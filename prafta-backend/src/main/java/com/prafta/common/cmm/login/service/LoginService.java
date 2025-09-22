@@ -1,0 +1,12 @@
+package com.prafta.common.cmm.login.service;
+
+import java.util.Map;
+
+import com.prafta.common.cmm.login.dto.LoginReqDto;
+import com.prafta.common.cmm.login.dto.UserJoinReqDto;
+
+public interface LoginService {
+	Map<String, Object> getLoginUser(LoginReqDto dto); 
+	
+	void insertUserInfo(UserJoinReqDto dto);
+}

@@ -1,0 +1,68 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+
+<mapper namespace="com.prafta.web.baim.baim01.mapper.Baim01Mapper">
+
+    <select id="selectSiteInfoList" parameterType="com.prafta.web.baim.baim01.dto.Baim01ReqDto" resultType="map">
+    /* Baim01Mapper.selectSiteInfoList */
+    SELECT
+    	'' AS CHK
+    	, A.SITE_CD
+    	, A.SITE_NO
+    	, A.SITE_NM
+    	, A.CMPNY_CD
+    	, A.ADDR_1
+    	, A.ADDR_2
+    	, A.ZIP_CODE
+    	, A.STR_DATE
+    	, A.END_DATE
+    	, A.USE_YN
+    	, A.SITE_ADMIN_ID
+    	, B.USER_ID AS SITE_ADMIN_NM
+    	, A.TEL_NO
+    	, A.SITE_DESC
+   	FROM TB_SITE A
+ 		 LEFT JOIN TB_USER B
+			ON (
+				A.CMPNY_CD = B.CMPNY_CD
+			AND A.SITE_ADMIN_ID = B.USER_ID
+            )
+  	WHERE 1=1
+  	  AND A.CMPNY_CD = #{gv_cmpnyCd}
+  	  <if test="siteCd != null and siteCd != ''">
+  	  	AND A.SITE_CD = #{siteCd}
+  	  </if>
+  	  <if test="siteNo != null and siteNo != ''">
+  	  	AND A.SITE_NO = #{siteNo}
+  	  </if>
+  	  <if test="siteNm != null and siteNm != ''">
+  	  	AND A.SITE_NM LIKE CONCAT('%', #{siteNm}, '%')
+  	  	
+  	  </if>
+  	  <if test="useYn != null and useYn != ''">
+  	  	AND A.USE_YN = #{useYn}
+  	  </if>
+	</select>
+	
+	<insert id="mergeSiteInfo">
+	/* Baim01Mapper.mergeSiteInfo */
+	{
+		call prafta.SP_INSERT_SITE(
+			#{param.siteCd}
+	   		, #{param.siteNo}
+	   		, #{param.siteNm}
+	   		, #{token.gv_cmpnyCd}
+	   		, #{param.addr1}
+			, #{param.addr2}
+			, #{param.zipCode}
+			, #{param.strDate}
+			, #{param.endDate}
+			, #{param.useYn}
+			, #{param.siteAdminId}
+			, #{param.telNo}
+			, #{param.siteDesc}
+			, #{token.gv_userId}
+		)
+	}
+	</insert>
+</mapper>

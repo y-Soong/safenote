@@ -1,0 +1,21 @@
+package com.prafta.web.baim.baim02.mapper;
+
+import java.util.List;
+import java.util.Map;
+
+import org.apache.ibatis.annotations.Mapper;
+import org.apache.ibatis.annotations.Param;
+
+import com.prafta.web.baim.baim02.dto.Baim02;
+import com.prafta.web.baim.baim02.dto.Baim02ReqDto;
+
+@Mapper
+public interface Baim02Mapper {
+	List<Map<String, Object>> selectCompCmmCodeMList(@Param(value = "param") Baim02ReqDto dto, @Param(value = "token") Map<String, Object> tokenInfo);
+	
+	List<Baim02> selectCompCmmCodeDList(@Param(value = "param") Baim02ReqDto dto, @Param(value = "token") Map<String, Object> tokenInfo);
+	
+	void mergeCmmCodeDetailInfo(@Param(value = "param") Baim02 dto, @Param(value = "token") Map<String, Object> tokenInfo);
+	
+	void deleteCmmCodeDetailInfo(@Param(value = "param") Baim02 dto, @Param(value = "token") Map<String, Object> tokenInfo);
+}

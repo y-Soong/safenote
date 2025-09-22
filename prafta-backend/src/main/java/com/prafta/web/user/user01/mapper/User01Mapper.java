@@ -1,0 +1,25 @@
+package com.prafta.web.user.user01.mapper;
+
+import java.util.List;
+import java.util.Map;
+
+import org.apache.ibatis.annotations.Mapper;
+import org.apache.ibatis.annotations.Param;
+
+import com.prafta.web.user.user01.dto.User01;
+import com.prafta.web.user.user01.dto.User01ReqDto;
+
+@Mapper
+public interface User01Mapper {
+	List<Map<String, Object>> selectUserInfoList(User01ReqDto dto);
+	
+	int updateUserPw(User01ReqDto dto);
+	
+	void mergeUserInfo(@Param(value = "param") User01 dto, @Param(value = "token") Map<String, Object> tokenInfo);
+	
+	Map<String, Object> selectUserSiteInfo(User01ReqDto dto);
+	
+	void deleteUserSiteAuth(@Param(value = "param") User01 dto, @Param(value = "token") Map<String, Object> tokenInfo);
+	
+	void insertUserSiteAuth(@Param(value = "param") User01 dto, @Param(value = "token") Map<String, Object> tokenInfo);
+}

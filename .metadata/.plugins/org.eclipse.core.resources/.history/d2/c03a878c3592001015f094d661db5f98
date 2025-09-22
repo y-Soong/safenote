@@ -1,0 +1,78 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+
+<mapper namespace="com.prafta.web.chkLst.chkLst02.mapper.ChkLst02Mapper">
+
+    <select id="selectChkptInspectItemList" parameterType="com.prafta.web.chkLst.chkLst02.dto.ChkLst02ReqDto" resultType="com.prafta.web.chkLst.chkLst02.dto.ChkLst02">
+    /* ChkLst01Mapper.selectChkptInspectItemList */
+	SELECT 
+		'' AS CHK
+		, A.CMPNY_CD
+	    , A.CHKLST_TYPE
+	    , A.INSPECT_ITEM_CD
+	    , A.INSPECT_ITEM_SUBJ
+	    , A.SORT_IDX
+	    , A.STR_DATE
+	    , A.USE_YN
+	    , A.INSERT_NO
+	    , A.INSERT_DATE
+	    , A.UPDATE_NO
+	    , A.UPDATE_DATE
+	FROM TB_CHKPT_INSPECT_ITEM A
+	WHERE 1=1
+	  AND A.CMPNY_CD = #{token.gv_cmpnyCd}
+   	  <if test="param.sr_codeCd != null and param.sr_codeCd != ''">
+   	  	AND A.CHKLST_TYPE = #{param.sr_codeCd}
+   	  </if>
+	</select>
+	
+	<insert id="mergeChkptInspectItemList">
+	/* ChkLst01Mapper.mergeChkptInspectItemList */	
+    INSERT INTO TB_CHKPT_INSPECT_ITEM (
+    	CMPNY_CD
+    	, CHKLST_TYPE
+    	, INSPECT_ITEM_CD
+    	, INSPECT_ITEM_SUBJ
+    	, SORT_IDX
+    	, STR_DATE
+    	, USE_YN
+    	, INSERT_NO
+    	, INSERT_DATE
+    	, UPDATE_NO
+    	, UPDATE_DATE
+   	)
+   	VALUES(
+   		#{token.gv_cmpnyCd}
+   		, #{param.chkLstType}
+   		, IFNULL(#{param.inspectItemCd}, prafta.FNC_CMM_SEQ_NEXTVAL(#{token.gv_cmpnyCd}, CONCAT('COM001', '_', #{param.chkLstType})))
+   		, #{param.inspectItemSubj}
+   		, #{param.sortIdx}
+   		, #{param.strDate}
+   		, #{param.useYn}
+		, #{token.gv_userId}
+		, now()
+		, #{token.gv_userId}
+		, now() 
+   	)
+   	ON DUPLICATE KEY UPDATE
+   		INSPECT_ITEM_SUBJ = VALUES(INSPECT_ITEM_SUBJ)
+   		, SORT_IDX		  = VALUES(SORT_IDX)
+    	, STR_DATE		  = VALUES(STR_DATE)
+    	, USE_YN		  = IFNULL(USE_YN, 'Y')
+    	, UPDATE_NO		  = #{token.gv_userId}
+    	, UPDATE_DATE	  = NOW()
+	</insert>
+	
+	<insert id="updateChkptInspectItemList">
+	/* ChkLst01Mapper.updateChkptInspectItemList */
+	UPDATE TB_CHKPT_INSPECT_ITEM
+	SET 
+		USE_YN = 'N'
+		, UPDATE_NO = #{token.gvuserId}
+		, UPDATE_DATE = now()
+	WHERE 1=1
+	  AND CMPNY_CD = #{param.cmpnyCd}
+	  AND CHKLST_TYPE = #{param.chkLstType}
+	  AND INSPECT_ITEM_CD = #{param.inspectItemCd}
+	</insert>
+</mapper>

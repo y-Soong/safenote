@@ -1,0 +1,17 @@
+package com.prafta.common.cmm.login.mapper;
+
+import java.util.Map;
+
+import org.apache.ibatis.annotations.Mapper;
+
+import com.prafta.common.cmm.login.dto.LoginReqDto;
+import com.prafta.common.cmm.login.dto.UserJoinReqDto;
+
+@Mapper
+public interface LoginMapper {
+	Map<String, Object> getLoginUser(LoginReqDto dto);
+	
+	int insertUserInfo(UserJoinReqDto dto);
+	
+	int insertUserSiteAuth(UserJoinReqDto dto);
+}

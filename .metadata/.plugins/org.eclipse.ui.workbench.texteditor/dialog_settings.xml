@@ -1,0 +1,52 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<section name="Workbench">
+	<section name="org.eclipse.ui.texteditor.FindReplaceDialog">
+		<item key="selection" value="getSystinfoList"/>
+		<item key="wrap" value="true"/>
+		<item key="casesensitive" value="true"/>
+		<item key="wholeword" value="false"/>
+		<item key="incremental" value="false"/>
+		<item key="isRegEx" value="false"/>
+		<list key="findhistory">
+			<item value="getSystinfoList"/>
+			<item value="validateToken"/>
+			<item value="getAllClaimsAsMap"/>
+			<item value="claims.getExpiration()"/>
+			<item value="claims.getExpiration() :: "/>
+			<item value="ChkLst01"/>
+			<item value="chkLst01"/>
+			<item value="mergeChkptList"/>
+			<item value="User01ReqDto"/>
+			<item value="selectUserInfoList"/>
+			<item value="selectUserSiteInfo"/>
+			<item value="selectChkptList"/>
+			<item value="prafta.TB"/>
+			<item value="prafta."/>
+			<item value="selectBaseinfoList"/>
+		</list>
+		<list key="replacehistory">
+			<item value="ChkLst02"/>
+			<item value="chkLst02"/>
+			<item value="TB"/>
+			<item value=""/>
+			<item value="Baim02"/>
+			<item value="baim02"/>
+			<item value="User03"/>
+			<item value="user03"/>
+			<item value="User03ReqDto"/>
+			<item value="SideMenu"/>
+			<item value="gv_userId"/>
+			<item value="Baim01"/>
+			<item value="baim"/>
+			<item value="baim01"/>
+			<item value="User"/>
+		</list>
+	</section>
+	<section name="org.eclipse.ui.texteditor.FindReplaceDialog_dialogBounds">
+		<item key="DIALOG_X_ORIGIN" value="1523"/>
+		<item key="DIALOG_Y_ORIGIN" value="124"/>
+		<item key="DIALOG_WIDTH" value="288"/>
+		<item key="DIALOG_HEIGHT" value="391"/>
+		<item key="DIALOG_FONT_NAME" value="1|맑은 고딕|9.0|0|WINDOWS|1|-12|0|0|0|400|0|0|0|1|0|0|0|0|맑은 고딕"/>
+	</section>
+</section>

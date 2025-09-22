@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8" standalone="no"?>
+<launchConfiguration type="org.eclipse.jdt.launching.localJavaApplication" visibleAttributes="org.eclipse.debug.core.MAPPED_RESOURCE_TYPES, org.eclipse.jdt.launching.PROJECT_ATTR, org.eclipse.jdt.launching.MAIN_TYPE, org.eclipse.debug.core.MAPPED_RESOURCE_PATHS, org.eclipse.jdt.launching.ATTR_USE_CLASSPATH_ONLY_JAR, org.eclipse.jdt.launching.MODULE_NAME, org.eclipse.jdt.launching.ATTR_USE_START_ON_FIRST_THREAD">
+    <listAttribute key="org.eclipse.debug.core.MAPPED_RESOURCE_PATHS">
+        <listEntry value="/prafta-backend/src/main/java/com/prafta/MainApplication.java"/>
+    </listAttribute>
+    <listAttribute key="org.eclipse.debug.core.MAPPED_RESOURCE_TYPES">
+        <listEntry value="1"/>
+    </listAttribute>
+    <booleanAttribute key="org.eclipse.jdt.launching.ATTR_USE_CLASSPATH_ONLY_JAR" value="false"/>
+    <booleanAttribute key="org.eclipse.jdt.launching.ATTR_USE_START_ON_FIRST_THREAD" value="true"/>
+    <stringAttribute key="org.eclipse.jdt.launching.MAIN_TYPE" value="com.prafta.MainApplication"/>
+    <stringAttribute key="org.eclipse.jdt.launching.MODULE_NAME" value="prafta-backend"/>
+    <stringAttribute key="org.eclipse.jdt.launching.PROJECT_ATTR" value="prafta-backend"/>
+</launchConfiguration>

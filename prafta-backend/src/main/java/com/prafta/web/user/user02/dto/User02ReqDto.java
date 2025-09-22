@@ -1,0 +1,15 @@
+package com.prafta.web.user.user02.dto;
+
+import com.prafta.common.dto.cmmReqDto;
+
+import lombok.Getter;
+import lombok.Setter;
+
+@Getter
+@Setter
+public class User02ReqDto extends cmmReqDto{
+	private String sr_menuMNm;
+	private String sr_menuDNm;
+	private String sr_useYn;
+	private String sr_authCd;
+}
