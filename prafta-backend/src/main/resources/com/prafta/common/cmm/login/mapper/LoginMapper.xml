@@ -20,7 +20,9 @@
 	FROM TB_USER
 	WHERE 1=1
 	  AND USER_ID = #{userId}
+	  <!-- 
 	  AND USER_PW = #{userPw}
+	   -->
 	  AND USE_YN = 'Y'
     </select>
     
@@ -50,10 +52,10 @@
    		, #{userPw}
    		, #{siteCd}
    		, IFNULL(#{authCd}, '100')
-   		, REPLACE(#{mblNo}, '-', '')
-   		, #{email}
+   		, FN_ENCRYPT(REPLACE(#{mblNo}, '-', ''))
+   		, FN_ENCRYPT(#{email})
    		, #{gender}
-   		, #{birthDt}
+   		, FN_ENCRYPT(#{birthDt})
    		, 'Y'
    		, 'SYSTEM'
    		, NOW()
@@ -95,6 +97,5 @@
     	, #{userId}
     	, NOW()
     )
-    
     </insert>
 </mapper>

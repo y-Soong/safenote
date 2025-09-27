@@ -19,6 +19,8 @@ public interface BaseinfoMapper {
 	
 	Map<String, Object> selectUserIdDupleChk(BaseinfoReqDto dto);
 	
+	int selectMblUniqChk(BaseinfoReqDto dto);
+	
 	void insertSmsAuthReq(BaseinfoReqDto dto);
 	
 	int updateSmsAuthReq(BaseinfoReqDto dto);
@@ -30,4 +32,8 @@ public interface BaseinfoMapper {
 	List<Map<String, Object>> selectWebMenuList(BaseinfoReqDto dto);
 	
 	List<Map<String, Object>> selectMenuList(BaseinfoReqDto dto);
+	
+	Map<String, Object> selectUserIdInfo(BaseinfoReqDto dto);
+	
+	void updateUserPw(BaseinfoReqDto dto);
 }

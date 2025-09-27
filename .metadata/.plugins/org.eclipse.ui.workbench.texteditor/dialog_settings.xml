@@ -1,28 +1,28 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <section name="Workbench">
 	<section name="org.eclipse.ui.texteditor.FindReplaceDialog">
-		<item key="selection" value="getSystinfoList"/>
+		<item key="selection" value="selectWebMenuList"/>
 		<item key="wrap" value="true"/>
 		<item key="casesensitive" value="true"/>
 		<item key="wholeword" value="false"/>
 		<item key="incremental" value="false"/>
 		<item key="isRegEx" value="false"/>
 		<list key="findhistory">
+			<item value="selectWebMenuList"/>
+			<item value="selectMblUniqChk"/>
+			<item value="getSmsAuthReq"/>
+			<item value="insertUserInfo"/>
+			<item value="updateUserInfo"/>
+			<item value="EMAIL"/>
+			<item value="selectUserInfoList"/>
+			<item value="selectUserIdInfo"/>
+			<item value="insertUserSiteAuth"/>
+			<item value="baseinfoMapper"/>
+			<item value="updateUserPw"/>
+			<item value="getLoginUser"/>
+			<item value="insertSmsAuthReq"/>
 			<item value="getSystinfoList"/>
 			<item value="validateToken"/>
-			<item value="getAllClaimsAsMap"/>
-			<item value="claims.getExpiration()"/>
-			<item value="claims.getExpiration() :: "/>
-			<item value="ChkLst01"/>
-			<item value="chkLst01"/>
-			<item value="mergeChkptList"/>
-			<item value="User01ReqDto"/>
-			<item value="selectUserInfoList"/>
-			<item value="selectUserSiteInfo"/>
-			<item value="selectChkptList"/>
-			<item value="prafta.TB"/>
-			<item value="prafta."/>
-			<item value="selectBaseinfoList"/>
 		</list>
 		<list key="replacehistory">
 			<item value="ChkLst02"/>

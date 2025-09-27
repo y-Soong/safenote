@@ -9,4 +9,5 @@
     <fullyQualifiedTypeName name="com.prafta.common.cmm.baseinfo.dto.TopMenu"/>
     <fullyQualifiedTypeName name="com.prafta.common.cmm.baseinfo.dto.Buttons"/>
     <fullyQualifiedTypeName name="com.prafta.common.cmm.baseinfo.dto.SideMenu"/>
+    <fullyQualifiedTypeName name="com.prafta.common.util.PasswordHashing"/>
 </qualifiedTypeNameHistroy>

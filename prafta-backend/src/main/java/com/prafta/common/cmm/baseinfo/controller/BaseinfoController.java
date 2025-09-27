@@ -16,6 +16,7 @@ import com.prafta.common.annotation.NoAuth;
 import com.prafta.common.cmm.baseinfo.dto.BaseinfoReqDto;
 import com.prafta.common.cmm.baseinfo.dto.NavigationPayload;
 import com.prafta.common.cmm.baseinfo.service.BaseinfoService;
+import com.prafta.common.cmm.login.dto.UserJoinReqDto;
 import com.prafta.common.exception.CmmApiException;
 import com.prafta.common.util.NavigationBuilder;
 
@@ -126,7 +127,7 @@ public class BaseinfoController {
         Map<String, Object> retMap = baseinfoService.selectCertNoSmsId(dto);
         
         if(retMap == null) {
-        	throw new CmmApiException("인증번호가 맞지 않거나 인증 유효 시간이 만료됐습니다.다시 시도해주세요.");
+        	throw new CmmApiException("인증번호가 맞지 않거나 인증 유효 시간이\n만료 됐습니다.\n다시 시도해주세요.");
         } else {
         	dto.setSmsId(retMap.get("SMS_ID").toString());
         	baseinfoService.updateSmsAuthReq(dto);
@@ -163,8 +164,21 @@ public class BaseinfoController {
     		throw new CmmApiException("접근가능한 메뉴가 없습니다.\n관리자에게 문의해주세요.");
     	}
         
-//    	return ResponseEntity.status(HttpStatus.OK).body(resultList);
     	return ResponseEntity.status(HttpStatus.OK).body(payload);
     }
     
+    @PostMapping("/getUserIdInfo")
+    public ResponseEntity<?> getUserIdInfo(@RequestBody BaseinfoReqDto dto) {
+        Map<String, Object> retMap = baseinfoService.selectUserIdInfo(dto);
+        
+    	return ResponseEntity.status(HttpStatus.OK).body(retMap);
+    }
+
+    @PostMapping("/updateUserPw")
+    public ResponseEntity<?> updateUserPw(@RequestBody BaseinfoReqDto dto) {
+    	
+    	baseinfoService.updateUserPw(dto);
+    	
+    	return ResponseEntity.status(HttpStatus.OK).build();
+    }
 }

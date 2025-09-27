@@ -24,6 +24,7 @@ public class AuthAspect {
 
     @Before("execution(* com.prafta..controller..*(..)) " +
             "&& !execution(* com.prafta.common.cmm.login.controller..*(..)) " +
+            "&& !execution(* com.prafta.common.cmm.baseinfo.controller..*(..)) " +
             "&& !@annotation(com.prafta.common.annotation.NoAuth)")
     public void checkAuthorization(JoinPoint joinPoint) {
         String token = request.getHeader("Authorization");

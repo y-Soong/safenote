@@ -27,4 +27,8 @@ public interface BaseinfoService {
 	List<Map<String, Object>> selectWebMenuList(BaseinfoReqDto dto);
 	
 	List<Map<String, Object>> selectMenuList(BaseinfoReqDto dto);
+	
+	Map<String, Object> selectUserIdInfo(BaseinfoReqDto dto);
+	
+	void updateUserPw(BaseinfoReqDto dto);
 }

@@ -1,0 +1,5 @@
+package com.prafta.common.util;
+
+public class AesGcmUtil {
+
+}

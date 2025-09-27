@@ -3,11 +3,16 @@ package com.prafta.common.cmm.baseinfo.service.impl;
 import java.util.List;
 import java.util.Map;
 
+import javax.crypto.SecretKey;
+
 import org.springframework.stereotype.Service;
 
 import com.prafta.common.cmm.baseinfo.dto.BaseinfoReqDto;
 import com.prafta.common.cmm.baseinfo.mapper.BaseinfoMapper;
 import com.prafta.common.cmm.baseinfo.service.BaseinfoService;
+import com.prafta.common.exception.CmmApiException;
+import com.prafta.common.util.AesGcmUtil;
+import com.prafta.common.util.PasswordHashing;
 
 import lombok.extern.slf4j.Slf4j;
 
@@ -41,6 +46,16 @@ public class BaseinfoServiceImpl implements BaseinfoService{
 	}
 	
 	public void insertSmsAuthReq(BaseinfoReqDto dto) {
+		if(
+			dto.getDupChkYn() != null && dto.getDupChkYn() != "" && dto.getDupChkYn().equals("Y")
+		) {
+			int mblCnt = baseinfoMapper.selectMblUniqChk(dto);
+			
+			if(mblCnt > 0) {
+				throw new CmmApiException("이미 등록된 휴대폰번호입니다.\n 확인 후 다시 시도해주세요.");
+			}
+		}
+		
 		baseinfoMapper.insertSmsAuthReq(dto);
 	}
 	
@@ -62,5 +77,21 @@ public class BaseinfoServiceImpl implements BaseinfoService{
 	
 	public List<Map<String, Object>> selectMenuList(BaseinfoReqDto dto) {
 		return baseinfoMapper.selectMenuList(dto);
+	}
+	
+	public Map<String, Object> selectUserIdInfo(BaseinfoReqDto dto) {
+		Map<String, Object> retMap = baseinfoMapper.selectUserIdInfo(dto);
+		
+		if(retMap == null) {
+			throw new CmmApiException("이름과 휴대폰 번호로 생성된 계정이 없습니다.\n확인 후 다시 시도해주세요.");
+		}
+		return retMap;
+	}
+	
+	public void updateUserPw(BaseinfoReqDto dto) {
+		/* 암호화처리 */
+		if(dto.getUserPw() != null) { dto.setUserPw(PasswordHashing.hashPassword(dto.getUserPw())); }
+		
+		baseinfoMapper.updateUserPw(dto);
 	}
 }

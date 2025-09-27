@@ -12,9 +12,9 @@
         , A.AUTH_CD
         , A.SITE_CD
         , C.SITE_NM
-        , A.MBL_NO
-        , A.BIRTH_DT
-        , A.EMAIL
+        , FN_DECRYPT(A.MBL_NO) AS MBL_NO
+        , FN_DECRYPT(A.BIRTH_DT) AS BIRTH_DT
+        , FN_DECRYPT(A.EMAIL) AS EMAIL
         , A.GENDER
         , A.USE_YN
         , IFNULL(B.SITE_NM_LIST, '') AS SITE_NM_LIST
@@ -73,10 +73,10 @@
 	SET 
 		SITE_CD = #{param.siteCd}
 		, AUTH_CD = #{param.authCd}
-		, MBL_NO = #{param.mblNo}
-		, EMAIL = #{param.email}
+		, MBL_NO = FN_ENCRYPT(#{param.mblNo})
+		, EMAIL = FN_ENCRYPT(#{param.email})
 		, GENDER = #{param.gender}
-		, BIRTH_DT = #{param.birthDt}
+		, BIRTH_DT = FN_ENCRYPT(#{param.birthDt})
 		, USE_YN = IFNULL(#{param.useYn}, 'Y')
 		, UPDATE_NO = #{token.gv_userId}
 		, UPDATE_DATE = NOW()
