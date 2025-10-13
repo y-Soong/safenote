@@ -1,8 +1,8 @@
 package com.prafta.common.cmm.login.service.impl;
 
+import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
-
-import javax.crypto.SecretKey;
 
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -12,7 +12,6 @@ import com.prafta.common.cmm.login.dto.UserJoinReqDto;
 import com.prafta.common.cmm.login.mapper.LoginMapper;
 import com.prafta.common.cmm.login.service.LoginService;
 import com.prafta.common.exception.LoginFailException;
-import com.prafta.common.util.AesGcmUtil;
 import com.prafta.common.util.PasswordHashing;
 
 import lombok.extern.slf4j.Slf4j;
@@ -43,6 +42,34 @@ public class LoginServiceImpl implements LoginService{
 		
 		loginMapper.insertUserInfo(dto);
 		loginMapper.insertUserSiteAuth(dto);
+		
+		List<Map<String, Object>> retList = loginMapper.selectRequiredTermsList();
+		
+		if(retList == null || retList.size() < 1) {
+			throw new LoginFailException("약관동의에 실패했습니다.\n관리자에게 문의해주세요.");
+		} else {
+			for(Map<String, Object> map : retList) {
+				Map<String, Object> param = new HashMap<String, Object>();
+				param.put("userId", dto.getUserId());
+				param.put("termsId", map.get("TERMS_ID"));
+				param.put("termsVersion", map.get("TERMS_VERSION"));
+				param.put("agrYn", "Y");
+				
+				loginMapper.insertTermsUserAgrMgmt(param);
+			}
+		}
+	}
+	
+	public List<Map<String, Object>> selectUserTermsAgrChk(LoginReqDto dto) {
+		return loginMapper.selectUserTermsAgrChk(dto);
+	}
+	
+	public void updateAuthMenuInfo(List<LoginReqDto> dtoList, Map<String, Object> tokenInfo) {
+		if(dtoList != null && dtoList.size() > 0) {
+			for(LoginReqDto dto : dtoList) {
+				loginMapper.mergeAuthMenuInfo(dto, tokenInfo);
+			}
+		}
 	}
 }
 

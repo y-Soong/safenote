@@ -1,5 +1,6 @@
 package com.prafta.common.cmm.login.service;
 
+import java.util.List;
 import java.util.Map;
 
 import com.prafta.common.cmm.login.dto.LoginReqDto;
@@ -9,4 +10,8 @@ public interface LoginService {
 	Map<String, Object> getLoginUser(LoginReqDto dto); 
 	
 	void insertUserInfo(UserJoinReqDto dto);
+	
+	List<Map<String, Object>> selectUserTermsAgrChk(LoginReqDto dto);
+	
+	void updateAuthMenuInfo(List<LoginReqDto> dtoList, Map<String, Object> tokenInfo);
 }

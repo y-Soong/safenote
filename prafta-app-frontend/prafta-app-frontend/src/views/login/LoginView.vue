@@ -1,92 +1,219 @@
 <template>
-  <div class="min-h-screen flex items-center justify-center bg-[#afeeee] px-4">
-    <div class="bg-white rounded-2xl shadow-xl w-full max-w-md px-8 py-10">
-      <!-- 로고 + 타이틀 -->
-      <div class="flex flex-col items-center mb-8">
-        <img src="@/assets/logo.png" alt="CleanNote Logo" class="w-20 h-auto mb-4" />
-        <h2 class="text-3xl font-extrabold text-gray-800">Welcome</h2>
-        <p class="text-sm text-gray-500 mt-1 text-center">Login to your cleaning service account</p>
+  <div class="min-h-screen flex flex-col items-center justify-center bg-gray-50">
+    <!-- 로그인 박스 -->
+    <img :src="safenote_logo" class="pt-10 pb-10 w-56" alt="logo" />
+
+    <!-- 로그인 박스 -->
+    <div class="w-full max-w-sm bg-white rounded-2xl shadow-md p-8">
+      <!-- 아이디 입력 -->
+      <div class="mb-4">
+        <input
+          id="userId"
+          type="text"
+          v-model="userId"
+          placeholder="아이디"
+          @blur="focusKill"
+          class="w-full px-4 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-green-500"
+        />
       </div>
 
-      <!-- 로그인 폼 -->
-      <form class="flex flex-col gap-4" @submit.prevent="submitLogin">
-        <div>
-          <label class="block text-sm font-medium text-gray-700 mb-1">아이디</label>
-          <input
-            type="userid"
-            v-model="userId"
-            class="w-full px-4 py-2 border border-gray-300 rounded-md focus:ring-[#afeeee]"
-          />
-        </div>
-        <div>
-          <label class="block text-sm font-medium text-gray-700 mb-1">비밀번호</label>
-          <input
-            type="password"
-            v-model="userPw"
-            class="w-full px-4 py-2 border border-gray-300 rounded-md focus:ring-[#afeeee]"
-          />
-        </div>
-        <button
-          type="submit"
-          class="w-full bg-[#afeeee] text-white font-semibold py-2 rounded-md hover:bg-[#9bdede] transition"
-        >
-          Login
-        </button>
-      </form>
+      <!-- 비밀번호 입력 -->
+      <div class="mb-1">
+        <input
+          type="password"
+          v-model="password"
+          placeholder="비밀번호"
+          class="w-full px-4 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-green-500"
+        />
+      </div>
 
-      <p class="mt-6 text-center text-sm text-gray-500">
-        Don’t have an account?
-        <a href="#" class="text-[#53bfbf] font-medium hover:underline">Sign up</a>
+      <!-- 에러 메시지 -->
+      <p v-if="errorMessage" class="text-red-500 text-sm mb-3">
+        {{ errorMessage }}
       </p>
+
+      <!-- 아이디 저장 -->
+      <div class="flex items-center mb-4 pt-1">
+        <input id="rememberId" type="checkbox" v-model="rememberId" class="mr-2 pt-1" />
+        <label for="rememberId" class="text-sm text-gray-700">아이디 저장</label>
+      </div>
+
+      <!-- 로그인 버튼 -->
+      <button
+        @click="fnSubmitLogin"
+        class="w-full bg-green-700 text-white py-2 rounded-md hover:bg-green-800 transition"
+      >
+        로그인
+      </button>
+
+      <!-- 아이디 찾기 / 비밀번호 초기화 -->
+      <div class="flex justify-center items-center mt-4 text-sm text-gray-600 help-links">
+        <a class="aTagCls" href="#" @click.prevent="acountInfoSrch">아이디/비밀번호 찾기</a>
+      </div>
     </div>
+
+    <!-- 가입하기 영역 -->
+    <div class="w-full max-w-sm mt-6 text-center pl-8 pr-8">
+      <p class="text-sm text-gray-700 mb-2" style="color: #084538">SAFE NOTE 가 처음이신가요?</p>
+      <button
+        class="w-full py-2 border border-green-700 text-green-700 rounded-md hover:bg-green-50 transition"
+        @click="fnOpenTerms"
+      >
+        가입하기
+      </button>
+    </div>
+
+    <!-- Footer -->
+    <footer class="mt-10 text-center text-xs text-gray-500">
+      <p class="font-semibold">YW LOGIS</p>
+      <p>고객센터 1234-5678</p>
+      <p>© 순기량여진이랑 INC. ALL RIGHTS RESERVED.</p>
+    </footer>
   </div>
 </template>
 
 <script setup>
-import { ref } from 'vue'
+import { ref, getCurrentInstance, onMounted } from 'vue'
+import { useRouter, useRoute } from 'vue-router'
+import safenote_logo from '@/assets/img/safenote_sign.png'
 import axios from '@/api/axios'
-import { useRouter } from 'vue-router'
-import { useUserStore } from '@/stores/userStore'
-// import { useGlobalUserStore } from '@/stores/globalUserStore'
 
 const userId = ref('')
-const userPw = ref('')
+const password = ref('')
+const rememberId = ref(false)
 const router = useRouter()
-const userSotre = useUserStore();
+const route = useRoute()
+const errorMessage = ref('')
 
-const submitLogin = async () => {
-  console.log('axios baseURL', axios.defaults.baseURL)
-  console.log(userId.value)
-  console.log(userPw.value)
+const { proxy } = getCurrentInstance()
 
-  try {
-    const response = await axios.post('/api/login', {
-      userId: userId.value,
-      userPw: userPw.value,
-      userNm: '윤순기'
-    })
+onMounted(() => {
+  if (proxy.$util.isNotEmpty(route) && proxy.$util.isNotEmpty(route.query.userId)) {
+    userId.value = route.query.userId
+  }
 
-    if (response.status == "200") {
-      console.log("Success ###")
-      console.log(response);
+  const savedId = localStorage.getItem('savedUserId')
+  if (savedId) {
+    userId.value = savedId
+    rememberId.value = true
+  }
+})
 
-      sessionStorage.setItem('jwt', response.data.token)
-      sessionStorage.setItem('token', response.data.token)
-      sessionStorage.setItem('userId', response.data.userId)
-      sessionStorage.setItem('userNm', response.data.userNm)
-      sessionStorage.setItem('cmpnyCd', response.data.cmpnyCd)
-
-
-      userSotre.setUser({
-        userId : response.data.userId
-        , userNm : response.data.userNm
-        , cmpnyCd : response.data.cmpnyCd
-      })
-
-      router.push('/main') // 로그인 성공 → 메인화면 이동
+function focusKill(e) {
+  if (e.target.id == 'userId') {
+    if (proxy.$util.isNotEmpty(userId.value)) {
+      userIdFocusKill()
     }
-  } catch (err) {
-    alert(err.response.data.message);
   }
 }
+
+/* API Call */
+const fnSubmitLogin = async () => {
+  if (!userId.value || !password.value) {
+    await proxy.$alert('아이디와 비밀번호를 모두 입력해주세요')
+    return
+  }
+
+  try {
+    const response = await axios.post('/comApi/login/loginChk', {
+      userId: userId.value,
+      userPw: password.value,
+    })
+
+    if (response.status === 200) {
+      const { token, userId: id, userNm, cmpnyCd, authCd, mblNo, email } = response.data
+
+      // ✅ 로그인 토큰 세팅
+      sessionStorage.setItem('jwt', token)
+      sessionStorage.setItem('token', token)
+      sessionStorage.setItem('gv_cmpnyCd', cmpnyCd)
+      sessionStorage.setItem('gv_userId', id)
+      sessionStorage.setItem('gv_userNm', userNm)
+      sessionStorage.setItem('gv_authCd', authCd)
+      sessionStorage.setItem('gv_mblNo', mblNo)
+      sessionStorage.setItem('gv_email', email)
+      // userStore.setUser({ userId: id, userNm, cmpnyCd, authCd, mblNo, email });
+
+      // ✅ 아이디 저장 처리
+      if (rememberId.value) {
+        localStorage.setItem('savedUserId', userId.value)
+      } else {
+        localStorage.removeItem('savedUserId')
+      }
+
+      /* 약관동의 체크 */
+      //fnUserTermsAgrChk()
+
+      router.push('/MainView')
+    }
+  } catch (err) {
+    await proxy.$alert(err.response?.data?.message || '로그인에 실패했습니다.')
+  }
+}
+
+// const fnUserTermsAgrChk = async () => {
+//   try {
+//     const response = await axios.post("/comApi/login/getUserTermsAgrChk", {
+//       userId: userId.value,
+//     });
+
+//     if (response.status === 200) {
+//       userTermsNonAgrList.value = response.data;
+
+//       if (response.data.length > 0) {
+//         openPop(TermsPop, {
+//           loginFlg_p: "Y",
+//           userTermsNonAgrList_p: userTermsNonAgrList.value,
+//           onMoveMain: fnMoveMainPath,
+//           onfnUserLogout: fnUserLogout,
+//         });
+//         // fnUserLogout();
+//       } else {
+//         fnMoveMainPath();
+//       }
+//     }
+//   } catch (err) {
+//     await proxy.$alert(err.response?.data?.message || "로그인에 실패했습니다.");
+//   }
+// };
+
+/* User Function */
+function userIdFocusKill() {
+  userId.value = proxy.$util.toUpperCase(userId.value)
+}
+
+function fnOpenTerms() {
+  router.push('/TermsInfo')
+}
+
+function acountInfoSrch() {
+  router.push('/ActInfoSrch')
+}
 </script>
+
+<style scoped>
+/* 필요 시 추가 커스텀 스타일 */
+.help-links {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  gap: 0.5rem;
+  list-style: none;
+  padding: 0;
+  margin: 0.5rem;
+  font-size: 0.85rem;
+}
+
+.help-links a {
+  color: #084538;
+  text-decoration: none;
+}
+
+.help-links li {
+  color: #084538;
+}
+
+.aTagCls:hover {
+  color: #30796a;
+}
+</style>

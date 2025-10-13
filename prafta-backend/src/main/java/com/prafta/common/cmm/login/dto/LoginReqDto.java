@@ -11,4 +11,6 @@ public class LoginReqDto extends cmmReqDto{
 	private String userId;
     private String userNm;
     private String userPw;
+    
+    private String systValDCd;
 }

@@ -92,6 +92,18 @@ public class BaseinfoController {
     	return ResponseEntity.status(HttpStatus.OK).body(retList);
     }
     
+    /* APP 메뉴 조회  */
+    @PostMapping("/getAppMenuList")
+    public ResponseEntity<?> getAppMenuList(@RequestBody BaseinfoReqDto dto) {
+		List<Map<String, Object>> retList = baseinfoService.selectAppMenuList(dto);
+		
+    	if(retList == null || retList.size() == 0) {
+    		throw new CmmApiException("조회결과가 없습니다.");
+    	}
+    	
+    	return ResponseEntity.status(HttpStatus.OK).body(retList);
+    }
+    
     /* 사용자 ID 중복체크 */
     @PostMapping("/getUserIdDupleChk")
     public ResponseEntity<?> getUserIdDupleChk(@RequestBody BaseinfoReqDto dto) {
@@ -127,7 +139,7 @@ public class BaseinfoController {
         Map<String, Object> retMap = baseinfoService.selectCertNoSmsId(dto);
         
         if(retMap == null) {
-        	throw new CmmApiException("인증번호가 맞지 않거나 인증 유효 시간이\n만료 됐습니다.\n다시 시도해주세요.");
+        	throw new CmmApiException("잘못된 인증번호입니다.\n확인 후 다시 시도해주세요.");
         } else {
         	dto.setSmsId(retMap.get("SMS_ID").toString());
         	baseinfoService.updateSmsAuthReq(dto);
@@ -180,5 +192,16 @@ public class BaseinfoController {
     	baseinfoService.updateUserPw(dto);
     	
     	return ResponseEntity.status(HttpStatus.OK).build();
+    }
+    
+    @PostMapping("/getTermsDInfo")
+    public ResponseEntity<?> getTermsDInfo(@RequestBody BaseinfoReqDto dto) {
+		Map<String, Object> retList = baseinfoService.selectTermsDInfo(dto);
+    	
+    	if(retList == null) {
+    		throw new CmmApiException("조회결과가 없습니다.");
+    	}
+    	
+    	return ResponseEntity.status(HttpStatus.OK).body(retList);
     }
 }

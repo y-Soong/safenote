@@ -1,34 +1,35 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <section name="Workbench">
 	<section name="org.eclipse.ui.texteditor.FindReplaceDialog">
-		<item key="selection" value="selectWebMenuList"/>
+		<item key="selection" value="getWebMenuList"/>
 		<item key="wrap" value="true"/>
-		<item key="casesensitive" value="true"/>
+		<item key="casesensitive" value="false"/>
 		<item key="wholeword" value="false"/>
 		<item key="incremental" value="false"/>
 		<item key="isRegEx" value="false"/>
 		<list key="findhistory">
+			<item value="getWebMenuList"/>
+			<item value="selectAuthMenuList"/>
+			<item value="selectSystinfo"/>
 			<item value="selectWebMenuList"/>
-			<item value="selectMblUniqChk"/>
-			<item value="getSmsAuthReq"/>
+			<item value="selectMenuList"/>
+			<item value="selectSystinfoList"/>
+			<item value="security"/>
+			<item value="securi"/>
+			<item value="spring-boot-starter-security"/>
+			<item value="addCorsMappings"/>
+			<item value="getSystInfoList"/>
+			<item value=""/>
+			<item value="get"/>
+			<item value="mergeTermsInfo"/>
 			<item value="insertUserInfo"/>
-			<item value="updateUserInfo"/>
-			<item value="EMAIL"/>
-			<item value="selectUserInfoList"/>
-			<item value="selectUserIdInfo"/>
-			<item value="insertUserSiteAuth"/>
-			<item value="baseinfoMapper"/>
-			<item value="updateUserPw"/>
-			<item value="getLoginUser"/>
-			<item value="insertSmsAuthReq"/>
-			<item value="getSystinfoList"/>
-			<item value="validateToken"/>
 		</list>
 		<list key="replacehistory">
+			<item value="03"/>
+			<item value=""/>
 			<item value="ChkLst02"/>
 			<item value="chkLst02"/>
 			<item value="TB"/>
-			<item value=""/>
 			<item value="Baim02"/>
 			<item value="baim02"/>
 			<item value="User03"/>
@@ -39,12 +40,11 @@
 			<item value="Baim01"/>
 			<item value="baim"/>
 			<item value="baim01"/>
-			<item value="User"/>
 		</list>
 	</section>
 	<section name="org.eclipse.ui.texteditor.FindReplaceDialog_dialogBounds">
 		<item key="DIALOG_X_ORIGIN" value="1523"/>
-		<item key="DIALOG_Y_ORIGIN" value="124"/>
+		<item key="DIALOG_Y_ORIGIN" value="386"/>
 		<item key="DIALOG_WIDTH" value="288"/>
 		<item key="DIALOG_HEIGHT" value="391"/>
 		<item key="DIALOG_FONT_NAME" value="1|맑은 고딕|9.0|0|WINDOWS|1|-12|0|0|0|400|0|0|0|1|0|0|0|0|맑은 고딕"/>

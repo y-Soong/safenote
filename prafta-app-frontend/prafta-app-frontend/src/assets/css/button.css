@@ -1,0 +1,92 @@
+.btn-group {
+  display: flex;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.btn {
+  padding: 0.3rem 1rem;
+  border-radius: 6px;
+  font-size: 0.8rem;
+  cursor: pointer;
+  transition: background 0.2s;
+  white-space: nowrap
+}
+
+.btn-custom {
+  padding: 0.1rem 0.5rem;
+  border: 1px solid #30796A;
+  color: #30796A;
+}
+
+.btn-custom:hover {
+  color: white;
+  background: #084538;
+}
+
+.btn-primary {
+  background: #30796A;
+  color: white;
+}
+.btn-primary:hover {
+  background: #084538;
+}
+
+.btn-second {
+  border: 1px solid #0069d9;
+  /* background: white; */
+  color: #007bff;
+}
+
+.btn-second:hover {
+  background: #084538;
+  color: white;
+}
+
+.search-btn {
+  width: 20px;
+  background: #30796a;
+  border-radius: 3px;
+  margin-left: -0.2rem;
+  margin-right: -0.2rem;
+  padding: 0.3rem;
+}
+
+.search-btn:hover {
+  background: #084538;
+}
+
+.icon-button {
+  border: none;
+  background: transparent;
+  padding: 0;
+  height: 20px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #fff;
+}
+
+.icon-button img {
+  width: 18px;
+  height: 18px;
+}
+
+.create-id-btn {
+  margin-top: 0.5rem;
+  padding: 0.6rem 1.8rem;
+  border: 1px solid #30796a;
+  background: #30796a;
+  color: #fff;
+  border-radius: var(--radius-md);
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.2s ease, color 0.2s ease;
+}
+
+.create-id-btn:hover {
+  background: #084538;
+  color: #fff;
+}

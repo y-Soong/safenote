@@ -75,6 +75,10 @@ public class BaseinfoServiceImpl implements BaseinfoService{
 		return baseinfoMapper.selectWebMenuList(dto);
 	}
 	
+	public List<Map<String, Object>> selectAppMenuList(BaseinfoReqDto dto) {
+		return baseinfoMapper.selectAppMenuList(dto);
+	}
+	
 	public List<Map<String, Object>> selectMenuList(BaseinfoReqDto dto) {
 		return baseinfoMapper.selectMenuList(dto);
 	}
@@ -83,7 +87,7 @@ public class BaseinfoServiceImpl implements BaseinfoService{
 		Map<String, Object> retMap = baseinfoMapper.selectUserIdInfo(dto);
 		
 		if(retMap == null) {
-			throw new CmmApiException("이름과 휴대폰 번호로 생성된 계정이 없습니다.\n확인 후 다시 시도해주세요.");
+			throw new CmmApiException("가입된 계정이 없습니다.\n확인 후 다시 시도해주세요.");
 		}
 		return retMap;
 	}
@@ -93,5 +97,14 @@ public class BaseinfoServiceImpl implements BaseinfoService{
 		if(dto.getUserPw() != null) { dto.setUserPw(PasswordHashing.hashPassword(dto.getUserPw())); }
 		
 		baseinfoMapper.updateUserPw(dto);
+	}
+	
+	public Map<String, Object> selectTermsDInfo(BaseinfoReqDto dto) {
+		Map<String, Object> retMap = baseinfoMapper.selectTermsDInfo(dto);
+		
+		if(retMap == null) {
+			throw new CmmApiException("조회된 약관 내용이 없습니다.\n확인 후 다시 시도해주세요.");
+		}
+		return retMap;
 	}
 }

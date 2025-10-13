@@ -13,13 +13,13 @@ if (token) {
   try {
     // JWT 디코딩
     const decoded = jwtDecode(token)
-    
+
     // 디코딩에 성공했고 필요한 필드가 있다면 사용
     if (decoded.userId && decoded.userNm && decoded.cmpnyCd) {
       userStore.setUser({
         userId: decoded.userId,
         userNm: decoded.userNm,
-        cmpnyCd: decoded.cmpnyCd
+        cmpnyCd: decoded.cmpnyCd,
       })
     } else {
       // 디코딩 실패 또는 필드 없음 → 수동 복원

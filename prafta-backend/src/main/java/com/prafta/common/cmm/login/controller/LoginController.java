@@ -1,18 +1,22 @@
 package com.prafta.common.cmm.login.controller;
 
+import java.util.List;
 import java.util.Map;
 
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
 import com.prafta.common.annotation.NoAuth;
+import com.prafta.common.cmm.baseinfo.dto.BaseinfoReqDto;
 import com.prafta.common.cmm.login.dto.LoginReqDto;
 import com.prafta.common.cmm.login.dto.UserJoinReqDto;
 import com.prafta.common.cmm.login.service.LoginService;
+import com.prafta.common.exception.CmmApiException;
 import com.prafta.common.exception.LoginFailException;
 import com.prafta.common.security.JwtUtil;
 
@@ -63,6 +67,26 @@ public class LoginController {
     public ResponseEntity<?> insertUserInfo(@RequestBody UserJoinReqDto dto) {
     	
     	loginService.insertUserInfo(dto);
+    	
+    	return ResponseEntity.status(HttpStatus.OK).build();
+    }
+    
+    @PostMapping("/getUserTermsAgrChk")
+    public ResponseEntity<?> getUserTermsAgrChk(@RequestBody LoginReqDto dto) {
+		List<Map<String, Object>> retList = loginService.selectUserTermsAgrChk(dto);
+    	
+    	if(retList == null) {
+    		throw new CmmApiException("조회결과가 없습니다.");
+    	}
+    	
+    	return ResponseEntity.status(HttpStatus.OK).body(retList);
+    }
+    
+    @PostMapping("/updateAuthMenuInfo")
+    public ResponseEntity<?> updateAuthMenuInfo(@RequestBody List<LoginReqDto> dtoList, @RequestHeader(value = "Authorization", required = false) String authorization) {
+    	Map<String, Object> tokenInfo = jwtUtil.getAllClaimsAsMap(authorization);
+    	
+    	loginService.updateAuthMenuInfo(dtoList, tokenInfo);
     	
     	return ResponseEntity.status(HttpStatus.OK).build();
     }

@@ -29,4 +29,6 @@ public class BaseinfoReqDto extends cmmReqDto{
 	private String menuSrc;
 	
 	private String seqKey;
+	
+	private String termsId;
 }

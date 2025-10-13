@@ -56,6 +56,7 @@
 	<if test="param.sr_useYn != null and param.sr_useYn != ''">
 	  AND A.USE_YN = #{param.sr_useYn}
 	</if>
+    ORDER BY A.MENU_SRC, A.MENU_M_ID, B.MENU_D_ID;	
 	</select>
 	
 	<insert id="mergeAuthMenuInfo">

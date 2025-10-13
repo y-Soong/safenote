@@ -2,6 +2,8 @@ package com.prafta.common.config;
 
 import org.springframework.boot.autoconfigure.web.servlet.WebMvcRegistrations;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.web.servlet.config.annotation.WebMvcConfigurer;
+import org.springframework.web.servlet.config.annotation.CorsRegistry;
 import org.springframework.web.servlet.mvc.method.annotation.RequestMappingHandlerMapping;
 import org.springframework.web.bind.annotation.RequestMethod;
 import org.springframework.web.servlet.mvc.method.RequestMappingInfo;
@@ -12,12 +14,30 @@ import java.util.Set;
 import java.util.stream.Collectors;
 
 @Configuration
-public class ApiPrefixConfig implements WebMvcRegistrations {
+public class ApiPrefixConfig implements WebMvcRegistrations, WebMvcConfigurer {
 
+    /** ✅ CORS 전역 허용 설정 **/
+    @Override
+    public void addCorsMappings(CorsRegistry registry) {
+        registry.addMapping("/**")
+        	.allowedOriginPatterns("*")              // ← file:// 등 모든 오리진 허용
+	        .allowedMethods("*")
+	        .allowedHeaders("*")
+	        .allowCredentials(false)
+	        .maxAge(3600);
+//        registry.addMapping("/**")  // 모든 경로
+//                .allowedOrigins("*") // 모든 Origin(file:// 포함)
+//                .allowedMethods("GET", "POST", "PUT", "DELETE", "OPTIONS")
+//                .allowedHeaders("*")
+//                .allowCredentials(false)
+//                .maxAge(3600);
+    }
+
+    /** ✅ 기존 Prefix 자동 등록 로직 **/
     @Override
     public RequestMappingHandlerMapping getRequestMappingHandlerMapping() {
         ApiPrefixHandlerMapping mapping = new ApiPrefixHandlerMapping();
-        mapping.setPatternParser(null); // ✅ Spring Boot 2.6+ 대응
+        mapping.setPatternParser(null); // Spring Boot 2.6+ 대응
         return mapping;
     }
 
@@ -46,8 +66,6 @@ public class ApiPrefixConfig implements WebMvcRegistrations {
 
             if (prefix != null && mapping != null && mapping.getPatternsCondition() != null) {
                 Set<String> originalPatterns = mapping.getPatternsCondition().getPatterns();
-                
-             // 💡 여기서 final 변수로 따로 빼주면 해결됨!
                 final String finalPrefix = prefix;
 
                 Set<String> updatedPatterns = originalPatterns.stream()

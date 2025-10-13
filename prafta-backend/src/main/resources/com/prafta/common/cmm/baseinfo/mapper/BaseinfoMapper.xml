@@ -172,7 +172,7 @@
     /* BaseinfoMapper."selectMblUniqChk" */
     SELECT COUNT(*)
 	FROM TB_USER
-	WHERE REPLACE(MBL_NO, '-', '') = REPLACE(FN_ENCRYPT(#{mblNo}), '-', '')
+	WHERE REPLACE(MBL_NO, '-', '') = FN_ENCRYPT(REPLACE(#{mblNo}, '-', ''))
     </select>
     
     <insert id="insertSmsAuthReq">
@@ -236,7 +236,7 @@
   	  	
   	  </if>
     </select>
-    
+        
     <select id="selectWebMenuList" parameterType="com.prafta.common.cmm.baseinfo.dto.BaseinfoReqDto" resultType="map">
     /* BaseinfoMapper."selectWebMenuList" */
     SELECT 
@@ -286,6 +286,24 @@
 	WHERE 1=1
 	  AND A.CMPNY_CD = #{cmpnyCd}	  
 	  AND A.USER_ID = #{userId}
+    </select>
+    
+    <select id="selectAppMenuList" parameterType="com.prafta.common.cmm.baseinfo.dto.BaseinfoReqDto" resultType="map">
+    /* BaseinfoMapper."selectAppMenuList" */
+    SELECT 
+		A.MENU_M_ID
+		, B.MENU_D_ID 	AS PATH
+		, B.MENU_D_ID 	AS NAME
+		, B.MENU_VIEW 	AS VIEW
+		, B.MENU_NM 	AS TITLE
+	FROM TB_SYST_MENU_M A
+	     INNER JOIN TB_SYST_MENU_D B
+			ON (
+				A.MENU_M_ID = B.MENU_M_ID
+			AND A.USE_YN = B.USE_YN
+	        )
+	WHERE A.MENU_SRC = '002'				/* APP MENU TYPE */
+	  AND A.USE_YN = 'Y'
     </select>
 	
 	<select id="selectMenuList" parameterType="com.prafta.common.cmm.baseinfo.dto.BaseinfoReqDto" resultType="map">
@@ -372,4 +390,12 @@
 	  AND CMPNY_CD = #{cmpnyCd}
 	  AND USER_ID = #{userId}
     </update>
+    
+    <select id="selectTermsDInfo" parameterType="com.prafta.common.cmm.baseinfo.dto.BaseinfoReqDto" resultType="map">
+    /* BaseinfoMapper."selectTermsDInfo" */
+    SELECT * 
+	FROM TB_TERMS
+	WHERE TERMS_ID = #{termsId}
+    </select>
+    
 </mapper>

@@ -73,7 +73,7 @@
 	SET 
 		SITE_CD = #{param.siteCd}
 		, AUTH_CD = #{param.authCd}
-		, MBL_NO = FN_ENCRYPT(#{param.mblNo})
+		, MBL_NO = FN_ENCRYPT(REPLACE(#{param.mblNo}, '-', ''))
 		, EMAIL = FN_ENCRYPT(#{param.email})
 		, GENDER = #{param.gender}
 		, BIRTH_DT = FN_ENCRYPT(#{param.birthDt})

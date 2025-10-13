@@ -1,0 +1,40 @@
+/* ── Tailwind 기본 계층 */
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* ── WebView/모바일 공통 보정 (base 아래에 둬야 적용이 안정적) */
+@layer base {
+  html, body {
+    height: 100%;
+    overscroll-behavior: none;       /* 바운스/당겨서 새로고침 방지 */
+    -webkit-text-size-adjust: 100%;  /* iOS 가변 확대 방지 */
+    text-size-adjust: 100%;
+  }
+
+  /* Safe Area (노치/홈인디케이터) */
+  .safe-area {
+    padding-top: env(safe-area-inset-top);
+    padding-bottom: env(safe-area-inset-bottom);
+  }
+
+  /* 100vh 이슈 보정: 최신/폴백 동시 */
+  .vh-fix { min-height: 100dvh; }
+  @supports (-webkit-touch-callout: none) {
+    .vh-fix { min-height: -webkit-fill-available; }
+  }
+
+  /* 이미지/버튼 등 터치 친화 */
+  img, video { max-width: 100%; height: auto; }
+  button, input, textarea { -webkit-tap-highlight-color: transparent; }
+
+  /* iOS 입력 시 스크롤 튐 방지(필요 시 주석 해제)
+  input, textarea, select { font-size: 16px; }
+  */
+}
+
+/* ── 선택: 유틸 클래스로도 쓰고 싶다면 */
+@layer utilities {
+  .min-h-100dvh { min-height: 100dvh; }
+  .min-h-fill   { min-height: -webkit-fill-available; }
+}

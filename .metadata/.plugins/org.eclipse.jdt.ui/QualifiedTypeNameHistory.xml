@@ -4,10 +4,10 @@
     <fullyQualifiedTypeName name="java.security.SecureRandom"/>
     <fullyQualifiedTypeName name="lombok.Getter"/>
     <fullyQualifiedTypeName name="lombok.Setter"/>
-    <fullyQualifiedTypeName name="java.util.List"/>
     <fullyQualifiedTypeName name="com.prafta.common.cmm.baseinfo.dto.NavigationPayload"/>
     <fullyQualifiedTypeName name="com.prafta.common.cmm.baseinfo.dto.TopMenu"/>
     <fullyQualifiedTypeName name="com.prafta.common.cmm.baseinfo.dto.Buttons"/>
     <fullyQualifiedTypeName name="com.prafta.common.cmm.baseinfo.dto.SideMenu"/>
     <fullyQualifiedTypeName name="com.prafta.common.util.PasswordHashing"/>
+    <fullyQualifiedTypeName name="java.util.List"/>
 </qualifiedTypeNameHistroy>
