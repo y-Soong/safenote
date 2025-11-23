@@ -2,9 +2,6 @@
   <div class="flex flex-col items-center justify-center min-h-screen bg-gray-50">
     <div id="qr-reader" class="w-full max-w-sm"></div>
     <p v-if="qrResult" class="mt-4 text-green-700 font-semibold">QR 코드 인식값: {{ qrResult }}</p>
-    <button @click="stopScanner" class="mt-6 bg-red-500 text-white px-4 py-2 rounded">
-      카메라 종료
-    </button>
   </div>
 </template>
 
@@ -25,27 +22,24 @@ const startScanner = async () => {
   const config = { fps: 10, qrbox: { width: 250, height: 250 } }
 
   try {
-    // ✅ 카메라 권한 먼저 확인
-    await navigator.mediaDevices.getUserMedia({ video: true })
+    const devices = await Html5Qrcode.getCameras()
+    if (!devices.length) throw new Error('No camera found')
+    // 후면 카메라를 찾아보고 없으면 첫 번째 사용
+    const backCam = devices.find((d) => /back|rear|environment/i.test(d.label)) || devices[0]
 
     await html5QrCode.start(
-      { facingMode: 'environment' },
+      { deviceId: { exact: backCam.id } },
       config,
       (decodedText) => {
         qrResult.value = decodedText
         router.replace({ path: '/ChkLst', query: { qr: decodedText } })
         stopScanner()
       },
-      (errorMessage) => {
-        console.log('QR Scan error:', errorMessage)
-      }
+      (err) => console.warn('QR error', err)
     )
   } catch (err) {
-    console.error('카메라 접근 실패:', err)
-
-    // ✅ 권한 거부 시 사용자 안내
     proxy.$alert(
-      '카메라 접근 권한이 거부되었습니다.\n브라우저 설정에서 카메라 권한을 허용해주세요.'
+      '카메라 초기화에 실패했습니다.\n다른 앱이 카메라를 사용 중이거나 후면 카메라 인식이 불가합니다.'
     )
   }
 }

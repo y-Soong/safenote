@@ -1,0 +1,14 @@
+package com.prafta.app.chkLst.chkLst01.dto;
+
+import lombok.Builder;
+import lombok.Data;
+import lombok.Value;
+
+@Value
+@Builder
+public class checklistInfoReq {
+	private String cmpnyCd;
+	private String siteCd;
+	private String chkptCd;
+	private String chkptNm;
+}

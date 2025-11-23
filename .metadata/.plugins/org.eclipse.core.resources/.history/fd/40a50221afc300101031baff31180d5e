@@ -1,0 +1,15 @@
+package com.prafta.app.chkLst.chkLst01.dto;
+
+import java.util.Map;
+
+import org.springframework.web.multipart.MultipartFile;
+
+import lombok.Data;
+
+@Data
+public class SaveInspectMeta {
+    private String siteCd;
+    private String chkptCd;
+    private String items;
+    private Map<String, MultipartFile> files;
+}

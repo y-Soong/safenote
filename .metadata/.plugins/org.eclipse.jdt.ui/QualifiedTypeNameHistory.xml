@@ -9,5 +9,15 @@
     <fullyQualifiedTypeName name="com.prafta.common.cmm.baseinfo.dto.Buttons"/>
     <fullyQualifiedTypeName name="com.prafta.common.cmm.baseinfo.dto.SideMenu"/>
     <fullyQualifiedTypeName name="com.prafta.common.util.PasswordHashing"/>
+    <fullyQualifiedTypeName name="com.prafta.app.chkLst.chkLst01.service.ChkLst01Service"/>
+    <fullyQualifiedTypeName name="com.prafta.app.chkLst.chkLst01.mapper.ChkLst01Mapper"/>
+    <fullyQualifiedTypeName name="org.springframework.http.MediaType"/>
+    <fullyQualifiedTypeName name="java.util.regex.Pattern"/>
+    <fullyQualifiedTypeName name="java.util.regex.Matcher"/>
+    <fullyQualifiedTypeName name="com.prafta.common.cmm.file.dto.FileInfo"/>
+    <fullyQualifiedTypeName name="com.prafta.common.cmm.file.dto.FileSaveRequest"/>
+    <fullyQualifiedTypeName name="com.prafta.common.cmm.file.dto.FileSaveQuery"/>
+    <fullyQualifiedTypeName name="lombok.Value"/>
+    <fullyQualifiedTypeName name="com.prafta.app.chkLst.chkLst01.dto.checklistInfoQuery"/>
     <fullyQualifiedTypeName name="java.util.List"/>
 </qualifiedTypeNameHistroy>

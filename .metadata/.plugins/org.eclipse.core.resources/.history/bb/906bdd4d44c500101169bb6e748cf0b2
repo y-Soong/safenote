@@ -1,0 +1,13 @@
+package com.prafta.common.cmm.file.dto;
+
+import lombok.AllArgsConstructor;
+import lombok.Data;
+import lombok.NoArgsConstructor;
+
+@Data
+@NoArgsConstructor
+@AllArgsConstructor
+public class FileInfo {
+    private String itemCd;
+    private String fileName; // 클라이언트 파일명(선택)
+}

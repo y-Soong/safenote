@@ -307,7 +307,6 @@
 
 <script setup>
 /* eslint-disable */
-/* dot */
 import { ref, getCurrentInstance, onUnmounted, onMounted, watch } from 'vue'
 import axios from "@/api/axios";
 import { useRouter } from 'vue-router'

@@ -11,13 +11,11 @@ public class PasswordHashing {
 
     // 비밀번호 해시 생성 (회원가입 시)
     public static String hashPassword(String plainPassword) {
-    	System.out.println("hashPassword ###");
         return encoder.encode(plainPassword);
     }
 
     // 비밀번호 검증 (로그인 시)
     public static boolean verifyPassword(String plainPassword, String storedHash) {
-    	System.out.println("verifyPassword ###");
         return encoder.matches(plainPassword, storedHash);
     }	
 }

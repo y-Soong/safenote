@@ -1,0 +1,16 @@
+package com.prafta.app.chkLst.chkLst01.dto;
+
+import java.util.Map;
+
+import org.springframework.web.multipart.MultipartFile;
+
+import lombok.Data;
+
+@Data
+public class SaveInspectResultReq {
+	String cmpnyCd;
+	String userCd;
+    String siteCd;
+    String chkptCd;
+    MultipartFile items;
+}

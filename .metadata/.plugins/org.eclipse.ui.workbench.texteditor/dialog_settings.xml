@@ -1,30 +1,33 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <section name="Workbench">
 	<section name="org.eclipse.ui.texteditor.FindReplaceDialog">
-		<item key="selection" value="getWebMenuList"/>
+		<item key="selection" value="inspectAnswerType"/>
 		<item key="wrap" value="true"/>
 		<item key="casesensitive" value="false"/>
 		<item key="wholeword" value="false"/>
 		<item key="incremental" value="false"/>
 		<item key="isRegEx" value="false"/>
 		<list key="findhistory">
-			<item value="getWebMenuList"/>
-			<item value="selectAuthMenuList"/>
-			<item value="selectSystinfo"/>
-			<item value="selectWebMenuList"/>
-			<item value="selectMenuList"/>
-			<item value="selectSystinfoList"/>
-			<item value="security"/>
-			<item value="securi"/>
-			<item value="spring-boot-starter-security"/>
-			<item value="addCorsMappings"/>
-			<item value="getSystInfoList"/>
-			<item value=""/>
-			<item value="get"/>
-			<item value="mergeTermsInfo"/>
-			<item value="insertUserInfo"/>
+			<item value="inspectAnswerType"/>
+			<item value="insertFileInfo"/>
+			<item value="mergeChkptInspectAnswer"/>
+			<item value="AppChkLst01"/>
+			<item value="InspectItemDto"/>
+			<item value="fileInfo"/>
+			<item value="saveInspectResult"/>
+			<item value="selectFileMgmtCd"/>
+			<item value="SaveInspectResultReq"/>
+			<item value="PasswordHashing"/>
+			<item value="AesGcmUtil"/>
+			<item value="value"/>
+			<item value="memo"/>
+			<item value="itemsJson"/>
+			<item value="itemJson"/>
 		</list>
 		<list key="replacehistory">
+			<item value="FileInfo"/>
+			<item value="FileSaveRequest"/>
+			<item value="SaveInspectResultReq"/>
 			<item value="03"/>
 			<item value=""/>
 			<item value="ChkLst02"/>
@@ -37,13 +40,10 @@
 			<item value="User03ReqDto"/>
 			<item value="SideMenu"/>
 			<item value="gv_userId"/>
-			<item value="Baim01"/>
-			<item value="baim"/>
-			<item value="baim01"/>
 		</list>
 	</section>
 	<section name="org.eclipse.ui.texteditor.FindReplaceDialog_dialogBounds">
-		<item key="DIALOG_X_ORIGIN" value="1523"/>
+		<item key="DIALOG_X_ORIGIN" value="1366"/>
 		<item key="DIALOG_Y_ORIGIN" value="386"/>
 		<item key="DIALOG_WIDTH" value="288"/>
 		<item key="DIALOG_HEIGHT" value="391"/>

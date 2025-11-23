@@ -1,0 +1,136 @@
+package com.prafta.app.chkLst.chkLst01.service.impl;
+
+import java.nio.charset.StandardCharsets;
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
+
+import org.springframework.stereotype.Service;
+import org.springframework.web.multipart.MultipartFile;
+
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.prafta.app.chkLst.chkLst01.dto.ChecklistInfoQuery;
+import com.prafta.app.chkLst.chkLst01.dto.ChecklistInfoReq;
+import com.prafta.app.chkLst.chkLst01.dto.ChecklistInfoRes;
+import com.prafta.app.chkLst.chkLst01.dto.SaveInspectResultReq;
+import com.prafta.app.chkLst.chkLst01.mapper.AppChkLst01Mapper;
+import com.prafta.app.chkLst.chkLst01.service.AppChkLst01Service;
+import com.prafta.app.chkLst.chkLst01.vo.ChecklistInfo;
+import com.prafta.common.cmm.file.dto.FileInfo;
+import com.prafta.common.cmm.file.dto.FileSaveQuery;
+import com.prafta.common.cmm.file.mapper.FileMapper;
+import com.prafta.common.cmm.file.service.FileService;
+
+import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
+
+@Slf4j
+@Service
+@RequiredArgsConstructor
+public class AppChkLst01ServiceImpl implements AppChkLst01Service {
+
+    private final AppChkLst01Mapper appChkLst01Mapper;
+    private final ObjectMapper objectMapper;
+    private final FileService fileService;
+    private final FileMapper fileMapper;
+
+    @Override
+    public ChecklistInfoRes selectChkLstInfo(ChecklistInfoReq request, Map<String, Object> tokenInfo) {
+    	
+    	ChecklistInfoQuery reqDto = ChecklistInfoQuery.builder()
+    									.cmpnyCd(request.getCmpnyCd())
+    									.siteCd(request.getSiteCd())
+    									.chkptCd(request.getChkptCd())
+    									.chkptNm(request.getChkptNm())
+    									.build();
+    	
+    	List<ChecklistInfo> resDto = appChkLst01Mapper.selectChkLstInfo(reqDto, tokenInfo); 
+    	
+    	ChecklistInfoRes retDto = ChecklistInfoRes.builder()
+    								.checklistInfos(resDto)
+    								.build();
+        return retDto;
+    }
+
+    @Override
+    public void saveInspectResult(SaveInspectResultReq request, Map<String, MultipartFile> files, Map<String, Object> tokenInfo) {
+    	
+    	System.out.println("request :: " + request);
+    	System.out.println("files :: " + files);
+    	
+        try {
+            // MultipartFile -> JSON String
+            MultipartFile itemsFile = request.getItems();
+            String itemsJson = null;
+            if (itemsFile != null && !itemsFile.isEmpty()) {
+                itemsJson = new String(itemsFile.getBytes(),StandardCharsets.UTF_8);
+            }
+
+            // JSON 파싱 -> List<FileInfo>
+            List<FileInfo> items = new ArrayList<>();
+            if (itemsJson != null && !itemsJson.isEmpty()) {
+                JsonNode node = objectMapper.readTree(itemsJson);
+                if (node.isArray()) {
+                    for (JsonNode n : node) {
+                        items.add(objectMapper.treeToValue(n, FileInfo.class));
+                    }
+                }
+            }
+
+            // files Map -> itemCd 기준으로 매핑 (키: files[ITEM_CD])
+            Pattern p = Pattern.compile("^files\\[(.+)]$");
+            Map<String, MultipartFile> fileByItemCd = new HashMap<>();
+            if (files != null) {
+                for (Map.Entry<String, MultipartFile> e : files.entrySet()) {
+                    Matcher m = p.matcher(e.getKey());
+                    if (m.find()) {
+                        fileByItemCd.put(m.group(1), e.getValue());
+                    }
+                }
+            }
+
+            String userId = tokenInfo.get("gv_userId").toString(); // or request.getUserCd()
+
+            // items 를 돌면서 "건별"로 fileMgmtCd 생성 + FileService 호출
+            for (FileInfo it : items) {
+            	System.out.println("FileInfo it :: " + it);
+            	
+                MultipartFile img = fileByItemCd.get(it.getItemCd());
+                if (img == null || img.isEmpty()) {
+                    continue; // 파일 없는 항목은 스킵
+                }
+
+                // 기본 FileSaveQuery (fileMgmtCd 없이)
+                FileSaveQuery baseQuery = FileSaveQuery.builder()
+                        .cmpnyCd(request.getCmpnyCd())
+                        .userId(userId)
+                        .siteCd(request.getSiteCd())
+                        .fileType("100")          // 일일점검 타입
+                        .itemCd(it.getItemCd())
+                        .fileName(it.getFileName())
+                        .build();
+
+                // 건별 fileMgmtCd 생성
+                String fileMgmtCd = fileMapper.selectFileMgmtCd(baseQuery);
+
+                FileSaveQuery queryWithKey = baseQuery.toBuilder()
+                        .fileMgmtCd(fileMgmtCd)
+                        .build();
+
+                // 공통 FileService 로 실제 파일 저장
+                fileService.saveFile(queryWithKey, img);
+
+                // 
+//                appChkLst01Mapper.mergeChkptInspectAnswer(dto, tokenInfo); 
+            }
+
+        } catch (Exception e) {
+            log.error("saveInspectResult 처리 중 오류", e);
+            throw new RuntimeException("일일점검 결과 저장 중 오류", e);
+        }
+    }
+}

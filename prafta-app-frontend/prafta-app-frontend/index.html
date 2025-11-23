@@ -1,13 +1,59 @@
 <!DOCTYPE html>
 <html lang="">
   <head>
-    <meta charset="UTF-8">
-    <link rel="icon" href="/favicon.ico">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Vite App</title>
+    <meta charset="UTF-8" />
+    <link rel="icon" href="/favicon.ico" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+
+    <!-- 개발 중 data:/blob: 미리보기 허용 (최소 완화) -->
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="
+        default-src 'self' data: blob:;
+        img-src 'self' data: blob:;
+        media-src 'self' data: blob:;
+        connect-src 'self' https://172.30.1.4:8082 ws: wss: http://172.30.1.4:8080;
+        style-src 'self' 'unsafe-inline';
+        script-src 'self' 'unsafe-inline' 'unsafe-eval' data: blob:;
+      "
+    />
+
+    <title>SAFE NOTE</title>
+
+    <!-- 🔒 개발 모드에서만 '전체 새로고침'을 무력화하는 가드 (최후의 안전장치) -->
+    <!-- Vue CLI의 html-webpack-plugin 템플릿 변수 사용 -->
+    <% if (process.env.NODE_ENV !== 'production') { %>
+    <script>
+      (function () {
+        try {
+          var origReload =
+            (window.location && window.location.reload) ?
+            window.location.reload.bind(window.location) :
+            null;
+
+          // wds가 호출하는 전체 리로드 가로채기
+          window.location.reload = function () {
+            console.log('[dev-guard] blocked full reload');
+            // 필요하면 특정 조건에서만 origReload(); 호출하도록 커스텀 가능
+          };
+
+          // 에러 오버레이 스크립트가 강제로 리로드를 유도할 여지를 최소화
+          window.__SAFE_DEV_NO_OVERLAY__ = true;
+          console.log('✅ dev guard installed');
+        } catch (e) {
+          console.log('dev-guard init error', e);
+        }
+      })();
+    </script>
+    <% } %>
   </head>
+
   <body>
     <div id="app"></div>
-    <script type="module" src="/src/main.js"></script>
+
+    <!-- ⚠️ Vue CLI는 번들을 자동 주입합니다. 
+         아래처럼 직접 /src/main.js를 모듈로 넣으면 중복 마운트/리로드 문제가 납니다.
+         <script type="module" src="/src/main.js"></script>
+    -->
   </body>
 </html>

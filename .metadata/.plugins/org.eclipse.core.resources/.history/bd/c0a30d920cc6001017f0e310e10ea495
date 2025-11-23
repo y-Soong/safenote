@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+
+<mapper namespace="com.prafta.common.cmm.file.mapper.FileMapper">
+
+	<select id="selectFileMgmtCd" parameterType="com.prafta.common.cmm.file.dto.FileSaveQuery" resultType="string">
+    /* BaseinfoMapper."selectFileMgmtCd" */
+    SELECT
+	    CONCAT(
+	    	#{fileType}
+	    	,'-'
+	    	,DATE_FORMAT(NOW(), '%Y%m%d')
+	    	,'-'
+	    	,FNC_CMM_SEQ_NEXTVAL(#{cmpnyCd}, CONCAT('FILE_MGMT_CD', '-', #{fileType}))
+    	) AS FILE_MGMT_CD
+	FROM DUAL
+    </select>
+
+</mapper>

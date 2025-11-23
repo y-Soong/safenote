@@ -1,0 +1,106 @@
+package com.prafta.common.cmm.file.service.impl;
+
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.Paths;
+import java.time.LocalDate;
+import java.time.format.DateTimeFormatter;
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
+
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.stereotype.Service;
+import org.springframework.web.multipart.MultipartFile;
+
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.prafta.common.cmm.file.dto.FileInfo;
+import com.prafta.common.cmm.file.dto.FileSaveRequest;
+import com.prafta.common.cmm.file.mapper.FileMapper;
+import com.prafta.common.cmm.file.service.FileService;
+import com.prafta.common.util.AesGcmUtil;
+
+import lombok.extern.slf4j.Slf4j;
+
+@Slf4j
+@Service
+public class FileServiceImpl implements FileService {
+	private final FileMapper fileMapper;
+	
+	@Autowired
+	private ObjectMapper objectMapper;
+	
+	public FileServiceImpl(FileMapper fileMapper) {
+		this.fileMapper = fileMapper;
+	}
+
+	
+	public void saveFile(FileSaveRequest request, Map<String, MultipartFile> file) {
+		try {
+            // 1) MultipartFile ¡æ JSON String
+            String itemsJson = null;
+            if (request.getItems() != null && !request.getItems().isEmpty()) {
+                itemsJson = new String(
+                        request.getItems().getBytes(),
+                        java.nio.charset.StandardCharsets.UTF_8
+                );
+            }
+
+            // 2) JSON ÆÄ½Ì
+            JsonNode node = objectMapper.readTree(itemsJson);
+            List<FileInfo> items = new ArrayList<>();
+            if (node.isArray()) {
+                for (JsonNode n : node) {
+                    items.add(objectMapper.treeToValue(n, FileInfo.class));
+                }
+            }
+
+            // 3) ÆÄÀÏ ¸ÅÄª
+            Pattern p = Pattern.compile("^files\\[(.+)]$");
+            Map<String, MultipartFile> fileByItemCd = new HashMap<>();
+            if (file != null) {
+                for (Map.Entry<String, MultipartFile> e : file.entrySet()) {
+                    Matcher m = p.matcher(e.getKey());
+                    
+                    if (m.find()) {
+                        fileByItemCd.put(m.group(1), e.getValue());
+                    }
+                }
+            }
+            
+            String today = LocalDate.now().format(DateTimeFormatter.ofPattern("yyyyMMdd"));
+
+            String projectRoot = System.getProperty("user.dir");
+            Path uploadRoot = Paths.get(
+                    projectRoot, "uploads",
+                    request.getCmpnyCd(), today, request.getSiteCd(), request.getChkptCd()
+            );
+            Files.createDirectories(uploadRoot);
+
+            for (FileInfo it : items) {
+                MultipartFile img = fileByItemCd.get(it.getItemCd());
+                if (img != null && !img.isEmpty()) {
+                    String originalFilename = img.getOriginalFilename();
+                    String extension = "";
+
+                    if (originalFilename != null && originalFilename.contains(".")) {
+                        extension = originalFilename.substring(originalFilename.lastIndexOf("."));
+                    }
+                    
+                    String saveFileName = AesGcmUtil.generate10Digit();
+//                    String saveFileName = it.getItemCd() + extension;
+
+                    Path savePath = uploadRoot.resolve(saveFileName);
+                    Files.createDirectories(savePath.getParent());
+                    img.transferTo(savePath.toFile());
+                }
+            }
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
+	}
+}

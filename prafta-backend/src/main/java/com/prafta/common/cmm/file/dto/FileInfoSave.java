@@ -1,0 +1,18 @@
+package com.prafta.common.cmm.file.dto;
+
+import lombok.Builder;
+import lombok.Value;
+
+@Value
+@Builder(toBuilder = true)
+public class FileInfoSave {
+    String cmpnyCd;
+    String userId;
+    String siteCd;
+    String fileType;   	// 001: 일일점검
+    String filePath;	// 파일 저장 경로
+    String itemCd;     	// 점검 항목 코드
+    String fileName;   	// 클라에서 온 파일명(선택)
+    String fileMgmtCd; 	// 생성된 파일관리코드
+    String fileExt;		// 파일확장자
+}

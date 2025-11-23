@@ -76,7 +76,7 @@
    	VALUES(
    		#{token.gv_cmpnyCd}
    		, #{param.baimValCd}
-   		, IFNULL(#{param.baimValDCd}, prafta.FNC_CMM_SEQ_NEXTVAL(#{token.gv_cmpnyCd}, 'COM001'))
+   		, IFNULL(#{param.baimValDCd}, FNC_CMM_SEQ_NEXTVAL(#{token.gv_cmpnyCd}, 'COM001'))
    		, #{param.baimValDNm}
    		, #{param.sortIdx}
 		, #{param.useYn}

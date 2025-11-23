@@ -152,7 +152,7 @@ const fnGetSystinfoList = async () => {
         }));
     }
   } catch (err) {
-    alert(err.response.data.message);
+    proxy.$alert(err.response.data.message);
   }
 };
 

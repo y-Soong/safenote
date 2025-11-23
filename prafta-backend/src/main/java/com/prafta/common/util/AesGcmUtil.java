@@ -1,12 +1,16 @@
 package com.prafta.common.util;
 
+import java.security.SecureRandom;
+import java.time.LocalTime;
+import java.time.format.DateTimeFormatter;
+import java.util.Base64;
+import java.util.Random;
+
 import javax.crypto.Cipher;
 import javax.crypto.KeyGenerator;
 import javax.crypto.SecretKey;
 import javax.crypto.spec.GCMParameterSpec;
 import javax.crypto.spec.SecretKeySpec;
-import java.security.SecureRandom;
-import java.util.Base64;
 
 public class AesGcmUtil {
     private static final int AES_KEY_BITS = 256; // 128/192/256
@@ -67,5 +71,14 @@ public class AesGcmUtil {
 
         byte[] plain = cipher.doFinal(cipherText);
         return new String(plain, "UTF-8");
+    }
+    
+    // 10자리 겹치지 않는 문자열 수
+    public static String generate10Digit() {
+        String timePart = LocalTime.now().format(DateTimeFormatter.ofPattern("HHmmss"));
+        int random = new Random().nextInt(10000); // 0 ~ 9999
+        String randomPart = String.format("%04d", random);
+
+        return timePart + randomPart;
     }
 }
