@@ -17,16 +17,20 @@ import io.jsonwebtoken.security.Keys;
 public class JwtUtil {
 
     private final String secret = "cleannote-cleaning-platform-jwt-secret-key-2025";
-    private final long expiration = 1000 * 60 * 60 * 2; // 2시간
-//    private final long expiration = 1000 * 15; // 30초
+    private final long expiration = 1000 * 60 * 60 * 1; // 1시간
+//    private final long expiration = 1000 * 60 * 60 * 2; // 2시간
+//    private final long expiration = 1000 * 5; // 5초		TEST
 
     private final Key key = Keys.hmacShaKeyFor(secret.getBytes());
 
-    public String generateToken(String cmpnyCd, String userId, String userNm, String authCd, String mblNo, String email) {
+    public String generateToken(String cmpnyCd, String userId, String userNm, String siteCd, String siteNo, String siteNm, String authCd, String mblNo, String email) {
         return Jwts.builder()
         		.claim("gv_cmpnyCd", cmpnyCd)
                 .claim("gv_userId", userId)
                 .claim("gv_userNm", userNm)
+                .claim("gv_siteCd", siteCd)
+                .claim("gv_siteNo", siteNo)
+                .claim("gv_siteNm", siteNm)
                 .claim("gv_authCd", authCd)
                 .claim("gv_mblNo", mblNo)
                 .claim("gv_email", email)
@@ -67,6 +71,18 @@ public class JwtUtil {
         return parseToken(token).get("gv_userNm", String.class);
     }
     
+    public String getSiteCdFromToken(String token) {
+        return parseToken(token).get("gv_siteCd", String.class);
+    }
+    
+    public String getSiteNoFromToken(String token) {
+        return parseToken(token).get("gv_siteNo", String.class);
+    }
+    
+    public String getSiteNmFromToken(String token) {
+        return parseToken(token).get("gv_siteNm", String.class);
+    }
+    
     public String getAuthCdFromToken(String token) {
         return parseToken(token).get("gv_authCd", String.class);
     }
@@ -79,9 +95,13 @@ public class JwtUtil {
         return parseToken(token).get("gv_email", String.class);
     }
     
-    public Map<String, Object> getAllClaimsAsMap(String bearer_token) {
+    public Map<String, Object> getAllClaimsAsMap(String authorization) {
+    	if (authorization == null || !authorization.startsWith("Bearer ")) {
+            throw new RuntimeException("Missing or invalid Authorization header");
+        }
+    	
     	// "Bearer " 제거
-        String token = bearer_token.substring(7);
+        String token = authorization.substring(7);
     	
         Map<String, Object> claimsMap = new HashMap<>();
         try {
@@ -89,6 +109,9 @@ public class JwtUtil {
             claimsMap.put("gv_cmpnyCd", claims.get("gv_cmpnyCd", String.class));
             claimsMap.put("gv_userId", claims.get("gv_userId", String.class));
             claimsMap.put("gv_userNm", claims.get("gv_userNm", String.class));
+            claimsMap.put("gv_siteCd", claims.get("gv_siteCd", String.class));
+            claimsMap.put("gv_siteNo", claims.get("gv_siteNo", String.class));
+            claimsMap.put("gv_siteNm", claims.get("gv_siteNm", String.class));
             claimsMap.put("gv_authCd", claims.get("gv_authCd", String.class));
             claimsMap.put("gv_mblNo", claims.get("gv_mblNo", String.class));
             claimsMap.put("gv_email", claims.get("gv_email", String.class));

@@ -1,0 +1,13 @@
+package com.prafta.web.baim.baim06.dto;
+
+import lombok.Data;
+
+@Data
+public class SiteNodeReq {
+	String siteCd;
+	String nodeCd;
+	String nodeNm;
+	String nodeType;
+	String parentNodeCd;
+	String selfAttdApprvYn;
+}

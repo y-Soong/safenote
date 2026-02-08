@@ -5,6 +5,8 @@ import java.util.Map;
 
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.ModelAttribute;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestHeader;
@@ -12,13 +14,13 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
 import com.prafta.common.annotation.NoAuth;
-import com.prafta.common.exception.LoginFailException;
 import com.prafta.common.security.JwtUtil;
-import com.prafta.web.user.user01.dto.User01;
-import com.prafta.web.user.user01.dto.User01ReqDto;
+import com.prafta.web.user.user01.dto.UserInfoListReq;
+import com.prafta.web.user.user01.dto.UserInfoListRes;
+import com.prafta.web.user.user01.dto.UserInfoReq;
+import com.prafta.web.user.user01.dto.UserPasswdReq;
 import com.prafta.web.user.user01.service.User01Service;
 
-import io.jsonwebtoken.Claims;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 
@@ -31,35 +33,32 @@ public class User01Controller {
 	
 	private final User01Service user01Service;
 	private final JwtUtil jwtUtil;
-
-    @PostMapping("/getUserInfoList")
-    public ResponseEntity<?> getUserInfoList(@RequestBody User01ReqDto dto) {
-    	System.out.println(dto.toString());
-		List<Map<String, Object>> retList = user01Service.selectUserInfoList(dto);
-		
-    	if(retList == null) {
-    		throw new LoginFailException("조회된 결과가 없습니다.");
-    	}
+    
+    @GetMapping("/user-info-lists")
+    public ResponseEntity<?> getUserInfoList(@ModelAttribute UserInfoListReq dto, @RequestHeader(value = "Authorization", required = false) String authorization) {
     	
-    	return ResponseEntity.status(HttpStatus.OK).body(retList);
+    	Map<String, Object> tokenInfo = jwtUtil.getAllClaimsAsMap(authorization);
+    	
+    	UserInfoListRes retDto = user01Service.selectUserInfoList(dto, tokenInfo);
+		
+//    	if(retList == null) {
+//    		throw new LoginFailException("조회된 결과가 없습니다.");
+//    	}
+    	
+    	return ResponseEntity.status(HttpStatus.OK).body(retDto);
     }
     
-    @PostMapping("/updateUserPw")
-    public ResponseEntity<?> updateUserPw(@RequestBody User01ReqDto dto) {
+    @PostMapping("/update-user-passwd")
+    public ResponseEntity<?> updateUserPw(@RequestBody UserPasswdReq dto) {
     	
-    	try {
-    		user01Service.updateUserPw(dto);
-    	} catch(Exception e) {
-    		throw new LoginFailException("조회된 결과가 없습니다.");
-    	}
+    	user01Service.updateUserPw(dto);
     	
     	return ResponseEntity.status(HttpStatus.OK).build();
     }
     
-    @PostMapping("/updateUserInfo")
-    public ResponseEntity<?> updateUserInfo(@RequestBody List<User01> dtoList, @RequestHeader(value = "Authorization", required = false) String authorization) {
-    	
-    	System.out.println(authorization);
+//    @PostMapping("/updateUserInfo")
+    @PostMapping("/update-user-infos")
+    public ResponseEntity<?> updateUserInfo(@RequestBody List<UserInfoReq> dtoList, @RequestHeader(value = "Authorization", required = false) String authorization) {
     	
     	Map<String, Object> tokenInfo = jwtUtil.getAllClaimsAsMap(authorization);
     	

@@ -1,0 +1,19 @@
+package com.prafta.web.user.user01.service;
+
+import java.util.List;
+import java.util.Map;
+
+import com.prafta.web.user.user01.dto.User01;
+import com.prafta.web.user.user01.dto.User01ReqDto;
+import com.prafta.web.user.user01.dto.UserInfoListReq;
+import com.prafta.web.user.user01.dto.UserPasswdReq;
+
+public interface User01Service {
+//	List<Map<String, Object>> selectUserInfoList(User01ReqDto dto);
+	
+	List<Map<String, Object>> selectUserInfoList(UserInfoListReq dto, Map<String, Object> tokenInfo);
+	
+	int updateUserPw(UserPasswdReq dto);
+	
+	void updateUserInfo(List<User01> dtoList, Map<String, Object> tokenInfo);
+}

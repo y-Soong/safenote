@@ -6,27 +6,87 @@
     <select id="getLoginUser" parameterType="com.prafta.common.cmm.login.dto.LoginReqDto" resultType="map">
     /* LoginMapper.getLoginUser */
 	SELECT 
-		CMPNY_CD
-		, USER_ID
-		, USER_NM
-		, USER_PW
-		, AUTH_CD
-		, MBL_NO
-		, EMAIL
-		, INSERT_NO
-		, INSERT_DATE
-		, UPDATE_NO
-		, UPDATE_DATE
-	FROM TB_USER
+		A.CMPNY_CD
+		, A.USER_ID
+		, A.USER_NM
+		, A.USER_PW
+		, A.AUTH_CD
+        , A.SITE_CD
+        , B.SITE_NO
+        , B.SITE_NM
+		, A.MBL_NO
+		, A.EMAIL
+		, A.INSERT_NO
+		, A.INSERT_DATE
+		, A.UPDATE_NO
+		, A.UPDATE_DATE
+	FROM TB_USER A
+         INNER JOIN TB_SITE B
+			ON (
+				A.CMPNY_CD = B.CMPNY_CD
+			AND A.SITE_CD = B.SITE_CD
+            )
 	WHERE 1=1
-	  AND USER_ID = #{userId}
-	  <!-- 
-	  AND USER_PW = #{userPw}
-	   -->
-	  AND USE_YN = 'Y'
+	  AND A.USER_ID = #{userId}
+	  AND A.USE_YN = 'Y'
+    </select>
+
+    <select id="lockUserRow" parameterType="com.prafta.common.cmm.login.dto.UserRowLock" resultType="map">
+    /* LoginMapper.lockUserRow */
+    SELECT USER_ID
+	FROM TB_USER
+	WHERE CMPNY_CD = #{cmpnyCd}
+	  AND USER_ID  = #{userId}
+	FOR UPDATE
     </select>
     
-    <insert id="insertUserInfo">
+    <update id="revokeActiveToken" parameterType="com.prafta.common.cmm.login.dto.ActiveToken">
+    /* LoginMapper.revokeActiveToken */
+    UPDATE prafta.TB_AUTH_TOKEN
+	SET REVOKED_YN='Y',
+	    REVOKED_DTIME=NOW(),
+	    UPDATE_NO=#{userId},
+	    UPDATE_DATE=NOW()
+	WHERE CMPNY_CD=#{cmpnyCd}
+	  AND USER_ID=#{userId}
+	  AND CLIENT_TYPE=#{clientType}
+	  AND REVOKED_YN='N'
+	  AND EXPIRE_DTIME > NOW()
+    </update>
+    
+    <insert id="insertAuthToken" parameterType="com.prafta.common.cmm.login.dto.ActiveToken">
+    /* LoginMapper.insertAuthToken */
+    INSERT INTO prafta.TB_AUTH_TOKEN (
+	    CMPNY_CD
+	    , USER_ID
+	    , TOKEN_ID
+	    , CLIENT_TYPE
+	    , REFRESH_TOKEN_HASH
+	    , ISSUED_DTIME
+	    , EXPIRE_DTIME
+	    , REVOKED_YN
+	    , REVOKED_DTIME
+	    , INSERT_NO
+	    , INSERT_DATE
+	) VALUES (
+	    #{cmpnyCd}
+	    , #{userId}
+	    , #{tokenId}
+	    , #{clientType}
+	    , #{refreshTokenHash}
+	    , NOW()
+	    , DATE_ADD(NOW(), INTERVAL #{expireDtime} DAY)
+	    <!-- 
+	    , #{expireDtime}
+	     -->
+	    , 'N'
+	    , NULL,
+	    #{userId}
+	    , NOW()
+	)
+    </insert>
+    
+    <insert id="insertUserInfo" parameterType="com.prafta.common.cmm.login.dto.UserJoinReqDto">
     /* LoginMapper.insertUserInfo */
     INSERT INTO TB_USER (
     	CMPNY_CD
@@ -62,21 +122,39 @@
    		, 'SYSTEM'
    		, NOW()
    	)
-   	<!-- 
-   	ON DUPLICATE KEY UPDATE
-	    USER_NM     = VALUES(USER_NM),
-	    AUTH_CD     = VALUES(AUTH_CD),
-	    MBL_NO      = VALUES(MBL_NO),
-	    EMAIL       = VALUES(EMAIL),
-	    GENDER      = VALUES(GENDER),
-	    BIRTH_DT    = VALUES(BIRTH_DT),
-	    USE_YN      = 'Y',
-	    UPDATE_NO   = 'SYSTEM',
-	    UPDATE_DATE = NOW()
-     -->
     </insert>
     
-    <insert id="insertUserSiteAuth">
+    <update id="revokeActiveTokenByClient" parameterType="com.prafta.common.cmm.login.dto.UserLogout">
+    /* LoginMapper.revokeActiveTokenByClient */
+	UPDATE TB_AUTH_TOKEN
+       SET REVOKED_YN    = 'Y'
+         , REVOKED_DTIME = NOW()
+         , UPDATE_NO     = #{userId}
+         , UPDATE_DATE   = NOW()
+     WHERE CMPNY_CD      = #{cmpnyCd}
+       AND USER_ID       = #{userId}
+       AND CLIENT_TYPE   = #{clientType}
+       AND REVOKED_YN    = 'N'
+       AND EXPIRE_DTIME  > NOW()
+       <if test="deviceId != null and deviceId != ''">
+       AND DEVICE_ID     = #{deviceId}
+       </if>
+    </update>
+    
+    <update id="revokeAllActiveTokens" parameterType="com.prafta.common.cmm.login.dto.UserLogout">
+    /* LoginMapper.revokeAllActiveTokens */
+    UPDATE TB_AUTH_TOKEN
+       SET REVOKED_YN    = 'Y'
+         , REVOKED_DTIME = NOW()
+         , UPDATE_NO     = #{userId}
+         , UPDATE_DATE   = NOW()
+     WHERE CMPNY_CD      = #{cmpnyCd}
+       AND USER_ID       = #{userId}
+       AND REVOKED_YN    = 'N'
+       AND EXPIRE_DTIME  > NOW()
+    </update>
+    
+    <insert id="insertUserSiteAuth" parameterType="com.prafta.common.cmm.login.dto.UserJoinReqDto">
     /* LoginMapper.insertUserSiteAuth */
     INSERT INTO TB_USER_SITE_AUTH (
     	CMPNY_CD

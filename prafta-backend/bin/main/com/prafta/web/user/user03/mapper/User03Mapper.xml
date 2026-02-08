@@ -3,21 +3,21 @@
 
 <mapper namespace="com.prafta.web.user.user03.mapper.User03Mapper">
 
-    <select id="selectSiteInfoSearch" parameterType="com.prafta.web.user.user03.dto.User03ReqDto" resultType="map">
+    <select id="selectSiteInfoSearch" parameterType="com.prafta.web.user.user03.dto.SiteInfoListQry" resultType="com.prafta.web.user.user03.vo.SiteInfo">
     /* User02Mapper.selectSiteInfoSearch */
 	SELECT
-		'' AS CHK
-		, A.CMPNY_CD
-	    , A.SITE_CD
-	    , A.SITE_NO
-	    , A.SITE_NM
-	    , CONCAT(A.ADDR_1, ' ', A.ADDR_2) AS ADDR
-	    , TEL_NO
+		'' 									AS chk
+		, A.CMPNY_CD						AS cmpnyCd
+	    , A.SITE_CD							AS siteCd
+	    , A.SITE_NO							AS siteNo
+	    , A.SITE_NM							AS siteNm
+	    , CONCAT(A.ADDR_1, ' ', A.ADDR_2) 	AS addr
+	    , TEL_NO							AS telNo
 	    , CASE 
 			WHEN B.SITE_CD IS NULL
 				THEN 'N'
 			ELSE 'Y'
-		END ALLOC_YN
+		END 								allocYn
 	FROM TB_SITE A
 		 LEFT JOIN (
 			SELECT 

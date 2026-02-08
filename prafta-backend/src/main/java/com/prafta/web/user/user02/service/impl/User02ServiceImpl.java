@@ -5,10 +5,14 @@ import java.util.Map;
 
 import org.springframework.stereotype.Service;
 
-import com.prafta.web.user.user02.dto.User02;
-import com.prafta.web.user.user02.dto.User02ReqDto;
+import com.prafta.web.user.user02.dto.AuthMenuInfoQry;
+import com.prafta.web.user.user02.dto.AuthMenuInfoReq;
+import com.prafta.web.user.user02.dto.AuthMenuListQry;
+import com.prafta.web.user.user02.dto.AuthMenuListReq;
+import com.prafta.web.user.user02.dto.AuthMenuListRes;
 import com.prafta.web.user.user02.mapper.User02Mapper;
 import com.prafta.web.user.user02.service.User02Service;
+import com.prafta.web.user.user02.vo.AuthMenu;
 
 import lombok.extern.slf4j.Slf4j;
 
@@ -22,13 +26,44 @@ public class User02ServiceImpl implements User02Service{
 	}
 	
 	
-	public List<Map<String, Object>> selectAuthMenuList(User02ReqDto dto, Map<String, Object> tokenInfo) {
-		return user02Mapper.selectAuthMenuList(dto, tokenInfo);
+	public AuthMenuListRes selectAuthMenuList(AuthMenuListReq dto, Map<String, Object> tokenInfo) {
+		
+		AuthMenuListQry reqDto = AuthMenuListQry.builder()
+				.menuDNm(dto.getMenuDNm())
+				.menuMNm(dto.getMenuMNm())
+				.authCd(dto.getAuthCd())
+				.useYn(dto.getUseYn())
+				.build();
+		
+		AuthMenuListRes retDto = null;
+		
+		List<AuthMenu> authMenuList = user02Mapper.selectAuthMenuList(reqDto, tokenInfo);
+		
+		if(authMenuList.size() > 0) {
+			retDto = AuthMenuListRes.builder()
+					.authMenuList(authMenuList)
+					.build();
+		}
+		
+		return retDto;
 	}
 
-	public void updateAuthMenuInfo(List<User02> dtoList, Map<String, Object> tokenInfo) {
-		for(User02 dto : dtoList) {
-			user02Mapper.mergeAuthMenuInfo(dto, tokenInfo);
+	public void updateAuthMenuInfo(List<AuthMenuInfoReq> dtoList, Map<String, Object> tokenInfo) {
+		
+		for(AuthMenuInfoReq dto : dtoList) {
+			
+			AuthMenuInfoQry reqDto = AuthMenuInfoQry.builder()
+					.authCd(dto.getAuthCd())
+					.menuDId(dto.getMenuDId())
+					.useYn(dto.getUseYn())
+					.btnSrch(dto.getBtnSrch())
+					.btnNew(dto.getBtnNew())
+					.btnDel(dto.getBtnDel())
+					.btnSave(dto.getBtnSave())
+					.btnExcl(dto.getBtnExcl())
+					.build();
+			
+			user02Mapper.mergeAuthMenuInfo(reqDto, tokenInfo);
 		}
 	}
 	

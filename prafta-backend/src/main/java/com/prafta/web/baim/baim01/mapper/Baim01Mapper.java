@@ -6,14 +6,15 @@ import java.util.Map;
 import org.apache.ibatis.annotations.Mapper;
 import org.apache.ibatis.annotations.Param;
 
-import com.prafta.web.baim.baim01.dto.Baim01;
-import com.prafta.web.baim.baim01.dto.Baim01ReqDto;
+import com.prafta.web.baim.baim01.dto.SiteInfoListQry;
+import com.prafta.web.baim.baim01.dto.SiteInfoSave;
+import com.prafta.web.baim.baim01.vo.SiteInfo;
 
 @Mapper
 public interface Baim01Mapper {
-	List<Map<String, Object>> selectSiteInfoList(Baim01ReqDto dto);
+	List<SiteInfo> selectSiteInfoList(@Param(value = "param") SiteInfoListQry dto, @Param(value = "token") Map<String, Object> tokenInfo);
 	
 //	int updateUserPw(Baim01ReqDto dto);
 //	
-	void mergeSiteInfo(@Param(value = "param") Baim01 dto, @Param(value = "token") Map<String, Object> tokenInfo);
+	void mergeSiteInfo(@Param(value = "param") SiteInfoSave dto, @Param(value = "token") Map<String, Object> tokenInfo);
 }

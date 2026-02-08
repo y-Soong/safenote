@@ -1,0 +1,14 @@
+package com.prafta.web.user.user01.dto;
+
+import lombok.Builder;
+import lombok.Value;
+
+@Value
+@Builder
+public class UserInfoSave{
+	String sr_cmpnyCd;
+	String sr_userId;
+	String sr_userNm;
+	String sr_useYn;
+	String sr_siteCd;
+}

@@ -1,0 +1,48 @@
+package com.prafta.common.cmm.baseinfo.service;
+
+import java.util.List;
+import java.util.Map;
+
+import com.prafta.common.cmm.baseinfo.dto.BaseInfoListReq;
+import com.prafta.common.cmm.baseinfo.dto.BaseInfoListRes;
+import com.prafta.common.cmm.baseinfo.dto.BaseinfoReq;
+import com.prafta.common.cmm.baseinfo.dto.SiteNodeListReq;
+import com.prafta.common.cmm.baseinfo.dto.SiteNodeListRes;
+import com.prafta.common.cmm.baseinfo.dto.SystInfoListReq;
+import com.prafta.common.cmm.baseinfo.dto.SystInfoListRes;
+import com.prafta.common.cmm.baseinfo.dto.SystInfoReq;
+import com.prafta.common.cmm.baseinfo.dto.SystInfoRes;
+
+public interface BaseinfoService {
+	SystInfoListRes selectSystinfoList(SystInfoListReq dto);
+	
+	SystInfoRes selectSystinfo(SystInfoReq dto);
+	
+	BaseInfoListRes selectBaseinfoList(BaseInfoListReq dto);
+	
+	Map<String, Object> selectCmpnyInfo(BaseinfoReq dto); 
+	
+	Map<String, Object> selectUserIdDupleChk(BaseinfoReq dto);
+	
+	void insertSmsAuthReq(BaseinfoReq dto);
+	
+	int updateSmsAuthReq(BaseinfoReq dto);
+	
+	Map<String, Object> selectCertNoSmsId(BaseinfoReq dto);
+	
+	List<Map<String, Object>> selectSiteInfoList(BaseinfoReq dto);
+	
+	SiteNodeListRes getSiteNodeList(SiteNodeListReq dto, Map<String, Object> tokenInfo);
+	
+	List<Map<String, Object>> selectWebMenuList(BaseinfoReq dto);
+	
+	List<Map<String, Object>> selectAppMenuList(BaseinfoReq dto);
+	
+	List<Map<String, Object>> selectMenuList(BaseinfoReq dto);
+	
+	Map<String, Object> selectUserIdInfo(BaseinfoReq dto);
+	
+	void updateUserPw(BaseinfoReq dto);
+	
+	Map<String, Object> selectTermsDInfo(BaseinfoReq dto);
+}

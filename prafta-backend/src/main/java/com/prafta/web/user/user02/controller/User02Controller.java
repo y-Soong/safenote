@@ -5,6 +5,8 @@ import java.util.Map;
 
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.ModelAttribute;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestHeader;
@@ -14,8 +16,9 @@ import org.springframework.web.bind.annotation.RestController;
 import com.prafta.common.annotation.NoAuth;
 import com.prafta.common.exception.LoginFailException;
 import com.prafta.common.security.JwtUtil;
-import com.prafta.web.user.user02.dto.User02;
-import com.prafta.web.user.user02.dto.User02ReqDto;
+import com.prafta.web.user.user02.dto.AuthMenuInfoReq;
+import com.prafta.web.user.user02.dto.AuthMenuListReq;
+import com.prafta.web.user.user02.dto.AuthMenuListRes;
 import com.prafta.web.user.user02.service.User02Service;
 
 import lombok.RequiredArgsConstructor;
@@ -31,21 +34,22 @@ public class User02Controller {
 	private final User02Service user02Service;
 	private final JwtUtil jwtUtil;
 
-    @PostMapping("/getAuthMenuList")
-    public ResponseEntity<?> getAuthMenuList(@RequestBody User02ReqDto dto, @RequestHeader(value = "Authorization", required = false) String authorization) {
+    @GetMapping("/auth-menu-lists")
+    public ResponseEntity<?> getAuthMenuList(@ModelAttribute AuthMenuListReq dto, @RequestHeader(value = "Authorization", required = false) String authorization) {
     	
     	Map<String, Object> tokenInfo = jwtUtil.getAllClaimsAsMap(authorization);
-		List<Map<String, Object>> retList = user02Service.selectAuthMenuList(dto, tokenInfo);
+    	AuthMenuListRes retList = user02Service.selectAuthMenuList(dto, tokenInfo);
 		
-    	if(retList == null) {
-    		throw new LoginFailException("조회된 결과가 없습니다.");
-    	}
+//    	if(retList == null) {
+//    		throw new LoginFailException("조회된 결과가 없습니다.");
+//    	}
     	
     	return ResponseEntity.status(HttpStatus.OK).body(retList);
     }
     
-    @PostMapping("/updateAuthMenuInfo")
-    public ResponseEntity<?> updateAuthMenuInfo(@RequestBody List<User02> dtoList, @RequestHeader(value = "Authorization", required = false) String authorization ) {
+//    @PostMapping("/updateAuthMenuInfo")
+    @PostMapping("/update-auth-menu-infos")
+    public ResponseEntity<?> updateAuthMenuInfo(@RequestBody List<AuthMenuInfoReq> dtoList, @RequestHeader(value = "Authorization", required = false) String authorization ) {
     	
     	Map<String, Object> tokenInfo = jwtUtil.getAllClaimsAsMap(authorization);
     	

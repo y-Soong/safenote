@@ -6,10 +6,18 @@ import java.util.Map;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-import com.prafta.web.user.user01.dto.User01;
-import com.prafta.web.user.user01.dto.User01ReqDto;
+import com.prafta.common.util.PasswordHashing;
+import com.prafta.web.user.user01.dto.UserInfoListQry;
+import com.prafta.web.user.user01.dto.UserInfoListReq;
+import com.prafta.web.user.user01.dto.UserInfoListRes;
+import com.prafta.web.user.user01.dto.UserInfoReq;
+import com.prafta.web.user.user01.dto.UserInfoSave;
+import com.prafta.web.user.user01.dto.UserPasswdReq;
+import com.prafta.web.user.user01.dto.UserPasswdSave;
 import com.prafta.web.user.user01.mapper.User01Mapper;
 import com.prafta.web.user.user01.service.User01Service;
+import com.prafta.web.user.user01.vo.UserInfo;
+import com.prafta.web.user.user01.vo.UserSiteInfo;
 
 import lombok.extern.slf4j.Slf4j;
 
@@ -22,41 +30,77 @@ public class User01ServiceImpl implements User01Service{
 		this.user01Mapper = user01Mapper;
 	}
 	
+//	public List<Map<String, Object>> selectUserInfoList(User01ReqDto dto) {
+//		return user01Mapper.selectUserInfoList(dto);
+//	}
 	
-	public List<Map<String, Object>> selectUserInfoList(User01ReqDto dto) {
-		return user01Mapper.selectUserInfoList(dto);
+	public UserInfoListRes selectUserInfoList(UserInfoListReq dto, Map<String, Object> tokenInfo) {
+		
+		UserInfoListQry reqDto = UserInfoListQry.builder()
+													.userId(dto.getUserId())
+													.userNm(dto.getUserNm())
+													.useYn(dto.getUseYn())
+													.siteCd(dto.getSiteCd())
+													.build();
+		
+		UserInfoListRes retDto = null;
+		
+		List<UserInfo> userInfoList = user01Mapper.selectUserInfoList(reqDto, tokenInfo);
+		
+		if(userInfoList != null && userInfoList.size() > 0) {
+			retDto = UserInfoListRes.builder()
+					.userInfoList(userInfoList)
+					.build();
+		}
+		
+		return retDto;
 	}
 	
-	public int updateUserPw(User01ReqDto dto) {
-		return user01Mapper.updateUserPw(dto);
+	public int updateUserPw(UserPasswdReq dto) {
+		
+		UserPasswdSave reqDto = UserPasswdSave.builder()
+								.cmpnyCd(dto.getCmpnyCd())
+								.userId(dto.getUserId())
+								.userPw(PasswordHashing.hashPassword(dto.getUserId()))
+								.build();
+		
+		return user01Mapper.updateUserPw(reqDto);
 	}
 	
 	@Transactional
-	public void updateUserInfo(List<User01> dtoList, Map<String, Object> tokenInfo) {
-		for(User01 dto : dtoList) {
+	public void updateUserInfo(List<UserInfoReq> dtoList, Map<String, Object> tokenInfo) {
+		for(UserInfoReq dto : dtoList) {
 			
-			User01ReqDto reqDto = new User01ReqDto();
-			reqDto.setSr_cmpnyCd(dto.getCmpnyCd());
-			reqDto.setSr_userId(dto.getUserId());
-			reqDto.setSr_userNm(dto.getUserNm());
-			reqDto.setSr_useYn(dto.getUseYn());
-			reqDto.setSr_siteCd(dto.getSiteCd());
-//			User01ReqDto reqDto = User01ReqDto.builder()
-//					.cmpnyCd(dto.getCmpnyCd())
-//					.userId(dto.getUserId())
-//					.userNm(dto.getUserNm())
-//					.useYn(dto.getUseYn())
-//					.siteCd(dto.getSiteCd())
-//					.build();
+//			User01ReqDto reqDto = new User01ReqDto();
+//			reqDto.setSr_cmpnyCd(dto.getCmpnyCd());
+//			reqDto.setSr_userId(dto.getUserId());
+//			reqDto.setSr_userNm(dto.getUserNm());
+//			reqDto.setSr_useYn(dto.getUseYn());
+//			reqDto.setSr_siteCd(dto.getSiteCd());
 			
-			Map<String, Object> userInfo = user01Mapper.selectUserSiteInfo(reqDto);
+			UserInfoSave reqDto = UserInfoSave.builder()
+											.cmpnyCd(dto.getCmpnyCd())
+											.userId(dto.getUserId())
+											.userPw(dto.getUserPw())
+											.userNm(dto.getUserNm())
+											.mblNo(dto.getMblNo())
+											.email(dto.getEmail())
+											.gender(dto.getGender())
+											.birthDt(dto.getBirthDt())
+											.siteCd(dto.getSiteCd())
+											.nodeCd(dto.getNodeCd())
+											.authCd(dto.getAuthCd())
+											.useYn(dto.getUseYn())
+											.build();
 			
-			if(!dto.getSiteCd().equals(userInfo.get("SITE_CD"))) {
-				user01Mapper.deleteUserSiteAuth(dto, tokenInfo);
-				user01Mapper.insertUserSiteAuth(dto, tokenInfo);
+			UserSiteInfo userInfo = user01Mapper.selectUserSiteInfo(reqDto);
+			
+			if(!dto.getSiteCd().equals(userInfo.getSiteCd())) {
+				user01Mapper.deleteUserSiteAuth(reqDto, tokenInfo);
+				user01Mapper.insertUserSiteAuth(reqDto, tokenInfo);
 			}
 				
-			user01Mapper.mergeUserInfo(dto, tokenInfo);
+			user01Mapper.mergeUserInfo(reqDto, tokenInfo);
 		}
 	}
 	

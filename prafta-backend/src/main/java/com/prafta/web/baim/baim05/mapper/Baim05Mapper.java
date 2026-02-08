@@ -1,0 +1,15 @@
+package com.prafta.web.baim.baim05.mapper;
+
+import java.util.List;
+import java.util.Map;
+
+import org.apache.ibatis.annotations.Mapper;
+import org.apache.ibatis.annotations.Param;
+
+import com.prafta.web.baim.baim05.dto.DailyUserSlotListQry;
+import com.prafta.web.baim.baim05.vo.DailyUserSlotList;
+
+@Mapper
+public interface Baim05Mapper {
+	List<DailyUserSlotList> selectDailyUserSlotList(@Param(value = "param") DailyUserSlotListQry dto, @Param(value = "token") Map<String, Object> tokenInfo);
+}

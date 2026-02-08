@@ -1,0 +1,35 @@
+package com.prafta.web.user.user03.service.impl;
+
+import java.util.List;
+import java.util.Map;
+
+import org.springframework.stereotype.Service;
+
+import com.prafta.web.user.user03.dto.User03;
+import com.prafta.web.user.user03.dto.User03ReqDto;
+import com.prafta.web.user.user03.mapper.User03Mapper;
+import com.prafta.web.user.user03.service.User03Service;
+
+import lombok.extern.slf4j.Slf4j;
+
+@Slf4j
+@Service
+public class User03ServiceImpl implements User03Service{
+	private final User03Mapper user03Mapper;
+	
+	public User03ServiceImpl(User03Mapper user03Mapper) {
+		this.user03Mapper = user03Mapper;
+	}
+	
+	
+	public List<Map<String, Object>> selectSiteInfoSearch(SiteInfoListReq dto, Map<String, Object> tokenInfo) {
+		return user03Mapper.selectSiteInfoSearch(dto, tokenInfo);
+	}
+
+	public void updateUserSiteAuth(List<User03> dtoList, Map<String, Object> tokenInfo) {
+		for(User03 dto : dtoList) {
+			user03Mapper.mergeUserSiteAuth(dto, tokenInfo);
+		}
+	}
+	
+}

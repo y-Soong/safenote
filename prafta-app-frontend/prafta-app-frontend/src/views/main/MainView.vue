@@ -81,6 +81,7 @@
       <!-- ② 위험성 발굴 -->
       <button
         class="bg-white pt-5 rounded-2xl shadow flex flex-col items-center hover:bg-gray-100 transition"
+        @click="fnRisk_01"
       >
         <div class="relative w-24 h-24 flex justify-center items-center mb-2">
           <!-- 바닥 아이콘 (fullscreen) -->
@@ -101,7 +102,7 @@
         <p
           class="font-semibold text-gray-700 m-2 p-1 border border-green-700 text-green-700 rounded-md"
         >
-          위험성 발굴
+          위험성 평가
         </p>
       </button>
     </div>
@@ -238,6 +239,7 @@
 <script setup>
 import { ref, onMounted, onBeforeUnmount, getCurrentInstance } from 'vue'
 import { useRouter } from 'vue-router'
+import axios from '@/api/axios'
 
 const { proxy } = getCurrentInstance()
 
@@ -254,6 +256,10 @@ const userMenuWrapper = ref(null)
 /* User Function */
 function fnDayChkLst() {
   router.push('/QrScanner')
+}
+
+function fnRisk_01() {
+  router.push('/Risk_01')
 }
 
 function toggleUserMenu() {
@@ -285,12 +291,27 @@ function goToMyInfo() {
   alert('내정보 페이지로 이동')
 }
 
-function logout() {
-  proxy.$alert('로그아웃 처리됐습니다.')
-  sessionStorage.removeItem('token')
-  userMenuOpen.value = false
+const logout = async () => {
+  try {
+    const response = await axios.post('/comApi/login/logout', {})
+    if (response.status === 200) {
+      proxy.$alert('로그아웃 처리됐습니다.')
+      //      sessionStorage.removeItem("token");
+      sessionStorage.clear()
+      userMenuOpen.value = false
+      router.push('/') // 로그인 성공 → 메인화면 이동
+    }
+  } catch (err) {
+    const msg =
+      err?.response?.data?.message || err?.message || '로그아웃 처리 중 오류가 발생했습니다.'
 
-  router.push('/') // 로그인 성공 → 메인화면 이동
+    await proxy.$alert(msg)
+  }
+  // proxy.$alert('로그아웃 처리됐습니다.')
+  // sessionStorage.removeItem('token')
+  // userMenuOpen.value = false
+
+  // router.push('/') // 로그인 성공 → 메인화면 이동
 }
 </script>
 <style scoped>

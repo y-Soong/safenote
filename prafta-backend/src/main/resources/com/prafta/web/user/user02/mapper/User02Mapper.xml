@@ -3,21 +3,21 @@
 
 <mapper namespace="com.prafta.web.user.user02.mapper.User02Mapper">
 
-    <select id="selectAuthMenuList" parameterType="com.prafta.web.user.user02.dto.User02ReqDto" resultType="map">
+    <select id="selectAuthMenuList" parameterType="com.prafta.web.user.user02.dto.AuthMenuListQry" resultType="com.prafta.web.user.user02.vo.AuthMenu">
     /* User02Mapper.selectAuthMenuList */
     SELECT
-    	'' AS CHK
-    	, A.MENU_M_ID
-    	, A.MENU_M_NM
-    	, A.MENU_SRC
-    	, A.MENU_D_ID
-    	, A.MENU_D_NM
-    	, A.USE_YN
-    	, A.BTN_SRCH
-    	, A.BTN_NEW
-    	, A.BTN_DELT
-    	, A.BTN_SAVE
-    	, A.BTN_EXCL
+    	'' 				AS chk
+    	, A.MENU_M_ID	AS menuMId
+    	, A.MENU_M_NM	AS menuMNm
+    	, A.MENU_SRC	AS menuSrc
+    	, A.MENU_D_ID	AS menuDId
+    	, A.MENU_D_NM	AS menuDNm
+    	, A.USE_YN		AS useYn
+    	, A.BTN_SRCH	AS btnSrch
+    	, A.BTN_NEW		AS btnNew
+    	, A.BTN_DELT	AS btnDel
+    	, A.BTN_SAVE	AS btnSave
+    	, A.BTN_EXCL	AS btnExcl
     FROM
     (
 	    SELECT 
@@ -37,29 +37,29 @@
 				ON (
 					A.MENU_M_ID = B.MENU_M_ID
 				AND A.USE_YN = B.USE_YN
-				<if test="param.sr_menuDNm != null and param.sr_menuDNm != ''">
-			  	  AND B.MENU_NM LIKE CONCAT('%', #{param.sr_menuDNm}, '%')
+				<if test="param.menuDNm != null and param.menuDNm != ''">
+			  	  AND B.MENU_NM LIKE CONCAT('%', #{param.menuDNm}, '%')
 				</if>
 		        )
 			LEFT JOIN TB_SYST_AUTH_MENU C
 				ON (
 					C.CMPNY_CD = #{token.gv_cmpnyCd}
 				AND B.MENU_D_ID = C.MENU_D_ID
-		        AND C.AUTH_CD = #{param.sr_authCd}
+		        AND C.AUTH_CD = #{param.authCd}
 		        )
 		WHERE 1=1
-	    <if test="param.sr_menuMNm != null and param.sr_menuMNm != ''">
-	  	  AND A.MENU_NM LIKE CONCAT('%', #{param.sr_menuMNm}, '%')
+	    <if test="param.menuMNm != null and param.menuMNm != ''">
+	  	  AND A.MENU_NM LIKE CONCAT('%', #{param.menuMNm}, '%')
 		</if>
 	) A
 	WHERE 1=1
-	<if test="param.sr_useYn != null and param.sr_useYn != ''">
-	  AND A.USE_YN = #{param.sr_useYn}
+	<if test="param.useYn != null and param.useYn != ''">
+	  AND A.USE_YN = #{param.useYn}
 	</if>
-    ORDER BY A.MENU_SRC, A.MENU_M_ID, B.MENU_D_ID;	
+    ORDER BY A.MENU_SRC, A.MENU_M_ID, A.MENU_D_ID	
 	</select>
 	
-	<insert id="mergeAuthMenuInfo">
+	<insert id="mergeAuthMenuInfo" parameterType="com.prafta.web.user.user02.dto.AuthMenuInfoQry">
 	/* User02Mapper.mergeAuthMenuInfo */
     INSERT INTO TB_SYST_AUTH_MENU (
     	CMPNY_CD
@@ -83,7 +83,7 @@
    		, #{param.useYn}
    		, #{param.btnSrch}
 		, #{param.btnNew}
-		, #{param.btnDelt}
+		, #{param.btnDel}
 		, #{param.btnSave}
 		, #{param.btnExcl}
 		, #{token.gv_userId}

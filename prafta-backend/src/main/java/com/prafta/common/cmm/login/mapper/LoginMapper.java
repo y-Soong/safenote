@@ -6,13 +6,25 @@ import java.util.Map;
 import org.apache.ibatis.annotations.Mapper;
 import org.apache.ibatis.annotations.Param;
 
+import com.prafta.common.cmm.login.dto.ActiveToken;
 import com.prafta.common.cmm.login.dto.LoginReqDto;
 import com.prafta.common.cmm.login.dto.UserJoinReqDto;
-import com.prafta.web.baim.baim03.dto.Baim03;
+import com.prafta.common.cmm.login.dto.UserLogout;
+import com.prafta.common.cmm.login.dto.UserRowLock;
 
 @Mapper
 public interface LoginMapper {
 	Map<String, Object> getLoginUser(LoginReqDto dto);
+	
+	void lockUserRow(UserRowLock dto);
+	
+	void revokeActiveToken(ActiveToken dto);
+	
+	void insertAuthToken(ActiveToken dto);
+	
+	int revokeActiveTokenByClient(UserLogout dto);
+
+    int revokeAllActiveTokens(UserLogout dto);
 	
 	int insertUserInfo(UserJoinReqDto dto);
 	

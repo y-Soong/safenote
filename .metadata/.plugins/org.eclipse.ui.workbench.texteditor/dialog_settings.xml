@@ -1,50 +1,50 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <section name="Workbench">
 	<section name="org.eclipse.ui.texteditor.FindReplaceDialog">
-		<item key="selection" value="inspectAnswerType"/>
+		<item key="selection" value="updateUserInfo"/>
 		<item key="wrap" value="true"/>
 		<item key="casesensitive" value="false"/>
 		<item key="wholeword" value="false"/>
 		<item key="incremental" value="false"/>
 		<item key="isRegEx" value="false"/>
 		<list key="findhistory">
-			<item value="inspectAnswerType"/>
-			<item value="insertFileInfo"/>
-			<item value="mergeChkptInspectAnswer"/>
-			<item value="AppChkLst01"/>
-			<item value="InspectItemDto"/>
-			<item value="fileInfo"/>
-			<item value="saveInspectResult"/>
-			<item value="selectFileMgmtCd"/>
-			<item value="SaveInspectResultReq"/>
-			<item value="PasswordHashing"/>
-			<item value="AesGcmUtil"/>
-			<item value="value"/>
-			<item value="memo"/>
-			<item value="itemsJson"/>
-			<item value="itemJson"/>
+			<item value="updateUserInfo"/>
+			<item value="selectUserSiteInfo"/>
+			<item value="mergeUserInfo"/>
+			<item value="nodeCd"/>
+			<item value="deleteUserSiteAuth"/>
+			<item value="insertUserSiteAuth"/>
+			<item value="nodeId"/>
+			<item value="sr_"/>
+			<item value="private "/>
+			<item value="a"/>
+			<item value="selectUserInfoList"/>
+			<item value="getUserInfoList"/>
+			<item value="node"/>
+			<item value="like"/>
+			<item value="selectSiteNodeList"/>
 		</list>
 		<list key="replacehistory">
-			<item value="FileInfo"/>
-			<item value="FileSaveRequest"/>
-			<item value="SaveInspectResultReq"/>
-			<item value="03"/>
 			<item value=""/>
-			<item value="ChkLst02"/>
-			<item value="chkLst02"/>
-			<item value="TB"/>
-			<item value="Baim02"/>
-			<item value="baim02"/>
-			<item value="User03"/>
-			<item value="user03"/>
-			<item value="User03ReqDto"/>
-			<item value="SideMenu"/>
-			<item value="gv_userId"/>
+			<item value="parentNodeCd"/>
+			<item value="-"/>
+			<item value="nodeCd"/>
+			<item value="NODE_CD"/>
+			<item value="TB_SITE_NODE"/>
+			<item value="TbmEduItemInfo"/>
+			<item value="baim"/>
+			<item value="baim04"/>
+			<item value="authMapper"/>
+			<item value="03"/>
+			<item value="PROCESS"/>
+			<item value="process"/>
+			<item value="BaseinfoReq"/>
+			<item value="BaseinfoReqDto"/>
 		</list>
 	</section>
 	<section name="org.eclipse.ui.texteditor.FindReplaceDialog_dialogBounds">
-		<item key="DIALOG_X_ORIGIN" value="1366"/>
-		<item key="DIALOG_Y_ORIGIN" value="386"/>
+		<item key="DIALOG_X_ORIGIN" value="2006"/>
+		<item key="DIALOG_Y_ORIGIN" value="87"/>
 		<item key="DIALOG_WIDTH" value="288"/>
 		<item key="DIALOG_HEIGHT" value="391"/>
 		<item key="DIALOG_FONT_NAME" value="1|맑은 고딕|9.0|0|WINDOWS|1|-12|0|0|0|400|0|0|0|1|0|0|0|0|맑은 고딕"/>

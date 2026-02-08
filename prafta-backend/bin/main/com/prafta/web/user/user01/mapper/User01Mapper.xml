@@ -3,21 +3,24 @@
 
 <mapper namespace="com.prafta.web.user.user01.mapper.User01Mapper">
 
-    <select id="selectUserInfoList" parameterType="com.prafta.web.user.user01.dto.User01ReqDto" resultType="map">
+    <select id="selectUserInfoList" parameterType="com.prafta.web.user.user01.dto.UserInfoListQry" resultType="com.prafta.web.user.user01.vo.UserInfo">
     /* User01Mapper.selectUserInfoList */
 	SELECT 
-		A.CMPNY_CD
-        , A.USER_ID
-        , A.USER_NM
-        , A.AUTH_CD
-        , A.SITE_CD
-        , C.SITE_NM
-        , FN_DECRYPT(A.MBL_NO) AS MBL_NO
-        , FN_DECRYPT(A.BIRTH_DT) AS BIRTH_DT
-        , FN_DECRYPT(A.EMAIL) AS EMAIL
-        , A.GENDER
-        , A.USE_YN
-        , IFNULL(B.SITE_NM_LIST, '') AS SITE_NM_LIST
+		'' 																AS chk
+		, A.CMPNY_CD													AS cmpnyCd
+        , A.USER_ID														AS userId
+        , A.USER_NM														AS userNm
+        , A.AUTH_CD														AS authCd
+        , A.SITE_CD														AS siteCd
+        , A.NODE_CD														AS nodeCd
+        , FNC_CMM_INFO_SRCH(A.CMPNY_CD, 'NODE', A.SITE_CD, A.NODE_CD)	AS nodeNm
+        , C.SITE_NM														AS siteNm
+        , FN_DECRYPT(A.MBL_NO) 											AS mblNo
+        , FN_DECRYPT(A.BIRTH_DT) 										AS birthDt
+        , FN_DECRYPT(A.EMAIL) 											AS email
+        , A.GENDER														AS gender
+        , A.USE_YN														AS useYn
+        , IFNULL(B.SITE_NM_LIST, '') 									AS siteNmList
 	FROM TB_USER A
 		 LEFT JOIN (
 			SELECT 
@@ -40,105 +43,46 @@
            AND C.USE_YN = 'Y'
            )
 	WHERE 1=1
-	  AND A.CMPNY_CD = #{gv_cmpnyCd}
+	  AND A.CMPNY_CD = #{token.gv_cmpnyCd}
 	  AND A.AUTH_CD != '999'				/* 시스템관리자 권한 제외 */
-	  <if test="sr_userNm != null and sr_userNm != ''">
-	  	AND A.USER_NM LIKE CONCAT('%', #{sr_userNm}, '%')
+	  <if test="param.userNm != null and param.userNm != ''">
+	  	AND A.USER_NM LIKE CONCAT('%', #{param.userNm}, '%')
 	  </if>
-	  <if test="sr_userId != null and sr_userId != ''">
-	  	AND A.USER_ID = #{sr_userId}
+	  <if test="param.userId != null and param.userId != ''">
+	  	AND A.USER_ID = #{param.userId}
 	  </if>
-	  <if test="sr_useYn != null and sr_useYn != ''">
-	  	AND A.USE_YN = #{sr_useYn}
+	  <if test="param.useYn != null and param.useYn != ''">
+	  	AND A.USE_YN = #{param.useYn}
 	  </if>
-	  <if test="sr_siteCd != null and sr_siteCd != ''">
-	  	AND A.SITE_CD = #{sr_siteCd}
+	  <if test="param.siteCd != null and param.siteCd != ''">
+	  	AND A.SITE_CD = #{param.siteCd}
 	  </if>
     </select>
     
-	<update id="updateUserPw">
+	<update id="updateUserPw" parameterType="com.prafta.web.user.user01.dto.UserPasswdSave">
 	/* User01Mapper.updateUserPw */
 	UPDATE
 		TB_USER
 	SET
-		USER_PW = #{userId}
+		USER_PW = #{userPw}
 	WHERE 1=1
 	  AND CMPNY_CD = #{cmpnyCd}
 	  AND USER_ID = #{userId}
 	</update>
 	
-	<insert id="mergeUserInfo">
-	/* User01Mapper.updateUserInfo */
-	UPDATE TB_USER 
-	SET 
-		SITE_CD = #{param.siteCd}
-		, AUTH_CD = #{param.authCd}
-		, MBL_NO = FN_ENCRYPT(REPLACE(#{param.mblNo}, '-', ''))
-		, EMAIL = FN_ENCRYPT(#{param.email})
-		, GENDER = #{param.gender}
-		, BIRTH_DT = FN_ENCRYPT(#{param.birthDt})
-		, USE_YN = IFNULL(#{param.useYn}, 'Y')
-		, UPDATE_NO = #{token.gv_userId}
-		, UPDATE_DATE = NOW()
-	WHERE 1=1
-	  AND CMPNY_CD = #{param.cmpnyCd}
-	  AND USER_ID = #{param.userId}
-	
-<!-- 
-    INSERT INTO TB_USER (
-    	CMPNY_CD
-    	, USER_ID
-    	, USER_NM
-    	, USER_PW
-    	, AUTH_CD
-    	, MBL_NO
-    	, EMAIL
-    	, GENDER
-    	, BIRTH_DT
-    	, USE_YN
-    	, INSERT_NO
-    	, INSERT_DATE
-    	, UPDATE_NO
-    	, UPDATE_DATE
-   	)
-   	VALUES(
-   		#{param.cmpnyCd}
-   		, #{param.userId}
-   		, #{param.userNm}
-   		, #{param.userPw}
-   		, IFNULL(#{param.authCd}, '100')
-   		, #{param.mblNo}
-   		, #{param.email}
-   		, #{param.gender}
-   		, #{param.birthDt}
-   		, IFNULL(#{param.useYn}, 'Y')
-   		, #{token.gv_userId}
-   		, NOW()
-   		, #{token.gv_userId}
-   		, NOW()
-   	)
-   	ON DUPLICATE KEY UPDATE
-	    USER_NM       = VALUES(USER_NM)
-	    , AUTH_CD     = VALUES(AUTH_CD)
-	    , MBL_NO      = VALUES(MBL_NO)
-	    , EMAIL       = VALUES(EMAIL)
-	    , GENDER      = VALUES(GENDER)
-	    , BIRTH_DT    = VALUES(BIRTH_DT)
-	    , USE_YN      = VALUES(USE_YN)
-	    , UPDATE_NO   = VALUES(UPDATE_NO)
-	    , UPDATE_DATE = VALUES(UPDATE_DATE)
- -->
-	</insert>
-	
-	<select id="selectUserSiteInfo" parameterType="com.prafta.web.user.user01.dto.User01ReqDto" resultType="map">
+	<select id="selectUserSiteInfo" parameterType="com.prafta.web.user.user01.dto.UserInfoSave" resultType="com.prafta.web.user.user01.vo.UserSiteInfo">
     /* User01Mapper.selectUserSiteInfo */
-    SELECT *
-	FROM TB_USER
-	WHERE CMPNY_CD = #{sr_cmpnyCd}
-	  AND USER_ID = #{sr_userId}
+    SELECT
+    	A.CMPNY_CD 	AS cmpnyCD
+    	, A.USER_ID	AS userId
+    	, A.SITE_CD	AS siteCd
+    	, A.USE_YN 	AS useYn 
+	FROM TB_USER A
+	WHERE A.CMPNY_CD = #{param.cmpnyCd}
+	  AND A.USER_ID = #{param.userId}
     </select>
     
-    <update id="deleteUserSiteAuth">
+    <update id="deleteUserSiteAuth" parameterType="com.prafta.web.user.user01.dto.UserInfoSave">
     /* User01Mapper.deleteUserSiteAuth */
     UPDATE TB_USER_SITE_AUTH
    	SET 
@@ -150,7 +94,7 @@
     	
     </update>
     
-    <update id="insertUserSiteAuth">
+    <update id="insertUserSiteAuth" parameterType="com.prafta.web.user.user01.dto.UserInfoSave">
     /* User01Mapper.insertUserSiteAuth */
     INSERT INTO TB_USER_SITE_AUTH (
     	CMPNY_CD
@@ -177,4 +121,23 @@
 	    , UPDATE_NO   = VALUES(UPDATE_NO)
 	    , UPDATE_DATE = VALUES(UPDATE_DATE)
     </update>
+    
+    <insert id="mergeUserInfo" parameterType="com.prafta.web.user.user01.dto.UserInfoSave">
+	/* User01Mapper.mergeUserInfo */
+	UPDATE TB_USER 
+	SET 
+		SITE_CD = #{param.siteCd}
+		, NODE_CD = #{param.nodeCd}
+		, AUTH_CD = #{param.authCd}
+		, MBL_NO = FN_ENCRYPT(REPLACE(#{param.mblNo}, '-', ''))
+		, EMAIL = FN_ENCRYPT(#{param.email})
+		, GENDER = #{param.gender}
+		, BIRTH_DT = FN_ENCRYPT(#{param.birthDt})
+		, USE_YN = IFNULL(#{param.useYn}, 'Y')
+		, UPDATE_NO = #{token.gv_userId}
+		, UPDATE_DATE = NOW()
+	WHERE 1=1
+	  AND CMPNY_CD = #{param.cmpnyCd}
+	  AND USER_ID = #{param.userId}
+	</insert>
 </mapper>

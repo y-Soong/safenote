@@ -76,7 +76,7 @@
    	VALUES(
    		#{token.gv_cmpnyCd}
    		, #{param.baimValCd}
-   		, IFNULL(#{param.baimValDCd}, FNC_CMM_SEQ_NEXTVAL(#{token.gv_cmpnyCd}, 'COM001'))
+   		, IFNULL(#{param.baimValDCd}, FNC_CMM_SEQ_NEXTVAL(#{token.gv_cmpnyCd}, #{param.baimValCd}))
    		, #{param.baimValDNm}
    		, #{param.sortIdx}
 		, #{param.useYn}
@@ -92,7 +92,7 @@
 	    USE_YN     		= VALUES(USE_YN)
 	    , BAIM_VAL_D_NM = VALUES(BAIM_VAL_D_NM)
 	    , SORT_IDX		= VALUES(SORT_IDX)
-	    , USE_YN		= IFNULL(USE_YN, 'Y')
+	    , USE_YN		= IFNULL(#{param.useYn}, 'Y')
 	    , VAL_D_INFO_1	= VALUES(VAL_D_INFO_1)
     	, VAL_D_INFO_2	= VALUES(VAL_D_INFO_2)
     	, VAL_D_DESC	= VALUES(VAL_D_DESC)

@@ -5,6 +5,8 @@ import java.util.Map;
 
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.ModelAttribute;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestHeader;
@@ -12,10 +14,10 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
 import com.prafta.common.annotation.NoAuth;
-import com.prafta.common.exception.LoginFailException;
 import com.prafta.common.security.JwtUtil;
+import com.prafta.web.user.user03.dto.SiteInfoListReq;
+import com.prafta.web.user.user03.dto.SiteInfoListRes;
 import com.prafta.web.user.user03.dto.User03;
-import com.prafta.web.user.user03.dto.User03ReqDto;
 import com.prafta.web.user.user03.service.User03Service;
 
 import lombok.RequiredArgsConstructor;
@@ -31,17 +33,19 @@ public class User03Controller {
 	private final User03Service user03Service;
 	private final JwtUtil jwtUtil;
 
-    @PostMapping("/getSiteInfoSearch")
-    public ResponseEntity<?> getSiteInfoSearch(@RequestBody User03ReqDto dto, @RequestHeader(value = "Authorization", required = false) String authorization) {
+//    @PostMapping("/getSiteInfoSearch")
+    @GetMapping("/site-info-lists")
+    public ResponseEntity<?> getSiteInfoList(@ModelAttribute SiteInfoListReq dto, @RequestHeader(value = "Authorization", required = false) String authorization) {
     	
     	Map<String, Object> tokenInfo = jwtUtil.getAllClaimsAsMap(authorization);
-		List<Map<String, Object>> retList = user03Service.selectSiteInfoSearch(dto, tokenInfo);
-		
-    	if(retList == null) {
-    		throw new LoginFailException("조회된 결과가 없습니다.");
-    	}
     	
-    	return ResponseEntity.status(HttpStatus.OK).body(retList);
+    	SiteInfoListRes retDto = user03Service.selectSiteInfoSearch(dto, tokenInfo);
+		
+//    	if(retList == null) {
+//    		throw new LoginFailException("조회된 결과가 없습니다.");
+//    	}
+    	
+    	return ResponseEntity.status(HttpStatus.OK).body(retDto);
     }
     
     @PostMapping("/updateUserSiteAuth")

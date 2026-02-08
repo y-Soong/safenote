@@ -7,7 +7,10 @@
       <!-- 헤더 -->
       <div class="flex justify-between items-center p-4 border-b">
         <h3 class="text-lg font-semibold text-gray-800">{{ title }}</h3>
-        <button class="text-gray-600 hover:text-black" @click="$emit('close')">✕</button>
+        <!-- ✅ X 버튼: history 정리하면서 닫기 -->
+        <button class="text-gray-600 hover:text-black" @click="closePanelWithHistoryCleanup">
+          ✕
+        </button>
       </div>
 
       <!-- 검색 영역 -->
@@ -132,7 +135,7 @@
       <div class="absolute bottom-0 left-0 w-full p-4 bg-white border-t">
         <button
           class="w-full bg-green-700 text-white py-3 rounded-md hover:bg-green-800 transition"
-          @click="$emit('confirm', selectedItems)"
+          @click="onConfirmAndClose"
         >
           확인
         </button>
@@ -143,7 +146,7 @@
 
 <script setup>
 /* eslint-disable */
-import { ref, watch, defineProps, defineEmits } from 'vue'
+import { ref, watch, defineProps, defineEmits, onBeforeUnmount } from 'vue'
 
 const props = defineProps({
   visible: Boolean,
@@ -185,9 +188,7 @@ function toggleSelection(item) {
   if (props.multiple) {
     const exists = selectedItems.value.find((i) => i[props.keyField] === item[props.keyField])
     if (exists) {
-      selectedItems.value = selectedItems.value.filter(
-        (i) => i[props.keyField] !== item[props.keyField]
-      )
+      selectedItems.value = selectedItems.value.filter((i) => i[props.keyField] !== item[props.keyField])
     } else {
       selectedItems.value.push(item)
     }
@@ -196,6 +197,69 @@ function toggleSelection(item) {
   }
   emit('update:modelValue', selectedItems.value)
 }
+
+/* ==============================
+   ✅ Back 버튼(히스토리) 처리 로직
+   - 패널 열릴 때 history pushState
+   - Android 뒤로가기(popstate) -> 패널만 닫기
+   - X/확인 버튼으로 닫을 때는 history.back()으로 스택 정리
+================================ */
+
+let pushed = false
+let ignoreNextPop = false
+
+function pushPanelState() {
+  if (pushed) return
+  history.pushState({ __sidepanel__: true }, '')
+  pushed = true
+}
+
+function onPopState() {
+  // 우리가 history.back() 호출해서 발생한 popstate는 무시
+  if (ignoreNextPop) {
+    ignoreNextPop = false
+    return
+  }
+
+  // 뒤로가기로 패널 닫기
+  if (props.visible) {
+    pushed = false
+    emit('close')
+  }
+}
+
+function closePanelWithHistoryCleanup() {
+  // X/확인 같은 "클릭으로 닫기"에서 히스토리 누적 방지
+  if (pushed) {
+    ignoreNextPop = true
+    history.back() // 이때 popstate 발생하지만 ignoreNextPop으로 무시
+    pushed = false
+  }
+  emit('close')
+}
+
+function onConfirmAndClose() {
+  emit('confirm', selectedItems.value)
+  closePanelWithHistoryCleanup()
+}
+
+watch(
+  () => props.visible,
+  (v) => {
+    if (v) {
+      pushPanelState()
+      window.addEventListener('popstate', onPopState)
+    } else {
+      window.removeEventListener('popstate', onPopState)
+      pushed = false
+      ignoreNextPop = false
+    }
+  }
+)
+
+onBeforeUnmount(() => {
+  window.removeEventListener('popstate', onPopState)
+})
 </script>
 
 <style scoped>

@@ -1,0 +1,4 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<session version="1.0">
+<refactoring comment="Delete resource &apos;prafta-backend/src/main/java/com/prafta/web/baim/baim06/dto/DailyUserSlotListRes.java&apos;" deleteContents="false" description="Delete resource &apos;prafta-backend/src/main/java/com/prafta/web/baim/baim06/dto/DailyUserSlotListRes.java&apos;" element1="/prafta-backend/src/main/java/com/prafta/web/baim/baim06/dto/DailyUserSlotListRes.java" flags="7" id="org.eclipse.ltk.core.refactoring.delete.resources" resources="1" stamp="1770203354189"/>
+</session>

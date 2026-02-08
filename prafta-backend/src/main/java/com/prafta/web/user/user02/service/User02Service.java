@@ -3,11 +3,12 @@ package com.prafta.web.user.user02.service;
 import java.util.List;
 import java.util.Map;
 
-import com.prafta.web.user.user02.dto.User02;
-import com.prafta.web.user.user02.dto.User02ReqDto;
+import com.prafta.web.user.user02.dto.AuthMenuInfoReq;
+import com.prafta.web.user.user02.dto.AuthMenuListReq;
+import com.prafta.web.user.user02.dto.AuthMenuListRes;
 
 public interface User02Service {
-	List<Map<String, Object>> selectAuthMenuList(User02ReqDto dto, Map<String, Object> tokenInfo);
+	AuthMenuListRes selectAuthMenuList(AuthMenuListReq dto, Map<String, Object> tokenInfo);
 	
-	void updateAuthMenuInfo(List<User02> dtoList, Map<String, Object> tokenInfo);
+	void updateAuthMenuInfo(List<AuthMenuInfoReq> dtoList, Map<String, Object> tokenInfo);
 }

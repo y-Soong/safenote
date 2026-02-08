@@ -12,8 +12,7 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
 import com.prafta.common.annotation.NoAuth;
-import com.prafta.common.exception.CmmApiException;
-import com.prafta.common.exception.LoginFailException;
+import com.prafta.common.exception.BaimApiException;
 import com.prafta.common.security.JwtUtil;
 import com.prafta.web.baim.baim03.dto.Baim03;
 import com.prafta.web.baim.baim03.dto.Baim03ReqDto;
@@ -37,9 +36,9 @@ public class Baim03Controller {
     	Map<String, Object> tokenInfo = jwtUtil.getAllClaimsAsMap(authorization);
 		List<Baim03> retList = baim03Service.selectTermsList(dto, tokenInfo);
 		
-    	if(retList == null) {
-    		throw new CmmApiException("조회된 결과가 없습니다.");
-    	}
+//    	if(retList == null) {
+//    		throw new BaimApiException("조회된 결과가 없습니다.");
+//    	}
     	
     	return ResponseEntity.status(HttpStatus.OK).body(retList);
     }
@@ -49,9 +48,9 @@ public class Baim03Controller {
     	Map<String, Object> tokenInfo = jwtUtil.getAllClaimsAsMap(authorization);
 		List<Baim03> retList = baim03Service.selectTermsDList(dto, tokenInfo);
 		
-    	if(retList == null) {
-    		throw new CmmApiException("조회된 결과가 없습니다.");
-    	}
+//    	if(retList == null) {
+//    		throw new BaimApiException("조회된 결과가 없습니다.");
+//    	}
     	
     	return ResponseEntity.status(HttpStatus.OK).body(retList);
     }
@@ -61,9 +60,9 @@ public class Baim03Controller {
     	Map<String, Object> tokenInfo = jwtUtil.getAllClaimsAsMap(authorization);
 		Baim03 retDto = baim03Service.selectTermsInfo(dto, tokenInfo);
 		
-    	if(retDto == null) {
-    		throw new CmmApiException("조회된 결과가 없습니다.");
-    	}
+//    	if(retDto == null) {
+//    		throw new BaimApiException("조회된 결과가 없습니다.");
+//    	}
     	
     	return ResponseEntity.status(HttpStatus.OK).body(retDto);
     }

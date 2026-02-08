@@ -1,0 +1,163 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+
+<mapper namespace="com.prafta.web.chkLst.chkLst03.mapper.ChkLst03Mapper">
+
+    <select id="selectChkptInspectItemList" parameterType="com.prafta.web.chkLst.chkLst03.dto.InspectResultQuery" resultType="com.prafta.web.chkLst.chkLst03.vo.InspectResult">
+    /* ChkLst03Mapper.selectChkptInspectItemList */
+	WITH SITE_LIST AS (
+		SELECT 
+			A.*
+		FROM TB_SITE A
+			 INNER JOIN TB_USER_SITE_AUTH B
+				ON (
+					A.CMPNY_CD = B.CMPNY_CD
+				AND A.SITE_CD = B.SITE_CD
+				AND B.USER_ID = #{param.userId}
+				)
+		WHERE 1=1
+		  AND A.CMPNY_CD = #{param.cmpnyCd}
+		  AND A.USE_YN = 'Y'
+		  AND (
+			A.END_DATE IS NULL OR
+			A.END_DATE   >=   date_format(NOW(), '%y%m%d')
+		  )
+	)
+	
+	SELECT
+		'' 						AS chk
+		, A.CMPNY_CD			AS cmpnyCd
+		, A.SITE_CD				AS siteCd
+		, A.SITE_NM				AS siteNm
+		, A.CHKPT_CD			AS chkptCd
+		, A.CHKPT_NM			AS chkptNm
+		, A.SITE_ADMIN_ID		AS siteAdminId
+		, B.USER_NM				AS siteAdminNm
+		, A.CHKLST_TYPE			AS chkLstType
+		, A.CHKPT_DESC			AS chkptDesc
+		, MIN(A.INSERT_DATE) 	AS WORK_DATE
+		, COUNT(A.WORK_DATE) 	AS inspectDayCnt
+		, SUM(A.N_ANSWER_CNT) 	AS defectiveResultCnt
+	FROM 
+		(
+			SELECT
+				A.CMPNY_CD
+				, B.SITE_CD
+				, B.SITE_NM
+				, A.CHKPT_CD
+                , A.CHKPT_NM
+				, B.SITE_ADMIN_ID
+				, C.CHKLST_TYPE
+				, A.CHKPT_DESC
+				, D.WORK_DATE
+				, DATE_FORMAT(D.INSERT_DATE, '%Y-%m') AS INSERT_DATE
+				, SUM(CASE WHEN D.INSPECT_ANSWER_TYPE = 'N' THEN 1 ELSE 0 END) AS N_ANSWER_CNT
+			FROM TB_CHKPT_TYPE_MGMT A
+				 INNER JOIN SITE_LIST B
+					ON (
+						A.CMPNY_CD = B.CMPNY_CD
+					AND A.SITE_CD = B.SITE_CD
+					)
+				 INNER JOIN TB_CHKPT_INSPECT_ITEM C
+					ON (
+						A.CMPNY_CD = C.CMPNY_CD
+					AND A.CHKLST_TYPE = C.CHKLST_TYPE
+					)
+				 LEFT JOIN TB_CHKPT_INSPECT_ANSWER D
+					ON (
+						A.CMPNY_CD = D.CMPNY_CD
+					AND C.INSPECT_ITEM_CD = D.INSPECT_ITEM_CD
+					AND A.SITE_CD = D.SITE_CD
+					<!-- 
+					AND SUBSTR(D.WORK_DATE, 1, 6) = #{param.workDate}
+					 -->
+					 AND SUBSTR(D.WORK_DATE, 1, 6) BETWEEN #{param.fromDate} AND #{param.toDate}
+					)
+			WHERE A.CMPNY_CD = #{param.cmpnyCd}
+			  AND A.USE_YN = 'Y'
+			GROUP BY
+				A.CMPNY_CD
+				, B.SITE_CD
+				, A.CHKPT_CD
+                , A.CHKPT_NM
+				, C.CHKLST_TYPE
+				, A.CHKPT_DESC
+				, D.WORK_DATE
+				, D.INSERT_DATE
+		) A
+		INNER JOIN TB_USER B
+			ON (
+				A.CMPNY_CD = B.CMPNY_CD
+			AND A.SITE_ADMIN_ID = B.USER_ID
+			AND B.USE_YN = 'Y'
+			)
+	GROUP BY A.CMPNY_CD
+		, A.SITE_CD
+		, A.SITE_NM
+		, A.CHKPT_CD
+        , A.CHKPT_NM
+		, A.SITE_ADMIN_ID
+		, A.CHKLST_TYPE
+		, A.CHKPT_DESC
+	ORDER BY A.CMPNY_CD, A.CHKLST_TYPE
+	</select>
+
+	<select id="selectInspectItemSubjList" parameterType="com.prafta.web.chkLst.chkLst03.dto.InspectItemSubjQuery" resultType="com.prafta.web.chkLst.chkLst03.vo.InspectItemSubj">
+    /* ChkLst03Mapper.selectInspectItemSubjList */
+    SELECT 
+		B.INSPECT_ITEM_CD				AS inspectItemCd
+	    , B.INSPECT_ITEM_SUBJ			AS inspectItemSubj
+	FROM TB_CHKPT_TYPE_MGMT A
+		INNER JOIN TB_CHKPT_INSPECT_ITEM B
+			ON (
+				A.CMPNY_CD = B.CMPNY_CD
+			AND A.CHKLST_TYPE = B.CHKLST_TYPE
+	        )
+	WHERE A.CMPNY_CD = #{token.gv_cmpnyCd}
+	  AND A.SITE_CD = #{param.siteCd}
+	  AND A.CHKLST_TYPE = #{param.chkLstType}
+	  AND A.CHKPT_CD = #{param.chkptCd}
+    </select>
+    
+    <select id="selectInspectAnswerList" parameterType="com.prafta.web.chkLst.chkLst03.dto.InspectAnswerQuery" resultType="com.prafta.web.chkLst.chkLst03.vo.InspectAnswer">
+    /* ChkLst03Mapper.selectInspectAnswerList */
+    SELECT 
+		A.CMPNY_CD										AS cmpnyCd
+	    , A.CHKPT_CD									AS chkptCd
+	    , B.INSPECT_ITEM_CD								AS inspectItemCd
+	    , CAST(SUBSTR(C.WORK_DATE, 7, 2) AS UNSIGNED) 	AS workDate
+	    , CASE
+			WHEN INSPECT_ANSWER_TYPE = 'Y'
+				THEN 'O'
+			ELSE 'X'
+		END inspectAnswerType
+	    , C.ANSWER_DESC									AS answerDesc
+	    , CONCAT(C.FILE_MGMT_CD, D.FILE_EXT)			AS fileMgmtCd
+	    , D.FILE_PATH									AS filePath
+	FROM TB_CHKPT_TYPE_MGMT A
+		INNER JOIN TB_CHKPT_INSPECT_ITEM B
+			ON (
+				A.CMPNY_CD = B.CMPNY_CD
+			AND A.CHKLST_TYPE = B.CHKLST_TYPE
+	        )
+		INNER JOIN TB_CHKPT_INSPECT_ANSWER C
+			ON (
+				A.CMPNY_CD = C.CMPNY_CD
+			AND A.SITE_CD = C.SITE_CD
+	        AND A.CHKPT_CD = C.CHKPT_CD
+	        AND B.INSPECT_ITEM_CD = C.INSPECT_ITEM_CD
+	        AND C.WORK_DATE LIKE CONCAT(#{param.workMonth}, '%')
+	        )
+		LEFT OUTER JOIN TB_FILE_INFO D
+			ON (
+				A.CMPNY_CD = D.CMPNY_CD
+			AND C.FILE_MGMT_CD = D.FILE_MGMT_CD
+	        AND D.FILE_TYPE = #{param.fileType}
+	        )
+	WHERE A.CMPNY_CD = #{token.gv_cmpnyCd}
+	  AND A.SITE_CD = #{param.siteCd}
+	  AND A.CHKLST_TYPE = #{param.chkLstType}
+	  AND A.CHKPT_CD = #{param.chkptCd}
+    </select>
+    
+</mapper>

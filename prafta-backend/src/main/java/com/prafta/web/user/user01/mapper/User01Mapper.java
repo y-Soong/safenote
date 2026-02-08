@@ -6,20 +6,26 @@ import java.util.Map;
 import org.apache.ibatis.annotations.Mapper;
 import org.apache.ibatis.annotations.Param;
 
-import com.prafta.web.user.user01.dto.User01;
-import com.prafta.web.user.user01.dto.User01ReqDto;
+import com.prafta.web.user.user01.dto.UserInfoListQry;
+import com.prafta.web.user.user01.dto.UserInfoReq;
+import com.prafta.web.user.user01.dto.UserInfoSave;
+import com.prafta.web.user.user01.dto.UserPasswdSave;
+import com.prafta.web.user.user01.vo.UserInfo;
+import com.prafta.web.user.user01.vo.UserSiteInfo;
 
 @Mapper
 public interface User01Mapper {
-	List<Map<String, Object>> selectUserInfoList(User01ReqDto dto);
+//	List<Map<String, Object>> selectUserInfoList(User01ReqDto dto);
 	
-	int updateUserPw(User01ReqDto dto);
+	List<UserInfo> selectUserInfoList(@Param(value = "param") UserInfoListQry dto, @Param(value = "token") Map<String, Object> tokenInfo);
 	
-	void mergeUserInfo(@Param(value = "param") User01 dto, @Param(value = "token") Map<String, Object> tokenInfo);
+	int updateUserPw(UserPasswdSave dto);
 	
-	Map<String, Object> selectUserSiteInfo(User01ReqDto dto);
+	UserSiteInfo selectUserSiteInfo(@Param(value = "param") UserInfoSave dto);
 	
-	void deleteUserSiteAuth(@Param(value = "param") User01 dto, @Param(value = "token") Map<String, Object> tokenInfo);
+	void mergeUserInfo(@Param(value = "param") UserInfoSave dto, @Param(value = "token") Map<String, Object> tokenInfo);
 	
-	void insertUserSiteAuth(@Param(value = "param") User01 dto, @Param(value = "token") Map<String, Object> tokenInfo);
+	void deleteUserSiteAuth(@Param(value = "param") UserInfoSave dto, @Param(value = "token") Map<String, Object> tokenInfo);
+	
+	void insertUserSiteAuth(@Param(value = "param") UserInfoSave dto, @Param(value = "token") Map<String, Object> tokenInfo);
 }

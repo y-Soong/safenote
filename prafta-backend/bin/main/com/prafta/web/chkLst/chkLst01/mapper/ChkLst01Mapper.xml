@@ -80,7 +80,7 @@
 	    CHKPT_NM    	= VALUES(CHKPT_NM)
 	    , CHKPT_DESC 	= VALUES(CHKPT_DESC)
 	    , MGMT_USER_ID	= VALUES(MGMT_USER_ID)
-	    , USE_YN		= IFNULL(USE_YN, 'Y')
+	    , USE_YN		= IFNULL(#{param.useYn}, 'Y')
 	    , UPDATE_NO   	= #{token.gv_userId}
 	    , UPDATE_DATE 	= NOW()
 	</insert>

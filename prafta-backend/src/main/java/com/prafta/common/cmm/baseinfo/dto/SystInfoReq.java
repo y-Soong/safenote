@@ -1,0 +1,14 @@
+package com.prafta.common.cmm.baseinfo.dto;
+
+import lombok.AllArgsConstructor;
+import lombok.Data;
+import lombok.NoArgsConstructor;
+
+@Data
+@NoArgsConstructor
+@AllArgsConstructor
+public class SystInfoReq {
+	String codeD;
+	String nameD;
+	String code;
+}

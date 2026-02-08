@@ -178,9 +178,9 @@ function safeParseQr(raw) {
 const fnSave = async () => {
   try {
     const items = chkptLst.value.map((row) => {
-      const itemCd = row.inspectItemCd;
+      const itemCd = row.inspectItemCd
       const answerDesc = answerDescByItem[itemCd] || ''
-      const inspectValue = row.inspectValue ?? null;
+      const inspectValue = row.inspectValue ?? null
       // 프리뷰에 1장만 유지하는 구조
       const fileObj = (previews[itemCd] && previews[itemCd][0]) || null
       const fileName = fileObj?.file?.name || null
@@ -216,9 +216,8 @@ const fnSave = async () => {
     })
 
     if (res.status >= 200 && res.status < 300) {
-      alert('저장되었습니다.')
-      // 필요 시 라우팅/리프레시
-      // router.replace(...);
+      proxy.$alert('저장되었습니다.')
+      router.push('/MainView')
     } else {
       const msg = res.data?.message || res.data?.error || `HTTP ${res.status}`
       alert(`저장 실패: ${msg}`)
@@ -272,7 +271,7 @@ const fnGetChkList = async () => {
   try {
     const res = await axios.get('/appApi/chkLst01/checklist-infos', {
       params: payload,
-      validateStatus: () => true
+      validateStatus: () => true,
     })
 
     if (res.status >= 200 && res.status < 300) {

@@ -1,10 +1,20 @@
 // tailwind.config.js
+const colors = require('tailwindcss/colors')
+
 module.exports = {
-  content: ['./index.html', './src/**/*.{vue,js,ts,jsx,tsx}'],
+  purge: {
+    content: ['./index.html', './src/**/*.{vue,js,ts,jsx,tsx}'],
+    options: {
+      safelist: ['bg-orange-300'],
+    },
+  },
   theme: {
     extend: {
+      colors: {
+        orange: colors.orange, // ✅ orange 팔레트 강제 복구
+      },
       fontFamily: {
-        sans: ['Pretendard', 'sans-serif'], // 기본 폰트를 Pretendard로 지정
+        sans: ['Pretendard', 'sans-serif'],
       },
     },
   },

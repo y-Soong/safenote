@@ -3,7 +3,7 @@
 
 <mapper namespace="com.prafta.app.chkLst.chkLst01.mapper.AppChkLst01Mapper">
 
-    <select id="selectChkLstInfo" parameterType="com.prafta.app.chkLst.chkLst01.dto.ChecklistInfoQuery" resultType="com.prafta.app.chkLst.chkLst01.vo.ChecklistInfo">
+    <select id="selectChkLstInfo" parameterType="com.prafta.app.chkLst.chkLst01.dto.ChecklistInfoQry" resultType="com.prafta.app.chkLst.chkLst01.vo.ChecklistInfo">
     /* AppChkLst01Mapper."selectChkLstInfo" */
     SELECT 
 		A.CMPNY_CD 					AS cmpnyCd
@@ -32,6 +32,7 @@
 	/* AppChkLst01Mapper.mergeChkptInspectAnswer */	
     INSERT INTO TB_CHKPT_INSPECT_ANSWER (
     	CMPNY_CD
+    	, SITE_CD
     	, INSPECT_ITEM_CD
     	, WORK_DATE
     	, INSPECT_ANSWER_TYPE
@@ -44,6 +45,7 @@
    	)
    	VALUES(
    		#{token.gv_cmpnyCd}
+   		, #{param.siteCd}
    		, #{param.inspectItemCd}
    		, #{param.workDate}
    		, #{param.inspectAnswerType}

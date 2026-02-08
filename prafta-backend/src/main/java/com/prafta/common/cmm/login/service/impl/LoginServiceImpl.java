@@ -1,14 +1,24 @@
 package com.prafta.common.cmm.login.service.impl;
 
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
+import java.security.SecureRandom;
+import java.util.Base64;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.UUID;
 
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import com.prafta.common.cmm.login.dto.ActiveToken;
+import com.prafta.common.cmm.login.dto.AuthLogoutReq;
 import com.prafta.common.cmm.login.dto.LoginReqDto;
 import com.prafta.common.cmm.login.dto.UserJoinReqDto;
+import com.prafta.common.cmm.login.dto.UserLogout;
+import com.prafta.common.cmm.login.dto.UserRowLock;
 import com.prafta.common.cmm.login.mapper.LoginMapper;
 import com.prafta.common.cmm.login.service.LoginService;
 import com.prafta.common.exception.LoginFailException;
@@ -25,15 +35,72 @@ public class LoginServiceImpl implements LoginService{
 		this.loginMapper = loginMapper;
 	}
 	
-	public Map<String, Object> getLoginUser(LoginReqDto dto) {
+	public Map<String, Object> getLoginUser(LoginReqDto dto, String clientType) {
 		Map<String, Object> userInfo = loginMapper.getLoginUser(dto);
 		
-		if(!PasswordHashing.verifyPassword(dto.getUserPw(), (String)userInfo.get("USER_PW"))) {
+		if (userInfo == null) {
+	        throw new LoginFailException("아이디 혹은 비밀번호를 확인해주세요.");
+	    }
+		
+		String hashedPw = (String) userInfo.get("USER_PW");
+		if(!PasswordHashing.verifyPassword(dto.getUserPw(), hashedPw)) {
 			throw new LoginFailException("아이디 혹은 비밀번호를 확인해주세요.");
 		}
 		
-		return loginMapper.getLoginUser(dto);
+		UserRowLock userRowLock = UserRowLock.builder()
+								.cmpnyCd((String)userInfo.get("CMPNY_CD"))
+								.userId((String)userInfo.get("USER_ID"))
+								.build();
+		
+		loginMapper.lockUserRow(userRowLock);
+		
+		String tokenId = UUID.randomUUID().toString().replace("-", "");
+		
+		SecureRandom random = new SecureRandom();
+		byte[] bytes = new byte[64]; // 64바이트면 충분히 강함
+		random.nextBytes(bytes);
+		String refreshToken = Base64.getUrlEncoder().withoutPadding().encodeToString(bytes);
+		
+		String pepper = "서버만_아는_비밀값"; // yml/env에 보관
+		String refreshTokenHash = sha256(refreshToken + ":" + pepper);
+		
+		ActiveToken activeToken = ActiveToken.builder()
+								.cmpnyCd((String)userInfo.get("CMPNY_CD"))
+								.userId((String) userInfo.get("USER_ID"))
+								.tokenId(tokenId)
+								.clientType(clientType)
+								.refreshTokenHash(refreshTokenHash)
+								.expireDtime("7")
+								.build();
+		// 기존 세션 revoke
+		loginMapper.revokeActiveToken(activeToken);
+		// 신규 세션 insert
+		loginMapper.insertAuthToken(activeToken);
+		// 응답에 PW 나가지 않도록 제거
+	    userInfo.remove("USER_PW");
+	    userInfo.put("refreshToken", refreshToken); // 또는 쿠키
+//	    userInfo.put("tokenId", tokenId);
+		return userInfo;
 	}
+	
+	@Override
+    @Transactional
+    public int logout(AuthLogoutReq req, Map<String, Object> tokenInfo) {
+
+		UserLogout userLogout = UserLogout.builder()
+        						.cmpnyCd(String.valueOf(tokenInfo.get("gv_cmpnyCd")))
+        						.userId(String.valueOf(tokenInfo.get("gv_userId")))
+        						.clientType(req.getClientType())
+        						.deviceId(req.getDeviceId())
+        						.build();
+
+        // 전체 로그아웃 옵션(필요 시)
+        if ("Y".equalsIgnoreCase(req.getLogoutAllYn())) {
+            return loginMapper.revokeAllActiveTokens(userLogout);
+        }
+
+        return loginMapper.revokeActiveTokenByClient(userLogout);
+    }
 	
 	@Transactional 
 	public void insertUserInfo(UserJoinReqDto dto) {
@@ -70,6 +137,18 @@ public class LoginServiceImpl implements LoginService{
 				loginMapper.mergeAuthMenuInfo(dto, tokenInfo);
 			}
 		}
+	}
+	
+	public static String sha256(String input) {
+	    try {
+	        MessageDigest md = MessageDigest.getInstance("SHA-256");
+	        byte[] digest = md.digest(input.getBytes(StandardCharsets.UTF_8));
+	        StringBuilder sb = new StringBuilder();
+	        for (byte b : digest) sb.append(String.format("%02x", b));
+	        return sb.toString();
+	    } catch (NoSuchAlgorithmException e) {
+	        throw new RuntimeException(e);
+	    }
 	}
 }
 

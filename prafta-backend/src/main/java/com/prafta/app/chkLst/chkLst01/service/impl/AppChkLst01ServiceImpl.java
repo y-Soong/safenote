@@ -14,7 +14,7 @@ import org.springframework.web.multipart.MultipartFile;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.prafta.app.chkLst.chkLst01.dto.ChecklistInfoQuery;
+import com.prafta.app.chkLst.chkLst01.dto.ChecklistInfoQry;
 import com.prafta.app.chkLst.chkLst01.dto.ChecklistInfoReq;
 import com.prafta.app.chkLst.chkLst01.dto.ChecklistInfoRes;
 import com.prafta.app.chkLst.chkLst01.dto.ChecklistInfoSave;
@@ -43,7 +43,7 @@ public class AppChkLst01ServiceImpl implements AppChkLst01Service {
     @Override
     public ChecklistInfoRes selectChkLstInfo(ChecklistInfoReq request, Map<String, Object> tokenInfo) {
     	
-    	ChecklistInfoQuery reqDto = ChecklistInfoQuery.builder()
+    	ChecklistInfoQry reqDto = ChecklistInfoQry.builder()
     									.cmpnyCd(request.getCmpnyCd())
     									.siteCd(request.getSiteCd())
     									.chkptCd(request.getChkptCd())
@@ -61,9 +61,6 @@ public class AppChkLst01ServiceImpl implements AppChkLst01Service {
     @Override
     @Transactional
     public void saveInspectResult(SaveInspectResultReq request, Map<String, MultipartFile> files, Map<String, Object> tokenInfo) {
-    	
-    	System.out.println("request :: " + request);
-    	System.out.println("files :: " + files);
     	
         try {
             // MultipartFile -> JSON String
@@ -126,6 +123,7 @@ public class AppChkLst01ServiceImpl implements AppChkLst01Service {
 
                 ChecklistInfoSave checklistInfoSave = ChecklistInfoSave.builder()
 						.cmpnyCd(request.getCmpnyCd())
+						.siteCd(request.getSiteCd())
 						.workDate(request.getWorkDate())
 						.inspectItemCd(it.getItemCd())
 						.inspectAnswerType(it.getInspectValue())

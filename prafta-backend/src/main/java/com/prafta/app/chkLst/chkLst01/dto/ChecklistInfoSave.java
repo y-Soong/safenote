@@ -7,6 +7,7 @@ import lombok.Value;
 @Builder
 public class ChecklistInfoSave {
 	String cmpnyCd;
+	String siteCd;
 	String inspectItemCd;
 	String workDate;
 	String inspectAnswerType;

@@ -8,7 +8,6 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.ModelAttribute;
 import org.springframework.web.bind.annotation.PostMapping;
-import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
@@ -44,9 +43,6 @@ public class AppChkLst01Controller {
     @GetMapping("/checklist-infos")
     public ResponseEntity<?> getChkLstInfo(@ModelAttribute ChecklistInfoReq request, @RequestHeader(value = "Authorization", required = false) String authorization) {
     	Map<String, Object> tokenInfo = jwtUtil.getAllClaimsAsMap(authorization);
-    	
-    	System.out.print("request ###");
-    	System.out.println(request);
     	
     	ChecklistInfoRes retDto = appChkLst01Service.selectChkLstInfo(request, tokenInfo);
     	

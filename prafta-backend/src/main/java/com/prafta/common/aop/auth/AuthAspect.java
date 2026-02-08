@@ -5,10 +5,10 @@ import javax.servlet.http.HttpServletRequest;
 import org.aspectj.lang.JoinPoint;
 import org.aspectj.lang.annotation.Aspect;
 import org.aspectj.lang.annotation.Before;
+import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Component;
 
 import com.prafta.common.exception.CmmApiException;
-import com.prafta.common.exception.UnauthorizedException;
 import com.prafta.common.security.JwtUtil;
 
 import io.jsonwebtoken.Claims;
@@ -25,13 +25,14 @@ public class AuthAspect {
     @Before("execution(* com.prafta..controller..*(..)) " +
             "&& !execution(* com.prafta.common.cmm.login.controller..*(..)) " +
             "&& !execution(* com.prafta.common.cmm.baseinfo.controller..*(..)) " +
+            "&& !execution(* com.prafta.common.cmm.auth.controller..*(..)) " +
             "&& !@annotation(com.prafta.common.annotation.NoAuth)")
     public void checkAuthorization(JoinPoint joinPoint) {
         String token = request.getHeader("Authorization");
 
         if (token == null || !token.startsWith("Bearer ")) {
 //            throw new UnauthorizedException("토큰이 없습니다.");
-            throw new CmmApiException("유효하지 않은 토큰입니다.");
+        	throw new CmmApiException(HttpStatus.UNAUTHORIZED, "유효하지 않은 토큰입니다.");
             
         }
 
@@ -40,7 +41,7 @@ public class AuthAspect {
         if (!jwtUtil.validateToken(pureToken)) {
 //            throw new UnauthorizedException("유효하지 않은 토큰입니다.");
         	System.out.println("유효하지 않은 토큰입니다 !!!");
-            throw new CmmApiException("유효하지 않은 토큰입니다.");
+        	throw new CmmApiException(HttpStatus.UNAUTHORIZED, "유효하지 않은 토큰입니다.");
         }
 
         // 필요하면 Claims 활용 가능

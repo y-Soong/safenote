@@ -53,7 +53,7 @@
         <label
           class="flex items-center cursor-pointer select-none mb-4"
           v-for="terms in termsList"
-          :key="terms.SYST_VAL_D_CD"
+          :key="terms.systValDCd"
         >
           <input type="checkbox" v-model="terms.checked" class="hidden" />
           <span
@@ -76,7 +76,7 @@
               />
             </svg>
           </span>
-          <span>{{ '(필수) ' + terms.SYST_VAL_D_NM }}</span>
+          <span>{{ '(필수) ' + terms.systValDNm }}</span>
 
           <!-- 오른쪽 영역: (보기) 버튼 -->
           <button
@@ -112,58 +112,59 @@ const emit = defineEmits(['close'])
 
 const router = useRouter()
 
-const systCodeArr = ref({});
-const termsList = ref([]);
+const systCodeArr = ref({})
+const termsList = ref([])
 
-const checked = ref(false);
+const checked = ref(false)
 
 onMounted(async () => {
-  await fnGetSystinfoList();
-});
+  await fnGetSystinfoList()
+})
 
 // API 호출
 const fnGetSystinfoList = async () => {
-  const systCodeList = ["SYS008"];
+  const systCodeList = ['SYS008']
 
   try {
-    const response = await axios.post("/comApi/baseinfo/getSystinfoList", {
-      systCodeList: systCodeList,
-    });
+    const response = await axios.get('/comApi/baseinfo/syst-info-list', {
+      params: {
+        systCodeList: systCodeList,
+      },
+    })
 
     if (response.status === 200) {
-      const grouped = {};
-      response.data.forEach((item) => {
-        if (proxy.$util.isNotEmpty(item.SYST_VAL_D_CD)) {
-          const key = item.SYST_VAL_CD;
-          if (!grouped[key]) {
-            grouped[key] = [];
-          }
-          grouped[key].push(item);
+      const resData = response.data?.systInfoList || []
+
+      const grouped = {}
+      resData.forEach((item) => {
+        const key = item.systValCd
+        if (!grouped[key]) {
+          grouped[key] = []
         }
-      });
+        grouped[key].push(item)
+      })
 
-      systCodeArr.value = grouped;
+      systCodeArr.value = grouped
 
-      termsList.value = (grouped["SYS008"] || [])
-        .filter((o) => o.SYST_VAL_D_CD != null)
+      termsList.value = (grouped['SYS008'] || [])
+        .filter((o) => o.systValDCd != null)
         .map((o) => ({
           ...o,
           checked: false, // 각 항목별 체크 상태 추가
-        }));
+        }))
     }
   } catch (err) {
-    proxy.$alert(err.response.data.message);
+    proxy.$alert(err.response.data.message)
   }
-};
-
+}
 
 /* User Function */
 function fnJoinUser() {
-  let joinFlg = true;
+  let joinFlg = true
 
   termsList.value.forEach((terms) => {
-    if (!terms.checked) joinFlg = false;
-  });
+    if (!terms.checked) joinFlg = false
+  })
 
   if (joinFlg) {
     router.push({
@@ -173,23 +174,22 @@ function fnJoinUser() {
       },
     })
   } else {
-    proxy.$alert("동의하지 않은 필수 약관이 있습니다.");
+    proxy.$alert('동의하지 않은 필수 약관이 있습니다.')
   }
-
 }
 
 function fnAllClick() {
   termsList.value.forEach((terms) => {
-    terms.checked = !checked.value;
-  });
+    terms.checked = !checked.value
+  })
 }
 
 function fnViewTerms(terms) {
   router.push({
     path: '/TermsDetail',
     query: {
-      termsId_p: terms.SYST_VAL_D_CD,
-      termsNm_p: terms.SYST_VAL_D_NM,
+      termsId_p: terms.systValDCd,
+      termsNm_p: terms.systValDNm,
     },
   })
 }

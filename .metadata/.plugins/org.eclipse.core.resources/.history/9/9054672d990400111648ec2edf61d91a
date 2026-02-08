@@ -1,0 +1,74 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+
+<mapper namespace="com.prafta.web.user.user03.mapper.User03Mapper">
+
+    <select id="selectSiteInfoSearch" parameterType="com.prafta.web.user.user03.dto.SiteInfoListQry" resultType="com.prafta.web.user.user03.vo.SiteInfo">
+    /* User02Mapper.selectSiteInfoSearch */
+	SELECT
+		'' AS CHK
+		, A.CMPNY_CD
+	    , A.SITE_CD
+	    , A.SITE_NO
+	    , A.SITE_NM
+	    , CONCAT(A.ADDR_1, ' ', A.ADDR_2) AS ADDR
+	    , TEL_NO
+	    , CASE 
+			WHEN B.SITE_CD IS NULL
+				THEN 'N'
+			ELSE 'Y'
+		END ALLOC_YN
+	FROM TB_SITE A
+		 LEFT JOIN (
+			SELECT 
+				A.CMPNY_CD
+				, A.USER_ID
+				, B.SITE_CD
+			FROM TB_USER A
+				 INNER JOIN TB_USER_SITE_AUTH B
+					ON (
+						A.CMPNY_CD = B.CMPNY_CD
+					AND A.USER_ID = B.USER_ID
+					AND B.USE_YN = 'Y'
+					)
+			WHERE 1=1
+			  AND A.CMPNY_CD = #{token.gv_cmpnyCd}
+			  AND A.USER_ID = #{param.userId}
+		 ) B
+			ON (
+				A.CMPNY_CD = B.CMPNY_CD
+			AND A.SITE_CD = B.SITE_CD
+	        )
+	WHERE 1=1
+	  AND A.CMPNY_CD = #{token.gv_cmpnyCd}
+	  AND USE_YN = 'Y'
+	</select>
+	
+	<insert id="mergeUserSiteAuth">
+	/* User02Mapper.mergeUserSiteAuth */
+	    INSERT INTO TB_USER_SITE_AUTH (
+    	CMPNY_CD
+    	, USER_ID
+    	, SITE_CD
+    	, USE_YN
+    	, INSERT_NO
+    	, INSERT_DATE
+    	, UPDATE_NO
+    	, UPDATE_DATE
+   	)
+   	VALUES(
+   		#{token.gv_cmpnyCd}
+   		, #{param.userId}
+   		, #{param.siteCd}
+   		, #{param.allocYn}
+		, #{token.gv_userId}
+		, now()
+		, #{token.gv_userId}
+		, now() 
+   	)
+   	ON DUPLICATE KEY UPDATE
+	    USE_YN = VALUES(USE_YN)
+	    , UPDATE_NO   	= #{token.gv_userId}
+	    , UPDATE_DATE 	= NOW()
+	</insert>
+</mapper>

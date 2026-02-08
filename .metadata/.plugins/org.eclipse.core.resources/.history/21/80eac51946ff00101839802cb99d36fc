@@ -1,0 +1,170 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+
+<mapper namespace="com.prafta.web.tbm.tbm01.mapper.Tbm01Mapper">
+
+	<select id="selectTbmEduInfo" parameterType="com.prafta.web.tbm.tbm01.dto.TbmEduInfoListQry" resultType="com.prafta.web.tbm.tbm01.vo.TbmEduInfo">
+    /* Tbm01Mapper.selectTbmEduInfo */
+    SELECT 
+    	'' 						AS chk
+		, A.CMPNY_CD			AS cmpnyCd
+	    , A.MTRL_CD				AS mtrlCd
+	    , A.TITLE				AS title
+	    , A.CONTENTS			AS contents
+	    , A.MTRL_TYPE			AS mtrlType
+	    , A.USE_YN				AS useYn
+	    , COUNT(B.MTRL_ITEM_CD) AS mtrlCnt
+	FROM TB_TBM_EDU_MTRL A
+	     INNER JOIN TB_TBM_EDU_MTRL_ITEM B
+			ON (
+				A.MTRL_CD = B.MTRL_CD 
+			AND B.USE_YN = 'Y'
+	        )
+	WHERE A.CMPNY_CD = #{token.gv_cmpnyCd}
+	  <if test="param.mtrlCd != null and param.mtrlCd != ''">
+	    AND A.MTRL_CD = #{param.mtrlCd}
+	  </if>
+	  <if test="param.title != null and param.title != ''">
+	  	AND A.TITLE = #{param.title}
+	  </if>
+	  <if test="param.mtrlType != null and param.mtrlType != ''">
+	  AND A.MTRL_TYPE = #{param.mtrlType}
+	  </if>
+	  <if test="param.useYn != null and param.useYn != ''">
+	  AND A.USE_YN = #{param.useYn}
+	  </if>
+	GROUP BY A.CMPNY_CD
+	    , A.MTRL_CD
+	    , A.TITLE
+	    , A.CONTENTS
+	    , A.MTRL_TYPE
+	    , A.USE_YN
+    </select>
+    
+    <select id="selectTbmEduItemInfo" parameterType="com.prafta.web.tbm.tbm01.dto.TbmEduItemInfoListQry" resultType="com.prafta.web.tbm.tbm01.vo.TbmEduItemInfo">
+    /* Tbm01Mapper.selectTbmEduItemInfo */
+    SELECT 
+    	''						AS chk
+    	, A.MTRL_ITEM_CD		AS mtrlItemCd
+    	, A.MTRL_CD				AS mtrlCd
+    	, A.SORT_IDX			AS sortIdx
+    	, A.MTRL_ITEM_TYPE		AS mtrlItemType
+    	, A.MTRL_DESC			AS mtrlDesc
+    	, A.FILE_MGMT_CD		AS fileMgmtCd
+    	, B.FILE_NM				AS fileNm
+    	, B.FILE_PATH			AS filePath
+    	, B.FILE_EXT			AS fileExt
+    	, A.URL					AS url
+    	, A.USE_YN				AS useYn
+    	/* 데이터 초기화 값 */
+    	, A.SORT_IDX			AS oriSortIdx
+    	, A.MTRL_ITEM_TYPE		AS oriMtrlItemType
+    	, A.MTRL_DESC			AS oriMtrlDesc
+    	, A.FILE_MGMT_CD		AS oriFileMgmtCd
+    	, B.FILE_NM				AS oriFileNm
+    	, B.FILE_PATH			AS oriFilePath
+    	, B.FILE_EXT			AS oriFileExt
+    	, A.URL					AS oriUrl
+    	, A.USE_YN				AS oriUseYn
+	FROM TB_TBM_EDU_MTRL_ITEM A
+		 LEFT OUTER JOIN TB_FILE_INFO B
+		 	ON (
+		 		A.FILE_MGMT_CD = B.FILE_MGMT_CD
+		 	)
+	WHERE A.MTRL_CD = #{param.mtrlCd}
+    </select>
+
+	<select id="selectMtrlCd" parameterType="java.util.HashMap" resultType="java.lang.String">
+    /* Tbm01Mapper.selectMtrlCd */
+    SELECT CONCAT(DATE_FORMAT(CURDATE(), '%y%m%d'), FNC_CMM_SEQ_NEXTVAL(#{token.gv_cmpnyCd}, 'MTRL_CD'))
+	FROM DUAL
+    </select>
+    
+    <select id="selectMtrlItemCd" parameterType="java.util.HashMap" resultType="java.lang.String">
+    /* Tbm01Mapper.selectMtrlItemCd */
+    SELECT CONCAT(DATE_FORMAT(CURDATE(), '%y%m%d'), FNC_CMM_SEQ_NEXTVAL(#{token.gv_cmpnyCd}, 'MTRL_ITEM_CD'))
+	FROM DUAL
+    </select>
+	
+	<update id="mergeTbmEduInfo" parameterType="com.prafta.web.tbm.tbm01.dto.TbmEduItemInfoSave">
+	/* Tbm01Mapper.mergeTbmEduInfo */
+	INSERT INTO TB_TBM_EDU_MTRL (
+	    MTRL_CD,
+	    CMPNY_CD,
+	    TITLE,
+	    CONTENTS,
+	    MTRL_TYPE,
+	    USE_YN,
+	    INSERT_NO,
+	    INSERT_DATE,
+	    UPDATE_NO,
+	    UPDATE_DATE
+	) VALUES (
+	    #{param.mtrlCd}
+	    , #{token.gv_cmpnyCd}
+	    , #{param.title}
+	    , #{param.contents}
+	    , #{param.mtrlType}
+	    , #{param.useYn}
+	    , #{token.gv_userId}
+	    , NOW()
+	    , #{token.gv_userId}
+	    , NOW()
+	)
+	ON DUPLICATE KEY UPDATE
+	    TITLE      		= VALUES(TITLE)
+	    , CONTENTS   	= VALUES(CONTENTS)
+	    , MTRL_TYPE  	= VALUES(MTRL_TYPE)
+	    , USE_YN     	= VALUES(USE_YN)
+	    , UPDATE_NO   	= VALUES(UPDATE_NO)
+	    , UPDATE_DATE 	= NOW()
+	</update>
+	
+	<update id="mergeTbmEduItemInfo" parameterType="com.prafta.web.tbm.tbm01.dto.TbmEduItemInfoSave">
+	/* Tbm01Mapper.mergeTbmEduItemInfo */
+	INSERT INTO TB_TBM_EDU_MTRL_ITEM (
+	    MTRL_ITEM_CD
+	    , MTRL_CD
+	    , SORT_IDX
+	    , MTRL_ITEM_TYPE
+	    , MTRL_DESC
+	    , FILE_MGMT_CD
+	    , URL
+	    , USE_YN
+	    , INSERT_NO
+	    , UPDATE_NO
+	) VALUES (
+	    #{param.mtrlItemCd}
+	    , #{param.mtrlCd}
+	    , #{param.sortIdx}
+	    , #{param.mtrlItemType}
+	    , #{param.mtrlDesc}
+	    , #{param.fileMgmtCd}
+	    , #{param.url}
+	    , #{param.useYn}
+	    , #{token.gv_userId}
+	    , #{token.gv_userId}
+	) AS new
+	ON DUPLICATE KEY UPDATE
+	    MTRL_ITEM_TYPE   = new.MTRL_ITEM_TYPE
+	    , MTRL_DESC      = new.MTRL_DESC
+	    , FILE_MGMT_CD   = new.FILE_MGMT_CD
+	    , URL            = new.URL
+	    , USE_YN         = new.USE_YN
+	    , UPDATE_NO      = #{token.gv_userId}
+	    , UPDATE_DATE    = NOW()
+	</update>
+	
+	<delete id ="deleteTbmEduItemInfo"  parameterType="com.prafta.web.tbm.tbm01.dto.TbmEduItemInfoSave">
+	/* Tbm01Mapper.deleteTbmEduItemInfo */
+	DELETE FROM TB_TBM_EDU_MTRL_ITEM
+	WHERE MTRL_ITEM_CD = #{param.mtrlItemCd}
+	</delete>
+	
+	<delete id ="deleteTbmEduInfo"  parameterType="com.prafta.web.tbm.tbm01.dto.TbmEduItemInfoSave">
+	/* Tbm01Mapper.deleteTbmEduInfo */
+	DELETE FROM TB_TBM_EDU_MTRL
+	WHERE MTRL_CD = #{param.mtrlCd}
+	  AND CMPNY_CD = #{token.gv_cmpnyCd} 
+	</delete>
+</mapper>

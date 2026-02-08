@@ -1,0 +1,114 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+
+<mapper namespace="com.prafta.web.baim.baim06.mapper.Baim06Mapper">
+
+	<select id="selectSiteGroupNodeList" parameterType="com.prafta.web.baim.baim06.dto.SiteGroupNodeListQry" resultType="com.prafta.web.baim.baim06.vo.SiteGroupNode">
+	/* Baim06Mapper.selectSiteGroupNodeList */
+	SELECT 
+		A.CMPNY_CD				AS cmpnyCd		
+		, A.SITE_CD				AS siteCd
+		, A.NODE_ID				AS nodeId
+		, A.NODE_NM				AS nodeNm
+		, A.NODE_TYPE			AS nodeType
+		, A.PARENT_NODE_ID		AS parentNodeId
+		, A.SELF_ATTD_APPRV_YN	AS selfAttdApprvYn
+	FROM TB_SITE_GROUP_NODE A
+	WHERE A.CMPNY_CD = #{token.gv_cmpnyCd}
+	  AND A.SITE_CD = #{param.siteCd}
+	</select>
+
+	<update id="saveSiteGroupNode" parameterType="com.prafta.web.baim.baim06.dto.SiteGroupNodeSave">
+    /* Baim06Mapper.saveSiteGroupNode */
+	INSERT INTO TB_SITE_GROUP_NODE (
+	    CMPNY_CD
+	    , SITE_CD
+	    , NODE_ID
+	    , NODE_NM
+	    , NODE_TYPE
+	    , PARENT_NODE_ID
+	    , SELF_ATTD_APPRV_YN
+	    , INSERT_NO
+	    , INSERT_DATE
+	    , UPDATE_NO
+	    , UPDATE_DATE
+	) VALUES (
+	    #{token.gv_cmpnyCd}
+	    , #{param.siteCd}
+	    , #{param.nodeId}
+	    , #{param.nodeNm}
+	    , #{param.nodeType}
+	    , #{param.parentNodeId}
+	    , #{param.selfAttdApprvYn}
+	    , #{token.gv_userId}
+	    , CURRENT_TIMESTAMP
+	    , #{token.gv_userId}
+	    , CURRENT_TIMESTAMP
+	) AS new
+	ON DUPLICATE KEY UPDATE
+		NODE_NM 		   = new.NODE_NM
+	    , SELF_ATTD_APPRV_YN = new.SELF_ATTD_APPRV_YN
+	    , UPDATE_NO          = new.UPDATE_NO
+	    , UPDATE_DATE        = CURRENT_TIMESTAMP
+    </update>
+    
+    <select id="selectNodeCnt" parameterType="com.prafta.web.baim.baim06.dto.SiteGroupNodeDelete" resultType="int">
+	/* Baim06Mapper.selectNodeCnt */
+	WITH RECURSIVE NODE_TREE AS (
+	    -- 1) 시작 노드의 "직계 자식"부터 가져오기
+	    SELECT
+	        A.*
+	        , 1 AS depth
+	        , A.NODE_ID AS path
+	    FROM TB_SITE_GROUP_NODE A
+	    WHERE A.CMPNY_CD = #{token.gv_cmpnyCd}
+	      AND A.SITE_CD  = #{param.siteCd}
+	      AND A.NODE_ID = #{param.nodeId}
+	      
+	
+	    UNION ALL
+	
+	    -- 2) 위에서 찾은 노드들의 자식을 계속 재귀적으로 확장
+	    SELECT
+	        A.*
+	        , B.depth + 1 AS depth
+	        , CONCAT(B.path, '>', A.NODE_ID) AS path
+	    FROM TB_SITE_GROUP_NODE A
+	    JOIN NODE_TREE B
+	      ON A.CMPNY_CD = B.CMPNY_CD
+	     AND A.SITE_CD  = B.SITE_CD
+	     AND A.PARENT_NODE_ID = B.NODE_ID
+	)
+	SELECT 
+		COUNT(*) AS CNT
+	FROM NODE_TREE
+	ORDER BY DEPTH, NODE_ID
+	</select>
+    
+    <delete id="deleteSiteGroupNode" parameterType="com.prafta.web.baim.baim06.dto.SiteGroupNodeDelete">
+    /* Baim06Mapper.deleteSiteGroupNode */
+    DELETE FROM TB_SITE_GROUP_NODE
+    WHERE CMPNY_CD = #{token.gv_cmpnyCd}
+      AND SITE_CD = #{param.siteCd}
+      AND NODE_ID = #{param.nodeId}
+    </delete>
+    
+    <delete id="deleteSiteAllGroupNode" parameterType="com.prafta.web.baim.baim06.dto.SiteGroupNodeDelete">
+    /* Baim06Mapper.deleteSiteAllGroupNode */
+    DELETE FROM TB_SITE_GROUP_NODE
+    WHERE CMPNY_CD = #{token.gv_cmpnyCd}
+      AND NODE_ID != 'n1'
+      AND SITE_CD = #{param.siteCd}
+    </delete>
+    
+    <insert id="copySiteGroupNode" parameterType="com.prafta.web.baim.baim06.dto.CopySiteGroupNodeSave">
+    /* Baim06Mapper.copySiteGroupNode */
+    INSERT INTO TB_SITE_GROUP_NODE (CMPNY_CD, SITE_CD, NODE_ID, NODE_NM, NODE_TYPE, PARENT_NODE_ID, SELF_ATTD_APPRV_YN, INSERT_NO, INSERT_DATE, UPDATE_NO, UPDATE_DATE)
+	SELECT 
+		CMPNY_CD, #{param.siteCd}, NODE_ID, NODE_NM, NODE_TYPE, PARENT_NODE_ID, SELF_ATTD_APPRV_YN, #{token.gv_userId}, NOW(), #{token.gv_userId}, NOW()
+	FROM TB_SITE_GROUP_NODE
+	WHERE CMPNY_CD = #{token.gv_cmpnyCd}
+	  AND SITE_CD = #{param.targetSiteCd}
+	  AND NODE_ID != 'n1'
+    </insert>
+</mapper>

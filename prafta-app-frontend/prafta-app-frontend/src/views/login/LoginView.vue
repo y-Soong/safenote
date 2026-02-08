@@ -88,6 +88,12 @@ const errorMessage = ref('')
 const { proxy } = getCurrentInstance()
 
 onMounted(() => {
+  const token = sessionStorage.getItem('token')
+  if (token) {
+    router.replace('/MainView')
+    return
+  }
+
   if (proxy.$util.isNotEmpty(route) && proxy.$util.isNotEmpty(route.query.userId)) {
     userId.value = route.query.userId
   }
@@ -121,17 +127,37 @@ const fnSubmitLogin = async () => {
     })
 
     if (response.status === 200) {
-      const { token, userId: id, userNm, cmpnyCd, authCd, mblNo, email } = response.data
+      const {
+        token,
+        userId: id,
+        userNm,
+        cmpnyCd,
+        siteCd,
+        siteNo,
+        siteNm,
+        authCd,
+        mblNo,
+        email,
+        refreshToken,
+      } = response.data
+
+      console.log(response.data)
 
       // ✅ 로그인 토큰 세팅
-      sessionStorage.setItem('jwt', token)
       sessionStorage.setItem('token', token)
+      axios.defaults.headers.common.Authorization = `Bearer ${token}`
+
       sessionStorage.setItem('gv_cmpnyCd', cmpnyCd)
       sessionStorage.setItem('gv_userId', id)
       sessionStorage.setItem('gv_userNm', userNm)
+      sessionStorage.setItem('gv_siteCd', siteCd)
+      sessionStorage.setItem('gv_siteNo', siteNo)
+      sessionStorage.setItem('gv_siteNm', siteNm)
       sessionStorage.setItem('gv_authCd', authCd)
       sessionStorage.setItem('gv_mblNo', mblNo)
       sessionStorage.setItem('gv_email', email)
+      localStorage.setItem('refreshToken', refreshToken)
+
       // userStore.setUser({ userId: id, userNm, cmpnyCd, authCd, mblNo, email });
 
       // ✅ 아이디 저장 처리
@@ -141,10 +167,14 @@ const fnSubmitLogin = async () => {
         localStorage.removeItem('savedUserId')
       }
 
+      const redirect = route.query.redirect
+      router.replace(redirect || '/MainView') // ✅ 권장
+
       /* 약관동의 체크 */
       //fnUserTermsAgrChk()
 
-      router.push('/MainView')
+      // router.push('/MainView');
+      // router.replace('/MainView')
     }
   } catch (err) {
     await proxy.$alert(err.response?.data?.message || '로그인에 실패했습니다.')

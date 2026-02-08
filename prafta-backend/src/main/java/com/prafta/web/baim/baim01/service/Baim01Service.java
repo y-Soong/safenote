@@ -3,11 +3,12 @@ package com.prafta.web.baim.baim01.service;
 import java.util.List;
 import java.util.Map;
 
-import com.prafta.web.baim.baim01.dto.Baim01;
-import com.prafta.web.baim.baim01.dto.Baim01ReqDto;
+import com.prafta.web.baim.baim01.dto.SiteInfoListReq;
+import com.prafta.web.baim.baim01.dto.SiteInfoListRes;
+import com.prafta.web.baim.baim01.dto.SiteInfoReq;
 
 public interface Baim01Service {
-	List<Map<String, Object>> selectSiteInfoList(Baim01ReqDto dto);
+	SiteInfoListRes selectSiteInfoList(SiteInfoListReq dto, Map<String, Object> tokenInfo);
 	
-	void updateSiteInfo(List<Baim01> dtoList, Map<String, Object> tokenInfo);
+	void saveSiteInfo(List<SiteInfoReq> dtoList, Map<String, Object> tokenInfo);
 }

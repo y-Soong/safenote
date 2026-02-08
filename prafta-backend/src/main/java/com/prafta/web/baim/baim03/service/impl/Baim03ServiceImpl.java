@@ -6,7 +6,7 @@ import java.util.Map;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-import com.prafta.common.exception.CmmApiException;
+import com.prafta.common.exception.BaimApiException;
 import com.prafta.web.baim.baim03.dto.Baim03;
 import com.prafta.web.baim.baim03.dto.Baim03ReqDto;
 import com.prafta.web.baim.baim03.mapper.Baim03Mapper;
@@ -42,7 +42,7 @@ public class Baim03ServiceImpl implements Baim03Service{
 		List<Baim03> retList = baim03Mapper.selectTermsList(reqDto, tokenInfo);
 		
 		if(retList.size() != 1) {
-			throw new CmmApiException("약관 데이터 생성 오류 !\n관리자에게 문의해주세요.");
+			throw new BaimApiException("약관 데이터 생성 오류 !\n관리자에게 문의해주세요.");
 		}
 		
 		String versionNo = String.valueOf(Integer.parseInt(retList.get(retList.size() - 1).getTermsVersion()) + 1);

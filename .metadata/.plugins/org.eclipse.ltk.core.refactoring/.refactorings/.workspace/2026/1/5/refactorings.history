@@ -1,0 +1,4 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<session version="1.0">
+<refactoring comment="Delete resource &apos;prafta-backend/src/main/java/com/prafta/web/tbm/tbm01/dto/RiskHazardListRes.java&apos;" deleteContents="false" description="Delete resource &apos;prafta-backend/src/main/java/com/prafta/web/tbm/tbm01/dto/RiskHazardListRes.java&apos;" element1="/prafta-backend/src/main/java/com/prafta/web/tbm/tbm01/dto/RiskHazardListRes.java" flags="7" id="org.eclipse.ltk.core.refactoring.delete.resources" resources="1" stamp="1769431616000"/>
+</session>

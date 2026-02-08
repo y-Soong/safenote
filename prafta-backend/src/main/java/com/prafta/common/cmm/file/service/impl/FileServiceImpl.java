@@ -26,16 +26,32 @@ public class FileServiceImpl implements FileService {
     @Override
     public void saveFile(FileInfoSave request, MultipartFile file) {
         try {
+        	System.out.println("getOriginalFilename :: " + file.getOriginalFilename());
+        	
             String today = LocalDate.now()
                     .format(DateTimeFormatter.ofPattern("yyyyMMdd"));
 
             String projectRoot = System.getProperty("user.dir");
-            Path uploadRoot = Paths.get(
-                    projectRoot, "uploads",
+            
+            // 파일 절대경로
+            Path absoluteFilePath = Paths.get(
+            		projectRoot,"/uploads",
                     request.getCmpnyCd(), today,
                     request.getSiteCd(), request.getFileType()
-            );
-            Files.createDirectories(uploadRoot);
+    		).toAbsolutePath().normalize();
+            
+            // Project Root 디렉토리 기준 파일 상대경로
+            Path filePath = Paths.get(
+            		"/uploads",
+                    request.getCmpnyCd(), today,
+                    request.getSiteCd(), request.getFileType()
+    		).normalize();
+            
+            System.out.println(filePath);
+            System.out.println("file :: " + file);
+            
+            
+            Files.createDirectories(absoluteFilePath);
 
             String originalFilename = file.getOriginalFilename();
             String extension = "";
@@ -46,13 +62,16 @@ public class FileServiceImpl implements FileService {
             // 파일명: fileMgmtCd + 확장자
             String saveFileName = request.getFileMgmtCd() + extension;
 
-            Path savePath = uploadRoot.resolve(saveFileName);
+            Path savePath = absoluteFilePath.resolve(saveFileName);
+            
+            // 부모 폴더 한번 더 보장 (가끔 normalize 영향 대비)
+            Files.createDirectories(savePath.getParent());
+            
             file.transferTo(savePath.toFile());
             
-            System.out.println("uploadRoot.toString() :: " + uploadRoot.toString());
-            
             request = request.toBuilder()
-            			.filePath(uploadRoot.toString())
+            			.filePath(filePath.toString())
+            			.fileName(originalFilename)
             			.fileExt(extension)
             			.build();
                         

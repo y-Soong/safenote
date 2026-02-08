@@ -9,7 +9,7 @@ public class FileInfoSave {
     String cmpnyCd;
     String userId;
     String siteCd;
-    String fileType;   	// 001: 일일점검
+    String fileType;   	// 001: 일일점검, 002: 위험성평가
     String filePath;	// 파일 저장 경로
     String itemCd;     	// 점검 항목 코드
     String fileName;   	// 클라에서 온 파일명(선택)

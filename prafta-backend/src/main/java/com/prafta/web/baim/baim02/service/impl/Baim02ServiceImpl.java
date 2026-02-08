@@ -9,14 +9,13 @@ import com.prafta.web.baim.baim02.dto.Baim02;
 import com.prafta.web.baim.baim02.dto.Baim02ReqDto;
 import com.prafta.web.baim.baim02.mapper.Baim02Mapper;
 import com.prafta.web.baim.baim02.service.Baim02Service;
-import com.prafta.web.user.user02.dto.User02;
 
 import lombok.extern.slf4j.Slf4j;
 
 @Slf4j
 @Service
 public class Baim02ServiceImpl implements Baim02Service{
-	private final Baim02Mapper baim02Mapper;
+	private final Baim02Mapper baim02Mapper; 
 	
 	public Baim02ServiceImpl(Baim02Mapper baim02Mapper) {
 		this.baim02Mapper = baim02Mapper;

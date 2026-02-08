@@ -12,12 +12,11 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
 import com.prafta.common.annotation.NoAuth;
-import com.prafta.common.exception.LoginFailException;
+import com.prafta.common.exception.BaimApiException;
 import com.prafta.common.security.JwtUtil;
 import com.prafta.web.baim.baim02.dto.Baim02;
 import com.prafta.web.baim.baim02.dto.Baim02ReqDto;
 import com.prafta.web.baim.baim02.service.Baim02Service;
-import com.prafta.web.user.user02.dto.User02;
 
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -37,9 +36,9 @@ public class Baim02Controller {
     	Map<String, Object> tokenInfo = jwtUtil.getAllClaimsAsMap(authorization);
 		List<Map<String, Object>> retList = baim02Service.selectCompCmmCodeMList(dto, tokenInfo);
 		
-    	if(retList == null) {
-    		throw new LoginFailException("조회된 결과가 없습니다.");
-    	}
+//    	if(retList == null) {
+//    		throw new BaimApiException("조회된 결과가 없습니다.");
+//    	}
     	
     	return ResponseEntity.status(HttpStatus.OK).body(retList);
     }
@@ -49,9 +48,9 @@ public class Baim02Controller {
     	Map<String, Object> tokenInfo = jwtUtil.getAllClaimsAsMap(authorization);
 		List<Baim02> retList = baim02Service.selectCompCmmCodeDList(dto, tokenInfo);
 		
-    	if(retList == null) {
-    		throw new LoginFailException("조회된 결과가 없습니다.");
-    	}
+//    	if(retList == null) {
+//    		throw new BaimApiException("조회된 결과가 없습니다.");
+//    	}
     	
     	return ResponseEntity.status(HttpStatus.OK).body(retList);
     }

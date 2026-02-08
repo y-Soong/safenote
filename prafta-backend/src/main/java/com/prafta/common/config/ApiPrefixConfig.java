@@ -1,16 +1,17 @@
 package com.prafta.common.config;
 
+import java.lang.reflect.Method;
+import java.util.Set;
+import java.util.stream.Collectors;
+
 import org.springframework.boot.autoconfigure.web.servlet.WebMvcRegistrations;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.web.bind.annotation.RequestMethod;
 import org.springframework.web.servlet.config.annotation.CorsRegistry;
+import org.springframework.web.servlet.config.annotation.ResourceHandlerRegistry;
 import org.springframework.web.servlet.config.annotation.WebMvcConfigurer;
 import org.springframework.web.servlet.mvc.method.RequestMappingInfo;
 import org.springframework.web.servlet.mvc.method.annotation.RequestMappingHandlerMapping;
-
-import java.lang.reflect.Method;
-import java.util.Set;
-import java.util.stream.Collectors;
 
 @Configuration
 public class ApiPrefixConfig implements WebMvcRegistrations, WebMvcConfigurer {
@@ -24,6 +25,16 @@ public class ApiPrefixConfig implements WebMvcRegistrations, WebMvcConfigurer {
                 .allowedHeaders("*")
                 .allowCredentials(false)
                 .maxAge(3600);
+    }
+    
+    /** ✅ 업로드 파일 정적 리소스 매핑 */
+    @Override
+    public void addResourceHandlers(ResourceHandlerRegistry registry) {
+        // URL:  http://localhost:8080/uploads/001/20251120/00001/001/001-20251120-00008.jpg
+        // 실제: C:/PRAFTA/prafta-backend/uploads/001/20251120/00001/001/001-20251120-00008.jpg
+        registry.addResourceHandler("/uploads/**")
+                .addResourceLocations("file:///C:/PRAFTA/prafta-backend/uploads/");
+                // or .addResourceLocations("file:C:/PRAFTA/prafta-backend/uploads/");
     }
 
     /** ✅ Prefix 자동 등록 핸들러 매핑 */

@@ -52,7 +52,7 @@
    				, '_'
    				, CAST(#{param.chkLstType} AS UNSIGNED)
    				, '_'
-   				, prafta.FNC_CMM_SEQ_NEXTVAL(#{token.gv_cmpnyCd}, CONCAT('COM001', '_', #{param.chkLstType})))
+   				, prafta.FNC_CMM_SEQ_NEXTVAL(#{token.gv_cmpnyCd}, CONCAT('COM001', '-', #{param.chkLstType})))
  			)
    		, #{param.inspectItemSubj}
    		, #{param.sortIdx}
@@ -67,7 +67,7 @@
    		INSPECT_ITEM_SUBJ = VALUES(INSPECT_ITEM_SUBJ)
    		, SORT_IDX		  = VALUES(SORT_IDX)
     	, STR_DATE		  = VALUES(STR_DATE)
-    	, USE_YN		  = IFNULL(USE_YN, 'Y')
+    	, USE_YN		  = IFNULL(#{param.useYn}, 'Y')
     	, UPDATE_NO		  = #{token.gv_userId}
     	, UPDATE_DATE	  = NOW()
 	</insert>

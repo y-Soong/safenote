@@ -1,24 +1,22 @@
 package com.prafta.common.exception;
 
+import org.springframework.http.HttpStatus;
+
 public class CmmApiException extends RuntimeException {
-//	private final int errorCode;
-//    private final String messageCode;
-    
-    public CmmApiException(String message) {
+	
+	private final HttpStatus status;
+	
+	public CmmApiException(String message) {
         super(message);
+        this.status = HttpStatus.NOT_FOUND;   // 기존 기본값 유지
     }
-//
-//    public CmmApiException(String message, Throwable cause, int errorCode, String messageCode) {
-//        super(message, cause);
-//        this.errorCode = errorCode;
-//        this.messageCode = messageCode;
-//    }
-//
-//    public CmmApiException(String messageCode, int errorCode, String message) {
-//        super(message);
-//        this.errorCode = errorCode;
-//        this.messageCode = messageCode;
-//    }
-    
-    
+
+    public CmmApiException(HttpStatus status, String message) {
+        super(message);
+        this.status = status;
+    }
+
+    public HttpStatus getStatus() {
+        return status;
+    }
 }

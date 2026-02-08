@@ -5,10 +5,13 @@ import java.util.Map;
 
 import org.springframework.stereotype.Service;
 
+import com.prafta.web.user.user03.dto.SiteInfoListQry;
+import com.prafta.web.user.user03.dto.SiteInfoListReq;
+import com.prafta.web.user.user03.dto.SiteInfoListRes;
 import com.prafta.web.user.user03.dto.User03;
-import com.prafta.web.user.user03.dto.User03ReqDto;
 import com.prafta.web.user.user03.mapper.User03Mapper;
 import com.prafta.web.user.user03.service.User03Service;
+import com.prafta.web.user.user03.vo.SiteInfo;
 
 import lombok.extern.slf4j.Slf4j;
 
@@ -22,8 +25,23 @@ public class User03ServiceImpl implements User03Service{
 	}
 	
 	
-	public List<Map<String, Object>> selectSiteInfoSearch(User03ReqDto dto, Map<String, Object> tokenInfo) {
-		return user03Mapper.selectSiteInfoSearch(dto, tokenInfo);
+	public SiteInfoListRes selectSiteInfoSearch(SiteInfoListReq dto, Map<String, Object> tokenInfo) {
+		
+		SiteInfoListQry reqDto = SiteInfoListQry.builder()
+												.userId(dto.getUserId())
+												.build();
+		
+		SiteInfoListRes resDto = null;
+		
+		List<SiteInfo> siteInfoList = user03Mapper.selectSiteInfoSearch(reqDto, tokenInfo);
+		
+		if(siteInfoList != null && siteInfoList.size() > 0) {
+			resDto = SiteInfoListRes.builder()
+									.siteInfoList(siteInfoList)
+									.build();
+		}
+		
+		return resDto;
 	}
 
 	public void updateUserSiteAuth(List<User03> dtoList, Map<String, Object> tokenInfo) {
