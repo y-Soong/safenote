@@ -13,9 +13,43 @@
 		, A.NODE_TYPE			AS nodeType
 		, A.PARENT_NODE_CD		AS parentNodeCd
 		, A.SELF_ATTD_APPRV_YN	AS selfAttdApprvYn
+        , SUM(CASE WHEN B.USER_TYPE = 'M' THEN 1 ELSE 0 END) managerCnt
+        , SUM(CASE WHEN B.USER_TYPE = 'W' THEN 1 ELSE 0 END) workerCnt
 	FROM TB_SITE_NODE A
+		 LEFT OUTER JOIN (
+			SELECT 
+				A.CMPNY_CD
+				, A.USER_ID
+				, A.SITE_CD
+				, A.NODE_CD
+				, CASE 
+					WHEN A.AUTH_CD = '99999'	-- 일반사용자 기본 코드
+						THEN 'W'				-- worker
+					ELSE 'M'					-- manager
+				END USER_TYPE
+			FROM TB_USER A
+				 INNER JOIN TB_BAIM_VAL_D B
+					ON (
+						A.CMPNY_CD = B.CMPNY_CD
+					AND A.AUTH_CD = B.BAIM_VAL_D_CD
+					AND B.BAIM_VAL_CD = 'COM005'
+					AND (B.VAL_D_INFO_1 != 'manage' OR B.VAL_D_INFO_1 IS NULL)
+					)
+         ) B
+			ON (
+				A.CMPNY_CD = B.CMPNY_CD
+			AND A.SITE_CD = B.SITE_CD
+            AND A.NODE_CD = B.NODE_CD
+            )
 	WHERE A.CMPNY_CD = #{token.gv_cmpnyCd}
 	  AND A.SITE_CD = #{param.siteCd}
+	GROUP BY A.CMPNY_CD
+			, A.SITE_CD
+			, A.NODE_CD
+			, A.NODE_NM
+			, A.NODE_TYPE
+			, A.PARENT_NODE_CD
+			, A.SELF_ATTD_APPRV_YN
 	</select>
 
 	<update id="saveSiteNode" parameterType="com.prafta.web.baim.baim06.dto.SiteNodeSave">

@@ -1,0 +1,42 @@
+package com.prafta.common.cmm.login.mapper;
+
+import java.util.List;
+import java.util.Map;
+
+import org.apache.ibatis.annotations.Mapper;
+import org.apache.ibatis.annotations.Param;
+
+import com.prafta.common.cmm.login.dto.ActiveToken;
+import com.prafta.common.cmm.login.dto.LoginReqDto;
+import com.prafta.common.cmm.login.dto.RequiredTermsInfoSave;
+import com.prafta.common.cmm.login.dto.UserJoinSave;
+import com.prafta.common.cmm.login.dto.UserLogout;
+import com.prafta.common.cmm.login.dto.UserRowLock;
+import com.prafta.web.user.user03.vo.RequiredTermsInfo;
+
+@Mapper
+public interface LoginMapper {
+	Map<String, Object> getLoginUser(LoginReqDto dto);
+	
+	void lockUserRow(UserRowLock dto);
+	
+	void revokeActiveToken(ActiveToken dto);
+	
+	void insertAuthToken(ActiveToken dto);
+	
+	int revokeActiveTokenByClient(UserLogout dto);
+
+    int revokeAllActiveTokens(UserLogout dto);
+	
+	int insertUserInfo(UserJoinSave dto);
+	
+	int insertUserSiteAuth(UserJoinSave dto);
+	
+	List<RequiredTermsInfo> selectRequiredTermsList();
+	
+	int insertTermsUserAgrMgmt(RequiredTermsInfoSave dto);
+	
+	List<Map<String, Object>> selectUserTermsAgrChk(LoginReqDto dto);
+	
+	void mergeAuthMenuInfo(@Param(value = "param") LoginReqDto dto, @Param(value = "token") Map<String, Object> tokenInfo);
+}

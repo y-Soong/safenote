@@ -1,0 +1,10 @@
+package com.prafta.web.attd.attd01.service;
+
+import java.util.Map;
+
+import com.prafta.web.baim.baim05.dto.DailyUserSlotListReq;
+import com.prafta.web.baim.baim05.dto.DailyUserSlotListRes;
+
+public interface Attd01Service {
+//	DailyUserSlotListRes selectDailyUserSlotList(DailyUserSlotListReq dto, Map<String, Object> tokenInfo);
+}

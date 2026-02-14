@@ -1,0 +1,110 @@
+package com.prafta.common.util;
+
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.Comparator;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Locale;
+import java.util.Map;
+import java.util.function.Function;
+import java.util.stream.Collectors;
+
+import com.prafta.common.cmm.baseinfo.dto.NavigationPayload;
+import com.prafta.common.cmm.baseinfo.vo.Buttons;
+import com.prafta.common.cmm.baseinfo.vo.SideMenu;
+import com.prafta.common.cmm.baseinfo.vo.TopMenu;
+
+public class NavigationBuilder {
+
+//    // 필요 시 외부에서 주입해 쓰는 KEY_ID → 라벨 매퍼 (없으면 1행 LABEL 사용 or KEY_ID 그대로)
+//    public static NavigationPayload build(
+//            List<Map<String, Object>> retList,
+//            Function<String, String> topLabelResolver // ex) keyId -> "사용자관리"/"기초정보관리"
+//    ) {
+//        if (retList == null || retList.isEmpty()) {
+//            return new NavigationPayload(Collections.emptyList(), Collections.emptyMap());
+//        }
+//
+//        // 1) KEY_ID로 그룹핑
+//        Map<String, List<Map<String, Object>>> byKey =
+//                retList.stream().collect(Collectors.groupingBy(row -> str(row.get("KEY_ID"))));
+//
+//        // 2) 탑 메뉴 (첫번째 변수)
+//        List<TopMenu> topMenus = byKey.entrySet().stream()
+//                .map(e -> {
+//                    String keyId = e.getKey();
+//                    String label = null;
+//
+////                    if (topLabelResolver != null) {
+////                        label = topLabelResolver.apply(keyId);           // 외부 정의 우선
+////                    }
+//                    if (isEmpty(label)) {
+//                        // 응답에 TOP 라벨 컬럼이 따로 없다면 같은 그룹의 "대표 라벨"을 정해야 함.
+//                        // 여기서는 1행의 LABEL을 임시 대표로 사용(원하면 별도 컬럼 추가 권장)
+//                        label = str(e.getValue().get(0).get("TOP_MENU_NM"));
+//                        if (isEmpty(label)) label = keyId;
+//                    }
+//
+//                    return TopMenu.builder()
+//                            .id(keyId)
+//                            .label(label)
+//                            .build();
+//                })
+//                // 필요 시 정렬 규칙(한글 우선 정렬 등)
+//                .sorted(Comparator.comparing(TopMenu::getId))
+//                .collect(Collectors.toList());
+//
+//        // 3) 사이드 메뉴 (두번째 변수)
+//        Map<String, List<SideMenu>> sideMenus = new LinkedHashMap<>();
+//        for (Map.Entry<String, List<Map<String, Object>>> e : byKey.entrySet()) {
+//            String keyId = e.getKey();
+//            List<Map<String, Object>> rows = e.getValue();
+//
+//            // 그룹 내부 정렬(원하는 정렬키 있으면 바꿔줘: ex) SORT_IDX)
+//            rows.sort(Comparator.comparing(m -> str(m.get("ID"))));
+//
+//            // 연속 ID가 필요하면 여기서 생성(예: 101,102…); 아니면 DB의 ID를 그대로 사용
+//            int base = Math.abs(keyId.hashCode() % 100) * 100; // 예: key별로 100단위 블록
+//            int seq = 1;
+//
+//            List<SideMenu> items = new ArrayList<>();
+//            for (Map<String, Object> r : rows) {
+//                String itemId = str(r.get("ID")); // DB의 ID를 그대로 쓸 수도 있고
+//                if (isEmpty(itemId)) {
+//                    itemId = String.valueOf(base + seq++); // 없으면 생성
+//                }
+//
+//                Buttons btn = Buttons.builder()
+//                        .search(yn(r.get("BTN_SRCH")))
+//                        .create(yn(r.get("BTN_NEW")))
+//                        .save(yn(r.get("BTN_SAVE")))
+//                        .delete(yn(r.get("BTN_DELT")))
+//                        .excel(yn(r.get("BTN_EXCL")))
+//                        .build();
+//
+//                items.add(SideMenu.builder()
+//                        .id(itemId)
+//                        .label(str(r.get("SIDE_MENU_NM")))
+//                        .route(str(r.get("ROUTE")))  // "User_01" / "Baim_01"
+//                        .buttons(btn)
+//                        .build());
+//            }
+//            sideMenus.put(keyId, items);
+//        }
+//
+//        return new NavigationPayload(topMenus, sideMenus);
+//    }
+//
+//    // ----- helpers
+//    private static String str(Object o) {
+//        return o == null ? "" : String.valueOf(o).trim();
+//    }
+//    private static String yn(Object o) {
+//        String v = str(o).toUpperCase(Locale.ROOT);
+//        return "Y".equals(v) ? "Y" : "N";
+//    }
+//    private static boolean isEmpty(String s) {
+//        return s == null || s.isEmpty();
+//    }
+}

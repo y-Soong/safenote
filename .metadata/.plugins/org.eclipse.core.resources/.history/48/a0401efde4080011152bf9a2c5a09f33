@@ -1,0 +1,14 @@
+package com.prafta.web.attd.attd01.dto;
+
+import lombok.Builder;
+import lombok.Value;
+
+@Value
+@Builder
+public class DailyUserSlotListQry{
+	String siteCd;
+	String slotType;
+	String slotStatus;
+	String useYn;
+	String currUserId;
+}

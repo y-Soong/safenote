@@ -3,46 +3,39 @@
 
 <mapper namespace="com.prafta.web.baim.baim02.mapper.Baim02Mapper">
 
-    <select id="selectCompCmmCodeMList" parameterType="com.prafta.web.baim.baim02.dto.Baim02ReqDto" resultType="map">
+    <select id="selectCompCmmCodeMList" parameterType="com.prafta.web.baim.baim02.dto.CompCmmCodeMListQry" resultType="com.prafta.web.baim.baim02.vo.CompCmmCodeM">
     /* Baim02Mapper.selectCompCmmCodeMList */
     SELECT
-    	CMPNY_CD
-    	, BAIM_VAL_CD
-    	, BAIM_VAL_NM
-    	, USE_YN
-    	, VAL_INFO_1
-    	, VAL_INFO_2
-    	, VAL_DESC
-    	, INSERT_NO
-    	, INSERT_DATE
-    	, UPDATE_NO
-    	, UPDATE_DATE
+    	'' 				AS chk
+    	, CMPNY_CD		AS cmpnyCd
+    	, BAIM_VAL_CD	AS baimValCd
+    	, BAIM_VAL_NM	AS baimValNm
+    	, USE_YN		AS useYn
+    	, VAL_INFO_1	AS valInfo1
+    	, VAL_INFO_2	AS valInfo2
+    	, VAL_DESC		AS valDesc
    	FROM TB_BAIM_VAL_M
    	WHERE 1=1
    	  AND CMPNY_CD = #{token.gv_cmpnyCd}
    	  AND USE_YN = 'Y'
-   	  <if test="param.sr_codeNm != null and param.sr_codeNm != ''">
-   	  	AND BAIM_VAL_NM LIKE CONCAT('%', #{param.sr_codeNm}, '%')
+   	  <if test="param.codeNm != null and param.codeNm != ''">
+   	  	AND BAIM_VAL_NM LIKE CONCAT('%', #{param.codeNm}, '%')
    	  </if>
 	</select>
 	
-	<select id="selectCompCmmCodeDList" parameterType="com.prafta.web.baim.baim02.dto.Baim02ReqDto" resultType="com.prafta.web.baim.baim02.dto.Baim02">
+	<select id="selectCompCmmCodeDList" parameterType="com.prafta.web.baim.baim02.dto.CompCmmCodeDListQry" resultType="com.prafta.web.baim.baim02.vo.CompCmmCodeD">
     /* Baim02Mapper.selectCompCmmCodeDList */
     SELECT
-    	'' AS CHK
-    	, A.CMPNY_CD
-    	, A.BAIM_VAL_CD
-    	, B.BAIM_VAL_D_CD
-    	, B.BAIM_VAL_D_NM AS baimValDNm
-    	, B.SORT_IDX
-    	, B.USE_YN
-    	, B.VAL_D_INFO_1
-    	, B.VAL_D_INFO_2
-    	, B.VAL_D_DESC
-    	, B.INSERT_NO
-    	, B.INSERT_DATE
-    	, B.UPDATE_NO
-    	, B.UPDATE_DATE
+    	'' 					AS chk
+    	, A.CMPNY_CD		AS cmpnyCd
+    	, A.BAIM_VAL_CD		AS baimValCd
+    	, B.BAIM_VAL_D_CD	AS baimValDCd
+    	, B.BAIM_VAL_D_NM 	AS baimValDNm
+    	, B.SORT_IDX		AS sortIdx
+    	, B.USE_YN			AS useYn
+    	, B.VAL_D_INFO_1	AS valDInfo1
+    	, B.VAL_D_INFO_2	AS valDInfo2
+    	, B.VAL_D_DESC		AS valDDesc
    	FROM TB_BAIM_VAL_M A
    		 INNER JOIN TB_BAIM_VAL_D B
    		 	ON (
@@ -53,10 +46,10 @@
    	WHERE 1=1
    	  AND A.CMPNY_CD = #{token.gv_cmpnyCd}
    	  AND A.USE_YN = 'Y'
-   	  AND A.BAIM_VAL_CD = #{param.sr_codeCd}
+   	  AND A.BAIM_VAL_CD = #{param.codeCd}
 	</select>
 	
-	<insert id="mergeCmmCodeDetailInfo">
+	<insert id="mergeCmmCodeDetailInfo" parameterType="com.prafta.web.baim.baim02.dto.CompCmmCodeDSave">
 	/* Baim02Mapper.mergeCmmCodeDetailInfo */	
     INSERT INTO TB_BAIM_VAL_D (
     	CMPNY_CD
@@ -100,7 +93,7 @@
 	    , UPDATE_DATE 	= NOW()
 	</insert>
 	
-	<update id="deleteCmmCodeDetailInfo">
+	<update id="deleteCmmCodeDetailInfo" parameterType="com.prafta.web.baim.baim02.dto.CompCmmCodeDSave">
 	/* Baim02Mapper.mergeCmmCodeDetailInfo */
 	UPDATE TB_BAIM_VAL_D 
 	SET USE_YN = 'N'

@@ -1,0 +1,56 @@
+package com.prafta.common.cmm.baseinfo.mapper;
+
+import java.util.List;
+import java.util.Map;
+
+import org.apache.ibatis.annotations.Mapper;
+import org.apache.ibatis.annotations.Param;
+
+import com.prafta.common.cmm.baseinfo.dto.BaseInfoListQuery;
+import com.prafta.common.cmm.baseinfo.dto.BaseInfoQry;
+import com.prafta.common.cmm.baseinfo.dto.BaseinfoCmmReq;
+import com.prafta.common.cmm.baseinfo.dto.SiteNodeListQry;
+import com.prafta.common.cmm.baseinfo.dto.SystInfoListQuery;
+import com.prafta.common.cmm.baseinfo.dto.SystInfoQry;
+import com.prafta.common.cmm.baseinfo.vo.BaseInfo;
+import com.prafta.common.cmm.baseinfo.vo.SiteNodeInfo;
+import com.prafta.common.cmm.baseinfo.vo.SystInfo;
+
+@Mapper
+public interface BaseinfoMapper {
+	List<SystInfo> selectSystinfoList(SystInfoListQuery reqDto);
+	
+	List<SystInfo> selectSystinfo(SystInfoQry dto);
+	
+	List<BaseInfo> selectBaseinfoList(BaseInfoListQuery reqDto);
+	
+	List<BaseInfo> selectSystinfo(@Param("param") BaseInfoQry dto, @Param("token") Map<String, Object> tokenInfo);
+	
+	Map<String, Object> selectCmpnyInfo(BaseinfoCmmReq dto);
+	
+	Map<String, Object> selectUserIdDupleChk(BaseinfoCmmReq dto);
+	
+	int selectMblUniqChk(BaseinfoCmmReq dto);
+	
+	void insertSmsAuthReq(BaseinfoCmmReq dto);
+	
+	int updateSmsAuthReq(BaseinfoCmmReq dto);
+	
+	Map<String, Object> selectCertNoSmsId(BaseinfoCmmReq dto);
+	
+	List<Map<String, Object>> selectSiteInfoList(BaseinfoCmmReq dto);
+	
+	List<SiteNodeInfo> selectSiteNodeList(@Param("param") SiteNodeListQry dto, @Param("token") Map<String, Object> tokenInfo);
+	
+	List<Map<String, Object>> selectWebMenuList(BaseinfoCmmReq dto);
+	
+	List<Map<String, Object>> selectAppMenuList(BaseinfoCmmReq dto);
+	
+	List<Map<String, Object>> selectMenuList(BaseinfoCmmReq dto);
+	
+	Map<String, Object> selectUserIdInfo(BaseinfoCmmReq dto);
+	
+	void updateUserPw(BaseinfoCmmReq dto);
+	
+	Map<String, Object> selectTermsDInfo(BaseinfoCmmReq dto);
+}

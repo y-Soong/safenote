@@ -1,0 +1,19 @@
+package com.prafta.web.baim.baim02.dto;
+
+import lombok.Builder;
+import lombok.Value;
+
+@Value
+@Builder
+public class CompCmmCodeDSave{
+	private String chk;
+	private String cmpnyCd;
+	private String baimValCd;
+	private String baimValDCd;
+	private String baimValDNm;
+	private String sortIdx;
+	private String useYn;
+	private String valDInfo2;
+	private String valDInfo1;
+	private String valDDesc;
+}

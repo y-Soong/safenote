@@ -6,7 +6,6 @@ import java.util.Map;
 import org.apache.ibatis.annotations.Mapper;
 import org.apache.ibatis.annotations.Param;
 
-import com.prafta.web.baim.baim02.dto.Baim02;
 import com.prafta.web.chkLst.chkLst01.dto.ChkLst01;
 import com.prafta.web.chkLst.chkLst01.dto.ChkLst01ReqDto;
 

@@ -15,7 +15,7 @@ import com.prafta.common.annotation.NoAuth;
 import com.prafta.common.cmm.login.dto.AuthLogoutReq;
 import com.prafta.common.cmm.login.dto.AuthLogoutRes;
 import com.prafta.common.cmm.login.dto.LoginReqDto;
-import com.prafta.common.cmm.login.dto.UserJoinReqDto;
+import com.prafta.common.cmm.login.dto.UserJoinReq;
 import com.prafta.common.cmm.login.service.LoginService;
 import com.prafta.common.exception.CmmApiException;
 import com.prafta.common.exception.LoginFailException;
@@ -35,7 +35,7 @@ public class LoginController {
 	private final LoginService loginService;
 	
     @PostMapping("/loginChk")
-    public ResponseEntity<?> Login(@RequestBody  LoginReqDto dto, @RequestHeader(value = "X-Client-Type", required = false, defaultValue = "WEB") String clientType) {
+    public ResponseEntity<?> Login(@RequestBody LoginReqDto dto, @RequestHeader(value = "X-Client-Type", required = false, defaultValue = "WEB") String clientType) {
     	    	
 		Map<String, Object> retMap = loginService.getLoginUser(dto, clientType);
     	
@@ -100,8 +100,8 @@ public class LoginController {
         );
     }
     
-    @PostMapping("/insertUserInfo")
-    public ResponseEntity<?> insertUserInfo(@RequestBody UserJoinReqDto dto) {
+    @PostMapping("/insert-user-info")
+    public ResponseEntity<?> insertUserInfo(@RequestBody UserJoinReq dto) {
     	
     	loginService.insertUserInfo(dto);
     	

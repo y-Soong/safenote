@@ -5,10 +5,18 @@ import java.util.Map;
 
 import org.springframework.stereotype.Service;
 
-import com.prafta.web.baim.baim02.dto.Baim02;
-import com.prafta.web.baim.baim02.dto.Baim02ReqDto;
+import com.prafta.web.baim.baim02.dto.CompCmmCodeDListQry;
+import com.prafta.web.baim.baim02.dto.CompCmmCodeDListReq;
+import com.prafta.web.baim.baim02.dto.CompCmmCodeDListRes;
+import com.prafta.web.baim.baim02.dto.CompCmmCodeDReq;
+import com.prafta.web.baim.baim02.dto.CompCmmCodeDSave;
+import com.prafta.web.baim.baim02.dto.CompCmmCodeMListQry;
+import com.prafta.web.baim.baim02.dto.CompCmmCodeMListReq;
+import com.prafta.web.baim.baim02.dto.CompCmmCodeMListRes;
 import com.prafta.web.baim.baim02.mapper.Baim02Mapper;
 import com.prafta.web.baim.baim02.service.Baim02Service;
+import com.prafta.web.baim.baim02.vo.CompCmmCodeD;
+import com.prafta.web.baim.baim02.vo.CompCmmCodeM;
 
 import lombok.extern.slf4j.Slf4j;
 
@@ -21,23 +29,80 @@ public class Baim02ServiceImpl implements Baim02Service{
 		this.baim02Mapper = baim02Mapper;
 	}
 		
-	public List<Map<String, Object>> selectCompCmmCodeMList(Baim02ReqDto dto, Map<String, Object> tokenInfo) {
-		return baim02Mapper.selectCompCmmCodeMList(dto, tokenInfo);
+	public CompCmmCodeMListRes selectCompCmmCodeMList(CompCmmCodeMListReq dto, Map<String, Object> tokenInfo) {
+		
+		CompCmmCodeMListQry reqDto = CompCmmCodeMListQry.builder()
+														.codeCd(dto.getCodeCd())
+														.codeNm(dto.getCodeNm())
+														.build();
+		
+		CompCmmCodeMListRes retDto = null;
+				
+		List<CompCmmCodeM> compCmmCodeMList = baim02Mapper.selectCompCmmCodeMList(reqDto, tokenInfo);
+		
+		if(compCmmCodeMList != null && compCmmCodeMList.size() > 0) {
+			retDto = CompCmmCodeMListRes.builder()
+										.compCmmCodeMList(compCmmCodeMList)
+										.build();
+		}
+		
+		return retDto;
 	}
 
-	public List<Baim02> selectCompCmmCodeDList(Baim02ReqDto dto, Map<String, Object> tokenInfo) {
-		return baim02Mapper.selectCompCmmCodeDList(dto, tokenInfo);
+	public CompCmmCodeDListRes selectCompCmmCodeDList(CompCmmCodeDListReq dto, Map<String, Object> tokenInfo) {
+		
+		CompCmmCodeDListQry reqDto = CompCmmCodeDListQry.builder()
+				.codeCd(dto.getCodeCd())
+				.codeNm(dto.getCodeNm())
+				.build();
+		
+		CompCmmCodeDListRes retDto = null;
+		
+		List<CompCmmCodeD> compCmmCodeDList = baim02Mapper.selectCompCmmCodeDList(reqDto, tokenInfo);
+		
+		if(compCmmCodeDList != null && compCmmCodeDList.size() > 0) {
+			retDto = CompCmmCodeDListRes.builder()
+										.compCmmCodeDList(compCmmCodeDList)
+										.build();
+		}
+		
+		return retDto;
 	}
 	
-	public void updateCmmCodeDetailInfo(List<Baim02> dtoList, Map<String, Object> tokenInfo) {
-		for(Baim02 dto : dtoList) {
-			baim02Mapper.mergeCmmCodeDetailInfo(dto, tokenInfo);
+	public void updateCmmCodeDetailInfo(List<CompCmmCodeDReq> dtoList, Map<String, Object> tokenInfo) {
+		for(CompCmmCodeDReq dto : dtoList) {		
+			CompCmmCodeDSave reqDto = CompCmmCodeDSave.builder()
+														.cmpnyCd(dto.getCmpnyCd())
+														.baimValCd(dto.getBaimValCd())
+														.baimValDCd(dto.getBaimValDCd())
+														.baimValDNm(dto.getBaimValDNm())
+														.sortIdx(dto.getSortIdx())
+														.useYn(dto.getUseYn())
+														.valDInfo1(dto.getValDInfo1())
+														.valDInfo2(dto.getValDInfo2())
+														.valDDesc(dto.getValDDesc())
+														.build();
+			
+			baim02Mapper.mergeCmmCodeDetailInfo(reqDto, tokenInfo);
 		}
 	}
 	
-	public void deleteCmmCodeDetailInfo(List<Baim02> dtoList, Map<String, Object> tokenInfo) {
-		for(Baim02 dto : dtoList) {
-			baim02Mapper.deleteCmmCodeDetailInfo(dto, tokenInfo);
+	public void deleteCmmCodeDetailInfo(List<CompCmmCodeDReq> dtoList, Map<String, Object> tokenInfo) {
+		for(CompCmmCodeDReq dto : dtoList) {
+			
+			CompCmmCodeDSave reqDto = CompCmmCodeDSave.builder()
+					.cmpnyCd(dto.getCmpnyCd())
+					.baimValCd(dto.getBaimValCd())
+					.baimValDCd(dto.getBaimValDCd())
+					.baimValDNm(dto.getBaimValDNm())
+					.sortIdx(dto.getSortIdx())
+					.useYn(dto.getUseYn())
+					.valDInfo1(dto.getValDInfo1())
+					.valDInfo2(dto.getValDInfo2())
+					.valDDesc(dto.getValDDesc())
+					.build();
+			
+			baim02Mapper.deleteCmmCodeDetailInfo(reqDto, tokenInfo);
 		}
 	}
 	

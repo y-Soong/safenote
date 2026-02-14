@@ -1,21 +1,9 @@
 <?xml version="1.0" encoding="UTF-8" standalone="no"?>
 <qualifiedTypeNameHistroy>
-    <fullyQualifiedTypeName name="lombok.ToString"/>
-    <fullyQualifiedTypeName name="com.prafta.common.cmm.baseinfo.dto.NavigationPayload"/>
-    <fullyQualifiedTypeName name="com.prafta.common.cmm.baseinfo.dto.TopMenu"/>
-    <fullyQualifiedTypeName name="com.prafta.common.cmm.baseinfo.dto.Buttons"/>
-    <fullyQualifiedTypeName name="com.prafta.common.cmm.baseinfo.dto.SideMenu"/>
-    <fullyQualifiedTypeName name="com.prafta.common.util.PasswordHashing"/>
-    <fullyQualifiedTypeName name="com.prafta.app.chkLst.chkLst01.service.ChkLst01Service"/>
-    <fullyQualifiedTypeName name="com.prafta.app.chkLst.chkLst01.mapper.ChkLst01Mapper"/>
-    <fullyQualifiedTypeName name="java.util.regex.Pattern"/>
-    <fullyQualifiedTypeName name="java.util.regex.Matcher"/>
     <fullyQualifiedTypeName name="com.prafta.common.cmm.file.dto.FileInfo"/>
     <fullyQualifiedTypeName name="com.prafta.common.cmm.file.dto.FileSaveRequest"/>
     <fullyQualifiedTypeName name="com.prafta.common.cmm.file.dto.FileSaveQuery"/>
     <fullyQualifiedTypeName name="com.prafta.app.chkLst.chkLst01.dto.checklistInfoQuery"/>
-    <fullyQualifiedTypeName name="lombok.Getter"/>
-    <fullyQualifiedTypeName name="lombok.Setter"/>
     <fullyQualifiedTypeName name="com.prafta.common.cmm.baseinfo.dto.BaseinfoListQuery"/>
     <fullyQualifiedTypeName name="com.prafta.app.chkLst.chkLst01.dto.ChecklistInfoReq"/>
     <fullyQualifiedTypeName name="com.prafta.app.chkLst.chkLst01.dto.ChecklistInfoRes"/>
@@ -39,7 +27,6 @@
     <fullyQualifiedTypeName name="java.nio.charset.StandardCharsets"/>
     <fullyQualifiedTypeName name="java.security.MessageDigest"/>
     <fullyQualifiedTypeName name="java.lang.Override"/>
-    <fullyQualifiedTypeName name="com.prafta.web.baim.baim01.dto.SiteInfoListQry"/>
     <fullyQualifiedTypeName name="com.prafta.web.baim.baim04.dto.LinkPoliciesSave"/>
     <fullyQualifiedTypeName name="com.prafta.web.baim.baim04.dto.DailyUserSlotSave"/>
     <fullyQualifiedTypeName name="java.lang.String"/>
@@ -52,10 +39,25 @@
     <fullyQualifiedTypeName name="com.prafta.web.baim.baim06.dto.SiteGroupNodeSave"/>
     <fullyQualifiedTypeName name="com.prafta.web.baim.baim06.dto.SiteGroupNodeDelete"/>
     <fullyQualifiedTypeName name="lombok.Builder"/>
-    <fullyQualifiedTypeName name="java.util.List"/>
-    <fullyQualifiedTypeName name="org.springframework.web.bind.annotation.ModelAttribute"/>
     <fullyQualifiedTypeName name="com.prafta.web.user.user01.dto.UserInfoListQry"/>
     <fullyQualifiedTypeName name="com.prafta.web.user.user01.vo.UserInfo"/>
-    <fullyQualifiedTypeName name="lombok.Value"/>
     <fullyQualifiedTypeName name="com.prafta.web.user.user01.dto.UserInfoSave"/>
+    <fullyQualifiedTypeName name="org.springframework.web.bind.annotation.ModelAttribute"/>
+    <fullyQualifiedTypeName name="com.prafta.web.baim.baim01.dto.SiteInfoListReq"/>
+    <fullyQualifiedTypeName name="com.prafta.web.user.user03.dto.SiteInfoListReq"/>
+    <fullyQualifiedTypeName name="com.prafta.web.baim.baim01.dto.SiteInfoListQry"/>
+    <fullyQualifiedTypeName name="com.prafta.web.user.user03.dto.SiteInfoListRes"/>
+    <fullyQualifiedTypeName name="com.prafta.web.user.user03.vo.SiteInfo"/>
+    <fullyQualifiedTypeName name="com.prafta.web.user.user03.dto.SiteInfoListQry"/>
+    <fullyQualifiedTypeName name="com.prafta.web.baim.baim02.dto.CompCmmCodeMListQry"/>
+    <fullyQualifiedTypeName name="com.prafta.web.baim.baim02.dto.CompCmmCodeDSave"/>
+    <fullyQualifiedTypeName name="com.prafta.common.cmm.login.dto.UserJoinSave"/>
+    <fullyQualifiedTypeName name="com.prafta.common.cmm.login.dto.RequiredTermsInfoSave"/>
+    <fullyQualifiedTypeName name="com.prafta.web.baim.baim03.dto.TermsInfoSave"/>
+    <fullyQualifiedTypeName name="com.prafta.web.baim.baim03.dto.TermsInfoListQry"/>
+    <fullyQualifiedTypeName name="lombok.Value"/>
+    <fullyQualifiedTypeName name="lombok.Getter"/>
+    <fullyQualifiedTypeName name="lombok.Setter"/>
+    <fullyQualifiedTypeName name="com.prafta.web.baim.baim05.dto.SchInfoListQry"/>
+    <fullyQualifiedTypeName name="java.util.List"/>
 </qualifiedTypeNameHistroy>

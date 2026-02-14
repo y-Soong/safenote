@@ -5,15 +5,20 @@ import java.util.Map;
 
 import com.prafta.web.baim.baim03.dto.Baim03;
 import com.prafta.web.baim.baim03.dto.Baim03ReqDto;
+import com.prafta.web.baim.baim03.dto.TermsDetailInfoListReq;
+import com.prafta.web.baim.baim03.dto.TermsDetailInfoListRes;
+import com.prafta.web.baim.baim03.dto.TermsInfoListReq;
+import com.prafta.web.baim.baim03.dto.TermsInfoListRes;
+import com.prafta.web.baim.baim03.dto.TermsInfoReq;
 
 public interface Baim03Service {
-	List<Baim03> selectTermsList(Baim03ReqDto dto, Map<String, Object> tokenInfo);
+	TermsInfoListRes selectTermsList(TermsInfoListReq dto, Map<String, Object> tokenInfo);
 	
-	List<Baim03> selectTermsDList(Baim03ReqDto dto, Map<String, Object> tokenInfo);
+	TermsDetailInfoListRes selectTermsDList(TermsDetailInfoListReq dto, Map<String, Object> tokenInfo);
 	
 	Baim03 selectTermsInfo(Baim03ReqDto dto, Map<String, Object> tokenInfo);
 	
-	void updateTermsInfo(Baim03 dto, Map<String, Object> tokenInfo);
+	void updateTermsInfo(TermsInfoReq dto, Map<String, Object> tokenInfo);
 	
-	void deleteCmmCodeDetailInfo(List<Baim03> dtoList, Map<String, Object> tokenInfo);
+	void deleteCmmCodeDetailInfo(List<TermsInfoReq> dtoList, Map<String, Object> tokenInfo);
 }

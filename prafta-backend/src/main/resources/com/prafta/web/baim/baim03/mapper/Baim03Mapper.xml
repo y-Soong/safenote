@@ -3,12 +3,12 @@
 
 <mapper namespace="com.prafta.web.baim.baim03.mapper.Baim03Mapper">
 
-    <select id="selectTermsList" parameterType="com.prafta.web.baim.baim03.dto.Baim03ReqDto" resultType="com.prafta.web.baim.baim03.dto.Baim03">
+    <select id="selectTermsList" parameterType="com.prafta.web.baim.baim03.dto.TermsInfoListQry" resultType="com.prafta.web.baim.baim03.vo.TermsInfo">
     /* Baim03Mapper.selectTermsList */
 	SELECT 
-		B.SYST_VAL_D_CD AS TERMS_ID
-	    , B.SYST_VAL_D_NM AS TERMS_NM
-	    , IFNULL(C.TERMS_VERSION, 0) AS TERMS_VERSION
+		B.SYST_VAL_D_CD 				AS termsId
+	    , B.SYST_VAL_D_NM 				AS termsNm
+	    , IFNULL(C.TERMS_VERSION, 0) 	AS termsVersion
 	FROM TB_SYST_VAL_M A
 		 INNER JOIN TB_SYST_VAL_D B
 			ON (
@@ -23,36 +23,37 @@
 	WHERE 1=1
 	  AND A.SYST_VAL_CD = 'SYS008'								/* 시스템코드 - 이용약관 */
 	  AND A.USE_YN = 'Y'
-	  <if test="param.sr_termsNm != null and param.sr_termsNm != ''">
-	  	AND B.SYST_VAL_D_NM = #{param.sr_termsNm}
+	  <if test="param.termsNm != null and param.termsNm != ''">
+	  	AND B.SYST_VAL_D_NM = #{param.termsNm}
 	  </if>
-	  <if test="param.sr_termsId != null and param.sr_termsId != ''">
-	  	AND B.SYST_VAL_D_CD = #{param.sr_termsId}
+	  <if test="param.termsId != null and param.termsId != ''">
+	  	AND B.SYST_VAL_D_CD = #{param.termsId}
 	  </if>
 	</select>
 
-    <select id="selectTermsDList" parameterType="com.prafta.web.baim.baim03.dto.Baim03ReqDto" resultType="com.prafta.web.baim.baim03.dto.Baim03">
+    <select id="selectTermsDList" parameterType="com.prafta.web.baim.baim03.dto.TermsDetailInfoListQry" resultType="com.prafta.web.baim.baim03.vo.TermsDetailInfo">
     /* Baim03Mapper.selectTermsDList */
 	SELECT
-		A.TERMS_ID AS TERMS_ID
-		, B.TERMS_VERSION AS TERMS_VERSION
-		, B.REQUIRED_YN AS REQUIRED_YN
-		, B.TERMS_CONTENT AS TERMS_CONTENT
-		, B.STR_DATE AS STR_DATE
-		, B.TERMS_DESC AS TERMS_DESC
+		A.TERMS_ID 				AS termsId
+		, B.TERMS_VERSION 		AS termsVersion
+		, B.REQUIRED_YN 		AS requiredYn
+		, B.TERMS_CONTENT 		AS termsContent
+		, B.STR_DATE 			AS strDate
+		, A.USE_YN				AS useYn
+		, B.TERMS_DESC 			AS termsDesc
 	FROM TB_TERMS A
 		 INNER JOIN TB_TERMS_ID_VERSION B
 			ON (
 				A.TERMS_ID = B.TERMS_ID
 			)
 	WHERE 1=1
-	  AND A.TERMS_ID = #{param.sr_termsId}
-	  <if test="param.sr_termsVersion != null and param.sr_termsVersion != ''">
-	  	AND B.TERMS_VERSION = #{param.sr_termsVersion}
+	  AND A.TERMS_ID = #{param.termsId}
+	  <if test="param.termsVersion != null and param.termsVersion != ''">
+	  	AND B.TERMS_VERSION = #{param.termsVersion}
 	  </if>
 	</select>
 		
-	<insert id="mergeTermsInfo">
+	<insert id="mergeTermsInfo" parameterType="com.prafta.web.baim.baim03.dto.TermsInfoSave">
 	/* Baim02Mapper.mergeTermsInfo */
 	INSERT INTO TB_TERMS (
 		TERMS_ID
@@ -91,7 +92,7 @@
 	    , UPDATE_DATE 			= NOW()
 	</insert>
 	
-	<insert id="insertTermsIdVersionInfo">
+	<insert id="insertTermsIdVersionInfo" parameterType="com.prafta.web.baim.baim03.dto.TermsInfoSave">
 	/* Baim02Mapper.insertTermsIdVersionInfo */
 	INSERT INTO TB_TERMS_ID_VERSION (
 		TERMS_ID

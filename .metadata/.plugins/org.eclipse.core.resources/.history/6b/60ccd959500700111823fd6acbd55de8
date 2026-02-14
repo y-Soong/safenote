@@ -1,0 +1,117 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+
+<mapper namespace="com.prafta.web.baim.baim03.mapper.Baim03Mapper">
+
+    <select id="selectTermsList" parameterType="com.prafta.web.baim.baim03.dto.TermsInfoListQry" resultType="com.prafta.web.baim.baim03.vo.TermsInfo">
+    /* Baim03Mapper.selectTermsList */
+	SELECT 
+		B.SYST_VAL_D_CD 				AS termsId
+	    , B.SYST_VAL_D_NM 				AS termsNm
+	    , IFNULL(C.TERMS_VERSION, 0) 	AS termsVersion
+	FROM TB_SYST_VAL_M A
+		 INNER JOIN TB_SYST_VAL_D B
+			ON (
+				A.SYST_VAL_CD = B.SYST_VAL_CD
+			AND A.USE_YN = B.USE_YN
+	        )
+		LEFT OUTER JOIN TB_TERMS C
+			ON (
+				B.SYST_VAL_D_CD = C.TERMS_ID
+			AND A.USE_YN = C.USE_YN
+	        )
+	WHERE 1=1
+	  AND A.SYST_VAL_CD = 'SYS008'								/* 시스템코드 - 이용약관 */
+	  AND A.USE_YN = 'Y'
+	  <if test="param.termsNm != null and param.termsNm != ''">
+	  	AND B.SYST_VAL_D_NM = #{param.termsNm}
+	  </if>
+	  <if test="param.termsId != null and param.termsId != ''">
+	  	AND B.SYST_VAL_D_CD = #{param.termsId}
+	  </if>
+	</select>
+
+    <select id="selectTermsDList" parameterType="com.prafta.web.baim.baim03.dto.TermsDetailInfoListQry" resultType="com.prafta.web.baim.baim03.vo.TermsDetailInfo">
+    /* Baim03Mapper.selectTermsDList */
+	SELECT
+		A.TERMS_ID 				AS termsId
+		, B.TERMS_VERSION 		AS termsVersion
+		, B.REQUIRED_YN 		AS requiredYn
+		, B.TERMS_CONTENT 		AS termsContent
+		, B.STR_DATE 			AS strDate
+		, B.TERMS_DESC 			AS termsDesc
+	FROM TB_TERMS A
+		 INNER JOIN TB_TERMS_ID_VERSION B
+			ON (
+				A.TERMS_ID = B.TERMS_ID
+			)
+	WHERE 1=1
+	  AND A.TERMS_ID = #{param.termsId}
+	  <if test="param.termsVersion != null and param.termsVersion != ''">
+	  	AND B.TERMS_VERSION = #{param.termsVersion}
+	  </if>
+	</select>
+		
+	<insert id="mergeTermsInfo" parameterType="com.prafta.web.baim.baim03.dto.TermsInfoSave">
+	/* Baim02Mapper.mergeTermsInfo */
+	INSERT INTO TB_TERMS (
+		TERMS_ID
+		, TERMS_VERSION
+		, REQUIRED_YN
+		, TERMS_CONTENT
+		, STR_DATE
+		, USE_YN
+		, TERMS_DESC
+		, INSERT_NO
+		, INSERT_DATE
+		, UPDATE_NO
+		, UPDATE_DATE
+	) 
+	VALUES (
+		#{param.termsId}
+		, #{param.termsVersion}
+		, #{param.requiredYn}
+		, <![CDATA[#{param.termsContent}]]>
+		, REPLACE(#{param.strDate}, '-', '')
+		, 'Y'
+		, <![CDATA[#{param.termsDesc}]]>
+		, #{token.gv_userId}
+		, now()
+		, #{token.gv_userId}
+		, now()
+	)
+	ON DUPLICATE KEY UPDATE
+		TERMS_VERSION			= VALUES(TERMS_VERSION)
+		, REQUIRED_YN			= VALUES(REQUIRED_YN)
+		, TERMS_CONTENT			= VALUES(TERMS_CONTENT)
+		, STR_DATE				= VALUES(STR_DATE)
+		, USE_YN				= VALUES(USE_YN)
+		, TERMS_DESC			= VALUES(TERMS_DESC)
+		, UPDATE_NO   			= #{token.gv_userId}
+	    , UPDATE_DATE 			= NOW()
+	</insert>
+	
+	<insert id="insertTermsIdVersionInfo" parameterType="com.prafta.web.baim.baim03.dto.TermsInfoSave">
+	/* Baim02Mapper.insertTermsIdVersionInfo */
+	INSERT INTO TB_TERMS_ID_VERSION (
+		TERMS_ID
+		, TERMS_VERSION
+		, REQUIRED_YN
+		, TERMS_CONTENT
+		, STR_DATE
+		, TERMS_DESC
+		, INSERT_NO
+		, INSERT_DATE
+	)
+	VALUES(
+		#{param.termsId}
+		, #{param.termsVersion}
+		, #{param.requiredYn}
+		, <![CDATA[#{param.termsContent}]]>
+		, REPLACE(#{param.strDate}, '-', '')
+		, #{param.termsDesc}
+		, #{token.gv_userId}
+		, now()
+	)
+	</insert>
+</mapper>

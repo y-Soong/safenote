@@ -1,0 +1,62 @@
+package com.prafta.web.attd.attd01.service.impl;
+
+import java.util.Map;
+
+import org.springframework.stereotype.Service;
+
+import com.prafta.web.attd.attd01.mapper.Attd01Mapper;
+import com.prafta.web.attd.attd01.service.Attd01Service;
+import com.prafta.web.baim.baim05.dto.SchInfoListQry;
+import com.prafta.web.baim.baim05.dto.SchInfoListReq;
+import com.prafta.web.baim.baim05.dto.SchInfoListRes;
+
+import lombok.extern.slf4j.Slf4j;
+
+@Slf4j
+@Service
+public class Attd01ServiceImpl implements Attd01Service{
+	private final Attd01Mapper attd01Mapper;
+		
+	public Attd01ServiceImpl(Attd01Mapper attd01Mapper) {
+		this.attd01Mapper = attd01Mapper;
+	}
+	
+	public SchInfoListRes selectSchInfoList(SchInfoListReq dto, Map<String, Object> tokenInfo) {
+		SchInfoListQry reqDto = SchInfoListQry.builder()
+												.siteCd(dto.getSiteCd())
+												.schCd(dto.getSchCd())
+												.schType(dto.getSchType())
+												.useYn(dto.getUseYn())
+												.build();
+		
+		SchInfoListRes resDto = null;
+		
+		attd01Mapper.selectSchInfoList(reqDto, tokenInfo);
+		
+		return resDto;
+	
+	}
+	
+//	public DailyUserSlotListRes selectDailyUserSlotList(DailyUserSlotListReq dto, Map<String, Object> tokenInfo) {
+//		
+//		DailyUserSlotListQry reqDto = DailyUserSlotListQry.builder()
+//										.siteCd(dto.getSiteCd())
+//										.slotType(dto.getSlotType())
+//										.slotStatus(dto.getSlotStatus())
+//										.useYn(dto.getUseYn())
+//										.currUserId(dto.getCurrUserId())
+//										.build();
+//		
+//		DailyUserSlotListRes retDto = null;
+//		
+//		List<DailyUserSlotList> dailyUserSlotList = baim05Mapper.selectDailyUserSlotList(reqDto, tokenInfo);
+//		
+//		if(dailyUserSlotList.size() > 0) {
+//			retDto = DailyUserSlotListRes.builder()
+//					.dailyUserSlotList(dailyUserSlotList)
+//					.build();
+//		}
+//		
+//		return retDto;
+//	}
+}

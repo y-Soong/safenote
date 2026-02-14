@@ -8,7 +8,13 @@ import org.springframework.stereotype.Service;
 import com.prafta.common.cmm.baseinfo.dto.BaseInfoListQuery;
 import com.prafta.common.cmm.baseinfo.dto.BaseInfoListReq;
 import com.prafta.common.cmm.baseinfo.dto.BaseInfoListRes;
-import com.prafta.common.cmm.baseinfo.dto.BaseinfoReq;
+import com.prafta.common.cmm.baseinfo.dto.BaseInfoQry;
+import com.prafta.common.cmm.baseinfo.dto.BaseInfoReq;
+import com.prafta.common.cmm.baseinfo.dto.BaseInfoRes;
+import com.prafta.common.cmm.baseinfo.dto.BaseinfoCmmReq;
+import com.prafta.common.cmm.baseinfo.dto.MenuListQry;
+import com.prafta.common.cmm.baseinfo.dto.MenuListReq;
+import com.prafta.common.cmm.baseinfo.dto.MenuListRes;
 import com.prafta.common.cmm.baseinfo.dto.SiteNodeListQry;
 import com.prafta.common.cmm.baseinfo.dto.SiteNodeListReq;
 import com.prafta.common.cmm.baseinfo.dto.SiteNodeListRes;
@@ -21,9 +27,11 @@ import com.prafta.common.cmm.baseinfo.dto.SystInfoRes;
 import com.prafta.common.cmm.baseinfo.mapper.BaseinfoMapper;
 import com.prafta.common.cmm.baseinfo.service.BaseinfoService;
 import com.prafta.common.cmm.baseinfo.vo.BaseInfo;
+import com.prafta.common.cmm.baseinfo.vo.MenuInfo;
 import com.prafta.common.cmm.baseinfo.vo.SiteNodeInfo;
 import com.prafta.common.cmm.baseinfo.vo.SystInfo;
 import com.prafta.common.exception.CmmApiException;
+import com.prafta.common.util.MenuListResBuilder;
 import com.prafta.common.util.PasswordHashing;
 
 import lombok.extern.slf4j.Slf4j;
@@ -96,15 +104,35 @@ public class BaseinfoServiceImpl implements BaseinfoService{
 		return retDto;
 	}
 	
-	public Map<String, Object> selectCmpnyInfo(BaseinfoReq dto) {
+	public BaseInfoRes selectBaseinfo(BaseInfoReq dto, Map<String, Object> tokenInfo) {
+		BaseInfoQry reqDto = BaseInfoQry.builder()
+			.codeD(dto.getCodeD())
+			.nameD(dto.getNameD())
+			.code(dto.getCode())
+			.build();
+		
+		BaseInfoRes retDto = null;
+		
+		List<BaseInfo> baseInfoList = baseinfoMapper.selectBaseinfo(reqDto, tokenInfo); 
+		
+		if(baseInfoList.size() > 0) {
+			retDto = BaseInfoRes.builder()
+					.baseInfoList(baseInfoList)
+					.build();
+		}
+		
+		return retDto;
+	}
+	
+	public Map<String, Object> selectCmpnyInfo(BaseinfoCmmReq dto) {
 		return baseinfoMapper.selectCmpnyInfo(dto);
 	}
 	
-	public Map<String, Object> selectUserIdDupleChk(BaseinfoReq dto) {
+	public Map<String, Object> selectUserIdDupleChk(BaseinfoCmmReq dto) {
 		return baseinfoMapper.selectUserIdDupleChk(dto);
 	}
 	
-	public void insertSmsAuthReq(BaseinfoReq dto) {
+	public void insertSmsAuthReq(BaseinfoCmmReq dto) {
 		if(
 			dto.getDupChkYn() != null && dto.getDupChkYn() != "" && dto.getDupChkYn().equals("Y")
 		) {
@@ -118,15 +146,15 @@ public class BaseinfoServiceImpl implements BaseinfoService{
 		baseinfoMapper.insertSmsAuthReq(dto);
 	}
 	
-	public int updateSmsAuthReq(BaseinfoReq dto) {
+	public int updateSmsAuthReq(BaseinfoCmmReq dto) {
 		return baseinfoMapper.updateSmsAuthReq(dto);
 	}
 	
-	public Map<String, Object> selectCertNoSmsId(BaseinfoReq dto) {
+	public Map<String, Object> selectCertNoSmsId(BaseinfoCmmReq dto) {
 		return baseinfoMapper.selectCertNoSmsId(dto);
 	}
 	
-	public List<Map<String, Object>> selectSiteInfoList(BaseinfoReq dto) {
+	public List<Map<String, Object>> selectSiteInfoList(BaseinfoCmmReq dto) {
 		return baseinfoMapper.selectSiteInfoList(dto);
 	}
 	
@@ -162,19 +190,39 @@ public class BaseinfoServiceImpl implements BaseinfoService{
 		return retDto;
 	}
 	
-	public List<Map<String, Object>> selectWebMenuList(BaseinfoReq dto) {
+	public List<Map<String, Object>> selectWebMenuList(BaseinfoCmmReq dto) {
 		return baseinfoMapper.selectWebMenuList(dto);
 	}
 	
-	public List<Map<String, Object>> selectAppMenuList(BaseinfoReq dto) {
+	public List<Map<String, Object>> selectAppMenuList(BaseinfoCmmReq dto) {
 		return baseinfoMapper.selectAppMenuList(dto);
 	}
 	
-	public List<Map<String, Object>> selectMenuList(BaseinfoReq dto) {
-		return baseinfoMapper.selectMenuList(dto);
+	public MenuListRes selectMenuList(MenuListReq dto, Map<String, Object> tokenInfo) {
+		
+		MenuListQry reqDto = MenuListQry.builder()
+										.userId(dto.getUserId())
+										.menuSrc(dto.getMenuSrc())
+										.build();
+		
+		MenuListRes retDto = null;
+		
+		List<MenuInfo> menuInfoList = baseinfoMapper.selectMenuList(reqDto, tokenInfo);
+		
+		if(menuInfoList != null && menuInfoList.size() > 0) {
+			
+			Map<String, String> topLabelMap = Map.of();
+			
+			retDto = MenuListResBuilder.build(
+					menuInfoList
+					, keyId -> topLabelMap.get(keyId)
+					);
+		}
+		
+		return retDto;
 	}
 	
-	public Map<String, Object> selectUserIdInfo(BaseinfoReq dto) {
+	public Map<String, Object> selectUserIdInfo(BaseinfoCmmReq dto) {
 		Map<String, Object> retMap = baseinfoMapper.selectUserIdInfo(dto);
 		
 		if(retMap == null) {
@@ -183,14 +231,14 @@ public class BaseinfoServiceImpl implements BaseinfoService{
 		return retMap;
 	}
 	
-	public void updateUserPw(BaseinfoReq dto) {
+	public void updateUserPw(BaseinfoCmmReq dto) {
 		/* 암호화처리 */
 		if(dto.getUserPw() != null) { dto.setUserPw(PasswordHashing.hashPassword(dto.getUserPw())); }
 		
 		baseinfoMapper.updateUserPw(dto);
 	}
 	
-	public Map<String, Object> selectTermsDInfo(BaseinfoReq dto) {
+	public Map<String, Object> selectTermsDInfo(BaseinfoCmmReq dto) {
 		Map<String, Object> retMap = baseinfoMapper.selectTermsDInfo(dto);
 		
 		if(retMap == null) {

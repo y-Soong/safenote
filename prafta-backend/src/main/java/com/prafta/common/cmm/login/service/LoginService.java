@@ -5,14 +5,14 @@ import java.util.Map;
 
 import com.prafta.common.cmm.login.dto.AuthLogoutReq;
 import com.prafta.common.cmm.login.dto.LoginReqDto;
-import com.prafta.common.cmm.login.dto.UserJoinReqDto;
+import com.prafta.common.cmm.login.dto.UserJoinReq;
 
 public interface LoginService {
 	Map<String, Object> getLoginUser(LoginReqDto dto, String clientType); 
 	
 	int logout(AuthLogoutReq req, Map<String, Object> tokenInfo);
 	
-	void insertUserInfo(UserJoinReqDto dto);
+	void insertUserInfo(UserJoinReq dto);
 	
 	List<Map<String, Object>> selectUserTermsAgrChk(LoginReqDto dto);
 	

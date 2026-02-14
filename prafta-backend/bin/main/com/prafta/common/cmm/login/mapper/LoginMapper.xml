@@ -86,7 +86,7 @@
 	)
     </insert>
     
-    <insert id="insertUserInfo" parameterType="com.prafta.common.cmm.login.dto.UserJoinReqDto">
+    <insert id="insertUserInfo" parameterType="com.prafta.common.cmm.login.dto.UserJoinSave">
     /* LoginMapper.insertUserInfo */
     INSERT INTO TB_USER (
     	CMPNY_CD
@@ -94,6 +94,7 @@
     	, USER_NM
     	, USER_PW
     	, SITE_CD
+    	, NODE_CD
     	, AUTH_CD
     	, MBL_NO
     	, EMAIL
@@ -111,7 +112,8 @@
    		, #{userNm}
    		, #{userPw}
    		, #{siteCd}
-   		, IFNULL(#{authCd}, '100')
+   		, #{nodeCd}
+   		, IFNULL(#{authCd}, '99999')			<!-- 일반사용자권한 할당 -->
    		, FN_ENCRYPT(REPLACE(#{mblNo}, '-', ''))
    		, FN_ENCRYPT(#{email})
    		, #{gender}
@@ -154,7 +156,7 @@
        AND EXPIRE_DTIME  > NOW()
     </update>
     
-    <insert id="insertUserSiteAuth" parameterType="com.prafta.common.cmm.login.dto.UserJoinReqDto">
+    <insert id="insertUserSiteAuth" parameterType="com.prafta.common.cmm.login.dto.UserJoinSave">
     /* LoginMapper.insertUserSiteAuth */
     INSERT INTO TB_USER_SITE_AUTH (
     	CMPNY_CD
@@ -177,12 +179,12 @@
     )
     </insert>
     
-    <select id="selectRequiredTermsList" resultType="map">
+    <select id="selectRequiredTermsList" resultType="com.prafta.common.cmm.login.vo.RequiredTermsInfo">
     /* LoginMapper.selectRequiredTermsList */
     SELECT 
-		A.SYST_VAL_D_CD AS TERMS_ID
-	    , A.SYST_VAL_D_NM AS TERMS_NM
-	    , B.TERMS_VERSION AS TERMS_VERSION
+		A.SYST_VAL_D_CD 		AS termsId
+	    , A.SYST_VAL_D_NM 		AS termsNm
+	    , B.TERMS_VERSION 		AS termsVersion
 	FROM TB_SYST_VAL_D A
 	     INNER JOIN TB_TERMS B
 			ON (
@@ -193,7 +195,7 @@
 	WHERE A.SYST_VAL_CD = 'SYS008'						/* 이용약관 코드 조회 */
     </select>
     
-    <insert id="insertTermsUserAgrMgmt">
+    <insert id="insertTermsUserAgrMgmt" parameterType="com.prafta.common.cmm.login.dto.RequiredTermsInfoSave">
     /* LoginMapper.insertTermsUserAgrMgmt */
     INSERT INTO TB_TERMS_USER_AGR_MGMT (
     	USER_ID
@@ -210,7 +212,7 @@
     	, #{agrYn}
     	, #{userId}
     	, NOW()
-    )
+    ) AS new
     </insert>
     
     <select id="selectUserTermsAgrChk" parameterType="com.prafta.common.cmm.login.dto.LoginReqDto" resultType="map">

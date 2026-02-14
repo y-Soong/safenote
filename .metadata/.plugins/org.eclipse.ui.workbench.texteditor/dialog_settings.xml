@@ -1,50 +1,50 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <section name="Workbench">
 	<section name="org.eclipse.ui.texteditor.FindReplaceDialog">
-		<item key="selection" value="updateUserInfo"/>
+		<item key="selection" value="baim"/>
 		<item key="wrap" value="true"/>
 		<item key="casesensitive" value="false"/>
 		<item key="wholeword" value="false"/>
 		<item key="incremental" value="false"/>
 		<item key="isRegEx" value="false"/>
 		<list key="findhistory">
-			<item value="updateUserInfo"/>
-			<item value="selectUserSiteInfo"/>
-			<item value="mergeUserInfo"/>
-			<item value="nodeCd"/>
-			<item value="deleteUserSiteAuth"/>
-			<item value="insertUserSiteAuth"/>
-			<item value="nodeId"/>
-			<item value="sr_"/>
+			<item value="attd"/>
+			<item value="insertTermsIdVersionInfo"/>
+			<item value="mergeTermsInfo"/>
+			<item value="selectTermsList"/>
+			<item value="TermsInfoReq"/>
+			<item value="updateTermsInfo"/>
+			<item value="selectTermsDList"/>
 			<item value="private "/>
-			<item value="a"/>
-			<item value="selectUserInfoList"/>
-			<item value="getUserInfoList"/>
-			<item value="node"/>
-			<item value="like"/>
+			<item value="getTermsList"/>
+			<item value="deleteCmmCodeDetailInfo"/>
+			<item value="Baim03"/>
+			<item value="insertUserInfo"/>
+			<item value="UserJoinReq"/>
 			<item value="selectSiteNodeList"/>
+			<item value="PasswordHashing"/>
 		</list>
 		<list key="replacehistory">
+			<item value="baim"/>
 			<item value=""/>
+			<item value="BaseinfoCmmReq"/>
 			<item value="parentNodeCd"/>
 			<item value="-"/>
 			<item value="nodeCd"/>
 			<item value="NODE_CD"/>
 			<item value="TB_SITE_NODE"/>
 			<item value="TbmEduItemInfo"/>
-			<item value="baim"/>
 			<item value="baim04"/>
 			<item value="authMapper"/>
 			<item value="03"/>
 			<item value="PROCESS"/>
 			<item value="process"/>
 			<item value="BaseinfoReq"/>
-			<item value="BaseinfoReqDto"/>
 		</list>
 	</section>
 	<section name="org.eclipse.ui.texteditor.FindReplaceDialog_dialogBounds">
-		<item key="DIALOG_X_ORIGIN" value="2006"/>
-		<item key="DIALOG_Y_ORIGIN" value="87"/>
+		<item key="DIALOG_X_ORIGIN" value="2054"/>
+		<item key="DIALOG_Y_ORIGIN" value="8"/>
 		<item key="DIALOG_WIDTH" value="288"/>
 		<item key="DIALOG_HEIGHT" value="391"/>
 		<item key="DIALOG_FONT_NAME" value="1|맑은 고딕|9.0|0|WINDOWS|1|-12|0|0|0|400|0|0|0|1|0|0|0|0|맑은 고딕"/>

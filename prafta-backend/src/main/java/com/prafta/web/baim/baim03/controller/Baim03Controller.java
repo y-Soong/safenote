@@ -5,6 +5,8 @@ import java.util.Map;
 
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.ModelAttribute;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestHeader;
@@ -12,10 +14,14 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
 import com.prafta.common.annotation.NoAuth;
-import com.prafta.common.exception.BaimApiException;
 import com.prafta.common.security.JwtUtil;
 import com.prafta.web.baim.baim03.dto.Baim03;
 import com.prafta.web.baim.baim03.dto.Baim03ReqDto;
+import com.prafta.web.baim.baim03.dto.TermsDetailInfoListReq;
+import com.prafta.web.baim.baim03.dto.TermsDetailInfoListRes;
+import com.prafta.web.baim.baim03.dto.TermsInfoListReq;
+import com.prafta.web.baim.baim03.dto.TermsInfoListRes;
+import com.prafta.web.baim.baim03.dto.TermsInfoReq;
 import com.prafta.web.baim.baim03.service.Baim03Service;
 
 import lombok.RequiredArgsConstructor;
@@ -31,28 +37,33 @@ public class Baim03Controller {
 	private final Baim03Service baim03Service;
 	private final JwtUtil jwtUtil;
 
-    @PostMapping("/getTermsList")
-    public ResponseEntity<?> getTermsList(@RequestBody Baim03ReqDto dto, @RequestHeader(value = "Authorization", required = false) String authorization) {
+//    @PostMapping("/getTermsList")
+	@GetMapping("/terms-info-lists")
+    public ResponseEntity<?> getTermsList(@ModelAttribute TermsInfoListReq dto, @RequestHeader(value = "Authorization", required = false) String authorization) {
     	Map<String, Object> tokenInfo = jwtUtil.getAllClaimsAsMap(authorization);
-		List<Baim03> retList = baim03Service.selectTermsList(dto, tokenInfo);
+    	
+    	TermsInfoListRes retDto = baim03Service.selectTermsList(dto, tokenInfo);
 		
 //    	if(retList == null) {
 //    		throw new BaimApiException("조회된 결과가 없습니다.");
 //    	}
     	
-    	return ResponseEntity.status(HttpStatus.OK).body(retList);
+    	return ResponseEntity.status(HttpStatus.OK).body(retDto);
     }
     
-    @PostMapping("/getTermsDList")
-    public ResponseEntity<?> getTermsDList(@RequestBody Baim03ReqDto dto, @RequestHeader(value = "Authorization", required = false) String authorization) {
+//    @PostMapping("/getTermsDList")
+	@GetMapping("/terms-detail-info-list")
+    public ResponseEntity<?> getTermsDList(@ModelAttribute TermsDetailInfoListReq dto, @RequestHeader(value = "Authorization", required = false) String authorization) {
+		
     	Map<String, Object> tokenInfo = jwtUtil.getAllClaimsAsMap(authorization);
-		List<Baim03> retList = baim03Service.selectTermsDList(dto, tokenInfo);
+    	
+    	TermsDetailInfoListRes retDto = baim03Service.selectTermsDList(dto, tokenInfo);
 		
 //    	if(retList == null) {
 //    		throw new BaimApiException("조회된 결과가 없습니다.");
 //    	}
     	
-    	return ResponseEntity.status(HttpStatus.OK).body(retList);
+    	return ResponseEntity.status(HttpStatus.OK).body(retDto);
     }
     
     @PostMapping("/getTermsInfo")
@@ -68,7 +79,7 @@ public class Baim03Controller {
     }
     
     @PostMapping("/updateTermsInfo")
-    public ResponseEntity<?> updateTermsInfo(@RequestBody Baim03 dto, @RequestHeader(value = "Authorization", required = false) String authorization ) {
+    public ResponseEntity<?> updateTermsInfo(@RequestBody TermsInfoReq dto, @RequestHeader(value = "Authorization", required = false) String authorization ) {
     	Map<String, Object> tokenInfo = jwtUtil.getAllClaimsAsMap(authorization);
     	
     	baim03Service.updateTermsInfo(dto, tokenInfo);
@@ -76,8 +87,9 @@ public class Baim03Controller {
     	return ResponseEntity.status(HttpStatus.OK).build();
     }
     
+    /* 작업하다 만듯 .. 이용약관 쪽 삭제가 필요할 때 마저 진행하자 */
     @PostMapping("/deleteCmmCodeDetailInfo")
-    public ResponseEntity<?> deleteCmmCodeDetailInfo(@RequestBody List<Baim03> dtoList, @RequestHeader(value = "Authorization", required = false) String authorization ) {
+    public ResponseEntity<?> deleteCmmCodeDetailInfo(@RequestBody List<TermsInfoReq> dtoList, @RequestHeader(value = "Authorization", required = false) String authorization ) {
     	Map<String, Object> tokenInfo = jwtUtil.getAllClaimsAsMap(authorization);
     	
     	baim03Service.deleteCmmCodeDetailInfo(dtoList, tokenInfo);

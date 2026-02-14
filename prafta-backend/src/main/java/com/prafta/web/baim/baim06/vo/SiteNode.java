@@ -13,4 +13,6 @@ public class SiteNode{
 	String nodeType;
 	String parentNodeCd;
 	String selfAttdApprvYn;
+	String managerCnt;
+	String workerCnt;
 }

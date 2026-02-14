@@ -14,5 +14,4 @@ public class Baim03{
 	private String strDate;
 	private String useYn;
 	private String termsDesc;
-	
 }

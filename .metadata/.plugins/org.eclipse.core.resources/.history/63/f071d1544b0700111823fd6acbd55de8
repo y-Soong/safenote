@@ -1,0 +1,17 @@
+package com.prafta.web.baim.baim03.vo;
+
+import lombok.Builder;
+import lombok.Value;
+
+@Value
+@Builder
+public class TermsInfo{
+	private String termsId;
+	private String termsNm;
+	private String termsVersion;
+	private String requiredYn;
+	private String termsContent;
+	private String strDate;
+	private String useYn;
+	private String termsDesc;
+}

@@ -5,7 +5,6 @@ import java.util.Map;
 
 import org.springframework.stereotype.Service;
 
-import com.prafta.web.baim.baim02.dto.Baim02;
 import com.prafta.web.chkLst.chkLst01.dto.ChkLst01;
 import com.prafta.web.chkLst.chkLst01.dto.ChkLst01ReqDto;
 import com.prafta.web.chkLst.chkLst01.mapper.ChkLst01Mapper;

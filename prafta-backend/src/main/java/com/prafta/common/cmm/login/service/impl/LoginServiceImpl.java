@@ -5,7 +5,6 @@ import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.security.SecureRandom;
 import java.util.Base64;
-import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -16,11 +15,14 @@ import org.springframework.transaction.annotation.Transactional;
 import com.prafta.common.cmm.login.dto.ActiveToken;
 import com.prafta.common.cmm.login.dto.AuthLogoutReq;
 import com.prafta.common.cmm.login.dto.LoginReqDto;
-import com.prafta.common.cmm.login.dto.UserJoinReqDto;
+import com.prafta.common.cmm.login.dto.RequiredTermsInfoSave;
+import com.prafta.common.cmm.login.dto.UserJoinReq;
+import com.prafta.common.cmm.login.dto.UserJoinSave;
 import com.prafta.common.cmm.login.dto.UserLogout;
 import com.prafta.common.cmm.login.dto.UserRowLock;
 import com.prafta.common.cmm.login.mapper.LoginMapper;
 import com.prafta.common.cmm.login.service.LoginService;
+import com.prafta.common.cmm.login.vo.RequiredTermsInfo;
 import com.prafta.common.exception.LoginFailException;
 import com.prafta.common.util.PasswordHashing;
 
@@ -103,26 +105,43 @@ public class LoginServiceImpl implements LoginService{
     }
 	
 	@Transactional 
-	public void insertUserInfo(UserJoinReqDto dto) {
+	public void insertUserInfo(UserJoinReq dto) {
+		
 		/* 암호화처리 */
 		if(dto.getUserPw() != null) { dto.setUserPw(PasswordHashing.hashPassword(dto.getUserPw())); }
 		
-		loginMapper.insertUserInfo(dto);
-		loginMapper.insertUserSiteAuth(dto);
+		UserJoinSave reqDto = UserJoinSave.builder()
+										.cmpnyCd(dto.getCmpnyCd())
+										.userId(dto.getUserId())
+										.userPw(dto.getUserPw())
+										.userNm(dto.getUserNm())
+										.siteCd(dto.getSiteCd())
+										.nodeCd(dto.getNodeCd())
+										.authCd(dto.getAuthCd())
+										.mblNo(dto.getMblNo())
+										.email(dto.getEmail())
+										.gender(dto.getGender())
+										.birthDt(dto.getBirthDt())
+										.useYn(dto.getUseYn())
+										.build();
 		
-		List<Map<String, Object>> retList = loginMapper.selectRequiredTermsList();
+		loginMapper.insertUserInfo(reqDto);
+		loginMapper.insertUserSiteAuth(reqDto);
 		
-		if(retList == null || retList.size() < 1) {
+		List<RequiredTermsInfo> requiredTermsInfoList = loginMapper.selectRequiredTermsList();
+		
+		if(requiredTermsInfoList == null || requiredTermsInfoList.size() < 1) {
 			throw new LoginFailException("약관동의에 실패했습니다.\n관리자에게 문의해주세요.");
 		} else {
-			for(Map<String, Object> map : retList) {
-				Map<String, Object> param = new HashMap<String, Object>();
-				param.put("userId", dto.getUserId());
-				param.put("termsId", map.get("TERMS_ID"));
-				param.put("termsVersion", map.get("TERMS_VERSION"));
-				param.put("agrYn", "Y");
+			for(RequiredTermsInfo requiredTermsInfo : requiredTermsInfoList) {
+				RequiredTermsInfoSave requiredTermsInfoSave = RequiredTermsInfoSave.builder()
+																					.userId(dto.getUserId())
+																					.termsId(requiredTermsInfo.getTermsId())
+																					.termsVersion(requiredTermsInfo.getTermsVersion())
+																					.agrYn("Y")
+																					.build();
 				
-				loginMapper.insertTermsUserAgrMgmt(param);
+				loginMapper.insertTermsUserAgrMgmt(requiredTermsInfoSave);
 			}
 		}
 	}

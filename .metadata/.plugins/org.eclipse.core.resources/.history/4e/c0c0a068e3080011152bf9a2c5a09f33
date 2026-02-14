@@ -1,0 +1,14 @@
+package com.prafta.web.baim.baim05.dto;
+
+import java.util.List;
+
+import com.prafta.web.baim.baim05.vo.SchInfo;
+
+import lombok.Builder;
+import lombok.Value;
+
+@Value
+@Builder
+public class SchInfoListRes{
+	List<SchInfo> dailyUserSlotList;
+}

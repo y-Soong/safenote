@@ -8,9 +8,11 @@ import org.apache.ibatis.annotations.Param;
 
 import com.prafta.common.cmm.login.dto.ActiveToken;
 import com.prafta.common.cmm.login.dto.LoginReqDto;
-import com.prafta.common.cmm.login.dto.UserJoinReqDto;
+import com.prafta.common.cmm.login.dto.RequiredTermsInfoSave;
+import com.prafta.common.cmm.login.dto.UserJoinSave;
 import com.prafta.common.cmm.login.dto.UserLogout;
 import com.prafta.common.cmm.login.dto.UserRowLock;
+import com.prafta.common.cmm.login.vo.RequiredTermsInfo;
 
 @Mapper
 public interface LoginMapper {
@@ -26,13 +28,13 @@ public interface LoginMapper {
 
     int revokeAllActiveTokens(UserLogout dto);
 	
-	int insertUserInfo(UserJoinReqDto dto);
+	int insertUserInfo(UserJoinSave dto);
 	
-	int insertUserSiteAuth(UserJoinReqDto dto);
+	int insertUserSiteAuth(UserJoinSave dto);
 	
-	List<Map<String, Object>> selectRequiredTermsList();
+	List<RequiredTermsInfo> selectRequiredTermsList();
 	
-	int insertTermsUserAgrMgmt(Map<String, Object> param);
+	int insertTermsUserAgrMgmt(RequiredTermsInfoSave dto);
 	
 	List<Map<String, Object>> selectUserTermsAgrChk(LoginReqDto dto);
 	

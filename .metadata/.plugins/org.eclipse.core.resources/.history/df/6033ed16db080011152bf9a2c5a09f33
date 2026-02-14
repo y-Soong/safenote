@@ -1,0 +1,45 @@
+package com.prafta.web.attd.attd01.controller;
+
+import java.util.Map;
+
+import org.springframework.http.HttpStatus;
+import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.ModelAttribute;
+import org.springframework.web.bind.annotation.RequestHeader;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RestController;
+
+import com.prafta.common.annotation.NoAuth;
+import com.prafta.common.security.JwtUtil;
+import com.prafta.web.baim.baim01.service.Baim01Service;
+import com.prafta.web.baim.baim05.dto.SchInfoListReq;
+import com.prafta.web.baim.baim05.dto.SchInfoListRes;
+
+import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
+
+@Slf4j
+@NoAuth
+@RestController
+@RequestMapping("/attd01")
+@RequiredArgsConstructor
+public class Attd01Controller { 	
+	
+	private final Baim01Service baim01Service;
+	private final JwtUtil jwtUtil;
+	
+////	@GetMapping("/risk-type-lists")
+	@GetMapping("/sch-info-lists")
+    public ResponseEntity<?> getSchInfoList(@ModelAttribute SchInfoListReq dto, @RequestHeader(value = "Authorization", required = false) String authorization) {
+    	
+    	Map<String, Object> tokenInfo = jwtUtil.getAllClaimsAsMap(authorization);
+    	SchInfoListRes retList = baim01Service.selectSchInfoList(dto, tokenInfo);
+		
+//    	if(retList == null) {
+//    		throw new BaimApiException("조회된 결과가 없습니다.");
+//    	}
+    	
+    	return ResponseEntity.status(HttpStatus.OK).body(retList);
+    }
+}

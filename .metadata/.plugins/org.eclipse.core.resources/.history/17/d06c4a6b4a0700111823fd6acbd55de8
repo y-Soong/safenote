@@ -1,0 +1,16 @@
+package com.prafta.web.baim.baim03.dto;
+
+import lombok.Data;
+
+@Data
+public class Baim03{
+	private String termsId;
+	private String termsNm;
+	private String termsVersion;
+	private String requiredYn;
+	private String termsContent;
+	private String strDate;
+	private String useYn;
+	private String termsDesc;
+	
+}

@@ -14,7 +14,6 @@ import org.springframework.web.bind.annotation.RestController;
 import com.prafta.common.annotation.NoAuth;
 import com.prafta.common.exception.LoginFailException;
 import com.prafta.common.security.JwtUtil;
-import com.prafta.web.baim.baim02.dto.Baim02;
 import com.prafta.web.chkLst.chkLst01.dto.ChkLst01;
 import com.prafta.web.chkLst.chkLst01.dto.ChkLst01ReqDto;
 import com.prafta.web.chkLst.chkLst01.service.ChkLst01Service;

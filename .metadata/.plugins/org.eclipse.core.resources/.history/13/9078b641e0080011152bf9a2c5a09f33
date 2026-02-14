@@ -1,0 +1,41 @@
+package com.prafta.web.attd.attd01.service.impl;
+
+import org.springframework.stereotype.Service;
+
+import com.prafta.web.attd.attd01.mapper.Attd01Mapper;
+import com.prafta.web.attd.attd01.service.Attd01Service;
+
+import lombok.extern.slf4j.Slf4j;
+
+@Slf4j
+@Service
+public class Attd01ServiceImpl implements Attd01Service{
+	private final Attd01Mapper attd01Mapper;
+		
+	public Attd01ServiceImpl(Attd01Mapper attd01Mapper) {
+		this.attd01Mapper = attd01Mapper;
+	}
+	
+//	public DailyUserSlotListRes selectDailyUserSlotList(DailyUserSlotListReq dto, Map<String, Object> tokenInfo) {
+//		
+//		DailyUserSlotListQry reqDto = DailyUserSlotListQry.builder()
+//										.siteCd(dto.getSiteCd())
+//										.slotType(dto.getSlotType())
+//										.slotStatus(dto.getSlotStatus())
+//										.useYn(dto.getUseYn())
+//										.currUserId(dto.getCurrUserId())
+//										.build();
+//		
+//		DailyUserSlotListRes retDto = null;
+//		
+//		List<DailyUserSlotList> dailyUserSlotList = baim05Mapper.selectDailyUserSlotList(reqDto, tokenInfo);
+//		
+//		if(dailyUserSlotList.size() > 0) {
+//			retDto = DailyUserSlotListRes.builder()
+//					.dailyUserSlotList(dailyUserSlotList)
+//					.build();
+//		}
+//		
+//		return retDto;
+//	}
+}
