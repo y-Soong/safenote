@@ -1,0 +1,10 @@
+package com.prafta.common.schedule.holiday.dto;
+
+import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
+
+@JsonIgnoreProperties(ignoreUnknown = true)
+public class HolidayItemDto {
+    public String dateName;   // ¸íÄª
+    public Integer locdate;   // yyyymmdd
+    public String isHoliday;  // Y/N
+}

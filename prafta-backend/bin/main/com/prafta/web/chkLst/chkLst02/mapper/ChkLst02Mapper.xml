@@ -52,7 +52,7 @@
    				, '_'
    				, CAST(#{param.chkLstType} AS UNSIGNED)
    				, '_'
-   				, prafta.FNC_CMM_SEQ_NEXTVAL(#{token.gv_cmpnyCd}, CONCAT('COM001', '-', #{param.chkLstType})))
+   				, prafta.FNC_CMM_SEQ_NEXTVAL(#{token.gv_cmpnyCd}, CONCAT('COM001-', #{param.chkLstType})))
  			)
    		, #{param.inspectItemSubj}
    		, #{param.sortIdx}

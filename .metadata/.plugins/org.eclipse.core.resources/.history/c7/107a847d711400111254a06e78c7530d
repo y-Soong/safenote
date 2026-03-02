@@ -1,0 +1,8 @@
+package com.prafta.common.schedule.holiday.vo;
+
+public class Holiday {
+	private String holidayDt;   // YYYY-MM-DD
+    private String holidayNm;
+    private String isHoliday;   // Y/N
+    private int year;
+}

@@ -11,13 +11,20 @@ public class SchInfo{
 	String schCd;
 	String schNo;
 	String schType;
+	String schTypeNm;
+	String baseYn;
+	String baseYnNm;
+	String applyDate;
 	String fstSchStrTime;
-	String fstSchStrEnd;
-	String fstSchBrkHour;
+	String fstSchEndTime;
+	String fstSchTime;
+	String fstSchBrkMin;
 	String fstSchBrkYn;
 	String secSchStrTime;
-	String secSchStrEnd;
-	String secSchBrkHour;
+	String secSchEndTime;
+	String secSchTime;
+	String secSchBrkMin;
 	String secSchBrkYn;
 	String useYn;
+	String useYnNm;
 }

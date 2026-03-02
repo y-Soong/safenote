@@ -1,0 +1,56 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+
+<mapper namespace="com.prafta.common.schedule.holiday.mapper.HolidayMapper">
+
+	<select id="selectCmpnyInfoList" resultType="com.prafta.common.schedule.holiday.vo.CmpnyInfo">
+    /* HolidayMapper.selectCmpnyInfoList */
+    SELECT CMPNY_CD AS cmpnyCd
+    FROM TB_CMPNY
+    WHERE USE_YN = 'Y'
+    </select>
+    
+    <select id="selectHolidayId" parameterType="com.prafta.common.schedule.holiday.vo.Holiday" resultType="string">
+    /* HolidayMapper.selectHolidayId */
+    SELECT A.HOLIDAY_ID
+    FROM TB_HOLIDAY A
+    WHERE A.CMPNY_CD = #{param.cmpnyCd}
+      AND A.HOLIDAY_YMD = STR_TO_DATE(REPLACE(#{param.holidayDt}, '-', ''), '%Y%m%d')
+      AND A.HOLIDAY_TYPE = '02'					/* 공휴일 타입 고정 */
+    </select>
+
+	<update id="updateHoliday" parameterType="com.prafta.common.schedule.holiday.vo.Holiday">
+    /* HolidayMapper.updateHoliday */
+	INSERT INTO TB_HOLIDAY (
+	    CMPNY_CD
+		 , HOLIDAY_ID
+		 , HOLIDAY_NM
+		 , HOLIDAY_YMD
+		 , HOLIDAY_TYPE
+		 , USE_YN
+		 , INSERT_NO
+		 , INSERT_DATE
+		 , UPDATE_NO
+		 , UPDATE_DATE
+	) VALUES (
+	    #{param.cmpnyCd}
+		 , IFNULL(#{param.HOLIDAY_ID}, CONCAT(DATE_FORMAT(NOW(), '%Y'), FNC_CMM_SEQ_NEXTVAL(#{param.cmpnyCd}, 'HOLIDAY_ID')))
+		 , #{param.holidayNm}
+		 , STR_TO_DATE(REPLACE(#{param.holidayDt}, '-', ''), '%Y%m%d')
+		 , '01'				/* 공휴일 타입 고정 */
+		 , 'Y'
+		 , 'SYSTEM'
+		 , NOW()
+		 , 'SYSTEM'
+		 , NOW()
+	)
+	ON DUPLICATE KEY UPDATE
+	    HOLIDAY_NM   = VALUES(HOLIDAY_NM)
+		 , HOLIDAY_YMD  = VALUES(HOLIDAY_YMD)
+		 , HOLIDAY_TYPE = '01'
+		 , USE_YN       = 'Y'
+		 , UPDATE_NO    = 'SYSTEM'
+		 , UPDATE_DATE  = NOW()
+    </update>
+    
+</mapper>

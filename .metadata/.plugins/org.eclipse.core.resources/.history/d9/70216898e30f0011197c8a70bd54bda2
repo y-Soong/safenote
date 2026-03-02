@@ -1,0 +1,9 @@
+package com.prafta.web.attd.attd01.dto;
+
+import lombok.Data;
+
+@Data
+public class CopySchInfoReq{
+	String siteCd;
+	String targetSiteCd;
+}

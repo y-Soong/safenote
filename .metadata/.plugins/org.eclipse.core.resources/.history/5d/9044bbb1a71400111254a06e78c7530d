@@ -1,0 +1,232 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+
+<mapper namespace="com.prafta.web.attd.attd01.mapper.Attd01Mapper">
+
+    <select id="selectSchInfoList" parameterType="com.prafta.web.attd.attd01.dto.SchInfoListQry" resultType="com.prafta.web.attd.attd01.vo.SchInfo">
+    /* Attd01Mapper.selectSchInfoList */
+    SELECT
+	    A.CMPNY_CD          	AS cmpnyCd
+	    , A.SITE_CD           	AS siteCd
+	    , A.SCH_CD            	AS schCd
+	    , A.SCH_NO            	AS schNo
+	    , A.SCH_TYPE          	AS schType
+	    , FNC_CMM_INFO_SRCH(
+	    	A.CMPNY_CD
+	    	, 'SYST_VAL'
+	    	, A.SCH_TYPE
+	    	, 'SYS019'
+    	) 						AS schTypeNm
+    	, A.BASE_YN          	AS baseYn
+    	, FNC_CMM_INFO_SRCH(
+	    	A.CMPNY_CD
+	    	, 'SYST_VAL'
+	    	, A.BASE_YN
+	    	, 'SYS003'
+    	) 						AS baseYnNm
+    	
+    	
+	    , A.APPLY_DATE			AS applyDate
+
+	    , A.FST_SCH_STR_TIME  	AS fstSchStrTime
+	    , A.FST_SCH_END_TIME	AS fstSchEndTime
+	    , CONCAT(
+	    	A.FST_SCH_STR_TIME
+	    	, '-'
+	    	, A.FST_SCH_END_TIME
+    	) 						AS fstSchTime
+	    , A.FST_SCH_BRK_MIN  	AS fstSchBrkMin
+
+	    , A.SEC_SCH_STR_TIME  	AS secSchStrTime
+	    , A.SEC_SCH_END_TIME  	AS secSchEndTime
+	    , CONCAT(
+	    	A.SEC_SCH_STR_TIME
+	    	, '-'
+	    	, A.SEC_SCH_END_TIME
+    	) 						AS secSchTime
+	    , A.SEC_SCH_BRK_MIN  	AS secSchBrkMin
+	    
+	    , A.USE_YN            	AS useYn
+	    , FNC_CMM_INFO_SRCH(
+	    	A.CMPNY_CD
+	    	, 'SYST_VAL'
+	    	, A.USE_YN
+	    	, 'SYS003'
+    	) 						AS useYnNm
+	    , A.INSERT_NO         	AS insertNo
+	    , A.INSERT_DATE       	AS insertDate
+	    , A.UPDATE_NO         	AS updateNo
+	    , A.UPDATE_DATE       	AS updateDate
+	FROM TB_SCH_MGMT A
+	WHERE 1=1
+	  AND A.CMPNY_CD = #{token.gv_cmpnyCd}
+	  <if test="param.siteCd != null and param.siteCd != ''">
+	  	AND A.SITE_CD = #{param.siteCd}
+	  </if>
+	  <if test="param.schNo != null and param.schNo != ''">
+	  	AND A.SCH_NO = #{param.schNo}	
+	  </if>
+	  <if test="param.useYn != null and param.useYn != ''">
+	  	AND A.USE_YN  = #{param.useYn}
+	  </if>
+	</select>
+	
+	<select id="selectSchCd" parameterType="com.prafta.web.attd.attd01.dto.SchCdQry" resultType="string">
+    /* Attd01Mapper.selectSchCd */
+    SELECT FNC_CMM_SEQ_NEXTVAL(#{token.gv_cmpnyCd}, CONCAT('SCH_CD-', #{param.siteCd}))
+    FROM DUAL
+    </select>
+	
+	<update id="updateSchInfo" parameterType="com.prafta.web.attd.attd01.dto.SchInfoSave">
+    /* Attd01Mapper.updateSchInfo */
+    INSERT INTO prafta.TB_SCH_MGMT (
+        CMPNY_CD
+        , SITE_CD
+        , SCH_CD
+        , SCH_NO
+        , SCH_TYPE
+        , APPLY_DATE
+		
+        , FST_SCH_STR_TIME
+        , FST_SCH_END_TIME
+        , FST_SCH_BRK_MIN
+		
+        , SEC_SCH_STR_TIME
+        , SEC_SCH_END_TIME
+        , SEC_SCH_BRK_MIN
+		
+        , USE_YN
+        , INSERT_NO
+        , INSERT_DATE
+        , UPDATE_NO
+        , UPDATE_DATE
+    )
+    VALUES (
+        #{token.gv_cmpnyCd}
+        , #{param.siteCd}
+        , #{param.schCd}
+        , #{param.schNo}
+        , #{param.schType}
+        , REPLACE(#{param.applyDate}, '-', '')
+		
+        , REPLACE(#{param.fstSchStrTime}, ':', '')
+        , REPLACE(#{param.fstSchEndTime}, ':', '')
+        , #{param.fstSchBrkMin}
+		
+        , REPLACE(IFNULL(#{param.secSchStrTime}, ''), ':', '')
+        , REPLACE(IFNULL(#{param.secSchEndTime}, ''), ':', '')
+        , IFNULL(#{param.secSchBrkMin}, '0')
+		
+        , IFNULL(#{param.useYn}, 'Y')
+        , #{token.gv_userId}
+        , NOW()
+        , #{token.gv_userId}
+        , NOW()
+    )
+    ON DUPLICATE KEY UPDATE
+        SCH_NO          	= VALUES(SCH_NO)
+        , SCH_TYPE        	= VALUES(SCH_TYPE)
+        , APPLY_DATE      	= VALUES(APPLY_DATE)
+
+        , FST_SCH_STR_TIME	= VALUES(FST_SCH_STR_TIME)
+        , FST_SCH_END_TIME	= VALUES(FST_SCH_END_TIME)
+        , FST_SCH_BRK_MIN 	= VALUES(FST_SCH_BRK_MIN)
+
+        , SEC_SCH_STR_TIME	= VALUES(SEC_SCH_STR_TIME)
+        , SEC_SCH_END_TIME	= VALUES(SEC_SCH_END_TIME)
+        , SEC_SCH_BRK_MIN 	= VALUES(SEC_SCH_BRK_MIN)
+
+        , USE_YN          	= VALUES(USE_YN)
+        , UPDATE_NO       	= #{token.gv_userId}
+        , UPDATE_DATE     	= NOW()
+	</update>
+	
+	<select id="selectSchHistIdx" parameterType="com.prafta.web.attd.attd01.dto.SchInfoHistQry" resultType="int">
+    /* Attd01Mapper.selectSchHistIdx */
+    SELECT COUNT(*)
+	FROM TB_SCH_MGMT_HIST A
+	WHERE A.CMPNY_CD = #{token.gv_cmpnyCd}
+	  AND A.SITE_CD = #{param.siteCd}
+	  AND A.SCH_CD = #{param.schCd}   
+    </select>
+    
+    <insert id="insertSchHistInfo" parameterType="com.prafta.web.attd.attd01.dto.SchInfoHistSave">
+    /* Attd01Mapper.insertSchHistInfo */
+    INSERT INTO TB_SCH_MGMT_HIST (
+        CMPNY_CD
+        , SITE_CD
+        , HIST_IDX
+        , SCH_CD
+        , APPLY_DATE
+		
+        , FST_SCH_STR_TIME
+        , FST_SCH_END_TIME
+        , FST_SCH_BRK_MIN
+		
+        , SEC_SCH_STR_TIME
+        , SEC_SCH_END_TIME
+        , SEC_SCH_BRK_MIN
+		
+        , USE_YN
+        , INSERT_NO
+        , INSERT_DATE
+    )
+    VALUES (
+        #{token.gv_cmpnyCd}
+        , #{param.siteCd}
+        , #{param.histIdx}
+        , #{param.schCd}
+        , REPLACE(#{param.applyDate}, '-', '')
+		
+        , REPLACE(#{param.fstSchStrTime}, ':', '')
+        , REPLACE(#{param.fstSchEndTime}, ':', '')
+        , #{param.fstSchBrkMin}
+		
+        , REPLACE(IFNULL(#{param.secSchStrTime}, ''), ':', '')
+        , REPLACE(IFNULL(#{param.secSchEndTime}, ''), ':', '')
+        , IFNULL(#{param.secSchBrkMin}, '0')
+		
+        , IFNULL(#{param.useYn}, 'Y')
+        , #{token.gv_userId}
+        , NOW()
+    )
+    </insert>
+    
+    <select id="selectSchHistList" parameterType="com.prafta.web.attd.attd01.dto.SchInfoHistQry" resultType="com.prafta.web.attd.attd01.vo.SchHist">
+    /* Attd01Mapper.selectSchHistList */
+	SELECT 
+		A.CMPNY_CD									AS cmpnyCd
+	    , A.SITE_CD									AS siteCd
+	    , A.HIST_IDX								AS histIdx
+	    , A.SCH_CD									AS schCd
+	    , DATE_FORMAT(A.APPLY_DATE, '%Y-%m-%d')		AS applyDate
+	
+	    , CONCAT(
+			A.FST_SCH_STR_TIME
+	        , '-'
+	        , A.FST_SCH_END_TIME
+		)											AS fstSchTime
+	    , A.FST_SCH_BRK_MIN							AS fstSchBrkMin
+	
+	    , CONCAT(
+			A.SEC_SCH_STR_TIME
+	        , '-'
+	        , A.SEC_SCH_END_TIME
+		)											AS secSchTime
+	    , A.SEC_SCH_BRK_MIN							AS secSchBrkMin
+	
+	    , A.USE_YN									AS useYn
+	    , A.INSERT_NO								AS userId
+	    , B.USER_NM									AS userNm
+	    , DATE_FORMAT(A.INSERT_DATE, '%Y-%m-%d')	AS insertDate
+	FROM TB_SCH_MGMT_HIST A
+		 INNER JOIN TB_USER B
+			ON (
+				A.INSERT_NO = B.USER_ID
+	        )
+	WHERE A.CMPNY_CD = #{token.gv_cmpnyCd}
+	  AND A.SITE_CD = #{param.siteCd}
+	  AND A.SCH_CD = #{param.schCd}
+	ORDER BY A.CMPNY_CD, A.SITE_CD, A.HIST_IDX
+    </select>
+</mapper>

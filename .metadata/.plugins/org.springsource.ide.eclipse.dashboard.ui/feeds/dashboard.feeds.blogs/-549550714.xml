@@ -1,80 +1,294 @@
-<?xml version="1.0" encoding="UTF-8"?><rss xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:content="http://purl.org/rss/1.0/modules/content/" xmlns:atom="http://www.w3.org/2005/Atom" version="2.0"><channel><title><![CDATA[Spring]]></title><description><![CDATA[Level up your Java code and explore what Spring can do for you.]]></description><link>https://spring.io</link><generator>GatsbyJS</generator><lastBuildDate>Sat, 14 Feb 2026 00:50:00 GMT</lastBuildDate><item><title><![CDATA[Spring Data 2025.1.3 and 2025.0.9 released]]></title><link>https://spring.io/blog/2026/02/13/spring-data-2025-1-3-and-2025-0-9-released</link><guid isPermaLink="true">https://spring.io/blog/2026/02/13/spring-data-2025-1-3-and-2025-0-9-released</guid><dc:creator><![CDATA[mp911de]]></dc:creator><pubDate>Fri, 13 Feb 2026 00:00:00 GMT</pubDate><content:encoded>&lt;p&gt;On behalf of the team and everyone who has contributed, I¡¯m pleased to announce the availability of &lt;code&gt;2025.1.3&lt;/code&gt; and &lt;code&gt;2025.0.9&lt;/code&gt; service releases. These releases ship with dependency upgrades, fixes for regressions and selected improvements.&lt;/p&gt;
-&lt;p&gt;The upcoming Spring Boot releases will pick up the above releases by next week.&lt;/p&gt;
-&lt;h2 id=&quot;202513&quot; style=&quot;position:relative;&quot;&gt;&lt;a href=&quot;#202513&quot; aria-label=&quot;202513 permalink&quot; class=&quot;anchor before&quot;&gt;&lt;svg aria-hidden=&quot;true&quot; focusable=&quot;false&quot; height=&quot;16&quot; version=&quot;1.1&quot; viewBox=&quot;0 0 16 16&quot; width=&quot;16&quot;&gt;&lt;path fill-rule=&quot;evenodd&quot; d=&quot;M4 9h1v1H4c-1.5 0-3-1.69-3-3.5S2.55 3 4 3h4c1.45 0 3 1.69 3 3.5 0 1.41-.91 2.72-2 3.25V8.59c.58-.45 1-1.27 1-2.09C10 5.22 8.98 4 8 4H4c-.98 0-2 1.22-2 2.5S3 9 4 9zm9-3h-1v1h1c1 0 2 1.22 2 2.5S13.98 12 13 12H9c-.98 0-2-1.22-2-2.5 0-.83.42-1.64 1-2.09V6.25c-1.09.53-2 1.84-2 3.25C6 11.31 7.55 13 9 13h4c1.45 0 3-1.69 3-3.5S14.5 6 13 6z&quot;&gt;&lt;/path&gt;&lt;/svg&gt;&lt;/a&gt;2025.1.3&lt;/h2&gt;
-&lt;ul&gt;
-&lt;li&gt;Spring Data Commons &lt;code&gt;4.0.3&lt;/code&gt; - &lt;a href=&quot;https://docs.spring.io/spring-data/commons/docs/4.0.3/api/&quot;&gt;Javadoc&lt;/a&gt; - &lt;a href=&quot;https://docs.spring.io/spring-data/commons/reference/4.0/&quot;&gt;Documentation&lt;/a&gt; - &lt;a href=&quot;https://github.com/spring-projects/spring-data-commons/releases/tag/4.0.3&quot;&gt;Changelog&lt;/a&gt;&lt;/li&gt;
-&lt;li&gt;Spring Data JPA &lt;code&gt;4.0.3&lt;/code&gt; - &lt;a href=&quot;https://docs.spring.io/spring-data/jpa/docs/4.0.3/api/&quot;&gt;Javadoc&lt;/a&gt; - &lt;a href=&quot;https://docs.spring.io/spring-data/jpa/reference/4.0/&quot;&gt;Documentation&lt;/a&gt; - &lt;a href=&quot;https://github.com/spring-projects/spring-data-jpa/releases/tag/4.0.3&quot;&gt;Changelog&lt;/a&gt;&lt;/li&gt;
-&lt;li&gt;Spring Data Neo4j &lt;code&gt;8.0.3&lt;/code&gt; - &lt;a href=&quot;https://docs.spring.io/spring-data/neo4j/docs/8.0.3/api/&quot;&gt;Javadoc&lt;/a&gt; - &lt;a href=&quot;https://docs.spring.io/spring-data/neo4j/reference/8.0/&quot;&gt;Documentation&lt;/a&gt; - &lt;a href=&quot;https://github.com/spring-projects/spring-data-neo4j/releases/tag/8.0.3&quot;&gt;Changelog&lt;/a&gt;&lt;/li&gt;
-&lt;li&gt;Spring Data for Apache Cassandra &lt;code&gt;5.0.3&lt;/code&gt; - &lt;a href=&quot;https://docs.spring.io/spring-data/cassandra/docs/5.0.3/api/&quot;&gt;Javadoc&lt;/a&gt; - &lt;a href=&quot;https://docs.spring.io/spring-data/cassandra/reference/5.0/&quot;&gt;Documentation&lt;/a&gt; - &lt;a href=&quot;https://github.com/spring-projects/spring-data-cassandra/releases/tag/5.0.3&quot;&gt;Changelog&lt;/a&gt;&lt;/li&gt;
-&lt;li&gt;Spring Data MongoDB &lt;code&gt;5.0.3&lt;/code&gt; - &lt;a href=&quot;https://docs.spring.io/spring-data/mongodb/docs/5.0.3/api/&quot;&gt;Javadoc&lt;/a&gt; - &lt;a href=&quot;https://docs.spring.io/spring-data/mongodb/reference/5.0/&quot;&gt;Documentation&lt;/a&gt; - &lt;a href=&quot;https://github.com/spring-projects/spring-data-mongodb/releases/tag/5.0.3&quot;&gt;Changelog&lt;/a&gt;&lt;/li&gt;
-&lt;li&gt;Spring Data KeyValue &lt;code&gt;4.0.3&lt;/code&gt; - &lt;a href=&quot;https://docs.spring.io/spring-data/keyvalue/docs/4.0.3/api/&quot;&gt;Javadoc&lt;/a&gt; - &lt;a href=&quot;https://docs.spring.io/spring-data/keyvalue/reference/4.0/&quot;&gt;Documentation&lt;/a&gt; - &lt;a href=&quot;https://github.com/spring-projects/spring-data-keyvalue/releases/tag/4.0.3&quot;&gt;Changelog&lt;/a&gt;&lt;/li&gt;
-&lt;li&gt;Spring Data LDAP &lt;code&gt;4.0.3&lt;/code&gt; - &lt;a href=&quot;https://docs.spring.io/spring-data/ldap/docs/4.0.3/api/&quot;&gt;Javadoc&lt;/a&gt; - &lt;a href=&quot;https://docs.spring.io/spring-data/ldap/reference/4.0/&quot;&gt;Documentation&lt;/a&gt; - &lt;a href=&quot;https://github.com/spring-projects/spring-data-ldap/releases/tag/4.0.3&quot;&gt;Changelog&lt;/a&gt;&lt;/li&gt;
-&lt;li&gt;Spring Data REST &lt;code&gt;5.0.3&lt;/code&gt; - &lt;a href=&quot;https://docs.spring.io/spring-data/rest/docs/5.0.3/api/&quot;&gt;Javadoc&lt;/a&gt; - &lt;a href=&quot;https://docs.spring.io/spring-data/rest/reference/5.0/&quot;&gt;Documentation&lt;/a&gt; - &lt;a href=&quot;https://github.com/spring-projects/spring-data-rest/releases/tag/5.0.3&quot;&gt;Changelog&lt;/a&gt;&lt;/li&gt;
-&lt;li&gt;Spring Data Redis &lt;code&gt;4.0.3&lt;/code&gt; - &lt;a href=&quot;https://docs.spring.io/spring-data/redis/docs/4.0.3/api/&quot;&gt;Javadoc&lt;/a&gt; - &lt;a href=&quot;https://docs.spring.io/spring-data/redis/reference/4.0/&quot;&gt;Documentation&lt;/a&gt; - &lt;a href=&quot;https://github.com/spring-projects/spring-data-redis/releases/tag/4.0.3&quot;&gt;Changelog&lt;/a&gt;&lt;/li&gt;
-&lt;li&gt;Spring Data Elasticsearch &lt;code&gt;6.0.3&lt;/code&gt; - &lt;a href=&quot;https://docs.spring.io/spring-data/elasticsearch/docs/6.0.3/api/&quot;&gt;Javadoc&lt;/a&gt; - &lt;a href=&quot;https://docs.spring.io/spring-data/elasticsearch/reference/6.0/&quot;&gt;Documentation&lt;/a&gt; - &lt;a href=&quot;https://github.com/spring-projects/spring-data-elasticsearch/releases/tag/6.0.3&quot;&gt;Changelog&lt;/a&gt;&lt;/li&gt;
-&lt;li&gt;Spring Data Couchbase &lt;code&gt;6.0.3&lt;/code&gt; - &lt;a href=&quot;https://docs.spring.io/spring-data/couchbase/docs/6.0.3/api/&quot;&gt;Javadoc&lt;/a&gt; - &lt;a href=&quot;https://docs.spring.io/spring-data/couchbase/reference/6.0/&quot;&gt;Documentation&lt;/a&gt; - &lt;a href=&quot;https://github.com/spring-projects/spring-data-couchbase/releases/tag/6.0.3&quot;&gt;Changelog&lt;/a&gt;&lt;/li&gt;
-&lt;li&gt;Spring Data Relational &lt;code&gt;4.0.3&lt;/code&gt; - &lt;a href=&quot;https://docs.spring.io/spring-data/relational/docs/4.0.3/api/&quot;&gt;Javadoc&lt;/a&gt; - &lt;a href=&quot;https://docs.spring.io/spring-data/relational/reference/4.0/&quot;&gt;Documentation&lt;/a&gt; - &lt;a href=&quot;https://github.com/spring-projects/spring-data-relational/releases/tag/4.0.3&quot;&gt;Changelog&lt;/a&gt;&lt;/li&gt;
-&lt;/ul&gt;
-&lt;h2 id=&quot;202509&quot; style=&quot;position:relative;&quot;&gt;&lt;a href=&quot;#202509&quot; aria-label=&quot;202509 permalink&quot; class=&quot;anchor before&quot;&gt;&lt;svg aria-hidden=&quot;true&quot; focusable=&quot;false&quot; height=&quot;16&quot; version=&quot;1.1&quot; viewBox=&quot;0 0 16 16&quot; width=&quot;16&quot;&gt;&lt;path fill-rule=&quot;evenodd&quot; d=&quot;M4 9h1v1H4c-1.5 0-3-1.69-3-3.5S2.55 3 4 3h4c1.45 0 3 1.69 3 3.5 0 1.41-.91 2.72-2 3.25V8.59c.58-.45 1-1.27 1-2.09C10 5.22 8.98 4 8 4H4c-.98 0-2 1.22-2 2.5S3 9 4 9zm9-3h-1v1h1c1 0 2 1.22 2 2.5S13.98 12 13 12H9c-.98 0-2-1.22-2-2.5 0-.83.42-1.64 1-2.09V6.25c-1.09.53-2 1.84-2 3.25C6 11.31 7.55 13 9 13h4c1.45 0 3-1.69 3-3.5S14.5 6 13 6z&quot;&gt;&lt;/path&gt;&lt;/svg&gt;&lt;/a&gt;2025.0.9&lt;/h2&gt;
-&lt;ul&gt;
-&lt;li&gt;Spring Data Commons &lt;code&gt;3.5.9&lt;/code&gt; - &lt;a href=&quot;https://docs.spring.io/spring-data/commons/docs/3.5.9/api/&quot;&gt;Javadoc&lt;/a&gt; - &lt;a href=&quot;https://docs.spring.io/spring-data/commons/reference/3.5/&quot;&gt;Documentation&lt;/a&gt; - &lt;a href=&quot;https://github.com/spring-projects/spring-data-commons/releases/tag/3.5.9&quot;&gt;Changelog&lt;/a&gt;&lt;/li&gt;
-&lt;li&gt;Spring Data JPA &lt;code&gt;3.5.9&lt;/code&gt; - &lt;a href=&quot;https://docs.spring.io/spring-data/jpa/docs/3.5.9/api/&quot;&gt;Javadoc&lt;/a&gt; - &lt;a href=&quot;https://docs.spring.io/spring-data/jpa/reference/3.5/&quot;&gt;Documentation&lt;/a&gt; - &lt;a href=&quot;https://github.com/spring-projects/spring-data-jpa/releases/tag/3.5.9&quot;&gt;Changelog&lt;/a&gt;&lt;/li&gt;
-&lt;li&gt;Spring Data Neo4j &lt;code&gt;7.5.9&lt;/code&gt; - &lt;a href=&quot;https://docs.spring.io/spring-data/neo4j/docs/7.5.9/api/&quot;&gt;Javadoc&lt;/a&gt; - &lt;a href=&quot;https://docs.spring.io/spring-data/neo4j/reference/7.5/&quot;&gt;Documentation&lt;/a&gt; - &lt;a href=&quot;https://github.com/spring-projects/spring-data-neo4j/releases/tag/7.5.9&quot;&gt;Changelog&lt;/a&gt;&lt;/li&gt;
-&lt;li&gt;Spring Data for Apache Cassandra &lt;code&gt;4.5.9&lt;/code&gt; - &lt;a href=&quot;https://docs.spring.io/spring-data/cassandra/docs/4.5.9/api/&quot;&gt;Javadoc&lt;/a&gt; - &lt;a href=&quot;https://docs.spring.io/spring-data/cassandra/reference/4.5/&quot;&gt;Documentation&lt;/a&gt; - &lt;a href=&quot;https://github.com/spring-projects/spring-data-cassandra/releases/tag/4.5.9&quot;&gt;Changelog&lt;/a&gt;&lt;/li&gt;
-&lt;li&gt;Spring Data MongoDB &lt;code&gt;4.5.9&lt;/code&gt; - &lt;a href=&quot;https://docs.spring.io/spring-data/mongodb/docs/4.5.9/api/&quot;&gt;Javadoc&lt;/a&gt; - &lt;a href=&quot;https://docs.spring.io/spring-data/mongodb/reference/4.5/&quot;&gt;Documentation&lt;/a&gt; - &lt;a href=&quot;https://github.com/spring-projects/spring-data-mongodb/releases/tag/4.5.9&quot;&gt;Changelog&lt;/a&gt;&lt;/li&gt;
-&lt;li&gt;Spring Data KeyValue &lt;code&gt;3.5.9&lt;/code&gt; - &lt;a href=&quot;https://docs.spring.io/spring-data/keyvalue/docs/3.5.9/api/&quot;&gt;Javadoc&lt;/a&gt; - &lt;a href=&quot;https://docs.spring.io/spring-data/keyvalue/reference/3.5/&quot;&gt;Documentation&lt;/a&gt; - &lt;a href=&quot;https://github.com/spring-projects/spring-data-keyvalue/releases/tag/3.5.9&quot;&gt;Changelog&lt;/a&gt;&lt;/li&gt;
-&lt;li&gt;Spring Data LDAP &lt;code&gt;3.5.9&lt;/code&gt; - &lt;a href=&quot;https://docs.spring.io/spring-data/ldap/docs/3.5.9/api/&quot;&gt;Javadoc&lt;/a&gt; - &lt;a href=&quot;https://docs.spring.io/spring-data/ldap/reference/3.5/&quot;&gt;Documentation&lt;/a&gt; - &lt;a href=&quot;https://github.com/spring-projects/spring-data-ldap/releases/tag/3.5.9&quot;&gt;Changelog&lt;/a&gt;&lt;/li&gt;
-&lt;li&gt;Spring Data REST &lt;code&gt;4.5.9&lt;/code&gt; - &lt;a href=&quot;https://docs.spring.io/spring-data/rest/docs/4.5.9/api/&quot;&gt;Javadoc&lt;/a&gt; - &lt;a href=&quot;https://docs.spring.io/spring-data/rest/reference/4.5/&quot;&gt;Documentation&lt;/a&gt; - &lt;a href=&quot;https://github.com/spring-projects/spring-data-rest/releases/tag/4.5.9&quot;&gt;Changelog&lt;/a&gt;&lt;/li&gt;
-&lt;li&gt;Spring Data Redis &lt;code&gt;3.5.9&lt;/code&gt; - &lt;a href=&quot;https://docs.spring.io/spring-data/redis/docs/3.5.9/api/&quot;&gt;Javadoc&lt;/a&gt; - &lt;a href=&quot;https://docs.spring.io/spring-data/redis/reference/3.5/&quot;&gt;Documentation&lt;/a&gt; - &lt;a href=&quot;https://github.com/spring-projects/spring-data-redis/releases/tag/3.5.9&quot;&gt;Changelog&lt;/a&gt;&lt;/li&gt;
-&lt;li&gt;Spring Data Elasticsearch &lt;code&gt;5.5.9&lt;/code&gt; - &lt;a href=&quot;https://docs.spring.io/spring-data/elasticsearch/docs/5.5.9/api/&quot;&gt;Javadoc&lt;/a&gt; - &lt;a href=&quot;https://docs.spring.io/spring-data/elasticsearch/reference/5.5/&quot;&gt;Documentation&lt;/a&gt; - &lt;a href=&quot;https://github.com/spring-projects/spring-data-elasticsearch/releases/tag/5.5.9&quot;&gt;Changelog&lt;/a&gt;&lt;/li&gt;
-&lt;li&gt;Spring Data Couchbase &lt;code&gt;5.5.9&lt;/code&gt; - &lt;a href=&quot;https://docs.spring.io/spring-data/couchbase/docs/5.5.9/api/&quot;&gt;Javadoc&lt;/a&gt; - &lt;a href=&quot;https://docs.spring.io/spring-data/couchbase/reference/5.5/&quot;&gt;Documentation&lt;/a&gt; - &lt;a href=&quot;https://github.com/spring-projects/spring-data-couchbase/releases/tag/5.5.9&quot;&gt;Changelog&lt;/a&gt;&lt;/li&gt;
-&lt;li&gt;Spring Data Relational &lt;code&gt;3.5.9&lt;/code&gt; - &lt;a href=&quot;https://docs.spring.io/spring-data/relational/docs/3.5.9/api/&quot;&gt;Javadoc&lt;/a&gt; - &lt;a href=&quot;https://docs.spring.io/spring-data/relational/reference/3.5/&quot;&gt;Documentation&lt;/a&gt; - &lt;a href=&quot;https://github.com/spring-projects/spring-data-relational/releases/tag/3.5.9&quot;&gt;Changelog&lt;/a&gt;&lt;/li&gt;
-&lt;/ul&gt;</content:encoded></item><item><title><![CDATA[Spring Data 2026.0.0-M1 released]]></title><link>https://spring.io/blog/2026/02/13/spring-data-2026-0-0-m1-released</link><guid isPermaLink="true">https://spring.io/blog/2026/02/13/spring-data-2026-0-0-m1-released</guid><dc:creator><![CDATA[mp911de]]></dc:creator><pubDate>Fri, 13 Feb 2026 00:00:00 GMT</pubDate><content:encoded>&lt;p&gt;On behalf of the team and everyone who has contributed, I¡¯m delighted to announce the first milestone of the &lt;code&gt;2026.0.0&lt;/code&gt; release train.&lt;/p&gt;
-&lt;h2 id=&quot;support-for-type-safe-property-paths&quot; style=&quot;position:relative;&quot;&gt;&lt;a href=&quot;#support-for-type-safe-property-paths&quot; aria-label=&quot;support for type safe property paths permalink&quot; class=&quot;anchor before&quot;&gt;&lt;svg aria-hidden=&quot;true&quot; focusable=&quot;false&quot; height=&quot;16&quot; version=&quot;1.1&quot; viewBox=&quot;0 0 16 16&quot; width=&quot;16&quot;&gt;&lt;path fill-rule=&quot;evenodd&quot; d=&quot;M4 9h1v1H4c-1.5 0-3-1.69-3-3.5S2.55 3 4 3h4c1.45 0 3 1.69 3 3.5 0 1.41-.91 2.72-2 3.25V8.59c.58-.45 1-1.27 1-2.09C10 5.22 8.98 4 8 4H4c-.98 0-2 1.22-2 2.5S3 9 4 9zm9-3h-1v1h1c1 0 2 1.22 2 2.5S13.98 12 13 12H9c-.98 0-2-1.22-2-2.5 0-.83.42-1.64 1-2.09V6.25c-1.09.53-2 1.84-2 3.25C6 11.31 7.55 13 9 13h4c1.45 0 3-1.69 3-3.5S14.5 6 13 6z&quot;&gt;&lt;/path&gt;&lt;/svg&gt;&lt;/a&gt;Support for Type-Safe Property Paths&lt;/h2&gt;
-&lt;p&gt;We now support type-safe property paths and property references as initiative to reduce the need for stringly-typed programming when referring to properties within an entity.&lt;/p&gt;
-&lt;p&gt;Java variants:&lt;/p&gt;
-&lt;pre&gt;&lt;code class=&quot;language-java&quot;&gt;PropertyPath.from(&quot;name&quot;, Person.class) // existing String-based API
-PropertyPath.of(Person::getName) // type-safe property reference expression
+<?xml version="1.0" encoding="UTF-8"?><rss xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:content="http://purl.org/rss/1.0/modules/content/" xmlns:atom="http://www.w3.org/2005/Atom" version="2.0"><channel><title><![CDATA[Spring]]></title><description><![CDATA[Level up your Java code and explore what Spring can do for you.]]></description><link>https://spring.io</link><generator>GatsbyJS</generator><lastBuildDate>Mon, 02 Mar 2026 06:19:41 GMT</lastBuildDate><item><title><![CDATA[Moving beyond Strings in Spring Data]]></title><link>https://spring.io/blog/2026/02/27/moving-beyond-strings-in-spring-data</link><guid isPermaLink="true">https://spring.io/blog/2026/02/27/moving-beyond-strings-in-spring-data</guid><dc:creator><![CDATA[mp911de]]></dc:creator><pubDate>Fri, 27 Feb 2026 00:00:00 GMT</pubDate><content:encoded>&lt;p&gt;If you&apos;ve worked with data access in Java and especially with Spring Data for a while, then you are familiar with various Query and Update programming models. You write data access code. You refactor a property name. You run your tests. They fail.
+Your query strings? Still pointing to the old property name because strings don&apos;t refactor.&lt;/p&gt;
+&lt;pre&gt;&lt;code class=&quot;language-java&quot;&gt;Sort.by(&quot;firstName&quot;, &quot;lastName&quot;);
 
-PropertyPath.from(&quot;address.country&quot;, Person.class) // existing nested path API
-PropertyPath.of(Person::getAddress).then(Address::getCountry) // type-safe composed path expression
-
-
-PropertyReference.of(Secret::getSecret)
+where(&quot;address.country&quot;).is(¡¦);
 &lt;/code&gt;&lt;/pre&gt;
-&lt;p&gt;Kotlin variants:&lt;/p&gt;
-&lt;pre&gt;&lt;code class=&quot;language-kotlin&quot;&gt;PropertyReference.of(Secret::secret)
-
-PropertyPath.of(Person::address / Address::city)
+&lt;p&gt;Query construction often involves referencing domain properties by strings, whether for predicates, sorting, or path navigation.
+This approach is simple and intentionally lightweight. It requires no additional setup and integrates naturally into application code. For many use cases, it&apos;s a reasonable default.
+However, String-based property references come with limitations that become more apparent as applications evolve over time.&lt;/p&gt;
+&lt;h2 id=&quot;string-based-property-references-in-practice&quot; style=&quot;position:relative;&quot;&gt;&lt;a href=&quot;#string-based-property-references-in-practice&quot; aria-label=&quot;string based property references in practice permalink&quot; class=&quot;anchor before&quot;&gt;&lt;svg aria-hidden=&quot;true&quot; focusable=&quot;false&quot; height=&quot;16&quot; version=&quot;1.1&quot; viewBox=&quot;0 0 16 16&quot; width=&quot;16&quot;&gt;&lt;path fill-rule=&quot;evenodd&quot; d=&quot;M4 9h1v1H4c-1.5 0-3-1.69-3-3.5S2.55 3 4 3h4c1.45 0 3 1.69 3 3.5 0 1.41-.91 2.72-2 3.25V8.59c.58-.45 1-1.27 1-2.09C10 5.22 8.98 4 8 4H4c-.98 0-2 1.22-2 2.5S3 9 4 9zm9-3h-1v1h1c1 0 2 1.22 2 2.5S13.98 12 13 12H9c-.98 0-2-1.22-2-2.5 0-.83.42-1.64 1-2.09V6.25c-1.09.53-2 1.84-2 3.25C6 11.31 7.55 13 9 13h4c1.45 0 3-1.69 3-3.5S14.5 6 13 6z&quot;&gt;&lt;/path&gt;&lt;/svg&gt;&lt;/a&gt;String-based property references in practice&lt;/h2&gt;
+&lt;p&gt;Using strings to refer to properties is a pragmatic design choice. They require no additional setup, no code generation, and no build process changes. However, this simplicity comes with inherent fragility, shifting some responsibility to runtime.&lt;/p&gt;
+&lt;p&gt;Property names expressed as strings are not validated by the compiler. Typographical errors, outdated names after refactoring, or mismatches between the domain model and query definitions will compile successfully and typically surface only when the code is executed. In some cases, tests can detect these issues early, but this is not always feasible.&lt;/p&gt;
+&lt;p&gt;Strings provide limited context for refactoring. IDEs can reliably update method and field references, but string literals lack semantic context, as they are effectively textual content. With a significant distance between execution points and query declarations, it becomes increasingly difficult for tools to associate them with the relevant domain types. In larger codebases, this can lead to subtle errors that are easy to miss.&lt;/p&gt;
+&lt;p&gt;These issues are not new, and they are not unique to Spring Data. They are a natural consequence of stringly-typed programming APIs.&lt;/p&gt;
+&lt;h2 id=&quot;metamodel-based-approaches&quot; style=&quot;position:relative;&quot;&gt;&lt;a href=&quot;#metamodel-based-approaches&quot; aria-label=&quot;metamodel based approaches permalink&quot; class=&quot;anchor before&quot;&gt;&lt;svg aria-hidden=&quot;true&quot; focusable=&quot;false&quot; height=&quot;16&quot; version=&quot;1.1&quot; viewBox=&quot;0 0 16 16&quot; width=&quot;16&quot;&gt;&lt;path fill-rule=&quot;evenodd&quot; d=&quot;M4 9h1v1H4c-1.5 0-3-1.69-3-3.5S2.55 3 4 3h4c1.45 0 3 1.69 3 3.5 0 1.41-.91 2.72-2 3.25V8.59c.58-.45 1-1.27 1-2.09C10 5.22 8.98 4 8 4H4c-.98 0-2 1.22-2 2.5S3 9 4 9zm9-3h-1v1h1c1 0 2 1.22 2 2.5S13.98 12 13 12H9c-.98 0-2-1.22-2-2.5 0-.83.42-1.64 1-2.09V6.25c-1.09.53-2 1.84-2 3.25C6 11.31 7.55 13 9 13h4c1.45 0 3-1.69 3-3.5S14.5 6 13 6z&quot;&gt;&lt;/path&gt;&lt;/svg&gt;&lt;/a&gt;Metamodel-based approaches&lt;/h2&gt;
+&lt;p&gt;The Java ecosystem offers several alternatives based on metamodels. These approaches represent domain models or database schemas in a structured, type-safe form.&lt;/p&gt;
+&lt;p&gt;Frameworks such as Querydsl and the JPA Metamodel Generator rely on annotation processing to generate metamodel classes. Their use in application code is rather convenient, as the following examples illustrate, reflecting the underlying domain model:&lt;/p&gt;
+&lt;p&gt;&lt;strong&gt;Querydsl&lt;/strong&gt;&lt;/p&gt;
+&lt;pre&gt;&lt;code class=&quot;language-java&quot;&gt;QPerson person = QPerson.person;
+query.where(person.firstName.eq(&quot;John&quot;));
 &lt;/code&gt;&lt;/pre&gt;
-&lt;p&gt;allowing type-safe usage through e.g.:&lt;/p&gt;
+&lt;p&gt;&lt;strong&gt;JPA Criteria API&lt;/strong&gt;&lt;/p&gt;
+&lt;pre&gt;&lt;code class=&quot;language-java&quot;&gt;CriteriaBuilder cb = entityManager.getCriteriaBuilder();
+CriteriaQuery&amp;#x3C;Person&gt; query = cb.createQuery(Person.class);
+Root&amp;#x3C;Person&gt; person = query.from(Person.class);
+query.where(cb.equal(person.get(Person_.firstName), &quot;John&quot;));
+&lt;/code&gt;&lt;/pre&gt;
+&lt;p&gt;Generated metamodels provide compile-time validation. At the same time, they typically introduce build-time code generation and often additional dependencies. When refactoring, the generated code must be regenerated consistently, which can become a source of friction.&lt;/p&gt;
+&lt;p&gt;These metamodels work best within their intended scope: The JPA metamodel integrates naturally with the Criteria API and Spring Data JPA¡¯s &lt;code&gt;Specification&lt;/code&gt; support. Outside of those contexts, additional integration layers are required. Spring Data provides adapters such as &lt;code&gt;JpaSort&lt;/code&gt; (for JPA Metamodel path expressions) or &lt;code&gt;QSort&lt;/code&gt; (for Querydsl order specifiers), but availability and feature coverage varies across modules.&lt;/p&gt;
+&lt;p&gt;Other libraries, such as jOOQ, focus more directly on the database schema. jOOQ&apos;s plugins can aid with generating a metamodel during the build reflecting tables and columns:&lt;/p&gt;
+&lt;pre&gt;&lt;code class=&quot;language-java&quot;&gt;Result result =
+    create.select()
+          .from(PERSON)
+          .where(PERSON.FIRST_NAME.eq(&quot;John&quot;))
+          .fetch();
+&lt;/code&gt;&lt;/pre&gt;
+&lt;p&gt;Each of these approaches involves tradeoffs between safety, flexibility, and operational complexity.&lt;/p&gt;
+&lt;h2 id=&quot;build-infrastructure-considerations&quot; style=&quot;position:relative;&quot;&gt;&lt;a href=&quot;#build-infrastructure-considerations&quot; aria-label=&quot;build infrastructure considerations permalink&quot; class=&quot;anchor before&quot;&gt;&lt;svg aria-hidden=&quot;true&quot; focusable=&quot;false&quot; height=&quot;16&quot; version=&quot;1.1&quot; viewBox=&quot;0 0 16 16&quot; width=&quot;16&quot;&gt;&lt;path fill-rule=&quot;evenodd&quot; d=&quot;M4 9h1v1H4c-1.5 0-3-1.69-3-3.5S2.55 3 4 3h4c1.45 0 3 1.69 3 3.5 0 1.41-.91 2.72-2 3.25V8.59c.58-.45 1-1.27 1-2.09C10 5.22 8.98 4 8 4H4c-.98 0-2 1.22-2 2.5S3 9 4 9zm9-3h-1v1h1c1 0 2 1.22 2 2.5S13.98 12 13 12H9c-.98 0-2-1.22-2-2.5 0-.83.42-1.64 1-2.09V6.25c-1.09.53-2 1.84-2 3.25C6 11.31 7.55 13 9 13h4c1.45 0 3-1.69 3-3.5S14.5 6 13 6z&quot;&gt;&lt;/path&gt;&lt;/svg&gt;&lt;/a&gt;Build infrastructure considerations&lt;/h2&gt;
+&lt;p&gt;Metamodel generation typically employs annotation processors or dedicated build plugins. In more mature projects where domain models change rather infrequently, repetitive generation yields the same generated metamodel code at the expense of build time.&lt;/p&gt;
+&lt;p&gt;IDE support for generated sources has evolved over time, leading to an improved overall experience, but behavior varies across environments and may require explicit configuration. None of these concerns is prohibitive, but each contributes to overall project complexity in areas that are rarely revisited. Thus, complexity leads to higher troubleshooting efforts in comparison to areas that are revisited rather often by project maintainers.&lt;/p&gt;
+&lt;h2 id=&quot;type-safe-property-references&quot; style=&quot;position:relative;&quot;&gt;&lt;a href=&quot;#type-safe-property-references&quot; aria-label=&quot;type safe property references permalink&quot; class=&quot;anchor before&quot;&gt;&lt;svg aria-hidden=&quot;true&quot; focusable=&quot;false&quot; height=&quot;16&quot; version=&quot;1.1&quot; viewBox=&quot;0 0 16 16&quot; width=&quot;16&quot;&gt;&lt;path fill-rule=&quot;evenodd&quot; d=&quot;M4 9h1v1H4c-1.5 0-3-1.69-3-3.5S2.55 3 4 3h4c1.45 0 3 1.69 3 3.5 0 1.41-.91 2.72-2 3.25V8.59c.58-.45 1-1.27 1-2.09C10 5.22 8.98 4 8 4H4c-.98 0-2 1.22-2 2.5S3 9 4 9zm9-3h-1v1h1c1 0 2 1.22 2 2.5S13.98 12 13 12H9c-.98 0-2-1.22-2-2.5 0-.83.42-1.64 1-2.09V6.25c-1.09.53-2 1.84-2 3.25C6 11.31 7.55 13 9 13h4c1.45 0 3-1.69 3-3.5S14.5 6 13 6z&quot;&gt;&lt;/path&gt;&lt;/svg&gt;&lt;/a&gt;Type-safe property references&lt;/h2&gt;
+&lt;p&gt;So far, we have discussed existing approaches, their adverse effects on maintainability, and how increased distance contributes to classes of potential bugs. In an ideal world, modern data access code should be able to leverage language primitives to reference properties for type- and refactoring-safety, and with Spring Data &lt;code&gt;2026.0.0-M1&lt;/code&gt; we are proud to introduce first-class support for type-safe property references.&lt;/p&gt;
+&lt;p&gt;Let&apos;s go back to our very first example:&lt;/p&gt;
+&lt;pre&gt;&lt;code class=&quot;language-java&quot;&gt;Sort.by(&quot;firstName&quot;, &quot;lastName&quot;);
+&lt;/code&gt;&lt;/pre&gt;
+&lt;p&gt;Now, let&apos;s transform that into a type-safe variant using method references:&lt;/p&gt;
 &lt;pre&gt;&lt;code class=&quot;language-java&quot;&gt;Sort.by(Person::getFirstName, Person::getLastName)
 &lt;/code&gt;&lt;/pre&gt;
-&lt;p&gt;Type-Safe property-paths are available in Spring Data Commons &lt;code&gt;4.1 M1&lt;/code&gt; and the following modules:&lt;/p&gt;
+&lt;p&gt;One uses string literals. The other is code. Consider how naturally method references express the intent.&lt;/p&gt;
+&lt;p&gt;The compiler validates that &lt;code&gt;getFirstName()&lt;/code&gt; exists on &lt;code&gt;Person&lt;/code&gt;. Your IDE can navigate to the method definition. Refactoring tools work as expected. It&apos;s type-safe, concise, and does not require additional infrastructure.&lt;/p&gt;
+&lt;p&gt;For nested properties, composition feels similarly natural, although it reads slightly more verbose:&lt;/p&gt;
+&lt;pre&gt;&lt;code class=&quot;language-java&quot;&gt;Sort.by(PropertyPath.of(Person::getAddress).then(Address::getCountry))
+&lt;/code&gt;&lt;/pre&gt;
+&lt;p&gt;Each step in the path is validated by the type system. Invalid paths fail fast, typically surfaced through your IDE, but in any case at compile time instead of at runtime.
+In addition, promoting the concept of an owning type to the interface allows methods to enforce sensible constraints. For example, a sort definition can ensure that all properties originate from the same domain type:&lt;/p&gt;
+&lt;pre&gt;&lt;code class=&quot;language-java&quot;&gt;Sort.by(Person::getFirstName, Person::getLastName)
+&lt;/code&gt;&lt;/pre&gt;
+&lt;p&gt;With more context, the type system does the work:&lt;/p&gt;
+&lt;pre&gt;&lt;code class=&quot;language-java&quot;&gt;Sort.by(Person::getFirstName, Order::getOrderDate)
+
+// Compilation error: incompatible owner types as per:
+// &amp;#x3C;T&gt; Sort by(TypedPropertyPath&amp;#x3C;T, ?&gt;... properties)
+&lt;/code&gt;&lt;/pre&gt;
+&lt;p&gt;The benefit isn&apos;t just safety: It&apos;s clarity. The intent is immediately obvious, and the type system enforces correctness.&lt;/p&gt;
+&lt;h2 id=&quot;kotlin-support&quot; style=&quot;position:relative;&quot;&gt;&lt;a href=&quot;#kotlin-support&quot; aria-label=&quot;kotlin support permalink&quot; class=&quot;anchor before&quot;&gt;&lt;svg aria-hidden=&quot;true&quot; focusable=&quot;false&quot; height=&quot;16&quot; version=&quot;1.1&quot; viewBox=&quot;0 0 16 16&quot; width=&quot;16&quot;&gt;&lt;path fill-rule=&quot;evenodd&quot; d=&quot;M4 9h1v1H4c-1.5 0-3-1.69-3-3.5S2.55 3 4 3h4c1.45 0 3 1.69 3 3.5 0 1.41-.91 2.72-2 3.25V8.59c.58-.45 1-1.27 1-2.09C10 5.22 8.98 4 8 4H4c-.98 0-2 1.22-2 2.5S3 9 4 9zm9-3h-1v1h1c1 0 2 1.22 2 2.5S13.98 12 13 12H9c-.98 0-2-1.22-2-2.5 0-.83.42-1.64 1-2.09V6.25c-1.09.53-2 1.84-2 3.25C6 11.31 7.55 13 9 13h4c1.45 0 3-1.69 3-3.5S14.5 6 13 6z&quot;&gt;&lt;/path&gt;&lt;/svg&gt;&lt;/a&gt;Kotlin support&lt;/h2&gt;
+&lt;p&gt;Kotlin offers first-class support for property references already. Spring Data gradually adopted Kotlin-friendly APIs by leveraging operator overloads for the div (&lt;code&gt;/&lt;/code&gt;) operator for property path navigation. Such applications can use &lt;code&gt;KProperty&lt;/code&gt; references in various &lt;code&gt;Criteria&lt;/code&gt; implementations effectively for all methods accepting &lt;code&gt;TypedPropertyPath&lt;/code&gt; embracing Kotlin&apos;s natural idioms:&lt;/p&gt;
+&lt;pre&gt;&lt;code class=&quot;language-kotlin&quot;&gt;Sort.by(Person::address)
+
+Sort.by(Person::address / Address::city)
+&lt;/code&gt;&lt;/pre&gt;
+&lt;p&gt;Type-safe property paths provide a unified abstraction while respecting the conventions of each language.&lt;/p&gt;
+&lt;h2 id=&quot;migration-path&quot; style=&quot;position:relative;&quot;&gt;&lt;a href=&quot;#migration-path&quot; aria-label=&quot;migration path permalink&quot; class=&quot;anchor before&quot;&gt;&lt;svg aria-hidden=&quot;true&quot; focusable=&quot;false&quot; height=&quot;16&quot; version=&quot;1.1&quot; viewBox=&quot;0 0 16 16&quot; width=&quot;16&quot;&gt;&lt;path fill-rule=&quot;evenodd&quot; d=&quot;M4 9h1v1H4c-1.5 0-3-1.69-3-3.5S2.55 3 4 3h4c1.45 0 3 1.69 3 3.5 0 1.41-.91 2.72-2 3.25V8.59c.58-.45 1-1.27 1-2.09C10 5.22 8.98 4 8 4H4c-.98 0-2 1.22-2 2.5S3 9 4 9zm9-3h-1v1h1c1 0 2 1.22 2 2.5S13.98 12 13 12H9c-.98 0-2-1.22-2-2.5 0-.83.42-1.64 1-2.09V6.25c-1.09.53-2 1.84-2 3.25C6 11.31 7.55 13 9 13h4c1.45 0 3-1.69 3-3.5S14.5 6 13 6z&quot;&gt;&lt;/path&gt;&lt;/svg&gt;&lt;/a&gt;Migration path&lt;/h2&gt;
+&lt;p&gt;Existing string-based APIs remain unchanged and fully supported. They are and will remain an active design aspect of new functionality. Type-safe property paths come with a sweet-spot for usage and like every other approach also with limitations. For any arrangement requiring dynamic property names at runtime, it is totally fine to continue using strings with their aforementioned limitations (such as accepting a property name through a web request).&lt;/p&gt;
+&lt;p&gt;Type-safe property paths are strictly additive and can be introduced selectively wherever their benefits are most pronounced. For example, consider the following examples alongside their refined type-safe alternatives:&lt;/p&gt;
+&lt;pre&gt;&lt;code class=&quot;language-java&quot;&gt;// Existing code
+where(&quot;firstName&quot;).is(&quot;¡¦&quot;)
+where(&quot;address.country&quot;).is(&quot;¡¦&quot;)
+Sort.by(&quot;firstName&quot;, &quot;lastName&quot;)
+
+// Type-safe variants
+where(Person::getFirstName).is(&quot;¡¦&quot;)
+where(PropertyPath.of(Person::getAddress).then(Address::getCountry)).is(&quot;¡¦&quot;)
+Sort.by(Person::getFirstName, Person::getLastName)
+&lt;/code&gt;&lt;/pre&gt;
+&lt;p&gt;Adoption can be gradual, focusing on areas where refactoring safety or clarity is most valuable. From a performance perspective, method references are introspected once and cached for subsequent usage, resulting in an overall pleasant performance baseline.&lt;/p&gt;
+&lt;h2 id=&quot;looking-forward&quot; style=&quot;position:relative;&quot;&gt;&lt;a href=&quot;#looking-forward&quot; aria-label=&quot;looking forward permalink&quot; class=&quot;anchor before&quot;&gt;&lt;svg aria-hidden=&quot;true&quot; focusable=&quot;false&quot; height=&quot;16&quot; version=&quot;1.1&quot; viewBox=&quot;0 0 16 16&quot; width=&quot;16&quot;&gt;&lt;path fill-rule=&quot;evenodd&quot; d=&quot;M4 9h1v1H4c-1.5 0-3-1.69-3-3.5S2.55 3 4 3h4c1.45 0 3 1.69 3 3.5 0 1.41-.91 2.72-2 3.25V8.59c.58-.45 1-1.27 1-2.09C10 5.22 8.98 4 8 4H4c-.98 0-2 1.22-2 2.5S3 9 4 9zm9-3h-1v1h1c1 0 2 1.22 2 2.5S13.98 12 13 12H9c-.98 0-2-1.22-2-2.5 0-.83.42-1.64 1-2.09V6.25c-1.09.53-2 1.84-2 3.25C6 11.31 7.55 13 9 13h4c1.45 0 3-1.69 3-3.5S14.5 6 13 6z&quot;&gt;&lt;/path&gt;&lt;/svg&gt;&lt;/a&gt;Looking forward&lt;/h2&gt;
+&lt;p&gt;We believe developers should spend their time building applications, not debugging property name typos. Your tools should work with you, not against you.
+The introduction of support for type-safe property paths represents more than just a set of new interfaces: It is an alignment with how modern Java and Kotlin developers expect to work. Languages provide powerful tools for type safety and refactoring, and our frameworks should leverage those tools rather than work around them.&lt;/p&gt;
+&lt;p&gt;Type-safe property paths eliminate a class of bugs, improve refactoring confidence, and make intent more explicit in code. They allow developers to rely on the compiler and less on convention and discipline. Moving forward, there are several more potential refinements possible to surface type-safe relationships within a query, but that will be part of an ongoing research effort.&lt;/p&gt;
+&lt;p&gt;We shipped type-safe property paths in &lt;a href=&quot;https://spring.io/blog/2026/02/13/spring-data-2026-0-0-m1-released&quot;&gt;Spring Data &lt;code&gt;2026.0.0-M1&lt;/code&gt;&lt;/a&gt; allowing you to explore the new APIs and provide feedback. We are excited to see how you will use them in your projects and how they will evolve based on your feedback.&lt;/p&gt;</content:encoded></item><item><title><![CDATA[A Bootiful Podcast - John Willis, author of 'Rebels of Reason']]></title><link>https://spring.io/blog/2026/02/26/a-bootiful-podcast-john-willis</link><guid isPermaLink="true">https://spring.io/blog/2026/02/26/a-bootiful-podcast-john-willis</guid><dc:creator><![CDATA[joshlong]]></dc:creator><pubDate>Thu, 26 Feb 2026 00:00:00 GMT</pubDate><content:encoded>&lt;p&gt;Hi Spring fans! In this installment I sit down with DevOps legend and industry analyst extraordinaire John Willis and talk about his new book &lt;em&gt;Rebels of Reason: The Long Road from Aristotle to ChatGPT and AI&apos;s Heroes Who Kept the Faith&lt;/em&gt;, and talk about the nature of the ecosystem, AI, the role of the developer in this exciting new world, and so much more! #ai #springboot #developers #artificailintelligence&lt;/p&gt;
 &lt;ul&gt;
-&lt;li&gt;Spring Data Cassandra through the &lt;code&gt;Query&lt;/code&gt;, &lt;code&gt;Criteria&lt;/code&gt; and &lt;code&gt;Update&lt;/code&gt; API for type-safe query construction.&lt;/li&gt;
-&lt;li&gt;Spring Data JDBC and R2DBC through the &lt;code&gt;Criteria&lt;/code&gt; and &lt;code&gt;Update&lt;/code&gt; API for type-safe query construction.&lt;/li&gt;
-&lt;li&gt;Spring Data JPA through the &lt;code&gt;Expressions&lt;/code&gt; utility for an improved CriteriaBuilder API usage experience.&lt;/li&gt;
-&lt;li&gt;Spring Data MongoDB through the &lt;code&gt;Query&lt;/code&gt;, &lt;code&gt;Criteria&lt;/code&gt; and &lt;code&gt;Update&lt;/code&gt; API for type-safe query construction.&lt;/li&gt;
+&lt;li&gt;&lt;a href=&quot;https://www.amazon.com/Rebels-Reason-Aristotle-ChatGPT-Heroes-ebook/dp/B0FCD8TW8R&quot;&gt;get the book&lt;/a&gt;&lt;/li&gt;
+&lt;li&gt;begin your &lt;a href=&quot;https://start.spring.io&quot;&gt;AI journey with Spring AI&lt;/a&gt;&lt;/li&gt;
 &lt;/ul&gt;
-&lt;p&gt;Besides that, this milestone ships with enhancements, bugfixes, and dependency upgrades.&lt;/p&gt;
-&lt;p&gt;You can find more details in our &lt;a href=&quot;https://github.com/spring-projects/spring-data-commons/wiki/Spring-Data-2026.0-Release-Notes&quot;&gt;Release Notes&lt;/a&gt;.&lt;/p&gt;
-&lt;p&gt;The upcoming Spring Boot 4.1 M2 milestone will pick up the release for your convenience by next week.&lt;/p&gt;
-&lt;h2 id=&quot;202600-m1&quot; style=&quot;position:relative;&quot;&gt;&lt;a href=&quot;#202600-m1&quot; aria-label=&quot;202600 m1 permalink&quot; class=&quot;anchor before&quot;&gt;&lt;svg aria-hidden=&quot;true&quot; focusable=&quot;false&quot; height=&quot;16&quot; version=&quot;1.1&quot; viewBox=&quot;0 0 16 16&quot; width=&quot;16&quot;&gt;&lt;path fill-rule=&quot;evenodd&quot; d=&quot;M4 9h1v1H4c-1.5 0-3-1.69-3-3.5S2.55 3 4 3h4c1.45 0 3 1.69 3 3.5 0 1.41-.91 2.72-2 3.25V8.59c.58-.45 1-1.27 1-2.09C10 5.22 8.98 4 8 4H4c-.98 0-2 1.22-2 2.5S3 9 4 9zm9-3h-1v1h1c1 0 2 1.22 2 2.5S13.98 12 13 12H9c-.98 0-2-1.22-2-2.5 0-.83.42-1.64 1-2.09V6.25c-1.09.53-2 1.84-2 3.25C6 11.31 7.55 13 9 13h4c1.45 0 3-1.69 3-3.5S14.5 6 13 6z&quot;&gt;&lt;/path&gt;&lt;/svg&gt;&lt;/a&gt;2026.0.0-M1&lt;/h2&gt;
+&lt;iframe title=&quot;John Willis, author of ¡±Rebels of Reason¡±&quot; allowtransparency=&quot;true&quot; height=&quot;300&quot; width=&quot;100%&quot; style=&quot;border: none; min-width: min(100%, 430px);height:300px;&quot; scrolling=&quot;no&quot; data-name=&quot;pb-iframe-player&quot; src=&quot;https://www.podbean.com/player-v2/?from=embed&amp;i=qxur7-1a58c3d-pb&amp;square=1&amp;share=1&amp;download=1&amp;fonts=Arial&amp;skin=1&amp;font-color=&amp;rtl=0&amp;logo_link=&amp;btn-skin=7&amp;size=300&quot; loading=&quot;lazy&quot; allowfullscreen=&quot;&quot;&gt;&lt;/iframe&gt;</content:encoded></item><item><title><![CDATA[Optimizations in Spring MVC]]></title><link>https://spring.io/blog/2026/02/25/optimizing-spring-mvc</link><guid isPermaLink="true">https://spring.io/blog/2026/02/25/optimizing-spring-mvc</guid><dc:creator><![CDATA[dsyer]]></dc:creator><pubDate>Wed, 25 Feb 2026 00:00:00 GMT</pubDate><content:encoded>&lt;h1 id=&quot;spring-fruits-benchmark&quot; style=&quot;position:relative;&quot;&gt;&lt;a href=&quot;#spring-fruits-benchmark&quot; aria-label=&quot;spring fruits benchmark permalink&quot; class=&quot;anchor before&quot;&gt;&lt;svg aria-hidden=&quot;true&quot; focusable=&quot;false&quot; height=&quot;16&quot; version=&quot;1.1&quot; viewBox=&quot;0 0 16 16&quot; width=&quot;16&quot;&gt;&lt;path fill-rule=&quot;evenodd&quot; d=&quot;M4 9h1v1H4c-1.5 0-3-1.69-3-3.5S2.55 3 4 3h4c1.45 0 3 1.69 3 3.5 0 1.41-.91 2.72-2 3.25V8.59c.58-.45 1-1.27 1-2.09C10 5.22 8.98 4 8 4H4c-.98 0-2 1.22-2 2.5S3 9 4 9zm9-3h-1v1h1c1 0 2 1.22 2 2.5S13.98 12 13 12H9c-.98 0-2-1.22-2-2.5 0-.83.42-1.64 1-2.09V6.25c-1.09.53-2 1.84-2 3.25C6 11.31 7.55 13 9 13h4c1.45 0 3-1.69 3-3.5S14.5 6 13 6z&quot;&gt;&lt;/path&gt;&lt;/svg&gt;&lt;/a&gt;Spring Fruits Benchmark&lt;/h1&gt;
+&lt;h2 id=&quot;abstract&quot; style=&quot;position:relative;&quot;&gt;&lt;a href=&quot;#abstract&quot; aria-label=&quot;abstract permalink&quot; class=&quot;anchor before&quot;&gt;&lt;svg aria-hidden=&quot;true&quot; focusable=&quot;false&quot; height=&quot;16&quot; version=&quot;1.1&quot; viewBox=&quot;0 0 16 16&quot; width=&quot;16&quot;&gt;&lt;path fill-rule=&quot;evenodd&quot; d=&quot;M4 9h1v1H4c-1.5 0-3-1.69-3-3.5S2.55 3 4 3h4c1.45 0 3 1.69 3 3.5 0 1.41-.91 2.72-2 3.25V8.59c.58-.45 1-1.27 1-2.09C10 5.22 8.98 4 8 4H4c-.98 0-2 1.22-2 2.5S3 9 4 9zm9-3h-1v1h1c1 0 2 1.22 2 2.5S13.98 12 13 12H9c-.98 0-2-1.22-2-2.5 0-.83.42-1.64 1-2.09V6.25c-1.09.53-2 1.84-2 3.25C6 11.31 7.55 13 9 13h4c1.45 0 3-1.69 3-3.5S14.5 6 13 6z&quot;&gt;&lt;/path&gt;&lt;/svg&gt;&lt;/a&gt;Abstract&lt;/h2&gt;
+&lt;p&gt;Benchmarks are tricky to do well, and the results are often hard to interpret. This analysis attempts to go beyond a simple headline number to explore how performance varies with data set size. The results show that while results might be disappointing for a given data set size, the performance characteristics can change as the size changes, leading to different conclusions about scalability and efficiency. The result is a deeper insight into how a framework handles increasing loads and the factors that influence performance.&lt;/p&gt;
+&lt;p&gt;For a data set size &lt;code&gt;N&lt;/code&gt;, the cycle time (inverse throughput) is linear in &lt;code&gt;N&lt;/code&gt;, so &lt;code&gt;t = A + B*N&lt;/code&gt;, with &lt;code&gt;A&lt;/code&gt; a baseline framework cost per HTTP request, and &lt;code&gt;B&lt;/code&gt; the processing time per data item. We measure &lt;code&gt;A&lt;/code&gt; and &lt;code&gt;B&lt;/code&gt; for a simple endpoint that fetches and renders a complete data set in JSON. &lt;code&gt;A&lt;/code&gt; is small (on the order of tens of microseconds). Probably for a &quot;real&quot; application (not just CRUD) the processing time &lt;code&gt;B&lt;/code&gt; will increase, dominating performance for large data sets, and having a less dramatic impact for small data sets.&lt;/p&gt;
+&lt;p&gt;Upgrading the Spring Framework to version 7.0.6 and switching on virtual threads in the Spring Boot application both add meaningful improvements in throughput. Even with such simple changes, we are able to improve the throughput by as much as 50% for small data sets.&lt;/p&gt;
+&lt;h2 id=&quot;introduction-and-set-up&quot; style=&quot;position:relative;&quot;&gt;&lt;a href=&quot;#introduction-and-set-up&quot; aria-label=&quot;introduction and set up permalink&quot; class=&quot;anchor before&quot;&gt;&lt;svg aria-hidden=&quot;true&quot; focusable=&quot;false&quot; height=&quot;16&quot; version=&quot;1.1&quot; viewBox=&quot;0 0 16 16&quot; width=&quot;16&quot;&gt;&lt;path fill-rule=&quot;evenodd&quot; d=&quot;M4 9h1v1H4c-1.5 0-3-1.69-3-3.5S2.55 3 4 3h4c1.45 0 3 1.69 3 3.5 0 1.41-.91 2.72-2 3.25V8.59c.58-.45 1-1.27 1-2.09C10 5.22 8.98 4 8 4H4c-.98 0-2 1.22-2 2.5S3 9 4 9zm9-3h-1v1h1c1 0 2 1.22 2 2.5S13.98 12 13 12H9c-.98 0-2-1.22-2-2.5 0-.83.42-1.64 1-2.09V6.25c-1.09.53-2 1.84-2 3.25C6 11.31 7.55 13 9 13h4c1.45 0 3-1.69 3-3.5S14.5 6 13 6z&quot;&gt;&lt;/path&gt;&lt;/svg&gt;&lt;/a&gt;Introduction and Set Up&lt;/h2&gt;
+&lt;p&gt;The application code is taken from some public benchmarks. The data represent fruits with links to the stores that stock them and the prices listed. The &lt;code&gt;/fruits&lt;/code&gt; endpoint returns a list of fruits and prices per store in JSON format. As in the original code, the Spring Boot application has 3 important configuration tweaks. In addition we immediately removed the observability features from the Spring sample, which adds a few percent to the throughput over the original. The original benchmarks only covered one data set with 10 fruits; this analysis extends that to multiple data sets by increasing numbers of fruits to observe performance trends. The measurements are done with the Spring benchmarks harness, which is similar to the original one, and the baseline results for 10 fruits are similar to the original. The main difference in the harness is that the Spring one has a longer warm up time for the running application - it gives the JVM time to optimize itself. The numbers reported here were collected in a controlled environment on a Linux virtual machine with 16 vCPUs and 32 GB RAM, running Java 21. The application, database and the load generator were all running on the same VM to minimize network variability, but in separate containers, constrained to have a fixed amount of CPUs and memory (4 CPUs and 2GB for the application container unless mentioned otherwise).&lt;/p&gt;
+&lt;h2 id=&quot;results&quot; style=&quot;position:relative;&quot;&gt;&lt;a href=&quot;#results&quot; aria-label=&quot;results permalink&quot; class=&quot;anchor before&quot;&gt;&lt;svg aria-hidden=&quot;true&quot; focusable=&quot;false&quot; height=&quot;16&quot; version=&quot;1.1&quot; viewBox=&quot;0 0 16 16&quot; width=&quot;16&quot;&gt;&lt;path fill-rule=&quot;evenodd&quot; d=&quot;M4 9h1v1H4c-1.5 0-3-1.69-3-3.5S2.55 3 4 3h4c1.45 0 3 1.69 3 3.5 0 1.41-.91 2.72-2 3.25V8.59c.58-.45 1-1.27 1-2.09C10 5.22 8.98 4 8 4H4c-.98 0-2 1.22-2 2.5S3 9 4 9zm9-3h-1v1h1c1 0 2 1.22 2 2.5S13.98 12 13 12H9c-.98 0-2-1.22-2-2.5 0-.83.42-1.64 1-2.09V6.25c-1.09.53-2 1.84-2 3.25C6 11.31 7.55 13 9 13h4c1.45 0 3-1.69 3-3.5S14.5 6 13 6z&quot;&gt;&lt;/path&gt;&lt;/svg&gt;&lt;/a&gt;Results&lt;/h2&gt;
+&lt;p&gt;Here are the raw data for throughput (TPS) vs number of fruits (N). The larger data sets were generated simply by copying the original 10-fruit data set multiple times. The number of stores is constant and the number of prices per fruit is the same in each case, so the result set size scales linearly with the number of fruits.&lt;/p&gt;
+&lt;div&gt;
+&lt;table border=&quot;1&quot; class=&quot;dataframe&quot;&gt;
+  &lt;thead&gt;
+    &lt;tr style=&quot;text-align: left;&quot;&gt;
+      &lt;th&gt;&lt;/th&gt;
+      &lt;th&gt;N&lt;/th&gt;
+      &lt;th&gt;spring-fruits&lt;/th&gt;
+    &lt;/tr&gt;
+  &lt;/thead&gt;
+  &lt;tbody&gt;
+    &lt;tr&gt;
+      &lt;th&gt;0&lt;/th&gt;
+      &lt;td&gt;10&lt;/td&gt;
+      &lt;td&gt;14892&lt;/td&gt;
+    &lt;/tr&gt;
+    &lt;tr&gt;
+      &lt;th&gt;1&lt;/th&gt;
+      &lt;td&gt;20&lt;/td&gt;
+      &lt;td&gt;10941&lt;/td&gt;
+    &lt;/tr&gt;
+    &lt;tr&gt;
+      &lt;th&gt;2&lt;/th&gt;
+      &lt;td&gt;40&lt;/td&gt;
+      &lt;td&gt;7329&lt;/td&gt;
+    &lt;/tr&gt;
+    &lt;tr&gt;
+      &lt;th&gt;3&lt;/th&gt;
+      &lt;td&gt;80&lt;/td&gt;
+      &lt;td&gt;4541&lt;/td&gt;
+    &lt;/tr&gt;
+  &lt;/tbody&gt;
+&lt;/table&gt;
+&lt;/div&gt;
+&lt;p&gt;Now we do some anaysis and plot the data along with a linear regression of the &quot;cycle time&quot; (inverse of throughput) vs number of fruits.&lt;/p&gt;
+&lt;p&gt;&lt;img src=&quot;https://static.spring.io/blog/dsyer/20260226/optimizing-spring-mvc-fig1.png&quot; alt=&quot;Cycle time vs number of fruits&quot;&gt;&lt;/p&gt;
+&lt;h2 id=&quot;optimizations&quot; style=&quot;position:relative;&quot;&gt;&lt;a href=&quot;#optimizations&quot; aria-label=&quot;optimizations permalink&quot; class=&quot;anchor before&quot;&gt;&lt;svg aria-hidden=&quot;true&quot; focusable=&quot;false&quot; height=&quot;16&quot; version=&quot;1.1&quot; viewBox=&quot;0 0 16 16&quot; width=&quot;16&quot;&gt;&lt;path fill-rule=&quot;evenodd&quot; d=&quot;M4 9h1v1H4c-1.5 0-3-1.69-3-3.5S2.55 3 4 3h4c1.45 0 3 1.69 3 3.5 0 1.41-.91 2.72-2 3.25V8.59c.58-.45 1-1.27 1-2.09C10 5.22 8.98 4 8 4H4c-.98 0-2 1.22-2 2.5S3 9 4 9zm9-3h-1v1h1c1 0 2 1.22 2 2.5S13.98 12 13 12H9c-.98 0-2-1.22-2-2.5 0-.83.42-1.64 1-2.09V6.25c-1.09.53-2 1.84-2 3.25C6 11.31 7.55 13 9 13h4c1.45 0 3-1.69 3-3.5S14.5 6 13 6z&quot;&gt;&lt;/path&gt;&lt;/svg&gt;&lt;/a&gt;Optimizations&lt;/h2&gt;
+&lt;p&gt;Profiling the Spring sample revealed that the transaction management was adding a significant overhead to the processing of each HTTP request, even though the operations were read-only. By annotating the repository methods with &lt;code&gt;@Transactional(propagation = SUPPORTS, readOnly = true)&lt;/code&gt;, we can avoid unnecessary transaction management overhead for read-only operations. This change significantly improved the performance of the sample, especially for smaller data sets, where the baseline overhead is more pronounced. (Note that this configuration is suited to read-only operations, and not appropriate in general for all applications and endpoints.) The results are shown below, demonstrating a noticeable improvement in throughput across all data set sizes.&lt;/p&gt;
+&lt;p&gt;There are some optimizations in the Spring Framework, adapting the HTTP headers to be more efficient, taking advantage of the underlying container implementation. This optimization is included in the results shown below (labelled &quot;sha&quot;), and it adds a few percent to the throughput across all data set sizes. You can pick up this change in Spring 7.0.5. Additional gains are also included from other optimizations in the Spring Framework, to be released shortly in version 7.0.6 (labelled &quot;buf&quot;).&lt;/p&gt;
+&lt;p&gt;We can get some even better results by switching on virtual threads, which is trivial in a Spring Boot application.&lt;/p&gt;
+&lt;div&gt;
+&lt;table border=&quot;1&quot; class=&quot;dataframe&quot;&gt;
+  &lt;thead&gt;
+    &lt;tr style=&quot;text-align: left;&quot;&gt;
+      &lt;th&gt;&lt;/th&gt;
+      &lt;th&gt;N&lt;/th&gt;
+      &lt;th&gt;spring-fruits (orig)&lt;/th&gt;
+      &lt;th&gt;spring-fruits&lt;/th&gt;
+      &lt;th&gt;spring-fruits (sha)&lt;/th&gt;
+      &lt;th&gt;spring-fruits (buf)&lt;/th&gt;
+      &lt;th&gt;spring-fruits (vt)&lt;/th&gt;
+    &lt;/tr&gt;
+  &lt;/thead&gt;
+  &lt;tbody&gt;
+    &lt;tr&gt;
+      &lt;th&gt;0&lt;/th&gt;
+      &lt;td&gt;10&lt;/td&gt;
+      &lt;td&gt;14892&lt;/td&gt;
+      &lt;td&gt;16412&lt;/td&gt;
+      &lt;td&gt;17847&lt;/td&gt;
+      &lt;td&gt;18137&lt;/td&gt;
+      &lt;td&gt;21990&lt;/td&gt;
+    &lt;/tr&gt;
+    &lt;tr&gt;
+      &lt;th&gt;1&lt;/th&gt;
+      &lt;td&gt;20&lt;/td&gt;
+      &lt;td&gt;10941&lt;/td&gt;
+      &lt;td&gt;11890&lt;/td&gt;
+      &lt;td&gt;12145&lt;/td&gt;
+      &lt;td&gt;12521&lt;/td&gt;
+      &lt;td&gt;13762&lt;/td&gt;
+    &lt;/tr&gt;
+    &lt;tr&gt;
+      &lt;th&gt;2&lt;/th&gt;
+      &lt;td&gt;40&lt;/td&gt;
+      &lt;td&gt;7329&lt;/td&gt;
+      &lt;td&gt;7894&lt;/td&gt;
+      &lt;td&gt;8150&lt;/td&gt;
+      &lt;td&gt;8200&lt;/td&gt;
+      &lt;td&gt;8735&lt;/td&gt;
+    &lt;/tr&gt;
+    &lt;tr&gt;
+      &lt;th&gt;3&lt;/th&gt;
+      &lt;td&gt;80&lt;/td&gt;
+      &lt;td&gt;4541&lt;/td&gt;
+      &lt;td&gt;4704&lt;/td&gt;
+      &lt;td&gt;4827&lt;/td&gt;
+      &lt;td&gt;4955&lt;/td&gt;
+      &lt;td&gt;4904&lt;/td&gt;
+    &lt;/tr&gt;
+  &lt;/tbody&gt;
+&lt;/table&gt;
+&lt;/div&gt;
+&lt;p&gt;&lt;img src=&quot;https://static.spring.io/blog/dsyer/20260226/optimizing-spring-mvc-fig2.png&quot; alt=&quot;Cycle time vs number of fruits with optimizations&quot;&gt;&lt;/p&gt;
+&lt;h2 id=&quot;analysis-and-interpretation&quot; style=&quot;position:relative;&quot;&gt;&lt;a href=&quot;#analysis-and-interpretation&quot; aria-label=&quot;analysis and interpretation permalink&quot; class=&quot;anchor before&quot;&gt;&lt;svg aria-hidden=&quot;true&quot; focusable=&quot;false&quot; height=&quot;16&quot; version=&quot;1.1&quot; viewBox=&quot;0 0 16 16&quot; width=&quot;16&quot;&gt;&lt;path fill-rule=&quot;evenodd&quot; d=&quot;M4 9h1v1H4c-1.5 0-3-1.69-3-3.5S2.55 3 4 3h4c1.45 0 3 1.69 3 3.5 0 1.41-.91 2.72-2 3.25V8.59c.58-.45 1-1.27 1-2.09C10 5.22 8.98 4 8 4H4c-.98 0-2 1.22-2 2.5S3 9 4 9zm9-3h-1v1h1c1 0 2 1.22 2 2.5S13.98 12 13 12H9c-.98 0-2-1.22-2-2.5 0-.83.42-1.64 1-2.09V6.25c-1.09.53-2 1.84-2 3.25C6 11.31 7.55 13 9 13h4c1.45 0 3-1.69 3-3.5S14.5 6 13 6z&quot;&gt;&lt;/path&gt;&lt;/svg&gt;&lt;/a&gt;Analysis and Interpretation&lt;/h2&gt;
+&lt;p&gt;Here&apos;s a reasonable interpretation: time spent per fruit is roughly constant, and there is a fixed overhead per framework. So &lt;code&gt;(cycle time) = 1 / throughput = A + B*N&lt;/code&gt; (&lt;code&gt;A&lt;/code&gt; and &lt;code&gt;B&lt;/code&gt; constant). The trendlines show a good fit to that for all data sets.&lt;/p&gt;
+&lt;div&gt;
+&lt;table border=&quot;1&quot; class=&quot;dataframe&quot;&gt;
+  &lt;thead&gt;
+    &lt;tr style=&quot;text-align: left;&quot;&gt;
+      &lt;th&gt;&lt;/th&gt;
+      &lt;th&gt;spring-fruits&lt;/th&gt;
+      &lt;th&gt;spring-fruits (buf)&lt;/th&gt;
+      &lt;th&gt;spring-fruits (orig)&lt;/th&gt;
+      &lt;th&gt;spring-fruits (vt)&lt;/th&gt;
+    &lt;/tr&gt;
+  &lt;/thead&gt;
+  &lt;tbody&gt;
+    &lt;tr&gt;
+      &lt;th&gt;A (microsec)&lt;/th&gt;
+      &lt;td&gt;40.151250&lt;/td&gt;
+      &lt;td&gt;36.846456&lt;/td&gt;
+      &lt;td&gt;47.226316&lt;/td&gt;
+      &lt;td&gt;25.259091&lt;/td&gt;
+    &lt;/tr&gt;
+    &lt;tr&gt;
+      &lt;th&gt;B (microsec/fruit)&lt;/th&gt;
+      &lt;td&gt;2.157959&lt;/td&gt;
+      &lt;td&gt;2.075890&lt;/td&gt;
+      &lt;td&gt;2.175362&lt;/td&gt;
+      &lt;td&gt;2.236666&lt;/td&gt;
+    &lt;/tr&gt;
+  &lt;/tbody&gt;
+&lt;/table&gt;
+&lt;/div&gt;
+&lt;p&gt;In a more realistic application where the cycle time per fruit is higher, the throughput will be dominated by real business processing even for small data sets. The baseline framework overhead would be less significant in that case, and since it is only a few tens of microseconds, any processing of a data item that took 100ms or a few times that would quickly overwhelm it even for small data sets.&lt;/p&gt;</content:encoded></item><item><title><![CDATA[This Week in Spring - February 24th, 2026 ]]></title><link>https://spring.io/blog/2026/02/24/this-week-in-spring-february-24th-2026</link><guid isPermaLink="true">https://spring.io/blog/2026/02/24/this-week-in-spring-february-24th-2026</guid><dc:creator><![CDATA[joshlong]]></dc:creator><pubDate>Tue, 24 Feb 2026 00:00:00 GMT</pubDate><content:encoded>&lt;p&gt;Hi, Spring fans! Welcome to another awesome (and oh-so-agentic) week in
+Spring! We&apos;ve got a &lt;em&gt;ton&lt;/em&gt; to look into, and I&apos;ve got even more to
+prepare for next week&apos;s DevNexus event in Atlanta, GA, so let&apos;s dive
+right into it! (Be sure to say &quot;hi&quot; if you&apos;re going to be there,
+though!)&lt;/p&gt;
 &lt;ul&gt;
-&lt;li&gt;Spring Data Commons &lt;code&gt;4.1 M1&lt;/code&gt; - &lt;a href=&quot;https://docs.spring.io/spring-data/commons/reference/4.1/api/java/&quot;&gt;Javadoc&lt;/a&gt; - &lt;a href=&quot;https://docs.spring.io/spring-data/commons/reference/4.1/&quot;&gt;Documentation&lt;/a&gt; - &lt;a href=&quot;https://github.com/spring-projects/spring-data-commons/releases/tag/4.1.0-M1&quot;&gt;Changelog&lt;/a&gt;&lt;/li&gt;
-&lt;li&gt;Spring Data JPA &lt;code&gt;4.1 M1&lt;/code&gt; - &lt;a href=&quot;https://docs.spring.io/spring-data/jpa/reference/4.1/api/java/&quot;&gt;Javadoc&lt;/a&gt; - &lt;a href=&quot;https://docs.spring.io/spring-data/jpa/reference/4.1/&quot;&gt;Documentation&lt;/a&gt; - &lt;a href=&quot;https://github.com/spring-projects/spring-data-jpa/releases/tag/4.1.0-M1&quot;&gt;Changelog&lt;/a&gt;&lt;/li&gt;
-&lt;li&gt;Spring Data for Apache Cassandra &lt;code&gt;5.1 M1&lt;/code&gt; - &lt;a href=&quot;https://docs.spring.io/spring-data/cassandra/reference/5.1/api/java/&quot;&gt;Javadoc&lt;/a&gt; - &lt;a href=&quot;https://docs.spring.io/spring-data/cassandra/reference/5.1/&quot;&gt;Documentation&lt;/a&gt; - &lt;a href=&quot;https://github.com/spring-projects/spring-data-cassandra/releases/tag/5.1.0-M1&quot;&gt;Changelog&lt;/a&gt;&lt;/li&gt;
-&lt;li&gt;Spring Data Neo4j &lt;code&gt;8.1 M1&lt;/code&gt; - &lt;a href=&quot;https://docs.spring.io/spring-data/neo4j/reference/8.1/api/java/&quot;&gt;Javadoc&lt;/a&gt; - &lt;a href=&quot;https://docs.spring.io/spring-data/neo4j/reference/8.1/&quot;&gt;Documentation&lt;/a&gt; - &lt;a href=&quot;https://github.com/spring-projects/spring-data-neo4j/releases/tag/8.1.0-M1&quot;&gt;Changelog&lt;/a&gt;&lt;/li&gt;
-&lt;li&gt;Spring Data KeyValue &lt;code&gt;4.1 M1&lt;/code&gt; - &lt;a href=&quot;https://docs.spring.io/spring-data/keyvalue/reference/4.1/api/java/&quot;&gt;Javadoc&lt;/a&gt; - &lt;a href=&quot;https://docs.spring.io/spring-data/keyvalue/reference/4.1/&quot;&gt;Documentation&lt;/a&gt; - &lt;a href=&quot;https://github.com/spring-projects/spring-data-keyvalue/releases/tag/4.1.0-M1&quot;&gt;Changelog&lt;/a&gt;&lt;/li&gt;
-&lt;li&gt;Spring Data MongoDB &lt;code&gt;5.1 M1&lt;/code&gt; - &lt;a href=&quot;https://docs.spring.io/spring-data/mongodb/reference/5.1/api/java/&quot;&gt;Javadoc&lt;/a&gt; - &lt;a href=&quot;https://docs.spring.io/spring-data/mongodb/reference/5.1/&quot;&gt;Documentation&lt;/a&gt; - &lt;a href=&quot;https://github.com/spring-projects/spring-data-mongodb/releases/tag/5.1.0-M1&quot;&gt;Changelog&lt;/a&gt;&lt;/li&gt;
-&lt;li&gt;Spring Data LDAP &lt;code&gt;4.1 M1&lt;/code&gt; - &lt;a href=&quot;https://docs.spring.io/spring-data/ldap/reference/4.1/api/java/&quot;&gt;Javadoc&lt;/a&gt; - &lt;a href=&quot;https://docs.spring.io/spring-data/ldap/reference/4.1/&quot;&gt;Documentation&lt;/a&gt; - &lt;a href=&quot;https://github.com/spring-projects/spring-data-ldap/releases/tag/4.1.0-M1&quot;&gt;Changelog&lt;/a&gt;&lt;/li&gt;
-&lt;li&gt;Spring Data REST &lt;code&gt;5.1 M1&lt;/code&gt; - &lt;a href=&quot;https://docs.spring.io/spring-data/rest/reference/5.1/api/java/&quot;&gt;Javadoc&lt;/a&gt; - &lt;a href=&quot;https://docs.spring.io/spring-data/rest/reference/5.1/&quot;&gt;Documentation&lt;/a&gt; - &lt;a href=&quot;https://github.com/spring-projects/spring-data-rest/releases/tag/5.1.0-M1&quot;&gt;Changelog&lt;/a&gt;&lt;/li&gt;
-&lt;li&gt;Spring Data Redis &lt;code&gt;4.1 M1&lt;/code&gt; - &lt;a href=&quot;https://docs.spring.io/spring-data/redis/reference/4.1/api/java/&quot;&gt;Javadoc&lt;/a&gt; - &lt;a href=&quot;https://docs.spring.io/spring-data/redis/reference/4.1/&quot;&gt;Documentation&lt;/a&gt; - &lt;a href=&quot;https://github.com/spring-projects/spring-data-redis/releases/tag/4.1.0-M1&quot;&gt;Changelog&lt;/a&gt;&lt;/li&gt;
-&lt;li&gt;Spring Data Elasticsearch &lt;code&gt;6.1 M1&lt;/code&gt; - &lt;a href=&quot;https://docs.spring.io/spring-data/elasticsearch/reference/6.1/api/java/&quot;&gt;Javadoc&lt;/a&gt; - &lt;a href=&quot;https://docs.spring.io/spring-data/elasticsearch/reference/6.1/&quot;&gt;Documentation&lt;/a&gt; - &lt;a href=&quot;https://github.com/spring-projects/spring-data-elasticsearch/releases/tag/6.1.0-M1&quot;&gt;Changelog&lt;/a&gt;&lt;/li&gt;
-&lt;li&gt;Spring Data Couchbase &lt;code&gt;6.1 M1&lt;/code&gt; - &lt;a href=&quot;https://docs.spring.io/spring-data/couchbase/reference/6.1/api/java/&quot;&gt;Javadoc&lt;/a&gt; - &lt;a href=&quot;https://docs.spring.io/spring-data/couchbase/reference/6.1/&quot;&gt;Documentation&lt;/a&gt; - &lt;a href=&quot;https://github.com/spring-projects/spring-data-couchbase/releases/tag/6.1.0-M1&quot;&gt;Changelog&lt;/a&gt;&lt;/li&gt;
-&lt;li&gt;Spring Data Relational &lt;code&gt;4.1 M1&lt;/code&gt; - &lt;a href=&quot;https://docs.spring.io/spring-data/relational/reference/4.1/api/java/&quot;&gt;Javadoc&lt;/a&gt; - &lt;a href=&quot;https://docs.spring.io/spring-data/relational/reference/4.1/&quot;&gt;Documentation&lt;/a&gt; - &lt;a href=&quot;https://github.com/spring-projects/spring-data-relational/releases/tag/4.1.0-M1&quot;&gt;Changelog&lt;/a&gt;&lt;/li&gt;
-&lt;/ul&gt;</content:encoded></item><item><title><![CDATA[Spring Security 6.5.8, 7.0.3 and 7.1.0-M2 available now]]></title><link>https://spring.io/blog/2026/02/13/spring-security-6-5-8-and-7-0-3-and-7-1-0-M2-available-now</link><guid isPermaLink="true">https://spring.io/blog/2026/02/13/spring-security-6-5-8-and-7-0-3-and-7-1-0-M2-available-now</guid><dc:creator><![CDATA[jgrandja]]></dc:creator><pubDate>Fri, 13 Feb 2026 00:00:00 GMT</pubDate><content:encoded>&lt;p&gt;On behalf of the team and everyone who has contributed, I am pleased to announce the releases of Spring Security &lt;code&gt;6.5.8&lt;/code&gt;, &lt;code&gt;7.0.3&lt;/code&gt; and &lt;code&gt;7.1.0-M2&lt;/code&gt;.&lt;/p&gt;
-&lt;p&gt;Please see the Spring Security &lt;a href=&quot;https://github.com/spring-projects/spring-security/releases/tag/6.5.8&quot;&gt;6.5.8&lt;/a&gt;, &lt;a href=&quot;https://github.com/spring-projects/spring-security/releases/tag/7.0.3&quot;&gt;7.0.3&lt;/a&gt; and &lt;a href=&quot;https://github.com/spring-projects/spring-security/releases/tag/7.1.0-M2&quot;&gt;7.1.0-M2&lt;/a&gt; release notes for more details.&lt;/p&gt;
-&lt;p&gt;&lt;a href=&quot;https://spring.io/projects/spring-security/&quot;&gt;Project Page&lt;/a&gt; | &lt;a href=&quot;https://github.com/spring-projects/spring-security&quot;&gt;GitHub&lt;/a&gt; | &lt;a href=&quot;https://github.com/spring-projects/spring-security/issues&quot;&gt;Issues&lt;/a&gt; | &lt;a href=&quot;https://docs.spring.io/spring-security/reference/&quot;&gt;Documentation&lt;/a&gt;&lt;/p&gt;</content:encoded></item><item><title><![CDATA[A Bootiful Podcast: Java Champion and hilarious friend, Richard Fichtner]]></title><link>https://spring.io/blog/2026/02/12/a-bootiful-podcast-richard-fichtner</link><guid isPermaLink="true">https://spring.io/blog/2026/02/12/a-bootiful-podcast-richard-fichtner</guid><dc:creator><![CDATA[joshlong]]></dc:creator><pubDate>Thu, 12 Feb 2026 00:00:00 GMT</pubDate><content:encoded>&lt;p&gt;Hi, Spring fans! I&apos;ve been waiting for this episode for so long! Today, we&apos;re finally joined by my friend Richard Fichtner, who so took pity on my plight waiting for music to be added to the GraalVM that his company, XDev Software, created the &lt;code&gt;music-maven-plugin&lt;/code&gt;, the best Maven plugin, ever! This episode was recorded live at the amazing JFokus 2026 event!&lt;/p&gt;
-&lt;iframe title=&quot;Java Champion and hilarious friend, Richard Fichtner&quot; allowtransparency=&quot;true&quot; height=&quot;300&quot; width=&quot;100%&quot; style=&quot;border: none; min-width: min(100%, 430px);height:300px;&quot; scrolling=&quot;no&quot; data-name=&quot;pb-iframe-player&quot; src=&quot;https://www.podbean.com/player-v2/?from=embed&amp;i=v33g7-1a443fd-pb&amp;square=1&amp;share=1&amp;download=1&amp;fonts=Arial&amp;skin=1&amp;font-color=&amp;rtl=0&amp;logo_link=&amp;btn-skin=7&amp;size=300&quot; loading=&quot;lazy&quot; allowfullscreen=&quot;&quot;&gt;&lt;/iframe&gt;</content:encoded></item></channel></rss>
+&lt;li&gt;You&apos;ve heard of Agent Skills before, right? The new thing announced
+about a month ago by Anthropic as a way to conditionally add
+knowledge about your expectations for workflows, processes,
+conventions, etc.? Well, good news! In this video, DaShaun Carter,
+James Ward, and I look at the amazing support for building Agent
+Skills (&lt;code&gt;.md&lt;/code&gt;) with Spring AI and--- you heard it here first!
+---&lt;a href=&quot;https://www.youtube.com/watch?v=eTh1Ti32QDU&amp;#x26;feature=youtu.be&quot;&gt;the new SkillsJars
+project!&lt;/a&gt;&lt;/li&gt;
+&lt;li&gt;In this video, I look at some of my favorite features in the new
+&lt;a href=&quot;https://youtu.be/RRY_d2kZsj0?si=opFGk90DUyho1Y5f&quot;&gt;Spring gRPC 1.0&lt;/a&gt;
+release, going from &lt;code&gt;.proto&lt;/code&gt; to an OAuth-secured, gRPC-powered
+client and service that runs in a GraalVM native image.&lt;/li&gt;
+&lt;li&gt;&lt;a href=&quot;https://youtu.be/Mpd1740f2Vs?si=D239fg02cFBbWzeO&quot;&gt;Enterprise-grade AI with Spring
+AI&lt;/a&gt;. In this
+video, I look at the latest and greatest (the &lt;code&gt;ChatClient&lt;/code&gt;, RAG,
+MCP) in the Spring AI ecosystem and explore production-centric
+concerns like MCP security (with OAuth and the Spring Authorization
+Server, natch!); observability; scalability (virtual threads); and
+efficiency (with GraalVM native images).&lt;/li&gt;
+&lt;li&gt;I had the privilege of sitting down with Neo4j developer advocate
+extraordinaire Jennifer Reif to revisit modern Neo4j in the context
+of Spring Data Neo4j! Enjoy this &lt;a href=&quot;https://youtu.be/S6m2C3nS_24?si=-9lur0FmTRSLXTCT&quot;&gt;Neo4j first steps with Jennifer
+Reif&lt;/a&gt;.&lt;/li&gt;
+&lt;li&gt;In last week&apos;s installment of &lt;em&gt;A Bootiful Podcast&lt;/em&gt;, Glenn Renfro and
+I talk about the amazing DevNexus event (which is going to be,
+again, &lt;em&gt;next&lt;/em&gt; week! Will you be there? Glenn, James Ward, DaShaun
+Carter, and I will &lt;em&gt;all&lt;/em&gt; be there!).&lt;/li&gt;
+&lt;li&gt;In this video, I looked at some of my favorite features in the new
+&lt;a href=&quot;https://youtu.be/68P21jtmoy0?si=YOvwfvwusju0SzYx&quot;&gt;Spring Security 7, including passkeys, one-time tokens,
+multi-factor authentication, authorization, Password4j, and
+more&lt;/a&gt;.&lt;/li&gt;
+&lt;li&gt;Skills, by the way, are very interesting, and there have been
+several very good ones created of late. I really liked this one from
+Julien Dubois, which &lt;a href=&quot;https://github.com/jdubois/dr-jskill&quot;&gt;shows how he would create a Spring Boot
+project&lt;/a&gt;.&lt;/li&gt;
+&lt;li&gt;&lt;a href=&quot;https://spring.io/blog/2026/02/19/spring-modulith-2-1-m2-2-0-3-and-1-4-8-released&quot;&gt;Spring Modulith 2.1 M2 and 2.0.3 and 1.4.8
+released&lt;/a&gt;&lt;/li&gt;
+&lt;li&gt;&lt;a href=&quot;https://spring.io/blog/2026/02/19/spring-boot-4-1-0-M2-available-now&quot;&gt;Spring Boot 4.1.0-M2 available
+now&lt;/a&gt;&lt;/li&gt;
+&lt;li&gt;&lt;a href=&quot;https://spring.io/blog/2026/02/19/spring-boot-4-0-3-available-now&quot;&gt;Spring Boot 4.0.3 available
+now&lt;/a&gt;&lt;/li&gt;
+&lt;li&gt;&lt;a href=&quot;https://spring.io/blog/2026/02/19/spring-amqp-4-1-0-m2-available&quot;&gt;Spring AMQP 4.1.0 M2 is available
+now&lt;/a&gt;&lt;/li&gt;
+&lt;li&gt;&lt;a href=&quot;https://spring.io/blog/2026/02/19/spring-boot-3-5-11-available-now&quot;&gt;Spring Boot 3.5.11 available
+now&lt;/a&gt;&lt;/li&gt;
+&lt;li&gt;&lt;a href=&quot;https://spring.io/blog/2026/02/19/spring-integration-7-1-0-m2-released&quot;&gt;Spring Integration 7.1.0
+M2&lt;/a&gt;&lt;/li&gt;
+&lt;li&gt;&lt;a href=&quot;https://spring.io/blog/2026/02/18/spring-session-releases&quot;&gt;New Spring Session releases available
+now!&lt;/a&gt;&lt;/li&gt;
+&lt;li&gt;&lt;a href=&quot;https://spring.io/blog/2026/02/18/spring-framework-7-0-5-available-now&quot;&gt;Spring Framework 7.0.5 available
+now&lt;/a&gt;&lt;/li&gt;
+&lt;li&gt;A nice post from our &lt;a href=&quot;https://medium.com/embabel/agent-memory-is-not-a-greenfield-problem-ground-it-in-your-existing-data-9272cabe1561&quot;&gt;friend Rod on memory in
+Embabel&lt;/a&gt;.&lt;/li&gt;
+&lt;li&gt;A nice link from our friend Simon Martinelli on &lt;a href=&quot;https://martinelli.ch/how-i-solved-smtp-timeouts-with-mailpit-and-javamail/&quot;&gt;using Mailpit and
+JavaMail&lt;/a&gt;
+with Spring and Testcontainers.&lt;/li&gt;
+&lt;li&gt;Hey, speaking of Simon, he linked to &lt;a href=&quot;https://docs.sonarsource.com/sonarqube-mcp-server&quot;&gt;this SonarQube MCP server,
+which is very
+interesting&lt;/a&gt; and
+might be worth adding to your MCP client of choice.&lt;/li&gt;
+&lt;/ul&gt;</content:encoded></item></channel></rss>

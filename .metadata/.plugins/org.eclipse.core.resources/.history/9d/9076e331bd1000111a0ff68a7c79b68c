@@ -1,0 +1,28 @@
+package com.prafta.web.attd.attd02.vo;
+
+import lombok.Builder;
+import lombok.Value;
+
+@Value
+@Builder
+public class SchInfo{
+	String cmpnyCd;
+	String siteCd;
+	String schCd;
+	String schNo;
+	String schType;
+	String schTypeNm;
+	String applyDate;
+	String fstSchStrTime;
+	String fstSchEndTime;
+	String fstSchTime;
+	String fstSchBrkMin;
+	String fstSchBrkYn;
+	String secSchStrTime;
+	String secSchEndTime;
+	String secSchTime;
+	String secSchBrkMin;
+	String secSchBrkYn;
+	String useYn;
+	String useYnNm;
+}

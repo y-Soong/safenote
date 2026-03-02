@@ -1,0 +1,68 @@
+package com.prafta.common.schedule.holiday.service;
+
+import java.time.LocalDate;
+import java.time.format.DateTimeFormatter;
+import java.util.List;
+
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+
+import com.prafta.common.schedule.holiday.client.HolidayApiClient;
+import com.prafta.common.schedule.holiday.dto.HolidayApiResponse;
+import com.prafta.common.schedule.holiday.dto.HolidayItem;
+import com.prafta.common.schedule.holiday.mapper.HolidayMapper;
+import com.prafta.common.schedule.holiday.vo.CmpnyInfo;
+import com.prafta.common.schedule.holiday.vo.Holiday;
+
+@Service
+public class HolidaySyncService {
+
+    private final HolidayApiClient apiClient;
+    private final HolidayMapper holidayMapper;
+
+    public HolidaySyncService(HolidayApiClient apiClient, HolidayMapper holidayMapper) {
+        this.apiClient = apiClient;
+        this.holidayMapper = holidayMapper;
+    }
+
+    @Transactional
+    public void syncYear(int year) {
+        HolidayApiResponse res = apiClient.fetchHolidays(year);
+        HolidayItem[] items = (res == null || res.response == null || res.response.body == null ||
+                res.response.body.items == null) ? null : res.response.body.items.item;
+
+        if (items == null || items.length == 0) {
+            return;
+        }
+
+        for (HolidayItem item : items) {
+            Holiday vo = toVo(item, year);
+            if (vo == null) continue;
+            List<CmpnyInfo> cmpnyInfoList = holidayMapper.selectCmpnyInfoList();
+            
+            if(cmpnyInfoList != null && cmpnyInfoList.size() > 0) {
+            	for(CmpnyInfo cmpny : cmpnyInfoList) {
+            		vo.setCmpnyCd(cmpny.getCmpnyCd());
+            		String holidayId = holidayMapper.selectHolidayId(vo);
+            		holidayMapper.updateHoliday(vo);
+            	}
+            }
+        }
+    }
+
+    private Holiday toVo(HolidayItem item, int year) {
+        if (item == null || item.locdate == null) return null;
+
+        String yyyymmdd = String.valueOf(item.locdate);
+        if (yyyymmdd.length() != 8) return null;
+
+        LocalDate dt = LocalDate.parse(yyyymmdd, DateTimeFormatter.BASIC_ISO_DATE);
+
+        Holiday vo = new Holiday();
+        vo.setHolidayDt(dt.toString()); // YYYY-MM-DD
+        vo.setHolidayNm(item.dateName);
+        vo.setIsHoliday(item.isHoliday);
+        vo.setYear(year);
+        return vo;
+    }
+}

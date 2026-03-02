@@ -1,0 +1,18 @@
+package com.prafta.common.schedule.holiday.mapper;
+
+import java.util.List;
+
+import org.apache.ibatis.annotations.Mapper;
+import org.apache.ibatis.annotations.Param;
+
+import com.prafta.common.schedule.holiday.vo.CmpnyInfo;
+import com.prafta.common.schedule.holiday.vo.Holiday;
+
+@Mapper
+public interface HolidayMapper {
+    int updateHoliday(@Param("param") Holiday vo);
+    
+    String selectHolidayId(@Param("param") Holiday vo);
+    
+    List<CmpnyInfo> selectCmpnyInfoList();
+}

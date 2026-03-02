@@ -1,0 +1,11 @@
+package com.prafta.common.schedule.holiday.vo;
+
+import lombok.Getter;
+import lombok.Setter;
+
+@Getter
+@Setter
+public class CmpnyInfo {
+	private String cmpnyCd;
+    
+}

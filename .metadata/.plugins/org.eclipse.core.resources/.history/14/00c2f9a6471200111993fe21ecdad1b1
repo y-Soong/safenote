@@ -1,0 +1,110 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+
+<mapper namespace="com.prafta.web.attd.attd02.mapper.Attd02Mapper">
+
+    <select id="selectHoliday" parameterType="com.prafta.web.attd.attd02.dto.HolidayListQry" resultType="com.prafta.web.attd.attd02.vo.Holiday">
+    /* Attd02Mapper.selectHoliday */
+	SELECT 
+		A.CMPNY_CD								AS cmpnyCd
+	    , A.HOLIDAY_ID							AS holidayId
+	    , A.HOLIDAY_NM							AS holidayNm
+	    , A.HOLIDAY_YMD							AS holidayYmd
+	    , A.HOLIDAY_TYPE						AS holidayType
+	    , A.USE_YN								AS useYn
+	    , A.INSERT_NO							AS insertNo
+	    , FNC_CMM_INFO_SRCH(
+			A.CMPNY_CD
+	        , 'USER'
+	        , A.INSERT_NO
+	        , null
+		) 										AS insertNm
+	    , DATE_FORMAT(INSERT_DATE, '%Y%m%d')	AS insertDate
+	FROM TB_HOLIDAY A
+	WHERE 1=1
+	  AND A.USE_YN = 'Y'
+	  AND HOLIDAY_YMD <![CDATA[ >= ]]> STR_TO_DATE(CONCAT(#{param.year}, LPAD(#{param.month}, 2, '0'), '01'), '%Y%m%d')
+  	  AND HOLIDAY_YMD <![CDATA[ < ]]>  DATE_ADD(STR_TO_DATE(CONCAT(#{param.year}, LPAD(#{param.month}, 2, '0'), '01'), '%Y%m%d'), INTERVAL 1 MONTH)
+	</select>
+	
+	<select id="selectHolidayId" parameterType="map" resultType="string">
+    /* Attd02Mapper.selectHolidayId */
+    SELECT CONCAT(DATE_FORMAT(NOW(), '%Y%m%d'), FNC_CMM_SEQ_NEXTVAL(#{token.gv_cmpnyCd}, 'HOLIDAY_ID')) FROM DUAL
+    </select>
+    
+    <select id="selectHolidayRuleId" parameterType="map" resultType="string">
+    /* Attd02Mapper.selectHolidayRuleId */
+    SELECT CONCAT(DATE_FORMAT(NOW(), '%Y%m%d'), FNC_CMM_SEQ_NEXTVAL(#{token.gv_cmpnyCd}, 'HOLIDAY_RULE_ID')) FROM DUAL
+    </select>
+    
+    <update id="updateHolidayRule" parameterType="com.prafta.web.attd.attd02.dto.HolidayListQry">
+    /* Attd02Mapper.updateHolidayRule */
+    INSERT INTO TB_HOLIDAY_RULE (
+   		CMPNY_CD
+		, HOLIDAY_RULE_ID
+		, HOLIDAY_RULR_NM
+		, HOLIDAY_MM
+		, HOLIDAY_DD
+		, HOLIDAY_TYPE
+		, USE_YN
+		, INSERT_NO
+		, INSERT_DATE
+		, UPDATE_NO
+		, UPDATE_DATE
+	) VALUES (
+	    #{token.gv_cmpnyCd}
+		, #{param.holidayId}
+		, #{param.holidayNm}
+		, SUBSTR(REPLACE(#{param.holidayYmd}, '-', ''), 5, 2)
+		, SUBSTR(REPLACE(#{param.holidayYmd}, '-', ''), 7, 2)
+		, #{param.holidayType}
+		, COALESCE(#{param.useYn}, 'Y')
+		, COALESCE(#{token.gv_userId}, 'SYSTEM')
+		, NOW()
+		, COALESCE(#{token.gv_userId}, 'SYSTEM')
+		, NOW()
+	)
+	ON DUPLICATE KEY UPDATE
+	    HOLIDAY_RULR_NM = VALUES(HOLIDAY_RULR_NM)
+	  , HOLIDAY_MM      = VALUES(HOLIDAY_MM)
+	  , HOLIDAY_DD      = VALUES(HOLIDAY_DD)
+	  , HOLIDAY_TYPE    = VALUES(HOLIDAY_TYPE)
+	  , USE_YN          = VALUES(USE_YN)
+	  , UPDATE_NO       = COALESCE(#{token.userId}, 'SYSTEM')
+	  , UPDATE_DATE     = NOW()
+    </update>
+    
+    <update id="updateHoliday" parameterType="com.prafta.web.attd.attd02.dto.HolidayListQry">
+    /* Attd02Mapper.updateHolidayRule */
+	INSERT INTO TB_HOLIDAY (
+	    CMPNY_CD
+		 , HOLIDAY_ID
+		 , HOLIDAY_NM
+		 , HOLIDAY_YMD
+		 , HOLIDAY_TYPE
+		 , USE_YN
+		 , INSERT_NO
+		 , INSERT_DATE
+		 , UPDATE_NO
+		 , UPDATE_DATE
+	) VALUES (
+	    #{token.gv_cmpnyCd}
+		 , #{param.holidayId}
+		 , #{param.holidayNm}
+		 , REPLACE(#{param.holidayYmd}, '-', '')
+		 , #{param.holidayType}
+		 , COALESCE(#{param.useYn}, 'Y')
+		 , COALESCE(#{token.gv_userId}, 'SYSTEM')
+		 , NOW()
+		 , COALESCE(#{token.gv_userId}, 'SYSTEM')
+		 , NOW()
+	)
+	ON DUPLICATE KEY UPDATE
+	    HOLIDAY_NM   = VALUES(HOLIDAY_NM)
+		 , HOLIDAY_YMD  = VALUES(HOLIDAY_YMD)
+		 , HOLIDAY_TYPE = VALUES(HOLIDAY_TYPE)
+		 , USE_YN       = VALUES(USE_YN)
+		 , UPDATE_NO    = COALESCE(#{token.userId}, 'SYSTEM')
+		 , UPDATE_DATE  = NOW()
+    </update>
+</mapper>

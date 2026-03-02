@@ -1,10 +1,5 @@
 <?xml version="1.0" encoding="UTF-8" standalone="no"?>
 <qualifiedTypeNameHistroy>
-    <fullyQualifiedTypeName name="com.prafta.common.cmm.file.dto.FileInfo"/>
-    <fullyQualifiedTypeName name="com.prafta.common.cmm.file.dto.FileSaveRequest"/>
-    <fullyQualifiedTypeName name="com.prafta.common.cmm.file.dto.FileSaveQuery"/>
-    <fullyQualifiedTypeName name="com.prafta.app.chkLst.chkLst01.dto.checklistInfoQuery"/>
-    <fullyQualifiedTypeName name="com.prafta.common.cmm.baseinfo.dto.BaseinfoListQuery"/>
     <fullyQualifiedTypeName name="com.prafta.app.chkLst.chkLst01.dto.ChecklistInfoReq"/>
     <fullyQualifiedTypeName name="com.prafta.app.chkLst.chkLst01.dto.ChecklistInfoRes"/>
     <fullyQualifiedTypeName name="com.prafta.app.risk.risk01.vo.RiskHazard"/>
@@ -55,9 +50,14 @@
     <fullyQualifiedTypeName name="com.prafta.common.cmm.login.dto.RequiredTermsInfoSave"/>
     <fullyQualifiedTypeName name="com.prafta.web.baim.baim03.dto.TermsInfoSave"/>
     <fullyQualifiedTypeName name="com.prafta.web.baim.baim03.dto.TermsInfoListQry"/>
+    <fullyQualifiedTypeName name="com.prafta.web.baim.baim05.dto.SchInfoListQry"/>
+    <fullyQualifiedTypeName name="com.prafta.web.attd.attd01.dto.SchInfoHistQry"/>
+    <fullyQualifiedTypeName name="com.prafta.web.attd.attd01.dto.CopySchInfoSave"/>
+    <fullyQualifiedTypeName name="com.prafta.web.attd.attd02.dto.HolydayListQry"/>
     <fullyQualifiedTypeName name="lombok.Value"/>
+    <fullyQualifiedTypeName name="com.prafta.web.attd.attd02.dto.HolidaySave"/>
+    <fullyQualifiedTypeName name="com.prafta.common.schedule.holiday.vo.Holiday"/>
     <fullyQualifiedTypeName name="lombok.Getter"/>
     <fullyQualifiedTypeName name="lombok.Setter"/>
-    <fullyQualifiedTypeName name="com.prafta.web.baim.baim05.dto.SchInfoListQry"/>
     <fullyQualifiedTypeName name="java.util.List"/>
 </qualifiedTypeNameHistroy>

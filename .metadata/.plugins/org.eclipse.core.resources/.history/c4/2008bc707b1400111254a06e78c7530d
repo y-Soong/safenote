@@ -1,0 +1,40 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+
+<mapper namespace="com.prafta.common.schedule.holiday.mapper.HolidayMapper">
+
+	<update id="updateHoliday" parameterType="com.prafta.common.cmm.login.dto.ActiveToken">
+    /* LoginMapper.revokeActiveToken */
+	INSERT INTO TB_HOLIDAY (
+	    CMPNY_CD
+		 , HOLIDAY_ID
+		 , HOLIDAY_NM
+		 , HOLIDAY_YMD
+		 , HOLIDAY_TYPE
+		 , USE_YN
+		 , INSERT_NO
+		 , INSERT_DATE
+		 , UPDATE_NO
+		 , UPDATE_DATE
+	) VALUES (
+	    #{token.gv_cmpnyCd}
+		 , #{param.holidayId}
+		 , #{param.holidayNm}
+		 , STR_TO_DATE(REPLACE(#{param.holidayYmd}, '-', ''), '%Y%m%d')
+		 , '01'				/* 공휴일 타입 고정 */
+		 , COALESCE(#{param.useYn}, 'Y')
+		 , COALESCE(#{token.gv_userId}, 'SYSTEM')
+		 , NOW()
+		 , COALESCE(#{token.gv_userId}, 'SYSTEM')
+		 , NOW()
+	)
+	ON DUPLICATE KEY UPDATE
+	    HOLIDAY_NM   = VALUES(HOLIDAY_NM)
+		 , HOLIDAY_YMD  = VALUES(HOLIDAY_YMD)
+		 , HOLIDAY_TYPE = VALUES(HOLIDAY_TYPE)
+		 , USE_YN       = VALUES(USE_YN)
+		 , UPDATE_NO    = COALESCE(#{token.userId}, 'SYSTEM')
+		 , UPDATE_DATE  = NOW()
+    </update>
+    
+</mapper>

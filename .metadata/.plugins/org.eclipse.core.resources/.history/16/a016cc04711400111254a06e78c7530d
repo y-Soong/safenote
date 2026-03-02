@@ -1,0 +1,5 @@
+package com.prafta.common.config;
+
+public class RestTemplateConfig {
+
+}

@@ -1,30 +1,33 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <section name="Workbench">
 	<section name="org.eclipse.ui.texteditor.FindReplaceDialog">
-		<item key="selection" value="baim"/>
+		<item key="selection" value="MapperScan"/>
 		<item key="wrap" value="true"/>
 		<item key="casesensitive" value="false"/>
 		<item key="wholeword" value="false"/>
 		<item key="incremental" value="false"/>
 		<item key="isRegEx" value="false"/>
 		<list key="findhistory">
-			<item value="attd"/>
-			<item value="insertTermsIdVersionInfo"/>
-			<item value="mergeTermsInfo"/>
-			<item value="selectTermsList"/>
-			<item value="TermsInfoReq"/>
-			<item value="updateTermsInfo"/>
-			<item value="selectTermsDList"/>
-			<item value="private "/>
-			<item value="getTermsList"/>
-			<item value="deleteCmmCodeDetailInfo"/>
-			<item value="Baim03"/>
-			<item value="insertUserInfo"/>
-			<item value="UserJoinReq"/>
-			<item value="selectSiteNodeList"/>
-			<item value="PasswordHashing"/>
+			<item value="CmpnyInfo"/>
+			<item value="MapperScan"/>
+			<item value="getLoginUser"/>
+			<item value="upsertHoliday"/>
+			<item value="com.prafta.common.schedule.holiday.vo"/>
+			<item value="cmpnyCd"/>
+			<item value="holidaySyncScheduler"/>
+			<item value="HolidayVo"/>
+			<item value="selectHoliday"/>
+			<item value="Holy"/>
+			<item value="selectSchHistList"/>
+			<item value="FNC_CMM_SEQ_NEXTVAL"/>
+			<item value="NULLIF"/>
+			<item value="SchInfo"/>
+			<item value="selectSchInfoList"/>
 		</list>
 		<list key="replacehistory">
+			<item value="Holiday"/>
+			<item value="Holi"/>
+			<item value="IFNULL"/>
 			<item value="baim"/>
 			<item value=""/>
 			<item value="BaseinfoCmmReq"/>
@@ -37,9 +40,6 @@
 			<item value="baim04"/>
 			<item value="authMapper"/>
 			<item value="03"/>
-			<item value="PROCESS"/>
-			<item value="process"/>
-			<item value="BaseinfoReq"/>
 		</list>
 	</section>
 	<section name="org.eclipse.ui.texteditor.FindReplaceDialog_dialogBounds">

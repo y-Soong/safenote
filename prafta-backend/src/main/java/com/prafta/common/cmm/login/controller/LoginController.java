@@ -37,6 +37,8 @@ public class LoginController {
     @PostMapping("/loginChk")
     public ResponseEntity<?> Login(@RequestBody LoginReqDto dto, @RequestHeader(value = "X-Client-Type", required = false, defaultValue = "WEB") String clientType) {
     	    	
+    	System.out.println("dto :: " + dto);
+    	
 		Map<String, Object> retMap = loginService.getLoginUser(dto, clientType);
     	
     	if(retMap != null) {

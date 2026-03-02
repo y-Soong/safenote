@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="UTF-8" standalone="no"?>
+<launchConfiguration type="org.springframework.ide.eclipse.boot.launch">
+    <mapAttribute key="org.eclipse.debug.core.environmentVariables">
+        <mapEntry key="HOLIDAY_API_SERVICE_KEY" value="25163b2af0791ddedae92cfbb1cde7ee5868c401517b71362e05ee65d2d7957e"/>
+    </mapAttribute>
+    <booleanAttribute key="org.eclipse.jdt.launching.ATTR_USE_CLASSPATH_ONLY_JAR" value="false"/>
+    <booleanAttribute key="org.eclipse.jdt.launching.ATTR_USE_START_ON_FIRST_THREAD" value="true"/>
+    <stringAttribute key="org.eclipse.jdt.launching.MAIN_TYPE" value=""/>
+    <booleanAttribute key="spring.boot.ansi.console" value="true"/>
+    <booleanAttribute key="spring.boot.dash.hidden" value="false"/>
+    <booleanAttribute key="spring.boot.debug.enable" value="false"/>
+    <booleanAttribute key="spring.boot.fast.startup" value="true"/>
+    <booleanAttribute key="spring.boot.jmx.enable" value="true"/>
+    <booleanAttribute key="spring.boot.lifecycle.enable" value="true"/>
+    <stringAttribute key="spring.boot.lifecycle.termination.timeout" value="15000"/>
+    <booleanAttribute key="spring.boot.livebean.enable" value="true"/>
+    <stringAttribute key="spring.boot.livebean.port" value="0"/>
+    <stringAttribute key="spring.boot.profile" value=""/>
+</launchConfiguration>

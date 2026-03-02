@@ -1,0 +1,38 @@
+package com.prafta.web.attd.attd02.mapper;
+
+import java.util.List;
+import java.util.Map;
+
+import org.apache.ibatis.annotations.Mapper;
+import org.apache.ibatis.annotations.Param;
+
+import com.prafta.web.attd.attd02.dto.HolidayListQry;
+import com.prafta.web.attd.attd02.dto.HolidaySave;
+import com.prafta.web.attd.attd02.vo.Holiday;
+
+@Mapper
+public interface Attd02Mapper {
+	
+	List<Holiday> selectHoliday(@Param(value = "param") HolidayListQry dto, @Param(value = "token") Map<String, Object> tokenInfo);
+	
+	String selectHolidayRuleId(@Param(value = "token") Map<String, Object> tokenInfo);
+	
+	String selectHolidayId(@Param(value = "token") Map<String, Object> tokenInfo);
+	
+	void updateHolidayRule(@Param(value = "param") HolidaySave dto, @Param(value = "token") Map<String, Object> tokenInfo);
+	
+	void updateHoliday(@Param(value = "param") HolidaySave dto, @Param(value = "token") Map<String, Object> tokenInfo);
+	
+//	
+//	List<SchInfo> selectSchInfoList(@Param(value = "param") SchInfoListQry dto, @Param(value = "token") Map<String, Object> tokenInfo);
+//	
+//	String selectSchCd(@Param(value = "param") SchCdQry dto, @Param(value = "token") Map<String, Object> tokenInfo);
+//	
+//	void updateSchInfo(@Param(value = "param") SchInfoSave dto, @Param(value = "token") Map<String, Object> tokenInfo);
+//	
+//	int selectSchHistIdx(@Param(value = "param") SchInfoHistQry dto, @Param(value = "token") Map<String, Object> tokenInfo);
+//	
+//	void insertSchHistInfo(@Param(value = "param") SchInfoHistSave dto, @Param(value = "token") Map<String, Object> tokenInfo);
+//	
+//	List<SchHist> selectSchHistList(@Param(value = "param") SchInfoHistQry dto, @Param(value = "token") Map<String, Object> tokenInfo);
+}

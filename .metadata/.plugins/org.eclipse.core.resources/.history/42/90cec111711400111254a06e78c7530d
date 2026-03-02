@@ -1,0 +1,5 @@
+package com.prafta.common.schedule.holiday.client;
+
+public class HolidayApiClient {
+
+}
