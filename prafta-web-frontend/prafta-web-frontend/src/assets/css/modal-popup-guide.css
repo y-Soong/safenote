@@ -1,0 +1,328 @@
+/**
+ * 모달/팝업 전용 가이드 스타일
+ * .prafta-modal-popup 클래스가 있는 overlay에만 적용 (views 본문 미적용)
+ */
+
+/* ========== 7-0. 모달 열림 시 배경 컨트롤 차단 (useModal) ========== */
+body.prafta-modal-open {
+  overflow: hidden;
+  pointer-events: none;
+}
+body.prafta-modal-open .modal-overlay,
+body.prafta-modal-open .modal-overlay * {
+  pointer-events: auto;
+}
+/* Flatpickr 달력은 body에 append되므로 별도 pointer-events/z-index 부여 */
+body.prafta-modal-open .flatpickr-calendar {
+  pointer-events: auto !important;
+  z-index: 10001 !important;
+}
+/* TimeInput 드롭다운은 Teleport로 body에 있으므로 pointer-events 부여 */
+body.prafta-modal-open .time-select-dropdown-fixed {
+  pointer-events: auto !important;
+}
+
+/* ========== 7-0. 전제 토큰 ========== */
+.prafta-modal-popup {
+  --modal-header-bg: rgba(22, 163, 74, 0.04); /* primaryTint-04 */
+  --modal-footer-bg: #f9fafb; /* bg */
+  --modal-surface: #ffffff;
+  --modal-border: #e5e7eb;
+  --modal-focus-ring: rgba(22, 163, 74, 0.35);
+}
+
+/* ========== 7-1. Overlay / Container ========== */
+.prafta-modal-popup.modal-overlay {
+  background: rgba(17, 24, 39, 0.35);
+  display: flex;
+  justify-content: center;
+  align-items: center;
+}
+
+.prafta-modal-popup .modal-content,
+.prafta-modal-popup .modal-content-wide,
+.prafta-modal-popup .modal-content-normal,
+.prafta-modal-popup .modal-content-narrow {
+  background: var(--modal-surface);
+  border: 1px solid var(--modal-border);
+  border-radius: 16px;
+  box-shadow: 0 10px 25px rgba(16, 24, 40, 0.12), 0 4px 10px rgba(16, 24, 40, 0.08);
+  display: flex;
+  flex-direction: column;
+  max-height: 90vh;
+  overflow: hidden;
+  /* 크기: 내용에 따라 유동, 고정 금지 — max-width만 제한 */
+}
+
+.prafta-modal-popup .modal-content-narrow {
+  max-width: 500px;
+}
+
+.prafta-modal-popup .modal-content-normal {
+  max-width: 1000px;
+}
+
+.prafta-modal-popup .modal-content-wide {
+  max-width: 1400px;
+}
+
+/* body만 스크롤, header/footer는 sticky */
+.prafta-modal-popup .modal-header {
+  flex-shrink: 0;
+}
+
+.prafta-modal-popup .modal-footer {
+  flex-shrink: 0;
+}
+
+/* ========== 7-2. Modal Header (옅은 그린 톤) ========== */
+.prafta-modal-popup .modal-header {
+  height: 52px;
+  min-height: 52px;
+  padding: 0 20px;
+  background: var(--modal-header-bg);
+  border-bottom: 1px solid var(--modal-border);
+  box-shadow: none;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.prafta-modal-popup .modal-header span {
+  font-size: 16px;
+  font-weight: 700;
+  color: #111827;
+  font-family: "Pretendard", sans-serif;
+}
+
+/* 닫기(X): Ghost 26×26, #4B5563, hover (기준의 약 80%) */
+.prafta-modal-popup .modal-header .icon-button {
+  width: 26px;
+  height: 26px;
+  min-width: 26px;
+  min-height: 26px;
+  padding: 0;
+  border: none;
+  background: transparent;
+  color: #4b5563;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 6px;
+}
+
+.prafta-modal-popup .modal-header .icon-button:hover {
+  background: rgba(17, 24, 39, 0.04);
+  color: #111827;
+}
+
+.prafta-modal-popup .modal-header .icon-button:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 3px var(--modal-focus-ring);
+  outline-offset: 2px;
+}
+
+.prafta-modal-popup .modal-header .icon-button svg,
+.prafta-modal-popup .modal-header .icon-button .w-6.h-6 {
+  width: 20px;
+  height: 20px;
+}
+
+/* ========== 7-3. Modal Body ========== */
+
+/* 7-3-1. 바디 기본 */
+.prafta-modal-popup .form-container,
+.prafta-modal-popup .modal-body,
+.prafta-modal-popup .risk-assess-content,
+.prafta-modal-popup .viewBody {
+  padding: 20px;
+  background: var(--modal-surface);
+  overflow-y: auto;
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+/* 7-3-2. 좌/우 컬럼 레이아웃 (좌 62% / 우 38%) */
+.prafta-modal-popup .modal-body-split {
+  display: grid;
+  grid-template-columns: 1.6fr 1fr;
+  gap: 16px;
+  padding: 20px;
+  align-items: start;
+  background: var(--modal-surface);
+  overflow-y: auto;
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+/* 7-3-3. 좌측 폼(Primary): 필드 그룹 spacing 16px, input/버튼 규격 */
+.prafta-modal-popup .form-container {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.prafta-modal-popup .form-container input[type="text"],
+.prafta-modal-popup .form-container input[type="number"],
+.prafta-modal-popup .form-container input[type="search"],
+.prafta-modal-popup .form-container input:not([type]),
+.prafta-modal-popup .modal-body input[type="text"],
+.prafta-modal-popup .modal-body input[type="number"],
+.prafta-modal-popup .modal-body input[type="search"],
+.prafta-modal-popup .modal-body input:not([type]) {
+  height: 36px;
+  min-height: 36px;
+  background: #f9fafb;
+  border: 1px solid var(--modal-border);
+  box-sizing: border-box;
+}
+
+.prafta-modal-popup .form-container input:focus,
+.prafta-modal-popup .form-container select:focus,
+.prafta-modal-popup .form-container textarea:focus,
+.prafta-modal-popup .modal-body input:focus,
+.prafta-modal-popup .modal-body select:focus,
+.prafta-modal-popup .modal-body textarea:focus {
+  outline: none;
+  box-shadow: 0 0 0 3px var(--modal-focus-ring);
+  outline-offset: 0;
+}
+
+.prafta-modal-popup .form-container select,
+.prafta-modal-popup .modal-body select {
+  height: 36px;
+  min-height: 36px;
+  background: #f9fafb;
+  border: 1px solid var(--modal-border);
+}
+
+/* 인라인 보조 버튼(주소찾기/계정찾기 등): btn-sm 26px (약 80%) */
+.prafta-modal-popup .form-container .btn:not(.btn-group .btn),
+.prafta-modal-popup .modal-body .btn:not(.btn-group .btn) {
+  min-height: 26px;
+  height: 26px;
+}
+
+/* 7-3-4. 우측 지도(Secondary) — 패널화 */
+.prafta-modal-popup .modal-panel-secondary,
+.prafta-modal-popup .content-wrapper .map-container {
+  background: #f9fafb;
+  border: 1px solid var(--modal-border);
+  border-radius: 12px;
+  padding: 12px;
+  box-shadow: none;
+}
+
+.prafta-modal-popup .modal-panel-secondary iframe,
+.prafta-modal-popup .modal-panel-secondary [class*="map"],
+.prafta-modal-popup .modal-panel-secondary [id*="map"],
+.prafta-modal-popup .content-wrapper .map-container iframe,
+.prafta-modal-popup .content-wrapper .map-container [class*="map"],
+.prafta-modal-popup .content-wrapper .map-container [id*="map"] {
+  border-radius: 10px;
+}
+
+.prafta-modal-popup .modal-panel-secondary .panel-title {
+  font-size: 12px;
+  font-weight: 600;
+  color: #4b5563;
+  margin-bottom: 8px;
+}
+
+/* 7-3-5. Divider 옵션 (필요 시 사용) */
+.prafta-modal-popup .modal-body-divider {
+  width: 1px;
+  background: var(--modal-border);
+  margin: 0 8px;
+  align-self: stretch;
+}
+
+/* 7-3-6. 반응형: 1024px 이하 세로 스택 */
+@media (max-width: 1024px) {
+  .prafta-modal-popup .modal-body-split {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* ========== 7-4. Modal Footer (옅은 그레이 톤, sticky) ========== */
+/* 버튼 영역과 form 영역 구분선: 팝업 전체 너비의 85%, 가운데 — .modal-footer 또는 body 맨 아래 .btn-group 공통 */
+.prafta-modal-popup .modal-footer {
+  height: 60px;
+  min-height: 60px;
+  padding: 0 20px;
+  background: var(--modal-footer-bg);
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  position: sticky;
+  bottom: 0;
+}
+
+.prafta-modal-popup .modal-footer::before {
+  content: "";
+  display: block;
+  position: absolute;
+  top: 0;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 85%;
+  height: 1px;
+  background: var(--modal-border);
+}
+
+/* body 안에 있는 맨 아래 버튼 영역(.btn-group)도 footer처럼 구분선 + 스타일 적용 (modal-footer 미사용 팝업 대응) */
+.prafta-modal-popup .form-container > .btn-group:last-child,
+.prafta-modal-popup .modal-body > .btn-group:last-child,
+.prafta-modal-popup .viewBody > .btn-group:last-child {
+  position: relative;
+  margin-top: 16px;
+  padding-top: 16px;
+  padding-bottom: 12px;
+  padding-left: 0;
+  padding-right: 0;
+  background: var(--modal-footer-bg);
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.prafta-modal-popup .form-container > .btn-group:last-child::before,
+.prafta-modal-popup .modal-body > .btn-group:last-child::before,
+.prafta-modal-popup .viewBody > .btn-group:last-child::before {
+  content: "";
+  display: block;
+  position: absolute;
+  top: 0;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 85%;
+  height: 1px;
+  background: var(--modal-border);
+}
+
+/* Footer 버튼: btn-md 29px (약 80%) */
+.prafta-modal-popup .modal-footer .btn {
+  min-height: 29px;
+  height: 29px;
+}
+
+.prafta-modal-popup .modal-footer .btn-group {
+  gap: 8px;
+}
+
+.prafta-modal-popup .modal-footer .btn-group .btn {
+  min-height: 29px;
+  height: 29px;
+}
+
+/* 바디 내 btn-group(초기화/저장 등)도 동일 규격 */
+.prafta-modal-popup .btn-group {
+  gap: 8px;
+}
+
+.prafta-modal-popup .btn-group .btn {
+  min-height: 29px;
+  height: 29px;
+}

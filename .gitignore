@@ -1,0 +1,116 @@
+############################
+# OS / Editor
+############################
+.DS_Store
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+
+# IDE
+.idea/
+.vscode/
+*.iml
+*.ipr
+*.iws
+
+# Vim / swap
+*.swp
+*.swo
+*~
+
+############################
+# Logs
+############################
+*.log
+logs/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+############################
+# Env / Secrets
+############################
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.crt
+*.p12
+*.jks
+secrets/
+private/
+
+############################
+# Node / Vue (프론트 공통)
+############################
+node_modules/
+dist/
+dist-ssr/
+.cache/
+.tmp/
+.temp/
+.tmp/
+.eslintcache
+*.local
+
+# Vite
+.vite/
+
+# TypeScript
+*.tsbuildinfo
+
+############################
+# Package managers
+############################
+# (선택) lock 파일은 보통 추적 권장 → 아래는 "무시하지 않음" 기본
+# 필요 시에만 무시하도록 주석 해제
+# package-lock.json
+# yarn.lock
+# pnpm-lock.yaml
+
+############################
+# Frontend testing / coverage
+############################
+coverage/
+.nyc_output/
+
+############################
+# Backend - Java / Spring / Gradle / Maven
+############################
+# Gradle
+.gradle/
+build/
+
+# Maven
+target/
+
+# Spring Boot
+*.pid
+*.hprof
+
+# Generated / out
+out/
+bin/
+
+############################
+# Backend - 기타(선택)
+############################
+# Lombok delombok
+delombok/
+
+############################
+# Docker / compose (선택)
+############################
+# local override 파일을 쓰는 경우만 무시
+docker-compose.override.yml
+
+############################
+# DB / Local data
+############################
+*.db
+*.sqlite
+*.sqlite3
+data/
+local-data/

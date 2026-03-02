@@ -1,0 +1,282 @@
+/* ========= 공통 베이스: 배율/줌에 강한 상대 단위 ========= */
+:root {
+  /* 기본 폰트 크기 (유동) */
+  --fs-base: clamp(14px, 1.15vw, 16px);
+  --radius-sm: 0.375rem;
+  --shadow-1: 0 1px 2px rgba(0, 0, 0, 0.04);
+  /* 테이블: 중립 베이스 (tokens.css에서 정의된 --color-* 사용) */
+  --border: var(--color-border, #e5e7eb);
+  --bg-subtle: var(--color-bg, #f9fafb);
+  --thead-bg: #f3f4f6;
+
+  --box-h: min(70svh, 48rem);
+  --box-w: 100%;
+  --box-oy: auto;
+  --box-ox: auto;
+  --box-sticky-top: 0px;
+}
+
+html {
+  font-size: var(--fs-base);
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+/* ========= 레이아웃 래퍼 ========= */
+.table-wrapper {
+  width: 100%;
+  overflow-x: auto;
+  /* PC 배율/줌에서 가로 넘침 보호 */
+
+}
+
+/* ========= 테이블 기본 ========= */
+.data-grid {
+  width: 100%;
+  min-width: 20rem;
+  /* 320px → 20rem로 변경 */
+  border-collapse: collapse;
+  table-layout: fixed;
+  /* 셀 폭 안정화(넘침/줄임과 궁합) */
+  font-size: .8rem;
+}
+
+/* 헤더/셀 공통 – 중립 베이스 */
+.data-grid th,
+.data-grid td {
+  border: 1px solid var(--border);
+  padding: 0.38rem;
+  text-align: left;
+  vertical-align: middle;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  background: var(--card-bg, #ffffff);
+  color: var(--color-text-strong, #111827);
+  font-family: "Pretendard", sans-serif;
+}
+
+/* 헤더 */
+.data-grid th {
+  background: var(--thead-bg);
+  font-weight: 600;
+}
+
+/* 긴 내용은 줄바꿈 허용하고 싶으면 .cell-wrap 사용 */
+.data-grid .cell-wrap {
+  white-space: normal;
+  word-break: break-word;
+}
+
+/* 그리드 조회 결과 없음 */
+.data-grid td.edu-grid-empty,
+.edu-grid-empty {
+  color: var(--color-text-muted, #4b5563);
+  text-align: center;
+  padding: 1.2rem 0.5rem;
+}
+
+/* ========= 폼 컨트롤 (테이블 내) ========= */
+.data-grid select,
+.data-grid input {
+  padding: 0.38rem;
+  border: 1px solid var(--border);
+  border-radius: var(--input-radius, 10px);
+  font-size: 0.7rem;
+  background: var(--color-bg, #f9fafb);
+  color: var(--color-text-strong, #111827);
+}
+
+.data-grid select:focus,
+.data-grid input:focus {
+  border-color: var(--color-border-strong, #d1d5db);
+  outline: none;
+  box-shadow: 0 0 0 var(--focus-ring-width, 3px) var(--color-focus-ring);
+  outline-offset: var(--outline-offset);
+}
+
+.data-grid button {
+  padding: 0.4rem 0.75rem;
+  font-size: 0.875rem;
+  border: 1px solid var(--color-border);
+  line-height: 1;
+}
+
+.data-grid tbody tr:hover td {
+  background-color: var(--color-bg, #f9fafb);
+  cursor: pointer;
+}
+
+/* 체크박스: accent primary */
+.data-grid th input[type="checkbox"],
+.data-grid td input[type="checkbox"] {
+  inline-size: 2em;
+  block-size: 1.5em;
+  accent-color: var(--color-primary, #16a34a);
+  cursor: pointer;
+  margin: 0 auto;
+  display: block;
+}
+
+/* 체크박스 컬럼: 논리폭 고정(상대단위) */
+.data-grid th:first-child:has(input[type="checkbox"]),
+.data-grid td:first-child:has(input[type="checkbox"]) {
+  inline-size: 2rem;
+  /* ~40px -> 2.5rem */
+  text-align: center;
+  padding: .2rem;
+}
+
+/* ========= 인라인 편집 표식 ========= */
+.editableCell {
+  position: relative;
+  cursor: pointer;
+}
+
+.editableCell::after {
+  content: '';
+  position: absolute;
+  inset-block-start: 0;
+  inset-inline-end: 0;
+  inline-size: 0;
+  block-size: 0;
+  border-block-start: 0.9rem solid var(--color-primary, #16a34a);
+  border-inline-start: 0.9rem solid transparent;
+}
+
+/* ========= 좌우 테이블 나열 ========= */
+.tables-row {
+  display: flex;
+  gap: 1.25rem;
+  /* 20px → 1.25rem */
+  align-items: flex-start;
+  font-family: "Pretendard", sans-serif;
+}
+
+.tables-row .table-wrapper {
+  flex: 0 0 auto;
+  max-width: 100%;
+}
+
+.subtitle-row {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  /* 제목은 좌, 버튼은 우 */
+  gap: .5rem;
+}
+
+/* subtitle이 행 내부일 땐 바닥 마진 제거 */
+.subtitle-row .subtitle {
+  margin: 0;
+  /* 기존 .subtitle의 margin-block-end 무력화 */
+}
+
+/* 우측 버튼 그룹: 버튼 간격만 관리 */
+.custom-btn-area {
+  margin-left: auto;
+  /* 오른쪽 끝으로 밀기(핵심) */
+  display: flex;
+  align-items: center;
+  gap: .5rem;
+  /* 버튼들 사이 간격 */
+  white-space: nowrap;
+  /* 한 줄 유지(넘치면 가로 스크롤) */
+}
+
+.subtitle {
+  font-family: "Pretendard", sans-serif;
+}
+
+/* ========= 소제목 바 (중립 베이스) ========= */
+.subtitle-pane .subtitle {
+  min-block-size: 1.5rem;
+  display: inline-flex;
+  align-items: center;
+  gap: 1rem;
+  white-space: nowrap;
+  padding-inline: 0.5rem;
+  border: 1px solid var(--color-border, #e5e7eb);
+  border-radius: var(--radius-sm);
+  background-color: var(--color-bg, #f9fafb);
+  margin-block-end: 0.3rem;
+  box-shadow: var(--shadow-1);
+}
+
+.subtitle .subtitle-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--color-text-muted, #4b5563);
+}
+
+.subtitle .subtitle-icon svg {
+  display: block;
+  fill: currentColor;
+  opacity: 0.8;
+}
+
+.subtitle .subtitle-text {
+  font-weight: 600;
+  font-size: clamp(14px, 1.2vw, 15px);
+  letter-spacing: 0.2px;
+  color: var(--color-text-strong, #111827);
+}
+
+/* ========= 테이블 스크롤 래퍼(하단 기준 높이 포함) ========= */
+.table-box {
+  display: block;
+  inline-size: var(--box-w);
+  block-size: var(--box-h);
+  max-inline-size: 100%;
+  overflow-y: var(--box-oy);
+  overflow-x: var(--box-ox);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--card-bg, #ffffff);
+}
+
+/* 박스 내부의 테이블: 내용이 넓으면 가로 스크롤, 좁으면 박스 폭 유지 */
+.table-box .data-grid {
+  width: max-content;
+  min-width: 100%;
+}
+
+/* 세로 스크롤 시 헤더 고정 */
+.table-box .data-grid thead th {
+  position: sticky;
+  top: var(--box-sticky-top);
+  z-index: 1;
+  background: var(--thead-bg);
+}
+
+/* 디버그 모드 */
+.table-box--debug {
+  outline: 2px dashed #ef4444;
+  outline-offset: 0;
+}
+
+/* ========= 모션/대비 접근성 보정 ========= */
+@media (prefers-reduced-motion: reduce) {
+  * {
+    animation: none !important;
+    transition: none !important;
+  }
+}
+
+@media (prefers-contrast: more) {
+
+  .data-grid th,
+  .data-grid td {
+    border-color: #94a3b8;
+  }
+
+  /* 가독성 보정 */
+}

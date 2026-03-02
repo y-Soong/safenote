@@ -1,0 +1,34 @@
+/**
+ * AlertModal / ConfirmModal 전용 — 팝업 가이드(우측 하단 버튼) 제외, 원래 형태 유지
+ * .prafta-modal-alert-confirm 이 있는 overlay에만 적용
+ */
+
+/* 컨테이너: 컴팩트·가운데 (가이드의 flex/90vh 등 덮어씀) */
+.prafta-modal-popup.prafta-modal-alert-confirm .modal-content {
+  max-height: none;
+  padding: 1.5rem;
+  max-width: 360px;
+  width: 90%;
+  text-align: center;
+}
+
+.prafta-modal-popup.prafta-modal-alert-confirm .modal-body {
+  padding: 0;
+}
+
+/* 푸터: 버튼 가운데 정렬, 구분선·그레이 바 제거 */
+.prafta-modal-popup.prafta-modal-alert-confirm .modal-footer {
+  margin-top: 1rem;
+  padding: 0;
+  height: auto;
+  min-height: 0;
+  background: transparent;
+  border: none;
+  justify-content: center;
+  gap: 1rem;
+  position: static;
+}
+
+.prafta-modal-popup.prafta-modal-alert-confirm .modal-footer::before {
+  display: none;
+}

@@ -1,0 +1,20 @@
+/* calendar.css (전역) */
+.flatpickr-calendar {
+  font-size: 12px !important;
+  transform: scale(0.9) !important;
+  transform-origin: top right !important;
+}
+.flatpickr-calendar.open {
+  z-index: 10001 !important;
+}
+
+.flatpickr-monthSelect-months {
+  font-size: 12px !important;
+  /* gap: 2px !important; */
+  /* padding: 2px !important; */
+}
+
+.flatpickr-monthSelect-month {
+  /* padding: 3px 5px !important; */
+  line-height: 1.2 !important;
+}
