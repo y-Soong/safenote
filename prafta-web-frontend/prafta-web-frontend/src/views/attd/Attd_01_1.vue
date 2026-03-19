@@ -72,23 +72,22 @@
 
     <div class="viewBody">
       <div class="table-wrapper subtitle-pane">
-        <div class="subtitle-row">
-          <div class="subtitle">
-            <span class="subtitle-icon" aria-hidden="true">
-              <svg viewBox="0 0 24 24" width="18" height="18">
-                <path d="M4 4h16v4H4zM4 10h10v10H4z" />
-              </svg>
-            </span>
-            <span class="subtitle-text">점검대상 리스트</span>
-          </div>
-          <div class="subtitle" v-if="siteNm">
-            <span class="subtitle-text">[{{ siteNm }}]</span>
-          </div>
+        <div class="subtitle">
+          <span class="subtitle-icon" aria-hidden="true">
+            <svg viewBox="0 0 24 24" width="18" height="18">
+              <path d="M4 4h16v4H4zM4 10h10v10H4z" />
+            </svg>
+          </span>
+          <span class="subtitle-text">점검대상 리스트</span>
         </div>
 
         <div
           class="table-box overflow-x-auto rounded-md border border-slate-300"
-          style="--box-h: 70vh; --box-sticky-top: 1px; --box-ox: auto"
+          style="
+            --box-h: calc(70vh - 3.5rem);
+            --box-sticky-top: 1px;
+            --box-ox: auto;
+          "
         >
           <table
             class="data-grid w-full table-fixed text-sm text-left rtl:text-right"
@@ -474,7 +473,10 @@ const fnSchInfoPopOpen = (sch) => {
   border-radius: 6px;
   cursor: pointer;
   color: #6b7280;
-  transition: color 0.2s, background 0.2s, border-color 0.2s;
+  transition:
+    color 0.2s,
+    background 0.2s,
+    border-color 0.2s;
 }
 .btn-history-icon:hover {
   color: #30796a;

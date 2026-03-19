@@ -1,6 +1,6 @@
 <template>
   <Transition name="fade">
-    <div class="modal-overlay prafta-modal-popup">
+    <div v-show="true" class="modal-overlay prafta-modal-popup">
       <div
         class="modal-content-wide"
         :style="{ top: position.y + 'px', left: position.x + 'px' }"
@@ -413,9 +413,8 @@ const getInspectionResult = (idx, day) => {
 // 사진 팝업 열기
 const openImagePopup = (filePath, fileMgmtCd) => {
   if (filePath && fileMgmtCd) {
-    // API_BASE_URL 환경 변수 가져오기 (Vue CLI: VUE_APP_ 접두사 필요)
-    // .env.development에 VUE_APP_API_BASE_URL로 설정되어 있어야 함
-    const apiBaseUrl = process.env.VUE_APP_API_BASE_URL || '';
+    // API_BASE_URL 환경 변수 (Vite: VITE_ 접두사)
+    const apiBaseUrl = import.meta.env.VITE_API_BASE_URL || '';
 
     // 파일 경로 구성: API_BASE_URL + filePath + "/" + fileMgmtCd
     let fullPath = `${filePath}/${fileMgmtCd}`;

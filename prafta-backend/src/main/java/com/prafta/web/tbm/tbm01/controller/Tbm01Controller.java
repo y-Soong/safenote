@@ -21,7 +21,7 @@ import org.springframework.web.multipart.MultipartHttpServletRequest;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.prafta.common.annotation.NoAuth;
-import com.prafta.common.exception.TbmApiException;
+import com.prafta.common.exception.tbm.TbmApiException;
 import com.prafta.common.security.JwtUtil;
 import com.prafta.web.tbm.tbm01.dto.TbmEduInfoListReq;
 import com.prafta.web.tbm.tbm01.dto.TbmEduInfoListRes;

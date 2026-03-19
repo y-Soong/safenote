@@ -20,7 +20,7 @@ import com.prafta.app.risk.risk01.vo.RiskType;
 import com.prafta.common.cmm.file.dto.FileInfoSave;
 import com.prafta.common.cmm.file.mapper.FileMapper;
 import com.prafta.common.cmm.file.service.FileService;
-import com.prafta.common.exception.RiskApiException;
+import com.prafta.common.exception.risk.RiskApiException;
 
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;

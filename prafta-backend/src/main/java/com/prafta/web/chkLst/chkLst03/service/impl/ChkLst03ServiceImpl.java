@@ -5,7 +5,7 @@ import java.util.Map;
 
 import org.springframework.stereotype.Service;
 
-import com.prafta.common.exception.ChkLstApiException;
+import com.prafta.common.exception.chkLst.ChkLstApiException;
 import com.prafta.web.chkLst.chkLst03.dto.InspectAnswerQuery;
 import com.prafta.web.chkLst.chkLst03.dto.InspectItemSubjQuery;
 import com.prafta.web.chkLst.chkLst03.dto.InspectResultDetailRequest;

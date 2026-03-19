@@ -201,7 +201,7 @@ const orgTreeToFlat = (tree, options = {}) => {
         (o.baimValDCd ?? o.value) === typeVal ||
         (o.baimValDNm ?? o.label) === typeVal
     );
-    return opt ? opt.baimValDCd ?? opt.value : typeVal;
+    return opt ? (opt.baimValDCd ?? opt.value) : typeVal;
   };
 
   const visit = (node, parentNode, sortOrder) => {
@@ -215,7 +215,7 @@ const orgTreeToFlat = (tree, options = {}) => {
       nodeType: typeToCode(node.nodeType),
       managerCnt: node.managerCnt ?? 0,
       workerCnt: node.workerCnt ?? 0,
-      selfAttdApprvYn: node.selfAttdApprvYn ? "Y" : "N" ?? "N",
+      selfAttdApprvYn: node.selfAttdApprvYn ? "Y" : ("N" ?? "N"),
     };
     if (includeSortOrder) row.sortOrder = sortOrder;
     if (includeDepthLevel) row.depthLevel = depthLevel;

@@ -1,6 +1,6 @@
 <template>
   <Transition name="fade">
-    <div class="modal-overlay prafta-modal-popup">
+    <div v-show="true" class="modal-overlay prafta-modal-popup">
       <!-- 드래그되는 영역 -->
       <div
         class="modal-content-narrow"

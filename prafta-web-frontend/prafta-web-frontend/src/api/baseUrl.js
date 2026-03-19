@@ -7,9 +7,9 @@ export const resolveBaseURL = () => {
   }
 
   if (typeof window !== "undefined" && window.location?.protocol === "file:") {
-    const env = (typeof process !== "undefined" && process.env) || {};
-    const apiBase = env.VUE_APP_FILE_API_BASE || "http://172.30.1.4:8080";
-    const context = env.VUE_APP_API_CONTEXT || "/prafta";
+    const apiBase =
+      import.meta.env.VITE_FILE_API_BASE || "http://172.30.1.4:8080";
+    const context = import.meta.env.VITE_API_CONTEXT || "/prafta";
     return `${apiBase}${context}`;
   }
 

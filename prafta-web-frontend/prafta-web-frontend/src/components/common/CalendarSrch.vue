@@ -40,8 +40,8 @@ watch(
     internalValue.value = Array.isArray(val)
       ? val.map((v) => (typeof v === "string" ? v : formatDate(v)))
       : typeof val === "string"
-      ? val
-      : formatDate(val);
+        ? val
+        : formatDate(val);
   }
 );
 

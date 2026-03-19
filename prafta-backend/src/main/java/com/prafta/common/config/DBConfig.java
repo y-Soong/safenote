@@ -2,7 +2,7 @@ package com.prafta.common.config;
 
 import javax.sql.DataSource;
 
-import org.apache.ibatis.session.Configuration; // ★ 중요
+//import org.apache.ibatis.session.Configuration; // ★ 중요
 import org.apache.ibatis.session.SqlSessionFactory;
 import org.apache.ibatis.type.JdbcType;
 import org.mybatis.spring.SqlSessionFactoryBean;
@@ -10,9 +10,9 @@ import org.mybatis.spring.SqlSessionTemplate;
 import org.mybatis.spring.annotation.MapperScan; // ★ 권장
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Configuration;
 import org.springframework.core.io.support.PathMatchingResourcePatternResolver;
 
-@MapperScan(basePackages = "com.prafta.**.mapper") // ★ 매퍼 인터페이스 패키지 경로에 맞게 수정
 public class DBConfig {
 
     @Value("${spring.datasource.url}")
@@ -41,10 +41,14 @@ public class DBConfig {
         factory.setDataSource(dataSource);
 
         // ★★★ MyBatis 전역 설정 직접 주입
-        Configuration mybatisConfig = new Configuration();
-        mybatisConfig.setMapUnderscoreToCamelCase(true); // SNAKE_CASE → camelCase 자동 매핑
-        mybatisConfig.setJdbcTypeForNull(JdbcType.NULL); // (옵션) null 바인딩 안전장치
-        // mybatisConfig.setCacheEnabled(true);          // (옵션) 2차 캐시 등 필요시
+//        Configuration mybatisConfig = new Configuration();
+//        mybatisConfig.setMapUnderscoreToCamelCase(true); // SNAKE_CASE → camelCase 자동 매핑
+//        mybatisConfig.setJdbcTypeForNull(JdbcType.NULL); // (옵션) null 바인딩 안전장치
+//        // mybatisConfig.setCacheEnabled(true);          // (옵션) 2차 캐시 등 필요시
+//        factory.setConfiguration(mybatisConfig);
+        org.apache.ibatis.session.Configuration mybatisConfig = new org.apache.ibatis.session.Configuration();
+        mybatisConfig.setMapUnderscoreToCamelCase(true);
+        mybatisConfig.setJdbcTypeForNull(JdbcType.NULL);
         factory.setConfiguration(mybatisConfig);
 
         // ★★★ 매퍼 XML 경로 지정 (properties의 mapper-locations 대신 수동 주입)

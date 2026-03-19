@@ -1,6 +1,6 @@
 <template>
   <Transition name="fade">
-    <div class="modal-overlay prafta-modal-popup">
+    <div v-show="true" class="modal-overlay prafta-modal-popup">
       <div
         class="modal-content-wide"
         :style="{ top: position.y + 'px', left: position.x + 'px' }"
@@ -504,7 +504,7 @@ const formData = ref({
 // 개선 전 사진 URL 생성 (initFilePath + initFileMgmtCd)
 const beforePhotoUrl = computed(() => {
   if (formData.value.initFilePath && formData.value.initFileMgmtCd) {
-    const apiBaseUrl = process.env.VUE_APP_API_BASE_URL || '';
+    const apiBaseUrl = import.meta.env.VITE_API_BASE_URL || '';
     let fullPath = `${formData.value.initFilePath}/${formData.value.initFileMgmtCd}`;
 
     // API_BASE_URL이 있고 상대 경로인 경우에만 추가
@@ -531,7 +531,7 @@ const beforePhotoUrl = computed(() => {
 const revalPhotoUrl = computed(() => {
   const filePath = formData.value.revalFilePath || formData.value.revalFilePath;
   if (filePath && formData.value.revalFileMgmtCd) {
-    const apiBaseUrl = process.env.VUE_APP_API_BASE_URL || '';
+    const apiBaseUrl = import.meta.env.VITE_API_BASE_URL || '';
     let fullPath = `${filePath}/${formData.value.revalFileMgmtCd}`;
 
     // API_BASE_URL이 있고 상대 경로인 경우에만 추가

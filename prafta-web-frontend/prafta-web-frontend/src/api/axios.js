@@ -10,7 +10,7 @@ import { resolveBaseURL } from "@/api/baseUrl";
  * baseURL 결정 규칙 (Vue CLI 전용)
  * 1) window.__APP_CONFIG__가 있으면 최우선 (assets/vue_app/app-config.json 등에서 주입)
  * 2) file:// 로 열렸다면(Flutter WebView 로컬 자산) 절대 URL 사용
- *    - env: VUE_APP_FILE_API_BASE, VUE_APP_API_CONTEXT
+ *    - env: VITE_FILE_API_BASE, VITE_API_CONTEXT
  *    - 없으면 기본값 'http://172.30.1.4:8080' + '/prafta'
  * 3) 그 외(웹서버에서 서비스 중)는 '/prafta' (dev는 proxy, prod는 리버스프록시 전제)
  */
@@ -25,8 +25,8 @@ import { resolveBaseURL } from "@/api/baseUrl";
 //   // 2) file:// 환경 (Flutter WebView 가 assets로 여는 경우)
 //   if (typeof window !== "undefined" && window.location?.protocol === "file:") {
 //     const env = (typeof process !== "undefined" && process.env) || {};
-//     const apiBase = env.VUE_APP_FILE_API_BASE || "http://172.30.1.4:8080"; // ← 필요 시 https 로 변경
-//     const context = env.VUE_APP_API_CONTEXT || "/prafta";
+//     const apiBase = import.meta.env.VITE_FILE_API_BASE || "http://172.30.1.4:8080";
+//     const context = import.meta.env.VITE_API_CONTEXT || "/prafta";
 //     return `${apiBase}${context}`;
 //   }
 

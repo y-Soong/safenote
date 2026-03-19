@@ -4,7 +4,9 @@ import java.util.List;
 import java.util.Map;
 
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
+import com.prafta.web.baim.baim01.dto.MasterSiteAuthSetCommand;
 import com.prafta.web.baim.baim01.dto.SiteInfoListQry;
 import com.prafta.web.baim.baim01.dto.SiteInfoListReq;
 import com.prafta.web.baim.baim01.dto.SiteInfoListRes;
@@ -13,8 +15,6 @@ import com.prafta.web.baim.baim01.dto.SiteInfoSave;
 import com.prafta.web.baim.baim01.mapper.Baim01Mapper;
 import com.prafta.web.baim.baim01.service.Baim01Service;
 import com.prafta.web.baim.baim01.vo.SiteInfo;
-import com.prafta.web.risk.risk03.dto.RiskAssessmentsListRes;
-import com.prafta.web.risk.risk03.vo.RiskAssessment;
 
 import lombok.extern.slf4j.Slf4j;
 
@@ -49,12 +49,22 @@ public class Baim01ServiceImpl implements Baim01Service{
 		return retDto;	
 	}
 	
+	@Transactional
 	public void saveSiteInfo(List<SiteInfoReq> dtoList, Map<String, Object> tokenInfo) {
 		
 		for(SiteInfoReq dto : dtoList) {
+			
+			String siteCd = "";
+			
+			if(dto.getSiteCd() != null) {
+				siteCd = dto.getSiteCd();
+			} else {
+				siteCd = baim01Mapper.selectSiteCd(tokenInfo);
+			}
+			
 			SiteInfoSave siteInfoSave = SiteInfoSave.builder()
 									    .cmpnyCd(dto.getCmpnyCd())
-									    .siteCd(dto.getSiteCd())
+									    .siteCd(siteCd)
 									    .siteNo(dto.getSiteNo())
 									    .siteNm(dto.getSiteNm())
 					
@@ -74,6 +84,14 @@ public class Baim01ServiceImpl implements Baim01Service{
 									    .build();
 			
 			baim01Mapper.mergeSiteInfo(siteInfoSave, tokenInfo);
+			
+			MasterSiteAuthSetCommand masterSiteAuthSetCommand = MasterSiteAuthSetCommand.builder()
+																						.siteCd(siteCd)
+																						.build();
+			
+			baim01Mapper.mergeMasterSiteAuthSet(masterSiteAuthSetCommand, tokenInfo);
+			
+			
 		}
 	}
 	

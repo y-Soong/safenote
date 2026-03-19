@@ -1,7 +1,8 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <section name="Workbench">
+	<item key="filters_last_used" value=""/>
 	<section name="SearchDialog">
-		<item key="PREVIOUS_PAGE" value="org.eclipse.jdt.ui.JavaSearchPage"/>
+		<item key="PREVIOUS_PAGE" value="org.eclipse.search.internal.ui.text.TextSearchPage"/>
 	</section>
 	<section name="Search">
 		<list key="Search.processedPageIds">
@@ -31,21 +32,21 @@
 		<item key="scope" value="0"/>
 	</section>
 	<section name="DialogBounds_SearchDialog">
-		<item key="DIALOG_X_ORIGIN" value="8"/>
-		<item key="DIALOG_Y_ORIGIN" value="206"/>
-		<item key="DIALOG_WIDTH" value="1052"/>
-		<item key="DIALOG_HEIGHT" value="470"/>
+		<item key="DIALOG_X_ORIGIN" value="778"/>
+		<item key="DIALOG_Y_ORIGIN" value="196"/>
+		<item key="DIALOG_WIDTH" value="525"/>
+		<item key="DIALOG_HEIGHT" value="480"/>
 		<item key="DIALOG_FONT_NAME" value="1|맑은 고딕|9.0|0|WINDOWS|1|-12|0|0|0|400|0|0|0|1|0|0|0|0|맑은 고딕"/>
 	</section>
 	<section name="TextSearchPage">
-		<item key="CASE_SENSITIVE" value="true"/>
+		<item key="CASE_SENSITIVE" value="false"/>
 		<item key="REG_EX_SEARCH" value="false"/>
 		<item key="WHOLE_WORD" value="false"/>
 		<item key="SEARCH_DERIVED" value="false"/>
 		<item key="SEARCH_IN_BINARIES" value="false"/>
 		<item key="HISTORY_SIZE" value="12"/>
 		<section name="HISTORY0">
-			<item key="ignoreCase" value="false"/>
+			<item key="ignoreCase" value="true"/>
 			<item key="isRegExSearch" value="false"/>
 			<item key="isWholeWord" value="false"/>
 			<item key="textPattern" value="FNC_CMM_SEQ_NEXTVAL"/>
@@ -62,11 +63,11 @@
 			<item key="2" value="ChkLstApiException"/>
 		</section>
 		<section name="HISTORY1">
-			<item key="ignoreCase" value="false"/>
+			<item key="ignoreCase" value="true"/>
 			<item key="isRegExSearch" value="false"/>
 			<item key="isWholeWord" value="false"/>
-			<item key="textPattern" value="FNC_CMM_INFO_SRCH"/>
-			<item key="scope" value="1"/>
+			<item key="textPattern" value="MapperScan"/>
+			<item key="scope" value="0"/>
 			<list key="fileNamePatterns">
 				<item value="*"/>
 			</list>
@@ -74,37 +75,37 @@
 			</list>
 		</section>
 		<section name="HISTORY2">
-			<item key="ignoreCase" value="false"/>
+			<item key="ignoreCase" value="true"/>
 			<item key="isRegExSearch" value="false"/>
 			<item key="isWholeWord" value="false"/>
-			<item key="textPattern" value="requestMatchers"/>
+			<item key="textPattern" value="SqlSession.selectOne"/>
 			<item key="scope" value="0"/>
 			<list key="fileNamePatterns">
-				<item value="ChkLstApiException"/>
+				<item value="*"/>
 			</list>
 			<list key="workingSets">
 			</list>
 		</section>
 		<section name="HISTORY3">
-			<item key="ignoreCase" value="false"/>
+			<item key="ignoreCase" value="true"/>
 			<item key="isRegExSearch" value="false"/>
 			<item key="isWholeWord" value="false"/>
-			<item key="textPattern" value="FNC_CMM_SRCH_NAME"/>
+			<item key="textPattern" value="LoginService.class.getName()"/>
 			<item key="scope" value="0"/>
 			<list key="fileNamePatterns">
-				<item value="ChkLstApiException"/>
+				<item value="*"/>
 			</list>
 			<list key="workingSets">
 			</list>
 		</section>
 		<section name="HISTORY4">
-			<item key="ignoreCase" value="false"/>
+			<item key="ignoreCase" value="true"/>
 			<item key="isRegExSearch" value="false"/>
 			<item key="isWholeWord" value="false"/>
-			<item key="textPattern" value="ChkLstException"/>
+			<item key="textPattern" value="LoginService.getLoginUser"/>
 			<item key="scope" value="0"/>
 			<list key="fileNamePatterns">
-				<item value="ChkLstApiException"/>
+				<item value="*"/>
 			</list>
 			<list key="workingSets">
 			</list>
@@ -113,7 +114,7 @@
 			<item key="ignoreCase" value="true"/>
 			<item key="isRegExSearch" value="false"/>
 			<item key="isWholeWord" value="false"/>
-			<item key="textPattern" value="WebMvcConfigurer"/>
+			<item key="textPattern" value="SqlSession"/>
 			<item key="scope" value="0"/>
 			<list key="fileNamePatterns">
 				<item value="*"/>
@@ -125,7 +126,7 @@
 			<item key="ignoreCase" value="true"/>
 			<item key="isRegExSearch" value="false"/>
 			<item key="isWholeWord" value="false"/>
-			<item key="textPattern" value="addResourceHandlers"/>
+			<item key="textPattern" value="update"/>
 			<item key="scope" value="0"/>
 			<list key="fileNamePatterns">
 				<item value="*"/>
@@ -137,7 +138,7 @@
 			<item key="ignoreCase" value="true"/>
 			<item key="isRegExSearch" value="false"/>
 			<item key="isWholeWord" value="false"/>
-			<item key="textPattern" value="toBuilder"/>
+			<item key="textPattern" value="selectList"/>
 			<item key="scope" value="0"/>
 			<list key="fileNamePatterns">
 				<item value="*"/>
@@ -149,7 +150,7 @@
 			<item key="ignoreCase" value="true"/>
 			<item key="isRegExSearch" value="false"/>
 			<item key="isWholeWord" value="false"/>
-			<item key="textPattern" value="TB_CMM_SEQ"/>
+			<item key="textPattern" value="selectOne"/>
 			<item key="scope" value="0"/>
 			<list key="fileNamePatterns">
 				<item value="*"/>
@@ -161,7 +162,7 @@
 			<item key="ignoreCase" value="true"/>
 			<item key="isRegExSearch" value="false"/>
 			<item key="isWholeWord" value="false"/>
-			<item key="textPattern" value="AesGcmUtil"/>
+			<item key="textPattern" value="HolidayApiClient.validateProps()"/>
 			<item key="scope" value="0"/>
 			<list key="fileNamePatterns">
 				<item value="*"/>
@@ -173,7 +174,7 @@
 			<item key="ignoreCase" value="true"/>
 			<item key="isRegExSearch" value="false"/>
 			<item key="isWholeWord" value="false"/>
-			<item key="textPattern" value="SecurityFilterChain"/>
+			<item key="textPattern" value="Configuration"/>
 			<item key="scope" value="0"/>
 			<list key="fileNamePatterns">
 				<item value="*"/>
@@ -185,7 +186,7 @@
 			<item key="ignoreCase" value="true"/>
 			<item key="isRegExSearch" value="false"/>
 			<item key="isWholeWord" value="false"/>
-			<item key="textPattern" value="WebSecurityConfigurerAdapter"/>
+			<item key="textPattern" value="setValidating"/>
 			<item key="scope" value="0"/>
 			<list key="fileNamePatterns">
 				<item value="*"/>
@@ -203,5 +204,8 @@
 	<section name="org.eclipse.jdt.ui.JavaSearchResultPage">
 		<item key="org.eclipse.jdt.search.resultpage.limit" value="1000"/>
 		<item key="org.eclipse.jdt.search.resultpage.limit_enabled" value="TRUE"/>
+	</section>
+	<section name="">
+		<item key="org.eclipse.search.resultpage.limit" value="1000"/>
 	</section>
 </section>

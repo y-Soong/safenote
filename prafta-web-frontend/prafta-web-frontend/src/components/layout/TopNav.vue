@@ -165,7 +165,9 @@ const logout = async () => {
   background: #ffffff;
   border: 1px solid #e5e7eb;
   border-radius: 8px;
-  transition: background 0.2s, border-color 0.2s;
+  transition:
+    background 0.2s,
+    border-color 0.2s;
   box-sizing: border-box;
 }
 .user-badge:hover {

@@ -8,7 +8,7 @@ import org.aspectj.lang.annotation.Before;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Component;
 
-import com.prafta.common.exception.CmmApiException;
+import com.prafta.common.exception.cmm.CmmApiException;
 import com.prafta.common.security.JwtUtil;
 
 import io.jsonwebtoken.Claims;

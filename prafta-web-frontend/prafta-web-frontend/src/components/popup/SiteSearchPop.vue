@@ -1,6 +1,6 @@
 <template>
   <Transition name="fade">
-    <div class="modal-overlay prafta-modal-popup">
+    <div v-show="true" class="modal-overlay prafta-modal-popup">
       <div
         class="modal-content-wide"
         :style="{ top: position.y + 'px', left: position.x + 'px' }"

@@ -114,3 +114,4 @@ docker-compose.override.yml
 *.sqlite3
 data/
 local-data/
+/.metadata/

@@ -17,8 +17,8 @@ import com.prafta.common.cmm.login.dto.AuthLogoutRes;
 import com.prafta.common.cmm.login.dto.LoginReqDto;
 import com.prafta.common.cmm.login.dto.UserJoinReq;
 import com.prafta.common.cmm.login.service.LoginService;
-import com.prafta.common.exception.CmmApiException;
-import com.prafta.common.exception.LoginFailException;
+import com.prafta.common.exception.cmm.CmmApiException;
+import com.prafta.common.exception.login.LoginApiException;
 import com.prafta.common.security.JwtUtil;
 
 import lombok.RequiredArgsConstructor;
@@ -71,7 +71,7 @@ public class LoginController {
     		retMap.put("token", token);
     		
     	} else {
-    		throw new LoginFailException("아이디 혹은 비밀번호를 확인해주세요.");
+    		throw new LoginApiException("아이디 혹은 비밀번호를 확인해주세요.");
     	}
     	
     	return ResponseEntity.status(HttpStatus.OK).body(retMap);

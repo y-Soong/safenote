@@ -16,10 +16,30 @@ import com.prafta.web.attd.attd01.dto.SchInfoListReq;
 import com.prafta.web.attd.attd01.dto.SchInfoListRes;
 import com.prafta.web.attd.attd01.dto.SchInfoReq;
 import com.prafta.web.attd.attd01.dto.SchInfoSave;
+import com.prafta.web.attd.attd01.dto.ShiftAssignSave;
+import com.prafta.web.attd.attd01.dto.ShiftCdQry;
+import com.prafta.web.attd.attd01.dto.ShiftPatternSave;
+import com.prafta.web.attd.attd01.dto.ShiftSchDetailQry;
+import com.prafta.web.attd.attd01.dto.ShiftSchDetailReq;
+import com.prafta.web.attd.attd01.dto.ShiftSchDetailRes;
+import com.prafta.web.attd.attd01.dto.ShiftSchInfoListQry;
+import com.prafta.web.attd.attd01.dto.ShiftSchInfoListReq;
+import com.prafta.web.attd.attd01.dto.ShiftSchInfoListRes;
+import com.prafta.web.attd.attd01.dto.ShiftSchInfoReq;
+import com.prafta.web.attd.attd01.dto.ShiftSchInfoReq.ShiftAssign;
+import com.prafta.web.attd.attd01.dto.ShiftSchInfoReq.ShiftPattern;
+import com.prafta.web.attd.attd01.dto.ShiftSchInfoReq.ShiftTeam;
+import com.prafta.web.attd.attd01.dto.ShiftTeamSave;
+import com.prafta.web.attd.attd01.dto.ShiftTypeSave;
 import com.prafta.web.attd.attd01.mapper.Attd01Mapper;
 import com.prafta.web.attd.attd01.service.Attd01Service;
 import com.prafta.web.attd.attd01.vo.SchHist;
 import com.prafta.web.attd.attd01.vo.SchInfo;
+import com.prafta.web.attd.attd01.vo.ShiftAssignInfo;
+import com.prafta.web.attd.attd01.vo.ShiftPatternInfo;
+import com.prafta.web.attd.attd01.vo.ShiftSchInfo;
+import com.prafta.web.attd.attd01.vo.ShiftTeamInfo;
+import com.prafta.web.attd.attd01.vo.ShiftTypeInfo;
 
 import lombok.extern.slf4j.Slf4j;
 
@@ -134,5 +154,117 @@ public class Attd01ServiceImpl implements Attd01Service{
 		}
 		
 		return schInfoHistRes;
+	}
+	
+	@Transactional
+	public void updateShiftSchInfo(ShiftSchInfoReq dto, Map<String, Object> tokenInfo) {
+		
+		ShiftCdQry shiftCdQry = ShiftCdQry.builder().siteCd(dto.getShiftType().getSiteCd()).build();
+		
+		String shiftCd = attd01Mapper.selectShiftCd(shiftCdQry, tokenInfo);
+		
+		ShiftTypeSave shiftTypeSave = ShiftTypeSave.builder()
+													.shiftCd(shiftCd)
+													.shiftNo(dto.getShiftType().getShiftNo())
+													.siteCd(dto.getShiftType().getSiteCd())
+													.shiftPtrnCnt(dto.getShiftType().getShiftPtrnCnt())
+													.shiftTeamCnt(dto.getShiftType().getShiftTeamCnt())
+													.shiftCycleDays(dto.getShiftType().getShiftCycleDays())
+													.useYn(dto.getShiftType().getUseYn())
+													.build();
+		
+		attd01Mapper.insertShiftSch(shiftTypeSave, tokenInfo);
+		
+		if(dto.getShiftPatternList() != null && dto.getShiftPatternList().size() > 0) {
+			for(ShiftPattern shiftPattern : dto.getShiftPatternList()) {
+				ShiftPatternSave shiftPatternSave = ShiftPatternSave.builder()
+																	.shiftCd(shiftCd)
+																	.siteCd(shiftPattern.getSiteCd())
+																	.ptrnIdx(shiftPattern.getPtrnIdx())
+																	.schCd(shiftPattern.getSchCd())
+																	.build();
+				
+				attd01Mapper.insertShiftSchPtrn(shiftPatternSave, tokenInfo);
+			}
+		}
+		
+		if(dto.getShiftTeamList() != null && dto.getShiftTeamList().size() > 0) {
+			for(ShiftTeam shiftTeam : dto.getShiftTeamList()) {
+				ShiftTeamSave shiftTeamSave = ShiftTeamSave.builder()
+															.shiftCd(shiftCd)
+															.siteCd(shiftTeam.getSiteCd())
+															.teamIdx(shiftTeam.getTeamIdx())
+															.teamNm(shiftTeam.getTeamNm())
+															.build();
+				
+				attd01Mapper.insertShiftSchTeam(shiftTeamSave, tokenInfo);
+			}
+		}
+		
+		if(dto.getShiftAssignList() != null && dto.getShiftAssignList().size() > 0) {
+			for(ShiftAssign shiftAssign : dto.getShiftAssignList()) {
+				ShiftAssignSave shiftAssignSave = ShiftAssignSave.builder()
+						.shiftCd(shiftCd)
+						.siteCd(shiftAssign.getSiteCd())
+						.dayNo(shiftAssign.getDayNo())
+						.teamIdx(shiftAssign.getTeamIdx())
+						.assignYn(shiftAssign.getAssignYn())
+						.schCd(shiftAssign.getSchCd())
+						.build();
+
+				attd01Mapper.insertShiftSchAssign(shiftAssignSave, tokenInfo);
+			}
+		}
+	}
+	
+	public ShiftSchInfoListRes selectShiftSchInfoList(ShiftSchInfoListReq dto, Map<String, Object> tokenInfo) {
+		
+		ShiftSchInfoListQry shiftSchInfoListQry = ShiftSchInfoListQry.builder()
+																	.siteCd(dto.getSiteCd())
+																	.shiftNo(dto.getShiftNo())
+																	.shiftCycleDays(dto.getShiftCycleDays())
+																	.useYn(dto.getUseYn())
+																	.build();
+		
+		ShiftSchInfoListRes shiftSchInfoListRes = null;
+		
+		List<ShiftSchInfo> shiftSchInfoList = attd01Mapper.selectShiftSchInfoList(shiftSchInfoListQry, tokenInfo);
+		
+		if(shiftSchInfoList != null && shiftSchInfoList.size() > 0) {
+			shiftSchInfoListRes = ShiftSchInfoListRes.builder()
+													.shiftSchInfoList(shiftSchInfoList)
+													.build();
+		}
+	
+		
+		return shiftSchInfoListRes;
+	}
+	
+	public ShiftSchDetailRes selectShiftSchDetail(ShiftSchDetailReq dto, Map<String, Object> tokenInfo) {
+		
+		ShiftSchDetailQry shiftSchDetailQry = ShiftSchDetailQry.builder()
+																.siteCd(dto.getSiteCd())
+																.shiftCd(dto.getShiftCd())
+																.build();
+		
+		ShiftSchDetailRes shiftSchDetailRes = null;
+		
+		List<ShiftTypeInfo> shiftTypeInfoList = attd01Mapper.selectShiftTypeInfoList(shiftSchDetailQry, tokenInfo);
+		
+		List<ShiftPatternInfo> shiftPatternInfoList = attd01Mapper.selectShiftPatternInfoList(shiftSchDetailQry, tokenInfo);
+		
+		List<ShiftTeamInfo> shiftTeamInfoList = attd01Mapper.selectShiftTeamInfoList(shiftSchDetailQry, tokenInfo);
+		
+		List<ShiftAssignInfo> shiftAssignInfoList = attd01Mapper.selectShiftAssignInfoList(shiftSchDetailQry, tokenInfo);
+		
+		shiftSchDetailRes = ShiftSchDetailRes.builder()
+											.shiftTypeInfoList(shiftTypeInfoList)
+											.shiftPatternInfoList(shiftPatternInfoList)
+											.shiftTeamInfoList(shiftTeamInfoList)
+											.shiftAssignInfoList(shiftAssignInfoList)
+											.build();
+		
+		
+		return shiftSchDetailRes;
 	}
 }

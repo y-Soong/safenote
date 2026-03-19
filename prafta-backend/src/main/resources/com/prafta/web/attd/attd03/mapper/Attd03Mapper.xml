@@ -1,0 +1,198 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.prafta.web.attd.attd03.mapper.Attd03Mapper">
+
+    <update id="updateLeaveType" parameterType="com.prafta.web.attd.attd03.dto.LeaveTypeSave">
+    /* Attd03Mapper.updateLeaveType */
+	INSERT INTO TB_LEAVE_TYPE_MGMT (
+		CMPNY_CD
+		, LEAVE_CD
+		, LEAVE_NO
+		, LEAVE_NM
+		, LEAVE_TYPE
+		, GRANT_TYPE
+		, PAID_TYPE
+		, LEAVE_NATURE_TYPE
+		, USE_YN
+		, LEAVE_DESC
+		, MAX_APLY_DAYS
+		, USE_UNIT_TYPE
+		, AVAIL_TERM_TYPE
+		, AVAIL_FROM_DT
+		, AVAIL_TO_DT
+		, GRANT_DAYS
+		, ADMIN_AVAIL_TERM_TYPE
+		, ADMIN_AVAIL_FROM_DT
+		, ADMIN_AVAIL_TO_DT
+		, GRANT_BASE_TYPE
+		, GRANT_OFFSET_MONTH
+		, APRV_USE_YN
+		, APRV_STEP_CNT
+		, HR_FINAL_APRV_YN
+		, EVIDENCE_YN
+		, EVIDENCE_GUIDE_MSG
+		, INSERT_NO
+		, INSERT_DATE
+		, UPDATE_NO
+		, UPDATE_DATE
+	)
+	VALUES (
+		#{token.gv_cmpnyCd}          -- CMPNY_CD
+		, #{param.leaveCd}           -- LEAVE_CD
+		, #{param.leaveNo}           -- LEAVE_NO
+		, #{param.leaveNm}           -- LEAVE_NM
+		, #{param.leaveType}         -- LEAVE_TYPE
+		, #{param.grantType}         -- GRANT_TYPE
+		, #{param.paidType}          -- PAID_TYPE
+		, #{param.leaveNatureType}   -- LEAVE_NATURE_TYPE
+		, #{param.useYn}             -- USE_YN
+		, #{param.leaveDesc}         -- LEAVE_DESC
+		
+		, #{param.maxAplyDays}       -- MAX_APLY_DAYS
+		, #{param.useUnitType}       -- USE_UNIT_TYPE
+		, #{param.availTermType}     -- AVAIL_TERM_TYPE
+		, #{param.availFromDt}       -- AVAIL_FROM_DT
+		, #{param.availToDt}         -- AVAIL_TO_DT
+		
+		, #{param.grantDays}         -- GRANT_DAYS
+		, #{param.adminAvailTermType}-- ADMIN_AVAIL_TERM_TYP
+		, #{param.adminAvailFromDt}  -- ADMIN_AVAIL_FROM_DT
+		, #{param.adminAvailToDt}    -- ADMIN_AVAIL_TO_DT
+		
+		, #{param.grantBaseType}     -- GRANT_BASE_TYPE
+		, #{param.grantOffsetMonth}  -- GRANT_OFFSET_MONTH
+		
+		, #{param.aprvUseYn}         -- APRV_USE_YN
+		, #{param.aprvStepCnt}       -- APRV_STEP_CNT
+		, #{param.hrFinalAprvYn}     -- HR_FINAL_APRV_YN
+		
+		, #{param.evidenceYn}        -- EVIDENCE_YN
+		, #{param.evidenceGuideMsg}  -- EVIDENCE_GUIDE_MSG
+		
+		, #{token.gv_userId}         -- INSERT_NO
+		, NOW()                      -- INSERT_DATE
+		, #{token.gv_userId}         -- UPDATE_NO
+		, NOW()                      -- UPDATE_DATE
+	) AS new
+	ON DUPLICATE KEY UPDATE
+		LEAVE_DESC		  = VALUES(LEAVE_DESC)
+		, USE_YN          = VALUES(USE_YN)
+		, UPDATE_NO       = #{token.gv_userId}
+		, UPDATE_DATE     = NOW()
+    </update>
+    
+    <select id="selectLeaveCd" parameterType="map" resultType="string">
+    /* Attd03Mapper.selectLeaveCd */
+    SELECT FNC_CMM_SEQ_NEXTVAL(#{token.gv_cmpnyCd}, 'LEAVE_CD')
+    FROM DUAL
+    </select>
+    
+    <select id="selectLeaves" parameterType="com.prafta.web.attd.attd03.dto.LeaveTypeListQry" resultType="com.prafta.web.attd.attd03.vo.LeaveType">
+    /* Attd03Mapper.selectLeaves */
+	SELECT 
+		A.CMPNY_CD AS cmpnyCd
+		, A.LEAVE_CD AS leaveCd
+		, A.LEAVE_NO AS leaveNo
+		, A.LEAVE_NM AS leaveNm
+		, A.LEAVE_TYPE AS leaveType
+		, FNC_CMM_INFO_SRCH(#{token.gv_cmpnyCd}, 'SYST_VAL', A.LEAVE_TYPE, 'SYS021') AS leaveTypeNm
+		, A.GRANT_TYPE AS grantType
+		, FNC_CMM_INFO_SRCH(#{token.gv_cmpnyCd}, 'SYST_VAL', A.GRANT_TYPE, 'SYS022') AS grantTypeNm
+		, A.PAID_TYPE AS paidType
+		, FNC_CMM_INFO_SRCH(#{token.gv_cmpnyCd}, 'SYST_VAL', A.PAID_TYPE, 'SYS023') AS paidTypeNm
+		, A.LEAVE_NATURE_TYPE AS leaveNatureType
+		, FNC_CMM_INFO_SRCH(#{token.gv_cmpnyCd}, 'SYST_VAL', A.LEAVE_NATURE_TYPE, 'SYS024') AS leaveNatureTypeNm
+		, A.LEAVE_DAYS AS leaveDays
+		, A.USE_UNIT_TYPE AS useUnitType
+		, FNC_CMM_INFO_SRCH(#{token.gv_cmpnyCd}, 'SYST_VAL', A.USE_UNIT_TYPE, 'SYS025') AS useUnitTypeNm
+		, A.AVAIL_TERM_TYPE AS availTermType
+		, FNC_CMM_INFO_SRCH(#{token.gv_cmpnyCd}, 'SYST_VAL', A.AVAIL_TERM_TYPE, 'SYS026') AS availTermTypeNm
+		, A.AVAIL_PERIOD AS availPeriod
+		, A.USE_YN AS useYn
+		, A.LEAVE_DESC AS leaveDesc
+		, A.GRANT_BASE_TYPE	AS grantBaseType
+		, FNC_CMM_INFO_SRCH(#{token.gv_cmpnyCd}, 'SYST_VAL', A.GRANT_BASE_TYPE, 'SYS027') AS grantBaseTypeNm
+		, A.GRANT_OFFSET_MONTH AS grantOffsetMonth
+		
+		, A.APRV_USE_YN	AS aprvUseYn
+		, A.APRV_STEP_CNT AS aprvStepCnt
+		, A.HR_FINAL_APRV_YN AS hrFinalAprvYn
+		, A.EVIDENCE_YN AS evidenceYn
+		, A.EVIDENCE_GUIDE_MSG AS evidenceGuideMsg
+	FROM 
+	(	
+	    SELECT 
+			A.CMPNY_CD
+			, A.LEAVE_CD
+			, A.LEAVE_NO
+			, A.LEAVE_NM
+			, A.LEAVE_TYPE
+			, A.GRANT_TYPE
+			, A.PAID_TYPE
+			, A.LEAVE_NATURE_TYPE
+			, CASE 
+				WHEN A.LEAVE_TYPE = '01'
+					THEN A.MAX_APLY_DAYS
+				WHEN A.LEAVE_TYPE = '02'
+					THEN A.GRANT_DAYS
+			END LEAVE_DAYS
+			, A.USE_UNIT_TYPE
+			, CASE 
+				WHEN A.LEAVE_TYPE = '01'
+					THEN A.AVAIL_TERM_TYPE
+				WHEN A.LEAVE_TYPE = '02'
+					THEN A.ADMIN_AVAIL_TERM_TYPE
+			END AVAIL_TERM_TYPE
+			, CASE 
+				WHEN A.LEAVE_TYPE = '01'
+					THEN CONCAT(A.AVAIL_FROM_DT, '~', A.AVAIL_TO_DT)
+				WHEN A.LEAVE_TYPE = '02'
+					THEN CONCAT(A.ADMIN_AVAIL_FROM_DT, '~', A.ADMIN_AVAIL_TO_DT)
+			END AVAIL_PERIOD
+			, A.USE_YN
+			, A.LEAVE_DESC
+			
+			, A.GRANT_BASE_TYPE
+            , A.GRANT_OFFSET_MONTH
+            
+            , A.APRV_USE_YN
+            , A.APRV_STEP_CNT
+            , A.HR_FINAL_APRV_YN
+            , A.EVIDENCE_YN
+            , A.EVIDENCE_GUIDE_MSG
+		FROM TB_LEAVE_TYPE_MGMT A
+		WHERE A.CMPNY_CD = #{token.gv_cmpnyCd}
+		  <if test="param.leaveNo != null and param.leaveNo != ''">
+		  	AND A.LEAVE_NO = #{param.leaveNo}
+		  </if>
+		  
+		  <if test="param.leaveNm != null and param.leaveNm != ''">
+		  	AND A.LEAVE_NM LIKE CONCAT('%', #{param.leaveNm}, '%')
+		  </if>
+		  
+		  <if test="param.leaveType != null and param.leaveType != ''">
+		  	AND A.LEAVE_TYPE = #{param.leaveType}
+		  </if>
+		  
+		  <if test="param.useYn != null and param.useYn != ''">
+		  	AND A.USE_YN = #{param.useYn}
+		  </if>
+		  
+	) A
+    </select>
+
+
+	<select id="selectLeaveNoDupChkResult" parameterType="com.prafta.web.attd.attd03.dto.LeaveNoDupChkQry" resultType="com.prafta.web.attd.attd03.vo.LeaveNoDupChk">
+    /* Attd03Mapper.selectLeaveNoDupChkResult */
+    SELECT 
+    	A.CMPNY_CD 		AS cmpnyCd
+    	, A.LEAVE_CD	AS leaveCd
+    	, A.LEAVE_NO	AS leaveNo
+    	, A.LEAVE_NM	AS leaveNm
+    FROM TB_LEAVE_TYPE_MGMT A
+    WHERE A.CMPNY_CD = #{token.gv_cmpnyCd}
+      AND A.LEAVE_NO = #{param.leaveNo}
+    LIMIT 1
+    </select>
+
+</mapper>

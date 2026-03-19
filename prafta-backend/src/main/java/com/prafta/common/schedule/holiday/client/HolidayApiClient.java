@@ -22,6 +22,8 @@ public class HolidayApiClient {
     }
 
     private void validateProps() {
+    	String key = System.getenv("HOLIDAY_API_SERVICE_KEY");
+    	
         if (!StringUtils.hasText(props.getServiceKey())) {
             // 키 없으면 "조용히 실패"하지 말고 앱 시작부터 막는 게 안전
             throw new IllegalStateException("HOLIDAY_API_SERVICE_KEY is empty. Set env var HOLIDAY_API_SERVICE_KEY.");
@@ -40,6 +42,8 @@ public class HolidayApiClient {
                 .queryParam("numOfRows", props.getNumOfRows())
                 .build(true)     // 인코딩 이슈 방지
                 .toUri();
+        
+        var res = holidayRestTemplate.getForEntity(uri, String.class);
 
         // 이 uri를 로그로 찍으면 ServiceKey 유출됩니다. 절대 금지.
         return holidayRestTemplate.getForObject(uri, HolidayApiResponse.class);

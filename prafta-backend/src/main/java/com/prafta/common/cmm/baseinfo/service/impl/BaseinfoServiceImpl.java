@@ -30,7 +30,7 @@ import com.prafta.common.cmm.baseinfo.vo.BaseInfo;
 import com.prafta.common.cmm.baseinfo.vo.MenuInfo;
 import com.prafta.common.cmm.baseinfo.vo.SiteNodeInfo;
 import com.prafta.common.cmm.baseinfo.vo.SystInfo;
-import com.prafta.common.exception.CmmApiException;
+import com.prafta.common.exception.cmm.CmmApiException;
 import com.prafta.common.util.MenuListResBuilder;
 import com.prafta.common.util.PasswordHashing;
 

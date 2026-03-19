@@ -21,6 +21,11 @@ body.prafta-modal-open .flatpickr-calendar {
 body.prafta-modal-open .time-select-dropdown-fixed {
   pointer-events: auto !important;
 }
+/* MonthDayPickerInput 팝오버도 Teleport로 body에 있으므로 pointer-events/z-index 부여 */
+body.prafta-modal-open .month-day-picker-popover {
+  pointer-events: auto !important;
+  z-index: 10001 !important;
+}
 
 /* ========== 7-0. 전제 토큰 ========== */
 .prafta-modal-popup {

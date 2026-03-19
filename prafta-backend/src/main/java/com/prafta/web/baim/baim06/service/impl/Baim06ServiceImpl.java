@@ -6,7 +6,7 @@ import java.util.Map;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-import com.prafta.common.exception.BaimApiException;
+import com.prafta.common.exception.baim.BaimApiException;
 import com.prafta.web.baim.baim06.dto.CopySiteNodeReq;
 import com.prafta.web.baim.baim06.dto.CopySiteNodeSave;
 import com.prafta.web.baim.baim06.dto.SiteNodeDelete;

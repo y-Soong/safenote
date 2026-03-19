@@ -125,8 +125,8 @@
                             (ev.type ?? ev.holidayType) === '01'
                               ? 'ev-public'
                               : (ev.type ?? ev.holidayType) === '03'
-                              ? 'ev-recurring'
-                              : 'ev-manual',
+                                ? 'ev-recurring'
+                                : 'ev-manual',
                           ]"
                           :title="ev.name ?? ev.holidayNm ?? ''"
                           @click.stop="fnOpenHolidayEdit(ev)"
@@ -137,8 +137,8 @@
                             ((ev.type ?? ev.holidayType) === "01"
                               ? "공휴일"
                               : (ev.type ?? ev.holidayType) === "03"
-                              ? "반복휴무"
-                              : ev.typeNm ?? "지정휴무")
+                                ? "반복휴무"
+                                : (ev.typeNm ?? "지정휴무"))
                           }}
                         </span>
                       </div>
@@ -251,8 +251,8 @@
                           (ev.type ?? ev.holidayType) === '01'
                             ? 'tag-public'
                             : (ev.type ?? ev.holidayType) === '03'
-                            ? 'tag-recurring'
-                            : 'tag-manual',
+                              ? 'tag-recurring'
+                              : 'tag-manual',
                         ]"
                       >
                         {{
@@ -260,8 +260,8 @@
                           ((ev.type ?? ev.holidayType) === "01"
                             ? "공휴일"
                             : (ev.type ?? ev.holidayType) === "03"
-                            ? "반복휴무"
-                            : "지정휴무")
+                              ? "반복휴무"
+                              : "지정휴무")
                         }}
                       </span>
                       <button
@@ -535,10 +535,10 @@ const getTypeNm = (type) =>
   type === "01"
     ? "공휴일"
     : type === "02"
-    ? "지정휴무"
-    : type === "03"
-    ? "반복휴무"
-    : type || "";
+      ? "지정휴무"
+      : type === "03"
+        ? "반복휴무"
+        : type || "";
 
 /** insertDate "20260223" → "2026-02-23" 포맷 */
 const formatInsertDate = (v) => {
@@ -725,7 +725,9 @@ onMounted(() => {
   font-size: 0.875rem;
   font-weight: 500;
   cursor: pointer;
-  transition: background 0.2s, opacity 0.2s;
+  transition:
+    background 0.2s,
+    opacity 0.2s;
 }
 .btn-holiday-register:hover {
   background: #15803d;

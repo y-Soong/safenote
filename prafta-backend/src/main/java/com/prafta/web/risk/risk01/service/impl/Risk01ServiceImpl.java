@@ -5,7 +5,7 @@ import java.util.Map;
 
 import org.springframework.stereotype.Service;
 
-import com.prafta.common.exception.RiskApiException;
+import com.prafta.common.exception.risk.RiskApiException;
 import com.prafta.web.risk.risk01.dto.RiskHazardListQry;
 import com.prafta.web.risk.risk01.dto.RiskHazardListReq;
 import com.prafta.web.risk.risk01.dto.RiskHazardListRes;

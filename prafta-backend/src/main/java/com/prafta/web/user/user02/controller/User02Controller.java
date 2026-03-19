@@ -14,7 +14,7 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
 import com.prafta.common.annotation.NoAuth;
-import com.prafta.common.exception.LoginFailException;
+import com.prafta.common.exception.login.LoginApiException;
 import com.prafta.common.security.JwtUtil;
 import com.prafta.web.user.user02.dto.AuthMenuInfoReq;
 import com.prafta.web.user.user02.dto.AuthMenuListReq;

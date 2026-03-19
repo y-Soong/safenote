@@ -53,44 +53,4 @@ public class Attd02Controller {
 	  	
 	  	return ResponseEntity.status(HttpStatus.OK).build();
 	}	
-	
-	
-	
-	
-//	
-//	@GetMapping("/sch-info-lists")
-//    public ResponseEntity<?> getSchInfoList(@ModelAttribute SchInfoListReq dto, @RequestHeader(value = "Authorization", required = false) String authorization) {
-//    	
-//    	Map<String, Object> tokenInfo = jwtUtil.getAllClaimsAsMap(authorization);
-//    	SchInfoListRes retList = attd01Service.selectSchInfoList(dto, tokenInfo);
-//		
-////    	if(retList == null) {
-////    		throw new BaimApiException("조회된 결과가 없습니다.");
-////    	}
-//    	
-//    	return ResponseEntity.status(HttpStatus.OK).body(retList);
-//    }
-//	
-//	@PostMapping("/update-sch-infos")
-//    public ResponseEntity<?> updateSchInfo(@RequestBody SchInfoReq dto, @RequestHeader(value = "Authorization", required = false) String authorization) {
-//    	Map<String, Object> tokenInfo = jwtUtil.getAllClaimsAsMap(authorization);
-//    	
-//		attd01Service.updateSchInfo(dto, tokenInfo);
-//    	
-//    	return ResponseEntity.status(HttpStatus.OK).build();
-//    }
-//	
-//	@GetMapping("/sch-hist-lists")
-//    public ResponseEntity<?> getSchHistList(@ModelAttribute SchInfoHistReq dto, @RequestHeader(value = "Authorization", required = false) String authorization) {
-//    	
-//    	Map<String, Object> tokenInfo = jwtUtil.getAllClaimsAsMap(authorization);
-//    	
-//    	SchInfoHistRes retList = attd01Service.selectSchHistList(dto, tokenInfo);
-//		
-////    	if(retList == null) {
-////    		throw new BaimApiException("조회된 결과가 없습니다.");
-////    	}
-//    	
-//    	return ResponseEntity.status(HttpStatus.OK).body(retList);
-//    }
 }

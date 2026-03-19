@@ -34,7 +34,7 @@
         type="button"
         class="time-select"
         :class="{ 'is-readonly': readonly }"
-        :disabled="computedDisabled"
+        :disabled="minuteDisabled"
         @click="toggleMinute"
       >
         {{ minuteVal }}
@@ -80,27 +80,37 @@ const props = defineProps({
   disabled: { type: Boolean, default: false },
   hourStep: { type: Number, default: 1 },
   minuteStep: { type: Number, default: 1 },
+  /** 종료시간 등 24:00 표현 허용 시 true. 24 선택 시 분은 00 고정 */
+  allow24: { type: Boolean, default: false },
 });
 
 const emit = defineEmits(["update:modelValue"]);
 
-/** "0900" → "09:00" 정규화 (24시간제), "~" 포함 값은 앞부분만 사용 */
-const normalizeToHHmm = (v) => {
+/** "0900" → "09:00" 정규화 (24시간제), "~" 포함 값은 앞부분만 사용. allow24 시 24:00 허용 */
+const normalizeToHHmm = (v, allow24 = false) => {
   if (!v || typeof v !== "string") return "";
   let s = String(v).trim().replace(/\s/g, "");
   if (s.includes("~")) s = s.split("~")[0] || s;
-  if (s.includes(":")) return s;
+  if (s.includes(":")) {
+    const [hPart, mPart] = s.split(":");
+    const h = parseInt(hPart || "0", 10);
+    const m = parseInt(mPart || "0", 10);
+    if (allow24 && h === 24 && m === 0) return "24:00";
+    const hOk = Math.min(allow24 ? 24 : 23, Math.max(0, h));
+    const mOk = hOk === 24 ? 0 : Math.min(59, Math.max(0, m));
+    return `${String(hOk).padStart(2, "0")}:${String(mOk).padStart(2, "0")}`;
+  }
   const digits = s.replace(/\D/g, "");
   if (digits.length >= 3) {
-    const h = Math.min(
-      23,
-      Math.max(0, parseInt(digits.slice(0, -2) || "0", 10))
-    );
-    const m = Math.min(59, Math.max(0, parseInt(digits.slice(-2) || "0", 10)));
+    let h = parseInt(digits.slice(0, -2) || "0", 10);
+    let m = parseInt(digits.slice(-2) || "0", 10);
+    if (allow24 && h === 24 && m === 0) return "24:00";
+    h = Math.min(allow24 ? 24 : 23, Math.max(0, h));
+    m = h === 24 ? 0 : Math.min(59, Math.max(0, m));
     return `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}`;
   }
   if (digits.length >= 1) {
-    const h = Math.min(23, Math.max(0, parseInt(digits, 10)));
+    const h = Math.min(allow24 ? 24 : 23, Math.max(0, parseInt(digits, 10)));
     return `${String(h).padStart(2, "0")}:00`;
   }
   return "";
@@ -119,6 +129,7 @@ const hourOptions = computed(() => {
   for (let i = 0; i < 24; i += step) {
     opts.push(String(i).padStart(2, "0"));
   }
+  if (props.allow24 && !opts.includes("24")) opts.push("24");
   return opts;
 });
 
@@ -136,7 +147,7 @@ const hourVal = ref("00");
 const minuteVal = ref("00");
 
 const syncFromProps = () => {
-  const n = normalizeToHHmm(props.modelValue) || "00:00";
+  const n = normalizeToHHmm(props.modelValue, props.allow24) || "00:00";
   const [h, m] = n.split(":");
   const hourStep = Math.max(1, Math.min(24, Math.floor(props.hourStep) || 1));
   const minuteStep = Math.max(
@@ -145,12 +156,15 @@ const syncFromProps = () => {
   );
   const hClean = String(h || "0").replace(/\D/g, "") || "0";
   const mClean = String(m || "0").replace(/[^\d]/g, "") || "0";
-  const hSnap = snapToStep(hClean, hourStep, 23);
-  const mSnap = snapToStep(mClean, minuteStep, 59);
+  const maxH = props.allow24 ? 24 : 23;
+  const hSnap = snapToStep(hClean, hourStep, maxH);
   const hOk = hourOptions.value.includes(hSnap) ? hSnap : hourOptions.value[0];
-  const mOk = minuteOptions.value.includes(mSnap)
-    ? mSnap
-    : minuteOptions.value[0];
+  const mOk =
+    hOk === "24"
+      ? "00"
+      : minuteOptions.value.includes(snapToStep(mClean, minuteStep, 59))
+        ? snapToStep(mClean, minuteStep, 59)
+        : minuteOptions.value[0];
   hourVal.value = hOk;
   minuteVal.value = mOk;
 };
@@ -158,7 +172,7 @@ const syncFromProps = () => {
 watch(
   () => props.modelValue,
   (v) => {
-    const n = normalizeToHHmm(v);
+    const n = normalizeToHHmm(v, props.allow24);
     if (n && n !== v) emit("update:modelValue", n);
     syncFromProps();
   },
@@ -166,7 +180,7 @@ watch(
 );
 
 watch(
-  () => [props.hourStep, props.minuteStep],
+  () => [props.hourStep, props.minuteStep, props.allow24],
   () => syncFromProps(),
   { deep: true }
 );
@@ -175,12 +189,19 @@ watch(
   [hourVal, minuteVal],
   ([h, m]) => {
     if (props.readonly) return;
-    emit("update:modelValue", `${h}:${m}`);
+    const val = h === "24" ? "24:00" : `${h}:${m}`;
+    if (val !== props.modelValue) {
+      emit("update:modelValue", val);
+    }
   },
-  { immediate: false }
+  { immediate: true }
 );
 
 const computedDisabled = computed(() => props.disabled || props.readonly);
+/** 24 선택 시 분은 00 고정, 분 셀렉트 비활성화 */
+const minuteDisabled = computed(
+  () => computedDisabled.value || hourVal.value === "24"
+);
 
 const hourOpen = ref(false);
 const minuteOpen = ref(false);
@@ -230,6 +251,7 @@ const toggleMinute = async () => {
 
 const selectHour = (opt) => {
   hourVal.value = opt;
+  if (opt === "24") minuteVal.value = "00";
   hourOpen.value = false;
 };
 

@@ -15,7 +15,7 @@ import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.multipart.MultipartFile;
 
 import com.prafta.common.annotation.NoAuth;
-import com.prafta.common.exception.LoginFailException;
+import com.prafta.common.exception.login.LoginApiException;
 import com.prafta.common.security.JwtUtil;
 import com.prafta.web.risk.risk03.dto.RiskAssessmentsListReq;
 import com.prafta.web.risk.risk03.dto.RiskAssessmentsListRes;

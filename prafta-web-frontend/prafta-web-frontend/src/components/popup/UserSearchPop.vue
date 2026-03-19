@@ -1,6 +1,10 @@
 <template>
   <Transition name="fade">
-    <div class="modal-overlay prafta-modal-popup" @click.self="$emit('close')">
+    <div
+      v-show="true"
+      class="modal-overlay prafta-modal-popup"
+      @click.self="$emit('close')"
+    >
       <div
         class="modal-content-wide"
         :style="{ top: position.y + 'px', left: position.x + 'px' }"
@@ -56,20 +60,20 @@
               <tbody>
                 <tr
                   v-for="user in userActList"
-                  :key="user.USER_ID"
+                  :key="user.userId"
                   @dblclick="
                     fnSelectRow(
-                      user.USER_ID,
-                      user.USER_NM,
-                      user.MBL_NO,
-                      user.EMAIL
+                      user.userId,
+                      user.userNm,
+                      user.mblNo,
+                      user.email
                     )
                   "
                 >
-                  <td>{{ user.USER_ID }}</td>
-                  <td>{{ user.USER_NM }}</td>
-                  <td>{{ user.MBL_NO }}</td>
-                  <td>{{ user.EMAIL }}</td>
+                  <td>{{ user.userId }}</td>
+                  <td>{{ user.userNm }}</td>
+                  <td>{{ user.mblNo }}</td>
+                  <td>{{ user.email }}</td>
                 </tr>
               </tbody>
             </table>
@@ -122,14 +126,15 @@ const fnGetUserInfoList = async () => {
   userActList.value = [];
 
   try {
-    const response = await axios.post("/webApi/user01/getUserInfoList", {
-      cmpnyCd: cmpnyCd.value,
-      userId: sr_userId.value,
-      userNm: sr_userNm.value,
+    const response = await axios.get("/webApi/user01/user-info-lists", {
+      params: {
+        userId: sr_userId.value,
+        userNm: sr_userNm.value,
+      },
     });
 
     if (response.status === 200) {
-      userActList.value = response.data;
+      userActList.value = response.data.userInfoList;
     }
   } catch (err) {
     fnAlertMsg(err.response.data.message);

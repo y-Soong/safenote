@@ -1,6 +1,6 @@
 <template>
   <Transition name="fade">
-    <div class="modal-overlay prafta-modal-popup">
+    <div v-show="true" class="modal-overlay prafta-modal-popup">
       <div
         class="modal-content-wide"
         :style="{ top: position.y + 'px', left: position.x + 'px' }"
@@ -199,8 +199,8 @@ import axios from "@/api/axios";
 import { fnSearchAddress } from "@/utils/addrUtil";
 import { useModal } from "@/utils/useModal";
 import { useCenteredDraggable } from "@/composables/useCenteredDraggable";
-import CalendarSrch from "@/components/common/CalendarSrch";
-import UserSearchPop from "@/components/popup/UserSearchPop";
+import CalendarSrch from "@/components/common/CalendarSrch.vue";
+import UserSearchPop from "@/components/popup/UserSearchPop.vue";
 import BaseSelect from "@/components/common/BaseSelect.vue";
 
 const readonly = ref(true);
@@ -214,7 +214,7 @@ const props = defineProps({
   // visible: Boolean,
   cmpnyCd_p: String,
   siteCd_p: String,
-  onSearch: Function,
+  onSelect: Function,
   reset: Function,
 });
 
@@ -290,11 +290,8 @@ const loadKakaoMapScript = () => {
       return;
     }
 
-    // Vue CLI: VUE_APP_ 접두사 필요
-    // 환경변수는 빌드 시점에 주입되므로 process.env 사용
-    // .env.development 파일에 VUE_APP_PUBLIC_KAKAO_APP_JS_KEY=your_key 형태로 설정 필요
-    const env = typeof process !== "undefined" ? process.env : {};
-    const kakaoKey = env.VUE_APP_PUBLIC_KAKAO_APP_JS_KEY;
+    // Vite: VITE_ 접두사 사용
+    const kakaoKey = import.meta.env.VITE_PUBLIC_KAKAO_APP_JS_KEY;
 
     if (!kakaoKey) {
       reject(new Error("카카오 지도 API 키가 없습니다."));
@@ -303,69 +300,30 @@ const loadKakaoMapScript = () => {
 
     const scriptUrl = `https://dapi.kakao.com/v2/maps/sdk.js?appkey=${kakaoKey}&libraries=services&autoload=false`;
 
-    // 먼저 fetch로 스크립트가 접근 가능한지 확인
-    fetch(scriptUrl, { method: "HEAD" })
-      .then((response) => {
-        if (!response.ok) {
-          reject(
-            new Error(
-              `카카오 지도 API 접근 실패: HTTP ${response.status}. 브라우저 개발자 도구의 네트워크 탭을 확인하세요.`
-            )
-          );
-          return;
-        }
+    // fetch HEAD는 CORS로 차단되므로 스크립트 태그로 직접 로드 (script 태그는 CORS 제한 없음)
+    const script = document.createElement("script");
+    script.src = scriptUrl;
+    script.async = true;
 
-        // 스크립트 로드
-        const script = document.createElement("script");
-        script.src = scriptUrl;
-        script.async = true;
+    script.onload = () => {
+      if (window.kakao && window.kakao.maps) {
+        window.kakao.maps.load(() => {
+          resolve();
+        });
+      } else {
+        reject(new Error("카카오 지도 API 객체를 찾을 수 없습니다."));
+      }
+    };
 
-        script.onload = () => {
-          if (window.kakao && window.kakao.maps) {
-            window.kakao.maps.load(() => {
-              resolve();
-            });
-          } else {
-            reject(new Error("카카오 지도 API 객체를 찾을 수 없습니다."));
-          }
-        };
+    script.onerror = () => {
+      reject(
+        new Error(
+          "카카오 지도 API 로드 실패. 카카오 개발자 콘솔에서 (1) JavaScript 키 사용 여부, (2) 사이트 도메인에 http://localhost:8081 등록 여부를 확인하세요."
+        )
+      );
+    };
 
-        script.onerror = (error) => {
-          reject(
-            new Error(
-              `카카오 지도 API 로드 실패. 네트워크 탭에서 HTTP 상태 코드를 확인하세요.`
-            )
-          );
-        };
-
-        document.head.appendChild(script);
-      })
-      .catch((fetchError) => {
-        // fetch 실패해도 스크립트 로드는 시도 (CORS 정책 때문일 수 있음)
-        const script = document.createElement("script");
-        script.src = scriptUrl;
-        script.async = true;
-
-        script.onload = () => {
-          if (window.kakao && window.kakao.maps) {
-            window.kakao.maps.load(() => {
-              resolve();
-            });
-          } else {
-            reject(new Error("카카오 지도 API 객체를 찾을 수 없습니다."));
-          }
-        };
-
-        script.onerror = (error) => {
-          reject(
-            new Error(
-              `카카오 지도 API 로드 실패. 카카오 개발자 콘솔 설정을 확인하세요.`
-            )
-          );
-        };
-
-        document.head.appendChild(script);
-      });
+    document.head.appendChild(script);
   });
 };
 
@@ -421,7 +379,7 @@ const updateMapLocation = (address) => {
 
       // 반경 원 생성 (gpsRange.value를 숫자로 변환, 없으면 기본값 100)
       const radiusValue = Number(gpsRange.value) || 100;
-      
+
       circle = new window.kakao.maps.Circle({
         center: coords,
         radius: radiusValue, // 미터 단위
@@ -438,23 +396,11 @@ const updateMapLocation = (address) => {
 
       // 지도 중심 이동 및 적절한 줌 레벨 설정
       map.setCenter(coords);
-      
+
       // 반경에 맞게 지도 레벨 조정 (반경이 클수록 더 넓게)
       const radius = radiusValue;
       let level = 3; // 기본 레벨
-      
-      // if (radius <= 50) {
-      //   level = 4; // 50m 이하: 더 가까이
-      // } else if (radius <= 100) {
-      //   level = 3; // 100m: 기본
-      // } else if (radius <= 200) {
-      //   level = 2; // 200m: 조금 넓게
-      // } else if (radius <= 500) {
-      //   level = 1; // 500m: 넓게
-      // } else {
-      //   level = 0; // 500m 이상: 매우 넓게
-      // }
-      
+
       map.setLevel(level);
     } else {
       console.warn("주소 검색 실패:", status);
@@ -599,7 +545,6 @@ const fnSiteSave = async () => {
     }
 
     try {
-      // const response = await axios.post("/webApi/baim01/updateSiteInfo", [
       const response = await axios.post("/webApi/baim01/save-site-infos", [
         {
           siteCd: proxy.$util.isEmpty(siteCd.value) ? null : siteCd.value,
@@ -622,7 +567,7 @@ const fnSiteSave = async () => {
         const alertMsg = "처리됐습니다.";
         fnAlertMsg(alertMsg, () => {
           emit("close");
-          props.onSearch();
+          props.onSelect();
         });
       }
     } catch (err) {

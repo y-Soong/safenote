@@ -10,7 +10,7 @@ import org.springframework.stereotype.Component;
 import org.springframework.web.context.request.RequestContextHolder;
 import org.springframework.web.context.request.ServletRequestAttributes;
 
-import com.prafta.common.exception.CmmApiException;
+import com.prafta.common.exception.cmm.CmmApiException;
 import com.prafta.common.security.JwtUtil;
 
 import lombok.RequiredArgsConstructor;

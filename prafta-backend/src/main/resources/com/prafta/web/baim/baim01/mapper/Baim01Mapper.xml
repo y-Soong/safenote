@@ -1,6 +1,5 @@
 <?xml version="1.0" encoding="UTF-8" ?>
 <!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
-
 <mapper namespace="com.prafta.web.baim.baim01.mapper.Baim01Mapper">
 
     <select id="selectSiteInfoList" parameterType="com.prafta.web.baim.baim01.dto.SiteInfoListQry" resultType="com.prafta.web.baim.baim01.vo.SiteInfo">
@@ -44,26 +43,102 @@
   	  </if>
 	</select>
 	
+	<select id="selectSiteCd" parameterType="map" resultType="String">
+    /* Baim01Mapper.selectSiteCd */
+    SELECT FNC_CMM_SEQ_NEXTVAL(#{token.gv_cmpnyCd}, 'SITE_CD')
+	FROM DUAL
+    </select>
+	
 	<insert id="mergeSiteInfo" parameterType="com.prafta.web.baim.baim01.dto.SiteInfoSave">
 	/* Baim01Mapper.mergeSiteInfo */
-	{
-		call prafta.SP_INSERT_SITE(
-			#{param.siteCd}
-	   		, #{param.siteNo}
-	   		, #{param.siteNm}
-	   		, #{token.gv_cmpnyCd}
-	   		, #{param.addr1}
-			, #{param.addr2}
-			, #{param.zipCode}
-			, #{param.strDate}
-			, #{param.endDate}
-			, #{param.useYn}
-			, #{param.siteAdminId}
-			, #{param.telNo}
-			, #{param.gpsRange}
-			, #{param.siteDesc}
-			, #{token.gv_userId}
-		)
-	}
+	INSERT INTO TB_SITE (
+        SITE_CD
+        , SITE_NO
+        , SITE_NM
+        , CMPNY_CD
+        , ADDR_1
+        , ADDR_2
+        , ZIP_CODE
+        , STR_DATE
+        , END_DATE
+        , USE_YN
+        , SITE_ADMIN_ID
+        , TEL_NO
+        , GPS_RANGE
+        , SITE_DESC
+        , INSERT_NO
+        , INSERT_DATE
+        , UPDATE_NO
+        , UPDATE_DATE
+    )
+    VALUES (
+        #{param.siteCd}
+        , COALESCE(NULLIF(#{param.siteNo}, ''), #{param.siteCd}) 
+		, #{param.siteNm}
+		, #{token.gv_cmpnyCd}
+		, #{param.addr1}
+		, #{param.addr2}
+		, #{param.zipCode}
+		, REPLACE(#{param.strDate}, '-', '')
+        , CASE 
+        	WHEN #{param.useYn} = 'Y' 
+        		THEN NULL 
+    		ELSE 
+				DATE_FORMAT(NOW(), '%Y%m%d') 
+		END
+		, #{param.useYn}
+		, #{param.siteAdminId}
+		, REPLACE(#{param.telNo}, '-', '')
+        , #{param.gpsRange}
+		, #{param.siteDesc}
+		, #{token.gv_userId}
+		, NOW()
+        , #{token.gv_userId}
+		, NOW()
+    )
+    ON DUPLICATE KEY UPDATE
+		SITE_NO				= VALUES(SITE_NO)
+        , SITE_NM			= VALUES(SITE_NM)
+        , ADDR_1			= VALUES(ADDR_1)
+        , ADDR_2			= VALUES(ADDR_2)
+        , ZIP_CODE			= VALUES(ZIP_CODE)
+        , STR_DATE			= VALUES(STR_DATE)
+        , END_DATE			= VALUES(END_DATE)
+        , USE_YN      		= IFNULL(USE_YN, 'Y')
+        , SITE_ADMIN_ID		= VALUES(SITE_ADMIN_ID)
+        , TEL_NO			= VALUES(TEL_NO)
+        , GPS_RANGE			= VALUES(GPS_RANGE)
+        , SITE_DESC			= VALUES(SITE_DESC)
+        , UPDATE_NO			= VALUES(UPDATE_NO)
+        , UPDATE_DATE		= VALUES(UPDATE_DATE)
+	</insert>
+	
+	<insert id="mergeMasterSiteAuthSet" parameterType="com.prafta.web.baim.baim01.dto.MasterSiteAuthSetCommand">
+	/* Baim01Mapper.mergeMasterSiteAuthSet */
+	INSERT INTO TB_USER_SITE_AUTH (
+		CMPNY_CD
+		, USER_ID
+		, SITE_CD
+		, USE_YN
+		, INSERT_NO
+		, INSERT_DATE
+		, UPDATE_NO
+		, UPDATE_DATE
+	)
+	SELECT 
+		A.CMPNY_CD
+	    , A.USER_ID
+	    , #{param.siteCd} AS SITE_CD
+	    , 'Y' AS USE_YN
+	    , #{token.gv_userId}
+	    , NOW()
+	    , #{token.gv_userId}
+	    , NOW()
+	FROM TB_USER A
+	WHERE AUTH_CD IN ('00001', '00000') /* 마스터 권한 사용자, 시스템 관리자 게정 */				
+	ON DUPLICATE KEY UPDATE
+		USE_YN 			= VALUES(USE_YN)
+		, UPDATE_NO 	= VALUES(UPDATE_NO)
+		, UPDATE_DATE 	= VALUES(UPDATE_DATE)
 	</insert>
 </mapper>

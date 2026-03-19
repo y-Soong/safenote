@@ -14,7 +14,6 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
 import com.prafta.common.annotation.NoAuth;
-import com.prafta.common.exception.BaimApiException;
 import com.prafta.common.security.JwtUtil;
 import com.prafta.web.baim.baim01.dto.SiteInfoListReq;
 import com.prafta.web.baim.baim01.dto.SiteInfoListRes;
@@ -34,16 +33,11 @@ public class Baim01Controller {
 	private final Baim01Service baim01Service;
 	private final JwtUtil jwtUtil;
 
-//    @PostMapping("/getSiteInfoList")
 	@GetMapping("/site-info-lists")
     public ResponseEntity<?> getSiteInfoList(@ModelAttribute SiteInfoListReq dto, @RequestHeader(value = "Authorization", required = false) String authorization) {
 		Map<String, Object> tokenInfo = jwtUtil.getAllClaimsAsMap(authorization);
 		
 		SiteInfoListRes retList = baim01Service.selectSiteInfoList(dto, tokenInfo);
-		
-//    	if(retList == null) {
-//    		throw new BaimApiException("조회된 결과가 없습니다.");
-//    	}
     	
     	return ResponseEntity.status(HttpStatus.OK).body(retList);
     }

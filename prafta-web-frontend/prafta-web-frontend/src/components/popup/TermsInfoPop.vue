@@ -92,7 +92,7 @@ import {
 import { QuillEditor } from "@vueup/vue-quill";
 import { useCenteredDraggable } from "@/composables/useCenteredDraggable";
 import "@vueup/vue-quill/dist/vue-quill.snow.css";
-import CalendarSrch from "@/components/common/CalendarSrch";
+import CalendarSrch from "@/components/common/CalendarSrch.vue";
 import axios from "@/api/axios";
 import BaseSelect from "@/components/common/BaseSelect.vue";
 

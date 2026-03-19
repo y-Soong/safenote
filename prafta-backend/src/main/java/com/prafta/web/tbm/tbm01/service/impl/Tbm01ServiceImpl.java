@@ -10,7 +10,7 @@ import org.springframework.web.multipart.MultipartFile;
 import com.prafta.common.cmm.file.dto.FileInfoSave;
 import com.prafta.common.cmm.file.mapper.FileMapper;
 import com.prafta.common.cmm.file.service.FileService;
-import com.prafta.common.exception.RiskApiException;
+import com.prafta.common.exception.risk.RiskApiException;
 import com.prafta.web.tbm.tbm01.dto.TbmEduInfoListQry;
 import com.prafta.web.tbm.tbm01.dto.TbmEduInfoListReq;
 import com.prafta.web.tbm.tbm01.dto.TbmEduInfoListRes;

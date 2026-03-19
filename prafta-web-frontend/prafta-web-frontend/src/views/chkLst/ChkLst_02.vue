@@ -177,14 +177,14 @@ import {
   onMounted,
   getCurrentInstance,
   defineOptions,
-} from 'vue';
-import { useFieldWatcher } from '@/utils/useFieldWatcher';
-import axios from '@/api/axios';
-import ViewHeader from '@/components/common/ViewHeader.vue';
-import BaseSelect from '@/components/common/BaseSelect.vue';
-import CalendarSrchMonth from '@/components/common/CalendarSrchMonth';
+} from "vue";
+import { useFieldWatcher } from "@/utils/useFieldWatcher";
+import axios from "@/api/axios";
+import ViewHeader from "@/components/common/ViewHeader.vue";
+import BaseSelect from "@/components/common/BaseSelect.vue";
+import CalendarSrchMonth from "@/components/common/CalendarSrchMonth.vue";
 
-defineOptions({ name: 'ChkLst_02' });
+defineOptions({ name: "ChkLst_02" });
 
 const props = defineProps({
   title: String,
@@ -198,10 +198,10 @@ const baseCodeArr = ref({});
 const localButtons = ref({ ...props.buttons });
 
 /* 조회조건 변수 세팅 */
-const sr_codeNm = ref('');
+const sr_codeNm = ref("");
 
-const targetValCd = ref('');
-const targetValNm = ref('');
+const targetValCd = ref("");
+const targetValNm = ref("");
 
 const headChk = ref(false);
 
@@ -216,7 +216,7 @@ useFieldWatcher(
   (item) => {
     item.chk = true;
   },
-  ['chk']
+  ["chk"]
 );
 
 // focusKill 이벤트
@@ -231,9 +231,9 @@ function focusKill(value, idx) {
 // API 호출
 const fnGetSystinfoList = async () => {
   try {
-    const response = await axios.get('/comApi/baseinfo/syst-info-list', {
+    const response = await axios.get("/comApi/baseinfo/syst-info-list", {
       params: {
-        systCodeList: ['SYS003'],
+        systCodeList: ["SYS003"],
       },
     });
 
@@ -255,7 +255,7 @@ const fnGetSystinfoList = async () => {
     const msg =
       err?.response?.data?.message ||
       err?.message ||
-      '조회 중 오류가 발생했습니다.';
+      "조회 중 오류가 발생했습니다.";
 
     await proxy.$alert(msg);
   }
@@ -265,10 +265,10 @@ const fnSearch = async () => {
   chkptInspectItemList.value = [];
 
   try {
-    const response = await axios.get('/comApi/baseinfo/base-info-list', {
+    const response = await axios.get("/comApi/baseinfo/base-info-list", {
       params: {
-        cmpnyCd: sessionStorage.getItem('gv_cmpnyCd'),
-        baseCodeList: ['COM001'],
+        cmpnyCd: sessionStorage.getItem("gv_cmpnyCd"),
+        baseCodeList: ["COM001"],
       },
     });
 
@@ -289,7 +289,7 @@ const fnSearch = async () => {
     const msg =
       err?.response?.data?.message ||
       err?.message ||
-      '조회 중 오류가 발생했습니다.';
+      "조회 중 오류가 발생했습니다.";
 
     await proxy.$alert(msg);
   }
@@ -305,7 +305,7 @@ const fnSubSearch = async (code) => {
 
   try {
     const response = await axios.post(
-      '/webApi/chkLst02/getChkptInspectItemList',
+      "/webApi/chkLst02/getChkptInspectItemList",
       {
         sr_codeCd: targetValCd.value,
       }
@@ -318,7 +318,7 @@ const fnSubSearch = async (code) => {
     const msg =
       err?.response?.data?.message ||
       err?.message ||
-      '조회 중 오류가 발생했습니다.';
+      "조회 중 오류가 발생했습니다.";
 
     await proxy.$alert(msg);
   }
@@ -326,28 +326,28 @@ const fnSubSearch = async (code) => {
 
 const fnSave = async (dataList) => {
   if (dataList.length == 0) {
-    proxy.$alert('저장할 데이터가 없습니다.');
+    proxy.$alert("저장할 데이터가 없습니다.");
     return;
   }
 
-  const ok = await proxy.$confirm('저장하시겠습니까 ?');
+  const ok = await proxy.$confirm("저장하시겠습니까 ?");
   if (!ok) return;
 
   try {
     const response = await axios.post(
-      '/webApi/chkLst02/updateChkptInspectItemList',
+      "/webApi/chkLst02/updateChkptInspectItemList",
       dataList
     );
 
     if (response.status === 200) {
-      proxy.$alert('처리되었습니다.');
+      proxy.$alert("처리되었습니다.");
       fnSubSearch();
     }
   } catch (err) {
     const msg =
       err?.response?.data?.message ||
       err?.message ||
-      '저장 중 오류가 발생했습니다.';
+      "저장 중 오류가 발생했습니다.";
 
     await proxy.$alert(msg);
   }
@@ -355,28 +355,28 @@ const fnSave = async (dataList) => {
 
 const fnDelete = async (dataList) => {
   if (dataList.length == 0) {
-    proxy.$alert('삭제할 데이터가 없습니다.');
+    proxy.$alert("삭제할 데이터가 없습니다.");
     return;
   }
 
-  const ok = await proxy.$confirm('삭제하시겠습니까 ?');
+  const ok = await proxy.$confirm("삭제하시겠습니까 ?");
   if (!ok) return;
 
   try {
     const response = await axios.post(
-      '/webApi/chkLst02/deleteChkptInspectItemList',
+      "/webApi/chkLst02/deleteChkptInspectItemList",
       dataList
     );
 
     if (response.status === 200) {
-      proxy.$alert('처리되었습니다.');
+      proxy.$alert("처리되었습니다.");
       fnSubSearch();
     }
   } catch (err) {
     const msg =
       err?.response?.data?.message ||
       err?.message ||
-      '삭제 중 오류가 발생했습니다.';
+      "삭제 중 오류가 발생했습니다.";
 
     await proxy.$alert(msg);
   }
@@ -385,10 +385,10 @@ const fnDelete = async (dataList) => {
 /* user function */
 function fnButtonControll() {
   // localButtons.value.search = "N";
-  localButtons.value.create = 'N';
-  localButtons.value.save = 'N';
-  localButtons.value.delete = 'N';
-  localButtons.value.excel = 'N';
+  localButtons.value.create = "N";
+  localButtons.value.save = "N";
+  localButtons.value.delete = "N";
+  localButtons.value.excel = "N";
 }
 
 function fnHeadChk() {
@@ -402,10 +402,10 @@ function fnAddRow() {
   if (proxy.$util.isNotEmpty(targetValCd.value)) {
     chkptInspectItemList.value.push({
       chk: true,
-      cmpnyCd: sessionStorage.getItem('gv_cmpnyCd'),
+      cmpnyCd: sessionStorage.getItem("gv_cmpnyCd"),
       chkLstType: targetValCd.value,
       sortIdx: chkptInspectItemList.value.length + 1,
-      useYn: 'Y',
+      useYn: "Y",
       strDate: proxy.$util.getToday(),
     });
   }
@@ -416,7 +416,7 @@ function fnSaveRow() {
   //  const dataList = proxy.$util.toCamelCaseKeys(filteredData);
 
   if (filteredData.length == 0) {
-    proxy.$alert('저장할 데이터가 없습니다.');
+    proxy.$alert("저장할 데이터가 없습니다.");
     return;
   }
 
@@ -430,7 +430,7 @@ function fnDeleteRow() {
   // const dataList = proxy.$util.toCamelCaseKeys(filteredData);
 
   if (filteredData.length == 0) {
-    proxy.$alert('삭제할 데이터가 없습니다.');
+    proxy.$alert("삭제할 데이터가 없습니다.");
     return;
   }
 

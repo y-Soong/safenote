@@ -30,7 +30,7 @@
       </div>
       <div>
         <label>자료명</label>
-        <input v-model.trim="title" type="text" />
+        <input v-model.trim="mtrlTitle" type="text" />
       </div>
       <div>
         <label>사용여부</label>
@@ -224,7 +224,7 @@ const baseCodeArr = ref([]);
 
 // 조회조건 변수
 const mtrlType = ref();
-const title = ref();
+const mtrlTitle = ref();
 const useYn = ref();
 
 // 화면 제어 변수
@@ -327,7 +327,7 @@ const fnSearch = async () => {
     const response = await axios.get("/webApi/tbm01/tbm-edu-infos", {
       params: {
         mtrlType: mtrlType.value,
-        title: title.value,
+        title: mtrlTitle.value,
         useYn: useYn.value,
       },
     });

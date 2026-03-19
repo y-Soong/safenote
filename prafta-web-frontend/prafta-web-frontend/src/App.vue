@@ -23,8 +23,8 @@ import api, { performServerLogout } from "@/api/axios";
 import { resolveBaseURL } from "@/api/baseUrl";
 import axios from "axios";
 
-import LoadingSpinner from "@/components/common/LoadingSpinner";
-import AlertModal from "@/components/modal/AlertModal";
+import LoadingSpinner from "@/components/common/LoadingSpinner.vue";
+import AlertModal from "@/components/modal/AlertModal.vue";
 import "@/assets/fonts/Pretendard/pretendard.css";
 
 const loadingStore = useLoadingStore();

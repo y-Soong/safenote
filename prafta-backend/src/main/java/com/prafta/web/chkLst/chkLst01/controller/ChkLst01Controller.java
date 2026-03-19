@@ -12,7 +12,7 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
 import com.prafta.common.annotation.NoAuth;
-import com.prafta.common.exception.LoginFailException;
+import com.prafta.common.exception.login.LoginApiException;
 import com.prafta.common.security.JwtUtil;
 import com.prafta.web.chkLst.chkLst01.dto.ChkLst01;
 import com.prafta.web.chkLst.chkLst01.dto.ChkLst01ReqDto;
@@ -37,7 +37,7 @@ public class ChkLst01Controller {
 		List<ChkLst01> retList = chkLst01Service.selectChkptList(dto, tokenInfo);
 		
     	if(retList == null) {
-    		throw new LoginFailException("조회된 결과가 없습니다.");
+    		throw new LoginApiException("조회된 결과가 없습니다.");
     	}
     	
     	return ResponseEntity.status(HttpStatus.OK).body(retList);

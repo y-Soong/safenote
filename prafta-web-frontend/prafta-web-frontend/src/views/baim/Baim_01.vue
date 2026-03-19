@@ -90,19 +90,24 @@
                 </tr>
               </template>
               <template v-else>
-                <tr v-for="(site, idx) in siteInfoList" :key="site.id">
+                <tr
+                  v-for="(site, idx) in siteInfoList"
+                  :key="site.id"
+                  class="row-clickable"
+                  @dblclick="fnSiteInfoPopOpen(site)"
+                >
                   <td style="text-align: center">{{ idx + 1 }}</td>
                   <td>
                     <input type="checkbox" v-model="site.chk" />
                   </td>
-                  <td @dblclick="fnSiteInfoPopOpen(site)">{{ site.siteNo }}</td>
-                  <td @dblclick="fnSiteInfoPopOpen(site)">{{ site.siteNm }}</td>
-                  <td @dblclick="fnSiteInfoPopOpen(site)">{{ site.addr1 }}</td>
-                  <td @dblclick="fnSiteInfoPopOpen(site)">{{ site.addr2 }}</td>
-                  <td @dblclick="fnSiteInfoPopOpen(site)">
+                  <td>{{ site.siteNo }}</td>
+                  <td>{{ site.siteNm }}</td>
+                  <td>{{ site.addr1 }}</td>
+                  <td>{{ site.addr2 }}</td>
+                  <td>
                     {{ site.gpsRange }}
                   </td>
-                  <td @dblclick="fnSiteInfoPopOpen(site)">
+                  <td>
                     <BaseSelect v-model="site.useYn">
                       <option
                         v-for="opt in (systCodeArr['SYS003'] || []).filter(
@@ -156,7 +161,7 @@ import axios from "@/api/axios";
 import ViewHeader from "@/components/common/ViewHeader.vue";
 import BaseSelect from "@/components/common/BaseSelect.vue";
 import SiteInfoPop from "./popup/SiteInfoPop.vue";
-import CalendarSrch from "@/components/common/CalendarSrch";
+import CalendarSrch from "@/components/common/CalendarSrch.vue";
 
 // ================ Options ================
 defineOptions({ name: "Baim_01" });
@@ -314,7 +319,7 @@ const fnSiteInfoPopOpen = (siteInfo) => {
   fnSiteOpenPop(SiteInfoPop, {
     cmpnyCd_p: sessionStorage.getItem("gv_cmpnyCd"),
     siteCd_p: p_siteCd.value,
-    onSearch: fnSearch,
+    onSelect: fnSearch,
     reset: fnCreate,
   });
 };
@@ -322,6 +327,7 @@ const fnSiteInfoPopOpen = (siteInfo) => {
 const fnCreate = () => {
   fnSiteOpenPop(SiteInfoPop, {
     cmpnyCd_p: sessionStorage.getItem("gv_cmpnyCd"),
+    onSelect: fnSearch,
   });
 };
 

@@ -8,6 +8,16 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.ControllerAdvice;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 
+import com.prafta.common.exception.attd.AttdApiException;
+import com.prafta.common.exception.baim.BaimApiException;
+import com.prafta.common.exception.chkLst.ChkLstApiException;
+import com.prafta.common.exception.cmm.CmmApiException;
+import com.prafta.common.exception.file.FileNotFoundException;
+import com.prafta.common.exception.leave.LeaveApiException;
+import com.prafta.common.exception.login.LoginApiException;
+import com.prafta.common.exception.risk.RiskApiException;
+import com.prafta.common.exception.tbm.TbmApiException;
+
 @ControllerAdvice
 public class GlobalExceptionHandler {
 	
@@ -27,8 +37,8 @@ public class GlobalExceptionHandler {
         return ResponseEntity.status(ex.getStatus()).body(response);
     }
     
-    @ExceptionHandler(LoginFailException.class)
-    public ResponseEntity<Map<String, Object>> LoginFailException(LoginFailException ex) {
+    @ExceptionHandler(LoginApiException.class)
+    public ResponseEntity<Map<String, Object>> LoginFailException(LoginApiException ex) {
     	Map<String, Object> response = new HashMap<>();
         response.put("success", false);
         response.put("message", ex.getMessage());
@@ -69,6 +79,22 @@ public class GlobalExceptionHandler {
     
     @ExceptionHandler(TbmApiException.class)
     public ResponseEntity<Map<String, Object>> TbmApiException(TbmApiException ex) {
+    	Map<String, Object> response = new HashMap<>();
+        response.put("success", false);
+        response.put("message", ex.getMessage());
+        return ResponseEntity.status(ex.getStatus()).body(response);
+    }
+    
+    @ExceptionHandler(AttdApiException.class)
+    public ResponseEntity<Map<String, Object>> AttdApiException(AttdApiException ex) {
+    	Map<String, Object> response = new HashMap<>();
+        response.put("success", false);
+        response.put("message", ex.getMessage());
+        return ResponseEntity.status(ex.getStatus()).body(response);
+    }
+    
+    @ExceptionHandler(LeaveApiException.class)
+    public ResponseEntity<Map<String, Object>> LeaveApiException(LeaveApiException ex) {
     	Map<String, Object> response = new HashMap<>();
         response.put("success", false);
         response.put("message", ex.getMessage());

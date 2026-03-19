@@ -339,8 +339,8 @@ const fnSiteOpenPop = (popId, param) => openPop(popId, param);
   --focusRing: rgba(22, 163, 74, 0.35);
   --radius-card: 16px;
   --radius-input: 10px;
-  --shadow-card: 0 1px 2px rgba(16, 24, 40, 0.06),
-    0 1px 3px rgba(16, 24, 40, 0.1);
+  --shadow-card:
+    0 1px 2px rgba(16, 24, 40, 0.06), 0 1px 3px rgba(16, 24, 40, 0.1);
 }
 
 html,
@@ -383,7 +383,8 @@ body,
 .art-glow {
   position: absolute;
   inset: -30%;
-  background: radial-gradient(
+  background:
+    radial-gradient(
       circle at 30% 40%,
       rgba(22, 163, 74, 0.06),
       transparent 55%
@@ -546,8 +547,13 @@ body,
     scale(calc(1 + var(--mx) * 0.12), calc(1 + var(--my) * 0.08));
   transform-origin: center center;
   box-sizing: border-box;
-  transition: transform 100ms ease-out, width 0.2s ease, height 0.2s ease,
-    border 0.2s ease, border-radius 0.2s ease, background 0.2s ease;
+  transition:
+    transform 100ms ease-out,
+    width 0.2s ease,
+    height 0.2s ease,
+    border 0.2s ease,
+    border-radius 0.2s ease,
+    background 0.2s ease;
 }
 
 /* ID 포커스 시: 입 벌린 느낌 (타원형) + 커서 따라 이동·늘어남 (범위 2배) */
@@ -600,7 +606,10 @@ body,
   height: 8px !important;
   min-height: 8px;
   border-radius: 999px;
-  transition: height 0.2s ease, background 0.2s ease, border 0.2s ease;
+  transition:
+    height 0.2s ease,
+    background 0.2s ease,
+    border 0.2s ease;
 }
 .art--eyes-closed .pupil {
   display: none;
@@ -700,7 +709,9 @@ body,
   border-radius: var(--radius-input);
   font-size: 0.95rem;
   outline: none;
-  transition: border-color 0.2s ease, box-shadow 0.2s ease;
+  transition:
+    border-color 0.2s ease,
+    box-shadow 0.2s ease;
 }
 
 .input-group input::placeholder {
@@ -725,7 +736,9 @@ body,
   font-size: 1rem;
   font-weight: 600;
   cursor: pointer;
-  transition: background 0.2s ease, box-shadow 0.2s ease;
+  transition:
+    background 0.2s ease,
+    box-shadow 0.2s ease;
 }
 
 .login-btn:hover {
@@ -792,7 +805,9 @@ body,
   font-size: 1rem;
   font-weight: 500;
   cursor: pointer;
-  transition: background 0.2s ease, box-shadow 0.2s ease;
+  transition:
+    background 0.2s ease,
+    box-shadow 0.2s ease;
 }
 
 .btn-secondary:hover {

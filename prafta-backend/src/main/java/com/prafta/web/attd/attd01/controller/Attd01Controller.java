@@ -19,6 +19,11 @@ import com.prafta.web.attd.attd01.dto.SchInfoHistRes;
 import com.prafta.web.attd.attd01.dto.SchInfoListReq;
 import com.prafta.web.attd.attd01.dto.SchInfoListRes;
 import com.prafta.web.attd.attd01.dto.SchInfoReq;
+import com.prafta.web.attd.attd01.dto.ShiftSchDetailReq;
+import com.prafta.web.attd.attd01.dto.ShiftSchDetailRes;
+import com.prafta.web.attd.attd01.dto.ShiftSchInfoListReq;
+import com.prafta.web.attd.attd01.dto.ShiftSchInfoListRes;
+import com.prafta.web.attd.attd01.dto.ShiftSchInfoReq;
 import com.prafta.web.attd.attd01.service.Attd01Service;
 
 import lombok.RequiredArgsConstructor;
@@ -62,6 +67,41 @@ public class Attd01Controller {
     	Map<String, Object> tokenInfo = jwtUtil.getAllClaimsAsMap(authorization);
     	
     	SchInfoHistRes retList = attd01Service.selectSchHistList(dto, tokenInfo);
+		
+//    	if(retList == null) {
+//    		throw new BaimApiException("조회된 결과가 없습니다.");
+//    	}
+    	
+    	return ResponseEntity.status(HttpStatus.OK).body(retList);
+    }
+	
+	@PostMapping("/update-shift-sch-infos")
+    public ResponseEntity<?> updateShiftSchInfo(@RequestBody ShiftSchInfoReq dto, @RequestHeader(value = "Authorization", required = false) String authorization) {
+    	Map<String, Object> tokenInfo = jwtUtil.getAllClaimsAsMap(authorization);
+    	
+		attd01Service.updateShiftSchInfo(dto, tokenInfo);
+    	
+    	return ResponseEntity.status(HttpStatus.OK).build();
+    }
+	
+	@GetMapping("/shift-sch-info-lists")
+    public ResponseEntity<?> getShiftSchInfoList(@ModelAttribute ShiftSchInfoListReq dto, @RequestHeader(value = "Authorization", required = false) String authorization) {
+    	
+    	Map<String, Object> tokenInfo = jwtUtil.getAllClaimsAsMap(authorization);
+    	ShiftSchInfoListRes retList = attd01Service.selectShiftSchInfoList(dto, tokenInfo);
+		
+//    	if(retList == null) {
+//    		throw new BaimApiException("조회된 결과가 없습니다.");
+//    	}
+    	
+    	return ResponseEntity.status(HttpStatus.OK).body(retList);
+    }
+	
+	@GetMapping("/shift-sch-details")
+    public ResponseEntity<?> getShiftSchDetail(@ModelAttribute ShiftSchDetailReq dto, @RequestHeader(value = "Authorization", required = false) String authorization) {
+    	
+    	Map<String, Object> tokenInfo = jwtUtil.getAllClaimsAsMap(authorization);
+    	ShiftSchDetailRes retList = attd01Service.selectShiftSchDetail(dto, tokenInfo);
 		
 //    	if(retList == null) {
 //    		throw new BaimApiException("조회된 결과가 없습니다.");

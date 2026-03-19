@@ -1,5 +1,6 @@
 <template>
   <select
+    v-bind="$attrs"
     style="width: 100%"
     :value="modelValue || null"
     :disabled="computedDisabled"
@@ -17,6 +18,9 @@
   />
 </template>
 
+<script>
+export default { inheritAttrs: false };
+</script>
 <script setup>
 // ================ Imports ================
 import { computed, defineProps, defineEmits } from "vue";

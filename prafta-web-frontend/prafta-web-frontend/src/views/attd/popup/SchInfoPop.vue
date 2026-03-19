@@ -1,6 +1,6 @@
 <template>
   <Transition name="fade">
-    <div class="modal-overlay prafta-modal-popup">
+    <div v-show="true" class="modal-overlay prafta-modal-popup">
       <div
         class="modal-content-narrow modal-content-sch-info"
         :style="positionStyle"
@@ -91,7 +91,7 @@
                 <TimeInput v-model="fstSchStrTime" :minute-step="10" />
                 <span class="time-sep-label">~</span>
                 <span class="work-time-sub">종료</span>
-                <TimeInput v-model="fstSchEndTime" :minute-step="10" />
+                <TimeInput v-model="fstSchEndTime" :minute-step="10" allow24 />
               </div>
             </div>
             <div class="form-row-max form-row-spaced">
@@ -121,7 +121,7 @@
                 <TimeInput v-model="secSchStrTime" :minute-step="10" />
                 <span class="time-sep-label">~</span>
                 <span class="work-time-sub">종료</span>
-                <TimeInput v-model="secSchEndTime" :minute-step="10" />
+                <TimeInput v-model="secSchEndTime" :minute-step="10" allow24 />
               </div>
             </div>
             <div class="form-row-max form-row-spaced">
@@ -234,18 +234,18 @@ const schCd = ref("");
 const schNo = ref("");
 const schType = ref("01");
 const applyDate = ref("");
-const baseYn = ref(props.schData_p?.baseYn ?? "Y");
+const baseYn = ref(props.schData_p?.baseYn ?? "N");
 /** 적용일: 프로그래밍 방식 설정 시 검증 스킵 (무한루프 방지) */
 const isProgrammaticApplyDate = ref(false);
 
-const fstSchStrTime = ref(props.schData_p?.fstSchStrTime ?? "");
-const fstSchEndTime = ref(props.schData_p?.fstSchEndTime ?? "");
+const fstSchStrTime = ref(props.schData_p?.fstSchStrTime ?? "00:00");
+const fstSchEndTime = ref(props.schData_p?.fstSchEndTime ?? "18:00");
 const fstSchBrkMin = ref(
   sanitizeBreakMin(props.schData_p?.fstSchBrkMin) ?? "0"
 );
 
-const secSchStrTime = ref(props.schData_p?.secSchStrTime ?? "");
-const secSchEndTime = ref(props.schData_p?.secSchEndTime ?? "");
+const secSchStrTime = ref(props.schData_p?.secSchStrTime ?? "00:00");
+const secSchEndTime = ref(props.schData_p?.secSchEndTime ?? "18:00");
 const secSchBrkMin = ref(
   sanitizeBreakMin(props.schData_p?.secSchBrkMin) ?? "0"
 );
@@ -412,6 +412,7 @@ const validateWorkTime = () => {
     if (s.length < 4) return null;
     const h = parseInt(s.slice(0, 2), 10);
     const m = parseInt(s.slice(2, 4), 10);
+    if (h === 24 && m === 0) return 24 * 60; // 24:00 = 1440분
     if (h < 0 || h > 23 || m < 0 || m > 59) return null;
     return h * 60 + m;
   };

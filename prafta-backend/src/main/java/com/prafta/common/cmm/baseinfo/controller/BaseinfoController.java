@@ -30,7 +30,7 @@ import com.prafta.common.cmm.baseinfo.dto.SystInfoListRes;
 import com.prafta.common.cmm.baseinfo.dto.SystInfoReq;
 import com.prafta.common.cmm.baseinfo.dto.SystInfoRes;
 import com.prafta.common.cmm.baseinfo.service.BaseinfoService;
-import com.prafta.common.exception.CmmApiException;
+import com.prafta.common.exception.cmm.CmmApiException;
 import com.prafta.common.security.JwtUtil;
 
 import lombok.RequiredArgsConstructor;

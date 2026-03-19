@@ -6,6 +6,8 @@
 			<item value="org.eclipse.ui.Basic"/>
 			<item value="org.eclipse.buildship.ui.importwizards"/>
 		</list>
+		<section name="ImportExportWizard.dialogBounds">
+		</section>
 	</section>
 	<section name="InstallationDialogSettings">
 		<item key="DIALOG_X_ORIGIN" value="110"/>
@@ -26,5 +28,12 @@
 			<item value="org.eclipse.emf.codegen.ui.JETNewWizards"/>
 			<item value="org.eclipse.wst.jsdt.ui.java"/>
 		</list>
+	</section>
+	<section name="WorkbenchPreferenceDialog.dialogBounds">
+		<item key="DIALOG_X_ORIGIN" value="664"/>
+		<item key="DIALOG_Y_ORIGIN" value="8"/>
+		<item key="DIALOG_WIDTH" value="903"/>
+		<item key="DIALOG_HEIGHT" value="792"/>
+		<item key="DIALOG_FONT_NAME" value="1|맑은 고딕|9.0|0|WINDOWS|1|-12|0|0|0|400|0|0|0|1|0|0|0|0|맑은 고딕"/>
 	</section>
 </section>

@@ -1,6 +1,5 @@
 <?xml version="1.0" encoding="UTF-8" ?>
 <!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
-
 <mapper namespace="com.prafta.web.risk.risk01.mapper.Risk01Mapper">
 
 	<select id="selectRiskTypeList" parameterType="com.prafta.web.risk.risk01.dto.RiskTypeListQry" resultType="com.prafta.web.risk.risk01.vo.RiskType">
@@ -156,7 +155,7 @@
 
 
 
-
+<!--
     <select id="selectSiteInfoList" parameterType="com.prafta.web.baim.baim01.dto.Baim01ReqDto" resultType="map">
     /* Baim01Mapper.selectSiteInfoList */
     SELECT
@@ -219,4 +218,5 @@
 		)
 	}
 	</insert>
+-->
 </mapper>

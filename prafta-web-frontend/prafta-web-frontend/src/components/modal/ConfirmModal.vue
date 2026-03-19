@@ -2,6 +2,7 @@
   <Teleport to="body">
     <Transition name="fade">
       <div
+        v-show="true"
         ref="overlayRef"
         class="modal-overlay prafta-modal-popup prafta-modal-alert-confirm"
         tabindex="-1"

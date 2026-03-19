@@ -1,13 +1,5 @@
 <?xml version="1.0" encoding="UTF-8" standalone="no"?>
 <qualifiedTypeNameHistroy>
-    <fullyQualifiedTypeName name="com.prafta.app.chkLst.chkLst01.dto.ChecklistInfoReq"/>
-    <fullyQualifiedTypeName name="com.prafta.app.chkLst.chkLst01.dto.ChecklistInfoRes"/>
-    <fullyQualifiedTypeName name="com.prafta.app.risk.risk01.vo.RiskHazard"/>
-    <fullyQualifiedTypeName name="com.prafta.app.risk.risk01.vo.RiskType"/>
-    <fullyQualifiedTypeName name="com.prafta.app.risk.risk01.dto.RiskHazardInfoSave"/>
-    <fullyQualifiedTypeName name="com.prafta.common.exception.RiskApiException"/>
-    <fullyQualifiedTypeName name="com.prafta.web.risk.risk03.dto.RiskTypeListReq"/>
-    <fullyQualifiedTypeName name="com.prafta.web.risk.risk03.dto.RiskTypeListRes"/>
     <fullyQualifiedTypeName name="com.prafta.web.risk.risk01.dto.RiskTypeListQry"/>
     <fullyQualifiedTypeName name="com.prafta.web.risk.risk03.dto.RiskTypeListQry"/>
     <fullyQualifiedTypeName name="com.prafta.web.risk.risk03.vo.RiskType"/>
@@ -54,10 +46,18 @@
     <fullyQualifiedTypeName name="com.prafta.web.attd.attd01.dto.SchInfoHistQry"/>
     <fullyQualifiedTypeName name="com.prafta.web.attd.attd01.dto.CopySchInfoSave"/>
     <fullyQualifiedTypeName name="com.prafta.web.attd.attd02.dto.HolydayListQry"/>
-    <fullyQualifiedTypeName name="lombok.Value"/>
     <fullyQualifiedTypeName name="com.prafta.web.attd.attd02.dto.HolidaySave"/>
-    <fullyQualifiedTypeName name="com.prafta.common.schedule.holiday.vo.Holiday"/>
     <fullyQualifiedTypeName name="lombok.Getter"/>
     <fullyQualifiedTypeName name="lombok.Setter"/>
+    <fullyQualifiedTypeName name="com.prafta.common.schedule.holiday.vo.Holiday"/>
+    <fullyQualifiedTypeName name="com.prafta.web.attd.attd01.dto.ShiftTypeSave"/>
+    <fullyQualifiedTypeName name="com.prafta.web.attd.attd01.dto.ShiftPatternSave"/>
+    <fullyQualifiedTypeName name="com.prafta.web.attd.attd01.dto.ShiftSchInfoListQry"/>
+    <fullyQualifiedTypeName name="com.prafta.web.attd.attd01.dto.ShiftSchDetailQry"/>
+    <fullyQualifiedTypeName name="com.prafta.web.attd.attd01.vo.ShiftType"/>
+    <fullyQualifiedTypeName name="lombok.Value"/>
+    <fullyQualifiedTypeName name="com.prafta.web.attd.attd03.dto.LeaveTypeListQry"/>
     <fullyQualifiedTypeName name="java.util.List"/>
+    <fullyQualifiedTypeName name="com.prafta.web.attd.attd03.dto.LeaveNoDupChkQry"/>
+    <fullyQualifiedTypeName name="com.prafta.web.baim.baim01.dto.MasterSiteAuthSetCommand"/>
 </qualifiedTypeNameHistroy>

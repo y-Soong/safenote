@@ -20,7 +20,7 @@ import com.prafta.app.risk.risk01.dto.RiskInfoRes;
 import com.prafta.app.risk.risk01.service.AppRisk01Service;
 import com.prafta.common.annotation.NoAuth;
 import com.prafta.common.cmm.file.service.FileService;
-import com.prafta.common.exception.CmmApiException;
+import com.prafta.common.exception.cmm.CmmApiException;
 import com.prafta.common.security.JwtUtil;
 
 import lombok.RequiredArgsConstructor;

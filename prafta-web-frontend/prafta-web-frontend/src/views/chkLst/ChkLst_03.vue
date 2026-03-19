@@ -213,7 +213,7 @@ import ChkLstRstPop from '@/views/chkLst/popup/ChkLstRstPop.vue';
 defineOptions({ name: 'ChkLst_03' });
 const props = defineProps({
   buttons: Object,
-  title: Object,
+  title: String,
 });
 
 // =========================== Reactive ===========================

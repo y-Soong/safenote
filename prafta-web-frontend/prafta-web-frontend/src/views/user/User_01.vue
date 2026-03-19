@@ -106,11 +106,11 @@
                 <th class="event_cell" style="width: 10%">이름</th>
                 <th style="width: 15%">이메일</th>
                 <th style="width: 15%">휴대폰번호</th>
-                <th class="editableCell" style="width: 8%">권한</th>
+                <th class="editableCell" style="width: 10%">권한</th>
                 <th class="editableCell" style="width: 8%">사용여부</th>
                 <th style="width: 10%">소속사업장</th>
                 <th style="width: 10%">소속부서</th>
-                <th>권한 소유 사업장</th>
+                <th style="width: 6%">권한 소유 사업장</th>
               </tr>
             </thead>
             <tbody>
@@ -207,19 +207,19 @@ import {
   onMounted,
   getCurrentInstance,
   defineOptions,
-} from 'vue';
-import { useModal } from '@/utils/useModal';
-import { useFieldWatcher } from '@/utils/useFieldWatcher';
-import axios from '@/api/axios';
-import ViewHeader from '@/components/common/ViewHeader.vue';
-import BaseSelect from '@/components/common/BaseSelect.vue';
-import search_icon from '@/assets/img/search_icon.png';
-import SiteSearchPop from '@/components/popup/SiteSearchPop.vue';
-import UserInfoPop from './popup/UserInfoPop.vue';
-import SiteNodeSearchPop from '@/components/popup/SiteNodeSearchPop.vue';
+} from "vue";
+import { useModal } from "@/utils/useModal";
+import { useFieldWatcher } from "@/utils/useFieldWatcher";
+import axios from "@/api/axios";
+import ViewHeader from "@/components/common/ViewHeader.vue";
+import BaseSelect from "@/components/common/BaseSelect.vue";
+import search_icon from "@/assets/img/search_icon.png";
+import SiteSearchPop from "@/components/popup/SiteSearchPop.vue";
+import UserInfoPop from "./popup/UserInfoPop.vue";
+import SiteNodeSearchPop from "@/components/popup/SiteNodeSearchPop.vue";
 
 // =========================== Define ===========================
-defineOptions({ name: 'User_01' });
+defineOptions({ name: "User_01" });
 const props = defineProps({
   title: String,
   buttons: Object,
@@ -230,13 +230,13 @@ const userActList = ref([]);
 const systCodeArr = ref([]);
 const baseInfoArr = ref([]);
 const SiteSearchPopOpen = ref(false);
-const userId = ref('');
-const userNm = ref('');
+const userId = ref("");
+const userNm = ref("");
 const useYn = ref();
-const siteCd = ref('');
-const siteNo = ref('');
-const siteNm = ref('');
-const p_userId = ref('');
+const siteCd = ref("");
+const siteNo = ref("");
+const siteNm = ref("");
+const p_userId = ref("");
 const headchk = ref(false);
 const siteDisabled = ref(false);
 
@@ -257,16 +257,16 @@ useFieldWatcher(
   (item) => {
     item.chk = true;
   },
-  ['chk']
+  ["chk"]
 );
 
 // =========================== Methods ===========================
 const fnGetBaseinfoList = async () => {
   try {
-    const response = await axios.get('/comApi/baseinfo/base-info-list', {
+    const response = await axios.get("/comApi/baseinfo/base-info-list", {
       params: {
-        cmpnyCd: sessionStorage.getItem('gv_cmpnyCd'),
-        baseCodeList: ['COM005'],
+        cmpnyCd: sessionStorage.getItem("gv_cmpnyCd"),
+        baseCodeList: ["COM005"],
       },
     });
 
@@ -289,7 +289,7 @@ const fnGetBaseinfoList = async () => {
     const msg =
       err?.response?.data?.message ||
       err?.message ||
-      '조회 중 오류가 발생했습니다.';
+      "조회 중 오류가 발생했습니다.";
 
     await proxy.$alert(msg);
   }
@@ -487,7 +487,7 @@ const fnUserInfoPopOpen = (userInfo) => {
 };
 
 const fnBatchRegister = () => {
-  proxy.$alert('준비 중입니다.');
+  proxy.$alert("준비 중입니다.");
 };
 
 const fnSiteSearchPopOpen = () => {
@@ -510,16 +510,21 @@ const fnSiteNodeSearchPopOpen = (user) => {
 };
 
 const fnUserNodeAllAssign = () => {
-  if(proxy.$util.isEmpty(siteCd.value)) {
-    proxy.$alert('사업장을 선택해주세요.');
+  if (proxy.$util.isEmpty(siteCd.value)) {
+    proxy.$alert("사업장을 선택해주세요.");
     return;
   }
 
-  if(userActList.value.filter((u) => u.chk === true).length === 0) {
-    proxy.$alert('지정할 사용자를 선택해주세요.');
+  if (userActList.value.filter((u) => u.chk === true).length === 0) {
+    proxy.$alert("지정할 사용자를 선택해주세요.");
     return;
-  } else if(userActList.value.filter((u) => u.chk === true && u.siteCd != siteCd.value).length > 0) {
-    proxy.$alert('[' + siteNm.value + '] 사업장에 속한\n사용자만 지정할 수 있습니다.');
+  } else if (
+    userActList.value.filter((u) => u.chk === true && u.siteCd != siteCd.value)
+      .length > 0
+  ) {
+    proxy.$alert(
+      "[" + siteNm.value + "] 사업장에 속한\n사용자만 지정할 수 있습니다."
+    );
     return;
   }
 

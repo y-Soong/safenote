@@ -23,7 +23,7 @@ import com.prafta.common.cmm.login.dto.UserRowLock;
 import com.prafta.common.cmm.login.mapper.LoginMapper;
 import com.prafta.common.cmm.login.service.LoginService;
 import com.prafta.common.cmm.login.vo.RequiredTermsInfo;
-import com.prafta.common.exception.LoginFailException;
+import com.prafta.common.exception.login.LoginApiException;
 import com.prafta.common.util.PasswordHashing;
 
 import lombok.extern.slf4j.Slf4j;
@@ -41,12 +41,12 @@ public class LoginServiceImpl implements LoginService{
 		Map<String, Object> userInfo = loginMapper.getLoginUser(dto);
 		
 		if (userInfo == null) {
-	        throw new LoginFailException("아이디 혹은 비밀번호를 확인해주세요.");
+	        throw new LoginApiException("아이디 혹은 비밀번호를 확인해주세요.");
 	    }
 		
 		String hashedPw = (String) userInfo.get("USER_PW");
 		if(!PasswordHashing.verifyPassword(dto.getUserPw(), hashedPw)) {
-			throw new LoginFailException("아이디 혹은 비밀번호를 확인해주세요.");
+			throw new LoginApiException("아이디 혹은 비밀번호를 확인해주세요.");
 		}
 		
 		UserRowLock userRowLock = UserRowLock.builder()
@@ -131,7 +131,7 @@ public class LoginServiceImpl implements LoginService{
 		List<RequiredTermsInfo> requiredTermsInfoList = loginMapper.selectRequiredTermsList();
 		
 		if(requiredTermsInfoList == null || requiredTermsInfoList.size() < 1) {
-			throw new LoginFailException("약관동의에 실패했습니다.\n관리자에게 문의해주세요.");
+			throw new LoginApiException("약관동의에 실패했습니다.\n관리자에게 문의해주세요.");
 		} else {
 			for(RequiredTermsInfo requiredTermsInfo : requiredTermsInfoList) {
 				RequiredTermsInfoSave requiredTermsInfoSave = RequiredTermsInfoSave.builder()

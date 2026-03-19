@@ -1,6 +1,7 @@
 <template>
   <Transition name="fade">
     <div
+      v-show="true"
       class="modal-overlay prafta-modal-popup"
       @keydown.ctrl.a.stop
       @keydown.meta.a.stop
@@ -316,7 +317,7 @@ const emit = defineEmits(["close"]);
 // ================ Ref Data ================
 const modalRef = ref(null);
 
-const apiBaseUrl = process.env.VUE_APP_API_BASE_URL || '';
+const apiBaseUrl = import.meta.env.VITE_API_BASE_URL || '';
 
 const systCodeArr = ref([]);
 const baseCodeArr = ref([]);

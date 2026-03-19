@@ -1,5 +1,0 @@
-package com.prafta.common.schedule.holiday.dto;
-
-public class HolidayApiResponse {
-
-}
