@@ -1,14 +1,11 @@
 package com.prafta.web.user.user03.service;
 
-import java.util.List;
-import java.util.Map;
-
-import com.prafta.web.user.user03.dto.SiteInfoListReq;
-import com.prafta.web.user.user03.dto.SiteInfoListRes;
-import com.prafta.web.user.user03.dto.User03;
+import com.prafta.web.user.user03.application.param.SiteInfoListParam;
+import com.prafta.web.user.user03.application.param.UserSiteAuthParam;
+import com.prafta.web.user.user03.dto.response.SiteInfoListResponse;
 
 public interface User03Service {
-	SiteInfoListRes selectSiteInfoSearch(SiteInfoListReq dto, Map<String, Object> tokenInfo);
+	SiteInfoListResponse selectSiteInfoSearch(SiteInfoListParam param);
 	
-	void updateUserSiteAuth(List<User03> dtoList, Map<String, Object> tokenInfo);
+	void updateUserSiteAuth(UserSiteAuthParam param);
 }

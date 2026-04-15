@@ -1,0 +1,16 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(find /c/PRAFTA/prafta-backend/src -name '*.java' ! -name TokenInfo.java ! -name JwtUtil.java -exec sed -i 's/gvUserId/gvUserCd/g; s/gv_userId/gv_userCd/g' '{}' ';')",
+      "Bash(echo \"Java done: $?\")",
+      "Bash(find /c/PRAFTA/prafta-backend/src -name '*.xml' -exec sed -i s/gv_userId/gv_userCd/g '{}' ';')",
+      "Bash(echo \"XML done: $?\")",
+      "Bash(find /c/PRAFTA/prafta-backend/src -name '*.xml' -exec sed -i s/gvUserId/gvUserCd/g '{}' ';')",
+      "Bash(echo \"done: $?\")",
+      "Bash(sed -i '/^\\\\t, String gv_userId\\\\r$/d' /c/PRAFTA/prafta-backend/src/main/java/com/prafta/common/dto/TokenInfo.java)",
+      "Bash(sed -i '/^\\\\t\\\\t, claims\\\\.get\\(\"gv_userId\", String\\\\.class\\)\\\\r$/d' /c/PRAFTA/prafta-backend/src/main/java/com/prafta/common/dto/TokenInfo.java)",
+      "Bash(node -e ':*)",
+      "Bash(xargs cat:*)"
+    ]
+  }
+}

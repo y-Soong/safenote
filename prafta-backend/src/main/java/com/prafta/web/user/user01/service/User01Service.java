@@ -1,19 +1,29 @@
 package com.prafta.web.user.user01.service;
 
-import java.util.List;
-import java.util.Map;
-
-import com.prafta.web.user.user01.dto.UserInfoListReq;
-import com.prafta.web.user.user01.dto.UserInfoListRes;
-import com.prafta.web.user.user01.dto.UserInfoReq;
-import com.prafta.web.user.user01.dto.UserPasswdReq;
+import com.prafta.web.user.user01.application.model.UserInfoModel;
+import com.prafta.web.user.user01.application.param.MyPasswdParam;
+import com.prafta.web.user.user01.application.param.ScheduleWithdrawalParam;
+import com.prafta.web.user.user01.application.param.SiteNodeAdminCandidateListParam;
+import com.prafta.web.user.user01.application.param.WithdrawMyAccountParam;
+import com.prafta.web.user.user01.application.param.UserInfoListParam;
+import com.prafta.web.user.user01.application.param.UserPasswdParam;
+import com.prafta.web.user.user01.dto.response.SiteNodeAdminCandidateListResponse;
+import com.prafta.web.user.user01.dto.response.UserInfoListResponse;
 
 public interface User01Service {
-//	List<Map<String, Object>> selectUserInfoList(User01ReqDto dto);
+	UserInfoListResponse selectUserInfoList(UserInfoListParam param);
+
+	int updateUserPw(UserPasswdParam param);
+
+	void updateMyPw(MyPasswdParam param);
+
+	void withdrawMyAccount(WithdrawMyAccountParam param);
+
+	void scheduleWithdrawal(ScheduleWithdrawalParam param);
 	
-	UserInfoListRes selectUserInfoList(UserInfoListReq dto, Map<String, Object> tokenInfo);
+	//void updateUserInfo(List<UserInfoReq> dtoList, Map<String, Object> tokenInfo);
 	
-	int updateUserPw(UserPasswdReq dto);
+	void updateOneUserInfo(UserInfoModel model);
 	
-	void updateUserInfo(List<UserInfoReq> dtoList, Map<String, Object> tokenInfo);
+	SiteNodeAdminCandidateListResponse selectSiteNodeAdminCandidateLists(SiteNodeAdminCandidateListParam param);
 }

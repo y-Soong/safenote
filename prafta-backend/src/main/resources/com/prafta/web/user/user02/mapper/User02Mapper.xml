@@ -2,7 +2,7 @@
 <!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
 <mapper namespace="com.prafta.web.user.user02.mapper.User02Mapper">
 
-    <select id="selectAuthMenuList" parameterType="com.prafta.web.user.user02.dto.AuthMenuListQry" resultType="com.prafta.web.user.user02.vo.AuthMenu">
+    <select id="selectAuthMenuList" parameterType="com.prafta.web.user.user02.application.query.AuthMenuListQuery" resultType="com.prafta.web.user.user02.result.AuthMenuResult">
     /* User02Mapper.selectAuthMenuList */
     SELECT
     	'' 				AS chk
@@ -36,29 +36,29 @@
 				ON (
 					A.MENU_M_ID = B.MENU_M_ID
 				AND A.USE_YN = B.USE_YN
-				<if test="param.menuDNm != null and param.menuDNm != ''">
-			  	  AND B.MENU_NM LIKE CONCAT('%', #{param.menuDNm}, '%')
+				<if test="menuDNm != null and menuDNm != ''">
+			  	  AND B.MENU_NM LIKE CONCAT('%', #{menuDNm}, '%')
 				</if>
 		        )
 			LEFT JOIN TB_SYST_AUTH_MENU C
 				ON (
-					C.CMPNY_CD = #{token.gv_cmpnyCd}
+					C.CMPNY_CD = #{gvCmpnyCd}
 				AND B.MENU_D_ID = C.MENU_D_ID
-		        AND C.AUTH_CD = #{param.authCd}
+		        AND C.AUTH_CD = #{authCd}
 		        )
 		WHERE 1=1
-	    <if test="param.menuMNm != null and param.menuMNm != ''">
-	  	  AND A.MENU_NM LIKE CONCAT('%', #{param.menuMNm}, '%')
+	    <if test="menuMNm != null and menuMNm != ''">
+	  	  AND A.MENU_NM LIKE CONCAT('%', #{menuMNm}, '%')
 		</if>
 	) A
 	WHERE 1=1
-	<if test="param.useYn != null and param.useYn != ''">
-	  AND A.USE_YN = #{param.useYn}
+	<if test="useYn != null and useYn != ''">
+	  AND A.USE_YN = #{useYn}
 	</if>
     ORDER BY A.MENU_SRC, A.MENU_M_ID, A.MENU_D_ID	
 	</select>
 	
-	<insert id="mergeAuthMenuInfo" parameterType="com.prafta.web.user.user02.dto.AuthMenuInfoQry">
+	<insert id="mergeAuthMenuInfo" parameterType="com.prafta.web.user.user02.application.command.AuthMenuInfoCommand">
 	/* User02Mapper.mergeAuthMenuInfo */
     INSERT INTO TB_SYST_AUTH_MENU (
     	CMPNY_CD
@@ -76,28 +76,28 @@
     	, UPDATE_DATE
    	)
    	VALUES(
-   		#{token.gv_cmpnyCd}
-   		, #{param.authCd}
-   		, #{param.menuDId}
-   		, #{param.useYn}
-   		, #{param.btnSrch}
-		, #{param.btnNew}
-		, #{param.btnDel}
-		, #{param.btnSave}
-		, #{param.btnExcl}
-		, #{token.gv_userId}
+   		#{gvCmpnyCd}
+   		, #{authCd}
+   		, #{menuDId}
+   		, #{useYn}
+   		, #{btnSrch}
+		, #{btnNew}
+		, #{btnDel}
+		, #{btnSave}
+		, #{btnExcl}
+		, #{gvUserCd}
 		, now()
-		, #{token.gv_userId}
+		, #{gvUserCd}
 		, now() 
-   	)
+   	) AS NEW
    	ON DUPLICATE KEY UPDATE
-	    USE_YN     		= VALUES(USE_YN)
-	    , BTN_SRCH      = VALUES(BTN_SRCH)
-	    , BTN_NEW      	= VALUES(BTN_NEW)
-	    , BTN_DELT     	= VALUES(BTN_DELT)
-	    , BTN_SAVE      = VALUES(BTN_SAVE)
-	    , BTN_EXCL    	= VALUES(BTN_EXCL)
-	    , UPDATE_NO   	= #{token.gv_userId}
+	    USE_YN     		= NEW.USE_YN
+	    , BTN_SRCH      = NEW.BTN_SRCH
+	    , BTN_NEW      	= NEW.BTN_NEW
+	    , BTN_DELT     	= NEW.BTN_DELT
+	    , BTN_SAVE      = NEW.BTN_SAVE
+	    , BTN_EXCL    	= NEW.BTN_EXCL
+	    , UPDATE_NO   	= NEW.UPDATE_NO
 	    , UPDATE_DATE 	= NOW()
 	</insert>
 </mapper>

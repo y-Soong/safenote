@@ -13,19 +13,24 @@ import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
-import com.prafta.common.annotation.NoAuth;
 import com.prafta.common.security.JwtUtil;
-import com.prafta.web.baim.baim06.dto.CopySiteNodeReq;
-import com.prafta.web.baim.baim06.dto.SiteNodeListReq;
-import com.prafta.web.baim.baim06.dto.SiteNodeListRes;
-import com.prafta.web.baim.baim06.dto.SiteNodeReq;
+import com.prafta.web.baim.baim06.application.param.CopySiteNodeParam;
+import com.prafta.web.baim.baim06.application.param.SiteNodeAdminParam;
+import com.prafta.web.baim.baim06.application.param.SiteNodeInfoParam;
+import com.prafta.web.baim.baim06.application.param.SiteNodeListParam;
+import com.prafta.web.baim.baim06.application.param.SiteNodeParam;
+import com.prafta.web.baim.baim06.dto.request.CopySiteNodeRequest;
+import com.prafta.web.baim.baim06.dto.request.SiteNodeAdminRequest;
+import com.prafta.web.baim.baim06.dto.request.SiteNodeInfoRequest;
+import com.prafta.web.baim.baim06.dto.request.SiteNodeListRequest;
+import com.prafta.web.baim.baim06.dto.request.SiteNodeRequest;
+import com.prafta.web.baim.baim06.dto.response.SiteNodeListResponse;
 import com.prafta.web.baim.baim06.service.Baim06Service;
 
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 
 @Slf4j
-@NoAuth
 @RestController
 @RequestMapping("/baim06")
 @RequiredArgsConstructor
@@ -35,50 +40,65 @@ public class Baim06Controller {
 	private final JwtUtil jwtUtil;
 	
 	@GetMapping("/site-node-lists")
-    public ResponseEntity<?> getSiteNodeList(@ModelAttribute SiteNodeListReq dto, @RequestHeader(value = "Authorization", required = false) String authorization) {
+    public ResponseEntity<?> getSiteNodeList(@ModelAttribute SiteNodeListRequest request, @RequestHeader(value = "Authorization", required = false) String authorization) {
     	
-    	Map<String, Object> tokenInfo = jwtUtil.getAllClaimsAsMap(authorization);
-    	SiteNodeListRes retList = baim06Service.selectSiteNodeList(dto, tokenInfo);
+    	SiteNodeListResponse response = baim06Service.selectSiteNodeList(SiteNodeListParam.from(request, jwtUtil.getAllClaimsAsMap(authorization)));
 		
-//    	if(retList == null) {
-//    		throw new BaimApiException("조회된 결과가 없습니다.");
-//    	}
-    	
-    	return ResponseEntity.status(HttpStatus.OK).body(retList);
+    	return ResponseEntity.status(HttpStatus.OK).body(response);
     }
 	
 	@PostMapping("/save-site-nodes")
-	public ResponseEntity<?> saveSiteNode(@RequestBody List<SiteNodeReq> dtoList, @RequestHeader(value = "Authorization", required = false) String authorization) {
-		Map<String, Object> tokenInfo = jwtUtil.getAllClaimsAsMap(authorization);
-		
-		baim06Service.saveSiteNode(dtoList, tokenInfo);
+	public ResponseEntity<?> saveSiteNode(@RequestBody List<SiteNodeInfoRequest> dtoList, @RequestHeader(value = "Authorization", required = false) String authorization) {
+	
+		baim06Service.saveSiteNode(SiteNodeInfoParam.from(dtoList, jwtUtil.getAllClaimsAsMap(authorization)));
 
 		return ResponseEntity.status(HttpStatus.OK).build();
 	}
 	
 	@PostMapping("/delete-site-nodes")
-	public ResponseEntity<?> deleteSiteNode(@RequestBody SiteNodeReq dto, @RequestHeader(value = "Authorization", required = false) String authorization) {
-		Map<String, Object> tokenInfo = jwtUtil.getAllClaimsAsMap(authorization);
+	public ResponseEntity<?> deleteSiteNode(@RequestBody SiteNodeRequest request, @RequestHeader(value = "Authorization", required = false) String authorization) {
 		
-		baim06Service.deleteSiteNode(dto, tokenInfo);
+		baim06Service.deleteSiteNode(SiteNodeParam.from(request, jwtUtil.getAllClaimsAsMap(authorization)));
 
 		return ResponseEntity.status(HttpStatus.OK).build();
 	}
 	
 	@PostMapping("/delete-site-all-nodes")
-	public ResponseEntity<?> deleteSiteAllNode(@RequestBody SiteNodeReq dto, @RequestHeader(value = "Authorization", required = false) String authorization) {
-		Map<String, Object> tokenInfo = jwtUtil.getAllClaimsAsMap(authorization);
+	public ResponseEntity<?> deleteSiteAllNode(@RequestBody SiteNodeRequest request, @RequestHeader(value = "Authorization", required = false) String authorization) {
 		
-		baim06Service.deleteSiteAllNode(dto, tokenInfo);
+		baim06Service.deleteSiteAllNode(SiteNodeParam.from(request, jwtUtil.getAllClaimsAsMap(authorization)));
 
 		return ResponseEntity.status(HttpStatus.OK).build();
 	}
 	
 	@PostMapping("/copy-site-nodes")
-	public ResponseEntity<?> copySiteNode(@RequestBody CopySiteNodeReq dto, @RequestHeader(value = "Authorization", required = false) String authorization) {
-		Map<String, Object> tokenInfo = jwtUtil.getAllClaimsAsMap(authorization);
+	public ResponseEntity<?> copySiteNode(@RequestBody CopySiteNodeRequest request, @RequestHeader(value = "Authorization", required = false) String authorization) {
 		
-		baim06Service.copySiteNode(dto, tokenInfo);
+		baim06Service.copySiteNode(CopySiteNodeParam.from(request, jwtUtil.getAllClaimsAsMap(authorization)));
+
+		return ResponseEntity.status(HttpStatus.OK).build();
+	}
+	
+	@PostMapping("/save-site-node-main-admin")
+	public ResponseEntity<?> saveSiteNodeMainAdmin(@RequestBody SiteNodeAdminRequest request, @RequestHeader(value = "Authorization", required = false) String authorization) {
+		
+		baim06Service.saveSiteNodeMainAdmin(SiteNodeAdminParam.from(request, jwtUtil.getAllClaimsAsMap(authorization)));
+
+		return ResponseEntity.status(HttpStatus.OK).build();
+	}
+	
+	@PostMapping("/save-site-node-sub-admin")
+	public ResponseEntity<?> saveSiteNodeSubAdmin(@RequestBody SiteNodeAdminRequest request, @RequestHeader(value = "Authorization", required = false) String authorization) {
+		
+		baim06Service.saveSiteNodeSubAdmin(SiteNodeAdminParam.from(request, jwtUtil.getAllClaimsAsMap(authorization)));
+
+		return ResponseEntity.status(HttpStatus.OK).build();
+	}
+	
+	@PostMapping("/delete-site-node-admin")
+	public ResponseEntity<?> deleteSiteNodeAdmin(@RequestBody SiteNodeAdminRequest request, @RequestHeader(value = "Authorization", required = false) String authorization) {
+		
+		baim06Service.deleteSiteNodeAdmin(SiteNodeAdminParam.from(request, jwtUtil.getAllClaimsAsMap(authorization)));
 
 		return ResponseEntity.status(HttpStatus.OK).build();
 	}

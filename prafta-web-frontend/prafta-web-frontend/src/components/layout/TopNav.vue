@@ -46,11 +46,14 @@ import {
 import { useUserStore } from "@/stores/userStore";
 import { useRouter } from "vue-router";
 import axios from "@/api/axios";
+import { useModal } from "@/utils/useModal";
+import MyInfoPop from "@/components/popup/MyInfoPop.vue";
 
 const userStore = useUserStore();
 const userId = sessionStorage.getItem("gv_userNm");
 const userMenuOpen = ref(false);
 const router = useRouter();
+const { open: openPop } = useModal();
 
 defineProps({
   menus: Array,
@@ -79,9 +82,8 @@ const toggleUserMenu = () => {
 };
 
 const goToMyInfo = () => {
-  proxy.$alert("내정보로 이동");
-  // sessionStorage.clear();
   userMenuOpen.value = false;
+  openPop(MyInfoPop, {});
 };
 
 const logout = async () => {

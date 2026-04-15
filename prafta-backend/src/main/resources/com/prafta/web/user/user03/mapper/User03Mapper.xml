@@ -2,8 +2,8 @@
 <!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
 <mapper namespace="com.prafta.web.user.user03.mapper.User03Mapper">
 
-    <select id="selectSiteInfoSearch" parameterType="com.prafta.web.user.user03.dto.SiteInfoListQry" resultType="com.prafta.web.user.user03.vo.SiteInfo">
-    /* User02Mapper.selectSiteInfoSearch */
+    <select id="selectSiteInfoSearch" parameterType="com.prafta.web.user.user03.application.query.SiteInfoListQuery" resultType="com.prafta.web.user.user03.result.SiteInfoResult">
+    /* User03Mapper.selectSiteInfoSearch */
 	SELECT
 		'' 									AS chk
 		, A.CMPNY_CD						AS cmpnyCd
@@ -27,27 +27,27 @@
 				 INNER JOIN TB_USER_SITE_AUTH B
 					ON (
 						A.CMPNY_CD = B.CMPNY_CD
-					AND A.USER_ID = B.USER_ID
+					AND A.USER_CD = B.USER_CD
 					AND B.USE_YN = 'Y'
 					)
 			WHERE 1=1
-			  AND A.CMPNY_CD = #{token.gv_cmpnyCd}
-			  AND A.USER_ID = #{param.userId}
+			  AND A.CMPNY_CD = #{gvCmpnyCd}
+			  AND A.USER_CD = #{userCd}
 		 ) B
 			ON (
 				A.CMPNY_CD = B.CMPNY_CD
 			AND A.SITE_CD = B.SITE_CD
 	        )
 	WHERE 1=1
-	  AND A.CMPNY_CD = #{token.gv_cmpnyCd}
+	  AND A.CMPNY_CD = #{gvCmpnyCd}
 	  AND USE_YN = 'Y'
 	</select>
 	
-	<insert id="mergeUserSiteAuth">
-	/* User02Mapper.mergeUserSiteAuth */
+	<insert id="mergeUserSiteAuth" parameterType="com.prafta.web.user.user03.application.command.UserSiteAuthCommand">
+	/* User03Mapper.mergeUserSiteAuth */
 	    INSERT INTO TB_USER_SITE_AUTH (
     	CMPNY_CD
-    	, USER_ID
+    	, USER_CD
     	, SITE_CD
     	, USE_YN
     	, INSERT_NO
@@ -56,18 +56,18 @@
     	, UPDATE_DATE
    	)
    	VALUES(
-   		#{token.gv_cmpnyCd}
-   		, #{param.userId}
-   		, #{param.siteCd}
-   		, #{param.allocYn}
-		, #{token.gv_userId}
+   		#{gvCmpnyCd}
+   		, #{userCd}
+   		, #{siteCd}
+   		, #{allocYn}
+		, #{gvUserCd}
 		, now()
-		, #{token.gv_userId}
+		, #{gvUserCd}
 		, now() 
    	)
    	ON DUPLICATE KEY UPDATE
 	    USE_YN = VALUES(USE_YN)
-	    , UPDATE_NO   	= #{token.gv_userId}
+	    , UPDATE_NO   	= #{gvUserCd}
 	    , UPDATE_DATE 	= NOW()
 	</insert>
 </mapper>

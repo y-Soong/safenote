@@ -1,22 +1,22 @@
 package com.prafta.web.baim.baim02.service.impl;
 
 import java.util.List;
-import java.util.Map;
 
 import org.springframework.stereotype.Service;
 
-import com.prafta.web.baim.baim02.dto.CompCmmCodeDListQry;
-import com.prafta.web.baim.baim02.dto.CompCmmCodeDListReq;
-import com.prafta.web.baim.baim02.dto.CompCmmCodeDListRes;
-import com.prafta.web.baim.baim02.dto.CompCmmCodeDReq;
-import com.prafta.web.baim.baim02.dto.CompCmmCodeDSave;
-import com.prafta.web.baim.baim02.dto.CompCmmCodeMListQry;
-import com.prafta.web.baim.baim02.dto.CompCmmCodeMListReq;
-import com.prafta.web.baim.baim02.dto.CompCmmCodeMListRes;
+import com.prafta.web.baim.baim02.application.command.CompCmmCodeDCommand;
+import com.prafta.web.baim.baim02.application.model.CompCmmCodeDModel;
+import com.prafta.web.baim.baim02.application.param.CompCmmCodeDListParam;
+import com.prafta.web.baim.baim02.application.param.CompCmmCodeDParam;
+import com.prafta.web.baim.baim02.application.param.CompCmmCodeMListParam;
+import com.prafta.web.baim.baim02.application.query.CompCmmCodeDListQuery;
+import com.prafta.web.baim.baim02.application.query.CompCmmCodeMListQuery;
+import com.prafta.web.baim.baim02.dto.response.CompCmmCodeDListResponse;
+import com.prafta.web.baim.baim02.dto.response.CompCmmCodeMListResponse;
 import com.prafta.web.baim.baim02.mapper.Baim02Mapper;
+import com.prafta.web.baim.baim02.result.CompCmmCodeDResult;
+import com.prafta.web.baim.baim02.result.CompCmmCodeMResult;
 import com.prafta.web.baim.baim02.service.Baim02Service;
-import com.prafta.web.baim.baim02.vo.CompCmmCodeD;
-import com.prafta.web.baim.baim02.vo.CompCmmCodeM;
 
 import lombok.extern.slf4j.Slf4j;
 
@@ -29,80 +29,46 @@ public class Baim02ServiceImpl implements Baim02Service{
 		this.baim02Mapper = baim02Mapper;
 	}
 		
-	public CompCmmCodeMListRes selectCompCmmCodeMList(CompCmmCodeMListReq dto, Map<String, Object> tokenInfo) {
+	public CompCmmCodeMListResponse selectCompCmmCodeMList(CompCmmCodeMListParam param) {
 		
-		CompCmmCodeMListQry reqDto = CompCmmCodeMListQry.builder()
-														.codeCd(dto.getCodeCd())
-														.codeNm(dto.getCodeNm())
-														.build();
-		
-		CompCmmCodeMListRes retDto = null;
+		CompCmmCodeMListResponse response = null;
 				
-		List<CompCmmCodeM> compCmmCodeMList = baim02Mapper.selectCompCmmCodeMList(reqDto, tokenInfo);
+		List<CompCmmCodeMResult> compCmmCodeMList = baim02Mapper.selectCompCmmCodeMList(CompCmmCodeMListQuery.from(param));
 		
 		if(compCmmCodeMList != null && compCmmCodeMList.size() > 0) {
-			retDto = CompCmmCodeMListRes.builder()
+			response = CompCmmCodeMListResponse.builder()
 										.compCmmCodeMList(compCmmCodeMList)
 										.build();
 		}
 		
-		return retDto;
+		return response;
 	}
 
-	public CompCmmCodeDListRes selectCompCmmCodeDList(CompCmmCodeDListReq dto, Map<String, Object> tokenInfo) {
+	public CompCmmCodeDListResponse selectCompCmmCodeDList(CompCmmCodeDListParam param) {
 		
-		CompCmmCodeDListQry reqDto = CompCmmCodeDListQry.builder()
-				.codeCd(dto.getCodeCd())
-				.codeNm(dto.getCodeNm())
-				.build();
+		CompCmmCodeDListResponse response = null;
 		
-		CompCmmCodeDListRes retDto = null;
-		
-		List<CompCmmCodeD> compCmmCodeDList = baim02Mapper.selectCompCmmCodeDList(reqDto, tokenInfo);
+		List<CompCmmCodeDResult> compCmmCodeDList = baim02Mapper.selectCompCmmCodeDList(CompCmmCodeDListQuery.from(param));
 		
 		if(compCmmCodeDList != null && compCmmCodeDList.size() > 0) {
-			retDto = CompCmmCodeDListRes.builder()
+			response = CompCmmCodeDListResponse.builder()
 										.compCmmCodeDList(compCmmCodeDList)
 										.build();
 		}
 		
-		return retDto;
+		return response;
 	}
 	
-	public void updateCmmCodeDetailInfo(List<CompCmmCodeDReq> dtoList, Map<String, Object> tokenInfo) {
-		for(CompCmmCodeDReq dto : dtoList) {		
-			CompCmmCodeDSave reqDto = CompCmmCodeDSave.builder()
-														.cmpnyCd(dto.getCmpnyCd())
-														.baimValCd(dto.getBaimValCd())
-														.baimValDCd(dto.getBaimValDCd())
-														.baimValDNm(dto.getBaimValDNm())
-														.sortIdx(dto.getSortIdx())
-														.useYn(dto.getUseYn())
-														.valDInfo1(dto.getValDInfo1())
-														.valDInfo2(dto.getValDInfo2())
-														.valDDesc(dto.getValDDesc())
-														.build();
-			
-			baim02Mapper.mergeCmmCodeDetailInfo(reqDto, tokenInfo);
+	public void updateCmmCodeDetailInfo(CompCmmCodeDParam param) {
+		for(CompCmmCodeDModel model : param.compCmmCodeDModelList()) {			
+			baim02Mapper.mergeCmmCodeDetailInfo(CompCmmCodeDCommand.from(model));
 		}
 	}
 	
-	public void deleteCmmCodeDetailInfo(List<CompCmmCodeDReq> dtoList, Map<String, Object> tokenInfo) {
-		for(CompCmmCodeDReq dto : dtoList) {
-			
-			CompCmmCodeDSave reqDto = CompCmmCodeDSave.builder()
-					.cmpnyCd(dto.getCmpnyCd())
-					.baimValCd(dto.getBaimValCd())
-					.baimValDCd(dto.getBaimValDCd())
-					.baimValDNm(dto.getBaimValDNm())
-					.sortIdx(dto.getSortIdx())
-					.useYn(dto.getUseYn())
-					.valDInfo1(dto.getValDInfo1())
-					.valDInfo2(dto.getValDInfo2())
-					.valDDesc(dto.getValDDesc())
-					.build();
-			
-			baim02Mapper.deleteCmmCodeDetailInfo(reqDto, tokenInfo);
+	public void deleteCmmCodeDetailInfo(CompCmmCodeDParam param) {
+		
+		for(CompCmmCodeDModel model : param.compCmmCodeDModelList()) {
+			baim02Mapper.deleteCmmCodeDetailInfo(CompCmmCodeDCommand.from(model));
 		}
 	}
 	

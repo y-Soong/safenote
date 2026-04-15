@@ -6,25 +6,49 @@ import java.util.Map;
 import org.apache.ibatis.annotations.Mapper;
 import org.apache.ibatis.annotations.Param;
 
-import com.prafta.web.baim.baim06.dto.CopySiteNodeSave;
-import com.prafta.web.baim.baim06.dto.SiteNodeDelete;
-import com.prafta.web.baim.baim06.dto.SiteNodeListQry;
-import com.prafta.web.baim.baim06.dto.SiteNodeSave;
-import com.prafta.web.baim.baim06.vo.SiteNode;
+import com.prafta.web.baim.baim06.application.command.CopySiteNodeCommand;
+import com.prafta.web.baim.baim06.application.command.SiteNodeCommand;
+import com.prafta.web.baim.baim06.application.command.SiteNodeInfoCommand;
+import com.prafta.web.baim.baim06.application.query.SiteNodeAdminQuery;
+import com.prafta.web.baim.baim06.application.query.SiteNodeCountQuery;
+import com.prafta.web.baim.baim06.application.query.SiteNodeListQuery;
+import com.prafta.web.baim.baim06.application.query.SiteNodeUserQuery;
+import com.prafta.web.baim.baim06.application.query.UserNodeInfoQuery;
+import com.prafta.web.baim.baim06.dto.SiteNodeAdminCommand;
+import com.prafta.web.baim.baim06.result.SiteNodeResult;
+import com.prafta.web.baim.baim06.vo.UserNodeInfo;
 
 @Mapper
 public interface Baim06Mapper {
 
-	List<SiteNode> selectSiteNodeList(@Param(value = "param") SiteNodeListQry dto, @Param(value = "token") Map<String, Object> tokenInfo);
+	List<SiteNodeResult> selectSiteNodeList(SiteNodeListQuery query);
 	
-	void saveSiteNode(@Param(value = "param") SiteNodeSave dto, @Param(value = "token") Map<String, Object> tokenInfo);
+	void saveSiteNode(SiteNodeInfoCommand command);
 	
-	void deleteSiteNode(@Param(value = "param") SiteNodeDelete dto, @Param(value = "token") Map<String, Object> tokenInfo);
+	int selectNodeCnt(SiteNodeCountQuery query);
 	
-	int selectNodeCnt(@Param(value = "param") SiteNodeDelete dto, @Param(value = "token") Map<String, Object> tokenInfo);
+	void deleteSiteNode(SiteNodeCommand command);
 	
-	void deleteSiteAllNode(@Param(value = "param") SiteNodeDelete dto, @Param(value = "token") Map<String, Object> tokenInfo);
+	void deleteSiteNodeInUser(SiteNodeCommand command);
 	
-	void copySiteNode(@Param(value = "param") CopySiteNodeSave dto, @Param(value = "token") Map<String, Object> tokenInfo);
+	void deleteSiteAllNode(SiteNodeCommand command);
+	
+	void copySiteNode(CopySiteNodeCommand command);
+	
+	void saveSiteNodeMainAdmin(SiteNodeAdminCommand command);
+	
+	void deleteSiteNodeMainAdmin(SiteNodeAdminCommand command);
+	
+	void saveSiteNodeSubAdmin(SiteNodeAdminCommand command);
+	
+	void deleteSiteNodeSubAdmin(SiteNodeAdminCommand command);
+	
+	void updateUserNode(SiteNodeAdminCommand command);
+	
+	int selectSiteNodeInAdmin(SiteNodeAdminQuery query);
+	
+	int selectSiteNodeInUser(SiteNodeUserQuery query);
+	
+	UserNodeInfo selectUserNodeInfo(UserNodeInfoQuery query);
 	
 }

@@ -300,6 +300,8 @@ import {
   getCurrentInstance,
 } from "vue";
 import axios from "@/api/axios";
+import { getMessage, MSG } from "@/messages";
+import { readFileAsBase64 } from "@/utils/fileUtil";
 import { useFieldWatcher } from '@/utils/useFieldWatcher';
 import { useCenteredDraggable } from "@/composables/useCenteredDraggable";
 import BaseSelect from "@/components/common/BaseSelect.vue";
@@ -357,7 +359,7 @@ onMounted(async () => {
 // ================ API Functions ================
 const fnGetSystinfoList = async () => {
   try {
-    const response = await axios.get("/comApi/baseinfo/syst-info-list", {
+    const response = await axios.get("/comApi/baseinfo/syst-info-lists", {
       params: {
         systCodeList: ["SYS003", "SYS018"],
       },
@@ -394,7 +396,7 @@ const fnGetSystinfoList = async () => {
 
 const fnGetBaseinfoList = async () => {
   try {
-    const response = await axios.get('/comApi/baseinfo/base-info-list', {
+    const response = await axios.get('/comApi/baseinfo/base-info-lists', {
       params: {
         cmpnyCd: sessionStorage.getItem('gv_cmpnyCd'),
         baseCodeList: ['COM003'],
@@ -439,49 +441,58 @@ const fnGetBaseinfoList = async () => {
 const fnSave = async () => {
   if (!dataValidationChk()) return;
 
-  const ok = await proxy.$confirm("저장하시겠습니까 ?");
+  const ok = await proxy.$confirm(getMessage(MSG.SAVE_CONFIRM));
   if (!ok) return;
 
   // 체크된 항목만
   const list = eduMtrlItemList.value.filter((item) => item?.chk);
 
   try {
-    const saveData = new FormData();
+    const itemListPayload = await Promise.all(
+      list.map(async (item) => {
+        const {
+          file,
+          chk,
+          oriSortIdx,
+          oriMtrlItemType,
+          oriMtrlDesc,
+          oriFileMgmtCd,
+          oriFileNm,
+          oriFilePath,
+          oriFileExt,
+          ...rest
+        } = item;
+        const row = { ...rest };
+        if (file instanceof File) {
+          row.itemBase64 = await readFileAsBase64(file);
+          row.itemOriginalFilename = file.name;
+        }
+        return row;
+      })
+    );
 
-    // 1) 일반 필드들 (항상 문자열로 넣는 게 안전)
-    saveData.append("mtrlCd", String(formData.mtrlCd ?? ""));
-    saveData.append("title", String(formData.title ?? ""));
-    saveData.append("contents", String(formData.contents ?? ""));
-    saveData.append("mtrlType", String(formData.mtrlType ?? ""));
-    saveData.append("useYn", String(formData.useYn ?? ""));
+    console.log("itemListPayload :: ");
+    console.log(itemListPayload);
 
-    // 2) 리스트는 JSON 문자열로 (file은 제외해서 넣기)
-    const listForJson = list.map((item) => {
-      const { file, ...rest } = item;
-      return rest;
-    });
-    saveData.append("eduMtrlItemList", JSON.stringify(listForJson));
+    const requestBody = {
+      mtrlCd: String(formData.mtrlCd ?? ""),
+      title: String(formData.title ?? ""),
+      contents: String(formData.contents ?? ""),
+      mtrlType: String(formData.mtrlType ?? ""),
+      useYn: String(formData.useYn ?? ""),
+      tbmEduItemInfoModelList: itemListPayload,
+    };
 
-    // 3) 파일은 있는 것만 append (없으면 그냥 안 넣음)
-    list.forEach((item, idx) => {
-      if (item?.file instanceof File) {
+    console.log(requestBody);
 
-        // const fileName = buildFileName("tbm", item.fileNm || item.file.name);
-        const fileName = item.file.name;
-        saveData.append(`item_${idx}`, item.file, fileName);
-      }
-    });
-
-    // 4) axios 호출 (Content-Type은 axios가 boundary 포함해서 자동 세팅)
     const response = await axios.post(
       "/webApi/tbm01/save-tbm-edu-infos",
-      saveData
-      // headers 직접 지정 안 하는 걸 추천
-      // { headers: { "Content-Type": "multipart/form-data" } } // <- 굳이 필요 없음
+      requestBody,
+      { headers: { "Content-Type": "application/json" } }
     );
 
     if (response.status === 200) {
-      fnAlertMsg("처리됐습니다.", () => {
+      fnAlertMsg(getMessage(MSG.SAVE_SUCCESS), () => {
         emit("close");
         props.onSearch();
       });
@@ -509,17 +520,18 @@ const fnSearch = async () => {
 
     if (response.status === 200) {
 
-      if(response.data?.tbmEduInfoList) {
-        formData.title = response.data?.tbmEduInfoList[0].title;
-        formData.mtrlType = response.data?.tbmEduInfoList[0].mtrlType;
-        formData.useYn = response.data?.tbmEduInfoList[0].useYn;
-        formData.contents = response.data?.tbmEduInfoList[0].contents; 
-        formData.oriTitle = response.data?.tbmEduInfoList[0].title;
-        formData.oriContents = response.data?.tbmEduInfoList[0].contents;
-        formData.oriMtrlType = response.data?.tbmEduInfoList[0].mtrlType;
-        formData.oriUseYn = response.data?.tbmEduInfoList[0].useYn;
+      if(response.data?.tbmEduInfoResultList) {
+        formData.title = response.data?.tbmEduInfoResultList[0].title;
+        formData.mtrlType = response.data?.tbmEduInfoResultList[0].mtrlType;
+        formData.useYn = response.data?.tbmEduInfoResultList[0].useYn;
+        formData.contents = response.data?.tbmEduInfoResultList[0].contents; 
+        formData.oriTitle = response.data?.tbmEduInfoResultList[0].title;
+        formData.oriContents = response.data?.tbmEduInfoResultList[0].contents;
+        formData.oriMtrlType = response.data?.tbmEduInfoResultList[0].mtrlType;
+        formData.oriUseYn = response.data?.tbmEduInfoResultList[0].useYn;
       }
-      eduMtrlItemList.value = response.data?.tbmEduItemInfoList ?? [];
+      eduMtrlItemList.value = response.data?.tbmEduItemInfoResultList ?? [];
+
       // 초기화 버튼용 원본 값 저장 (복사 소스)
       eduMtrlItemList.value.forEach((item) => {
         item.oriSortIdx = item.sortIdx;
@@ -564,13 +576,13 @@ const fnReset = () => {
 };
 
 const fnDelete = async () => {
-  const ok = await proxy.$confirm("삭제하시겠습니까 ?");
+  const ok = await proxy.$confirm(getMessage(MSG.DELETE_CONFIRM));
   if (!ok) return;
 
   const filteredData = eduMtrlItemList.value.filter((item) => item?.chk);
 
   if(filteredData.length === 0) {
-    proxy.$alert("삭제할 데이터가 없습니다.");
+    proxy.$alert(getMessage(MSG.DELETE_DATA_REQUIRED));
     return;
   }
 
@@ -578,7 +590,7 @@ const fnDelete = async () => {
     const response = await axios.post("/webApi/tbm01/delete-tbm-edu-item-infos", filteredData);
 
     if (response.status === 200) {
-      fnAlertMsg("처리됐습니다.", () => {
+      fnAlertMsg(getMessage(MSG.SAVE_SUCCESS), () => {
         emit("close");
         props.onSearch();
       });
@@ -611,29 +623,29 @@ const fnAlertMsg = async (message, afterConfirmCallback) => {
 
 const dataValidationChk = () => {
   if(proxy.$util.isEmpty(formData.title)) {
-    proxy.$alert("교육자료 제목을 입력해주세요.");
+    proxy.$alert(getMessage(MSG.EDU_TITLE_REQUIRED));
     return false;
   }
   if(proxy.$util.isEmpty(formData.mtrlType)) {
-    proxy.$alert("교육자료 타입을 선택해주세요.");
+    proxy.$alert(getMessage(MSG.EDU_TYPE_REQUIRED));
     return false;
   }
   if(proxy.$util.isEmpty(formData.useYn)) {
-    proxy.$alert("사용여부를 선택해주세요.");
+    proxy.$alert(getMessage(MSG.USE_YN_REQUIRED));
     return false;
   }
 
   if(eduMtrlItemList.value.length === 0) {
-    proxy.$alert("교육자료 세부항목을 추가해주세요.");
+    proxy.$alert(getMessage(MSG.EDU_ITEM_REQUIRED));
     return false;
   } else {
     for(let i = 0; i < eduMtrlItemList.value.filter(item => item.chk).length; i++) {
       if(proxy.$util.isEmpty(eduMtrlItemList.value[i].mtrlItemType)) {
-        proxy.$alert("자료 타입을 선택해주세요.");
+        proxy.$alert(getMessage(MSG.MATERIAL_TYPE_REQUIRED));
         return false;
       }
       if(proxy.$util.isEmpty(eduMtrlItemList.value[i].useYn)) {
-        proxy.$alert("사용여부를 선택해주세요.");
+        proxy.$alert(getMessage(MSG.USE_YN_REQUIRED));
         return false;
       }
       if(eduMtrlItemList.value[i].mtrlItemType === '01' || eduMtrlItemList.value[i].mtrlItemType === '02') {
@@ -641,13 +653,13 @@ const dataValidationChk = () => {
         const hasNewFile = file && typeof file === 'object' && file instanceof File && file.size > 0;
         const hasExistingFile = eduMtrlItemList.value[i].fileMgmtCd && eduMtrlItemList.value[i].filePath;
         if (!hasNewFile && !hasExistingFile) {
-          proxy.$alert("파일을 선택해주세요.");
+          proxy.$alert(getMessage(MSG.FILE_REQUIRED));
           return false;
         }
       }
       if(eduMtrlItemList.value[i].mtrlItemType === '03') {
         if(proxy.$util.isEmpty(eduMtrlItemList.value[i].url)) {
-          proxy.$alert("URL을 입력해주세요.");
+          proxy.$alert(getMessage(MSG.URL_REQUIRED));
           return false;
         }
       }
@@ -714,7 +726,7 @@ const handleFileDownload = async (item) => {
         document.body.removeChild(a);
         URL.revokeObjectURL(blobUrl);
       } catch (error) {
-        await proxy.$alert('파일 다운로드에 실패했습니다.');
+        await proxy.$alert(getMessage(MSG.FILE_DOWNLOAD_FAILED));
       }
     }
     return;
@@ -754,13 +766,13 @@ const onFileSelected = async (event, item, idx) => {
   const mtrlItemType = item.mtrlItemType;
   if (mtrlItemType === '01') {
     if (!file.type.startsWith('image/')) {
-      await proxy.$alert('자료 타입이 "이미지"일 경우 이미지 파일만\n첨부할 수 있습니다.');
+      await proxy.$alert(getMessage(MSG.IMAGE_FILE_ONLY));
       event.target.value = '';
       return;
     }
   } else if (mtrlItemType === '02') {
     if (!file.type.startsWith('video/')) {
-      await proxy.$alert('자료 타입이 "동영상"일 경우 동영상 파일만\n첨부할 수 있습니다.');
+      await proxy.$alert(getMessage(MSG.VIDEO_FILE_ONLY));
       event.target.value = '';
       return;
     }

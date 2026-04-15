@@ -6,14 +6,15 @@ import java.util.Map;
 import org.apache.ibatis.annotations.Mapper;
 import org.apache.ibatis.annotations.Param;
 
-import com.prafta.web.chkLst.chkLst01.dto.ChkLst01;
-import com.prafta.web.chkLst.chkLst01.dto.ChkLst01ReqDto;
+import com.prafta.web.chkLst.chkLst01.application.command.ChkptInfoCommand;
+import com.prafta.web.chkLst.chkLst01.application.query.ChkptListQuery;
+import com.prafta.web.chkLst.chkLst01.result.ChkptResult;
 
 @Mapper
 public interface ChkLst01Mapper {
-	List<ChkLst01> selectChkptList(@Param(value = "param") ChkLst01ReqDto dto, @Param(value = "token") Map<String, Object> tokenInfo);
+	List<ChkptResult> selectChkptList(ChkptListQuery query);
 	
-	void mergeChkptList(@Param(value = "param") ChkLst01 dto, @Param(value = "token") Map<String, Object> tokenInfo);
+	void mergeChkptList(ChkptInfoCommand command);
 	
-	void updateChkptList(@Param(value = "param") ChkLst01 dto, @Param(value = "token") Map<String, Object> tokenInfo);
+	void updateChkptList(ChkptInfoCommand command);
 }

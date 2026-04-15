@@ -153,7 +153,8 @@
             <tbody>
               <template
                 v-if="
-                  !filteredRiskTypeList || filteredRiskTypeList.length === 0
+                  !filteredriskTypeResultList ||
+                  filteredriskTypeResultList.length === 0
                 "
               >
                 <tr>
@@ -164,7 +165,7 @@
               </template>
               <template v-else>
                 <tr
-                  v-for="(risk, idx) in filteredRiskTypeList"
+                  v-for="(risk, idx) in filteredriskTypeResultList"
                   :key="risk.id"
                   @dblclick="fnSelectRiskType(risk)"
                 >
@@ -229,7 +230,14 @@
 
           <div class="custom-btn-area">
             <button class="btn btn-custom" @click="fnSearch_sec()">조회</button>
-            <button class="btn btn-custom" @click="fnAddRow_sec()">생성</button>
+            <button
+              class="btn btn-custom"
+              type="button"
+              @click="fnAddRow_sec()"
+              v-if="canAddRiskHazardRow || commonChk"
+            >
+              생성
+            </button>
             <button class="btn btn-custom" @click="fnSaveRow_sec()">
               저장
             </button>
@@ -288,7 +296,8 @@
             <tbody>
               <template
                 v-if="
-                  !filteredRiskHazardList || filteredRiskHazardList.length === 0
+                  !filteredRiskHazardResultList ||
+                  filteredRiskHazardResultList.length === 0
                 "
               >
                 <tr>
@@ -299,7 +308,7 @@
               </template>
               <template v-else>
                 <tr
-                  v-for="(hazard, idx) in filteredRiskHazardList"
+                  v-for="(hazard, idx) in filteredRiskHazardResultList"
                   :key="hazard.id"
                 >
                   <td style="text-align: center">{{ idx + 1 }}</td>
@@ -348,17 +357,18 @@ import {
   defineOptions,
   computed,
   reactive,
-} from 'vue';
-import { useFieldWatcher } from '@/utils/useFieldWatcher';
-import axios from '@/api/axios';
-import ViewHeader from '@/components/common/ViewHeader.vue';
-import BaseSelect from '@/components/common/BaseSelect.vue';
-import { useModal } from '@/utils/useModal';
-import search_icon from '@/assets/img/search_icon.png';
-import SiteSearchPop from '@/components/popup/SiteSearchPop.vue';
+} from "vue";
+import { useFieldWatcher } from "@/utils/useFieldWatcher";
+import axios from "@/api/axios";
+import ViewHeader from "@/components/common/ViewHeader.vue";
+import { getMessage, MSG } from "@/messages";
+import BaseSelect from "@/components/common/BaseSelect.vue";
+import { useModal } from "@/utils/useModal";
+import search_icon from "@/assets/img/search_icon.png";
+import SiteSearchPop from "@/components/popup/SiteSearchPop.vue";
 
 // =========================== Define ===========================
-defineOptions({ name: 'Risk_01' });
+defineOptions({ name: "Risk_01" });
 const props = defineProps({
   title: String,
   buttons: Object,
@@ -368,32 +378,32 @@ const props = defineProps({
 /* 위험요인구분 조회 데이터 */
 const srchData_fst = reactive({
   useYn: null,
-  riskTypeNm: '',
+  riskTypeNm: "",
 });
 
 /* 유해요인 조회 데이터 */
 const srchData_sec = reactive({
-  hazardNm: '',
-  hazardDesc: '',
+  hazardNm: "",
+  hazardDesc: "",
 });
 
 // =========================== Ref ===========================
 /* 버튼 관련 */
 const localButtons = ref({ ...props.buttons });
-const buttonGroupRef = ref('');
+const buttonGroupRef = ref("");
 const buttonRefs = ref([]);
 const selectedButtonIndex = ref(0);
 
 /* 카테고리/선택 관련 */
-const selectedCategoryId = ref('');
-const selectedRiskTypeCd = ref('');
-const selectedRiskTypeNm = ref('');
-const targetValNm = ref('');
+const selectedCategoryId = ref("");
+const selectedRiskTypeCd = ref("");
+const selectedRiskTypeNm = ref("");
+const targetValNm = ref("");
 
 /* 사업장 관련 */
-const siteCd = ref('');
-const siteNo = ref('');
-const siteNm = ref('');
+const siteCd = ref("");
+const siteNo = ref("");
+const siteNm = ref("");
 const commonChk = ref(true);
 
 /* 체크박스 */
@@ -403,8 +413,8 @@ const headChk_sec = ref(false);
 /* 데이터 리스트 */
 const systCodeArr = ref([]);
 const baseInfoArr = ref([]);
-const riskTypeList = ref([]);
-const riskHazardList = ref([]);
+const riskTypeResultList = ref([]);
+const riskHazardResultList = ref([]);
 
 // =========================== Data ===========================
 const { proxy } = getCurrentInstance();
@@ -412,11 +422,11 @@ const { open: openPop } = useModal();
 
 // =========================== Computed ===========================
 // 필터링된 위험요인구분 리스트
-const filteredRiskTypeList = computed(() => {
-  let filtered = [...riskTypeList.value];
+const filteredriskTypeResultList = computed(() => {
+  let filtered = [...riskTypeResultList.value];
 
   // 위험요인구분명 필터링
-  if (srchData_fst.riskTypeNm && srchData_fst.riskTypeNm.trim() !== '') {
+  if (srchData_fst.riskTypeNm && srchData_fst.riskTypeNm.trim() !== "") {
     filtered = filtered.filter((item) =>
       item.riskTypeNm
         ?.toLowerCase()
@@ -425,7 +435,7 @@ const filteredRiskTypeList = computed(() => {
   }
 
   // 사용여부 필터링
-  if (srchData_fst.useYn !== null && srchData_fst.useYn !== '') {
+  if (srchData_fst.useYn !== null && srchData_fst.useYn !== "") {
     filtered = filtered.filter((item) => item.useYn === srchData_fst.useYn);
   }
 
@@ -433,18 +443,18 @@ const filteredRiskTypeList = computed(() => {
 });
 
 // 필터링된 유해요인 리스트
-const filteredRiskHazardList = computed(() => {
-  let filtered = [...riskHazardList.value];
+const filteredRiskHazardResultList = computed(() => {
+  let filtered = [...riskHazardResultList.value];
 
   // 유해요인명 필터링
-  if (srchData_sec.hazardNm && srchData_sec.hazardNm.trim() !== '') {
+  if (srchData_sec.hazardNm && srchData_sec.hazardNm.trim() !== "") {
     filtered = filtered.filter((item) =>
       item.hazardNm?.toLowerCase().includes(srchData_sec.hazardNm.toLowerCase())
     );
   }
 
   // 유해요인 비고 필터링
-  if (srchData_sec.hazardDesc && srchData_sec.hazardDesc.trim() !== '') {
+  if (srchData_sec.hazardDesc && srchData_sec.hazardDesc.trim() !== "") {
     filtered = filtered.filter((item) =>
       item.hazardDesc
         ?.toLowerCase()
@@ -455,17 +465,29 @@ const filteredRiskHazardList = computed(() => {
   return filtered;
 });
 
+/** 우측 위험발생상황 생성: 헤더 사업장 + 좌측 선택 분류 행의 siteCd 필요(테이블 disabled와 동일) */
+const canAddRiskHazardRow = computed(() => {
+  if (proxy.$util.isEmpty(siteCd.value)) return false;
+  if (proxy.$util.isEmpty(selectedRiskTypeCd.value)) return false;
+  const row = riskTypeResultList.value.find(
+    (r) => r.riskTypeCd === selectedRiskTypeCd.value
+  );
+  if (!row) return false;
+  if (proxy.$util.isEmpty(row.siteCd)) return false;
+  return true;
+});
+
 // 세모 위치 계산
 const triangleStyle = computed(() => {
   if (!buttonRefs.value[selectedButtonIndex.value]) {
-    return { left: '0px', opacity: 0 };
+    return { left: "0px", opacity: 0 };
   }
 
   const button = buttonRefs.value[selectedButtonIndex.value];
   const buttonGroup = buttonGroupRef.value;
 
   if (!buttonGroup) {
-    return { left: '0px', opacity: 0 };
+    return { left: "0px", opacity: 0 };
   }
 
   const buttonRect = button.getBoundingClientRect();
@@ -487,21 +509,29 @@ onMounted(async () => {
 
 // =========================== Watch, Watcher ===========================
 useFieldWatcher(
-  riskTypeList,
+  riskTypeResultList,
   (item) => {
     item.chk = true;
   },
-  ['chk']
+  ["chk"]
+);
+
+useFieldWatcher(
+  filteredRiskHazardResultList,
+  (item) => {
+    item.chk = true;
+  },
+  ["chk"]
 );
 
 // =========================== Methods ===========================
 // API 호출
 const fnGetBaseinfoList = async () => {
   try {
-    const response = await axios.get('/comApi/baseinfo/base-info-list', {
+    const response = await axios.get("/comApi/baseinfo/base-info-lists", {
       params: {
-        cmpnyCd: sessionStorage.getItem('gv_cmpnyCd'),
-        baseCodeList: ['COM002'],
+        cmpnyCd: sessionStorage.getItem("gv_cmpnyCd"),
+        baseCodeList: ["COM002"],
       },
     });
 
@@ -520,13 +550,13 @@ const fnGetBaseinfoList = async () => {
 
       baseInfoArr.value = grouped;
 
-      fnCategoryClick(baseInfoArr.value['COM002'][0], 0);
+      fnCategoryClick(baseInfoArr.value["COM002"][0], 0);
     }
   } catch (err) {
     const msg =
       err?.response?.data?.message ||
       err?.message ||
-      '조회 중 오류가 발생했습니다.';
+      "조회 중 오류가 발생했습니다.";
 
     await proxy.$alert(msg);
   }
@@ -534,9 +564,9 @@ const fnGetBaseinfoList = async () => {
 
 const fnGetSystinfoList = async () => {
   try {
-    const response = await axios.get('/comApi/baseinfo/syst-info-list', {
+    const response = await axios.get("/comApi/baseinfo/syst-info-lists", {
       params: {
-        systCodeList: ['SYS003'],
+        systCodeList: ["SYS003"],
       },
     });
 
@@ -558,7 +588,7 @@ const fnGetSystinfoList = async () => {
     const msg =
       err?.response?.data?.message ||
       err?.message ||
-      '조회 중 오류가 발생했습니다.';
+      "조회 중 오류가 발생했습니다.";
 
     await proxy.$alert(msg);
   }
@@ -568,15 +598,15 @@ const fnGetSystinfoList = async () => {
 const fnSearch_fst = async () => {
   if (!commonChk.value) {
     if (proxy.$util.isEmpty(siteCd.value)) {
-      proxy.$alert('사업장을 선택해주세요.');
+      proxy.$alert(getMessage(MSG.SITE_REQUIRED));
       return;
     }
   }
 
-  riskTypeList.value = [];
+  riskTypeResultList.value = [];
 
   try {
-    const response = await axios.get('/webApi/risk01/risk-type-lists', {
+    const response = await axios.get("/webApi/risk01/risk-type-lists", {
       params: {
         processCd: selectedCategoryId.value,
         siteCd: siteCd.value,
@@ -586,15 +616,15 @@ const fnSearch_fst = async () => {
     });
 
     if (response.status === 200) {
-      const resData = response.data?.riskTypeList || [];
+      const resData = response.data?.riskTypeResultList || [];
 
-      riskTypeList.value = resData;
+      riskTypeResultList.value = resData;
     }
   } catch (err) {
     const msg =
       err?.response?.data?.message ||
       err?.message ||
-      '조회 중 오류가 발생했습니다.';
+      "조회 중 오류가 발생했습니다.";
 
     await proxy.$alert(msg);
   }
@@ -605,13 +635,18 @@ const fnSearch_sec = async () => {
     baseInfoArr.value.COM002.filter(
       (o) => o.baimValDCd == selectedCategoryId.value
     )[0].baimValDNm +
-    ' - ' +
+    " - " +
     selectedRiskTypeNm.value;
 
-  riskHazardList.value = [];
+  riskHazardResultList.value = [];
+
+  if (proxy.$util.isEmpty(selectedRiskTypeCd.value)) {
+    proxy.$alert(getMessage(MSG.RISK_FACTOR_REQUIRED));
+    return;
+  }
 
   try {
-    const response = await axios.get('/webApi/risk01/risk-hazard-lists', {
+    const response = await axios.get("/webApi/risk01/risk-hazard-lists", {
       params: {
         riskTypeCd: selectedRiskTypeCd.value,
         processCd: selectedCategoryId.value,
@@ -621,15 +656,15 @@ const fnSearch_sec = async () => {
       },
     });
     if (response.status === 200) {
-      const resData = response.data?.riskHazardList || [];
+      const resData = response.data?.riskHazardResultList || [];
 
-      riskHazardList.value = resData;
+      riskHazardResultList.value = resData;
     }
   } catch (err) {
     const msg =
       err?.response?.data?.message ||
       err?.message ||
-      '조회 중 오류가 발생했습니다.';
+      "조회 중 오류가 발생했습니다.";
 
     await proxy.$alert(msg);
   }
@@ -637,124 +672,144 @@ const fnSearch_sec = async () => {
 
 // 저장/삭제
 const fnSaveRow_fst = async () => {
-  const filteredDetail = riskTypeList.value.filter((item) => item.chk);
+  const filteredDetail = riskTypeResultList.value.filter((item) => item.chk);
 
   if (filteredDetail.length === 0) {
-    proxy.$alert('저장할 데이터가 없습니다.');
+    proxy.$alert(getMessage(MSG.SAVE_DATA_REQUIRED));
     return;
   }
 
-  const ok = await proxy.$confirm('저장하시겠습니까 ?');
+  const ok = await proxy.$confirm(getMessage(MSG.SAVE_CONFIRM));
   if (!ok) return;
 
   try {
     const response = await axios.post(
-      '/webApi/risk01/update-risk-types',
+      "/webApi/risk01/update-risk-types",
       filteredDetail
     );
 
     if (response.status === 200) {
-      proxy.$alert('처리되었습니다.');
+      proxy.$alert(getMessage(MSG.SAVE_SUCCESS));
       fnSearch_fst();
     }
   } catch (err) {
     const msg =
       err?.response?.data?.message ||
       err?.message ||
-      '저장 중 오류가 발생했습니다.';
+      "저장 중 오류가 발생했습니다.";
 
     await proxy.$alert(msg);
   }
 };
 
 const fnSaveRow_sec = async () => {
-  const filteredDetail = riskHazardList.value.filter((item) => item.chk);
-
-  if (filteredDetail.length === 0) {
-    proxy.$alert('저장할 데이터가 없습니다.');
+  const filteredDetail = riskHazardResultList.value.filter((item) => item.chk);
+  if (!(await fnDataValidationChk(filteredDetail))) {
     return;
   }
 
-  const ok = await proxy.$confirm('저장하시겠습니까 ?');
+  const ok = await proxy.$confirm(getMessage(MSG.SAVE_CONFIRM));
   if (!ok) return;
 
   try {
     const response = await axios.post(
-      '/webApi/risk01/update-risk-hazards',
+      "/webApi/risk01/update-risk-hazards",
       filteredDetail
     );
 
     if (response.status === 200) {
-      proxy.$alert('처리되었습니다.');
-      fnSearch_fst();
-    }
-  } catch (err) {
-    const msg =
-      err?.response?.data?.message ||
-      err?.message ||
-      '저장 중 오류가 발생했습니다.';
-
-    await proxy.$alert(msg);
-  }
-};
-
-const fnDeleteRow_fst = async () => {
-  const filteredDetail = riskTypeList.value.filter((item) => item.chk);
-
-  if (filteredDetail.length === 0) {
-    proxy.$alert('삭제할 데이터가 없습니다.');
-    return;
-  }
-
-  const ok = await proxy.$confirm('삭제하시겠습니까 ?');
-  if (!ok) return;
-
-  try {
-    const response = await axios.post(
-      '/webApi/risk01/delete-risk-types',
-      filteredDetail
-    );
-
-    if (response.status === 200) {
-      proxy.$alert('처리되었습니다.');
-      fnSearch_fst();
-    }
-  } catch (err) {
-    const msg =
-      err?.response?.data?.message ||
-      err?.message ||
-      '삭제 중 오류가 발생했습니다.';
-
-    await proxy.$alert(msg);
-  }
-};
-
-const fnDeleteRow_sec = async () => {
-  const filteredDetail = riskHazardList.value.filter((item) => item.chk);
-
-  if (filteredDetail.length === 0) {
-    proxy.$alert('삭제할 데이터가 없습니다.');
-    return;
-  }
-
-  const ok = await proxy.$confirm('삭제하시겠습니까 ?');
-  if (!ok) return;
-
-  try {
-    const response = await axios.post(
-      '/webApi/risk01/delete-risk-hazards',
-      filteredDetail
-    );
-
-    if (response.status === 200) {
-      proxy.$alert('처리되었습니다.');
+      proxy.$alert(getMessage(MSG.SAVE_SUCCESS));
+      // fnSearch_fst();
       fnSearch_sec();
     }
   } catch (err) {
     const msg =
       err?.response?.data?.message ||
       err?.message ||
-      '삭제제 중 오류가 발생했습니다.';
+      "저장 중 오류가 발생했습니다.";
+
+    await proxy.$alert(msg);
+  }
+};
+
+const fnDataValidationChk = async (filteredData) => {
+  if (filteredData.length === 0) {
+    await proxy.$alert(getMessage(MSG.SAVE_DATA_REQUIRED));
+    return false;
+  }
+
+  for (let i = 0; i < filteredData.length; i++) {
+    if (proxy.$util.isEmpty(filteredData[i].hazardNm)) {
+      await proxy.$alert(
+        getMessage(MSG.GRID_ROW_FIELD_REQUIRED, {
+          row: i + 1,
+          fieldLabel: "상황명",
+        })
+      );
+      return false;
+    }
+  }
+
+  return true;
+};
+
+const fnDeleteRow_fst = async () => {
+  const filteredDetail = riskTypeResultList.value.filter((item) => item.chk);
+
+  if (filteredDetail.length === 0) {
+    proxy.$alert(getMessage(MSG.DELETE_DATA_REQUIRED));
+    return;
+  }
+
+  const ok = await proxy.$confirm(getMessage(MSG.DELETE_CONFIRM));
+  if (!ok) return;
+
+  try {
+    const response = await axios.post(
+      "/webApi/risk01/delete-risk-types",
+      filteredDetail
+    );
+
+    if (response.status === 200) {
+      proxy.$alert(getMessage(MSG.SAVE_SUCCESS));
+      fnSearch_fst();
+    }
+  } catch (err) {
+    const msg =
+      err?.response?.data?.message ||
+      err?.message ||
+      "삭제 중 오류가 발생했습니다.";
+
+    await proxy.$alert(msg);
+  }
+};
+
+const fnDeleteRow_sec = async () => {
+  const filteredDetail = riskHazardResultList.value.filter((item) => item.chk);
+
+  if (filteredDetail.length === 0) {
+    proxy.$alert(getMessage(MSG.DELETE_DATA_REQUIRED));
+    return;
+  }
+
+  const ok = await proxy.$confirm(getMessage(MSG.DELETE_CONFIRM));
+  if (!ok) return;
+
+  try {
+    const response = await axios.post(
+      "/webApi/risk01/delete-risk-hazards",
+      filteredDetail
+    );
+
+    if (response.status === 200) {
+      proxy.$alert(getMessage(MSG.SAVE_SUCCESS));
+      fnSearch_sec();
+    }
+  } catch (err) {
+    const msg =
+      err?.response?.data?.message ||
+      err?.message ||
+      "삭제제 중 오류가 발생했습니다.";
 
     await proxy.$alert(msg);
   }
@@ -763,48 +818,66 @@ const fnDeleteRow_sec = async () => {
 // 행 추가
 const fnAddRow_fst = () => {
   if (!commonChk.value && proxy.$util.isEmpty(siteCd.value)) {
-    proxy.$alert('사업장을 선택해주세요.');
+    proxy.$alert(getMessage(MSG.SITE_REQUIRED));
     return;
   }
 
-  riskTypeList.value.push({
+  riskTypeResultList.value.push({
     chk: true,
-    cmpnyCd: sessionStorage.getItem('gv_cmpnyCd'),
+    cmpnyCd: sessionStorage.getItem("gv_cmpnyCd"),
     siteCd: siteCd.value,
     processCd: selectedCategoryId.value,
-    useYn: 'Y',
+    useYn: "Y",
   });
 };
 
 const fnAddRow_sec = () => {
   if (proxy.$util.isEmpty(selectedRiskTypeCd.value)) {
-    proxy.$alert('위험요인구분을 선택해주세요.');
+    proxy.$alert(getMessage(MSG.RISK_FACTOR_REQUIRED));
     return;
   }
 
   if (!commonChk.value && proxy.$util.isEmpty(siteCd.value)) {
-    proxy.$alert('사업장을 선택해주세요.');
+    proxy.$alert(getMessage(MSG.SITE_REQUIRED));
     return;
   }
 
-  riskHazardList.value.push({
+  const parentRisk = riskTypeResultList.value.find(
+    (r) => r.riskTypeCd === selectedRiskTypeCd.value
+  );
+
+  if (
+    !commonChk.value &&
+    parentRisk &&
+    proxy.$util.isEmpty(parentRisk.siteCd)
+  ) {
+    proxy.$alert(getMessage(MSG.SITE_REQUIRED));
+    return;
+  }
+
+  const hazardSiteCd =
+    !commonChk.value && parentRisk && proxy.$util.isNotEmpty(parentRisk.siteCd)
+      ? parentRisk.siteCd
+      : siteCd.value;
+
+  riskHazardResultList.value.push({
     chk: true,
-    cmpnyCd: sessionStorage.getItem('gv_cmpnyCd'),
+    cmpnyCd: sessionStorage.getItem("gv_cmpnyCd"),
     riskTypeCd: selectedRiskTypeCd.value,
     processCd: selectedCategoryId.value,
-    siteCd: siteCd.value,
-    useYn: 'Y',
+    siteCd: hazardSiteCd,
+    useYn: "Y",
   });
 };
 
 // 체크박스
 const fnHeadChk_fst = () => {
   headChk_fst.value = !headChk_fst.value;
-  filteredRiskTypeList.value.forEach((item) => {
+  filteredriskTypeResultList.value.forEach((item) => {
     // 체크박스가 표시되지 않는 경우는 무조건 false
     const isVisible =
       commonChk.value ||
-      (item.siteCd !== null && item.siteCd !== undefined && item.siteCd !== '');
+      (item.siteCd !== null && item.siteCd !== undefined && item.siteCd !== "");
     if (!isVisible) {
       item.chk = false;
     } else {
@@ -815,11 +888,11 @@ const fnHeadChk_fst = () => {
 
 const fnHeadChk_sec = () => {
   headChk_sec.value = !headChk_sec.value;
-  filteredRiskHazardList.value.forEach((item) => {
+  filteredRiskHazardResultList.value.forEach((item) => {
     // 체크박스가 표시되지 않는 경우는 무조건 false
     const isVisible =
       commonChk.value ||
-      (item.siteCd !== null && item.siteCd !== undefined && item.siteCd !== '');
+      (item.siteCd !== null && item.siteCd !== undefined && item.siteCd !== "");
     if (!isVisible) {
       item.chk = false;
     } else {
@@ -833,12 +906,12 @@ const fnCategoryClick = (button, idx) => {
   selectedCategoryId.value = button.baimValDCd;
   selectedButtonIndex.value = idx;
 
-  selectedRiskTypeCd.value = '';
-  srchData_fst.riskTypeNm = '';
+  selectedRiskTypeCd.value = "";
+  srchData_fst.riskTypeNm = "";
   srchData_fst.useYn = null;
 
-  riskTypeList.value = [];
-  riskHazardList.value = [];
+  riskTypeResultList.value = [];
+  riskHazardResultList.value = [];
 
   fnSearch_fst();
 };
@@ -847,8 +920,8 @@ const fnSelectRiskType = (risk) => {
   selectedRiskTypeCd.value = risk.riskTypeCd;
   selectedRiskTypeNm.value = risk.riskTypeNm;
 
-  srchData_sec.hazardNm = '';
-  srchData_sec.hazardDesc = '';
+  srchData_sec.hazardNm = "";
+  srchData_sec.hazardDesc = "";
 
   fnSearch_sec(risk);
 };
@@ -860,42 +933,44 @@ const setButtonRef = (el, idx) => {
 };
 
 const fnButtonControll = () => {
-  localButtons.value.search = 'N';
-  localButtons.value.save = 'N';
-  localButtons.value.create = 'N';
-  localButtons.value.delete = 'N';
-  localButtons.value.excel = 'N';
+  localButtons.value.search = "N";
+  localButtons.value.save = "N";
+  localButtons.value.create = "N";
+  localButtons.value.delete = "N";
+  localButtons.value.excel = "N";
 };
 
 const fnCommonChkChange = () => {
   if (commonChk.value) {
-    siteCd.value = '';
-    siteNo.value = '';
-    siteNm.value = '';
+    siteCd.value = "";
+    siteNo.value = "";
+    siteNm.value = "";
     fnSearch_fst();
   }
 
-  selectedRiskTypeCd.value = '';
-  srchData_fst.riskTypeNm = '';
+  selectedRiskTypeCd.value = "";
+  srchData_fst.riskTypeNm = "";
   srchData_fst.useYn = null;
 
-  srchData_sec.hazardNm = '';
-  srchData_sec.hazardDesc = '';
+  srchData_sec.hazardNm = "";
+  srchData_sec.hazardDesc = "";
 
-  targetValNm.value = '';
+  targetValNm.value = "";
 
-  riskTypeList.value = [];
-  riskHazardList.value = [];
+  riskTypeResultList.value = [];
+  riskHazardResultList.value = [];
 };
 
 // 사업장 관련
 const fnSrchSiteInfo = async () => {
   try {
-    const response = await axios.post('/comApi/baseinfo/getSiteInfoList', {
-      cmpnyCd: sessionStorage.getItem('gv_cmpnyCd'),
-      userId: sessionStorage.getItem('gv_userId'),
-      siteNo: siteNo.value,
-      siteNm: siteNm.value,
+    const response = await axios.get("/comApi/baseinfo/site-lists", {
+      params: {
+        cmpnyCd: sessionStorage.getItem("gv_cmpnyCd"),
+        userCd: sessionStorage.getItem("gv_userCd"),
+        siteNo: siteNo.value,
+        siteNm: siteNm.value,
+      },
     });
 
     if (response.status === 200) {
@@ -905,7 +980,7 @@ const fnSrchSiteInfo = async () => {
     const msg =
       err?.response?.data?.message ||
       err?.message ||
-      '조회 중 오류가 발생했습니다.';
+      "조회 중 오류가 발생했습니다.";
 
     await proxy.$alert(msg);
   }
@@ -913,19 +988,20 @@ const fnSrchSiteInfo = async () => {
 
 const fnCallback = (res) => {
   if (proxy.$util.isNotEmpty(res)) {
-    const apiId = res.config.url.split('/').pop();
+    const apiId = res.config.url.split("/").pop();
 
-    if (apiId == 'getSiteInfoList') {
-      if (res.data.length == 1) {
-        siteCd.value = res.data[0].SITE_CD;
-        siteNo.value = res.data[0].SITE_NO;
-        siteNm.value = res.data[0].SITE_NM;
-      } else if (res.data.length > 1) {
+    if (apiId == "site-lists") {
+      const siteList = res.data?.siteInfoResultList ?? [];
+      if (siteList.length === 1) {
+        siteCd.value = siteList[0].siteCd;
+        siteNo.value = siteList[0].siteNo;
+        siteNm.value = siteList[0].siteNm;
+      } else if (siteList.length > 1) {
         fnSiteSearchPopOpen();
       } else {
-        siteCd.value = '';
-        siteNo.value = '';
-        siteNm.value = '';
+        siteCd.value = "";
+        siteNo.value = "";
+        siteNm.value = "";
       }
     }
   }
@@ -942,20 +1018,20 @@ const siteFocusKill = async () => {
 };
 
 const focusKill = (e) => {
-  if (e.target.id == 'siteNo') {
+  if (e.target.id == "siteNo") {
     if (proxy.$util.isEmpty(siteNo.value)) {
-      siteCd.value = '';
-      siteNm.value = '';
+      siteCd.value = "";
+      siteNm.value = "";
     } else {
-      siteNm.value = '';
+      siteNm.value = "";
       siteFocusKill();
     }
-  } else if (e.target.id == 'siteNm') {
+  } else if (e.target.id == "siteNm") {
     if (proxy.$util.isEmpty(siteNm.value)) {
-      siteCd.value = '';
-      siteNo.value = '';
+      siteCd.value = "";
+      siteNo.value = "";
     } else {
-      siteNo.value = '';
+      siteNo.value = "";
       siteFocusKill();
     }
   }
@@ -963,9 +1039,9 @@ const focusKill = (e) => {
 
 const fnSiteSearchPopOpen = () => {
   openPop(SiteSearchPop, {
-    cmpnyCd_p: sessionStorage.getItem('gv_cmpnyCd'),
-    siteNo_p: siteNo.value,
-    siteNm_p: siteNm.value,
+    cmpnyCd_p: sessionStorage.getItem("gv_cmpnyCd"),
+    siteNo_p: "",
+    siteNm_p: "",
     onSelect: onSiteSelected,
   });
 };
@@ -1016,7 +1092,7 @@ const fnSiteSearchPopOpen = () => {
   font-size: 14px;
 }
 
-.site-search-area input[type='text'] {
+.site-search-area input[type="text"] {
   border: 1px solid #ccc;
   border-radius: 4px;
   padding: 0.05rem 0.3rem;

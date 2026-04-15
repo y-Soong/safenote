@@ -1,6 +1,5 @@
 package com.prafta.web.tbm.tbm01.controller;
 
-import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
@@ -13,22 +12,23 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestMapping;
-import org.springframework.web.bind.annotation.RequestPart;
 import org.springframework.web.bind.annotation.RestController;
-import org.springframework.web.multipart.MultipartFile;
-import org.springframework.web.multipart.MultipartHttpServletRequest;
 
-import com.fasterxml.jackson.core.type.TypeReference;
-import com.fasterxml.jackson.databind.ObjectMapper;
 import com.prafta.common.annotation.NoAuth;
-import com.prafta.common.exception.tbm.TbmApiException;
 import com.prafta.common.security.JwtUtil;
-import com.prafta.web.tbm.tbm01.dto.TbmEduInfoListReq;
-import com.prafta.web.tbm.tbm01.dto.TbmEduInfoListRes;
-import com.prafta.web.tbm.tbm01.dto.TbmEduInfoReq;
-import com.prafta.web.tbm.tbm01.dto.TbmEduItemInfoListReq;
-import com.prafta.web.tbm.tbm01.dto.TbmEduItemInfoListRes;
-import com.prafta.web.tbm.tbm01.dto.TbmEduItemInfoReq;
+import com.prafta.web.tbm.tbm01.application.param.TbmEduInfoListParam;
+import com.prafta.web.tbm.tbm01.application.param.TbmEduInfoParam;
+import com.prafta.web.tbm.tbm01.application.param.TbmEduItemInfoListParam;
+import com.prafta.web.tbm.tbm01.application.param.TbmEduItemParam;
+import com.prafta.web.tbm.tbm01.application.param.TbmEduMtrlInfoParam;
+//import com.prafta.web.tbm.tbm01.dto.TbmEduItemInfoReq;
+import com.prafta.web.tbm.tbm01.dto.request.TbmEduInfoListRequest;
+import com.prafta.web.tbm.tbm01.dto.request.TbmEduInfoRequest;
+import com.prafta.web.tbm.tbm01.dto.request.TbmEduItemInfoListRequest;
+import com.prafta.web.tbm.tbm01.dto.request.TbmEduItemRequest;
+import com.prafta.web.tbm.tbm01.dto.request.TbmEduMtrlInfoRequest;
+import com.prafta.web.tbm.tbm01.dto.response.TbmEduInfoListResponse;
+import com.prafta.web.tbm.tbm01.dto.response.TbmEduItemInfoListResponse;
 import com.prafta.web.tbm.tbm01.service.Tbm01Service;
 
 import lombok.RequiredArgsConstructor;
@@ -43,92 +43,54 @@ public class Tbm01Controller {
 	
 	private final Tbm01Service tbm01Service;
 	private final JwtUtil jwtUtil;
-	
 
 	@GetMapping("/tbm-edu-infos")
-    public ResponseEntity<?> getTbmEduInfo(@ModelAttribute TbmEduInfoListReq dto, @RequestHeader(value = "Authorization", required = false) String authorization) {
+    public ResponseEntity<?> getTbmEduInfo(@ModelAttribute TbmEduInfoListRequest request, @RequestHeader(value = "Authorization", required = false) String authorization) {
 		
-    	Map<String, Object> tokenInfo = jwtUtil.getAllClaimsAsMap(authorization);
-    	TbmEduInfoListRes retList = tbm01Service.selectTbmEduInfo(dto, tokenInfo);
+    	TbmEduInfoListResponse response = tbm01Service.selectTbmEduInfo(TbmEduInfoListParam.from(request, jwtUtil.getAllClaimsAsMap(authorization)));
 		
-//    	if(retList == null) {
-//    		throw new TbmApiException("조회된 결과가 없습니다.");
-//    	}
-    	
-    	return ResponseEntity.status(HttpStatus.OK).body(retList);
+    	return ResponseEntity.status(HttpStatus.OK).body(response);
     }
 	
 	@GetMapping("/tbm-edu-item-infos")
-    public ResponseEntity<?> getTbmEduItemInfo(@ModelAttribute TbmEduItemInfoListReq dto, @RequestHeader(value = "Authorization", required = false) String authorization) {
+    public ResponseEntity<?> getTbmEduItemInfo(@ModelAttribute TbmEduItemInfoListRequest request, @RequestHeader(value = "Authorization", required = false) String authorization) {
 		
-    	Map<String, Object> tokenInfo = jwtUtil.getAllClaimsAsMap(authorization);
-    	TbmEduItemInfoListRes retList = tbm01Service.selectTbmEduItemInfo(dto, tokenInfo);
+    	TbmEduItemInfoListResponse response = tbm01Service.selectTbmEduItemInfo(TbmEduItemInfoListParam.from(request, jwtUtil.getAllClaimsAsMap(authorization)));
 		
-//    	if(retList == null) {
-//    		throw new TbmApiException("조회된 결과가 없습니다.");
-//    	}
-    	
-    	return ResponseEntity.status(HttpStatus.OK).body(retList);
+    	return ResponseEntity.status(HttpStatus.OK).body(response);
     }
 	
-	@PostMapping(value = "/save-tbm-edu-infos", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
-	public ResponseEntity<?> saveTbmEduInfosMultipart(
-	        @ModelAttribute TbmEduInfoReq dto,
-	        @RequestPart("eduMtrlItemList") String eduMtrlItemListJson,
-	        MultipartHttpServletRequest multipartRequest,
-	        @RequestHeader(value = "Authorization", required = false) String authorization
+	@PostMapping(value = "/save-tbm-edu-infos", consumes = MediaType.APPLICATION_JSON_VALUE)
+	public ResponseEntity<?> saveTbmEduInfos(
+			@RequestBody TbmEduInfoRequest request,
+			@RequestHeader(value = "Authorization", required = false) String authorization
 	) {
-		Map<String, Object> tokenInfo = jwtUtil.getAllClaimsAsMap(authorization);
-		List<TbmEduItemInfoReq> items = null;
 		
-		try {
-			ObjectMapper om = new ObjectMapper();
-			
-			items = om.readValue(eduMtrlItemListJson, new TypeReference<List<TbmEduItemInfoReq>>() {});
-		} catch (Exception e) {
-			throw new TbmApiException("eduMtrlItemList JSON 파싱 실패.\n관리자에게 문의해주세요.");
-		}
-		
-		// 2) 파일들 수집 (item_0, item_1, ...)
-	    Map<String, MultipartFile> fileMap = new HashMap<>();
-	    multipartRequest.getFileMap().forEach((key, file) -> {
-	        if (key != null && key.startsWith("item_") && file != null && !file.isEmpty()) {
-	            fileMap.put(key, file);
-	        }
-	    });
-		
-	    // 3) 서비스로 전달해서 저장
-	    tbm01Service.saveTbmEduInfos(dto, items, fileMap, tokenInfo);
+		tbm01Service.saveTbmEduInfos(TbmEduInfoParam.from(request, jwtUtil.getAllClaimsAsMap(authorization)));
 
-	    return ResponseEntity.ok().build();
+		return ResponseEntity.ok().build();
 	}
 	
 	@PostMapping("/delete-tbm-edu-item-infos")
-	public ResponseEntity<?> deleteTbmEduItemInfo(@RequestBody List<TbmEduItemInfoReq> dtoList, @RequestHeader(value = "Authorization", required = false) String authorization) {
+	public ResponseEntity<?> deleteTbmEduItemInfo(@RequestBody List<TbmEduItemRequest> request, @RequestHeader(value = "Authorization", required = false) String authorization) {
 		
-		Map<String, Object> tokenInfo = jwtUtil.getAllClaimsAsMap(authorization);
-		
-		tbm01Service.deleteTbmEduItemInfo(dtoList, tokenInfo);
+		tbm01Service.deleteTbmEduItemInfo(TbmEduItemParam.from(request, jwtUtil.getAllClaimsAsMap(authorization)));
 		
 		return ResponseEntity.ok().build();
 	}
 	
 	@PostMapping("/save-tbm-edus")
-	public ResponseEntity<?> saveTbmEdu(@RequestBody List<TbmEduInfoReq> dtoList, @RequestHeader(value = "Authorization", required = false) String authorization) {
+	public ResponseEntity<?> saveTbmEdu(@RequestBody List<TbmEduMtrlInfoRequest> request, @RequestHeader(value = "Authorization", required = false) String authorization) {
 		
-		Map<String, Object> tokenInfo = jwtUtil.getAllClaimsAsMap(authorization);
-		
-		tbm01Service.saveTbmEdu(dtoList, tokenInfo);
+		tbm01Service.saveTbmEdu(TbmEduMtrlInfoParam.from(request, jwtUtil.getAllClaimsAsMap(authorization)));
 		
 		return ResponseEntity.ok().build();
 	}
 	
 	@PostMapping("/delete-tbm-edus")
-	public ResponseEntity<?> deleteTbmEdu(@RequestBody List<TbmEduInfoReq> dtoList, @RequestHeader(value = "Authorization", required = false) String authorization) {
+	public ResponseEntity<?> deleteTbmEdu(@RequestBody List<TbmEduMtrlInfoRequest> request, @RequestHeader(value = "Authorization", required = false) String authorization) {
 		
-		Map<String, Object> tokenInfo = jwtUtil.getAllClaimsAsMap(authorization);
-		
-		tbm01Service.deleteTbmEdu(dtoList, tokenInfo);
+		tbm01Service.deleteTbmEdu(TbmEduMtrlInfoParam.from(request, jwtUtil.getAllClaimsAsMap(authorization)));
 		
 		return ResponseEntity.ok().build();
 	}

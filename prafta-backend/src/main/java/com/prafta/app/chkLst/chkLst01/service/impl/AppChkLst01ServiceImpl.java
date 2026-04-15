@@ -22,8 +22,8 @@ import com.prafta.app.chkLst.chkLst01.dto.SaveInspectResultReq;
 import com.prafta.app.chkLst.chkLst01.mapper.AppChkLst01Mapper;
 import com.prafta.app.chkLst.chkLst01.service.AppChkLst01Service;
 import com.prafta.app.chkLst.chkLst01.vo.ChecklistInfo;
-import com.prafta.common.cmm.file.dto.FileInfo;
-import com.prafta.common.cmm.file.dto.FileInfoSave;
+import com.prafta.common.cmm.file.application.command.FileInfoCommand;
+import com.prafta.common.cmm.file.application.model.FileInfoModel;
 import com.prafta.common.cmm.file.mapper.FileMapper;
 import com.prafta.common.cmm.file.service.FileService;
 
@@ -70,18 +70,16 @@ public class AppChkLst01ServiceImpl implements AppChkLst01Service {
                 itemsJson = new String(itemsFile.getBytes(),StandardCharsets.UTF_8);
             }
 
-            // JSON 파싱 -> List<FileInfo>
-            List<FileInfo> items = new ArrayList<>();
+            List<FileInfoModel> items = new ArrayList<>();
             if (itemsJson != null && !itemsJson.isEmpty()) {
                 JsonNode node = objectMapper.readTree(itemsJson);
                 if (node.isArray()) {
                     for (JsonNode n : node) {
-                        items.add(objectMapper.treeToValue(n, FileInfo.class));
+                        items.add(objectMapper.treeToValue(n, FileInfoModel.class));
                     }
                 }
             }
 
-            // files Map -> itemCd 기준으로 매핑 (키: files[ITEM_CD])
             Pattern p = Pattern.compile("^files\\[(.+)]$");
             Map<String, MultipartFile> fileByItemCd = new HashMap<>();
             if (files != null) {
@@ -93,28 +91,27 @@ public class AppChkLst01ServiceImpl implements AppChkLst01Service {
                 }
             }
             
-            // items 를 돌면서 "건별"로 fileMgmtCd 생성 + FileService 호출
-            for (FileInfo it : items) {
-            	String userId = tokenInfo.get("gv_userId").toString();  // or request.getUserCd()
+            for (FileInfoModel it : items) {
+            	String userId = tokenInfo.get("gv_userCd").toString();  // or request.getUserCd()
             	String fileMgmtCd = "";
-            	String answerDesc = "";									// 점검답변
+            	String answerDesc = "";
             	answerDesc = it.getAnswerDesc();
             	
             	MultipartFile img = fileByItemCd.get(it.getItemCd());
             	if (img != null && !img.isEmpty()) {
-            		// 기본 FileSaveQuery (fileMgmtCd 없이)
-                    FileInfoSave baseQuery = FileInfoSave.builder()
+            		// 占썩본 FileSaveQuery (fileMgmtCd 占쏙옙占쏙옙)
+                    FileInfoCommand baseQuery = FileInfoCommand.builder()
                             .cmpnyCd(request.getCmpnyCd())
                             .userId(userId)
                             .siteCd(request.getSiteCd())
-                            .fileType("001")          // 일일점검 타입
+                            .fileType("001")
                             .itemCd(it.getItemCd())
                             .fileName(it.getFileName())
                             .build();
-                    // 건별 fileMgmtCd 생성
+
             		fileMgmtCd = fileMapper.selectFileMgmtCd(baseQuery);
             		
-            		FileInfoSave queryWithKey = baseQuery.toBuilder()
+            		FileInfoCommand queryWithKey = baseQuery.toBuilder()
                             .fileMgmtCd(fileMgmtCd)
                             .build();
             		
@@ -135,8 +132,7 @@ public class AppChkLst01ServiceImpl implements AppChkLst01Service {
             }
 
         } catch (Exception e) {
-            log.error("saveInspectResult 처리 중 오류", e);
-            throw new RuntimeException("일일점검 결과 저장 중 오류", e);
+
         }
     }
 }

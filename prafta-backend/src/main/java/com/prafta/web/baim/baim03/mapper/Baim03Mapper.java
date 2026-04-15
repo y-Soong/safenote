@@ -6,25 +6,21 @@ import java.util.Map;
 import org.apache.ibatis.annotations.Mapper;
 import org.apache.ibatis.annotations.Param;
 
-import com.prafta.web.baim.baim03.dto.Baim03;
-import com.prafta.web.baim.baim03.dto.Baim03ReqDto;
-import com.prafta.web.baim.baim03.dto.TermsDetailInfoListQry;
-import com.prafta.web.baim.baim03.dto.TermsInfoListQry;
-import com.prafta.web.baim.baim03.dto.TermsInfoSave;
-import com.prafta.web.baim.baim03.vo.TermsDetailInfo;
-import com.prafta.web.baim.baim03.vo.TermsInfo;
+import com.prafta.web.baim.baim03.application.command.TermsInfoCommand;
+import com.prafta.web.baim.baim03.application.query.TermsDetailInfoListQuery;
+import com.prafta.web.baim.baim03.application.query.TermsInfoListQuery;
+import com.prafta.web.baim.baim03.result.TermsDetailInfoResult;
+import com.prafta.web.baim.baim03.result.TermsInfoResult;
 
 @Mapper
 public interface Baim03Mapper {
-	List<TermsInfo> selectTermsList(@Param(value = "param") TermsInfoListQry dto, @Param(value = "token") Map<String, Object> tokenInfo);
+	List<TermsInfoResult> selectTermsList(TermsInfoListQuery query);
 	
-	List<TermsDetailInfo> selectTermsDList(@Param(value = "param") TermsDetailInfoListQry dto, @Param(value = "token") Map<String, Object> tokenInfo);
+	List<TermsDetailInfoResult> selectTermsDList(TermsDetailInfoListQuery query);
 	
-	Baim03 selectTermsInfo(@Param(value = "param") Baim03ReqDto dto, @Param(value = "token") Map<String, Object> tokenInfo);
+	void mergeTermsInfo(TermsInfoCommand command);
 	
-	void mergeTermsInfo(@Param(value = "param") TermsInfoSave dto, @Param(value = "token") Map<String, Object> tokenInfo);
+	void insertTermsIdVersionInfo(TermsInfoCommand command);
 	
-	void insertTermsIdVersionInfo(@Param(value = "param") TermsInfoSave dto, @Param(value = "token") Map<String, Object> tokenInfo);
-	
-	void deleteCmmCodeDetailInfo(@Param(value = "param") TermsInfoSave dto, @Param(value = "token") Map<String, Object> tokenInfo);
+	void deleteCmmCodeDetailInfo(@Param(value = "param") TermsInfoCommand dto, @Param(value = "token") Map<String, Object> tokenInfo);
 }

@@ -6,129 +6,202 @@ import java.util.Map;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-import com.prafta.common.exception.baim.BaimApiException;
-import com.prafta.web.baim.baim06.dto.CopySiteNodeReq;
-import com.prafta.web.baim.baim06.dto.CopySiteNodeSave;
-import com.prafta.web.baim.baim06.dto.SiteNodeDelete;
-import com.prafta.web.baim.baim06.dto.SiteNodeListQry;
-import com.prafta.web.baim.baim06.dto.SiteNodeListReq;
-import com.prafta.web.baim.baim06.dto.SiteNodeListRes;
-import com.prafta.web.baim.baim06.dto.SiteNodeReq;
-import com.prafta.web.baim.baim06.dto.SiteNodeSave;
+import com.prafta.common.error.baim.BaimErrorCode;
+import com.prafta.common.error.common.CommonErrorCode;
+import com.prafta.common.exception.ApiException;
+import com.prafta.web.baim.baim06.application.command.CopySiteNodeCommand;
+import com.prafta.web.baim.baim06.application.command.SiteNodeCommand;
+import com.prafta.web.baim.baim06.application.command.SiteNodeInfoCommand;
+import com.prafta.web.baim.baim06.application.model.SiteNodeModel;
+import com.prafta.web.baim.baim06.application.param.CopySiteNodeParam;
+import com.prafta.web.baim.baim06.application.param.SiteNodeAdminParam;
+import com.prafta.web.baim.baim06.application.param.SiteNodeInfoParam;
+import com.prafta.web.baim.baim06.application.param.SiteNodeListParam;
+import com.prafta.web.baim.baim06.application.param.SiteNodeParam;
+import com.prafta.web.baim.baim06.application.query.SiteNodeAdminQuery;
+import com.prafta.web.baim.baim06.application.query.SiteNodeCountQuery;
+import com.prafta.web.baim.baim06.application.query.SiteNodeListQuery;
+import com.prafta.web.baim.baim06.application.query.SiteNodeUserQuery;
+import com.prafta.web.baim.baim06.application.query.UserNodeInfoQuery;
+import com.prafta.web.baim.baim06.dto.SiteNodeAdminCommand;
+import com.prafta.web.baim.baim06.dto.request.SiteNodeAdminRequest;
+import com.prafta.web.baim.baim06.dto.response.SiteNodeListResponse;
 import com.prafta.web.baim.baim06.mapper.Baim06Mapper;
+import com.prafta.web.baim.baim06.result.SiteNodeResult;
 import com.prafta.web.baim.baim06.service.Baim06Service;
-import com.prafta.web.baim.baim06.vo.SiteNode;
+import com.prafta.web.baim.baim06.vo.UserNodeInfo;
 
+import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 
 @Slf4j
 @Service
+@RequiredArgsConstructor
 public class Baim06ServiceImpl implements Baim06Service{
 	private final Baim06Mapper baim06Mapper;
+
+	public SiteNodeListResponse selectSiteNodeList(SiteNodeListParam param) {
 		
-	public Baim06ServiceImpl(Baim06Mapper baim06Mapper) {
-		this.baim06Mapper = baim06Mapper;
-	}
-	
-//	public DailyUserSlotListRes selectDailyUserSlotList(DailyUserSlotListReq dto, Map<String, Object> tokenInfo) {
-//		
-//		DailyUserSlotListQry reqDto = DailyUserSlotListQry.builder()
-//										.siteCd(dto.getSiteCd())
-//										.slotType(dto.getSlotType())
-//										.slotStatus(dto.getSlotStatus())
-//										.useYn(dto.getUseYn())
-//										.currUserId(dto.getCurrUserId())
-//										.build();
-//		
-//		DailyUserSlotListRes retDto = null;
-//		
-//		List<DailyUserSlotList> dailyUserSlotList = baim05Mapper.selectDailyUserSlotList(reqDto, tokenInfo);
-//		
-//		if(dailyUserSlotList.size() > 0) {
-//			retDto = DailyUserSlotListRes.builder()
-//					.dailyUserSlotList(dailyUserSlotList)
-//					.build();
-//		}
-//		
-//		return retDto;
-//	}
-	public SiteNodeListRes selectSiteNodeList(SiteNodeListReq dto, Map<String, Object> tokenInfo) {
-		SiteNodeListQry reqdDto = SiteNodeListQry.builder()
-										.siteCd(dto.getSiteCd())
-										.build();
+		SiteNodeListResponse response = null;
 		
-		SiteNodeListRes retDto = null;
-		
-		List<SiteNode> siteNodeList = baim06Mapper.selectSiteNodeList(reqdDto, tokenInfo);
+		List<SiteNodeResult> siteNodeList = baim06Mapper.selectSiteNodeList(SiteNodeListQuery.from(param));
 		
 		if(siteNodeList != null && siteNodeList.size() > 0) {
-			retDto = SiteNodeListRes.builder()
+			response = SiteNodeListResponse.builder()
 											.siteNodeList(siteNodeList)
 											.build();
 		}
 		
-		return retDto;
+		return response;
 	}
 	
-	public void saveSiteNode(List<SiteNodeReq> dtoList, Map<String, Object> tokenInfo) {
+	public void saveSiteNode(SiteNodeInfoParam param) {
 		
-		for(SiteNodeReq dto : dtoList) {
+		for(SiteNodeModel model : param.siteNodeModelList()) {
 			
-			SiteNodeSave reqDto = SiteNodeSave.builder()
-										.siteCd(dto.getSiteCd())
-										.nodeCd(dto.getNodeCd())
-										.nodeNm(dto.getNodeNm())
-										.nodeType(dto.getNodeType())
-										.parentNodeCd(dto.getParentNodeCd())
-										.selfAttdApprvYn(dto.getSelfAttdApprvYn())
-										.build();
-			
-			baim06Mapper.saveSiteNode(reqDto, tokenInfo);
+			baim06Mapper.saveSiteNode(SiteNodeInfoCommand.from(model));
 		}
-	}
-	
-	public void deleteSiteNode(SiteNodeReq dto, Map<String, Object> tokenInfo) {
-		SiteNodeDelete reqDto = SiteNodeDelete.builder()
-										.siteCd(dto.getSiteCd())
-										.nodeCd(dto.getNodeCd())
-										.build();
-		
-		int nodeCnt = baim06Mapper.selectNodeCnt(reqDto, tokenInfo);
-		
-		if(nodeCnt > 1) {
-			throw new BaimApiException("하위 조직이 존재하는 경우 삭제할 수 없습니다.");
-		} 
-		else if(nodeCnt == 1) {
-			baim06Mapper.deleteSiteNode(reqDto, tokenInfo);
-		}
-		else {
-			throw new BaimApiException("조직정보 삭제를 실패했습니다.");
-		}
-	}
-	
-	public void deleteSiteAllNode(SiteNodeReq dto, Map<String, Object> tokenInfo) {
-		SiteNodeDelete reqDto = SiteNodeDelete.builder()
-										.siteCd(dto.getSiteCd())
-										.build();
-		
-		baim06Mapper.deleteSiteAllNode(reqDto, tokenInfo);
 	}
 	
 	@Transactional
-	public void copySiteNode(CopySiteNodeReq dto, Map<String, Object> tokenInfo) {
+	public void deleteSiteNode(SiteNodeParam param) {
 		
-		SiteNodeDelete reqDto = SiteNodeDelete.builder()
-				.siteCd(dto.getSiteCd())
-				.build();
+		int nodeCnt = baim06Mapper.selectNodeCnt(SiteNodeCountQuery.from(param));
+		
+		if(nodeCnt > 1) {
+			throw new ApiException(BaimErrorCode.BAIM_400_001);
+		} 
+		else if(nodeCnt == 1) {
+			baim06Mapper.deleteSiteNodeInUser(SiteNodeCommand.from(param));
+			
+			baim06Mapper.deleteSiteNode(SiteNodeCommand.from(param));
+		}
+		else {
+			throw new ApiException(BaimErrorCode.BAIM_500_002);
+		}
+	}
+	
+	@Transactional
+	public void deleteSiteAllNode(SiteNodeParam param) {
+		
+		baim06Mapper.deleteSiteAllNode(SiteNodeCommand.from(param));
+		
+		// 사업장에 속한 모든 사용자의 소속 일괄 초기화
+		baim06Mapper.deleteSiteNodeInUser(SiteNodeCommand.from(param));
+	}
+	
+	@Transactional
+	public void copySiteNode(CopySiteNodeParam param) {
 
-		baim06Mapper.deleteSiteAllNode(reqDto, tokenInfo);
+		baim06Mapper.deleteSiteAllNode(SiteNodeCommand.from(param));
 		
-		CopySiteNodeSave reqDto2 = CopySiteNodeSave.builder()
-										.siteCd(dto.getSiteCd())
-										.targetSiteCd(dto.getTargetSiteCd())
-										.build();
+		// 사업장에 속한 모든 사용자의 소속 일괄 초기화
+		baim06Mapper.deleteSiteNodeInUser(SiteNodeCommand.from(param));
 		
-		baim06Mapper.copySiteNode(reqDto2, tokenInfo);
+		baim06Mapper.copySiteNode(CopySiteNodeCommand.from(param));
 		
+	}
+	
+	@Transactional
+	public void saveSiteNodeMainAdmin(SiteNodeAdminParam param) {
+		
+		int siteNodeInAdminCnt = baim06Mapper.selectSiteNodeInAdmin(SiteNodeAdminQuery.from(param));
+		
+		/* 부서 관리자로 지정한 사용자의 기존 부서에 남은 관리자가 있는지 체크 */
+		if(siteNodeInAdminCnt == 0) {
+			
+			UserNodeInfo siteNodeAdmin = baim06Mapper.selectUserNodeInfo(UserNodeInfoQuery.from(param));
+			
+			if(siteNodeAdmin != null) {
+				String nodeCd = siteNodeAdmin.getNodeCd();
+				
+				if (nodeCd != null && !nodeCd.isBlank()) {
+
+					int siteNodeInUserCnt = baim06Mapper.selectSiteNodeInUser(SiteNodeUserQuery.from(param, nodeCd));
+					
+					/* 부서 관리자로 지정한 사용자의 기존 부서에 남은 근로자가 있는지 체크 */
+					if(siteNodeInUserCnt > 0) {
+						throw new ApiException(CommonErrorCode.COMMON_400_001, "[" + param.userNm() + "] 님의 기존 부서에 소속 근로자가 있어\n담당 정/부를 비울 수 없습니다.\n담당 정/부를 추가하거나 소속 근로자를 모두\n이동시킨 후 다시 시도해주세요.");
+					}
+				}
+			} else {
+				throw new ApiException(CommonErrorCode.COMMON_500_001, "[" + param.userNm() + "] 님의 기존 부서정보를 찾지 못했습니다.\n관리자에게 문의해주세요.");
+			}
+		}
+		
+		SiteNodeAdminCommand siteNodeAdminCommand = SiteNodeAdminCommand.from(param);
+		
+		baim06Mapper.deleteSiteNodeMainAdmin(siteNodeAdminCommand);
+		baim06Mapper.deleteSiteNodeSubAdmin(siteNodeAdminCommand);
+		baim06Mapper.saveSiteNodeMainAdmin(siteNodeAdminCommand);
+		baim06Mapper.updateUserNode(siteNodeAdminCommand);
+	}
+	
+	@Transactional
+	public void saveSiteNodeSubAdmin(SiteNodeAdminParam param) {
+		
+		int siteNodeInAdminCnt = baim06Mapper.selectSiteNodeInAdmin(SiteNodeAdminQuery.from(param));
+		
+		/* 부서 관리자로 지정한 사용자의 기존 부서에 남은 관리자가 있는지 체크 */
+		if(siteNodeInAdminCnt == 0) {
+					
+			UserNodeInfo siteNodeAdmin = baim06Mapper.selectUserNodeInfo(UserNodeInfoQuery.from(param));
+			
+			if(siteNodeAdmin != null) {
+				String nodeCd = siteNodeAdmin.getNodeCd();
+				
+				if (nodeCd != null && !nodeCd.isBlank()) {
+					
+					int siteNodeInUserCnt = baim06Mapper.selectSiteNodeInUser(SiteNodeUserQuery.from(param, nodeCd));
+					
+					/* 부서 관리자로 지정한 사용자의 기존 부서에 남은 근로자가 있는지 체크 */
+					if(siteNodeInUserCnt > 0) {
+						throw new ApiException(CommonErrorCode.COMMON_400_001, "[" + param.userNm() + "] 님의 기존 부서에 소속 근로자가 있어\n담당 정/부를 비울 수 없습니다.\n담당 정/부를 추가하거나 소속 근로자를 모두\n이동시킨 후 다시 시도해주세요.");
+					}
+				}
+			} else {
+				throw new ApiException(CommonErrorCode.COMMON_500_001, "[" + param.userNm() + "] 님의 기존 부서정보를 찾지 못했습니다.\n관리자에게 문의해주세요.");
+			}
+		}
+		
+		SiteNodeAdminCommand siteNodeAdminCommand = SiteNodeAdminCommand.from(param);
+		
+		baim06Mapper.deleteSiteNodeMainAdmin(siteNodeAdminCommand);
+		baim06Mapper.deleteSiteNodeSubAdmin(siteNodeAdminCommand);
+		baim06Mapper.saveSiteNodeSubAdmin(siteNodeAdminCommand);
+		baim06Mapper.updateUserNode(siteNodeAdminCommand);
+	}
+	
+	@Transactional
+	public void deleteSiteNodeAdmin(SiteNodeAdminParam param) {
+		
+		int siteNodeInAdminCnt = baim06Mapper.selectSiteNodeInAdmin(SiteNodeAdminQuery.from(param));
+		
+		/* 부서 관리자로 지정한 사용자의 기존 부서에 남은 관리자가 있는지 체크 */
+		if(siteNodeInAdminCnt == 0) {
+			
+			UserNodeInfo siteNodeAdmin = baim06Mapper.selectUserNodeInfo(UserNodeInfoQuery.from(param));
+			
+			if(siteNodeAdmin != null) {
+				String nodeCd = siteNodeAdmin.getNodeCd();
+				
+				if (nodeCd != null && !nodeCd.isBlank()) {
+				
+					int siteNodeInUserCnt = baim06Mapper.selectSiteNodeInUser(SiteNodeUserQuery.from(param, nodeCd));
+					
+					/* 부서 관리자로 지정한 사용자의 기존 부서에 남은 근로자가 있는지 체크 */
+					if(siteNodeInUserCnt > 0) {
+						throw new ApiException(CommonErrorCode.COMMON_400_001, "[" + param.userNm() + "] 님의 기존 부서에 소속 근로자가 있어\n담당 정/부를 비울 수 없습니다.\n담당 정/부를 추가하거나 소속 근로자를 모두\n이동시킨 후 다시 시도해주세요.");
+					}
+				}
+			} else {
+				throw new ApiException(CommonErrorCode.COMMON_500_001, "[" + param.userNm() + "] 님의 기존 부서정보를 찾지 못했습니다.\n관리자에게 문의해주세요.");
+			}
+		}
+		
+		SiteNodeAdminCommand siteNodeAdminCommand = SiteNodeAdminCommand.from(param);
+		
+		baim06Mapper.deleteSiteNodeMainAdmin(siteNodeAdminCommand);
+		baim06Mapper.deleteSiteNodeSubAdmin(siteNodeAdminCommand);
 	}
 }

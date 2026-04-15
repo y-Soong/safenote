@@ -6,15 +6,18 @@ import java.util.Map;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-import com.prafta.web.baim.baim04.dto.DailyUserLinkPoliciesQry;
-import com.prafta.web.baim.baim04.dto.DailyUserLinkPoliciesReq;
-import com.prafta.web.baim.baim04.dto.DailyUserLinkPoliciesRes;
-import com.prafta.web.baim.baim04.dto.DailyUserSlotSave;
-import com.prafta.web.baim.baim04.dto.LinkPoliciesReq;
-import com.prafta.web.baim.baim04.dto.LinkPoliciesSave;
+import com.prafta.web.baim.baim04.application.command.DailyUserSlotCommand;
+import com.prafta.web.baim.baim04.application.command.LinkPoliciesCommand;
+import com.prafta.web.baim.baim04.application.model.LinkPoliciesModel;
+import com.prafta.web.baim.baim04.application.param.DailyUserLinkPoliciesParam;
+import com.prafta.web.baim.baim04.application.param.LinkPoliciesParam;
+import com.prafta.web.baim.baim04.application.param.UserSlotCountQuery;
+import com.prafta.web.baim.baim04.application.query.DailyUserLinkPoliciesQuery;
+import com.prafta.web.baim.baim04.dto.request.LinkPoliciesRequest;
+import com.prafta.web.baim.baim04.dto.response.DailyUserLinkPoliciesResponse;
 import com.prafta.web.baim.baim04.mapper.Baim04Mapper;
+import com.prafta.web.baim.baim04.result.DailyUserLinkPolicyResult;
 import com.prafta.web.baim.baim04.service.Baim04Service;
-import com.prafta.web.baim.baim04.vo.DailyUserLinkPolicy;
 
 import lombok.extern.slf4j.Slf4j;
 
@@ -27,40 +30,29 @@ public class Baim04ServiceImpl implements Baim04Service{
 		this.baim04Mapper = baim04Mapper;
 	}
 
-	public DailyUserLinkPoliciesRes selectDailyUserLinkPolicyList(DailyUserLinkPoliciesReq dto, Map<String, Object> tokenInfo) {
+	public DailyUserLinkPoliciesResponse selectDailyUserLinkPolicyList(DailyUserLinkPoliciesParam param) {
 		
-		DailyUserLinkPoliciesQry reqDto = DailyUserLinkPoliciesQry.builder()
-											.siteCd(dto.getSiteCd())
-											.useYn(dto.getUseYn())
-											.build();
+		DailyUserLinkPoliciesResponse response = null;
 		
-		DailyUserLinkPoliciesRes retDto = null;
-		
-		List<DailyUserLinkPolicy> dailyUserLinkPolicyList = baim04Mapper.selectDailyUserLinkPolicyList(reqDto, tokenInfo);
+		List<DailyUserLinkPolicyResult> dailyUserLinkPolicyList = baim04Mapper.selectDailyUserLinkPolicyList(DailyUserLinkPoliciesQuery.from(param));
 		
 		if(dailyUserLinkPolicyList.size() > 0) {
-			retDto = DailyUserLinkPoliciesRes.builder()
+			response = DailyUserLinkPoliciesResponse.builder()
 					.dailyUserLinkPolicyList(dailyUserLinkPolicyList)
 					.build();
 		}
 		
-		return retDto;
+		return response;
 	}
 	
 	@Transactional
-	public void saveDailyUserLinkPolicy(List<LinkPoliciesReq> dtoList, Map<String, Object> tokenInfo) {
-		for(LinkPoliciesReq dto : dtoList) {
-			LinkPoliciesSave reqDto = LinkPoliciesSave.builder()
-										.cmpnyCd(dto.getCmpnyCd())
-										.siteCd(dto.getSiteCd())
-										.useYn(dto.getUseYn())
-										.dayLimitCnt(dto.getDayLimitCnt())
-										.build();
+	public void saveDailyUserLinkPolicy(LinkPoliciesParam param) {
+		for(LinkPoliciesModel model : param.linkPoliciesModelList()) {
+
+			baim04Mapper.saveDailyUserLinkPolicy(LinkPoliciesCommand.from(model));
 			
-			baim04Mapper.saveDailyUserLinkPolicy(reqDto, tokenInfo);
-			
-			int dayLimitCnt = Integer.parseInt(String.valueOf(reqDto.getDayLimitCnt()));
-			int dailyUserSlotCnt = baim04Mapper.selectDailyUserSlotCnt(reqDto, tokenInfo);
+			int dayLimitCnt = Integer.parseInt(String.valueOf(model.dayLimitCnt()));
+			int dailyUserSlotCnt = baim04Mapper.selectDailyUserSlotCnt(UserSlotCountQuery.from(model));
 			
 			if(dayLimitCnt > 0 || dailyUserSlotCnt > 0) {
 				int limit = 0;
@@ -76,39 +68,27 @@ public class Baim04ServiceImpl implements Baim04Service{
 				}
 				
 				for(int i = 0; i < limit; i++) {
-					DailyUserSlotSave dailyUserSlotSave = DailyUserSlotSave.builder()
-															.cmpnyCd((String)tokenInfo.get("gv_cmpnyCd"))
-															.siteCd(reqDto.getSiteCd())
-															.slotNo(i)
-															.slotType("01")				// 01:일반사용자, 02:QR사용자 
-															.slotStatus("01")			// 01:비점유중, 02:점유중
-															.build();
+					String useYn = "";
 					
 					if(limit == dailyUserSlotCnt) {
 						if(i < dayLimitCnt) {
-							dailyUserSlotSave = dailyUserSlotSave.toBuilder().useYn("Y").build();
+							useYn = "Y";
 						} 
 						else {
-							dailyUserSlotSave = dailyUserSlotSave.toBuilder().useYn("N").build();
+							useYn = "N";
 						}
 					}
 					
-					baim04Mapper.saveDailyUserSlot(dailyUserSlotSave, tokenInfo);
+					baim04Mapper.saveDailyUserSlot(DailyUserSlotCommand.from(model, dailyUserSlotCnt, useYn));
 				}
 			}
 		}
 	}
 	
-	public void deleteDailyUserLinkPolicy(List<LinkPoliciesReq> dtoList, Map<String, Object> tokenInfo) {
-		for(LinkPoliciesReq dto : dtoList) {
-			LinkPoliciesSave reqDto = LinkPoliciesSave.builder()
-										.cmpnyCd(dto.getCmpnyCd())
-										.siteCd(dto.getSiteCd())
-										.useYn(dto.getUseYn())
-										.dayLimitCnt(dto.getDayLimitCnt())
-										.build();
+	public void deleteDailyUserLinkPolicy(LinkPoliciesParam param) {
+		for(LinkPoliciesModel model : param.linkPoliciesModelList()) {
 			
-			baim04Mapper.deleteDailyUserLinkPolicy(reqDto, tokenInfo);
+			baim04Mapper.deleteDailyUserLinkPolicy(DailyUserSlotCommand.from(model));
 		}
 	}
 }

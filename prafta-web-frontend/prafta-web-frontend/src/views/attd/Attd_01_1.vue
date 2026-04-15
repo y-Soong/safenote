@@ -181,6 +181,7 @@ import {
 import { useModal } from "@/utils/useModal";
 import axios from "@/api/axios";
 import ViewHeader from "@/components/common/ViewHeader.vue";
+import { getMessage, MSG } from "@/messages";
 import search_icon from "@/assets/img/search_icon.png";
 import SiteSearchPop from "@/components/popup/SiteSearchPop.vue";
 import SchInfoPop from "./popup/SchInfoPop.vue";
@@ -215,7 +216,7 @@ onMounted(async () => {
 
 const fnGetSystinfoList = async () => {
   try {
-    const response = await axios.get("/comApi/baseinfo/syst-info-list", {
+    const response = await axios.get("/comApi/baseinfo/syst-info-lists", {
       params: {
         systCodeList: ["SYS003", "SYS019"],
       },
@@ -244,7 +245,7 @@ const fnGetSystinfoList = async () => {
 
 const fnSearch = async () => {
   if (proxy.$util.isEmpty(siteCd.value)) {
-    proxy.$alert("사업장을 선택해주세요.");
+    proxy.$alert(getMessage(MSG.SITE_REQUIRED));
     return;
   }
   schList.value = [];
@@ -258,7 +259,7 @@ const fnSearch = async () => {
       },
     });
     if (response.status === 200) {
-      schList.value = response.data.schInfoList;
+      schList.value = response.data.schInfoResultList;
     }
   } catch (err) {
     const msg =
@@ -272,15 +273,15 @@ const fnSearch = async () => {
 const fnSave = async () => {
   const filteredData = schList.value.filter((chkpt) => chkpt.chk);
   if (filteredData.length == 0) {
-    proxy.$alert("저장할 데이터가 없습니다.");
+    proxy.$alert(getMessage(MSG.SAVE_DATA_REQUIRED));
     return;
   }
   if (!fnDataValidationChk(filteredData)) return;
-  const ok = await proxy.$confirm("저장하시겠습니까 ?");
+  const ok = await proxy.$confirm(getMessage(MSG.SAVE_CONFIRM));
   if (!ok) return;
   try {
     await axios.post("/webApi/chkLst01/updateschList", filteredData);
-    proxy.$alert("처리되었습니다.");
+    proxy.$alert(getMessage(MSG.SAVE_SUCCESS));
     fnSearch();
   } catch (err) {
     const msg =
@@ -296,14 +297,14 @@ const fnDelete = async () => {
     (chkpt) => chkpt.chk && chkpt.chkptCd
   );
   if (filteredData.length == 0) {
-    proxy.$alert("저장할 데이터가 없습니다.");
+    proxy.$alert(getMessage(MSG.SAVE_DATA_REQUIRED));
     return;
   }
-  const ok = await proxy.$confirm("삭제하시겠습니까 ?");
+  const ok = await proxy.$confirm(getMessage(MSG.DELETE_CONFIRM));
   if (!ok) return;
   try {
     await axios.post("/webApi/chkLst01/deleteschList", filteredData);
-    proxy.$alert("처리되었습니다.");
+    proxy.$alert(getMessage(MSG.SAVE_SUCCESS));
     fnSearch();
   } catch (err) {
     const msg =
@@ -316,10 +317,12 @@ const fnDelete = async () => {
 
 const fnSrchSiteInfo = async () => {
   try {
-    const response = await axios.post("/comApi/baseinfo/getSiteInfoList", {
-      cmpnyCd: sessionStorage.getItem("gv_cmpnyCd"),
-      siteNo: siteNo.value,
-      siteNm: siteNm.value,
+    const response = await axios.get("/comApi/baseinfo/site-lists", {
+      params: {
+        cmpnyCd: sessionStorage.getItem("gv_cmpnyCd"),
+        siteNo: siteNo.value,
+        siteNm: siteNm.value,
+      },
     });
     if (response.status === 200) fnCallback(response);
   } catch (err) {
@@ -382,12 +385,13 @@ const fnDataValidationChk = (filteredData) => {
 const fnCallback = (res) => {
   if (proxy.$util.isNotEmpty(res)) {
     const apiId = res.config.url.split("/").pop();
-    if (apiId == "getSiteInfoList") {
-      if (res.data.length == 1) {
-        siteCd.value = res.data[0].SITE_CD;
-        siteNo.value = res.data[0].SITE_NO;
-        siteNm.value = res.data[0].SITE_NM;
-      } else if (res.data.length > 1) {
+    if (apiId == "site-lists") {
+      const siteList = res.data?.siteInfoResultList ?? [];
+      if (siteList.length === 1) {
+        siteCd.value = siteList[0].siteCd;
+        siteNo.value = siteList[0].siteNo;
+        siteNm.value = siteList[0].siteNm;
+      } else if (siteList.length > 1) {
         fnSiteSearchPopOpen("searchForm");
       } else {
         siteCd.value = "";
@@ -400,7 +404,7 @@ const fnCallback = (res) => {
 
 const fnCreate = () => {
   if (proxy.$util.isEmpty(siteCd.value)) {
-    proxy.$alert("사업장을 선택해주세요.");
+    proxy.$alert(getMessage(MSG.SITE_REQUIRED));
     return;
   }
   fnSchInfoPopOpen(null);
@@ -420,15 +424,15 @@ const fnSiteSearchPopOpen = (callPoint) => {
   if (callPoint == "searchForm") {
     openPop(SiteSearchPop, {
       cmpnyCd_p: sessionStorage.getItem("gv_cmpnyCd"),
-      siteNo_p: siteNo.value,
-      siteNm_p: siteNm.value,
+      siteNo_p: "",
+      siteNm_p: "",
       onSelect: onSiteSelected,
     });
   } else {
     openPop(SiteSearchPop, {
       cmpnyCd_p: sessionStorage.getItem("gv_cmpnyCd"),
-      siteNo_p: siteNo.value,
-      siteNm_p: siteNm.value,
+      siteNo_p: "",
+      siteNm_p: "",
       onSelect: (siteCdVal, siteNoVal, siteNmVal) => {
         schList.value[callPoint].siteCd = siteCdVal;
         schList.value[callPoint].siteNm = siteNmVal;

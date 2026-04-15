@@ -1,9 +1,9 @@
 package com.prafta.common.cmm.file.service;
 
-import org.springframework.web.multipart.MultipartFile;
-
-import com.prafta.common.cmm.file.dto.FileInfoSave;
+import com.prafta.common.cmm.file.dto.param.FileInfoParam;
 
 public interface FileService {
-	void saveFile(FileInfoSave request, MultipartFile file);
+//	void saveFile(FileInfoCommand request, MultipartFile file);
+	
+	void fileSave(FileInfoParam param);
 }

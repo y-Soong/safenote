@@ -1,22 +1,21 @@
 package com.prafta.web.risk.risk03.mapper;
 
 import java.util.List;
-import java.util.Map;
 
 import org.apache.ibatis.annotations.Mapper;
-import org.apache.ibatis.annotations.Param;
 
-import com.prafta.web.risk.risk03.dto.RiskAssessmentsListQry;
-import com.prafta.web.risk.risk03.dto.SaveAssessmentQry;
-import com.prafta.web.risk.risk03.vo.RiskAssessment;
-import com.prafta.web.risk.risk03.vo.RiskType;
+import com.prafta.web.risk.risk03.application.command.AssessmentCommand;
+import com.prafta.web.risk.risk03.application.query.RiskAssessmentsListQuery;
+import com.prafta.web.risk.risk03.application.query.RiskTypeInfoListQuery;
+import com.prafta.web.risk.risk03.result.RiskAssessmentResult;
+import com.prafta.web.risk.risk03.result.RiskTypeResult;
 
 @Mapper
 public interface Risk03Mapper {
 	
-	List<RiskType> selectRiskTypeList(@Param(value = "token") Map<String, Object> tokenInfo);
+	List<RiskTypeResult> selectRiskTypeList(RiskTypeInfoListQuery query);
 	
-	List<RiskAssessment> selectRiskAssessmentsLists(@Param(value = "param") RiskAssessmentsListQry dto, @Param(value = "token") Map<String, Object> tokenInfo);
+	List<RiskAssessmentResult> selectRiskAssessmentsLists(RiskAssessmentsListQuery query);
 	
-	void updateAssessment(@Param(value = "param") SaveAssessmentQry dto, @Param(value = "token") Map<String, Object> tokenInfo);
+	void updateAssessment(AssessmentCommand command);
 }

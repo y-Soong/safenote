@@ -50,16 +50,16 @@
    		, #{param.inspectAnswerType}
    		, #{param.answerDesc}
    		, #{param.fileMgmtCd}		
-		, #{token.gv_userId}
+		, #{token.gv_userCd}
 		, now()
-		, #{token.gv_userId}
+		, #{token.gv_userCd}
 		, now() 
    	)
    	ON DUPLICATE KEY UPDATE
 	    INSPECT_ANSWER_TYPE = VALUES(INSPECT_ANSWER_TYPE)
 	    , ANSWER_DESC 		= VALUES(ANSWER_DESC)
 	    , FILE_MGMT_CD		= VALUES(FILE_MGMT_CD)
-	    , UPDATE_NO   		= #{token.gv_userId}
+	    , UPDATE_NO   		= #{token.gv_userCd}
 	    , UPDATE_DATE 		= NOW()
 	</insert>
 </mapper>

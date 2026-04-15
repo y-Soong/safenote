@@ -1,18 +1,17 @@
 package com.prafta.common.aop.auth;
 
-import javax.servlet.http.HttpServletRequest;
-
 import org.aspectj.lang.annotation.Aspect;
 import org.aspectj.lang.annotation.Before;
 import org.aspectj.lang.annotation.Pointcut;
-import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Component;
 import org.springframework.web.context.request.RequestContextHolder;
 import org.springframework.web.context.request.ServletRequestAttributes;
 
-import com.prafta.common.exception.cmm.CmmApiException;
+import com.prafta.common.error.common.CommonErrorCode;
+import com.prafta.common.exception.ApiException;
 import com.prafta.common.security.JwtUtil;
 
+import jakarta.servlet.http.HttpServletRequest;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 
@@ -36,19 +35,15 @@ public class AuthCheckAspect {
         String authHeader = request.getHeader("Authorization");
 
         if (authHeader == null || !authHeader.startsWith("Bearer ")) {
-//            throw new LoginFailException("인증 토큰이 없습니다.");
-        	throw new CmmApiException(HttpStatus.UNAUTHORIZED, "유효하지 않은 토큰입니다.");
-            
+        	throw new ApiException(CommonErrorCode.COMMON_400_600);
         }
 
         String token = authHeader.substring(7);
 
         if (!jwtUtil.validateToken(token)) {
-//            throw new LoginFailException("유효하지 않은 토큰입니다.");
-        	System.out.println("유효하지 않은 토큰입니다 ~");
-        	throw new CmmApiException(HttpStatus.UNAUTHORIZED, "유효하지 않은 토큰입니다.");
+        	throw new ApiException(CommonErrorCode.COMMON_400_600);
         }
 
-        log.info("인증 성공: {}", jwtUtil.getUserIdFromToken(token));
+        log.info("인증 성공: {}", jwtUtil.getUserCdFromToken(token));
     }
 }

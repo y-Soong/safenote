@@ -6,19 +6,19 @@ import java.util.Map;
 import org.apache.ibatis.annotations.Mapper;
 import org.apache.ibatis.annotations.Param;
 
-import com.prafta.web.baim.baim02.dto.CompCmmCodeDListQry;
-import com.prafta.web.baim.baim02.dto.CompCmmCodeDSave;
-import com.prafta.web.baim.baim02.dto.CompCmmCodeMListQry;
-import com.prafta.web.baim.baim02.vo.CompCmmCodeD;
-import com.prafta.web.baim.baim02.vo.CompCmmCodeM;
+import com.prafta.web.baim.baim02.application.command.CompCmmCodeDCommand;
+import com.prafta.web.baim.baim02.application.query.CompCmmCodeDListQuery;
+import com.prafta.web.baim.baim02.application.query.CompCmmCodeMListQuery;
+import com.prafta.web.baim.baim02.result.CompCmmCodeDResult;
+import com.prafta.web.baim.baim02.result.CompCmmCodeMResult;
 
 @Mapper
 public interface Baim02Mapper {
-	List<CompCmmCodeM> selectCompCmmCodeMList(@Param(value = "param") CompCmmCodeMListQry dto, @Param(value = "token") Map<String, Object> tokenInfo);
+	List<CompCmmCodeMResult> selectCompCmmCodeMList(CompCmmCodeMListQuery query);
 	
-	List<CompCmmCodeD> selectCompCmmCodeDList(@Param(value = "param") CompCmmCodeDListQry dto, @Param(value = "token") Map<String, Object> tokenInfo);
+	List<CompCmmCodeDResult> selectCompCmmCodeDList(CompCmmCodeDListQuery query);
 	
-	void mergeCmmCodeDetailInfo(@Param(value = "param") CompCmmCodeDSave dto, @Param(value = "token") Map<String, Object> tokenInfo);
+	void mergeCmmCodeDetailInfo(CompCmmCodeDCommand command);
 	
-	void deleteCmmCodeDetailInfo(@Param(value = "param") CompCmmCodeDSave dto, @Param(value = "token") Map<String, Object> tokenInfo);
+	void deleteCmmCodeDetailInfo(CompCmmCodeDCommand command);
 }

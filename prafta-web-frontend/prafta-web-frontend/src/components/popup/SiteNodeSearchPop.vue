@@ -62,6 +62,7 @@
         <!-- 🔹 3. 그리드 영역 -->
         <div class="viewBody">
           <div class="table-wrapper">
+            <p class="site-node-notice">담당자가 정해진 부서만 조회됩니다.</p>
             <table class="data-grid">
               <thead>
                 <tr>
@@ -128,24 +129,27 @@ import { useCenteredDraggable } from "@/composables/useCenteredDraggable";
 import BaseSelect from "@/components/common/BaseSelect.vue";
 import axios from "@/api/axios";
 
-const emit = defineEmits(["select", "close"]);
-const modalRef = ref(null);
-const nodeList = ref([]);
-const baseCodeArr = ref([]);
 const { proxy } = getCurrentInstance();
-
-const nodeCd = ref("");
-const nodeNm = ref("");
-const nodeType = ref("");
-const parentNodeNm = ref("");
 
 const props = defineProps({
   visible: Boolean,
   cmpnyCd_p: String,
   siteCd_p: String,
+  nodeCd_p: String,
+  nodeNm_p: String,
   userId_p: String,
   onSelect: Function,
 });
+
+const emit = defineEmits(["select", "close"]);
+const modalRef = ref(null);
+const nodeList = ref([]);
+const baseCodeArr = ref([]);
+
+const nodeCd = ref(props.nodeCd_p || "");
+const nodeNm = ref(props.nodeNm_p || "");
+const nodeType = ref("");
+const parentNodeNm = ref("");
 
 // 공통 훅으로 화면 중앙(살짝 위쪽)에 배치 + 드래그 가능
 const { position, startDrag } = useCenteredDraggable(modalRef, {
@@ -160,7 +164,7 @@ onMounted(async () => {
 
 const fnGetBaseinfoList = async () => {
   try {
-    const response = await axios.get("/comApi/baseinfo/base-info-list", {
+    const response = await axios.get("/comApi/baseinfo/base-info-lists", {
       params: {
         cmpnyCd: sessionStorage.getItem("gv_cmpnyCd") || props.cmpnyCd_p,
         baseCodeList: ["COM004"],
@@ -227,3 +231,11 @@ const fnSelectRow = (nodeCd, nodeNm) => {
   emit("close"); // 팝업 닫기
 };
 </script>
+
+<style scoped>
+.site-node-notice {
+  color: #dc2626;
+  font-size: 0.875rem;
+  margin: 0 0 0.5rem 0;
+}
+</style>

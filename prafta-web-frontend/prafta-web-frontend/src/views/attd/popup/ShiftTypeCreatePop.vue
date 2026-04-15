@@ -227,6 +227,7 @@ import { ref, computed, watch, getCurrentInstance, onMounted } from "vue";
 import { useCenteredDraggable } from "@/composables/useCenteredDraggable";
 import BaseSelect from "@/components/common/BaseSelect.vue";
 import axios from "@/api/axios";
+import { getMessage, MSG } from "@/messages";
 
 // ================ Options ================
 // (defineOptions 사용 시 추가)
@@ -363,7 +364,7 @@ watch(groups, () => rebuildAssignments(), { deep: true });
 // ================ API Functions ================
 const fnGetSystinfoList = async () => {
   try {
-    const response = await axios.get("/comApi/baseinfo/syst-info-list", {
+    const response = await axios.get("/comApi/baseinfo/syst-info-lists", {
       params: { systCodeList: ["SYS003"] },
     });
     if (response.status === 200) {
@@ -387,7 +388,7 @@ const fnGetSystinfoList = async () => {
 
 const fnSchInfoList = async () => {
   if (proxy.$util.isEmpty(props.siteCd_p)) {
-    proxy.$alert("사업장을 선택해주세요.");
+    proxy.$alert(getMessage(MSG.SITE_REQUIRED));
     return;
   }
   patternOptions.value = [];
@@ -443,7 +444,7 @@ const fnShiftDetail = async () => {
 const fnCreate = async () => {
   if (!canCreate.value) return;
 
-  const ok = await proxy.$confirm("생성하시겠습니까?");
+  const ok = await proxy.$confirm(getMessage(MSG.CREATE_CONFIRM));
   if (!ok) return;
 
   const payload = buildCreatePayload();
@@ -454,7 +455,7 @@ const fnCreate = async () => {
       payload
     );
     if (response.status === 200) {
-      proxy.$alert("처리되었습니다.");
+      proxy.$alert(getMessage(MSG.SAVE_SUCCESS));
       props.onSearch?.();
       emit("close");
     }
@@ -497,7 +498,7 @@ function removeGroup(idx) {
 function fnAutoFill() {
   const base = assignments.value[0];
   if (!base || base.some((v) => !v)) {
-    proxy.$alert("A조의 모든 Day를 선택해주세요.");
+    proxy.$alert(getMessage(MSG.SHIFT_DAY_REQUIRED));
     return;
   }
   const next = { ...assignments.value };

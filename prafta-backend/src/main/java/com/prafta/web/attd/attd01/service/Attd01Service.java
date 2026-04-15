@@ -1,29 +1,27 @@
 package com.prafta.web.attd.attd01.service;
 
-import java.util.Map;
-
-import com.prafta.web.attd.attd01.dto.SchInfoHistReq;
-import com.prafta.web.attd.attd01.dto.SchInfoHistRes;
-import com.prafta.web.attd.attd01.dto.SchInfoListReq;
-import com.prafta.web.attd.attd01.dto.SchInfoListRes;
-import com.prafta.web.attd.attd01.dto.SchInfoReq;
-import com.prafta.web.attd.attd01.dto.ShiftSchDetailReq;
-import com.prafta.web.attd.attd01.dto.ShiftSchDetailRes;
-import com.prafta.web.attd.attd01.dto.ShiftSchInfoListReq;
-import com.prafta.web.attd.attd01.dto.ShiftSchInfoListRes;
-import com.prafta.web.attd.attd01.dto.ShiftSchInfoReq;
+import com.prafta.web.attd.attd01.application.param.SchInfoHistParam;
+import com.prafta.web.attd.attd01.application.param.SchInfoListParam;
+import com.prafta.web.attd.attd01.application.param.SchInfoParam;
+import com.prafta.web.attd.attd01.application.param.ShiftSchDetailParam;
+import com.prafta.web.attd.attd01.application.param.ShiftSchInfoListParam;
+import com.prafta.web.attd.attd01.application.param.ShiftSchInfoParam;
+import com.prafta.web.attd.attd01.dto.response.SchInfoHistResponse;
+import com.prafta.web.attd.attd01.dto.response.SchInfoListResponse;
+import com.prafta.web.attd.attd01.dto.response.ShiftSchDetailResponse;
+import com.prafta.web.attd.attd01.dto.response.ShiftSchInfoListResponse;
 
 public interface Attd01Service {
-	SchInfoListRes selectSchInfoList(SchInfoListReq dto, Map<String, Object> tokenInfo);
+	SchInfoListResponse selectSchInfoList(SchInfoListParam param);
 	
-	void updateSchInfo(SchInfoReq dto, Map<String, Object> tokenInfo);
+	void updateSchInfo(SchInfoParam param);
 	
-	SchInfoHistRes selectSchHistList(SchInfoHistReq dto, Map<String, Object> tokenInfo);
+	SchInfoHistResponse selectSchHistList(SchInfoHistParam param);
 	
-	void updateShiftSchInfo(ShiftSchInfoReq dto, Map<String, Object> tokenInfo);
+	void updateShiftSchInfo(ShiftSchInfoParam param);
 	
-	ShiftSchInfoListRes selectShiftSchInfoList(ShiftSchInfoListReq dto, Map<String, Object> tokenInfo);
+	ShiftSchInfoListResponse selectShiftSchInfoList(ShiftSchInfoListParam param);
 	
-	ShiftSchDetailRes selectShiftSchDetail(ShiftSchDetailReq dto, Map<String, Object> tokenInfo);
+	ShiftSchDetailResponse selectShiftSchDetail(ShiftSchDetailParam param);
 	
 }

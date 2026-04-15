@@ -1,7 +1,6 @@
 package com.prafta.web.baim.baim01.controller;
 
 import java.util.List;
-import java.util.Map;
 
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -15,16 +14,17 @@ import org.springframework.web.bind.annotation.RestController;
 
 import com.prafta.common.annotation.NoAuth;
 import com.prafta.common.security.JwtUtil;
-import com.prafta.web.baim.baim01.dto.SiteInfoListReq;
-import com.prafta.web.baim.baim01.dto.SiteInfoListRes;
-import com.prafta.web.baim.baim01.dto.SiteInfoReq;
+import com.prafta.web.baim.baim01.application.param.SiteInfoListParam;
+import com.prafta.web.baim.baim01.application.param.SiteInfoParam;
+import com.prafta.web.baim.baim01.dto.request.SiteInfoListRequest;
+import com.prafta.web.baim.baim01.dto.request.SiteInfoRequest;
+import com.prafta.web.baim.baim01.dto.response.SiteInfoListResponse;
 import com.prafta.web.baim.baim01.service.Baim01Service;
 
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 
 @Slf4j
-@NoAuth
 @RestController
 @RequestMapping("/baim01")
 @RequiredArgsConstructor
@@ -34,19 +34,17 @@ public class Baim01Controller {
 	private final JwtUtil jwtUtil;
 
 	@GetMapping("/site-info-lists")
-    public ResponseEntity<?> getSiteInfoList(@ModelAttribute SiteInfoListReq dto, @RequestHeader(value = "Authorization", required = false) String authorization) {
-		Map<String, Object> tokenInfo = jwtUtil.getAllClaimsAsMap(authorization);
+    public ResponseEntity<?> getSiteInfoList(@ModelAttribute SiteInfoListRequest request, @RequestHeader(value = "Authorization", required = false) String authorization) {
 		
-		SiteInfoListRes retList = baim01Service.selectSiteInfoList(dto, tokenInfo);
+		SiteInfoListResponse response = baim01Service.selectSiteInfoList(SiteInfoListParam.from(request, jwtUtil.getAllClaimsAsMap(authorization)));
     	
-    	return ResponseEntity.status(HttpStatus.OK).body(retList);
+    	return ResponseEntity.status(HttpStatus.OK).body(response);
     }
     
     @PostMapping("/save-site-infos")
-    public ResponseEntity<?> saveSiteInfo(@RequestBody List<SiteInfoReq> dtoList, @RequestHeader(value = "Authorization", required = false) String authorization) {
-    	Map<String, Object> tokenInfo = jwtUtil.getAllClaimsAsMap(authorization);
+    public ResponseEntity<?> saveSiteInfo(@RequestBody List<SiteInfoRequest> request, @RequestHeader(value = "Authorization", required = false) String authorization) {
     	
-    	baim01Service.saveSiteInfo(dtoList, tokenInfo);
+    	baim01Service.saveSiteInfo(SiteInfoParam.from(request, jwtUtil.getAllClaimsAsMap(authorization)));
     	
     	return ResponseEntity.status(HttpStatus.OK).build();
     }

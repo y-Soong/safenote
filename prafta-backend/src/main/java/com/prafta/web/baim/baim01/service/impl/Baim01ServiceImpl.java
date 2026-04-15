@@ -1,20 +1,21 @@
 package com.prafta.web.baim.baim01.service.impl;
 
 import java.util.List;
-import java.util.Map;
 
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-import com.prafta.web.baim.baim01.dto.MasterSiteAuthSetCommand;
-import com.prafta.web.baim.baim01.dto.SiteInfoListQry;
-import com.prafta.web.baim.baim01.dto.SiteInfoListReq;
-import com.prafta.web.baim.baim01.dto.SiteInfoListRes;
-import com.prafta.web.baim.baim01.dto.SiteInfoReq;
-import com.prafta.web.baim.baim01.dto.SiteInfoSave;
+import com.prafta.web.baim.baim01.application.command.MasterSiteAuthSetCommand;
+import com.prafta.web.baim.baim01.application.command.SiteInfoCommand;
+import com.prafta.web.baim.baim01.application.command.SiteNodeInfoCommand;
+import com.prafta.web.baim.baim01.application.model.SiteInfoModel;
+import com.prafta.web.baim.baim01.application.param.SiteInfoListParam;
+import com.prafta.web.baim.baim01.application.param.SiteInfoParam;
+import com.prafta.web.baim.baim01.application.query.SiteInfoListQuery;
+import com.prafta.web.baim.baim01.dto.response.SiteInfoListResponse;
 import com.prafta.web.baim.baim01.mapper.Baim01Mapper;
+import com.prafta.web.baim.baim01.result.SiteInfoResult;
 import com.prafta.web.baim.baim01.service.Baim01Service;
-import com.prafta.web.baim.baim01.vo.SiteInfo;
 
 import lombok.extern.slf4j.Slf4j;
 
@@ -28,70 +29,40 @@ public class Baim01ServiceImpl implements Baim01Service{
 	}
 	
 	
-	public SiteInfoListRes selectSiteInfoList(SiteInfoListReq dto, Map<String, Object> tokenInfo) {
+	public SiteInfoListResponse selectSiteInfoList(SiteInfoListParam param) {
 		
-		SiteInfoListQry reqDto = SiteInfoListQry.builder()
-								.siteCd(dto.getSiteCd())
-								.siteNo(dto.getSiteNo())
-								.siteNm(dto.getSiteNm())
-								.build();
+		SiteInfoListResponse response = null;
 		
-		SiteInfoListRes retDto = null;
-		
-		List<SiteInfo> siteInfoList = baim01Mapper.selectSiteInfoList(reqDto, tokenInfo);
+		List<SiteInfoResult> siteInfoList = baim01Mapper.selectSiteInfoList(SiteInfoListQuery.from(param));
 		
 		if(siteInfoList.size() > 0) {
-			retDto = SiteInfoListRes.builder()
+			response = SiteInfoListResponse.builder()
 					.siteInfoList(siteInfoList)
 					.build();
 		}
 		
-		return retDto;	
+		return response;	
 	}
 	
 	@Transactional
-	public void saveSiteInfo(List<SiteInfoReq> dtoList, Map<String, Object> tokenInfo) {
+	public void saveSiteInfo(SiteInfoParam param) {
 		
-		for(SiteInfoReq dto : dtoList) {
+		for(SiteInfoModel model : param.siteInfoModelList()) {
 			
 			String siteCd = "";
 			
-			if(dto.getSiteCd() != null) {
-				siteCd = dto.getSiteCd();
-			} else {
-				siteCd = baim01Mapper.selectSiteCd(tokenInfo);
+			if(model.siteCd() != null) {					// 기존 사업장 데이터 변경
+				siteCd = model.siteCd();
+			} else {										// 신규 사업장 생성
+				siteCd = baim01Mapper.selectSiteCd(model.gvCmpnyCd());
 			}
 			
-			SiteInfoSave siteInfoSave = SiteInfoSave.builder()
-									    .cmpnyCd(dto.getCmpnyCd())
-									    .siteCd(siteCd)
-									    .siteNo(dto.getSiteNo())
-									    .siteNm(dto.getSiteNm())
-					
-									    .addr1(dto.getAddr1())
-									    .addr2(dto.getAddr2())
-									    .zipCode(dto.getZipCode())
-					
-									    .strDate(dto.getStrDate())   // 시작일
-									    .endDate(dto.getEndDate())   // 종료일
-					
-									    .useYn(dto.getUseYn())
-									    .siteAdminId(dto.getSiteAdminId())
-									    .telNo(dto.getTelNo())
-					
-									    .gpsRange(dto.getGpsRange())
-									    .siteDesc(dto.getSiteDesc())
-									    .build();
+			// 초기 1 depth 노드 생서
+			baim01Mapper.insertSiteNodeInfo(SiteNodeInfoCommand.from(model, siteCd));
 			
-			baim01Mapper.mergeSiteInfo(siteInfoSave, tokenInfo);
+			baim01Mapper.mergeSiteInfo(SiteInfoCommand.from(model, siteCd));
 			
-			MasterSiteAuthSetCommand masterSiteAuthSetCommand = MasterSiteAuthSetCommand.builder()
-																						.siteCd(siteCd)
-																						.build();
-			
-			baim01Mapper.mergeMasterSiteAuthSet(masterSiteAuthSetCommand, tokenInfo);
-			
-			
+			baim01Mapper.mergeMasterSiteAuthSet(MasterSiteAuthSetCommand.from(model, siteCd));
 		}
 	}
 	

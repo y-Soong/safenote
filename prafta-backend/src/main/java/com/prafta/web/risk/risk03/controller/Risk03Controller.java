@@ -1,26 +1,30 @@
 package com.prafta.web.risk.risk03.controller;
 
-import java.util.Map;
+import java.util.Base64;
 
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
+import org.springframework.util.StringUtils;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.ModelAttribute;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestMapping;
-import org.springframework.web.bind.annotation.RequestPart;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.multipart.MultipartFile;
 
 import com.prafta.common.annotation.NoAuth;
-import com.prafta.common.exception.login.LoginApiException;
+import com.prafta.common.cmm.file.dto.BytesMultipartFile;
 import com.prafta.common.security.JwtUtil;
-import com.prafta.web.risk.risk03.dto.RiskAssessmentsListReq;
-import com.prafta.web.risk.risk03.dto.RiskAssessmentsListRes;
-import com.prafta.web.risk.risk03.dto.RiskTypeListRes;
-import com.prafta.web.risk.risk03.dto.SaveAssessmentReq;
+import com.prafta.web.risk.risk03.application.param.AssessmentParam;
+import com.prafta.web.risk.risk03.application.param.RiskAssessmentsListParam;
+import com.prafta.web.risk.risk03.application.param.RiskTypeInfoListParam;
+import com.prafta.web.risk.risk03.dto.request.AssessmentRequest;
+import com.prafta.web.risk.risk03.dto.request.RiskAssessmentsListRequest;
+import com.prafta.web.risk.risk03.dto.response.RiskAssessmentsListResponse;
+import com.prafta.web.risk.risk03.dto.response.RiskTypeListResponse;
 import com.prafta.web.risk.risk03.service.Risk03Service;
 
 import lombok.RequiredArgsConstructor;
@@ -39,36 +43,33 @@ public class Risk03Controller {
 	@GetMapping("/risk-type-info-lists")
 	public ResponseEntity<?> getRiskTypeInfoList(@RequestHeader(value = "Authorization", required = false) String authorization) {
   	
-		Map<String, Object> tokenInfo = jwtUtil.getAllClaimsAsMap(authorization);
-		RiskTypeListRes retList = risk03Service.selectRiskTypeInfoList(tokenInfo);
+		RiskTypeListResponse response = risk03Service.selectRiskTypeInfoList(RiskTypeInfoListParam.from(jwtUtil.getAllClaimsAsMap(authorization)));
 		
-//		if(retList == null) {
-//			throw new LoginFailException("조회된 결과가 없습니다.");
-//		}
-  	
-		return ResponseEntity.status(HttpStatus.OK).body(retList);
+		return ResponseEntity.status(HttpStatus.OK).body(response);
 	}
 	
 	@GetMapping("/risk-assessment-lists")
-	public ResponseEntity<?> getRiskAssessmentsLists(@ModelAttribute RiskAssessmentsListReq dto, @RequestHeader(value = "Authorization", required = false) String authorization) {
+	public ResponseEntity<?> getRiskAssessmentsLists(@ModelAttribute RiskAssessmentsListRequest request, @RequestHeader(value = "Authorization", required = false) String authorization) {
   	
-		Map<String, Object> tokenInfo = jwtUtil.getAllClaimsAsMap(authorization);
-		RiskAssessmentsListRes retList = risk03Service.selectRiskAssessmentsLists(dto, tokenInfo);
+		RiskAssessmentsListResponse response = risk03Service.selectRiskAssessmentsLists(RiskAssessmentsListParam.from(request, jwtUtil.getAllClaimsAsMap(authorization)));
 		
-//		if(retList == null) {
-//			throw new LoginFailException("조회된 결과가 없습니다.");
-//		}
-  	
-		return ResponseEntity.status(HttpStatus.OK).body(retList);
+		return ResponseEntity.status(HttpStatus.OK).body(response);
 	}
 	
-	@PostMapping(value = "/save-assessments", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
-	public ResponseEntity<?> saveAssessment(@ModelAttribute SaveAssessmentReq request, @RequestPart(value = "item", required = false) MultipartFile file, @RequestHeader(value = "Authorization", required = false) String authorization) {
-    	
-    	Map<String, Object> tokenInfo = jwtUtil.getAllClaimsAsMap(authorization);
-    	
-    	risk03Service.saveAssessment(request, file, tokenInfo);
-    	
-    	return ResponseEntity.status(HttpStatus.OK).build();
-    }
+	@PostMapping(value = "/save-assessments", consumes = MediaType.APPLICATION_JSON_VALUE)
+	public ResponseEntity<?> saveAssessment(@RequestBody AssessmentRequest request, @RequestHeader(value = "Authorization", required = false) String authorization) {
+
+		MultipartFile file = null;
+		if (StringUtils.hasText(request.getItemBase64())) {
+			byte[] bytes = Base64.getDecoder().decode(request.getItemBase64().trim());
+			String fileName = StringUtils.hasText(request.getItemOriginalFilename())
+					? request.getItemOriginalFilename()
+					: "upload.bin";
+			file = new BytesMultipartFile("item", fileName, null, bytes);
+		}
+
+		risk03Service.saveAssessment(AssessmentParam.from(request, jwtUtil.getAllClaimsAsMap(authorization)), file);
+
+		return ResponseEntity.status(HttpStatus.OK).build();
+	}
 }

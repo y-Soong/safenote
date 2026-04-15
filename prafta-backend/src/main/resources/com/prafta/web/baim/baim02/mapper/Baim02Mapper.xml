@@ -2,7 +2,7 @@
 <!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
 <mapper namespace="com.prafta.web.baim.baim02.mapper.Baim02Mapper">
 
-    <select id="selectCompCmmCodeMList" parameterType="com.prafta.web.baim.baim02.dto.CompCmmCodeMListQry" resultType="com.prafta.web.baim.baim02.vo.CompCmmCodeM">
+    <select id="selectCompCmmCodeMList" parameterType="com.prafta.web.baim.baim02.application.query.CompCmmCodeMListQuery" resultType="com.prafta.web.baim.baim02.result.CompCmmCodeMResult">
     /* Baim02Mapper.selectCompCmmCodeMList */
     SELECT
     	'' 				AS chk
@@ -15,14 +15,14 @@
     	, VAL_DESC		AS valDesc
    	FROM TB_BAIM_VAL_M
    	WHERE 1=1
-   	  AND CMPNY_CD = #{token.gv_cmpnyCd}
+   	  AND CMPNY_CD = #{gvCmpnyCd}
    	  AND USE_YN = 'Y'
-   	  <if test="param.codeNm != null and param.codeNm != ''">
-   	  	AND BAIM_VAL_NM LIKE CONCAT('%', #{param.codeNm}, '%')
+   	  <if test="codeNm != null and codeNm != ''">
+   	  	AND BAIM_VAL_NM LIKE CONCAT('%', #{codeNm}, '%')
    	  </if>
 	</select>
 	
-	<select id="selectCompCmmCodeDList" parameterType="com.prafta.web.baim.baim02.dto.CompCmmCodeDListQry" resultType="com.prafta.web.baim.baim02.vo.CompCmmCodeD">
+	<select id="selectCompCmmCodeDList" parameterType="com.prafta.web.baim.baim02.application.query.CompCmmCodeDListQuery" resultType="com.prafta.web.baim.baim02.result.CompCmmCodeDResult">
     /* Baim02Mapper.selectCompCmmCodeDList */
     SELECT
     	'' 					AS chk
@@ -40,16 +40,17 @@
    		 	ON (
    		 		A.CMPNY_CD = B.CMPNY_CD
  		 	AND A.BAIM_VAL_CD = B.BAIM_VAL_CD
- 		 	AND B.VAL_D_INFO_1 != 'manage'					/* 관리 코드는 조회 제외 */
+ 		 	AND (B.VAL_D_INFO_1 IS NULL OR B.VAL_D_INFO_1 != 'manage')					/* 관리 코드는 조회 제외 */
  		 	AND B.USE_YN = 'Y'
    		 	)
    	WHERE 1=1
-   	  AND A.CMPNY_CD = #{token.gv_cmpnyCd}
+   	  AND A.CMPNY_CD = #{gvCmpnyCd}
    	  AND A.USE_YN = 'Y'
-   	  AND A.BAIM_VAL_CD = #{param.codeCd}
+   	  AND A.BAIM_VAL_CD = #{codeCd}
+   	ORDER BY B.SORT_IDX
 	</select>
 	
-	<insert id="mergeCmmCodeDetailInfo" parameterType="com.prafta.web.baim.baim02.dto.CompCmmCodeDSave">
+	<insert id="mergeCmmCodeDetailInfo" parameterType="com.prafta.web.baim.baim02.application.command.CompCmmCodeDCommand">
 	/* Baim02Mapper.mergeCmmCodeDetailInfo */	
     INSERT INTO TB_BAIM_VAL_D (
     	CMPNY_CD
@@ -67,41 +68,41 @@
     	, UPDATE_DATE
    	)
    	VALUES(
-   		#{token.gv_cmpnyCd}
-   		, #{param.baimValCd}
-   		, IFNULL(#{param.baimValDCd}, FNC_CMM_SEQ_NEXTVAL(#{token.gv_cmpnyCd}, #{param.baimValCd}))
-   		, #{param.baimValDNm}
-   		, #{param.sortIdx}
-		, #{param.useYn}
-		, #{param.valDInfo1}
-		, #{param.valDInfo2}
-		, #{param.valDDesc}
-		, #{token.gv_userId}
+   		#{gvCmpnyCd}
+   		, #{baimValCd}
+   		, IFNULL(#{baimValDCd}, FNC_CMM_SEQ_NEXTVAL(#{gvCmpnyCd}, #{baimValCd}))
+   		, #{baimValDNm}
+   		, #{sortIdx}
+		, #{useYn}
+		, #{valDInfo1}
+		, #{valDInfo2}
+		, #{valDDesc}
+		, #{gvUserCd}
 		, now()
-		, #{token.gv_userId}
+		, #{gvUserCd}
 		, now() 
-   	)
+   	) AS NEW
    	ON DUPLICATE KEY UPDATE
-	    USE_YN     		= VALUES(USE_YN)
-	    , BAIM_VAL_D_NM = VALUES(BAIM_VAL_D_NM)
-	    , SORT_IDX		= VALUES(SORT_IDX)
-	    , USE_YN		= IFNULL(#{param.useYn}, 'Y')
-	    , VAL_D_INFO_1	= VALUES(VAL_D_INFO_1)
-    	, VAL_D_INFO_2	= VALUES(VAL_D_INFO_2)
-    	, VAL_D_DESC	= VALUES(VAL_D_DESC)
-	    , UPDATE_NO   	= #{token.gv_userId}
+	    USE_YN     		= NEW.USE_YN
+	    , BAIM_VAL_D_NM = NEW.BAIM_VAL_D_NM
+	    , SORT_IDX		= NEW.SORT_IDX
+	    , USE_YN		= IFNULL(NEW.USE_YN, 'Y')
+	    , VAL_D_INFO_1	= NEW.VAL_D_INFO_1
+    	, VAL_D_INFO_2	= NEW.VAL_D_INFO_2
+    	, VAL_D_DESC	= NEW.VAL_D_DESC
+	    , UPDATE_NO   	= NEW.UPDATE_NO
 	    , UPDATE_DATE 	= NOW()
 	</insert>
 	
-	<update id="deleteCmmCodeDetailInfo" parameterType="com.prafta.web.baim.baim02.dto.CompCmmCodeDSave">
+	<update id="deleteCmmCodeDetailInfo" parameterType="com.prafta.web.baim.baim02.application.command.CompCmmCodeDCommand">
 	/* Baim02Mapper.mergeCmmCodeDetailInfo */
 	UPDATE TB_BAIM_VAL_D 
 	SET USE_YN = 'N'
-		, UPDATE_NO = #{token.gv_userId}
+		, UPDATE_NO = #{gvUserCd}
 		, UPDATE_DATE = now()
-	WHERE CMPNY_CD = #{token.gv_cmpnyCd}
-	  AND BAIM_VAL_CD = #{param.baimValCd}
-	  AND BAIM_VAL_D_CD = #{param.baimValDCd}
+	WHERE CMPNY_CD = #{gvCmpnyCd}
+	  AND BAIM_VAL_CD = #{baimValCd}
+	  AND BAIM_VAL_D_CD = #{baimValDCd}
 	
 	</update>
 </mapper>

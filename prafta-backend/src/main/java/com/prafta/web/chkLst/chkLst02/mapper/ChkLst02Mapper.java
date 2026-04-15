@@ -1,19 +1,18 @@
 package com.prafta.web.chkLst.chkLst02.mapper;
 
 import java.util.List;
-import java.util.Map;
 
 import org.apache.ibatis.annotations.Mapper;
-import org.apache.ibatis.annotations.Param;
 
-import com.prafta.web.chkLst.chkLst02.dto.ChkLst02;
-import com.prafta.web.chkLst.chkLst02.dto.ChkLst02ReqDto;
+import com.prafta.web.chkLst.chkLst02.application.command.ChkptInspectItemCommand;
+import com.prafta.web.chkLst.chkLst02.application.query.ChkptInspectItemListQuery;
+import com.prafta.web.chkLst.chkLst02.result.ChkptInspectItemResult;
 
 @Mapper
 public interface ChkLst02Mapper {
-	List<ChkLst02> selectChkptInspectItemList(@Param(value = "param") ChkLst02ReqDto dto, @Param(value = "token") Map<String, Object> tokenInfo);
+	List<ChkptInspectItemResult> selectChkptInspectItemList(ChkptInspectItemListQuery query);
 	
-	void mergeChkptInspectItemList(@Param(value = "param") ChkLst02 dto, @Param(value = "token") Map<String, Object> tokenInfo);
+	void mergeChkptInspectItemList(ChkptInspectItemCommand command);
 	
-	void updateChkptInspectItemList(@Param(value = "param") ChkLst02 dto, @Param(value = "token") Map<String, Object> tokenInfo);
+	void updateChkptInspectItemList(ChkptInspectItemCommand command);
 }

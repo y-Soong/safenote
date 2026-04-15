@@ -90,7 +90,6 @@ export default {
         };
 
         const vnode = createVNode(ConfirmModal, {
-          visible: true,
           message: message.replace(/\\n/g, "\n"),
           onConfirm: () => {
             cleanup();

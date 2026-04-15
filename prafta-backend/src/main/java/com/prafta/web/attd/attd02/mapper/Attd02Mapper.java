@@ -6,33 +6,20 @@ import java.util.Map;
 import org.apache.ibatis.annotations.Mapper;
 import org.apache.ibatis.annotations.Param;
 
-import com.prafta.web.attd.attd02.dto.HolidayListQry;
-import com.prafta.web.attd.attd02.dto.HolidaySave;
-import com.prafta.web.attd.attd02.vo.Holiday;
+import com.prafta.web.attd.attd02.application.command.HolidayCommand;
+import com.prafta.web.attd.attd02.application.query.HolidayListQuery;
+import com.prafta.web.attd.attd02.result.HolidayResult;
 
 @Mapper
 public interface Attd02Mapper {
 	
-	List<Holiday> selectHoliday(@Param(value = "param") HolidayListQry dto, @Param(value = "token") Map<String, Object> tokenInfo);
+	List<HolidayResult> selectHoliday(HolidayListQuery query);
 	
-	String selectHolidayRuleId(@Param(value = "token") Map<String, Object> tokenInfo);
+	String selectHolidayRuleId(@Param(value = "gvCmpnyCd") String gvCmpnyCd);
 	
-	String selectHolidayId(@Param(value = "token") Map<String, Object> tokenInfo);
+	String selectHolidayId(@Param(value = "gvCmpnyCd") String gvCmpnyCd);
 	
-	void updateHolidayRule(@Param(value = "param") HolidaySave dto, @Param(value = "token") Map<String, Object> tokenInfo);
+	void updateHolidayRule(HolidayCommand command);
 	
-	void updateHoliday(@Param(value = "param") HolidaySave dto, @Param(value = "token") Map<String, Object> tokenInfo);
-	
-//	
-//	List<SchInfo> selectSchInfoList(@Param(value = "param") SchInfoListQry dto, @Param(value = "token") Map<String, Object> tokenInfo);
-//	
-//	String selectSchCd(@Param(value = "param") SchCdQry dto, @Param(value = "token") Map<String, Object> tokenInfo);
-//	
-//	void updateSchInfo(@Param(value = "param") SchInfoSave dto, @Param(value = "token") Map<String, Object> tokenInfo);
-//	
-//	int selectSchHistIdx(@Param(value = "param") SchInfoHistQry dto, @Param(value = "token") Map<String, Object> tokenInfo);
-//	
-//	void insertSchHistInfo(@Param(value = "param") SchInfoHistSave dto, @Param(value = "token") Map<String, Object> tokenInfo);
-//	
-//	List<SchHist> selectSchHistList(@Param(value = "param") SchInfoHistQry dto, @Param(value = "token") Map<String, Object> tokenInfo);
+	void updateHoliday(HolidayCommand command);
 }

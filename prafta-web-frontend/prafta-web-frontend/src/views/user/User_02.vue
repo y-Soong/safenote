@@ -71,7 +71,7 @@
             <span class="subtitle-text">메뉴 리스트</span>
           </div>
           <div
-            v-if="authMenuList.length > 0"
+            v-if="authMenuList.length > 0 && !isCheckboxColumnHidden"
             class="custom-btn-area menu-batch-control"
           >
             <template v-for="item in batchControlItems" :key="item.field">
@@ -130,7 +130,7 @@
                 <th class="event_cell" style="text-align: center; width: 2%">
                   No
                 </th>
-                <th style="width: 4%">
+                <th v-if="!isCheckboxColumnHidden" style="width: 4%">
                   <input
                     id="headChk"
                     v-model="headChk"
@@ -152,7 +152,10 @@
             <tbody>
               <template v-if="!authMenuList || authMenuList.length === 0">
                 <tr>
-                  <td colspan="11" class="edu-grid-empty">
+                  <td
+                    :colspan="isCheckboxColumnHidden ? 10 : 11"
+                    class="edu-grid-empty"
+                  >
                     등록된 세부 항목이 없습니다.
                   </td>
                 </tr>
@@ -160,11 +163,12 @@
               <template v-else>
                 <tr v-for="(menu, idx) in authMenuList" :key="menu.id">
                   <td style="text-align: center">{{ idx + 1 }}</td>
-                  <td>
+                  <td v-if="!isCheckboxColumnHidden">
                     <input
                       v-if="menu.menuSrc === '001'"
                       type="checkbox"
                       v-model="menu.chk"
+                      :disabled="isRowCheckboxDisabled(menu)"
                     />
                   </td>
                   <td>{{ menu.menuMNm }}</td>
@@ -283,14 +287,15 @@ import {
   onMounted,
   getCurrentInstance,
   defineOptions,
-} from 'vue';
-import { useFieldWatcher } from '@/utils/useFieldWatcher';
-import axios from '@/api/axios';
-import ViewHeader from '@/components/common/ViewHeader.vue';
-import BaseSelect from '@/components/common/BaseSelect.vue';
+} from "vue";
+import { useFieldWatcher } from "@/utils/useFieldWatcher";
+import axios from "@/api/axios";
+import ViewHeader from "@/components/common/ViewHeader.vue";
+import { getMessage, MSG } from "@/messages";
+import BaseSelect from "@/components/common/BaseSelect.vue";
 
 // =========================== Define ===========================
-defineOptions({ name: 'User_02' });
+defineOptions({ name: "User_02" });
 const props = defineProps({
   title: String,
   buttons: Object,
@@ -302,21 +307,56 @@ const authList = ref([]);
 const authMenuList = ref([]);
 const systCodeArr = ref({});
 const baseInfoArr = ref([]);
-const authNm = ref('');
-const authCd = ref('');
+const authNm = ref("");
+const authCd = ref("");
 const headChk = ref(false);
+const selectedAuth = ref(null); // fnSubSearch 시 선택된 권한 (master/hr/safe 체크용)
 
 // =========================== Computed ===========================
 const batchControlItems = [
-  { field: 'useYn', label: '사용여부' },
-  { field: 'btnSrch', label: '조회' },
-  { field: 'btnNew', label: '생성' },
-  { field: 'btnDel', label: '삭제' },
-  { field: 'btnSave', label: '저장' },
-  { field: 'btnExcl', label: '엑셀' },
+  { field: "useYn", label: "사용여부" },
+  { field: "btnSrch", label: "조회" },
+  { field: "btnNew", label: "생성" },
+  { field: "btnDel", label: "삭제" },
+  { field: "btnSave", label: "저장" },
+  { field: "btnExcl", label: "엑셀" },
 ];
-const checkedCount = computed(() =>
-  authMenuList.value.filter((m) => m.chk === true).length
+const checkedCount = computed(
+  () =>
+    authMenuList.value.filter(
+      (m) => m.chk === true && !isRowCheckboxDisabled(m)
+    ).length
+);
+
+/** menuMId 추출 (예: Baim_01 -> baim, chkLst_02 -> chklst) */
+const getMenuModuleId = (menu) => {
+  const raw = menu.menuMId ?? menu.menuId ?? menu.menuCd ?? menu.path ?? "";
+  const s = String(raw).toLowerCase();
+  const beforeUnderscore = s.split("_")[0] || s;
+  return beforeUnderscore;
+};
+
+/** master: 체크박스 숨김, hr: baim/attd/user 비활성화, safe: baim/user/risk/tbm/chkLst 비활성화 */
+const isRowCheckboxDisabled = (menu) => {
+  const baimValDCd =
+    selectedAuth.value?.baimValDCd ?? selectedAuth.value?.baimValDCd ?? "";
+
+  if (baimValDCd === "master") return true;
+  const moduleId = getMenuModuleId(menu);
+  if (baimValDCd === "hr") {
+    return ["baim", "attd", "user"].includes(moduleId);
+  }
+  if (baimValDCd === "safe") {
+    return ["baim", "user", "risk", "tbm", "chklst"].includes(moduleId);
+  }
+  return false;
+};
+
+/** master일 때 체크박스 열 숨김 여부 */
+const isCheckboxColumnHidden = computed(
+  () =>
+    (selectedAuth.value?.baimValDCd ?? selectedAuth.value?.baimValDCd ?? "") ===
+    "master"
 );
 
 // =========================== Data ===========================
@@ -335,13 +375,13 @@ useFieldWatcher(
   (item) => {
     item.chk = true;
   },
-  ['chk']
+  ["chk"]
 );
 
 // =========================== Methods ===========================
 const fnGetSystinfoList = async () => {
   try {
-    const response = await axios.get("/comApi/baseinfo/syst-info-list", {
+    const response = await axios.get("/comApi/baseinfo/syst-info-lists", {
       params: {
         systCodeList: ["SYS003", "SYS007"],
       },
@@ -376,8 +416,7 @@ const fnSearch = async () => {
   authMenuList.value = [];
 
   try {
-    // const response = await axios.get("/comApi/baseinfo/syst-info", {
-    const response = await axios.get("/comApi/baseinfo/base-info", {  
+    const response = await axios.get("/comApi/baseinfo/base-infos", {
       params: {
         code: "COM005",
         nameD: authNm.value,
@@ -386,7 +425,6 @@ const fnSearch = async () => {
 
     if (response.status === 200) {
       console.log(response.data);
-      // authList.value = response.data.systInfoList;
       authList.value = response.data.baseInfoList;
     }
   } catch (err) {
@@ -401,6 +439,7 @@ const fnSearch = async () => {
 
 const fnSubSearch = async (auth) => {
   authMenuList.value = [];
+  selectedAuth.value = auth ?? null;
 
   if (proxy.$util.isNotEmpty(auth)) {
     authCd.value = auth.baimValDCd;
@@ -427,18 +466,20 @@ const fnSubSearch = async (auth) => {
 };
 
 const fnSave = async () => {
-  const filteredMenu = authMenuList.value.filter((menu) => menu.chk);
+  const filteredMenu = authMenuList.value.filter(
+    (menu) => menu.chk && !isRowCheckboxDisabled(menu)
+  );
 
   for (var i = 0; i < filteredMenu.length; i++) {
     filteredMenu[i].authCd = authCd.value;
   }
 
   if (filteredMenu.length == 0) {
-    proxy.$alert("저장할 데이터가 없습니다.");
+    proxy.$alert(getMessage(MSG.SAVE_DATA_REQUIRED));
     return;
   }
 
-  const ok = await proxy.$confirm("저장하시겠습니까 ?");
+  const ok = await proxy.$confirm(getMessage(MSG.SAVE_CONFIRM));
   if (!ok) return;
 
   try {
@@ -448,8 +489,8 @@ const fnSave = async () => {
     );
 
     if (response.status === 200) {
-      proxy.$alert("처리되었습니다.");
-      fnSubSearch();
+      proxy.$alert(getMessage(MSG.SAVE_SUCCESS));
+      fnSubSearch(selectedAuth.value);
     }
   } catch (err) {
     const msg =
@@ -472,7 +513,9 @@ const fnButtonControll = () => {
 const fnHeadChk = () => {
   headChk.value = !headChk.value;
   authMenuList.value.forEach((item) => {
-    item.chk = headChk.value;
+    if (!isRowCheckboxDisabled(item)) {
+      item.chk = headChk.value;
+    }
   });
 };
 
@@ -487,7 +530,7 @@ const fnSetFieldForChecked = (field, value) => {
 
 /** chk=true 항목에 대해 사용여부·조회·생성·삭제·저장·엑셀 전부 value로 설정 */
 const fnSetAllForChecked = (value) => {
-  const fields = ['useYn', 'btnSrch', 'btnNew', 'btnDel', 'btnSave', 'btnExcl'];
+  const fields = ["useYn", "btnSrch", "btnNew", "btnDel", "btnSave", "btnExcl"];
   authMenuList.value
     .filter((m) => m.chk === true)
     .forEach((m) => {

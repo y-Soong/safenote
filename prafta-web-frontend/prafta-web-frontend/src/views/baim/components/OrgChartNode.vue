@@ -34,6 +34,83 @@
         <div class="org-node-count-row">
           관리자{{ managerCnt }}명 / 근로자{{ workerCnt }}명
         </div>
+        <!-- 담당 관리자 정/부 -->
+        <div class="org-node-managers">
+          <div class="org-node-manager-row">
+            <span class="org-node-manager-label">담당 정</span>
+            <button
+              type="button"
+              class="org-node-manager-chip"
+              :class="{ empty: !node.managerPrimaryUserNm }"
+              @click="
+                $emit('open-user-search', { node, field: 'managerPrimary' })
+              "
+            >
+              <span class="org-node-manager-name">{{
+                node.managerPrimaryUserNm || "미지정"
+              }}</span>
+              <svg
+                class="org-node-manager-icon"
+                viewBox="0 0 20 20"
+                fill="currentColor"
+              >
+                <path
+                  fill-rule="evenodd"
+                  d="M8 4a4 4 0 100 8 4 4 0 000-8zM2 8a6 6 0 1110.89 3.476l4.817 4.817a1 1 0 01-1.414 1.414l-4.816-4.816A6 6 0 012 8z"
+                  clip-rule="evenodd"
+                />
+              </svg>
+            </button>
+            <button
+              v-if="node.managerPrimaryUserNm"
+              type="button"
+              class="org-node-manager-clear"
+              title="선택 해제"
+              @click.stop="
+                $emit('delete-manager', { node, field: 'managerPrimary' })
+              "
+            >
+              ×
+            </button>
+          </div>
+          <div class="org-node-manager-row">
+            <span class="org-node-manager-label">담당 부</span>
+            <button
+              type="button"
+              class="org-node-manager-chip"
+              :class="{ empty: !node.managerDeputyUserNm }"
+              @click="
+                $emit('open-user-search', { node, field: 'managerDeputy' })
+              "
+            >
+              <span class="org-node-manager-name">{{
+                node.managerDeputyUserNm || "미지정"
+              }}</span>
+              <svg
+                class="org-node-manager-icon"
+                viewBox="0 0 20 20"
+                fill="currentColor"
+              >
+                <path
+                  fill-rule="evenodd"
+                  d="M8 4a4 4 0 100 8 4 4 0 000-8zM2 8a6 6 0 1110.89 3.476l4.817 4.817a1 1 0 01-1.414 1.414l-4.816-4.816A6 6 0 012 8z"
+                  clip-rule="evenodd"
+                />
+              </svg>
+            </button>
+            <button
+              v-if="node.managerDeputyUserNm"
+              type="button"
+              class="org-node-manager-clear"
+              title="선택 해제"
+              @click.stop="
+                $emit('delete-manager', { node, field: 'managerDeputy' })
+              "
+            >
+              ×
+            </button>
+          </div>
+        </div>
         <label v-if="!isRoot" class="org-node-check-row">
           <input
             v-model="selfAttdApprvYn"
@@ -114,6 +191,8 @@
             @update-node="
               (n, field, val) => $emit('update-node', n, field, val)
             "
+            @delete-manager="$emit('delete-manager', $event)"
+            @open-user-search="$emit('open-user-search', $event)"
           />
         </div>
       </div>
@@ -137,7 +216,13 @@ const props = defineProps({
   indexInParent: { type: Number, default: -1 },
 });
 
-const emit = defineEmits(["add-child", "delete-node", "update-node"]);
+const emit = defineEmits([
+  "add-child",
+  "delete-node",
+  "update-node",
+  "delete-manager",
+  "open-user-search",
+]);
 
 const typeOptionsResolved = computed(() =>
   props.typeOptions.map((opt) =>
@@ -282,6 +367,103 @@ const onTypeChange = (e) => {
   color: #6b7280;
   margin-top: 6px;
   text-align: center;
+}
+
+.org-node-managers {
+  margin-top: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.org-node-manager-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+.org-node-manager-row .org-node-manager-chip {
+  flex: 1;
+}
+
+.org-node-manager-label {
+  font-size: 10px;
+  font-weight: 600;
+  color: #6b7280;
+  flex-shrink: 0;
+  width: 44px;
+}
+
+.org-node-manager-chip {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 4px;
+  padding: 4px 8px;
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  background: #f8fafc;
+  cursor: pointer;
+  font-size: 11px;
+  color: #374151;
+  transition: all 0.2s;
+}
+
+.org-node-manager-chip:hover {
+  background: #f1f5f9;
+  border-color: var(--node-color);
+  color: var(--node-color);
+}
+
+.org-node-manager-chip.empty {
+  color: #9ca3af;
+  font-style: italic;
+}
+
+.org-node-manager-chip.empty:hover {
+  color: var(--node-color);
+}
+
+.org-node-manager-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.org-node-manager-icon {
+  width: 12px;
+  height: 12px;
+  flex-shrink: 0;
+  opacity: 0.6;
+}
+
+.org-node-manager-chip:hover .org-node-manager-icon {
+  opacity: 1;
+}
+
+.org-node-manager-clear {
+  flex-shrink: 0;
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  border: none;
+  border-radius: 6px;
+  background: #fee2e2;
+  color: #dc2626;
+  font-size: 14px;
+  line-height: 1;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.2s;
+}
+
+.org-node-manager-clear:hover {
+  background: #fecaca;
 }
 
 .org-node-check-row {

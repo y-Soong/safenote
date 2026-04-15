@@ -176,6 +176,7 @@ import BaseSelect from "@/components/common/BaseSelect.vue";
 import TimeInput from "@/components/common/TimeInput.vue";
 import CalendarSrch from "@/components/common/CalendarSrch.vue";
 import axios from "@/api/axios";
+import { getMessage, MSG } from "@/messages";
 
 // ================ Props & Emits ================
 const props = defineProps({
@@ -270,6 +271,7 @@ onMounted(() => {
     schNo.value = props.schData_p.schNo ?? "";
     schType.value = props.schData_p.schType ?? "01";
     baseYn.value = props.schData_p.baseYn ?? "Y";
+    useYn.value = props.schData_p.useYn ?? "Y";
     isProgrammaticApplyDate.value = true;
     applyDate.value =
       formatYyyyMmDd(
@@ -297,11 +299,11 @@ onMounted(() => {
 // ================ API Functions ================
 const fnSave = async () => {
   if (!schNo.value?.trim()) {
-    proxy.$alert("타입코드를 입력해주세요.");
+    proxy.$alert(getMessage(MSG.TYPE_CODE_REQUIRED));
     return;
   }
   if (!applyDate.value?.trim()) {
-    proxy.$alert("적용일을 선택해주세요.");
+    proxy.$alert(getMessage(MSG.APPLY_DATE_REQUIRED));
     return;
   }
   const timeValidation = validateWorkTime();
@@ -315,13 +317,13 @@ const fnSave = async () => {
     const selected = new Date(applyDate.value);
     selected.setHours(0, 0, 0, 0);
     if (selected <= today) {
-      proxy.$alert("수정 시 적용일은 내일 이후만 선택 가능합니다.");
+      proxy.$alert(getMessage(MSG.APPLY_DATE_FUTURE));
       return;
     }
   }
 
   const ok = await proxy.$confirm(
-    isEditMode.value ? "저장하시겠습니까?" : "생성하시겠습니까?"
+    isEditMode.value ? getMessage(MSG.SAVE_CONFIRM) : getMessage(MSG.CREATE_CONFIRM)
   );
   if (!ok) return;
 
@@ -354,7 +356,7 @@ const fnSave = async () => {
       payload
     );
     if (response.status === 200) {
-      proxy.$alert("처리되었습니다.");
+      proxy.$alert(getMessage(MSG.SAVE_SUCCESS));
       props.onSave?.();
       emit("close");
     }
@@ -389,7 +391,7 @@ const onApplyDateChange = (newVal) => {
   selected.setHours(0, 0, 0, 0);
 
   if (selected <= today) {
-    proxy.$alert("적용일은 내일 이후만 선택 가능합니다.");
+    proxy.$alert(getMessage(MSG.APPLY_DATE_FUTURE_ONLY));
     const prev = applyDate.value;
     isProgrammaticApplyDate.value = true;
     applyDate.value = "";

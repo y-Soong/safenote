@@ -83,6 +83,7 @@ import {
 import { useCenteredDraggable } from "@/composables/useCenteredDraggable";
 import CalendarSrch from "@/components/common/CalendarSrch.vue";
 import axios from "@/api/axios";
+import { getMessage, MSG } from "@/messages";
 
 const props = defineProps({
   siteCd_p: { type: String, default: "" },
@@ -143,15 +144,15 @@ onMounted(() => {
 const fnRegister = async () => {
   if (isSubmitDisabled.value) return;
   if (!holidayNm.value?.trim()) {
-    proxy.$alert("휴일명을 입력해주세요.");
+    proxy.$alert(getMessage(MSG.HOLIDAY_NAME_REQUIRED));
     return;
   }
   if (!holidayYmd.value?.trim()) {
-    proxy.$alert("일자를 선택해주세요.");
+    proxy.$alert(getMessage(MSG.HOLIDAY_DATE_REQUIRED));
     return;
   }
 
-  const ok = await proxy.$confirm("저장하시겠습니까 ?");
+  const ok = await proxy.$confirm(getMessage(MSG.SAVE_CONFIRM));
   if (!ok) return;
 
   try {
@@ -166,7 +167,7 @@ const fnRegister = async () => {
       useYn: "Y",
     });
     if (response.status === 200) {
-      proxy.$alert("처리되었습니다.");
+      proxy.$alert(getMessage(MSG.SAVE_SUCCESS));
       props.onSearch?.();
       emit("close");
     }

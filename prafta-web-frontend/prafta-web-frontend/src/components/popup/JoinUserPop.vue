@@ -107,7 +107,7 @@
               ref="mblNoFcs"
               v-model="mblNo"
               @blur="focusKill"
-              :disabled="mblNoDisabled"
+              :disabled="mblNoDisabled || cmpnyCdDisabled"
               placeholder="최대12자리"
               maxlength="12"
             />
@@ -115,7 +115,7 @@
               ref="smsAuthReqBtnFcs"
               class="btn btn-primary"
               @click="fnSmsAuthReq"
-              :disabled="timer > 0"
+              :disabled="timer > 0 || cmpnyCdDisabled"
               v-show="btnAuthChkDisabled"
             >
               {{ timer > 0 ? `${timer}초 후 재요청` : "인증요청" }}
@@ -130,11 +130,12 @@
               v-model="certNo"
               placeholder="인증번호6자리"
               maxlength="6"
-              :disabled="mblNoDisabled"
+              :disabled="mblNoDisabled || cmpnyCdDisabled"
             />
             <button
               class="btn btn-primary"
               @click="fnSmsAuthChk"
+              :disabled="cmpnyCdDisabled"
               v-show="btnAuthChkDisabled"
             >
               확인
@@ -438,7 +439,7 @@ function birthDtFocusKill() {
 // API 호출
 const fnGetSystinfoList = async () => {
   try {
-    const response = await axios.get("/comApi/baseinfo/syst-info-list", {
+    const response = await axios.get("/comApi/baseinfo/syst-info-lists", {
       params: {
         systCodeList: ["SYS004"],
       },
@@ -465,13 +466,17 @@ const fnGetSystinfoList = async () => {
 
 const fnGetCmpnyInfo = async () => {
   try {
-    const response = await axios.post("/comApi/baseinfo/getCmpnyInfo", {
-      cmpnyCd: cmpnyCd.value,
+    const response = await axios.get("/comApi/baseinfo/cmpny-infos", {
+      params: {
+        cmpnyCd: cmpnyCd.value,
+      },
     });
     if (response.status === 200) {
-      cmpnyCdDisabled.value = !response.data.USE_YN;
-      cmpnyNm.value = response.data.CMPNY_NM;
-      siteDisabled.value = !response.data.USE_YN;
+      const resData = response.data?.cmpnyInfoResult || [];
+
+      cmpnyCdDisabled.value = !resData.useYn;
+      siteDisabled.value = !resData.useYn;
+      cmpnyNm.value = resData.cmpnyNm;
     }
   } catch (err) {
     fnAlertMsg(err.response.data.message, () => {
@@ -491,12 +496,14 @@ const fnUserIdDupleChk = async () => {
   }
 
   try {
-    const response = await axios.post("/comApi/baseinfo/getUserIdDupleChk", {
-      cmpnyCd: cmpnyCd.value,
-      userId: proxy.$util.toUpperCase(userId.value),
+    const response = await axios.get("/comApi/baseinfo/user-id-duple-checks", {
+      params: {
+        cmpnyCd: cmpnyCd.value,
+        userId: proxy.$util.toUpperCase(userId.value),
+      },
     });
     if (response.status === 200) {
-      if (response.data.UNIQUE_YN == "N") {
+      if (response.data.uniqueYn == "N") {
         userIdMsg.value = "❌";
         const alertMsg = "이미 사용중인 아이디 입니다.";
         fnAlertMsg(alertMsg, () => {
@@ -529,8 +536,17 @@ const fnSmsAuthReq = async () => {
     return;
   }
 
+  if (proxy.$util.isEmpty(cmpnyCd.value)) {
+    const alertMsg = "회사코드를 입력해주세요.";
+    fnAlertMsg(alertMsg, () => {
+      cmpnyCdFcs.value.focus();
+    });
+    return;
+  }
+
   try {
-    const response = await axios.post("/comApi/baseinfo/getSmsAuthReq", {
+    const response = await axios.post("/comApi/baseinfo/sms-auth-sends", {
+      cmpnyCd: cmpnyCd.value,
       mblNo: mblNo.value,
       dupChkYn: "Y",
     });
@@ -577,7 +593,8 @@ const fnSmsAuthChk = async () => {
   }
 
   try {
-    const response = await axios.post("/comApi/baseinfo/getSmsAuthChk", {
+    const response = await axios.post("/comApi/baseinfo/sms-auth-checks", {
+      cmpnyCd: cmpnyCd.value,
       mblNo: mblNo.value,
       certNo: certNo.value,
     });

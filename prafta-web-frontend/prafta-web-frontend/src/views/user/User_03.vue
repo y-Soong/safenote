@@ -230,6 +230,7 @@ import {
 } from 'vue';
 import axios from '@/api/axios';
 import ViewHeader from '@/components/common/ViewHeader.vue';
+import { getMessage, MSG } from '@/messages';
 
 // =========================== Define ===========================
 defineOptions({ name: 'User_03' });
@@ -252,7 +253,7 @@ const bottomBox = ref(null);
 const headChkMain = ref(false);
 const headChkSub = ref(false);
 const currentUserSiteCd = ref('');
-const currentUserId = ref('');
+const currentUserCd = ref('');
 
 // =========================== Data ===========================
 const { proxy } = getCurrentInstance();
@@ -267,7 +268,7 @@ onMounted(async () => {
 // =========================== Methods ===========================
 const fnGetSystinfoList = async () => {
   try {
-    const response = await axios.get("/comApi/baseinfo/syst-info-list", {
+    const response = await axios.get("/comApi/baseinfo/syst-info-lists", {
       params: {
         systCodeList: ["SYS002", "SYS003", "SYS007"],
       },
@@ -321,7 +322,7 @@ const fnSearch = async () => {
 
 const fnSiteInfoSearch = async (user) => {
   currentUserSiteCd.value = user.siteCd;
-  currentUserId.value = user.userId;
+  currentUserCd.value = user.userCd;
 
   fnSiteInfoSearchTran();
 };
@@ -330,7 +331,7 @@ const fnSiteInfoSearchTran = async () => {
   try {
     const response = await axios.get("/webApi/user03/site-info-lists", {
       params: {
-        userId: currentUserId.value,
+        userCd: currentUserCd.value,
       },
     });
 
@@ -363,21 +364,22 @@ const fnSiteInfoSearchTran = async () => {
 
 const fnSave = async (dataList) => {
   if (dataList.length == 0) {
-    proxy.$alert("저장할 데이터가 없습니다.");
+    proxy.$alert(getMessage(MSG.SAVE_DATA_REQUIRED));
     return;
   }
-
-  const ok = await proxy.$confirm("저장하시겠습니까 ?");
+  const ok = await proxy.$confirm(getMessage(MSG.SAVE_CONFIRM));
   if (!ok) return;
+
+  
 
   try {
     const response = await axios.post(
-      "/webApi/user03/updateUserSiteAuth",
+      "/webApi/user03/update-user-site-auth",
       dataList
     );
 
     if (response.status === 200) {
-      proxy.$alert("처리되었습니다.");
+      proxy.$alert(getMessage(MSG.SAVE_SUCCESS));
       fnSiteInfoSearchTran();
     }
   } catch (err) {
@@ -415,10 +417,8 @@ function fnScrollTo(id) {
   // 3) 값 토글 및 추가 세팅
   for (const row of filterdDataList) {
     row.allocYn = row.allocYn === "Y" ? "N" : "Y";
-    row.userId = currentUserId.value;
+    row.userCd = currentUserCd.value;
   }
-
-  // const dataList = proxy.$util.toCamelCaseKeys(filterdDataList);
 
   fnSave(filterdDataList);
 }

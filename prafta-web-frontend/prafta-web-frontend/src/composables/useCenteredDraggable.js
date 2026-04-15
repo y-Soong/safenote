@@ -16,7 +16,7 @@ export function useCenteredDraggable(modalRef, options = {}) {
   const { horizontalRatio = 2, verticalRatio = 2 } = options;
 
   // 실제 드래그 처리는 기존 useDraggable 로 위임
-  const { position, startDrag } = useDraggable(0, 0);
+  const { position, startDrag, stopDrag } = useDraggable(0, 0);
 
   const updatePositionToCenter = () => {
     if (!modalRef.value) return;
@@ -41,5 +41,5 @@ export function useCenteredDraggable(modalRef, options = {}) {
     window.removeEventListener("resize", updatePositionToCenter);
   });
 
-  return { position, startDrag };
+  return { position, startDrag, stopDrag };
 }

@@ -2,7 +2,7 @@
 <!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
 <mapper namespace="com.prafta.web.baim.baim04.mapper.Baim04Mapper">
 
-	<select id="selectDailyUserLinkPolicyList" parameterType="com.prafta.web.baim.baim04.dto.DailyUserLinkPoliciesQry" resultType="com.prafta.web.baim.baim04.vo.DailyUserLinkPolicy">
+	<select id="selectDailyUserLinkPolicyList" parameterType="com.prafta.web.baim.baim04.application.query.DailyUserLinkPoliciesQuery" resultType="com.prafta.web.baim.baim04.result.DailyUserLinkPolicyResult">
     /* Baim04Mapper.selectDailyUserLinkPolicyList */
     SELECT
     	'' 						AS chk 
@@ -32,19 +32,19 @@
 					A.CMPNY_CD = B.CMPNY_CD
 				AND A.SITE_CD = B.SITE_CD
 		        )
-		WHERE A.CMPNY_CD = #{token.gv_cmpnyCd}
-		  <if test="param.siteCd != null and param.siteCd != ''">
-	   	  	AND A.SITE_CD = #{param.siteCd}
+		WHERE A.CMPNY_CD = #{gvCmpnyCd}
+		  <if test="siteCd != null and siteCd != ''">
+	   	  	AND A.SITE_CD = #{siteCd}
 	   	  </if>
 	) A
 	WHERE 1=1
-	  <if test="param.useYn != null and param.useYn != ''">
- 	    AND A.USE_YN = #{param.useYn}
+	  <if test="useYn != null and useYn != ''">
+ 	    AND A.USE_YN = #{useYn}
   	  </if>
 	
   	</select>
   
-  	<update id="saveDailyUserLinkPolicy" parameterType="com.prafta.web.baim.baim04.dto.LinkPoliciesSave">
+  	<update id="saveDailyUserLinkPolicy" parameterType="com.prafta.web.baim.baim04.application.command.LinkPoliciesCommand">
   
 	/* Baim04Mapper.saveDailyUserLinkPolicy */
     INSERT INTO TB_DAILY_USER_LINK_POLICY (
@@ -58,31 +58,31 @@
     	, UPDATE_DATE
    	)
    	VALUES(
-   		#{token.gv_cmpnyCd}
-   		, #{param.siteCd}
-		, IFNULL(#{param.useYn}, 'Y')
-		, #{param.dayLimitCnt}
-		, #{token.gv_userId}
+   		#{gvCmpnyCd}
+   		, #{siteCd}
+		, IFNULL(#{useYn}, 'Y')
+		, #{dayLimitCnt}
+		, #{gvUserCd}
 		, now()
-		, #{token.gv_userId}
+		, #{gvUserCd}
 		, now() 
-   	)
+   	) AS NEW
    	ON DUPLICATE KEY UPDATE
-	    USE_YN		= IFNULL(#{param.useYn}, 'Y')
-	    , DAY_LIMIT_CNT = #{param.dayLimitCnt}
-	    , UPDATE_NO   	= #{token.gv_userId}
+	    USE_YN			= IFNULL(NEW.USE_YN, 'Y')
+	    , DAY_LIMIT_CNT = NEW.DAY_LIMIT_CNT
+	    , UPDATE_NO   	= NEW.UPDATE_NO
 	    , UPDATE_DATE 	= NOW()
 	</update>
 	
-	<select id="selectDailyUserSlotCnt" parameterType="com.prafta.web.baim.baim04.dto.LinkPoliciesSave" resultType="integer">
+	<select id="selectDailyUserSlotCnt" parameterType="com.prafta.web.baim.baim04.application.param.UserSlotCountQuery" resultType="integer">
     /* Baim04Mapper.selectDailyUserSlotCnt */
     SELECT COUNT(*) 
     FROM TB_DAILY_USER_SLOT
-	WHERE CMPNY_CD = #{token.gv_cmpnyCd}
-	  AND SITE_CD = #{param.siteCd}
+	WHERE CMPNY_CD = #{gvCmpnyCd}
+	  AND SITE_CD = #{siteCd}
     </select>
 	
-	<update id="saveDailyUserSlot" parameterType="com.prafta.web.baim.baim04.dto.LinkPoliciesSave">
+	<update id="saveDailyUserSlot" parameterType="com.prafta.web.baim.baim04.application.command.DailyUserSlotCommand">
 	/* Baim04Mapper.saveDailyUserSlot */
 	INSERT INTO TB_DAILY_USER_SLOT (
     	CMPNY_CD
@@ -99,32 +99,32 @@
     	, UPDATE_DATE
    	)
    	VALUES(
-   		#{param.cmpnyCd}
-   		, #{param.siteCd}
-   		, #{param.slotNo}
-   		, #{param.slotType}
+   		#{gvCmpnyCd}
+   		, #{siteCd}
+   		, #{slotNo}
+   		, #{slotType}
    		, 'N'
 		, 'Y'
 		, ''
-		, #{param.slotStatus}
-		, #{token.gv_userId}
+		, #{slotStatus}
+		, #{gvUserCd}
 		, now()
-		, #{token.gv_userId}
+		, #{gvUserCd}
 		, now() 
-   	)
+   	) AS NEW
    	ON DUPLICATE KEY UPDATE
-   		USE_YN		= IFNULL(#{param.useYn}, 'Y')
-	    , UPDATE_NO   	= #{token.gv_userId}
+   		USE_YN		= IFNULL(NEW.USE_YN, 'Y')
+	    , UPDATE_NO   	= NEW.UPDATE_NO
 	    , UPDATE_DATE 	= NOW()
 	</update>
 	
 	
 	
-	<delete id="deleteDailyUserLinkPolicy" parameterType="com.prafta.web.baim.baim04.dto.LinkPoliciesSave">
+	<delete id="deleteDailyUserLinkPolicy" parameterType="com.prafta.web.baim.baim04.application.command.LinkPoliciesCommand">
 	/* Baim04Mapper.deleteDailyUserLinkPolicy */
 	DELETE FROM TB_DAILY_USER_LINK_POLICY
-	WHERE CMPNY_CD = #{token.gv_cmpnyCd}
-	  AND SITE_CD = #{param.siteCd}
+	WHERE CMPNY_CD = #{gvCmpnyCd}
+	  AND SITE_CD = #{siteCd}
 	</delete>
 	
 </mapper>

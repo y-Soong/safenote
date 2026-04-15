@@ -1,5 +1,8 @@
 eclipse.preferences.version=1
 encoding//src/main/java/com/prafta/common/aop/auth/AuthAspect.java=UTF-8
 encoding//src/main/java/com/prafta/common/config/ApiPrefixConfig.java=UTF-8
+encoding//src/main/java/com/prafta/common/error/user/UserErrorCode.java=UTF-8
+encoding//src/main/java/com/prafta/web/chkLst/chkLst01/dto/request/ChkptInfoRequest.java=UTF-8
+encoding//src/main/java/com/prafta/web/user/user01/service/impl/User01BatchServiceImpl.java=UTF-8
 encoding//src/main/resources/application.properties=UTF-8
 encoding//src/main/resources/com/prafta/app/chkLst/chkLst01/mapper/AppChkLst01Mapper.xml=UTF-8

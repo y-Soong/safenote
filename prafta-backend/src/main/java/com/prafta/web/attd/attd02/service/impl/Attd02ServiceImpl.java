@@ -1,18 +1,17 @@
 package com.prafta.web.attd.attd02.service.impl;
 
 import java.util.List;
-import java.util.Map;
 
 import org.springframework.stereotype.Service;
 
-import com.prafta.web.attd.attd02.dto.HolidayListQry;
-import com.prafta.web.attd.attd02.dto.HolidayListReq;
-import com.prafta.web.attd.attd02.dto.HolidayListRes;
-import com.prafta.web.attd.attd02.dto.HolidayReq;
-import com.prafta.web.attd.attd02.dto.HolidaySave;
+import com.prafta.web.attd.attd02.application.command.HolidayCommand;
+import com.prafta.web.attd.attd02.application.param.HolidayListParam;
+import com.prafta.web.attd.attd02.application.param.HolidayParam;
+import com.prafta.web.attd.attd02.application.query.HolidayListQuery;
+import com.prafta.web.attd.attd02.dto.response.HolidayListResponse;
 import com.prafta.web.attd.attd02.mapper.Attd02Mapper;
+import com.prafta.web.attd.attd02.result.HolidayResult;
 import com.prafta.web.attd.attd02.service.Attd02Service;
-import com.prafta.web.attd.attd02.vo.Holiday;
 
 import lombok.extern.slf4j.Slf4j;
 
@@ -25,166 +24,43 @@ public class Attd02ServiceImpl implements Attd02Service{
 		this.attd02Mapper = attd02Mapper;
 	}
 	
-	public HolidayListRes selectHoliday(HolidayListReq dto, Map<String, Object> tokenInfo) {
+	public HolidayListResponse selectHoliday(HolidayListParam param) {
+
+		HolidayListResponse response = null;
 		
-		HolidayListQry holidayListQry = HolidayListQry.builder()
-													.year(dto.getYear())
-													.month(dto.getMonth())
-													.build();
+		List<HolidayResult> holidayResultList = attd02Mapper.selectHoliday(HolidayListQuery.from(param));
 		
-		HolidayListRes holidayListRes = null;
-		
-		List<Holiday> holidayList = attd02Mapper.selectHoliday(holidayListQry, tokenInfo);
-		
-		if(holidayList != null && holidayList.size() > 0) {
-			holidayListRes = HolidayListRes.builder()
-											.holidayList(holidayList)
+		if(holidayResultList != null && holidayResultList.size() > 0) {
+			response = HolidayListResponse.builder()
+											.holidayResultList(holidayResultList)
 											.build();
 		}
 		
-		return holidayListRes;
+		return response;
 	}
 	
-	public void updateHolidayInfo(HolidayReq dto, Map<String, Object> tokenInfo) {
-		
-		System.out.println("dto :: " + dto);
+	public void updateHolidayInfo(HolidayParam param) {
 		
 		String holidayId = null;
 		String holidayType = null;
 		
-		HolidaySave holidaySave = HolidaySave.builder()
-											.siteCd(dto.getSiteCd())
-											.holidayNm(dto.getHolidayNm())
-											.holidayYmd(dto.getHolidayYmd())
-//											.holidayType(dto.getHolidayType())
-											.repeatYearly(dto.isRepeatYearly())
-											.useYn(dto.getUseYn())
-											.build();
-		
-		if(!dto.getHolidayId().isEmpty()) {
-			holidayId = dto.getHolidayId();
-			holidayType = dto.getHolidayType();
+		if(!param.holidayId().isEmpty()) {
+			holidayId = param.holidayId();
+			holidayType = param.holidayType();
 		} else {
-			if(dto.isRepeatYearly()) {
-				holidayId = attd02Mapper.selectHolidayRuleId(tokenInfo);
+			if(param.repeatYearly()) {
+				holidayId = attd02Mapper.selectHolidayRuleId(param.gvCmpnyCd());
 				holidayType = "03";			/* 반복 */
 			} else {
-				holidayId = attd02Mapper.selectHolidayId(tokenInfo);
+				holidayId = attd02Mapper.selectHolidayId(param.gvCmpnyCd());
 				holidayType = "02";			/* 반복 */
 			}
 		}
 		
-		holidaySave = holidaySave.toBuilder().holidayId(holidayId).holidayType(holidayType).build();
-		
-		if(dto.isRepeatYearly()) {
-			attd02Mapper.updateHolidayRule(holidaySave, tokenInfo);
+		if(param.repeatYearly()) {
+			attd02Mapper.updateHolidayRule(HolidayCommand.from(param, holidayId, holidayType));
 		} else {
-			attd02Mapper.updateHoliday(holidaySave, tokenInfo);
+			attd02Mapper.updateHoliday(HolidayCommand.from(param, holidayId, holidayType));
 		}
 	}
-	
-//	
-//	public SchInfoListRes selectSchInfoList(SchInfoListReq dto, Map<String, Object> tokenInfo) {
-//		SchInfoListQry reqDto = SchInfoListQry.builder()
-//												.siteCd(dto.getSiteCd())
-//												.schNo(dto.getSchNo())
-//												.schType(dto.getSchType())
-//												.useYn(dto.getUseYn())
-//												.build();
-//		
-//		SchInfoListRes resDto = null;
-//		
-//		List<SchInfo> schInfoList = attd01Mapper.selectSchInfoList(reqDto, tokenInfo);
-//		
-//		if(schInfoList != null && !schInfoList.isEmpty()) {
-//			resDto = SchInfoListRes.builder()
-//									.schInfoList(schInfoList)
-//									.build();
-//		}
-//		
-//		return resDto;
-//	
-//	}
-//	
-//	@Transactional
-//	public void updateSchInfo(SchInfoReq dto, Map<String, Object> tokenInfo) {
-//		
-//		String schCd = null;
-//		
-//		if(dto.getSchCd() != null && dto.getSchCd() != "") {
-//			schCd = dto.getSchCd();
-//		} else {
-//			SchCdQry schCdQry = SchCdQry.builder().siteCd(dto.getSiteCd()).build();
-//			
-//			schCd = attd01Mapper.selectSchCd(schCdQry, tokenInfo);
-//		}
-//		
-//		SchInfoSave schInfoSave = SchInfoSave.builder()
-//							    .cmpnyCd(dto.getCmpnyCd())
-//							    .siteCd(dto.getSiteCd())
-//							    .schCd(schCd)
-//							    .schNo(dto.getSchNo())
-//							    .schType(dto.getSchType())
-//							    .applyDate(dto.getApplyDate())
-//				
-//							    .fstSchStrTime(dto.getFstSchStrTime())
-//							    .fstSchEndTime(dto.getFstSchEndTime())
-//							    .fstSchBrkMin(dto.getFstSchBrkMin())
-//				
-//							    .secSchStrTime(dto.getSecSchStrTime())
-//							    .secSchEndTime(dto.getSecSchEndTime())
-//							    .secSchBrkMin(dto.getSecSchBrkMin())
-//				
-//							    .useYn(dto.getUseYn())
-//							    .build();
-//		
-//		attd01Mapper.updateSchInfo(schInfoSave, tokenInfo);
-//		
-//		SchInfoHistQry schInfoHistQry = SchInfoHistQry.builder()
-//														.siteCd(dto.getSiteCd())
-//														.schCd(schCd)
-//														.build();
-//		
-//		int histIdx = attd01Mapper.selectSchHistIdx(schInfoHistQry, tokenInfo);
-//		
-//		SchInfoHistSave schInfoHistSave = SchInfoHistSave.builder()
-//			    .cmpnyCd(dto.getCmpnyCd())
-//			    .siteCd(dto.getSiteCd())
-//			    .histIdx(histIdx)
-//			    .schCd(schCd)
-//			    .applyDate(dto.getApplyDate())
-//
-//			    .fstSchStrTime(dto.getFstSchStrTime())
-//			    .fstSchEndTime(dto.getFstSchEndTime())
-//			    .fstSchBrkMin(dto.getFstSchBrkMin())
-//
-//			    .secSchStrTime(dto.getSecSchStrTime())
-//			    .secSchEndTime(dto.getSecSchEndTime())
-//			    .secSchBrkMin(dto.getSecSchBrkMin())
-//
-//			    .useYn(dto.getUseYn())
-//			    .build();
-//		
-//		attd01Mapper.insertSchHistInfo(schInfoHistSave, tokenInfo);
-//	}
-//	
-//	public SchInfoHistRes selectSchHistList(SchInfoHistReq dto, Map<String, Object> tokenInfo) {
-//		
-//		SchInfoHistQry schInfoHistQry = SchInfoHistQry.builder()
-//				.siteCd(dto.getSiteCd())
-//				.schCd(dto.getSchCd())
-//				.build();
-//		
-//		SchInfoHistRes schInfoHistRes = null;
-//		
-//		List<SchHist> schHistList = attd01Mapper.selectSchHistList(schInfoHistQry, tokenInfo);
-//		
-//		if(schHistList != null && schHistList.size() > 0) {
-//			schInfoHistRes = SchInfoHistRes.builder()
-//											.schHistList(schHistList)
-//											.build();
-//		}
-//		
-//		return schInfoHistRes;
-//	}
 }

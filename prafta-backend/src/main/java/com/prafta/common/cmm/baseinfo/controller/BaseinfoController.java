@@ -1,10 +1,5 @@
 package com.prafta.common.cmm.baseinfo.controller;
 
-import java.security.SecureRandom;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
-
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -16,28 +11,54 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
 import com.prafta.common.annotation.NoAuth;
-import com.prafta.common.cmm.baseinfo.dto.BaseInfoListReq;
-import com.prafta.common.cmm.baseinfo.dto.BaseInfoListRes;
-import com.prafta.common.cmm.baseinfo.dto.BaseInfoReq;
-import com.prafta.common.cmm.baseinfo.dto.BaseInfoRes;
-import com.prafta.common.cmm.baseinfo.dto.BaseinfoCmmReq;
-import com.prafta.common.cmm.baseinfo.dto.MenuListReq;
-import com.prafta.common.cmm.baseinfo.dto.MenuListRes;
-import com.prafta.common.cmm.baseinfo.dto.SiteNodeListReq;
-import com.prafta.common.cmm.baseinfo.dto.SiteNodeListRes;
-import com.prafta.common.cmm.baseinfo.dto.SystInfoListReq;
-import com.prafta.common.cmm.baseinfo.dto.SystInfoListRes;
-import com.prafta.common.cmm.baseinfo.dto.SystInfoReq;
-import com.prafta.common.cmm.baseinfo.dto.SystInfoRes;
+import com.prafta.common.cmm.baseinfo.application.param.AppMenuListParam;
+import com.prafta.common.cmm.baseinfo.application.param.BaseInfoListParam;
+import com.prafta.common.cmm.baseinfo.application.param.BaseInfoParam;
+import com.prafta.common.cmm.baseinfo.application.param.CmpnyInfoParam;
+import com.prafta.common.cmm.baseinfo.application.param.MenuListParam;
+import com.prafta.common.cmm.baseinfo.application.param.SiteInfoParam;
+import com.prafta.common.cmm.baseinfo.application.param.SiteNodeListParam;
+import com.prafta.common.cmm.baseinfo.application.param.SystInfoListParam;
+import com.prafta.common.cmm.baseinfo.application.param.SystInfoParam;
+import com.prafta.common.cmm.baseinfo.application.param.TermsDetailInfoParam;
+import com.prafta.common.cmm.baseinfo.application.param.UserIdDupleCheckParam;
+import com.prafta.common.cmm.baseinfo.application.param.UserSmsAuthNoCheckParam;
+import com.prafta.common.cmm.baseinfo.application.param.UserSmsAuthNoParam;
+import com.prafta.common.cmm.baseinfo.application.param.WebMenuListParam;
+import com.prafta.common.cmm.baseinfo.dto.request.AppMenuListRequest;
+import com.prafta.common.cmm.baseinfo.dto.request.BaseInfoListRequest;
+import com.prafta.common.cmm.baseinfo.dto.request.BaseInfoRequest;
+import com.prafta.common.cmm.baseinfo.dto.request.CmpnyInfoRequest;
+import com.prafta.common.cmm.baseinfo.dto.request.MenuListRequest;
+import com.prafta.common.cmm.baseinfo.dto.request.SiteInfoRequest;
+import com.prafta.common.cmm.baseinfo.dto.request.SiteNodeListRequest;
+import com.prafta.common.cmm.baseinfo.dto.request.SystInfoListRequest;
+import com.prafta.common.cmm.baseinfo.dto.request.SystInfoRequest;
+import com.prafta.common.cmm.baseinfo.dto.request.TermsDetailInfoRequest;
+import com.prafta.common.cmm.baseinfo.dto.request.UserIdDupleCheckRequest;
+import com.prafta.common.cmm.baseinfo.dto.request.UserSmsAuthNoCheckRequest;
+import com.prafta.common.cmm.baseinfo.dto.request.UserSmsAuthNoRequest;
+import com.prafta.common.cmm.baseinfo.dto.request.WebMenuListRequest;
+import com.prafta.common.cmm.baseinfo.dto.response.AppMenuListResponse;
+import com.prafta.common.cmm.baseinfo.dto.response.BaseInfoListResponse;
+import com.prafta.common.cmm.baseinfo.dto.response.BaseInfoResponse;
+import com.prafta.common.cmm.baseinfo.dto.response.CmpnyInfoResponse;
+import com.prafta.common.cmm.baseinfo.dto.response.MenuListResponse;
+import com.prafta.common.cmm.baseinfo.dto.response.SiteInfoResponse;
+import com.prafta.common.cmm.baseinfo.dto.response.SiteNodeListResponse;
+import com.prafta.common.cmm.baseinfo.dto.response.SystInfoListResponse;
+import com.prafta.common.cmm.baseinfo.dto.response.SystInfoResponse;
+import com.prafta.common.cmm.baseinfo.dto.response.TermsDetailInfoResponse;
+import com.prafta.common.cmm.baseinfo.dto.response.UserIdDupleCheckResponse;
+import com.prafta.common.cmm.baseinfo.dto.response.WebMenuListResponse;
 import com.prafta.common.cmm.baseinfo.service.BaseinfoService;
-import com.prafta.common.exception.cmm.CmmApiException;
 import com.prafta.common.security.JwtUtil;
 
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 
 @Slf4j
-@NoAuth
+//@NoAuth
 @RestController
 @RequestMapping("/baseinfo")
 @RequiredArgsConstructor // 롬복이 final 필드로 생성자 자동 생성
@@ -47,200 +68,141 @@ public class BaseinfoController {
 	private final JwtUtil jwtUtil;
 
 	/* 공통코드 조회 */
-	@GetMapping("/syst-info-list")
-    public ResponseEntity<?> getSystinfoList(@ModelAttribute SystInfoListReq dto) {
-		SystInfoListRes retList = baseinfoService.selectSystinfoList(dto);
+	@GetMapping("/syst-info-lists")
+    public ResponseEntity<?> getSystinfoList(@ModelAttribute SystInfoListRequest request) {
+		
+		SystInfoListResponse response = baseinfoService.selectSystinfoList(SystInfoListParam.from(request));
     	
-//    	if(retList == null) {
-//    		throw new CmmApiException("조회결과가 없습니다.");
-//    	}
-    	
-    	return ResponseEntity.status(HttpStatus.OK).body(retList);
+    	return ResponseEntity.status(HttpStatus.OK).body(response);
     }
     
     /* 공통코드 단일 조회 */
-	@GetMapping("/syst-info")
-    public ResponseEntity<?> getSystinfo(@ModelAttribute SystInfoReq dto) {
-		SystInfoRes retDto = baseinfoService.selectSystinfo(dto);
+	@GetMapping("/syst-infos")
+    public ResponseEntity<?> getSystinfo(@ModelAttribute SystInfoRequest request) {
+		
+		SystInfoResponse response = baseinfoService.selectSystinfo(SystInfoParam.from(request));
     	
-//    	if(retDto == null) {
-//    		throw new CmmApiException("조회결과가 없습니다.");
-//    	}
-    	
-    	return ResponseEntity.status(HttpStatus.OK).body(retDto);
+    	return ResponseEntity.status(HttpStatus.OK).body(response);
     }
     
     /* 운영사별 기초코드 조회 */
-    @GetMapping("/base-info-list")
-    public ResponseEntity<?> getBaseinfoList(@ModelAttribute BaseInfoListReq dto) {
-    	BaseInfoListRes resDto = baseinfoService.selectBaseinfoList(dto);
+    @GetMapping("/base-info-lists")
+    public ResponseEntity<?> getBaseinfoList(@ModelAttribute BaseInfoListRequest request, @RequestHeader(value = "Authorization", required = false) String authorization) {
     	
-//    	if(resDto == null) {
-//    		throw new CmmApiException("조회결과가 없습니다.");
-//    	}
+    	BaseInfoListResponse response = baseinfoService.selectBaseinfoList(BaseInfoListParam.from(request, jwtUtil.getAllClaimsAsMap(authorization)));
     	
-    	return ResponseEntity.status(HttpStatus.OK).body(resDto);
+    	return ResponseEntity.status(HttpStatus.OK).body(response);
     }
     
     /* 운영사별 기초코드 단일 조회 */
-	@GetMapping("/base-info")
-    public ResponseEntity<?> getBaseinfo(@ModelAttribute BaseInfoReq dto, @RequestHeader(value = "Authorization", required = false) String authorization) {
+	@GetMapping("/base-infos")
+    public ResponseEntity<?> getBaseinfo(@ModelAttribute BaseInfoRequest request, @RequestHeader(value = "Authorization", required = false) String authorization) {
 		
-		Map<String, Object> tokenInfo = jwtUtil.getAllClaimsAsMap(authorization);
-		
-		BaseInfoRes retDto = baseinfoService.selectBaseinfo(dto, tokenInfo);
+		BaseInfoResponse response = baseinfoService.selectBaseinfo(BaseInfoParam.from(request, jwtUtil.getAllClaimsAsMap(authorization)));
     	
-//    	if(retDto == null) {
-//    		throw new CmmApiException("조회결과가 없습니다.");
-//    	}
-    	
-    	return ResponseEntity.status(HttpStatus.OK).body(retDto);
+    	return ResponseEntity.status(HttpStatus.OK).body(response);
     }
     
     /* 회사명 조회  */
-    @PostMapping("/getCmpnyInfo")
-    public ResponseEntity<?> getCmpnyInfo(@RequestBody BaseinfoCmmReq dto) {
-		Map<String, Object> retMap = baseinfoService.selectCmpnyInfo(dto);
-		
-//    	if(retMap == null) {
-//    		throw new CmmApiException("조회결과가 없습니다.");
-//    	}
+    @GetMapping("/cmpny-infos")
+    public ResponseEntity<?> getCmpnyInfo(@ModelAttribute CmpnyInfoRequest request) {
+    	CmpnyInfoResponse response = baseinfoService.selectCmpnyInfo(CmpnyInfoParam.from(request));
     	
-    	return ResponseEntity.status(HttpStatus.OK).body(retMap);
+    	return ResponseEntity.status(HttpStatus.OK).body(response);
     }
     
-    /* WEB 메뉴 조회  */
-    @PostMapping("/getWebMenuList")
-    public ResponseEntity<?> getWebMenuList(@RequestBody BaseinfoCmmReq dto) {
-		List<Map<String, Object>> retList = baseinfoService.selectWebMenuList(dto);
-		
-//    	if(retList == null || retList.size() == 0) {
-//    		throw new CmmApiException("조회결과가 없습니다.");
-//    	}
-    	
-    	return ResponseEntity.status(HttpStatus.OK).body(retList);
+    /* WEB 메뉴 조회 */
+    @GetMapping("/web-menu-lists")
+    public ResponseEntity<?> getWebMenuList(@ModelAttribute WebMenuListRequest request, @RequestHeader(value = "Authorization", required = false) String authorization) {
+    	WebMenuListResponse response = baseinfoService.selectWebMenuList(WebMenuListParam.from(request, jwtUtil.getAllClaimsAsMap(authorization)));
+    	return ResponseEntity.status(HttpStatus.OK).body(response);
     }
     
-    /* APP 메뉴 조회  */
-    @PostMapping("/getAppMenuList")
-    public ResponseEntity<?> getAppMenuList(@RequestBody BaseinfoCmmReq dto) {
-		List<Map<String, Object>> retList = baseinfoService.selectAppMenuList(dto);
-		
-//    	if(retList == null || retList.size() == 0) {
-//    		throw new CmmApiException("조회결과가 없습니다.");
-//    	}
+    /* APP 메뉴 조회 */
+    @GetMapping("/app-menu-lists")
+    public ResponseEntity<?> getAppMenuList(@ModelAttribute AppMenuListRequest request, @RequestHeader(value = "Authorization", required = false) String authorization) {
+    	AppMenuListResponse retList = baseinfoService.selectAppMenuList(AppMenuListParam.from(request, jwtUtil.getAllClaimsAsMap(authorization)));
     	
     	return ResponseEntity.status(HttpStatus.OK).body(retList);
     }
     
     /* 사용자 ID 중복체크 */
-    @PostMapping("/getUserIdDupleChk")
-    public ResponseEntity<?> getUserIdDupleChk(@RequestBody BaseinfoCmmReq dto) {
-		Map<String, Object> retMap = baseinfoService.selectUserIdDupleChk(dto);
-		
-    	if(retMap == null) {
-    		retMap = new HashMap<String, Object>();
-    		retMap.put("UniqueYn", "Y");
-    	} else {
-    		
-    	}
+    @GetMapping("/user-id-duple-checks")
+    public ResponseEntity<?> getUserIdDupleCheck(@ModelAttribute UserIdDupleCheckRequest request) {
+
+    	UserIdDupleCheckResponse response = baseinfoService.getUserIdDupleCheck(UserIdDupleCheckParam.from(request));
     	
-    	return ResponseEntity.status(HttpStatus.OK).body(retMap);
+    	return ResponseEntity.status(HttpStatus.OK).body(response);
     }
     
     /* SMS 발송 */
-    @PostMapping("/getSmsAuthReq")
-    public ResponseEntity<?> getSmsAuthReq(@RequestBody BaseinfoCmmReq dto) {
-    	SecureRandom random = new SecureRandom();
-        int code = 100000 + random.nextInt(900000); // 100000 ~ 999999
-        
-        System.out.println("# SMS Send Code :: " + code);
-        
-        dto.setCertNo(Integer.toString(code));
-        baseinfoService.insertSmsAuthReq(dto);
+    @PostMapping("/sms-auth-sends")
+    public ResponseEntity<?> insertSmsAuthNo(@RequestBody UserSmsAuthNoRequest request) {
+        baseinfoService.insertSmsAuthNo(UserSmsAuthNoParam.from(request));
         
         return ResponseEntity.status(HttpStatus.OK).build();
     }
     
     /* SMS 인증번호 확인  */
-    @PostMapping("/getSmsAuthChk")
-    public ResponseEntity<?> getSmsAuthChk(@RequestBody BaseinfoCmmReq dto) {
-        Map<String, Object> retMap = baseinfoService.selectCertNoSmsId(dto);
-        
-        if(retMap == null) {
-        	throw new CmmApiException("잘못된 인증번호입니다.\n확인 후 다시 시도해주세요.");
-        } else {
-        	dto.setSmsId(retMap.get("SMS_ID").toString());
-        	baseinfoService.updateSmsAuthReq(dto);
-        }
+    @PostMapping("/sms-auth-checks")
+    public ResponseEntity<?> userSmsAuthCheck(@RequestBody UserSmsAuthNoCheckRequest request) {
+    	baseinfoService.userSmsAuthCheck(UserSmsAuthNoCheckParam.from(request));
+    	
         return ResponseEntity.status(HttpStatus.OK).build();
     }
     
     /* 사업장 리스트 조회 */
-    @PostMapping("/getSiteInfoList")
-    public ResponseEntity<?> getSiteInfoList(@RequestBody BaseinfoCmmReq dto) {
-        List<Map<String, Object>> resultList = baseinfoService.selectSiteInfoList(dto);
-        
-//        if(resultList == null) {
-//    		throw new CmmApiException("조회결과가 없습니다.");
-//    	}
-        
-    	return ResponseEntity.status(HttpStatus.OK).body(resultList);
+    @GetMapping("/site-lists")
+    public ResponseEntity<?> getSiteInfoList(@ModelAttribute SiteInfoRequest request, @RequestHeader(value = "Authorization", required = false) String authorization) {
+    	
+    	SiteInfoResponse response = baseinfoService.selectSiteInfoList(SiteInfoParam.from(request, jwtUtil.getAllClaimsAsMap(authorization)));
+
+    	return ResponseEntity.status(HttpStatus.OK).body(response);
     }
     
     /* 사업장 리스트 조회 */
     @GetMapping("/site-node-lists")
-    public ResponseEntity<?> getSiteNodeList(@ModelAttribute SiteNodeListReq dto, @RequestHeader(value = "Authorization", required = false) String authorization) {
-    	Map<String, Object> tokenInfo = null;
+    public ResponseEntity<?> getSiteNodeList(@ModelAttribute SiteNodeListRequest request, @RequestHeader(value = "Authorization", required = false) String authorization) {
     	
-    	if(authorization != null) {
-    		tokenInfo = jwtUtil.getAllClaimsAsMap(authorization);
-    	}
-    	
-    	
-    	SiteNodeListRes retDto = baseinfoService.selectSiteNodeList(dto, tokenInfo);
+    	SiteNodeListResponse response = baseinfoService.selectSiteNodeList(SiteNodeListParam.from(request, jwtUtil.getAllClaimsAsMap(authorization)));
         
-//        if(resultList == null) {
-//    		throw new CmmApiException("조회결과가 없습니다.");
-//    	}
-        
-    	return ResponseEntity.status(HttpStatus.OK).body(retDto);
+    	return ResponseEntity.status(HttpStatus.OK).body(response);
     }
     
     /* 사용자 메뉴 조회  */
     @GetMapping("/menu-list")
-    public ResponseEntity<?> getMenuList(@ModelAttribute MenuListReq dto, @RequestHeader(value = "Authorization", required = false) String authorization) {
+    public ResponseEntity<?> getMenuList(@ModelAttribute MenuListRequest request, @RequestHeader(value = "Authorization", required = false) String authorization) {
     	
-    	Map<String, Object> tokenInfo = jwtUtil.getAllClaimsAsMap(authorization);
+    	MenuListResponse response = baseinfoService.selectMenuList(MenuListParam.from(request, jwtUtil.getAllClaimsAsMap(authorization)));
     	
-    	MenuListRes retDto = baseinfoService.selectMenuList(dto, tokenInfo);
-        
-    	return ResponseEntity.status(HttpStatus.OK).body(retDto);
+    	return ResponseEntity.status(HttpStatus.OK).body(response);
     }
     
-    @PostMapping("/getUserIdInfo")
-    public ResponseEntity<?> getUserIdInfo(@RequestBody BaseinfoCmmReq dto) {
-        Map<String, Object> retMap = baseinfoService.selectUserIdInfo(dto);
-        
-    	return ResponseEntity.status(HttpStatus.OK).body(retMap);
-    }
+    // 보류 ( 프로세스 개선 필요 )
+    // AS-IS : 이름, 휴대폰번호 입력 후 인증되면 아이디를 찾아주지만 휴대폰번호 Hmac 값을 구하려면 회사코드를 알아야 함
+    // TO-BE : 이름 입력 후 아이디 찾기 > 여러 아이디가 조회되면 팝업에 리스트를 띄워서 사용자가 본인 계정을 선택(회사코드 이때 알아냄) > 계정 ID를 기반으로 회사코드를 조회해서 휴대폰번호 Hmac 값을 구한 후 이후 로직 실행
+//    @GetMapping("/user-ids")
+//    public ResponseEntity<?> getUserIdInfo(@ModelAttribute UserIdInfoRequest request) {
+//    	UserIdInfoResponse response = baseinfoService.selectUserIdInfo(UserIdInfoParam.from(request));
+//        
+//    	return ResponseEntity.status(HttpStatus.OK).body(response);
+//    }
+//    
+//    // 보류 ( 프로세스 개선 필요 )
+//    // getUserIdInfo 와 같은 이유로 보류
+//    @PostMapping("/updateUserPw")
+//    public ResponseEntity<?> updateUserPw(@RequestBody BaseinfoCmmReq dto) {
+//    	
+//    	baseinfoService.updateUserPw(dto);
+//    	
+//    	return ResponseEntity.status(HttpStatus.OK).build();
+//    }terms-detail-info
+    
+    @GetMapping("/terms-detail-infos")
+    public ResponseEntity<?> getTermsDetailInfo(@ModelAttribute TermsDetailInfoRequest request) {
+    	TermsDetailInfoResponse response = baseinfoService.selectTermsDetailInfo(TermsDetailInfoParam.from(request));
 
-    @PostMapping("/updateUserPw")
-    public ResponseEntity<?> updateUserPw(@RequestBody BaseinfoCmmReq dto) {
     	
-    	baseinfoService.updateUserPw(dto);
-    	
-    	return ResponseEntity.status(HttpStatus.OK).build();
-    }
-    
-    @PostMapping("/getTermsDInfo")
-    public ResponseEntity<?> getTermsDInfo(@RequestBody BaseinfoCmmReq dto) {
-		Map<String, Object> retList = baseinfoService.selectTermsDInfo(dto);
-    	
-    	if(retList == null) {
-    		throw new CmmApiException("조회결과가 없습니다.");
-    	}
-    	
-    	return ResponseEntity.status(HttpStatus.OK).body(retList);
+    	return ResponseEntity.status(HttpStatus.OK).body(response);
     }
 }

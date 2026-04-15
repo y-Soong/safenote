@@ -17,16 +17,16 @@
     <div class="viewSearch">
       <div>
         <label>사업장번호</label>
-        <input v-model.trim="sr_siteNo" type="text" />
+        <input v-model.trim="siteNo" type="text" />
       </div>
       <div>
         <label>사업장명</label>
-        <input v-model.trim="sr_siteNm" type="text" />
+        <input v-model.trim="siteNm" type="text" />
       </div>
 
       <div>
         <label>사용여부</label>
-        <select v-model.trim="sr_useYn" name="combo">
+        <select v-model.trim="useYn" name="combo">
           <option
             v-for="opt in systCodeArr['SYS003'] || []"
             :key="opt.systValDCd"
@@ -159,6 +159,7 @@ import { useModal } from "@/utils/useModal";
 import { useFieldWatcher } from "@/utils/useFieldWatcher";
 import axios from "@/api/axios";
 import ViewHeader from "@/components/common/ViewHeader.vue";
+import { getMessage, MSG } from "@/messages";
 import BaseSelect from "@/components/common/BaseSelect.vue";
 import SiteInfoPop from "./popup/SiteInfoPop.vue";
 import CalendarSrch from "@/components/common/CalendarSrch.vue";
@@ -182,9 +183,9 @@ const siteInfoList = ref([]);
 const systCodeArr = ref({});
 
 // 조회조건 변수
-const sr_siteNo = ref("");
-const sr_siteNm = ref("");
-const sr_useYn = ref("Y");
+const siteNo = ref("");
+const siteNm = ref("");
+const useYn = ref("Y");
 
 // 화면 제어 변수
 const p_siteCd = ref("");
@@ -209,7 +210,7 @@ onMounted(async () => {
 // ================ API Functions ================
 const fnGetSystinfoList = async () => {
   try {
-    const response = await axios.get("/comApi/baseinfo/syst-info-list", {
+    const response = await axios.get("/comApi/baseinfo/syst-info-lists", {
       params: {
         systCodeList: ["SYS003"],
       },
@@ -246,9 +247,9 @@ const fnSearch = async () => {
     const response = await axios.get("/webApi/baim01/site-info-lists", {
       params: {
         cmpnyCd: sessionStorage.getItem("gv_cmpnyCd"),
-        siteNo: sr_siteNo.value,
-        siteNm: sr_siteNm.value,
-        useYn: sr_useYn.value,
+        siteNo: siteNo.value,
+        siteNm: siteNm.value,
+        useYn: useYn.value,
       },
     });
 
@@ -267,24 +268,23 @@ const fnSearch = async () => {
 
 const fnSave = async () => {
   const filteredSite = siteInfoList.value.filter((user) => user.chk);
-  const dataList = proxy.$util.toCamelCaseKeys(filteredSite);
 
-  if (dataList.length == 0) {
-    proxy.$alert("저장할 데이터가 없습니다.");
+  if (filteredSite.length == 0) {
+    proxy.$alert(getMessage(MSG.SAVE_DATA_REQUIRED));
     return;
   }
 
-  const ok = await proxy.$confirm("저장하시겠습니까 ?");
+  const ok = await proxy.$confirm(getMessage(MSG.SAVE_CONFIRM));
   if (!ok) return;
 
   try {
     const response = await axios.post(
-      "/webApi/baim01/updateSiteInfo",
-      dataList
+      "/webApi/baim01/save-site-infos",
+      filteredSite
     );
 
     if (response.status === 200) {
-      proxy.$alert("처리되었습니다.");
+      proxy.$alert(getMessage(MSG.SAVE_SUCCESS));
       fnSearch();
     }
   } catch (err) {

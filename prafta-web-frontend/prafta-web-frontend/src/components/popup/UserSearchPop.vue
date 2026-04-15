@@ -34,9 +34,9 @@
         <div class="viewSearch">
           <div class="form-left">
             <label>아이디</label>
-            <input v-model="sr_userId" />
+            <input v-model="userId" />
             <label>사용자명</label>
-            <input v-model="sr_userNm" />
+            <input v-model="userNm" />
           </div>
           <div class="btn-group">
             <button class="btn btn-primary" @click="fnGetUserInfoList">
@@ -63,7 +63,7 @@
                   :key="user.userId"
                   @dblclick="
                     fnSelectRow(
-                      user.userId,
+                      user.userCd,
                       user.userNm,
                       user.mblNo,
                       user.email
@@ -98,13 +98,16 @@ import axios from "@/api/axios";
 const modalRef = ref(null);
 const userActList = ref([]);
 const cmpnyCd = ref("");
-const sr_userId = ref("");
-const sr_userNm = ref("");
+const userId = ref("");
+const userNm = ref("");
 
 const { proxy } = getCurrentInstance();
 
 const props = defineProps({
   cmpnyCd_p: String,
+  siteCd_p: String,
+  nodeCd_p: String,
+  searchMode_p: String,
   onSelect: Function,
 });
 
@@ -124,13 +127,25 @@ onMounted(async () => {
 // API 호출
 const fnGetUserInfoList = async () => {
   userActList.value = [];
+  let apiUrl = "/webApi/user01/user-info-lists";
+  let params = {
+    userId: userId.value,
+    userNm: userNm.value,
+  };
+
+  if (props.searchMode_p === "siteNodeAdmin") {
+    apiUrl = "/webApi/user01/site-node-admin-candidate-lists";
+    params = {
+      userId: userId.value,
+      userNm: userNm.value,
+      siteCd: props.siteCd_p,
+      nodeCd: props.nodeCd_p,
+    };
+  }
 
   try {
-    const response = await axios.get("/webApi/user01/user-info-lists", {
-      params: {
-        userId: sr_userId.value,
-        userNm: sr_userNm.value,
-      },
+    const response = await axios.get(apiUrl, {
+      params: params,
     });
 
     if (response.status === 200) {
@@ -142,9 +157,9 @@ const fnGetUserInfoList = async () => {
 };
 
 /* user function */
-function fnSelectRow(userId, userNm, mblNo, email) {
+const fnSelectRow = (userCd, userNm, mblNo, email) => {
   // emit("select", siteCd, siteNo, siteNm); // SITE_CD 부모에 전달
-  props.onSelect(userId, userNm, mblNo, email);
+  props.onSelect(userCd, userNm, mblNo, email);
   emit("close"); // 팝업 닫기
 }
 

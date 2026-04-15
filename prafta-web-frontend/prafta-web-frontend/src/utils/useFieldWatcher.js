@@ -17,6 +17,8 @@ export function useFieldWatcher(listRef, onFieldChange, excludeKeys = []) {
     watchers.forEach((unwatch) => unwatch());
     watchers.length = 0;
 
+    if (!Array.isArray(listRef.value)) return;
+
     listRef.value.forEach((item) => {
       Object.keys(item).forEach((key) => {
         if (excludeKeys.includes(key)) return;

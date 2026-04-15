@@ -2,7 +2,7 @@
 <!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
 <mapper namespace="com.prafta.web.baim.baim05.mapper.Baim05Mapper">
 
-	<select id="selectDailyUserSlotList" parameterType="com.prafta.web.baim.baim05.dto.DailyUserSlotListQry" resultType="com.prafta.web.baim.baim05.vo.DailyUserSlotList">
+	<select id="selectDailyUserSlotList" parameterType="com.prafta.web.baim.baim05.application.query.DailyUserSlotListQuery" resultType="com.prafta.web.baim.baim05.result.DailyUserSlotListResult">
     /* Baim05Mapper.selectDailyUserSlotList */
 	SELECT 
 		'' 																AS chk
@@ -17,21 +17,21 @@
 	    , FNC_CMM_INFO_SRCH(A.CMPNY_CD, 'USER', A.CURR_USER_ID, NULL) 	AS currUserNm
 	    , A.SLOT_STATUS													AS slotStatus
 	FROM TB_DAILY_USER_SLOT A
-	WHERE A.CMPNY_CD = #{token.gv_cmpnyCd}
-	  <if test="param.siteCd != null and param.siteCd != ''">
-	  	AND A.SITE_CD = #{param.siteCd}
+	WHERE A.CMPNY_CD = #{gvCmpnyCd}
+	  <if test="siteCd != null and siteCd != ''">
+	  	AND A.SITE_CD = #{siteCd}
 	  </if>
-	  <if test="param.slotType != null and param.slotType != ''">
-	  	AND A.SLOT_TYPE = #{param.slotType}
+	  <if test="slotType != null and slotType != ''">
+	  	AND A.SLOT_TYPE = #{slotType}
 	  </if>
-	  <if test="param.slotStatus != null and param.slotStatus != ''">
-	  	AND A.SLOT_STATUS = #{param.slotStatus}
+	  <if test="slotStatus != null and slotStatus != ''">
+	  	AND A.SLOT_STATUS = #{slotStatus}
 	  </if>
-	  <if test="param.useYn != null and param.useYn != ''">
-	  	AND A.USE_YN = #{param.useYn}
+	  <if test="useYn != null and useYn != ''">
+	  	AND A.USE_YN = #{useYn}
 	  </if>
-	  <if test="param.currUserId != null and param.currUserId != ''">
-	  	AND A.USE_YN = #{param.currUserId}
+	  <if test="currUserId != null and currUserId != ''">
+	  	AND A.USE_YN = #{currUserId}
 	  </if>
 	ORDER BY SITE_CD, CAST(A.SLOT_NO AS UNSIGNED)
     </select>

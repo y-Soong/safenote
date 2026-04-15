@@ -1,17 +1,18 @@
 package com.prafta.web.user.user03.service.impl;
 
 import java.util.List;
-import java.util.Map;
 
 import org.springframework.stereotype.Service;
 
-import com.prafta.web.user.user03.dto.SiteInfoListQry;
-import com.prafta.web.user.user03.dto.SiteInfoListReq;
-import com.prafta.web.user.user03.dto.SiteInfoListRes;
-import com.prafta.web.user.user03.dto.User03;
+import com.prafta.web.user.user03.application.command.UserSiteAuthCommand;
+import com.prafta.web.user.user03.application.model.UserSiteAuthModel;
+import com.prafta.web.user.user03.application.param.SiteInfoListParam;
+import com.prafta.web.user.user03.application.param.UserSiteAuthParam;
+import com.prafta.web.user.user03.application.query.SiteInfoListQuery;
+import com.prafta.web.user.user03.dto.response.SiteInfoListResponse;
 import com.prafta.web.user.user03.mapper.User03Mapper;
+import com.prafta.web.user.user03.result.SiteInfoResult;
 import com.prafta.web.user.user03.service.User03Service;
-import com.prafta.web.user.user03.vo.SiteInfo;
 
 import lombok.extern.slf4j.Slf4j;
 
@@ -25,28 +26,24 @@ public class User03ServiceImpl implements User03Service{
 	}
 	
 	
-	public SiteInfoListRes selectSiteInfoSearch(SiteInfoListReq dto, Map<String, Object> tokenInfo) {
+	public SiteInfoListResponse selectSiteInfoSearch(SiteInfoListParam param) {
 		
-		SiteInfoListQry reqDto = SiteInfoListQry.builder()
-												.userId(dto.getUserId())
-												.build();
+		SiteInfoListResponse response = null;
 		
-		SiteInfoListRes resDto = null;
-		
-		List<SiteInfo> siteInfoList = user03Mapper.selectSiteInfoSearch(reqDto, tokenInfo);
+		List<SiteInfoResult> siteInfoList = user03Mapper.selectSiteInfoSearch(SiteInfoListQuery.from(param));
 		
 		if(siteInfoList != null && siteInfoList.size() > 0) {
-			resDto = SiteInfoListRes.builder()
+			response = SiteInfoListResponse.builder()
 									.siteInfoList(siteInfoList)
 									.build();
 		}
 		
-		return resDto;
+		return response;
 	}
 
-	public void updateUserSiteAuth(List<User03> dtoList, Map<String, Object> tokenInfo) {
-		for(User03 dto : dtoList) {
-			user03Mapper.mergeUserSiteAuth(dto, tokenInfo);
+	public void updateUserSiteAuth(UserSiteAuthParam param) {
+		for(UserSiteAuthModel model : param.userSiteAuthModelList()) {
+			user03Mapper.mergeUserSiteAuth(UserSiteAuthCommand.from(model));
 		}
 	}
 	

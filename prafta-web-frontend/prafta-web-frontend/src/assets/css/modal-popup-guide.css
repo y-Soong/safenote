@@ -26,6 +26,10 @@ body.prafta-modal-open .month-day-picker-popover {
   pointer-events: auto !important;
   z-index: 10001 !important;
 }
+/* 본문 모달 밖(Teleport 등)에 뜨는 2중 오버레이 — body pointer-events: none 상속 우회 */
+body.prafta-modal-open .prafta-nested-modal-overlay {
+  pointer-events: auto !important;
+}
 
 /* ========== 7-0. 전제 토큰 ========== */
 .prafta-modal-popup {

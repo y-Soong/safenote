@@ -1,15 +1,13 @@
 package com.prafta.web.chkLst.chkLst01.service;
 
-import java.util.List;
-import java.util.Map;
-
-import com.prafta.web.chkLst.chkLst01.dto.ChkLst01;
-import com.prafta.web.chkLst.chkLst01.dto.ChkLst01ReqDto;
+import com.prafta.web.chkLst.chkLst01.application.param.ChkptInfoParam;
+import com.prafta.web.chkLst.chkLst01.application.param.ChkptListParam;
+import com.prafta.web.chkLst.chkLst01.dto.response.ChkptListResponse;
 
 public interface ChkLst01Service {
-	List<ChkLst01> selectChkptList(ChkLst01ReqDto dto, Map<String, Object> tokenInfo);
+	ChkptListResponse selectChkptList(ChkptListParam param);
 	
-	void updateChkptList(List<ChkLst01> dtoList, Map<String, Object> tokenInfo);
+	void updateChkptList(ChkptInfoParam param);
 	
-	void deleteChkptList(List<ChkLst01> dtoList, Map<String, Object> tokenInfo);
+	void deleteChkptList(ChkptInfoParam param);
 }

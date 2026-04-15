@@ -1,20 +1,23 @@
 package com.prafta.common.cmm.login.service;
 
-import java.util.List;
-import java.util.Map;
-
-import com.prafta.common.cmm.login.dto.AuthLogoutReq;
-import com.prafta.common.cmm.login.dto.LoginReqDto;
-import com.prafta.common.cmm.login.dto.UserJoinReq;
+import com.prafta.common.cmm.login.application.param.AuthMenuInfoParam;
+import com.prafta.common.cmm.login.application.param.LoginParam;
+import com.prafta.common.cmm.login.application.param.LogoutParam;
+import com.prafta.common.cmm.login.application.param.UserJoinParam;
+import com.prafta.common.cmm.login.application.param.UserTermsAgreementCheckParam;
+import com.prafta.common.cmm.login.dto.response.LoginResponse;
+import com.prafta.common.cmm.login.dto.response.UserTermsAgreementCheckResponse;
 
 public interface LoginService {
-	Map<String, Object> getLoginUser(LoginReqDto dto, String clientType); 
+	LoginResponse Login(LoginParam param); 
 	
-	int logout(AuthLogoutReq req, Map<String, Object> tokenInfo);
+	void logout(LogoutParam param);
 	
-	void insertUserInfo(UserJoinReq dto);
+	void insertUserInfo(UserJoinParam param);
 	
-	List<Map<String, Object>> selectUserTermsAgrChk(LoginReqDto dto);
+	UserTermsAgreementCheckResponse userTermsAgrementCheck(UserTermsAgreementCheckParam param);
 	
-	void updateAuthMenuInfo(List<LoginReqDto> dtoList, Map<String, Object> tokenInfo);
+//	List<Map<String, Object>> selectUserTermsAgrChk(LoginRequest dto);
+	
+	void updateAuthMenuInfo(AuthMenuInfoParam param);
 }

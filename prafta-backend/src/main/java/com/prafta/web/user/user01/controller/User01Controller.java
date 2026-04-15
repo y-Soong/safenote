@@ -15,12 +15,27 @@ import org.springframework.web.bind.annotation.RestController;
 
 import com.prafta.common.annotation.NoAuth;
 import com.prafta.common.security.JwtUtil;
-import com.prafta.web.user.user01.dto.UserInfoListReq;
-import com.prafta.web.user.user01.dto.UserInfoListRes;
-import com.prafta.web.user.user01.dto.UserInfoReq;
-import com.prafta.web.user.user01.dto.UserPasswdReq;
+import com.prafta.web.user.user01.application.param.MyPasswdParam;
+import com.prafta.web.user.user01.application.param.ScheduleWithdrawalParam;
+import com.prafta.web.user.user01.application.param.SiteNodeAdminCandidateListParam;
+import com.prafta.web.user.user01.application.param.WithdrawMyAccountParam;
+import com.prafta.web.user.user01.application.param.UserInfoListParam;
+import com.prafta.web.user.user01.application.param.UserInfoParam;
+import com.prafta.web.user.user01.application.param.UserPasswdParam;
+import com.prafta.web.user.user01.dto.UserBatchUpdateResponse;
+import com.prafta.web.user.user01.dto.request.MyPasswdRequest;
+import com.prafta.web.user.user01.dto.request.ScheduleWithdrawalRequest;
+import com.prafta.web.user.user01.dto.request.SiteNodeAdminCandidateListRequest;
+import com.prafta.web.user.user01.dto.request.WithdrawMyAccountRequest;
+import com.prafta.web.user.user01.dto.request.UserInfoListRequest;
+import com.prafta.web.user.user01.dto.request.UserInfoRequest;
+import com.prafta.web.user.user01.dto.request.UserPasswdRequest;
+import com.prafta.web.user.user01.dto.response.SiteNodeAdminCandidateListResponse;
+import com.prafta.web.user.user01.dto.response.UserInfoListResponse;
+import com.prafta.web.user.user01.service.User01BatchService;
 import com.prafta.web.user.user01.service.User01Service;
 
+import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 
@@ -32,38 +47,63 @@ import lombok.extern.slf4j.Slf4j;
 public class User01Controller { 	
 	
 	private final User01Service user01Service;
+	private final User01BatchService user01BatchService;
 	private final JwtUtil jwtUtil;
     
     @GetMapping("/user-info-lists")
-    public ResponseEntity<?> getUserInfoList(@ModelAttribute UserInfoListReq dto, @RequestHeader(value = "Authorization", required = false) String authorization) {
+    public ResponseEntity<?> getUserInfoList(@ModelAttribute UserInfoListRequest request, @RequestHeader(value = "Authorization", required = false) String authorization) {
     	
-    	Map<String, Object> tokenInfo = jwtUtil.getAllClaimsAsMap(authorization);
+    	UserInfoListResponse response = user01Service.selectUserInfoList(UserInfoListParam.from(request, jwtUtil.getAllClaimsAsMap(authorization)));
     	
-    	UserInfoListRes retDto = user01Service.selectUserInfoList(dto, tokenInfo);
-		
-//    	if(retList == null) {
-//    		throw new LoginFailException("조회된 결과가 없습니다.");
-//    	}
-    	
-    	return ResponseEntity.status(HttpStatus.OK).body(retDto);
+    	return ResponseEntity.status(HttpStatus.OK).body(response);
     }
     
     @PostMapping("/update-user-passwd")
-    public ResponseEntity<?> updateUserPw(@RequestBody UserPasswdReq dto) {
-    	
-    	user01Service.updateUserPw(dto);
-    	
+    public ResponseEntity<?> updateUserPw(@RequestBody UserPasswdRequest request) {
+
+    	user01Service.updateUserPw(UserPasswdParam.from(request));
+
+    	return ResponseEntity.status(HttpStatus.OK).build();
+    }
+
+    @PostMapping("/update-my-passwd")
+    public ResponseEntity<?> updateMyPw(@RequestBody MyPasswdRequest request) {
+
+    	user01Service.updateMyPw(MyPasswdParam.from(request));
+
     	return ResponseEntity.status(HttpStatus.OK).build();
     }
     
-//    @PostMapping("/updateUserInfo")
     @PostMapping("/update-user-infos")
-    public ResponseEntity<?> updateUserInfo(@RequestBody List<UserInfoReq> dtoList, @RequestHeader(value = "Authorization", required = false) String authorization) {
+    public ResponseEntity<?> updateUserInfo(@Valid @RequestBody List<UserInfoRequest> reqeust, @RequestHeader(value = "Authorization", required = false) String authorization) {
     	
-    	Map<String, Object> tokenInfo = jwtUtil.getAllClaimsAsMap(authorization);
-    	
-    	user01Service.updateUserInfo(dtoList, tokenInfo);
-    	
+    	UserBatchUpdateResponse result = user01BatchService.updateUserInfoBatch(UserInfoParam.from(reqeust, jwtUtil.getAllClaimsAsMap(authorization)));
+
+    	return ResponseEntity.status(HttpStatus.OK).body(result);
+    }
+    
+    @PostMapping("/withdraw-my-account")
+    public ResponseEntity<?> withdrawMyAccount(@RequestBody WithdrawMyAccountRequest request) {
+
+    	user01Service.withdrawMyAccount(WithdrawMyAccountParam.from(request));
+
     	return ResponseEntity.status(HttpStatus.OK).build();
     }
+
+    @PostMapping("/schedule-withdrawal")
+    public ResponseEntity<?> scheduleWithdrawal(@RequestBody ScheduleWithdrawalRequest request) {
+
+    	user01Service.scheduleWithdrawal(ScheduleWithdrawalParam.from(request));
+
+    	return ResponseEntity.status(HttpStatus.OK).build();
+    }
+
+    @GetMapping("/site-node-admin-candidate-lists")
+    public ResponseEntity<?> getSiteNodeAdminCandidateLists(@ModelAttribute SiteNodeAdminCandidateListRequest request, @RequestHeader(value = "Authorization", required = false) String authorization) {
+    	
+    	SiteNodeAdminCandidateListResponse response = user01Service.selectSiteNodeAdminCandidateLists(SiteNodeAdminCandidateListParam.from(request, jwtUtil.getAllClaimsAsMap(authorization)));
+    	
+    	return ResponseEntity.status(HttpStatus.OK).body(response);
+    }
+    
 }

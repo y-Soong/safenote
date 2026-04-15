@@ -2,11 +2,11 @@
 <!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
 <mapper namespace="com.prafta.common.cmm.auth.mapper.AuthMapper">
 
-	<select id="selectValidByRefreshTokenHash" parameterType="string" resultType="com.prafta.common.cmm.auth.vo.AuthToken">
+	<select id="selectValidByRefreshTokenHash" parameterType="string" resultType="com.prafta.common.cmm.auth.result.AuthTokenResult">
 	/* AuthMapper.selectValidByRefreshTokenHash */
 	    SELECT
 			CMPNY_CD            AS cmpnyCd
-			, USER_ID             AS userId
+			, USER_CD             AS userCd
 			, TOKEN_ID            AS tokenId
 			, CLIENT_TYPE         AS clientType
 			, DEVICE_ID           AS deviceId
@@ -21,38 +21,53 @@
 			, INSERT_DATE         AS insertDate
 			, UPDATE_NO           AS updateNo
 			, UPDATE_DATE         AS updateDate
-	    FROM tb_auth_token
+	    FROM TB_AUTH_TOKEN
 	    WHERE REFRESH_TOKEN_HASH = #{refreshTokenHash}
 	      AND REVOKED_YN = 'N'
 	      AND EXPIRE_DTIME > NOW()
 	    LIMIT 1
 	</select>
 	
-	<select id="selectUserForJwt" parameterType="string" resultType="com.prafta.common.cmm.auth.vo.UserInfo">
+	<select id="selectUserForJwt" parameterType="string" resultType="com.prafta.common.cmm.login.result.UserResult">
 	/* AuthMapper.selectUserForJwt */
 	SELECT 
-		A.CMPNY_CD
-		, A.USER_ID
-		, A.USER_NM
-		, A.USER_PW
-		, A.AUTH_CD
-        , A.SITE_CD
-        , B.SITE_NO
-        , B.SITE_NM
-		, A.MBL_NO
-		, A.EMAIL
-		, A.INSERT_NO
-		, A.INSERT_DATE
-		, A.UPDATE_NO
-		, A.UPDATE_DATE
+		A.CMPNY_CD			AS cmpnyCd
+		, A.USER_CD			AS userCd
+		, A.USER_ID			AS userId
+		, A.USER_NM			AS userNm
+		, ''				AS userPw
+		, A.AUTH_CD			AS authCd
+		, FNC_CMM_INFO_SRCH(
+			A.CMPNY_CD
+			, 'AUTH_LEVEL'
+			, A.AUTH_CD
+			, null
+		)					AS authLevel
+        , A.SITE_CD			AS siteCd
+        , B.SITE_NO			AS siteNo
+        , B.SITE_NM			AS siteNm
+        , A.NODE_CD			AS nodeCd
+        , C.NODE_NM			AS nodeNm
+		, A.MBL_NO_ENC		AS mblNoEnc
+		, A.EMAIL_ENC		AS emailEnc
+		, A.INSERT_NO		AS insertNo
+		, A.INSERT_DATE		AS insertDate
+		, A.UPDATE_NO		AS updateNo
+		, A.UPDATE_DATE		AS updateDate
 	FROM TB_USER A
          INNER JOIN TB_SITE B
 			ON (
 				A.CMPNY_CD = B.CMPNY_CD
 			AND A.SITE_CD = B.SITE_CD
             )
+         LEFT OUTER JOIN TB_SITE_NODE C
+         	ON (
+				A.CMPNY_CD = C.CMPNY_CD
+			AND A.SITE_CD = C.SITE_CD
+			AND A.NODE_CD = C.NODE_CD
+			)
 	WHERE 1=1
-	  AND A.USER_ID = #{userId}
+	  AND A.USER_CD = #{userCd}
 	  AND A.USE_YN = 'Y'
 	</select>
 	

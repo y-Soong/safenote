@@ -102,7 +102,9 @@
               <div style="width: 10rem">
                 <BaseSelect id="useYn" v-model="useYn">
                   <option
-                    v-for="opt in systCodeArr['SYS003'] || []"
+                    v-for="opt in (systCodeArr['SYS003'] || []).filter(
+                      (o) => o.systValDCd != null
+                    )"
                     :key="opt.systValDCd"
                     :value="opt.systValDCd"
                   >
@@ -237,7 +239,7 @@ const zipCode = ref("");
 const strDate = ref("");
 const endDate = ref("");
 const useYn = ref("");
-const siteAdminId = ref("");
+const siteAdminCd = ref("");
 const siteAdminNm = ref("");
 const siteAdminSrchBtnFcs = ref("");
 const telNo = ref("");
@@ -483,7 +485,7 @@ function focusKill(e) {
 // API 호출
 const fnGetSystinfoList = async () => {
   try {
-    const response = await axios.get("/comApi/baseinfo/syst-info-list", {
+    const response = await axios.get("/comApi/baseinfo/syst-info-lists", {
       params: {
         systCodeList: ["SYS003"],
       },
@@ -529,7 +531,7 @@ const fnGetSiteInfo = async (siteCd) => {
         telNo.value = response.data?.siteInfoList[0].telNo;
         gpsRange.value = response.data?.siteInfoList[0].gpsRange;
         siteDesc.value = response.data?.siteInfoList[0].siteDesc;
-        siteAdminId.value = response.data?.siteInfoList[0].siteAdminId;
+        siteAdminCd.value = response.data?.siteInfoList[0].siteAdminCd;
         siteAdminNm.value = response.data?.siteInfoList[0].siteAdminNm;
       }
     }
@@ -557,7 +559,7 @@ const fnSiteSave = async () => {
           strDate: strDate.value,
           endDate: endDate.value,
           useYn: useYn.value,
-          siteAdminId: siteAdminId.value,
+          siteAdminCd: siteAdminCd.value,
           telNo: telNo.value,
           gpsRange: gpsRange.value,
           siteDesc: siteDesc.value,
@@ -591,8 +593,8 @@ function telNoFocusKill() {
   }
 }
 
-function onUserSelected(userIdVal, userNmVal) {
-  siteAdminId.value = userIdVal;
+function onUserSelected(userCdVal, userNmVal) {
+  siteAdminCd.value = userCdVal;
   siteAdminNm.value = userNmVal;
 }
 
@@ -629,7 +631,7 @@ function fnSiteInfoValidationChk() {
       addrFcs.value.focus();
     });
     retVal = false;
-  } else if (proxy.$util.isEmpty(siteAdminId.value)) {
+  } else if (proxy.$util.isEmpty(siteAdminCd.value)) {
     alertMsg = "관리자 계정을 지정해주세요.";
 
     fnAlertMsg(alertMsg, () => {

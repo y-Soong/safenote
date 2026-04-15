@@ -2,63 +2,170 @@
 <!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
 <mapper namespace="com.prafta.web.user.user01.mapper.User01Mapper">
 
-    <select id="selectUserInfoList" parameterType="com.prafta.web.user.user01.dto.UserInfoListQry" resultType="com.prafta.web.user.user01.vo.UserInfo">
-    /* User01Mapper.selectUserInfoList */
-	SELECT 
-		'' 																AS chk
-		, A.CMPNY_CD													AS cmpnyCd
-        , A.USER_ID														AS userId
-        , A.USER_NM														AS userNm
-        , A.AUTH_CD														AS authCd
-        , A.SITE_CD														AS siteCd
-        , A.NODE_CD														AS nodeCd
-        , FNC_CMM_INFO_SRCH(A.CMPNY_CD, 'NODE', A.SITE_CD, A.NODE_CD)	AS nodeNm
-        , C.SITE_NM														AS siteNm
-        , FN_DECRYPT(A.MBL_NO) 											AS mblNo
-        , FN_DECRYPT(A.BIRTH_DT) 										AS birthDt
-        , FN_DECRYPT(A.EMAIL) 											AS email
-        , A.GENDER														AS gender
-        , A.USE_YN														AS useYn
-        , IFNULL(B.SITE_NM_LIST, '') 									AS siteNmList
+	<select id="selectUserNodeAdminCheck" parameterType="com.prafta.web.user.user01.application.query.UserNodeAdminCheckQuery" resultType="int">
+    /* User01Mapper.selectUserNodeAdminCheck */
+	SELECT COUNT(*)
 	FROM TB_USER A
-		 LEFT JOIN (
-			SELECT 
-				A.USER_ID
-				, GROUP_CONCAT(B.SITE_NM ORDER BY B.SITE_CD SEPARATOR ',') AS SITE_NM_LIST
-			FROM TB_USER_SITE_AUTH A
-			     INNER JOIN TB_SITE B
-					ON (
-						A.CMPNY_CD = B.CMPNY_CD
-					AND A.SITE_CD = B.SITE_CD
-					)
-			WHERE A.USE_YN = 'Y'
-			GROUP BY A.USER_ID
-		) B
-		ON B.USER_ID = A.USER_ID
-		INNER JOIN TB_SITE C
+	     INNER JOIN TB_SITE_NODE B
+			ON (
+				A.CMPNY_CD = B.CMPNY_CD
+			AND A.NODE_CD = B.NODE_CD
+	        AND A.SITE_CD = B.SITE_CD
+	        AND (A.USER_CD = B.MAIN_ADMIN_CD OR A.USER_CD = B.SUB_ADMIN_CD)
+	        )
+	WHERE A.CMPNY_CD = #{cmpnyCd}
+	  AND A.USER_CD = #{userCd}
+	</select>
+	
+	<resultMap id="UserInfoMap" type="com.prafta.web.user.user01.result.UserInfoResult">
+	  <constructor>
+	    <!-- record component 순서/이름과 맞추는 게 안전 -->
+	    <arg name="chk"       column="chk"       javaType="java.lang.String"/>
+	    <arg name="cmpnyCd"   column="cmpnyCd"   javaType="java.lang.String"/>
+	    <arg name="userCd"    column="userCd"    javaType="java.lang.String"/>
+	    <arg name="userId"    column="userId"    javaType="java.lang.String"/>
+	    <arg name="userNm"    column="userNm"    javaType="java.lang.String"/>
+	    <arg name="authCd"    column="authCd"    javaType="java.lang.String"/>
+	    <arg name="authLevel" column="authLevel" javaType="java.lang.String"/>
+	    <arg name="siteCd"    column="siteCd"    javaType="java.lang.String"/>
+	    <arg name="nodeCd"    column="nodeCd"    javaType="java.lang.String"/>
+	    <arg name="oriNodeCd" column="oriNodeCd" javaType="java.lang.String"/>
+	    <arg name="nodeNm"    column="nodeNm"    javaType="java.lang.String"/>
+	    <arg name="siteNm"    column="siteNm"    javaType="java.lang.String"/>
+	
+	    <!-- TypeHandler 적용: record도 constructor arg에 가능 -->
+	    <arg name="mblNo"   column="mblNo"   javaType="java.lang.String"
+	         typeHandler="com.prafta.common.security.crypto.mybatis.AesGcmDecryptTypeHandler"/>
+	    <arg name="email"   column="email"   javaType="java.lang.String"
+	         typeHandler="com.prafta.common.security.crypto.mybatis.AesGcmDecryptTypeHandler"/>
+	    <arg name="birthDt" column="birthDt" javaType="java.lang.String"
+	         typeHandler="com.prafta.common.security.crypto.mybatis.AesGcmDecryptTypeHandler"/>
+	
+	    <arg name="gender"    column="gender"    javaType="java.lang.String"/>
+	    <arg name="useYn"     column="useYn"     javaType="java.lang.String"/>
+	    <arg name="siteNmList" column="siteNmList" javaType="java.lang.String"/>
+	    <arg name="accountStatus" column="accountStatus" javaType="java.lang.String"/>
+	    <arg name="withdrawalDate" column="withdrawalDate" javaType="java.lang.String"/>
+	  </constructor>
+	</resultMap>
+
+    <select id="selectUserInfoList" parameterType="com.prafta.web.user.user01.application.query.UserInfoListQuery" resultMap="UserInfoMap">
+    /* User01Mapper.selectUserInfoList */
+	WITH RECURSIVE viewer AS (
+	    SELECT
+	        U.CMPNY_CD,
+	        U.USER_CD,
+	        U.USER_ID,
+	        U.AUTH_CD,
+	        U.SITE_CD,
+	        U.NODE_CD
+	    FROM TB_USER U
+	    WHERE U.CMPNY_CD = #{gvCmpnyCd}
+	      AND U.USER_CD  = #{gvUserCd}
+	    LIMIT 1
+	),
+	node_tree AS (
+	    /* 로그인 사용자의 node 부터 시작 */
+	    SELECT N.CMPNY_CD, N.SITE_CD, N.NODE_CD
+	    FROM TB_SITE_NODE N
+	    INNER JOIN viewer V
+	        ON N.CMPNY_CD = V.CMPNY_CD
+	       AND N.SITE_CD  = V.SITE_CD
+	       AND N.NODE_CD  = V.NODE_CD
+	
+	    UNION ALL
+	
+	    /* 하위 노드 무한 확장 */
+	    SELECT C.CMPNY_CD, C.SITE_CD, C.NODE_CD
+	    FROM TB_SITE_NODE C
+	    INNER JOIN node_tree P
+	        ON C.CMPNY_CD = P.CMPNY_CD
+	       AND C.SITE_CD  = P.SITE_CD
+	       AND C.PARENT_NODE_CD = P.NODE_CD
+	)
+	
+	SELECT
+	    null                                                              	AS chk
+	    , A.CMPNY_CD                                                       	AS cmpnyCd
+	    , A.USER_CD                                                        	AS userCd
+	    , A.USER_ID                                                        	AS userId
+	    , A.USER_NM                                                        	AS userNm
+	    , A.AUTH_CD                                                        	AS authCd
+	    , FNC_CMM_INFO_SRCH(A.CMPNY_CD, 'AUTH_LEVEL', A.AUTH_CD, null)		AS authLevel
+	    , A.SITE_CD                                                        	AS siteCd
+	    , A.NODE_CD                                                        	AS nodeCd
+	    , A.NODE_CD                                                        	AS oriNodeCd
+	    , FNC_CMM_INFO_SRCH(A.CMPNY_CD, 'NODE', A.SITE_CD, A.NODE_CD)      	AS nodeNm
+	    , C.SITE_NM                                                        	AS siteNm
+	    , A.MBL_NO_ENC														AS mblNo
+	    , A.EMAIL_ENC														AS email
+	    , A.BIRTH_DT_ENC													AS birthDt
+	    , A.GENDER                                                         	AS gender
+	    , A.USE_YN                                                         	AS useYn
+	    , IFNULL(B.SITE_NM_LIST, '')                                       	AS siteNmList
+	    , A.ACCOUNT_STATUS													AS accountStatus
+        , DATE_FORMAT(STR_TO_DATE(A.WITHDRAWAL_DATE, '%Y%m%d'), '%Y-%m-%d') AS withdrawalDate
+	FROM TB_USER A
+	LEFT JOIN (
+	    SELECT
+	        X.USER_CD,
+	        GROUP_CONCAT(S.SITE_NM ORDER BY S.SITE_CD SEPARATOR ',') AS SITE_NM_LIST
+	    FROM TB_USER_SITE_AUTH X
+	    INNER JOIN TB_SITE S
+	        ON X.CMPNY_CD = S.CMPNY_CD
+	       AND X.SITE_CD  = S.SITE_CD
+	    WHERE X.USE_YN = 'Y'
+	    GROUP BY X.USER_CD
+	) B 
 		ON (
+			B.USER_CD = A.USER_CD
+		)
+	INNER JOIN TB_SITE C
+	    ON (
 			A.CMPNY_CD = C.CMPNY_CD
-		AND A.SITE_CD = C.SITE_CD
-           AND C.USE_YN = 'Y'
-           )
+	   	AND A.SITE_CD  = C.SITE_CD
+	   	AND C.USE_YN   = 'Y'
+	   	)
 	WHERE 1=1
-	  AND A.CMPNY_CD = #{token.gv_cmpnyCd}
-	  AND A.AUTH_CD != '999'				/* 시스템관리자 권한 제외 */
-	  <if test="param.userNm != null and param.userNm != ''">
-	  	AND A.USER_NM LIKE CONCAT('%', #{param.userNm}, '%')
+	  AND A.CMPNY_CD = #{gvCmpnyCd}
+	  AND A.AUTH_CD != 'system'  /* 시스템관리자 권한 제외(기존 유지) */
+	
+	  /* 권한별 노드/사이트 제한 */
+	  AND (
+	        (SELECT V.AUTH_CD FROM viewer V) IN ('system','master','hr','safe')
+	        OR (
+	            /* 비권한 사용자는 본인 site 고정 + 하위 node만 */
+	            A.SITE_CD = (SELECT V.SITE_CD FROM viewer V)
+	            <if test="gvNodeCd != null and gvNodeCd != ''">
+	            	AND A.NODE_CD IN (SELECT T.NODE_CD FROM node_tree T)
+	            </if>
+	        )
+	  )
+	
+	  <if test="userNm != null and userNm != ''">
+	    AND A.USER_NM LIKE CONCAT('%', #{userNm}, '%')
 	  </if>
-	  <if test="param.userId != null and param.userId != ''">
-	  	AND A.USER_ID = #{param.userId}
+	
+	  <if test="userId != null and userId != ''">
+	    AND A.USER_ID = #{userId}
 	  </if>
-	  <if test="param.useYn != null and param.useYn != ''">
-	  	AND A.USE_YN = #{param.useYn}
+	
+	  <if test="useYn != null and useYn != ''">
+	    AND A.USE_YN = #{useYn}
 	  </if>
-	  <if test="param.siteCd != null and param.siteCd != ''">
-	  	AND A.SITE_CD = #{param.siteCd}
+	
+	  <!-- 권한자(system/master/hr/safe)만 site 필터가 의미있게 동작.
+	       비권한자는 위에서 viewer site로 이미 고정됨 -->
+	  <if test="siteCd != null and siteCd != ''">
+	    AND A.SITE_CD = #{siteCd}
+	  </if>
+	
+	  <if test="nodeCd != null and nodeCd != ''">
+	    AND A.NODE_CD = #{nodeCd}
 	  </if>
     </select>
     
-	<update id="updateUserPw" parameterType="com.prafta.web.user.user01.dto.UserPasswdSave">
+	<update id="updateUserPw" parameterType="com.prafta.web.user.user01.application.command.UserPasswdCommand">
 	/* User01Mapper.updateUserPw */
 	UPDATE
 		TB_USER
@@ -66,38 +173,104 @@
 		USER_PW = #{userPw}
 	WHERE 1=1
 	  AND CMPNY_CD = #{cmpnyCd}
-	  AND USER_ID = #{userId}
+	  AND USER_CD = #{userCd}
+	</update>
+
+	<select id="selectUserPwByUserId" resultType="com.prafta.web.user.user01.result.UserPwResult">
+	/* User01Mapper.selectUserPwByUserId */
+	SELECT
+		USER_CD  AS userCd
+		, USER_PW AS userPw
+	FROM TB_USER
+	WHERE CMPNY_CD = #{cmpnyCd}
+	  AND USER_CD  = #{userCd}
+	  AND USE_YN   = 'Y'
+	</select>
+
+	<update id="updateMyPw" parameterType="com.prafta.web.user.user01.application.command.UserPasswdCommand">
+	/* User01Mapper.updateMyPw */
+	UPDATE TB_USER
+	SET
+		USER_PW               = #{userPw}
+		, PWD_CHG_DTIME       = NOW()
+		, PWD_FAIL_CNT        = 0
+		, PWD_LOCK_YN         = 'N'
+		, PWD_LOCK_EXPIRE_DTIME = NULL
+		, UPDATE_NO           = #{userCd}
+		, UPDATE_DATE         = NOW()
+	WHERE 1=1
+	  AND CMPNY_CD = #{cmpnyCd}
+	  AND USER_CD  = #{userCd}
 	</update>
 	
-	<select id="selectUserSiteInfo" parameterType="com.prafta.web.user.user01.dto.UserInfoSave" resultType="com.prafta.web.user.user01.vo.UserSiteInfo">
+	<!-- NOTE: USER_ID column is defined NOT NULL in DDL.
+	     To allow NULL here, run: ALTER TABLE TB_USER MODIFY USER_ID VARCHAR(50) NULL; -->
+	<update id="withdrawMyAccount" parameterType="com.prafta.web.user.user01.application.command.WithdrawMyAccountCommand">
+	/* User01Mapper.withdrawMyAccount */
+	UPDATE TB_USER
+	SET
+		USER_ID                 = #{userCd}
+		, USER_PW				= NULL
+		, MBL_NO_ENC            = NULL
+		, MBL_NO_HMAC           = NULL
+		, MBL_NO_LAST4          = NULL
+		, EMAIL_ENC             = NULL
+		, EMAIL_HMAC            = NULL
+		, EMAIL_DOMAIN          = NULL
+		, BIRTH_DT_ENC          = NULL
+		, GENDER                = NULL
+		, WITHDRAWAL_DATE       = DATE_FORMAT(NOW(), '%Y%m%d')
+		, ACCOUNT_STATUS        = '04'
+		, USE_YN                = 'N'
+		, UPDATE_NO             = #{userCd}
+		, UPDATE_DATE           = NOW()
+	WHERE 1=1
+	  AND CMPNY_CD = #{cmpnyCd}
+	  AND USER_CD  = #{userCd}
+	</update>
+
+	<update id="scheduleWithdrawal" parameterType="com.prafta.web.user.user01.application.command.ScheduleWithdrawalCommand">
+	/* User01Mapper.scheduleWithdrawal */
+	UPDATE TB_USER
+	SET
+		WITHDRAWAL_DATE = #{withdrawalDate}
+		, UPDATE_NO     = #{userCd}
+		, UPDATE_DATE   = NOW()
+	WHERE 1=1
+	  AND CMPNY_CD = #{cmpnyCd}
+	  AND USER_CD  = #{userCd}
+	</update>
+
+	<select id="selectUserSiteInfo" parameterType="com.prafta.web.user.user01.application.query.UserSiteInfoQuery" resultType="com.prafta.web.user.user01.result.UserSiteInfoResult">
     /* User01Mapper.selectUserSiteInfo */
     SELECT
-    	A.CMPNY_CD 	AS cmpnyCD
+    	A.CMPNY_CD 	AS cmpnyCd
+    	, A.USER_CD	AS userCd
     	, A.USER_ID	AS userId
     	, A.SITE_CD	AS siteCd
     	, A.USE_YN 	AS useYn 
 	FROM TB_USER A
-	WHERE A.CMPNY_CD = #{param.cmpnyCd}
-	  AND A.USER_ID = #{param.userId}
+	WHERE A.CMPNY_CD = #{cmpnyCd}
+	  AND A.USER_CD = #{userCd}
     </select>
     
-    <update id="deleteUserSiteAuth" parameterType="com.prafta.web.user.user01.dto.UserInfoSave">
+    <update id="deleteUserSiteAuth" parameterType="com.prafta.web.user.user01.application.command.UserSiteAuthCommand">
     /* User01Mapper.deleteUserSiteAuth */
     UPDATE TB_USER_SITE_AUTH
    	SET 
    		USE_YN = 'N'
-   		, UPDATE_NO = #{token.gv_userId}
+   		, UPDATE_NO = #{gvUserCd}
   		, UPDATE_DATE = NOW()
-	WHERE CMPNY_CD = #{param.cmpnyCd}
-	  AND USER_ID = #{param.userId}   		
+	WHERE CMPNY_CD = #{cmpnyCd}
+	  AND USER_CD = #{userCd}
     	
     </update>
     
-    <update id="insertUserSiteAuth" parameterType="com.prafta.web.user.user01.dto.UserInfoSave">
+    <update id="insertUserSiteAuth" parameterType="com.prafta.web.user.user01.application.command.UserSiteAuthCommand">
     /* User01Mapper.insertUserSiteAuth */
     INSERT INTO TB_USER_SITE_AUTH (
     	CMPNY_CD
-    	, USER_ID
+    	, USER_CD
     	, SITE_CD
     	, USE_YN
     	, INSERT_NO
@@ -106,37 +279,107 @@
     	, UPDATE_DATE
     )
     VALUES (
-    	#{param.cmpnyCd}
-    	, #{param.userId}
-    	, #{param.siteCd}
-    	, IFNULL(#{param.useYn}, 'Y')
-    	, #{token.gv_userId}
+    	#{cmpnyCd}
+    	, #{userCd}
+    	, #{siteCd}
+    	, IFNULL(#{useYn}, 'Y')
+    	, #{gvUserCd}
     	, NOW()
-    	, #{token.gv_userId}
+    	, #{gvUserCd}
     	, NOW()
-    )
+    ) AS NEW
     ON DUPLICATE KEY UPDATE
-	    USE_YN        = VALUES(USE_YN)
-	    , UPDATE_NO   = VALUES(UPDATE_NO)
-	    , UPDATE_DATE = VALUES(UPDATE_DATE)
+	    USE_YN        = NEW.USE_YN
+	    , UPDATE_NO   = NEW.UPDATE_NO
+	    , UPDATE_DATE = NEW.UPDATE_DATE
     </update>
     
-    <insert id="mergeUserInfo" parameterType="com.prafta.web.user.user01.dto.UserInfoSave">
+    <insert id="mergeUserInfo" parameterType="com.prafta.web.user.user01.application.command.UserInfoCommand">
 	/* User01Mapper.mergeUserInfo */
 	UPDATE TB_USER 
 	SET 
-		SITE_CD = #{param.siteCd}
-		, NODE_CD = #{param.nodeCd}
-		, AUTH_CD = #{param.authCd}
-		, MBL_NO = FN_ENCRYPT(REPLACE(#{param.mblNo}, '-', ''))
-		, EMAIL = FN_ENCRYPT(#{param.email})
-		, GENDER = #{param.gender}
-		, BIRTH_DT = FN_ENCRYPT(#{param.birthDt})
-		, USE_YN = IFNULL(#{param.useYn}, 'Y')
-		, UPDATE_NO = #{token.gv_userId}
+		SITE_CD = #{siteCd}
+		, NODE_CD = #{nodeCd}
+		, AUTH_CD = #{authCd}
+		, MBL_NO_ENC = #{mblNoEnc}
+		, MBL_NO_HMAC = #{mblNoHmac}
+		, EMAIL_ENC = #{emailEnc}
+		, EMAIL_HMAC = #{emailHmac}
+		, GENDER = #{gender}
+		, BIRTH_DT_ENC = #{birthDtEnc}
+		, USE_YN = IFNULL(#{useYn}, 'Y')
+		, ACCOUNT_STATUS = #{accountStatus}
+		, WITHDRAWAL_DATE = CASE WHEN #{accountStatus} = '04' THEN #{withdrawalDate} ELSE NULL END				<!-- 계정 상태가 탈퇴가 아니면 탈퇴일자 null 처리 -->
+		, UPDATE_NO = #{gvUserCd}
 		, UPDATE_DATE = NOW()
 	WHERE 1=1
-	  AND CMPNY_CD = #{param.cmpnyCd}
-	  AND USER_ID = #{param.userId}
+	  AND CMPNY_CD = #{cmpnyCd}
+	  AND USER_CD = #{userCd}
 	</insert>
+	
+	<select id="selectSiteNodeAdminCandidateLists" parameterType="com.prafta.web.user.user01.application.query.SiteNodeAdminCandidateListQuery" resultMap="UserInfoMap">
+    /* User01Mapper.selectSiteNodeAdminCandidateLists */
+		SELECT 
+			null                                                              	AS chk
+		    , A.CMPNY_CD                                                       	AS cmpnyCd
+		    , A.USER_CD                                                        	AS userCd
+		    , A.USER_ID                                                        	AS userId
+		    , A.USER_NM                                                        	AS userNm
+		    , A.AUTH_CD                                                        	AS authCd
+		    , FNC_CMM_INFO_SRCH(A.CMPNY_CD, 'AUTH_LEVEL', A.AUTH_CD, null)		AS authLevel
+		    , A.SITE_CD                                                        	AS siteCd
+		    , A.NODE_CD                                                        	AS nodeCd
+		    , A.NODE_CD                                                        	AS oriNodeCd
+		    , FNC_CMM_INFO_SRCH(A.CMPNY_CD, 'NODE', A.SITE_CD, A.NODE_CD)      	AS nodeNm
+		    , C.SITE_NM                                                        	AS siteNm
+		    , A.MBL_NO_ENC														AS mblNo
+		    , A.EMAIL_ENC														AS email
+		    , A.BIRTH_DT_ENC													AS birthDt
+		    , A.GENDER                                                         	AS gender
+		    , A.USE_YN                                                         	AS useYn
+		    , IFNULL(B.SITE_NM_LIST, '')                                       	AS siteNmList
+		FROM TB_USER A
+			 LEFT JOIN (
+				SELECT 
+					A.USER_CD
+					, GROUP_CONCAT(B.SITE_NM ORDER BY B.SITE_CD SEPARATOR ',') AS SITE_NM_LIST
+				FROM TB_USER_SITE_AUTH A
+				     INNER JOIN TB_SITE B
+						ON (
+							A.CMPNY_CD = B.CMPNY_CD
+						AND A.SITE_CD = B.SITE_CD
+						)
+				WHERE A.USE_YN = 'Y'
+				GROUP BY A.USER_CD
+			) B
+			ON B.USER_CD = A.USER_CD
+			INNER JOIN TB_SITE C
+			ON (
+				A.CMPNY_CD = C.CMPNY_CD
+			AND A.SITE_CD = C.SITE_CD
+	           AND C.USE_YN = 'Y'
+	           )
+		WHERE 1=1
+		  AND A.CMPNY_CD = #{gvCmpnyCd}
+		  AND A.AUTH_CD != '999'				/* 시스템관리자 권한 제외 */
+		  AND A.USE_YN = 'Y'
+		  AND A.SITE_CD = #{siteCd}
+		  <if test="userNm != null and userNm != ''">
+		  	AND A.USER_NM LIKE CONCAT('%', #{userNm}, '%')
+		  </if>
+		  <if test="userId != null and userId != ''">
+		  	AND A.USER_ID = #{userId}
+		  </if>
+		  AND NOT EXISTS (
+		      SELECT 1
+		      FROM TB_SITE_NODE N
+		      WHERE N.CMPNY_CD = A.CMPNY_CD
+		        AND N.SITE_CD = A.SITE_CD
+		        AND N.NODE_CD = #{nodeCd}
+		        AND (
+		             N.MAIN_ADMIN_CD = A.USER_CD
+		          OR N.SUB_ADMIN_CD  = A.USER_CD
+		        )
+		  )
+	</select>
 </mapper>

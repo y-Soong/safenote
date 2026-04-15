@@ -375,10 +375,12 @@ import {
   defineProps,
   defineEmits,
   getCurrentInstance,
-} from 'vue';
-import { useDraggable } from '@/composables/useDraggable';
-import CalendarSrch from '@/components/common/CalendarSrch.vue';
-import axios from '@/api/axios';
+} from "vue";
+import { useDraggable } from "@/composables/useDraggable";
+import CalendarSrch from "@/components/common/CalendarSrch.vue";
+import axios from "@/api/axios";
+import { getMessage, MSG } from "@/messages";
+import { readFileAsBase64 } from "@/utils/fileUtil";
 
 const systCodeArr = ref([]);
 const fileInput = ref(null);
@@ -402,9 +404,9 @@ const init = () => {
 // API 호출
 const fnGetSystinfoList = async () => {
   try {
-    const response = await axios.get('/comApi/baseinfo/syst-info-list', {
+    const response = await axios.get("/comApi/baseinfo/syst-info-lists", {
       params: {
-        systCodeList: ['SYS011'],
+        systCodeList: ["SYS011"],
       },
     });
 
@@ -430,7 +432,7 @@ const fnGetSystinfoList = async () => {
     const msg =
       err?.response?.data?.message ||
       err?.message ||
-      '조회 중 오류가 발생했습니다.';
+      "조회 중 오류가 발생했습니다.";
 
     await proxy.$alert(msg);
   }
@@ -447,7 +449,7 @@ const props = defineProps({
   },
 });
 
-const emit = defineEmits(['close', 'save']);
+const emit = defineEmits(["close", "save"]);
 
 const { position, startDrag } = useDraggable(
   window.innerWidth / 2 - 650,
@@ -457,66 +459,66 @@ const { position, startDrag } = useDraggable(
 // 폼 데이터
 const formData = ref({
   // 기본 정보
-  cmpnyCd: '',
-  siteCd: '',
-  processCd: '',
-  processNm: '',
-  riskTypeCd: '',
-  riskTypeNm: '',
-  hazardCd: '',
-  hazardNm: '',
-  assessmentCd: '',
-  assessmentStatus: '',
-  assessmentStatusNm: '',
+  cmpnyCd: "",
+  siteCd: "",
+  processCd: "",
+  processNm: "",
+  riskTypeCd: "",
+  riskTypeNm: "",
+  hazardCd: "",
+  hazardNm: "",
+  assessmentCd: "",
+  assessmentStatus: "",
+  assessmentStatusNm: "",
 
   // 초기 평가 정보
-  initLikelihoodScore: '',
-  initSeverityScore: '',
-  initRiskLv: '',
-  initDesc: '',
-  initAssessorId: '',
-  initAssessorNm: '',
-  initAssessDate: '',
-  initFileMgmtCd: '',
-  initFilePath: '',
+  initLikelihoodScore: "",
+  initSeverityScore: "",
+  initRiskLv: "",
+  initDesc: "",
+  initAssessorId: "",
+  initAssessorNm: "",
+  initAssessDate: "",
+  initFileMgmtCd: "",
+  initFilePath: "",
 
   // 재평가 정보
-  revalDate: '',
-  revalBeforeDesc: '',
-  revalRiskLv: '',
-  revalLikelihoodScore: '',
-  revalSeverityScore: '',
-  revalAssessorId: '',
-  revalAssessorNm: '',
-  revalFileMgmtCd: '',
-  revalFilePath: '',
-  revalAssessDate: '',
+  revalDate: "",
+  revalBeforeDesc: "",
+  revalRiskLv: "",
+  revalLikelihoodScore: "",
+  revalSeverityScore: "",
+  revalAssessorId: "",
+  revalAssessorNm: "",
+  revalFileMgmtCd: "",
+  revalFilePath: "",
+  revalAssessDate: "",
 
   // 개선 전 사진
-  beforePhoto: '',
+  beforePhoto: "",
 
   // 개선 후 정보
-  revalDesc: '',
-  afterFrequency: '',
-  afterIntensity: '',
+  revalDesc: "",
+  afterFrequency: "",
+  afterIntensity: "",
 });
 
 // 개선 전 사진 URL 생성 (initFilePath + initFileMgmtCd)
 const beforePhotoUrl = computed(() => {
   if (formData.value.initFilePath && formData.value.initFileMgmtCd) {
-    const apiBaseUrl = import.meta.env.VITE_API_BASE_URL || '';
+    const apiBaseUrl = import.meta.env.VITE_API_BASE_URL || "";
     let fullPath = `${formData.value.initFilePath}/${formData.value.initFileMgmtCd}`;
 
     // API_BASE_URL이 있고 상대 경로인 경우에만 추가
     if (
       apiBaseUrl &&
-      !formData.value.initFilePath.startsWith('http://') &&
-      !formData.value.initFilePath.startsWith('https://')
+      !formData.value.initFilePath.startsWith("http://") &&
+      !formData.value.initFilePath.startsWith("https://")
     ) {
-      const baseUrl = apiBaseUrl.endsWith('/')
+      const baseUrl = apiBaseUrl.endsWith("/")
         ? apiBaseUrl.slice(0, -1)
         : apiBaseUrl;
-      const cleanFilePath = formData.value.initFilePath.startsWith('/')
+      const cleanFilePath = formData.value.initFilePath.startsWith("/")
         ? formData.value.initFilePath.slice(1)
         : formData.value.initFilePath;
       fullPath = `${baseUrl}/${cleanFilePath}/${formData.value.initFileMgmtCd}`;
@@ -531,19 +533,19 @@ const beforePhotoUrl = computed(() => {
 const revalPhotoUrl = computed(() => {
   const filePath = formData.value.revalFilePath || formData.value.revalFilePath;
   if (filePath && formData.value.revalFileMgmtCd) {
-    const apiBaseUrl = import.meta.env.VITE_API_BASE_URL || '';
+    const apiBaseUrl = import.meta.env.VITE_API_BASE_URL || "";
     let fullPath = `${filePath}/${formData.value.revalFileMgmtCd}`;
 
     // API_BASE_URL이 있고 상대 경로인 경우에만 추가
     if (
       apiBaseUrl &&
-      !filePath.startsWith('http://') &&
-      !filePath.startsWith('https://')
+      !filePath.startsWith("http://") &&
+      !filePath.startsWith("https://")
     ) {
-      const baseUrl = apiBaseUrl.endsWith('/')
+      const baseUrl = apiBaseUrl.endsWith("/")
         ? apiBaseUrl.slice(0, -1)
         : apiBaseUrl;
-      const cleanFilePath = filePath.startsWith('/')
+      const cleanFilePath = filePath.startsWith("/")
         ? filePath.slice(1)
         : filePath;
       fullPath = `${baseUrl}/${cleanFilePath}/${formData.value.revalFileMgmtCd}`;
@@ -556,17 +558,17 @@ const revalPhotoUrl = computed(() => {
 
 // 위험도 계산 (빈도 × 강도)
 const calculateRiskLevel = (frequency, intensity) => {
-  if (!frequency || !intensity) return '';
+  if (!frequency || !intensity) return "";
   return String(Number(frequency) * Number(intensity));
 };
 
 watch(
   () => formData.value.assessmentStatus,
   (newVal) => {
-    if (newVal == '003') {
+    if (newVal == "003") {
       if (proxy.$util.isEmpty(formData.value.revalAssessorId)) {
-        formData.value.revalAssessorId = sessionStorage.getItem('gv_userId');
-        formData.value.revalAssessorNm = sessionStorage.getItem('gv_userNm');
+        formData.value.revalAssessorId = sessionStorage.getItem("gv_userCd");
+        formData.value.revalAssessorNm = sessionStorage.getItem("gv_userNm");
       }
 
       if (proxy.$util.isEmpty(formData.value.revalLikelihoodScore)) {
@@ -618,43 +620,43 @@ watch(
     if (newData) {
       formData.value = {
         // 기본 정보
-        cmpnyCd: newData.cmpnyCd || '',
-        siteCd: newData.siteCd || '',
-        processCd: newData.processCd || '',
-        processNm: newData.processNm || '',
-        riskTypeCd: newData.riskTypeCd || '',
-        riskTypeNm: newData.riskTypeNm || '',
-        hazardCd: newData.hazardCd || '',
-        hazardNm: newData.hazardNm || '',
-        assessmentCd: newData.assessmentCd || '',
-        assessmentStatus: newData.assessmentStatus || '',
-        assessmentStatusNm: newData.assessmentStatusNm || '',
+        cmpnyCd: newData.cmpnyCd || "",
+        siteCd: newData.siteCd || "",
+        processCd: newData.processCd || "",
+        processNm: newData.processNm || "",
+        riskTypeCd: newData.riskTypeCd || "",
+        riskTypeNm: newData.riskTypeNm || "",
+        hazardCd: newData.hazardCd || "",
+        hazardNm: newData.hazardNm || "",
+        assessmentCd: newData.assessmentCd || "",
+        assessmentStatus: newData.assessmentStatus || "",
+        assessmentStatusNm: newData.assessmentStatusNm || "",
         // 초기 평가 정보
-        initLikelihoodScore: newData.initLikelihoodScore || '',
-        initSeverityScore: newData.initSeverityScore || '',
-        initRiskLv: newData.initRiskLv || '',
-        initDesc: newData.initDesc || '',
-        initAssessorId: newData.initAssessorId || '',
-        initAssessorNm: newData.initAssessorNm || '',
-        initAssessDate: newData.initAssessDate || '',
-        initFileMgmtCd: newData.initFileMgmtCd || '',
-        initFilePath: newData.initFilePath || '',
+        initLikelihoodScore: newData.initLikelihoodScore || "",
+        initSeverityScore: newData.initSeverityScore || "",
+        initRiskLv: newData.initRiskLv || "",
+        initDesc: newData.initDesc || "",
+        initAssessorId: newData.initAssessorId || "",
+        initAssessorNm: newData.initAssessorNm || "",
+        initAssessDate: newData.initAssessDate || "",
+        initFileMgmtCd: newData.initFileMgmtCd || "",
+        initFilePath: newData.initFilePath || "",
         // 재평가 정보
-        revalDate: newData.revalDate || '',
-        revalBeforeDesc: newData.revalBeforeDesc || '',
-        revalLikelihoodScore: newData.revalLikelihoodScore || '',
-        revalSeverityScore: newData.revalSeverityScore || '',
-        revalRiskLv: newData.revalRiskLv || '',
-        revalAssessorId: newData.revalAssessorId || '',
-        revalAssessorNm: newData.revalAssessorNm || '',
+        revalDate: newData.revalDate || "",
+        revalBeforeDesc: newData.revalBeforeDesc || "",
+        revalLikelihoodScore: newData.revalLikelihoodScore || "",
+        revalSeverityScore: newData.revalSeverityScore || "",
+        revalRiskLv: newData.revalRiskLv || "",
+        revalAssessorId: newData.revalAssessorId || "",
+        revalAssessorNm: newData.revalAssessorNm || "",
 
-        revalFileMgmtCd: newData.revalFileMgmtCd || '',
-        revalFilePath: newData.revalFilePath || '',
-        revalAssessDate: newData.revalAssessDate || '',
+        revalFileMgmtCd: newData.revalFileMgmtCd || "",
+        revalFilePath: newData.revalFilePath || "",
+        revalAssessDate: newData.revalAssessDate || "",
         // 개선 전 사진
-        beforePhoto: newData.beforePhoto || '',
+        beforePhoto: newData.beforePhoto || "",
         // 개선 후 정보
-        revalDesc: newData.revalDesc || '',
+        revalDesc: newData.revalDesc || "",
       };
     }
   },
@@ -664,16 +666,16 @@ watch(
 // 위험도에 따른 클래스 반환
 const getRiskLevelClass = (riskLevel) => {
   const level = Number(riskLevel);
-  if (level >= 13 && level <= 20) return 'risk-high'; // 높음 (빨간색)
-  if (level >= 7 && level <= 12) return 'risk-medium'; // 보통 (주황색)
-  if (level >= 4 && level <= 6) return 'risk-low'; // 낮음 (노란색)
-  if (level >= 1 && level <= 3) return 'risk-very-low'; // 매우 낮음 (연두색)
-  return '';
+  if (level >= 13 && level <= 20) return "risk-high"; // 높음 (빨간색)
+  if (level >= 7 && level <= 12) return "risk-medium"; // 보통 (주황색)
+  if (level >= 4 && level <= 6) return "risk-low"; // 낮음 (노란색)
+  if (level >= 1 && level <= 3) return "risk-very-low"; // 매우 낮음 (연두색)
+  return "";
 };
 
 // 이미지 파일 확인 함수
 const isImageFile = (file) =>
-  file && typeof file.type === 'string' && file.type.startsWith('image/');
+  file && typeof file.type === "string" && file.type.startsWith("image/");
 
 // 파일 선택 콜백
 const onFileSelected = (evt) => {
@@ -684,8 +686,8 @@ const onFileSelected = (evt) => {
     if (!file) return;
 
     if (!isImageFile(file)) {
-      proxy.$alert('이미지 파일만 선택해주세요.');
-      if (input) input.value = '';
+      proxy.$alert(getMessage(MSG.IMAGE_ONLY));
+      if (input) input.value = "";
       return;
     }
 
@@ -698,12 +700,12 @@ const onFileSelected = (evt) => {
     previewImage.value = { file, url };
 
     // 같은 파일 재선택 허용
-    if (input) input.value = '';
+    if (input) input.value = "";
   } catch (err) {
     const msg =
       err?.response?.data?.message ||
       err?.message ||
-      '파일을 읽는 중 오류가 발생했습니다.';
+      "파일을 읽는 중 오류가 발생했습니다.";
 
     proxy.$alert(msg);
   }
@@ -717,13 +719,13 @@ const removePreview = async () => {
     }
     previewImage.value = null;
     if (fileInput.value) {
-      fileInput.value.value = '';
+      fileInput.value.value = "";
     }
   } catch (e) {
     const msg =
       err?.response?.data?.message ||
       err?.message ||
-      '이미지 삭제 중 오류가 발생했습니다.';
+      "이미지 삭제 중 오류가 발생했습니다.";
 
     await proxy.$alert(msg);
   }
@@ -738,66 +740,51 @@ const removePreview = async () => {
 
 // 저장 처리
 const fnSave = async () => {
-  const ok = await proxy.$confirm('저장하시겠습니까 ?');
+  const ok = await proxy.$confirm(getMessage(MSG.SAVE_CONFIRM));
   if (!ok) return;
 
   try {
-    const saveData = new FormData();
-    saveData.append('siteCd', props.riskAssessmentData.siteCd);
-    saveData.append('assessmentCd', props.riskAssessmentData.assessmentCd);
-    saveData.append('assessmentStatus', formData.value.assessmentStatus);
-    saveData.append('processCd', props.riskAssessmentData.processCd);
-    saveData.append(
-      'initLikelihoodScore',
-      formData.value.initLikelihoodScore || 0
-    );
-    saveData.append('initSeverityScore', formData.value.initSeverityScore || 0);
-    saveData.append('initRiskLv', formData.value.initRiskLv || 0);
+    const requestBody = {
+      siteCd: props.riskAssessmentData.siteCd,
+      assessmentCd: props.riskAssessmentData.assessmentCd,
+      assessmentStatus: formData.value.assessmentStatus,
+      processCd: props.riskAssessmentData.processCd,
+      initLikelihoodScore: formData.value.initLikelihoodScore || 0,
+      initSeverityScore: formData.value.initSeverityScore || 0,
+      initRiskLv: formData.value.initRiskLv || 0,
+      revalDate: formData.value.revalDate,
+      revalBeforeDesc: formData.value.revalBeforeDesc,
+      revalLikelihoodScore: formData.value.revalLikelihoodScore || 0,
+      revalSeverityScore: formData.value.revalSeverityScore || 0,
+      revalRiskLv: formData.value.revalRiskLv || 0,
+      revalDesc: formData.value.revalDesc,
+    };
 
-    saveData.append('revalDate', formData.value.revalDate);
-    saveData.append('revalBeforeDesc', formData.value.revalBeforeDesc);
-    saveData.append(
-      'revalLikelihoodScore',
-      formData.value.revalLikelihoodScore || 0
-    );
-    saveData.append(
-      'revalSeverityScore',
-      formData.value.revalSeverityScore || 0
-    );
-    saveData.append('revalRiskLv', formData.value.revalRiskLv || 0);
-    saveData.append('revalDesc', formData.value.revalDesc);
-
-    // 사진이 있으면 추가
     if (previewImage.value?.file) {
-//      const fileName = buildFileName('risk', previewImage.value.file.name);
-      const fileName = previewImage.value.file.name;
-      saveData.append('item', previewImage.value.file, fileName);
+      requestBody.itemBase64 = await readFileAsBase64(previewImage.value.file);
+      requestBody.itemOriginalFilename = previewImage.value.file.name;
     }
 
     const response = await axios.post(
-      '/webApi/risk03/save-assessments',
-      saveData
+      "/webApi/risk03/save-assessments",
+      requestBody,
+      { headers: { "Content-Type": "application/json" } }
     );
     if (response.status === 200) {
-      proxy.$alert('저장되었습니다.');
-      // onSave 콜백이 있으면 호출
-      if (props.onSave && typeof props.onSave === 'function') {
+      proxy.$alert(getMessage(MSG.SAVE_COMPLETED));
+      if (props.onSave && typeof props.onSave === "function") {
         props.onSave(response.data);
       }
-      emit('close');
+      emit("close");
     } else {
-      const msg =
-        err?.response?.data?.message ||
-        err?.message ||
-        '저장 중 오류가 발생했습니다.';
-
+      const msg = response.data?.message || "저장 중 오류가 발생했습니다.";
       await proxy.$alert(msg);
     }
   } catch (err) {
     const msg =
       err?.response?.data?.message ||
       err?.message ||
-      '저장 중 오류가 발생했습니다.';
+      "저장 중 오류가 발생했습니다.";
 
     await proxy.$alert(msg);
   }
@@ -805,177 +792,177 @@ const fnSave = async () => {
 
 // 진행상태 이름 가져오기
 const getAssessmentStatusName = (statusCd) => {
-  if (!statusCd || !systCodeArr.value['SYS011']) return '';
-  const status = systCodeArr.value['SYS011'].find(
+  if (!statusCd || !systCodeArr.value["SYS011"]) return "";
+  const status = systCodeArr.value["SYS011"].find(
     (item) => item.systValDCd === statusCd
   );
-  return status ? status.systValDNm : '';
+  return status ? status.systValDNm : "";
 };
 
 // 개선실행계획서 열기
 const fnOpenImprovementPlan = () => {
   // 데이터 준비
-  const processNm = formData.value.processNm || '-';
-  const riskTypeNm = formData.value.riskTypeNm || '-';
-  const initAssessDate = formData.value.initAssessDate || '-';
-  const initAssessorNm = formData.value.initAssessorNm || '-';
-  const hazardNm = formData.value.hazardNm || '-';
-  const initDesc = (formData.value.initDesc || '-').replace(/\n/g, '<br>');
-  const initLikelihoodScore = formData.value.initLikelihoodScore || '-';
-  const initSeverityScore = formData.value.initSeverityScore || '-';
-  const initRiskLv = formData.value.initRiskLv || '-';
+  const processNm = formData.value.processNm || "-";
+  const riskTypeNm = formData.value.riskTypeNm || "-";
+  const initAssessDate = formData.value.initAssessDate || "-";
+  const initAssessorNm = formData.value.initAssessorNm || "-";
+  const hazardNm = formData.value.hazardNm || "-";
+  const initDesc = (formData.value.initDesc || "-").replace(/\n/g, "<br>");
+  const initLikelihoodScore = formData.value.initLikelihoodScore || "-";
+  const initSeverityScore = formData.value.initSeverityScore || "-";
+  const initRiskLv = formData.value.initRiskLv || "-";
   const riskLevelClass = getRiskLevelClass(formData.value.initRiskLv);
   const assessmentStatusName = getAssessmentStatusName(
     formData.value.assessmentStatus
   );
   const revalDate =
-    formData.value.assessmentStatus == '002' ||
-    formData.value.assessmentStatus == '003'
-      ? formData.value.revalDate || '-'
-      : '';
+    formData.value.assessmentStatus == "002" ||
+    formData.value.assessmentStatus == "003"
+      ? formData.value.revalDate || "-"
+      : "";
   const revalBeforeDesc =
-    formData.value.assessmentStatus == '002' ||
-    formData.value.assessmentStatus == '003'
-      ? (formData.value.revalBeforeDesc || '-').replace(/\n/g, '<br>')
-      : '';
+    formData.value.assessmentStatus == "002" ||
+    formData.value.assessmentStatus == "003"
+      ? (formData.value.revalBeforeDesc || "-").replace(/\n/g, "<br>")
+      : "";
   const photoHtml = beforePhotoUrl.value
     ? '<img src="' +
       beforePhotoUrl.value +
       '" alt="개선 전 사진" class="print-photo" />'
-    : '사진 없음';
-  const printDate = new Date().toLocaleString('ko-KR');
+    : "사진 없음";
+  const printDate = new Date().toLocaleString("ko-KR");
 
   // 프린트용 HTML 생성
   let printContent =
-    '<!DOCTYPE html>' +
-    '<html>' +
-    '<head>' +
+    "<!DOCTYPE html>" +
+    "<html>" +
+    "<head>" +
     '<meta charset="UTF-8">' +
-    '<title>개선실행계획서</title>' +
-    '<style>' +
-    '@media print {' +
-    '  @page { size: A4 landscape; margin: 5mm; }' +
-    '  body { margin: 0; padding: 0; height: 100%; overflow: hidden; }' +
-    '}' +
-    'body {' +
+    "<title>개선실행계획서</title>" +
+    "<style>" +
+    "@media print {" +
+    "  @page { size: A4 landscape; margin: 5mm; }" +
+    "  body { margin: 0; padding: 0; height: 100%; overflow: hidden; }" +
+    "}" +
+    "body {" +
     '  font-family: "Pretendard", sans-serif;' +
-    '  font-size: 13px;' +
-    '  line-height: 1.4;' +
-    '  color: #333;' +
-    '  padding: 10px 8px 5px 8px;' +
-    '  height: 100%;' +
-    '  display: flex;' +
-    '  flex-direction: column;' +
-    '  box-sizing: border-box;' +
-    '}' +
-    '.print-header {' +
-    '  text-align: center;' +
-    '  margin-bottom: 10px;' +
-    '  border-bottom: 2px solid #333;' +
-    '  padding-bottom: 6px;' +
-    '  flex-shrink: 0;' +
-    '}' +
-    '.print-header h1 {' +
-    '  font-size: 20px;' +
-    '  font-weight: bold;' +
-    '  margin: 0;' +
-    '}' +
-    '.print-content {' +
-    '  display: flex;' +
-    '  gap: 10px;' +
-    '  margin-bottom: 2px;' +
-    '  flex: 1;' +
-    '  min-height: 0;' +
-    '}' +
-    '.print-section {' +
-    '  flex: 1;' +
-    '  border: 1px solid #ddd;' +
-    '  border-radius: 4px;' +
-    '  padding: 8px;' +
-    '  display: flex;' +
-    '  flex-direction: column;' +
-    '  min-height: 0;' +
-    '  overflow: hidden;' +
-    '}' +
-    '.section-title {' +
-    '  background: #f5f5f5;' +
-    '  padding: 6px;' +
-    '  font-weight: bold;' +
-    '  border-bottom: 1px solid #ddd;' +
-    '  margin: -8px -8px 6px -8px;' +
-    '  font-size: 14px;' +
-    '  flex-shrink: 0;' +
-    '}' +
-    '.print-row {' +
-    '  display: flex;' +
-    '  margin-bottom: 3px;' +
-    '  align-items: flex-start;' +
-    '  flex-shrink: 0;' +
-    '}' +
-    '.print-label {' +
-    '  flex: 0 0 120px;' +
-    '  font-weight: 500;' +
-    '  color: #333;' +
-    '  font-size: 13px;' +
-    '  padding-top: 5px;' +
-    '}' +
-    '.print-value {' +
-    '  flex: 1;' +
-    '  color: #666;' +
-    '  font-size: 13px;' +
-    '}' +
-    '.print-textarea {' +
-    '  min-height: 35px;' +
-    '  white-space: pre-wrap;' +
-    '  word-break: break-word;' +
-    '  line-height: 1.2;' +
-    '}' +
-    '.print-photo {' +
-    '  max-width: 100%;' +
-    '  max-height: 144px;' +
-    '  border: 1px solid #ddd;' +
-    '  padding: 3px;' +
-    '}' +
-    '.risk-evaluation {' +
-    '  display: flex;' +
-    '  gap: 10px;' +
-    '  align-items: center;' +
-    '}' +
-    '.risk-item {' +
-    '  display: flex;' +
-    '  align-items: center;' +
-    '  gap: 5px;' +
-    '}' +
-    '.risk-item-label {' +
-    '  font-weight: 500;' +
-    '  font-size: 13px;' +
-    '}' +
-    '.risk-level {' +
-    '  padding: 3px 8px;' +
-    '  border-radius: 4px;' +
-    '  font-weight: bold;' +
-    '  min-width: 35px;' +
-    '  text-align: center;' +
-    '  font-size: 13px;' +
-    '}' +
-    '.risk-high { background: #ff6b6b; color: white; }' +
-    '.risk-medium { background: #ffa500; color: white; }' +
-    '.risk-low { background: #ffd700; color: #333; }' +
-    '.risk-very-low { background: #90ee90; color: #333; }' +
-    '.print-date {' +
-    '  text-align: right;' +
-    '  margin-top: auto;' +
-    '  padding-top: 3px;' +
-    '  font-size: 11px;' +
-    '  color: #666;' +
-    '  flex-shrink: 0;' +
-    '}' +
-    '</style>' +
-    '</head>' +
-    '<body>' +
+    "  font-size: 13px;" +
+    "  line-height: 1.4;" +
+    "  color: #333;" +
+    "  padding: 10px 8px 5px 8px;" +
+    "  height: 100%;" +
+    "  display: flex;" +
+    "  flex-direction: column;" +
+    "  box-sizing: border-box;" +
+    "}" +
+    ".print-header {" +
+    "  text-align: center;" +
+    "  margin-bottom: 10px;" +
+    "  border-bottom: 2px solid #333;" +
+    "  padding-bottom: 6px;" +
+    "  flex-shrink: 0;" +
+    "}" +
+    ".print-header h1 {" +
+    "  font-size: 20px;" +
+    "  font-weight: bold;" +
+    "  margin: 0;" +
+    "}" +
+    ".print-content {" +
+    "  display: flex;" +
+    "  gap: 10px;" +
+    "  margin-bottom: 2px;" +
+    "  flex: 1;" +
+    "  min-height: 0;" +
+    "}" +
+    ".print-section {" +
+    "  flex: 1;" +
+    "  border: 1px solid #ddd;" +
+    "  border-radius: 4px;" +
+    "  padding: 8px;" +
+    "  display: flex;" +
+    "  flex-direction: column;" +
+    "  min-height: 0;" +
+    "  overflow: hidden;" +
+    "}" +
+    ".section-title {" +
+    "  background: #f5f5f5;" +
+    "  padding: 6px;" +
+    "  font-weight: bold;" +
+    "  border-bottom: 1px solid #ddd;" +
+    "  margin: -8px -8px 6px -8px;" +
+    "  font-size: 14px;" +
+    "  flex-shrink: 0;" +
+    "}" +
+    ".print-row {" +
+    "  display: flex;" +
+    "  margin-bottom: 3px;" +
+    "  align-items: flex-start;" +
+    "  flex-shrink: 0;" +
+    "}" +
+    ".print-label {" +
+    "  flex: 0 0 120px;" +
+    "  font-weight: 500;" +
+    "  color: #333;" +
+    "  font-size: 13px;" +
+    "  padding-top: 5px;" +
+    "}" +
+    ".print-value {" +
+    "  flex: 1;" +
+    "  color: #666;" +
+    "  font-size: 13px;" +
+    "}" +
+    ".print-textarea {" +
+    "  min-height: 35px;" +
+    "  white-space: pre-wrap;" +
+    "  word-break: break-word;" +
+    "  line-height: 1.2;" +
+    "}" +
+    ".print-photo {" +
+    "  max-width: 100%;" +
+    "  max-height: 144px;" +
+    "  border: 1px solid #ddd;" +
+    "  padding: 3px;" +
+    "}" +
+    ".risk-evaluation {" +
+    "  display: flex;" +
+    "  gap: 10px;" +
+    "  align-items: center;" +
+    "}" +
+    ".risk-item {" +
+    "  display: flex;" +
+    "  align-items: center;" +
+    "  gap: 5px;" +
+    "}" +
+    ".risk-item-label {" +
+    "  font-weight: 500;" +
+    "  font-size: 13px;" +
+    "}" +
+    ".risk-level {" +
+    "  padding: 3px 8px;" +
+    "  border-radius: 4px;" +
+    "  font-weight: bold;" +
+    "  min-width: 35px;" +
+    "  text-align: center;" +
+    "  font-size: 13px;" +
+    "}" +
+    ".risk-high { background: #ff6b6b; color: white; }" +
+    ".risk-medium { background: #ffa500; color: white; }" +
+    ".risk-low { background: #ffd700; color: #333; }" +
+    ".risk-very-low { background: #90ee90; color: #333; }" +
+    ".print-date {" +
+    "  text-align: right;" +
+    "  margin-top: auto;" +
+    "  padding-top: 3px;" +
+    "  font-size: 11px;" +
+    "  color: #666;" +
+    "  flex-shrink: 0;" +
+    "}" +
+    "</style>" +
+    "</head>" +
+    "<body>" +
     '<div class="print-header">' +
-    '<h1>개선실행계획서</h1>' +
-    '</div>' +
+    "<h1>개선실행계획서</h1>" +
+    "</div>" +
     '<div class="print-content">' +
     '<div class="print-section">' +
     '<div class="section-title">개선 전</div>' +
@@ -983,91 +970,91 @@ const fnOpenImprovementPlan = () => {
     '<div class="print-label">작업명</div>' +
     '<div class="print-value">' +
     processNm +
-    '</div>' +
-    '</div>' +
+    "</div>" +
+    "</div>" +
     '<div class="print-row">' +
     '<div class="print-label">위험성구분</div>' +
     '<div class="print-value">' +
     processNm +
-    '</div>' +
-    '</div>' +
+    "</div>" +
+    "</div>" +
     '<div class="print-row">' +
     '<div class="print-label">위험성분류</div>' +
     '<div class="print-value">' +
     riskTypeNm +
-    '</div>' +
-    '</div>' +
+    "</div>" +
+    "</div>" +
     '<div class="print-row">' +
     '<div class="print-label">평가요청일자</div>' +
     '<div class="print-value">' +
     initAssessDate +
-    '</div>' +
-    '</div>' +
+    "</div>" +
+    "</div>" +
     '<div class="print-row">' +
     '<div class="print-label">평가요청자</div>' +
     '<div class="print-value">' +
     initAssessorNm +
-    '</div>' +
-    '</div>' +
+    "</div>" +
+    "</div>" +
     '<div class="print-row">' +
     '<div class="print-label">유해요인명</div>' +
     '<div class="print-value">' +
     hazardNm +
-    '</div>' +
-    '</div>' +
+    "</div>" +
+    "</div>" +
     '<div class="print-row">' +
     '<div class="print-label">유해요인설명</div>' +
     '<div class="print-value print-textarea">' +
     initDesc +
-    '</div>' +
-    '</div>' +
+    "</div>" +
+    "</div>" +
     '<div class="print-row">' +
     '<div class="print-label">사진</div>' +
     '<div class="print-value">' +
     photoHtml +
-    '</div>' +
-    '</div>' +
+    "</div>" +
+    "</div>" +
     '<div class="print-row">' +
     '<div class="print-label">개선 전 위험성 평가</div>' +
     '<div class="print-value">' +
     '<div class="risk-evaluation">' +
     '<div class="risk-item">' +
     '<span class="risk-item-label">빈도:</span>' +
-    '<span>' +
+    "<span>" +
     initLikelihoodScore +
-    '</span>' +
-    '</div>' +
+    "</span>" +
+    "</div>" +
     '<div class="risk-item">' +
     '<span class="risk-item-label">강도:</span>' +
-    '<span>' +
+    "<span>" +
     initSeverityScore +
-    '</span>' +
-    '</div>' +
+    "</span>" +
+    "</div>" +
     '<div class="risk-item">' +
     '<span class="risk-item-label">위험도:</span>' +
     '<span class="risk-level ' +
     riskLevelClass +
     '">' +
     initRiskLv +
-    '</span>' +
-    '</div>' +
-    '</div>' +
-    '</div>' +
-    '</div>' +
-    '</div>' +
+    "</span>" +
+    "</div>" +
+    "</div>" +
+    "</div>" +
+    "</div>" +
+    "</div>" +
     '<div class="print-section">' +
     '<div class="section-title">개선 후</div>' +
     '<div class="print-row">' +
     '<div class="print-label">진행상태</div>' +
     '<div class="print-value">' +
     assessmentStatusName +
-    '</div>' +
-    '</div>';
+    "</div>" +
+    "</div>";
 
   // 개선예정일자와 임시조치 내용 추가
   if (
-    formData.value.assessmentStatus == '002' ||
-    formData.value.assessmentStatus == '003'
+    formData.value.assessmentStatus == "002" ||
+    formData.value.assessmentStatus == "003"
   ) {
     printContent =
       printContent +
@@ -1075,29 +1062,29 @@ const fnOpenImprovementPlan = () => {
       '<div class="print-label">개선예정일자</div>' +
       '<div class="print-value">' +
       revalDate +
-      '</div>' +
-      '</div>' +
+      "</div>" +
+      "</div>" +
       '<div class="print-row">' +
       '<div class="print-label">임시조치 내용</div>' +
       '<div class="print-value print-textarea">' +
       revalBeforeDesc +
-      '</div>' +
-      '</div>';
+      "</div>" +
+      "</div>";
   }
 
   printContent =
     printContent +
-    '</div>' +
-    '</div>' +
+    "</div>" +
+    "</div>" +
     '<div class="print-date">' +
-    '출력일시: ' +
+    "출력일시: " +
     printDate +
-    '</div>' +
-    '</body>' +
-    '</html>';
+    "</div>" +
+    "</body>" +
+    "</html>";
 
   // 새 창 열기
-  const printWindow = window.open('', '_blank');
+  const printWindow = window.open("", "_blank");
   if (printWindow) {
     printWindow.document.write(printContent);
     printWindow.document.close();
@@ -1105,190 +1092,188 @@ const fnOpenImprovementPlan = () => {
     setTimeout(() => {
       printWindow.print();
       // 프린트 후 창 닫기
-      printWindow.addEventListener('afterprint', () => {
+      printWindow.addEventListener("afterprint", () => {
         printWindow.close();
       });
     }, 250);
   } else {
-    proxy.$alert(
-      '팝업이 차단되어 있습니다. 브라우저 설정에서 팝업을 허용해주세요.'
-    );
+    proxy.$alert(getMessage(MSG.POPUP_BLOCKED));
   }
 };
 
 // 개선완료보고서 열기
 const fnOpenImprovementReport = () => {
   // 데이터 준비
-  const processNm = formData.value.processNm || '-';
-  const riskTypeNm = formData.value.riskTypeNm || '-';
-  const initAssessDate = formData.value.initAssessDate || '-';
-  const initAssessorNm = formData.value.initAssessorNm || '-';
-  const hazardNm = formData.value.hazardNm || '-';
-  const initDesc = (formData.value.initDesc || '-').replace(/\n/g, '<br>');
-  const initLikelihoodScore = formData.value.initLikelihoodScore || '-';
-  const initSeverityScore = formData.value.initSeverityScore || '-';
-  const initRiskLv = formData.value.initRiskLv || '-';
+  const processNm = formData.value.processNm || "-";
+  const riskTypeNm = formData.value.riskTypeNm || "-";
+  const initAssessDate = formData.value.initAssessDate || "-";
+  const initAssessorNm = formData.value.initAssessorNm || "-";
+  const hazardNm = formData.value.hazardNm || "-";
+  const initDesc = (formData.value.initDesc || "-").replace(/\n/g, "<br>");
+  const initLikelihoodScore = formData.value.initLikelihoodScore || "-";
+  const initSeverityScore = formData.value.initSeverityScore || "-";
+  const initRiskLv = formData.value.initRiskLv || "-";
   const initRiskLevelClass = getRiskLevelClass(formData.value.initRiskLv);
   const assessmentStatusName = getAssessmentStatusName(
     formData.value.assessmentStatus
   );
-  const revalDate = formData.value.revalDate || '-';
-  const revalBeforeDesc = (formData.value.revalBeforeDesc || '-').replace(
+  const revalDate = formData.value.revalDate || "-";
+  const revalBeforeDesc = (formData.value.revalBeforeDesc || "-").replace(
     /\n/g,
-    '<br>'
+    "<br>"
   );
-  const revalAssessorNm = formData.value.revalAssessorNm || '-';
-  const revalAssessDate = formData.value.revalAssessDate || '-';
-  const revalDesc = (formData.value.revalDesc || '-').replace(/\n/g, '<br>');
-  const revalLikelihoodScore = formData.value.revalLikelihoodScore || '-';
-  const revalSeverityScore = formData.value.revalSeverityScore || '-';
-  const revalRiskLv = formData.value.revalRiskLv || '-';
+  const revalAssessorNm = formData.value.revalAssessorNm || "-";
+  const revalAssessDate = formData.value.revalAssessDate || "-";
+  const revalDesc = (formData.value.revalDesc || "-").replace(/\n/g, "<br>");
+  const revalLikelihoodScore = formData.value.revalLikelihoodScore || "-";
+  const revalSeverityScore = formData.value.revalSeverityScore || "-";
+  const revalRiskLv = formData.value.revalRiskLv || "-";
   const revalRiskLevelClass = getRiskLevelClass(formData.value.revalRiskLv);
   const beforePhotoHtml = beforePhotoUrl.value
     ? '<img src="' +
       beforePhotoUrl.value +
       '" alt="개선 전 사진" class="print-photo" />'
-    : '사진 없음';
+    : "사진 없음";
   const afterPhotoHtml =
     previewImage?.value?.url || revalPhotoUrl.value
       ? '<img src="' +
         (previewImage?.value?.url || revalPhotoUrl.value) +
         '" alt="개선 후 사진" class="print-photo" />'
-      : '사진 없음';
-  const printDate = new Date().toLocaleString('ko-KR');
+      : "사진 없음";
+  const printDate = new Date().toLocaleString("ko-KR");
 
   // 프린트용 HTML 생성
   let printContent =
-    '<!DOCTYPE html>' +
-    '<html>' +
-    '<head>' +
+    "<!DOCTYPE html>" +
+    "<html>" +
+    "<head>" +
     '<meta charset="UTF-8">' +
-    '<title>개선완료보고서</title>' +
-    '<style>' +
-    '@media print {' +
-    '  @page { size: A4 landscape; margin: 5mm; }' +
-    '  body { margin: 0; padding: 0; height: 100%; overflow: hidden; }' +
-    '}' +
-    'body {' +
+    "<title>개선완료보고서</title>" +
+    "<style>" +
+    "@media print {" +
+    "  @page { size: A4 landscape; margin: 5mm; }" +
+    "  body { margin: 0; padding: 0; height: 100%; overflow: hidden; }" +
+    "}" +
+    "body {" +
     '  font-family: "Pretendard", sans-serif;' +
-    '  font-size: 13px;' +
-    '  line-height: 1.4;' +
-    '  color: #333;' +
-    '  padding: 10px 8px 5px 8px;' +
-    '  height: 100%;' +
-    '  display: flex;' +
-    '  flex-direction: column;' +
-    '  box-sizing: border-box;' +
-    '}' +
-    '.print-header {' +
-    '  text-align: center;' +
-    '  margin-bottom: 10px;' +
-    '  border-bottom: 2px solid #333;' +
-    '  padding-bottom: 6px;' +
-    '  flex-shrink: 0;' +
-    '}' +
-    '.print-header h1 {' +
-    '  font-size: 20px;' +
-    '  font-weight: bold;' +
-    '  margin: 0;' +
-    '}' +
-    '.print-content {' +
-    '  display: flex;' +
-    '  gap: 10px;' +
-    '  margin-bottom: 5px;' +
-    '  flex: 1;' +
-    '  min-height: 0;' +
-    '}' +
-    '.print-section {' +
-    '  flex: 1;' +
-    '  border: 1px solid #ddd;' +
-    '  border-radius: 4px;' +
-    '  padding: 8px;' +
-    '  display: flex;' +
-    '  flex-direction: column;' +
-    '  min-height: 0;' +
-    '  overflow: hidden;' +
-    '}' +
-    '.section-title {' +
-    '  background: #f5f5f5;' +
-    '  padding: 6px;' +
-    '  font-weight: bold;' +
-    '  border-bottom: 1px solid #ddd;' +
-    '  margin: -8px -8px 6px -8px;' +
-    '  font-size: 14px;' +
-    '  flex-shrink: 0;' +
-    '}' +
-    '.print-row {' +
-    '  display: flex;' +
-    '  margin-bottom: 8px;' +
-    '  align-items: flex-start;' +
-    '  flex-shrink: 0;' +
-    '}' +
-    '.print-label {' +
-    '  flex: 0 0 120px;' +
-    '  font-weight: 500;' +
-    '  color: #333;' +
-    '  font-size: 13px;' +
-    '  padding-top: 5px;' +
-    '}' +
-    '.print-value {' +
-    '  flex: 1;' +
-    '  color: #666;' +
-    '  font-size: 13px;' +
-    '  padding-top: 5px;' +
-    '}' +
-    '.print-textarea {' +
-    '  min-height: 35px;' +
-    '  white-space: pre-wrap;' +
-    '  word-break: break-word;' +
-    '  line-height: 1.2;' +
-    '}' +
-    '.print-photo {' +
-    '  max-width: 100%;' +
-    '  max-height: 144px;' +
-    '  border: 1px solid #ddd;' +
-    '}' +
-    '.risk-evaluation {' +
-    '  display: flex;' +
-    '  gap: 10px;' +
-    '  align-items: center;' +
-    '  margin-top: -3px;' +
-    '}' +
-    '.risk-item {' +
-    '  display: flex;' +
-    '  align-items: center;' +
-    '  gap: 5px;' +
-    '}' +
-    '.risk-item-label {' +
-    '  font-weight: 500;' +
-    '  font-size: 13px;' +
-    '}' +
-    '.risk-level {' +
-    '  padding: 3px 8px;' +
-    '  border-radius: 4px;' +
-    '  font-weight: bold;' +
-    '  min-width: 35px;' +
-    '  text-align: center;' +
-    '  font-size: 13px;' +
-    '}' +
-    '.risk-high { background: #ff6b6b; color: white; }' +
-    '.risk-medium { background: #ffa500; color: white; }' +
-    '.risk-low { background: #ffd700; color: #333; }' +
-    '.risk-very-low { background: #90ee90; color: #333; }' +
-    '.print-date {' +
-    '  text-align: right;' +
-    '  margin-top: auto;' +
-    '  padding-top: 5px;' +
-    '  font-size: 11px;' +
-    '  color: #666;' +
-    '  flex-shrink: 0;' +
-    '}' +
-    '</style>' +
-    '</head>' +
-    '<body>' +
+    "  font-size: 13px;" +
+    "  line-height: 1.4;" +
+    "  color: #333;" +
+    "  padding: 10px 8px 5px 8px;" +
+    "  height: 100%;" +
+    "  display: flex;" +
+    "  flex-direction: column;" +
+    "  box-sizing: border-box;" +
+    "}" +
+    ".print-header {" +
+    "  text-align: center;" +
+    "  margin-bottom: 10px;" +
+    "  border-bottom: 2px solid #333;" +
+    "  padding-bottom: 6px;" +
+    "  flex-shrink: 0;" +
+    "}" +
+    ".print-header h1 {" +
+    "  font-size: 20px;" +
+    "  font-weight: bold;" +
+    "  margin: 0;" +
+    "}" +
+    ".print-content {" +
+    "  display: flex;" +
+    "  gap: 10px;" +
+    "  margin-bottom: 5px;" +
+    "  flex: 1;" +
+    "  min-height: 0;" +
+    "}" +
+    ".print-section {" +
+    "  flex: 1;" +
+    "  border: 1px solid #ddd;" +
+    "  border-radius: 4px;" +
+    "  padding: 8px;" +
+    "  display: flex;" +
+    "  flex-direction: column;" +
+    "  min-height: 0;" +
+    "  overflow: hidden;" +
+    "}" +
+    ".section-title {" +
+    "  background: #f5f5f5;" +
+    "  padding: 6px;" +
+    "  font-weight: bold;" +
+    "  border-bottom: 1px solid #ddd;" +
+    "  margin: -8px -8px 6px -8px;" +
+    "  font-size: 14px;" +
+    "  flex-shrink: 0;" +
+    "}" +
+    ".print-row {" +
+    "  display: flex;" +
+    "  margin-bottom: 8px;" +
+    "  align-items: flex-start;" +
+    "  flex-shrink: 0;" +
+    "}" +
+    ".print-label {" +
+    "  flex: 0 0 120px;" +
+    "  font-weight: 500;" +
+    "  color: #333;" +
+    "  font-size: 13px;" +
+    "  padding-top: 5px;" +
+    "}" +
+    ".print-value {" +
+    "  flex: 1;" +
+    "  color: #666;" +
+    "  font-size: 13px;" +
+    "  padding-top: 5px;" +
+    "}" +
+    ".print-textarea {" +
+    "  min-height: 35px;" +
+    "  white-space: pre-wrap;" +
+    "  word-break: break-word;" +
+    "  line-height: 1.2;" +
+    "}" +
+    ".print-photo {" +
+    "  max-width: 100%;" +
+    "  max-height: 144px;" +
+    "  border: 1px solid #ddd;" +
+    "}" +
+    ".risk-evaluation {" +
+    "  display: flex;" +
+    "  gap: 10px;" +
+    "  align-items: center;" +
+    "  margin-top: -3px;" +
+    "}" +
+    ".risk-item {" +
+    "  display: flex;" +
+    "  align-items: center;" +
+    "  gap: 5px;" +
+    "}" +
+    ".risk-item-label {" +
+    "  font-weight: 500;" +
+    "  font-size: 13px;" +
+    "}" +
+    ".risk-level {" +
+    "  padding: 3px 8px;" +
+    "  border-radius: 4px;" +
+    "  font-weight: bold;" +
+    "  min-width: 35px;" +
+    "  text-align: center;" +
+    "  font-size: 13px;" +
+    "}" +
+    ".risk-high { background: #ff6b6b; color: white; }" +
+    ".risk-medium { background: #ffa500; color: white; }" +
+    ".risk-low { background: #ffd700; color: #333; }" +
+    ".risk-very-low { background: #90ee90; color: #333; }" +
+    ".print-date {" +
+    "  text-align: right;" +
+    "  margin-top: auto;" +
+    "  padding-top: 5px;" +
+    "  font-size: 11px;" +
+    "  color: #666;" +
+    "  flex-shrink: 0;" +
+    "}" +
+    "</style>" +
+    "</head>" +
+    "<body>" +
     '<div class="print-header">' +
-    '<h1>개선완료보고서</h1>' +
-    '</div>' +
+    "<h1>개선완료보고서</h1>" +
+    "</div>" +
     '<div class="print-content">' +
     '<div class="print-section">' +
     '<div class="section-title">개선 전</div>' +
@@ -1296,160 +1281,160 @@ const fnOpenImprovementReport = () => {
     '<div class="print-label">작업명</div>' +
     '<div class="print-value">' +
     processNm +
-    '</div>' +
-    '</div>' +
+    "</div>" +
+    "</div>" +
     '<div class="print-row">' +
     '<div class="print-label">위험성구분</div>' +
     '<div class="print-value">' +
     processNm +
-    '</div>' +
-    '</div>' +
+    "</div>" +
+    "</div>" +
     '<div class="print-row">' +
     '<div class="print-label">위험성분류</div>' +
     '<div class="print-value">' +
     riskTypeNm +
-    '</div>' +
-    '</div>' +
+    "</div>" +
+    "</div>" +
     '<div class="print-row">' +
     '<div class="print-label">평가요청일자</div>' +
     '<div class="print-value">' +
     initAssessDate +
-    '</div>' +
-    '</div>' +
+    "</div>" +
+    "</div>" +
     '<div class="print-row">' +
     '<div class="print-label">평가요청자</div>' +
     '<div class="print-value">' +
     initAssessorNm +
-    '</div>' +
-    '</div>' +
+    "</div>" +
+    "</div>" +
     '<div class="print-row">' +
     '<div class="print-label">유해요인명</div>' +
     '<div class="print-value">' +
     hazardNm +
-    '</div>' +
-    '</div>' +
+    "</div>" +
+    "</div>" +
     '<div class="print-row">' +
     '<div class="print-label">유해요인설명</div>' +
     '<div class="print-value print-textarea">' +
     initDesc +
-    '</div>' +
-    '</div>' +
+    "</div>" +
+    "</div>" +
     '<div class="print-row">' +
     '<div class="print-label">사진</div>' +
     '<div class="print-value">' +
     beforePhotoHtml +
-    '</div>' +
-    '</div>' +
+    "</div>" +
+    "</div>" +
     '<div class="print-row">' +
     '<div class="print-label">개선 전 위험성 평가</div>' +
     '<div class="print-value">' +
     '<div class="risk-evaluation">' +
     '<div class="risk-item">' +
     '<span class="risk-item-label">빈도:</span>' +
-    '<span>' +
+    "<span>" +
     initLikelihoodScore +
-    '</span>' +
-    '</div>' +
+    "</span>" +
+    "</div>" +
     '<div class="risk-item">' +
     '<span class="risk-item-label">강도:</span>' +
-    '<span>' +
+    "<span>" +
     initSeverityScore +
-    '</span>' +
-    '</div>' +
+    "</span>" +
+    "</div>" +
     '<div class="risk-item">' +
     '<span class="risk-item-label">위험도:</span>' +
     '<span class="risk-level ' +
     initRiskLevelClass +
     '">' +
     initRiskLv +
-    '</span>' +
-    '</div>' +
-    '</div>' +
-    '</div>' +
-    '</div>' +
-    '</div>' +
+    "</span>" +
+    "</div>" +
+    "</div>" +
+    "</div>" +
+    "</div>" +
+    "</div>" +
     '<div class="print-section">' +
     '<div class="section-title">개선 후</div>' +
     '<div class="print-row">' +
     '<div class="print-label">진행상태</div>' +
     '<div class="print-value">' +
     assessmentStatusName +
-    '</div>' +
-    '</div>' +
+    "</div>" +
+    "</div>" +
     '<div class="print-row">' +
     '<div class="print-label">개선예정일자</div>' +
     '<div class="print-value">' +
     revalDate +
-    '</div>' +
-    '</div>' +
+    "</div>" +
+    "</div>" +
     '<div class="print-row">' +
     '<div class="print-label">임시조치 내용</div>' +
     '<div class="print-value print-textarea">' +
     revalBeforeDesc +
-    '</div>' +
-    '</div>' +
+    "</div>" +
+    "</div>" +
     '<div class="print-row">' +
     '<div class="print-label">개선관리자</div>' +
     '<div class="print-value">' +
     revalAssessorNm +
-    '</div>' +
-    '</div>' +
+    "</div>" +
+    "</div>" +
     '<div class="print-row">' +
     '<div class="print-label">개선완료일자</div>' +
     '<div class="print-value">' +
     revalAssessDate +
-    '</div>' +
-    '</div>' +
+    "</div>" +
+    "</div>" +
     '<div class="print-row">' +
     '<div class="print-label">개선내용</div>' +
     '<div class="print-value print-textarea">' +
     revalDesc +
-    '</div>' +
-    '</div>' +
+    "</div>" +
+    "</div>" +
     '<div class="print-row">' +
     '<div class="print-label">개선사진</div>' +
     '<div class="print-value">' +
     afterPhotoHtml +
-    '</div>' +
-    '</div>' +
+    "</div>" +
+    "</div>" +
     '<div class="print-row">' +
     '<div class="print-label">개선 후 위험성 평가</div>' +
     '<div class="print-value">' +
     '<div class="risk-evaluation">' +
     '<div class="risk-item">' +
     '<span class="risk-item-label">빈도:</span>' +
-    '<span>' +
+    "<span>" +
     revalLikelihoodScore +
-    '</span>' +
-    '</div>' +
+    "</span>" +
+    "</div>" +
     '<div class="risk-item">' +
     '<span class="risk-item-label">강도:</span>' +
-    '<span>' +
+    "<span>" +
     revalSeverityScore +
-    '</span>' +
-    '</div>' +
+    "</span>" +
+    "</div>" +
     '<div class="risk-item">' +
     '<span class="risk-item-label">위험도:</span>' +
     '<span class="risk-level ' +
     revalRiskLevelClass +
     '">' +
     revalRiskLv +
-    '</span>' +
-    '</div>' +
-    '</div>' +
-    '</div>' +
-    '</div>' +
-    '</div>' +
-    '</div>' +
+    "</span>" +
+    "</div>" +
+    "</div>" +
+    "</div>" +
+    "</div>" +
+    "</div>" +
+    "</div>" +
     '<div class="print-date">' +
-    '출력일시: ' +
+    "출력일시: " +
     printDate +
-    '</div>' +
-    '</body>' +
-    '</html>';
+    "</div>" +
+    "</body>" +
+    "</html>";
 
   // 새 창 열기
-  const printWindow = window.open('', '_blank');
+  const printWindow = window.open("", "_blank");
   if (printWindow) {
     printWindow.document.write(printContent);
     printWindow.document.close();
@@ -1457,14 +1442,12 @@ const fnOpenImprovementReport = () => {
     setTimeout(() => {
       printWindow.print();
       // 프린트 후 창 닫기
-      printWindow.addEventListener('afterprint', () => {
+      printWindow.addEventListener("afterprint", () => {
         printWindow.close();
       });
     }, 250);
   } else {
-    proxy.$alert(
-      '팝업이 차단되어 있습니다. 브라우저 설정에서 팝업을 허용해주세요.'
-    );
+    proxy.$alert(getMessage(MSG.POPUP_BLOCKED));
   }
 };
 
@@ -1544,6 +1527,9 @@ onBeforeUnmount(() => {
   gap: 0.5rem;
   text-align: left;
   margin-bottom: 0.5rem;
+  width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
 }
 
 .form-row label {
@@ -1557,7 +1543,8 @@ onBeforeUnmount(() => {
 .form-row input,
 .form-row select,
 .form-row textarea {
-  flex: 1 1 auto;
+  flex: 1 1 0%;
+  min-width: 0;
   padding: 0.4rem 0.6rem;
   border: 1px solid #ccc;
   border-radius: 4px;
@@ -1863,60 +1850,56 @@ onBeforeUnmount(() => {
 }
 
 .modal-footer {
-  display: flex;
   justify-content: space-between;
-  align-items: center;
-  gap: 0.5rem;
-  padding: 1rem 1.5rem;
-  border-top: 1px solid #ddd;
-  background: #f9f9f9;
 }
 
-.footer-buttons-left {
-  display: flex;
-  gap: 0.5rem;
-}
-
+.footer-buttons-left,
 .footer-buttons-right {
   display: flex;
   gap: 0.5rem;
 }
 
 .btn {
-  padding: 0.5rem 1.5rem;
-  border: none;
-  border-radius: 4px;
-  font-size: 0.9rem;
+  padding: 0 1rem;
+  border-radius: 6px;
+  font-size: 0.875rem;
+  font-weight: 500;
+  font-family: "Pretendard", sans-serif;
   cursor: pointer;
-  transition: all 0.2s;
+  white-space: nowrap;
+  transition:
+    background 0.2s,
+    box-shadow 0.2s;
 }
 
 .btn-cancel {
-  background: white;
-  color: #666;
-  border: 1px solid #ccc;
+  background: #ffffff;
+  color: #374151;
+  border: 1px solid #e5e7eb;
 }
 
 .btn-cancel:hover {
-  background: #f5f5f5;
+  background: #f9fafb;
 }
 
 .btn-save {
-  background: #30796a;
-  color: white;
+  background: #16a34a;
+  color: #ffffff;
+  border: none;
 }
 
 .btn-save:hover {
-  background: #256b5a;
+  background: #15803d;
 }
 
 .btn-report {
-  background: #4a90e2;
-  color: white;
+  background: #ffffff;
+  color: #16a34a;
+  border: 1px solid #16a34a;
 }
 
 .btn-report:hover {
-  background: #357abd;
+  background: rgba(22, 163, 74, 0.06);
 }
 
 .fade-enter-active,

@@ -45,12 +45,12 @@
 
       <div>
         <label>점검대상명칭</label>
-        <input v-model.trim="sr_chkptNm" type="text" />
+        <input v-model.trim="chkptNm" type="text" />
       </div>
 
       <div>
         <label>순회회점검구분</label>
-        <select v-model="sr_chkLstType" name="combo">
+        <select v-model="chkLstType" name="combo">
           <option
             v-for="opt in baseCodeArr['COM001'] || []"
             :key="opt.baimValDCd"
@@ -63,7 +63,7 @@
 
       <div>
         <label>사용여부</label>
-        <select v-model.trim="sr_useYn" name="combo">
+        <select v-model.trim="useYn" name="combo">
           <option
             v-for="opt in systCodeArr['SYS003'] || []"
             :key="opt.systValDCd"
@@ -127,10 +127,9 @@
                   <div class="flex items-center gap-2 w-full">
                     <span class="truncate min-w-0">{{ chkpt.siteNm }}</span>
                     <button
-                      v-if="!chkpt.chkptCd"
                       class="ml-auto border rounded"
                       style="
-                        background-color: #007bff;
+                        background-color: #30796a;
                         border: none;
                         padding: 0.2rem 0.2rem;
                       "
@@ -239,6 +238,7 @@ import { useModal } from "@/utils/useModal";
 import { useFieldWatcher } from "@/utils/useFieldWatcher";
 import axios from "@/api/axios";
 import ViewHeader from "@/components/common/ViewHeader.vue";
+import { getMessage, MSG } from "@/messages";
 import search_icon from "@/assets/img/search_icon.png";
 import SiteSearchPop from "@/components/popup/SiteSearchPop.vue";
 import BaseSelect from "@/components/common/BaseSelect.vue";
@@ -265,10 +265,10 @@ const baseCodeArr = ref({});
 const SiteSearchPopOpen = ref(false);
 
 // 조회조건 변수
-const sr_chkptNm = ref("");
-const sr_chkLstType = ref();
-const sr_useYn = ref("Y");
-const sr_siteCd = ref("");
+const chkptNm = ref("");
+const chkLstType = ref();
+const useYn = ref("Y");
+const siteCd = ref("");
 const sr_siteNo = ref("");
 const sr_siteNm = ref("");
 
@@ -296,7 +296,7 @@ onMounted(async () => {
 // ================ API Functions ================
 const fnGetSystinfoList = async () => {
   try {
-    const response = await axios.get("/comApi/baseinfo/syst-info-list", {
+    const response = await axios.get("/comApi/baseinfo/syst-info-lists", {
       params: {
         systCodeList: ["SYS002", "SYS003"],
       },
@@ -328,7 +328,7 @@ const fnGetSystinfoList = async () => {
 
 const fnGetBaseinfoList = async () => {
   try {
-    const response = await axios.get("/comApi/baseinfo/base-info-list", {
+    const response = await axios.get("/comApi/baseinfo/base-info-lists", {
       params: {
         cmpnyCd: sessionStorage.getItem("gv_cmpnyCd"),
         baseCodeList: ["COM001"],
@@ -348,7 +348,7 @@ const fnGetBaseinfoList = async () => {
       });
 
       baseCodeArr.value = grouped;
-      sr_chkLstType.value = baseCodeArr.value.COM001[0].baimValDCd;
+      chkLstType.value = baseCodeArr.value.COM001[0].baimValDCd;
     }
   } catch (err) {
     const msg =
@@ -361,16 +361,20 @@ const fnGetBaseinfoList = async () => {
 };
 
 const fnSearch = async () => {
+  chkptList.value = [];
+
   try {
-    const response = await axios.post("/webApi/chkLst01/getChkptList", {
-      sr_siteCd: sr_siteCd.value,
-      sr_chkptNm: sr_chkptNm.value,
-      sr_chkLstType: sr_chkLstType.value,
-      sr_useYn: sr_useYn.value,
+    const response = await axios.get("/webApi/chkLst01/chkpt-lists", {
+      params: {
+        siteCd: siteCd.value,
+        chkptNm: chkptNm.value,
+        chkLstType: chkLstType.value,
+        useYn: useYn.value,
+      },
     });
 
     if (response.status === 200) {
-      chkptList.value = response.data;
+      chkptList.value = response.data?.chkptResultList || [];
     }
   } catch (err) {
     const msg =
@@ -386,7 +390,7 @@ const fnSave = async () => {
   const filteredData = chkptList.value.filter((chkpt) => chkpt.chk);
 
   if (filteredData.length == 0) {
-    proxy.$alert("저장할 데이터가 없습니다.");
+    proxy.$alert(getMessage(MSG.SAVE_DATA_REQUIRED));
     return;
   }
 
@@ -394,17 +398,17 @@ const fnSave = async () => {
     return;
   }
 
-  const ok = await proxy.$confirm("저장하시겠습니까 ?");
+  const ok = await proxy.$confirm(getMessage(MSG.SAVE_CONFIRM));
   if (!ok) return;
 
   try {
     const response = await axios.post(
-      "/webApi/chkLst01/updateChkptList",
+      "/webApi/chkLst01/update-chkpt-lists",
       filteredData
     );
 
     if (response.status === 200) {
-      proxy.$alert("처리되었습니다.");
+      proxy.$alert(getMessage(MSG.SAVE_SUCCESS));
       fnSearch();
     }
   } catch (err) {
@@ -423,11 +427,11 @@ const fnDelete = async () => {
   );
 
   if (filteredData.length == 0) {
-    proxy.$alert("저장할 데이터가 없습니다.");
+    proxy.$alert(getMessage(MSG.DELETE_DATA_REQUIRED));
     return;
   }
 
-  const ok = await proxy.$confirm("삭제하시겠습니까 ?");
+  const ok = await proxy.$confirm(getMessage(MSG.DELETE_CONFIRM));
   if (!ok) return;
 
   try {
@@ -437,7 +441,7 @@ const fnDelete = async () => {
     );
 
     if (response.status === 200) {
-      proxy.$alert("처리되었습니다.");
+      proxy.$alert(getMessage(MSG.SAVE_SUCCESS));
       fnSearch();
     }
   } catch (err) {
@@ -452,10 +456,12 @@ const fnDelete = async () => {
 
 const fnSrchSiteInfo = async () => {
   try {
-    const response = await axios.post("/comApi/baseinfo/getSiteInfoList", {
-      cmpnyCd: sessionStorage.getItem("gv_cmpnyCd"),
-      siteNo: sr_siteNo.value,
-      siteNm: sr_siteNm.value,
+    const response = await axios.get("/comApi/baseinfo/site-lists", {
+      params: {
+        cmpnyCd: sessionStorage.getItem("gv_cmpnyCd"),
+        siteNo: sr_siteNo.value,
+        siteNm: sr_siteNm.value,
+      },
     });
 
     if (response.status === 200) {
@@ -478,7 +484,7 @@ const fnButtonControll = () => {
 const focusKill = (e) => {
   if (e.target.id == "sr_siteNo") {
     if (proxy.$util.isEmpty(sr_siteNo.value)) {
-      sr_siteCd.value = "";
+      siteCd.value = "";
       sr_siteNm.value = "";
     } else {
       sr_siteNm.value = "";
@@ -486,7 +492,7 @@ const focusKill = (e) => {
     }
   } else if (e.target.id == "sr_siteNm") {
     if (proxy.$util.isEmpty(sr_siteNm.value)) {
-      sr_siteCd.value = "";
+      siteCd.value = "";
       sr_siteNo.value = "";
     } else {
       sr_siteNo.value = "";
@@ -515,7 +521,7 @@ const fnDataValidationChk = (filteredData) => {
 
       fnAlertMsg(alertMsg);
       retVal = false;
-    } else if (proxy.$util.isEmpty(filteredData[i].mgmtUserId)) {
+    } else if (proxy.$util.isEmpty(filteredData[i].mgmtUserCd)) {
       alertMsg = "관리자는 필수 입력 값 입니다.";
 
       fnAlertMsg(alertMsg);
@@ -533,17 +539,18 @@ const fnDataValidationChk = (filteredData) => {
 const fnCallback = (res) => {
   if (proxy.$util.isNotEmpty(res)) {
     const apiId = res.config.url.split("/").pop();
-    if (apiId == "getSiteInfoList") {
-      if (res.data.length == 1) {
-        sr_siteCd.value = res.data[0].SITE_CD;
-        sr_siteNo.value = res.data[0].SITE_NO;
-        sr_siteNm.value = res.data[0].SITE_NM;
-      } else if (res.data.length > 1) {
+    if (apiId == "site-lists") {
+      const siteList = res.data?.siteInfoResultList ?? [];
+      if (siteList.length === 1) {
+        siteCd.value = siteList[0].siteCd;
+        sr_siteNo.value = siteList[0].siteNo;
+        sr_siteNm.value = siteList[0].siteNm;
+      } else if (siteList.length > 1) {
         //        handleResetSiteSearchPop();
         fnSiteSearchPopOpen("searchForm");
         SiteSearchPopOpen.value = true;
       } else {
-        sr_siteCd.value = "";
+        siteCd.value = "";
         sr_siteNo.value = "";
         sr_siteNm.value = "";
       }
@@ -555,13 +562,13 @@ const fnCreate = () => {
   chkptList.value.push({
     chk: true,
     useYn: "Y",
-    siteCd: sr_siteCd.value,
+    siteCd: siteCd.value,
     siteNm: sr_siteNm.value,
   });
 };
 
 const onSiteSelected = (siteCdVal, siteNoVal, siteNmVal) => {
-  sr_siteCd.value = siteCdVal;
+  siteCd.value = siteCdVal;
   sr_siteNo.value = siteNoVal;
   sr_siteNm.value = siteNmVal;
 };
@@ -581,15 +588,15 @@ const fnSiteSearchPopOpen = (callPoint) => {
   if (callPoint == "searchForm") {
     openPop(SiteSearchPop, {
       cmpnyCd_p: sessionStorage.getItem("gv_cmpnyCd"),
-      siteNo_p: sr_siteNo.value,
-      siteNm_p: sr_siteNm.value,
+      siteNo_p: "",
+      siteNm_p: "",
       onSelect: onSiteSelected,
     });
   } else {
     openPop(SiteSearchPop, {
       cmpnyCd_p: sessionStorage.getItem("gv_cmpnyCd"),
-      siteNo_p: sr_siteNo.value,
-      siteNm_p: sr_siteNm.value,
+      siteNo_p: "",
+      siteNm_p: "",
       onSelect: (siteCdVal, siteNoVal, siteNmVal) => {
         chkptList.value[callPoint].siteCd = siteCdVal;
         chkptList.value[callPoint].siteNm = siteNmVal;
@@ -602,7 +609,7 @@ const fnUserSearchPopOpen = (callPoint) => {
   openPop(UserSearchPop, {
     cmpnyCd_p: sessionStorage.getItem("gv_cmpnyCd"),
     onSelect: (userIdVal, userNmVal) => {
-      chkptList.value[callPoint].mgmtUserId = userIdVal;
+      chkptList.value[callPoint].mgmtUserCd = userIdVal;
       chkptList.value[callPoint].mgmtUserNm = userNmVal;
     },
   });

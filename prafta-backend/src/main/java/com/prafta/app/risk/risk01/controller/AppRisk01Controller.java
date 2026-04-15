@@ -20,7 +20,8 @@ import com.prafta.app.risk.risk01.dto.RiskInfoRes;
 import com.prafta.app.risk.risk01.service.AppRisk01Service;
 import com.prafta.common.annotation.NoAuth;
 import com.prafta.common.cmm.file.service.FileService;
-import com.prafta.common.exception.cmm.CmmApiException;
+import com.prafta.common.error.common.CommonErrorCode;
+import com.prafta.common.exception.ApiException;
 import com.prafta.common.security.JwtUtil;
 
 import lombok.RequiredArgsConstructor;
@@ -49,7 +50,7 @@ public class AppRisk01Controller {
 		RiskInfoRes retDto = appRisk01Service.selectRiskTypeInfo(request, tokenInfo);
 		
 		if(retDto == null) {
-    		throw new CmmApiException("조회결과가 없습니다.");
+			throw new ApiException(CommonErrorCode.COMMON_400_002);
     	}
     	
     	return ResponseEntity.status(HttpStatus.OK).body(retDto);

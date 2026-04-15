@@ -329,6 +329,7 @@ import {
 import { useModal } from "@/utils/useModal";
 import axios from "@/api/axios";
 import ViewHeader from "@/components/common/ViewHeader.vue";
+import { getMessage, MSG } from "@/messages";
 import HolidayRegisterPop from "@/views/attd/popup/HolidayRegisterPop.vue";
 import CalendarMonthPickerPop from "@/views/attd/popup/CalendarMonthPickerPop.vue";
 
@@ -349,7 +350,7 @@ const viewMode = ref("month");
 const activeTab = ref("detail");
 const listFilter = ref("all");
 const selectedDate = ref("");
-const holidayList = ref([]);
+const holidayResultList = ref([]);
 
 const dayLabels = ["일", "월", "화", "수", "목", "금", "토"];
 
@@ -382,7 +383,7 @@ const calendarWeeks = computed(() => {
 });
 
 const getEventsForDate = (dateStr) => {
-  const list = holidayList.value;
+  const list = holidayResultList.value;
   if (!Array.isArray(list)) return [];
   return list.filter((h) => {
     const hDate = h.date ?? h.holidayYmd ?? h.holidayDate;
@@ -397,7 +398,7 @@ const getEventsForDate = (dateStr) => {
 };
 
 const filteredList = computed(() => {
-  const list = holidayList.value;
+  const list = holidayResultList.value;
   if (!Array.isArray(list)) return [];
   const arr = list.map((h) => {
     const type = h.type ?? h.holidayType ?? "02";
@@ -421,15 +422,18 @@ const filteredList = computed(() => {
 
 const publicCount = computed(
   () =>
-    holidayList.value.filter((h) => (h.type ?? h.holidayType) === "01").length
+    holidayResultList.value.filter((h) => (h.type ?? h.holidayType) === "01")
+      .length
 );
 const manualCount = computed(
   () =>
-    holidayList.value.filter((h) => (h.type ?? h.holidayType) === "02").length
+    holidayResultList.value.filter((h) => (h.type ?? h.holidayType) === "02")
+      .length
 );
 const recurringCount = computed(
   () =>
-    holidayList.value.filter((h) => (h.type ?? h.holidayType) === "03").length
+    holidayResultList.value.filter((h) => (h.type ?? h.holidayType) === "03")
+      .length
 );
 
 const selectedDateEvents = computed(() =>
@@ -579,21 +583,21 @@ const fnSearch = async () => {
     });
 
     if (response.status === 200) {
-      const data = response?.data?.holidayList;
-      holidayList.value = Array.isArray(data)
+      const data = response?.data?.holidayResultList;
+      holidayResultList.value = Array.isArray(data)
         ? data.map(normalizeHolidayItem)
         : [];
     } else {
-      holidayList.value = [];
+      holidayResultList.value = [];
     }
   } catch (err) {
     console.warn("[Attd02] holiday-list API error:", err);
-    holidayList.value = [];
+    holidayResultList.value = [];
   }
 };
 
 const fnDeleteHoliday = async (item) => {
-  const ok = await proxy.$confirm("해당 휴무를 삭제하시겠습니까?");
+  const ok = await proxy.$confirm(getMessage(MSG.LEAVE_DELETE_CONFIRM));
   if (!ok) return;
 
   try {
@@ -609,7 +613,7 @@ const fnDeleteHoliday = async (item) => {
       payload
     );
     if (response.status === 200) {
-      proxy.$alert("처리되었습니다.");
+      proxy.$alert(getMessage(MSG.SAVE_SUCCESS));
       fnSearch();
     }
   } catch (err) {
@@ -789,19 +793,6 @@ onMounted(() => {
   display: flex;
   gap: 0.25rem;
 }
-/* .btn-toggle {
-  padding: 0.35rem 0.75rem;
-  border: 1px solid var(--color-border, #d1d5db);
-  border-radius: 6px;
-  background: #fff;
-  cursor: pointer;
-  font-size: 0.8125rem;
-}
-.btn-toggle.active {
-  border-color: var(--color-primary, #16a34a);
-  background: rgba(22, 163, 74, 0.08);
-  color: var(--color-primary);
-} */
 .calendar-body {
   flex: 1;
   min-height: 0;

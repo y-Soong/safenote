@@ -20,7 +20,8 @@ import com.prafta.app.chkLst.chkLst01.dto.SaveInspectResultReq;
 import com.prafta.app.chkLst.chkLst01.service.AppChkLst01Service;
 import com.prafta.common.annotation.NoAuth;
 import com.prafta.common.cmm.file.service.FileService;
-import com.prafta.common.exception.cmm.CmmApiException;
+import com.prafta.common.error.common.CommonErrorCode;
+import com.prafta.common.exception.ApiException;
 import com.prafta.common.security.JwtUtil;
 
 import lombok.RequiredArgsConstructor;
@@ -30,7 +31,7 @@ import lombok.extern.slf4j.Slf4j;
 @NoAuth
 @RestController
 @RequestMapping("/chkLst01")
-@RequiredArgsConstructor // ·Òº¹ÀÌ final ÇÊµå·Î »ý¼ºÀÚ ÀÚµ¿ »ý¼º
+@RequiredArgsConstructor
 public class AppChkLst01Controller {
 	
 	private final AppChkLst01Service appChkLst01Service;
@@ -39,7 +40,7 @@ public class AppChkLst01Controller {
 	
 	private final JwtUtil jwtUtil;
 	
-	/* Ã¼Å©¸®½ºÆ® Á¤º¸Á¶È¸ */
+	/* Ã¼Å©ï¿½ï¿½ï¿½ï¿½Æ® ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½È¸ */
     @GetMapping("/checklist-infos")
     public ResponseEntity<?> getChkLstInfo(@ModelAttribute ChecklistInfoReq request, @RequestHeader(value = "Authorization", required = false) String authorization) {
     	Map<String, Object> tokenInfo = jwtUtil.getAllClaimsAsMap(authorization);
@@ -47,7 +48,7 @@ public class AppChkLst01Controller {
     	ChecklistInfoRes retDto = appChkLst01Service.selectChkLstInfo(request, tokenInfo);
     	
     	if(retDto == null) {
-    		throw new CmmApiException("Á¶È¸°á°ú°¡ ¾ø½À´Ï´Ù.");
+    		throw new ApiException(CommonErrorCode.COMMON_400_002);
     	}
     	
     	return ResponseEntity.status(HttpStatus.OK).body(retDto);

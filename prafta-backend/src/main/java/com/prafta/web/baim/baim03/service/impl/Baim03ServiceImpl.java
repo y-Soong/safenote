@@ -1,26 +1,27 @@
 package com.prafta.web.baim.baim03.service.impl;
 
 import java.util.List;
-import java.util.Map;
 
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-import com.prafta.common.exception.baim.BaimApiException;
-import com.prafta.web.baim.baim03.dto.Baim03;
-import com.prafta.web.baim.baim03.dto.Baim03ReqDto;
-import com.prafta.web.baim.baim03.dto.TermsDetailInfoListQry;
-import com.prafta.web.baim.baim03.dto.TermsDetailInfoListReq;
-import com.prafta.web.baim.baim03.dto.TermsDetailInfoListRes;
-import com.prafta.web.baim.baim03.dto.TermsInfoListQry;
-import com.prafta.web.baim.baim03.dto.TermsInfoListReq;
-import com.prafta.web.baim.baim03.dto.TermsInfoListRes;
-import com.prafta.web.baim.baim03.dto.TermsInfoReq;
-import com.prafta.web.baim.baim03.dto.TermsInfoSave;
+import com.prafta.common.error.baim.BaimErrorCode;
+import com.prafta.common.error.common.CommonErrorCode;
+import com.prafta.common.exception.ApiException;
+import com.prafta.web.baim.baim03.application.command.TermsInfoCommand;
+import com.prafta.web.baim.baim03.application.model.TermsModel;
+import com.prafta.web.baim.baim03.application.param.TermsDetailInfoListParam;
+import com.prafta.web.baim.baim03.application.param.TermsInfoListParam;
+import com.prafta.web.baim.baim03.application.param.TermsInfoParam;
+import com.prafta.web.baim.baim03.application.param.TermsListParam;
+import com.prafta.web.baim.baim03.application.query.TermsDetailInfoListQuery;
+import com.prafta.web.baim.baim03.application.query.TermsInfoListQuery;
+import com.prafta.web.baim.baim03.dto.response.TermsDetailInfoListResponse;
+import com.prafta.web.baim.baim03.dto.response.TermsInfoListResponse;
 import com.prafta.web.baim.baim03.mapper.Baim03Mapper;
+import com.prafta.web.baim.baim03.result.TermsDetailInfoResult;
+import com.prafta.web.baim.baim03.result.TermsInfoResult;
 import com.prafta.web.baim.baim03.service.Baim03Service;
-import com.prafta.web.baim.baim03.vo.TermsDetailInfo;
-import com.prafta.web.baim.baim03.vo.TermsInfo;
 
 import lombok.extern.slf4j.Slf4j;
 
@@ -33,106 +34,66 @@ public class Baim03ServiceImpl implements Baim03Service{
 		this.baim03Mapper = baim03Mapper;
 	}
 		
-	public TermsInfoListRes selectTermsList(TermsInfoListReq dto, Map<String, Object> tokenInfo) {
+	public TermsInfoListResponse selectTermsList(TermsInfoListParam param) {
+				
+		TermsInfoListResponse response = null;
 		
-		TermsInfoListQry reqDto = TermsInfoListQry.builder()
-													.termsNm(dto.getTermsNm())
-													.build();
-		
-		TermsInfoListRes retDto = null;
-		
-		List<TermsInfo> termsInfoList = baim03Mapper.selectTermsList(reqDto, tokenInfo);
+		List<TermsInfoResult> termsInfoList = baim03Mapper.selectTermsList(TermsInfoListQuery.from(param));
 		
 		if(termsInfoList != null && termsInfoList.size() > 0) {
-			retDto = TermsInfoListRes.builder()
+			response = TermsInfoListResponse.builder()
 									.termsInfoList(termsInfoList)
 									.build();
 		}
 		
-		return retDto;
+		return response;
 	}
 
-	public TermsDetailInfoListRes selectTermsDList(TermsDetailInfoListReq dto, Map<String, Object> tokenInfo) {
+	public TermsDetailInfoListResponse selectTermsDList(TermsDetailInfoListParam param) {
+
+		TermsDetailInfoListResponse response = null;
 		
-		TermsDetailInfoListQry reqDto = TermsDetailInfoListQry.builder()
-													.termsId(dto.getTermsId())
-													.termsVersion(dto.getTermsVersion())
-													.build();
-		
-		TermsDetailInfoListRes retDto = null;
-		
-		List<TermsDetailInfo> termsDetailInfoList = baim03Mapper.selectTermsDList(reqDto, tokenInfo);
+		List<TermsDetailInfoResult> termsDetailInfoList = baim03Mapper.selectTermsDList(TermsDetailInfoListQuery.from(param));
 		
 		if(termsDetailInfoList != null &&termsDetailInfoList.size() > 0) {
-			retDto = TermsDetailInfoListRes.builder()
+			response = TermsDetailInfoListResponse.builder()
 									.termsDetailInfoList(termsDetailInfoList)
 									.build();
 		}
 		
-		return retDto;
-	}
-	
-	public Baim03 selectTermsInfo(Baim03ReqDto dto, Map<String, Object> tokenInfo) {
-		return baim03Mapper.selectTermsInfo(dto, tokenInfo);
+		return response;
 	}
 	
 	@Transactional
-	public void updateTermsInfo(TermsInfoReq dto, Map<String, Object> tokenInfo) {
-		
-		TermsInfoSave reqDto = TermsInfoSave.builder()
-											.termsId(dto.getTermsId())
-											.termsNm(dto.getTermsNm())
-//											.termsVersion(dto.getTermsVersion())
-											.requiredYn(dto.getRequiredYn())
-											.termsContent(dto.getTermsContent())
-											.strDate(dto.getStrDate())
-											.useYn(dto.getUseYn())
-											.termsDesc(dto.getTermsDesc())
-											.build();
-		
-		TermsInfoListQry reqDto2 = TermsInfoListQry.builder()
-				.termsNm(dto.getTermsNm())
-				.build();
+	public void updateTermsInfo(TermsInfoParam param) {
 
-		List<TermsInfo> termsInfoList = baim03Mapper.selectTermsList(reqDto2, tokenInfo);
+		List<TermsInfoResult> termsInfoResultList = baim03Mapper.selectTermsList(TermsInfoListQuery.from(param));
 		
-		if (termsInfoList != null && !termsInfoList.isEmpty()) {
+		if (termsInfoResultList != null && !termsInfoResultList.isEmpty()) {
 			
-			TermsInfo last = termsInfoList.get(termsInfoList.size() - 1);
+			TermsInfoResult last = termsInfoResultList.get(termsInfoResultList.size() - 1);
 
-		    String lastVerStr = last.getTermsVersion();
+		    String lastVerStr = last.termsVersion();
 		    int lastVer = 0;
 		    try {
 		        lastVer = Integer.parseInt(lastVerStr == null ? "0" : lastVerStr.trim());
 		    } catch (NumberFormatException e) {
-		        throw new BaimApiException("약관 버전 값이 숫자가 아닙니다. termsVersion=" + lastVerStr);
+		    	throw new ApiException(CommonErrorCode.COMMON_400_001, "약관 버전 값이 숫자가 아닙니다. termsVersion=" + lastVerStr);
 		    }
 
 		    String versionNo = String.valueOf(lastVer + 1);
-		    reqDto = reqDto.toBuilder().termsVersion(versionNo).build();
 			
-			baim03Mapper.mergeTermsInfo(reqDto, tokenInfo);
-			baim03Mapper.insertTermsIdVersionInfo(reqDto, tokenInfo);
+			baim03Mapper.mergeTermsInfo(TermsInfoCommand.from(param, versionNo));
+			baim03Mapper.insertTermsIdVersionInfo(TermsInfoCommand.from(param, versionNo));
 		} else {
-			throw new BaimApiException("약관 데이터 생성 오류 !\n관리자에게 문의해주세요.");
+			throw new ApiException(BaimErrorCode.BAIM_500_001);
 		}
 	}
 	
-	public void deleteCmmCodeDetailInfo(List<TermsInfoReq> dtoList, Map<String, Object> tokenInfo) {
-		for(TermsInfoReq dto : dtoList) {
-			
-			TermsInfoSave reqDto = TermsInfoSave.builder()
-					.termsId(dto.getTermsId())
-					.termsNm(dto.getTermsNm())
-//					.termsVersion(dto.getTermsVersion())
-					.requiredYn(dto.getRequiredYn())
-					.termsContent(dto.getTermsContent())
-					.strDate(dto.getStrDate())
-					.useYn(dto.getUseYn())
-					.termsDesc(dto.getTermsDesc())
-					.build();
-			
-			baim03Mapper.deleteCmmCodeDetailInfo(reqDto, tokenInfo);
+	public void deleteCmmCodeDetailInfo(TermsListParam param) {
+		for(TermsModel model : param.termsInfoModelList()) {
+
+//			baim03Mapper.deleteCmmCodeDetailInfo(TermsInfoCommand.from(model, null));
 		}
 	}
 	

@@ -2,7 +2,7 @@
 <!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
 <mapper namespace="com.prafta.web.risk.risk03.mapper.Risk03Mapper">
 
-	<select id="selectRiskTypeList" parameterType="map" resultType="com.prafta.web.risk.risk03.vo.RiskType">
+	<select id="selectRiskTypeList" parameterType="com.prafta.web.risk.risk03.application.query.RiskTypeInfoListQuery" resultType="com.prafta.web.risk.risk03.result.RiskTypeResult">
    	/* Risk03Mapper.selectRiskTypeList */
    	SELECT 
 		'' AS PROCESS_CD
@@ -17,15 +17,14 @@
 	    , RISK_TYPE_CD
 	    , RISK_TYPE_NM
 	FROM TB_RISK_TYPE
-	WHERE CMPNY_CD = #{token.gv_cmpnyCd}
+	WHERE CMPNY_CD = #{gvCmpnyCd}
 	  AND USE_YN = 'Y'
     </select>
     
-    <select id="selectRiskAssessmentsLists" parameterType="map" resultType="com.prafta.web.risk.risk03.vo.RiskAssessment">
+    <select id="selectRiskAssessmentsLists" parameterType="com.prafta.web.risk.risk03.application.query.RiskAssessmentsListQuery" resultType="com.prafta.web.risk.risk03.result.RiskAssessmentResult">
    	/* Risk03Mapper.selectRiskAssessmentsLists */
    	SELECT 
-   		'' 																			AS chk
-		, A.CMPNY_CD																AS cmpnyCd
+   		A.CMPNY_CD																AS cmpnyCd
 	    , A.SITE_CD																	AS siteCd
 	    , A.PROCESS_CD																AS processCd
 	    , C.BAIM_VAL_D_NM															AS processNm
@@ -48,7 +47,7 @@
 	    , FNC_CMM_INFO_SRCH(A.CMPNY_CD, 'USER', A.INIT_ASSESSOR_ID, NULL) 			AS initAssessorNm
 	    , A.INIT_ASSESS_DATE														AS initAssessDate
 	    , FNC_CMM_INFO_SRCH(A.CMPNY_CD, 'FILE_NAME', A.INIT_FILE_MGMT_CD, NULL)		AS initFileMgmtCd
-        , FNC_CMM_INFO_SRCH(A.CMPNY_CD, 'FILE_PATH', A.INIT_FILE_MGMT_CD. NULL)		AS initFilePath
+        , FNC_CMM_INFO_SRCH(A.CMPNY_CD, 'FILE_PATH', A.INIT_FILE_MGMT_CD, NULL)		AS initFilePath
         , A.REVAL_DATE																AS revalDate
         , A.REVAL_BEFORE_DESC														AS revalBeforeDesc
 	    , A.REVAL_LIKELIHOOD_SCORE													AS revalLikelihoodScore
@@ -77,7 +76,7 @@
 				A.BAIM_VAL_D_CD
 				, A.BAIM_VAL_D_NM
 			FROM TB_BAIM_VAL_D A
-			WHERE A.CMPNY_CD = #{token.gv_cmpnyCd}
+			WHERE A.CMPNY_CD = #{gvCmpnyCd}
 			  AND A.BAIM_VAL_CD = 'COM002'
 			  AND A.USE_YN = 'Y'
 	     ) C
@@ -96,43 +95,43 @@
 	        AND A.HAZARD_CD = E.HAZARD_CD
 	        )
 	WHERE 1=1
-	  <if test="param.siteCd != null and param.siteCd != ''">
-	  	AND A.SITE_CD = #{param.siteCd}
+	  <if test="siteCd != null and siteCd != ''">
+	  	AND A.SITE_CD = #{siteCd}
 	  </if>
-	  <if test="param.assessmentStatus != null and param.assessmentStatus != ''">
-	  	AND A.ASSESSMENT_STATUS = #{param.assessmentStatus}
+	  <if test="assessmentStatus != null and assessmentStatus != ''">
+	  	AND A.ASSESSMENT_STATUS = #{assessmentStatus}
 	  </if>
-	  <if test="param.processCd != null and param.processCd != ''">
-	  	AND A.PROCESS_CD = #{param.processCd}
+	  <if test="processCd != null and processCd != ''">
+	  	AND A.PROCESS_CD = #{processCd}
 	  </if>
-	  <if test="param.riskTypeCd != null and param.riskTypeCd != ''">
-	  	AND A.RISK_TYPE_CD = #{param.riskTypeCd}
+	  <if test="riskTypeCd != null and riskTypeCd != ''">
+	  	AND A.RISK_TYPE_CD = #{riskTypeCd}
 	  </if>
 	ORDER BY A.ASSESSMENT_STATUS, A.SITE_CD, A.PROCESS_CD, A.RISK_TYPE_CD, A.HAZARD_CD
    	</select>
    	
-   	<update id="updateAssessment" parameterType="com.prafta.web.risk.risk03.dto.SaveAssessmentQry">
+   	<update id="updateAssessment" parameterType="com.prafta.web.risk.risk03.application.command.AssessmentCommand">
 	/* Risk01Mapper.updateAssessment */
 	UPDATE TB_RISK_ASSESSMENT
 	SET
-		ASSESSMENT_STATUS			= #{param.assessmentStatus}		
-		, INIT_LIKELIHOOD_SCORE 	= #{param.initLikelihoodScore}
-	    , INIT_SEVERITY_SCORE 		= #{param.initSeverityScore}
-	    , INIT_RISK_LV 				= #{param.initRiskLv}
-		, REVAL_DATE 				= REPLACE(#{param.revalDate}, '-', '')
-		, REVAL_BEFORE_DESC			= #{param.revalBeforeDesc}
-	    , REVAL_LIKELIHOOD_SCORE 	= #{param.revalLikelihoodScore}
-	    , REVAL_SEVERITY_SCORE 		= #{param.revalSeverityScore}
-	    , REVAL_RISK_LV 			= #{param.revalRiskLv}
-	    , REVAL_DESC 				= #{param.revalDesc}
-	    , REVAL_FILE_MGMT_CD 		= #{param.revalFileMgmtCd}
-	    , REVAL_ASSESSOR_ID 		= #{token.gv_userId}
+		ASSESSMENT_STATUS			= #{assessmentStatus}		
+		, INIT_LIKELIHOOD_SCORE 	= #{initLikelihoodScore}
+	    , INIT_SEVERITY_SCORE 		= #{initSeverityScore}
+	    , INIT_RISK_LV 				= #{initRiskLv}
+		, REVAL_DATE 				= REPLACE(#{revalDate}, '-', '')
+		, REVAL_BEFORE_DESC			= #{revalBeforeDesc}
+	    , REVAL_LIKELIHOOD_SCORE 	= #{revalLikelihoodScore}
+	    , REVAL_SEVERITY_SCORE 		= #{revalSeverityScore}
+	    , REVAL_RISK_LV 			= #{revalRiskLv}
+	    , REVAL_DESC 				= #{revalDesc}
+	    , REVAL_FILE_MGMT_CD 		= #{revalFileMgmtCd}
+	    , REVAL_ASSESSOR_ID 		= #{gvUserCd}
 	    , REVAL_ASSESS_DATE 		= NOW()
-	    , UPDATE_NO   				= #{token.gv_userId}
+	    , UPDATE_NO   				= #{gvUserCd}
 		, UPDATE_DATE 				= NOW()
-	WHERE CMPNY_CD = #{token.gv_cmpnyCd}
-	  AND SITE_CD = #{param.siteCd}
-	  AND ASSESSMENT_CD = #{param.assessmentCd}
-	  AND PROCESS_CD = #{param.processCd}
+	WHERE CMPNY_CD = #{gvCmpnyCd}
+	  AND SITE_CD = #{siteCd}
+	  AND ASSESSMENT_CD = #{assessmentCd}
+	  AND PROCESS_CD = #{processCd}
 	</update>
 </mapper>

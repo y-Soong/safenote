@@ -124,7 +124,11 @@
               </tr>
             </thead>
             <tbody>
-              <template v-if="!TbmEduInfoList || TbmEduInfoList.length === 0">
+              <template
+                v-if="
+                  !tbmEduInfoResultList || tbmEduInfoResultList.length === 0
+                "
+              >
                 <tr>
                   <td colspan="9" class="edu-grid-empty">
                     등록된 세부 항목이 없습니다.
@@ -132,7 +136,7 @@
                 </tr>
               </template>
               <template v-else>
-                <tr v-for="(info, idx) in TbmEduInfoList" :key="info.id">
+                <tr v-for="(info, idx) in tbmEduInfoResultList" :key="info.id">
                   <td style="text-align: center">{{ idx + 1 }}</td>
                   <td>
                     <input type="checkbox" v-model="info.chk" />
@@ -201,6 +205,7 @@ import { useModal } from "@/utils/useModal";
 import { useFieldWatcher } from "@/utils/useFieldWatcher";
 import axios from "@/api/axios";
 import ViewHeader from "@/components/common/ViewHeader.vue";
+import { getMessage, MSG } from "@/messages";
 import BaseSelect from "@/components/common/BaseSelect.vue";
 import TbmEduMtrlInfo from "./popup/TbmEduMtrlInfo.vue";
 
@@ -218,7 +223,7 @@ const { proxy } = getCurrentInstance();
 const { open: openPop } = useModal();
 
 // ================ Refs (Variables) ================
-const TbmEduInfoList = ref([]);
+const tbmEduInfoResultList = ref([]);
 const systCodeArr = ref([]);
 const baseCodeArr = ref([]);
 
@@ -232,7 +237,7 @@ const headChk = ref(false);
 
 // ================ Watchers ================
 useFieldWatcher(
-  TbmEduInfoList,
+  tbmEduInfoResultList,
   (item) => {
     item.chk = true;
   },
@@ -249,7 +254,7 @@ onMounted(async () => {
 // ================ API Functions ================
 const fnGetSystinfoList = async () => {
   try {
-    const response = await axios.get("/comApi/baseinfo/syst-info-list", {
+    const response = await axios.get("/comApi/baseinfo/syst-info-lists", {
       params: {
         systCodeList: ["SYS003"],
       },
@@ -283,7 +288,7 @@ const fnGetSystinfoList = async () => {
 
 const fnGetBaseinfoList = async () => {
   try {
-    const response = await axios.get("/comApi/baseinfo/base-info-list", {
+    const response = await axios.get("/comApi/baseinfo/base-info-lists", {
       params: {
         cmpnyCd: sessionStorage.getItem("gv_cmpnyCd"),
         baseCodeList: ["COM003"],
@@ -321,7 +326,7 @@ const fnGetBaseinfoList = async () => {
 };
 
 const fnSearch = async () => {
-  TbmEduInfoList.value = [];
+  tbmEduInfoResultList.value = [];
 
   try {
     const response = await axios.get("/webApi/tbm01/tbm-edu-infos", {
@@ -333,7 +338,7 @@ const fnSearch = async () => {
     });
 
     if (response.status === 200) {
-      TbmEduInfoList.value = response.data?.tbmEduInfoList || [];
+      tbmEduInfoResultList.value = response.data?.tbmEduInfoResultList || [];
     }
   } catch (err) {
     const msg =
@@ -346,14 +351,14 @@ const fnSearch = async () => {
 };
 
 const fnSave = async () => {
-  const filteredUsers = TbmEduInfoList.value.filter((user) => user.chk);
+  const filteredUsers = tbmEduInfoResultList.value.filter((user) => user.chk);
 
   if (filteredUsers.length == 0) {
-    proxy.$alert("저장할 데이터가 없습니다.");
+    proxy.$alert(getMessage(MSG.SAVE_DATA_REQUIRED));
     return;
   }
 
-  const ok = await proxy.$confirm("저장하시겠습니까 ?");
+  const ok = await proxy.$confirm(getMessage(MSG.SAVE_CONFIRM));
   if (!ok) return;
 
   try {
@@ -363,7 +368,7 @@ const fnSave = async () => {
     );
 
     if (response.status === 200) {
-      proxy.$alert("처리되었습니다.");
+      proxy.$alert(getMessage(MSG.SAVE_SUCCESS));
       fnSearch();
     }
   } catch (err) {
@@ -377,14 +382,14 @@ const fnSave = async () => {
 };
 
 const fnDelete = async () => {
-  const filteredUsers = TbmEduInfoList.value.filter((user) => user.chk);
+  const filteredUsers = tbmEduInfoResultList.value.filter((user) => user.chk);
 
   if (filteredUsers.length == 0) {
-    proxy.$alert("삭제제할 데이터가 없습니다.");
+    proxy.$alert(getMessage(MSG.DELETE_DATA_REQUIRED));
     return;
   }
 
-  const ok = await proxy.$confirm("삭제하시겠습니까 ?");
+  const ok = await proxy.$confirm(getMessage(MSG.DELETE_CONFIRM));
   if (!ok) return;
 
   try {
@@ -394,7 +399,7 @@ const fnDelete = async () => {
     );
 
     if (response.status === 200) {
-      proxy.$alert("처리되었습니다.");
+      proxy.$alert(getMessage(MSG.SAVE_SUCCESS));
       fnSearch();
     }
   } catch (err) {
@@ -417,15 +422,12 @@ const fnCreate = () => {
 
 const fnHeadChk = () => {
   headChk.value = !headChk.value;
-  TbmEduInfoList.value.forEach((item) => {
+  tbmEduInfoResultList.value.forEach((item) => {
     item.chk = headChk.value;
   });
 };
 
 const fnTbmEduMtrlInfoPopOpen = (info) => {
-  console.log("info :: ");
-  console.log(info);
-
   openPop(TbmEduMtrlInfo, {
     mtrlCd_p: info.mtrlCd,
     onSearch: fnSearch,

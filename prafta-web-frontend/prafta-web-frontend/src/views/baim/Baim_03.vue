@@ -168,6 +168,7 @@ import { useModal } from "@/utils/useModal";
 import { useFieldWatcher } from "@/utils/useFieldWatcher";
 import axios from "@/api/axios";
 import ViewHeader from "@/components/common/ViewHeader.vue";
+import { getMessage, MSG } from "@/messages";
 import TermsInfoPop from "@/components/popup/TermsInfoPop.vue";
 
 defineOptions({ name: "Baim_02" });
@@ -206,7 +207,7 @@ useFieldWatcher(
 // API 호출
 const fnGetSystinfoList = async () => {
   try {
-    const response = await axios.get("/comApi/baseinfo/syst-info-list", {
+    const response = await axios.get("/comApi/baseinfo/syst-info-lists", {
       params: {
         systCodeList: ["SYS003"],
       },
@@ -315,8 +316,7 @@ function fnAddRow(terms) {
       });
     }
   } else {
-    const alertMsg = "이용약관을 선택해주세요.";
-    fnAlertMsg(alertMsg);
+    fnAlertMsg(getMessage(MSG.TERMS_SELECT_REQUIRED));
   }
 }
 

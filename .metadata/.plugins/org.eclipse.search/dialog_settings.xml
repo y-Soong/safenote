@@ -35,7 +35,7 @@
 		<item key="DIALOG_X_ORIGIN" value="778"/>
 		<item key="DIALOG_Y_ORIGIN" value="196"/>
 		<item key="DIALOG_WIDTH" value="525"/>
-		<item key="DIALOG_HEIGHT" value="480"/>
+		<item key="DIALOG_HEIGHT" value="502"/>
 		<item key="DIALOG_FONT_NAME" value="1|맑은 고딕|9.0|0|WINDOWS|1|-12|0|0|0|400|0|0|0|1|0|0|0|0|맑은 고딕"/>
 	</section>
 	<section name="TextSearchPage">
@@ -49,7 +49,7 @@
 			<item key="ignoreCase" value="true"/>
 			<item key="isRegExSearch" value="false"/>
 			<item key="isWholeWord" value="false"/>
-			<item key="textPattern" value="FNC_CMM_SEQ_NEXTVAL"/>
+			<item key="textPattern" value="USER_400_002"/>
 			<item key="scope" value="0"/>
 			<list key="fileNamePatterns">
 				<item value="*"/>
@@ -59,14 +59,16 @@
 		</section>
 		<section name="EXTENSIONS">
 			<item key="0" value="*"/>
-			<item key="1" value=""/>
-			<item key="2" value="ChkLstApiException"/>
+			<item key="1" value="com.prafta.common.cmm.login.record.UserTermsAgreementCheckRecord"/>
+			<item key="2" value="미미미미미미미치고싶어"/>
+			<item key="3" value=""/>
+			<item key="4" value="ChkLstApiException"/>
 		</section>
 		<section name="HISTORY1">
 			<item key="ignoreCase" value="true"/>
 			<item key="isRegExSearch" value="false"/>
 			<item key="isWholeWord" value="false"/>
-			<item key="textPattern" value="MapperScan"/>
+			<item key="textPattern" value="gv_authLevel"/>
 			<item key="scope" value="0"/>
 			<list key="fileNamePatterns">
 				<item value="*"/>
@@ -78,7 +80,7 @@
 			<item key="ignoreCase" value="true"/>
 			<item key="isRegExSearch" value="false"/>
 			<item key="isWholeWord" value="false"/>
-			<item key="textPattern" value="SqlSession.selectOne"/>
+			<item key="textPattern" value="USER_400_001"/>
 			<item key="scope" value="0"/>
 			<list key="fileNamePatterns">
 				<item value="*"/>
@@ -90,7 +92,7 @@
 			<item key="ignoreCase" value="true"/>
 			<item key="isRegExSearch" value="false"/>
 			<item key="isWholeWord" value="false"/>
-			<item key="textPattern" value="LoginService.class.getName()"/>
+			<item key="textPattern" value="user-info-lists"/>
 			<item key="scope" value="0"/>
 			<list key="fileNamePatterns">
 				<item value="*"/>
@@ -102,7 +104,7 @@
 			<item key="ignoreCase" value="true"/>
 			<item key="isRegExSearch" value="false"/>
 			<item key="isWholeWord" value="false"/>
-			<item key="textPattern" value="LoginService.getLoginUser"/>
+			<item key="textPattern" value="siteAdminId"/>
 			<item key="scope" value="0"/>
 			<list key="fileNamePatterns">
 				<item value="*"/>
@@ -114,7 +116,7 @@
 			<item key="ignoreCase" value="true"/>
 			<item key="isRegExSearch" value="false"/>
 			<item key="isWholeWord" value="false"/>
-			<item key="textPattern" value="SqlSession"/>
+			<item key="textPattern" value="SITE_ADMIN_ID"/>
 			<item key="scope" value="0"/>
 			<list key="fileNamePatterns">
 				<item value="*"/>
@@ -126,7 +128,7 @@
 			<item key="ignoreCase" value="true"/>
 			<item key="isRegExSearch" value="false"/>
 			<item key="isWholeWord" value="false"/>
-			<item key="textPattern" value="update"/>
+			<item key="textPattern" value="MGMT_USER_ID"/>
 			<item key="scope" value="0"/>
 			<list key="fileNamePatterns">
 				<item value="*"/>
@@ -138,7 +140,7 @@
 			<item key="ignoreCase" value="true"/>
 			<item key="isRegExSearch" value="false"/>
 			<item key="isWholeWord" value="false"/>
-			<item key="textPattern" value="selectList"/>
+			<item key="textPattern" value="COMMON_500_001"/>
 			<item key="scope" value="0"/>
 			<list key="fileNamePatterns">
 				<item value="*"/>
@@ -150,7 +152,7 @@
 			<item key="ignoreCase" value="true"/>
 			<item key="isRegExSearch" value="false"/>
 			<item key="isWholeWord" value="false"/>
-			<item key="textPattern" value="selectOne"/>
+			<item key="textPattern" value="COMMON_400_600"/>
 			<item key="scope" value="0"/>
 			<list key="fileNamePatterns">
 				<item value="*"/>
@@ -162,7 +164,7 @@
 			<item key="ignoreCase" value="true"/>
 			<item key="isRegExSearch" value="false"/>
 			<item key="isWholeWord" value="false"/>
-			<item key="textPattern" value="HolidayApiClient.validateProps()"/>
+			<item key="textPattern" value="COMMON_400_002"/>
 			<item key="scope" value="0"/>
 			<list key="fileNamePatterns">
 				<item value="*"/>
@@ -174,7 +176,7 @@
 			<item key="ignoreCase" value="true"/>
 			<item key="isRegExSearch" value="false"/>
 			<item key="isWholeWord" value="false"/>
-			<item key="textPattern" value="Configuration"/>
+			<item key="textPattern" value="COMMON_400_401"/>
 			<item key="scope" value="0"/>
 			<list key="fileNamePatterns">
 				<item value="*"/>
@@ -186,7 +188,7 @@
 			<item key="ignoreCase" value="true"/>
 			<item key="isRegExSearch" value="false"/>
 			<item key="isWholeWord" value="false"/>
-			<item key="textPattern" value="setValidating"/>
+			<item key="textPattern" value="COMMON_400_001"/>
 			<item key="scope" value="0"/>
 			<list key="fileNamePatterns">
 				<item value="*"/>
@@ -204,6 +206,17 @@
 	<section name="org.eclipse.jdt.ui.JavaSearchResultPage">
 		<item key="org.eclipse.jdt.search.resultpage.limit" value="1000"/>
 		<item key="org.eclipse.jdt.search.resultpage.limit_enabled" value="TRUE"/>
+	</section>
+	<section name="ReplaceDialog2">
+		<list key="replace_with">
+			<item value="com.prafta.web.attd.attd03.application.query.LeaveTypeListQuery"/>
+			<item value="com.prafta.web.attd.attd03.result.LeaveTypeResult"/>
+			<item value="com.prafta.web.attd.attd03.application.command.LeaveTypeCommand"/>
+			<item value="com.prafta.web.attd.attd03.application.query.LeaveNoDupCheckQuery"/>
+			<item value="com.prafta.web.attd.attd02.application.query.HolidayListQuery"/>
+			<item value="com.prafta.web.attd.attd02.result.HolidayResult"/>
+			<item value="com.prafta.web.attd.attd01.result.ShiftTypeInfoResult"/>
+		</list>
 	</section>
 	<section name="">
 		<item key="org.eclipse.search.resultpage.limit" value="1000"/>

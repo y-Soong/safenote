@@ -2,11 +2,12 @@ package com.prafta.common.cmm.file.mapper;
 
 import org.apache.ibatis.annotations.Mapper;
 
-import com.prafta.common.cmm.file.dto.FileInfoSave;
+import com.prafta.common.cmm.file.application.command.FileInfoCommand;
+import com.prafta.common.cmm.file.application.query.FileInfoQuery;
 
 @Mapper
 public interface FileMapper {
-	String selectFileMgmtCd(FileInfoSave dto);
+	String selectFileMgmtCd(FileInfoQuery query);
 	
-	void insertFileInfo(FileInfoSave dto);
+	void insertFileInfo(FileInfoCommand dto);
 }

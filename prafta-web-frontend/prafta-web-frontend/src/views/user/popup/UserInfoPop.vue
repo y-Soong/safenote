@@ -47,14 +47,10 @@
 
           <div class="form-row-max">
             <label>권한</label>
-            <BaseSelect
-              id="authCd"
-              v-model="authCd"
-              :disabled="cboAuthCdDisabled"
-            >
+            <BaseSelect id="authCd" v-model="authCd">
               <option
                 v-for="opt in (baseInfoArr['COM005'] || []).filter(
-                  (o) => o.baimValDCd != null
+                  (o) => o.baimValDCd != null && o.sortIdx >= authLevel
                 )"
                 :key="opt.baimValCd"
                 :value="opt.baimValDCd"
@@ -187,21 +183,33 @@
               @blur="focusKill"
             />
           </div>
+
+          <!-- 회원탈퇴 날짜 선택 (회원탈퇴 버튼 클릭 시 표시) -->
+          <div
+            class="form-row-max withdrawal-date-row"
+            v-show="withdrawalSectionVisible"
+          >
+            <label>탈퇴예정일</label>
+            <input type="date" v-model="withdrawalDate" :min="tomorrowDate" />
+            <button class="btn btn-withdrawal" @click="fnScheduleWithdrawal">
+              탈퇴일 확정
+            </button>
+          </div>
         </div>
 
         <div class="modal-footer">
           <div class="btn-group">
             <button
-              class="btn btn-primary"
+              class="btn btn-withdrawal"
               v-show="btnUserWithdrawalVisible"
               @click="fnUserWithdrawal"
             >
-              계정삭제
+              회원탈퇴
             </button>
             <button class="btn btn-primary" @click="fnUserPwResetConf">
               비밀번호 초기화
             </button>
-            <button class="btn btn-primary" @click="fnUserJoin">저장</button>
+            <button class="btn btn-primary" @click="fnUserInfoSave">저장</button>
           </div>
         </div>
       </div>
@@ -218,16 +226,17 @@ import {
   onMounted,
   onUnmounted,
   getCurrentInstance,
-} from 'vue';
-import { useModal } from '@/utils/useModal';
-import { useCenteredDraggable } from '@/composables/useCenteredDraggable';
-import axios from '@/api/axios';
-import SiteSearchPop from '@/components/popup/SiteSearchPop.vue';
-import SiteNodeSearchPop from '@/components/popup/SiteNodeSearchPop.vue';
-import BaseSelect from '@/components/common/BaseSelect.vue';
+} from "vue";
+import { useModal } from "@/utils/useModal";
+import { useCenteredDraggable } from "@/composables/useCenteredDraggable";
+import axios from "@/api/axios";
+import { getMessage, MSG } from "@/messages";
+import SiteSearchPop from "@/components/popup/SiteSearchPop.vue";
+import SiteNodeSearchPop from "@/components/popup/SiteNodeSearchPop.vue";
+import BaseSelect from "@/components/common/BaseSelect.vue";
 
 // =========================== Define ===========================
-const emit = defineEmits(['close']);
+const emit = defineEmits(["close"]);
 const props = defineProps({
   visible: Boolean,
   cmpnyCd_p: String,
@@ -240,37 +249,44 @@ const props = defineProps({
 const modalRef = ref(null);
 const systCodeArr = ref([]);
 const baseInfoArr = ref([]);
-const cmpnyCd = ref('');
-const userId = ref('');
-const userNm = ref('');
-const mblNo = ref('');
-const oriMblNo = ref('');
-const mblNoFcs = ref('');
-const certNo = ref('');
-const certNoFcs = ref('');
-const smsAuthReqBtnFcs = ref('');
-const email = ref('');
-const emailFcs = ref('');
-const gender = ref('');
-const siteCd = ref('');
-const siteNo = ref('');
-const siteNm = ref('');
-const useYn = ref('');
-const siteSrchBtnFcs = ref(false);
-const nodeSrchBtnFcs = ref(false);
-const birthDt = ref('');
-const birthDtFcs = ref('');
-const authCd = ref('');
-const nodeCd = ref('');
-const nodeNm = ref('');
+const cmpnyCd = ref("");
+const userCd = ref("");
+const userId = ref("");
+const userNm = ref("");
+const mblNo = ref("");
+const oriMblNo = ref("");
+const mblNoFcs = ref("");
+const certNo = ref("");
+const certNoFcs = ref("");
+const smsAuthReqBtnFcs = ref("");
+const email = ref("");
+const emailFcs = ref("");
+const gender = ref("");
+const siteCd = ref("");
+const siteNo = ref("");
+const siteNm = ref("");
+const useYn = ref("");
+const birthDt = ref("");
+const birthDtFcs = ref("");
+const authCd = ref("");
+const nodeCd = ref("");
+const nodeNm = ref("");
 const mblNoDisabled = ref(false);
 const btnAuthChkDisabledVisible = ref(true);
 const smsCertNoChk = ref(false);
 const cboAuthCdDisabled = ref(true);
-const smsAuthChkMsg = ref('');
+const smsAuthChkMsg = ref("");
 const btnUserWithdrawalVisible = ref(false);
+const withdrawalSectionVisible = ref(false);
+const withdrawalDate = ref("");
+const tomorrowDate = (() => {
+  const d = new Date();
+  d.setDate(d.getDate() + 1);
+  return d.toISOString().slice(0, 10);
+})();
 const timer = ref(0);
 let timerInterval = null;
+const authLevel = ref(sessionStorage.getItem('gv_authLevel'));
 
 // =========================== Data ===========================
 const { open: openPop } = useModal();
@@ -299,10 +315,10 @@ onUnmounted(() => {
 // =========================== Methods ===========================
 const fnGetBaseinfoList = async () => {
   try {
-    const response = await axios.get('/comApi/baseinfo/base-info-list', {
+    const response = await axios.get("/comApi/baseinfo/base-info-lists", {
       params: {
-        cmpnyCd: sessionStorage.getItem('gv_cmpnyCd'),
-        baseCodeList: ['COM005'],
+        cmpnyCd: sessionStorage.getItem("gv_cmpnyCd"),
+        baseCodeList: ["COM005"],
       },
     });
 
@@ -325,7 +341,7 @@ const fnGetBaseinfoList = async () => {
     const msg =
       err?.response?.data?.message ||
       err?.message ||
-      '조회 중 오류가 발생했습니다.';
+      "조회 중 오류가 발생했습니다.";
 
     await proxy.$alert(msg);
   }
@@ -333,9 +349,11 @@ const fnGetBaseinfoList = async () => {
 
 const fnGetSystinfoList = async () => {
   try {
-    const response = await axios.get("/comApi/baseinfo/syst-info-list", { params: {
-      systCodeList: ['SYS003', 'SYS004'],
-    }});
+    const response = await axios.get("/comApi/baseinfo/syst-info-lists", {
+      params: {
+        systCodeList: ["SYS003", "SYS004"],
+      },
+    });
 
     if (response.status === 200) {
       const resData = response.data?.systInfoList || [];
@@ -364,8 +382,14 @@ const fnGetUserInfo = async (userId) => {
       },
     });
     if (response.status === 200) {
-
       if (response.data.userInfoList.length == 1) {
+
+        if(response.data.userInfoList[0].accountStatus == "04") {
+          proxy.$alert("탈퇴된 계정은 상세보기를 지원하지 않습니다.");
+          emit("close");;
+        }
+
+        userCd.value = response.data.userInfoList[0].userCd;
         userNm.value = response.data.userInfoList[0].userNm;
         authCd.value = response.data.userInfoList[0].authCd;
         siteCd.value = response.data.userInfoList[0].siteCd;
@@ -373,15 +397,18 @@ const fnGetUserInfo = async (userId) => {
         nodeNm.value = response.data.userInfoList[0].nodeNm;
         siteNm.value = response.data.userInfoList[0].siteNm;
         useYn.value = response.data.userInfoList[0].useYn;
-        mblNo.value = proxy.$util.formatPhoneNumber(response.data.userInfoList[0].mblNo);
+        mblNo.value = proxy.$util.formatPhoneNumber(
+          response.data.userInfoList[0].mblNo
+        );
         oriMblNo.value = response.data.userInfoList[0].mblNo;
         email.value = response.data.userInfoList[0].email;
         gender.value = response.data.userInfoList[0].gender;
         birthDt.value = response.data.userInfoList[0].birthDt;
 
         if (
-          sessionStorage.getItem("gv_authCd") == "999" ||
-          sessionStorage.getItem("gv_authCd") > response.data.userInfoList[0].authCd
+          sessionStorage.getItem("gv_authCd") == "system" ||
+          sessionStorage.getItem("gv_authCd") >
+            response.data.userInfoList[0].authCd
         ) {
           cboAuthCdDisabled.value = false;
           btnUserWithdrawalVisible.value = true;
@@ -398,8 +425,7 @@ const fnSmsAuthReq = async () => {
     proxy.$util.isEmpty(mblNo.value) ||
     !proxy.$util.validatePhoneNumber(mblNo.value)
   ) {
-    const alertMsg = "휴대폰 번호를 확인해주세요.";
-    fnAlertMsg(alertMsg, () => {
+    fnAlertMsg(getMessage(MSG.PHONE_VERIFY), () => {
       mblNo.value = "";
       mblNoFcs.value.focus();
     });
@@ -407,13 +433,13 @@ const fnSmsAuthReq = async () => {
   }
 
   try {
-    const response = await axios.post("/comApi/baseinfo/getSmsAuthReq", {
+    const response = await axios.post("/comApi/baseinfo/sms-auth-sends", {
+      cmpnyCd: cmpnyCd.value,
       mblNo: mblNo.value,
     });
 
     if (response.status === 200) {
-      const alertMsg = "인증번호가 발송되었습니다.";
-      fnAlertMsg(alertMsg, () => {
+      fnAlertMsg(getMessage(MSG.USER_INFO_SMS_SENT), () => {
         certNoFcs.value.focus();
       });
 
@@ -427,22 +453,20 @@ const fnSmsAuthReq = async () => {
       }, 1000);
     }
   } catch (err) {
-    const alertMsg = "인증번호 발송에 실패했습니다.\n관리자에게 문의해주세요.";
+    const alertMsg = err.response.data.message;
     fnAlertMsg(alertMsg);
   }
 };
 
 const fnSmsAuthChk = async () => {
   if (proxy.$util.isEmpty(certNo.value)) {
-    const alertMsg = "인증번호를 입력해주세요.";
-    fnAlertMsg(alertMsg, () => {
+    fnAlertMsg(getMessage(MSG.USER_INFO_CERT_NO_REQUIRED), () => {
       certNo.value = "";
       certNoFcs.value.focus();
     });
     return;
   } else if (proxy.$util.isEmpty(mblNo.value)) {
-    const alertMsg = "휴대폰번호를 입력해주세요.";
-    fnAlertMsg(alertMsg, () => {
+    fnAlertMsg(getMessage(MSG.USER_INFO_PHONE_REQUIRED), () => {
       mblNo.value = "";
       mblNoFcs.value.focus();
     });
@@ -450,7 +474,8 @@ const fnSmsAuthChk = async () => {
   }
 
   try {
-    const response = await axios.post("/comApi/baseinfo/getSmsAuthChk", {
+    const response = await axios.post("/comApi/baseinfo/sms-auth-checks", {
+      cmpnyCd: cmpnyCd.value,
       mblNo: mblNo.value,
       certNo: certNo.value,
     });
@@ -460,8 +485,7 @@ const fnSmsAuthChk = async () => {
       smsAuthChkMsg.value = "✅";
       smsCertNoChk.value = true;
 
-      const alertMsg = "인증번호가 확인되었습니다.";
-      fnAlertMsg(alertMsg, () => {
+      fnAlertMsg(getMessage(MSG.USER_INFO_SMS_VERIFIED), () => {
         emailFcs.value.focus();
       });
     }
@@ -473,24 +497,19 @@ const fnSmsAuthChk = async () => {
   }
 };
 
-const fnUserJoin = async () => {
+const fnUserInfoSave = async () => {
   if (!fnUserInfoValidationChk()) {
     return;
   }
 
-  const result = await proxy.$confirm("저장하시겠습니까 ?");
+  const result = await proxy.$confirm(getMessage(MSG.SAVE_CONFIRM));
 
-  console.log(props.callmethod_p);
   if (result) {
-    const apiUrl =
-      props.callmethod_p == "S"
-        ? "/webApi/user01/update-user-infos"
-        : "/webApi/user01/insertUserInfo";
-
     try {
-      const response = await axios.post(apiUrl, [
+      const response = await axios.post("/webApi/user01/update-user-infos", [
         {
           cmpnyCd: cmpnyCd.value,
+          userCd: userCd.value,
           userId: userId.value,
           userNm: userNm.value,
           siteCd: siteCd.value,
@@ -504,16 +523,13 @@ const fnUserJoin = async () => {
         },
       ]);
       if (response.status === 200) {
-        const alertMsg = "처리됐습니다.";
-        fnAlertMsg(alertMsg, () => {
+        fnAlertMsg(getMessage(MSG.SAVE_SUCCESS), () => {
           emit("close");
           props.onSearch();
         });
       }
     } catch (err) {
-      const alertMsg =
-        "요청처리에 실패했습니다.\n관리자에게 문의해주세요.";
-      fnAlertMsg(alertMsg);
+      fnAlertMsg(getMessage(MSG.REQUEST_FAILED));
     }
   }
 };
@@ -525,13 +541,10 @@ const fnUserPwReset = async () => {
       userId: userId.value,
     });
     if (response.status === 200) {
-      const alertMsg = "처리됐습니다.";
-      fnAlertMsg(alertMsg, () => {});
+      fnAlertMsg(getMessage(MSG.SAVE_SUCCESS), () => {});
     }
   } catch (err) {
-    const alertMsg =
-      "요청처리에 실패했습니다.\n관리자에게 문의해주세요.";
-    fnAlertMsg(alertMsg);
+      fnAlertMsg(getMessage(MSG.REQUEST_FAILED));
   }
 };
 
@@ -548,8 +561,7 @@ const mblNoFocusKill = () => {
     mblNo.value = proxy.$util.formatPhoneNumber(mblNo.value);
     smsAuthReqBtnFcs.value.focus();
   } else {
-    const alertMsg = "휴대폰 번호를 확인해주세요.";
-    fnAlertMsg(alertMsg, () => {
+    fnAlertMsg(getMessage(MSG.PHONE_VERIFY), () => {
       mblNo.value = "";
       mblNoFcs.value.focus();
     });
@@ -557,16 +569,47 @@ const mblNoFocusKill = () => {
 };
 
 const fnUserWithdrawal = () => {
-  fnConfirmMsg(
-    "사용자의 계정을 삭제합니다.\n삭제된 계정은 복구할 수 없습니다.",
-    () => {
-      console.log("ASD");
-    }
+  withdrawalSectionVisible.value = !withdrawalSectionVisible.value;
+  if (!withdrawalSectionVisible.value) {
+    withdrawalDate.value = "";
+  }
+};
+
+const fnScheduleWithdrawal = async () => {
+  if (!withdrawalDate.value) {
+    await proxy.$alert(getMessage(MSG.USER_INFO_WITHDRAWAL_DATE_REQUIRED));
+    return;
+  }
+
+  const confirmed = await proxy.$confirm(
+    getMessage(MSG.USER_INFO_WITHDRAWAL_DATE_CONFIRM, {
+      withdrawalDate: withdrawalDate.value,
+    })
   );
+  if (!confirmed) return;
+
+  try {
+    await axios.post("/webApi/user01/schedule-withdrawal", {
+      cmpnyCd: cmpnyCd.value,
+      userCd: userCd.value,
+      withdrawalDate: withdrawalDate.value,
+    });
+    fnAlertMsg(getMessage(MSG.USER_INFO_WITHDRAWAL_DATE_SET), () => {
+      withdrawalSectionVisible.value = false;
+      withdrawalDate.value = "";
+      emit("close");
+      props.onSearch();
+    });
+  } catch (err) {
+    fnAlertMsg(
+      err?.response?.data?.message ||
+        getMessage(MSG.USER_INFO_WITHDRAWAL_DATE_FAILED)
+    );
+  }
 };
 
 const fnUserPwResetConf = () => {
-  fnConfirmMsg("사용자의 비밀번호를 초기화합니다.", () => {
+  fnConfirmMsg(getMessage(MSG.USER_PW_RESET_CONFIRM), () => {
     fnUserPwReset();
   });
 };
@@ -578,12 +621,12 @@ const fnUserInfoValidationChk = () => {
     mblNo.value.replaceAll("-", "") != oriMblNo.value.replaceAll("-", "") &&
     !smsCertNoChk.value
   ) {
-    fnAlertMsg("휴대폰 번호를 인증해주세요.", () => {
+    fnAlertMsg(getMessage(MSG.PHONE_AUTH_REQUIRED), () => {
       certNoFcs.value.focus();
     });
     retVal = false;
   } else if (proxy.$util.isEmpty(birthDt.value)) {
-    fnAlertMsg("생년월일을 인증해주세요.", () => {
+    fnAlertMsg(getMessage(MSG.BIRTH_AUTH_REQUIRED), () => {
       birthDtFcs.value.focus();
     });
     retVal = false;
@@ -600,8 +643,8 @@ const fnSiteSearchPopOpen = () => {
 };
 
 const fnSiteNodeSearchPopOpen = () => {
-  if (proxy.$util.isEmpty(siteCd.value)) { 
-    proxy.$alert("사업장을 선택해주세요.");
+  if (proxy.$util.isEmpty(siteCd.value)) {
+    proxy.$alert(getMessage(MSG.SITE_REQUIRED));
     return;
   }
 
@@ -646,5 +689,23 @@ const fnConfirmMsg = async (message, afterConfirmCallback) => {
   padding: 1.2rem;
   max-width: 500px;
   margin: 0 auto;
+}
+
+.withdrawal-date-row {
+  border-top: 1px solid var(--color-border, #e5e7eb);
+  padding-top: 0.75rem;
+}
+
+.btn-withdrawal {
+  background-color: #ef4444;
+  color: #fff;
+  border: none;
+  padding: 0.35rem 0.85rem;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 0.8rem;
+}
+.btn-withdrawal:hover {
+  background-color: #dc2626;
 }
 </style>

@@ -2,20 +2,20 @@
 <!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
 <mapper namespace="com.prafta.web.chkLst.chkLst01.mapper.ChkLst01Mapper">
 
-    <select id="selectChkptList" parameterType="com.prafta.web.chkLst.chkLst01.dto.ChkLst01ReqDto" resultType="com.prafta.web.chkLst.chkLst01.dto.ChkLst01">
+    <select id="selectChkptList" parameterType="com.prafta.web.chkLst.chkLst01.application.query.ChkptListQuery" resultType="com.prafta.web.chkLst.chkLst01.result.ChkptResult">
     /* ChkLst01Mapper.selectChkptList */
 	SELECT 
-		'' AS CHK
-		, A.CMPNY_CD
-	    , A.SITE_CD
-	    , B.SITE_NM
-	    , A.CHKLST_TYPE
-	    , A.CHKPT_CD
-	    , A.CHKPT_NM
-	    , A.USE_YN
-	    , A.CHKPT_DESC
-	    , A.MGMT_USER_ID
-	    , C.USER_NM AS MGMT_USER_NM
+		'' 					AS chk
+		, A.CMPNY_CD		AS cmpnyCd
+	    , A.SITE_CD			AS siteCd
+	    , B.SITE_NM			AS siteNm
+	    , A.CHKLST_TYPE		AS chkLstType
+	    , A.CHKPT_CD		AS chkptCd
+	    , A.CHKPT_NM		AS chkptNm
+	    , A.CHKPT_DESC		AS chkptDesc
+	    , A.USE_YN			AS useYn
+	    , A.MGMT_USER_CD	AS mgmtUserCd
+	    , C.USER_NM 		AS mgmtUserNm 
 	FROM TB_CHKPT_TYPE_MGMT A
 		 INNER JOIN TB_SITE B
 			ON (
@@ -26,26 +26,26 @@
 		LEFT OUTER JOIN TB_USER C
 			ON (
 				A.CMPNY_CD = C.CMPNY_CD
-			AND A.MGMT_USER_ID = C.USER_ID
+			AND A.MGMT_USER_CD = C.USER_CD
 			AND C.USE_YN = 'Y'
 	        )
 	WHERE 1=1
-	  AND A.CMPNY_CD = #{token.gv_cmpnyCd}
-   	  <if test="param.sr_siteCd != null and param.sr_siteCd != ''">
-   	  	AND A.SITE_CD = #{param.sr_siteCd}
+	  AND A.CMPNY_CD = #{gvCmpnyCd}
+   	  <if test="siteCd != null and siteCd != ''">
+   	  	AND A.SITE_CD = #{siteCd}
    	  </if>
-   	  <if test="param.sr_chkptNm != null and param.sr_chkptNm != ''">
-   	  	AND A.CHKPT_NM LIKE CONCAT('%', #{param.sr_chkptNm}, '%')
+   	  <if test="chkptNm != null and chkptNm != ''">
+   	  	AND A.CHKPT_NM LIKE CONCAT('%', #{chkptNm}, '%')
    	  </if>
-   	  <if test="param.sr_chkLstType != null and param.sr_chkLstType != ''">
-   	  	AND A.CHKLST_TYPE = #{param.sr_chkLstType}
+   	  <if test="chkLstType != null and chkLstType != ''">
+   	  	AND A.CHKLST_TYPE = #{chkLstType}
    	  </if>
-   	  <if test="param.sr_useYn != null and param.sr_useYn != ''">
-   	  	AND A.USE_YN = #{param.sr_useYn}
+   	  <if test="useYn != null and useYn != ''">
+   	  	AND A.USE_YN = #{useYn}
    	  </if>
 	</select>
 	
-	<insert id="mergeChkptList">
+	<insert id="mergeChkptList" parameterType="com.prafta.web.chkLst.chkLst01.application.command.ChkptInfoCommand">
 	/* ChkLst01Mapper.mergeChkptList */	
     INSERT INTO TB_CHKPT_TYPE_MGMT (
     	CMPNY_CD
@@ -54,7 +54,7 @@
     	, CHKPT_CD
     	, CHKPT_NM
     	, CHKPT_DESC
-    	, MGMT_USER_ID
+    	, MGMT_USER_CD
     	, USE_YN
     	, INSERT_NO
     	, INSERT_DATE
@@ -62,39 +62,39 @@
     	, UPDATE_DATE
    	)
    	VALUES(
-   		#{token.gv_cmpnyCd}
-   		, #{param.siteCd}
-   		, #{param.chkLstType}
-   		, IFNULL(#{param.chkptCd}, prafta.FNC_CMM_SEQ_NEXTVAL(#{token.gv_cmpnyCd}, 'CHKPT_CD'))
-   		, #{param.chkptNm}
-		, #{param.chkptDesc}
-		, #{param.mgmtUserId}
-		, #{param.useYn}
-		, #{token.gv_userId}
+   		#{gvCmpnyCd}
+   		, #{siteCd}
+   		, #{chkLstType}
+   		, IFNULL(#{chkptCd}, prafta.FNC_CMM_SEQ_NEXTVAL(#{gvCmpnyCd}, 'CHKPT_CD'))
+   		, #{chkptNm}
+		, #{chkptDesc}
+		, #{mgmtUserCd}
+		, #{useYn}
+		, #{gvUserCd}
 		, now()
-		, #{token.gv_userId}
+		, #{gvUserCd}
 		, now() 
-   	)
+   	) AS NEW
    	ON DUPLICATE KEY UPDATE
-	    CHKPT_NM    	= VALUES(CHKPT_NM)
-	    , CHKPT_DESC 	= VALUES(CHKPT_DESC)
-	    , MGMT_USER_ID	= VALUES(MGMT_USER_ID)
-	    , USE_YN		= IFNULL(#{param.useYn}, 'Y')
-	    , UPDATE_NO   	= #{token.gv_userId}
+	    CHKPT_NM    	= NEW.CHKPT_NM
+	    , CHKPT_DESC 	= NEW.CHKPT_DESC
+	    , MGMT_USER_CD	= NEW.MGMT_USER_CD
+	    , USE_YN		= IFNULL(NEW.USE_YN, 'Y')
+	    , UPDATE_NO   	= NEW.UPDATE_NO
 	    , UPDATE_DATE 	= NOW()
 	</insert>
 	
-	<insert id="updateChkptList">
+	<insert id="updateChkptList" parameterType="com.prafta.web.chkLst.chkLst01.application.command.ChkptInfoCommand">
 	/* ChkLst01Mapper.updateChkptList */
 	UPDATE TB_CHKPT_TYPE_MGMT
 	SET 
 		USE_YN = 'N'
-		, UPDATE_NO = #{token.gvuserId}
+		, UPDATE_NO = #{gvUserCd}
 		, UPDATE_DATE = now()
 	WHERE 1=1
-	  AND CMPNY_CD = #{param.cmpnyCd}
-	  AND SITE_CD = #{param.siteCd}
-	  AND CHKLST_TYPE = #{param.chkLstType}
-	  AND CHKPT_CD = #{param.chkptCd}
+	  AND CMPNY_CD = #{gvCmpnyCd}
+	  AND SITE_CD = #{siteCd}
+	  AND CHKLST_TYPE = #{chkLstType}
+	  AND CHKPT_CD = #{chkptCd}
 	</insert>
 </mapper>

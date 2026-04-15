@@ -44,38 +44,52 @@
 	</section>
 	<section name="org.eclipse.ui.texteditor.FindReplaceDialog_dialogBounds">
 		<item key="DIALOG_X_ORIGIN" value="2054"/>
-		<item key="DIALOG_Y_ORIGIN" value="8"/>
+		<item key="DIALOG_Y_ORIGIN" value="17"/>
 		<item key="DIALOG_WIDTH" value="288"/>
 		<item key="DIALOG_HEIGHT" value="391"/>
 		<item key="DIALOG_FONT_NAME" value="1|맑은 고딕|9.0|0|WINDOWS|1|-12|0|0|0|400|0|0|0|1|0|0|0|0|맑은 고딕"/>
 	</section>
 	<section name="java.lang.Class">
 		<item key="replaceBarOpen" value="true"/>
-		<item key="selection" value="AppChkLst01Mapper"/>
+		<item key="selection" value=""/>
 		<item key="wrap" value="true"/>
 		<item key="casesensitive" value="false"/>
 		<item key="wholeword" value="false"/>
 		<item key="incremental" value="false"/>
 		<item key="isRegEx" value="false"/>
 		<list key="findhistory">
-			<item value="selectSiteCd"/>
+			<item value="withdrawMyAccount"/>
+			<item value="saveSiteNodeMainAdmin"/>
+			<item value="deleteSiteNodeAdmin"/>
+			<item value="save-site-node-main-admin"/>
+			<item value="siteNodeInAdminCnt :: "/>
+			<item value="updateUserNode"/>
+			<item value="deleteSiteNodeMainAdmin"/>
+			<item value="selectSiteNodeInAdmin"/>
+			<item value="UserPasswdCommand"/>
+			<item value="selectUserPwByUserId"/>
+			<item value="selectUserNodeAdminCheck"/>
+			<item value="占쏙옙 占쏙옙占쏙옙 占쏙옙 占쌀쇽옙 占싸쇽옙 占쏙옙占쏙옙占쏙옙 占쏙옙占쏙옙占쌌니댐옙"/>
+			<item value="updateOneUserInfo"/>
 			<item value="mergeSiteInfo"/>
-			<item value="getUserInfoList"/>
-			<item value="save-site-infos"/>
-			<item value="selectCompCmmCodeDList"/>
-			<item value="selectLeaves"/>
-			<item value="selectLeaveNoDupChkResult"/>
-			<item value="updateLeaveType"/>
-			<item value="cmpnyCd"/>
-			<item value="update-leave-types"/>
-			<item value="token.gv_cmpnyCd"/>
-			<item value="private "/>
-			<item value="req"/>
-			<item value="leaveTypeReq"/>
-			<item value="AuthMenuInfoReq"/>
+			<item value="USER_ID"/>
 		</list>
 		<list key="replacehistory">
-			<item value="dto"/>
+			<item value="siteAdminCd"/>
+			<item value="SITE_ADMIN_CD"/>
+			<item value="MGMT_USER_CD"/>
+			<item value="userCd"/>
+			<item value="MAIN_ADMIN_CD"/>
+			<item value="SUB_ADMIN_CD"/>
+			<item value=", String"/>
+			<item value=", "/>
+			<item value=", String "/>
+			<item value="gvUserId"/>
+			<item value="gvCmpnyCd"/>
+			<item value="private String "/>
+			<item value=","/>
+			<item value="private String"/>
+			<item value="i"/>
 		</list>
 	</section>
 </section>

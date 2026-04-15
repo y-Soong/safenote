@@ -13,19 +13,18 @@ import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
-import com.prafta.common.annotation.NoAuth;
-import com.prafta.common.exception.baim.BaimApiException;
 import com.prafta.common.security.JwtUtil;
-import com.prafta.web.baim.baim04.dto.DailyUserLinkPoliciesReq;
-import com.prafta.web.baim.baim04.dto.DailyUserLinkPoliciesRes;
-import com.prafta.web.baim.baim04.dto.LinkPoliciesReq;
+import com.prafta.web.baim.baim04.application.param.DailyUserLinkPoliciesParam;
+import com.prafta.web.baim.baim04.application.param.LinkPoliciesParam;
+import com.prafta.web.baim.baim04.dto.request.DailyUserLinkPoliciesRequest;
+import com.prafta.web.baim.baim04.dto.request.LinkPoliciesRequest;
+import com.prafta.web.baim.baim04.dto.response.DailyUserLinkPoliciesResponse;
 import com.prafta.web.baim.baim04.service.Baim04Service;
 
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 
 @Slf4j
-@NoAuth
 @RestController
 @RequestMapping("/baim04")
 @RequiredArgsConstructor
@@ -35,32 +34,25 @@ public class Baim04Controller {
 	private final JwtUtil jwtUtil;
 
 	@GetMapping("/daily-user-link-policies")
-    public ResponseEntity<?> getDailyUserLinkPolicyList(@ModelAttribute DailyUserLinkPoliciesReq dto, @RequestHeader(value = "Authorization", required = false) String authorization) {
+    public ResponseEntity<?> getDailyUserLinkPolicyList(@ModelAttribute DailyUserLinkPoliciesRequest request, @RequestHeader(value = "Authorization", required = false) String authorization) {
     	
-    	Map<String, Object> tokenInfo = jwtUtil.getAllClaimsAsMap(authorization);
-    	DailyUserLinkPoliciesRes retList = baim04Service.selectDailyUserLinkPolicyList(dto, tokenInfo);
+    	DailyUserLinkPoliciesResponse response = baim04Service.selectDailyUserLinkPolicyList(DailyUserLinkPoliciesParam.from(request, jwtUtil.getAllClaimsAsMap(authorization)));
 		
-//    	if(retList == null) {
-//    		throw new BaimApiException("조회된 결과가 없습니다.");
-//    	}
-    	
-    	return ResponseEntity.status(HttpStatus.OK).body(retList);
+    	return ResponseEntity.status(HttpStatus.OK).body(response);
     }
 	
 	@PostMapping("/save-daily-user-link-policies")
-	public ResponseEntity<?> saveDailyUserLinkPolicy(@RequestBody List<LinkPoliciesReq> dtoList, @RequestHeader(value = "Authorization", required = false) String authorization) {
-		Map<String, Object> tokenInfo = jwtUtil.getAllClaimsAsMap(authorization);
+	public ResponseEntity<?> saveDailyUserLinkPolicy(@RequestBody List<LinkPoliciesRequest> request, @RequestHeader(value = "Authorization", required = false) String authorization) {
 		
-		baim04Service.saveDailyUserLinkPolicy(dtoList, tokenInfo);
+		baim04Service.saveDailyUserLinkPolicy(LinkPoliciesParam.from(request, jwtUtil.getAllClaimsAsMap(authorization)));
 
 		return ResponseEntity.status(HttpStatus.OK).build();
 	}
 	
 	@PostMapping("/delete-daily-user-link-policies")
-	public ResponseEntity<?> deleteDailyUserLinkPolicy(@RequestBody List<LinkPoliciesReq> dtoList, @RequestHeader(value = "Authorization", required = false) String authorization) {
-		Map<String, Object> tokenInfo = jwtUtil.getAllClaimsAsMap(authorization);
+	public ResponseEntity<?> deleteDailyUserLinkPolicy(@RequestBody List<LinkPoliciesRequest> request, @RequestHeader(value = "Authorization", required = false) String authorization) {
 		
-		baim04Service.deleteDailyUserLinkPolicy(dtoList, tokenInfo);
+		baim04Service.deleteDailyUserLinkPolicy(LinkPoliciesParam.from(request, jwtUtil.getAllClaimsAsMap(authorization)));
 
 		return ResponseEntity.status(HttpStatus.OK).build();
 	}

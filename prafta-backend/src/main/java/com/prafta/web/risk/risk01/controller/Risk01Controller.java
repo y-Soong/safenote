@@ -14,23 +14,23 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
 import com.prafta.common.annotation.NoAuth;
-import com.prafta.common.exception.login.LoginApiException;
 import com.prafta.common.security.JwtUtil;
-import com.prafta.web.risk.risk01.dto.RiskHazardListReq;
-import com.prafta.web.risk.risk01.dto.RiskHazardListRes;
-import com.prafta.web.risk.risk01.dto.RiskHazardListReq;
-import com.prafta.web.risk.risk01.dto.RiskHazardListRes;
-import com.prafta.web.risk.risk01.dto.RiskHazardReq;
-import com.prafta.web.risk.risk01.dto.RiskTypeListReq;
-import com.prafta.web.risk.risk01.dto.RiskTypeListRes;
-import com.prafta.web.risk.risk01.dto.RiskTypeReq;
+import com.prafta.web.risk.risk01.application.param.RiskHazardListParam;
+import com.prafta.web.risk.risk01.application.param.RiskHazardParam;
+import com.prafta.web.risk.risk01.application.param.RiskTypeListParam;
+import com.prafta.web.risk.risk01.application.param.RiskTypeParam;
+import com.prafta.web.risk.risk01.dto.request.RiskHazardListRequest;
+import com.prafta.web.risk.risk01.dto.request.RiskHazardRequest;
+import com.prafta.web.risk.risk01.dto.request.RiskTypeListRequest;
+import com.prafta.web.risk.risk01.dto.request.RiskTypeRequest;
+import com.prafta.web.risk.risk01.dto.response.RiskHazardListResponse;
+import com.prafta.web.risk.risk01.dto.response.RiskTypeListResponse;
 import com.prafta.web.risk.risk01.service.Risk01Service;
 
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 
 @Slf4j
-@NoAuth
 @RestController
 @RequestMapping("/risk01")
 @RequiredArgsConstructor
@@ -40,63 +40,49 @@ public class Risk01Controller {
 	private final JwtUtil jwtUtil;
 	
 	@GetMapping("/risk-type-lists")
-    public ResponseEntity<?> getRiskTypeList(@ModelAttribute RiskTypeListReq dto, @RequestHeader(value = "Authorization", required = false) String authorization) {
+    public ResponseEntity<?> getRiskTypeList(@ModelAttribute RiskTypeListRequest request, @RequestHeader(value = "Authorization", required = false) String authorization) {
     	
-    	Map<String, Object> tokenInfo = jwtUtil.getAllClaimsAsMap(authorization);
-    	RiskTypeListRes retList = risk01Service.selectRiskTypeList(dto, tokenInfo);
+    	RiskTypeListResponse response = risk01Service.selectRiskTypeList(RiskTypeListParam.from(request, jwtUtil.getAllClaimsAsMap(authorization)));
 		
-//    	if(retList == null) {
-//    		throw new LoginFailException("조회된 결과가 없습니다.");
-//    	}
-    	
-    	return ResponseEntity.status(HttpStatus.OK).body(retList);
+    	return ResponseEntity.status(HttpStatus.OK).body(response);
     }
 	
 	@PostMapping("/update-risk-types")
-	public ResponseEntity<?> updateRistType(@RequestBody List<RiskTypeReq> dtoList, @RequestHeader(value = "Authorization", required = false) String authorization) {
-		Map<String, Object> tokenInfo = jwtUtil.getAllClaimsAsMap(authorization);
+	public ResponseEntity<?> updateRistType(@RequestBody List<RiskTypeRequest> request, @RequestHeader(value = "Authorization", required = false) String authorization) {
 		
-		risk01Service.updateRistType(dtoList, tokenInfo);
+		risk01Service.updateRistType(RiskTypeParam.from(request, jwtUtil.getAllClaimsAsMap(authorization)));
 
 		return ResponseEntity.status(HttpStatus.OK).build();
 	}
 	
 	@PostMapping("/delete-risk-types")
-	public ResponseEntity<?> deleteRistType(@RequestBody List<RiskTypeReq> dtoList, @RequestHeader(value = "Authorization", required = false) String authorization) {
-		Map<String, Object> tokenInfo = jwtUtil.getAllClaimsAsMap(authorization);
+	public ResponseEntity<?> deleteRistType(@RequestBody List<RiskTypeRequest> request, @RequestHeader(value = "Authorization", required = false) String authorization) {
 		
-		risk01Service.deleteRistType(dtoList, tokenInfo);
+		risk01Service.deleteRistType(RiskTypeParam.from(request, jwtUtil.getAllClaimsAsMap(authorization)));
 
 		return ResponseEntity.status(HttpStatus.OK).build();
 	}
 	
 	@GetMapping("/risk-hazard-lists")
-    public ResponseEntity<?> getRiskHazardList(@ModelAttribute RiskHazardListReq dto, @RequestHeader(value = "Authorization", required = false) String authorization) {
+    public ResponseEntity<?> getRiskHazardList(@ModelAttribute RiskHazardListRequest request, @RequestHeader(value = "Authorization", required = false) String authorization) {
     	
-    	Map<String, Object> tokenInfo = jwtUtil.getAllClaimsAsMap(authorization);
-    	RiskHazardListRes retList = risk01Service.selectRiskHazardList(dto, tokenInfo);
-		
-//    	if(retList == null) {
-//    		throw new LoginFailException("조회된 결과가 없습니다.");
-//    	}
-    	
-    	return ResponseEntity.status(HttpStatus.OK).body(retList);
+    	RiskHazardListResponse response = risk01Service.selectRiskHazardList(RiskHazardListParam.from(request, jwtUtil.getAllClaimsAsMap(authorization)));
+
+    	return ResponseEntity.status(HttpStatus.OK).body(response);
     }
 	
 	@PostMapping("/update-risk-hazards")
-	public ResponseEntity<?> updateRiskHazard(@RequestBody List<RiskHazardReq> dtoList, @RequestHeader(value = "Authorization", required = false) String authorization) {
-		Map<String, Object> tokenInfo = jwtUtil.getAllClaimsAsMap(authorization);
+	public ResponseEntity<?> updateRiskHazard(@RequestBody List<RiskHazardRequest> request, @RequestHeader(value = "Authorization", required = false) String authorization) {
 		
-		risk01Service.updateRiskHazard(dtoList, tokenInfo);
+		risk01Service.updateRiskHazard(RiskHazardParam.from(request, jwtUtil.getAllClaimsAsMap(authorization)));
 
 		return ResponseEntity.status(HttpStatus.OK).build();
 	}
 	
 	@PostMapping("/delete-risk-hazards")
-	public ResponseEntity<?> deleteRiskHazard(@RequestBody List<RiskHazardReq> dtoList, @RequestHeader(value = "Authorization", required = false) String authorization) {
-		Map<String, Object> tokenInfo = jwtUtil.getAllClaimsAsMap(authorization);
+	public ResponseEntity<?> deleteRiskHazard(@RequestBody List<RiskHazardRequest> request, @RequestHeader(value = "Authorization", required = false) String authorization) {
 		
-		risk01Service.deleteRiskHazard(dtoList, tokenInfo);
+		risk01Service.deleteRiskHazard(RiskHazardParam.from(request, jwtUtil.getAllClaimsAsMap(authorization)));
 
 		return ResponseEntity.status(HttpStatus.OK).build();
 	}

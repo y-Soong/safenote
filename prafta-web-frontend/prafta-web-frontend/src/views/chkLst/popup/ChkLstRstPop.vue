@@ -9,7 +9,14 @@
         <!-- 헤더 -->
         <div class="modal-header" @mousedown="startDrag">
           <span>점검결과 확인서</span>
-          <button class="icon-button" @click="$emit('close')">✕</button>
+          <button
+            type="button"
+            class="icon-button"
+            @mousedown.stop
+            @click.stop="$emit('close')"
+          >
+            ✕
+          </button>
         </div>
 
         <div class="content-wrapper">
@@ -101,7 +108,7 @@
                         <tr
                           v-for="(
                             item, idx
-                          ) in inspectionInfo.inspectItemSubjList"
+                          ) in inspectionInfo.inspectItemSubjResultList"
                           :key="'daily-' + idx"
                         >
                           <td class="col-no">{{ idx + 1 }}</td>
@@ -197,10 +204,17 @@
           </div>
         </div>
 
+        <!-- Footer: SiteInfoPop과 동일 가이드(구분선 + 우측 정렬 버튼) -->
         <div class="modal-footer">
           <div class="btn-group">
-            <button class="btn btn-primary" @click="fnPrint">프린트</button>
-            <button class="btn btn-secondary" @click="$emit('close')">
+            <button type="button" class="btn btn-primary" @click="fnPrint">
+              프린트
+            </button>
+            <button
+              type="button"
+              class="btn btn-primary"
+              @click="$emit('close')"
+            >
               닫기
             </button>
           </div>
@@ -209,24 +223,38 @@
     </div>
   </Transition>
 
-  <!-- 사진 팝업 -->
-  <Transition name="fade">
-    <div
-      v-if="showImagePopup"
-      class="image-popup-overlay"
-      @click="closeImagePopup"
-    >
-      <div class="image-popup-content" @click.stop>
-        <div class="image-popup-header">
-          <span>첨부사진</span>
-          <button class="icon-button" @click="closeImagePopup">✕</button>
-        </div>
-        <div class="image-popup-body">
-          <img :src="imageUrl" alt="첨부사진" class="popup-image" />
+  <!-- 사진 팝업: body로 Teleport — prafta-modal-open pointer-events 대응 + 메인 모달 드래그와 분리 -->
+  <Teleport to="body">
+    <Transition name="fade">
+      <div
+        v-if="showImagePopup"
+        ref="imagePopupOverlayRef"
+        class="image-popup-overlay prafta-nested-modal-overlay"
+        role="dialog"
+        aria-modal="true"
+        aria-label="첨부사진"
+        tabindex="-1"
+        @click="closeImagePopup"
+      >
+        <div class="image-popup-content" @mousedown.stop @click.stop>
+          <div class="image-popup-header">
+            <span>첨부사진</span>
+            <button
+              type="button"
+              class="icon-button"
+              @mousedown.stop
+              @click.stop="closeImagePopup"
+            >
+              ✕
+            </button>
+          </div>
+          <div class="image-popup-body">
+            <img :src="imageUrl" alt="첨부사진" class="popup-image" />
+          </div>
         </div>
       </div>
-    </div>
-  </Transition>
+    </Transition>
+  </Teleport>
 </template>
 <script setup>
 /* eslint-disable */
@@ -235,13 +263,14 @@ import {
   reactive,
   onMounted,
   watch,
+  nextTick,
   getCurrentInstance,
   defineProps,
   defineEmits,
   computed,
-} from 'vue';
-import { useDraggable } from '@/composables/useDraggable';
-import axios from '@/api/axios';
+} from "vue";
+import { useDraggable } from "@/composables/useDraggable";
+import axios from "@/api/axios";
 
 const props = defineProps({
   cmpnyCd: { type: String, required: true },
@@ -249,32 +278,39 @@ const props = defineProps({
 });
 
 // const emit =
-defineEmits(['close']);
+defineEmits(["close"]);
 
-const { position, startDrag } = useDraggable(
+const { position, startDrag, stopDrag } = useDraggable(
   window.innerWidth / 2 - 600,
   window.innerHeight / 2 - 400
 );
 
 const { proxy } = getCurrentInstance();
+
+/** inspect-result-details: 항목 마스터는 PascalCase·답변은 camelCase로 올 수 있음 */
+const subjRowItemCd = (row) => row?.inspectItemCd ?? row?.InspectItemCd;
+const subjRowItemSubj = (row) =>
+  row?.inspectItemSubj ?? row?.InspectItemSubj;
+
 const printArea = ref(null);
 const modalRef = ref(null);
 const workMonthIdx = ref(0);
 
 const formData = reactive({
-  siteNm: '',
-  chkptNm: '',
-  chkptTypeNm: '',
-  chkLstTypeNm: '',
-  siteAdminNm: '',
-  chkptDesc: '',
+  siteNm: "",
+  chkptNm: "",
+  chkptTypeNm: "",
+  chkLstTypeNm: "",
+  siteAdminNm: "",
+  chkptDesc: "",
 });
 
 const dailyInspectionItems = ref([]);
 const inspectionData = ref({}); // { siteCd_chkLstType: { itemIdx_day: result } }
 const showRightPanel = ref(false);
 const showImagePopup = ref(false);
-const imageUrl = ref('');
+const imageUrl = ref("");
+const imagePopupOverlayRef = ref(null);
 
 // 오른쪽 패널 토글
 const toggleRightPanel = () => {
@@ -312,12 +348,12 @@ const initializePopup = async () => {
 const fnGetInspectionInfo = async () => {
   const chkptInfo = props.chkptInfo[workMonthIdx.value];
 
-  inspectionInfo.inspectItemSubjList = [];
+  inspectionInfo.inspectItemSubjResultList = [];
   inspectionInfo.dailyResults = [];
 
   try {
     const response = await axios.get(
-      '/webApi/chkLst03/inspect-result-details',
+      "/webApi/chkLst03/inspect-result-details",
       {
         params: {
           siteCd: chkptInfo.siteCd,
@@ -330,49 +366,58 @@ const fnGetInspectionInfo = async () => {
 
     if (response.status === 200) {
       const resData = response.data;
-      const inspectItemSubjList = resData.inspectItemSubjList;
-      const inspectAnswerList = resData.inspectAnswerList;
+      const inspectItemSubjResultList =
+        resData.inspectItemSubjResultList ?? [];
+      const inspectAnswerResultList = resData.inspectAnswerResultList ?? [];
 
-      inspectionInfo.inspectItemSubjList = inspectItemSubjList.map((item) => {
-        return { itemNm: item.inspectItemSubj };
-      });
+      inspectionInfo.inspectItemSubjResultList =
+        inspectItemSubjResultList.map((item) => ({
+          itemNm: subjRowItemSubj(item) || "-",
+        }));
 
       if (
-        proxy.$util.isNotEmpty(inspectAnswerList) &&
-        inspectAnswerList.length > 0
+        proxy.$util.isNotEmpty(inspectAnswerResultList) &&
+        inspectAnswerResultList.length > 0
       ) {
-        inspectionInfo.dailyResults = inspectAnswerList.map((item) => {
-          const inspectIdx = inspectItemSubjList
-            .filter(
-              (subjItem, index) => subjItem.inspectItemCd === item.inspectItemCd
-            )
-            .map((subjItem, index, arr) => {
-              const originalIndex = inspectItemSubjList.indexOf(subjItem);
-              return {
-                inspectItemSubj: subjItem.inspectItemSubj,
-                index: originalIndex,
-              };
-            });
+        const answerItemCd = (row) =>
+          row?.inspectItemCd ?? row?.InspectItemCd;
 
-          if (proxy.$util.isNotEmpty(inspectIdx) && inspectIdx.length == 1) {
-            return {
-              inspectDay: item.workDate,
-              itemIdx: inspectIdx[0].index,
-              result: item.inspectAnswerType,
-              answerDesc: item.answerDesc,
-              inspectItemSubj: inspectIdx[0].inspectItemSubj,
-              fileMgmtCd: item.fileMgmtCd,
-              filePath: item.filePath,
-            };
-          }
-        });
+        inspectionInfo.dailyResults = inspectAnswerResultList
+          .map((item) => {
+            const targetCd = answerItemCd(item);
+            const inspectIdx = inspectItemSubjResultList
+              .filter((subjItem) => subjRowItemCd(subjItem) === targetCd)
+              .map((subjItem) => {
+                const originalIndex =
+                  inspectItemSubjResultList.indexOf(subjItem);
+
+                return {
+                  inspectItemSubj: subjRowItemSubj(subjItem),
+                  index: originalIndex,
+                };
+              });
+
+            if (proxy.$util.isNotEmpty(inspectIdx) && inspectIdx.length === 1) {
+              return {
+                inspectDay: item.workDate,
+                itemIdx: inspectIdx[0].index,
+                result: item.inspectAnswerType,
+                answerDesc: item.answerDesc,
+                inspectItemSubj: inspectIdx[0].inspectItemSubj,
+                fileMgmtCd: item.fileMgmtCd,
+                filePath: item.filePath,
+              };
+            }
+            return null;
+          })
+          .filter(Boolean);
       }
     }
   } catch (err) {
     const msg =
       err?.response?.data?.message ||
       err?.message ||
-      '조회 중 오류가 발생했습니다.';
+      "조회 중 오류가 발생했습니다.";
 
     await proxy.$alert(msg);
   }
@@ -380,13 +425,13 @@ const fnGetInspectionInfo = async () => {
 
 const inspectionInfo = reactive({
   equipmentInfo: {
-    chkptNm: '',
-    chkptTypeNm: '',
-    department: '',
-    inspector: '',
-    siteNm: '',
+    chkptNm: "",
+    chkptTypeNm: "",
+    department: "",
+    inspector: "",
+    siteNm: "",
   },
-  inspectItemSubjList: [],
+  inspectItemSubjResultList: [],
   dailyResults: [],
 });
 
@@ -404,9 +449,10 @@ const getInspectionResult = (idx, day) => {
   return (
     inspectionInfo.dailyResults.find(
       (result) =>
+        result != null &&
         Number(result.inspectDay) === Number(day) &&
         Number(result.itemIdx) === Number(idx)
-    )?.result || ''
+    )?.result || ""
   );
 };
 
@@ -414,7 +460,7 @@ const getInspectionResult = (idx, day) => {
 const openImagePopup = (filePath, fileMgmtCd) => {
   if (filePath && fileMgmtCd) {
     // API_BASE_URL 환경 변수 (Vite: VITE_ 접두사)
-    const apiBaseUrl = import.meta.env.VITE_API_BASE_URL || '';
+    const apiBaseUrl = import.meta.env.VITE_API_BASE_URL || "";
 
     // 파일 경로 구성: API_BASE_URL + filePath + "/" + fileMgmtCd
     let fullPath = `${filePath}/${fileMgmtCd}`;
@@ -422,36 +468,41 @@ const openImagePopup = (filePath, fileMgmtCd) => {
     // API_BASE_URL이 있고 상대 경로인 경우에만 추가
     if (
       apiBaseUrl &&
-      !filePath.startsWith('http://') &&
-      !filePath.startsWith('https://')
+      !filePath.startsWith("http://") &&
+      !filePath.startsWith("https://")
     ) {
       // API_BASE_URL 끝에 슬래시가 있으면 제거
-      const baseUrl = apiBaseUrl.endsWith('/')
+      const baseUrl = apiBaseUrl.endsWith("/")
         ? apiBaseUrl.slice(0, -1)
         : apiBaseUrl;
       // filePath 시작에 슬래시가 있으면 제거
-      const cleanFilePath = filePath.startsWith('/')
+      const cleanFilePath = filePath.startsWith("/")
         ? filePath.slice(1)
         : filePath;
       fullPath = `${baseUrl}/${cleanFilePath}/${fileMgmtCd}`;
     }
 
+    stopDrag();
     imageUrl.value = fullPath;
     showImagePopup.value = true;
+    nextTick(() => {
+      imagePopupOverlayRef.value?.focus({ preventScroll: true });
+    });
   }
 };
 
 // 사진 팝업 닫기
 const closeImagePopup = () => {
+  stopDrag();
   showImagePopup.value = false;
-  imageUrl.value = '';
+  imageUrl.value = "";
 };
 
 // 프린트 기능
 const fnPrint = () => {
   if (!printArea.value) return;
 
-  const printWindow = window.open('', '_blank', 'width=1200,height=800');
+  const printWindow = window.open("", "_blank", "width=1200,height=800");
   const printContent = printArea.value.innerHTML;
 
   printWindow.document.write(`
@@ -633,13 +684,32 @@ const fnPrint = () => {
 </script>
 
 <style scoped>
+/* 본문 영역: SiteInfoPop.content-wrapper 와 동일하게 flex:1 + 패딩 */
 .content-wrapper {
   flex: 1;
+  min-height: 0;
   overflow: hidden;
   position: relative;
   display: flex;
   flex-direction: column;
-  min-height: 0;
+  padding: 1.2rem;
+  gap: 0;
+}
+
+/* 하단 버튼 바: 모달 본문에 붙이고 축소되지 않도록 (prafta-modal-footer 가이드 보강) */
+.modal-footer {
+  flex-shrink: 0;
+  position: relative;
+  z-index: 2;
+}
+
+.modal-footer .btn-group {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  width: 100%;
 }
 
 .main-content {
@@ -651,7 +721,7 @@ const fnPrint = () => {
 
 .left-panel {
   flex: 1;
-  padding: 20px;
+  padding: 0;
   min-width: 0;
   display: flex;
   flex-direction: column;
@@ -1036,7 +1106,10 @@ const fnPrint = () => {
   display: flex;
   align-items: center;
   justify-content: center;
-  z-index: 1000;
+  /* 메인 모달(z-index 1000) 위 + body.prafta-modal-open 시 클릭 수신 */
+  z-index: 10050;
+  pointer-events: auto;
+  outline: none;
 }
 
 .image-popup-content {

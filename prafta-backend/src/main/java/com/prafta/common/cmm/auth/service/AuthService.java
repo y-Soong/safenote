@@ -1,5 +1,8 @@
 package com.prafta.common.cmm.auth.service;
 
+import com.prafta.common.cmm.auth.application.param.RefreshParam;
+import com.prafta.common.cmm.auth.dto.response.RefreshResponse;
+
 public interface AuthService {
-	String refreshAccessToken(String refreshToken);
+	RefreshResponse refreshAccessToken(RefreshParam param);
 }

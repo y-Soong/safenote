@@ -1,62 +1,60 @@
 package com.prafta.web.chkLst.chkLst02.controller;
 
 import java.util.List;
-import java.util.Map;
 
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.validation.annotation.Validated;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.ModelAttribute;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
-import com.prafta.common.annotation.NoAuth;
-import com.prafta.common.exception.login.LoginApiException;
 import com.prafta.common.security.JwtUtil;
-import com.prafta.web.chkLst.chkLst02.dto.ChkLst02;
-import com.prafta.web.chkLst.chkLst02.dto.ChkLst02ReqDto;
+import com.prafta.web.chkLst.chkLst02.application.param.ChkptInspectItemListParam;
+import com.prafta.web.chkLst.chkLst02.application.param.ChkptInspectItemParam;
+import com.prafta.web.chkLst.chkLst02.dto.request.ChkptInspectItemListRequest;
+import com.prafta.web.chkLst.chkLst02.dto.request.ChkptInspectItemRequest;
+import com.prafta.web.chkLst.chkLst02.dto.response.ChkptInspectItemListResponse;
 import com.prafta.web.chkLst.chkLst02.service.ChkLst02Service;
 
+import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 
 @Slf4j
-@NoAuth
 @RestController
 @RequestMapping("/chkLst02")
 @RequiredArgsConstructor
+@Validated
 public class ChkLst02Controller { 	
 	
 	private final ChkLst02Service chkLst02Service;
 	private final JwtUtil jwtUtil;
 
-	@PostMapping("/getChkptInspectItemList")
-    public ResponseEntity<?> getChkptInspectItemList(@RequestBody ChkLst02ReqDto dto, @RequestHeader(value = "Authorization", required = false) String authorization) {
-    	Map<String, Object> tokenInfo = jwtUtil.getAllClaimsAsMap(authorization);
-		List<ChkLst02> retList = chkLst02Service.selectChkptInspectItemList(dto, tokenInfo);
+	@GetMapping("/chkpt-inspect-item-lists")
+    public ResponseEntity<?> getChkptInspectItemList(@ModelAttribute ChkptInspectItemListRequest request, @RequestHeader(value = "Authorization", required = false) String authorization) {
 		
-    	if(retList == null) {
-    		throw new LoginApiException("조회된 결과가 없습니다.");
-    	}
-    	
-    	return ResponseEntity.status(HttpStatus.OK).body(retList);
+		ChkptInspectItemListResponse response = chkLst02Service.selectChkptInspectItemList(ChkptInspectItemListParam.from(request, jwtUtil.getAllClaimsAsMap(authorization)));
+		
+    	return ResponseEntity.status(HttpStatus.OK).body(response);
     }
 	
-	@PostMapping("/updateChkptInspectItemList")
-    public ResponseEntity<?> updateChkptInspectItemList(@RequestBody List<ChkLst02> dtoList, @RequestHeader(value = "Authorization", required = false) String authorization ) {
-    	Map<String, Object> tokenInfo = jwtUtil.getAllClaimsAsMap(authorization);
+	@PostMapping("/update-chkpt-inspect-items")
+    public ResponseEntity<?> updateChkptInspectItemList(@Valid @RequestBody List<ChkptInspectItemRequest> request, @RequestHeader(value = "Authorization", required = false) String authorization ) {
     	
-    	chkLst02Service.updateChkptInspectItemList(dtoList, tokenInfo);
+    	chkLst02Service.updateChkptInspectItemList(ChkptInspectItemParam.from(request, jwtUtil.getAllClaimsAsMap(authorization)));
     	
     	return ResponseEntity.status(HttpStatus.OK).build();
     }
 	
-	@PostMapping("/deleteChkptInspectItemList")
-    public ResponseEntity<?> deleteChkptInspectItemList(@RequestBody List<ChkLst02> dtoList, @RequestHeader(value = "Authorization", required = false) String authorization ) {
-    	Map<String, Object> tokenInfo = jwtUtil.getAllClaimsAsMap(authorization);
+	@PostMapping("/delete-chkpt-inspect-items")
+    public ResponseEntity<?> deleteChkptInspectItemList(@RequestBody List<ChkptInspectItemRequest> request, @RequestHeader(value = "Authorization", required = false) String authorization ) {
     	
-    	chkLst02Service.deleteChkptInspectItemList(dtoList, tokenInfo);
+    	chkLst02Service.deleteChkptInspectItemList(ChkptInspectItemParam.from(request, jwtUtil.getAllClaimsAsMap(authorization)));
     	
     	return ResponseEntity.status(HttpStatus.OK).build();
     }

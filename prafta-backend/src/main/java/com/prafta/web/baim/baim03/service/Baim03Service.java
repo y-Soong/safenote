@@ -1,24 +1,20 @@
 package com.prafta.web.baim.baim03.service;
 
-import java.util.List;
-import java.util.Map;
-
-import com.prafta.web.baim.baim03.dto.Baim03;
-import com.prafta.web.baim.baim03.dto.Baim03ReqDto;
-import com.prafta.web.baim.baim03.dto.TermsDetailInfoListReq;
-import com.prafta.web.baim.baim03.dto.TermsDetailInfoListRes;
-import com.prafta.web.baim.baim03.dto.TermsInfoListReq;
-import com.prafta.web.baim.baim03.dto.TermsInfoListRes;
-import com.prafta.web.baim.baim03.dto.TermsInfoReq;
+import com.prafta.web.baim.baim03.application.param.TermsDetailInfoListParam;
+import com.prafta.web.baim.baim03.application.param.TermsInfoListParam;
+import com.prafta.web.baim.baim03.application.param.TermsInfoParam;
+import com.prafta.web.baim.baim03.application.param.TermsListParam;
+import com.prafta.web.baim.baim03.dto.response.TermsDetailInfoListResponse;
+import com.prafta.web.baim.baim03.dto.response.TermsInfoListResponse;
 
 public interface Baim03Service {
-	TermsInfoListRes selectTermsList(TermsInfoListReq dto, Map<String, Object> tokenInfo);
+	TermsInfoListResponse selectTermsList(TermsInfoListParam param);
 	
-	TermsDetailInfoListRes selectTermsDList(TermsDetailInfoListReq dto, Map<String, Object> tokenInfo);
+	TermsDetailInfoListResponse selectTermsDList(TermsDetailInfoListParam param);
 	
-	Baim03 selectTermsInfo(Baim03ReqDto dto, Map<String, Object> tokenInfo);
+//	Baim03 selectTermsInfo(Baim03ReqDto dto, Map<String, Object> tokenInfo);
 	
-	void updateTermsInfo(TermsInfoReq dto, Map<String, Object> tokenInfo);
+	void updateTermsInfo(TermsInfoParam param);
 	
-	void deleteCmmCodeDetailInfo(List<TermsInfoReq> dtoList, Map<String, Object> tokenInfo);
+	void deleteCmmCodeDetailInfo(TermsListParam param);
 }

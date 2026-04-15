@@ -105,14 +105,16 @@
                 <th style="width: 4%">
                   <input
                     id="headChk"
-                    v-model="headChk"
                     type="checkbox"
-                    @click="fnHeadChk"
+                    :checked="headChk"
+                    @change="fnHeadChk"
                   />
                 </th>
                 <th style="width: 15%">상세코드</th>
                 <th class="editableCell" style="width: 15%">상세코드명</th>
-                <th class="editableCell" style="width: 8%">코드순번</th>
+                <th class="editableCell" style="width: 8%">
+                  {{ targetValCd === "COM005" ? "권한등급" : "코드순번" }}
+                </th>
                 <th class="editableCell">비고</th>
               </tr>
             </thead>
@@ -152,9 +154,13 @@
                   <td>
                     <input
                       id="sortIdx"
-                      v-model="codeDetail.sortIdx"
+                      type="text"
+                      inputmode="numeric"
+                      autocomplete="off"
+                      :value="codeDetail.sortIdx"
                       :disabled="codeDetail.valDInfo1 === 'system'"
-                      @blur="focusKill(codeDetail.SORT_IDX, idx)"
+                      @input="sanitizeSortIdxInput($event, codeDetail)"
+                      @blur="focusKill(codeDetail, idx)"
                     />
                   </td>
                   <td>
@@ -176,68 +182,76 @@
 
 <script setup>
 /* eslint-disable */
+
+// ================ Imports ================
 import {
   ref,
   defineProps,
   onMounted,
   getCurrentInstance,
   defineOptions,
-} from 'vue';
-import { useFieldWatcher } from '@/utils/useFieldWatcher';
-import axios from '@/api/axios';
-import ViewHeader from '@/components/common/ViewHeader.vue';
-import BaseSelect from '@/components/common/BaseSelect.vue';
+} from "vue";
+import { useFieldWatcher } from "@/utils/useFieldWatcher";
+import axios from "@/api/axios";
+import ViewHeader from "@/components/common/ViewHeader.vue";
+import { getMessage, MSG } from "@/messages";
+import BaseSelect from "@/components/common/BaseSelect.vue";
 
-defineOptions({ name: 'Baim_02' });
+// ================ Options ================
+defineOptions({ name: "Baim_02" });
 
+// ================ Props & Emits ================
 const props = defineProps({
   title: String,
   buttons: Object,
 });
 
+// ================ Instance & Composables ================
 const { proxy } = getCurrentInstance();
+
+// ================ Refs (Variables) ================
+const localButtons = ref({ ...props.buttons });
 const cmmCodeList = ref([]);
 const cmmCodeDetailList = ref([]);
 const systCodeArr = ref({});
-const localButtons = ref({ ...props.buttons });
 
-/* 조회조건 변수 세팅 */
-const codeNm = ref('');
+// 조회조건
+const codeNm = ref("");
 
-const targetValCd = ref('');
-const targetValNm = ref('');
+// 좌측 선택 코드(상세 그리드 기준)
+const targetValCd = ref("");
+const targetValNm = ref("");
 
 const headChk = ref(false);
 
+// ================ Field watcher ================
+useFieldWatcher(
+  cmmCodeDetailList,
+  (item) => {
+    item.chk = true;
+  },
+  ["chk"]
+);
+
+// ================ COM005 권한등급(코드순번) 유틸 ================
+
+const isCom005SortIdxValid = (n) => {
+  return Number.isInteger(n) && n >= 3 && n <= 99998;
+};
+
+// ================ Life Cycle Functions ================
 onMounted(async () => {
   fnButtonControll();
   await fnGetSystinfoList();
   await fnSearch();
 });
 
-useFieldWatcher(
-  cmmCodeDetailList,
-  (item) => {
-    item.chk = true;
-  },
-  ['chk']
-);
-
-// focusKill 이벤트
-function focusKill(value, idx) {
-  // if (e.target.id == "sortIdx") {
-  if (proxy.$util.isNotEmpty(value) && !proxy.$util.isInteger(value)) {
-    cmmCodeDetailList.value[idx].sortIdx = idx + 1;
-  }
-  // }
-}
-
-// API 호출
+// ================ API Functions ================
 const fnGetSystinfoList = async () => {
   try {
-    const response = await axios.get('/comApi/baseinfo/syst-info-list', {
+    const response = await axios.get("/comApi/baseinfo/syst-info-lists", {
       params: {
-        systCodeList: ['SYS003'],
+        systCodeList: ["SYS003"],
       },
     });
 
@@ -259,7 +273,7 @@ const fnGetSystinfoList = async () => {
     const msg =
       err?.response?.data?.message ||
       err?.message ||
-      '조회 중 오류가 발생했습니다.';
+      "조회 중 오류가 발생했습니다.";
 
     await proxy.$alert(msg);
   }
@@ -268,9 +282,10 @@ const fnGetSystinfoList = async () => {
 const fnSearch = async () => {
   cmmCodeList.value = [];
   cmmCodeDetailList.value = [];
+  headChk.value = false;
 
   try {
-    const response = await axios.get('/webApi/baim02/comp-cmm-code-m-list', {
+    const response = await axios.get("/webApi/baim02/comp-cmm-code-m-list", {
       params: {
         codeNm: codeNm.value,
       },
@@ -285,7 +300,7 @@ const fnSearch = async () => {
     const msg =
       err?.response?.data?.message ||
       err?.message ||
-      '조회 중 오류가 발생했습니다.';
+      "조회 중 오류가 발생했습니다.";
 
     await proxy.$alert(msg);
   }
@@ -298,9 +313,10 @@ const fnSubSearch = async (code) => {
   }
 
   cmmCodeDetailList.value = [];
+  headChk.value = false;
 
   try {
-    const response = await axios.get('/webApi/baim02/comp-cmm-code-d-list', {
+    const response = await axios.get("/webApi/baim02/comp-cmm-code-d-list", {
       params: {
         codeCd: targetValCd.value,
       },
@@ -313,7 +329,7 @@ const fnSubSearch = async (code) => {
     const msg =
       err?.response?.data?.message ||
       err?.message ||
-      '조회 중 오류가 발생했습니다.';
+      "조회 중 오류가 발생했습니다.";
 
     await proxy.$alert(msg);
   }
@@ -321,28 +337,28 @@ const fnSubSearch = async (code) => {
 
 const fnSave = async (dataList) => {
   if (dataList.length == 0) {
-    proxy.$alert('저장할 데이터가 없습니다.');
+    proxy.$alert(getMessage(MSG.SAVE_DATA_REQUIRED));
     return;
   }
 
-  const ok = await proxy.$confirm('저장하시겠습니까 ?');
+  const ok = await proxy.$confirm(getMessage(MSG.SAVE_CONFIRM));
   if (!ok) return;
 
   try {
     const response = await axios.post(
-      '/webApi/baim02/update-cmm-code-detail-info',
+      "/webApi/baim02/update-cmm-code-detail-info",
       dataList
     );
 
     if (response.status === 200) {
-      proxy.$alert('처리되었습니다.');
+      proxy.$alert(getMessage(MSG.SAVE_SUCCESS));
       fnSubSearch();
     }
   } catch (err) {
     const msg =
       err?.response?.data?.message ||
       err?.message ||
-      '저장 중 오류가 발생했습니다.';
+      "저장 중 오류가 발생했습니다.";
 
     await proxy.$alert(msg);
   }
@@ -350,71 +366,117 @@ const fnSave = async (dataList) => {
 
 const fnDelete = async (dataList) => {
   if (dataList.length == 0) {
-    proxy.$alert('삭제할 데이터가 없습니다.');
+    proxy.$alert(getMessage(MSG.DELETE_DATA_REQUIRED));
     return;
   }
 
-  const ok = await proxy.$confirm('삭제하시겠습니까 ?');
+  const ok = await proxy.$confirm(getMessage(MSG.DELETE_CONFIRM));
   if (!ok) return;
 
   try {
     const response = await axios.post(
-      '/webApi/baim02/deleteCmmCodeDetailInfo',
+      "/webApi/baim02/deleteCmmCodeDetailInfo",
       dataList
     );
 
     if (response.status === 200) {
-      proxy.$alert('처리되었습니다.');
+      proxy.$alert(getMessage(MSG.SAVE_SUCCESS));
       fnSubSearch();
     }
   } catch (err) {
     const msg =
       err?.response?.data?.message ||
       err?.message ||
-      '삭제 중 오류가 발생했습니다.';
+      "삭제 중 오류가 발생했습니다.";
 
     await proxy.$alert(msg);
   }
 };
 
-/* user function */
+// ================ Methods/Functions ================
 function fnButtonControll() {
   // localButtons.value.search = "N";
-  localButtons.value.create = 'N';
-  localButtons.value.save = 'N';
-  localButtons.value.delete = 'N';
-  localButtons.value.excel = 'N';
+  localButtons.value.create = "N";
+  localButtons.value.save = "N";
+  localButtons.value.delete = "N";
+  localButtons.value.excel = "N";
 }
 
-function fnHeadChk() {
-  headChk.value = !headChk.value;
+function fnHeadChk(e) {
+  const checked = e.target.checked;
+  headChk.value = checked;
   cmmCodeDetailList.value.forEach((item) => {
-    item.chk = headChk.value;
+    if (item.valDInfo1 !== "system") {
+      item.chk = checked;
+    }
   });
 }
+
+/** 코드순번·권한등급: 숫자만 입력 */
+function sanitizeSortIdxInput(e, codeDetail) {
+  if (codeDetail.valDInfo1 === "system") return;
+  const raw = e.target.value ?? "";
+  const digitsOnly = String(raw).replace(/\D/g, "");
+  codeDetail.sortIdx = digitsOnly === "" ? "" : digitsOnly;
+}
+
+/** 상세 그리드 코드순번(권한등급) blur */
+const focusKill = async (codeDetail, idx) => {
+  const raw = codeDetail.sortIdx;
+  const strVal = raw == null ? "" : String(raw).trim();
+
+  if (targetValCd.value === "COM005" && codeDetail.valDInfo1 !== "system") {
+    const n = parseInt(strVal, 10);
+    if (strVal === "" || Number.isNaN(n) || !isCom005SortIdxValid(n)) {
+      await proxy.$alert(getMessage(MSG.COM005_SORT_IDX_RANGE));
+      cmmCodeDetailList.value[idx].sortIdx = 3;
+      return;
+    }
+    cmmCodeDetailList.value[idx].sortIdx = n;
+    return;
+  }
+
+  if (proxy.$util.isNotEmpty(strVal) && !proxy.$util.isInteger(strVal)) {
+    cmmCodeDetailList.value[idx].sortIdx = idx + 1;
+  }
+};
 
 function fnAddRow() {
   const nextIdx = cmmCodeDetailList.value.length + 1;
   const newRow = {
     chk: true,
-    useYn: 'Y',
+    useYn: "Y",
     baimValCd: targetValCd.value,
   };
-  if (targetValCd.value === 'COM006') {
+  if (targetValCd.value === "COM006") {
     newRow.baimValDNm = `${nextIdx}일`;
   }
   cmmCodeDetailList.value.push(newRow);
 }
 
-function fnSaveRow() {
+async function fnSaveRow() {
   const filteredData = cmmCodeDetailList.value.filter(
     (cmmCode) => cmmCode.chk && cmmCode.baimValDNm
   );
   //  const dataList = proxy.$util.toCamelCaseKeys(filteredData);
 
   if (filteredData.length == 0) {
-    proxy.$alert('저장할 데이터가 없습니다.');
+    proxy.$alert(getMessage(MSG.SAVE_DATA_REQUIRED));
     return;
+  }
+
+  if (targetValCd.value === "COM005") {
+    const invalid = filteredData.find(
+      (row) =>
+        row.valDInfo1 !== "system" &&
+        !isCom005SortIdxValid(
+          parseInt(String(row.sortIdx ?? row.SORT_IDX ?? "").trim(), 10)
+        )
+    );
+    if (invalid) {
+      await proxy.$alert(getMessage(MSG.COM005_SORT_IDX_RANGE));
+      return;
+    }
   }
 
   fnSave(filteredData);
@@ -427,7 +489,7 @@ function fnDeleteRow() {
   // const dataList = proxy.$util.toCamelCaseKeys(filteredData);
 
   if (filteredData.length == 0) {
-    proxy.$alert('삭제할 데이터가 없습니다.');
+    proxy.$alert(getMessage(MSG.DELETE_DATA_REQUIRED));
     return;
   }
 

@@ -2,31 +2,27 @@
 <!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
 <mapper namespace="com.prafta.web.chkLst.chkLst02.mapper.ChkLst02Mapper">
 
-    <select id="selectChkptInspectItemList" parameterType="com.prafta.web.chkLst.chkLst02.dto.ChkLst02ReqDto" resultType="com.prafta.web.chkLst.chkLst02.dto.ChkLst02">
+    <select id="selectChkptInspectItemList" parameterType="com.prafta.web.chkLst.chkLst02.application.query.ChkptInspectItemListQuery" resultType="com.prafta.web.chkLst.chkLst02.result.ChkptInspectItemResult">
     /* ChkLst01Mapper.selectChkptInspectItemList */
 	SELECT 
-		'' AS CHK
-		, A.CMPNY_CD
-	    , A.CHKLST_TYPE
-	    , A.INSPECT_ITEM_CD
-	    , A.INSPECT_ITEM_SUBJ
-	    , A.SORT_IDX
-	    , A.STR_DATE
-	    , A.USE_YN
-	    , A.INSERT_NO
-	    , A.INSERT_DATE
-	    , A.UPDATE_NO
-	    , A.UPDATE_DATE
+		'' 						AS chk
+		, A.CMPNY_CD			AS cmpnyCd
+	    , A.CHKLST_TYPE			AS chkLstType
+	    , A.INSPECT_ITEM_CD		AS inspectItemCd
+	    , A.INSPECT_ITEM_SUBJ	AS inspectItemSubj
+	    , A.SORT_IDX			AS sortIdx
+	    , A.STR_DATE			AS strDate
+	    , A.USE_YN				AS useYn
 	FROM TB_CHKPT_INSPECT_ITEM A
 	WHERE 1=1
-	  AND A.CMPNY_CD = #{token.gv_cmpnyCd}
-   	  <if test="param.sr_codeCd != null and param.sr_codeCd != ''">
-   	  	AND A.CHKLST_TYPE = #{param.sr_codeCd}
+	  AND A.CMPNY_CD = #{gvCmpnyCd}
+   	  <if test="codeCd != null and codeCd != ''">
+   	  	AND A.CHKLST_TYPE = #{codeCd}
    	  </if>
 	ORDER BY CHKLST_TYPE, SORT_IDX
 	</select>
 	
-	<insert id="mergeChkptInspectItemList">
+	<insert id="mergeChkptInspectItemList" parameterType="com.prafta.web.chkLst.chkLst02.application.command.ChkptInspectItemCommand">
 	/* ChkLst01Mapper.mergeChkptInspectItemList */	
     INSERT INTO TB_CHKPT_INSPECT_ITEM (
     	CMPNY_CD
@@ -42,45 +38,45 @@
     	, UPDATE_DATE
    	)
    	VALUES(
-   		#{token.gv_cmpnyCd}
-   		, #{param.chkLstType}
+   		#{gvCmpnyCd}
+   		, #{chkLstType}
    		, IFNULL(
-   			#{param.inspectItemCd}
+   			#{inspectItemCd}
    			, CONCAT(
    				'DCHK'
    				, '_'
-   				, CAST(#{param.chkLstType} AS UNSIGNED)
+   				, CAST(#{chkLstType} AS UNSIGNED)
    				, '_'
-   				, prafta.FNC_CMM_SEQ_NEXTVAL(#{token.gv_cmpnyCd}, CONCAT('COM001-', #{param.chkLstType})))
+   				, FNC_CMM_SEQ_NEXTVAL(#{gvCmpnyCd}, CONCAT('COM001-', #{chkLstType})))
  			)
-   		, #{param.inspectItemSubj}
-   		, #{param.sortIdx}
-   		, SUBSTRING(REPLACE(#{param.strDate}, '-', ''), 1, 6)
-   		, #{param.useYn}
-		, #{token.gv_userId}
+   		, #{inspectItemSubj}
+   		, #{sortIdx}
+   		, SUBSTRING(REPLACE(#{strDate}, '-', ''), 1, 6)
+   		, #{useYn}
+		, #{gvUserCd}
 		, now()
-		, #{token.gv_userId}
+		, #{gvUserCd}
 		, now() 
-   	)
+   	) AS NEW
    	ON DUPLICATE KEY UPDATE
-   		INSPECT_ITEM_SUBJ = VALUES(INSPECT_ITEM_SUBJ)
-   		, SORT_IDX		  = VALUES(SORT_IDX)
-    	, STR_DATE		  = VALUES(STR_DATE)
-    	, USE_YN		  = IFNULL(#{param.useYn}, 'Y')
-    	, UPDATE_NO		  = #{token.gv_userId}
+   		INSPECT_ITEM_SUBJ = NEW.INSPECT_ITEM_SUBJ
+   		, SORT_IDX		  = NEW.SORT_IDX
+    	, STR_DATE		  = NEW.STR_DATE
+    	, USE_YN		  = IFNULL(NEW.USE_YN, 'Y')
+    	, UPDATE_NO		  = NEW.UPDATE_NO
     	, UPDATE_DATE	  = NOW()
 	</insert>
 	
-	<insert id="updateChkptInspectItemList">
+	<insert id="updateChkptInspectItemList" parameterType="com.prafta.web.chkLst.chkLst02.application.command.ChkptInspectItemCommand">
 	/* ChkLst01Mapper.updateChkptInspectItemList */
 	UPDATE TB_CHKPT_INSPECT_ITEM
 	SET 
 		USE_YN = 'N'
-		, UPDATE_NO = #{token.gvuserId}
+		, UPDATE_NO = #{gvUserCd}
 		, UPDATE_DATE = now()
 	WHERE 1=1
-	  AND CMPNY_CD = #{param.cmpnyCd}
-	  AND CHKLST_TYPE = #{param.chkLstType}
-	  AND INSPECT_ITEM_CD = #{param.inspectItemCd}
+	  AND CMPNY_CD = #{gvCmpnyCd}
+	  AND CHKLST_TYPE = #{chkLstType}
+	  AND INSPECT_ITEM_CD = #{inspectItemCd}
 	</insert>
 </mapper>

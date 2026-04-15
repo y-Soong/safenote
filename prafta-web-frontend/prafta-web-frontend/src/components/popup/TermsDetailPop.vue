@@ -29,12 +29,13 @@
 </template>
 
 <script setup>
-import { ref, onMounted, defineProps } from "vue";
+import { ref, onMounted, defineProps, getCurrentInstance } from "vue";
 import { QuillEditor } from "@vueup/vue-quill";
 import { useCenteredDraggable } from "@/composables/useCenteredDraggable";
 import "@vueup/vue-quill/dist/vue-quill.snow.css";
 import axios from "@/api/axios";
 
+const { proxy } = getCurrentInstance();
 const modalRef = ref(null);
 const props = defineProps({
   termsId_p: String,
@@ -64,19 +65,24 @@ onMounted(async () => {
 // API 호출
 const fnGetTermsInfo = async () => {
   try {
-    const response = await axios.post("/comApi/baseinfo/getTermsDInfo", {
-      termsId: termsId.value,
+    const response = await axios.get("/comApi/baseinfo/terms-detail-infos", {
+      params: {
+        termsId: termsId.value,
+      },
     });
 
     if (response.status === 200) {
-      termsContent.value = response.data.TERMS_CONTENT;
+      termsContent.value = response.data.termsDetailInfoResult.termsContent;
     }
   } catch (err) {
-    alert(err.response.data.message);
+    const msg =
+      err?.response?.data?.message ||
+      err?.message ||
+      "조회 중 오류가 발생했습니다.";
+
+    await proxy.$alert(msg);
   }
 };
-
-/* User Function */
 </script>
 
 <style scoped>

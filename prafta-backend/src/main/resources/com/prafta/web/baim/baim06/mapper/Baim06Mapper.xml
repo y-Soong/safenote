@@ -2,18 +2,22 @@
 <!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
 <mapper namespace="com.prafta.web.baim.baim06.mapper.Baim06Mapper">
 
-	<select id="selectSiteNodeList" parameterType="com.prafta.web.baim.baim06.dto.SiteNodeListQry" resultType="com.prafta.web.baim.baim06.vo.SiteNode">
+	<select id="selectSiteNodeList" parameterType="com.prafta.web.baim.baim06.application.query.SiteNodeListQuery" resultType="com.prafta.web.baim.baim06.result.SiteNodeResult">
 	/* Baim06Mapper.selectSiteNodeList */
 	SELECT 
-		A.CMPNY_CD				AS cmpnyCd		
-		, A.SITE_CD				AS siteCd
-		, A.NODE_CD				AS nodeCd
-		, A.NODE_NM				AS nodeNm
-		, A.NODE_TYPE			AS nodeType
-		, A.PARENT_NODE_CD		AS parentNodeCd
-		, A.SELF_ATTD_APPRV_YN	AS selfAttdApprvYn
-        , SUM(CASE WHEN B.USER_TYPE = 'M' THEN 1 ELSE 0 END) managerCnt
-        , SUM(CASE WHEN B.USER_TYPE = 'W' THEN 1 ELSE 0 END) workerCnt
+		A.CMPNY_CD														AS cmpnyCd		
+		, A.SITE_CD														AS siteCd
+		, A.NODE_CD														AS nodeCd
+		, A.NODE_NM														AS nodeNm
+		, A.NODE_TYPE													AS nodeType
+		, A.PARENT_NODE_CD												AS parentNodeCd
+		, A.SELF_ATTD_APPRV_YN											AS selfAttdApprvYn
+		, A.MAIN_ADMIN_CD												AS mainAdminCd
+        , FNC_CMM_INFO_SRCH(A.CMPNY_CD, 'USER', A.MAIN_ADMIN_CD, NULL) 	AS mainAdminNm
+        , A.SUB_ADMIN_CD												AS subAdminCd
+        , FNC_CMM_INFO_SRCH(A.CMPNY_CD, 'USER', A.SUB_ADMIN_CD, NULL) 	AS subAdminNm
+        , SUM(CASE WHEN B.USER_TYPE = 'M' THEN 1 ELSE 0 END) 			AS managerCnt
+        , SUM(CASE WHEN B.USER_TYPE = 'W' THEN 1 ELSE 0 END) 			AS workerCnt
 	FROM TB_SITE_NODE A
 		 LEFT OUTER JOIN (
 			SELECT 
@@ -40,8 +44,8 @@
 			AND A.SITE_CD = B.SITE_CD
             AND A.NODE_CD = B.NODE_CD
             )
-	WHERE A.CMPNY_CD = #{token.gv_cmpnyCd}
-	  AND A.SITE_CD = #{param.siteCd}
+	WHERE A.CMPNY_CD = #{gvCmpnyCd}
+	  AND A.SITE_CD = #{siteCd}
 	GROUP BY A.CMPNY_CD
 			, A.SITE_CD
 			, A.NODE_CD
@@ -51,7 +55,7 @@
 			, A.SELF_ATTD_APPRV_YN
 	</select>
 
-	<update id="saveSiteNode" parameterType="com.prafta.web.baim.baim06.dto.SiteNodeSave">
+	<update id="saveSiteNode" parameterType="com.prafta.web.baim.baim06.application.command.SiteNodeInfoCommand">
     /* Baim06Mapper.saveSiteNode */
 	INSERT INTO TB_SITE_NODE (
 	    CMPNY_CD
@@ -66,28 +70,28 @@
 	    , UPDATE_NO
 	    , UPDATE_DATE
 	) VALUES (
-	    #{token.gv_cmpnyCd}
-	    , #{param.siteCd}
-	    , #{param.nodeCd}
-	    , #{param.nodeNm}
-	    , #{param.nodeType}
-	    , #{param.parentNodeCd}
-	    , #{param.selfAttdApprvYn}
-	    , #{token.gv_userId}
+	    #{gvCmpnyCd}
+	    , #{siteCd}
+	    , #{nodeCd}
+	    , #{nodeNm}
+	    , #{nodeType}
+	    , #{parentNodeCd}
+	    , #{selfAttdApprvYn}
+	    , #{gvUserCd}
 	    , CURRENT_TIMESTAMP
-	    , #{token.gv_userId}
+	    , #{gvUserCd}
 	    , CURRENT_TIMESTAMP
-	) AS new
+	) AS NEW
 	ON DUPLICATE KEY UPDATE
-		NODE_NM 		   	 = new.NODE_NM
-		, NODE_TYPE			 = new.NODE_TYPE
-		, PARENT_NODE_CD	 = new.PARENT_NODE_CD
-	    , SELF_ATTD_APPRV_YN = new.SELF_ATTD_APPRV_YN
-	    , UPDATE_NO          = new.UPDATE_NO
+		NODE_NM 		   	 = NEW.NODE_NM
+		, NODE_TYPE			 = NEW.NODE_TYPE
+		, PARENT_NODE_CD	 = NEW.PARENT_NODE_CD
+	    , SELF_ATTD_APPRV_YN = NEW.SELF_ATTD_APPRV_YN
+	    , UPDATE_NO          = NEW.UPDATE_NO
 	    , UPDATE_DATE        = CURRENT_TIMESTAMP
     </update>
     
-    <select id="selectNodeCnt" parameterType="com.prafta.web.baim.baim06.dto.SiteNodeDelete" resultType="int">
+    <select id="selectNodeCnt" parameterType="com.prafta.web.baim.baim06.application.query.SiteNodeCountQuery" resultType="int">
 	/* Baim06Mapper.selectNodeCnt */
 	WITH RECURSIVE NODE_TREE AS (
 	    -- 1) 시작 노드의 "직계 자식"부터 가져오기
@@ -96,9 +100,9 @@
 	        , 1 AS depth
 	        , A.NODE_CD AS path
 	    FROM TB_SITE_NODE A
-	    WHERE A.CMPNY_CD = #{token.gv_cmpnyCd}
-	      AND A.SITE_CD  = #{param.siteCd}
-	      AND A.NODE_CD = #{param.nodeCd}
+	    WHERE A.CMPNY_CD = #{gvCmpnyCd}
+	      AND A.SITE_CD  = #{siteCd}
+	      AND A.NODE_CD = #{nodeCd}
 	      
 	
 	    UNION ALL
@@ -120,30 +124,168 @@
 	ORDER BY DEPTH, NODE_CD
 	</select>
     
-    <delete id="deleteSiteNode" parameterType="com.prafta.web.baim.baim06.dto.SiteNodeDelete">
+    <delete id="deleteSiteNode" parameterType="com.prafta.web.baim.baim06.application.command.SiteNodeCommand">
     /* Baim06Mapper.deleteSiteNode */
     DELETE FROM TB_SITE_NODE
-    WHERE CMPNY_CD = #{token.gv_cmpnyCd}
-      AND SITE_CD = #{param.siteCd}
-      AND NODE_CD = #{param.nodeCd}
+    WHERE CMPNY_CD = #{gvCmpnyCd}
+      AND SITE_CD = #{siteCd}
+      AND NODE_CD = #{nodeCd}
     </delete>
     
-    <delete id="deleteSiteAllNode" parameterType="com.prafta.web.baim.baim06.dto.SiteNodeDelete">
+    <delete id="deleteSiteNodeInUser" parameterType="com.prafta.web.baim.baim06.application.command.SiteNodeCommand">
+    /* Baim06Mapper.deleteSiteNodeInUser */
+    UPDATE TB_USER A
+    SET A.NODE_CD = ''
+    	, A.UPDATE_NO = #{gvUserCd}
+    	, A.UPDATE_DATE = NOW()
+	WHERE A.CMPNY_CD = #{gvCmpnyCd}
+	  AND A.SITE_CD = #{siteCd}
+	  AND NOT EXISTS (
+		SELECT 1
+	    FROM TB_SITE_NODE N
+	    WHERE N.CMPNY_CD = A.CMPNY_CD
+	      AND N.SITE_CD = A.SITE_CD
+	      AND N.NODE_CD = A.NODE_CD
+	      AND N.NODE_CD = 'n1'
+	      AND (N.MAIN_ADMIN_CD = A.USER_ID OR N.SUB_ADMIN_CD = A.USER_CD)
+	  )
+    </delete>
+    
+    <delete id="deleteSiteAllNode" parameterType="com.prafta.web.baim.baim06.application.command.SiteNodeCommand">
     /* Baim06Mapper.deleteSiteAllNode */
     DELETE FROM TB_SITE_NODE
-    WHERE CMPNY_CD = #{token.gv_cmpnyCd}
+    WHERE CMPNY_CD = #{gvCmpnyCd}
       AND NODE_CD != 'n1'
-      AND SITE_CD = #{param.siteCd}
+      AND SITE_CD = #{siteCd}
     </delete>
     
-    <insert id="copySiteNode" parameterType="com.prafta.web.baim.baim06.dto.CopySiteNodeSave">
+    <insert id="copySiteNode" parameterType="com.prafta.web.baim.baim06.application.command.CopySiteNodeCommand">
     /* Baim06Mapper.copySiteNode */
-    INSERT INTO TB_SITE_NODE (CMPNY_CD, SITE_CD, NODE_CD, NODE_NM, NODE_TYPE, PARENT_NODE_CD, SELF_ATTD_APPRV_YN, INSERT_NO, INSERT_DATE, UPDATE_NO, UPDATE_DATE)
+    INSERT INTO TB_SITE_NODE (
+		CMPNY_CD
+		, SITE_CD
+		, NODE_CD
+		, NODE_NM
+		, NODE_TYPE
+		, PARENT_NODE_CD
+		, SELF_ATTD_APPRV_YN
+		, INSERT_NO
+		, INSERT_DATE
+		, UPDATE_NO
+		, UPDATE_DATE
+	)
 	SELECT 
-		CMPNY_CD, #{param.siteCd}, NODE_CD, NODE_NM, NODE_TYPE, PARENT_NODE_CD, SELF_ATTD_APPRV_YN, #{token.gv_userId}, NOW(), #{token.gv_userId}, NOW()
+		CMPNY_CD
+		, #{siteCd}
+		, NODE_CD
+		, NODE_NM
+		, NODE_TYPE
+		, PARENT_NODE_CD
+		, SELF_ATTD_APPRV_YN
+		, #{gvUserCd}
+		, NOW()
+		, #{gvUserCd}
+		, NOW()
 	FROM TB_SITE_NODE
-	WHERE CMPNY_CD = #{token.gv_cmpnyCd}
-	  AND SITE_CD = #{param.targetSiteCd}
+	WHERE CMPNY_CD = #{gvCmpnyCd}
+	  AND SITE_CD = #{targetSiteCd}
 	  AND NODE_CD != 'n1'
     </insert>
+    
+    <update id="deleteSiteNodeMainAdmin" parameterType="com.prafta.web.baim.baim06.dto.SiteNodeAdminCommand">
+    /* Baim06Mapper.deleteSiteNodeMainAdmin */
+    UPDATE TB_SITE_NODE
+    SET MAIN_ADMIN_CD = ''
+        , UPDATE_NO = #{gvUserCd}
+        , UPDATE_DATE = NOW()
+    WHERE CMPNY_CD = #{gvCmpnyCd}
+      AND MAIN_ADMIN_CD = #{userCd}
+    </update>
+    
+    <update id="deleteSiteNodeSubAdmin" parameterType="com.prafta.web.baim.baim06.dto.SiteNodeAdminCommand">
+    /* Baim06Mapper.deleteSiteNodeSubAdmin */
+    UPDATE TB_SITE_NODE
+    SET SUB_ADMIN_CD = ''
+        , UPDATE_NO = #{gvUserCd}
+        , UPDATE_DATE = NOW()
+    WHERE CMPNY_CD = #{gvCmpnyCd}
+      AND SUB_ADMIN_CD = #{userCd}
+    </update>
+    
+    <update id="saveSiteNodeMainAdmin" parameterType="com.prafta.web.baim.baim06.dto.SiteNodeAdminCommand">
+    /* Baim06Mapper.saveSiteNodeMainAdmin */
+    UPDATE TB_SITE_NODE
+    SET MAIN_ADMIN_CD = #{userCd}
+        , UPDATE_NO = #{gvUserCd}
+        , UPDATE_DATE = NOW()
+    WHERE CMPNY_CD = #{gvCmpnyCd}
+      AND SITE_CD = #{siteCd}
+      AND NODE_CD = #{nodeCd}
+    </update>
+    
+    <update id="saveSiteNodeSubAdmin" parameterType="com.prafta.web.baim.baim06.dto.SiteNodeAdminCommand">
+    /* Baim06Mapper.saveSiteNodeSubAdmin */
+    UPDATE TB_SITE_NODE
+    SET SUB_ADMIN_CD = #{userCd}
+    	, UPDATE_NO = #{gvUserCd}
+        , UPDATE_DATE = NOW()
+    WHERE CMPNY_CD = #{gvCmpnyCd}
+      AND SITE_CD = #{siteCd}
+      AND NODE_CD = #{nodeCd}
+    </update>
+    
+    <update id="updateUserNode" parameterType="com.prafta.web.baim.baim06.dto.SiteNodeAdminCommand">
+    /* Baim06Mapper.updateUserNode */
+    UPDATE TB_USER
+    SET NODE_CD = #{nodeCd}
+        , UPDATE_NO = #{gvUserCd}
+        , UPDATE_DATE = NOW()
+    WHERE CMPNY_CD = #{gvCmpnyCd}
+      AND USER_CD = #{userCd}
+    </update>
+    
+    <select id="selectSiteNodeInAdmin" parameterType="com.prafta.web.baim.baim06.application.query.SiteNodeAdminQuery" resultType="int">
+	/* Baim06Mapper.selectSiteNodeInAdmin */
+	SELECT COUNT(*)
+	FROM TB_SITE_NODE A
+	     INNER JOIN TB_USER B
+			ON (
+				A.CMPNY_CD = B.CMPNY_CD
+			AND A.NODE_CD = B.NODE_CD
+	        AND B.USER_CD = #{userCd}
+	        AND B.USE_YN = 'Y'
+	        AND (
+					(
+	                    NULLIF(TRIM(A.MAIN_ADMIN_CD), '') IS NOT NULL AND A.MAIN_ADMIN_CD != #{userCd}
+					) 
+	                 OR (
+	 					NULLIF(TRIM(A.SUB_ADMIN_CD), '') IS NOT NULL AND A.SUB_ADMIN_CD != #{userCd}
+	                 )
+				)
+	        )
+	WHERE A.CMPNY_CD = #{gvCmpnyCd}
+	  AND A.SITE_CD = #{siteCd}
+	</select>
+	
+	<select id="selectSiteNodeInUser" parameterType="com.prafta.web.baim.baim06.application.query.SiteNodeUserQuery" resultType="int">
+	/* Baim06Mapper.selectSiteNodeInUser */
+	SELECT COUNT(*)
+	FROM TB_USER A
+	WHERE A.CMPNY_CD = #{gvCmpnyCd}
+	  AND A.USE_YN = 'Y'
+	  AND A.SITE_CD = #{siteCd}
+	  AND A.NODE_CD = #{nodeCd}
+	  AND A.USER_CD != #{userCd}
+	</select>
+	
+	<select id="selectUserNodeInfo" parameterType="com.prafta.web.baim.baim06.application.query.UserNodeInfoQuery" resultType="com.prafta.web.baim.baim06.vo.UserNodeInfo">
+	/* Baim06Mapper.selectUserNodeInfo */	
+	SELECT 
+		A.SITE_CD		AS siteCd
+		, A.NODE_CD		AS nodeCd
+	FROM TB_USER A
+	WHERE A.CMPNY_CD = #{gvCmpnyCd}
+	  AND A.SITE_CD = #{siteCd}
+	  AND A.USER_CD = #{userCd}
+	</select>
 </mapper>

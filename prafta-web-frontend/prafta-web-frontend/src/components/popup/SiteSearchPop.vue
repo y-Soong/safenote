@@ -64,23 +64,23 @@
                 <template v-else>
                   <tr
                     v-for="site in siteList"
-                    :key="site.SITE_CD"
+                    :key="site.siteCd"
                     @dblclick="
-                      fnSelectRow(site.SITE_CD, site.SITE_NO, site.SITE_NM)
+                      fnSelectRow(site.siteCd, site.siteNo, site.siteNm)
                     "
                   >
-                    <td style="display: none">{{ site.SITE_CD }}</td>
-                    <td>{{ site.SITE_NO }}</td>
-                    <td>{{ site.SITE_NM }}</td>
-                    <td>{{ site.SITE_ADMIN_ID }}</td>
+                    <td style="display: none">{{ site.siteCd }}</td>
+                    <td>{{ site.siteNo }}</td>
+                    <td>{{ site.siteNm }}</td>
+                    <td>{{ site.siteAdminNm }}</td>
                     <td>
                       {{
-                        proxy.$util.isNotEmpty(site.TEL_NO)
-                          ? proxy.$util.formatPhoneNumber(site.TEL_NO)
-                          : site.TEL_NO
+                        proxy.$util.isNotEmpty(site.telNo)
+                          ? proxy.$util.formatPhoneNumber(site.telNo)
+                          : site.telNo
                       }}
                     </td>
-                    <td>{{ site.ADDR_1 || site.ADDR_2 }}</td>
+                    <td>{{ site.addr1 || site.addr2 }}</td>
                   </tr>
                 </template>
               </tbody>
@@ -141,24 +141,22 @@ const fnSearch = async () => {
   siteList.value = [];
   try {
     if (!proxy.$util.isEmpty(cmpnyCd.value)) {
-      const response = await axios.post("/comApi/baseinfo/getSiteInfoList", {
-        cmpnyCd: cmpnyCd.value,
-        siteNo: siteNo.value,
-        siteNm: siteNm.value,
-        userId: sessionStorage.getItem("gv_userId"),
+      const response = await axios.get("/comApi/baseinfo/site-lists", {
+        params: {
+          cmpnyCd: cmpnyCd.value,
+          siteNo: siteNo.value,
+          siteNm: siteNm.value,
+        },
       });
 
       if (response.status === 200) {
-        console.log(response.data);
-        console.log(props.siteNo_n_p);
+        const resData = response.data?.siteInfoResultList || [];
 
         if (proxy.$util.isEmpty(props.siteNo_n_p)) {
-          siteList.value = response.data;
+          siteList.value = resData;
         } else {
-          siteList.value = response.data.filter((item) => {
-            console.log("item.SITE_NO :: ");
-            console.log(item.SITE_NO);
-            if (item.SITE_NO != props.siteNo_n_p) {
+          siteList.value = resData.filter((item) => {
+            if (item.siteNo != props.siteNo_n_p) {
               return true;
             } else {
               return false;
@@ -173,7 +171,7 @@ const fnSearch = async () => {
 };
 
 function fnSelectRow(siteCd, siteNo, siteNm) {
-  // emit("select", siteCd, siteNo, siteNm); // SITE_CD 부모에 전달
+  // emit("select", siteCd, siteNo, siteNm); // siteCd 부모에 전달
   props.onSelect(siteCd, siteNo, siteNm);
   emit("close"); // 팝업 닫기
 }

@@ -17,10 +17,11 @@ import com.prafta.app.risk.risk01.service.AppRisk01Service;
 import com.prafta.app.risk.risk01.vo.RiskCategory;
 import com.prafta.app.risk.risk01.vo.RiskHazard;
 import com.prafta.app.risk.risk01.vo.RiskType;
-import com.prafta.common.cmm.file.dto.FileInfoSave;
+import com.prafta.common.cmm.file.application.command.FileInfoCommand;
 import com.prafta.common.cmm.file.mapper.FileMapper;
 import com.prafta.common.cmm.file.service.FileService;
-import com.prafta.common.exception.risk.RiskApiException;
+import com.prafta.common.error.common.CommonErrorCode;
+import com.prafta.common.exception.ApiException;
 
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -76,20 +77,18 @@ public class AppRisk01ServiceImpl implements AppRisk01Service {
     		String fileMgmtCd = "";
     		if (file != null && !file.isEmpty()) {
     			
-    			FileInfoSave baseQuery = FileInfoSave.builder()
+    			FileInfoCommand baseQuery = FileInfoCommand.builder()
                         .cmpnyCd(tokenInfo.get("gv_cmpnyCd").toString())
-                        .userId(tokenInfo.get("gv_userId").toString())
+                        .userId(tokenInfo.get("gv_userCd").toString())
                         .siteCd(request.getSiteCd())
                         .fileType("002")     	// 002: 위험성평가
                         .itemCd("")      // 1번은 itemCd=inspectItemCd 였고, 2번은 riskId 같은 업무키를 넣는 걸 추천
                         .fileName("")
                         .build();
-    			
-    			System.out.println("baseQuery :: " + baseQuery);
-    			
+    			    			
     			fileMgmtCd = fileMapper.selectFileMgmtCd(baseQuery);
     			
-    			FileInfoSave queryWithKey = baseQuery.toBuilder()
+    			FileInfoCommand queryWithKey = baseQuery.toBuilder()
                         .fileMgmtCd(fileMgmtCd)
                         .build();
     			
@@ -113,7 +112,7 @@ public class AppRisk01ServiceImpl implements AppRisk01Service {
     		
     		appRisk01Mapper.mergeRiskAssessment(riskHazardInfoSave, tokenInfo);
     	} catch (Exception e) {
-    		throw new RiskApiException(e.getMessage());
+    		throw new ApiException(CommonErrorCode.COMMON_500_001);
     	}
     }
 
@@ -172,7 +171,7 @@ public class AppRisk01ServiceImpl implements AppRisk01Service {
 //            
 //            // items 를 돌면서 "건별"로 fileMgmtCd 생성 + FileService 호출
 //            for (FileInfo it : items) {
-//            	String userId = tokenInfo.get("gv_userId").toString();  // or request.getUserCd()
+//            	String userId = tokenInfo.get("gv_userCd").toString();  // or request.getUserCd()
 //            	String fileMgmtCd = "";
 //            	String answerDesc = "";									// 점검답변
 //            	answerDesc = it.getAnswerDesc();

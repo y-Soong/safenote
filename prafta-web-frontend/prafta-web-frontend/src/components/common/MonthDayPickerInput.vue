@@ -101,10 +101,7 @@ const closePopover = () => {
 const onDocClick = (e) => {
   const wrap = wrapRef.value;
   const popover = popoverRef.value;
-  if (
-    wrap?.contains?.(e.target) ||
-    popover?.contains?.(e.target)
-  ) {
+  if (wrap?.contains?.(e.target) || popover?.contains?.(e.target)) {
     return;
   }
   closePopover();
@@ -136,11 +133,15 @@ watch(open, (v) => {
     document.addEventListener("click", onDocClick, true);
     window.addEventListener("scroll", onScroll, true);
     scrollParents.value = getScrollParents(wrapRef.value);
-    scrollParents.value.forEach((el) => el.addEventListener("scroll", onScroll, true));
+    scrollParents.value.forEach((el) =>
+      el.addEventListener("scroll", onScroll, true)
+    );
   } else {
     document.removeEventListener("click", onDocClick, true);
     window.removeEventListener("scroll", onScroll, true);
-    scrollParents.value.forEach((el) => el.removeEventListener("scroll", onScroll, true));
+    scrollParents.value.forEach((el) =>
+      el.removeEventListener("scroll", onScroll, true)
+    );
     scrollParents.value = [];
   }
 });
@@ -148,7 +149,9 @@ watch(open, (v) => {
 onBeforeUnmount(() => {
   document.removeEventListener("click", onDocClick, true);
   window.removeEventListener("scroll", onScroll, true);
-  scrollParents.value.forEach((el) => el.removeEventListener("scroll", onScroll, true));
+  scrollParents.value.forEach((el) =>
+    el.removeEventListener("scroll", onScroll, true)
+  );
 });
 </script>
 

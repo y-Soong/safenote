@@ -455,6 +455,7 @@
 import { ref, computed, getCurrentInstance, onMounted } from "vue";
 import { useCenteredDraggable } from "@/composables/useCenteredDraggable";
 import axios from "@/api/axios";
+import { getMessage, MSG } from "@/messages";
 import MonthDayPickerInput from "@/components/common/MonthDayPickerInput.vue";
 import CalendarSrch from "@/components/common/CalendarSrch.vue";
 
@@ -568,7 +569,7 @@ const canSave = computed(() => {
 // ================ API Functions ================
 const fnGetSystinfoList = async () => {
   try {
-    const response = await axios.get("/comApi/baseinfo/syst-info-list", {
+    const response = await axios.get("/comApi/baseinfo/syst-info-lists", {
       params: {
         systCodeList: [
           "SYS003",
@@ -678,9 +679,7 @@ const fnGetSystinfoList = async () => {
 const fnSave = async () => {
   if (!canSave.value) return;
 
-  const ok = await proxy.$confirm(
-    "저장 후에는 아래 항목을 제외한 나머지 항목을\n수정할 수 없습니다.\n\n[연차명, 사용여부, 비고, 증빙 안내 문구]\n\n저장하시겠습니까?"
-  );
+  const ok = await proxy.$confirm(getMessage(MSG.LEAVE_SAVE_CONFIRM));
   if (!ok) return;
 
   try {
@@ -785,7 +784,7 @@ const fnSave = async () => {
 
     await axios.post("/webApi/attd03/update-leave-types", payload);
 
-    proxy.$alert("저장되었습니다.");
+    proxy.$alert(getMessage(MSG.SAVE_COMPLETED));
     props.onSearch?.();
     emit("close");
   } catch (err) {

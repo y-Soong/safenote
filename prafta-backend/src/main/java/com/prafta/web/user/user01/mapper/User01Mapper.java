@@ -1,31 +1,46 @@
 package com.prafta.web.user.user01.mapper;
 
 import java.util.List;
-import java.util.Map;
 
 import org.apache.ibatis.annotations.Mapper;
 import org.apache.ibatis.annotations.Param;
 
-import com.prafta.web.user.user01.dto.UserInfoListQry;
-import com.prafta.web.user.user01.dto.UserInfoReq;
-import com.prafta.web.user.user01.dto.UserInfoSave;
-import com.prafta.web.user.user01.dto.UserPasswdSave;
-import com.prafta.web.user.user01.vo.UserInfo;
-import com.prafta.web.user.user01.vo.UserSiteInfo;
+import com.prafta.web.user.user01.application.command.ScheduleWithdrawalCommand;
+import com.prafta.web.user.user01.application.command.UserInfoCommand;
+import com.prafta.web.user.user01.application.command.UserPasswdCommand;
+import com.prafta.web.user.user01.application.command.UserSiteAuthCommand;
+import com.prafta.web.user.user01.application.command.WithdrawMyAccountCommand;
+import com.prafta.web.user.user01.application.query.SiteNodeAdminCandidateListQuery;
+import com.prafta.web.user.user01.application.query.UserInfoListQuery;
+import com.prafta.web.user.user01.application.query.UserNodeAdminCheckQuery;
+import com.prafta.web.user.user01.application.query.UserSiteInfoQuery;
+import com.prafta.web.user.user01.result.UserInfoResult;
+import com.prafta.web.user.user01.result.UserPwResult;
+import com.prafta.web.user.user01.result.UserSiteInfoResult;
 
 @Mapper
 public interface User01Mapper {
-//	List<Map<String, Object>> selectUserInfoList(User01ReqDto dto);
+	int selectUserNodeAdminCheck(UserNodeAdminCheckQuery query);
 	
-	List<UserInfo> selectUserInfoList(@Param(value = "param") UserInfoListQry dto, @Param(value = "token") Map<String, Object> tokenInfo);
+	List<UserInfoResult> selectUserInfoList(UserInfoListQuery query);
 	
-	int updateUserPw(UserPasswdSave dto);
+	int updateUserPw(UserPasswdCommand dto);
+
+	UserPwResult selectUserPwByUserId(@Param("cmpnyCd") String cmpnyCd, @Param("userCd") String userCd);
+
+	int updateMyPw(UserPasswdCommand command);
+
+	int withdrawMyAccount(WithdrawMyAccountCommand command);
+
+	int scheduleWithdrawal(ScheduleWithdrawalCommand command);
 	
-	UserSiteInfo selectUserSiteInfo(@Param(value = "param") UserInfoSave dto);
+	UserSiteInfoResult selectUserSiteInfo(UserSiteInfoQuery query);
 	
-	void mergeUserInfo(@Param(value = "param") UserInfoSave dto, @Param(value = "token") Map<String, Object> tokenInfo);
+	void mergeUserInfo(UserInfoCommand command);
 	
-	void deleteUserSiteAuth(@Param(value = "param") UserInfoSave dto, @Param(value = "token") Map<String, Object> tokenInfo);
+	void deleteUserSiteAuth(UserSiteAuthCommand command);
 	
-	void insertUserSiteAuth(@Param(value = "param") UserInfoSave dto, @Param(value = "token") Map<String, Object> tokenInfo);
+	void insertUserSiteAuth(UserSiteAuthCommand command);
+	
+	List<UserInfoResult> selectSiteNodeAdminCandidateLists(SiteNodeAdminCandidateListQuery query);
 }

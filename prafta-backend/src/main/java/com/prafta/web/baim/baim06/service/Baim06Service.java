@@ -1,21 +1,26 @@
 package com.prafta.web.baim.baim06.service;
 
-import java.util.List;
-import java.util.Map;
-
-import com.prafta.web.baim.baim06.dto.CopySiteNodeReq;
-import com.prafta.web.baim.baim06.dto.SiteNodeListReq;
-import com.prafta.web.baim.baim06.dto.SiteNodeListRes;
-import com.prafta.web.baim.baim06.dto.SiteNodeReq;
+import com.prafta.web.baim.baim06.application.param.CopySiteNodeParam;
+import com.prafta.web.baim.baim06.application.param.SiteNodeAdminParam;
+import com.prafta.web.baim.baim06.application.param.SiteNodeInfoParam;
+import com.prafta.web.baim.baim06.application.param.SiteNodeListParam;
+import com.prafta.web.baim.baim06.application.param.SiteNodeParam;
+import com.prafta.web.baim.baim06.dto.response.SiteNodeListResponse;
 
 public interface Baim06Service {
-	SiteNodeListRes selectSiteNodeList(SiteNodeListReq dto, Map<String, Object> tokenInfo);
+	SiteNodeListResponse selectSiteNodeList(SiteNodeListParam param);
 	
-	void saveSiteNode(List<SiteNodeReq> dtoList, Map<String, Object> tokenInfo);
+	void saveSiteNode(SiteNodeInfoParam param);
 	
-	void deleteSiteNode(SiteNodeReq dto, Map<String, Object> tokenInfo);
+	void deleteSiteNode(SiteNodeParam param);
 	
-	void deleteSiteAllNode(SiteNodeReq dto, Map<String, Object> tokenInfo);
+	void deleteSiteAllNode(SiteNodeParam param);
 	
-	void copySiteNode(CopySiteNodeReq dto, Map<String, Object> tokenInfo);
+	void copySiteNode(CopySiteNodeParam param);
+	
+	void saveSiteNodeMainAdmin(SiteNodeAdminParam param);
+	
+	void saveSiteNodeSubAdmin(SiteNodeAdminParam param);
+	
+	void deleteSiteNodeAdmin(SiteNodeAdminParam param);
 }

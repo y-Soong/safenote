@@ -1,17 +1,16 @@
 package com.prafta.common.aop.auth;
 
-import javax.servlet.http.HttpServletRequest;
-
 import org.aspectj.lang.JoinPoint;
 import org.aspectj.lang.annotation.Aspect;
 import org.aspectj.lang.annotation.Before;
-import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Component;
 
-import com.prafta.common.exception.cmm.CmmApiException;
+import com.prafta.common.error.common.CommonErrorCode;
+import com.prafta.common.exception.ApiException;
 import com.prafta.common.security.JwtUtil;
 
 import io.jsonwebtoken.Claims;
+import jakarta.servlet.http.HttpServletRequest;
 import lombok.RequiredArgsConstructor;
 
 @Aspect
@@ -31,21 +30,17 @@ public class AuthAspect {
         String token = request.getHeader("Authorization");
 
         if (token == null || !token.startsWith("Bearer ")) {
-//            throw new UnauthorizedException("토큰이 없습니다.");
-        	throw new CmmApiException(HttpStatus.UNAUTHORIZED, "유효하지 않은 토큰입니다.");
-            
+        	throw new ApiException(CommonErrorCode.COMMON_400_600);
         }
 
         String pureToken = token.substring(7);
 
         if (!jwtUtil.validateToken(pureToken)) {
-//            throw new UnauthorizedException("유효하지 않은 토큰입니다.");
-        	System.out.println("유효하지 않은 토큰입니다 !!!");
-        	throw new CmmApiException(HttpStatus.UNAUTHORIZED, "유효하지 않은 토큰입니다.");
+        	throw new ApiException(CommonErrorCode.COMMON_400_600);
         }
 
         // 필요하면 Claims 활용 가능
         Claims claims = jwtUtil.parseToken(pureToken);
-        // claims.get("gv_userId", String.class) 같은 식으로 사용 가능
+        // claims.get("gv_userCd", String.class) 같은 식으로 사용 가능
     }
 }

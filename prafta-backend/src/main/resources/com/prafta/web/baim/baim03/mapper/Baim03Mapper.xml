@@ -2,7 +2,7 @@
 <!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
 <mapper namespace="com.prafta.web.baim.baim03.mapper.Baim03Mapper">
 
-    <select id="selectTermsList" parameterType="com.prafta.web.baim.baim03.dto.TermsInfoListQry" resultType="com.prafta.web.baim.baim03.vo.TermsInfo">
+    <select id="selectTermsList" parameterType="com.prafta.web.baim.baim03.application.query.TermsInfoListQuery" resultType="com.prafta.web.baim.baim03.result.TermsInfoResult">
     /* Baim03Mapper.selectTermsList */
 	SELECT 
 		B.SYST_VAL_D_CD 				AS termsId
@@ -22,15 +22,15 @@
 	WHERE 1=1
 	  AND A.SYST_VAL_CD = 'SYS008'								/* 시스템코드 - 이용약관 */
 	  AND A.USE_YN = 'Y'
-	  <if test="param.termsNm != null and param.termsNm != ''">
-	  	AND B.SYST_VAL_D_NM = #{param.termsNm}
+	  <if test="termsNm != null and termsNm != ''">
+	  	AND B.SYST_VAL_D_NM = #{termsNm}
 	  </if>
-	  <if test="param.termsId != null and param.termsId != ''">
-	  	AND B.SYST_VAL_D_CD = #{param.termsId}
+	  <if test="termsId != null and termsId != ''">
+	  	AND B.SYST_VAL_D_CD = #{termsId}
 	  </if>
 	</select>
 
-    <select id="selectTermsDList" parameterType="com.prafta.web.baim.baim03.dto.TermsDetailInfoListQry" resultType="com.prafta.web.baim.baim03.vo.TermsDetailInfo">
+    <select id="selectTermsDList" parameterType="com.prafta.web.baim.baim03.application.query.TermsDetailInfoListQuery" resultType="com.prafta.web.baim.baim03.result.TermsDetailInfoResult">
     /* Baim03Mapper.selectTermsDList */
 	SELECT
 		A.TERMS_ID 				AS termsId
@@ -46,13 +46,13 @@
 				A.TERMS_ID = B.TERMS_ID
 			)
 	WHERE 1=1
-	  AND A.TERMS_ID = #{param.termsId}
-	  <if test="param.termsVersion != null and param.termsVersion != ''">
-	  	AND B.TERMS_VERSION = #{param.termsVersion}
+	  AND A.TERMS_ID = #{termsId}
+	  <if test="termsVersion != null and termsVersion != ''">
+	  	AND B.TERMS_VERSION = #{termsVersion}
 	  </if>
 	</select>
 		
-	<insert id="mergeTermsInfo" parameterType="com.prafta.web.baim.baim03.dto.TermsInfoSave">
+	<insert id="mergeTermsInfo" parameterType="com.prafta.web.baim.baim03.application.command.TermsInfoCommand">
 	/* Baim02Mapper.mergeTermsInfo */
 	INSERT INTO TB_TERMS (
 		TERMS_ID
@@ -68,30 +68,30 @@
 		, UPDATE_DATE
 	) 
 	VALUES (
-		#{param.termsId}
-		, #{param.termsVersion}
-		, #{param.requiredYn}
-		, <![CDATA[#{param.termsContent}]]>
-		, REPLACE(#{param.strDate}, '-', '')
+		#{termsId}
+		, #{termsVersion}
+		, #{requiredYn}
+		, <![CDATA[#{termsContent}]]>
+		, REPLACE(#{strDate}, '-', '')
 		, 'Y'
-		, <![CDATA[#{param.termsDesc}]]>
-		, #{token.gv_userId}
+		, <![CDATA[#{termsDesc}]]>
+		, #{gvUserCd}
 		, now()
-		, #{token.gv_userId}
+		, #{gvUserCd}
 		, now()
-	)
+	) AS NEW
 	ON DUPLICATE KEY UPDATE
-		TERMS_VERSION			= VALUES(TERMS_VERSION)
-		, REQUIRED_YN			= VALUES(REQUIRED_YN)
-		, TERMS_CONTENT			= VALUES(TERMS_CONTENT)
-		, STR_DATE				= VALUES(STR_DATE)
-		, USE_YN				= VALUES(USE_YN)
-		, TERMS_DESC			= VALUES(TERMS_DESC)
-		, UPDATE_NO   			= #{token.gv_userId}
+		TERMS_VERSION			= NEW.TERMS_VERSION
+		, REQUIRED_YN			= NEW.REQUIRED_YN
+		, TERMS_CONTENT			= NEW.TERMS_CONTENT
+		, STR_DATE				= NEW.STR_DATE
+		, USE_YN				= NEW.USE_YN
+		, TERMS_DESC			= NEW.TERMS_DESC
+		, UPDATE_NO   			= NEW.UPDATE_NO
 	    , UPDATE_DATE 			= NOW()
 	</insert>
 	
-	<insert id="insertTermsIdVersionInfo" parameterType="com.prafta.web.baim.baim03.dto.TermsInfoSave">
+	<insert id="insertTermsIdVersionInfo" parameterType="com.prafta.web.baim.baim03.application.command.TermsInfoCommand">
 	/* Baim02Mapper.insertTermsIdVersionInfo */
 	INSERT INTO TB_TERMS_ID_VERSION (
 		TERMS_ID
@@ -104,13 +104,13 @@
 		, INSERT_DATE
 	)
 	VALUES(
-		#{param.termsId}
-		, #{param.termsVersion}
-		, #{param.requiredYn}
-		, <![CDATA[#{param.termsContent}]]>
-		, REPLACE(#{param.strDate}, '-', '')
-		, #{param.termsDesc}
-		, #{token.gv_userId}
+		#{termsId}
+		, #{termsVersion}
+		, #{requiredYn}
+		, <![CDATA[#{termsContent}]]>
+		, REPLACE(#{strDate}, '-', '')
+		, #{termsDesc}
+		, #{gvUserCd}
 		, now()
 	)
 	</insert>

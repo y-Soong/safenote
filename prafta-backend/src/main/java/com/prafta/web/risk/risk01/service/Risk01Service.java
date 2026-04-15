@@ -1,26 +1,23 @@
 package com.prafta.web.risk.risk01.service;
 
-import java.util.List;
-import java.util.Map;
-
-import com.prafta.web.risk.risk01.dto.RiskHazardListReq;
-import com.prafta.web.risk.risk01.dto.RiskHazardListRes;
-import com.prafta.web.risk.risk01.dto.RiskHazardReq;
-import com.prafta.web.risk.risk01.dto.RiskTypeListReq;
-import com.prafta.web.risk.risk01.dto.RiskTypeListRes;
-import com.prafta.web.risk.risk01.dto.RiskTypeReq;
+import com.prafta.web.risk.risk01.application.param.RiskHazardListParam;
+import com.prafta.web.risk.risk01.application.param.RiskHazardParam;
+import com.prafta.web.risk.risk01.application.param.RiskTypeListParam;
+import com.prafta.web.risk.risk01.application.param.RiskTypeParam;
+import com.prafta.web.risk.risk01.dto.response.RiskHazardListResponse;
+import com.prafta.web.risk.risk01.dto.response.RiskTypeListResponse;
 
 public interface Risk01Service {
 	
-	RiskTypeListRes selectRiskTypeList(RiskTypeListReq dto, Map<String, Object> tokenInfo);
+	RiskTypeListResponse selectRiskTypeList(RiskTypeListParam param);
 	
-	void updateRistType(List<RiskTypeReq> dtoList, Map<String, Object> tokenInfo);
+	void updateRistType(RiskTypeParam param);
 	
-	void deleteRistType(List<RiskTypeReq> dtoList, Map<String, Object> tokenInfo);
+	void deleteRistType(RiskTypeParam param);
 	
-	RiskHazardListRes selectRiskHazardList(RiskHazardListReq dto, Map<String, Object> tokenInfo);
+	RiskHazardListResponse selectRiskHazardList(RiskHazardListParam param);
 	
-	void updateRiskHazard(List<RiskHazardReq> dtoList, Map<String, Object> tokenInfo);
+	void updateRiskHazard(RiskHazardParam param);
 	
-	void deleteRiskHazard(List<RiskHazardReq> dtoList, Map<String, Object> tokenInfo);
+	void deleteRiskHazard(RiskHazardParam param);
 }

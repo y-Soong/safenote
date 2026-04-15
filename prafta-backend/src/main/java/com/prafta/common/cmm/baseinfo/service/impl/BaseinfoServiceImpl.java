@@ -1,213 +1,288 @@
 package com.prafta.common.cmm.baseinfo.service.impl;
 
+import java.security.SecureRandom;
 import java.util.List;
 import java.util.Map;
 
 import org.springframework.stereotype.Service;
 
-import com.prafta.common.cmm.baseinfo.dto.BaseInfoListQuery;
-import com.prafta.common.cmm.baseinfo.dto.BaseInfoListReq;
-import com.prafta.common.cmm.baseinfo.dto.BaseInfoListRes;
-import com.prafta.common.cmm.baseinfo.dto.BaseInfoQry;
-import com.prafta.common.cmm.baseinfo.dto.BaseInfoReq;
-import com.prafta.common.cmm.baseinfo.dto.BaseInfoRes;
-import com.prafta.common.cmm.baseinfo.dto.BaseinfoCmmReq;
-import com.prafta.common.cmm.baseinfo.dto.MenuListQry;
-import com.prafta.common.cmm.baseinfo.dto.MenuListReq;
-import com.prafta.common.cmm.baseinfo.dto.MenuListRes;
-import com.prafta.common.cmm.baseinfo.dto.SiteNodeListQry;
-import com.prafta.common.cmm.baseinfo.dto.SiteNodeListReq;
-import com.prafta.common.cmm.baseinfo.dto.SiteNodeListRes;
-import com.prafta.common.cmm.baseinfo.dto.SystInfoListQuery;
-import com.prafta.common.cmm.baseinfo.dto.SystInfoListReq;
-import com.prafta.common.cmm.baseinfo.dto.SystInfoListRes;
-import com.prafta.common.cmm.baseinfo.dto.SystInfoQry;
-import com.prafta.common.cmm.baseinfo.dto.SystInfoReq;
-import com.prafta.common.cmm.baseinfo.dto.SystInfoRes;
+import com.prafta.common.cmm.baseinfo.application.command.MblUniqueCheckCommand;
+import com.prafta.common.cmm.baseinfo.application.command.SmsAuthNoCommand;
+import com.prafta.common.cmm.baseinfo.application.param.AppMenuListParam;
+import com.prafta.common.cmm.baseinfo.application.param.BaseInfoListParam;
+import com.prafta.common.cmm.baseinfo.application.param.BaseInfoParam;
+import com.prafta.common.cmm.baseinfo.application.param.CmpnyInfoParam;
+import com.prafta.common.cmm.baseinfo.application.param.MenuListParam;
+import com.prafta.common.cmm.baseinfo.application.param.SiteInfoParam;
+import com.prafta.common.cmm.baseinfo.application.param.SiteNodeListParam;
+import com.prafta.common.cmm.baseinfo.application.param.SystInfoListParam;
+import com.prafta.common.cmm.baseinfo.application.param.SystInfoParam;
+import com.prafta.common.cmm.baseinfo.application.param.TermsDetailInfoParam;
+import com.prafta.common.cmm.baseinfo.application.param.UserIdDupleCheckParam;
+import com.prafta.common.cmm.baseinfo.application.param.UserIdInfoParam;
+import com.prafta.common.cmm.baseinfo.application.param.UserSmsAuthNoCheckParam;
+import com.prafta.common.cmm.baseinfo.application.param.UserSmsAuthNoParam;
+import com.prafta.common.cmm.baseinfo.application.param.WebMenuListParam;
+import com.prafta.common.cmm.baseinfo.application.query.AppMenuListQuery;
+import com.prafta.common.cmm.baseinfo.application.query.BaseInfoListQuery;
+import com.prafta.common.cmm.baseinfo.application.query.BaseInfoQuery;
+import com.prafta.common.cmm.baseinfo.application.query.CmpnyInfoQuery;
+import com.prafta.common.cmm.baseinfo.application.query.MblUniqueCheckQuery;
+import com.prafta.common.cmm.baseinfo.application.query.MenuListQuery;
+import com.prafta.common.cmm.baseinfo.application.query.SiteInfoQuery;
+import com.prafta.common.cmm.baseinfo.application.query.SiteNodeListQuery;
+import com.prafta.common.cmm.baseinfo.application.query.SystInfoListQuery;
+import com.prafta.common.cmm.baseinfo.application.query.SystInfoQuery;
+import com.prafta.common.cmm.baseinfo.application.query.TermsDetailInfoQuery;
+import com.prafta.common.cmm.baseinfo.application.query.UserIdDupleCheckQuery;
+import com.prafta.common.cmm.baseinfo.application.query.UserSmsAuthNoCheckQuery;
+import com.prafta.common.cmm.baseinfo.application.query.WebMenuListQuery;
+import com.prafta.common.cmm.baseinfo.dto.response.AppMenuListResponse;
+import com.prafta.common.cmm.baseinfo.dto.response.BaseInfoListResponse;
+import com.prafta.common.cmm.baseinfo.dto.response.BaseInfoResponse;
+import com.prafta.common.cmm.baseinfo.dto.response.CmpnyInfoResponse;
+import com.prafta.common.cmm.baseinfo.dto.response.MenuListResponse;
+import com.prafta.common.cmm.baseinfo.dto.response.SiteInfoResponse;
+import com.prafta.common.cmm.baseinfo.dto.response.SiteNodeListResponse;
+import com.prafta.common.cmm.baseinfo.dto.response.SystInfoListResponse;
+import com.prafta.common.cmm.baseinfo.dto.response.SystInfoResponse;
+import com.prafta.common.cmm.baseinfo.dto.response.TermsDetailInfoResponse;
+import com.prafta.common.cmm.baseinfo.dto.response.UserIdDupleCheckResponse;
+import com.prafta.common.cmm.baseinfo.dto.response.UserIdInfoResponse;
+import com.prafta.common.cmm.baseinfo.dto.response.WebMenuListResponse;
 import com.prafta.common.cmm.baseinfo.mapper.BaseinfoMapper;
+import com.prafta.common.cmm.baseinfo.result.AppMenuResult;
+import com.prafta.common.cmm.baseinfo.result.BaseInfoResult;
+import com.prafta.common.cmm.baseinfo.result.CmpnyInfoResult;
+import com.prafta.common.cmm.baseinfo.result.MenuInfoResult;
+import com.prafta.common.cmm.baseinfo.result.SiteInfoResult;
+import com.prafta.common.cmm.baseinfo.result.SiteNodeInfoResult;
+import com.prafta.common.cmm.baseinfo.result.SystInfoResult;
+import com.prafta.common.cmm.baseinfo.result.TermsDetailInfoResult;
+import com.prafta.common.cmm.baseinfo.result.WebMenuResult;
 import com.prafta.common.cmm.baseinfo.service.BaseinfoService;
-import com.prafta.common.cmm.baseinfo.vo.BaseInfo;
-import com.prafta.common.cmm.baseinfo.vo.MenuInfo;
-import com.prafta.common.cmm.baseinfo.vo.SiteNodeInfo;
-import com.prafta.common.cmm.baseinfo.vo.SystInfo;
-import com.prafta.common.exception.cmm.CmmApiException;
+import com.prafta.common.error.common.CommonErrorCode;
+import com.prafta.common.exception.ApiException;
+import com.prafta.common.security.crypto.AesGcmCrypto;
+import com.prafta.common.security.crypto.HmacSigner;
+import com.prafta.common.security.normalize.Normalizers;
 import com.prafta.common.util.MenuListResBuilder;
-import com.prafta.common.util.PasswordHashing;
+import com.prafta.common.util.PasswordHasher;
 
+import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 
 @Slf4j
 @Service
+@RequiredArgsConstructor
 public class BaseinfoServiceImpl implements BaseinfoService{
+	
 	private final BaseinfoMapper baseinfoMapper;
+	private final AesGcmCrypto aesGcmCrypto;
+    private final HmacSigner hmacSigner;
+    private final PasswordHasher passwordHasher;
 	
-	public BaseinfoServiceImpl(BaseinfoMapper baseinfoMapper) {
-		this.baseinfoMapper = baseinfoMapper;
-	}
-	
-	public SystInfoListRes selectSystinfoList(SystInfoListReq dto) {
-		
-		SystInfoListQuery reqDto = SystInfoListQuery.builder()
-				.systCodeList(dto.getSystCodeList())
-				.build();
+	public SystInfoListResponse selectSystinfoList(SystInfoListParam param) {
 
-		SystInfoListRes retDto = null;
+		SystInfoListResponse response = null;
 		
-		List<SystInfo> systInfoList = baseinfoMapper.selectSystinfoList(reqDto); 
+		List<SystInfoResult> systInfoList = baseinfoMapper.selectSystinfoList(SystInfoListQuery.from(param)); 
 		
 		if(systInfoList.size() > 0) {
-			retDto = SystInfoListRes.builder()
+			response = SystInfoListResponse.builder()
 					.systInfoList(systInfoList)
 					.build();
 		}
 		
-		return retDto;
+		return response;
 	}
 	
-	public SystInfoRes selectSystinfo(SystInfoReq dto) {
-		SystInfoQry reqDto = SystInfoQry.builder()
-			.codeD(dto.getCodeD())
-			.nameD(dto.getNameD())
-			.code(dto.getCode())
-			.build();
+	public SystInfoResponse selectSystinfo(SystInfoParam param) {
 		
-		SystInfoRes retDto = null;
+		SystInfoResponse response = null;
 		
-		List<SystInfo> systInfoList = baseinfoMapper.selectSystinfo(reqDto); 
+		List<SystInfoResult> systInfoList = baseinfoMapper.selectSystinfo(SystInfoQuery.from(param)); 
 		
 		if(systInfoList.size() > 0) {
-			retDto = SystInfoRes.builder()
+			response = SystInfoResponse.builder()
 					.systInfoList(systInfoList)
 					.build();
 		}
 		
-		return retDto;
+		return response;
 	}
 	
-	public BaseInfoListRes selectBaseinfoList(BaseInfoListReq dto) {
+	public BaseInfoListResponse selectBaseinfoList(BaseInfoListParam param) {
 		
-		BaseInfoListQuery reqDto = BaseInfoListQuery.builder()
-									.baseCodeList(dto.getBaseCodeList())
-									.cmpnyCd(dto.getCmpnyCd())
-									.build();
+		BaseInfoListResponse response = null;
 		
-		BaseInfoListRes retDto = null;
-		
-		List<BaseInfo> baseInfoList = baseinfoMapper.selectBaseinfoList(reqDto); 
+		List<BaseInfoResult> baseInfoList = baseinfoMapper.selectBaseinfoList(BaseInfoListQuery.from(param)); 
 		
 		if(baseInfoList.size() > 0) {
-			retDto = BaseInfoListRes.builder()
+			response = BaseInfoListResponse.builder()
 					.baseInfoList(baseInfoList)
 					.build();
 		}
 		
-		return retDto;
+		return response;
 	}
 	
-	public BaseInfoRes selectBaseinfo(BaseInfoReq dto, Map<String, Object> tokenInfo) {
-		BaseInfoQry reqDto = BaseInfoQry.builder()
-			.codeD(dto.getCodeD())
-			.nameD(dto.getNameD())
-			.code(dto.getCode())
-			.build();
+	public BaseInfoResponse selectBaseinfo(BaseInfoParam param) {		
+		BaseInfoResponse response = null;
 		
-		BaseInfoRes retDto = null;
-		
-		List<BaseInfo> baseInfoList = baseinfoMapper.selectBaseinfo(reqDto, tokenInfo); 
+		List<BaseInfoResult> baseInfoList = baseinfoMapper.selectBaseinfo(BaseInfoQuery.from(param)); 
 		
 		if(baseInfoList.size() > 0) {
-			retDto = BaseInfoRes.builder()
+			response = BaseInfoResponse.builder()
 					.baseInfoList(baseInfoList)
 					.build();
 		}
 		
-		return retDto;
+		return response;
 	}
 	
-	public Map<String, Object> selectCmpnyInfo(BaseinfoCmmReq dto) {
-		return baseinfoMapper.selectCmpnyInfo(dto);
-	}
-	
-	public Map<String, Object> selectUserIdDupleChk(BaseinfoCmmReq dto) {
-		return baseinfoMapper.selectUserIdDupleChk(dto);
-	}
-	
-	public void insertSmsAuthReq(BaseinfoCmmReq dto) {
-		if(
-			dto.getDupChkYn() != null && dto.getDupChkYn() != "" && dto.getDupChkYn().equals("Y")
-		) {
-			int mblCnt = baseinfoMapper.selectMblUniqChk(dto);
-			
-			if(mblCnt > 0) {
-				throw new CmmApiException("이미 등록된 휴대폰번호입니다.\n 확인 후 다시 시도해주세요.");
-			}
+	public CmpnyInfoResponse selectCmpnyInfo(CmpnyInfoParam param) {
+		
+		CmpnyInfoResponse response = null;
+		
+		CmpnyInfoResult cmpnyInfoResult = baseinfoMapper.selectCmpnyInfo(CmpnyInfoQuery.from(param));
+		
+		if(cmpnyInfoResult != null) {
+			response = CmpnyInfoResponse.builder()
+													.cmpnyInfoResult(cmpnyInfoResult)
+													.build();
 		}
 		
-		baseinfoMapper.insertSmsAuthReq(dto);
+		return response;
 	}
 	
-	public int updateSmsAuthReq(BaseinfoCmmReq dto) {
-		return baseinfoMapper.updateSmsAuthReq(dto);
-	}
-	
-	public Map<String, Object> selectCertNoSmsId(BaseinfoCmmReq dto) {
-		return baseinfoMapper.selectCertNoSmsId(dto);
-	}
-	
-	public List<Map<String, Object>> selectSiteInfoList(BaseinfoCmmReq dto) {
-		return baseinfoMapper.selectSiteInfoList(dto);
-	}
-	
-	public SiteNodeListRes selectSiteNodeList(SiteNodeListReq dto, Map<String, Object> tokenInfo) {
-		String cmpnyCd;
+	public UserIdDupleCheckResponse getUserIdDupleCheck(UserIdDupleCheckParam param) {
 		
-		if(tokenInfo != null && tokenInfo.get("gv_cmpnyCd") != null && (String) tokenInfo.get("gv_cmpnyCd") != "") {
-			cmpnyCd = (String) tokenInfo.get("gv_cmpnyCd");
-		} else {
-			cmpnyCd = dto.getCmpnyCd();
+		UserIdDupleCheckResponse response = null;
+		
+		String uniqueYn = baseinfoMapper.getUserIdDupleCheck(UserIdDupleCheckQuery.from(param)); 
+		
+		if(uniqueYn != null && uniqueYn != "") {
+			response = UserIdDupleCheckResponse.builder()
+												.uniqueYn(uniqueYn)
+												.build();
 		}
 		
-		SiteNodeListQry reqDto = SiteNodeListQry.builder()
-									.cmpnyCd(cmpnyCd)
-									.siteCd(dto.getSiteCd())
-									.nodeCd(dto.getNodeCd())
-									.nodeType(dto.getNodeType())
-									.nodeNm(dto.getNodeNm())
-									.parentNodeNm(dto.getParentNodeNm())
-									.build();
 		
-		SiteNodeListRes retDto = null;
+		return response;
+	}
+	
+	public void insertSmsAuthNo(UserSmsAuthNoParam param) {
 		
-		List<SiteNodeInfo> siteNodeInfoList = baseinfoMapper.selectSiteNodeList(reqDto, tokenInfo);
+		String phoneNorm = Normalizers.normalizePhone(param.mblNo().replaceAll("-", ""));
+		String phoneEnc = aesGcmCrypto.encrypt(phoneNorm);
+		String phoneHmac = hmacSigner.hmacSha256Base64Url(phoneNorm + ":" + param.cmpnyCd());
+		String certNo = "";
+		
+//		if(
+//			param.dupChkYn() != null && param.dupChkYn() != "" && param.dupChkYn().equals("Y")
+//		) {
+//			int mblCnt = baseinfoMapper.selectMblUniqChk(MblUniqueCheckQuery.from(phoneHmac));
+//			
+//			if(mblCnt > 0) {
+//				throw new ApiException(CommonErrorCode.COMMON_400_001, "이미 등록된 휴대폰번호입니다.\n 확인 후 다시 시도해주세요.");
+//			}
+//		}
+		
+		int mblCnt = baseinfoMapper.selectMblUniqChk(MblUniqueCheckQuery.from(phoneHmac));
+		
+		if(mblCnt > 0) {
+			throw new ApiException(CommonErrorCode.COMMON_400_001, "이미 등록된 휴대폰번호입니다.\n 확인 후 다시 시도해주세요.");
+		}
+		
+		SecureRandom random = new SecureRandom();
+        int code = 100000 + random.nextInt(900000); // 100000 ~ 999999
+        
+        System.out.println("# SMS Send Code :: " + code);
+        
+        certNo = Integer.toString(code);
+		
+		baseinfoMapper.insertSmsAuthNo(SmsAuthNoCommand.from(phoneEnc, phoneHmac, certNo));
+	}
+	
+	public void userSmsAuthCheck(UserSmsAuthNoCheckParam param) {
+		
+		String phoneNorm = Normalizers.normalizePhone(param.mblNo().replaceAll("-", ""));
+		String phoneEnc = aesGcmCrypto.encrypt(phoneNorm);
+		String phoneHmac = hmacSigner.hmacSha256Base64Url(phoneNorm + ":" + param.cmpnyCd()); 
+		
+		String smsId = baseinfoMapper.selectCertNoSmsId(UserSmsAuthNoCheckQuery.from(param, phoneHmac));
+		
+		if(smsId == null || smsId == "") {
+        	throw new ApiException(CommonErrorCode.COMMON_400_002);
+        }
+		
+		baseinfoMapper.updateSmsAuthReq(MblUniqueCheckCommand.from(smsId, smsId, param));
+	}
+	
+	public SiteInfoResponse selectSiteInfoList(SiteInfoParam param) {
+		
+		SiteInfoResponse response = null;
+		
+		List<SiteInfoResult> siteInfoResultList = baseinfoMapper.selectSiteInfoList(SiteInfoQuery.from(param)); 
+		
+		if(siteInfoResultList != null && siteInfoResultList.size() > 0) {
+			response = SiteInfoResponse.builder()
+										.siteInfoResultList(siteInfoResultList)
+										.build();
+		}
+		
+		return response; 
+	}
+	
+	public SiteNodeListResponse selectSiteNodeList(SiteNodeListParam param) {
+		
+		SiteNodeListResponse response = null;
+		
+		List<SiteNodeInfoResult> siteNodeInfoList = baseinfoMapper.selectSiteNodeList(SiteNodeListQuery.from(param));
 		
 		if(siteNodeInfoList != null && siteNodeInfoList.size() > 0) {
-			retDto = SiteNodeListRes.builder()
+			response = SiteNodeListResponse.builder()
 									.siteNodeInfoList(siteNodeInfoList)
 									.build();
 			
 		}
 		
-		return retDto;
+		return response;
 	}
 	
-	public List<Map<String, Object>> selectWebMenuList(BaseinfoCmmReq dto) {
-		return baseinfoMapper.selectWebMenuList(dto);
+	public WebMenuListResponse selectWebMenuList(WebMenuListParam param) {
+		
+		WebMenuListResponse response = null;
+		
+		List<WebMenuResult> webMenuResultList = baseinfoMapper.selectWebMenuList(WebMenuListQuery.from(param));
+		
+		if(webMenuResultList != null && webMenuResultList.size() > 0) {
+			response = WebMenuListResponse.builder()
+											.webMenuResultList(webMenuResultList)
+											.build();
+		}
+		return response;
 	}
 	
-	public List<Map<String, Object>> selectAppMenuList(BaseinfoCmmReq dto) {
-		return baseinfoMapper.selectAppMenuList(dto);
+	public AppMenuListResponse selectAppMenuList(AppMenuListParam param) {
+		AppMenuListResponse response = null;
+		
+		List<AppMenuResult> appMenuResultList = baseinfoMapper.selectAppMenuList(AppMenuListQuery.from(param));
+		
+		if(appMenuResultList != null && appMenuResultList.size() > 0) {
+			response = AppMenuListResponse.builder()
+											.appMenuResultList(appMenuResultList)
+											.build();
+		}
+		return response;
 	}
 	
-	public MenuListRes selectMenuList(MenuListReq dto, Map<String, Object> tokenInfo) {
+	public MenuListResponse selectMenuList(MenuListParam param) {
 		
-		MenuListQry reqDto = MenuListQry.builder()
-										.userId(dto.getUserId())
-										.menuSrc(dto.getMenuSrc())
-										.build();
+		MenuListResponse retDto = null;
 		
-		MenuListRes retDto = null;
-		
-		List<MenuInfo> menuInfoList = baseinfoMapper.selectMenuList(reqDto, tokenInfo);
+		List<MenuInfoResult> menuInfoList = baseinfoMapper.selectMenuList(MenuListQuery.from(param));
 		
 		if(menuInfoList != null && menuInfoList.size() > 0) {
 			
@@ -222,28 +297,42 @@ public class BaseinfoServiceImpl implements BaseinfoService{
 		return retDto;
 	}
 	
-	public Map<String, Object> selectUserIdInfo(BaseinfoCmmReq dto) {
-		Map<String, Object> retMap = baseinfoMapper.selectUserIdInfo(dto);
-		
-		if(retMap == null) {
-			throw new CmmApiException("가입된 계정이 없습니다.\n확인 후 다시 시도해주세요.");
-		}
-		return retMap;
+	// 보류 ( 프로세스 개선 필요 )
+	public UserIdInfoResponse selectUserIdInfo(UserIdInfoParam param) {
+//		String phoneNorm = Normalizers.normalizePhone(param.mblNo());
+//		String phoneEnc = aesGcmCrypto.decrypt(phoneNorm);
+//		
+//		Map<String, Object> retMap = baseinfoMapper.selectUserIdInfo(UserIdInfoQuery.from(param, phoneEnc));
+//		
+//		if(retMap == null) {
+//			throw new ApiException(CommonErrorCode.COMMON_400_003);
+//		}
+//		return retMap;
+		return null;
 	}
 	
-	public void updateUserPw(BaseinfoCmmReq dto) {
+//	public void updateUserPw(BaseinfoCmmReq dto) {
 		/* 암호화처리 */
-		if(dto.getUserPw() != null) { dto.setUserPw(PasswordHashing.hashPassword(dto.getUserPw())); }
-		
-		baseinfoMapper.updateUserPw(dto);
-	}
+//		if(dto.getUserPw() != null) { dto.setUserPw(PasswordHashing.hashPassword(dto.getUserPw())); }
+//		if(dto.getUserPw() != null) { dto.setUserPw(passwordHasher.hash(dto.getUserPw())); }
+//		
+//		baseinfoMapper.updateUserPw(dto);
+//	}
 	
-	public Map<String, Object> selectTermsDInfo(BaseinfoCmmReq dto) {
-		Map<String, Object> retMap = baseinfoMapper.selectTermsDInfo(dto);
+	public TermsDetailInfoResponse selectTermsDetailInfo(TermsDetailInfoParam param) {
 		
-		if(retMap == null) {
-			throw new CmmApiException("조회된 약관 내용이 없습니다.\n확인 후 다시 시도해주세요.");
+		TermsDetailInfoResponse response = null;
+		
+		TermsDetailInfoResult termsDetailInfoResult = baseinfoMapper.selectTermsDetailInfo(TermsDetailInfoQuery.from(param));
+		
+		if(termsDetailInfoResult != null) {
+			response = TermsDetailInfoResponse.builder()
+												.termsDetailInfoResult(termsDetailInfoResult)
+												.build();
+		} else {
+			throw new ApiException(CommonErrorCode.COMMON_400_401);
 		}
-		return retMap;
+		
+		return response;
 	}
 }

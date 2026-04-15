@@ -8,7 +8,7 @@ export async function fnGetMenuList() {
     const response = await axios.get("/comApi/baseinfo/menu-list", {
       params: {
         cmpnyCd: sessionStorage.getItem("gv_cmpnyCd"),
-        userId: sessionStorage.getItem("gv_userId"),
+        userCd: sessionStorage.getItem("gv_userCd"),
         menuSrc: "001",
       },
     });

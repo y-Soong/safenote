@@ -7,8 +7,9 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
 import com.prafta.common.annotation.NoAuth;
-import com.prafta.common.cmm.auth.dto.RefreshReq;
-import com.prafta.common.cmm.auth.dto.RefreshRes;
+import com.prafta.common.cmm.auth.application.param.RefreshParam;
+import com.prafta.common.cmm.auth.dto.request.RefreshRequest;
+import com.prafta.common.cmm.auth.dto.response.RefreshResponse;
 import com.prafta.common.cmm.auth.service.AuthService;
 
 import lombok.RequiredArgsConstructor;
@@ -22,11 +23,11 @@ public class AuthController {
 	private final AuthService authService;
 	
 	@PostMapping("/refresh")
-	public ResponseEntity<?> refresh(@RequestBody RefreshReq dto) {		  
+	public ResponseEntity<?> refresh(@RequestBody RefreshRequest request) {		  
 
-	    String newAccessToken = authService.refreshAccessToken(dto.getRefreshToken());
+		RefreshResponse response = authService.refreshAccessToken(RefreshParam.from(request));
 	    
 	    //return ResponseEntity.ok(new RefreshRes(newAccessToken));
-	    return ResponseEntity.ok(RefreshRes.builder().token(newAccessToken).build());
+	    return ResponseEntity.ok().body(response);
 	}
 }

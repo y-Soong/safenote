@@ -65,6 +65,7 @@ import {
   onMounted,
 } from "vue";
 import { useCenteredDraggable } from "@/composables/useCenteredDraggable";
+import { getMessage, MSG } from "@/messages";
 
 const props = defineProps({
   year_p: { type: Number, default: () => new Date().getFullYear() },
@@ -101,11 +102,11 @@ const fnConfirm = () => {
   const y = Number(yearVal.value);
   const m = Number(monthVal.value);
   if (Number.isNaN(y) || y < 2000 || y > 2100) {
-    proxy.$alert("년도는 2000~2100 사이로 입력해주세요.");
+    proxy.$alert(getMessage(MSG.YEAR_RANGE));
     return;
   }
   if (Number.isNaN(m) || m < 1 || m > 12) {
-    proxy.$alert("월은 1~12 사이로 선택해주세요.");
+    proxy.$alert(getMessage(MSG.MONTH_RANGE));
     return;
   }
   props.onConfirm?.(y, m);

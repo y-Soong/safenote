@@ -21,10 +21,20 @@ export default defineConfig({
   },
   server: {
     port: 8081,
+    host: true, // 0.0.0.0 - 내 IP로 접근 가능하게
     proxy: {
       "/prafta": {
         target: "http://localhost:8080",
         changeOrigin: true,
+        configure: (proxy) => {
+          proxy.on("proxyRes", (proxyRes, req) => {
+            // IP 접근 시 CORS: 요청 Origin으로 응답 헤더 덮어쓰기
+            const origin = req.headers.origin;
+            if (origin && proxyRes.headers["access-control-allow-origin"]) {
+              proxyRes.headers["access-control-allow-origin"] = origin;
+            }
+          });
+        },
       },
     },
   },

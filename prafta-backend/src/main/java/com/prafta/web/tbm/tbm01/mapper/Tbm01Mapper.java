@@ -6,29 +6,30 @@ import java.util.Map;
 import org.apache.ibatis.annotations.Mapper;
 import org.apache.ibatis.annotations.Param;
 
-import com.prafta.web.tbm.tbm01.dto.TbmEduItemInfoListQry;
-import com.prafta.web.tbm.tbm01.dto.TbmEduInfoListQry;
-import com.prafta.web.tbm.tbm01.dto.TbmEduInfoSave;
-import com.prafta.web.tbm.tbm01.dto.TbmEduItemInfoSave;
-import com.prafta.web.tbm.tbm01.vo.TbmEduInfo;
-import com.prafta.web.tbm.tbm01.vo.TbmEduItemInfo;
+import com.prafta.web.tbm.tbm01.application.command.TbmEduInfoCommand;
+import com.prafta.web.tbm.tbm01.application.command.TbmEduItemCommand;
+import com.prafta.web.tbm.tbm01.application.command.TbmEduItemInfoCommand;
+import com.prafta.web.tbm.tbm01.application.query.TbmEduInfoListQuery;
+import com.prafta.web.tbm.tbm01.application.query.TbmEduItemInfoListQuery;
+import com.prafta.web.tbm.tbm01.result.TbmEduInfoResult;
+import com.prafta.web.tbm.tbm01.result.TbmEduItemInfoResult;
 
 @Mapper
 public interface Tbm01Mapper {
 	
-	List<TbmEduInfo> selectTbmEduInfo(@Param(value = "param") TbmEduInfoListQry dto, @Param(value = "token") Map<String, Object> tokenInfo);
+	List<TbmEduInfoResult> selectTbmEduInfo(TbmEduInfoListQuery query);
 	
-	List<TbmEduItemInfo> selectTbmEduItemInfo(@Param(value = "param") TbmEduItemInfoListQry dto, @Param(value = "token") Map<String, Object> tokenInfo);
+	List<TbmEduItemInfoResult> selectTbmEduItemInfo(TbmEduItemInfoListQuery query);
 	
-	String selectMtrlCd(@Param(value = "token") Map<String, Object> tokenInfo);
+	String selectMtrlCd(@Param(value = "gvCmpnyCd") String gvCmpnyCd);
 	
-	String selectMtrlItemCd(@Param(value = "token") Map<String, Object> tokenInfo);
+	String selectMtrlItemCd(@Param(value = "gvCmpnyCd") String gvCmpnyCd);
 	
-	void mergeTbmEduInfo(@Param(value = "param") TbmEduInfoSave dto, @Param(value = "token") Map<String, Object> tokenInfo);
+	void mergeTbmEduInfo(TbmEduInfoCommand command);
 	
-	void mergeTbmEduItemInfo(@Param(value = "param") TbmEduItemInfoSave dto, @Param(value = "token") Map<String, Object> tokenInfo);
+	void mergeTbmEduItemInfo(TbmEduItemInfoCommand command);
 	
-	void deleteTbmEduItemInfo(@Param(value = "param") TbmEduItemInfoSave dto, @Param(value = "token") Map<String, Object> tokenInfo);
+	void deleteTbmEduItemInfo(TbmEduItemCommand command);
 	
-	void deleteTbmEduInfo(@Param(value = "param") TbmEduInfoSave dto, @Param(value = "token") Map<String, Object> tokenInfo);
+	void deleteTbmEduInfo(TbmEduInfoCommand command);
 }

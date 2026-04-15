@@ -1,0 +1,26 @@
+package com.prafta.web.baim.baim02.application.param;
+
+import com.prafta.common.dto.TokenInfo;
+import com.prafta.common.error.common.CommonErrorCode;
+import com.prafta.common.exception.ApiException;
+import com.prafta.web.baim.baim02.dto.request.CompCmmCodeMListRequest;
+
+public record CompCmmCodeMListParam(
+	String codeCd
+	, String codeNm
+	, String gvCmpnyCd
+) {
+	public static CompCmmCodeMListParam from(CompCmmCodeMListRequest request, TokenInfo tokenInfo) {
+		
+		if(request == null)
+			throw ApiException.appendf(CommonErrorCode.COMMON_400_001,"\n필수값 누락 - CompCmmCodeMListRequest");
+		if(tokenInfo == null)
+			throw ApiException.appendf(CommonErrorCode.COMMON_400_001,"\n필수값 누락 - TokenInfo");
+		
+		return new CompCmmCodeMListParam(
+			request.getCodeCd()
+			, request.getCodeNm()
+			,tokenInfo.gv_cmpnyCd()
+		); 
+	}
+}

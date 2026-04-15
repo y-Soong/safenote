@@ -163,51 +163,6 @@ const leaveNm = ref("");
 const leaveType = ref("");
 const useYn = ref("");
 
-// const getMockLeaveList = () => [
-//   {
-//     leaveNo: "LEAVE_ANNUAL",
-//     leaveNm: "연차",
-//     leaveType: "user",
-//     leaveTypeNm: "사용자 신청",
-//     grantTypeNm: "-",
-//     paidTypeNm: "유급",
-//     leaveNatureTypeNm: "법정",
-//     leaveDays: "자동 부여",
-//     useUnitTypeNm: "1",
-//     availTermTypeNm: "해당연도 내",
-//     useYn: "Y",
-//     leaveDesc: "기본 연차",
-//   },
-//   {
-//     leaveNo: "LEAVE_BIRTHDAY",
-//     leaveNm: "생일",
-//     leaveType: "user",
-//     leaveTypeNm: "사용자 신청",
-//     grantTypeNm: "-",
-//     paidTypeNm: "유급",
-//     leaveNatureTypeNm: "특별",
-//     leaveDays: "자동 부여",
-//     useUnitTypeNm: "1",
-//     availTermTypeNm: "해당연도 내",
-//     useYn: "Y",
-//     leaveDesc: "생일 휴가",
-//   },
-//   {
-//     leaveNo: "LEAVE_CONDOLENCE",
-//     leaveNm: "경조사",
-//     leaveType: "admin",
-//     leaveTypeNm: "관리자 부여",
-//     grantTypeNm: "수동 부여",
-//     paidTypeNm: "유급",
-//     leaveNatureTypeNm: "특별",
-//     leaveDays: "-일",
-//     useUnitTypeNm: "-",
-//     availTermTypeNm: "-",
-//     useYn: "Y",
-//     leaveDesc: "경조사 특별휴가",
-//   },
-// ];
-
 const fnButtonControll = () => {
   localButtons.value.search = "Y";
   localButtons.value.create = "Y";
@@ -218,7 +173,7 @@ const fnButtonControll = () => {
 
 const fnGetSystinfoList = async () => {
   try {
-    const response = await axios.get("/comApi/baseinfo/syst-info-list", {
+    const response = await axios.get("/comApi/baseinfo/syst-info-lists", {
       params: { systCodeList: ["SYS003", "SYS021"] },
     });
     if (response.status === 200) {
@@ -253,8 +208,9 @@ const fnSearch = async () => {
         useYn: useYn.value,
       },
     });
-    leaveList.value = response.data?.leaveTypeList ?? [];
-    // leaveList.value = getMockLeaveList();
+    if (response.status === 200) {
+      leaveList.value = response.data?.leaveTypeResultList ?? [];
+    }
   } catch (err) {
     const msg =
       err?.response?.data?.message ||
@@ -275,10 +231,6 @@ const fnOpenEdit = (row) => {
     onSearch: fnSearch,
     editRow: row,
   });
-};
-
-const fnChangeHistOpen = (row) => {
-  proxy.$alert(`${row.leaveNm} 변경이력 기능은 준비 중입니다.`);
 };
 
 onMounted(async () => {

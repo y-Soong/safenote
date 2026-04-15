@@ -1,149 +1,99 @@
 package com.prafta.web.risk.risk01.service.impl;
 
 import java.util.List;
-import java.util.Map;
 
 import org.springframework.stereotype.Service;
 
-import com.prafta.common.exception.risk.RiskApiException;
-import com.prafta.web.risk.risk01.dto.RiskHazardListQry;
-import com.prafta.web.risk.risk01.dto.RiskHazardListReq;
-import com.prafta.web.risk.risk01.dto.RiskHazardListRes;
-import com.prafta.web.risk.risk01.dto.RiskHazardQry;
-import com.prafta.web.risk.risk01.dto.RiskHazardReq;
-import com.prafta.web.risk.risk01.dto.RiskTypeListQry;
-import com.prafta.web.risk.risk01.dto.RiskTypeListReq;
-import com.prafta.web.risk.risk01.dto.RiskTypeListRes;
-import com.prafta.web.risk.risk01.dto.RiskTypeQry;
-import com.prafta.web.risk.risk01.dto.RiskTypeReq;
+import com.prafta.common.error.risk.RiskErrorCode;
+import com.prafta.common.exception.ApiException;
+import com.prafta.web.risk.risk01.application.command.RiskHazardCommand;
+import com.prafta.web.risk.risk01.application.command.RiskTypeCommand;
+import com.prafta.web.risk.risk01.application.model.RiskHazardModel;
+import com.prafta.web.risk.risk01.application.model.RiskTypeModel;
+import com.prafta.web.risk.risk01.application.param.RiskHazardListParam;
+import com.prafta.web.risk.risk01.application.param.RiskHazardParam;
+import com.prafta.web.risk.risk01.application.param.RiskTypeListParam;
+import com.prafta.web.risk.risk01.application.param.RiskTypeParam;
+import com.prafta.web.risk.risk01.application.query.RiskHazardCountQuery;
+import com.prafta.web.risk.risk01.application.query.RiskHazardListQuery;
+import com.prafta.web.risk.risk01.application.query.RiskTypeListQuery;
+import com.prafta.web.risk.risk01.dto.response.RiskHazardListResponse;
+import com.prafta.web.risk.risk01.dto.response.RiskTypeListResponse;
 import com.prafta.web.risk.risk01.mapper.Risk01Mapper;
+import com.prafta.web.risk.risk01.result.RiskHazardResult;
+import com.prafta.web.risk.risk01.result.RiskTypeResult;
 import com.prafta.web.risk.risk01.service.Risk01Service;
-import com.prafta.web.risk.risk01.vo.RiskHazard;
-import com.prafta.web.risk.risk01.vo.RiskType;
 
+import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 
 @Slf4j
 @Service
+@RequiredArgsConstructor
 public class Risk01ServiceImpl implements Risk01Service{
 	private final Risk01Mapper risk01Mapper;
 	
-	public Risk01ServiceImpl(Risk01Mapper risk01Mapper) {
-		this.risk01Mapper = risk01Mapper;
-	}
-	
-	public RiskTypeListRes selectRiskTypeList(RiskTypeListReq dto, Map<String, Object> tokenInfo) {
+	public RiskTypeListResponse selectRiskTypeList(RiskTypeListParam param) {
+
+		RiskTypeListResponse response = null;
 		
-		RiskTypeListQry reqDto = RiskTypeListQry.builder()
-				.processCd(dto.getProcessCd())
-				.siteCd(dto.getSiteCd())
-				.riskTypeNm(dto.getRiskTypeNm())
-				.useYn(dto.getUseYn())
-				.build();
+		List<RiskTypeResult> riskTypeResultList = risk01Mapper.selectRiskTypeList(RiskTypeListQuery.from(param));
 		
-		RiskTypeListRes retDto = null;
-		
-		List<RiskType> riskTypeList = risk01Mapper.selectRiskTypeList(reqDto, tokenInfo);
-		
-		if(riskTypeList.size() > 0) {
-			retDto = RiskTypeListRes.builder()
-					.riskTypeList(riskTypeList)
-					.build();
+		if(riskTypeResultList.size() > 0) {
+			response = RiskTypeListResponse.builder()
+											.riskTypeResultList(riskTypeResultList)
+											.build();
 		}
 		
-		return retDto;
+		return response;
 	}
 
-	public void updateRistType(List<RiskTypeReq> dtoList, Map<String, Object> tokenInfo) {
-		for(RiskTypeReq dto : dtoList) {
+	public void updateRistType(RiskTypeParam param) {
+		for(RiskTypeModel model : param.riskTypeModelList()) {
 			
-			RiskTypeQry reqDto = RiskTypeQry.builder()
-					.cmpnyCd(dto.getCmpnyCd())
-					.processCd(dto.getProcessCd())
-					.riskTypeCd(dto.getRiskTypeCd())
-					.riskTypeNm(dto.getRiskTypeNm())
-					.siteCd(dto.getSiteCd())
-					.useYn(dto.getUseYn())
-					.riskTypeDesc(dto.getRiskTypeDesc())
-					.build();
-			
-			risk01Mapper.mergeRistType(reqDto, tokenInfo);
+			risk01Mapper.mergeRistType(RiskTypeCommand.from(model));
 		}
 	}
 	
-	public void deleteRistType(List<RiskTypeReq> dtoList, Map<String, Object> tokenInfo) {
-		for(RiskTypeReq dto : dtoList) {
+	public void deleteRistType(RiskTypeParam param) {
+		for(RiskTypeModel model : param.riskTypeModelList()) {
 			
-			RiskTypeQry reqDto = RiskTypeQry.builder()
-					.cmpnyCd(dto.getCmpnyCd())
-					.processCd(dto.getProcessCd())
-					.riskTypeCd(dto.getRiskTypeCd())
-					.riskTypeNm(dto.getRiskTypeNm())
-					.siteCd(dto.getSiteCd())
-					.useYn(dto.getUseYn())
-					.riskTypeDesc(dto.getRiskTypeDesc())
-					.build();
-			
-			int riskHazardCnt = risk01Mapper.selectRiskHazardCnt(reqDto);
+			int riskHazardCnt = risk01Mapper.selectRiskHazardCnt(RiskHazardCountQuery.from(model));
 			
 			if(riskHazardCnt > 0) {
-				throw new RiskApiException("위험요인 구분 하위에 유해요인이 존재합니다.\n확인 후 다시 시도해주세요.");
+				throw new ApiException(RiskErrorCode.RISK_400_001);
 			}
 			
-			risk01Mapper.deleteRistType(reqDto, tokenInfo);
+			risk01Mapper.deleteRistType(RiskTypeCommand.from(model));
 		}
 	}
 	
-	public RiskHazardListRes selectRiskHazardList(RiskHazardListReq dto, Map<String, Object> tokenInfo) {
+	public RiskHazardListResponse selectRiskHazardList(RiskHazardListParam param) {
 		
-		RiskHazardListQry reqDto = RiskHazardListQry.builder()
-				.riskTypeCd(dto.getRiskTypeCd())
-				.hazardNm(dto.getHazardNm())
-				.hazardDesc(dto.getHazardDesc())
-				.build();
+		RiskHazardListResponse response = null;
 		
-		RiskHazardListRes retDto = null;
+		List<RiskHazardResult> riskHazardResultList = risk01Mapper.selectRiskHazardList(RiskHazardListQuery.from(param));
 		
-		List<RiskHazard> riskHazardList = risk01Mapper.selectRiskHazardList(reqDto, tokenInfo);
-		
-		if(riskHazardList.size() > 0) {
-			retDto = RiskHazardListRes.builder()
-					.riskHazardList(riskHazardList)
-					.build();
+		if(riskHazardResultList.size() > 0) {
+			response = RiskHazardListResponse.builder()
+											.riskHazardResultList(riskHazardResultList)
+											.build();
 		}
 		
-		return retDto;
+		return response;
 	}
 	
-	public void updateRiskHazard(List<RiskHazardReq> dtoList, Map<String, Object> tokenInfo) {
-		for(RiskHazardReq dto : dtoList) {
+	public void updateRiskHazard(RiskHazardParam param) {
+		for(RiskHazardModel model : param.riskHazardModelList()) {
 			
-			RiskHazardQry reqDto = RiskHazardQry.builder()
-					.cmpnyCd(dto.getCmpnyCd())
-					.riskTypeCd(dto.getRiskTypeCd())
-					.hazardCd(dto.getHazardCd())
-					.hazardNm(dto.getHazardNm())
-					.siteCd(dto.getSiteCd())
-					.hazardDesc(dto.getHazardDesc())
-					.build();
-			
-			risk01Mapper.mergeRiskHazard(reqDto, tokenInfo);
+			risk01Mapper.mergeRiskHazard(RiskHazardCommand.from(model));
 		}
 	}
 	
-	public void deleteRiskHazard(List<RiskHazardReq> dtoList, Map<String, Object> tokenInfo) {
-		for(RiskHazardReq dto : dtoList) {
+	public void deleteRiskHazard(RiskHazardParam param) {
+		for(RiskHazardModel model : param.riskHazardModelList()) {
 			
-			RiskHazardQry reqDto = RiskHazardQry.builder()
-					.cmpnyCd(dto.getCmpnyCd())
-					.riskTypeCd(dto.getRiskTypeCd())
-					.hazardCd(dto.getHazardCd())
-					.hazardNm(dto.getHazardNm())
-					.siteCd(dto.getSiteCd())
-					.hazardDesc(dto.getHazardDesc())
-					.build();
-			
-			risk01Mapper.deleteRiskHazard(reqDto, tokenInfo);
+			risk01Mapper.deleteRiskHazard(RiskHazardCommand.from(model));
 		}
 	}
 }

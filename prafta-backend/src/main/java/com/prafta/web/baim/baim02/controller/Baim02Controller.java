@@ -15,18 +15,20 @@ import org.springframework.web.bind.annotation.RestController;
 
 import com.prafta.common.annotation.NoAuth;
 import com.prafta.common.security.JwtUtil;
-import com.prafta.web.baim.baim02.dto.CompCmmCodeDListReq;
-import com.prafta.web.baim.baim02.dto.CompCmmCodeDListRes;
-import com.prafta.web.baim.baim02.dto.CompCmmCodeDReq;
-import com.prafta.web.baim.baim02.dto.CompCmmCodeMListReq;
-import com.prafta.web.baim.baim02.dto.CompCmmCodeMListRes;
+import com.prafta.web.baim.baim02.application.param.CompCmmCodeDListParam;
+import com.prafta.web.baim.baim02.application.param.CompCmmCodeDParam;
+import com.prafta.web.baim.baim02.application.param.CompCmmCodeMListParam;
+import com.prafta.web.baim.baim02.dto.request.CompCmmCodeDListRequest;
+import com.prafta.web.baim.baim02.dto.request.CompCmmCodeDRequest;
+import com.prafta.web.baim.baim02.dto.request.CompCmmCodeMListRequest;
+import com.prafta.web.baim.baim02.dto.response.CompCmmCodeDListResponse;
+import com.prafta.web.baim.baim02.dto.response.CompCmmCodeMListResponse;
 import com.prafta.web.baim.baim02.service.Baim02Service;
 
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 
 @Slf4j
-@NoAuth
 @RestController
 @RequestMapping("/baim02")
 @RequiredArgsConstructor
@@ -35,49 +37,34 @@ public class Baim02Controller {
 	private final Baim02Service baim02Service;
 	private final JwtUtil jwtUtil;
 
-//    @PostMapping("/getCompCmmCodeMList")
     @GetMapping("/comp-cmm-code-m-list")
-    public ResponseEntity<?> getCompCmmCodeMList(@ModelAttribute CompCmmCodeMListReq dto, @RequestHeader(value = "Authorization", required = false) String authorization) {
+    public ResponseEntity<?> getCompCmmCodeMList(@ModelAttribute CompCmmCodeMListRequest request, @RequestHeader(value = "Authorization", required = false) String authorization) {
     	
-    	Map<String, Object> tokenInfo = jwtUtil.getAllClaimsAsMap(authorization);
-    	CompCmmCodeMListRes retDto = baim02Service.selectCompCmmCodeMList(dto, tokenInfo);
+    	    	CompCmmCodeMListResponse response = baim02Service.selectCompCmmCodeMList(CompCmmCodeMListParam.from(request, jwtUtil.getAllClaimsAsMap(authorization)));
 		
-//    	if(retList == null) {
-//    		throw new BaimApiException("조회된 결과가 없습니다.");
-//    	}
-    	
-    	return ResponseEntity.status(HttpStatus.OK).body(retDto);
+    	return ResponseEntity.status(HttpStatus.OK).body(response);
     }
     
-//    @PostMapping("/getCompCmmCodeDList")
     @GetMapping("/comp-cmm-code-d-list")
-    public ResponseEntity<?> getCompCmmCodeDList(@ModelAttribute CompCmmCodeDListReq dto, @RequestHeader(value = "Authorization", required = false) String authorization) {
+    public ResponseEntity<?> getCompCmmCodeDList(@ModelAttribute CompCmmCodeDListRequest request, @RequestHeader(value = "Authorization", required = false) String authorization) {
     	
-    	Map<String, Object> tokenInfo = jwtUtil.getAllClaimsAsMap(authorization);
-    	CompCmmCodeDListRes retDto = baim02Service.selectCompCmmCodeDList(dto, tokenInfo);
+    	CompCmmCodeDListResponse response = baim02Service.selectCompCmmCodeDList(CompCmmCodeDListParam.from(request, jwtUtil.getAllClaimsAsMap(authorization)));
 		
-//    	if(retList == null) {
-//    		throw new BaimApiException("조회된 결과가 없습니다.");
-//    	}
-    	
-    	return ResponseEntity.status(HttpStatus.OK).body(retDto);
+    	return ResponseEntity.status(HttpStatus.OK).body(response);
     }
     
-    //@PostMapping("/updateCmmCodeDetailInfo")
     @PostMapping("/update-cmm-code-detail-info")
-    public ResponseEntity<?> updateCmmCodeDetailInfo(@RequestBody List<CompCmmCodeDReq> dtoList, @RequestHeader(value = "Authorization", required = false) String authorization ) {
-    	Map<String, Object> tokenInfo = jwtUtil.getAllClaimsAsMap(authorization);
+    public ResponseEntity<?> updateCmmCodeDetailInfo(@RequestBody List<CompCmmCodeDRequest> request, @RequestHeader(value = "Authorization", required = false) String authorization ) {
     	
-    	baim02Service.updateCmmCodeDetailInfo(dtoList, tokenInfo);
+    	baim02Service.updateCmmCodeDetailInfo(CompCmmCodeDParam.from(request, jwtUtil.getAllClaimsAsMap(authorization)));
     	
     	return ResponseEntity.status(HttpStatus.OK).build();
     }
     
     @PostMapping("/deleteCmmCodeDetailInfo")
-    public ResponseEntity<?> deleteCmmCodeDetailInfo(@RequestBody List<CompCmmCodeDReq> dtoList, @RequestHeader(value = "Authorization", required = false) String authorization ) {
-    	Map<String, Object> tokenInfo = jwtUtil.getAllClaimsAsMap(authorization);
+    public ResponseEntity<?> deleteCmmCodeDetailInfo(@RequestBody List<CompCmmCodeDRequest> request, @RequestHeader(value = "Authorization", required = false) String authorization ) {
     	
-    	baim02Service.deleteCmmCodeDetailInfo(dtoList, tokenInfo);
+    	baim02Service.deleteCmmCodeDetailInfo(CompCmmCodeDParam.from(request, jwtUtil.getAllClaimsAsMap(authorization)));
     	
     	return ResponseEntity.status(HttpStatus.OK).build();
     }

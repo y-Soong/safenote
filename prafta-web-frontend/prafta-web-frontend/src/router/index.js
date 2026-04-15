@@ -94,13 +94,16 @@ async function ensureAccessToken() {
 async function fetchRoutesFromServer() {
   let data = [];
   try {
-    const response = await api.post("/comApi/baseinfo/getWebMenuList", {
-      cmpnyCd: sessionStorage.getItem("gv_cmpnyCd"),
-      userId: sessionStorage.getItem("gv_userId"),
-      menuSrc: "001",
+    const response = await api.get("/comApi/baseinfo/web-menu-lists", {
+      params: {
+        userCd: sessionStorage.getItem("gv_userCd"),
+        menuSrc: "001",
+      },
     });
 
-    if (response.status === 200) data = response.data;
+    if (response.status === 200) {
+      data = response.data?.webMenuResultList || [];
+    }
   } catch (err) {
     alert(err?.response?.data?.message || err.message);
   }

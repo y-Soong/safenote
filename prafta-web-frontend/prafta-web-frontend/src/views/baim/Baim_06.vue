@@ -51,19 +51,23 @@
           <div class="subtitle" v-if="siteNm">
             <span class="subtitle-text">[{{ siteNm }}]</span>
           </div>
+          <span class="org-notice-text"
+            >담당 정/부로 지정된 사용자의 소속 부서는 해당 부서로 자동
+            변경됩니다.</span
+          >
           <div class="custom-btn-area">
             <button class="btn btn-custom" @click="fnNodeCopySiteSearchPopOpen">
-              타사업장 조직노드 가져오기
+              타사업장 조직부서 가져오기
             </button>
             <button class="btn btn-custom" @click="fnSiteNodeAllDelete">
-              조직노드 일괄 삭제
+              조직부서 일괄 삭제
             </button>
           </div>
         </div>
 
         <div class="org-chart-box" style="--box-h: 70vh">
           <div v-if="!siteCd" class="org-chart-empty">
-            사업장을 선택해주세요.
+            {{ getMessage(MSG.SITE_REQUIRED) }}
           </div>
           <div v-else class="org-chart-container">
             <div v-if="rootNode" class="org-chart-tree">
@@ -76,6 +80,8 @@
                 @add-child="fnAddChild"
                 @delete-node="fnDeleteNode"
                 @update-node="fnUpdateNode"
+                @delete-manager="fnDeleteManager"
+                @open-user-search="fnOpenUserSearch"
               />
             </div>
             <div v-else class="org-chart-empty-inner">
@@ -104,8 +110,10 @@ import {
 import { useModal } from "@/utils/useModal";
 import axios from "@/api/axios";
 import ViewHeader from "@/components/common/ViewHeader.vue";
+import { getMessage, MSG } from "@/messages";
 import search_icon from "@/assets/img/search_icon.png";
 import SiteSearchPop from "@/components/popup/SiteSearchPop.vue";
+import UserSearchPop from "@/components/popup/UserSearchPop.vue";
 import OrgChartNode from "./components/OrgChartNode.vue";
 
 // ================ Options ================
@@ -144,6 +152,7 @@ const typeOptionsFromBase = computed(() => baseInfoArr.value["COM004"] ?? []);
 // ================ Life Cycle Functions ================
 onMounted(async () => {
   fnButtonControll();
+  init();
   await fnGetBaseinfoList();
 });
 
@@ -160,6 +169,14 @@ const flatToOrgTree = (flatList) => {
     nodeNm: n.nodeNm ?? n.label,
     nodeType: n.nodeType ?? n.type,
     selfAttdApprvYn: n.selfAttdApprvYn ?? n.selfAttendanceApprovalYn,
+    managerPrimaryUserCd:
+      n.mainAdminCd ?? n.managerPrimaryUserCd ?? n.managerPrimaryCd,
+    managerPrimaryUserNm:
+      n.mainAdminNm ?? n.managerPrimaryUserNm ?? n.managerPrimaryNm,
+    managerDeputyUserCd:
+      n.subAdminCd ?? n.managerDeputyUserCd ?? n.managerDeputyCd,
+    managerDeputyUserNm:
+      n.subAdminNm ?? n.managerDeputyUserNm ?? n.managerDeputyNm,
     children: [],
   }));
   const byId = new Map(list.map((n) => [n.nodeCd, n]));
@@ -216,6 +233,8 @@ const orgTreeToFlat = (tree, options = {}) => {
       managerCnt: node.managerCnt ?? 0,
       workerCnt: node.workerCnt ?? 0,
       selfAttdApprvYn: node.selfAttdApprvYn ? "Y" : ("N" ?? "N"),
+      mainAdminCd: node.managerPrimaryUserCd ?? null,
+      subAdminCd: node.managerDeputyUserCd ?? null,
     };
     if (includeSortOrder) row.sortOrder = sortOrder;
     if (includeDepthLevel) row.depthLevel = depthLevel;
@@ -234,7 +253,7 @@ const orgTreeToFlat = (tree, options = {}) => {
 // ================ API Functions ================
 const fnGetBaseinfoList = async () => {
   try {
-    const response = await axios.get("/comApi/baseinfo/base-info-list", {
+    const response = await axios.get("/comApi/baseinfo/base-info-lists", {
       params: {
         cmpnyCd: sessionStorage.getItem("gv_cmpnyCd"),
         baseCodeList: ["COM004"],
@@ -268,7 +287,7 @@ const fnGetBaseinfoList = async () => {
 
 const fnSearch = async () => {
   if (proxy.$util.isEmpty(siteCd.value)) {
-    proxy.$alert("사업장을 선택해주세요.");
+    proxy.$alert(getMessage(MSG.SITE_REQUIRED));
     return;
   }
   try {
@@ -279,6 +298,7 @@ const fnSearch = async () => {
       orgTree.value = null;
       return;
     }
+
     const data = response.data?.siteNodeList;
 
     if (Array.isArray(data)) {
@@ -294,11 +314,11 @@ const fnSearch = async () => {
 
 const fnSave = async () => {
   if (proxy.$util.isEmpty(siteCd.value)) {
-    proxy.$alert("사업장을 선택해주세요.");
+    proxy.$alert(getMessage(MSG.SITE_REQUIRED));
     return;
   }
   if (!orgTree.value) {
-    proxy.$alert("저장할 조직 데이터가 없습니다.");
+    proxy.$alert(getMessage(MSG.ORG_DATA_REQUIRED));
     return;
   }
 
@@ -308,13 +328,13 @@ const fnSave = async () => {
     typeOptions: typeOptionsFromBase.value,
   });
 
-  const ok = await proxy.$confirm("저장하시겠습니까?");
+  const ok = await proxy.$confirm(getMessage(MSG.ASSIGN_MANAGER_CONFIRM));
   if (!ok) return;
   try {
     // 백엔드가 트리(root)를 받는 경우
     await axios.post("/webApi/baim06/save-site-nodes", flatList);
 
-    proxy.$alert("처리되었습니다.");
+    proxy.$alert(getMessage(MSG.SAVE_SUCCESS));
     fnSearch();
   } catch (err) {
     const msg =
@@ -328,12 +348,12 @@ const fnSave = async () => {
 /** 저장된 노드 삭제 API 호출 후 재조회 */
 const fnDeleteOrgNode = async (node) => {
   if (proxy.$util.isEmpty(siteCd.value)) return;
-  const ok = await proxy.$confirm("해당 노드를 삭제하시겠습니까?");
+  const ok = await proxy.$confirm(getMessage(MSG.DELETE_NODE_CONFIRM));
   if (!ok) return;
 
   try {
     await axios.post("/webApi/baim06/delete-site-nodes", node);
-    proxy.$alert("삭제되었습니다.");
+    proxy.$alert(getMessage(MSG.DELETE_SUCCESS));
     await fnSearch();
   } catch (err) {
     const msg =
@@ -346,12 +366,12 @@ const fnDeleteOrgNode = async (node) => {
 
 const fnSiteNodeAllDelete = async () => {
   if (proxy.$util.isEmpty(siteCd.value)) {
-    proxy.$alert("사업장을 선택해주세요.");
+    proxy.$alert(getMessage(MSG.SITE_REQUIRED));
     return;
   }
 
   const ok = await proxy.$confirm(
-    "[" + siteNm.value + "] 사업장의 조직도를\n일괄 삭제하시겠습니까?"
+    getMessage(MSG.SITE_ALL_DELETE_CONFIRM, { siteNm: siteNm.value })
   );
   if (!ok) return;
 
@@ -359,7 +379,7 @@ const fnSiteNodeAllDelete = async () => {
     await axios.post("/webApi/baim06/delete-site-all-nodes", {
       siteCd: siteCd.value,
     });
-    proxy.$alert("삭제되었습니다.");
+    proxy.$alert(getMessage(MSG.DELETE_SUCCESS));
     await fnSearch();
   } catch (err) {
     const msg =
@@ -372,11 +392,10 @@ const fnSiteNodeAllDelete = async () => {
 
 const fnNodeCopy = async (siteCdVal, siteNoVal, siteNmVal) => {
   const ok = await proxy.$confirm(
-    "[" +
-      siteNm.value +
-      "] 사업장의 조직도를\n[" +
-      siteNmVal +
-      "] 사업장 조직도로\n덮어쓰기 하시겠습니까 ?"
+    getMessage(MSG.NODE_COPY_CONFIRM, {
+      siteNm: siteNm.value,
+      targetSiteNm: siteNmVal,
+    })
   );
   if (!ok) return;
 
@@ -387,7 +406,7 @@ const fnNodeCopy = async (siteCdVal, siteNoVal, siteNmVal) => {
     });
 
     fnSearch();
-    proxy.$alert("조직노드 덮어쓰기가 완료되었습니다.");
+    proxy.$alert(getMessage(MSG.NODE_COPY_SUCCESS));
   } catch (err) {
     const msg =
       err?.response?.data?.message ||
@@ -399,10 +418,12 @@ const fnNodeCopy = async (siteCdVal, siteNoVal, siteNmVal) => {
 
 const fnSrchSiteInfo = async () => {
   try {
-    const response = await axios.post("/comApi/baseinfo/getSiteInfoList", {
-      cmpnyCd: sessionStorage.getItem("gv_cmpnyCd"),
-      siteNo: siteNo.value,
-      siteNm: siteNm.value,
+    const response = await axios.get("/comApi/baseinfo/site-lists", {
+      params: {
+        cmpnyCd: sessionStorage.getItem("gv_cmpnyCd"),
+        siteNo: siteNo.value,
+        siteNm: siteNm.value,
+      },
     });
     if (response.status === 200) {
       fnCallback(response);
@@ -416,7 +437,79 @@ const fnSrchSiteInfo = async () => {
   }
 };
 
+const fnDeleteSiteNodeAdmin = async (nodeCd, siteCd, userCd, userNm) => {
+  const ok = await proxy.$confirm(getMessage(MSG.DELETE_CONFIRM));
+  if (!ok) return;
+
+  try {
+    const response = await axios.post("/webApi/baim06/delete-site-node-admin", {
+      siteCd: siteCd,
+      nodeCd: nodeCd,
+      userCd: userCd,
+      userNm: userNm,
+    });
+    if (response.status === 200) {
+      proxy.$alert(getMessage(MSG.DELETE_SUCCESS));
+      fnSearch();
+    }
+  } catch (err) {
+    const msg =
+      err?.response?.data?.message ||
+      err?.message ||
+      "삭제 중 오류가 발생했습니다.";
+    await proxy.$alert(msg);
+  }
+};
+
+const fnSaveSiteNodeAdmin = async (field, node, userCd, userNm) => {
+  let apiUrl = "";
+
+  if (field === "managerPrimary") {
+    apiUrl = "/webApi/baim06/save-site-node-main-admin";
+  } else if (field === "managerDeputy") {
+    apiUrl = "/webApi/baim06/save-site-node-sub-admin";
+  }
+
+  try {
+    const response = await axios.post(apiUrl, {
+      siteCd: siteCd.value,
+      nodeCd: node.nodeCd,
+      userCd: userCd,
+      userNm: userNm,
+    });
+
+    if (response.status === 200) {
+      proxy.$alert(getMessage(MSG.SAVE_SUCCESS));
+
+      if (field === "managerPrimary") {
+        node.managerPrimaryUserCd = userCd;
+        node.managerPrimaryUserNm = userNm;
+      } else if (field === "managerDeputy") {
+        node.managerDeputyUserCd = userCd;
+        node.managerDeputyUserNm = userNm;
+      }
+
+      fnSearch();
+    }
+  } catch (err) {
+    const msg =
+      err?.response?.data?.message ||
+      err?.message ||
+      "저장 중 오류가 발생했습니다.";
+    await proxy.$alert(msg);
+  }
+};
+
 // ================ Methods/Functions ================
+const init = () => {
+  siteCd.value = sessionStorage.getItem("gv_siteCd");
+  siteNo.value = sessionStorage.getItem("gv_siteNo");
+  siteNm.value = sessionStorage.getItem("gv_siteNm");
+  orgTree.value = null;
+
+  fnSearch();
+};
+
 const fnButtonControll = () => {
   localButtons.value.create = "N";
   localButtons.value.delete = "N";
@@ -446,13 +539,13 @@ const focusKill = (e) => {
 const fnCallback = (res) => {
   if (proxy.$util.isNotEmpty(res)) {
     const apiId = res.config.url?.split("/").pop();
-    if (apiId === "getSiteInfoList") {
-      if (res.data?.length === 1) {
-        siteCd.value = res.data[0].SITE_CD;
-        siteNo.value = res.data[0].SITE_NO;
-        siteNm.value = res.data[0].SITE_NM;
+    if (apiId === "site-lists") {
+      if (res.data?.siteInfoResultList?.length === 1) {
+        siteCd.value = res.data.siteInfoResultList[0].siteCd;
+        siteNo.value = res.data.siteInfoResultList[0].siteNo;
+        siteNm.value = res.data.siteInfoResultList[0].siteNm;
         fnSearch();
-      } else if (res.data?.length > 1) {
+      } else if (res.data?.siteInfoResultList?.length > 1) {
         fnSiteSearchPopOpen();
       } else {
         siteCd.value = "";
@@ -484,9 +577,8 @@ const fnSiteSearchPopOpen = () => {
 };
 
 const fnNodeCopySiteSearchPopOpen = () => {
-  console.log("siteNo.value :: ", siteNo.value);
   if (proxy.$util.isEmpty(siteCd.value)) {
-    proxy.$alert("사업장을 선택해주세요.");
+    proxy.$alert(getMessage(MSG.SITE_REQUIRED));
     return;
   }
 
@@ -533,6 +625,10 @@ const fnAddRootNode = () => {
     managerCnt: 0,
     workerCnt: 0,
     selfAttdApprvYn: false,
+    managerPrimaryUserCd: null,
+    managerPrimaryUserNm: null,
+    managerDeputyUserCd: null,
+    managerDeputyUserNm: null,
     isNew: true,
     children: [],
   };
@@ -560,6 +656,10 @@ const fnAddChild = (parentNode) => {
     managerCnt: 0,
     workerCnt: 0,
     selfAttdApprvYn: false,
+    managerPrimaryUserCd: null,
+    managerPrimaryUserNm: null,
+    managerDeputyUserCd: null,
+    managerDeputyUserNm: null,
     isNew: true,
     children: [],
   };
@@ -587,6 +687,38 @@ const fnDeleteNode = async (payload) => {
 
 const fnUpdateNode = (node, field, value) => {
   if (node && field) node[field] = value;
+};
+
+/** 담당 정/부 삭제 - 데이터만 전달, API 호출 후 fnSearch로 재조회 */
+const fnDeleteManager = ({ node, field }) => {
+  const nodeCd = node.nodeCd;
+  const siteCdVal = node.siteCd ?? siteCd.value;
+  const userCd =
+    field === "managerPrimary"
+      ? (node.managerPrimaryUserCd ?? node.mainAdminCd)
+      : (node.managerDeputyUserCd ?? node.subAdminCd);
+  const userNm =
+    field === "managerPrimary"
+      ? (node.managerPrimaryUserNm ?? node.mainAdminNm)
+      : (node.managerDeputyUserNm ?? node.subAdminNm);
+  if (userCd) fnDeleteSiteNodeAdmin(nodeCd, siteCdVal, userCd, userNm);
+};
+
+/** 담당 관리자 정/부 선택 팝업 */
+const fnOpenUserSearch = ({ node, field }) => {
+
+  openPop(UserSearchPop, {
+    cmpnyCd_p: sessionStorage.getItem("gv_cmpnyCd"),
+    siteCd_p: siteCd.value,
+    nodeCd_p: node.nodeCd,
+    searchMode_p: "siteNodeAdmin",
+    onSelect: async (userCd, userNm) => {
+      const ok = await proxy.$confirm(getMessage(MSG.ASSIGN_MANAGER_CONFIRM));
+      if (!ok) return;
+
+      await fnSaveSiteNodeAdmin(field, node, userCd, userNm);
+    },
+  });
 };
 </script>
 
@@ -622,5 +754,12 @@ const fnUpdateNode = (node, field, value) => {
 .org-chart-container {
   display: inline-block;
   min-width: 100%;
+}
+
+.org-notice-text {
+  flex: 1;
+  color: #dc2626;
+  font-size: 0.875rem;
+  padding-inline: 0.75rem;
 }
 </style>

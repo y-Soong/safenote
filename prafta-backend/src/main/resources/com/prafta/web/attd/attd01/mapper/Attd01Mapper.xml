@@ -2,7 +2,7 @@
 <!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
 <mapper namespace="com.prafta.web.attd.attd01.mapper.Attd01Mapper">
 
-    <select id="selectSchInfoList" parameterType="com.prafta.web.attd.attd01.dto.SchInfoListQry" resultType="com.prafta.web.attd.attd01.vo.SchInfo">
+    <select id="selectSchInfoList" parameterType="com.prafta.web.attd.attd01.application.query.SchInfoListQuery" resultType="com.prafta.web.attd.attd01.result.SchInfoResult">
     /* Attd01Mapper.selectSchInfoList */
     SELECT
 	    A.CMPNY_CD          		AS cmpnyCd
@@ -52,31 +52,27 @@
 	    	, A.USE_YN
 	    	, 'SYS003'
     	) 							AS useYnNm
-	    , A.INSERT_NO         		AS insertNo
-	    , A.INSERT_DATE       		AS insertDate
-	    , A.UPDATE_NO         		AS updateNo
-	    , A.UPDATE_DATE       		AS updateDate
 	FROM TB_SCH_MGMT A
 	WHERE 1=1
-	  AND A.CMPNY_CD = #{token.gv_cmpnyCd}
-	  <if test="param.siteCd != null and param.siteCd != ''">
-	  	AND A.SITE_CD = #{param.siteCd}
+	  AND A.CMPNY_CD = #{gvCmpnyCd}
+	  <if test="siteCd != null and siteCd != ''">
+	  	AND A.SITE_CD = #{siteCd}
 	  </if>
-	  <if test="param.schNo != null and param.schNo != ''">
-	  	AND A.SCH_NO = #{param.schNo}	
+	  <if test="schNo != null and schNo != ''">
+	  	AND A.SCH_NO = #{schNo}	
 	  </if>
-	  <if test="param.useYn != null and param.useYn != ''">
-	  	AND A.USE_YN  = #{param.useYn}
+	  <if test="useYn != null and useYn != ''">
+	  	AND A.USE_YN  = #{useYn}
 	  </if>
 	</select>
 	
-	<select id="selectSchCd" parameterType="com.prafta.web.attd.attd01.dto.SchCdQry" resultType="string">
+	<select id="selectSchCd" parameterType="com.prafta.web.attd.attd01.application.query.SchCdQuery" resultType="string">
     /* Attd01Mapper.selectSchCd */
-    SELECT FNC_CMM_SEQ_NEXTVAL(#{token.gv_cmpnyCd}, CONCAT('SCH_CD-', #{param.siteCd}))
+    SELECT FNC_CMM_SEQ_NEXTVAL(#{gvCmpnyCd}, CONCAT('SCH_CD-', #{siteCd}))
     FROM DUAL
     </select>
 	
-	<update id="updateSchInfo" parameterType="com.prafta.web.attd.attd01.dto.SchInfoSave">
+	<update id="updateSchInfo" parameterType="com.prafta.web.attd.attd01.application.command.SchInfoCommand">
     /* Attd01Mapper.updateSchInfo */
     INSERT INTO prafta.TB_SCH_MGMT (
         CMPNY_CD
@@ -101,25 +97,25 @@
         , UPDATE_DATE
     )
     VALUES (
-        #{token.gv_cmpnyCd}
-        , #{param.siteCd}
-        , #{param.schCd}
-        , #{param.schNo}
-        , #{param.schType}
-        , REPLACE(#{param.applyDate}, '-', '')
+        #{gvCmpnyCd}
+        , #{siteCd}
+        , #{schCd}
+        , #{schNo}
+        , #{schType}
+        , REPLACE(#{applyDate}, '-', '')
 		
-        , REPLACE(#{param.fstSchStrTime}, ':', '')
-        , REPLACE(#{param.fstSchEndTime}, ':', '')
-        , #{param.fstSchBrkMin}
+        , REPLACE(#{fstSchStrTime}, ':', '')
+        , REPLACE(#{fstSchEndTime}, ':', '')
+        , #{fstSchBrkMin}
 		
-        , REPLACE(IFNULL(#{param.secSchStrTime}, ''), ':', '')
-        , REPLACE(IFNULL(#{param.secSchEndTime}, ''), ':', '')
-        , IFNULL(#{param.secSchBrkMin}, '0')
+        , REPLACE(IFNULL(#{secSchStrTime}, ''), ':', '')
+        , REPLACE(IFNULL(#{secSchEndTime}, ''), ':', '')
+        , IFNULL(#{secSchBrkMin}, '0')
 		
-        , IFNULL(#{param.useYn}, 'Y')
-        , #{token.gv_userId}
+        , IFNULL(#{useYn}, 'Y')
+        , #{gvUserCd}
         , NOW()
-        , #{token.gv_userId}
+        , #{gvUserCd}
         , NOW()
     )
     ON DUPLICATE KEY UPDATE
@@ -136,20 +132,20 @@
         , SEC_SCH_BRK_MIN 	= VALUES(SEC_SCH_BRK_MIN)
 
         , USE_YN          	= VALUES(USE_YN)
-        , UPDATE_NO       	= #{token.gv_userId}
+        , UPDATE_NO       	= #{gvUserCd}
         , UPDATE_DATE     	= NOW()
 	</update>
 	
-	<select id="selectSchHistIdx" parameterType="com.prafta.web.attd.attd01.dto.SchInfoHistQry" resultType="int">
+	<select id="selectSchHistIdx" parameterType="com.prafta.web.attd.attd01.application.query.SchInfoHistQuery" resultType="int">
     /* Attd01Mapper.selectSchHistIdx */
     SELECT COUNT(*)
 	FROM TB_SCH_MGMT_HIST A
-	WHERE A.CMPNY_CD = #{token.gv_cmpnyCd}
-	  AND A.SITE_CD = #{param.siteCd}
-	  AND A.SCH_CD = #{param.schCd}   
+	WHERE A.CMPNY_CD = #{gvCmpnyCd}
+	  AND A.SITE_CD = #{siteCd}
+	  AND A.SCH_CD = #{schCd}   
     </select>
     
-    <insert id="insertSchHistInfo" parameterType="com.prafta.web.attd.attd01.dto.SchInfoHistSave">
+    <insert id="insertSchHistInfo" parameterType="com.prafta.web.attd.attd01.application.command.SchInfoHistCommand">
     /* Attd01Mapper.insertSchHistInfo */
     INSERT INTO TB_SCH_MGMT_HIST (
         CMPNY_CD
@@ -171,27 +167,27 @@
         , INSERT_DATE
     )
     VALUES (
-        #{token.gv_cmpnyCd}
-        , #{param.siteCd}
-        , #{param.histIdx}
-        , #{param.schCd}
-        , REPLACE(#{param.applyDate}, '-', '')
+        #{gvCmpnyCd}
+        , #{siteCd}
+        , #{histIdx}
+        , #{schCd}
+        , REPLACE(#{applyDate}, '-', '')
 		
-        , REPLACE(#{param.fstSchStrTime}, ':', '')
-        , REPLACE(#{param.fstSchEndTime}, ':', '')
-        , #{param.fstSchBrkMin}
+        , REPLACE(#{fstSchStrTime}, ':', '')
+        , REPLACE(#{fstSchEndTime}, ':', '')
+        , #{fstSchBrkMin}
 		
-        , REPLACE(IFNULL(#{param.secSchStrTime}, ''), ':', '')
-        , REPLACE(IFNULL(#{param.secSchEndTime}, ''), ':', '')
-        , IFNULL(#{param.secSchBrkMin}, '0')
+        , REPLACE(IFNULL(#{secSchStrTime}, ''), ':', '')
+        , REPLACE(IFNULL(#{secSchEndTime}, ''), ':', '')
+        , IFNULL(#{secSchBrkMin}, '0')
 		
-        , IFNULL(#{param.useYn}, 'Y')
-        , #{token.gv_userId}
+        , IFNULL(#{useYn}, 'Y')
+        , #{gvUserCd}
         , NOW()
     )
     </insert>
     
-    <select id="selectSchHistList" parameterType="com.prafta.web.attd.attd01.dto.SchInfoHistQry" resultType="com.prafta.web.attd.attd01.vo.SchHist">
+    <select id="selectSchHistList" parameterType="com.prafta.web.attd.attd01.application.query.SchInfoHistQuery" resultType="com.prafta.web.attd.attd01.result.SchHistResult">
     /* Attd01Mapper.selectSchHistList */
 	SELECT 
 		A.CMPNY_CD									AS cmpnyCd
@@ -223,19 +219,19 @@
 			ON (
 				A.INSERT_NO = B.USER_ID
 	        )
-	WHERE A.CMPNY_CD = #{token.gv_cmpnyCd}
-	  AND A.SITE_CD = #{param.siteCd}
-	  AND A.SCH_CD = #{param.schCd}
+	WHERE A.CMPNY_CD = #{gvCmpnyCd}
+	  AND A.SITE_CD = #{siteCd}
+	  AND A.SCH_CD = #{schCd}
 	ORDER BY A.CMPNY_CD, A.SITE_CD, A.HIST_IDX
     </select>
     
-    <select id="selectShiftCd" parameterType="com.prafta.web.attd.attd01.dto.ShiftCdQry" resultType="string">
+    <select id="selectShiftCd" parameterType="com.prafta.web.attd.attd01.application.query.ShiftCdQuery" resultType="string">
     /* Attd01Mapper.selectShiftCd */
-    SELECT FNC_CMM_SEQ_NEXTVAL(#{token.gv_cmpnyCd}, CONCAT('SHIFT_CD-', #{param.siteCd}))
+    SELECT FNC_CMM_SEQ_NEXTVAL(#{gvCmpnyCd}, CONCAT('SHIFT_CD-', #{siteCd}))
     FROM DUAL
     </select>
     
-    <insert id="insertShiftSch" parameterType="com.prafta.web.attd.attd01.dto.ShiftTypeSave">
+    <insert id="insertShiftSch" parameterType="com.prafta.web.attd.attd01.application.command.ShiftTypeCommand">
     /* Attd01Mapper.insertShiftSch */
     INSERT TB_SHIFT_SCH_MGMT (
 		CMPNY_CD
@@ -254,24 +250,24 @@
 		, UPDATE_DATE
 	)
 	VALUES (
-		#{token.gv_cmpnyCd}
-		, #{param.siteCd}
-		, #{param.shiftCd}
-		, #{param.shiftNo}
+		#{gvCmpnyCd}
+		, #{siteCd}
+		, #{shiftCd}
+		, #{shiftNo}
 		
-		, #{param.shiftPtrnCnt}
-		, #{param.shiftTeamCnt}
-		, #{param.shiftCycleDays}
-		, #{param.useYn}
+		, #{shiftPtrnCnt}
+		, #{shiftTeamCnt}
+		, #{shiftCycleDays}
+		, #{useYn}
 		
-		, #{token.gv_userId}
+		, #{gvUserCd}
 		, NOW()
-		, #{token.gv_userId}
+		, #{gvUserCd}
 		, NOW()
 	)
     </insert>
     
-    <insert id="insertShiftSchPtrn" parameterType="com.prafta.web.attd.attd01.dto.ShiftPatternSave">
+    <insert id="insertShiftSchPtrn" parameterType="com.prafta.web.attd.attd01.application.command.ShiftPatternCommand">
     /* Attd01Mapper.insertShiftSchPtrn */
     INSERT TB_SHIFT_SCH_PTRN_MGMT (
 		CMPNY_CD
@@ -286,20 +282,20 @@
 		, UPDATE_DATE
 	)
 	VALUES (
-		#{token.gv_cmpnyCd}
-		, #{param.siteCd}
-		, #{param.shiftCd}
-		, #{param.ptrnIdx}
-		, #{param.schCd}
+		#{gvCmpnyCd}
+		, #{siteCd}
+		, #{shiftCd}
+		, #{ptrnIdx}
+		, #{schCd}
 		
-		, #{token.gv_userId}
+		, #{gvUserCd}
 		, NOW()
-		, #{token.gv_userId}
+		, #{gvUserCd}
 		, NOW()
 	)
     </insert>
     
-    <insert id="insertShiftSchTeam" parameterType="com.prafta.web.attd.attd01.dto.ShiftTeamSave">
+    <insert id="insertShiftSchTeam" parameterType="com.prafta.web.attd.attd01.application.command.ShiftTeamCommand">
     /* Attd01Mapper.insertShiftSchTeam */
     INSERT TB_SHIFT_SCH_TEAM_MGMT (
 		CMPNY_CD
@@ -314,20 +310,20 @@
 		, UPDATE_DATE
 	)
 	VALUES (
-		#{token.gv_cmpnyCd}
-		, #{param.siteCd}
-		, #{param.shiftCd}
-		, #{param.teamIdx}
-		, #{param.teamNm}
+		#{gvCmpnyCd}
+		, #{siteCd}
+		, #{shiftCd}
+		, #{teamIdx}
+		, #{teamNm}
 		
-		, #{token.gv_userId}
+		, #{gvUserCd}
 		, NOW()
-		, #{token.gv_userId}
+		, #{gvUserCd}
 		, NOW()
 	)
     </insert>
     
-    <insert id="insertShiftSchAssign" parameterType="com.prafta.web.attd.attd01.dto.ShiftAssignSave">
+    <insert id="insertShiftSchAssign" parameterType="com.prafta.web.attd.attd01.application.command.ShiftAssignCommand">
     /* Attd01Mapper.insertShiftSchAssign */
     INSERT TB_SHIFT_SCH_ASSIGN_MGMT (
 		CMPNY_CD
@@ -345,23 +341,23 @@
 		, UPDATE_DATE
 	)
 	VALUES (
-		#{token.gv_cmpnyCd}
-		, #{param.siteCd}
-		, #{param.shiftCd}
+		#{gvCmpnyCd}
+		, #{siteCd}
+		, #{shiftCd}
 		
-		, #{param.teamIdx}
-		, #{param.dayNo}
-		, #{param.assignYn}
-		, #{param.schCd}
+		, #{teamIdx}
+		, #{dayNo}
+		, #{assignYn}
+		, #{schCd}
 		
-		, #{token.gv_userId}
+		, #{gvUserCd}
 		, NOW()
-		, #{token.gv_userId}
+		, #{gvUserCd}
 		, NOW()
 	)
     </insert>
     
-    <select id="selectShiftSchInfoList" parameterType="com.prafta.web.attd.attd01.dto.ShiftSchInfoListQry" resultType="com.prafta.web.attd.attd01.vo.ShiftSchInfo">
+    <select id="selectShiftSchInfoList" parameterType="com.prafta.web.attd.attd01.application.query.ShiftSchInfoListQuery" resultType="com.prafta.web.attd.attd01.result.ShiftSchInfoResult">
     /* Attd01Mapper.selectShiftSchInfoList */
 	SELECT
 		A.CMPNY_CD													AS cmpnyCd
@@ -399,18 +395,18 @@
 			AND A.SHIFT_CD = B.SHIFT_CD
 	        )
 	WHERE 1=1
-		AND A.CMPNY_CD = #{token.gv_cmpnyCd}
-	  <if test="param.siteCd != null and param.siteCd != ''">
-	  	AND A.SITE_CD = #{param.siteCd}
+		AND A.CMPNY_CD = #{gvCmpnyCd}
+	  <if test="siteCd != null and siteCd != ''">
+	  	AND A.SITE_CD = #{siteCd}
 	  </if>
-	   <if test="param.shiftNo != null and param.shiftNo != ''">
-	   	AND A.SHIFT_NO = #{param.shiftNo}
+	   <if test="shiftNo != null and shiftNo != ''">
+	   	AND A.SHIFT_NO = #{shiftNo}
 	  </if>
-	  <if test="param.shiftCycleDays != null and param.shiftCycleDays != ''">
-	  	AND A.SHIFT_CYCLE_DAYS = #{param.shiftCycleDays}
+	  <if test="shiftCycleDays != null and shiftCycleDays != ''">
+	  	AND A.SHIFT_CYCLE_DAYS = #{shiftCycleDays}
 	  </if>
-	  <if test="param.useYn != null and param.useYn != ''">
-	  	AND A.USE_YN = #{param.USE_YN}
+	  <if test="useYn != null and useYn != ''">
+	  	AND A.USE_YN = #{USE_YN}
 	  </if>
 	GROUP BY
 		A.CMPNY_CD
@@ -423,7 +419,7 @@
 		, A.USE_YN
     </select>
     
-    <select id="selectShiftTypeInfoList" parameterType="com.prafta.web.attd.attd01.dto.ShiftSchDetailQry" resultType="com.prafta.web.attd.attd01.vo.ShiftTypeInfo">
+    <select id="selectShiftTypeInfoList" parameterType="com.prafta.web.attd.attd01.application.query.ShiftSchDetailQuery" resultType="com.prafta.web.attd.attd01.result.ShiftTypeInfoResult">
     /* Attd01Mapper.selectShiftTypeInfoList */
 	SELECT 
 		A.CMPNY_CD           AS cmpnyCd
@@ -435,12 +431,12 @@
 		, A.SHIFT_CYCLE_DAYS AS shiftCycleDays
 		, A.USE_YN           AS useYn
 	FROM TB_SHIFT_SCH_MGMT A
-	WHERE A.CMPNY_CD = #{token.gv_cmpnyCd}
-	  AND A.SITE_CD  = #{param.siteCd}
-	  AND A.SHIFT_CD = #{param.shiftCd}
+	WHERE A.CMPNY_CD = #{gvCmpnyCd}
+	  AND A.SITE_CD  = #{siteCd}
+	  AND A.SHIFT_CD = #{shiftCd}
     </select>
     
-    <select id="selectShiftPatternInfoList" parameterType="com.prafta.web.attd.attd01.dto.ShiftSchDetailQry" resultType="com.prafta.web.attd.attd01.vo.ShiftPatternInfo">
+    <select id="selectShiftPatternInfoList" parameterType="com.prafta.web.attd.attd01.application.query.ShiftSchDetailQuery" resultType="com.prafta.web.attd.attd01.result.ShiftPatternInfoResult">
     /* Attd01Mapper.selectShiftPatternInfoList */
     SELECT 
 		A.CMPNY_CD     AS cmpnyCd
@@ -449,12 +445,12 @@
 		, A.PTRN_IDX   AS ptrnIdx
 		, A.SCH_CD     AS schCd
 	FROM TB_SHIFT_SCH_PTRN_MGMT A
-	WHERE A.CMPNY_CD = #{token.gv_cmpnyCd}
-	  AND A.SITE_CD  = #{param.siteCd}
-	  AND A.SHIFT_CD = #{param.shiftCd}
+	WHERE A.CMPNY_CD = #{gvCmpnyCd}
+	  AND A.SITE_CD  = #{siteCd}
+	  AND A.SHIFT_CD = #{shiftCd}
     </select>
     
-    <select id="selectShiftTeamInfoList" parameterType="com.prafta.web.attd.attd01.dto.ShiftSchDetailQry" resultType="com.prafta.web.attd.attd01.vo.ShiftTeamInfo">
+    <select id="selectShiftTeamInfoList" parameterType="com.prafta.web.attd.attd01.application.query.ShiftSchDetailQuery" resultType="com.prafta.web.attd.attd01.result.ShiftTeamInfoResult">
     /* Attd01Mapper.selectShiftTeamInfoList */
 	SELECT 
 		A.CMPNY_CD     AS cmpnyCd
@@ -463,12 +459,12 @@
 		, A.TEAM_IDX   AS teamIdx
 		, A.TEAM_NM    AS teamNm
 	FROM TB_SHIFT_SCH_TEAM_MGMT A
-	WHERE A.CMPNY_CD = #{token.gv_cmpnyCd}
-	  AND A.SITE_CD  = #{param.siteCd}
-	  AND A.SHIFT_CD = #{param.shiftCd}
+	WHERE A.CMPNY_CD = #{gvCmpnyCd}
+	  AND A.SITE_CD  = #{siteCd}
+	  AND A.SHIFT_CD = #{shiftCd}
     </select>
     
-    <select id="selectShiftAssignInfoList" parameterType="com.prafta.web.attd.attd01.dto.ShiftSchDetailQry" resultType="com.prafta.web.attd.attd01.vo.ShiftAssignInfo">
+    <select id="selectShiftAssignInfoList" parameterType="com.prafta.web.attd.attd01.application.query.ShiftSchDetailQuery" resultType="com.prafta.web.attd.attd01.result.ShiftAssignInfoResult">
     /* Attd01Mapper.selectShiftAssignInfoList */
 	SELECT 
 		A.CMPNY_CD     AS cmpnyCd
@@ -479,8 +475,8 @@
 		, A.ASSIGN_YN  AS assignYn
 		, A.SCH_CD     AS schCd
 	FROM TB_SHIFT_SCH_ASSIGN_MGMT A
-	WHERE A.CMPNY_CD = #{token.gv_cmpnyCd}
-	  AND A.SITE_CD  = #{param.siteCd}
-	  AND A.SHIFT_CD = #{param.shiftCd}
+	WHERE A.CMPNY_CD = #{gvCmpnyCd}
+	  AND A.SITE_CD  = #{siteCd}
+	  AND A.SHIFT_CD = #{shiftCd}
     </select>
 </mapper>

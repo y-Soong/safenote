@@ -49,7 +49,9 @@
                 </tr>
               </thead>
               <tbody>
-                <template v-if="!schHistList || schHistList.length === 0">
+                <template
+                  v-if="!schHistResultList || schHistResultList.length === 0"
+                >
                   <tr>
                     <td colspan="7" class="edu-grid-empty">
                       변경이력이 없습니다.
@@ -57,7 +59,7 @@
                   </tr>
                 </template>
                 <template v-else>
-                  <tr v-for="(item, idx) in schHistList" :key="idx">
+                  <tr v-for="(item, idx) in schHistResultList" :key="idx">
                     <td>{{ item.applyDate ?? "-" }}</td>
                     <td>{{ item.fstSchTime ?? "-" }}</td>
                     <td>{{ item.fstSchBrkMin ?? "-" }}</td>
@@ -118,8 +120,8 @@ const positionStyle = computed(() => {
   return { top: y + "px", left: x + "px" };
 });
 
-/** API 연동 시 schHistList에 데이터 할당 */
-const schHistList = ref([]);
+/** API 연동 시 schHistResultList에 데이터 할당 */
+const schHistResultList = ref([]);
 
 // ================ Life Cycle Functions ================
 onMounted(() => {
@@ -136,7 +138,7 @@ const fnSearch = async () => {
     });
 
     if (response.status === 200) {
-      schHistList.value = response.data.schHistList;
+      schHistResultList.value = response.data.schHistResultList;
     }
   } catch (err) {
     const msg =

@@ -1,0 +1,105 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.prafta.web.attd.attd04.mapper.Attd04Mapper">
+
+    <select id="selectAttdStdTimeRuleList" parameterType="com.prafta.web.attd.attd04.application.query.AttdStdTimeRuleListQuery" resultType="com.prafta.web.attd.attd04.result.AttdStdTimeRuleResult">
+    /* Attd04Mapper.selectAttdStdTimeRuleList */
+    SELECT
+    	A.CMPNY_CD 				AS cmpnyCd
+	    , A.STD_TIME_RULE_TYPE	AS stdTimeRuleType
+	    , A.STD_TIME_TYPE		AS stdTimeType
+    FROM TB_ATTD_STD_TIME_RULE A
+    WHERE A.CMPNY_CD = #{gvCmpnyCd}
+    </select>
+    
+    <select id="selectAttdStdTimeRuleHistList" parameterType="com.prafta.web.attd.attd04.application.query.AttdStdTimeRuleListQuery" resultType="com.prafta.web.attd.attd04.result.AttdStdTimeRuleHistResult">
+    /* Attd04Mapper.selectAttdStdTimeRuleHistList */
+    SELECT 
+		A.CMPNY_CD 						AS cmpnyCd
+	    , B.HIST_IDX					AS histIdx
+	    , A.STD_TIME_RULE_TYPE			AS stdTimeRuleType
+	    , FNC_CMM_INFO_SRCH(
+			A.CMPNY_CD
+	        , 'SYST_VAL'
+	        , A.STD_TIME_RULE_TYPE
+	        , 'SYS028'
+		) 								AS stdTimeRuleTypeNm
+	    , B.STD_TIME_TYPE				AS stdTimeType
+	    , FNC_CMM_INFO_SRCH(
+			A.CMPNY_CD
+			, 'SYST_VAL'
+	        , B.STD_TIME_TYPE
+	        , 'SYS029'
+		) 								AS stdTimeTypeNm
+	    , B.INSERT_NO					AS insertNo
+	    , FNC_CMM_INFO_SRCH(
+			A.CMPNY_CD
+	        , 'USER'
+	        , B.INSERT_NO
+	        , null
+		) 								AS insertNm
+	    , B.INSERT_DATE					AS insertDate
+	FROM TB_ATTD_STD_TIME_RULE A
+		 LEFT OUTER JOIN TB_ATTD_STD_TIME_RULE_HIS B
+			ON (
+				A.CMPNY_CD = B.CMPNY_CD
+			AND A.STD_TIME_RULE_TYPE = B.STD_TIME_RULE_TYPE
+	        )
+	WHERE A.CMPNY_CD = #{gvCmpnyCd}
+	ORDER BY B.HIST_IDX DESC
+    </select>
+
+    <update id="saveAttdStdTimeRule" parameterType="com.prafta.web.attd.attd04.application.command.AttdStdTimeRuleCommand">
+    /* Attd04Mapper.saveAttdStdTimeRule */
+    INSERT INTO TB_ATTD_STD_TIME_RULE (
+		CMPNY_CD
+		, STD_TIME_RULE_TYPE
+		, STD_TIME_TYPE
+		, INSERT_NO 
+		, INSERT_DATE
+		, UPDATE_NO
+		, UPDATE_DATE
+	)
+    VALUES (
+		#{gvCmpnyCd}
+		, #{stdTimeRuleType}
+		, #{stdTimeType}
+		, #{gvUserCd}
+		, NOW()
+		, #{gvUserCd}
+		, NOW()
+	) AS NEW
+	ON DUPLICATE KEY UPDATE
+		STD_TIME_TYPE	= NEW.STD_TIME_TYPE
+		, UPDATE_NO     = NEW.UPDATE_NO
+		, UPDATE_DATE   = NOW()
+    </update>
+    
+    <select id="selectHistIdx" parameterType="string" resultType="int">
+    /* Attd04Mapper.selectHistIdx */
+    SELECT
+    	COUNT(*)
+	FROM TB_ATTD_STD_TIME_RULE_HIS
+	WHERE CMPNY_CD = #{gvCmpnyCd}
+    </select>
+
+	<insert id="saveAttdStdTimeRuleHist" parameterType="com.prafta.web.attd.attd04.application.command.AttdStdTimeRuleHistCommand">
+    /* Attd04Mapper.saveAttdStdTimeRuleHist */
+    INSERT INTO TB_ATTD_STD_TIME_RULE_HIS (
+		HIST_IDX
+		, CMPNY_CD
+		, STD_TIME_RULE_TYPE
+		, STD_TIME_TYPE
+		, INSERT_NO 
+		, INSERT_DATE
+	)
+    VALUES (
+		#{histIdx}
+		, #{gvCmpnyCd}
+		, #{stdTimeRuleType}
+		, #{stdTimeType}
+		, #{gvUserCd}
+		, NOW()
+	)
+    </insert>
+</mapper>

@@ -1,42 +1,55 @@
 package com.prafta.common.cmm.login.mapper;
 
 import java.util.List;
-import java.util.Map;
 
 import org.apache.ibatis.annotations.Mapper;
 import org.apache.ibatis.annotations.Param;
 
-import com.prafta.common.cmm.login.dto.ActiveToken;
-import com.prafta.common.cmm.login.dto.LoginReqDto;
-import com.prafta.common.cmm.login.dto.RequiredTermsInfoSave;
-import com.prafta.common.cmm.login.dto.UserJoinSave;
-import com.prafta.common.cmm.login.dto.UserLogout;
-import com.prafta.common.cmm.login.dto.UserRowLock;
-import com.prafta.common.cmm.login.vo.RequiredTermsInfo;
+import com.prafta.common.cmm.login.application.command.ActiveTokenCommand;
+import com.prafta.common.cmm.login.application.command.AuthMenuInfoCommand;
+import com.prafta.common.cmm.login.application.command.RequiredTermsInfoCommand;
+import com.prafta.common.cmm.login.application.command.UserJoinCommand;
+import com.prafta.common.cmm.login.application.command.UserLogoutCommand;
+import com.prafta.common.cmm.login.application.command.UserPwdFailCommand;
+import com.prafta.common.cmm.login.application.command.UserPwdUnlockCommand;
+import com.prafta.common.cmm.login.application.query.LoginQuery;
+import com.prafta.common.cmm.login.application.query.UserRowLockQuery;
+import com.prafta.common.cmm.login.application.query.UserTermsAgreementCheckQuery;
+import com.prafta.common.cmm.login.result.RequiredTermsResult;
+import com.prafta.common.cmm.login.result.UserResult;
+import com.prafta.common.cmm.login.result.UserTermsAgreementCheckResult;
 
 @Mapper
 public interface LoginMapper {
-	Map<String, Object> getLoginUser(LoginReqDto dto);
+	UserResult Login(LoginQuery loginQuery);
 	
-	void lockUserRow(UserRowLock dto);
+	void userPwdUnLock(UserPwdUnlockCommand command);
 	
-	void revokeActiveToken(ActiveToken dto);
+	void updateUserPwdFail(UserPwdFailCommand command);
 	
-	void insertAuthToken(ActiveToken dto);
+	int lockUserRow(UserRowLockQuery userRowLockQuery);
 	
-	int revokeActiveTokenByClient(UserLogout dto);
+	void revokeActiveToken(ActiveTokenCommand dto);
+	
+	void insertAuthToken(ActiveTokenCommand dto);
+	
+	void updateUserLastLoginDtime(@Param("userCd") String userCd);
+	
+	int revokeActiveTokenByClient(UserLogoutCommand dto);
 
-    int revokeAllActiveTokens(UserLogout dto);
+    int revokeAllActiveTokens(UserLogoutCommand dto);
 	
-	int insertUserInfo(UserJoinSave dto);
+    String selectUserCd(@Param("cmpnyCd") String cmpnyCd);
+    
+	int insertUserInfo(UserJoinCommand dto);
 	
-	int insertUserSiteAuth(UserJoinSave dto);
+	int insertUserSiteAuth(UserJoinCommand dto);
 	
-	List<RequiredTermsInfo> selectRequiredTermsList();
+	List<RequiredTermsResult> selectRequiredTermsList();
 	
-	int insertTermsUserAgrMgmt(RequiredTermsInfoSave dto);
+	int insertTermsUserAgrMgmt(RequiredTermsInfoCommand dto);
 	
-	List<Map<String, Object>> selectUserTermsAgrChk(LoginReqDto dto);
+	List<UserTermsAgreementCheckResult> selectUserTermsAgreementCheck(UserTermsAgreementCheckQuery userTermsAgreementCheckQuery);
 	
-	void mergeAuthMenuInfo(@Param(value = "param") LoginReqDto dto, @Param(value = "token") Map<String, Object> tokenInfo);
+	void mergeAuthMenuInfo(AuthMenuInfoCommand command);
 }

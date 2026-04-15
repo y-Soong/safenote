@@ -138,7 +138,10 @@
             </thead>
             <tbody>
               <template
-                v-if="!riskAssessmentList || riskAssessmentList.length === 0"
+                v-if="
+                  !riskAssessmentResultList ||
+                  riskAssessmentResultList.length === 0
+                "
               >
                 <tr>
                   <td colspan="9" class="edu-grid-empty">
@@ -148,7 +151,7 @@
               </template>
               <template v-else>
                 <tr
-                  v-for="(risk, idx) in riskAssessmentList"
+                  v-for="(risk, idx) in riskAssessmentResultList"
                   :key="risk.assessmentCd"
                   @dblclick="fnOpenRiskAssessInfo(risk)"
                   style="cursor: pointer"
@@ -198,16 +201,16 @@ import {
   defineOptions,
   computed,
   watch,
-} from 'vue';
-import { useModal } from '@/utils/useModal';
-import { useFieldWatcher } from '@/utils/useFieldWatcher';
-import axios from '@/api/axios';
-import ViewHeader from '@/components/common/ViewHeader.vue';
-import search_icon from '@/assets/img/search_icon.png';
-import SiteSearchPop from '@/components/popup/SiteSearchPop.vue';
-import RiskAssessInfo from './popup/RiskAssessInfo.vue';
+} from "vue";
+import { useModal } from "@/utils/useModal";
+import { useFieldWatcher } from "@/utils/useFieldWatcher";
+import axios from "@/api/axios";
+import ViewHeader from "@/components/common/ViewHeader.vue";
+import search_icon from "@/assets/img/search_icon.png";
+import SiteSearchPop from "@/components/popup/SiteSearchPop.vue";
+import RiskAssessInfo from "./popup/RiskAssessInfo.vue";
 
-defineOptions({ name: 'Risk_03' });
+defineOptions({ name: "Risk_03" });
 const props = defineProps({
   title: String,
   buttons: Object,
@@ -217,7 +220,7 @@ const localButtons = ref({ ...props.buttons });
 const { open: openPop } = useModal();
 
 // const userStore = useUserStore();
-const riskAssessmentList = ref([]);
+const riskAssessmentResultList = ref([]);
 const systCodeArr = ref([]);
 const baseCodeArr = ref([]);
 const riskTypeArr = ref([]);
@@ -226,14 +229,14 @@ const SiteSearchPopOpen = ref(false);
 /* 조회조건 변수 세팅 */
 const assessmentStatus = ref();
 const proccessCd = ref();
-const riskTypeCd = ref('');
+const riskTypeCd = ref("");
 const revalDate = ref();
 
-const sr_chkptNm = ref('');
-const sr_useYn = ref('Y');
-const siteCd = ref('');
-const siteNo = ref('');
-const siteNm = ref('');
+const sr_chkptNm = ref("");
+const sr_useYn = ref("Y");
+const siteCd = ref("");
+const siteNo = ref("");
+const siteNm = ref("");
 
 /* UserInfoPop 파라미터 변수 */
 const headChk = ref(false);
@@ -246,38 +249,38 @@ onMounted(async () => {
   fnButtonControll();
   await fnGetSystinfoList();
   await fnGetBaseinfoList();
-  await fnGetriskTypeList();
+  await fnGetriskTypeResultList();
   await fnSearch();
 });
 
 useFieldWatcher(
-  riskAssessmentList,
+  riskAssessmentResultList,
   (item) => {
     item.chk = true;
   },
-  ['chk']
+  ["chk"]
 );
 
 watch(proccessCd, (newVal) => {
-  riskTypeCd.value = '';
+  riskTypeCd.value = "";
 });
 
 // focusKill 이벤트
 const focusKill = (e) => {
-  if (e.target.id == 'siteNo') {
+  if (e.target.id == "siteNo") {
     if (proxy.$util.isEmpty(siteNo.value)) {
-      siteCd.value = '';
-      siteNm.value = '';
+      siteCd.value = "";
+      siteNm.value = "";
     } else {
-      siteNm.value = '';
+      siteNm.value = "";
       siteFocusKill();
     }
-  } else if (e.target.id == 'siteNm') {
+  } else if (e.target.id == "siteNm") {
     if (proxy.$util.isEmpty(siteNm.value)) {
-      siteCd.value = '';
-      siteNo.value = '';
+      siteCd.value = "";
+      siteNo.value = "";
     } else {
-      siteNo.value = '';
+      siteNo.value = "";
       siteFocusKill();
     }
   }
@@ -286,9 +289,9 @@ const focusKill = (e) => {
 // API 호출
 const fnGetSystinfoList = async () => {
   try {
-    const response = await axios.get('/comApi/baseinfo/syst-info-list', {
+    const response = await axios.get("/comApi/baseinfo/syst-info-lists", {
       params: {
-        systCodeList: ['SYS011'],
+        systCodeList: ["SYS011"],
       },
     });
 
@@ -312,7 +315,7 @@ const fnGetSystinfoList = async () => {
     const msg =
       err?.response?.data?.message ||
       err?.message ||
-      '조회 중 오류가 발생했습니다.';
+      "조회 중 오류가 발생했습니다.";
 
     await proxy.$alert(msg);
   }
@@ -320,10 +323,10 @@ const fnGetSystinfoList = async () => {
 
 const fnGetBaseinfoList = async () => {
   try {
-    const response = await axios.get('/comApi/baseinfo/base-info-list', {
+    const response = await axios.get("/comApi/baseinfo/base-info-lists", {
       params: {
-        cmpnyCd: sessionStorage.getItem('gv_cmpnyCd'),
-        baseCodeList: ['COM002'],
+        cmpnyCd: sessionStorage.getItem("gv_cmpnyCd"),
+        baseCodeList: ["COM002"],
       },
     });
 
@@ -347,34 +350,34 @@ const fnGetBaseinfoList = async () => {
     const msg =
       err?.response?.data?.message ||
       err?.message ||
-      '조회 중 오류가 발생했습니다.';
+      "조회 중 오류가 발생했습니다.";
 
     await proxy.$alert(msg);
   }
 };
 
-const fnGetriskTypeList = async () => {
+const fnGetriskTypeResultList = async () => {
   try {
-    const response = await axios.get('/webApi/risk03/risk-type-info-lists', {});
+    const response = await axios.get("/webApi/risk03/risk-type-info-lists", {});
 
     if (response.status === 200) {
-      riskTypeArr.value = response.data.riskTypeList;
+      riskTypeArr.value = response.data.riskTypeResultList;
     }
   } catch (err) {
     const msg =
       err?.response?.data?.message ||
       err?.message ||
-      '조회 중 오류가 발생했습니다.';
+      "조회 중 오류가 발생했습니다.";
 
     await proxy.$alert(msg);
   }
 };
 
 const fnSearch = async () => {
-  riskAssessmentList.value = [];
+  riskAssessmentResultList.value = [];
 
   try {
-    const response = await axios.get('/webApi/risk03/risk-assessment-lists', {
+    const response = await axios.get("/webApi/risk03/risk-assessment-lists", {
       params: {
         siteCd: siteCd.value,
         assessmentStatus: assessmentStatus.value,
@@ -385,40 +388,40 @@ const fnSearch = async () => {
 
     if (response.status === 200) {
       console.log(response.data);
-      riskAssessmentList.value = response.data.riskAssessmentList;
+      riskAssessmentResultList.value = response.data.riskAssessmentResultList;
     }
   } catch (err) {
     const msg =
       err?.response?.data?.message ||
       err?.message ||
-      '조회 중 오류가 발생했습니다.';
+      "조회 중 오류가 발생했습니다.";
 
     await proxy.$alert(msg);
   }
 };
 
 const fnDataValidationChk = (filteredData) => {
-  let alertMsg = '';
+  let alertMsg = "";
   let retVal = true;
 
   for (var i = 0; i < filteredData.length; i++) {
     if (proxy.$util.isEmpty(filteredData[i].siteCd)) {
-      alertMsg = '사업장은 필수 입력 값 입니다.';
+      alertMsg = "사업장은 필수 입력 값 입니다.";
 
       fnAlertMsg(alertMsg);
       retVal = false;
     } else if (proxy.$util.isEmpty(filteredData[i].chkLstType)) {
-      alertMsg = '점검구분은 필수 입력 값 입니다.';
+      alertMsg = "점검구분은 필수 입력 값 입니다.";
 
       fnAlertMsg(alertMsg);
       retVal = false;
     } else if (proxy.$util.isEmpty(filteredData[i].chkptNm)) {
-      alertMsg = '점검대상명칭은 필수 입력 값 입니다.';
+      alertMsg = "점검대상명칭은 필수 입력 값 입니다.";
 
       fnAlertMsg(alertMsg);
       retVal = false;
     } else if (proxy.$util.isEmpty(filteredData[i].mgmtUserId)) {
-      alertMsg = '관리자는 필수 입력 값 입니다.';
+      alertMsg = "관리자는 필수 입력 값 입니다.";
 
       fnAlertMsg(alertMsg);
       retVal = false;
@@ -434,10 +437,12 @@ const fnDataValidationChk = (filteredData) => {
 
 const fnSrchSiteInfo = async () => {
   try {
-    const response = await axios.post('/comApi/baseinfo/getSiteInfoList', {
-      cmpnyCd: sessionStorage.getItem('gv_cmpnyCd'),
-      siteNo: siteNo.value,
-      siteNm: siteNm.value,
+    const response = await axios.get("/comApi/baseinfo/site-lists", {
+      params: {
+        cmpnyCd: sessionStorage.getItem("gv_cmpnyCd"),
+        siteNo: siteNo.value,
+        siteNm: siteNm.value,
+      },
     });
 
     if (response.status === 200) {
@@ -447,7 +452,7 @@ const fnSrchSiteInfo = async () => {
     const msg =
       err?.response?.data?.message ||
       err?.message ||
-      '조회 중 오류가 발생했습니다.';
+      "조회 중 오류가 발생했습니다.";
 
     await proxy.$alert(msg);
   }
@@ -456,20 +461,21 @@ const fnSrchSiteInfo = async () => {
 /* fnCallback */
 const fnCallback = (res) => {
   if (proxy.$util.isNotEmpty(res)) {
-    const apiId = res.config.url.split('/').pop();
-    if (apiId == 'getSiteInfoList') {
-      if (res.data.length == 1) {
-        siteCd.value = res.data[0].SITE_CD;
-        siteNo.value = res.data[0].SITE_NO;
-        siteNm.value = res.data[0].SITE_NM;
-      } else if (res.data.length > 1) {
+    const apiId = res.config.url.split("/").pop();
+    if (apiId == "site-lists") {
+      const siteList = res.data?.siteInfoResultList ?? [];
+      if (siteList.length === 1) {
+        siteCd.value = siteList[0].siteCd;
+        siteNo.value = siteList[0].siteNo;
+        siteNm.value = siteList[0].siteNm;
+      } else if (siteList.length > 1) {
         //        handleResetSiteSearchPop();
-        fnSiteSearchPopOpen('searchForm');
+        fnSiteSearchPopOpen("searchForm");
         SiteSearchPopOpen.value = true;
       } else {
-        siteCd.value = '';
-        siteNo.value = '';
-        siteNm.value = '';
+        siteCd.value = "";
+        siteNo.value = "";
+        siteNm.value = "";
       }
     }
   }
@@ -478,10 +484,10 @@ const fnCallback = (res) => {
 /* user function */
 const fnButtonControll = () => {
   // localButtons.value.search = "N";
-  localButtons.value.create = 'N';
-  localButtons.value.save = 'N';
-  localButtons.value.delete = 'N';
-  localButtons.value.excel = 'N';
+  localButtons.value.create = "N";
+  localButtons.value.save = "N";
+  localButtons.value.delete = "N";
+  localButtons.value.excel = "N";
 };
 
 const onSiteSelected = (siteCdVal, siteNoVal, siteNmVal) => {
@@ -496,17 +502,17 @@ const siteFocusKill = async () => {
 
 const fnHeadChk = () => {
   headChk.value = !headChk.value;
-  riskAssessmentList.value.forEach((item) => {
+  riskAssessmentResultList.value.forEach((item) => {
     item.chk = headChk.value;
   });
 };
 
 const fnSiteSearchPopOpen = (callPoint) => {
-  if (callPoint == 'searchForm') {
+  if (callPoint == "searchForm") {
     openPop(SiteSearchPop, {
-      cmpnyCd_p: sessionStorage.getItem('gv_cmpnyCd'),
-      siteNo_p: siteNo.value,
-      siteNm_p: siteNm.value,
+      cmpnyCd_p: sessionStorage.getItem("gv_cmpnyCd"),
+      siteNo_p: "",
+      siteNm_p: "",
       onSelect: onSiteSelected,
     });
   }
@@ -517,46 +523,46 @@ const fnOpenRiskAssessInfo = (risk) => {
 
   openPop(RiskAssessInfo, {
     riskAssessmentData: {
-      cmpnyCd: risk.cmpnyCd || '',
-      siteCd: risk.siteCd || '',
-      processCd: risk.processCd || '',
-      processNm: risk.processNm || '',
-      riskTypeCd: risk.riskTypeCd || '',
-      riskTypeNm: risk.riskTypeNm || '',
-      hazardCd: risk.hazardCd || '',
-      hazardNm: risk.hazardNm || '',
-      assessmentCd: risk.assessmentCd || '',
-      assessmentStatus: risk.assessmentStatus || '',
-      assessmentStatusNm: risk.assessmentStatusNm || '',
-      initLikelihoodScore: risk.initLikelihoodScore || '',
-      initSeverityScore: risk.initSeverityScore || '',
-      initRiskLv: risk.initRiskLv || '',
-      initDesc: risk.initDesc || '',
-      initAssessorId: risk.initAssessorId || '',
-      initAssessorNm: risk.initAssessorNm || '',
-      initAssessDate: risk.initAssessDate || '',
-      initFileMgmtCd: risk.initFileMgmtCd || '',
-      initFilePath: risk.initFilePath || '',
-      revalDate: risk.revalDate || '',
-      revalBeforeDesc: risk.revalBeforeDesc || '',
+      cmpnyCd: risk.cmpnyCd || "",
+      siteCd: risk.siteCd || "",
+      processCd: risk.processCd || "",
+      processNm: risk.processNm || "",
+      riskTypeCd: risk.riskTypeCd || "",
+      riskTypeNm: risk.riskTypeNm || "",
+      hazardCd: risk.hazardCd || "",
+      hazardNm: risk.hazardNm || "",
+      assessmentCd: risk.assessmentCd || "",
+      assessmentStatus: risk.assessmentStatus || "",
+      assessmentStatusNm: risk.assessmentStatusNm || "",
+      initLikelihoodScore: risk.initLikelihoodScore || "",
+      initSeverityScore: risk.initSeverityScore || "",
+      initRiskLv: risk.initRiskLv || "",
+      initDesc: risk.initDesc || "",
+      initAssessorId: risk.initAssessorId || "",
+      initAssessorNm: risk.initAssessorNm || "",
+      initAssessDate: risk.initAssessDate || "",
+      initFileMgmtCd: risk.initFileMgmtCd || "",
+      initFilePath: risk.initFilePath || "",
+      revalDate: risk.revalDate || "",
+      revalBeforeDesc: risk.revalBeforeDesc || "",
       revalLikelihoodScore: proxy.$util.isEmpty(risk.revalLikelihoodScore)
         ? risk.initLikelihoodScore
-        : risk.revalLikelihoodScore || '',
+        : risk.revalLikelihoodScore || "",
       revalSeverityScore: proxy.$util.isEmpty(risk.revalSeverityScore)
         ? risk.initSeverityScore
-        : risk.revalSeverityScore || '',
-      revalRiskLv: risk.revalRiskLv || '',
-      revalDesc: risk.revalDesc || '',
-      revalAssessorId: risk.revalAssessorId || '',
-      revalAssessorNm: risk.revalAssessorNm || '',
-      revalAssessDate: risk.revalAssessDate || '',
-      revalFileMgmtCd: risk.revalFileMgmtCd || '',
-      revalFilePath: risk.revalFilePath || '',
-      revalAssessDate: risk.revalAssessDate || '',
+        : risk.revalSeverityScore || "",
+      revalRiskLv: risk.revalRiskLv || "",
+      revalDesc: risk.revalDesc || "",
+      revalAssessorId: risk.revalAssessorId || "",
+      revalAssessorNm: risk.revalAssessorNm || "",
+      revalAssessDate: risk.revalAssessDate || "",
+      revalFileMgmtCd: risk.revalFileMgmtCd || "",
+      revalFilePath: risk.revalFilePath || "",
+      revalAssessDate: risk.revalAssessDate || "",
     },
     onSave: (data) => {
       // 저장 후 처리 로직
-      console.log('Saved data:', data);
+      console.log("Saved data:", data);
       fnSearch(); // 목록 새로고침
     },
   });

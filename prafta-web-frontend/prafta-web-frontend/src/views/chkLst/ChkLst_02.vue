@@ -181,6 +181,7 @@ import {
 import { useFieldWatcher } from "@/utils/useFieldWatcher";
 import axios from "@/api/axios";
 import ViewHeader from "@/components/common/ViewHeader.vue";
+import { getMessage, MSG } from "@/messages";
 import BaseSelect from "@/components/common/BaseSelect.vue";
 import CalendarSrchMonth from "@/components/common/CalendarSrchMonth.vue";
 
@@ -231,7 +232,7 @@ function focusKill(value, idx) {
 // API 호출
 const fnGetSystinfoList = async () => {
   try {
-    const response = await axios.get("/comApi/baseinfo/syst-info-list", {
+    const response = await axios.get("/comApi/baseinfo/syst-info-lists", {
       params: {
         systCodeList: ["SYS003"],
       },
@@ -265,7 +266,7 @@ const fnSearch = async () => {
   chkptInspectItemList.value = [];
 
   try {
-    const response = await axios.get("/comApi/baseinfo/base-info-list", {
+    const response = await axios.get("/comApi/baseinfo/base-info-lists", {
       params: {
         cmpnyCd: sessionStorage.getItem("gv_cmpnyCd"),
         baseCodeList: ["COM001"],
@@ -304,15 +305,18 @@ const fnSubSearch = async (code) => {
   chkptInspectItemList.value = [];
 
   try {
-    const response = await axios.post(
-      "/webApi/chkLst02/getChkptInspectItemList",
+    const response = await axios.get(
+      "/webApi/chkLst02/chkpt-inspect-item-lists",
       {
-        sr_codeCd: targetValCd.value,
+        params: {
+          codeCd: targetValCd.value,
+        },
       }
     );
 
     if (response.status === 200) {
-      chkptInspectItemList.value = response.data;
+      chkptInspectItemList.value =
+        response.data?.chkptInspectItemResultList || [];
     }
   } catch (err) {
     const msg =
@@ -326,21 +330,30 @@ const fnSubSearch = async (code) => {
 
 const fnSave = async (dataList) => {
   if (dataList.length == 0) {
-    proxy.$alert("저장할 데이터가 없습니다.");
+    proxy.$alert(getMessage(MSG.SAVE_DATA_REQUIRED));
     return;
   }
 
-  const ok = await proxy.$confirm("저장하시겠습니까 ?");
+  const invalidIdx = dataList.findIndex((item) =>
+    proxy.$util.isEmpty(item.inspectItemSubj)
+  );
+
+  if (invalidIdx !== -1) {
+    proxy.$alert(`선택된 데이터 중 ${invalidIdx + 1}번째 행의 점검항목명을\n입력해주세요.`);
+    return;
+  }
+
+  const ok = await proxy.$confirm(getMessage(MSG.SAVE_CONFIRM));
   if (!ok) return;
 
   try {
     const response = await axios.post(
-      "/webApi/chkLst02/updateChkptInspectItemList",
+      "/webApi/chkLst02/update-chkpt-inspect-items",
       dataList
     );
 
     if (response.status === 200) {
-      proxy.$alert("처리되었습니다.");
+      proxy.$alert(getMessage(MSG.SAVE_SUCCESS));
       fnSubSearch();
     }
   } catch (err) {
@@ -355,21 +368,21 @@ const fnSave = async (dataList) => {
 
 const fnDelete = async (dataList) => {
   if (dataList.length == 0) {
-    proxy.$alert("삭제할 데이터가 없습니다.");
+    proxy.$alert(getMessage(MSG.DELETE_DATA_REQUIRED));
     return;
   }
 
-  const ok = await proxy.$confirm("삭제하시겠습니까 ?");
+  const ok = await proxy.$confirm(getMessage(MSG.DELETE_CONFIRM));
   if (!ok) return;
 
   try {
     const response = await axios.post(
-      "/webApi/chkLst02/deleteChkptInspectItemList",
+      "/webApi/chkLst02/delete-chkpt-inspect-items",
       dataList
     );
 
     if (response.status === 200) {
-      proxy.$alert("처리되었습니다.");
+      proxy.$alert(getMessage(MSG.SAVE_SUCCESS));
       fnSubSearch();
     }
   } catch (err) {
@@ -416,7 +429,7 @@ function fnSaveRow() {
   //  const dataList = proxy.$util.toCamelCaseKeys(filteredData);
 
   if (filteredData.length == 0) {
-    proxy.$alert("저장할 데이터가 없습니다.");
+    proxy.$alert(getMessage(MSG.SAVE_DATA_REQUIRED));
     return;
   }
 
@@ -430,7 +443,7 @@ function fnDeleteRow() {
   // const dataList = proxy.$util.toCamelCaseKeys(filteredData);
 
   if (filteredData.length == 0) {
-    proxy.$alert("삭제할 데이터가 없습니다.");
+    proxy.$alert(getMessage(MSG.DELETE_DATA_REQUIRED));
     return;
   }
 

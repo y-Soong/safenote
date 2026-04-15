@@ -222,45 +222,81 @@ onBeforeUnmount(() => {
 
 // ================ API Functions ================
 const fnSubmitLogin = async () => {
+  /*
   if (!userId.value || !password.value) {
-    await proxy.$alert("아이디와 비밀번호를 모두 입력해주세요");
+    await proxy.$alert(getMessage(MSG.LOGIN_INPUT_REQUIRED));
     return;
   }
-
+*/
+  console.log(userId.value, password.value);
   try {
-    const response = await axios.post("/comApi/login/loginChk", {
-      userId: userId.value,
-      userPw: password.value,
+    const response = await axios.get("/comApi/login/login", {
+      params: {
+        userId: userId.value,
+        userPw: password.value,
+      },
     });
 
     if (response.status === 200) {
       const {
         token,
-        userId: id,
+        userCd,
+        userId,
         userNm,
+        siteCd,
+        siteNo,
+        siteNm,
+        nodeCd,
+        nodeNm,
         cmpnyCd,
         authCd,
+        authLevel,
         mblNo,
         email,
         refreshToken,
       } = response.data;
 
+      console.log(response);
+      console.log(userId);
+
       sessionStorage.setItem("token", token);
       sessionStorage.setItem("gv_cmpnyCd", cmpnyCd);
-      sessionStorage.setItem("gv_userId", id);
+      sessionStorage.setItem("gv_userCd", userCd);
+      sessionStorage.setItem("gv_userId", userId);
       sessionStorage.setItem("gv_userNm", userNm);
+      sessionStorage.setItem("gv_siteCd", siteCd);
+      sessionStorage.setItem("gv_siteNo", siteNo);
+      sessionStorage.setItem("gv_siteNm", siteNm);
+      sessionStorage.setItem("gv_nodeCd", nodeCd);
+      sessionStorage.setItem("gv_nodeNm", nodeNm);
       sessionStorage.setItem("gv_authCd", authCd);
+      sessionStorage.setItem("gv_authLevel", authLevel);
       sessionStorage.setItem("gv_mblNo", mblNo);
       sessionStorage.setItem("gv_email", email);
       localStorage.setItem("refreshToken", refreshToken);
-      userStore.setUser({ userId: id, userNm, cmpnyCd, authCd, mblNo, email });
+      userStore.setUser({
+        cmpnyCd,
+        userCd,
+        userId,
+        userNm,
+        siteCd,
+        siteNo,
+        siteNm,
+        nodeCd,
+        nodeNm,
+        authCd,
+        authLevel,
+        mblNo,
+        email,
+      });
 
-      if (rememberId.value) localStorage.setItem("savedUserId", userId.value);
+      if (rememberId.value) localStorage.setItem("savedUserId", userId);
       else localStorage.removeItem("savedUserId");
 
       fnUserTermsAgrChk();
     }
   } catch (err) {
+    console.log(err);
     const msg =
       err?.response?.data?.message || err?.message || "로그인에 실패했습니다.";
     await proxy.$alert(msg);
@@ -269,14 +305,20 @@ const fnSubmitLogin = async () => {
 
 const fnUserTermsAgrChk = async () => {
   try {
-    const response = await axios.post("/comApi/login/getUserTermsAgrChk", {
-      userId: userId.value,
-    });
+    const response = await axios.get(
+      "/comApi/login/user-terms-agreement-check",
+      {
+        params: {
+          userId: userId.value,
+        },
+      }
+    );
 
     if (response.status === 200) {
-      userTermsNonAgrList.value = response.data;
+      userTermsNonAgrList.value =
+        response.data?.userTermsAgreementCheckList || [];
 
-      if (response.data.length > 0) {
+      if (userTermsNonAgrList.value.length > 0) {
         openPop(TermsPop, {
           loginFlg_p: "Y",
           userTermsNonAgrList_p: userTermsNonAgrList.value,

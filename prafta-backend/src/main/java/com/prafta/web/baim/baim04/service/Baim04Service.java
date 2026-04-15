@@ -1,16 +1,13 @@
 package com.prafta.web.baim.baim04.service;
 
-import java.util.List;
-import java.util.Map;
-
-import com.prafta.web.baim.baim04.dto.DailyUserLinkPoliciesReq;
-import com.prafta.web.baim.baim04.dto.DailyUserLinkPoliciesRes;
-import com.prafta.web.baim.baim04.dto.LinkPoliciesReq;
+import com.prafta.web.baim.baim04.application.param.DailyUserLinkPoliciesParam;
+import com.prafta.web.baim.baim04.application.param.LinkPoliciesParam;
+import com.prafta.web.baim.baim04.dto.response.DailyUserLinkPoliciesResponse;
 
 public interface Baim04Service {
-	DailyUserLinkPoliciesRes selectDailyUserLinkPolicyList(DailyUserLinkPoliciesReq dto, Map<String, Object> tokenInfo);
+	DailyUserLinkPoliciesResponse selectDailyUserLinkPolicyList(DailyUserLinkPoliciesParam param);
 	
-	void saveDailyUserLinkPolicy(List<LinkPoliciesReq> dtoList, Map<String, Object> tokenInfo);
+	void saveDailyUserLinkPolicy(LinkPoliciesParam param);
 	
-	void deleteDailyUserLinkPolicy(List<LinkPoliciesReq> dtoList, Map<String, Object> tokenInfo);
+	void deleteDailyUserLinkPolicy(LinkPoliciesParam param);
 }

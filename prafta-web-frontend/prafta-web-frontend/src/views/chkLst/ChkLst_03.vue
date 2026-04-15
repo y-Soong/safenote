@@ -3,7 +3,7 @@
     <ViewHeader
       class="commViewHeader"
       :title="props.title"
-      :buttons="props.buttons"
+      :buttons="localButtons"
       @search="fnSearch"
     />
     <!-- 
@@ -198,19 +198,20 @@ import {
   defineOptions,
   nextTick,
   watch,
-} from 'vue';
-import { useModal } from '@/utils/useModal';
-import { useFieldWatcher } from '@/utils/useFieldWatcher';
-import axios from '@/api/axios';
-import ViewHeader from '@/components/common/ViewHeader.vue';
-import search_icon from '@/assets/img/search_icon.png';
-import SiteSearchPop from '@/components/popup/SiteSearchPop.vue';
-import BaseSelect from '@/components/common/BaseSelect.vue';
-import CalendarSrchMonth from '@/components/common/CalendarSrchMonth.vue';
-import ChkLstRstPop from '@/views/chkLst/popup/ChkLstRstPop.vue';
+} from "vue";
+import { useModal } from "@/utils/useModal";
+import { useFieldWatcher } from "@/utils/useFieldWatcher";
+import axios from "@/api/axios";
+import ViewHeader from "@/components/common/ViewHeader.vue";
+import { getMessage, MSG } from "@/messages";
+import search_icon from "@/assets/img/search_icon.png";
+import SiteSearchPop from "@/components/popup/SiteSearchPop.vue";
+import BaseSelect from "@/components/common/BaseSelect.vue";
+import CalendarSrchMonth from "@/components/common/CalendarSrchMonth.vue";
+import ChkLstRstPop from "@/views/chkLst/popup/ChkLstRstPop.vue";
 
 // =========================== Define ===========================
-defineOptions({ name: 'ChkLst_03' });
+defineOptions({ name: "ChkLst_03" });
 const props = defineProps({
   buttons: Object,
   title: String,
@@ -218,13 +219,13 @@ const props = defineProps({
 
 // =========================== Reactive ===========================
 const formData = reactive({
-  fromDate: '',
-  toDate: '',
-  siteCd: '',
-  siteNo: '',
-  siteNm: '',
-  chkLstType: '',
-  chkptNm: '',
+  fromDate: "",
+  toDate: "",
+  siteCd: "",
+  siteNo: "",
+  siteNm: "",
+  chkLstType: "",
+  chkptNm: "",
 });
 
 // =========================== Ref ===========================
@@ -237,16 +238,15 @@ const siteDisabled = ref(false);
 // =========================== Data ===========================
 const { open: openPop } = useModal();
 const { proxy } = getCurrentInstance();
+const localButtons = ref({ ...props.buttons });
 // 날짜 자동 조정 플래그 (무한 루프 방지)
 let isAdjustingDate = false;
 
 // =========================== Life Cycle ===========================
 onMounted(async () => {
   initializeFormData();
-  // await fnGetSystinfoList();
+  fnButtonControll();
   await fnGetBaseinfoList();
-  // await fnSearch();
-  // formData.workDate
 });
 
 // =========================== Watch, Watcher ===========================
@@ -255,7 +255,7 @@ useFieldWatcher(
   (item) => {
     item.chk = true;
   },
-  ['chk']
+  ["chk"]
 );
 
 // fromDate 변경 감시 - toDate보다 클 경우 toDate를 fromDate의 한달 후로 세팅
@@ -317,23 +317,23 @@ watch(
 // yyyy-mm 형식의 날짜를 Date 객체로 변환
 const parseDate = (dateStr) => {
   if (!dateStr) return null;
-  const [year, month] = dateStr.split('-').map(Number);
+  const [year, month] = dateStr.split("-").map(Number);
   return new Date(year, month - 1, 1);
 };
 
 // Date 객체를 yyyy-mm 형식으로 변환
 const formatDate = (date) => {
-  if (!date) return '';
+  if (!date) return "";
   return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(
     2,
-    '0'
+    "0"
   )}`;
 };
 
 // 날짜 validation 체크 (조회 전에 호출)
 const validateDateRange = () => {
   if (!formData.fromDate || !formData.toDate) {
-    proxy.$alert('시작월과 종료월을 모두 입력해주세요.');
+    proxy.$alert(getMessage(MSG.MONTH_RANGE_REQUIRED));
     return false;
   }
 
@@ -341,7 +341,7 @@ const validateDateRange = () => {
   const toDateParsed = parseDate(formData.toDate);
 
   if (!fromDateParsed || !toDateParsed) {
-    proxy.$alert('날짜 형식이 올바르지 않습니다.');
+    proxy.$alert(getMessage(MSG.DATE_FORMAT_INVALID));
     return false;
   }
 
@@ -353,9 +353,7 @@ const validateDateRange = () => {
       1
     );
     formData.fromDate = formatDate(adjustedDate);
-    proxy.$alert(
-      '시작월이 종료월보다 클 수 없습니다. 시작월이 자동으로 조정되었습니다.'
-    );
+    proxy.$alert(getMessage(MSG.MONTH_ORDER_AUTO_ADJUSTED));
     return false; // 조정 후 다시 확인하도록 false 반환
   }
 
@@ -364,20 +362,20 @@ const validateDateRange = () => {
 
 // focusKill 이벤트
 function focusKill(e) {
-  if (e.target.id == 'siteNo') {
+  if (e.target.id == "siteNo") {
     if (proxy.$util.isEmpty(formData.sr_siteNo)) {
-      formData.siteCd = '';
-      formData.siteNm = '';
+      formData.siteCd = "";
+      formData.siteNm = "";
     } else {
-      formData.siteNm = '';
+      formData.siteNm = "";
       siteFocusKill();
     }
-  } else if (e.target.id == 'siteNm') {
+  } else if (e.target.id == "siteNm") {
     if (proxy.$util.isEmpty(formData.siteNm)) {
-      formData.siteCd = '';
-      formData.siteNo = '';
+      formData.siteCd = "";
+      formData.siteNo = "";
     } else {
-      formData.siteNo = '';
+      formData.siteNo = "";
       siteFocusKill();
     }
   }
@@ -387,13 +385,13 @@ const initializeFormData = () => {
   const now = new Date();
   const currentMonth = `${now.getFullYear()}-${String(
     now.getMonth() + 1
-  ).padStart(2, '0')}`;
+  ).padStart(2, "0")}`;
 
   // 1개월 뒤 계산
   const nextMonth = new Date(now.getFullYear(), now.getMonth() - 1, 1);
   const nextMonthStr = `${nextMonth.getFullYear()}-${String(
     nextMonth.getMonth() + 1
-  ).padStart(2, '0')}`;
+  ).padStart(2, "0")}`;
 
   formData.toDate = currentMonth;
   formData.fromDate = nextMonthStr;
@@ -401,10 +399,10 @@ const initializeFormData = () => {
 
 const fnGetBaseinfoList = async () => {
   try {
-    const response = await axios.get('/comApi/baseinfo/base-info-list', {
+    const response = await axios.get("/comApi/baseinfo/base-info-lists", {
       params: {
-        cmpnyCd: sessionStorage.getItem('gv_cmpnyCd'),
-        baseCodeList: ['COM001'],
+        cmpnyCd: sessionStorage.getItem("gv_cmpnyCd"),
+        baseCodeList: ["COM001"],
       },
     });
 
@@ -428,7 +426,7 @@ const fnGetBaseinfoList = async () => {
     const msg =
       err?.response?.data?.message ||
       err?.message ||
-      '조회 중 오류가 발생했습니다.';
+      "조회 중 오류가 발생했습니다.";
 
     await proxy.$alert(msg);
     // proxy.$alert(err.response.data.message);
@@ -442,17 +440,15 @@ const fnSearch = async () => {
   }
 
   const param = {
-    cmpnyCd: sessionStorage.getItem('gv_cmpnyCd'),
-    userId: sessionStorage.getItem('gv_userId'),
-    fromDate: formData.fromDate.split('T')[0].replaceAll('-', ''),
-    toDate: formData.toDate.split('T')[0].replaceAll('-', ''),
+    fromDate: formData.fromDate.split("T")[0].replaceAll("-", ""),
+    toDate: formData.toDate.split("T")[0].replaceAll("-", ""),
     siteCd: formData.siteCd,
     chkptNm: formData.chkptNm,
     chkLstType: formData.chkLstType,
   };
 
   try {
-    const response = await axios.get('/webApi/chkLst03/inspect-results', {
+    const response = await axios.get("/webApi/chkLst03/inspect-results", {
       params: param,
     });
 
@@ -463,7 +459,7 @@ const fnSearch = async () => {
     const msg =
       err?.response?.data?.message ||
       err?.message ||
-      '조회 중 오류가 발생했습니다.';
+      "조회 중 오류가 발생했습니다.";
 
     await proxy.$alert(msg);
     // proxy.$alert(err.response.data.message);
@@ -471,27 +467,27 @@ const fnSearch = async () => {
 };
 
 function fnDataValidationChk(filteredData) {
-  let alertMsg = '';
+  let alertMsg = "";
   let retVal = true;
 
   for (var i = 0; i < filteredData.length; i++) {
     if (proxy.$util.isEmpty(filteredData[i].siteCd)) {
-      alertMsg = '사업장은 필수 입력 값 입니다.';
+      alertMsg = "사업장은 필수 입력 값 입니다.";
 
       fnAlertMsg(alertMsg);
       retVal = false;
     } else if (proxy.$util.isEmpty(filteredData[i].chkLstType)) {
-      alertMsg = '점검구분은 필수 입력 값 입니다.';
+      alertMsg = "점검구분은 필수 입력 값 입니다.";
 
       fnAlertMsg(alertMsg);
       retVal = false;
     } else if (proxy.$util.isEmpty(filteredData[i].chkptNm)) {
-      alertMsg = '점검대상명칭은 필수 입력 값 입니다.';
+      alertMsg = "점검대상명칭은 필수 입력 값 입니다.";
 
       fnAlertMsg(alertMsg);
       retVal = false;
     } else if (proxy.$util.isEmpty(filteredData[i].mgmtUserId)) {
-      alertMsg = '관리자는 필수 입력 값 입니다.';
+      alertMsg = "관리자는 필수 입력 값 입니다.";
 
       fnAlertMsg(alertMsg);
       retVal = false;
@@ -507,10 +503,12 @@ function fnDataValidationChk(filteredData) {
 
 const fnSrchSiteInfo = async () => {
   try {
-    const response = await axios.post('/comApi/baseinfo/getSiteInfoList', {
-      cmpnyCd: sessionStorage.getItem('gv_cmpnyCd'),
-      siteNo: formData.siteNo,
-      siteNm: formData.siteNm,
+    const response = await axios.get("/comApi/baseinfo/site-lists", {
+      params: {
+        cmpnyCd: sessionStorage.getItem("gv_cmpnyCd"),
+        siteNo: formData.siteNo,
+        siteNm: formData.siteNm,
+      },
     });
 
     if (response.status === 200) {
@@ -520,7 +518,7 @@ const fnSrchSiteInfo = async () => {
     const msg =
       err?.response?.data?.message ||
       err?.message ||
-      '조회 중 오류가 발생했습니다.';
+      "조회 중 오류가 발생했습니다.";
 
     await proxy.$alert(msg);
     // alert(err.response.data.message);
@@ -530,26 +528,35 @@ const fnSrchSiteInfo = async () => {
 /* fnCallback */
 const fnCallback = (res) => {
   if (proxy.$util.isNotEmpty(res)) {
-    const apiId = res.config.url.split('/').pop();
-    if (apiId == 'getSiteInfoList') {
-      if (res.data.length == 1) {
-        formData.siteCd = res.data[0].SITE_CD;
-        formData.siteNo = res.data[0].SITE_NO;
-        formData.siteNm = res.data[0].SITE_NM;
-      } else if (res.data.length > 1) {
+    const apiId = res.config.url.split("/").pop();
+    if (apiId == "site-lists") {
+      const siteList = res.data?.siteInfoResultList ?? [];
+      if (siteList.length === 1) {
+        formData.siteCd = siteList[0].siteCd;
+        formData.siteNo = siteList[0].siteNo;
+        formData.siteNm = siteList[0].siteNm;
+      } else if (siteList.length > 1) {
         //        handleResetSiteSearchPop();
-        fnSiteSearchPopOpen('searchForm');
+        fnSiteSearchPopOpen("searchForm");
         SiteSearchPopOpen.value = true;
       } else {
-        formData.siteCd = '';
-        formData.siteNo = '';
-        formData.siteNm = '';
+        formData.siteCd = "";
+        formData.siteNo = "";
+        formData.siteNm = "";
       }
     }
   }
 };
 
 /* user function */
+const fnButtonControll = () => {
+  // localButtons.value.search = "N";
+  localButtons.value.create = "N";
+  localButtons.value.save = "N";
+  localButtons.value.delete = "N";
+  localButtons.value.excel = "N";
+}
+
 const onSiteSelected = (siteCdVal, siteNoVal, siteNmVal) => {
   formData.siteCd = siteCdVal;
   formData.siteNo = siteNoVal;
@@ -568,18 +575,18 @@ const fnHeadChk = () => {
 };
 
 const fnSiteSearchPopOpen = (callPoint) => {
-  if (callPoint == 'searchForm') {
+  if (callPoint == "searchForm") {
     openPop(SiteSearchPop, {
-      cmpnyCd_p: sessionStorage.getItem('gv_cmpnyCd'),
-      siteNo_p: formData.sr_siteNo,
-      siteNm_p: formData.sr_siteNm,
+      cmpnyCd_p: sessionStorage.getItem("gv_cmpnyCd"),
+      siteNo_p: "",
+      siteNm_p: "",
       onSelect: onSiteSelected,
     });
   } else {
     openPop(SiteSearchPop, {
-      cmpnyCd_p: sessionStorage.getItem('gv_cmpnyCd'),
-      siteNo_p: formData.sr_siteNo,
-      siteNm_p: formData.sr_siteNm,
+      cmpnyCd_p: sessionStorage.getItem("gv_cmpnyCd"),
+      siteNo_p: "",
+      siteNm_p: "",
       onSelect: (siteCdVal, siteNoVal, siteNmVal) => {
         chkptList.value[callPoint].siteCd = siteCdVal;
         chkptList.value[callPoint].siteNm = siteNmVal;
@@ -595,8 +602,8 @@ const generateDateRange = (fromDate, toDate) => {
   if (!fromDate || !toDate) return dates;
 
   // yyyy-mm 형식을 파싱
-  const [fromYear, fromMonth] = fromDate.split('-').map(Number);
-  const [toYear, toMonth] = toDate.split('-').map(Number);
+  const [fromYear, fromMonth] = fromDate.split("-").map(Number);
+  const [toYear, toMonth] = toDate.split("-").map(Number);
 
   let currentYear = fromYear;
   let currentMonth = fromMonth;
@@ -607,7 +614,7 @@ const generateDateRange = (fromDate, toDate) => {
     (currentYear === toYear && currentMonth <= toMonth)
   ) {
     // yyyyMM 형식으로 변환 (예: 202411)
-    const workDate = `${currentYear}${String(currentMonth).padStart(2, '0')}`;
+    const workDate = `${currentYear}${String(currentMonth).padStart(2, "0")}`;
     dates.push(workDate);
 
     // 다음 월로 이동
@@ -624,30 +631,30 @@ const generateDateRange = (fromDate, toDate) => {
 const fnChkLstRstPopOpen = (chkptResult) => {
   // fromDate와 toDate 사이의 모든 월에 대해 workDate 생성
   const workMonths = generateDateRange(formData.fromDate, formData.toDate);
-  const baseCode = baseCodeArr.value['COM001'].filter(
+  const baseCode = baseCodeArr.value["COM001"].filter(
     (item) => item.baimValDCd == chkptResult.chkLstType
   );
-  let chkLstTypeNm = '';
+  let chkLstTypeNm = "";
 
   if (proxy.$util.isNotEmpty(baseCode) && baseCode.length == 1) {
-    chkLstTypeNm = baseCode[0]?.baimValDNm || '';
+    chkLstTypeNm = baseCode[0]?.baimValDNm || "";
   }
 
   // 각 workDate마다 chkptInfo 항목 생성
   const chkptInfo = workMonths.map((workMonth) => ({
-    siteCd: chkptResult.siteCd || '',
-    siteNm: chkptResult.siteNm || '',
+    siteCd: chkptResult.siteCd || "",
+    siteNm: chkptResult.siteNm || "",
     workMonth: workMonth,
-    chkptCd: chkptResult.chkptCd || '',
-    chkptNm: chkptResult.chkptNm || '',
-    chkLstType: chkptResult.chkLstType || '',
-    chkLstTypeNm: chkLstTypeNm || '',
-    siteAdminNm: chkptResult.siteAdminNm || '',
-    chkptDesc: chkptResult.chkptDesc || '',
+    chkptCd: chkptResult.chkptCd || "",
+    chkptNm: chkptResult.chkptNm || "",
+    chkLstType: chkptResult.chkLstType || "",
+    chkLstTypeNm: chkLstTypeNm || "",
+    siteAdminNm: chkptResult.siteAdminNm || "",
+    chkptDesc: chkptResult.chkptDesc || "",
   }));
 
   openPop(ChkLstRstPop, {
-    cmpnyCd: sessionStorage.getItem('gv_cmpnyCd'),
+    cmpnyCd: sessionStorage.getItem("gv_cmpnyCd"),
     chkptInfo: chkptInfo,
   });
 };
@@ -660,7 +667,7 @@ const fnSelectedChkLstRstPopOpen = () => {
   );
 
   if (selectedItems.length === 0) {
-    proxy.$alert('조회할 항목을 선택해주세요.');
+    proxy.$alert(getMessage(MSG.SEARCH_ITEM_REQUIRED));
     return;
   }
 
@@ -673,33 +680,33 @@ const fnSelectedChkLstRstPopOpen = () => {
   selectedItems.forEach((chkptResult) => {
     // chkLstTypeNm 찾기
     const baseCode =
-      baseCodeArr.value['COM001']?.filter(
+      baseCodeArr.value["COM001"]?.filter(
         (item) => item.baimValDCd == chkptResult.chkLstType
       ) || [];
-    let chkLstTypeNm = '';
+    let chkLstTypeNm = "";
 
     if (proxy.$util.isNotEmpty(baseCode) && baseCode.length == 1) {
-      chkLstTypeNm = baseCode[0]?.baimValDNm || '';
+      chkLstTypeNm = baseCode[0]?.baimValDNm || "";
     }
 
     // 각 workMonth마다 chkptInfo 항목 생성
     workMonths.forEach((workMonth) => {
       chkptInfo.push({
-        siteCd: chkptResult.siteCd || '',
-        siteNm: chkptResult.siteNm || '',
+        siteCd: chkptResult.siteCd || "",
+        siteNm: chkptResult.siteNm || "",
         workMonth: workMonth,
-        chkptCd: chkptResult.chkptCd || '',
-        chkptNm: chkptResult.chkptNm || '',
-        chkLstType: chkptResult.chkLstType || '',
-        chkLstTypeNm: chkLstTypeNm || '',
-        siteAdminNm: chkptResult.siteAdminNm || '',
-        chkptDesc: chkptResult.chkptDesc || '',
+        chkptCd: chkptResult.chkptCd || "",
+        chkptNm: chkptResult.chkptNm || "",
+        chkLstType: chkptResult.chkLstType || "",
+        chkLstTypeNm: chkLstTypeNm || "",
+        siteAdminNm: chkptResult.siteAdminNm || "",
+        chkptDesc: chkptResult.chkptDesc || "",
       });
     });
   });
 
   openPop(ChkLstRstPop, {
-    cmpnyCd: sessionStorage.getItem('gv_cmpnyCd'),
+    cmpnyCd: sessionStorage.getItem("gv_cmpnyCd"),
     chkptInfo: chkptInfo,
   });
 };

@@ -2,7 +2,7 @@
 <!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
 <mapper namespace="com.prafta.web.risk.risk01.mapper.Risk01Mapper">
 
-	<select id="selectRiskTypeList" parameterType="com.prafta.web.risk.risk01.dto.RiskTypeListQry" resultType="com.prafta.web.risk.risk01.vo.RiskType">
+	<select id="selectRiskTypeList" parameterType="com.prafta.web.risk.risk01.application.query.RiskTypeListQuery" resultType="com.prafta.web.risk.risk01.result.RiskTypeResult">
     /* Risk01Mapper.selectRiskTypeList */
     SELECT
     	A.CMPNY_CD 			AS cmpnyCd
@@ -16,22 +16,22 @@
    	WHERE 1=1
    	  AND (
    	  	A.SITE_CD IS NULL OR A.SITE_CD = ''
-   	  	<if test="param.siteCd != null and param.siteCd != ''">
-   	      OR A.SITE_CD = #{param.siteCd}
+   	  	<if test="siteCd != null and siteCd != ''">
+   	      OR A.SITE_CD = #{siteCd}
    	    </if>
    	  )
-   	  <if test="param.processCd != null and param.processCd != ''">
-   	  	AND A.PROCESS_CD = #{param.processCd}
+   	  <if test="processCd != null and processCd != ''">
+   	  	AND A.PROCESS_CD = #{processCd}
    	  </if>
-   	  <if test="param.riskTypeNm != null and param.riskTypeNm != ''">
-   	  	AND A.RISK_TYPE_NM LIKE CONCAT('%', #{param.riskTypeNm}, '%')
+   	  <if test="riskTypeNm != null and riskTypeNm != ''">
+   	  	AND A.RISK_TYPE_NM LIKE CONCAT('%', #{riskTypeNm}, '%')
    	  </if>
-   	  <if test="param.useYn != null and param.useYn != ''">
-   	  	AND A.USE_YN = #{param.useYn}
+   	  <if test="useYn != null and useYn != ''">
+   	  	AND A.USE_YN = #{useYn}
    	  </if>
     </select>
 
-	<update id="mergeRistType" parameterType="com.prafta.web.risk.risk01.dto.RiskTypeQry">
+	<update id="mergeRistType" parameterType="com.prafta.web.risk.risk01.application.command.RiskTypeCommand">
 	/* Risk01Mapper.mergeRistType */
     INSERT INTO TB_RISK_TYPE (
     	CMPNY_CD
@@ -47,46 +47,46 @@
     	, UPDATE_DATE
    	)
    	VALUES(
-   		#{token.gv_cmpnyCd}
-   		, IFNULL(#{param.riskTypeCd}, FNC_CMM_SEQ_NEXTVAL(#{token.gv_cmpnyCd}, 'RISK_TYPE_CD'))
-   		, #{param.riskTypeNm}
-   		, #{param.siteCd}
-   		, #{param.processCd}
-		, #{param.useYn}
-		, #{param.riskTypeDesc}
-		, #{token.gv_userId}
+   		#{gvCmpnyCd}
+   		, IFNULL(#{riskTypeCd}, FNC_CMM_SEQ_NEXTVAL(#{gvCmpnyCd}, 'RISK_TYPE_CD'))
+   		, #{riskTypeNm}
+   		, #{siteCd}
+   		, #{processCd}
+		, #{useYn}
+		, #{riskTypeDesc}
+		, #{gvUserCd}
 		, now()
-		, #{token.gv_userId}
+		, #{gvUserCd}
 		, now() 
-   	)
+   	) AS NEW
    	ON DUPLICATE KEY UPDATE
-	    RISK_TYPE_NM	= VALUES(RISK_TYPE_NM)
-	    , USE_YN		= IFNULL(#{param.useYn}, 'Y')
-	    , UPDATE_NO   	= #{token.gv_userId}
+	    RISK_TYPE_NM	= NEW.RISK_TYPE_NM
+	    , USE_YN		= IFNULL(NEW.USE_YN, 'Y')
+	    , UPDATE_NO   	= NEW.UPDATGE_NO
 	    , UPDATE_DATE 	= NOW()
 	</update>
 	
-	<select id="selectRiskHazardCnt" parameterType="com.prafta.web.risk.risk01.dto.RiskTypeQry" resultType="java.lang.Integer">
+	<select id="selectRiskHazardCnt" parameterType="com.prafta.web.risk.risk01.application.query.RiskHazardCountQuery" resultType="java.lang.Integer">
     /* Risk01Mapper.selectRiskHazardCnt */
     SELECT COUNT(*)
    	FROM TB_RISK_HAZARD
    	WHERE 1=1
-   	  AND CMPNY_CD = #{param.cmpnyCd}
-   	  AND RISK_TYPE_CD = #{param.riskTypeCd}
+   	  AND CMPNY_CD = #{gvCmpnyCd}
+   	  AND RISK_TYPE_CD = #{riskTypeCd}
     </select>
 	
-	<delete id="deleteRistType" parameterType="com.prafta.web.risk.risk01.dto.RiskTypeQry">
+	<delete id="deleteRistType" parameterType="com.prafta.web.risk.risk01.application.command.RiskTypeCommand">
 	/* Risk01Mapper.deleteRistType */
 	DELETE FROM TB_RISK_TYPE
-	WHERE CMPNY_CD = #{param.cmpnyCd}
-	  AND RISK_TYPE_CD = #{param.riskTypeCd}
-	  <if test="param.siteCd != null and param.siteCd != ''">
-	  	AND SITE_CD = #{param.siteCd}
+	WHERE CMPNY_CD = #{gvCmpnyCd}
+	  AND RISK_TYPE_CD = #{riskTypeCd}
+	  <if test="siteCd != null and siteCd != ''">
+	  	AND SITE_CD = #{siteCd}
 	  </if>
-	  AND PROCESS_CD = #{param.processCd}
+	  AND PROCESS_CD = #{processCd}
 	</delete>
 
-	<select id="selectRiskHazardList" parameterType="com.prafta.web.risk.risk01.dto.RiskHazardListQry" resultType="com.prafta.web.risk.risk01.vo.RiskHazard">
+	<select id="selectRiskHazardList" parameterType="com.prafta.web.risk.risk01.application.query.RiskHazardListQuery" resultType="com.prafta.web.risk.risk01.result.RiskHazardResult">
     /* Risk01Mapper.selectRiskHazardList */
     SELECT 
     	'' 				AS chk
@@ -98,17 +98,17 @@
     	, HAZARD_DESC	AS hazardDesc
    	FROM TB_RISK_SITE_HAZARD
    	WHERE 1=1
-   	  AND CMPNY_CD = #{token.gv_cmpnyCd}
-   	  AND RISK_TYPE_CD = #{param.riskTypeCd}
-   	  <if test="param.hazardNm != null and param.hazardNm != ''">
-   	  	AND HAZARD_NM LIKE CONCAT('%', #{param.hazardNm}, '%')
+   	  AND CMPNY_CD = #{gvCmpnyCd}
+   	  AND RISK_TYPE_CD = #{riskTypeCd}
+   	  <if test="hazardNm != null and hazardNm != ''">
+   	  	AND HAZARD_NM LIKE CONCAT('%', #{hazardNm}, '%')
    	  </if>
-   	  <if test="param.hazardDesc != null and param.hazardDesc != ''">
-   	  	AND HAZARD_DESC LIKE CONCAT('%', #{param.hazardDesc}, '%')
+   	  <if test="hazardDesc != null and hazardDesc != ''">
+   	  	AND HAZARD_DESC LIKE CONCAT('%', #{hazardDesc}, '%')
    	  </if>
     </select>
 
-	<update id="mergeRiskHazard" parameterType="com.prafta.web.risk.risk01.dto.RiskHazardQry">
+	<update id="mergeRiskHazard" parameterType="com.prafta.web.risk.risk01.application.command.RiskHazardCommand">
 	/* Risk01Mapper.mergeRiskHazard */
 	INSERT INTO TB_RISK_SITE_HAZARD (
     	CMPNY_CD
@@ -123,100 +123,33 @@
     	, UPDATE_DATE
    	)
    	VALUES(
-   		#{token.gv_cmpnyCd}
-   		, #{param.riskTypeCd}
-   		, IFNULL(#{param.hazardCd}, FNC_CMM_SEQ_NEXTVAL(#{token.gv_cmpnyCd}, 'HAZARD_CD'))
-   		, #{param.hazardNm}
-   		, #{param.siteCd}
-		, #{param.hazardDesc}
-		, #{token.gv_userId}
+   		#{gvCmpnyCd}
+   		, #{riskTypeCd}
+   		, IFNULL(#{hazardCd}, FNC_CMM_SEQ_NEXTVAL(#{gvCmpnyCd}, 'HAZARD_CD'))
+   		, #{hazardNm}
+   		, #{siteCd}
+		, #{hazardDesc}
+		, #{gvUserCd}
 		, now()
-		, #{token.gv_userId}
+		, #{gvUserCd}
 		, now() 
-   	)
+   	) AS NEW
    	ON DUPLICATE KEY UPDATE
-	    HAZARD_NM		= VALUES(HAZARD_NM)
-	    , HAZARD_DESC	= VALUES(HAZARD_DESC)
-	    , UPDATE_NO   	= #{token.gv_userId}
+	    HAZARD_NM		= NEW.HAZARD_NM
+	    , HAZARD_DESC	= NEW.HAZARD_DESC
+	    , UPDATE_NO   	= NEW.UPDATE_NO
 	    , UPDATE_DATE 	= NOW()
 	</update>
 
-	<delete id="deleteRiskHazard" parameterType="com.prafta.web.risk.risk01.dto.RiskHazardQry">
+	<delete id="deleteRiskHazard" parameterType="com.prafta.web.risk.risk01.application.command.RiskHazardCommand">
 	/* Risk01Mapper.deleteRiskHazard */
 	DELETE FROM TB_RISK_SITE_HAZARD
-	WHERE CMPNY_CD = #{token.gv_cmpnyCd}
-	  AND RISK_TYPE_CD = #{param.riskTypeCd}
-	  AND HAZARD_CD = #{param.hazardCd}
-	  <if test="param.siteCd != null and param.siteCd != ''">
-	  	AND SITE_CD = #{param.siteCd}
+	WHERE CMPNY_CD = #{gvCmpnyCd}
+	  AND RISK_TYPE_CD = #{riskTypeCd}
+	  AND HAZARD_CD = #{hazardCd}
+	  <if test="siteCd != null and siteCd != ''">
+	  	AND SITE_CD = #{siteCd}
 	  </if>
 	</delete>
 
-
-
-
-<!--
-    <select id="selectSiteInfoList" parameterType="com.prafta.web.baim.baim01.dto.Baim01ReqDto" resultType="map">
-    /* Baim01Mapper.selectSiteInfoList */
-    SELECT
-    	'' AS CHK
-    	, A.SITE_CD
-    	, A.SITE_NO
-    	, A.SITE_NM
-    	, A.CMPNY_CD
-    	, A.ADDR_1
-    	, A.ADDR_2
-    	, A.ZIP_CODE
-    	, A.STR_DATE
-    	, A.END_DATE
-    	, A.USE_YN
-    	, A.SITE_ADMIN_ID
-    	, B.USER_ID AS SITE_ADMIN_NM
-    	, A.TEL_NO
-    	, A.SITE_DESC
-   	FROM TB_SITE A
- 		 LEFT JOIN TB_USER B
-			ON (
-				A.CMPNY_CD = B.CMPNY_CD
-			AND A.SITE_ADMIN_ID = B.USER_ID
-            )
-  	WHERE 1=1
-  	  AND A.CMPNY_CD = #{gv_cmpnyCd}
-  	  <if test="siteCd != null and siteCd != ''">
-  	  	AND A.SITE_CD = #{siteCd}
-  	  </if>
-  	  <if test="siteNo != null and siteNo != ''">
-  	  	AND A.SITE_NO = #{siteNo}
-  	  </if>
-  	  <if test="siteNm != null and siteNm != ''">
-  	  	AND A.SITE_NM LIKE CONCAT('%', #{siteNm}, '%')
-  	  	
-  	  </if>
-  	  <if test="useYn != null and useYn != ''">
-  	  	AND A.USE_YN = #{useYn}
-  	  </if>
-	</select>
-	
-	<insert id="mergeSiteInfo">
-	/* Baim01Mapper.mergeSiteInfo */
-	{
-		call prafta.SP_INSERT_SITE(
-			#{param.siteCd}
-	   		, #{param.siteNo}
-	   		, #{param.siteNm}
-	   		, #{token.gv_cmpnyCd}
-	   		, #{param.addr1}
-			, #{param.addr2}
-			, #{param.zipCode}
-			, #{param.strDate}
-			, #{param.endDate}
-			, #{param.useYn}
-			, #{param.siteAdminId}
-			, #{param.telNo}
-			, #{param.siteDesc}
-			, #{token.gv_userId}
-		)
-	}
-	</insert>
--->
 </mapper>

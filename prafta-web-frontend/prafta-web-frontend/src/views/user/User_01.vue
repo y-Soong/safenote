@@ -3,7 +3,7 @@
     <ViewHeader
       class="commViewHeader"
       :title="props.title"
-      :buttons="props.buttons"
+      :buttons="localButtons"
       @search="fnSearch"
       @save="fnSave"
     />
@@ -62,6 +62,33 @@
           @blur="focusKill"
         />
       </div>
+
+      <div>
+        <label>소속부서</label>
+        <input
+          id="nodeCd"
+          type="text"
+          v-model="nodeCd"
+          placeholder="부서코드"
+          :disabled="nodeDisabled"
+          @blur="focusKill"
+        />
+        <button
+          class="search-btn"
+          :disabled="nodeDisabled"
+          @click="fnSiteNodeSearchPopOpenForCondition()"
+        >
+          <img class="search_icon" :src="search_icon" alt="검색" />
+        </button>
+        <input
+          id="nodeNm"
+          type="text"
+          v-model="nodeNm"
+          placeholder="부서명"
+          :disabled="nodeDisabled"
+          @blur="focusKill"
+        />
+      </div>
     </div>
 
     <div class="viewBody">
@@ -102,43 +129,58 @@
                     @click="fnHeadchk"
                   />
                 </th>
-                <th class="event_cell" style="width: 10%">사용자ID</th>
-                <th class="event_cell" style="width: 10%">이름</th>
-                <th style="width: 15%">이메일</th>
-                <th style="width: 15%">휴대폰번호</th>
-                <th class="editableCell" style="width: 10%">권한</th>
-                <th class="editableCell" style="width: 8%">사용여부</th>
-                <th style="width: 10%">소속사업장</th>
-                <th style="width: 10%">소속부서</th>
-                <th style="width: 6%">권한 소유 사업장</th>
+                <th class="event_cell" style="width: 8%">사용자ID</th>
+                <th class="event_cell" style="width: 8%">이름</th>
+                <th style="width: 8%">이메일</th>
+                <th style="width: 8%">휴대폰번호</th>
+                <th class="editableCell" style="width: 7%">권한</th>
+                <th class="editableCell" style="width: 6%">사용여부</th>
+                <th style="width: 8%">소속사업장</th>
+                <th style="width: 8%">소속부서</th>
+                <th class="editableCell" style="width: 6%">계정상태</th>
+                <th style="width: 8%">탈퇴일자</th>
+                <th style="width: 25%">권한 소유 사업장</th>
               </tr>
             </thead>
             <tbody>
               <template v-if="!userActList || userActList.length === 0">
                 <tr>
-                  <td colspan="11" class="edu-grid-empty">
+                  <td colspan="13" class="edu-grid-empty">
                     등록된 세부 항목이 없습니다.
                   </td>
                 </tr>
               </template>
               <template v-else>
-                <tr v-for="(user, idx) in userActList" :key="user.id">
+                <tr
+                  v-for="(user, idx) in userActList"
+                  :key="user.id"
+                  :class="{ 'row-locked': isRowLocked(user) }"
+                >
                   <td style="text-align: center">{{ idx + 1 }}</td>
                   <td>
-                    <input type="checkbox" v-model="user.chk" />
+                    <input
+                      type="checkbox"
+                      v-model="user.chk"
+                      :disabled="isRowLocked(user)"
+                    />
                   </td>
-                  <td @dblclick="fnUserInfoPopOpen(user)">
+                  <td @dblclick="!isRowLocked(user) && fnUserInfoPopOpen(user)">
                     {{ user.userId }}
                   </td>
-                  <td @dblclick="fnUserInfoPopOpen(user)">
+                  <td @dblclick="!isRowLocked(user) && fnUserInfoPopOpen(user)">
                     {{ user.userNm }}
                   </td>
-                  <td @dblclick="fnUserInfoPopOpen(user)">{{ user.email }}</td>
-                  <td @dblclick="fnUserInfoPopOpen(user)">
+                  <td @dblclick="!isRowLocked(user) && fnUserInfoPopOpen(user)">
+                    {{ user.email }}
+                  </td>
+                  <td @dblclick="!isRowLocked(user) && fnUserInfoPopOpen(user)">
                     {{ proxy.$util.formatPhoneNumber(user.mblNo) }}
                   </td>
-                  <td @dblclick="fnUserInfoPopOpen(user)">
-                    <BaseSelect v-model="user.authCd">
+                  <td @dblclick="!isRowLocked(user) && fnUserInfoPopOpen(user)">
+                    <BaseSelect
+                      v-model="user.authCd"
+                      :disabled="isRowLocked(user)"
+                    >
                       <option
                         v-for="opt in (baseInfoArr['COM005'] || []).filter(
                           (o) => o.baimValDCd != null
@@ -150,8 +192,11 @@
                       </option>
                     </BaseSelect>
                   </td>
-                  <td @dblclick="fnUserInfoPopOpen(user)">
-                    <BaseSelect v-model="user.useYn">
+                  <td @dblclick="!isRowLocked(user) && fnUserInfoPopOpen(user)">
+                    <BaseSelect
+                      v-model="user.useYn"
+                      :disabled="isRowLocked(user)"
+                    >
                       <option
                         v-for="opt in (systCodeArr['SYS003'] || []).filter(
                           (o) => o.systValDCd != null
@@ -163,10 +208,10 @@
                       </option>
                     </BaseSelect>
                   </td>
-                  <td @dblclick="fnUserInfoPopOpen(user)">
+                  <td @dblclick="!isRowLocked(user) && fnUserInfoPopOpen(user)">
                     {{ user.siteNm }}
                   </td>
-                  <td @dblclick="fnUserInfoPopOpen(user)">
+                  <td @dblclick="!isRowLocked(user) && fnUserInfoPopOpen(user)">
                     <div class="flex items-center gap-2 w-full">
                       <span class="truncate min-w-0">{{ user.nodeNm }}</span>
                       <button
@@ -176,6 +221,7 @@
                           border: none;
                           padding: 0.2rem 0.2rem;
                         "
+                        :disabled="isRowLocked(user)"
                         @click="fnSiteNodeSearchPopOpen(user)"
                       >
                         <img
@@ -186,7 +232,35 @@
                       </button>
                     </div>
                   </td>
-                  <td @dblclick="fnUserInfoPopOpen(user)">
+                  <td @dblclick="!isRowLocked(user) && fnUserInfoPopOpen(user)">
+                    <BaseSelect
+                      v-model="user.accountStatus"
+                      disabled
+                    >
+                      <option
+                        v-for="opt in (systCodeArr['SYS013'] || []).filter(
+                          (o) => o.systValDCd != null
+                        )"
+                        :key="opt.systValDCd"
+                        :value="opt.systValDCd"
+                      >
+                        {{ opt.systValDNm }}
+                      </option>
+                    </BaseSelect>
+                  </td>
+                  <td @dblclick="!isRowLocked(user) && fnUserInfoPopOpen(user)">
+                    {{ user.withdrawalDate }}
+                  </td>
+                  <td
+                    @dblclick="!isRowLocked(user) && fnUserInfoPopOpen(user)"
+                    style="
+                      max-width: 0;
+                      overflow: hidden;
+                      text-overflow: ellipsis;
+                      white-space: nowrap;
+                    "
+                    :title="user.siteNmList"
+                  >
                     {{ user.siteNmList }}
                   </td>
                 </tr>
@@ -210,6 +284,7 @@ import {
 } from "vue";
 import { useModal } from "@/utils/useModal";
 import { useFieldWatcher } from "@/utils/useFieldWatcher";
+import { getMessage, MSG } from "@/messages";
 import axios from "@/api/axios";
 import ViewHeader from "@/components/common/ViewHeader.vue";
 import BaseSelect from "@/components/common/BaseSelect.vue";
@@ -217,6 +292,7 @@ import search_icon from "@/assets/img/search_icon.png";
 import SiteSearchPop from "@/components/popup/SiteSearchPop.vue";
 import UserInfoPop from "./popup/UserInfoPop.vue";
 import SiteNodeSearchPop from "@/components/popup/SiteNodeSearchPop.vue";
+import BatchResultPop from "@/components/popup/BatchResultPop.vue";
 
 // =========================== Define ===========================
 defineOptions({ name: "User_01" });
@@ -226,6 +302,7 @@ const props = defineProps({
 });
 
 // =========================== Ref ===========================
+const localButtons = ref({ ...props.buttons });
 const userActList = ref([]);
 const systCodeArr = ref([]);
 const baseInfoArr = ref([]);
@@ -236,9 +313,13 @@ const useYn = ref();
 const siteCd = ref("");
 const siteNo = ref("");
 const siteNm = ref("");
+const nodeCd = ref("");
+const nodeNm = ref("");
+const nodeDisabled = ref(true);
 const p_userId = ref("");
 const headchk = ref(false);
 const siteDisabled = ref(false);
+const authLevel = ref(sessionStorage.getItem('gv_authLevel'));
 
 // =========================== Data ===========================
 const { proxy } = getCurrentInstance();
@@ -246,9 +327,11 @@ const { open: openPop } = useModal();
 
 // =========================== Life Cycle ===========================
 onMounted(async () => {
+  fnButtonControll();
   await fnGetSystinfoList();
   await fnGetBaseinfoList();
   await fnSearch();
+  console.log(sessionStorage.getItem('gv_authLevel'));
 });
 
 // =========================== Watch, Watcher ===========================
@@ -262,13 +345,16 @@ useFieldWatcher(
 
 // =========================== Methods ===========================
 const fnGetBaseinfoList = async () => {
+
   try {
-    const response = await axios.get("/comApi/baseinfo/base-info-list", {
+    const response = await axios.get("/comApi/baseinfo/base-info-lists", {
       params: {
         cmpnyCd: sessionStorage.getItem("gv_cmpnyCd"),
         baseCodeList: ["COM005"],
       },
     });
+
+    console.log(response);
 
     if (response.status === 200) {
       const resData = response.data?.baseInfoList || [];
@@ -282,7 +368,6 @@ const fnGetBaseinfoList = async () => {
         }
         grouped[key].push(item);
       });
-
       baseInfoArr.value = grouped;
     }
   } catch (err) {
@@ -297,9 +382,9 @@ const fnGetBaseinfoList = async () => {
 
 const fnGetSystinfoList = async () => {
   try {
-    const response = await axios.get("/comApi/baseinfo/syst-info-list", {
+    const response = await axios.get("/comApi/baseinfo/syst-info-lists", {
       params: {
-        systCodeList: ["SYS003"],
+        systCodeList: ["SYS003", "SYS013"],
       },
     });
 
@@ -330,6 +415,8 @@ const fnGetSystinfoList = async () => {
 };
 
 const fnSearch = async () => {
+  userActList.value = [];
+
   try {
     const response = await axios.get("/webApi/user01/user-info-lists", {
       params: {
@@ -337,6 +424,7 @@ const fnSearch = async () => {
         userNm: userNm.value,
         useYn: useYn.value,
         siteCd: siteCd.value,
+        nodeCd: nodeCd.value,
       },
     });
 
@@ -355,17 +443,14 @@ const fnSearch = async () => {
 
 const fnSave = async () => {
   const filteredUsers = userActList.value.filter((user) => user.chk);
-  // const dataList = proxy.$util.toCamelCaseKeys(filteredUsers);
 
   if (filteredUsers.length == 0) {
-    proxy.$alert("저장할 데이터가 없습니다.");
+    proxy.$alert(getMessage(MSG.SAVE_DATA_REQUIRED));
     return;
   }
 
-  const ok = await proxy.$confirm("저장하시겠습니까 ?");
+  const ok = await proxy.$confirm(getMessage(MSG.SAVE_CONFIRM));
   if (!ok) return;
-
-  console.log(filteredUsers);
 
   try {
     const response = await axios.post(
@@ -374,7 +459,18 @@ const fnSave = async () => {
     );
 
     if (response.status === 200) {
-      proxy.$alert("처리되었습니다.");
+      if (response.data.failCount > 0) {
+        openPop(BatchResultPop, {
+          totalCount: response.data.totalCount,
+          successCount: response.data.successCount,
+          failCount: response.data.failCount,
+          identifierLabel: "사용자ID",
+          dataList: response.data.fails,
+        });
+      } else {
+        proxy.$alert(getMessage(MSG.SAVE_SUCCESS));
+      }
+
       fnSearch();
     }
   } catch (err) {
@@ -389,10 +485,12 @@ const fnSave = async () => {
 
 const fnSrchSiteInfo = async () => {
   try {
-    const response = await axios.post("/comApi/baseinfo/getSiteInfoList", {
-      cmpnyCd: sessionStorage.getItem("gv_cmpnyCd"),
-      siteNo: siteNo.value,
-      siteNm: siteNm.value,
+    const response = await axios.get("/comApi/baseinfo/site-lists", {
+      params: {
+        cmpnyCd: sessionStorage.getItem("gv_cmpnyCd"),
+        siteNo: siteNo.value,
+        siteNm: siteNm.value,
+      },
     });
 
     if (response.status === 200) {
@@ -413,6 +511,9 @@ const focusKill = (e) => {
     if (proxy.$util.isEmpty(siteNo.value)) {
       siteCd.value = "";
       siteNm.value = "";
+      nodeDisabled.value = true;
+      nodeCd.value = "";
+      nodeNm.value = "";
     } else {
       siteNm.value = "";
       siteFocusKill();
@@ -421,9 +522,30 @@ const focusKill = (e) => {
     if (proxy.$util.isEmpty(siteNm.value)) {
       siteCd.value = "";
       siteNo.value = "";
+      nodeDisabled.value = true;
+      nodeCd.value = "";
+      nodeNm.value = "";
     } else {
       siteNo.value = "";
       siteFocusKill();
+    }
+  } else if (e.target.id == "nodeCd") {
+    if (proxy.$util.isEmpty(nodeCd.value)) {
+      nodeCd.value = "";
+      nodeNm.value = "";
+      return;
+    } else {
+      nodeNm.value = "";
+      nodeFocusKill();
+    }
+  } else if (e.target.id == "nodeNm") {
+    if (proxy.$util.isEmpty(nodeNm.value)) {
+      nodeCd.value = "";
+      nodeNm.value = "";
+      return;
+    } else {
+      nodeCd.value = "";
+      nodeFocusKill();
     }
   }
 };
@@ -432,28 +554,50 @@ const fnCallback = (res) => {
   if (proxy.$util.isNotEmpty(res)) {
     const apiId = res.config.url.split("/").pop();
 
-    if (apiId == "getSiteInfoList") {
-      if (res.data.length == 1) {
-        siteCd.value = res.data[0].SITE_CD;
-        siteNo.value = res.data[0].SITE_NO;
-        siteNm.value = res.data[0].SITE_NM;
-      } else if (res.data.length > 1) {
-        //        handleResetSiteSearchPop();
+    if (apiId == "site-lists") {
+      const siteList = res.data?.siteInfoResultList ?? [];
+      if (siteList.length === 1) {
+        siteCd.value = siteList[0].siteCd;
+        siteNo.value = siteList[0].siteNo;
+        siteNm.value = siteList[0].siteNm;
+        nodeDisabled.value = false;
+      } else if (siteList.length > 1) {
         fnSiteSearchPopOpen();
         SiteSearchPopOpen.value = true;
       } else {
         siteCd.value = "";
         siteNo.value = "";
         siteNm.value = "";
+        nodeDisabled.value = true;
+        nodeCd.value = "";
+        nodeNm.value = "";
+      }
+    } else if (apiId == "site-node-lists") {
+      const list = res.data?.siteNodeInfoList || [];
+      if (list.length === 0) {
+        nodeCd.value = "";
+        nodeNm.value = "";
+      } else if (list.length === 1) {
+        nodeCd.value = list[0].nodeCd ?? "";
+        nodeNm.value = list[0].nodeNm ?? "";
+      } else {
+        fnSiteNodeSearchPopOpenForCondition();
       }
     }
   }
+};
+
+const fnButtonControll = () => {
+  localButtons.value.delete = "N";
 };
 
 const onSiteSelected = (siteCdVal, siteNoVal, siteNmVal) => {
   siteCd.value = siteCdVal;
   siteNo.value = siteNoVal;
   siteNm.value = siteNmVal;
+  nodeDisabled.value = false;
+  nodeCd.value = "";
+  nodeNm.value = "";
 };
 
 const onSiteNodeSelected = (userIdVal, nodeCdVal, nodeNmVal) => {
@@ -468,6 +612,52 @@ const siteFocusKill = async () => {
   await fnSrchSiteInfo();
 };
 
+const fnSrchNodeInfo = async () => {
+  if (proxy.$util.isEmpty(siteCd.value)) return;
+  try {
+    const response = await axios.get("/comApi/baseinfo/site-node-lists", {
+      params: {
+        cmpnyCd: sessionStorage.getItem("gv_cmpnyCd"),
+        siteCd: siteCd.value,
+        nodeCd: nodeCd.value,
+        nodeNm: nodeNm.value,
+      },
+    });
+    if (response.status === 200) {
+      fnCallback({ ...response, config: { url: "/dummy/site-node-lists" } });
+    }
+  } catch (err) {
+    const msg =
+      err?.response?.data?.message ||
+      err?.message ||
+      "조회 중 오류가 발생했습니다.";
+    await proxy.$alert(msg);
+  }
+};
+
+const nodeFocusKill = async () => {
+  await fnSrchNodeInfo();
+};
+
+const fnSiteNodeSearchPopOpenForCondition = () => {
+  if (proxy.$util.isEmpty(siteCd.value)) {
+    proxy.$alert(getMessage(MSG.SITE_REQUIRED));
+    return;
+  }
+  openPop(SiteNodeSearchPop, {
+    cmpnyCd_p: sessionStorage.getItem("gv_cmpnyCd"),
+    siteCd_p: siteCd.value,
+    nodeCd_p: "",
+    userId_p: "",
+    onSelect: onSiteNodeSelectedForCondition,
+  });
+};
+
+const onSiteNodeSelectedForCondition = (nodeCdVal, nodeNmVal) => {
+  nodeCd.value = nodeCdVal ?? "";
+  nodeNm.value = nodeNmVal ?? "";
+};
+
 const fnHeadchk = () => {
   headchk.value = !headchk.value;
   userActList.value.forEach((item) => {
@@ -476,6 +666,11 @@ const fnHeadchk = () => {
 };
 
 const fnUserInfoPopOpen = (userInfo) => {
+  if(userInfo.accountStatus == "04") {    // 회원탈퇴 계정
+    proxy.$alert("탈퇴된 계정은 상세보기를 지원하지 않습니다.");
+    return;
+  }
+  
   p_userId.value = userInfo.userId;
 
   openPop(UserInfoPop, {
@@ -486,15 +681,11 @@ const fnUserInfoPopOpen = (userInfo) => {
   });
 };
 
-const fnBatchRegister = () => {
-  proxy.$alert("준비 중입니다.");
-};
-
 const fnSiteSearchPopOpen = () => {
   openPop(SiteSearchPop, {
     cmpnyCd_p: sessionStorage.getItem("gv_cmpnyCd"),
-    siteNo_p: siteNo.value,
-    siteNm_p: siteNm.value,
+    siteNo_p: "",
+    siteNm_p: "",
     onSelect: onSiteSelected,
   });
 };
@@ -503,7 +694,7 @@ const fnSiteNodeSearchPopOpen = (user) => {
   openPop(SiteNodeSearchPop, {
     cmpnyCd_p: sessionStorage.getItem("gv_cmpnyCd"),
     siteCd_p: user.siteCd,
-    nodeCd_p: user.nodeCd,
+    nodeCd_p: "",
     userId_p: user.userId,
     onSelect: onSiteNodeSelected,
   });
@@ -511,20 +702,18 @@ const fnSiteNodeSearchPopOpen = (user) => {
 
 const fnUserNodeAllAssign = () => {
   if (proxy.$util.isEmpty(siteCd.value)) {
-    proxy.$alert("사업장을 선택해주세요.");
+    proxy.$alert(getMessage(MSG.SITE_REQUIRED));
     return;
   }
 
   if (userActList.value.filter((u) => u.chk === true).length === 0) {
-    proxy.$alert("지정할 사용자를 선택해주세요.");
+    proxy.$alert(getMessage(MSG.USER_SELECT_REQUIRED));
     return;
   } else if (
     userActList.value.filter((u) => u.chk === true && u.siteCd != siteCd.value)
       .length > 0
   ) {
-    proxy.$alert(
-      "[" + siteNm.value + "] 사업장에 속한\n사용자만 지정할 수 있습니다."
-    );
+    proxy.$alert(getMessage(MSG.SITE_USER_ONLY, { siteNm: siteNm.value }));
     return;
   }
 
@@ -544,6 +733,13 @@ const onSiteNodeAllAssignSelected = (nodeCdVal, nodeNmVal) => {
     target.nodeNm = nodeNmVal;
   });
 };
+
+const isRowLocked = (user) => Number(user.authLevel) < Number(authLevel.value);
 </script>
 
-<style scoped></style>
+<style scoped>
+.row-locked {
+  opacity: 0.5;
+  pointer-events: none;
+}
+</style>

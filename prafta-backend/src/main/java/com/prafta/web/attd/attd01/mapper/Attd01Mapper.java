@@ -6,58 +6,58 @@ import java.util.Map;
 import org.apache.ibatis.annotations.Mapper;
 import org.apache.ibatis.annotations.Param;
 
-import com.prafta.web.attd.attd01.dto.SchCdQry;
-import com.prafta.web.attd.attd01.dto.SchInfoHistQry;
-import com.prafta.web.attd.attd01.dto.SchInfoHistSave;
-import com.prafta.web.attd.attd01.dto.SchInfoListQry;
-import com.prafta.web.attd.attd01.dto.SchInfoSave;
-import com.prafta.web.attd.attd01.dto.ShiftAssignSave;
-import com.prafta.web.attd.attd01.dto.ShiftCdQry;
-import com.prafta.web.attd.attd01.dto.ShiftPatternSave;
-import com.prafta.web.attd.attd01.dto.ShiftSchDetailQry;
-import com.prafta.web.attd.attd01.dto.ShiftSchInfoListQry;
-import com.prafta.web.attd.attd01.dto.ShiftTeamSave;
-import com.prafta.web.attd.attd01.dto.ShiftTypeSave;
-import com.prafta.web.attd.attd01.vo.SchHist;
-import com.prafta.web.attd.attd01.vo.SchInfo;
-import com.prafta.web.attd.attd01.vo.ShiftAssignInfo;
-import com.prafta.web.attd.attd01.vo.ShiftPatternInfo;
-import com.prafta.web.attd.attd01.vo.ShiftSchInfo;
-import com.prafta.web.attd.attd01.vo.ShiftTeamInfo;
-import com.prafta.web.attd.attd01.vo.ShiftTypeInfo;
+import com.prafta.web.attd.attd01.application.command.SchInfoCommand;
+import com.prafta.web.attd.attd01.application.command.SchInfoHistCommand;
+import com.prafta.web.attd.attd01.application.command.ShiftAssignCommand;
+import com.prafta.web.attd.attd01.application.command.ShiftPatternCommand;
+import com.prafta.web.attd.attd01.application.command.ShiftTeamCommand;
+import com.prafta.web.attd.attd01.application.command.ShiftTypeCommand;
+import com.prafta.web.attd.attd01.application.query.SchCdQuery;
+import com.prafta.web.attd.attd01.application.query.SchInfoHistQuery;
+import com.prafta.web.attd.attd01.application.query.SchInfoListQuery;
+import com.prafta.web.attd.attd01.application.query.ShiftCdQuery;
+import com.prafta.web.attd.attd01.application.query.ShiftSchDetailQuery;
+import com.prafta.web.attd.attd01.application.query.ShiftSchInfoListQuery;
+import com.prafta.web.attd.attd01.result.SchHistResult;
+import com.prafta.web.attd.attd01.result.SchInfoResult;
+import com.prafta.web.attd.attd01.result.ShiftAssignInfoResult;
+import com.prafta.web.attd.attd01.result.ShiftPatternInfoResult;
+import com.prafta.web.attd.attd01.result.ShiftSchInfoResult;
+import com.prafta.web.attd.attd01.result.ShiftTeamInfoResult;
+import com.prafta.web.attd.attd01.result.ShiftTypeInfoResult;
 
 @Mapper
 public interface Attd01Mapper {
 	
-	List<SchInfo> selectSchInfoList(@Param(value = "param") SchInfoListQry dto, @Param(value = "token") Map<String, Object> tokenInfo);
+	List<SchInfoResult> selectSchInfoList(SchInfoListQuery query);
 	
-	String selectSchCd(@Param(value = "param") SchCdQry dto, @Param(value = "token") Map<String, Object> tokenInfo);
+	String selectSchCd(SchCdQuery query);
 	
-	void updateSchInfo(@Param(value = "param") SchInfoSave dto, @Param(value = "token") Map<String, Object> tokenInfo);
+	void updateSchInfo(SchInfoCommand command);
 	
-	int selectSchHistIdx(@Param(value = "param") SchInfoHistQry dto, @Param(value = "token") Map<String, Object> tokenInfo);
+	int selectSchHistIdx(SchInfoHistQuery query);
 	
-	void insertSchHistInfo(@Param(value = "param") SchInfoHistSave dto, @Param(value = "token") Map<String, Object> tokenInfo);
+	void insertSchHistInfo(SchInfoHistCommand command);
 	
-	List<SchHist> selectSchHistList(@Param(value = "param") SchInfoHistQry dto, @Param(value = "token") Map<String, Object> tokenInfo);
+	List<SchHistResult> selectSchHistList(SchInfoHistQuery query);
 	
-	String selectShiftCd(@Param(value = "param") ShiftCdQry dto, @Param(value = "token") Map<String, Object> tokenInfo);
+	String selectShiftCd(ShiftCdQuery query);
 	
-	void insertShiftSch(@Param(value = "param") ShiftTypeSave dto, @Param(value = "token") Map<String, Object> tokenInfo);
+	void insertShiftSch(ShiftTypeCommand command);
 	
-	void insertShiftSchPtrn(@Param(value = "param") ShiftPatternSave dto, @Param(value = "token") Map<String, Object> tokenInfo);
+	void insertShiftSchPtrn(ShiftPatternCommand command);
 	
-	void insertShiftSchTeam(@Param(value = "param") ShiftTeamSave dto, @Param(value = "token") Map<String, Object> tokenInfo);
+	void insertShiftSchTeam(ShiftTeamCommand command);
 	
-	void insertShiftSchAssign(@Param(value = "param") ShiftAssignSave dto, @Param(value = "token") Map<String, Object> tokenInfo);
+	void insertShiftSchAssign(ShiftAssignCommand command);
 	
-	List<ShiftSchInfo> selectShiftSchInfoList(@Param(value = "param") ShiftSchInfoListQry dto, @Param(value = "token") Map<String, Object> tokenInfo);
+	List<ShiftSchInfoResult> selectShiftSchInfoList(ShiftSchInfoListQuery query);
 	
-	List<ShiftTypeInfo> selectShiftTypeInfoList(@Param(value = "param") ShiftSchDetailQry dto, @Param(value = "token") Map<String, Object> tokenInfo);
+	List<ShiftTypeInfoResult> selectShiftTypeInfoList(ShiftSchDetailQuery query);
 	
-	List<ShiftPatternInfo> selectShiftPatternInfoList(@Param(value = "param") ShiftSchDetailQry dto, @Param(value = "token") Map<String, Object> tokenInfo);
+	List<ShiftPatternInfoResult> selectShiftPatternInfoList(ShiftSchDetailQuery query);
 	
-	List<ShiftTeamInfo> selectShiftTeamInfoList(@Param(value = "param") ShiftSchDetailQry dto, @Param(value = "token") Map<String, Object> tokenInfo);
+	List<ShiftTeamInfoResult> selectShiftTeamInfoList(ShiftSchDetailQuery query);
 	
-	List<ShiftAssignInfo> selectShiftAssignInfoList(@Param(value = "param") ShiftSchDetailQry dto, @Param(value = "token") Map<String, Object> tokenInfo);
+	List<ShiftAssignInfoResult> selectShiftAssignInfoList(ShiftSchDetailQuery query);
 }

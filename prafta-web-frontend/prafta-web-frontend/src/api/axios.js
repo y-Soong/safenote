@@ -149,9 +149,16 @@ api.interceptors.request.use(
 
     const userInfo = {
       gv_cmpnyCd: sessionStorage.getItem("gv_cmpnyCd"),
+      gv_userCd: sessionStorage.getItem("gv_userCd"),
       gv_userId: sessionStorage.getItem("gv_userId"),
       gv_userNm: sessionStorage.getItem("gv_userNm"),
+      gv_siteCd: sessionStorage.getItem("gv_siteCd"),
+      gv_siteNo: sessionStorage.getItem("gv_siteNo"),
+      gv_siteNm: sessionStorage.getItem("gv_siteNm"),
+      gv_nodeCd: sessionStorage.getItem("gv_nodeCd"),
+      gv_nodeNm: sessionStorage.getItem("gv_nodeNm"),
       gv_authCd: sessionStorage.getItem("gv_authCd"),
+      gv_authLevel: sessionStorage.getItem("gv_authLevel"),
       gv_mblNo: sessionStorage.getItem("gv_mblNo"),
       gv_email: sessionStorage.getItem("gv_email"),
       gv_clientIP: clientIP,
@@ -241,7 +248,15 @@ api.interceptors.response.use(
     const originalRequest = error?.config;
 
     // ✅ 1) 401 -> refresh -> retry
-    if (status === 401 && originalRequest && !originalRequest._retry) {
+    // errorCode가 있을 때는 실제 토큰 에러 코드인 경우에만 refresh 시도
+    // (비즈니스 에러가 401로 오는 경우 로그아웃되지 않도록 방어)
+    const errorCode = error?.response?.data?.errorCode;
+    const isTokenError =
+      !errorCode ||
+      errorCode === "COMMON_400_600" ||
+      String(errorCode).startsWith("AUTH_");
+
+    if (status === 401 && isTokenError && originalRequest && !originalRequest._retry) {
       originalRequest._retry = true;
 
       // refresh 요청에서 다시 401나면 즉시 로그아웃 (루프 방지)

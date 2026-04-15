@@ -114,6 +114,7 @@ import { useCenteredDraggable } from "@/composables/useCenteredDraggable";
 import { useModal } from "@/utils/useModal";
 import "@vueup/vue-quill/dist/vue-quill.snow.css";
 import axios from "@/api/axios";
+import { getMessage, MSG } from "@/messages";
 import TermsDetailPop from "@/components/popup/TermsDetailPop.vue";
 import JoinUserPop from "@/components/popup/JoinUserPop.vue";
 
@@ -146,6 +147,7 @@ const userTermsNonAgrList = ref({});
 onMounted(async () => {
   if (proxy.$util.isNotEmpty(props.loginFlg_p)) {
     btnName.value = "약관동의";
+    console.log(props.userTermsNonAgrList_p);
     userTermsNonAgrList.value = props.userTermsNonAgrList_p;
   }
   await fnGetSystinfoList();
@@ -154,7 +156,7 @@ onMounted(async () => {
 // ================ API Functions ================
 const fnGetSystinfoList = async () => {
   try {
-    const response = await axios.get("/comApi/baseinfo/syst-info-list", {
+    const response = await axios.get("/comApi/baseinfo/syst-info-lists", {
       params: {
         systCodeList: ["SYS008"],
       },
@@ -162,6 +164,8 @@ const fnGetSystinfoList = async () => {
 
     if (response.status === 200) {
       const resData = response.data?.systInfoList || [];
+
+      console.log(resData);
 
       const grouped = {};
       resData.forEach((item) => {
@@ -183,7 +187,7 @@ const fnGetSystinfoList = async () => {
           }))
           .filter((sys) =>
             userTermsNonAgrList.value.some(
-              (terms) => terms.TERMS_ID === sys.systValDCd
+              (terms) => terms.termsId === sys.systValDCd
             )
           );
       } else {
@@ -204,21 +208,23 @@ const fnUpdateUserTermsAgrList = async () => {
   const filteredMenu = termsList.value;
 
   if (filteredMenu.length == 0) {
-    proxy.$alert("저장할 데이터가 없습니다.");
+    proxy.$alert(getMessage(MSG.SAVE_DATA_REQUIRED));
     return;
   }
 
-  const ok = await proxy.$confirm("저장하시겠습니까 ?");
+  const ok = await proxy.$confirm(getMessage(MSG.SAVE_CONFIRM));
   if (!ok) return;
+
+  console.log(filteredMenu);
 
   try {
     const response = await axios.post(
-      "/comApi/login/updateAuthMenuInfo",
+      "/comApi/login/update-auth-menu-info",
       filteredMenu
     );
 
     if (response.status === 200) {
-      proxy.$alert("이용약관이 업데이트 됐습니다.");
+      proxy.$alert(getMessage(MSG.TERMS_UPDATE_SUCCESS));
       props.onMoveMain();
       emit("close");
     }
@@ -231,7 +237,7 @@ const fnUpdateUserTermsAgrList = async () => {
 const fnClose = () => {
   if (proxy.$util.isNotEmpty(props.loginFlg_p)) {
     props.onUserLogout();
-    proxy.$alert("필수약관 미동의 시 서비스 이용이 불가합니다.");
+    proxy.$alert(getMessage(MSG.TERMS_REQUIRED));
   }
   emit("close");
 };
@@ -247,7 +253,7 @@ const fnJoinUser = () => {
       emit("close");
     }
   } else {
-    proxy.$alert("동의하지 않은 필수 약관이 있습니다.");
+    proxy.$alert(getMessage(MSG.TERMS_AGREEMENT_REQUIRED));
   }
 };
 

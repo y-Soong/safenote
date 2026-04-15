@@ -1,19 +1,18 @@
 package com.prafta.web.risk.risk03.service;
 
-import java.util.Map;
-
 import org.springframework.web.multipart.MultipartFile;
 
-import com.prafta.web.risk.risk03.dto.RiskAssessmentsListReq;
-import com.prafta.web.risk.risk03.dto.RiskAssessmentsListRes;
-import com.prafta.web.risk.risk03.dto.RiskTypeListRes;
-import com.prafta.web.risk.risk03.dto.SaveAssessmentReq;
+import com.prafta.web.risk.risk03.application.param.AssessmentParam;
+import com.prafta.web.risk.risk03.application.param.RiskAssessmentsListParam;
+import com.prafta.web.risk.risk03.application.param.RiskTypeInfoListParam;
+import com.prafta.web.risk.risk03.dto.response.RiskAssessmentsListResponse;
+import com.prafta.web.risk.risk03.dto.response.RiskTypeListResponse;
 
 public interface Risk03Service {
 	
-	RiskTypeListRes selectRiskTypeInfoList(Map<String, Object> tokenInfo);
+	RiskTypeListResponse selectRiskTypeInfoList(RiskTypeInfoListParam param);
 	
-	RiskAssessmentsListRes selectRiskAssessmentsLists(RiskAssessmentsListReq dto, Map<String, Object> tokenInfo);
+	RiskAssessmentsListResponse selectRiskAssessmentsLists(RiskAssessmentsListParam param);
 	
-	void saveAssessment(SaveAssessmentReq request, MultipartFile file, Map<String, Object> tokenInfo);
+	void saveAssessment(AssessmentParam param, MultipartFile file);
 }

@@ -52,17 +52,29 @@ function setUserFromToken(token) {
 
     if (
       decoded.gv_cmpnyCd &&
-      decoded.gv_userId &&
+      decoded.gv_userCd &&
       decoded.gv_userNm &&
+      decoded.gv_siteCd &&
+      decoded.gv_siteNo &&
+      decoded.gv_siteNm &&
+      decoded.gv_nodeCd &&
+      decoded.gv_nodeNm &&
       decoded.gv_authCd &&
+      decoded.gv_authLevel &&
       decoded.gv_mblNo &&
       decoded.gv_email
     ) {
       userStore.setUser({
         gv_cmpnyCd: decoded.gv_cmpnyCd,
-        gv_userId: decoded.gv_userId,
+        gv_userCd: decoded.gv_userCd,
         gv_userNm: decoded.gv_userNm,
+        gv_siteCd: decoded.gv_siteCd,
+        gv_siteNo: decoded.gv_siteNo,
+        gv_siteNm: decoded.gv_siteNm,
+        gv_nodeCd: decoded.gv_nodeCd,
+        gv_nodeNm: decoded.gv_nodeNm,
         gv_authCd: decoded.gv_authCd,
+        gv_authLevel: decoded.gv_authLevel,
         gv_mblNo: decoded.gv_mblNo,
         gv_email: decoded.gv_email,
       });
@@ -81,18 +93,32 @@ if (token) {
   if (!ok) {
     // fallback: sessionStorage 값 기반
     const gv_cmpnyCd = sessionStorage.getItem("gv_cmpnyCd");
+    const gv_userCd = sessionStorage.getItem("gv_userCd");
     const gv_userId = sessionStorage.getItem("gv_userId");
     const gv_userNm = sessionStorage.getItem("gv_userNm");
+    const gv_siteCd = sessionStorage.getItem("gv_siteCd");
+    const gv_siteNo = sessionStorage.getItem("gv_siteNo");
+    const gv_siteNm = sessionStorage.getItem("gv_siteNm");
+    const gv_nodeCd = sessionStorage.getItem("gv_nodeCd");
+    const gv_nodeNm = sessionStorage.getItem("gv_nodeNm");
     const gv_authCd = sessionStorage.getItem("gv_authCd");
+    const gv_authLevel = sessionStorage.getItem("gv_authLevel");
     const gv_mblNo = sessionStorage.getItem("gv_mblNo");
     const gv_email = sessionStorage.getItem("gv_email");
 
-    if (gv_userId && gv_userNm) {
+    if (gv_userCd && gv_userNm) {
       userStore.setUser({
         gv_cmpnyCd,
+        gv_userCd,
         gv_userId,
         gv_userNm,
+        gv_siteCd,
+        gv_siteNo,
+        gv_siteNm,
+        gv_nodeCd,
+        gv_nodeNm,
         gv_authCd,
+        gv_authLevel,
         gv_mblNo,
         gv_email,
       });
@@ -146,14 +172,35 @@ async function refreshTokenAndSync() {
       if (decoded.gv_cmpnyCd) {
         sessionStorage.setItem("gv_cmpnyCd", decoded.gv_cmpnyCd);
       }
+      if (decoded.gv_userCd) {
+        sessionStorage.setItem("gv_userCd", decoded.gv_userCd);
+      }
       if (decoded.gv_userId) {
-        sessionStorage.setItem("gv_userId", decoded.gv_userId);
+        sessionStorage.setItem("gv_userCd", decoded.gv_userId);
       }
       if (decoded.gv_userNm) {
         sessionStorage.setItem("gv_userNm", decoded.gv_userNm);
       }
+      if (decoded.gv_siteCd) {
+        sessionStorage.setItem("gv_siteCd", decoded.gv_siteCd);
+      }
+      if (decoded.gv_siteNo) {
+        sessionStorage.setItem("gv_siteNo", decoded.gv_siteNo);
+      }
+      if (decoded.gv_siteNm) {
+        sessionStorage.setItem("gv_siteNm", decoded.gv_siteNm);
+      }
+      if (decoded.gv_nodeCd) {
+        sessionStorage.setItem("gv_nodeCd", decoded.gv_nodeCd);
+      }
+      if (decoded.gv_nodeNm) {
+        sessionStorage.setItem("gv_nodeNm", decoded.gv_nodeNm);
+      }
       if (decoded.gv_authCd) {
         sessionStorage.setItem("gv_authCd", decoded.gv_authCd);
+      }
+      if (decoded.gv_authLevel) {
+        sessionStorage.setItem("gv_authLevel", decoded.gv_authLevel);
       }
       if (decoded.gv_mblNo) {
         sessionStorage.setItem("gv_mblNo", decoded.gv_mblNo);

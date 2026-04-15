@@ -1,20 +1,17 @@
 package com.prafta.web.baim.baim02.service;
 
-import java.util.List;
-import java.util.Map;
-
-import com.prafta.web.baim.baim02.dto.CompCmmCodeDListReq;
-import com.prafta.web.baim.baim02.dto.CompCmmCodeDListRes;
-import com.prafta.web.baim.baim02.dto.CompCmmCodeDReq;
-import com.prafta.web.baim.baim02.dto.CompCmmCodeMListReq;
-import com.prafta.web.baim.baim02.dto.CompCmmCodeMListRes;
+import com.prafta.web.baim.baim02.application.param.CompCmmCodeDListParam;
+import com.prafta.web.baim.baim02.application.param.CompCmmCodeDParam;
+import com.prafta.web.baim.baim02.application.param.CompCmmCodeMListParam;
+import com.prafta.web.baim.baim02.dto.response.CompCmmCodeDListResponse;
+import com.prafta.web.baim.baim02.dto.response.CompCmmCodeMListResponse;
 
 public interface Baim02Service {
-	CompCmmCodeMListRes selectCompCmmCodeMList(CompCmmCodeMListReq dto, Map<String, Object> tokenInfo);
+	CompCmmCodeMListResponse selectCompCmmCodeMList(CompCmmCodeMListParam param);
 	
-	CompCmmCodeDListRes selectCompCmmCodeDList(CompCmmCodeDListReq dto, Map<String, Object> tokenInfo);
+	CompCmmCodeDListResponse selectCompCmmCodeDList(CompCmmCodeDListParam param);
 	
-	void updateCmmCodeDetailInfo(List<CompCmmCodeDReq> dtoList, Map<String, Object> tokenInfo);
+	void updateCmmCodeDetailInfo(CompCmmCodeDParam param);
 	
-	void deleteCmmCodeDetailInfo(List<CompCmmCodeDReq> dtoList, Map<String, Object> tokenInfo);
+	void deleteCmmCodeDetailInfo(CompCmmCodeDParam param);
 }

@@ -5,58 +5,62 @@ import java.util.Map;
 
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.validation.annotation.Validated;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.ModelAttribute;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
+import jakarta.validation.Valid;
+
 import com.prafta.common.annotation.NoAuth;
-import com.prafta.common.exception.login.LoginApiException;
 import com.prafta.common.security.JwtUtil;
-import com.prafta.web.chkLst.chkLst01.dto.ChkLst01;
-import com.prafta.web.chkLst.chkLst01.dto.ChkLst01ReqDto;
+import com.prafta.web.chkLst.chkLst01.application.param.ChkptInfoParam;
+import com.prafta.web.chkLst.chkLst01.application.param.ChkptListParam;
+import com.prafta.web.chkLst.chkLst01.dto.request.ChkptInfoRequest;
+import com.prafta.web.chkLst.chkLst01.dto.request.ChkptListRequest;
+import com.prafta.web.chkLst.chkLst01.dto.response.ChkptListResponse;
+import com.prafta.web.chkLst.chkLst01.result.ChkptResult;
 import com.prafta.web.chkLst.chkLst01.service.ChkLst01Service;
 
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 
 @Slf4j
-@NoAuth
+@Validated
 @RestController
 @RequestMapping("/chkLst01")
 @RequiredArgsConstructor
-public class ChkLst01Controller { 	
+public class ChkLst01Controller {
 	
 	private final ChkLst01Service chkLst01Service;
 	private final JwtUtil jwtUtil;
 
-	@PostMapping("/getChkptList")
-    public ResponseEntity<?> getChkptList(@RequestBody ChkLst01ReqDto dto, @RequestHeader(value = "Authorization", required = false) String authorization) {
-    	Map<String, Object> tokenInfo = jwtUtil.getAllClaimsAsMap(authorization);
-		List<ChkLst01> retList = chkLst01Service.selectChkptList(dto, tokenInfo);
+	@GetMapping("/chkpt-lists")
+    public ResponseEntity<?> getChkptList(@ModelAttribute ChkptListRequest request, @RequestHeader(value = "Authorization", required = false) String authorization) {
 		
-    	if(retList == null) {
-    		throw new LoginApiException("조회된 결과가 없습니다.");
-    	}
-    	
-    	return ResponseEntity.status(HttpStatus.OK).body(retList);
+		ChkptListResponse response = chkLst01Service.selectChkptList(ChkptListParam.from(request, jwtUtil.getAllClaimsAsMap(authorization)));
+		
+    	return ResponseEntity.status(HttpStatus.OK).body(response);
     }
 	
-	@PostMapping("/updateChkptList")
-    public ResponseEntity<?> updateChkptList(@RequestBody List<ChkLst01> dtoList, @RequestHeader(value = "Authorization", required = false) String authorization ) {
-    	Map<String, Object> tokenInfo = jwtUtil.getAllClaimsAsMap(authorization);
+	@PostMapping("/update-chkpt-lists")
+    public ResponseEntity<?> updateChkptList(@RequestBody @Valid List<@Valid ChkptInfoRequest> request, @RequestHeader(value = "Authorization", required = false) String authorization ) {
+		
+		System.out.println(request.toString());
     	
-    	chkLst01Service.updateChkptList(dtoList, tokenInfo);
+    	chkLst01Service.updateChkptList(ChkptInfoParam.from(request, jwtUtil.getAllClaimsAsMap(authorization)));
     	
     	return ResponseEntity.status(HttpStatus.OK).build();
     }
 	
 	@PostMapping("/deleteChkptList")
-    public ResponseEntity<?> deleteChkptList(@RequestBody List<ChkLst01> dtoList, @RequestHeader(value = "Authorization", required = false) String authorization ) {
-    	Map<String, Object> tokenInfo = jwtUtil.getAllClaimsAsMap(authorization);
+    public ResponseEntity<?> deleteChkptList(@RequestBody List<ChkptInfoRequest> request, @RequestHeader(value = "Authorization", required = false) String authorization ) {
     	
-    	chkLst01Service.deleteChkptList(dtoList, tokenInfo);
+    	chkLst01Service.deleteChkptList(ChkptInfoParam.from(request, jwtUtil.getAllClaimsAsMap(authorization)));
     	
     	return ResponseEntity.status(HttpStatus.OK).build();
     }

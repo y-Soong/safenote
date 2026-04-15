@@ -1,18 +1,18 @@
 package com.prafta.web.user.user02.service.impl;
 
 import java.util.List;
-import java.util.Map;
 
 import org.springframework.stereotype.Service;
 
-import com.prafta.web.user.user02.dto.AuthMenuInfoQry;
-import com.prafta.web.user.user02.dto.AuthMenuInfoReq;
-import com.prafta.web.user.user02.dto.AuthMenuListQry;
-import com.prafta.web.user.user02.dto.AuthMenuListReq;
-import com.prafta.web.user.user02.dto.AuthMenuListRes;
+import com.prafta.web.user.user02.application.command.AuthMenuInfoCommand;
+import com.prafta.web.user.user02.application.model.AuthMenuInfoModel;
+import com.prafta.web.user.user02.application.param.AuthMenuInfoParam;
+import com.prafta.web.user.user02.application.param.AuthMenuListParam;
+import com.prafta.web.user.user02.application.query.AuthMenuListQuery;
+import com.prafta.web.user.user02.dto.response.AuthMenuListResponse;
 import com.prafta.web.user.user02.mapper.User02Mapper;
+import com.prafta.web.user.user02.result.AuthMenuResult;
 import com.prafta.web.user.user02.service.User02Service;
-import com.prafta.web.user.user02.vo.AuthMenu;
 
 import lombok.extern.slf4j.Slf4j;
 
@@ -26,21 +26,14 @@ public class User02ServiceImpl implements User02Service{
 	}
 	
 	
-	public AuthMenuListRes selectAuthMenuList(AuthMenuListReq dto, Map<String, Object> tokenInfo) {
+	public AuthMenuListResponse selectAuthMenuList(AuthMenuListParam param) {
 		
-		AuthMenuListQry reqDto = AuthMenuListQry.builder()
-				.menuDNm(dto.getMenuDNm())
-				.menuMNm(dto.getMenuMNm())
-				.authCd(dto.getAuthCd())
-				.useYn(dto.getUseYn())
-				.build();
+		AuthMenuListResponse retDto = null;
 		
-		AuthMenuListRes retDto = null;
-		
-		List<AuthMenu> authMenuList = user02Mapper.selectAuthMenuList(reqDto, tokenInfo);
+		List<AuthMenuResult> authMenuList = user02Mapper.selectAuthMenuList(AuthMenuListQuery.from(param));
 		
 		if(authMenuList.size() > 0) {
-			retDto = AuthMenuListRes.builder()
+			retDto = AuthMenuListResponse.builder()
 					.authMenuList(authMenuList)
 					.build();
 		}
@@ -48,22 +41,11 @@ public class User02ServiceImpl implements User02Service{
 		return retDto;
 	}
 
-	public void updateAuthMenuInfo(List<AuthMenuInfoReq> dtoList, Map<String, Object> tokenInfo) {
+	public void updateAuthMenuInfo(AuthMenuInfoParam param) {
 		
-		for(AuthMenuInfoReq dto : dtoList) {
+		for(AuthMenuInfoModel model : param.authMenuInfoModelList()) {
 			
-			AuthMenuInfoQry reqDto = AuthMenuInfoQry.builder()
-					.authCd(dto.getAuthCd())
-					.menuDId(dto.getMenuDId())
-					.useYn(dto.getUseYn())
-					.btnSrch(dto.getBtnSrch())
-					.btnNew(dto.getBtnNew())
-					.btnDel(dto.getBtnDel())
-					.btnSave(dto.getBtnSave())
-					.btnExcl(dto.getBtnExcl())
-					.build();
-			
-			user02Mapper.mergeAuthMenuInfo(reqDto, tokenInfo);
+			user02Mapper.mergeAuthMenuInfo(AuthMenuInfoCommand.from(model));
 		}
 	}
 	

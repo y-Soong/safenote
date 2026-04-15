@@ -10,31 +10,31 @@ import java.util.Map;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 
-import com.prafta.common.cmm.baseinfo.dto.MenuListRes;
+import com.prafta.common.cmm.baseinfo.dto.response.MenuListResponse;
+import com.prafta.common.cmm.baseinfo.result.MenuInfoResult;
 import com.prafta.common.cmm.baseinfo.vo.Buttons;
-import com.prafta.common.cmm.baseinfo.vo.MenuInfo;
 import com.prafta.common.cmm.baseinfo.vo.SideMenu;
 import com.prafta.common.cmm.baseinfo.vo.TopMenu;
 
 public class MenuListResBuilder {
 
-    public static MenuListRes build(
-            List<MenuInfo> menuInfoList,
+    public static MenuListResponse build(
+            List<MenuInfoResult> menuInfoList,
             Function<String, String> topLabelResolver
     ) {
         if (menuInfoList == null || menuInfoList.isEmpty()) {
 //            return new MenuListRes(Collections.emptyList(), Collections.emptyMap());
-        	return MenuListRes.builder()
+        	return MenuListResponse.builder()
                     .topMenus(Collections.emptyList())
                     .sideMenus(Collections.emptyMap())
                     .build();
         }
 
         // 1) keyId로 그룹핑 (순서 유지하려면 LinkedHashMap)
-        Map<String, List<MenuInfo>> byKey = menuInfoList.stream()
+        Map<String, List<MenuInfoResult>> byKey = menuInfoList.stream()
                 .filter(m -> !isEmpty(m.getKeyId()))
                 .collect(Collectors.groupingBy(
-                        MenuInfo::getKeyId,
+                        MenuInfoResult::getKeyId,
                         LinkedHashMap::new,
                         Collectors.toList()
                 ));
@@ -43,7 +43,7 @@ public class MenuListResBuilder {
         List<TopMenu> topMenus = byKey.entrySet().stream()
                 .map(e -> {
                     String keyId = e.getKey();
-                    MenuInfo first = e.getValue().get(0);
+                    MenuInfoResult first = e.getValue().get(0);
 
                     // label 우선순위: 외부 resolver > MenuInfo.topMenuNm > keyId
                     String label = null;
@@ -68,7 +68,7 @@ public class MenuListResBuilder {
 
         for (TopMenu tm : topMenus) {
             String keyId = tm.getId();
-            List<MenuInfo> rows = byKey.getOrDefault(keyId, Collections.emptyList());
+            List<MenuInfoResult> rows = byKey.getOrDefault(keyId, Collections.emptyList());
 
             // 그룹 내부 정렬 (id가 숫자 문자열이면 숫자정렬로 바꾸는 것도 가능)
             rows.sort(Comparator.comparing(m -> nullToEmpty(m.getId())));
@@ -77,7 +77,7 @@ public class MenuListResBuilder {
             int seq = 1;
 
             List<SideMenu> items = new ArrayList<>();
-            for (MenuInfo m : rows) {
+            for (MenuInfoResult m : rows) {
                 String itemId = nullToEmpty(m.getId());
                 if (isEmpty(itemId)) {
                     itemId = String.valueOf(base + seq++);
@@ -103,7 +103,7 @@ public class MenuListResBuilder {
         }
 
 //        return new MenuListRes(topMenus, sideMenus);
-        return MenuListRes.builder()
+        return MenuListResponse.builder()
                 .topMenus(topMenus)
                 .sideMenus(sideMenus)
                 .build();

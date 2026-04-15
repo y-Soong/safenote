@@ -1,30 +1,40 @@
 package com.prafta.web.tbm.tbm01.service.impl;
 
+import java.util.Base64;
 import java.util.List;
-import java.util.Map;
 
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.util.StringUtils;
 import org.springframework.web.multipart.MultipartFile;
 
-import com.prafta.common.cmm.file.dto.FileInfoSave;
+import com.prafta.common.cmm.file.application.query.FileInfoQuery;
+import com.prafta.common.cmm.file.dto.BytesMultipartFile;
+import com.prafta.common.cmm.file.dto.param.FileInfoParam;
 import com.prafta.common.cmm.file.mapper.FileMapper;
 import com.prafta.common.cmm.file.service.FileService;
-import com.prafta.common.exception.risk.RiskApiException;
-import com.prafta.web.tbm.tbm01.dto.TbmEduInfoListQry;
-import com.prafta.web.tbm.tbm01.dto.TbmEduInfoListReq;
-import com.prafta.web.tbm.tbm01.dto.TbmEduInfoListRes;
-import com.prafta.web.tbm.tbm01.dto.TbmEduInfoReq;
-import com.prafta.web.tbm.tbm01.dto.TbmEduInfoSave;
-import com.prafta.web.tbm.tbm01.dto.TbmEduItemInfoListQry;
-import com.prafta.web.tbm.tbm01.dto.TbmEduItemInfoListReq;
-import com.prafta.web.tbm.tbm01.dto.TbmEduItemInfoListRes;
-import com.prafta.web.tbm.tbm01.dto.TbmEduItemInfoReq;
-import com.prafta.web.tbm.tbm01.dto.TbmEduItemInfoSave;
+import com.prafta.common.error.common.CommonErrorCode;
+import com.prafta.common.exception.ApiException;
+import com.prafta.web.tbm.tbm01.application.command.TbmEduInfoCommand;
+import com.prafta.web.tbm.tbm01.application.command.TbmEduItemCommand;
+import com.prafta.web.tbm.tbm01.application.command.TbmEduItemInfoCommand;
+import com.prafta.web.tbm.tbm01.application.model.TbmEduItemInfoModel;
+import com.prafta.web.tbm.tbm01.application.model.TbmEduItemModel;
+import com.prafta.web.tbm.tbm01.application.model.TbmEduMtrlModel;
+import com.prafta.web.tbm.tbm01.application.param.TbmEduInfoListParam;
+import com.prafta.web.tbm.tbm01.application.param.TbmEduInfoParam;
+import com.prafta.web.tbm.tbm01.application.param.TbmEduItemInfoListParam;
+import com.prafta.web.tbm.tbm01.application.param.TbmEduItemParam;
+import com.prafta.web.tbm.tbm01.application.param.TbmEduMtrlInfoParam;
+import com.prafta.web.tbm.tbm01.application.query.TbmEduInfoListQuery;
+import com.prafta.web.tbm.tbm01.application.query.TbmEduItemInfoListQuery;
+//import com.prafta.web.tbm.tbm01.dto.TbmEduItemInfoReq;
+import com.prafta.web.tbm.tbm01.dto.response.TbmEduInfoListResponse;
+import com.prafta.web.tbm.tbm01.dto.response.TbmEduItemInfoListResponse;
 import com.prafta.web.tbm.tbm01.mapper.Tbm01Mapper;
+import com.prafta.web.tbm.tbm01.result.TbmEduInfoResult;
+import com.prafta.web.tbm.tbm01.result.TbmEduItemInfoResult;
 import com.prafta.web.tbm.tbm01.service.Tbm01Service;
-import com.prafta.web.tbm.tbm01.vo.TbmEduInfo;
-import com.prafta.web.tbm.tbm01.vo.TbmEduItemInfo;
 
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -37,173 +47,117 @@ public class Tbm01ServiceImpl implements Tbm01Service{
 	private final FileService fileService;
     private final FileMapper fileMapper;
 	
-	public TbmEduInfoListRes selectTbmEduInfo(TbmEduInfoListReq dto, Map<String, Object> tokenInfo) {
-		TbmEduInfoListQry reqDto = TbmEduInfoListQry.builder()
-				.mtrlCd(dto.getMtrlCd())
-				.mtrlType(dto.getMtrlType())
-				.title(dto.getTitle())
-				.useYn(dto.getUseYn())
-				.build();
+	public TbmEduInfoListResponse selectTbmEduInfo(TbmEduInfoListParam param) {
+		TbmEduInfoListResponse response = null;
 		
-		TbmEduInfoListRes retList = null;
+		List<TbmEduInfoResult> tbmEduInfoResultList = tbm01Mapper.selectTbmEduInfo(TbmEduInfoListQuery.from(param));
 		
-		List<TbmEduInfo> tbmEduInfoList = tbm01Mapper.selectTbmEduInfo(reqDto, tokenInfo);
+		List<TbmEduItemInfoResult> tbmEduItemInfoResult = tbm01Mapper.selectTbmEduItemInfo(TbmEduItemInfoListQuery.from(param));
 		
-		TbmEduItemInfoListQry reqDto2 = TbmEduItemInfoListQry.builder()
-				.mtrlCd(dto.getMtrlCd())
-				.build();
-		
-		List<TbmEduItemInfo> tbmEduItemInfoList = tbm01Mapper.selectTbmEduItemInfo(reqDto2, tokenInfo);
-		
-		if(tbmEduInfoList!= null && tbmEduInfoList.size() > 0) {
-			retList = TbmEduInfoListRes.builder()
-						.tbmEduInfoList(tbmEduInfoList)
-						.build();
-		}
-		
-		if(tbmEduItemInfoList!= null && tbmEduItemInfoList.size() > 0) {
-			retList = retList.toBuilder()
-					.tbmEduItemInfoList(tbmEduItemInfoList)
-					.build();
-		}
-		
-		return retList;
+		response = TbmEduInfoListResponse.builder()
+										.tbmEduInfoResultList(tbmEduInfoResultList)
+										.tbmEduItemInfoResultList(tbmEduItemInfoResult)
+										.build();
+		return response;
 	}
 	
-	public TbmEduItemInfoListRes selectTbmEduItemInfo(TbmEduItemInfoListReq dto, Map<String, Object> tokenInfo) {
-		TbmEduItemInfoListQry reqDto = TbmEduItemInfoListQry.builder()
-				.mtrlCd(dto.getMtrlCd())
-				.build();
+	public TbmEduItemInfoListResponse selectTbmEduItemInfo(TbmEduItemInfoListParam param) {
 		
-		TbmEduItemInfoListRes retList = null;
+		TbmEduItemInfoListResponse response = null;
 		
-		List<TbmEduItemInfo> tbmEduItemInfoList = tbm01Mapper.selectTbmEduItemInfo(reqDto, tokenInfo);
+		List<TbmEduItemInfoResult> tbmEduItemInfoList = tbm01Mapper.selectTbmEduItemInfo(TbmEduItemInfoListQuery.from(param));
 		
 		if(tbmEduItemInfoList!= null && tbmEduItemInfoList.size() > 0) {
-			retList = TbmEduItemInfoListRes.builder()
+			response = TbmEduItemInfoListResponse.builder()
 						.tbmEduItemInfoList(tbmEduItemInfoList)
 						.build();
 		}
 		
-		return retList;
+		return response;
 	}
 	
 	@Transactional
-	public void saveTbmEduInfos(TbmEduInfoReq dto, List<TbmEduItemInfoReq> itemList, Map<String, MultipartFile> fileMap, Map<String, Object> tokenInfo) {
+	public void saveTbmEduInfos(TbmEduInfoParam param) {
 		try {
 			String mtrlCd = "";
 			String fileMgmtCd = "";
 			
-			if(dto.getMtrlCd().isEmpty()) {
-				mtrlCd = tbm01Mapper.selectMtrlCd(tokenInfo);
+			if(param.mtrlCd().isEmpty()) {
+				mtrlCd = tbm01Mapper.selectMtrlCd(param.gvCmpnyCd());
 			} else {
-				mtrlCd = dto.getMtrlCd();
+				mtrlCd = param.mtrlCd();
 			}
 			
-			TbmEduInfoSave reqDto = TbmEduInfoSave.builder()
-					.mtrlCd(mtrlCd)
-					.title(dto.getTitle())
-					.contents(dto.getContents())
-					.mtrlType(dto.getMtrlType())
-					.useYn(dto.getUseYn())
-					.build();
+			tbm01Mapper.mergeTbmEduInfo(TbmEduInfoCommand.from(param, mtrlCd));
 			
-			tbm01Mapper.mergeTbmEduInfo(reqDto, tokenInfo);
-			
-			for (int i = 0; i < itemList.size(); i++) {
-		        TbmEduItemInfoReq item = itemList.get(i);
-		        
-		        fileMgmtCd = item.getFileMgmtCd();
-
-		        MultipartFile file = fileMap.get("item_" + i); // <-- 인덱스로 매칭
-		        if (file != null && !file.isEmpty()) {
-		        	FileInfoSave baseQuery = FileInfoSave.builder()
-	                        .cmpnyCd(tokenInfo.get("gv_cmpnyCd").toString())
-	                        .userId(tokenInfo.get("gv_userId").toString())
-	                        .siteCd("")
-	                        .fileType("003")     	// 002: TBM 교육자료
-	                        .itemCd("")
-	                        .fileName("")
-	                        .build();
-	    			
-	    			fileMgmtCd = fileMapper.selectFileMgmtCd(baseQuery);
-	    			
-	    			FileInfoSave queryWithKey = baseQuery.toBuilder()
-	                        .fileMgmtCd(fileMgmtCd)
-	                        .build();
-	    			
-	    			fileService.saveFile(queryWithKey, file);
-		        }
-		        
-		        String mtrlItemCd;
+			for(TbmEduItemInfoModel model : param.tbmEduItemInfoModelList()) {
+				fileMgmtCd = model.fileMgmtCd();
 				
-				if(item.getMtrlItemCd() == null) {
-					mtrlItemCd = tbm01Mapper.selectMtrlItemCd(tokenInfo);
-				} else {
-					mtrlItemCd = item.getMtrlItemCd();
+				MultipartFile file = null;
+				if (StringUtils.hasText(model.itemBase64())) {
+					byte[] bytes = Base64.getDecoder().decode(model.itemBase64().trim());
+					String fileName = StringUtils.hasText(model.itemOriginalFilename())
+							? model.itemOriginalFilename()
+							: "upload.bin";
+					file = new BytesMultipartFile("item", fileName, null, bytes);
 				}
 				
-				TbmEduItemInfoSave tbmEduItemInfoSave = TbmEduItemInfoSave.builder()
-										.mtrlItemCd(mtrlItemCd)
-										.mtrlCd(mtrlCd)
-										.sortIdx(item.getSortIdx())
-										.mtrlItemType(item.getMtrlItemType())
-										.fileMgmtCd(fileMgmtCd)
-										.mtrlDesc(item.getMtrlDesc())
-										.url(item.getUrl())
-										.useYn(item.getUseYn())
-										.build();
+				if (file != null && !file.isEmpty()) {
+					fileMgmtCd = fileMapper.selectFileMgmtCd(FileInfoQuery.from(param.gvCmpnyCd(), "003"));			// 002 : TBM 교육자료
+					
+					fileService.fileSave(FileInfoParam.from(
+    					param.gvCmpnyCd()
+    					, param.gvUserCd()
+    					, ""							// TBM 교육자료는 회사 공통으로 생성
+    					, "003"							// 위험성 평가
+    					, fileMgmtCd
+    					, file
+					));
+				}
 				
-				tbm01Mapper.mergeTbmEduItemInfo(tbmEduItemInfoSave, tokenInfo);
+				String mtrlItemCd;
+				
+				if(model.mtrlItemCd() == null) {
+					mtrlItemCd = tbm01Mapper.selectMtrlItemCd(param.gvCmpnyCd());
+				} else {
+					mtrlItemCd = model.mtrlItemCd();
+				}
+
+				TbmEduItemInfoCommand command = TbmEduItemInfoCommand.from(model, param, mtrlItemCd, mtrlCd, fileMgmtCd);
+				
+				tbm01Mapper.mergeTbmEduItemInfo(command);
 			}
 		} catch (Exception e) {
-			throw new RiskApiException(e.getMessage());
+			throw new ApiException(CommonErrorCode.COMMON_500_001);
 		}
-	}
+	}	
 	
-	public void deleteTbmEduItemInfo(List<TbmEduItemInfoReq> dtoList, Map<String, Object> tokenInfo) {
+	public void deleteTbmEduItemInfo(TbmEduItemParam param) {
 		
-		if(dtoList != null && dtoList.size() > 0) {
-			for(TbmEduItemInfoReq dto : dtoList) {
-				TbmEduItemInfoSave reqDto = TbmEduItemInfoSave.builder()
-						.mtrlItemCd(dto.getMtrlItemCd())
-						.build();
+		if(param != null && param.tbmEduItemModelList().size() > 0) {
+			for(TbmEduItemModel model : param.tbmEduItemModelList()) {
 				
-				tbm01Mapper.deleteTbmEduItemInfo(reqDto, tokenInfo);
+				tbm01Mapper.deleteTbmEduItemInfo(TbmEduItemCommand.from(model));
 			}
 		}
 	}
 	
-	public void saveTbmEdu(List<TbmEduInfoReq> dtoList, Map<String, Object> tokenInfo) {
+	public void saveTbmEdu(TbmEduMtrlInfoParam param) {
 
-		if(dtoList != null && dtoList.size() > 0) {
-			for(TbmEduInfoReq dto : dtoList) {
-				TbmEduInfoSave reqDto = TbmEduInfoSave.builder()
-						.mtrlCd(dto.getMtrlCd())
-						.title(dto.getTitle())
-						.contents(dto.getContents())
-						.mtrlType(dto.getMtrlType())
-						.useYn(dto.getUseYn())
-						.build();
+		if(param != null && param.tbmEduMtrlModelList().size() > 0) {
+			for(TbmEduMtrlModel model : param.tbmEduMtrlModelList()) {
 				
-				tbm01Mapper.mergeTbmEduInfo(reqDto, tokenInfo);
+				tbm01Mapper.mergeTbmEduInfo(TbmEduInfoCommand.from(model));
 			}
 		}
 	}
 	
-	public void deleteTbmEdu(List<TbmEduInfoReq> dtoList, Map<String, Object> tokenInfo) {
+	public void deleteTbmEdu(TbmEduMtrlInfoParam param) {
 		
-		if(dtoList != null && dtoList.size() > 0) {
-			for(TbmEduInfoReq dto : dtoList) {
-				TbmEduInfoSave reqDto = TbmEduInfoSave.builder()
-						.mtrlCd(dto.getMtrlCd())
-						.title(dto.getTitle())
-						.contents(dto.getContents())
-						.mtrlType(dto.getMtrlType())
-						.useYn(dto.getUseYn())
-						.build();
+		if(param != null && param.tbmEduMtrlModelList().size() > 0) {
+			for(TbmEduMtrlModel model : param.tbmEduMtrlModelList()) {
 				
-				tbm01Mapper.deleteTbmEduInfo(reqDto, tokenInfo);
+				tbm01Mapper.deleteTbmEduInfo(TbmEduInfoCommand.from(model));
 			}
 		}
 	}

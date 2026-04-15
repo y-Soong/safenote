@@ -151,7 +151,7 @@ onMounted(async () => {
 // API 호출
 const fnGetSystinfoList = async () => {
   try {
-    const response = await axios.get("/comApi/baseinfo/syst-info-list", {
+    const response = await axios.get("/comApi/baseinfo/syst-info-lists", {
       params: {
         systCodeList: ["SYS003"],
       },
@@ -217,7 +217,7 @@ const fnGetTermsInfo = async () => {
 const fnSaveTerms = async () => {
   fnConfirmMsg("저장하시겠습니까 ?", async () => {
     try {
-      const response = await axios.post("/webApi/baim03/updateTermsInfo", {
+      const response = await axios.post("/webApi/baim03/update-terms-info", {
         termsId: termsId.value,
         termsNm: termsNm.value,
         requiredYn: requiredYn.value,

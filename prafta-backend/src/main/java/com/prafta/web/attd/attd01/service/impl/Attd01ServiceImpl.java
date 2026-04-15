@@ -1,45 +1,44 @@
 package com.prafta.web.attd.attd01.service.impl;
 
 import java.util.List;
-import java.util.Map;
 
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-import com.prafta.web.attd.attd01.dto.SchCdQry;
-import com.prafta.web.attd.attd01.dto.SchInfoHistQry;
-import com.prafta.web.attd.attd01.dto.SchInfoHistReq;
-import com.prafta.web.attd.attd01.dto.SchInfoHistRes;
-import com.prafta.web.attd.attd01.dto.SchInfoHistSave;
-import com.prafta.web.attd.attd01.dto.SchInfoListQry;
-import com.prafta.web.attd.attd01.dto.SchInfoListReq;
-import com.prafta.web.attd.attd01.dto.SchInfoListRes;
-import com.prafta.web.attd.attd01.dto.SchInfoReq;
-import com.prafta.web.attd.attd01.dto.SchInfoSave;
-import com.prafta.web.attd.attd01.dto.ShiftAssignSave;
-import com.prafta.web.attd.attd01.dto.ShiftCdQry;
-import com.prafta.web.attd.attd01.dto.ShiftPatternSave;
-import com.prafta.web.attd.attd01.dto.ShiftSchDetailQry;
-import com.prafta.web.attd.attd01.dto.ShiftSchDetailReq;
-import com.prafta.web.attd.attd01.dto.ShiftSchDetailRes;
-import com.prafta.web.attd.attd01.dto.ShiftSchInfoListQry;
-import com.prafta.web.attd.attd01.dto.ShiftSchInfoListReq;
-import com.prafta.web.attd.attd01.dto.ShiftSchInfoListRes;
-import com.prafta.web.attd.attd01.dto.ShiftSchInfoReq;
-import com.prafta.web.attd.attd01.dto.ShiftSchInfoReq.ShiftAssign;
-import com.prafta.web.attd.attd01.dto.ShiftSchInfoReq.ShiftPattern;
-import com.prafta.web.attd.attd01.dto.ShiftSchInfoReq.ShiftTeam;
-import com.prafta.web.attd.attd01.dto.ShiftTeamSave;
-import com.prafta.web.attd.attd01.dto.ShiftTypeSave;
+import com.prafta.web.attd.attd01.application.command.SchInfoCommand;
+import com.prafta.web.attd.attd01.application.command.SchInfoHistCommand;
+import com.prafta.web.attd.attd01.application.command.ShiftAssignCommand;
+import com.prafta.web.attd.attd01.application.command.ShiftPatternCommand;
+import com.prafta.web.attd.attd01.application.command.ShiftTeamCommand;
+import com.prafta.web.attd.attd01.application.command.ShiftTypeCommand;
+import com.prafta.web.attd.attd01.application.param.SchInfoHistParam;
+import com.prafta.web.attd.attd01.application.param.SchInfoListParam;
+import com.prafta.web.attd.attd01.application.param.SchInfoParam;
+import com.prafta.web.attd.attd01.application.param.ShiftSchDetailParam;
+import com.prafta.web.attd.attd01.application.param.ShiftSchInfoListParam;
+import com.prafta.web.attd.attd01.application.param.ShiftSchInfoParam;
+import com.prafta.web.attd.attd01.application.param.ShiftSchInfoParam.ShiftAssignParam;
+import com.prafta.web.attd.attd01.application.param.ShiftSchInfoParam.ShiftPatternParam;
+import com.prafta.web.attd.attd01.application.param.ShiftSchInfoParam.ShiftTeamParam;
+import com.prafta.web.attd.attd01.application.query.SchCdQuery;
+import com.prafta.web.attd.attd01.application.query.SchInfoHistQuery;
+import com.prafta.web.attd.attd01.application.query.SchInfoListQuery;
+import com.prafta.web.attd.attd01.application.query.ShiftCdQuery;
+import com.prafta.web.attd.attd01.application.query.ShiftSchDetailQuery;
+import com.prafta.web.attd.attd01.application.query.ShiftSchInfoListQuery;
+import com.prafta.web.attd.attd01.dto.response.SchInfoHistResponse;
+import com.prafta.web.attd.attd01.dto.response.SchInfoListResponse;
+import com.prafta.web.attd.attd01.dto.response.ShiftSchDetailResponse;
+import com.prafta.web.attd.attd01.dto.response.ShiftSchInfoListResponse;
 import com.prafta.web.attd.attd01.mapper.Attd01Mapper;
+import com.prafta.web.attd.attd01.result.SchHistResult;
+import com.prafta.web.attd.attd01.result.SchInfoResult;
+import com.prafta.web.attd.attd01.result.ShiftAssignInfoResult;
+import com.prafta.web.attd.attd01.result.ShiftPatternInfoResult;
+import com.prafta.web.attd.attd01.result.ShiftSchInfoResult;
+import com.prafta.web.attd.attd01.result.ShiftTeamInfoResult;
+import com.prafta.web.attd.attd01.result.ShiftTypeInfoResult;
 import com.prafta.web.attd.attd01.service.Attd01Service;
-import com.prafta.web.attd.attd01.vo.SchHist;
-import com.prafta.web.attd.attd01.vo.SchInfo;
-import com.prafta.web.attd.attd01.vo.ShiftAssignInfo;
-import com.prafta.web.attd.attd01.vo.ShiftPatternInfo;
-import com.prafta.web.attd.attd01.vo.ShiftSchInfo;
-import com.prafta.web.attd.attd01.vo.ShiftTeamInfo;
-import com.prafta.web.attd.attd01.vo.ShiftTypeInfo;
 
 import lombok.extern.slf4j.Slf4j;
 
@@ -52,219 +51,119 @@ public class Attd01ServiceImpl implements Attd01Service{
 		this.attd01Mapper = attd01Mapper;
 	}
 	
-	public SchInfoListRes selectSchInfoList(SchInfoListReq dto, Map<String, Object> tokenInfo) {
-		SchInfoListQry reqDto = SchInfoListQry.builder()
-												.siteCd(dto.getSiteCd())
-												.schNo(dto.getSchNo())
-												.schType(dto.getSchType())
-												.useYn(dto.getUseYn())
-												.build();
+	public SchInfoListResponse selectSchInfoList(SchInfoListParam param) {
 		
-		SchInfoListRes resDto = null;
+		SchInfoListResponse response = null;
 		
-		List<SchInfo> schInfoList = attd01Mapper.selectSchInfoList(reqDto, tokenInfo);
+		List<SchInfoResult> schInfoResultList = attd01Mapper.selectSchInfoList(SchInfoListQuery.from(param));
 		
-		if(schInfoList != null && !schInfoList.isEmpty()) {
-			resDto = SchInfoListRes.builder()
-									.schInfoList(schInfoList)
+		if(schInfoResultList != null && !schInfoResultList.isEmpty()) {
+			response = SchInfoListResponse.builder()
+									.schInfoResultList(schInfoResultList)
 									.build();
 		}
 		
-		return resDto;
+		return response;
 	
 	}
 	
 	@Transactional
-	public void updateSchInfo(SchInfoReq dto, Map<String, Object> tokenInfo) {
+	public void updateSchInfo(SchInfoParam param) {
 		
 		String schCd = null;
 		
-		if(dto.getSchCd() != null && dto.getSchCd() != "") {
-			schCd = dto.getSchCd();
+		if(param.schCd() != null && param.schCd() != "") {
+			schCd = param.schCd();
 		} else {
-			SchCdQry schCdQry = SchCdQry.builder().siteCd(dto.getSiteCd()).build();
-			
-			schCd = attd01Mapper.selectSchCd(schCdQry, tokenInfo);
+			schCd = attd01Mapper.selectSchCd(SchCdQuery.from(param));
 		}
 		
-		SchInfoSave schInfoSave = SchInfoSave.builder()
-							    .cmpnyCd(dto.getCmpnyCd())
-							    .siteCd(dto.getSiteCd())
-							    .schCd(schCd)
-							    .schNo(dto.getSchNo())
-							    .schType(dto.getSchType())
-							    .applyDate(dto.getApplyDate())
-				
-							    .fstSchStrTime(dto.getFstSchStrTime())
-							    .fstSchEndTime(dto.getFstSchEndTime())
-							    .fstSchBrkMin(dto.getFstSchBrkMin())
-				
-							    .secSchStrTime(dto.getSecSchStrTime())
-							    .secSchEndTime(dto.getSecSchEndTime())
-							    .secSchBrkMin(dto.getSecSchBrkMin())
-				
-							    .useYn(dto.getUseYn())
-							    .build();
+		attd01Mapper.updateSchInfo(SchInfoCommand.from(param));
 		
-		attd01Mapper.updateSchInfo(schInfoSave, tokenInfo);
+		int histIdx = attd01Mapper.selectSchHistIdx(SchInfoHistQuery.from(param));
 		
-		SchInfoHistQry schInfoHistQry = SchInfoHistQry.builder()
-														.siteCd(dto.getSiteCd())
-														.schCd(schCd)
-														.build();
-		
-		int histIdx = attd01Mapper.selectSchHistIdx(schInfoHistQry, tokenInfo);
-		
-		SchInfoHistSave schInfoHistSave = SchInfoHistSave.builder()
-			    .cmpnyCd(dto.getCmpnyCd())
-			    .siteCd(dto.getSiteCd())
-			    .histIdx(histIdx)
-			    .schCd(schCd)
-			    .applyDate(dto.getApplyDate())
-
-			    .fstSchStrTime(dto.getFstSchStrTime())
-			    .fstSchEndTime(dto.getFstSchEndTime())
-			    .fstSchBrkMin(dto.getFstSchBrkMin())
-
-			    .secSchStrTime(dto.getSecSchStrTime())
-			    .secSchEndTime(dto.getSecSchEndTime())
-			    .secSchBrkMin(dto.getSecSchBrkMin())
-
-			    .useYn(dto.getUseYn())
-			    .build();
-		
-		attd01Mapper.insertSchHistInfo(schInfoHistSave, tokenInfo);
+		attd01Mapper.insertSchHistInfo(SchInfoHistCommand.from(param, histIdx, schCd));
 	}
 	
-	public SchInfoHistRes selectSchHistList(SchInfoHistReq dto, Map<String, Object> tokenInfo) {
+	public SchInfoHistResponse selectSchHistList(SchInfoHistParam param) {
 		
-		SchInfoHistQry schInfoHistQry = SchInfoHistQry.builder()
-				.siteCd(dto.getSiteCd())
-				.schCd(dto.getSchCd())
-				.build();
 		
-		SchInfoHistRes schInfoHistRes = null;
+		SchInfoHistResponse response = null;
 		
-		List<SchHist> schHistList = attd01Mapper.selectSchHistList(schInfoHistQry, tokenInfo);
+		List<SchHistResult> schHistResultList = attd01Mapper.selectSchHistList(SchInfoHistQuery.from(param));
 		
-		if(schHistList != null && schHistList.size() > 0) {
-			schInfoHistRes = SchInfoHistRes.builder()
-											.schHistList(schHistList)
+		if(schHistResultList != null && schHistResultList.size() > 0) {
+			response = SchInfoHistResponse.builder()
+											.schHistResultList(schHistResultList)
 											.build();
 		}
 		
-		return schInfoHistRes;
+		return response;
 	}
 	
 	@Transactional
-	public void updateShiftSchInfo(ShiftSchInfoReq dto, Map<String, Object> tokenInfo) {
+	public void updateShiftSchInfo(ShiftSchInfoParam param) {
 		
-		ShiftCdQry shiftCdQry = ShiftCdQry.builder().siteCd(dto.getShiftType().getSiteCd()).build();
+		String shiftCd = attd01Mapper.selectShiftCd(ShiftCdQuery.from(param));
 		
-		String shiftCd = attd01Mapper.selectShiftCd(shiftCdQry, tokenInfo);
+		attd01Mapper.insertShiftSch(ShiftTypeCommand.from(param, shiftCd));
 		
-		ShiftTypeSave shiftTypeSave = ShiftTypeSave.builder()
-													.shiftCd(shiftCd)
-													.shiftNo(dto.getShiftType().getShiftNo())
-													.siteCd(dto.getShiftType().getSiteCd())
-													.shiftPtrnCnt(dto.getShiftType().getShiftPtrnCnt())
-													.shiftTeamCnt(dto.getShiftType().getShiftTeamCnt())
-													.shiftCycleDays(dto.getShiftType().getShiftCycleDays())
-													.useYn(dto.getShiftType().getUseYn())
-													.build();
-		
-		attd01Mapper.insertShiftSch(shiftTypeSave, tokenInfo);
-		
-		if(dto.getShiftPatternList() != null && dto.getShiftPatternList().size() > 0) {
-			for(ShiftPattern shiftPattern : dto.getShiftPatternList()) {
-				ShiftPatternSave shiftPatternSave = ShiftPatternSave.builder()
-																	.shiftCd(shiftCd)
-																	.siteCd(shiftPattern.getSiteCd())
-																	.ptrnIdx(shiftPattern.getPtrnIdx())
-																	.schCd(shiftPattern.getSchCd())
-																	.build();
-				
-				attd01Mapper.insertShiftSchPtrn(shiftPatternSave, tokenInfo);
+		if(param.shiftPatternList() != null && param.shiftPatternList().size() > 0) {
+			for(ShiftPatternParam shiftPatternParam : param.shiftPatternList()) {
+				attd01Mapper.insertShiftSchPtrn(ShiftPatternCommand.from(shiftPatternParam, shiftCd, param.gvCmpnyCd(), param.gvUserCd()));
 			}
 		}
 		
-		if(dto.getShiftTeamList() != null && dto.getShiftTeamList().size() > 0) {
-			for(ShiftTeam shiftTeam : dto.getShiftTeamList()) {
-				ShiftTeamSave shiftTeamSave = ShiftTeamSave.builder()
-															.shiftCd(shiftCd)
-															.siteCd(shiftTeam.getSiteCd())
-															.teamIdx(shiftTeam.getTeamIdx())
-															.teamNm(shiftTeam.getTeamNm())
-															.build();
+		if(param.shiftTeamList() != null && param.shiftTeamList().size() > 0) {
+			for(ShiftTeamParam shiftTeamParam : param.shiftTeamList()) {
 				
-				attd01Mapper.insertShiftSchTeam(shiftTeamSave, tokenInfo);
+				attd01Mapper.insertShiftSchTeam(ShiftTeamCommand.from(shiftTeamParam, shiftCd, param.gvCmpnyCd(), param.gvUserCd()));
 			}
 		}
 		
-		if(dto.getShiftAssignList() != null && dto.getShiftAssignList().size() > 0) {
-			for(ShiftAssign shiftAssign : dto.getShiftAssignList()) {
-				ShiftAssignSave shiftAssignSave = ShiftAssignSave.builder()
-						.shiftCd(shiftCd)
-						.siteCd(shiftAssign.getSiteCd())
-						.dayNo(shiftAssign.getDayNo())
-						.teamIdx(shiftAssign.getTeamIdx())
-						.assignYn(shiftAssign.getAssignYn())
-						.schCd(shiftAssign.getSchCd())
-						.build();
+		if(param.shiftAssignList() != null && param.shiftAssignList().size() > 0) {
+			for(ShiftAssignParam shiftAssignParam : param.shiftAssignList()) {
 
-				attd01Mapper.insertShiftSchAssign(shiftAssignSave, tokenInfo);
+				attd01Mapper.insertShiftSchAssign(ShiftAssignCommand.from(shiftAssignParam, shiftCd, param.gvCmpnyCd(), param.gvUserCd()));
 			}
 		}
 	}
 	
-	public ShiftSchInfoListRes selectShiftSchInfoList(ShiftSchInfoListReq dto, Map<String, Object> tokenInfo) {
+	public ShiftSchInfoListResponse selectShiftSchInfoList(ShiftSchInfoListParam param) {
 		
-		ShiftSchInfoListQry shiftSchInfoListQry = ShiftSchInfoListQry.builder()
-																	.siteCd(dto.getSiteCd())
-																	.shiftNo(dto.getShiftNo())
-																	.shiftCycleDays(dto.getShiftCycleDays())
-																	.useYn(dto.getUseYn())
-																	.build();
+		ShiftSchInfoListResponse response = null;
 		
-		ShiftSchInfoListRes shiftSchInfoListRes = null;
+		List<ShiftSchInfoResult> shiftSchInfoResultList = attd01Mapper.selectShiftSchInfoList(ShiftSchInfoListQuery.from(param));
 		
-		List<ShiftSchInfo> shiftSchInfoList = attd01Mapper.selectShiftSchInfoList(shiftSchInfoListQry, tokenInfo);
-		
-		if(shiftSchInfoList != null && shiftSchInfoList.size() > 0) {
-			shiftSchInfoListRes = ShiftSchInfoListRes.builder()
-													.shiftSchInfoList(shiftSchInfoList)
+		if(shiftSchInfoResultList != null && shiftSchInfoResultList.size() > 0) {
+			response = ShiftSchInfoListResponse.builder()
+													.shiftSchInfoResultList(shiftSchInfoResultList)
 													.build();
 		}
 	
 		
-		return shiftSchInfoListRes;
+		return response;
 	}
 	
-	public ShiftSchDetailRes selectShiftSchDetail(ShiftSchDetailReq dto, Map<String, Object> tokenInfo) {
+	public ShiftSchDetailResponse selectShiftSchDetail(ShiftSchDetailParam param) {
 		
-		ShiftSchDetailQry shiftSchDetailQry = ShiftSchDetailQry.builder()
-																.siteCd(dto.getSiteCd())
-																.shiftCd(dto.getShiftCd())
-																.build();
+		ShiftSchDetailResponse response = null;
 		
-		ShiftSchDetailRes shiftSchDetailRes = null;
+		List<ShiftTypeInfoResult> shiftTypeInfoResultList = attd01Mapper.selectShiftTypeInfoList(ShiftSchDetailQuery.from(param));
 		
-		List<ShiftTypeInfo> shiftTypeInfoList = attd01Mapper.selectShiftTypeInfoList(shiftSchDetailQry, tokenInfo);
+		List<ShiftPatternInfoResult> shiftPatternInfoResultList = attd01Mapper.selectShiftPatternInfoList(ShiftSchDetailQuery.from(param));
 		
-		List<ShiftPatternInfo> shiftPatternInfoList = attd01Mapper.selectShiftPatternInfoList(shiftSchDetailQry, tokenInfo);
+		List<ShiftTeamInfoResult> shiftTeamInfoResultList = attd01Mapper.selectShiftTeamInfoList(ShiftSchDetailQuery.from(param));
 		
-		List<ShiftTeamInfo> shiftTeamInfoList = attd01Mapper.selectShiftTeamInfoList(shiftSchDetailQry, tokenInfo);
+		List<ShiftAssignInfoResult> shiftAssignInfoResultList = attd01Mapper.selectShiftAssignInfoList(ShiftSchDetailQuery.from(param));
 		
-		List<ShiftAssignInfo> shiftAssignInfoList = attd01Mapper.selectShiftAssignInfoList(shiftSchDetailQry, tokenInfo);
-		
-		shiftSchDetailRes = ShiftSchDetailRes.builder()
-											.shiftTypeInfoList(shiftTypeInfoList)
-											.shiftPatternInfoList(shiftPatternInfoList)
-											.shiftTeamInfoList(shiftTeamInfoList)
-											.shiftAssignInfoList(shiftAssignInfoList)
+		response = ShiftSchDetailResponse.builder()
+											.shiftTypeInfoResultList(shiftTypeInfoResultList)
+											.shiftPatternInfoResultList(shiftPatternInfoResultList)
+											.shiftTeamInfoResultList(shiftTeamInfoResultList)
+											.shiftAssignInfoResultList(shiftAssignInfoResultList)
 											.build();
 		
-		
-		return shiftSchDetailRes;
+		return response;
 	}
 }

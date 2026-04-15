@@ -188,6 +188,7 @@ import { useModal } from "@/utils/useModal";
 import { useFieldWatcher } from "@/utils/useFieldWatcher";
 import axios from "@/api/axios";
 import ViewHeader from "@/components/common/ViewHeader.vue";
+import { getMessage, MSG } from "@/messages";
 import BaseSelect from "@/components/common/BaseSelect.vue";
 import search_icon from "@/assets/img/search_icon.png";
 import SiteSearchPop from "@/components/popup/SiteSearchPop.vue";
@@ -241,7 +242,7 @@ onMounted(async () => {
 // ================ API Functions ================
 const fnGetSystinfoList = async () => {
   try {
-    const response = await axios.get("/comApi/baseinfo/syst-info-list", {
+    const response = await axios.get("/comApi/baseinfo/syst-info-lists", {
       params: {
         systCodeList: ["SYS003"],
       },
@@ -315,7 +316,7 @@ const fnSave = async () => {
   );
 
   if (filteredData.length == 0) {
-    proxy.$alert("저장할 데이터가 없습니다.");
+    proxy.$alert(getMessage(MSG.SAVE_DATA_REQUIRED));
     return;
   }
 
@@ -330,7 +331,7 @@ const fnSave = async () => {
     }
   });
 
-  const ok = await proxy.$confirm("저장하시겠습니까 ?");
+  const ok = await proxy.$confirm(getMessage(MSG.SAVE_CONFIRM));
   if (!ok) return;
 
   try {
@@ -340,7 +341,7 @@ const fnSave = async () => {
     );
 
     if (response.status === 200) {
-      proxy.$alert("처리되었습니다.");
+      proxy.$alert(getMessage(MSG.SAVE_SUCCESS));
       fnSearch();
     }
   } catch (err) {
@@ -359,11 +360,11 @@ const fnDelete = async () => {
   );
 
   if (filteredData.length == 0) {
-    proxy.$alert("삭제할 데이터가 없습니다.");
+    proxy.$alert(getMessage(MSG.DELETE_DATA_REQUIRED));
     return;
   }
 
-  const ok = await proxy.$confirm("삭제하시겠습니까 ?");
+  const ok = await proxy.$confirm(getMessage(MSG.DELETE_CONFIRM));
   if (!ok) return;
 
   try {
@@ -373,7 +374,7 @@ const fnDelete = async () => {
     );
 
     if (response.status === 200) {
-      proxy.$alert("처리되었습니다.");
+      proxy.$alert(getMessage(MSG.SAVE_SUCCESS));
       fnSearch();
     }
   } catch (err) {
@@ -388,11 +389,13 @@ const fnDelete = async () => {
 
 const fnSrchSiteInfo = async () => {
   try {
-    const response = await axios.post("/comApi/baseinfo/getSiteInfoList", {
-      cmpnyCd: sessionStorage.getItem("gv_cmpnyCd"),
-      siteNo: siteNo.value,
-      siteNm: siteNm.value,
-      useYn: useYn.value,
+    const response = await axios.get("/comApi/baseinfo/site-lists", {
+      params: {
+        cmpnyCd: sessionStorage.getItem("gv_cmpnyCd"),
+        siteNo: siteNo.value,
+        siteNm: siteNm.value,
+        useYn: useYn.value,
+      },
     });
 
     if (response.status === 200) {
@@ -441,12 +444,13 @@ const fnCallback = (res) => {
   if (proxy.$util.isNotEmpty(res)) {
     const apiId = res.config.url.split("/").pop();
 
-    if (apiId == "getSiteInfoList") {
-      if (res.data.length == 1) {
-        siteCd.value = res.data[0].SITE_CD;
-        siteNo.value = res.data[0].SITE_NO;
-        siteNm.value = res.data[0].SITE_NM;
-      } else if (res.data.length > 1) {
+    if (apiId == "site-lists") {
+      const siteList = res.data?.siteInfoResultList ?? [];
+      if (siteList.length === 1) {
+        siteCd.value = siteList[0].siteCd;
+        siteNo.value = siteList[0].siteNo;
+        siteNm.value = siteList[0].siteNm;
+      } else if (siteList.length > 1) {
         //        handleResetSiteSearchPop();
         fnSiteSearchPopOpen();
         SiteSearchPopOpen.value = true;
@@ -479,8 +483,8 @@ const fnHeadChk = () => {
 const fnSiteSearchPopOpen = () => {
   openPop(SiteSearchPop, {
     cmpnyCd_p: sessionStorage.getItem("gv_cmpnyCd"),
-    siteNo_p: siteNo.value,
-    siteNm_p: siteNm.value,
+    siteNo_p: "",
+    siteNm_p: "",
     onSelect: onSiteSelected,
   });
 };

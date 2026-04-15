@@ -1,58 +1,70 @@
 package com.prafta.common.cmm.baseinfo.mapper;
 
 import java.util.List;
-import java.util.Map;
 
 import org.apache.ibatis.annotations.Mapper;
-import org.apache.ibatis.annotations.Param;
 
-import com.prafta.common.cmm.baseinfo.dto.BaseInfoListQuery;
-import com.prafta.common.cmm.baseinfo.dto.BaseInfoQry;
-import com.prafta.common.cmm.baseinfo.dto.BaseinfoCmmReq;
-import com.prafta.common.cmm.baseinfo.dto.MenuListQry;
-import com.prafta.common.cmm.baseinfo.dto.SiteNodeListQry;
-import com.prafta.common.cmm.baseinfo.dto.SystInfoListQuery;
-import com.prafta.common.cmm.baseinfo.dto.SystInfoQry;
-import com.prafta.common.cmm.baseinfo.vo.BaseInfo;
-import com.prafta.common.cmm.baseinfo.vo.MenuInfo;
-import com.prafta.common.cmm.baseinfo.vo.SiteNodeInfo;
-import com.prafta.common.cmm.baseinfo.vo.SystInfo;
+import com.prafta.common.cmm.baseinfo.application.command.MblUniqueCheckCommand;
+import com.prafta.common.cmm.baseinfo.application.command.SmsAuthNoCommand;
+import com.prafta.common.cmm.baseinfo.application.query.AppMenuListQuery;
+import com.prafta.common.cmm.baseinfo.application.query.BaseInfoListQuery;
+import com.prafta.common.cmm.baseinfo.application.query.BaseInfoQuery;
+import com.prafta.common.cmm.baseinfo.application.query.CmpnyInfoQuery;
+import com.prafta.common.cmm.baseinfo.application.query.MblUniqueCheckQuery;
+import com.prafta.common.cmm.baseinfo.application.query.MenuListQuery;
+import com.prafta.common.cmm.baseinfo.application.query.SiteInfoQuery;
+import com.prafta.common.cmm.baseinfo.application.query.SiteNodeListQuery;
+import com.prafta.common.cmm.baseinfo.application.query.SystInfoListQuery;
+import com.prafta.common.cmm.baseinfo.application.query.SystInfoQuery;
+import com.prafta.common.cmm.baseinfo.application.query.TermsDetailInfoQuery;
+import com.prafta.common.cmm.baseinfo.application.query.UserIdDupleCheckQuery;
+import com.prafta.common.cmm.baseinfo.application.query.UserSmsAuthNoCheckQuery;
+import com.prafta.common.cmm.baseinfo.application.query.WebMenuListQuery;
+import com.prafta.common.cmm.baseinfo.result.AppMenuResult;
+import com.prafta.common.cmm.baseinfo.result.BaseInfoResult;
+import com.prafta.common.cmm.baseinfo.result.CmpnyInfoResult;
+import com.prafta.common.cmm.baseinfo.result.MenuInfoResult;
+import com.prafta.common.cmm.baseinfo.result.SiteInfoResult;
+import com.prafta.common.cmm.baseinfo.result.SiteNodeInfoResult;
+import com.prafta.common.cmm.baseinfo.result.SystInfoResult;
+import com.prafta.common.cmm.baseinfo.result.TermsDetailInfoResult;
+import com.prafta.common.cmm.baseinfo.result.WebMenuResult;
 
 @Mapper
 public interface BaseinfoMapper {
-	List<SystInfo> selectSystinfoList(SystInfoListQuery reqDto);
+	List<SystInfoResult> selectSystinfoList(SystInfoListQuery reqDto);
 	
-	List<SystInfo> selectSystinfo(SystInfoQry dto);
+	List<SystInfoResult> selectSystinfo(SystInfoQuery dto);
 	
-	List<BaseInfo> selectBaseinfoList(BaseInfoListQuery reqDto);
+	List<BaseInfoResult> selectBaseinfoList(BaseInfoListQuery query);
 	
-	List<BaseInfo> selectBaseinfo(@Param("param") BaseInfoQry dto, @Param("token") Map<String, Object> tokenInfo);
+	List<BaseInfoResult> selectBaseinfo(BaseInfoQuery query);
 	
-	Map<String, Object> selectCmpnyInfo(BaseinfoCmmReq dto);
+	CmpnyInfoResult selectCmpnyInfo(CmpnyInfoQuery query);
 	
-	Map<String, Object> selectUserIdDupleChk(BaseinfoCmmReq dto);
+	String getUserIdDupleCheck(UserIdDupleCheckQuery query);
 	
-	int selectMblUniqChk(BaseinfoCmmReq dto);
+	int selectMblUniqChk(MblUniqueCheckQuery dto);
 	
-	void insertSmsAuthReq(BaseinfoCmmReq dto);
+	void insertSmsAuthNo(SmsAuthNoCommand dto);
 	
-	int updateSmsAuthReq(BaseinfoCmmReq dto);
+	int updateSmsAuthReq(MblUniqueCheckCommand mblUniqueCheckCommand);
 	
-	Map<String, Object> selectCertNoSmsId(BaseinfoCmmReq dto);
+	String selectCertNoSmsId(UserSmsAuthNoCheckQuery dto);
 	
-	List<Map<String, Object>> selectSiteInfoList(BaseinfoCmmReq dto);
+	List<SiteInfoResult> selectSiteInfoList(SiteInfoQuery query);
 	
-	List<SiteNodeInfo> selectSiteNodeList(@Param("param") SiteNodeListQry dto, @Param("token") Map<String, Object> tokenInfo);
+	List<SiteNodeInfoResult> selectSiteNodeList(SiteNodeListQuery query);
 	
-	List<Map<String, Object>> selectWebMenuList(BaseinfoCmmReq dto);
+	List<WebMenuResult> selectWebMenuList(WebMenuListQuery query);
 	
-	List<Map<String, Object>> selectAppMenuList(BaseinfoCmmReq dto);
+	List<AppMenuResult> selectAppMenuList(AppMenuListQuery query);
 	
-	List<MenuInfo> selectMenuList(@Param("param") MenuListQry dto, @Param("token") Map<String, Object> tokenInfo);
+	List<MenuInfoResult> selectMenuList(MenuListQuery query);
 	
-	Map<String, Object> selectUserIdInfo(BaseinfoCmmReq dto);
+//	Map<String, Object> selectUserIdInfo(BaseinfoCmmReq dto);
+//	
+//	void updateUserPw(BaseinfoCmmReq dto);
 	
-	void updateUserPw(BaseinfoCmmReq dto);
-	
-	Map<String, Object> selectTermsDInfo(BaseinfoCmmReq dto);
+	TermsDetailInfoResult selectTermsDetailInfo(TermsDetailInfoQuery query);
 }

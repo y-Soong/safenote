@@ -31,5 +31,5 @@ export function useDraggable(initialX = 200, initialY = 150) {
 
   onUnmounted(() => stopDrag());
 
-  return { position, startDrag };
+  return { position, startDrag, stopDrag };
 }

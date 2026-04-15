@@ -1,28 +1,24 @@
 package com.prafta.web.tbm.tbm01.service;
 
-import java.util.List;
-import java.util.Map;
-
-import org.springframework.web.multipart.MultipartFile;
-
-import com.prafta.web.tbm.tbm01.dto.TbmEduItemInfoListReq;
-import com.prafta.web.tbm.tbm01.dto.TbmEduItemInfoListRes;
-import com.prafta.web.tbm.tbm01.dto.TbmEduItemInfoReq;
-import com.prafta.web.tbm.tbm01.dto.TbmEduInfoListReq;
-import com.prafta.web.tbm.tbm01.dto.TbmEduInfoListRes;
-import com.prafta.web.tbm.tbm01.dto.TbmEduInfoReq;
+import com.prafta.web.tbm.tbm01.application.param.TbmEduInfoListParam;
+import com.prafta.web.tbm.tbm01.application.param.TbmEduInfoParam;
+import com.prafta.web.tbm.tbm01.application.param.TbmEduItemInfoListParam;
+import com.prafta.web.tbm.tbm01.application.param.TbmEduItemParam;
+import com.prafta.web.tbm.tbm01.application.param.TbmEduMtrlInfoParam;
+import com.prafta.web.tbm.tbm01.dto.response.TbmEduInfoListResponse;
+import com.prafta.web.tbm.tbm01.dto.response.TbmEduItemInfoListResponse;
 
 public interface Tbm01Service {
 	
-	TbmEduInfoListRes selectTbmEduInfo(TbmEduInfoListReq dto, Map<String, Object> tokenInfo);
+	TbmEduInfoListResponse selectTbmEduInfo(TbmEduInfoListParam param);
 
-	TbmEduItemInfoListRes selectTbmEduItemInfo(TbmEduItemInfoListReq dto, Map<String, Object> tokenInfo);
+	TbmEduItemInfoListResponse selectTbmEduItemInfo(TbmEduItemInfoListParam param);
+
+	void saveTbmEduInfos(TbmEduInfoParam param);
 	
-	void saveTbmEduInfos(TbmEduInfoReq dto, List<TbmEduItemInfoReq> itemList, Map<String, MultipartFile> fileMap, Map<String, Object> tokenInfo);
+	void deleteTbmEduItemInfo(TbmEduItemParam param);
 	
-	void deleteTbmEduItemInfo(List<TbmEduItemInfoReq> dtoList, Map<String, Object> tokenInfo);
+	void saveTbmEdu(TbmEduMtrlInfoParam param);
 	
-	void saveTbmEdu(List<TbmEduInfoReq> dtoList, Map<String, Object> tokenInfo);
-	
-	void deleteTbmEdu(List<TbmEduInfoReq> dtoList, Map<String, Object> tokenInfo);
+	void deleteTbmEdu(TbmEduMtrlInfoParam param);
 }

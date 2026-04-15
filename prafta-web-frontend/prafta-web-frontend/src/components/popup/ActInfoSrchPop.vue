@@ -258,9 +258,11 @@ const fnUserIdSrch = async() => {
   }
 
   try {
-    const response = await axios.post("/comApi/baseinfo/getUserIdInfo", {
-      userNm: userNm.value,
-      mblNo: mblNo.value,
+    const response = await axios.get("/comApi/baseinfo/user-ids", {
+      params: {
+        userNm: userNm.value,
+        mblNo: mblNo.value,
+      },
     });
     if (response.status === 200) {
       userIdTmp.value = response.data.USER_ID;
