@@ -289,10 +289,12 @@ const focusKill = (e) => {
 
 const fnSrchSiteInfo = async () => {
   try {
-    const response = await axios.post("/comApi/baseinfo/site-lists", {
-      cmpnyCd: sessionStorage.getItem("gv_cmpnyCd"),
-      siteNo: siteNo.value,
-      siteNm: siteNm.value,
+    const response = await axios.get("/comApi/baseinfo/site-lists", {
+      params : {
+        cmpnyCd: sessionStorage.getItem("gv_cmpnyCd"),
+        siteNo: siteNo.value,
+        siteNm: siteNm.value,
+      }
     });
     if (response.status === 200) fnCallback(response);
   } catch (err) {

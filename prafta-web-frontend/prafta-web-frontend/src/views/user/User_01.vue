@@ -331,7 +331,6 @@ onMounted(async () => {
   await fnGetSystinfoList();
   await fnGetBaseinfoList();
   await fnSearch();
-  console.log(sessionStorage.getItem('gv_authLevel'));
 });
 
 // =========================== Watch, Watcher ===========================
@@ -353,8 +352,6 @@ const fnGetBaseinfoList = async () => {
         baseCodeList: ["COM005"],
       },
     });
-
-    console.log(response);
 
     if (response.status === 200) {
       const resData = response.data?.baseInfoList || [];
@@ -666,7 +663,7 @@ const fnHeadchk = () => {
 };
 
 const fnUserInfoPopOpen = (userInfo) => {
-  if(userInfo.accountStatus == "04") {    // 회원탈퇴 계정
+  if(userInfo.accountStatus == "03") {    // 회원탈퇴 계정
     proxy.$alert("탈퇴된 계정은 상세보기를 지원하지 않습니다.");
     return;
   }

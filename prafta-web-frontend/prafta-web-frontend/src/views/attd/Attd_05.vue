@@ -10,21 +10,74 @@
     <!-- 조회 영역 -->
     <div class="viewSearch">
       <div>
-        <label>조회</label>
+        <label>사업장</label>
         <input
+          id="siteNo"
+          ref="siteNoFcs"
           type="text"
-          value="전체"
-          readonly
-          class="input-readonly"
-          style="width: 80px"
+          v-model="siteNo"
+          placeholder="사업장코드"
+          :disabled="siteDisabled"
+          @blur="focusKill"
         />
-        <span
-          class="ym-clickable"
-          @click="fnOpenMonthPicker"
-          title="클릭하여 년월 변경"
+        <button
+          class="search-btn"
+          :disabled="siteDisabled"
+          @click="fnSiteSearchPopOpen()"
         >
-          {{ searchYear }}년 {{ searchMonth }}월
-        </span>
+          <img class="search_icon" :src="search_icon" alt="검색" />
+        </button>
+        <input
+          id="siteNm"
+          type="text"
+          v-model="siteNm"
+          placeholder="사업장명"
+          :disabled="siteDisabled"
+          @blur="focusKill"
+        />
+      </div>
+      <div>
+        <label>소속부서</label>
+        <input
+          id="nodeCd"
+          type="text"
+          v-model="nodeCd"
+          ref="nodeCdFcs"
+          placeholder="부서코드"
+          :disabled="nodeDisabled"
+          @blur="focusKill"
+        />
+        <button
+          class="search-btn"
+          :disabled="nodeDisabled"
+          @click="fnSiteNodeSearchPopOpenForCondition()"
+        >
+          <img class="search_icon" :src="search_icon" alt="검색" />
+        </button>
+        <input
+          id="nodeNm"
+          type="text"
+          v-model="nodeNm"
+          placeholder="부서명"
+          :disabled="nodeDisabled"
+          @blur="focusKill"
+        />
+      </div>
+      <div>
+        <label class="checkbox-label">
+          <input type="checkbox" v-model="incSubNodeYn" />
+          하위부서 조회
+        </label>
+        <label>조회월</label>
+        <CalendarSrchMonth
+          :range="false"
+          style="width: 100px"
+          v-model="searchYm"
+        />
+      </div>
+      <div>
+        <label>사용자명</label>
+        <input v-model.trim="searchUserNm" type="text" />
       </div>
     </div>
 
@@ -68,19 +121,19 @@
               <th class="th-user-info sticky-left sticky-top">사용자 정보</th>
               <th
                 v-for="d in daysInMonth"
-                :key="d.day"
+                :key="d.workYmd"
                 class="th-day sticky-top"
                 :class="{
                   'head-sun': d.dow === '일',
                   'head-sat': d.dow === '토',
                 }"
               >
-                {{ d.day }}({{ d.dow }})
+                {{ parseInt(d.workYmd.slice(6)) }}({{ d.dow }})
               </th>
             </tr>
           </thead>
           <tbody>
-            <tr v-for="(user, rowIdx) in userList" :key="user.userId">
+            <tr v-for="(user, rowIdx) in userList" :key="user.userCd">
               <td class="td-user-info sticky-left">
                 <div class="user-cell-inner">
                   <span class="row-badge">{{ getRowLabel(rowIdx) }}</span>
@@ -89,35 +142,36 @@
                       {{ user.userNm }}({{ user.userId }})
                     </div>
                     <div class="u-dept">
-                      {{ user.deptNm }} / {{ user.shiftNm || "-" }}
+                      {{ user.nodeNm }} / {{ user.shiftNm || "-" }}
                     </div>
-                    <div class="u-phone">{{ user.phone }}</div>
+                    <div class="u-phone">{{ proxy.$util.formatPhoneNumber(user.mblNo) }}</div>
                   </div>
                 </div>
               </td>
               <td
                 v-for="d in daysInMonth"
-                :key="d.day"
+                :key="d.workYmd"
                 class="td-day"
                 :class="[
                   d.dow === '일' ? 'td-sun' : '',
                   d.dow === '토' ? 'td-sat' : '',
-                  isCellSelected(rowIdx, d.day) ? 'td-selected' : '',
-                  ...getSelEdgeClasses(rowIdx, d.day),
+                  isCellSelected(rowIdx, d.workYmd) ? 'td-selected' : '',
+                  ...getSelEdgeClasses(rowIdx, d.workYmd),
                 ]"
-                @mousedown.prevent="onCellDown(rowIdx, d.day)"
-                @mousemove="onCellMove(rowIdx, d.day)"
+                @mousedown.prevent="onCellDown(rowIdx, d.workYmd)"
+                @mousemove="onCellMove(rowIdx, d.workYmd)"
                 @mouseup="onCellUp"
               >
                 <span
                   class="td-val"
                   :class="{
                     'val-muted':
-                      d.isWeekend && !getCellValue(user.userId, d.day),
+                      d.weekendYn && !getCellValue(user.userCd, d.workYmd),
                   }"
                 >
                   {{
-                    getCellValue(user.userId, d.day) || (d.isWeekend ? "-" : "")
+                    getCellValue(user.userCd, d.workYmd) ||
+                    (d.weekendYn ? "-" : "")
                   }}
                 </span>
               </td>
@@ -140,8 +194,13 @@ import {
   defineOptions,
 } from "vue";
 import ViewHeader from "@/components/common/ViewHeader.vue";
-import CalendarMonthPickerPop from "@/views/attd/popup/CalendarMonthPickerPop.vue";
 import { useModal } from "@/utils/useModal";
+import axios from "@/api/axios";
+import { getMessage, MSG } from "@/messages";
+import search_icon from "@/assets/img/search_icon.png";
+import SiteSearchPop from "@/components/popup/SiteSearchPop.vue";
+import SiteNodeSearchPop from "@/components/popup/SiteNodeSearchPop.vue";
+import CalendarSrchMonth from "@/components/common/CalendarSrchMonth.vue";
 
 defineOptions({ name: "Attd_05" });
 
@@ -157,8 +216,24 @@ const localButtons = ref({ ...props.buttons });
 
 // ── 조회 조건 ─────────────────────────────────────────────
 const now = new Date();
-const searchYear = ref(now.getFullYear());
-const searchMonth = ref(now.getMonth() + 1);
+const searchYm = ref(
+  `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`
+);
+const searchUserNm = ref("");
+
+// ── 사업장 / 소속부서 ──────────────────────────────────────
+const siteCd = ref("");
+const siteNo = ref("");
+const siteNm = ref("");
+const siteDisabled = ref(false);
+const nodeCd = ref("");
+const nodeNm = ref("");
+const nodeDisabled = ref(true);
+const incSubNodeYn = ref(false);
+
+// ── 포커싱 변수 목록 ───────────────────────────────────────
+const siteNoFcs = ref(null);
+const nodeCdFcs = ref(null);
 
 // ── 스케줄 타입 목록 ───────────────────────────────────────
 const schTypeList = ref([]);
@@ -166,7 +241,7 @@ const schTypeList = ref([]);
 // ── 사용자 목록 ────────────────────────────────────────────
 const userList = ref([]);
 
-// ── 셀 데이터: key = `${userId}_${day}`, value = 표시문자열 ─
+// ── 셀 데이터: key = `${userCd}_${day}`, value = 표시문자열 ─
 const scheduleData = ref({});
 
 // ── 적용 옵션 ─────────────────────────────────────────────
@@ -175,7 +250,7 @@ const holidayMode = ref("exclude");
 
 // ── 드래그 선택 상태 ──────────────────────────────────────
 const isDragging = ref(false);
-const dragStart = ref(null); // { rowIdx, day }
+const dragStart = ref(null); // { rowIdx, workYmd }
 const dragEnd = ref(null);
 
 // ── 버튼 컨트롤 ────────────────────────────────────────────
@@ -189,18 +264,20 @@ const fnButtonControll = () => {
 
 // ── 해당 월 날짜 목록 ──────────────────────────────────────
 const daysInMonth = computed(() => {
-  const year = searchYear.value;
-  const month = searchMonth.value;
+  if (!searchYm.value) return [];
+  const [year, month] = searchYm.value.split("-").map(Number);
   const lastDay = new Date(year, month, 0).getDate();
   const DOW = ["일", "월", "화", "수", "목", "금", "토"];
   const result = [];
   for (let d = 1; d <= lastDay; d++) {
     const date = new Date(year, month - 1, d);
     const dayOfWeek = date.getDay();
+    const workYmd = `${year}${String(month).padStart(2, "0")}${String(d).padStart(2, "0")}`;
     result.push({
-      day: d,
+      workYmd,
       dow: DOW[dayOfWeek],
-      isWeekend: dayOfWeek === 0 || dayOfWeek === 6,
+      weekendYn: dayOfWeek === 0 || dayOfWeek === 6,
+      holidayYn: false, // API 응답으로 채워짐
     });
   }
   return result;
@@ -216,60 +293,71 @@ const getRowLabel = (idx) => {
 };
 
 // ── 셀 값 조회 ─────────────────────────────────────────────
-const getCellValue = (userId, day) => {
-  return scheduleData.value[`${userId}_${day}`] || "";
+const getCellValue = (userCd, workYmd) => {
+  return scheduleData.value[`${userCd}_${workYmd}`] || "";
 };
 
 // ── 선택 범위 ──────────────────────────────────────────────
 const selectionRange = computed(() => {
   if (!dragStart.value || !dragEnd.value) return null;
+  const ymds = [dragStart.value.workYmd, dragEnd.value.workYmd].sort();
   return {
     minRow: Math.min(dragStart.value.rowIdx, dragEnd.value.rowIdx),
     maxRow: Math.max(dragStart.value.rowIdx, dragEnd.value.rowIdx),
-    minDay: Math.min(dragStart.value.day, dragEnd.value.day),
-    maxDay: Math.max(dragStart.value.day, dragEnd.value.day),
+    minDay: ymds[0],
+    maxDay: ymds[1],
   };
 });
 
-const isCellSelected = (rowIdx, day) => {
+const isCellSelected = (rowIdx, workYmd) => {
   if (!selectionRange.value) return false;
   const { minRow, maxRow, minDay, maxDay } = selectionRange.value;
-  return rowIdx >= minRow && rowIdx <= maxRow && day >= minDay && day <= maxDay;
+  return (
+    rowIdx >= minRow &&
+    rowIdx <= maxRow &&
+    workYmd >= minDay &&
+    workYmd <= maxDay
+  );
 };
 
-const getSelEdgeClasses = (rowIdx, day) => {
-  if (!isCellSelected(rowIdx, day)) return [];
+const getSelEdgeClasses = (rowIdx, workYmd) => {
+  if (!isCellSelected(rowIdx, workYmd)) return [];
   const { minRow, maxRow, minDay, maxDay } = selectionRange.value;
   const cls = [];
   if (rowIdx === minRow) cls.push("sel-top");
   if (rowIdx === maxRow) cls.push("sel-bottom");
-  if (day === minDay) cls.push("sel-left");
-  if (day === maxDay) cls.push("sel-right");
+  if (workYmd === minDay) cls.push("sel-left");
+  if (workYmd === maxDay) cls.push("sel-right");
   return cls;
 };
 
 const selectionLabel = computed(() => {
   if (!selectionRange.value) return "";
   const { minRow, maxRow, minDay, maxDay } = selectionRange.value;
-  return `${getRowLabel(minRow)}${minDay}:${getRowLabel(maxRow)}${maxDay}`;
+  const minDayNum = parseInt(minDay.slice(6));
+  const maxDayNum = parseInt(maxDay.slice(6));
+  return `${getRowLabel(minRow)}${minDayNum}:${getRowLabel(maxRow)}${maxDayNum}`;
 });
 
 const selectionCount = computed(() => {
   if (!selectionRange.value) return 0;
   const { minRow, maxRow, minDay, maxDay } = selectionRange.value;
-  return (maxRow - minRow + 1) * (maxDay - minDay + 1);
+  const dayCount = daysInMonth.value.filter(
+    (d) => d.workYmd >= minDay && d.workYmd <= maxDay
+  ).length;
+  return (maxRow - minRow + 1) * dayCount;
 });
 
 // ── 드래그 이벤트 ──────────────────────────────────────────
-const onCellDown = (rowIdx, day) => {
+const onCellDown = (rowIdx, workYmd) => {
   isDragging.value = true;
-  dragStart.value = { rowIdx, day };
-  dragEnd.value = { rowIdx, day };
+  dragStart.value = { rowIdx, workYmd };
+  dragEnd.value = { rowIdx, workYmd };
 };
 
-const onCellMove = (rowIdx, day) => {
+const onCellMove = (rowIdx, workYmd) => {
   if (!isDragging.value) return;
-  dragEnd.value = { rowIdx, day };
+  dragEnd.value = { rowIdx, workYmd };
 };
 
 const onCellUp = () => {
@@ -302,38 +390,214 @@ const fnApply = async () => {
   for (let r = minRow; r <= maxRow; r++) {
     const user = userList.value[r];
     if (!user) continue;
-    for (let day = minDay; day <= maxDay; day++) {
-      const dayInfo = daysInMonth.value.find((d) => d.day === day);
-      if (holidayMode.value === "exclude" && dayInfo?.isWeekend) continue;
-      scheduleData.value[`${user.userId}_${day}`] = displayVal;
+    const daysInRange = daysInMonth.value.filter(
+      (d) => d.workYmd >= minDay && d.workYmd <= maxDay
+    );
+    for (const d of daysInRange) {
+      if (holidayMode.value === "exclude" && (d.weekendYn || d.holidayYn))
+        continue;
+      scheduleData.value[`${user.userCd}_${d.workYmd}`] = displayVal;
     }
   }
 };
 
-// ── 년월 선택 팝업 ─────────────────────────────────────────
-const fnOpenMonthPicker = () => {
-  openPop(CalendarMonthPickerPop, {
-    year_p: searchYear.value,
-    month_p: searchMonth.value,
-    onConfirm: (y, m) => {
-      searchYear.value = y;
-      searchMonth.value = m;
-      fnSearch();
+// ── 사업장 조회 ────────────────────────────────────────────
+const fnSrchSiteInfo = async () => {
+  try {
+    const response = await axios.get("/comApi/baseinfo/site-lists", {
+      params: {
+        cmpnyCd: sessionStorage.getItem("gv_cmpnyCd"),
+        siteNo: siteNo.value,
+        siteNm: siteNm.value,
+      },
+    });
+    if (response.status === 200) fnCallback(response);
+  } catch (err) {
+    await proxy.$alert(
+      err?.response?.data?.message || err?.message || "조회 오류"
+    );
+  }
+};
+
+const fnCallback = (res) => {
+  if (!proxy.$util.isNotEmpty(res)) return;
+  const apiId = res.config.url.split("/").pop();
+  if (apiId === "site-lists") {
+    const list = res.data?.siteInfoResultList ?? [];
+    if (list.length === 1) {
+      siteCd.value = list[0].siteCd;
+      siteNo.value = list[0].siteNo;
+      siteNm.value = list[0].siteNm;
+      nodeDisabled.value = false;
+    } else if (list.length > 1) {
+      fnSiteSearchPopOpen();
+    } else {
+      siteCd.value = "";
+      siteNo.value = "";
+      siteNm.value = "";
+      nodeDisabled.value = true;
+      nodeCd.value = "";
+      nodeNm.value = "";
+    }
+  } else if (apiId === "site-node-lists") {
+    const list = res.data?.siteNodeInfoList || [];
+    if (list.length === 0) {
+      nodeCd.value = "";
+      nodeNm.value = "";
+    } else if (list.length === 1) {
+      nodeCd.value = list[0].nodeCd ?? "";
+      nodeNm.value = list[0].nodeNm ?? "";
+    } else {
+      fnSiteNodeSearchPopOpenForCondition();
+    }
+  }
+};
+
+const focusKill = (e) => {
+  if (e.target.id === "siteNo") {
+    if (proxy.$util.isEmpty(siteNo.value)) {
+      siteCd.value = "";
+      siteNm.value = "";
+      nodeDisabled.value = true;
+      nodeCd.value = "";
+      nodeNm.value = "";
+    } else {
+      siteNm.value = "";
+      fnSrchSiteInfo();
+    }
+  } else if (e.target.id === "siteNm") {
+    if (proxy.$util.isEmpty(siteNm.value)) {
+      siteCd.value = "";
+      siteNo.value = "";
+      nodeDisabled.value = true;
+      nodeCd.value = "";
+      nodeNm.value = "";
+    } else {
+      siteNo.value = "";
+      fnSrchSiteInfo();
+    }
+  } else if (e.target.id === "nodeCd") {
+    if (proxy.$util.isEmpty(nodeCd.value)) {
+      nodeNm.value = "";
+    } else {
+      nodeNm.value = "";
+      fnSrchNodeInfo();
+    }
+  } else if (e.target.id === "nodeNm") {
+    if (proxy.$util.isEmpty(nodeNm.value)) {
+      nodeCd.value = "";
+    } else {
+      nodeCd.value = "";
+      fnSrchNodeInfo();
+    }
+  }
+};
+
+const fnSrchNodeInfo = async () => {
+  if (proxy.$util.isEmpty(siteCd.value)) return;
+  try {
+    const response = await axios.get("/comApi/baseinfo/site-node-lists", {
+      params: {
+        cmpnyCd: sessionStorage.getItem("gv_cmpnyCd"),
+        siteCd: siteCd.value,
+        nodeCd: nodeCd.value,
+        nodeNm: nodeNm.value,
+      },
+    });
+    if (response.status === 200) {
+      fnCallback({ ...response, config: { url: "/dummy/site-node-lists" } });
+    }
+  } catch (err) {
+    await proxy.$alert(
+      err?.response?.data?.message || err?.message || "조회 오류"
+    );
+  }
+};
+
+const onSiteSelected = (siteCdVal, siteNoVal, siteNmVal) => {
+  siteCd.value = siteCdVal;
+  siteNo.value = siteNoVal;
+  siteNm.value = siteNmVal;
+  nodeDisabled.value = false;
+  nodeCd.value = "";
+  nodeNm.value = "";
+};
+
+const fnSiteSearchPopOpen = () => {
+  openPop(SiteSearchPop, {
+    cmpnyCd_p: sessionStorage.getItem("gv_cmpnyCd"),
+    siteNo_p: "",
+    siteNm_p: "",
+    onSelect: onSiteSelected,
+  });
+};
+
+const fnSiteNodeSearchPopOpenForCondition = () => {
+  if (proxy.$util.isEmpty(siteCd.value)) {
+    proxy.$alert(getMessage(MSG.SITE_REQUIRED));
+    return;
+  }
+  openPop(SiteNodeSearchPop, {
+    cmpnyCd_p: sessionStorage.getItem("gv_cmpnyCd"),
+    siteCd_p: siteCd.value,
+    nodeCd_p: "",
+    userCd_p: "",
+    onSelect: (nodeCdVal, nodeNmVal) => {
+      nodeCd.value = nodeCdVal ?? "";
+      nodeNm.value = nodeNmVal ?? "";
     },
   });
 };
 
 // ── 조회 ───────────────────────────────────────────────────
 const fnSearch = async () => {
+  if(proxy.$util.isEmpty(siteCd.value)) {
+    await proxy.$alert(
+      getMessage(MSG.REQUIRED_FIELD_MISSING, {
+        fieldLabel: "사업장",
+      })
+    );
+    siteNoFcs.value.focus();
+    return false;
+  }
+
+  if(proxy.$util.isEmpty(nodeCd.value)) {
+    await proxy.$alert(
+      getMessage(MSG.REQUIRED_FIELD_MISSING, {
+        fieldLabel: "사업장",
+      })
+    );
+    nodeCdFcs.value.focus();
+    return false;
+  }
+
   try {
-    // TODO: API 연동
-    // const response = await axios.get('/webApi/attd05/sch-apply-lists', {
-    //   params: { searchYear: searchYear.value, searchMonth: searchMonth.value }
-    // });
+    const response = await axios.get("/webApi/attd05/user-work-plans", {
+      params: {
+        searchYm: searchYm.value,
+        siteCd: siteCd.value,
+        nodeCd: nodeCd.value,
+        incSubNodeYn: incSubNodeYn.value ? "Y" : "N",
+        userNm: searchUserNm.value,
+      },
+    });
+
+    if (response.status === 200) {
+      console.log(response.data);
+      console.log(response.data.userListResultList[0].mblNo);
+      // TODO: 서버 응답 세팅
+      userList.value = response.data.userListResultList;
+      // daysInMonth 서버 응답 사용 시: daysInMonth.value = response.data.dayResultList;
+      scheduleData.value = {};
+      response.data.schedResultList.forEach((item) => {
+        const sch = schTypeList.value.find((s) => s.schNo === item.dayPlanCd);
+        scheduleData.value[`${item.userCd}_${item.workYmd}`] = sch?.schNm ?? item.dayPlanCd;
+      });
+    }
+
     scheduleData.value = {};
     dragStart.value = null;
     dragEnd.value = null;
-    initMockData();
   } catch (err) {
     const msg =
       err?.response?.data?.message ||
@@ -367,60 +631,60 @@ const fnGetSchTypeList = async () => {
 const initMockData = () => {
   const mockUsers = [
     {
-      userId: "pjiyoung",
+      userCd: "pjiyoung",
       userNm: "박지영",
-      deptNm: "디자인팀",
+      nodeNm: "디자인팀",
       shiftNm: null,
-      phone: "010-3456-7890",
+      mblNo: "010-3456-7890",
     },
     {
-      userId: "HONGgd",
+      userCd: "HONGgd",
       userNm: "홍길동",
-      deptNm: "인프라팀",
+      nodeNm: "인프라팀",
       shiftNm: null,
-      phone: "010-3455-3333",
+      mblNo: "010-3455-3333",
     },
     {
-      userId: "cdonghun",
+      userCd: "cdonghun",
       userNm: "최동훈",
-      deptNm: "DT팀",
+      nodeNm: "DT팀",
       shiftNm: "C조",
-      phone: "010-5678-9012",
+      mblNo: "010-5678-9012",
     },
     {
-      userId: "jhaneul",
+      userCd: "jhaneul",
       userNm: "정하늘",
-      deptNm: "개발팀",
+      nodeNm: "개발팀",
       shiftNm: null,
-      phone: "010-6789-0123",
+      mblNo: "010-6789-0123",
     },
     {
-      userId: "kseoyeon",
+      userCd: "kseoyeon",
       userNm: "강서연",
-      deptNm: "마케팅팀",
+      nodeNm: "마케팅팀",
       shiftNm: null,
-      phone: "010-1234-5678",
+      mblNo: "010-1234-5678",
     },
     {
-      userId: "lminsoo",
+      userCd: "lminsoo",
       userNm: "이민수",
-      deptNm: "IT팀",
+      nodeNm: "IT팀",
       shiftNm: "A조",
-      phone: "010-2345-6789",
+      mblNo: "010-2345-6789",
     },
     {
-      userId: "cwonbin",
+      userCd: "cwonbin",
       userNm: "최원빈",
-      deptNm: "영업팀",
+      nodeNm: "영업팀",
       shiftNm: null,
-      phone: "010-9876-5432",
+      mblNo: "010-9876-5432",
     },
     {
-      userId: "khyunjin",
+      userCd: "khyunjin",
       userNm: "김현진",
-      deptNm: "기획팀",
+      nodeNm: "기획팀",
       shiftNm: null,
-      phone: "010-4567-8901",
+      mblNo: "010-4567-8901",
     },
   ];
   userList.value = mockUsers;
@@ -428,15 +692,15 @@ const initMockData = () => {
   const days = daysInMonth.value;
   mockUsers.forEach((user) => {
     days.forEach((d) => {
-      if (d.isWeekend) return;
-      scheduleData.value[`${user.userId}_${d.day}`] =
+      if (d.weekendYn) return;
+      scheduleData.value[`${user.userCd}_${d.workYmd}`] =
         d.dow === "목" ? "09:00~12:00\n14:00~18:00" : "09:00~18:00";
     });
   });
   // 홍길동은 다른 스케줄
   days.forEach((d) => {
-    if (!d.isWeekend) {
-      scheduleData.value[`HONGgd_${d.day}`] = "10:00~19:00";
+    if (!d.weekendYn) {
+      scheduleData.value[`HONGgd_${d.workYmd}`] = "10:00~19:00";
     }
   });
 };
@@ -444,7 +708,6 @@ const initMockData = () => {
 onMounted(async () => {
   fnButtonControll();
   await fnGetSchTypeList();
-  initMockData();
   document.addEventListener("mouseup", onDocMouseUp);
 });
 
@@ -455,6 +718,26 @@ onUnmounted(() => {
 
 <style scoped>
 /* ── viewSearch 추가 스타일 ──────────────────────────────── */
+.checkbox-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  font-size: 0.85rem;
+  color: var(--color-text-muted, #6b7280);
+  cursor: pointer;
+  user-select: none;
+  margin-left: -1rem;
+  margin-right: 0.4rem;
+  white-space: nowrap;
+}
+.checkbox-label input[type="checkbox"] {
+  width: 13px;
+  height: 13px;
+  cursor: pointer;
+  accent-color: var(--color-primary, #16a34a);
+  flex-shrink: 0;
+}
+
 .input-readonly {
   background: var(--color-bg, #f3f4f6) !important;
   cursor: default;

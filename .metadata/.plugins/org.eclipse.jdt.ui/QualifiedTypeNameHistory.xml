@@ -1,7 +1,5 @@
 <?xml version="1.0" encoding="UTF-8" standalone="no"?>
 <qualifiedTypeNameHistroy>
-    <fullyQualifiedTypeName name="com.prafta.web.baim.baim06.application.param.SiteNodeParam"/>
-    <fullyQualifiedTypeName name="com.prafta.web.baim.baim06.application.param.CopySiteNodeParam"/>
     <fullyQualifiedTypeName name="com.prafta.web.baim.baim06.application.param.SiteNodeAdminParam"/>
     <fullyQualifiedTypeName name="com.prafta.web.baim.baim01.application.command.SiteNodeInfoCommand"/>
     <fullyQualifiedTypeName name="com.prafta.web.chkLst.chkLst01.application.param.ChkptListParam"/>
@@ -37,7 +35,6 @@
     <fullyQualifiedTypeName name="com.prafta.web.tbm.tbm01.application.model.TbmEduItemInfoModel"/>
     <fullyQualifiedTypeName name="com.prafta.web.tbm.tbm01.application.param.TbmEduItemParam"/>
     <fullyQualifiedTypeName name="com.prafta.web.tbm.tbm01.application.command.TbmEduItemCommand"/>
-    <fullyQualifiedTypeName name="java.util.List"/>
     <fullyQualifiedTypeName name="com.prafta.web.tbm.tbm01.application.model.TbmEduMtrlModel"/>
     <fullyQualifiedTypeName name="com.prafta.web.tbm.tbm01.application.param.TbmEduMtrlInfoParam"/>
     <fullyQualifiedTypeName name="com.prafta.web.attd.attd01.application.param.SchInfoListParam"/>
@@ -53,11 +50,14 @@
     <fullyQualifiedTypeName name="lombok.NoArgsConstructor"/>
     <fullyQualifiedTypeName name="com.prafta.web.attd.attd03.application.param.LeaveTypeListParam"/>
     <fullyQualifiedTypeName name="com.prafta.web.attd.attd04.application.command.AttdStdTimeRuleHistCommand"/>
-    <fullyQualifiedTypeName name="lombok.Value"/>
     <fullyQualifiedTypeName name="com.prafta.common.cmm.login.application.param.LoginParam"/>
     <fullyQualifiedTypeName name="com.prafta.common.cmm.login.application.command.UserPwdFailCommand"/>
     <fullyQualifiedTypeName name="org.springframework.beans.factory.annotation.Value"/>
     <fullyQualifiedTypeName name="com.prafta.common.cmm.login.result.UserResult"/>
     <fullyQualifiedTypeName name="com.prafta.common.annotation.FieldLabel"/>
     <fullyQualifiedTypeName name="jakarta.validation.constraints.NotBlank"/>
+    <fullyQualifiedTypeName name="com.prafta.web.attd.attd05.application.query.UserWorkPlansQuery"/>
+    <fullyQualifiedTypeName name="lombok.Value"/>
+    <fullyQualifiedTypeName name="com.prafta.web.attd.attd05.result.UserResult"/>
+    <fullyQualifiedTypeName name="java.util.List"/>
 </qualifiedTypeNameHistroy>

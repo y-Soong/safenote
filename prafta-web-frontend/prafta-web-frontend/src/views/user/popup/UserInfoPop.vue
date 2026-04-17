@@ -184,24 +184,74 @@
             />
           </div>
 
-          <!-- 회원탈퇴 날짜 선택 (회원탈퇴 버튼 클릭 시 표시) -->
-          <div
-            class="form-row-max withdrawal-date-row"
-            v-show="withdrawalSectionVisible"
-          >
+          <!-- 탈퇴예정일 (withdrawalDate 값이 있을 때만 표시) -->
+          <div class="form-row-max withdrawal-date-row" v-show="withdrawalDate">
             <label>탈퇴예정일</label>
-            <input type="date" v-model="withdrawalDate" :min="tomorrowDate" />
-            <button class="btn btn-withdrawal" @click="fnScheduleWithdrawal">
-              탈퇴일 확정
+            <CalendarSrch v-model="withdrawalDate" :disabled="true" />
+            <button
+              class="btn btn-danger"
+              :disabled="accountStatus === '03'"
+              @click="fnCancelWithdrawal"
+            >
+              탈퇴취소
             </button>
           </div>
         </div>
 
+        <!-- 탈퇴예정일 입력 다이얼로그 -->
+        <Transition name="dialog-fade">
+          <div
+            v-if="withdrawalDialogVisible"
+            class="withdrawal-dialog-overlay"
+            @click.self="fnCloseWithdrawalDialog"
+          >
+            <div class="withdrawal-dialog">
+              <div class="withdrawal-dialog-header">
+                <span>탈퇴예정일 설정</span>
+                <button class="icon-button" @click="fnCloseWithdrawalDialog">
+                  <svg
+                    xmlns="http://www.w3.org/2000/svg"
+                    fill="none"
+                    viewBox="0 0 24 24"
+                    stroke-width="1.5"
+                    stroke="currentColor"
+                    class="w-6 h-6"
+                  >
+                    <path
+                      stroke-linecap="round"
+                      stroke-linejoin="round"
+                      d="M6 18L18 6M6 6l12 12"
+                    />
+                  </svg>
+                </button>
+              </div>
+              <div class="withdrawal-dialog-body">
+                <div class="form-row-max">
+                  <label>탈퇴예정일</label>
+                  <input
+                    class="dialog-date-input"
+                    type="date"
+                    v-model="newWithdrawalDate"
+                    :min="tomorrowDate"
+                  />
+                </div>
+              </div>
+              <div class="withdrawal-dialog-footer">
+                <div class="btn-group">
+                  <button class="btn btn-danger" @click="fnScheduleWithdrawal">
+                    확정
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </Transition>
+
         <div class="modal-footer">
           <div class="btn-group">
             <button
-              class="btn btn-withdrawal"
-              v-show="btnUserWithdrawalVisible"
+              class="btn btn-danger"
+              v-show="btnUserWithdrawalVisible && !withdrawalDate"
               @click="fnUserWithdrawal"
             >
               회원탈퇴
@@ -234,6 +284,7 @@ import { getMessage, MSG } from "@/messages";
 import SiteSearchPop from "@/components/popup/SiteSearchPop.vue";
 import SiteNodeSearchPop from "@/components/popup/SiteNodeSearchPop.vue";
 import BaseSelect from "@/components/common/BaseSelect.vue";
+import CalendarSrch from "@/components/common/CalendarSrch.vue";
 
 // =========================== Define ===========================
 const emit = defineEmits(["close"]);
@@ -271,14 +322,16 @@ const birthDtFcs = ref("");
 const authCd = ref("");
 const nodeCd = ref("");
 const nodeNm = ref("");
+const accountStatus = ref("");
+const withdrawalDate = ref("");
 const mblNoDisabled = ref(false);
 const btnAuthChkDisabledVisible = ref(true);
 const smsCertNoChk = ref(false);
 const cboAuthCdDisabled = ref(true);
 const smsAuthChkMsg = ref("");
 const btnUserWithdrawalVisible = ref(false);
-const withdrawalSectionVisible = ref(false);
-const withdrawalDate = ref("");
+const withdrawalDialogVisible = ref(false);
+const newWithdrawalDate = ref("");
 const tomorrowDate = (() => {
   const d = new Date();
   d.setDate(d.getDate() + 1);
@@ -384,7 +437,7 @@ const fnGetUserInfo = async (userId) => {
     if (response.status === 200) {
       if (response.data.userInfoList.length == 1) {
 
-        if(response.data.userInfoList[0].accountStatus == "04") {
+        if(response.data.userInfoList[0].accountStatus == "03") {
           proxy.$alert("탈퇴된 계정은 상세보기를 지원하지 않습니다.");
           emit("close");;
         }
@@ -404,11 +457,14 @@ const fnGetUserInfo = async (userId) => {
         email.value = response.data.userInfoList[0].email;
         gender.value = response.data.userInfoList[0].gender;
         birthDt.value = response.data.userInfoList[0].birthDt;
+        authLevel.value = response.data.userInfoList[0].authLevel;
+        accountStatus.value = response.data.userInfoList[0].accountStatus;
+        withdrawalDate.value = response.data.userInfoList[0].withdrawalDate;
 
         if (
           sessionStorage.getItem("gv_authCd") == "system" ||
-          sessionStorage.getItem("gv_authCd") >
-            response.data.userInfoList[0].authCd
+          sessionStorage.getItem("gv_authLevel") <
+            authLevel.value
         ) {
           cboAuthCdDisabled.value = false;
           btnUserWithdrawalVisible.value = true;
@@ -569,21 +625,24 @@ const mblNoFocusKill = () => {
 };
 
 const fnUserWithdrawal = () => {
-  withdrawalSectionVisible.value = !withdrawalSectionVisible.value;
-  if (!withdrawalSectionVisible.value) {
-    withdrawalDate.value = "";
-  }
+  newWithdrawalDate.value = "";
+  withdrawalDialogVisible.value = true;
+};
+
+const fnCloseWithdrawalDialog = () => {
+  withdrawalDialogVisible.value = false;
+  newWithdrawalDate.value = "";
 };
 
 const fnScheduleWithdrawal = async () => {
-  if (!withdrawalDate.value) {
+  if (!newWithdrawalDate.value) {
     await proxy.$alert(getMessage(MSG.USER_INFO_WITHDRAWAL_DATE_REQUIRED));
     return;
   }
 
   const confirmed = await proxy.$confirm(
     getMessage(MSG.USER_INFO_WITHDRAWAL_DATE_CONFIRM, {
-      withdrawalDate: withdrawalDate.value,
+      withdrawalDate: newWithdrawalDate.value,
     })
   );
   if (!confirmed) return;
@@ -592,11 +651,11 @@ const fnScheduleWithdrawal = async () => {
     await axios.post("/webApi/user01/schedule-withdrawal", {
       cmpnyCd: cmpnyCd.value,
       userCd: userCd.value,
-      withdrawalDate: withdrawalDate.value,
+      withdrawalDate: newWithdrawalDate.value,
     });
     fnAlertMsg(getMessage(MSG.USER_INFO_WITHDRAWAL_DATE_SET), () => {
-      withdrawalSectionVisible.value = false;
-      withdrawalDate.value = "";
+      withdrawalDialogVisible.value = false;
+      newWithdrawalDate.value = "";
       emit("close");
       props.onSearch();
     });
@@ -604,6 +663,27 @@ const fnScheduleWithdrawal = async () => {
     fnAlertMsg(
       err?.response?.data?.message ||
         getMessage(MSG.USER_INFO_WITHDRAWAL_DATE_FAILED)
+    );
+  }
+};
+
+const fnCancelWithdrawal = async () => {
+  const confirmed = await proxy.$confirm("탈퇴 예정을 취소하시겠습니까?");
+  if (!confirmed) return;
+
+  try {
+    await axios.post("/webApi/user01/cancel-withdrawal", {
+      cmpnyCd: cmpnyCd.value,
+      userCd: userCd.value,
+    });
+    fnAlertMsg("탈퇴가 취소되었습니다.", () => {
+      withdrawalDate.value = "";
+      emit("close");
+      props.onSearch();
+    });
+  } catch (err) {
+    fnAlertMsg(
+      err?.response?.data?.message || getMessage(MSG.REQUEST_FAILED)
     );
   }
 };
@@ -696,16 +776,86 @@ const fnConfirmMsg = async (message, afterConfirmCallback) => {
   padding-top: 0.75rem;
 }
 
-.btn-withdrawal {
-  background-color: #ef4444;
+.btn-danger {
+  background: #ef4444;
   color: #fff;
   border: none;
-  padding: 0.35rem 0.85rem;
-  border-radius: 4px;
-  cursor: pointer;
-  font-size: 0.8rem;
 }
-.btn-withdrawal:hover {
-  background-color: #dc2626;
+.btn-danger:hover:not(:disabled) {
+  background: #dc2626;
+}
+.btn-danger:disabled {
+  background: rgba(239, 68, 68, 0.35);
+  cursor: not-allowed;
+}
+
+.withdrawal-dialog-overlay {
+  position: absolute;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.4);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: inherit;
+  z-index: 10;
+}
+
+.withdrawal-dialog {
+  background: var(--card-bg, #ffffff);
+  border: var(--card-border);
+  border-radius: var(--card-radius, 16px);
+  box-shadow: var(--card-shadow);
+  width: 320px;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.withdrawal-dialog-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 0.75rem 1rem;
+  background: var(--color-bg, #f9fafb);
+  border-bottom: 1px solid var(--color-border, #e5e7eb);
+  font-size: 1rem;
+  font-weight: 600;
+  font-family: "Pretendard", sans-serif;
+  color: var(--color-text-strong, #111827);
+}
+
+.withdrawal-dialog-body {
+  padding: 1.2rem 1rem;
+}
+
+.withdrawal-dialog-footer {
+  padding: 0.75rem 1rem;
+  border-top: 1px solid var(--color-border, #e5e7eb);
+  background: var(--color-bg, #f9fafb);
+}
+
+.dialog-fade-enter-active,
+.dialog-fade-leave-active {
+  transition: opacity 0.2s ease;
+}
+.dialog-fade-enter-from,
+.dialog-fade-leave-to {
+  opacity: 0;
+}
+
+.dialog-date-input {
+  flex: 1;
+  padding: 0.4rem 0.6rem;
+  background: var(--color-bg, #f9fafb);
+  border: 1px solid var(--color-border, #e5e7eb);
+  border-radius: var(--input-radius, 10px);
+  color: var(--color-text-strong, #111827);
+  font-size: 0.875rem;
+  font-family: "Pretendard", sans-serif;
+}
+.dialog-date-input:focus {
+  border-color: var(--color-border-strong, #d1d5db);
+  outline: none;
+  box-shadow: 0 0 0 var(--focus-ring-width, 3px) var(--color-focus-ring);
 }
 </style>

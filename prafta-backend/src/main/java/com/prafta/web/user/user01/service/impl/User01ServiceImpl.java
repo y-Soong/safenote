@@ -6,8 +6,6 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 
-import java.util.regex.Pattern;
-
 import com.prafta.common.error.common.CommonErrorCode;
 import com.prafta.common.error.login.LoginErrorCode;
 import com.prafta.common.error.user.UserErrorCode;
@@ -16,19 +14,20 @@ import com.prafta.common.security.crypto.AesGcmCrypto;
 import com.prafta.common.security.crypto.HmacSigner;
 import com.prafta.common.security.normalize.Normalizers;
 import com.prafta.common.util.PasswordHasher;
-import com.prafta.web.baim.baim06.service.Baim06Service;
 import com.prafta.web.user.user01.application.command.ScheduleWithdrawalCommand;
 import com.prafta.web.user.user01.application.command.UserInfoCommand;
 import com.prafta.web.user.user01.application.command.UserPasswdCommand;
 import com.prafta.web.user.user01.application.command.UserSiteAuthCommand;
 import com.prafta.web.user.user01.application.command.WithdrawMyAccountCommand;
+import com.prafta.web.user.user01.application.command.WithdrawalCancelCommand;
 import com.prafta.web.user.user01.application.model.UserInfoModel;
 import com.prafta.web.user.user01.application.param.MyPasswdParam;
 import com.prafta.web.user.user01.application.param.ScheduleWithdrawalParam;
 import com.prafta.web.user.user01.application.param.SiteNodeAdminCandidateListParam;
-import com.prafta.web.user.user01.application.param.WithdrawMyAccountParam;
 import com.prafta.web.user.user01.application.param.UserInfoListParam;
 import com.prafta.web.user.user01.application.param.UserPasswdParam;
+import com.prafta.web.user.user01.application.param.WithdrawMyAccountParam;
+import com.prafta.web.user.user01.application.param.WithdrawalCancelParam;
 import com.prafta.web.user.user01.application.query.SiteNodeAdminCandidateListQuery;
 import com.prafta.web.user.user01.application.query.UserInfoListQuery;
 import com.prafta.web.user.user01.application.query.UserNodeAdminCheckQuery;
@@ -135,7 +134,6 @@ public class User01ServiceImpl implements User01Service{
 				if(model.useYn().equals("N")) {
 					throw new ApiException(UserErrorCode.USER_400_002);
 				} else {
-					System.out.println("UserErrorCode.USER_400_001 ####");
 					throw new ApiException(UserErrorCode.USER_400_001);
 				}
 			}			
@@ -203,9 +201,14 @@ public class User01ServiceImpl implements User01Service{
 
 	@Override
 	public void withdrawMyAccount(WithdrawMyAccountParam param) {
-		int updated = user01Mapper.withdrawMyAccount(
-			new WithdrawMyAccountCommand(param.cmpnyCd(), param.userCd())
-		);
+		
+		int userNodeAdminCheck = user01Mapper.selectUserNodeAdminCheck(UserNodeAdminCheckQuery.from(param));
+		
+		if(userNodeAdminCheck > 0) {
+			throw new ApiException(UserErrorCode.USER_400_005);
+		}
+		
+		int updated = user01Mapper.withdrawMyAccount(WithdrawMyAccountCommand.from(param));
 		if (updated == 0) {
 			throw new ApiException(LoginErrorCode.LOGIN_400_002);
 		}
@@ -213,14 +216,25 @@ public class User01ServiceImpl implements User01Service{
 
 	@Override
 	public void scheduleWithdrawal(ScheduleWithdrawalParam param) {
+		
+		int userNodeAdminCheck = user01Mapper.selectUserNodeAdminCheck(UserNodeAdminCheckQuery.from(param));
+		
+		if(userNodeAdminCheck > 0) {
+			throw new ApiException(UserErrorCode.USER_400_005);
+		}
+		
 		if (param.withdrawalDate() == null || param.withdrawalDate().isBlank()) {
 			throw new ApiException(CommonErrorCode.COMMON_400_002);
 		}
-		int updated = user01Mapper.scheduleWithdrawal(
-			new ScheduleWithdrawalCommand(param.cmpnyCd(), param.userCd(), param.withdrawalDate())
-		);
+		
+		int updated = user01Mapper.scheduleWithdrawal(ScheduleWithdrawalCommand.from(param));
 		if (updated == 0) {
 			throw new ApiException(LoginErrorCode.LOGIN_400_002);
 		}
+	}
+	
+	@Override
+	public void cancelWithdrawal(WithdrawalCancelParam param) {
+		user01Mapper.cancelWithdrawal(WithdrawalCancelCommand.from(param));
 	}
 }

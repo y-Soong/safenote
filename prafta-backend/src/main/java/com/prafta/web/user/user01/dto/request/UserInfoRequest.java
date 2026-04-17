@@ -22,6 +22,4 @@ public class UserInfoRequest {
     private String oriNodeCd;
     private String authCd;
     private String useYn;
-    private String accountStatus;
-    private String withdrawalDate;
 }

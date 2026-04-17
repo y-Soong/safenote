@@ -4,9 +4,10 @@ import com.prafta.web.user.user01.application.model.UserInfoModel;
 import com.prafta.web.user.user01.application.param.MyPasswdParam;
 import com.prafta.web.user.user01.application.param.ScheduleWithdrawalParam;
 import com.prafta.web.user.user01.application.param.SiteNodeAdminCandidateListParam;
-import com.prafta.web.user.user01.application.param.WithdrawMyAccountParam;
 import com.prafta.web.user.user01.application.param.UserInfoListParam;
 import com.prafta.web.user.user01.application.param.UserPasswdParam;
+import com.prafta.web.user.user01.application.param.WithdrawMyAccountParam;
+import com.prafta.web.user.user01.application.param.WithdrawalCancelParam;
 import com.prafta.web.user.user01.dto.response.SiteNodeAdminCandidateListResponse;
 import com.prafta.web.user.user01.dto.response.UserInfoListResponse;
 
@@ -20,8 +21,8 @@ public interface User01Service {
 	void withdrawMyAccount(WithdrawMyAccountParam param);
 
 	void scheduleWithdrawal(ScheduleWithdrawalParam param);
-	
-	//void updateUserInfo(List<UserInfoReq> dtoList, Map<String, Object> tokenInfo);
+
+	void cancelWithdrawal(WithdrawalCancelParam param);
 	
 	void updateOneUserInfo(UserInfoModel model);
 	

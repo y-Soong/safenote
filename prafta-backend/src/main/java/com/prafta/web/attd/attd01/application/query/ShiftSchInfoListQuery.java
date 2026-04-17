@@ -9,7 +9,7 @@ public record ShiftSchInfoListQuery(
 	, String shiftNo
 	, String shiftCycleDays
 	, String useYn
-	, String gcCmpnyCd
+	, String gvCmpnyCd
 ){
 	public static ShiftSchInfoListQuery from(ShiftSchInfoListParam param) {
 		

@@ -351,7 +351,7 @@
 		  FROM TB_SITE_NODE A
 		 WHERE A.CMPNY_CD = #{cmpnyCd}
 	 	   AND A.SITE_CD = #{siteCd}
-	 	   AND (A.MAIN_ADMIN_CD IS NOT NULL OR A.SUB_ADMIN_CD IS NOT NULL)
+	 	   AND (NULLIF(A.MAIN_ADMIN_CD, '') IS NOT NULL OR NULLIF(A.SUB_ADMIN_CD, '') IS NOT NULL)
 	 	   /* 권한별 노드/사이트 제한 */
 		   AND (
 		         (SELECT V.AUTH_CD FROM viewer V) IN ('system','master','hr','safe')

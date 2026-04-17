@@ -401,7 +401,7 @@ const fnSchInfoList = async () => {
       },
     });
     if (response.status === 200) {
-      const list = response.data?.schInfoList ?? [];
+      const list = response.data?.schInfoResultList ?? [];
       patternOptions.value = [
         ...list.map((item) => ({
           value: item.schCd,
@@ -430,6 +430,7 @@ const fnShiftDetail = async () => {
       },
     });
     if (response.status === 200) {
+      console.log(response.data)
       bindDetailToForm(response.data);
     }
   } catch (err) {
@@ -571,11 +572,11 @@ function buildCreatePayload() {
  * shiftTypeInfoList, shiftTeamInfoList, shiftPatternInfoList, shiftAssignInfoList
  */
 function bindDetailToForm(data) {
-  const typeList = data?.shiftTypeInfoList ?? [];
+  const typeList = data?.shiftTypeInfoResultList ?? [];
   const st = typeList[0] ?? {};
-  const teamList = data?.shiftTeamInfoList ?? [];
-  const ptrnList = data?.shiftPatternInfoList ?? [];
-  const assignList = data?.shiftAssignInfoList ?? [];
+  const teamList = data?.shiftTeamInfoResultList ?? [];
+  const ptrnList = data?.shiftPatternInfoResultList ?? [];
+  const assignList = data?.shiftAssignInfoResultList ?? [];
 
   const toNum = (v) => {
     if (v == null || v === "") return undefined;

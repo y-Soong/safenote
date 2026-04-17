@@ -20,8 +20,6 @@ public record UserInfoCommand(
     , String nodeCd
     , String authCd
     , String useYn
-    , String accountStatus
-    , String withdrawalDate
     , String gvUserCd
 ){
 	public static UserInfoCommand from(UserInfoModel model, String mblNoEnc, String mblNoHmac, String emailEnc, String emailHmac, String birthDtEnc) {
@@ -45,8 +43,6 @@ public record UserInfoCommand(
 			, model.nodeCd()
 			, model.authCd()
 			, model.useYn()
-			, model.accountStatus()
-			, model.withdrawalDate()
 			, model.gvUserCd()
 		);
 	}

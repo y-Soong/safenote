@@ -58,23 +58,24 @@
 		<item key="incremental" value="false"/>
 		<item key="isRegEx" value="false"/>
 		<list key="findhistory">
-			<item value="withdrawMyAccount"/>
-			<item value="saveSiteNodeMainAdmin"/>
-			<item value="deleteSiteNodeAdmin"/>
-			<item value="save-site-node-main-admin"/>
-			<item value="siteNodeInAdminCnt :: "/>
-			<item value="updateUserNode"/>
-			<item value="deleteSiteNodeMainAdmin"/>
-			<item value="selectSiteNodeInAdmin"/>
-			<item value="UserPasswdCommand"/>
-			<item value="selectUserPwByUserId"/>
+			<item value="UserListResult"/>
+			<item value="private "/>
+			<item value="selectShiftSchInfoList"/>
+			<item value="getShiftSchInfoList"/>
+			<item value="UserInfoMap"/>
+			<item value="UserNodeAdminCheckQuery"/>
+			<item value="UserInfoParam"/>
+			<item value="selectSiteNodeAdminCandidateLists"/>
+			<item value="UserInfoResult"/>
 			<item value="selectUserNodeAdminCheck"/>
-			<item value="占쏙옙 占쏙옙占쏙옙 占쏙옙 占쌀쇽옙 占싸쇽옙 占쏙옙占쏙옙占쏙옙 占쏙옙占쏙옙占쌌니댐옙"/>
-			<item value="updateOneUserInfo"/>
-			<item value="mergeSiteInfo"/>
-			<item value="USER_ID"/>
+			<item value="userNodeAdminCheck"/>
+			<item value="selectSiteNodeList"/>
+			<item value="scheduleWithdrawal"/>
+			<item value="selectUserSiteInfo"/>
+			<item value="UserInfoCommand"/>
 		</list>
 		<list key="replacehistory">
+			<item value=", "/>
 			<item value="siteAdminCd"/>
 			<item value="SITE_ADMIN_CD"/>
 			<item value="MGMT_USER_CD"/>
@@ -82,7 +83,6 @@
 			<item value="MAIN_ADMIN_CD"/>
 			<item value="SUB_ADMIN_CD"/>
 			<item value=", String"/>
-			<item value=", "/>
 			<item value=", String "/>
 			<item value="gvUserId"/>
 			<item value="gvCmpnyCd"/>

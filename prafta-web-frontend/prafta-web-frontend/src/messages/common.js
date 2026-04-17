@@ -20,5 +20,7 @@ export const COMMON_MESSAGES = {
   APPLY_DATE_REQUIRED: "적용일을 선택해주세요.",
   CREATE_CONFIRM: "생성하시겠습니까?",
   GRID_ROW_FIELD_REQUIRED:
-    "[{fieldLabel}] 값은 필수 입력값입니다.\n체크된 행 중 [{row}]번째 행을 확인해주세요.",
+    "[{fieldLabel}] 값은 필수 입력 값 입니다.\n체크된 행 중 [{row}]번째 행을 확인해주세요.",
+  REQUIRED_FIELD_MISSING:
+    "[{fieldLabel}] 값은 필수 입력 값 입니다.",
 };

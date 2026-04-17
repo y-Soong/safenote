@@ -210,6 +210,8 @@
 	UPDATE TB_USER
 	SET
 		USER_ID                 = #{userCd}
+		, SITE_CD				= NULL
+		, NODE_CD				= NULL
 		, USER_PW				= NULL
 		, MBL_NO_ENC            = NULL
 		, MBL_NO_HMAC           = NULL
@@ -220,7 +222,7 @@
 		, BIRTH_DT_ENC          = NULL
 		, GENDER                = NULL
 		, WITHDRAWAL_DATE       = DATE_FORMAT(NOW(), '%Y%m%d')
-		, ACCOUNT_STATUS        = '04'
+		, ACCOUNT_STATUS        = '03'
 		, USE_YN                = 'N'
 		, UPDATE_NO             = #{userCd}
 		, UPDATE_DATE           = NOW()
@@ -234,11 +236,23 @@
 	UPDATE TB_USER
 	SET
 		WITHDRAWAL_DATE = #{withdrawalDate}
-		, UPDATE_NO     = #{userCd}
+		, UPDATE_NO     = #{gvUserCd}
 		, UPDATE_DATE   = NOW()
 	WHERE 1=1
-	  AND CMPNY_CD = #{cmpnyCd}
+	  AND CMPNY_CD = #{gvCmpnyCd}
 	  AND USER_CD  = #{userCd}
+	</update>
+	
+	<update id="cancelWithdrawal" parameterType="com.prafta.web.user.user01.application.command.WithdrawalCancelCommand">
+	/* User01Mapper.cancelWithdrawal */
+	UPDATE TB_USER
+	SET WITHDRAWAL_DATE = null
+	    , UPDATE_NO     = #{gvUserCd}
+		, UPDATE_DATE   = NOW()
+	WHERE
+		CMPNY_CD = #{gvCmpnyCd}
+	AND USER_CD = #{userCd}
+		
 	</update>
 
 	<select id="selectUserSiteInfo" parameterType="com.prafta.web.user.user01.application.query.UserSiteInfoQuery" resultType="com.prafta.web.user.user01.result.UserSiteInfoResult">
@@ -308,8 +322,6 @@
 		, GENDER = #{gender}
 		, BIRTH_DT_ENC = #{birthDtEnc}
 		, USE_YN = IFNULL(#{useYn}, 'Y')
-		, ACCOUNT_STATUS = #{accountStatus}
-		, WITHDRAWAL_DATE = CASE WHEN #{accountStatus} = '04' THEN #{withdrawalDate} ELSE NULL END				<!-- 계정 상태가 탈퇴가 아니면 탈퇴일자 null 처리 -->
 		, UPDATE_NO = #{gvUserCd}
 		, UPDATE_DATE = NOW()
 	WHERE 1=1
@@ -338,6 +350,8 @@
 		    , A.GENDER                                                         	AS gender
 		    , A.USE_YN                                                         	AS useYn
 		    , IFNULL(B.SITE_NM_LIST, '')                                       	AS siteNmList
+		    , A.ACCOUNT_STATUS													AS accountStatus
+		    , A.WITHDRAWAL_DATE													AS withdrawalDate
 		FROM TB_USER A
 			 LEFT JOIN (
 				SELECT 

@@ -1,7 +1,6 @@
 package com.prafta.web.user.user01.controller;
 
 import java.util.List;
-import java.util.Map;
 
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -18,18 +17,20 @@ import com.prafta.common.security.JwtUtil;
 import com.prafta.web.user.user01.application.param.MyPasswdParam;
 import com.prafta.web.user.user01.application.param.ScheduleWithdrawalParam;
 import com.prafta.web.user.user01.application.param.SiteNodeAdminCandidateListParam;
-import com.prafta.web.user.user01.application.param.WithdrawMyAccountParam;
 import com.prafta.web.user.user01.application.param.UserInfoListParam;
 import com.prafta.web.user.user01.application.param.UserInfoParam;
 import com.prafta.web.user.user01.application.param.UserPasswdParam;
+import com.prafta.web.user.user01.application.param.WithdrawMyAccountParam;
+import com.prafta.web.user.user01.application.param.WithdrawalCancelParam;
 import com.prafta.web.user.user01.dto.UserBatchUpdateResponse;
 import com.prafta.web.user.user01.dto.request.MyPasswdRequest;
 import com.prafta.web.user.user01.dto.request.ScheduleWithdrawalRequest;
 import com.prafta.web.user.user01.dto.request.SiteNodeAdminCandidateListRequest;
-import com.prafta.web.user.user01.dto.request.WithdrawMyAccountRequest;
 import com.prafta.web.user.user01.dto.request.UserInfoListRequest;
 import com.prafta.web.user.user01.dto.request.UserInfoRequest;
 import com.prafta.web.user.user01.dto.request.UserPasswdRequest;
+import com.prafta.web.user.user01.dto.request.WithdrawMyAccountRequest;
+import com.prafta.web.user.user01.dto.request.WithdrawalCancelRequest;
 import com.prafta.web.user.user01.dto.response.SiteNodeAdminCandidateListResponse;
 import com.prafta.web.user.user01.dto.response.UserInfoListResponse;
 import com.prafta.web.user.user01.service.User01BatchService;
@@ -91,12 +92,22 @@ public class User01Controller {
     }
 
     @PostMapping("/schedule-withdrawal")
-    public ResponseEntity<?> scheduleWithdrawal(@RequestBody ScheduleWithdrawalRequest request) {
+    public ResponseEntity<?> scheduleWithdrawal(@RequestBody ScheduleWithdrawalRequest request, @RequestHeader(value = "Authorization", required = false) String authorization) {
 
-    	user01Service.scheduleWithdrawal(ScheduleWithdrawalParam.from(request));
+    	user01Service.scheduleWithdrawal(ScheduleWithdrawalParam.from(request, jwtUtil.getAllClaimsAsMap(authorization)));
 
     	return ResponseEntity.status(HttpStatus.OK).build();
     }
+    
+    @PostMapping("/cancel-withdrawal")
+    public ResponseEntity<?> cancelWithdrawal(@RequestBody WithdrawalCancelRequest request, @RequestHeader(value = "Authorization", required = false) String authorization) {
+
+    	user01Service.cancelWithdrawal(WithdrawalCancelParam.from(request, jwtUtil.getAllClaimsAsMap(authorization)));
+
+    	return ResponseEntity.status(HttpStatus.OK).build();
+    }
+    
+    
 
     @GetMapping("/site-node-admin-candidate-lists")
     public ResponseEntity<?> getSiteNodeAdminCandidateLists(@ModelAttribute SiteNodeAdminCandidateListRequest request, @RequestHeader(value = "Authorization", required = false) String authorization) {

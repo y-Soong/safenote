@@ -32,7 +32,7 @@ export const USER_MESSAGES = {
   MY_INFO_PW_CHANGED: "비밀번호가 변경되었습니다.",
   MY_INFO_PW_CHANGE_FAILED: "비밀번호 변경 중 오류가 발생했습니다.",
   MY_INFO_WITHDRAWAL_CONFIRM:
-    "탈퇴하시면 모든 개인정보가 삭제되며 복구가 불가능합니다.\n정말 회원탈퇴 하시겠습니까?",
+    "탈퇴하시면 모든 개인정보가 삭제되며 복구가\n불가능합니다.\n정말 회원탈퇴 하시겠습니까?",
   MY_INFO_WITHDRAWAL_SUCCESS: "회원탈퇴가 완료되었습니다.",
   MY_INFO_WITHDRAWAL_FAILED: "회원탈퇴 처리 중 오류가 발생했습니다.",
 };

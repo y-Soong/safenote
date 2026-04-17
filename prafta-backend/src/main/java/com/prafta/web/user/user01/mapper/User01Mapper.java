@@ -10,6 +10,7 @@ import com.prafta.web.user.user01.application.command.UserInfoCommand;
 import com.prafta.web.user.user01.application.command.UserPasswdCommand;
 import com.prafta.web.user.user01.application.command.UserSiteAuthCommand;
 import com.prafta.web.user.user01.application.command.WithdrawMyAccountCommand;
+import com.prafta.web.user.user01.application.command.WithdrawalCancelCommand;
 import com.prafta.web.user.user01.application.query.SiteNodeAdminCandidateListQuery;
 import com.prafta.web.user.user01.application.query.UserInfoListQuery;
 import com.prafta.web.user.user01.application.query.UserNodeAdminCheckQuery;
@@ -33,6 +34,8 @@ public interface User01Mapper {
 	int withdrawMyAccount(WithdrawMyAccountCommand command);
 
 	int scheduleWithdrawal(ScheduleWithdrawalCommand command);
+	
+	int cancelWithdrawal(WithdrawalCancelCommand command);
 	
 	UserSiteInfoResult selectUserSiteInfo(UserSiteInfoQuery query);
 	

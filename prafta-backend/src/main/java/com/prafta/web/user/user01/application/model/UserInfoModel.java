@@ -15,8 +15,6 @@ public record UserInfoModel(
     , String oriNodeCd
     , String authCd
     , String useYn
-    , String accountStatus
-    , String withdrawalDate
     
     , String gvUserCd
 ) {
