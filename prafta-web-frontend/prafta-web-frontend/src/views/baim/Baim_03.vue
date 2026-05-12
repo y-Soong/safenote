@@ -48,8 +48,24 @@
                 <th class="event_cell" style="text-align: center; width: 2%">
                   No
                 </th>
-                <th class="w-40">약관명</th>
-                <th class="w-20">시행버전</th>
+                <ThSortable
+                  label="약관명"
+                  col-key="termsNm"
+                  :sort-key="termsSortKey"
+                  :sort-order="termsSortOrder"
+                  :width="termsColWidths.termsNm"
+                  @sort="termsOnSort"
+                  @update:width="termsOnResize"
+                />
+                <ThSortable
+                  label="시행버전"
+                  col-key="termsVersion"
+                  :sort-key="termsSortKey"
+                  :sort-order="termsSortOrder"
+                  :width="termsColWidths.termsVersion"
+                  @sort="termsOnSort"
+                  @update:width="termsOnResize"
+                />
               </tr>
             </thead>
             <tbody>
@@ -62,7 +78,7 @@
               </template>
               <template v-else>
                 <tr
-                  v-for="(terms, idx) in termsList"
+                  v-for="(terms, idx) in termsSortedData"
                   :key="terms.termsId"
                   @dblclick="fnSubSearch(terms)"
                 >
@@ -116,10 +132,42 @@
                 <th class="event_cell" style="text-align: center; width: 2%">
                   No
                 </th>
-                <th style="width: 10%">약관버전</th>
-                <th class="editableCell" style="width: 8%">필수여부</th>
-                <th class="editableCell" style="width: 15%">시행일자</th>
-                <th class="editableCell">비고</th>
+                <ThSortable
+                  label="약관버전"
+                  col-key="termsVersion"
+                  :sort-key="detailSortKey"
+                  :sort-order="detailSortOrder"
+                  :width="detailColWidths.termsVersion"
+                  @sort="detailOnSort"
+                  @update:width="detailOnResize"
+                />
+                <ThSortable
+                  label="필수여부"
+                  col-key="requiredYn"
+                  :sort-key="detailSortKey"
+                  :sort-order="detailSortOrder"
+                  :width="detailColWidths.requiredYn"
+                  @sort="detailOnSort"
+                  @update:width="detailOnResize"
+                />
+                <ThSortable
+                  label="시행일자"
+                  col-key="strDate"
+                  :sort-key="detailSortKey"
+                  :sort-order="detailSortOrder"
+                  :width="detailColWidths.strDate"
+                  @sort="detailOnSort"
+                  @update:width="detailOnResize"
+                />
+                <ThSortable
+                  label="비고"
+                  col-key="termsDesc"
+                  :sort-key="detailSortKey"
+                  :sort-order="detailSortOrder"
+                  :width="detailColWidths.termsDesc"
+                  @sort="detailOnSort"
+                  @update:width="detailOnResize"
+                />
               </tr>
             </thead>
             <tbody>
@@ -134,7 +182,7 @@
               </template>
               <template v-else>
                 <tr
-                  v-for="(termsDetail, idx) in termsDetaillList"
+                  v-for="(termsDetail, idx) in detailSortedData"
                   :key="termsDetail.termsId"
                   @dblclick="fnAddRow(termsDetail)"
                 >
@@ -170,6 +218,11 @@ import axios from "@/api/axios";
 import ViewHeader from "@/components/common/ViewHeader.vue";
 import { getMessage, MSG } from "@/messages";
 import TermsInfoPop from "@/components/popup/TermsInfoPop.vue";
+import ThSortable from "@/components/common/ThSortable.vue";
+import {
+  useTableSort,
+  useColumnResize,
+} from "@/composables/useTableFeatures.js";
 
 defineOptions({ name: "Baim_02" });
 
@@ -183,6 +236,29 @@ const { open: openPop } = useModal();
 
 const termsList = ref([]);
 const termsDetaillList = ref([]);
+const {
+  sortKey: termsSortKey,
+  sortOrder: termsSortOrder,
+  sortedData: termsSortedData,
+  onSort: termsOnSort,
+} = useTableSort(termsList);
+const { colWidths: termsColWidths, onResize: termsOnResize } = useColumnResize({
+  termsNm: 160,
+  termsVersion: 90,
+});
+const {
+  sortKey: detailSortKey,
+  sortOrder: detailSortOrder,
+  sortedData: detailSortedData,
+  onSort: detailOnSort,
+} = useTableSort(termsDetaillList);
+const { colWidths: detailColWidths, onResize: detailOnResize } =
+  useColumnResize({
+    termsVersion: 100,
+    requiredYn: 80,
+    strDate: 130,
+    termsDesc: 200,
+  });
 const systCodeArr = ref({});
 const localButtons = ref({ ...props.buttons });
 

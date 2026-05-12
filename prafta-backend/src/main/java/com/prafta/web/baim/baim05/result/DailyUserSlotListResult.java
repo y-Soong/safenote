@@ -7,11 +7,15 @@ public record DailyUserSlotListResult(
 	, String siteNm
 	, String slotNo
 	, String slotType
+	, String slotTypeNm
 	, String fixedYn
+	, String expired
 	, String useYn
 	, String currUserId
 	, String currUserNm
+	, String mblNo
 	, String slotStatus
+	, String slotStatusNm
 ){
 	
 }

@@ -18,8 +18,6 @@ public record CompCmmCodeDParam(
         if (requests == null)
         	throw ApiException.appendf(CommonErrorCode.COMMON_400_001,"\n필수값 누락 - CompCmmCodeDRequest");
         
-        if (tokenInfo == null)
-        	throw ApiException.appendf(CommonErrorCode.COMMON_400_001,"\n필수값 누락 - TokenInfo");
 
         // 2) null element 방지 + 3) 필수값 검증 + 4) 매핑
         List<CompCmmCodeDModel> models = requests.stream()

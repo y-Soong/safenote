@@ -48,11 +48,19 @@
                 <th class="event_cell" style="text-align: center; width: 2%">
                   No
                 </th>
-                <th class="w-30">코드명</th>
+                <ThSortable
+                  label="코드명"
+                  col-key="baimValNm"
+                  :sort-key="sortKey"
+                  :sort-order="sortOrder"
+                  :width="colWidths.baimValNm"
+                  @sort="onSort"
+                  @update:width="onResize"
+                />
               </tr>
             </thead>
             <tbody>
-              <tr v-for="(code, idx) in cmmCodeList" :key="code.baimValCd">
+              <tr v-for="(code, idx) in sortedData" :key="code.baimValCd">
                 <td style="text-align: center">{{ idx + 1 }}</td>
                 <td @dblclick="fnSubSearch(code)">{{ code.baimValNm }}</td>
               </tr>
@@ -196,6 +204,8 @@ import axios from "@/api/axios";
 import ViewHeader from "@/components/common/ViewHeader.vue";
 import { getMessage, MSG } from "@/messages";
 import BaseSelect from "@/components/common/BaseSelect.vue";
+import ThSortable from "@/components/common/ThSortable.vue";
+import { useTableSort, useColumnResize } from "@/composables/useTableFeatures.js";
 
 // ================ Options ================
 defineOptions({ name: "Baim_02" });
@@ -212,6 +222,8 @@ const { proxy } = getCurrentInstance();
 // ================ Refs (Variables) ================
 const localButtons = ref({ ...props.buttons });
 const cmmCodeList = ref([]);
+const { sortKey, sortOrder, sortedData, onSort } = useTableSort(cmmCodeList);
+const { colWidths, onResize } = useColumnResize({ baimValNm: 160 });
 const cmmCodeDetailList = ref([]);
 const systCodeArr = ref({});
 

@@ -4,11 +4,25 @@ import java.util.List;
 
 import org.springframework.stereotype.Service;
 
+import com.prafta.web.attd.attd05.application.command.SchTypeCommand;
+import com.prafta.web.attd.attd05.application.command.SchTypeDeleCommand;
+import com.prafta.web.attd.attd05.application.model.SchTypeDeleModel;
+import com.prafta.web.attd.attd05.application.model.SchTypeModel;
+import com.prafta.web.attd.attd05.application.param.LeaveTypeListParam;
+import com.prafta.web.attd.attd05.application.param.SchTypeDeleParam;
+import com.prafta.web.attd.attd05.application.param.SchTypeListParam;
+import com.prafta.web.attd.attd05.application.param.SchTypeParam;
 import com.prafta.web.attd.attd05.application.param.UserWorkPlansParam;
+import com.prafta.web.attd.attd05.application.query.LeaveTypeListQuery;
+import com.prafta.web.attd.attd05.application.query.SchListQuery;
 import com.prafta.web.attd.attd05.application.query.UserWorkPlansQuery;
+import com.prafta.web.attd.attd05.dto.response.LeaveTypeResponse;
+import com.prafta.web.attd.attd05.dto.response.SchTypeListResponse;
 import com.prafta.web.attd.attd05.dto.response.UserWorkPlansResponse;
 import com.prafta.web.attd.attd05.mapper.Attd05Mapper;
 import com.prafta.web.attd.attd05.result.DayResult;
+import com.prafta.web.attd.attd05.result.LeaveTypeResult;
+import com.prafta.web.attd.attd05.result.SchTypeResult;
 import com.prafta.web.attd.attd05.result.SchedResult;
 import com.prafta.web.attd.attd05.result.UserResult;
 import com.prafta.web.attd.attd05.service.Attd05Service;
@@ -42,46 +56,42 @@ public class Attd05ServiceImpl implements Attd05Service {
     	
     	return response;
     }
+    
+    @Override
+    public SchTypeListResponse getSchTypeList(SchTypeListParam param) {
+    	
+    	SchTypeListResponse response = null;
+    	
+    	List<SchTypeResult> schTypeResultList = attd05Mapper.selectSchTypeList(SchListQuery.from(param));
+    	
+    	response = SchTypeListResponse.builder().schTypeResultList(schTypeResultList).build();
+    	
+    	return response;
+    }
 
-//    @Override
-//    public AttdStdTimeRuleListResponse getAttdStdTimeRuleList(AttdStdTimeRuleListParam param) {	
-//
-//        List<AttdStdTimeRuleResult> attdStdTimeRuleResultList = attd04Mapper.selectAttdStdTimeRuleList(AttdStdTimeRuleListQuery.from(param));
-//        List<AttdStdTimeRuleHistResult> attdStdTimeRuleHistResultList = attd04Mapper.selectAttdStdTimeRuleHistList(AttdStdTimeRuleListQuery.from(param));
-//
-//        if (attdStdTimeRuleResultList == null || attdStdTimeRuleResultList.isEmpty()) {
-//            return null;
-//        }
-//
-//        return AttdStdTimeRuleListResponse.builder()
-//                .attdStdTimeRuleResultList(attdStdTimeRuleResultList)
-//                .attdStdTimeRuleHistResultList(attdStdTimeRuleHistResultList)
-//                .build();
-//    }
-//
-//    @Override
-//    public void saveAttdStdTimeRule(AttdStdTimeRuleParam param) {
-//    	String stdTimeRuleType = "";
-//    	String stdTimeType = "";
-//    	
-//    	// 출근 시간 표준화 데이터 저장
-//    	stdTimeRuleType = "01";
-//    	stdTimeType = param.startStdTimeType();
-//
-//        attd04Mapper.saveAttdStdTimeRule(AttdStdTimeRuleCommand.from(param, stdTimeRuleType, stdTimeType));
-//        
-//        // 출퇴근 표준화 데이터 이력 저장
-//        int histIdx = attd04Mapper.selectHistIdx(param.gvCmpnyCd());
-//        attd04Mapper.saveAttdStdTimeRuleHist(AttdStdTimeRuleHistCommand.from(param, histIdx, stdTimeRuleType, stdTimeType));
-//        
-//        // 퇴근 시간 표준화 데이터 저장
-//        stdTimeRuleType = "02";
-//    	stdTimeType = param.endStdTimeType();
-//
-//        attd04Mapper.saveAttdStdTimeRule(AttdStdTimeRuleCommand.from(param, stdTimeRuleType, stdTimeType));
-//        
-//        histIdx = attd04Mapper.selectHistIdx(param.gvCmpnyCd());
-//        // 출퇴근 표준화 데이터 이력 저장
-//        attd04Mapper.saveAttdStdTimeRuleHist(AttdStdTimeRuleHistCommand.from(param, histIdx, stdTimeRuleType, stdTimeType));
-//    }
+    @Override
+    public LeaveTypeResponse getLeaveTypeList(LeaveTypeListParam param) {
+    	
+    	LeaveTypeResponse response= null;
+    	
+    	List<LeaveTypeResult> leaveTypeResultList = attd05Mapper.selectLeaveTypeList(LeaveTypeListQuery.from(param));
+    	
+    	response = LeaveTypeResponse.builder().leaveTypeResultList(leaveTypeResultList).build();
+    	
+    	return response;
+    }
+    
+    @Override
+    public void saveUserWorkPlans(SchTypeParam param) {
+    	for(SchTypeModel model : param.schTypeModelList()) {
+    		attd05Mapper.saveUserWorkPlans(SchTypeCommand.from(model));
+    	}
+    }
+    
+    @Override
+    public void deleteUserWorkPlans(SchTypeDeleParam param) {
+    	for(SchTypeDeleModel model : param.schTypeDeleModelList()) {
+    		attd05Mapper.deleteUserWorkPlans(SchTypeDeleCommand.from(model));
+    	}
+    }
 }

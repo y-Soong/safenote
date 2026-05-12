@@ -1,0 +1,296 @@
+<template>
+  <Transition name="fade">
+    <div v-show="true" class="modal-overlay prafta-modal-popup">
+      <div
+        class="modal-content-normal modal-content-admin-qr"
+        :style="positionStyle"
+        ref="modalRef"
+      >
+        <div class="modal-header" @mousedown="startDrag">
+          <span>관리자 QR 생성</span>
+          <button class="icon-button" @click="$emit('close')">
+            <svg
+              xmlns="http://www.w3.org/2000/svg"
+              fill="none"
+              viewBox="0 0 24 24"
+              stroke-width="1.5"
+              stroke="currentColor"
+              class="w-6 h-6"
+            >
+              <path
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                d="M6 18L18 6M6 6l12 12"
+              />
+            </svg>
+          </button>
+        </div>
+
+        <div class="modal-body-admin-qr">
+          <p class="modal-desc">
+            배정할 빈 자리 슬롯을 선택하고 근로자 정보를 입력하세요. 저장 시
+            해당 슬롯이 점유됩니다.
+          </p>
+
+          <div class="form-grid">
+            <div class="form-item full-width">
+              <label
+                >배정 슬롯 (빈 자리만) <span class="required">*</span></label
+              >
+              <select v-model="selectedSlotNo">
+                <option value="" disabled>슬롯을 선택하세요</option>
+                <option
+                  v-for="s in availableSlots"
+                  :key="s.slotNo"
+                  :value="s.slotNo"
+                >
+                  {{ s.slotNo }}번 슬롯 (빈 자리)
+                </option>
+              </select>
+              <p class="field-desc">현재 빈 슬롯만 선택 가능합니다.</p>
+            </div>
+
+            <div class="form-item full-width">
+              <label>근로자 이름 <span class="required">*</span></label>
+              <input
+                v-model.trim="userNm"
+                type="text"
+                placeholder="예: 홍길동"
+              />
+              <p class="field-desc">출퇴근 QR과 함께 슬롯에 기록됩니다.</p>
+            </div>
+
+            <div class="form-item full-width">
+              <label>휴대폰번호 <span class="required">*</span></label>
+              <input
+                v-model.trim="userPhone"
+                type="text"
+                placeholder="예: 010-1234-5678"
+                maxlength="13"
+              />
+            </div>
+          </div>
+        </div>
+
+        <div class="modal-footer">
+          <div class="footer-actions">
+            <button class="btn btn-secondary" @click="$emit('close')">
+              취소
+            </button>
+            <button
+              class="btn btn-primary"
+              :disabled="!canSave"
+              @click="fnSave"
+            >
+              QR 생성 · 슬롯 점유
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </Transition>
+</template>
+
+<script setup>
+import { ref, computed, getCurrentInstance } from "vue";
+import { useCenteredDraggable } from "@/composables/useCenteredDraggable";
+import { getMessage, MSG } from "@/messages";
+import axios from "@/api/axios";
+
+const props = defineProps({
+  slotList: { type: Array, default: () => [] },
+  siteCd: { type: String, default: "" },
+  onSaved: { type: Function, default: null },
+});
+const emit = defineEmits(["close"]);
+
+const { proxy } = getCurrentInstance();
+const modalRef = ref(null);
+const { position, startDrag } = useCenteredDraggable(modalRef, {
+  horizontalRatio: 2,
+  verticalRatio: 2,
+});
+
+const selectedSlotNo = ref("");
+const userNm = ref("");
+const userPhone = ref("");
+
+const availableSlots = computed(() =>
+  (props.slotList || []).filter((s) => s.slotStatus === "01" && s.useYn === "Y")
+);
+
+const positionStyle = computed(() => {
+  const padding = 16;
+  const modalWidth = 480;
+  const modalHeight = 460;
+  const maxX = window.innerWidth - (modalWidth + padding);
+  const maxY = window.innerHeight - (modalHeight + padding);
+  const x = Math.max(padding, Math.min(maxX, position.value.x));
+  const y = Math.max(padding, Math.min(maxY, position.value.y));
+  return { top: y + "px", left: x + "px" };
+});
+
+const canSave = computed(
+  () => !!selectedSlotNo.value && !!userNm.value && !!userPhone.value
+);
+
+const fnSave = async () => {
+  if (!canSave.value) return;
+
+  if (!proxy.$util.validatePhoneNumber(userPhone.value)) {
+    await proxy.$alert("휴대폰 번호를 확인해주세요.");
+    return;
+  }
+
+  const mblNo = userPhone.value.replace(/\D+/g, "");
+
+  try {
+    const response = await axios.post("/webApi/baim05/insert-daily-qr-user", {
+      siteCd: props.siteCd,
+      userNm: userNm.value,
+      mblNo: mblNo,
+      slotNo: selectedSlotNo.value,
+    });
+
+    if (response.status === 200) {
+      const { cmpnyCd, siteCd, userCd } =
+        response.data.dailyUserQrInfoResult ?? {};
+      if (cmpnyCd && siteCd && userCd) {
+        proxy.$alert(getMessage(MSG.SAVE_SUCCESS));
+
+        emit("close");
+        props.onSaved?.({
+          cmpnyCd,
+          siteCd,
+          userCd,
+          userNm: userNm.value,
+        });
+      } else {
+        await proxy.$alert("QR 생성에 필요한 정보가 부족합니다.");
+      }
+    }
+  } catch (err) {
+    const msg =
+      err?.response?.data?.message ||
+      err?.message ||
+      "저장 중 오류가 발생했습니다.";
+    await proxy.$alert(msg);
+  }
+};
+</script>
+
+<style scoped>
+@import "@/assets/css/modal-popup-guide.css";
+
+.modal-content-admin-qr {
+  width: 480px;
+  max-height: 85vh;
+}
+
+.modal-body-admin-qr {
+  padding: 1rem 1.5rem;
+  overflow-y: auto;
+  flex: 1;
+  min-height: 0;
+}
+
+.modal-desc {
+  margin: 0 0 1rem;
+  font-size: 0.8125rem;
+  color: #6b7280;
+  line-height: 1.5;
+}
+
+.form-grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 1rem;
+}
+
+.form-item {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
+.form-item.full-width {
+  grid-column: 1 / -1;
+}
+
+.form-item label {
+  font-size: 0.875rem;
+  font-weight: 500;
+  color: #374151;
+}
+
+.form-item .required {
+  color: #ef4444;
+}
+
+.form-item input,
+.form-item select {
+  padding: 0.5rem 0.75rem;
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  font-size: 0.875rem;
+}
+
+.form-item input:focus,
+.form-item select:focus {
+  outline: none;
+  border-color: #16a34a;
+  box-shadow: 0 0 0 2px rgba(22, 163, 74, 0.2);
+}
+
+.field-desc {
+  margin: 0.125rem 0 0;
+  font-size: 0.75rem;
+  color: #6b7280;
+}
+
+.modal-footer {
+  display: flex;
+  justify-content: flex-end;
+  padding: 1rem 1.5rem;
+  background: var(--modal-footer-bg, #f9fafb);
+  border-top: 1px solid var(--modal-border, #e5e7eb);
+}
+
+.footer-actions {
+  display: flex;
+  gap: 0.5rem;
+}
+
+.btn {
+  padding: 0.5rem 1rem;
+  border-radius: 8px;
+  font-size: 0.875rem;
+  font-weight: 500;
+  cursor: pointer;
+}
+
+.btn-secondary {
+  background: #fff;
+  border: 1px solid #d1d5db;
+  color: #374151;
+}
+
+.btn-secondary:hover {
+  background: #f9fafb;
+}
+
+.btn-primary {
+  background: #16a34a;
+  border: 1px solid #16a34a;
+  color: #fff;
+}
+
+.btn-primary:hover:not(:disabled) {
+  background: #15803d;
+}
+
+.btn-primary:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+</style>

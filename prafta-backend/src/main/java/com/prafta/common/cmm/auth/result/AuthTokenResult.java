@@ -5,7 +5,6 @@ import java.util.Date;
 public record AuthTokenResult (
 	String cmpnyCd
 	, String userCd
-    , String userId
     , String tokenId
 
     , String clientType

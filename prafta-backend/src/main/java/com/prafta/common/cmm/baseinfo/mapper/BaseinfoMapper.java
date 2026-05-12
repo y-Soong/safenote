@@ -6,6 +6,7 @@ import org.apache.ibatis.annotations.Mapper;
 
 import com.prafta.common.cmm.baseinfo.application.command.MblUniqueCheckCommand;
 import com.prafta.common.cmm.baseinfo.application.command.SmsAuthNoCommand;
+import com.prafta.common.cmm.baseinfo.application.command.UserPasswordCommand;
 import com.prafta.common.cmm.baseinfo.application.query.AppMenuListQuery;
 import com.prafta.common.cmm.baseinfo.application.query.BaseInfoListQuery;
 import com.prafta.common.cmm.baseinfo.application.query.BaseInfoQuery;
@@ -18,6 +19,8 @@ import com.prafta.common.cmm.baseinfo.application.query.SystInfoListQuery;
 import com.prafta.common.cmm.baseinfo.application.query.SystInfoQuery;
 import com.prafta.common.cmm.baseinfo.application.query.TermsDetailInfoQuery;
 import com.prafta.common.cmm.baseinfo.application.query.UserIdDupleCheckQuery;
+import com.prafta.common.cmm.baseinfo.application.query.UserIdInfoQuery;
+import com.prafta.common.cmm.baseinfo.application.query.UserInfoListQuery;
 import com.prafta.common.cmm.baseinfo.application.query.UserSmsAuthNoCheckQuery;
 import com.prafta.common.cmm.baseinfo.application.query.WebMenuListQuery;
 import com.prafta.common.cmm.baseinfo.result.AppMenuResult;
@@ -28,6 +31,8 @@ import com.prafta.common.cmm.baseinfo.result.SiteInfoResult;
 import com.prafta.common.cmm.baseinfo.result.SiteNodeInfoResult;
 import com.prafta.common.cmm.baseinfo.result.SystInfoResult;
 import com.prafta.common.cmm.baseinfo.result.TermsDetailInfoResult;
+import com.prafta.common.cmm.baseinfo.result.UserIdInfoResult;
+import com.prafta.common.cmm.baseinfo.result.UserInfoResult;
 import com.prafta.common.cmm.baseinfo.result.WebMenuResult;
 
 @Mapper
@@ -61,10 +66,12 @@ public interface BaseinfoMapper {
 	List<AppMenuResult> selectAppMenuList(AppMenuListQuery query);
 	
 	List<MenuInfoResult> selectMenuList(MenuListQuery query);
+
+	List<UserInfoResult> selectUserInfoList(UserInfoListQuery query);
+
+	UserIdInfoResult selectUserIdInfo(UserIdInfoQuery query);
 	
-//	Map<String, Object> selectUserIdInfo(BaseinfoCmmReq dto);
-//	
-//	void updateUserPw(BaseinfoCmmReq dto);
+	void updateUserPw(UserPasswordCommand command);
 	
 	TermsDetailInfoResult selectTermsDetailInfo(TermsDetailInfoQuery query);
 }

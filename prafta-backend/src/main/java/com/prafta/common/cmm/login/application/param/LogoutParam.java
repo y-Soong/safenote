@@ -14,14 +14,12 @@ public record LogoutParam(
 		
 		if(clientType == null)
 			throw ApiException.appendf(CommonErrorCode.COMMON_400_001,"\n필수값 누락 - clientType");
-		if(tokenInfo == null)
-			throw ApiException.appendf(CommonErrorCode.COMMON_400_001,"\n필수값 누락 - TokenInfo");
 		
         return new LogoutParam(
-    		tokenInfo.gv_cmpnyCd()
-            , tokenInfo.gv_userCd()
+    		tokenInfo != null ? tokenInfo.gv_cmpnyCd() : ""
+            , tokenInfo != null ? tokenInfo.gv_userCd() : "SYSTEM"
             , clientType
-            , tokenInfo.gv_deviceId()
+            , tokenInfo != null ? tokenInfo.gv_deviceId() : ""
         );
     }
 }

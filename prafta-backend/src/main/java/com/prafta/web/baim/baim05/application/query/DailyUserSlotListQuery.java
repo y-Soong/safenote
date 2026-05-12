@@ -9,7 +9,7 @@ public record DailyUserSlotListQuery(
 		, String slotType
 		, String slotStatus
 		, String useYn
-		, String currUserId
+		, String currUserNm
 		, String gvCmpnyCd
 		, String gvUserCd
 ){
@@ -23,7 +23,7 @@ public record DailyUserSlotListQuery(
 			, param.slotType()
 			, param.slotStatus()
 			, param.useYn()
-			, param.currUserId()
+			, param.currUserNm()
 			, param.gvCmpnyCd()
 			, param.gvUserCd()
 		);

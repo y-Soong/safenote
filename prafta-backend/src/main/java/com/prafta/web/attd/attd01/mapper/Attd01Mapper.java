@@ -1,10 +1,8 @@
 package com.prafta.web.attd.attd01.mapper;
 
 import java.util.List;
-import java.util.Map;
 
 import org.apache.ibatis.annotations.Mapper;
-import org.apache.ibatis.annotations.Param;
 
 import com.prafta.web.attd.attd01.application.command.SchInfoCommand;
 import com.prafta.web.attd.attd01.application.command.SchInfoHistCommand;
@@ -15,9 +13,11 @@ import com.prafta.web.attd.attd01.application.command.ShiftTypeCommand;
 import com.prafta.web.attd.attd01.application.query.SchCdQuery;
 import com.prafta.web.attd.attd01.application.query.SchInfoHistQuery;
 import com.prafta.web.attd.attd01.application.query.SchInfoListQuery;
+import com.prafta.web.attd.attd01.application.query.SchNoCountQuery;
 import com.prafta.web.attd.attd01.application.query.ShiftCdQuery;
 import com.prafta.web.attd.attd01.application.query.ShiftSchDetailQuery;
 import com.prafta.web.attd.attd01.application.query.ShiftSchInfoListQuery;
+import com.prafta.web.attd.attd01.application.query.ShiftSchNoCountQuery;
 import com.prafta.web.attd.attd01.result.SchHistResult;
 import com.prafta.web.attd.attd01.result.SchInfoResult;
 import com.prafta.web.attd.attd01.result.ShiftAssignInfoResult;
@@ -31,6 +31,8 @@ public interface Attd01Mapper {
 	
 	List<SchInfoResult> selectSchInfoList(SchInfoListQuery query);
 	
+	int selectSchNoCount(SchNoCountQuery query);
+	
 	String selectSchCd(SchCdQuery query);
 	
 	void updateSchInfo(SchInfoCommand command);
@@ -40,6 +42,8 @@ public interface Attd01Mapper {
 	void insertSchHistInfo(SchInfoHistCommand command);
 	
 	List<SchHistResult> selectSchHistList(SchInfoHistQuery query);
+	
+	int selectShiftSchNoCount(ShiftSchNoCountQuery query);
 	
 	String selectShiftCd(ShiftCdQuery query);
 	

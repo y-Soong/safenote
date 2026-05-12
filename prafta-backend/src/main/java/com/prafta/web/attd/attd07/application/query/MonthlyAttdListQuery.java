@@ -1,0 +1,31 @@
+package com.prafta.web.attd.attd07.application.query;
+
+import com.prafta.common.error.common.CommonErrorCode;
+import com.prafta.common.exception.ApiException;
+import com.prafta.web.attd.attd07.application.param.MonthlyAttdListParam;
+
+public record MonthlyAttdListQuery(
+      String workYm
+      , String siteCd
+      , String nodeCd
+      , String incSubNodeYn
+      , String userNm
+      , String gvCmpnyCd
+      , String gvAuthCd
+  ){
+      public static MonthlyAttdListQuery from(MonthlyAttdListParam param) {
+
+          if (param == null)
+              throw ApiException.appendf(CommonErrorCode.COMMON_400_001, "\n필수값 누락 - MonthlyAttdListParam");
+
+          return new MonthlyAttdListQuery(
+                param.workYm()
+              , param.siteCd()
+              , param.nodeCd()
+              , param.incSubNodeYn()
+              , param.userNm()
+              , param.gvCmpnyCd()
+              , param.gvAuthCd()
+          );
+      }
+  }

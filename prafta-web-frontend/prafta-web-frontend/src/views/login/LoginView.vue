@@ -256,9 +256,6 @@ const fnSubmitLogin = async () => {
         refreshToken,
       } = response.data;
 
-      console.log(response);
-      console.log(userId);
-
       sessionStorage.setItem("token", token);
       sessionStorage.setItem("gv_cmpnyCd", cmpnyCd);
       sessionStorage.setItem("gv_userCd", userCd);

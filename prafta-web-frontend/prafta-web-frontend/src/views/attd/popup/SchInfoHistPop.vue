@@ -38,14 +38,78 @@
             <table class="data-grid w-full text-sm text-left rtl:text-right">
               <thead>
                 <tr>
-                  <th>적용일시</th>
-                  <th>1근무시간</th>
-                  <th>1휴게시간</th>
-                  <th>2근무시간</th>
-                  <th>2휴게시간</th>
-                  <th>사용여부</th>
-                  <th>변경자</th>
-                  <th>변경일시</th>
+                  <ThSortable
+                    label="적용일시"
+                    col-key="applyDate"
+                    :sort-key="sortKey"
+                    :sort-order="sortOrder"
+                    :width="colWidths.applyDate"
+                    @sort="onSort"
+                    @update:width="onResize"
+                  />
+                  <ThSortable
+                    label="1근무시간"
+                    col-key="fstSchTime"
+                    :sort-key="sortKey"
+                    :sort-order="sortOrder"
+                    :width="colWidths.fstSchTime"
+                    @sort="onSort"
+                    @update:width="onResize"
+                  />
+                  <ThSortable
+                    label="1휴게시간"
+                    col-key="fstSchBrkMin"
+                    :sort-key="sortKey"
+                    :sort-order="sortOrder"
+                    :width="colWidths.fstSchBrkMin"
+                    @sort="onSort"
+                    @update:width="onResize"
+                  />
+                  <ThSortable
+                    label="2근무시간"
+                    col-key="secSchTime"
+                    :sort-key="sortKey"
+                    :sort-order="sortOrder"
+                    :width="colWidths.secSchTime"
+                    @sort="onSort"
+                    @update:width="onResize"
+                  />
+                  <ThSortable
+                    label="2휴게시간"
+                    col-key="secSchBrkMin"
+                    :sort-key="sortKey"
+                    :sort-order="sortOrder"
+                    :width="colWidths.secSchBrkMin"
+                    @sort="onSort"
+                    @update:width="onResize"
+                  />
+                  <ThSortable
+                    label="사용여부"
+                    col-key="useYn"
+                    :sort-key="sortKey"
+                    :sort-order="sortOrder"
+                    :width="colWidths.useYn"
+                    @sort="onSort"
+                    @update:width="onResize"
+                  />
+                  <ThSortable
+                    label="변경자"
+                    col-key="chgUserNm"
+                    :sort-key="sortKey"
+                    :sort-order="sortOrder"
+                    :width="colWidths.chgUserNm"
+                    @sort="onSort"
+                    @update:width="onResize"
+                  />
+                  <ThSortable
+                    label="변경일시"
+                    col-key="chgDt"
+                    :sort-key="sortKey"
+                    :sort-order="sortOrder"
+                    :width="colWidths.chgDt"
+                    @sort="onSort"
+                    @update:width="onResize"
+                  />
                 </tr>
               </thead>
               <tbody>
@@ -59,7 +123,7 @@
                   </tr>
                 </template>
                 <template v-else>
-                  <tr v-for="(item, idx) in schHistResultList" :key="idx">
+                  <tr v-for="(item, idx) in sortedData" :key="idx">
                     <td>{{ item.applyDate ?? "-" }}</td>
                     <td>{{ item.fstSchTime ?? "-" }}</td>
                     <td>{{ item.fstSchBrkMin ?? "-" }}</td>
@@ -93,6 +157,8 @@
 import { ref, getCurrentInstance, computed, onMounted } from "vue";
 import { useCenteredDraggable } from "@/composables/useCenteredDraggable";
 import axios from "@/api/axios";
+import ThSortable from "@/components/common/ThSortable.vue";
+import { useTableSort, useColumnResize } from "@/composables/useTableFeatures.js";
 
 // ================ Instance & Composables ================
 const { proxy } = getCurrentInstance();
@@ -122,6 +188,17 @@ const positionStyle = computed(() => {
 
 /** API 연동 시 schHistResultList에 데이터 할당 */
 const schHistResultList = ref([]);
+const { sortKey, sortOrder, sortedData, onSort } = useTableSort(schHistResultList);
+const { colWidths, onResize } = useColumnResize({
+  applyDate: 120,
+  fstSchTime: 110,
+  fstSchBrkMin: 100,
+  secSchTime: 110,
+  secSchBrkMin: 100,
+  useYn: 80,
+  chgUserNm: 100,
+  chgDt: 130,
+});
 
 // ================ Life Cycle Functions ================
 onMounted(() => {

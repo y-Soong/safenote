@@ -163,13 +163,13 @@ public class User01ServiceImpl implements User01Service{
         if(model.mblNo() != null && !model.mblNo().isBlank()) {
         	phoneNorm = Normalizers.normalizePhone(model.mblNo());
         	phoneEnc = (phoneNorm == null) ? null : aesGcmCrypto.encrypt(phoneNorm);
-        	phoneHmac = (phoneNorm == null) ? null : hmacSigner.hmacSha256Base64Url(phoneNorm + ":" + model.cmpnyCd());
+        	phoneHmac = (phoneNorm == null) ? null : hmacSigner.hmacSha256Base64Url(phoneNorm);
         }
         
         if(model.email() != null && !model.email().isBlank()) {
         	emailNorm = Normalizers.normalizeEmail(model.email());
         	emailEnc = (emailNorm == null) ? null : aesGcmCrypto.encrypt(emailNorm);
-        	emailHmac = (emailNorm == null) ? null : hmacSigner.hmacSha256Base64Url(emailNorm + ":" + model.cmpnyCd());
+        	emailHmac = (emailNorm == null) ? null : hmacSigner.hmacSha256Base64Url(emailNorm);
         }
         
         if(model.birthDt() != null && !model.birthDt().isBlank()) {

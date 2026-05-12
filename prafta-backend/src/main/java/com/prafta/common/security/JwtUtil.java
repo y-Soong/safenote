@@ -39,6 +39,7 @@ public class JwtUtil {
 //    private final Key key = Keys.hmacShaKeyFor(secret.getBytes());
 
     public String generateToken(UserResult userResult, String mblNo, String email) {
+    	
         return Jwts.builder()
         		.claim("gv_cmpnyCd", userResult.cmpnyCd())
         		.claim("gv_userCd", userResult.userCd())
@@ -131,7 +132,6 @@ public class JwtUtil {
     public TokenInfo getAllClaimsAsMap(String authorization) {    	
     	if (authorization != null && authorization.startsWith("Bearer ")) {
     		
-    		// "Bearer " ����
             String token = authorization.substring(7);
             Claims claims = null;
         	

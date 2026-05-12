@@ -7,7 +7,10 @@ import com.prafta.common.error.ApiErrorCode;
 public enum AttdErrorCode implements ApiErrorCode {
 
     // 규칙 예시: {MODULE}_{HTTP}_{SEQ}
-    ATTD_400_001(HttpStatus.BAD_REQUEST, "이미 사용중인 연차코드입니다.");
+	ATTD_400_001(HttpStatus.BAD_REQUEST, "이미 사용중인 근무코드입니다.")
+	, ATTD_400_002(HttpStatus.BAD_REQUEST, "이미 사용중인 교대근무 코드입니다.")
+    , ATTD_400_003(HttpStatus.BAD_REQUEST, "이미 사용중인 연차코드입니다.")
+    ;
 
     private final HttpStatus httpStatus;
     private final String message;

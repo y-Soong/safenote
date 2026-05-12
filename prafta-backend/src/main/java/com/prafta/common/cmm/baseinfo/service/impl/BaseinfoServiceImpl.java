@@ -8,6 +8,7 @@ import org.springframework.stereotype.Service;
 
 import com.prafta.common.cmm.baseinfo.application.command.MblUniqueCheckCommand;
 import com.prafta.common.cmm.baseinfo.application.command.SmsAuthNoCommand;
+import com.prafta.common.cmm.baseinfo.application.command.UserPasswordCommand;
 import com.prafta.common.cmm.baseinfo.application.param.AppMenuListParam;
 import com.prafta.common.cmm.baseinfo.application.param.BaseInfoListParam;
 import com.prafta.common.cmm.baseinfo.application.param.BaseInfoParam;
@@ -20,6 +21,8 @@ import com.prafta.common.cmm.baseinfo.application.param.SystInfoParam;
 import com.prafta.common.cmm.baseinfo.application.param.TermsDetailInfoParam;
 import com.prafta.common.cmm.baseinfo.application.param.UserIdDupleCheckParam;
 import com.prafta.common.cmm.baseinfo.application.param.UserIdInfoParam;
+import com.prafta.common.cmm.baseinfo.application.param.UserInfoListParam;
+import com.prafta.common.cmm.baseinfo.application.param.UserPasswordParam;
 import com.prafta.common.cmm.baseinfo.application.param.UserSmsAuthNoCheckParam;
 import com.prafta.common.cmm.baseinfo.application.param.UserSmsAuthNoParam;
 import com.prafta.common.cmm.baseinfo.application.param.WebMenuListParam;
@@ -35,6 +38,8 @@ import com.prafta.common.cmm.baseinfo.application.query.SystInfoListQuery;
 import com.prafta.common.cmm.baseinfo.application.query.SystInfoQuery;
 import com.prafta.common.cmm.baseinfo.application.query.TermsDetailInfoQuery;
 import com.prafta.common.cmm.baseinfo.application.query.UserIdDupleCheckQuery;
+import com.prafta.common.cmm.baseinfo.application.query.UserIdInfoQuery;
+import com.prafta.common.cmm.baseinfo.application.query.UserInfoListQuery;
 import com.prafta.common.cmm.baseinfo.application.query.UserSmsAuthNoCheckQuery;
 import com.prafta.common.cmm.baseinfo.application.query.WebMenuListQuery;
 import com.prafta.common.cmm.baseinfo.dto.response.AppMenuListResponse;
@@ -49,6 +54,7 @@ import com.prafta.common.cmm.baseinfo.dto.response.SystInfoResponse;
 import com.prafta.common.cmm.baseinfo.dto.response.TermsDetailInfoResponse;
 import com.prafta.common.cmm.baseinfo.dto.response.UserIdDupleCheckResponse;
 import com.prafta.common.cmm.baseinfo.dto.response.UserIdInfoResponse;
+import com.prafta.common.cmm.baseinfo.dto.response.UserInfoListResponse;
 import com.prafta.common.cmm.baseinfo.dto.response.WebMenuListResponse;
 import com.prafta.common.cmm.baseinfo.mapper.BaseinfoMapper;
 import com.prafta.common.cmm.baseinfo.result.AppMenuResult;
@@ -59,6 +65,8 @@ import com.prafta.common.cmm.baseinfo.result.SiteInfoResult;
 import com.prafta.common.cmm.baseinfo.result.SiteNodeInfoResult;
 import com.prafta.common.cmm.baseinfo.result.SystInfoResult;
 import com.prafta.common.cmm.baseinfo.result.TermsDetailInfoResult;
+import com.prafta.common.cmm.baseinfo.result.UserIdInfoResult;
+import com.prafta.common.cmm.baseinfo.result.UserInfoResult;
 import com.prafta.common.cmm.baseinfo.result.WebMenuResult;
 import com.prafta.common.cmm.baseinfo.service.BaseinfoService;
 import com.prafta.common.error.common.CommonErrorCode;
@@ -176,23 +184,15 @@ public class BaseinfoServiceImpl implements BaseinfoService{
 		
 		String phoneNorm = Normalizers.normalizePhone(param.mblNo().replaceAll("-", ""));
 		String phoneEnc = aesGcmCrypto.encrypt(phoneNorm);
-		String phoneHmac = hmacSigner.hmacSha256Base64Url(phoneNorm + ":" + param.cmpnyCd());
+		String phoneHmac = hmacSigner.hmacSha256Base64Url(phoneNorm);
 		String certNo = "";
 		
-//		if(
-//			param.dupChkYn() != null && param.dupChkYn() != "" && param.dupChkYn().equals("Y")
-//		) {
-//			int mblCnt = baseinfoMapper.selectMblUniqChk(MblUniqueCheckQuery.from(phoneHmac));
-//			
-//			if(mblCnt > 0) {
-//				throw new ApiException(CommonErrorCode.COMMON_400_001, "이미 등록된 휴대폰번호입니다.\n 확인 후 다시 시도해주세요.");
-//			}
-//		}
-		
-		int mblCnt = baseinfoMapper.selectMblUniqChk(MblUniqueCheckQuery.from(phoneHmac));
-		
-		if(mblCnt > 0) {
-			throw new ApiException(CommonErrorCode.COMMON_400_001, "이미 등록된 휴대폰번호입니다.\n 확인 후 다시 시도해주세요.");
+		if(param.dupChkYn() != null && param.dupChkYn().equals("Y")) {
+			int mblCnt = baseinfoMapper.selectMblUniqChk(MblUniqueCheckQuery.from(phoneHmac));
+			
+			if(mblCnt > 0) {
+				throw new ApiException(CommonErrorCode.COMMON_400_001, "이미 등록된 휴대폰번호입니다.\\n 확인 후 다시 시도해주세요.");
+			}
 		}
 		
 		SecureRandom random = new SecureRandom();
@@ -208,8 +208,7 @@ public class BaseinfoServiceImpl implements BaseinfoService{
 	public void userSmsAuthCheck(UserSmsAuthNoCheckParam param) {
 		
 		String phoneNorm = Normalizers.normalizePhone(param.mblNo().replaceAll("-", ""));
-		String phoneEnc = aesGcmCrypto.encrypt(phoneNorm);
-		String phoneHmac = hmacSigner.hmacSha256Base64Url(phoneNorm + ":" + param.cmpnyCd()); 
+		String phoneHmac = hmacSigner.hmacSha256Base64Url(phoneNorm); 
 		
 		String smsId = baseinfoMapper.selectCertNoSmsId(UserSmsAuthNoCheckQuery.from(param, phoneHmac));
 		
@@ -297,27 +296,41 @@ public class BaseinfoServiceImpl implements BaseinfoService{
 		return retDto;
 	}
 	
-	// 보류 ( 프로세스 개선 필요 )
+	public UserInfoListResponse selectUserInfoList(UserInfoListParam param) {
+
+		UserInfoListResponse response = null;
+		List<UserInfoResult> userInfoList = baseinfoMapper.selectUserInfoList(UserInfoListQuery.from(param));
+
+		if(userInfoList != null && userInfoList.size() > 0) {
+			response = UserInfoListResponse.builder()
+						.userInfoList(userInfoList)
+						.build();
+		}
+
+		return response;
+	}
+
 	public UserIdInfoResponse selectUserIdInfo(UserIdInfoParam param) {
-//		String phoneNorm = Normalizers.normalizePhone(param.mblNo());
-//		String phoneEnc = aesGcmCrypto.decrypt(phoneNorm);
-//		
-//		Map<String, Object> retMap = baseinfoMapper.selectUserIdInfo(UserIdInfoQuery.from(param, phoneEnc));
-//		
-//		if(retMap == null) {
-//			throw new ApiException(CommonErrorCode.COMMON_400_003);
-//		}
-//		return retMap;
-		return null;
+		
+		System.out.println(param.mblNo());
+		
+		String phoneNorm = Normalizers.normalizePhone(param.mblNo());
+		String phoneHmac = (phoneNorm == null) ? null : hmacSigner.hmacSha256Base64Url(phoneNorm);
+		
+		UserIdInfoResult userIdInfoResult = baseinfoMapper.selectUserIdInfo(UserIdInfoQuery.from(param, phoneHmac));
+		
+		if(userIdInfoResult == null) {
+			throw new ApiException(CommonErrorCode.COMMON_400_004);
+		}
+		return UserIdInfoResponse.builder().userIdInfoResult(userIdInfoResult).build();
 	}
 	
-//	public void updateUserPw(BaseinfoCmmReq dto) {
-		/* 암호화처리 */
-//		if(dto.getUserPw() != null) { dto.setUserPw(PasswordHashing.hashPassword(dto.getUserPw())); }
-//		if(dto.getUserPw() != null) { dto.setUserPw(passwordHasher.hash(dto.getUserPw())); }
-//		
-//		baseinfoMapper.updateUserPw(dto);
-//	}
+	public void updateUserPw(UserPasswordParam param) {
+		String userPwHash = null;
+		if(param.userPw() != null) { userPwHash = passwordHasher.hash(param.userPw()); }
+		
+		baseinfoMapper.updateUserPw(UserPasswordCommand.from(param, userPwHash));
+	}
 	
 	public TermsDetailInfoResponse selectTermsDetailInfo(TermsDetailInfoParam param) {
 		

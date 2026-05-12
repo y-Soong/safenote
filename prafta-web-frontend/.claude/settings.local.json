@@ -10,7 +10,20 @@
       "Bash(sed -i '/^\\\\t, String gv_userId\\\\r$/d' /c/PRAFTA/prafta-backend/src/main/java/com/prafta/common/dto/TokenInfo.java)",
       "Bash(sed -i '/^\\\\t\\\\t, claims\\\\.get\\(\"gv_userId\", String\\\\.class\\)\\\\r$/d' /c/PRAFTA/prafta-backend/src/main/java/com/prafta/common/dto/TokenInfo.java)",
       "Bash(node -e ':*)",
-      "Bash(xargs cat:*)"
+      "Bash(xargs cat:*)",
+      "Bash(grep -l \"tokenInfo == null\" \"c:\\\\PRAFTA\\\\prafta-backend\\\\src\\\\main\\\\java\"/**/*.java)",
+      "Bash(find \"c:\\\\PRAFTA\\\\prafta-backend\\\\src\\\\main\\\\java\" -name \"*.java\" -exec grep -l \"tokenInfo == null\" {} \\\\;)",
+      "Bash(python3)",
+      "Read(//c/Windows/**)",
+      "Bash(ls /c/Python*/python.exe)",
+      "Bash(python)",
+      "Bash(npm install *)",
+      "Bash(head -n 828 /c/PRAFTA/prafta-web-frontend/prafta-web-frontend/src/views/attd/popup/AttdDayDetailPop.vue)",
+      "Bash(tail -n +1451 /c/PRAFTA/prafta-web-frontend/prafta-web-frontend/src/views/attd/popup/AttdDayDetailPop.vue)",
+      "Read(//tmp/**)",
+      "Bash(awk 'NR<=154 || NR>=468' /c/PRAFTA/prafta-web-frontend/prafta-web-frontend/src/views/attd/popup/AttdDayDetailPop.vue)",
+      "Bash(npx eslint *)",
+      "Bash(npx vite *)"
     ]
   }
 }

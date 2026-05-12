@@ -51,31 +51,35 @@
 	</section>
 	<section name="java.lang.Class">
 		<item key="replaceBarOpen" value="true"/>
-		<item key="selection" value=""/>
+		<item key="selection" value="selectDailyUserSlotCnt"/>
 		<item key="wrap" value="true"/>
 		<item key="casesensitive" value="false"/>
 		<item key="wholeword" value="false"/>
 		<item key="incremental" value="false"/>
 		<item key="isRegEx" value="false"/>
 		<list key="findhistory">
-			<item value="UserListResult"/>
-			<item value="private "/>
-			<item value="selectShiftSchInfoList"/>
-			<item value="getShiftSchInfoList"/>
-			<item value="UserInfoMap"/>
-			<item value="UserNodeAdminCheckQuery"/>
-			<item value="UserInfoParam"/>
-			<item value="selectSiteNodeAdminCandidateLists"/>
-			<item value="UserInfoResult"/>
-			<item value="selectUserNodeAdminCheck"/>
-			<item value="userNodeAdminCheck"/>
-			<item value="selectSiteNodeList"/>
-			<item value="scheduleWithdrawal"/>
-			<item value="selectUserSiteInfo"/>
-			<item value="UserInfoCommand"/>
+			<item value="selectDailyAttdDetailHistory"/>
+			<item value="selectMonthlyAttdReqIdList"/>
+			<item value="dailyAttdDetailHistoryResultList"/>
+			<item value="MonthlyAttdReqResult"/>
+			<item value="selectDailyAttdDetails"/>
+			<item value="MonthlyAttdReqIdListResult"/>
+			<item value="updateUserAttdInfos"/>
+			<item value="proccess"/>
+			<item value="selectMonthlyAttdList"/>
+			<item value="insertDailyAttdDetailDeleteHist"/>
+			<item value="insertUserAttdInfos"/>
+			<item value="nodeCd"/>
+			<item value="AttdRecordCommand"/>
+			<item value="private String "/>
+			<item value="subDeptYn"/>
 		</list>
 		<list key="replacehistory">
 			<item value=", "/>
+			<item value="incSubNodeYn"/>
+			<item value="#{siteCd}"/>
+			<item value="#{gvCmpnyCd}"/>
+			<item value="leaderYn"/>
 			<item value="siteAdminCd"/>
 			<item value="SITE_ADMIN_CD"/>
 			<item value="MGMT_USER_CD"/>
@@ -86,10 +90,6 @@
 			<item value=", String "/>
 			<item value="gvUserId"/>
 			<item value="gvCmpnyCd"/>
-			<item value="private String "/>
-			<item value=","/>
-			<item value="private String"/>
-			<item value="i"/>
 		</list>
 	</section>
 </section>

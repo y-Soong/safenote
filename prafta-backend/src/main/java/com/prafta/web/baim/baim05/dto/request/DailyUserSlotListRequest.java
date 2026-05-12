@@ -12,5 +12,5 @@ public class DailyUserSlotListRequest{
 	private String slotType;
 	private String slotStatus;
 	private String useYn;
-	private String currUserId;
+	private String currUserNm;
 }

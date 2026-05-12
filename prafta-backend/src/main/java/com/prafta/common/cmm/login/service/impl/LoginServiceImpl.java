@@ -84,10 +84,10 @@ public class LoginServiceImpl implements LoginService{
 		            throw ApiException.appendf(LoginErrorCode.LOGIN_400_003, "\n잠금 해제까지 %d분 남았습니다.", remainMinutes);
 		        }
 		    }
-		    
-		    // 잠금 해제 시각이 지났남, 계정 상태 업데이트
-		    loginMapper.userPwdUnLock(UserPwdUnlockCommand.from(userResult));
 		}
+		
+		// 잠금 해제 시각이 지났남, 계정 상태 업데이트
+	    loginMapper.userPwdUnLock(UserPwdUnlockCommand.from(userResult));
 		
 		String hashedPw = (String) userResult.userPw();
 		
@@ -156,8 +156,8 @@ public class LoginServiceImpl implements LoginService{
 
         // 4) HMAC 인덱스 (equals/중복/계정찾기)
         // 회사 단위 유니크면 cmpnyCd 섞는 걸 추천
-        String phoneHmac = (phoneNorm == null) ? null : hmacSigner.hmacSha256Base64Url(phoneNorm + ":" + param.cmpnyCd());
-        String emailHmac = (emailNorm == null) ? null : hmacSigner.hmacSha256Base64Url(emailNorm + ":" + param.cmpnyCd());
+        String phoneHmac = (phoneNorm == null) ? null : hmacSigner.hmacSha256Base64Url(phoneNorm);
+        String emailHmac = (emailNorm == null) ? null : hmacSigner.hmacSha256Base64Url(emailNorm);
 
         // 5) 파생값
         String phoneLast4 = Normalizers.last4(phoneNorm);

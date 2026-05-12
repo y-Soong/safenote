@@ -14,7 +14,7 @@
 	    , A.INSERT_NO							AS insertNo
 	    , FNC_CMM_INFO_SRCH(
 			A.CMPNY_CD
-	        , 'USER'
+	        , 'USER_NM'
 	        , A.INSERT_NO
 	        , null
 		) 										AS insertNm
@@ -43,7 +43,7 @@
 	    , A.INSERT_NO							AS insertNo
 		, FNC_CMM_INFO_SRCH(
 			A.CMPNY_CD
-			, 'USER'
+			, 'USER_NM'
 			, A.INSERT_NO
 			, null
 		) 										AS insertNm

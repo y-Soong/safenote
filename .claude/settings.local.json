@@ -1,0 +1,11 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(mkdir -p /c/PRAFTA/prafta-backend/src/main/java/com/prafta/web/attd/attd06/application/command /c/PRAFTA/prafta-backend/src/main/java/com/prafta/web/attd/attd06/application/model /c/PRAFTA/prafta-backend/src/main/java/com/prafta/web/attd/attd06/application/param /c/PRAFTA/prafta-backend/src/main/java/com/prafta/web/attd/attd06/application/query)",
+      "Bash(touch /c/PRAFTA/prafta-backend/src/main/java/com/prafta/web/attd/attd06/application/command/.gitkeep /c/PRAFTA/prafta-backend/src/main/java/com/prafta/web/attd/attd06/application/model/.gitkeep /c/PRAFTA/prafta-backend/src/main/java/com/prafta/web/attd/attd06/application/param/.gitkeep /c/PRAFTA/prafta-backend/src/main/java/com/prafta/web/attd/attd06/application/query/.gitkeep)",
+      "Bash(claude mcp *)",
+      "mcp__claude_ai_Notion__notion-search",
+      "mcp__claude_ai_Notion__notion-fetch"
+    ]
+  }
+}

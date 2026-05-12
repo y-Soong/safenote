@@ -45,13 +45,37 @@
                 <th class="event_cell" style="text-align: center; width: 2%">
                   No
                 </th>
-                <th style="width: 25%">사용자ID</th>
-                <th style="width: 25%">사용자명</th>
-                <th>전화번호</th>
+                <ThSortable
+                  label="사용자ID"
+                  col-key="userId"
+                  :sort-key="userSortKey"
+                  :sort-order="userSortOrder"
+                  :width="userColWidths.userId"
+                  @sort="userOnSort"
+                  @update:width="userOnResize"
+                />
+                <ThSortable
+                  label="사용자명"
+                  col-key="userNm"
+                  :sort-key="userSortKey"
+                  :sort-order="userSortOrder"
+                  :width="userColWidths.userNm"
+                  @sort="userOnSort"
+                  @update:width="userOnResize"
+                />
+                <ThSortable
+                  label="전화번호"
+                  col-key="mblNo"
+                  :sort-key="userSortKey"
+                  :sort-order="userSortOrder"
+                  :width="userColWidths.mblNo"
+                  @sort="userOnSort"
+                  @update:width="userOnResize"
+                />
               </tr>
             </thead>
             <tbody>
-              <tr v-for="(user, idx) in userActList" :key="user.id">
+              <tr v-for="(user, idx) in userSortedData" :key="user.id">
                 <td style="text-align: center">{{ idx + 1 }}</td>
                 <td @dblclick="fnSiteInfoSearch(user)">{{ user.userId }}</td>
                 <td @dblclick="fnSiteInfoSearch(user)">{{ user.userNm }}</td>
@@ -96,10 +120,42 @@
                     @click="fnHeadChk('headChkMain')"
                   />
                 </th>
-                <th style="width: 15%">사업장코드</th>
-                <th style="width: 15%">사업장명</th>
-                <th>주소</th>
-                <th style="width: 20%">전화번호</th>
+                <ThSortable
+                  label="사업장코드"
+                  col-key="siteNo"
+                  :sort-key="unallocSortKey"
+                  :sort-order="unallocSortOrder"
+                  :width="unallocColWidths.siteNo"
+                  @sort="unallocOnSort"
+                  @update:width="unallocOnResize"
+                />
+                <ThSortable
+                  label="사업장명"
+                  col-key="siteNm"
+                  :sort-key="unallocSortKey"
+                  :sort-order="unallocSortOrder"
+                  :width="unallocColWidths.siteNm"
+                  @sort="unallocOnSort"
+                  @update:width="unallocOnResize"
+                />
+                <ThSortable
+                  label="주소"
+                  col-key="addr"
+                  :sort-key="unallocSortKey"
+                  :sort-order="unallocSortOrder"
+                  :width="unallocColWidths.addr"
+                  @sort="unallocOnSort"
+                  @update:width="unallocOnResize"
+                />
+                <ThSortable
+                  label="전화번호"
+                  col-key="telNo"
+                  :sort-key="unallocSortKey"
+                  :sort-order="unallocSortOrder"
+                  :width="unallocColWidths.telNo"
+                  @sort="unallocOnSort"
+                  @update:width="unallocOnResize"
+                />
               </tr>
             </thead>
             <tbody>
@@ -111,7 +167,7 @@
                 </tr>
               </template>
               <template v-else>
-                <tr v-for="(site, idx) in siteUnallocList" :key="site.siteCd">
+                <tr v-for="(site, idx) in unallocSortedData" :key="site.siteCd">
                   <td style="text-align: center">{{ idx + 1 }}</td>
                   <td>
                     <input type="checkbox" v-model="site.chk" />
@@ -181,10 +237,42 @@
                     @click="fnHeadChk('headChkSub')"
                   />
                 </th>
-                <th style="width: 15%">사업장코드</th>
-                <th style="width: 15%">사업장명</th>
-                <th>주소</th>
-                <th style="width: 20%">전화번호</th>
+                <ThSortable
+                  label="사업장코드"
+                  col-key="siteNo"
+                  :sort-key="allocSortKey"
+                  :sort-order="allocSortOrder"
+                  :width="allocColWidths.siteNo"
+                  @sort="allocOnSort"
+                  @update:width="allocOnResize"
+                />
+                <ThSortable
+                  label="사업장명"
+                  col-key="siteNm"
+                  :sort-key="allocSortKey"
+                  :sort-order="allocSortOrder"
+                  :width="allocColWidths.siteNm"
+                  @sort="allocOnSort"
+                  @update:width="allocOnResize"
+                />
+                <ThSortable
+                  label="주소"
+                  col-key="addr"
+                  :sort-key="allocSortKey"
+                  :sort-order="allocSortOrder"
+                  :width="allocColWidths.addr"
+                  @sort="allocOnSort"
+                  @update:width="allocOnResize"
+                />
+                <ThSortable
+                  label="전화번호"
+                  col-key="telNo"
+                  :sort-key="allocSortKey"
+                  :sort-order="allocSortOrder"
+                  :width="allocColWidths.telNo"
+                  @sort="allocOnSort"
+                  @update:width="allocOnResize"
+                />
               </tr>
             </thead>
             <tbody>
@@ -196,7 +284,7 @@
                 </tr>
               </template>
               <template v-else>
-                <tr v-for="(site, idx) in siteAllocList" :key="site.id">
+                <tr v-for="(site, idx) in allocSortedData" :key="site.id">
                   <td style="text-align: center">{{ idx + 1 }}</td>
                   <td>
                     <input
@@ -231,6 +319,8 @@ import {
 import axios from '@/api/axios';
 import ViewHeader from '@/components/common/ViewHeader.vue';
 import { getMessage, MSG } from '@/messages';
+import ThSortable from "@/components/common/ThSortable.vue";
+import { useTableSort, useColumnResize } from "@/composables/useTableFeatures.js";
 
 // =========================== Define ===========================
 defineOptions({ name: 'User_03' });
@@ -244,6 +334,12 @@ const userActList = ref([]);
 const siteInfoList = ref([]);
 const siteUnallocList = ref([]);
 const siteAllocList = ref([]);
+const { sortKey: userSortKey, sortOrder: userSortOrder, sortedData: userSortedData, onSort: userOnSort } = useTableSort(userActList);
+const { colWidths: userColWidths, onResize: userOnResize } = useColumnResize({ userId: 100, userNm: 100, mblNo: 120 });
+const { sortKey: unallocSortKey, sortOrder: unallocSortOrder, sortedData: unallocSortedData, onSort: unallocOnSort } = useTableSort(siteUnallocList);
+const { colWidths: unallocColWidths, onResize: unallocOnResize } = useColumnResize({ siteNo: 110, siteNm: 120, addr: 200, telNo: 130 });
+const { sortKey: allocSortKey, sortOrder: allocSortOrder, sortedData: allocSortedData, onSort: allocOnSort } = useTableSort(siteAllocList);
+const { colWidths: allocColWidths, onResize: allocOnResize } = useColumnResize({ siteNo: 110, siteNm: 120, addr: 200, telNo: 130 });
 const systCodeArr = ref({});
 const localButtons = ref({ ...props.buttons });
 const userId = ref('');

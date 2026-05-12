@@ -71,14 +71,70 @@
                     @click="fnHeadChk"
                   />
                 </th>
-                <th class="event_cell" style="width: 10%">사업장번호</th>
-                <th class="event_cell" style="width: 10%">사업장명</th>
-                <th style="width: 20%">주소</th>
-                <th>상세주소</th>
-                <th class="editableCell" style="width: 8%">GPS허용용범위</th>
+                <ThSortable
+                  label="사업장번호"
+                  col-key="siteNo"
+                  :sort-key="sortKey"
+                  :sort-order="sortOrder"
+                  :width="colWidths.siteNo"
+                  @sort="onSort"
+                  @update:width="onResize"
+                />
+                <ThSortable
+                  label="사업장명"
+                  col-key="siteNm"
+                  :sort-key="sortKey"
+                  :sort-order="sortOrder"
+                  :width="colWidths.siteNm"
+                  @sort="onSort"
+                  @update:width="onResize"
+                />
+                <ThSortable
+                  label="주소"
+                  col-key="addr1"
+                  :sort-key="sortKey"
+                  :sort-order="sortOrder"
+                  :width="colWidths.addr1"
+                  @sort="onSort"
+                  @update:width="onResize"
+                />
+                <ThSortable
+                  label="상세주소"
+                  col-key="addr2"
+                  :sort-key="sortKey"
+                  :sort-order="sortOrder"
+                  :width="colWidths.addr2"
+                  @sort="onSort"
+                  @update:width="onResize"
+                />
+                <ThSortable
+                  label="GPS허용범위"
+                  col-key="gpsRange"
+                  :sort-key="sortKey"
+                  :sort-order="sortOrder"
+                  :width="colWidths.gpsRange"
+                  @sort="onSort"
+                  @update:width="onResize"
+                />
                 <th class="editableCell" style="width: 8%">사용여부</th>
-                <th style="width: 8%">사업개시일</th>
-                <th style="width: 8%">사업종료일</th>
+                <ThSortable
+                  label="사업개시일"
+                  col-key="strDate"
+                  :sort-key="sortKey"
+                  :sort-order="sortOrder"
+                  :width="colWidths.strDate"
+                  @sort="onSort"
+                  @update:width="onResize"
+                />
+                <ThSortable
+                  label="사업종료일"
+                  col-key="endDate"
+                  :sort-key="sortKey"
+                  :sort-order="sortOrder"
+                  :width="colWidths.endDate"
+                  @sort="onSort"
+                  @update:width="onResize"
+                />
               </tr>
             </thead>
             <tbody>
@@ -91,7 +147,7 @@
               </template>
               <template v-else>
                 <tr
-                  v-for="(site, idx) in siteInfoList"
+                  v-for="(site, idx) in sortedData"
                   :key="site.id"
                   class="row-clickable"
                   @dblclick="fnSiteInfoPopOpen(site)"
@@ -163,6 +219,11 @@ import { getMessage, MSG } from "@/messages";
 import BaseSelect from "@/components/common/BaseSelect.vue";
 import SiteInfoPop from "./popup/SiteInfoPop.vue";
 import CalendarSrch from "@/components/common/CalendarSrch.vue";
+import ThSortable from "@/components/common/ThSortable.vue";
+import {
+  useTableSort,
+  useColumnResize,
+} from "@/composables/useTableFeatures.js";
 
 // ================ Options ================
 defineOptions({ name: "Baim_01" });
@@ -180,6 +241,16 @@ const { open: openPop } = useModal();
 // ================ Refs (Variables) ================
 const localButtons = ref({ ...props.buttons });
 const siteInfoList = ref([]);
+const { sortKey, sortOrder, sortedData, onSort } = useTableSort(siteInfoList);
+const { colWidths, onResize } = useColumnResize({
+  siteNo: 110,
+  siteNm: 120,
+  addr1: 200,
+  addr2: 160,
+  gpsRange: 110,
+  strDate: 110,
+  endDate: 110,
+});
 const systCodeArr = ref({});
 
 // 조회조건 변수
@@ -201,7 +272,13 @@ useFieldWatcher(
 );
 
 // ================ Life Cycle Functions ================
+const fnInit = () => {
+  siteNo.value = sessionStorage.getItem("gv_siteNo") ?? "";
+  siteNm.value = sessionStorage.getItem("gv_siteNm") ?? "";
+};
+
 onMounted(async () => {
+  fnInit();
   fnButtonControll();
   await fnGetSystinfoList();
   await fnSearch();

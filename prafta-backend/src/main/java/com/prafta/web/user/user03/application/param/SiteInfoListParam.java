@@ -14,7 +14,7 @@ public record SiteInfoListParam(
 		if(request == null)
 			throw ApiException.appendf(CommonErrorCode.COMMON_400_001,"\n필수값 누락 - SiteInfoListRequest");
 		if(tokenInfo == null)
-			throw ApiException.appendf(CommonErrorCode.COMMON_400_001,"\n필수값 누락 - TokenInfo");
+			throw ApiException.appendf(CommonErrorCode.COMMON_400_003,"\n필수값 누락 - TokenInfo");
 		
 		return new SiteInfoListParam(
 			request.getUserCd()

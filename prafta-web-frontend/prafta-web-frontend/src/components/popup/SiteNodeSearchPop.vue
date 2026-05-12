@@ -66,11 +66,51 @@
             <table class="data-grid">
               <thead>
                 <tr>
-                  <th>부서번호</th>
-                  <th>부서명</th>
-                  <th>부서타입</th>
-                  <th>상위부서명</th>
-                  <th>자체근태승인여부</th>
+                  <ThSortable
+                    label="부서번호"
+                    col-key="nodeCd"
+                    :sort-key="sortKey"
+                    :sort-order="sortOrder"
+                    :width="colWidths.nodeCd"
+                    @sort="onSort"
+                    @update:width="onResize"
+                  />
+                  <ThSortable
+                    label="부서명"
+                    col-key="nodeNm"
+                    :sort-key="sortKey"
+                    :sort-order="sortOrder"
+                    :width="colWidths.nodeNm"
+                    @sort="onSort"
+                    @update:width="onResize"
+                  />
+                  <ThSortable
+                    label="부서타입"
+                    col-key="nodeType"
+                    :sort-key="sortKey"
+                    :sort-order="sortOrder"
+                    :width="colWidths.nodeType"
+                    @sort="onSort"
+                    @update:width="onResize"
+                  />
+                  <ThSortable
+                    label="상위부서명"
+                    col-key="parentNodeNm"
+                    :sort-key="sortKey"
+                    :sort-order="sortOrder"
+                    :width="colWidths.parentNodeNm"
+                    @sort="onSort"
+                    @update:width="onResize"
+                  />
+                  <ThSortable
+                    label="자체근태승인여부"
+                    col-key="selfAttdApprvYn"
+                    :sort-key="sortKey"
+                    :sort-order="sortOrder"
+                    :width="colWidths.selfAttdApprvYn"
+                    @sort="onSort"
+                    @update:width="onResize"
+                  />
                 </tr>
               </thead>
               <tbody>
@@ -83,7 +123,7 @@
                 </template>
                 <template v-else>
                   <tr
-                    v-for="node in nodeList"
+                    v-for="node in sortedData"
                     :key="node.nodeCd"
                     @dblclick="fnSelectRow(node.nodeCd, node.nodeNm)"
                   >
@@ -128,6 +168,11 @@ import {
 import { useCenteredDraggable } from "@/composables/useCenteredDraggable";
 import BaseSelect from "@/components/common/BaseSelect.vue";
 import axios from "@/api/axios";
+import ThSortable from "@/components/common/ThSortable.vue";
+import {
+  useTableSort,
+  useColumnResize,
+} from "@/composables/useTableFeatures.js";
 
 const { proxy } = getCurrentInstance();
 
@@ -144,6 +189,14 @@ const props = defineProps({
 const emit = defineEmits(["select", "close"]);
 const modalRef = ref(null);
 const nodeList = ref([]);
+const { sortKey, sortOrder, sortedData, onSort } = useTableSort(nodeList);
+const { colWidths, onResize } = useColumnResize({
+  nodeCd: 110,
+  nodeNm: 140,
+  nodeType: 100,
+  parentNodeNm: 130,
+  selfAttdApprvYn: 120,
+});
 const baseCodeArr = ref([]);
 
 const nodeCd = ref(props.nodeCd_p || "");

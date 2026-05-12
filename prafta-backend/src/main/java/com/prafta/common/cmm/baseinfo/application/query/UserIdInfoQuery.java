@@ -6,18 +6,18 @@ import com.prafta.common.exception.ApiException;
 
 public record UserIdInfoQuery(
 	String userNm
-	, String mblNoEnc
+	, String mblNoHmac
 ) {
-	public static UserIdInfoQuery from(UserIdInfoParam param, String mblNoEnc) {
+	public static UserIdInfoQuery from(UserIdInfoParam param, String mblNoHmac) {
 		
 		if(param == null)
 			throw ApiException.appendf(CommonErrorCode.COMMON_400_001,"\n필수값 누락 - UserIdInfoParam");
-		if(mblNoEnc == null)
+		if(mblNoHmac == null)
 			throw ApiException.appendf(CommonErrorCode.COMMON_400_001,"\n필수값 누락 - mblNoEnc");
 		
 		return new UserIdInfoQuery(
 			param.userNm()
-			, mblNoEnc
+			, mblNoHmac
 		); 
 	}
 }

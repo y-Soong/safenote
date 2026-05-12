@@ -14,7 +14,7 @@ public record CompCmmCodeDListParam(
 			if(request == null)
 				throw ApiException.appendf(CommonErrorCode.COMMON_400_001,"\n필수값 누락 - CompCmmCodeMListRequest");
 			if(tokenInfo == null)
-				throw ApiException.appendf(CommonErrorCode.COMMON_400_001,"\n필수값 누락 - TokenInfo");
+				throw ApiException.appendf(CommonErrorCode.COMMON_400_003,"\n필수값 누락 - TokenInfo");
 			
 			return new CompCmmCodeDListParam(
 				request.getCodeCd()

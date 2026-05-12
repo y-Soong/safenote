@@ -48,7 +48,7 @@
           <div class="form-section">
             <p class="section-desc">교대 근무에 사용할 패턴을 정의합니다.</p>
             <div class="form-row">
-              <label>교대 패턴 수</label>
+              <label>패턴 수</label>
               <select
                 v-model.number="patternCount"
                 class="select-pattern-count"
@@ -430,7 +430,7 @@ const fnShiftDetail = async () => {
       },
     });
     if (response.status === 200) {
-      console.log(response.data)
+      console.log(response.data);
       bindDetailToForm(response.data);
     }
   } catch (err) {

@@ -71,7 +71,7 @@
 	        )
 	WHERE A.ACCOUNT_STATUS != '03'
 	  <if test="userNm != null and userNm != ''">
-	  	AND A.USER_NM = #{userNm}
+	  	AND A.USER_NM LIKE CONCAT('%', #{userNm}, '%')
 	  </if>
 	  <if test='"N".equals(incSubNodeYn)'>
 	  	AND A.NODE_CD = #{nodeCd}
@@ -81,11 +81,11 @@
     <select id="selectDayList" parameterType="com.prafta.web.attd.attd05.application.query.UserWorkPlansQuery" resultType="com.prafta.web.attd.attd05.result.DayResult">
     /* Attd05Mapper.selectDayList */
     WITH RECURSIVE date_range AS (
-	    SELECT STR_TO_DATE(CONCAT(#{workYm}, '01'), '%Y%m%d') AS dt
+	    SELECT STR_TO_DATE(CONCAT(REPLACE(#{workYm}, '-', ''), '01'), '%Y%m%d') AS dt
 	    UNION ALL
 	    SELECT DATE_ADD(dt, INTERVAL 1 DAY)
 	    FROM date_range
-	    WHERE DATE_ADD(dt, INTERVAL 1 DAY) <![CDATA[ <= ]]> LAST_DAY(STR_TO_DATE(CONCAT(#{workYm}, '01'), '%Y%m%d'))
+	    WHERE DATE_ADD(dt, INTERVAL 1 DAY) <![CDATA[ <= ]]> LAST_DAY(STR_TO_DATE(CONCAT(REPLACE(#{workYm}, '-', ''), '01'), '%Y%m%d'))
 	)
 	SELECT
 	    DATE_FORMAT(d.dt, '%Y%m%d')                             AS workYmd
@@ -128,5 +128,86 @@
 	FROM TB_USER_WORK_PLAN A
 	WHERE A.CMPNY_CD = #{gvCmpnyCd}
 	  AND A.SITE_CD = #{siteCd}
-    </select>    
+    </select>
+    
+    <select id="selectSchTypeList" parameterType="com.prafta.web.attd.attd05.application.query.SchListQuery" resultType="com.prafta.web.attd.attd05.result.SchTypeResult">
+    /* Attd05Mapper.selectSchList */
+    SELECT
+		A.CMPNY_CD		AS cmpnyCd
+	    , A.SITE_CD		AS siteCd
+	    , A.SCH_CD		AS schCd
+	    , A.SCH_NO		AS schNo
+	    , CASE
+			WHEN SCH_TYPE = '01'
+				THEN CONCAT(
+					SUBSTRING(A.FST_SCH_STR_TIME, 1, 2), ':'
+                    , SUBSTRING(A.FST_SCH_STR_TIME, 3, 2), '~'
+                    , SUBSTRING(A.FST_SCH_END_TIME, 1, 2), ':'
+                    , SUBSTRING(A.FST_SCH_END_TIME, 3, 2))
+			ELSE 
+				CONCAT(
+	                SUBSTRING(A.FST_SCH_STR_TIME, 1, 2), ':'
+                    , SUBSTRING(A.FST_SCH_STR_TIME, 3, 2), '~'
+                    , SUBSTRING(A.FST_SCH_END_TIME, 1, 2), ':'
+                    , SUBSTRING(A.FST_SCH_END_TIME, 3, 2), '\n'
+                    , SUBSTRING(A.SEC_SCH_STR_TIME, 1, 2), ':'
+                    , SUBSTRING(A.SEC_SCH_STR_TIME, 3, 2), '~'
+                    , SUBSTRING(A.SEC_SCH_END_TIME, 1, 2), ':'
+                    , SUBSTRING(A.SEC_SCH_END_TIME, 3, 2)
+	            )
+		END schNm
+	FROM TB_SCH_MGMT A
+	WHERE A.CMPNY_CD = #{gvCmpnyCd}
+	  AND A.SITE_CD = #{siteCd}
+    </select>
+    
+    <select id="selectLeaveTypeList" parameterType="com.prafta.web.attd.attd05.application.query.LeaveTypeListQuery" resultType="com.prafta.web.attd.attd05.result.LeaveTypeResult">
+    /* Attd05Mapper.selectLeaveTypeList */
+    SELECT 
+		A.CMPNY_CD		AS cmpnoyCd
+	    , A.LEAVE_CD	AS leaveCd
+	    , A.LEAVE_NO	AS leaveNo
+	    , A.LEAVE_NM	AS leaveNm
+	FROM TB_LEAVE_TYPE_MGMT A
+	WHERE A.CMPNY_CD = #{gvCmpnyCd}
+    </select>
+    
+    <update id="saveUserWorkPlans" parameterType="com.prafta.web.attd.attd05.application.command.SchTypeCommand">
+    /* Attd05Mapper.saveUserWorkPlans */
+	INSERT INTO TB_USER_WORK_PLAN (
+	    CMPNY_CD
+	    , SITE_CD
+	    , USER_CD
+	    , WORK_YMD
+	    , WORK_PLAN_CD
+	    , INSERT_NO
+	    , INSERT_DATE
+	    , UPDATE_NO
+	    , UPDATE_DATE
+	) VALUES (
+	    #{gvCmpnyCd}
+	    , #{siteCd}
+	    , #{userCd}
+	    , #{workYmd}
+	    , #{workPlanCd}
+	    , #{gvUserCd}
+	    , NOW()
+	    , #{gvUserCd}
+	    , NOW()
+	) AS NEW
+	ON DUPLICATE KEY UPDATE
+		WORK_PLAN_CD	= NEW.WORK_PLAN_CD
+	    , UPDATE_NO		= NEW.UPDATE_NO
+	    , UPDATE_DATE	= NOW()
+    </update>
+    
+    <delete id="deleteUserWorkPlans" parameterType="com.prafta.web.attd.attd05.application.command.SchTypeDeleCommand">
+    /* Attd05Mapper.deleteUserWorkPlans */
+    DELETE FROM TB_USER_WORK_PLAN
+    WHERE CMPNY_CD = #{gvCmpnyCd}
+      AND SITE_CD = #{siteCd}
+      AND USER_CD = #{userCd}
+      AND WORK_YMD LIKE CONCAT(replace(#{workYm},'-', ''), '%')
+    
+	</delete>
 </mapper>

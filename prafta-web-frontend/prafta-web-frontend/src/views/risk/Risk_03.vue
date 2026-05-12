@@ -126,14 +126,78 @@
                     @click="fnHeadChk"
                   />
                 </th> -->
-                <th class="editableCell" style="width: 10%">위험구분</th>
-                <th class="editableCell" style="width: 10%">위험분류</th>
-                <th class="editableCell" style="width: 10%">평가요청일</th>
-                <th class="editableCell" style="width: 10%">유해요인명</th>
-                <th class="editableCell" style="width: 10%">평가요청자</th>
-                <th class="editableCell" style="width: 10%">진행상태</th>
-                <th class="editableCell" style="width: 10%">유해요인등급</th>
-                <th class="editableCell">유해요인설명</th>
+                <ThSortable
+                  label="위험구분"
+                  col-key="processNm"
+                  :sort-key="sortKey"
+                  :sort-order="sortOrder"
+                  :width="colWidths.processNm"
+                  @sort="onSort"
+                  @update:width="onResize"
+                />
+                <ThSortable
+                  label="위험분류"
+                  col-key="riskTypeNm"
+                  :sort-key="sortKey"
+                  :sort-order="sortOrder"
+                  :width="colWidths.riskTypeNm"
+                  @sort="onSort"
+                  @update:width="onResize"
+                />
+                <ThSortable
+                  label="평가요청일"
+                  col-key="initAssessDate"
+                  :sort-key="sortKey"
+                  :sort-order="sortOrder"
+                  :width="colWidths.initAssessDate"
+                  @sort="onSort"
+                  @update:width="onResize"
+                />
+                <ThSortable
+                  label="유해요인명"
+                  col-key="hazardNm"
+                  :sort-key="sortKey"
+                  :sort-order="sortOrder"
+                  :width="colWidths.hazardNm"
+                  @sort="onSort"
+                  @update:width="onResize"
+                />
+                <ThSortable
+                  label="평가요청자"
+                  col-key="initAssessorNm"
+                  :sort-key="sortKey"
+                  :sort-order="sortOrder"
+                  :width="colWidths.initAssessorNm"
+                  @sort="onSort"
+                  @update:width="onResize"
+                />
+                <ThSortable
+                  label="진행상태"
+                  col-key="assessmentStatusNm"
+                  :sort-key="sortKey"
+                  :sort-order="sortOrder"
+                  :width="colWidths.assessmentStatusNm"
+                  @sort="onSort"
+                  @update:width="onResize"
+                />
+                <ThSortable
+                  label="유해요인등급"
+                  col-key="initRiskLv"
+                  :sort-key="sortKey"
+                  :sort-order="sortOrder"
+                  :width="colWidths.initRiskLv"
+                  @sort="onSort"
+                  @update:width="onResize"
+                />
+                <ThSortable
+                  label="유해요인설명"
+                  col-key="initDesc"
+                  :sort-key="sortKey"
+                  :sort-order="sortOrder"
+                  :width="colWidths.initDesc"
+                  @sort="onSort"
+                  @update:width="onResize"
+                />
               </tr>
             </thead>
             <tbody>
@@ -151,7 +215,7 @@
               </template>
               <template v-else>
                 <tr
-                  v-for="(risk, idx) in riskAssessmentResultList"
+                  v-for="(risk, idx) in sortedData"
                   :key="risk.assessmentCd"
                   @dblclick="fnOpenRiskAssessInfo(risk)"
                   style="cursor: pointer"
@@ -209,6 +273,8 @@ import ViewHeader from "@/components/common/ViewHeader.vue";
 import search_icon from "@/assets/img/search_icon.png";
 import SiteSearchPop from "@/components/popup/SiteSearchPop.vue";
 import RiskAssessInfo from "./popup/RiskAssessInfo.vue";
+import ThSortable from "@/components/common/ThSortable.vue";
+import { useTableSort, useColumnResize } from "@/composables/useTableFeatures.js";
 
 defineOptions({ name: "Risk_03" });
 const props = defineProps({
@@ -219,8 +285,19 @@ const props = defineProps({
 const localButtons = ref({ ...props.buttons });
 const { open: openPop } = useModal();
 
-// const userStore = useUserStore();
+
 const riskAssessmentResultList = ref([]);
+const { sortKey, sortOrder, sortedData, onSort } = useTableSort(riskAssessmentResultList);
+const { colWidths, onResize } = useColumnResize({
+  processNm: 110,
+  riskTypeNm: 110,
+  initAssessDate: 110,
+  hazardNm: 120,
+  initAssessorNm: 110,
+  assessmentStatusNm: 110,
+  initRiskLv: 110,
+  initDesc: 160,
+});
 const systCodeArr = ref([]);
 const baseCodeArr = ref([]);
 const riskTypeArr = ref([]);
@@ -245,7 +322,14 @@ const siteDisabled = ref(false);
 
 const { proxy } = getCurrentInstance();
 
+const fnInit = () => {
+  siteCd.value = sessionStorage.getItem("gv_siteCd") ?? "";
+  siteNo.value = sessionStorage.getItem("gv_siteNo") ?? "";
+  siteNm.value = sessionStorage.getItem("gv_siteNm") ?? "";
+};
+
 onMounted(async () => {
+  fnInit();
   fnButtonControll();
   await fnGetSystinfoList();
   await fnGetBaseinfoList();

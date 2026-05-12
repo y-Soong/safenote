@@ -46,11 +46,51 @@
               <thead>
                 <tr>
                   <th style="display: none">사업장코드</th>
-                  <th>사업장번호</th>
-                  <th>사업장명</th>
-                  <th>관리자명</th>
-                  <th>사업장 전화번호</th>
-                  <th>주소</th>
+                  <ThSortable
+                    label="사업장번호"
+                    col-key="siteNo"
+                    :sort-key="sortKey"
+                    :sort-order="sortOrder"
+                    :width="colWidths.siteNo"
+                    @sort="onSort"
+                    @update:width="onResize"
+                  />
+                  <ThSortable
+                    label="사업장명"
+                    col-key="siteNm"
+                    :sort-key="sortKey"
+                    :sort-order="sortOrder"
+                    :width="colWidths.siteNm"
+                    @sort="onSort"
+                    @update:width="onResize"
+                  />
+                  <ThSortable
+                    label="관리자명"
+                    col-key="siteAdminNm"
+                    :sort-key="sortKey"
+                    :sort-order="sortOrder"
+                    :width="colWidths.siteAdminNm"
+                    @sort="onSort"
+                    @update:width="onResize"
+                  />
+                  <ThSortable
+                    label="사업장 전화번호"
+                    col-key="telNo"
+                    :sort-key="sortKey"
+                    :sort-order="sortOrder"
+                    :width="colWidths.telNo"
+                    @sort="onSort"
+                    @update:width="onResize"
+                  />
+                  <ThSortable
+                    label="주소"
+                    col-key="addr1"
+                    :sort-key="sortKey"
+                    :sort-order="sortOrder"
+                    :width="colWidths.addr1"
+                    @sort="onSort"
+                    @update:width="onResize"
+                  />
                 </tr>
               </thead>
               <tbody>
@@ -63,7 +103,7 @@
                 </template>
                 <template v-else>
                   <tr
-                    v-for="site in siteList"
+                    v-for="site in sortedData"
                     :key="site.siteCd"
                     @dblclick="
                       fnSelectRow(site.siteCd, site.siteNo, site.siteNm)
@@ -103,9 +143,22 @@ import {
 // import { useDraggable } from "@/composables/useDraggable";
 import { useCenteredDraggable } from "@/composables/useCenteredDraggable";
 import axios from "@/api/axios";
+import ThSortable from "@/components/common/ThSortable.vue";
+import {
+  useTableSort,
+  useColumnResize,
+} from "@/composables/useTableFeatures.js";
 
 const cmpnyCd = ref("");
 const siteList = ref([]);
+const { sortKey, sortOrder, sortedData, onSort } = useTableSort(siteList);
+const { colWidths, onResize } = useColumnResize({
+  siteNo: 120,
+  siteNm: 150,
+  siteAdminNm: 100,
+  telNo: 130,
+  addr1: 200,
+});
 const emit = defineEmits(["select", "close"]);
 const modalRef = ref(null);
 

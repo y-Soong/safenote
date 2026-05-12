@@ -10,7 +10,6 @@ import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
-import com.prafta.common.annotation.NoAuth;
 import com.prafta.common.cmm.baseinfo.application.param.AppMenuListParam;
 import com.prafta.common.cmm.baseinfo.application.param.BaseInfoListParam;
 import com.prafta.common.cmm.baseinfo.application.param.BaseInfoParam;
@@ -22,6 +21,9 @@ import com.prafta.common.cmm.baseinfo.application.param.SystInfoListParam;
 import com.prafta.common.cmm.baseinfo.application.param.SystInfoParam;
 import com.prafta.common.cmm.baseinfo.application.param.TermsDetailInfoParam;
 import com.prafta.common.cmm.baseinfo.application.param.UserIdDupleCheckParam;
+import com.prafta.common.cmm.baseinfo.application.param.UserIdInfoParam;
+import com.prafta.common.cmm.baseinfo.application.param.UserInfoListParam;
+import com.prafta.common.cmm.baseinfo.application.param.UserPasswordParam;
 import com.prafta.common.cmm.baseinfo.application.param.UserSmsAuthNoCheckParam;
 import com.prafta.common.cmm.baseinfo.application.param.UserSmsAuthNoParam;
 import com.prafta.common.cmm.baseinfo.application.param.WebMenuListParam;
@@ -36,6 +38,9 @@ import com.prafta.common.cmm.baseinfo.dto.request.SystInfoListRequest;
 import com.prafta.common.cmm.baseinfo.dto.request.SystInfoRequest;
 import com.prafta.common.cmm.baseinfo.dto.request.TermsDetailInfoRequest;
 import com.prafta.common.cmm.baseinfo.dto.request.UserIdDupleCheckRequest;
+import com.prafta.common.cmm.baseinfo.dto.request.UserIdInfoRequest;
+import com.prafta.common.cmm.baseinfo.dto.request.UserInfoListRequest;
+import com.prafta.common.cmm.baseinfo.dto.request.UserPasswordRequest;
 import com.prafta.common.cmm.baseinfo.dto.request.UserSmsAuthNoCheckRequest;
 import com.prafta.common.cmm.baseinfo.dto.request.UserSmsAuthNoRequest;
 import com.prafta.common.cmm.baseinfo.dto.request.WebMenuListRequest;
@@ -50,6 +55,8 @@ import com.prafta.common.cmm.baseinfo.dto.response.SystInfoListResponse;
 import com.prafta.common.cmm.baseinfo.dto.response.SystInfoResponse;
 import com.prafta.common.cmm.baseinfo.dto.response.TermsDetailInfoResponse;
 import com.prafta.common.cmm.baseinfo.dto.response.UserIdDupleCheckResponse;
+import com.prafta.common.cmm.baseinfo.dto.response.UserIdInfoResponse;
+import com.prafta.common.cmm.baseinfo.dto.response.UserInfoListResponse;
 import com.prafta.common.cmm.baseinfo.dto.response.WebMenuListResponse;
 import com.prafta.common.cmm.baseinfo.service.BaseinfoService;
 import com.prafta.common.security.JwtUtil;
@@ -61,7 +68,7 @@ import lombok.extern.slf4j.Slf4j;
 //@NoAuth
 @RestController
 @RequestMapping("/baseinfo")
-@RequiredArgsConstructor // 롬복이 final 필드로 생성자 자동 생성
+@RequiredArgsConstructor		// 롬복이 final 필드로 생성자 자동 생성
 public class BaseinfoController { 	
 	
 	private final BaseinfoService baseinfoService;
@@ -76,7 +83,7 @@ public class BaseinfoController {
     	return ResponseEntity.status(HttpStatus.OK).body(response);
     }
     
-    /* 공통코드 단일 조회 */
+	/* 공통코드 단일 조회 */
 	@GetMapping("/syst-infos")
     public ResponseEntity<?> getSystinfo(@ModelAttribute SystInfoRequest request) {
 		
@@ -85,7 +92,7 @@ public class BaseinfoController {
     	return ResponseEntity.status(HttpStatus.OK).body(response);
     }
     
-    /* 운영사별 기초코드 조회 */
+	/* 운영사별 기초코드 조회 */
     @GetMapping("/base-info-lists")
     public ResponseEntity<?> getBaseinfoList(@ModelAttribute BaseInfoListRequest request, @RequestHeader(value = "Authorization", required = false) String authorization) {
     	
@@ -103,7 +110,7 @@ public class BaseinfoController {
     	return ResponseEntity.status(HttpStatus.OK).body(response);
     }
     
-    /* 회사명 조회  */
+	/* 회사명 조회  */
     @GetMapping("/cmpny-infos")
     public ResponseEntity<?> getCmpnyInfo(@ModelAttribute CmpnyInfoRequest request) {
     	CmpnyInfoResponse response = baseinfoService.selectCmpnyInfo(CmpnyInfoParam.from(request));
@@ -160,7 +167,7 @@ public class BaseinfoController {
     	return ResponseEntity.status(HttpStatus.OK).body(response);
     }
     
-    /* 사업장 리스트 조회 */
+    /* 사업장 소속 부서 리스트 조회 */
     @GetMapping("/site-node-lists")
     public ResponseEntity<?> getSiteNodeList(@ModelAttribute SiteNodeListRequest request, @RequestHeader(value = "Authorization", required = false) String authorization) {
     	
@@ -178,25 +185,29 @@ public class BaseinfoController {
     	return ResponseEntity.status(HttpStatus.OK).body(response);
     }
     
-    // 보류 ( 프로세스 개선 필요 )
-    // AS-IS : 이름, 휴대폰번호 입력 후 인증되면 아이디를 찾아주지만 휴대폰번호 Hmac 값을 구하려면 회사코드를 알아야 함
-    // TO-BE : 이름 입력 후 아이디 찾기 > 여러 아이디가 조회되면 팝업에 리스트를 띄워서 사용자가 본인 계정을 선택(회사코드 이때 알아냄) > 계정 ID를 기반으로 회사코드를 조회해서 휴대폰번호 Hmac 값을 구한 후 이후 로직 실행
-//    @GetMapping("/user-ids")
-//    public ResponseEntity<?> getUserIdInfo(@ModelAttribute UserIdInfoRequest request) {
-//    	UserIdInfoResponse response = baseinfoService.selectUserIdInfo(UserIdInfoParam.from(request));
-//        
-//    	return ResponseEntity.status(HttpStatus.OK).body(response);
-//    }
-//    
-//    // 보류 ( 프로세스 개선 필요 )
-//    // getUserIdInfo 와 같은 이유로 보류
-//    @PostMapping("/updateUserPw")
-//    public ResponseEntity<?> updateUserPw(@RequestBody BaseinfoCmmReq dto) {
-//    	
-//    	baseinfoService.updateUserPw(dto);
-//    	
-//    	return ResponseEntity.status(HttpStatus.OK).build();
-//    }terms-detail-info
+    /* 사용자 정보 조회 */
+    @GetMapping("/user-info-lists")
+    public ResponseEntity<?> getUserInfoList(@ModelAttribute UserInfoListRequest request, @RequestHeader(value = "Authorization", required = false) String authorization) {
+    	
+    	UserInfoListResponse response = baseinfoService.selectUserInfoList(UserInfoListParam.from(request, jwtUtil.getAllClaimsAsMap(authorization)));
+    	
+    	return ResponseEntity.status(HttpStatus.OK).body(response);
+    }
+    
+    @GetMapping("/user-ids")
+    public ResponseEntity<?> getUserIdInfo(@ModelAttribute UserIdInfoRequest request) {
+    	UserIdInfoResponse response = baseinfoService.selectUserIdInfo(UserIdInfoParam.from(request));
+        
+    	return ResponseEntity.status(HttpStatus.OK).body(response);
+    }
+    
+    @PostMapping("/update-user-password")
+    public ResponseEntity<?> updateUserPw(@RequestBody UserPasswordRequest request) {
+    	
+    	baseinfoService.updateUserPw(UserPasswordParam.from(request));
+    	
+    	return ResponseEntity.status(HttpStatus.OK).build();
+    }
     
     @GetMapping("/terms-detail-infos")
     public ResponseEntity<?> getTermsDetailInfo(@ModelAttribute TermsDetailInfoRequest request) {

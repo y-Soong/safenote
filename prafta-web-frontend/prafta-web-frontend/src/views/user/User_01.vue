@@ -129,17 +129,73 @@
                     @click="fnHeadchk"
                   />
                 </th>
-                <th class="event_cell" style="width: 8%">사용자ID</th>
-                <th class="event_cell" style="width: 8%">이름</th>
-                <th style="width: 8%">이메일</th>
-                <th style="width: 8%">휴대폰번호</th>
+                <ThSortable
+                  label="사용자ID"
+                  col-key="userId"
+                  :sort-key="sortKey"
+                  :sort-order="sortOrder"
+                  :width="colWidths.userId"
+                  @sort="onSort"
+                  @update:width="onResize"
+                />
+                <ThSortable
+                  label="이름"
+                  col-key="userNm"
+                  :sort-key="sortKey"
+                  :sort-order="sortOrder"
+                  :width="colWidths.userNm"
+                  @sort="onSort"
+                  @update:width="onResize"
+                />
+                <ThSortable
+                  label="이메일"
+                  col-key="email"
+                  :sort-key="sortKey"
+                  :sort-order="sortOrder"
+                  :width="colWidths.email"
+                  @sort="onSort"
+                  @update:width="onResize"
+                />
+                <ThSortable
+                  label="휴대폰번호"
+                  col-key="mblNo"
+                  :sort-key="sortKey"
+                  :sort-order="sortOrder"
+                  :width="colWidths.mblNo"
+                  @sort="onSort"
+                  @update:width="onResize"
+                />
                 <th class="editableCell" style="width: 7%">권한</th>
                 <th class="editableCell" style="width: 6%">사용여부</th>
-                <th style="width: 8%">소속사업장</th>
+                <ThSortable
+                  label="소속사업장"
+                  col-key="siteNm"
+                  :sort-key="sortKey"
+                  :sort-order="sortOrder"
+                  :width="colWidths.siteNm"
+                  @sort="onSort"
+                  @update:width="onResize"
+                />
                 <th style="width: 8%">소속부서</th>
                 <th class="editableCell" style="width: 6%">계정상태</th>
-                <th style="width: 8%">탈퇴일자</th>
-                <th style="width: 25%">권한 소유 사업장</th>
+                <ThSortable
+                  label="탈퇴일자"
+                  col-key="withdrawalDate"
+                  :sort-key="sortKey"
+                  :sort-order="sortOrder"
+                  :width="colWidths.withdrawalDate"
+                  @sort="onSort"
+                  @update:width="onResize"
+                />
+                <ThSortable
+                  label="권한 소유 사업장"
+                  col-key="siteNmList"
+                  :sort-key="sortKey"
+                  :sort-order="sortOrder"
+                  :width="colWidths.siteNmList"
+                  @sort="onSort"
+                  @update:width="onResize"
+                />
               </tr>
             </thead>
             <tbody>
@@ -152,7 +208,7 @@
               </template>
               <template v-else>
                 <tr
-                  v-for="(user, idx) in userActList"
+                  v-for="(user, idx) in sortedData"
                   :key="user.id"
                   :class="{ 'row-locked': isRowLocked(user) }"
                 >
@@ -233,10 +289,7 @@
                     </div>
                   </td>
                   <td @dblclick="!isRowLocked(user) && fnUserInfoPopOpen(user)">
-                    <BaseSelect
-                      v-model="user.accountStatus"
-                      disabled
-                    >
+                    <BaseSelect v-model="user.accountStatus" disabled>
                       <option
                         v-for="opt in (systCodeArr['SYS013'] || []).filter(
                           (o) => o.systValDCd != null
@@ -293,6 +346,8 @@ import SiteSearchPop from "@/components/popup/SiteSearchPop.vue";
 import UserInfoPop from "./popup/UserInfoPop.vue";
 import SiteNodeSearchPop from "@/components/popup/SiteNodeSearchPop.vue";
 import BatchResultPop from "@/components/popup/BatchResultPop.vue";
+import ThSortable from "@/components/common/ThSortable.vue";
+import { useTableSort, useColumnResize } from "@/composables/useTableFeatures.js";
 
 // =========================== Define ===========================
 defineOptions({ name: "User_01" });
@@ -304,6 +359,16 @@ const props = defineProps({
 // =========================== Ref ===========================
 const localButtons = ref({ ...props.buttons });
 const userActList = ref([]);
+const { sortKey, sortOrder, sortedData, onSort } = useTableSort(userActList);
+const { colWidths, onResize } = useColumnResize({
+  userId: 100,
+  userNm: 90,
+  email: 140,
+  mblNo: 120,
+  siteNm: 110,
+  withdrawalDate: 110,
+  siteNmList: 200,
+});
 const systCodeArr = ref([]);
 const baseInfoArr = ref([]);
 const SiteSearchPopOpen = ref(false);
@@ -326,7 +391,24 @@ const { proxy } = getCurrentInstance();
 const { open: openPop } = useModal();
 
 // =========================== Life Cycle ===========================
+const getSession = (key) => {
+  const v = sessionStorage.getItem(key);
+  return v && v !== "null" && v !== "undefined" ? v : "";
+};
+
+const fnInit = () => {
+  siteCd.value = getSession("gv_siteCd");
+  siteNo.value = getSession("gv_siteNo");
+  siteNm.value = getSession("gv_siteNm");
+  if (siteCd.value) {
+    nodeDisabled.value = false;
+    nodeCd.value = getSession("gv_nodeCd");
+    nodeNm.value = getSession("gv_nodeNm");
+  }
+};
+
 onMounted(async () => {
+  fnInit();
   fnButtonControll();
   await fnGetSystinfoList();
   await fnGetBaseinfoList();

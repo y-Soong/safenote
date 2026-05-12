@@ -48,9 +48,9 @@ public class Baim06Controller {
     }
 	
 	@PostMapping("/save-site-nodes")
-	public ResponseEntity<?> saveSiteNode(@RequestBody List<SiteNodeInfoRequest> dtoList, @RequestHeader(value = "Authorization", required = false) String authorization) {
+	public ResponseEntity<?> saveSiteNode(@RequestBody List<SiteNodeInfoRequest> request, @RequestHeader(value = "Authorization", required = false) String authorization) {
 	
-		baim06Service.saveSiteNode(SiteNodeInfoParam.from(dtoList, jwtUtil.getAllClaimsAsMap(authorization)));
+		baim06Service.saveSiteNode(SiteNodeInfoParam.from(request, jwtUtil.getAllClaimsAsMap(authorization)));
 
 		return ResponseEntity.status(HttpStatus.OK).build();
 	}

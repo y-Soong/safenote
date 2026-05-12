@@ -159,6 +159,7 @@ const { position, startDrag } = useCenteredDraggable(modalRef, {
 /* 회원가입정보 */
 const cmpnyCd = ref("");
 const userNm = ref("");
+const userCd = ref("");
 const userId = ref("");
 const userIdTmp = ref("");
 const mblNo = ref("");
@@ -265,8 +266,9 @@ const fnUserIdSrch = async() => {
       },
     });
     if (response.status === 200) {
-      userIdTmp.value = response.data.USER_ID;
-      cmpnyCd.value = response.data.CMPNY_CD;
+      userCd.value = response.data?.userIdInfoResult?.userCd;
+      userIdTmp.value = response.data?.userIdInfoResult?.userId;
+      cmpnyCd.value = response.data?.userIdInfoResult?.cmpnyCd;
 
       fnSmsAuthReqApi();
     }
@@ -279,7 +281,7 @@ const fnUserIdSrch = async() => {
 
 const fnSmsAuthReqApi = async() => {
     try {
-    const response = await axios.post("/comApi/baseinfo/getSmsAuthReq", {
+    const response = await axios.post("/comApi/baseinfo/sms-auth-sends", {
       mblNo: mblNo.value,
       dupChkYn: "N"
     });
@@ -327,7 +329,7 @@ const fnSmsAuthChk = async () => {
   }
 
   try {
-    const response = await axios.post("/comApi/baseinfo/getSmsAuthChk", {
+    const response = await axios.post("/comApi/baseinfo/sms-auth-checks", {
       mblNo: mblNo.value,
       certNo: certNo.value,
     });
@@ -351,9 +353,9 @@ const fnSmsAuthChk = async () => {
 
 const fnUserPwUpdate = async () => {
   try {
-    const response = await axios.post("/comApi/baseinfo/updateUserPw", {
+    const response = await axios.post("/comApi/baseinfo/update-user-password", {
       cmpnyCd: cmpnyCd.value,
-      userId: userId.value,
+      userCd: userCd.value,
       userPw: userPwConfirm.value,
     });
     if (response.status === 200) {

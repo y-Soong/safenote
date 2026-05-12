@@ -7,6 +7,7 @@ import com.prafta.web.attd.attd01.application.param.SchInfoParam;
 
 public record SchCdQuery(
 	String siteCd
+	, String gvCmpnyCd
 ){
 	public static SchCdQuery from(SchInfoParam param) {
 		
@@ -15,6 +16,7 @@ public record SchCdQuery(
 
         return new SchCdQuery(
         		param.siteCd()
+        		, param.gvCmpnyCd()
         );
 	}
 }

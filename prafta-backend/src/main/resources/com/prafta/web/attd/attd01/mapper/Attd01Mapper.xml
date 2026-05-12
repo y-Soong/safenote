@@ -66,6 +66,16 @@
 	  </if>
 	</select>
 	
+	<select id="selectSchNoCount" parameterType="com.prafta.web.attd.attd01.application.query.SchNoCountQuery" resultType="int">
+    /* Attd01Mapper.selectSchNoCount */
+    SELECT 
+    	COUNT(*)
+	FROM TB_SCH_MGMT
+	WHERE CMPNY_CD = #{gvCmpnyCd}
+	  AND SITE_CD = #{siteCd}
+	  AND SCH_NO = #{schNo}
+    </select>
+	
 	<select id="selectSchCd" parameterType="com.prafta.web.attd.attd01.application.query.SchCdQuery" resultType="string">
     /* Attd01Mapper.selectSchCd */
     SELECT FNC_CMM_SEQ_NEXTVAL(#{gvCmpnyCd}, CONCAT('SCH_CD-', #{siteCd}))
@@ -117,22 +127,22 @@
         , NOW()
         , #{gvUserCd}
         , NOW()
-    )
+    ) AS NEW
     ON DUPLICATE KEY UPDATE
-        SCH_NO          	= VALUES(SCH_NO)
-        , SCH_TYPE        	= VALUES(SCH_TYPE)
-        , APPLY_DATE      	= VALUES(APPLY_DATE)
+        SCH_NO          	= NEW.SCH_NO
+        , SCH_TYPE        	= NEW.SCH_TYPE
+        , APPLY_DATE      	= NEW.APPLY_DATE
 
-        , FST_SCH_STR_TIME	= VALUES(FST_SCH_STR_TIME)
-        , FST_SCH_END_TIME	= VALUES(FST_SCH_END_TIME)
-        , FST_SCH_BRK_MIN 	= VALUES(FST_SCH_BRK_MIN)
+        , FST_SCH_STR_TIME	= NEW.FST_SCH_STR_TIME
+        , FST_SCH_END_TIME	= NEW.FST_SCH_END_TIME
+        , FST_SCH_BRK_MIN 	= NEW.FST_SCH_BRK_MIN
 
-        , SEC_SCH_STR_TIME	= VALUES(SEC_SCH_STR_TIME)
-        , SEC_SCH_END_TIME	= VALUES(SEC_SCH_END_TIME)
-        , SEC_SCH_BRK_MIN 	= VALUES(SEC_SCH_BRK_MIN)
+        , SEC_SCH_STR_TIME	= NEW.SEC_SCH_STR_TIME
+        , SEC_SCH_END_TIME	= NEW.SEC_SCH_END_TIME
+        , SEC_SCH_BRK_MIN 	= NEW.SEC_SCH_BRK_MIN
 
-        , USE_YN          	= VALUES(USE_YN)
-        , UPDATE_NO       	= #{gvUserCd}
+        , USE_YN          	= NEW.USE_YN
+        , UPDATE_NO       	= NEW.UPDATE_NO
         , UPDATE_DATE     	= NOW()
 	</update>
 	
@@ -225,6 +235,15 @@
 	ORDER BY A.CMPNY_CD, A.SITE_CD, A.HIST_IDX
     </select>
     
+    <select id="selectShiftSchNoCount" parameterType="com.prafta.web.attd.attd01.application.query.ShiftSchNoCountQuery" resultType="int">
+    /* Attd01Mapper.selectShiftSchNoCount */
+    SELECT COUNT(*)
+	FROM TB_SHIFT_SCH_MGMT
+	WHERE CMPNY_CD = #{gvCmpnyCd}
+	  AND SITE_CD = #{siteCd}
+	  AND SHIFT_NO = #{shiftNo}
+    </select>
+    
     <select id="selectShiftCd" parameterType="com.prafta.web.attd.attd01.application.query.ShiftCdQuery" resultType="string">
     /* Attd01Mapper.selectShiftCd */
     SELECT FNC_CMM_SEQ_NEXTVAL(#{gvCmpnyCd}, CONCAT('SHIFT_CD-', #{siteCd}))
@@ -297,7 +316,7 @@
     
     <insert id="insertShiftSchTeam" parameterType="com.prafta.web.attd.attd01.application.command.ShiftTeamCommand">
     /* Attd01Mapper.insertShiftSchTeam */
-    INSERT TB_SHIFT_SCH_TEAM_MGMT (
+    INSERT TB_SHIFT_SCH_TEAM_META_INFO (
 		CMPNY_CD
 		, SITE_CD
 		, SHIFT_CD
@@ -458,7 +477,7 @@
 		, A.SHIFT_CD   AS shiftCd
 		, A.TEAM_IDX   AS teamIdx
 		, A.TEAM_NM    AS teamNm
-	FROM TB_SHIFT_SCH_TEAM_MGMT A
+	FROM TB_SHIFT_SCH_TEAM_META_INFO A
 	WHERE A.CMPNY_CD = #{gvCmpnyCd}
 	  AND A.SITE_CD  = #{siteCd}
 	  AND A.SHIFT_CD = #{shiftCd}

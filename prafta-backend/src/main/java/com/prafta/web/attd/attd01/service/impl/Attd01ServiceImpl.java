@@ -5,6 +5,8 @@ import java.util.List;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import com.prafta.common.error.attd.AttdErrorCode;
+import com.prafta.common.exception.ApiException;
 import com.prafta.web.attd.attd01.application.command.SchInfoCommand;
 import com.prafta.web.attd.attd01.application.command.SchInfoHistCommand;
 import com.prafta.web.attd.attd01.application.command.ShiftAssignCommand;
@@ -23,9 +25,11 @@ import com.prafta.web.attd.attd01.application.param.ShiftSchInfoParam.ShiftTeamP
 import com.prafta.web.attd.attd01.application.query.SchCdQuery;
 import com.prafta.web.attd.attd01.application.query.SchInfoHistQuery;
 import com.prafta.web.attd.attd01.application.query.SchInfoListQuery;
+import com.prafta.web.attd.attd01.application.query.SchNoCountQuery;
 import com.prafta.web.attd.attd01.application.query.ShiftCdQuery;
 import com.prafta.web.attd.attd01.application.query.ShiftSchDetailQuery;
 import com.prafta.web.attd.attd01.application.query.ShiftSchInfoListQuery;
+import com.prafta.web.attd.attd01.application.query.ShiftSchNoCountQuery;
 import com.prafta.web.attd.attd01.dto.response.SchInfoHistResponse;
 import com.prafta.web.attd.attd01.dto.response.SchInfoListResponse;
 import com.prafta.web.attd.attd01.dto.response.ShiftSchDetailResponse;
@@ -72,13 +76,19 @@ public class Attd01ServiceImpl implements Attd01Service{
 		
 		String schCd = null;
 		
+		int schNoCnt = attd01Mapper.selectSchNoCount(SchNoCountQuery.from(param));
+		
+		if(schNoCnt > 0) {
+			throw new ApiException(AttdErrorCode.ATTD_400_001);
+		}
+		
 		if(param.schCd() != null && param.schCd() != "") {
 			schCd = param.schCd();
 		} else {
 			schCd = attd01Mapper.selectSchCd(SchCdQuery.from(param));
 		}
 		
-		attd01Mapper.updateSchInfo(SchInfoCommand.from(param));
+		attd01Mapper.updateSchInfo(SchInfoCommand.from(param, schCd));
 		
 		int histIdx = attd01Mapper.selectSchHistIdx(SchInfoHistQuery.from(param));
 		
@@ -103,6 +113,12 @@ public class Attd01ServiceImpl implements Attd01Service{
 	
 	@Transactional
 	public void updateShiftSchInfo(ShiftSchInfoParam param) {
+		
+		int shiftSchNoCnt = attd01Mapper.selectShiftSchNoCount(ShiftSchNoCountQuery.from(param.shiftType(), param.gvCmpnyCd()));
+		
+		if(shiftSchNoCnt > 0) {
+			throw new ApiException(AttdErrorCode.ATTD_400_002);
+		}
 		
 		String shiftCd = attd01Mapper.selectShiftCd(ShiftCdQuery.from(param));
 		

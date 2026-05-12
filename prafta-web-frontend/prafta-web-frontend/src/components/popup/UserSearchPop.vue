@@ -51,15 +51,47 @@
             <table class="data-grid">
               <thead>
                 <tr>
-                  <th>아이디</th>
-                  <th>이름</th>
-                  <th>전화번호</th>
-                  <th>이메일</th>
+                  <ThSortable
+                    label="아이디"
+                    col-key="userId"
+                    :sort-key="sortKey"
+                    :sort-order="sortOrder"
+                    :width="colWidths.userId"
+                    @sort="onSort"
+                    @update:width="onResize"
+                  />
+                  <ThSortable
+                    label="이름"
+                    col-key="userNm"
+                    :sort-key="sortKey"
+                    :sort-order="sortOrder"
+                    :width="colWidths.userNm"
+                    @sort="onSort"
+                    @update:width="onResize"
+                  />
+                  <ThSortable
+                    label="전화번호"
+                    col-key="mblNo"
+                    :sort-key="sortKey"
+                    :sort-order="sortOrder"
+                    :width="colWidths.mblNo"
+                    @sort="onSort"
+                    @update:width="onResize"
+                  />
+                  <ThSortable
+                    label="이메일"
+                    col-key="email"
+                    :sort-key="sortKey"
+                    :sort-order="sortOrder"
+                    :width="colWidths.email"
+                    @sort="onSort"
+                    @update:width="onResize"
+                  />
                 </tr>
               </thead>
               <tbody>
                 <tr
-                  v-for="user in userActList"
+                  v-for="user in sortedData"
                   :key="user.userId"
                   @dblclick="
                     fnSelectRow(
@@ -94,9 +126,21 @@ import {
 } from "vue";
 import { useCenteredDraggable } from "@/composables/useCenteredDraggable";
 import axios from "@/api/axios";
+import ThSortable from "@/components/common/ThSortable.vue";
+import {
+  useTableSort,
+  useColumnResize,
+} from "@/composables/useTableFeatures.js";
 
 const modalRef = ref(null);
 const userActList = ref([]);
+const { sortKey, sortOrder, sortedData, onSort } = useTableSort(userActList);
+const { colWidths, onResize } = useColumnResize({
+  userId: 120,
+  userNm: 120,
+  mblNo: 130,
+  email: 180,
+});
 const cmpnyCd = ref("");
 const userId = ref("");
 const userNm = ref("");
@@ -161,7 +205,7 @@ const fnSelectRow = (userCd, userNm, mblNo, email) => {
   // emit("select", siteCd, siteNo, siteNm); // SITE_CD 부모에 전달
   props.onSelect(userCd, userNm, mblNo, email);
   emit("close"); // 팝업 닫기
-}
+};
 
 async function fnAlertMsg(message, afterConfirmCallback) {
   await proxy.$alert(message);

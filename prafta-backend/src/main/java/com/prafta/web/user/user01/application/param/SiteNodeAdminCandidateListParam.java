@@ -16,8 +16,6 @@ public record SiteNodeAdminCandidateListParam (
 
         if (request == null)
         	throw ApiException.appendf(CommonErrorCode.COMMON_400_001,"\n필수값 누락 - SiteNodeAdminCandidateListRequest");
-        if (tokenInfo == null)
-        	throw ApiException.appendf(CommonErrorCode.COMMON_400_001,"\n필수값 누락 - TokenInfo");
         
         System.out.println("param 팩토링 siteCd :: " + request.getSiteCd());
 	

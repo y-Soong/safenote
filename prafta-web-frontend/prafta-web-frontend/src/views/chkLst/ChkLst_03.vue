@@ -117,19 +117,67 @@
                     @click="fnHeadChk"
                   />
                 </th>
-                <th class="editableCell" style="width: 13%">사업장</th>
-                <th class="editableCell" style="width: 15%">점검대상명칭</th>
+                <ThSortable
+                  label="사업장"
+                  col-key="siteNm"
+                  :sort-key="sortKey"
+                  :sort-order="sortOrder"
+                  :width="colWidths.siteNm"
+                  @sort="onSort"
+                  @update:width="onResize"
+                />
+                <ThSortable
+                  label="점검대상명칭"
+                  col-key="chkptNm"
+                  :sort-key="sortKey"
+                  :sort-order="sortOrder"
+                  :width="colWidths.chkptNm"
+                  @sort="onSort"
+                  @update:width="onResize"
+                />
                 <th class="editableCell" style="width: 10%">점검구분</th>
-                <th class="editableCell" style="width: 10%">점검시행행월</th>
-                <th class="editableCell" style="width: 10%">관리자</th>
-                <th class="editableCell" style="width: 10%">점검시행일수</th>
-                <th class="editableCell" style="width: 10%">불량항목 수</th>
+                <ThSortable
+                  label="점검시행행월"
+                  col-key="workDate"
+                  :sort-key="sortKey"
+                  :sort-order="sortOrder"
+                  :width="colWidths.workDate"
+                  @sort="onSort"
+                  @update:width="onResize"
+                />
+                <ThSortable
+                  label="관리자"
+                  col-key="siteAdminNm"
+                  :sort-key="sortKey"
+                  :sort-order="sortOrder"
+                  :width="colWidths.siteAdminNm"
+                  @sort="onSort"
+                  @update:width="onResize"
+                />
+                <ThSortable
+                  label="점검시행일수"
+                  col-key="inspectDayCnt"
+                  :sort-key="sortKey"
+                  :sort-order="sortOrder"
+                  :width="colWidths.inspectDayCnt"
+                  @sort="onSort"
+                  @update:width="onResize"
+                />
+                <ThSortable
+                  label="불량항목 수"
+                  col-key="defectiveResultCnt"
+                  :sort-key="sortKey"
+                  :sort-order="sortOrder"
+                  :width="colWidths.defectiveResultCnt"
+                  @sort="onSort"
+                  @update:width="onResize"
+                />
                 <th class="editableCell">점검결과확인</th>
               </tr>
             </thead>
             <tbody>
               <tr
-                v-for="(chkptResult, idx) in chkptResultList"
+                v-for="(chkptResult, idx) in sortedData"
                 :key="chkptResult.siteCd"
               >
                 <td style="text-align: center">{{ idx + 1 }}</td>
@@ -209,6 +257,8 @@ import SiteSearchPop from "@/components/popup/SiteSearchPop.vue";
 import BaseSelect from "@/components/common/BaseSelect.vue";
 import CalendarSrchMonth from "@/components/common/CalendarSrchMonth.vue";
 import ChkLstRstPop from "@/views/chkLst/popup/ChkLstRstPop.vue";
+import ThSortable from "@/components/common/ThSortable.vue";
+import { useTableSort, useColumnResize } from "@/composables/useTableFeatures.js";
 
 // =========================== Define ===========================
 defineOptions({ name: "ChkLst_03" });
@@ -230,6 +280,15 @@ const formData = reactive({
 
 // =========================== Ref ===========================
 const chkptResultList = ref([]);
+const { sortKey, sortOrder, sortedData, onSort } = useTableSort(chkptResultList);
+const { colWidths, onResize } = useColumnResize({
+  siteNm: 130,
+  chkptNm: 150,
+  workDate: 110,
+  siteAdminNm: 110,
+  inspectDayCnt: 110,
+  defectiveResultCnt: 110,
+});
 const baseCodeArr = ref([]);
 const SiteSearchPopOpen = ref(false);
 const headChk = ref(false);
@@ -243,7 +302,14 @@ const localButtons = ref({ ...props.buttons });
 let isAdjustingDate = false;
 
 // =========================== Life Cycle ===========================
+const fnInit = () => {
+  formData.siteCd = sessionStorage.getItem("gv_siteCd") ?? "";
+  formData.siteNo = sessionStorage.getItem("gv_siteNo") ?? "";
+  formData.siteNm = sessionStorage.getItem("gv_siteNm") ?? "";
+};
+
 onMounted(async () => {
+  fnInit();
   initializeFormData();
   fnButtonControll();
   await fnGetBaseinfoList();

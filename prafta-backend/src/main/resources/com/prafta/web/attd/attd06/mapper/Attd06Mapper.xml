@@ -1,0 +1,534 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.prafta.web.attd.attd06.mapper.Attd06Mapper">
+
+    <select id="selectShiftTeamUserInfos" parameterType="com.prafta.web.attd.attd06.application.query.ShiftTeamUserInfosQuery" resultType="com.prafta.web.attd.attd06.result.ShiftTeamUserInfosResult">
+    /* Attd06Mapper.selectShiftTeamUserInfos */
+    	WITH RECURSIVE 
+			node_tree AS (
+				/* 로그인 사용자의 node 부터 시작 */
+				SELECT 
+					N.CMPNY_CD
+					, N.SITE_CD
+					, N.NODE_CD
+					, N.NODE_NM
+				FROM TB_SITE_NODE N
+				WHERE N.CMPNY_CD = #{gvCmpnyCd}
+				  AND N.SITE_CD  = #{siteCd}
+				  <choose>
+				  	  <when test='"master".equals(gvAuthCd) or "hr".equals(gvAuthCd)'>
+					  	AND N.NODE_CD  = 'n1'
+					  </when>
+					  <otherwise>
+					  	AND N.NODE_CD = #{nodeCd}
+					  </otherwise>
+				  </choose>
+				  
+			
+				UNION ALL
+			
+				/* 하위 노드 무한 확장 */
+				SELECT 
+					C.CMPNY_CD
+					, C.SITE_CD
+					, C.NODE_CD
+					, C.NODE_NM
+				FROM TB_SITE_NODE C
+				INNER JOIN node_tree P
+					ON C.CMPNY_CD = P.CMPNY_CD
+				   AND C.SITE_CD  = P.SITE_CD
+				   AND C.PARENT_NODE_CD = P.NODE_CD
+			)
+    
+		SELECT 
+			A.CMPNY_CD				AS cmpnyCd
+		    , A.SITE_CD				AS siteCd
+		    , A.SHIFT_CD			AS shiftCd
+		    , FNC_CMM_INFO_SRCH(
+				A.CMPNY_CD 
+				, 'SHIFT_NO'
+				, A.SITE_CD
+				, A.SHIFT_CD
+			) 						AS shiftNm
+		    , A.SHIFT_TEAM_ID		AS shiftTeamId
+		    , A.SHIFT_TEAM_NM		AS shiftTeamNm
+		    , A.TEAM_IDX			AS teamIdx
+		    , A.TEAM_NM				AS teamNm
+		    , B.USER_CD				AS userCd
+		    , B.USER_NM				AS userNm
+	        , B.NODE_CD				AS nodeCd
+		    , B.NODE_NM				AS nodeNm
+		    , CASE 
+				WHEN B.NODE_CD = C.NODE_CD
+					THEN 'Y'
+				ELSE 'N'
+			END editableYn
+		    , B.LEADER_YN			AS leaderYn
+		    , A.STR_DATE			AS strDate
+		    , A.END_DATE			AS endDate
+		FROM (
+			SELECT 
+				A.CMPNY_CD
+				, A.SITE_CD
+				, A.SHIFT_CD
+				, A.SHIFT_TEAM_ID
+				, A.SHIFT_TEAM_NM
+				, B.TEAM_IDX
+				, B.TEAM_NM
+				, A.STR_DATE
+				, A.END_DATE
+			FROM TB_SHIFT_SCH_TEAM_MGMT A
+				 INNER JOIN TB_SHIFT_SCH_TEAM_META_INFO B
+					ON (
+						A.CMPNY_CD = B.CMPNY_CD
+					AND A.SITE_CD = B.SITE_CD
+					AND A.SHIFT_CD = B.SHIFT_CD 
+					)
+	    ) A
+			 LEFT OUTER JOIN (		
+					SELECT 
+						A.CMPNY_CD
+						, A.SITE_CD
+						, A.SHIFT_CD
+						, A.SHIFT_TEAM_ID
+						, A.TEAM_IDX
+						, C.TEAM_NM
+						, A.USER_CD
+						, B.USER_NM
+						, B.NODE_CD
+						, B.NODE_NM
+						, A.LEADER_YN
+					FROM TB_SHIFT_SCH_TEAM_USER A
+						 INNER JOIN (
+							SELECT 
+								A.CMPNY_CD
+								, A.USER_CD
+								, A.USER_NM
+								, A.SITE_CD
+								, A.NODE_CD
+								, B.NODE_NM
+							FROM TB_USER A
+								 LEFT OUTER JOIN TB_SITE_NODE B
+									ON (
+										A.CMPNY_CD = B.CMPNY_CD
+									AND A.SITE_CD = B.SITE_CD
+									AND A.NODE_CD = B.NODE_CD
+									)
+							WHERE A.CMPNY_CD = #{gvCmpnyCd}
+							  AND A.SITE_CD = #{siteCd}
+		
+						 ) B
+							ON (
+								A.CMPNY_CD = B.CMPNY_CD
+							AND A.SITE_CD = B.SITE_CD 
+							AND A.USER_CD = B.USER_CD
+							)
+					INNER JOIN TB_SHIFT_SCH_TEAM_META_INFO C
+						ON (
+							A.CMPNY_CD = C.CMPNY_CD
+						AND A.SITE_CD = C.SITE_CD
+						AND A.SHIFT_CD = C.SHIFT_CD
+						AND A.TEAM_IDX = C.TEAM_IDX
+						)
+					WHERE A.CMPNY_CD = #{gvCmpnyCd}
+					  AND A.SITE_CD = #{siteCd}
+		     ) B
+				ON (
+					A.CMPNY_CD = B.CMPNY_CD
+				AND A.SITE_CD = B.SITE_CD
+		        AND A.SHIFT_CD = B.SHIFT_CD
+		        AND A.SHIFT_TEAM_ID = B.SHIFT_TEAM_ID
+	            AND A.TEAM_IDX = B.TEAM_IDX
+		        )
+	        LEFT OUTER JOIN node_tree C
+				ON (
+					A.CMPNY_CD = C.CMPNY_CD
+				AND A.SITE_CD = C.SITE_CD
+                AND B.NODE_CD = C.NODE_CD
+                )
+		WHERE A.CMPNY_CD = #{gvCmpnyCd}
+		  AND A.SITE_CD = #{siteCd}
+    </select>
+
+    <select id="selectShiftTypeLists" parameterType="com.prafta.web.attd.attd06.application.query.ShiftTypeListsQuery" resultType="com.prafta.web.attd.attd06.result.ShiftTypeListsResult">
+    /* Attd06Mapper.selectShiftTypeLists */
+	SELECT
+		A.CMPNY_CD													AS cmpnyCd
+		, A.SITE_CD													AS siteCd
+		, A.SHIFT_CD												AS shiftCd
+		, A.SHIFT_NO												AS shiftNo
+		, CONCAT(A.SHIFT_TEAM_CNT, '조 ', A.SHIFT_PTRN_CNT, '교대')	AS shiftNm
+		, A.SHIFT_PTRN_CNT											AS shiftPtrnCnt
+		, A.SHIFT_TEAM_CNT											AS shiftTeamCnt
+		, A.SHIFT_CYCLE_DAYS										AS shiftCycleDays
+		, A.USE_YN													AS useYn
+		, GROUP_CONCAT(B.SCH_NM ORDER BY B.DAY_NO SEPARATOR ' / ') 	AS schNmList
+	FROM TB_SHIFT_SCH_MGMT A
+		 INNER JOIN (
+			SELECT 
+				A.CMPNY_CD
+				, A.SITE_CD
+				, A.SHIFT_CD
+	            , A.TEAM_IDX
+	            , A.DAY_NO
+				, A.SCH_CD
+				,IFNULL(CONCAT(B.FST_SCH_STR_TIME, '~', B.FST_SCH_END_TIME), 'OFF') SCH_NM
+			FROM TB_SHIFT_SCH_ASSIGN_MGMT A
+				 LEFT OUTER JOIN TB_SCH_MGMT B
+					ON (
+						A.CMPNY_CD = B.CMPNY_CD
+					AND A.SITE_CD = B.SITE_CD
+					AND A.SCH_CD = B.SCH_CD
+					)
+			WHERE A.TEAM_IDX = '1'
+	     ) B
+			ON (
+				A.CMPNY_CD = B.CMPNY_CD
+			AND A.SITE_CD  = B.SITE_CD
+			AND A.SHIFT_CD = B.SHIFT_CD
+	        )
+	WHERE 1=1
+		AND A.CMPNY_CD = #{gvCmpnyCd}
+	  	AND A.SITE_CD = #{siteCd}
+	GROUP BY
+		A.CMPNY_CD
+		, A.SITE_CD
+		, A.SHIFT_CD
+		, A.SHIFT_NO
+		, A.SHIFT_PTRN_CNT
+		, A.SHIFT_TEAM_CNT
+		, A.SHIFT_CYCLE_DAYS
+		, A.USE_YN
+    </select>
+
+    <select id="selectUserLists" parameterType="com.prafta.web.attd.attd06.application.query.UserListsQuery" resultType="com.prafta.web.attd.attd06.result.UserListsResult">
+    /* Attd06Mapper.selectUserLists */
+	WITH RECURSIVE 
+		node_tree AS (
+		    /* 로그인 사용자의 node 부터 시작 */
+		    SELECT 
+				N.CMPNY_CD
+	            , N.SITE_CD
+	            , N.NODE_CD
+	            , N.NODE_NM
+		    FROM TB_SITE_NODE N
+			WHERE N.CMPNY_CD = #{gvCmpnyCd}
+			  AND N.SITE_CD  = #{siteCd}
+			  <if test="nodeCd != null and nodeCd != ''">
+			  	AND N.NODE_CD  = #{nodeCd}
+			  </if>
+		
+		    UNION ALL
+		
+		    /* 하위 노드 무한 확장 */
+		    SELECT 
+				C.CMPNY_CD
+	            , C.SITE_CD
+	            , C.NODE_CD
+	            , C.NODE_NM
+		    FROM TB_SITE_NODE C
+		    INNER JOIN node_tree P
+		        ON C.CMPNY_CD = P.CMPNY_CD
+		       AND C.SITE_CD  = P.SITE_CD
+		       AND C.PARENT_NODE_CD = P.NODE_CD
+		)
+	SELECT 
+		A.USER_CD			AS userCd
+		, A.USER_ID			AS userId
+		, A.USER_NM			AS usernm
+		, A.NODE_CD			AS nodeCd
+		, B.NODE_NM			AS nodeNm
+	FROM TB_USER A
+		 INNER JOIN TB_SITE_NODE B
+			ON (
+				A.CMPNY_CD = B.CMPNY_CD
+			AND A.SITE_CD = B.SITE_CD
+			AND A.NODE_CD = B.NODE_CD
+			)
+	WHERE A.CMPNY_CD = #{gvCmpnyCd}
+	  AND A.SITE_CD = #{siteCd}
+	  AND A.USE_YN = 'Y'
+	  AND A.ACCOUNT_STATUS != '03'
+	  <if test="nodeCd != null and nodeCd != ''">
+	  	<if test='"N".equals(incSubNodeYn)'>
+			AND A.NODE_CD = #{nodeCd}
+		</if>
+	  </if>
+	  
+	  AND NOT EXISTS (
+	      SELECT 1
+	      FROM TB_SHIFT_SCH_TEAM_USER STU
+	      WHERE STU.CMPNY_CD = A.CMPNY_CD
+	        AND STU.SITE_CD  = A.SITE_CD
+	        AND STU.USER_CD  = A.USER_CD
+	  )
+    </select>
+
+    <select id="selectShiftTypeDetailLists" parameterType="com.prafta.web.attd.attd06.application.query.ShiftTypeDetailListsQuery" resultType="com.prafta.web.attd.attd06.result.ShiftTypeDetailListsResult">
+    /* Attd06Mapper.selectShiftTypeDetailLists */
+    SELECT
+		A.CMPNY_CD			AS cmpnyCd
+	    , A.SITE_CD			AS siteCd
+	    , A.SHIFT_CD		AS shiftCd
+	    , B.TEAM_IDX		AS teamIdx
+	    , B.TEAM_NM			AS teamNm
+	    , B.DAY_NO			AS dayNo
+	    , B.ASSIGN_YN		AS assignYn
+	    , B.SCH_CD			AS schCd
+	    , B.SCH_NO			AS schNo
+	    , B.FST_SCH_TIME	AS fstSchTime
+	    , B.SEC_SCH_TIME	AS secSchTime
+	    , B.SCH_TYPE		AS schType
+	FROM TB_SHIFT_SCH_MGMT A
+		 INNER JOIN (
+			SELECT 
+				A.CMPNY_CD
+				, A.SITE_CD
+				, A.SHIFT_CD
+				, A.TEAM_IDX
+				, C.TEAM_NM
+				, A.DAY_NO
+				, A.ASSIGN_YN
+				, A.SCH_CD
+				, B.SCH_NO
+				, CONCAT(B.FST_SCH_STR_TIME, '-', B.FST_SCH_END_TIME) AS FST_SCH_TIME
+				, CASE
+					WHEN SCH_TYPE = '02'				<!-- 2구간 근무 타입 -->
+						THEN CONCAT(B.SEC_SCH_STR_TIME, '-', B.SEC_SCH_END_TIME)
+					ELSE NULL
+				END SEC_SCH_TIME
+				, B.SCH_TYPE
+			FROM TB_SHIFT_SCH_ASSIGN_MGMT A
+				 INNER JOIN TB_SCH_MGMT B
+					ON (
+						A.CMPNY_CD = B.CMPNY_CD
+					AND A.SITE_CD = B.SITE_CD
+					AND A.SCH_CD = B.SCH_CD
+					)
+				 INNER JOIN TB_SHIFT_SCH_TEAM_META_INFO C
+					ON (
+						A.CMPNY_CD = C.CMPNY_CD
+					AND A.SITE_CD = C.SITE_CD
+                    AND A.SHIFT_CD = C.SHIFT_CD
+                    AND A.TEAM_IDX = C.TEAM_IDX
+                    )
+	     ) B
+			ON (
+				A.CMPNY_CD = B.CMPNY_CD
+			AND A.SITE_CD = B.SITE_CD
+	        AND A.SHIFT_CD = B.SHIFT_CD
+			)
+	WHERE A.CMPNY_CD = #{gvCmpnyCd}
+	  AND A.SITE_CD = #{siteCd}
+	  AND A.SHIFT_CD = #{shiftCd}
+    </select>
+    
+    
+    <select id="selectShiftTeamCd" parameterType="string" resultType="string">
+    /* Attd06Mapper.selectShiftTeamCd */
+    SELECT CONCAT(DATE_FORMAT(NOW(), '%Y%m'), FNC_CMM_SEQ_NEXTVAL(#{gvCmpnyCd}, 'TEAM_SHIFT_ID')) AS teamShiftId
+    FROM DUAL
+    </select>
+    
+    <update id="insertShiftTeam" parameterType="com.prafta.web.attd.attd06.application.command.ShiftTeamUserCommand">
+	/* Attd06Mapper.insertShiftTeam */
+		INSERT INTO TB_SHIFT_SCH_TEAM_MGMT (
+			CMPNY_CD
+			, SITE_CD
+			, SHIFT_CD
+			, SHIFT_TEAM_ID
+			, SHIFT_TEAM_NM
+			, STR_DATE
+			, END_DATE
+			, INSERT_NO
+			, INSERT_DATE
+			, UPDATE_NO
+			, UPDATE_DATE
+		)
+		VALUES
+		(
+			#{gvCmpnyCd}
+	        , #{siteCd}
+	        , #{shiftCd}
+          	, #{shiftTeamId}
+          	, IFNULL(NULLIF(#{shiftTeamNm}, ''), #{shiftTeamId})
+          	, #{startDate}
+          	, #{endDate}
+          	, #{gvUserCd}
+	        , NOW()
+	        , #{gvUserCd}
+	        , NOW()
+		)
+	</update>
+
+	<update id="insertShiftTeamUser" parameterType="com.prafta.web.attd.attd06.application.command.ShiftTeamCommand">
+	/* Attd06Mapper.insertShiftTeamUser */
+		INSERT INTO TB_SHIFT_SCH_TEAM_USER (
+		      CMPNY_CD
+		    , SITE_CD
+		    , SHIFT_CD
+		    , SHIFT_TEAM_ID
+		    , TEAM_IDX
+		    , USER_CD
+		    , LEADER_YN
+		    , INSERT_NO
+		    , INSERT_DATE
+		    , UPDATE_NO
+		    , UPDATE_DATE
+		) VALUES
+		<foreach collection="memberList" item="member" separator=",">
+		    (
+		        #{gvCmpnyCd}
+		        , #{siteCd}
+		        , #{shiftCd}
+	          	, #{shiftTeamId}
+		        , #{teamIdx}
+		        , #{member.userCd}
+		        , #{member.leaderYn}
+		        , #{gvUserCd}
+		        , NOW()
+		        , #{gvUserCd}
+		        , NOW()
+		    )
+		</foreach>
+		AS NEW
+		ON DUPLICATE KEY UPDATE
+		    LEADER_YN   = NEW.LEADER_YN
+		    , UPDATE_NO   = NEW.INSERT_NO
+		    , UPDATE_DATE = NOW()
+	</update>
+
+    <update id="updateShiftTeamNm" parameterType="com.prafta.web.attd.attd06.application.command.UpdateShiftTeamNmCommand">
+    /* Attd06Mapper.updateShiftTeamNm */
+    UPDATE TB_SHIFT_SCH_TEAM_MGMT
+    SET 
+    	SHIFT_TEAM_NM = #{shiftTeamNm}
+    	, UPDATE_NO = #{gvUserCd}
+    	, UPDATE_DATE = NOW()
+    WHERE CMPNY_CD = #{gvCmpnyCd}
+      AND SITE_CD = #{siteCd}
+      AND SHIFT_TEAM_ID = #{shiftTeamId}
+    </update>
+
+    <update id="deleteShiftTeamUser" parameterType="com.prafta.web.attd.attd06.application.command.DeleteShiftTeamUserCommand">
+    /* Attd06Mapper.deleteShiftTeamUser */
+    DELETE FROM TB_SHIFT_SCH_TEAM_USER
+    WHERE CMPNY_CD = #{gvCmpnyCd}
+      AND SITE_CD = #{siteCd}
+      AND SHIFT_TEAM_ID = #{shiftTeamId}
+      AND USER_CD = #{userCd}
+    </update>
+
+    <update id="insertShiftTeamUsers" parameterType="com.prafta.web.attd.attd06.application.command.InsertShiftTeamUsersCommand">
+    /* Attd06Mapper.insertShiftTeamUsers */
+    INSERT INTO TB_SHIFT_SCH_TEAM_USER
+    (
+		CMPNY_CD
+		, SITE_CD
+		, SHIFT_CD
+		, SHIFT_TEAM_ID
+		, TEAM_IDX
+		, USER_CD
+		, LEADER_YN
+		, INSERT_NO
+		, INSERT_DATE
+		, UPDATE_NO
+		, UPDATE_DATE
+	)
+	VALUES
+	(
+		#{gvCmpnyCd}
+		, #{siteCd}
+		, #{shiftCd}
+		, #{shiftTeamId}
+		, #{teamIdx}
+		, #{userCd}
+		, 'N'
+		, #{gvUserCd}
+		, NOW()
+		, #{gvUserCd}
+		, NOW()
+	)
+    </update>
+
+    <update id="updateShiftTeamLeaders" parameterType="com.prafta.web.attd.attd06.application.command.UpdateShiftTeamLeadersCommand">
+    /* Attd06Mapper.updateShiftTeamLeaders */
+    UPDATE TB_SHIFT_SCH_TEAM_USER
+    SET LEADER_YN = #{leaderYn}
+    	, UPDATE_NO = #{gvUserCd}
+    	, UPDATE_DATE = NOW()
+	WHERE CMPNY_CD = #{gvCmpnyCd}
+	  AND SITE_CD = #{siteCd}
+	  AND USER_CD = #{userCd}
+    </update>
+
+    <update id="updateShiftTeamPeriod" parameterType="com.prafta.web.attd.attd06.application.command.UpdateShiftTeamPeriodCommand">
+    /* Attd06Mapper.updateShiftTeamPeriod */
+    UPDATE TB_SHIFT_SCH_TEAM_MGMT
+    SET STR_DATE = #{strDate}
+    	, END_DATE = #{endDate}
+    	, UPDATE_NO = #{gvUserCd}
+    	, UPDATE_DATE = NOW() 
+    WHERE CMPNY_CD = #{gvCmpnyCd}
+      AND SITE_CD = #{siteCd}
+      AND SHIFT_CD = #{shiftCd}
+      AND SHIFT_TEAM_ID = #{shiftTeamId}
+    </update>
+
+    <delete id="deleteShiftTeam" parameterType="com.prafta.web.attd.attd06.application.command.DeleteShiftTeamCommand">
+    /* Attd06Mapper.deleteShiftTeam */
+    DELETE FROM TB_SHIFT_SCH_TEAM_MGMT
+    WHERE CMPNY_CD = #{gvCmpnyCd}
+      AND SITE_CD = #{siteCd}
+      AND SHIFT_CD = #{shiftCd}
+      AND SHIFT_TEAM_ID = #{shiftTeamId}
+    </delete>
+    
+    <delete id="deleteShiftTeamAllUser" parameterType="com.prafta.web.attd.attd06.application.command.DeleteShiftTeamCommand">
+    /* Attd06Mapper.deleteShiftTeamAllUser */
+    DELETE FROM TB_SHIFT_SCH_TEAM_USER
+    WHERE CMPNY_CD = #{gvCmpnyCd}
+      AND SITE_CD = #{siteCd}
+      AND SHIFT_CD = #{shiftCd}
+      AND SHIFT_TEAM_ID = #{shiftTeamId}    
+    </delete>
+    
+    <select id="selectShiftPtrnSchList" parameterType="com.prafta.web.attd.attd06.application.query.SchCdListQuery" resultType="string">
+    /* Attd06Mapper.selectShiftPtrnSchList */
+    SELECT
+        SCH_CD
+    FROM TB_SHIFT_SCH_PTRN_MGMT
+    WHERE CMPNY_CD 	= #{cmpnyCd}
+      AND SITE_CD 	= #{siteCd}
+      AND SHIFT_CD	= #{shiftCd}
+    </select>
+    
+    <insert id="upsertUserWorkPlanList" parameterType="com.prafta.web.attd.attd06.application.command.UserWorkPlanCommand">
+    /* Attd06Mapper.upsertUserWorkPlanList */
+    INSERT INTO TB_USER_WORK_PLAN (
+        CMPNY_CD
+        , SITE_CD
+        , USER_CD
+        , WORK_YMD
+        , WORK_PLAN_CD
+        , INSERT_NO
+        , INSERT_DATE
+    ) VALUES
+    <foreach collection="userWorkPlanModelList" item="item" separator=",">
+        (
+            #{item.cmpnyCd}
+            , #{item.siteCd}
+            , #{item.userCd}
+            , #{item.workYmd}
+            , #{item.schCd}
+            , #{item.gvUserCd}
+            , NOW()
+        )
+    </foreach>
+    AS NEW
+    ON DUPLICATE KEY UPDATE
+        WORK_PLAN_CD = NEW.WORK_PLAN_CD
+        , UPDATE_NO = NEW.INSERT_NO
+        , UPDATE_DATE = NOW()
+	</insert>
+</mapper>

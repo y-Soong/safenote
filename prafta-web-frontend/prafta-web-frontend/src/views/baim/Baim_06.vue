@@ -152,7 +152,7 @@ const typeOptionsFromBase = computed(() => baseInfoArr.value["COM004"] ?? []);
 // ================ Life Cycle Functions ================
 onMounted(async () => {
   fnButtonControll();
-  init();
+  fnInit();
   await fnGetBaseinfoList();
 });
 
@@ -501,10 +501,10 @@ const fnSaveSiteNodeAdmin = async (field, node, userCd, userNm) => {
 };
 
 // ================ Methods/Functions ================
-const init = () => {
-  siteCd.value = sessionStorage.getItem("gv_siteCd");
-  siteNo.value = sessionStorage.getItem("gv_siteNo");
-  siteNm.value = sessionStorage.getItem("gv_siteNm");
+const fnInit = () => {
+  siteCd.value = sessionStorage.getItem("gv_siteCd") ?? "";
+  siteNo.value = sessionStorage.getItem("gv_siteNo") ?? "";
+  siteNm.value = sessionStorage.getItem("gv_siteNm") ?? "";
   orgTree.value = null;
 
   fnSearch();
@@ -706,7 +706,6 @@ const fnDeleteManager = ({ node, field }) => {
 
 /** 담당 관리자 정/부 선택 팝업 */
 const fnOpenUserSearch = ({ node, field }) => {
-
   openPop(UserSearchPop, {
     cmpnyCd_p: sessionStorage.getItem("gv_cmpnyCd"),
     siteCd_p: siteCd.value,

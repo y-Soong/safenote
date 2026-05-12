@@ -102,10 +102,42 @@
                 <th class="event_cell" style="text-align: center; width: 4%">
                   No
                 </th>
-                <th class="editableCell" style="width: 10%">타입코드</th>
-                <th class="editableCell" style="width: 8%">교대일수</th>
-                <th class="editableCell">패턴요약</th>
-                <th class="editableCell" style="width: 10%">등록사용자수</th>
+                <ThSortable
+                  label="타입코드"
+                  col-key="shiftNo"
+                  :sort-key="sortKey"
+                  :sort-order="sortOrder"
+                  :width="colWidths.shiftNo"
+                  @sort="onSort"
+                  @update:width="onResize"
+                />
+                <ThSortable
+                  label="교대일수"
+                  col-key="shiftCycleDays"
+                  :sort-key="sortKey"
+                  :sort-order="sortOrder"
+                  :width="colWidths.shiftCycleDays"
+                  @sort="onSort"
+                  @update:width="onResize"
+                />
+                <ThSortable
+                  label="패턴요약"
+                  col-key="schNmList"
+                  :sort-key="sortKey"
+                  :sort-order="sortOrder"
+                  :width="colWidths.schNmList"
+                  @sort="onSort"
+                  @update:width="onResize"
+                />
+                <ThSortable
+                  label="등록사용자수"
+                  col-key="regUserCnt"
+                  :sort-key="sortKey"
+                  :sort-order="sortOrder"
+                  :width="colWidths.regUserCnt"
+                  @sort="onSort"
+                  @update:width="onResize"
+                />
                 <th style="width: 12%">사용여부</th>
               </tr>
             </thead>
@@ -119,7 +151,7 @@
               </template>
               <template v-else>
                 <tr
-                  v-for="(shift, idx) in shiftList"
+                  v-for="(shift, idx) in sortedData"
                   :key="shift.shiftNo || idx"
                   class="row-clickable"
                   @dblclick="fnShiftTypeDetail(shift)"
@@ -180,6 +212,11 @@ import { useModal } from "@/utils/useModal";
 import search_icon from "@/assets/img/search_icon.png";
 import SiteSearchPop from "@/components/popup/SiteSearchPop.vue";
 import ShiftTypeCreatePop from "@/views/attd/popup/ShiftTypeCreatePop.vue";
+import ThSortable from "@/components/common/ThSortable.vue";
+import {
+  useTableSort,
+  useColumnResize,
+} from "@/composables/useTableFeatures.js";
 
 defineOptions({ name: "Attd_01_2" });
 
@@ -193,6 +230,13 @@ const { open: openPop } = useModal();
 
 const localButtons = ref({ ...props.buttons });
 const shiftList = ref([]);
+const { sortKey, sortOrder, sortedData, onSort } = useTableSort(shiftList);
+const { colWidths, onResize } = useColumnResize({
+  shiftNo: 110,
+  shiftCycleDays: 90,
+  schNmList: 200,
+  regUserCnt: 110,
+});
 const systCodeArr = ref([]);
 const headChk = ref(false);
 
@@ -204,7 +248,14 @@ const siteNo = ref("");
 const siteNm = ref("");
 const siteDisabled = ref(false);
 
+const fnInit = () => {
+  siteCd.value = sessionStorage.getItem("gv_siteCd") ?? "";
+  siteNo.value = sessionStorage.getItem("gv_siteNo") ?? "";
+  siteNm.value = sessionStorage.getItem("gv_siteNm") ?? "";
+};
+
 onMounted(async () => {
+  fnInit();
   fnButtonControll();
   await fnGetSystinfoList();
 });
@@ -290,11 +341,11 @@ const focusKill = (e) => {
 const fnSrchSiteInfo = async () => {
   try {
     const response = await axios.get("/comApi/baseinfo/site-lists", {
-      params : {
+      params: {
         cmpnyCd: sessionStorage.getItem("gv_cmpnyCd"),
         siteNo: siteNo.value,
         siteNm: siteNm.value,
-      }
+      },
     });
     if (response.status === 200) fnCallback(response);
   } catch (err) {

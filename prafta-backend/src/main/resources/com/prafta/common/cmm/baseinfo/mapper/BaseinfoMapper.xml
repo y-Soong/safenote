@@ -258,7 +258,7 @@
     	, A.SITE_NO														AS siteNo
     	, A.SITE_NM														AS siteNm
     	, A.SITE_ADMIN_CD												AS siteAdminCd
-    	, FNC_CMM_INFO_SRCH(A.CMPNY_CD, 'USER', A.SITE_ADMIN_CD, null)	AS siteAdminNm
+    	, FNC_CMM_INFO_SRCH(A.CMPNY_CD, 'USER_NM', A.SITE_ADMIN_CD, null)	AS siteAdminNm
     	, A.ADDR_1														AS addr1
     	, A.ADDR_2														AS addr2
     	, A.TEL_NO														AS telNo
@@ -303,9 +303,6 @@
 		  <if test="userCd != null and userCd != ''">
 	      AND U.USER_CD = #{userCd}
 	      </if>
-<!--
-	      AND U.USE_YN   = 'Y'
--->
 	    LIMIT 1
 	),
 	node_tree AS (
@@ -356,9 +353,15 @@
 		   AND (
 		         (SELECT V.AUTH_CD FROM viewer V) IN ('system','master','hr','safe')
 		         OR (
+					CASE 
+						WHEN A.SITE_CD = (SELECT V.SITE_CD FROM viewer V)
+							THEN (A.SITE_CD = (SELECT V.SITE_CD FROM viewer V) AND A.NODE_CD IN (SELECT T.NODE_CD FROM node_tree T))
+					END
+<!--
 		             /* 비권한 사용자는 본인 site 고정 + 하위 node만 */
 		             A.SITE_CD = (SELECT V.SITE_CD FROM viewer V)
 		             AND A.NODE_CD IN (SELECT T.NODE_CD FROM node_tree T)
+-->
 		         )
 		   )
 	 	   <if test="nodeCd != null and nodeCd != ''">
@@ -517,23 +520,26 @@
 	  AND A.USER_CD = #{userCd}
 	  AND A.USE_YN = 'Y'
     </select>
-<!--
-    <select id="selectUserIdInfo" parameterType="com.prafta.common.cmm.baseinfo.dto.BaseinfoCmmReq" resultType="map">
+    
+    <select id="selectUserIdInfo" parameterType="com.prafta.common.cmm.baseinfo.application.query.UserIdInfoQuery" resultType="com.prafta.common.cmm.baseinfo.result.UserIdInfoResult">
     /* BaseinfoMapper."selectUserIdInfo" */
-    SELECT *
+    SELECT
+    	CMPNY_CD	AS cmpnyCd
+    	, USER_CD	AS userCd
+    	, USER_ID	AS userId
     FROM TB_USER
     WHERE 1=1
       AND USER_NM = #{userNm}
-      AND MBL_NO_ENC = #{mblNoHmac}
+      AND MBL_NO_HMAC = #{mblNoHmac}
     </select>
--->
-    <update id="updateUserPw">
+    
+    <update id="updateUserPw" parameterType="com.prafta.common.cmm.baseinfo.application.command.UserPasswordCommand">
     /* BaseinfoMapper."updateUserPw" */
     UPDATE TB_USER
 	SET USER_PW = #{userPw}
 	WHERE 1=1
 	  AND CMPNY_CD = #{cmpnyCd}
-	  AND USER_ID = #{userId}
+	  AND USER_CD = #{userCd}
     </update>
     
     <select id="selectTermsDetailInfo" parameterType="com.prafta.common.cmm.baseinfo.application.query.TermsDetailInfoQuery" resultType="com.prafta.common.cmm.baseinfo.result.TermsDetailInfoResult">
@@ -553,5 +559,168 @@
 	FROM TB_TERMS A
 	WHERE A.TERMS_ID = #{termsId}
     </select>
-    
+
+	<resultMap id="UserInfoMap" type="com.prafta.common.cmm.baseinfo.result.UserInfoResult">
+	  <constructor>
+	    <arg name="chk"       column="chk"       javaType="java.lang.String"/>
+	    <arg name="cmpnyCd"   column="cmpnyCd"   javaType="java.lang.String"/>
+	    <arg name="userCd"    column="userCd"    javaType="java.lang.String"/>
+	    <arg name="userId"    column="userId"    javaType="java.lang.String"/>
+	    <arg name="userNm"    column="userNm"    javaType="java.lang.String"/>
+	    <arg name="authCd"    column="authCd"    javaType="java.lang.String"/>
+	    <arg name="authLevel" column="authLevel" javaType="java.lang.String"/>
+	    <arg name="siteCd"    column="siteCd"    javaType="java.lang.String"/>
+	    <arg name="nodeCd"    column="nodeCd"    javaType="java.lang.String"/>
+	    <arg name="oriNodeCd" column="oriNodeCd" javaType="java.lang.String"/>
+	    <arg name="nodeNm"    column="nodeNm"    javaType="java.lang.String"/>
+	    <arg name="siteNm"    column="siteNm"    javaType="java.lang.String"/>
+
+	    <arg name="mblNo"   column="mblNo"   javaType="java.lang.String"
+	         typeHandler="com.prafta.common.security.crypto.mybatis.AesGcmDecryptTypeHandler"/>
+	    <arg name="email"   column="email"   javaType="java.lang.String"
+	         typeHandler="com.prafta.common.security.crypto.mybatis.AesGcmDecryptTypeHandler"/>
+	    <arg name="birthDt" column="birthDt" javaType="java.lang.String"
+	         typeHandler="com.prafta.common.security.crypto.mybatis.AesGcmDecryptTypeHandler"/>
+
+	    <arg name="gender"    column="gender"    javaType="java.lang.String"/>
+	    <arg name="useYn"     column="useYn"     javaType="java.lang.String"/>
+	    <arg name="siteNmList" column="siteNmList" javaType="java.lang.String"/>
+	    <arg name="accountStatus" column="accountStatus" javaType="java.lang.String"/>
+	    <arg name="withdrawalDate" column="withdrawalDate" javaType="java.lang.String"/>
+	  </constructor>
+	</resultMap>
+
+    <select id="selectUserInfoList" parameterType="com.prafta.common.cmm.baseinfo.application.query.UserInfoListQuery" resultMap="UserInfoMap">
+    /* BaseinfoMapper.selectUserInfoList */
+	WITH RECURSIVE viewer AS (
+	    SELECT
+	        U.CMPNY_CD,
+	        U.USER_CD,
+	        U.USER_ID,
+	        U.AUTH_CD,
+	        U.SITE_CD,
+	        U.NODE_CD
+	    FROM TB_USER U
+	    WHERE U.CMPNY_CD = #{gvCmpnyCd}
+	      AND U.USER_CD  = #{gvUserCd}
+	    LIMIT 1
+	),
+	node_tree AS (
+	    SELECT N.CMPNY_CD, N.SITE_CD, N.NODE_CD
+	    FROM TB_SITE_NODE N
+	    INNER JOIN viewer V
+	        ON N.CMPNY_CD = V.CMPNY_CD
+	       AND N.SITE_CD  = V.SITE_CD
+	       AND N.NODE_CD  = V.NODE_CD
+
+	    UNION ALL
+
+	    SELECT C.CMPNY_CD, C.SITE_CD, C.NODE_CD
+	    FROM TB_SITE_NODE C
+	    INNER JOIN node_tree P
+	        ON C.CMPNY_CD = P.CMPNY_CD
+	       AND C.SITE_CD  = P.SITE_CD
+	       AND C.PARENT_NODE_CD = P.NODE_CD
+	)
+
+	SELECT
+	    null                                                              	AS chk
+	    , A.CMPNY_CD                                                       	AS cmpnyCd
+	    , A.USER_CD                                                        	AS userCd
+	    , A.USER_ID                                                        	AS userId
+	    , A.USER_NM                                                        	AS userNm
+	    , A.AUTH_CD                                                        	AS authCd
+	    , FNC_CMM_INFO_SRCH(A.CMPNY_CD, 'AUTH_LEVEL', A.AUTH_CD, null)		AS authLevel
+	    , A.SITE_CD                                                        	AS siteCd
+	    , A.NODE_CD                                                        	AS nodeCd
+	    , A.NODE_CD                                                        	AS oriNodeCd
+	    , FNC_CMM_INFO_SRCH(A.CMPNY_CD, 'NODE', A.SITE_CD, A.NODE_CD)      	AS nodeNm
+	    , C.SITE_NM                                                        	AS siteNm
+	    , A.MBL_NO_ENC														AS mblNo
+	    , A.EMAIL_ENC														AS email
+	    , A.BIRTH_DT_ENC													AS birthDt
+	    , A.GENDER                                                         	AS gender
+	    , A.USE_YN                                                         	AS useYn
+	    , IFNULL(B.SITE_NM_LIST, '')                                       	AS siteNmList
+	    , A.ACCOUNT_STATUS													AS accountStatus
+        , DATE_FORMAT(STR_TO_DATE(A.WITHDRAWAL_DATE, '%Y%m%d'), '%Y-%m-%d') AS withdrawalDate
+	FROM TB_USER A
+		LEFT JOIN (
+		    SELECT
+		        X.USER_CD,
+		        GROUP_CONCAT(S.SITE_NM ORDER BY S.SITE_CD SEPARATOR ',') AS SITE_NM_LIST
+		    FROM TB_USER_SITE_AUTH X
+		    INNER JOIN TB_SITE S
+		        ON X.CMPNY_CD = S.CMPNY_CD
+		       AND X.SITE_CD  = S.SITE_CD
+		    WHERE X.USE_YN = 'Y'
+		    GROUP BY X.USER_CD
+		) B
+			ON (
+				B.USER_CD = A.USER_CD
+			)
+		INNER JOIN TB_SITE C
+		    ON (
+				A.CMPNY_CD = C.CMPNY_CD
+		   	AND A.SITE_CD  = C.SITE_CD
+		   	AND C.USE_YN   = 'Y'
+		   	)
+		WHERE 1=1
+		  AND A.CMPNY_CD = #{gvCmpnyCd}
+		  AND A.AUTH_CD != 'system'
+		  AND A.USE_YN = 'Y'
+
+		  AND (
+			<choose>
+				<when test="searchMode != null and searchMode != ''">
+					<if test='"SHIFT_USER_SRCH".equals(searchMode)'>
+						(SELECT V.AUTH_CD FROM viewer V) IN ('system','master','hr') OR
+					</if>
+				</when>
+				<otherwise>
+					(SELECT V.AUTH_CD FROM viewer V) IN ('system','master','hr','safe') OR
+				</otherwise>
+			</choose>
+		        (
+		            A.SITE_CD = (SELECT V.SITE_CD FROM viewer V)
+		            <if test="gvNodeCd != null and gvNodeCd != ''">
+		            	AND A.NODE_CD IN (SELECT T.NODE_CD FROM node_tree T)
+		            </if>
+		        )
+		  )
+
+		  <if test="userNm != null and userNm != ''">
+		    AND A.USER_NM LIKE CONCAT('%', #{userNm}, '%')
+		  </if>
+
+		  <if test="userId != null and userId != ''">
+		    AND A.USER_ID = #{userId}
+		  </if>
+
+		  <if test="useYn != null and useYn != ''">
+		    AND A.USE_YN = #{useYn}
+		  </if>
+
+		  <if test="siteCd != null and siteCd != ''">
+		    AND A.SITE_CD = #{siteCd}
+		  </if>
+
+		  <if test="nodeCd != null and nodeCd != ''">
+		    AND A.NODE_CD = #{nodeCd}
+		  </if>
+		  
+		  <if test="searchMode != null and searchMode != ''">
+			<if test='"SHIFT_USER_SRCH".equals(searchMode)'>
+			  AND NOT EXISTS (
+				  SELECT 1
+	              FROM TB_SHIFT_SCH_TEAM_USER STU
+		        WHERE STU.CMPNY_CD = A.CMPNY_CD
+  		          AND STU.SITE_CD  = A.SITE_CD
+		          AND STU.USER_CD  = A.USER_CD
+	          )
+			</if>
+		  </if>
+		  
+    </select>
+
 </mapper>

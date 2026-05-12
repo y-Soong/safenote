@@ -501,7 +501,14 @@ const triangleStyle = computed(() => {
 });
 
 // =========================== Life Cycle ===========================
+const fnInit = () => {
+  siteCd.value = sessionStorage.getItem("gv_siteCd") ?? "";
+  siteNo.value = sessionStorage.getItem("gv_siteNo") ?? "";
+  siteNm.value = sessionStorage.getItem("gv_siteNm") ?? "";
+};
+
 onMounted(async () => {
+  fnInit();
   fnButtonControll();
   await fnGetSystinfoList();
   await fnGetBaseinfoList();

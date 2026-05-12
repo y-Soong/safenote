@@ -5,6 +5,8 @@
       :title="props.title"
       :buttons="localButtons"
       @search="fnSearch"
+      @save="fnSave"
+      @delete="fnDelete"
     />
 
     <!-- 조회 영역 -->
@@ -72,7 +74,7 @@
         <CalendarSrchMonth
           :range="false"
           style="width: 100px"
-          v-model="searchYm"
+          v-model="workYm"
         />
       </div>
       <div>
@@ -83,10 +85,11 @@
 
     <!-- 적용 툴바 -->
     <div class="attd05-toolbar">
-      <span class="toolbar-label">적용</span>
+      <!-- ── 근무 타입 적용 섹션 ─────────────────────────── -->
+      <span class="toolbar-label">근무 타입</span>
       <select v-model="selectedSchType" class="toolbar-sch-select">
         <option value="">스케줄 타입 선택</option>
-        <option v-for="sch in schTypeList" :key="sch.schNo" :value="sch.schNo">
+        <option v-for="sch in schTypeList" :key="sch.schCd" :value="sch.schCd">
           {{ sch.schNm }}
         </option>
       </select>
@@ -98,18 +101,66 @@
       </div>
       <div class="toolbar-radio-wrap">
         <label class="radio-item">
-          <input type="radio" v-model="holidayMode" value="exclude" />
+          <input type="radio" v-model="schHolidayMode" value="exclude" />
           <span>휴일 제외</span>
         </label>
         <label class="radio-item">
-          <input type="radio" v-model="holidayMode" value="include" />
+          <input type="radio" v-model="schHolidayMode" value="include" />
           <span>휴일 포함</span>
         </label>
       </div>
-      <button class="btn-toolbar-apply" @click="fnApply">적용</button>
-      <span v-if="selectionLabel" class="toolbar-count-label">
-        선택: {{ selectionLabel }} &middot; {{ selectionCount }}건
+      <button class="btn-toolbar-apply" @click="fnApplySchType">적용</button>
+      <span class="toolbar-count-label" :class="{ invisible: !selectionLabel }">
+        선택: {{ selectionLabel || "–" }} &middot; {{ selectionCount }}건
       </span>
+
+      <!-- ── 구분선 ─────────────────────────────────────── -->
+      <div class="toolbar-divider"></div>
+
+      <!-- ── 연차 타입 적용 섹션 ─────────────────────────── -->
+      <span class="toolbar-label toolbar-label-leave">연차 타입</span>
+      <select
+        v-model="selectedLeaveType"
+        class="toolbar-sch-select toolbar-sch-select-leave"
+      >
+        <option value="">연차 타입 선택</option>
+        <option
+          v-for="leave in leaveTypeList"
+          :key="leave.leaveCd"
+          :value="leave.leaveCd"
+        >
+          {{ leave.leaveNm }}
+        </option>
+      </select>
+      <div
+        class="toolbar-selection-box toolbar-selection-box-leave"
+        :class="{ 'has-value': !!selectionLabel }"
+      >
+        {{ selectionLabel || "" }}
+      </div>
+      <div class="toolbar-radio-wrap">
+        <label class="radio-item radio-item-leave">
+          <input type="radio" v-model="leaveHolidayMode" value="exclude" />
+          <span>휴일 제외</span>
+        </label>
+        <label class="radio-item radio-item-leave">
+          <input type="radio" v-model="leaveHolidayMode" value="include" />
+          <span>휴일 포함</span>
+        </label>
+      </div>
+      <button
+        class="btn-toolbar-apply btn-toolbar-apply-leave"
+        @click="fnApplyLeaveType"
+      >
+        적용
+      </button>
+      <span class="toolbar-count-label" :class="{ invisible: !selectionLabel }">
+        선택: {{ selectionLabel || "–" }} &middot; {{ selectionCount }}건
+      </span>
+      <div class="toolbar-spacer"></div>
+      <button class="btn-toolbar-upload" @click="fnUploadExcel">
+        엑셀 업로드
+      </button>
     </div>
 
     <!-- 테이블 영역 -->
@@ -118,7 +169,20 @@
         <table class="attd05-table" @selectstart.prevent>
           <thead>
             <tr>
-              <th class="th-user-info sticky-left sticky-top">사용자 정보</th>
+              <th class="th-seq sticky-col-seq sticky-top">No</th>
+              <th class="th-chk sticky-col-chk sticky-top">
+                <input type="checkbox" v-model="allChecked" />
+              </th>
+              <ThSortable
+                label="사용자 정보"
+                col-key="userNm"
+                :sort-key="sortKey"
+                :sort-order="sortOrder"
+                :width="colWidths.userInfo"
+                class="th-user-info sticky-col-info sticky-top"
+                @sort="onSort"
+                @update:width="onResize"
+              />
               <th
                 v-for="d in daysInMonth"
                 :key="d.workYmd"
@@ -126,6 +190,8 @@
                 :class="{
                   'head-sun': d.dow === '일',
                   'head-sat': d.dow === '토',
+                  'head-holiday':
+                    d.holidayYn !== 'N' && d.dow !== '일' && d.dow !== '토',
                 }"
               >
                 {{ parseInt(d.workYmd.slice(6)) }}({{ d.dow }})
@@ -133,8 +199,16 @@
             </tr>
           </thead>
           <tbody>
-            <tr v-for="(user, rowIdx) in userList" :key="user.userCd">
-              <td class="td-user-info sticky-left">
+            <tr v-for="(user, rowIdx) in sortedUserList" :key="user.userCd">
+              <td class="td-seq sticky-col-seq">{{ rowIdx + 1 }}</td>
+              <td class="td-chk sticky-col-chk">
+                <input
+                  type="checkbox"
+                  v-model="checkedRows"
+                  :value="user.userCd"
+                />
+              </td>
+              <td class="td-user-info sticky-col-info">
                 <div class="user-cell-inner">
                   <span class="row-badge">{{ getRowLabel(rowIdx) }}</span>
                   <div class="user-text">
@@ -144,7 +218,9 @@
                     <div class="u-dept">
                       {{ user.nodeNm }} / {{ user.shiftNm || "-" }}
                     </div>
-                    <div class="u-phone">{{ proxy.$util.formatPhoneNumber(user.mblNo) }}</div>
+                    <div class="u-phone">
+                      {{ proxy.$util.formatPhoneNumber(user.mblNo) }}
+                    </div>
                   </div>
                 </div>
               </td>
@@ -155,6 +231,9 @@
                 :class="[
                   d.dow === '일' ? 'td-sun' : '',
                   d.dow === '토' ? 'td-sat' : '',
+                  d.holidayYn !== 'N' && d.dow !== '일' && d.dow !== '토'
+                    ? 'td-holiday'
+                    : '',
                   isCellSelected(rowIdx, d.workYmd) ? 'td-selected' : '',
                   ...getSelEdgeClasses(rowIdx, d.workYmd),
                 ]"
@@ -166,12 +245,13 @@
                   class="td-val"
                   :class="{
                     'val-muted':
-                      d.weekendYn && !getCellValue(user.userCd, d.workYmd),
+                      (d.weekendYn || d.holidayYn) &&
+                      !getCellNmValue(user.userCd, d.workYmd),
                   }"
                 >
                   {{
-                    getCellValue(user.userCd, d.workYmd) ||
-                    (d.weekendYn ? "-" : "")
+                    getCellNmValue(user.userCd, d.workYmd) ||
+                    (d.weekendYn || d.holidayYn ? "-" : "")
                   }}
                 </span>
               </td>
@@ -201,7 +281,12 @@ import search_icon from "@/assets/img/search_icon.png";
 import SiteSearchPop from "@/components/popup/SiteSearchPop.vue";
 import SiteNodeSearchPop from "@/components/popup/SiteNodeSearchPop.vue";
 import CalendarSrchMonth from "@/components/common/CalendarSrchMonth.vue";
-
+import ExcelUploadPop from "@/views/attd/popup/ExcelUploadPop.vue";
+import ThSortable from "@/components/common/ThSortable.vue";
+import {
+  useTableSort,
+  useColumnResize,
+} from "@/composables/useTableFeatures.js";
 defineOptions({ name: "Attd_05" });
 
 const props = defineProps({
@@ -216,7 +301,7 @@ const localButtons = ref({ ...props.buttons });
 
 // ── 조회 조건 ─────────────────────────────────────────────
 const now = new Date();
-const searchYm = ref(
+const workYm = ref(
   `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`
 );
 const searchUserNm = ref("");
@@ -238,15 +323,40 @@ const nodeCdFcs = ref(null);
 // ── 스케줄 타입 목록 ───────────────────────────────────────
 const schTypeList = ref([]);
 
+// ── 연차 타입 목록 ───────────────────────────────────────
+const leaveTypeList = ref([]);
+
 // ── 사용자 목록 ────────────────────────────────────────────
 const userList = ref([]);
+const {
+  sortKey,
+  sortOrder,
+  sortedData: sortedUserList,
+  onSort,
+} = useTableSort(userList);
+const { colWidths, onResize } = useColumnResize({ userInfo: 210 });
 
 // ── 셀 데이터: key = `${userCd}_${day}`, value = 표시문자열 ─
 const scheduleData = ref({});
 
-// ── 적용 옵션 ─────────────────────────────────────────────
+// ── 적용 옵션 (근무 타입) ──────────────────────────────────
 const selectedSchType = ref("");
-const holidayMode = ref("exclude");
+const schHolidayMode = ref("exclude");
+
+// ── 적용 옵션 (연차 타입) ──────────────────────────────────
+const selectedLeaveType = ref("");
+const leaveHolidayMode = ref("exclude");
+
+// ── 행 체크박스 ───────────────────────────────────────────
+const checkedRows = ref([]);
+const allChecked = computed({
+  get: () =>
+    userList.value.length > 0 &&
+    checkedRows.value.length === userList.value.length,
+  set: (val) => {
+    checkedRows.value = val ? userList.value.map((u) => u.userCd) : [];
+  },
+});
 
 // ── 드래그 선택 상태 ──────────────────────────────────────
 const isDragging = ref(false);
@@ -255,33 +365,15 @@ const dragEnd = ref(null);
 
 // ── 버튼 컨트롤 ────────────────────────────────────────────
 const fnButtonControll = () => {
-  localButtons.value.search = "Y";
+  // localButtons.value.search = "Y";
   localButtons.value.create = "N";
-  localButtons.value.save = "N";
-  localButtons.value.delete = "N";
+  // localButtons.value.save = "N";
+  // localButtons.value.delete = "N";
   localButtons.value.excel = "N";
 };
 
-// ── 해당 월 날짜 목록 ──────────────────────────────────────
-const daysInMonth = computed(() => {
-  if (!searchYm.value) return [];
-  const [year, month] = searchYm.value.split("-").map(Number);
-  const lastDay = new Date(year, month, 0).getDate();
-  const DOW = ["일", "월", "화", "수", "목", "금", "토"];
-  const result = [];
-  for (let d = 1; d <= lastDay; d++) {
-    const date = new Date(year, month - 1, d);
-    const dayOfWeek = date.getDay();
-    const workYmd = `${year}${String(month).padStart(2, "0")}${String(d).padStart(2, "0")}`;
-    result.push({
-      workYmd,
-      dow: DOW[dayOfWeek],
-      weekendYn: dayOfWeek === 0 || dayOfWeek === 6,
-      holidayYn: false, // API 응답으로 채워짐
-    });
-  }
-  return result;
-});
+// ── 해당 월 날짜 목록 (fnSearch 호출 후 서버 응답으로 세팅) ─
+const daysInMonth = ref([]);
 
 // ── 행 레이블 (A, B, C … Z, AA, AB …) ─────────────────────
 const getRowLabel = (idx) => {
@@ -292,9 +384,18 @@ const getRowLabel = (idx) => {
   );
 };
 
-// ── 셀 값 조회 ─────────────────────────────────────────────
-const getCellValue = (userCd, workYmd) => {
-  return scheduleData.value[`${userCd}_${workYmd}`] || "";
+// ── 셀 값 조회 (표시명 변환) ──────────────────────────
+const getCellNmValue = (userCd, workYmd) => {
+  const code = scheduleData.value[`${userCd}_${workYmd}`];
+  if (!code) return "";
+
+  const sch = schTypeList.value.find((s) => s.schCd === code);
+  if (sch) return sch.schNm;
+
+  const leave = leaveTypeList.value.find((l) => l.leaveCd === code);
+  if (leave) return leave.leaveNm;
+
+  return code;
 };
 
 // ── 선택 범위 ──────────────────────────────────────────────
@@ -372,8 +473,8 @@ const onDocMouseUp = () => {
   isDragging.value = false;
 };
 
-// ── 적용 ───────────────────────────────────────────────────
-const fnApply = async () => {
+// ── 근무 타입 적용 ─────────────────────────────────────────
+const fnApplySchType = async () => {
   if (!selectedSchType.value) {
     await proxy.$alert("스케줄 타입을 선택해주세요.");
     return;
@@ -383,10 +484,8 @@ const fnApply = async () => {
     return;
   }
 
-  const sch = schTypeList.value.find((s) => s.schNo === selectedSchType.value);
-  const displayVal = sch ? sch.schNm : selectedSchType.value;
-
   const { minRow, maxRow, minDay, maxDay } = selectionRange.value;
+  const updatedUserCds = new Set();
   for (let r = minRow; r <= maxRow; r++) {
     const user = userList.value[r];
     if (!user) continue;
@@ -394,15 +493,62 @@ const fnApply = async () => {
       (d) => d.workYmd >= minDay && d.workYmd <= maxDay
     );
     for (const d of daysInRange) {
-      if (holidayMode.value === "exclude" && (d.weekendYn || d.holidayYn))
+      if (
+        schHolidayMode.value === "exclude" &&
+        (d.weekendYn === "Y" || d.holidayYn === "Y")
+      ) {
         continue;
-      scheduleData.value[`${user.userCd}_${d.workYmd}`] = displayVal;
+      }
+      scheduleData.value[`${user.userCd}_${d.workYmd}`] = selectedSchType.value;
+      updatedUserCds.add(user.userCd);
     }
+  }
+  if (updatedUserCds.size > 0) {
+    const merged = new Set([...checkedRows.value, ...updatedUserCds]);
+    checkedRows.value = [...merged];
+  }
+};
+
+// ── 연차 타입 적용 ─────────────────────────────────────────
+const fnApplyLeaveType = async () => {
+  if (!selectedLeaveType.value) {
+    await proxy.$alert("연차 타입을 선택해주세요.");
+    return;
+  }
+  if (!selectionRange.value) {
+    await proxy.$alert("적용할 영역을 선택해주세요.");
+    return;
+  }
+
+  const { minRow, maxRow, minDay, maxDay } = selectionRange.value;
+  const updatedUserCds = new Set();
+  for (let r = minRow; r <= maxRow; r++) {
+    const user = userList.value[r];
+    if (!user) continue;
+    const daysInRange = daysInMonth.value.filter(
+      (d) => d.workYmd >= minDay && d.workYmd <= maxDay
+    );
+    for (const d of daysInRange) {
+      if (
+        leaveHolidayMode.value === "exclude" &&
+        (d.weekendYn === "Y" || d.holidayYn === "Y")
+      ) {
+        continue;
+      }
+      scheduleData.value[`${user.userCd}_${d.workYmd}`] =
+        selectedLeaveType.value;
+      updatedUserCds.add(user.userCd);
+    }
+  }
+  if (updatedUserCds.size > 0) {
+    const merged = new Set([...checkedRows.value, ...updatedUserCds]);
+    checkedRows.value = [...merged];
   }
 };
 
 // ── 사업장 조회 ────────────────────────────────────────────
 const fnSrchSiteInfo = async () => {
+  userList.value = [];
   try {
     const response = await axios.get("/comApi/baseinfo/site-lists", {
       params: {
@@ -429,6 +575,8 @@ const fnCallback = (res) => {
       siteNo.value = list[0].siteNo;
       siteNm.value = list[0].siteNm;
       nodeDisabled.value = false;
+
+      fnGetSchTypeList();
     } else if (list.length > 1) {
       fnSiteSearchPopOpen();
     } else {
@@ -521,6 +669,8 @@ const onSiteSelected = (siteCdVal, siteNoVal, siteNmVal) => {
   nodeDisabled.value = false;
   nodeCd.value = "";
   nodeNm.value = "";
+  userList.value = [];
+  fnGetSchTypeList();
 };
 
 const fnSiteSearchPopOpen = () => {
@@ -551,7 +701,10 @@ const fnSiteNodeSearchPopOpenForCondition = () => {
 
 // ── 조회 ───────────────────────────────────────────────────
 const fnSearch = async () => {
-  if(proxy.$util.isEmpty(siteCd.value)) {
+  userList.value = [];
+  checkedRows.value = [];
+
+  if (proxy.$util.isEmpty(siteCd.value)) {
     await proxy.$alert(
       getMessage(MSG.REQUIRED_FIELD_MISSING, {
         fieldLabel: "사업장",
@@ -561,10 +714,10 @@ const fnSearch = async () => {
     return false;
   }
 
-  if(proxy.$util.isEmpty(nodeCd.value)) {
+  if (proxy.$util.isEmpty(nodeCd.value)) {
     await proxy.$alert(
       getMessage(MSG.REQUIRED_FIELD_MISSING, {
-        fieldLabel: "사업장",
+        fieldLabel: "소속부서",
       })
     );
     nodeCdFcs.value.focus();
@@ -574,7 +727,7 @@ const fnSearch = async () => {
   try {
     const response = await axios.get("/webApi/attd05/user-work-plans", {
       params: {
-        searchYm: searchYm.value,
+        workYm: workYm.value,
         siteCd: siteCd.value,
         nodeCd: nodeCd.value,
         incSubNodeYn: incSubNodeYn.value ? "Y" : "N",
@@ -584,20 +737,19 @@ const fnSearch = async () => {
 
     if (response.status === 200) {
       console.log(response.data);
-      console.log(response.data.userListResultList[0].mblNo);
-      // TODO: 서버 응답 세팅
+
       userList.value = response.data.userListResultList;
-      // daysInMonth 서버 응답 사용 시: daysInMonth.value = response.data.dayResultList;
+      daysInMonth.value = response.data.dayResultList;
       scheduleData.value = {};
       response.data.schedResultList.forEach((item) => {
-        const sch = schTypeList.value.find((s) => s.schNo === item.dayPlanCd);
-        scheduleData.value[`${item.userCd}_${item.workYmd}`] = sch?.schNm ?? item.dayPlanCd;
+        scheduleData.value[`${item.userCd}_${item.workYmd}`] = item.workPlanCd;
       });
-    }
+      dragStart.value = null;
+      dragEnd.value = null;
 
-    scheduleData.value = {};
-    dragStart.value = null;
-    dragEnd.value = null;
+      await fnGetLeaveTypeList();
+      await fnGetSchTypeList();
+    }
   } catch (err) {
     const msg =
       err?.response?.data?.message ||
@@ -611,15 +763,12 @@ const fnSearch = async () => {
 const fnGetSchTypeList = async () => {
   try {
     // TODO: API 연동
-    // const response = await axios.get('/webApi/attd01/sch-lists', {});
-    // schTypeList.value = response.data?.schList ?? [];
-    schTypeList.value = [
-      { schNo: "SCH001", schNm: "09:00~18:00" },
-      { schNo: "SCH002", schNm: "09:00~12:00\n14:00~18:00" },
-      { schNo: "SCH003", schNm: "10:00~19:00" },
-      { schNo: "SCH004", schNm: "08:00~17:00" },
-      { schNo: "SCH005", schNm: "휴무" },
-    ];
+    const response = await axios.get("/webApi/attd05/sch-type-lists", {
+      params: {
+        siteCd: siteCd.value,
+      },
+    });
+    schTypeList.value = response.data?.schTypeResultList ?? [];
   } catch (err) {
     const msg =
       err?.response?.data?.message || err?.message || "스케줄 목록 조회 오류.";
@@ -627,87 +776,140 @@ const fnGetSchTypeList = async () => {
   }
 };
 
-// ── Mock 데이터 초기화 ─────────────────────────────────────
-const initMockData = () => {
-  const mockUsers = [
-    {
-      userCd: "pjiyoung",
-      userNm: "박지영",
-      nodeNm: "디자인팀",
-      shiftNm: null,
-      mblNo: "010-3456-7890",
-    },
-    {
-      userCd: "HONGgd",
-      userNm: "홍길동",
-      nodeNm: "인프라팀",
-      shiftNm: null,
-      mblNo: "010-3455-3333",
-    },
-    {
-      userCd: "cdonghun",
-      userNm: "최동훈",
-      nodeNm: "DT팀",
-      shiftNm: "C조",
-      mblNo: "010-5678-9012",
-    },
-    {
-      userCd: "jhaneul",
-      userNm: "정하늘",
-      nodeNm: "개발팀",
-      shiftNm: null,
-      mblNo: "010-6789-0123",
-    },
-    {
-      userCd: "kseoyeon",
-      userNm: "강서연",
-      nodeNm: "마케팅팀",
-      shiftNm: null,
-      mblNo: "010-1234-5678",
-    },
-    {
-      userCd: "lminsoo",
-      userNm: "이민수",
-      nodeNm: "IT팀",
-      shiftNm: "A조",
-      mblNo: "010-2345-6789",
-    },
-    {
-      userCd: "cwonbin",
-      userNm: "최원빈",
-      nodeNm: "영업팀",
-      shiftNm: null,
-      mblNo: "010-9876-5432",
-    },
-    {
-      userCd: "khyunjin",
-      userNm: "김현진",
-      nodeNm: "기획팀",
-      shiftNm: null,
-      mblNo: "010-4567-8901",
-    },
-  ];
-  userList.value = mockUsers;
+// ── 연차 타입 목록 조회 ──────────────────────────────────
+const fnGetLeaveTypeList = async () => {
+  try {
+    // TODO: API 연동
+    const response = await axios.get("/webApi/attd05/leave-type-lists", {});
+    leaveTypeList.value = response.data?.leaveTypeResultList ?? [];
+  } catch (err) {
+    const msg =
+      err?.response?.data?.message || err?.message || "스케줄 목록 조회 오류.";
+    await proxy.$alert(msg);
+  }
+};
 
-  const days = daysInMonth.value;
-  mockUsers.forEach((user) => {
-    days.forEach((d) => {
-      if (d.weekendYn) return;
-      scheduleData.value[`${user.userCd}_${d.workYmd}`] =
-        d.dow === "목" ? "09:00~12:00\n14:00~18:00" : "09:00~18:00";
+// ── 저장 ───────────────────────────────────────────────────
+const fnSave = async () => {
+  if (checkedRows.value.length === 0) {
+    await proxy.$alert("선택된 항목이 없습니다.");
+    return;
+  }
+
+  const cmpnyCd = sessionStorage.getItem("gv_cmpnyCd");
+  const saveList = Object.entries(scheduleData.value)
+    .filter(([key, workPlanCd]) => {
+      if (!workPlanCd) return false;
+      const workYmd = key.slice(-8);
+      const userCd = key.substring(0, key.length - 9);
+      return checkedRows.value.includes(userCd) && !!workYmd;
+    })
+    .map(([key, workPlanCd]) => {
+      const workYmd = key.slice(-8);
+      const userCd = key.substring(0, key.length - 9);
+      return { cmpnyCd, siteCd: siteCd.value, userCd, workYmd, workPlanCd };
     });
-  });
-  // 홍길동은 다른 스케줄
-  days.forEach((d) => {
-    if (!d.weekendYn) {
-      scheduleData.value[`HONGgd_${d.workYmd}`] = "10:00~19:00";
+
+  if (saveList.length === 0) {
+    await proxy.$alert(getMessage(MSG.SAVE_DATA_REQUIRED));
+    return;
+  }
+
+  const ok = await proxy.$confirm(getMessage(MSG.SAVE_CONFIRM));
+  if (!ok) return;
+
+  try {
+    const response = await axios.post(
+      "/webApi/attd05/save-user-work-plans",
+      saveList
+    );
+    if (response.status === 200) {
+      proxy.$alert(getMessage(MSG.SAVE_SUCCESS));
+      fnSearch();
     }
+  } catch (err) {
+    const msg =
+      err?.response?.data?.message ||
+      err?.message ||
+      "저장 중 오류가 발생했습니다.";
+    await proxy.$alert(msg);
+  }
+};
+
+// ── 삭제 ───────────────────────────────────────────────────
+const fnDelete = async () => {
+  if (checkedRows.value.length === 0) {
+    await proxy.$alert("선택된 항목이 없습니다.");
+    return;
+  }
+
+  const cmpnyCd = sessionStorage.getItem("gv_cmpnyCd");
+  const deleteList = checkedRows.value.map((userCd) => ({
+    cmpnyCd,
+    userCd,
+    siteCd: siteCd.value,
+    workYm: workYm.value,
+  }));
+
+  console.log(deleteList);
+
+  const ok = await proxy.$confirm(getMessage(MSG.DELETE_CONFIRM));
+  if (!ok) return;
+
+  try {
+    const response = await axios.post(
+      "/webApi/attd05/delete-user-work-plans",
+      deleteList
+    );
+    if (response.status === 200) {
+      proxy.$alert(getMessage(MSG.DELETE_SUCCESS));
+      fnSearch();
+    }
+  } catch (err) {
+    const msg =
+      err?.response?.data?.message ||
+      err?.message ||
+      "저장 중 오류가 발생했습니다.";
+    await proxy.$alert(msg);
+  }
+};
+
+// ── 엑셀 업로드 팝업 오픈 ────────────────────────────────────
+const fnUploadExcel = () => {
+  openPop(ExcelUploadPop, {
+    siteCd_p: siteCd.value,
+    siteNo_p: siteNo.value,
+    siteNm_p: siteNm.value,
+    nodeCd_p: nodeCd.value,
+    nodeNm_p: nodeNm.value,
+    incSubNodeYn_p: incSubNodeYn.value,
+    workYm_p: workYm.value,
+    onSaved: fnSearch,
   });
 };
 
+const fnInit = () => {
+  siteCd.value = sessionStorage.getItem("gv_siteCd") ?? "";
+  siteNo.value = sessionStorage.getItem("gv_siteNo") ?? "";
+  siteNm.value = sessionStorage.getItem("gv_siteNm") ?? "";
+  if (siteCd.value) {
+    nodeDisabled.value = false;
+
+    if (proxy.$util.isEmpty(sessionStorage.getItem("gv_nodeCd"))) {
+      nodeCd.value = "";
+      nodeNm.value = "";
+    } else {
+      nodeCd.value = sessionStorage.getItem("gv_nodeCd");
+      nodeNm.value = sessionStorage.getItem("gv_nodeNm");
+
+      fnSearch();
+    }
+  }
+};
+
 onMounted(async () => {
+  fnInit();
   fnButtonControll();
-  await fnGetSchTypeList();
   document.addEventListener("mouseup", onDocMouseUp);
 });
 
@@ -853,10 +1055,70 @@ onUnmounted(() => {
   background: #15803d;
 }
 
+/* ── 연차 타입 섹션 pink 스타일 ─────────────────────────── */
+.toolbar-label-leave {
+  color: #be185d;
+}
+
+.toolbar-sch-select-leave:focus {
+  border-color: #db2777 !important;
+}
+
+.toolbar-selection-box-leave.has-value {
+  border-color: #db2777 !important;
+  color: #db2777 !important;
+}
+
+.radio-item-leave input[type="radio"] {
+  accent-color: #db2777;
+}
+
+.btn-toolbar-apply-leave {
+  background: #db2777;
+}
+.btn-toolbar-apply-leave:hover {
+  background: #be185d;
+}
+
+/* ── 툴바 구분선 ─────────────────────────────────────────── */
+.toolbar-divider {
+  width: 1px;
+  height: 28px;
+  background: var(--color-border, #d1d5db);
+  margin: 0 0.75rem;
+  flex-shrink: 0;
+}
+
 .toolbar-count-label {
   font-size: 0.8125rem;
   color: var(--color-text-muted, #6b7280);
   margin-left: 0.25rem;
+  margin-right: 0.5rem;
+}
+.toolbar-count-label.invisible {
+  visibility: hidden;
+}
+
+/* ── 툴바 스페이서 / 업로드 버튼 ────────────────────────── */
+.toolbar-spacer {
+  flex: 1;
+}
+
+.btn-toolbar-upload {
+  padding: 0.35rem 1rem;
+  background: #fff;
+  border: 1px solid var(--color-border, #d1d5db);
+  color: var(--color-text, #374151);
+  border-radius: 6px;
+  font-size: 0.875rem;
+  font-weight: 600;
+  cursor: pointer;
+  font-family: "Pretendard", sans-serif;
+  transition: background 0.15s;
+  white-space: nowrap;
+}
+.btn-toolbar-upload:hover {
+  background: var(--color-bg, #f3f4f6);
 }
 
 /* ── 테이블 바디 영역 ─────────────────────────────────────── */
@@ -885,10 +1147,28 @@ onUnmounted(() => {
   font-size: 0.8125rem;
 }
 
-/* 틀고정: 가로(left) */
+/* 틀고정: 가로(left) - 순번/체크/사용자정보 순서로 left 누적 */
 .sticky-left {
   position: sticky;
   left: 0;
+  z-index: 2;
+  background: var(--color-surface, #fff);
+}
+.sticky-col-seq {
+  position: sticky;
+  left: 0;
+  z-index: 2;
+  background: var(--color-surface, #fff);
+}
+.sticky-col-chk {
+  position: sticky;
+  left: 40px;
+  z-index: 2;
+  background: var(--color-surface, #fff);
+}
+.sticky-col-info {
+  position: sticky;
+  left: 80px;
   z-index: 2;
   background: var(--color-surface, #fff);
 }
@@ -901,8 +1181,66 @@ onUnmounted(() => {
 }
 
 /* 좌상단 교차 셀은 z-index 최상위 */
+.th-seq,
+.th-chk,
 .th-user-info {
   z-index: 4 !important;
+}
+
+/* ── 순번 / 체크박스 헤더 셀 ───────────────────────────────── */
+.th-seq {
+  min-width: 40px;
+  width: 40px;
+  background: var(--color-bg, #f3f4f6);
+  border-bottom: 2px solid var(--color-border, #d1d5db);
+  border-right: 1px solid var(--color-border, #e5e7eb);
+  padding: 0.45rem 0.2rem;
+  font-size: 0.8125rem;
+  font-weight: 600;
+  color: var(--color-text-strong, #111827);
+  text-align: center;
+  white-space: nowrap;
+}
+
+.th-chk {
+  min-width: 40px;
+  width: 40px;
+  background: var(--color-bg, #f3f4f6);
+  border-bottom: 2px solid var(--color-border, #d1d5db);
+  border-right: 1px solid var(--color-border, #e5e7eb);
+  padding: 0.45rem 0.2rem;
+  text-align: center;
+}
+
+/* ── 순번 / 체크박스 데이터 셀 ─────────────────────────────── */
+.td-seq {
+  min-width: 40px;
+  width: 40px;
+  border-bottom: 1px solid var(--color-border, #e5e7eb);
+  border-right: 1px solid var(--color-border, #e5e7eb);
+  padding: 0.35rem 0.2rem;
+  text-align: center;
+  font-size: 0.75rem;
+  color: var(--color-text-muted, #6b7280);
+  background: var(--color-surface, #fff);
+}
+
+.td-chk {
+  min-width: 40px;
+  width: 40px;
+  border-bottom: 1px solid var(--color-border, #e5e7eb);
+  border-right: 1px solid var(--color-border, #e5e7eb);
+  padding: 0.35rem 0.2rem;
+  text-align: center;
+  background: var(--color-surface, #fff);
+}
+
+.td-chk input[type="checkbox"],
+.th-chk input[type="checkbox"] {
+  width: 13px;
+  height: 13px;
+  cursor: pointer;
+  accent-color: var(--color-primary, #16a34a);
 }
 
 /* ── 헤더 ─────────────────────────────────────────────────── */
@@ -936,6 +1274,9 @@ onUnmounted(() => {
 }
 .head-sat {
   color: #3b82f6;
+}
+.head-holiday {
+  color: #ef4444;
 }
 
 /* ── 사용자 정보 셀 ───────────────────────────────────────── */
@@ -1016,6 +1357,10 @@ onUnmounted(() => {
 .td-sat {
   background: rgba(59, 130, 246, 0.04);
   color: #3b82f6;
+}
+.td-holiday {
+  background: rgba(239, 68, 68, 0.04);
+  color: #ef4444;
 }
 
 .td-val {

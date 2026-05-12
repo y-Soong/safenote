@@ -24,7 +24,7 @@ public record SchInfoCommand(
 	, String gvCmpnyCd
 	, String gvUserCd
 ){
-	public static SchInfoCommand from(SchInfoParam param) {
+	public static SchInfoCommand from(SchInfoParam param, String schCd) {
 		
         if (param == null)
         	throw ApiException.appendf(CommonErrorCode.COMMON_400_001,"\n필수값 누락 - SchInfoParam");
@@ -32,7 +32,7 @@ public record SchInfoCommand(
         return new SchInfoCommand(
     		param.cmpnyCd()
     		, param.siteCd()
-    		, param.schCd()
+    		, schCd
     		, param.schNo()
     		, param.schType()
     		, param.applyDate()

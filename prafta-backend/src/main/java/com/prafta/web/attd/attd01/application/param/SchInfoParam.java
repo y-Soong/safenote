@@ -29,8 +29,6 @@ public record SchInfoParam(
 		
         if (request == null)
         	throw ApiException.appendf(CommonErrorCode.COMMON_400_001,"\n필수값 누락 - SchInfoRequest");
-        if (tokenInfo == null)
-        	throw ApiException.appendf(CommonErrorCode.COMMON_400_001,"\n필수값 누락 - TokenInfo");
 
         return new SchInfoParam(
     		request.getCmpnyCd()

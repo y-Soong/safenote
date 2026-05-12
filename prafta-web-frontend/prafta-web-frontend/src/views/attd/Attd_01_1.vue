@@ -97,15 +97,87 @@
                 <th class="event_cell" style="text-align: center; width: 2%">
                   No
                 </th>
-                <th class="editableCell" style="width: 15%">근무코드</th>
-                <th class="editableCell" style="width: 10%">근무구간</th>
-                <th class="editableCell" style="width: 13%">1 근무시간</th>
-                <th class="editableCell" style="width: 10%">1 휴게시간</th>
-                <th class="editableCell" style="width: 13%">2 근무시간</th>
-                <th class="editableCell" style="width: 10%">2 휴게시간</th>
-                <th class="editableCell">등록 사용자 수</th>
-                <th style="width: 8%">사용여부</th>
-                <th style="width: 8%">기본근무여부</th>
+                <ThSortable
+                  label="근무코드"
+                  col-key="schNo"
+                  :sort-key="sortKey"
+                  :sort-order="sortOrder"
+                  :width="colWidths.schNo"
+                  @sort="onSort"
+                  @update:width="onResize"
+                />
+                <ThSortable
+                  label="근무구간"
+                  col-key="schTypeNm"
+                  :sort-key="sortKey"
+                  :sort-order="sortOrder"
+                  :width="colWidths.schTypeNm"
+                  @sort="onSort"
+                  @update:width="onResize"
+                />
+                <ThSortable
+                  label="1 근무시간"
+                  col-key="fstSchTime"
+                  :sort-key="sortKey"
+                  :sort-order="sortOrder"
+                  :width="colWidths.fstSchTime"
+                  @sort="onSort"
+                  @update:width="onResize"
+                />
+                <ThSortable
+                  label="1 휴게시간"
+                  col-key="fstSchBrkMin"
+                  :sort-key="sortKey"
+                  :sort-order="sortOrder"
+                  :width="colWidths.fstSchBrkMin"
+                  @sort="onSort"
+                  @update:width="onResize"
+                />
+                <ThSortable
+                  label="2 근무시간"
+                  col-key="secSchTime"
+                  :sort-key="sortKey"
+                  :sort-order="sortOrder"
+                  :width="colWidths.secSchTime"
+                  @sort="onSort"
+                  @update:width="onResize"
+                />
+                <ThSortable
+                  label="2 휴게시간"
+                  col-key="secSchBrkMin"
+                  :sort-key="sortKey"
+                  :sort-order="sortOrder"
+                  :width="colWidths.secSchBrkMin"
+                  @sort="onSort"
+                  @update:width="onResize"
+                />
+                <ThSortable
+                  label="등록 사용자 수"
+                  col-key="regUserCnt"
+                  :sort-key="sortKey"
+                  :sort-order="sortOrder"
+                  :width="colWidths.regUserCnt"
+                  @sort="onSort"
+                  @update:width="onResize"
+                />
+                <ThSortable
+                  label="사용여부"
+                  col-key="useYnNm"
+                  :sort-key="sortKey"
+                  :sort-order="sortOrder"
+                  :width="colWidths.useYnNm"
+                  @sort="onSort"
+                  @update:width="onResize"
+                />
+                <ThSortable
+                  label="기본근무여부"
+                  col-key="baseYnNm"
+                  :sort-key="sortKey"
+                  :sort-order="sortOrder"
+                  :width="colWidths.baseYnNm"
+                  @sort="onSort"
+                  @update:width="onResize"
+                />
                 <th class="editableCell" style="width: 8%">변경이력</th>
               </tr>
             </thead>
@@ -119,7 +191,7 @@
               </template>
               <template v-else>
                 <tr
-                  v-for="(sch, idx) in schList"
+                  v-for="(sch, idx) in sortedData"
                   :key="sch.schCd || idx"
                   class="row-clickable"
                   @dblclick="fnSchInfoPopOpen(sch)"
@@ -186,6 +258,11 @@ import search_icon from "@/assets/img/search_icon.png";
 import SiteSearchPop from "@/components/popup/SiteSearchPop.vue";
 import SchInfoPop from "./popup/SchInfoPop.vue";
 import SchInfoHistPop from "./popup/SchInfoHistPop.vue";
+import ThSortable from "@/components/common/ThSortable.vue";
+import {
+  useTableSort,
+  useColumnResize,
+} from "@/composables/useTableFeatures.js";
 
 defineOptions({ name: "Attd_01_1" });
 
@@ -199,6 +276,18 @@ const { open: openPop } = useModal();
 
 const localButtons = ref({ ...props.buttons });
 const schList = ref([]);
+const { sortKey, sortOrder, sortedData, onSort } = useTableSort(schList);
+const { colWidths, onResize } = useColumnResize({
+  schNo: 140,
+  schTypeNm: 110,
+  fstSchTime: 130,
+  fstSchBrkMin: 110,
+  secSchTime: 130,
+  secSchBrkMin: 110,
+  regUserCnt: 110,
+  useYnNm: 80,
+  baseYnNm: 90,
+});
 const systCodeArr = ref([]);
 
 const schNo = ref("");
@@ -209,7 +298,14 @@ const siteNo = ref("");
 const siteNm = ref("");
 const siteDisabled = ref(false);
 
+const fnInit = () => {
+  siteCd.value = sessionStorage.getItem("gv_siteCd") ?? "";
+  siteNo.value = sessionStorage.getItem("gv_siteNo") ?? "";
+  siteNm.value = sessionStorage.getItem("gv_siteNm") ?? "";
+};
+
 onMounted(async () => {
+  fnInit();
   fnButtonControll();
   await fnGetSystinfoList();
 });

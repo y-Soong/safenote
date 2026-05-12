@@ -106,63 +106,64 @@
 	    , A.ACCOUNT_STATUS													AS accountStatus
         , DATE_FORMAT(STR_TO_DATE(A.WITHDRAWAL_DATE, '%Y%m%d'), '%Y-%m-%d') AS withdrawalDate
 	FROM TB_USER A
-	LEFT JOIN (
-	    SELECT
-	        X.USER_CD,
-	        GROUP_CONCAT(S.SITE_NM ORDER BY S.SITE_CD SEPARATOR ',') AS SITE_NM_LIST
-	    FROM TB_USER_SITE_AUTH X
-	    INNER JOIN TB_SITE S
-	        ON X.CMPNY_CD = S.CMPNY_CD
-	       AND X.SITE_CD  = S.SITE_CD
-	    WHERE X.USE_YN = 'Y'
-	    GROUP BY X.USER_CD
-	) B 
-		ON (
-			B.USER_CD = A.USER_CD
-		)
-	INNER JOIN TB_SITE C
-	    ON (
-			A.CMPNY_CD = C.CMPNY_CD
-	   	AND A.SITE_CD  = C.SITE_CD
-	   	AND C.USE_YN   = 'Y'
-	   	)
-	WHERE 1=1
-	  AND A.CMPNY_CD = #{gvCmpnyCd}
-	  AND A.AUTH_CD != 'system'  /* 시스템관리자 권한 제외(기존 유지) */
-	
-	  /* 권한별 노드/사이트 제한 */
-	  AND (
-	        (SELECT V.AUTH_CD FROM viewer V) IN ('system','master','hr','safe')
-	        OR (
-	            /* 비권한 사용자는 본인 site 고정 + 하위 node만 */
-	            A.SITE_CD = (SELECT V.SITE_CD FROM viewer V)
-	            <if test="gvNodeCd != null and gvNodeCd != ''">
-	            	AND A.NODE_CD IN (SELECT T.NODE_CD FROM node_tree T)
-	            </if>
-	        )
-	  )
-	
-	  <if test="userNm != null and userNm != ''">
-	    AND A.USER_NM LIKE CONCAT('%', #{userNm}, '%')
-	  </if>
-	
-	  <if test="userId != null and userId != ''">
-	    AND A.USER_ID = #{userId}
-	  </if>
-	
-	  <if test="useYn != null and useYn != ''">
-	    AND A.USE_YN = #{useYn}
-	  </if>
-	
-	  <!-- 권한자(system/master/hr/safe)만 site 필터가 의미있게 동작.
-	       비권한자는 위에서 viewer site로 이미 고정됨 -->
-	  <if test="siteCd != null and siteCd != ''">
-	    AND A.SITE_CD = #{siteCd}
-	  </if>
-	
-	  <if test="nodeCd != null and nodeCd != ''">
-	    AND A.NODE_CD = #{nodeCd}
-	  </if>
+		LEFT JOIN (
+		    SELECT
+		        X.USER_CD,
+		        GROUP_CONCAT(S.SITE_NM ORDER BY S.SITE_CD SEPARATOR ',') AS SITE_NM_LIST
+		    FROM TB_USER_SITE_AUTH X
+		    INNER JOIN TB_SITE S
+		        ON X.CMPNY_CD = S.CMPNY_CD
+		       AND X.SITE_CD  = S.SITE_CD
+		    WHERE X.USE_YN = 'Y'
+		    GROUP BY X.USER_CD
+		) B 
+			ON (
+				B.USER_CD = A.USER_CD
+			)
+		INNER JOIN TB_SITE C
+		    ON (
+				A.CMPNY_CD = C.CMPNY_CD
+		   	AND A.SITE_CD  = C.SITE_CD
+		   	AND C.USE_YN   = 'Y'
+		   	)
+		WHERE 1=1
+		  AND A.CMPNY_CD = #{gvCmpnyCd}
+		  AND A.AUTH_CD != 'system'  /* 시스템관리자 권한 제외(기존 유지) */
+		  AND A.USE_YN = 'Y'
+		
+		  /* 권한별 노드/사이트 제한 */
+		  AND (
+		        (SELECT V.AUTH_CD FROM viewer V) IN ('system','master','hr','safe')
+		        OR (
+		            /* 비권한 사용자는 본인 site 고정 + 하위 node만 */
+		            A.SITE_CD = (SELECT V.SITE_CD FROM viewer V)
+		            <if test="gvNodeCd != null and gvNodeCd != ''">
+		            	AND A.NODE_CD IN (SELECT T.NODE_CD FROM node_tree T)
+		            </if>
+		        )
+		  )
+		
+		  <if test="userNm != null and userNm != ''">
+		    AND A.USER_NM LIKE CONCAT('%', #{userNm}, '%')
+		  </if>
+		
+		  <if test="userId != null and userId != ''">
+		    AND A.USER_ID = #{userId}
+		  </if>
+		
+		  <if test="useYn != null and useYn != ''">
+		    AND A.USE_YN = #{useYn}
+		  </if>
+		
+		  <!-- 권한자(system/master/hr/safe)만 site 필터가 의미있게 동작.
+		       비권한자는 위에서 viewer site로 이미 고정됨 -->
+		  <if test="siteCd != null and siteCd != ''">
+		    AND A.SITE_CD = #{siteCd}
+		  </if>
+		
+		  <if test="nodeCd != null and nodeCd != ''">
+		    AND A.NODE_CD = #{nodeCd}
+		  </if>
     </select>
     
 	<update id="updateUserPw" parameterType="com.prafta.web.user.user01.application.command.UserPasswdCommand">

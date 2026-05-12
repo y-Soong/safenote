@@ -66,22 +66,150 @@
                 <th class="event_cell" style="text-align: center; width: 3%">
                   No
                 </th>
-                <th style="width: 10%">연차코드</th>
-                <th style="width: 8%">연차명</th>
-                <th style="width: 10%">연차타입</th>
-                <th style="width: 8%">유급구분</th>
-                <th style="width: 8%">휴가성격</th>
-                <th style="width: 10%">기본일수/부여일수</th>
-                <th style="width: 7%">사용단위</th>
-                <th style="width: 11%">사용 가능기간</th>
-                <th style="width: 8%">사용여부</th>
-                <th style="width: 8%">자동부여 기준일</th>
-                <th style="width: 6%">실행시점</th>
-                <th style="width: 6%">결재여부</th>
-                <th style="width: 6%">결재단계</th>
-                <th style="width: 8%">인사팀승인</th>
-                <th style="width: 6%">증빙여부</th>
-                <th>비고</th>
+                <ThSortable
+                  label="연차코드"
+                  col-key="leaveNo"
+                  :sort-key="sortKey"
+                  :sort-order="sortOrder"
+                  :width="colWidths.leaveNo"
+                  @sort="onSort"
+                  @update:width="onResize"
+                />
+                <ThSortable
+                  label="연차명"
+                  col-key="leaveNm"
+                  :sort-key="sortKey"
+                  :sort-order="sortOrder"
+                  :width="colWidths.leaveNm"
+                  @sort="onSort"
+                  @update:width="onResize"
+                />
+                <ThSortable
+                  label="연차타입"
+                  col-key="leaveTypeNm"
+                  :sort-key="sortKey"
+                  :sort-order="sortOrder"
+                  :width="colWidths.leaveTypeNm"
+                  @sort="onSort"
+                  @update:width="onResize"
+                />
+                <ThSortable
+                  label="유급구분"
+                  col-key="paidTypeNm"
+                  :sort-key="sortKey"
+                  :sort-order="sortOrder"
+                  :width="colWidths.paidTypeNm"
+                  @sort="onSort"
+                  @update:width="onResize"
+                />
+                <ThSortable
+                  label="휴가성격"
+                  col-key="leaveNatureTypeNm"
+                  :sort-key="sortKey"
+                  :sort-order="sortOrder"
+                  :width="colWidths.leaveNatureTypeNm"
+                  @sort="onSort"
+                  @update:width="onResize"
+                />
+                <ThSortable
+                  label="기본일수/부여일수"
+                  col-key="leaveDays"
+                  :sort-key="sortKey"
+                  :sort-order="sortOrder"
+                  :width="colWidths.leaveDays"
+                  @sort="onSort"
+                  @update:width="onResize"
+                />
+                <ThSortable
+                  label="사용단위"
+                  col-key="useUnitTypeNm"
+                  :sort-key="sortKey"
+                  :sort-order="sortOrder"
+                  :width="colWidths.useUnitTypeNm"
+                  @sort="onSort"
+                  @update:width="onResize"
+                />
+                <ThSortable
+                  label="사용 가능기간"
+                  col-key="availTermTypeNm"
+                  :sort-key="sortKey"
+                  :sort-order="sortOrder"
+                  :width="colWidths.availTermTypeNm"
+                  @sort="onSort"
+                  @update:width="onResize"
+                />
+                <ThSortable
+                  label="사용여부"
+                  col-key="useYn"
+                  :sort-key="sortKey"
+                  :sort-order="sortOrder"
+                  :width="colWidths.useYn"
+                  @sort="onSort"
+                  @update:width="onResize"
+                />
+                <ThSortable
+                  label="자동부여 기준일"
+                  col-key="grantBaseTypeNm"
+                  :sort-key="sortKey"
+                  :sort-order="sortOrder"
+                  :width="colWidths.grantBaseTypeNm"
+                  @sort="onSort"
+                  @update:width="onResize"
+                />
+                <ThSortable
+                  label="실행시점"
+                  col-key="grantOffsetMonth"
+                  :sort-key="sortKey"
+                  :sort-order="sortOrder"
+                  :width="colWidths.grantOffsetMonth"
+                  @sort="onSort"
+                  @update:width="onResize"
+                />
+                <ThSortable
+                  label="결재여부"
+                  col-key="aprvUseYn"
+                  :sort-key="sortKey"
+                  :sort-order="sortOrder"
+                  :width="colWidths.aprvUseYn"
+                  @sort="onSort"
+                  @update:width="onResize"
+                />
+                <ThSortable
+                  label="결재단계"
+                  col-key="aprvStepCnt"
+                  :sort-key="sortKey"
+                  :sort-order="sortOrder"
+                  :width="colWidths.aprvStepCnt"
+                  @sort="onSort"
+                  @update:width="onResize"
+                />
+                <ThSortable
+                  label="인사팀승인"
+                  col-key="hrFinalAprvYn"
+                  :sort-key="sortKey"
+                  :sort-order="sortOrder"
+                  :width="colWidths.hrFinalAprvYn"
+                  @sort="onSort"
+                  @update:width="onResize"
+                />
+                <ThSortable
+                  label="증빙여부"
+                  col-key="evidenceYn"
+                  :sort-key="sortKey"
+                  :sort-order="sortOrder"
+                  :width="colWidths.evidenceYn"
+                  @sort="onSort"
+                  @update:width="onResize"
+                />
+                <ThSortable
+                  label="비고"
+                  col-key="leaveDesc"
+                  :sort-key="sortKey"
+                  :sort-order="sortOrder"
+                  :width="colWidths.leaveDesc"
+                  @sort="onSort"
+                  @update:width="onResize"
+                />
               </tr>
             </thead>
             <tbody>
@@ -94,7 +222,7 @@
               </template>
               <template v-else>
                 <tr
-                  v-for="(row, idx) in leaveList"
+                  v-for="(row, idx) in sortedData"
                   :key="row.leaveNo || idx"
                   class="row-clickable"
                   @dblclick="fnOpenEdit(row)"
@@ -144,6 +272,11 @@ import axios from "@/api/axios";
 import ViewHeader from "@/components/common/ViewHeader.vue";
 import { useModal } from "@/utils/useModal";
 import LeaveTypeCreatePop from "@/views/attd/popup/LeaveTypeCreatePop.vue";
+import ThSortable from "@/components/common/ThSortable.vue";
+import {
+  useTableSort,
+  useColumnResize,
+} from "@/composables/useTableFeatures.js";
 
 defineOptions({ name: "Attd_03" });
 
@@ -157,6 +290,25 @@ const { open: openPop } = useModal();
 
 const localButtons = ref({ ...props.buttons });
 const leaveList = ref([]);
+const { sortKey, sortOrder, sortedData, onSort } = useTableSort(leaveList);
+const { colWidths, onResize } = useColumnResize({
+  leaveNo: 110,
+  leaveNm: 100,
+  leaveTypeNm: 110,
+  paidTypeNm: 90,
+  leaveNatureTypeNm: 90,
+  leaveDays: 110,
+  useUnitTypeNm: 90,
+  availTermTypeNm: 110,
+  useYn: 80,
+  grantBaseTypeNm: 110,
+  grantOffsetMonth: 80,
+  aprvUseYn: 80,
+  aprvStepCnt: 80,
+  hrFinalAprvYn: 90,
+  evidenceYn: 80,
+  leaveDesc: 120,
+});
 const systCodeArr = ref([]);
 const leaveNo = ref("");
 const leaveNm = ref("");

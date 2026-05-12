@@ -41,7 +41,7 @@ public class Attd03ServiceImpl implements Attd03Service{
 		LeaveNoDupChk leaveNoDupChk = attd03Mapper.selectLeaveNoDupChkResult(LeaveNoDupCheckQuery.from(param));
 		
 		if(leaveNoDupChk != null) {
-			throw new ApiException(AttdErrorCode.ATTD_400_001);
+			throw new ApiException(AttdErrorCode.ATTD_400_003);
 		}
 		
 		attd03Mapper.updateLeaveType(LeaveTypeCommand.from(param));

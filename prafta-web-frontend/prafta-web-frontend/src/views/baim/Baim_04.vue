@@ -89,10 +89,26 @@
                     @click="fnHeadChk"
                   />
                 </th>
-                <th class="event_cell" style="width: 15%">사업장</th>
+                <ThSortable
+                  label="사업장"
+                  col-key="siteNm"
+                  :sort-key="sortKey"
+                  :sort-order="sortOrder"
+                  :width="colWidths.siteNm"
+                  @sort="onSort"
+                  @update:width="onResize"
+                />
                 <th class="event_cell" style="width: 15%">링크 활성화 여부</th>
                 <th style="width: 15%">활성화 계정 수</th>
-                <th>일일계정 회원가입 코드</th>
+                <ThSortable
+                  label="일일계정 회원가입 코드"
+                  col-key="joinCd"
+                  :sort-key="sortKey"
+                  :sort-order="sortOrder"
+                  :width="colWidths.joinCd"
+                  @sort="onSort"
+                  @update:width="onResize"
+                />
                 <th class="editableCell" style="width: 15%">QR코드</th>
               </tr>
             </thead>
@@ -106,7 +122,7 @@
               </template>
               <template v-else>
                 <tr
-                  v-for="(linkPolicy, idx) in LinkPolicyList"
+                  v-for="(linkPolicy, idx) in sortedData"
                   :key="linkPolicy.id"
                 >
                   <td style="text-align: center">{{ idx + 1 }}</td>
@@ -149,21 +165,13 @@
                   <td>
                     {{ linkPolicy.joinCd }}
                   </td>
-                  <td>
-                    <div class="flex items-center gap-2 w-full">
-                      <button
-                        class="border rounded"
-                        style="
-                          background-color: #30796a;
-                          border: none;
-                          padding: 0.2rem 0.5rem;
-                          color: #fff; /* ← 글자색 흰색 */
-                        "
-                        @click="fnQrCodePopOpen(linkPolicy)"
-                      >
-                        QRCODE
-                      </button>
-                    </div>
+                  <td style="text-align: center">
+                    <button
+                      class="btn btn-custom"
+                      @click="fnQrCodePopOpen(linkPolicy)"
+                    >
+                      QRCODE
+                    </button>
                   </td>
                 </tr>
               </template>
@@ -193,6 +201,11 @@ import BaseSelect from "@/components/common/BaseSelect.vue";
 import search_icon from "@/assets/img/search_icon.png";
 import SiteSearchPop from "@/components/popup/SiteSearchPop.vue";
 import QrCodePop from "@/components/popup/QrCodePop.vue";
+import ThSortable from "@/components/common/ThSortable.vue";
+import {
+  useTableSort,
+  useColumnResize,
+} from "@/composables/useTableFeatures.js";
 
 // ================ Options ================
 defineOptions({ name: "Baim_04" });
@@ -210,6 +223,8 @@ const { open: openPop } = useModal();
 // ================ Refs (Variables) ================
 const localButtons = ref({ ...props.buttons });
 const LinkPolicyList = ref([]);
+const { sortKey, sortOrder, sortedData, onSort } = useTableSort(LinkPolicyList);
+const { colWidths, onResize } = useColumnResize({ siteNm: 150, joinCd: 200 });
 const systCodeArr = ref({});
 const SiteSearchPopOpen = ref(false);
 
@@ -233,7 +248,14 @@ useFieldWatcher(
 );
 
 // ================ Life Cycle Functions ================
+const fnInit = () => {
+  siteCd.value = sessionStorage.getItem("gv_siteCd") ?? "";
+  siteNo.value = sessionStorage.getItem("gv_siteNo") ?? "";
+  siteNm.value = sessionStorage.getItem("gv_siteNm") ?? "";
+};
+
 onMounted(async () => {
+  fnInit();
   await fnButtonControll();
   await fnGetSystinfoList();
   await fnSearch();
@@ -500,4 +522,10 @@ const fnQrCodePopOpen = (linkPolicy) => {
 };
 </script>
 
-<style scoped></style>
+<style scoped>
+/* table.css 의 .data-grid button 전역 border 가 .btn-custom 색을 덮으므로
+   테이블 내부에서도 동일한 border 가 유지되도록 specificity 보강 */
+.data-grid .btn.btn-custom {
+  border-color: var(--color-primary, #16a34a);
+}
+</style>

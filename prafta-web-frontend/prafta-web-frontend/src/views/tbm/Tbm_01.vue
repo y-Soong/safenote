@@ -79,48 +79,53 @@
                     @click="fnHeadChk"
                   />
                 </th>
-                <th
-                  class="event_cell"
-                  style="width: 10%"
-                  @dblclick="fnTbmEduMtrlInfoPopOpen(info)"
-                >
-                  교육자료명
-                </th>
-                <th
-                  class="event_cell"
-                  style="width: 10%"
-                  @dblclick="fnTbmEduMtrlInfoPopOpen(info)"
-                >
-                  교육자료 타입
-                </th>
-                <th
-                  style="width: 15%"
-                  @dblclick="fnTbmEduMtrlInfoPopOpen(info)"
-                >
-                  사용여부
-                </th>
-                <th @dblclick="fnTbmEduMtrlInfoPopOpen(info)">교육자료 설명</th>
-                <th
-                  class="editableCell"
-                  style="width: 15%"
-                  @dblclick="fnTbmEduMtrlInfoPopOpen(info)"
-                >
-                  등록된 교육자료 수
-                </th>
-                <th
-                  class="editableCell"
-                  style="width: 10%"
-                  @dblclick="fnTbmEduMtrlInfoPopOpen(info)"
-                >
-                  등록자
-                </th>
-                <th
-                  class="editableCell"
-                  style="width: 10%"
-                  @dblclick="fnTbmEduMtrlInfoPopOpen(info)"
-                >
-                  등록일자
-                </th>
+                <ThSortable
+                  label="교육자료명"
+                  col-key="title"
+                  :sort-key="sortKey"
+                  :sort-order="sortOrder"
+                  :width="colWidths.title"
+                  @sort="onSort"
+                  @update:width="onResize"
+                />
+                <th class="event_cell" style="width: 10%">교육자료 타입</th>
+                <th style="width: 15%">사용여부</th>
+                <ThSortable
+                  label="교육자료 설명"
+                  col-key="contents"
+                  :sort-key="sortKey"
+                  :sort-order="sortOrder"
+                  :width="colWidths.contents"
+                  @sort="onSort"
+                  @update:width="onResize"
+                />
+                <ThSortable
+                  label="등록된 교육자료 수"
+                  col-key="mtrlCnt"
+                  :sort-key="sortKey"
+                  :sort-order="sortOrder"
+                  :width="colWidths.mtrlCnt"
+                  @sort="onSort"
+                  @update:width="onResize"
+                />
+                <ThSortable
+                  label="등록자"
+                  col-key="insertNm"
+                  :sort-key="sortKey"
+                  :sort-order="sortOrder"
+                  :width="colWidths.insertNm"
+                  @sort="onSort"
+                  @update:width="onResize"
+                />
+                <ThSortable
+                  label="등록일자"
+                  col-key="insertDate"
+                  :sort-key="sortKey"
+                  :sort-order="sortOrder"
+                  :width="colWidths.insertDate"
+                  @sort="onSort"
+                  @update:width="onResize"
+                />
               </tr>
             </thead>
             <tbody>
@@ -136,7 +141,7 @@
                 </tr>
               </template>
               <template v-else>
-                <tr v-for="(info, idx) in tbmEduInfoResultList" :key="info.id">
+                <tr v-for="(info, idx) in sortedData" :key="info.id">
                   <td style="text-align: center">{{ idx + 1 }}</td>
                   <td>
                     <input type="checkbox" v-model="info.chk" />
@@ -208,6 +213,11 @@ import ViewHeader from "@/components/common/ViewHeader.vue";
 import { getMessage, MSG } from "@/messages";
 import BaseSelect from "@/components/common/BaseSelect.vue";
 import TbmEduMtrlInfo from "./popup/TbmEduMtrlInfo.vue";
+import ThSortable from "@/components/common/ThSortable.vue";
+import {
+  useTableSort,
+  useColumnResize,
+} from "@/composables/useTableFeatures.js";
 
 // ================ Options ================
 defineOptions({ name: "Tbm_01" });
@@ -224,6 +234,15 @@ const { open: openPop } = useModal();
 
 // ================ Refs (Variables) ================
 const tbmEduInfoResultList = ref([]);
+const { sortKey, sortOrder, sortedData, onSort } =
+  useTableSort(tbmEduInfoResultList);
+const { colWidths, onResize } = useColumnResize({
+  title: 130,
+  contents: 180,
+  mtrlCnt: 130,
+  insertNm: 110,
+  insertDate: 110,
+});
 const systCodeArr = ref([]);
 const baseCodeArr = ref([]);
 

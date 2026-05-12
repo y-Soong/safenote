@@ -259,7 +259,9 @@
             <button class="btn btn-primary" @click="fnUserPwResetConf">
               비밀번호 초기화
             </button>
-            <button class="btn btn-primary" @click="fnUserInfoSave">저장</button>
+            <button class="btn btn-primary" @click="fnUserInfoSave">
+              저장
+            </button>
           </div>
         </div>
       </div>

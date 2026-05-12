@@ -199,22 +199,14 @@
                     v-model="chkpt.chkptDesc"
                   />
                 </td>
-                <td>
-                  <div class="flex items-center gap-2 w-full">
-                    <button
-                      v-if="chkpt.chkptCd"
-                      class="border rounded"
-                      style="
-                        background-color: #30796a;
-                        border: none;
-                        padding: 0.2rem 0.5rem;
-                        color: #fff; /* ← 글자색 흰색 */
-                      "
-                      @click="fnQrCodePopOpen(chkpt)"
-                    >
-                      QRCODE
-                    </button>
-                  </div>
+                <td style="text-align: center">
+                  <button
+                    v-if="chkpt.chkptCd"
+                    class="btn btn-custom"
+                    @click="fnQrCodePopOpen(chkpt)"
+                  >
+                    QRCODE
+                  </button>
                 </td>
               </tr>
             </tbody>
@@ -286,7 +278,14 @@ useFieldWatcher(
 );
 
 // ================ Life Cycle Functions ================
+const fnInit = () => {
+  siteCd.value = sessionStorage.getItem("gv_siteCd") ?? "";
+  sr_siteNo.value = sessionStorage.getItem("gv_siteNo") ?? "";
+  sr_siteNm.value = sessionStorage.getItem("gv_siteNm") ?? "";
+};
+
 onMounted(async () => {
+  fnInit();
   fnButtonControll();
   await fnGetSystinfoList();
   await fnGetBaseinfoList();
@@ -633,4 +632,10 @@ const fnAlertMsg = async (message, afterConfirmCallback) => {
 };
 </script>
 
-<style scoped></style>
+<style scoped>
+/* table.css 의 .data-grid button 전역 border 가 .btn-custom 색을 덮으므로
+   테이블 내부에서도 동일한 border 가 유지되도록 specificity 보강 */
+.data-grid .btn.btn-custom {
+  border-color: var(--color-primary, #16a34a);
+}
+</style>

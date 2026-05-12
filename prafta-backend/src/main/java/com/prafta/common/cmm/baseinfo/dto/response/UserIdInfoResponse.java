@@ -1,12 +1,12 @@
 package com.prafta.common.cmm.baseinfo.dto.response;
 
-import lombok.Getter;
-import lombok.NoArgsConstructor;
-import lombok.Setter;
+import com.prafta.common.cmm.baseinfo.result.UserIdInfoResult;
 
-@Getter
-@NoArgsConstructor
+import lombok.Builder;
+import lombok.Value;
+
+@Value
+@Builder
 public class UserIdInfoResponse {
-	private String userNm;
-	private String mblNo;
+	private UserIdInfoResult userIdInfoResult;
 }

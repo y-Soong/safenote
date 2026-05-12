@@ -44,7 +44,7 @@
 	    , A.INIT_RISK_LV															AS initRiskLv
 	    , A.INIT_DESC																AS initDesc
 	    , A.INIT_ASSESSOR_ID														AS initAssessorId
-	    , FNC_CMM_INFO_SRCH(A.CMPNY_CD, 'USER', A.INIT_ASSESSOR_ID, NULL) 			AS initAssessorNm
+	    , FNC_CMM_INFO_SRCH(A.CMPNY_CD, 'USER_NM', A.INIT_ASSESSOR_ID, NULL) 			AS initAssessorNm
 	    , A.INIT_ASSESS_DATE														AS initAssessDate
 	    , FNC_CMM_INFO_SRCH(A.CMPNY_CD, 'FILE_NAME', A.INIT_FILE_MGMT_CD, NULL)		AS initFileMgmtCd
         , FNC_CMM_INFO_SRCH(A.CMPNY_CD, 'FILE_PATH', A.INIT_FILE_MGMT_CD, NULL)		AS initFilePath
@@ -55,7 +55,7 @@
 	    , A.REVAL_RISK_LV															AS revalRiskLv
 	    , A.REVAL_DESC																AS revalDesc
 	    , A.REVAL_ASSESSOR_ID														AS revalAssessorId
-	    , FNC_CMM_INFO_SRCH(A.CMPNY_CD, 'USER', A.REVAL_ASSESSOR_ID, NULL)			AS revalAssessorNm
+	    , FNC_CMM_INFO_SRCH(A.CMPNY_CD, 'USER_NM', A.REVAL_ASSESSOR_ID, NULL)			AS revalAssessorNm
 	    , A.REVAL_ASSESS_DATE														AS revalAssessDate
 	    , FNC_CMM_INFO_SRCH(A.CMPNY_CD, 'FILE_NAME', A.REVAL_FILE_MGMT_CD, NULL)	AS revalFileMgmtCd
         , FNC_CMM_INFO_SRCH(A.CMPNY_CD, 'FILE_PATH', A.REVAL_FILE_MGMT_CD, NULL)	AS revalFilePath

@@ -17,8 +17,6 @@ public record UserSiteAuthParam(
         if (requests == null)
         	throw ApiException.appendf(CommonErrorCode.COMMON_400_001,"\n필수값 누락 - UserInfoRequest");
         
-        if (tokenInfo == null)
-        	throw ApiException.appendf(CommonErrorCode.COMMON_400_001,"\n필수값 누락 - TokenInfo");
 
         // 2) null element 방지 + 3) 필수값 검증 + 4) 매핑
         List<UserSiteAuthModel> models = requests.stream()

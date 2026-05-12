@@ -28,7 +28,7 @@ public record TokenInfo (
 	public static TokenInfo from(Claims claims) {
 		
 		if (claims == null)
-        	throw ApiException.appendf(CommonErrorCode.COMMON_400_001,"\nï¿½Ê¼ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ - Claims");
+        	throw ApiException.appendf(CommonErrorCode.COMMON_400_001,"\nÇÊ¼ö°ª ´©¶ô - Claims");
 		
         return new TokenInfo(
         		claims.get("gv_cmpnyCd", String.class)
@@ -40,7 +40,7 @@ public record TokenInfo (
         		, claims.get("gv_siteCd", String.class)
         		, claims.get("gv_siteNo", String.class)
         		, claims.get("gv_siteNm", String.class)
-        		, claims.get("gb_nodeCd", String.class)
+        		, claims.get("gv_nodeCd", String.class)
         		, claims.get("gv_nodeNm", String.class)
         		, claims.get("gv_mblNo", String.class)
         		, claims.get("gv_email", String.class)

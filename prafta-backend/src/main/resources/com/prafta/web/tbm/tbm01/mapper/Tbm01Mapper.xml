@@ -18,7 +18,7 @@
 	    , A.MTRL_TYPE			AS oriMtrlType
 	    , A.USE_YN				AS oriUseYn
 	    
-	    , FNC_CMM_INFO_SRCH(A.CMPNY_CD, 'USER', A.INSERT_NO, NULL) 	AS insertNm
+	    , FNC_CMM_INFO_SRCH(A.CMPNY_CD, 'USER_NM', A.INSERT_NO, NULL) 	AS insertNm
         , DATE_FORMAT(A.INSERT_DATE, '%Y-%m-%d %H:%i')				AS insertDate
 	FROM TB_TBM_EDU_MTRL A
 	     INNER JOIN TB_TBM_EDU_MTRL_ITEM B

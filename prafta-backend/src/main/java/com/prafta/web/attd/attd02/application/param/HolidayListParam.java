@@ -14,8 +14,6 @@ public record HolidayListParam(
 		
 		if (request == null)
             throw ApiException.appendf(CommonErrorCode.COMMON_400_001, "\n필수값 누락 - HolidayListRequest");
-        if (tokenInfo == null)
-            throw ApiException.appendf(CommonErrorCode.COMMON_400_001, "\n필수값 누락 - TokenInfo");
 		
 		return new HolidayListParam(
 			request.getYear()

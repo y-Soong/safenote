@@ -13,9 +13,9 @@
 		, A.PARENT_NODE_CD												AS parentNodeCd
 		, A.SELF_ATTD_APPRV_YN											AS selfAttdApprvYn
 		, A.MAIN_ADMIN_CD												AS mainAdminCd
-        , FNC_CMM_INFO_SRCH(A.CMPNY_CD, 'USER', A.MAIN_ADMIN_CD, NULL) 	AS mainAdminNm
+        , FNC_CMM_INFO_SRCH(A.CMPNY_CD, 'USER_NM', A.MAIN_ADMIN_CD, NULL) 	AS mainAdminNm
         , A.SUB_ADMIN_CD												AS subAdminCd
-        , FNC_CMM_INFO_SRCH(A.CMPNY_CD, 'USER', A.SUB_ADMIN_CD, NULL) 	AS subAdminNm
+        , FNC_CMM_INFO_SRCH(A.CMPNY_CD, 'USER_NM', A.SUB_ADMIN_CD, NULL) 	AS subAdminNm
         , SUM(CASE WHEN B.USER_TYPE = 'M' THEN 1 ELSE 0 END) 			AS managerCnt
         , SUM(CASE WHEN B.USER_TYPE = 'W' THEN 1 ELSE 0 END) 			AS workerCnt
 	FROM TB_SITE_NODE A

@@ -2,37 +2,311 @@
 <!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
 <mapper namespace="com.prafta.web.baim.baim05.mapper.Baim05Mapper">
 
-	<select id="selectDailyUserSlotList" parameterType="com.prafta.web.baim.baim05.application.query.DailyUserSlotListQuery" resultType="com.prafta.web.baim.baim05.result.DailyUserSlotListResult">
+	<select id="selectDailyUserLinkPolicyList" parameterType="com.prafta.web.baim.baim05.application.query.DailyUserLinkPoliciesQuery" resultType="com.prafta.web.baim.baim05.result.DailyUserLinkPolicyResult">
+    /* Baim05Mapper.selectDailyUserLinkPolicyList */
+    SELECT
+    	'' 						AS chk 
+		, A.CMPNY_CD			AS cmpnyCd
+	    , A.SITE_CD				AS siteCd
+	    , A.SITE_NO				AS siteNo
+	    , A.SITE_NM				AS siteNm
+	    , A.USE_YN				AS useYn
+	    , A.USE_YN				AS oriUseYn
+	    , A.DAY_LIMIT_CNT		AS dayLimitCnt
+	    , CONCAT(
+	    	A.CMPNY_CD
+	    	, '-'
+	    	, A.SITE_CD
+    	) 						AS joinCd
+   	FROM 
+   	(
+		SELECT 
+			A.CMPNY_CD
+		    , A.SITE_CD
+		    , A.SITE_NO
+		    , A.SITE_NM
+		    , IFNULL(B.USE_YN, 'N') AS USE_YN
+		    , B.DAY_LIMIT_CNT
+		FROM TB_SITE A
+			 LEFT OUTER JOIN TB_DAILY_USER_LINK_POLICY B
+				ON (
+					A.CMPNY_CD = B.CMPNY_CD
+				AND A.SITE_CD = B.SITE_CD
+		        )
+		WHERE A.CMPNY_CD = #{gvCmpnyCd}
+	   	  	AND A.SITE_CD = #{siteCd}
+	) A
+  	</select>
+  	
+  	<resultMap id="DailyUserInfoMap" type="com.prafta.web.baim.baim05.result.DailyUserSlotListResult">
+	  <constructor>
+	    <!-- record component 순서/이름과 맞추는 게 안전 -->
+	    <arg name="chk"       		column="chk"       		javaType="java.lang.String"/>
+	    <arg name="cmpnyCd"   		column="cmpnyCd"   		javaType="java.lang.String"/>
+	    <arg name="siteCd"   		column="siteCd"    		javaType="java.lang.String"/>
+	    <arg name="siteNm"    		column="siteNm"    		javaType="java.lang.String"/>
+	    
+	    <arg name="slotNo"    		column="slotNo"    		javaType="java.lang.String"/>
+	    <arg name="slotType"    	column="slotType"    	javaType="java.lang.String"/>
+	    <arg name="slotTypeNm"  	column="slotTypeNm"    	javaType="java.lang.String"/>
+	    
+	    <arg name="fixedYn"    		column="fixedYn"    	javaType="java.lang.String"/>
+	    <arg name="expired" 		column="expired" 		javaType="java.lang.String"/>
+	    <arg name="useYn"    		column="useYn"    		javaType="java.lang.String"/>
+	    <arg name="currUserId"  	column="currUserId"    	javaType="java.lang.String"/>
+	    <arg name="currUserNm" 		column="currUserNm" 	javaType="java.lang.String"/>
+	
+	    <!-- TypeHandler 적용: record도 constructor arg에 가능 -->
+	    <arg name="mblNo"   		column="mblNo"   		javaType="java.lang.String"
+	         typeHandler="com.prafta.common.security.crypto.mybatis.AesGcmDecryptTypeHandler"/>
+	
+	    <arg name="slotStatus"  	column="slotStatus"    	javaType="java.lang.String"/>
+	    <arg name="slotStatusNm"    column="slotStatusNm"   javaType="java.lang.String"/>
+	  </constructor>
+	</resultMap>
+
+	<select id="selectDailyUserSlotList" parameterType="com.prafta.web.baim.baim05.application.query.DailyUserSlotListQuery" resultMap="DailyUserInfoMap">
     /* Baim05Mapper.selectDailyUserSlotList */
-	SELECT 
-		'' 																AS chk
+    SELECT
+   	 	'' 																AS chk
 		, A.CMPNY_CD													AS cmpnyCd
 		, A.SITE_CD														AS siteCd
-	    , FNC_CMM_INFO_SRCH(A.CMPNY_CD, 'SITE', A.SITE_CD, NULL)		AS siteNm
+	    , A.SITE_NM														AS siteNm
+	    
 	    , A.SLOT_NO														AS slotNo
 	    , A.SLOT_TYPE													AS slotType
+	    , A.SLOT_TYPE_NM												AS slotTypeNm
+	    
 	    , A.FIXED_YN													AS fixedYn
+	    , A.EXPIRED														AS expired
 	    , A.USE_YN														AS useYn
-	    , A.CURR_USER_ID												AS currUserId
-	    , FNC_CMM_INFO_SRCH(A.CMPNY_CD, 'USER', A.CURR_USER_ID, NULL) 	AS currUserNm
+	    , A.CURR_USER_CD												AS currUserId
+	    , A.CURR_USER_NM												AS currUserNm
+	    
+	    , A.MBL_NO_ENC													AS mblNo
 	    , A.SLOT_STATUS													AS slotStatus
-	FROM TB_DAILY_USER_SLOT A
-	WHERE A.CMPNY_CD = #{gvCmpnyCd}
-	  <if test="siteCd != null and siteCd != ''">
-	  	AND A.SITE_CD = #{siteCd}
-	  </if>
-	  <if test="slotType != null and slotType != ''">
-	  	AND A.SLOT_TYPE = #{slotType}
-	  </if>
-	  <if test="slotStatus != null and slotStatus != ''">
-	  	AND A.SLOT_STATUS = #{slotStatus}
-	  </if>
-	  <if test="useYn != null and useYn != ''">
-	  	AND A.USE_YN = #{useYn}
-	  </if>
-	  <if test="currUserId != null and currUserId != ''">
-	  	AND A.USE_YN = #{currUserId}
+	    , A.SLOT_STATUS_NM												AS slotStatusNm
+    FROM (
+		SELECT 
+			A.CMPNY_CD
+			, A.SITE_CD
+			, FNC_CMM_INFO_SRCH(A.CMPNY_CD, 'SITE', A.SITE_CD, NULL)		AS SITE_NM
+		    , A.SLOT_NO
+		    , A.SLOT_TYPE
+		    , FNC_CMM_INFO_SRCH(
+				A.CMPNY_CD
+	            , 'SYST_VAL'
+	            , A.SLOT_TYPE
+	            , 'SYS014'
+			)																AS SLOT_TYPE_NM
+		    , A.FIXED_YN
+		    , CASE 
+				WHEN SLOT_STATUS = '01'
+					THEN '-'
+				ELSE 
+					CASE 
+						WHEN FIXED_YN = 'Y'
+							THEN '점유 유지 중'
+						ELSE TIMESTAMP(DATE_ADD(CURDATE(), INTERVAL 1 DAY))
+					END
+			END EXPIRED
+		    , A.USE_YN
+		    , A.CURR_USER_CD
+		    , B.USER_NM 													AS CURR_USER_NM
+		    , B.MBL_NO_ENC
+		    , A.SLOT_STATUS
+		    , FNC_CMM_INFO_SRCH(
+				A.CMPNY_CD
+	            , 'SYST_VAL'
+	            , A.SLOT_TYPE
+	            , 'SYS015'
+			)																AS SLOT_STATUS_NM
+		FROM TB_DAILY_USER_SLOT A
+			 LEFT OUTER JOIN TB_DAILY_USER B
+				ON (
+					A.CMPNY_CD = B.CMPNY_CD
+				AND A.SITE_CD = B.SITE_CD
+                AND A.CURR_USER_CD = B.USER_CD
+                AND B.USE_YN = 'Y'
+                )
+		WHERE A.CMPNY_CD = #{gvCmpnyCd}
+		  <if test="siteCd != null and siteCd != ''">
+		  	AND A.SITE_CD = #{siteCd}
+		  </if>
+		  <if test="slotType != null and slotType != ''">
+		  	AND A.SLOT_TYPE = #{slotType}
+		  </if>
+		  <if test="slotStatus != null and slotStatus != ''">
+		  	AND A.SLOT_STATUS = #{slotStatus}
+		  </if>
+		  <if test="useYn != null and useYn != ''">
+		    AND A.USE_YN = #{useYn}
+		  </if>
+	) A
+	WHERE 1=1
+	  <if test="currUserNm != null and currUserNm != ''">
+	  	AND A.CURR_USER_NM LIKE CONCAT('%', #{currUserNm}, '%')
 	  </if>
 	ORDER BY SITE_CD, CAST(A.SLOT_NO AS UNSIGNED)
     </select>
+    
+    <update id="saveDailyUserLinkPolicy" parameterType="com.prafta.web.baim.baim05.application.command.LinkPoliciesCommand">
+	/* Baim05Mapper.saveDailyUserLinkPolicy */
+    INSERT INTO TB_DAILY_USER_LINK_POLICY (
+    	CMPNY_CD
+    	, SITE_CD
+    	, USE_YN
+    	, DAY_LIMIT_CNT
+    	, INSERT_NO
+    	, INSERT_DATE
+    	, UPDATE_NO
+    	, UPDATE_DATE
+   	)
+   	VALUES(
+   		#{gvCmpnyCd}
+   		, #{siteCd}
+		, IFNULL(#{useYn}, 'Y')
+		, #{dayLimitCnt}
+		, #{gvUserCd}
+		, now()
+		, #{gvUserCd}
+		, now() 
+   	) AS NEW
+   	ON DUPLICATE KEY UPDATE
+	    USE_YN			= IFNULL(NEW.USE_YN, 'Y')
+	    , DAY_LIMIT_CNT = NEW.DAY_LIMIT_CNT
+	    , UPDATE_NO   	= NEW.UPDATE_NO
+	    , UPDATE_DATE 	= NOW()
+	</update>
+	
+	<select id="selectDailyUserSlotCnt" parameterType="com.prafta.web.baim.baim05.application.query.UserSlotCountQuery" resultType="integer">
+    /* Baim05Mapper.selectDailyUserSlotCnt */
+    SELECT COUNT(*)
+    FROM TB_DAILY_USER_SLOT
+	WHERE CMPNY_CD = #{gvCmpnyCd}
+	  AND SITE_CD = #{siteCd}
+    </select>
+    
+    <update id="saveDailyUserSlot" parameterType="com.prafta.web.baim.baim05.application.command.DailyUserSlotCommand">
+	/* Baim05Mapper.saveDailyUserSlot */
+	INSERT INTO TB_DAILY_USER_SLOT (
+    	CMPNY_CD
+    	, SITE_CD
+    	, SLOT_NO
+    	, SLOT_TYPE
+    	, FIXED_YN
+    	, USE_YN
+    	, CURR_USER_CD
+    	, SLOT_STATUS
+    	, INSERT_NO
+    	, INSERT_DATE
+    	, UPDATE_NO
+    	, UPDATE_DATE
+   	)
+   	VALUES(
+   		#{gvCmpnyCd}
+   		, #{siteCd}
+   		, #{slotNo}
+   		, #{slotType}
+   		, 'N'
+		, #{useYn}
+		, ''
+		, #{slotStatus}
+		, #{gvUserCd}
+		, now()
+		, #{gvUserCd}
+		, now() 
+   	) AS NEW
+   	ON DUPLICATE KEY UPDATE
+   		USE_YN		= IFNULL(NEW.USE_YN, 'Y')
+   		, SLOT_TYPE     = IF(NEW.USE_YN = 'N', '01', TB_DAILY_USER_SLOT.SLOT_TYPE)
+	    , CURR_USER_CD  = IF(NEW.USE_YN = 'N', NULL, TB_DAILY_USER_SLOT.CURR_USER_CD)
+	    , SLOT_STATUS   = IF(NEW.USE_YN = 'N', '01', TB_DAILY_USER_SLOT.SLOT_STATUS)
+	    , UPDATE_NO   	= NEW.UPDATE_NO
+	    , UPDATE_DATE 	= NOW()
+	</update>
+	
+	<select id="selectDailyUserCd" parameterType="string" resultType="string">
+	/* Baim05Mapper.selectDailyUserCd */
+	SELECT CONCAT('D', DATE_FORMAT(NOW(), '%Y%m%d'), FNC_CMM_SEQ_NEXTVAL(#{cmpnyCd}, 'DAILY_USER'))
+	FROM DUAL
+	</select>
+	
+	<select id="selectDailyUserDuplicateCnt" parameterType="string" resultType="int">
+	/* Baim05Mapper.selectDailyUserDuplicateCnt */
+	SELECT COUNT(*) 
+	FROM (
+        SELECT 1
+          FROM TB_DAILY_USER
+         WHERE MBL_NO_HMAC = #{mblNoHmac}
+           AND USE_YN      = 'Y'
+         LIMIT 1
+    ) T
+	</select>
+	
+	<insert id="insertDailyQrUser" parameterType="com.prafta.web.baim.baim05.application.command.InsertDailyQrUserCommand">
+	/* Baim05Mapper.insertDailyQrUser */
+	INSERT INTO TB_DAILY_USER
+	(
+		CMPNY_CD
+        , SITE_CD
+        , USER_CD
+        , USER_ID
+        , USER_NM
+        , USER_PW
+        
+        , MBL_NO_ENC
+        , MBL_NO_HMAC
+        , MBL_NO_LAST4
+        , REG_TYPE
+        
+        , USE_YN
+        , ACCOUNT_STATUS
+        , WORK_EXPIRE_DATE
+        , WITHDRAWAL_DATE
+        
+        , INSERT_NO
+        , INSERT_DATE
+        , UPDATE_NO
+        , UPDATE_DATE
+	)
+	VALUES
+	(
+		#{gvCmpnyCd}
+		, #{siteCd}
+		, #{userCd}
+		, #{userCd}					<!-- QR 사용자의 경우 USER_CD로 USER_ID 까지 사용 -->
+		, #{userNm}
+		, #{userPw}
+		
+		, #{mblNoEnc}
+		, #{mblNoHmac}
+		, #{mblNoLast4}
+		, #{regType}
+		
+		, #{useYn}
+		, #{accountStatus}
+		, DATE_FORMAT(NOW(), '%Y%m%d')
+		, NULL
+		
+		, #{gvUserCd}
+		, NOW()
+		, #{gvUserCd}
+		, NOW()
+	)
+	</insert>
+	
+	<insert id="updateDailyUserSlotCurrUserCd" parameterType="com.prafta.web.baim.baim05.application.command.DailyUserSlotUpdCommand">
+	/* Baim05Mapper.updateDailyUserSlotCurrUserCd */
+	UPDATE TB_DAILY_USER_SLOT
+	SET CURR_USER_CD = #{userCd}
+		, SLOT_TYPE = #{slotType}
+		, SLOT_STATUS =#{slotStatus}
+	    , UPDATE_NO = #{gvUserCd}
+	    , UPDATE_DATE = NOW()
+	WHERE CMPNY_CD = #{gvCmpnyCd}
+	  AND SITE_CD = #{siteCd}
+	  AND SLOT_NO = #{slotNo}
+	
+	</insert>
 </mapper>

@@ -2,6 +2,7 @@ package com.prafta.web.attd.attd01.controller;
 
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.ModelAttribute;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -30,6 +31,7 @@ import com.prafta.web.attd.attd01.dto.response.ShiftSchDetailResponse;
 import com.prafta.web.attd.attd01.dto.response.ShiftSchInfoListResponse;
 import com.prafta.web.attd.attd01.service.Attd01Service;
 
+import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 
@@ -38,6 +40,7 @@ import lombok.extern.slf4j.Slf4j;
 @RestController
 @RequestMapping("/attd01")
 @RequiredArgsConstructor
+@Validated
 public class Attd01Controller { 	
 	
 	private final Attd01Service attd01Service;
@@ -52,7 +55,7 @@ public class Attd01Controller {
     }
 	
 	@PostMapping("/update-sch-infos")
-    public ResponseEntity<?> updateSchInfo(@RequestBody SchInfoRequest request, @RequestHeader(value = "Authorization", required = false) String authorization) {
+    public ResponseEntity<?> updateSchInfo(@Valid @RequestBody SchInfoRequest request, @RequestHeader(value = "Authorization", required = false) String authorization) {
     	
 		attd01Service.updateSchInfo(SchInfoParam.from(request, jwtUtil.getAllClaimsAsMap(authorization)));
     	

@@ -16,7 +16,7 @@ public record BaseInfoParam (
 		if(request == null)
 			throw ApiException.appendf(CommonErrorCode.COMMON_400_001,"\n필수값 누락 - BaseInfoRequest");
 		if(tokenInfo == null)
-			throw ApiException.appendf(CommonErrorCode.COMMON_400_001,"\n필수값 누락 - TokenInfo");
+			throw ApiException.appendf(CommonErrorCode.COMMON_400_003,"\n필수값 누락 - TokenInfo");
 		
 		return new BaseInfoParam(
 				tokenInfo.gv_cmpnyCd()

@@ -12,6 +12,8 @@ import com.prafta.common.cmm.baseinfo.application.param.SystInfoParam;
 import com.prafta.common.cmm.baseinfo.application.param.TermsDetailInfoParam;
 import com.prafta.common.cmm.baseinfo.application.param.UserIdDupleCheckParam;
 import com.prafta.common.cmm.baseinfo.application.param.UserIdInfoParam;
+import com.prafta.common.cmm.baseinfo.application.param.UserInfoListParam;
+import com.prafta.common.cmm.baseinfo.application.param.UserPasswordParam;
 import com.prafta.common.cmm.baseinfo.application.param.UserSmsAuthNoCheckParam;
 import com.prafta.common.cmm.baseinfo.application.param.UserSmsAuthNoParam;
 import com.prafta.common.cmm.baseinfo.application.param.WebMenuListParam;
@@ -27,6 +29,7 @@ import com.prafta.common.cmm.baseinfo.dto.response.SystInfoResponse;
 import com.prafta.common.cmm.baseinfo.dto.response.TermsDetailInfoResponse;
 import com.prafta.common.cmm.baseinfo.dto.response.UserIdDupleCheckResponse;
 import com.prafta.common.cmm.baseinfo.dto.response.UserIdInfoResponse;
+import com.prafta.common.cmm.baseinfo.dto.response.UserInfoListResponse;
 import com.prafta.common.cmm.baseinfo.dto.response.WebMenuListResponse;
 
 public interface BaseinfoService {
@@ -57,8 +60,10 @@ public interface BaseinfoService {
 	MenuListResponse selectMenuList(MenuListParam param);
 	
 	UserIdInfoResponse selectUserIdInfo(UserIdInfoParam param);
-	
-//	void updateUserPw(BaseinfoCmmReq dto);
+
+	UserInfoListResponse selectUserInfoList(UserInfoListParam param);
+
+	void updateUserPw(UserPasswordParam param);
 	
 	TermsDetailInfoResponse selectTermsDetailInfo(TermsDetailInfoParam param);
 }

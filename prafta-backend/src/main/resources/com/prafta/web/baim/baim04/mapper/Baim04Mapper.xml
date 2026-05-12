@@ -91,7 +91,7 @@
     	, SLOT_TYPE
     	, FIXED_YN
     	, USE_YN
-    	, CURR_USER_ID
+    	, CURR_USER_CD
     	, SLOT_STATUS
     	, INSERT_NO
     	, INSERT_DATE

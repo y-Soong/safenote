@@ -65,7 +65,7 @@ async function getClientIP() {
   return null;
 }
 
-// ✅ 인터셉터 없는 refresh 전용 인스턴스 (무한루프 방지)
+//  인터셉터 없는 refresh 전용 인스턴스 (무한루프 방지)
 const plain = axios.create({
   baseURL: resolveBaseURL(),
   timeout: 10000,
@@ -191,14 +191,14 @@ api.interceptors.request.use(
       }
     }
 
-    // ✅ 토큰은 sessionStorage 기준
+    // 토큰은 sessionStorage 기준
     const token = sessionStorage.getItem("token");
     if (token) {
       config.headers = config.headers || {};
       config.headers.Authorization = `Bearer ${token}`;
     }
 
-    // ✅ clientType 헤더는 "항상" 붙이는 편이 안전 (백엔드 정책 통일)
+    // clientType 헤더는 "항상" 붙이는 편이 안전 (백엔드 정책 통일)
     config.headers = config.headers || {};
     config.headers["X-Client-Type"] = "WEB";
 
@@ -247,16 +247,49 @@ api.interceptors.response.use(
     const status = error?.response?.status;
     const originalRequest = error?.config;
 
-    // ✅ 1) 401 -> refresh -> retry
+    const errorCode = error?.response?.data?.errorCode;
+    console.log("errorCode :: " + errorCode);
+
+    // COMMON_400_003 → 세션 만료 등 서버가 명시적으로 로그아웃 요구
+    if (errorCode === "COMMON_400_003") {
+      const rt =
+        localStorage.getItem("refreshToken") ||
+        localStorage.getItem("gv_refreshToken");
+      await performServerLogout(rt);
+      sessionStorage.clear();
+      localStorage.removeItem("refreshToken");
+      userStore.logout();
+      (await getRouter()).push("/");
+      return Promise.reject(error);
+    }
+
+    //  1) 401 -> refresh -> retry
     // errorCode가 있을 때는 실제 토큰 에러 코드인 경우에만 refresh 시도
     // (비즈니스 에러가 401로 오는 경우 로그아웃되지 않도록 방어)
-    const errorCode = error?.response?.data?.errorCode;
     const isTokenError =
       !errorCode ||
       errorCode === "COMMON_400_600" ||
       String(errorCode).startsWith("AUTH_");
 
-    if (status === 401 && isTokenError && originalRequest && !originalRequest._retry) {
+    // 재시도(_retry) 후에도 401이면 토큰 자체가 무효 → 강제 로그아웃
+    if (status === 401 && isTokenError && originalRequest?._retry) {
+      const rt =
+        localStorage.getItem("refreshToken") ||
+        localStorage.getItem("gv_refreshToken");
+      await performServerLogout(rt);
+      sessionStorage.clear();
+      localStorage.removeItem("refreshToken");
+      userStore.logout();
+      (await getRouter()).push("/");
+      return Promise.reject(error);
+    }
+
+    if (
+      status === 401 &&
+      isTokenError &&
+      originalRequest &&
+      !originalRequest._retry
+    ) {
       originalRequest._retry = true;
 
       // refresh 요청에서 다시 401나면 즉시 로그아웃 (루프 방지)
@@ -323,7 +356,7 @@ api.interceptors.response.use(
       }
     }
 
-    // ✅ 2) 기존 로직 유지 (404 + 유효하지 않은 토큰)
+    //  2) 기존 로직 유지 (404 + 유효하지 않은 토큰)
     if (
       status === 404 &&
       error?.response?.data?.message === "유효하지 않은 토큰입니다."

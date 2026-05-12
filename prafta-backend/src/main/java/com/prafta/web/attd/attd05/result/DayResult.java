@@ -4,9 +4,9 @@ public record DayResult(
 	String workYmd
 	, String dow
 	, String holidayYn
-	, String weekendYn
 	, String holidayNm
 	, String holidayType
+	, String weekendYn
 ) {
 
 }

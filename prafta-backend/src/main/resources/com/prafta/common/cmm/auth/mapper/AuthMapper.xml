@@ -48,9 +48,15 @@
         , B.SITE_NM			AS siteNm
         , A.NODE_CD			AS nodeCd
         , C.NODE_NM			AS nodeNm
-		, A.MBL_NO_ENC		AS mblNoEnc
-		, A.EMAIL_ENC		AS emailEnc
-		, A.INSERT_NO		AS insertNo
+		, A.MBL_NO_ENC				AS mblNoEnc
+		, A.EMAIL_ENC				AS emailEnc
+		, A.PWD_LOCK_YN				AS pwdLockYn
+		, A.PWD_FAIL_CNT			AS pwdFailCnt
+		, A.PWD_LOCK_EXPIRE_DTIME	AS pwdLockExpireDtime
+		, A.PWD_CHG_DTIME			AS pwdChgDtime
+		, A.WITHDRAWAL_DATE			AS withdrawalDate
+		, A.LAST_LOGIN_DTIME		AS lastLoginDtime
+		, A.INSERT_NO				AS insertNo
 		, A.INSERT_DATE		AS insertDate
 		, A.UPDATE_NO		AS updateNo
 		, A.UPDATE_DATE		AS updateDate

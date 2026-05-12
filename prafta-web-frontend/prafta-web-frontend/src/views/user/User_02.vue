@@ -46,11 +46,19 @@
                 <th class="event_cell" style="text-align: center; width: 2%">
                   No
                 </th>
-                <th class="w-30">권한명</th>
+                <ThSortable
+                  label="권한명"
+                  col-key="baimValDNm"
+                  :sort-key="authSortKey"
+                  :sort-order="authSortOrder"
+                  :width="authColWidths.baimValDNm"
+                  @sort="authOnSort"
+                  @update:width="authOnResize"
+                />
               </tr>
             </thead>
             <tbody>
-              <tr v-for="(auth, idx) in authList" :key="auth.baimValCd">
+              <tr v-for="(auth, idx) in authSortedData" :key="auth.baimValCd">
                 <td style="text-align: center">{{ idx + 1 }}</td>
                 <td @dblclick="fnSubSearch(auth)">{{ auth.baimValDNm }}</td>
               </tr>
@@ -138,8 +146,24 @@
                     @click="fnHeadChk"
                   />
                 </th>
-                <th>대메뉴명</th>
-                <th>소메뉴명</th>
+                <ThSortable
+                  label="대메뉴명"
+                  col-key="menuMNm"
+                  :sort-key="menuSortKey"
+                  :sort-order="menuSortOrder"
+                  :width="menuColWidths.menuMNm"
+                  @sort="menuOnSort"
+                  @update:width="menuOnResize"
+                />
+                <ThSortable
+                  label="소메뉴명"
+                  col-key="menuDNm"
+                  :sort-key="menuSortKey"
+                  :sort-order="menuSortOrder"
+                  :width="menuColWidths.menuDNm"
+                  @sort="menuOnSort"
+                  @update:width="menuOnResize"
+                />
                 <th class="editableCell" style="width: 8%">사용여부</th>
                 <th style="width: 10%">메뉴사용처</th>
                 <th class="editableCell" style="width: 10%">조회</th>
@@ -161,7 +185,7 @@
                 </tr>
               </template>
               <template v-else>
-                <tr v-for="(menu, idx) in authMenuList" :key="menu.id">
+                <tr v-for="(menu, idx) in menuSortedData" :key="menu.id">
                   <td style="text-align: center">{{ idx + 1 }}</td>
                   <td v-if="!isCheckboxColumnHidden">
                     <input
@@ -293,6 +317,8 @@ import axios from "@/api/axios";
 import ViewHeader from "@/components/common/ViewHeader.vue";
 import { getMessage, MSG } from "@/messages";
 import BaseSelect from "@/components/common/BaseSelect.vue";
+import ThSortable from "@/components/common/ThSortable.vue";
+import { useTableSort, useColumnResize } from "@/composables/useTableFeatures.js";
 
 // =========================== Define ===========================
 defineOptions({ name: "User_02" });
@@ -305,6 +331,10 @@ const props = defineProps({
 const localButtons = ref({ ...props.buttons });
 const authList = ref([]);
 const authMenuList = ref([]);
+const { sortKey: authSortKey, sortOrder: authSortOrder, sortedData: authSortedData, onSort: authOnSort } = useTableSort(authList);
+const { colWidths: authColWidths, onResize: authOnResize } = useColumnResize({ baimValDNm: 160 });
+const { sortKey: menuSortKey, sortOrder: menuSortOrder, sortedData: menuSortedData, onSort: menuOnSort } = useTableSort(authMenuList);
+const { colWidths: menuColWidths, onResize: menuOnResize } = useColumnResize({ menuMNm: 160, menuDNm: 160 });
 const systCodeArr = ref({});
 const baseInfoArr = ref([]);
 const authNm = ref("");

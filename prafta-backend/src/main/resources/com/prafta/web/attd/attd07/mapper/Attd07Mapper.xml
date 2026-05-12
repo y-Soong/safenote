@@ -1,0 +1,668 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.prafta.web.attd.attd07.mapper.Attd07Mapper">
+
+    <select id="selectMonthlyAttdList" parameterType="com.prafta.web.attd.attd07.application.query.MonthlyAttdListQuery" resultType="com.prafta.web.attd.attd07.result.MonthlyAttdListResult">
+    /* Attd07Mapper.selectMonthlyAttdList */
+	    WITH RECURSIVE
+	    /* 1. 부서 트리 — 시작 노드부터 하위까지 */
+	    node_tree AS (
+	        SELECT
+	              N.CMPNY_CD
+	            , N.SITE_CD
+	            , N.NODE_CD
+	            , N.NODE_NM
+	        FROM TB_SITE_NODE N
+	        WHERE N.CMPNY_CD = #{gvCmpnyCd}
+	          AND N.SITE_CD  = #{siteCd}
+	          AND N.NODE_CD = #{nodeCd}
+
+	        <if test='"Y".equals(incSubNodeYn)'>
+	        UNION ALL
+	
+	        SELECT
+	              C.CMPNY_CD
+	            , C.SITE_CD
+	            , C.NODE_CD
+	            , C.NODE_NM
+	        FROM TB_SITE_NODE C
+	        INNER JOIN node_tree P
+	            ON  C.CMPNY_CD       = P.CMPNY_CD
+	            AND C.SITE_CD        = P.SITE_CD
+	            AND C.PARENT_NODE_CD = P.NODE_CD
+	        </if>
+	    ),
+	
+	    /* 2. 대상 사용자 */
+	    target_user AS (
+	        SELECT
+	              U.CMPNY_CD
+	            , U.SITE_CD
+	            , U.USER_CD
+	            , U.USER_ID
+	            , U.USER_NM
+	            , U.NODE_CD
+	            , U.AUTH_CD
+	            , NT.NODE_NM
+	        FROM TB_USER U
+	        INNER JOIN node_tree NT
+	            ON  U.CMPNY_CD = NT.CMPNY_CD
+	            AND U.SITE_CD  = NT.SITE_CD
+	            AND U.NODE_CD  = NT.NODE_CD
+	        WHERE U.CMPNY_CD       = #{gvCmpnyCd}
+	          AND U.SITE_CD        = #{siteCd}
+	          AND U.USE_YN         = 'Y'
+	          AND U.WITHDRAWAL_DATE IS NULL
+	        <if test="userNm != null and userNm != ''">
+	          AND U.USER_NM LIKE CONCAT('%', #{userNm}, '%')
+	        </if>
+	    ),
+	
+	    /* 3. 해당 월 일자 펼치기 (workYm 포맷 'YYYY-MM' / 'YYYYMM' 모두 지원) */
+	    month_days AS (
+	        SELECT DATE_FORMAT(
+	                   DATE_ADD(
+	                       STR_TO_DATE(CONCAT(REPLACE(#{workYm}, '-', ''), '01'), '%Y%m%d'),
+	                       INTERVAL (T.N - 1) DAY
+	                   ),
+	                   '%Y%m%d'
+	               ) AS WORK_YMD
+	        FROM (
+	            SELECT 1 AS N UNION ALL SELECT 2  UNION ALL SELECT 3  UNION ALL SELECT 4
+	            UNION ALL SELECT 5  UNION ALL SELECT 6  UNION ALL SELECT 7  UNION ALL SELECT 8
+	            UNION ALL SELECT 9  UNION ALL SELECT 10 UNION ALL SELECT 11 UNION ALL SELECT 12
+	            UNION ALL SELECT 13 UNION ALL SELECT 14 UNION ALL SELECT 15 UNION ALL SELECT 16
+	            UNION ALL SELECT 17 UNION ALL SELECT 18 UNION ALL SELECT 19 UNION ALL SELECT 20
+	            UNION ALL SELECT 21 UNION ALL SELECT 22 UNION ALL SELECT 23 UNION ALL SELECT 24
+	            UNION ALL SELECT 25 UNION ALL SELECT 26 UNION ALL SELECT 27 UNION ALL SELECT 28
+	            UNION ALL SELECT 29 UNION ALL SELECT 30 UNION ALL SELECT 31
+	        ) T
+	        WHERE T.N <![CDATA[ <= ]]> DAY(
+	            LAST_DAY(STR_TO_DATE(CONCAT(REPLACE(#{workYm}, '-', ''), '01'), '%Y%m%d'))
+	        )
+	    )
+	
+	    /* 4. 메인 — 사용자 × 일자 카르테시안 + 계획/근태 LEFT JOIN */
+	    SELECT
+	          U.USER_CD                                                        AS userCd
+	        , U.USER_ID                                                        AS userId
+	        , U.USER_NM                                                        AS userNm
+	        , U.NODE_NM                                                        AS deptNm
+	        , U.AUTH_CD                                                        AS authCd
+	        , FNC_CMM_INFO_SRCH(U.CMPNY_CD, 'BAIM_VAL', U.AUTH_CD, 'COM005')   AS authNm
+	        
+	        /* INSERT 시 프론트가 들고있어야 할 키 */
+	        , U.CMPNY_CD                                                       AS cmpnyCd
+	        , U.SITE_CD                                                        AS siteCd
+	        , U.NODE_CD                                                        AS nodeCd
+	        , D.WORK_YMD                                                       AS workYmd
+	        
+	        , DAYOFWEEK(STR_TO_DATE(D.WORK_YMD, '%Y%m%d')) - 1                 AS dow
+	
+	        /* 근무계획 (스케줄 / 휴가 양쪽 LEFT JOIN) */
+	        , WP.WORK_PLAN_CD                                                  AS workPlanCd
+	        , CASE
+	            WHEN SCH.SCH_CD   IS NOT NULL THEN 'SCH'
+	            WHEN LV.LEAVE_CD  IS NOT NULL THEN 'LEAVE'
+	            ELSE NULL
+	          END                                                              AS planType
+	
+	        /* 스케줄 정보 (1·2구간) */
+	        , SCH.SCH_TYPE                                                     AS schType
+	        , SCH.FST_SCH_STR_TIME                                             AS plan1Start
+	        , SCH.FST_SCH_END_TIME                                             AS plan1End
+	        , SCH.FST_SCH_BRK_MIN                                              AS plan1BreakMin
+	        , SCH.SEC_SCH_STR_TIME                                             AS plan2Start
+	        , SCH.SEC_SCH_END_TIME                                             AS plan2End
+	        , SCH.SEC_SCH_BRK_MIN                                              AS plan2BreakMin
+	
+	        /* 휴가 정보 */
+	        , LV.LEAVE_NM                                                      AS leaveNm
+	
+	        /* 근태 1차 */
+	        , A1.ATTD_ID                                                       AS attd1Id
+	        , A1.CHECK_IN_DATE                                                 AS act1InDate
+	        , A1.CHECK_IN_TIME                                                 AS act1InTime
+	        , FNC_STD_TIME(
+				  A1.CHECK_IN_TIME
+				, IFNULL(
+					  CASE WHEN CHAR_LENGTH(FNC_CMM_INFO_SRCH(U.CMPNY_CD, 'ATTD_STD_CHKIN', A1.CHECK_IN_DATE, null)) = 0
+						   THEN NULL
+						   ELSE FNC_CMM_INFO_SRCH(U.CMPNY_CD, 'ATTD_STD_CHKIN', A1.CHECK_IN_DATE, null)
+					  END
+				  , 0)
+				, 'IN'
+			)                                                                  AS act1InStdTime
+	        , A1.CHECK_IN_METHOD                                               AS act1InMethod
+	        , A1.CHECK_OUT_DATE                                                AS act1OutDate
+	        , A1.CHECK_OUT_TIME                                                AS act1OutTime
+	        , FNC_STD_TIME(
+				  A1.CHECK_OUT_TIME
+				, IFNULL(
+					  CASE WHEN CHAR_LENGTH(FNC_CMM_INFO_SRCH(U.CMPNY_CD, 'ATTD_STD_CHKOUT', A1.CHECK_OUT_DATE, null)) = 0
+						   THEN NULL
+						   ELSE FNC_CMM_INFO_SRCH(U.CMPNY_CD, 'ATTD_STD_CHKOUT', A1.CHECK_OUT_DATE, null)
+					  END
+				  , 0)
+				, 'OUT'
+			)                                                                  AS act1OutStdTime
+	        , A1.CHECK_OUT_METHOD                                              AS act1OutMethod
+	
+	        /* 근태 2차 */
+	        , A2.ATTD_ID                                                       AS attd2Id
+	        , A2.CHECK_IN_DATE                                                 AS act2InDate
+	        , A2.CHECK_IN_TIME                                                 AS act2InTime
+	        , FNC_STD_TIME(
+				  A2.CHECK_IN_TIME
+				, IFNULL(
+					  CASE WHEN CHAR_LENGTH(FNC_CMM_INFO_SRCH(U.CMPNY_CD, 'ATTD_STD_CHKIN', A2.CHECK_IN_DATE, null)) = 0
+						   THEN NULL
+						   ELSE FNC_CMM_INFO_SRCH(U.CMPNY_CD, 'ATTD_STD_CHKIN', A2.CHECK_IN_DATE, null)
+					  END
+				  , 0)
+				, 'IN'
+			)                                                                  AS act2InStdTime
+	        , A2.CHECK_IN_METHOD                                               AS act2InMethod
+	        , A2.CHECK_OUT_DATE                                                AS act2OutDate
+	        , A2.CHECK_OUT_TIME                                                AS act2OutTime
+	        , FNC_STD_TIME(
+				  A2.CHECK_OUT_TIME
+				, IFNULL(
+					  CASE WHEN CHAR_LENGTH(FNC_CMM_INFO_SRCH(U.CMPNY_CD, 'ATTD_STD_CHKOUT', A2.CHECK_OUT_DATE, null)) = 0
+						   THEN NULL
+						   ELSE FNC_CMM_INFO_SRCH(U.CMPNY_CD, 'ATTD_STD_CHKOUT', A2.CHECK_OUT_DATE, null)
+					  END
+				  , 0)
+				, 'OUT'
+			)                                                                  AS act2OutStdTime
+	        , A2.CHECK_OUT_METHOD                                              AS act2OutMethod
+	
+	    FROM target_user U
+	    CROSS JOIN month_days D
+	
+	    LEFT JOIN TB_USER_WORK_PLAN WP
+	        ON  WP.CMPNY_CD = U.CMPNY_CD
+	        AND WP.SITE_CD  = U.SITE_CD
+	        AND WP.USER_CD  = U.USER_CD
+	        AND WP.WORK_YMD = D.WORK_YMD
+	
+	    /* 근무계획코드가 스케줄코드인 경우 */
+	    LEFT JOIN TB_SCH_MGMT SCH
+	        ON  SCH.CMPNY_CD = WP.CMPNY_CD
+	        AND SCH.SITE_CD  = WP.SITE_CD
+	        AND SCH.SCH_CD   = WP.WORK_PLAN_CD
+	        AND SCH.USE_YN   = 'Y'
+	
+	    /* 근무계획코드가 휴가코드인 경우 */
+	    LEFT JOIN TB_LEAVE_TYPE_MGMT LV
+	        ON  LV.CMPNY_CD = WP.CMPNY_CD
+	        AND LV.LEAVE_CD = WP.WORK_PLAN_CD
+	        AND LV.USE_YN   = 'Y'
+	
+	    /* 근태 1차 */
+	    LEFT JOIN TB_USER_ATTD_MGMT A1
+	        ON  A1.CMPNY_CD = U.CMPNY_CD
+	        AND A1.SITE_CD  = U.SITE_CD
+	        AND A1.USER_CD  = U.USER_CD
+	        AND A1.WORK_YMD = D.WORK_YMD
+	        AND A1.WORK_SEQ = 1
+	        AND A1.DEL_YN   = 'N'
+	
+	    /* 근태 2차 */
+	    LEFT JOIN TB_USER_ATTD_MGMT A2
+	        ON  A2.CMPNY_CD = U.CMPNY_CD
+	        AND A2.SITE_CD  = U.SITE_CD
+	        AND A2.USER_CD  = U.USER_CD
+	        AND A2.WORK_YMD = D.WORK_YMD
+	        AND A2.WORK_SEQ = 2
+	        AND A2.DEL_YN   = 'N'
+	
+	    ORDER BY U.USER_CD, D.WORK_YMD
+    </select>
+    
+    
+    <select id="selectMonthlyAttdReqSummary" parameterType="com.prafta.web.attd.attd07.application.query.MonthlyAttdListQuery" resultType="com.prafta.web.attd.attd07.result.MonthlyAttdReqSummaryResult">
+	/* Attd07Mapper.selectMonthlyAttdReqSummary */
+	    WITH RECURSIVE
+	    /* 1. 부서 트리 — 시작 노드부터 하위까지 */
+	    node_tree AS (
+	        SELECT
+	              N.CMPNY_CD
+	            , N.SITE_CD
+	            , N.NODE_CD
+	        FROM TB_SITE_NODE N
+	        WHERE N.CMPNY_CD = #{gvCmpnyCd}
+	          AND N.SITE_CD  = #{siteCd}
+	          AND N.NODE_CD  = #{nodeCd}
+	
+	        <if test='"Y".equals(incSubNodeYn)'>
+	        UNION ALL
+	
+	        SELECT
+	              C.CMPNY_CD
+	            , C.SITE_CD
+	            , C.NODE_CD
+	        FROM TB_SITE_NODE C
+	        INNER JOIN node_tree P
+	            ON  C.CMPNY_CD       = P.CMPNY_CD
+	            AND C.SITE_CD        = P.SITE_CD
+	            AND C.PARENT_NODE_CD = P.NODE_CD
+	        </if>
+	    )
+	
+	    SELECT
+	        A.REQ_ID		AS reqId
+	        , A.WORK_YMD	AS workYmd
+	        , A.USER_CD		AS userCd
+	    FROM TB_USER_ATTD_REQ A
+	    INNER JOIN node_tree NT
+	        ON  A.CMPNY_CD = NT.CMPNY_CD
+	        AND A.SITE_CD  = NT.SITE_CD
+	        AND A.NODE_CD  = NT.NODE_CD
+	    WHERE A.CMPNY_CD   = #{gvCmpnyCd}
+	      AND A.SITE_CD    = #{siteCd}
+	      AND A.WORK_YMD   LIKE CONCAT(REPLACE(#{workYm}, '-', ''), '%')
+	      AND A.DEL_YN     = 'N'
+	      AND A.REQ_STATUS = '01'    <!-- 신청 상태인 요청만 조회 -->
+    </select>
+    
+    <select id="selectAttdId" parameterType="string" resultType="string">
+    /* Attd07Mapper.selectAttdId */
+    SELECT CONCAT(DATE_FORMAT(NOW(), '%Y%m%d'), FNC_CMM_SEQ_NEXTVAL(#{gvCmpnyCd}, 'ATTD_ID')) AS attdId
+    FROM DUAL
+    </select>
+    
+    <select id="selectHistId" parameterType="string" resultType="string">
+    /* Attd07Mapper.selectHistId */
+    SELECT CONCAT(DATE_FORMAT(NOW(), '%Y%m%d'), FNC_CMM_SEQ_NEXTVAL(#{gvCmpnyCd}, 'ATTD_HIST_ID')) AS histId
+    FROM DUAL
+    </select>
+
+    <update id="updateUserAttdInfos" parameterType="com.prafta.web.attd.attd07.application.command.UpdateUserAttdInfosCommand">
+    /* Attd07Mapper.updateUserAttdInfos */
+    INSERT INTO TB_USER_ATTD_MGMT (
+		ATTD_ID
+		, CMPNY_CD
+		, SITE_CD
+		, USER_CD
+		, WORK_YMD
+		
+		, NODE_CD
+		, WORK_SEQ
+		
+		, CHECK_IN_DATE
+		, CHECK_IN_TIME
+		, CHECK_IN_METHOD
+		, CHECK_OUT_DATE
+		, CHECK_OUT_TIME
+		, CHECK_OUT_METHOD
+		
+		, DEL_YN
+		, INSERT_NO
+		, INSERT_DATE
+		, UPDATE_NO
+		, UPDATE_DATE
+	)
+	VALUES (
+		#{attdId}
+		, #{gvCmpnyCd}
+		, #{siteCd}
+		, #{userCd}
+		, #{workYmd}
+		
+		, #{nodeCd}
+		, #{workSeq}
+		
+		, #{checkInDate}
+		, #{checkInTime}
+		, #{checkInMethod}
+		, #{checkOutDate}
+		, #{checkOutTime}
+		, #{checkOutMethod}
+		
+		, 'N'
+		, #{gvUserCd}
+		, NOW()
+		, #{gvUserCd}
+		, NOW()
+	) AS NEW
+	ON DUPLICATE KEY UPDATE
+		CHECK_IN_DATE		= NEW.CHECK_IN_DATE
+		, CHECK_IN_TIME		= NEW.CHECK_IN_TIME
+		, CHECK_IN_METHOD	= NEW.CHECK_IN_METHOD
+		, CHECK_OUT_DATE	= NEW.CHECK_OUT_DATE
+		, CHECK_OUT_TIME	= NEW.CHECK_OUT_TIME
+		, CHECK_OUT_METHOD	= NEW.CHECK_OUT_METHOD
+		, DEL_YN			= NEW.DEL_YN
+		, UPDATE_NO			= NEW.UPDATE_NO
+		, UPDATE_DATE		= NEW.UPDATE_DATE
+    </update>
+    
+	<insert id="insertUserAttdInfos" parameterType="com.prafta.web.attd.attd07.application.command.InsertUserAttdHistsCommand">
+    /* Attd07Mapper.insertUserAttdInfos */
+    INSERT INTO TB_USER_ATTD_HIST (
+		HIST_ID
+		, CMPNY_CD
+		, ATTD_ID
+		, SITE_CD
+		, HIST_TYPE
+		
+		, PROCESS_REASON
+		, WORK_YMD
+		
+		, BEF_CHECK_IN_DATE
+		, BEF_CHECK_IN_TIME
+		, BEF_CHECK_OUT_DATE
+		, BEF_CHECK_OUT_TIME
+		
+		, AFT_CHECK_IN_DATE
+		, AFT_CHECK_IN_TIME
+		, AFT_CHECK_OUT_DATE
+		, AFT_CHECK_OUT_TIME
+		
+		, INSERT_NO
+		, INSERT_DATE 
+    )
+    VALUES (
+		#{histId}
+		, #{gvCmpnyCd}
+		, #{attdId}
+		, #{siteCd}
+		, #{histType}
+		
+		, #{processReason}
+		, #{workYmd}
+		
+		, #{befCheckInDate}
+		, #{befCheckInTime}
+		, #{befCheckOutDate}
+		, #{befCheckOutTime}
+		
+		, #{aftCheckInDate}
+		, #{aftCheckInTime}
+		, #{aftCheckOutDate}
+		, #{aftCheckOutTime}
+		
+		, #{gvUserCd}
+		, NOW()
+	)
+	</insert>
+
+    <select id="selectDailyAttdDetails" parameterType="com.prafta.web.attd.attd07.application.query.DailyAttdDetailsQuery" resultType="com.prafta.web.attd.attd07.result.DailyAttdDetailsResult">
+    /* Attd07Mapper.selectDailyAttdDetails */
+	SELECT 
+        A.CMPNY_CD                                                         AS cmpnyCd
+	    , A.USER_CD                                                        AS userCd
+	    , B.USER_ID                                                        AS userId
+	    , B.USER_NM                                                        AS userNm
+	    , A.SITE_CD                                                        AS siteCd
+	    , B.NODE_CD                                                        AS nodeCd
+	    , A.WORK_YMD                                                       AS workYmd
+	
+	    /* 스케줄 정보 (1·2구간) */
+	    , SCH.SCH_TYPE                                                     AS schType
+	    , SCH.FST_SCH_STR_TIME                                             AS plan1Start
+	    , SCH.FST_SCH_END_TIME                                             AS plan1End
+	    , SCH.FST_SCH_BRK_MIN                                              AS plan1BreakMin
+	    , SCH.SEC_SCH_STR_TIME                                             AS plan2Start
+	    , SCH.SEC_SCH_END_TIME                                             AS plan2End
+	    , SCH.SEC_SCH_BRK_MIN                                              AS plan2BreakMin
+	
+	    /* 근태 1차 */
+	    , A1.ATTD_ID                                                       AS attd1Id
+	    , A1.CHECK_IN_DATE                                                 AS act1InDate
+	    , A1.CHECK_IN_TIME                                                 AS act1InTime
+	    , FNC_STD_TIME(
+	          A1.CHECK_IN_TIME
+	        , IFNULL(
+	              CASE WHEN CHAR_LENGTH(FNC_CMM_INFO_SRCH(A.CMPNY_CD, 'ATTD_STD_CHKIN', A1.CHECK_IN_DATE, NULL)) = 0
+	                   THEN NULL
+	                   ELSE FNC_CMM_INFO_SRCH(A.CMPNY_CD, 'ATTD_STD_CHKIN', A1.CHECK_IN_DATE, NULL)
+	              END
+	          , 0)
+	        , 'IN'
+	    )                                                                  AS act1InStdTime
+	    , A1.CHECK_IN_METHOD                                               AS act1InMethod
+	    , A1.CHECK_OUT_DATE                                                AS act1OutDate
+	    , A1.CHECK_OUT_TIME                                                AS act1OutTime
+	    , FNC_STD_TIME(
+	          A1.CHECK_OUT_TIME
+	        , IFNULL(
+	              CASE WHEN CHAR_LENGTH(FNC_CMM_INFO_SRCH(A.CMPNY_CD, 'ATTD_STD_CHKOUT', A1.CHECK_OUT_DATE, NULL)) = 0
+	                   THEN NULL
+	                   ELSE FNC_CMM_INFO_SRCH(A.CMPNY_CD, 'ATTD_STD_CHKOUT', A1.CHECK_OUT_DATE, NULL)
+	              END
+	          , 0)
+	        , 'OUT'
+	    )                                                                  AS act1OutStdTime
+	    , A1.CHECK_OUT_METHOD                                              AS act1OutMethod
+	    
+	    , A1.CHECK_IN_DATE                                                 AS oriAct1InDate
+	    , A1.CHECK_IN_TIME                                                 AS oriAct1InTime
+	    , A1.CHECK_OUT_DATE                                                AS oriAct1OutDate
+	    , A1.CHECK_OUT_TIME                                                AS oriAct1OutTime
+	
+	    /* 근태 2차 */
+	    , A2.ATTD_ID                                                       AS attd2Id
+	    , A2.CHECK_IN_DATE                                                 AS act2InDate
+	    , A2.CHECK_IN_TIME                                                 AS act2InTime
+	    , FNC_STD_TIME(
+	          A2.CHECK_IN_TIME
+	        , IFNULL(
+	              CASE WHEN CHAR_LENGTH(FNC_CMM_INFO_SRCH(A.CMPNY_CD, 'ATTD_STD_CHKIN', A2.CHECK_IN_DATE, NULL)) = 0
+	                   THEN NULL
+	                   ELSE FNC_CMM_INFO_SRCH(A.CMPNY_CD, 'ATTD_STD_CHKIN', A2.CHECK_IN_DATE, NULL)
+	              END
+	          , 0)
+	        , 'IN'
+	    )                                                                  AS act2InStdTime
+	    , A2.CHECK_IN_METHOD                                               AS act2InMethod
+	    , A2.CHECK_OUT_DATE                                                AS act2OutDate
+	    , A2.CHECK_OUT_TIME                                                AS act2OutTime
+	    , FNC_STD_TIME(
+	          A2.CHECK_OUT_TIME
+	        , IFNULL(
+	              CASE WHEN CHAR_LENGTH(FNC_CMM_INFO_SRCH(A.CMPNY_CD, 'ATTD_STD_CHKOUT', A2.CHECK_OUT_DATE, NULL)) = 0
+	                   THEN NULL
+	                   ELSE FNC_CMM_INFO_SRCH(A.CMPNY_CD, 'ATTD_STD_CHKOUT', A2.CHECK_OUT_DATE, NULL)
+	              END
+	          , 0)
+	        , 'OUT'
+	    )                                                                  AS act2OutStdTime
+	    , A2.CHECK_OUT_METHOD                                              AS act2OutMethod
+	    
+	    , A2.CHECK_IN_DATE                                                 AS oriAct2InDate
+	    , A2.CHECK_IN_TIME                                                 AS oriAct2InTime
+	    , A2.CHECK_OUT_DATE                                                AS oriAct2OutDate
+	    , A2.CHECK_OUT_TIME                                                AS oriAct2OutTime
+	FROM TB_USER_ATTD_MGMT A
+		 INNER JOIN TB_USER B
+			ON (
+				A.CMPNY_CD = B.CMPNY_CD
+			AND A.USER_CD = B.USER_CD
+	        )
+	
+		 LEFT JOIN TB_USER_WORK_PLAN WP
+			ON  WP.CMPNY_CD = A.CMPNY_CD
+			AND WP.SITE_CD  = A.SITE_CD
+			AND WP.USER_CD  = A.USER_CD
+			AND WP.WORK_YMD = A.WORK_YMD
+	
+		/* 근무계획코드가 스케줄코드인 경우 */
+		LEFT JOIN TB_SCH_MGMT SCH
+			ON  SCH.CMPNY_CD = WP.CMPNY_CD
+			AND SCH.SITE_CD  = WP.SITE_CD
+			AND SCH.SCH_CD   = WP.WORK_PLAN_CD
+			AND SCH.USE_YN   = 'Y'
+	
+		/* 근무계획코드가 휴가코드인 경우 */
+		LEFT JOIN TB_LEAVE_TYPE_MGMT LV
+			ON  LV.CMPNY_CD = WP.CMPNY_CD
+			AND LV.LEAVE_CD = WP.WORK_PLAN_CD
+			AND LV.USE_YN   = 'Y'
+	        
+		/* 근태 1차 */
+		LEFT JOIN TB_USER_ATTD_MGMT A1
+			ON  A.CMPNY_CD = A1.CMPNY_CD
+			AND A.SITE_CD  = A1.SITE_CD
+			AND A.USER_CD  = A1.USER_CD
+			AND A.WORK_YMD = A1.WORK_YMD
+			AND A1.WORK_SEQ = 1
+			AND A1.DEL_YN   = 'N'
+	
+		/* 근태 2차 */
+		LEFT JOIN TB_USER_ATTD_MGMT A2
+			ON  A.CMPNY_CD = A2.CMPNY_CD
+			AND A.SITE_CD  = A2.SITE_CD
+			AND A.USER_CD  = A2.USER_CD
+			AND A.WORK_YMD = A2.WORK_YMD
+			AND A2.WORK_SEQ = 2
+			AND A2.DEL_YN   = 'N'
+	WHERE A.CMPNY_CD = #{gvCmpnyCd}
+	  AND A.SITE_CD = #{siteCd}
+	  AND A.ATTD_ID = #{attdId}
+	  AND A.WORK_YMD = #{workYmd}
+    </select>
+    
+	<select id="selectDailyAttdDetailHistory" parameterType="com.prafta.web.attd.attd07.application.query.DailyAttdDetailsQuery" resultType="com.prafta.web.attd.attd07.result.DailyAttdDetailHistoryResult">
+    /* Attd07Mapper.selectDailyAttdDetailHistory */
+    SELECT 
+		A.CMPNY_CD					AS cmpnyCd
+		, B.HIST_ID					AS histId
+	    , A.ATTD_ID					AS attdId
+	    , B.HIST_TYPE				AS histType
+	    , FNC_CMM_INFO_SRCH(
+			A.CMPNY_CD
+			, 'SYST_VAL'
+			, B.HIST_TYPE
+			, 'SYS032'
+		) 							AS histTypeNm
+		, A.WORK_SEQ				AS workSeq
+	    , B.BEF_CHECK_IN_DATE		AS befCheckInDate
+	    , B.BEF_CHECK_IN_TIME		AS befCheckInTime
+	    , B.BEF_CHECK_OUT_DATE		AS befCheckOutDate
+	    , B.BEF_CHECK_OUT_TIME		AS befCheckOutTime
+	    
+	    , B.AFT_CHECK_IN_DATE		AS aftCheckInDate
+	    , B.AFT_CHECK_IN_TIME		AS aftCheckInTime
+	    , B.AFT_CHECK_OUT_DATE		AS aftCheckOutDate
+	    , B.AFT_CHECK_OUT_TIME		AS aftCheckOutTime
+	    
+	    , B.PROCESS_REASON			AS processReason
+	    , B.INSERT_NO				AS insertNo
+	    , FNC_CMM_INFO_SRCH(
+			A.CMPNY_CD
+			, 'USER_NM'
+			, B.INSERT_NO
+			, null
+		) 							AS insertNm
+	    , B.INSERT_DATE				AS insertDate
+	FROM TB_USER_ATTD_MGMT A
+	     INNER JOIN TB_USER_ATTD_HIST B
+			 ON (
+				A.CMPNY_CD = B.CMPNY_CD
+			AND A.ATTD_ID = B.ATTD_ID
+			 )
+	WHERE A.CMPNY_CD = #{gvCmpnyCd}
+	  AND A.SITE_CD = #{siteCd}
+	  AND A.USER_CD = #{userCd}
+	  AND A.WORK_YMD = #{workYmd}
+	ORDER BY B.INSERT_DATE DESC
+    </select>
+    
+    <select id="selectMonthlyAttdReq" parameterType="com.prafta.web.attd.attd07.application.query.DailyAttdDetailsQuery" resultType="com.prafta.web.attd.attd07.result.MonthlyAttdReqResult">
+    /* Attd07Mapper.selectMonthlyAttdReq */
+    SELECT 
+		A.CMPNY_CD			AS cmpnyCd
+		, A.REQ_ID			AS reqId
+	    , A.SITE_CD			AS siteCd
+	    , A.NODE_CD			AS nodeCd
+	    , A.USER_CD			AS userCd
+	    , A.REQ_TYPE		AS reqType
+	    , FNC_CMM_INFO_SRCH(
+			A.CMPNY_CD
+	        , 'SYST_VAL'
+	        , A.REQ_TYPE
+			, 'SYS032'
+		) 					AS reqTypeNm
+	    , A.REQ_STATUS		AS reqStatus
+	    , FNC_CMM_INFO_SRCH(
+			A.CMPNY_CD
+	        , 'SYST_VAL'
+	        , A.REQ_STATUS
+	        , 'SYS033'
+		) 					AS reqStatusNm
+		, A.WORK_SEQ		AS workSeq
+	    , A.WORK_YMD		AS workYmd
+	    , A.CHECK_IN_DATE	AS checkInDate
+	    , A.CHECK_IN_TIME	AS checkInTime
+	    , A.CHECK_OUT_DATE	AS checkOutDate
+	    , A.CHECK_OUT_TIME	AS checkOutTime
+	    , A.REQ_REASON		AS reqReason
+	    , A.INSERT_DATE		AS insertDate
+	FROM TB_USER_ATTD_REQ A
+	WHERE A.CMPNY_CD = #{gvCmpnyCd}
+	  AND A.SITE_CD = #{siteCd}
+	  AND A.USER_CD = #{userCd}
+	  AND A.WORK_YMD = #{workYmd}
+	  AND A.REQ_STATUS = '01'				<!-- 요청 신청건만 조회 -->
+    </select>
+
+    <insert id="insertDailyAttdDetailDeleteHist" parameterType="com.prafta.web.attd.attd07.application.command.DailyAttdDetailDeleteCommand">
+    /* Attd07Mapper.insertDailyAttdDetailDeleteHist */
+    INSERT INTO TB_USER_ATTD_HIST (
+        HIST_ID
+        , CMPNY_CD
+        , ATTD_ID
+        , SITE_CD
+        , HIST_TYPE
+
+        , PROCESS_REASON
+        , WORK_YMD
+
+        , BEF_CHECK_IN_DATE
+        , BEF_CHECK_IN_TIME
+        , BEF_CHECK_OUT_DATE
+        , BEF_CHECK_OUT_TIME
+
+        , INSERT_NO
+        , INSERT_DATE
+    )
+    SELECT
+        CONCAT(DATE_FORMAT(NOW(), '%Y%m%d'), FNC_CMM_SEQ_NEXTVAL(#{gvCmpnyCd}, 'ATTD_HIST_ID'))
+        , A.CMPNY_CD
+        , A.ATTD_ID
+        , A.SITE_CD
+        , '03'
+
+        , #{reason}
+        , A.WORK_YMD
+
+        , A.CHECK_IN_DATE
+        , A.CHECK_IN_TIME
+        , A.CHECK_OUT_DATE
+        , A.CHECK_OUT_TIME
+
+        , #{gvUserCd}
+        , NOW()
+    FROM TB_USER_ATTD_MGMT A
+    WHERE A.CMPNY_CD = #{gvCmpnyCd}
+      AND A.SITE_CD  = #{siteCd}
+      AND A.USER_CD  = #{userCd}
+      AND A.DEL_YN   = 'N'
+      AND A.ATTD_ID  = #{attdId}
+    </insert>
+
+    <update id="dailyAttdDetailDelete" parameterType="com.prafta.web.attd.attd07.application.command.DailyAttdDetailDeleteCommand">
+    /* Attd07Mapper.dailyAttdDetailDelete */
+    UPDATE TB_USER_ATTD_MGMT
+    SET DEL_YN      = 'Y'
+        , UPDATE_NO   = #{gvUserCd}
+        , UPDATE_DATE = NOW()
+    WHERE CMPNY_CD = #{gvCmpnyCd}
+      AND SITE_CD  = #{siteCd}
+      AND USER_CD  = #{userCd}
+      AND ATTD_ID  = #{attdId}
+    </update>
+
+</mapper>
