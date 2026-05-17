@@ -17,17 +17,17 @@ public record DailyUserSlotCommand(
 	public static DailyUserSlotCommand from(LinkPoliciesModel model, int slotNo, String useYn) {
 
         if (model == null)
-        	throw ApiException.appendf(CommonErrorCode.COMMON_400_001,"\nÇÊ¼ö°ª ´©¶ô - LinkPoliciesModel");
+        	throw new ApiException(CommonErrorCode.COMMON_400_001);
         if (useYn == null)
-        	throw ApiException.appendf(CommonErrorCode.COMMON_400_001,"\nÇÊ¼ö°ª ´©¶ô - useYn");
+        	throw new ApiException(CommonErrorCode.COMMON_400_001);
 
         return new DailyUserSlotCommand(
         		model.cmpnyCd()
         		, model.siteCd()
         		, slotNo
-        		, "01"					// 01:ÀÏ¹İ»ç¿ëÀÚ, 02:QR»ç¿ëÀÚ
+        		, "01"					// 01:ì¼ë°˜ì‚¬ìš©ì, 02:QRì‚¬ìš©ì
         		, useYn
-        		, "01"					// 01:ºñÁ¡À¯Áß, 02:Á¡À¯Áß
+        		, "01"					// 01:ë¹„ì ìœ ì¤‘, 02:ì ìœ ì¤‘
         		, model.gvCmpnyCd()
         		, model.gvUserCd()
         );        
@@ -36,15 +36,15 @@ public record DailyUserSlotCommand(
 	public static DailyUserSlotCommand from(LinkPoliciesModel model) {
 
         if (model == null)
-        	throw ApiException.appendf(CommonErrorCode.COMMON_400_001,"\nÇÊ¼ö°ª ´©¶ô - LinkPoliciesModel");
+        	throw new ApiException(CommonErrorCode.COMMON_400_001);
 
         return new DailyUserSlotCommand(
         		model.cmpnyCd()
         		, model.siteCd()
         		, 0
-        		, "01"					// 01:ÀÏ¹İ»ç¿ëÀÚ, 02:QR»ç¿ëÀÚ
+        		, "01"					// 01:ì¼ë°˜ì‚¬ìš©ì, 02:QRì‚¬ìš©ì
         		, ""
-        		, "01"					// 01:ºñÁ¡À¯Áß, 02:Á¡À¯Áß
+        		, "01"					// 01:ë¹„ì ìœ ì¤‘, 02:ì ìœ ì¤‘
         		, model.gvCmpnyCd()
         		, model.gvUserCd()
         );        

@@ -15,7 +15,7 @@ public record RiskAssessmentsListParam(
 	public static RiskAssessmentsListParam from(RiskAssessmentsListRequest request, TokenInfo tokenInfo) {
 
         if (request == null)
-        	throw ApiException.appendf(CommonErrorCode.COMMON_400_001,"\n필수값 누락 - RiskAssessmentsListRequest");
+        	throw new ApiException(CommonErrorCode.COMMON_400_001);
 
 
         return new RiskAssessmentsListParam(

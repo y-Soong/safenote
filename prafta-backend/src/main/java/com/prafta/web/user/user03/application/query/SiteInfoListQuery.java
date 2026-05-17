@@ -11,7 +11,7 @@ public record SiteInfoListQuery(
 	public static SiteInfoListQuery from(SiteInfoListParam param) {
 		
 		if(param == null)
-			throw ApiException.appendf(CommonErrorCode.COMMON_400_001,"\n필수값 누락 - SiteInfoListParam");
+			throw new ApiException(CommonErrorCode.COMMON_400_001);
 		
 		return new SiteInfoListQuery(
 			param.userCd()

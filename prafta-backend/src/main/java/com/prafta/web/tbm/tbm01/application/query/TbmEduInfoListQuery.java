@@ -14,7 +14,7 @@ public record TbmEduInfoListQuery(
 	public static TbmEduInfoListQuery from(TbmEduInfoListParam param) {
 		
 		if(param == null)
-			throw ApiException.appendf(CommonErrorCode.COMMON_400_001,"\n필수값 누락 - TbmEduInfoListParam");
+			throw new ApiException(CommonErrorCode.COMMON_400_001);
 		
 		return new TbmEduInfoListQuery(
 			param.mtrlCd()

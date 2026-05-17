@@ -10,7 +10,7 @@ public record UserTermsAgreementCheckParam(
     public static UserTermsAgreementCheckParam from(TokenInfo tokenInfo) {
     	
     	if(tokenInfo == null)
-			throw ApiException.appendf(CommonErrorCode.COMMON_400_003,"\n필수값 누락 - TokenInfo");
+			throw new ApiException(CommonErrorCode.COMMON_400_003);
     	
     	return new UserTermsAgreementCheckParam(tokenInfo.gv_userCd());    	
     }

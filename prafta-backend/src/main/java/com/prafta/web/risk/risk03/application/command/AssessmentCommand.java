@@ -29,9 +29,9 @@ public record AssessmentCommand(
 	public static AssessmentCommand from(AssessmentParam param, String fileMgmtCd) {
 
         if (param == null)
-        	throw ApiException.appendf(CommonErrorCode.COMMON_400_001,"\n필수값 누락 - AssessmentParam");
+        	throw new ApiException(CommonErrorCode.COMMON_400_001);
         if (fileMgmtCd == null)
-        	throw ApiException.appendf(CommonErrorCode.COMMON_400_001,"\n필수값 누락 - fileMgmtCd");
+        	throw new ApiException(CommonErrorCode.COMMON_400_001);
 
         return new AssessmentCommand(
         	param.siteCd()

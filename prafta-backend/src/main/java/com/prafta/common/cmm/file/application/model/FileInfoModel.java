@@ -2,11 +2,11 @@ package com.prafta.common.cmm.file.application.model;
 
 public record FileInfoModel(
 	String itemCd
-    , String fileName // Å¬¶óÀÌ¾ğÆ® ÆÄÀÏ¸í(¼±ÅÃ)
+    , String fileName // í´ë¼ì´ì–¸íŠ¸ íŒŒì¼ëª…(ì„ íƒ)
     
-    // ÀÏÀÏÁ¡°Ë ÄÃ·³
-    , String answerDesc				// ´äº¯ºñ°í
-    , String inspectValue			// ´äº¯ (Y/N)
+    // ì¼ì¼ì ê²€ ì»¬ëŸ¼
+    , String answerDesc				// ë‹µë³€ë¹„ê³ 
+    , String inspectValue			// ë‹µë³€ (Y/N)
 ) {
     
 }

@@ -17,9 +17,11 @@ import com.prafta.app.risk.risk01.service.AppRisk01Service;
 import com.prafta.app.risk.risk01.vo.RiskCategory;
 import com.prafta.app.risk.risk01.vo.RiskHazard;
 import com.prafta.app.risk.risk01.vo.RiskType;
-import com.prafta.common.cmm.file.application.command.FileInfoCommand;
+import com.prafta.common.cmm.file.application.query.FileInfoQuery;
+import com.prafta.common.cmm.file.dto.param.FileInfoParam;
 import com.prafta.common.cmm.file.mapper.FileMapper;
 import com.prafta.common.cmm.file.service.FileService;
+import com.prafta.common.dto.TokenInfo;
 import com.prafta.common.error.common.CommonErrorCode;
 import com.prafta.common.exception.ApiException;
 
@@ -37,7 +39,7 @@ public class AppRisk01ServiceImpl implements AppRisk01Service {
     private final FileMapper fileMapper;
     
     
-    public RiskInfoRes selectRiskTypeInfo(RiskInfoReq request, Map<String, Object> tokenInfo) {
+    public RiskInfoRes selectRiskTypeInfo(RiskInfoReq request, TokenInfo tokenInfo) {
     	
     	RiskInfoQry reqDto = RiskInfoQry.builder()
 				.siteCd(request.getSiteCd())
@@ -72,27 +74,21 @@ public class AppRisk01ServiceImpl implements AppRisk01Service {
     	return resDto;
     }
     
-    public void saveRiskAssessments(RiskAssessmentReq request, MultipartFile file, Map<String, Object> tokenInfo) {
+    public void saveRiskAssessments(RiskAssessmentReq request, MultipartFile file, TokenInfo tokenInfo) {
     	try {
     		String fileMgmtCd = "";
     		if (file != null && !file.isEmpty()) {
-    			
-    			FileInfoCommand baseQuery = FileInfoCommand.builder()
-                        .cmpnyCd(tokenInfo.get("gv_cmpnyCd").toString())
-                        .userId(tokenInfo.get("gv_userCd").toString())
-                        .siteCd(request.getSiteCd())
-                        .fileType("002")     	// 002: ¿ß«Ëº∫∆Ú∞°
-                        .itemCd("")      // 1π¯¿∫ itemCd=inspectItemCd ø¥∞Ì, 2π¯¿∫ riskId ∞∞¿∫ æ˜π´≈∞∏¶ ≥÷¥¬ ∞… √ﬂ√µ
-                        .fileName("")
-                        .build();
-    			    			
-    			fileMgmtCd = fileMapper.selectFileMgmtCd(baseQuery);
-    			
-    			FileInfoCommand queryWithKey = baseQuery.toBuilder()
-                        .fileMgmtCd(fileMgmtCd)
-                        .build();
-    			
-    			fileService.saveFile(queryWithKey, file);
+
+    			fileMgmtCd = fileMapper.selectFileMgmtCd(FileInfoQuery.from(tokenInfo.gv_cmpnyCd(), "002"));		// 002: ÏúÑÌóòÏÑ±ÌèâÍ∞Ä
+
+    			fileService.fileSave(FileInfoParam.from(
+    					tokenInfo.gv_cmpnyCd()
+    					, tokenInfo.gv_userCd()
+    					, request.getSiteCd()
+    					, "002"							// ÏúÑÌóòÏÑ±ÌèâÍ∞Ä
+    					, fileMgmtCd
+    					, file
+    			));
     		}
     		
     		RiskAssessmentSave riskHazardInfoSave = RiskAssessmentSave.builder()
@@ -101,7 +97,7 @@ public class AppRisk01ServiceImpl implements AppRisk01Service {
     				.riskTypeCd(request.getRiskTypeCd())
     				.hazardCd(request.getHazardCd())
     				.assessmentDesc(request.getAssessmentDesc())
-    				.assessmentStatus("001")						// ∞À≈‰ø‰√ª ªÛ≈¬
+    				.assessmentStatus("001")						// Í≤ÄÌÜ†ÏöîÏ≤≠ ÏÉÅÌÉú
     				.initDesc(request.getInitDesc())
     				
     				.initLikelihoodScore(request.getInitLikelihoodScore())
@@ -146,7 +142,7 @@ public class AppRisk01ServiceImpl implements AppRisk01Service {
 //                itemsJson = new String(itemsFile.getBytes(),StandardCharsets.UTF_8);
 //            }
 //
-//            // JSON ∆ƒΩÃ -> List<FileInfo>
+//            // JSON ÌååÏã± -> List<FileInfo>
 //            List<FileInfo> items = new ArrayList<>();
 //            if (itemsJson != null && !itemsJson.isEmpty()) {
 //                JsonNode node = objectMapper.readTree(itemsJson);
@@ -157,7 +153,7 @@ public class AppRisk01ServiceImpl implements AppRisk01Service {
 //                }
 //            }
 //
-//            // files Map -> itemCd ±‚¡ÿ¿∏∑Œ ∏≈«Œ (≈∞: files[ITEM_CD])
+//            // files Map -> itemCd Í∏∞Ï§ÄÏúºÎ°ú Îß§Ìïë (ÌÇ§: files[ITEM_CD])
 //            Pattern p = Pattern.compile("^files\\[(.+)]$");
 //            Map<String, MultipartFile> fileByItemCd = new HashMap<>();
 //            if (files != null) {
@@ -169,25 +165,25 @@ public class AppRisk01ServiceImpl implements AppRisk01Service {
 //                }
 //            }
 //            
-//            // items ∏¶ µπ∏Èº≠ "∞«∫∞"∑Œ fileMgmtCd ª˝º∫ + FileService »£√‚
+//            // items Î•º ÎèåÎ©¥ÏÑú "Í±¥Î≥Ñ"Î°ú fileMgmtCd ÏÉùÏÑ± + FileService Ìò∏Ï∂ú
 //            for (FileInfo it : items) {
 //            	String userId = tokenInfo.get("gv_userCd").toString();  // or request.getUserCd()
 //            	String fileMgmtCd = "";
-//            	String answerDesc = "";									// ¡°∞À¥‰∫Ø
+//            	String answerDesc = "";									// Ï†êÍ≤ÄÎãµÎ≥Ä
 //            	answerDesc = it.getAnswerDesc();
 //            	
 //            	MultipartFile img = fileByItemCd.get(it.getItemCd());
 //            	if (img != null && !img.isEmpty()) {
-//            		// ±‚∫ª FileSaveQuery (fileMgmtCd æ¯¿Ã)
+//            		// Í∏∞Î≥∏ FileSaveQuery (fileMgmtCd ÏóÜÏù¥)
 //                    FileInfoSave baseQuery = FileInfoSave.builder()
 //                            .cmpnyCd(request.getCmpnyCd())
 //                            .userId(userId)
 //                            .siteCd(request.getSiteCd())
-//                            .fileType("001")          // ¿œ¿œ¡°∞À ≈∏¿‘
+//                            .fileType("001")          // ÏùºÏùºÏ†êÍ≤Ä ÌÉÄÏûÖ
 //                            .itemCd(it.getItemCd())
 //                            .fileName(it.getFileName())
 //                            .build();
-//                    // ∞«∫∞ fileMgmtCd ª˝º∫
+//                    // Í±¥Î≥Ñ fileMgmtCd ÏÉùÏÑ±
 //            		fileMgmtCd = fileMapper.selectFileMgmtCd(baseQuery);
 //            		
 //            		FileInfoSave queryWithKey = baseQuery.toBuilder()
@@ -211,8 +207,8 @@ public class AppRisk01ServiceImpl implements AppRisk01Service {
 //            }
 //
 //        } catch (Exception e) {
-//            log.error("saveInspectResult √≥∏Æ ¡ﬂ ø¿∑˘", e);
-//            throw new RuntimeException("¿œ¿œ¡°∞À ∞·∞˙ ¿˙¿Â ¡ﬂ ø¿∑˘", e);
+//            log.error("saveInspectResult Ï≤òÎ¶¨ Ï§ë Ïò§Î•ò", e);
+//            throw new RuntimeException("ÏùºÏùºÏ†êÍ≤Ä Í≤∞Í≥º Ï†ÄÏû• Ï§ë Ïò§Î•ò", e);
 //        }
 //    }
 }

@@ -28,6 +28,78 @@
 	    LIMIT 1
 	</select>
 	
+	<select id="selectRecentlyRevokedByRefreshTokenHash" resultType="com.prafta.common.cmm.auth.result.AuthTokenResult">
+	/* AuthMapper.selectRecentlyRevokedByRefreshTokenHash */
+	    SELECT
+			CMPNY_CD            AS cmpnyCd
+			, USER_CD             AS userCd
+			, TOKEN_ID            AS tokenId
+			, CLIENT_TYPE         AS clientType
+			, DEVICE_ID           AS deviceId
+			, REFRESH_TOKEN_HASH  AS refreshTokenHash
+			, ISSUED_DTIME        AS issuedDtime
+			, EXPIRE_DTIME        AS expireDtime
+			, REVOKED_YN          AS revokedYn
+			, REVOKED_DTIME       AS revokedDtime
+			, IP_ADDR             AS ipAddr
+			, USER_AGENT          AS userAgent
+			, INSERT_NO           AS insertNo
+			, INSERT_DATE         AS insertDate
+			, UPDATE_NO           AS updateNo
+			, UPDATE_DATE         AS updateDate
+	    FROM TB_AUTH_TOKEN
+	    WHERE REFRESH_TOKEN_HASH = #{refreshTokenHash}
+	      AND REVOKED_YN = 'Y'
+	      AND REVOKED_DTIME IS NOT NULL
+	      AND REVOKED_DTIME >= DATE_SUB(NOW(), INTERVAL #{graceSeconds} SECOND)
+	      AND EXPIRE_DTIME > NOW()
+	    LIMIT 1
+	</select>
+
+	<update id="revokeTokenById">
+	/* AuthMapper.revokeTokenById */
+	    UPDATE TB_AUTH_TOKEN
+	       SET REVOKED_YN = 'Y'
+	         , REVOKED_DTIME = NOW()
+	         , UPDATE_NO = #{userCd}
+	         , UPDATE_DATE = NOW()
+	     WHERE CMPNY_CD = #{cmpnyCd}
+	       AND USER_CD = #{userCd}
+	       AND TOKEN_ID = #{tokenId}
+	       AND REVOKED_YN = 'N'
+	</update>
+
+	<insert id="insertRotatedToken">
+	/* AuthMapper.insertRotatedToken */
+	    INSERT INTO TB_AUTH_TOKEN (
+	        CMPNY_CD
+	        , USER_CD
+	        , TOKEN_ID
+	        , CLIENT_TYPE
+	        , DEVICE_ID
+	        , REFRESH_TOKEN_HASH
+	        , ISSUED_DTIME
+	        , EXPIRE_DTIME
+	        , REVOKED_YN
+	        , REVOKED_DTIME
+	        , INSERT_NO
+	        , INSERT_DATE
+	    ) VALUES (
+	        #{cmpnyCd}
+	        , #{userCd}
+	        , #{tokenId}
+	        , #{clientType}
+	        , #{deviceId}
+	        , #{refreshTokenHash}
+	        , NOW()
+	        , #{expireDtime}
+	        , 'N'
+	        , NULL
+	        , #{userCd}
+	        , NOW()
+	    )
+	</insert>
+
 	<select id="selectUserForJwt" parameterType="string" resultType="com.prafta.common.cmm.login.result.UserResult">
 	/* AuthMapper.selectUserForJwt */
 	SELECT 

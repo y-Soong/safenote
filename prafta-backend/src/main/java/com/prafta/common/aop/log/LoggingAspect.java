@@ -20,12 +20,12 @@ public class LoggingAspect {
     public Object logRequestAndResponseTime(ProceedingJoinPoint joinPoint) throws Throwable {
         long start = System.currentTimeMillis();
         String method = joinPoint.getSignature().toShortString();
-        log.info("[Request] °Ê {}", method);
+        log.info("[Request] ‚Üí {}", method);
 
         Object result = joinPoint.proceed();
 
         long duration = System.currentTimeMillis() - start;
-        log.info("[Response] °Á {} ({}ms)", method, duration);
+        log.info("[Response] ‚Üê {} ({}ms)", method, duration);
         return result;
     }
     

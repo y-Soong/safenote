@@ -13,7 +13,7 @@ public record InsertShiftTeamUsersParam(
     public static InsertShiftTeamUsersParam from(List<InsertShiftTeamUsersRequest> requests, TokenInfo tokenInfo) {
 
         if (requests == null)
-            throw ApiException.appendf(CommonErrorCode.COMMON_400_001, "\nRequired param missing - InsertShiftTeamUsersRequest");
+            throw new ApiException(CommonErrorCode.COMMON_400_001);
 
         List<InsertShiftTeamUsersModel> models = requests.stream()
             .map(req -> new InsertShiftTeamUsersModel(

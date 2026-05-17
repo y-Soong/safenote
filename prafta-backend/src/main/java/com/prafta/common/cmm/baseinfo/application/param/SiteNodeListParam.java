@@ -17,11 +17,13 @@ public record SiteNodeListParam(
 	public static SiteNodeListParam from(SiteNodeListRequest request, TokenInfo token) {
 		
 		if(request == null)
-			throw ApiException.appendf(CommonErrorCode.COMMON_400_001,"\n필수값 누락 - SiteNodeListRequest");
-		
+			throw new ApiException(CommonErrorCode.COMMON_400_001);
+		if(token == null)
+			throw new ApiException(CommonErrorCode.COMMON_400_003);
+
 		return new SiteNodeListParam(
-			token != null ? token.gv_cmpnyCd() : request.getCmpnyCd()
-			, token != null ? token.gv_userCd() : ""
+			token.gv_cmpnyCd()
+			, token.gv_userCd()
 			, request.getSiteCd()
 			, request.getNodeCd()
 			, request.getNodeType()

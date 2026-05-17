@@ -319,6 +319,7 @@ import {
 import axios from '@/api/axios';
 import ViewHeader from '@/components/common/ViewHeader.vue';
 import { getMessage, MSG } from '@/messages';
+import { resolveApiErrorMessage } from "@/utils/apiError";
 import ThSortable from "@/components/common/ThSortable.vue";
 import { useTableSort, useColumnResize } from "@/composables/useTableFeatures.js";
 
@@ -385,10 +386,7 @@ const fnGetSystinfoList = async () => {
       systCodeArr.value = grouped;
     }
   } catch (err) {
-    const msg =
-      err?.response?.data?.message ||
-      err?.message ||
-      "조회 중 오류가 발생했습니다.";
+    const msg = resolveApiErrorMessage(err, "조회 중 오류가 발생했습니다.");
 
     await proxy.$alert(msg);
   }
@@ -407,10 +405,7 @@ const fnSearch = async () => {
       userActList.value = response.data.userInfoList;
     }
   } catch (err) {
-    const msg =
-      err?.response?.data?.message ||
-      err?.message ||
-      "조회 중 오류가 발생했습니다.";
+    const msg = resolveApiErrorMessage(err, "조회 중 오류가 발생했습니다.");
 
     await proxy.$alert(msg);
   }
@@ -449,10 +444,7 @@ const fnSiteInfoSearchTran = async () => {
       siteUnallocList.value = split.unalloc;
     }
   } catch (err) {
-    const msg =
-      err?.response?.data?.message ||
-      err?.message ||
-      "조회 중 오류가 발생했습니다.";
+    const msg = resolveApiErrorMessage(err, "조회 중 오류가 발생했습니다.");
 
     await proxy.$alert(msg);
   }
@@ -479,10 +471,7 @@ const fnSave = async (dataList) => {
       fnSiteInfoSearchTran();
     }
   } catch (err) {
-    const msg =
-      err?.response?.data?.message ||
-      err?.message ||
-      "저장 중 오류가 발생했습니다.";
+    const msg = resolveApiErrorMessage(err, "저장 중 오류가 발생했습니다.");
 
     await proxy.$alert(msg);
   }

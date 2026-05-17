@@ -271,6 +271,7 @@ import {
 import axios from "@/api/axios";
 import ViewHeader from "@/components/common/ViewHeader.vue";
 import { useModal } from "@/utils/useModal";
+import { resolveApiErrorMessage } from "@/utils/apiError";
 import LeaveTypeCreatePop from "@/views/attd/popup/LeaveTypeCreatePop.vue";
 import ThSortable from "@/components/common/ThSortable.vue";
 import {
@@ -341,10 +342,10 @@ const fnGetSystinfoList = async () => {
       leaveType.value = systCodeArr.value.SYS021?.[0]?.systValDCd;
     }
   } catch (err) {
-    const msg =
-      err?.response?.data?.message ||
-      err?.message ||
-      "시스템코드 조회 중 오류가 발생했습니다.";
+    const msg = resolveApiErrorMessage(
+      err,
+      "시스템코드 조회 중 오류가 발생했습니다."
+    );
     await proxy.$alert(msg);
   }
 };
@@ -364,10 +365,7 @@ const fnSearch = async () => {
       leaveList.value = response.data?.leaveTypeResultList ?? [];
     }
   } catch (err) {
-    const msg =
-      err?.response?.data?.message ||
-      err?.message ||
-      "조회 중 오류가 발생했습니다.";
+    const msg = resolveApiErrorMessage(err, "조회 중 오류가 발생했습니다.");
     await proxy.$alert(msg);
   }
 };

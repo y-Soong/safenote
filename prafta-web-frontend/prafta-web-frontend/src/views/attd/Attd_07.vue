@@ -434,6 +434,7 @@ import SiteNodeSearchPop from "@/components/popup/SiteNodeSearchPop.vue";
 import AttdDayDetailPop from "@/views/attd/popup/AttdDayDetailPop.vue";
 import axios from "@/api/axios";
 import { getMessage, MSG } from "@/messages";
+import { resolveApiErrorMessage } from "@/utils/apiError";
 
 defineOptions({ name: "Attd_07" });
 
@@ -541,9 +542,7 @@ const fnSrchSiteInfo = async () => {
     if (response.status === 200) fnCallback(response);
   } catch (err) {
     await proxy.$alert(
-      err?.response?.data?.message ||
-        err?.message ||
-        getMessage(MSG.SEARCH_ERROR_DEFAULT)
+      resolveApiErrorMessage(err, getMessage(MSG.SEARCH_ERROR_DEFAULT))
     );
   }
 };
@@ -565,9 +564,7 @@ const fnSrchNodeInfo = async () => {
     }
   } catch (err) {
     await proxy.$alert(
-      err?.response?.data?.message ||
-        err?.message ||
-        getMessage(MSG.SEARCH_ERROR_DEFAULT)
+      resolveApiErrorMessage(err, getMessage(MSG.SEARCH_ERROR_DEFAULT))
     );
   }
 };
@@ -1107,10 +1104,7 @@ const fnSearch = async () => {
       fnBindResponse(response.data);
     }
   } catch (err) {
-    const msg =
-      err?.response?.data?.message ||
-      err?.message ||
-      getMessage(MSG.SEARCH_ERROR);
+    const msg = resolveApiErrorMessage(err, getMessage(MSG.SEARCH_ERROR));
     await proxy.$alert(msg);
   }
 };

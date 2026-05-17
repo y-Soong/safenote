@@ -23,31 +23,28 @@ public record UserWorkPlanCommand(
 	        , String gvUserCd) {
 
 	    if (memberParam == null)
-	        throw ApiException.appendf(CommonErrorCode.COMMON_400_001, "\nRequired param missing - MemberParam");
+	        throw new ApiException(CommonErrorCode.COMMON_400_001);
 	    if (shiftMeta == null)
-	        throw ApiException.appendf(CommonErrorCode.COMMON_400_001, "\nRequired param missing - ShiftMetaParam");
+	        throw new ApiException(CommonErrorCode.COMMON_400_001);
 	    if (schCdPattern == null || schCdPattern.isEmpty())
-	        throw ApiException.appendf(CommonErrorCode.COMMON_400_001, "\nRequired param missing - schCdPattern");
+	        throw new ApiException(CommonErrorCode.COMMON_400_001);
 	    if (teamIdx == null || teamIdx.isBlank())
-	        throw ApiException.appendf(CommonErrorCode.COMMON_400_001, "\nRequired param missing - teamIdx");
+	        throw new ApiException(CommonErrorCode.COMMON_400_001);
 
 	    int teamIdxInt;
 	    try {
 	        teamIdxInt = Integer.parseInt(teamIdx.trim());
 	    } catch (NumberFormatException e) {
-	        throw ApiException.appendf(CommonErrorCode.COMMON_400_001,
-	            "\nInvalid teamIdx (must be numeric) - teamIdx=" + teamIdx);
+	        throw new ApiException(CommonErrorCode.COMMON_400_001);
 	    }
 
 	    if (teamIdxInt < 1)
-	        throw ApiException.appendf(CommonErrorCode.COMMON_400_001,
-	            "\nInvalid teamIdx (must be >= 1) - teamIdx=" + teamIdx);
+	        throw new ApiException(CommonErrorCode.COMMON_400_001);
 
 	    int patternSize = schCdPattern.size();
 
 	    if (teamIdxInt > patternSize)
-	        throw ApiException.appendf(CommonErrorCode.COMMON_400_001,
-	            "\nteamIdx exceeds pattern size - teamIdx=" + teamIdx + ", patternSize=" + patternSize);
+	        throw new ApiException(CommonErrorCode.COMMON_400_001);
 
 	    DateTimeFormatter fmt = DateTimeFormatter.BASIC_ISO_DATE;
 
@@ -57,15 +54,11 @@ public record UserWorkPlanCommand(
 	        start = LocalDate.parse(shiftMeta.startDate(), fmt);
 	        end   = LocalDate.parse(shiftMeta.endDate(),   fmt);
 	    } catch (Exception e) {
-	        throw ApiException.appendf(CommonErrorCode.COMMON_400_001,
-	            "\nInvalid date format (YYYYMMDD) - startDate=" + shiftMeta.startDate()
-	            + ", endDate=" + shiftMeta.endDate());
+	        throw new ApiException(CommonErrorCode.COMMON_400_001);
 	    }
 
 	    if (start.isAfter(end))
-	        throw ApiException.appendf(CommonErrorCode.COMMON_400_001,
-	            "\nstartDate is after endDate - startDate=" + shiftMeta.startDate()
-	            + ", endDate=" + shiftMeta.endDate());
+	        throw new ApiException(CommonErrorCode.COMMON_400_001);
 
 	    List<UserWorkPlanModel> models = new ArrayList<>();
 	    int offset = teamIdxInt - 1;
@@ -75,7 +68,7 @@ public record UserWorkPlanCommand(
 	        int patternIndex = ((dayIndex - offset) % patternSize + patternSize) % patternSize;
 	        String rawSchCd = schCdPattern.get(patternIndex);
 
-	        // OFF / blank ¡æ null ·Î Á¤±ÔÈ­ÇÏ¿© upsert
+	        // OFF / blank â†’ null ë¡œ ì •ê·œí™”í•˜ì—¬ upsert
 	        String schCd;
 	        if (rawSchCd == null || rawSchCd.isBlank() || "OFF".equalsIgnoreCase(rawSchCd)) {
 	            schCd = null;
@@ -95,7 +88,7 @@ public record UserWorkPlanCommand(
 
 	    return new UserWorkPlanCommand(models);
 	}
-	
+
 	public static UserWorkPlanCommand from(
 			ShiftUserSchInfosParam.MemberParam memberParam
 	        , ShiftUserSchInfosParam.ShiftMetaParam shiftMeta
@@ -105,31 +98,28 @@ public record UserWorkPlanCommand(
 	        , String gvUserCd) {
 
 	    if (memberParam == null)
-	        throw ApiException.appendf(CommonErrorCode.COMMON_400_001, "\nRequired param missing - MemberParam");
+	        throw new ApiException(CommonErrorCode.COMMON_400_001);
 	    if (shiftMeta == null)
-	        throw ApiException.appendf(CommonErrorCode.COMMON_400_001, "\nRequired param missing - ShiftMetaParam");
+	        throw new ApiException(CommonErrorCode.COMMON_400_001);
 	    if (schCdPattern == null || schCdPattern.isEmpty())
-	        throw ApiException.appendf(CommonErrorCode.COMMON_400_001, "\nRequired param missing - schCdPattern");
+	        throw new ApiException(CommonErrorCode.COMMON_400_001);
 	    if (teamIdx == null || teamIdx.isBlank())
-	        throw ApiException.appendf(CommonErrorCode.COMMON_400_001, "\nRequired param missing - teamIdx");
+	        throw new ApiException(CommonErrorCode.COMMON_400_001);
 
 	    int teamIdxInt;
 	    try {
 	        teamIdxInt = Integer.parseInt(teamIdx.trim());
 	    } catch (NumberFormatException e) {
-	        throw ApiException.appendf(CommonErrorCode.COMMON_400_001,
-	            "\nInvalid teamIdx (must be numeric) - teamIdx=" + teamIdx);
+	        throw new ApiException(CommonErrorCode.COMMON_400_001);
 	    }
 
 	    if (teamIdxInt < 1)
-	        throw ApiException.appendf(CommonErrorCode.COMMON_400_001,
-	            "\nInvalid teamIdx (must be >= 1) - teamIdx=" + teamIdx);
+	        throw new ApiException(CommonErrorCode.COMMON_400_001);
 
 	    int patternSize = schCdPattern.size();
 
 	    if (teamIdxInt > patternSize)
-	        throw ApiException.appendf(CommonErrorCode.COMMON_400_001,
-	            "\nteamIdx exceeds pattern size - teamIdx=" + teamIdx + ", patternSize=" + patternSize);
+	        throw new ApiException(CommonErrorCode.COMMON_400_001);
 
 	    DateTimeFormatter fmt = DateTimeFormatter.BASIC_ISO_DATE;
 
@@ -139,15 +129,11 @@ public record UserWorkPlanCommand(
 	        start = LocalDate.parse(shiftMeta.startDate(), fmt);
 	        end   = LocalDate.parse(shiftMeta.endDate(),   fmt);
 	    } catch (Exception e) {
-	        throw ApiException.appendf(CommonErrorCode.COMMON_400_001,
-	            "\nInvalid date format (YYYYMMDD) - startDate=" + shiftMeta.startDate()
-	            + ", endDate=" + shiftMeta.endDate());
+	        throw new ApiException(CommonErrorCode.COMMON_400_001);
 	    }
 
 	    if (start.isAfter(end))
-	        throw ApiException.appendf(CommonErrorCode.COMMON_400_001,
-	            "\nstartDate is after endDate - startDate=" + shiftMeta.startDate()
-	            + ", endDate=" + shiftMeta.endDate());
+	        throw new ApiException(CommonErrorCode.COMMON_400_001);
 
 	    List<UserWorkPlanModel> models = new ArrayList<>();
 	    int offset = teamIdxInt - 1;
@@ -157,7 +143,7 @@ public record UserWorkPlanCommand(
 	        int patternIndex = ((dayIndex - offset) % patternSize + patternSize) % patternSize;
 	        String rawSchCd = schCdPattern.get(patternIndex);
 
-	        // OFF / blank ¡æ null ·Î Á¤±ÔÈ­ÇÏ¿© upsert
+	        // OFF / blank â†’ null ë¡œ ì •ê·œí™”í•˜ì—¬ upsert
 	        String schCd;
 	        if (rawSchCd == null || rawSchCd.isBlank() || "OFF".equalsIgnoreCase(rawSchCd)) {
 	            schCd = null;

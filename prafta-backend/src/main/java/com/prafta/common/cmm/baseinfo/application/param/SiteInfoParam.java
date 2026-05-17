@@ -14,11 +14,13 @@ public record SiteInfoParam(
 	public static SiteInfoParam from(SiteInfoRequest request, TokenInfo tokenInfo) {
 		
 		if(request == null)
-			throw ApiException.appendf(CommonErrorCode.COMMON_400_001,"\n필수값 누락 - SiteInfoRequest");
-		
+			throw new ApiException(CommonErrorCode.COMMON_400_001);
+		if(tokenInfo == null)
+			throw new ApiException(CommonErrorCode.COMMON_400_003);
+
         return new SiteInfoParam(
-    		request.getCmpnyCd()
-    		, tokenInfo != null ? tokenInfo.gv_userCd() : ""
+    		tokenInfo.gv_cmpnyCd()
+    		, tokenInfo.gv_userCd()
     		, request.getSiteNo()
     		, request.getSiteNm()
         );

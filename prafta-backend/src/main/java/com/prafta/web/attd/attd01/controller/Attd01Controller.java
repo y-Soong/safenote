@@ -11,7 +11,6 @@ import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
-import com.prafta.common.annotation.NoAuth;
 import com.prafta.common.security.JwtUtil;
 import com.prafta.web.attd.attd01.application.param.SchInfoHistParam;
 import com.prafta.web.attd.attd01.application.param.SchInfoListParam;
@@ -36,7 +35,6 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 
 @Slf4j
-@NoAuth
 @RestController
 @RequestMapping("/attd01")
 @RequiredArgsConstructor

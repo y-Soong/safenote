@@ -7,6 +7,11 @@ import com.prafta.common.exception.ApiException;
 
 import io.jsonwebtoken.Claims;
 
+/**
+ * JWT 클레임에서 추출한 사용자 식별·인가 정보.
+ * 정책 §11.1(최소 수집·목적 제한)에 따라 휴대폰(gv_mblNo) / 이메일(gv_email) 등 PII는
+ * JWT 클레임 및 본 레코드에서 제외한다.
+ */
 public record TokenInfo (
 	String gv_cmpnyCd
 	, String gv_userCd
@@ -19,17 +24,15 @@ public record TokenInfo (
 	, String gv_siteNm
 	, String gv_nodeCd
 	, String gv_nodeNm
-	, String gv_mblNo
-	, String gv_email
 	, String gv_deviceId
 	, Date issuedAt
 	, Date getExpiration
 ) {
 	public static TokenInfo from(Claims claims) {
-		
+
 		if (claims == null)
-        	throw ApiException.appendf(CommonErrorCode.COMMON_400_001,"\n�ʼ��� ���� - Claims");
-		
+        	throw new ApiException(CommonErrorCode.COMMON_400_001);
+
         return new TokenInfo(
         		claims.get("gv_cmpnyCd", String.class)
         		, claims.get("gv_userCd", String.class)
@@ -42,8 +45,6 @@ public record TokenInfo (
         		, claims.get("gv_siteNm", String.class)
         		, claims.get("gv_nodeCd", String.class)
         		, claims.get("gv_nodeNm", String.class)
-        		, claims.get("gv_mblNo", String.class)
-        		, claims.get("gv_email", String.class)
         		, claims.get("gv_deviceId", String.class)
         		, claims.getIssuedAt()
         		, claims.getExpiration()

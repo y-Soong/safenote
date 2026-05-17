@@ -32,14 +32,14 @@ public class FileServiceImpl implements FileService {
 
 	        String projectRoot = System.getProperty("user.dir");
 	        
-	        // ÆÄÀÏ Àı´ë°æ·Î
+	        // íŒŒì¼ ì ˆëŒ€ê²½ë¡œ
 	        Path absoluteFilePath = Paths.get(
 	        		projectRoot,"/uploads",
 	        		param.cmpnyCd(), today,
 	        		param.siteCd(), param.fileType()
 			).toAbsolutePath().normalize();
 	        
-	        // Project Root µğ·ºÅä¸® ±âÁØ ÆÄÀÏ »ó´ë°æ·Î
+	        // Project Root ë””ë ‰í† ë¦¬ ê¸°ì¤€ íŒŒì¼ ìƒëŒ€ê²½ë¡œ
 	        Path filePath = Paths.get(
 	        		"/uploads",
 	        		param.cmpnyCd(), today,
@@ -54,23 +54,23 @@ public class FileServiceImpl implements FileService {
 	            extension = originalFilename.substring(originalFilename.lastIndexOf("."));
 	        }
 
-	        // ÆÄÀÏ¸í: fileMgmtCd + È®ÀåÀÚ
+	        // íŒŒì¼ëª…: fileMgmtCd + í™•ì¥ì
 	        String saveFileName = param.fileMgmtCd() + extension;
 
 	        Path savePath = absoluteFilePath.resolve(saveFileName).normalize();
 	        
-	        // ºÎ¸ğ Æú´õ ÇÑ¹ø ´õ º¸Àå (°¡²û normalize ¿µÇâ ´ëºñ)
+	        // ë¶€ëª¨ í´ë” í•œë²ˆ ë” ë³´ì¥ (ê°€ë” normalize ì˜í–¥ ëŒ€ë¹„)
 	        Files.createDirectories(savePath.getParent());
 	        
 	        param.file().transferTo(savePath.toFile());
 	                    
 	        fileMapper.insertFileInfo(FileInfoCommand.from(param, filePath.toString(), originalFilename, extension));
 
-	        log.info("ÆÄÀÏ ÀúÀå ¿Ï·á: {}", savePath.toAbsolutePath());
+	        log.info("íŒŒì¼ ì €ì¥ ì™„ë£Œ: {}", savePath.toAbsolutePath());
         } catch (Exception e) {
-        	log.error("ÆÄÀÏ ÀúÀå Áß ¿À·ù. request={}", param, e);
-        	// ÇÁ·ÎÁ§Æ® °øÅë ¿¹¿Ü°¡ ÀÖÀ¸¸é °Å±â·Î ·¡ÇÎÇØ¼­ ´øÁ®µµ µÊ
-        	throw new RuntimeException("ÆÄÀÏ ÀúÀå ½ÇÆĞ", e);
+        	log.error("íŒŒì¼ ì €ì¥ ì¤‘ ì˜¤ë¥˜. request={}", param, e);
+        	// í”„ë¡œì íŠ¸ ê³µí†µ ì˜ˆì™¸ê°€ ìˆìœ¼ë©´ ê±°ê¸°ë¡œ ë˜í•‘í•´ì„œ ë˜ì ¸ë„ ë¨
+        	throw new RuntimeException("íŒŒì¼ ì €ì¥ ì‹¤íŒ¨", e);
       }
 	}
 }

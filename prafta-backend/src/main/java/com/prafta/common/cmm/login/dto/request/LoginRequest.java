@@ -12,14 +12,14 @@ import lombok.Setter;
 @Setter
 @NoArgsConstructor
 public class LoginRequest {
-	@FieldLabel("¾ÆÀÌµğ")
+	@FieldLabel("ì•„ì´ë””")
 	@NotBlank()
 	@Size(max = 50)
 	private String userId;
 	
     private String userNm;
     
-    @FieldLabel("ºñ¹Ğ¹øÈ£")
+    @FieldLabel("ë¹„ë°€ë²ˆí˜¸")
 	@NotBlank()
     @Size(max = 50)
     private String userPw;

@@ -14,7 +14,7 @@ public record SiteNodeInfoParam(
 	public static SiteNodeInfoParam from(List<SiteNodeInfoRequest> requests, TokenInfo tokenInfo) {
 
         if (requests == null)
-        	throw ApiException.appendf(CommonErrorCode.COMMON_400_001,"\n필수값 누락 - SiteNodeRequest");
+        	throw new ApiException(CommonErrorCode.COMMON_400_001);
         
         List<SiteNodeModel> models = requests.stream()
     		.map(req -> {

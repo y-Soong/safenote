@@ -269,6 +269,7 @@ import {
 import { useModal } from "@/utils/useModal";
 import { useFieldWatcher } from "@/utils/useFieldWatcher";
 import axios from "@/api/axios";
+import { resolveApiErrorMessage } from "@/utils/apiError";
 import ViewHeader from "@/components/common/ViewHeader.vue";
 import search_icon from "@/assets/img/search_icon.png";
 import SiteSearchPop from "@/components/popup/SiteSearchPop.vue";
@@ -396,10 +397,7 @@ const fnGetSystinfoList = async () => {
       assessmentStatus.value = systCodeArr.value.SYS011[0].systValDCd;
     }
   } catch (err) {
-    const msg =
-      err?.response?.data?.message ||
-      err?.message ||
-      "조회 중 오류가 발생했습니다.";
+    const msg = resolveApiErrorMessage(err, "조회 중 오류가 발생했습니다.");
 
     await proxy.$alert(msg);
   }
@@ -431,10 +429,7 @@ const fnGetBaseinfoList = async () => {
       proccessCd.value = baseCodeArr.value.COM002[0].baimValDCd;
     }
   } catch (err) {
-    const msg =
-      err?.response?.data?.message ||
-      err?.message ||
-      "조회 중 오류가 발생했습니다.";
+    const msg = resolveApiErrorMessage(err, "조회 중 오류가 발생했습니다.");
 
     await proxy.$alert(msg);
   }
@@ -448,10 +443,7 @@ const fnGetriskTypeResultList = async () => {
       riskTypeArr.value = response.data.riskTypeResultList;
     }
   } catch (err) {
-    const msg =
-      err?.response?.data?.message ||
-      err?.message ||
-      "조회 중 오류가 발생했습니다.";
+    const msg = resolveApiErrorMessage(err, "조회 중 오류가 발생했습니다.");
 
     await proxy.$alert(msg);
   }
@@ -475,10 +467,7 @@ const fnSearch = async () => {
       riskAssessmentResultList.value = response.data.riskAssessmentResultList;
     }
   } catch (err) {
-    const msg =
-      err?.response?.data?.message ||
-      err?.message ||
-      "조회 중 오류가 발생했습니다.";
+    const msg = resolveApiErrorMessage(err, "조회 중 오류가 발생했습니다.");
 
     await proxy.$alert(msg);
   }
@@ -533,10 +522,7 @@ const fnSrchSiteInfo = async () => {
       fnCallback(response);
     }
   } catch (err) {
-    const msg =
-      err?.response?.data?.message ||
-      err?.message ||
-      "조회 중 오류가 발생했습니다.";
+    const msg = resolveApiErrorMessage(err, "조회 중 오류가 발생했습니다.");
 
     await proxy.$alert(msg);
   }

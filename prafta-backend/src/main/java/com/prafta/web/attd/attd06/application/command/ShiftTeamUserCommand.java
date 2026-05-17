@@ -24,11 +24,11 @@ public record ShiftTeamUserCommand(
         , String gvUserCd
     ) {
         if (teamParam == null)
-            throw ApiException.appendf(CommonErrorCode.COMMON_400_001, "\nRequired param missing - TeamParam");
+            throw new ApiException(CommonErrorCode.COMMON_400_001);
         if (shiftMetaParam == null)
-            throw ApiException.appendf(CommonErrorCode.COMMON_400_001, "\nRequired param missing - ShiftMetaParam");
+            throw new ApiException(CommonErrorCode.COMMON_400_001);
         if (teamParam.memberList() == null || teamParam.memberList().isEmpty())
-            throw ApiException.appendf(CommonErrorCode.COMMON_400_001, "\nRequired param missing - MemberList");
+            throw new ApiException(CommonErrorCode.COMMON_400_001);
 
         return new ShiftTeamUserCommand(
             teamParam.teamIdx()

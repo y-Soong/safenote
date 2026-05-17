@@ -9,36 +9,36 @@ public class ApiException extends RuntimeException {
     private final ApiErrorCode errorCode;
 
     /**
-     * ±âÁ¸: detailMessage°¡ ÀÖÀ¸¸é enum ¸Ş½ÃÁö¸¦ "´ëÃ¼"ÇÏ´Â ¿ëµµ
+     * ê¸°ì¡´: detailMessageê°€ ìˆìœ¼ë©´ enum ë©”ì‹œì§€ë¥¼ "ëŒ€ì²´"í•˜ëŠ” ìš©ë„
      */
     private final String detailMessage;
 
     /**
-     * ½Å±Ô: enum ±âº» ¸Ş½ÃÁö µÚ¿¡ "Ãß°¡"·Î ºÙÀÏ ¸Ş½ÃÁö
-     * - ±âÁ¸ ÄÚµå ¿µÇâ ÃÖ¼ÒÈ­¸¦ À§ÇØ º°µµ ÇÊµå·Î ºĞ¸®
+     * ì‹ ê·œ: enum ê¸°ë³¸ ë©”ì‹œì§€ ë’¤ì— "ì¶”ê°€"ë¡œ ë¶™ì¼ ë©”ì‹œì§€
+     * - ê¸°ì¡´ ì½”ë“œ ì˜í–¥ ìµœì†Œí™”ë¥¼ ìœ„í•´ ë³„ë„ í•„ë“œë¡œ ë¶„ë¦¬
      */
     private final String appendMessage;
 
     public ApiException(ApiErrorCode errorCode) {
         super(errorCode.message());
         this.errorCode = errorCode;
-        this.detailMessage = null;
+        this.detailMessage = errorCode.message();
         this.appendMessage = null;
     }
 
     /**
-     * ±âÁ¸ µ¿ÀÛ À¯Áö: detailMessage°¡ ÀÖÀ¸¸é enum ¸Ş½ÃÁö¸¦ "´ëÃ¼"
+     * ê¸°ì¡´ ë™ì‘ ìœ ì§€: detailMessageê°€ ìˆìœ¼ë©´ enum ë©”ì‹œì§€ë¥¼ "ëŒ€ì²´"
      */
     public ApiException(ApiErrorCode errorCode, String detailMessage) {
-        super(detailMessage); // RuntimeException messageµµ detail·Î
+        super(detailMessage); // RuntimeException messageë„ detailë¡œ
         this.errorCode = errorCode;
         this.detailMessage = detailMessage;
         this.appendMessage = null;
     }
 
     /**
-     * ½Å±Ô: append ¿ëµµ (»ı¼ºÀÚ Á÷Á¢ È£Ãâº¸´Ü append() ÆÑÅä¸® »ç¿ë ±ÇÀå)
-     * - message´Â "±âº» + append"·Î ³Ö¾î µğ¹ö±ë/·Î±×¿¡¼­µµ ±×´ë·Î º¸ÀÌ°Ô ÇÔ
+     * ì‹ ê·œ: append ìš©ë„ (ìƒì„±ì ì§ì ‘ í˜¸ì¶œë³´ë‹¨ append() íŒ©í† ë¦¬ ì‚¬ìš© ê¶Œì¥)
+     * - messageëŠ” "ê¸°ë³¸ + append"ë¡œ ë„£ì–´ ë””ë²„ê¹…/ë¡œê·¸ì—ì„œë„ ê·¸ëŒ€ë¡œ ë³´ì´ê²Œ í•¨
      */
     private ApiException(ApiErrorCode errorCode, String detailMessage, String appendMessage, boolean useAppendMode) {
         super(resolveMessage(errorCode, detailMessage, appendMessage, useAppendMode));
@@ -52,37 +52,37 @@ public class ApiException extends RuntimeException {
     }
 
     /**
-     * ÃÖÁ¾ ¸Ş½ÃÁö ÇØ¼® ±ÔÄ¢
-     * 1) detailMessage°¡ ÀÖÀ¸¸é: detailMessage·Î "´ëÃ¼" (±âÁ¸ µ¿ÀÛ À¯Áö)
-     * 2) detailMessage ¾ø°í appendMessage°¡ ÀÖÀ¸¸é: ±âº» + "\n" + appendMessage
-     * 3) µÑ ´Ù ¾øÀ¸¸é: ±âº» ¸Ş½ÃÁö
+     * ìµœì¢… ë©”ì‹œì§€ í•´ì„ ê·œì¹™
+     * 1) detailMessageê°€ ìˆìœ¼ë©´: detailMessageë¡œ "ëŒ€ì²´" (ê¸°ì¡´ ë™ì‘ ìœ ì§€)
+     * 2) detailMessage ì—†ê³  appendMessageê°€ ìˆìœ¼ë©´: ê¸°ë³¸ + "\n" + appendMessage
+     * 3) ë‘˜ ë‹¤ ì—†ìœ¼ë©´: ê¸°ë³¸ ë©”ì‹œì§€
      */
     public String getResolvedMessage() {
-        // 1) ±âÁ¸ ´ëÃ¼ ¿ì¼±
+        // 1) ê¸°ì¡´ ëŒ€ì²´ ìš°ì„ 
         if (detailMessage != null && !detailMessage.isBlank()) {
             return detailMessage;
         }
 
-        // 2) append ¸ğµå
+        // 2) append ëª¨ë“œ
         String append = Objects.toString(appendMessage, "").trim();
         if (!append.isBlank()) {
             return errorCode.message() + "\n" + append;
         }
 
-        // 3) ±âº»
+        // 3) ê¸°ë³¸
         return errorCode.message();
     }
 
     /**
-     * append ¸ğµå·Î ¿¹¿Ü »ı¼º (±âº» ¸Ş½ÃÁö + Ãß°¡ ¸Ş½ÃÁö)
+     * append ëª¨ë“œë¡œ ì˜ˆì™¸ ìƒì„± (ê¸°ë³¸ ë©”ì‹œì§€ + ì¶”ê°€ ë©”ì‹œì§€)
      */
     public static ApiException append(ApiErrorCode errorCode, String appendMessage) {
         return new ApiException(errorCode, null, appendMessage, true);
     }
 
     /**
-     * append ¸ğµå·Î ¿¹¿Ü »ı¼º (String.format ½ºÅ¸ÀÏ)
-     * - ¿¹: ApiException.appendf(code, "ÇÊ¼ö°ª ´©¶ô(\"%s\")", "TokenInfo is required")
+     * append ëª¨ë“œë¡œ ì˜ˆì™¸ ìƒì„± (String.format ìŠ¤íƒ€ì¼)
+     * - ì˜ˆ: ApiException.appendf(code, "í•„ìˆ˜ê°’ ëˆ„ë½(\"%s\")", "TokenInfo is required")
      */
     public static ApiException appendf(ApiErrorCode errorCode, String format, Object... args) {
         String msg = (format == null) ? null : String.format(format, args);
@@ -94,12 +94,12 @@ public class ApiException extends RuntimeException {
                                          String appendMessage,
                                          boolean useAppendMode) {
 
-        // detailMessage´Â "´ëÃ¼"ÀÌ¹Ç·Î ±×´ë·Î
+        // detailMessageëŠ” "ëŒ€ì²´"ì´ë¯€ë¡œ ê·¸ëŒ€ë¡œ
         if (detailMessage != null && !detailMessage.isBlank()) {
             return detailMessage;
         }
 
-        // append ¸ğµå¸é ±âº»+append·Î RuntimeException message ¼¼ÆÃ
+        // append ëª¨ë“œë©´ ê¸°ë³¸+appendë¡œ RuntimeException message ì„¸íŒ…
         if (useAppendMode) {
             String append = Objects.toString(appendMessage, "").trim();
             if (!append.isBlank()) {

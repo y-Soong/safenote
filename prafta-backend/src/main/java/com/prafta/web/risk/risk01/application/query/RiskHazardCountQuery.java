@@ -11,7 +11,7 @@ public record RiskHazardCountQuery(
 	public static RiskHazardCountQuery from(RiskTypeModel model) {
 
         if (model == null)
-        	throw ApiException.appendf(CommonErrorCode.COMMON_400_001,"\n필수값 누락 - RiskTypeModel");
+        	throw new ApiException(CommonErrorCode.COMMON_400_001);
 
         return new RiskHazardCountQuery(
         	model.riskTypeCd()

@@ -20,13 +20,13 @@ public record TbmEduItemInfoCommand(
 	public static TbmEduItemInfoCommand from(TbmEduItemInfoModel model, TbmEduInfoParam param, String mtrlItemCd, String mtrlCd, String fileMgmtCd) {
 		
 		if(model == null)
-			throw ApiException.appendf(CommonErrorCode.COMMON_400_001,"\n필수값 누락 - TbmEduItemInfoModel");
+			throw new ApiException(CommonErrorCode.COMMON_400_001);
 		if(param == null)
-			throw ApiException.appendf(CommonErrorCode.COMMON_400_001,"\n필수값 누락 - TbmEduInfoParam");
+			throw new ApiException(CommonErrorCode.COMMON_400_001);
 		if(mtrlItemCd == null)
-			throw ApiException.appendf(CommonErrorCode.COMMON_400_001,"\n필수값 누락 - mtrlItemCd");
+			throw new ApiException(CommonErrorCode.COMMON_400_001);
 		if(mtrlCd == null)
-			throw ApiException.appendf(CommonErrorCode.COMMON_400_001,"\n필수값 누락 - mtrlCd");
+			throw new ApiException(CommonErrorCode.COMMON_400_001);
 		
 		return new TbmEduItemInfoCommand(
 			mtrlItemCd

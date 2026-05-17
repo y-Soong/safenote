@@ -1,55 +1,66 @@
 package com.prafta.web.attd.attd07.result;
 
+/**
+ * Result row of {@code Attd07Mapper.selectMonthlyAttdReq}.
+ *
+ * PRAFTA-003: the underlying TB_USER_ATTD_REQ columns were renamed
+ *   CHECK_IN_DATE  -> START_DATE
+ *   CHECK_IN_TIME  -> START_TIME
+ *   CHECK_OUT_DATE -> END_DATE
+ *   CHECK_OUT_TIME -> END_TIME
+ * Field names below were updated to match. Front-end mapping was migrated in the
+ * same release; see AttdDayDetailPop.vue (line ~1310, ~1602).
+ */
 public record MonthlyAttdReqResult(
-	/** 회사코드 */
-    String cmpnyCd
+    /** company code */
+      String cmpnyCd
 
-    /** 신청고유ID */
+    /** request id */
     , String reqId
 
-    /** 사업장코드 */
+    /** site code */
     , String siteCd
 
-    /** 소속부서 */
+    /** node (department) code */
     , String nodeCd
 
-    /** 사용자코드 */
+    /** worker user code */
     , String userCd
 
-    /** 신청유형 [SYS032] */
+    /** request type [SYS032] */
     , String reqType
 
-    /** 신청유형명 (공통코드 변환) */
+    /** request type name (resolved via code master) */
     , String reqTypeNm
 
-    /** 신청상태 [SYS033] */
+    /** request status [SYS033] */
     , String reqStatus
 
-    /** 신청상태명 (공통코드 변환) */
+    /** request status name (resolved via code master) */
     , String reqStatusNm
-    
-    /** 근무 구간 */
+
+    /** work sequence */
     , String workSeq
 
-    /** 근무일 (yyyyMMdd) */
+    /** work date (yyyyMMdd) */
     , String workYmd
 
-    /** 출근일자 (yyyyMMdd) */
-    , String checkInDate
+    /** start date (yyyyMMdd) */
+    , String startDate
 
-    /** 출근시간 (HHmm) */
-    , String checkInTime
+    /** start time (HHmm) */
+    , String startTime
 
-    /** 퇴근일자 (yyyyMMdd) */
-    , String checkOutDate
+    /** end date (yyyyMMdd) */
+    , String endDate
 
-    /** 퇴근시간 (HHmm) */
-    , String checkOutTime
-    
-    /** 사유 */
+    /** end time (HHmm) */
+    , String endTime
+
+    /** request reason */
     , String reqReason
 
-    /** 입력일시 */
+    /** insert datetime */
     , String insertDate
 ) {
 }

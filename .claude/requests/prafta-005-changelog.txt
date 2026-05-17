@@ -1,0 +1,83 @@
+================================================================================
+PRAFTA-005 작업 체인지로그 (원복용)
+================================================================================
+작성일: 2026-05-16
+원 요청서: .claude/requests/prafta-005.md
+작업 흐름: planner → developer → security → qa (전 단계 완료)
+작업 ID: prafta-007-001/002/003
+  ※ "prafta-005"는 본 세션에서 이미 백엔드 빌드 에러 수정에 사용되어(prafta-004-changelog.txt
+     섹션 6) ID 충돌 회피 차원에서 prafta-007 계열로 채번함.
+
+================================================================================
+1. 요청 요약
+================================================================================
+Attd_07.vue 화면 fnSearch 조회 쿼리가 TB_SCH_MGMT만 조인해, 근무일이 언제든 항상
+"최신 스케줄"을 보여주는 버그. TB_SCH_MGMT(현재본) + TB_SCH_MGMT_HIST(이력본)를
+결합해 각 근무일에 APPLY_DATE <= 근무일 인 가장 최근 버전이 적용되도록 수정.
+예: SCH_CD '00005' APPLY_DATE 20260308·20260517 → 근무일 20260308~20260516은
+20260308 버전, 20260517~ 는 20260517 버전.
+
+================================================================================
+2. 사용자 컨펌 사항 (요청서 9번 줄 "모호하면 질문" 지시에 따라 확인)
+================================================================================
+- Q1 fnSearch 대상 → GET /webApi/attd07/monthly-attd-lists 확정.
+- Q2 결합 방식 → TB_SCH_MGMT + TB_SCH_MGMT_HIST UNION (사용자 선택).
+- Q3 동일 SCH_CD+APPLY_DATE 중복 → HIST_IDX 최댓값 채택.
+- Q4 범위 → OT 등록용 selectAllowedWindow도 포함 (사용자 선택).
+- Q5 SCH_TYPE → 항상 TB_SCH_MGMT(현재본) 값 (사용자 선택; HIST엔 컬럼 없음).
+- Q6 정책서 → attd/06-schedule.md §6.1~6.3가 effective-dating 개념 뒷받침,
+     세부 SQL 기준은 요청서 본문.
+
+================================================================================
+3. 변경 내용
+================================================================================
+■ 변경 파일 (단일)
+  - prafta-backend/src/main/resources/com/prafta/web/attd/attd07/mapper/Attd07Mapper.xml
+
+[prafta-007-001] selectMonthlyAttdList (fnSearch 본체, GET /attd07/monthly-attd-lists)
+[prafta-007-002] selectDailyAttdDetails (상세 팝업, GET /attd07/daily-attd-details)
+[prafta-007-003] selectAllowedWindow (OT 등록 검증)
+
+■ 공통 수정 패턴 (effective-dating)
+  - 기존 `LEFT JOIN TB_SCH_MGMT SCH`(현재본 1건, APPLY_DATE 조건 없음)를 제거.
+  - TB_SCH_MGMT + TB_SCH_MGMT_HIST를 UNION ALL한 인라인 뷰로 대체. 현재본에는 가상
+    HIST_IDX=2147483647 부여 → 동일 APPLY_DATE 중복 시 현재본 우선.
+  - 동일 SCH_CD+APPLY_DATE는 MAX(HIST_IDX) 상관 서브쿼리로 1건만 채택.
+  - 근무일별로 `SCH.APPLY_DATE = (SELECT MAX(APPLY_DATE) ... WHERE APPLY_DATE <= WP.WORK_YMD)`
+    상관 서브쿼리 → 월별 그리드에서 일자마다 다른 버전이 적용됨.
+  - SCH_TYPE은 TB_SCH_MGMT(현재본)를 SCH_CD로 별도 LEFT JOIN(SCHT)해 취득
+    (selectMonthlyAttdList/selectDailyAttdDetails만; selectAllowedWindow는 SCH_TYPE 미사용).
+  - 모든 조인/서브쿼리에 CMPNY_CD+SITE_CD 테넌트 격리, USE_YN='Y' 유지.
+  - 각 select 결과 컬럼(이름·개수·순서) 불변 → Controller/Service/DTO 무변경.
+
+================================================================================
+4. 검증 결과
+================================================================================
+[빌드] 백엔드 ./gradlew compileJava BUILD SUCCESSFUL (XML은 컴파일 비대상,
+       MyBatis 런타임 파싱 — CDATA·괄호·동적태그 정합성 정적 검증 완료).
+[security] 이슈 없음 (Critical/High/Medium/Low 0). SQL 전부 #{} 바인딩, ${} 미사용,
+           테넌트 격리 전 조인 단계 유지, 신규 PII 노출 없음.
+[qa] 조건부 PASS — 요구사항 5/5 충족, 예시 시나리오(SCH_CD '00005') 추적 통과,
+     엣지 케이스 9/9 통과. 조건부 사유는 Notion 로그 등록 미수행(환경상 Notion MCP
+     미노출)뿐이며 기능 결함 0. security 통과가 확인되므로 실질 PASS.
+
+[qa 발견 — M-1 (Medium, 성능, 재작업 비강제)]
+  effective-dating이 동일 UNION을 쿼리당 최대 3회 스캔하고, 월별 그리드는 사용자×
+  최대 31일 행마다 ON절 상관 서브쿼리를 재평가. 기능 정확성은 문제 없음. TB_SCH_MGMT_HIST
+  대용량 시 성능 저하 가능 → 성능 SLA 명문화 시 윈도우 함수 기반 단일 스캔 리팩터링 권장.
+  본 요청(기능 수정) 범위상 재작업 필수 아님.
+
+================================================================================
+5. 원복 방법
+================================================================================
+git checkout HEAD -- prafta-backend/src/main/resources/com/prafta/web/attd/attd07/mapper/Attd07Mapper.xml
+
+================================================================================
+6. 수동 검증 권장 (사용자)
+================================================================================
+- 실 DB에서 SCH_CD '00005'의 TB_SCH_MGMT/TB_SCH_MGMT_HIST에 20260308/20260517
+  두 버전이 실제 존재하는지 확인.
+- Attd_07 화면에서 월 경계(20260516↔20260517)를 포함한 월 조회 시, 셀별
+  근무시간(plan1/plan2)이 버전별로 다르게 표시되는지 육안 확인.
+- p6spy 로그로 selectMonthlyAttdList 실행 SQL 확인.
+- OT 등록(selectAllowedWindow): 과거 버전 스케줄로 근무한 날의 OT 등록이 정상 동작하는지.

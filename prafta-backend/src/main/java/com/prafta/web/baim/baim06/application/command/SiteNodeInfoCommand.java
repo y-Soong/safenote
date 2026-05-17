@@ -17,7 +17,7 @@ public record SiteNodeInfoCommand(
 	public static SiteNodeInfoCommand from(SiteNodeModel model) {
 
         if (model == null)
-        	throw ApiException.appendf(CommonErrorCode.COMMON_400_001,"\n필수값 누락 - SiteNodeModel");
+        	throw new ApiException(CommonErrorCode.COMMON_400_001);
 
         return new SiteNodeInfoCommand(
         	model.siteCd()

@@ -11,10 +11,12 @@ import com.prafta.web.user.user01.application.command.UserPasswdCommand;
 import com.prafta.web.user.user01.application.command.UserSiteAuthCommand;
 import com.prafta.web.user.user01.application.command.WithdrawMyAccountCommand;
 import com.prafta.web.user.user01.application.command.WithdrawalCancelCommand;
+import com.prafta.web.user.user01.application.query.MyProfileQuery;
 import com.prafta.web.user.user01.application.query.SiteNodeAdminCandidateListQuery;
 import com.prafta.web.user.user01.application.query.UserInfoListQuery;
 import com.prafta.web.user.user01.application.query.UserNodeAdminCheckQuery;
 import com.prafta.web.user.user01.application.query.UserSiteInfoQuery;
+import com.prafta.web.user.user01.result.MyProfileResult;
 import com.prafta.web.user.user01.result.UserInfoResult;
 import com.prafta.web.user.user01.result.UserPwResult;
 import com.prafta.web.user.user01.result.UserSiteInfoResult;
@@ -46,4 +48,6 @@ public interface User01Mapper {
 	void insertUserSiteAuth(UserSiteAuthCommand command);
 	
 	List<UserInfoResult> selectSiteNodeAdminCandidateLists(SiteNodeAdminCandidateListQuery query);
+
+	MyProfileResult selectMyProfile(MyProfileQuery query);
 }

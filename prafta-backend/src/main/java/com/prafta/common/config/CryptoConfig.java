@@ -6,9 +6,9 @@ import org.springframework.context.annotation.Configuration;
 import com.prafta.common.security.crypto.CryptoProperties;
 
 /**
- * CryptoProperties¸¦ Spring ÄÁÅ×ÀÌ³Ê¿¡ µî·Ï.
+ * CryptoPropertiesë¥¼ Spring ì»¨í…Œì´ë„ˆì— ë“±ë¡.
  *
- * - @ConfigurationProperties´Â ÀÌ EnableConfigurationProperties µî·ÏÀÌ ÇÊ¿ä(¶Ç´Â @ConfigurationPropertiesScan »ç¿ë)
+ * - @ConfigurationPropertiesëŠ” ì´ EnableConfigurationProperties ë“±ë¡ì´ í•„ìš”(ë˜ëŠ” @ConfigurationPropertiesScan ì‚¬ìš©)
  */
 @Configuration
 @EnableConfigurationProperties(CryptoProperties.class)

@@ -74,17 +74,47 @@
                         class="seg-line"
                       >
                         <span class="seg-tag">{{ s.tag }}</span>
-                        <span v-html="s.range"></span>
+                        <span class="seg-line-body">
+                          <span v-html="s.range"></span>
+                          <button
+                            v-if="s.outside"
+                            type="button"
+                            class="seg-tag seg-tag-outside"
+                            :class="{ 'is-active': gpsPanel.segIdx === s.segIdx }"
+                            @click="fnToggleGps(s.segIdx, s.attdId)"
+                          >
+                            외근
+                          </button>
+                        </span>
                       </div>
                     </div>
                   </template>
                   <template v-else>
-                    <span
-                      v-html="cfg.timeCard.actual.value"
-                      :class="{ 'val-empty': cfg.timeCard.actual.empty }"
-                    ></span>
+                    <span class="seg-line-body">
+                      <span
+                        v-html="cfg.timeCard.actual.value"
+                        :class="{ 'val-empty': cfg.timeCard.actual.empty }"
+                      ></span>
+                      <button
+                        v-if="cfg.timeCard.actual.outside"
+                        type="button"
+                        class="seg-tag seg-tag-outside"
+                        :class="{ 'is-active': gpsPanel.segIdx === 0 }"
+                        @click="fnToggleGps(0, cfg.timeCard.actual.attdId)"
+                      >
+                        외근
+                      </button>
+                    </span>
                   </template>
                 </div>
+              </div>
+
+              <!-- 외근 GPS 동선 패널 (외근 버튼 클릭 시 토글 노출) -->
+              <div v-if="gpsPanel.segIdx !== null" class="gps-panel-row">
+                <AttdGpsCoordPanel
+                  :trail="gpsPanel.trail"
+                  :loading="gpsPanel.loading"
+                />
               </div>
               <!-- 표준화 적용 -->
               <div class="time-row">
@@ -257,11 +287,19 @@
             <div class="panel-card" :class="{ 'is-open': panelOpen }">
               <div class="panel-head" @click="panelOpen = !panelOpen">
                 <h3>관리자 직접 수정</h3>
-                <div class="panel-head-right">
+                <div class="panel-head-right panel-actions">
                   <button
                     v-if="cfg.panel.kind === 'segments'"
                     type="button"
-                    class="btn-del-all"
+                    class="btn-reset-all"
+                    @click.stop="fnResetForm"
+                  >
+                    초기화
+                  </button>
+                  <button
+                    v-if="cfg.panel.kind === 'segments'"
+                    type="button"
+                    class="btn-clear-all"
                     @click.stop="openDeletePopup('all', null)"
                   >
                     전체삭제
@@ -331,69 +369,251 @@
 
               <!-- 일반 / 잠금 / 구간 입력 모드 -->
               <div v-if="cfg.panel.kind === 'segments'" class="panel-body">
-                <!-- 구간 입력 -->
-                <div
-                  v-for="(seg, i) in form.segments"
-                  :key="i"
-                  class="seg-section"
-                >
-                  <div class="seg-section-head">
-                    <span class="seg-label">{{ i + 1 }}구간</span>
-                    <div class="seg-section-head-actions">
-                      <button
-                        class="seg-del-btn"
-                        type="button"
-                        @click="openDeletePopup('segment', i)"
+                <!-- 구간 리스트 — 길어지면 자체 스크롤. 사유/저장 영역은 panel-body
+                     안의 별도 블록으로 두어 항상 노출된다. -->
+                <div class="seg-list-scroll">
+                  <!-- 구간 입력 -->
+                  <div
+                    v-for="(seg, i) in form.segments"
+                    :key="i"
+                    class="seg-section"
+                  >
+                    <div class="seg-section-head">
+                      <div class="seg-title-row">
+                        <span class="seg-tag-lg">{{ i + 1 }}구간</span>
+                        <span
+                          v-if="segSummary(seg)"
+                          class="seg-summary"
+                          v-html="segSummary(seg)"
+                        ></span>
+                      </div>
+                      <div class="seg-section-head-actions">
+                        <button
+                          class="seg-delete"
+                          type="button"
+                          aria-label="구간 삭제"
+                          @click="openDeletePopup('segment', i)"
+                        >
+                          <svg
+                            width="16"
+                            height="16"
+                            viewBox="0 0 24 24"
+                            fill="none"
+                            stroke="currentColor"
+                            stroke-width="2"
+                            stroke-linecap="round"
+                            stroke-linejoin="round"
+                          >
+                            <polyline points="3 6 5 6 21 6" />
+                            <path
+                              d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"
+                            />
+                            <path d="M10 11v6" />
+                            <path d="M14 11v6" />
+                            <path d="M9 6V4a2 2 0 0 1 2-2h2a2 2 0 0 1 2 2v2" />
+                          </svg>
+                        </button>
+                      </div>
+                    </div>
+
+                    <!-- 정규근무 한 줄 (출근/퇴근). PRAFTA-003-7: 내부 변수명을 DB
+                         컬럼명(START_*/END_*)과 정렬해 startDate/startTime/endDate/endTime 로 통일. -->
+                    <div class="reg-row">
+                      <div class="time-input-group">
+                        <span class="lab">출근</span>
+                        <CalendarSrch
+                          v-model="seg.startDate"
+                          class="seg-date"
+                        />
+                        <input
+                          type="text"
+                          inputmode="numeric"
+                          class="input seg-time"
+                          :value="displayTime(seg.startTime, `${i}-in`)"
+                          :maxlength="focusedTime === `${i}-in` ? 4 : 5"
+                          placeholder="HHMM"
+                          @focus="onTimeFocus(`${i}-in`)"
+                          @blur="onTimeBlur"
+                          @input="onTimeInput($event, seg, 'startTime')"
+                        />
+                      </div>
+                      <div class="time-input-group">
+                        <span class="lab">퇴근</span>
+                        <CalendarSrch v-model="seg.endDate" class="seg-date" />
+                        <input
+                          type="text"
+                          inputmode="numeric"
+                          class="input seg-time"
+                          :value="displayTime(seg.endTime, `${i}-out`)"
+                          :maxlength="focusedTime === `${i}-out` ? 4 : 5"
+                          placeholder="HHMM"
+                          @focus="onTimeFocus(`${i}-out`)"
+                          @blur="onTimeBlur"
+                          @input="onTimeInput($event, seg, 'endTime')"
+                        />
+                      </div>
+                    </div>
+                    <div v-if="isOverday(seg)" class="overday-hint">
+                      출퇴근 날짜가 상이합니다. 익일 퇴근, Overnight 근무로
+                      처리됩니다.
+                    </div>
+
+                    <!-- 초과근무 블록 -->
+                    <div class="ot-block">
+                      <div class="ot-block-head">
+                        <span class="ot-block-title">초과근무</span>
+                        <template v-if="isSegmentFromDb(i)">
+                          <div
+                            v-if="otAllowedWindowsForSeg(i).length"
+                            class="ot-allowed-hint"
+                            aria-label="초과근무 등록 가능 범위"
+                          >
+                            <span class="ot-allowed-lbl">등록 가능</span>
+                            <ul class="ot-allowed-list">
+                              <li
+                                v-for="(w, wi) in otAllowedWindowsForSeg(i)"
+                                :key="wi"
+                                class="ot-allowed-item"
+                              >
+                                {{ w.startLabel }} ~ {{ w.endLabel }}
+                              </li>
+                            </ul>
+                          </div>
+                          <div v-else class="ot-allowed-hint is-empty">
+                            등록 가능한 초과근무 범위가 없습니다.
+                          </div>
+                        </template>
+                        <div v-else class="ot-allowed-hint is-empty">
+                          저장되지 않은 신규 구간은 초과근무를 등록할 수
+                          없습니다.
+                        </div>
+                      </div>
+                      <ul
+                        v-if="
+                          isSegmentFromDb(i) && seg.otList && seg.otList.length
+                        "
+                        class="ot-list"
                       >
-                        삭제
+                        <li
+                          v-for="(ot, oi) in seg.otList"
+                          :key="oi"
+                          class="ot-row"
+                        >
+                          <div class="time-input-group">
+                            <span class="lab">시작</span>
+                            <CalendarSrch
+                              v-model="ot.startDate"
+                              class="ot-date"
+                            />
+                            <input
+                              type="text"
+                              inputmode="numeric"
+                              class="input ot-time"
+                              :value="
+                                displayTime(ot.startTime, `${i}-ot${oi}-start`)
+                              "
+                              :maxlength="
+                                focusedTime === `${i}-ot${oi}-start` ? 4 : 5
+                              "
+                              placeholder="HHMM"
+                              @focus="onTimeFocus(`${i}-ot${oi}-start`)"
+                              @blur="onTimeBlur"
+                              @input="onTimeInput($event, ot, 'startTime')"
+                            />
+                          </div>
+                          <div class="time-input-group">
+                            <span class="lab">종료</span>
+                            <CalendarSrch
+                              v-model="ot.endDate"
+                              class="ot-date"
+                            />
+                            <input
+                              type="text"
+                              inputmode="numeric"
+                              class="input ot-time"
+                              :value="
+                                displayTime(ot.endTime, `${i}-ot${oi}-end`)
+                              "
+                              :maxlength="
+                                focusedTime === `${i}-ot${oi}-end` ? 4 : 5
+                              "
+                              placeholder="HHMM"
+                              @focus="onTimeFocus(`${i}-ot${oi}-end`)"
+                              @blur="onTimeBlur"
+                              @input="onTimeInput($event, ot, 'endTime')"
+                            />
+                          </div>
+                          <button
+                            class="ot-delete"
+                            type="button"
+                            aria-label="삭제"
+                            @click="removeOt(i, oi)"
+                          >
+                            <svg
+                              width="14"
+                              height="14"
+                              viewBox="0 0 24 24"
+                              fill="none"
+                              stroke="currentColor"
+                              stroke-width="2"
+                              stroke-linecap="round"
+                              stroke-linejoin="round"
+                            >
+                              <polyline points="3 6 5 6 21 6" />
+                              <path
+                                d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"
+                              />
+                              <path d="M10 11v6" />
+                              <path d="M14 11v6" />
+                              <path
+                                d="M9 6V4a2 2 0 0 1 2-2h2a2 2 0 0 1 2 2v2"
+                              />
+                            </svg>
+                          </button>
+                        </li>
+                      </ul>
+                      <button
+                        v-if="isSegmentFromDb(i)"
+                        class="add-ot-btn"
+                        type="button"
+                        @click="addOt(i)"
+                      >
+                        + {{ i + 1 }}구간 초과근무 추가
                       </button>
+                      <div
+                        v-if="isSegmentFromDb(i) && hasAnyOt(i)"
+                        class="ot-actions"
+                      >
+                        <button
+                          type="button"
+                          class="ot-save-btn"
+                          :disabled="!canSaveOt || otSaving"
+                          @click="fnApproveOvertime(i)"
+                        >
+                          <span v-if="!otSaving">초과근무 저장</span>
+                          <span v-else>저장 중…</span>
+                        </button>
+                        <button
+                          v-if="otHasReqId(i)"
+                          type="button"
+                          class="ot-reject-btn"
+                          :disabled="otSaving"
+                          @click="fnRejectOvertime(i)"
+                        >
+                          반려
+                        </button>
+                      </div>
                     </div>
                   </div>
-                  <div class="seg-inline-row">
-                    <label class="seg-inline-label">출근</label>
-                    <div class="datetime-wrap">
-                      <CalendarSrch v-model="seg.inDate" class="seg-date" />
-                      <input
-                        type="text"
-                        inputmode="numeric"
-                        class="input seg-time"
-                        :value="displayTime(seg.in, `${i}-in`)"
-                        :maxlength="focusedTime === `${i}-in` ? 4 : 5"
-                        placeholder="HHMM"
-                        @focus="onTimeFocus(`${i}-in`)"
-                        @blur="onTimeBlur"
-                        @input="onTimeInput($event, seg, 'in')"
-                      />
-                    </div>
-                    <label class="seg-inline-label">퇴근</label>
-                    <div class="datetime-wrap">
-                      <CalendarSrch v-model="seg.outDate" class="seg-date" />
-                      <input
-                        type="text"
-                        inputmode="numeric"
-                        class="input seg-time"
-                        :value="displayTime(seg.out, `${i}-out`)"
-                        :maxlength="focusedTime === `${i}-out` ? 4 : 5"
-                        placeholder="HHMM"
-                        @focus="onTimeFocus(`${i}-out`)"
-                        @blur="onTimeBlur"
-                        @input="onTimeInput($event, seg, 'out')"
-                      />
-                    </div>
-                  </div>
-                  <div v-if="isOverday(seg)" class="overday-hint">
-                    출퇴근 날짜가 상이합니다. 익일 퇴근, Overnight 근무로
-                    처리됩니다.
-                  </div>
+                  <button
+                    v-if="form.segments.length < MAX_SEGMENTS"
+                    class="seg-add-btn"
+                    type="button"
+                    @click="addSegment"
+                  >
+                    + 구간 추가
+                  </button>
                 </div>
-                <button
-                  v-if="form.segments.length < MAX_SEGMENTS"
-                  class="seg-add-btn"
-                  type="button"
-                  @click="addSegment"
-                >
-                  + 구간 추가
-                </button>
                 <div class="reason-section">
                   <div class="form-row is-textarea">
                     <label class="required">사유</label>
@@ -485,86 +705,29 @@
               </div>
             </div>
 
-            <!-- 처리 이력 -->
-            <div class="history-card" :class="{ 'is-open': !historyOpen }">
-              <div class="history-head" @click="historyOpen = !historyOpen">
-                <h3>
-                  처리 이력
-                  <span class="count">({{ cfg.history.length }})</span>
-                </h3>
-                <svg
-                  class="chev"
-                  width="18"
-                  height="18"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="currentColor"
-                  stroke-width="2"
-                  stroke-linecap="round"
-                  stroke-linejoin="round"
-                >
-                  <polyline points="6 9 12 15 18 9" />
-                </svg>
-              </div>
-              <div class="history-body">
-                <div v-if="cfg.history.length" class="hist-table-wrap">
-                  <table class="hist-table">
-                    <colgroup>
-                      <col style="width: 110px" />
-                      <col style="width: 70px" />
-                      <col style="width: 130px" />
-                      <col style="width: 130px" />
-                      <col style="width: 130px" />
-                      <col style="width: 130px" />
-                      <col style="width: 70px" />
-                      <col style="width: 90px" />
-                      <col style="width: 160px" />
-                    </colgroup>
-                    <thead>
-                      <tr>
-                        <th rowspan="2">이력 유형</th>
-                        <th rowspan="2">구간</th>
-                        <th colspan="2">변경 전</th>
-                        <th colspan="2">변경 후</th>
-                        <th rowspan="2">사유</th>
-                        <th rowspan="2">수정자</th>
-                        <th rowspan="2">수정일시</th>
-                      </tr>
-                      <tr>
-                        <th>출근</th>
-                        <th>퇴근</th>
-                        <th>출근</th>
-                        <th>퇴근</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      <tr v-for="(h, i) in cfg.history" :key="i">
-                        <td class="cell-type">{{ h.histTypeNm }}</td>
-                        <td>{{ h.workSeq }}</td>
-                        <td class="cell-time">{{ h.befCheckIn }}</td>
-                        <td class="cell-time">{{ h.befCheckOut }}</td>
-                        <td class="cell-time">{{ h.aftCheckIn }}</td>
-                        <td class="cell-time">{{ h.aftCheckOut }}</td>
-                        <td>
-                          <button
-                            class="hist-reason-btn"
-                            type="button"
-                            @click="openReasonPopup(h.reason)"
-                          >
-                            보기
-                          </button>
-                        </td>
-                        <td>{{ h.insertNm }}</td>
-                        <td class="cell-time">{{ h.insertDate }}</td>
-                      </tr>
-                    </tbody>
-                  </table>
-                </div>
-                <div v-else class="hist-empty">
-                  {{ cfg.historyEmpty || "등록된 처리 이력이 없습니다." }}
-                </div>
-              </div>
-            </div>
+            <!-- 처리 이력 — 버튼 클릭 시 별도 팝업으로 표시 -->
+            <button
+              type="button"
+              class="history-toggle-btn"
+              @click="openHistoryPopup"
+            >
+              <span class="history-toggle-label">
+                처리 이력
+                <span class="count">({{ cfg.history.length }})</span>
+              </span>
+              <svg
+                width="16"
+                height="16"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+              >
+                <path d="M9 18l6-6-6-6" />
+              </svg>
+            </button>
           </div>
         </div>
       </div>
@@ -632,7 +795,7 @@
     <Transition name="fade">
       <div
         v-if="reasonPopup.open"
-        class="del-pop-backdrop prafta-nested-modal-overlay"
+        class="del-pop-backdrop reason-pop-backdrop prafta-nested-modal-overlay"
         @click.self="closeReasonPopup"
       >
         <div class="del-pop" @click.stop>
@@ -658,6 +821,109 @@
       </div>
     </Transition>
   </Teleport>
+
+  <!-- 처리 이력 팝업 (별도 모달) -->
+  <Teleport to="body">
+    <Transition name="fade">
+      <div
+        v-if="historyPopup.open"
+        class="hist-pop-backdrop prafta-nested-modal-overlay"
+        @click.self="closeHistoryPopup"
+      >
+        <div class="hist-pop" @click.stop>
+          <div class="hist-pop-head">
+            <h3>
+              처리 이력
+              <span class="count">({{ cfg.history.length }})</span>
+            </h3>
+            <button
+              class="del-pop-close"
+              type="button"
+              @click="closeHistoryPopup"
+            >
+              ×
+            </button>
+          </div>
+          <div class="hist-pop-body">
+            <div v-if="cfg.history.length" class="hist-table-wrap">
+              <table class="hist-table">
+                <colgroup>
+                  <col style="width: 110px" />
+                  <col style="width: 70px" />
+                  <col style="width: 130px" />
+                  <col style="width: 130px" />
+                  <col style="width: 130px" />
+                  <col style="width: 130px" />
+                  <col style="width: 70px" />
+                  <col style="width: 90px" />
+                  <col style="width: 160px" />
+                </colgroup>
+                <thead>
+                  <tr>
+                    <th rowspan="2">이력 유형</th>
+                    <th rowspan="2">구간</th>
+                    <th colspan="2">변경 전</th>
+                    <th colspan="2">변경 후</th>
+                    <th rowspan="2">사유</th>
+                    <th rowspan="2">수정자</th>
+                    <th rowspan="2">수정일시</th>
+                  </tr>
+                  <tr>
+                    <th>출근</th>
+                    <th>퇴근</th>
+                    <th>출근</th>
+                    <th>퇴근</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr v-for="(h, i) in cfg.history" :key="i">
+                    <td class="cell-type">{{ h.histTypeNm }}</td>
+                    <td>{{ h.workSeq }}</td>
+                    <td class="cell-time">{{ h.befCheckIn }}</td>
+                    <td class="cell-time">{{ h.befCheckOut }}</td>
+                    <td class="cell-time">{{ h.aftCheckIn }}</td>
+                    <td class="cell-time">{{ h.aftCheckOut }}</td>
+                    <td>
+                      <button
+                        class="hist-reason-btn"
+                        type="button"
+                        @click="openReasonPopup(h.reason)"
+                      >
+                        보기
+                      </button>
+                    </td>
+                    <td>{{ h.insertNm }}</td>
+                    <td class="cell-time">{{ h.insertDate }}</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+            <div v-else class="hist-empty">
+              {{ cfg.historyEmpty || "등록된 처리 이력이 없습니다." }}
+            </div>
+          </div>
+          <div class="del-pop-foot">
+            <button class="btn-cancel" type="button" @click="closeHistoryPopup">
+              닫기
+            </button>
+          </div>
+        </div>
+      </div>
+    </Transition>
+  </Teleport>
+
+  <!-- 반려 사유 입력 모달 (근태 요청 / 초과근무 요청 반려 공용) -->
+  <ReasonInputModal
+    v-if="rejectModal.open"
+    title="반려 사유 입력"
+    message="반려 사유를 입력해 주세요. 반려 시 해당 요청은 처리할 수 없습니다."
+    placeholder="반려 사유를 입력해 주세요. (최대 500자)"
+    :max-length="500"
+    :required="true"
+    @confirm="onRejectConfirm"
+    @cancel="closeRejectModal"
+    @close="closeRejectModal"
+  />
 </template>
 
 <script setup>
@@ -671,8 +937,11 @@ import {
   getCurrentInstance,
 } from "vue";
 import CalendarSrch from "@/components/common/CalendarSrch.vue";
+import ReasonInputModal from "@/components/modal/ReasonInputModal.vue";
+import AttdGpsCoordPanel from "@/views/attd/popup/AttdGpsCoordPanel.vue";
 import axios from "@/api/axios";
 import { getMessage, MSG } from "@/messages";
+import { resolveApiErrorMessage } from "@/utils/apiError";
 
 defineOptions({ name: "AttdDayDetailPop" });
 
@@ -694,10 +963,23 @@ const props = defineProps({
 const emit = defineEmits(["close", "saved"]);
 const { proxy } = getCurrentInstance();
 
-const onClose = () => emit("close");
-const historyOpen = ref(true);
+// 팝업 종료 시 Attd_07 테이블을 최신 데이터로 reload 한다.
+// (saved 이벤트 → Attd_07.vue 의 onSaved 핸들러(fnSearch) 호출)
+const onClose = () => {
+  emit("saved");
+  emit("close");
+};
 // 관리자 직접 수정 패널 접기/펼치기 — 기본 열림
 const panelOpen = ref(true);
+
+// 처리 이력 팝업 상태 (별도 모달로 분리)
+const historyPopup = ref({ open: false });
+const openHistoryPopup = () => {
+  historyPopup.value.open = true;
+};
+const closeHistoryPopup = () => {
+  historyPopup.value.open = false;
+};
 
 // 삭제 사유 입력 팝업 상태
 //   type:   'all'      → 일자 전체 삭제
@@ -719,12 +1001,25 @@ const closeReasonPopup = () => {
   reasonPopup.value.open = false;
 };
 
+// 반려 사유 입력 모달 상태 (PRAFTA-009 part1).
+//   kind: 'attd'     → 근태 요청 반려 (POST /attd07/reject-user-attd-requests)
+//         'overtime' → 초과근무 요청 반려 (POST /attd07/reject-user-overtime-requests)
+//   context: 반려 API 호출에 필요한 식별자 묶음 (kind 별로 키 구성 상이)
+const rejectModal = ref({ open: false, kind: null, context: null, busy: false });
+const closeRejectModal = () => {
+  if (rejectModal.value.busy) return;
+  rejectModal.value = { open: false, kind: null, context: null, busy: false };
+};
+
 // API 결과 보관용 — 응답 전에는 비어 있음
 const loading = ref(true);
 const record = ref({}); // 일자 근태 상세 (plan/act/leave …)
 const userInfo = ref({}); // 사용자 정보 (헤더용)
 const historyList = ref([]); // 처리 이력
 const reqList = ref([]); // 근로자 요청 (monthlyAttdReqResultList)
+// PRAFTA-003-7: getDailyAttdDetails 응답의 dailyOvertimeResultList 원본 보관용.
+//   initForm()에서 segments[*].otList 에 분배해서 프리필하는 데 사용한다.
+const dailyOvertimeList = ref([]);
 
 // "YYYY-MM-DD" → "YYYYMMDD"
 const ymdDashToNum = (s) => (s || "").replace(/-/g, "");
@@ -799,8 +1094,10 @@ const headerDate = computed(() => {
   return `${y}.${String(m).padStart(2, "0")}.${String(d).padStart(2, "0")} (${dowLabels[dow]})`;
 });
 
-// "0000"은 백엔드에서 빈 plan을 의미하는 sentinel — 의미 있는 시간으로 취급하지 않음
-const isMeaningfulTime = (t) => !!t && t !== "0000";
+// 빈 2구간 스케줄은 백엔드에서 NULL(→ 프론트에서 "")로 내려온다.
+// "0000"은 자정(00:00)을 뜻하는 유효한 시간이므로 빈 값으로 취급하지 않는다.
+// (예: 1구간 00:00~07:00 + 2구간 00:00~18:00 같은 심야 분할근무 스케줄)
+const isMeaningfulTime = (t) => !!t;
 
 // ── 셀 상태 분석 ──────────────────────────────────────────
 const recordState = computed(() => {
@@ -897,6 +1194,10 @@ const buildTimeCard = () => {
       segments: [
         {
           tag: "1구간",
+          segIdx: 0,
+          // PRAFTA-009 part2: 구간별 외근 여부/ATTD_ID (외근 버튼 노출·GPS 조회용).
+          outside: r.attd1OutsideYn === "Y",
+          attdId: r.attd1Id || "",
           range: actualRange(
             r.act1InDate,
             r.act1InTime,
@@ -906,6 +1207,9 @@ const buildTimeCard = () => {
         },
         {
           tag: "2구간",
+          segIdx: 1,
+          outside: r.attd2OutsideYn === "Y",
+          attdId: r.attd2Id || "",
           range: actualRange(
             r.act2InDate,
             r.act2InTime,
@@ -945,6 +1249,9 @@ const buildTimeCard = () => {
         r.act1OutDate,
         r.act1OutTime
       ),
+      // PRAFTA-009 part2: 단일 구간(1구간만) 케이스의 외근 여부/ATTD_ID.
+      outside: r.attd1OutsideYn === "Y",
+      attdId: r.attd1Id || "",
     };
     std = {
       value: actualRange(
@@ -955,6 +1262,30 @@ const buildTimeCard = () => {
       ),
     };
   }
+
+  // 초과근무 집계 — 우측 패널의 form.segments[].otList 기반.
+  //   비고 영역의 "초과근무 N건 인정 (Xh Ym)" 표시에만 사용한다.
+  //   (표준화 적용 카드의 초과 합계 요약 라인은 prafta-009 요청으로 제거됨)
+  const segs = form.value.segments || [];
+  const otCount = segs.reduce(
+    (sum, seg) =>
+      sum +
+      (seg.otList || []).filter(
+        (o) =>
+          minutesOfRange(o.startDate, o.startTime, o.endDate, o.endTime) > 0
+      ).length,
+    0
+  );
+  const otTotal = segs.reduce(
+    (sum, seg) =>
+      sum +
+      (seg.otList || []).reduce(
+        (s, o) =>
+          s + minutesOfRange(o.startDate, o.startTime, o.endDate, o.endTime),
+        0
+      ),
+    0
+  );
 
   // 비고
   let note;
@@ -970,6 +1301,8 @@ const buildTimeCard = () => {
     recordState.value.missing === "out2"
   ) {
     note = { value: "퇴근 누락" };
+  } else if (otCount > 0) {
+    note = { value: `초과근무 ${otCount}건 인정 (${fmtHm(otTotal)})` };
   } else {
     note = { value: "−", cls: "val-empty" };
   }
@@ -1019,18 +1352,18 @@ const buildPanel = () => {
   );
   if (hasAct1) {
     segments.push({
-      inDate: ymdNumToDash(r.act1InDate) || props.date_p,
-      in: r.act1InTime || "",
-      outDate: ymdNumToDash(r.act1OutDate) || props.date_p,
-      out: r.act1OutTime || "",
+      startDate: ymdNumToDash(r.act1InDate) || props.date_p,
+      startTime: r.act1InTime || "",
+      endDate: ymdNumToDash(r.act1OutDate) || props.date_p,
+      endTime: r.act1OutTime || "",
     });
   }
   if (hasAct2) {
     segments.push({
-      inDate: ymdNumToDash(r.act2InDate) || props.date_p,
-      in: r.act2InTime || "",
-      outDate: ymdNumToDash(r.act2OutDate) || props.date_p,
-      out: r.act2OutTime || "",
+      startDate: ymdNumToDash(r.act2InDate) || props.date_p,
+      startTime: r.act2InTime || "",
+      endDate: ymdNumToDash(r.act2OutDate) || props.date_p,
+      endTime: r.act2OutTime || "",
     });
   }
   return { kind: "segments", segments };
@@ -1119,8 +1452,8 @@ const reqCards = computed(() => {
       workSeq: n,
       befIn: fmtTime(r[`act${n}InTime`]) || "-",
       befOut: fmtTime(r[`act${n}OutTime`]) || "-",
-      aftIn: fmtTime(req.checkInTime) || "-",
-      aftOut: fmtTime(req.checkOutTime) || "-",
+      aftIn: fmtTime(req.startTime) || "-",
+      aftOut: fmtTime(req.endTime) || "-",
       reqReason: req.reqReason || "",
     };
   });
@@ -1140,18 +1473,120 @@ const cfg = computed(() => ({
 
 // ── 폼 상태 ───────────────────────────────────────────────
 // API 응답 전엔 비어 있고, fnSearch 완료 후 initForm()으로 채워진다.
+//   각 segment 는 정규근무 입력(startTime/endTime) + 초과근무 리스트(otList) 를 가진다.
+//   otList: [{ startDate, startTime, endDate, endTime, type: 'extend'|'night'|'holiday', otId?, reqId? }]
+// PRAFTA-003-7: 백엔드 dailyOvertimeResultList 응답을 segment 별로 분배해 프리필한다.
 const form = ref({ segments: [], reason: "" });
+
+// "초기화" 버튼 복원 기준점 — initForm() 으로 form 이 채워질 때마다 그 시점 값을 깊은 복사로 보관.
+const formSnapshot = ref(null);
+const cloneForm = (v) => JSON.parse(JSON.stringify(v));
+
+// 백엔드 OT_TYPE enum(EXTEND/NIGHT/HOLIDAY) → 프론트 type 소문자.
+//   mapOtType 의 역방향. 알 수 없는 값은 'extend' 로 보수적으로 매핑한다.
+const reverseOtType = (raw) => {
+  const v = (raw || "").toUpperCase();
+  if (v === "NIGHT") return "night";
+  if (v === "HOLIDAY") return "holiday";
+  return "extend";
+};
+
+// "20260514" + "0900" 형식의 (날짜, 시각) → 분 stamp.
+//   [QA 재작업 D1] 분 stamp 기준을 buildStdSegments 와 동일하게 workYmd-1 00:00 으로 통일.
+//   (dayDiff + 1) * 1440 + m 으로 산출해 workYmd 00:00 = 1440 이 되도록 한다.
+//   잘못된 값이면 null.
+const otStampFromYmdHm = (ymd, hhmm) => {
+  const baseYmd = ymdDashToNum(props.date_p);
+  const d = String(ymd || "");
+  if (baseYmd.length !== 8 || d.length !== 8) return null;
+  const m = hhmmToMin(hhmm);
+  if (m == null) return null;
+  const by = parseInt(baseYmd.slice(0, 4), 10);
+  const bm = parseInt(baseYmd.slice(4, 6), 10) - 1;
+  const bd = parseInt(baseYmd.slice(6, 8), 10);
+  const ty = parseInt(d.slice(0, 4), 10);
+  const tm = parseInt(d.slice(4, 6), 10) - 1;
+  const td = parseInt(d.slice(6, 8), 10);
+  const dayDiff = Math.round(
+    (new Date(ty, tm, td).getTime() - new Date(by, bm, bd).getTime()) /
+      (1000 * 60 * 60 * 24)
+  );
+  return (dayDiff + 1) * 1440 + m;
+};
+
+// OT row 1건을 form.segments 의 어느 구간에 넣을지 판정한다.
+//   분 stamp 기준으로 actual std 구간(buildStdSegments) 중 어느 구간에 OT 시작이
+//   포함되는지 검사. 어디에도 포함되지 않으면 가장 가까운(시작이 더 작은 std 구간 끝
+//   이후에 있는) 구간으로 fallback. segment 개수가 부족하면 0(1구간)으로 fallback.
+const assignOtToSegment = (otRow, stdSegs, segCount) => {
+  if (!segCount) return -1;
+  if (segCount === 1) return 0;
+  // segCount === 2 — std 구간이 인덱스별로 1:1 대응한다는 가정.
+  // buildStdSegments 는 act1, act2 순서로 push 하므로 인덱스 의미가 일치.
+  const start = otStampFromYmdHm(otRow.actualStartDate, otRow.actualStartTime);
+  const end = otStampFromYmdHm(otRow.actualEndDate, otRow.actualEndTime);
+  if (start == null) return 0;
+  // stdSegs[0] / stdSegs[1] 와 비교.
+  // [QA 재작업 D3] stdSegs 는 인덱스 보존 배열이므로 각 자리에 null 이 올 수 있다.
+  //   양쪽 구간이 모두 유효할 때만 구간 판정을 수행하고, 한쪽이 null 이면
+  //   유효한 구간(또는 1구간)으로 fallback 한다.
+  // OT 시작이 std[1] 구간 내부 또는 std[1] 끝 이후라면 2구간에 귀속.
+  if (stdSegs[0] && stdSegs[1]) {
+    const [s1, e1] = stdSegs[0];
+    const [s2] = stdSegs[1];
+    // 1구간 actual 내부 또는 1구간 종료 직후 ~ 2구간 시작 전까지면 1구간 OT.
+    if (start >= s1 && (end == null || end <= s2)) return 0;
+    // 2구간 actual 내부 또는 2구간 종료 이후면 2구간 OT.
+    if (start >= s2 || (end != null && end > e1 && start >= e1)) return 1;
+    // 기본: 1구간.
+    return 0;
+  }
+  // 한쪽 구간만 유효한(또는 둘 다 null 인) 비정상 케이스 → 유효 구간이 2구간뿐이면 1, 그 외 1구간.
+  if (!stdSegs[0] && stdSegs[1]) return 1;
+  return 0;
+};
+
 function initForm() {
   const panel = cfg.value.panel;
   if (panel.kind === "segments") {
+    // 1) 정규근무(startDate/Time/endDate/Time) 부분을 panel.segments 로 채운다.
+    const segments = panel.segments.map((s) => ({ ...s, otList: [] }));
+
+    // 2) PRAFTA-003-7: dailyOvertimeResultList 를 segment 인덱스별로 분배.
+    const stdSegs = buildStdSegments();
+    const otRows = dailyOvertimeList.value || [];
+    for (const ot of otRows) {
+      const idx = assignOtToSegment(ot, stdSegs, segments.length);
+      if (idx < 0 || !segments[idx]) continue;
+      segments[idx].otList.push({
+        otId: ot.otId,
+        reqId: ot.reqId || null,
+        startDate: ymdNumToDash(ot.actualStartDate) || props.date_p,
+        startTime: ot.actualStartTime || "",
+        endDate: ymdNumToDash(ot.actualEndDate) || props.date_p,
+        endTime: ot.actualEndTime || "",
+        type: reverseOtType(ot.otType),
+      });
+    }
+
     form.value = {
-      segments: panel.segments.map((s) => ({ ...s })),
+      segments,
       reason: "",
     };
   } else {
     form.value = { reason: "" };
   }
+  // 방금 채워진 form 상태를 "초기화" 복원 기준점으로 저장 (저장/삭제 후 reload 시 갱신됨)
+  formSnapshot.value = cloneForm(form.value);
 }
+
+// "초기화" — 직접 수정 폼을 마지막으로 데이터를 불러온 시점(initForm) 값으로 되돌린다.
+const fnResetForm = async () => {
+  if (!formSnapshot.value) return;
+  const ok = await proxy.$confirm(getMessage(MSG.FORM_RESET_CONFIRM));
+  if (!ok) return;
+  form.value = cloneForm(formSnapshot.value);
+};
 
 const canSave = computed(() => form.value.reason.trim().length > 0);
 
@@ -1161,16 +1596,494 @@ const MAX_SEGMENTS = 2;
 const addSegment = () => {
   if (form.value.segments.length >= MAX_SEGMENTS) return;
   form.value.segments.push({
-    inDate: props.date_p,
-    in: "",
-    outDate: props.date_p,
-    out: "",
+    startDate: props.date_p,
+    startTime: "",
+    endDate: props.date_p,
+    endTime: "",
+    otList: [],
   });
 };
 
 // 출/퇴근 일자가 다르면 익일 처리 (날짜 문자열은 사전순 비교 가능)
 const isOverday = (seg) =>
-  !!seg.outDate && !!seg.inDate && seg.outDate > seg.inDate;
+  !!seg.endDate && !!seg.startDate && seg.endDate > seg.startDate;
+
+// ── 초과근무 관리 (UI 골격) ─────────────────────────────────
+// 추가/삭제만 화면 상태로 처리. 저장 payload 매핑은 추후 백엔드 합의 후 연동.
+
+// DB에서 읽어온 구간인지 여부 (record.attd{n}Id 존재 ⇒ DB 적재 구간).
+//   화면에서 "+ 구간 추가"로 새로 추가된 구간은 false 가 되므로 초과근무 입력을 막는다.
+const isSegmentFromDb = (segIdx) => {
+  const r = record.value ?? {};
+  return !!r[`attd${segIdx + 1}Id`];
+};
+
+const addOt = (segIdx) => {
+  const seg = form.value.segments[segIdx];
+  if (!seg) return;
+  // DB 적재 구간이 아니면 초과근무 등록 차단 (UI 가드와 동일 규칙).
+  if (!isSegmentFromDb(segIdx)) return;
+  if (!Array.isArray(seg.otList)) seg.otList = [];
+  // 기본값: 해당 구간 퇴근 직후 시작, 동일 일자, 타입은 '연장'
+  seg.otList.push({
+    startDate: seg.endDate || seg.startDate || props.date_p,
+    startTime: "",
+    endDate: seg.endDate || seg.startDate || props.date_p,
+    endTime: "",
+    type: "extend",
+  });
+};
+
+const removeOt = (segIdx, otIdx) => {
+  const seg = form.value.segments[segIdx];
+  if (!seg || !Array.isArray(seg.otList)) return;
+  seg.otList.splice(otIdx, 1);
+};
+
+// 구간 헤더의 요약 표시 (정규/초과 합계). 데이터가 없거나 계산 불가 시 빈 문자열.
+//   - 정규근무: in~out 시간 차 (분 단위)
+//   - 초과근무: otList 의 각 row 시간 합 (분 단위)
+const minutesOfRange = (sDate, sTime, eDate, eTime) => {
+  if (!sTime || !eTime || sTime.length < 4 || eTime.length < 4) return 0;
+  const sd = (sDate || "").replace(/-/g, "");
+  const ed = (eDate || "").replace(/-/g, "");
+  if (!sd || !ed) return 0;
+  const sStamp =
+    parseInt(sd, 10) * 1440 +
+    parseInt(sTime.slice(0, 2), 10) * 60 +
+    parseInt(sTime.slice(2, 4), 10);
+  const eStamp =
+    parseInt(ed, 10) * 1440 +
+    parseInt(eTime.slice(0, 2), 10) * 60 +
+    parseInt(eTime.slice(2, 4), 10);
+  return Math.max(0, eStamp - sStamp);
+};
+const fmtHm = (mins) => {
+  const h = Math.floor(mins / 60);
+  const m = mins % 60;
+  return `${h}시간 ${m}분`;
+};
+const segSummary = (seg) => {
+  const reg = minutesOfRange(
+    seg.startDate,
+    seg.startTime,
+    seg.endDate,
+    seg.endTime
+  );
+  const ot = (seg.otList || []).reduce(
+    (sum, o) =>
+      sum + minutesOfRange(o.startDate, o.startTime, o.endDate, o.endTime),
+    0
+  );
+  if (!reg && !ot) return "";
+  const parts = [];
+  if (reg) parts.push(`정규<strong>${fmtHm(reg)}</strong>`);
+  if (ot) parts.push(`초과<strong>${fmtHm(ot)}</strong>`);
+  return parts.join('<span class="dot">·</span>');
+};
+
+// ── 추가근무(OT) 신규 API 연동 (PRAFTA-003) ────────────────
+// 정책서 2,3번 — 등록 가능 OT 범위 = (표준화 적용 근무시간) - (스케줄 시간).
+// 백엔드 /attd07/update-user-overtime-requests 에서도 동일 검증을 수행한다.
+// 여기서는 사용자 가이드 + 사전 차단을 위해 클라이언트 측에서도 한 번 계산한다.
+
+// 저장 진행 중 플래그 (모든 segment 의 ot-actions 가 공유)
+const otSaving = ref(false);
+
+// ── 외근 GPS 동선 (PRAFTA-009 part2) ───────────────────────
+//   외근 버튼 클릭 시 해당 구간의 ATTD_ID 로 GET /attd08/attd-gps-trail 호출,
+//   응답 trail 을 AttdGpsCoordPanel 에 전달한다. 같은 구간 버튼 재클릭 시 패널 닫힘.
+//   segIdx: 현재 열려 있는 구간 인덱스(0/1), null 이면 패널 닫힘.
+const gpsPanel = ref({ segIdx: null, attdId: "", trail: [], loading: false });
+
+const fnToggleGps = async (segIdx, attdId) => {
+  // 같은 구간 버튼 재클릭 → 패널 토글(닫기)
+  if (gpsPanel.value.segIdx === segIdx) {
+    gpsPanel.value = { segIdx: null, attdId: "", trail: [], loading: false };
+    return;
+  }
+  if (!attdId) {
+    await proxy.$alert(getMessage(MSG.SEARCH_ERROR));
+    return;
+  }
+  // 다른 구간으로 전환: 패널을 즉시 열고 로딩 표시 후 trail 조회.
+  gpsPanel.value = { segIdx, attdId, trail: [], loading: true };
+  try {
+    const response = await axios.get("/webApi/attd08/attd-gps-trail", {
+      params: { attdId },
+    });
+    if (response.status === 200) {
+      // 조회 도중 사용자가 다른 구간으로 전환했다면 결과를 버린다.
+      if (gpsPanel.value.segIdx !== segIdx) return;
+      gpsPanel.value.trail =
+        response.data?.attdGpsTrailResultList ?? [];
+    }
+  } catch (err) {
+    console.error("[AttdDayDetailPop] gps trail load failed", err);
+    if (gpsPanel.value.segIdx === segIdx) gpsPanel.value.trail = [];
+    await proxy.$alert(
+      resolveApiErrorMessage(err, getMessage(MSG.SEARCH_ERROR))
+    );
+  } finally {
+    if (gpsPanel.value.segIdx === segIdx) gpsPanel.value.loading = false;
+  }
+};
+
+// HH:mm 라벨 (분 stamp → "HH:mm")
+const stampToHHmm = (mins) => {
+  const m = ((mins % 1440) + 1440) % 1440;
+  const h = Math.floor(m / 60);
+  const mm = m % 60;
+  return `${String(h).padStart(2, "0")}:${String(mm).padStart(2, "0")}`;
+};
+
+// 날짜+시각 라벨 (분 stamp → "YYYY-MM-DD HH:mm")
+// [QA 재작업 D1] stamp origin 이 workYmd-1 00:00 기준(workYmd 00:00 = 1440)으로 통일되었으므로
+//   props.date_p(workYmd) 기준 일자 오프셋은 Math.floor(mins / 1440) - 1 이다.
+const stampToDateTime = (mins) => {
+  const hhmm = stampToHHmm(mins);
+  if (!props.date_p) return hhmm;
+  const dayOffset = Math.floor(mins / 1440) - 1;
+  const [y, mo, d] = props.date_p.split("-").map(Number);
+  const dt = new Date(y, mo - 1, d + dayOffset);
+  const ymd = `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, "0")}-${String(dt.getDate()).padStart(2, "0")}`;
+  return `${ymd} ${hhmm}`;
+};
+
+// "HHmm" → 분 (00:00 기준). 잘못된 값이면 null.
+const hhmmToMin = (hhmm) => {
+  if (!hhmm || String(hhmm).length !== 4) return null;
+  const h = parseInt(String(hhmm).slice(0, 2), 10);
+  const m = parseInt(String(hhmm).slice(2, 4), 10);
+  if (Number.isNaN(h) || Number.isNaN(m)) return null;
+  if (h < 0 || h > 23 || m < 0 || m > 59) return null;
+  return h * 60 + m;
+};
+
+// 스케줄 구간 (record.plan{n}Start/End) → 분 stamp.
+// [QA 재작업 D1] stamp origin 을 workYmd-1 00:00 기준으로 통일(백엔드와 동일).
+//   plan 은 workYmd anchor 이므로 sMin/eMin 모두 +1440. end <= start 이면 자정 넘김으로 추가 +1440.
+// [QA 재작업 D3] 구간 인덱스(idx0=1구간, idx1=2구간)를 보존한다.
+//   값이 null/invalid 여도 push 를 건너뛰지 않고 null 을 채워 자리를 유지한다(compaction 금지).
+const buildSchSegments = () => {
+  const r = record.value ?? {};
+  const segs = [];
+  const build = (s, e) => {
+    const sRaw = hhmmToMin(s);
+    let eRaw = hhmmToMin(e);
+    if (sRaw == null || eRaw == null) return null;
+    const sMin = 1440 + sRaw;
+    let eMin = 1440 + eRaw;
+    if (eMin <= sMin) eMin += 1440;
+    return [sMin, eMin];
+  };
+  segs.push(build(r.plan1Start, r.plan1End));
+  segs.push(build(r.plan2Start, r.plan2End));
+  return segs;
+};
+
+// 표준화 적용 실제 근무 구간 (act{n}InStdTime, act{n}OutStdTime) → 분 stamp.
+// 출퇴근 일자 (act{n}InDate, act{n}OutDate) 차이로 자정 넘김 보정.
+// [QA 재작업 D1] stamp origin 을 workYmd-1 00:00 기준으로 통일(백엔드와 동일).
+//   (dayDiff + 1) * 1440 + hhmm 으로 산출해 workYmd 00:00 = 1440 이 되도록 한다.
+// [QA 재작업 D3] 구간 인덱스(idx0=1구간, idx1=2구간)를 보존한다.
+//   값이 null/invalid 여도 push 를 건너뛰지 않고 null 을 채워 자리를 유지한다(compaction 금지).
+const buildStdSegments = () => {
+  const r = record.value ?? {};
+  const baseYmd = ymdDashToNum(props.date_p);
+  if (baseYmd.length !== 8) return [null, null];
+
+  const ymdDiffDays = (ymd) => {
+    if (!ymd || ymd.length !== 8) return 0;
+    const y = parseInt(ymd.slice(0, 4), 10);
+    const m = parseInt(ymd.slice(4, 6), 10);
+    const d = parseInt(ymd.slice(6, 8), 10);
+    const b = new Date(
+      parseInt(baseYmd.slice(0, 4), 10),
+      parseInt(baseYmd.slice(4, 6), 10) - 1,
+      parseInt(baseYmd.slice(6, 8), 10)
+    );
+    const t = new Date(y, m - 1, d);
+    return Math.round((t.getTime() - b.getTime()) / (1000 * 60 * 60 * 24));
+  };
+
+  const segs = [];
+  const build = (inDate, inTime, outDate, outTime) => {
+    const sMin = hhmmToMin(inTime);
+    const eMin = hhmmToMin(outTime);
+    if (sMin == null || eMin == null) return null;
+    const sStamp = (ymdDiffDays(inDate) + 1) * 1440 + sMin;
+    const eStamp = (ymdDiffDays(outDate) + 1) * 1440 + eMin;
+    if (eStamp <= sStamp) return null;
+    return [sStamp, eStamp];
+  };
+
+  segs.push(build(r.act1InDate, r.act1InStdTime, r.act1OutDate, r.act1OutStdTime));
+  segs.push(build(r.act2InDate, r.act2InStdTime, r.act2OutDate, r.act2OutStdTime));
+  return segs;
+};
+
+// 정렬 + 인접/겹침 병합. 입력은 변경하지 않는다.
+const mergeIntervals = (segs) => {
+  const sorted = [...segs].sort((a, b) => a[0] - b[0]);
+  const out = [];
+  for (const [s, e] of sorted) {
+    if (!out.length || out[out.length - 1][1] < s) {
+      out.push([s, e]);
+    } else if (e > out[out.length - 1][1]) {
+      out[out.length - 1][1] = e;
+    }
+  }
+  return out;
+};
+
+// 차집합 (a - b). 두 입력 모두 mergeIntervals 결과(정렬·분리)여야 한다.
+const subtractIntervals = (a, b) => {
+  const out = [];
+  for (const [start, end] of a) {
+    let cursor = start;
+    for (const [bs, be] of b) {
+      if (be <= cursor) continue;
+      if (bs >= end) break;
+      if (bs > cursor) out.push([cursor, bs]);
+      cursor = Math.max(cursor, be);
+      if (cursor >= end) break;
+    }
+    if (cursor < end) out.push([cursor, end]);
+  }
+  return out;
+};
+
+// 화면 노출용 — 등록 가능 OT 구간 리스트 (구간별 분리 계산).
+//   PRAFTA-011 백엔드 규칙과 동일하게 1구간/2구간 각각 따로 계산한다.
+//   - 매칭 스케줄이 있는 구간: (해당 구간 표준화 근무) - (해당 구간 스케줄)
+//   - 매칭 스케줄이 없는 구간: 해당 구간 표준화 근무 전체가 등록 가능
+//   [QA 재작업 D3] buildStdSegments / buildSchSegments 는 구간 인덱스를 보존하며
+//   해당 구간 값이 없으면 null 을 둔다. idx0=1구간, idx1=2구간 1:1 매핑이 정상 동작한다.
+//   - std 가 null 인 구간: 등록 가능 OT 없음 → 빈 배열.
+//   - sch 가 null 인 구간: 매칭 스케줄 없음 → 표준화 근무 전체가 등록 가능.
+const otAllowedWindowsBySeg = computed(() => {
+  const stdSegs = buildStdSegments();
+  const schSegs = buildSchSegments();
+  return stdSegs.map((std, i) => {
+    if (!std) return [];
+    const sch = schSegs[i];
+    // 매칭 스케줄이 있으면 차집합, 없으면 표준화 근무 전체.
+    const allowed = sch
+      ? subtractIntervals(mergeIntervals([std]), mergeIntervals([sch]))
+      : [std];
+    return allowed.map(([s, e]) => ({
+      startMin: s,
+      endMin: e,
+      startLabel: stampToDateTime(s),
+      endLabel: stampToDateTime(e),
+    }));
+  });
+});
+
+// 특정 구간(0-based)의 등록 가능 OT 구간 리스트. 없으면 빈 배열.
+const otAllowedWindowsForSeg = (segIdx) =>
+  otAllowedWindowsBySeg.value[segIdx] || [];
+
+// otList 의 한 row → 분 stamp 구간. 잘못된 값이면 null.
+const otRowToStamp = (ot) => {
+  const sd = ymdDashToNum(ot.startDate || "");
+  const ed = ymdDashToNum(ot.endDate || "");
+  const baseYmd = ymdDashToNum(props.date_p);
+  if (sd.length !== 8 || ed.length !== 8 || baseYmd.length !== 8) return null;
+  const sMin = hhmmToMin(ot.startTime);
+  const eMin = hhmmToMin(ot.endTime);
+  if (sMin == null || eMin == null) return null;
+  const dayDiff = (ymd) => {
+    const y = parseInt(ymd.slice(0, 4), 10);
+    const m = parseInt(ymd.slice(4, 6), 10);
+    const d = parseInt(ymd.slice(6, 8), 10);
+    const b = new Date(
+      parseInt(baseYmd.slice(0, 4), 10),
+      parseInt(baseYmd.slice(4, 6), 10) - 1,
+      parseInt(baseYmd.slice(6, 8), 10)
+    );
+    const t = new Date(y, m - 1, d);
+    return Math.round((t.getTime() - b.getTime()) / (1000 * 60 * 60 * 24));
+  };
+  // [QA 재작업 D1] stamp origin 을 workYmd-1 00:00 기준으로 통일 (+1 day offset).
+  const sStamp = (dayDiff(sd) + 1) * 1440 + sMin;
+  const eStamp = (dayDiff(ed) + 1) * 1440 + eMin;
+  if (eStamp <= sStamp) return null;
+  return [sStamp, eStamp];
+};
+
+// 특정 구간의 OT row 들이 (1) 완전 입력 (2) 그 구간의 허용 범위 포함
+// (3) 서로 겹치지 않을 때 true. 그 외 false.
+//   PRAFTA-009 part4: 등록 가능 범위가 구간별로 분리되었으므로, OT 검증도
+//   각 구간 자신의 허용 범위(otAllowedWindowsForSeg)와 대조한다.
+const isSegOtValid = (segIdx) => {
+  const seg = form.value.segments?.[segIdx];
+  if (!seg || !Array.isArray(seg.otList) || !seg.otList.length) return false;
+  const allowed = otAllowedWindowsForSeg(segIdx).map((w) => [
+    w.startMin,
+    w.endMin,
+  ]);
+  if (!allowed.length) return false;
+
+  const stamps = [];
+  for (const ot of seg.otList) {
+    if (!ot.startDate || !ot.startTime || !ot.endDate || !ot.endTime) {
+      return false;
+    }
+    const stamp = otRowToStamp(ot);
+    if (!stamp) return false;
+    const ok = allowed.some(([as, ae]) => as <= stamp[0] && ae >= stamp[1]);
+    if (!ok) return false;
+    stamps.push(stamp);
+  }
+  // overlap check (구간 내부)
+  const sorted = [...stamps].sort((a, b) => a[0] - b[0]);
+  for (let i = 1; i < sorted.length; i++) {
+    if (sorted[i][0] < sorted[i - 1][1]) return false;
+  }
+  return true;
+};
+
+// OT 행이 있는 모든 구간이 각자 유효할 때 true (저장 버튼 활성 조건).
+const canSaveOt = computed(() => {
+  const segs = form.value.segments || [];
+  const withOt = segs
+    .map((s, i) => i)
+    .filter((i) => (segs[i].otList || []).length);
+  if (!withOt.length) return false;
+  return withOt.every((i) => isSegOtValid(i));
+});
+
+// 해당 segment 에 OT 행이 하나라도 있는지
+const hasAnyOt = (segIdx) => {
+  const seg = form.value.segments?.[segIdx];
+  return !!(seg && Array.isArray(seg.otList) && seg.otList.length);
+};
+
+// OT 가 reqId 경유로 들어왔는지 (반려 버튼 노출 조건).
+// 현재 화면에서는 사용자 요청 카드에서 OT 가 흘러오는 경로가 없어 항상 false.
+const otHasReqId = (segIdx) => {
+  const seg = form.value.segments?.[segIdx];
+  if (!seg || !Array.isArray(seg.otList) || !seg.otList.length) return false;
+  return seg.otList.some((o) => !!o.reqId);
+};
+
+// 클라이언트 측 검증 — 통과하면 true, 실패 시 alert 노출.
+const validateOtBeforeSave = async (segIdx) => {
+  const seg = form.value.segments?.[segIdx];
+  if (!seg || !Array.isArray(seg.otList) || !seg.otList.length) {
+    await proxy.$alert(getMessage(MSG.OT_LIST_EMPTY));
+    return false;
+  }
+  // isSegOtValid 가 false 인 정확한 원인을 사용자에게 알린다.
+  for (const ot of seg.otList) {
+    if (!ot.startDate || !ot.startTime || !ot.endDate || !ot.endTime) {
+      await proxy.$alert(getMessage(MSG.OT_RANGE_INVALID));
+      return false;
+    }
+    const stamp = otRowToStamp(ot);
+    if (!stamp) {
+      await proxy.$alert(getMessage(MSG.OT_RANGE_INVALID));
+      return false;
+    }
+  }
+  // 해당 구간 자신의 등록 가능 범위와 대조 (구간별 분리 검증).
+  if (!isSegOtValid(segIdx)) {
+    // 범위 외 또는 겹침
+    await proxy.$alert(getMessage(MSG.OT_OUTSIDE_ALLOWED));
+    return false;
+  }
+  return true;
+};
+
+// otList 의 type 값(소문자) → 백엔드 OT_TYPE enum
+const mapOtType = (t) => {
+  if (t === "night") return "NIGHT";
+  if (t === "holiday") return "HOLIDAY";
+  return "EXTEND";
+};
+
+// 저장: POST /attd07/update-user-overtime-requests
+const fnApproveOvertime = async (segIdx) => {
+  if (otSaving.value) return;
+  if (!(await validateOtBeforeSave(segIdx))) return;
+
+  const ok = await proxy.$confirm(getMessage(MSG.OT_SAVE_CONFIRM));
+  if (!ok) return;
+
+  const r = record.value ?? {};
+  const u = userInfo.value ?? {};
+  const seg = form.value.segments[segIdx];
+  const segNo = segIdx + 1;
+  const workYmd = ymdToYmdNum(props.date_p);
+
+  const overtimes = (seg.otList || []).map((o) => ({
+    otType: mapOtType(o.type),
+    startDate: ymdToYmdNum(o.startDate),
+    startTime: o.startTime,
+    endDate: ymdToYmdNum(o.endDate),
+    endTime: o.endTime,
+  }));
+
+  const payload = {
+    userCd: props.userCd_p || u.userCd || r.userCd || "",
+    siteCd: props.siteCd_p || r.siteCd || "",
+    nodeCd: props.nodeCd_p || r.nodeCd || "",
+    workYmd,
+    attdId: r[`attd${segNo}Id`] || props.attdId_p || null,
+    reqId: null,
+    overtimes,
+    reqReason: form.value.reason || "",
+  };
+
+  otSaving.value = true;
+  try {
+    const response = await axios.post(
+      "/webApi/attd07/update-user-overtime-requests",
+      payload
+    );
+    if (response.status === 200) {
+      await proxy.$alert(getMessage(MSG.SAVE_COMPLETED));
+      // 저장 후 팝업을 닫지 않고 상세 조회 API를 다시 호출해 데이터를 reload 한다.
+      await fnSearch();
+    }
+  } catch (err) {
+    console.error("[AttdDayDetailPop] overtime save failed", err);
+    // prafta-008: 백엔드 ApiException 메시지를 그대로 노출(공통 유틸 경유).
+    // 백엔드 enum 이 민감 코드에 일반 메시지를 쓰므로 정보 누설 없음.
+    await proxy.$alert(
+      resolveApiErrorMessage(err, getMessage(MSG.OT_SAVE_ERROR))
+    );
+  } finally {
+    otSaving.value = false;
+  }
+};
+
+// 초과근무 요청 반려 — 반려 사유 입력 모달을 띄운다.
+//   확인 시 onRejectConfirm 에서 POST /attd07/reject-user-overtime-requests 호출.
+const fnRejectOvertime = (segIdx) => {
+  const seg = form.value.segments?.[segIdx];
+  if (!seg) return;
+  // 해당 구간 OT 행 중 reqId 를 가진 첫 항목이 반려 대상.
+  const target = (seg.otList || []).find((o) => !!o.reqId);
+  if (!target) {
+    proxy.$alert(getMessage(MSG.OT_LIST_EMPTY));
+    return;
+  }
+  const r = record.value ?? {};
+  const u = userInfo.value ?? {};
+  rejectModal.value = {
+    open: true,
+    kind: "overtime",
+    busy: false,
+    context: {
+      reqId: target.reqId,
+      siteCd: props.siteCd_p || r.siteCd || "",
+      userCd: props.userCd_p || u.userCd || r.userCd || "",
+    },
+  };
+};
 
 // ── 시간 입력 (포커스에 따라 raw "1230" / 표시 "12:30" 전환) ───
 const focusedTime = ref(null); // 예: "0-in", "1-out"
@@ -1203,25 +2116,25 @@ const validateForm = async () => {
   for (let i = 0; i < form.value.segments.length; i++) {
     const seg = form.value.segments[i];
     const idx = i + 1;
-    if (!seg.inDate || !seg.in) {
+    if (!seg.startDate || !seg.startTime) {
       await proxy.$alert(getMessage(MSG.SEG_CHECKIN_REQUIRED, { idx }));
       return false;
     }
-    if (!seg.outDate || !seg.out) {
+    if (!seg.endDate || !seg.endTime) {
       await proxy.$alert(getMessage(MSG.SEG_CHECKOUT_REQUIRED, { idx }));
       return false;
     }
-    if (seg.in.length < 4 || seg.out.length < 4) {
+    if (seg.startTime.length < 4 || seg.endTime.length < 4) {
       await proxy.$alert(getMessage(MSG.SEG_TIME_FORMAT, { idx }));
       return false;
     }
-    if (seg.outDate < seg.inDate) {
+    if (seg.endDate < seg.startDate) {
       await proxy.$alert(getMessage(MSG.SEG_OUT_DATE_BEFORE_IN, { idx }));
       return false;
     }
-    if (seg.outDate === seg.inDate) {
-      const inN = parseInt(seg.in, 10);
-      const outN = parseInt(seg.out, 10);
+    if (seg.endDate === seg.startDate) {
+      const inN = parseInt(seg.startTime, 10);
+      const outN = parseInt(seg.endTime, 10);
       if (outN <= inN) {
         await proxy.$alert(getMessage(MSG.SEG_OUT_TIME_BEFORE_IN, { idx }));
         return false;
@@ -1234,8 +2147,8 @@ const validateForm = async () => {
   if (form.value.segments.length >= 2) {
     const seg1 = form.value.segments[0];
     const seg2 = form.value.segments[1];
-    const seg1OutStamp = toMinuteStamp(seg1.outDate, seg1.out);
-    const seg2InStamp = toMinuteStamp(seg2.inDate, seg2.in);
+    const seg1OutStamp = toMinuteStamp(seg1.endDate, seg1.endTime);
+    const seg2InStamp = toMinuteStamp(seg2.startDate, seg2.startTime);
     if (seg2InStamp <= seg1OutStamp) {
       await proxy.$alert(getMessage(MSG.SEG2_IN_AFTER_SEG1_OUT));
       return false;
@@ -1262,10 +2175,10 @@ const fnSave = async () => {
     const oriOutDate = r[`oriAct${segNo}OutDate`] ?? "";
     const oriOutTime = r[`oriAct${segNo}OutTime`] ?? "";
     return (
-      ymdToYmdNum(seg.inDate) !== String(oriInDate ?? "") ||
-      (seg.in || "") !== String(oriInTime ?? "") ||
-      ymdToYmdNum(seg.outDate) !== String(oriOutDate ?? "") ||
-      (seg.out || "") !== String(oriOutTime ?? "")
+      ymdToYmdNum(seg.startDate) !== String(oriInDate ?? "") ||
+      (seg.startTime || "") !== String(oriInTime ?? "") ||
+      ymdToYmdNum(seg.endDate) !== String(oriOutDate ?? "") ||
+      (seg.endTime || "") !== String(oriOutTime ?? "")
     );
   };
 
@@ -1280,11 +2193,13 @@ const fnSave = async () => {
       userId: u.userId || "",
       userCd: props.userCd_p || u.userCd || "",
       workSeq: segNo,
-      checkInDate: ymdToYmdNum(seg.inDate),
-      checkInTime: seg.in,
+      // PRAFTA-003-7: 프론트 내부 변수명은 startDate/startTime/endDate/endTime 으로
+      // 정렬되었으나, 백엔드 request DTO 키(checkInDate/Time, checkOutDate/Time)는 그대로 유지.
+      checkInDate: ymdToYmdNum(seg.startDate),
+      checkInTime: seg.startTime,
       checkInMethod: "02",
-      checkOutDate: ymdToYmdNum(seg.outDate),
-      checkOutTime: seg.out,
+      checkOutDate: ymdToYmdNum(seg.endDate),
+      checkOutTime: seg.endTime,
       checkOutMethod: "02",
       // 수정 전 실제 출퇴근 값 (구간별 oriAct{n}* — 서버 원본)
       oriCheckInDate: r[`oriAct${segNo}InDate`] ?? "",
@@ -1312,22 +2227,21 @@ const fnSave = async () => {
     );
     if (response.status === 200) {
       await proxy.$alert(getMessage(MSG.SAVE_COMPLETED));
-      emit("saved");
-      emit("close");
+      // 저장 후 팝업을 닫지 않고 상세 조회 API를 다시 호출해 데이터를 reload 한다.
+      await fnSearch();
     }
   } catch (err) {
-    const msg =
-      err?.response?.data?.message ||
-      err?.message ||
-      getMessage(MSG.SAVE_ERROR);
+    console.log("[AttdDayDetailPop] save failed", err);
+    const msg = resolveApiErrorMessage(err, getMessage(MSG.SAVE_ERROR));
     await proxy.$alert(msg);
   }
 };
 
 // ── 근로자 요청 카드 액션 ─────────────────────────────────
 //  - 직접수정(승인): 요청 값을 form 의 해당 workSeq 구간에 채워 넣음 (UI 적용)
-//    실제 승인 처리는 form 저장 시점에 함께 처리 (추후 API 연동 예정)
-//  - 승인 / 반려: 별도 API — 현재는 스텁 (메시지 코드 REQ_ACTION_PREPARING)
+//    실제 승인 처리는 form 저장 시점에 함께 처리
+//  - 승인: POST /attd07/update-user-attd-requests
+//  - 반려: POST /attd07/reject-user-attd-requests (반려 사유 입력 모달 경유)
 // 요청 카드의 출퇴근 값을 form 의 해당 workSeq 구간에 채워 넣는다.
 // 반환: 채워 넣은 segment 객체 (실패 시 null)
 const fillSegmentFromReq = (card) => {
@@ -1338,19 +2252,20 @@ const fillSegmentFromReq = (card) => {
     form.value.segments.length < MAX_SEGMENTS
   ) {
     form.value.segments.push({
-      inDate: props.date_p,
-      in: "",
-      outDate: props.date_p,
-      out: "",
+      startDate: props.date_p,
+      startTime: "",
+      endDate: props.date_p,
+      endTime: "",
+      otList: [],
     });
   }
   const seg = form.value.segments[i];
   if (!seg) return null;
   const req = card.raw ?? {};
-  seg.inDate = ymdNumToDash(req.checkInDate) || props.date_p;
-  seg.in = req.checkInTime || "";
-  seg.outDate = ymdNumToDash(req.checkOutDate) || props.date_p;
-  seg.out = req.checkOutTime || "";
+  seg.startDate = ymdNumToDash(req.startDate) || props.date_p;
+  seg.startTime = req.startTime || "";
+  seg.endDate = ymdNumToDash(req.endDate) || props.date_p;
+  seg.endTime = req.endTime || "";
   return seg;
 };
 
@@ -1360,31 +2275,122 @@ const fnDirectEditReq = (card) => {
   proxy.$alert(getMessage(MSG.REQ_DIRECT_EDIT_FILLED));
 };
 
-// 승인: confirm → 해당 구간을 요청 값으로 갱신 → 사유 자동 입력 → 저장
+// 승인: confirm → 단일 API 호출로 TB_USER_ATTD_MGMT 갱신 + TB_USER_ATTD_REQ 상태 변경 + HIST 기록
 const fnApproveReq = async (card) => {
   const ok = await proxy.$confirm(getMessage(MSG.REQ_APPROVE_CONFIRM));
   if (!ok) return;
 
-  // 수정 가능한 일자(segments 패널)에서만 진행
-  if (cfg.value.panel.kind !== "segments") {
-    await proxy.$alert(getMessage(MSG.REQ_APPROVE_NOT_EDITABLE));
-    return;
-  }
+  const raw = card?.raw ?? {};
+  const r = record.value ?? {};
+  const n = parseInt(raw.workSeq, 10) || card?.workSeq || 1;
 
-  // 1) 해당 workSeq 구간을 요청 값으로 채움
-  fillSegmentFromReq(card);
-  // 2) 사유 자동 입력
-  form.value.reason = getMessage(MSG.REQ_APPROVED_REASON);
-  // 3) 저장 실행 (fnSave 내부에서 유효성/변경여부 검사 + SAVE_CONFIRM)
-  await fnSave();
+  const payload = {
+    reqId: raw.reqId,
+    attdId: r[`attd${n}Id`] || props.attdId_p || "",
+    siteCd: raw.siteCd || props.siteCd_p,
+    userCd: raw.userCd || props.userCd_p,
+    workYmd: raw.workYmd || ymdDashToNum(props.date_p),
+    workSeq: String(n),
+    nodeCd: raw.nodeCd || props.nodeCd_p,
+
+    // PRAFTA-003 QA-008: TB_USER_ATTD_REQ가 START_*/END_* 구조로 마이그됐기 때문에
+    // raw(req 객체)에는 더 이상 checkInDate/Time 등이 존재하지 않는다. 응답 객체의
+    // 신규 키(startDate/startTime/endDate/endTime)에서 값을 가져오되 백엔드 request
+    // DTO(UpdateUserAttdRequestRequest) 키는 그대로 유지하여 변환 매핑한다.
+    checkInDate: raw.startDate || "",
+    checkInTime: raw.startTime || "",
+    checkInMethod: r[`act${n}InMethod`] || "02",
+    checkOutDate: raw.endDate || "",
+    checkOutTime: raw.endTime || "",
+    checkOutMethod: r[`act${n}OutMethod`] || "02",
+
+    oriCheckInDate: r[`oriAct${n}InDate`] || "",
+    oriCheckInTime: r[`oriAct${n}InTime`] || "",
+    oriCheckOutDate: r[`oriAct${n}OutDate`] || "",
+    oriCheckOutTime: r[`oriAct${n}OutTime`] || "",
+
+    processComment: getMessage(MSG.REQ_APPROVED_REASON),
+  };
+
+  try {
+    const response = await axios.post(
+      "/webApi/attd07/update-user-attd-requests",
+      payload
+    );
+    if (response.status === 200) {
+      await proxy.$alert(getMessage(MSG.SAVE_COMPLETED));
+      // 저장 후 팝업을 닫지 않고 상세 조회 API를 다시 호출해 데이터를 reload 한다.
+      await fnSearch();
+    }
+  } catch (err) {
+    console.error("[AttdDayDetailPop] approve request failed", err);
+    // prafta-008: 백엔드 ApiException 메시지를 그대로 노출(공통 유틸 경유).
+    await proxy.$alert(resolveApiErrorMessage(err, getMessage(MSG.SAVE_ERROR)));
+  }
 };
 
-const fnRejectReq = async (card) => {
-  const ok = await proxy.$confirm(getMessage(MSG.REQ_REJECT_CONFIRM));
-  if (!ok) return;
-  // TODO: 반려 API 연동 — reqId, userCd, siteCd 전달
-  console.log("[reject] reqId=", card?.reqId);
-  await proxy.$alert(getMessage(MSG.REQ_ACTION_PREPARING));
+// 근로자 요청 반려 — 반려 사유 입력 모달을 띄운다.
+//   [QA 재작업 D4] OT 요청(reqType==='OT_REGISTER')은 근태 반려 endpoint
+//   (reject-user-attd-requests)의 SEC-018 REQ_TYPE 가드에 막히므로, OT 요청은
+//   kind='overtime' 으로 분기해 onRejectConfirm 에서 reject-user-overtime-requests 로
+//   라우팅한다(요청 body 는 OT 반려 DTO 형식 { reqId, siteCd, userCd, rejectReason }).
+//   그 외 근태 수정/생성 요청은 기존 kind='attd' 경로를 그대로 사용한다.
+const fnRejectReq = (card) => {
+  const raw = card?.raw ?? {};
+  const n = parseInt(raw.workSeq, 10) || card?.workSeq || 1;
+  const isOtReq = card?.reqType === "OT_REGISTER";
+  rejectModal.value = {
+    open: true,
+    kind: isOtReq ? "overtime" : "attd",
+    busy: false,
+    context: {
+      reqId: raw.reqId,
+      siteCd: raw.siteCd || props.siteCd_p,
+      userCd: raw.userCd || props.userCd_p,
+      workYmd: raw.workYmd || ymdDashToNum(props.date_p),
+      workSeq: String(n),
+      nodeCd: raw.nodeCd || props.nodeCd_p,
+    },
+  };
+};
+
+// 반려 사유 입력 모달 "확인" 핸들러 — 입력된 사유로 반려 API 호출.
+//   기존 승인(fnApproveReq/fnApproveOvertime)의 호출/에러처리 패턴을 따른다.
+const onRejectConfirm = async (reason) => {
+  if (rejectModal.value.busy) return;
+  const { kind, context } = rejectModal.value;
+  if (!kind || !context) return;
+
+  rejectModal.value.busy = true;
+  try {
+    if (kind === "attd") {
+      await axios.post("/webApi/attd07/reject-user-attd-requests", {
+        reqId: context.reqId,
+        siteCd: context.siteCd,
+        userCd: context.userCd,
+        workYmd: context.workYmd,
+        workSeq: context.workSeq,
+        nodeCd: context.nodeCd,
+        rejectReason: reason,
+      });
+    } else {
+      await axios.post("/webApi/attd07/reject-user-overtime-requests", {
+        reqId: context.reqId,
+        siteCd: context.siteCd,
+        userCd: context.userCd,
+        rejectReason: reason,
+      });
+    }
+    rejectModal.value = { open: false, kind: null, context: null, busy: false };
+    await proxy.$alert(getMessage(MSG.SAVE_COMPLETED));
+    // 반려 후 팝업을 닫지 않고 상세 조회 API를 다시 호출해 데이터를 reload 한다.
+    await fnSearch();
+  } catch (err) {
+    console.error("[AttdDayDetailPop] reject request failed", err);
+    rejectModal.value.busy = false;
+    // 백엔드 ApiException 메시지를 그대로 노출(공통 유틸 경유).
+    await proxy.$alert(resolveApiErrorMessage(err, getMessage(MSG.SAVE_ERROR)));
+  }
 };
 
 // ── 삭제 ──────────────────────────────────────────────────
@@ -1422,7 +2428,7 @@ const openDeletePopup = (type, segIdx) => {
       segIdx: null,
       reason: "",
     };
-  }
+  }2
 };
 
 const closeDeletePopup = () => {
@@ -1446,13 +2452,10 @@ const fnDelete = async () => {
     }
     closeDeletePopup();
     await proxy.$alert(getMessage(MSG.DELETE_SUCCESS));
-    emit("saved");
-    emit("close");
+    // 삭제 후 팝업을 닫지 않고 상세 조회 API를 다시 호출해 데이터를 reload 한다.
+    await fnSearch();
   } catch (err) {
-    const msg =
-      err?.response?.data?.message ||
-      err?.message ||
-      getMessage(MSG.DELETE_ERROR);
+    const msg = resolveApiErrorMessage(err, getMessage(MSG.DELETE_ERROR));
     await proxy.$alert(msg);
   }
 };
@@ -1513,6 +2516,10 @@ const fnSearch = async () => {
   };
   historyList.value = [];
   reqList.value = [];
+  // PRAFTA-003-7: OT 리스트도 응답 전엔 비워두고, 응답 후 덮어쓴다.
+  dailyOvertimeList.value = [];
+  // PRAFTA-009 part2: reload 시 외근 GPS 패널을 닫는다(ATTD_ID 가 갱신될 수 있음).
+  gpsPanel.value = { segIdx: null, attdId: "", trail: [], loading: false };
 
   try {
     const response = await axios.get("/webApi/attd07/daily-attd-details", {
@@ -1525,6 +2532,8 @@ const fnSearch = async () => {
       },
     });
     if (response.status === 200) {
+      console.log(response.data);
+
       const d = response.data?.dailyAttdDetailsResult ?? {};
       // 응답에 의미 있는 데이터가 있을 때만 덮어씀
       if (d && Object.keys(d).length) {
@@ -1546,17 +2555,14 @@ const fnSearch = async () => {
         };
       }
       historyList.value = response.data?.dailyAttdDetailHistoryResultList ?? [];
-      reqList.value =
-        response.data?.monthlyAttdReqResultList ??
-        response.data?.MonthlyAttdReqResultList ??
-        [];
+      // PRAFTA-003-7: 백엔드 응답 키를 lowerCamel(`monthlyAttdReqResultList`)로 정규화 완료.
+      reqList.value = response.data?.monthlyAttdReqResultList ?? [];
+      // PRAFTA-003-7: OT 응답 키도 lowerCamel(`dailyOvertimeResultList`)로 정규화 완료.
+      dailyOvertimeList.value = response.data?.dailyOvertimeResultList ?? [];
     }
   } catch (err) {
     // 조회 실패해도 fallback 값으로 화면은 정상 렌더되도록 알림만 띄움
-    const msg =
-      err?.response?.data?.message ||
-      err?.message ||
-      getMessage(MSG.SEARCH_ERROR);
+    const msg = resolveApiErrorMessage(err, getMessage(MSG.SEARCH_ERROR));
     await proxy.$alert(msg);
   } finally {
     initForm();
@@ -1586,6 +2592,9 @@ onMounted(() => {
   border-radius: 14px;
   width: 1320px;
   max-width: 100%;
+  /* 우측 패널(1·2구간 모두 활성) + 처리이력 3행을 담는 고정 높이.
+     좌측 근로자 요청 카드 수와 무관하게 팝업 크기 고정. */
+  height: 880px;
   max-height: calc(100vh - 48px);
   overflow: hidden;
   display: flex;
@@ -1669,22 +2678,35 @@ onMounted(() => {
 }
 
 /* ── 바디 (2-pane) ───────────────────────────────────────── */
-/* 좌측 pane은 기존 480px 폭을 유지, 추가 공간은 모두 우측(관리자 직접 수정/처리 이력)에 배분 */
+/* 좌 480px 고정 + 우 나머지.
+   flex/grid stretch 만으로는 자식 콘텐츠가 부모 height 를 초과할 때 자식 height 가
+   부모 안에 가둬지지 않는 환경이 있어(콘텐츠 따라 늘어남 → 자식 overflow-y 가 동작
+   하지 않고 상위 overflow:hidden 으로 잘려나감), 자식을 position:absolute 로 부모
+   안에 강제 inset 시켜 height 를 부모와 동일하게 고정한다. body 는 relative + flex
+   grow 로 modal 안의 남은 height 를 정확히 점유한다. */
 .a07pop-body {
-  flex: 1;
-  display: grid;
-  grid-template-columns: 480px minmax(0, 1fr);
+  flex: 1 1 0;
+  min-height: 0;
+  position: relative;
   overflow: hidden;
 }
 .a07pop-pane {
+  position: absolute;
+  top: 0;
+  bottom: 0;
   overflow-y: auto;
-  padding: 18px 22px 24px;
+  box-sizing: border-box;
+  padding: 18px 22px 0px;
 }
 .a07pop-pane.left {
+  left: 0;
+  width: 480px;
   border-right: 1px solid #e5e7eb;
   background: #f9fafb;
 }
 .a07pop-pane.right {
+  left: 480px;
+  right: 0;
   background: #fff;
 }
 .a07pop-pane::-webkit-scrollbar {
@@ -1850,6 +2872,36 @@ onMounted(() => {
   padding: 2px 6px;
   border-radius: 4px;
   text-align: center;
+}
+/* 실제 출퇴근 줄 — 시간 범위 + 외근 버튼을 한 줄에 배치 (PRAFTA-009 part2) */
+.seg-line-body {
+  display: inline-flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+/* 외근 버튼 — 1구간/2구간 태그(seg-tag)와 동일 룩. 클릭 가능하도록 보강. */
+.seg-tag-outside {
+  cursor: pointer;
+  color: #b91c1c;
+  background: #fee2e2;
+  border-color: #fecaca;
+  transition:
+    background 0.15s,
+    color 0.15s;
+}
+.seg-tag-outside:hover {
+  background: #fecaca;
+}
+.seg-tag-outside.is-active {
+  color: #fff;
+  background: #b91c1c;
+  border-color: #b91c1c;
+}
+/* 외근 GPS 동선 패널 행 — 시간 카드 내부 별도 행 */
+.gps-panel-row {
+  padding: 12px 16px;
+  border-bottom: 1px solid #e5e7eb;
 }
 .nextday-mark {
   color: #6b7280;
@@ -2541,20 +3593,47 @@ onMounted(() => {
 .panel-card.is-open .chev {
   transform: rotate(180deg);
 }
-.btn-del-all {
+.btn-del-all,
+.btn-clear-all {
   background: #fff;
   border: 1px solid #fecaca;
   color: #dc2626;
-  font-size: 12px;
+  font-size: 12.5px;
   font-weight: 700;
-  padding: 4px 10px;
+  height: 30px;
+  padding: 0 12px;
   border-radius: 6px;
   cursor: pointer;
   transition: all 0.15s;
+  font-family: inherit;
 }
-.btn-del-all:hover {
+.btn-del-all:hover,
+.btn-clear-all:hover {
   background: #fef2f2;
   border-color: #f87171;
+}
+/* 초기화 — 파괴적 동작이 아니므로 중립(회색) 톤 */
+.btn-reset-all {
+  background: #fff;
+  border: 1px solid #d1d5db;
+  color: #4b5563;
+  font-size: 12.5px;
+  font-weight: 700;
+  height: 30px;
+  padding: 0 12px;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: all 0.15s;
+  font-family: inherit;
+}
+.btn-reset-all:hover {
+  background: #f9fafb;
+  border-color: #9ca3af;
+}
+.panel-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
 }
 .lock-pill {
   display: inline-flex;
@@ -2575,6 +3654,15 @@ onMounted(() => {
 }
 .panel-card.is-open .panel-body {
   display: block;
+}
+/* 구간/초과근무가 많아질 때 이 영역만 자체 스크롤. 사유/저장 영역은 panel-body
+   안의 별도 블록이라 스크롤 위치와 관계없이 항상 노출된다. */
+.seg-list-scroll {
+  max-height: calc(100vh - 460px);
+  min-height: 200px;
+  overflow-y: auto;
+  padding-right: 4px;
+  margin-right: -4px;
 }
 .panel-card .panel-readonly-body {
   display: none;
@@ -2666,7 +3754,6 @@ textarea.input {
 .save-btn {
   width: 100%;
   height: 44px;
-  margin-top: 8px;
   border: none;
   border-radius: 8px;
   background: #dcfce7;
@@ -2687,60 +3774,241 @@ textarea.input {
   background: #15803d;
 }
 
-/* 구간 입력 (A-9) */
+/* ── 구간 입력 (박스형) ─────────────────────────────────── */
 .seg-section {
-  margin-bottom: 16px;
-  padding-bottom: 12px;
-  border-bottom: 1px solid #e5e7eb;
+  margin-bottom: 18px;
+  padding: 14px 16px 16px;
+  background: #f9fafb;
+  border: 1px solid #e5e7eb;
+  border-radius: 10px;
 }
 .seg-section:last-of-type {
-  border-bottom: none;
-  padding-bottom: 0;
+  margin-bottom: 18px;
 }
 .seg-section-head {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  margin-bottom: 10px;
+  margin-bottom: 12px;
 }
-.seg-section-head .seg-label {
-  font-size: 12px;
+.seg-title-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.seg-tag-lg {
+  font-size: 11px;
   font-weight: 800;
-  color: #374151;
-  letter-spacing: 0.04em;
+  color: #15803d;
+  background: #dcfce7;
+  padding: 3px 8px;
+  border-radius: 4px;
+  letter-spacing: 0.02em;
+}
+.seg-summary {
+  font-size: 12.5px;
+  color: #6b7280;
+  font-weight: 600;
+}
+:deep(.seg-summary strong) {
+  color: #111827;
+  font-weight: 800;
+  margin-left: 2px;
+}
+:deep(.seg-summary .dot) {
+  color: #d1d5db;
+  margin: 0 4px;
 }
 .seg-section-head-actions {
   display: flex;
   align-items: center;
   gap: 10px;
 }
-.seg-section-head .seg-action {
-  background: none;
-  border: none;
-  color: #6b7280;
-  font-size: 12px;
-  font-weight: 600;
+/* 구간 삭제 — 휴지통 아이콘 버튼 (초과근무 ot-delete와 동일한 룩) */
+.seg-delete {
+  width: 28px;
+  height: 28px;
+  border-radius: 4px;
+  border: 1px solid transparent;
+  background: transparent;
+  color: #9ca3af;
   cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
   padding: 0;
 }
-.seg-section-head .seg-action:hover {
-  color: #111827;
+.seg-delete:hover {
+  color: #ef4444;
+  background: #fef2f2;
 }
-.seg-section-head .seg-del-btn {
+
+/* 정규근무 한 줄 (출근/퇴근) */
+.reg-row {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 12px 14px;
   background: #fff;
-  border: 1px solid #fecaca;
-  color: #dc2626;
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  flex-wrap: wrap;
+}
+.time-input-group {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+.time-input-group .lab {
+  font-size: 13px;
+  font-weight: 600;
+  color: #374151;
+  margin-left: 30px;
+  margin-right: 10px;
+}
+.reg-row .seg-date {
+  flex: 0 0 130px;
+  min-width: 0;
+}
+.reg-row :deep(.calendar-input) {
+  width: 100%;
+  height: 36px;
+  padding: 0 10px;
+  border: 1px solid #d1d5db;
+  border-radius: 6px;
+  font-size: 13px;
+  color: #111827;
+  background: #fff;
+}
+.reg-row :deep(.calendar-input:focus) {
+  outline: none;
+  border-color: #16a34a;
+  box-shadow: 0 0 0 3px #dcfce7;
+}
+.reg-row .seg-time {
+  width: 90px;
+  height: 36px;
+  flex-shrink: 0;
+  text-align: center;
+  letter-spacing: 0.06em;
+  font-size: 13px;
+}
+
+.overday-hint {
+  margin-top: 8px;
+  padding: 6px 10px;
+  border-radius: 6px;
+  background: #fff7ed;
+  border: 1px solid #fed7aa;
+  color: #9a3412;
+  font-size: 11.5px;
+  font-weight: 500;
+}
+
+/* ── 초과근무 블록 ──────────────────────────────────────── */
+.ot-block {
+  margin-top: 12px;
+}
+.ot-block-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin: 0 2px 8px;
+}
+.ot-block-title {
   font-size: 12px;
+  font-weight: 800;
+  color: #374151;
+  letter-spacing: 0.02em;
+}
+.ot-list {
+  list-style: none;
+  margin: 0 0 8px;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+/* 초과근무 행 — 정규근무 reg-row 와 동일한 입력 컴포넌트/텍스트 크기 적용. */
+.ot-row {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  background: #fff;
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  padding: 12px 14px;
+  flex-wrap: wrap;
+}
+.ot-row .ot-date {
+  flex: 0 0 130px;
+  min-width: 0;
+}
+.ot-row :deep(.calendar-input) {
+  width: 100%;
+  height: 36px;
+  padding: 0 10px;
+  border: 1px solid #d1d5db;
+  border-radius: 6px;
+  font-size: 13px;
+  color: #111827;
+  background: #fff;
+}
+.ot-row :deep(.calendar-input:focus) {
+  outline: none;
+  border-color: #16a34a;
+  box-shadow: 0 0 0 3px #dcfce7;
+}
+.ot-row .ot-time {
+  width: 90px;
+  height: 36px;
+  flex-shrink: 0;
+  text-align: center;
+  letter-spacing: 0.06em;
+  font-size: 13px;
+  padding: 0 10px;
+}
+.ot-row .ot-delete {
+  width: 28px;
+  height: 28px;
+  border-radius: 4px;
+  border: 1px solid transparent;
+  background: transparent;
+  color: #9ca3af;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  margin-left: auto;
+}
+.ot-row .ot-delete:hover {
+  color: #ef4444;
+  background: #fef2f2;
+}
+
+.add-ot-btn {
+  width: 100%;
+  height: 34px;
+  border: 1px dashed #d1d5db;
+  background: #fff;
+  color: #6b7280;
+  font-size: 12.5px;
   font-weight: 700;
-  padding: 3px 10px;
   border-radius: 6px;
   cursor: pointer;
+  font-family: inherit;
   transition: all 0.15s;
 }
-.seg-section-head .seg-del-btn:hover {
-  background: #fef2f2;
-  border-color: #f87171;
+.add-ot-btn:hover {
+  background: #f0fdf4;
+  border-color: #16a34a;
+  color: #15803d;
 }
+
 .seg-add-btn {
   width: 100%;
   padding: 9px 12px;
@@ -2759,66 +4027,7 @@ textarea.input {
   border-color: #16a34a;
   color: #15803d;
 }
-/* 한 행에 출근/퇴근 묶음을 가로로 배치 */
-.seg-inline-row {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  margin-bottom: 12px;
-  flex-wrap: wrap;
-}
-.seg-inline-label {
-  font-size: 14px;
-  font-weight: 700;
-  color: #374151;
-  white-space: nowrap;
-  min-width: 36px;
-  text-align: center;
-}
-/* 출근 그룹과 퇴근 그룹 사이 여백 확대 */
-.seg-inline-row .datetime-wrap + .seg-inline-label {
-  margin-left: 28px;
-}
-.datetime-wrap {
-  display: flex;
-  gap: 8px;
-  align-items: center;
-}
-.datetime-wrap .seg-date {
-  flex: 0 0 150px;
-  min-width: 0;
-}
-.datetime-wrap :deep(.calendar-input) {
-  width: 100%;
-  height: 38px;
-  padding: 0 10px;
-  border: 1px solid #d1d5db;
-  border-radius: 6px;
-  font-size: 13px;
-  color: #111827;
-  background: #fff;
-}
-.datetime-wrap :deep(.calendar-input:focus) {
-  outline: none;
-  border-color: #16a34a;
-  box-shadow: 0 0 0 3px #dcfce7;
-}
-.datetime-wrap .seg-time {
-  width: 150px;
-  flex-shrink: 0;
-  text-align: center;
-}
-.overday-hint {
-  margin-top: -4px;
-  margin-bottom: 8px;
-  padding: 6px 10px;
-  border-radius: 6px;
-  background: #fff7ed;
-  border: 1px solid #fed7aa;
-  color: #9a3412;
-  font-size: 11.5px;
-  font-weight: 500;
-}
+
 .reason-section {
   padding-top: 12px;
   border-top: 1px solid #e5e7eb;
@@ -2859,46 +4068,37 @@ textarea.input {
 }
 
 /* ── 처리 이력 ────────────────────────────────────────────── */
-.history-card {
-  background: #fff;
-  border: 1px solid #e5e7eb;
-  border-radius: 10px;
-  overflow: hidden;
-}
-.history-head {
+/* 우측 pane 안의 토글 버튼 — 클릭 시 별도 팝업으로 처리 이력 표시 */
+.history-toggle-btn {
   display: flex;
   align-items: center;
   justify-content: space-between;
+  width: 100%;
   padding: 14px 16px;
+  margin-top: 5px;
+  margin-bottom: 20px;
+  background: #fff;
+  border: 1px solid #e5e7eb;
+  border-radius: 10px;
   cursor: pointer;
-  user-select: none;
+  font-family: inherit;
+  color: #111827;
+  transition: background 0.15s;
 }
-.history-head:hover {
+.history-toggle-btn:hover {
   background: #f9fafb;
 }
-.history-head h3 {
-  margin: 0;
+.history-toggle-label {
   font-size: 14px;
   font-weight: 800;
 }
-.history-head .count {
+.history-toggle-label .count {
   color: #6b7280;
   font-weight: 600;
   margin-left: 4px;
 }
-.history-head .chev {
-  transition: transform 0.2s;
+.history-toggle-btn svg {
   color: #6b7280;
-}
-.history-card.is-open .chev {
-  transform: rotate(180deg);
-}
-.history-body {
-  padding: 0 16px 16px;
-  display: none;
-}
-.history-card.is-open .history-body {
-  display: block;
 }
 .hist-table-wrap {
   border: 1px solid #e5e7eb;
@@ -2983,7 +4183,8 @@ textarea.input {
 }
 
 /* ── 삭제 사유 입력 팝업 ────────────────────────────────── */
-.del-pop-backdrop {
+.del-pop-backdrop,
+.hist-pop-backdrop {
   position: fixed;
   inset: 0;
   background: rgba(17, 24, 39, 0.55);
@@ -2993,6 +4194,46 @@ textarea.input {
   /* 프레임워크 nested overlay와 동일 레이어 (flatpickr/month-day-picker와 동급) */
   z-index: 10001;
   font-family: "Pretendard", "Apple SD Gothic Neo", "맑은 고딕", sans-serif;
+}
+/* 사유 보기 팝업은 처리 이력 팝업(hist-pop-backdrop) 내부의 "보기" 버튼에서
+   열리므로, 처리 이력 팝업보다 한 단계 위 레이어에 떠야 한다. */
+.reason-pop-backdrop {
+  z-index: 10002;
+}
+.hist-pop {
+  background: #fff;
+  border-radius: 12px;
+  width: 1080px;
+  max-width: calc(100% - 32px);
+  max-height: calc(100vh - 64px);
+  box-shadow: 0 20px 50px rgba(0, 0, 0, 0.25);
+  display: flex;
+  flex-direction: column;
+}
+.hist-pop-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 16px 18px;
+  border-bottom: 1px solid #e5e7eb;
+}
+.hist-pop-head h3 {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 800;
+  color: #111827;
+}
+.hist-pop-head .count {
+  color: #6b7280;
+  font-weight: 600;
+  margin-left: 4px;
+  font-size: 13px;
+}
+.hist-pop-body {
+  padding: 18px;
+  overflow-y: auto;
+  flex: 1 1 auto;
+  min-height: 0;
 }
 .del-pop {
   background: #fff;
@@ -3118,5 +4359,107 @@ textarea.input {
 .fade-enter-from,
 .fade-leave-to {
   opacity: 0;
+}
+
+/* PRAFTA-003 F1 — 초과근무 허용 범위 안내 */
+.ot-block-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--header-gap);
+}
+
+.ot-allowed-hint {
+  display: flex;
+  align-items: center;
+  gap: var(--header-right-gap);
+  color: var(--color-text-muted);
+  font-size: var(--btn-font-sm);
+}
+
+.ot-allowed-hint.is-empty {
+  color: var(--color-text-muted);
+  font-style: italic;
+}
+
+.ot-allowed-lbl {
+  color: var(--color-text);
+  font-weight: 600;
+}
+
+.ot-allowed-list {
+  display: flex;
+  align-items: center;
+  gap: var(--header-right-gap);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.ot-allowed-item {
+  padding: 0 var(--header-right-gap);
+  border: var(--card-border);
+  border-radius: var(--btn-radius);
+  background: var(--color-bg);
+  color: var(--color-text);
+  line-height: var(--btn-height-sm);
+  font-size: var(--btn-font-sm);
+}
+
+/* PRAFTA-003 F1 — 초과근무 저장/반려 액션 영역 */
+.ot-actions {
+  display: flex;
+  gap: var(--header-right-gap);
+  justify-content: flex-end;
+  margin-top: var(--header-right-gap);
+}
+
+.ot-save-btn,
+.ot-reject-btn {
+  height: var(--btn-height);
+  padding: 0 var(--btn-padding);
+  border-radius: var(--btn-radius);
+  border: var(--card-border);
+  font-size: var(--btn-font);
+  cursor: pointer;
+}
+
+.ot-save-btn {
+  background: var(--color-primary);
+  color: var(--color-surface);
+  border-color: var(--color-primary);
+}
+
+.ot-save-btn:hover:not(:disabled) {
+  background: var(--color-primary-hover);
+  border-color: var(--color-primary-hover);
+}
+
+.ot-save-btn:active:not(:disabled) {
+  background: var(--color-primary-pressed);
+  border-color: var(--color-primary-pressed);
+}
+
+.ot-save-btn:disabled {
+  background: var(--color-border-strong);
+  border-color: var(--color-border-strong);
+  color: var(--color-text-muted);
+  cursor: not-allowed;
+}
+
+.ot-reject-btn {
+  background: var(--color-surface);
+  color: var(--color-danger);
+  border-color: var(--color-danger);
+}
+
+.ot-reject-btn:hover:not(:disabled) {
+  background: var(--color-bg);
+}
+
+.ot-reject-btn:disabled {
+  color: var(--color-text-muted);
+  border-color: var(--color-border-strong);
+  cursor: not-allowed;
 }
 </style>

@@ -6,11 +6,11 @@ import com.prafta.common.error.ApiErrorCode;
 
 public enum LoginErrorCode implements ApiErrorCode {
 
-    // ±ÔÄ¢ ¿¹½Ã: {MODULE}_{HTTP}_{SEQ}
-    LOGIN_400_001(HttpStatus.BAD_REQUEST, "¾ÆÀÌµğ È¤Àº ºñ¹Ğ¹øÈ£¸¦ È®ÀÎÇØÁÖ¼¼¿ä.")
-    , LOGIN_400_002(HttpStatus.BAD_REQUEST, "»ç¿ëÀÚ Á¤º¸°¡ Á¸ÀçÇÏÁö ¾Ê½À´Ï´Ù.")
-    , LOGIN_400_003(HttpStatus.BAD_REQUEST, "ºñ¹Ğ¹øÈ£ ÀÎÁõ ½ÇÆĞ·Î °èÁ¤ÀÌ Àá°ÜÁø »óÅÂÀÔ´Ï´Ù.")
-    , LOGIN_500_001(HttpStatus.BAD_REQUEST, "¾à°üµ¿ÀÇ¿¡ ½ÇÆĞÇß½À´Ï´Ù.\n°ü¸®ÀÚ¿¡°Ô ¹®ÀÇÇØÁÖ¼¼¿ä.")
+    // ê·œì¹™ ì˜ˆì‹œ: {MODULE}_{HTTP}_{SEQ}
+    LOGIN_400_001(HttpStatus.BAD_REQUEST, "ì•„ì´ë”” í˜¹ì€ ë¹„ë°€ë²ˆí˜¸ë¥¼ í™•ì¸í•´ì£¼ì„¸ìš”.")
+    , LOGIN_400_002(HttpStatus.BAD_REQUEST, "ì‚¬ìš©ì ì •ë³´ê°€ ì¡´ì¬í•˜ì§€ ì•ŠìŠµë‹ˆë‹¤.")
+    , LOGIN_400_003(HttpStatus.BAD_REQUEST, "ë¹„ë°€ë²ˆí˜¸ ì¸ì¦ ì‹¤íŒ¨ë¡œ ê³„ì •ì´ ì ê²¨ì§„ ìƒíƒœì…ë‹ˆë‹¤.")
+    , LOGIN_500_001(HttpStatus.BAD_REQUEST, "ì•½ê´€ë™ì˜ì— ì‹¤íŒ¨í–ˆìŠµë‹ˆë‹¤.\nê´€ë¦¬ìì—ê²Œ ë¬¸ì˜í•´ì£¼ì„¸ìš”.")
     ;
 
     private final HttpStatus httpStatus;
@@ -23,7 +23,7 @@ public enum LoginErrorCode implements ApiErrorCode {
 
     @Override
     public String code() {
-        return name(); // enum ÀÌ¸§À» ±×´ë·Î ÄÚµå·Î ¾²¸é °ü¸® ½¬¿ò
+        return name(); // enum ì´ë¦„ì„ ê·¸ëŒ€ë¡œ ì½”ë“œë¡œ ì“°ë©´ ê´€ë¦¬ ì‰¬ì›€
     }
 
     @Override

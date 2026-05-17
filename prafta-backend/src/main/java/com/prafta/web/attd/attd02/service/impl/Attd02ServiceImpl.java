@@ -50,10 +50,10 @@ public class Attd02ServiceImpl implements Attd02Service{
 		} else {
 			if(param.repeatYearly()) {
 				holidayId = attd02Mapper.selectHolidayRuleId(param.gvCmpnyCd());
-				holidayType = "03";			/* ¹Ýº¹ */
+				holidayType = "03";			/* ë°˜ë³µ */
 			} else {
 				holidayId = attd02Mapper.selectHolidayId(param.gvCmpnyCd());
-				holidayType = "02";			/* ¹Ýº¹ */
+				holidayType = "02";			/* ë°˜ë³µ */
 			}
 		}
 		

@@ -13,11 +13,11 @@ public record ChkptInspectItemParam(
 ) {
 	public static ChkptInspectItemParam from(List<ChkptInspectItemRequest> requests, TokenInfo tokenInfo) {
 
-        // 1) ¸®½ºÆ® ÀÚÃ¼ °ËÁõ
+        // 1) ë¦¬ìŠ¤íŠ¸ ìì²´ ê²€ì¦
         if (requests == null)
-        	throw ApiException.appendf(CommonErrorCode.COMMON_400_001,"\nÇÊ¼ö°ª ´©¶ô - ChkptInspectItemRequest");
+        	throw new ApiException(CommonErrorCode.COMMON_400_001);
 
-        // 2) null element ¹æÁö + 3) ÇÊ¼ö°ª °ËÁõ + 4) ¸ÅÇÎ
+        // 2) null element ë°©ì§€ + 3) í•„ìˆ˜ê°’ ê²€ì¦ + 4) ë§¤í•‘
         List<ChkptInspectItemModel> models = requests.stream()
             .map(req -> {
                 return new ChkptInspectItemModel(

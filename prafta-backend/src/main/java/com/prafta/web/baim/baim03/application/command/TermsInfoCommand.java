@@ -18,9 +18,9 @@ public record TermsInfoCommand(
 	public static TermsInfoCommand from(TermsInfoParam param, String versionNo) {
 
         if (param == null)
-        	throw ApiException.appendf(CommonErrorCode.COMMON_400_001,"\n필수값 누락 - TermsInfoParam");
+        	throw new ApiException(CommonErrorCode.COMMON_400_001);
         if (versionNo == null)
-        	throw ApiException.appendf(CommonErrorCode.COMMON_400_001,"\n필수값 누락 - versionNo");
+        	throw new ApiException(CommonErrorCode.COMMON_400_001);
         
         return new TermsInfoCommand(
     		param.termsId()

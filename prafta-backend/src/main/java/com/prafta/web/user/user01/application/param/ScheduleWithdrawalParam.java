@@ -14,7 +14,7 @@ public record ScheduleWithdrawalParam(
 ) {
     public static ScheduleWithdrawalParam from(ScheduleWithdrawalRequest request, TokenInfo tokenInfo) {
         if (request == null)
-            throw ApiException.appendf(CommonErrorCode.COMMON_400_001, "\nrequired param - ScheduleWithdrawalRequest");
+            throw new ApiException(CommonErrorCode.COMMON_400_001);
 
         // Convert YYYY-MM-DD -> YYYYMMDD
         String date = request.getWithdrawalDate();

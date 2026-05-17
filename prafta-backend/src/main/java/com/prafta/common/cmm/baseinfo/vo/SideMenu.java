@@ -6,8 +6,8 @@ import lombok.Value;
 @Value
 @Builder
 public class SideMenu {
-    private String id;     // È­¸é °íÀ¯ ID(¼ıÀÚ/¹®ÀÚ »ó°ü X)
-    private String label;  // ex) "»ç¿ëÀÚ°ü¸®", "»ç¾÷Àå°ü¸®"
+    private String id;     // í™”ë©´ ê³ ìœ  ID(ìˆ«ì/ë¬¸ì ìƒê´€ X)
+    private String label;  // ex) "ì‚¬ìš©ìê´€ë¦¬", "ì‚¬ì—…ì¥ê´€ë¦¬"
     private String route;  // ex) "User_01", "Baim_01"
     private Buttons buttons;
 }

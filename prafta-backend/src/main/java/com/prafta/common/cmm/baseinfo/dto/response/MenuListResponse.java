@@ -12,8 +12,8 @@ import lombok.Getter;
 @Getter
 @Builder
 public class MenuListResponse {
-	// Ã¹¹øÂ° º¯¼ö
+	// ì²«ë²ˆì§¸ ë³€ìˆ˜
     List<TopMenu> topMenus;
-    // µÎ¹øÂ° º¯¼ö
+    // ë‘ë²ˆì§¸ ë³€ìˆ˜
     Map<String, List<SideMenu>> sideMenus; // key = KEY_ID("user","baim"...)
 }

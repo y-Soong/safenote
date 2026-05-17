@@ -5,13 +5,13 @@ import com.prafta.common.exception.ApiException;
 
 public record FileInfoQuery(
     String cmpnyCd
-    , String fileType   	// 001: ¿œ¿œ¡°∞À, 002: ¿ß«Ëº∫∆Ú∞°
+    , String fileType   	// 001: ÏùºÏùºÏ†êÍ≤Ä, 002: ÏúÑÌóòÏÑ±ÌèâÍ∞Ä
 ) {
 	public static FileInfoQuery from(String cmpnyCd, String fileType) {
 		if (cmpnyCd == null)
-        	throw ApiException.appendf(CommonErrorCode.COMMON_400_001,"\n« ºˆ∞™ ¥©∂Ù - cmpnyCd");
+        	throw new ApiException(CommonErrorCode.COMMON_400_001);
 		if (fileType == null)
-        	throw ApiException.appendf(CommonErrorCode.COMMON_400_001,"\n« ºˆ∞™ ¥©∂Ù - fileType");
+        	throw new ApiException(CommonErrorCode.COMMON_400_001);
 		
 		return new FileInfoQuery(
 			cmpnyCd

@@ -16,7 +16,7 @@ public record UpdateShiftTeamNmParam(
     public static UpdateShiftTeamNmParam from(UpdateShiftTeamNmRequest request, TokenInfo tokenInfo) {
 
         if (request == null)
-            throw ApiException.appendf(CommonErrorCode.COMMON_400_001, "\nRequired param missing - UpdateShiftTeamNmRequest");
+            throw new ApiException(CommonErrorCode.COMMON_400_001);
 
         return new UpdateShiftTeamNmParam(
             request.getSiteCd()

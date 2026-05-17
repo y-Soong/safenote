@@ -14,7 +14,6 @@ INDEX VERSION 1.134+C:\PRAFTA\.metadata\.plugins\org.eclipse.jdt.core
 1682917284.index
 2015446971.index
 4013837822.index
-3819870506.index
 3838762789.index
 965249006.index
 2982304049.index

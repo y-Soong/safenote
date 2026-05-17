@@ -73,13 +73,13 @@ public class Risk03ServiceImpl implements Risk03Service{
 			String fileMgmtCd = "";
     		if (file != null && !file.isEmpty()) {
     			
-    			fileMgmtCd = fileMapper.selectFileMgmtCd(FileInfoQuery.from(param.gvCmpnyCd(), "002"));			// 002 : À§Çè¼ºÆò°¡
+    			fileMgmtCd = fileMapper.selectFileMgmtCd(FileInfoQuery.from(param.gvCmpnyCd(), "002"));			// 002 : ìœ„í—˜ì„±í‰ê°€
     			
     			fileService.fileSave(FileInfoParam.from(
     					param.gvCmpnyCd()
     					, param.gvUserCd()
     					, param.siteCd()
-    					, "002"							// À§Çè¼º Æò°¡
+    					, "002"							// ìœ„í—˜ì„± í‰ê°€
     					, fileMgmtCd
     					, file
 				));

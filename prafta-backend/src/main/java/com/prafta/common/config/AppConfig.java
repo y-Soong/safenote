@@ -5,7 +5,7 @@ import org.springframework.context.annotation.Configuration;
 import org.springframework.context.annotation.EnableAspectJAutoProxy;
 
 @Configuration
-@EnableAspectJAutoProxy(proxyTargetClass = true) // true ½Ã CGLIB ±â¹İ ÇÁ·Ï½Ã, false ½Ã JDK µ¿Àû ÇÁ·Ï½Ã
+@EnableAspectJAutoProxy(proxyTargetClass = true) // true ì‹œ CGLIB ê¸°ë°˜ í”„ë¡ì‹œ, false ì‹œ JDK ë™ì  í”„ë¡ì‹œ
 public class AppConfig {
-    // AOP ¿Ü¿¡µµ °øÅëÀûÀÎ ¼³Á¤À» ¿©±â¿¡¼­ Ãß°¡ÇÒ ¼ö ÀÖÀ½
+    // AOP ì™¸ì—ë„ ê³µí†µì ì¸ ì„¤ì •ì„ ì—¬ê¸°ì—ì„œ ì¶”ê°€í•  ìˆ˜ ìˆìŒ
 }

@@ -11,7 +11,7 @@ public record UserIdDupleCheckParam (
 	public static UserIdDupleCheckParam from(UserIdDupleCheckRequest request) {
 		
 		if(request == null)
-			throw ApiException.appendf(CommonErrorCode.COMMON_400_001,"\n필수값 누락 - UserIdDupleCheckRequest");
+			throw new ApiException(CommonErrorCode.COMMON_400_001);
 		
 		return new UserIdDupleCheckParam (
 			request.getCmpnyCd()

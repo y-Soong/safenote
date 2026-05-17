@@ -208,6 +208,7 @@ import {
 import axios from "@/api/axios";
 import ViewHeader from "@/components/common/ViewHeader.vue";
 import { getMessage, MSG } from "@/messages";
+import { resolveApiErrorMessage } from "@/utils/apiError";
 import { useModal } from "@/utils/useModal";
 import search_icon from "@/assets/img/search_icon.png";
 import SiteSearchPop from "@/components/popup/SiteSearchPop.vue";
@@ -277,10 +278,7 @@ const fnGetSystinfoList = async () => {
       useYn.value = systCodeArr.value.SYS003?.[0]?.systValDCd;
     }
   } catch (err) {
-    const msg =
-      err?.response?.data?.message ||
-      err?.message ||
-      "조회 중 오류가 발생했습니다.";
+    const msg = resolveApiErrorMessage(err, "조회 중 오류가 발생했습니다.");
     await proxy.$alert(msg);
   }
 };
@@ -304,10 +302,7 @@ const fnSearch = async () => {
       shiftList.value = response.data.shiftSchInfoResultList;
     }
   } catch (err) {
-    const msg =
-      err?.response?.data?.message ||
-      err?.message ||
-      "조회 중 오류가 발생했습니다.";
+    const msg = resolveApiErrorMessage(err, "조회 중 오류가 발생했습니다.");
     await proxy.$alert(msg);
   }
 };
@@ -350,9 +345,7 @@ const fnSrchSiteInfo = async () => {
     if (response.status === 200) fnCallback(response);
   } catch (err) {
     proxy.$alert(
-      err?.response?.data?.message ||
-        err?.message ||
-        "사업장 조회 중 오류가 발생했습니다."
+      resolveApiErrorMessage(err, "사업장 조회 중 오류가 발생했습니다.")
     );
   }
 };

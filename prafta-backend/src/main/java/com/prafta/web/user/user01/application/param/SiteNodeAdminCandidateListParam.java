@@ -15,9 +15,9 @@ public record SiteNodeAdminCandidateListParam (
 	public static SiteNodeAdminCandidateListParam from(SiteNodeAdminCandidateListRequest request, TokenInfo tokenInfo) {
 
         if (request == null)
-        	throw ApiException.appendf(CommonErrorCode.COMMON_400_001,"\n« ºˆ∞™ ¥©∂Ù - SiteNodeAdminCandidateListRequest");
+        	throw new ApiException(CommonErrorCode.COMMON_400_001);
         
-        System.out.println("param ∆—≈‰∏µ siteCd :: " + request.getSiteCd());
+        System.out.println("param Ìå©ÌÜ†ÎßÅ siteCd :: " + request.getSiteCd());
 	
 	    return new SiteNodeAdminCandidateListParam(
 			request.getUserId()

@@ -17,13 +17,13 @@ public record ShiftAssignCommand(
 	public static ShiftAssignCommand from(ShiftAssignParam param, String shiftCd, String gvCmpnyCd, String gvUserCd) {
 		
         if (param == null)
-        	throw ApiException.appendf(CommonErrorCode.COMMON_400_001,"\n필수값 누락 - ShiftAssignParam");
+        	throw new ApiException(CommonErrorCode.COMMON_400_001);
         if (shiftCd == null)
-        	throw ApiException.appendf(CommonErrorCode.COMMON_400_001,"\n필수값 누락 - shiftCd");
+        	throw new ApiException(CommonErrorCode.COMMON_400_001);
         if (gvCmpnyCd == null)
-        	throw ApiException.appendf(CommonErrorCode.COMMON_400_001,"\n필수값 누락 - gvCmpnyCd");
+        	throw new ApiException(CommonErrorCode.COMMON_400_001);
         if (gvUserCd == null)
-        	throw ApiException.appendf(CommonErrorCode.COMMON_400_001,"\n필수값 누락 - gvUserCd");
+        	throw new ApiException(CommonErrorCode.COMMON_400_001);
 
         return new ShiftAssignCommand(
     		shiftCd

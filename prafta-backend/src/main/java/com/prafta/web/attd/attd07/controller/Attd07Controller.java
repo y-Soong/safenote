@@ -18,15 +18,24 @@ import com.prafta.common.security.JwtUtil;
 import com.prafta.web.attd.attd07.application.param.DailyAttdDetailDeleteParam;
 import com.prafta.web.attd.attd07.application.param.DailyAttdDetailsParam;
 import com.prafta.web.attd.attd07.application.param.MonthlyAttdListParam;
+import com.prafta.web.attd.attd07.application.param.RejectUserAttdRequestParam;
+import com.prafta.web.attd.attd07.application.param.RejectUserOvertimeRequestParam;
 import com.prafta.web.attd.attd07.application.param.UpdateUserAttdInfosParam;
+import com.prafta.web.attd.attd07.application.param.UpdateUserAttdRequestParam;
+import com.prafta.web.attd.attd07.application.param.UpdateUserOvertimeRequestParam;
 import com.prafta.web.attd.attd07.dto.request.DailyAttdDetailDeleteRequest;
 import com.prafta.web.attd.attd07.dto.request.DailyAttdDetailsRequest;
 import com.prafta.web.attd.attd07.dto.request.MonthlyAttdListRequest;
+import com.prafta.web.attd.attd07.dto.request.RejectUserAttdRequestRequest;
+import com.prafta.web.attd.attd07.dto.request.RejectUserOvertimeRequestRequest;
 import com.prafta.web.attd.attd07.dto.request.UpdateUserAttdInfosRequest;
+import com.prafta.web.attd.attd07.dto.request.UpdateUserAttdRequestRequest;
+import com.prafta.web.attd.attd07.dto.request.UpdateUserOvertimeRequestRequest;
 import com.prafta.web.attd.attd07.dto.response.AttdRecordListResponse;
 import com.prafta.web.attd.attd07.dto.response.DailyAttdDetailsResponse;
 import com.prafta.web.attd.attd07.service.Attd07Service;
 
+import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 
@@ -63,8 +72,8 @@ public class Attd07Controller {
 
     @GetMapping("/daily-attd-details")
     public ResponseEntity<?> getDailyAttdDetails(
-            @ModelAttribute DailyAttdDetailsRequest request,
-            @RequestHeader(value = "Authorization", required = false) String authorization) {
+            @ModelAttribute @Valid DailyAttdDetailsRequest request,
+            @RequestHeader(value = "Authorization", required = true) String authorization) {
 
         DailyAttdDetailsResponse response = attd07Service.getDailyAttdDetails(
                 DailyAttdDetailsParam.from(request, jwtUtil.getAllClaimsAsMap(authorization)));
@@ -79,6 +88,52 @@ public class Attd07Controller {
 
         attd07Service.dailyAttdDetailDelete(
                 DailyAttdDetailDeleteParam.from(request, jwtUtil.getAllClaimsAsMap(authorization)));
+
+        return ResponseEntity.status(HttpStatus.OK).build();
+    }
+
+    @PostMapping("/update-user-attd-requests")
+    public ResponseEntity<?> updateUserAttdRequest(
+            @RequestBody @Valid UpdateUserAttdRequestRequest request,
+            @RequestHeader(value = "Authorization", required = true) String authorization) {
+
+        attd07Service.updateUserAttdRequest(
+                UpdateUserAttdRequestParam.from(request, jwtUtil.getAllClaimsAsMap(authorization)));
+
+        return ResponseEntity.status(HttpStatus.OK).build();
+    }
+
+    @PostMapping("/update-user-overtime-requests")
+    public ResponseEntity<?> updateUserOvertimeRequests(
+            @RequestBody @Valid UpdateUserOvertimeRequestRequest request,
+            @RequestHeader(value = "Authorization", required = true) String authorization) {
+
+        attd07Service.updateUserOvertimeRequests(
+                UpdateUserOvertimeRequestParam.from(request, jwtUtil.getAllClaimsAsMap(authorization)));
+
+        return ResponseEntity.status(HttpStatus.OK).build();
+    }
+
+    /** PRAFTA-008 - 근태 요청 반려. */
+    @PostMapping("/reject-user-attd-requests")
+    public ResponseEntity<?> rejectUserAttdRequest(
+            @RequestBody @Valid RejectUserAttdRequestRequest request,
+            @RequestHeader(value = "Authorization", required = true) String authorization) {
+
+        attd07Service.rejectUserAttdRequest(
+                RejectUserAttdRequestParam.from(request, jwtUtil.getAllClaimsAsMap(authorization)));
+
+        return ResponseEntity.status(HttpStatus.OK).build();
+    }
+
+    /** PRAFTA-010 - 초과근무 요청 반려. */
+    @PostMapping("/reject-user-overtime-requests")
+    public ResponseEntity<?> rejectUserOvertimeRequest(
+            @RequestBody @Valid RejectUserOvertimeRequestRequest request,
+            @RequestHeader(value = "Authorization", required = true) String authorization) {
+
+        attd07Service.rejectUserOvertimeRequest(
+                RejectUserOvertimeRequestParam.from(request, jwtUtil.getAllClaimsAsMap(authorization)));
 
         return ResponseEntity.status(HttpStatus.OK).build();
     }

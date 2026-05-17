@@ -60,7 +60,7 @@ public class Baim03Controller {
     	return ResponseEntity.status(HttpStatus.OK).build();
     }
     
-    /* ÀÛ¾÷ÇÏ´Ù ¸¸µí .. ÀÌ¿ë¾à°ü ÂÊ »èÁ¦°¡ ÇÊ¿äÇÒ ¶§ ¸¶Àú ÁøÇàÇÏÀÚ */
+    /* ì‘ì—…í•˜ë‹¤ ë§Œë“¯ .. ì´ìš©ì•½ê´€ ìª½ ì‚­ì œê°€ í•„ìš”í•  ë•Œ ë§ˆì € ì§„í–‰í•˜ì */
     @PostMapping("/deleteCmmCodeDetailInfo")
     public ResponseEntity<?> deleteCmmCodeDetailInfo(@RequestBody List<TermsInfoRequest> request, @RequestHeader(value = "Authorization", required = false) String authorization ) {
 //    	Map<String, Object> tokenInfo = jwtUtil.getAllClaimsAsMap(authorization);

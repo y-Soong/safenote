@@ -23,6 +23,7 @@ import com.prafta.web.attd.attd05.dto.request.SchTypeListRequst;
 import com.prafta.web.attd.attd05.dto.request.SchTypeRequst;
 import com.prafta.web.attd.attd05.dto.request.UserWorkPlansRequest;
 import com.prafta.web.attd.attd05.dto.response.LeaveTypeResponse;
+import com.prafta.web.attd.attd05.dto.response.SaveUserWorkPlansResponse;
 import com.prafta.web.attd.attd05.dto.response.SchTypeListResponse;
 import com.prafta.web.attd.attd05.dto.response.UserWorkPlansResponse;
 import com.prafta.web.attd.attd05.service.Attd05Service;
@@ -66,9 +67,9 @@ public class Attd05Controller {
     @PostMapping("/save-user-work-plans")
     public ResponseEntity<?> saveUserWorkPlans(@RequestBody List<SchTypeRequst> request, @RequestHeader(value = "Authorization", required = false) String authorization) {
 
-    	attd05Service.saveUserWorkPlans(SchTypeParam.from(request, jwtUtil.getAllClaimsAsMap(authorization)));
+    	SaveUserWorkPlansResponse response = attd05Service.saveUserWorkPlans(SchTypeParam.from(request, jwtUtil.getAllClaimsAsMap(authorization)));
 
-        return ResponseEntity.status(HttpStatus.OK).build();
+        return ResponseEntity.status(HttpStatus.OK).body(response);
     }
     
     @PostMapping("/delete-user-work-plans")

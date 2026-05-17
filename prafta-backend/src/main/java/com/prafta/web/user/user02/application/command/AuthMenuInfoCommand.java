@@ -20,7 +20,7 @@ public record AuthMenuInfoCommand(
 	public static AuthMenuInfoCommand from(AuthMenuInfoModel model) {
 		
 		if(model == null)
-			throw ApiException.appendf(CommonErrorCode.COMMON_400_001,"\n필수값 누락 - AuthMenuInfoModel");
+			throw new ApiException(CommonErrorCode.COMMON_400_001);
 		
 		return new AuthMenuInfoCommand(
 			model.authCd()

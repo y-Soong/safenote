@@ -4,12 +4,12 @@ import com.prafta.common.error.common.CommonErrorCode;
 import com.prafta.common.exception.ApiException;
 
 public record MblUniqueCheckQuery(
-		String mblNoHmac     // »ç¿ëÀÚ°¡ ÀÔ·ÂÇÑ ¹øÈ£ (¿øº»)
+		String mblNoHmac     // ì‚¬ìš©ìê°€ ì…ë ¥í•œ ë²ˆí˜¸ (ì›ë³¸)
 ) {
 	public static MblUniqueCheckQuery from(String mblNoHmac) {
 		
 		if(mblNoHmac == null)
-			throw ApiException.appendf(CommonErrorCode.COMMON_400_001,"\nÇÊ¼ö°ª ´©¶ô - mblNoHmac");
+			throw new ApiException(CommonErrorCode.COMMON_400_001);
 		
 		return new MblUniqueCheckQuery(
 				mblNoHmac

@@ -15,7 +15,7 @@ public record ShiftMetaCommand(
     public static ShiftMetaCommand from(ShiftSchInfosParam param) {
 
         if (param == null)
-            throw ApiException.appendf(CommonErrorCode.COMMON_400_001, "\nRequired param missing - SaveShiftSchInfosParam");
+            throw new ApiException(CommonErrorCode.COMMON_400_001);
 
         return new ShiftMetaCommand(
             param.shiftMeta().siteCd()

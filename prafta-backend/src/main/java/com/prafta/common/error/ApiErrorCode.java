@@ -5,5 +5,5 @@ import org.springframework.http.HttpStatus;
 public interface ApiErrorCode {
     String code();           // ex) BAIM_404_001
     HttpStatus httpStatus(); // ex) NOT_FOUND
-    String message();        // ±âº» ¸Þ½ÃÁö
+    String message();        // ê¸°ë³¸ ë©”ì‹œì§€
 }

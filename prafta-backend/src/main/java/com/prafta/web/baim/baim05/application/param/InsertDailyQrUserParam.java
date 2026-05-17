@@ -16,7 +16,7 @@ public record InsertDailyQrUserParam(
     public static InsertDailyQrUserParam from(InsertDailyQrUserRequest request, TokenInfo tokenInfo) {
 
         if (request == null)
-            throw ApiException.appendf(CommonErrorCode.COMMON_400_001, "\nRequired param missing - InsertDailyQrUserRequest");
+            throw new ApiException(CommonErrorCode.COMMON_400_001);
 
         return new InsertDailyQrUserParam(
             request.getSiteCd()

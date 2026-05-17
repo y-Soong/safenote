@@ -16,7 +16,7 @@ public class SchInfoRequest{
 	private String siteCd;
 	private String schCd;
 	
-	@FieldLabel("±Ù¹«ÄÚµå")
+	@FieldLabel("ê·¼ë¬´ì½”ë“œ")
 	@NotNull
 	@Size(max = 50)
 	private String schNo;

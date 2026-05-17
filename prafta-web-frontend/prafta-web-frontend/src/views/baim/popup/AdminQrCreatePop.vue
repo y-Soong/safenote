@@ -95,6 +95,7 @@
 import { ref, computed, getCurrentInstance } from "vue";
 import { useCenteredDraggable } from "@/composables/useCenteredDraggable";
 import { getMessage, MSG } from "@/messages";
+import { resolveApiErrorMessage } from "@/utils/apiError";
 import axios from "@/api/axios";
 
 const props = defineProps({
@@ -170,10 +171,7 @@ const fnSave = async () => {
       }
     }
   } catch (err) {
-    const msg =
-      err?.response?.data?.message ||
-      err?.message ||
-      "저장 중 오류가 발생했습니다.";
+    const msg = resolveApiErrorMessage(err, "저장 중 오류가 발생했습니다.");
     await proxy.$alert(msg);
   }
 };

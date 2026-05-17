@@ -5,7 +5,7 @@ public final class Normalizers {
 
     public static String normalizePhone(String raw) {
         if (raw == null) return null;
-        // ¼ıÀÚ¸¸ ³²±è
+        // ìˆ«ìë§Œ ë‚¨ê¹€
         String digits = raw.replaceAll("\\D", "");
         return digits.isBlank() ? null : digits;
     }
@@ -18,7 +18,7 @@ public final class Normalizers {
 
     public static String normalizeBirth(String raw) {
         if (raw == null) return null;
-        // ¼ıÀÚ¸¸: YYYYMMDD ÇüÅÂ¸¦ ±â´ë
+        // ìˆ«ìë§Œ: YYYYMMDD í˜•íƒœë¥¼ ê¸°ëŒ€
         String digits = raw.replaceAll("\\D", "");
         return digits.isBlank() ? null : digits;
     }

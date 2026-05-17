@@ -16,7 +16,7 @@ public class ChkptInspectItemRequest {
 	private String chkLstType;
 	private String inspectItemCd;
 	
-	@FieldLabel("Á¡°ËÇ×¸ñ¸í")
+	@FieldLabel("ì ê²€í•­ëª©ëª…")
 	@NotBlank
 	private String inspectItemSubj;
 	private int sortIdx;

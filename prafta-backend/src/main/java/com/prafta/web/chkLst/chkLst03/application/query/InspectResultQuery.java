@@ -5,18 +5,18 @@ import com.prafta.common.exception.ApiException;
 import com.prafta.web.chkLst.chkLst03.application.param.InspectResultParam;
 
 public record InspectResultQuery(
-	String fromDate				// Á¡°ËÁ¶È¸ ½ÃÀÛ ¿ù
-	, String toDate					// Á¡°ËÁ¶È¸ Á¾·á ¿ù
-	, String siteCd					// »ç¾÷ÀåÄÚµå
-	, String chkptNm				// Á¡°Ë´ë»ó¸íÄª
-	, String chkLstType				// ÀÏÀÏÁ¡°Ë±¸ºĞ
+	String fromDate				// ì ê²€ì¡°íšŒ ì‹œì‘ ì›”
+	, String toDate					// ì ê²€ì¡°íšŒ ì¢…ë£Œ ì›”
+	, String siteCd					// ì‚¬ì—…ì¥ì½”ë“œ
+	, String chkptNm				// ì ê²€ëŒ€ìƒëª…ì¹­
+	, String chkLstType				// ì¼ì¼ì ê²€êµ¬ë¶„
 	, String gvCmpnyCd
 	, String gvUserCd
 ){
 	public static InspectResultQuery from(InspectResultParam param) {
 
         if (param == null)
-        	throw ApiException.appendf(CommonErrorCode.COMMON_400_001,"\nÇÊ¼ö°ª ´©¶ô - InspectResultParam");
+        	throw new ApiException(CommonErrorCode.COMMON_400_001);
 
         return new InspectResultQuery(
     		param.fromDate()

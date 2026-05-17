@@ -16,7 +16,7 @@ public record UpdateShiftTeamPeriodCommand(
     public static UpdateShiftTeamPeriodCommand from(UpdateShiftTeamPeriodParam param) {
 
         if (param == null)
-            throw ApiException.appendf(CommonErrorCode.COMMON_400_001, "\nRequired param missing - UpdateShiftTeamPeriodParam");
+            throw new ApiException(CommonErrorCode.COMMON_400_001);
 
         return new UpdateShiftTeamPeriodCommand(
             param.siteCd()

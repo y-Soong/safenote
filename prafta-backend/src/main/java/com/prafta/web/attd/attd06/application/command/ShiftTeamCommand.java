@@ -21,7 +21,7 @@ public record ShiftTeamCommand(
         , String gvUserCd
     ) {
         if (shiftMetaParam == null)
-            throw ApiException.appendf(CommonErrorCode.COMMON_400_001, "\nRequired param missing - ShiftMetaParam");
+            throw new ApiException(CommonErrorCode.COMMON_400_001);
 
         return new ShiftTeamCommand(
             shiftMetaParam.shiftCd()

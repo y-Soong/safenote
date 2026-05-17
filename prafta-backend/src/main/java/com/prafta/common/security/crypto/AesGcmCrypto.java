@@ -12,17 +12,17 @@ import javax.crypto.spec.SecretKeySpec;
 import org.springframework.stereotype.Component;
 
 /**
- * AES-GCM ±â¹İ ¾ç¹æÇâ ¾Ïº¹È£ ÄÄÆ÷³ÍÆ®.
+ * AES-GCM ê¸°ë°˜ ì–‘ë°©í–¥ ì•”ë³µí˜¸ ì»´í¬ë„ŒíŠ¸.
  *
- * ÀúÀå Æ÷¸Ë(¹®ÀÚ¿­):
+ * ì €ì¥ í¬ë§·(ë¬¸ìì—´):
  *   v1.<Base64URL(payload)>
  *
- * payload ¹ÙÀÌ³Ê¸® ±¸Á¶:
+ * payload ë°”ì´ë„ˆë¦¬ êµ¬ì¡°:
  *   [1byte version][12byte nonce][ciphertext+tag]
  *
- * - nonce: 12 bytes ±ÇÀå(GCM Ç¥ÁØ)
- * - tag: 16 bytes(128-bit) ±ÇÀå
- * - key: 32 bytes(256-bit) ±ÇÀå
+ * - nonce: 12 bytes ê¶Œì¥(GCM í‘œì¤€)
+ * - tag: 16 bytes(128-bit) ê¶Œì¥
+ * - key: 32 bytes(256-bit) ê¶Œì¥
  */
 @Component
 public class AesGcmCrypto {
@@ -37,14 +37,14 @@ public class AesGcmCrypto {
     public AesGcmCrypto(CryptoProperties props) {
         byte[] key = KeyMaterial.fromBase64Url(props.aesKey());
 
-        // AES-256 ±ÇÀå: 32 bytes
+        // AES-256 ê¶Œì¥: 32 bytes
         if (key.length != 32) {
             throw new IllegalStateException("AES key must be 32 bytes (AES-256). Check PRAFTA_AES_DATA_KEY.");
         }
         this.keySpec = new SecretKeySpec(key, "AES");
     }
 
-    /** Æò¹® > ¾ÏÈ£¹® ¹®ÀÚ¿­(v1...) */
+    /** í‰ë¬¸ > ì•”í˜¸ë¬¸ ë¬¸ìì—´(v1...) */
     public String encrypt(String plaintext) {
         if (plaintext == null) return null;
 
@@ -69,7 +69,7 @@ public class AesGcmCrypto {
         }
     }
 
-    /** ¾ÏÈ£¹® ¹®ÀÚ¿­(v1...) -> Æò¹® */
+    /** ì•”í˜¸ë¬¸ ë¬¸ìì—´(v1...) -> í‰ë¬¸ */
     public String decrypt(String encrypted) {
         if (encrypted == null) return null;
 
@@ -98,7 +98,7 @@ public class AesGcmCrypto {
             byte[] pt = cipher.doFinal(ct);
             return new String(pt, StandardCharsets.UTF_8);
         } catch (Exception e) {
-            // GCMÀº Å°/nonce/µ¥ÀÌÅÍ°¡ Á¶±İ¸¸ ´Ş¶óµµ ¿©±â¼­ ½ÇÆĞ(¹«°á¼º º¸È£)
+            // GCMì€ í‚¤/nonce/ë°ì´í„°ê°€ ì¡°ê¸ˆë§Œ ë‹¬ë¼ë„ ì—¬ê¸°ì„œ ì‹¤íŒ¨(ë¬´ê²°ì„± ë³´í˜¸)
             throw new IllegalStateException("AES-GCM decrypt failed", e);
         }
     }

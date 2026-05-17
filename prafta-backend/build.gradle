@@ -19,6 +19,10 @@ repositories {
 
 tasks.withType(JavaCompile).configureEach {
     options.compilerArgs += ['-parameters']
+    // PRAFTA-003-8: 한글 인코딩 정렬을 위해 소스 인코딩을 UTF-8 로 명시.
+    // 별도 지정이 없으면 Windows 환경에서 플랫폼 기본 인코딩(CP949)을 사용해
+    // UTF-8 로 저장된 .java 의 한글이 깨질 수 있다.
+    options.encoding = 'UTF-8'
 }
 
 dependencies {

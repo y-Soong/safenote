@@ -14,7 +14,7 @@ public record CopySiteNodeCommand(
 	public static CopySiteNodeCommand from(CopySiteNodeParam param) {
 
         if (param == null)
-        	throw ApiException.appendf(CommonErrorCode.COMMON_400_001,"\n필수값 누락 - CopySiteNodeParam");
+        	throw new ApiException(CommonErrorCode.COMMON_400_001);
 
         return new CopySiteNodeCommand(
     		param.siteCd()

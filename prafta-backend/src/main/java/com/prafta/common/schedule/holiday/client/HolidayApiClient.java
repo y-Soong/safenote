@@ -25,7 +25,7 @@ public class HolidayApiClient {
     	String key = System.getenv("HOLIDAY_API_SERVICE_KEY");
     	
         if (!StringUtils.hasText(props.getServiceKey())) {
-            // Å° ¾øÀ¸¸é "Á¶¿ëÈ÷ ½ÇÆĞ"ÇÏÁö ¸»°í ¾Û ½ÃÀÛºÎÅÍ ¸·´Â °Ô ¾ÈÀü
+            // í‚¤ ì—†ìœ¼ë©´ "ì¡°ìš©íˆ ì‹¤íŒ¨"í•˜ì§€ ë§ê³  ì•± ì‹œì‘ë¶€í„° ë§‰ëŠ” ê²Œ ì•ˆì „
             throw new IllegalStateException("HOLIDAY_API_SERVICE_KEY is empty. Set env var HOLIDAY_API_SERVICE_KEY.");
         }
         if (!StringUtils.hasText(props.getBaseUrl())) {
@@ -37,15 +37,15 @@ public class HolidayApiClient {
         URI uri = UriComponentsBuilder
                 .fromHttpUrl(props.getBaseUrl())
                 .queryParam("solYear", solYear)
-                .queryParam("ServiceKey", props.getServiceKey()) // ¹Î°¨Á¤º¸: ·Î±×¿¡ Àı´ë ³²±âÁö ¸» °Í
+                .queryParam("ServiceKey", props.getServiceKey()) // ë¯¼ê°ì •ë³´: ë¡œê·¸ì— ì ˆëŒ€ ë‚¨ê¸°ì§€ ë§ ê²ƒ
                 .queryParam("_type", props.getType())
                 .queryParam("numOfRows", props.getNumOfRows())
-                .build(true)     // ÀÎÄÚµù ÀÌ½´ ¹æÁö
+                .build(true)     // ì¸ì½”ë”© ì´ìŠˆ ë°©ì§€
                 .toUri();
         
         var res = holidayRestTemplate.getForEntity(uri, String.class);
 
-        // ÀÌ uri¸¦ ·Î±×·Î ÂïÀ¸¸é ServiceKey À¯ÃâµË´Ï´Ù. Àı´ë ±İÁö.
+        // ì´ urië¥¼ ë¡œê·¸ë¡œ ì°ìœ¼ë©´ ServiceKey ìœ ì¶œë©ë‹ˆë‹¤. ì ˆëŒ€ ê¸ˆì§€.
         return holidayRestTemplate.getForObject(uri, HolidayApiResponse.class);
     }
 }

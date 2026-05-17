@@ -126,6 +126,7 @@ import {
 } from "vue";
 import { useCenteredDraggable } from "@/composables/useCenteredDraggable";
 import axios from "@/api/axios";
+import { resolveApiErrorMessage } from "@/utils/apiError";
 import ThSortable from "@/components/common/ThSortable.vue";
 import {
   useTableSort,
@@ -196,7 +197,7 @@ const fnGetUserInfoList = async () => {
       userActList.value = response.data.userInfoList;
     }
   } catch (err) {
-    fnAlertMsg(err.response.data.message);
+    fnAlertMsg(resolveApiErrorMessage(err, "조회 중 오류가 발생했습니다."));
   }
 };
 

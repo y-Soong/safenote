@@ -15,7 +15,6 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.multipart.MultipartFile;
 
-import com.prafta.common.annotation.NoAuth;
 import com.prafta.common.cmm.file.dto.BytesMultipartFile;
 import com.prafta.common.security.JwtUtil;
 import com.prafta.web.risk.risk03.application.param.AssessmentParam;
@@ -31,7 +30,6 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 
 @Slf4j
-@NoAuth
 @RestController
 @RequestMapping("/risk03")
 @RequiredArgsConstructor

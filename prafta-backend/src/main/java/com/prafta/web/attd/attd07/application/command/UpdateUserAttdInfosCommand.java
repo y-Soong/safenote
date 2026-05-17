@@ -25,10 +25,10 @@ public record UpdateUserAttdInfosCommand(
     public static UpdateUserAttdInfosCommand from(String attdId, UpdateUserAttdInfosModel model) {
 
     	if (attdId == null)
-            throw ApiException.appendf(CommonErrorCode.COMMON_400_001, "\nRequired param missing - attdId");
+            throw new ApiException(CommonErrorCode.COMMON_400_001);
     	
         if (model == null)
-            throw ApiException.appendf(CommonErrorCode.COMMON_400_001, "\nRequired param missing - UpdateUserAttdInfosModel");
+            throw new ApiException(CommonErrorCode.COMMON_400_001);
 
         return new UpdateUserAttdInfosCommand(
         	attdId

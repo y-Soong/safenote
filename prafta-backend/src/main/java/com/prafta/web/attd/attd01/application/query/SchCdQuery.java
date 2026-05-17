@@ -12,7 +12,7 @@ public record SchCdQuery(
 	public static SchCdQuery from(SchInfoParam param) {
 		
         if (param == null)
-        	throw ApiException.appendf(CommonErrorCode.COMMON_400_001,"\n필수값 누락 - SchInfoParam");
+        	throw new ApiException(CommonErrorCode.COMMON_400_001);
 
         return new SchCdQuery(
         		param.siteCd()

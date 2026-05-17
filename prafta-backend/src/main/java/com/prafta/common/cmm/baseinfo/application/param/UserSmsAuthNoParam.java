@@ -12,7 +12,7 @@ public record UserSmsAuthNoParam (
 	public static UserSmsAuthNoParam from(UserSmsAuthNoRequest request) {
 		
 		if(request == null)
-			throw ApiException.appendf(CommonErrorCode.COMMON_400_001,"\n필수값 누락 - UserSmsAuthNoRequest");
+			throw new ApiException(CommonErrorCode.COMMON_400_001);
 		
 		return new UserSmsAuthNoParam(
 			request.getCmpnyCd()

@@ -6,10 +6,10 @@ import com.prafta.common.error.ApiErrorCode;
 
 public enum AuthErrorCode implements ApiErrorCode {
 
-    // ±ÔÄ¢ ¿¹½Ã: {MODULE}_{HTTP}_{SEQ}
-	AUTH_500_001(HttpStatus.UNAUTHORIZED, "NO_REFRESH_TOKEN !\n°ü¸®ÀÚ¿¡°Ô ¹®ÀÇÇØÁÖ¼¼¿ä.")
-	, AUTH_500_002(HttpStatus.UNAUTHORIZED, "INVALID_REFRESH_TOKEN !\n°ü¸®ÀÚ¿¡°Ô ¹®ÀÇÇØÁÖ¼¼¿ä.")
-	, AUTH_500_003(HttpStatus.UNAUTHORIZED, "USER_NOT_FOUND !\n°ü¸®ÀÚ¿¡°Ô ¹®ÀÇÇØÁÖ¼¼¿ä.")
+    // ê·œì¹™ ì˜ˆì‹œ: {MODULE}_{HTTP}_{SEQ}
+	AUTH_500_001(HttpStatus.UNAUTHORIZED, "ì¸ì¦ì— ì‹¤íŒ¨í–ˆìŠµë‹ˆë‹¤. ë‹¤ì‹œ ë¡œê·¸ì¸í•´ ì£¼ì„¸ìš”.")
+	, AUTH_500_002(HttpStatus.UNAUTHORIZED, "ì¸ì¦ì— ì‹¤íŒ¨í–ˆìŠµë‹ˆë‹¤. ë‹¤ì‹œ ë¡œê·¸ì¸í•´ ì£¼ì„¸ìš”.")
+	, AUTH_500_003(HttpStatus.UNAUTHORIZED, "ì¸ì¦ì— ì‹¤íŒ¨í–ˆìŠµë‹ˆë‹¤. ë‹¤ì‹œ ë¡œê·¸ì¸í•´ ì£¼ì„¸ìš”.")
     ;
 
     private final HttpStatus httpStatus;
@@ -22,7 +22,7 @@ public enum AuthErrorCode implements ApiErrorCode {
 
     @Override
     public String code() {
-        return name(); // enum ÀÌ¸§À» ±×´ë·Î ÄÚµå·Î ¾²¸é °ü¸® ½¬¿ò
+        return name(); // enum ì´ë¦„ì„ ê·¸ëŒ€ë¡œ ì½”ë“œë¡œ ì“°ë©´ ê´€ë¦¬ ì‰¬ì›€
     }
 
     @Override

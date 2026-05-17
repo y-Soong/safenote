@@ -12,7 +12,7 @@ public record ShiftTypeDetailListsQuery(
     public static ShiftTypeDetailListsQuery from(ShiftTypeDetailListsParam param) {
 
         if (param == null)
-            throw ApiException.appendf(CommonErrorCode.COMMON_400_001, "\nRequired param missing - ShiftTypeDetailListsParam");
+            throw new ApiException(CommonErrorCode.COMMON_400_001);
 
         return new ShiftTypeDetailListsQuery(
             param.siteCd()

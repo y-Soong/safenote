@@ -141,6 +141,7 @@ import {
   getCurrentInstance,
 } from "vue";
 import axios from "@/api/axios";
+import { resolveApiErrorMessage } from "@/utils/apiError";
 import { useCenteredDraggable } from "@/composables/useCenteredDraggable";
 
 const emit = defineEmits(["close"]);
@@ -273,7 +274,7 @@ const fnUserIdSrch = async() => {
       fnSmsAuthReqApi();
     }
   } catch (err) {
-    fnAlertMsg(err.response.data.message, () => {
+    fnAlertMsg(resolveApiErrorMessage(err, "처리 중 오류가 발생했습니다."), () => {
       smsAuthReqBtnFcs.value.focus();
     });
   }
@@ -303,10 +304,9 @@ const fnSmsAuthReqApi = async() => {
       }, 1000);
     }
   } catch (err) {
-    // const alertMsg = "인증번호 발송에 실패했습니다.\n관리자에게 문의해주세요.";
     if (err.response?.data?.message) {
       mblNo.value = "";
-      fnAlertMsg(err.response.data.message);
+      fnAlertMsg(resolveApiErrorMessage(err, "처리 중 오류가 발생했습니다."));
     }
   }
 }
@@ -345,7 +345,7 @@ const fnSmsAuthChk = async () => {
       fnAlertMsg(alertMsg);
     }
   } catch (err) {
-    fnAlertMsg(err.response.data.message, () => {
+    fnAlertMsg(resolveApiErrorMessage(err, "처리 중 오류가 발생했습니다."), () => {
       smsAuthReqBtnFcs.value.focus();
     });
   }
@@ -366,7 +366,7 @@ const fnUserPwUpdate = async () => {
       emit('close');
     }
   } catch (err) {
-    fnAlertMsg(err.response.data.message, () => {
+    fnAlertMsg(resolveApiErrorMessage(err, "처리 중 오류가 발생했습니다."), () => {
       smsAuthReqBtnFcs.value.focus();
     });
   }

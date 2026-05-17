@@ -14,11 +14,11 @@ public record RequiredTermsInfoCommand(
 	public static RequiredTermsInfoCommand from(String userCd, UserJoinParam param, RequiredTermsResult result) {
 		
 		if(userCd == null)
-			throw ApiException.appendf(CommonErrorCode.COMMON_400_001,"\n필수값 누락 - userCd");
+			throw new ApiException(CommonErrorCode.COMMON_400_001);
 		if(param == null)
-			throw ApiException.appendf(CommonErrorCode.COMMON_400_001,"\n필수값 누락 - UserJoinParam");
+			throw new ApiException(CommonErrorCode.COMMON_400_001);
 		if(result == null)
-			throw ApiException.appendf(CommonErrorCode.COMMON_400_001,"\n필수값 누락 - RequiredTermsResult");
+			throw new ApiException(CommonErrorCode.COMMON_400_001);
 		
 		return new RequiredTermsInfoCommand(
 			userCd

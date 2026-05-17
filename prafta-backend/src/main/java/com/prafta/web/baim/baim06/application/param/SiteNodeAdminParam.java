@@ -16,7 +16,7 @@ public record SiteNodeAdminParam(
 	public static SiteNodeAdminParam from(SiteNodeAdminRequest request, TokenInfo tokenInfo) {
 
         if (request == null)
-        	throw ApiException.appendf(CommonErrorCode.COMMON_400_001,"\n필수값 누락 - SiteNodeAdminRequest");
+        	throw new ApiException(CommonErrorCode.COMMON_400_001);
         
         return new SiteNodeAdminParam(
     		request.getSiteCd()

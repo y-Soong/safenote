@@ -51,13 +51,13 @@ public class Baim01ServiceImpl implements Baim01Service{
 			
 			String siteCd = "";
 			
-			if(model.siteCd() != null) {					// ±âÁ¸ »ç¾÷Àå µ¥ÀÌÅÍ º¯°æ
+			if(model.siteCd() != null) {					// ê¸°ì¡´ ì‚¬ì—…ì¥ ë°ì´í„° ë³€ê²½
 				siteCd = model.siteCd();
-			} else {										// ½Å±Ô »ç¾÷Àå »ı¼º
+			} else {										// ì‹ ê·œ ì‚¬ì—…ì¥ ìƒì„±
 				siteCd = baim01Mapper.selectSiteCd(model.gvCmpnyCd());
 			}
 			
-			// ÃÊ±â 1 depth ³ëµå »ı¼­
+			// ì´ˆê¸° 1 depth ë…¸ë“œ ìƒì„œ
 			baim01Mapper.insertSiteNodeInfo(SiteNodeInfoCommand.from(model, siteCd));
 			
 			baim01Mapper.mergeSiteInfo(SiteInfoCommand.from(model, siteCd));

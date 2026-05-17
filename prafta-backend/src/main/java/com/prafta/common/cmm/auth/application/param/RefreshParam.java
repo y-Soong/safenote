@@ -10,7 +10,7 @@ public record RefreshParam (
 	public static RefreshParam from(RefreshRequest request) {
 		
 		if(request == null)
-			throw ApiException.appendf(CommonErrorCode.COMMON_400_001,"\n필수값 누락 - RefreshRequest");
+			throw new ApiException(CommonErrorCode.COMMON_400_001);
 		
 		return new RefreshParam(request.getRefreshToken());
 	}

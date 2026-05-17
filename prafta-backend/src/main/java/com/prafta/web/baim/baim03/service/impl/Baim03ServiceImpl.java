@@ -78,7 +78,7 @@ public class Baim03ServiceImpl implements Baim03Service{
 		    try {
 		        lastVer = Integer.parseInt(lastVerStr == null ? "0" : lastVerStr.trim());
 		    } catch (NumberFormatException e) {
-		    	throw new ApiException(CommonErrorCode.COMMON_400_001, "¾à°ü ¹öÀü °ªÀÌ ¼ıÀÚ°¡ ¾Æ´Õ´Ï´Ù. termsVersion=" + lastVerStr);
+		    	throw new ApiException(CommonErrorCode.COMMON_400_001, "ì•½ê´€ ë²„ì „ ê°’ì´ ìˆ«ìê°€ ì•„ë‹™ë‹ˆë‹¤. termsVersion=" + lastVerStr);
 		    }
 
 		    String versionNo = String.valueOf(lastVer + 1);

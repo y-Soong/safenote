@@ -417,6 +417,7 @@ import ViewHeader from "@/components/common/ViewHeader.vue";
 import { useModal } from "@/utils/useModal";
 import axios from "@/api/axios";
 import { getMessage, MSG } from "@/messages";
+import { resolveApiErrorMessage } from "@/utils/apiError";
 import search_icon from "@/assets/img/search_icon.png";
 import SiteSearchPop from "@/components/popup/SiteSearchPop.vue";
 import SiteNodeSearchPop from "@/components/popup/SiteNodeSearchPop.vue";
@@ -507,9 +508,7 @@ const fnSrchSiteInfo = async () => {
     });
     if (response.status === 200) fnCallback(response);
   } catch (err) {
-    await proxy.$alert(
-      err?.response?.data?.message || err?.message || "조회 오류"
-    );
+    await proxy.$alert(resolveApiErrorMessage(err, "조회 오류"));
   }
 };
 
@@ -562,9 +561,7 @@ const fnSrchNodeInfo = async () => {
       fnCallback({ ...response, config: { url: "/dummy/site-node-lists" } });
     }
   } catch (err) {
-    await proxy.$alert(
-      err?.response?.data?.message || err?.message || "조회 오류"
-    );
+    await proxy.$alert(resolveApiErrorMessage(err, "조회 오류"));
   }
 };
 
@@ -739,7 +736,7 @@ const fnSearch = async () => {
     }));
   } catch (err) {
     await proxy.$alert(
-      err?.response?.data?.message || "조회 중 오류가 발생했습니다."
+      resolveApiErrorMessage(err, "조회 중 오류가 발생했습니다.")
     );
   }
 };
@@ -783,7 +780,7 @@ const deleteAssignment = async (group) => {
     }
   } catch (err) {
     await proxy.$alert(
-      err?.response?.data?.message || "삭제 중 오류가 발생했습니다."
+      resolveApiErrorMessage(err, "삭제 중 오류가 발생했습니다.")
     );
   }
 };
@@ -844,9 +841,7 @@ const confirmTeamNmEdit = async (group) => {
     }
   } catch (err) {
     await proxy.$alert(
-      err?.response?.data?.message ||
-        err?.message ||
-        "팀명 수정 중 오류가 발생했습니다."
+      resolveApiErrorMessage(err, "팀명 수정 중 오류가 발생했습니다.")
     );
   }
 };
@@ -892,9 +887,7 @@ const fnInsertShiftTeamUsers = async (group, team, users) => {
     }
   } catch (err) {
     await proxy.$alert(
-      err?.response?.data?.message ||
-        err?.message ||
-        "처리 중 오류가 발생했습니다."
+      resolveApiErrorMessage(err, "처리 중 오류가 발생했습니다.")
     );
   }
 };
@@ -919,9 +912,7 @@ const fnToggleLeader = async (member) => {
     }
   } catch (err) {
     await proxy.$alert(
-      err?.response?.data?.message ||
-        err?.message ||
-        "처리 중 오류가 발생했습니다."
+      resolveApiErrorMessage(err, "처리 중 오류가 발생했습니다.")
     );
   }
 };
@@ -946,9 +937,7 @@ const fnDeleteShiftTeamUser = async (group, team, member) => {
     }
   } catch (err) {
     await proxy.$alert(
-      err?.response?.data?.message ||
-        err?.message ||
-        "처리 중 오류가 발생했습니다."
+      resolveApiErrorMessage(err, "처리 중 오류가 발생했습니다.")
     );
   }
 };
@@ -1009,9 +998,7 @@ const fnSave = async () => {
     }
   } catch (err) {
     await proxy.$alert(
-      err?.response?.data?.message ||
-        err?.message ||
-        "처리 중 오류가 발생했습니다."
+      resolveApiErrorMessage(err, "처리 중 오류가 발생했습니다.")
     );
   }
 };

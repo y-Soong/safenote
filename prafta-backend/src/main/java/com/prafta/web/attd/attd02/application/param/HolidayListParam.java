@@ -13,7 +13,7 @@ public record HolidayListParam(
 	public static HolidayListParam from(HolidayListRequest request, TokenInfo tokenInfo) {
 		
 		if (request == null)
-            throw ApiException.appendf(CommonErrorCode.COMMON_400_001, "\n필수값 누락 - HolidayListRequest");
+            throw new ApiException(CommonErrorCode.COMMON_400_001);
 		
 		return new HolidayListParam(
 			request.getYear()

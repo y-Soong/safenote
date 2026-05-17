@@ -13,7 +13,7 @@ public record BaseInfoListQuery(
 	public static BaseInfoListQuery from(BaseInfoListParam param) {
 		
 		if(param == null)
-			throw ApiException.appendf(CommonErrorCode.COMMON_400_001,"\n필수값 누락 - BaseInfoListParam");
+			throw new ApiException(CommonErrorCode.COMMON_400_001);
 		
 		return new BaseInfoListQuery(
 				param.baseCodeList()

@@ -15,7 +15,7 @@ public record SchTypeParam(
 	public static SchTypeParam from(List<SchTypeRequst> requests, TokenInfo tokenInfo) {
 
         if (requests == null)
-        	throw ApiException.appendf(CommonErrorCode.COMMON_400_001,"\n필수값 누락 - SchTypeRequst");
+        	throw new ApiException(CommonErrorCode.COMMON_400_001);
         
         List<SchTypeModel> models = requests.stream()
     		.map(req -> {

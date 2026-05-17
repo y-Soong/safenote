@@ -16,7 +16,7 @@ public record MonthlyAttdListQuery(
       public static MonthlyAttdListQuery from(MonthlyAttdListParam param) {
 
           if (param == null)
-              throw ApiException.appendf(CommonErrorCode.COMMON_400_001, "\n필수값 누락 - MonthlyAttdListParam");
+              throw new ApiException(CommonErrorCode.COMMON_400_001);
 
           return new MonthlyAttdListQuery(
                 param.workYm()

@@ -12,6 +12,7 @@ import com.prafta.web.attd.attd05.application.query.UserWorkPlansQuery;
 import com.prafta.web.attd.attd05.result.DayResult;
 import com.prafta.web.attd.attd05.result.LeaveTypeResult;
 import com.prafta.web.attd.attd05.result.SchTypeResult;
+import com.prafta.web.attd.attd05.result.SchTypeUseYnResult;
 import com.prafta.web.attd.attd05.result.SchedResult;
 import com.prafta.web.attd.attd05.result.UserResult;
 
@@ -25,7 +26,15 @@ public interface Attd05Mapper {
 	List<SchedResult> selectSchedList(UserWorkPlansQuery query);
 	
 	List<SchTypeResult> selectSchTypeList(SchListQuery query);
-	
+
+	/**
+	 * 근무타입(SCH_CD)별 effective-dating 버전 목록.
+	 * TB_SCH_MGMT(현재본) + TB_SCH_MGMT_HIST(이력본) 합집합을
+	 * 동일 SCH_CD+APPLY_DATE 중복 시 MAX(HIST_IDX) 1건으로 정리하여 반환한다.
+	 * USE_YN='N' 버전도 차단 근거로 살려야 하므로 USE_YN 필터를 걸지 않는다.
+	 */
+	List<SchTypeUseYnResult> selectSchTypeUseYnList(SchListQuery query);
+
 	List<LeaveTypeResult> selectLeaveTypeList(LeaveTypeListQuery query);
 	
 	void saveUserWorkPlans(SchTypeCommand command);

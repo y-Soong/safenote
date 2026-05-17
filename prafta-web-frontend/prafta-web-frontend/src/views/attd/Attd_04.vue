@@ -166,6 +166,7 @@ import {
 } from "vue";
 import ViewHeader from "@/components/common/ViewHeader.vue";
 import { getMessage, MSG } from "@/messages";
+import { resolveApiErrorMessage } from "@/utils/apiError";
 import { useModal } from "@/utils/useModal";
 import CommuteStdExamplePop from "@/views/attd/popup/CommuteStdExamplePop.vue";
 import axios from "@/api/axios";
@@ -236,10 +237,10 @@ const fnGetSystinfoList = async () => {
       console.log(systCodeArr.value);
     }
   } catch (err) {
-    const msg =
-      err?.response?.data?.message ||
-      err?.message ||
-      "시스템코드 조회 중 오류가 발생했습니다.";
+    const msg = resolveApiErrorMessage(
+      err,
+      "시스템코드 조회 중 오류가 발생했습니다."
+    );
     await proxy.$alert(msg);
   }
 };
@@ -261,10 +262,7 @@ const fnSearch = async () => {
       fnAttdStdTimeRuleSet();
     }
   } catch (err) {
-    const msg =
-      err?.response?.data?.message ||
-      err?.message ||
-      "조회 중 오류가 발생했습니다.";
+    const msg = resolveApiErrorMessage(err, "조회 중 오류가 발생했습니다.");
     await proxy.$alert(msg);
   }
 };
@@ -292,10 +290,7 @@ const fnSave = async () => {
       fnSearch();
     }
   } catch (err) {
-    const msg =
-      err?.response?.data?.message ||
-      err?.message ||
-      "조회 중 오류가 발생했습니다.";
+    const msg = resolveApiErrorMessage(err, "조회 중 오류가 발생했습니다.");
     await proxy.$alert(msg);
   }
 };

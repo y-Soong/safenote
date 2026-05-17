@@ -14,7 +14,7 @@ public record SchInfoHistQuery(
 	public static SchInfoHistQuery from(SchInfoParam param) {
 		
         if (param == null)
-        	throw ApiException.appendf(CommonErrorCode.COMMON_400_001,"\n필수값 누락 - SchInfoParam");
+        	throw new ApiException(CommonErrorCode.COMMON_400_001);
 
         return new SchInfoHistQuery(
     		param.siteCd()
@@ -26,7 +26,7 @@ public record SchInfoHistQuery(
 	public static SchInfoHistQuery from(SchInfoHistParam param) {
 		
         if (param == null)
-        	throw ApiException.appendf(CommonErrorCode.COMMON_400_001,"\n필수값 누락 - SchInfoHistParam");
+        	throw new ApiException(CommonErrorCode.COMMON_400_001);
 
         return new SchInfoHistQuery(
     		param.siteCd()

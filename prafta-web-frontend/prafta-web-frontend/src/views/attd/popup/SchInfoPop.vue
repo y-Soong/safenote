@@ -177,6 +177,7 @@ import TimeInput from "@/components/common/TimeInput.vue";
 import CalendarSrch from "@/components/common/CalendarSrch.vue";
 import axios from "@/api/axios";
 import { getMessage, MSG } from "@/messages";
+import { resolveApiErrorMessage } from "@/utils/apiError";
 
 // ================ Props & Emits ================
 const props = defineProps({
@@ -316,6 +317,7 @@ const fnSave = async () => {
     today.setHours(0, 0, 0, 0);
     const selected = new Date(applyDate.value);
     selected.setHours(0, 0, 0, 0);
+
     if (selected <= today) {
       proxy.$alert(getMessage(MSG.APPLY_DATE_FUTURE));
       return;
@@ -350,6 +352,8 @@ const fnSave = async () => {
     useYn: useYn.value,
   };
 
+  console.log("Saving schedule info with payload:", payload);
+
   try {
     const response = await axios.post(
       "/webApi/attd01/update-sch-infos",
@@ -361,10 +365,7 @@ const fnSave = async () => {
       emit("close");
     }
   } catch (err) {
-    const msg =
-      err?.response?.data?.message ||
-      err?.message ||
-      "처리 중 오류가 발생했습니다.";
+    const msg = resolveApiErrorMessage(err, "처리 중 오류가 발생했습니다.");
     await proxy.$alert(msg);
   }
 };

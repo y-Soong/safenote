@@ -16,7 +16,7 @@ public class UpdateUserAttdInfosRequest {
     private String workSeq;
     private String workYmd;
     
-    /* ±âÁ¸ ÃâÅð±Ù °ª */
+    /* ê¸°ì¡´ ì¶œí‡´ê·¼ ê°’ */
     private String oriCheckInDate;
     private String oriCheckInTime;
     private String oriCheckOutDate;

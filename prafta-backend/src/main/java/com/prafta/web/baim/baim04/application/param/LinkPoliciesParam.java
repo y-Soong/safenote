@@ -15,7 +15,7 @@ public record LinkPoliciesParam(
 	public static LinkPoliciesParam from(List<LinkPoliciesRequest> requests, TokenInfo tokenInfo) {
 
         if (requests == null)
-        	throw ApiException.appendf(CommonErrorCode.COMMON_400_001,"\n필수값 누락 - TermsInfoRequest");
+        	throw new ApiException(CommonErrorCode.COMMON_400_001);
         
         List<LinkPoliciesModel> models = requests.stream()
     		.map(req -> {

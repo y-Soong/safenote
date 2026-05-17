@@ -121,6 +121,7 @@ import { useCenteredDraggable } from "@/composables/useCenteredDraggable";
 import { useUserStore } from "@/stores/userStore";
 import axios from "@/api/axios";
 import { getMessage, MSG } from "@/messages";
+import { resolveApiErrorMessage } from "@/utils/apiError";
 
 const { proxy } = getCurrentInstance();
 const userStore = useUserStore();
@@ -150,23 +151,23 @@ onMounted(async () => {
 });
 
 const fnLoadMyInfo = async () => {
-  // userStore에서 기본값 먼저 세팅
+  // userStore에서 기본값 먼저 세팅 (비-PII만)
+  // 정책 §11.1에 따라 휴대폰/이메일은 store/sessionStorage에 두지 않으므로,
+  // 아래 API 응답으로만 채워진다.
   userId.value =
     userStore.gv_userId || sessionStorage.getItem("gv_userId") || "";
   userNm.value =
     userStore.gv_userNm || sessionStorage.getItem("gv_userNm") || "";
   siteNm.value =
     userStore.gv_siteNm || sessionStorage.getItem("gv_siteNm") || "";
-  mblNo.value = userStore.gv_mblNo || "";
-  email.value = userStore.gv_email || "";
 
-  // API로 최신 정보 조회
+  // 본인 전용 API로 최신 정보 조회.
+  // 조회 대상은 서버가 토큰으로만 결정하므로 클라이언트 식별자(params) 미전달 (IDOR 방지).
   try {
-    const response = await axios.get("/webApi/user01/user-info-lists", {
-      params: { userId: userId.value },
-    });
-    if (response.status === 200 && response.data.userInfoList?.length > 0) {
-      const info = response.data.userInfoList[0];
+    const response = await axios.get("/webApi/user01/my-profile");
+    if (response.status === 200 && response.data) {
+      const info = response.data;
+      userId.value = info.userId || userId.value;
       userNm.value = info.userNm || userNm.value;
       siteNm.value = info.siteNm || siteNm.value;
       nodeNm.value = info.nodeNm || "";
@@ -192,18 +193,16 @@ const fnSelfWithdrawal = async () => {
   if (!confirmed) return;
 
   try {
-    await axios.post("/webApi/user01/withdraw-my-account", {
-      cmpnyCd: sessionStorage.getItem("gv_cmpnyCd"),
-      userCd: sessionStorage.getItem("gv_userCd"),
-    });
+    // 탈퇴 대상은 서버가 토큰으로만 결정한다. 식별자 파라미터는 더 이상 전송하지 않는다.
+    await axios.post("/webApi/user01/withdraw-my-account", {});
     await proxy.$alert(getMessage(MSG.MY_INFO_WITHDRAWAL_SUCCESS));
     sessionStorage.clear();
     window.location.replace("/");
   } catch (err) {
-    const msg =
-      err?.response?.data?.message ||
-      err?.message ||
-      getMessage(MSG.MY_INFO_WITHDRAWAL_FAILED);
+    const msg = resolveApiErrorMessage(
+      err,
+      getMessage(MSG.MY_INFO_WITHDRAWAL_FAILED)
+    );
     await proxy.$alert(msg);
   }
 };
@@ -245,10 +244,10 @@ const fnChangePassword = async () => {
       newPwConfirm.value = "";
     }
   } catch (err) {
-    const msg =
-      err?.response?.data?.message ||
-      err?.message ||
-      getMessage(MSG.MY_INFO_PW_CHANGE_FAILED);
+    const msg = resolveApiErrorMessage(
+      err,
+      getMessage(MSG.MY_INFO_PW_CHANGE_FAILED)
+    );
     await proxy.$alert(msg);
   }
 };

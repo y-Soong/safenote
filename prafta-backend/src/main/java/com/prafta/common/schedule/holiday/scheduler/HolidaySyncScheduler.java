@@ -16,7 +16,7 @@ public class HolidaySyncScheduler {
         this.syncService = syncService;
     }
 
-    // ÃÊ ºĞ ÀÏ ¿ù ³â ¿äÀÏ
+    // ì´ˆ ë¶„ ì¼ ì›” ë…„ ìš”ì¼
 //    @Scheduled(cron = "0 10 3 25 12 *")
 //    @Scheduled(cron = "0 0/3 * * * *")
     public void syncNextYear() {
@@ -24,7 +24,7 @@ public class HolidaySyncScheduler {
         syncService.syncYear(nextYear);
     }
 
-    // ¸Å¿ù 1ÀÏ 04:00¿¡ ¿ÃÇØ °øÈŞÀÏ Àçµ¿±âÈ­(º¸Á¤ ´ëÀÀ)
+    // ë§¤ì›” 1ì¼ 04:00ì— ì˜¬í•´ ê³µíœ´ì¼ ì¬ë™ê¸°í™”(ë³´ì • ëŒ€ì‘)
 //    @Scheduled(cron = "0 0 4 1 * *")
 //    @Scheduled(cron = "0 0/2 * * * *")
     public void resyncThisYear() {

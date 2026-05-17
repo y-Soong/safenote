@@ -2,12 +2,12 @@ package com.prafta.common.config;
 
 import javax.sql.DataSource;
 
-//import org.apache.ibatis.session.Configuration; // ¡Ú Áß¿ä
+//import org.apache.ibatis.session.Configuration; // â˜… ì¤‘ìš”
 import org.apache.ibatis.session.SqlSessionFactory;
 import org.apache.ibatis.type.JdbcType;
 import org.mybatis.spring.SqlSessionFactoryBean;
 import org.mybatis.spring.SqlSessionTemplate;
-import org.mybatis.spring.annotation.MapperScan; // ¡Ú ±ÇÀå
+import org.mybatis.spring.annotation.MapperScan; // â˜… ê¶Œì¥
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -40,24 +40,24 @@ public class DBConfig {
         SqlSessionFactoryBean factory = new SqlSessionFactoryBean();
         factory.setDataSource(dataSource);
 
-        // ¡Ú¡Ú¡Ú MyBatis Àü¿ª ¼³Á¤ Á÷Á¢ ÁÖÀÔ
+        // â˜…â˜…â˜… MyBatis ì „ì—­ ì„¤ì • ì§ì ‘ ì£¼ì…
 //        Configuration mybatisConfig = new Configuration();
-//        mybatisConfig.setMapUnderscoreToCamelCase(true); // SNAKE_CASE ¡æ camelCase ÀÚµ¿ ¸ÅÇÎ
-//        mybatisConfig.setJdbcTypeForNull(JdbcType.NULL); // (¿É¼Ç) null ¹ÙÀÎµù ¾ÈÀüÀåÄ¡
-//        // mybatisConfig.setCacheEnabled(true);          // (¿É¼Ç) 2Â÷ Ä³½Ã µî ÇÊ¿ä½Ã
+//        mybatisConfig.setMapUnderscoreToCamelCase(true); // SNAKE_CASE â†’ camelCase ìë™ ë§¤í•‘
+//        mybatisConfig.setJdbcTypeForNull(JdbcType.NULL); // (ì˜µì…˜) null ë°”ì¸ë”© ì•ˆì „ì¥ì¹˜
+//        // mybatisConfig.setCacheEnabled(true);          // (ì˜µì…˜) 2ì°¨ ìºì‹œ ë“± í•„ìš”ì‹œ
 //        factory.setConfiguration(mybatisConfig);
         org.apache.ibatis.session.Configuration mybatisConfig = new org.apache.ibatis.session.Configuration();
         mybatisConfig.setMapUnderscoreToCamelCase(true);
         mybatisConfig.setJdbcTypeForNull(JdbcType.NULL);
         factory.setConfiguration(mybatisConfig);
 
-        // ¡Ú¡Ú¡Ú ¸ÅÆÛ XML °æ·Î ÁöÁ¤ (propertiesÀÇ mapper-locations ´ë½Å ¼öµ¿ ÁÖÀÔ)
+        // â˜…â˜…â˜… ë§¤í¼ XML ê²½ë¡œ ì§€ì • (propertiesì˜ mapper-locations ëŒ€ì‹  ìˆ˜ë™ ì£¼ì…)
         factory.setMapperLocations(
             new PathMatchingResourcePatternResolver()
                 .getResources("classpath*:mapper/**/*.xml")
         );
 
-        // (¿É¼Ç) Type Alias ÆĞÅ°Áö: DTO ÆĞÅ°Áö ÀüÃ¼¸¦ º°ÄªÀ¸·Î ¾²°í ½ÍÀ» ¶§
+        // (ì˜µì…˜) Type Alias íŒ¨í‚¤ì§€: DTO íŒ¨í‚¤ì§€ ì „ì²´ë¥¼ ë³„ì¹­ìœ¼ë¡œ ì“°ê³  ì‹¶ì„ ë•Œ
         // factory.setTypeAliasesPackage("com.prafta.web.**.dto");
 
         return factory.getObject();

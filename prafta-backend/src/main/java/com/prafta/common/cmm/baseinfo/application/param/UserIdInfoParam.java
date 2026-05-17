@@ -11,7 +11,7 @@ public record UserIdInfoParam(
 	public static UserIdInfoParam from(UserIdInfoRequest request) {
 		
 		if(request == null)
-			throw ApiException.appendf(CommonErrorCode.COMMON_400_001,"\n필수값 누락 - UserIdInfoRequest");
+			throw new ApiException(CommonErrorCode.COMMON_400_001);
 		
 		return new UserIdInfoParam(
 			request.getUserNm()

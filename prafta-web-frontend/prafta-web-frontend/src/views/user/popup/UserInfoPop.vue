@@ -283,6 +283,7 @@ import { useModal } from "@/utils/useModal";
 import { useCenteredDraggable } from "@/composables/useCenteredDraggable";
 import axios from "@/api/axios";
 import { getMessage, MSG } from "@/messages";
+import { resolveApiErrorMessage } from "@/utils/apiError";
 import SiteSearchPop from "@/components/popup/SiteSearchPop.vue";
 import SiteNodeSearchPop from "@/components/popup/SiteNodeSearchPop.vue";
 import BaseSelect from "@/components/common/BaseSelect.vue";
@@ -393,11 +394,7 @@ const fnGetBaseinfoList = async () => {
       baseInfoArr.value = grouped;
     }
   } catch (err) {
-    const msg =
-      err?.response?.data?.message ||
-      err?.message ||
-      "조회 중 오류가 발생했습니다.";
-
+    const msg = resolveApiErrorMessage(err, "조회 중 오류가 발생했습니다.");
     await proxy.$alert(msg);
   }
 };
@@ -425,7 +422,7 @@ const fnGetSystinfoList = async () => {
       systCodeArr.value = grouped;
     }
   } catch (err) {
-    alert(err.response.data.message);
+    fnAlertMsg(resolveApiErrorMessage(err, "조회 중 오류가 발생했습니다."));
   }
 };
 
@@ -474,7 +471,7 @@ const fnGetUserInfo = async (userId) => {
       }
     }
   } catch (err) {
-    alert(err.response.data.message);
+    fnAlertMsg(resolveApiErrorMessage(err, "조회 중 오류가 발생했습니다."));
   }
 };
 
@@ -511,8 +508,7 @@ const fnSmsAuthReq = async () => {
       }, 1000);
     }
   } catch (err) {
-    const alertMsg = err.response.data.message;
-    fnAlertMsg(alertMsg);
+    fnAlertMsg(resolveApiErrorMessage(err, "처리 중 오류가 발생했습니다."));
   }
 };
 
@@ -549,7 +545,7 @@ const fnSmsAuthChk = async () => {
     }
   } catch (err) {
     console.log(err);
-    fnAlertMsg(err.response.data.message, () => {
+    fnAlertMsg(resolveApiErrorMessage(err, "처리 중 오류가 발생했습니다."), () => {
       smsAuthReqBtnFcs.value.focus();
     });
   }
@@ -594,8 +590,8 @@ const fnUserInfoSave = async () => {
 
 const fnUserPwReset = async () => {
   try {
+    // cmpnyCd는 서버가 토큰으로 강제하므로 전송하지 않는다.
     const response = await axios.post("/webApi/user01/update-user-passwd", {
-      cmpnyCd: cmpnyCd.value,
       userId: userId.value,
     });
     if (response.status === 200) {
@@ -663,8 +659,10 @@ const fnScheduleWithdrawal = async () => {
     });
   } catch (err) {
     fnAlertMsg(
-      err?.response?.data?.message ||
+      resolveApiErrorMessage(
+        err,
         getMessage(MSG.USER_INFO_WITHDRAWAL_DATE_FAILED)
+      )
     );
   }
 };
@@ -684,9 +682,7 @@ const fnCancelWithdrawal = async () => {
       props.onSearch();
     });
   } catch (err) {
-    fnAlertMsg(
-      err?.response?.data?.message || getMessage(MSG.REQUEST_FAILED)
-    );
+    fnAlertMsg(resolveApiErrorMessage(err, getMessage(MSG.REQUEST_FAILED)));
   }
 };
 

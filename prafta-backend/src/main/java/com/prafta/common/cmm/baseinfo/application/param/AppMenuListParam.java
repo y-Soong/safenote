@@ -12,13 +12,13 @@ public record AppMenuListParam(
 	public static AppMenuListParam from(AppMenuListRequest request, TokenInfo tokenInfo) {
 		
 		if(request == null)
-			throw ApiException.appendf(CommonErrorCode.COMMON_400_001,"\n필수값 누락 - AppMenuListRequest");
+			throw new ApiException(CommonErrorCode.COMMON_400_001);
 		if(tokenInfo == null)
-			throw ApiException.appendf(CommonErrorCode.COMMON_400_003,"\n필수값 누락 - TokenInfo");
+			throw new ApiException(CommonErrorCode.COMMON_400_003);
 		
 		return new AppMenuListParam(
 			tokenInfo.gv_cmpnyCd()
-			, request.getUserCd()
+			, tokenInfo.gv_userCd()
 		);
 	}
 }

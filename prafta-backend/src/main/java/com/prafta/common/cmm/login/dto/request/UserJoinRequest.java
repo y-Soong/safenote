@@ -12,37 +12,37 @@ import lombok.Setter;
 @Setter
 @NoArgsConstructor
 public class UserJoinRequest{
-	@FieldLabel("È¸»çÄÚµå")
+	@FieldLabel("íšŒì‚¬ì½”ë“œ")
 	@NotBlank()
 	@Size(max = 50)
     String cmpnyCd;
 	
-	@FieldLabel("¾ÆÀÌµğ")
+	@FieldLabel("ì•„ì´ë””")
 	@NotBlank()
 	@Size(max = 50)
     String userId;
 	
-	@FieldLabel("ºñ¹Ğ¹øÈ£")
+	@FieldLabel("ë¹„ë°€ë²ˆí˜¸")
 	@NotBlank()
 	@Size(max = 50)
     String userPw;
 	
-	@FieldLabel("ÀÌ¸§")
+	@FieldLabel("ì´ë¦„")
 	@NotBlank()
 	@Size(max = 50)
     String userNm;
 	
-	@FieldLabel("»ç¾÷Àå")
+	@FieldLabel("ì‚¬ì—…ì¥")
 	@NotBlank()
 	@Size(max = 50)
     String siteCd;
 	
-	@FieldLabel("ÈŞ´ëÆù¹øÈ£")
+	@FieldLabel("íœ´ëŒ€í°ë²ˆí˜¸")
 	@NotBlank()
 	@Size(max = 50)
     String mblNo;
     
-    @FieldLabel("»ı³â¿ùÀÏ")
+    @FieldLabel("ìƒë…„ì›”ì¼")
 	@NotBlank()
 	@Size(max = 6)
     String birthDt;

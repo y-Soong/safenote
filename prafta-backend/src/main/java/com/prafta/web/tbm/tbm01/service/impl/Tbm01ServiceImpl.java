@@ -103,13 +103,13 @@ public class Tbm01ServiceImpl implements Tbm01Service{
 				}
 				
 				if (file != null && !file.isEmpty()) {
-					fileMgmtCd = fileMapper.selectFileMgmtCd(FileInfoQuery.from(param.gvCmpnyCd(), "003"));			// 002 : TBM ±³À°ÀÚ·á
+					fileMgmtCd = fileMapper.selectFileMgmtCd(FileInfoQuery.from(param.gvCmpnyCd(), "003"));			// 002 : TBM êµìœ¡ìë£Œ
 					
 					fileService.fileSave(FileInfoParam.from(
     					param.gvCmpnyCd()
     					, param.gvUserCd()
-    					, ""							// TBM ±³À°ÀÚ·á´Â È¸»ç °øÅëÀ¸·Î »ı¼º
-    					, "003"							// À§Çè¼º Æò°¡
+    					, ""							// TBM êµìœ¡ìë£ŒëŠ” íšŒì‚¬ ê³µí†µìœ¼ë¡œ ìƒì„±
+    					, "003"							// ìœ„í—˜ì„± í‰ê°€
     					, fileMgmtCd
     					, file
 					));

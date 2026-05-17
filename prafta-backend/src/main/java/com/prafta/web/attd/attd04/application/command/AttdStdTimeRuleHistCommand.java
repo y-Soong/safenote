@@ -14,11 +14,11 @@ public record AttdStdTimeRuleHistCommand(
     public static AttdStdTimeRuleHistCommand from(AttdStdTimeRuleParam param, int histIdx, String stdTimeRuleType, String stdTimeType) {
 
         if (param == null)
-            throw ApiException.appendf(CommonErrorCode.COMMON_400_001, "\n필수값 누락 - AttdStdTimeRuleParam");
+            throw new ApiException(CommonErrorCode.COMMON_400_001);
         if (stdTimeRuleType == null)
-            throw ApiException.appendf(CommonErrorCode.COMMON_400_001, "\n필수값 누락 - stdTimeRuleType");
+            throw new ApiException(CommonErrorCode.COMMON_400_001);
         if (stdTimeType == null)
-            throw ApiException.appendf(CommonErrorCode.COMMON_400_001, "\n필수값 누락 - stdTimeType");
+            throw new ApiException(CommonErrorCode.COMMON_400_001);
         
         return new AttdStdTimeRuleHistCommand(
         	histIdx

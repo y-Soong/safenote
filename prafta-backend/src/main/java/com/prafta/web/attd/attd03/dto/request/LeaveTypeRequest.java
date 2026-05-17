@@ -14,139 +14,139 @@ import lombok.Setter;
 @NoArgsConstructor
 public class LeaveTypeRequest {
 
-    @FieldLabel("¿¬Â÷ÄÚµå")
+    @FieldLabel("ì—°ì°¨ì½”ë“œ")
     @NotBlank
     @Size(max = 20)
     private String leaveCd;
     
-    // A. Å¸ÀÔ±¸ºĞ    
-    /** Å¸ÀÔ±¸ºĞ (01:»ç¿ëÀÚ ½ÅÃ», 02:°ü¸®ÀÚ ºÎ¿©) */
-    @FieldLabel("Å¸ÀÔ±¸ºĞ")
+    // A. íƒ€ì…êµ¬ë¶„    
+    /** íƒ€ì…êµ¬ë¶„ (01:ì‚¬ìš©ì ì‹ ì²­, 02:ê´€ë¦¬ì ë¶€ì—¬) */
+    @FieldLabel("íƒ€ì…êµ¬ë¶„")
     @NotBlank
     @Size(max = 2)
     private String leaveType;
 
-    /** ¿¬Â÷ ºÎ¿© ¹æ½Ä (leaveType=02ÀÏ ¶§ »ç¿ë) */
-    @FieldLabel("¿¬Â÷ ºÎ¿© ¹æ½Ä")
+    /** ì—°ì°¨ ë¶€ì—¬ ë°©ì‹ (leaveType=02ì¼ ë•Œ ì‚¬ìš©) */
+    @FieldLabel("ì—°ì°¨ ë¶€ì—¬ ë°©ì‹")
     @Size(max = 2)
     private String grantType;
 
-    // B. ±âº»±¸ºĞ
-    /** ¿¬Â÷ÄÚµå */
-    @FieldLabel("¿¬Â÷¹øÈ£")
+    // B. ê¸°ë³¸êµ¬ë¶„
+    /** ì—°ì°¨ì½”ë“œ */
+    @FieldLabel("ì—°ì°¨ë²ˆí˜¸")
     @NotBlank
     @Size(max = 20)
     private String leaveNo;
 
-    /** ¿¬Â÷¸í */
-    @FieldLabel("¿¬Â÷¸í")
+    /** ì—°ì°¨ëª… */
+    @FieldLabel("ì—°ì°¨ëª…")
     @NotBlank
     @Size(max = 200)
     private String leaveNm;
 
-    /** SYS023 À¯±Ş±¸ºĞ */
-    @FieldLabel("À¯±Ş±¸ºĞ")
+    /** SYS023 ìœ ê¸‰êµ¬ë¶„ */
+    @FieldLabel("ìœ ê¸‰êµ¬ë¶„")
     @NotBlank
     @Size(max = 2)
     private String paidType;
 
-    /** SYS024 ÈŞ°¡¼º°İ */
-    @FieldLabel("ÈŞ°¡¼º°İ")
+    /** SYS024 íœ´ê°€ì„±ê²© */
+    @FieldLabel("íœ´ê°€ì„±ê²©")
     @NotBlank
     @Size(max = 2)
     private String leaveNatureType;
 
-    /** »ç¿ë¿©ºÎ (Y/N) */
-    @FieldLabel("»ç¿ë¿©ºÎ")
+    /** ì‚¬ìš©ì—¬ë¶€ (Y/N) */
+    @FieldLabel("ì‚¬ìš©ì—¬ë¶€")
     @Size(max = 1)
     private String useYn;
 
-    /** ºñ°í(¼³¸í) */
-    @FieldLabel("ºñ°í")
+    /** ë¹„ê³ (ì„¤ëª…) */
+    @FieldLabel("ë¹„ê³ ")
     @Size(max = 500)
     private String leaveDesc;
 
-    // C. »ç¿ë±ÔÄ¢ - »ç¿ëÀÚ ½ÅÃ» Å¸ÀÔ(leaveType=01)
-    /** ÃÖ´ë ½ÅÃ»ÀÏ¼ö */
-    @FieldLabel("ÃÖ´ë ½ÅÃ»ÀÏ¼ö")
+    // C. ì‚¬ìš©ê·œì¹™ - ì‚¬ìš©ì ì‹ ì²­ íƒ€ì…(leaveType=01)
+    /** ìµœëŒ€ ì‹ ì²­ì¼ìˆ˜ */
+    @FieldLabel("ìµœëŒ€ ì‹ ì²­ì¼ìˆ˜")
     @Max(255)
     private Integer maxAplyDays;
 
-    /** ¿¬Â÷ »ç¿ë ´ÜÀ§ */
-    @FieldLabel("¿¬Â÷ »ç¿ë ´ÜÀ§")
+    /** ì—°ì°¨ ì‚¬ìš© ë‹¨ìœ„ */
+    @FieldLabel("ì—°ì°¨ ì‚¬ìš© ë‹¨ìœ„")
     @Size(max = 2)
     private String useUnitType;
 
-    /** »ç¿ë°¡´É±â°£ */
-    @FieldLabel("»ç¿ë°¡´É±â°£")
+    /** ì‚¬ìš©ê°€ëŠ¥ê¸°ê°„ */
+    @FieldLabel("ì‚¬ìš©ê°€ëŠ¥ê¸°ê°„")
     @Size(max = 2)
     private String availTermType;
 
-    /** ±â°£¼³Á¤ ½ÃÀÛÀÏ (availTermType=03ÀÏ ¶§) */
-    @FieldLabel("»ç¿ë±â°£ ½ÃÀÛÀÏ")
+    /** ê¸°ê°„ì„¤ì • ì‹œì‘ì¼ (availTermType=03ì¼ ë•Œ) */
+    @FieldLabel("ì‚¬ìš©ê¸°ê°„ ì‹œì‘ì¼")
     @Size(max = 4)
     private String availFromDt;
 
-    /** ±â°£¼³Á¤ Á¾·áÀÏ (availTermType=03ÀÏ ¶§) */
-    @FieldLabel("»ç¿ë±â°£ Á¾·áÀÏ")
+    /** ê¸°ê°„ì„¤ì • ì¢…ë£Œì¼ (availTermType=03ì¼ ë•Œ) */
+    @FieldLabel("ì‚¬ìš©ê¸°ê°„ ì¢…ë£Œì¼")
     @Size(max = 4)
     private String availToDt;
 
-    // C. »ç¿ë±ÔÄ¢ - °ü¸®ÀÚ ºÎ¿© Å¸ÀÔ(¼öµ¿ºÎ¿©: leaveType=02 & grantType=02)
-    /** ºÎ¿©ÀÏ¼ö */
-    @FieldLabel("ºÎ¿©ÀÏ¼ö")
+    // C. ì‚¬ìš©ê·œì¹™ - ê´€ë¦¬ì ë¶€ì—¬ íƒ€ì…(ìˆ˜ë™ë¶€ì—¬: leaveType=02 & grantType=02)
+    /** ë¶€ì—¬ì¼ìˆ˜ */
+    @FieldLabel("ë¶€ì—¬ì¼ìˆ˜")
     @Max(255)
     private Integer grantDays;
 
-    /** »ç¿ë°¡´É±â°£ */
-    @FieldLabel("°ü¸®ÀÚ »ç¿ë°¡´É±â°£")
+    /** ì‚¬ìš©ê°€ëŠ¥ê¸°ê°„ */
+    @FieldLabel("ê´€ë¦¬ì ì‚¬ìš©ê°€ëŠ¥ê¸°ê°„")
     @Size(max = 2)
     private String adminAvailTermType;
 
-    /** ±â°£¼³Á¤ ½ÃÀÛÀÏ (adminAvailTermType=03ÀÏ ¶§) */
-    @FieldLabel("°ü¸®ÀÚ »ç¿ë±â°£ ½ÃÀÛÀÏ")
+    /** ê¸°ê°„ì„¤ì • ì‹œì‘ì¼ (adminAvailTermType=03ì¼ ë•Œ) */
+    @FieldLabel("ê´€ë¦¬ì ì‚¬ìš©ê¸°ê°„ ì‹œì‘ì¼")
     @Size(max = 6)
     private String adminAvailFromDt;
 
-    /** ±â°£¼³Á¤ Á¾·áÀÏ (adminAvailTermType=03ÀÏ ¶§) */
-    @FieldLabel("°ü¸®ÀÚ »ç¿ë±â°£ Á¾·áÀÏ")
+    /** ê¸°ê°„ì„¤ì • ì¢…ë£Œì¼ (adminAvailTermType=03ì¼ ë•Œ) */
+    @FieldLabel("ê´€ë¦¬ì ì‚¬ìš©ê¸°ê°„ ì¢…ë£Œì¼")
     @Size(max = 6)
     private String adminAvailToDt;
 
-    // C. »ç¿ë±ÔÄ¢ - °ü¸®ÀÚ ºÎ¿© Å¸ÀÔ(ÀÚµ¿ºÎ¿©: leaveType=02 & grantType=01)
-    /** ÀÚµ¿ ºÎ¿© ±âÁØÀÏ */
-    @FieldLabel("ÀÚµ¿ ºÎ¿© ±âÁØÀÏ")
+    // C. ì‚¬ìš©ê·œì¹™ - ê´€ë¦¬ì ë¶€ì—¬ íƒ€ì…(ìë™ë¶€ì—¬: leaveType=02 & grantType=01)
+    /** ìë™ ë¶€ì—¬ ê¸°ì¤€ì¼ */
+    @FieldLabel("ìë™ ë¶€ì—¬ ê¸°ì¤€ì¼")
     @Size(max = 2)
     private String grantBaseType;
 
-    /** ½ÇÇà ½ÃÁ¡ (°³¿ù Àü 1ÀÏ) */
-    @FieldLabel("ÀÚµ¿ºÎ¿© ½ÇÇà½ÃÁ¡")
+    /** ì‹¤í–‰ ì‹œì  (ê°œì›” ì „ 1ì¼) */
+    @FieldLabel("ìë™ë¶€ì—¬ ì‹¤í–‰ì‹œì ")
     @Max(255)
     private Integer grantOffsetMonth;
 
-    // D. °áÀç ¹× Áõºù
-    /** °áÀç ¿©ºÎ (Y/N) */
-    @FieldLabel("°áÀç ¿©ºÎ")
+    // D. ê²°ì¬ ë° ì¦ë¹™
+    /** ê²°ì¬ ì—¬ë¶€ (Y/N) */
+    @FieldLabel("ê²°ì¬ ì—¬ë¶€")
     @Size(max = 1)
     private String aprvUseYn;
 
-    /** °áÀç ´Ü°è ¼ö (aprvUseYn=YÀÏ ¶§) */
-    @FieldLabel("°áÀç ´Ü°è ¼ö")
+    /** ê²°ì¬ ë‹¨ê³„ ìˆ˜ (aprvUseYn=Yì¼ ë•Œ) */
+    @FieldLabel("ê²°ì¬ ë‹¨ê³„ ìˆ˜")
     @Max(255)
     private Integer aprvStepCnt;
 
-    /** ÀÎ»çÆÀ ÃÖÁ¾ ½ÂÀÎ ¿©ºÎ (Y/N, aprvUseYn=YÀÏ ¶§) */
-    @FieldLabel("ÀÎ»çÆÀ ÃÖÁ¾ ½ÂÀÎ ¿©ºÎ")
+    /** ì¸ì‚¬íŒ€ ìµœì¢… ìŠ¹ì¸ ì—¬ë¶€ (Y/N, aprvUseYn=Yì¼ ë•Œ) */
+    @FieldLabel("ì¸ì‚¬íŒ€ ìµœì¢… ìŠ¹ì¸ ì—¬ë¶€")
     @Size(max = 1)
     private String hrFinalAprvYn;
 
-    /** Áõºù ¿©ºÎ (Y/N) */
-    @FieldLabel("Áõºù ¿©ºÎ")
+    /** ì¦ë¹™ ì—¬ë¶€ (Y/N) */
+    @FieldLabel("ì¦ë¹™ ì—¬ë¶€")
     @Size(max = 1)
     private String evidenceYn;
 
-    /** Áõºù ¾È³» ¹®±¸ (evidenceYn=YÀÏ ¶§) */
-    @FieldLabel("Áõºù ¾È³» ¹®±¸")
+    /** ì¦ë¹™ ì•ˆë‚´ ë¬¸êµ¬ (evidenceYn=Yì¼ ë•Œ) */
+    @FieldLabel("ì¦ë¹™ ì•ˆë‚´ ë¬¸êµ¬")
     @Size(max = 500)
     private String evidenceGuideMsg;
 }

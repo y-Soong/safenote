@@ -12,9 +12,9 @@ public record UserSmsAuthNoCheckQuery(
 	public static UserSmsAuthNoCheckQuery from(UserSmsAuthNoCheckParam param, String mblNoHmac) {
 		
 		if(param == null)
-			throw ApiException.appendf(CommonErrorCode.COMMON_400_001,"\n필수값 누락 - UserSmsAuthNoCheckParam");
+			throw new ApiException(CommonErrorCode.COMMON_400_001);
 		if(mblNoHmac == null)
-			throw ApiException.appendf(CommonErrorCode.COMMON_400_001,"\n필수값 누락 - mblNoHmac");
+			throw new ApiException(CommonErrorCode.COMMON_400_001);
 		
 		return new UserSmsAuthNoCheckQuery(
 				param.cmpnyCd()

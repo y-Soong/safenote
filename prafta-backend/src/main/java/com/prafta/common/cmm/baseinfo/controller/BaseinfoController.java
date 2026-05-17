@@ -59,6 +59,7 @@ import com.prafta.common.cmm.baseinfo.dto.response.UserIdInfoResponse;
 import com.prafta.common.cmm.baseinfo.dto.response.UserInfoListResponse;
 import com.prafta.common.cmm.baseinfo.dto.response.WebMenuListResponse;
 import com.prafta.common.cmm.baseinfo.service.BaseinfoService;
+import com.prafta.common.annotation.NoAuth;
 import com.prafta.common.security.JwtUtil;
 
 import lombok.RequiredArgsConstructor;
@@ -68,13 +69,14 @@ import lombok.extern.slf4j.Slf4j;
 //@NoAuth
 @RestController
 @RequestMapping("/baseinfo")
-@RequiredArgsConstructor		// ·Òº¹ÀÌ final ÇÊµå·Î »ı¼ºÀÚ ÀÚµ¿ »ı¼º
+@RequiredArgsConstructor		// ë¡¬ë³µì´ final í•„ë“œë¡œ ìƒì„±ì ìë™ ìƒì„±
 public class BaseinfoController { 	
 	
 	private final BaseinfoService baseinfoService;
 	private final JwtUtil jwtUtil;
 
-	/* °øÅëÄÚµå Á¶È¸ */
+	/* ê³µí†µì½”ë“œ ì¡°íšŒ */
+	@NoAuth
 	@GetMapping("/syst-info-lists")
     public ResponseEntity<?> getSystinfoList(@ModelAttribute SystInfoListRequest request) {
 		
@@ -83,7 +85,8 @@ public class BaseinfoController {
     	return ResponseEntity.status(HttpStatus.OK).body(response);
     }
     
-	/* °øÅëÄÚµå ´ÜÀÏ Á¶È¸ */
+	/* ê³µí†µì½”ë“œ ë‹¨ì¼ ì¡°íšŒ */
+	@NoAuth
 	@GetMapping("/syst-infos")
     public ResponseEntity<?> getSystinfo(@ModelAttribute SystInfoRequest request) {
 		
@@ -92,25 +95,26 @@ public class BaseinfoController {
     	return ResponseEntity.status(HttpStatus.OK).body(response);
     }
     
-	/* ¿î¿µ»çº° ±âÃÊÄÚµå Á¶È¸ */
+	/* ìš´ì˜ì‚¬ë³„ ê¸°ì´ˆì½”ë“œ ì¡°íšŒ */
     @GetMapping("/base-info-lists")
-    public ResponseEntity<?> getBaseinfoList(@ModelAttribute BaseInfoListRequest request, @RequestHeader(value = "Authorization", required = false) String authorization) {
+    public ResponseEntity<?> getBaseinfoList(@ModelAttribute BaseInfoListRequest request, @RequestHeader(value = "Authorization", required = true) String authorization) {
     	
     	BaseInfoListResponse response = baseinfoService.selectBaseinfoList(BaseInfoListParam.from(request, jwtUtil.getAllClaimsAsMap(authorization)));
     	
     	return ResponseEntity.status(HttpStatus.OK).body(response);
     }
     
-    /* ¿î¿µ»çº° ±âÃÊÄÚµå ´ÜÀÏ Á¶È¸ */
+    /* ìš´ì˜ì‚¬ë³„ ê¸°ì´ˆì½”ë“œ ë‹¨ì¼ ì¡°íšŒ */
 	@GetMapping("/base-infos")
-    public ResponseEntity<?> getBaseinfo(@ModelAttribute BaseInfoRequest request, @RequestHeader(value = "Authorization", required = false) String authorization) {
+    public ResponseEntity<?> getBaseinfo(@ModelAttribute BaseInfoRequest request, @RequestHeader(value = "Authorization", required = true) String authorization) {
 		
 		BaseInfoResponse response = baseinfoService.selectBaseinfo(BaseInfoParam.from(request, jwtUtil.getAllClaimsAsMap(authorization)));
     	
     	return ResponseEntity.status(HttpStatus.OK).body(response);
     }
     
-	/* È¸»ç¸í Á¶È¸  */
+	/* íšŒì‚¬ëª… ì¡°íšŒ  */
+	@NoAuth
     @GetMapping("/cmpny-infos")
     public ResponseEntity<?> getCmpnyInfo(@ModelAttribute CmpnyInfoRequest request) {
     	CmpnyInfoResponse response = baseinfoService.selectCmpnyInfo(CmpnyInfoParam.from(request));
@@ -118,22 +122,23 @@ public class BaseinfoController {
     	return ResponseEntity.status(HttpStatus.OK).body(response);
     }
     
-    /* WEB ¸Ş´º Á¶È¸ */
+    /* WEB ë©”ë‰´ ì¡°íšŒ */
     @GetMapping("/web-menu-lists")
-    public ResponseEntity<?> getWebMenuList(@ModelAttribute WebMenuListRequest request, @RequestHeader(value = "Authorization", required = false) String authorization) {
+    public ResponseEntity<?> getWebMenuList(@ModelAttribute WebMenuListRequest request, @RequestHeader(value = "Authorization", required = true) String authorization) {
     	WebMenuListResponse response = baseinfoService.selectWebMenuList(WebMenuListParam.from(request, jwtUtil.getAllClaimsAsMap(authorization)));
     	return ResponseEntity.status(HttpStatus.OK).body(response);
     }
     
-    /* APP ¸Ş´º Á¶È¸ */
+    /* APP ë©”ë‰´ ì¡°íšŒ */
     @GetMapping("/app-menu-lists")
-    public ResponseEntity<?> getAppMenuList(@ModelAttribute AppMenuListRequest request, @RequestHeader(value = "Authorization", required = false) String authorization) {
+    public ResponseEntity<?> getAppMenuList(@ModelAttribute AppMenuListRequest request, @RequestHeader(value = "Authorization", required = true) String authorization) {
     	AppMenuListResponse retList = baseinfoService.selectAppMenuList(AppMenuListParam.from(request, jwtUtil.getAllClaimsAsMap(authorization)));
     	
     	return ResponseEntity.status(HttpStatus.OK).body(retList);
     }
     
-    /* »ç¿ëÀÚ ID Áßº¹Ã¼Å© */
+    /* ì‚¬ìš©ì ID ì¤‘ë³µì²´í¬ */
+    @NoAuth
     @GetMapping("/user-id-duple-checks")
     public ResponseEntity<?> getUserIdDupleCheck(@ModelAttribute UserIdDupleCheckRequest request) {
 
@@ -142,7 +147,8 @@ public class BaseinfoController {
     	return ResponseEntity.status(HttpStatus.OK).body(response);
     }
     
-    /* SMS ¹ß¼Û */
+    /* SMS ë°œì†¡ */
+    @NoAuth
     @PostMapping("/sms-auth-sends")
     public ResponseEntity<?> insertSmsAuthNo(@RequestBody UserSmsAuthNoRequest request) {
         baseinfoService.insertSmsAuthNo(UserSmsAuthNoParam.from(request));
@@ -150,7 +156,8 @@ public class BaseinfoController {
         return ResponseEntity.status(HttpStatus.OK).build();
     }
     
-    /* SMS ÀÎÁõ¹øÈ£ È®ÀÎ  */
+    /* SMS ì¸ì¦ë²ˆí˜¸ í™•ì¸  */
+    @NoAuth
     @PostMapping("/sms-auth-checks")
     public ResponseEntity<?> userSmsAuthCheck(@RequestBody UserSmsAuthNoCheckRequest request) {
     	baseinfoService.userSmsAuthCheck(UserSmsAuthNoCheckParam.from(request));
@@ -158,42 +165,43 @@ public class BaseinfoController {
         return ResponseEntity.status(HttpStatus.OK).build();
     }
     
-    /* »ç¾÷Àå ¸®½ºÆ® Á¶È¸ */
+    /* ì‚¬ì—…ì¥ ë¦¬ìŠ¤íŠ¸ ì¡°íšŒ */
     @GetMapping("/site-lists")
-    public ResponseEntity<?> getSiteInfoList(@ModelAttribute SiteInfoRequest request, @RequestHeader(value = "Authorization", required = false) String authorization) {
+    public ResponseEntity<?> getSiteInfoList(@ModelAttribute SiteInfoRequest request, @RequestHeader(value = "Authorization", required = true) String authorization) {
     	
     	SiteInfoResponse response = baseinfoService.selectSiteInfoList(SiteInfoParam.from(request, jwtUtil.getAllClaimsAsMap(authorization)));
 
     	return ResponseEntity.status(HttpStatus.OK).body(response);
     }
     
-    /* »ç¾÷Àå ¼Ò¼Ó ºÎ¼­ ¸®½ºÆ® Á¶È¸ */
+    /* ì‚¬ì—…ì¥ ì†Œì† ë¶€ì„œ ë¦¬ìŠ¤íŠ¸ ì¡°íšŒ */
     @GetMapping("/site-node-lists")
-    public ResponseEntity<?> getSiteNodeList(@ModelAttribute SiteNodeListRequest request, @RequestHeader(value = "Authorization", required = false) String authorization) {
+    public ResponseEntity<?> getSiteNodeList(@ModelAttribute SiteNodeListRequest request, @RequestHeader(value = "Authorization", required = true) String authorization) {
     	
     	SiteNodeListResponse response = baseinfoService.selectSiteNodeList(SiteNodeListParam.from(request, jwtUtil.getAllClaimsAsMap(authorization)));
         
     	return ResponseEntity.status(HttpStatus.OK).body(response);
     }
     
-    /* »ç¿ëÀÚ ¸Ş´º Á¶È¸  */
+    /* ì‚¬ìš©ì ë©”ë‰´ ì¡°íšŒ  */
     @GetMapping("/menu-list")
-    public ResponseEntity<?> getMenuList(@ModelAttribute MenuListRequest request, @RequestHeader(value = "Authorization", required = false) String authorization) {
+    public ResponseEntity<?> getMenuList(@ModelAttribute MenuListRequest request, @RequestHeader(value = "Authorization", required = true) String authorization) {
     	
     	MenuListResponse response = baseinfoService.selectMenuList(MenuListParam.from(request, jwtUtil.getAllClaimsAsMap(authorization)));
     	
     	return ResponseEntity.status(HttpStatus.OK).body(response);
     }
     
-    /* »ç¿ëÀÚ Á¤º¸ Á¶È¸ */
+    /* ì‚¬ìš©ì ì •ë³´ ì¡°íšŒ */
     @GetMapping("/user-info-lists")
-    public ResponseEntity<?> getUserInfoList(@ModelAttribute UserInfoListRequest request, @RequestHeader(value = "Authorization", required = false) String authorization) {
+    public ResponseEntity<?> getUserInfoList(@ModelAttribute UserInfoListRequest request, @RequestHeader(value = "Authorization", required = true) String authorization) {
     	
     	UserInfoListResponse response = baseinfoService.selectUserInfoList(UserInfoListParam.from(request, jwtUtil.getAllClaimsAsMap(authorization)));
     	
     	return ResponseEntity.status(HttpStatus.OK).body(response);
     }
     
+    @NoAuth
     @GetMapping("/user-ids")
     public ResponseEntity<?> getUserIdInfo(@ModelAttribute UserIdInfoRequest request) {
     	UserIdInfoResponse response = baseinfoService.selectUserIdInfo(UserIdInfoParam.from(request));
@@ -201,6 +209,7 @@ public class BaseinfoController {
     	return ResponseEntity.status(HttpStatus.OK).body(response);
     }
     
+    @NoAuth
     @PostMapping("/update-user-password")
     public ResponseEntity<?> updateUserPw(@RequestBody UserPasswordRequest request) {
     	
@@ -209,6 +218,7 @@ public class BaseinfoController {
     	return ResponseEntity.status(HttpStatus.OK).build();
     }
     
+    @NoAuth
     @GetMapping("/terms-detail-infos")
     public ResponseEntity<?> getTermsDetailInfo(@ModelAttribute TermsDetailInfoRequest request) {
     	TermsDetailInfoResponse response = baseinfoService.selectTermsDetailInfo(TermsDetailInfoParam.from(request));

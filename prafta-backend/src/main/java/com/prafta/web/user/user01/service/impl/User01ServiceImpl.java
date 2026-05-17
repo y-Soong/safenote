@@ -22,19 +22,23 @@ import com.prafta.web.user.user01.application.command.WithdrawMyAccountCommand;
 import com.prafta.web.user.user01.application.command.WithdrawalCancelCommand;
 import com.prafta.web.user.user01.application.model.UserInfoModel;
 import com.prafta.web.user.user01.application.param.MyPasswdParam;
+import com.prafta.web.user.user01.application.param.MyProfileParam;
 import com.prafta.web.user.user01.application.param.ScheduleWithdrawalParam;
 import com.prafta.web.user.user01.application.param.SiteNodeAdminCandidateListParam;
 import com.prafta.web.user.user01.application.param.UserInfoListParam;
 import com.prafta.web.user.user01.application.param.UserPasswdParam;
 import com.prafta.web.user.user01.application.param.WithdrawMyAccountParam;
 import com.prafta.web.user.user01.application.param.WithdrawalCancelParam;
+import com.prafta.web.user.user01.application.query.MyProfileQuery;
 import com.prafta.web.user.user01.application.query.SiteNodeAdminCandidateListQuery;
 import com.prafta.web.user.user01.application.query.UserInfoListQuery;
 import com.prafta.web.user.user01.application.query.UserNodeAdminCheckQuery;
 import com.prafta.web.user.user01.application.query.UserSiteInfoQuery;
+import com.prafta.web.user.user01.dto.response.MyProfileResponse;
 import com.prafta.web.user.user01.dto.response.SiteNodeAdminCandidateListResponse;
 import com.prafta.web.user.user01.dto.response.UserInfoListResponse;
 import com.prafta.web.user.user01.mapper.User01Mapper;
+import com.prafta.web.user.user01.result.MyProfileResult;
 import com.prafta.web.user.user01.result.UserInfoResult;
 import com.prafta.web.user.user01.result.UserPwResult;
 import com.prafta.web.user.user01.result.UserSiteInfoResult;
@@ -236,5 +240,18 @@ public class User01ServiceImpl implements User01Service{
 	@Override
 	public void cancelWithdrawal(WithdrawalCancelParam param) {
 		user01Mapper.cancelWithdrawal(WithdrawalCancelCommand.from(param));
+	}
+
+	@Override
+	public MyProfileResponse selectMyProfile(MyProfileParam param) {
+
+		// 조회 대상 cmpnyCd/userCd는 param(=토큰) 값만 사용. 클라이언트 입력 미사용.
+		MyProfileResult result = user01Mapper.selectMyProfile(MyProfileQuery.from(param));
+
+		if (result == null) {
+			throw new ApiException(LoginErrorCode.LOGIN_400_002);
+		}
+
+		return MyProfileResponse.from(result);
 	}
 }

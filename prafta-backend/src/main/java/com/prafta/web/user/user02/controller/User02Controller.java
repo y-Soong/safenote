@@ -13,7 +13,6 @@ import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
-import com.prafta.common.annotation.NoAuth;
 import com.prafta.common.security.JwtUtil;
 import com.prafta.web.user.user02.application.param.AuthMenuInfoParam;
 import com.prafta.web.user.user02.application.param.AuthMenuListParam;
@@ -26,7 +25,6 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 
 @Slf4j
-@NoAuth
 @RestController
 @RequestMapping("/user02")
 @RequiredArgsConstructor

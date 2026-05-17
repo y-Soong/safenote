@@ -19,7 +19,7 @@ public record ChkptInspectItemCommand(
 	public static ChkptInspectItemCommand from(ChkptInspectItemModel model) {
 
         if (model == null)
-        	throw ApiException.appendf(CommonErrorCode.COMMON_400_001,"\n필수값 누락 - ChkptInspectItemModel");
+        	throw new ApiException(CommonErrorCode.COMMON_400_001);
 
         return new ChkptInspectItemCommand(
     		model.cmpnyCd()

@@ -11,7 +11,7 @@ public record SiteNodeListQuery(
 	public static SiteNodeListQuery from(SiteNodeListParam param) {
 		
 		if(param == null)
-			throw ApiException.appendf(CommonErrorCode.COMMON_400_001,"\n필수값 누락 - SiteNodeListParam");
+			throw new ApiException(CommonErrorCode.COMMON_400_001);
 		
 		return new SiteNodeListQuery(
 			param.siteCd()

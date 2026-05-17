@@ -21,9 +21,11 @@ public class AuthAspect {
     private final HttpServletRequest request;
     private final JwtUtil jwtUtil; // 🔹 JwtUtil 주입
 
+    // baseinfo 컨트롤러 통째 면제 절은 제거됨(PRAFTA-006-005 005-3-C).
+    // baseinfo 의 공개(비로그인) 엔드포인트는 메서드 레벨 @NoAuth 로 개별 면제하고,
+    // 로그인-후 엔드포인트는 본 Aspect 가 JWT 를 강제한다.
     @Before("execution(* com.prafta..controller..*(..)) " +
             "&& !execution(* com.prafta.common.cmm.login.controller..*(..)) " +
-            "&& !execution(* com.prafta.common.cmm.baseinfo.controller..*(..)) " +
             "&& !execution(* com.prafta.common.cmm.auth.controller..*(..)) " +
             "&& !@annotation(com.prafta.common.annotation.NoAuth)")
     public void checkAuthorization(JoinPoint joinPoint) {

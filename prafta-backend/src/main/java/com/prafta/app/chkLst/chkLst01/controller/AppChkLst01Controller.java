@@ -20,6 +20,7 @@ import com.prafta.app.chkLst.chkLst01.dto.SaveInspectResultReq;
 import com.prafta.app.chkLst.chkLst01.service.AppChkLst01Service;
 import com.prafta.common.annotation.NoAuth;
 import com.prafta.common.cmm.file.service.FileService;
+import com.prafta.common.dto.TokenInfo;
 import com.prafta.common.error.common.CommonErrorCode;
 import com.prafta.common.exception.ApiException;
 import com.prafta.common.security.JwtUtil;
@@ -40,10 +41,10 @@ public class AppChkLst01Controller {
 	
 	private final JwtUtil jwtUtil;
 	
-	/* üũ����Ʈ ������ȸ */
+	/* 체크리스트 정보조회 */
     @GetMapping("/checklist-infos")
     public ResponseEntity<?> getChkLstInfo(@ModelAttribute ChecklistInfoReq request, @RequestHeader(value = "Authorization", required = false) String authorization) {
-    	Map<String, Object> tokenInfo = jwtUtil.getAllClaimsAsMap(authorization);
+    	TokenInfo tokenInfo = jwtUtil.getAllClaimsAsMap(authorization);
     	
     	ChecklistInfoRes retDto = appChkLst01Service.selectChkLstInfo(request, tokenInfo);
     	
@@ -56,8 +57,8 @@ public class AppChkLst01Controller {
     
     @PostMapping(value = "/save-inspect-result", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
     public ResponseEntity<?> saveInspectResult(@ModelAttribute SaveInspectResultReq request, @RequestParam(required = false) Map<String, MultipartFile> file, @RequestHeader(value = "Authorization", required = false) String authorization) {
-    	
-    	Map<String, Object> tokenInfo = jwtUtil.getAllClaimsAsMap(authorization);
+
+    	TokenInfo tokenInfo = jwtUtil.getAllClaimsAsMap(authorization);
     	
     	appChkLst01Service.saveInspectResult(request, file, tokenInfo);
     	

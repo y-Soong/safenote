@@ -16,7 +16,7 @@ public record InsertShiftTeamUsersCommand(
     public static InsertShiftTeamUsersCommand from(InsertShiftTeamUsersModel model) {
 
         if (model == null)
-            throw ApiException.appendf(CommonErrorCode.COMMON_400_001, "\nRequired param missing - InsertShiftTeamUsersModel");
+            throw new ApiException(CommonErrorCode.COMMON_400_001);
 
         return new InsertShiftTeamUsersCommand(
             model.siteCd()

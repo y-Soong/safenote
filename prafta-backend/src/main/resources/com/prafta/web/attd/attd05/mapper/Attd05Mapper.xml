@@ -161,6 +161,66 @@
 	  AND A.SITE_CD = #{siteCd}
     </select>
     
+    <select id="selectSchTypeUseYnList" parameterType="com.prafta.web.attd.attd05.application.query.SchListQuery" resultType="com.prafta.web.attd.attd05.result.SchTypeUseYnResult">
+    /* Attd05Mapper.selectSchTypeUseYnList */
+    /* 근무타입(SCH_CD) effective-dating 검증용 버전 목록.
+       TB_SCH_MGMT(현재본) 과 TB_SCH_MGMT_HIST(이력본)를 UNION 으로 합쳐
+       동일 SCH_CD + APPLY_DATE 가 중복되면 HIST_IDX 최댓값 1건만 채택한다.
+       attd07 과 달리 USE_YN='N' 버전도 차단 근거로 살려야 하므로 USE_YN 필터를 걸지 않고
+       USE_YN 을 컬럼으로 SELECT 해 판정에 사용한다. */
+    SELECT
+          E.SCH_CD       AS schCd
+        , E.APPLY_DATE   AS applyDate
+        , E.USE_YN       AS useYn
+    FROM (
+        /* 현재본 (HIST_IDX 를 최댓값으로 두어 동일 APPLY_DATE 중복 시 현재본 우선) */
+        SELECT
+              M.CMPNY_CD
+            , M.SITE_CD
+            , M.SCH_CD
+            , M.APPLY_DATE
+            , M.USE_YN
+            , 2147483647 AS HIST_IDX
+        FROM TB_SCH_MGMT M
+        WHERE M.CMPNY_CD = #{gvCmpnyCd}
+          AND M.SITE_CD  = #{siteCd}
+
+        UNION ALL
+
+        /* 이력본 */
+        SELECT
+              H.CMPNY_CD
+            , H.SITE_CD
+            , H.SCH_CD
+            , H.APPLY_DATE
+            , H.USE_YN
+            , H.HIST_IDX
+        FROM TB_SCH_MGMT_HIST H
+        WHERE H.CMPNY_CD = #{gvCmpnyCd}
+          AND H.SITE_CD  = #{siteCd}
+    ) E
+    /* 동일 SCH_CD + APPLY_DATE 그룹에서 HIST_IDX 최댓값 행만 채택 */
+    WHERE E.HIST_IDX = (
+        SELECT MAX(E2.HIST_IDX)
+        FROM (
+            SELECT M2.CMPNY_CD, M2.SITE_CD, M2.SCH_CD, M2.APPLY_DATE, 2147483647 AS HIST_IDX
+            FROM TB_SCH_MGMT M2
+            WHERE M2.CMPNY_CD = #{gvCmpnyCd}
+              AND M2.SITE_CD  = #{siteCd}
+            UNION ALL
+            SELECT H2.CMPNY_CD, H2.SITE_CD, H2.SCH_CD, H2.APPLY_DATE, H2.HIST_IDX
+            FROM TB_SCH_MGMT_HIST H2
+            WHERE H2.CMPNY_CD = #{gvCmpnyCd}
+              AND H2.SITE_CD  = #{siteCd}
+        ) E2
+        WHERE E2.CMPNY_CD   = E.CMPNY_CD
+          AND E2.SITE_CD    = E.SITE_CD
+          AND E2.SCH_CD     = E.SCH_CD
+          AND E2.APPLY_DATE = E.APPLY_DATE
+    )
+    ORDER BY E.SCH_CD, E.APPLY_DATE
+    </select>
+
     <select id="selectLeaveTypeList" parameterType="com.prafta.web.attd.attd05.application.query.LeaveTypeListQuery" resultType="com.prafta.web.attd.attd05.result.LeaveTypeResult">
     /* Attd05Mapper.selectLeaveTypeList */
     SELECT 

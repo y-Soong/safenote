@@ -45,8 +45,9 @@ import {
 } from "vue";
 import { useUserStore } from "@/stores/userStore";
 import { useRouter } from "vue-router";
-import axios from "@/api/axios";
+import { forceLogout } from "@/composables/useAuth";
 import { useModal } from "@/utils/useModal";
+import { resolveApiErrorMessage } from "@/utils/apiError";
 import MyInfoPop from "@/components/popup/MyInfoPop.vue";
 
 const userStore = useUserStore();
@@ -88,26 +89,18 @@ const goToMyInfo = () => {
 
 const logout = async () => {
   try {
-    const refreshToken = localStorage.getItem("refreshToken");
-    // || localStorage.getItem("gv_refreshToken");
-    const response = await axios.post("/comApi/login/logout", {
-      refreshToken,
-    });
-    if (response.status === 200) {
-      proxy.$alert("로그아웃 처리됐습니다.");
-      sessionStorage.clear();
-      localStorage.removeItem("refreshToken");
-      localStorage.removeItem("gv_refreshToken");
-      userStore.logout();
-      userMenuOpen.value = false;
-      router.push("/"); // 로그인 성공 → 메인화면 이동
-    }
+    // PRAFTA-008/009: 서버 로그아웃 + 세션/refreshToken 정리는 useAuth 단일 진입점(forceLogout)으로 위임.
+    // forceLogout 내부에서 서버 로그아웃 실패는 무시되고 클라이언트 정리는 항상 수행된다.
+    await forceLogout();
+    userStore.logout();
+    userMenuOpen.value = false;
+    await proxy.$alert("로그아웃 처리됐습니다.");
+    router.push("/"); // 로그인 화면으로 이동
   } catch (err) {
-    const msg =
-      err?.response?.data?.message ||
-      err?.message ||
-      "로그아웃 처리 중 오류가 발생했습니다.";
-
+    const msg = resolveApiErrorMessage(
+      err,
+      "로그아웃 처리 중 오류가 발생했습니다."
+    );
     await proxy.$alert(msg);
   }
 };

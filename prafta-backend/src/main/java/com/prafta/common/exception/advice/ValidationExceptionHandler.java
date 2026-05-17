@@ -26,17 +26,17 @@ import jakarta.validation.ConstraintViolationException;
 @RestControllerAdvice
 public class ValidationExceptionHandler {
 
-    // Á¦¾àÄÚµå -> »ç¿ëÀÚ ³ëÃâ ¹®±¸
+    // ì œì•½ì½”ë“œ -> ì‚¬ìš©ì ë…¸ì¶œ ë¬¸êµ¬
     private static final Map<String, String> CONSTRAINT_LABEL = Map.of(
-            "NotBlank", "ÇÊ¼ö°ª ´©¶ô",
-            "NotNull", "ÇÊ¼ö°ª ´©¶ô",
-            "NotEmpty", "ÇÊ¼ö°ª ´©¶ô",
-            "Length", "±æÀÌ°ª °ËÁõ ½ÇÆĞ",
-            "Size", "±æÀÌ°ª °ËÁõ ½ÇÆĞ",
-            "Pattern", "Çü½Ä °ËÁõ ½ÇÆĞ",
-            "Email", "ÀÌ¸ŞÀÏ Çü½Ä °ËÁõ ½ÇÆĞ",
-            "Min", "ÃÖ¼Ò°ª °ËÁõ ½ÇÆĞ",
-            "Max", "ÃÖ´ë°ª °ËÁõ ½ÇÆĞ"
+            "NotBlank", "í•„ìˆ˜ê°’ ëˆ„ë½",
+            "NotNull", "í•„ìˆ˜ê°’ ëˆ„ë½",
+            "NotEmpty", "í•„ìˆ˜ê°’ ëˆ„ë½",
+            "Length", "ê¸¸ì´ê°’ ê²€ì¦ ì‹¤íŒ¨",
+            "Size", "ê¸¸ì´ê°’ ê²€ì¦ ì‹¤íŒ¨",
+            "Pattern", "í˜•ì‹ ê²€ì¦ ì‹¤íŒ¨",
+            "Email", "ì´ë©”ì¼ í˜•ì‹ ê²€ì¦ ì‹¤íŒ¨",
+            "Min", "ìµœì†Œê°’ ê²€ì¦ ì‹¤íŒ¨",
+            "Max", "ìµœëŒ€ê°’ ê²€ì¦ ì‹¤íŒ¨"
     );
 
     /** JSON Body(@RequestBody @Valid) */
@@ -54,14 +54,14 @@ public class ValidationExceptionHandler {
     /** @RequestParam/@PathVariable + @Validated */
     @ExceptionHandler(ConstraintViolationException.class)
     public ResponseEntity<Map<String, Object>> handleConstraintViolation(ConstraintViolationException ex) {
-        // ÆÄ¶ó¹ÌÅÍ °ËÁõÀº FieldError°¡ ¾Æ´Ï¶ó ConstraintViolation ±â¹İ
+        // íŒŒë¼ë¯¸í„° ê²€ì¦ì€ FieldErrorê°€ ì•„ë‹ˆë¼ ConstraintViolation ê¸°ë°˜
         Map<String, LinkedHashSet<String>> grouped = new LinkedHashMap<>();
 
         for (ConstraintViolation<?> v : ex.getConstraintViolations()) {
             String constraint = v.getConstraintDescriptor().getAnnotation().annotationType().getSimpleName(); // NotBlank, Min...
             String groupLabel = CONSTRAINT_LABEL.getOrDefault(constraint, constraint);
 
-            // propertyPath ¿¹: "login.arg0" ÀÌ·± ½ÄÀ¸·Î ³ª¿À±âµµ ÇØ¼­, ¸¶Áö¸· ³ëµå¸¸ ¾²´Â ½ÄÀ¸·Î ´Ü¼øÈ­
+            // propertyPath ì˜ˆ: "login.arg0" ì´ëŸ° ì‹ìœ¼ë¡œ ë‚˜ì˜¤ê¸°ë„ í•´ì„œ, ë§ˆì§€ë§‰ ë…¸ë“œë§Œ ì“°ëŠ” ì‹ìœ¼ë¡œ ë‹¨ìˆœí™”
             String path = v.getPropertyPath().toString();
             String paramName = path.contains(".") ? path.substring(path.lastIndexOf('.') + 1) : path;
 
@@ -105,7 +105,7 @@ public class ValidationExceptionHandler {
     }
 
     private String buildMessage(Map<String, LinkedHashSet<String>> grouped) {
-        // "ÇÊ¼ö°ª ´©¶ô: '»ç¿ëÀÚID', '»ç¿ëÀÚPW', ±æÀÌ°ª °ËÁõ ½ÇÆĞ: 'ÈŞ´ëÆù¹øÈ£'"
+        // "í•„ìˆ˜ê°’ ëˆ„ë½: 'ì‚¬ìš©ìID', 'ì‚¬ìš©ìPW', ê¸¸ì´ê°’ ê²€ì¦ ì‹¤íŒ¨: 'íœ´ëŒ€í°ë²ˆí˜¸'"
         StringBuilder sb = new StringBuilder();
         boolean first = true;
         for (var e : grouped.entrySet()) {
@@ -131,7 +131,7 @@ public class ValidationExceptionHandler {
         return "Invalid";
     }
 
-    /** @FieldLabel("»ç¿ëÀÚID") ±â¹İ Ç¥½Ã¸í */
+    /** @FieldLabel("ì‚¬ìš©ìID") ê¸°ë°˜ í‘œì‹œëª… */
     private String resolveDisplayName(Class<?> dtoClass, String fieldPath) {
         if (dtoClass == null || fieldPath == null || fieldPath.isBlank()) return fieldPath;
 
@@ -141,7 +141,7 @@ public class ValidationExceptionHandler {
         int bracket = topField.indexOf('[');
         if (bracket > 0) topField = topField.substring(0, bracket);
 
-        // record Áö¿ø
+        // record ì§€ì›
         if (dtoClass.isRecord()) {
             for (RecordComponent rc : dtoClass.getRecordComponents()) {
                 if (rc.getName().equals(topField)) {
@@ -152,7 +152,7 @@ public class ValidationExceptionHandler {
             }
         }
 
-        // class Áö¿ø(ÇöÀç LoginRequest´Â class¶ó¼­ ¿©±â Ãß°¡!)
+        // class ì§€ì›(í˜„ì¬ LoginRequestëŠ” classë¼ì„œ ì—¬ê¸° ì¶”ê°€!)
         try {
             var field = dtoClass.getDeclaredField(topField);
             FieldLabel label = field.getAnnotation(FieldLabel.class);

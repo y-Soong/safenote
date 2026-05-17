@@ -30,7 +30,7 @@ public class MenuListResBuilder {
                     .build();
         }
 
-        // 1) keyId·Î ±×·ìÇÎ (¼ø¼­ À¯ÁöÇÏ·Á¸é LinkedHashMap)
+        // 1) keyIdë¡œ ê·¸ë£¹í•‘ (ìˆœì„œ ìœ ì§€í•˜ë ¤ë©´ LinkedHashMap)
         Map<String, List<MenuInfoResult>> byKey = menuInfoList.stream()
                 .filter(m -> !isEmpty(m.getKeyId()))
                 .collect(Collectors.groupingBy(
@@ -39,13 +39,13 @@ public class MenuListResBuilder {
                         Collectors.toList()
                 ));
 
-        // 2) Å¾ ¸Ş´º ±¸¼º
+        // 2) íƒ‘ ë©”ë‰´ êµ¬ì„±
         List<TopMenu> topMenus = byKey.entrySet().stream()
                 .map(e -> {
                     String keyId = e.getKey();
                     MenuInfoResult first = e.getValue().get(0);
 
-                    // label ¿ì¼±¼øÀ§: ¿ÜºÎ resolver > MenuInfo.topMenuNm > keyId
+                    // label ìš°ì„ ìˆœìœ„: ì™¸ë¶€ resolver > MenuInfo.topMenuNm > keyId
                     String label = null;
                     if (topLabelResolver != null) {
                         label = topLabelResolver.apply(keyId);
@@ -58,22 +58,22 @@ public class MenuListResBuilder {
                             .label(label)
                             .build();
                 })
-                // ÇÊ¿äÇÏ¸é Á¤·Ä ±ÔÄ¢ À¯Áö/º¯°æ °¡´É
+                // í•„ìš”í•˜ë©´ ì •ë ¬ ê·œì¹™ ìœ ì§€/ë³€ê²½ ê°€ëŠ¥
                 .sorted(Comparator.comparing(TopMenu::getId))
                 .collect(Collectors.toList());
 
-        // 3) »çÀÌµå ¸Ş´º ±¸¼º
-        // topMenus ¼ø¼­¿Í ¸ÂÃß°í ½ÍÀ¸¸é, topMenus ±âÁØÀ¸·Î key¸¦ ¼øÈ¸ÇÏ´Â ¹æ½ÄÀ» ÃßÃµ
+        // 3) ì‚¬ì´ë“œ ë©”ë‰´ êµ¬ì„±
+        // topMenus ìˆœì„œì™€ ë§ì¶”ê³  ì‹¶ìœ¼ë©´, topMenus ê¸°ì¤€ìœ¼ë¡œ keyë¥¼ ìˆœíšŒí•˜ëŠ” ë°©ì‹ì„ ì¶”ì²œ
         Map<String, List<SideMenu>> sideMenus = new LinkedHashMap<>();
 
         for (TopMenu tm : topMenus) {
             String keyId = tm.getId();
             List<MenuInfoResult> rows = byKey.getOrDefault(keyId, Collections.emptyList());
 
-            // ±×·ì ³»ºÎ Á¤·Ä (id°¡ ¼ıÀÚ ¹®ÀÚ¿­ÀÌ¸é ¼ıÀÚÁ¤·Ä·Î ¹Ù²Ù´Â °Íµµ °¡´É)
+            // ê·¸ë£¹ ë‚´ë¶€ ì •ë ¬ (idê°€ ìˆ«ì ë¬¸ìì—´ì´ë©´ ìˆ«ìì •ë ¬ë¡œ ë°”ê¾¸ëŠ” ê²ƒë„ ê°€ëŠ¥)
             rows.sort(Comparator.comparing(m -> nullToEmpty(m.getId())));
 
-            int base = Math.abs(keyId.hashCode() % 100) * 100; // keyº° 100´ÜÀ§ ºí·Ï
+            int base = Math.abs(keyId.hashCode() % 100) * 100; // keyë³„ 100ë‹¨ìœ„ ë¸”ë¡
             int seq = 1;
 
             List<SideMenu> items = new ArrayList<>();
@@ -93,7 +93,7 @@ public class MenuListResBuilder {
 
                 items.add(SideMenu.builder()
                         .id(itemId)
-                        .label(nullToEmpty(m.getSideMenu())) // sideMenu ÄÃ·³ÀÌ »çÀÌµå ¸Ş´º¸í
+                        .label(nullToEmpty(m.getSideMenu())) // sideMenu ì»¬ëŸ¼ì´ ì‚¬ì´ë“œ ë©”ë‰´ëª…
                         .route(nullToEmpty(m.getRoute()))
                         .buttons(btn)
                         .build());

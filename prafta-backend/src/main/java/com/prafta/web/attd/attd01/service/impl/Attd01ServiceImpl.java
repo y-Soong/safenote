@@ -76,15 +76,15 @@ public class Attd01ServiceImpl implements Attd01Service{
 		
 		String schCd = null;
 		
-		int schNoCnt = attd01Mapper.selectSchNoCount(SchNoCountQuery.from(param));
-		
-		if(schNoCnt > 0) {
-			throw new ApiException(AttdErrorCode.ATTD_400_001);
-		}
-		
-		if(param.schCd() != null && param.schCd() != "") {
+		if(param.schCd() != null && param.schCd() != "") {			
 			schCd = param.schCd();
 		} else {
+			int schNoCnt = attd01Mapper.selectSchNoCount(SchNoCountQuery.from(param));
+			
+			if(schNoCnt > 0) {
+				throw new ApiException(AttdErrorCode.ATTD_400_001);
+			}
+			
 			schCd = attd01Mapper.selectSchCd(SchCdQuery.from(param));
 		}
 		

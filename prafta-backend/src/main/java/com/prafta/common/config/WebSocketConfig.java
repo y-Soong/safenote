@@ -19,6 +19,6 @@ public class WebSocketConfig implements WebSocketConfigurer {
 
     @Bean
     public WebSocketHandler websocketHandler() {
-        return new WebSocketHandler(); // ±‚¡∏ handler ∞¥√º
+        return new WebSocketHandler(); // Í∏∞Ï°¥ handler Í∞ùÏ≤¥
     }
 }

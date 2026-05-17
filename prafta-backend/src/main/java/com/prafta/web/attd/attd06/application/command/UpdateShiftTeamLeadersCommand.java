@@ -14,7 +14,7 @@ public record UpdateShiftTeamLeadersCommand(
     public static UpdateShiftTeamLeadersCommand from(UpdateShiftTeamLeadersParam param) {
 
         if (param == null)
-            throw ApiException.appendf(CommonErrorCode.COMMON_400_001, "\nRequired param missing - UpdateShiftTeamLeadersParam");
+            throw new ApiException(CommonErrorCode.COMMON_400_001);
 
         return new UpdateShiftTeamLeadersCommand(
             param.siteCd()

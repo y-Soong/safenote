@@ -14,7 +14,7 @@ public record SiteNodeParam(
 	public static SiteNodeParam from(SiteNodeRequest request, TokenInfo tokenInfo) {
 
         if (request == null)
-        	throw ApiException.appendf(CommonErrorCode.COMMON_400_001,"\n필수값 누락 - SiteNodeRequest");
+        	throw new ApiException(CommonErrorCode.COMMON_400_001);
 
         return new SiteNodeParam(
     		request.getSiteCd()

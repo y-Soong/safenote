@@ -1,4 +1,5 @@
 import axios from "@/api/axios";
+import { resolveApiErrorMessage } from "@/utils/apiError";
 
 export async function fnGetMenuList() {
   let menuInfo = {};
@@ -19,7 +20,7 @@ export async function fnGetMenuList() {
       menuInfo = response.data;
     }
   } catch (err) {
-    alert(err.response.data.message);
+    alert(resolveApiErrorMessage(err, "메뉴 조회 중 오류가 발생했습니다."));
   }
 
   return menuInfo;

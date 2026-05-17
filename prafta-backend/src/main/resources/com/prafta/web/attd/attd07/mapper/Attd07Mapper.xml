@@ -107,8 +107,8 @@
 	            ELSE NULL
 	          END                                                              AS planType
 	
-	        /* 스케줄 정보 (1·2구간) */
-	        , SCH.SCH_TYPE                                                     AS schType
+	        /* 스케줄 정보 (1·2구간) — SCH_TYPE 은 현재본(SCHT), 시간값은 유효 버전(SCH) */
+	        , SCHT.SCH_TYPE                                                    AS schType
 	        , SCH.FST_SCH_STR_TIME                                             AS plan1Start
 	        , SCH.FST_SCH_END_TIME                                             AS plan1End
 	        , SCH.FST_SCH_BRK_MIN                                              AS plan1BreakMin
@@ -186,19 +186,110 @@
 	        AND WP.USER_CD  = U.USER_CD
 	        AND WP.WORK_YMD = D.WORK_YMD
 	
-	    /* 근무계획코드가 스케줄코드인 경우 */
-	    LEFT JOIN TB_SCH_MGMT SCH
+	    /* 근무계획코드가 스케줄코드인 경우 — 근무일(WP.WORK_YMD) 기준 유효 스케줄(effective-dating) 적용.
+	       TB_SCH_MGMT(현재본) 과 TB_SCH_MGMT_HIST(전 버전)를 UNION 으로 합쳐
+	       APPLY_DATE <![CDATA[ <= ]]> WORK_YMD 인 가장 최근 버전의 시간값을 결합한다. */
+	    LEFT JOIN (
+	        /* 현재본 + 이력본을 SCH_CD + APPLY_DATE 단위로 합친 유효 스케줄 후보.
+	           동일 SCH_CD + APPLY_DATE 가 중복되면 HIST_IDX 최댓값 1건만 채택한다. */
+	        SELECT
+	              E.CMPNY_CD
+	            , E.SITE_CD
+	            , E.SCH_CD
+	            , E.APPLY_DATE
+	            , E.FST_SCH_STR_TIME
+	            , E.FST_SCH_END_TIME
+	            , E.FST_SCH_BRK_MIN
+	            , E.SEC_SCH_STR_TIME
+	            , E.SEC_SCH_END_TIME
+	            , E.SEC_SCH_BRK_MIN
+	        FROM (
+	            /* 현재본 (HIST_IDX 를 최댓값으로 두어 동일 APPLY_DATE 중복 시 현재본 우선) */
+	            SELECT
+	                  M.CMPNY_CD
+	                , M.SITE_CD
+	                , M.SCH_CD
+	                , M.APPLY_DATE
+	                , M.FST_SCH_STR_TIME
+	                , M.FST_SCH_END_TIME
+	                , M.FST_SCH_BRK_MIN
+	                , M.SEC_SCH_STR_TIME
+	                , M.SEC_SCH_END_TIME
+	                , M.SEC_SCH_BRK_MIN
+	                , 2147483647 AS HIST_IDX
+	            FROM TB_SCH_MGMT M
+	            WHERE M.USE_YN = 'Y'
+
+	            UNION ALL
+
+	            /* 이력본 */
+	            SELECT
+	                  H.CMPNY_CD
+	                , H.SITE_CD
+	                , H.SCH_CD
+	                , H.APPLY_DATE
+	                , H.FST_SCH_STR_TIME
+	                , H.FST_SCH_END_TIME
+	                , H.FST_SCH_BRK_MIN
+	                , H.SEC_SCH_STR_TIME
+	                , H.SEC_SCH_END_TIME
+	                , H.SEC_SCH_BRK_MIN
+	                , H.HIST_IDX
+	            FROM TB_SCH_MGMT_HIST H
+	            WHERE H.USE_YN = 'Y'
+	        ) E
+	        /* 동일 SCH_CD + APPLY_DATE 그룹에서 HIST_IDX 최댓값 행만 채택 */
+	        WHERE E.HIST_IDX = (
+	            SELECT MAX(E2.HIST_IDX)
+	            FROM (
+	                SELECT M2.CMPNY_CD, M2.SITE_CD, M2.SCH_CD, M2.APPLY_DATE, 2147483647 AS HIST_IDX
+	                FROM TB_SCH_MGMT M2
+	                WHERE M2.USE_YN = 'Y'
+	                UNION ALL
+	                SELECT H2.CMPNY_CD, H2.SITE_CD, H2.SCH_CD, H2.APPLY_DATE, H2.HIST_IDX
+	                FROM TB_SCH_MGMT_HIST H2
+	                WHERE H2.USE_YN = 'Y'
+	            ) E2
+	            WHERE E2.CMPNY_CD   = E.CMPNY_CD
+	              AND E2.SITE_CD    = E.SITE_CD
+	              AND E2.SCH_CD     = E.SCH_CD
+	              AND E2.APPLY_DATE = E.APPLY_DATE
+	        )
+	    ) SCH
 	        ON  SCH.CMPNY_CD = WP.CMPNY_CD
 	        AND SCH.SITE_CD  = WP.SITE_CD
 	        AND SCH.SCH_CD   = WP.WORK_PLAN_CD
-	        AND SCH.USE_YN   = 'Y'
-	
+	        /* 근무일 기준 APPLY_DATE <![CDATA[ <= ]]> WORK_YMD 인 가장 최근(MAX APPLY_DATE) 버전만 적용 */
+	        AND SCH.APPLY_DATE = (
+	            SELECT MAX(SE.APPLY_DATE)
+	            FROM (
+	                SELECT M3.CMPNY_CD, M3.SITE_CD, M3.SCH_CD, M3.APPLY_DATE
+	                FROM TB_SCH_MGMT M3
+	                WHERE M3.USE_YN = 'Y'
+	                UNION ALL
+	                SELECT H3.CMPNY_CD, H3.SITE_CD, H3.SCH_CD, H3.APPLY_DATE
+	                FROM TB_SCH_MGMT_HIST H3
+	                WHERE H3.USE_YN = 'Y'
+	            ) SE
+	            WHERE SE.CMPNY_CD    = WP.CMPNY_CD
+	              AND SE.SITE_CD     = WP.SITE_CD
+	              AND SE.SCH_CD      = WP.WORK_PLAN_CD
+	              AND SE.APPLY_DATE <![CDATA[ <= ]]> WP.WORK_YMD
+	        )
+
+	    /* SCH_TYPE 은 이력본에 컬럼이 없으므로 항상 현재본(TB_SCH_MGMT)에서 가져온다 */
+	    LEFT JOIN TB_SCH_MGMT SCHT
+	        ON  SCHT.CMPNY_CD = WP.CMPNY_CD
+	        AND SCHT.SITE_CD  = WP.SITE_CD
+	        AND SCHT.SCH_CD   = WP.WORK_PLAN_CD
+	        AND SCHT.USE_YN   = 'Y'
+
 	    /* 근무계획코드가 휴가코드인 경우 */
 	    LEFT JOIN TB_LEAVE_TYPE_MGMT LV
 	        ON  LV.CMPNY_CD = WP.CMPNY_CD
 	        AND LV.LEAVE_CD = WP.WORK_PLAN_CD
 	        AND LV.USE_YN   = 'Y'
-	
+
 	    /* 근태 1차 */
 	    LEFT JOIN TB_USER_ATTD_MGMT A1
 	        ON  A1.CMPNY_CD = U.CMPNY_CD
@@ -263,7 +354,7 @@
 	      AND A.SITE_CD    = #{siteCd}
 	      AND A.WORK_YMD   LIKE CONCAT(REPLACE(#{workYm}, '-', ''), '%')
 	      AND A.DEL_YN     = 'N'
-	      AND A.REQ_STATUS = '01'    <!-- 신청 상태인 요청만 조회 -->
+	      AND A.REQ_STATUS = 'REQUESTED'    <!-- 신청 상태인 요청만 조회 -->
     </select>
     
     <select id="selectAttdId" parameterType="string" resultType="string">
@@ -399,8 +490,8 @@
 	    , B.NODE_CD                                                        AS nodeCd
 	    , A.WORK_YMD                                                       AS workYmd
 	
-	    /* 스케줄 정보 (1·2구간) */
-	    , SCH.SCH_TYPE                                                     AS schType
+	    /* 스케줄 정보 (1·2구간) — SCH_TYPE 은 현재본(SCHT), 시간값은 유효 버전(SCH) */
+	    , SCHT.SCH_TYPE                                                    AS schType
 	    , SCH.FST_SCH_STR_TIME                                             AS plan1Start
 	    , SCH.FST_SCH_END_TIME                                             AS plan1End
 	    , SCH.FST_SCH_BRK_MIN                                              AS plan1BreakMin
@@ -475,6 +566,28 @@
 	    , A2.CHECK_IN_TIME                                                 AS oriAct2InTime
 	    , A2.CHECK_OUT_DATE                                                AS oriAct2OutDate
 	    , A2.CHECK_OUT_TIME                                                AS oriAct2OutTime
+
+	    /* PRAFTA-011 - 구간별 외근 플래그.
+	       해당 구간 ATTD_ID 로 TB_USER_ATTD_GPS 행이 존재하면 'Y', 없으면 'N'.
+	       GPS 테이블에 WORK_SEQ 가 없으므로 구간 구분은 ATTD_ID 로만 한다. */
+	    , CASE WHEN A1.ATTD_ID IS NOT NULL
+	                AND EXISTS (
+	                    SELECT 1
+	                    FROM TB_USER_ATTD_GPS G1
+	                    WHERE G1.CMPNY_CD = A1.CMPNY_CD
+	                      AND G1.ATTD_ID  = A1.ATTD_ID
+	                )
+	           THEN 'Y' ELSE 'N'
+	      END                                                              AS attd1OutsideYn
+	    , CASE WHEN A2.ATTD_ID IS NOT NULL
+	                AND EXISTS (
+	                    SELECT 1
+	                    FROM TB_USER_ATTD_GPS G2
+	                    WHERE G2.CMPNY_CD = A2.CMPNY_CD
+	                      AND G2.ATTD_ID  = A2.ATTD_ID
+	                )
+	           THEN 'Y' ELSE 'N'
+	      END                                                              AS attd2OutsideYn
 	FROM TB_USER_ATTD_MGMT A
 		 INNER JOIN TB_USER B
 			ON (
@@ -488,13 +601,104 @@
 			AND WP.USER_CD  = A.USER_CD
 			AND WP.WORK_YMD = A.WORK_YMD
 	
-		/* 근무계획코드가 스케줄코드인 경우 */
-		LEFT JOIN TB_SCH_MGMT SCH
+		/* 근무계획코드가 스케줄코드인 경우 — 근무일(A.WORK_YMD) 기준 유효 스케줄(effective-dating) 적용.
+		   TB_SCH_MGMT(현재본) 과 TB_SCH_MGMT_HIST(전 버전)를 UNION 으로 합쳐
+		   APPLY_DATE <![CDATA[ <= ]]> WORK_YMD 인 가장 최근 버전의 시간값을 결합한다. */
+		LEFT JOIN (
+			/* 현재본 + 이력본을 SCH_CD + APPLY_DATE 단위로 합친 유효 스케줄 후보.
+			   동일 SCH_CD + APPLY_DATE 가 중복되면 HIST_IDX 최댓값 1건만 채택한다. */
+			SELECT
+				  E.CMPNY_CD
+				, E.SITE_CD
+				, E.SCH_CD
+				, E.APPLY_DATE
+				, E.FST_SCH_STR_TIME
+				, E.FST_SCH_END_TIME
+				, E.FST_SCH_BRK_MIN
+				, E.SEC_SCH_STR_TIME
+				, E.SEC_SCH_END_TIME
+				, E.SEC_SCH_BRK_MIN
+			FROM (
+				/* 현재본 (HIST_IDX 를 최댓값으로 두어 동일 APPLY_DATE 중복 시 현재본 우선) */
+				SELECT
+					  M.CMPNY_CD
+					, M.SITE_CD
+					, M.SCH_CD
+					, M.APPLY_DATE
+					, M.FST_SCH_STR_TIME
+					, M.FST_SCH_END_TIME
+					, M.FST_SCH_BRK_MIN
+					, M.SEC_SCH_STR_TIME
+					, M.SEC_SCH_END_TIME
+					, M.SEC_SCH_BRK_MIN
+					, 2147483647 AS HIST_IDX
+				FROM TB_SCH_MGMT M
+				WHERE M.USE_YN = 'Y'
+
+				UNION ALL
+
+				/* 이력본 */
+				SELECT
+					  H.CMPNY_CD
+					, H.SITE_CD
+					, H.SCH_CD
+					, H.APPLY_DATE
+					, H.FST_SCH_STR_TIME
+					, H.FST_SCH_END_TIME
+					, H.FST_SCH_BRK_MIN
+					, H.SEC_SCH_STR_TIME
+					, H.SEC_SCH_END_TIME
+					, H.SEC_SCH_BRK_MIN
+					, H.HIST_IDX
+				FROM TB_SCH_MGMT_HIST H
+				WHERE H.USE_YN = 'Y'
+			) E
+			/* 동일 SCH_CD + APPLY_DATE 그룹에서 HIST_IDX 최댓값 행만 채택 */
+			WHERE E.HIST_IDX = (
+				SELECT MAX(E2.HIST_IDX)
+				FROM (
+					SELECT M2.CMPNY_CD, M2.SITE_CD, M2.SCH_CD, M2.APPLY_DATE, 2147483647 AS HIST_IDX
+					FROM TB_SCH_MGMT M2
+					WHERE M2.USE_YN = 'Y'
+					UNION ALL
+					SELECT H2.CMPNY_CD, H2.SITE_CD, H2.SCH_CD, H2.APPLY_DATE, H2.HIST_IDX
+					FROM TB_SCH_MGMT_HIST H2
+					WHERE H2.USE_YN = 'Y'
+				) E2
+				WHERE E2.CMPNY_CD   = E.CMPNY_CD
+				  AND E2.SITE_CD    = E.SITE_CD
+				  AND E2.SCH_CD     = E.SCH_CD
+				  AND E2.APPLY_DATE = E.APPLY_DATE
+			)
+		) SCH
 			ON  SCH.CMPNY_CD = WP.CMPNY_CD
 			AND SCH.SITE_CD  = WP.SITE_CD
 			AND SCH.SCH_CD   = WP.WORK_PLAN_CD
-			AND SCH.USE_YN   = 'Y'
-	
+			/* 근무일 기준 APPLY_DATE <![CDATA[ <= ]]> WORK_YMD 인 가장 최근(MAX APPLY_DATE) 버전만 적용 */
+			AND SCH.APPLY_DATE = (
+				SELECT MAX(SE.APPLY_DATE)
+				FROM (
+					SELECT M3.CMPNY_CD, M3.SITE_CD, M3.SCH_CD, M3.APPLY_DATE
+					FROM TB_SCH_MGMT M3
+					WHERE M3.USE_YN = 'Y'
+					UNION ALL
+					SELECT H3.CMPNY_CD, H3.SITE_CD, H3.SCH_CD, H3.APPLY_DATE
+					FROM TB_SCH_MGMT_HIST H3
+					WHERE H3.USE_YN = 'Y'
+				) SE
+				WHERE SE.CMPNY_CD    = WP.CMPNY_CD
+				  AND SE.SITE_CD     = WP.SITE_CD
+				  AND SE.SCH_CD      = WP.WORK_PLAN_CD
+				  AND SE.APPLY_DATE <![CDATA[ <= ]]> WP.WORK_YMD
+			)
+
+		/* SCH_TYPE 은 이력본에 컬럼이 없으므로 항상 현재본(TB_SCH_MGMT)에서 가져온다 */
+		LEFT JOIN TB_SCH_MGMT SCHT
+			ON  SCHT.CMPNY_CD = WP.CMPNY_CD
+			AND SCHT.SITE_CD  = WP.SITE_CD
+			AND SCHT.SCH_CD   = WP.WORK_PLAN_CD
+			AND SCHT.USE_YN   = 'Y'
+
 		/* 근무계획코드가 휴가코드인 경우 */
 		LEFT JOIN TB_LEAVE_TYPE_MGMT LV
 			ON  LV.CMPNY_CD = WP.CMPNY_CD
@@ -526,13 +730,24 @@
     
 	<select id="selectDailyAttdDetailHistory" parameterType="com.prafta.web.attd.attd07.application.query.DailyAttdDetailsQuery" resultType="com.prafta.web.attd.attd07.result.DailyAttdDetailHistoryResult">
     /* Attd07Mapper.selectDailyAttdDetailHistory */
-    SELECT 
-		A.CMPNY_CD					AS cmpnyCd
+    <!--
+        [QA 재작업 D2] TB_USER_ATTD_HIST 기준 조회로 변경.
+        기존 INNER JOIN TB_USER_ATTD_MGMT 는 MGMT 에 ATTD_ID 가 없는
+        ATTD_CREATE 반려 이력(HIST_TYPE='07', 미반영이라 MGMT INSERT 안 함)을
+        결과에서 누락시킨다. HIST 를 기준으로 LEFT JOIN 하여 orphan 이력도 포함한다.
+        USER_CD 스코핑:
+          - MGMT 가 존재하는 이력(수정/생성반영/삭제): MGMT.USER_CD 로 직접 매칭.
+          - orphan 이력(MGMT 없음): 해당 사용자의 ATTD_CREATE 반려 REQ 존재 여부로 스코핑.
+            (반려 ATTD_CREATE 는 새 ATTD_ID 를 어디에도 저장하지 않으므로 ATTD_ID 로는
+             REQ 와 연결 불가 → CMPNY_CD+SITE_CD+WORK_YMD+USER_CD 일치 REQ 존재로 보장.)
+    -->
+    SELECT
+		B.CMPNY_CD					AS cmpnyCd
 		, B.HIST_ID					AS histId
-	    , A.ATTD_ID					AS attdId
+	    , B.ATTD_ID					AS attdId
 	    , B.HIST_TYPE				AS histType
 	    , FNC_CMM_INFO_SRCH(
-			A.CMPNY_CD
+			B.CMPNY_CD
 			, 'SYST_VAL'
 			, B.HIST_TYPE
 			, 'SYS032'
@@ -542,31 +757,46 @@
 	    , B.BEF_CHECK_IN_TIME		AS befCheckInTime
 	    , B.BEF_CHECK_OUT_DATE		AS befCheckOutDate
 	    , B.BEF_CHECK_OUT_TIME		AS befCheckOutTime
-	    
+
 	    , B.AFT_CHECK_IN_DATE		AS aftCheckInDate
 	    , B.AFT_CHECK_IN_TIME		AS aftCheckInTime
 	    , B.AFT_CHECK_OUT_DATE		AS aftCheckOutDate
 	    , B.AFT_CHECK_OUT_TIME		AS aftCheckOutTime
-	    
+
 	    , B.PROCESS_REASON			AS processReason
 	    , B.INSERT_NO				AS insertNo
 	    , FNC_CMM_INFO_SRCH(
-			A.CMPNY_CD
+			B.CMPNY_CD
 			, 'USER_NM'
 			, B.INSERT_NO
 			, null
 		) 							AS insertNm
 	    , B.INSERT_DATE				AS insertDate
-	FROM TB_USER_ATTD_MGMT A
-	     INNER JOIN TB_USER_ATTD_HIST B
+	FROM TB_USER_ATTD_HIST B
+	     LEFT JOIN TB_USER_ATTD_MGMT A
 			 ON (
 				A.CMPNY_CD = B.CMPNY_CD
 			AND A.ATTD_ID = B.ATTD_ID
 			 )
-	WHERE A.CMPNY_CD = #{gvCmpnyCd}
-	  AND A.SITE_CD = #{siteCd}
-	  AND A.USER_CD = #{userCd}
-	  AND A.WORK_YMD = #{workYmd}
+	WHERE B.CMPNY_CD = #{gvCmpnyCd}
+	  AND B.SITE_CD = #{siteCd}
+	  AND B.WORK_YMD = #{workYmd}
+	  AND (
+	        A.USER_CD = #{userCd}
+	     OR (
+	            A.ATTD_ID IS NULL
+	        AND EXISTS (
+	                SELECT 1
+	                  FROM TB_USER_ATTD_REQ R
+	                 WHERE R.CMPNY_CD  = B.CMPNY_CD
+	                   AND R.SITE_CD   = B.SITE_CD
+	                   AND R.WORK_YMD  = B.WORK_YMD
+	                   AND R.USER_CD   = #{userCd}
+	                   AND R.REQ_TYPE  = 'ATTD_CREATE'
+	                   AND R.REQ_STATUS = 'REJECTED'
+	            )
+	        )
+	      )
 	ORDER BY B.INSERT_DATE DESC
     </select>
     
@@ -594,10 +824,10 @@
 		) 					AS reqStatusNm
 		, A.WORK_SEQ		AS workSeq
 	    , A.WORK_YMD		AS workYmd
-	    , A.CHECK_IN_DATE	AS checkInDate
-	    , A.CHECK_IN_TIME	AS checkInTime
-	    , A.CHECK_OUT_DATE	AS checkOutDate
-	    , A.CHECK_OUT_TIME	AS checkOutTime
+	    , A.START_DATE		AS startDate
+	    , A.START_TIME		AS startTime
+	    , A.END_DATE		AS endDate
+	    , A.END_TIME		AS endTime
 	    , A.REQ_REASON		AS reqReason
 	    , A.INSERT_DATE		AS insertDate
 	FROM TB_USER_ATTD_REQ A
@@ -605,7 +835,53 @@
 	  AND A.SITE_CD = #{siteCd}
 	  AND A.USER_CD = #{userCd}
 	  AND A.WORK_YMD = #{workYmd}
-	  AND A.REQ_STATUS = '01'				<!-- 요청 신청건만 조회 -->
+	  AND A.REQ_STATUS = 'REQUESTED'		<!-- 요청 신청건만 조회 -->
+    </select>
+
+    <!-- PRAFTA-003-6: 일자 상세 조회 시 함께 노출되는 OT(초과근무) 리스트 조회.
+         IDX_OT_USER_YMD (CMPNY_CD, SITE_CD, USER_CD, WORK_YMD) 인덱스 활용을 위해
+         WHERE 절을 (CMPNY_CD -> SITE_CD -> USER_CD -> WORK_YMD -> DEL_YN -> OT_STATUS)
+         순서로 작성한다. 취소된(`CANCELLED`) OT 는 응답에서 제외한다. -->
+    <select id="selectDailyOvertimeList"
+            parameterType="com.prafta.web.attd.attd07.application.query.DailyAttdDetailsQuery"
+            resultType="com.prafta.web.attd.attd07.result.DailyOvertimeResult">
+    /* Attd07Mapper.selectDailyOvertimeList */
+    SELECT
+          O.OT_ID                AS otId
+        , O.ATTD_ID              AS attdId
+        , O.REQ_ID               AS reqId
+
+        , O.WORK_YMD             AS workYmd
+        , O.NODE_CD              AS nodeCd
+
+        , O.OT_TYPE              AS otType
+
+        , O.PLAN_START_DATE      AS planStartDate
+        , O.PLAN_START_TIME      AS planStartTime
+        , O.PLAN_END_DATE        AS planEndDate
+        , O.PLAN_END_TIME        AS planEndTime
+
+        , O.ACTUAL_START_DATE    AS actualStartDate
+        , O.ACTUAL_START_TIME    AS actualStartTime
+        , O.ACTUAL_START_METHOD  AS actualStartMethod
+        , O.ACTUAL_END_DATE      AS actualEndDate
+        , O.ACTUAL_END_TIME      AS actualEndTime
+        , O.ACTUAL_END_METHOD    AS actualEndMethod
+
+        , O.WORK_MINUTES         AS workMinutes
+        , O.BREAK_MINUTES        AS breakMinutes
+
+        , O.OT_STATUS            AS otStatus
+
+        , O.INSERT_DATE          AS insertDate
+    FROM TB_USER_OVERTIME_MGMT O
+    WHERE O.CMPNY_CD  = #{gvCmpnyCd}
+      AND O.SITE_CD   = #{siteCd}
+      AND O.USER_CD   = #{userCd}
+      AND O.WORK_YMD  = #{workYmd}
+      AND O.DEL_YN    = 'N'
+      AND O.OT_STATUS <![CDATA[ <> ]]> 'CANCELLED'
+    ORDER BY O.ACTUAL_START_DATE, O.ACTUAL_START_TIME
     </select>
 
     <insert id="insertDailyAttdDetailDeleteHist" parameterType="com.prafta.web.attd.attd07.application.command.DailyAttdDetailDeleteCommand">
@@ -664,5 +940,374 @@
       AND USER_CD  = #{userCd}
       AND ATTD_ID  = #{attdId}
     </update>
+
+    <update id="updateUserAttdReqApprove" parameterType="com.prafta.web.attd.attd07.application.command.UpdateUserAttdRequestCommand">
+    /* Attd07Mapper.updateUserAttdReqApprove */
+    UPDATE TB_USER_ATTD_REQ
+    SET REQ_STATUS        = 'APPROVED'
+        , TARGET_ID       = #{targetId}
+        , PROCESS_USER_CD = #{gvUserCd}
+        , PROCESS_COMMENT = IFNULL(NULLIF(#{processComment}, ''), 'AUTO_APPROVED')
+        , PROCESS_DATE    = NOW()
+        , UPDATE_NO       = #{gvUserCd}
+        , UPDATE_DATE     = NOW()
+    WHERE CMPNY_CD   = #{gvCmpnyCd}
+      AND SITE_CD    = #{siteCd}
+      AND REQ_ID     = #{reqId}
+      AND DEL_YN     = 'N'
+      AND REQ_STATUS = 'REQUESTED'
+    </update>
+
+    <update id="updateUserAttdReqReject" parameterType="com.prafta.web.attd.attd07.application.command.RejectUserAttdRequestCommand">
+    /* Attd07Mapper.updateUserAttdReqReject - PRAFTA-008 / PRAFTA-010 */
+    UPDATE TB_USER_ATTD_REQ
+    SET REQ_STATUS        = 'REJECTED'
+        , PROCESS_USER_CD = #{gvUserCd}
+        , PROCESS_COMMENT = #{rejectReason}
+        , PROCESS_DATE    = NOW()
+        , UPDATE_NO       = #{gvUserCd}
+        , UPDATE_DATE     = NOW()
+    WHERE CMPNY_CD   = #{gvCmpnyCd}
+      AND SITE_CD    = #{siteCd}
+      AND REQ_ID     = #{reqId}
+      AND DEL_YN     = 'N'
+      AND REQ_STATUS = 'REQUESTED'
+    </update>
+
+    <select id="selectUserAttdReqByReqId" resultType="com.prafta.web.attd.attd07.result.UserAttdReqResult">
+    /* Attd07Mapper.selectUserAttdReqByReqId */
+    SELECT
+          R.REQ_ID       AS reqId
+        , R.TARGET_ID    AS targetId
+        , R.USER_CD      AS userCd
+        , R.SITE_CD      AS siteCd
+        , R.NODE_CD      AS nodeCd
+        , R.WORK_YMD     AS workYmd
+        , R.WORK_SEQ     AS workSeq
+        , R.REQ_TYPE     AS reqType
+        , R.REQ_STATUS   AS reqStatus
+        , R.DEL_YN       AS delYn
+    FROM TB_USER_ATTD_REQ R
+    WHERE R.CMPNY_CD = #{gvCmpnyCd}
+      AND R.REQ_ID   = #{reqId}
+      AND R.DEL_YN   = 'N'
+    </select>
+
+    <select id="selectExistingAttdId" resultType="string">
+    /* Attd07Mapper.selectExistingAttdId */
+    SELECT M.ATTD_ID
+    FROM TB_USER_ATTD_MGMT M
+    WHERE M.CMPNY_CD = #{gvCmpnyCd}
+      AND M.SITE_CD  = #{siteCd}
+      AND M.USER_CD  = #{userCd}
+      AND M.WORK_YMD = #{workYmd}
+      AND M.WORK_SEQ = #{workSeq}
+      AND M.DEL_YN   = 'N'
+    LIMIT 1
+    </select>
+
+    <!-- ================================================================
+         PRAFTA-003 - overtime registration
+         ================================================================ -->
+
+    <select id="selectAllowedWindow"
+            parameterType="com.prafta.web.attd.attd07.application.query.OvertimeAllowedWindowQuery"
+            resultType="com.prafta.web.attd.attd07.result.AllowedWindowResult">
+    /* Attd07Mapper.selectAllowedWindow */
+    SELECT
+          SCH.FST_SCH_STR_TIME                                             AS plan1Start
+        , SCH.FST_SCH_END_TIME                                             AS plan1End
+        , SCH.SEC_SCH_STR_TIME                                             AS plan2Start
+        , SCH.SEC_SCH_END_TIME                                             AS plan2End
+
+        /* 1st attd row - standardized check-in / check-out */
+        , A1.CHECK_IN_DATE                                                 AS act1InDate
+        , FNC_STD_TIME(
+              A1.CHECK_IN_TIME
+            , IFNULL(
+                  CASE WHEN CHAR_LENGTH(FNC_CMM_INFO_SRCH(#{gvCmpnyCd}, 'ATTD_STD_CHKIN', A1.CHECK_IN_DATE, NULL)) = 0
+                       THEN NULL
+                       ELSE FNC_CMM_INFO_SRCH(#{gvCmpnyCd}, 'ATTD_STD_CHKIN', A1.CHECK_IN_DATE, NULL)
+                  END
+              , 0)
+            , 'IN'
+          )                                                                AS act1InStdTime
+        , A1.CHECK_OUT_DATE                                                AS act1OutDate
+        , FNC_STD_TIME(
+              A1.CHECK_OUT_TIME
+            , IFNULL(
+                  CASE WHEN CHAR_LENGTH(FNC_CMM_INFO_SRCH(#{gvCmpnyCd}, 'ATTD_STD_CHKOUT', A1.CHECK_OUT_DATE, NULL)) = 0
+                       THEN NULL
+                       ELSE FNC_CMM_INFO_SRCH(#{gvCmpnyCd}, 'ATTD_STD_CHKOUT', A1.CHECK_OUT_DATE, NULL)
+                  END
+              , 0)
+            , 'OUT'
+          )                                                                AS act1OutStdTime
+
+        /* 2nd attd row - standardized check-in / check-out */
+        , A2.CHECK_IN_DATE                                                 AS act2InDate
+        , FNC_STD_TIME(
+              A2.CHECK_IN_TIME
+            , IFNULL(
+                  CASE WHEN CHAR_LENGTH(FNC_CMM_INFO_SRCH(#{gvCmpnyCd}, 'ATTD_STD_CHKIN', A2.CHECK_IN_DATE, NULL)) = 0
+                       THEN NULL
+                       ELSE FNC_CMM_INFO_SRCH(#{gvCmpnyCd}, 'ATTD_STD_CHKIN', A2.CHECK_IN_DATE, NULL)
+                  END
+              , 0)
+            , 'IN'
+          )                                                                AS act2InStdTime
+        , A2.CHECK_OUT_DATE                                                AS act2OutDate
+        , FNC_STD_TIME(
+              A2.CHECK_OUT_TIME
+            , IFNULL(
+                  CASE WHEN CHAR_LENGTH(FNC_CMM_INFO_SRCH(#{gvCmpnyCd}, 'ATTD_STD_CHKOUT', A2.CHECK_OUT_DATE, NULL)) = 0
+                       THEN NULL
+                       ELSE FNC_CMM_INFO_SRCH(#{gvCmpnyCd}, 'ATTD_STD_CHKOUT', A2.CHECK_OUT_DATE, NULL)
+                  END
+              , 0)
+            , 'OUT'
+          )                                                                AS act2OutStdTime
+
+    FROM TB_USER_WORK_PLAN WP
+
+    /* 근무일(WP.WORK_YMD) 기준 유효 스케줄(effective-dating) 적용.
+       TB_SCH_MGMT(현재본) 은 최신 1건만 보유하므로 과거 버전을 찾지 못한다.
+       TB_SCH_MGMT_HIST(전 버전)를 UNION 으로 합쳐 APPLY_DATE <![CDATA[ <= ]]> WORK_YMD 인
+       가장 최근 버전의 시간값을 결합한다. (SCH_TYPE 미사용 select 이므로 현재본 추가 조인 불필요) */
+    LEFT JOIN (
+        /* 현재본 + 이력본을 SCH_CD + APPLY_DATE 단위로 합친 유효 스케줄 후보.
+           동일 SCH_CD + APPLY_DATE 가 중복되면 HIST_IDX 최댓값 1건만 채택한다. */
+        SELECT
+              E.CMPNY_CD
+            , E.SITE_CD
+            , E.SCH_CD
+            , E.APPLY_DATE
+            , E.FST_SCH_STR_TIME
+            , E.FST_SCH_END_TIME
+            , E.FST_SCH_BRK_MIN
+            , E.SEC_SCH_STR_TIME
+            , E.SEC_SCH_END_TIME
+            , E.SEC_SCH_BRK_MIN
+        FROM (
+            /* 현재본 (HIST_IDX 를 최댓값으로 두어 동일 APPLY_DATE 중복 시 현재본 우선) */
+            SELECT
+                  M.CMPNY_CD
+                , M.SITE_CD
+                , M.SCH_CD
+                , M.APPLY_DATE
+                , M.FST_SCH_STR_TIME
+                , M.FST_SCH_END_TIME
+                , M.FST_SCH_BRK_MIN
+                , M.SEC_SCH_STR_TIME
+                , M.SEC_SCH_END_TIME
+                , M.SEC_SCH_BRK_MIN
+                , 2147483647 AS HIST_IDX
+            FROM TB_SCH_MGMT M
+            WHERE M.USE_YN = 'Y'
+
+            UNION ALL
+
+            /* 이력본 */
+            SELECT
+                  H.CMPNY_CD
+                , H.SITE_CD
+                , H.SCH_CD
+                , H.APPLY_DATE
+                , H.FST_SCH_STR_TIME
+                , H.FST_SCH_END_TIME
+                , H.FST_SCH_BRK_MIN
+                , H.SEC_SCH_STR_TIME
+                , H.SEC_SCH_END_TIME
+                , H.SEC_SCH_BRK_MIN
+                , H.HIST_IDX
+            FROM TB_SCH_MGMT_HIST H
+            WHERE H.USE_YN = 'Y'
+        ) E
+        /* 동일 SCH_CD + APPLY_DATE 그룹에서 HIST_IDX 최댓값 행만 채택 */
+        WHERE E.HIST_IDX = (
+            SELECT MAX(E2.HIST_IDX)
+            FROM (
+                SELECT M2.CMPNY_CD, M2.SITE_CD, M2.SCH_CD, M2.APPLY_DATE, 2147483647 AS HIST_IDX
+                FROM TB_SCH_MGMT M2
+                WHERE M2.USE_YN = 'Y'
+                UNION ALL
+                SELECT H2.CMPNY_CD, H2.SITE_CD, H2.SCH_CD, H2.APPLY_DATE, H2.HIST_IDX
+                FROM TB_SCH_MGMT_HIST H2
+                WHERE H2.USE_YN = 'Y'
+            ) E2
+            WHERE E2.CMPNY_CD   = E.CMPNY_CD
+              AND E2.SITE_CD    = E.SITE_CD
+              AND E2.SCH_CD     = E.SCH_CD
+              AND E2.APPLY_DATE = E.APPLY_DATE
+        )
+    ) SCH
+        ON  SCH.CMPNY_CD = WP.CMPNY_CD
+        AND SCH.SITE_CD  = WP.SITE_CD
+        AND SCH.SCH_CD   = WP.WORK_PLAN_CD
+        /* 근무일 기준 APPLY_DATE <![CDATA[ <= ]]> WORK_YMD 인 가장 최근(MAX APPLY_DATE) 버전만 적용 */
+        AND SCH.APPLY_DATE = (
+            SELECT MAX(SE.APPLY_DATE)
+            FROM (
+                SELECT M3.CMPNY_CD, M3.SITE_CD, M3.SCH_CD, M3.APPLY_DATE
+                FROM TB_SCH_MGMT M3
+                WHERE M3.USE_YN = 'Y'
+                UNION ALL
+                SELECT H3.CMPNY_CD, H3.SITE_CD, H3.SCH_CD, H3.APPLY_DATE
+                FROM TB_SCH_MGMT_HIST H3
+                WHERE H3.USE_YN = 'Y'
+            ) SE
+            WHERE SE.CMPNY_CD    = WP.CMPNY_CD
+              AND SE.SITE_CD     = WP.SITE_CD
+              AND SE.SCH_CD      = WP.WORK_PLAN_CD
+              AND SE.APPLY_DATE <![CDATA[ <= ]]> WP.WORK_YMD
+        )
+
+    LEFT JOIN TB_USER_ATTD_MGMT A1
+        ON  A1.CMPNY_CD = WP.CMPNY_CD
+        AND A1.SITE_CD  = WP.SITE_CD
+        AND A1.USER_CD  = WP.USER_CD
+        AND A1.WORK_YMD = WP.WORK_YMD
+        AND A1.WORK_SEQ = 1
+        AND A1.DEL_YN   = 'N'
+
+    LEFT JOIN TB_USER_ATTD_MGMT A2
+        ON  A2.CMPNY_CD = WP.CMPNY_CD
+        AND A2.SITE_CD  = WP.SITE_CD
+        AND A2.USER_CD  = WP.USER_CD
+        AND A2.WORK_YMD = WP.WORK_YMD
+        AND A2.WORK_SEQ = 2
+        AND A2.DEL_YN   = 'N'
+
+    WHERE WP.CMPNY_CD = #{gvCmpnyCd}
+      AND WP.SITE_CD  = #{siteCd}
+      AND WP.USER_CD  = #{userCd}
+      AND WP.WORK_YMD = #{workYmd}
+    LIMIT 1
+    </select>
+
+    <select id="selectOtId" parameterType="string" resultType="string">
+    /* Attd07Mapper.selectOtId */
+    SELECT CONCAT(DATE_FORMAT(NOW(), '%Y%m%d'), FNC_CMM_SEQ_NEXTVAL(#{gvCmpnyCd}, 'OT_ID')) AS otId
+    FROM DUAL
+    </select>
+
+    <select id="selectUserExistInCmpnySite" resultType="int">
+    /* Attd07Mapper.selectUserExistInCmpnySite - SEC-017 scope check */
+    SELECT COUNT(*)
+    FROM TB_USER U
+    WHERE U.CMPNY_CD        = #{cmpnyCd}
+      AND U.SITE_CD         = #{siteCd}
+      AND U.USER_CD         = #{userCd}
+      AND U.USE_YN          = 'Y'
+      AND U.WITHDRAWAL_DATE IS NULL
+    </select>
+
+    <select id="selectAttdExistInScope" resultType="int">
+    /* Attd07Mapper.selectAttdExistInScope - SEC-017 scope check */
+    SELECT COUNT(*)
+    FROM TB_USER_ATTD_MGMT M
+    WHERE M.CMPNY_CD = #{cmpnyCd}
+      AND M.SITE_CD  = #{siteCd}
+      AND M.USER_CD  = #{userCd}
+      AND M.ATTD_ID  = #{attdId}
+      AND M.DEL_YN   = 'N'
+    </select>
+
+    <!-- PRAFTA-009-001: 초과근무 중복 INSERT 방지용 겹침 건수 조회.
+         ATTD_ID 기준으로 기존 활성(DEL_YN='N', OT_STATUS != 'CANCELLED') OT 행 중
+         요청 구간 [reqStart, reqEnd) 과 시간이 겹치는 행 수를 반환한다.
+         겹침 판정 표준식: (기존시작 < 요청종료) AND (요청시작 < 기존종료).
+         시각은 ACTUAL_START_DATE(8) + ACTUAL_START_TIME(4) / ACTUAL_END_DATE(8) + ACTUAL_END_TIME(4)
+         를 CONCAT 한 12자리 문자열(yyyyMMddHHmm)로 비교한다.
+         ACTUAL_END_DATE / ACTUAL_END_TIME 이 NULL 인 행은 유한 종료 시각이 없어
+         구간 겹침 판정이 불가능하므로 비교 대상에서 제외한다.
+         WHERE 절은 IDX_OT_ATTD(ATTD_ID) 인덱스 활용을 위해
+         (CMPNY_CD -> SITE_CD -> USER_CD -> ATTD_ID -> 시간대 -> DEL_YN/OT_STATUS) 순으로 작성한다. -->
+    <select id="selectOverlappingOvertimeCount" resultType="int">
+    /* Attd07Mapper.selectOverlappingOvertimeCount - PRAFTA-009-001 OT overlap check */
+    SELECT COUNT(*)
+    FROM TB_USER_OVERTIME_MGMT O
+    WHERE O.CMPNY_CD = #{cmpnyCd}
+      AND O.SITE_CD  = #{siteCd}
+      AND O.USER_CD  = #{userCd}
+      AND O.ATTD_ID  = #{attdId}
+      AND O.ACTUAL_END_DATE IS NOT NULL
+      AND O.ACTUAL_END_TIME IS NOT NULL
+      AND CONCAT(O.ACTUAL_START_DATE, O.ACTUAL_START_TIME) <![CDATA[ < ]]> #{reqEnd}
+      AND #{reqStart} <![CDATA[ < ]]> CONCAT(O.ACTUAL_END_DATE, O.ACTUAL_END_TIME)
+      AND O.DEL_YN    = 'N'
+      AND O.OT_STATUS <![CDATA[ <> ]]> 'CANCELLED'
+    </select>
+
+    <insert id="insertUserOvertime"
+            parameterType="com.prafta.web.attd.attd07.application.command.InsertUserOvertimeCommand">
+    /* Attd07Mapper.insertUserOvertime */
+    INSERT INTO TB_USER_OVERTIME_MGMT (
+          OT_ID
+        , CMPNY_CD
+        , SITE_CD
+        , USER_CD
+
+        , ATTD_ID
+        , REQ_ID
+
+        , WORK_YMD
+        , NODE_CD
+
+        , OT_TYPE
+
+        , PLAN_START_DATE
+        , PLAN_START_TIME
+        , PLAN_END_DATE
+        , PLAN_END_TIME
+
+        , ACTUAL_START_DATE
+        , ACTUAL_START_TIME
+        , ACTUAL_END_DATE
+        , ACTUAL_END_TIME
+
+        , WORK_MINUTES
+        , BREAK_MINUTES
+
+        , OT_STATUS
+
+        , DEL_YN
+        , INSERT_NO
+        , INSERT_DATE
+    )
+    VALUES (
+          #{otId}
+        , #{gvCmpnyCd}
+        , #{siteCd}
+        , #{userCd}
+
+        , #{attdId}
+        , #{reqId}
+
+        , #{workYmd}
+        , #{nodeCd}
+
+        , #{otType}
+
+        , #{planStartDate}
+        , #{planStartTime}
+        , #{planEndDate}
+        , #{planEndTime}
+
+        , #{actualStartDate}
+        , #{actualStartTime}
+        , #{actualEndDate}
+        , #{actualEndTime}
+
+        , #{workMinutes}
+        , #{breakMinutes}
+
+        , #{otStatus}
+
+        , 'N'
+        , #{gvUserCd}
+        , NOW()
+    )
+    </insert>
 
 </mapper>

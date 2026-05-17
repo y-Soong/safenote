@@ -38,8 +38,13 @@ public class JwtUtil {
 
 //    private final Key key = Keys.hmacShaKeyFor(secret.getBytes());
 
-    public String generateToken(UserResult userResult, String mblNo, String email) {
-    	
+    /**
+     * JWT 토큰 생성.
+     * 정책 §11.1(최소 수집·목적 제한)에 따라 휴대폰/이메일 등 PII는 클레임에 포함하지 않는다.
+     * JWT 페이로드는 base64로 누구나 디코딩 가능하므로 식별·인가에 필요한 비-PII 정보만 담는다.
+     */
+    public String generateToken(UserResult userResult) {
+
         return Jwts.builder()
         		.claim("gv_cmpnyCd", userResult.cmpnyCd())
         		.claim("gv_userCd", userResult.userCd())
@@ -52,8 +57,6 @@ public class JwtUtil {
                 .claim("gv_siteNm", userResult.siteNm())
                 .claim("gv_nodeCd", userResult.nodeCd())
                 .claim("gv_nodeNm", userResult.nodeNm())
-                .claim("gv_mblNo", mblNo)
-                .claim("gv_email", email)
                 .setIssuedAt(new Date())
                 .setExpiration(new Date(System.currentTimeMillis() + expiration))
                 .signWith(key, SignatureAlgorithm.HS256)
@@ -120,16 +123,11 @@ public class JwtUtil {
     public String getNodeNmFromToken(String token) {
         return parseToken(token).get("gv_nodeNm", String.class);
     }
-    
-    public String getMblNoFromToken(String token) {
-        return parseToken(token).get("gv_mblNo", String.class);
-    }
-    
-    public String getEmailFromToken(String token) {
-        return parseToken(token).get("gv_email", String.class);
-    }
-    
-    public TokenInfo getAllClaimsAsMap(String authorization) {    	
+
+    // gv_mblNo / gv_email getter는 정책 §11.1에 따라 JWT 클레임에서 제거됨.
+    // 휴대폰/이메일이 필요한 화면은 /comApi/baseinfo/user-info-lists API로 조회한다.
+
+    public TokenInfo getAllClaimsAsMap(String authorization) {
     	if (authorization != null && authorization.startsWith("Bearer ")) {
     		
             String token = authorization.substring(7);

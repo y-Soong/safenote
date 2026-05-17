@@ -46,24 +46,24 @@ public class Attd04ServiceImpl implements Attd04Service {
     	String stdTimeRuleType = "";
     	String stdTimeType = "";
     	
-    	// Ãâ±Ù ½Ã°£ Ç¥ÁØÈ­ µ¥ÀÌÅÍ ÀúÀå
+    	// ì¶œê·¼ ì‹œê°„ í‘œì¤€í™” ë°ì´í„° ì €ì¥
     	stdTimeRuleType = "01";
     	stdTimeType = param.startStdTimeType();
 
         attd04Mapper.saveAttdStdTimeRule(AttdStdTimeRuleCommand.from(param, stdTimeRuleType, stdTimeType));
         
-        // ÃâÅğ±Ù Ç¥ÁØÈ­ µ¥ÀÌÅÍ ÀÌ·Â ÀúÀå
+        // ì¶œí‡´ê·¼ í‘œì¤€í™” ë°ì´í„° ì´ë ¥ ì €ì¥
         int histIdx = attd04Mapper.selectHistIdx(param.gvCmpnyCd());
         attd04Mapper.saveAttdStdTimeRuleHist(AttdStdTimeRuleHistCommand.from(param, histIdx, stdTimeRuleType, stdTimeType));
         
-        // Åğ±Ù ½Ã°£ Ç¥ÁØÈ­ µ¥ÀÌÅÍ ÀúÀå
+        // í‡´ê·¼ ì‹œê°„ í‘œì¤€í™” ë°ì´í„° ì €ì¥
         stdTimeRuleType = "02";
     	stdTimeType = param.endStdTimeType();
 
         attd04Mapper.saveAttdStdTimeRule(AttdStdTimeRuleCommand.from(param, stdTimeRuleType, stdTimeType));
         
         histIdx = attd04Mapper.selectHistIdx(param.gvCmpnyCd());
-        // ÃâÅğ±Ù Ç¥ÁØÈ­ µ¥ÀÌÅÍ ÀÌ·Â ÀúÀå
+        // ì¶œí‡´ê·¼ í‘œì¤€í™” ë°ì´í„° ì´ë ¥ ì €ì¥
         attd04Mapper.saveAttdStdTimeRuleHist(AttdStdTimeRuleHistCommand.from(param, histIdx, stdTimeRuleType, stdTimeType));
     }
 }

@@ -12,9 +12,9 @@ public record UserPasswordCommand(
 	public static UserPasswordCommand from(UserPasswordParam param, String userPwHash) {
 		
 		if(param == null)
-			throw ApiException.appendf(CommonErrorCode.COMMON_400_001,"\n필수값 누락 - UserPasswordParam");
+			throw new ApiException(CommonErrorCode.COMMON_400_001);
 		if(userPwHash == null)
-			throw ApiException.appendf(CommonErrorCode.COMMON_400_001,"\n필수값 누락 - userPwHash");
+			throw new ApiException(CommonErrorCode.COMMON_400_001);
 		
 		return new UserPasswordCommand(
 			param.cmpnyCd()

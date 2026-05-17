@@ -23,7 +23,7 @@ public class AuthCheckAspect {
 
     private final JwtUtil jwtUtil;
 
-    // @AuthCheck ¾î³ëÅ×ÀÌ¼ÇÀÌ ºÙÀº ¸Ş¼­µå¸¦ ´ë»óÀ¸·Î ÁöÁ¤
+    // @AuthCheck ì–´ë…¸í…Œì´ì…˜ì´ ë¶™ì€ ë©”ì„œë“œë¥¼ ëŒ€ìƒìœ¼ë¡œ ì§€ì •
     @Pointcut("@annotation(com.prafta.common.aop.auth.AuthCheck)")
     public void authCheckTarget() {}
 
@@ -44,6 +44,6 @@ public class AuthCheckAspect {
         	throw new ApiException(CommonErrorCode.COMMON_400_600);
         }
 
-        log.info("ÀÎÁõ ¼º°ø: {}", jwtUtil.getUserCdFromToken(token));
+        log.info("ì¸ì¦ ì„±ê³µ: {}", jwtUtil.getUserCdFromToken(token));
     }
 }

@@ -211,6 +211,7 @@ import { useFieldWatcher } from "@/utils/useFieldWatcher";
 import axios from "@/api/axios";
 import ViewHeader from "@/components/common/ViewHeader.vue";
 import { getMessage, MSG } from "@/messages";
+import { resolveApiErrorMessage } from "@/utils/apiError";
 import BaseSelect from "@/components/common/BaseSelect.vue";
 import TbmEduMtrlInfo from "./popup/TbmEduMtrlInfo.vue";
 import ThSortable from "@/components/common/ThSortable.vue";
@@ -296,10 +297,7 @@ const fnGetSystinfoList = async () => {
       useYn.value = systCodeArr.value.SYS003[0].systValDCd;
     }
   } catch (err) {
-    const msg =
-      err?.response?.data?.message ||
-      err?.message ||
-      "조회 중 오류가 발생했습니다.";
+    const msg = resolveApiErrorMessage(err, "조회 중 오류가 발생했습니다.");
 
     await proxy.$alert(msg);
   }
@@ -335,10 +333,7 @@ const fnGetBaseinfoList = async () => {
       // )[0].baimValDCd;
     }
   } catch (err) {
-    const msg =
-      err?.response?.data?.message ||
-      err?.message ||
-      "조회 중 오류가 발생했습니다.";
+    const msg = resolveApiErrorMessage(err, "조회 중 오류가 발생했습니다.");
 
     await proxy.$alert(msg);
   }
@@ -360,10 +355,7 @@ const fnSearch = async () => {
       tbmEduInfoResultList.value = response.data?.tbmEduInfoResultList || [];
     }
   } catch (err) {
-    const msg =
-      err?.response?.data?.message ||
-      err?.message ||
-      "조회 중 오류가 발생했습니다.";
+    const msg = resolveApiErrorMessage(err, "조회 중 오류가 발생했습니다.");
 
     await proxy.$alert(msg);
   }
@@ -391,10 +383,7 @@ const fnSave = async () => {
       fnSearch();
     }
   } catch (err) {
-    const msg =
-      err?.response?.data?.message ||
-      err?.message ||
-      "저장 중 오류가 발생했습니다.";
+    const msg = resolveApiErrorMessage(err, "저장 중 오류가 발생했습니다.");
 
     await proxy.$alert(msg);
   }
@@ -422,10 +411,7 @@ const fnDelete = async () => {
       fnSearch();
     }
   } catch (err) {
-    const msg =
-      err?.response?.data?.message ||
-      err?.message ||
-      "삭제 중 오류가 발생했습니다.";
+    const msg = resolveApiErrorMessage(err, "삭제 중 오류가 발생했습니다.");
 
     await proxy.$alert(msg);
   }

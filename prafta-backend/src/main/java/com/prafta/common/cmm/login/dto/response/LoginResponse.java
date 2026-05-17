@@ -1,7 +1,5 @@
 package com.prafta.common.cmm.login.dto.response;
 
-import java.util.Objects;
-
 import com.prafta.common.cmm.login.result.UserResult;
 import com.prafta.common.error.common.CommonErrorCode;
 import com.prafta.common.exception.ApiException;
@@ -11,7 +9,6 @@ public record LoginResponse(
 	, String userCd
 	, String userId
 	, String userNm
-	, String userPw
 	, String authCd
 	, String authLevel
 	, String siteCd
@@ -19,30 +16,25 @@ public record LoginResponse(
 	, String siteNm
 	, String nodeCd
 	, String nodeNm
-	, String mblNo
-	, String email
 	, String refreshToken
 	, String token
 ) {
-	public static LoginResponse from(UserResult userResult, String mblNo, String email, String refreshToken, String token) {
-		
+	// ì •ì±… Â§11.1 / Â§11.5: ë¡œê·¸ì¸ ì‘ë‹µ í˜ì´ë¡œë“œì—ì„œ ìê²© ì¦ëª…(ë¹„ë°€ë²ˆí˜¸ í•´ì‹œ) ë° PII(íœ´ëŒ€í°/ì´ë©”ì¼) ì œê±°.
+	// í•„ìš”í•œ í™”ë©´ì€ ì¸ì¦ëœ ë³„ë„ API(/webApi/user01/user-info-lists)ë¡œ ì¡°íšŒí•œë‹¤.
+	public static LoginResponse from(UserResult userResult, String refreshToken, String token) {
+
 		if (userResult == null)
-        	throw ApiException.appendf(CommonErrorCode.COMMON_400_001,"\nÇÊ¼ö°ª ´©¶ô - UserResult");
-		if (mblNo == null)
-        	throw ApiException.appendf(CommonErrorCode.COMMON_400_001,"\nÇÊ¼ö°ª ´©¶ô - mblNo");
-		if (email == null)
-        	throw ApiException.appendf(CommonErrorCode.COMMON_400_001,"\nÇÊ¼ö°ª ´©¶ô - email");
+        	throw new ApiException(CommonErrorCode.COMMON_400_001);
 		if (refreshToken == null)
-        	throw ApiException.appendf(CommonErrorCode.COMMON_400_001,"\nÇÊ¼ö°ª ´©¶ô - refreshToken");
+        	throw new ApiException(CommonErrorCode.COMMON_400_001);
 		if (token == null)
-        	throw ApiException.appendf(CommonErrorCode.COMMON_400_001,"\nÇÊ¼ö°ª ´©¶ô - token");
-		
+        	throw new ApiException(CommonErrorCode.COMMON_400_001);
+
         return new LoginResponse(
     		userResult.cmpnyCd()
     		, userResult.userCd()
             , userResult.userId()
             , userResult.userNm()
-            , userResult.userPw()
             , userResult.authCd()
             , userResult.authLevel()
             , userResult.siteCd()
@@ -50,8 +42,6 @@ public record LoginResponse(
             , userResult.siteNm()
             , userResult.nodeCd()
             , userResult.nodeNm()
-            , mblNo
-            , email
             , refreshToken
             , token
         );

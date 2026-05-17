@@ -12,7 +12,7 @@ public record MenuListQuery(
 	public static MenuListQuery from(MenuListParam param) {
 		
 		if(param == null)
-			throw ApiException.appendf(CommonErrorCode.COMMON_400_001,"\n필수값 누락 - MenuListParam");
+			throw new ApiException(CommonErrorCode.COMMON_400_001);
 		
 		return new MenuListQuery(
 			param.cmpnyCd()

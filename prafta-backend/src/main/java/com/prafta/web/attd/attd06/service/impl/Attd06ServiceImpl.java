@@ -151,7 +151,7 @@ public class Attd06ServiceImpl implements Attd06Service {
     		}
     	}
     }
-    // ###############################
+    
     @Override
     @Transactional
     public void updateShiftUserSchInfos(ShiftUserSchInfosParam param) {

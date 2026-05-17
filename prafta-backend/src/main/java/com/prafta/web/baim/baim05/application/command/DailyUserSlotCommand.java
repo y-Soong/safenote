@@ -16,16 +16,16 @@ public record DailyUserSlotCommand(
 	public static DailyUserSlotCommand from(LinkPoliciesParam param, int slotNo, String useYn) {
 
         if (param == null)
-        	throw ApiException.appendf(CommonErrorCode.COMMON_400_001,"\nÇÊ¼ö°ª ´©¶ô - LinkPoliciesParam");
+        	throw new ApiException(CommonErrorCode.COMMON_400_001);
         if (useYn == null)
-        	throw ApiException.appendf(CommonErrorCode.COMMON_400_001,"\nÇÊ¼ö°ª ´©¶ô - useYn");
+        	throw new ApiException(CommonErrorCode.COMMON_400_001);
 
         return new DailyUserSlotCommand(
         		param.siteCd()
         		, slotNo
-        		, "01"					// 01:ÀÏ¹İ»ç¿ëÀÚ, 02:QR»ç¿ëÀÚ
+        		, "01"					// 01:ì¼ë°˜ì‚¬ìš©ì, 02:QRì‚¬ìš©ì
         		, useYn
-        		, "01"					// 01:ºñÁ¡À¯Áß, 02:Á¡À¯Áß
+        		, "01"					// 01:ë¹„ì ìœ ì¤‘, 02:ì ìœ ì¤‘
         		, param.gvCmpnyCd()
         		, param.gvUserCd()
         );        

@@ -277,6 +277,7 @@ import ViewHeader from "@/components/common/ViewHeader.vue";
 import { useModal } from "@/utils/useModal";
 import axios from "@/api/axios";
 import { getMessage, MSG } from "@/messages";
+import { resolveApiErrorMessage } from "@/utils/apiError";
 import search_icon from "@/assets/img/search_icon.png";
 import SiteSearchPop from "@/components/popup/SiteSearchPop.vue";
 import SiteNodeSearchPop from "@/components/popup/SiteNodeSearchPop.vue";
@@ -322,6 +323,10 @@ const nodeCdFcs = ref(null);
 
 // ── 스케줄 타입 목록 ───────────────────────────────────────
 const schTypeList = ref([]);
+
+// ── 근무타입(SCH_CD)별 검증 메타 ────────────────────────────
+// key = schCd, value = { createDt, versionList:[{ applyDate, useYn, histIdx }] }
+const schTypeValidMetaMap = ref({});
 
 // ── 연차 타입 목록 ───────────────────────────────────────
 const leaveTypeList = ref([]);
@@ -396,6 +401,49 @@ const getCellNmValue = (userCd, workYmd) => {
   if (leave) return leave.leaveNm;
 
   return code;
+};
+
+// ── 근무타입 표시명 조회 ───────────────────────────────────
+const getSchTypeNm = (schCd) => {
+  const sch = schTypeList.value.find((s) => s.schCd === schCd);
+  return sch ? sch.schNm : schCd;
+};
+
+// ── 근무타입(SCH_CD)×날짜 지정 가능 여부 검증 ───────────────
+// 반환: 위반 시 { reasonCode, reason }, 정상이면 null.
+// 검증 메타가 없는 코드(휴가코드 등)는 검증 대상이 아니므로 null 반환.
+const validateSchCell = (schCd, workYmd) => {
+  const meta = schTypeValidMetaMap.value[schCd];
+  if (!meta) return null;
+
+  const versionList = meta.versionList || [];
+  if (versionList.length === 0) return null;
+
+  // 검증1) 생성일(MIN APPLY_DATE) 이전이면 차단
+  if (!workYmd || workYmd < meta.createDt) {
+    return {
+      reasonCode: "BEFORE_CREATE",
+      reason: "근무타입 생성일 이전 날짜입니다.",
+    };
+  }
+
+  // 검증2) effective USE_YN : APPLY_DATE <= workYmd 인 최신 버전의 USE_YN
+  let effectiveUseYn = null;
+  for (const v of versionList) {
+    if (v.applyDate <= workYmd) {
+      effectiveUseYn = v.useYn;
+    } else {
+      break;
+    }
+  }
+  if (effectiveUseYn === "N") {
+    return {
+      reasonCode: "USE_YN_N",
+      reason: "해당 날짜는 근무타입 미사용 기간입니다.",
+    };
+  }
+
+  return null;
 };
 
 // ── 선택 범위 ──────────────────────────────────────────────
@@ -486,6 +534,8 @@ const fnApplySchType = async () => {
 
   const { minRow, maxRow, minDay, maxDay } = selectionRange.value;
   const updatedUserCds = new Set();
+  // 위반으로 스킵된 날짜를 사유별로 수집 (고지 문구용, 중복 제거)
+  const skippedReasons = new Map();
   for (let r = minRow; r <= maxRow; r++) {
     const user = userList.value[r];
     if (!user) continue;
@@ -499,6 +549,14 @@ const fnApplySchType = async () => {
       ) {
         continue;
       }
+      // 근무타입 생성일·미사용 기간 검증 — 위반 시 해당 셀 스킵
+      const violation = validateSchCell(selectedSchType.value, d.workYmd);
+      if (violation) {
+        if (!skippedReasons.has(violation.reasonCode)) {
+          skippedReasons.set(violation.reasonCode, violation.reason);
+        }
+        continue;
+      }
       scheduleData.value[`${user.userCd}_${d.workYmd}`] = selectedSchType.value;
       updatedUserCds.add(user.userCd);
     }
@@ -506,6 +564,14 @@ const fnApplySchType = async () => {
   if (updatedUserCds.size > 0) {
     const merged = new Set([...checkedRows.value, ...updatedUserCds]);
     checkedRows.value = [...merged];
+  }
+  // 스킵된 셀이 있으면 사용자에게 고지
+  if (skippedReasons.size > 0) {
+    const schNm = getSchTypeNm(selectedSchType.value);
+    const reasonText = [...skippedReasons.values()].join("\n");
+    await proxy.$alert(
+      `'${schNm}' 근무타입을 지정할 수 없는 날짜가 있어 일부 셀은 제외되었습니다.\n${reasonText}`
+    );
   }
 };
 
@@ -559,9 +625,7 @@ const fnSrchSiteInfo = async () => {
     });
     if (response.status === 200) fnCallback(response);
   } catch (err) {
-    await proxy.$alert(
-      err?.response?.data?.message || err?.message || "조회 오류"
-    );
+    await proxy.$alert(resolveApiErrorMessage(err, "조회 오류"));
   }
 };
 
@@ -656,9 +720,7 @@ const fnSrchNodeInfo = async () => {
       fnCallback({ ...response, config: { url: "/dummy/site-node-lists" } });
     }
   } catch (err) {
-    await proxy.$alert(
-      err?.response?.data?.message || err?.message || "조회 오류"
-    );
+    await proxy.$alert(resolveApiErrorMessage(err, "조회 오류"));
   }
 };
 
@@ -751,10 +813,7 @@ const fnSearch = async () => {
       await fnGetSchTypeList();
     }
   } catch (err) {
-    const msg =
-      err?.response?.data?.message ||
-      err?.message ||
-      "조회 중 오류가 발생했습니다.";
+    const msg = resolveApiErrorMessage(err, "조회 중 오류가 발생했습니다.");
     await proxy.$alert(msg);
   }
 };
@@ -762,16 +821,25 @@ const fnSearch = async () => {
 // ── 스케줄 타입 목록 조회 ──────────────────────────────────
 const fnGetSchTypeList = async () => {
   try {
-    // TODO: API 연동
     const response = await axios.get("/webApi/attd05/sch-type-lists", {
       params: {
         siteCd: siteCd.value,
       },
     });
     schTypeList.value = response.data?.schTypeResultList ?? [];
+
+    // 근무타입(SCH_CD)별 검증 메타를 schCd 키 맵으로 가공해 보관
+    const metaList = response.data?.schTypeValidMetaList ?? [];
+    const metaMap = {};
+    metaList.forEach((m) => {
+      metaMap[m.schCd] = {
+        createDt: m.createDt,
+        versionList: m.versionList ?? [],
+      };
+    });
+    schTypeValidMetaMap.value = metaMap;
   } catch (err) {
-    const msg =
-      err?.response?.data?.message || err?.message || "스케줄 목록 조회 오류.";
+    const msg = resolveApiErrorMessage(err, "스케줄 목록 조회 오류.");
     await proxy.$alert(msg);
   }
 };
@@ -783,8 +851,7 @@ const fnGetLeaveTypeList = async () => {
     const response = await axios.get("/webApi/attd05/leave-type-lists", {});
     leaveTypeList.value = response.data?.leaveTypeResultList ?? [];
   } catch (err) {
-    const msg =
-      err?.response?.data?.message || err?.message || "스케줄 목록 조회 오류.";
+    const msg = resolveApiErrorMessage(err, "스케줄 목록 조회 오류.");
     await proxy.$alert(msg);
   }
 };
@@ -824,14 +891,26 @@ const fnSave = async () => {
       saveList
     );
     if (response.status === 200) {
-      proxy.$alert(getMessage(MSG.SAVE_SUCCESS));
+      const skippedList = response.data?.skippedList ?? [];
+      if (skippedList.length > 0) {
+        // 서버 검증으로 스킵된 셀 목록을 사용자에게 표시
+        const detail = skippedList
+          .map((s) => {
+            const schNm = getSchTypeNm(s.workPlanCd);
+            return `· ${s.workYmd} / ${schNm} : ${s.reason}`;
+          })
+          .join("\n");
+        await proxy.$alert(
+          `${response.data.savedCount}건 저장되었습니다.\n` +
+            `아래 ${skippedList.length}건은 근무타입 지정이 불가하여 제외되었습니다.\n${detail}`
+        );
+      } else {
+        await proxy.$alert(getMessage(MSG.SAVE_SUCCESS));
+      }
       fnSearch();
     }
   } catch (err) {
-    const msg =
-      err?.response?.data?.message ||
-      err?.message ||
-      "저장 중 오류가 발생했습니다.";
+    const msg = resolveApiErrorMessage(err, "저장 중 오류가 발생했습니다.");
     await proxy.$alert(msg);
   }
 };
@@ -866,10 +945,7 @@ const fnDelete = async () => {
       fnSearch();
     }
   } catch (err) {
-    const msg =
-      err?.response?.data?.message ||
-      err?.message ||
-      "저장 중 오류가 발생했습니다.";
+    const msg = resolveApiErrorMessage(err, "저장 중 오류가 발생했습니다.");
     await proxy.$alert(msg);
   }
 };

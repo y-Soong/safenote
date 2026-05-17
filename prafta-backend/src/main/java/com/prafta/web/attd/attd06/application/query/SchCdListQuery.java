@@ -12,11 +12,11 @@ public record SchCdListQuery(
     public static SchCdListQuery from(String cmpnyCd, String siteCd, String shiftCd) {
 
         if (cmpnyCd == null)
-            throw ApiException.appendf(CommonErrorCode.COMMON_400_001, "\nRequired param missing - cmpnyCd");
+            throw new ApiException(CommonErrorCode.COMMON_400_001);
         if (siteCd == null)
-            throw ApiException.appendf(CommonErrorCode.COMMON_400_001, "\nRequired param missing - siteCd");
+            throw new ApiException(CommonErrorCode.COMMON_400_001);
         if (shiftCd == null)
-            throw ApiException.appendf(CommonErrorCode.COMMON_400_001, "\nRequired param missing - shiftCd");
+            throw new ApiException(CommonErrorCode.COMMON_400_001);
 
         return new SchCdListQuery(
     		cmpnyCd

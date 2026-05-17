@@ -9,11 +9,11 @@ import java.security.MessageDigest;
 import java.util.Base64;
 
 /**
- * HMAC °ü·Ã ±â´É Á¦°ø ÄÄÆ÷³ÍÆ®.
+ * HMAC ê´€ë ¨ ê¸°ëŠ¥ ì œê³µ ì»´í¬ë„ŒíŠ¸.
  *
- * ¼³°è ÀÇµµ:
- * - ¼­ºñ½º ·¹ÀÌ¾î°¡ Å°¸¦ Àü´ŞÇÏÁö ¾Êµµ·Ï, ¼­¹ö ±âµ¿ ½Ã ÇÑ ¹ø ·ÎµùÇØ¼­ ³»ºÎ º¸°ü
- * - Ãâ·ÂÀº DB ÀúÀå/Àü¼Û¿¡ ÆíÇÑ Base64URL(no padding)À» ±âº» Æ÷¸ËÀ¸·Î »ç¿ë
+ * ì„¤ê³„ ì˜ë„:
+ * - ì„œë¹„ìŠ¤ ë ˆì´ì–´ê°€ í‚¤ë¥¼ ì „ë‹¬í•˜ì§€ ì•Šë„ë¡, ì„œë²„ ê¸°ë™ ì‹œ í•œ ë²ˆ ë¡œë”©í•´ì„œ ë‚´ë¶€ ë³´ê´€
+ * - ì¶œë ¥ì€ DB ì €ì¥/ì „ì†¡ì— í¸í•œ Base64URL(no padding)ì„ ê¸°ë³¸ í¬ë§·ìœ¼ë¡œ ì‚¬ìš©
  */
 @Component
 public class HmacSigner {
@@ -23,22 +23,22 @@ public class HmacSigner {
     public HmacSigner(CryptoProperties props) {
         this.pepperKey = KeyMaterial.fromBase64Url(props.hmacPepper());
 
-        // ¾ÈÀüÀåÄ¡: ÃÖ¼Ò ±ÇÀå ±æÀÌ(32 bytes = 256-bit)
-        // 64 bytes(512-bit) »ç¿ëÀ» ±ÇÀåÇÏÁö¸¸, ÃÖ¼ÒÄ¡¶óµµ °­Á¦ÇØ ½Ç¼ö ¹æÁö
+        // ì•ˆì „ì¥ì¹˜: ìµœì†Œ ê¶Œì¥ ê¸¸ì´(32 bytes = 256-bit)
+        // 64 bytes(512-bit) ì‚¬ìš©ì„ ê¶Œì¥í•˜ì§€ë§Œ, ìµœì†Œì¹˜ë¼ë„ ê°•ì œí•´ ì‹¤ìˆ˜ ë°©ì§€
         if (pepperKey.length < 32) {
             throw new IllegalStateException("AUTH pepper is too short. Use >= 32 bytes random key.");
         }
     }
 
     /**
-     * RefreshTokenÀ» DB¿¡ ¾ÈÀüÇÏ°Ô ÀúÀåÇÏ±â À§ÇÑ "¼­¹öÃø ÇØ½Ã" »ı¼º.
+     * RefreshTokenì„ DBì— ì•ˆì „í•˜ê²Œ ì €ì¥í•˜ê¸° ìœ„í•œ "ì„œë²„ì¸¡ í•´ì‹œ" ìƒì„±.
      *
-     * - refreshToken ¿ø¹®Àº DB¿¡ ÀúÀåÇÏÁö ¸»°í
-     * - HMAC °á°ú(Base64URL)¸¸ ÀúÀåÇÏ´Â ÆĞÅÏ ±ÇÀå
+     * - refreshToken ì›ë¬¸ì€ DBì— ì €ì¥í•˜ì§€ ë§ê³ 
+     * - HMAC ê²°ê³¼(Base64URL)ë§Œ ì €ì¥í•˜ëŠ” íŒ¨í„´ ê¶Œì¥
      *
-     * ÄÁÅØ½ºÆ®(cmpnyCd/userId)¸¦ ¸Ş½ÃÁö¿¡ ¼¯´Â ÀÌÀ¯:
-     * - µ¿ÀÏ refreshToken °ªÀÌ ¿ì¿¬È÷ Àç»ç¿ëµÇ¾îµµ ´Ù¸¥ »ç¿ëÀÚ/È¸»ç ÄÁÅØ½ºÆ®¸é ÇØ½Ã°¡ ´Ş¶óÁü
-     * - ÅäÅ«-»ç¿ëÀÚ ¹ÙÀÎµùÀÌ ¸íÈ®ÇØÁü
+     * ì»¨í…ìŠ¤íŠ¸(cmpnyCd/userId)ë¥¼ ë©”ì‹œì§€ì— ì„ëŠ” ì´ìœ :
+     * - ë™ì¼ refreshToken ê°’ì´ ìš°ì—°íˆ ì¬ì‚¬ìš©ë˜ì–´ë„ ë‹¤ë¥¸ ì‚¬ìš©ì/íšŒì‚¬ ì»¨í…ìŠ¤íŠ¸ë©´ í•´ì‹œê°€ ë‹¬ë¼ì§
+     * - í† í°-ì‚¬ìš©ì ë°”ì¸ë”©ì´ ëª…í™•í•´ì§
      */
     public String refreshTokenHash(String refreshToken, String cmpnyCd, String userId) {
         String msg = refreshToken + ":" + cmpnyCd + ":" + userId;
@@ -46,7 +46,7 @@ public class HmacSigner {
     }
 
     /**
-     * HMAC-SHA256(message) -> Base64URL(no padding) ¹®ÀÚ¿­ ¹İÈ¯
+     * HMAC-SHA256(message) -> Base64URL(no padding) ë¬¸ìì—´ ë°˜í™˜
      */
     public String hmacSha256Base64Url(String message) {
         byte[] raw = hmacSha256(message.getBytes(StandardCharsets.UTF_8));
@@ -54,7 +54,7 @@ public class HmacSigner {
     }
 
     /**
-     * (¼±ÅÃ) °ËÁõ¿ë. Å¸ÀÌ¹Ö °ø°İ ¹æÁö¸¦ À§ÇØ »ó¼ö½Ã°£ ºñ±³ »ç¿ë.
+     * (ì„ íƒ) ê²€ì¦ìš©. íƒ€ì´ë° ê³µê²© ë°©ì§€ë¥¼ ìœ„í•´ ìƒìˆ˜ì‹œê°„ ë¹„êµ ì‚¬ìš©.
      */
     public boolean verifyBase64Url(String message, String expectedBase64Url) {
         String actual = hmacSha256Base64Url(message);
@@ -67,7 +67,7 @@ public class HmacSigner {
             mac.init(new SecretKeySpec(pepperKey, "HmacSHA256"));
             return mac.doFinal(messageBytes);
         } catch (Exception e) {
-            // ¿©±â ÅÍÁö¸é º¸Åë È¯°æº¯¼ö/Å° µğÄÚµù/¾Ë°í¸®Áò È¯°æ ¹®Á¦ ¡æ Áï½Ã ½ÇÆĞ°¡ ¸ÂÀ½
+            // ì—¬ê¸° í„°ì§€ë©´ ë³´í†µ í™˜ê²½ë³€ìˆ˜/í‚¤ ë””ì½”ë”©/ì•Œê³ ë¦¬ì¦˜ í™˜ê²½ ë¬¸ì œ â†’ ì¦‰ì‹œ ì‹¤íŒ¨ê°€ ë§ìŒ
             throw new IllegalStateException("Failed to compute HMAC-SHA256", e);
         }
     }

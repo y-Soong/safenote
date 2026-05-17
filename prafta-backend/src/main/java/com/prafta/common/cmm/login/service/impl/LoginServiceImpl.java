@@ -1,8 +1,5 @@
 package com.prafta.common.cmm.login.service.impl;
 
-import java.nio.charset.StandardCharsets;
-import java.security.MessageDigest;
-import java.security.NoSuchAlgorithmException;
 import java.security.SecureRandom;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
@@ -72,7 +69,7 @@ public class LoginServiceImpl implements LoginService{
 			throw new ApiException(LoginErrorCode.LOGIN_400_001);
 	    }
 		
-		// ºñ¹Ğ¹øÈ£ ÀÎÁõ ½ÇÆĞ Àá±İ ¸¸·áÀÏ½Ã Ã¼Å©
+		// ë¹„ë°€ë²ˆí˜¸ ì¸ì¦ ì‹¤íŒ¨ ì ê¸ˆ ë§Œë£Œì¼ì‹œ ì²´í¬
 		if(userResult.pwdLockYn().equals("Y")) {
 			String unlockDtimeStr = userResult.pwdLockExpireDtime();
 			
@@ -81,12 +78,12 @@ public class LoginServiceImpl implements LoginService{
 		        
 		        if (LocalDateTime.now().isBefore(unlockDtime)) {
 		            long remainMinutes = ChronoUnit.MINUTES.between(LocalDateTime.now(), unlockDtime);
-		            throw ApiException.appendf(LoginErrorCode.LOGIN_400_003, "\nÀá±İ ÇØÁ¦±îÁö %dºĞ ³²¾Ò½À´Ï´Ù.", remainMinutes);
+		            throw ApiException.appendf(LoginErrorCode.LOGIN_400_003, "\nì ê¸ˆ í•´ì œê¹Œì§€ %dë¶„ ë‚¨ì•˜ìŠµë‹ˆë‹¤.", remainMinutes);
 		        }
 		    }
 		}
 		
-		// Àá±İ ÇØÁ¦ ½Ã°¢ÀÌ Áö³µ³², °èÁ¤ »óÅÂ ¾÷µ¥ÀÌÆ®
+		// ì ê¸ˆ í•´ì œ ì‹œê°ì´ ì§€ë‚¬ë‚¨, ê³„ì • ìƒíƒœ ì—…ë°ì´íŠ¸
 	    loginMapper.userPwdUnLock(UserPwdUnlockCommand.from(userResult));
 		
 		String hashedPw = (String) userResult.userPw();
@@ -98,32 +95,33 @@ public class LoginServiceImpl implements LoginService{
 			throw new ApiException(LoginErrorCode.LOGIN_400_001);
 		}
 
-		// »ç¿ëÀÚ Á¤º¸ LOCK Àâ±â
+		// ì‚¬ìš©ì ì •ë³´ LOCK ì¡ê¸°
 		loginMapper.lockUserRow(UserRowLockQuery.from(userResult));
 		
 		String tokenId = UUID.randomUUID().toString().replace("-", "");
 		
 		SecureRandom random = new SecureRandom();
-		byte[] bytes = new byte[64]; // 64¹ÙÀÌÆ®¸é ÃæºĞÈ÷ °­ÇÔ
+		byte[] bytes = new byte[64]; // 64ë°”ì´íŠ¸ë©´ ì¶©ë¶„íˆ ê°•í•¨
 		random.nextBytes(bytes);
 		String refreshToken = Base64.getUrlEncoder().withoutPadding().encodeToString(bytes);
 		String refreshTokenHash = hmacSigner.hmacSha256Base64Url(refreshToken);
 		
-		ActiveTokenCommand activeTokenCommand = ActiveTokenCommand.from(userResult, tokenId, param.clientType(), refreshTokenHash, "7");
+		// ì •ì±… Â§3.4: Refresh Token ìœ íš¨ê¸°ê°„ 48ì‹œê°„(2ì¼)
+		ActiveTokenCommand activeTokenCommand = ActiveTokenCommand.from(userResult, tokenId, param.clientType(), refreshTokenHash, "2");
 		
-		// ±âÁ¸ ¼¼¼Ç revoke
+		// ê¸°ì¡´ ì„¸ì…˜ revoke
 		loginMapper.revokeActiveToken(activeTokenCommand);
-		// ½Å±Ô ¼¼¼Ç insert
+		// ì‹ ê·œ ì„¸ì…˜ insert
 		loginMapper.insertAuthToken(activeTokenCommand);
 		
-		String mblNo = aesGcmCrypto.decrypt(userResult.mblNoEnc());
-		String email = aesGcmCrypto.decrypt(userResult.emailEnc());
-		String token = jwtUtil.generateToken(userResult, mblNo, email);
-		
-		// »ç¿ëÀÚ ·Î±×ÀÎ ½Ã°£ ±â·Ï
+		// ì •ì±… Â§11.1ì— ë”°ë¼ ë¡œê·¸ì¸ ì‘ë‹µ í˜ì´ë¡œë“œì—ì„œ íœ´ëŒ€í°/ì´ë©”ì¼ í‰ë¬¸ì„ ì œê±°.
+		// í•„ìš”í•œ í™”ë©´ì€ ì¸ì¦ëœ ë³„ë„ API(/webApi/user01/user-info-lists)ë¡œ ì¡°íšŒí•œë‹¤.
+		String token = jwtUtil.generateToken(userResult);
+
+		// ì‚¬ìš©ì ë¡œê·¸ì¸ ì‹œê°„ ê¸°ë¡
 		loginMapper.updateUserLastLoginDtime(userResult.userCd());
-				
-		return LoginResponse.from(userResult, mblNo, email, refreshToken, token);
+
+		return LoginResponse.from(userResult, refreshToken, token);
 	}
 	
 	@Override
@@ -139,12 +137,12 @@ public class LoginServiceImpl implements LoginService{
 		
 		String userPw = "";
 
-        // 1) ºñ¹Ğ¹øÈ£ ÇØ½Ã (Æò¹® ÀúÀå ±İÁö)
+        // 1) ë¹„ë°€ë²ˆí˜¸ í•´ì‹œ (í‰ë¬¸ ì €ì¥ ê¸ˆì§€)
         if (param.userPw() != null) {
         	userPw = passwordHasher.hash(param.userPw());
         }
 
-        // 2) Á¤±ÔÈ­
+        // 2) ì •ê·œí™”
         String phoneNorm = Normalizers.normalizePhone(param.mblNo());
         String emailNorm = Normalizers.normalizeEmail(param.email());
         String birthNorm = Normalizers.normalizeBirth(param.birthDt());
@@ -154,12 +152,12 @@ public class LoginServiceImpl implements LoginService{
         String emailEnc = (emailNorm == null) ? null : aesGcmCrypto.encrypt(emailNorm);
         String birthEnc = (birthNorm == null) ? null : aesGcmCrypto.encrypt(birthNorm);
 
-        // 4) HMAC ÀÎµ¦½º (equals/Áßº¹/°èÁ¤Ã£±â)
-        // È¸»ç ´ÜÀ§ À¯´ÏÅ©¸é cmpnyCd ¼¯´Â °É ÃßÃµ
+        // 4) HMAC ì¸ë±ìŠ¤ (equals/ì¤‘ë³µ/ê³„ì •ì°¾ê¸°)
+        // íšŒì‚¬ ë‹¨ìœ„ ìœ ë‹ˆí¬ë©´ cmpnyCd ì„ëŠ” ê±¸ ì¶”ì²œ
         String phoneHmac = (phoneNorm == null) ? null : hmacSigner.hmacSha256Base64Url(phoneNorm);
         String emailHmac = (emailNorm == null) ? null : hmacSigner.hmacSha256Base64Url(emailNorm);
 
-        // 5) ÆÄ»ı°ª
+        // 5) íŒŒìƒê°’
         String phoneLast4 = Normalizers.last4(phoneNorm);
         String emailDomain = Normalizers.emailDomain(emailNorm);
         
@@ -171,7 +169,7 @@ public class LoginServiceImpl implements LoginService{
         loginMapper.insertUserInfo(userJoinCommand);
         loginMapper.insertUserSiteAuth(userJoinCommand);
 
-        // ¾à°ü µ¿ÀÇ ·ÎÁ÷Àº ±×´ë·Î
+        // ì•½ê´€ ë™ì˜ ë¡œì§ì€ ê·¸ëŒ€ë¡œ
         List<RequiredTermsResult> RequiredTermsResultList = loginMapper.selectRequiredTermsList();
         if (RequiredTermsResultList == null || RequiredTermsResultList.isEmpty()) {
             throw new ApiException(LoginErrorCode.LOGIN_500_001);
@@ -206,16 +204,5 @@ public class LoginServiceImpl implements LoginService{
 		}
 	}
 	
-	public static String sha256(String input) {
-	    try {
-	        MessageDigest md = MessageDigest.getInstance("SHA-256");
-	        byte[] digest = md.digest(input.getBytes(StandardCharsets.UTF_8));
-	        StringBuilder sb = new StringBuilder();
-	        for (byte b : digest) sb.append(String.format("%02x", b));
-	        return sb.toString();
-	    } catch (NoSuchAlgorithmException e) {
-	        throw new RuntimeException(e);
-	    }
-	}
 }
 

@@ -16,7 +16,7 @@ public record SchTypeDeleParam(
 	public static SchTypeDeleParam from(List<SchTypeDeleRequst> requests, TokenInfo tokenInfo) {
 
         if (requests == null)
-        	throw ApiException.appendf(CommonErrorCode.COMMON_400_001,"\n필수값 누락 - SchTypeDeleRequst");
+        	throw new ApiException(CommonErrorCode.COMMON_400_001);
         
         List<SchTypeDeleModel> models = requests.stream()
     		.map(req -> {

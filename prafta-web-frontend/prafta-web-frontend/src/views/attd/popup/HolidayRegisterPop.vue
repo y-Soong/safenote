@@ -84,6 +84,7 @@ import { useCenteredDraggable } from "@/composables/useCenteredDraggable";
 import CalendarSrch from "@/components/common/CalendarSrch.vue";
 import axios from "@/api/axios";
 import { getMessage, MSG } from "@/messages";
+import { resolveApiErrorMessage } from "@/utils/apiError";
 
 const props = defineProps({
   siteCd_p: { type: String, default: "" },
@@ -172,10 +173,7 @@ const fnRegister = async () => {
       emit("close");
     }
   } catch (err) {
-    const msg =
-      err?.response?.data?.message ||
-      err?.message ||
-      "등록 중 오류가 발생했습니다.";
+    const msg = resolveApiErrorMessage(err, "등록 중 오류가 발생했습니다.");
     await proxy.$alert(msg);
   }
 };

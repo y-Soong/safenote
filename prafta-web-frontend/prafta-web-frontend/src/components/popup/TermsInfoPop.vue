@@ -94,6 +94,7 @@ import { useCenteredDraggable } from "@/composables/useCenteredDraggable";
 import "@vueup/vue-quill/dist/vue-quill.snow.css";
 import CalendarSrch from "@/components/common/CalendarSrch.vue";
 import axios from "@/api/axios";
+import { resolveApiErrorMessage } from "@/utils/apiError";
 import BaseSelect from "@/components/common/BaseSelect.vue";
 
 const modalRef = ref(null);
@@ -172,7 +173,7 @@ const fnGetSystinfoList = async () => {
       systCodeArr.value = grouped;
     }
   } catch (err) {
-    alert(err.response.data.message);
+    fnAlertMsg(resolveApiErrorMessage(err, "처리 중 오류가 발생했습니다."));
   }
 };
 
@@ -210,7 +211,7 @@ const fnGetTermsInfo = async () => {
       }
     }
   } catch (err) {
-    alert(err.response.data.message);
+    fnAlertMsg(resolveApiErrorMessage(err, "처리 중 오류가 발생했습니다."));
   }
 };
 
@@ -235,7 +236,7 @@ const fnSaveTerms = async () => {
         });
       }
     } catch (err) {
-      alert(err.response.data.message);
+      fnAlertMsg(resolveApiErrorMessage(err, "처리 중 오류가 발생했습니다."));
     }
   });
 };

@@ -15,7 +15,7 @@ public record DailyAttdDetailDeleteCommand(
     public static DailyAttdDetailDeleteCommand from(DailyAttdDetailDeleteParam param) {
 
         if (param == null)
-            throw ApiException.appendf(CommonErrorCode.COMMON_400_001, "\nRequired param missing - DailyAttdDetailDeleteParam");
+            throw new ApiException(CommonErrorCode.COMMON_400_001);
 
         return new DailyAttdDetailDeleteCommand(
             param.siteCd()

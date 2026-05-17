@@ -252,6 +252,7 @@ import { useFieldWatcher } from "@/utils/useFieldWatcher";
 import axios from "@/api/axios";
 import ViewHeader from "@/components/common/ViewHeader.vue";
 import { getMessage, MSG } from "@/messages";
+import { resolveApiErrorMessage } from "@/utils/apiError";
 import search_icon from "@/assets/img/search_icon.png";
 import SiteSearchPop from "@/components/popup/SiteSearchPop.vue";
 import BaseSelect from "@/components/common/BaseSelect.vue";
@@ -489,13 +490,8 @@ const fnGetBaseinfoList = async () => {
       formData.chkLstType = baseCodeArr.value.COM001[0].baimValDCd;
     }
   } catch (err) {
-    const msg =
-      err?.response?.data?.message ||
-      err?.message ||
-      "조회 중 오류가 발생했습니다.";
-
+    const msg = resolveApiErrorMessage(err, "조회 중 오류가 발생했습니다.");
     await proxy.$alert(msg);
-    // proxy.$alert(err.response.data.message);
   }
 };
 
@@ -522,13 +518,8 @@ const fnSearch = async () => {
       chkptResultList.value = response.data?.inspectResult;
     }
   } catch (err) {
-    const msg =
-      err?.response?.data?.message ||
-      err?.message ||
-      "조회 중 오류가 발생했습니다.";
-
+    const msg = resolveApiErrorMessage(err, "조회 중 오류가 발생했습니다.");
     await proxy.$alert(msg);
-    // proxy.$alert(err.response.data.message);
   }
 };
 
@@ -581,13 +572,8 @@ const fnSrchSiteInfo = async () => {
       fnCallback(response);
     }
   } catch (err) {
-    const msg =
-      err?.response?.data?.message ||
-      err?.message ||
-      "조회 중 오류가 발생했습니다.";
-
+    const msg = resolveApiErrorMessage(err, "조회 중 오류가 발생했습니다.");
     await proxy.$alert(msg);
-    // alert(err.response.data.message);
   }
 };
 

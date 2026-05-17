@@ -14,7 +14,7 @@ public record UpdateUserAttdInfosParam(
     public static UpdateUserAttdInfosParam from(List<UpdateUserAttdInfosRequest> requests, TokenInfo tokenInfo) {
 
         if (requests == null)
-            throw ApiException.appendf(CommonErrorCode.COMMON_400_001, "\nRequired param missing - UpdateUserAttdInfosRequest");
+            throw new ApiException(CommonErrorCode.COMMON_400_001);
 
         List<UpdateUserAttdInfosModel> models = requests.stream()
             .map(req -> new UpdateUserAttdInfosModel(

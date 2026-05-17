@@ -15,7 +15,7 @@ public record LeaveTypeListParam(
 	public static LeaveTypeListParam from(LeaveTypeListRequest request, TokenInfo tokenInfo) {
 		
 		if (request == null)
-            throw ApiException.appendf(CommonErrorCode.COMMON_400_001, "\n필수값 누락 - LeaveTypeListRequest");
+            throw new ApiException(CommonErrorCode.COMMON_400_001);
 		
 		return new LeaveTypeListParam(
 			request.getLeaveNo()

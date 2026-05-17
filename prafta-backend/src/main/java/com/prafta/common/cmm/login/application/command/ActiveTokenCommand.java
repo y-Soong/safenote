@@ -17,15 +17,15 @@ public record ActiveTokenCommand(
 	public static ActiveTokenCommand from(UserResult userResult, String tokenId, String clientType, String refreshTokenHash, String expireDtime) {
 
 			if(userResult == null)
-				throw ApiException.appendf(CommonErrorCode.COMMON_400_001,"\n필수값 누락 - UserResult");
+				throw new ApiException(CommonErrorCode.COMMON_400_001);
 			if(tokenId == null)
-				throw ApiException.appendf(CommonErrorCode.COMMON_400_001,"\n필수값 누락 - tokenId");
+				throw new ApiException(CommonErrorCode.COMMON_400_001);
 			if(clientType == null)
-				throw ApiException.appendf(CommonErrorCode.COMMON_400_001,"\n필수값 누락 - clientType");
+				throw new ApiException(CommonErrorCode.COMMON_400_001);
 			if(refreshTokenHash == null)
-				throw ApiException.appendf(CommonErrorCode.COMMON_400_001,"\n필수값 누락 - refreshTokenHash");
+				throw new ApiException(CommonErrorCode.COMMON_400_001);
 			if(expireDtime == null)
-				throw ApiException.appendf(CommonErrorCode.COMMON_400_001,"\n필수값 누락 - expireDtime");
+				throw new ApiException(CommonErrorCode.COMMON_400_001);
 		
         return new ActiveTokenCommand(
     		userResult.cmpnyCd()

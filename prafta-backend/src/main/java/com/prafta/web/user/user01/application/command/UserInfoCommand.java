@@ -25,7 +25,7 @@ public record UserInfoCommand(
 	public static UserInfoCommand from(UserInfoModel model, String mblNoEnc, String mblNoHmac, String emailEnc, String emailHmac, String birthDtEnc) {
 
         if (model == null)
-        	throw ApiException.appendf(CommonErrorCode.COMMON_400_001,"\n필수값 누락 - UserInfoModel");
+        	throw new ApiException(CommonErrorCode.COMMON_400_001);
 	
 	    return new UserInfoCommand(
 			model.cmpnyCd()

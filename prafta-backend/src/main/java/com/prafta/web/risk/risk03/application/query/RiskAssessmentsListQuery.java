@@ -14,7 +14,7 @@ public record RiskAssessmentsListQuery(
 	public static RiskAssessmentsListQuery from(RiskAssessmentsListParam param) {
 
         if (param == null)
-        	throw ApiException.appendf(CommonErrorCode.COMMON_400_001,"\n필수값 누락 - RiskAssessmentsListParam");
+        	throw new ApiException(CommonErrorCode.COMMON_400_001);
 
         return new RiskAssessmentsListQuery(
     		param.siteCd()

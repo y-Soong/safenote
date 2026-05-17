@@ -10,7 +10,7 @@ public record AttdStdTimeRuleListQuery(
     public static AttdStdTimeRuleListQuery from(AttdStdTimeRuleListParam param) {
 
         if (param == null)
-            throw ApiException.appendf(CommonErrorCode.COMMON_400_001, "\n필수 값 누락 - Attd04ListParam");
+            throw new ApiException(CommonErrorCode.COMMON_400_001);
 
         return new AttdStdTimeRuleListQuery(
             param.gvCmpnyCd()

@@ -36,11 +36,11 @@ public record UserJoinCommand(
 			, String birthEnc
 	) {
 		if(param == null)
-			throw ApiException.appendf(CommonErrorCode.COMMON_400_001,"\n필수값 누락 - UserJoinParam");
+			throw new ApiException(CommonErrorCode.COMMON_400_001);
 		if(userCd == null)
-			throw ApiException.appendf(CommonErrorCode.COMMON_400_001,"\n필수값 누락 - userCd");
+			throw new ApiException(CommonErrorCode.COMMON_400_001);
 		if(userPw == null)
-			throw ApiException.appendf(CommonErrorCode.COMMON_400_001,"\n필수값 누락 - userPw");
+			throw new ApiException(CommonErrorCode.COMMON_400_001);
 		
 		return new UserJoinCommand(
 			param.cmpnyCd()

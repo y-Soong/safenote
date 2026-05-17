@@ -2,18 +2,18 @@ package com.prafta.web.chkLst.chkLst03.result;
 
 public record InspectResult(
 	String chk
-	, String cmpnyCd								// È¸»çÄÚµå
-	, String siteCd								// »ç¾÷ÀåÄÚµå
-	, String siteNm								// »ç¾÷Àå¸í
-	, String chkptCd								// Á¡°Ë´ë»óÄÚµå
-	, String chkptNm								// Á¡°Ë´ë»ó¸í
-	, String siteAdminCd							// »ç¾÷Àå °ü¸®ÀÚ ID
-	, String siteAdminNm							// »ç¾÷Àå °ü¸®ÀÚ¸í
-	, String chkLstType							// Ã¼Å©¸®½ºÆ® Å¸ÀÔ[COM001]
-	, String chkptDesc							// Á¡°Ë´ë»óºñ°í
-	, String workDate							// Á¡°ËÁ¶È¸¿ù
-	, String inspectDayCnt						// Á¡°Ë½ÃÇà ÀÏÀÚ ¼ö
-	, String defectiveResultCnt					// ºÒ·®¿ä¼Ò ¼ö
+	, String cmpnyCd								// íšŒì‚¬ì½”ë“œ
+	, String siteCd								// ì‚¬ì—…ì¥ì½”ë“œ
+	, String siteNm								// ì‚¬ì—…ì¥ëª…
+	, String chkptCd								// ì ê²€ëŒ€ìƒì½”ë“œ
+	, String chkptNm								// ì ê²€ëŒ€ìƒëª…
+	, String siteAdminCd							// ì‚¬ì—…ì¥ ê´€ë¦¬ì ID
+	, String siteAdminNm							// ì‚¬ì—…ì¥ ê´€ë¦¬ìëª…
+	, String chkLstType							// ì²´í¬ë¦¬ìŠ¤íŠ¸ íƒ€ì…[COM001]
+	, String chkptDesc							// ì ê²€ëŒ€ìƒë¹„ê³ 
+	, String workDate							// ì ê²€ì¡°íšŒì›”
+	, String inspectDayCnt						// ì ê²€ì‹œí–‰ ì¼ì ìˆ˜
+	, String defectiveResultCnt					// ë¶ˆëŸ‰ìš”ì†Œ ìˆ˜
 ) {
 	
 }

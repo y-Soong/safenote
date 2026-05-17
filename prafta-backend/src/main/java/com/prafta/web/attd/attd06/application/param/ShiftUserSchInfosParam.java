@@ -16,9 +16,9 @@ public record ShiftUserSchInfosParam(
     public static ShiftUserSchInfosParam from(ShiftUserSchInfosRequest request, TokenInfo tokenInfo) {
 
         if (request == null)
-            throw ApiException.appendf(CommonErrorCode.COMMON_400_001, "\nRequired param missing - ShiftUserSchInfosRequest");
+            throw new ApiException(CommonErrorCode.COMMON_400_001);
         if (tokenInfo == null)
-            throw ApiException.appendf(CommonErrorCode.COMMON_400_001, "\nRequired param missing - TokenInfo");
+            throw new ApiException(CommonErrorCode.COMMON_400_001);
 
         return new ShiftUserSchInfosParam(
             ShiftMetaParam.from(request.getShiftMeta())
@@ -38,7 +38,7 @@ public record ShiftUserSchInfosParam(
     ) {
         public static ShiftMetaParam from(ShiftUserSchInfosRequest.ShiftMeta obj) {
             if (obj == null)
-                throw ApiException.appendf(CommonErrorCode.COMMON_400_001, "\nRequired param missing - ShiftMeta");
+                throw new ApiException(CommonErrorCode.COMMON_400_001);
             return new ShiftMetaParam(
             	obj.getShiftTeamId()
                 , obj.getSiteCd()
@@ -57,7 +57,7 @@ public record ShiftUserSchInfosParam(
     ) {
         public static TeamParam from(ShiftUserSchInfosRequest.Team obj) {
             if (obj == null)
-                throw ApiException.appendf(CommonErrorCode.COMMON_400_001, "\nRequired param missing - Team");
+                throw new ApiException(CommonErrorCode.COMMON_400_001);
             return new TeamParam(
                 obj.getTeamIdx()
                 , obj.getTeamNm()
@@ -67,7 +67,7 @@ public record ShiftUserSchInfosParam(
 
         public static List<TeamParam> fromList(List<ShiftUserSchInfosRequest.Team> list) {
             if (list == null)
-                throw ApiException.appendf(CommonErrorCode.COMMON_400_001, "\nRequired param missing - TeamList");
+                throw new ApiException(CommonErrorCode.COMMON_400_001);
             return list.stream().map(TeamParam::from).toList();
         }
     }
@@ -77,7 +77,7 @@ public record ShiftUserSchInfosParam(
     ) {
         public static MemberParam from(ShiftUserSchInfosRequest.Member obj) {
             if (obj == null)
-                throw ApiException.appendf(CommonErrorCode.COMMON_400_001, "\nRequired param missing - Member");
+                throw new ApiException(CommonErrorCode.COMMON_400_001);
             return new MemberParam(
                 obj.getUserCd()
             );
@@ -85,7 +85,7 @@ public record ShiftUserSchInfosParam(
 
         public static List<MemberParam> fromList(List<ShiftUserSchInfosRequest.Member> list) {
             if (list == null)
-                throw ApiException.appendf(CommonErrorCode.COMMON_400_001, "\nRequired param missing - MemberList");
+                throw new ApiException(CommonErrorCode.COMMON_400_001);
             return list.stream().map(MemberParam::from).toList();
         }
     }

@@ -11,11 +11,11 @@ public record SmsAuthNoCommand(
 	public static SmsAuthNoCommand from(String mblNoEnc, String mblNoHmac, String certNo) {
 		
 		if(mblNoEnc == null)
-			throw ApiException.appendf(CommonErrorCode.COMMON_400_001,"\n필수값 누락 - mblNoEnc");
+			throw new ApiException(CommonErrorCode.COMMON_400_001);
 		if(mblNoHmac == null)
-			throw ApiException.appendf(CommonErrorCode.COMMON_400_001,"\n필수값 누락 - mblNoHmac");
+			throw new ApiException(CommonErrorCode.COMMON_400_001);
 		if(certNo == null)
-			throw ApiException.appendf(CommonErrorCode.COMMON_400_001,"\n필수값 누락 - certNo");
+			throw new ApiException(CommonErrorCode.COMMON_400_001);
 		
 		return new SmsAuthNoCommand(
 			mblNoEnc

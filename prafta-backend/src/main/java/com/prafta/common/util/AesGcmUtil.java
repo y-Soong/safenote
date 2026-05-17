@@ -14,19 +14,19 @@ import javax.crypto.spec.SecretKeySpec;
 
 public class AesGcmUtil {
     private static final int AES_KEY_BITS = 256; // 128/192/256
-    private static final int GCM_IV_LENGTH = 12; // bytes, ±ÇÀå
+    private static final int GCM_IV_LENGTH = 12; // bytes, ê¶Œì¥
     private static final int GCM_TAG_LENGTH = 128; // bits
 
     private static final SecureRandom secureRandom = new SecureRandom();
 
-    // Å° »ı¼º (¿î¿µ¿¡¼­´Â KMS/HSM »ç¿ë ±ÇÀå)
+    // í‚¤ ìƒì„± (ìš´ì˜ì—ì„œëŠ” KMS/HSM ì‚¬ìš© ê¶Œì¥)
     public static SecretKey generateKey() throws Exception {
         KeyGenerator keyGen = KeyGenerator.getInstance("AES");
         keyGen.init(AES_KEY_BITS);
         return keyGen.generateKey();
     }
 
-    // Å°¸¦ Base64 ¹®ÀÚ¿­·Î ÀúÀå/º¹¿øÇÒ ¶§
+    // í‚¤ë¥¼ Base64 ë¬¸ìì—´ë¡œ ì €ì¥/ë³µì›í•  ë•Œ
     public static String keyToBase64(SecretKey key) {
         return Base64.getEncoder().encodeToString(key.getEncoded());
     }
@@ -36,7 +36,7 @@ public class AesGcmUtil {
         return new SecretKeySpec(decoded, "AES");
     }
     
-    // ¾ÏÈ£È­: ¹İÈ¯°ªÀº Base64( iv || ciphertext )
+    // ì•”í˜¸í™”: ë°˜í™˜ê°’ì€ Base64( iv || ciphertext )
     public static String encrypt(String plainText, SecretKey key) throws Exception {
         byte[] iv = new byte[GCM_IV_LENGTH];
         secureRandom.nextBytes(iv);
@@ -47,7 +47,7 @@ public class AesGcmUtil {
 
         byte[] cipherText = cipher.doFinal(plainText.getBytes("UTF-8"));
 
-        // ÇÕÃÄ¼­ ÀúÀå: iv + cipherText
+        // í•©ì³ì„œ ì €ì¥: iv + cipherText
         byte[] combined = new byte[iv.length + cipherText.length];
         System.arraycopy(iv, 0, combined, 0, iv.length);
         System.arraycopy(cipherText, 0, combined, iv.length, cipherText.length);
@@ -55,7 +55,7 @@ public class AesGcmUtil {
         return Base64.getEncoder().encodeToString(combined);
     }
 
-    // º¹È£È­: ÀÔ·ÂÀº Base64( iv || ciphertext )
+    // ë³µí˜¸í™”: ì…ë ¥ì€ Base64( iv || ciphertext )
     public static String decrypt(String base64IvAndCipherText, SecretKey key) throws Exception {
         byte[] combined = Base64.getDecoder().decode(base64IvAndCipherText);
 
@@ -73,7 +73,7 @@ public class AesGcmUtil {
         return new String(plain, "UTF-8");
     }
     
-    // 10ÀÚ¸® °ãÄ¡Áö ¾Ê´Â ¹®ÀÚ¿­ ¼ö
+    // 10ìë¦¬ ê²¹ì¹˜ì§€ ì•ŠëŠ” ë¬¸ìì—´ ìˆ˜
     public static String generate10Digit() {
         String timePart = LocalTime.now().format(DateTimeFormatter.ofPattern("HHmmss"));
         int random = new Random().nextInt(10000); // 0 ~ 9999

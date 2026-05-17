@@ -1,0 +1,109 @@
+================================================================================
+PRAFTA-007 작업 체인지로그 (원복용)
+================================================================================
+작성일: 2026-05-16
+원 요청서: .claude/requests/prafta-007.md
+작업 흐름: planner → developer → security → qa (전 단계 완료)
+작업 ID: prafta-009-001
+  ※ "prafta-007"은 본 세션에서 이미 prafta-005.md 작업(effective-dating,
+     prafta-007-001~003)에 사용되어 ID 충돌 회피 차원에서 prafta-009 계열로 채번함.
+
+================================================================================
+1. 요청 요약
+================================================================================
+AttdDayDetailPop.vue 초과근무 입력 오동작 수정.
+- 버그: 초과근무를 여러 번 입력하면 같은 시간대여도 계속 INSERT됨(중복).
+  재현 — OT 2건 저장 → 팝업 재오픈 → 화면에서만 OT 삭제 → 신규 OT 재입력 → 또 INSERT.
+- 수정: 초과근무 생성 API 호출 시 TB_USER_OVERTIME_MGMT를 ATTD_ID 기준으로 같은
+  시간대 데이터 존재 여부 체크 → 없을 때만 INSERT.
+
+================================================================================
+2. 사용자 컨펌 사항 (요청서 21번 줄 "모호하면 질문" 지시 이행)
+================================================================================
+- P-1 "같은 시간대" 정의 → 시간 구간 겹침(overlap).
+- P-2 중복 시 처리 → 전체 거부(에러).
+- P-3 중복 판정 행 범위 → 활성 행만(DEL_YN='N' AND OT_STATUS<>'CANCELLED').
+       취소/삭제 OT는 재등록을 막지 않음.
+- P-4 ATTD_ID NULL 케이스 → 이 화면은 항상 ATTD_ID 보유 → ATTD_ID 기준으로만 구현.
+- P-5 화면 삭제↔DB 삭제 → 이번 범위는 INSERT 중복 방지에 한정. 화면에서 지운 OT의
+       DB soft-delete 동기화는 별도 작업.
+
+================================================================================
+3. 변경 내용 (백엔드만)
+================================================================================
+[prafta-009-001] 초과근무 중복 INSERT 방지
+
+■ 버그 원인
+  Attd07ServiceImpl.updateUserOvertimeRequests의 INSERT 루프가 요청된 모든 OT 구간을
+  DB 기존 행 대조 없이 무조건 insertUserOvertime → 같은 OT 재저장 시 중복 INSERT.
+
+■ 변경 파일 (4개, 모두 수정)
+  - prafta-backend/.../web/attd/attd07/mapper/Attd07Mapper.java
+      신규 selectOverlappingOvertimeCount(cmpnyCd,siteCd,userCd,attdId,reqStart,reqEnd).
+  - prafta-backend/.../resources/com/prafta/web/attd/attd07/mapper/Attd07Mapper.xml
+      신규 <select id="selectOverlappingOvertimeCount"> — ATTD_ID 기준 기존 활성 OT와
+      시간 구간 겹침 COUNT. 표준 겹침식 `기존시작 < 요청종료 AND 요청시작 < 기존종료`.
+      시각은 ACTUAL_START_DATE(8)+ACTUAL_START_TIME(4) CONCAT 12자리 문자열 비교.
+      WHERE: CMPNY_CD→SITE_CD→USER_CD→ATTD_ID→시간대→DEL_YN='N'/OT_STATUS<>'CANCELLED'.
+      전부 #{} 바인딩, SELECT * 미사용.
+  - prafta-backend/.../web/attd/attd07/service/impl/Attd07ServiceImpl.java
+      INSERT 루프 진입 전(단계 6-1)에 요청 OT 전 구간을 겹침 검사. 하나라도 겹치면
+      ApiException(ATTD_409_002) throw → 전체 거부(부분 INSERT 원천 차단). 메서드는
+      이미 @Transactional.
+  - prafta-backend/.../common/error/attd/AttdErrorCode.java
+      신규 ATTD_409_002 (HTTP 409 CONFLICT, "이미 등록된 시간대의 초과근무가
+      존재합니다. 시간이 겹치지 않도록 입력해 주세요.").
+
+■ 설계 메모
+  - ACTUAL_END_DATE/TIME이 NULL인 기존 행(진행중 OT 등)은 유한 구간 겹침 판정이
+    불가능해 검사 대상에서 제외. 본 endpoint가 INSERT하는 행은 ACTUAL_* 4개를 모두
+    채우므로 재현 시나리오 차단에는 영향 없음.
+  - 프론트 미변경: AttdDayDetailPop.vue fnApproveOvertime catch가 보안정책 SEC-013
+    (백엔드 응답 메시지 직접 노출 금지)으로 OT 저장 에러를 일반 메시지로 일괄 처리.
+    developer가 SEC-013 단독 변경을 피해 미변경. 요청서에 명시적 "고지 문구" 요구가
+    없어 요구사항 충족에는 문제 없음(섹션 5 참조).
+
+================================================================================
+4. 검증 결과
+================================================================================
+[빌드] 백엔드 ./gradlew compileJava BUILD SUCCESSFUL.
+[security] Critical 0 / High 0 / Medium 1 / Low 1.
+  - 신규 백엔드 변경은 SQLi·테넌트 격리·검증 우회·정보 노출 4관점 모두 안전.
+  - Medium/Low는 섹션 5 참조.
+[qa] PASS — 요구사항 5/5 충족, 엣지 케이스 10/10 통과, 회귀 없음, 재현 버그 차단 확인.
+
+================================================================================
+5. 미반영 / 후속 권장 (자동 수정하지 않음)
+================================================================================
+[Medium — security] Attd07ServiceImpl의 [OT-DIAG]/[DIAG-B] 진단용 log.warn 다수
+  잔존(약 264,369,376행). userCd/cmpnyCd/siteCd/attdId 등 내부 식별자를 WARN 레벨로
+  평문 출력. prafta-009-001이 추가한 코드가 아니며, 초과근무 버그 진단용으로 사용자가
+  넣은 임시 디버그 코드로 보임 → 임의 삭제하지 않음. 운영 배포 전 사용자가 제거하거나
+  log.debug로 격하 권장.
+
+[Low — qa] ACTUAL_END NULL(OT_STATUS='IN_PROGRESS' 진행중) 행은 겹침 검사에서 제외됨.
+  사용자 확정 "활성 행" 정의(DEL_YN='N' AND OT_STATUS<>'CANCELLED')에 IN_PROGRESS
+  처리가 없어 범위 밖. IN_PROGRESS도 겹침 차단 대상이어야 한다면 정책 재정의 필요.
+
+[권고 — security] 프론트 SEC-013 일괄 일반화로 ATTD_409_002 구체 메시지가 사용자에게
+  안 보임. 보안 결함은 아니나, 사용자에게 "시간 겹침" 사유를 알리려면 메시지 문자열이
+  아닌 에러코드 화이트리스트(또는 ApiErrorCode의 userVisible 플래그)로 일반화해 노출
+  허용 코드만 메시지를 표시하는 방식 권장. 별도 프론트 개선 작업으로 분리 권장.
+
+================================================================================
+6. 원복 방법
+================================================================================
+git checkout HEAD -- \
+  prafta-backend/src/main/java/com/prafta/web/attd/attd07/mapper/Attd07Mapper.java \
+  prafta-backend/src/main/resources/com/prafta/web/attd/attd07/mapper/Attd07Mapper.xml \
+  prafta-backend/src/main/java/com/prafta/web/attd/attd07/service/impl/Attd07ServiceImpl.java \
+  prafta-backend/src/main/java/com/prafta/common/error/attd/AttdErrorCode.java
+
+================================================================================
+7. 수동 검증 권장 (사용자)
+================================================================================
+- 실 DB로 재현: OT 2건 저장 → 팝업 재오픈 → 동일 OT 재입력 저장 시 409 응답 +
+  TB_USER_OVERTIME_MGMT에 INSERT 미발생을 p6spy 로그로 확인.
+- 겹치지 않는 정상 OT 등록이 그대로 INSERT되는지(회귀).
+- 자정 넘김 OT(예: 23:00~익일 01:00) 겹침 판정 정상 여부.
+- AttdDayDetailPop 화면에서 저장 실패 시 사용자 안내가 표시되는지.

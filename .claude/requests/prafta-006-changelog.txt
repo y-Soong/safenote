@@ -1,0 +1,129 @@
+================================================================================
+PRAFTA-006 작업 체인지로그 (원복용)
+================================================================================
+작성일: 2026-05-16
+원 요청서: .claude/requests/prafta-006.md
+작업 흐름: planner → developer → security → qa (전 단계 완료)
+작업 ID: prafta-008-001/002/003
+  ※ "prafta-006"은 본 세션에서 이미 보안 보류건(006-001~005)에 사용되어 ID 충돌
+     회피 차원에서 prafta-008 계열로 채번함.
+
+================================================================================
+1. 요청 요약
+================================================================================
+Attd_05.vue 화면에서 테이블 셀에 근무타입(SCH_CD)을 지정할 때, 다음 날짜는
+입력을 막고 사용자에게 고지 — 백엔드+프론트 모두 수정.
+(1) 해당 SCH_CD 최초 생성일 이전 날짜.
+(2) 스케줄 데이터의 USE_YN이 'N'인 기간(USE_YN은 Y↔N 토글 가능 → 시점별 판정).
+참고 테이블: TB_SCH_MGMT(현재본), TB_SCH_MGMT_HIST(이력본).
+
+================================================================================
+2. 사용자 컨펌 사항
+================================================================================
+- Q0 정책 근거 → 본 차단 규칙은 정책서에 없으나 요청서 prafta-006.md 자체가 출처. 진행.
+- Q1 "생성일" 정의 → MIN(APPLY_DATE) (TB_SCH_MGMT+HIST 합집합 최소 적용일자).
+- Q2 USE_YN='N' 의미 → 날짜별 effective USE_YN 판정(토글 구간만 차단). 요청서 명시.
+- Q3 검증 시점 → 저장 시점 검증. 사후 USE_YN 변경 시 기존 배정 재검증은 범위 밖.
+- Q4 다건 일부 위반 → 위반 셀만 스킵(정상 셀 저장), skippedList 반환.
+- Q5 차단 시점 → 셀 입력 즉시 차단 + 고지(앱 공통 알림).
+- Q6 일괄 적용 → "근무 타입 일괄 적용" 경로에도 차단 적용.
+- Q7 대상 → 근무타입(SCH_CD)만 검증, 휴가코드(LEAVE_CD)는 통과.
+※ planner가 "prafta-web-frontend 디렉토리 부재"로 보고했으나 오판 — 해당 디렉토리는
+  .gitignore 대상이라 Glob/Grep(ripgrep)이 건너뛴 것. Read로는 정상 접근됨.
+
+================================================================================
+3. 변경 내용
+================================================================================
+[prafta-008-001] GET /attd05/sch-type-lists 응답에 검증 메타 추가
+  - 신규 result: SchTypeUseYnResult(schCd, applyDate, useYn), SchTypeValidMeta(schCd,
+    createDt, versionList).
+  - SchTypeListResponse에 schTypeValidMetaList 필드 추가.
+  - Attd05Mapper.xml에 selectSchTypeUseYnList 신규 — TB_SCH_MGMT(가상 HIST_IDX
+    2147483647) + TB_SCH_MGMT_HIST UNION ALL, 동일 SCH_CD+APPLY_DATE는 MAX(HIST_IDX)
+    채택. attd07 패턴 재사용하되 USE_YN='Y' 필터는 제거(USE_YN='N' 버전도 차단 근거).
+  - Attd05Mapper.java / Attd05ServiceImpl.getSchTypeList 반영.
+
+[prafta-008-002] POST /attd05/save-user-work-plans 저장 시 검증
+  - 신규: SkippedCellResult(userCd, workYmd, workPlanCd, reasonCode, reason),
+    SaveUserWorkPlansResponse(savedCount, skippedList).
+  - Attd05ServiceImpl.saveUserWorkPlans: 셀별로 SCH_CD 검증 — 생성일 이전(BEFORE_CREATE)
+    / effective USE_YN='N'(USE_YN_N)이면 스킵하고 skippedList에 수집, 정상 셀만 저장.
+    LEAVE_CD는 검증 메타에 없으므로 통과. 쓰기 메서드 @Transactional.
+  - Attd05Service.saveUserWorkPlans 반환 void → SaveUserWorkPlansResponse.
+  - Attd05Controller가 응답 body 반환.
+
+[prafta-008-003] 프론트 Attd_05.vue
+  - sch-type-lists 응답의 생성일·USE_YN 버전 메타로 validateSchCell 구현.
+  - fnApplySchType(드래그 영역/일괄 적용)에서 셀별 검증 — 위반 셀 스킵 + $alert 고지.
+  - fnSave가 저장 응답의 skippedList를 받아 사용자에게 고지.
+
+[security·qa 후속 수정 — 본 세션 반영]
+  - QA 결함(Medium): ExcelUploadPop.vue가 동일 엔드포인트를 호출하나 skippedList를
+    무시 → 엑셀 경로 고지 누락. fnSave에 skippedList 처리 + getSchTypeNm 헬퍼 추가
+    (Attd_05.vue fnSave와 동일 방식).
+  - Security(Medium): sch-type-lists 응답 versionList가 내부값 histIdx 노출 →
+    SchTypeUseYnResult에서 histIdx 필드 제거, selectSchTypeUseYnList 최외곽 SELECT에서
+    histIdx 컬럼 제거(중복제거용 WHERE MAX(HIST_IDX) 서브쿼리는 유지).
+
+================================================================================
+4. 검증 결과
+================================================================================
+[빌드] 백엔드 ./gradlew compileJava BUILD SUCCESSFUL / 프론트 npm run build 성공.
+[security] High 1 / Medium 2 / Low 1.
+  - Medium(histIdx 노출) → 본 세션 수정 완료.
+  - High + Medium(siteCd) → 섹션 5 참조(Phase 2 이월).
+  - Low(LoggingAspect) → 사전 공통 코드, 별도 작업.
+[qa] 조건부 PASS — 요구사항 6/6 충족, 예시 시나리오·엣지 케이스 검증 통과.
+  - 결함(ExcelUploadPop 고지 누락) → 본 세션 수정 완료.
+
+================================================================================
+5. Phase 2(인가) 이월 — siteCd 사업장 권한 검증
+================================================================================
+security 발견 [High] — saveUserWorkPlans가 요청 바디의 siteCd/userCd를 신뢰해
+TB_USER_WORK_PLAN에 기록 → 인증된 사용자가 바디의 siteCd를 위조하면 같은 회사 내
+타 사업장 사용자의 근무계획을 생성/수정 가능. [Medium] 다건 요청 시 첫 모델의
+siteCd로만 검증.
+
+[처리 방침 — 이월]
+- 이 결함은 prafta-008 이전부터 존재한 사전 인가 갭이다(saveUserWorkPlans 자체가
+  기존부터 바디 siteCd로 INSERT). prafta-008-002가 그 위에 검증을 얹으며 같은
+  siteCd를 쓴 것.
+- 단순히 토큰 siteCd로 강제하면 멀티 사업장 관리자(정책 §8.3 Site Switcher)가 깨진다.
+  올바른 해법은 TB_USER_SITE_AUTH 기반으로 "요청 siteCd가 사용자에게 부여된 접근
+  가능 사업장인지" 검증하는 것 — 정책 §8(3축 권한: 화면권한×사업장권한×조직스코프)
+  기반 설계가 필요.
+- prafta-006.md 요청 범위(생성일·USE_YN 차단)와 무관하며, 사용자가 앞서 결정한
+  "인가는 별도 작업으로 분리"(prafta-004-changelog.txt 섹션 10/12) 방침에 부합.
+- → Phase 2 인가 작업(§8 3축 권한)에 포함 권장.
+
+[정보성 — Low] LoggingAspect의 @AfterReturning이 모든 컨트롤러 응답을 INFO 로그로
+출력 → getUserWorkPlan 응답의 mblNo(복호화 평문) 등 PII가 로그에 노출. 사전 공통
+코드 문제. 별도 작업으로 LoggingAspect 응답 로깅 제거/마스킹 권장.
+
+================================================================================
+6. 원복 방법
+================================================================================
+git checkout HEAD -- \
+  prafta-backend/src/main/java/com/prafta/web/attd/attd05/dto/response/SchTypeListResponse.java \
+  prafta-backend/src/main/java/com/prafta/web/attd/attd05/mapper/Attd05Mapper.java \
+  prafta-backend/src/main/resources/com/prafta/web/attd/attd05/mapper/Attd05Mapper.xml \
+  prafta-backend/src/main/java/com/prafta/web/attd/attd05/service/Attd05Service.java \
+  prafta-backend/src/main/java/com/prafta/web/attd/attd05/service/impl/Attd05ServiceImpl.java \
+  prafta-backend/src/main/java/com/prafta/web/attd/attd05/controller/Attd05Controller.java
+git rm \
+  prafta-backend/src/main/java/com/prafta/web/attd/attd05/result/SchTypeUseYnResult.java \
+  prafta-backend/src/main/java/com/prafta/web/attd/attd05/result/SchTypeValidMeta.java \
+  prafta-backend/src/main/java/com/prafta/web/attd/attd05/result/SkippedCellResult.java \
+  prafta-backend/src/main/java/com/prafta/web/attd/attd05/dto/response/SaveUserWorkPlansResponse.java
+# 프론트(.gitignore 대상 — git checkout 무효, 수동 복구 필요):
+#   prafta-web-frontend/prafta-web-frontend/src/views/attd/Attd_05.vue
+#   prafta-web-frontend/prafta-web-frontend/src/views/attd/popup/ExcelUploadPop.vue
+
+================================================================================
+7. 수동 검증 권장 (사용자)
+================================================================================
+- Attd_05 그리드에서 생성일 이전 날짜·USE_YN='N' 기간 셀에 근무타입 지정 시 차단·고지.
+- USE_YN 토글 이력이 있는 SCH_CD로 effective 판정이 비즈니스적으로 맞는지.
+- 일괄 적용(드래그 영역)·엑셀 업로드 경로에서 위반 셀 스킵 + 고지 동작.
+- 휴가코드(LEAVE_CD) 지정은 차단 없이 통과하는지.
+- p6spy 로그로 selectSchTypeUseYnList 결과 확인.

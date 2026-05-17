@@ -1,7 +1,7 @@
 package com.prafta.web.user.user01.dto;
 
 public record UserUpdateFailItem(
-        int index,          // ¸î ¹øÂ° ¿äÃ»ÀÎÁö(0-based)
+        int index,          // ëª‡ ë²ˆì§¸ ìš”ì²­ì¸ì§€(0-based)
         String errorItem,
         String errorCode,
         String message

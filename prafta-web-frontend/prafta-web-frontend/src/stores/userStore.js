@@ -1,5 +1,7 @@
 import { defineStore } from "pinia";
 
+// 정책 §11.1(최소 수집·목적 제한)에 따라 클라이언트 store에는 PII(휴대폰/이메일)를 보관하지 않는다.
+// 휴대폰/이메일은 내정보 화면(MyInfoPop) 등 필요한 화면에서만 인증 API로 직접 조회한다.
 export const useUserStore = defineStore("user", {
   state: () => ({
     gv_cmpnyCd: null,
@@ -13,8 +15,6 @@ export const useUserStore = defineStore("user", {
     gv_nodeNm: null,
     gv_authCd: null,
     gv_authLevel: null,
-    gv_mblNo: null,
-    gv_email: null,
   }),
   actions: {
     setUser(data) {
@@ -29,8 +29,6 @@ export const useUserStore = defineStore("user", {
       this.gv_nodeNm = data.nodeNm;
       this.gv_authCd = data.authCd;
       this.gv_authLevel = data.authLevel;
-      this.gv_mblNo = data.mblNo;
-      this.gv_email = data.email;
     },
     logout() {
       this.gv_cmpnyCd = null;
@@ -44,8 +42,6 @@ export const useUserStore = defineStore("user", {
       this.gv_nodeNm = null;
       this.gv_authCd = null;
       this.gv_authLevel = null;
-      this.gv_mblNo = null;
-      this.gv_email = null;
     },
   },
 });

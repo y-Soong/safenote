@@ -6,8 +6,8 @@ import com.prafta.common.error.ApiErrorCode;
 
 public enum ChkLstErrorCode implements ApiErrorCode {
 
-    // ±ÔÄ¢ ¿¹½Ã: {MODULE}_{HTTP}_{SEQ}
-    CHKLST_400_001(HttpStatus.BAD_REQUEST, "µî·ÏµÈ Á¡°ËÇ×¸ñÀÌ ¾ø½À´Ï´Ù.");
+    // ê·œì¹™ ì˜ˆì‹œ: {MODULE}_{HTTP}_{SEQ}
+    CHKLST_400_001(HttpStatus.BAD_REQUEST, "ë“±ë¡ëœ ì ê²€í•­ëª©ì´ ì—†ìŠµë‹ˆë‹¤.");
 
     private final HttpStatus httpStatus;
     private final String message;
@@ -19,7 +19,7 @@ public enum ChkLstErrorCode implements ApiErrorCode {
 
     @Override
     public String code() {
-        return name(); // enum ÀÌ¸§À» ±×´ë·Î ÄÚµå·Î ¾²¸é °ü¸® ½¬¿ò
+        return name(); // enum ì´ë¦„ì„ ê·¸ëŒ€ë¡œ ì½”ë“œë¡œ ì“°ë©´ ê´€ë¦¬ ì‰¬ì›€
     }
 
     @Override

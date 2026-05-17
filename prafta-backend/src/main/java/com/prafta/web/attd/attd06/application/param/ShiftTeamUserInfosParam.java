@@ -16,7 +16,7 @@ public record ShiftTeamUserInfosParam(
     public static ShiftTeamUserInfosParam from(ShiftTeamUserInfosRequest request, TokenInfo tokenInfo) {
 
         if (request == null)
-            throw ApiException.appendf(CommonErrorCode.COMMON_400_001, "\nRequired param missing - ShiftTeamUserInfosRequest");
+            throw new ApiException(CommonErrorCode.COMMON_400_001);
 
         return new ShiftTeamUserInfosParam(
             request.getSiteCd()

@@ -11,10 +11,10 @@ public class RestTemplateConfig {
 
     @Bean
     public RestTemplate holidayRestTemplate(HolidayApiProperties props) {
-        // Spring ¹öÀü¿¡ µû¶ó requestFactory·Î timeout ¼³Á¤ ¹æ½ÄÀÌ ´Ù¸¨´Ï´Ù.
-        // °¡Àå È£È¯ ÁÁÀº ¹æ½ÄÀº HttpComponentsClientHttpRequestFactoryÀÎµ¥,
-        // ÀÇÁ¸¼º Ãß°¡°¡ ÇÊ¿äÇÒ ¼ö ÀÖ¾î ÀÏ´Ü ±âº» RestTemplate·Î ½ÃÀÛÇÏ°í,
-        // timeoutÀº ÃßÈÄ È®Á¤(Spring Boot ¹öÀü È®ÀÎ ÈÄ) ÃßÃµ.
+        // Spring ë²„ì „ì— ë”°ë¼ requestFactoryë¡œ timeout ì„¤ì • ë°©ì‹ì´ ë‹¤ë¦…ë‹ˆë‹¤.
+        // ê°€ì¥ í˜¸í™˜ ì¢‹ì€ ë°©ì‹ì€ HttpComponentsClientHttpRequestFactoryì¸ë°,
+        // ì˜ì¡´ì„± ì¶”ê°€ê°€ í•„ìš”í•  ìˆ˜ ìˆì–´ ì¼ë‹¨ ê¸°ë³¸ RestTemplateë¡œ ì‹œì‘í•˜ê³ ,
+        // timeoutì€ ì¶”í›„ í™•ì •(Spring Boot ë²„ì „ í™•ì¸ í›„) ì¶”ì²œ.
         return new RestTemplate();
     }
 }

@@ -10,5 +10,5 @@ import lombok.Setter;
 public class UserSmsAuthNoRequest {
 	private String cmpnyCd;
     private String mblNo;
-    private String dupChkYn;		/* ÈŞ´ëÆù¹øÈ£ Áßº¹ Ã¼Å© ÇÊ¿ä ¿©ºÎ Y/N */
+    private String dupChkYn;		/* íœ´ëŒ€í°ë²ˆí˜¸ ì¤‘ë³µ ì²´í¬ í•„ìš” ì—¬ë¶€ Y/N */
 }

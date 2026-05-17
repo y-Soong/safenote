@@ -3,23 +3,23 @@ package com.prafta.common.security.crypto;
 import java.util.Base64;
 
 /**
- * Å°/ºñ¹Ğ°ª ¹®ÀÚ¿­À» ½ÇÁ¦ ¹ÙÀÌÆ® ¹è¿­·Î º¯È¯ÇÏ´Â À¯Æ¿.
+ * í‚¤/ë¹„ë°€ê°’ ë¬¸ìì—´ì„ ì‹¤ì œ ë°”ì´íŠ¸ ë°°ì—´ë¡œ ë³€í™˜í•˜ëŠ” ìœ í‹¸.
  *
- * ÇÙ½É:
- * - ENV¿¡´Â »ç¶÷ÀÌ ÀĞ´Â ¹®ÀåÀÌ ¾Æ´Ï¶ó "·£´ı ¹ÙÀÌÆ®"¸¦ Base64URL·Î ÀÎÄÚµùÇØ ³Ö´Â´Ù.
- * - ¼­¹ö¿¡¼­ µğÄÚµùÇÏ¿© byte[]·Î »ç¿ëÇØ¾ß ÀÇµµÇÑ º¸¾È °­µµ¸¦ ¾ò´Â´Ù.
+ * í•µì‹¬:
+ * - ENVì—ëŠ” ì‚¬ëŒì´ ì½ëŠ” ë¬¸ì¥ì´ ì•„ë‹ˆë¼ "ëœë¤ ë°”ì´íŠ¸"ë¥¼ Base64URLë¡œ ì¸ì½”ë”©í•´ ë„£ëŠ”ë‹¤.
+ * - ì„œë²„ì—ì„œ ë””ì½”ë”©í•˜ì—¬ byte[]ë¡œ ì‚¬ìš©í•´ì•¼ ì˜ë„í•œ ë³´ì•ˆ ê°•ë„ë¥¼ ì–»ëŠ”ë‹¤.
  */
 public final class KeyMaterial {
 
     private KeyMaterial() {}
 
     /**
-     * Base64URL(no padding) ¹®ÀÚ¿­À» byte[]·Î µğÄÚµù.
-     * ¿¹: PowerShell·Î »ı¼ºÇÑ b64url °ªÀ» ±×´ë·Î ³Ö´Â °æ¿ì¿¡ »ç¿ë.
+     * Base64URL(no padding) ë¬¸ìì—´ì„ byte[]ë¡œ ë””ì½”ë”©.
+     * ì˜ˆ: PowerShellë¡œ ìƒì„±í•œ b64url ê°’ì„ ê·¸ëŒ€ë¡œ ë„£ëŠ” ê²½ìš°ì— ì‚¬ìš©.
      */
     public static byte[] fromBase64Url(String base64UrlNoPadding) {
         if (base64UrlNoPadding == null || base64UrlNoPadding.isBlank()) {
-            // Å°°¡ ¾øÀ¸¸é "±âµ¿ ½ÇÆĞ"°¡ ¸Â´Ù (¿î¿µ¿¡¼­ Á¶¿ëÈ÷ Áö³ª°¡¸é »ç°í)
+            // í‚¤ê°€ ì—†ìœ¼ë©´ "ê¸°ë™ ì‹¤íŒ¨"ê°€ ë§ë‹¤ (ìš´ì˜ì—ì„œ ì¡°ìš©íˆ ì§€ë‚˜ê°€ë©´ ì‚¬ê³ )
             throw new IllegalStateException("PRAFTA_AUTH_PEPPER is missing (auth.pepper)");
         }
         return Base64.getUrlDecoder().decode(base64UrlNoPadding);

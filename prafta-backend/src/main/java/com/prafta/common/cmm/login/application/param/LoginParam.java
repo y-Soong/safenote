@@ -12,9 +12,9 @@ public record LoginParam(
 	public static LoginParam from(LoginRequest request, String clientType) {
 		
 		if(request == null)
-			throw ApiException.appendf(CommonErrorCode.COMMON_400_001,"\n필수값 누락 - LoginRequest");
+			throw new ApiException(CommonErrorCode.COMMON_400_001);
 		if(clientType == null)
-			throw ApiException.appendf(CommonErrorCode.COMMON_400_001,"\n필수값 누락 - clientType");
+			throw new ApiException(CommonErrorCode.COMMON_400_001);
 		
         return new LoginParam(
             request.getUserId()

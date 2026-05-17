@@ -37,7 +37,7 @@ public record LeaveTypeParam(
 	    public static LeaveTypeParam from(LeaveTypeRequest request, TokenInfo tokenInfo) {
 
 	        if (request == null)
-	            throw ApiException.appendf(CommonErrorCode.COMMON_400_001, "\n필수값 누락 - LeaveTypeRequest");
+	            throw new ApiException(CommonErrorCode.COMMON_400_001);
 
 	        return new LeaveTypeParam(
 	            request.getLeaveCd()

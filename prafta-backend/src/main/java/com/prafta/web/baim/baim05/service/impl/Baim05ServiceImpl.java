@@ -115,35 +115,35 @@ public class Baim05ServiceImpl implements Baim05Service{
 	@Transactional
 	public InsertDailyQrUserResponse insertDailyQrUser(InsertDailyQrUserParam param) {
 		String userCd = baim05Mapper.selectDailyUserCd(param.gvCmpnyCd());
-		// 1) ³­¼ö ÇØ½Ã°ª¸¸ »ı¼º
+		// 1) ë‚œìˆ˜ í•´ì‹œê°’ë§Œ ìƒì„±
 		String userPw = passwordHasher.generateRandomHash();
 		
-		// 2) Á¤±ÔÈ­
+		// 2) ì •ê·œí™”
         String phoneNorm = Normalizers.normalizePhone(param.mblNo());
 
         // 3) ENC (AES-GCM)
         String phoneEnc = (phoneNorm == null) ? null : aesGcmCrypto.encrypt(phoneNorm);
 
-        // 4) HMAC ÀÎµ¦½º (equals/Áßº¹/°èÁ¤Ã£±â)
-        // È¸»ç ´ÜÀ§ À¯´ÏÅ©¸é cmpnyCd ¼¯´Â °É ÃßÃµ
+        // 4) HMAC ì¸ë±ìŠ¤ (equals/ì¤‘ë³µ/ê³„ì •ì°¾ê¸°)
+        // íšŒì‚¬ ë‹¨ìœ„ ìœ ë‹ˆí¬ë©´ cmpnyCd ì„ëŠ” ê±¸ ì¶”ì²œ
         String phoneHmac = (phoneNorm == null) ? null : hmacSigner.hmacSha256Base64Url(phoneNorm);
 
-        // 5) ÆÄ»ı°ª
+        // 5) íŒŒìƒê°’
         String phoneLast4 = Normalizers.last4(phoneNorm);
         
         InsertDailyQrUserCommand command = InsertDailyQrUserCommand.from(userCd, param, userPw, phoneEnc, phoneHmac, phoneLast4);
         
-        // ÈŞ´ëÆù¹øÈ£ ±âÁØ °èÁ¤ Áßº¹ Ã¼Å©
+        // íœ´ëŒ€í°ë²ˆí˜¸ ê¸°ì¤€ ê³„ì • ì¤‘ë³µ ì²´í¬
         int userCnt = baim05Mapper.selectDailyUserDuplicateCnt(phoneHmac);
         
         if(userCnt > 0) {
         	throw new ApiException(BaimErrorCode.BAIM_400_003);
         }
 		
-        // ÀÏÀÏ»ç¿ëÀÚ °èÁ¤ »ı¼º
+        // ì¼ì¼ì‚¬ìš©ì ê³„ì • ìƒì„±
 		baim05Mapper.insertDailyQrUser(command);
 		
-		// ÀÏÀÏ»ç¿ëÀÚ °èÁ¤ ½½·Ô ÇÒ´ç
+		// ì¼ì¼ì‚¬ìš©ì ê³„ì • ìŠ¬ë¡¯ í• ë‹¹
 		baim05Mapper.updateDailyUserSlotCurrUserCd(DailyUserSlotUpdCommand.from(param, userCd));
 		
 		return InsertDailyQrUserResponse.builder().dailyUserQrInfoResult(new DailyUserQrInfoResult(param.gvCmpnyCd(), param.siteCd(), userCd)).build();

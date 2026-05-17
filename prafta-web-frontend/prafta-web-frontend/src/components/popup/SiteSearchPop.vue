@@ -143,6 +143,7 @@ import {
 // import { useDraggable } from "@/composables/useDraggable";
 import { useCenteredDraggable } from "@/composables/useCenteredDraggable";
 import axios from "@/api/axios";
+import { resolveApiErrorMessage } from "@/utils/apiError";
 import ThSortable from "@/components/common/ThSortable.vue";
 import {
   useTableSort,
@@ -219,7 +220,7 @@ const fnSearch = async () => {
       }
     }
   } catch (err) {
-    alert(err.response.data.message);
+    proxy.$alert(resolveApiErrorMessage(err, "조회 중 오류가 발생했습니다."));
   }
 };
 

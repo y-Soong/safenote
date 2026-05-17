@@ -15,7 +15,7 @@ public record ShiftSchInfoListParam(
 	public static ShiftSchInfoListParam from(ShiftSchInfoListRequest request, TokenInfo tokenInfo) {
 		
         if (request == null)
-        	throw ApiException.appendf(CommonErrorCode.COMMON_400_001,"\n필수값 누락 - ShiftSchInfoListRequest");
+        	throw new ApiException(CommonErrorCode.COMMON_400_001);
 
         return new ShiftSchInfoListParam(
     		request.getSiteCd()

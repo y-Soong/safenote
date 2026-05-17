@@ -11,9 +11,9 @@ public record MasterSiteAuthSetCommand(
 	public static MasterSiteAuthSetCommand from(SiteInfoModel model, String siteCd) {
 		
 		if(model == null)
-			throw ApiException.appendf(CommonErrorCode.COMMON_400_001,"\n필수값 누락 - SiteInfoModel");
+			throw new ApiException(CommonErrorCode.COMMON_400_001);
 		if(siteCd == null)
-			throw ApiException.appendf(CommonErrorCode.COMMON_400_001,"\n필수값 누락 - siteCd");
+			throw new ApiException(CommonErrorCode.COMMON_400_001);
 		
 		return new MasterSiteAuthSetCommand(
 			siteCd

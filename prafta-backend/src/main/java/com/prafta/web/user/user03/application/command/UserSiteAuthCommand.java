@@ -17,7 +17,7 @@ public record UserSiteAuthCommand(
 	public static UserSiteAuthCommand from(UserSiteAuthModel model) {
 		
 		if(model == null)
-			throw ApiException.appendf(CommonErrorCode.COMMON_400_001,"\n필수값 누락 - UserSiteAuthModel");
+			throw new ApiException(CommonErrorCode.COMMON_400_001);
 		
 		return new UserSiteAuthCommand(
 			model.chk()

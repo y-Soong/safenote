@@ -35,7 +35,7 @@ public record InsertDailyQrUserCommand(
 	) {
 
         if (param == null)
-            throw ApiException.appendf(CommonErrorCode.COMMON_400_001, "\nRequired param missing - InsertDailyQrUserParam");
+            throw new ApiException(CommonErrorCode.COMMON_400_001);
 
         return new InsertDailyQrUserCommand(
             param.siteCd()
@@ -46,7 +46,7 @@ public record InsertDailyQrUserCommand(
             , mblNoEnc
             , mblNoHmac
             , mblNoLast4
-            , "02"				// 01 : Á÷Á¢°¡ÀÔ, 02 : QR »ç¿ëÀÚ
+            , "02"				// 01 : ì§ì ‘ê°€ì…, 02 : QR ì‚¬ìš©ì
             
             , "Y"
             , "01"

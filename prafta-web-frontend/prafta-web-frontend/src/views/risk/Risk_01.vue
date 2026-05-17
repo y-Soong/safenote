@@ -362,6 +362,7 @@ import { useFieldWatcher } from "@/utils/useFieldWatcher";
 import axios from "@/api/axios";
 import ViewHeader from "@/components/common/ViewHeader.vue";
 import { getMessage, MSG } from "@/messages";
+import { resolveApiErrorMessage } from "@/utils/apiError";
 import BaseSelect from "@/components/common/BaseSelect.vue";
 import { useModal } from "@/utils/useModal";
 import search_icon from "@/assets/img/search_icon.png";
@@ -560,10 +561,7 @@ const fnGetBaseinfoList = async () => {
       fnCategoryClick(baseInfoArr.value["COM002"][0], 0);
     }
   } catch (err) {
-    const msg =
-      err?.response?.data?.message ||
-      err?.message ||
-      "조회 중 오류가 발생했습니다.";
+    const msg = resolveApiErrorMessage(err, "조회 중 오류가 발생했습니다.");
 
     await proxy.$alert(msg);
   }
@@ -592,10 +590,7 @@ const fnGetSystinfoList = async () => {
       systCodeArr.value = grouped;
     }
   } catch (err) {
-    const msg =
-      err?.response?.data?.message ||
-      err?.message ||
-      "조회 중 오류가 발생했습니다.";
+    const msg = resolveApiErrorMessage(err, "조회 중 오류가 발생했습니다.");
 
     await proxy.$alert(msg);
   }
@@ -628,10 +623,7 @@ const fnSearch_fst = async () => {
       riskTypeResultList.value = resData;
     }
   } catch (err) {
-    const msg =
-      err?.response?.data?.message ||
-      err?.message ||
-      "조회 중 오류가 발생했습니다.";
+    const msg = resolveApiErrorMessage(err, "조회 중 오류가 발생했습니다.");
 
     await proxy.$alert(msg);
   }
@@ -668,10 +660,7 @@ const fnSearch_sec = async () => {
       riskHazardResultList.value = resData;
     }
   } catch (err) {
-    const msg =
-      err?.response?.data?.message ||
-      err?.message ||
-      "조회 중 오류가 발생했습니다.";
+    const msg = resolveApiErrorMessage(err, "조회 중 오류가 발생했습니다.");
 
     await proxy.$alert(msg);
   }
@@ -700,10 +689,7 @@ const fnSaveRow_fst = async () => {
       fnSearch_fst();
     }
   } catch (err) {
-    const msg =
-      err?.response?.data?.message ||
-      err?.message ||
-      "저장 중 오류가 발생했습니다.";
+    const msg = resolveApiErrorMessage(err, "저장 중 오류가 발생했습니다.");
 
     await proxy.$alert(msg);
   }
@@ -730,10 +716,7 @@ const fnSaveRow_sec = async () => {
       fnSearch_sec();
     }
   } catch (err) {
-    const msg =
-      err?.response?.data?.message ||
-      err?.message ||
-      "저장 중 오류가 발생했습니다.";
+    const msg = resolveApiErrorMessage(err, "저장 중 오류가 발생했습니다.");
 
     await proxy.$alert(msg);
   }
@@ -782,10 +765,7 @@ const fnDeleteRow_fst = async () => {
       fnSearch_fst();
     }
   } catch (err) {
-    const msg =
-      err?.response?.data?.message ||
-      err?.message ||
-      "삭제 중 오류가 발생했습니다.";
+    const msg = resolveApiErrorMessage(err, "삭제 중 오류가 발생했습니다.");
 
     await proxy.$alert(msg);
   }
@@ -813,10 +793,7 @@ const fnDeleteRow_sec = async () => {
       fnSearch_sec();
     }
   } catch (err) {
-    const msg =
-      err?.response?.data?.message ||
-      err?.message ||
-      "삭제제 중 오류가 발생했습니다.";
+    const msg = resolveApiErrorMessage(err, "삭제 중 오류가 발생했습니다.");
 
     await proxy.$alert(msg);
   }
@@ -984,10 +961,7 @@ const fnSrchSiteInfo = async () => {
       fnCallback(response);
     }
   } catch (err) {
-    const msg =
-      err?.response?.data?.message ||
-      err?.message ||
-      "조회 중 오류가 발생했습니다.";
+    const msg = resolveApiErrorMessage(err, "조회 중 오류가 발생했습니다.");
 
     await proxy.$alert(msg);
   }

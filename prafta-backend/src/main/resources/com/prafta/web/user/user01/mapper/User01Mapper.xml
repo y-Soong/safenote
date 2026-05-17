@@ -397,4 +397,39 @@
 		        )
 		  )
 	</select>
+
+	<resultMap id="MyProfileMap" type="com.prafta.web.user.user01.result.MyProfileResult">
+	  <constructor>
+	    <arg name="userId"         column="userId"         javaType="java.lang.String"/>
+	    <arg name="userNm"         column="userNm"         javaType="java.lang.String"/>
+	    <arg name="siteNm"         column="siteNm"         javaType="java.lang.String"/>
+	    <arg name="nodeNm"         column="nodeNm"         javaType="java.lang.String"/>
+	    <!-- PII 컬럼: SELECT 자동 복호화 TypeHandler 적용 -->
+	    <arg name="mblNo"          column="mblNo"          javaType="java.lang.String"
+	         typeHandler="com.prafta.common.security.crypto.mybatis.AesGcmDecryptTypeHandler"/>
+	    <arg name="email"          column="email"          javaType="java.lang.String"
+	         typeHandler="com.prafta.common.security.crypto.mybatis.AesGcmDecryptTypeHandler"/>
+	    <arg name="lastLoginDtime" column="lastLoginDtime" javaType="java.lang.String"/>
+	  </constructor>
+	</resultMap>
+
+	<select id="selectMyProfile" parameterType="com.prafta.web.user.user01.application.query.MyProfileQuery" resultMap="MyProfileMap">
+	/* User01Mapper.selectMyProfile */
+	SELECT
+		A.USER_ID													AS userId
+		, A.USER_NM													AS userNm
+		, C.SITE_NM													AS siteNm
+		, FNC_CMM_INFO_SRCH(A.CMPNY_CD, 'NODE', A.SITE_CD, A.NODE_CD)	AS nodeNm
+		, A.MBL_NO_ENC												AS mblNo
+		, A.EMAIL_ENC												AS email
+		, A.LAST_LOGIN_DTIME										AS lastLoginDtime
+	FROM TB_USER A
+		LEFT JOIN TB_SITE C
+			ON (
+				A.CMPNY_CD = C.CMPNY_CD
+			AND A.SITE_CD  = C.SITE_CD
+			)
+	WHERE A.CMPNY_CD = #{gvCmpnyCd}
+	  AND A.USER_CD  = #{gvUserCd}
+	</select>
 </mapper>

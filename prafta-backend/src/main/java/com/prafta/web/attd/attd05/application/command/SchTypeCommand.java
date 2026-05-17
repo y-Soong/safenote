@@ -16,7 +16,7 @@ public record SchTypeCommand(
 	public static SchTypeCommand from(SchTypeModel model) {
 
         if (model == null)
-        	throw ApiException.appendf(CommonErrorCode.COMMON_400_001,"\n필수값 누락 - SchTypeModel");
+        	throw new ApiException(CommonErrorCode.COMMON_400_001);
 
         return new SchTypeCommand(
     		model.siteCd()

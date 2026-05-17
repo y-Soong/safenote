@@ -198,6 +198,7 @@ import {
   nextTick,
 } from "vue";
 import axios from "@/api/axios";
+import { resolveApiErrorMessage } from "@/utils/apiError";
 import { fnSearchAddress } from "@/utils/addrUtil";
 import { useModal } from "@/utils/useModal";
 import { useCenteredDraggable } from "@/composables/useCenteredDraggable";
@@ -506,7 +507,7 @@ const fnGetSystinfoList = async () => {
       systCodeArr.value = grouped;
     }
   } catch (err) {
-    alert(err.response.data.message);
+    fnAlertMsg(resolveApiErrorMessage(err, "조회 중 오류가 발생했습니다."));
   }
 };
 
@@ -536,7 +537,7 @@ const fnGetSiteInfo = async (siteCd) => {
       }
     }
   } catch (err) {
-    alert(err.response.data.message);
+    fnAlertMsg(resolveApiErrorMessage(err, "조회 중 오류가 발생했습니다."));
   }
 };
 

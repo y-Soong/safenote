@@ -12,7 +12,7 @@ public record ChkptInspectItemListParam(
     public static ChkptInspectItemListParam from(ChkptInspectItemListRequest request, TokenInfo tokenInfo) {
 
         if (request == null)
-        	throw ApiException.appendf(CommonErrorCode.COMMON_400_001,"\n필수값 누락 - ChkptInspectItemListRequest");
+        	throw new ApiException(CommonErrorCode.COMMON_400_001);
 
         return new ChkptInspectItemListParam(
         		request.getCodeCd()

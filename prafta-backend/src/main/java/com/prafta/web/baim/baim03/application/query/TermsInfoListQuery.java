@@ -10,7 +10,7 @@ public record TermsInfoListQuery(
 	, String termsNm
 ){
 	public static TermsInfoListQuery from(TermsInfoListParam p) {
-        if (p == null) throw ApiException.appendf(CommonErrorCode.COMMON_400_001, "\nÇÊ¼ö°ª ´©¶ô - TermsInfoListParam");
+        if (p == null) throw new ApiException(CommonErrorCode.COMMON_400_001);
         return new TermsInfoListQuery(
     		p.termsId()
     		, p.termsNm()
@@ -18,10 +18,10 @@ public record TermsInfoListQuery(
     }
 
     public static TermsInfoListQuery from(TermsInfoParam p) {
-        if (p == null) throw ApiException.appendf(CommonErrorCode.COMMON_400_001, "\nÇÊ¼ö°ª ´©¶ô - TermsInfoParam");
+        if (p == null) throw new ApiException(CommonErrorCode.COMMON_400_001);
         return new TermsInfoListQuery(
     		p.termsId()
     		, p.termsNm()
-		); // TermsInfoParam¿¡ ¸ÅÇÎ °¡´ÉÇÑ ÇÊµå¸¸
+		); // TermsInfoParamì— ë§¤í•‘ ê°€ëŠ¥í•œ í•„ë“œë§Œ
     }
 }

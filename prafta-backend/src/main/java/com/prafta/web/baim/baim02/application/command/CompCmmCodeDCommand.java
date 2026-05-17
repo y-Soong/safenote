@@ -20,9 +20,9 @@ public record CompCmmCodeDCommand(
 ){
 	public static CompCmmCodeDCommand from(CompCmmCodeDModel model) {
 
-        // 1) ∏ÆΩ∫∆Æ ¿⁄√º ∞À¡ı
+        // 1) Î¶¨Ïä§Ìä∏ ÏûêÏ≤¥ Í≤ÄÏ¶ù
         if (model == null)
-        	throw ApiException.appendf(CommonErrorCode.COMMON_400_001,"\n« ºˆ∞™ ¥©∂Ù - CompCmmCodeDModel");
+        	throw new ApiException(CommonErrorCode.COMMON_400_001);
         
         return new CompCmmCodeDCommand(
         	model.chk()

@@ -239,6 +239,7 @@ import { useModal } from "@/utils/useModal";
 import { useCenteredDraggable } from "@/composables/useCenteredDraggable";
 import { exportStyledExcel } from "@/utils/excelExport";
 import { getMessage, MSG } from "@/messages";
+import { resolveApiErrorMessage } from "@/utils/apiError";
 import search_icon from "@/assets/img/search_icon.png";
 import SiteSearchPop from "@/components/popup/SiteSearchPop.vue";
 import SiteNodeSearchPop from "@/components/popup/SiteNodeSearchPop.vue";
@@ -301,6 +302,12 @@ const allChecked = computed({
   },
 });
 
+// ── 근무타입 표시명 조회 (schCd → 근무타입명) ────────────────
+const getSchTypeNm = (schCd) => {
+  const sch = schTypeList.value.find((s) => s.schCd === schCd);
+  return sch ? sch.schNm : schCd;
+};
+
 // ── 셀 값 조회 (코드 → 표시명) ───────────────────────────────
 const getCellNmValue = (userCd, workYmd) => {
   const code = scheduleData.value[`${userCd}_${workYmd}`];
@@ -347,9 +354,7 @@ const fnSrchSiteInfo = async () => {
       nodeNm.value = "";
     }
   } catch (err) {
-    await proxy.$alert(
-      err?.response?.data?.message || err?.message || "조회 오류"
-    );
+    await proxy.$alert(resolveApiErrorMessage(err, "조회 오류"));
   }
 };
 
@@ -376,9 +381,7 @@ const fnSrchNodeInfo = async () => {
       nodeNm.value = "";
     }
   } catch (err) {
-    await proxy.$alert(
-      err?.response?.data?.message || err?.message || "조회 오류"
-    );
+    await proxy.$alert(resolveApiErrorMessage(err, "조회 오류"));
   }
 };
 
@@ -510,10 +513,7 @@ const fnSearch = async () => {
       // });
     }
   } catch (err) {
-    const msg =
-      err?.response?.data?.message ||
-      err?.message ||
-      "조회 중 오류가 발생했습니다.";
+    const msg = resolveApiErrorMessage(err, "조회 중 오류가 발생했습니다.");
     await proxy.$alert(msg);
   } finally {
     loading.value = false;
@@ -739,15 +739,27 @@ const fnSave = async () => {
       saveList
     );
     if (response.status === 200) {
-      await proxy.$alert(getMessage(MSG.SAVE_SUCCESS));
+      const skippedList = response.data?.skippedList ?? [];
+      if (skippedList.length > 0) {
+        // 서버 검증으로 스킵된 셀 목록을 사용자에게 표시
+        const detail = skippedList
+          .map((s) => {
+            const schNm = getSchTypeNm(s.workPlanCd);
+            return `· ${s.workYmd} / ${schNm} : ${s.reason}`;
+          })
+          .join("\n");
+        await proxy.$alert(
+          `${response.data.savedCount}건 저장되었습니다.\n` +
+            `아래 ${skippedList.length}건은 근무타입 지정이 불가하여 제외되었습니다.\n${detail}`
+        );
+      } else {
+        await proxy.$alert(getMessage(MSG.SAVE_SUCCESS));
+      }
       emit("close");
       props.onSaved?.();
     }
   } catch (err) {
-    const msg =
-      err?.response?.data?.message ||
-      err?.message ||
-      "저장 중 오류가 발생했습니다.";
+    const msg = resolveApiErrorMessage(err, "저장 중 오류가 발생했습니다.");
     await proxy.$alert(msg);
   }
 };

@@ -13,7 +13,7 @@ public record UserPwdFailCommand(
 	public static UserPwdFailCommand from(UserResult userResult, int lockDurationMinutes, int pwdFailMaxCnt) {
 		
 		if (userResult == null)
-        	throw ApiException.appendf(CommonErrorCode.COMMON_400_001,"\n필수값 누락 - UserResult");
+        	throw new ApiException(CommonErrorCode.COMMON_400_001);
 		
         return new UserPwdFailCommand(
     		userResult.cmpnyCd()

@@ -13,39 +13,39 @@ import com.prafta.common.security.crypto.AesGcmCrypto;
 import lombok.RequiredArgsConstructor;
 
 /**
- * [¸ñÀû]
- * MyBatis°¡ DB¿¡¼­ ¹®ÀÚ¿­ ÄÃ·³À» ÀÐ¾î Java °´Ã¼(UserInfo µî)¿¡ ¸ÅÇÎÇÒ ¶§,
- * AES-GCMÀ¸·Î ¾ÏÈ£È­µÈ °ª(v1.<payload>)Àº ÀÚµ¿À¸·Î "º¹È£È­µÈ Æò¹®"À¸·Î º¯È¯ÇØ ÁÖ´Â TypeHandler.
+ * [ëª©ì ]
+ * MyBatisê°€ DBì—ì„œ ë¬¸ìžì—´ ì»¬ëŸ¼ì„ ì½ì–´ Java ê°ì²´(UserInfo ë“±)ì— ë§¤í•‘í•  ë•Œ,
+ * AES-GCMìœ¼ë¡œ ì•”í˜¸í™”ëœ ê°’(v1.<payload>)ì€ ìžë™ìœ¼ë¡œ "ë³µí˜¸í™”ëœ í‰ë¬¸"ìœ¼ë¡œ ë³€í™˜í•´ ì£¼ëŠ” TypeHandler.
  *
- * [¿Ö ÇÊ¿äÇÑ°¡]
- * - ¼­ºñ½º/ÄÁÆ®·Ñ·¯¿¡¼­ ¸®½ºÆ®¸¦ ¹Ýº¹¹®À¸·Î µ¹¸ç decrypt()¸¦ È£ÃâÇÏ¸é ÄÚµå°¡ ÁöÀúºÐÇØÁö°í,
- *   Æ¯Á¤ API¿¡¼­ º¹È£È­ ´©¶ô/Áßº¹ º¹È£È­ °°Àº ½Ç¼ö°¡ ¹ß»ýÇÏ±â ½¬¿ò.
- * - ÀÌ TypeHandler¸¦ resultMap¿¡ ÁöÁ¤ÇÏ¸é "Á¶È¸ ½ÃÁ¡"¿¡ ÀÏ°ý Ã³¸®µÇ¾î ÀÏ°ü¼ºÀÌ »ý±è.
+ * [ì™œ í•„ìš”í•œê°€]
+ * - ì„œë¹„ìŠ¤/ì»¨íŠ¸ë¡¤ëŸ¬ì—ì„œ ë¦¬ìŠ¤íŠ¸ë¥¼ ë°˜ë³µë¬¸ìœ¼ë¡œ ëŒë©° decrypt()ë¥¼ í˜¸ì¶œí•˜ë©´ ì½”ë“œê°€ ì§€ì €ë¶„í•´ì§€ê³ ,
+ *   íŠ¹ì • APIì—ì„œ ë³µí˜¸í™” ëˆ„ë½/ì¤‘ë³µ ë³µí˜¸í™” ê°™ì€ ì‹¤ìˆ˜ê°€ ë°œìƒí•˜ê¸° ì‰¬ì›€.
+ * - ì´ TypeHandlerë¥¼ resultMapì— ì§€ì •í•˜ë©´ "ì¡°íšŒ ì‹œì "ì— ì¼ê´„ ì²˜ë¦¬ë˜ì–´ ì¼ê´€ì„±ì´ ìƒê¹€.
  *
- * [Àû¿ë ¹üÀ§]
- * - resultMap¿¡¼­ MBL_NO_ENC / EMAIL_ENC / BIRTH_DT_ENC °°Àº ÄÃ·³¿¡¸¸ ÁöÁ¤ÇØ¼­ »ç¿ë.
+ * [ì ìš© ë²”ìœ„]
+ * - resultMapì—ì„œ MBL_NO_ENC / EMAIL_ENC / BIRTH_DT_ENC ê°™ì€ ì»¬ëŸ¼ì—ë§Œ ì§€ì •í•´ì„œ ì‚¬ìš©.
  *
- * [ÁÖÀÇ»çÇ×]
- * - ÀÌ ±¸ÇöÀº Á¶È¸(get) ½Ã º¹È£È­°¡ ¸ñÀûÀÌ¸ç, setNonNullParameter()´Â ±âº» µ¿ÀÛ¸¸ ¼öÇà.
- *   (INSERT/UPDATE±îÁö ÀÚµ¿ ¾ÏÈ£È­¸¦ ¿øÇÏ¸é Encrypt Àü¿ë TypeHandler¸¦ º°µµ·Î µÎ´Â °ÍÀ» ±ÇÀå)
- * - v1. Æ÷¸ËÀÌ ¾Æ´Ñ °ªÀº º¹È£È­ÇÏÁö ¾Ê°í ±×´ë·Î ¹ÝÈ¯ÇÏ¿©,
- *   Æò¹® µ¥ÀÌÅÍ ¶Ç´Â ¸¶ÀÌ±×·¹ÀÌ¼Ç È¥Àç È¯°æ¿¡¼­µµ ¾ÈÀüÇÏ°Ô µ¿ÀÛÇÏµµ·Ï ÇÔ.
+ * [ì£¼ì˜ì‚¬í•­]
+ * - ì´ êµ¬í˜„ì€ ì¡°íšŒ(get) ì‹œ ë³µí˜¸í™”ê°€ ëª©ì ì´ë©°, setNonNullParameter()ëŠ” ê¸°ë³¸ ë™ìž‘ë§Œ ìˆ˜í–‰.
+ *   (INSERT/UPDATEê¹Œì§€ ìžë™ ì•”í˜¸í™”ë¥¼ ì›í•˜ë©´ Encrypt ì „ìš© TypeHandlerë¥¼ ë³„ë„ë¡œ ë‘ëŠ” ê²ƒì„ ê¶Œìž¥)
+ * - v1. í¬ë§·ì´ ì•„ë‹Œ ê°’ì€ ë³µí˜¸í™”í•˜ì§€ ì•Šê³  ê·¸ëŒ€ë¡œ ë°˜í™˜í•˜ì—¬,
+ *   í‰ë¬¸ ë°ì´í„° ë˜ëŠ” ë§ˆì´ê·¸ë ˆì´ì…˜ í˜¼ìž¬ í™˜ê²½ì—ì„œë„ ì•ˆì „í•˜ê²Œ ë™ìž‘í•˜ë„ë¡ í•¨.
  */
 @RequiredArgsConstructor
 public class AesGcmDecryptTypeHandler extends BaseTypeHandler<String> {
 
     /**
-     * ½ÇÁ¦ AES-GCM º¹È£È­¸¦ ¼öÇàÇÏ´Â ÄÄÆ÷³ÍÆ®.
-     * (Å° °ü¸®/Æ÷¸Ë °ËÁõ Æ÷ÇÔ)
+     * ì‹¤ì œ AES-GCM ë³µí˜¸í™”ë¥¼ ìˆ˜í–‰í•˜ëŠ” ì»´í¬ë„ŒíŠ¸.
+     * (í‚¤ ê´€ë¦¬/í¬ë§· ê²€ì¦ í¬í•¨)
      */
     private final AesGcmCrypto crypto;
 
     /**
-     * PreparedStatement¿¡ ÆÄ¶ó¹ÌÅÍ¸¦ ¼¼ÆÃÇÒ ¶§ È£ÃâµÊ.
+     * PreparedStatementì— íŒŒë¼ë¯¸í„°ë¥¼ ì„¸íŒ…í•  ë•Œ í˜¸ì¶œë¨.
      *
-     * - º¸Åë SELECT °á°ú ¸ÅÇÎ¿¡¼­´Â °ÅÀÇ »ç¿ëµÇÁö ¾ÊÀ½.
-     * - ÇöÀç ±¸ÇöÀº "±×´ë·Î ¼¼ÆÃ"¸¸ ¼öÇà(¾ÏÈ£È­ ¾È ÇÔ).
-     * - INSERT/UPDATE¿¡¼­ ¾ÏÈ£È­¸¦ ÀÚµ¿ Àû¿ëÇÏ·Á¸é EncryptTypeHandler¸¦ º°µµ·Î ¸¸µé °Í.
+     * - ë³´í†µ SELECT ê²°ê³¼ ë§¤í•‘ì—ì„œëŠ” ê±°ì˜ ì‚¬ìš©ë˜ì§€ ì•ŠìŒ.
+     * - í˜„ìž¬ êµ¬í˜„ì€ "ê·¸ëŒ€ë¡œ ì„¸íŒ…"ë§Œ ìˆ˜í–‰(ì•”í˜¸í™” ì•ˆ í•¨).
+     * - INSERT/UPDATEì—ì„œ ì•”í˜¸í™”ë¥¼ ìžë™ ì ìš©í•˜ë ¤ë©´ EncryptTypeHandlerë¥¼ ë³„ë„ë¡œ ë§Œë“¤ ê²ƒ.
      */
     @Override
     public void setNonNullParameter(PreparedStatement ps, int i, String parameter, JdbcType jdbcType)
@@ -54,8 +54,8 @@ public class AesGcmDecryptTypeHandler extends BaseTypeHandler<String> {
     }
 
     /**
-     * ResultSet¿¡¼­ ÄÃ·³¸íÀ¸·Î °ªÀ» ÀÐÀ» ¶§ È£ÃâµÊ.
-     * DB¿¡¼­ ÀÐÀº ¹®ÀÚ¿­ÀÌ v1.<payload> Æ÷¸ËÀÌ¸é º¹È£È­ÇÏ¿© Æò¹®À» ¹ÝÈ¯ÇÑ´Ù.
+     * ResultSetì—ì„œ ì»¬ëŸ¼ëª…ìœ¼ë¡œ ê°’ì„ ì½ì„ ë•Œ í˜¸ì¶œë¨.
+     * DBì—ì„œ ì½ì€ ë¬¸ìžì—´ì´ v1.<payload> í¬ë§·ì´ë©´ ë³µí˜¸í™”í•˜ì—¬ í‰ë¬¸ì„ ë°˜í™˜í•œë‹¤.
      */
     @Override
     public String getNullableResult(ResultSet rs, String columnName) throws SQLException {
@@ -63,8 +63,8 @@ public class AesGcmDecryptTypeHandler extends BaseTypeHandler<String> {
     }
 
     /**
-     * ResultSet¿¡¼­ ÄÃ·³ ÀÎµ¦½º·Î °ªÀ» ÀÐÀ» ¶§ È£ÃâµÊ.
-     * DB¿¡¼­ ÀÐÀº ¹®ÀÚ¿­ÀÌ v1.<payload> Æ÷¸ËÀÌ¸é º¹È£È­ÇÏ¿© Æò¹®À» ¹ÝÈ¯ÇÑ´Ù.
+     * ResultSetì—ì„œ ì»¬ëŸ¼ ì¸ë±ìŠ¤ë¡œ ê°’ì„ ì½ì„ ë•Œ í˜¸ì¶œë¨.
+     * DBì—ì„œ ì½ì€ ë¬¸ìžì—´ì´ v1.<payload> í¬ë§·ì´ë©´ ë³µí˜¸í™”í•˜ì—¬ í‰ë¬¸ì„ ë°˜í™˜í•œë‹¤.
      */
     @Override
     public String getNullableResult(ResultSet rs, int columnIndex) throws SQLException {
@@ -72,8 +72,8 @@ public class AesGcmDecryptTypeHandler extends BaseTypeHandler<String> {
     }
 
     /**
-     * Stored Procedure È£Ãâ µî¿¡¼­ CallableStatement·Î °ªÀ» ÀÐÀ» ¶§ È£ÃâµÊ.
-     * DB¿¡¼­ ÀÐÀº ¹®ÀÚ¿­ÀÌ v1.<payload> Æ÷¸ËÀÌ¸é º¹È£È­ÇÏ¿© Æò¹®À» ¹ÝÈ¯ÇÑ´Ù.
+     * Stored Procedure í˜¸ì¶œ ë“±ì—ì„œ CallableStatementë¡œ ê°’ì„ ì½ì„ ë•Œ í˜¸ì¶œë¨.
+     * DBì—ì„œ ì½ì€ ë¬¸ìžì—´ì´ v1.<payload> í¬ë§·ì´ë©´ ë³µí˜¸í™”í•˜ì—¬ í‰ë¬¸ì„ ë°˜í™˜í•œë‹¤.
      */
     @Override
     public String getNullableResult(CallableStatement cs, int columnIndex) throws SQLException {
@@ -81,16 +81,16 @@ public class AesGcmDecryptTypeHandler extends BaseTypeHandler<String> {
     }
 
     /**
-     * º¹È£È­¸¦ "¾ÈÀüÇÏ°Ô" ¼öÇàÇÏ±â À§ÇÑ °¡µå ·ÎÁ÷.
+     * ë³µí˜¸í™”ë¥¼ "ì•ˆì „í•˜ê²Œ" ìˆ˜í–‰í•˜ê¸° ìœ„í•œ ê°€ë“œ ë¡œì§.
      *
-     * - null/blank¸é ±×´ë·Î ¹ÝÈ¯
-     * - ¾ÏÈ£¹® Æ÷¸Ë(v1.)ÀÌ ¾Æ´Ï¸é ±×´ë·Î ¹ÝÈ¯ (Æò¹®/¸¶ÀÌ±×·¹ÀÌ¼Ç µ¥ÀÌÅÍ È¥Àç ´ëºñ)
-     * - v1. Æ÷¸ËÀÌ¸é crypto.decrypt()·Î º¹È£È­
+     * - null/blankë©´ ê·¸ëŒ€ë¡œ ë°˜í™˜
+     * - ì•”í˜¸ë¬¸ í¬ë§·(v1.)ì´ ì•„ë‹ˆë©´ ê·¸ëŒ€ë¡œ ë°˜í™˜ (í‰ë¬¸/ë§ˆì´ê·¸ë ˆì´ì…˜ ë°ì´í„° í˜¼ìž¬ ëŒ€ë¹„)
+     * - v1. í¬ë§·ì´ë©´ crypto.decrypt()ë¡œ ë³µí˜¸í™”
      */
     private String decryptSafely(String v) {
         if (v == null || v.isBlank()) return v;
 
-        // ¾ÏÈ£ Æ÷¸Ë(v1.)ÀÏ ¶§¸¸ º¹È£È­ ½Ãµµ (Æò¹®/¸¶ÀÌ±×·¹ÀÌ¼Ç µ¥ÀÌÅÍ È¥Àç ´ëºñ)
+        // ì•”í˜¸ í¬ë§·(v1.)ì¼ ë•Œë§Œ ë³µí˜¸í™” ì‹œë„ (í‰ë¬¸/ë§ˆì´ê·¸ë ˆì´ì…˜ ë°ì´í„° í˜¼ìž¬ ëŒ€ë¹„)
         if (!v.startsWith("v1.")) return v;
 
         return crypto.decrypt(v);

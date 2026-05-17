@@ -15,7 +15,7 @@ public record UserNodeInfoQuery(
 	public static UserNodeInfoQuery from(SiteNodeAdminParam param) {
 
         if (param == null)
-        	throw ApiException.appendf(CommonErrorCode.COMMON_400_001,"\n필수값 누락 - SiteNodeAdminParam");
+        	throw new ApiException(CommonErrorCode.COMMON_400_001);
 
         return new UserNodeInfoQuery(
     		param.siteCd()

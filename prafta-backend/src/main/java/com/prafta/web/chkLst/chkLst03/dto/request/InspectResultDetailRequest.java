@@ -8,8 +8,8 @@ import lombok.Setter;
 @Setter
 @NoArgsConstructor
 public class InspectResultDetailRequest{
-	private String workMonth;		// Á¶È¸ ±âÁØ ¿ù
-	private String siteCd;			// »ç¾÷ÀåÄÚµå
-	private String chkLstType;		// Ã¼Å©¸®½ºÆ® Å¸ÀÔ
-	private String chkptCd;			// Á¡°ËÇ×¸ñÄÚµå
+	private String workMonth;		// ì¡°íšŒ ê¸°ì¤€ ì›”
+	private String siteCd;			// ì‚¬ì—…ì¥ì½”ë“œ
+	private String chkLstType;		// ì²´í¬ë¦¬ìŠ¤íŠ¸ íƒ€ì…
+	private String chkptCd;			// ì ê²€í•­ëª©ì½”ë“œ
 }

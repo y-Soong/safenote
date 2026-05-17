@@ -34,6 +34,7 @@ import { QuillEditor } from "@vueup/vue-quill";
 import { useCenteredDraggable } from "@/composables/useCenteredDraggable";
 import "@vueup/vue-quill/dist/vue-quill.snow.css";
 import axios from "@/api/axios";
+import { resolveApiErrorMessage } from "@/utils/apiError";
 
 const { proxy } = getCurrentInstance();
 const modalRef = ref(null);
@@ -75,11 +76,7 @@ const fnGetTermsInfo = async () => {
       termsContent.value = response.data.termsDetailInfoResult.termsContent;
     }
   } catch (err) {
-    const msg =
-      err?.response?.data?.message ||
-      err?.message ||
-      "조회 중 오류가 발생했습니다.";
-
+    const msg = resolveApiErrorMessage(err, "조회 중 오류가 발생했습니다.");
     await proxy.$alert(msg);
   }
 };

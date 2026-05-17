@@ -12,11 +12,11 @@ public record MblUniqueCheckCommand(
 	public static MblUniqueCheckCommand from(String smsId, String mblNoHmac, UserSmsAuthNoCheckParam param) {
 		
 		if(smsId == null)
-			throw ApiException.appendf(CommonErrorCode.COMMON_400_001,"\n필수값 누락 - smsId");
+			throw new ApiException(CommonErrorCode.COMMON_400_001);
 		if(mblNoHmac == null)
-			throw ApiException.appendf(CommonErrorCode.COMMON_400_001,"\n필수값 누락 - mblNoHmac");
+			throw new ApiException(CommonErrorCode.COMMON_400_001);
 		if(param == null)
-			throw ApiException.appendf(CommonErrorCode.COMMON_400_001,"\n필수값 누락 - UserSmsAuthNoCheckParam");
+			throw new ApiException(CommonErrorCode.COMMON_400_001);
 		
 		return new MblUniqueCheckCommand(
 			smsId

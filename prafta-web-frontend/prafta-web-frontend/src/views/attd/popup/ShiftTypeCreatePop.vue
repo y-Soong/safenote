@@ -228,6 +228,7 @@ import { useCenteredDraggable } from "@/composables/useCenteredDraggable";
 import BaseSelect from "@/components/common/BaseSelect.vue";
 import axios from "@/api/axios";
 import { getMessage, MSG } from "@/messages";
+import { resolveApiErrorMessage } from "@/utils/apiError";
 
 // ================ Options ================
 // (defineOptions 사용 시 추가)
@@ -378,10 +379,7 @@ const fnGetSystinfoList = async () => {
       systCodeArr.value = grouped;
     }
   } catch (err) {
-    const msg =
-      err?.response?.data?.message ||
-      err?.message ||
-      "조회 중 오류가 발생했습니다.";
+    const msg = resolveApiErrorMessage(err, "조회 중 오류가 발생했습니다.");
     await proxy.$alert(msg);
   }
 };
@@ -411,10 +409,7 @@ const fnSchInfoList = async () => {
       ];
     }
   } catch (err) {
-    const msg =
-      err?.response?.data?.message ||
-      err?.message ||
-      "조회 중 오류가 발생했습니다.";
+    const msg = resolveApiErrorMessage(err, "조회 중 오류가 발생했습니다.");
     await proxy.$alert(msg);
   }
 };
@@ -434,10 +429,7 @@ const fnShiftDetail = async () => {
       bindDetailToForm(response.data);
     }
   } catch (err) {
-    const msg =
-      err?.response?.data?.message ||
-      err?.message ||
-      "조회 중 오류가 발생했습니다.";
+    const msg = resolveApiErrorMessage(err, "조회 중 오류가 발생했습니다.");
     await proxy.$alert(msg);
   }
 };
@@ -461,10 +453,7 @@ const fnCreate = async () => {
       emit("close");
     }
   } catch (err) {
-    const msg =
-      err?.response?.data?.message ||
-      err?.message ||
-      "처리 중 오류가 발생했습니다.";
+    const msg = resolveApiErrorMessage(err, "처리 중 오류가 발생했습니다.");
     await proxy.$alert(msg);
   }
 };

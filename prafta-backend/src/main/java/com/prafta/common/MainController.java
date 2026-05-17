@@ -4,8 +4,8 @@ import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
-@RestController // JSON ÇüÅÂ·Î ÀÀ´ä
-@RequestMapping("/prafta") // °øÅë URI prefix
+@RestController // JSON í˜•íƒœë¡œ ì‘ë‹µ
+@RequestMapping("/prafta") // ê³µí†µ URI prefix
 public class MainController {
 
     @GetMapping("/")

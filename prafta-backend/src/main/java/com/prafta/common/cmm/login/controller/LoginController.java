@@ -6,7 +6,6 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.GetMapping;
-import org.springframework.web.bind.annotation.ModelAttribute;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestHeader;
@@ -37,21 +36,22 @@ import lombok.extern.slf4j.Slf4j;
 @Validated
 @RestController
 @RequestMapping("/login")
-@RequiredArgsConstructor // ·Òº¹ÀÌ final ÇÊµå·Î »ı¼ºÀÚ ÀÚµ¿ »ı¼º
+@RequiredArgsConstructor // ë¡¬ë³µì´ final í•„ë“œë¡œ ìƒì„±ì ìë™ ìƒì„±
 public class LoginController { 	
 	
 	private final JwtUtil jwtUtil;
 	private final LoginService loginService;
 	
-    @GetMapping("/login")
-    public ResponseEntity<?> Login(@Valid @ModelAttribute LoginRequest loginRequest, @RequestHeader(value = "X-Client-Type", required = false, defaultValue = "WEB") String clientType) {
+    // ë³´ì•ˆ ìˆ˜ì •(PRAFTA-006-001): ìê²©ì¦ëª…ì´ URL ì¿¼ë¦¬ìŠ¤íŠ¸ë§/ì„œë²„ ë¡œê·¸/Refererì— ë…¸ì¶œë˜ì§€ ì•Šë„ë¡ POST + JSON ë³¸ë¬¸ìœ¼ë¡œ ì „í™˜
+    @PostMapping("/login")
+    public ResponseEntity<?> Login(@Valid @RequestBody LoginRequest loginRequest, @RequestHeader(value = "X-Client-Type", required = false, defaultValue = "WEB") String clientType) {
     	LoginResponse loginResponse = loginService.Login(LoginParam.from(loginRequest, clientType));
     	
     	return ResponseEntity.status(HttpStatus.OK).body(loginResponse);
     }
 
     /**
-     * ·Î±×¾Æ¿ô: È°¼º ¼¼¼Ç revoke (B¾È: ÀÏ¹İ API´Â JWT¸¸ °ËÁõ, refresh¿¡¼­¸¸ DB°ËÁõ)
+     * ë¡œê·¸ì•„ì›ƒ: í™œì„± ì„¸ì…˜ revoke (Bì•ˆ: ì¼ë°˜ APIëŠ” JWTë§Œ ê²€ì¦, refreshì—ì„œë§Œ DBê²€ì¦)
      */
     @PostMapping("/logout")
     public ResponseEntity<AuthLogoutResponse> logout(

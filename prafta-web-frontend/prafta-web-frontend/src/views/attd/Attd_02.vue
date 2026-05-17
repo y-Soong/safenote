@@ -330,6 +330,7 @@ import { useModal } from "@/utils/useModal";
 import axios from "@/api/axios";
 import ViewHeader from "@/components/common/ViewHeader.vue";
 import { getMessage, MSG } from "@/messages";
+import { resolveApiErrorMessage } from "@/utils/apiError";
 import HolidayRegisterPop from "@/views/attd/popup/HolidayRegisterPop.vue";
 import CalendarMonthPickerPop from "@/views/attd/popup/CalendarMonthPickerPop.vue";
 
@@ -617,10 +618,7 @@ const fnDeleteHoliday = async (item) => {
       fnSearch();
     }
   } catch (err) {
-    const msg =
-      err?.response?.data?.message ||
-      err?.message ||
-      "삭제 처리 중 오류가 발생했습니다.";
+    const msg = resolveApiErrorMessage(err, "삭제 처리 중 오류가 발생했습니다.");
     await proxy.$alert(msg);
   }
 };

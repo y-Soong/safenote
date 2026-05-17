@@ -13,7 +13,7 @@ public record WithdrawalCancelCommand (
 	public static WithdrawalCancelCommand from(WithdrawalCancelParam param) {
 		
 		if(param == null)
-			throw ApiException.appendf(CommonErrorCode.COMMON_400_001,"\n필수값 누락 - WithdrawalCancelParam");
+			throw new ApiException(CommonErrorCode.COMMON_400_001);
 		
 		return new WithdrawalCancelCommand(
 			param.cmpnyCd()

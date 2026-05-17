@@ -15,9 +15,9 @@ public record AuthMenuInfoParam(
     public static AuthMenuInfoParam from(List<AuthMenuInfoRequest> requests, TokenInfo tokenInfo) {
         
         if(requests == null)
-			throw ApiException.appendf(CommonErrorCode.COMMON_400_001,"\n필수값 누락 - AuthMenuInfoRequest");
+			throw new ApiException(CommonErrorCode.COMMON_400_001);
 		if(tokenInfo == null)
-			throw ApiException.appendf(CommonErrorCode.COMMON_400_003,"\n필수값 누락 - TokenInfo");
+			throw new ApiException(CommonErrorCode.COMMON_400_003);
 
         if (requests.isEmpty()) {
             throw new IllegalArgumentException("request list must not be empty");

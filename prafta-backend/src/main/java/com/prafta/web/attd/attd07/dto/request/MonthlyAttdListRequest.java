@@ -8,9 +8,9 @@ import lombok.Setter;
 @Setter
 @NoArgsConstructor
 public class MonthlyAttdListRequest {
-	private String workYm;     		// "2026-04" ¶Ç´Â "202604"
-    private String siteCd;     		// »ç¾÷ÀåÄÚµå
-    private String nodeCd;     		// ºÎ¼­ÄÚµå (¼Ò¼ÓºÎ¼­)
-    private String incSubNodeYn; 	 // ÇÏÀ§ºÎ¼­ Á¶È¸ ¿©ºÎ (Y/N)
-    private String userNm;    		 // »ç¿ëÀÚ¸í (ºÎºĞÀÏÄ¡, nullable)
+	private String workYm;     		// "2026-04" ë˜ëŠ” "202604"
+    private String siteCd;     		// ì‚¬ì—…ì¥ì½”ë“œ
+    private String nodeCd;     		// ë¶€ì„œì½”ë“œ (ì†Œì†ë¶€ì„œ)
+    private String incSubNodeYn; 	 // í•˜ìœ„ë¶€ì„œ ì¡°íšŒ ì—¬ë¶€ (Y/N)
+    private String userNm;    		 // ì‚¬ìš©ìëª… (ë¶€ë¶„ì¼ì¹˜, nullable)
 }

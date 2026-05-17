@@ -13,7 +13,7 @@ public record LogoutParam(
 	public static LogoutParam from(String clientType, TokenInfo tokenInfo) {
 		
 		if(clientType == null)
-			throw ApiException.appendf(CommonErrorCode.COMMON_400_001,"\n필수값 누락 - clientType");
+			throw new ApiException(CommonErrorCode.COMMON_400_001);
 		
         return new LogoutParam(
     		tokenInfo != null ? tokenInfo.gv_cmpnyCd() : ""

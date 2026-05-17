@@ -271,6 +271,7 @@ import {
 } from "vue";
 import { useDraggable } from "@/composables/useDraggable";
 import axios from "@/api/axios";
+import { resolveApiErrorMessage } from "@/utils/apiError";
 
 const props = defineProps({
   cmpnyCd: { type: String, required: true },
@@ -414,11 +415,7 @@ const fnGetInspectionInfo = async () => {
       }
     }
   } catch (err) {
-    const msg =
-      err?.response?.data?.message ||
-      err?.message ||
-      "조회 중 오류가 발생했습니다.";
-
+    const msg = resolveApiErrorMessage(err, "조회 중 오류가 발생했습니다.");
     await proxy.$alert(msg);
   }
 };

@@ -3,10 +3,10 @@ package com.prafta.common.security.crypto;
 import org.springframework.boot.context.properties.ConfigurationProperties;
 
 /**
- * ¾ÏÈ£ °ü·Ã ¼³Á¤ °ª ¹ÙÀÎµù¿ë Properties.
+ * ì•”í˜¸ ê´€ë ¨ ì„¤ì • ê°’ ë°”ì¸ë”©ìš© Properties.
  *
- * - application.properties / application.yml ¾î´À ÂÊÀÌµç µ¿ÀÏÇÏ°Ô ¹ÙÀÎµù °¡´É
- * - Å°(pepper)´Â ¹İµå½Ã È¯°æº¯¼ö·Î ÁÖÀÔµÇ´Â °ªÀ» ¹Şµµ·Ï ±¸¼ºÇÏ´Â °ÍÀ» ±ÇÀå
+ * - application.properties / application.yml ì–´ëŠ ìª½ì´ë“  ë™ì¼í•˜ê²Œ ë°”ì¸ë”© ê°€ëŠ¥
+ * - í‚¤(pepper)ëŠ” ë°˜ë“œì‹œ í™˜ê²½ë³€ìˆ˜ë¡œ ì£¼ì…ë˜ëŠ” ê°’ì„ ë°›ë„ë¡ êµ¬ì„±í•˜ëŠ” ê²ƒì„ ê¶Œì¥
  */
 @ConfigurationProperties(prefix = "crypto")
 public record CryptoProperties(

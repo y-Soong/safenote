@@ -14,9 +14,9 @@ public record WithdrawalCancelParam (
 	public static WithdrawalCancelParam from(WithdrawalCancelRequest request, TokenInfo tokenInfo) {
 		
 		if(request == null)
-			throw ApiException.appendf(CommonErrorCode.COMMON_400_001,"\n필수값 누락 - WithdrawalCancelRequest");
+			throw new ApiException(CommonErrorCode.COMMON_400_001);
 		if(tokenInfo == null)
-			throw ApiException.appendf(CommonErrorCode.COMMON_400_003,"\n필수값 누락 - TokenInfo");
+			throw new ApiException(CommonErrorCode.COMMON_400_003);
 		
 		return new WithdrawalCancelParam(
 			request.getCmpnyCd()

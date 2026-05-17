@@ -1,9 +1,9 @@
 package com.prafta.web.chkLst.chkLst03.result;
 
 public record InspectAnswerResult(
-	String cmpnyCd						// È¸»çÄÚµå
-	, String chkptCd						// Á¡°ËÇ×¸ñÄÚµå
-	, String inspectItemCd				// Á¡°Ë¹®Ç×ÄÚµå
+	String cmpnyCd						// íšŒì‚¬ì½”ë“œ
+	, String chkptCd						// ì ê²€í•­ëª©ì½”ë“œ
+	, String inspectItemCd				// ì ê²€ë¬¸í•­ì½”ë“œ
 	, String workDate
 	, String inspectAnswerType
 	, String answerDesc

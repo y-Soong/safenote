@@ -10,9 +10,9 @@ public record TermsDetailInfoListParam(
 ){
 	public static TermsDetailInfoListParam from(TermsDetailInfoListRequest request) {
 
-        // 1) ¸®½ºÆ® ÀÚÃ¼ °ËÁõ
+        // 1) ë¦¬ìŠ¤íŠ¸ ìì²´ ê²€ì¦
         if (request == null)
-        	throw ApiException.appendf(CommonErrorCode.COMMON_400_001,"\nÇÊ¼ö°ª ´©¶ô - TermsDetailInfoListRequest");
+        	throw new ApiException(CommonErrorCode.COMMON_400_001);
 
         return new TermsDetailInfoListParam(
         	request.getTermsId()

@@ -15,9 +15,9 @@ public record TbmEduInfoListParam(
 	public static TbmEduInfoListParam from(TbmEduInfoListRequest request, TokenInfo tokenInfo) {
 		
 		if(request == null)
-			throw ApiException.appendf(CommonErrorCode.COMMON_400_001,"\n필수값 누락 - TbmEduInfoListRequest");
+			throw new ApiException(CommonErrorCode.COMMON_400_001);
 		if(tokenInfo == null)
-			throw ApiException.appendf(CommonErrorCode.COMMON_400_003,"\n필수값 누락 - TokenInfo");
+			throw new ApiException(CommonErrorCode.COMMON_400_003);
 		
 		return new TbmEduInfoListParam(
 			request.getMtrlCd()

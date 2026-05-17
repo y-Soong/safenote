@@ -18,16 +18,16 @@ public record MonthlyAttdListParam(
 	      public static MonthlyAttdListParam from(MonthlyAttdListRequest request, TokenInfo tokenInfo) {
 
 	          if (request == null)
-	              throw ApiException.appendf(CommonErrorCode.COMMON_400_001, "\n필수값 누락 - MonthlyAttdListRequest");
+	              throw new ApiException(CommonErrorCode.COMMON_400_001);
 	          if (tokenInfo == null)
-	              throw ApiException.appendf(CommonErrorCode.COMMON_400_001, "\n필수값 누락 - TokenInfo");
+	              throw new ApiException(CommonErrorCode.COMMON_400_001);
 
 	          if (request.getWorkYm() == null || request.getWorkYm().isBlank())
-	              throw ApiException.appendf(CommonErrorCode.COMMON_400_001, "\n필수값 누락 - workYm");
+	              throw new ApiException(CommonErrorCode.COMMON_400_001);
 	          if (request.getSiteCd() == null || request.getSiteCd().isBlank())
-	              throw ApiException.appendf(CommonErrorCode.COMMON_400_001, "\n필수값 누락 - siteCd");
+	              throw new ApiException(CommonErrorCode.COMMON_400_001);
 	          if (request.getNodeCd() == null || request.getNodeCd().isBlank())
-	              throw ApiException.appendf(CommonErrorCode.COMMON_400_001, "\n필수값 누락 - nodeCd");
+	              throw new ApiException(CommonErrorCode.COMMON_400_001);
 
 	          return new MonthlyAttdListParam(
 	                request.getWorkYm()

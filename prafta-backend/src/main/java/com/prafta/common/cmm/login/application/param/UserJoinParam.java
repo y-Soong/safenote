@@ -21,7 +21,7 @@ public record UserJoinParam(
 	public static UserJoinParam from(UserJoinRequest request) {
 		
 		if(request == null)
-			throw ApiException.appendf(CommonErrorCode.COMMON_400_001,"\n필수값 누락 - UserJoinRequest");
+			throw new ApiException(CommonErrorCode.COMMON_400_001);
 		
         return new UserJoinParam(
     		request.getCmpnyCd()

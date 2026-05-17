@@ -12,7 +12,7 @@ public record SystInfoParam(
 	public static SystInfoParam from(SystInfoRequest request) {
 		
 		if(request == null)
-			throw ApiException.appendf(CommonErrorCode.COMMON_400_001,"\n필수값 누락 - SystInfoRequest");
+			throw new ApiException(CommonErrorCode.COMMON_400_001);
 		
 		return new SystInfoParam(
 			request.getCodeD()

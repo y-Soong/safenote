@@ -14,7 +14,7 @@ public record TbmEduItemInfoResult(
 	, String url
 	, String useYn
 	
-	/* µ¥ÀÌÅÍ ÃÊ±âÈ­¿ë °ª */
+	/* ë°ì´í„° ì´ˆê¸°í™”ìš© ê°’ */
 	, String oriSortIdx
 	, String oriMtrlItemType
 	, String oriMtrlDesc

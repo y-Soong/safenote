@@ -12,7 +12,7 @@ public record CompCmmCodeMListQuery(
 public static CompCmmCodeMListQuery from(CompCmmCodeMListParam param) {
 		
 		if(param == null)
-			throw ApiException.appendf(CommonErrorCode.COMMON_400_001,"\n필수값 누락 - CompCmmCodeMListParam");
+			throw new ApiException(CommonErrorCode.COMMON_400_001);
 		
 		return new CompCmmCodeMListQuery(
 			param.codeCd()

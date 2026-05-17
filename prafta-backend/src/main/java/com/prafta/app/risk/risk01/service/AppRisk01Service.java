@@ -1,18 +1,17 @@
 package com.prafta.app.risk.risk01.service;
 
-import java.util.Map;
-
 import org.springframework.web.multipart.MultipartFile;
 
 import com.prafta.app.risk.risk01.dto.RiskAssessmentReq;
 import com.prafta.app.risk.risk01.dto.RiskInfoReq;
 import com.prafta.app.risk.risk01.dto.RiskInfoRes;
+import com.prafta.common.dto.TokenInfo;
 
 public interface AppRisk01Service {
-	
-	RiskInfoRes selectRiskTypeInfo(RiskInfoReq request, Map<String, Object> tokenInfo);
-	
-	void saveRiskAssessments(RiskAssessmentReq request, MultipartFile file, Map<String, Object> tokenInfo);
+
+	RiskInfoRes selectRiskTypeInfo(RiskInfoReq request, TokenInfo tokenInfo);
+
+	void saveRiskAssessments(RiskAssessmentReq request, MultipartFile file, TokenInfo tokenInfo);
 	
 //	ChecklistInfoRes selectChkLstInfo(ChecklistInfoReq request, Map<String, Object> tokenInfo);
 //	

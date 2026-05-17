@@ -11,11 +11,11 @@ import lombok.Setter;
 @Setter
 @NoArgsConstructor
 public class AttdStdTimeRuleRequest {
-	@FieldLabel("��ٽð� ǥ��ȭ Ÿ��")
+	@FieldLabel("출근시간 표준화 타입")
 	@NotBlank
 	private String startStdTimeType;
 	
-	@FieldLabel("��ٽð� ǥ��ȭ Ÿ��")
+	@FieldLabel("퇴근시간 표준화 타입")
 	@NotBlank
 	private String endStdTimeType;
 }

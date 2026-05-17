@@ -5,6 +5,7 @@ import java.util.List;
 import org.apache.ibatis.annotations.Mapper;
 
 import com.prafta.common.cmm.baseinfo.application.command.MblUniqueCheckCommand;
+import com.prafta.common.cmm.baseinfo.application.command.SmsAuthConsumeCommand;
 import com.prafta.common.cmm.baseinfo.application.command.SmsAuthNoCommand;
 import com.prafta.common.cmm.baseinfo.application.command.UserPasswordCommand;
 import com.prafta.common.cmm.baseinfo.application.query.AppMenuListQuery;
@@ -14,6 +15,7 @@ import com.prafta.common.cmm.baseinfo.application.query.CmpnyInfoQuery;
 import com.prafta.common.cmm.baseinfo.application.query.MblUniqueCheckQuery;
 import com.prafta.common.cmm.baseinfo.application.query.MenuListQuery;
 import com.prafta.common.cmm.baseinfo.application.query.SiteInfoQuery;
+import com.prafta.common.cmm.baseinfo.application.query.SmsVerifiedCheckQuery;
 import com.prafta.common.cmm.baseinfo.application.query.SiteNodeListQuery;
 import com.prafta.common.cmm.baseinfo.application.query.SystInfoListQuery;
 import com.prafta.common.cmm.baseinfo.application.query.SystInfoQuery;
@@ -72,6 +74,12 @@ public interface BaseinfoMapper {
 	UserIdInfoResult selectUserIdInfo(UserIdInfoQuery query);
 	
 	void updateUserPw(UserPasswordCommand command);
+
+	/* 비밀번호 재설정 진입 시 대상 사용자의 최근 SMS 인증 성공(미만료/미소비) 레코드 SMS_ID 조회 */
+	String selectSmsVerifiedSmsId(SmsVerifiedCheckQuery query);
+
+	/* 비밀번호 재설정 검증에 사용된 SMS 인증 레코드를 소비(consume) 처리 */
+	int consumeSmsAuth(SmsAuthConsumeCommand command);
 	
 	TermsDetailInfoResult selectTermsDetailInfo(TermsDetailInfoQuery query);
 }

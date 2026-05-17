@@ -18,9 +18,9 @@ public record TbmEduInfoCommand(
 	public static TbmEduInfoCommand from(TbmEduInfoParam param, String mtrlCd) {
 		
 		if(param == null)
-			throw ApiException.appendf(CommonErrorCode.COMMON_400_001,"\n필수값 누락 - TbmEduInfoParam");
+			throw new ApiException(CommonErrorCode.COMMON_400_001);
 		if(mtrlCd == null)
-			throw ApiException.appendf(CommonErrorCode.COMMON_400_001,"\n필수값 누락 - mtrlCd");
+			throw new ApiException(CommonErrorCode.COMMON_400_001);
 		
 		return new TbmEduInfoCommand(
 			mtrlCd
@@ -36,7 +36,7 @@ public record TbmEduInfoCommand(
 	public static TbmEduInfoCommand from(TbmEduMtrlModel model) {
 		
 		if(model == null)
-			throw ApiException.appendf(CommonErrorCode.COMMON_400_001,"\n필수값 누락 - TbmEduMtrlModel");
+			throw new ApiException(CommonErrorCode.COMMON_400_001);
 		
 		return new TbmEduInfoCommand(
 			model.mtrlCd()

@@ -5,8 +5,10 @@ import java.util.List;
 import java.util.Map;
 
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 import com.prafta.common.cmm.baseinfo.application.command.MblUniqueCheckCommand;
+import com.prafta.common.cmm.baseinfo.application.command.SmsAuthConsumeCommand;
 import com.prafta.common.cmm.baseinfo.application.command.SmsAuthNoCommand;
 import com.prafta.common.cmm.baseinfo.application.command.UserPasswordCommand;
 import com.prafta.common.cmm.baseinfo.application.param.AppMenuListParam;
@@ -33,6 +35,7 @@ import com.prafta.common.cmm.baseinfo.application.query.CmpnyInfoQuery;
 import com.prafta.common.cmm.baseinfo.application.query.MblUniqueCheckQuery;
 import com.prafta.common.cmm.baseinfo.application.query.MenuListQuery;
 import com.prafta.common.cmm.baseinfo.application.query.SiteInfoQuery;
+import com.prafta.common.cmm.baseinfo.application.query.SmsVerifiedCheckQuery;
 import com.prafta.common.cmm.baseinfo.application.query.SiteNodeListQuery;
 import com.prafta.common.cmm.baseinfo.application.query.SystInfoListQuery;
 import com.prafta.common.cmm.baseinfo.application.query.SystInfoQuery;
@@ -191,7 +194,7 @@ public class BaseinfoServiceImpl implements BaseinfoService{
 			int mblCnt = baseinfoMapper.selectMblUniqChk(MblUniqueCheckQuery.from(phoneHmac));
 			
 			if(mblCnt > 0) {
-				throw new ApiException(CommonErrorCode.COMMON_400_001, "�̹� ��ϵ� �޴�����ȣ�Դϴ�.\\n Ȯ�� �� �ٽ� �õ����ּ���.");
+				throw new ApiException(CommonErrorCode.COMMON_400_001, "이미 등록된 휴대폰번호입니다.\\n 확인 후 다시 시도해주세요.");
 			}
 		}
 		
@@ -325,10 +328,29 @@ public class BaseinfoServiceImpl implements BaseinfoService{
 		return UserIdInfoResponse.builder().userIdInfoResult(userIdInfoResult).build();
 	}
 	
+	@Transactional
 	public void updateUserPw(UserPasswordParam param) {
+
+		// 005-1-C : 비로그인 비밀번호 찾기 흐름이므로 JWT 강제가 불가하다.
+		// 대상 사용자의 최근 SMS 인증이 성공/미만료/미소비 상태인지 서버측에서 검증한다.
+		String smsId = baseinfoMapper.selectSmsVerifiedSmsId(SmsVerifiedCheckQuery.from(param));
+
+		if(smsId == null || smsId.isBlank()) {
+			log.info("비밀번호 재설정 거부 - SMS 인증 미통과 (cmpnyCd={}, userCd={})", param.cmpnyCd(), param.userCd());
+			throw new ApiException(CommonErrorCode.COMMON_400_002);
+		}
+
+		// 인증 레코드 소비(consume) - 동시 요청 시 단 1건만 통과하도록 VERIFIED_YN='Y' 조건부 갱신.
+		int consumed = baseinfoMapper.consumeSmsAuth(SmsAuthConsumeCommand.from(smsId));
+
+		if(consumed != 1) {
+			log.info("비밀번호 재설정 거부 - SMS 인증 레코드 소비 실패 (smsId={})", smsId);
+			throw new ApiException(CommonErrorCode.COMMON_400_002);
+		}
+
 		String userPwHash = null;
 		if(param.userPw() != null) { userPwHash = passwordHasher.hash(param.userPw()); }
-		
+
 		baseinfoMapper.updateUserPw(UserPasswordCommand.from(param, userPwHash));
 	}
 	

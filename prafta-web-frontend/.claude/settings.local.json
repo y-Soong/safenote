@@ -23,7 +23,16 @@
       "Read(//tmp/**)",
       "Bash(awk 'NR<=154 || NR>=468' /c/PRAFTA/prafta-web-frontend/prafta-web-frontend/src/views/attd/popup/AttdDayDetailPop.vue)",
       "Bash(npx eslint *)",
-      "Bash(npx vite *)"
+      "Bash(npx vite *)",
+      "Bash(git -C \"c:\\\\PRAFTA\\\\prafta-web-frontend\" diff --stat src/views/attd/Attd_08.vue)",
+      "Bash(git -C \"c:\\\\PRAFTA\\\\prafta-web-frontend\\\\prafta-web-frontend\" diff --stat -- src/views/attd/Attd_08.vue)",
+      "Bash(git -C \"c:\\\\PRAFTA\\\\prafta-web-frontend\\\\prafta-web-frontend\" status -s)",
+      "Bash(echo \"EXIT: $?\")",
+      "Bash(grep -i \"overtime\\\\|OT_\\\\|otList\\\\|ot1\\\\|approvedOt\" \"c:\\\\PRAFTA\\\\.claude\\\\context\\\\schema-full.sql\" | head -50)",
+      "Read(//c/PRAFTA/.claude/context/**)",
+      "Bash(node -e \"const fs=require\\('fs'\\);const p='prafta-web-frontend/src/views/attd/popup/AttdDayDetailPop.vue';let s=fs.readFileSync\\(p,'utf8'\\);const lines=s.split\\(/\\\\r?\\\\n/\\);for\\(let i=438;i<478;i++\\){console.log\\(i+1, JSON.stringify\\(lines[i]\\).slice\\(-30\\)\\);}\")",
+      "Bash(node -e \"const fs=require\\('fs'\\);const p='prafta-web-frontend/src/views/attd/popup/AttdDayDetailPop.vue';let s=fs.readFileSync\\(p,'utf8'\\);const orig=s;s=s.replace\\(/\\\\r\\\\n/g,'\\\\n'\\).replace\\(/\\\\n/g,'\\\\r\\\\n'\\);fs.writeFileSync\\(p,s,'utf8'\\);console.log\\('orig bytes',orig.length,'new bytes',s.length\\);\")",
+      "Bash(node -e \"const fs=require\\('fs'\\);const b=fs.readFileSync\\('prafta-web-frontend/src/views/attd/popup/AttdDayDetailPop.vue'\\);let cr=0,lf=0,crlf=0;for\\(let i=0;i<b.length;i++\\){if\\(b[i]===0x0d\\)cr++;if\\(b[i]===0x0a\\){lf++;if\\(b[i-1]===0x0d\\)crlf++;}};console.log\\({cr,lf,crlf,bareLf:lf-crlf}\\);\")"
     ]
   }
 }

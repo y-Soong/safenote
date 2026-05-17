@@ -6,8 +6,8 @@ import com.prafta.common.error.ApiErrorCode;
 
 public enum RiskErrorCode implements ApiErrorCode {
 
-    // ±ÔÄ¢ ¿¹½Ã: {MODULE}_{HTTP}_{SEQ}
-    RISK_400_001(HttpStatus.BAD_REQUEST, "À§Çè¿äÀÎ ±¸ºĞ ÇÏÀ§¿¡ À¯ÇØ¿äÀÎÀÌ Á¸ÀçÇÕ´Ï´Ù.\nÈ®ÀÎ ÈÄ ´Ù½Ã ½ÃµµÇØÁÖ¼¼¿ä.")
+    // ê·œì¹™ ì˜ˆì‹œ: {MODULE}_{HTTP}_{SEQ}
+    RISK_400_001(HttpStatus.BAD_REQUEST, "ìœ„í—˜ìš”ì¸ êµ¬ë¶„ í•˜ìœ„ì— ìœ í•´ìš”ì¸ì´ ì¡´ì¬í•©ë‹ˆë‹¤.\ní™•ì¸ í›„ ë‹¤ì‹œ ì‹œë„í•´ì£¼ì„¸ìš”.")
     ;
 
     private final HttpStatus httpStatus;
@@ -20,7 +20,7 @@ public enum RiskErrorCode implements ApiErrorCode {
 
     @Override
     public String code() {
-        return name(); // enum ÀÌ¸§À» ±×´ë·Î ÄÚµå·Î ¾²¸é °ü¸® ½¬¿ò
+        return name(); // enum ì´ë¦„ì„ ê·¸ëŒ€ë¡œ ì½”ë“œë¡œ ì“°ë©´ ê´€ë¦¬ ì‰¬ì›€
     }
 
     @Override

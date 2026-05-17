@@ -15,13 +15,13 @@ public record ShiftTeamCommand(
 	public static ShiftTeamCommand from(ShiftTeamParam param, String shiftCd, String gvCmpnyCd, String gvUserCd) {
 		
         if (param == null)
-        	throw ApiException.appendf(CommonErrorCode.COMMON_400_001,"\n필수값 누락 - ShiftTeamParam");
+        	throw new ApiException(CommonErrorCode.COMMON_400_001);
         if (shiftCd == null)
-        	throw ApiException.appendf(CommonErrorCode.COMMON_400_001,"\n필수값 누락 - shiftCd");
+        	throw new ApiException(CommonErrorCode.COMMON_400_001);
         if (gvCmpnyCd == null)
-        	throw ApiException.appendf(CommonErrorCode.COMMON_400_001,"\n필수값 누락 - gvCmpnyCd");
+        	throw new ApiException(CommonErrorCode.COMMON_400_001);
         if (gvUserCd == null)
-        	throw ApiException.appendf(CommonErrorCode.COMMON_400_001,"\n필수값 누락 - gvUserCd");
+        	throw new ApiException(CommonErrorCode.COMMON_400_001);
 
         return new ShiftTeamCommand(
     		shiftCd

@@ -55,7 +55,10 @@
       <!-- 콘텐츠 영역 -->
       <main class="main-content">
         <!-- route 변수는 안 쓰므로 제거 -->
-        <router-view v-slot="{ Component }">
+        <!-- PRAFTA-005 후속: 메뉴 로드/탭 구성 완료(ready) 전까지 렌더를 보류한다.
+             새 탭 직진입 시 뷰가 먼저 렌더되어 공통 버튼 props(buttons)가 빈 채로
+             고정되는 문제를 방지. -->
+        <router-view v-if="ready" v-slot="{ Component }">
           <!-- 열린 탭들의 컴포넌트만 캐시 -->
           <keep-alive :include="cachedNames">
             <component :is="Component" v-bind="getActiveTabProps()" />
@@ -68,12 +71,13 @@
 
 <script setup>
 import { ref, onMounted, computed } from "vue";
-import { useRouter } from "vue-router";
+import { useRoute, useRouter } from "vue-router";
 import { fnGetMenuList } from "@/api/navigation";
 import TopNav from "@/components/layout/TopNav.vue";
 import SideMenu from "@/components/layout/SideMenu.vue";
 
 const router = useRouter();
+const route = useRoute();
 
 const topMenus = ref([]);
 const sideMenus = ref([]);
@@ -83,6 +87,11 @@ const selectedTopMenuId = ref(null);
 /* 탭 상태 */
 const tabs = ref([]);
 const activeTab = ref(null);
+
+/* PRAFTA-005 후속: 메뉴 로드 + 탭 구성이 끝나야 본문(router-view)을 렌더한다.
+   새 탭 직진입 시 뷰가 메뉴 로드보다 먼저 마운트되어 공통 버튼 props가
+   빈 채로 고정되는 문제를 막기 위한 게이트. */
+const ready = ref(false);
 
 /* keep-alive 에 포함시킬 '컴포넌트 이름' 목록
    - router.resolve(t.route).name 은 '라우트 이름'이므로
@@ -154,15 +163,66 @@ function getActiveTabProps() {
   return tab?.buttons ? { title: tab.label, buttons: tab.buttons } : {};
 }
 
+/**
+ * PRAFTA-005: 새 탭에서 /main/{동적경로}로 직진입한 경우,
+ * 라우터는 이미 해당 자식 라우트로 매칭을 마쳤지만 tabs 배열에는 홈 탭만 있다.
+ * 현재 URL에 해당하는 메뉴를 메뉴 트리에서 찾아 탭으로 자동 추가하고 active 처리한다.
+ */
+function findMenuByRoute(targetRoute, sideMenuMap) {
+  // sideMenuMap: { [topMenuId]: [{ id, label, route, buttons, children? }, ...] }
+  for (const topId of Object.keys(sideMenuMap)) {
+    const list = sideMenuMap[topId] || [];
+    const found = findInList(list, targetRoute);
+    if (found) return { topId, menu: found };
+  }
+  return null;
+}
+
+function findInList(list, targetRoute) {
+  for (const item of list) {
+    if (item.route && `/main/${item.route}` === targetRoute) return item;
+    if (Array.isArray(item.children)) {
+      const sub = findInList(item.children, targetRoute);
+      if (sub) return sub;
+    }
+  }
+  return null;
+}
+
 onMounted(async () => {
-  const retMenu = await fnGetMenuList();
-  topMenus.value = retMenu.topMenus;
-  allSideMenus.value = retMenu.sideMenus;
+  try {
+    const retMenu = await fnGetMenuList();
+    topMenus.value = retMenu.topMenus || [];
+    allSideMenus.value = retMenu.sideMenus || {};
 
-  const defaultTop = topMenus.value[0];
-  if (defaultTop) selectTopMenu(defaultTop.id);
+    const defaultTop = topMenus.value[0];
+    if (defaultTop) selectTopMenu(defaultTop.id);
 
-  addTab({ label: "🏠", route: "/main", buttons: {} });
+    addTab({ label: "🏠", route: "/main", buttons: {} });
+
+    // PRAFTA-005: URL이 /main 자식 라우트로 직진입된 경우 해당 탭을 자동 추가
+    if (route.path && route.path !== "/main" && route.path.startsWith("/main/")) {
+      const matched = findMenuByRoute(route.path, allSideMenus.value);
+      if (matched) {
+        // 해당 메뉴가 속한 상단 메뉴 탭을 선택
+        selectTopMenu(matched.topId);
+        const label = matched.menu.label || route.meta?.title || route.path;
+        addTab({
+          label,
+          route: route.path,
+          buttons: matched.menu.buttons || {},
+        });
+      } else {
+        // 메뉴 트리에서 찾지 못해도 라우트 메타에서 라벨만 가져와 탭에 추가
+        const label = route.meta?.title || route.path;
+        addTab({ label, route: route.path, buttons: {} });
+      }
+    }
+  } finally {
+    // 메뉴 로드/탭 구성이 끝난 뒤에만 본문을 렌더한다.
+    // (에러가 나도 ready를 true로 두어 화면이 영구 공백으로 멈추지 않게 한다.)
+    ready.value = true;
+  }
 });
 
 function closeAllTabsExceptHome() {

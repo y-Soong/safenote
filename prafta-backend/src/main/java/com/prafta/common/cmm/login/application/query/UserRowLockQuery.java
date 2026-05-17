@@ -11,7 +11,7 @@ public record UserRowLockQuery(
 	public static UserRowLockQuery from(UserResult userResult) {
 
 		if (userResult == null)
-        	throw ApiException.appendf(CommonErrorCode.COMMON_400_001,"\n필수값 누락 - UserResult");
+        	throw new ApiException(CommonErrorCode.COMMON_400_001);
 		
 		return new UserRowLockQuery(
 			userResult.cmpnyCd()

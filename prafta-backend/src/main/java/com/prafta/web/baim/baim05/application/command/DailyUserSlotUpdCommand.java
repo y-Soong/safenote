@@ -16,7 +16,7 @@ public record DailyUserSlotUpdCommand(
 	public static DailyUserSlotUpdCommand from(InsertDailyQrUserParam param, String userCd) {
 
         if (param == null)
-        	throw ApiException.appendf(CommonErrorCode.COMMON_400_001,"\n필수값 누락 - InsertDailyQrUserParam");
+        	throw new ApiException(CommonErrorCode.COMMON_400_001);
 
         return new DailyUserSlotUpdCommand(
         		param.siteCd()

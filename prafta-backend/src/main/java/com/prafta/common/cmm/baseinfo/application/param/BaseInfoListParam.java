@@ -14,11 +14,13 @@ public record BaseInfoListParam (
 	public static BaseInfoListParam from(BaseInfoListRequest request, TokenInfo tokenInfo) {
 		
 		if(request == null)
-			throw ApiException.appendf(CommonErrorCode.COMMON_400_001,"\n필수값 누락 - BaseInfoListRequest");
-		
+			throw new ApiException(CommonErrorCode.COMMON_400_001);
+		if(tokenInfo == null)
+			throw new ApiException(CommonErrorCode.COMMON_400_003);
+
 		return new BaseInfoListParam(
 				request.getBaseCodeList()
-				, tokenInfo != null ? tokenInfo.gv_cmpnyCd() : request.getCmpnyCd()
+				, tokenInfo.gv_cmpnyCd()
 		);
 	}
 }

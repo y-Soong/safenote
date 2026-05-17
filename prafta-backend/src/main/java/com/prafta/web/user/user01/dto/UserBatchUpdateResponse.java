@@ -3,7 +3,7 @@ package com.prafta.web.user.user01.dto;
 import java.util.List;
 
 public record UserBatchUpdateResponse(
-        boolean success,          // fails°¡ ÀÖÀ¸¸é false
+        boolean success,          // failsê°€ ìžˆìœ¼ë©´ false
         int totalCount,
         int successCount,
         int failCount,

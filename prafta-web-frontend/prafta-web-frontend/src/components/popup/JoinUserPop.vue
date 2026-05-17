@@ -242,6 +242,7 @@ import {
 } from "vue";
 import { useModal } from "@/utils/useModal";
 import axios from "@/api/axios";
+import { resolveApiErrorMessage } from "@/utils/apiError";
 import SiteSearchPop from "@/components/popup/SiteSearchPop.vue";
 import SiteNodeSearchPop from "@/components/popup/SiteNodeSearchPop.vue";
 
@@ -460,7 +461,7 @@ const fnGetSystinfoList = async () => {
       systCodeArr.value = grouped;
     }
   } catch (err) {
-    alert(err.response.data.message);
+    fnAlertMsg(resolveApiErrorMessage(err, "조회 중 오류가 발생했습니다."));
   }
 };
 
@@ -479,7 +480,7 @@ const fnGetCmpnyInfo = async () => {
       cmpnyNm.value = resData.cmpnyNm;
     }
   } catch (err) {
-    fnAlertMsg(err.response.data.message, () => {
+    fnAlertMsg(resolveApiErrorMessage(err, "처리 중 오류가 발생했습니다."), () => {
       cmpnyCd.value = "";
       cmpnyCdFcs.value.focus();
     });
@@ -516,7 +517,7 @@ const fnUserIdDupleChk = async () => {
       }
     }
   } catch (err) {
-    fnAlertMsg(err.response.data.message, () => {
+    fnAlertMsg(resolveApiErrorMessage(err, "처리 중 오류가 발생했습니다."), () => {
       cmpnyCd.value = "";
       cmpnyCdFcs.value.focus();
     });
@@ -567,10 +568,9 @@ const fnSmsAuthReq = async () => {
       }, 1000);
     }
   } catch (err) {
-    // const alertMsg = "인증번호 발송에 실패했습니다.\n관리자에게 문의해주세요.";
     if (err.response?.data?.message) {
       mblNo.value = "";
-      fnAlertMsg(err.response.data.message);
+      fnAlertMsg(resolveApiErrorMessage(err, "처리 중 오류가 발생했습니다."));
     }
   }
 };
@@ -610,7 +610,7 @@ const fnSmsAuthChk = async () => {
       });
     }
   } catch (err) {
-    fnAlertMsg(err.response.data.message, () => {
+    fnAlertMsg(resolveApiErrorMessage(err, "처리 중 오류가 발생했습니다."), () => {
       smsAuthReqBtnFcs.value.focus();
     });
   }

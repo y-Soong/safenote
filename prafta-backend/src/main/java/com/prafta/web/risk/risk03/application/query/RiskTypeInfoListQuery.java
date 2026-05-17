@@ -10,7 +10,7 @@ public record RiskTypeInfoListQuery(
 	public static RiskTypeInfoListQuery from(RiskTypeInfoListParam param) {
 
         if (param == null)
-        	throw ApiException.appendf(CommonErrorCode.COMMON_400_001,"\n필수값 누락 - RiskTypeInfoListParam");
+        	throw new ApiException(CommonErrorCode.COMMON_400_001);
 
         return new RiskTypeInfoListQuery(param.gvCmpnyCd());
     }

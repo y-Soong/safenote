@@ -18,7 +18,7 @@ public record ShiftSchInfoParam(
 	    public static ShiftSchInfoParam from(ShiftSchInfoRequest request, TokenInfo tokenInfo) {
 
 	        if (request == null)
-	            throw ApiException.appendf(CommonErrorCode.COMMON_400_001, "\n« ºˆ∞™ ¥©∂Ù - ShiftSchInfoRequest");
+	            throw new ApiException(CommonErrorCode.COMMON_400_001);
 
 	        return new ShiftSchInfoParam(
 	            ShiftTypeParam.from(request.getShiftType())
@@ -40,7 +40,7 @@ public record ShiftSchInfoParam(
 	    ) {
 	        public static ShiftTypeParam from(ShiftSchInfoRequest.ShiftType shiftType) {
 	            if (shiftType == null)
-	                throw ApiException.appendf(CommonErrorCode.COMMON_400_001, "\n« ºˆ∞™ ¥©∂Ù - ShiftType");
+	                throw new ApiException(CommonErrorCode.COMMON_400_001);
 
 	            return new ShiftTypeParam(
 	                shiftType.getShiftNo()
@@ -60,7 +60,7 @@ public record ShiftSchInfoParam(
 	    ) {
 	        public static ShiftPatternParam from(ShiftSchInfoRequest.ShiftPattern pattern) {
 	            if (pattern == null)
-	                throw ApiException.appendf(CommonErrorCode.COMMON_400_001, "\n« ºˆ∞™ ¥©∂Ù - ShiftPattern");
+	                throw new ApiException(CommonErrorCode.COMMON_400_001);
 
 	            return new ShiftPatternParam(
 	                pattern.getSiteCd()
@@ -70,7 +70,7 @@ public record ShiftSchInfoParam(
 	        }
 
 	        public static List<ShiftPatternParam> fromList(List<ShiftSchInfoRequest.ShiftPattern> list) {
-	            if (list == null) return null; // ¡§√•ø° µ˚∂Û ∫Û ∏ÆΩ∫∆Æ∑Œ πŸ≤„µµ µ 
+	            if (list == null) return null; // Ï†ïÏ±ÖÏóê Îî∞Îùº Îπà Î¶¨Ïä§Ìä∏Î°ú Î∞îÍøîÎèÑ Îê®
 	            return list.stream().map(ShiftPatternParam::from).toList();
 	        }
 	    }
@@ -82,7 +82,7 @@ public record ShiftSchInfoParam(
 	    ) {
 	        public static ShiftTeamParam from(ShiftSchInfoRequest.ShiftTeam team) {
 	            if (team == null)
-	                throw ApiException.appendf(CommonErrorCode.COMMON_400_001, "\n« ºˆ∞™ ¥©∂Ù - ShiftTeam");
+	                throw new ApiException(CommonErrorCode.COMMON_400_001);
 
 	            return new ShiftTeamParam(
 	                team.getSiteCd()
@@ -106,7 +106,7 @@ public record ShiftSchInfoParam(
 	    ) {
 	        public static ShiftAssignParam from(ShiftSchInfoRequest.ShiftAssign assign) {
 	            if (assign == null)
-	                throw ApiException.appendf(CommonErrorCode.COMMON_400_001, "\n« ºˆ∞™ ¥©∂Ù - ShiftAssign");
+	                throw new ApiException(CommonErrorCode.COMMON_400_001);
 
 	            return new ShiftAssignParam(
 	                assign.getSiteCd()

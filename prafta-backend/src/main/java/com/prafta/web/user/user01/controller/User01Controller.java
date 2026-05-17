@@ -12,9 +12,9 @@ import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
-import com.prafta.common.annotation.NoAuth;
 import com.prafta.common.security.JwtUtil;
 import com.prafta.web.user.user01.application.param.MyPasswdParam;
+import com.prafta.web.user.user01.application.param.MyProfileParam;
 import com.prafta.web.user.user01.application.param.ScheduleWithdrawalParam;
 import com.prafta.web.user.user01.application.param.SiteNodeAdminCandidateListParam;
 import com.prafta.web.user.user01.application.param.UserInfoListParam;
@@ -29,8 +29,8 @@ import com.prafta.web.user.user01.dto.request.SiteNodeAdminCandidateListRequest;
 import com.prafta.web.user.user01.dto.request.UserInfoListRequest;
 import com.prafta.web.user.user01.dto.request.UserInfoRequest;
 import com.prafta.web.user.user01.dto.request.UserPasswdRequest;
-import com.prafta.web.user.user01.dto.request.WithdrawMyAccountRequest;
 import com.prafta.web.user.user01.dto.request.WithdrawalCancelRequest;
+import com.prafta.web.user.user01.dto.response.MyProfileResponse;
 import com.prafta.web.user.user01.dto.response.SiteNodeAdminCandidateListResponse;
 import com.prafta.web.user.user01.dto.response.UserInfoListResponse;
 import com.prafta.web.user.user01.service.User01BatchService;
@@ -41,7 +41,6 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 
 @Slf4j
-@NoAuth
 @RestController
 @RequestMapping("/user01")
 @RequiredArgsConstructor
@@ -60,17 +59,17 @@ public class User01Controller {
     }
     
     @PostMapping("/update-user-passwd")
-    public ResponseEntity<?> updateUserPw(@RequestBody UserPasswdRequest request) {
+    public ResponseEntity<?> updateUserPw(@RequestBody UserPasswdRequest request, @RequestHeader(value = "Authorization", required = true) String authorization) {
 
-    	user01Service.updateUserPw(UserPasswdParam.from(request));
+    	user01Service.updateUserPw(UserPasswdParam.from(request, jwtUtil.getAllClaimsAsMap(authorization)));
 
     	return ResponseEntity.status(HttpStatus.OK).build();
     }
 
     @PostMapping("/update-my-passwd")
-    public ResponseEntity<?> updateMyPw(@RequestBody MyPasswdRequest request) {
+    public ResponseEntity<?> updateMyPw(@RequestBody MyPasswdRequest request, @RequestHeader(value = "Authorization", required = true) String authorization) {
 
-    	user01Service.updateMyPw(MyPasswdParam.from(request));
+    	user01Service.updateMyPw(MyPasswdParam.from(request, jwtUtil.getAllClaimsAsMap(authorization)));
 
     	return ResponseEntity.status(HttpStatus.OK).build();
     }
@@ -84,9 +83,10 @@ public class User01Controller {
     }
     
     @PostMapping("/withdraw-my-account")
-    public ResponseEntity<?> withdrawMyAccount(@RequestBody WithdrawMyAccountRequest request) {
+    public ResponseEntity<?> withdrawMyAccount(@RequestHeader(value = "Authorization", required = true) String authorization) {
 
-    	user01Service.withdrawMyAccount(WithdrawMyAccountParam.from(request));
+        // 탈퇴 대상은 토큰으로만 결정한다 (IDOR 방지). request body의 식별자는 사용하지 않는다.
+    	user01Service.withdrawMyAccount(WithdrawMyAccountParam.from(jwtUtil.getAllClaimsAsMap(authorization)));
 
     	return ResponseEntity.status(HttpStatus.OK).build();
     }
@@ -108,6 +108,15 @@ public class User01Controller {
     }
     
     
+
+    @GetMapping("/my-profile")
+    public ResponseEntity<?> getMyProfile(@RequestHeader("Authorization") String authorization) {
+
+        // 조회 대상은 토큰에서만 결정한다 (IDOR 방지). 토큰 미존재/무효 시 param.from()에서 거부.
+        MyProfileResponse response = user01Service.selectMyProfile(MyProfileParam.from(jwtUtil.getAllClaimsAsMap(authorization)));
+
+        return ResponseEntity.status(HttpStatus.OK).body(response);
+    }
 
     @GetMapping("/site-node-admin-candidate-lists")
     public ResponseEntity<?> getSiteNodeAdminCandidateLists(@ModelAttribute SiteNodeAdminCandidateListRequest request, @RequestHeader(value = "Authorization", required = false) String authorization) {

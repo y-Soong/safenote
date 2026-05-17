@@ -19,9 +19,9 @@ public record UserInfoListParam(
 	public static UserInfoListParam from(UserInfoListRequest request, TokenInfo tokenInfo) {
 
 		if (request == null)
-			throw ApiException.appendf(CommonErrorCode.COMMON_400_001, "\nRequired param missing - UserInfoListRequest");
+			throw new ApiException(CommonErrorCode.COMMON_400_001);
 		if (tokenInfo == null)
-			throw ApiException.appendf(CommonErrorCode.COMMON_400_003, "\nRequired param missing - TokenInfo");
+			throw new ApiException(CommonErrorCode.COMMON_400_003);
 
 		return new UserInfoListParam(
 			request.getUserId()

@@ -5,16 +5,16 @@ import com.prafta.common.exception.ApiException;
 import com.prafta.web.chkLst.chkLst03.application.param.InspectResultDetailParam;
 
 public record InspectItemSubjQuery(
-	String workMonth		// Á¶È¸ ±âÁØ ¿ù
-	, String siteCd			// »ç¾÷ÀåÄÚµå
-	, String chkLstType		// Ã¼Å©¸®½ºÆ® Å¸ÀÔ
-	, String chkptCd		// Á¡°ËÇ×¸ñÄÚµå
+	String workMonth		// ì¡°íšŒ ê¸°ì¤€ ì›”
+	, String siteCd			// ì‚¬ì—…ì¥ì½”ë“œ
+	, String chkLstType		// ì²´í¬ë¦¬ìŠ¤íŠ¸ íƒ€ì…
+	, String chkptCd		// ì ê²€í•­ëª©ì½”ë“œ
 	, String gvCmpnyCd
 ) {
 	public static InspectItemSubjQuery from(InspectResultDetailParam param) {
 
         if (param == null)
-        	throw ApiException.appendf(CommonErrorCode.COMMON_400_001,"\nÇÊ¼ö°ª ´©¶ô - InspectResultDetailParam");
+        	throw new ApiException(CommonErrorCode.COMMON_400_001);
 
         return new InspectItemSubjQuery(
     		param.workMonth()

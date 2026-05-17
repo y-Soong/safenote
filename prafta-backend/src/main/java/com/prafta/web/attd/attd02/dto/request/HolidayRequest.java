@@ -13,34 +13,34 @@ import lombok.Setter;
 @NoArgsConstructor
 public class HolidayRequest {
 
-    @FieldLabel("»ç¾÷ÀåÄÚµå")
+    @FieldLabel("ì‚¬ì—…ì¥ì½”ë“œ")
     @Size(max = 50)
     private String siteCd;
 
-    @FieldLabel("ÈŞÀÏ±ÔÄ¢ID")
+    @FieldLabel("íœ´ì¼ê·œì¹™ID")
     @NotBlank
     @Size(max = 10)
     private String holidayId;
 
-    @FieldLabel("ÈŞÀÏ±ÔÄ¢¸í")
+    @FieldLabel("íœ´ì¼ê·œì¹™ëª…")
     @NotBlank
     @Size(max = 200)
     private String holidayNm;
 
-    @FieldLabel("ÈŞÀÏÀÏÀÚ")
+    @FieldLabel("íœ´ì¼ì¼ì")
     @NotBlank
     @Size(max = 8)
     private String holidayYmd;
 
-    @FieldLabel("ÈŞÀÏÅ¸ÀÔ")
+    @FieldLabel("íœ´ì¼íƒ€ì…")
     @NotBlank
     @Size(max = 2)
     private String holidayType;
 
-    @FieldLabel("¸Å³â¹İº¹¿©ºÎ")
+    @FieldLabel("ë§¤ë…„ë°˜ë³µì—¬ë¶€")
     private boolean repeatYearly;
 
-    @FieldLabel("»ç¿ë¿©ºÎ")
+    @FieldLabel("ì‚¬ìš©ì—¬ë¶€")
     @NotBlank
     @Size(max = 1)
     private String useYn;

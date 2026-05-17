@@ -51,28 +51,28 @@
 	</section>
 	<section name="java.lang.Class">
 		<item key="replaceBarOpen" value="true"/>
-		<item key="selection" value="selectDailyUserSlotCnt"/>
+		<item key="selection" value="com.prafta.common.exception"/>
 		<item key="wrap" value="true"/>
 		<item key="casesensitive" value="false"/>
 		<item key="wholeword" value="false"/>
 		<item key="incremental" value="false"/>
 		<item key="isRegEx" value="false"/>
 		<list key="findhistory">
+			<item value="ATTD_400_011"/>
+			<item value="toMinuteStamp"/>
+			<item value="selectSchNoCount"/>
+			<item value="update-sch-infos"/>
+			<item value="FNC_STD_TIME"/>
+			<item value="com.prafta.common.exception"/>
+			<item value="ATTD_400_014"/>
+			<item value="no completed work record found for the day"/>
+			<item value="ATTD_403_003"/>
+			<item value="Self overtime registration is not allowed."/>
+			<item value="insertUserOvertime"/>
+			<item value="update-user-attd-infos"/>
 			<item value="selectDailyAttdDetailHistory"/>
 			<item value="selectMonthlyAttdReqIdList"/>
 			<item value="dailyAttdDetailHistoryResultList"/>
-			<item value="MonthlyAttdReqResult"/>
-			<item value="selectDailyAttdDetails"/>
-			<item value="MonthlyAttdReqIdListResult"/>
-			<item value="updateUserAttdInfos"/>
-			<item value="proccess"/>
-			<item value="selectMonthlyAttdList"/>
-			<item value="insertDailyAttdDetailDeleteHist"/>
-			<item value="insertUserAttdInfos"/>
-			<item value="nodeCd"/>
-			<item value="AttdRecordCommand"/>
-			<item value="private String "/>
-			<item value="subDeptYn"/>
 		</list>
 		<list key="replacehistory">
 			<item value=", "/>

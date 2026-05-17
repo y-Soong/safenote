@@ -618,6 +618,7 @@ import ViewHeader from "@/components/common/ViewHeader.vue";
 import { useModal } from "@/utils/useModal";
 import axios from "@/api/axios";
 import { getMessage, MSG } from "@/messages";
+import { resolveApiErrorMessage } from "@/utils/apiError";
 import search_icon from "@/assets/img/search_icon.png";
 import SiteSearchPop from "@/components/popup/SiteSearchPop.vue";
 import SiteNodeSearchPop from "@/components/popup/SiteNodeSearchPop.vue";
@@ -709,9 +710,7 @@ const fnSrchSiteInfo = async () => {
     });
     if (response.status === 200) fnCallback(response);
   } catch (err) {
-    await proxy.$alert(
-      err?.response?.data?.message || err?.message || "조회 오류"
-    );
+    await proxy.$alert(resolveApiErrorMessage(err, "조회 오류"));
   }
 };
 
@@ -764,9 +763,7 @@ const fnSrchNodeInfo = async () => {
       fnCallback({ ...response, config: { url: "/dummy/site-node-lists" } });
     }
   } catch (err) {
-    await proxy.$alert(
-      err?.response?.data?.message || err?.message || "조회 오류"
-    );
+    await proxy.$alert(resolveApiErrorMessage(err, "조회 오류"));
   }
 };
 
@@ -1173,9 +1170,7 @@ const fnSearch = async () => {
     showCrewWrap.value = true;
   } catch (err) {
     await proxy.$alert(
-      err?.response?.data?.message ||
-        err?.message ||
-        "조회 중 오류가 발생했습니다."
+      resolveApiErrorMessage(err, "조회 중 오류가 발생했습니다.")
     );
   }
 };
@@ -1248,7 +1243,7 @@ const fnSave = async () => {
     emit("save-complete");
   } catch (err) {
     await proxy.$alert(
-      err?.response?.data?.message || "저장 중 오류가 발생했습니다."
+      resolveApiErrorMessage(err, "저장 중 오류가 발생했습니다.")
     );
   }
 };

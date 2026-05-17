@@ -12,7 +12,7 @@ public record SchListQuery (
 	public static SchListQuery from(SchTypeListParam param) {
 
         if (param == null)
-        	throw ApiException.appendf(CommonErrorCode.COMMON_400_001,"\n필수값 누락 - SchListParam");
+        	throw new ApiException(CommonErrorCode.COMMON_400_001);
 
         return new SchListQuery(
     		param.siteCd()

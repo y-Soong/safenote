@@ -13,7 +13,7 @@ public record UserListsQuery(
     public static UserListsQuery from(UserListsParam param) {
 
         if (param == null)
-            throw ApiException.appendf(CommonErrorCode.COMMON_400_001, "\nRequired param missing - UserListsParam");
+            throw new ApiException(CommonErrorCode.COMMON_400_001);
 
         return new UserListsQuery(
             param.siteCd()

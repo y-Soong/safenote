@@ -18,7 +18,7 @@ public class PasswordHasher {
     private static final String HMAC_ALGORITHM = "HmacSHA256";
 
     private final PasswordEncoder encoder;
-    private final byte[] pepperBytes; // HMAC Å°·Î »ç¿ë
+    private final byte[] pepperBytes; // HMAC í‚¤ë¡œ ì‚¬ìš©
     private final boolean pepperEnabled;
     private final int randomPasswordByteLength;
 
@@ -33,7 +33,7 @@ public class PasswordHasher {
         this.randomPasswordByteLength = randomPasswordByteLength;
     }
 
-    /* ===== ÇØ½Ã ===== */
+    /* ===== í•´ì‹œ ===== */
     public String hash(String plainPassword) {
         validate(plainPassword);
         return encoder.encode(applyPepper(plainPassword));
@@ -44,7 +44,7 @@ public class PasswordHasher {
         return encoder.matches(applyPepper(plainPassword), storedHash);
     }
 
-    /* ===== ³­¼ö ºñ¹Ğ¹øÈ£ »ı¼º ===== */
+    /* ===== ë‚œìˆ˜ ë¹„ë°€ë²ˆí˜¸ ìƒì„± ===== */
     public String generateRandomHash() {
         String rawPassword = generateRandomPassword();
         return encoder.encode(applyPepper(rawPassword));
@@ -59,8 +59,8 @@ public class PasswordHasher {
     /* ===== private ===== */
 
     /**
-     * Pepper Àû¿ë: HMAC-SHA256(key=pepper, msg=password)
-     * °á°ú´Â Ç×»ó 32¹ÙÀÌÆ® ¡æ Base64 ÀÎÄÚµù ½Ã 44ÀÚ ¡æ BCrypt 72¹ÙÀÌÆ® ÇÑ°è ³»
+     * Pepper ì ìš©: HMAC-SHA256(key=pepper, msg=password)
+     * ê²°ê³¼ëŠ” í•­ìƒ 32ë°”ì´íŠ¸ â†’ Base64 ì¸ì½”ë”© ì‹œ 44ì â†’ BCrypt 72ë°”ì´íŠ¸ í•œê³„ ë‚´
      */
     private String applyPepper(String pw) {
         if (!pepperEnabled) return pw;

@@ -254,6 +254,7 @@ import { useModal } from "@/utils/useModal";
 import axios from "@/api/axios";
 import ViewHeader from "@/components/common/ViewHeader.vue";
 import { getMessage, MSG } from "@/messages";
+import { resolveApiErrorMessage } from "@/utils/apiError";
 import search_icon from "@/assets/img/search_icon.png";
 import SiteSearchPop from "@/components/popup/SiteSearchPop.vue";
 import SchInfoPop from "./popup/SchInfoPop.vue";
@@ -331,10 +332,7 @@ const fnGetSystinfoList = async () => {
       schType.value = systCodeArr.value.SYS019[0].systValDCd;
     }
   } catch (err) {
-    const msg =
-      err?.response?.data?.message ||
-      err?.message ||
-      "조회 중 오류가 발생했습니다.";
+    const msg = resolveApiErrorMessage(err, "조회 중 오류가 발생했습니다.");
     await proxy.$alert(msg);
   }
 };
@@ -358,10 +356,7 @@ const fnSearch = async () => {
       schList.value = response.data.schInfoResultList;
     }
   } catch (err) {
-    const msg =
-      err?.response?.data?.message ||
-      err?.message ||
-      "조회 중 오류가 발생했습니다.";
+    const msg = resolveApiErrorMessage(err, "조회 중 오류가 발생했습니다.");
     await proxy.$alert(msg);
   }
 };
@@ -380,10 +375,7 @@ const fnSave = async () => {
     proxy.$alert(getMessage(MSG.SAVE_SUCCESS));
     fnSearch();
   } catch (err) {
-    const msg =
-      err?.response?.data?.message ||
-      err?.message ||
-      "저장 중 오류가 발생했습니다.";
+    const msg = resolveApiErrorMessage(err, "저장 중 오류가 발생했습니다.");
     await proxy.$alert(msg);
   }
 };
@@ -403,10 +395,7 @@ const fnDelete = async () => {
     proxy.$alert(getMessage(MSG.SAVE_SUCCESS));
     fnSearch();
   } catch (err) {
-    const msg =
-      err?.response?.data?.message ||
-      err?.message ||
-      "삭제 중 오류가 발생했습니다.";
+    const msg = resolveApiErrorMessage(err, "삭제 중 오류가 발생했습니다.");
     await proxy.$alert(msg);
   }
 };
@@ -422,7 +411,7 @@ const fnSrchSiteInfo = async () => {
     });
     if (response.status === 200) fnCallback(response);
   } catch (err) {
-    alert(err.response?.data?.message);
+    await proxy.$alert(resolveApiErrorMessage(err, "조회 중 오류가 발생했습니다."));
   }
 };
 

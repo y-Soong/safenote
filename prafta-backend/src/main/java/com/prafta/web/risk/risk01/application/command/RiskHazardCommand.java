@@ -17,7 +17,7 @@ public record RiskHazardCommand(
     public static RiskHazardCommand from(RiskHazardModel model) {
 
         if(model == null)
-        	throw ApiException.appendf(CommonErrorCode.COMMON_400_001,"\n필수값 누락 - RiskHazardModel");
+        	throw new ApiException(CommonErrorCode.COMMON_400_001);
 
         return new RiskHazardCommand(
         	model.cmpnyCd()

@@ -18,11 +18,11 @@ public record HolidayCommand(
 	public static HolidayCommand from(HolidayParam param, String holidayId, String holidayType) {
 		
 		if (param == null)
-            throw ApiException.appendf(CommonErrorCode.COMMON_400_001, "\n필수값 누락 - HolidayParam");
+            throw new ApiException(CommonErrorCode.COMMON_400_001);
 		if (holidayId == null)
-            throw ApiException.appendf(CommonErrorCode.COMMON_400_001, "\n필수값 누락 - holidayId");
+            throw new ApiException(CommonErrorCode.COMMON_400_001);
 		if (holidayType == null)
-            throw ApiException.appendf(CommonErrorCode.COMMON_400_001, "\n필수값 누락 - holidayType");
+            throw new ApiException(CommonErrorCode.COMMON_400_001);
 		
 		return new HolidayCommand(
 			param.siteCd()

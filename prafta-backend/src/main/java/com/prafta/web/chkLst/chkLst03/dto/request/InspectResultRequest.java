@@ -8,11 +8,11 @@ import lombok.Setter;
 @Setter
 @NoArgsConstructor
 public class InspectResultRequest{
-	private String cmpnyCd;					// È¸»çÄÚµå
-	private String userId;					// »ç¿ëÀÚÄÚµå
-	private String fromDate;				// Á¡°ËÁ¶È¸ ½ÃÀÛ ¿ù
-	private String toDate;					// Á¡°ËÁ¶È¸ Á¾·á ¿ù
-	private String siteCd;					// »ç¾÷ÀåÄÚµå
-	private String chkptNm;					// Á¡°Ë´ë»ó¸íÄª
-	private String chkLstType;				// ÀÏÀÏÁ¡°Ë±¸ºĞ
+	private String cmpnyCd;					// íšŒì‚¬ì½”ë“œ
+	private String userId;					// ì‚¬ìš©ìì½”ë“œ
+	private String fromDate;				// ì ê²€ì¡°íšŒ ì‹œì‘ ì›”
+	private String toDate;					// ì ê²€ì¡°íšŒ ì¢…ë£Œ ì›”
+	private String siteCd;					// ì‚¬ì—…ì¥ì½”ë“œ
+	private String chkptNm;					// ì ê²€ëŒ€ìƒëª…ì¹­
+	private String chkLstType;				// ì¼ì¼ì ê²€êµ¬ë¶„
 }

@@ -86,7 +86,7 @@ public class Baim06ServiceImpl implements Baim06Service{
 		
 		baim06Mapper.deleteSiteAllNode(SiteNodeCommand.from(param));
 		
-		// »ç¾÷Àå¿¡ ¼ÓÇÑ ¸ðµç »ç¿ëÀÚÀÇ ¼Ò¼Ó ÀÏ°ý ÃÊ±âÈ­
+		// ì‚¬ì—…ìž¥ì— ì†í•œ ëª¨ë“  ì‚¬ìš©ìžì˜ ì†Œì† ì¼ê´„ ì´ˆê¸°í™”
 		baim06Mapper.deleteSiteNodeInUser(SiteNodeCommand.from(param));
 	}
 	
@@ -95,7 +95,7 @@ public class Baim06ServiceImpl implements Baim06Service{
 
 		baim06Mapper.deleteSiteAllNode(SiteNodeCommand.from(param));
 		
-		// »ç¾÷Àå¿¡ ¼ÓÇÑ ¸ðµç »ç¿ëÀÚÀÇ ¼Ò¼Ó ÀÏ°ý ÃÊ±âÈ­
+		// ì‚¬ì—…ìž¥ì— ì†í•œ ëª¨ë“  ì‚¬ìš©ìžì˜ ì†Œì† ì¼ê´„ ì´ˆê¸°í™”
 		baim06Mapper.deleteSiteNodeInUser(SiteNodeCommand.from(param));
 		
 		baim06Mapper.copySiteNode(CopySiteNodeCommand.from(param));
@@ -107,7 +107,7 @@ public class Baim06ServiceImpl implements Baim06Service{
 		
 		int siteNodeInAdminCnt = baim06Mapper.selectSiteNodeInAdmin(SiteNodeAdminQuery.from(param));
 		
-		/* ºÎ¼­ °ü¸®ÀÚ·Î ÁöÁ¤ÇÑ »ç¿ëÀÚÀÇ ±âÁ¸ ºÎ¼­¿¡ ³²Àº °ü¸®ÀÚ°¡ ÀÖ´ÂÁö Ã¼Å© */
+		/* ë¶€ì„œ ê´€ë¦¬ìžë¡œ ì§€ì •í•œ ì‚¬ìš©ìžì˜ ê¸°ì¡´ ë¶€ì„œì— ë‚¨ì€ ê´€ë¦¬ìžê°€ ìžˆëŠ”ì§€ ì²´í¬ */
 		if(siteNodeInAdminCnt == 0) {
 			
 			UserNodeInfo siteNodeAdmin = baim06Mapper.selectUserNodeInfo(UserNodeInfoQuery.from(param));
@@ -119,13 +119,13 @@ public class Baim06ServiceImpl implements Baim06Service{
 
 					int siteNodeInUserCnt = baim06Mapper.selectSiteNodeInUser(SiteNodeUserQuery.from(param, nodeCd));
 					
-					/* ºÎ¼­ °ü¸®ÀÚ·Î ÁöÁ¤ÇÑ »ç¿ëÀÚÀÇ ±âÁ¸ ºÎ¼­¿¡ ³²Àº ±Ù·ÎÀÚ°¡ ÀÖ´ÂÁö Ã¼Å© */
+					/* ë¶€ì„œ ê´€ë¦¬ìžë¡œ ì§€ì •í•œ ì‚¬ìš©ìžì˜ ê¸°ì¡´ ë¶€ì„œì— ë‚¨ì€ ê·¼ë¡œìžê°€ ìžˆëŠ”ì§€ ì²´í¬ */
 					if(siteNodeInUserCnt > 0) {
-						throw new ApiException(CommonErrorCode.COMMON_400_001, "[" + param.userNm() + "] ´ÔÀÇ ±âÁ¸ ºÎ¼­¿¡ ¼Ò¼Ó ±Ù·ÎÀÚ°¡ ÀÖ¾î\n´ã´ç Á¤/ºÎ¸¦ ºñ¿ï ¼ö ¾ø½À´Ï´Ù.\n´ã´ç Á¤/ºÎ¸¦ Ãß°¡ÇÏ°Å³ª ¼Ò¼Ó ±Ù·ÎÀÚ¸¦ ¸ðµÎ\nÀÌµ¿½ÃÅ² ÈÄ ´Ù½Ã ½ÃµµÇØÁÖ¼¼¿ä.");
+						throw new ApiException(CommonErrorCode.COMMON_400_001, "[" + param.userNm() + "] ë‹˜ì˜ ê¸°ì¡´ ë¶€ì„œì— ì†Œì† ê·¼ë¡œìžê°€ ìžˆì–´\në‹´ë‹¹ ì •/ë¶€ë¥¼ ë¹„ìš¸ ìˆ˜ ì—†ìŠµë‹ˆë‹¤.\në‹´ë‹¹ ì •/ë¶€ë¥¼ ì¶”ê°€í•˜ê±°ë‚˜ ì†Œì† ê·¼ë¡œìžë¥¼ ëª¨ë‘\nì´ë™ì‹œí‚¨ í›„ ë‹¤ì‹œ ì‹œë„í•´ì£¼ì„¸ìš”.");
 					}
 				}
 			} else {
-				throw new ApiException(CommonErrorCode.COMMON_500_001, "[" + param.userNm() + "] ´ÔÀÇ ±âÁ¸ ºÎ¼­Á¤º¸¸¦ Ã£Áö ¸øÇß½À´Ï´Ù.\n°ü¸®ÀÚ¿¡°Ô ¹®ÀÇÇØÁÖ¼¼¿ä.");
+				throw new ApiException(CommonErrorCode.COMMON_500_001, "[" + param.userNm() + "] ë‹˜ì˜ ê¸°ì¡´ ë¶€ì„œì •ë³´ë¥¼ ì°¾ì§€ ëª»í–ˆìŠµë‹ˆë‹¤.\nê´€ë¦¬ìžì—ê²Œ ë¬¸ì˜í•´ì£¼ì„¸ìš”.");
 			}
 		}
 		
@@ -142,7 +142,7 @@ public class Baim06ServiceImpl implements Baim06Service{
 		
 		int siteNodeInAdminCnt = baim06Mapper.selectSiteNodeInAdmin(SiteNodeAdminQuery.from(param));
 		
-		/* ºÎ¼­ °ü¸®ÀÚ·Î ÁöÁ¤ÇÑ »ç¿ëÀÚÀÇ ±âÁ¸ ºÎ¼­¿¡ ³²Àº °ü¸®ÀÚ°¡ ÀÖ´ÂÁö Ã¼Å© */
+		/* ë¶€ì„œ ê´€ë¦¬ìžë¡œ ì§€ì •í•œ ì‚¬ìš©ìžì˜ ê¸°ì¡´ ë¶€ì„œì— ë‚¨ì€ ê´€ë¦¬ìžê°€ ìžˆëŠ”ì§€ ì²´í¬ */
 		if(siteNodeInAdminCnt == 0) {
 					
 			UserNodeInfo siteNodeAdmin = baim06Mapper.selectUserNodeInfo(UserNodeInfoQuery.from(param));
@@ -154,13 +154,13 @@ public class Baim06ServiceImpl implements Baim06Service{
 					
 					int siteNodeInUserCnt = baim06Mapper.selectSiteNodeInUser(SiteNodeUserQuery.from(param, nodeCd));
 					
-					/* ºÎ¼­ °ü¸®ÀÚ·Î ÁöÁ¤ÇÑ »ç¿ëÀÚÀÇ ±âÁ¸ ºÎ¼­¿¡ ³²Àº ±Ù·ÎÀÚ°¡ ÀÖ´ÂÁö Ã¼Å© */
+					/* ë¶€ì„œ ê´€ë¦¬ìžë¡œ ì§€ì •í•œ ì‚¬ìš©ìžì˜ ê¸°ì¡´ ë¶€ì„œì— ë‚¨ì€ ê·¼ë¡œìžê°€ ìžˆëŠ”ì§€ ì²´í¬ */
 					if(siteNodeInUserCnt > 0) {
-						throw new ApiException(CommonErrorCode.COMMON_400_001, "[" + param.userNm() + "] ´ÔÀÇ ±âÁ¸ ºÎ¼­¿¡ ¼Ò¼Ó ±Ù·ÎÀÚ°¡ ÀÖ¾î\n´ã´ç Á¤/ºÎ¸¦ ºñ¿ï ¼ö ¾ø½À´Ï´Ù.\n´ã´ç Á¤/ºÎ¸¦ Ãß°¡ÇÏ°Å³ª ¼Ò¼Ó ±Ù·ÎÀÚ¸¦ ¸ðµÎ\nÀÌµ¿½ÃÅ² ÈÄ ´Ù½Ã ½ÃµµÇØÁÖ¼¼¿ä.");
+						throw new ApiException(CommonErrorCode.COMMON_400_001, "[" + param.userNm() + "] ë‹˜ì˜ ê¸°ì¡´ ë¶€ì„œì— ì†Œì† ê·¼ë¡œìžê°€ ìžˆì–´\në‹´ë‹¹ ì •/ë¶€ë¥¼ ë¹„ìš¸ ìˆ˜ ì—†ìŠµë‹ˆë‹¤.\në‹´ë‹¹ ì •/ë¶€ë¥¼ ì¶”ê°€í•˜ê±°ë‚˜ ì†Œì† ê·¼ë¡œìžë¥¼ ëª¨ë‘\nì´ë™ì‹œí‚¨ í›„ ë‹¤ì‹œ ì‹œë„í•´ì£¼ì„¸ìš”.");
 					}
 				}
 			} else {
-				throw new ApiException(CommonErrorCode.COMMON_500_001, "[" + param.userNm() + "] ´ÔÀÇ ±âÁ¸ ºÎ¼­Á¤º¸¸¦ Ã£Áö ¸øÇß½À´Ï´Ù.\n°ü¸®ÀÚ¿¡°Ô ¹®ÀÇÇØÁÖ¼¼¿ä.");
+				throw new ApiException(CommonErrorCode.COMMON_500_001, "[" + param.userNm() + "] ë‹˜ì˜ ê¸°ì¡´ ë¶€ì„œì •ë³´ë¥¼ ì°¾ì§€ ëª»í–ˆìŠµë‹ˆë‹¤.\nê´€ë¦¬ìžì—ê²Œ ë¬¸ì˜í•´ì£¼ì„¸ìš”.");
 			}
 		}
 		
@@ -177,7 +177,7 @@ public class Baim06ServiceImpl implements Baim06Service{
 		
 		int siteNodeInAdminCnt = baim06Mapper.selectSiteNodeInAdmin(SiteNodeAdminQuery.from(param));
 		
-		/* ºÎ¼­ °ü¸®ÀÚ·Î ÁöÁ¤ÇÑ »ç¿ëÀÚÀÇ ±âÁ¸ ºÎ¼­¿¡ ³²Àº °ü¸®ÀÚ°¡ ÀÖ´ÂÁö Ã¼Å© */
+		/* ë¶€ì„œ ê´€ë¦¬ìžë¡œ ì§€ì •í•œ ì‚¬ìš©ìžì˜ ê¸°ì¡´ ë¶€ì„œì— ë‚¨ì€ ê´€ë¦¬ìžê°€ ìžˆëŠ”ì§€ ì²´í¬ */
 		if(siteNodeInAdminCnt == 0) {
 			
 			UserNodeInfo siteNodeAdmin = baim06Mapper.selectUserNodeInfo(UserNodeInfoQuery.from(param));
@@ -189,13 +189,13 @@ public class Baim06ServiceImpl implements Baim06Service{
 				
 					int siteNodeInUserCnt = baim06Mapper.selectSiteNodeInUser(SiteNodeUserQuery.from(param, nodeCd));
 					
-					/* ºÎ¼­ °ü¸®ÀÚ·Î ÁöÁ¤ÇÑ »ç¿ëÀÚÀÇ ±âÁ¸ ºÎ¼­¿¡ ³²Àº ±Ù·ÎÀÚ°¡ ÀÖ´ÂÁö Ã¼Å© */
+					/* ë¶€ì„œ ê´€ë¦¬ìžë¡œ ì§€ì •í•œ ì‚¬ìš©ìžì˜ ê¸°ì¡´ ë¶€ì„œì— ë‚¨ì€ ê·¼ë¡œìžê°€ ìžˆëŠ”ì§€ ì²´í¬ */
 					if(siteNodeInUserCnt > 0) {
-						throw new ApiException(CommonErrorCode.COMMON_400_001, "[" + param.userNm() + "] ´ÔÀÇ ±âÁ¸ ºÎ¼­¿¡ ¼Ò¼Ó ±Ù·ÎÀÚ°¡ ÀÖ¾î\n´ã´ç Á¤/ºÎ¸¦ ºñ¿ï ¼ö ¾ø½À´Ï´Ù.\n´ã´ç Á¤/ºÎ¸¦ Ãß°¡ÇÏ°Å³ª ¼Ò¼Ó ±Ù·ÎÀÚ¸¦ ¸ðµÎ\nÀÌµ¿½ÃÅ² ÈÄ ´Ù½Ã ½ÃµµÇØÁÖ¼¼¿ä.");
+						throw new ApiException(CommonErrorCode.COMMON_400_001, "[" + param.userNm() + "] ë‹˜ì˜ ê¸°ì¡´ ë¶€ì„œì— ì†Œì† ê·¼ë¡œìžê°€ ìžˆì–´\në‹´ë‹¹ ì •/ë¶€ë¥¼ ë¹„ìš¸ ìˆ˜ ì—†ìŠµë‹ˆë‹¤.\në‹´ë‹¹ ì •/ë¶€ë¥¼ ì¶”ê°€í•˜ê±°ë‚˜ ì†Œì† ê·¼ë¡œìžë¥¼ ëª¨ë‘\nì´ë™ì‹œí‚¨ í›„ ë‹¤ì‹œ ì‹œë„í•´ì£¼ì„¸ìš”.");
 					}
 				}
 			} else {
-				throw new ApiException(CommonErrorCode.COMMON_500_001, "[" + param.userNm() + "] ´ÔÀÇ ±âÁ¸ ºÎ¼­Á¤º¸¸¦ Ã£Áö ¸øÇß½À´Ï´Ù.\n°ü¸®ÀÚ¿¡°Ô ¹®ÀÇÇØÁÖ¼¼¿ä.");
+				throw new ApiException(CommonErrorCode.COMMON_500_001, "[" + param.userNm() + "] ë‹˜ì˜ ê¸°ì¡´ ë¶€ì„œì •ë³´ë¥¼ ì°¾ì§€ ëª»í–ˆìŠµë‹ˆë‹¤.\nê´€ë¦¬ìžì—ê²Œ ë¬¸ì˜í•´ì£¼ì„¸ìš”.");
 			}
 		}
 		

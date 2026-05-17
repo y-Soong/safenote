@@ -8,11 +8,11 @@ public record FileInfoCommand(
     String cmpnyCd
     , String userId
     , String siteCd
-    , String fileType   	// 001: ÀÏÀÏÁ¡°Ë, 002: À§Çè¼ºÆò°¡
-    , String filePath		// ÆÄÀÏ ÀúÀå °æ·Î
-    , String fileName   	// Å¬¶ó¿¡¼­ ¿Â ÆÄÀÏ¸í(¼±ÅÃ)
-    , String fileMgmtCd 	// »ı¼ºµÈ ÆÄÀÏ°ü¸®ÄÚµå
-    , String fileExt		// ÆÄÀÏÈ®ÀåÀÚ
+    , String fileType   	// 001: ì¼ì¼ì ê²€, 002: ìœ„í—˜ì„±í‰ê°€
+    , String filePath		// íŒŒì¼ ì €ì¥ ê²½ë¡œ
+    , String fileName   	// í´ë¼ì—ì„œ ì˜¨ íŒŒì¼ëª…(ì„ íƒ)
+    , String fileMgmtCd 	// ìƒì„±ëœ íŒŒì¼ê´€ë¦¬ì½”ë“œ
+    , String fileExt		// íŒŒì¼í™•ì¥ì
 ) {
 	public static FileInfoCommand from(FileInfoParam param, String filePath, String fileName, String fileExt) {
 		Objects.requireNonNull(param, "FileInfoParam is required");

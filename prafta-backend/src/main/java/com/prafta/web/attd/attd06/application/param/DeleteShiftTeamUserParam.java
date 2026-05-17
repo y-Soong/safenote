@@ -17,7 +17,7 @@ public record DeleteShiftTeamUserParam(
     public static DeleteShiftTeamUserParam from(DeleteShiftTeamUserRequest request, TokenInfo tokenInfo) {
 
         if (request == null)
-            throw ApiException.appendf(CommonErrorCode.COMMON_400_001, "\nRequired param missing - InsertShiftTeamUserRequest");
+            throw new ApiException(CommonErrorCode.COMMON_400_001);
 
         return new DeleteShiftTeamUserParam(
             request.getSiteCd()

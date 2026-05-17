@@ -14,7 +14,7 @@ public record UserListsParam(
     public static UserListsParam from(UserListsRequest request, TokenInfo tokenInfo) {
 
         if (request == null)
-            throw ApiException.appendf(CommonErrorCode.COMMON_400_001, "\nRequired param missing - UserListsRequest");
+            throw new ApiException(CommonErrorCode.COMMON_400_001);
 
         return new UserListsParam(
             request.getSiteCd()

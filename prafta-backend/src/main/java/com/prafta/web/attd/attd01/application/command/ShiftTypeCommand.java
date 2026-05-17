@@ -18,9 +18,9 @@ public record ShiftTypeCommand(
 	public static ShiftTypeCommand from(ShiftSchInfoParam param, String shiftCd) {
 		
         if (param == null)
-        	throw ApiException.appendf(CommonErrorCode.COMMON_400_001,"\n필수값 누락 - ShiftSchInfoParam");
+        	throw new ApiException(CommonErrorCode.COMMON_400_001);
         if (shiftCd == null)
-        	throw ApiException.appendf(CommonErrorCode.COMMON_400_001,"\n필수값 누락 - shiftCd");
+        	throw new ApiException(CommonErrorCode.COMMON_400_001);
 
         return new ShiftTypeCommand(
     		param.shiftType().siteCd()

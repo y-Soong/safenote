@@ -9,8 +9,8 @@ public record FileInfoParam(
 	String cmpnyCd
     , String userId
     , String siteCd
-    , String fileType   	// 001: ÀÏÀÏÁ¡°Ë, 002: À§Çè¼ºÆò°¡
-    , String fileMgmtCd 	// »ı¼ºµÈ ÆÄÀÏ°ü¸®ÄÚµå
+    , String fileType   	// 001: ì¼ì¼ì ê²€, 002: ìœ„í—˜ì„±í‰ê°€
+    , String fileMgmtCd 	// ìƒì„±ëœ íŒŒì¼ê´€ë¦¬ì½”ë“œ
     , MultipartFile file
 ) {
 	public static FileInfoParam from(
@@ -22,17 +22,17 @@ public record FileInfoParam(
 		    , MultipartFile file
     ) {
 		if (cmpnyCd == null)
-        	throw ApiException.appendf(CommonErrorCode.COMMON_400_001,"\nÇÊ¼ö°ª ´©¶ô - cmpnyCd");
+        	throw new ApiException(CommonErrorCode.COMMON_400_001);
 		if (userId == null)
-        	throw ApiException.appendf(CommonErrorCode.COMMON_400_001,"\nÇÊ¼ö°ª ´©¶ô - userId");
+        	throw new ApiException(CommonErrorCode.COMMON_400_001);
 		if (siteCd == null)
-        	throw ApiException.appendf(CommonErrorCode.COMMON_400_001,"\nÇÊ¼ö°ª ´©¶ô - siteCd");
+        	throw new ApiException(CommonErrorCode.COMMON_400_001);
 		if (fileType == null)
-        	throw ApiException.appendf(CommonErrorCode.COMMON_400_001,"\nÇÊ¼ö°ª ´©¶ô - fileType");
+        	throw new ApiException(CommonErrorCode.COMMON_400_001);
 		if (fileMgmtCd == null)
-        	throw ApiException.appendf(CommonErrorCode.COMMON_400_001,"\nÇÊ¼ö°ª ´©¶ô - fileMgmtCd");
+        	throw new ApiException(CommonErrorCode.COMMON_400_001);
 		if (file == null)
-        	throw ApiException.appendf(CommonErrorCode.COMMON_400_001,"\nÇÊ¼ö°ª ´©¶ô - file");
+        	throw new ApiException(CommonErrorCode.COMMON_400_001);
 		
 		return new FileInfoParam(
 			cmpnyCd

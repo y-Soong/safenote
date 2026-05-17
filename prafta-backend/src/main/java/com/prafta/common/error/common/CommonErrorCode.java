@@ -6,13 +6,13 @@ import com.prafta.common.error.ApiErrorCode;
 
 public enum CommonErrorCode implements ApiErrorCode {
 
-    COMMON_400_001(HttpStatus.BAD_REQUEST, "¿äÃ» ÇÊ¼ö ÆÄ¶ó¹ÌÅÍ°¡ ´©¶ôµÇ¾ú½À´Ï´Ù.")
-    , COMMON_400_002(HttpStatus.BAD_REQUEST, "À¯È¿ÇÏÁö ¾ÊÀº°ªÀÌ Æ÷ÇÔµÇ¾ú½À´Ï´Ù.\nÈ®ÀÎ ÈÄ ´Ù½Ã ¿äÃ»ÇØÁÖ½Ê½Ã¿À.")
-    , COMMON_400_003(HttpStatus.BAD_REQUEST, "ÅäÅ«Á¤º¸°¡ Á¸ÀçÇÏÁö ¾Ê½À´Ï´Ù.")
-    , COMMON_400_004(HttpStatus.BAD_REQUEST, "°èÁ¤Á¤º¸°¡ Á¸ÀçÇÏÁö ¾Ê½À´Ï´Ù.")
-    , COMMON_400_401(HttpStatus.NOT_FOUND, "Á¶È¸°á°ú°¡ ¾ø½À´Ï´Ù.\n°ü¸®ÀÚ¿¡°Ô ¹®ÀÇÇØÁÖ¼¼¿ä.")
-    , COMMON_400_600(HttpStatus.UNAUTHORIZED, "ÀÎÁõµÇÁö ¾ÊÀº ÅäÅ«ÀÔ´Ï´Ù.\n°ü¸®ÀÚ¿¡°Ô ¹®ÀÇÇØÁÖ¼¼¿ä.")
-    , COMMON_500_001(HttpStatus.INTERNAL_SERVER_ERROR, "Ã³¸® Áß ¿À·ù°¡ ¹ß»ýÇÏ¿´½À´Ï´Ù.\\n°ü¸®ÀÚ¿¡°Ô ¹®ÀÇÇØÁÖ½Ê½Ã¿À.")
+    COMMON_400_001(HttpStatus.BAD_REQUEST, "ìš”ì²­ í•„ìˆ˜ íŒŒë¼ë¯¸í„°ê°€ ëˆ„ë½ë˜ì—ˆìŠµë‹ˆë‹¤.")
+    , COMMON_400_002(HttpStatus.BAD_REQUEST, "ìœ íš¨í•˜ì§€ ì•Šì€ê°’ì´ í¬í•¨ë˜ì—ˆìŠµë‹ˆë‹¤.\ní™•ì¸ í›„ ë‹¤ì‹œ ìš”ì²­í•´ì£¼ì‹­ì‹œì˜¤.")
+    , COMMON_400_003(HttpStatus.BAD_REQUEST, "í† í°ì •ë³´ê°€ ì¡´ìž¬í•˜ì§€ ì•ŠìŠµë‹ˆë‹¤.")
+    , COMMON_400_004(HttpStatus.BAD_REQUEST, "ê³„ì •ì •ë³´ê°€ ì¡´ìž¬í•˜ì§€ ì•ŠìŠµë‹ˆë‹¤.")
+    , COMMON_400_401(HttpStatus.NOT_FOUND, "ì¡°íšŒê²°ê³¼ê°€ ì—†ìŠµë‹ˆë‹¤.\nê´€ë¦¬ìžì—ê²Œ ë¬¸ì˜í•´ì£¼ì„¸ìš”.")
+    , COMMON_400_600(HttpStatus.UNAUTHORIZED, "ì¸ì¦ë˜ì§€ ì•Šì€ í† í°ìž…ë‹ˆë‹¤.\nê´€ë¦¬ìžì—ê²Œ ë¬¸ì˜í•´ì£¼ì„¸ìš”.")
+    , COMMON_500_001(HttpStatus.INTERNAL_SERVER_ERROR, "ì²˜ë¦¬ ì¤‘ ì˜¤ë¥˜ê°€ ë°œìƒí•˜ì˜€ìŠµë‹ˆë‹¤.\\nê´€ë¦¬ìžì—ê²Œ ë¬¸ì˜í•´ì£¼ì‹­ì‹œì˜¤.")
     
     ;
 

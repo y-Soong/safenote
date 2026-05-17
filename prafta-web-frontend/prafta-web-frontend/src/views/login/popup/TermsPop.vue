@@ -115,6 +115,7 @@ import { useModal } from "@/utils/useModal";
 import "@vueup/vue-quill/dist/vue-quill.snow.css";
 import axios from "@/api/axios";
 import { getMessage, MSG } from "@/messages";
+import { resolveApiErrorMessage } from "@/utils/apiError";
 import TermsDetailPop from "@/components/popup/TermsDetailPop.vue";
 import JoinUserPop from "@/components/popup/JoinUserPop.vue";
 
@@ -200,7 +201,7 @@ const fnGetSystinfoList = async () => {
       }
     }
   } catch (err) {
-    alert(err.response.data.message);
+    proxy.$alert(resolveApiErrorMessage(err, "조회 중 오류가 발생했습니다."));
   }
 };
 
@@ -229,7 +230,7 @@ const fnUpdateUserTermsAgrList = async () => {
       emit("close");
     }
   } catch (err) {
-    proxy.$alert(err.response.data.message);
+    proxy.$alert(resolveApiErrorMessage(err, "저장 중 오류가 발생했습니다."));
   }
 };
 

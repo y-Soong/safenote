@@ -12,9 +12,9 @@ public record WebMenuListParam(
 	public static WebMenuListParam from(WebMenuListRequest request, TokenInfo tokenInfo) {
 		
 		if(request == null)
-			throw ApiException.appendf(CommonErrorCode.COMMON_400_001,"\n필수값 누락 - WebMenuListRequest");
+			throw new ApiException(CommonErrorCode.COMMON_400_001);
 		if(tokenInfo == null)
-			throw ApiException.appendf(CommonErrorCode.COMMON_400_003,"\n필수값 누락 - TokenInfo");
+			throw new ApiException(CommonErrorCode.COMMON_400_003);
 		
 		return new WebMenuListParam(
 			tokenInfo.gv_cmpnyCd()

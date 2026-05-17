@@ -168,6 +168,7 @@ import {
 import { useCenteredDraggable } from "@/composables/useCenteredDraggable";
 import BaseSelect from "@/components/common/BaseSelect.vue";
 import axios from "@/api/axios";
+import { resolveApiErrorMessage } from "@/utils/apiError";
 import ThSortable from "@/components/common/ThSortable.vue";
 import {
   useTableSort,
@@ -241,13 +242,8 @@ const fnGetBaseinfoList = async () => {
       nodeType.value = baseCodeArr.value.COM004[0].baimValDCd;
     }
   } catch (err) {
-    const msg =
-      err?.response?.data?.message ||
-      err?.message ||
-      "조회 중 오류가 발생했습니다.";
-
+    const msg = resolveApiErrorMessage(err, "조회 중 오류가 발생했습니다.");
     await proxy.$alert(msg);
-    // proxy.$alert(err.response.data.message);
   }
 };
 
@@ -269,7 +265,7 @@ const fnSearch = async () => {
       nodeList.value = response.data?.siteNodeInfoList || [];
     }
   } catch (err) {
-    alert(err.response.data.message);
+    await proxy.$alert(resolveApiErrorMessage(err, "조회 중 오류가 발생했습니다."));
   }
 };
 

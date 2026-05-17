@@ -22,10 +22,12 @@ import com.prafta.app.chkLst.chkLst01.dto.SaveInspectResultReq;
 import com.prafta.app.chkLst.chkLst01.mapper.AppChkLst01Mapper;
 import com.prafta.app.chkLst.chkLst01.service.AppChkLst01Service;
 import com.prafta.app.chkLst.chkLst01.vo.ChecklistInfo;
-import com.prafta.common.cmm.file.application.command.FileInfoCommand;
 import com.prafta.common.cmm.file.application.model.FileInfoModel;
+import com.prafta.common.cmm.file.application.query.FileInfoQuery;
+import com.prafta.common.cmm.file.dto.param.FileInfoParam;
 import com.prafta.common.cmm.file.mapper.FileMapper;
 import com.prafta.common.cmm.file.service.FileService;
+import com.prafta.common.dto.TokenInfo;
 
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -41,7 +43,7 @@ public class AppChkLst01ServiceImpl implements AppChkLst01Service {
     private final FileMapper fileMapper;
 
     @Override
-    public ChecklistInfoRes selectChkLstInfo(ChecklistInfoReq request, Map<String, Object> tokenInfo) {
+    public ChecklistInfoRes selectChkLstInfo(ChecklistInfoReq request, TokenInfo tokenInfo) {
     	
     	ChecklistInfoQry reqDto = ChecklistInfoQry.builder()
     									.cmpnyCd(request.getCmpnyCd())
@@ -60,7 +62,7 @@ public class AppChkLst01ServiceImpl implements AppChkLst01Service {
 
     @Override
     @Transactional
-    public void saveInspectResult(SaveInspectResultReq request, Map<String, MultipartFile> files, Map<String, Object> tokenInfo) {
+    public void saveInspectResult(SaveInspectResultReq request, Map<String, MultipartFile> files, TokenInfo tokenInfo) {
     	
         try {
             // MultipartFile -> JSON String
@@ -92,39 +94,33 @@ public class AppChkLst01ServiceImpl implements AppChkLst01Service {
             }
             
             for (FileInfoModel it : items) {
-            	String userId = tokenInfo.get("gv_userCd").toString();  // or request.getUserCd()
+            	String userId = tokenInfo.gv_userCd();  // or request.getUserCd()
             	String fileMgmtCd = "";
             	String answerDesc = "";
-            	answerDesc = it.getAnswerDesc();
-            	
-            	MultipartFile img = fileByItemCd.get(it.getItemCd());
-            	if (img != null && !img.isEmpty()) {
-            		// �⺻ FileSaveQuery (fileMgmtCd ����)
-                    FileInfoCommand baseQuery = FileInfoCommand.builder()
-                            .cmpnyCd(request.getCmpnyCd())
-                            .userId(userId)
-                            .siteCd(request.getSiteCd())
-                            .fileType("001")
-                            .itemCd(it.getItemCd())
-                            .fileName(it.getFileName())
-                            .build();
+            	answerDesc = it.answerDesc();
 
-            		fileMgmtCd = fileMapper.selectFileMgmtCd(baseQuery);
-            		
-            		FileInfoCommand queryWithKey = baseQuery.toBuilder()
-                            .fileMgmtCd(fileMgmtCd)
-                            .build();
-            		
-            		fileService.saveFile(queryWithKey, img);
+            	MultipartFile img = fileByItemCd.get(it.itemCd());
+            	if (img != null && !img.isEmpty()) {
+            		// 건별 fileMgmtCd 생성
+            		fileMgmtCd = fileMapper.selectFileMgmtCd(FileInfoQuery.from(request.getCmpnyCd(), "001"));		// 001: 일일점검
+
+            		fileService.fileSave(FileInfoParam.from(
+            				request.getCmpnyCd()
+            				, userId
+            				, request.getSiteCd()
+            				, "001"							// 일일점검
+            				, fileMgmtCd
+            				, img
+            		));
             	}
 
                 ChecklistInfoSave checklistInfoSave = ChecklistInfoSave.builder()
 						.cmpnyCd(request.getCmpnyCd())
 						.siteCd(request.getSiteCd())
 						.workDate(request.getWorkDate())
-						.inspectItemCd(it.getItemCd())
-						.inspectAnswerType(it.getInspectValue())
-						.answerDesc(it.getAnswerDesc())
+						.inspectItemCd(it.itemCd())
+						.inspectAnswerType(it.inspectValue())
+						.answerDesc(it.answerDesc())
 						.fileMgmtCd(fileMgmtCd)
 						.build();
 

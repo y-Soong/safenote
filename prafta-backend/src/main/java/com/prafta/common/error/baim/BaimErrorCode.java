@@ -6,12 +6,12 @@ import com.prafta.common.error.ApiErrorCode;
 
 public enum BaimErrorCode implements ApiErrorCode {
 
-    // ±ÔÄ¢ ¿¹½Ã: {MODULE}_{HTTP}_{SEQ}
-    BAIM_400_001(HttpStatus.BAD_REQUEST, "ÇÏÀ§ ºÎ¼­°¡ Á¸ÀçÇÏ´Â °æ¿ì »èÁ¦ÇÒ ¼ö ¾ø½À´Ï´Ù.")
-    , BAIM_400_002(HttpStatus.BAD_REQUEST, "ºÎ¼­³» °ü¸®ÀÚ°¡ ")
-    , BAIM_400_003(HttpStatus.BAD_REQUEST, "µ¿ÀÏÇÑ ÇÚµåÆù¹øÈ£¸¦ »ç¿ëÁßÀÎ\nÀÏÀÏ»ç¿ëÀÚ °èÁ¤ÀÌ Á¸ÀçÇÕ´Ï´Ù.")
-    , BAIM_500_001(HttpStatus.INTERNAL_SERVER_ERROR, "¾à°ü µ¥ÀÌÅÍ »ý¼º ¿À·ù !\n°ü¸®ÀÚ¿¡°Ô ¹®ÀÇÇØÁÖ¼¼¿ä.")
-    , BAIM_500_002(HttpStatus.INTERNAL_SERVER_ERROR, "Á¶Á÷Á¤º¸ »èÁ¦¿¡ ½ÇÆÐÇß½À´Ï´Ù.\n°ü¸®ÀÚ¿¡°Ô ¹®ÀÇÇØÁÖ¼¼¿ä.")
+    // ê·œì¹™ ì˜ˆì‹œ: {MODULE}_{HTTP}_{SEQ}
+    BAIM_400_001(HttpStatus.BAD_REQUEST, "í•˜ìœ„ ë¶€ì„œê°€ ì¡´ìž¬í•˜ëŠ” ê²½ìš° ì‚­ì œí•  ìˆ˜ ì—†ìŠµë‹ˆë‹¤.")
+    , BAIM_400_002(HttpStatus.BAD_REQUEST, "ë¶€ì„œë‚´ ê´€ë¦¬ìžê°€ ")
+    , BAIM_400_003(HttpStatus.BAD_REQUEST, "ë™ì¼í•œ í•¸ë“œí°ë²ˆí˜¸ë¥¼ ì‚¬ìš©ì¤‘ì¸\nì¼ì¼ì‚¬ìš©ìž ê³„ì •ì´ ì¡´ìž¬í•©ë‹ˆë‹¤.")
+    , BAIM_500_001(HttpStatus.INTERNAL_SERVER_ERROR, "ì•½ê´€ ë°ì´í„° ìƒì„± ì˜¤ë¥˜ !\nê´€ë¦¬ìžì—ê²Œ ë¬¸ì˜í•´ì£¼ì„¸ìš”.")
+    , BAIM_500_002(HttpStatus.INTERNAL_SERVER_ERROR, "ì¡°ì§ì •ë³´ ì‚­ì œì— ì‹¤íŒ¨í–ˆìŠµë‹ˆë‹¤.\nê´€ë¦¬ìžì—ê²Œ ë¬¸ì˜í•´ì£¼ì„¸ìš”.")
     ;
 
     private final HttpStatus httpStatus;
@@ -24,7 +24,7 @@ public enum BaimErrorCode implements ApiErrorCode {
 
     @Override
     public String code() {
-        return name(); // enum ÀÌ¸§À» ±×´ë·Î ÄÚµå·Î ¾²¸é °ü¸® ½¬¿ò
+        return name(); // enum ì´ë¦„ì„ ê·¸ëŒ€ë¡œ ì½”ë“œë¡œ ì“°ë©´ ê´€ë¦¬ ì‰¬ì›€
     }
 
     @Override

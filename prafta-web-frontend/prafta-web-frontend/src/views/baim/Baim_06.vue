@@ -111,6 +111,7 @@ import { useModal } from "@/utils/useModal";
 import axios from "@/api/axios";
 import ViewHeader from "@/components/common/ViewHeader.vue";
 import { getMessage, MSG } from "@/messages";
+import { resolveApiErrorMessage } from "@/utils/apiError";
 import search_icon from "@/assets/img/search_icon.png";
 import SiteSearchPop from "@/components/popup/SiteSearchPop.vue";
 import UserSearchPop from "@/components/popup/UserSearchPop.vue";
@@ -276,10 +277,7 @@ const fnGetBaseinfoList = async () => {
       baseInfoArr.value = grouped;
     }
   } catch (err) {
-    const msg =
-      err?.response?.data?.message ||
-      err?.message ||
-      "조회 중 오류가 발생했습니다.";
+    const msg = resolveApiErrorMessage(err, "조회 중 오류가 발생했습니다.");
 
     await proxy.$alert(msg);
   }
@@ -337,10 +335,7 @@ const fnSave = async () => {
     proxy.$alert(getMessage(MSG.SAVE_SUCCESS));
     fnSearch();
   } catch (err) {
-    const msg =
-      err?.response?.data?.message ||
-      err?.message ||
-      "저장 중 오류가 발생했습니다.";
+    const msg = resolveApiErrorMessage(err, "저장 중 오류가 발생했습니다.");
     await proxy.$alert(msg);
   }
 };
@@ -356,10 +351,7 @@ const fnDeleteOrgNode = async (node) => {
     proxy.$alert(getMessage(MSG.DELETE_SUCCESS));
     await fnSearch();
   } catch (err) {
-    const msg =
-      err?.response?.data?.message ||
-      err?.message ||
-      "삭제 중 오류가 발생했습니다.";
+    const msg = resolveApiErrorMessage(err, "삭제 중 오류가 발생했습니다.");
     await proxy.$alert(msg);
   }
 };
@@ -382,10 +374,7 @@ const fnSiteNodeAllDelete = async () => {
     proxy.$alert(getMessage(MSG.DELETE_SUCCESS));
     await fnSearch();
   } catch (err) {
-    const msg =
-      err?.response?.data?.message ||
-      err?.message ||
-      "삭제 중 오류가 발생했습니다.";
+    const msg = resolveApiErrorMessage(err, "삭제 중 오류가 발생했습니다.");
     await proxy.$alert(msg);
   }
 };
@@ -408,10 +397,10 @@ const fnNodeCopy = async (siteCdVal, siteNoVal, siteNmVal) => {
     fnSearch();
     proxy.$alert(getMessage(MSG.NODE_COPY_SUCCESS));
   } catch (err) {
-    const msg =
-      err?.response?.data?.message ||
-      err?.message ||
-      "조직노드 덮어쓰기 중 오류가 발생했습니다.";
+    const msg = resolveApiErrorMessage(
+      err,
+      "조직노드 덮어쓰기 중 오류가 발생했습니다."
+    );
     await proxy.$alert(msg);
   }
 };
@@ -429,10 +418,7 @@ const fnSrchSiteInfo = async () => {
       fnCallback(response);
     }
   } catch (err) {
-    const msg =
-      err?.response?.data?.message ||
-      err?.message ||
-      "조회 중 오류가 발생했습니다.";
+    const msg = resolveApiErrorMessage(err, "조회 중 오류가 발생했습니다.");
     await proxy.$alert(msg);
   }
 };
@@ -453,10 +439,7 @@ const fnDeleteSiteNodeAdmin = async (nodeCd, siteCd, userCd, userNm) => {
       fnSearch();
     }
   } catch (err) {
-    const msg =
-      err?.response?.data?.message ||
-      err?.message ||
-      "삭제 중 오류가 발생했습니다.";
+    const msg = resolveApiErrorMessage(err, "삭제 중 오류가 발생했습니다.");
     await proxy.$alert(msg);
   }
 };
@@ -492,10 +475,7 @@ const fnSaveSiteNodeAdmin = async (field, node, userCd, userNm) => {
       fnSearch();
     }
   } catch (err) {
-    const msg =
-      err?.response?.data?.message ||
-      err?.message ||
-      "저장 중 오류가 발생했습니다.";
+    const msg = resolveApiErrorMessage(err, "저장 중 오류가 발생했습니다.");
     await proxy.$alert(msg);
   }
 };

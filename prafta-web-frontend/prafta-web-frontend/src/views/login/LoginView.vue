@@ -153,6 +153,7 @@ import { useModal } from "@/utils/useModal";
 import { useRouter } from "vue-router";
 import { useUserStore } from "@/stores/userStore";
 import axios from "@/api/axios";
+import { resolveApiErrorMessage } from "@/utils/apiError";
 import TermsPop from "./popup/TermsPop.vue";
 import ActInfoSrch from "@/components/popup/ActInfoSrchPop.vue";
 
@@ -228,13 +229,11 @@ const fnSubmitLogin = async () => {
     return;
   }
 */
-  console.log(userId.value, password.value);
   try {
-    const response = await axios.get("/comApi/login/login", {
-      params: {
-        userId: userId.value,
-        userPw: password.value,
-      },
+    // 보안 수정(PRAFTA-006-001): 자격증명이 URL 쿼리스트링/서버 로그/Referer에 노출되지 않도록 POST + JSON 본문으로 전송
+    const response = await axios.post("/comApi/login/login", {
+      userId: userId.value,
+      userPw: password.value,
     });
 
     if (response.status === 200) {
@@ -251,11 +250,11 @@ const fnSubmitLogin = async () => {
         cmpnyCd,
         authCd,
         authLevel,
-        mblNo,
-        email,
         refreshToken,
       } = response.data;
 
+      // 정책 §11.1에 따라 휴대폰(mblNo) / 이메일(email)은 sessionStorage 및 store에 보관하지 않는다.
+      // 응답 페이로드에 포함되더라도 클라이언트는 받아 쓰지 않는다.
       sessionStorage.setItem("token", token);
       sessionStorage.setItem("gv_cmpnyCd", cmpnyCd);
       sessionStorage.setItem("gv_userCd", userCd);
@@ -268,8 +267,6 @@ const fnSubmitLogin = async () => {
       sessionStorage.setItem("gv_nodeNm", nodeNm);
       sessionStorage.setItem("gv_authCd", authCd);
       sessionStorage.setItem("gv_authLevel", authLevel);
-      sessionStorage.setItem("gv_mblNo", mblNo);
-      sessionStorage.setItem("gv_email", email);
       localStorage.setItem("refreshToken", refreshToken);
       userStore.setUser({
         cmpnyCd,
@@ -283,8 +280,6 @@ const fnSubmitLogin = async () => {
         nodeNm,
         authCd,
         authLevel,
-        mblNo,
-        email,
       });
 
       if (rememberId.value) localStorage.setItem("savedUserId", userId);
@@ -293,9 +288,7 @@ const fnSubmitLogin = async () => {
       fnUserTermsAgrChk();
     }
   } catch (err) {
-    console.log(err);
-    const msg =
-      err?.response?.data?.message || err?.message || "로그인에 실패했습니다.";
+    const msg = resolveApiErrorMessage(err, "로그인에 실패했습니다.");
     await proxy.$alert(msg);
   }
 };
@@ -327,8 +320,7 @@ const fnUserTermsAgrChk = async () => {
       }
     }
   } catch (err) {
-    const msg =
-      err?.response?.data?.message || err?.message || "로그인에 실패했습니다..";
+    const msg = resolveApiErrorMessage(err, "로그인에 실패했습니다..");
     await proxy.$alert(msg);
   }
 };

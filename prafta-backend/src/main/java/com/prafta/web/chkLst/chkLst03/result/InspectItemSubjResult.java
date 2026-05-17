@@ -1,8 +1,8 @@
 package com.prafta.web.chkLst.chkLst03.result;
 
 public record InspectItemSubjResult(
-	String InspectItemCd			// Á¡°Ë¹®Ç×ÄÚµå
-	, String InspectItemSubj		// Á¡°Ë¹®Ç×¸í
+	String InspectItemCd			// ì ê²€ë¬¸í•­ì½”ë“œ
+	, String InspectItemSubj		// ì ê²€ë¬¸í•­ëª…
 ) {
 	
 }

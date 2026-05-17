@@ -36,6 +36,8 @@ export const ATTD_MESSAGES = {
   SAVE_ERROR: "저장 중 오류가 발생했습니다.",
   REASON_REQUIRED: "사유를 입력해 주세요.",
   DELETE_ERROR: "삭제 중 오류가 발생했습니다.",
+  FORM_RESET_CONFIRM:
+    "변경한 내용을 모두 초기화하시겠습니까?\n팝업을 불러온 시점의 값으로 되돌립니다.",
 
   // ── 근로자 요청 (monthlyAttdReqResultList) ──────────────
   REQ_APPROVE_CONFIRM: "해당 요청을 승인하시겠습니까?",
@@ -48,4 +50,14 @@ export const ATTD_MESSAGES = {
   // 승인 처리하려는데 해당 일자가 수정 불가능한 상태일 때
   REQ_APPROVE_NOT_EDITABLE:
     "현재 일자는 직접 수정이 불가능한 상태입니다.\n승인 처리를 진행할 수 없습니다.",
+
+  // ── 추가근무 (PRAFTA-003) ────────────────────────────────
+  OT_SAVE_CONFIRM: "추가근무를 저장하시겠습니까?",
+  OT_LIST_EMPTY: "저장할 추가근무 내역이 없습니다.",
+  OT_RANGE_INVALID:
+    "추가근무 시작/종료 시간이 올바르지 않습니다.\n시작 시간이 종료 시간보다 빨라야 합니다.",
+  OT_OUTSIDE_ALLOWED:
+    "추가근무 시간이 등록 가능 범위를 벗어났습니다.\n표시된 등록 가능 시간 안에서만 등록할 수 있습니다.",
+  OT_OVERLAP: "추가근무 구간이 서로 겹칩니다.\n시간이 겹치지 않도록 수정해 주세요.",
+  OT_SAVE_ERROR: "추가근무 저장 중 오류가 발생했습니다.",
 };

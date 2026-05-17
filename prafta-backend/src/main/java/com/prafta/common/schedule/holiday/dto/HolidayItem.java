@@ -4,7 +4,7 @@ import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 
 @JsonIgnoreProperties(ignoreUnknown = true)
 public class HolidayItem {
-    public String dateName;   // ¸íÄª
+    public String dateName;   // ëª…ì¹­
     public Integer locdate;   // yyyymmdd
     public String isHoliday;  // Y/N
 }

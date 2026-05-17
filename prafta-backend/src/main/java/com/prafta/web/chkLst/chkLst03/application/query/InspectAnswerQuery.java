@@ -5,24 +5,24 @@ import com.prafta.common.exception.ApiException;
 import com.prafta.web.chkLst.chkLst03.application.param.InspectResultDetailParam;
 
 public record InspectAnswerQuery(
-	String workMonth		// Á¶È¸±âÁØ ¿ù
-	, String siteCd			// »ç¾÷ÀåÄÚµå
-	, String chkLstType		// Ã¼Å©¸®½ºÆ® Å¸ÀÔ
-	, String chkptCd			// Á¡°ËÇ×¸ñÄÚµå
-	, String fileType		// Ã·ºÎÆÄÀÏ Å¸ÀÔ (001 : ÀÏÀÏÁ¡°Ë)
+	String workMonth		// ì¡°íšŒê¸°ì¤€ ì›”
+	, String siteCd			// ì‚¬ì—…ì¥ì½”ë“œ
+	, String chkLstType		// ì²´í¬ë¦¬ìŠ¤íŠ¸ íƒ€ì…
+	, String chkptCd			// ì ê²€í•­ëª©ì½”ë“œ
+	, String fileType		// ì²¨ë¶€íŒŒì¼ íƒ€ì… (001 : ì¼ì¼ì ê²€)
 	, String gvCmpnyCd
 ){
 	public static InspectAnswerQuery from(InspectResultDetailParam param) {
 
         if (param == null)
-        	throw ApiException.appendf(CommonErrorCode.COMMON_400_001,"\nÇÊ¼ö°ª ´©¶ô - InspectResultDetailParam");
+        	throw new ApiException(CommonErrorCode.COMMON_400_001);
 
         return new InspectAnswerQuery(
     		param.workMonth()
     		, param.siteCd()
     		, param.chkLstType()
     		, param.chkptCd()
-    		, "001"									// ÀÏÀÏÁ¡°Ë ÆÄÀÏ Å¸ÀÔ
+    		, "001"									// ì¼ì¼ì ê²€ íŒŒì¼ íƒ€ì…
     		, param.gvCmpnyCd()
         );
     }

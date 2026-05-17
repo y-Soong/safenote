@@ -380,6 +380,7 @@ import { useDraggable } from "@/composables/useDraggable";
 import CalendarSrch from "@/components/common/CalendarSrch.vue";
 import axios from "@/api/axios";
 import { getMessage, MSG } from "@/messages";
+import { resolveApiErrorMessage } from "@/utils/apiError";
 import { readFileAsBase64 } from "@/utils/fileUtil";
 
 const systCodeArr = ref([]);
@@ -429,11 +430,7 @@ const fnGetSystinfoList = async () => {
       // }
     }
   } catch (err) {
-    const msg =
-      err?.response?.data?.message ||
-      err?.message ||
-      "조회 중 오류가 발생했습니다.";
-
+    const msg = resolveApiErrorMessage(err, "조회 중 오류가 발생했습니다.");
     await proxy.$alert(msg);
   }
 };
@@ -723,8 +720,8 @@ const removePreview = async () => {
     }
   } catch (e) {
     const msg =
-      err?.response?.data?.message ||
-      err?.message ||
+      e?.response?.data?.message ||
+      e?.message ||
       "이미지 삭제 중 오류가 발생했습니다.";
 
     await proxy.$alert(msg);
@@ -781,11 +778,7 @@ const fnSave = async () => {
       await proxy.$alert(msg);
     }
   } catch (err) {
-    const msg =
-      err?.response?.data?.message ||
-      err?.message ||
-      "저장 중 오류가 발생했습니다.";
-
+    const msg = resolveApiErrorMessage(err, "저장 중 오류가 발생했습니다.");
     await proxy.$alert(msg);
   }
 };

@@ -15,7 +15,7 @@ public record DeleteShiftTeamParam(
     public static DeleteShiftTeamParam from(DeleteShiftTeamRequest request, TokenInfo tokenInfo) {
 
         if (request == null)
-            throw ApiException.appendf(CommonErrorCode.COMMON_400_001, "\nRequired param missing - DeleteShiftTeamRequest");
+            throw new ApiException(CommonErrorCode.COMMON_400_001);
 
         return new DeleteShiftTeamParam(
             request.getSiteCd()

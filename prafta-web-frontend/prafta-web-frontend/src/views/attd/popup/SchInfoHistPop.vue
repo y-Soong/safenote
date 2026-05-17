@@ -157,6 +157,7 @@
 import { ref, getCurrentInstance, computed, onMounted } from "vue";
 import { useCenteredDraggable } from "@/composables/useCenteredDraggable";
 import axios from "@/api/axios";
+import { resolveApiErrorMessage } from "@/utils/apiError";
 import ThSortable from "@/components/common/ThSortable.vue";
 import { useTableSort, useColumnResize } from "@/composables/useTableFeatures.js";
 
@@ -218,10 +219,7 @@ const fnSearch = async () => {
       schHistResultList.value = response.data.schHistResultList;
     }
   } catch (err) {
-    const msg =
-      err?.response?.data?.message ||
-      err?.message ||
-      "조회 중 오류가 발생했습니다.";
+    const msg = resolveApiErrorMessage(err, "조회 중 오류가 발생했습니다.");
     await proxy.$alert(msg);
   }
 };

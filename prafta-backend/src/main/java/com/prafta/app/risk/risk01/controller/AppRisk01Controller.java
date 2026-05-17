@@ -20,6 +20,7 @@ import com.prafta.app.risk.risk01.dto.RiskInfoRes;
 import com.prafta.app.risk.risk01.service.AppRisk01Service;
 import com.prafta.common.annotation.NoAuth;
 import com.prafta.common.cmm.file.service.FileService;
+import com.prafta.common.dto.TokenInfo;
 import com.prafta.common.error.common.CommonErrorCode;
 import com.prafta.common.exception.ApiException;
 import com.prafta.common.security.JwtUtil;
@@ -33,7 +34,7 @@ import lombok.extern.slf4j.Slf4j;
 @NoAuth
 @RestController
 @RequestMapping("/risk01")
-@RequiredArgsConstructor // ·Òº¹ÀÌ final ÇÊµå·Î »ı¼ºÀÚ ÀÚµ¿ »ı¼º
+@RequiredArgsConstructor // ë¡¬ë³µì´ final í•„ë“œë¡œ ìƒì„±ì ìë™ ìƒì„±
 public class AppRisk01Controller {
 	
 	private final AppRisk01Service appRisk01Service;
@@ -42,10 +43,10 @@ public class AppRisk01Controller {
 	
 	private final JwtUtil jwtUtil;
 	
-	/* À§Çè¼ºÆò°¡ ±¸ºĞ, ºĞ·ù, ¹ß»ı»óÈ² Á¶È¸ */
+	/* ìœ„í—˜ì„±í‰ê°€ êµ¬ë¶„, ë¶„ë¥˜, ë°œìƒìƒí™© ì¡°íšŒ */
 	@GetMapping("/risk-type-infos")
 	public ResponseEntity<?> getRiskTypeInfo(@ModelAttribute RiskInfoReq request, @RequestHeader(value = "Authorization", required = false) String authorization) {
-		Map<String, Object> tokenInfo = jwtUtil.getAllClaimsAsMap(authorization);
+		TokenInfo tokenInfo = jwtUtil.getAllClaimsAsMap(authorization);
 		
 		RiskInfoRes retDto = appRisk01Service.selectRiskTypeInfo(request, tokenInfo);
 		
@@ -58,15 +59,15 @@ public class AppRisk01Controller {
 	
 	@PostMapping(value = "/save-risk-assessments", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
     public ResponseEntity<?> saveRiskAssessments(@ModelAttribute RiskAssessmentReq request, @RequestPart(value = "item", required = false) MultipartFile file, @RequestHeader(value = "Authorization", required = false) String authorization) {
-    	
-    	Map<String, Object> tokenInfo = jwtUtil.getAllClaimsAsMap(authorization);
+
+    	TokenInfo tokenInfo = jwtUtil.getAllClaimsAsMap(authorization);
     	
     	appRisk01Service.saveRiskAssessments(request, file, tokenInfo);
     	
     	return ResponseEntity.status(HttpStatus.OK).build();
     }
 	
-//	/* Ã¼Å©¸®½ºÆ® Á¤º¸Á¶È¸ */
+//	/* ì²´í¬ë¦¬ìŠ¤íŠ¸ ì •ë³´ì¡°íšŒ */
 //    @GetMapping("/checklist-infos")
 //    public ResponseEntity<?> getChkLstInfo(@ModelAttribute ChecklistInfoReq request, @RequestHeader(value = "Authorization", required = false) String authorization) {
 //    	Map<String, Object> tokenInfo = jwtUtil.getAllClaimsAsMap(authorization);
@@ -77,7 +78,7 @@ public class AppRisk01Controller {
 //    	ChecklistInfoRes retDto = appChkLst01Service.selectChkLstInfo(request, tokenInfo);
 //    	
 //    	if(retDto == null) {
-//    		throw new CmmApiException("Á¶È¸°á°ú°¡ ¾ø½À´Ï´Ù.");
+//    		throw new CmmApiException("ì¡°íšŒê²°ê³¼ê°€ ì—†ìŠµë‹ˆë‹¤.");
 //    	}
 //    	
 //    	return ResponseEntity.status(HttpStatus.OK).body(retDto);

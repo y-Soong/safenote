@@ -1,7 +1,7 @@
 package com.prafta.web.attd.attd07.result;
 
 public record DailyAttdDetailsResult(
-    /* »ç¿ëÀÚ/»ç¾÷Àå ±âº» Á¤º¸ */
+    /* ì‚¬ìš©ì/ì‚¬ì—…ì¥ ê¸°ë³¸ ì •ë³´ */
       String cmpnyCd
     , String userCd
     , String userId
@@ -10,7 +10,7 @@ public record DailyAttdDetailsResult(
     , String nodeCd
     , String workYmd
 
-    /* ½ºÄÉÁÙ Á¤º¸ (1¡¤2±¸°£) */
+    /* ìŠ¤ì¼€ì¤„ ì •ë³´ (1Â·2êµ¬ê°„) */
     , String schType
     , String plan1Start
     , String plan1End
@@ -19,7 +19,7 @@ public record DailyAttdDetailsResult(
     , String plan2End
     , Integer plan2BreakMin
 
-    /* ±ÙÅÂ 1Â÷ */
+    /* ê·¼íƒœ 1ì°¨ */
     , String attd1Id
     , String act1InDate
     , String act1InTime
@@ -35,7 +35,7 @@ public record DailyAttdDetailsResult(
     , String oriAct1OutDate
     , String oriAct1OutTime
 
-    /* ±ÙÅÂ 2Â÷ */
+    /* ê·¼íƒœ 2ì°¨ */
     , String attd2Id
     , String act2InDate
     , String act2InTime
@@ -50,5 +50,11 @@ public record DailyAttdDetailsResult(
     , String oriAct2InTime
     , String oriAct2OutDate
     , String oriAct2OutTime
+
+    /* PRAFTA-011 - êµ¬ê°„ë³„ ì™¸ê·¼ í”Œë˜ê·¸.
+       í•´ë‹¹ êµ¬ê°„ ATTD_ID ì— ì—°ê²°ëœ TB_USER_ATTD_GPS í–‰ì´ 1ê±´ì´ë¼ë„ ì¡´ì¬í•˜ë©´ 'Y',
+       ì—†ìœ¼ë©´ 'N'. GPS í…Œì´ë¸”ì—ëŠ” WORK_SEQ ì»¬ëŸ¼ì´ ì—†ìœ¼ë¯€ë¡œ êµ¬ê°„ êµ¬ë¶„ì€ ATTD_ID ë¡œë§Œ í•œë‹¤. */
+    , String attd1OutsideYn
+    , String attd2OutsideYn
 ) {
 }
