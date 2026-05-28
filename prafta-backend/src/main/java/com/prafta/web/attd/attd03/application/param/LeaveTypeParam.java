@@ -20,15 +20,13 @@ public record LeaveTypeParam(
 	    , String availTermType
 	    , String availFromDt
 	    , String availToDt
-	    , Integer grantDays
 	    , String adminAvailTermType
 	    , String adminAvailFromDt
 	    , String adminAvailToDt
 	    , String grantBaseType
 	    , Integer grantOffsetMonth
+	    , String grantAssignMmdd
 	    , String aprvUseYn
-	    , Integer aprvStepCnt
-	    , String hrFinalAprvYn
 	    , String evidenceYn
 	    , String evidenceGuideMsg
 	    , String gvCmpnyCd
@@ -54,15 +52,13 @@ public record LeaveTypeParam(
 	            , request.getAvailTermType()
 	            , request.getAvailFromDt()
 	            , request.getAvailToDt()
-	            , request.getGrantDays()
 	            , request.getAdminAvailTermType()
 	            , request.getAdminAvailFromDt()
 	            , request.getAdminAvailToDt()
 	            , request.getGrantBaseType()
 	            , request.getGrantOffsetMonth()
+	            , request.getGrantAssignMmdd()
 	            , request.getAprvUseYn()
-	            , request.getAprvStepCnt()
-	            , request.getHrFinalAprvYn()
 	            , request.getEvidenceYn()
 	            , request.getEvidenceGuideMsg()
 	            , tokenInfo.gv_cmpnyCd()

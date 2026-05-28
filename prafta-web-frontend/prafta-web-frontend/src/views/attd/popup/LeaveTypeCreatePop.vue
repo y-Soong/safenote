@@ -223,7 +223,7 @@
                       :key="opt.systValDCd"
                       :value="opt.systValDCd"
                     >
-                      {{ opt.systValDNm }}일
+                      {{ opt.systValDNm }}
                     </option>
                   </select>
                 </div>
@@ -279,8 +279,16 @@
                       </select>
                     </div>
                     <div class="form-item">
-                      <label>실행 시점</label>
-                      <div class="exec-time-row">
+                      <label>
+                        {{ grantBaseType === "03" ? "부여일" : "실행 시점" }}
+                      </label>
+                      <div v-if="grantBaseType === '03'" class="exec-time-row">
+                        <MonthDayPickerInput
+                          v-model="grantAssignMmdd"
+                          :readonly="isEditMode"
+                        />
+                      </div>
+                      <div v-else class="exec-time-row">
                         <select
                           v-model.number="grantOffsetMonth"
                           :disabled="isEditMode"
@@ -301,16 +309,6 @@
               </div>
               <!-- 관리자 부여 타입 - 수동 부여 -->
               <div v-else class="form-grid">
-                <div class="form-item full-width">
-                  <label>부여일수 (선택)</label>
-                  <input
-                    v-model.number="grantDays"
-                    type="number"
-                    min="0"
-                    placeholder=""
-                    :readonly="isEditMode"
-                  />
-                </div>
                 <div
                   class="form-item"
                   :class="{ 'full-width': adminAvailTermType !== '03' }"
@@ -382,22 +380,6 @@
                   <p class="field-desc">
                     활성화 시 사용자의 연차 신청에 결재가 필요합니다.
                   </p>
-                </div>
-                <div v-if="aprvUseYn === 'Y'" class="form-item">
-                  <label>결재 단계 수</label>
-                  <input
-                    v-model.number="aprvStepCnt"
-                    type="number"
-                    min="1"
-                    :readonly="isEditMode"
-                  />
-                </div>
-                <div v-if="aprvUseYn === 'Y'" class="form-item">
-                  <label>인사팀 최종 승인 여부</label>
-                  <select v-model="hrFinalAprvYn" :disabled="isEditMode">
-                    <option value="Y">예</option>
-                    <option value="N">아니오</option>
-                  </select>
                 </div>
                 <div class="form-item full-width">
                   <label>증빙 여부</label>
@@ -490,7 +472,7 @@ const leaveDesc = ref("");
 
 // 사용자 신청 타입용
 const maxAplyDays = ref(1);
-const useUnitType = ref("03"); // SYS025: '01'=0.25, '02'=0.5, '03'=1
+const useUnitType = ref("00"); // SYS025: 00=1일 / 01=반차 / 02=시간차(2시간) / 03=시간차(1시간) / 04=시간차(30분)
 const availTermType = ref("02"); // SYS026: '01'=설정안함, '02'=해당년도 내, '03'=기간설정
 const currentYear = new Date().getFullYear();
 // 사용자 신청 기간설정: MMDD 형식 (예: 0101, 1231)
@@ -498,18 +480,17 @@ const availFromDt = ref("0101");
 const availToDt = ref("1231");
 
 // 관리자 부여 타입용
-const grantDays = ref(1);
 const adminAvailTermType = ref("02"); // SYS026
 const adminAvailFromDt = ref(`${currentYear}-01-01`);
 const adminAvailToDt = ref(`${currentYear}-12-31`);
 // 자동 부여용
-const grantBaseType = ref("01"); // SYS027: '01'=입사일, '02'=생일
+const grantBaseType = ref("01"); // SYS027: '01'=입사일, '02'=생일, '03'=부여일지정
 const grantOffsetMonth = ref(1);
+// 자동 부여 - '부여일지정' 선택 시 MMDD 4자리 (예: 0901)
+const grantAssignMmdd = ref("0101");
 
 // 결재 및 증빙
 const aprvUseYn = ref("N");
-const aprvStepCnt = ref(1);
-const hrFinalAprvYn = ref("N");
 const evidenceYn = ref("N");
 const evidenceGuideMsg = ref("");
 
@@ -532,6 +513,12 @@ const autoGrantInfoMsg = computed(() => {
   const std =
     opts.find((o) => o.systValDCd === grantBaseType.value)?.systValDNm ||
     "입사일";
+  if (grantBaseType.value === "03") {
+    const v = String(grantAssignMmdd.value || "");
+    const mm = v.length >= 2 ? v.slice(0, 2) : "MM";
+    const dd = v.length >= 4 ? v.slice(2, 4) : "DD";
+    return `(${std}, ${mm}월 ${dd}일) 매년 ${mm}월 ${dd}일 00시에 해당 연차가 사용자에게 부여됩니다.`;
+  }
   const months = grantOffsetMonth.value;
   return `(${std}, ${months}개월 전 1일) ${std}이 9월 16일이면 8월 1일 00시에 해당 연차가 사용자에게 부여됩니다.`;
 });
@@ -563,6 +550,26 @@ const canSave = computed(() => {
   ) {
     if (!adminAvailFromDt.value || !adminAvailToDt.value) return false;
     if (adminAvailFromDt.value > adminAvailToDt.value) return false;
+  }
+  if (leaveType.value === "02" && grantType.value === "01") {
+    // 관리자 부여 + 자동 부여: 정책서 §8.1.2에 따라 기준일별 cross-field 검증
+    if (grantBaseType.value === "01" || grantBaseType.value === "02") {
+      // 입사일/생일 기준: 실행시점 개월수 1-11 필수
+      const m = Number(grantOffsetMonth.value);
+      if (!Number.isInteger(m) || m < 1 || m > 11) return false;
+    } else if (grantBaseType.value === "03") {
+      // 부여일지정: MMDD 4자리 + 월별 일수 검증 (02/29 허용, 평년 02/28 fallback은 서버 책임)
+      const v = toMMDD(grantAssignMmdd.value);
+      if (v.length !== 4) return false;
+      const mm = Number(v.slice(0, 2));
+      const dd = Number(v.slice(2, 4));
+      if (mm < 1 || mm > 12 || dd < 1) return false;
+      const maxDay = mm === 2 ? 29 : [4, 6, 9, 11].includes(mm) ? 30 : 31;
+      if (dd > maxDay) return false;
+    } else {
+      // SYS027 코드값 외 입력 거부
+      return false;
+    }
   }
   return true;
 });
@@ -614,11 +621,10 @@ const fnGetSystinfoList = async () => {
           r.leaveNatureType ?? firstValid("SYS024") ?? leaveNatureType.value;
         useYn.value = r.useYn ?? useYn.value;
         leaveDesc.value = r.leaveDesc ?? leaveDesc.value;
-        // leaveDays: 사용자신청=maxAplyDays, 관리자수동부여=grantDays
+        // leaveDays: 사용자신청=maxAplyDays (관리자 부여 타입은 부여일수 없음)
         const days = r.leaveDays != null ? Number(r.leaveDays) : null;
         if (days != null) {
           maxAplyDays.value = days;
-          grantDays.value = days;
         }
         useUnitType.value =
           r.useUnitType ?? firstValid("SYS025") ?? useUnitType.value;
@@ -648,11 +654,15 @@ const fnGetSystinfoList = async () => {
           r.grantOffsetMonth != null
             ? Number(r.grantOffsetMonth)
             : grantOffsetMonth.value;
+        // 자동부여 지정일 (MMDD)
+        if (r.grantAssignMmdd != null && String(r.grantAssignMmdd) !== "") {
+          grantAssignMmdd.value = String(r.grantAssignMmdd)
+            .replace(/\D/g, "")
+            .slice(0, 4)
+            .padStart(4, "0");
+        }
         // 결재 및 증빙
         aprvUseYn.value = r.aprvUseYn ?? aprvUseYn.value;
-        aprvStepCnt.value =
-          r.aprvStepCnt != null ? Number(r.aprvStepCnt) : aprvStepCnt.value;
-        hrFinalAprvYn.value = r.hrFinalAprvYn ?? hrFinalAprvYn.value;
         evidenceYn.value = r.evidenceYn ?? evidenceYn.value;
         evidenceGuideMsg.value = r.evidenceGuideMsg ?? evidenceGuideMsg.value;
       } else {
@@ -727,11 +737,6 @@ const fnSave = async () => {
           : null,
 
       // 관리자 부여 타입 (수동부여)
-      // 부여일수
-      grantDays:
-        leaveType.value === "02" && grantType.value === "02"
-          ? grantDays.value
-          : null,
       // 사용가능기간
       adminAvailTermType:
         leaveType.value === "02" && grantType.value === "02"
@@ -758,19 +763,24 @@ const fnSave = async () => {
         leaveType.value === "02" && grantType.value === "01"
           ? grantBaseType.value
           : null,
-      // 실행 시점 (개월 전 1일)
+      // 실행 시점 (개월 전 1일) - grantBaseType '01','02'일 때만 사용
       grantOffsetMonth:
-        leaveType.value === "02" && grantType.value === "01"
+        leaveType.value === "02" &&
+        grantType.value === "01" &&
+        grantBaseType.value !== "03"
           ? grantOffsetMonth.value
+          : null,
+      // 자동부여 지정일 (MMDD) - grantBaseType '03'(부여일지정)일 때만 사용
+      grantAssignMmdd:
+        leaveType.value === "02" &&
+        grantType.value === "01" &&
+        grantBaseType.value === "03"
+          ? toMMDD(grantAssignMmdd.value)
           : null,
 
       // D. 결재 및 증빙
       // 결재 여부
       aprvUseYn: aprvUseYn.value,
-      // 결재 단계 수
-      aprvStepCnt: aprvUseYn.value === "Y" ? aprvStepCnt.value : null,
-      // 인사팀 최종 승인 여부
-      hrFinalAprvYn: aprvUseYn.value === "Y" ? hrFinalAprvYn.value : null,
       // 증빙 여부
       evidenceYn: evidenceYn.value,
       // 증빙 안내 문구

@@ -10,21 +10,27 @@ public record TbmEduInfoListParam(
 	, String mtrlType
 	, String title
 	, String useYn
+	, String siteCd
 	, String gvCmpnyCd
+	, String gvSiteCd
+	, String gvAuthCd
 ){
 	public static TbmEduInfoListParam from(TbmEduInfoListRequest request, TokenInfo tokenInfo) {
-		
+
 		if(request == null)
 			throw new ApiException(CommonErrorCode.COMMON_400_001);
 		if(tokenInfo == null)
 			throw new ApiException(CommonErrorCode.COMMON_400_003);
-		
+
 		return new TbmEduInfoListParam(
 			request.getMtrlCd()
 			, request.getMtrlType()
 			, request.getTitle()
 			, request.getUseYn()
+			, request.getSiteCd()
 			, tokenInfo.gv_cmpnyCd()
+			, tokenInfo.gv_siteCd()
+			, tokenInfo.gv_authCd()
 		);
 	}
 }

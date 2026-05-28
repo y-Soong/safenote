@@ -19,6 +19,7 @@ public record UserInfoCommand(
     , String siteCd
     , String nodeCd
     , String authCd
+    , String rankCd
     , String useYn
     , String gvUserCd
 ){
@@ -42,6 +43,7 @@ public record UserInfoCommand(
 			, model.siteCd()
 			, model.nodeCd()
 			, model.authCd()
+			, model.rankCd()
 			, model.useYn()
 			, model.gvUserCd()
 		);

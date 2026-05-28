@@ -14,25 +14,31 @@ public record TbmEduInfoParam(
 	, String contents
 	, String mtrlType
 	, String useYn
+	, String siteCd
 	, List<TbmEduItemInfoModel> tbmEduItemInfoModelList
 	, String gvCmpnyCd
+	, String gvSiteCd
+	, String gvAuthCd
 	, String gvUserCd
 ) {
 	public static TbmEduInfoParam from(TbmEduInfoRequest request, TokenInfo tokenInfo) {
-		
+
 		if(request == null)
 			throw new ApiException(CommonErrorCode.COMMON_400_001);
 		if(tokenInfo == null)
 			throw new ApiException(CommonErrorCode.COMMON_400_003);
-		
+
 		return new TbmEduInfoParam(
 			request.getMtrlCd()
 			, request.getTitle()
 			, request.getContents()
 			, request.getMtrlType()
 			, request.getUseYn()
+			, request.getSiteCd()
 			, request.getTbmEduItemInfoModelList()
 			, tokenInfo.gv_cmpnyCd()
+			, tokenInfo.gv_siteCd()
+			, tokenInfo.gv_authCd()
 			, tokenInfo.gv_userCd()
 		);
 	}

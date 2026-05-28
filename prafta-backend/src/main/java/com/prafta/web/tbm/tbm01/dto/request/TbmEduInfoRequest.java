@@ -18,5 +18,6 @@ public class TbmEduInfoRequest {
 	private String contents;
 	private String mtrlType;
 	private String useYn;
+	private String siteCd;		// prafta-033-A: 스코프(사업장). 빈 값/NULL=회사공통
 	private List<TbmEduItemInfoModel> tbmEduItemInfoModelList;
 }

@@ -121,44 +121,45 @@ const fnSubmitLogin = async () => {
   }
 
   try {
-    const response = await axios.post('/comApi/login/loginChk', {
+    const response = await axios.post('/comApi/login/login', {
       userId: userId.value,
       userPw: password.value,
     })
 
     if (response.status === 200) {
+      // 정책 §11.1에 따라 휴대폰(mblNo)/이메일(email)은 응답에 없으며 sessionStorage/store에 보관하지 않는다.
       const {
         token,
+        userCd,
         userId: id,
         userNm,
         cmpnyCd,
         siteCd,
         siteNo,
         siteNm,
+        nodeCd,
+        nodeNm,
         authCd,
-        mblNo,
-        email,
+        authLevel,
         refreshToken,
       } = response.data
-
-      console.log(response.data)
 
       // ✅ 로그인 토큰 세팅
       sessionStorage.setItem('token', token)
       axios.defaults.headers.common.Authorization = `Bearer ${token}`
 
       sessionStorage.setItem('gv_cmpnyCd', cmpnyCd)
+      sessionStorage.setItem('gv_userCd', userCd)
       sessionStorage.setItem('gv_userId', id)
       sessionStorage.setItem('gv_userNm', userNm)
       sessionStorage.setItem('gv_siteCd', siteCd)
       sessionStorage.setItem('gv_siteNo', siteNo)
       sessionStorage.setItem('gv_siteNm', siteNm)
+      sessionStorage.setItem('gv_nodeCd', nodeCd)
+      sessionStorage.setItem('gv_nodeNm', nodeNm)
       sessionStorage.setItem('gv_authCd', authCd)
-      sessionStorage.setItem('gv_mblNo', mblNo)
-      sessionStorage.setItem('gv_email', email)
+      sessionStorage.setItem('gv_authLevel', authLevel)
       localStorage.setItem('refreshToken', refreshToken)
-
-      // userStore.setUser({ userId: id, userNm, cmpnyCd, authCd, mblNo, email });
 
       // ✅ 아이디 저장 처리
       if (rememberId.value) {

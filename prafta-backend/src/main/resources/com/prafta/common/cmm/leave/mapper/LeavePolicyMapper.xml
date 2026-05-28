@@ -1,0 +1,321 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.prafta.common.cmm.leave.mapper.LeavePolicyMapper">
+
+    <!--
+      활성 정책 조회 (락 없음).
+      TB_LEAVE_POLICY + TB_LEAVE_USAGE_POLICY 1:1 LEFT JOIN으로 1행 반환.
+    -->
+    <select id="selectActivePolicy" resultType="com.prafta.common.cmm.leave.vo.LeavePolicyVO">
+    /* LeavePolicyMapper.selectActivePolicy */
+    SELECT
+          P.POLICY_SEQ                AS policySeq
+        , P.CMPNY_CD                  AS cmpnyCd
+        , P.POLICY_PRESET             AS policyPreset
+        , P.AXIS1_GRANT_BASE          AS axis1GrantBase
+        , P.AXIS2_FISCAL_START_MM     AS axis2FiscalStartMm
+        , P.AXIS2_FISCAL_START_DD     AS axis2FiscalStartDd
+        , P.AXIS3_FIRST_YEAR_METHOD   AS axis3FirstYearMethod
+        , P.AXIS3_PREGRANT_YN         AS axis3PregrantYn
+        , P.AXIS4_PRORATE_ROUNDING    AS axis4ProrateRounding
+        , P.AXIS5_TENURE_MODE         AS axis5TenureMode
+        , P.AXIS5_START_YEAR          AS axis5StartYear
+        , P.AXIS5_INTERVAL            AS axis5Interval
+        , P.AXIS5_MAX_DAYS            AS axis5MaxDays
+        , P.AXIS6_VALIDITY_MONTHS     AS axis6ValidityMonths
+        , P.AXIS7_USE_PROMOTION       AS axis7UsePromotion
+        , P.APRV_USE_YN               AS aprvUseYn
+        , P.USE_YN                    AS useYn
+        , P.APPLY_FROM_DATE           AS applyFromDate
+        , P.INSERT_NO                 AS insertNo
+        , DATE_FORMAT(P.INSERT_DATE, '%Y-%m-%dT%H:%i:%s') AS insertDate
+        , P.UPDATE_NO                 AS updateNo
+        , DATE_FORMAT(P.UPDATE_DATE, '%Y-%m-%dT%H:%i:%s') AS updateDate
+        , U.USAGE_UNIT                AS usageUnit
+      FROM TB_LEAVE_POLICY P
+      LEFT JOIN TB_LEAVE_USAGE_POLICY U
+        ON U.POLICY_SEQ = P.POLICY_SEQ
+     WHERE P.CMPNY_CD = #{cmpnyCd}
+       AND P.USE_YN = 'Y'
+     ORDER BY P.POLICY_SEQ DESC
+     LIMIT 1
+    </select>
+
+    <!--
+      활성 정책 조회 + 회사 행 락 (SELECT ... FOR UPDATE).
+      정책 생성/변경 트랜잭션 진입부에서 호출.
+
+      주의:
+        - 활성 정책이 없으면 행이 없어 락은 잡히지 않는다 (MySQL InnoDB 기본 동작).
+        - 회사 단위로 동시 변경을 직렬화하기 위해 USE_YN='Y' 행을 락한다.
+        - JOIN을 걸지 않고 P 행만 락한다 (USAGE_POLICY는 1:1이므로 P 락만으로 충분).
+    -->
+    <select id="selectActivePolicyForUpdate" resultType="com.prafta.common.cmm.leave.vo.LeavePolicyVO">
+    /* LeavePolicyMapper.selectActivePolicyForUpdate */
+    SELECT
+          P.POLICY_SEQ                AS policySeq
+        , P.CMPNY_CD                  AS cmpnyCd
+        , P.POLICY_PRESET             AS policyPreset
+        , P.AXIS1_GRANT_BASE          AS axis1GrantBase
+        , P.AXIS2_FISCAL_START_MM     AS axis2FiscalStartMm
+        , P.AXIS2_FISCAL_START_DD     AS axis2FiscalStartDd
+        , P.AXIS3_FIRST_YEAR_METHOD   AS axis3FirstYearMethod
+        , P.AXIS3_PREGRANT_YN         AS axis3PregrantYn
+        , P.AXIS4_PRORATE_ROUNDING    AS axis4ProrateRounding
+        , P.AXIS5_TENURE_MODE         AS axis5TenureMode
+        , P.AXIS5_START_YEAR          AS axis5StartYear
+        , P.AXIS5_INTERVAL            AS axis5Interval
+        , P.AXIS5_MAX_DAYS            AS axis5MaxDays
+        , P.AXIS6_VALIDITY_MONTHS     AS axis6ValidityMonths
+        , P.AXIS7_USE_PROMOTION       AS axis7UsePromotion
+        , P.APRV_USE_YN               AS aprvUseYn
+        , P.USE_YN                    AS useYn
+        , P.APPLY_FROM_DATE           AS applyFromDate
+        , P.INSERT_NO                 AS insertNo
+        , DATE_FORMAT(P.INSERT_DATE, '%Y-%m-%dT%H:%i:%s') AS insertDate
+        , P.UPDATE_NO                 AS updateNo
+        , DATE_FORMAT(P.UPDATE_DATE, '%Y-%m-%dT%H:%i:%s') AS updateDate
+      FROM TB_LEAVE_POLICY P
+     WHERE P.CMPNY_CD = #{cmpnyCd}
+       AND P.USE_YN = 'Y'
+     ORDER BY P.POLICY_SEQ DESC
+     LIMIT 1
+     FOR UPDATE
+    </select>
+
+    <!--
+      기존 활성 정책 비활성화. USE_YN='Y'인 단건만 대상으로 한다 (이중 안전장치).
+    -->
+    <update id="deactivatePolicy">
+    /* LeavePolicyMapper.deactivatePolicy */
+    UPDATE TB_LEAVE_POLICY
+       SET USE_YN      = 'N'
+         , UPDATE_NO   = #{updateBy}
+         , UPDATE_DATE = NOW()
+     WHERE CMPNY_CD = #{cmpnyCd}
+       AND POLICY_SEQ = #{policySeq}
+       AND USE_YN = 'Y'
+    </update>
+
+    <!--
+      신규 정책 INSERT. AUTO_INCREMENT POLICY_SEQ를 useGeneratedKeys로 회수.
+    -->
+    <insert id="insertPolicy" parameterType="com.prafta.common.cmm.leave.vo.LeavePolicyVO"
+            useGeneratedKeys="true" keyProperty="policySeq" keyColumn="POLICY_SEQ">
+    /* LeavePolicyMapper.insertPolicy */
+    INSERT INTO TB_LEAVE_POLICY (
+          CMPNY_CD
+        , POLICY_PRESET
+        , AXIS1_GRANT_BASE
+        , AXIS2_FISCAL_START_MM
+        , AXIS2_FISCAL_START_DD
+        , AXIS3_FIRST_YEAR_METHOD
+        , AXIS3_PREGRANT_YN
+        , AXIS4_PRORATE_ROUNDING
+        , AXIS5_TENURE_MODE
+        , AXIS5_START_YEAR
+        , AXIS5_INTERVAL
+        , AXIS5_MAX_DAYS
+        , AXIS6_VALIDITY_MONTHS
+        , AXIS7_USE_PROMOTION
+        , APRV_USE_YN
+        , USE_YN
+        , APPLY_FROM_DATE
+        , INSERT_NO
+        , INSERT_DATE
+        , UPDATE_NO
+        , UPDATE_DATE
+    )
+    VALUES (
+          #{cmpnyCd}
+        , #{policyPreset}
+        , #{axis1GrantBase}
+        , #{axis2FiscalStartMm}
+        , #{axis2FiscalStartDd}
+        , #{axis3FirstYearMethod}
+        , #{axis3PregrantYn}
+        , #{axis4ProrateRounding}
+        , #{axis5TenureMode}
+        , #{axis5StartYear}
+        , #{axis5Interval}
+        , #{axis5MaxDays}
+        , #{axis6ValidityMonths}
+        , #{axis7UsePromotion}
+        , #{aprvUseYn}
+        , #{useYn}
+        , #{applyFromDate}
+        , #{insertNo}
+        , NOW()
+        , #{updateNo}
+        , NOW()
+    )
+    </insert>
+
+    <!--
+      TB_LEAVE_USAGE_POLICY 1:1 INSERT.
+      POLICY_SEQ는 직전 insertPolicy로 채워진 VO의 PK를 그대로 사용.
+    -->
+    <insert id="insertUsagePolicy" parameterType="com.prafta.common.cmm.leave.vo.LeavePolicyVO">
+    /* LeavePolicyMapper.insertUsagePolicy */
+    INSERT INTO TB_LEAVE_USAGE_POLICY (
+          POLICY_SEQ
+        , CMPNY_CD
+        , USAGE_UNIT
+        , INSERT_NO
+        , INSERT_DATE
+        , UPDATE_NO
+        , UPDATE_DATE
+    )
+    VALUES (
+          #{policySeq}
+        , #{cmpnyCd}
+        , #{usageUnit}
+        , #{insertNo}
+        , NOW()
+        , #{updateNo}
+        , NOW()
+    )
+    </insert>
+
+    <!--
+      변경 이력 INSERT. PREV/NEW snapshot + IMPACT_SUMMARY는 JSON 컬럼.
+      MySQL JSON 컬럼은 varchar/text 형태의 유효 JSON 문자열을 자동 파싱하여 저장한다.
+    -->
+    <insert id="insertPolicyHistory" parameterType="com.prafta.common.cmm.leave.vo.LeavePolicyHistoryVO">
+    /* LeavePolicyMapper.insertPolicyHistory */
+    INSERT INTO TB_LEAVE_POLICY_HISTORY (
+          HIST_ID
+        , CMPNY_CD
+        , POLICY_SEQ
+        , CHANGE_TYPE
+        , PREV_SNAPSHOT
+        , NEW_SNAPSHOT
+        , CHANGE_REASON
+        , IMPACT_SUMMARY
+        , INSERT_NO
+        , INSERT_DATE
+    )
+    VALUES (
+          #{histId}
+        , #{cmpnyCd}
+        , #{policySeq}
+        , #{changeType}
+        , #{prevSnapshot}
+        , #{newSnapshot}
+        , #{changeReason}
+        , #{impactSummary}
+        , #{insertNo}
+        , NOW()
+    )
+    </insert>
+
+    <!--
+      HIST_ID 채번. prafta 표준 시퀀스 함수 사용.
+      SEQ_KEY = 'LEAVE_POLICY_HIST' (회사별 자동 INSERT).
+    -->
+    <select id="selectNextHistId" resultType="string">
+    /* LeavePolicyMapper.selectNextHistId */
+    SELECT FNC_CMM_SEQ_NEXTVAL(#{cmpnyCd}, 'LEAVE_POLICY_HIST')
+      FROM DUAL
+    </select>
+
+    <!--
+      변경 이력 페이징 조회. PREV_SNAPSHOT/NEW_SNAPSHOT/IMPACT_SUMMARY는 raw 문자열로 반환.
+      MyBatis가 JSON 컬럼을 String으로 매핑한다.
+    -->
+    <select id="selectPolicyHistory" resultType="com.prafta.common.cmm.leave.vo.LeavePolicyHistoryVO">
+    /* LeavePolicyMapper.selectPolicyHistory */
+    SELECT
+          HIST_ID                  AS histId
+        , CMPNY_CD                 AS cmpnyCd
+        , POLICY_SEQ               AS policySeq
+        , CHANGE_TYPE              AS changeType
+        , CAST(PREV_SNAPSHOT AS CHAR)   AS prevSnapshot
+        , CAST(NEW_SNAPSHOT AS CHAR)    AS newSnapshot
+        , CHANGE_REASON            AS changeReason
+        , CAST(IMPACT_SUMMARY AS CHAR)  AS impactSummary
+        , INSERT_NO                AS insertNo
+        , DATE_FORMAT(INSERT_DATE, '%Y-%m-%dT%H:%i:%s') AS insertDate
+      FROM TB_LEAVE_POLICY_HISTORY
+     WHERE CMPNY_CD = #{cmpnyCd}
+     ORDER BY INSERT_DATE DESC, HIST_ID DESC
+     LIMIT #{limit} OFFSET #{offset}
+    </select>
+
+    <select id="countPolicyHistory" resultType="long">
+    /* LeavePolicyMapper.countPolicyHistory */
+    SELECT COUNT(*)
+      FROM TB_LEAVE_POLICY_HISTORY
+     WHERE CMPNY_CD = #{cmpnyCd}
+    </select>
+
+    <!--
+      IMPACT_SUMMARY 계산용: 본 회사 활성 사용자 수.
+      USE_YN='Y' AND WITHDRAWAL_DATE IS NULL AND ACCOUNT_STATUS='01'.
+      (실제 활성 사용자 정의는 prafta 전역에서 별도 명세가 없어 보수적 기준 적용)
+    -->
+    <select id="countActiveUsers" resultType="int">
+    /* LeavePolicyMapper.countActiveUsers */
+    SELECT COUNT(*)
+      FROM TB_USER
+     WHERE CMPNY_CD = #{cmpnyCd}
+       AND USE_YN = 'Y'
+       AND WITHDRAWAL_DATE IS NULL
+       AND ACCOUNT_STATUS = '01'
+    </select>
+
+    <select id="selectMaxPolicySeq" resultType="java.lang.Long">
+    /* LeavePolicyMapper.selectMaxPolicySeq */
+    SELECT MAX(POLICY_SEQ)
+      FROM TB_LEAVE_POLICY
+     WHERE CMPNY_CD = #{cmpnyCd}
+    </select>
+
+    <!--
+      정책 변경 영향 분석(화면 8)용 활성 직원 목록.
+      - 활성 사용자: USE_YN='Y' AND WITHDRAWAL_DATE IS NULL AND ACCOUNT_STATUS='01' (countActiveUsers 동일 기준)
+      - 부서명: TB_SITE_NODE LEFT JOIN (CMPNY_CD,SITE_CD,NODE_CD). 부서 미지정/미존재 시 NULL.
+      - 기존 부여/사용: TB_USER_LEAVE_GRANT 활성 행(DEL_YN='N' AND STATUS='ACTIVE') 합계 (근사, D-5).
+        상관 서브쿼리로 집계하여 GROUP BY 없이 1:1 매핑.
+      - 대량 사업장 대비 LIMIT 가드.
+    -->
+    <select id="selectActiveUsersForImpact" resultType="com.prafta.common.cmm.leave.vo.AffectedEmployeeBaseVO">
+    /* LeavePolicyMapper.selectActiveUsersForImpact */
+    SELECT
+          U.USER_CD       AS userCd
+        , U.USER_NM       AS userNm
+        , N.NODE_NM       AS deptNm
+        , U.HIRE_DATE     AS hireDate
+        , IFNULL((
+              SELECT SUM(G.GRANT_DAYS)
+                FROM TB_USER_LEAVE_GRANT G
+               WHERE G.CMPNY_CD = U.CMPNY_CD
+                 AND G.USER_CD  = U.USER_CD
+                 AND G.DEL_YN   = 'N'
+                 AND G.STATUS   = 'ACTIVE'
+          ), 0) AS currentGrant
+        , IFNULL((
+              SELECT SUM(G.USED_DAYS)
+                FROM TB_USER_LEAVE_GRANT G
+               WHERE G.CMPNY_CD = U.CMPNY_CD
+                 AND G.USER_CD  = U.USER_CD
+                 AND G.DEL_YN   = 'N'
+                 AND G.STATUS   = 'ACTIVE'
+          ), 0) AS currentUsed
+      FROM TB_USER U
+      LEFT JOIN TB_SITE_NODE N
+        ON N.CMPNY_CD = U.CMPNY_CD
+       AND N.SITE_CD  = U.SITE_CD
+       AND N.NODE_CD  = U.NODE_CD
+     WHERE U.CMPNY_CD = #{cmpnyCd}
+       AND U.USE_YN = 'Y'
+       AND U.WITHDRAWAL_DATE IS NULL
+       AND U.ACCOUNT_STATUS = '01'
+       /* 입사일이 입력된 직원만 영향 분석 대상에 포함 (입사일 미입력자는 부여 기준 산정 불가) */
+       AND U.HIRE_DATE IS NOT NULL
+       AND TRIM(U.HIRE_DATE) &lt;&gt; ''
+     ORDER BY U.HIRE_DATE ASC, U.USER_CD ASC
+     LIMIT #{limit}
+    </select>
+
+</mapper>

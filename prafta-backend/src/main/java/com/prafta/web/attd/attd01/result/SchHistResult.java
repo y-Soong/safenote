@@ -8,9 +8,13 @@ public record SchHistResult(
 
 	, String fstSchTime	
 	, String fstSchBrkMin
+	, String fstBrkStrTime
+	, String fstBrkEndTime
 
 	, String secSchTime
 	, String secSchBrkMin
+	, String secBrkStrTime
+	, String secBrkEndTime
 	, String useYn
 	
 	, String userId

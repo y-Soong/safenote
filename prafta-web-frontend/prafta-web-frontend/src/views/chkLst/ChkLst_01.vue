@@ -453,7 +453,9 @@ const fnSrchSiteInfo = async () => {
       fnCallback(response);
     }
   } catch (err) {
-    await proxy.$alert(resolveApiErrorMessage(err, "조회 중 오류가 발생했습니다."));
+    await proxy.$alert(
+      resolveApiErrorMessage(err, "조회 중 오류가 발생했습니다.")
+    );
   }
 };
 

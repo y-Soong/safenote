@@ -14,27 +14,35 @@ import com.prafta.common.cmm.file.dto.param.FileInfoParam;
 import com.prafta.common.cmm.file.mapper.FileMapper;
 import com.prafta.common.cmm.file.service.FileService;
 import com.prafta.common.error.common.CommonErrorCode;
+import com.prafta.common.error.tbm.TbmErrorCode;
 import com.prafta.common.exception.ApiException;
+import com.prafta.common.util.AuthRoleUtils;
 import com.prafta.web.tbm.tbm01.application.command.TbmEduInfoCommand;
 import com.prafta.web.tbm.tbm01.application.command.TbmEduItemCommand;
 import com.prafta.web.tbm.tbm01.application.command.TbmEduItemInfoCommand;
 import com.prafta.web.tbm.tbm01.application.model.TbmEduItemInfoModel;
 import com.prafta.web.tbm.tbm01.application.model.TbmEduItemModel;
 import com.prafta.web.tbm.tbm01.application.model.TbmEduMtrlModel;
+import com.prafta.web.tbm.tbm01.application.param.TbmEduDetailParam;
 import com.prafta.web.tbm.tbm01.application.param.TbmEduInfoListParam;
 import com.prafta.web.tbm.tbm01.application.param.TbmEduInfoParam;
 import com.prafta.web.tbm.tbm01.application.param.TbmEduItemInfoListParam;
 import com.prafta.web.tbm.tbm01.application.param.TbmEduItemParam;
 import com.prafta.web.tbm.tbm01.application.param.TbmEduMtrlInfoParam;
+import com.prafta.web.tbm.tbm01.application.query.TbmEduDetailQuery;
 import com.prafta.web.tbm.tbm01.application.query.TbmEduInfoListQuery;
 import com.prafta.web.tbm.tbm01.application.query.TbmEduItemInfoListQuery;
 //import com.prafta.web.tbm.tbm01.dto.TbmEduItemInfoReq;
+import com.prafta.web.tbm.tbm01.dto.response.TbmEduDetailResponse;
 import com.prafta.web.tbm.tbm01.dto.response.TbmEduInfoListResponse;
 import com.prafta.web.tbm.tbm01.dto.response.TbmEduItemInfoListResponse;
 import com.prafta.web.tbm.tbm01.mapper.Tbm01Mapper;
 import com.prafta.web.tbm.tbm01.result.TbmEduInfoResult;
 import com.prafta.web.tbm.tbm01.result.TbmEduItemInfoResult;
+import com.prafta.web.tbm.tbm01.result.TbmEduUsedSessionResult;
 import com.prafta.web.tbm.tbm01.service.Tbm01Service;
+
+import java.util.Collections;
 
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -46,19 +54,63 @@ public class Tbm01ServiceImpl implements Tbm01Service{
 	private final Tbm01Mapper tbm01Mapper;
 	private final FileService fileService;
     private final FileMapper fileMapper;
-	
+
 	public TbmEduInfoListResponse selectTbmEduInfo(TbmEduInfoListParam param) {
+		// prafta-033-A: 999999(권한 미부여)는 콘텐츠 화면 진입 차단(서버에서도 거부)
+		if (AuthRoleUtils.isAccessDenied(param.gvAuthCd())) {
+			log.warn("TBM 콘텐츠 목록 접근 차단 - authCd={}", param.gvAuthCd());
+			throw new ApiException(TbmErrorCode.TBM_403_001);
+		}
+
 		TbmEduInfoListResponse response = null;
-		
+
 		List<TbmEduInfoResult> tbmEduInfoResultList = tbm01Mapper.selectTbmEduInfo(TbmEduInfoListQuery.from(param));
-		
+
 		List<TbmEduItemInfoResult> tbmEduItemInfoResult = tbm01Mapper.selectTbmEduItemInfo(TbmEduItemInfoListQuery.from(param));
-		
+
 		response = TbmEduInfoListResponse.builder()
 										.tbmEduInfoResultList(tbmEduInfoResultList)
 										.tbmEduItemInfoResultList(tbmEduItemInfoResult)
 										.build();
 		return response;
+	}
+
+	/**
+	 * prafta-033-A: W-03 콘텐츠 상세(묶음+세부항목+사용 TBM 이력).
+	 * 999999 진입 차단 + 스코프 격리(사업장 관리자는 자기 사업장+회사공통만).
+	 */
+	public TbmEduDetailResponse selectTbmEduDetail(TbmEduDetailParam param) {
+		if (AuthRoleUtils.isAccessDenied(param.gvAuthCd())) {
+			log.warn("TBM 콘텐츠 상세 접근 차단 - authCd={}", param.gvAuthCd());
+			throw new ApiException(TbmErrorCode.TBM_403_001);
+		}
+
+		TbmEduDetailQuery query = TbmEduDetailQuery.from(param);
+
+		TbmEduInfoResult master = tbm01Mapper.selectTbmEduDetail(query);
+		if (master == null) {
+			throw new ApiException(CommonErrorCode.COMMON_400_401);
+		}
+
+		// 스코프 격리: 회사 전체 권한(master/safe)이 아니면 회사공통 또는 자기 사업장만 열람 가능
+		if (!AuthRoleUtils.isCompanyWide(param.gvAuthCd())) {
+			boolean isCommon = master.siteCd() == null || master.siteCd().isEmpty();
+			boolean isOwnSite = param.gvSiteCd() != null && param.gvSiteCd().equals(master.siteCd());
+			if (!isCommon && !isOwnSite) {
+				log.warn("TBM 콘텐츠 상세 스코프 위반 - authCd={}, ownSite={}, targetSite={}",
+						param.gvAuthCd(), param.gvSiteCd(), master.siteCd());
+				throw new ApiException(TbmErrorCode.TBM_403_003);
+			}
+		}
+
+		List<TbmEduItemInfoResult> items = tbm01Mapper.selectTbmEduDetailItems(query);
+		List<TbmEduUsedSessionResult> usedSessions = tbm01Mapper.selectTbmEduUsedSessions(query);
+
+		return TbmEduDetailResponse.builder()
+				.tbmEduInfo(master)
+				.tbmEduItemInfoList(items != null ? items : Collections.emptyList())
+				.usedSessionList(usedSessions != null ? usedSessions : Collections.emptyList())
+				.build();
 	}
 	
 	public TbmEduItemInfoListResponse selectTbmEduItemInfo(TbmEduItemInfoListParam param) {
@@ -78,21 +130,49 @@ public class Tbm01ServiceImpl implements Tbm01Service{
 	
 	@Transactional
 	public void saveTbmEduInfos(TbmEduInfoParam param) {
+		// prafta-033-A: 999999(권한 미부여)는 콘텐츠 저장 차단
+		if (AuthRoleUtils.isAccessDenied(param.gvAuthCd())) {
+			log.warn("TBM 콘텐츠 저장 접근 차단 - authCd={}", param.gvAuthCd());
+			throw new ApiException(TbmErrorCode.TBM_403_001);
+		}
+
+		// prafta-033-A: 회사공통(SITE_CD 비어있음) 콘텐츠 저장은 master/safe 만 허용
+		boolean isCommonSave = (param.siteCd() == null || param.siteCd().isEmpty());
+		if (isCommonSave && !AuthRoleUtils.canManageCommon(param.gvAuthCd())) {
+			log.warn("TBM 회사공통 콘텐츠 저장 권한 없음 - authCd={}", param.gvAuthCd());
+			throw new ApiException(TbmErrorCode.TBM_403_002);
+		}
+
+		// 사업장 콘텐츠 저장: 회사 전체 권한이 아니면 자기 사업장으로만 저장 가능(스코프 격리)
+		if (!isCommonSave && !AuthRoleUtils.isCompanyWide(param.gvAuthCd())) {
+			if (param.gvSiteCd() == null || !param.gvSiteCd().equals(param.siteCd())) {
+				log.warn("TBM 타 사업장 콘텐츠 저장 시도 - authCd={}, ownSite={}, targetSite={}",
+						param.gvAuthCd(), param.gvSiteCd(), param.siteCd());
+				throw new ApiException(TbmErrorCode.TBM_403_003);
+			}
+		}
+
 		try {
 			String mtrlCd = "";
 			String fileMgmtCd = "";
-			
+
 			if(param.mtrlCd().isEmpty()) {
 				mtrlCd = tbm01Mapper.selectMtrlCd(param.gvCmpnyCd());
 			} else {
 				mtrlCd = param.mtrlCd();
 			}
-			
+
 			tbm01Mapper.mergeTbmEduInfo(TbmEduInfoCommand.from(param, mtrlCd));
 			
 			for(TbmEduItemInfoModel model : param.tbmEduItemInfoModelList()) {
+				// prafta-033-A: 세부항목 타입 allow-list 검증 (01 이미지 / 02 동영상 / 03 유튜브URL / 04 PDF)
+				if (!isAllowedItemType(model.mtrlItemType())) {
+					log.warn("TBM 세부항목 타입 부적합 - mtrlItemType={}", model.mtrlItemType());
+					throw new ApiException(CommonErrorCode.COMMON_400_002);
+				}
+
 				fileMgmtCd = model.fileMgmtCd();
-				
+
 				MultipartFile file = null;
 				if (StringUtils.hasText(model.itemBase64())) {
 					byte[] bytes = Base64.getDecoder().decode(model.itemBase64().trim());
@@ -127,10 +207,22 @@ public class Tbm01ServiceImpl implements Tbm01Service{
 				
 				tbm01Mapper.mergeTbmEduItemInfo(command);
 			}
+		} catch (ApiException ae) {
+			// 권한/검증 등 의도된 예외는 원본 그대로 전파
+			throw ae;
 		} catch (Exception e) {
+			log.error("TBM 콘텐츠 저장 중 오류", e);
 			throw new ApiException(CommonErrorCode.COMMON_500_001);
 		}
-	}	
+	}
+
+	/** prafta-033-A: 세부항목(미디어) 타입 allow-list. SYS018: 01/02/03/04 */
+	private boolean isAllowedItemType(String mtrlItemType) {
+		return "01".equals(mtrlItemType)
+			|| "02".equals(mtrlItemType)
+			|| "03".equals(mtrlItemType)
+			|| "04".equals(mtrlItemType);
+	}
 	
 	public void deleteTbmEduItemInfo(TbmEduItemParam param) {
 		

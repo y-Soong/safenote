@@ -219,7 +219,7 @@ public class BaseinfoServiceImpl implements BaseinfoService{
         	throw new ApiException(CommonErrorCode.COMMON_400_002);
         }
 		
-		baseinfoMapper.updateSmsAuthReq(MblUniqueCheckCommand.from(smsId, smsId, param));
+		baseinfoMapper.updateSmsAuthReq(MblUniqueCheckCommand.from(smsId, phoneHmac, param));
 	}
 	
 	public SiteInfoResponse selectSiteInfoList(SiteInfoParam param) {

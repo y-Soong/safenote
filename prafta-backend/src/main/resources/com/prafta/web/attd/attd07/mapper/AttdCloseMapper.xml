@@ -1,0 +1,356 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.prafta.web.attd.attd07.mapper.AttdCloseMapper">
+
+    <!--
+      PRAFTA-028: 마감 단위에 부서(NODE_CD) 차원 추가. nodeCd 는 서비스에서 정규화되어
+      '*'(전체 사업장) 또는 실제 노드코드로만 들어온다. incSubNodeYn 은 'Y'/'N'.
+      카운트 쿼리는 부서 스코프(부서 + 하위포함 시 하위트리) 내로 한정한다.
+    -->
+
+    <!-- 마감 상태 행(정확 스코프) 조회 (없으면 null = 미마감) -->
+    <select id="selectCloseRow" resultType="com.prafta.web.attd.attd07.result.AttdCloseRowResult">
+    /* AttdCloseMapper.selectCloseRow */
+    SELECT
+          A.CLOSE_YM                                          AS closeYm
+        , A.CLOSE_STATUS                                      AS closeStatus
+        , DATE_FORMAT(A.CLOSE_DTIME, '%Y-%m-%dT%H:%i:%s')     AS closeDtime
+        , A.CLOSE_USER_CD                                     AS closeUserCd
+        , DATE_FORMAT(A.UNCLOSE_DTIME, '%Y-%m-%dT%H:%i:%s')   AS uncloseDtime
+        , A.UNCLOSE_USER_CD                                   AS uncloseUserCd
+        , A.CLOSE_DESC                                        AS closeDesc
+      FROM TB_ATTD_CLOSE A
+     WHERE A.CMPNY_CD = #{cmpnyCd}
+       AND A.SITE_CD  = #{siteCd}
+       AND A.NODE_CD  = #{nodeCd}
+       AND A.CLOSE_YM = #{closeYm}
+     LIMIT 1
+    </select>
+
+    <!-- 미결(대기) 요청 — 초과근무(03/04) 제외. 스코프(부서+하위포함) 한정 -->
+    <select id="countPendingReq" resultType="int">
+    /* AttdCloseMapper.countPendingReq */
+    <choose>
+      <when test='"*".equals(nodeCd)'>
+        SELECT COUNT(*)
+          FROM TB_USER_ATTD_REQ A
+         WHERE A.CMPNY_CD   = #{cmpnyCd}
+           AND A.SITE_CD    = #{siteCd}
+           AND LEFT(A.WORK_YMD, 6) = #{closeYm}
+           AND A.REQ_STATUS = '01'
+           AND A.DEL_YN     = 'N'
+           AND A.REQ_TYPE NOT IN ('03', '04')
+      </when>
+      <otherwise>
+        WITH RECURSIVE node_tree AS (
+            SELECT N.NODE_CD
+              FROM TB_SITE_NODE N
+             WHERE N.CMPNY_CD = #{cmpnyCd} AND N.SITE_CD = #{siteCd} AND N.NODE_CD = #{nodeCd}
+            <if test='"Y".equals(incSubNodeYn)'>
+            UNION ALL
+            SELECT C.NODE_CD
+              FROM TB_SITE_NODE C
+              JOIN node_tree P
+                ON C.CMPNY_CD = #{cmpnyCd} AND C.SITE_CD = #{siteCd} AND C.PARENT_NODE_CD = P.NODE_CD
+            </if>
+        )
+        SELECT COUNT(*)
+          FROM TB_USER_ATTD_REQ A
+         WHERE A.CMPNY_CD   = #{cmpnyCd}
+           AND A.SITE_CD    = #{siteCd}
+           AND A.NODE_CD    IN (SELECT NODE_CD FROM node_tree)
+           AND LEFT(A.WORK_YMD, 6) = #{closeYm}
+           AND A.REQ_STATUS = '01'
+           AND A.DEL_YN     = 'N'
+           AND A.REQ_TYPE NOT IN ('03', '04')
+      </otherwise>
+    </choose>
+    </select>
+
+    <!-- 미승인 추가근무 — 초과근무(03/04) 신청 대기. 스코프 한정 -->
+    <select id="countUnapprovedOt" resultType="int">
+    /* AttdCloseMapper.countUnapprovedOt */
+    <choose>
+      <when test='"*".equals(nodeCd)'>
+        SELECT COUNT(*)
+          FROM TB_USER_ATTD_REQ A
+         WHERE A.CMPNY_CD   = #{cmpnyCd}
+           AND A.SITE_CD    = #{siteCd}
+           AND LEFT(A.WORK_YMD, 6) = #{closeYm}
+           AND A.REQ_STATUS = '01'
+           AND A.DEL_YN     = 'N'
+           AND A.REQ_TYPE IN ('03', '04')
+      </when>
+      <otherwise>
+        WITH RECURSIVE node_tree AS (
+            SELECT N.NODE_CD
+              FROM TB_SITE_NODE N
+             WHERE N.CMPNY_CD = #{cmpnyCd} AND N.SITE_CD = #{siteCd} AND N.NODE_CD = #{nodeCd}
+            <if test='"Y".equals(incSubNodeYn)'>
+            UNION ALL
+            SELECT C.NODE_CD
+              FROM TB_SITE_NODE C
+              JOIN node_tree P
+                ON C.CMPNY_CD = #{cmpnyCd} AND C.SITE_CD = #{siteCd} AND C.PARENT_NODE_CD = P.NODE_CD
+            </if>
+        )
+        SELECT COUNT(*)
+          FROM TB_USER_ATTD_REQ A
+         WHERE A.CMPNY_CD   = #{cmpnyCd}
+           AND A.SITE_CD    = #{siteCd}
+           AND A.NODE_CD    IN (SELECT NODE_CD FROM node_tree)
+           AND LEFT(A.WORK_YMD, 6) = #{closeYm}
+           AND A.REQ_STATUS = '01'
+           AND A.DEL_YN     = 'N'
+           AND A.REQ_TYPE IN ('03', '04')
+      </otherwise>
+    </choose>
+    </select>
+
+    <!--
+      GPS 미확인 미해소 — Mock 위치('Y') 중, 같은 사용자/일자에 승인된 근태 보정(01/02, '02')이 없는 건.
+      GPS 테이블엔 NODE_CD 가 없어 TB_USER 로 사용자 소속부서를 구해 스코프 한정한다.
+    -->
+    <select id="countGpsUnconfirmed" resultType="int">
+    /* AttdCloseMapper.countGpsUnconfirmed */
+    <choose>
+      <when test='"*".equals(nodeCd)'>
+        SELECT COUNT(*)
+          FROM TB_USER_ATTD_GPS A
+         WHERE A.CMPNY_CD = #{cmpnyCd}
+           AND A.SITE_CD  = #{siteCd}
+           AND LEFT(A.API_CALL_DATE, 6) = #{closeYm}
+           AND A.IS_MOCKED = 'Y'
+           AND NOT EXISTS (
+               SELECT 1 FROM TB_USER_ATTD_REQ R
+                WHERE R.CMPNY_CD = A.CMPNY_CD AND R.SITE_CD = A.SITE_CD
+                  AND R.USER_CD = A.USER_CD AND R.WORK_YMD = A.API_CALL_DATE
+                  AND R.REQ_TYPE IN ('01','02') AND R.REQ_STATUS = '02' AND R.DEL_YN = 'N'
+           )
+      </when>
+      <otherwise>
+        WITH RECURSIVE node_tree AS (
+            SELECT N.NODE_CD
+              FROM TB_SITE_NODE N
+             WHERE N.CMPNY_CD = #{cmpnyCd} AND N.SITE_CD = #{siteCd} AND N.NODE_CD = #{nodeCd}
+            <if test='"Y".equals(incSubNodeYn)'>
+            UNION ALL
+            SELECT C.NODE_CD
+              FROM TB_SITE_NODE C
+              JOIN node_tree P
+                ON C.CMPNY_CD = #{cmpnyCd} AND C.SITE_CD = #{siteCd} AND C.PARENT_NODE_CD = P.NODE_CD
+            </if>
+        )
+        SELECT COUNT(*)
+          FROM TB_USER_ATTD_GPS A
+          JOIN TB_USER U
+            ON U.CMPNY_CD = A.CMPNY_CD AND U.SITE_CD = A.SITE_CD AND U.USER_CD = A.USER_CD
+         WHERE A.CMPNY_CD = #{cmpnyCd}
+           AND A.SITE_CD  = #{siteCd}
+           AND U.NODE_CD  IN (SELECT NODE_CD FROM node_tree)
+           AND LEFT(A.API_CALL_DATE, 6) = #{closeYm}
+           AND A.IS_MOCKED = 'Y'
+           AND NOT EXISTS (
+               SELECT 1 FROM TB_USER_ATTD_REQ R
+                WHERE R.CMPNY_CD = A.CMPNY_CD AND R.SITE_CD = A.SITE_CD
+                  AND R.USER_CD = A.USER_CD AND R.WORK_YMD = A.API_CALL_DATE
+                  AND R.REQ_TYPE IN ('01','02') AND R.REQ_STATUS = '02' AND R.DEL_YN = 'N'
+           )
+      </otherwise>
+    </choose>
+    </select>
+
+    <!-- 정확 스코프(회사+사업장+부서+월) 마감 행 수 — 재마감 방지 -->
+    <select id="countClosed" resultType="int">
+    /* AttdCloseMapper.countClosed */
+    SELECT COUNT(*)
+      FROM TB_ATTD_CLOSE A
+     WHERE A.CMPNY_CD     = #{cmpnyCd}
+       AND A.SITE_CD      = #{siteCd}
+       AND A.NODE_CD      = #{nodeCd}
+       AND A.CLOSE_YM     = #{closeYm}
+       AND A.CLOSE_STATUS = 'CLOSED'
+    </select>
+
+    <!-- 커버리지 마감 수 — 주어진 부서가 마감으로 덮이는지 ('*' / 자기자신 / INC_SUB='Y' 상위) -->
+    <select id="countCovering" resultType="int">
+    /* AttdCloseMapper.countCovering */
+    <choose>
+      <when test='"*".equals(nodeCd)'>
+        SELECT COUNT(*)
+          FROM TB_ATTD_CLOSE C
+         WHERE C.CMPNY_CD = #{cmpnyCd} AND C.SITE_CD = #{siteCd} AND C.CLOSE_YM = #{closeYm}
+           AND C.CLOSE_STATUS = 'CLOSED' AND C.NODE_CD = '*'
+      </when>
+      <otherwise>
+        WITH RECURSIVE anc AS (
+            SELECT N.NODE_CD, N.PARENT_NODE_CD
+              FROM TB_SITE_NODE N
+             WHERE N.CMPNY_CD = #{cmpnyCd} AND N.SITE_CD = #{siteCd} AND N.NODE_CD = #{nodeCd}
+            UNION ALL
+            SELECT P.NODE_CD, P.PARENT_NODE_CD
+              FROM TB_SITE_NODE P
+              JOIN anc A2
+                ON P.CMPNY_CD = #{cmpnyCd} AND P.SITE_CD = #{siteCd} AND P.NODE_CD = A2.PARENT_NODE_CD
+        )
+        SELECT COUNT(*)
+          FROM TB_ATTD_CLOSE C
+         WHERE C.CMPNY_CD = #{cmpnyCd} AND C.SITE_CD = #{siteCd} AND C.CLOSE_YM = #{closeYm}
+           AND C.CLOSE_STATUS = 'CLOSED'
+           AND (
+                C.NODE_CD = '*'
+             OR C.NODE_CD = #{nodeCd}
+             OR (C.INC_SUB_YN = 'Y' AND C.NODE_CD IN (SELECT NODE_CD FROM anc WHERE NODE_CD != #{nodeCd}))
+           )
+      </otherwise>
+    </choose>
+    </select>
+
+    <!-- 노드 관리자 여부 — userCd 가 nodeCd 또는 상위 노드의 정/부 관리자인지 -->
+    <select id="countNodeAdmin" resultType="int">
+    /* AttdCloseMapper.countNodeAdmin */
+    WITH RECURSIVE anc AS (
+        SELECT N.NODE_CD, N.PARENT_NODE_CD, N.MAIN_ADMIN_CD, N.SUB_ADMIN_CD
+          FROM TB_SITE_NODE N
+         WHERE N.CMPNY_CD = #{cmpnyCd} AND N.SITE_CD = #{siteCd} AND N.NODE_CD = #{nodeCd}
+        UNION ALL
+        SELECT P.NODE_CD, P.PARENT_NODE_CD, P.MAIN_ADMIN_CD, P.SUB_ADMIN_CD
+          FROM TB_SITE_NODE P
+          JOIN anc A2
+            ON P.CMPNY_CD = #{cmpnyCd} AND P.SITE_CD = #{siteCd} AND P.NODE_CD = A2.PARENT_NODE_CD
+    )
+    SELECT COUNT(*)
+      FROM anc
+     WHERE MAIN_ADMIN_CD = #{userCd} OR SUB_ADMIN_CD = #{userCd}
+    </select>
+
+    <!-- 사용자 소속부서 조회 (마감 가드에서 대상 사용자 부서 해석용) -->
+    <select id="selectUserNodeCd" resultType="string">
+    /* AttdCloseMapper.selectUserNodeCd */
+    SELECT U.NODE_CD
+      FROM TB_USER U
+     WHERE U.CMPNY_CD = #{cmpnyCd}
+       AND U.SITE_CD  = #{siteCd}
+       AND U.USER_CD  = #{userCd}
+     LIMIT 1
+    </select>
+
+    <!-- 마감 upsert (CLOSED) -->
+    <insert id="upsertClose" parameterType="com.prafta.web.attd.attd07.application.command.AttdCloseCommand">
+    /* AttdCloseMapper.upsertClose */
+    INSERT INTO TB_ATTD_CLOSE (
+          CMPNY_CD
+        , SITE_CD
+        , NODE_CD
+        , INC_SUB_YN
+        , CLOSE_YM
+        , CLOSE_STATUS
+        , CLOSE_DTIME
+        , CLOSE_USER_CD
+        , CLOSE_DESC
+        , INSERT_NO
+        , INSERT_DATE
+        , UPDATE_NO
+        , UPDATE_DATE
+    )
+    VALUES (
+          #{cmpnyCd}
+        , #{siteCd}
+        , #{nodeCd}
+        , #{incSubNodeYn}
+        , #{closeYm}
+        , 'CLOSED'
+        , NOW()
+        , #{userCd}
+        , #{closeDesc}
+        , #{userCd}
+        , NOW()
+        , #{userCd}
+        , NOW()
+    ) AS NEW
+    ON DUPLICATE KEY UPDATE
+          CLOSE_STATUS  = 'CLOSED'
+        , INC_SUB_YN    = NEW.INC_SUB_YN
+        , CLOSE_DTIME   = NOW()
+        , CLOSE_USER_CD = NEW.CLOSE_USER_CD
+        , CLOSE_DESC    = NEW.CLOSE_DESC
+        , UPDATE_NO     = NEW.UPDATE_NO
+        , UPDATE_DATE   = NOW()
+    </insert>
+
+    <!-- 마감 해제 (OPEN) — 해당 정확 스코프가 CLOSED 일 때만 -->
+    <update id="updateUnclose" parameterType="com.prafta.web.attd.attd07.application.command.AttdCloseCommand">
+    /* AttdCloseMapper.updateUnclose */
+    UPDATE TB_ATTD_CLOSE
+       SET CLOSE_STATUS    = 'OPEN'
+         , UNCLOSE_DTIME   = NOW()
+         , UNCLOSE_USER_CD = #{userCd}
+         , CLOSE_DESC      = #{closeDesc}
+         , UPDATE_NO       = #{userCd}
+         , UPDATE_DATE     = NOW()
+     WHERE CMPNY_CD     = #{cmpnyCd}
+       AND SITE_CD      = #{siteCd}
+       AND NODE_CD      = #{nodeCd}
+       AND CLOSE_YM     = #{closeYm}
+       AND CLOSE_STATUS = 'CLOSED'
+    </update>
+
+    <!-- 마감 이력 ID 채번 -->
+    <select id="selectNextCloseHistId" resultType="string">
+    /* AttdCloseMapper.selectNextCloseHistId */
+    SELECT FNC_CMM_SEQ_NEXTVAL(#{cmpnyCd}, 'ATTD_CLOSE_HIST')
+      FROM DUAL
+    </select>
+
+    <!-- 마감/해제 이력 INSERT -->
+    <insert id="insertCloseHist">
+    /* AttdCloseMapper.insertCloseHist */
+    INSERT INTO TB_ATTD_CLOSE_HIST (
+          HIST_ID
+        , CMPNY_CD
+        , SITE_CD
+        , NODE_CD
+        , INC_SUB_YN
+        , CLOSE_YM
+        , ACTION_TYPE
+        , ACTION_USER_CD
+        , ACTION_DTIME
+        , ACTION_DESC
+        , INSERT_NO
+        , INSERT_DATE
+    )
+    VALUES (
+          #{histId}
+        , #{cmpnyCd}
+        , #{siteCd}
+        , #{nodeCd}
+        , #{incSubNodeYn}
+        , #{closeYm}
+        , #{actionType}
+        , #{userCd}
+        , NOW()
+        , #{actionDesc}
+        , #{userCd}
+        , NOW()
+    )
+    </insert>
+
+    <!-- 마감/해제 이력 목록 (스코프 부서 기준, 최신순) -->
+    <select id="selectCloseHist" resultType="com.prafta.web.attd.attd07.result.AttdCloseHistResult">
+    /* AttdCloseMapper.selectCloseHist */
+    SELECT
+          A.HIST_ID                                          AS histId
+        , A.CLOSE_YM                                         AS closeYm
+        , A.ACTION_TYPE                                      AS actionType
+        , A.ACTION_USER_CD                                   AS actionUserCd
+        , DATE_FORMAT(A.ACTION_DTIME, '%Y-%m-%dT%H:%i:%s')   AS actionDtime
+        , A.ACTION_DESC                                      AS actionDesc
+      FROM TB_ATTD_CLOSE_HIST A
+     WHERE A.CMPNY_CD = #{cmpnyCd}
+       AND A.SITE_CD  = #{siteCd}
+       AND A.NODE_CD  = #{nodeCd}
+       AND A.CLOSE_YM = #{closeYm}
+     ORDER BY A.ACTION_DTIME DESC, A.HIST_ID DESC
+    </select>
+
+</mapper>

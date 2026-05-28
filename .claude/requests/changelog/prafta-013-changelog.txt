@@ -1,0 +1,197 @@
+================================================================================
+PRAFTA-013 변경 이력 (changelog)
+일일사용자 회원가입 신규 화면 (비로그인 외부 화면)
+작성일: 2026-05-18
+================================================================================
+
+[요약]
+일일 사용자가 URL 접근 또는 QR 스캔으로 진입하는 비로그인 외부 회원가입 화면을
+신규 개발했다. 관리자는 Baim_05 화면의 링크복사/QR출력으로 가입 링크를 배포하고,
+일일 사용자는 회원가입 시 TB_DAILY_USER 에 저장된다.
+
+- 진입 URL : http://localhost:8081/dailyUserJoin/{joinCd}
+              joinCd = {회사코드}-{사업장코드5자리} (예: 001-00001)
+- 화면     : 회사명/사업장명(읽기전용 표시), 사용자ID/이름/휴대폰(입력),
+              SMS 인증, 이용약관 동의 → 회원가입 → 발급 사용자ID 안내
+- 저장     : TB_DAILY_USER (+ 슬롯 매핑, 약관 동의 이력)
+
+[사용자 확정 사항 (정책서보다 우선)]
+1. 파일 경로 : 백엔드 신규 모듈 com.prafta.common.cmm.dailyjoin (클래스+메서드
+              @NoAuth 비로그인 노출) / 프론트 prafta-web-frontend
+              views/dailyJoin/DailyUserJoin.vue.
+2. SMS 인증 : 포함 (인증요청/인증번호 확인). 기존 @NoAuth API 재사용.
+3. 약관 동의: 동의 이력 DB 저장까지 (TB_TERMS_USER_AGR_MGMT).
+4. 가입 완료: 발급된 사용자ID를 화면에 안내.
+5. 슬롯 연동: 슬롯 자동 매핑 + 빈 슬롯 없음/계정등록 토글 OFF 시 가입 차단
+              (공통 정책서 §5.5.3/§5.7 준수).
+6. abuse 방어(rate-limit): 이번 범위에서 제외, 별도 후속 작업으로 분리.
+
+[DB 변경]
+- 없음. 기존 테이블만 사용 (TB_DAILY_USER, TB_CMPNY, TB_SITE,
+  TB_DAILY_USER_SLOT, TB_DAILY_USER_LINK_POLICY, TB_TERMS,
+  TB_TERMS_USER_AGR_MGMT, TB_SMS_AUTH_CODE).
+- 주의: 이 세션 MCP MySQL 미연결, .claude/context/schema-full.sql 스냅샷 기준.
+
+
+================================================================================
+§1. 백엔드 - 신규 모듈 com.prafta.common.cmm.dailyjoin
+================================================================================
+패키지 레이아웃은 attd08/baim05 관례 준수(controller/service/impl/mapper/dto/
+application/result). 컨트롤러는 클래스 + 각 메서드에 @NoAuth 부착
+(AuthAspect 포인트컷이 메서드 레벨 @annotation 만 인식하므로 메서드 레벨이
+실제 면제를 보장). gateway prefix 적용 후 실 호출 경로는 /comApi/dailyJoin/*.
+
+-- PLNprafta-013001 : joinCd 회사/사업장 조회 API ------------------------------
+신규 파일:
+  controller/DailyJoinController.java
+  service/DailyJoinService.java, service/impl/DailyJoinServiceImpl.java
+  mapper/DailyJoinMapper.java
+  resources/.../dailyjoin/mapper/DailyJoinMapper.xml
+  dto/request/SiteInfoRequest.java, dto/response/SiteInfoResponse.java
+  application/param/SiteInfoParam.java, application/query/SiteInfoQuery.java
+  result/SiteInfoResult.java
+  error/dailyjoin/DailyJoinErrorCode.java (신규 도메인 ErrorCode)
+내용:
+  - GET /comApi/dailyJoin/site-infos?cmpnyCd=&siteCd=
+    → { cmpnyCd, cmpnyNm, siteCd, siteNm }
+  - TB_CMPNY INNER JOIN TB_SITE 단독 조회(비로그인 적합, TB_USER_SITE_AUTH 미사용).
+    회사 USE_YN='Y'(IFNULL ...,'N') + 사업장 USE_YN='Y' 조건. 미존재 시
+    DAILYJOIN_404_001.
+
+-- PLNprafta-013002 : ID 중복체크 + 회원가입 API ------------------------------
+신규 파일(요약): dto/request·response, application/param·query·command,
+  result 의 UserIdDupleCheck* / InsertDailyUser* / AgrTermsRequest /
+  RequiredTermsResult / EmptySlotQuery / LinkPolicyQuery /
+  DailyUserSlotUpdCommand / TermsUserAgrCommand 등.
+내용:
+  - GET /comApi/dailyJoin/user-id-duple-checks?cmpnyCd=&userId=
+    → { uniqueYn:'Y'|'N' }. TB_DAILY_USER 대상, USE_YN='Y' 카운트,
+      UNIQUE (CMPNY_CD, USER_ID) 기준. (기존 baseinfo user-id-duple-checks 는
+      TB_USER 대상이라 재사용 불가 → 신규.)
+  - POST /comApi/dailyJoin/insert-daily-user (@Transactional)
+    요청 { cmpnyCd, siteCd, userId, userNm, mblNo, certNo, agrTermsList }
+    응답 { userId }
+    처리: SMS 재검증·소진 → 계정등록 토글(TB_DAILY_USER_LINK_POLICY.USE_YN)
+      검증 → ID/휴대폰 중복 재확인 → 첫 빈 슬롯 확보 → USER_CD 채번
+      (CONCAT('D',DATE_FORMAT(NOW(),'%Y%m%d'),FNC_CMM_SEQ_NEXTVAL(cmpnyCd,
+      'DAILY_USER'))) → 휴대폰 AES-GCM(MBL_NO_ENC)/HMAC/last4 → 난수 비밀번호
+      (passwordHasher.generateRandomHash()) → TB_DAILY_USER insert
+      (REG_TYPE='01', ACCOUNT_STATUS='01', USE_YN='Y',
+      WORK_EXPIRE_DATE=DATE_FORMAT(NOW(),'%Y%m%d')) → 슬롯 조건부 점유 UPDATE
+      (동시성 충돌 시 롤백) → TB_TERMS_USER_AGR_MGMT 약관 동의 이력 insert.
+
+
+================================================================================
+§2. 프론트엔드 - prafta-web-frontend
+================================================================================
+-- PLNprafta-013003 ----------------------------------------------------------
+신규 파일:
+  prafta-web-frontend/prafta-web-frontend/src/views/dailyJoin/DailyUserJoin.vue
+변경 파일:
+  prafta-web-frontend/prafta-web-frontend/src/router/index.js
+내용:
+  - router/index.js 고정 routes 배열에 catch-all 앞에
+    { path:"/dailyUserJoin/:joinCd", name:"DailyUserJoin", component:lazy } 추가.
+    meta.requiresAuth 미부착 → beforeEach 인증 강제 안 함(비로그인).
+  - DailyUserJoin.vue : 전체화면 페이지 레이아웃(외부 단독 진입, 모바일 반응형).
+    onMounted joinCd 파싱·검증 → site-infos 조회 → 약관 목록(SYS008) 조회.
+    ID 중복확인, SMS 인증요청/확인(60초 타이머, 기존 baseinfo @NoAuth API 재사용),
+    약관 동의(전체/개별, TermsDetailPop 보기), 제출 → 완료 패널(발급 userId 표시).
+    template/style 골격은 planner 작성분 사용, CSS 변수(tokens.css)만 사용.
+
+
+================================================================================
+§3. QA·보안 검토 및 재작업
+================================================================================
+1차 검토에서 보안 High 2건/Medium 2건/Low 1건, QA High 1건/Medium 2건/Low 1건이
+발견되어 재작업 후 재검증으로 종료.
+
+-- 재작업 6건 (1차 지적 → 해결) ----------------------------------------------
+[1] (보안 High SECprafta-013001) SMS 인증코드 일회성 소진:
+    selectSmsVerifiedCnt(COUNT) → selectSmsVerifiedSmsId(SMS_ID 반환)로 교체.
+    가입 트랜잭션 내 consumeSmsAuth(VERIFIED_YN 'Y'→'C' 조건부 UPDATE) 호출,
+    영향행 0이면 DAILYJOIN_400_003 으로 롤백. baseinfo 소진 패턴과 일치.
+    동일 인증코드 재사용 차단.
+[2] (보안 High SECprafta-013002) 약관 버전 서버 신뢰값 저장:
+    요청 DTO(AgrTermsRequest)에서 termsVersion 폐기, termsId 만 수신.
+    insertTermsAgreement 가 selectRequiredTermsList() 서버 조회값
+    (termsId↔TERMS_VERSION)으로 TB_TERMS_USER_AGR_MGMT 적재. 동의 이력 위변조 차단.
+[3] (QA High QA#1) SLOT_TYPE 수정:
+    DailyUserSlotUpdCommand slotType "02"(QR) → "01"(직접가입).
+    SLOT_STATUS 점유값 "02"는 baim05 패턴과 일치하므로 유지.
+[4] (QA Medium QA#3) 휴대폰 중복체크 회사 스코프:
+    selectMblNoDupleCnt 에 AND CMPNY_CD=#{cmpnyCd} 추가, 신규 MblNoDupleQuery.
+    타 회사 동일 휴대폰 가입자 오차단 해소.
+[5] (보안 Medium SECprafta-013003) 서버측 입력 검증:
+    신규 DailyJoinValidators — siteCd 5자리, cmpnyCd blank 아님+varchar(50) 상한
+    (자릿수 미고정), userId 영숫자 4~10자, userNm ≤15자, certNo ^\d{6}$,
+    mblNo 정규화 후 11자리 상한. 위반 시 DAILYJOIN_400_006.
+    InsertDailyUserParam/SiteInfoParam/UserIdDupleCheckParam from()에 적용.
+[6] (QA Medium QA#2) 프론트 상태 리셋:
+    watch(userId)로 ID 변경 시 userIdChecked=false/userIdMsg='' 리셋.
+    중복확인 통과 후 toUpperCase 재대입이 watch 를 재트리거하는 부작용은
+    checkedUserId ref 가드로 차단.
+삭제: application/query/SmsVerifyQuery.java ([1]/[4] 교체로 데드코드).
+
+-- 재검증 결과 ---------------------------------------------------------------
+- 보안 재검토: SECprafta-013001/013002/013003 모두 "해결됨", 신규 이슈 0건.
+- QA 재검증  : QA#1/#2/#3 모두 "해결", QA#4 현행유지 확인, 회귀 0건, 신규 0건.
+
+-- 범위 밖 (재작업 제외) ------------------------------------------------------
+- SECprafta-013004 (가입/SMS rate-limit, Medium): 사용자 결정으로 별도 후속
+  작업 분리. → 후속 prafta 요청서로 별도 진행 필요.
+- SECprafta-013005 (전역 로그 레벨/p6spy SQL 로그, Low): dailyjoin 코드 무관,
+  전역 설정 사안.
+- QA#4 (회사 USE_YN=NULL, Low): 현행 IFNULL(C.USE_YN,'N')='Y' 유지
+  (기존 JoinUserPop 가입 플로우와 일치).
+
+[빌드 검증]
+- 백엔드: ./gradlew compileJava 성공
+- 프론트엔드: npm run build 성공
+
+
+================================================================================
+§4. 미해결/확인필요 사항
+================================================================================
+- Notion MCP 미연결: 본 세션에서 "작업 로그"(PLNprafta-013001~003), "QA 로그"
+  (QAprafta-013001), "보안 리뷰 로그"(SECprafta-013001~005), "도메인 지식
+  베이스"(UI-001 DailyUserJoin) 등록을 수행하지 못함. Notion 연결 후 등록 필요.
+- (후속 작업) 비로그인 가입/SMS 발송 API의 abuse 방어(rate-limit/CAPTCHA):
+  SECprafta-013004 — 별도 요청서로 분리.
+- schema-full.sql 스냅샷은 이번 작업으로 변경 없음(신규 테이블/컬럼 없음).
+- 수동 검증 권장: 카카오 SMS 실 발송/수신 end-to-end, 모바일 반응형 실 디바이스
+  렌더, FNC_CMM_SEQ_NEXTVAL 실 USER_CD 채번 형식, SYS008 약관코드 ↔ TB_TERMS
+  TERMS_ID 운영 데이터 대조.
+================================================================================
+
+
+================================================================================
+§5. 출시 후 버그 수정 (2026-05-18)
+================================================================================
+[증상] 일일사용자 회원가입 화면에서 SMS 인증을 완료했는데도 회원가입 시
+       "휴대폰 인증이 완료되지 않았습니다"(DAILYJOIN_400_003) 오류 발생.
+
+[원인] 공통 SMS 인증확인 로직 BaseinfoServiceImpl.userSmsAuthCheck 의 잠복 버그.
+       updateSmsAuthReq 호출 시 MblUniqueCheckCommand.from(smsId, smsId, param)
+       으로 2번째 인자(mblNoHmac 자리)에 휴대폰 HMAC 대신 SMS_ID 를 전달.
+       updateSmsAuthReq 의 WHERE MBL_NO_HMAC=#{mblNoHmac} 가 실제 43자 HMAC 과
+       숫자 SMS_ID 를 비교 → 항상 0건 갱신 → TB_SMS_AUTH_CODE.VERIFIED_YN 이
+       'N' 그대로 유지. userSmsAuthCheck 가 갱신 건수를 확인하지 않아 200 응답.
+       기존 회원가입(JoinUserPop)은 가입 시 VERIFIED_YN 을 재조회하지 않아
+       버그가 드러나지 않았으나, dailyjoin 가입은 selectSmsVerifiedSmsId 로
+       VERIFIED_YN='Y' 를 요구하므로 노출됨.
+
+[조치] BaseinfoServiceImpl.userSmsAuthCheck (약 222행):
+       MblUniqueCheckCommand.from(smsId, smsId, param)
+         → MblUniqueCheckCommand.from(smsId, phoneHmac, param)
+       (phoneHmac 은 같은 메서드 214행에서 이미 계산된 실제 휴대폰 HMAC.)
+       이 수정으로 updateSmsAuthReq 가 정상적으로 VERIFIED_YN='Y' 를 반영.
+       dailyjoin SMS 재검증 및 비밀번호 재설정 등 VERIFIED_YN 의존 흐름 정상화.
+       회귀 위험 없음(인증 완료 후 VERIFIED_YN='Y' 가 되어 동일 코드 재인증은
+       selectCertNoSmsId 의 VERIFIED_YN='N' 조건으로 차단 — 일회성 인증 정상화).
+
+[빌드] 백엔드 ./gradlew compileJava 성공.
+[권고] (개선) userSmsAuthCheck 가 updateSmsAuthReq 영향행 수를 검증해, 0건이면
+       예외 처리하도록 보강하면 "화면은 인증완료, DB는 미반영" 류 불일치를
+       구조적으로 차단 가능. 이번 수정 범위에는 미포함.
+================================================================================

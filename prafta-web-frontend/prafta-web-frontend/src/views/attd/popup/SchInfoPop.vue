@@ -107,8 +107,19 @@
                 </div>
               </div>
             </div>
+            <div class="form-row-max form-row-spaced">
+              <label>휴게 시간대 (선택)</label>
+              <div class="work-time-inputs">
+                <span class="work-time-sub">시작</span>
+                <TimeInput v-model="fstBrkStrTime" :minute-step="10" />
+                <span class="time-sep-label">~</span>
+                <span class="work-time-sub">종료</span>
+                <TimeInput v-model="fstBrkEndTime" :minute-step="10" allow24 />
+              </div>
+            </div>
             <p class="form-hint">
-              휴게시간은 근무시간 산정 시 자동으로 적용됩니다.
+              휴게시간은 근무시간 산정 시 자동으로 적용됩니다. 휴게 시간대를
+              입력하면 시간단위 연차 신청 시 휴게 가로지름을 차단합니다.
             </p>
           </div>
 
@@ -135,6 +146,16 @@
                     @input="onBreakMinInput($event, 'sec')"
                   />
                 </div>
+              </div>
+            </div>
+            <div class="form-row-max form-row-spaced">
+              <label>휴게 시간대 (선택)</label>
+              <div class="work-time-inputs">
+                <span class="work-time-sub">시작</span>
+                <TimeInput v-model="secBrkStrTime" :minute-step="10" />
+                <span class="time-sep-label">~</span>
+                <span class="work-time-sub">종료</span>
+                <TimeInput v-model="secBrkEndTime" :minute-step="10" allow24 />
               </div>
             </div>
           </div>
@@ -245,12 +266,16 @@ const fstSchEndTime = ref(props.schData_p?.fstSchEndTime ?? "18:00");
 const fstSchBrkMin = ref(
   sanitizeBreakMin(props.schData_p?.fstSchBrkMin) ?? "0"
 );
+const fstBrkStrTime = ref(props.schData_p?.fstBrkStrTime ?? "");
+const fstBrkEndTime = ref(props.schData_p?.fstBrkEndTime ?? "");
 
 const secSchStrTime = ref(props.schData_p?.secSchStrTime ?? "00:00");
 const secSchEndTime = ref(props.schData_p?.secSchEndTime ?? "18:00");
 const secSchBrkMin = ref(
   sanitizeBreakMin(props.schData_p?.secSchBrkMin) ?? "0"
 );
+const secBrkStrTime = ref(props.schData_p?.secBrkStrTime ?? "");
+const secBrkEndTime = ref(props.schData_p?.secBrkEndTime ?? "");
 const useYn = ref(
   props.schData_p?.useYn ?? props.systCodeArr_p?.SYS003?.[0]?.systValDCd ?? "Y"
 );
@@ -343,10 +368,14 @@ const fnSave = async () => {
     fstSchStrTime: fstSchStrTime.value,
     fstSchEndTime: fstSchEndTime.value,
     fstSchBrkMin: fstSchBrkMin.value,
+    fstBrkStrTime: fstBrkStrTime.value,
+    fstBrkEndTime: fstBrkEndTime.value,
 
     secSchStrTime: secSchStrTime.value,
     secSchEndTime: secSchEndTime.value,
     secSchBrkMin: schType.value === "02" ? secSchBrkMin.value : "",
+    secBrkStrTime: schType.value === "02" ? secBrkStrTime.value : "",
+    secBrkEndTime: schType.value === "02" ? secBrkEndTime.value : "",
 
     baseYn: baseYn.value,
     useYn: useYn.value,

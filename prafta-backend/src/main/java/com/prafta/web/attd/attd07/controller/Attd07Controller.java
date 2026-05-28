@@ -31,9 +31,15 @@ import com.prafta.web.attd.attd07.dto.request.RejectUserOvertimeRequestRequest;
 import com.prafta.web.attd.attd07.dto.request.UpdateUserAttdInfosRequest;
 import com.prafta.web.attd.attd07.dto.request.UpdateUserAttdRequestRequest;
 import com.prafta.web.attd.attd07.dto.request.UpdateUserOvertimeRequestRequest;
+import com.prafta.web.attd.attd07.application.param.AttdCloseParam;
+import com.prafta.web.attd.attd07.application.param.AttdCloseStatusParam;
+import com.prafta.web.attd.attd07.dto.request.AttdCloseRequest;
+import com.prafta.web.attd.attd07.dto.request.AttdCloseStatusRequest;
+import com.prafta.web.attd.attd07.dto.response.AttdCloseStatusResponse;
 import com.prafta.web.attd.attd07.dto.response.AttdRecordListResponse;
 import com.prafta.web.attd.attd07.dto.response.DailyAttdDetailsResponse;
 import com.prafta.web.attd.attd07.service.Attd07Service;
+import com.prafta.web.attd.attd07.service.AttdCloseService;
 
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
@@ -46,6 +52,7 @@ import lombok.extern.slf4j.Slf4j;
 public class Attd07Controller {
 
     private final Attd07Service attd07Service;
+    private final AttdCloseService attdCloseService;
     private final JwtUtil jwtUtil;
 
     @GetMapping("/monthly-attd-lists")
@@ -83,8 +90,8 @@ public class Attd07Controller {
 
     @PostMapping("/daily-attd-detail-delete")
     public ResponseEntity<?> dailyAttdDetailDelete(
-            @RequestBody DailyAttdDetailDeleteRequest request,
-            @RequestHeader(value = "Authorization", required = false) String authorization) {
+            @RequestBody @Valid DailyAttdDetailDeleteRequest request,
+            @RequestHeader(value = "Authorization", required = true) String authorization) {
 
         attd07Service.dailyAttdDetailDelete(
                 DailyAttdDetailDeleteParam.from(request, jwtUtil.getAllClaimsAsMap(authorization)));
@@ -134,6 +141,44 @@ public class Attd07Controller {
 
         attd07Service.rejectUserOvertimeRequest(
                 RejectUserOvertimeRequestParam.from(request, jwtUtil.getAllClaimsAsMap(authorization)));
+
+        return ResponseEntity.status(HttpStatus.OK).build();
+    }
+
+    // ===== PRAFTA-019-C 근태 마감 =====
+
+    /** 근태 마감 상태 + 차단 사유 현황 + 이력 조회. */
+    @GetMapping("/attd-close-status")
+    public ResponseEntity<?> getAttdCloseStatus(
+            @ModelAttribute @Valid AttdCloseStatusRequest request,
+            @RequestHeader(value = "Authorization", required = true) String authorization) {
+
+        AttdCloseStatusResponse response = attdCloseService.getCloseStatus(
+                AttdCloseStatusParam.from(request, jwtUtil.getAllClaimsAsMap(authorization)));
+
+        return ResponseEntity.status(HttpStatus.OK).body(response);
+    }
+
+    /** 근태 마감 실행 (매니저 권한 + 차단 사유 0건). */
+    @PostMapping("/attd-close")
+    public ResponseEntity<?> attdClose(
+            @RequestBody @Valid AttdCloseRequest request,
+            @RequestHeader(value = "Authorization", required = true) String authorization) {
+
+        attdCloseService.closeAttendance(
+                AttdCloseParam.from(request, jwtUtil.getAllClaimsAsMap(authorization)));
+
+        return ResponseEntity.status(HttpStatus.OK).build();
+    }
+
+    /** 근태 마감 해제 (매니저 권한). */
+    @PostMapping("/attd-unclose")
+    public ResponseEntity<?> attdUnclose(
+            @RequestBody @Valid AttdCloseRequest request,
+            @RequestHeader(value = "Authorization", required = true) String authorization) {
+
+        attdCloseService.uncloseAttendance(
+                AttdCloseParam.from(request, jwtUtil.getAllClaimsAsMap(authorization)));
 
         return ResponseEntity.status(HttpStatus.OK).build();
     }

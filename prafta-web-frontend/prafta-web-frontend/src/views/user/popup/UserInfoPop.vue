@@ -196,6 +196,100 @@
               탈퇴취소
             </button>
           </div>
+
+          <!-- 근태/연차 정보 (master/hr 전용) -->
+          <div class="leave-section" v-if="isHrOrMaster">
+            <div class="leave-section-title">근태/연차 정보</div>
+
+            <div class="form-row-max">
+              <label>입사일</label>
+              <input
+                class="row-readonly"
+                :value="hireDate"
+                readonly
+                placeholder="미설정"
+              />
+              <button class="btn btn-primary" @click="fnHireDateEditOpen">
+                입사일 수정
+              </button>
+            </div>
+            <p class="leave-section-hint">
+              ⓘ 입사일 변경은 연차 부여 등 노무 계산에 영향을 줍니다.
+            </p>
+          </div>
+
+          <!-- 경력 인정 (master/hr 전용) -->
+          <div class="leave-section" v-if="isHrOrMaster">
+            <div class="leave-section-title">경력 인정</div>
+
+            <!-- 경력 인정이 연차에 미치는 영향 안내 (prafta-030) -->
+            <div class="credit-notice">
+              <p>
+                경력 인정은 <strong>본연차·근속가산</strong> 산정에 반영됩니다.
+                <span class="credit-notice-mono">산정 근속 = 실제 입사일 + 인정 경력</span>
+              </p>
+              <p>
+                인정 경력으로 <strong>산정 근속이 1년 이상</strong>이 되면 본연차가 발생하며, 이때
+                실제 근무 1년 미만이라도 <strong>1년 미만 월차는 중복 부여되지 않습니다</strong>(고용승계 등 — 재직자와 동일 대우).
+              </p>
+              <p>
+                실제 연차 반영(소급·부여)은 <strong>사용자 연차관리(Attd_09)의 '정책 기준 부여'</strong>에서 처리됩니다.
+                입사일 자체를 변경하려면 입사일 수정 기능을 사용하세요.
+              </p>
+            </div>
+
+            <div class="credit-list">
+              <div
+                class="credit-item"
+                v-for="(item, idx) in creditList"
+                :key="idx"
+              >
+                <div class="credit-item-header">
+                  <span class="credit-item-title"
+                    >인정 항목 #{{ idx + 1 }}</span
+                  >
+                  <button
+                    class="btn btn-danger btn-credit-del"
+                    @click="fnRemoveCredit(idx)"
+                  >
+                    삭제
+                  </button>
+                </div>
+                <div class="form-row-max">
+                  <label>인정 개월</label>
+                  <input
+                    class="row-short"
+                    type="number"
+                    min="0"
+                    v-model.number="item.creditMonths"
+                    placeholder="0"
+                  />
+                  <span class="credit-suffix">개월</span>
+                </div>
+                <div class="form-row-max">
+                  <label>상세 설명</label>
+                  <input
+                    v-model="item.reasonDetail"
+                    maxlength="500"
+                    placeholder="상세 설명"
+                  />
+                </div>
+              </div>
+
+              <button class="add-credit-btn" @click="fnAddCredit">
+                + 인정 항목 추가
+              </button>
+
+              <div class="credit-summary">
+                총 인정:
+                <strong
+                  >{{ creditTotalMonths }}개월({{ creditTotalYears }}년)</strong
+                >
+                · 법적 근속 기준일:
+                <strong>{{ legalTenureBaseDate || "-" }}</strong>
+              </div>
+            </div>
+          </div>
         </div>
 
         <!-- 탈퇴예정일 입력 다이얼로그 -->
@@ -273,6 +367,7 @@
 /* eslint-disable */
 import {
   ref,
+  computed,
   defineProps,
   defineEmits,
   onMounted,
@@ -288,6 +383,7 @@ import SiteSearchPop from "@/components/popup/SiteSearchPop.vue";
 import SiteNodeSearchPop from "@/components/popup/SiteNodeSearchPop.vue";
 import BaseSelect from "@/components/common/BaseSelect.vue";
 import CalendarSrch from "@/components/common/CalendarSrch.vue";
+import HireDateEditPop from "./HireDateEditPop.vue";
 
 // =========================== Define ===========================
 const emit = defineEmits(["close"]);
@@ -344,6 +440,12 @@ const timer = ref(0);
 let timerInterval = null;
 const authLevel = ref(sessionStorage.getItem('gv_authLevel'));
 
+// PRAFTA-017-4 근태/연차 정보 (master/hr 전용)
+const hireDate = ref("");          // 입사일 (YYYY-MM-DD)
+const employmentType = ref("");    // 고용형태 [SYS041]
+const creditList = ref([]);        // 경력 인정 항목 [{ creditMonths, reasonDetail }]
+const legalTenureBaseDate = ref(""); // 법적 근속 기준일 (YYYY-MM-DD)
+
 // =========================== Data ===========================
 const { open: openPop } = useModal();
 const { proxy } = getCurrentInstance();
@@ -351,6 +453,23 @@ const { position, startDrag } = useCenteredDraggable(modalRef, {
   horizontalRatio: 2,
   verticalRatio: 3.5,
 });
+
+// =========================== Computed ===========================
+// 근태/연차·경력 인정 섹션 게이트: master/hr 권한만
+const isHrOrMaster = computed(() =>
+  ["master", "hr"].includes(sessionStorage.getItem("gv_authCd"))
+);
+
+// 경력 인정 총 개월/년 (프론트 계산, 요약 표시용)
+const creditTotalMonths = computed(() =>
+  creditList.value.reduce(
+    (sum, it) => sum + (Number(it.creditMonths) || 0),
+    0
+  )
+);
+const creditTotalYears = computed(() =>
+  Math.floor(creditTotalMonths.value / 12)
+);
 
 // =========================== Life Cycle ===========================
 onMounted(async () => {
@@ -360,7 +479,12 @@ onMounted(async () => {
 
   if (props.userId_p) {
     userId.value = props.userId_p;
-    fnGetUserInfo(userId.value);
+    await fnGetUserInfo(userId.value);
+
+    // master/hr 권한일 때만 근태/연차 정보 추가 조회 (기본정보와 독립 호출)
+    if (isHrOrMaster.value && userCd.value) {
+      await fnGetLeaveInfo();
+    }
   }
 });
 
@@ -577,6 +701,12 @@ const fnUserInfoSave = async () => {
         },
       ]);
       if (response.status === 200) {
+        // master/hr면 기본정보 저장 성공 후 경력 인정 저장(분리 호출)
+        if (isHrOrMaster.value) {
+          const creditSaved = await fnSaveCredit();
+          if (!creditSaved) return; // 경력 인정 저장 실패 시 알럿은 fnSaveCredit에서 처리
+        }
+
         fnAlertMsg(getMessage(MSG.SAVE_SUCCESS), () => {
           emit("close");
           props.onSearch();
@@ -586,6 +716,82 @@ const fnUserInfoSave = async () => {
       fnAlertMsg(getMessage(MSG.REQUEST_FAILED));
     }
   }
+};
+
+// =========================== PRAFTA-017-4 Methods ===========================
+// 근태/연차 정보(입사일/고용형태/경력 인정) 조회 (master/hr 전용)
+const fnGetLeaveInfo = async () => {
+  try {
+    const response = await axios.get(
+      `/webApi/user01/${userCd.value}/leave-info`
+    );
+    if (response.status === 200) {
+      const data = response.data || {};
+      hireDate.value = data.hireDate || "";
+      employmentType.value = data.employmentType || "";
+      legalTenureBaseDate.value = data.legalTenureBaseDate || "";
+      creditList.value = (data.creditList || []).map((it) => ({
+        creditMonths: it.creditMonths,
+        reasonDetail: it.reasonDetail,
+      }));
+    }
+  } catch (err) {
+    await proxy.$alert(
+      resolveApiErrorMessage(err, "근태/연차 정보 조회 중 오류가 발생했습니다.")
+    );
+  }
+};
+
+// 경력 인정 항목 추가
+const fnAddCredit = () => {
+  creditList.value.push({ creditMonths: 0, reasonDetail: "" });
+};
+
+// 경력 인정 항목 삭제
+const fnRemoveCredit = (idx) => {
+  creditList.value.splice(idx, 1);
+};
+
+// 경력 인정 저장 (delete-and-insert 전량 교체). 성공 시 true 반환.
+const fnSaveCredit = async () => {
+  // 인정 개월 검증: 0 이상 정수
+  for (const it of creditList.value) {
+    const months = Number(it.creditMonths);
+    if (!Number.isFinite(months) || months < 0) {
+      await proxy.$alert("인정 개월 수는 0 이상으로 입력해 주세요.");
+      return false;
+    }
+  }
+
+  try {
+    const response = await axios.post("/webApi/user01/update-user-credit", {
+      cmpnyCd: cmpnyCd.value,
+      userCd: userCd.value,
+      creditList: creditList.value.map((it) => ({
+        creditMonths: Number(it.creditMonths) || 0,
+        reasonDetail: it.reasonDetail,
+      })),
+    });
+    return response.status === 200;
+  } catch (err) {
+    await proxy.$alert(
+      resolveApiErrorMessage(err, "경력 인정 저장 중 오류가 발생했습니다.")
+    );
+    return false;
+  }
+};
+
+// 입사일 수정 모달 오픈 (중첩 openPop). 성공 시 onSaved 콜백으로 leave-info 재조회.
+const fnHireDateEditOpen = () => {
+  openPop(HireDateEditPop, {
+    cmpnyCd_p: cmpnyCd.value,
+    userCd_p: userCd.value,
+    userId_p: userId.value,
+    userNm_p: userNm.value,
+    nodeNm_p: nodeNm.value,
+    hireDate_p: hireDate.value,
+    onSaved: fnGetLeaveInfo,
+  });
 };
 
 const fnUserPwReset = async () => {
@@ -855,5 +1061,134 @@ const fnConfirmMsg = async (message, afterConfirmCallback) => {
   border-color: var(--color-border-strong, #d1d5db);
   outline: none;
   box-shadow: 0 0 0 var(--focus-ring-width, 3px) var(--color-focus-ring);
+}
+
+/* PRAFTA-017-4 근태/연차·경력 인정 섹션 (master/hr 전용) */
+.leave-section {
+  border-top: 1px solid var(--color-border, #e5e7eb);
+  padding-top: 0.75rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.leave-section-title {
+  font-size: 0.8125rem;
+  font-weight: 600;
+  color: var(--color-text-strong, #111827);
+  padding-bottom: 0.375rem;
+  border-bottom: 1px solid var(--color-border, #e5e7eb);
+}
+
+.leave-section-hint {
+  font-size: 0.6875rem;
+  color: var(--color-text-muted, #4b5563);
+  line-height: 1.5;
+}
+
+.row-readonly {
+  background: var(--color-bg, #f9fafb);
+  color: var(--color-text-muted, #4b5563);
+}
+
+.credit-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  background: var(--color-bg, #f9fafb);
+  border: 1px solid var(--color-border, #e5e7eb);
+  border-radius: var(--input-radius, 10px);
+  padding: 0.75rem;
+}
+
+.credit-item {
+  background: var(--color-surface, #ffffff);
+  border: 1px solid var(--color-border, #e5e7eb);
+  border-radius: var(--input-radius, 10px);
+  padding: 0.75rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.credit-item-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.credit-item-title {
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--color-text-muted, #4b5563);
+}
+
+.btn-credit-del {
+  height: 1.75rem;
+  padding: 0 0.625rem;
+  font-size: 0.75rem;
+}
+
+.credit-suffix {
+  font-size: 0.75rem;
+  color: var(--color-text-muted, #4b5563);
+}
+
+.add-credit-btn {
+  width: 100%;
+  height: 2rem;
+  border: 1px dashed var(--color-border-strong, #d1d5db);
+  border-radius: var(--input-radius, 10px);
+  background: var(--color-surface, #ffffff);
+  color: var(--color-text-muted, #4b5563);
+  cursor: pointer;
+  font-size: 0.75rem;
+  font-weight: 500;
+  font-family: "Pretendard", sans-serif;
+}
+
+.add-credit-btn:hover {
+  background: var(--color-bg, #f9fafb);
+  color: var(--color-text-strong, #111827);
+}
+
+.credit-summary {
+  background: var(--color-info-bg, #eff6ff);
+  border-radius: var(--input-radius, 10px);
+  padding: 0.625rem 0.75rem;
+  font-size: 0.75rem;
+  color: var(--color-info-text, #1d4ed8);
+}
+
+.credit-summary strong {
+  font-weight: 600;
+}
+
+/* 경력 인정 → 연차 영향 안내 (prafta-030) */
+.credit-notice {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  margin-bottom: 0.5rem;
+  padding: 0.625rem 0.75rem;
+  background: var(--color-info-bg, #eff6ff);
+  border-radius: var(--input-radius, 10px);
+  font-size: 0.6875rem;
+  line-height: 1.5;
+  color: var(--color-info-text, #1d4ed8);
+}
+
+.credit-notice strong {
+  font-weight: 600;
+}
+
+.credit-notice-mono {
+  display: inline-block;
+  margin-left: 0.25rem;
+  padding: 0 0.375rem;
+  border-radius: var(--btn-radius, 8px);
+  background: var(--color-surface, #ffffff);
+  color: var(--color-text-muted, #4b5563);
+  font-size: 0.625rem;
 }
 </style>

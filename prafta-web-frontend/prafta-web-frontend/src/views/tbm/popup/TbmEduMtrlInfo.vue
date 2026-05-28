@@ -13,7 +13,9 @@
       >
         <!-- 🔹 Title  v-if="visible" -->
         <div class="modal-header" @mousedown="startDrag">
-          <span>TBM 교육자료 등록</span>
+          <span>{{
+            isEditMode ? "TBM 교육자료 수정" : "TBM 교육자료 등록"
+          }}</span>
           <button class="icon-button" @click="$emit('close')">
             <svg
               xmlns="http://www.w3.org/2000/svg"
@@ -36,18 +38,34 @@
         <div class="content-wrapper">
           <!-- 🔹 Form -->
           <div class="form-container">
+            <!-- prafta-033-A: 스코프(회사공통/사업장) + 교육자료 타입 + 사용여부 -->
             <div class="form-row-max">
-              <label>교육자료 제목</label>
-              <input
-                id="title"
-                v-model="formData.title"
-                placeholder="교육자료 제목"
-              />
-            </div>
+              <label>스코프</label>
+              <div class="scope-radio-group">
+                <label class="scope-radio-item">
+                  <input
+                    type="radio"
+                    value="COMMON"
+                    v-model="formData.scopeType"
+                    :disabled="isEditMode || !canManageCommon"
+                    @change="onScopeChange"
+                  />
+                  회사 공통
+                </label>
+                <label class="scope-radio-item">
+                  <input
+                    type="radio"
+                    value="SITE"
+                    v-model="formData.scopeType"
+                    :disabled="isEditMode"
+                    @change="onScopeChange"
+                  />
+                  사업장
+                </label>
+              </div>
 
-            <div class="form-row-max">
-              <label>교육자료 타입</label>
-              <div style="width: 35%">
+              <label class="inline-label">교육자료 타입</label>
+              <div class="inline-select">
                 <BaseSelect id="mtrlType" v-model="formData.mtrlType">
                   <option
                     v-for="opt in (baseCodeArr['COM003'] || []).filter(
@@ -61,8 +79,8 @@
                 </BaseSelect>
               </div>
 
-              <label>사용여부</label>
-              <div style="width: 35%">
+              <label class="inline-label inline-label-sm">사용여부</label>
+              <div class="inline-select inline-select-sm">
                 <BaseSelect id="useYn" v-model="formData.useYn">
                   <option
                     v-for="opt in (systCodeArr['SYS003'] || []).filter(
@@ -75,6 +93,41 @@
                   </option>
                 </BaseSelect>
               </div>
+            </div>
+
+            <div v-if="!canManageCommon" class="scope-hint-row">
+              <span class="scope-hint">
+                ⓘ 회사 공통은 안전관리자만 등록할 수 있습니다.
+              </span>
+            </div>
+
+            <div v-if="formData.scopeType === 'SITE'" class="form-row-max">
+              <label>사업장</label>
+              <div style="width: 35%">
+                <BaseSelect
+                  id="siteCd"
+                  v-model="formData.siteCd"
+                  :disabled="isEditMode"
+                >
+                  <option value="">선택</option>
+                  <option
+                    v-for="opt in siteList || []"
+                    :key="opt.siteCd"
+                    :value="opt.siteCd"
+                  >
+                    {{ opt.siteNm }}
+                  </option>
+                </BaseSelect>
+              </div>
+            </div>
+
+            <div class="form-row-max">
+              <label>교육자료 제목</label>
+              <input
+                id="title"
+                v-model="formData.title"
+                placeholder="교육자료 제목"
+              />
             </div>
 
             <div class="form-row-max">
@@ -117,7 +170,8 @@
                         <th style="width: 8%">사용여부</th>
                         <th style="width: 8%">정렬순서</th>
                         <th style="width: 12%">파일</th>
-                        <th style="width: 18%">URL</th>
+                        <th style="width: 15%">URL</th>
+                        <th style="width: 8%">미리보기</th>
                         <th>자료설명</th>
                       </tr>
                     </thead>
@@ -126,7 +180,7 @@
                         v-if="!eduMtrlItemList || eduMtrlItemList.length === 0"
                       >
                         <tr>
-                          <td colspan="8" class="edu-grid-empty">
+                          <td colspan="9" class="edu-grid-empty">
                             등록된 세부 항목이 없습니다.
                           </td>
                         </tr>
@@ -189,10 +243,7 @@
                                 :ref="(el) => setFileInputRef(el, idx)"
                                 type="file"
                                 :accept="getFileAccept(item.mtrlItemType)"
-                                :disabled="
-                                  item.mtrlItemType !== '01' &&
-                                  item.mtrlItemType !== '02'
-                                "
+                                :disabled="!isFileType(item.mtrlItemType)"
                                 @change="(e) => onFileSelected(e, item, idx)"
                                 style="display: none"
                               />
@@ -200,14 +251,11 @@
                                 type="button"
                                 class="file-upload-btn"
                                 :class="{
-                                  'file-upload-btn-disabled':
-                                    item.mtrlItemType !== '01' &&
-                                    item.mtrlItemType !== '02',
+                                  'file-upload-btn-disabled': !isFileType(
+                                    item.mtrlItemType
+                                  ),
                                 }"
-                                :disabled="
-                                  item.mtrlItemType !== '01' &&
-                                  item.mtrlItemType !== '02'
-                                "
+                                :disabled="!isFileType(item.mtrlItemType)"
                                 @click="() => handleFileButtonClick(idx)"
                               >
                                 <svg
@@ -260,6 +308,17 @@
                               :disabled="item.mtrlItemType !== '03'"
                             />
                           </td>
+                          <td style="text-align: center">
+                            <img
+                              v-if="getThumbUrl(item)"
+                              :src="getThumbUrl(item)"
+                              class="thumb-preview"
+                              alt="썸네일"
+                            />
+                            <span v-else class="thumb-placeholder">{{
+                              getMediaTypeIcon(item.mtrlItemType)
+                            }}</span>
+                          </td>
                           <td style="text-align: left">
                             <input
                               style="width: 100%"
@@ -278,10 +337,13 @@
 
         <div class="modal-footer">
           <div class="btn-group">
-            <button class="btn btn-primary" @click="fnAddRow">추가</button>
-            <button class="btn btn-primary" @click="fnReset">초기화</button>
+            <button class="btn btn-second" @click="fnAddRow">행 추가</button>
+            <button class="btn btn-second" @click="fnDelete()">
+              선택 행 삭제
+            </button>
+            <button class="btn btn-second" @click="fnReset">초기화</button>
             <button class="btn btn-primary" @click="fnSave()">저장</button>
-            <button class="btn btn-primary" @click="fnDelete()">삭제</button>
+            <button class="btn btn-second" @click="$emit('close')">닫기</button>
           </div>
         </div>
       </div>
@@ -294,6 +356,7 @@
 import {
   ref,
   reactive,
+  computed,
   defineProps,
   defineEmits,
   onMounted,
@@ -327,6 +390,16 @@ const baseCodeArr = ref([]);
 const eduMtrlItemList = ref([]);
 const headChk = ref(false);
 const fileInputRefs = ref({});
+const siteList = ref([]); // prafta-033-A: 사업장 목록
+
+// prafta-033-A: 수정 모드 여부(mtrlCd_p 존재 시). 스코프 변경 잠금에 사용
+const isEditMode = computed(() => !proxy.$util.isEmpty(props.mtrlCd_p));
+
+// prafta-033-A: 회사공통 콘텐츠 등록 권한(master/safe)
+const canManageCommon = computed(() => {
+  const authCd = sessionStorage.getItem("gv_authCd");
+  return authCd === "master" || authCd === "safe";
+});
 
 // ================ Reactive Data ================
 const formData = reactive({
@@ -335,6 +408,8 @@ const formData = reactive({
   contents: '',
   mtrlType: '',
   useYn: '',
+  scopeType: '', // prafta-033-A: COMMON(회사공통) / SITE(사업장)
+  siteCd: '',
   oriTitle: '',
   oriContents: '',
   oriMtrlType: '',
@@ -352,8 +427,17 @@ const { position, startDrag } = useCenteredDraggable(modalRef, {
 onMounted(async () => {
   await fnGetSystinfoList();
   await fnGetBaseinfoList();
+  await fnGetSiteList();
   if (!proxy.$util.isEmpty(props.mtrlCd_p)) {
     await fnSearch();
+  } else {
+    // 신규 등록: 권한에 따라 기본 스코프 결정(공통 권한 없으면 사업장 기본 + 본인 사업장 선택)
+    if (canManageCommon.value) {
+      formData.scopeType = "COMMON";
+    } else {
+      formData.scopeType = "SITE";
+      formData.siteCd = sessionStorage.getItem("gv_siteCd") || "";
+    }
   }
 });
 
@@ -426,6 +510,27 @@ const fnGetBaseinfoList = async () => {
   }
 };
 
+// prafta-033-A: 사업장 목록 조회(스코프=사업장 선택용)
+const fnGetSiteList = async () => {
+  try {
+    const response = await axios.get('/comApi/baseinfo/site-lists', {
+      params: {
+        cmpnyCd: sessionStorage.getItem('gv_cmpnyCd'),
+        siteNo: '',
+        siteNm: '',
+      },
+    });
+
+    if (response.status === 200) {
+      siteList.value = response.data?.siteInfoResultList || [];
+    }
+  } catch (err) {
+    const msg = resolveApiErrorMessage(err, '조회 중 오류가 발생했습니다.');
+
+    await proxy.$alert(msg);
+  }
+};
+
 /** 서버 전송용 파일명 생성 (RiskAssessInfo와 동일 패턴) */
 // const buildFileName = (prefix, originalName = "file") => {
 //   const ts = new Date().toISOString().replace(/[:.]/g, "");
@@ -469,12 +574,17 @@ const fnSave = async () => {
     console.log("itemListPayload :: ");
     console.log(itemListPayload);
 
+    // prafta-033-A: 스코프 -> SITE_CD. COMMON 이면 빈 값(서버에서 NULL=회사공통 처리)
+    const saveSiteCd =
+      formData.scopeType === "SITE" ? String(formData.siteCd ?? "") : "";
+
     const requestBody = {
       mtrlCd: String(formData.mtrlCd ?? ""),
       title: String(formData.title ?? ""),
       contents: String(formData.contents ?? ""),
       mtrlType: String(formData.mtrlType ?? ""),
       useYn: String(formData.useYn ?? ""),
+      siteCd: saveSiteCd,
       tbmEduItemInfoModelList: itemListPayload,
     };
 
@@ -513,14 +623,18 @@ const fnSearch = async () => {
     if (response.status === 200) {
 
       if(response.data?.tbmEduInfoResultList) {
-        formData.title = response.data?.tbmEduInfoResultList[0].title;
-        formData.mtrlType = response.data?.tbmEduInfoResultList[0].mtrlType;
-        formData.useYn = response.data?.tbmEduInfoResultList[0].useYn;
-        formData.contents = response.data?.tbmEduInfoResultList[0].contents; 
-        formData.oriTitle = response.data?.tbmEduInfoResultList[0].title;
-        formData.oriContents = response.data?.tbmEduInfoResultList[0].contents;
-        formData.oriMtrlType = response.data?.tbmEduInfoResultList[0].mtrlType;
-        formData.oriUseYn = response.data?.tbmEduInfoResultList[0].useYn;
+        const master = response.data?.tbmEduInfoResultList[0];
+        formData.title = master.title;
+        formData.mtrlType = master.mtrlType;
+        formData.useYn = master.useYn;
+        formData.contents = master.contents;
+        formData.oriTitle = master.title;
+        formData.oriContents = master.contents;
+        formData.oriMtrlType = master.mtrlType;
+        formData.oriUseYn = master.useYn;
+        // prafta-033-A: 스코프 복원(수정 모드에서는 잠금)
+        formData.scopeType = master.isCommonContent === 'Y' ? 'COMMON' : 'SITE';
+        formData.siteCd = master.siteCd || '';
       }
       eduMtrlItemList.value = response.data?.tbmEduItemInfoResultList ?? [];
 
@@ -608,6 +722,19 @@ const fnAlertMsg = async (message, afterConfirmCallback) => {
 };
 
 const dataValidationChk = () => {
+  // prafta-033-A: 스코프 검증
+  if(proxy.$util.isEmpty(formData.scopeType)) {
+    proxy.$alert('스코프를 선택해 주세요.');
+    return false;
+  }
+  if(formData.scopeType === 'COMMON' && !canManageCommon.value) {
+    proxy.$alert('회사 공통 콘텐츠는 안전관리자만 등록할 수 있습니다.');
+    return false;
+  }
+  if(formData.scopeType === 'SITE' && proxy.$util.isEmpty(formData.siteCd)) {
+    proxy.$alert('사업장을 선택해 주세요.');
+    return false;
+  }
   if(proxy.$util.isEmpty(formData.title)) {
     proxy.$alert(getMessage(MSG.EDU_TITLE_REQUIRED));
     return false;
@@ -634,7 +761,7 @@ const dataValidationChk = () => {
         proxy.$alert(getMessage(MSG.USE_YN_REQUIRED));
         return false;
       }
-      if(eduMtrlItemList.value[i].mtrlItemType === '01' || eduMtrlItemList.value[i].mtrlItemType === '02') {
+      if(eduMtrlItemList.value[i].mtrlItemType === '01' || eduMtrlItemList.value[i].mtrlItemType === '02' || eduMtrlItemList.value[i].mtrlItemType === '04') {
         const file = eduMtrlItemList.value[i].file;
         const hasNewFile = file && typeof file === 'object' && file instanceof File && file.size > 0;
         const hasExistingFile = eduMtrlItemList.value[i].fileMgmtCd && eduMtrlItemList.value[i].filePath;
@@ -739,11 +866,44 @@ const onMtrlItemTypeChange = (item) => {
   item.url = null;
 };
 
-/** 자료 타입별 허용 확장자: 01=이미지, 02=동영상 */
+/** prafta-033-A: 파일 첨부 대상 타입(01 이미지/02 동영상/04 PDF). 03 유튜브는 URL */
+const isFileType = (mtrlItemType) =>
+  mtrlItemType === '01' || mtrlItemType === '02' || mtrlItemType === '04';
+
+/** 자료 타입별 허용 확장자: 01=이미지, 02=동영상, 04=PDF */
 const getFileAccept = (mtrlItemType) => {
   if (mtrlItemType === '01') return 'image/*';
   if (mtrlItemType === '02') return 'video/*';
+  if (mtrlItemType === '04') return 'application/pdf';
   return '';
+};
+
+/** prafta-033-A: 스코프 변경 시 사업장 선택값 정리 */
+const onScopeChange = () => {
+  if (formData.scopeType === 'COMMON') {
+    formData.siteCd = '';
+  } else if (formData.scopeType === 'SITE' && proxy.$util.isEmpty(formData.siteCd)) {
+    formData.siteCd = sessionStorage.getItem('gv_siteCd') || '';
+  }
+};
+
+/** prafta-033-A: 썸네일 미리보기 URL(서버 썸네일 파일 또는 이미지 파일 자체) */
+const getThumbUrl = (item) => {
+  if (!item) return '';
+  // 이미지 타입은 본 파일 자체를 썸네일로 사용
+  if (item.mtrlItemType === '01' && item.filePath && item.fileMgmtCd) {
+    return getDownloadUrl(item);
+  }
+  return '';
+};
+
+/** prafta-033-A: 썸네일 없는 경우 타입별 아이콘 문자 */
+const getMediaTypeIcon = (mtrlItemType) => {
+  if (mtrlItemType === '02') return '동영상';
+  if (mtrlItemType === '03') return '유튜브';
+  if (mtrlItemType === '04') return 'PDF';
+  if (mtrlItemType === '01') return '이미지';
+  return '-';
 };
 
 const onFileSelected = async (event, item, idx) => {
@@ -759,6 +919,16 @@ const onFileSelected = async (event, item, idx) => {
   } else if (mtrlItemType === '02') {
     if (!file.type.startsWith('video/')) {
       await proxy.$alert(getMessage(MSG.VIDEO_FILE_ONLY));
+      event.target.value = '';
+      return;
+    }
+  } else if (mtrlItemType === '04') {
+    // prafta-033-A: PDF 타입 - 확장자/타입 검증
+    const isPdf =
+      file.type === 'application/pdf' ||
+      /\.pdf$/i.test(file.name || '');
+    if (!isPdf) {
+      await proxy.$alert('PDF 파일만 업로드할 수 있습니다.');
       event.target.value = '';
       return;
     }
@@ -783,6 +953,81 @@ const fnAddRow = () => {
 </script>
 
 <style scoped>
+/* prafta-033-A: 스코프 라디오/안내/썸네일 */
+.scope-radio-group {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  flex: 0 0 auto;
+  flex-wrap: nowrap;
+  white-space: nowrap;
+}
+
+.scope-radio-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  cursor: pointer;
+  color: var(--color-text);
+  white-space: nowrap;
+}
+
+/* prafta-033-A: 라디오 버튼은 form-row-max input:focus의 box-shadow(ring)를 상속받지 않도록 무력화 */
+.scope-radio-item input[type="radio"],
+.scope-radio-item input[type="radio"]:focus,
+.scope-radio-item input[type="radio"]:focus-visible {
+  outline: none;
+  box-shadow: none;
+  border: none;
+  background: transparent;
+  padding: 0;
+  flex: 0 0 auto;
+}
+
+/* prafta-033-A: 스코프 행 인라인 라벨/SelectBox (교육자료 타입, 사용여부) */
+.inline-label {
+  flex: 0 0 100px !important;
+  margin-left: 1rem;
+}
+
+.inline-label-sm {
+  flex: 0 0 64px !important;
+  margin-left: 0.5rem;
+}
+
+.inline-select {
+  flex: 0 0 180px;
+}
+
+.inline-select-sm {
+  flex: 0 0 110px;
+}
+
+.scope-hint-row {
+  display: flex;
+  align-items: center;
+  padding-left: 128px; /* label flex 120px + gap 0.5rem 정렬 */
+}
+
+.scope-hint {
+  font-size: var(--btn-font-sm);
+  color: var(--color-text-muted);
+  white-space: nowrap;
+}
+
+.thumb-preview {
+  max-width: 48px;
+  max-height: 48px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--btn-radius);
+  object-fit: cover;
+}
+
+.thumb-placeholder {
+  font-size: var(--btn-font-sm);
+  color: var(--color-text-muted);
+}
+
 .content-wrapper {
   /* display: flex; */
   gap: 1rem;

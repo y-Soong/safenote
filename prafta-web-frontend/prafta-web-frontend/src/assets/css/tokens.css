@@ -8,6 +8,10 @@
   --color-primary-pressed: #166534;
   --color-danger: #ef4444;
 
+  /* 경고/법정(warning) 강조 — 노란 배지·경고 박스용 */
+  --color-warning-bg: #fef3c7;
+  --color-warning-text: #b45309;
+
   /* 배경/테두리 */
   --color-bg: #f9fafb;
   --color-surface: #ffffff;

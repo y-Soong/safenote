@@ -57,10 +57,16 @@ public record MonthlyAttdReqResult(
     /** end time (HHmm) */
     , String endTime
 
+    /** overtime type [EXTEND/NIGHT/HOLIDAY] — OT 요청(03/04)일 때만 채워짐 (PRAFTA-027) */
+    , String otType
+
     /** request reason */
     , String reqReason
 
     /** insert datetime */
     , String insertDate
+
+    /** 연차(05/06) 결재 시 현재 로그인 사용자가 처리할 결재 단계 (그 외 타입/비결재자는 null) */
+    , Integer approvalStep
 ) {
 }

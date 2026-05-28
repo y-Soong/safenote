@@ -1,0 +1,295 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.prafta.web.attd.attd11.mapper.Attd11Mapper">
+
+    <!-- ================================================================
+         PRAFTA-034 - Attd_11 월별 사용자 근태 판정 조회.
+
+         decisions §4/§5 정의식 단일 출처. node_tree(하위부서 RECURSIVE) +
+         target_user(USE_YN='Y', WITHDRAWAL_DATE IS NULL, USER_NM LIKE) +
+         effective-dating 스케줄 조인은 attd07 selectMonthlyAttdList 패턴 재사용.
+
+         차수 단위 집계: 한 행 = (USER_CD, WORK_YMD, WORK_SEQ). 차수에 맞는
+         스케줄 계획시각/휴게를 CASE 로 단일 컬럼(planStart/planEnd/planBreakMin)
+         으로 정규화해 내려준다. 지각/조퇴/근무시간의 일시 비교·자정 보정은
+         service(MonthlyAttdSummaryQuery → ServiceImpl)에서 수행한다.
+
+         지각/조퇴/근무시간 시각 비교는 표준화 시각이 아니라 원본
+         CHECK_IN/OUT_DATE+TIME 을 사용한다(decisions §3-1).
+         ================================================================ -->
+    <select id="selectAttdSummaryRows" parameterType="com.prafta.web.attd.attd11.application.query.MonthlyAttdSummaryQuery" resultType="com.prafta.web.attd.attd11.result.AttdSummaryRowResult">
+    /* Attd11Mapper.selectAttdSummaryRows */
+        WITH RECURSIVE
+        /* 1. 부서 트리 — 시작 노드부터 하위까지 (nodeCd 미지정 시 사업장 전체) */
+        node_tree AS (
+            SELECT
+                  N.CMPNY_CD
+                , N.SITE_CD
+                , N.NODE_CD
+                , N.NODE_NM
+            FROM TB_SITE_NODE N
+            WHERE N.CMPNY_CD = #{gvCmpnyCd}
+              AND N.SITE_CD  = #{siteCd}
+            <if test="nodeCd != null and nodeCd != ''">
+              AND N.NODE_CD  = #{nodeCd}
+            </if>
+            <if test="nodeCd == null or nodeCd == ''">
+              AND N.PARENT_NODE_CD IS NULL
+            </if>
+
+            <if test='"Y".equals(incSubNodeYn) or nodeCd == null or nodeCd == ""'>
+            UNION ALL
+
+            SELECT
+                  C.CMPNY_CD
+                , C.SITE_CD
+                , C.NODE_CD
+                , C.NODE_NM
+            FROM TB_SITE_NODE C
+            INNER JOIN node_tree P
+                ON  C.CMPNY_CD       = P.CMPNY_CD
+                AND C.SITE_CD        = P.SITE_CD
+                AND C.PARENT_NODE_CD = P.NODE_CD
+            </if>
+        ),
+
+        /* 2. 대상 사용자 (USE_YN='Y', 미퇴사) */
+        target_user AS (
+            SELECT
+                  U.CMPNY_CD
+                , U.SITE_CD
+                , U.USER_CD
+                , U.USER_ID
+                , U.USER_NM
+                , U.NODE_CD
+                , U.AUTH_CD
+                , NT.NODE_NM
+            FROM TB_USER U
+            INNER JOIN node_tree NT
+                ON  U.CMPNY_CD = NT.CMPNY_CD
+                AND U.SITE_CD  = NT.SITE_CD
+                AND U.NODE_CD  = NT.NODE_CD
+            WHERE U.CMPNY_CD        = #{gvCmpnyCd}
+              AND U.SITE_CD         = #{siteCd}
+              AND U.USE_YN          = 'Y'
+              AND U.WITHDRAWAL_DATE IS NULL
+            <if test="userNm != null and userNm != ''">
+              AND U.USER_NM LIKE CONCAT('%', #{userNm}, '%')
+            </if>
+        )
+
+        /* 3. 메인 — 출퇴근 실적(차수 행) + 차수별 유효 스케줄 결합 */
+        SELECT
+              U.USER_CD                                                        AS userCd
+            , U.USER_ID                                                        AS userId
+            , U.USER_NM                                                        AS userNm
+            , U.NODE_NM                                                        AS deptNm
+            , U.AUTH_CD                                                        AS authCd
+            , FNC_CMM_INFO_SRCH(U.CMPNY_CD, 'BAIM_VAL', U.AUTH_CD, 'COM005')   AS authNm
+
+            , A.WORK_YMD                                                       AS workYmd
+            , A.WORK_SEQ                                                       AS workSeq
+
+            /* 차수에 맞춰 정규화한 스케줄 계획시각/휴게 (1구간/2구간) */
+            , CASE WHEN A.WORK_SEQ = 2 THEN SCH.SEC_SCH_STR_TIME ELSE SCH.FST_SCH_STR_TIME END   AS planStart
+            , CASE WHEN A.WORK_SEQ = 2 THEN SCH.SEC_SCH_END_TIME ELSE SCH.FST_SCH_END_TIME END   AS planEnd
+            , CASE WHEN A.WORK_SEQ = 2 THEN SCH.SEC_SCH_BRK_MIN  ELSE SCH.FST_SCH_BRK_MIN  END   AS planBreakMin
+
+            /* 실제(원본) 출퇴근 일시 — 표준화 아님 */
+            , A.CHECK_IN_DATE                                                  AS actInDate
+            , A.CHECK_IN_TIME                                                  AS actInTime
+            , A.CHECK_OUT_DATE                                                 AS actOutDate
+            , A.CHECK_OUT_TIME                                                 AS actOutTime
+
+        FROM target_user U
+        INNER JOIN TB_USER_ATTD_MGMT A
+            ON  A.CMPNY_CD = U.CMPNY_CD
+            AND A.SITE_CD  = U.SITE_CD
+            AND A.USER_CD  = U.USER_CD
+            AND A.WORK_SEQ IN (1, 2)
+            AND A.DEL_YN   = 'N'
+            AND A.WORK_YMD LIKE CONCAT(REPLACE(#{workYm}, '-', ''), '%')
+
+        LEFT JOIN TB_USER_WORK_PLAN WP
+            ON  WP.CMPNY_CD = A.CMPNY_CD
+            AND WP.SITE_CD  = A.SITE_CD
+            AND WP.USER_CD  = A.USER_CD
+            AND WP.WORK_YMD = A.WORK_YMD
+
+        /* 근무계획코드가 스케줄코드인 경우 — 근무일(A.WORK_YMD) 기준 유효 스케줄(effective-dating).
+           TB_SCH_MGMT(현재본) + TB_SCH_MGMT_HIST(전 버전) UNION 후
+           APPLY_DATE &lt;= WORK_YMD 인 가장 최근 버전의 시간값을 결합한다.
+           (attd07 selectMonthlyAttdList 의 SCH 서브쿼리 그대로 재사용) */
+        LEFT JOIN (
+            SELECT
+                  E.CMPNY_CD
+                , E.SITE_CD
+                , E.SCH_CD
+                , E.APPLY_DATE
+                , E.FST_SCH_STR_TIME
+                , E.FST_SCH_END_TIME
+                , E.FST_SCH_BRK_MIN
+                , E.SEC_SCH_STR_TIME
+                , E.SEC_SCH_END_TIME
+                , E.SEC_SCH_BRK_MIN
+            FROM (
+                SELECT
+                      M.CMPNY_CD
+                    , M.SITE_CD
+                    , M.SCH_CD
+                    , M.APPLY_DATE
+                    , M.FST_SCH_STR_TIME
+                    , M.FST_SCH_END_TIME
+                    , M.FST_SCH_BRK_MIN
+                    , M.SEC_SCH_STR_TIME
+                    , M.SEC_SCH_END_TIME
+                    , M.SEC_SCH_BRK_MIN
+                    , 2147483647 AS HIST_IDX
+                FROM TB_SCH_MGMT M
+                WHERE M.USE_YN = 'Y'
+
+                UNION ALL
+
+                SELECT
+                      H.CMPNY_CD
+                    , H.SITE_CD
+                    , H.SCH_CD
+                    , H.APPLY_DATE
+                    , H.FST_SCH_STR_TIME
+                    , H.FST_SCH_END_TIME
+                    , H.FST_SCH_BRK_MIN
+                    , H.SEC_SCH_STR_TIME
+                    , H.SEC_SCH_END_TIME
+                    , H.SEC_SCH_BRK_MIN
+                    , H.HIST_IDX
+                FROM TB_SCH_MGMT_HIST H
+                WHERE H.USE_YN = 'Y'
+            ) E
+            WHERE E.HIST_IDX = (
+                SELECT MAX(E2.HIST_IDX)
+                FROM (
+                    SELECT M2.CMPNY_CD, M2.SITE_CD, M2.SCH_CD, M2.APPLY_DATE, 2147483647 AS HIST_IDX
+                    FROM TB_SCH_MGMT M2
+                    WHERE M2.USE_YN = 'Y'
+                    UNION ALL
+                    SELECT H2.CMPNY_CD, H2.SITE_CD, H2.SCH_CD, H2.APPLY_DATE, H2.HIST_IDX
+                    FROM TB_SCH_MGMT_HIST H2
+                    WHERE H2.USE_YN = 'Y'
+                ) E2
+                WHERE E2.CMPNY_CD   = E.CMPNY_CD
+                  AND E2.SITE_CD    = E.SITE_CD
+                  AND E2.SCH_CD     = E.SCH_CD
+                  AND E2.APPLY_DATE = E.APPLY_DATE
+            )
+        ) SCH
+            ON  SCH.CMPNY_CD = WP.CMPNY_CD
+            AND SCH.SITE_CD  = WP.SITE_CD
+            AND SCH.SCH_CD   = WP.WORK_PLAN_CD
+            AND SCH.APPLY_DATE = (
+                SELECT MAX(SE.APPLY_DATE)
+                FROM (
+                    SELECT M3.CMPNY_CD, M3.SITE_CD, M3.SCH_CD, M3.APPLY_DATE
+                    FROM TB_SCH_MGMT M3
+                    WHERE M3.USE_YN = 'Y'
+                    UNION ALL
+                    SELECT H3.CMPNY_CD, H3.SITE_CD, H3.SCH_CD, H3.APPLY_DATE
+                    FROM TB_SCH_MGMT_HIST H3
+                    WHERE H3.USE_YN = 'Y'
+                ) SE
+                WHERE SE.CMPNY_CD    = WP.CMPNY_CD
+                  AND SE.SITE_CD     = WP.SITE_CD
+                  AND SE.SCH_CD      = WP.WORK_PLAN_CD
+                  AND SE.APPLY_DATE <![CDATA[ <= ]]> WP.WORK_YMD
+            )
+
+        ORDER BY U.USER_CD, A.WORK_YMD, A.WORK_SEQ
+    </select>
+
+
+    <!-- ================================================================
+         PRAFTA-034 - 사용자별 COMPLETED 초과근무 분 합(해당 월).
+         decisions §3-4 / §4 : OT_STATUS='COMPLETED' AND DEL_YN='N' 만 합산.
+         node_tree 스코프는 selectAttdSummaryRows 와 동일.
+         ================================================================ -->
+    <select id="selectOvertimeSummary" parameterType="com.prafta.web.attd.attd11.application.query.MonthlyAttdSummaryQuery" resultType="com.prafta.web.attd.attd11.result.OvertimeSummaryResult">
+    /* Attd11Mapper.selectOvertimeSummary */
+        WITH RECURSIVE
+        node_tree AS (
+            SELECT
+                  N.CMPNY_CD
+                , N.SITE_CD
+                , N.NODE_CD
+                , N.NODE_NM
+            FROM TB_SITE_NODE N
+            WHERE N.CMPNY_CD = #{gvCmpnyCd}
+              AND N.SITE_CD  = #{siteCd}
+            <if test="nodeCd != null and nodeCd != ''">
+              AND N.NODE_CD  = #{nodeCd}
+            </if>
+            <if test="nodeCd == null or nodeCd == ''">
+              AND N.PARENT_NODE_CD IS NULL
+            </if>
+
+            <if test='"Y".equals(incSubNodeYn) or nodeCd == null or nodeCd == ""'>
+            UNION ALL
+
+            SELECT
+                  C.CMPNY_CD
+                , C.SITE_CD
+                , C.NODE_CD
+                , C.NODE_NM
+            FROM TB_SITE_NODE C
+            INNER JOIN node_tree P
+                ON  C.CMPNY_CD       = P.CMPNY_CD
+                AND C.SITE_CD        = P.SITE_CD
+                AND C.PARENT_NODE_CD = P.NODE_CD
+            </if>
+        ),
+
+        target_user AS (
+            SELECT
+                  U.CMPNY_CD
+                , U.SITE_CD
+                , U.USER_CD
+                , U.USER_ID
+                , U.USER_NM
+                , U.AUTH_CD
+                , NT.NODE_NM
+            FROM TB_USER U
+            INNER JOIN node_tree NT
+                ON  U.CMPNY_CD = NT.CMPNY_CD
+                AND U.SITE_CD  = NT.SITE_CD
+                AND U.NODE_CD  = NT.NODE_CD
+            WHERE U.CMPNY_CD        = #{gvCmpnyCd}
+              AND U.SITE_CD         = #{siteCd}
+              AND U.USE_YN          = 'Y'
+              AND U.WITHDRAWAL_DATE IS NULL
+            <if test="userNm != null and userNm != ''">
+              AND U.USER_NM LIKE CONCAT('%', #{userNm}, '%')
+            </if>
+        )
+
+        /* OT-only(정규 출근기록 없는 휴일 초과근무 등) 사용자도 1행으로 노출하기 위해
+           사용자 기본정보(userId/userNm/deptNm/authCd/authNm)를 함께 내려준다. */
+        SELECT
+              O.USER_CD                  AS userCd
+            , U.USER_ID                  AS userId
+            , U.USER_NM                  AS userNm
+            , U.NODE_NM                  AS deptNm
+            , U.AUTH_CD                  AS authCd
+            , FNC_CMM_INFO_SRCH(U.CMPNY_CD, 'BAIM_VAL', U.AUTH_CD, 'COM005')   AS authNm
+            , IFNULL(SUM(O.WORK_MINUTES), 0) AS otMinutes
+        FROM TB_USER_OVERTIME_MGMT O
+        INNER JOIN target_user U
+            ON  O.CMPNY_CD = U.CMPNY_CD
+            AND O.SITE_CD  = U.SITE_CD
+            AND O.USER_CD  = U.USER_CD
+        WHERE O.CMPNY_CD  = #{gvCmpnyCd}
+          AND O.SITE_CD   = #{siteCd}
+          AND O.WORK_YMD  LIKE CONCAT(REPLACE(#{workYm}, '-', ''), '%')
+          AND O.DEL_YN    = 'N'
+          AND O.OT_STATUS = 'COMPLETED'
+        GROUP BY O.USER_CD, U.CMPNY_CD, U.USER_ID, U.USER_NM, U.NODE_NM, U.AUTH_CD
+    </select>
+
+</mapper>

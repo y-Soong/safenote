@@ -35,6 +35,10 @@ import com.prafta.web.attd.attd05.result.SchedResult;
 import com.prafta.web.attd.attd05.result.SkippedCellResult;
 import com.prafta.web.attd.attd05.result.UserResult;
 import com.prafta.web.attd.attd05.service.Attd05Service;
+import com.prafta.web.attd.leaveflow.vo.DirectLeaveResult;
+import com.prafta.common.error.attd.AttdErrorCode;
+import com.prafta.common.exception.ApiException;
+import com.prafta.common.util.AuthRoleUtils;
 
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -45,11 +49,15 @@ import lombok.extern.slf4j.Slf4j;
 public class Attd05ServiceImpl implements Attd05Service {
 
     private final Attd05Mapper attd05Mapper;
+    private final com.prafta.web.attd.leaveflow.service.LeaveFlowService leaveFlowService;
+    private final com.prafta.web.attd.attd07.service.AttdCloseService attdCloseService;
 
     /** 검증 스킵 사유 코드 - 근무타입 생성일 이전 */
     private static final String REASON_BEFORE_CREATE = "BEFORE_CREATE";
     /** 검증 스킵 사유 코드 - effective USE_YN 이 'N' 인 기간 */
     private static final String REASON_USE_YN_N = "USE_YN_N";
+    /** 검증 스킵 사유 코드 - 연차 잔여 부족(직접 차감 불가, prafta-021) */
+    private static final String REASON_INSUFFICIENT_LEAVE = "INSUFFICIENT_LEAVE";
 
     @Override
     public UserWorkPlansResponse getUserWorkPlan(UserWorkPlansParam param) {
@@ -104,6 +112,13 @@ public class Attd05ServiceImpl implements Attd05Service {
     @Transactional
     public SaveUserWorkPlansResponse saveUserWorkPlans(SchTypeParam param) {
 
+    	// 관리 기능 권한 가드 — 근무계획/연차 직접 입력·차감은 매니저(MASTER/HR) 전용 (prafta-021 보안).
+    	// JWT 기반 authCd 사용(body 위조 불가). 일반 사용자의 타인 연차 무단 차감 차단.
+    	if (!AuthRoleUtils.isManager(param.gvAuthCd())) {
+    		log.warn("근무계획 저장 권한 없음 - authCd={}", param.gvAuthCd());
+    		throw new ApiException(AttdErrorCode.ATTD_403_002);
+    	}
+
     	List<SchTypeModel> modelList = param.schTypeModelList();
 
     	if (modelList == null || modelList.isEmpty()) {
@@ -121,10 +136,21 @@ public class Attd05ServiceImpl implements Attd05Service {
     	// SCH_CD 별 버전 목록 (APPLY_DATE 오름차순)
     	Map<String, List<SchTypeUseYnResult>> versionMap = groupBySchCd(useYnList);
 
+    	// 법정 휴가 코드 집합 — 이 코드로 적용된 셀은 결재 없이 즉시 연차 사용 기록(차감) (prafta-021 B)
+    	java.util.Set<String> legalLeaveCds = new java.util.HashSet<>(
+    			attd05Mapper.selectLegalLeaveCds(firstModel.gvCmpnyCd()));
+
     	List<SkippedCellResult> skippedList = new ArrayList<>();
     	int savedCount = 0;
 
     	for (SchTypeModel model : modelList) {
+
+    		// PRAFTA-028 - 마감된 기간(부서)의 근무타입 변경(저장) 차단
+    		String closeYm = (model.workYmd() != null && model.workYmd().length() >= 6)
+    				? model.workYmd().substring(0, 6) : model.workYmd();
+    		if (attdCloseService.isClosedForUser(model.gvCmpnyCd(), model.siteCd(), model.userCd(), closeYm)) {
+    			throw new ApiException(AttdErrorCode.ATTD_400_042);
+    		}
 
     		String workPlanCd = model.workPlanCd();
     		List<SchTypeUseYnResult> versions = (workPlanCd == null) ? null : versionMap.get(workPlanCd);
@@ -148,6 +174,22 @@ public class Attd05ServiceImpl implements Attd05Service {
     			}
     		}
 
+    		// 법정 휴가 적용 셀: 결재 없이 즉시 연차 사용 기록 + 잔여 차감 (prafta-021).
+    		// 잔여 부족이면 해당 셀은 저장하지 않고 스킵. (이미 기록됨/정상 차감은 통과하여 근무계획 저장)
+    		if (workPlanCd != null && legalLeaveCds.contains(workPlanCd)) {
+    			DirectLeaveResult result = leaveFlowService.recordDirectLeaveUsage(
+    					model.gvCmpnyCd(), model.siteCd(), model.userCd(),
+    					model.workYmd(), workPlanCd, model.gvUserCd());
+    			if (result == DirectLeaveResult.INSUFFICIENT) {
+    				skippedList.add(new SkippedCellResult(
+    						model.userCd(), model.workYmd(), workPlanCd,
+    						REASON_INSUFFICIENT_LEAVE, reasonText(REASON_INSUFFICIENT_LEAVE)));
+    				log.info("근무계획 연차 적용 스킵(잔여 부족) - userCd={}, workYmd={}, leaveCd={}"
+    						, model.userCd(), model.workYmd(), workPlanCd);
+    				continue;
+    			}
+    		}
+
     		attd05Mapper.saveUserWorkPlans(SchTypeCommand.from(model));
     		savedCount++;
     	}
@@ -163,7 +205,16 @@ public class Attd05ServiceImpl implements Attd05Service {
     @Override
     @Transactional
     public void deleteUserWorkPlans(SchTypeDeleParam param) {
+    	// 관리 기능 권한 가드 (prafta-021 보안) — 매니저(MASTER/HR) 전용.
+    	if (!AuthRoleUtils.isManager(param.gvAuthCd())) {
+    		log.warn("근무계획 삭제 권한 없음 - authCd={}", param.gvAuthCd());
+    		throw new ApiException(AttdErrorCode.ATTD_403_002);
+    	}
     	for(SchTypeDeleModel model : param.schTypeDeleModelList()) {
+    		// PRAFTA-028 - 마감된 기간(부서)의 근무계획 삭제 차단
+    		if (attdCloseService.isClosedForUser(model.gvCmpnyCd(), model.siteCd(), model.userCd(), model.workYm())) {
+    			throw new ApiException(AttdErrorCode.ATTD_400_042);
+    		}
     		attd05Mapper.deleteUserWorkPlans(SchTypeDeleCommand.from(model));
     	}
     }
@@ -245,6 +296,9 @@ public class Attd05ServiceImpl implements Attd05Service {
     	}
     	if (REASON_USE_YN_N.equals(reasonCode)) {
     		return "해당 날짜는 근무타입 미사용 기간입니다.";
+    	}
+    	if (REASON_INSUFFICIENT_LEAVE.equals(reasonCode)) {
+    		return "연차 잔여가 부족하여 적용할 수 없습니다.";
     	}
     	return "근무타입을 지정할 수 없는 날짜입니다.";
     }

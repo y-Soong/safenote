@@ -1,0 +1,107 @@
+package com.prafta.common.cmm.leave.service;
+
+import com.prafta.common.cmm.leave.command.ManualGrantCommand;
+import com.prafta.common.cmm.leave.vo.HireDateGrantResultVO;
+import com.prafta.common.cmm.leave.vo.LeaveDashboardResultVO;
+import com.prafta.common.cmm.leave.vo.LeaveDetailResultVO;
+import com.prafta.common.cmm.leave.vo.LeaveRecallResultVO;
+import com.prafta.common.cmm.leave.vo.LeaveTypeOptionVO;
+import com.prafta.common.cmm.leave.vo.ManualGrantResultVO;
+
+import java.util.List;
+
+/**
+ * 연차 현황 대시보드/상세/수동 부여(attd09) 비즈니스 서비스.
+ *
+ * <p>정책서: {@code .claude/context/policies/attd/08-leave.md} §8.5
+ *
+ * <p>채널(웹/배치) 비종속 비즈니스 로직을 모은다. attd09 모듈의 {@code Attd09ServiceImpl}은
+ * 본 서비스로 위임하는 어댑터다(baim07 ↔ LeavePolicyService 동일 패턴).
+ *
+ * <p>스코프/권한 (정책서 §8.5.7):
+ * <ul>
+ *   <li>목록/상세/수동부여 종류 조회: AUTH_MASTER OR AUTH_HR_MANAGER + CMPNY_CD 스코프.
+ *       대시보드 조회는 전 직원/특정 직원 PII를 노출하므로 진입부에서 관리자 권한을 강제한다
+ *       (요청 body의 cmpnyCd 미신뢰, JWT만).</li>
+ *   <li>수동 부여(단일/일괄): AUTH_MASTER OR AUTH_HR_MANAGER 진입부 강제.</li>
+ * </ul>
+ */
+public interface LeaveDashboardService {
+
+    /**
+     * 연차 현황 대시보드 목록 + 메트릭 조회.
+     *
+     * @param cmpnyCd      회사 코드 (JWT)
+     * @param authCd       수행자 권한 코드 (JWT) — MASTER/HR 진입부 강제 (§8.5.7)
+     * @param siteCd       사업장 코드 필터 (NULL/빈값=전체, CMPNY_CD 스코프 내)
+     * @param nodeCd       소속부서 노드 필터 (NULL/빈값=전체)
+     * @param incSubNodeYn 하위부서 포함 여부 Y/N (Y면 nodeCd 서브트리 포함 — attd08 패턴)
+     * @param userNm       사용자명 검색어 (NULL/빈값=전체)
+     * @param page         페이지(1-based)
+     * @param size         페이지 크기
+     */
+    LeaveDashboardResultVO getDashboard(String cmpnyCd, String authCd, String siteCd, String nodeCd,
+                                        String incSubNodeYn, String userNm, int page, int size);
+
+    /**
+     * 직원별 연차 상세 조회. 대상 직원이 스코프 밖이면 ApiException(NOT_FOUND).
+     *
+     * @param cmpnyCd 회사 코드 (JWT)
+     * @param authCd  수행자 권한 코드 (JWT) — MASTER/HR 진입부 강제 (§8.5.7)
+     * @param userCd  대상 직원 코드
+     */
+    LeaveDetailResultVO getDetail(String cmpnyCd, String authCd, String userCd);
+
+    /**
+     * 수동 부여 가능 휴가 종류 옵션.
+     *
+     * @param cmpnyCd 회사 코드 (JWT)
+     * @param authCd  수행자 권한 코드 (JWT) — MASTER/HR 진입부 강제 (§8.5.7)
+     */
+    List<LeaveTypeOptionVO> getManualGrantTypes(String cmpnyCd, String authCd);
+
+    /**
+     * 연차 수동 부여(단일/일괄 공통). @Transactional, 권한 MASTER/HR.
+     *
+     * @param cmpnyCd 회사 코드 (JWT)
+     * @param command 부여 입력 (userCds/leaveCd/grantDays/availFromDate/reason)
+     * @param authCd  수행자 권한 코드 (JWT)
+     * @param userCd  수행자 사용자 코드 (INSERT_NO 기록용)
+     */
+    ManualGrantResultVO manualGrant(String cmpnyCd, ManualGrantCommand command, String authCd, String userCd);
+
+    /**
+     * 관리자 수동 부여 연차 회수(soft cancel, PRAFTA-031). @Transactional, 권한 MASTER/HR.
+     *
+     * <p>정책서 §8.5.7(권한) / §8.5.8(소프트 취소·사용 이력 불변). 회수 대상은 관리자 수동 부여건
+     * (GRANT_TYPE LIKE 'MANUAL_%' AND GRANT_BY_TYPE='02')이며, 사용 전(STATUS='ACTIVE' AND
+     * USED_DAYS=0 AND DEL_YN='N')일 때만 가능하다. 회수 = STATUS='CANCELED' 전환 + 회수 메타 기록.
+     * <b>USED_DAYS는 절대 갱신하지 않는다.</b> 회수 성공 시 알림 outbox에 1건 적재(발송은 추후).
+     *
+     * @param cmpnyCd         회사 코드 (JWT)
+     * @param grantId         회수 대상 부여 ID (PathVariable)
+     * @param reason          회수 사유 (필수, 최대 500자)
+     * @param authCd          수행자 권한 코드 (JWT) — MASTER/HR 진입부 강제
+     * @param operatorUserCd  수행자 사용자 코드 (CANCEL_BY / outbox INSERT_NO 기록용)
+     */
+    LeaveRecallResultVO recallGrant(String cmpnyCd, String grantId, String reason, String authCd,
+                                    String operatorUserCd);
+
+    /**
+     * 입사일 기준 연차 부여(테스트/검증용). @Transactional, 권한 MASTER/HR.
+     *
+     * <p>선택 직원 각각의 HIRE_DATE 기준 근속 개월 수로 법정 연차를 산정해 부여한다.
+     * <ul>
+     *   <li>근속 12개월 미만: 법정 월차(경과 개월수, 최대 11) → SYS_MONTHLY</li>
+     *   <li>근속 12개월 이상: 본연차 15일(SYS_ANNUAL) + 활성 정책 근속가산(SYS_TENURE_BONUS)</li>
+     * </ul>
+     * 입사일 미입력 직원이 1명이라도 있으면 전건 부여하지 않고 예외(§입력 가드).
+     * 동일 직원·연도·종류로 이미 부여된 건은 멱등 처리(중복 부여 차단, 건너뜀).
+     *
+     * @param cmpnyCd 회사 코드 (JWT)
+     * @param userCds 대상 직원 코드 목록
+     * @param authCd  수행자 권한 코드 (JWT)
+     * @param userCd  수행자 사용자 코드 (INSERT_NO 기록용)
+     */
+    HireDateGrantResultVO hireDateGrant(String cmpnyCd, List<String> userCds, String authCd, String userCd);
+}

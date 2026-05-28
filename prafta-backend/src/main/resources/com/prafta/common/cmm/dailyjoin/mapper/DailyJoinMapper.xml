@@ -1,0 +1,204 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.prafta.common.cmm.dailyjoin.mapper.DailyJoinMapper">
+
+    <!-- 회사/사업장 정보 조회 (비로그인 단독 조회) -->
+    <select id="selectSiteInfo" parameterType="com.prafta.common.cmm.dailyjoin.application.query.SiteInfoQuery" resultType="com.prafta.common.cmm.dailyjoin.result.SiteInfoResult">
+    /* DailyJoinMapper.selectSiteInfo */
+    SELECT
+        C.CMPNY_CD          AS cmpnyCd
+        , C.CMPNY_NM        AS cmpnyNm
+        , S.SITE_CD         AS siteCd
+        , S.SITE_NM         AS siteNm
+    FROM TB_CMPNY C
+         INNER JOIN TB_SITE S
+            ON (
+                C.CMPNY_CD = S.CMPNY_CD
+            )
+    WHERE C.CMPNY_CD = #{cmpnyCd}
+      AND S.SITE_CD = #{siteCd}
+      AND IFNULL(C.USE_YN, 'N') = 'Y'
+      AND IFNULL(S.USE_YN, 'Y') = 'Y'
+    </select>
+
+    <!-- 사용자ID 중복 카운트 (TB_DAILY_USER, USE_YN='Y') -->
+    <select id="selectUserIdDupleCnt" parameterType="com.prafta.common.cmm.dailyjoin.application.query.UserIdDupleCheckQuery" resultType="int">
+    /* DailyJoinMapper.selectUserIdDupleCnt */
+    SELECT COUNT(*)
+    FROM (
+        SELECT 1
+          FROM TB_DAILY_USER
+         WHERE CMPNY_CD = #{cmpnyCd}
+           AND USER_ID  = #{userId}
+           AND USE_YN   = 'Y'
+         LIMIT 1
+    ) T
+    </select>
+
+    <!-- 휴대폰번호 중복 카운트 (TB_DAILY_USER, CMPNY_CD + MBL_NO_HMAC 기준 USE_YN='Y') -->
+    <select id="selectMblNoDupleCnt" parameterType="com.prafta.common.cmm.dailyjoin.application.query.MblNoDupleQuery" resultType="int">
+    /* DailyJoinMapper.selectMblNoDupleCnt */
+    SELECT COUNT(*)
+    FROM (
+        SELECT 1
+          FROM TB_DAILY_USER
+         WHERE CMPNY_CD    = #{cmpnyCd}
+           AND MBL_NO_HMAC = #{mblNoHmac}
+           AND USE_YN      = 'Y'
+         LIMIT 1
+    ) T
+    </select>
+
+    <!-- 가입 시점 SMS 인증 재검증 - 인증완료(VERIFIED_YN='Y') 레코드의 SMS_ID 조회 -->
+    <select id="selectSmsVerifiedSmsId" parameterType="com.prafta.common.cmm.dailyjoin.application.query.SmsConsumeQuery" resultType="string">
+    /* DailyJoinMapper.selectSmsVerifiedSmsId */
+    SELECT SMS_ID
+      FROM TB_SMS_AUTH_CODE
+     WHERE MBL_NO_HMAC = #{mblNoHmac}
+       AND AUTH_CD     = #{certNo}
+       AND VERIFIED_YN = 'Y'
+       AND UPDATE_DATE <![CDATA[ >= ]]> DATE_SUB(NOW(), INTERVAL 10 MINUTE)
+     ORDER BY UPDATE_DATE DESC
+     LIMIT 1
+    </select>
+
+    <!-- SMS 인증 레코드 소진 처리 (VERIFIED_YN='Y' -> 'C' 조건부 UPDATE) -->
+    <update id="consumeSmsAuth" parameterType="com.prafta.common.cmm.baseinfo.application.command.SmsAuthConsumeCommand">
+    /* DailyJoinMapper.consumeSmsAuth */
+    UPDATE TB_SMS_AUTH_CODE
+    SET VERIFIED_YN = 'C'
+        , UPDATE_NO   = 'SYSTEM'
+        , UPDATE_DATE = NOW()
+    WHERE SMS_ID      = #{smsId}
+      AND VERIFIED_YN = 'Y'
+    </update>
+
+    <!-- 사업장 계정등록 정책 사용여부 조회 -->
+    <select id="selectLinkPolicyUseYn" parameterType="com.prafta.common.cmm.dailyjoin.application.query.LinkPolicyQuery" resultType="string">
+    /* DailyJoinMapper.selectLinkPolicyUseYn */
+    SELECT USE_YN
+    FROM TB_DAILY_USER_LINK_POLICY
+    WHERE CMPNY_CD = #{cmpnyCd}
+      AND SITE_CD  = #{siteCd}
+    </select>
+
+    <!-- 사업장 첫 빈 슬롯 번호 조회 -->
+    <select id="selectFirstEmptySlotNo" parameterType="com.prafta.common.cmm.dailyjoin.application.query.EmptySlotQuery" resultType="string">
+    /* DailyJoinMapper.selectFirstEmptySlotNo */
+    SELECT SLOT_NO
+    FROM TB_DAILY_USER_SLOT
+    WHERE CMPNY_CD    = #{cmpnyCd}
+      AND SITE_CD     = #{siteCd}
+      AND USE_YN      = 'Y'
+      AND SLOT_STATUS = '00'
+      AND (CURR_USER_CD IS NULL OR CURR_USER_CD = '')
+    ORDER BY CAST(SLOT_NO AS UNSIGNED)
+    LIMIT 1
+    </select>
+
+    <!-- USER_CD 채번 -->
+    <select id="selectDailyUserCd" parameterType="com.prafta.common.cmm.dailyjoin.application.query.EmptySlotQuery" resultType="string">
+    /* DailyJoinMapper.selectDailyUserCd */
+    SELECT CONCAT('D', DATE_FORMAT(NOW(), '%Y%m%d'), FNC_CMM_SEQ_NEXTVAL(#{cmpnyCd}, 'DAILY_USER'))
+    FROM DUAL
+    </select>
+
+    <!-- 일일사용자 계정 insert -->
+    <insert id="insertDailyUser" parameterType="com.prafta.common.cmm.dailyjoin.application.command.InsertDailyUserCommand">
+    /* DailyJoinMapper.insertDailyUser */
+    INSERT INTO TB_DAILY_USER (
+        CMPNY_CD
+        , SITE_CD
+        , USER_CD
+        , USER_ID
+        , USER_NM
+        , USER_PW
+
+        , MBL_NO_ENC
+        , MBL_NO_HMAC
+        , MBL_NO_LAST4
+
+        , REG_TYPE
+        , USE_YN
+        , ACCOUNT_STATUS
+        , WORK_EXPIRE_DATE
+
+        , INSERT_NO
+        , INSERT_DATE
+        , UPDATE_NO
+        , UPDATE_DATE
+    )
+    VALUES (
+        #{cmpnyCd}
+        , #{siteCd}
+        , #{userCd}
+        , #{userId}
+        , #{userNm}
+        , #{userPw}
+
+        , #{mblNoEnc}
+        , #{mblNoHmac}
+        , #{mblNoLast4}
+
+        , #{regType}
+        , #{useYn}
+        , #{accountStatus}
+        , DATE_FORMAT(NOW(), '%Y%m%d')
+
+        , #{userCd}
+        , NOW()
+        , #{userCd}
+        , NOW()
+    )
+    </insert>
+
+    <!-- 빈 슬롯 점유(CURR_USER_CD 매핑) -->
+    <update id="updateDailyUserSlotCurrUserCd" parameterType="com.prafta.common.cmm.dailyjoin.application.command.DailyUserSlotUpdCommand">
+    /* DailyJoinMapper.updateDailyUserSlotCurrUserCd */
+    UPDATE TB_DAILY_USER_SLOT
+    SET CURR_USER_CD = #{userCd}
+        , SLOT_TYPE   = #{slotType}
+        , SLOT_STATUS = #{slotStatus}
+        , UPDATE_NO   = #{userCd}
+        , UPDATE_DATE = NOW()
+    WHERE CMPNY_CD    = #{cmpnyCd}
+      AND SITE_CD     = #{siteCd}
+      AND SLOT_NO     = #{slotNo}
+      AND USE_YN      = 'Y'
+      AND SLOT_STATUS = '00'
+      AND (CURR_USER_CD IS NULL OR CURR_USER_CD = '')
+    </update>
+
+    <!-- 필수약관 목록 조회 (TB_TERMS) -->
+    <select id="selectRequiredTermsList" resultType="com.prafta.common.cmm.dailyjoin.result.RequiredTermsResult">
+    /* DailyJoinMapper.selectRequiredTermsList */
+    SELECT
+        TERMS_ID        AS termsId
+        , TERMS_VERSION AS termsVersion
+    FROM TB_TERMS
+    WHERE REQUIRED_YN = 'Y'
+      AND IFNULL(USE_YN, 'Y') = 'Y'
+    </select>
+
+    <!-- 약관 동의 이력 insert -->
+    <insert id="insertTermsUserAgrMgmt" parameterType="com.prafta.common.cmm.dailyjoin.application.command.TermsUserAgrCommand">
+    /* DailyJoinMapper.insertTermsUserAgrMgmt */
+    INSERT INTO TB_TERMS_USER_AGR_MGMT (
+        USER_CD
+        , TERMS_ID
+        , TERMS_VERSION
+        , AGR_YN
+        , INSERT_NO
+        , INSERT_DATE
+    )
+    VALUES (
+        #{userCd}
+        , #{termsId}
+        , #{termsVersion}
+        , #{agrYn}
+        , #{userCd}
+        , NOW()
+    )
+    </insert>
+
+</mapper>

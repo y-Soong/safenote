@@ -39,8 +39,12 @@ public class MenuListResBuilder {
                         Collectors.toList()
                 ));
 
-        // 2) 탑 메뉴 구성
+        // 2) 탑 메뉴 구성 — TB_SYST_MENU_M.MENU_IDX(숫자) 오름차순, 동률이면 keyId.
+        //    매핑 전에 정렬해 그 순서를 그대로 결과 리스트에 보존한다(매핑 후 재정렬 금지).
         List<TopMenu> topMenus = byKey.entrySet().stream()
+                .sorted(Comparator
+                        .comparingInt((Map.Entry<String, List<MenuInfoResult>> e) -> nz(e.getValue().get(0).getMenuIdx()))
+                        .thenComparing(Map.Entry::getKey))
                 .map(e -> {
                     String keyId = e.getKey();
                     MenuInfoResult first = e.getValue().get(0);
@@ -58,8 +62,6 @@ public class MenuListResBuilder {
                             .label(label)
                             .build();
                 })
-                // 필요하면 정렬 규칙 유지/변경 가능
-                .sorted(Comparator.comparing(TopMenu::getId))
                 .collect(Collectors.toList());
 
         // 3) 사이드 메뉴 구성
@@ -70,8 +72,11 @@ public class MenuListResBuilder {
             String keyId = tm.getId();
             List<MenuInfoResult> rows = byKey.getOrDefault(keyId, Collections.emptyList());
 
-            // 그룹 내부 정렬 (id가 숫자 문자열이면 숫자정렬로 바꾸는 것도 가능)
-            rows.sort(Comparator.comparing(m -> nullToEmpty(m.getId())));
+            // 그룹 내부 정렬 — TB_SYST_MENU_D.MENU_IDX(숫자) 오름차순, 동률이면 id.
+            //    (id는 'MENU_M_ID_MENU_IDX' 문자열이라 문자열 정렬 시 10 < 2 로 깨짐 → 숫자 정렬)
+            rows.sort(Comparator
+                    .comparingInt((MenuInfoResult m) -> nz(m.getMenuSubIdx()))
+                    .thenComparing(m -> nullToEmpty(m.getId())));
 
             int base = Math.abs(keyId.hashCode() % 100) * 100; // key별 100단위 블록
             int seq = 1;
@@ -110,6 +115,11 @@ public class MenuListResBuilder {
     }
 
     // ----- helpers
+    /** MENU_IDX null이면 맨 뒤로 보내기 위한 치환값. */
+    private static int nz(Integer v) {
+        return v == null ? Integer.MAX_VALUE : v;
+    }
+
     private static String yn(String v) {
         if (v == null) return "N";
         String t = v.trim().toUpperCase(Locale.ROOT);

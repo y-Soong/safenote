@@ -80,7 +80,9 @@
                             v-if="s.outside"
                             type="button"
                             class="seg-tag seg-tag-outside"
-                            :class="{ 'is-active': gpsPanel.segIdx === s.segIdx }"
+                            :class="{
+                              'is-active': gpsPanel.segIdx === s.segIdx,
+                            }"
                             @click="fnToggleGps(s.segIdx, s.attdId)"
                           >
                             외근
@@ -257,20 +259,15 @@
                     <button
                       type="button"
                       class="req-btn req-btn-approve"
+                      :disabled="isMonthClosed"
                       @click="fnApproveReq(card)"
                     >
                       승인
                     </button>
                     <button
                       type="button"
-                      class="req-btn req-btn-edit"
-                      @click="fnDirectEditReq(card)"
-                    >
-                      직접수정(승인)
-                    </button>
-                    <button
-                      type="button"
                       class="req-btn req-btn-reject"
+                      :disabled="isMonthClosed"
                       @click="fnRejectReq(card)"
                     >
                       반려
@@ -624,7 +621,11 @@
                       maxlength="100"
                     ></textarea>
                   </div>
-                  <button class="save-btn" :disabled="!canSave" @click="fnSave">
+                  <button
+                    class="save-btn"
+                    :disabled="!canSave || isMonthClosed"
+                    @click="fnSave"
+                  >
                     저장
                   </button>
                 </div>
@@ -848,7 +849,7 @@
             <div v-if="cfg.history.length" class="hist-table-wrap">
               <table class="hist-table">
                 <colgroup>
-                  <col style="width: 110px" />
+                  <col style="width: 160px" />
                   <col style="width: 70px" />
                   <col style="width: 130px" />
                   <col style="width: 130px" />
@@ -912,7 +913,7 @@
     </Transition>
   </Teleport>
 
-  <!-- 반려 사유 입력 모달 (근태 요청 / 초과근무 요청 반려 공용) -->
+  <!-- 반려 사유 입력 모달 (근태 / 초과근무 / 연차 요청 반려 공용) -->
   <ReasonInputModal
     v-if="rejectModal.open"
     title="반려 사유 입력"
@@ -958,10 +959,22 @@ const props = defineProps({
   // 응답의 plan* 값이 없을 때 보충용으로 사용되는 스케줄 값.
   // { plan1Start, plan1End, plan2Start, plan2End }
   fallback_p: { type: Object, default: () => ({}) },
+  // PRAFTA-028 - 해당 월 마감 여부 (true 면 모든 쓰기 차단, 조회는 허용)
+  isMonthClosed_p: { type: Boolean, default: false },
 });
 
 const emit = defineEmits(["close", "saved"]);
 const { proxy } = getCurrentInstance();
+
+// PRAFTA-028 - 마감된 월에는 근태/OT 생성·수정·삭제·승인·반려 등 모든 쓰기를 차단한다(조회는 허용).
+const isMonthClosed = computed(() => props.isMonthClosed_p);
+const guardClosed = async () => {
+  if (isMonthClosed.value) {
+    await proxy.$alert("마감된 월입니다. 마감 해제 후 수정할 수 있습니다.");
+    return true;
+  }
+  return false;
+};
 
 // 팝업 종료 시 Attd_07 테이블을 최신 데이터로 reload 한다.
 // (saved 이벤트 → Attd_07.vue 의 onSaved 핸들러(fnSearch) 호출)
@@ -1005,7 +1018,12 @@ const closeReasonPopup = () => {
 //   kind: 'attd'     → 근태 요청 반려 (POST /attd07/reject-user-attd-requests)
 //         'overtime' → 초과근무 요청 반려 (POST /attd07/reject-user-overtime-requests)
 //   context: 반려 API 호출에 필요한 식별자 묶음 (kind 별로 키 구성 상이)
-const rejectModal = ref({ open: false, kind: null, context: null, busy: false });
+const rejectModal = ref({
+  open: false,
+  kind: null,
+  context: null,
+  busy: false,
+});
 const closeRejectModal = () => {
   if (rejectModal.value.busy) return;
   rejectModal.value = { open: false, kind: null, context: null, busy: false };
@@ -1151,7 +1169,8 @@ const actualRange = (inDate, inTime, outDate, outTime) => {
   const right = outTime
     ? dtBlock(outDate, outTime)
     : '<span class="val-missing">(미등록)</span>';
-  return `${left}<span class="dt-arrow">→</span>${right}`;
+  // 실제 출퇴근/표준화 적용은 구간 분리기호로 '~' 를 사용한다 (스케줄 계획은 '→' 유지)
+  return `${left}<span class="dt-arrow">~</span>${right}`;
 };
 
 const planRange = (s, e) => {
@@ -1163,8 +1182,8 @@ const buildTimeCard = () => {
   const r = record.value;
   const { isOff, isLeave, hasSeg2, hasPlan2 } = recordState.value;
 
-  // 휴무
-  if (isOff) {
+  // 레코드 자체가 없으면 표시할 데이터가 없으므로 휴무 placeholder 반환
+  if (!r) {
     return {
       plan: { value: "휴무", meta: "정기 휴일", cls: "value-off" },
       actual: { value: "−", cls: "val-empty" },
@@ -1173,15 +1192,22 @@ const buildTimeCard = () => {
     };
   }
 
-  // 계획 — plan2가 의미 있는 시간일 때만 2구간 표시
-  const plan = hasPlan2
-    ? {
-        segments: [
-          { tag: "1구간", range: planRange(r.plan1Start, r.plan1End) },
-          { tag: "2구간", range: planRange(r.plan2Start, r.plan2End) },
-        ],
-      }
-    : { value: planRange(r.plan1Start, r.plan1End), meta: "1구간" };
+  // 계획 — 휴무(계획 없음)면 "휴무", plan2가 의미 있는 시간일 때만 2구간 표시
+  // 정책 §7.5: 휴무일에도 출퇴근 등록은 허용되며 실적/표준화/비고는 그대로 표시한다
+  // (해당 근무는 전량 추가근무로 취급).
+  let plan;
+  if (isOff) {
+    plan = { value: "휴무", meta: "정기 휴일", cls: "value-off" };
+  } else if (hasPlan2) {
+    plan = {
+      segments: [
+        { tag: "1구간", range: planRange(r.plan1Start, r.plan1End) },
+        { tag: "2구간", range: planRange(r.plan2Start, r.plan2End) },
+      ],
+    };
+  } else {
+    plan = { value: planRange(r.plan1Start, r.plan1End), meta: "1구간" };
+  }
 
   // 실적 / 표준화
   let actual;
@@ -1455,6 +1481,8 @@ const reqCards = computed(() => {
       aftIn: fmtTime(req.startTime) || "-",
       aftOut: fmtTime(req.endTime) || "-",
       reqReason: req.reqReason || "",
+      // 연차(05/06) 결재 라우팅용 — 백엔드가 현재 로그인 사용자의 처리 단계를 내려줌(비결재자/그 외 타입은 null)
+      approvalStep: req.approvalStep ?? null,
     };
   });
 });
@@ -1594,6 +1622,10 @@ const canSave = computed(() => form.value.reason.trim().length > 0);
 const MAX_SEGMENTS = 2;
 
 const addSegment = () => {
+  if (isMonthClosed.value) {
+    proxy.$alert("마감된 월입니다. 마감 해제 후 수정할 수 있습니다.");
+    return;
+  }
   if (form.value.segments.length >= MAX_SEGMENTS) return;
   form.value.segments.push({
     startDate: props.date_p,
@@ -1697,6 +1729,8 @@ const otSaving = ref(false);
 const gpsPanel = ref({ segIdx: null, attdId: "", trail: [], loading: false });
 
 const fnToggleGps = async (segIdx, attdId) => {
+  console.log("[AttdDayDetailPop] fnToggleGps", { segIdx, attdId });
+
   // 같은 구간 버튼 재클릭 → 패널 토글(닫기)
   if (gpsPanel.value.segIdx === segIdx) {
     gpsPanel.value = { segIdx: null, attdId: "", trail: [], loading: false };
@@ -1715,8 +1749,7 @@ const fnToggleGps = async (segIdx, attdId) => {
     if (response.status === 200) {
       // 조회 도중 사용자가 다른 구간으로 전환했다면 결과를 버린다.
       if (gpsPanel.value.segIdx !== segIdx) return;
-      gpsPanel.value.trail =
-        response.data?.attdGpsTrailResultList ?? [];
+      gpsPanel.value.trail = response.data?.attdGpsTrailResultList ?? [];
     }
   } catch (err) {
     console.error("[AttdDayDetailPop] gps trail load failed", err);
@@ -1818,8 +1851,12 @@ const buildStdSegments = () => {
     return [sStamp, eStamp];
   };
 
-  segs.push(build(r.act1InDate, r.act1InStdTime, r.act1OutDate, r.act1OutStdTime));
-  segs.push(build(r.act2InDate, r.act2InStdTime, r.act2OutDate, r.act2OutStdTime));
+  segs.push(
+    build(r.act1InDate, r.act1InStdTime, r.act1OutDate, r.act1OutStdTime)
+  );
+  segs.push(
+    build(r.act2InDate, r.act2InStdTime, r.act2OutDate, r.act2OutStdTime)
+  );
   return segs;
 };
 
@@ -2006,6 +2043,7 @@ const mapOtType = (t) => {
 
 // 저장: POST /attd07/update-user-overtime-requests
 const fnApproveOvertime = async (segIdx) => {
+  if (await guardClosed()) return;
   if (otSaving.value) return;
   if (!(await validateOtBeforeSave(segIdx))) return;
 
@@ -2159,6 +2197,7 @@ const validateForm = async () => {
 };
 
 const fnSave = async () => {
+  if (await guardClosed()) return;
   if (!(await validateForm())) return;
 
   // payload — 구간(workSeq)별 1건씩 (관리자 등록: method '02' 고정)
@@ -2227,8 +2266,6 @@ const fnSave = async () => {
     );
     if (response.status === 200) {
       await proxy.$alert(getMessage(MSG.SAVE_COMPLETED));
-      // 저장 후 팝업을 닫지 않고 상세 조회 API를 다시 호출해 데이터를 reload 한다.
-      await fnSearch();
     }
   } catch (err) {
     console.log("[AttdDayDetailPop] save failed", err);
@@ -2238,51 +2275,82 @@ const fnSave = async () => {
 };
 
 // ── 근로자 요청 카드 액션 ─────────────────────────────────
-//  - 직접수정(승인): 요청 값을 form 의 해당 workSeq 구간에 채워 넣음 (UI 적용)
-//    실제 승인 처리는 form 저장 시점에 함께 처리
 //  - 승인: POST /attd07/update-user-attd-requests
 //  - 반려: POST /attd07/reject-user-attd-requests (반려 사유 입력 모달 경유)
-// 요청 카드의 출퇴근 값을 form 의 해당 workSeq 구간에 채워 넣는다.
-// 반환: 채워 넣은 segment 객체 (실패 시 null)
-const fillSegmentFromReq = (card) => {
-  const i = (card.workSeq || 1) - 1;
-  // form 의 해당 구간이 없으면 생성 (1구간 → index 0, 2구간 → index 1)
-  while (
-    form.value.segments.length <= i &&
-    form.value.segments.length < MAX_SEGMENTS
-  ) {
-    form.value.segments.push({
-      startDate: props.date_p,
-      startTime: "",
-      endDate: props.date_p,
-      endTime: "",
-      otList: [],
-    });
-  }
-  const seg = form.value.segments[i];
-  if (!seg) return null;
-  const req = card.raw ?? {};
-  seg.startDate = ymdNumToDash(req.startDate) || props.date_p;
-  seg.startTime = req.startTime || "";
-  seg.endDate = ymdNumToDash(req.endDate) || props.date_p;
-  seg.endTime = req.endTime || "";
-  return seg;
-};
-
-const fnDirectEditReq = (card) => {
-  const seg = fillSegmentFromReq(card);
-  if (!seg) return;
-  proxy.$alert(getMessage(MSG.REQ_DIRECT_EDIT_FILLED));
-};
-
 // 승인: confirm → 단일 API 호출로 TB_USER_ATTD_MGMT 갱신 + TB_USER_ATTD_REQ 상태 변경 + HIST 기록
 const fnApproveReq = async (card) => {
+  if (await guardClosed()) return;
   const ok = await proxy.$confirm(getMessage(MSG.REQ_APPROVE_CONFIRM));
   if (!ok) return;
 
   const raw = card?.raw ?? {};
   const r = record.value ?? {};
   const n = parseInt(raw.workSeq, 10) || card?.workSeq || 1;
+
+  // [PRAFTA-027] 초과근무 요청(03 생성 / 04 수정)은 OT 승인 엔드포인트로 라우팅한다.
+  //   근태 승인 엔드포인트(update-user-attd-requests)는 SEC-018 REQ_TYPE 가드가 있어
+  //   OT 요청을 "요청을 처리할 수 없습니다"로 거부한다. (fnRejectReq 의 OT 분기와 동일 취지,
+  //   Attd_10 의 OT 승인 payload 형식과 동일.)
+  const isOtReq = card?.reqType === "03" || card?.reqType === "04";
+  if (isOtReq) {
+    const otPayload = {
+      reqId: raw.reqId,
+      userCd: raw.userCd || props.userCd_p,
+      siteCd: raw.siteCd || props.siteCd_p,
+      nodeCd: raw.nodeCd || props.nodeCd_p || "",
+      workYmd: raw.workYmd || ymdDashToNum(props.date_p),
+      reqReason: raw.reqReason || "",
+      overtimes: [
+        {
+          otType: raw.otType,
+          startDate: raw.startDate || raw.workYmd || ymdDashToNum(props.date_p),
+          startTime: raw.startTime,
+          endDate: raw.endDate || raw.workYmd || ymdDashToNum(props.date_p),
+          endTime: raw.endTime,
+        },
+      ],
+    };
+    try {
+      const response = await axios.post(
+        "/webApi/attd07/update-user-overtime-requests",
+        otPayload
+      );
+      if (response.status === 200) {
+        await proxy.$alert(getMessage(MSG.SAVE_COMPLETED));
+        await fnSearch();
+      }
+    } catch (err) {
+      console.error("[AttdDayDetailPop] approve OT request failed", err);
+      await proxy.$alert(
+        resolveApiErrorMessage(err, getMessage(MSG.SAVE_ERROR))
+      );
+    }
+    return;
+  }
+
+  // [A] 연차(05 사용 / 06 수정) 요청은 LeaveFlow 결재 엔드포인트로 라우팅한다.
+  //   근태 승인 엔드포인트는 SEC-018 가드(01/02)에 막히고, 연차는 다단계 결재 모델이라
+  //   현재 로그인 사용자가 처리할 결재 단계(approvalStep)를 함께 전송한다(Attd_10 연차 탭과 동일 payload).
+  const isLeaveReq = card?.reqType === "05" || card?.reqType === "06";
+  if (isLeaveReq) {
+    try {
+      const response = await axios.post("/webApi/leaveflow/approve", {
+        reqId: raw.reqId,
+        approvalStep: card.approvalStep,
+        comment: "",
+      });
+      if (response.status === 200) {
+        await proxy.$alert(getMessage(MSG.SAVE_COMPLETED));
+        await fnSearch();
+      }
+    } catch (err) {
+      console.error("[AttdDayDetailPop] approve leave request failed", err);
+      await proxy.$alert(
+        resolveApiErrorMessage(err, getMessage(MSG.SAVE_ERROR))
+      );
+    }
+    return;
+  }
 
   const payload = {
     reqId: raw.reqId,
@@ -2330,18 +2398,27 @@ const fnApproveReq = async (card) => {
 };
 
 // 근로자 요청 반려 — 반려 사유 입력 모달을 띄운다.
-//   [QA 재작업 D4] OT 요청(reqType==='OT_REGISTER')은 근태 반려 endpoint
+//   [QA 재작업 D4] OT 요청(reqType==='03', 초과근무생성)은 근태 반려 endpoint
 //   (reject-user-attd-requests)의 SEC-018 REQ_TYPE 가드에 막히므로, OT 요청은
 //   kind='overtime' 으로 분기해 onRejectConfirm 에서 reject-user-overtime-requests 로
 //   라우팅한다(요청 body 는 OT 반려 DTO 형식 { reqId, siteCd, userCd, rejectReason }).
 //   그 외 근태 수정/생성 요청은 기존 kind='attd' 경로를 그대로 사용한다.
+//   reqType 은 SYS032 코드값으로 관리된다(PRAFTA-010-2).
 const fnRejectReq = (card) => {
+  if (isMonthClosed.value) {
+    proxy.$alert("마감된 월입니다. 마감 해제 후 수정할 수 있습니다.");
+    return;
+  }
   const raw = card?.raw ?? {};
   const n = parseInt(raw.workSeq, 10) || card?.workSeq || 1;
-  const isOtReq = card?.reqType === "OT_REGISTER";
+  // [8번 보정] OT는 생성(03)·수정(04) 모두 OT 반려 엔드포인트로 라우팅한다.
+  //   (기존엔 03만 봐서 04 반려가 근태 반려 엔드포인트의 SEC-018 가드에 막혔다 — 승인은 03·04를 보는데 반려만 03이라 비대칭이었음.)
+  const isOtReq = card?.reqType === "03" || card?.reqType === "04";
+  // [A] 연차(05 사용 / 06 수정)는 LeaveFlow 반려 엔드포인트로 라우팅(다단계 결재 → approvalStep 동반).
+  const isLeaveReq = card?.reqType === "05" || card?.reqType === "06";
   rejectModal.value = {
     open: true,
-    kind: isOtReq ? "overtime" : "attd",
+    kind: isLeaveReq ? "leave" : isOtReq ? "overtime" : "attd",
     busy: false,
     context: {
       reqId: raw.reqId,
@@ -2350,6 +2427,7 @@ const fnRejectReq = (card) => {
       workYmd: raw.workYmd || ymdDashToNum(props.date_p),
       workSeq: String(n),
       nodeCd: raw.nodeCd || props.nodeCd_p,
+      approvalStep: card?.approvalStep,
     },
   };
 };
@@ -2357,6 +2435,7 @@ const fnRejectReq = (card) => {
 // 반려 사유 입력 모달 "확인" 핸들러 — 입력된 사유로 반려 API 호출.
 //   기존 승인(fnApproveReq/fnApproveOvertime)의 호출/에러처리 패턴을 따른다.
 const onRejectConfirm = async (reason) => {
+  if (await guardClosed()) return;
   if (rejectModal.value.busy) return;
   const { kind, context } = rejectModal.value;
   if (!kind || !context) return;
@@ -2372,6 +2451,13 @@ const onRejectConfirm = async (reason) => {
         workSeq: context.workSeq,
         nodeCd: context.nodeCd,
         rejectReason: reason,
+      });
+    } else if (kind === "leave") {
+      // [A] 연차(05/06) 반려 — LeaveFlow 엔드포인트(다단계 결재). 반려 사유(comment) 서버 필수.
+      await axios.post("/webApi/leaveflow/reject", {
+        reqId: context.reqId,
+        approvalStep: context.approvalStep,
+        comment: reason,
       });
     } else {
       await axios.post("/webApi/attd07/reject-user-overtime-requests", {
@@ -2398,6 +2484,10 @@ const onRejectConfirm = async (reason) => {
 //  - DB에서 읽어온 구간(record.attd{n}Id 존재) → 사유 입력 팝업 → API 호출
 //  - 화면상 신규 추가한 구간(attd{n}Id 없음) → 팝업/API 없이 form에서 즉시 제거
 const openDeletePopup = (type, segIdx) => {
+  if (isMonthClosed.value) {
+    proxy.$alert("마감된 월입니다. 마감 해제 후 수정할 수 있습니다.");
+    return;
+  }
   const r = record.value ?? {};
 
   if (type === "segment") {
@@ -2428,7 +2518,7 @@ const openDeletePopup = (type, segIdx) => {
       segIdx: null,
       reason: "",
     };
-  }2
+  }
 };
 
 const closeDeletePopup = () => {
@@ -2791,8 +2881,10 @@ onMounted(() => {
   align-items: center;
   margin: 0 10px;
   color: #9ca3af;
-  font-weight: 500;
-  font-size: 14px;
+  font-weight: 600;
+  font-size: 15px;
+  /* '~' 분리기호가 시간 블록 가운데에 자연스럽게 정렬되도록 함 */
+  vertical-align: middle;
 }
 .val-empty {
   color: #9ca3af;
@@ -3106,15 +3198,6 @@ onMounted(() => {
 }
 .req-btn-approve:hover {
   background: #15803d;
-}
-.req-btn-edit {
-  background: #fff;
-  border-color: #d1d5db;
-  color: #374151;
-}
-.req-btn-edit:hover {
-  background: #f9fafb;
-  border-color: #9ca3af;
 }
 .req-btn-reject {
   background: #fff;
@@ -4203,7 +4286,7 @@ textarea.input {
 .hist-pop {
   background: #fff;
   border-radius: 12px;
-  width: 1080px;
+  width: 1130px;
   max-width: calc(100% - 32px);
   max-height: calc(100vh - 64px);
   box-shadow: 0 20px 50px rgba(0, 0, 0, 0.25);

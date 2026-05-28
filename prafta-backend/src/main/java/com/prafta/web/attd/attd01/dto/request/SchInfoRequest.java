@@ -26,10 +26,14 @@ public class SchInfoRequest{
 	private String fstSchStrTime;
 	private String fstSchEndTime;
 	private String fstSchBrkMin;
-	
+	private String fstBrkStrTime;
+	private String fstBrkEndTime;
+
 	private String secSchStrTime;
 	private String secSchEndTime;
 	private String secSchBrkMin;
-	
+	private String secBrkStrTime;
+	private String secBrkEndTime;
+
 	private String useYn;
 }

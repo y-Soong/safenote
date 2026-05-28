@@ -1,0 +1,50 @@
+package com.prafta.web.attd.reqinbox.service.impl;
+
+import java.util.List;
+
+import org.springframework.stereotype.Service;
+
+import com.prafta.common.error.attd.AttdErrorCode;
+import com.prafta.common.error.common.CommonErrorCode;
+import com.prafta.common.exception.ApiException;
+import com.prafta.common.util.AuthRoleUtils;
+import com.prafta.web.attd.reqinbox.mapper.ReqInboxMapper;
+import com.prafta.web.attd.reqinbox.result.PendingReqResult;
+import com.prafta.web.attd.reqinbox.service.ReqInboxService;
+
+import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
+
+/** {@link ReqInboxService} 구현 (prafta-019 후속). */
+@Slf4j
+@Service
+@RequiredArgsConstructor
+public class ReqInboxServiceImpl implements ReqInboxService {
+
+    private final ReqInboxMapper reqInboxMapper;
+
+    @Override
+    public List<PendingReqResult> getPendingRequests(String cmpnyCd, String siteCd, String authCd, String reqTypeGroup) {
+        // 매니저 전용 게이트. JWT 기반 authCd를 사용하므로 body 위조로 권한 escalation 불가
+        // (reject endpoint 와 동일 패턴). 일반 작업자의 대기요청·요청자명 열람 차단.
+        if (!AuthRoleUtils.isManager(authCd)) {
+            log.warn("reqinbox pending rejected - insufficient privilege. authCd={}", authCd);
+            throw new ApiException(AttdErrorCode.ATTD_403_002);
+        }
+
+        List<String> reqTypes;
+        if ("correction".equals(reqTypeGroup)) {
+            // 근태 생성('01')/수정('02') — AttdReqTypeUtils.isAttendanceReqType 와 동일 allow-list.
+            reqTypes = List.of("01", "02");
+        } else if ("overtime".equals(reqTypeGroup)) {
+            // 초과근무 생성('03')/수정('04') — AttdReqTypeUtils.isOvertimeReqType allow-list.
+            // (PRAFTA-025: 초과근무 수정('04') 승인·반려가 구현되어 접수함에도 함께 노출한다.
+            //  승인 시 03=새 OT INSERT / 04=기존 OT(TARGET_ID) UPDATE 로 분기 처리된다.)
+            reqTypes = List.of("03", "04");
+        } else {
+            // 스케줄 수정 등은 별도 REQ_TYPE 부재 — 미지원
+            throw new ApiException(CommonErrorCode.COMMON_400_001);
+        }
+        return reqInboxMapper.selectPendingRequests(cmpnyCd, siteCd, reqTypes);
+    }
+}

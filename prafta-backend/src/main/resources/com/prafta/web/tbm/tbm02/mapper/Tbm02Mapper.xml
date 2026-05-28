@@ -1,0 +1,582 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.prafta.web.tbm.tbm02.mapper.Tbm02Mapper">
+
+	<!-- ============================ 채번 ============================ -->
+	<select id="selectSessionCd" parameterType="java.util.HashMap" resultType="java.lang.String">
+	/* Tbm02Mapper.selectSessionCd */
+	SELECT CONCAT('T', DATE_FORMAT(CURDATE(), '%Y%m%d'), FNC_CMM_SEQ_NEXTVAL(#{gvCmpnyCd}, 'TBM_SESSION_CD'))
+	FROM DUAL
+	</select>
+
+	<!-- ============================ W-04 목록 ============================ -->
+	<sql id="sessionListWhere">
+		WHERE A.CMPNY_CD = #{gvCmpnyCd}
+		  AND A.DEL_YN = 'N'
+		  /* 스코프 필터: master/safe(companyWide=true)는 회사 전체, 그 외는 자기 사업장만 */
+		  <if test="!companyWide">
+		    AND A.SITE_CD = #{scopeSiteCd}
+		  </if>
+		  <if test="siteCd != null and siteCd != ''">
+		    AND A.SITE_CD = #{siteCd}
+		  </if>
+		  <if test="statusCd != null and statusCd != ''">
+		    AND A.STATUS_CD = #{statusCd}
+		  </if>
+		  <if test="managerUserCd != null and managerUserCd != ''">
+		    AND A.MANAGER_USER_CD = #{managerUserCd}
+		  </if>
+		  <if test="searchKeyword != null and searchKeyword != ''">
+		    AND A.TITLE LIKE CONCAT('%', #{searchKeyword}, '%')
+		  </if>
+		  <if test="startDate != null and startDate != ''">
+		    AND DATE(A.INSERT_DATE) &gt;= #{startDate}
+		  </if>
+		  <if test="endDate != null and endDate != ''">
+		    AND DATE(A.INSERT_DATE) &lt;= #{endDate}
+		  </if>
+	</sql>
+
+	<select id="selectSessionList" parameterType="com.prafta.web.tbm.tbm02.application.query.SessionListQuery" resultType="com.prafta.web.tbm.tbm02.result.SessionListResult">
+	/* Tbm02Mapper.selectSessionList */
+	SELECT
+		A.SESSION_CD		AS sessionCd
+		, A.SITE_CD			AS siteCd
+		, ST.SITE_NM		AS siteNm
+		, A.TITLE			AS title
+		, A.STATUS_CD		AS statusCd
+		, SC.SYST_VAL_D_NM	AS statusNm
+		, A.EDU_TYPE_CD		AS eduTypeCd
+		, A.MANAGER_USER_CD	AS managerUserCd
+		, FNC_CMM_INFO_SRCH(A.CMPNY_CD, 'USER_NM', A.MANAGER_USER_CD, NULL)	AS managerUserNm
+		, DATE_FORMAT(A.OPENED_AT, '%Y-%m-%d %H:%i')	AS openedAt
+		, DATE_FORMAT(A.STARTED_AT, '%Y-%m-%d %H:%i')	AS startedAt
+		, DATE_FORMAT(A.ENDED_AT, '%Y-%m-%d %H:%i')		AS endedAt
+		, DATE_FORMAT(A.INSERT_DATE, '%Y-%m-%d %H:%i')	AS insertDate
+		/* 연계 위험성평가 수 */
+		, (
+			SELECT COUNT(1)
+			FROM TB_TBM_SESSION_RISK R
+			WHERE R.CMPNY_CD = A.CMPNY_CD
+			  AND R.SESSION_CD = A.SESSION_CD
+		  )				AS riskCount
+		/* 출결 집계(출결 테이블 미사용 단계에서는 0). DEL_YN='N' 기준 */
+		, (
+			SELECT COUNT(1)
+			FROM TB_TBM_ATTENDANCE AT
+			WHERE AT.CMPNY_CD = A.CMPNY_CD
+			  AND AT.SESSION_CD = A.SESSION_CD
+			  AND AT.DEL_YN = 'N'
+		  )				AS attendanceCount
+		, (
+			SELECT COUNT(1)
+			FROM TB_TBM_ATTENDANCE AT
+			WHERE AT.CMPNY_CD = A.CMPNY_CD
+			  AND AT.SESSION_CD = A.SESSION_CD
+			  AND AT.DEL_YN = 'N'
+			  AND AT.COMPLETION_STATUS_CD = 'COMPLETED'
+		  )				AS completedCount
+		, (
+			SELECT COUNT(1)
+			FROM TB_TBM_ATTENDANCE AT
+			WHERE AT.CMPNY_CD = A.CMPNY_CD
+			  AND AT.SESSION_CD = A.SESSION_CD
+			  AND AT.DEL_YN = 'N'
+			  AND AT.COMPLETION_STATUS_CD = 'NOT_COMPLETED'
+		  )				AS notCompletedCount
+	FROM TB_TBM_SESSION A
+		 LEFT OUTER JOIN TB_SITE ST
+		 	ON (
+		 		A.CMPNY_CD = ST.CMPNY_CD
+		 	AND A.SITE_CD = ST.SITE_CD
+		 	)
+		 LEFT OUTER JOIN (
+			SELECT D.SYST_VAL_D_CD, D.SYST_VAL_D_NM
+			FROM TB_SYST_VAL_D D
+			WHERE D.SYST_VAL_CD = 'SYS046'
+			  AND D.USE_YN = 'Y'
+		 ) SC
+		 	ON (
+		 		A.STATUS_CD = SC.SYST_VAL_D_CD
+		 	)
+	<include refid="sessionListWhere" />
+	/* 상태 우선순위(IN_PROGRESS > OPENED > DRAFT > COMPLETED > CANCELLED) -> 개설일/등록일 desc */
+	ORDER BY
+		CASE A.STATUS_CD
+			WHEN 'IN_PROGRESS' THEN 1
+			WHEN 'OPENED' THEN 2
+			WHEN 'DRAFT' THEN 3
+			WHEN 'COMPLETED' THEN 4
+			WHEN 'CANCELLED' THEN 5
+			ELSE 9
+		END
+		, A.INSERT_DATE DESC
+	LIMIT #{pageSize} OFFSET #{offset}
+	</select>
+
+	<select id="selectSessionListCount" parameterType="com.prafta.web.tbm.tbm02.application.query.SessionListQuery" resultType="int">
+	/* Tbm02Mapper.selectSessionListCount */
+	SELECT COUNT(1)
+	FROM TB_TBM_SESSION A
+	<include refid="sessionListWhere" />
+	</select>
+
+	<!-- ============================ W-06 상세 ============================ -->
+	<select id="selectSessionDetail" parameterType="com.prafta.web.tbm.tbm02.application.query.SessionDetailQuery" resultType="com.prafta.web.tbm.tbm02.result.SessionResult">
+	/* Tbm02Mapper.selectSessionDetail */
+	SELECT
+		A.SESSION_CD			AS sessionCd
+		, A.CMPNY_CD			AS cmpnyCd
+		, A.SITE_CD				AS siteCd
+		, ST.SITE_NM			AS siteNm
+		, A.EDU_TYPE_CD			AS eduTypeCd
+		, A.TITLE				AS title
+		, A.CONTENT_BODY		AS contentBody
+		, A.CONTENT_FORMAT_CD	AS contentFormatCd
+		, A.STATUS_CD			AS statusCd
+		, SC.SYST_VAL_D_NM		AS statusNm
+		, A.ENTRY_PWD			AS entryPwd
+		, A.EXIT_PWD			AS exitPwd
+		, A.MANAGER_USER_CD		AS managerUserCd
+		, FNC_CMM_INFO_SRCH(A.CMPNY_CD, 'USER_NM', A.MANAGER_USER_CD, NULL)	AS managerUserNm
+		, A.MANAGER_GPS_LAT		AS managerGpsLat
+		, A.MANAGER_GPS_LON		AS managerGpsLon
+		, A.GPS_VERIFY_TYPE_CD	AS gpsVerifyTypeCd
+		, A.GPS_VERIFY_RADIUS_M	AS gpsVerifyRadiusM
+		, A.GPS_MANUAL_CONFIRM_YN	AS gpsManualConfirmYn
+		, DATE_FORMAT(A.OPENED_AT, '%Y-%m-%d %H:%i')		AS openedAt
+		, DATE_FORMAT(A.STARTED_AT, '%Y-%m-%d %H:%i')		AS startedAt
+		, DATE_FORMAT(A.ENDED_AT, '%Y-%m-%d %H:%i')			AS endedAt
+		, DATE_FORMAT(A.CANCELLED_AT, '%Y-%m-%d %H:%i')		AS cancelledAt
+		, A.CANCEL_REASON		AS cancelReason
+		, FNC_CMM_INFO_SRCH(A.CMPNY_CD, 'USER_NM', A.INSERT_NO, NULL)	AS insertNm
+		, DATE_FORMAT(A.INSERT_DATE, '%Y-%m-%d %H:%i')		AS insertDate
+	FROM TB_TBM_SESSION A
+		 LEFT OUTER JOIN TB_SITE ST
+		 	ON (
+		 		A.CMPNY_CD = ST.CMPNY_CD
+		 	AND A.SITE_CD = ST.SITE_CD
+		 	)
+		 LEFT OUTER JOIN (
+			SELECT D.SYST_VAL_D_CD, D.SYST_VAL_D_NM
+			FROM TB_SYST_VAL_D D
+			WHERE D.SYST_VAL_CD = 'SYS046'
+			  AND D.USE_YN = 'Y'
+		 ) SC
+		 	ON (
+		 		A.STATUS_CD = SC.SYST_VAL_D_CD
+		 	)
+	WHERE A.CMPNY_CD = #{gvCmpnyCd}
+	  AND A.SESSION_CD = #{sessionCd}
+	  AND A.DEL_YN = 'N'
+	</select>
+
+	<select id="selectSessionGuard" parameterType="com.prafta.web.tbm.tbm02.application.query.SessionDetailQuery" resultType="com.prafta.web.tbm.tbm02.result.SessionGuardResult">
+	/* Tbm02Mapper.selectSessionGuard */
+	SELECT
+		A.SESSION_CD		AS sessionCd
+		, A.SITE_CD			AS siteCd
+		, A.STATUS_CD		AS statusCd
+		, A.MANAGER_USER_CD	AS managerUserCd
+	FROM TB_TBM_SESSION A
+	WHERE A.CMPNY_CD = #{gvCmpnyCd}
+	  AND A.SESSION_CD = #{sessionCd}
+	  AND A.DEL_YN = 'N'
+	</select>
+
+	<select id="selectSessionContents" parameterType="com.prafta.web.tbm.tbm02.application.query.SessionDetailQuery" resultType="com.prafta.web.tbm.tbm02.result.SessionContentResult">
+	/* Tbm02Mapper.selectSessionContents */
+	SELECT
+		SC.MTRL_CD			AS mtrlCd
+		, M.TITLE			AS title
+		, M.MTRL_TYPE		AS mtrlType
+		, BD.BAIM_VAL_D_NM	AS mtrlTypeNm
+		, (
+			SELECT COUNT(I.MTRL_ITEM_CD)
+			FROM TB_TBM_EDU_MTRL_ITEM I
+			WHERE I.MTRL_CD = SC.MTRL_CD
+			  AND I.USE_YN = 'Y'
+		  )					AS itemCnt
+		, SC.DISPLAY_ORDER	AS displayOrder
+		, SC.OVERRIDE_DESC	AS overrideDesc
+	FROM TB_TBM_SESSION_CONTENT SC
+		 LEFT OUTER JOIN TB_TBM_EDU_MTRL M
+		 	ON (
+		 		SC.MTRL_CD = M.MTRL_CD
+		 	AND SC.CMPNY_CD = M.CMPNY_CD
+		 	)
+		 LEFT OUTER JOIN TB_BAIM_VAL_D BD
+		 	ON (
+		 		BD.CMPNY_CD = SC.CMPNY_CD
+		 	AND BD.BAIM_VAL_CD = 'COM003'
+		 	AND BD.BAIM_VAL_D_CD = M.MTRL_TYPE
+		 	AND BD.USE_YN = 'Y'
+		 	)
+	WHERE SC.CMPNY_CD = #{gvCmpnyCd}
+	  AND SC.SESSION_CD = #{sessionCd}
+	ORDER BY SC.DISPLAY_ORDER
+	</select>
+
+	<select id="selectSessionRisks" parameterType="com.prafta.web.tbm.tbm02.application.query.SessionDetailQuery" resultType="com.prafta.web.tbm.tbm02.result.SessionRiskResult">
+	/* Tbm02Mapper.selectSessionRisks */
+	SELECT
+		SR.SITE_CD			AS siteCd
+		, SR.PROCESS_CD		AS processCd
+		, C.BAIM_VAL_D_NM	AS processNm
+		, RA.RISK_TYPE_CD	AS riskTypeCd
+		, RT.RISK_TYPE_NM	AS riskTypeNm
+		, RA.HAZARD_CD		AS hazardCd
+		, CASE
+			WHEN RA.HAZARD_CD = 'self'
+				THEN RA.ASSESSMENT_DESC
+			ELSE E.HAZARD_NM
+		  END				AS hazardNm
+		, SR.ASSESSMENT_CD	AS assessmentCd
+		, RA.ASSESSMENT_STATUS	AS assessmentStatus
+		, B.SYST_VAL_D_NM	AS assessmentStatusNm
+		, SR.DISPLAY_ORDER	AS displayOrder
+	FROM TB_TBM_SESSION_RISK SR
+		 INNER JOIN TB_RISK_ASSESSMENT RA
+		 	ON (
+		 		SR.CMPNY_CD = RA.CMPNY_CD
+		 	AND SR.SITE_CD = RA.SITE_CD
+		 	AND SR.PROCESS_CD = RA.PROCESS_CD
+		 	AND SR.ASSESSMENT_CD = RA.ASSESSMENT_CD
+		 	)
+		 LEFT OUTER JOIN (
+			SELECT D.SYST_VAL_D_CD, D.SYST_VAL_D_NM
+			FROM TB_SYST_VAL_D D
+			WHERE D.SYST_VAL_CD = 'SYS011'
+			  AND D.USE_YN = 'Y'
+		 ) B
+		 	ON (
+		 		RA.ASSESSMENT_STATUS = B.SYST_VAL_D_CD
+		 	)
+		 LEFT OUTER JOIN TB_BAIM_VAL_D C
+		 	ON (
+		 		C.CMPNY_CD = RA.CMPNY_CD
+		 	AND C.BAIM_VAL_CD = 'COM002'
+		 	AND C.BAIM_VAL_D_CD = RA.PROCESS_CD
+		 	AND C.USE_YN = 'Y'
+		 	)
+		 LEFT OUTER JOIN TB_RISK_TYPE RT
+		 	ON (
+		 		RA.CMPNY_CD = RT.CMPNY_CD
+		 	AND RA.RISK_TYPE_CD = RT.RISK_TYPE_CD
+		 	)
+		 LEFT OUTER JOIN TB_RISK_SITE_HAZARD E
+		 	ON (
+		 		RA.CMPNY_CD = E.CMPNY_CD
+		 	AND RA.RISK_TYPE_CD = E.RISK_TYPE_CD
+		 	AND RA.HAZARD_CD = E.HAZARD_CD
+		 	)
+	WHERE SR.CMPNY_CD = #{gvCmpnyCd}
+	  AND SR.SESSION_CD = #{sessionCd}
+	ORDER BY SR.DISPLAY_ORDER
+	</select>
+
+	<!-- ============================ W-05/06 쓰기 ============================ -->
+	<insert id="insertSession" parameterType="com.prafta.web.tbm.tbm02.application.command.SessionCommand">
+	/* Tbm02Mapper.insertSession */
+	INSERT INTO TB_TBM_SESSION (
+		SESSION_CD
+		, CMPNY_CD
+		, SITE_CD
+		, EDU_TYPE_CD
+		, TITLE
+		, CONTENT_BODY
+		, CONTENT_FORMAT_CD
+		, STATUS_CD
+		, ENTRY_PWD
+		, EXIT_PWD
+		, MANAGER_USER_CD
+		, MANAGER_GPS_LAT
+		, MANAGER_GPS_LON
+		, GPS_VERIFY_TYPE_CD
+		, GPS_VERIFY_RADIUS_M
+		, GPS_MANUAL_CONFIRM_YN
+		, OPENED_AT
+		, DEL_YN
+		, INSERT_NO
+		, INSERT_DATE
+		, UPDATE_NO
+		, UPDATE_DATE
+	) VALUES (
+		#{sessionCd}
+		, #{gvCmpnyCd}
+		, #{siteCd}
+		, 'TBM'
+		, #{title}
+		, #{contentBody}
+		, 'RICH_HTML'
+		, #{statusCd}
+		, #{entryPwd}
+		, #{exitPwd}
+		, #{managerUserCd}
+		, #{managerGpsLat}
+		, #{managerGpsLon}
+		, IFNULL(#{gpsVerifyTypeCd}, 'AUTO')
+		, IFNULL(#{gpsVerifyRadiusM}, 100)
+		, #{gpsManualConfirmYn}
+		<choose>
+			<when test="opened">, NOW()</when>
+			<otherwise>, NULL</otherwise>
+		</choose>
+		, 'N'
+		, #{gvUserCd}
+		, NOW()
+		, #{gvUserCd}
+		, NOW()
+	)
+	</insert>
+
+	<update id="updateSession" parameterType="com.prafta.web.tbm.tbm02.application.command.SessionCommand">
+	/* Tbm02Mapper.updateSession */
+	UPDATE TB_TBM_SESSION
+	SET
+		TITLE					= #{title}
+		, CONTENT_BODY			= #{contentBody}
+		, GPS_VERIFY_TYPE_CD	= IFNULL(#{gpsVerifyTypeCd}, GPS_VERIFY_TYPE_CD)
+		, GPS_VERIFY_RADIUS_M	= IFNULL(#{gpsVerifyRadiusM}, GPS_VERIFY_RADIUS_M)
+		, MANAGER_GPS_LAT		= #{managerGpsLat}
+		, MANAGER_GPS_LON		= #{managerGpsLon}
+		, GPS_MANUAL_CONFIRM_YN	= #{gpsManualConfirmYn}
+		, UPDATE_NO				= #{gvUserCd}
+		, UPDATE_DATE			= NOW()
+	WHERE CMPNY_CD = #{gvCmpnyCd}
+	  AND SESSION_CD = #{sessionCd}
+	  AND DEL_YN = 'N'
+	  AND STATUS_CD IN ('DRAFT', 'OPENED')
+	</update>
+
+	<insert id="insertSessionContent" parameterType="com.prafta.web.tbm.tbm02.application.command.SessionContentCommand">
+	/* Tbm02Mapper.insertSessionContent */
+	INSERT INTO TB_TBM_SESSION_CONTENT (
+		CMPNY_CD
+		, SESSION_CD
+		, MTRL_CD
+		, DISPLAY_ORDER
+		, OVERRIDE_DESC
+		, INSERT_NO
+		, INSERT_DATE
+	) VALUES (
+		#{gvCmpnyCd}
+		, #{sessionCd}
+		, #{mtrlCd}
+		, #{displayOrder}
+		, #{overrideDesc}
+		, #{gvUserCd}
+		, NOW()
+	)
+	</insert>
+
+	<delete id="deleteSessionContents" parameterType="java.util.HashMap">
+	/* Tbm02Mapper.deleteSessionContents */
+	DELETE FROM TB_TBM_SESSION_CONTENT
+	WHERE CMPNY_CD = #{gvCmpnyCd}
+	  AND SESSION_CD = #{sessionCd}
+	</delete>
+
+	<insert id="insertSessionRisk" parameterType="com.prafta.web.tbm.tbm02.application.command.SessionRiskCommand">
+	/* Tbm02Mapper.insertSessionRisk */
+	INSERT INTO TB_TBM_SESSION_RISK (
+		CMPNY_CD
+		, SESSION_CD
+		, SITE_CD
+		, PROCESS_CD
+		, ASSESSMENT_CD
+		, DISPLAY_ORDER
+		, INSERT_NO
+		, INSERT_DATE
+	) VALUES (
+		#{gvCmpnyCd}
+		, #{sessionCd}
+		, #{siteCd}
+		, #{processCd}
+		, #{assessmentCd}
+		, #{displayOrder}
+		, #{gvUserCd}
+		, NOW()
+	)
+	</insert>
+
+	<delete id="deleteSessionRisks" parameterType="java.util.HashMap">
+	/* Tbm02Mapper.deleteSessionRisks */
+	DELETE FROM TB_TBM_SESSION_RISK
+	WHERE CMPNY_CD = #{gvCmpnyCd}
+	  AND SESSION_CD = #{sessionCd}
+	</delete>
+
+	<update id="upsertSessionState" parameterType="com.prafta.web.tbm.tbm02.application.command.SessionStateCommand">
+	/* Tbm02Mapper.upsertSessionState */
+	INSERT INTO TB_TBM_SESSION_STATE (
+		CMPNY_CD
+		, SESSION_CD
+		, CURRENT_SLIDE_INDEX
+		, SYNC_STATE_CD
+		, LAST_UPDATED_BY
+		, INSERT_NO
+		, INSERT_DATE
+	) VALUES (
+		#{gvCmpnyCd}
+		, #{sessionCd}
+		, 0
+		, 'PAUSED'
+		, #{gvUserCd}
+		, #{gvUserCd}
+		, NOW()
+	) AS NEW
+	ON DUPLICATE KEY UPDATE
+		CURRENT_SLIDE_INDEX	= NEW.CURRENT_SLIDE_INDEX
+		, SYNC_STATE_CD		= NEW.SYNC_STATE_CD
+		, LAST_UPDATED_BY	= NEW.LAST_UPDATED_BY
+		, UPDATE_NO			= NEW.INSERT_NO
+		, UPDATE_DATE		= NOW()
+	</update>
+
+	<update id="cancelSession" parameterType="com.prafta.web.tbm.tbm02.application.command.SessionCancelCommand">
+	/* Tbm02Mapper.cancelSession */
+	UPDATE TB_TBM_SESSION
+	SET
+		STATUS_CD		= 'CANCELLED'
+		, CANCELLED_AT	= NOW()
+		, CANCEL_REASON	= #{cancelReason}
+		, UPDATE_NO		= #{gvUserCd}
+		, UPDATE_DATE	= NOW()
+	WHERE CMPNY_CD = #{gvCmpnyCd}
+	  AND SESSION_CD = #{sessionCd}
+	  AND DEL_YN = 'N'
+	  AND STATUS_CD IN ('DRAFT', 'OPENED')
+	</update>
+
+	<update id="updateSessionPwd" parameterType="com.prafta.web.tbm.tbm02.application.command.SessionPwdCommand">
+	/* Tbm02Mapper.updateSessionPwd */
+	UPDATE TB_TBM_SESSION
+	SET
+		ENTRY_PWD		= #{entryPwd}
+		, EXIT_PWD		= #{exitPwd}
+		, UPDATE_NO		= #{gvUserCd}
+		, UPDATE_DATE	= NOW()
+	WHERE CMPNY_CD = #{gvCmpnyCd}
+	  AND SESSION_CD = #{sessionCd}
+	  AND DEL_YN = 'N'
+	  AND STATUS_CD = 'OPENED'
+	</update>
+
+	<!-- ============================ 보조 조회 ============================ -->
+	<select id="selectContentOptions" parameterType="com.prafta.web.tbm.tbm02.application.query.OptionQuery" resultType="com.prafta.web.tbm.tbm02.result.ContentOptionResult">
+	/* Tbm02Mapper.selectContentOptions */
+	SELECT
+		A.MTRL_CD			AS mtrlCd
+		, A.TITLE			AS title
+		, A.MTRL_TYPE		AS mtrlType
+		, BD.BAIM_VAL_D_NM	AS mtrlTypeNm
+		, A.SITE_CD			AS siteCd
+		, CASE WHEN A.SITE_CD IS NULL THEN 'Y' ELSE 'N' END	AS isCommonContent
+		, (
+			SELECT COUNT(I.MTRL_ITEM_CD)
+			FROM TB_TBM_EDU_MTRL_ITEM I
+			WHERE I.MTRL_CD = A.MTRL_CD
+			  AND I.USE_YN = 'Y'
+		  )					AS itemCnt
+	FROM TB_TBM_EDU_MTRL A
+		 LEFT OUTER JOIN TB_BAIM_VAL_D BD
+		 	ON (
+		 		BD.CMPNY_CD = A.CMPNY_CD
+		 	AND BD.BAIM_VAL_CD = 'COM003'
+		 	AND BD.BAIM_VAL_D_CD = A.MTRL_TYPE
+		 	AND BD.USE_YN = 'Y'
+		 	)
+	WHERE A.CMPNY_CD = #{gvCmpnyCd}
+	  AND A.USE_YN = 'Y'
+	  /* 스코프 필터: master/safe(companyWide=true)는 회사 전체, 그 외는 자기사업장+회사공통 */
+	  <if test="!companyWide">
+	    AND (A.SITE_CD IS NULL OR A.SITE_CD = #{scopeSiteCd})
+	  </if>
+	  <if test="siteCd != null and siteCd != ''">
+	    <choose>
+	      <when test="siteCd == 'COMMON'">
+	        AND A.SITE_CD IS NULL
+	      </when>
+	      <otherwise>
+	        AND A.SITE_CD = #{siteCd}
+	      </otherwise>
+	    </choose>
+	  </if>
+	  <if test="searchKeyword != null and searchKeyword != ''">
+	    AND A.TITLE LIKE CONCAT('%', #{searchKeyword}, '%')
+	  </if>
+	ORDER BY A.SITE_CD IS NOT NULL, A.TITLE
+	</select>
+
+	<select id="selectRiskOptions" parameterType="com.prafta.web.tbm.tbm02.application.query.OptionQuery" resultType="com.prafta.web.tbm.tbm02.result.RiskOptionResult">
+	/* Tbm02Mapper.selectRiskOptions */
+	SELECT
+		A.SITE_CD			AS siteCd
+		, A.PROCESS_CD		AS processCd
+		, C.BAIM_VAL_D_NM	AS processNm
+		, A.RISK_TYPE_CD	AS riskTypeCd
+		, D.RISK_TYPE_NM	AS riskTypeNm
+		, A.HAZARD_CD		AS hazardCd
+		, CASE
+			WHEN A.HAZARD_CD = 'self'
+				THEN A.ASSESSMENT_DESC
+			ELSE E.HAZARD_NM
+		  END				AS hazardNm
+		, A.ASSESSMENT_CD	AS assessmentCd
+		, A.ASSESSMENT_STATUS	AS assessmentStatus
+		, B.SYST_VAL_D_NM	AS assessmentStatusNm
+	FROM TB_RISK_ASSESSMENT A
+		 LEFT OUTER JOIN (
+			SELECT G.SYST_VAL_D_CD, G.SYST_VAL_D_NM
+			FROM TB_SYST_VAL_D G
+			WHERE G.SYST_VAL_CD = 'SYS011'
+			  AND G.USE_YN = 'Y'
+		 ) B
+		 	ON (
+		 		A.ASSESSMENT_STATUS = B.SYST_VAL_D_CD
+		 	)
+		 LEFT OUTER JOIN TB_BAIM_VAL_D C
+		 	ON (
+		 		C.CMPNY_CD = A.CMPNY_CD
+		 	AND C.BAIM_VAL_CD = 'COM002'
+		 	AND C.BAIM_VAL_D_CD = A.PROCESS_CD
+		 	AND C.USE_YN = 'Y'
+		 	)
+		 LEFT OUTER JOIN TB_RISK_TYPE D
+		 	ON (
+		 		A.CMPNY_CD = D.CMPNY_CD
+		 	AND A.RISK_TYPE_CD = D.RISK_TYPE_CD
+		 	)
+		 LEFT OUTER JOIN TB_RISK_SITE_HAZARD E
+		 	ON (
+		 		A.CMPNY_CD = E.CMPNY_CD
+		 	AND A.RISK_TYPE_CD = E.RISK_TYPE_CD
+		 	AND A.HAZARD_CD = E.HAZARD_CD
+		 	)
+	WHERE A.CMPNY_CD = #{gvCmpnyCd}
+	  /* 스코프 필터: master/safe는 회사 전체, 그 외는 자기 사업장만 */
+	  <if test="!companyWide">
+	    AND A.SITE_CD = #{scopeSiteCd}
+	  </if>
+	  <if test="siteCd != null and siteCd != ''">
+	    AND A.SITE_CD = #{siteCd}
+	  </if>
+	  <if test="processCd != null and processCd != ''">
+	    AND A.PROCESS_CD = #{processCd}
+	  </if>
+	ORDER BY A.SITE_CD, A.PROCESS_CD, A.RISK_TYPE_CD, A.HAZARD_CD
+	</select>
+
+	<select id="selectSiteOptions" parameterType="java.util.HashMap" resultType="com.prafta.web.tbm.tbm02.result.SiteOptionResult">
+	/* Tbm02Mapper.selectSiteOptions */
+	SELECT
+		A.SITE_CD		AS siteCd
+		, A.SITE_NM		AS siteNm
+	FROM TB_SITE A
+	WHERE A.CMPNY_CD = #{gvCmpnyCd}
+	  AND A.USE_YN = 'Y'
+	ORDER BY A.SITE_NM
+	</select>
+
+</mapper>

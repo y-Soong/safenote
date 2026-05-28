@@ -20,15 +20,13 @@
 		, AVAIL_TERM_TYPE
 		, AVAIL_FROM_DT
 		, AVAIL_TO_DT
-		, GRANT_DAYS
 		, ADMIN_AVAIL_TERM_TYPE
 		, ADMIN_AVAIL_FROM_DT
 		, ADMIN_AVAIL_TO_DT
 		, GRANT_BASE_TYPE
 		, GRANT_OFFSET_MONTH
+		, GRANT_ASSIGN_MMDD
 		, APRV_USE_YN
-		, APRV_STEP_CNT
-		, HR_FINAL_APRV_YN
 		, EVIDENCE_YN
 		, EVIDENCE_GUIDE_MSG
 		, INSERT_NO
@@ -53,19 +51,17 @@
 		, #{availTermType}     -- AVAIL_TERM_TYPE
 		, #{availFromDt}       -- AVAIL_FROM_DT
 		, #{availToDt}         -- AVAIL_TO_DT
-		
-		, #{grantDays}         -- GRANT_DAYS
+
 		, #{adminAvailTermType}-- ADMIN_AVAIL_TERM_TYP
 		, #{adminAvailFromDt}  -- ADMIN_AVAIL_FROM_DT
 		, #{adminAvailToDt}    -- ADMIN_AVAIL_TO_DT
-		
+
 		, #{grantBaseType}     -- GRANT_BASE_TYPE
 		, #{grantOffsetMonth}  -- GRANT_OFFSET_MONTH
+		, #{grantAssignMmdd}   -- GRANT_ASSIGN_MMDD
 		
 		, #{aprvUseYn}         -- APRV_USE_YN
-		, #{aprvStepCnt}       -- APRV_STEP_CNT
-		, #{hrFinalAprvYn}     -- HR_FINAL_APRV_YN
-		
+
 		, #{evidenceYn}        -- EVIDENCE_YN
 		, #{evidenceGuideMsg}  -- EVIDENCE_GUIDE_MSG
 		
@@ -113,10 +109,9 @@
 		, A.GRANT_BASE_TYPE	AS grantBaseType
 		, FNC_CMM_INFO_SRCH(#{gvCmpnyCd}, 'SYST_VAL', A.GRANT_BASE_TYPE, 'SYS027') AS grantBaseTypeNm
 		, A.GRANT_OFFSET_MONTH AS grantOffsetMonth
+		, A.GRANT_ASSIGN_MMDD AS grantAssignMmdd
 		
 		, A.APRV_USE_YN	AS aprvUseYn
-		, A.APRV_STEP_CNT AS aprvStepCnt
-		, A.HR_FINAL_APRV_YN AS hrFinalAprvYn
 		, A.EVIDENCE_YN AS evidenceYn
 		, A.EVIDENCE_GUIDE_MSG AS evidenceGuideMsg
 	FROM 
@@ -130,11 +125,10 @@
 			, A.GRANT_TYPE
 			, A.PAID_TYPE
 			, A.LEAVE_NATURE_TYPE
-			, CASE 
+			, CASE
 				WHEN A.LEAVE_TYPE = '01'
 					THEN A.MAX_APLY_DAYS
-				WHEN A.LEAVE_TYPE = '02'
-					THEN A.GRANT_DAYS
+				ELSE NULL
 			END LEAVE_DAYS
 			, A.USE_UNIT_TYPE
 			, CASE 
@@ -154,10 +148,9 @@
 			
 			, A.GRANT_BASE_TYPE
             , A.GRANT_OFFSET_MONTH
-            
+            , A.GRANT_ASSIGN_MMDD
+
             , A.APRV_USE_YN
-            , A.APRV_STEP_CNT
-            , A.HR_FINAL_APRV_YN
             , A.EVIDENCE_YN
             , A.EVIDENCE_GUIDE_MSG
 		FROM TB_LEAVE_TYPE_MGMT A
@@ -184,7 +177,7 @@
 
 	<select id="selectLeaveNoDupChkResult" parameterType="com.prafta.web.attd.attd03.application.query.LeaveNoDupCheckQuery" resultType="com.prafta.web.attd.attd03.vo.LeaveNoDupChk">
     /* Attd03Mapper.selectLeaveNoDupChkResult */
-    SELECT 
+    SELECT
     	A.CMPNY_CD 		AS cmpnyCd
     	, A.LEAVE_CD	AS leaveCd
     	, A.LEAVE_NO	AS leaveNo
@@ -193,6 +186,15 @@
     WHERE A.CMPNY_CD = #{gvCmpnyCd}
       AND A.LEAVE_NO = #{leaveNo}
     LIMIT 1
+    </select>
+
+    <select id="selectSystemYn" resultType="string">
+    /* Attd03Mapper.selectSystemYn — PRAFTA-018 §8.5.5 시스템 시드 가드 */
+    SELECT A.SYSTEM_YN
+      FROM TB_LEAVE_TYPE_MGMT A
+     WHERE A.CMPNY_CD = #{gvCmpnyCd}
+       AND A.LEAVE_CD = #{leaveCd}
+     LIMIT 1
     </select>
 
 </mapper>

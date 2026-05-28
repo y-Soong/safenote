@@ -1,0 +1,41 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.prafta.web.attd.reqinbox.mapper.ReqInboxMapper">
+
+    <!--
+      매니저 스코프(회사 + 사업장) 내 대기('01' 신청) 요청 목록.
+      반려 시 기존 /attd07/reject-user-* 엔드포인트가 키필드 일치를 요구하므로 키필드를 함께 반환한다.
+      v1 스코프: CMPNY_CD(토큰) + SITE_CD(토큰). 다중 사업장 권한(§8.4) 확장은 후속.
+    -->
+    <select id="selectPendingRequests" resultType="com.prafta.web.attd.reqinbox.result.PendingReqResult">
+    /* ReqInboxMapper.selectPendingRequests */
+    SELECT
+          R.REQ_ID                                                     AS reqId
+        , R.REQ_TYPE                                                   AS reqType
+        , R.USER_CD                                                    AS userCd
+        , FNC_CMM_INFO_SRCH(R.CMPNY_CD, 'USER_NM', R.USER_CD, null)     AS userNm
+        , R.SITE_CD                                                    AS siteCd
+        , R.NODE_CD                                                    AS nodeCd
+        , FNC_CMM_INFO_SRCH(R.CMPNY_CD, 'NODE', R.SITE_CD, R.NODE_CD)   AS nodeNm
+        , R.WORK_YMD                                                   AS workYmd
+        , R.WORK_SEQ                                                   AS workSeq
+        , R.START_DATE                                                 AS startDate
+        , R.START_TIME                                                 AS startTime
+        , R.END_DATE                                                   AS endDate
+        , R.END_TIME                                                   AS endTime
+        , R.OT_TYPE                                                    AS otType
+        , R.REQ_REASON                                                 AS reqReason
+        , DATE_FORMAT(R.INSERT_DATE, '%Y-%m-%dT%H:%i:%s')              AS reqDate
+      FROM TB_USER_ATTD_REQ R
+     WHERE R.CMPNY_CD   = #{cmpnyCd}
+       AND R.SITE_CD    = #{siteCd}
+       AND R.REQ_STATUS = '01'
+       AND R.DEL_YN     = 'N'
+       AND R.REQ_TYPE IN
+       <foreach collection="reqTypes" item="rt" open="(" separator="," close=")">
+           #{rt}
+       </foreach>
+     ORDER BY R.INSERT_DATE DESC
+    </select>
+
+</mapper>

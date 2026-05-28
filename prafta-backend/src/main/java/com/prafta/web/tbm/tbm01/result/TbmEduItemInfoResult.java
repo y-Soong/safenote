@@ -13,7 +13,10 @@ public record TbmEduItemInfoResult(
 	, String fileExt
 	, String url
 	, String useYn
-	
+
+	, String thumbFileMgmtCd	// prafta-033-A: 썸네일 파일코드
+	, String durationSec		// prafta-033-A: 미디어 길이(초, 동영상)
+
 	/* 데이터 초기화용 값 */
 	, String oriSortIdx
 	, String oriMtrlItemType
@@ -25,5 +28,5 @@ public record TbmEduItemInfoResult(
 	, String oriUrl
 	, String oriUseYn
 ){
-	
+
 }

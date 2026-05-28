@@ -14,10 +14,14 @@ public record SchInfoResult(
 	, String fstSchEndTime
 	, String fstSchTime
 	, String fstSchBrkMin
+	, String fstBrkStrTime
+	, String fstBrkEndTime
 	, String secSchStrTime
 	, String secSchEndTime
 	, String secSchTime
 	, String secSchBrkMin
+	, String secBrkStrTime
+	, String secBrkEndTime
 	, String useYn
 	, String useYnNm
 ){

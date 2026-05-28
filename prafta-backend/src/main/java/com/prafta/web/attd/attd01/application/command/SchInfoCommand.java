@@ -15,11 +15,15 @@ public record SchInfoCommand(
 	, String fstSchStrTime
 	, String fstSchEndTime
 	, String fstSchBrkMin
-	
+	, String fstBrkStrTime
+	, String fstBrkEndTime
+
 	, String secSchStrTime
 	, String secSchEndTime
 	, String secSchBrkMin
-	
+	, String secBrkStrTime
+	, String secBrkEndTime
+
 	, String useYn
 	, String gvCmpnyCd
 	, String gvUserCd
@@ -39,9 +43,13 @@ public record SchInfoCommand(
     		, param.fstSchStrTime()
     		, param.fstSchEndTime()
     		, param.fstSchBrkMin()
+    		, param.fstBrkStrTime()
+    		, param.fstBrkEndTime()
     		, param.secSchStrTime()
     		, param.secSchEndTime()
     		, param.secSchBrkMin()
+    		, param.secBrkStrTime()
+    		, param.secBrkEndTime()
     		, param.useYn()
     		, param.gvCmpnyCd()
     		, param.gvUserCd()

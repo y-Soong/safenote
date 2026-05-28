@@ -11,13 +11,14 @@ import com.prafta.web.attd.attd05.dto.request.SchTypeDeleRequst;
 
 public record SchTypeDeleParam(
 	List<SchTypeDeleModel> schTypeDeleModelList
+	, String gvAuthCd
 ) {
-	
+
 	public static SchTypeDeleParam from(List<SchTypeDeleRequst> requests, TokenInfo tokenInfo) {
 
-        if (requests == null)
+        if (requests == null || tokenInfo == null)
         	throw new ApiException(CommonErrorCode.COMMON_400_001);
-        
+
         List<SchTypeDeleModel> models = requests.stream()
     		.map(req -> {
     			return new SchTypeDeleModel(
@@ -30,6 +31,6 @@ public record SchTypeDeleParam(
     		})
         	.toList();
 
-        return new SchTypeDeleParam(models);        
+        return new SchTypeDeleParam(models, tokenInfo.gv_authCd());
     }
 }

@@ -31,7 +31,8 @@ export const ATTD_MESSAGES = {
   SEG_OUT_DATE_BEFORE_IN: "{idx}구간 퇴근 일자가 출근 일자보다 빠릅니다.",
   SEG_OUT_TIME_BEFORE_IN:
     "{idx}구간 퇴근 시간이 출근 시간보다 빠르거나 같습니다.",
-  SEG2_IN_AFTER_SEG1_OUT: "2구간 출근 시간은 1구간 퇴근 시간보다\n늦어야 합니다.",
+  SEG2_IN_AFTER_SEG1_OUT:
+    "2구간 출근 시간은 1구간 퇴근 시간보다\n늦어야 합니다.",
   DAY_NO_CHANGES: "수정된 데이터가 없습니다.",
   SAVE_ERROR: "저장 중 오류가 발생했습니다.",
   REASON_REQUIRED: "사유를 입력해 주세요.",
@@ -58,6 +59,7 @@ export const ATTD_MESSAGES = {
     "추가근무 시작/종료 시간이 올바르지 않습니다.\n시작 시간이 종료 시간보다 빨라야 합니다.",
   OT_OUTSIDE_ALLOWED:
     "추가근무 시간이 등록 가능 범위를 벗어났습니다.\n표시된 등록 가능 시간 안에서만 등록할 수 있습니다.",
-  OT_OVERLAP: "추가근무 구간이 서로 겹칩니다.\n시간이 겹치지 않도록 수정해 주세요.",
+  OT_OVERLAP:
+    "추가근무 구간이 서로 겹칩니다.\n시간이 겹치지 않도록 수정해 주세요.",
   OT_SAVE_ERROR: "추가근무 저장 중 오류가 발생했습니다.",
 };

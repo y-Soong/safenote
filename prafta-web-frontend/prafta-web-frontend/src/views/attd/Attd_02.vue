@@ -618,7 +618,10 @@ const fnDeleteHoliday = async (item) => {
       fnSearch();
     }
   } catch (err) {
-    const msg = resolveApiErrorMessage(err, "삭제 처리 중 오류가 발생했습니다.");
+    const msg = resolveApiErrorMessage(
+      err,
+      "삭제 처리 중 오류가 발생했습니다."
+    );
     await proxy.$alert(msg);
   }
 };

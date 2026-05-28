@@ -37,6 +37,13 @@ const routes = [
       },
     ],
   },
+  // 일일사용자 회원가입 (비로그인 외부 화면, PRAFTA-013)
+  // joinCd = {회사코드}-{사업장코드5자리}. requiresAuth 미부착 → 인증 강제 없음.
+  {
+    path: "/dailyUserJoin/:joinCd",
+    name: "DailyUserJoin",
+    component: () => import("@/views/dailyJoin/DailyUserJoin.vue"),
+  },
   {
     path: "/:pathMatch(.*)*",
     name: "NotFound",

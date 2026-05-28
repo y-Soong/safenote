@@ -17,6 +17,20 @@
 
     <div class="viewSearch">
       <div>
+        <label>사업장</label>
+        <select v-model.trim="siteCd" name="combo">
+          <option value="">전체</option>
+          <option value="COMMON">회사공통</option>
+          <option
+            v-for="opt in siteList || []"
+            :key="opt.siteCd"
+            :value="opt.siteCd"
+          >
+            {{ opt.siteNm }}
+          </option>
+        </select>
+      </div>
+      <div>
         <label>자료유형</label>
         <select v-model.trim="mtrlType" name="combo">
           <option
@@ -30,7 +44,11 @@
       </div>
       <div>
         <label>자료명</label>
-        <input v-model.trim="mtrlTitle" type="text" />
+        <input
+          v-model.trim="mtrlTitle"
+          type="text"
+          @input="fnDebouncedSearch"
+        />
       </div>
       <div>
         <label>사용여부</label>
@@ -79,6 +97,7 @@
                     @click="fnHeadChk"
                   />
                 </th>
+                <th class="event_cell" style="width: 8%">스코프</th>
                 <ThSortable
                   label="교육자료명"
                   col-key="title"
@@ -135,7 +154,7 @@
                 "
               >
                 <tr>
-                  <td colspan="9" class="edu-grid-empty">
+                  <td colspan="10" class="edu-grid-empty">
                     등록된 세부 항목이 없습니다.
                   </td>
                 </tr>
@@ -146,8 +165,33 @@
                   <td>
                     <input type="checkbox" v-model="info.chk" />
                   </td>
-                  <td @dblclick="fnTbmEduMtrlInfoPopOpen(info)">
-                    {{ info.title }}
+                  <td style="text-align: center">
+                    <span
+                      class="scope-badge"
+                      :class="
+                        info.isCommonContent === 'Y'
+                          ? 'scope-badge-common'
+                          : 'scope-badge-site'
+                      "
+                    >
+                      {{
+                        info.isCommonContent === "Y"
+                          ? "회사공통"
+                          : fnSiteNm(info.siteCd)
+                      }}
+                    </span>
+                  </td>
+                  <!-- 제목 셀: 단일 클릭=상세 팝업. 다른 셀처럼 td dblclick=수정 핸들러를
+                       달면 더블클릭 시 click 2회+dblclick 1회가 동시에 발생하여 팝업이
+                       겹쳐 unmount 도중 호출 에러가 나므로, 이 셀에서는 dblclick 미연결. -->
+                  <td>
+                    <button
+                      type="button"
+                      class="title-link"
+                      @click.stop="fnTbmEduDetailPopOpen(info)"
+                    >
+                      {{ info.title }}
+                    </button>
                   </td>
                   <td>
                     <BaseSelect v-model="info.mtrlType">
@@ -214,6 +258,7 @@ import { getMessage, MSG } from "@/messages";
 import { resolveApiErrorMessage } from "@/utils/apiError";
 import BaseSelect from "@/components/common/BaseSelect.vue";
 import TbmEduMtrlInfo from "./popup/TbmEduMtrlInfo.vue";
+import TbmEduDetailPop from "./popup/TbmEduDetailPop.vue";
 import ThSortable from "@/components/common/ThSortable.vue";
 import {
   useTableSort,
@@ -246,14 +291,19 @@ const { colWidths, onResize } = useColumnResize({
 });
 const systCodeArr = ref([]);
 const baseCodeArr = ref([]);
+const siteList = ref([]);
 
 // 조회조건 변수
 const mtrlType = ref();
 const mtrlTitle = ref();
 const useYn = ref();
+const siteCd = ref(""); // prafta-033-A: 스코프 필터(""=전체, "COMMON"=회사공통, 그 외=사업장코드)
 
 // 화면 제어 변수
 const headChk = ref(false);
+
+// prafta-033-A: 검색 디바운싱(500ms)
+let searchDebounceTimer = null;
 
 // ================ Watchers ================
 useFieldWatcher(
@@ -268,6 +318,7 @@ useFieldWatcher(
 onMounted(async () => {
   await fnGetSystinfoList();
   await fnGetBaseinfoList();
+  await fnGetSiteList();
   await fnSearch();
 });
 
@@ -339,6 +390,26 @@ const fnGetBaseinfoList = async () => {
   }
 };
 
+const fnGetSiteList = async () => {
+  try {
+    const response = await axios.get("/comApi/baseinfo/site-lists", {
+      params: {
+        cmpnyCd: sessionStorage.getItem("gv_cmpnyCd"),
+        siteNo: "",
+        siteNm: "",
+      },
+    });
+
+    if (response.status === 200) {
+      siteList.value = response.data?.siteInfoResultList || [];
+    }
+  } catch (err) {
+    const msg = resolveApiErrorMessage(err, "조회 중 오류가 발생했습니다.");
+
+    await proxy.$alert(msg);
+  }
+};
+
 const fnSearch = async () => {
   tbmEduInfoResultList.value = [];
 
@@ -348,6 +419,7 @@ const fnSearch = async () => {
         mtrlType: mtrlType.value,
         title: mtrlTitle.value,
         useYn: useYn.value,
+        siteCd: siteCd.value,
       },
     });
 
@@ -359,6 +431,21 @@ const fnSearch = async () => {
 
     await proxy.$alert(msg);
   }
+};
+
+// prafta-033-A: 자료명 입력 디바운싱(500ms) - 불필요한 조회 호출 방지
+const fnDebouncedSearch = () => {
+  if (searchDebounceTimer) clearTimeout(searchDebounceTimer);
+  searchDebounceTimer = setTimeout(() => {
+    fnSearch();
+  }, 500);
+};
+
+// prafta-033-A: 사업장코드 -> 사업장명 표기(스코프 배지)
+const fnSiteNm = (code) => {
+  if (!code) return "사업장";
+  const found = (siteList.value || []).find((s) => s.siteCd === code);
+  return found ? found.siteNm : "사업장";
 };
 
 const fnSave = async () => {
@@ -438,6 +525,58 @@ const fnTbmEduMtrlInfoPopOpen = (info) => {
     onSearch: fnSearch,
   });
 };
+
+// prafta-033-A: W-03 상세 보기(미디어 미리보기 + 사용 TBM 이력)
+// 빠른 더블클릭 시 같은 팝업이 mount-도중-unmount-재mount 되며 비동기 콜백이
+// 무효 인스턴스를 참조해 에러가 나는 것을 방지하기 위해 짧은 가드를 둔다.
+let detailPopOpening = false;
+const fnTbmEduDetailPopOpen = (info) => {
+  if (detailPopOpening) return;
+  detailPopOpening = true;
+  setTimeout(() => { detailPopOpening = false; }, 300);
+  openPop(TbmEduDetailPop, {
+    mtrlCd_p: info.mtrlCd,
+    onEdit: () => fnTbmEduMtrlInfoPopOpen(info),
+  });
+};
 </script>
 
-<style scoped></style>
+<style scoped>
+/* prafta-033-A: 스코프 배지 */
+.scope-badge {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: var(--btn-radius);
+  font-size: var(--btn-font-sm);
+  font-weight: 600;
+  line-height: 1.6;
+  white-space: nowrap;
+}
+
+.scope-badge-common {
+  background: var(--color-warning-bg);
+  color: var(--color-warning-text);
+}
+
+.scope-badge-site {
+  background: var(--color-bg);
+  color: var(--color-text-muted);
+  border: 1px solid var(--color-border);
+}
+
+/* prafta-033-A: 제목 링크(상세 보기 진입) */
+.title-link {
+  background: none;
+  border: none;
+  padding: 0;
+  color: var(--color-primary);
+  cursor: pointer;
+  text-align: left;
+  text-decoration: underline;
+  font: inherit;
+}
+
+.title-link:hover {
+  color: var(--color-primary-hover);
+}
+</style>

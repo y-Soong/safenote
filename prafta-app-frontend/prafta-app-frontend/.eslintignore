@@ -1,0 +1,8 @@
+node_modules
+dist
+*.min.js
+coverage
+.vite
+.env
+.env.*
+!.env.example

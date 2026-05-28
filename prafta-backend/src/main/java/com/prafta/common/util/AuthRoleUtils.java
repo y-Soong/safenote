@@ -17,6 +17,12 @@ public final class AuthRoleUtils {
     /** HR 담당자. */
     public static final String AUTH_HR_MANAGER = "hr";
 
+    /** 안전관리자. */
+    public static final String AUTH_SAFETY_MANAGER = "safe";
+
+    /** 권한 미부여(접근 차단) 계정. */
+    public static final String AUTH_NONE = "999999";
+
     private AuthRoleUtils() {
         // 유틸리티 클래스 - 인스턴스 생성 금지
     }
@@ -30,5 +36,31 @@ public final class AuthRoleUtils {
         if (authCd == null || authCd.isEmpty()) return false;
         return AUTH_MASTER.equals(authCd)
             || AUTH_HR_MANAGER.equals(authCd);
+    }
+
+    /**
+     * 회사 공통(전사) 리소스를 등록/수정할 수 있는 역할인지 판정한다.
+     * (master 또는 safe). TBM 콘텐츠 라이브러리(prafta-033-A)에서 회사공통
+     * 콘텐츠(SITE_CD IS NULL) 저장 권한 게이트로 사용된다.
+     */
+    public static boolean canManageCommon(String authCd) {
+        if (authCd == null || authCd.isEmpty()) return false;
+        return AUTH_MASTER.equals(authCd)
+            || AUTH_SAFETY_MANAGER.equals(authCd);
+    }
+
+    /**
+     * 회사 전체 스코프(공통 + 모든 사업장)를 조회/관리할 수 있는 역할인지 판정한다.
+     * (master 또는 safe). 사업장 관리자/일반 사용자는 자기 사업장 + 회사공통만.
+     */
+    public static boolean isCompanyWide(String authCd) {
+        return canManageCommon(authCd);
+    }
+
+    /**
+     * 접근 차단 권한(999999)인지 판정한다. true면 해당 화면/API 진입을 거부한다.
+     */
+    public static boolean isAccessDenied(String authCd) {
+        return AUTH_NONE.equals(authCd);
     }
 }

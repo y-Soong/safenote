@@ -25,6 +25,11 @@ tasks.withType(JavaCompile).configureEach {
     options.encoding = 'UTF-8'
 }
 
+// JUnit 5(Jupiter) 테스트 실행 설정 (Spring Boot 3 = JUnit 5). 누락 시 테스트가 "No tests found"로 미실행됨.
+tasks.named('test') {
+    useJUnitPlatform()
+}
+
 dependencies {
     implementation 'org.springframework.boot:spring-boot-starter'
     implementation 'org.springframework.boot:spring-boot-starter-web'

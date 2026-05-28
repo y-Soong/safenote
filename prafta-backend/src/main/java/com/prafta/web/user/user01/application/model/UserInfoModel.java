@@ -14,8 +14,9 @@ public record UserInfoModel(
     , String nodeCd
     , String oriNodeCd
     , String authCd
+    , String rankCd
     , String useYn
-    
+
     , String gvUserCd
 ) {
 	    

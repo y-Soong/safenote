@@ -2,6 +2,98 @@
 <!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
 <mapper namespace="com.prafta.web.attd.attd07.mapper.Attd07Mapper">
 
+    <!-- ================================================================
+         PRAFTA-015 - 표준화 시간 계산 SQL 프래그먼트.
+
+         배경: 기존 FNC_STD_TIME 은 표준화 결과가 1440분(24:00) 이상이면
+         23:59 로 캡하여 자정 넘김을 표현하지 못한다. 또한 표준화 단위 코드
+         조회를 FNC_CMM_INFO_SRCH('ATTD_STD_CHKIN'/'ATTD_STD_CHKOUT', ...) 로
+         하던 경로는 TB_ATTD_STD_TIME_RULE_HIS 의 시행일(INSERT_DATE) 기반
+         최신 룰을 반영하지 못한다. FNC_STD_TIME 은 ALTER 불가이므로 mapper
+         SQL 재작성으로 해결한다.
+
+         규칙:
+           - 표준화 단위(분)는 근무일자 기준 TB_ATTD_STD_TIME_RULE_HIS 에서
+             STD_TIME_RULE_TYPE(SYS028: 01=출근, 02=퇴근) 별로
+             DATE(INSERT_DATE) &lt;= 근무일자 인 행 중 INSERT_DATE 가 가장
+             최신인 1행의 STD_TIME_TYPE(SYS029) 을 CASE 로 분 변환한다
+             (01=0, 02=5, 03=10, 04=15, 05=30). 단위 0(설정안함)이면 표준화 없음.
+           - 자정 넘김: 근무일자(00:00)를 origin 으로 한 통합 분 stamp
+             (DATEDIFF(체크일자, 근무일자)*1440 + 시*60 + 분) 으로 환산 후
+             출근=올림(CEIL)/퇴근=내림(FLOOR) 한 다음, 결과 stamp 를
+             다시 일자/시각으로 분리한다.
+           - frag_std_unit       : 표준화 단위(분) 스칼라.
+           - frag_std_stamp      : 표준화 후 통합 분 stamp.
+           - frag_std_date       : 표준화 후 일자(YYYYMMDD).
+           - frag_std_time       : 표준화 후 시각(HHMM).
+
+         호출부 ${} 바인딩 파라미터:
+           cmpny  - 회사코드 컬럼/표현식 (예: U.CMPNY_CD, #{gvCmpnyCd})
+           ymd    - 근무일자 컬럼/표현식 (예: D.WORK_YMD, #{workYmd})
+           dtCol  - 체크 일자 컬럼 (YYYYMMDD, 예: A1.CHECK_IN_DATE)
+           tmCol  - 체크 시각 컬럼 (HHMM, 예: A1.CHECK_IN_TIME)
+           rule   - STD_TIME_RULE_TYPE ('01'=출근 / '02'=퇴근)
+           round  - 'CEIL'(출근) / 'FLOOR'(퇴근)
+         ================================================================ -->
+    <sql id="frag_std_unit">
+        IFNULL((
+            SELECT CASE H.STD_TIME_TYPE
+                       WHEN '01' THEN 0
+                       WHEN '02' THEN 5
+                       WHEN '03' THEN 10
+                       WHEN '04' THEN 15
+                       WHEN '05' THEN 30
+                       ELSE 0
+                   END
+            FROM TB_ATTD_STD_TIME_RULE_HIS H
+            WHERE H.CMPNY_CD           = ${cmpny}
+              AND H.STD_TIME_RULE_TYPE = ${rule}
+              AND DATE(H.INSERT_DATE) <![CDATA[ <= ]]> STR_TO_DATE(${ymd}, '%Y%m%d')
+            ORDER BY H.INSERT_DATE DESC
+            LIMIT 1
+        ), 0)
+    </sql>
+
+    <sql id="frag_std_stamp">
+        /* 표준화 후 통합 분 stamp (근무일자 00:00 = 0 origin). 단위 0 이면 원본 stamp 그대로. */
+        CASE
+            WHEN ${dtCol} IS NULL OR ${tmCol} IS NULL OR ${tmCol} = '' THEN NULL
+            WHEN (<include refid="frag_std_unit"/>) = 0 THEN
+                ( DATEDIFF(STR_TO_DATE(${dtCol}, '%Y%m%d'), STR_TO_DATE(${ymd}, '%Y%m%d')) * 1440
+                + CAST(SUBSTRING(${tmCol}, 1, 2) AS SIGNED) * 60
+                + CAST(SUBSTRING(${tmCol}, 3, 2) AS SIGNED) )
+            ELSE
+                ${round}(
+                    ( DATEDIFF(STR_TO_DATE(${dtCol}, '%Y%m%d'), STR_TO_DATE(${ymd}, '%Y%m%d')) * 1440
+                    + CAST(SUBSTRING(${tmCol}, 1, 2) AS SIGNED) * 60
+                    + CAST(SUBSTRING(${tmCol}, 3, 2) AS SIGNED) )
+                    / (<include refid="frag_std_unit"/>)
+                ) * (<include refid="frag_std_unit"/>)
+        END
+    </sql>
+
+    <sql id="frag_std_date">
+        /* 표준화 후 일자: 근무일자 + FLOOR(stamp/1440) 일. */
+        CASE
+            WHEN (<include refid="frag_std_stamp"/>) IS NULL THEN NULL
+            ELSE DATE_FORMAT(
+                     DATE_ADD(STR_TO_DATE(${ymd}, '%Y%m%d'),
+                              INTERVAL FLOOR((<include refid="frag_std_stamp"/>) / 1440) DAY),
+                     '%Y%m%d')
+        END
+    </sql>
+
+    <sql id="frag_std_time">
+        /* 표준화 후 시각(HHMM): MOD(stamp,1440) 을 음수 보정 후 HHMM 으로. */
+        CASE
+            WHEN (<include refid="frag_std_stamp"/>) IS NULL THEN NULL
+            ELSE LPAD(CONCAT(
+                     LPAD(FLOOR(MOD(MOD((<include refid="frag_std_stamp"/>), 1440) + 1440, 1440) / 60), 2, '0'),
+                     LPAD(MOD(MOD(MOD((<include refid="frag_std_stamp"/>), 1440) + 1440, 1440), 60), 2, '0')
+                 ), 4, '0')
+        END
+    </sql>
+
     <select id="selectMonthlyAttdList" parameterType="com.prafta.web.attd.attd07.application.query.MonthlyAttdListQuery" resultType="com.prafta.web.attd.attd07.result.MonthlyAttdListResult">
     /* Attd07Mapper.selectMonthlyAttdList */
 	    WITH RECURSIVE
@@ -123,59 +215,48 @@
 	        , A1.ATTD_ID                                                       AS attd1Id
 	        , A1.CHECK_IN_DATE                                                 AS act1InDate
 	        , A1.CHECK_IN_TIME                                                 AS act1InTime
-	        , FNC_STD_TIME(
-				  A1.CHECK_IN_TIME
-				, IFNULL(
-					  CASE WHEN CHAR_LENGTH(FNC_CMM_INFO_SRCH(U.CMPNY_CD, 'ATTD_STD_CHKIN', A1.CHECK_IN_DATE, null)) = 0
-						   THEN NULL
-						   ELSE FNC_CMM_INFO_SRCH(U.CMPNY_CD, 'ATTD_STD_CHKIN', A1.CHECK_IN_DATE, null)
-					  END
-				  , 0)
-				, 'IN'
-			)                                                                  AS act1InStdTime
+	        /* PRAFTA-015 - 표준화 출근 일자/시각 (TB_ATTD_STD_TIME_RULE_HIS 룰 + 자정 넘김 보정) */
+	        , <include refid="frag_std_date"><property name="cmpny" value="U.CMPNY_CD"/><property name="ymd" value="D.WORK_YMD"/><property name="dtCol" value="A1.CHECK_IN_DATE"/><property name="tmCol" value="A1.CHECK_IN_TIME"/><property name="rule" value="'01'"/><property name="round" value="CEIL"/></include> AS act1InStdDate
+	        , <include refid="frag_std_time"><property name="cmpny" value="U.CMPNY_CD"/><property name="ymd" value="D.WORK_YMD"/><property name="dtCol" value="A1.CHECK_IN_DATE"/><property name="tmCol" value="A1.CHECK_IN_TIME"/><property name="rule" value="'01'"/><property name="round" value="CEIL"/></include> AS act1InStdTime
 	        , A1.CHECK_IN_METHOD                                               AS act1InMethod
 	        , A1.CHECK_OUT_DATE                                                AS act1OutDate
 	        , A1.CHECK_OUT_TIME                                                AS act1OutTime
-	        , FNC_STD_TIME(
-				  A1.CHECK_OUT_TIME
-				, IFNULL(
-					  CASE WHEN CHAR_LENGTH(FNC_CMM_INFO_SRCH(U.CMPNY_CD, 'ATTD_STD_CHKOUT', A1.CHECK_OUT_DATE, null)) = 0
-						   THEN NULL
-						   ELSE FNC_CMM_INFO_SRCH(U.CMPNY_CD, 'ATTD_STD_CHKOUT', A1.CHECK_OUT_DATE, null)
-					  END
-				  , 0)
-				, 'OUT'
-			)                                                                  AS act1OutStdTime
+	        , <include refid="frag_std_date"><property name="cmpny" value="U.CMPNY_CD"/><property name="ymd" value="D.WORK_YMD"/><property name="dtCol" value="A1.CHECK_OUT_DATE"/><property name="tmCol" value="A1.CHECK_OUT_TIME"/><property name="rule" value="'02'"/><property name="round" value="FLOOR"/></include> AS act1OutStdDate
+	        , <include refid="frag_std_time"><property name="cmpny" value="U.CMPNY_CD"/><property name="ymd" value="D.WORK_YMD"/><property name="dtCol" value="A1.CHECK_OUT_DATE"/><property name="tmCol" value="A1.CHECK_OUT_TIME"/><property name="rule" value="'02'"/><property name="round" value="FLOOR"/></include> AS act1OutStdTime
 	        , A1.CHECK_OUT_METHOD                                              AS act1OutMethod
 	
 	        /* 근태 2차 */
 	        , A2.ATTD_ID                                                       AS attd2Id
 	        , A2.CHECK_IN_DATE                                                 AS act2InDate
 	        , A2.CHECK_IN_TIME                                                 AS act2InTime
-	        , FNC_STD_TIME(
-				  A2.CHECK_IN_TIME
-				, IFNULL(
-					  CASE WHEN CHAR_LENGTH(FNC_CMM_INFO_SRCH(U.CMPNY_CD, 'ATTD_STD_CHKIN', A2.CHECK_IN_DATE, null)) = 0
-						   THEN NULL
-						   ELSE FNC_CMM_INFO_SRCH(U.CMPNY_CD, 'ATTD_STD_CHKIN', A2.CHECK_IN_DATE, null)
-					  END
-				  , 0)
-				, 'IN'
-			)                                                                  AS act2InStdTime
+	        , <include refid="frag_std_date"><property name="cmpny" value="U.CMPNY_CD"/><property name="ymd" value="D.WORK_YMD"/><property name="dtCol" value="A2.CHECK_IN_DATE"/><property name="tmCol" value="A2.CHECK_IN_TIME"/><property name="rule" value="'01'"/><property name="round" value="CEIL"/></include> AS act2InStdDate
+	        , <include refid="frag_std_time"><property name="cmpny" value="U.CMPNY_CD"/><property name="ymd" value="D.WORK_YMD"/><property name="dtCol" value="A2.CHECK_IN_DATE"/><property name="tmCol" value="A2.CHECK_IN_TIME"/><property name="rule" value="'01'"/><property name="round" value="CEIL"/></include> AS act2InStdTime
 	        , A2.CHECK_IN_METHOD                                               AS act2InMethod
 	        , A2.CHECK_OUT_DATE                                                AS act2OutDate
 	        , A2.CHECK_OUT_TIME                                                AS act2OutTime
-	        , FNC_STD_TIME(
-				  A2.CHECK_OUT_TIME
-				, IFNULL(
-					  CASE WHEN CHAR_LENGTH(FNC_CMM_INFO_SRCH(U.CMPNY_CD, 'ATTD_STD_CHKOUT', A2.CHECK_OUT_DATE, null)) = 0
-						   THEN NULL
-						   ELSE FNC_CMM_INFO_SRCH(U.CMPNY_CD, 'ATTD_STD_CHKOUT', A2.CHECK_OUT_DATE, null)
-					  END
-				  , 0)
-				, 'OUT'
-			)                                                                  AS act2OutStdTime
+	        , <include refid="frag_std_date"><property name="cmpny" value="U.CMPNY_CD"/><property name="ymd" value="D.WORK_YMD"/><property name="dtCol" value="A2.CHECK_OUT_DATE"/><property name="tmCol" value="A2.CHECK_OUT_TIME"/><property name="rule" value="'02'"/><property name="round" value="FLOOR"/></include> AS act2OutStdDate
+	        , <include refid="frag_std_time"><property name="cmpny" value="U.CMPNY_CD"/><property name="ymd" value="D.WORK_YMD"/><property name="dtCol" value="A2.CHECK_OUT_DATE"/><property name="tmCol" value="A2.CHECK_OUT_TIME"/><property name="rule" value="'02'"/><property name="round" value="FLOOR"/></include> AS act2OutStdTime
 	        , A2.CHECK_OUT_METHOD                                              AS act2OutMethod
+
+	        /* PRAFTA-017 - 구간별 외근 플래그. 구간 ATTD_ID 가 TB_USER_ATTD_GPS 에 존재하면 'Y'. */
+	        , CASE WHEN A1.ATTD_ID IS NOT NULL
+	                    AND EXISTS (
+	                        SELECT 1
+	                        FROM TB_USER_ATTD_GPS G1
+	                        WHERE G1.CMPNY_CD = A1.CMPNY_CD
+	                          AND G1.ATTD_ID  = A1.ATTD_ID
+	                    )
+	               THEN 'Y' ELSE 'N'
+	          END                                                              AS attd1OutsideYn
+	        , CASE WHEN A2.ATTD_ID IS NOT NULL
+	                    AND EXISTS (
+	                        SELECT 1
+	                        FROM TB_USER_ATTD_GPS G2
+	                        WHERE G2.CMPNY_CD = A2.CMPNY_CD
+	                          AND G2.ATTD_ID  = A2.ATTD_ID
+	                    )
+	               THEN 'Y' ELSE 'N'
+	          END                                                              AS attd2OutsideYn
 	
 	    FROM target_user U
 	    CROSS JOIN month_days D
@@ -354,9 +435,95 @@
 	      AND A.SITE_CD    = #{siteCd}
 	      AND A.WORK_YMD   LIKE CONCAT(REPLACE(#{workYm}, '-', ''), '%')
 	      AND A.DEL_YN     = 'N'
-	      AND A.REQ_STATUS = 'REQUESTED'    <!-- 신청 상태인 요청만 조회 -->
+	      AND A.REQ_STATUS = '01'    <!-- 신청('01') 상태인 요청만 조회 (SYS033) -->
+      <!-- PRAFTA: 연차(05/06)는 현재 로그인 사용자가 그 요청의 '현재 처리 단계' 결재자일 때만 노출.
+           근태/OT(01~04)는 매니저 모델이므로 무영향. selectMyPendingLeaveApprovals 와 동일 조건. -->
+      AND ( A.REQ_TYPE NOT IN ('05','06')
+            OR EXISTS ( SELECT 1
+                          FROM TB_USER_ATTD_REQ_APPROVAL AP
+                         WHERE AP.CMPNY_CD = A.CMPNY_CD
+                           AND AP.REQ_ID   = A.REQ_ID
+                           AND AP.APPROVER_USER_CD = #{gvUserCd}
+                           AND AP.APPROVAL_STATUS  = '01' ) )
     </select>
-    
+
+    <!-- PRAFTA-017 - Attd_07 목록뷰 일자별 초과근무 목록 (월 단위).
+         selectMonthlyAttdReqSummary 와 동일한 부서 트리(node_tree) 스코프로
+         TB_USER_OVERTIME_MGMT 를 월 단위 조회한다. selectDailyOvertimeList 의
+         컬럼 구성을 재사용하되 CMPNY_CD/SITE_CD/USER_CD 를 추가로 반환한다. -->
+    <select id="selectMonthlyOvertimeList" parameterType="com.prafta.web.attd.attd07.application.query.MonthlyAttdListQuery" resultType="com.prafta.web.attd.attd07.result.MonthlyOvertimeResult">
+    /* Attd07Mapper.selectMonthlyOvertimeList */
+        WITH RECURSIVE
+        /* 1. 부서 트리 — 시작 노드부터 하위까지 */
+        node_tree AS (
+            SELECT
+                  N.CMPNY_CD
+                , N.SITE_CD
+                , N.NODE_CD
+            FROM TB_SITE_NODE N
+            WHERE N.CMPNY_CD = #{gvCmpnyCd}
+              AND N.SITE_CD  = #{siteCd}
+              AND N.NODE_CD  = #{nodeCd}
+
+            <if test='"Y".equals(incSubNodeYn)'>
+            UNION ALL
+
+            SELECT
+                  C.CMPNY_CD
+                , C.SITE_CD
+                , C.NODE_CD
+            FROM TB_SITE_NODE C
+            INNER JOIN node_tree P
+                ON  C.CMPNY_CD       = P.CMPNY_CD
+                AND C.SITE_CD        = P.SITE_CD
+                AND C.PARENT_NODE_CD = P.NODE_CD
+            </if>
+        )
+
+        SELECT
+              O.OT_ID                AS otId
+            , O.ATTD_ID              AS attdId
+            , O.REQ_ID               AS reqId
+
+            , O.CMPNY_CD             AS cmpnyCd
+            , O.SITE_CD              AS siteCd
+            , O.USER_CD              AS userCd
+            , O.WORK_YMD             AS workYmd
+            , O.NODE_CD              AS nodeCd
+
+            , O.OT_TYPE              AS otType
+
+            , O.PLAN_START_DATE      AS planStartDate
+            , O.PLAN_START_TIME      AS planStartTime
+            , O.PLAN_END_DATE        AS planEndDate
+            , O.PLAN_END_TIME        AS planEndTime
+
+            , O.ACTUAL_START_DATE    AS actualStartDate
+            , O.ACTUAL_START_TIME    AS actualStartTime
+            , O.ACTUAL_START_METHOD  AS actualStartMethod
+            , O.ACTUAL_END_DATE      AS actualEndDate
+            , O.ACTUAL_END_TIME      AS actualEndTime
+            , O.ACTUAL_END_METHOD    AS actualEndMethod
+
+            , O.WORK_MINUTES         AS workMinutes
+            , O.BREAK_MINUTES        AS breakMinutes
+
+            , O.OT_STATUS            AS otStatus
+
+            , O.INSERT_DATE          AS insertDate
+        FROM TB_USER_OVERTIME_MGMT O
+        INNER JOIN node_tree NT
+            ON  O.CMPNY_CD = NT.CMPNY_CD
+            AND O.SITE_CD  = NT.SITE_CD
+            AND O.NODE_CD  = NT.NODE_CD
+        WHERE O.CMPNY_CD  = #{gvCmpnyCd}
+          AND O.SITE_CD   = #{siteCd}
+          AND O.WORK_YMD  LIKE CONCAT(REPLACE(#{workYm}, '-', ''), '%')
+          AND O.DEL_YN    = 'N'
+          AND O.OT_STATUS <![CDATA[ <> ]]> 'CANCELLED'
+        ORDER BY O.USER_CD, O.WORK_YMD, O.ACTUAL_START_DATE, O.ACTUAL_START_TIME
+    </select>
+
     <select id="selectAttdId" parameterType="string" resultType="string">
     /* Attd07Mapper.selectAttdId */
     SELECT CONCAT(DATE_FORMAT(NOW(), '%Y%m%d'), FNC_CMM_SEQ_NEXTVAL(#{gvCmpnyCd}, 'ATTD_ID')) AS attdId
@@ -503,29 +670,14 @@
 	    , A1.ATTD_ID                                                       AS attd1Id
 	    , A1.CHECK_IN_DATE                                                 AS act1InDate
 	    , A1.CHECK_IN_TIME                                                 AS act1InTime
-	    , FNC_STD_TIME(
-	          A1.CHECK_IN_TIME
-	        , IFNULL(
-	              CASE WHEN CHAR_LENGTH(FNC_CMM_INFO_SRCH(A.CMPNY_CD, 'ATTD_STD_CHKIN', A1.CHECK_IN_DATE, NULL)) = 0
-	                   THEN NULL
-	                   ELSE FNC_CMM_INFO_SRCH(A.CMPNY_CD, 'ATTD_STD_CHKIN', A1.CHECK_IN_DATE, NULL)
-	              END
-	          , 0)
-	        , 'IN'
-	    )                                                                  AS act1InStdTime
+	    /* PRAFTA-015 - 표준화 출근 일자/시각 (TB_ATTD_STD_TIME_RULE_HIS 룰 + 자정 넘김 보정) */
+	    , <include refid="frag_std_date"><property name="cmpny" value="A.CMPNY_CD"/><property name="ymd" value="A.WORK_YMD"/><property name="dtCol" value="A1.CHECK_IN_DATE"/><property name="tmCol" value="A1.CHECK_IN_TIME"/><property name="rule" value="'01'"/><property name="round" value="CEIL"/></include> AS act1InStdDate
+	    , <include refid="frag_std_time"><property name="cmpny" value="A.CMPNY_CD"/><property name="ymd" value="A.WORK_YMD"/><property name="dtCol" value="A1.CHECK_IN_DATE"/><property name="tmCol" value="A1.CHECK_IN_TIME"/><property name="rule" value="'01'"/><property name="round" value="CEIL"/></include> AS act1InStdTime
 	    , A1.CHECK_IN_METHOD                                               AS act1InMethod
 	    , A1.CHECK_OUT_DATE                                                AS act1OutDate
 	    , A1.CHECK_OUT_TIME                                                AS act1OutTime
-	    , FNC_STD_TIME(
-	          A1.CHECK_OUT_TIME
-	        , IFNULL(
-	              CASE WHEN CHAR_LENGTH(FNC_CMM_INFO_SRCH(A.CMPNY_CD, 'ATTD_STD_CHKOUT', A1.CHECK_OUT_DATE, NULL)) = 0
-	                   THEN NULL
-	                   ELSE FNC_CMM_INFO_SRCH(A.CMPNY_CD, 'ATTD_STD_CHKOUT', A1.CHECK_OUT_DATE, NULL)
-	              END
-	          , 0)
-	        , 'OUT'
-	    )                                                                  AS act1OutStdTime
+	    , <include refid="frag_std_date"><property name="cmpny" value="A.CMPNY_CD"/><property name="ymd" value="A.WORK_YMD"/><property name="dtCol" value="A1.CHECK_OUT_DATE"/><property name="tmCol" value="A1.CHECK_OUT_TIME"/><property name="rule" value="'02'"/><property name="round" value="FLOOR"/></include> AS act1OutStdDate
+	    , <include refid="frag_std_time"><property name="cmpny" value="A.CMPNY_CD"/><property name="ymd" value="A.WORK_YMD"/><property name="dtCol" value="A1.CHECK_OUT_DATE"/><property name="tmCol" value="A1.CHECK_OUT_TIME"/><property name="rule" value="'02'"/><property name="round" value="FLOOR"/></include> AS act1OutStdTime
 	    , A1.CHECK_OUT_METHOD                                              AS act1OutMethod
 	    
 	    , A1.CHECK_IN_DATE                                                 AS oriAct1InDate
@@ -537,29 +689,13 @@
 	    , A2.ATTD_ID                                                       AS attd2Id
 	    , A2.CHECK_IN_DATE                                                 AS act2InDate
 	    , A2.CHECK_IN_TIME                                                 AS act2InTime
-	    , FNC_STD_TIME(
-	          A2.CHECK_IN_TIME
-	        , IFNULL(
-	              CASE WHEN CHAR_LENGTH(FNC_CMM_INFO_SRCH(A.CMPNY_CD, 'ATTD_STD_CHKIN', A2.CHECK_IN_DATE, NULL)) = 0
-	                   THEN NULL
-	                   ELSE FNC_CMM_INFO_SRCH(A.CMPNY_CD, 'ATTD_STD_CHKIN', A2.CHECK_IN_DATE, NULL)
-	              END
-	          , 0)
-	        , 'IN'
-	    )                                                                  AS act2InStdTime
+	    , <include refid="frag_std_date"><property name="cmpny" value="A.CMPNY_CD"/><property name="ymd" value="A.WORK_YMD"/><property name="dtCol" value="A2.CHECK_IN_DATE"/><property name="tmCol" value="A2.CHECK_IN_TIME"/><property name="rule" value="'01'"/><property name="round" value="CEIL"/></include> AS act2InStdDate
+	    , <include refid="frag_std_time"><property name="cmpny" value="A.CMPNY_CD"/><property name="ymd" value="A.WORK_YMD"/><property name="dtCol" value="A2.CHECK_IN_DATE"/><property name="tmCol" value="A2.CHECK_IN_TIME"/><property name="rule" value="'01'"/><property name="round" value="CEIL"/></include> AS act2InStdTime
 	    , A2.CHECK_IN_METHOD                                               AS act2InMethod
 	    , A2.CHECK_OUT_DATE                                                AS act2OutDate
 	    , A2.CHECK_OUT_TIME                                                AS act2OutTime
-	    , FNC_STD_TIME(
-	          A2.CHECK_OUT_TIME
-	        , IFNULL(
-	              CASE WHEN CHAR_LENGTH(FNC_CMM_INFO_SRCH(A.CMPNY_CD, 'ATTD_STD_CHKOUT', A2.CHECK_OUT_DATE, NULL)) = 0
-	                   THEN NULL
-	                   ELSE FNC_CMM_INFO_SRCH(A.CMPNY_CD, 'ATTD_STD_CHKOUT', A2.CHECK_OUT_DATE, NULL)
-	              END
-	          , 0)
-	        , 'OUT'
-	    )                                                                  AS act2OutStdTime
+	    , <include refid="frag_std_date"><property name="cmpny" value="A.CMPNY_CD"/><property name="ymd" value="A.WORK_YMD"/><property name="dtCol" value="A2.CHECK_OUT_DATE"/><property name="tmCol" value="A2.CHECK_OUT_TIME"/><property name="rule" value="'02'"/><property name="round" value="FLOOR"/></include> AS act2OutStdDate
+	    , <include refid="frag_std_time"><property name="cmpny" value="A.CMPNY_CD"/><property name="ymd" value="A.WORK_YMD"/><property name="dtCol" value="A2.CHECK_OUT_DATE"/><property name="tmCol" value="A2.CHECK_OUT_TIME"/><property name="rule" value="'02'"/><property name="round" value="FLOOR"/></include> AS act2OutStdTime
 	    , A2.CHECK_OUT_METHOD                                              AS act2OutMethod
 	    
 	    , A2.CHECK_IN_DATE                                                 AS oriAct2InDate
@@ -733,12 +869,12 @@
     <!--
         [QA 재작업 D2] TB_USER_ATTD_HIST 기준 조회로 변경.
         기존 INNER JOIN TB_USER_ATTD_MGMT 는 MGMT 에 ATTD_ID 가 없는
-        ATTD_CREATE 반려 이력(HIST_TYPE='07', 미반영이라 MGMT INSERT 안 함)을
+        근태생성(REQ_TYPE='01') 반려 이력(HIST_TYPE='07', 미반영이라 MGMT INSERT 안 함)을
         결과에서 누락시킨다. HIST 를 기준으로 LEFT JOIN 하여 orphan 이력도 포함한다.
         USER_CD 스코핑:
           - MGMT 가 존재하는 이력(수정/생성반영/삭제): MGMT.USER_CD 로 직접 매칭.
-          - orphan 이력(MGMT 없음): 해당 사용자의 ATTD_CREATE 반려 REQ 존재 여부로 스코핑.
-            (반려 ATTD_CREATE 는 새 ATTD_ID 를 어디에도 저장하지 않으므로 ATTD_ID 로는
+          - orphan 이력(MGMT 없음): 해당 사용자의 근태생성('01') 반려('03') REQ 존재 여부로 스코핑.
+            (반려된 근태생성 REQ 는 새 ATTD_ID 를 어디에도 저장하지 않으므로 ATTD_ID 로는
              REQ 와 연결 불가 → CMPNY_CD+SITE_CD+WORK_YMD+USER_CD 일치 REQ 존재로 보장.)
     -->
     SELECT
@@ -792,8 +928,8 @@
 	                   AND R.SITE_CD   = B.SITE_CD
 	                   AND R.WORK_YMD  = B.WORK_YMD
 	                   AND R.USER_CD   = #{userCd}
-	                   AND R.REQ_TYPE  = 'ATTD_CREATE'
-	                   AND R.REQ_STATUS = 'REJECTED'
+	                   AND R.REQ_TYPE  = '01'
+	                   AND R.REQ_STATUS = '03'
 	            )
 	        )
 	      )
@@ -828,14 +964,85 @@
 	    , A.START_TIME		AS startTime
 	    , A.END_DATE		AS endDate
 	    , A.END_TIME		AS endTime
+	    , A.OT_TYPE			AS otType
 	    , A.REQ_REASON		AS reqReason
 	    , A.INSERT_DATE		AS insertDate
+	    , ( SELECT AP.APPROVAL_STEP
+	          FROM TB_USER_ATTD_REQ_APPROVAL AP
+	         WHERE AP.CMPNY_CD = A.CMPNY_CD
+	           AND AP.REQ_ID   = A.REQ_ID
+	           AND AP.APPROVER_USER_CD = #{gvUserCd}
+	           AND AP.APPROVAL_STATUS  = '01'
+	         LIMIT 1 )  AS approvalStep
 	FROM TB_USER_ATTD_REQ A
 	WHERE A.CMPNY_CD = #{gvCmpnyCd}
 	  AND A.SITE_CD = #{siteCd}
 	  AND A.USER_CD = #{userCd}
 	  AND A.WORK_YMD = #{workYmd}
-	  AND A.REQ_STATUS = 'REQUESTED'		<!-- 요청 신청건만 조회 -->
+	  AND A.REQ_STATUS = '01'		<!-- 신청('01') 상태인 요청건만 조회 (SYS033) -->
+      <!-- PRAFTA: 연차(05/06)는 현재 로그인 사용자가 그 요청의 '현재 처리 단계' 결재자일 때만 카드로 노출.
+           근태/OT(01~04)는 매니저 모델이므로 무영향. -->
+      AND ( A.REQ_TYPE NOT IN ('05','06')
+            OR EXISTS ( SELECT 1
+                          FROM TB_USER_ATTD_REQ_APPROVAL AP
+                         WHERE AP.CMPNY_CD = A.CMPNY_CD
+                           AND AP.REQ_ID   = A.REQ_ID
+                           AND AP.APPROVER_USER_CD = #{gvUserCd}
+                           AND AP.APPROVAL_STATUS  = '01' ) )
+    </select>
+
+    <select id="selectDailyLeaveApprovalHistory" parameterType="com.prafta.web.attd.attd07.application.query.DailyAttdDetailsQuery" resultType="com.prafta.web.attd.attd07.result.DailyAttdDetailHistoryResult">
+    /* Attd07Mapper.selectDailyLeaveApprovalHistory */
+    <!-- 연차(05/06) 승인/반려 처리 이력. 결재라인(AP)의 '처리된' 단계(02 승인 / 03 반려)를
+         일자 상세 '처리 이력'에 노출. 출퇴근 변경 개념이 없어 시간/구간 컬럼은 NULL.
+         insertDate 는 기존 근태 이력(B.INSERT_DATE)과 동일하게 원본 datetime 을 포맷 없이 내려
+         표시/정렬을 일치시킨다. 유형명은 코드마스터(SYS032/SYS044)로 조립한다. -->
+    SELECT
+          AP.CMPNY_CD                                                          AS cmpnyCd
+        , NULL                                                                 AS histId
+        , NULL                                                                 AS attdId
+        , AP.APPROVAL_STATUS                                                   AS histType
+        , CONCAT(
+              FNC_CMM_INFO_SRCH(AP.CMPNY_CD, 'SYST_VAL', R.REQ_TYPE, 'SYS032')
+            , ' '
+            , FNC_CMM_INFO_SRCH(AP.CMPNY_CD, 'SYST_VAL', AP.APPROVAL_STATUS, 'SYS044')
+          )                                                                    AS histTypeNm
+        , NULL                                                                 AS workSeq
+        , NULL                                                                 AS befCheckInDate
+        , NULL                                                                 AS befCheckInTime
+        , NULL                                                                 AS befCheckOutDate
+        , NULL                                                                 AS befCheckOutTime
+        , NULL                                                                 AS aftCheckInDate
+        , NULL                                                                 AS aftCheckInTime
+        , NULL                                                                 AS aftCheckOutDate
+        , NULL                                                                 AS aftCheckOutTime
+        , AP.APPROVAL_COMMENT                                                  AS processReason
+        , AP.APPROVER_USER_CD                                                  AS insertNo
+        , FNC_CMM_INFO_SRCH(AP.CMPNY_CD, 'USER_NM', AP.APPROVER_USER_CD, null) AS insertNm
+        , AP.APPROVAL_DATE                                                     AS insertDate
+      FROM TB_USER_ATTD_REQ_APPROVAL AP
+      JOIN TB_USER_ATTD_REQ R
+        ON R.CMPNY_CD = AP.CMPNY_CD
+       AND R.REQ_ID   = AP.REQ_ID
+     WHERE R.CMPNY_CD = #{gvCmpnyCd}
+       AND R.SITE_CD  = #{siteCd}
+       AND R.USER_CD  = #{userCd}
+       AND R.WORK_YMD = #{workYmd}
+       AND R.REQ_TYPE IN ('05','06')
+       AND R.DEL_YN   = 'N'
+       AND AP.APPROVAL_STATUS IN ('02','03')
+       AND AP.APPROVAL_DATE IS NOT NULL
+     ORDER BY AP.APPROVAL_DATE DESC
+    </select>
+
+
+    <select id="selectAttdWorkYmd" resultType="string">
+    /* Attd07Mapper.selectAttdWorkYmd */
+    SELECT M.WORK_YMD
+      FROM TB_USER_ATTD_MGMT M
+     WHERE M.CMPNY_CD = #{gvCmpnyCd}
+       AND M.ATTD_ID  = #{attdId}
+     LIMIT 1
     </select>
 
     <!-- PRAFTA-003-6: 일자 상세 조회 시 함께 노출되는 OT(초과근무) 리스트 조회.
@@ -941,10 +1148,27 @@
       AND ATTD_ID  = #{attdId}
     </update>
 
+    <!-- PRAFTA-016 - 근태 전체삭제 시 OT 연쇄 soft-delete.
+         삭제 대상 ATTD_ID 와 일치하고 아직 활성인 OT 행만 DEL_YN='Y' 로 전이한다.
+         OT_STATUS / REQ 상태는 변경하지 않는다. -->
+    <update id="deleteOvertimeByAttdId" parameterType="com.prafta.web.attd.attd07.application.command.DailyAttdDetailDeleteCommand">
+    /* Attd07Mapper.deleteOvertimeByAttdId */
+    UPDATE TB_USER_OVERTIME_MGMT
+    SET DEL_YN      = 'Y'
+        , UPDATE_NO   = #{gvUserCd}
+        , UPDATE_DATE = NOW()
+    WHERE CMPNY_CD = #{gvCmpnyCd}
+      AND SITE_CD  = #{siteCd}
+      AND USER_CD  = #{userCd}
+      AND ATTD_ID  = #{attdId}
+      AND ATTD_ID IS NOT NULL
+      AND DEL_YN   = 'N'
+    </update>
+
     <update id="updateUserAttdReqApprove" parameterType="com.prafta.web.attd.attd07.application.command.UpdateUserAttdRequestCommand">
     /* Attd07Mapper.updateUserAttdReqApprove */
     UPDATE TB_USER_ATTD_REQ
-    SET REQ_STATUS        = 'APPROVED'
+    SET REQ_STATUS        = '02'
         , TARGET_ID       = #{targetId}
         , PROCESS_USER_CD = #{gvUserCd}
         , PROCESS_COMMENT = IFNULL(NULLIF(#{processComment}, ''), 'AUTO_APPROVED')
@@ -955,13 +1179,13 @@
       AND SITE_CD    = #{siteCd}
       AND REQ_ID     = #{reqId}
       AND DEL_YN     = 'N'
-      AND REQ_STATUS = 'REQUESTED'
+      AND REQ_STATUS = '01'
     </update>
 
     <update id="updateUserAttdReqReject" parameterType="com.prafta.web.attd.attd07.application.command.RejectUserAttdRequestCommand">
     /* Attd07Mapper.updateUserAttdReqReject - PRAFTA-008 / PRAFTA-010 */
     UPDATE TB_USER_ATTD_REQ
-    SET REQ_STATUS        = 'REJECTED'
+    SET REQ_STATUS        = '03'
         , PROCESS_USER_CD = #{gvUserCd}
         , PROCESS_COMMENT = #{rejectReason}
         , PROCESS_DATE    = NOW()
@@ -971,7 +1195,23 @@
       AND SITE_CD    = #{siteCd}
       AND REQ_ID     = #{reqId}
       AND DEL_YN     = 'N'
-      AND REQ_STATUS = 'REQUESTED'
+      AND REQ_STATUS = '01'
+    </update>
+
+    <update id="updateUserOvertimeReqApprove">
+    /* Attd07Mapper.updateUserOvertimeReqApprove - 초과근무 요청 승인(요청 승인 관리 인박스 경유) */
+    UPDATE TB_USER_ATTD_REQ
+    SET REQ_STATUS        = '02'
+        , PROCESS_USER_CD = #{gvUserCd}
+        , PROCESS_COMMENT = 'OT_APPROVED'
+        , PROCESS_DATE    = NOW()
+        , UPDATE_NO       = #{gvUserCd}
+        , UPDATE_DATE     = NOW()
+    WHERE CMPNY_CD   = #{gvCmpnyCd}
+      AND SITE_CD    = #{siteCd}
+      AND REQ_ID     = #{reqId}
+      AND DEL_YN     = 'N'
+      AND REQ_STATUS = '01'
     </update>
 
     <select id="selectUserAttdReqByReqId" resultType="com.prafta.web.attd.attd07.result.UserAttdReqResult">
@@ -1006,6 +1246,19 @@
     LIMIT 1
     </select>
 
+    <select id="selectAttdIdByDay" resultType="string">
+    /* Attd07Mapper.selectAttdIdByDay - PRAFTA-027: 초과근무 처리 이력 앵커용 그날 ATTD_ID */
+    SELECT M.ATTD_ID
+    FROM TB_USER_ATTD_MGMT M
+    WHERE M.CMPNY_CD = #{gvCmpnyCd}
+      AND M.SITE_CD  = #{siteCd}
+      AND M.USER_CD  = #{userCd}
+      AND M.WORK_YMD = #{workYmd}
+      AND M.DEL_YN   = 'N'
+    ORDER BY M.WORK_SEQ
+    LIMIT 1
+    </select>
+
     <!-- ================================================================
          PRAFTA-003 - overtime registration
          ================================================================ -->
@@ -1020,53 +1273,21 @@
         , SCH.SEC_SCH_STR_TIME                                             AS plan2Start
         , SCH.SEC_SCH_END_TIME                                             AS plan2End
 
-        /* 1st attd row - standardized check-in / check-out */
+        /* 1st attd row - standardized check-in / check-out (PRAFTA-015 룰 + 자정 넘김 보정) */
         , A1.CHECK_IN_DATE                                                 AS act1InDate
-        , FNC_STD_TIME(
-              A1.CHECK_IN_TIME
-            , IFNULL(
-                  CASE WHEN CHAR_LENGTH(FNC_CMM_INFO_SRCH(#{gvCmpnyCd}, 'ATTD_STD_CHKIN', A1.CHECK_IN_DATE, NULL)) = 0
-                       THEN NULL
-                       ELSE FNC_CMM_INFO_SRCH(#{gvCmpnyCd}, 'ATTD_STD_CHKIN', A1.CHECK_IN_DATE, NULL)
-                  END
-              , 0)
-            , 'IN'
-          )                                                                AS act1InStdTime
+        , <include refid="frag_std_date"><property name="cmpny" value="#{gvCmpnyCd}"/><property name="ymd" value="WP.WORK_YMD"/><property name="dtCol" value="A1.CHECK_IN_DATE"/><property name="tmCol" value="A1.CHECK_IN_TIME"/><property name="rule" value="'01'"/><property name="round" value="CEIL"/></include> AS act1InStdDate
+        , <include refid="frag_std_time"><property name="cmpny" value="#{gvCmpnyCd}"/><property name="ymd" value="WP.WORK_YMD"/><property name="dtCol" value="A1.CHECK_IN_DATE"/><property name="tmCol" value="A1.CHECK_IN_TIME"/><property name="rule" value="'01'"/><property name="round" value="CEIL"/></include> AS act1InStdTime
         , A1.CHECK_OUT_DATE                                                AS act1OutDate
-        , FNC_STD_TIME(
-              A1.CHECK_OUT_TIME
-            , IFNULL(
-                  CASE WHEN CHAR_LENGTH(FNC_CMM_INFO_SRCH(#{gvCmpnyCd}, 'ATTD_STD_CHKOUT', A1.CHECK_OUT_DATE, NULL)) = 0
-                       THEN NULL
-                       ELSE FNC_CMM_INFO_SRCH(#{gvCmpnyCd}, 'ATTD_STD_CHKOUT', A1.CHECK_OUT_DATE, NULL)
-                  END
-              , 0)
-            , 'OUT'
-          )                                                                AS act1OutStdTime
+        , <include refid="frag_std_date"><property name="cmpny" value="#{gvCmpnyCd}"/><property name="ymd" value="WP.WORK_YMD"/><property name="dtCol" value="A1.CHECK_OUT_DATE"/><property name="tmCol" value="A1.CHECK_OUT_TIME"/><property name="rule" value="'02'"/><property name="round" value="FLOOR"/></include> AS act1OutStdDate
+        , <include refid="frag_std_time"><property name="cmpny" value="#{gvCmpnyCd}"/><property name="ymd" value="WP.WORK_YMD"/><property name="dtCol" value="A1.CHECK_OUT_DATE"/><property name="tmCol" value="A1.CHECK_OUT_TIME"/><property name="rule" value="'02'"/><property name="round" value="FLOOR"/></include> AS act1OutStdTime
 
-        /* 2nd attd row - standardized check-in / check-out */
+        /* 2nd attd row - standardized check-in / check-out (PRAFTA-015 룰 + 자정 넘김 보정) */
         , A2.CHECK_IN_DATE                                                 AS act2InDate
-        , FNC_STD_TIME(
-              A2.CHECK_IN_TIME
-            , IFNULL(
-                  CASE WHEN CHAR_LENGTH(FNC_CMM_INFO_SRCH(#{gvCmpnyCd}, 'ATTD_STD_CHKIN', A2.CHECK_IN_DATE, NULL)) = 0
-                       THEN NULL
-                       ELSE FNC_CMM_INFO_SRCH(#{gvCmpnyCd}, 'ATTD_STD_CHKIN', A2.CHECK_IN_DATE, NULL)
-                  END
-              , 0)
-            , 'IN'
-          )                                                                AS act2InStdTime
+        , <include refid="frag_std_date"><property name="cmpny" value="#{gvCmpnyCd}"/><property name="ymd" value="WP.WORK_YMD"/><property name="dtCol" value="A2.CHECK_IN_DATE"/><property name="tmCol" value="A2.CHECK_IN_TIME"/><property name="rule" value="'01'"/><property name="round" value="CEIL"/></include> AS act2InStdDate
+        , <include refid="frag_std_time"><property name="cmpny" value="#{gvCmpnyCd}"/><property name="ymd" value="WP.WORK_YMD"/><property name="dtCol" value="A2.CHECK_IN_DATE"/><property name="tmCol" value="A2.CHECK_IN_TIME"/><property name="rule" value="'01'"/><property name="round" value="CEIL"/></include> AS act2InStdTime
         , A2.CHECK_OUT_DATE                                                AS act2OutDate
-        , FNC_STD_TIME(
-              A2.CHECK_OUT_TIME
-            , IFNULL(
-                  CASE WHEN CHAR_LENGTH(FNC_CMM_INFO_SRCH(#{gvCmpnyCd}, 'ATTD_STD_CHKOUT', A2.CHECK_OUT_DATE, NULL)) = 0
-                       THEN NULL
-                       ELSE FNC_CMM_INFO_SRCH(#{gvCmpnyCd}, 'ATTD_STD_CHKOUT', A2.CHECK_OUT_DATE, NULL)
-                  END
-              , 0)
-            , 'OUT'
-          )                                                                AS act2OutStdTime
+        , <include refid="frag_std_date"><property name="cmpny" value="#{gvCmpnyCd}"/><property name="ymd" value="WP.WORK_YMD"/><property name="dtCol" value="A2.CHECK_OUT_DATE"/><property name="tmCol" value="A2.CHECK_OUT_TIME"/><property name="rule" value="'02'"/><property name="round" value="FLOOR"/></include> AS act2OutStdDate
+        , <include refid="frag_std_time"><property name="cmpny" value="#{gvCmpnyCd}"/><property name="ymd" value="WP.WORK_YMD"/><property name="dtCol" value="A2.CHECK_OUT_DATE"/><property name="tmCol" value="A2.CHECK_OUT_TIME"/><property name="rule" value="'02'"/><property name="round" value="FLOOR"/></include> AS act2OutStdTime
 
     FROM TB_USER_WORK_PLAN WP
 
@@ -1309,5 +1530,31 @@
         , NOW()
     )
     </insert>
+
+    <!-- PRAFTA-025 - 초과근무 수정('04') 승인 시 기존 OT 행(OT_ID) UPDATE.
+         완료된 OT 확정 모델에 맞춰 PLAN_*/ACTUAL_* 를 요청 구간 동일 값으로 갱신한다.
+         스코프(회사/사업장/사용자) 일치 + 활성 행만 대상(취소/삭제 행은 미수정 → 0행 반환). -->
+    <update id="updateUserOvertimeModify">
+    /* Attd07Mapper.updateUserOvertimeModify - PRAFTA-025 초과근무 수정 승인 */
+    UPDATE TB_USER_OVERTIME_MGMT
+       SET OT_TYPE           = #{otType}
+         , PLAN_START_DATE   = #{startDate}
+         , PLAN_START_TIME   = #{startTime}
+         , PLAN_END_DATE     = #{endDate}
+         , PLAN_END_TIME     = #{endTime}
+         , ACTUAL_START_DATE = #{startDate}
+         , ACTUAL_START_TIME = #{startTime}
+         , ACTUAL_END_DATE   = #{endDate}
+         , ACTUAL_END_TIME   = #{endTime}
+         , WORK_MINUTES      = #{workMinutes}
+         , UPDATE_NO         = #{updateNo}
+         , UPDATE_DATE       = NOW()
+     WHERE CMPNY_CD   = #{cmpnyCd}
+       AND SITE_CD    = #{siteCd}
+       AND USER_CD    = #{userCd}
+       AND OT_ID      = #{otId}
+       AND DEL_YN     = 'N'
+       AND OT_STATUS <![CDATA[ <> ]]> 'CANCELLED'
+    </update>
 
 </mapper>

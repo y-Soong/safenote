@@ -1,0 +1,28 @@
+package com.prafta.web.tbm.tbm02.application.param;
+
+import com.prafta.common.dto.TokenInfo;
+import com.prafta.common.error.common.CommonErrorCode;
+import com.prafta.common.exception.ApiException;
+import com.prafta.web.tbm.tbm02.dto.request.SessionDetailRequest;
+
+public record SessionDetailParam(
+	String sessionCd
+	, String gvCmpnyCd
+	, String gvSiteCd
+	, String gvAuthCd
+){
+	public static SessionDetailParam from(SessionDetailRequest request, TokenInfo tokenInfo) {
+
+		if (request == null)
+			throw new ApiException(CommonErrorCode.COMMON_400_001);
+		if (tokenInfo == null)
+			throw new ApiException(CommonErrorCode.COMMON_400_003);
+
+		return new SessionDetailParam(
+			request.getSessionCd()
+			, tokenInfo.gv_cmpnyCd()
+			, tokenInfo.gv_siteCd()
+			, tokenInfo.gv_authCd()
+		);
+	}
+}

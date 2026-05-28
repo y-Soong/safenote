@@ -19,15 +19,13 @@ public record LeaveTypeCommand(
     , String availTermType
     , String availFromDt
     , String availToDt
-    , Integer grantDays
     , String adminAvailTermType
     , String adminAvailFromDt
     , String adminAvailToDt
     , String grantBaseType
     , Integer grantOffsetMonth
+    , String grantAssignMmdd
     , String aprvUseYn
-    , Integer aprvStepCnt
-    , String hrFinalAprvYn
     , String evidenceYn
     , String evidenceGuideMsg
 ){
@@ -51,15 +49,13 @@ public record LeaveTypeCommand(
 			, param.availTermType()
 			, param.availFromDt()
 			, param.availToDt()
-			, param.grantDays()
 			, param.adminAvailTermType()
 			, param.adminAvailFromDt()
 			, param.adminAvailToDt()
 			, param.grantBaseType()
 			, param.grantOffsetMonth()
+			, param.grantAssignMmdd()
 			, param.aprvUseYn()
-			, param.aprvStepCnt()
-			, param.hrFinalAprvYn()
 			, param.evidenceYn()
 			, param.evidenceGuideMsg()
 		);

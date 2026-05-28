@@ -12,4 +12,5 @@ public class TbmEduInfoListRequest{
 	private String mtrlType;
 	private String title;
 	private String useYn;
+	private String siteCd;		// prafta-033-A: 스코프 필터(사업장). 빈 값이면 회사공통+자기사업장
 }

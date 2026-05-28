@@ -21,6 +21,8 @@ public record UserInfoResult(
 	, String siteNmList
 	, String accountStatus
 	, String withdrawalDate
+	, String rankCd
+	, String rankNm
 ){
 	
 }

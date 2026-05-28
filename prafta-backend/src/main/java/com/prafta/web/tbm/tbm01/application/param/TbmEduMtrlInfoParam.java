@@ -26,6 +26,7 @@ public record TbmEduMtrlInfoParam(
                     , req.getContents()
                     , req.getMtrlType()
                     , req.getUseYn()
+                    , req.getSiteCd()
                     , tokenInfo.gv_cmpnyCd()
                     , tokenInfo.gv_userCd()
                 );

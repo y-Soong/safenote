@@ -21,20 +21,24 @@ public record AllowedWindowResult(
     , String plan2Start
     , String plan2End
 
-    /** 1차 근태 row — 출근 raw 일자 / FNC_STD_TIME 적용 시각. */
+    /** 1차 근태 row — 출근 raw 일자 / 표준화 일자 / 표준화 시각. */
     , String act1InDate
+    , String act1InStdDate
     , String act1InStdTime
 
-    /** 1차 근태 row — 퇴근 raw 일자 / FNC_STD_TIME 적용 시각. */
+    /** 1차 근태 row — 퇴근 raw 일자 / 표준화 일자 / 표준화 시각. */
     , String act1OutDate
+    , String act1OutStdDate
     , String act1OutStdTime
 
-    /** 2차 근태 row — 출근 raw 일자 / FNC_STD_TIME 적용 시각. */
+    /** 2차 근태 row — 출근 raw 일자 / 표준화 일자 / 표준화 시각. */
     , String act2InDate
+    , String act2InStdDate
     , String act2InStdTime
 
-    /** 2차 근태 row — 퇴근 raw 일자 / FNC_STD_TIME 적용 시각. */
+    /** 2차 근태 row — 퇴근 raw 일자 / 표준화 일자 / 표준화 시각. */
     , String act2OutDate
+    , String act2OutStdDate
     , String act2OutStdTime
 ) {
 }

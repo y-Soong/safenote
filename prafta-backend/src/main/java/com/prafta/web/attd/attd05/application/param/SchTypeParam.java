@@ -10,13 +10,14 @@ import com.prafta.web.attd.attd05.dto.request.SchTypeRequst;
 
 public record SchTypeParam(
 	List<SchTypeModel> schTypeModelList
+	, String gvAuthCd
 ) {
-	
+
 	public static SchTypeParam from(List<SchTypeRequst> requests, TokenInfo tokenInfo) {
 
-        if (requests == null)
+        if (requests == null || tokenInfo == null)
         	throw new ApiException(CommonErrorCode.COMMON_400_001);
-        
+
         List<SchTypeModel> models = requests.stream()
     		.map(req -> {
     			return new SchTypeModel(
@@ -30,6 +31,6 @@ public record SchTypeParam(
     		})
         	.toList();
 
-        return new SchTypeParam(models);        
+        return new SchTypeParam(models, tokenInfo.gv_authCd());
     }
 }

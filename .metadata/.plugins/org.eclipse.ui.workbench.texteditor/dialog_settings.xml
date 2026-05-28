@@ -58,6 +58,13 @@
 		<item key="incremental" value="false"/>
 		<item key="isRegEx" value="false"/>
 		<list key="findhistory">
+			<item value="selectDailyUserCd"/>
+			<item value="insertDailyQrUser"/>
+			<item value="ATTD_MODIFY"/>
+			<item value="FNC_CMM_SEQ_NEXTVAL"/>
+			<item value="FNC_CMM_SEQ_NEXTVAL "/>
+			<item value="TB_SCH_MGMT"/>
+			<item value="frag_std_stamp"/>
 			<item value="ATTD_400_011"/>
 			<item value="toMinuteStamp"/>
 			<item value="selectSchNoCount"/>
@@ -66,13 +73,6 @@
 			<item value="com.prafta.common.exception"/>
 			<item value="ATTD_400_014"/>
 			<item value="no completed work record found for the day"/>
-			<item value="ATTD_403_003"/>
-			<item value="Self overtime registration is not allowed."/>
-			<item value="insertUserOvertime"/>
-			<item value="update-user-attd-infos"/>
-			<item value="selectDailyAttdDetailHistory"/>
-			<item value="selectMonthlyAttdReqIdList"/>
-			<item value="dailyAttdDetailHistoryResultList"/>
 		</list>
 		<list key="replacehistory">
 			<item value=", "/>

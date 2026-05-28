@@ -35,6 +35,8 @@
 	    	, A.FST_SCH_END_TIME
     	) 							AS fstSchTime
 	    , A.FST_SCH_BRK_MIN  		AS fstSchBrkMin
+	    , A.FST_BRK_STR_TIME AS fstBrkStrTime
+	    , A.FST_BRK_END_TIME AS fstBrkEndTime
 
 	    , A.SEC_SCH_STR_TIME  		AS secSchStrTime
 	    , A.SEC_SCH_END_TIME  		AS secSchEndTime
@@ -44,6 +46,8 @@
 	    	, A.SEC_SCH_END_TIME
     	) 							AS secSchTime
 	    , A.SEC_SCH_BRK_MIN  		AS secSchBrkMin
+	    , A.SEC_BRK_STR_TIME AS secBrkStrTime
+	    , A.SEC_BRK_END_TIME AS secBrkEndTime
 	    
 	    , A.USE_YN            		AS useYn
 	    , FNC_CMM_INFO_SRCH(
@@ -95,10 +99,14 @@
         , FST_SCH_STR_TIME
         , FST_SCH_END_TIME
         , FST_SCH_BRK_MIN
+        , FST_BRK_STR_TIME
+        , FST_BRK_END_TIME
 		
         , SEC_SCH_STR_TIME
         , SEC_SCH_END_TIME
         , SEC_SCH_BRK_MIN
+        , SEC_BRK_STR_TIME
+        , SEC_BRK_END_TIME
 		
         , USE_YN
         , INSERT_NO
@@ -117,10 +125,14 @@
         , REPLACE(#{fstSchStrTime}, ':', '')
         , REPLACE(#{fstSchEndTime}, ':', '')
         , #{fstSchBrkMin}
+        , NULLIF(REPLACE(IFNULL(#{fstBrkStrTime}, ''), ':', ''), '')
+        , NULLIF(REPLACE(IFNULL(#{fstBrkEndTime}, ''), ':', ''), '')
 		
         , REPLACE(IFNULL(#{secSchStrTime}, ''), ':', '')
         , REPLACE(IFNULL(#{secSchEndTime}, ''), ':', '')
         , IFNULL(#{secSchBrkMin}, '0')
+        , NULLIF(REPLACE(IFNULL(#{secBrkStrTime}, ''), ':', ''), '')
+        , NULLIF(REPLACE(IFNULL(#{secBrkEndTime}, ''), ':', ''), '')
 		
         , IFNULL(#{useYn}, 'Y')
         , #{gvUserCd}
@@ -136,10 +148,14 @@
         , FST_SCH_STR_TIME	= NEW.FST_SCH_STR_TIME
         , FST_SCH_END_TIME	= NEW.FST_SCH_END_TIME
         , FST_SCH_BRK_MIN 	= NEW.FST_SCH_BRK_MIN
+        , FST_BRK_STR_TIME = NEW.FST_BRK_STR_TIME
+        , FST_BRK_END_TIME = NEW.FST_BRK_END_TIME
 
         , SEC_SCH_STR_TIME	= NEW.SEC_SCH_STR_TIME
         , SEC_SCH_END_TIME	= NEW.SEC_SCH_END_TIME
         , SEC_SCH_BRK_MIN 	= NEW.SEC_SCH_BRK_MIN
+        , SEC_BRK_STR_TIME = NEW.SEC_BRK_STR_TIME
+        , SEC_BRK_END_TIME = NEW.SEC_BRK_END_TIME
 
         , USE_YN          	= NEW.USE_YN
         , UPDATE_NO       	= NEW.UPDATE_NO
@@ -167,10 +183,14 @@
         , FST_SCH_STR_TIME
         , FST_SCH_END_TIME
         , FST_SCH_BRK_MIN
+        , FST_BRK_STR_TIME
+        , FST_BRK_END_TIME
 		
         , SEC_SCH_STR_TIME
         , SEC_SCH_END_TIME
         , SEC_SCH_BRK_MIN
+        , SEC_BRK_STR_TIME
+        , SEC_BRK_END_TIME
 		
         , USE_YN
         , INSERT_NO
@@ -186,10 +206,14 @@
         , REPLACE(#{fstSchStrTime}, ':', '')
         , REPLACE(#{fstSchEndTime}, ':', '')
         , #{fstSchBrkMin}
+        , NULLIF(REPLACE(IFNULL(#{fstBrkStrTime}, ''), ':', ''), '')
+        , NULLIF(REPLACE(IFNULL(#{fstBrkEndTime}, ''), ':', ''), '')
 		
         , REPLACE(IFNULL(#{secSchStrTime}, ''), ':', '')
         , REPLACE(IFNULL(#{secSchEndTime}, ''), ':', '')
         , IFNULL(#{secSchBrkMin}, '0')
+        , NULLIF(REPLACE(IFNULL(#{secBrkStrTime}, ''), ':', ''), '')
+        , NULLIF(REPLACE(IFNULL(#{secBrkEndTime}, ''), ':', ''), '')
 		
         , IFNULL(#{useYn}, 'Y')
         , #{gvUserCd}
@@ -212,6 +236,8 @@
 	        , A.FST_SCH_END_TIME
 		)											AS fstSchTime
 	    , A.FST_SCH_BRK_MIN							AS fstSchBrkMin
+	    , A.FST_BRK_STR_TIME AS fstBrkStrTime
+	    , A.FST_BRK_END_TIME AS fstBrkEndTime
 	
 	    , CONCAT(
 			A.SEC_SCH_STR_TIME
@@ -219,6 +245,8 @@
 	        , A.SEC_SCH_END_TIME
 		)											AS secSchTime
 	    , A.SEC_SCH_BRK_MIN							AS secSchBrkMin
+	    , A.SEC_BRK_STR_TIME AS secBrkStrTime
+	    , A.SEC_BRK_END_TIME AS secBrkEndTime
 	
 	    , A.USE_YN									AS useYn
 	    , A.INSERT_NO								AS userId

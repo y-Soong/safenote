@@ -201,7 +201,11 @@ onMounted(async () => {
     addTab({ label: "🏠", route: "/main", buttons: {} });
 
     // PRAFTA-005: URL이 /main 자식 라우트로 직진입된 경우 해당 탭을 자동 추가
-    if (route.path && route.path !== "/main" && route.path.startsWith("/main/")) {
+    if (
+      route.path &&
+      route.path !== "/main" &&
+      route.path.startsWith("/main/")
+    ) {
       const matched = findMenuByRoute(route.path, allSideMenus.value);
       if (matched) {
         // 해당 메뉴가 속한 상단 메뉴 탭을 선택

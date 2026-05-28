@@ -24,17 +24,17 @@ public interface Attd07Service {
     void updateUserAttdRequest(UpdateUserAttdRequestParam param);
 
     /**
-     * PRAFTA-008 - 근태(ATTD_MODIFY / ATTD_CREATE) 요청을 반려한다.
+     * PRAFTA-008 - 근태(REQ_TYPE='01' 근태생성 / '02' 근태수정) 요청을 반려한다.
      *
-     * 승인과 동일한 권위 검증(REQ row 로더 / REQ_TYPE 가드 / REQUESTED 가드 /
+     * 승인과 동일한 권위 검증(REQ row 로더 / REQ_TYPE 가드 / 신청('01') 상태 가드 /
      * body-REQ 변조검증)을 거치되 출퇴근 값은 실제 반영하지 않는다.
-     * TB_USER_ATTD_REQ 를 REJECTED 로 전이하고 TB_USER_ATTD_HIST 에
+     * TB_USER_ATTD_REQ 를 반려('03') 상태로 전이하고 TB_USER_ATTD_HIST 에
      * HIST_TYPE='07' 반려 이력 1행만 남긴다.
      */
     void rejectUserAttdRequest(RejectUserAttdRequestParam param);
 
     /**
-     * PRAFTA-010 - 초과근무(OT_REGISTER) 요청을 반려한다.
+     * PRAFTA-010 - 초과근무(REQ_TYPE='03', 초과근무생성) 요청을 반려한다.
      *
      * SEC-015~017 가드(매니저 게이트 / scope 검증)를 거친 뒤
      * TB_USER_ATTD_REQ 의 처리 컬럼만 갱신한다. 근태 반려와 달리

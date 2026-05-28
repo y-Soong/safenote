@@ -94,6 +94,15 @@
                   @update:width="onResize"
                 />
                 <ThSortable
+                  label="수동여부"
+                  col-key="grantType"
+                  :sort-key="sortKey"
+                  :sort-order="sortOrder"
+                  :width="colWidths.grantType"
+                  @sort="onSort"
+                  @update:width="onResize"
+                />
+                <ThSortable
                   label="유급구분"
                   col-key="paidTypeNm"
                   :sort-key="sortKey"
@@ -175,24 +184,6 @@
                   @update:width="onResize"
                 />
                 <ThSortable
-                  label="결재단계"
-                  col-key="aprvStepCnt"
-                  :sort-key="sortKey"
-                  :sort-order="sortOrder"
-                  :width="colWidths.aprvStepCnt"
-                  @sort="onSort"
-                  @update:width="onResize"
-                />
-                <ThSortable
-                  label="인사팀승인"
-                  col-key="hrFinalAprvYn"
-                  :sort-key="sortKey"
-                  :sort-order="sortOrder"
-                  :width="colWidths.hrFinalAprvYn"
-                  @sort="onSort"
-                  @update:width="onResize"
-                />
-                <ThSortable
                   label="증빙여부"
                   col-key="evidenceYn"
                   :sort-key="sortKey"
@@ -215,7 +206,7 @@
             <tbody>
               <template v-if="!leaveList || leaveList.length === 0">
                 <tr>
-                  <td colspan="17" class="edu-grid-empty">
+                  <td colspan="16" class="edu-grid-empty">
                     등록된 세부 항목이 없습니다.
                   </td>
                 </tr>
@@ -231,6 +222,15 @@
                   <td>{{ row.leaveNo }}</td>
                   <td>{{ row.leaveNm }}</td>
                   <td>{{ row.leaveTypeNm }}</td>
+                  <td>
+                    {{
+                      row.grantType === "02"
+                        ? "수동"
+                        : row.grantType === "01"
+                        ? "자동"
+                        : "-"
+                    }}
+                  </td>
                   <td>{{ row.paidTypeNm }}</td>
                   <td>{{ row.leaveNatureTypeNm }}</td>
                   <td>{{ row.leaveDays || "-" }}</td>
@@ -239,15 +239,9 @@
                   <td>{{ row.useYn === "Y" ? "사용" : "미사용" }}</td>
                   <td>{{ row.grantBaseTypeNm || row.grantBaseType || "-" }}</td>
                   <td>
-                    {{
-                      row.grantOffsetMonth != null
-                        ? row.grantOffsetMonth + "개월"
-                        : "-"
-                    }}
+                    {{ formatExecTime(row) }}
                   </td>
                   <td>{{ row.aprvUseYn === "Y" ? "사용" : "미사용" }}</td>
-                  <td>{{ row.aprvStepCnt ?? "-" }}</td>
-                  <td>{{ row.hrFinalAprvYn === "Y" ? "예" : "아니오" }}</td>
                   <td>{{ row.evidenceYn === "Y" ? "사용" : "미사용" }}</td>
                   <td>{{ row.leaveDesc || "-" }}</td>
                 </tr>
@@ -296,6 +290,7 @@ const { colWidths, onResize } = useColumnResize({
   leaveNo: 110,
   leaveNm: 100,
   leaveTypeNm: 110,
+  grantType: 90,
   paidTypeNm: 90,
   leaveNatureTypeNm: 90,
   leaveDays: 110,
@@ -305,8 +300,6 @@ const { colWidths, onResize } = useColumnResize({
   grantBaseTypeNm: 110,
   grantOffsetMonth: 80,
   aprvUseYn: 80,
-  aprvStepCnt: 80,
-  hrFinalAprvYn: 90,
   evidenceYn: 80,
   leaveDesc: 120,
 });
@@ -322,6 +315,17 @@ const fnButtonControll = () => {
   localButtons.value.delete = "N";
   localButtons.value.excel = "N";
   localButtons.value.save = "N";
+};
+
+// 실행시점 컬럼 포맷
+// grantBaseType='03'(부여일지정) → MM-DD, 그 외 → n개월
+const formatExecTime = (row) => {
+  if (row?.grantBaseType === "03") {
+    const v = String(row?.grantAssignMmdd || "").replace(/\D/g, "");
+    if (v.length >= 4) return `${v.slice(0, 2)}-${v.slice(2, 4)}`;
+    return "-";
+  }
+  return row?.grantOffsetMonth != null ? row.grantOffsetMonth + "개월" : "-";
 };
 
 const fnGetSystinfoList = async () => {

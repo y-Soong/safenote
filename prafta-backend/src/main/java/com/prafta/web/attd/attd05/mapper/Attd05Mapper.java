@@ -36,6 +36,9 @@ public interface Attd05Mapper {
 	List<SchTypeUseYnResult> selectSchTypeUseYnList(SchListQuery query);
 
 	List<LeaveTypeResult> selectLeaveTypeList(LeaveTypeListQuery query);
+
+	/** 법정 휴가(LEAVE_NATURE_TYPE='01') 연차코드 목록 — 저장 시 직접 차감 대상 판별용 (prafta-021). */
+	List<String> selectLegalLeaveCds(@org.apache.ibatis.annotations.Param("cmpnyCd") String cmpnyCd);
 	
 	void saveUserWorkPlans(SchTypeCommand command);
 	

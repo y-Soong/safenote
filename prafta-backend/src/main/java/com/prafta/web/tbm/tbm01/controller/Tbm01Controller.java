@@ -15,17 +15,20 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
 import com.prafta.common.security.JwtUtil;
+import com.prafta.web.tbm.tbm01.application.param.TbmEduDetailParam;
 import com.prafta.web.tbm.tbm01.application.param.TbmEduInfoListParam;
 import com.prafta.web.tbm.tbm01.application.param.TbmEduInfoParam;
 import com.prafta.web.tbm.tbm01.application.param.TbmEduItemInfoListParam;
 import com.prafta.web.tbm.tbm01.application.param.TbmEduItemParam;
 import com.prafta.web.tbm.tbm01.application.param.TbmEduMtrlInfoParam;
 //import com.prafta.web.tbm.tbm01.dto.TbmEduItemInfoReq;
+import com.prafta.web.tbm.tbm01.dto.request.TbmEduDetailRequest;
 import com.prafta.web.tbm.tbm01.dto.request.TbmEduInfoListRequest;
 import com.prafta.web.tbm.tbm01.dto.request.TbmEduInfoRequest;
 import com.prafta.web.tbm.tbm01.dto.request.TbmEduItemInfoListRequest;
 import com.prafta.web.tbm.tbm01.dto.request.TbmEduItemRequest;
 import com.prafta.web.tbm.tbm01.dto.request.TbmEduMtrlInfoRequest;
+import com.prafta.web.tbm.tbm01.dto.response.TbmEduDetailResponse;
 import com.prafta.web.tbm.tbm01.dto.response.TbmEduInfoListResponse;
 import com.prafta.web.tbm.tbm01.dto.response.TbmEduItemInfoListResponse;
 import com.prafta.web.tbm.tbm01.service.Tbm01Service;
@@ -52,9 +55,18 @@ public class Tbm01Controller {
 	
 	@GetMapping("/tbm-edu-item-infos")
     public ResponseEntity<?> getTbmEduItemInfo(@ModelAttribute TbmEduItemInfoListRequest request, @RequestHeader(value = "Authorization", required = false) String authorization) {
-		
+
     	TbmEduItemInfoListResponse response = tbm01Service.selectTbmEduItemInfo(TbmEduItemInfoListParam.from(request, jwtUtil.getAllClaimsAsMap(authorization)));
-		
+
+    	return ResponseEntity.status(HttpStatus.OK).body(response);
+    }
+
+	// prafta-033-A: W-03 콘텐츠 상세(묶음+세부항목+사용 TBM 이력)
+	@GetMapping("/tbm-edu-detail")
+    public ResponseEntity<?> getTbmEduDetail(@ModelAttribute TbmEduDetailRequest request, @RequestHeader(value = "Authorization", required = false) String authorization) {
+
+    	TbmEduDetailResponse response = tbm01Service.selectTbmEduDetail(TbmEduDetailParam.from(request, jwtUtil.getAllClaimsAsMap(authorization)));
+
     	return ResponseEntity.status(HttpStatus.OK).body(response);
     }
 	

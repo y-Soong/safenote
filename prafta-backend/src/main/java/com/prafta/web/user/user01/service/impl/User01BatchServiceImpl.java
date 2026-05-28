@@ -6,7 +6,9 @@ import java.util.List;
 import org.springframework.stereotype.Service;
 
 import com.prafta.common.error.common.CommonErrorCode;
+import com.prafta.common.error.user.UserErrorCode;
 import com.prafta.common.exception.ApiException;
+import com.prafta.common.util.AuthRoleUtils;
 import com.prafta.web.user.user01.application.model.UserInfoModel;
 import com.prafta.web.user.user01.application.param.UserInfoParam;
 import com.prafta.web.user.user01.dto.UserBatchUpdateResponse;
@@ -26,6 +28,13 @@ public class User01BatchServiceImpl implements User01BatchService {
 
     @Override
     public UserBatchUpdateResponse updateUserInfoBatch(UserInfoParam param) {
+
+        // prafta-019-B 보안 하드닝: 사용자 정보(직급/권한/소속 포함) 저장은 매니저 권한 필요.
+        // (형제 update-user-credit / update-user-hire-date 와 동일 가드. 회사 스코프는 Param.from에서 토큰 강제)
+        if (!AuthRoleUtils.isManager(param.gvAuthCd())) {
+            log.warn("사용자 정보 저장 권한 부족 - userCd={}, authCd={}", param.gvUserCd(), param.gvAuthCd());
+            throw new ApiException(UserErrorCode.USER_403_001);
+        }
 
         List<UserUpdateFailItem> fails = new ArrayList<>();
         int successCount = 0;

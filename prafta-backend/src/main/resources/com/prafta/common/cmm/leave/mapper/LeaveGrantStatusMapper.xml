@@ -1,0 +1,70 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.prafta.common.cmm.leave.mapper.LeaveGrantStatusMapper">
+
+    <select id="selectGrantById" resultType="com.prafta.common.cmm.leave.vo.LeaveGrantStatusVO">
+    /* LeaveGrantStatusMapper.selectGrantById */
+    SELECT
+          GRANT_ID         AS grantId
+        , CMPNY_CD         AS cmpnyCd
+        , USER_CD          AS userCd
+        , LEAVE_CD         AS leaveCd
+        , STATUS           AS status
+        , EXPIRE_YN        AS expireYn
+        , DEL_YN           AS delYn
+        , GRANT_DAYS       AS grantDays
+        , USED_DAYS        AS usedDays
+        , AVAIL_TO_DATE    AS availToDate
+    FROM TB_USER_LEAVE_GRANT
+    WHERE CMPNY_CD = #{cmpnyCd}
+      AND GRANT_ID = #{grantId}
+    </select>
+
+    <select id="selectUsedDaysSum" resultType="java.math.BigDecimal">
+    /* LeaveGrantStatusMapper.selectUsedDaysSum */
+    SELECT
+        IFNULL(SUM(LEAVE_DAYS), 0)
+    FROM TB_USER_LEAVE_USE
+    WHERE CMPNY_CD = #{cmpnyCd}
+      AND GRANT_ID = #{grantId}
+      AND DEL_YN = 'N'
+    </select>
+
+    <update id="updateStatusWithSync">
+    /* LeaveGrantStatusMapper.updateStatusWithSync */
+    UPDATE TB_USER_LEAVE_GRANT
+       SET STATUS      = #{status}
+         , EXPIRE_YN   = #{expireYn}
+         , DEL_YN      = #{delYn}
+         , EXPIRE_DATE = CASE WHEN #{expireYn} = 'Y' AND EXPIRE_DATE IS NULL THEN NOW() ELSE EXPIRE_DATE END
+         , UPDATE_NO   = #{updateBy}
+         , UPDATE_DATE = NOW()
+     WHERE CMPNY_CD = #{cmpnyCd}
+       AND GRANT_ID = #{grantId}
+       <!-- 보안 가드(plnprafta-018001-001/002): CANCELED 행 부활 차단. 신규 CANCELED 전이는 허용. -->
+       AND (STATUS != 'CANCELED' OR #{status} = 'CANCELED')
+    </update>
+
+    <update id="updateUsedDays">
+    /* LeaveGrantStatusMapper.updateUsedDays */
+    UPDATE TB_USER_LEAVE_GRANT
+       SET USED_DAYS   = #{usedDays}
+         , UPDATE_NO   = #{updateBy}
+         , UPDATE_DATE = NOW()
+     WHERE CMPNY_CD = #{cmpnyCd}
+       AND GRANT_ID = #{grantId}
+    </update>
+
+    <update id="expireOverdueGrants">
+    /* LeaveGrantStatusMapper.expireOverdueGrants */
+    UPDATE TB_USER_LEAVE_GRANT
+       SET STATUS      = 'EXPIRED'
+         , EXPIRE_YN   = 'Y'
+         , EXPIRE_DATE = NOW()
+         , UPDATE_NO   = 'SYSTEM'
+         , UPDATE_DATE = NOW()
+     WHERE STATUS = 'ACTIVE'
+       AND AVAIL_TO_DATE &lt; DATE_FORMAT(NOW(), '%Y%m%d')
+    </update>
+
+</mapper>

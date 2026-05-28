@@ -1,56 +1,29 @@
 // src/api/axios.js (APP)
+// web 프론트(@/api/axios)와 동일한 통신/세션 정책을 사용한다.
+// 차이점(APP 고유): X-Client-Type=APP, gv_deviceId 전송(디바이스 바인딩), 해시 라우터 이동.
 import axios from 'axios'
 import { useLoadingStore } from '@/stores/loadingStore'
 import { useUserStore } from '@/stores/userStore'
 import { $alert } from '@/utils/alertUtil'
+import { resolveBaseURL } from '@/api/baseUrl'
+import { refreshAccessToken, forceLogout } from '@/composables/useAuth'
 
-/**
- * baseURL 결정 규칙
- */
-function resolveBaseURL() {
-  const cfg = (typeof window !== 'undefined' && window.__APP_CONFIG__) || {}
-  if (cfg.API_BASE) {
-    const context = cfg.CONTEXT ?? '/prafta'
-    return `${cfg.API_BASE}${context}`
+// 순환참조 방지: router는 지연 import (router/index.js가 본 모듈을 import 하므로)
+let routerRef
+const getRouter = async () => {
+  if (!routerRef) {
+    const mod = await import('@/router/index.js')
+    routerRef = mod.default
   }
-
-  if (typeof window !== 'undefined' && window.location?.protocol === 'file:') {
-    const env = (typeof process !== 'undefined' && process.env) || {}
-    const apiBase = env.VUE_APP_FILE_API_BASE || 'http://172.30.1.4:8080'
-    const context = env.VUE_APP_API_CONTEXT || '/prafta'
-    return `${apiBase}${context}`
-  }
-
-  return '/prafta'
+  return routerRef
 }
 
 /**
- * 클라이언트 IP 주소를 가져옵니다 (외부 API 사용, sessionStorage 캐싱)
- */
-async function getClientIP() {
-  const cachedIP = sessionStorage.getItem('clientIP')
-  if (cachedIP) return cachedIP
-
-  try {
-    const response = await axios.get('https://api.ipify.org?format=json', {
-      timeout: 3000,
-    })
-    const ip = response.data?.ip
-    if (ip) {
-      sessionStorage.setItem('clientIP', ip)
-      return ip
-    }
-  } catch (error) {
-    console.warn('[AXIOS] Failed to get client IP:', error.message)
-  }
-  return null
-}
-
-/**
- * Device ID 가져오기
+ * Device ID 가져오기 (APP 고유 — localStorage에 영속, 로그아웃에도 유지).
+ * 백엔드 인증/리프레시/로그아웃 흐름이 gv_deviceId를 사용한다.
  */
 function getDeviceId() {
-  if (typeof window === 'undefined') return null
+  if (typeof window === 'undefined') return ''
 
   const STORAGE_KEY = 'gv_deviceId'
   let deviceId = localStorage.getItem(STORAGE_KEY)
@@ -70,91 +43,56 @@ function getDeviceId() {
   return deviceId
 }
 
-// ✅ refresh 전용(인터셉터 없는) 인스턴스
-const plain = axios.create({
-  baseURL: resolveBaseURL(),
-  timeout: 10000,
-})
-
 const api = axios.create({
   baseURL: resolveBaseURL(),
   timeout: 10000,
 })
 
-// ------------------------------
-// Refresh control (401 handling)
-// ------------------------------
-let isRefreshing = false
-let refreshQueue = []
-
-function resolveQueue(error, newToken = null) {
-  refreshQueue.forEach(({ resolve, reject }) => {
-    if (error) reject(error)
-    else resolve(newToken)
-  })
-  refreshQueue = []
+/**
+ * 401 응답이 토큰 자체의 문제로 발생한 것인지 판단.
+ * - 서버가 errorCode를 반환했다면 AUTH_* 또는 COMMON_400_600만 토큰 에러로 본다.
+ * - errorCode가 없으면 보수적으로 토큰 에러로 간주한다 (기존 동작 유지).
+ */
+function isTokenError(errorCode) {
+  return (
+    !errorCode || errorCode === 'COMMON_400_600' || String(errorCode).startsWith('AUTH_')
+  )
 }
 
-async function requestRefresh() {
-  const refreshToken = localStorage.getItem('refreshToken')
-  if (!refreshToken) throw new Error('NO_REFRESH_TOKEN')
-
-  console.log(refreshToken)
-
-  // ⚠️ 실제 서버 경로에 맞춰 필요하면 변경
-  const res = await plain.post('/comApi/auth/refresh', { refreshToken })
-
-  const newToken = res.data?.token
-  if (!newToken) throw new Error('NO_TOKEN_IN_REFRESH_RESPONSE')
-  return newToken
-}
-
-function hardLogout(message) {
+/** 강제 로그아웃 + 로그인 페이지 이동 (인터셉터 내부에서 일관 사용). */
+async function forceLogoutAndRedirect(userStore) {
+  await forceLogout()
   try {
-    if (message) $alert(message)
-  } catch (err) {
-    console.error('[AXIOS] error log :', err)
-  }
-
-  sessionStorage.clear()
-  localStorage.removeItem('refreshToken')
-
-  try {
-    const userStore = useUserStore()
     userStore.logout()
-  } catch (err) {
-    console.error('[AXIOS] error log :', err)
+  } catch (e) {
+    // store 미초기화 등은 무시
+    console.warn('[AXIOS] store logout skip:', e?.message)
   }
-
-  // ✅ APP(해시 라우터)라 router import 없이도 강제 이동 가능
-  // 로그인 경로가 "/" 이므로 "#/" 로 보냄
-  if (typeof window !== 'undefined') {
-    window.location.hash = '#/'
-  }
+  // APP은 해시 라우터 → push('/') 는 '#/' 로 이동
+  ;(await getRouter()).push('/')
 }
 
 // 요청 인터셉터
+// - 정책 §11.1에 따라 휴대폰(gv_mblNo) / 이메일(gv_email)은 요청 파라미터에 포함하지 않는다.
+// - 외부 IP 조회(ipify.org) 호출은 제거되었다. 클라이언트 IP는 백엔드가 HttpServletRequest에서 추출한다.
 api.interceptors.request.use(
   async (config) => {
     const loadingStore = useLoadingStore()
     loadingStore.startLoading()
 
-    const clientIP = await getClientIP()
-    const deviceId = getDeviceId()
-
     const userInfo = {
       gv_cmpnyCd: sessionStorage.getItem('gv_cmpnyCd'),
+      gv_userCd: sessionStorage.getItem('gv_userCd'),
       gv_userId: sessionStorage.getItem('gv_userId'),
       gv_userNm: sessionStorage.getItem('gv_userNm'),
       gv_siteCd: sessionStorage.getItem('gv_siteCd'),
       gv_siteNo: sessionStorage.getItem('gv_siteNo'),
       gv_siteNm: sessionStorage.getItem('gv_siteNm'),
+      gv_nodeCd: sessionStorage.getItem('gv_nodeCd'),
+      gv_nodeNm: sessionStorage.getItem('gv_nodeNm'),
       gv_authCd: sessionStorage.getItem('gv_authCd'),
-      gv_mblNo: sessionStorage.getItem('gv_mblNo'),
-      gv_email: sessionStorage.getItem('gv_email'),
-      gv_clientType: 'APP', // ✅ APP로 고정
-      gv_clientIP: clientIP,
-      gv_deviceId: deviceId,
+      gv_authLevel: sessionStorage.getItem('gv_authLevel'),
+      gv_deviceId: getDeviceId(), // APP 고유
     }
 
     const method = (config.method || 'get').toLowerCase()
@@ -177,14 +115,15 @@ api.interceptors.request.use(
       }
     }
 
-    // ✅ 헤더
+    // 토큰은 sessionStorage 기준
     config.headers = config.headers || {}
-    config.headers['X-Client-Type'] = 'APP' // ✅ 서버가 clientType 정책 쓰는 경우 중요
-
     const token = sessionStorage.getItem('token')
     if (token) {
       config.headers.Authorization = `Bearer ${token}`
     }
+
+    // clientType 헤더는 "항상" 붙인다 (백엔드 정책 통일). APP은 APP 고정.
+    config.headers['X-Client-Type'] = 'APP'
 
     if (typeof window !== 'undefined' && window.location?.protocol === 'file:') {
       console.debug('[AXIOS file://] =>', config.method?.toUpperCase(), config.baseURL, config.url)
@@ -219,61 +158,58 @@ api.interceptors.response.use(
       console.error('[AXIOS] error log :', err)
     }
 
+    const userStore = useUserStore()
     const status = error?.response?.status
-    const msg = error?.response?.data?.message
     const originalRequest = error?.config
+    const errorCode = error?.response?.data?.errorCode
 
-    // ✅ 백엔드가 404로 "유효하지 않은 토큰"을 주는 경우도 인증오류로 취급
-    const isAuthError =
-      status === 401 ||
-      (status === 404 && msg === '유효하지 않은 토큰입니다.') ||
-      (status === 401 && msg === '유효하지 않은 토큰입니다.')
+    // COMMON_400_003 → 세션 만료 등 서버가 명시적으로 로그아웃 요구
+    if (errorCode === 'COMMON_400_003') {
+      await forceLogoutAndRedirect(userStore)
+      return Promise.reject(error)
+    }
 
-    if (isAuthError && originalRequest && !originalRequest._retry) {
+    const tokenError = isTokenError(errorCode)
+
+    // 재시도(_retry) 후에도 401이면 토큰 자체가 무효 → 강제 로그아웃
+    if (status === 401 && tokenError && originalRequest?._retry) {
+      await forceLogoutAndRedirect(userStore)
+      return Promise.reject(error)
+    }
+
+    // 401 → refresh → retry
+    if (status === 401 && tokenError && originalRequest && !originalRequest._retry) {
       originalRequest._retry = true
 
-      // refresh 요청 자체에서 실패하면 루프 방지
-      if (String(originalRequest.url || '').includes('/auth/refresh')) {
-        hardLogout('세션이 만료되었습니다. 다시 로그인해주세요.')
+      // refresh 자체에서 401이 다시 나면 즉시 로그아웃 (루프 방지)
+      const reqUrl = String(originalRequest.url || '')
+      if (reqUrl.includes('/auth/refresh') || reqUrl.includes('/comApi/auth/refresh')) {
+        await forceLogoutAndRedirect(userStore)
         return Promise.reject(error)
       }
 
-      if (isRefreshing) {
-        return new Promise((resolve, reject) => {
-          refreshQueue.push({
-            resolve: (newToken) => {
-              originalRequest.headers = originalRequest.headers || {}
-              originalRequest.headers.Authorization = `Bearer ${newToken}`
-              resolve(api(originalRequest))
-            },
-            reject,
-          })
-        })
-      }
-
-      isRefreshing = true
-
       try {
-        const newToken = await requestRefresh()
+        // useAuth의 단일 잠금/큐를 통해 refresh
+        const newToken = await refreshAccessToken()
 
-        sessionStorage.setItem('token', newToken)
         api.defaults.headers.common.Authorization = `Bearer ${newToken}`
-
-        resolveQueue(null, newToken)
 
         originalRequest.headers = originalRequest.headers || {}
         originalRequest.headers.Authorization = `Bearer ${newToken}`
         return api(originalRequest)
       } catch (e) {
-        resolveQueue(e, null)
-        hardLogout('세션이 만료되었습니다. 다시 로그인해주세요.')
+        await forceLogoutAndRedirect(userStore)
         return Promise.reject(e)
-      } finally {
-        isRefreshing = false
       }
     }
 
-    // 그 외 에러
+    // 기존 호환: 404 + "유효하지 않은 토큰입니다." 메시지
+    if (status === 404 && error?.response?.data?.message === '유효하지 않은 토큰입니다.') {
+      $alert(error.response.data.message)
+      await forceLogoutAndRedirect(userStore)
+      return new Promise(() => {})
+    }
+
     console.error(
       '[AXIOS][ERROR]',
       status,

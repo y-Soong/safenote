@@ -2,6 +2,7 @@
   <Teleport to="body">
     <Transition name="fade">
       <div
+        v-show="true"
         ref="overlayRef"
         class="modal-overlay prafta-modal-popup"
         tabindex="-1"
@@ -25,10 +26,7 @@
             ></textarea>
 
             <div class="reason-modal__meta">
-              <span
-                v-if="required && !isValid"
-                class="reason-modal__hint"
-              >
+              <span v-if="required && !isValid" class="reason-modal__hint">
                 사유를 입력해 주세요.
               </span>
               <span class="reason-modal__count">

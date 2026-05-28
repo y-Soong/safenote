@@ -12,6 +12,7 @@ public record DailyAttdDetailsQuery(
     , String workYmd
     , String nodeCd
     , String gvCmpnyCd
+    , String gvUserCd
 ) {
     public static DailyAttdDetailsQuery from(DailyAttdDetailsParam param) {
 
@@ -26,6 +27,7 @@ public record DailyAttdDetailsQuery(
             , param.workYmd()
             , param.nodeCd()
             , param.gvCmpnyCd()
+            , param.gvUserCd()
         );
     }
 }

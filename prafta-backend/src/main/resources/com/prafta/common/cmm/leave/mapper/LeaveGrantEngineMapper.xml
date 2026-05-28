@@ -1,0 +1,168 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.prafta.common.cmm.leave.mapper.LeaveGrantEngineMapper">
+
+    <!--
+      연차 부여 엔진(prafta-022 작업 C) 전용 SQL.
+      정책서 §8.5.6(입사일 변경 처리 매트릭스) / §8.5.8(멱등·기부여보호).
+      모든 쿼리는 CMPNY_CD 스코프 격리. leading comma, #{} 바인딩, SELECT * 금지.
+    -->
+
+    <!-- ============ 최신 미적용 입사일 변경 이력의 처리방식 ============
+      APPLIED_YN='N' 행 중 INSERT_DATE 최신 1건. 동률 시 HIST_ID 내림차순 tie-break.
+      미적용 이력이 없으면 결과 없음(null) → 호출부에서 KEEP_AND_APPLY_NEW 동치 처리. -->
+    <select id="selectLatestUnappliedHandling" resultType="java.util.HashMap">
+    /* LeaveGrantEngineMapper.selectLatestUnappliedHandling */
+    SELECT
+          H.HIST_ID       AS HIST_ID
+        , H.HANDLING_TYPE AS HANDLING_TYPE
+      FROM TB_USER_HIRE_DATE_HISTORY H
+     WHERE H.CMPNY_CD   = #{cmpnyCd}
+       AND H.USER_CD    = #{userCd}
+       AND H.APPLIED_YN = 'N'
+     ORDER BY H.INSERT_DATE DESC, H.HIST_ID DESC
+     LIMIT 1
+    </select>
+
+    <!-- ============ RESET_ALL 대상: 활성 법정 부여 GRANT_ID ============
+      STATUTORY_% prefix + STATUS IN ('ACTIVE','EXHAUSTED') + DEL_YN='N'.
+      CANCELED/EXPIRED는 재취소 대상 아님(§8.5.8). -->
+    <select id="selectActiveStatutoryGrantIds" resultType="string">
+    /* LeaveGrantEngineMapper.selectActiveStatutoryGrantIds */
+    SELECT
+          G.GRANT_ID
+      FROM TB_USER_LEAVE_GRANT G
+     WHERE G.CMPNY_CD = #{cmpnyCd}
+       AND G.USER_CD  = #{userCd}
+       AND G.DEL_YN   = 'N'
+       AND G.GRANT_TYPE LIKE 'STATUTORY\_%'
+       AND G.STATUS IN ('ACTIVE', 'EXHAUSTED')
+     ORDER BY G.GRANT_ID ASC
+    </select>
+
+    <!-- ============ 부여 성공 후: 미적용 이력 일괄 적용 마킹 ============
+      해당 직원 APPLIED_YN='N' 전부 → 'Y' + APPLIED_DATE=NOW() + APPLIED_BY=수행자. -->
+    <update id="markHireDateHistoryApplied">
+    /* LeaveGrantEngineMapper.markHireDateHistoryApplied */
+    UPDATE TB_USER_HIRE_DATE_HISTORY
+       SET APPLIED_YN   = 'Y'
+         , APPLIED_DATE = NOW()
+         , APPLIED_BY   = #{appliedBy}
+     WHERE CMPNY_CD   = #{cmpnyCd}
+       AND USER_CD    = #{userCd}
+       AND APPLIED_YN = 'N'
+    </update>
+
+    <!-- 자동 정기부여(prafta-023 E) 대상 회사: 활성 연차정책(USE_YN='Y') 보유 회사. 정책 없는 회사는 비대상. -->
+    <select id="selectAutoGrantCompanyCds" resultType="string">
+    /* LeaveGrantEngineMapper.selectAutoGrantCompanyCds */
+    SELECT DISTINCT P.CMPNY_CD
+      FROM TB_LEAVE_POLICY P
+     WHERE P.USE_YN = 'Y'
+     ORDER BY P.CMPNY_CD
+    </select>
+
+    <!-- 자동 정기부여(prafta-023 E) 대상 직원: 활성(USE_YN='Y', 미탈퇴, ACCOUNT_STATUS='01') + 입사일 보유 -->
+    <select id="selectActiveUserCdsForAutoGrant" resultType="string">
+    /* LeaveGrantEngineMapper.selectActiveUserCdsForAutoGrant */
+    SELECT U.USER_CD
+      FROM TB_USER U
+     WHERE U.CMPNY_CD = #{cmpnyCd}
+       AND U.USE_YN = 'Y'
+       AND U.WITHDRAWAL_DATE IS NULL
+       AND U.ACCOUNT_STATUS = '01'
+       AND U.HIRE_DATE IS NOT NULL
+       AND U.HIRE_DATE != ''
+     ORDER BY U.USER_CD
+    </select>
+
+    <!-- ============================================================
+      입사일 변경 수동 연차 조정 (prafta-032 D3/D4/D5) — 신규 SQL
+      A안 핵심: 기존 잔액/차감 집계 SQL을 건드리지 않고 회수 전용 SQL을 별도 추가한다.
+      모든 쿼리 CMPNY_CD 스코프 격리. leading comma, #{} 바인딩, SELECT * 금지.
+      ============================================================ -->
+
+    <!-- ============ 회수 가능량(D3): ACTIVE 법정 잔여 합계 = SUM(GRANT_DAYS - USED_DAYS) ============
+      USED_DAYS는 휴가 신청(신청 대기 포함) 시점에 CONFIRMED 예약으로 즉시 반영되므로(leaveflow),
+      잔여 합계는 "이미 사용 + 사용 예정"을 자연 제외한다(D3). 행 없으면 0. -->
+    <select id="selectRecallableStatutoryTotal" resultType="java.math.BigDecimal">
+    /* LeaveGrantEngineMapper.selectRecallableStatutoryTotal */
+    SELECT COALESCE(SUM(G.GRANT_DAYS - G.USED_DAYS), 0)
+      FROM TB_USER_LEAVE_GRANT G
+     WHERE G.CMPNY_CD = #{cmpnyCd}
+       AND G.USER_CD  = #{userCd}
+       AND G.DEL_YN   = 'N'
+       AND G.STATUS   = 'ACTIVE'
+       AND G.GRANT_TYPE LIKE 'STATUTORY\_%'
+    </select>
+
+    <!-- ============ 현재 법정 부여량(D2): ACTIVE 법정 GRANT_DAYS 합 ============
+      차액 = 목표 − 이 값. HireDateEditPop ② "법정 부여" 기준과 동일. 행 없으면 0. -->
+    <select id="selectActiveStatutoryGrantedTotal" resultType="java.math.BigDecimal">
+    /* LeaveGrantEngineMapper.selectActiveStatutoryGrantedTotal */
+    SELECT COALESCE(SUM(G.GRANT_DAYS), 0)
+      FROM TB_USER_LEAVE_GRANT G
+     WHERE G.CMPNY_CD = #{cmpnyCd}
+       AND G.USER_CD  = #{userCd}
+       AND G.DEL_YN   = 'N'
+       AND G.STATUS   = 'ACTIVE'
+       AND G.GRANT_TYPE LIKE 'STATUTORY\_%'
+    </select>
+
+    <!-- ============ 회수 대상(D5): ACTIVE 법정 부여행 — 회수 우선순위 정렬 ============
+      ① AVAIL_TO_DATE ASC(소멸 임박 먼저) → ② GRANT_DATE DESC(최근 부여 먼저) → ③ GRANT_ID DESC(최신 데이터 먼저). -->
+    <select id="selectActiveStatutoryGrantsForRecall" resultType="com.prafta.common.cmm.leave.vo.LeaveGrantRecallRowVO">
+    /* LeaveGrantEngineMapper.selectActiveStatutoryGrantsForRecall */
+    SELECT
+          G.GRANT_ID      AS grantId
+        , G.GRANT_TYPE    AS grantType
+        , G.GRANT_DAYS    AS grantDays
+        , G.USED_DAYS     AS usedDays
+        , G.GRANT_DATE    AS grantDate
+        , G.AVAIL_TO_DATE AS availToDate
+      FROM TB_USER_LEAVE_GRANT G
+     WHERE G.CMPNY_CD = #{cmpnyCd}
+       AND G.USER_CD  = #{userCd}
+       AND G.DEL_YN   = 'N'
+       AND G.STATUS   = 'ACTIVE'
+       AND G.GRANT_TYPE LIKE 'STATUTORY\_%'
+     ORDER BY G.AVAIL_TO_DATE ASC, G.GRANT_DATE DESC, G.GRANT_ID DESC
+    </select>
+
+    <!-- ============ 회수(전체, D5): 잔여 전체 회수 + USED_DAYS=0 → STATUS='CANCELED' ============
+      prafta-031 회수 패턴: CANCEL_REASON/CANCEL_DATE/CANCEL_BY 기록. USED_DAYS 불변(사용분 보존).
+      GRANT_REASON은 회수 태깅으로 갱신(출처 식별). WHERE에 STATUS='ACTIVE'+DEL_YN='N' 못박아 경합 재확인. -->
+    <update id="cancelStatutoryGrantForHireChange">
+    /* LeaveGrantEngineMapper.cancelStatutoryGrantForHireChange */
+    UPDATE TB_USER_LEAVE_GRANT
+       SET STATUS        = 'CANCELED'
+         , CANCEL_REASON = #{reason}
+         , CANCEL_DATE   = NOW()
+         , CANCEL_BY     = #{operatorUserCd}
+         , GRANT_REASON  = #{grantReason}
+         , UPDATE_NO     = #{operatorUserCd}
+         , UPDATE_DATE   = NOW()
+     WHERE CMPNY_CD = #{cmpnyCd}
+       AND GRANT_ID = #{grantId}
+       AND STATUS   = 'ACTIVE'
+       AND DEL_YN   = 'N'
+    </update>
+
+    <!-- ============ 회수(부분, D5): GRANT_DAYS 직접 차감 ============
+      USED_DAYS / tb_user_leave_use FK 불변. GRANT_REASON 회수 태깅 갱신.
+      WHERE에 잔여(GRANT_DAYS-USED_DAYS) >= 차감량 못박아 사용분 침범/경합 차단. -->
+    <update id="reduceStatutoryGrantDaysForHireChange">
+    /* LeaveGrantEngineMapper.reduceStatutoryGrantDaysForHireChange */
+    UPDATE TB_USER_LEAVE_GRANT
+       SET GRANT_DAYS   = GRANT_DAYS - #{reduceDays}
+         , GRANT_REASON = #{grantReason}
+         , UPDATE_NO    = #{operatorUserCd}
+         , UPDATE_DATE  = NOW()
+     WHERE CMPNY_CD = #{cmpnyCd}
+       AND GRANT_ID = #{grantId}
+       AND STATUS   = 'ACTIVE'
+       AND DEL_YN   = 'N'
+       AND (GRANT_DAYS - USED_DAYS) >= #{reduceDays}
+    </update>
+
+</mapper>

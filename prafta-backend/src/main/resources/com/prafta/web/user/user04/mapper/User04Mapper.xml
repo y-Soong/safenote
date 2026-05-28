@@ -1,0 +1,182 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.prafta.web.user.user04.mapper.User04Mapper">
+
+    <!--
+      결재자 후보: 동일 회사/사업장 활성 사용자(본인·시스템계정 제외), 직급 순서(SORT_IDX) 포함.
+      직급 코드그룹 COM007(prafta-019-B) 상세를 LEFT JOIN하여 순서를 얻는다.
+    -->
+    <select id="selectApprovalCandidates" resultType="com.prafta.web.user.user04.result.ApprovalCandidateResult">
+    /* User04Mapper.selectApprovalCandidates */
+    SELECT
+          U.USER_CD                                                          AS userCd
+        , U.USER_ID                                                          AS userId
+        , U.USER_NM                                                          AS userNm
+        , U.RANK_CD                                                          AS rankCd
+        , FNC_CMM_INFO_SRCH(U.CMPNY_CD, 'BAIM_VAL', U.RANK_CD, 'COM007')      AS rankNm
+        , D.SORT_IDX                                                         AS rankSortIdx
+        , FNC_CMM_INFO_SRCH(U.CMPNY_CD, 'NODE', U.SITE_CD, U.NODE_CD)         AS nodeNm
+      FROM TB_USER U
+      LEFT JOIN TB_BAIM_VAL_D D
+        ON D.CMPNY_CD     = U.CMPNY_CD
+       AND D.BAIM_VAL_CD  = 'COM007'
+       AND D.BAIM_VAL_D_CD = U.RANK_CD
+       AND D.USE_YN       = 'Y'
+     WHERE U.CMPNY_CD = #{cmpnyCd}
+       AND U.SITE_CD  = #{siteCd}
+       AND U.USE_YN   = 'Y'
+       AND U.WITHDRAWAL_DATE IS NULL
+       AND U.ACCOUNT_STATUS  = '01'
+       AND U.USER_CD != #{excludeUserCd}
+       AND U.AUTH_CD != 'system'
+       <if test="nodeCd != null and nodeCd != ''">
+         AND U.NODE_CD = #{nodeCd}
+       </if>
+       <if test="userNm != null and userNm != ''">
+         AND U.USER_NM LIKE CONCAT('%', #{userNm}, '%')
+       </if>
+     ORDER BY (D.SORT_IDX IS NULL), D.SORT_IDX ASC, U.USER_NM ASC
+    </select>
+
+    <select id="selectUserRankSortIdx" resultType="java.lang.Integer">
+    /* User04Mapper.selectUserRankSortIdx */
+    SELECT D.SORT_IDX
+      FROM TB_USER U
+      LEFT JOIN TB_BAIM_VAL_D D
+        ON D.CMPNY_CD     = U.CMPNY_CD
+       AND D.BAIM_VAL_CD  = 'COM007'
+       AND D.BAIM_VAL_D_CD = U.RANK_CD
+       AND D.USE_YN       = 'Y'
+     WHERE U.CMPNY_CD = #{cmpnyCd}
+       AND U.USER_CD  = #{userCd}
+     LIMIT 1
+    </select>
+
+    <!-- ============ 결재라인 프리셋 CRUD (prafta-020) ============ -->
+
+    <select id="selectPresetMasters" resultType="com.prafta.web.user.user04.result.AprvPresetVO">
+    /* User04Mapper.selectPresetMasters */
+    SELECT
+          P.PRESET_ID   AS presetId
+        , P.PRESET_NM   AS presetNm
+        , P.DEFAULT_YN  AS defaultYn
+      FROM TB_APRV_LINE_PRESET P
+     WHERE P.CMPNY_CD = #{cmpnyCd}
+       AND P.USER_CD  = #{userCd}
+       AND P.USE_YN   = 'Y'
+     ORDER BY (P.DEFAULT_YN = 'Y') DESC, P.PRESET_NM ASC, P.PRESET_ID ASC
+    </select>
+
+    <select id="selectPresetStepsByUser" resultType="com.prafta.web.user.user04.result.AprvPresetStepVO">
+    /* User04Mapper.selectPresetStepsByUser */
+    SELECT
+          D.PRESET_ID         AS presetId
+        , D.STEP_NO           AS stepNo
+        , D.APPROVER_USER_CD  AS approverUserCd
+        , U.USER_NM           AS userNm
+        , U.USER_ID           AS userId
+      FROM TB_APRV_LINE_PRESET P
+      INNER JOIN TB_APRV_LINE_PRESET_D D
+        ON D.CMPNY_CD = P.CMPNY_CD
+       AND D.PRESET_ID = P.PRESET_ID
+      LEFT JOIN TB_USER U
+        ON U.CMPNY_CD = D.CMPNY_CD
+       AND U.USER_CD  = D.APPROVER_USER_CD
+     WHERE P.CMPNY_CD = #{cmpnyCd}
+       AND P.USER_CD  = #{userCd}
+       AND P.USE_YN   = 'Y'
+     ORDER BY D.PRESET_ID ASC, D.STEP_NO ASC
+    </select>
+
+    <select id="selectPresetOwner" resultType="string">
+    /* User04Mapper.selectPresetOwner */
+    SELECT P.USER_CD
+      FROM TB_APRV_LINE_PRESET P
+     WHERE P.CMPNY_CD = #{cmpnyCd}
+       AND P.PRESET_ID = #{presetId}
+       AND P.USE_YN = 'Y'
+     LIMIT 1
+    </select>
+
+    <select id="selectNextPresetId" resultType="string">
+    /* User04Mapper.selectNextPresetId */
+    SELECT CONCAT('P', DATE_FORMAT(NOW(), '%Y%m%d'), FNC_CMM_SEQ_NEXTVAL(#{cmpnyCd}, 'APRV_PRESET_ID'))
+      FROM DUAL
+    </select>
+
+    <select id="countActiveCandidate" resultType="int">
+    /* User04Mapper.countActiveCandidate */
+    SELECT COUNT(*)
+      FROM TB_USER U
+     WHERE U.CMPNY_CD = #{cmpnyCd}
+       AND U.SITE_CD  = #{siteCd}
+       AND U.USER_CD  = #{userCd}
+       AND U.USE_YN   = 'Y'
+       AND U.WITHDRAWAL_DATE IS NULL
+       AND U.ACCOUNT_STATUS  = '01'
+       AND U.AUTH_CD != 'system'
+    </select>
+
+    <insert id="insertPresetMaster">
+    /* User04Mapper.insertPresetMaster */
+    INSERT INTO TB_APRV_LINE_PRESET (
+          CMPNY_CD, PRESET_ID, USER_CD, PRESET_NM, DEFAULT_YN, USE_YN, INSERT_NO, INSERT_DATE
+    ) VALUES (
+          #{cmpnyCd}, #{presetId}, #{userCd}, #{presetNm}, #{defaultYn}, 'Y', #{insertNo}, NOW()
+    )
+    </insert>
+
+    <update id="updatePresetMaster">
+    /* User04Mapper.updatePresetMaster */
+    UPDATE TB_APRV_LINE_PRESET
+       SET PRESET_NM   = #{presetNm}
+         , DEFAULT_YN  = #{defaultYn}
+         , UPDATE_NO   = #{updateNo}
+         , UPDATE_DATE = NOW()
+     WHERE CMPNY_CD  = #{cmpnyCd}
+       AND PRESET_ID = #{presetId}
+    </update>
+
+    <insert id="insertPresetStep">
+    /* User04Mapper.insertPresetStep */
+    INSERT INTO TB_APRV_LINE_PRESET_D (
+          CMPNY_CD, PRESET_ID, STEP_NO, APPROVER_USER_CD, INSERT_NO, INSERT_DATE
+    ) VALUES (
+          #{cmpnyCd}, #{presetId}, #{stepNo}, #{approverUserCd}, #{insertNo}, NOW()
+    )
+    </insert>
+
+    <delete id="deletePresetSteps">
+    /* User04Mapper.deletePresetSteps */
+    DELETE FROM TB_APRV_LINE_PRESET_D
+     WHERE CMPNY_CD = #{cmpnyCd}
+       AND PRESET_ID = #{presetId}
+    </delete>
+
+    <delete id="deletePresetMaster">
+    /* User04Mapper.deletePresetMaster */
+    DELETE FROM TB_APRV_LINE_PRESET
+     WHERE CMPNY_CD = #{cmpnyCd}
+       AND PRESET_ID = #{presetId}
+    </delete>
+
+    <update id="clearDefaultForUser">
+    /* User04Mapper.clearDefaultForUser */
+    UPDATE TB_APRV_LINE_PRESET
+       SET DEFAULT_YN = 'N'
+     WHERE CMPNY_CD = #{cmpnyCd}
+       AND USER_CD  = #{userCd}
+       AND DEFAULT_YN = 'Y'
+    </update>
+
+    <update id="setDefault">
+    /* User04Mapper.setDefault */
+    UPDATE TB_APRV_LINE_PRESET
+       SET DEFAULT_YN  = 'Y'
+         , UPDATE_NO   = #{updateNo}
+         , UPDATE_DATE = NOW()
+     WHERE CMPNY_CD  = #{cmpnyCd}
+       AND PRESET_ID = #{presetId}
+    </update>
+
+</mapper>

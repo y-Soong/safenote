@@ -1,0 +1,705 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.prafta.common.cmm.leave.mapper.LeaveDashboardMapper">
+
+    <!--
+      활성 직원 정의(전 쿼리 공통): USE_YN='Y' AND WITHDRAWAL_DATE IS NULL AND ACCOUNT_STATUS='01'.
+      법정/법정외 구분: tb_user_leave_grant.GRANT_TYPE prefix (STATUTORY_% / MANUAL_%).
+      활성 부여 정의: STATUS='ACTIVE' AND DEL_YN='N'.
+    -->
+
+    <!-- ============ 메트릭 4종 단건 집계 ============ -->
+    <select id="selectDashboardMetrics" resultType="com.prafta.common.cmm.leave.vo.LeaveDashboardMetricsVO">
+    /* LeaveDashboardMapper.selectDashboardMetrics */
+    SELECT
+          (
+            SELECT COUNT(*)
+              FROM TB_USER U
+             WHERE U.CMPNY_CD = #{cmpnyCd}
+               AND U.USE_YN = 'Y'
+               AND U.WITHDRAWAL_DATE IS NULL
+               AND U.ACCOUNT_STATUS = '01'
+          ) AS totalEmployees
+        , IFNULL((
+            SELECT SUM(G.GRANT_DAYS)
+              FROM TB_USER_LEAVE_GRANT G
+              JOIN TB_USER U
+                ON U.CMPNY_CD = G.CMPNY_CD
+               AND U.USER_CD  = G.USER_CD
+               AND U.USE_YN = 'Y'
+               AND U.WITHDRAWAL_DATE IS NULL
+               AND U.ACCOUNT_STATUS = '01'
+             WHERE G.CMPNY_CD = #{cmpnyCd}
+               AND G.DEL_YN = 'N'
+               AND G.STATUS = 'ACTIVE'
+          ), 0) AS totalGranted
+        , IFNULL((
+            SELECT SUM(G.USED_DAYS)
+              FROM TB_USER_LEAVE_GRANT G
+              JOIN TB_USER U
+                ON U.CMPNY_CD = G.CMPNY_CD
+               AND U.USER_CD  = G.USER_CD
+               AND U.USE_YN = 'Y'
+               AND U.WITHDRAWAL_DATE IS NULL
+               AND U.ACCOUNT_STATUS = '01'
+             WHERE G.CMPNY_CD = #{cmpnyCd}
+               AND G.DEL_YN = 'N'
+               AND G.STATUS = 'ACTIVE'
+          ), 0) AS totalUsed
+        , (
+            SELECT COUNT(DISTINCT G.USER_CD)
+              FROM TB_USER_LEAVE_GRANT G
+              JOIN TB_USER U
+                ON U.CMPNY_CD = G.CMPNY_CD
+               AND U.USER_CD  = G.USER_CD
+               AND U.USE_YN = 'Y'
+               AND U.WITHDRAWAL_DATE IS NULL
+               AND U.ACCOUNT_STATUS = '01'
+             WHERE G.CMPNY_CD = #{cmpnyCd}
+               AND G.DEL_YN = 'N'
+               AND G.STATUS = 'ACTIVE'
+               AND G.GRANT_DAYS > G.USED_DAYS
+               AND G.AVAIL_TO_DATE BETWEEN DATE_FORMAT(NOW(), '%Y%m%d')
+                                       AND DATE_FORMAT(DATE_ADD(NOW(), INTERVAL 30 DAY), '%Y%m%d')
+          ) AS expiringSoon30
+        , (
+            <!-- 화면 라벨이 "N명"이므로 인원 단위로 집계 (레코드 수 아님). expiringSoon30과 동일 단위. -->
+            SELECT COUNT(DISTINCT G.USER_CD)
+              FROM TB_USER_LEAVE_GRANT G
+              JOIN TB_USER U
+                ON U.CMPNY_CD = G.CMPNY_CD
+               AND U.USER_CD  = G.USER_CD
+               AND U.USE_YN = 'Y'
+               AND U.WITHDRAWAL_DATE IS NULL
+               AND U.ACCOUNT_STATUS = '01'
+             WHERE G.CMPNY_CD = #{cmpnyCd}
+               AND G.DEL_YN = 'N'
+               AND G.GRANT_DATE LIKE CONCAT(DATE_FORMAT(NOW(), '%Y%m'), '%')
+          ) AS newGrantThisMonth
+      FROM DUAL
+    </select>
+
+    <!-- ============ 하위부서 서브트리 CTE (attd08 패턴 차용) ============
+      incSubNodeYn='Y' AND nodeCd가 있을 때만 사용한다.
+      siteCd가 비어 있으면(전체 사업장) 부모-자식 SITE_CD 동일 조건으로만 트리를 전개한다.
+      사용처(selectDashboardList/countDashboardList)에서 WITH RECURSIVE 머리로 앞에 붙인다. -->
+    <sql id="nodeTreeCte">
+        WITH RECURSIVE node_tree AS (
+            SELECT
+                  N.CMPNY_CD
+                , N.SITE_CD
+                , N.NODE_CD
+            FROM TB_SITE_NODE N
+            WHERE N.CMPNY_CD = #{cmpnyCd}
+              AND N.NODE_CD  = #{nodeCd}
+            <if test="siteCd != null and siteCd != ''">
+              AND N.SITE_CD = #{siteCd}
+            </if>
+
+            UNION ALL
+
+            SELECT
+                  C.CMPNY_CD
+                , C.SITE_CD
+                , C.NODE_CD
+            FROM TB_SITE_NODE C
+            INNER JOIN node_tree P
+                ON  C.CMPNY_CD       = P.CMPNY_CD
+                AND C.SITE_CD        = P.SITE_CD
+                AND C.PARENT_NODE_CD = P.NODE_CD
+        )
+    </sql>
+
+    <!-- ============ 목록 공통 WHERE 절 ============
+      사업장(SITE_CD)/소속부서(NODE_CD) 필터는 CMPNY_CD 스코프 내에서만 적용된다.
+      - nodeCd 있고 incSubNodeYn='Y' : 서브트리(node_tree) 포함
+      - nodeCd 있고 그 외            : 정확 일치
+      사용자명은 USER_NM LIKE. -->
+    <sql id="dashboardWhere">
+        WHERE U.CMPNY_CD = #{cmpnyCd}
+          AND U.USE_YN = 'Y'
+          AND U.WITHDRAWAL_DATE IS NULL
+          AND U.ACCOUNT_STATUS = '01'
+        <if test="siteCd != null and siteCd != ''">
+          AND U.SITE_CD = #{siteCd}
+        </if>
+        <if test="nodeCd != null and nodeCd != ''">
+          <choose>
+            <when test='"Y".equals(incSubNodeYn)'>
+          AND EXISTS (
+                SELECT 1
+                  FROM node_tree NT
+                 WHERE NT.CMPNY_CD = U.CMPNY_CD
+                   AND NT.SITE_CD  = U.SITE_CD
+                   AND NT.NODE_CD  = U.NODE_CD
+              )
+            </when>
+            <otherwise>
+          AND U.NODE_CD = #{nodeCd}
+            </otherwise>
+          </choose>
+        </if>
+        <if test="userNm != null and userNm != ''">
+          AND U.USER_NM LIKE CONCAT('%', #{userNm}, '%')
+        </if>
+    </sql>
+
+    <!-- ============ 직원 목록 페이징 ============
+      정렬은 고정(USER_NM 오름차순 = 한글 가나다 / 영문 ABC, USER_CD ASC tie-break)이다.
+      USER_NM은 평문 varchar(utf8mb4_unicode_ci) 컬럼이라 콜레이션 기준 정렬이 가나다·ABC와 일치한다
+      (영문 A~Z가 한글 가나다보다 앞에 정렬). 서버 페이징(LIMIT/OFFSET)이므로 전체 페이지에 걸쳐
+      이름순이 유지되려면 정렬은 SQL에서 수행해야 한다.
+      동적 ${} 정렬 미사용(가드레일 4) — 정렬 키는 정적 컬럼명만 사용. -->
+    <select id="selectDashboardList" resultType="com.prafta.common.cmm.leave.vo.LeaveDashboardRowVO">
+    /* LeaveDashboardMapper.selectDashboardList */
+    <if test='nodeCd != null and nodeCd != "" and "Y".equals(incSubNodeYn)'>
+      <include refid="nodeTreeCte" />
+    </if>
+    SELECT
+          U.USER_CD         AS userCd
+        , U.USER_NM         AS userNm
+        , N.NODE_NM         AS deptNm
+        , U.HIRE_DATE       AS hireDate
+        , U.EMPLOYMENT_TYPE AS employmentType
+        , IFNULL((
+              SELECT SUM(C.CREDIT_MONTHS)
+                FROM TB_USER_SERVICE_CREDIT C
+               WHERE C.CMPNY_CD = U.CMPNY_CD
+                 AND C.USER_CD  = U.USER_CD
+                 AND C.USE_YN   = 'Y'
+          ), 0) AS creditMonths
+        , IFNULL((
+              SELECT SUM(G.GRANT_DAYS)
+                FROM TB_USER_LEAVE_GRANT G
+               WHERE G.CMPNY_CD = U.CMPNY_CD
+                 AND G.USER_CD  = U.USER_CD
+                 AND G.DEL_YN   = 'N'
+                 AND G.STATUS   = 'ACTIVE'
+                 AND G.GRANT_TYPE LIKE 'STATUTORY\_%'
+          ), 0) AS legalGranted
+        , IFNULL((
+              SELECT SUM(G.USED_DAYS)
+                FROM TB_USER_LEAVE_GRANT G
+               WHERE G.CMPNY_CD = U.CMPNY_CD
+                 AND G.USER_CD  = U.USER_CD
+                 AND G.DEL_YN   = 'N'
+                 AND G.STATUS   = 'ACTIVE'
+                 AND G.GRANT_TYPE LIKE 'STATUTORY\_%'
+          ), 0) AS legalUsed
+        <!-- 법정 사용예정: 위 USED_DAYS 합계의 부분집합 중 START_DATE가 미도래(오늘 이후)인 CONFIRMED 사용분.
+             USED_DAYS는 GRANT_ID로 연결된 CONFIRMED 사용 합계이므로(LeaveFlowMapper.recomputeGrantUsedDays),
+             동일 활성 부여(STATUS=ACTIVE, STATUTORY_)에 GRANT_ID 조인 후 START_DATE > 오늘 필터로 동일 기준 분리. -->
+        , IFNULL((
+              SELECT SUM(LU.LEAVE_DAYS)
+                FROM TB_USER_LEAVE_USE LU
+                JOIN TB_USER_LEAVE_GRANT G
+                  ON G.CMPNY_CD   = LU.CMPNY_CD
+                 AND G.GRANT_ID   = LU.GRANT_ID
+                 AND G.DEL_YN     = 'N'
+                 AND G.STATUS     = 'ACTIVE'
+                 AND G.GRANT_TYPE LIKE 'STATUTORY\_%'
+               WHERE LU.CMPNY_CD     = U.CMPNY_CD
+                 AND LU.USER_CD      = U.USER_CD
+                 AND LU.LEAVE_STATUS = 'CONFIRMED'
+                 AND LU.DEL_YN       = 'N'
+                 AND LU.START_DATE   <![CDATA[ > ]]> DATE_FORMAT(NOW(), '%Y%m%d')
+          ), 0) AS legalScheduled
+        , IFNULL((
+              SELECT SUM(G.GRANT_DAYS)
+                FROM TB_USER_LEAVE_GRANT G
+               WHERE G.CMPNY_CD = U.CMPNY_CD
+                 AND G.USER_CD  = U.USER_CD
+                 AND G.DEL_YN   = 'N'
+                 AND G.STATUS   = 'ACTIVE'
+                 AND G.GRANT_TYPE LIKE 'MANUAL\_%'
+          ), 0) AS nonLegalGranted
+        , IFNULL((
+              SELECT SUM(G.USED_DAYS)
+                FROM TB_USER_LEAVE_GRANT G
+               WHERE G.CMPNY_CD = U.CMPNY_CD
+                 AND G.USER_CD  = U.USER_CD
+                 AND G.DEL_YN   = 'N'
+                 AND G.STATUS   = 'ACTIVE'
+                 AND G.GRANT_TYPE LIKE 'MANUAL\_%'
+          ), 0) AS nonLegalUsed
+        <!-- 법정외 사용예정: 위와 동일 기준(MANUAL_ 활성 부여 GRANT_ID 조인 + START_DATE 미도래). -->
+        , IFNULL((
+              SELECT SUM(LU.LEAVE_DAYS)
+                FROM TB_USER_LEAVE_USE LU
+                JOIN TB_USER_LEAVE_GRANT G
+                  ON G.CMPNY_CD   = LU.CMPNY_CD
+                 AND G.GRANT_ID   = LU.GRANT_ID
+                 AND G.DEL_YN     = 'N'
+                 AND G.STATUS     = 'ACTIVE'
+                 AND G.GRANT_TYPE LIKE 'MANUAL\_%'
+               WHERE LU.CMPNY_CD     = U.CMPNY_CD
+                 AND LU.USER_CD      = U.USER_CD
+                 AND LU.LEAVE_STATUS = 'CONFIRMED'
+                 AND LU.DEL_YN       = 'N'
+                 AND LU.START_DATE   <![CDATA[ > ]]> DATE_FORMAT(NOW(), '%Y%m%d')
+          ), 0) AS nonLegalScheduled
+      FROM TB_USER U
+      LEFT JOIN TB_SITE_NODE N
+        ON N.CMPNY_CD = U.CMPNY_CD
+       AND N.SITE_CD  = U.SITE_CD
+       AND N.NODE_CD  = U.NODE_CD
+    <include refid="dashboardWhere" />
+     ORDER BY U.USER_NM ASC, U.USER_CD ASC
+     LIMIT #{limit} OFFSET #{offset}
+    </select>
+
+    <select id="countDashboardList" resultType="long">
+    /* LeaveDashboardMapper.countDashboardList */
+    <if test='nodeCd != null and nodeCd != "" and "Y".equals(incSubNodeYn)'>
+      <include refid="nodeTreeCte" />
+    </if>
+    SELECT COUNT(*)
+      FROM TB_USER U
+    <include refid="dashboardWhere" />
+    </select>
+
+    <!-- ============ 상세: 직원 + 집계 ============ -->
+    <select id="selectDetailUser" resultType="com.prafta.common.cmm.leave.vo.LeaveDetailUserVO">
+    /* LeaveDashboardMapper.selectDetailUser */
+    SELECT
+          U.USER_CD         AS userCd
+        , U.USER_NM         AS userNm
+        , N.NODE_NM         AS deptNm
+        , U.EMPLOYMENT_TYPE AS employmentType
+        , U.HIRE_DATE       AS hireDate
+        , IFNULL((
+              SELECT SUM(C.CREDIT_MONTHS)
+                FROM TB_USER_SERVICE_CREDIT C
+               WHERE C.CMPNY_CD = U.CMPNY_CD
+                 AND C.USER_CD  = U.USER_CD
+                 AND C.USE_YN   = 'Y'
+          ), 0) AS creditMonths
+        , IFNULL((
+              SELECT SUM(G.GRANT_DAYS)
+                FROM TB_USER_LEAVE_GRANT G
+               WHERE G.CMPNY_CD = U.CMPNY_CD
+                 AND G.USER_CD  = U.USER_CD
+                 AND G.DEL_YN   = 'N'
+                 AND G.STATUS   = 'ACTIVE'
+                 AND G.GRANT_TYPE LIKE 'STATUTORY\_%'
+          ), 0) AS legalGranted
+        , IFNULL((
+              SELECT SUM(G.USED_DAYS)
+                FROM TB_USER_LEAVE_GRANT G
+               WHERE G.CMPNY_CD = U.CMPNY_CD
+                 AND G.USER_CD  = U.USER_CD
+                 AND G.DEL_YN   = 'N'
+                 AND G.STATUS   = 'ACTIVE'
+                 AND G.GRANT_TYPE LIKE 'STATUTORY\_%'
+          ), 0) AS legalUsed
+        , IFNULL((
+              SELECT SUM(G.GRANT_DAYS)
+                FROM TB_USER_LEAVE_GRANT G
+               WHERE G.CMPNY_CD = U.CMPNY_CD
+                 AND G.USER_CD  = U.USER_CD
+                 AND G.DEL_YN   = 'N'
+                 AND G.STATUS   = 'ACTIVE'
+                 AND G.GRANT_TYPE LIKE 'MANUAL\_%'
+          ), 0) AS nonLegalGranted
+        , IFNULL((
+              SELECT SUM(G.USED_DAYS)
+                FROM TB_USER_LEAVE_GRANT G
+               WHERE G.CMPNY_CD = U.CMPNY_CD
+                 AND G.USER_CD  = U.USER_CD
+                 AND G.DEL_YN   = 'N'
+                 AND G.STATUS   = 'ACTIVE'
+                 AND G.GRANT_TYPE LIKE 'MANUAL\_%'
+          ), 0) AS nonLegalUsed
+        , (
+              SELECT MIN(G.AVAIL_TO_DATE)
+                FROM TB_USER_LEAVE_GRANT G
+               WHERE G.CMPNY_CD = U.CMPNY_CD
+                 AND G.USER_CD  = U.USER_CD
+                 AND G.DEL_YN   = 'N'
+                 AND G.STATUS   = 'ACTIVE'
+                 AND G.GRANT_TYPE LIKE 'STATUTORY\_%'
+                 AND G.GRANT_DAYS > G.USED_DAYS
+          ) AS legalNearestExpire
+      FROM TB_USER U
+      LEFT JOIN TB_SITE_NODE N
+        ON N.CMPNY_CD = U.CMPNY_CD
+       AND N.SITE_CD  = U.SITE_CD
+       AND N.NODE_CD  = U.NODE_CD
+     WHERE U.CMPNY_CD = #{cmpnyCd}
+       AND U.USER_CD  = #{userCd}
+    </select>
+
+    <!-- ============ 상세: 부여 이력 ============ -->
+    <select id="selectGrantHistory" resultType="com.prafta.common.cmm.leave.vo.LeaveGrantHistoryRowVO">
+    /* LeaveDashboardMapper.selectGrantHistory */
+    SELECT
+          G.GRANT_ID    AS grantId
+        , G.GRANT_DATE  AS grantDate
+        , CASE WHEN G.GRANT_TYPE LIKE 'STATUTORY\_%' THEN 'LEGAL' ELSE 'NON_LEGAL' END AS natureBadge
+        , G.GRANT_REASON AS reason
+        , G.GRANT_DAYS   AS granted
+        , G.USED_DAYS    AS used
+        , (G.GRANT_DAYS - G.USED_DAYS) AS remaining
+        , G.AVAIL_TO_DATE AS expiresAt
+        , G.STATUS       AS status
+        , G.USED_DAYS    AS usedDays
+        , G.GRANT_BY_TYPE AS grantByType
+        <!-- PRAFTA-031: 회수(soft cancel) 가능 여부를 SQL에서 산출(0/1 → boolean 매핑).
+             수동 부여(MANUAL_ + GRANT_BY_TYPE='02') + 미사용(USED_DAYS=0) + ACTIVE + 미삭제일 때만 회수 가능. -->
+        , CASE WHEN G.GRANT_TYPE LIKE 'MANUAL\_%'
+                AND G.GRANT_BY_TYPE = '02'
+                AND G.STATUS = 'ACTIVE'
+                AND G.USED_DAYS = 0
+                AND G.DEL_YN = 'N'
+               THEN 1 ELSE 0 END AS canRecall
+      FROM TB_USER_LEAVE_GRANT G
+     WHERE G.CMPNY_CD = #{cmpnyCd}
+       AND G.USER_CD  = #{userCd}
+       AND G.DEL_YN   = 'N'
+     ORDER BY G.GRANT_DATE DESC, G.GRANT_ID DESC
+    </select>
+
+    <!-- ============ 수동 부여: 휴가 종류 옵션 ============ -->
+    <select id="selectManualGrantTypes" resultType="com.prafta.common.cmm.leave.vo.LeaveTypeOptionVO">
+    /* LeaveDashboardMapper.selectManualGrantTypes */
+    SELECT
+          T.LEAVE_CD AS leaveCd
+        , T.LEAVE_NM AS leaveNm
+      FROM TB_LEAVE_TYPE_MGMT T
+     WHERE T.CMPNY_CD = #{cmpnyCd}
+       AND T.LEAVE_TYPE = '02'
+       AND T.GRANT_TYPE = '02'
+       AND T.USE_YN = 'Y'
+     ORDER BY T.LEAVE_NO ASC
+    </select>
+
+    <select id="countManualGrantType" resultType="int">
+    /* LeaveDashboardMapper.countManualGrantType */
+    SELECT COUNT(*)
+      FROM TB_LEAVE_TYPE_MGMT T
+     WHERE T.CMPNY_CD = #{cmpnyCd}
+       AND T.LEAVE_CD = #{leaveCd}
+       AND T.LEAVE_TYPE = '02'
+       AND T.GRANT_TYPE = '02'
+       AND T.USE_YN = 'Y'
+    </select>
+
+    <select id="countActiveUser" resultType="int">
+    /* LeaveDashboardMapper.countActiveUser */
+    SELECT COUNT(*)
+      FROM TB_USER U
+     WHERE U.CMPNY_CD = #{cmpnyCd}
+       AND U.USER_CD  = #{userCd}
+       AND U.USE_YN = 'Y'
+       AND U.WITHDRAWAL_DATE IS NULL
+       AND U.ACCOUNT_STATUS = '01'
+    </select>
+
+    <!-- ============ 수동 부여: GRANT_ID 채번 ============ -->
+    <!--
+      'G' + YYYYMMDD + 5자리 시퀀스(MAX_VAL=99999 기준 LPAD) = 14자 (varchar(20) 이내).
+      SEQ_KEY='LEAVE_GRANT_ID' (회사별 자동 INSERT).
+    -->
+    <select id="selectNextGrantId" resultType="string">
+    /* LeaveDashboardMapper.selectNextGrantId */
+    SELECT CONCAT('G', DATE_FORMAT(NOW(), '%Y%m%d'), FNC_CMM_SEQ_NEXTVAL(#{cmpnyCd}, 'LEAVE_GRANT_ID'))
+      FROM DUAL
+    </select>
+
+    <!-- ============ 수동 부여: INSERT ============ -->
+    <insert id="insertManualGrant" parameterType="com.prafta.common.cmm.leave.vo.LeaveGrantInsertVO">
+    /* LeaveDashboardMapper.insertManualGrant */
+    INSERT INTO TB_USER_LEAVE_GRANT (
+          GRANT_ID
+        , CMPNY_CD
+        , USER_CD
+        , LEAVE_CD
+        , GRANT_TYPE
+        , GRANT_DAYS
+        , USED_DAYS
+        , GRANT_REASON
+        , GRANT_BY_TYPE
+        , POLICY_SEQ
+        , GRANT_DATE
+        , AVAIL_FROM_DATE
+        , AVAIL_TO_DATE
+        , IDEMPOTENCY_KEY
+        , STATUS
+        , EXPIRE_YN
+        , DEL_YN
+        , INSERT_NO
+        , INSERT_DATE
+    )
+    VALUES (
+          #{grantId}
+        , #{cmpnyCd}
+        , #{userCd}
+        , #{leaveCd}
+        , #{grantType}
+        , #{grantDays}
+        , #{usedDays}
+        , #{grantReason}
+        , #{grantByType}
+        , #{policySeq}
+        , #{grantDate}
+        , #{availFromDate}
+        , #{availToDate}
+        , #{idempotencyKey}
+        , #{status}
+        , 'N'
+        , 'N'
+        , #{insertNo}
+        , NOW()
+    )
+    </insert>
+
+    <!-- ============ 수동 부여 연차 회수(soft cancel, PRAFTA-031): 대상 단건 조회 ============
+      회사 스코프로만 단건 조회한다. 서버 재검증용 최소 컬럼만 SELECT.
+      회수 가능 조건은 서비스 계층에서 재검증한다(MANUAL_ + 02 + ACTIVE + USED_DAYS=0 + DEL_YN='N'). -->
+    <select id="selectRecallTarget" resultType="com.prafta.common.cmm.leave.vo.LeaveRecallTargetVO">
+    /* LeaveDashboardMapper.selectRecallTarget */
+    SELECT
+          G.GRANT_ID      AS grantId
+        , G.USER_CD       AS userCd
+        , G.LEAVE_CD      AS leaveCd
+        , G.GRANT_TYPE    AS grantType
+        , G.GRANT_BY_TYPE AS grantByType
+        , G.GRANT_DAYS    AS grantDays
+        , G.USED_DAYS     AS usedDays
+        , G.STATUS        AS status
+        , G.DEL_YN        AS delYn
+      FROM TB_USER_LEAVE_GRANT G
+     WHERE G.CMPNY_CD = #{cmpnyCd}
+       AND G.GRANT_ID = #{grantId}
+    </select>
+
+    <!-- ============ 수동 부여 연차 회수(soft cancel, PRAFTA-031): UPDATE ============
+      STATUS='CANCELED' 전환 + 회수 메타(사유/일시/수행자) 기록 + 표준 감사컬럼 갱신.
+      정책서 §8.5.8: USED_DAYS는 절대 갱신하지 않는다(사용분 보존). EXPIRE_YN/DEL_YN='N' 유지(행 보존).
+      WHERE를 grantId + cmpnyCd + STATUS='ACTIVE' + DEL_YN='N'으로 못박아 동시성/조건을 재확인한다. -->
+    <update id="recallGrant">
+    /* LeaveDashboardMapper.recallGrant */
+    UPDATE TB_USER_LEAVE_GRANT
+       SET STATUS        = 'CANCELED'
+         , CANCEL_REASON = #{reason}
+         , CANCEL_DATE   = NOW()
+         , CANCEL_BY     = #{operatorUserCd}
+         , UPDATE_NO     = #{operatorUserCd}
+         , UPDATE_DATE   = NOW()
+     WHERE CMPNY_CD = #{cmpnyCd}
+       AND GRANT_ID = #{grantId}
+       AND STATUS   = 'ACTIVE'
+       AND DEL_YN   = 'N'
+    </update>
+
+    <!-- ============ 알림 outbox(PRAFTA-031): NOTI_ID 채번 ============
+      'N' + YYYYMMDD + 시퀀스(FNC_CMM_SEQ_NEXTVAL, SEQ_KEY='NOTI_OUTBOX_ID'). selectNextGrantId 패턴 동일. -->
+    <select id="selectNextNotiId" resultType="string">
+    /* LeaveDashboardMapper.selectNextNotiId */
+    SELECT CONCAT('N', DATE_FORMAT(NOW(), '%Y%m%d'), FNC_CMM_SEQ_NEXTVAL(#{cmpnyCd}, 'NOTI_OUTBOX_ID'))
+      FROM DUAL
+    </select>
+
+    <!-- ============ 알림 outbox(PRAFTA-031): INSERT ============
+      회수 완료 시 1행 적재(SEND_STATUS='PENDING'). 발송은 추후 모바일 push.
+      중복 발송 방지(§10.3): UNIQUE(CMPNY_CD, DEDUP_KEY) — DEDUP_KEY='RECALL_'+grantId. -->
+    <insert id="insertNotiOutbox" parameterType="com.prafta.common.cmm.leave.vo.NotiOutboxInsertVO">
+    /* LeaveDashboardMapper.insertNotiOutbox */
+    INSERT INTO TB_NOTI_OUTBOX (
+          NOTI_ID
+        , CMPNY_CD
+        , SITE_CD
+        , TARGET_USER_CD
+        , NOTI_TYPE
+        , CHANNEL
+        , TITLE
+        , BODY
+        , DATA_PAYLOAD
+        , SEND_STATUS
+        , RETRY_CNT
+        , DEDUP_KEY
+        , DEL_YN
+        , INSERT_NO
+        , INSERT_DATE
+    )
+    VALUES (
+          #{notiId}
+        , #{cmpnyCd}
+        , #{siteCd}
+        , #{targetUserCd}
+        , #{notiType}
+        , #{channel}
+        , #{title}
+        , #{body}
+        , #{dataPayload}
+        , #{sendStatus}
+        , 0
+        , #{dedupKey}
+        , 'N'
+        , #{insertNo}
+        , NOW()
+    )
+    </insert>
+
+    <!-- ============ 입사일 기준 부여: CANCELED 표준키 재활성화(옵션 A) ============
+      prafta-029 후속 버그 수정. CANCELED 단건을 ACTIVE로 부활시키고 재부여 값으로 갱신한다.
+      USED_DAYS는 절대 갱신하지 않는다(§8.5.8 #2 사후차감 금지 — 사용분 보존). LEAVE_CD/GRANT_TYPE 미변경.
+      보안: WHERE를 정확한 단건 멱등키 + STATUS='CANCELED' + DEL_YN='N'으로 못박아 범위/LIKE 부활 배제. -->
+    <update id="reactivateCanceledGrant" parameterType="com.prafta.common.cmm.leave.vo.LeaveGrantInsertVO">
+    /* LeaveDashboardMapper.reactivateCanceledGrant */
+    UPDATE TB_USER_LEAVE_GRANT
+       SET STATUS          = 'ACTIVE'
+         , EXPIRE_YN       = 'N'
+         , EXPIRE_DATE     = NULL
+         , GRANT_DATE      = #{grantDate}
+         , AVAIL_FROM_DATE = #{availFromDate}
+         , AVAIL_TO_DATE   = #{availToDate}
+         , GRANT_DAYS      = #{grantDays}
+         , POLICY_SEQ      = #{policySeq}
+         , GRANT_REASON    = #{grantReason}
+         , GRANT_BY_TYPE   = #{grantByType}
+         , UPDATE_NO       = #{insertNo}
+         , UPDATE_DATE     = NOW()
+     WHERE CMPNY_CD        = #{cmpnyCd}
+       AND IDEMPOTENCY_KEY = #{idempotencyKey}
+       AND STATUS          = 'CANCELED'
+       AND DEL_YN          = 'N'
+    </update>
+
+    <!-- prafta-029 옵션 A: 해당 멱등키의 CANCELED 단건 GRANT_ID (없으면 null). reactivate 분기 진입 판정용. -->
+    <select id="selectCanceledGrantIdByKey" resultType="string">
+    /* LeaveDashboardMapper.selectCanceledGrantIdByKey */
+    SELECT G.GRANT_ID
+      FROM TB_USER_LEAVE_GRANT G
+     WHERE G.CMPNY_CD        = #{cmpnyCd}
+       AND G.IDEMPOTENCY_KEY = #{idempotencyKey}
+       AND G.STATUS          = 'CANCELED'
+       AND G.DEL_YN          = 'N'
+     LIMIT 1
+    </select>
+
+    <!-- ============ 입사일 기준 부여: 대상자 입사일 ============ -->
+    <select id="selectUserHireDate" resultType="string">
+    /* LeaveDashboardMapper.selectUserHireDate */
+    SELECT U.HIRE_DATE
+      FROM TB_USER U
+     WHERE U.CMPNY_CD = #{cmpnyCd}
+       AND U.USER_CD  = #{userCd}
+       AND U.USE_YN = 'Y'
+       AND U.WITHDRAWAL_DATE IS NULL
+       AND U.ACCOUNT_STATUS = '01'
+    </select>
+
+    <!-- ============ 입사일 기준 부여: 멱등성 키 중복 카운트 ============ -->
+    <select id="countByIdempotencyKey" resultType="int">
+    /* LeaveDashboardMapper.countByIdempotencyKey */
+    SELECT COUNT(*)
+      FROM TB_USER_LEAVE_GRANT G
+     WHERE G.CMPNY_CD        = #{cmpnyCd}
+       AND G.IDEMPOTENCY_KEY = #{idempotencyKey}
+    </select>
+
+    <!-- prafta-029 옵션 A: live(STATUS!='CANCELED' AND DEL_YN='N')만 기부여로 본다.
+         CANCELED는 멱등키 미점유 → RESET_ALL 후 같은 기간을 reactivate/INSERT로 재부여 가능. -->
+    <select id="countLiveByIdempotencyKey" resultType="int">
+    /* LeaveDashboardMapper.countLiveByIdempotencyKey */
+    SELECT COUNT(*)
+      FROM TB_USER_LEAVE_GRANT G
+     WHERE G.CMPNY_CD        = #{cmpnyCd}
+       AND G.IDEMPOTENCY_KEY = #{idempotencyKey}
+       AND G.STATUS != 'CANCELED'
+       AND G.DEL_YN  = 'N'
+    </select>
+
+    <!-- prafta-023 #1: ACTIVE 집계 월차 보유 연도 판정 (월차 집계↔per-월 상호배타) -->
+    <select id="countActiveByIdempotencyKey" resultType="int">
+    /* LeaveDashboardMapper.countActiveByIdempotencyKey */
+    SELECT COUNT(*)
+      FROM TB_USER_LEAVE_GRANT G
+     WHERE G.CMPNY_CD        = #{cmpnyCd}
+       AND G.IDEMPOTENCY_KEY = #{idempotencyKey}
+       AND G.STATUS          = 'ACTIVE'
+       AND G.DEL_YN          = 'N'
+    </select>
+
+    <!-- prafta-029: 회차키(_R{HIST_ID})/_HIRE 등 '변형 키' 중 ACTIVE 부여 카운트 (표준키 자기 자신 제외).
+         baseKey 의 언더스코어를 REPLACE 로 이스케이프(literal)한 뒤 '_접미사'가 붙은 키만 매칭한다.
+         (MySQL LIKE 기본 이스케이프 '\' — 기존 'STATUTORY\_%' 패턴과 동일 규칙) -->
+    <select id="countActiveBySuffixVariant" resultType="int">
+    /* LeaveDashboardMapper.countActiveBySuffixVariant */
+    SELECT COUNT(*)
+      FROM TB_USER_LEAVE_GRANT G
+     WHERE G.CMPNY_CD = #{cmpnyCd}
+       AND G.STATUS   = 'ACTIVE'
+       AND G.DEL_YN   = 'N'
+       AND G.IDEMPOTENCY_KEY LIKE CONCAT(REPLACE(#{baseKey}, '_', '\_'), '\_%')
+    </select>
+
+    <!-- ============ 입사일 기준 부여: 시스템 연차 종류 존재 카운트 ============ -->
+    <select id="countLeaveTypeExists" resultType="int">
+    /* LeaveDashboardMapper.countLeaveTypeExists */
+    SELECT COUNT(*)
+      FROM TB_LEAVE_TYPE_MGMT T
+     WHERE T.CMPNY_CD = #{cmpnyCd}
+       AND T.LEAVE_CD = #{leaveCd}
+       AND T.USE_YN = 'Y'
+    </select>
+
+    <!-- ============ 입사일 기준 부여: 경력 인정 개월 합계 ============ -->
+    <select id="selectCreditMonths" resultType="int">
+    /* LeaveDashboardMapper.selectCreditMonths */
+    SELECT IFNULL(SUM(C.CREDIT_MONTHS), 0)
+      FROM TB_USER_SERVICE_CREDIT C
+     WHERE C.CMPNY_CD = #{cmpnyCd}
+       AND C.USER_CD  = #{userCd}
+       AND C.USE_YN   = 'Y'
+    </select>
+
+    <!-- ============ prafta-030 BE-1(정정 2026-05-26): 입사일 변경 차액 보전용 "기존 부여누적" ============
+      전 STATUTORY 유형(월차 포함, GRANT_TYPE LIKE 'STATUTORY\_%') live(STATUS!='CANCELED' AND DEL_YN='N')에 대해
+      "소멸 제외 + 사용 포함"으로 합산한다(결정문서 D1).
+        행 기여 = USED_DAYS + (AVAIL_TO_DATE >= today ? GRANT_DAYS - USED_DAYS : 0)
+      - 사용분(USED_DAYS)은 소멸해도 혜택 제공분이라 항상 포함(정답표 §2.1).
+      - 미사용 잔여분은 소멸일(AVAIL_TO_DATE)이 today 이상(유효)일 때만 포함, 소멸분 제외.
+      - 월차 포함이라야 경계B(기존 월차 누적 7 차감 → 차액 +8)가 맞다(월차 제외 시 +15 과다).
+      LIKE 'STATUTORY\_%'는 언더스코어를 '\'로 이스케이프(기존 패턴 동일). -->
+    <select id="selectStatutoryGrantAccrual" resultType="java.math.BigDecimal">
+    /* LeaveDashboardMapper.selectStatutoryGrantAccrual */
+    SELECT IFNULL(SUM(
+                G.USED_DAYS
+              + CASE WHEN G.AVAIL_TO_DATE <![CDATA[ >= ]]> #{today}
+                     THEN G.GRANT_DAYS - G.USED_DAYS
+                     ELSE 0
+                END
+           ), 0)
+      FROM TB_USER_LEAVE_GRANT G
+     WHERE G.CMPNY_CD   = #{cmpnyCd}
+       AND G.USER_CD    = #{userCd}
+       AND G.GRANT_TYPE LIKE 'STATUTORY\_%'
+       AND G.STATUS    != 'CANCELED'
+       AND G.DEL_YN     = 'N'
+    </select>
+
+    <!-- ============ prafta-030 BE-3: 입사일 변경 미리보기용 "기존 본연차+가산 누적"(월차 제외) ============
+      selectStatutoryGrantAccrual과 동일 산식(USED 포함 + 유효잔여)이되 대상 유형을 본연차/근속가산만으로 좁힌다
+      (월차 STATUTORY_MONTHLY 제외). 옵션별 finalHold를 "본연차/가산"과 "월차"로 분리 산정하기 위함.
+        행 기여 = USED_DAYS + (AVAIL_TO_DATE >= today ? GRANT_DAYS - USED_DAYS : 0)
+      GRANT_TYPE을 IN 목록으로 정확히 매칭하므로 LIKE/언더스코어 이스케이프가 필요 없다. -->
+    <select id="selectStatutoryAnnualTenureAccrual" resultType="java.math.BigDecimal">
+    /* LeaveDashboardMapper.selectStatutoryAnnualTenureAccrual */
+    SELECT IFNULL(SUM(
+                G.USED_DAYS
+              + CASE WHEN G.AVAIL_TO_DATE <![CDATA[ >= ]]> #{today}
+                     THEN G.GRANT_DAYS - G.USED_DAYS
+                     ELSE 0
+                END
+           ), 0)
+      FROM TB_USER_LEAVE_GRANT G
+     WHERE G.CMPNY_CD   = #{cmpnyCd}
+       AND G.USER_CD    = #{userCd}
+       AND G.GRANT_TYPE IN ('STATUTORY_ANNUAL', 'STATUTORY_TENURE_BONUS')
+       AND G.STATUS    != 'CANCELED'
+       AND G.DEL_YN     = 'N'
+    </select>
+
+</mapper>

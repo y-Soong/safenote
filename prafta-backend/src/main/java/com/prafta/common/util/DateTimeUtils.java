@@ -115,4 +115,41 @@ public final class DateTimeUtils {
         }
         return new int[] { sStamp.intValue(), eStamp.intValue() };
     }
+
+    /**
+     * 길이 8의 yyyyMMdd 문자열에서 {@code months} 개월을 뺀 yyyyMMdd 문자열을 반환한다.
+     * 말일 보정은 {@link LocalDate#minusMonths(long)} 규칙을 따른다(예: 3/31 - 1개월 = 2/28).
+     * 입력이 null이거나 형식이 잘못된 경우 null을 반환한다.
+     */
+    public static String minusMonths(String yyyymmdd, int months) {
+        LocalDate d = parseYyyymmdd(yyyymmdd);
+        if (d == null) return null;
+        LocalDate r = d.minusMonths(months);
+        return String.format("%04d%02d%02d", r.getYear(), r.getMonthValue(), r.getDayOfMonth());
+    }
+
+    /**
+     * 길이 8의 yyyyMMdd 문자열을 yyyy-MM-dd로 변환한다.
+     * 입력이 null/공백/형식 오류면 빈 문자열을 반환한다(화면 표기 안전 기본값).
+     */
+    public static String toHyphenDate(String yyyymmdd) {
+        LocalDate d = parseYyyymmdd(yyyymmdd);
+        if (d == null) return "";
+        return String.format("%04d-%02d-%02d", d.getYear(), d.getMonthValue(), d.getDayOfMonth());
+    }
+
+    /**
+     * 길이 8의 yyyyMMdd 문자열을 LocalDate로 파싱한다. 실패 시 null.
+     */
+    public static LocalDate parseYyyymmdd(String yyyymmdd) {
+        if (yyyymmdd == null || yyyymmdd.length() != 8) return null;
+        try {
+            return LocalDate.of(
+                    Integer.parseInt(yyyymmdd.substring(0, 4)),
+                    Integer.parseInt(yyyymmdd.substring(4, 6)),
+                    Integer.parseInt(yyyymmdd.substring(6, 8)));
+        } catch (NumberFormatException | DateTimeException e) {
+            return null;
+        }
+    }
 }

@@ -140,6 +140,11 @@
                 ELSE 'NORMAL'
               END                                                                AS attdStatusCd
 
+            /* row type discriminator (PRAFTA-015) - 정규근태 분기 */
+            , 'NORMAL'                                                           AS rowType
+            , NULL                                                               AS otId
+            , NULL                                                               AS otType
+
         FROM TB_USER_ATTD_MGMT A
         INNER JOIN node_tree NT
             ON  A.CMPNY_CD = NT.CMPNY_CD
@@ -188,7 +193,100 @@
           AND U.USER_NM LIKE CONCAT('%', #{safeUserNm}, '%') ESCAPE '\'
         </if>
 
-        ORDER BY A.WORK_YMD, A.USER_CD, A.WORK_SEQ
+        UNION ALL
+
+        /* 초과근무 분기 (PRAFTA-015) - TB_USER_OVERTIME_MGMT 를 별도 행으로 합산.
+           정규근태 분기와 컬럼 개수/순서/alias 가 완전히 동일해야 한다(UNION 규칙).
+           스케줄/2구간/정규화 컬럼은 초과근무에 개념이 없으므로 전부 NULL 로 채운다. */
+        SELECT
+              O.ATTD_ID                                                          AS attdId
+            , O.USER_CD                                                          AS userCd
+            , U.USER_ID                                                          AS userId
+            , U.USER_NM                                                          AS userNm
+            , O.NODE_CD                                                          AS nodeCd
+            , NT.NODE_NM                                                         AS nodeNm
+            , O.CMPNY_CD                                                         AS cmpnyCd
+            , O.SITE_CD                                                          AS siteCd
+            , O.WORK_YMD                                                         AS workYmd
+            , NULL                                                               AS workSeq
+
+            /* schedule (1st / 2nd block) - 초과근무는 스케줄 개념 없음 */
+            , NULL                                                               AS schType
+            , NULL                                                               AS plan1Start
+            , NULL                                                               AS plan1End
+            , NULL                                                               AS plan1BreakMin
+            , NULL                                                               AS plan2Start
+            , NULL                                                               AS plan2End
+            , NULL                                                               AS plan2BreakMin
+
+            /* actual 1st - 초과근무 실제 출퇴근 */
+            , O.ACTUAL_START_DATE                                                AS act1InDate
+            , O.ACTUAL_START_TIME                                                AS act1InTime
+            , O.ACTUAL_START_METHOD                                              AS act1InMethod
+            , O.ACTUAL_END_DATE                                                  AS act1OutDate
+            , O.ACTUAL_END_TIME                                                  AS act1OutTime
+            , O.ACTUAL_END_METHOD                                                AS act1OutMethod
+
+            /* actual 2nd - 초과근무는 2구간 개념 없음 */
+            , NULL                                                               AS act2InDate
+            , NULL                                                               AS act2InTime
+            , NULL                                                               AS act2InMethod
+            , NULL                                                               AS act2OutDate
+            , NULL                                                               AS act2OutTime
+            , NULL                                                               AS act2OutMethod
+
+            /* normalized times - 초과근무는 정규화 개념 없음 */
+            , NULL                                                               AS act1InStdTime
+            , NULL                                                               AS act1OutStdTime
+            , NULL                                                               AS act2InStdTime
+            , NULL                                                               AS act2OutStdTime
+
+            /* outside detection - 정규근태 분기와 동일하게 GPS 행 존재 여부로 판정 */
+            , CASE
+                WHEN EXISTS (
+                    SELECT 1
+                    FROM TB_USER_ATTD_GPS G
+                    WHERE G.CMPNY_CD = O.CMPNY_CD
+                      AND G.ATTD_ID  = O.ATTD_ID
+                ) THEN 'Y'
+                ELSE 'N'
+              END                                                                AS isOutsideYn
+
+            /* status - 초과근무 행은 화면에서 '-' 로 표시하므로 NULL */
+            , NULL                                                               AS attdStatusCd
+
+            /* row type discriminator (PRAFTA-015) - 초과근무 분기 */
+            , 'OT'                                                               AS rowType
+            , O.OT_ID                                                            AS otId
+            , O.OT_TYPE                                                          AS otType
+
+        /* 초과근무의 NODE_CD 는 nullable 이다. node_tree 와 INNER JOIN 하므로
+           NODE_CD 가 NULL 인 초과근무 행은 결과에서 제외된다. 이는 정규근태 분기와
+           동일한 사업장/부서 필터 일관성을 유지하기 위한 의도된 동작이다. */
+        FROM TB_USER_OVERTIME_MGMT O
+        INNER JOIN node_tree NT
+            ON  O.CMPNY_CD = NT.CMPNY_CD
+            AND O.SITE_CD  = NT.SITE_CD
+            AND O.NODE_CD  = NT.NODE_CD
+        INNER JOIN TB_USER U
+            ON  O.CMPNY_CD = U.CMPNY_CD
+            AND O.USER_CD  = U.USER_CD
+
+        WHERE O.CMPNY_CD = #{gvCmpnyCd}
+          AND O.SITE_CD  = #{siteCd}
+          AND O.DEL_YN   = 'N'
+          AND O.OT_STATUS <![CDATA[ <> ]]> 'CANCELLED'
+          AND O.WORK_YMD <![CDATA[ >= ]]> #{fromYmd}
+          AND O.WORK_YMD <![CDATA[ <= ]]> #{toYmd}
+        <if test="userNm != null and userNm != ''">
+          <bind name="safeUserNmOt"
+                value="userNm.replace('\\', '\\\\').replace('%', '\\%').replace('_', '\\_')" />
+          AND U.USER_NM LIKE CONCAT('%', #{safeUserNmOt}, '%') ESCAPE '\'
+        </if>
+
+        /* UNION 전체 정렬은 SELECT-list alias 로 작성한다(테이블 한정명 사용 불가).
+           rowType 으로 같은 사용자·일자에서 정규근태(NORMAL)가 먼저, 초과근무(OT)가 뒤로 정렬된다. */
+        ORDER BY workYmd, userCd, rowType, workSeq
     </select>
 
     <select id="selectAttdGpsTrail" parameterType="com.prafta.web.attd.attd08.application.query.AttdGpsTrailQuery" resultType="com.prafta.web.attd.attd08.result.AttdGpsTrailResult">
@@ -201,6 +299,7 @@
             , G.API_CALL_DATE  AS apiCallDate
             , G.API_CALL_TIME  AS apiCallTime
             , G.IS_MOCKED      AS isMocked
+            , G.GPS_INFO_TYPE  AS gpsInfoType
         FROM TB_USER_ATTD_GPS G
         WHERE G.CMPNY_CD = #{gvCmpnyCd}
           AND G.ATTD_ID  = #{attdId}
@@ -211,7 +310,7 @@
                   AND M.CMPNY_CD = #{gvCmpnyCd}
                   AND M.DEL_YN   = 'N'
               )
-        ORDER BY G.API_CALL_DATE ASC, G.API_CALL_TIME ASC
+        ORDER BY G.GPS_INFO_TYPE ASC, G.API_CALL_DATE ASC, G.API_CALL_TIME ASC
     </select>
 
 </mapper>

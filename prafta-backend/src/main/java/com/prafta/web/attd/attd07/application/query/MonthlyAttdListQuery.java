@@ -12,6 +12,7 @@ public record MonthlyAttdListQuery(
       , String userNm
       , String gvCmpnyCd
       , String gvAuthCd
+      , String gvUserCd
   ){
       public static MonthlyAttdListQuery from(MonthlyAttdListParam param) {
 
@@ -26,6 +27,7 @@ public record MonthlyAttdListQuery(
               , param.userNm()
               , param.gvCmpnyCd()
               , param.gvAuthCd()
+              , param.gvUserCd()
           );
       }
   }

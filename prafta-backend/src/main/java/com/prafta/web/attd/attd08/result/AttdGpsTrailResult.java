@@ -10,5 +10,6 @@ public record AttdGpsTrailResult(
     , String apiCallDate
     , String apiCallTime
     , String isMocked
+    , String gpsInfoType
 ) {
 }

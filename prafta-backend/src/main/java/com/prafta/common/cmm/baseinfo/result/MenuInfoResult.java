@@ -16,4 +16,8 @@ public class MenuInfoResult {
 	String btnDelt;
 	String btnSave;
 	String btnExcl;
+	/** TOP 메뉴(TB_SYST_MENU_M) 정렬 순번 */
+	Integer menuIdx;
+	/** SIDE 메뉴(TB_SYST_MENU_D) 정렬 순번 */
+	Integer menuSubIdx;
 }

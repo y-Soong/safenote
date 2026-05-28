@@ -1,0 +1,140 @@
+================================================================================
+PRAFTA-012 변경 이력 (changelog)
+TB_USER_ATTD_GPS.GPS_INFO_TYPE 컬럼 적용 - 지도 좌표 출근/퇴근 구분
+작성일: 2026-05-18
+================================================================================
+
+[요약]
+TB_USER_ATTD_GPS 테이블에 추가된 GPS_INFO_TYPE 컬럼('01'=출근 / '02'=퇴근)을
+GPS 좌표 조회 API와 지도 렌더 화면에 반영했다. 기존에는 좌표 배열의 첫 점을
+출근, 마지막 점을 퇴근으로 "위치 추론"했으나, GPS_INFO_TYPE 코드값 기준으로
+출근/퇴근 마커 색·라벨을 결정하도록 교체했다.
+
+[사용자 확인 사항 (정책서보다 우선)]
+- 마커 구분 : '01'->출근 마커(초록 #16a34a)+"출근" 라벨,
+              '02'->퇴근 마커(빨강 #ef4444)+"퇴근" 라벨.
+- NULL 처리 : GPS_INFO_TYPE 이 '01'/'02' 가 아닌(NULL 포함) 좌표는 지도에
+              표시하지 않는다.
+- 폴리라인   : 출근-퇴근 2점 연결선은 유지.
+- 행 개수    : 한 ATTD_ID 당 GPS_INFO_TYPE 별 0~1건(총 0~2점).
+              중간 동선 점(dot) 개념 없음.
+- Attd_08    : Mock 좌표 색 구분(빨강 마커) 제거. 단 하단 "Mock 좌표 N건 포함"
+              요약 텍스트와 mockedCount 계산은 유지.
+
+[DB 변경]
+- 없음. GPS_INFO_TYPE 컬럼은 사용자가 DB 에 이미 추가 완료(작업 외부).
+  마이그레이션 SQL 작성 불필요.
+- 주의: 본 세션은 MCP MySQL(prafta-mysql) 미연결이며 .claude/context/schema-full.sql
+  스냅샷에는 GPS_INFO_TYPE 이 아직 미반영. 추후 스냅샷 재생성 필요.
+  컬럼 정의 전제: GPS_INFO_TYPE char(2), 값 '01'/'02', NULL 가능.
+
+
+================================================================================
+§1. 코드 변경 (작업 ID별)
+================================================================================
+
+-- PLNprafta-012001 (백엔드) ---------------------------------------------------
+변경 파일:
+  prafta-backend/src/main/resources/com/prafta/web/attd/attd08/mapper/Attd08Mapper.xml
+  prafta-backend/src/main/java/com/prafta/web/attd/attd08/result/AttdGpsTrailResult.java
+내용:
+  Attd08Mapper.xml (selectAttdGpsTrail):
+    - SELECT 절에 ", G.GPS_INFO_TYPE AS gpsInfoType" 추가(leading comma).
+    - ORDER BY 선두에 "G.GPS_INFO_TYPE ASC" 추가
+      -> 출근('01')이 퇴근('02')보다 먼저 정렬되도록 보장
+         (API_CALL_TIME NULL/역전 방어).
+  AttdGpsTrailResult.java:
+    - record 에 "String gpsInfoType" 필드 추가.
+  참고: AttdGpsTrailResponse / Attd08ServiceImpl / Attd08Controller 는 mapper
+        결과를 가공 없이 전달하므로 수정 불필요(record 필드 추가만으로 응답
+        JSON 에 gpsInfoType 자동 포함).
+
+-- PLNprafta-012002 (프론트 - 공용 컴포넌트) -----------------------------------
+변경 파일:
+  prafta-web-frontend/prafta-web-frontend/src/views/attd/popup/AttdGpsCoordPanel.vue
+내용:
+  - renderMap: 출근/퇴근 판정을 배열 위치(idx===0 / idx===lastIdx) 추론에서
+    gpsInfoType 코드값(p.gpsInfoType === '01') 기준으로 교체.
+  - points 변환 시 gpsInfoType 이 '01'/'02' 가 아닌 좌표는 필터 제외.
+    '01' 이 '02' 보다 앞에 오도록 localeCompare 정렬.
+  - 중간 점 dot 렌더링(midDotImage / mockedDotImage) 제거.
+  - 출근('01')=초록 핀+"출근" 라벨, 퇴근('02')=빨강 핀+"퇴근" 라벨.
+  - 폴리라인은 출근-퇴근 2점 연결로 유지.
+  - QA 후속(아래 §2): validTrail computed 추가. 빈-상태 안내와 요약 건수를
+    "유효 좌표(01/02)" 기준으로 산정.
+
+-- PLNprafta-012003 (프론트 - 화면) -------------------------------------------
+변경 파일:
+  prafta-web-frontend/prafta-web-frontend/src/views/attd/Attd_08.vue
+내용:
+  - renderMap: 마커를 isMocked 기준 normalImage(파랑)/mockedImage(빨강) 2종에서
+    gpsInfoType 기준 출근(초록 #16a34a)/퇴근(빨강 #ef4444) 핀으로 변경.
+    mockedImage 제거 - Mock 좌표 색 구분 폐지.
+  - gpsInfoType 이 '01'/'02' 가 아닌 좌표는 points 필터 제외.
+  - 출근/퇴근 CustomOverlay 라벨 추가(AttdGpsCoordPanel 과 색·SVG·라벨 패턴 일치).
+  - 폴리라인 유지. 하단 "Mock 좌표 N건 포함" 요약 텍스트와 mockedCount 유지.
+  - 라벨용 :deep(.gps-pin-label) 스타일을 <style scoped> 에 CSS 변수로 추가.
+  - QA 후속(아래 §2): validGpsList computed 추가. 빈-상태 안내와 요약 건수를
+    "유효 좌표(01/02)" 기준으로 산정.
+
+-- 자동 전파 (수정 불필요 - 확인 완료) ----------------------------------------
+  Attd_07.vue / AttdDayDetailPop.vue 는 GET /webApi/attd08/attd-gps-trail 응답을
+  가공 없이 공용 컴포넌트 AttdGpsCoordPanel.vue 의 trail prop 으로 전달한다.
+  -> AttdGpsCoordPanel 수정으로 두 화면 자동 반영. 별도 작업 불필요.
+
+
+================================================================================
+§2. QA 후속 수정 (경미 UX 이슈 해소)
+================================================================================
+QA 1차 검증에서 발견된 경미 이슈를 사용자 결정("수정한다")에 따라 반영.
+
+[이슈] 한 ATTD 의 GPS 행이 전부 gpsInfoType NULL(또는 01/02 아님)일 때,
+       좌표는 전부 필터링되지만 "수집된 GPS 좌표가 없습니다" 안내는
+       trail.length===0 조건이라 노출되지 않고 빈 회색 지도 캔버스만 표시됨.
+
+[조치]
+  AttdGpsCoordPanel.vue:
+    - validTrail computed 신규: gpsInfoType 이 '01'/'02' 인 좌표만 추림.
+    - 빈-상태 v-else-if 조건 trail.length===0 -> validTrail.length===0.
+    - 요약 v-if / 표시 건수 trail.length -> validTrail.length.
+    - mockedCount 산정 기준을 props.trail -> validTrail(실제 표시 좌표)로 변경.
+  Attd_08.vue:
+    - validGpsList computed 신규: 동일 필터.
+    - 빈-상태 v-else-if 조건 gpsList.length===0 -> validGpsList.length===0.
+    - 요약 v-if / 표시 건수 gpsList.length -> validGpsList.length.
+    - mockedCount 산정 기준을 gpsList -> validGpsList 로 변경.
+
+
+================================================================================
+§3. 검증
+================================================================================
+[QA 1차 검증]
+- 사용자 확인 5개 항목 + 추가 4개 항목(record-alias 일치, 자동 전파, 레거시
+  잔재 제거, CLAUDE.md 규칙) 전부 충족.
+- 엣지 케이스 6/7 통과. 부분 1건(전부 NULL 시 빈 캔버스)은 §2 에서 해소.
+
+[보안 검토 1차]
+- prafta-012 변경분 신규 이슈: 없음.
+  SQL 바인딩(#{} 사용, ${} 없음), 회사 스코프 격리(WHERE CMPNY_CD + EXISTS),
+  프론트 XSS(CustomOverlay content 는 고정 리터럴, gpsInfoType 직접 출력 없음),
+  카카오 API 키(환경변수 참조) 모두 안전.
+- 기존 코드 이슈 1건(Low, 범위 밖): GPS 상세 위치 조회에 별도 권한 체크/감사
+  로그 부재(정책서 common/11-security-privacy.md §11.2~11.3). 리뷰 ID
+  SECprafta-012001. prafta-012 범위 외 -> planner 별도 작업 분해 권고.
+
+[수동 검증 필요 항목]
+- 카카오맵 실제 렌더 시 마커 색·"출근/퇴근" 라벨 위치 시각 확인.
+- 출근만/퇴근만 1건일 때 단일 마커 줌(level 4) 적정성.
+- 실 DB 에서 GPS_INFO_TYPE 값이 '01'/'02' 로 정상 적재되는지.
+- p6spy 로그로 selectAttdGpsTrail 실 SQL 및 ORDER BY 결과 순서 확인.
+
+
+================================================================================
+§4. 미해결/확인필요 사항
+================================================================================
+- Notion MCP 미연결: 본 세션에서 "작업 로그"/"QA 로그"/"보안 리뷰 로그" DB
+  등록을 수행하지 못함. Notion 연결 후 별도 등록 필요
+  (QA ID QAprafta-012001, 보안 리뷰 ID SECprafta-012001).
+- schema-full.sql 스냅샷에 GPS_INFO_TYPE 미반영 -> mysqldump 재실행 필요.
+- (범위 밖) SECprafta-012001: GPS 위치 조회 권한 모델 + 감사 로그 별도 작업.
+================================================================================

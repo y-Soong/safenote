@@ -223,13 +223,27 @@
 
     <select id="selectLeaveTypeList" parameterType="com.prafta.web.attd.attd05.application.query.LeaveTypeListQuery" resultType="com.prafta.web.attd.attd05.result.LeaveTypeResult">
     /* Attd05Mapper.selectLeaveTypeList */
-    SELECT 
-		A.CMPNY_CD		AS cmpnoyCd
+    SELECT
+		A.CMPNY_CD		AS cmpnyCd
 	    , A.LEAVE_CD	AS leaveCd
 	    , A.LEAVE_NO	AS leaveNo
 	    , A.LEAVE_NM	AS leaveNm
+	    , A.LEAVE_TYPE	AS leaveType
+	    , A.APRV_USE_YN	AS aprvUseYn
+	    , A.LEAVE_NATURE_TYPE	AS leaveNatureType
 	FROM TB_LEAVE_TYPE_MGMT A
 	WHERE A.CMPNY_CD = #{gvCmpnyCd}
+	  AND A.USE_YN = 'Y'
+	ORDER BY A.LEAVE_NO ASC
+    </select>
+
+    <select id="selectLegalLeaveCds" resultType="string">
+    /* Attd05Mapper.selectLegalLeaveCds */
+    SELECT A.LEAVE_CD
+      FROM TB_LEAVE_TYPE_MGMT A
+     WHERE A.CMPNY_CD = #{cmpnyCd}
+       AND A.USE_YN = 'Y'
+       AND A.LEAVE_NATURE_TYPE = '01'
     </select>
     
     <update id="saveUserWorkPlans" parameterType="com.prafta.web.attd.attd05.application.command.SchTypeCommand">

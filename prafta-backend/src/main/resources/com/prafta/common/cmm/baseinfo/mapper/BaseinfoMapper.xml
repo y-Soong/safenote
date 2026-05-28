@@ -468,6 +468,8 @@
 		, B.BTN_DELT								AS btnDelt
 		, B.BTN_SAVE								AS btnSave
 		, B.BTN_EXCL								AS btnExcl
+		, B.MENU_IDX								AS menuIdx
+		, B.MENU_SUB_IDX							AS menuSubIdx
 	FROM TB_USER A
 	     INNER JOIN (
 			SELECT 
@@ -519,8 +521,9 @@
 	  AND A.CMPNY_CD = #{cmpnyCd}
 	  AND A.USER_CD = #{userCd}
 	  AND A.USE_YN = 'Y'
+	ORDER BY B.MENU_IDX, B.MENU_SUB_IDX
     </select>
-    
+
     <select id="selectUserIdInfo" parameterType="com.prafta.common.cmm.baseinfo.application.query.UserIdInfoQuery" resultType="com.prafta.common.cmm.baseinfo.result.UserIdInfoResult">
     /* BaseinfoMapper."selectUserIdInfo" */
     SELECT

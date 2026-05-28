@@ -33,12 +33,12 @@ public record LeaveTypeResult(
     
     , String grantBaseType
     , String grantBaseTypeNm
-    
+
     , String grantOffsetMonth
-    
+
+    , String grantAssignMmdd
+
     , String aprvUseYn
-    , String aprvStepCnt
-    , String hrFinalAprvYn
     , String evidenceYn
     , String evidenceGuideMsg
 ){

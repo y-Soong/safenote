@@ -13,4 +13,5 @@ public class TbmEduMtrlInfoRequest{
 	private String contents;
 	private String mtrlType;
 	private String useYn;
+	private String siteCd;		// prafta-033-A: 스코프(목록 그리드 인라인 저장 시 전달). 미전달이면 기존 값 보존
 }

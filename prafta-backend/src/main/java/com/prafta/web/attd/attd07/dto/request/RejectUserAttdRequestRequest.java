@@ -10,9 +10,9 @@ import lombok.Setter;
 /**
  * Request body for POST /attd07/reject-user-attd-requests.
  *
- * PRAFTA-008 - 근태(ATTD_MODIFY / ATTD_CREATE) 요청 반려.
+ * PRAFTA-008 - 근태(REQ_TYPE='01' 근태생성 / '02' 근태수정) 요청 반려.
  * 승인(update-user-attd-requests)과 동일한 권위 검증을 거치되, 출퇴근 값을
- * 실제 반영하지 않고 TB_USER_ATTD_REQ 를 REJECTED 로 전이하고
+ * 실제 반영하지 않고 TB_USER_ATTD_REQ 를 반려('03') 상태로 전이하고
  * TB_USER_ATTD_HIST 에 반려 이력만 남긴다.
  *
  * body 의 키 필드(siteCd / userCd / workYmd / workSeq / nodeCd)는 서버가 보관한

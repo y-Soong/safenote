@@ -47,5 +47,10 @@ public record AttdListsResult(
     /* outside / status */
     , String isOutsideYn
     , String attdStatusCd
+
+    /* row type discriminator (PRAFTA-015) */
+    , String rowType   /* 'NORMAL' | 'OT' */
+    , String otId      /* 초과근무 ID — OT 행만, NORMAL 은 NULL */
+    , String otType    /* 초과근무 유형 EXTEND/NIGHT/HOLIDAY — OT 행만 */
 ) {
 }

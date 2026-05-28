@@ -166,6 +166,7 @@
                   @update:width="onResize"
                 />
                 <th class="editableCell" style="width: 7%">권한</th>
+                <th class="editableCell" style="width: 6%">직급</th>
                 <th class="editableCell" style="width: 6%">사용여부</th>
                 <ThSortable
                   label="소속사업장"
@@ -201,7 +202,7 @@
             <tbody>
               <template v-if="!userActList || userActList.length === 0">
                 <tr>
-                  <td colspan="13" class="edu-grid-empty">
+                  <td colspan="14" class="edu-grid-empty">
                     등록된 세부 항목이 없습니다.
                   </td>
                 </tr>
@@ -242,6 +243,23 @@
                           (o) => o.baimValDCd != null
                         )"
                         :key="opt.baimValCd"
+                        :value="opt.baimValDCd"
+                      >
+                        {{ opt.baimValDNm }}
+                      </option>
+                    </BaseSelect>
+                  </td>
+                  <td @dblclick="!isRowLocked(user) && fnUserInfoPopOpen(user)">
+                    <BaseSelect
+                      v-model="user.rankCd"
+                      :disabled="isRowLocked(user)"
+                    >
+                      <option :value="null">-</option>
+                      <option
+                        v-for="opt in (baseInfoArr['COM007'] || []).filter(
+                          (o) => o.baimValDCd != null
+                        )"
+                        :key="opt.baimValDCd"
                         :value="opt.baimValDCd"
                       >
                         {{ opt.baimValDNm }}
@@ -432,7 +450,7 @@ const fnGetBaseinfoList = async () => {
     const response = await axios.get("/comApi/baseinfo/base-info-lists", {
       params: {
         cmpnyCd: sessionStorage.getItem("gv_cmpnyCd"),
-        baseCodeList: ["COM005"],
+        baseCodeList: ["COM005", "COM007"],
       },
     });
 

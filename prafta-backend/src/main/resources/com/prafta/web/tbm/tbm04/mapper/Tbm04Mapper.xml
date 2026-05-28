@@ -1,0 +1,457 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.prafta.web.tbm.tbm04.mapper.Tbm04Mapper">
+
+	<!-- ============================ W-12 이력 목록 ============================ -->
+	<!-- 기본 대상: STATUS_CD IN ('COMPLETED','CANCELLED'). statusCd 지정 시 해당 상태만. -->
+	<sql id="historyWhere">
+		WHERE A.CMPNY_CD = #{gvCmpnyCd}
+		  AND A.DEL_YN = 'N'
+		  /* 스코프 필터: master/safe(companyWide=true)는 회사 전체, 그 외는 자기 사업장만 */
+		  <if test="!companyWide">
+		    AND A.SITE_CD = #{scopeSiteCd}
+		  </if>
+		  <choose>
+		    <when test="statusCd != null and statusCd != ''">
+		      AND A.STATUS_CD = #{statusCd}
+		    </when>
+		    <otherwise>
+		      AND A.STATUS_CD IN ('COMPLETED', 'CANCELLED')
+		    </otherwise>
+		  </choose>
+		  <if test="siteCd != null and siteCd != ''">
+		    AND A.SITE_CD = #{siteCd}
+		  </if>
+		  <if test="managerUserCd != null and managerUserCd != ''">
+		    AND A.MANAGER_USER_CD = #{managerUserCd}
+		  </if>
+		  <if test="searchKeyword != null and searchKeyword != ''">
+		    AND A.TITLE LIKE CONCAT('%', #{searchKeyword}, '%')
+		  </if>
+		  /* 기간 필터: 종료일(ENDED_AT) 기준, 미종료(CANCELLED 등)는 등록일 보완 */
+		  <if test="startDate != null and startDate != ''">
+		    AND DATE(IFNULL(A.ENDED_AT, A.INSERT_DATE)) &gt;= #{startDate}
+		  </if>
+		  <if test="endDate != null and endDate != ''">
+		    AND DATE(IFNULL(A.ENDED_AT, A.INSERT_DATE)) &lt;= #{endDate}
+		  </if>
+	</sql>
+
+	<select id="selectHistorySessionList" parameterType="com.prafta.web.tbm.tbm04.application.query.HistorySessionListQuery" resultType="com.prafta.web.tbm.tbm04.result.HistorySessionListResult">
+	/* Tbm04Mapper.selectHistorySessionList */
+	SELECT
+		A.SESSION_CD		AS sessionCd
+		, A.SITE_CD			AS siteCd
+		, ST.SITE_NM		AS siteNm
+		, A.TITLE			AS title
+		, A.STATUS_CD		AS statusCd
+		, SC.SYST_VAL_D_NM	AS statusNm
+		, A.MANAGER_USER_CD	AS managerUserCd
+		, FNC_CMM_INFO_SRCH(A.CMPNY_CD, 'USER_NM', A.MANAGER_USER_CD, NULL)	AS managerUserNm
+		, DATE_FORMAT(A.OPENED_AT, '%Y-%m-%d %H:%i')	AS openedAt
+		, DATE_FORMAT(A.STARTED_AT, '%Y-%m-%d %H:%i')	AS startedAt
+		, DATE_FORMAT(A.ENDED_AT, '%Y-%m-%d %H:%i')		AS endedAt
+		, DATE_FORMAT(A.INSERT_DATE, '%Y-%m-%d %H:%i')	AS insertDate
+		/* 연계 위험성평가 수 */
+		, (
+			SELECT COUNT(1)
+			FROM TB_TBM_SESSION_RISK R
+			WHERE R.CMPNY_CD = A.CMPNY_CD
+			  AND R.SESSION_CD = A.SESSION_CD
+		  )				AS riskCount
+		/* 출결 집계(출결 테이블 미사용 단계에서는 0). DEL_YN='N' 기준 */
+		, (
+			SELECT COUNT(1)
+			FROM TB_TBM_ATTENDANCE AT
+			WHERE AT.CMPNY_CD = A.CMPNY_CD
+			  AND AT.SESSION_CD = A.SESSION_CD
+			  AND AT.DEL_YN = 'N'
+		  )				AS attendanceCount
+		, (
+			SELECT COUNT(1)
+			FROM TB_TBM_ATTENDANCE AT
+			WHERE AT.CMPNY_CD = A.CMPNY_CD
+			  AND AT.SESSION_CD = A.SESSION_CD
+			  AND AT.DEL_YN = 'N'
+			  AND AT.COMPLETION_STATUS_CD = 'COMPLETED'
+		  )				AS completedCount
+		, (
+			SELECT COUNT(1)
+			FROM TB_TBM_ATTENDANCE AT
+			WHERE AT.CMPNY_CD = A.CMPNY_CD
+			  AND AT.SESSION_CD = A.SESSION_CD
+			  AND AT.DEL_YN = 'N'
+			  AND AT.COMPLETION_STATUS_CD = 'NOT_COMPLETED'
+		  )				AS notCompletedCount
+	FROM TB_TBM_SESSION A
+		 LEFT OUTER JOIN TB_SITE ST
+		 	ON (
+		 		A.CMPNY_CD = ST.CMPNY_CD
+		 	AND A.SITE_CD = ST.SITE_CD
+		 	)
+		 LEFT OUTER JOIN (
+			SELECT D.SYST_VAL_D_CD, D.SYST_VAL_D_NM
+			FROM TB_SYST_VAL_D D
+			WHERE D.SYST_VAL_CD = 'SYS046'
+			  AND D.USE_YN = 'Y'
+		 ) SC
+		 	ON (
+		 		A.STATUS_CD = SC.SYST_VAL_D_CD
+		 	)
+	<include refid="historyWhere" />
+	/* 종료일(없으면 등록일) 최신순 */
+	ORDER BY IFNULL(A.ENDED_AT, A.INSERT_DATE) DESC
+	LIMIT #{pageSize} OFFSET #{offset}
+	</select>
+
+	<select id="selectHistorySessionListCount" parameterType="com.prafta.web.tbm.tbm04.application.query.HistorySessionListQuery" resultType="int">
+	/* Tbm04Mapper.selectHistorySessionListCount */
+	SELECT COUNT(1)
+	FROM TB_TBM_SESSION A
+	<include refid="historyWhere" />
+	</select>
+
+	<select id="selectHistoryStat" parameterType="com.prafta.web.tbm.tbm04.application.query.HistorySessionListQuery" resultType="com.prafta.web.tbm.tbm04.result.HistoryStatResult">
+	/* Tbm04Mapper.selectHistoryStat */
+	/* 필터된 세션 집합(A)에 출결(AT)을 LEFT JOIN 하여 한 번에 집계. 출결 0건이면 모두 0. */
+	/* SUM은 행이 0건이면 NULL을 반환하므로 IFNULL로 0 보정(결과 record가 primitive int) */
+	SELECT
+		COUNT(DISTINCT A.SESSION_CD)	AS sessionCount
+		, COUNT(AT.ATTENDANCE_CD)		AS attendanceCount
+		, IFNULL(SUM(CASE WHEN AT.COMPLETION_STATUS_CD = 'COMPLETED' THEN 1 ELSE 0 END), 0)		AS completedCount
+		, IFNULL(SUM(CASE WHEN AT.COMPLETION_STATUS_CD = 'NOT_COMPLETED' THEN 1 ELSE 0 END), 0)	AS notCompletedCount
+	FROM TB_TBM_SESSION A
+		 LEFT OUTER JOIN TB_TBM_ATTENDANCE AT
+		 	ON (
+		 		A.CMPNY_CD = AT.CMPNY_CD
+		 	AND A.SESSION_CD = AT.SESSION_CD
+		 	AND AT.DEL_YN = 'N'
+		 	)
+	<include refid="historyWhere" />
+	</select>
+
+	<!-- ============================ W-13 출결 명단 ============================ -->
+	<!-- 정규직(TB_USER)/일용직(TB_DAILY_USER) LEFT OUTER JOIN 후 USER_TYPE_CD 로 컬럼 선택.
+	     이상신호 요약은 TB_TBM_ATTENDANCE_EVENT 백엔드 집계. 출결 0건이면 빈 목록. -->
+	<select id="selectSessionAttendances" parameterType="com.prafta.web.tbm.tbm04.application.query.SessionAttendanceQuery" resultType="com.prafta.web.tbm.tbm04.result.SessionAttendanceResult">
+	/* Tbm04Mapper.selectSessionAttendances */
+	SELECT
+		AT.ATTENDANCE_CD		AS attendanceCd
+		, AT.USER_TYPE_CD		AS userTypeCd
+		, TP.SYST_VAL_D_NM		AS userTypeNm
+		, AT.USER_CD			AS userCd
+		, CASE
+			WHEN AT.USER_TYPE_CD = 'REGULAR' THEN RU.USER_NM
+			ELSE DU.USER_NM
+		  END					AS userNm
+		, ND.NODE_NM			AS deptNm
+		, DU.MBL_NO_LAST4		AS mblNoLast4
+		, AT.ENTRY_TYPE_CD		AS entryTypeCd
+		, DATE_FORMAT(AT.ENTRY_AT, '%Y-%m-%d %H:%i')	AS entryAt
+		, AT.EXIT_TYPE_CD		AS exitTypeCd
+		, DATE_FORMAT(AT.EXIT_AT, '%Y-%m-%d %H:%i')		AS exitAt
+		, AT.EXIT_FORCED_REASON	AS exitForcedReason
+		, AT.ENTRY_SIGN_FILE_MGMT_CD	AS entrySignFileMgmtCd
+		, AT.EXIT_SIGN_FILE_MGMT_CD		AS exitSignFileMgmtCd
+		, AT.COMPLETION_STATUS_CD	AS completionStatusCd
+		, CS.SYST_VAL_D_NM		AS completionStatusNm
+		, AT.NOT_COMPLETED_REASON	AS notCompletedReason
+		, AT.STATUS_UPDATED_BY	AS statusUpdatedBy
+		, FNC_CMM_INFO_SRCH(AT.CMPNY_CD, 'USER_NM', AT.STATUS_UPDATED_BY, NULL)	AS statusUpdatedByNm
+		, DATE_FORMAT(AT.STATUS_UPDATED_AT, '%Y-%m-%d %H:%i')	AS statusUpdatedAt
+		/* 이상신호 요약(백엔드 집계) */
+		, (
+			SELECT COUNT(1)
+			FROM TB_TBM_ATTENDANCE_EVENT EV
+			WHERE EV.CMPNY_CD = AT.CMPNY_CD
+			  AND EV.ATTENDANCE_CD = AT.ATTENDANCE_CD
+			  AND EV.EVENT_TYPE_CD = 'BACKGROUND_OUT'
+		  )				AS backgroundCount
+		, (
+			SELECT COUNT(1)
+			FROM TB_TBM_ATTENDANCE_EVENT EV
+			WHERE EV.CMPNY_CD = AT.CMPNY_CD
+			  AND EV.ATTENDANCE_CD = AT.ATTENDANCE_CD
+			  AND EV.EVENT_TYPE_CD = 'GPS_UPDATED'
+			  AND JSON_EXTRACT(EV.EVENT_DATA, '$.outOfRange') = TRUE
+		  )				AS gpsOutOfRangeCount
+		, (
+			SELECT COUNT(1)
+			FROM TB_TBM_ATTENDANCE_EVENT EV
+			WHERE EV.CMPNY_CD = AT.CMPNY_CD
+			  AND EV.ATTENDANCE_CD = AT.ATTENDANCE_CD
+			  AND EV.EVENT_TYPE_CD = 'NETWORK_LOST'
+		  )				AS networkLostCount
+		, (
+			SELECT COUNT(1)
+			FROM TB_TBM_ATTENDANCE_EVENT EV
+			WHERE EV.CMPNY_CD = AT.CMPNY_CD
+			  AND EV.ATTENDANCE_CD = AT.ATTENDANCE_CD
+		  )				AS eventCount
+	FROM TB_TBM_ATTENDANCE AT
+		 LEFT OUTER JOIN TB_USER RU
+		 	ON (
+		 		AT.USER_TYPE_CD = 'REGULAR'
+		 	AND AT.CMPNY_CD = RU.CMPNY_CD
+		 	AND AT.USER_CD = RU.USER_CD
+		 	)
+		 LEFT OUTER JOIN TB_DAILY_USER DU
+		 	ON (
+		 		AT.USER_TYPE_CD = 'DAILY'
+		 	AND AT.CMPNY_CD = DU.CMPNY_CD
+		 	AND AT.USER_CD = DU.USER_CD
+		 	)
+		 LEFT OUTER JOIN TB_SITE_NODE ND
+		 	ON (
+		 		AT.USER_TYPE_CD = 'REGULAR'
+		 	AND RU.CMPNY_CD = ND.CMPNY_CD
+		 	AND RU.SITE_CD = ND.SITE_CD
+		 	AND RU.NODE_CD = ND.NODE_CD
+		 	)
+		 LEFT OUTER JOIN (
+			SELECT D.SYST_VAL_D_CD, D.SYST_VAL_D_NM
+			FROM TB_SYST_VAL_D D
+			WHERE D.SYST_VAL_CD = 'SYS050'
+			  AND D.USE_YN = 'Y'
+		 ) TP
+		 	ON (
+		 		AT.USER_TYPE_CD = TP.SYST_VAL_D_CD
+		 	)
+		 LEFT OUTER JOIN (
+			SELECT D.SYST_VAL_D_CD, D.SYST_VAL_D_NM
+			FROM TB_SYST_VAL_D D
+			WHERE D.SYST_VAL_CD = 'SYS053'
+			  AND D.USE_YN = 'Y'
+		 ) CS
+		 	ON (
+		 		AT.COMPLETION_STATUS_CD = CS.SYST_VAL_D_CD
+		 	)
+	WHERE AT.CMPNY_CD = #{gvCmpnyCd}
+	  AND AT.SESSION_CD = #{sessionCd}
+	  AND AT.DEL_YN = 'N'
+	  <if test="userTypeCd != null and userTypeCd != ''">
+	    AND AT.USER_TYPE_CD = #{userTypeCd}
+	  </if>
+	  <if test="completionStatusCd != null and completionStatusCd != ''">
+	    AND AT.COMPLETION_STATUS_CD = #{completionStatusCd}
+	  </if>
+	ORDER BY AT.ENTRY_AT IS NULL, AT.ENTRY_AT, AT.ATTENDANCE_CD
+	</select>
+
+	<!-- ============================ W-13 이벤트 타임라인 ============================ -->
+	<select id="selectAttendanceEvents" parameterType="com.prafta.web.tbm.tbm04.application.query.AttendanceEventQuery" resultType="com.prafta.web.tbm.tbm04.result.AttendanceEventResult">
+	/* Tbm04Mapper.selectAttendanceEvents */
+	SELECT
+		EV.EVENT_NO			AS eventNo
+		, EV.EVENT_TYPE_CD	AS eventTypeCd
+		, ET.SYST_VAL_D_NM	AS eventTypeNm
+		, DATE_FORMAT(EV.EVENT_TIME, '%Y-%m-%d %H:%i:%s')			AS eventTime
+		, DATE_FORMAT(EV.SERVER_RECEIVED_AT, '%Y-%m-%d %H:%i:%s')	AS serverReceivedAt
+		, EV.EVENT_DATA		AS eventData
+	FROM TB_TBM_ATTENDANCE_EVENT EV
+		 LEFT OUTER JOIN (
+			SELECT D.SYST_VAL_D_CD, D.SYST_VAL_D_NM
+			FROM TB_SYST_VAL_D D
+			WHERE D.SYST_VAL_CD = 'SYS054'
+			  AND D.USE_YN = 'Y'
+		 ) ET
+		 	ON (
+		 		EV.EVENT_TYPE_CD = ET.SYST_VAL_D_CD
+		 	)
+	WHERE EV.CMPNY_CD = #{gvCmpnyCd}
+	  AND EV.ATTENDANCE_CD = #{attendanceCd}
+	ORDER BY EV.EVENT_TIME, EV.EVENT_NO
+	LIMIT #{pageSize} OFFSET #{offset}
+	</select>
+
+	<select id="selectAttendanceEventCount" parameterType="com.prafta.web.tbm.tbm04.application.query.AttendanceEventQuery" resultType="int">
+	/* Tbm04Mapper.selectAttendanceEventCount */
+	SELECT COUNT(1)
+	FROM TB_TBM_ATTENDANCE_EVENT EV
+	WHERE EV.CMPNY_CD = #{gvCmpnyCd}
+	  AND EV.ATTENDANCE_CD = #{attendanceCd}
+	</select>
+
+	<!-- ============================ W-14 미이수 처리 ============================ -->
+	<select id="selectAttendanceGuard" parameterType="com.prafta.web.tbm.tbm04.application.query.AttendanceGuardQuery" resultType="com.prafta.web.tbm.tbm04.result.AttendanceGuardResult">
+	/* Tbm04Mapper.selectAttendanceGuard */
+	SELECT
+		AT.ATTENDANCE_CD	AS attendanceCd
+		, AT.SESSION_CD		AS sessionCd
+		, S.SITE_CD			AS siteCd
+		, S.MANAGER_USER_CD	AS managerUserCd
+		, AT.COMPLETION_STATUS_CD	AS completionStatusCd
+	FROM TB_TBM_ATTENDANCE AT
+		 INNER JOIN TB_TBM_SESSION S
+		 	ON (
+		 		AT.CMPNY_CD = S.CMPNY_CD
+		 	AND AT.SESSION_CD = S.SESSION_CD
+		 	)
+	WHERE AT.CMPNY_CD = #{gvCmpnyCd}
+	  AND AT.ATTENDANCE_CD = #{attendanceCd}
+	  AND AT.DEL_YN = 'N'
+	</select>
+
+	<update id="updateCompletion" parameterType="com.prafta.web.tbm.tbm04.application.command.CompletionUpdateCommand">
+	/* Tbm04Mapper.updateCompletion */
+	UPDATE TB_TBM_ATTENDANCE
+	SET
+		COMPLETION_STATUS_CD	= #{completionStatusCd}
+		/* NOT_COMPLETED 시에만 사유 갱신. COMPLETED 복귀 시 기존 사유 보존(감사용). */
+		, NOT_COMPLETED_REASON	= IFNULL(#{notCompletedReason}, NOT_COMPLETED_REASON)
+		, STATUS_UPDATED_BY		= #{gvUserCd}
+		, STATUS_UPDATED_AT		= NOW()
+		, UPDATE_NO				= #{gvUserCd}
+		, UPDATE_DATE			= NOW()
+	WHERE CMPNY_CD = #{gvCmpnyCd}
+	  AND ATTENDANCE_CD = #{attendanceCd}
+	  AND DEL_YN = 'N'
+	</update>
+
+	<!-- ============================ W-15 사용자별 이수 ============================ -->
+	<!-- 대상 사용자 헤더(정규직 TB_USER + 부서명 / 일용직 TB_DAILY_USER + 끝4자리). -->
+	<select id="selectUserInfo" parameterType="com.prafta.web.tbm.tbm04.application.query.UserAttendanceQuery" resultType="com.prafta.web.tbm.tbm04.result.UserInfoResult">
+	/* Tbm04Mapper.selectUserInfo */
+	<choose>
+		<when test="userTypeCd == 'DAILY'">
+			SELECT
+				DU.USER_CD		AS userCd
+				, 'DAILY'		AS userTypeCd
+				, DU.USER_NM	AS userNm
+				, DU.SITE_CD	AS siteCd
+				, ST.SITE_NM	AS siteNm
+				, NULL			AS deptNm
+				, DU.MBL_NO_LAST4	AS mblNoLast4
+			FROM TB_DAILY_USER DU
+				 LEFT OUTER JOIN TB_SITE ST
+				 	ON (
+				 		DU.CMPNY_CD = ST.CMPNY_CD
+				 	AND DU.SITE_CD = ST.SITE_CD
+				 	)
+			WHERE DU.CMPNY_CD = #{gvCmpnyCd}
+			  AND DU.USER_CD = #{userCd}
+		</when>
+		<otherwise>
+			SELECT
+				RU.USER_CD		AS userCd
+				, 'REGULAR'		AS userTypeCd
+				, RU.USER_NM	AS userNm
+				, RU.SITE_CD	AS siteCd
+				, ST.SITE_NM	AS siteNm
+				, ND.NODE_NM	AS deptNm
+				, NULL			AS mblNoLast4
+			FROM TB_USER RU
+				 LEFT OUTER JOIN TB_SITE ST
+				 	ON (
+				 		RU.CMPNY_CD = ST.CMPNY_CD
+				 	AND RU.SITE_CD = ST.SITE_CD
+				 	)
+				 LEFT OUTER JOIN TB_SITE_NODE ND
+				 	ON (
+				 		RU.CMPNY_CD = ND.CMPNY_CD
+				 	AND RU.SITE_CD = ND.SITE_CD
+				 	AND RU.NODE_CD = ND.NODE_CD
+				 	)
+			WHERE RU.CMPNY_CD = #{gvCmpnyCd}
+			  AND RU.USER_CD = #{userCd}
+		</otherwise>
+	</choose>
+	</select>
+
+	<sql id="userAttendanceWhere">
+		WHERE AT.CMPNY_CD = #{gvCmpnyCd}
+		  AND AT.USER_TYPE_CD = #{userTypeCd}
+		  AND AT.USER_CD = #{userCd}
+		  AND AT.DEL_YN = 'N'
+		  <if test="completionStatusCd != null and completionStatusCd != ''">
+		    AND AT.COMPLETION_STATUS_CD = #{completionStatusCd}
+		  </if>
+		  <if test="startDate != null and startDate != ''">
+		    AND DATE(IFNULL(S.ENDED_AT, S.INSERT_DATE)) &gt;= #{startDate}
+		  </if>
+		  <if test="endDate != null and endDate != ''">
+		    AND DATE(IFNULL(S.ENDED_AT, S.INSERT_DATE)) &lt;= #{endDate}
+		  </if>
+	</sql>
+
+	<select id="selectUserAttendances" parameterType="com.prafta.web.tbm.tbm04.application.query.UserAttendanceQuery" resultType="com.prafta.web.tbm.tbm04.result.UserAttendanceResult">
+	/* Tbm04Mapper.selectUserAttendances */
+	SELECT
+		AT.ATTENDANCE_CD	AS attendanceCd
+		, AT.SESSION_CD		AS sessionCd
+		, S.TITLE			AS sessionTitle
+		, S.SITE_CD			AS siteCd
+		, ST.SITE_NM		AS siteNm
+		, DATE_FORMAT(IFNULL(S.ENDED_AT, S.INSERT_DATE), '%Y-%m-%d')	AS sessionDate
+		, DATE_FORMAT(AT.ENTRY_AT, '%Y-%m-%d %H:%i')	AS entryAt
+		, DATE_FORMAT(AT.EXIT_AT, '%Y-%m-%d %H:%i')		AS exitAt
+		, AT.COMPLETION_STATUS_CD	AS completionStatusCd
+		, CS.SYST_VAL_D_NM	AS completionStatusNm
+		, (
+			SELECT COUNT(1)
+			FROM TB_TBM_SESSION_RISK R
+			WHERE R.CMPNY_CD = S.CMPNY_CD
+			  AND R.SESSION_CD = S.SESSION_CD
+		  )					AS riskCount
+	FROM TB_TBM_ATTENDANCE AT
+		 INNER JOIN TB_TBM_SESSION S
+		 	ON (
+		 		AT.CMPNY_CD = S.CMPNY_CD
+		 	AND AT.SESSION_CD = S.SESSION_CD
+		 	)
+		 LEFT OUTER JOIN TB_SITE ST
+		 	ON (
+		 		S.CMPNY_CD = ST.CMPNY_CD
+		 	AND S.SITE_CD = ST.SITE_CD
+		 	)
+		 LEFT OUTER JOIN (
+			SELECT D.SYST_VAL_D_CD, D.SYST_VAL_D_NM
+			FROM TB_SYST_VAL_D D
+			WHERE D.SYST_VAL_CD = 'SYS053'
+			  AND D.USE_YN = 'Y'
+		 ) CS
+		 	ON (
+		 		AT.COMPLETION_STATUS_CD = CS.SYST_VAL_D_CD
+		 	)
+	<include refid="userAttendanceWhere" />
+	ORDER BY IFNULL(S.ENDED_AT, S.INSERT_DATE) DESC, AT.ATTENDANCE_CD DESC
+	LIMIT #{pageSize} OFFSET #{offset}
+	</select>
+
+	<select id="selectUserAttendanceCount" parameterType="com.prafta.web.tbm.tbm04.application.query.UserAttendanceQuery" resultType="int">
+	/* Tbm04Mapper.selectUserAttendanceCount */
+	SELECT COUNT(1)
+	FROM TB_TBM_ATTENDANCE AT
+		 INNER JOIN TB_TBM_SESSION S
+		 	ON (
+		 		AT.CMPNY_CD = S.CMPNY_CD
+		 	AND AT.SESSION_CD = S.SESSION_CD
+		 	)
+	<include refid="userAttendanceWhere" />
+	</select>
+
+	<select id="selectUserAttendanceSummary" parameterType="com.prafta.web.tbm.tbm04.application.query.UserAttendanceQuery" resultType="com.prafta.web.tbm.tbm04.result.UserAttendanceSummaryResult">
+	/* Tbm04Mapper.selectUserAttendanceSummary */
+	/* SUM은 행이 0건이면 NULL을 반환하므로 IFNULL로 0 보정(결과 record가 primitive int) */
+	SELECT
+		COUNT(1)	AS totalCount
+		, IFNULL(SUM(CASE WHEN AT.COMPLETION_STATUS_CD = 'COMPLETED' THEN 1 ELSE 0 END), 0)		AS completedCount
+		, IFNULL(SUM(CASE WHEN AT.COMPLETION_STATUS_CD = 'NOT_COMPLETED' THEN 1 ELSE 0 END), 0)	AS notCompletedCount
+		/* 평균 참여시간(분): 입실~종료가 모두 있는 출결 기준. 없으면 NULL */
+		, ROUND(AVG(
+			CASE
+				WHEN AT.ENTRY_AT IS NOT NULL AND AT.EXIT_AT IS NOT NULL
+					THEN TIMESTAMPDIFF(MINUTE, AT.ENTRY_AT, AT.EXIT_AT)
+				ELSE NULL
+			END
+		  ))	AS avgDurationMin
+	FROM TB_TBM_ATTENDANCE AT
+		 INNER JOIN TB_TBM_SESSION S
+		 	ON (
+		 		AT.CMPNY_CD = S.CMPNY_CD
+		 	AND AT.SESSION_CD = S.SESSION_CD
+		 	)
+	<include refid="userAttendanceWhere" />
+	</select>
+
+</mapper>

@@ -34,12 +34,15 @@ public record AttdGpsTrailParam(
         // ATTD_ID is varchar(20) on the DB side but the application format is a
         // numeric sequence (yyyyMMdd + seq). Reject non-numeric input early so
         // we never bind arbitrary strings to downstream queries.
+        // [PRAFTA-010-1-020] attdId 가 비숫자인 경우는 "필수 누락"이 아니라
+        // "유효하지 않은 값"이므로 COMMON_400_002 로 응답한다.
+        // (위 blank 검증의 COMMON_400_001 = 진짜 필수 누락과 구분한다.)
         try {
             Long.parseLong(request.getAttdId());
         } catch (NumberFormatException e) {
-            log.warn("AttdGpsTrailParam.from - attdId is not a valid numeric identifier. attdId={}",
+            log.warn("AttdGpsTrailParam.from - attdId 형식 오류(비숫자). attdId={}",
                     request.getAttdId());
-            throw new ApiException(CommonErrorCode.COMMON_400_001);
+            throw new ApiException(CommonErrorCode.COMMON_400_002);
         }
 
         return new AttdGpsTrailParam(

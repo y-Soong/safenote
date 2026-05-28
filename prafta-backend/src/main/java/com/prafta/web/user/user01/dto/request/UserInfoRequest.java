@@ -21,5 +21,6 @@ public class UserInfoRequest {
     private String nodeCd;
     private String oriNodeCd;
     private String authCd;
+    private String rankCd;
     private String useYn;
 }

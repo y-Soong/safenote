@@ -480,10 +480,13 @@ const fnGetCmpnyInfo = async () => {
       cmpnyNm.value = resData.cmpnyNm;
     }
   } catch (err) {
-    fnAlertMsg(resolveApiErrorMessage(err, "처리 중 오류가 발생했습니다."), () => {
-      cmpnyCd.value = "";
-      cmpnyCdFcs.value.focus();
-    });
+    fnAlertMsg(
+      resolveApiErrorMessage(err, "처리 중 오류가 발생했습니다."),
+      () => {
+        cmpnyCd.value = "";
+        cmpnyCdFcs.value.focus();
+      }
+    );
   }
 };
 
@@ -517,10 +520,13 @@ const fnUserIdDupleChk = async () => {
       }
     }
   } catch (err) {
-    fnAlertMsg(resolveApiErrorMessage(err, "처리 중 오류가 발생했습니다."), () => {
-      cmpnyCd.value = "";
-      cmpnyCdFcs.value.focus();
-    });
+    fnAlertMsg(
+      resolveApiErrorMessage(err, "처리 중 오류가 발생했습니다."),
+      () => {
+        cmpnyCd.value = "";
+        cmpnyCdFcs.value.focus();
+      }
+    );
   }
 };
 
@@ -610,9 +616,12 @@ const fnSmsAuthChk = async () => {
       });
     }
   } catch (err) {
-    fnAlertMsg(resolveApiErrorMessage(err, "처리 중 오류가 발생했습니다."), () => {
-      smsAuthReqBtnFcs.value.focus();
-    });
+    fnAlertMsg(
+      resolveApiErrorMessage(err, "처리 중 오류가 발생했습니다."),
+      () => {
+        smsAuthReqBtnFcs.value.focus();
+      }
+    );
   }
 };
 

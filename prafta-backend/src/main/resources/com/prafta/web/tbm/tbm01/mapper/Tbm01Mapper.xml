@@ -4,7 +4,7 @@
 
 	<select id="selectTbmEduInfo" parameterType="com.prafta.web.tbm.tbm01.application.query.TbmEduInfoListQuery" resultType="com.prafta.web.tbm.tbm01.result.TbmEduInfoResult">
     /* Tbm01Mapper.selectTbmEduInfo */
-    SELECT 
+    SELECT
     	A.CMPNY_CD			AS cmpnyCd
 	    , A.MTRL_CD				AS mtrlCd
 	    , A.TITLE				AS title
@@ -12,26 +12,44 @@
 	    , A.MTRL_TYPE			AS mtrlType
 	    , A.USE_YN				AS useYn
 	    , COUNT(B.MTRL_ITEM_CD) AS mtrlCnt
+	    , A.SITE_CD				AS siteCd
+	    /* 회사공통 여부: SITE_CD IS NULL 이면 'Y' */
+	    , CASE WHEN A.SITE_CD IS NULL THEN 'Y' ELSE 'N' END AS isCommonContent
 	    /* 데이터 초기화용 값 */
 	    , A.TITLE				AS oriTitle
 	    , A.CONTENTS			AS oriContents
 	    , A.MTRL_TYPE			AS oriMtrlType
 	    , A.USE_YN				AS oriUseYn
-	    
+
 	    , FNC_CMM_INFO_SRCH(A.CMPNY_CD, 'USER_NM', A.INSERT_NO, NULL) 	AS insertNm
         , DATE_FORMAT(A.INSERT_DATE, '%Y-%m-%d %H:%i')				AS insertDate
 	FROM TB_TBM_EDU_MTRL A
 	     INNER JOIN TB_TBM_EDU_MTRL_ITEM B
 			ON (
-				A.MTRL_CD = B.MTRL_CD 
+				A.MTRL_CD = B.MTRL_CD
 			AND B.USE_YN = 'Y'
 	        )
 	WHERE A.CMPNY_CD = #{gvCmpnyCd}
+	  /* 스코프 필터: master/safe(companyWide=true)는 회사 전체, 그 외는 자기사업장+회사공통 */
+	  <if test="!companyWide">
+	    AND (A.SITE_CD IS NULL OR A.SITE_CD = #{scopeSiteCd})
+	  </if>
+	  /* 특정 사업장 필터(드롭다운 선택). 'COMMON' 은 회사공통만 */
+	  <if test="siteCd != null and siteCd != ''">
+	    <choose>
+	      <when test="siteCd == 'COMMON'">
+	        AND A.SITE_CD IS NULL
+	      </when>
+	      <otherwise>
+	        AND A.SITE_CD = #{siteCd}
+	      </otherwise>
+	    </choose>
+	  </if>
 	  <if test="mtrlCd != null and mtrlCd != ''">
 	    AND A.MTRL_CD = #{mtrlCd}
 	  </if>
 	  <if test="title != null and title != ''">
-	  	AND A.TITLE LIKE CONCAT('%', #{title}, '%') 
+	  	AND A.TITLE LIKE CONCAT('%', #{title}, '%')
 	  </if>
 	  <if test="mtrlType != null and mtrlType != ''">
 	  AND A.MTRL_TYPE = #{mtrlType}
@@ -45,11 +63,12 @@
 	    , A.CONTENTS
 	    , A.MTRL_TYPE
 	    , A.USE_YN
+	    , A.SITE_CD
     </select>
     
     <select id="selectTbmEduItemInfo" parameterType="com.prafta.web.tbm.tbm01.application.query.TbmEduItemInfoListQuery" resultType="com.prafta.web.tbm.tbm01.result.TbmEduItemInfoResult">
     /* Tbm01Mapper.selectTbmEduItemInfo */
-    SELECT 
+    SELECT
     	''						AS chk
     	, A.MTRL_ITEM_CD		AS mtrlItemCd
     	, A.MTRL_CD				AS mtrlCd
@@ -62,6 +81,8 @@
     	, B.FILE_EXT			AS fileExt
     	, A.URL					AS url
     	, A.USE_YN				AS useYn
+    	, A.THUMB_FILE_MGMT_CD	AS thumbFileMgmtCd
+    	, A.DURATION_SEC		AS durationSec
     	/* 데이터 초기화 값 */
     	, A.SORT_IDX			AS oriSortIdx
     	, A.MTRL_ITEM_TYPE		AS oriMtrlItemType
@@ -73,11 +94,17 @@
     	, A.URL					AS oriUrl
     	, A.USE_YN				AS oriUseYn
 	FROM TB_TBM_EDU_MTRL_ITEM A
+		 INNER JOIN TB_TBM_EDU_MTRL M
+		 	ON (
+		 		A.MTRL_CD = M.MTRL_CD
+		 	AND M.CMPNY_CD = #{gvCmpnyCd}
+		 	)
 		 LEFT OUTER JOIN TB_FILE_INFO B
 		 	ON (
 		 		A.FILE_MGMT_CD = B.FILE_MGMT_CD
 		 	)
 	WHERE A.MTRL_CD = #{mtrlCd}
+	ORDER BY A.SORT_IDX
     </select>
 
 	<select id="selectMtrlCd" parameterType="java.util.HashMap" resultType="java.lang.String">
@@ -101,6 +128,8 @@
 	    , MTRL_ITEM_TYPE
 	    , MTRL_DESC
 	    , FILE_MGMT_CD
+	    , THUMB_FILE_MGMT_CD
+	    , DURATION_SEC
 	    , URL
 	    , USE_YN
 	    , INSERT_NO
@@ -112,19 +141,23 @@
 	    , #{mtrlItemType}
 	    , #{mtrlDesc}
 	    , #{fileMgmtCd}
+	    , #{thumbFileMgmtCd}
+	    , #{durationSec}
 	    , #{url}
 	    , #{useYn}
 	    , #{gvUserCd}
 	    , #{gvUserCd}
 	) AS NEW
 	ON DUPLICATE KEY UPDATE
-	    MTRL_ITEM_TYPE   = NEW.MTRL_ITEM_TYPE
-	    , MTRL_DESC      = NEW.MTRL_DESC
-	    , FILE_MGMT_CD   = NEW.FILE_MGMT_CD
-	    , URL            = NEW.URL
-	    , USE_YN         = NEW.USE_YN
-	    , UPDATE_NO      = NEW.UPDATE_NO
-	    , UPDATE_DATE    = NOW()
+	    MTRL_ITEM_TYPE       = NEW.MTRL_ITEM_TYPE
+	    , MTRL_DESC          = NEW.MTRL_DESC
+	    , FILE_MGMT_CD       = NEW.FILE_MGMT_CD
+	    , THUMB_FILE_MGMT_CD = NEW.THUMB_FILE_MGMT_CD
+	    , DURATION_SEC       = NEW.DURATION_SEC
+	    , URL                = NEW.URL
+	    , USE_YN             = NEW.USE_YN
+	    , UPDATE_NO          = NEW.UPDATE_NO
+	    , UPDATE_DATE        = NOW()
 	</update>
 	
 		<update id="mergeTbmEduInfo" parameterType="com.prafta.web.tbm.tbm01.application.command.TbmEduInfoCommand">
@@ -132,6 +165,7 @@
 	INSERT INTO TB_TBM_EDU_MTRL (
 	    MTRL_CD,
 	    CMPNY_CD,
+	    SITE_CD,
 	    TITLE,
 	    CONTENTS,
 	    MTRL_TYPE,
@@ -143,6 +177,7 @@
 	) VALUES (
 	    #{mtrlCd}
 	    , #{gvCmpnyCd}
+	    , #{siteCd}
 	    , #{title}
 	    , #{contents}
 	    , #{mtrlType}
@@ -157,6 +192,8 @@
 	    , CONTENTS   	= NEW.CONTENTS
 	    , MTRL_TYPE  	= NEW.MTRL_TYPE
 	    , USE_YN     	= NEW.USE_YN
+	    /* 스코프(SITE_CD)는 수정 모드에서 변경 불가(FE-5). 전달값 NULL 이면 기존 값 보존 */
+	    , SITE_CD    	= IFNULL(NEW.SITE_CD, SITE_CD)
 	    , UPDATE_NO   	= NEW.UPDATE_NO
 	    , UPDATE_DATE 	= NOW()
 	</update>
@@ -171,6 +208,105 @@
 	/* Tbm01Mapper.deleteTbmEduInfo */
 	DELETE FROM TB_TBM_EDU_MTRL
 	WHERE MTRL_CD = #{mtrlCd}
-	  AND CMPNY_CD = #{gvCmpnyCd} 
+	  AND CMPNY_CD = #{gvCmpnyCd}
 	</delete>
+
+	<!-- prafta-033-A: W-03 상세 - 묶음 마스터 1건(스코프/권한 검증용 SITE_CD 포함) -->
+	<select id="selectTbmEduDetail" parameterType="com.prafta.web.tbm.tbm01.application.query.TbmEduDetailQuery" resultType="com.prafta.web.tbm.tbm01.result.TbmEduInfoResult">
+	/* Tbm01Mapper.selectTbmEduDetail */
+	SELECT
+		A.CMPNY_CD			AS cmpnyCd
+		, A.MTRL_CD			AS mtrlCd
+		, A.TITLE			AS title
+		, A.CONTENTS		AS contents
+		, A.MTRL_TYPE		AS mtrlType
+		, A.USE_YN			AS useYn
+		, (
+			SELECT COUNT(I.MTRL_ITEM_CD)
+			FROM TB_TBM_EDU_MTRL_ITEM I
+			WHERE I.MTRL_CD = A.MTRL_CD
+			  AND I.USE_YN = 'Y'
+		  )					AS mtrlCnt
+		, A.SITE_CD			AS siteCd
+		, CASE WHEN A.SITE_CD IS NULL THEN 'Y' ELSE 'N' END AS isCommonContent
+		, A.TITLE			AS oriTitle
+		, A.CONTENTS		AS oriContents
+		, A.MTRL_TYPE		AS oriMtrlType
+		, A.USE_YN			AS oriUseYn
+		, FNC_CMM_INFO_SRCH(A.CMPNY_CD, 'USER_NM', A.INSERT_NO, NULL)	AS insertNm
+		, DATE_FORMAT(A.INSERT_DATE, '%Y-%m-%d %H:%i')					AS insertDate
+	FROM TB_TBM_EDU_MTRL A
+	WHERE A.CMPNY_CD = #{gvCmpnyCd}
+	  AND A.MTRL_CD = #{mtrlCd}
+	</select>
+
+	<!-- prafta-033-A: W-03 상세 - 세부항목(미디어) 목록 -->
+	<!-- TbmEduItemInfoResult record 는 23필드(뒤에 ori* 9개)를 가지므로,
+	     상세 조회에서도 동일 위치 매핑을 맞춰 줘야 한다. 안 그러면
+	     MyBatis 가 record canonical constructor 위치 매칭 중
+	     IndexOutOfBoundsException 을 던진다(상세 화면은 ori* 미사용). -->
+	<select id="selectTbmEduDetailItems" parameterType="com.prafta.web.tbm.tbm01.application.query.TbmEduDetailQuery" resultType="com.prafta.web.tbm.tbm01.result.TbmEduItemInfoResult">
+	/* Tbm01Mapper.selectTbmEduDetailItems */
+	SELECT
+		''					AS chk
+		, A.MTRL_ITEM_CD	AS mtrlItemCd
+		, A.MTRL_CD			AS mtrlCd
+		, A.SORT_IDX		AS sortIdx
+		, A.MTRL_ITEM_TYPE	AS mtrlItemType
+		, A.MTRL_DESC		AS mtrlDesc
+		, A.FILE_MGMT_CD	AS fileMgmtCd
+		, B.FILE_NM			AS fileNm
+		, B.FILE_PATH		AS filePath
+		, B.FILE_EXT		AS fileExt
+		, A.URL				AS url
+		, A.USE_YN			AS useYn
+		, A.THUMB_FILE_MGMT_CD	AS thumbFileMgmtCd
+		, A.DURATION_SEC	AS durationSec
+		/* record 시그니처 맞춤용(상세 화면 미사용) */
+		, A.SORT_IDX		AS oriSortIdx
+		, A.MTRL_ITEM_TYPE	AS oriMtrlItemType
+		, A.MTRL_DESC		AS oriMtrlDesc
+		, A.FILE_MGMT_CD	AS oriFileMgmtCd
+		, B.FILE_NM			AS oriFileNm
+		, B.FILE_PATH		AS oriFilePath
+		, B.FILE_EXT		AS oriFileExt
+		, A.URL				AS oriUrl
+		, A.USE_YN			AS oriUseYn
+	FROM TB_TBM_EDU_MTRL_ITEM A
+		 INNER JOIN TB_TBM_EDU_MTRL M
+		 	ON (
+		 		A.MTRL_CD = M.MTRL_CD
+		 	AND M.CMPNY_CD = #{gvCmpnyCd}
+		 	)
+		 LEFT OUTER JOIN TB_FILE_INFO B
+		 	ON (
+		 		A.FILE_MGMT_CD = B.FILE_MGMT_CD
+		 	)
+	WHERE A.MTRL_CD = #{mtrlCd}
+	  AND A.USE_YN = 'Y'
+	ORDER BY A.SORT_IDX
+	</select>
+
+	<!-- prafta-033-A: W-03 상세 - 이 묶음을 사용한 TBM 세션 이력(B 이전 빈 목록) -->
+	<select id="selectTbmEduUsedSessions" parameterType="com.prafta.web.tbm.tbm01.application.query.TbmEduDetailQuery" resultType="com.prafta.web.tbm.tbm01.result.TbmEduUsedSessionResult">
+	/* Tbm01Mapper.selectTbmEduUsedSessions */
+	SELECT
+		S.SESSION_CD		AS sessionCd
+		, S.TITLE			AS title
+		, S.STATUS_CD		AS statusCd
+		, S.SITE_CD			AS siteCd
+		, DATE_FORMAT(S.OPENED_AT, '%Y-%m-%d %H:%i')	AS openedAt
+		, DATE_FORMAT(S.ENDED_AT, '%Y-%m-%d %H:%i')		AS endedAt
+		, SC.DISPLAY_ORDER	AS displayOrder
+	FROM TB_TBM_SESSION_CONTENT SC
+		 INNER JOIN TB_TBM_SESSION S
+		 	ON (
+		 		SC.CMPNY_CD = S.CMPNY_CD
+		 	AND SC.SESSION_CD = S.SESSION_CD
+		 	)
+	WHERE SC.CMPNY_CD = #{gvCmpnyCd}
+	  AND SC.MTRL_CD = #{mtrlCd}
+	  AND S.DEL_YN = 'N'
+	ORDER BY S.INSERT_DATE DESC
+	</select>
 </mapper>

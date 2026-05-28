@@ -16,11 +16,15 @@ public record SchInfoParam(
 	, String fstSchStrTime
 	, String fstSchEndTime
 	, String fstSchBrkMin
-	
+	, String fstBrkStrTime
+	, String fstBrkEndTime
+
 	, String secSchStrTime
 	, String secSchEndTime
 	, String secSchBrkMin
-	
+	, String secBrkStrTime
+	, String secBrkEndTime
+
 	, String useYn
 	, String gvCmpnyCd
 	, String gvUserCd
@@ -40,9 +44,13 @@ public record SchInfoParam(
     		, request.getFstSchStrTime()
     		, request.getFstSchEndTime()
     		, request.getFstSchBrkMin()
+    		, request.getFstBrkStrTime()
+    		, request.getFstBrkEndTime()
     		, request.getSecSchStrTime()
     		, request.getSecSchEndTime()
     		, request.getSecSchBrkMin()
+    		, request.getSecBrkStrTime()
+    		, request.getSecBrkEndTime()
     		, request.getUseYn()
     		, tokenInfo.gv_cmpnyCd()
     		, tokenInfo.gv_userCd()

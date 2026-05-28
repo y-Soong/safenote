@@ -2,13 +2,44 @@
   <div class="gps-panel">
     <div class="gps-panel__title">외근 GPS 동선</div>
 
-    <!-- loading -->
-    <div v-if="loading" class="gps-panel__empty">
-      GPS 정보를 불러오는 중...
+    <!-- 출근/퇴근/전체 필터 — 출근·퇴근 좌표가 겹쳐 가려질 때 개별 확인용 -->
+    <div
+      v-if="!loading && !mapError && validTrail.length > 0"
+      class="gps-panel__filter"
+    >
+      <button
+        type="button"
+        class="gps-filter-btn"
+        :class="{ 'is-active': viewMode === 'all' }"
+        @click="setViewMode('all')"
+      >
+        전체
+      </button>
+      <button
+        type="button"
+        class="gps-filter-btn"
+        :class="{ 'is-active': viewMode === '01' }"
+        :disabled="startCount === 0"
+        @click="setViewMode('01')"
+      >
+        출근
+      </button>
+      <button
+        type="button"
+        class="gps-filter-btn"
+        :class="{ 'is-active': viewMode === '02' }"
+        :disabled="endCount === 0"
+        @click="setViewMode('02')"
+      >
+        퇴근
+      </button>
     </div>
 
-    <!-- empty -->
-    <div v-else-if="trail.length === 0" class="gps-panel__empty">
+    <!-- loading -->
+    <div v-if="loading" class="gps-panel__empty">GPS 정보를 불러오는 중...</div>
+
+    <!-- empty: 수집 좌표 0건 또는 유효(01/02) 좌표가 하나도 없을 때 -->
+    <div v-else-if="validTrail.length === 0" class="gps-panel__empty">
       수집된 GPS 좌표가 없습니다.
     </div>
 
@@ -18,14 +49,10 @@
     </div>
 
     <!-- success: 카카오맵 캔버스 -->
-    <div
-      v-else
-      ref="mapContainer"
-      class="gps-panel__canvas"
-    ></div>
+    <div v-else ref="mapContainer" class="gps-panel__canvas"></div>
 
-    <div v-if="trail.length > 0 && !loading" class="gps-panel__summary">
-      총 <b>{{ trail.length }}</b
+    <div v-if="validTrail.length > 0 && !loading" class="gps-panel__summary">
+      총 <b>{{ validTrail.length }}</b
       >건
       <span v-if="mockedCount > 0" class="gps-panel__mocked-warn">
         (Mock 좌표 {{ mockedCount }}건 포함)
@@ -45,7 +72,8 @@ import {
 } from "vue";
 
 const props = defineProps({
-  // 시간 오름차순 GPS 좌표 배열 [{ lat, lon, recordTime?, isMocked? }]
+  // GPS 좌표 배열 [{ lat, lon, gpsInfoType?, isMocked? }]
+  //   gpsInfoType: '01'=출근 / '02'=퇴근 (그 외/NULL 은 지도에 표시하지 않음)
   trail: { type: Array, default: () => [] },
   // 부모의 trail 조회 로딩 상태
   loading: { type: Boolean, default: false },
@@ -55,11 +83,31 @@ const props = defineProps({
 const mapContainer = ref(null);
 const mapError = ref(false);
 
-// Mock 좌표 건수 (표시 전용 계산)
+// gpsInfoType 이 '01'(출근)/'02'(퇴근) 인 유효 좌표만 추린 목록.
+//   지도 표시 대상이며, 빈-상태 안내·요약 건수의 기준이 된다.
+//   gpsInfoType 이 NULL 등으로 유효하지 않은 좌표는 지도에 찍지 않으므로
+//   여기서도 제외해, 그런 좌표만 있을 때 빈 캔버스 대신 안내 문구가 노출되게 한다.
+const validTrail = computed(() =>
+  props.trail.filter((g) => g.gpsInfoType === "01" || g.gpsInfoType === "02")
+);
+
+// Mock 좌표 건수 (실제 지도에 표시되는 유효 좌표 기준)
 const mockedCount = computed(
   () =>
-    props.trail.filter((g) => g.isMocked === "Y" || g.isMocked === true).length
+    validTrail.value.filter((g) => g.isMocked === "Y" || g.isMocked === true)
+      .length
 );
+
+// 출근('01')/퇴근('02') 좌표 건수 — 필터 버튼 비활성화 판단용
+const startCount = computed(
+  () => validTrail.value.filter((g) => g.gpsInfoType === "01").length
+);
+const endCount = computed(
+  () => validTrail.value.filter((g) => g.gpsInfoType === "02").length
+);
+
+// 지도 표시 필터 — 'all'=전체 / '01'=출근만 / '02'=퇴근만
+const viewMode = ref("all");
 
 // 카카오맵 인스턴스 핸들 (반응형 불필요 — 일반 변수)
 let kakaoMap = null;
@@ -119,7 +167,8 @@ const loadKakaoMapScript = () => {
 
 /*
  * 지도 렌더 — Attd_08.vue renderMap 패턴 차용.
- * 첫 점=출근 마커, 마지막 점=퇴근 마커로 색/라벨 구분.
+ * gpsInfoType('01'=출근 / '02'=퇴근) 기준으로 마커 색/라벨을 구분한다.
+ * '01'/'02' 가 아닌 좌표는 지도에 표시하지 않는다.
  */
 const renderMap = async () => {
   if (!mapContainer.value) return;
@@ -133,25 +182,39 @@ const renderMap = async () => {
     return;
   }
 
-  // props.trail -> 유효 좌표 배열로 변환 (시간 오름차순 가정)
+  // props.trail -> 유효 좌표 배열로 변환.
+  //   gpsInfoType 이 '01'(출근)/'02'(퇴근) 인 좌표만 지도에 표시한다.
+  //   '01' 이 '02' 보다 앞에 오도록 정렬한다 (백엔드 ORDER BY 와 동일 보장).
   const points = props.trail
     .map((g) => {
       const lat = Number(g.lat);
       const lon = Number(g.lon);
       if (isNaN(lat) || isNaN(lon)) return null;
+      const gpsInfoType = g.gpsInfoType;
+      if (gpsInfoType !== "01" && gpsInfoType !== "02") return null;
       return {
         lat,
         lon,
+        gpsInfoType,
         isMocked: g.isMocked === "Y" || g.isMocked === true,
         raw: g,
       };
     })
-    .filter(Boolean);
+    .filter(Boolean)
+    .sort((a, b) => a.gpsInfoType.localeCompare(b.gpsInfoType));
 
   if (points.length === 0) return;
 
+  // viewMode 필터 — '01'(출근)/'02'(퇴근) 단독 보기 시 해당 좌표만 표시한다.
+  // (출근·퇴근 좌표가 동일해 마커가 겹쳐 가려질 때 개별 확인용)
+  const visible =
+    viewMode.value === "all"
+      ? points
+      : points.filter((p) => p.gpsInfoType === viewMode.value);
+  if (visible.length === 0) return;
+
   // 지도 생성 (첫 좌표 중심)
-  const center = new window.kakao.maps.LatLng(points[0].lat, points[0].lon);
+  const center = new window.kakao.maps.LatLng(visible[0].lat, visible[0].lon);
   kakaoMap = new window.kakao.maps.Map(mapContainer.value, {
     center,
     level: 4,
@@ -172,64 +235,37 @@ const renderMap = async () => {
   const startImage = buildPinImage("#16a34a"); // 출근
   const endImage = buildPinImage("#ef4444"); // 퇴근
 
-  // 중간 점 — 작은 원형 마커. 정상 좌표는 회색, Mock 좌표(isMocked)는 빨강으로 구분.
-  //   Attd_08.vue 의 normalImage/mockedImage 색 구분 패턴을 원형 마커로 적용.
-  const buildDotImage = (color) =>
-    new window.kakao.maps.MarkerImage(
-      "data:image/svg+xml;base64," +
-        btoa(
-          `<svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 12 12"><circle cx="6" cy="6" r="5" fill="${color}" stroke="#fff" stroke-width="1.5"/></svg>`
-        ),
-      new window.kakao.maps.Size(12, 12),
-      { offset: new window.kakao.maps.Point(6, 6) }
-    );
-  const midDotImage = buildDotImage("#6b7280"); // 정상 중간 점
-  const mockedDotImage = buildDotImage("#ef4444"); // Mock 중간 점
-
   const bounds = new window.kakao.maps.LatLngBounds();
   const path = [];
-  const lastIdx = points.length - 1;
 
-  points.forEach((p, idx) => {
+  visible.forEach((p) => {
     const pos = new window.kakao.maps.LatLng(p.lat, p.lon);
     path.push(pos);
     bounds.extend(pos);
 
-    // 첫 점=출근, 마지막 점=퇴근. 그 외 중간 점.
-    const isStart = idx === 0;
-    const isEnd = idx === lastIdx && lastIdx !== 0;
+    // gpsInfoType 으로 출근('01')/퇴근('02') 구분
+    const isStart = p.gpsInfoType === "01";
 
-    if (isStart || isEnd) {
-      const marker = new window.kakao.maps.Marker({
-        map: kakaoMap,
-        position: pos,
-        image: isStart ? startImage : endImage,
-      });
-      kakaoMarkers.push(marker);
+    const marker = new window.kakao.maps.Marker({
+      map: kakaoMap,
+      position: pos,
+      image: isStart ? startImage : endImage,
+    });
+    kakaoMarkers.push(marker);
 
-      // 출근/퇴근 라벨 (CustomOverlay)
-      const label = new window.kakao.maps.CustomOverlay({
-        map: kakaoMap,
-        position: pos,
-        yAnchor: 2.2,
-        content: `<div class="gps-pin-label ${
-          isStart ? "is-start" : "is-end"
-        }">${isStart ? "출근" : "퇴근"}</div>`,
-      });
-      kakaoMarkers.push(label);
-    } else {
-      // 중간 점 — 작은 원형 마커. Mock 좌표는 빨강으로 구분 표시.
-      const dot = new window.kakao.maps.Marker({
-        map: kakaoMap,
-        position: pos,
-        image: p.isMocked ? mockedDotImage : midDotImage,
-        zIndex: 1,
-      });
-      kakaoMarkers.push(dot);
-    }
+    // 출근/퇴근 라벨 (CustomOverlay)
+    const label = new window.kakao.maps.CustomOverlay({
+      map: kakaoMap,
+      position: pos,
+      yAnchor: 2.2,
+      content: `<div class="gps-pin-label ${
+        isStart ? "is-start" : "is-end"
+      }">${isStart ? "출근" : "퇴근"}</div>`,
+    });
+    kakaoMarkers.push(label);
   });
 
-  // 중간 점 폴리라인 트레일 (시간순 연결)
+  // 출근·퇴근 2점 연결 폴리라인
   if (path.length >= 2) {
     kakaoPolyline = new window.kakao.maps.Polyline({
       path,
@@ -273,6 +309,16 @@ const cleanupMap = () => {
   kakaoMap = null;
 };
 
+// 출근/퇴근/전체 필터 버튼 — 선택한 모드로 지도를 다시 그린다.
+const setViewMode = async (mode) => {
+  if (viewMode.value === mode) return;
+  viewMode.value = mode;
+  cleanupMap();
+  if (props.loading || validTrail.value.length === 0) return;
+  await nextTick();
+  await renderMap();
+};
+
 // trail 변경 시 재렌더 (cleanup 후 renderMap)
 //   mapContainer 는 success 분기(v-else)에서만 mount 되므로, trail 도착으로
 //   loading=false && trail.length>0 이 된 직후 nextTick 으로 DOM 반영을 기다린 뒤
@@ -280,6 +326,8 @@ const cleanupMap = () => {
 watch(
   () => props.trail,
   async () => {
+    // 새 동선 데이터가 도착하면 필터를 전체로 초기화
+    viewMode.value = "all";
     cleanupMap();
     if (props.loading || props.trail.length === 0) return;
     await nextTick();
@@ -361,6 +409,40 @@ onBeforeUnmount(() => {
   color: var(--color-danger);
   font-weight: 600;
   margin-left: 0.4rem;
+}
+
+/* 출근/퇴근/전체 필터 버튼 */
+.gps-panel__filter {
+  display: flex;
+  gap: 0.25rem;
+  margin-bottom: 0.5rem;
+}
+
+.gps-filter-btn {
+  flex: 0 0 auto;
+  padding: 0.25rem 0.7rem;
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: var(--color-text-muted);
+  background: var(--color-bg);
+  border: 1px solid var(--color-border);
+  border-radius: var(--input-radius);
+  cursor: pointer;
+}
+
+.gps-filter-btn:hover:not(:disabled):not(.is-active) {
+  border-color: var(--color-border-strong);
+}
+
+.gps-filter-btn.is-active {
+  color: var(--color-surface);
+  background: var(--color-primary);
+  border-color: var(--color-primary);
+}
+
+.gps-filter-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
 }
 
 /* 출근/퇴근 핀 라벨 — CustomOverlay content 는 .gps-panel__canvas(scoped 데이터

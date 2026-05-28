@@ -1,0 +1,98 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.prafta.common.cmm.approval.mapper.ApprovalLineMapper">
+
+    <insert id="insertApprovalStep" parameterType="com.prafta.common.cmm.approval.vo.ApprovalStepVO">
+    /* ApprovalLineMapper.insertApprovalStep */
+    INSERT INTO TB_USER_ATTD_REQ_APPROVAL (
+          REQ_ID
+        , APPROVAL_STEP
+        , CMPNY_CD
+        , APPROVER_USER_CD
+        , APPROVAL_STATUS
+        , APPROVAL_COMMENT
+        , APPROVAL_DATE
+        , INSERT_NO
+        , INSERT_DATE
+        , UPDATE_NO
+        , UPDATE_DATE
+    )
+    VALUES (
+          #{reqId}
+        , #{approvalStep}
+        , #{cmpnyCd}
+        , #{approverUserCd}
+        , #{approvalStatus}
+        , #{approvalComment}
+        , NULL
+        , #{insertNo}
+        , NOW()
+        , #{insertNo}
+        , NOW()
+    )
+    </insert>
+
+    <select id="selectApprovalLineByReqId" resultType="com.prafta.common.cmm.approval.vo.ApprovalStepVO">
+    /* ApprovalLineMapper.selectApprovalLineByReqId */
+    SELECT
+          A.REQ_ID                                                          AS reqId
+        , A.APPROVAL_STEP                                                    AS approvalStep
+        , A.CMPNY_CD                                                         AS cmpnyCd
+        , A.APPROVER_USER_CD                                                 AS approverUserCd
+        , FNC_CMM_INFO_SRCH(A.CMPNY_CD, 'USER_NM', A.APPROVER_USER_CD, null) AS approverUserNm
+        , A.APPROVAL_STATUS                                                  AS approvalStatus
+        , FNC_CMM_INFO_SRCH(A.CMPNY_CD, 'SYST_VAL', A.APPROVAL_STATUS, 'SYS044') AS approvalStatusNm
+        , A.APPROVAL_COMMENT                                                 AS approvalComment
+        , DATE_FORMAT(A.APPROVAL_DATE, '%Y-%m-%dT%H:%i:%s')                  AS approvalDate
+      FROM TB_USER_ATTD_REQ_APPROVAL A
+     WHERE A.CMPNY_CD = #{cmpnyCd}
+       AND A.REQ_ID   = #{reqId}
+     ORDER BY A.APPROVAL_STEP ASC
+    </select>
+
+    <update id="updateStepStatus">
+    /* ApprovalLineMapper.updateStepStatus */
+    UPDATE TB_USER_ATTD_REQ_APPROVAL
+       SET APPROVAL_STATUS  = #{approvalStatus}
+         , APPROVAL_COMMENT = #{approvalComment}
+         , APPROVAL_DATE    = NOW()
+         , UPDATE_NO        = #{processUserCd}
+         , UPDATE_DATE      = NOW()
+     WHERE CMPNY_CD      = #{cmpnyCd}
+       AND REQ_ID        = #{reqId}
+       AND APPROVAL_STEP = #{approvalStep}
+    </update>
+
+    <delete id="deleteApprovalLineByReqId">
+    /* ApprovalLineMapper.deleteApprovalLineByReqId */
+    DELETE FROM TB_USER_ATTD_REQ_APPROVAL
+     WHERE REQ_ID = #{reqId}
+    </delete>
+
+    <select id="selectApprovalStep" resultType="com.prafta.common.cmm.approval.vo.ApprovalStepVO">
+    /* ApprovalLineMapper.selectApprovalStep */
+    SELECT
+          A.REQ_ID            AS reqId
+        , A.APPROVAL_STEP     AS approvalStep
+        , A.CMPNY_CD          AS cmpnyCd
+        , A.APPROVER_USER_CD  AS approverUserCd
+        , A.APPROVAL_STATUS   AS approvalStatus
+        , A.APPROVAL_COMMENT  AS approvalComment
+      FROM TB_USER_ATTD_REQ_APPROVAL A
+     WHERE A.CMPNY_CD      = #{cmpnyCd}
+       AND A.REQ_ID        = #{reqId}
+       AND A.APPROVAL_STEP = #{approvalStep}
+     LIMIT 1
+    </select>
+
+    <!-- 첫 대기('00') 단계 번호 (다음 활성 단계 판정). 자기승인 자동승인('02') 단계는 자동 skip됨. -->
+    <select id="selectFirstWaitingStep" resultType="java.lang.Integer">
+    /* ApprovalLineMapper.selectFirstWaitingStep */
+    SELECT MIN(A.APPROVAL_STEP)
+      FROM TB_USER_ATTD_REQ_APPROVAL A
+     WHERE A.CMPNY_CD        = #{cmpnyCd}
+       AND A.REQ_ID          = #{reqId}
+       AND A.APPROVAL_STATUS = '00'
+    </select>
+
+</mapper>

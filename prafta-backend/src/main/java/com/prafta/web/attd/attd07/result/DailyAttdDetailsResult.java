@@ -23,13 +23,15 @@ public record DailyAttdDetailsResult(
     , String attd1Id
     , String act1InDate
     , String act1InTime
+    , String act1InStdDate    // PRAFTA-015 - 표준화 출근 일자(YYYYMMDD), 자정 넘김 보정 반영
     , String act1InStdTime
     , String act1InMethod
     , String act1OutDate
     , String act1OutTime
+    , String act1OutStdDate   // PRAFTA-015 - 표준화 퇴근 일자(YYYYMMDD)
     , String act1OutStdTime
     , String act1OutMethod
-    
+
     , String oriAct1InDate
     , String oriAct1InTime
     , String oriAct1OutDate
@@ -39,10 +41,12 @@ public record DailyAttdDetailsResult(
     , String attd2Id
     , String act2InDate
     , String act2InTime
+    , String act2InStdDate    // PRAFTA-015 - 표준화 출근 일자(YYYYMMDD)
     , String act2InStdTime
     , String act2InMethod
     , String act2OutDate
     , String act2OutTime
+    , String act2OutStdDate   // PRAFTA-015 - 표준화 퇴근 일자(YYYYMMDD)
     , String act2OutStdTime
     , String act2OutMethod
     

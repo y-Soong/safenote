@@ -104,7 +104,9 @@ export async function refreshAccessToken() {
 
   refreshing = (async () => {
     try {
-      const res = await plain.post("/comApi/auth/refresh", { refreshToken: rt });
+      const res = await plain.post("/comApi/auth/refresh", {
+        refreshToken: rt,
+      });
       const newToken = res.data?.token;
       if (!newToken) throw new Error("NO_TOKEN_IN_REFRESH_RESPONSE");
 

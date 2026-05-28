@@ -98,20 +98,21 @@
         </div>
       </div>
       <div class="a07-actions">
-        <button
-          class="a07-btn-issue"
-          :class="{ disabled: issueCount === 0 }"
-          @click="fnOpenIssueListPop"
+        <span v-if="isMonthClosed" class="a07-issue-count none">마감됨</span>
+        <span
+          v-else
+          class="a07-issue-count"
+          :class="{ none: blockCountDisplay === 0 }"
         >
-          처리 필요 <b>{{ issueCount }}</b
-          >건 →
-        </button>
+          처리 필요 <b>{{ blockCountDisplay }}</b
+          >건
+        </span>
         <button
           class="a07-btn-line"
-          :class="{ disabled: !canMonthClose }"
+          :class="{ disabled: !monthCloseBtnEnabled }"
           @click="fnOpenMonthClosePop"
         >
-          근태 마감
+          {{ monthCloseLabel }}
         </button>
         <button class="a07-btn-line" @click="fnOpenExcelUploadPop">
           ↑ 엑셀 업로드
@@ -154,7 +155,7 @@
                   :key="d.day"
                   class="m-day-cell"
                   :class="getCellClass(u, d)"
-                  @click="fnOpenDayDetailPop(u, d)"
+                  @dblclick="fnOpenDayDetailPop(u, d)"
                 >
                   <template v-if="getCell(u, d).type === 'off'">
                     <span class="m-off">−</span>
@@ -195,10 +196,7 @@
                     </div>
                   </template>
                   <template v-else-if="getCell(u, d).type === 'code'">
-                    <div
-                      class="m-code-label"
-                      v-html="getCell(u, d).label"
-                    ></div>
+                    <div class="m-code-label">{{ getCell(u, d).label }}</div>
                   </template>
                 </td>
               </tr>
@@ -206,8 +204,8 @@
           </table>
         </div>
         <div class="a07-cal-legend">
-          <spanㄹ class="lg-item"
-            ><span class="sw sw-issue"></span>처리 필요 — 라벨형</spanㄹ
+          <span class="lg-item"
+            ><span class="sw sw-issue"></span>처리 필요 — 라벨형</span
           >
           <span class="lg-item"
             ><span class="sw sw-marker"></span>처리 필요 — 코너 마커</span
@@ -275,12 +273,6 @@
               </div>
             </div>
             <div class="a07-metrics">
-              <div class="a07-m a07-m-warn">
-                <span class="a07-m-lbl">확인필요</span>
-                <span class="a07-m-val"
-                  >{{ detailSummary.alerts }}<small>건</small></span
-                >
-              </div>
               <div class="a07-m">
                 <span class="a07-m-lbl">총 근무 기록</span>
                 <span class="a07-m-val">
@@ -295,118 +287,181 @@
           <div class="a07-detail-table-wrap">
             <table class="a07-detail-table">
               <colgroup>
+                <col class="c-note" />
                 <col class="c-date" />
+                <!-- 1구간 -->
                 <col class="c-plan" />
                 <col class="c-plan" />
+                <col class="c-day" />
                 <col class="c-act-time" />
+                <col class="c-day" />
                 <col class="c-act-time" />
-                <col class="c-act-loc" />
-                <col class="c-act-loc" />
+                <col class="c-day" />
                 <col class="c-norm" />
+                <col class="c-day" />
                 <col class="c-norm" />
+                <!-- 2구간 -->
                 <col class="c-plan" />
                 <col class="c-plan" />
+                <col class="c-day" />
                 <col class="c-act-time" />
+                <col class="c-day" />
                 <col class="c-act-time" />
-                <col class="c-act-loc" />
-                <col class="c-act-loc" />
+                <col class="c-day" />
                 <col class="c-norm" />
+                <col class="c-day" />
                 <col class="c-norm" />
                 <col class="c-total" />
-                <col class="c-note" />
               </colgroup>
               <thead>
-                <!-- Level 1: 날짜 / 1구간 / 2구간 / 근무시간 / 비고 -->
+                <!-- Level 1: 비고 / 날짜 / 계획·실적·표준화(1·2구간) / 근무시간 -->
                 <tr class="lvl1">
-                  <th class="date-h" rowspan="3">날짜</th>
-                  <th class="l1-shift bdr-section" colspan="8">1</th>
-                  <th class="l1-shift bdr-section" colspan="8">2</th>
-                  <th class="l1-rs bdr-section" rowspan="3">근무시간</th>
-                  <th class="l1-rs col-note bdr-section" rowspan="3">비고</th>
+                  <th class="l1-rs col-note" rowspan="2">비고</th>
+                  <th class="date-h bdr-section" rowspan="2">날짜</th>
+                  <th class="l2-plan bdr-section" colspan="2">계획 1</th>
+                  <th class="l2-actual bdr-sub" colspan="4">실적 1</th>
+                  <th class="l2-norm bdr-sub" colspan="4">표준화 1</th>
+                  <th class="l2-plan bdr-section" colspan="2">계획 2</th>
+                  <th class="l2-actual bdr-sub" colspan="4">실적 2</th>
+                  <th class="l2-norm bdr-sub" colspan="4">표준화 2</th>
+                  <th class="l1-rs bdr-section" rowspan="2">근무시간</th>
                 </tr>
-                <!-- Level 2: 계획 / 실적 / 표준화 -->
+                <!-- Level 2: 컬럼명 -->
                 <tr class="lvl2">
-                  <th class="l2-plan bdr-section" colspan="2">계획</th>
-                  <th class="l2-actual bdr-sub" colspan="4">실적</th>
-                  <th class="l2-norm bdr-sub" colspan="2">표준화</th>
-                  <th class="l2-plan bdr-section" colspan="2">계획</th>
-                  <th class="l2-actual bdr-sub" colspan="4">실적</th>
-                  <th class="l2-norm bdr-sub" colspan="2">표준화</th>
-                </tr>
-                <!-- Level 3: 컬럼명 -->
-                <tr class="lvl3">
                   <th class="l3-plan bdr-section">시작</th>
                   <th class="l3-plan">종료</th>
-                  <th class="l3-actual bdr-sub">출근</th>
+                  <th class="l3-actual bdr-sub">출근일자</th>
+                  <th class="l3-actual">출근</th>
+                  <th class="l3-actual">퇴근일자</th>
                   <th class="l3-actual">퇴근</th>
-                  <th class="l3-actual">출근장소</th>
-                  <th class="l3-actual">퇴근장소</th>
-                  <th class="l3-norm bdr-sub">출근</th>
+                  <th class="l3-norm bdr-sub">출근일자</th>
+                  <th class="l3-norm">출근</th>
+                  <th class="l3-norm">퇴근일자</th>
                   <th class="l3-norm">퇴근</th>
                   <th class="l3-plan bdr-section">시작</th>
                   <th class="l3-plan">종료</th>
-                  <th class="l3-actual bdr-sub">출근</th>
+                  <th class="l3-actual bdr-sub">출근일자</th>
+                  <th class="l3-actual">출근</th>
+                  <th class="l3-actual">퇴근일자</th>
                   <th class="l3-actual">퇴근</th>
-                  <th class="l3-actual">출근장소</th>
-                  <th class="l3-actual">퇴근장소</th>
-                  <th class="l3-norm bdr-sub">출근</th>
+                  <th class="l3-norm bdr-sub">출근일자</th>
+                  <th class="l3-norm">출근</th>
+                  <th class="l3-norm">퇴근일자</th>
                   <th class="l3-norm">퇴근</th>
                 </tr>
               </thead>
               <tbody>
-                <tr
-                  v-for="r in detailRows"
-                  :key="r.day"
-                  :class="r.status"
-                  @click="fnOpenAttdAdjustPop(r)"
-                >
-                  <td class="date">
-                    <span v-if="r.status === 'alert'" class="alert-dot"></span>
-                    {{ r.day }}
-                    <span :class="dowClass(r.dow)"
-                      >({{ dowLabels[r.dow] }})</span
-                    >
-                  </td>
-                  <!-- 1구간 계획 -->
-                  <td class="col-plan bdr-section">
-                    {{ valOrDash(r.p1Start) }}
-                  </td>
-                  <td class="col-plan">{{ valOrDash(r.p1End) }}</td>
-                  <!-- 1구간 실적 -->
-                  <td class="col-actual bdr-sub">{{ valOrDash(r.a1In) }}</td>
-                  <td class="col-actual">{{ valOrDash(r.a1Out) }}</td>
-                  <td class="col-actual" v-html="locOrDash(r.a1InLoc)"></td>
-                  <td class="col-actual" v-html="locOrDash(r.a1OutLoc)"></td>
-                  <!-- 1구간 표준화 -->
-                  <td class="col-norm bdr-sub">{{ valOrDash(r.n1In) }}</td>
-                  <td class="col-norm">{{ valOrDash(r.n1Out) }}</td>
-                  <!-- 2구간 계획 -->
-                  <td class="col-plan bdr-section">
-                    {{ valOrDash(r.p2Start) }}
-                  </td>
-                  <td class="col-plan">{{ valOrDash(r.p2End) }}</td>
-                  <!-- 2구간 실적 -->
-                  <td class="col-actual bdr-sub">{{ valOrDash(r.a2In) }}</td>
-                  <td class="col-actual">{{ valOrDash(r.a2Out) }}</td>
-                  <td class="col-actual" v-html="locOrDash(r.a2InLoc)"></td>
-                  <td class="col-actual" v-html="locOrDash(r.a2OutLoc)"></td>
-                  <!-- 2구간 표준화 -->
-                  <td class="col-norm bdr-sub">{{ valOrDash(r.n2In) }}</td>
-                  <td class="col-norm">{{ valOrDash(r.n2Out) }}</td>
-                  <!-- 근무시간 -->
-                  <td class="bdr-section right">{{ valOrDash(r.total) }}</td>
-                  <!-- 비고 -->
-                  <td class="bdr-section col-note">
-                    <span
-                      v-if="r.note"
-                      :class="
-                        r.status === 'alert' ? 'badge-warn' : 'badge-info'
-                      "
-                      >{{ r.note }}</span
-                    >
-                    <span v-else class="dash">−</span>
-                  </td>
-                </tr>
+                <template v-for="r in detailRows" :key="r.rowKey">
+                  <!-- 초과근무 행 (kind === 'ot') -->
+                  <tr v-if="r.kind === 'ot'" class="ot-row">
+                    <!-- 비고 -->
+                    <td class="col-note">
+                      <span class="badge-ot">초과근무</span>
+                    </td>
+                    <td class="date bdr-section"></td>
+                    <!-- 1구간: OT 실적은 1구간 실적 칸에 표시 -->
+                    <td class="col-plan bdr-section">−</td>
+                    <td class="col-plan">−</td>
+                    <td class="col-actual bdr-sub">
+                      {{ valOrDash(r.otInDate) }}
+                    </td>
+                    <td class="col-actual">{{ valOrDash(r.otIn) }}</td>
+                    <td class="col-actual">{{ valOrDash(r.otOutDate) }}</td>
+                    <td class="col-actual">{{ valOrDash(r.otOut) }}</td>
+                    <td class="col-norm bdr-sub">−</td>
+                    <td class="col-norm">−</td>
+                    <td class="col-norm">−</td>
+                    <td class="col-norm">−</td>
+                    <!-- 2구간: OT 행은 공란 -->
+                    <td class="col-plan bdr-section">−</td>
+                    <td class="col-plan">−</td>
+                    <td class="col-actual bdr-sub">−</td>
+                    <td class="col-actual">−</td>
+                    <td class="col-actual">−</td>
+                    <td class="col-actual">−</td>
+                    <td class="col-norm bdr-sub">−</td>
+                    <td class="col-norm">−</td>
+                    <td class="col-norm">−</td>
+                    <td class="col-norm">−</td>
+                    <td class="bdr-section right">{{ valOrDash(r.total) }}</td>
+                  </tr>
+                  <!-- 정규근무 행 (kind === 'work') -->
+                  <tr v-else :class="r.status" @click="fnOpenAttdAdjustPop(r)">
+                    <!-- 비고 -->
+                    <td class="col-note">
+                      <template v-if="r.outsideList && r.outsideList.length">
+                        <span
+                          v-for="o in r.outsideList"
+                          :key="o.gpsKey"
+                          class="badge-outside"
+                          @click.stop="fnOpenGpsPop(o)"
+                        >
+                          외근{{ o.label }}
+                        </span>
+                      </template>
+                      <span
+                        v-else-if="r.note"
+                        :class="
+                          r.status === 'alert' ? 'badge-warn' : 'badge-info'
+                        "
+                        >{{ r.note }}</span
+                      >
+                      <span v-else class="dash">−</span>
+                    </td>
+                    <td class="date bdr-section">
+                      <span
+                        v-if="r.status === 'alert'"
+                        class="alert-dot"
+                      ></span>
+                      {{ r.day }}
+                      <span :class="dowClass(r.dow)"
+                        >({{ dowLabels[r.dow] }})</span
+                      >
+                    </td>
+                    <!-- 1구간 계획 -->
+                    <td class="col-plan bdr-section">
+                      {{ valOrDash(r.p1Start) }}
+                    </td>
+                    <td class="col-plan">{{ valOrDash(r.p1End) }}</td>
+                    <!-- 1구간 실적 -->
+                    <td class="col-actual bdr-sub">
+                      {{ valOrDash(r.a1InDate) }}
+                    </td>
+                    <td class="col-actual">{{ valOrDash(r.a1In) }}</td>
+                    <td class="col-actual">{{ valOrDash(r.a1OutDate) }}</td>
+                    <td class="col-actual">{{ valOrDash(r.a1Out) }}</td>
+                    <!-- 1구간 표준화 -->
+                    <td class="col-norm bdr-sub">
+                      {{ valOrDash(r.n1InDate) }}
+                    </td>
+                    <td class="col-norm">{{ valOrDash(r.n1In) }}</td>
+                    <td class="col-norm">{{ valOrDash(r.n1OutDate) }}</td>
+                    <td class="col-norm">{{ valOrDash(r.n1Out) }}</td>
+                    <!-- 2구간 계획 -->
+                    <td class="col-plan bdr-section">
+                      {{ valOrDash(r.p2Start) }}
+                    </td>
+                    <td class="col-plan">{{ valOrDash(r.p2End) }}</td>
+                    <!-- 2구간 실적 -->
+                    <td class="col-actual bdr-sub">
+                      {{ valOrDash(r.a2InDate) }}
+                    </td>
+                    <td class="col-actual">{{ valOrDash(r.a2In) }}</td>
+                    <td class="col-actual">{{ valOrDash(r.a2OutDate) }}</td>
+                    <td class="col-actual">{{ valOrDash(r.a2Out) }}</td>
+                    <!-- 2구간 표준화 -->
+                    <td class="col-norm bdr-sub">
+                      {{ valOrDash(r.n2InDate) }}
+                    </td>
+                    <td class="col-norm">{{ valOrDash(r.n2In) }}</td>
+                    <td class="col-norm">{{ valOrDash(r.n2OutDate) }}</td>
+                    <td class="col-norm">{{ valOrDash(r.n2Out) }}</td>
+                    <!-- 근무시간 -->
+                    <td class="bdr-section right">
+                      {{ valOrDash(r.total) }}
+                    </td>
+                  </tr>
+                </template>
               </tbody>
             </table>
           </div>
@@ -420,6 +475,7 @@
 import {
   ref,
   computed,
+  watch,
   onMounted,
   getCurrentInstance,
   defineProps,
@@ -432,6 +488,7 @@ import search_icon from "@/assets/img/search_icon.png";
 import SiteSearchPop from "@/components/popup/SiteSearchPop.vue";
 import SiteNodeSearchPop from "@/components/popup/SiteNodeSearchPop.vue";
 import AttdDayDetailPop from "@/views/attd/popup/AttdDayDetailPop.vue";
+import AttdGpsTrailPop from "@/views/attd/popup/AttdGpsTrailPop.vue";
 import axios from "@/api/axios";
 import { getMessage, MSG } from "@/messages";
 import { resolveApiErrorMessage } from "@/utils/apiError";
@@ -470,6 +527,16 @@ const siteNoFcs = ref(null);
 // ── 화면 상태 ─────────────────────────────────────────────
 const viewMode = ref("calendar"); // 'calendar' | 'list'
 const workYm = ref(currentYm()); // YYYY-MM
+
+// PRAFTA-019-C 근태 마감 상태 (백엔드 authoritative). null = 미조회
+const closeInfo = ref(null);
+// PRAFTA-028 - 조회 완료 여부 ('조회 먼저' 가드). 스코프/월 변경 시 초기화.
+const hasSearched = ref(false);
+// PRAFTA-028 - master/hr 여부 (그 외 권한은 사업장+소속부서 필수)
+const isMasterOrHr = computed(() => {
+  const a = sessionStorage.getItem("gv_authCd");
+  return a === "master" || a === "hr";
+});
 
 const dowLabels = ["일", "월", "화", "수", "목", "금", "토"];
 
@@ -655,6 +722,10 @@ const reqCellSet = computed(() => {
   return s;
 });
 
+// 월간 초과근무 목록 (response.data.monthlyOvertimeResultList)
+//   PRAFTA-017 신규 응답. 목록 뷰에서 일자별 정규근무 행 아래 OT 행으로 펼침.
+const monthlyOvertimeList = ref([]);
+
 const selectedUserId = ref("");
 const selectedUser = computed(
   () => userList.value.find((u) => u.userId === selectedUserId.value) ?? null
@@ -687,6 +758,13 @@ const fmtTimeSec = (v) => {
   if (s.length >= 6)
     return `${s.slice(0, 2)}:${s.slice(2, 4)}:${s.slice(4, 6)}`;
   return s;
+};
+// "20260502" → "05.02" (일자 컬럼 표시용)
+const fmtMmdd = (ymd) => {
+  if (!ymd) return "";
+  const v = String(ymd);
+  if (v.length < 8) return v;
+  return `${v.slice(4, 6)}.${v.slice(6, 8)}`;
 };
 // 응답 record에서 day(1~31) 추출 — workYmd(YYYYMMDD) 우선, fallback cmpnyCd
 const pickDay = (r) => {
@@ -847,6 +925,8 @@ const getCellClass = (user, dayInfo) => {
     "issue-marker": c.type === "issue-marker" || c.type === "issue-dash",
     "issue-label": isReq,
     "code-cell": c.type === "code",
+    // PRAFTA-028 - 마감된 월이면 셀을 회색 계열로 표시(관리자 인지용)
+    closed: isMonthClosed.value,
   };
 };
 
@@ -861,11 +941,37 @@ const summary = computed(() => {
   return { ok, issue, rate: total ? Math.round((ok / total) * 100) : 0 };
 });
 
+// ── 목록 뷰: 선택 사용자 OT 일자별 그룹핑 ─────────────────
+// 선택 사용자(userCd)의 월간 OT 를 WORK_YMD 의 일(day)별로 묶는다.
+const overtimeByDay = computed(() => {
+  const map = {};
+  if (!selectedUser.value) return map;
+  const userCd = selectedUser.value.userCd;
+  for (const ot of monthlyOvertimeList.value) {
+    if (ot?.userCd !== userCd) continue;
+    const ymd = String(ot.workYmd ?? "");
+    if (!/^\d{8}$/.test(ymd)) continue;
+    const day = Number(ymd.slice(6, 8));
+    if (!map[day]) map[day] = [];
+    map[day].push(ot);
+  }
+  return map;
+});
+
 // ── 목록 뷰: 선택 사용자 상세 행 빌드 ─────────────────────
+// 정규근무 행 + (해당 일자에 OT 가 있으면) OT 행을 바로 아래에 끼워넣는다.
 const detailRows = computed(() => {
   if (!selectedUser.value) return [];
   const u = selectedUser.value;
-  return daysInMonth.value.map((d) => buildDetailRow(u, d));
+  const rows = [];
+  daysInMonth.value.forEach((d) => {
+    rows.push(buildDetailRow(u, d));
+    const otList = overtimeByDay.value[d.day] ?? [];
+    otList.forEach((ot, idx) => {
+      rows.push(buildOvertimeRow(d, ot, idx));
+    });
+  });
+  return rows;
 });
 
 function buildDetailRow(user, d) {
@@ -889,58 +995,126 @@ function buildDetailRow(user, d) {
   const { status, note } = detectAttdState(r, ymd);
 
   return {
+    kind: "work",
+    rowKey: `work_${d.day}`,
     day: d.day,
     dow: d.dow,
     p1Start: fmtTime(r.plan1Start),
     p1End: fmtTime(r.plan1End),
+    a1InDate: fmtMmdd(r.act1InDate),
     a1In: fmtTimeSec(r.act1InTime),
+    a1OutDate: fmtMmdd(r.act1OutDate),
     a1Out: fmtTimeSec(r.act1OutTime),
-    a1InLoc: r.act1InMethod ?? "",
-    a1OutLoc: r.act1OutMethod ?? "",
-    n1In: fmtTime(r.act1InTime),
-    n1Out: fmtTime(r.act1OutTime),
+    n1InDate: fmtMmdd(r.act1InStdDate),
+    n1In: fmtTime(r.act1InStdTime),
+    n1OutDate: fmtMmdd(r.act1OutStdDate),
+    n1Out: fmtTime(r.act1OutStdTime),
     p2Start: fmtTime(r.plan2Start),
     p2End: fmtTime(r.plan2End),
+    a2InDate: fmtMmdd(r.act2InDate),
     a2In: fmtTimeSec(r.act2InTime),
+    a2OutDate: fmtMmdd(r.act2OutDate),
     a2Out: fmtTimeSec(r.act2OutTime),
-    a2InLoc: r.act2InMethod ?? "",
-    a2OutLoc: r.act2OutMethod ?? "",
-    n2In: fmtTime(r.act2InTime),
-    n2Out: fmtTime(r.act2OutTime),
+    n2InDate: fmtMmdd(r.act2InStdDate),
+    n2In: fmtTime(r.act2InStdTime),
+    n2OutDate: fmtMmdd(r.act2OutStdDate),
+    n2Out: fmtTime(r.act2OutStdTime),
     total: calcTotal(r),
     note,
     status,
+    // 외근 배지 — 구간별 외근 플래그(attd{1,2}OutsideYn)가 'Y'인 구간만 노출
+    outsideList: buildOutsideList(d, r),
   };
+}
+
+// 정규근무 행의 외근 배지 목록 빌드.
+//   각 항목: { seg, label, attdId, gpsKey }
+//   gpsKey = `${day}_${seg}` (외근 배지 v-for 의 고유 key)
+function buildOutsideList(d, r) {
+  const list = [];
+  if (r.attd1OutsideYn === "Y" && r.attd1Id) {
+    list.push({
+      seg: 1,
+      label: "(1)",
+      attdId: r.attd1Id,
+      gpsKey: `${d.day}_1`,
+    });
+  }
+  if (r.attd2OutsideYn === "Y" && r.attd2Id) {
+    list.push({
+      seg: 2,
+      label: "(2)",
+      attdId: r.attd2Id,
+      gpsKey: `${d.day}_2`,
+    });
+  }
+  return list;
+}
+
+// OT 행 빌드 — 비고 칸 "초과근무" 배지, 실적 칸에 OT 시작/종료 표시.
+function buildOvertimeRow(d, ot, idx) {
+  return {
+    kind: "ot",
+    rowKey: `ot_${d.day}_${ot.otId ?? idx}`,
+    day: d.day,
+    dow: d.dow,
+    otInDate: fmtMmdd(ot.actualStartDate),
+    otIn: fmtTimeSec(ot.actualStartTime),
+    otOutDate: fmtMmdd(ot.actualEndDate),
+    otOut: fmtTimeSec(ot.actualEndTime),
+    total: fmtMinutes(ot.workMinutes),
+    status: "",
+  };
+}
+
+// 분(min) → "N시간 M분" 표기. OT 행 근무시간 칸 표시용.
+function fmtMinutes(min) {
+  const m = parseInt(min, 10);
+  if (isNaN(m) || m <= 0) return "";
+  const h = Math.floor(m / 60);
+  const rm = m % 60;
+  if (h && rm) return `${h}시간 ${rm}분`;
+  if (h) return `${h}시간`;
+  return `${rm}분`;
 }
 
 function emptyRow(d, status) {
   return {
+    kind: "work",
+    rowKey: `work_${d.day}`,
     day: d.day,
     dow: d.dow,
     p1Start: "",
     p1End: "",
+    a1InDate: "",
     a1In: "",
+    a1OutDate: "",
     a1Out: "",
-    a1InLoc: "",
-    a1OutLoc: "",
+    n1InDate: "",
     n1In: "",
+    n1OutDate: "",
     n1Out: "",
     p2Start: "",
     p2End: "",
+    a2InDate: "",
     a2In: "",
+    a2OutDate: "",
     a2Out: "",
-    a2InLoc: "",
-    a2OutLoc: "",
+    n2InDate: "",
     n2In: "",
+    n2OutDate: "",
     n2Out: "",
     total: "",
     note: "",
     status,
+    outsideList: [],
   };
 }
 
 const detailSummary = computed(() => {
-  const rows = detailRows.value.filter((r) => r.status !== "off");
+  const rows = detailRows.value.filter(
+    (r) => r.kind === "work" && r.status !== "off"
+  );
   const alerts = rows.filter((r) => r.status === "alert").length;
   let recDays = 0,
     totalH = 0,
@@ -959,26 +1133,123 @@ const detailSummary = computed(() => {
 });
 
 const valOrDash = (v) => (v ? v : "−");
-const locOrDash = (v) => {
-  if (!v) return '<span class="dash">−</span>';
-  if (v === "사업장") return "사업장";
-  return '<span class="loc-out">사업장 외</span>';
-};
 const dowClass = (dow) => (dow === 0 ? "dow-sun" : dow === 6 ? "dow-sat" : "");
+
+// ── 외근 GPS 동선 팝업 ────────────────────────────────────
+// 외근 배지 클릭 시 GPS 동선 팝업(AttdGpsTrailPop)을 연다.
+// 동선 조회는 팝업 내부에서 attdId 로 직접 수행한다.
+const fnOpenGpsPop = (outside) => {
+  if (!outside.attdId) return;
+  openPop(AttdGpsTrailPop, {
+    attdId_p: outside.attdId,
+    label_p: `${outside.seg}구간`,
+  });
+};
 
 // ── 팝업 핸들러 ───────────────────────────────────────────
 // 일자 상세 팝업(AttdDayDetailPop)은 record 데이터를 그대로 전달
-// 잔여 팝업: AttdIssueListPop / AttdMonthClosePop / AttdExcelUploadPop (추후)
-const fnOpenIssueListPop = () => {
-  if (issueCount.value === 0) return;
-  proxy.$alert(getMessage(MSG.ISSUE_LIST_PREPARING));
-};
-const fnOpenMonthClosePop = () => {
-  if (!canMonthClose.value) {
-    proxy.$alert(getMessage(MSG.MONTH_CLOSE_BLOCKED));
+// 잔여 팝업: AttdMonthClosePop / AttdExcelUploadPop (추후)
+// PRAFTA-019-C 근태 마감 상태 조회 (사업장 + 월 기준)
+const fnLoadCloseStatus = async () => {
+  if (proxy.$util.isEmpty(siteCd.value)) {
+    closeInfo.value = null;
     return;
   }
-  proxy.$alert(getMessage(MSG.MONTH_CLOSE_PREPARING));
+  try {
+    const response = await axios.get("/webApi/attd07/attd-close-status", {
+      params: {
+        siteCd: siteCd.value,
+        nodeCd: nodeCd.value,
+        incSubNodeYn: incSubNodeYn.value ? "Y" : "N",
+        closeYm: workYm.value.replace("-", ""),
+      },
+    });
+    if (response.status === 200) {
+      closeInfo.value = response.data;
+    }
+  } catch (err) {
+    // 마감 상태 조회 실패는 화면 핵심 기능을 막지 않는다 (배지/버튼만 미표시 fallback)
+    closeInfo.value = null;
+  }
+};
+
+// 마감 여부 / 버튼 라벨 / 버튼 활성 / 차단 카운트 (백엔드 우선, 미조회 시 프론트 파생값 fallback)
+const isMonthClosed = computed(() => !!closeInfo.value?.closed);
+const monthCloseLabel = computed(() =>
+  isMonthClosed.value ? "마감 해제" : "근태 마감"
+);
+const monthCloseBtnEnabled = computed(() =>
+  closeInfo.value
+    ? closeInfo.value.closable || closeInfo.value.closed
+    : canMonthClose.value
+);
+const blockCountDisplay = computed(() =>
+  closeInfo.value ? closeInfo.value.blockTotalCnt : issueCount.value
+);
+
+// 근태 마감 / 마감 해제 실행 (PRAFTA-019-C — 자동/강제 마감 금지)
+const fnOpenMonthClosePop = async () => {
+  if (proxy.$util.isEmpty(siteCd.value)) {
+    await proxy.$alert(getMessage(MSG.SITE_INPUT_REQUIRED));
+    return;
+  }
+
+  // PRAFTA-028 - 조회 스코프 기준 마감 → 먼저 조회해야 함
+  if (!hasSearched.value) {
+    await proxy.$alert("먼저 조회한 뒤 마감해 주세요.");
+    return;
+  }
+  // PRAFTA-028 - master/hr 이 아니면 사업장+소속부서 필수 (전체 마감 불가)
+  if (!isMasterOrHr.value && proxy.$util.isEmpty(nodeCd.value)) {
+    await proxy.$alert("소속 부서를 선택해 주세요.");
+    return;
+  }
+
+  // 이미 마감된 기간 → 마감 해제 플로우
+  if (isMonthClosed.value) {
+    const ok = await proxy.$confirm("해당 월의 근태 마감을 해제하시겠습니까?");
+    if (!ok) return;
+    try {
+      await axios.post("/webApi/attd07/attd-unclose", {
+        siteCd: siteCd.value,
+        nodeCd: nodeCd.value,
+        incSubNodeYn: incSubNodeYn.value ? "Y" : "N",
+        closeYm: workYm.value.replace("-", ""),
+      });
+      await proxy.$alert("마감이 해제되었습니다.");
+      await fnLoadCloseStatus();
+    } catch (err) {
+      await proxy.$alert(
+        resolveApiErrorMessage(err, "마감 해제 중 오류가 발생했습니다.")
+      );
+    }
+    return;
+  }
+
+  // 차단 사유 잔존 시 마감 불가
+  if (!monthCloseBtnEnabled.value) {
+    await proxy.$alert(getMessage(MSG.MONTH_CLOSE_BLOCKED));
+    return;
+  }
+
+  const ok = await proxy.$confirm(
+    "해당 월의 근태를 마감하시겠습니까? 마감 후에는 사후 신청이 차단됩니다."
+  );
+  if (!ok) return;
+  try {
+    await axios.post("/webApi/attd07/attd-close", {
+      siteCd: siteCd.value,
+      nodeCd: nodeCd.value,
+      incSubNodeYn: incSubNodeYn.value ? "Y" : "N",
+      closeYm: workYm.value.replace("-", ""),
+    });
+    await proxy.$alert("근태가 마감되었습니다.");
+    await fnLoadCloseStatus();
+  } catch (err) {
+    await proxy.$alert(
+      resolveApiErrorMessage(err, "근태 마감 중 오류가 발생했습니다.")
+    );
+  }
 };
 const fnOpenExcelUploadPop = () =>
   proxy.$alert(getMessage(MSG.EXCEL_UPLOAD_PREPARING));
@@ -1011,6 +1282,7 @@ const fnOpenDayDetailPop = (user, d) => {
     date_p: ymd,
     dow_p: d.dow,
     fallback_p: buildFallback(user, record),
+    isMonthClosed_p: isMonthClosed.value, // PRAFTA-028 - 마감 시 팝업 쓰기 차단
     onSaved: fnSearch,
   });
 };
@@ -1029,6 +1301,7 @@ const fnOpenAttdAdjustPop = (row) => {
     date_p: ymd,
     dow_p: row.dow,
     fallback_p: buildFallback(selectedUser.value, record),
+    isMonthClosed_p: isMonthClosed.value, // PRAFTA-028 - 마감 시 팝업 쓰기 차단
     onSaved: fnSearch,
   });
 };
@@ -1036,6 +1309,7 @@ const fnOpenAttdAdjustPop = (row) => {
 // ── 응답 → 화면 모델 매핑 ─────────────────────────────────
 const fnBindResponse = (data) => {
   reqIdList.value = data?.monthlyAttdReqSummaryResultList ?? [];
+  monthlyOvertimeList.value = data?.monthlyOvertimeResultList ?? [];
 
   const recs = data?.attdRecordResultList ?? [];
 
@@ -1089,6 +1363,12 @@ const fnSearch = async () => {
     return;
   }
 
+  // PRAFTA-028 - master/hr 이 아니면 사업장+소속부서를 모두 지정해야 조회 가능
+  if (!isMasterOrHr.value && proxy.$util.isEmpty(nodeCd.value)) {
+    await proxy.$alert("소속 부서를 선택해 주세요.");
+    return;
+  }
+
   try {
     const response = await axios.get("/webApi/attd07/monthly-attd-lists", {
       params: {
@@ -1102,7 +1382,9 @@ const fnSearch = async () => {
 
     if (response.status === 200) {
       fnBindResponse(response.data);
+      hasSearched.value = true; // PRAFTA-028 - 조회 완료 → 마감 가능
     }
+    await fnLoadCloseStatus();
   } catch (err) {
     const msg = resolveApiErrorMessage(err, getMessage(MSG.SEARCH_ERROR));
     await proxy.$alert(msg);
@@ -1120,6 +1402,11 @@ const fnInit = () => {
     nodeNm.value = sessionStorage.getItem("gv_nodeNm") ?? "";
   }
 };
+
+// PRAFTA-028 - 스코프/월이 바뀌면 재조회 전까지 마감 불가 ('조회 먼저' 가드)
+watch([siteCd, nodeCd, incSubNodeYn, workYm], () => {
+  hasSearched.value = false;
+});
 
 onMounted(() => {
   fnInit();
@@ -1232,7 +1519,8 @@ onMounted(() => {
   align-items: center;
   font-size: 0.8125rem;
 }
-.a07-btn-issue {
+/* 처리 필요 건수 표시 (클릭 불가 — 단순 상태 표시용) */
+.a07-issue-count {
   display: inline-flex;
   align-items: center;
   gap: 0.4rem;
@@ -1241,18 +1529,16 @@ onMounted(() => {
   color: #92400e;
   padding: 0.3rem 0.8rem;
   border-radius: 4px;
-  cursor: pointer;
   font-size: 0.8125rem;
   font-family: "Pretendard", sans-serif;
 }
-.a07-btn-issue b {
+.a07-issue-count b {
   font-size: 0.9rem;
 }
-.a07-btn-issue.disabled {
+.a07-issue-count.none {
   background: #fff;
   border-color: var(--color-border, #d1d5db);
   color: var(--color-text-muted, #9ca3af);
-  cursor: not-allowed;
 }
 .a07-btn-line {
   padding: 0.3rem 0.8rem;
@@ -1413,6 +1699,15 @@ table.a07-matrix td.m-day-cell.code-cell {
   background: #f1efe8;
   color: var(--color-text-muted, #6b7280);
 }
+/* PRAFTA-028 - 마감된 월 셀 (회색 처리, 관리자 인지용) */
+table.a07-matrix td.m-day-cell.closed {
+  background: var(--color-bg-muted, #f1f3f5);
+  color: var(--color-text-muted, #9ca3af);
+}
+table.a07-matrix td.m-day-cell.closed:hover {
+  background: var(--color-bg-muted, #e9ecef);
+}
+
 /* 처리필요 — 라벨형 (monthlyAttdReqSummaryResultList 매칭 셀) */
 table.a07-matrix td.m-day-cell.issue-label {
   background: #fef3c7;
@@ -1683,17 +1978,6 @@ table.a07-matrix td.m-day-cell.issue-label:hover {
   font-size: 0.6875rem;
   margin-left: 2px;
 }
-.a07-m-warn {
-  padding: 3px 10px;
-  border-radius: 14px;
-  background: #fef3c7;
-  border: 0.5px solid #f59e0b;
-}
-.a07-m-warn .a07-m-lbl,
-.a07-m-warn .a07-m-val,
-.a07-m-warn .a07-m-val small {
-  color: #92400e;
-}
 
 .a07-detail-table-wrap {
   overflow: auto;
@@ -1706,7 +1990,8 @@ table.a07-detail-table {
   border-collapse: separate;
   border-spacing: 0;
   table-layout: fixed;
-  width: 1410px;
+  /* col 너비 합계와 일치해야 한다. c-total 을 110px 로 넓힌 만큼(+20px) 함께 증가 */
+  width: 1558px;
   font-size: 0.75rem;
   font-family: "Pretendard", sans-serif;
 }
@@ -1719,14 +2004,15 @@ table.a07-detail-table col.c-plan {
 table.a07-detail-table col.c-act-time {
   width: 80px;
 }
-table.a07-detail-table col.c-act-loc {
-  width: 80px;
+table.a07-detail-table col.c-day {
+  width: 56px;
 }
 table.a07-detail-table col.c-norm {
   width: 60px;
 }
 table.a07-detail-table col.c-total {
-  width: 90px;
+  /* 근무시간 값(예: "12시간 00분")이 잘리지 않도록 90px → 110px 로 확대 */
+  width: 110px;
 }
 table.a07-detail-table col.c-note {
   width: 120px;
@@ -1734,6 +2020,9 @@ table.a07-detail-table col.c-note {
 
 table.a07-detail-table th {
   padding: 7px 8px;
+  /* height 가 패딩/보더 포함 실제 높이가 되도록 border-box 로 둔다.
+     (sticky top 오프셋과 헤더 행 높이를 정확히 일치시켜 헤더 어긋남 방지) */
+  box-sizing: border-box;
   text-align: center;
   font-weight: 500;
   color: var(--color-text-muted, #6b7280);
@@ -1745,37 +2034,37 @@ table.a07-detail-table th {
   text-overflow: ellipsis;
 }
 
-/* 3단 헤더 sticky */
+/* 2단 헤더 sticky — top 오프셋은 윗 행 높이와 정확히 일치해야 한다.
+   (border-box 기준: lvl1 그룹행 44 / lvl2 컬럼명행 40) */
 table.a07-detail-table thead tr.lvl1 th {
   top: 0;
   z-index: 5;
-  height: 30px;
+  height: 44px;
   border-bottom: 0.5px solid var(--color-border, #e5e7eb);
+}
+/* sticky-left 코너 헤더(비고/날짜)는 그룹 헤더보다 확실히 위에 그려져야 한다.
+   `tr.lvl1 th` 규칙(specificity 0,0,2,4)보다 높은 셀렉터(0,0,3,4)로 z-index 를
+   덮어써, 횡스크롤 시 그룹 헤더(계획1 등)가 좌측 고정 컬럼을 침범하지 않게 한다. */
+table.a07-detail-table thead tr.lvl1 th.col-note,
+table.a07-detail-table thead tr.lvl1 th.date-h {
+  z-index: 7;
 }
 table.a07-detail-table thead tr.lvl2 th {
-  top: 30px;
+  top: 44px;
   z-index: 4;
-  height: 28px;
-  font-size: 0.6875rem;
-  border-bottom: 0.5px solid var(--color-border, #e5e7eb);
-}
-table.a07-detail-table thead tr.lvl3 th {
-  top: 58px;
-  z-index: 3;
-  height: 26px;
+  height: 40px;
   font-size: 0.6875rem;
   font-weight: 500;
   color: var(--color-text-muted, #9a9a95);
   border-bottom: 1px solid #cfcfc8;
 }
+/* rowspan 헤더 셀(비고/날짜/근무시간)은 2개 행 전체 높이(44+40)를
+   차지해야 sticky 상태에서 헤더가 끊기거나 컬럼이 어긋나 보이지 않는다. */
+table.a07-detail-table thead th[rowspan="2"] {
+  height: 84px;
+}
 
 /* 그룹 컬러 */
-table.a07-detail-table th.l1-shift {
-  background: #ededdc;
-  color: var(--color-text-strong, #111827);
-  font-weight: 700;
-  letter-spacing: 0.5px;
-}
 table.a07-detail-table th.l1-rs {
   background: var(--color-bg, #f9fafb);
 }
@@ -1797,6 +2086,17 @@ table.a07-detail-table th.l3-norm {
 /* 셀 */
 table.a07-detail-table td {
   padding: 8px 8px;
+  /* 모든 행 높이를 고정해 sticky 셀(비고/날짜)과 일반 셀의 끝단을 일치시킨다.
+     (sticky <td> 는 행 높이에 맞춰 늘어나지 않으므로 명시 높이가 필요하다)
+     height 는 한 줄 콘텐츠(line-height 1.5 → 18px)보다 넉넉히 잡아 글자가
+     overflow:hidden 으로 잘리지 않게 한다.
+     box-sizing: border-box 로 두어 th(line 1886)와 동일한 높이 기준을 쓰게 하고,
+     vertical-align: middle 로 배지(비고)·텍스트(근무시간) 콘텐츠가 baseline 차이
+     없이 세로 중앙 정렬되어 컬럼 간 행 높이가 어긋나 보이지 않게 한다. */
+  box-sizing: border-box;
+  height: 36px;
+  line-height: 1.5;
+  vertical-align: middle;
   border-bottom: 0.5px solid var(--color-border, #e5e7eb);
   font-size: 0.75rem;
   color: var(--color-text, #374151);
@@ -1829,10 +2129,22 @@ table.a07-detail-table td.bdr-sub {
   border-left: 0.5px solid #cfcfc8;
 }
 
-/* 날짜 sticky */
-table.a07-detail-table th.date-h {
+/* 비고 sticky (목록 뷰 최좌측 고정) */
+table.a07-detail-table th.col-note {
+  left: 0;
+  z-index: 6;
+}
+table.a07-detail-table td.col-note {
   position: sticky;
   left: 0;
+  z-index: 2;
+  background: #fff;
+}
+
+/* 날짜 sticky (비고 우측에 이어서 고정) */
+table.a07-detail-table th.date-h {
+  position: sticky;
+  left: 120px;
   top: 0;
   z-index: 6;
   background: var(--color-bg, #f9fafb);
@@ -1842,7 +2154,7 @@ table.a07-detail-table th.date-h {
 }
 table.a07-detail-table td.date {
   position: sticky;
-  left: 0;
+  left: 120px;
   z-index: 2;
   background: #fff;
   box-shadow: 1px 0 0 var(--color-border, #e5e7eb);
@@ -1921,7 +2233,53 @@ table.a07-detail-table tr.pre td {
 .dash {
   color: var(--color-text-muted, #9ca3af);
 }
-.loc-out {
+
+/* ── 외근 배지 (비고 칸) ──────────────────────────────────── */
+.badge-outside {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  font-size: 0.625rem;
+  /* 줄 높이/세로 마진을 제거해 일반 인라인 배지와 동일하게 행 높이에 들어가도록 함 */
+  line-height: 1;
+  padding: 2px 8px;
+  border-radius: 9px;
+  font-weight: 600;
+  background: #fff7ed;
   color: #92400e;
+  border: 0.5px solid #fdba74;
+  cursor: pointer;
+  margin: 0 2px;
+  vertical-align: middle;
+}
+.badge-outside:hover {
+  background: #ffedd5;
+}
+
+/* ── 초과근무 배지 / 행 ───────────────────────────────────── */
+.badge-ot {
+  font-size: 0.625rem;
+  padding: 2px 8px;
+  border-radius: 9px;
+  font-weight: 600;
+  background: #f3e8ff;
+  color: #6b21a8;
+  border: 0.5px solid #c084fc;
+}
+table.a07-detail-table tr.ot-row td {
+  background: #faf8fd;
+  color: var(--color-text, #374151);
+}
+table.a07-detail-table tr.ot-row td.col-plan {
+  background: #f6f2fb;
+}
+table.a07-detail-table tr.ot-row td.col-actual {
+  background: #f6f2fb;
+}
+table.a07-detail-table tr.ot-row td.col-norm {
+  background: #f6f2fb;
+}
+table.a07-detail-table tr.ot-row td.date {
+  background: #faf8fd;
 }
 </style>

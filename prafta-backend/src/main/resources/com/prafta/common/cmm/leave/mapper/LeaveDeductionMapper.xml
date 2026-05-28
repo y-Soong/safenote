@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.prafta.common.cmm.leave.mapper.LeaveDeductionMapper">
+
+    <!--
+      사용자/일자 적용 근무 스케줄 시각 조회.
+      tb_user_work_plan.WORK_PLAN_CD(=SCH_CD)를 tb_sch_mgmt 와 INNER JOIN.
+      WORK_PLAN_CD 가 연차 코드(LEAVE_CD)이거나 스케줄이 없으면 행 없음 → null 반환.
+    -->
+    <select id="selectDailySchedule" resultType="com.prafta.common.cmm.leave.vo.DailyScheduleVO">
+    /* LeaveDeductionMapper.selectDailySchedule */
+    SELECT
+          S.SCH_CD            AS schCd
+        , S.FST_SCH_STR_TIME  AS fstSchStrTime
+        , S.FST_SCH_END_TIME  AS fstSchEndTime
+        , S.FST_SCH_BRK_MIN   AS fstSchBrkMin
+        , S.SEC_SCH_STR_TIME  AS secSchStrTime
+        , S.SEC_SCH_END_TIME  AS secSchEndTime
+        , S.SEC_SCH_BRK_MIN   AS secSchBrkMin
+        , S.FST_BRK_STR_TIME  AS fstBrkStrTime
+        , S.FST_BRK_END_TIME  AS fstBrkEndTime
+        , S.SEC_BRK_STR_TIME  AS secBrkStrTime
+        , S.SEC_BRK_END_TIME  AS secBrkEndTime
+      FROM TB_USER_WORK_PLAN WP
+      JOIN TB_SCH_MGMT S
+        ON S.CMPNY_CD = WP.CMPNY_CD
+       AND S.SITE_CD  = WP.SITE_CD
+       AND S.SCH_CD   = WP.WORK_PLAN_CD
+       AND S.USE_YN   = 'Y'
+     WHERE WP.CMPNY_CD = #{cmpnyCd}
+       AND WP.SITE_CD  = #{siteCd}
+       AND WP.USER_CD  = #{userCd}
+       AND WP.WORK_YMD = #{workYmd}
+     LIMIT 1
+    </select>
+
+</mapper>

@@ -109,7 +109,13 @@
           <span>휴일 포함</span>
         </label>
       </div>
-      <button class="btn-toolbar-apply" @click="fnApplySchType">적용</button>
+      <button
+        class="btn-toolbar-apply"
+        :disabled="isMonthClosed"
+        @click="fnApplySchType"
+      >
+        적용
+      </button>
       <span class="toolbar-count-label" :class="{ invisible: !selectionLabel }">
         선택: {{ selectionLabel || "–" }} &middot; {{ selectionCount }}건
       </span>
@@ -117,21 +123,19 @@
       <!-- ── 구분선 ─────────────────────────────────────── -->
       <div class="toolbar-divider"></div>
 
-      <!-- ── 연차 타입 적용 섹션 ─────────────────────────── -->
-      <span class="toolbar-label toolbar-label-leave">연차 타입</span>
-      <select
-        v-model="selectedLeaveType"
-        class="toolbar-sch-select toolbar-sch-select-leave"
+      <!-- ── 법정 연차 적용 섹션 — 타입 선택 없이 본연차(SYS_ANNUAL) 고정 ── -->
+      <span class="toolbar-label toolbar-label-leave">법정 연차</span>
+      <div
+        class="toolbar-fixed-leave"
+        :class="{ 'is-missing': !annualLeaveType }"
+        :title="
+          annualLeaveType
+            ? '법정 본연차로 고정 적용됩니다.'
+            : '법정 연차(SYS_ANNUAL)가 설정되어 있지 않습니다.'
+        "
       >
-        <option value="">연차 타입 선택</option>
-        <option
-          v-for="leave in leaveTypeList"
-          :key="leave.leaveCd"
-          :value="leave.leaveCd"
-        >
-          {{ leave.leaveNm }}
-        </option>
-      </select>
+        {{ annualLeaveType ? annualLeaveType.leaveNm : "연차 미설정" }}
+      </div>
       <div
         class="toolbar-selection-box toolbar-selection-box-leave"
         :class="{ 'has-value': !!selectionLabel }"
@@ -316,6 +320,8 @@ const nodeCd = ref("");
 const nodeNm = ref("");
 const nodeDisabled = ref(true);
 const incSubNodeYn = ref(false);
+// PRAFTA-028 - 조회한 월(스코프)이 마감되었는지 (마감 시 근무타입 변경/저장/삭제 차단)
+const isMonthClosed = ref(false);
 
 // ── 포커싱 변수 목록 ───────────────────────────────────────
 const siteNoFcs = ref(null);
@@ -348,8 +354,13 @@ const scheduleData = ref({});
 const selectedSchType = ref("");
 const schHolidayMode = ref("exclude");
 
-// ── 적용 옵션 (연차 타입) ──────────────────────────────────
-const selectedLeaveType = ref("");
+// ── 적용 옵션 (법정 연차) ──────────────────────────────────
+// 연차 타입 선택 없이 법정 본연차(SYS_ANNUAL)만 고정 적용한다.
+// 그 외 연차(월차/근속가산/약정 등)는 사용자 직접 신청·사후 요청 경로로 처리하며 이 화면 대상이 아니다.
+const ANNUAL_LEAVE_CD = "SYS_ANNUAL";
+const annualLeaveType = computed(
+  () => leaveTypeList.value.find((t) => t.leaveCd === ANNUAL_LEAVE_CD) ?? null
+);
 const leaveHolidayMode = ref("exclude");
 
 // ── 행 체크박스 ───────────────────────────────────────────
@@ -523,6 +534,10 @@ const onDocMouseUp = () => {
 
 // ── 근무 타입 적용 ─────────────────────────────────────────
 const fnApplySchType = async () => {
+  if (isMonthClosed.value) {
+    await proxy.$alert("마감된 월입니다. 근무타입을 변경할 수 없습니다.");
+    return;
+  }
   if (!selectedSchType.value) {
     await proxy.$alert("스케줄 타입을 선택해주세요.");
     return;
@@ -575,10 +590,14 @@ const fnApplySchType = async () => {
   }
 };
 
-// ── 연차 타입 적용 ─────────────────────────────────────────
+// ── 법정 연차 적용 ─────────────────────────────────────────
+// 타입 선택 없이 법정 본연차(SYS_ANNUAL)만 적용한다. 저장 시 백엔드가 잔여 차감/유효성 검증을 수행한다.
 const fnApplyLeaveType = async () => {
-  if (!selectedLeaveType.value) {
-    await proxy.$alert("연차 타입을 선택해주세요.");
+  const leaveCd = annualLeaveType.value?.leaveCd;
+  if (!leaveCd) {
+    await proxy.$alert(
+      "적용 가능한 법정 연차(SYS_ANNUAL)가 없습니다. 연차 정책 설정을 확인해주세요."
+    );
     return;
   }
   if (!selectionRange.value) {
@@ -601,8 +620,7 @@ const fnApplyLeaveType = async () => {
       ) {
         continue;
       }
-      scheduleData.value[`${user.userCd}_${d.workYmd}`] =
-        selectedLeaveType.value;
+      scheduleData.value[`${user.userCd}_${d.workYmd}`] = leaveCd;
       updatedUserCds.add(user.userCd);
     }
   }
@@ -762,6 +780,24 @@ const fnSiteNodeSearchPopOpenForCondition = () => {
 };
 
 // ── 조회 ───────────────────────────────────────────────────
+// PRAFTA-028 - 조회 스코프(사업장+부서+하위포함)의 해당 월 마감 여부 조회.
+//   마감이면 근무타입 적용/저장/삭제를 막는다(백엔드도 동일 가드). 조회 실패 시엔 막지 않음.
+const fnLoadCloseStatus = async () => {
+  try {
+    const res = await axios.get("/webApi/attd07/attd-close-status", {
+      params: {
+        siteCd: siteCd.value,
+        nodeCd: nodeCd.value,
+        incSubNodeYn: incSubNodeYn.value ? "Y" : "N",
+        closeYm: workYm.value.replace("-", ""),
+      },
+    });
+    isMonthClosed.value = res.status === 200 ? !!res.data?.closed : false;
+  } catch (e) {
+    isMonthClosed.value = false;
+  }
+};
+
 const fnSearch = async () => {
   userList.value = [];
   checkedRows.value = [];
@@ -807,6 +843,7 @@ const fnSearch = async () => {
         scheduleData.value[`${item.userCd}_${item.workYmd}`] = item.workPlanCd;
       });
       dragStart.value = null;
+      await fnLoadCloseStatus(); // PRAFTA-028 - 조회 후 마감 여부 갱신
       dragEnd.value = null;
 
       await fnGetLeaveTypeList();
@@ -844,12 +881,16 @@ const fnGetSchTypeList = async () => {
   }
 };
 
-// ── 연차 타입 목록 조회 ──────────────────────────────────
+// ── 연차 타입 목록 조회 (법정 본연차 식별 + 셀 표시명 변환용) ──────────
+// 관리자가 직접 적용하는 화면이며 법정 본연차(SYS_ANNUAL)만 고정 적용한다.
+// 법정 휴가(LEAVE_NATURE_TYPE='01') 목록을 받아 SYS_ANNUAL 식별(annualLeaveType) 및
+// 기존 셀의 표시명 변환(getCellNmValue)에 사용한다. (prafta-021 → 타입 선택 제거 후속)
 const fnGetLeaveTypeList = async () => {
   try {
-    // TODO: API 연동
     const response = await axios.get("/webApi/attd05/leave-type-lists", {});
-    leaveTypeList.value = response.data?.leaveTypeResultList ?? [];
+    leaveTypeList.value = (response.data?.leaveTypeResultList ?? []).filter(
+      (t) => t.leaveNatureType === "01"
+    );
   } catch (err) {
     const msg = resolveApiErrorMessage(err, "스케줄 목록 조회 오류.");
     await proxy.$alert(msg);
@@ -858,6 +899,10 @@ const fnGetLeaveTypeList = async () => {
 
 // ── 저장 ───────────────────────────────────────────────────
 const fnSave = async () => {
+  if (isMonthClosed.value) {
+    await proxy.$alert("마감된 월입니다. 근무계획을 저장할 수 없습니다.");
+    return;
+  }
   if (checkedRows.value.length === 0) {
     await proxy.$alert("선택된 항목이 없습니다.");
     return;
@@ -917,6 +962,10 @@ const fnSave = async () => {
 
 // ── 삭제 ───────────────────────────────────────────────────
 const fnDelete = async () => {
+  if (isMonthClosed.value) {
+    await proxy.$alert("마감된 월입니다. 근무계획을 삭제할 수 없습니다.");
+    return;
+  }
   if (checkedRows.value.length === 0) {
     await proxy.$alert("선택된 항목이 없습니다.");
     return;
@@ -1131,13 +1180,30 @@ onUnmounted(() => {
   background: #15803d;
 }
 
-/* ── 연차 타입 섹션 pink 스타일 ─────────────────────────── */
+/* ── 법정 연차 섹션 pink 스타일 ─────────────────────────── */
 .toolbar-label-leave {
   color: #be185d;
 }
 
-.toolbar-sch-select-leave:focus {
-  border-color: #db2777 !important;
+/* 연차 타입 선택 제거 — 법정 본연차 고정 표시 칩 */
+.toolbar-fixed-leave {
+  display: inline-flex;
+  align-items: center;
+  min-width: 160px;
+  padding: 0.3rem 0.6rem;
+  border: 1px solid #db2777;
+  border-radius: var(--input-radius, 6px);
+  background: rgba(219, 39, 119, 0.06);
+  font-size: 0.875rem;
+  font-weight: 600;
+  color: #db2777;
+  font-family: "Pretendard", sans-serif;
+  white-space: nowrap;
+}
+.toolbar-fixed-leave.is-missing {
+  border-color: var(--color-border, #d1d5db);
+  background: var(--color-bg, #f3f4f6);
+  color: var(--color-text-muted, #9ca3af);
 }
 
 .toolbar-selection-box-leave.has-value {

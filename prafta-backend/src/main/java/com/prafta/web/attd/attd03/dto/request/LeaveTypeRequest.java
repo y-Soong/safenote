@@ -93,11 +93,6 @@ public class LeaveTypeRequest {
     private String availToDt;
 
     // C. 사용규칙 - 관리자 부여 타입(수동부여: leaveType=02 & grantType=02)
-    /** 부여일수 */
-    @FieldLabel("부여일수")
-    @Max(255)
-    private Integer grantDays;
-
     /** 사용가능기간 */
     @FieldLabel("관리자 사용가능기간")
     @Size(max = 2)
@@ -119,26 +114,21 @@ public class LeaveTypeRequest {
     @Size(max = 2)
     private String grantBaseType;
 
-    /** 실행 시점 (개월 전 1일) */
+    /** 실행 시점 (개월 전 1일) - grantBaseType '01','02'일 때만 사용 */
     @FieldLabel("자동부여 실행시점")
     @Max(255)
     private Integer grantOffsetMonth;
+
+    /** 자동부여 지정일 (MMDD) - grantBaseType '03'(부여일지정)일 때만 사용 */
+    @FieldLabel("자동부여 지정일")
+    @Size(max = 4)
+    private String grantAssignMmdd;
 
     // D. 결재 및 증빙
     /** 결재 여부 (Y/N) */
     @FieldLabel("결재 여부")
     @Size(max = 1)
     private String aprvUseYn;
-
-    /** 결재 단계 수 (aprvUseYn=Y일 때) */
-    @FieldLabel("결재 단계 수")
-    @Max(255)
-    private Integer aprvStepCnt;
-
-    /** 인사팀 최종 승인 여부 (Y/N, aprvUseYn=Y일 때) */
-    @FieldLabel("인사팀 최종 승인 여부")
-    @Size(max = 1)
-    private String hrFinalAprvYn;
 
     /** 증빙 여부 (Y/N) */
     @FieldLabel("증빙 여부")

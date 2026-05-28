@@ -14,11 +14,13 @@ public record TbmEduItemInfoCommand(
 		, String mtrlDesc
 		, String url
 		, String useYn
+		, String thumbFileMgmtCd	// prafta-033-A: 썸네일 파일코드
+		, String durationSec		// prafta-033-A: 미디어 길이(초)
 		, String gvCmpnyCd
 		, String gvUserCd
 ){
 	public static TbmEduItemInfoCommand from(TbmEduItemInfoModel model, TbmEduInfoParam param, String mtrlItemCd, String mtrlCd, String fileMgmtCd) {
-		
+
 		if(model == null)
 			throw new ApiException(CommonErrorCode.COMMON_400_001);
 		if(param == null)
@@ -27,7 +29,7 @@ public record TbmEduItemInfoCommand(
 			throw new ApiException(CommonErrorCode.COMMON_400_001);
 		if(mtrlCd == null)
 			throw new ApiException(CommonErrorCode.COMMON_400_001);
-		
+
 		return new TbmEduItemInfoCommand(
 			mtrlItemCd
 			, mtrlCd
@@ -37,6 +39,8 @@ public record TbmEduItemInfoCommand(
 			, model.mtrlDesc()
 			, model.url()
 			, model.useYn()
+			, model.thumbFileMgmtCd()
+			, model.durationSec()
 			, param.gvCmpnyCd()
 			, param.gvUserCd()
 		);
