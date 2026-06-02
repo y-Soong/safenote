@@ -1,0 +1,621 @@
+<!--
+  AttendanceTodayCard.vue — 오늘 근태 카드 (5 변형 통합)
+  - 작업 ID: APP002-06 (UI 명세: UI-A002)
+  - 시안 화면 1~5: 근무중 / 퇴근완료 / 사업장다름 / 2구간 / 퇴근미등록
+  - 정책: attd §7.1~7.3, §10.1~10.2, §11.1 / 시안 §3.1·§3.5·§3.6·§4.2
+  - 3행(스케줄/근태/표준화) 구조는 구간(slot)마다 반복. 2구간이면 구분선으로 분리.
+  - 활성/비활성은 detail.actions(서버 산출) 표시만. 비즈니스 판정 금지.
+  - 참조 패턴: views/main/components/AttendanceCard.vue (badge/btn/HHMM 포맷)
+  - prafta-app-013: "수정 요청"은 항상 활성(4액션 시트를 연다). 개별 게이팅은 시트가 담당.
+-->
+<template>
+  <div v-if="detail" class="cd today-card">
+    <!-- 날짜 헤더 -->
+    <div class="dr">
+      <p class="dm">{{ dateMainText }}</p>
+      <p class="dx">{{ dateSubText }}</p>
+    </div>
+
+    <!-- 상태 배지 + 근무타입명 -->
+    <div class="sl">
+      <span class="bd" :class="statusBadgeClass">
+        <span class="bd__dot" />{{ statusText }}
+      </span>
+      <strong>{{ detail.workPlanName }}</strong>
+    </div>
+
+    <!-- 구간별 3행 정보 -->
+    <template v-for="(slot, idx) in slots" :key="slot.workSeq">
+      <div v-if="isTwoSlot" class="dv">{{ idx === 0 ? '1구간' : '2구간' }}</div>
+      <div class="tr">
+        <!-- 스케줄 -->
+        <div class="tw">
+          <div class="tl">
+            <svg class="icon" width="13" height="13" aria-hidden="true"><use href="#i-attd-cal-ev" /></svg>
+            스케줄
+          </div>
+          <div class="tb">
+            <div class="tt2">{{ formatRange(slot.schedule.startTime, slot.schedule.endTime) }}</div>
+            <div class="tm">{{ scheduleMetaText(slot.schedule) }}</div>
+          </div>
+        </div>
+
+        <!-- 근태 -->
+        <div class="tw a" :class="attendanceRowClass(slot)">
+          <div class="tl">
+            <svg class="icon" width="13" height="13" aria-hidden="true">
+              <use :href="slot.attendance && slot.attendance.isMissingCheckOut ? '#i-attd-alert-c' : '#i-attd-finger'" />
+            </svg>
+            근태
+          </div>
+          <div class="tb">
+            <div class="tt2" v-html="attendanceTimeHtml(slot)"></div>
+            <div v-if="attendanceMetaHtml(slot)" class="tm" v-html="attendanceMetaHtml(slot)"></div>
+          </div>
+        </div>
+
+        <!-- 표준화 -->
+        <div class="tw st" :class="{ x: !stdApplied(slot) && !stdUnmet(slot), unmet: stdUnmet(slot) }">
+          <div class="tl">
+            <svg class="icon" width="13" height="13" aria-hidden="true"><use href="#i-attd-adjust" /></svg>
+            표준화
+          </div>
+          <div class="tb" :class="{ x: !stdApplied(slot) && !stdUnmet(slot) }">
+            <template v-if="stdUnmet(slot)">
+              <div class="tt2 um">조건 미충족으로 표준화 규칙 미적용</div>
+            </template>
+            <template v-else>
+              <div class="tt2">{{ standardizedText(slot) }}</div>
+              <div v-if="stdApplied(slot)" class="tm">{{ standardizedMetaText(slot) }}</div>
+            </template>
+          </div>
+        </div>
+      </div>
+    </template>
+
+    <!-- 인라인 알림 -->
+    <div v-if="alertText" class="al" :class="alertToneClass">
+      <svg class="icon" width="14" height="14" aria-hidden="true"><use :href="alertIconId" /></svg>
+      <span>{{ alertText }}</span>
+    </div>
+
+    <!-- 푸터 액션 -->
+    <div class="ft">
+      <!--
+        prafta-app-013: "수정 요청"은 항상 눌러서 4액션 시트를 연다(결정 §3).
+        개별 게이팅은 시트 내부 4행(sheetActions)이 담당하므로 버튼 자체는 항상 활성.
+        종전 canRequestModify(서버) 의존을 끊었다.
+      -->
+      <button
+        type="button"
+        class="bt bt-s"
+        @click="onModify"
+      >
+        <svg class="icon" width="16" height="16" aria-hidden="true"><use href="#i-attd-edit" /></svg>
+        수정 요청
+      </button>
+      <button
+        type="button"
+        class="bt"
+        :class="primaryActionEnabled ? 'bt-p' : 'bt-x'"
+        :disabled="!primaryActionEnabled"
+        @click="onPrimaryAction"
+      >
+        <svg class="icon" width="16" height="16" aria-hidden="true"><use :href="primaryActionIcon" /></svg>
+        {{ primaryActionLabel }}
+      </button>
+    </div>
+
+    <!-- 본 카드 전용 sprite -->
+    <svg width="0" height="0" class="card-sprite" aria-hidden="true" focusable="false">
+      <defs>
+        <symbol id="i-attd-cal-ev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="5" width="16" height="16" rx="2" /><line x1="16" y1="3" x2="16" y2="7" /><line x1="8" y1="3" x2="8" y2="7" /><line x1="4" y1="11" x2="20" y2="11" /><line x1="8" y1="15" x2="8" y2="15" /></symbol>
+        <symbol id="i-attd-finger" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18.9 7a8 8 0 0 1 1.1 5v1a6 6 0 0 0 .8 3" /><path d="M8 11a4 4 0 0 1 8 0v1a10 10 0 0 0 2 6" /><path d="M12 11v2a14 14 0 0 0 2.5 8" /><path d="M8 15a18 18 0 0 0 1.8 6" /><path d="M4.9 19a22 22 0 0 1-.9-7a8 8 0 0 1 12-7" /></symbol>
+        <symbol id="i-attd-adjust" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="4" y1="8" x2="14" y2="8" /><line x1="4" y1="16" x2="10" y2="16" /><circle cx="17" cy="8" r="3" /><circle cx="13" cy="16" r="3" /></symbol>
+        <symbol id="i-attd-alert-c" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9" /><line x1="12" y1="8" x2="12" y2="12" /><line x1="12" y1="16" x2="12" y2="16" /></symbol>
+        <symbol id="i-attd-info" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9" /><line x1="12" y1="8" x2="12" y2="8" /><line x1="11" y1="12" x2="12" y2="12" /><line x1="12" y1="12" x2="12" y2="16" /></symbol>
+        <symbol id="i-attd-alert-t" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 9v4" /><path d="M10.4 4.6l-8 14a1.7 1.7 0 0 0 1.5 2.4h16.2a1.7 1.7 0 0 0 1.5-2.4l-8-14a1.7 1.7 0 0 0-3 0z" /><line x1="12" y1="17" x2="12" y2="17" /></symbol>
+        <symbol id="i-attd-edit" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20h4l10.5-10.5a2.1 2.1 0 0 0-3-3L5 17v3z" /><line x1="13.5" y1="6.5" x2="17.5" y2="10.5" /></symbol>
+        <symbol id="i-attd-logout" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 8V6a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h7a2 2 0 0 0 2-2v-2" /><line x1="9" y1="12" x2="21" y2="12" /><polyline points="18 9 21 12 18 15" /></symbol>
+        <symbol id="i-attd-login" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 8V6a2 2 0 0 1 2-2h7a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2h-7a2 2 0 0 1-2-2v-2" /><line x1="3" y1="12" x2="15" y2="12" /><polyline points="6 9 3 12 6 15" /></symbol>
+      </defs>
+    </svg>
+  </div>
+</template>
+
+<script setup>
+import { computed } from 'vue'
+import {
+  formatHHMM,
+  formatRange,
+  formatYmdLong,
+  formatDowLong,
+  minutesToKorean,
+} from '../attdFormat'
+
+const props = defineProps({
+  // GET /api/app/attd/my/today (또는 day-detail) 응답 1건. null=로딩/미주입
+  detail: {
+    type: Object,
+    default: null,
+  },
+})
+
+const emit = defineEmits(['action'])
+
+// ───────────────────────────────────────────────────────────
+// 파생 값 (단순 포맷/표시 — 비즈니스 로직 아님)
+// ───────────────────────────────────────────────────────────
+const slots = computed(() => (props.detail && props.detail.slots) || [])
+const isTwoSlot = computed(() => !!(props.detail && props.detail.isTwoSlot))
+
+// 날짜 헤더 — "2026년 5월 20일" / "수요일 · 중곡사업장"
+const dateMainText = computed(() => formatYmdLong(props.detail && props.detail.workDate))
+const dateSubText = computed(() => {
+  if (!props.detail) return ''
+  const dow = formatDowLong(props.detail.workDate)
+  const site = props.detail.siteName || ''
+  return [dow, site].filter(Boolean).join(' · ')
+})
+
+// 상태 배지
+const statusBadgeClass = computed(() => {
+  switch (props.detail && props.detail.workStatus) {
+    case 'WORKING':
+      return 'bd-p'
+    case 'TWO_SLOT_WORKING':
+      return 'bd-i'
+    case 'CHECK_OUT_MISSING':
+      return 'bd-w'
+    case 'CHECKED_OUT':
+    default:
+      return 'bd-n'
+  }
+})
+const statusText = computed(() => {
+  switch (props.detail && props.detail.workStatus) {
+    case 'WORKING':
+      return '근무중'
+    case 'TWO_SLOT_WORKING':
+      return '2구간 근무'
+    case 'CHECK_OUT_MISSING':
+      return '퇴근 미등록'
+    case 'CHECKED_OUT':
+      return '퇴근'
+    case 'BEFORE_WORK':
+      return '출근 전'
+    default:
+      return ''
+  }
+})
+
+// 스케줄 메타 — "휴게 90분 · 7시간"
+const scheduleMetaText = (schedule) => {
+  if (!schedule) return ''
+  const parts = []
+  if (schedule.breakMinutes != null) parts.push(`휴게 ${schedule.breakMinutes}분`)
+  if (schedule.workMinutes != null) parts.push(minutesToKorean(schedule.workMinutes))
+  return parts.join(' · ')
+}
+
+// 근태 행 톤 클래스 (.a 위에 추가): 사업장다름=.wr / 미등록=.m
+const attendanceRowClass = (slot) => {
+  const a = slot.attendance
+  if (!a) return ''
+  if (a.isMissingCheckOut) return 'm'
+  if (a.isDifferentSite) return 'wr'
+  return ''
+}
+
+// 근태 시각 HTML — 미등록 시 빨간 "미등록"(.dg) 표시
+const attendanceTimeHtml = (slot) => {
+  const a = slot.attendance
+  // 근태 미생성(미래/2구간 미시작) → '- ~ -'
+  if (!a || !a.checkInTime) return '- ~ -'
+  const inText = formatHHMM(a.checkInTime) || '-'
+  // 퇴근 미등록(보정 대상) → 빨간 "미등록"
+  if (a.isMissingCheckOut) return `${inText} ~ <span class="dg">미등록</span>`
+  // 근무중(퇴근 시각 없음) → "09:28 ~ -" (시안 화면1)
+  const outText = formatHHMM(a.checkOutTime) || '-'
+  return `${inText} ~ ${outText}`
+}
+
+// 근태 메타 HTML — "출근 {사업장} · 퇴근 {사업장}".
+//   prafta-app-003 B-2: GPS 행 존재(checkInOffsite/checkOutOffsite=true) = 근무지 밖(외근).
+//   외근이면 "근무지 외(외근)"를 warning 톤(.pw)으로 노출(시안 §3.5 "근무지 외" 태그).
+const checkInLabel = (a) => {
+  if (a.checkInOffsite === true) return '<span class="pw">출근 근무지 외(외근)</span>'
+  return a.checkInSiteName ? `출근 ${a.checkInSiteName}` : ''
+}
+const attendanceMetaHtml = (slot) => {
+  const a = slot.attendance
+  if (!a || !a.checkInTime) return ''
+  const parts = []
+  const inLabel = checkInLabel(a)
+  if (inLabel) parts.push(inLabel)
+  // 퇴근 미등록이면 퇴근 메타 없음(시안 화면5: "출근 중곡사업장"만)
+  if (!a.isMissingCheckOut && a.checkOutTime) {
+    let outLabel
+    if (a.checkOutOffsite === true) outLabel = '<span class="pw">퇴근 근무지 외(외근)</span>'
+    else if (a.checkOutSiteName) {
+      // 사업장다름(스키마 한계로 현재 항상 false)이면 퇴근지를 warning 톤(.pw)으로 강조 (시안 §3.5)
+      outLabel = a.isDifferentSite
+        ? `<span class="pw">퇴근 ${a.checkOutSiteName}</span>`
+        : `퇴근 ${a.checkOutSiteName}`
+    } else {
+      outLabel = ''
+    }
+    if (outLabel) parts.push(outLabel)
+  }
+  return parts.join(' · ')
+}
+
+// 표준화 — 3상태:
+//   applied : 표준화 적용(시각 + 근무시간 표시)
+//   unmet   : 출퇴근은 등록됐으나 회사유리(출근올림/퇴근내림) 적용 시 시간규칙 위반 → 미적용 안내
+//   na      : 표준화 비대상(출퇴근 미완료 등 standardized=null)
+const stdApplied = (slot) =>
+  !!(slot.standardized && slot.standardized.applied === true && slot.standardized.settledMinutes != null)
+const stdUnmet = (slot) => !!(slot.standardized && slot.standardized.applied === false)
+const standardizedText = (slot) => {
+  if (!stdApplied(slot)) return '-'
+  return formatRange(slot.standardized.startTime, slot.standardized.endTime)
+}
+const standardizedMetaText = (slot) => {
+  if (!stdApplied(slot)) return ''
+  // 표기 변경(사용자 요청): "정산" → "근무시간"
+  return `근무시간 ${minutesToKorean(slot.standardized.settledMinutes)}`
+}
+
+// ───────────────────────────────────────────────────────────
+// 인라인 알림 (상태별 워딩 — 시안 §3.1 고정 문구)
+// ───────────────────────────────────────────────────────────
+const alertText = computed(() => {
+  switch (props.detail && props.detail.workStatus) {
+    case 'WORKING':
+      return '근무 중에는 근태 수정을 요청할 수 없어요.'
+    case 'TWO_SLOT_WORKING':
+      return '2구간 근무까지 모두 끝난 뒤에 수정 요청을 등록할 수 있어요.'
+    case 'CHECK_OUT_MISSING':
+      return '퇴근은 오늘 안에만 가능해요.'
+    case 'CHECKED_OUT':
+      // 사업장다름(.wr)이면 안내 문구 없음(시안 §3.1)
+      return hasDifferentSite.value ? '' : '출퇴근 기록과 근태가 다르면 수정 요청해 주세요.'
+    default:
+      return ''
+  }
+})
+const hasDifferentSite = computed(() =>
+  slots.value.some((s) => s.attendance && s.attendance.isDifferentSite)
+)
+const alertToneClass = computed(() =>
+  (props.detail && props.detail.workStatus) === 'CHECK_OUT_MISSING' ? 'dg' : 'in'
+)
+const alertIconId = computed(() =>
+  (props.detail && props.detail.workStatus) === 'CHECK_OUT_MISSING'
+    ? '#i-attd-alert-t'
+    : '#i-attd-info'
+)
+
+// ───────────────────────────────────────────────────────────
+// 푸터 액션 (서버 산출 actions 표시만)
+//   prafta-app-013: "수정 요청"은 항상 활성(시트 오픈). canRequestModify 의존 제거.
+//   primary 버튼(퇴근/2구간 출근)은 종전대로 actions.canCheckOut/canCheckIn 사용.
+// ───────────────────────────────────────────────────────────
+const actions = computed(() => (props.detail && props.detail.actions) || {})
+
+// Primary 버튼: 2구간 미시작이면 "2구간 출근"(canCheckIn), 그 외 "퇴근하기"(canCheckOut)
+const isTwoSlotCheckIn = computed(
+  () => (props.detail && props.detail.workStatus) === 'TWO_SLOT_WORKING' && !!actions.value.canCheckIn
+)
+const primaryActionEnabled = computed(() =>
+  isTwoSlotCheckIn.value ? !!actions.value.canCheckIn : !!actions.value.canCheckOut
+)
+const primaryActionLabel = computed(() => (isTwoSlotCheckIn.value ? '2구간 출근' : '퇴근하기'))
+const primaryActionIcon = computed(() =>
+  isTwoSlotCheckIn.value ? '#i-attd-login' : '#i-attd-logout'
+)
+
+const onModify = () => {
+  // prafta-app-013: 4액션 시트를 열도록 컨테이너에 위임 — 본 라운드는 emit만.
+  // TODO(developer): MyAttendanceView.onTodayAction 에서 sheetActions 로 시트용 day 구성 후 오픈.
+  emit('action', { type: 'requestModify', detail: props.detail })
+}
+const onPrimaryAction = () => {
+  // TODO(developer): 퇴근/2구간 출근 확인 모달 → POST check-out/check-in — 본 라운드는 emit만
+  emit('action', {
+    type: isTwoSlotCheckIn.value ? 'checkIn' : 'checkOut',
+    detail: props.detail,
+  })
+}
+</script>
+
+<style scoped>
+.cd {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  padding: 14px;
+}
+
+.dr {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  margin: 0 0 var(--space-sm);
+  flex-wrap: wrap;
+}
+.dm {
+  margin: 0;
+  font-size: 17px;
+  font-weight: 700;
+  color: var(--color-text-primary);
+}
+.dx {
+  margin: 0;
+  font-size: 12px;
+  color: var(--color-text-secondary);
+}
+
+.sl {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+  margin-bottom: 10px;
+  flex-wrap: wrap;
+}
+.sl strong {
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--color-text-primary);
+}
+
+/* 상태 배지 */
+.bd {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-xs);
+  height: 22px;
+  padding: 0 var(--space-sm);
+  border-radius: var(--radius-sm);
+  font-size: 11px;
+  font-weight: 500;
+  white-space: nowrap;
+}
+.bd__dot {
+  width: 6px;
+  height: 6px;
+  border-radius: var(--radius-full);
+}
+.bd-p {
+  background: var(--color-primary-tint);
+  color: var(--color-primary);
+}
+.bd-p .bd__dot {
+  background: var(--color-primary);
+}
+.bd-n {
+  background: var(--color-border-light);
+  color: var(--color-text-secondary);
+}
+.bd-n .bd__dot {
+  background: var(--color-text-secondary);
+}
+.bd-w {
+  background: var(--color-warning-tint);
+  color: var(--color-warning-text);
+}
+.bd-w .bd__dot {
+  background: var(--color-warning);
+}
+.bd-i {
+  background: var(--color-info-tint);
+  color: var(--color-info);
+}
+.bd-i .bd__dot {
+  background: var(--color-info);
+}
+
+/* 구분선 (2구간) */
+.dv {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: var(--space-sm) 0 var(--space-xs);
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--color-text-secondary);
+}
+.dv::before,
+.dv::after {
+  content: '';
+  flex: 1;
+  height: 1px;
+  background: var(--color-border-light);
+}
+
+/* 3행 정보 */
+.tr {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.tw {
+  display: grid;
+  grid-template-columns: 80px 1fr;
+  gap: var(--space-sm);
+  align-items: center;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  padding: 10px 12px;
+}
+.tw.a {
+  border-color: var(--color-primary-tint-border);
+  background: var(--color-primary-tint);
+}
+.tw.a.m {
+  border-color: var(--color-danger-border);
+  background: var(--color-danger-tint);
+}
+.tw.a.wr {
+  border-color: var(--color-warning-border);
+  background: var(--color-warning-tint);
+}
+.tw.st {
+  border-color: var(--color-info-border);
+  background: var(--color-info-tint);
+}
+.tw.st.x {
+  border-color: var(--color-border);
+  background: var(--color-border-light);
+}
+/* 표준화 조건 미충족(회사유리 적용 시 시간규칙 위반) — 연한 붉은색 계통 */
+.tw.st.unmet {
+  border-color: var(--color-danger-border);
+  background: var(--color-danger-tint);
+}
+.tw.st.unmet .tl {
+  color: var(--color-danger);
+}
+.tt2.um {
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1.3;
+  color: var(--color-danger-text);
+}
+
+.tl {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--color-text-secondary);
+}
+.tw.a .tl {
+  color: var(--color-primary-text-deep);
+}
+.tw.a.m .tl {
+  color: var(--color-danger);
+}
+.tw.a.wr .tl {
+  color: var(--color-warning-text);
+}
+.tw.st .tl {
+  color: var(--color-info-strong);
+}
+.tw.st.x .tl {
+  color: var(--color-text-tertiary);
+}
+
+.tb {
+  min-width: 0;
+}
+.tt2 {
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--color-text-primary);
+  line-height: 1.3;
+  font-variant-numeric: tabular-nums;
+}
+.tb.x .tt2 {
+  color: var(--color-text-tertiary);
+  font-weight: 500;
+}
+.tm {
+  margin-top: 1px;
+  font-size: 11px;
+  color: var(--color-text-secondary);
+}
+
+/* deep selector — v-html 내부 span 색상 (서버/포맷 문자열의 .dg/.pw/.mu) */
+.tt2 :deep(.dg) {
+  color: var(--color-danger);
+}
+.tt2 :deep(.mu) {
+  color: var(--color-text-tertiary);
+  font-weight: 500;
+}
+.tm :deep(.pw) {
+  color: var(--color-warning-text);
+  font-weight: 600;
+}
+
+/* 인라인 알림 */
+.al {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  margin-top: var(--space-sm);
+  padding: var(--space-sm) 10px;
+  border-radius: var(--radius-sm);
+  font-size: 11px;
+  line-height: 1.4;
+  background: var(--color-warning-tint);
+  border: 1px solid var(--color-warning-border-light);
+  color: var(--color-warning-text);
+}
+.al .icon {
+  margin-top: 1px;
+}
+.al.dg {
+  background: var(--color-danger-tint);
+  border-color: var(--color-danger-border);
+  color: var(--color-danger-text);
+}
+.al.in {
+  background: var(--color-info-tint);
+  border-color: var(--color-info-border);
+  color: var(--color-info-strong);
+}
+
+/* 푸터 */
+.ft {
+  display: flex;
+  gap: var(--space-sm);
+  margin-top: var(--space-md);
+}
+.bt {
+  flex: 1;
+  height: 48px;
+  border-radius: var(--radius-md);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  font-size: 14px;
+  font-weight: 600;
+  border: none;
+  cursor: pointer;
+  white-space: nowrap;
+  font-family: inherit;
+}
+.bt-p {
+  background: var(--color-primary);
+  color: var(--color-surface);
+}
+.bt-s {
+  background: var(--color-surface);
+  color: var(--color-primary);
+  border: 1.5px solid var(--color-primary);
+}
+.bt-x {
+  background: var(--color-border-light);
+  color: var(--color-text-tertiary);
+  border: 1px solid var(--color-border);
+  cursor: not-allowed;
+}
+
+.card-sprite {
+  position: absolute;
+  width: 0;
+  height: 0;
+  overflow: hidden;
+}
+.icon {
+  display: inline-block;
+  flex-shrink: 0;
+  vertical-align: middle;
+}
+</style>

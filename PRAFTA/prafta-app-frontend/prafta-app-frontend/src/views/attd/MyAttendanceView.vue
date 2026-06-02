@@ -1,0 +1,910 @@
+<!--
+  MyAttendanceView.vue — 내 근태 조회 (모바일 앱) 상위 컨테이너
+  - 작업 ID: APP002-05 (분해: .claude/requests/app_requests/prafta-app-002-plan.md)
+  - UI 명세: UI-A001 (.claude/requests/app_requests/prafta-app-002-ui-spec.md)
+  - 시안: refs/prafta-app-002/prafta_my_attendance_v8.html
+  - planner 라운드 스코프: 헤더 + 3등분 세그먼트 + 본문 분기 + 탭바 조립 (template/style 완성)
+  - developer 라운드 스코프(아래 TODO): API 호출(01~04), 라우팅, 캐시, 케이스 분기 실데이터
+  - 디자인 토큰: MainView(.home-view)와 동일 세트를 .my-attd-view 루트에 1회 선언.
+    자식 컴포넌트(scoped)는 var(--...) 상속받아 사용.
+-->
+<template>
+  <div class="my-attd-view">
+    <!-- 헤더 -->
+    <header class="attd-hd">
+      <button type="button" class="attd-hd__back" aria-label="뒤로" @click="onBack">
+        <svg class="icon" width="22" height="22" aria-hidden="true">
+          <use href="#i-attd-chev-left" />
+        </svg>
+      </button>
+      <h1 class="attd-hd__title">내 근태</h1>
+      <button type="button" class="attd-hd__bell" aria-label="알림" @click="onBell">
+        <svg class="icon" width="20" height="20" aria-hidden="true">
+          <use href="#i-attd-bell" />
+        </svg>
+        <span v-if="notificationCount > 0" class="attd-hd__badge">{{ notificationCount }}</span>
+      </button>
+    </header>
+
+    <!-- 세그먼트 (오늘/이번주/이번달) -->
+    <div class="attd-seg" role="tablist" aria-label="근태 조회 기간">
+      <button
+        v-for="seg in segments"
+        :key="seg.key"
+        type="button"
+        role="tab"
+        class="attd-seg__item"
+        :class="{ 'attd-seg__item--on': activeTab === seg.key }"
+        :aria-selected="activeTab === seg.key"
+        @click="onSelectTab(seg.key)"
+      >
+        {{ seg.label }}
+      </button>
+    </div>
+
+    <!-- 본문 (스크롤 영역) -->
+    <main class="attd-body">
+      <!-- 오늘 탭 -->
+      <AttendanceTodayCard
+        v-if="activeTab === 'today'"
+        :detail="todayDetail"
+        @action="onTodayAction"
+      />
+
+      <!-- 이번주 탭 -->
+      <AttendanceWeekList
+        v-else-if="activeTab === 'week'"
+        :week="weekData"
+        @prev-week="onPrevWeek"
+        @next-week="onNextWeek"
+        @select-day="onSelectWeekDay"
+      />
+
+      <!-- 이번달 탭 -->
+      <template v-else>
+        <AttendanceMonthCalendar
+          :month="monthData"
+          :selected-ymd="selectedYmd"
+          @prev-month="onPrevMonth"
+          @next-month="onNextMonth"
+          @select-date="onSelectDate"
+        />
+        <AttendanceDayDetailCard
+          :detail="dayDetail"
+          @action="onDayDetailAction"
+        />
+      </template>
+
+      <!-- 표준 빈 상태 (로드 완료했으나 표시할 근태가 없을 때) -->
+      <p v-if="showEmptyState" class="attd-empty">표시할 근태가 없어요</p>
+    </main>
+
+    <!-- 하단 탭바 (근태 활성) -->
+    <nav class="attd-tabbar" aria-label="하단 탭바">
+      <button
+        v-for="tab in bottomTabs"
+        :key="tab.key"
+        type="button"
+        class="attd-tabbar__tab"
+        :class="{ 'attd-tabbar__tab--on': tab.key === 'attd' }"
+        @click="onBottomTab(tab.key)"
+      >
+        <svg class="icon" width="22" height="22" aria-hidden="true">
+          <use :href="`#${tab.iconId}`" />
+        </svg>
+        <span class="attd-tabbar__lbl">{{ tab.label }}</span>
+      </button>
+    </nav>
+
+    <!-- 이번주 카드 탭 시 바텀시트 -->
+    <AttendanceActionSheet
+      v-model="actionSheetOpen"
+      :day="actionSheetDay"
+      @action="onSheetAction"
+    />
+
+    <!-- 외근(지오펜스 밖) 사유 시트 — 서버 ATTD_400_086 수신 시 오픈 (prafta-app-008) -->
+    <OffsiteReasonSheet
+      v-model="offsiteSheetOpen"
+      :mode="offsiteMode"
+      :lat="offsiteCtx.lat"
+      :lon="offsiteCtx.lon"
+      :accuracy="offsiteCtx.accuracy"
+      @submit="onOffsiteSubmit"
+      @cancel="onOffsiteCancel"
+    />
+
+    <!-- 인라인 SVG sprite (본 화면 전용) -->
+    <svg width="0" height="0" class="attd-sprite" aria-hidden="true" focusable="false">
+      <defs>
+        <symbol id="i-attd-chev-left" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <polyline points="15 18 9 12 15 6" />
+        </symbol>
+        <symbol id="i-attd-bell" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M10 5a2 2 0 0 1 4 0a7 7 0 0 1 4 6v3a4 4 0 0 0 2 3h-16a4 4 0 0 0 2 -3v-3a7 7 0 0 1 4 -6" />
+          <path d="M9 17v1a3 3 0 0 0 6 0v-1" />
+        </symbol>
+        <symbol id="i-attd-home" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M5 12l-2 0l9-9l9 9l-2 0" />
+          <path d="M5 12v7a2 2 0 0 0 2 2h10a2 2 0 0 0 2 -2v-7" />
+          <path d="M10 21v-6a2 2 0 0 1 2-2h0a2 2 0 0 1 2 2v6" />
+        </symbol>
+        <symbol id="i-attd-cal" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <rect x="4" y="5" width="16" height="16" rx="2" />
+          <line x1="16" y1="3" x2="16" y2="7" />
+          <line x1="8" y1="3" x2="8" y2="7" />
+          <line x1="4" y1="11" x2="20" y2="11" />
+        </symbol>
+        <symbol id="i-attd-shield" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M12 3l8 4v6c0 4.4-3.6 8-8 8s-8-3.6-8-8V7l8-4z" />
+        </symbol>
+        <symbol id="i-attd-monitor" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <rect x="3" y="4" width="18" height="12" rx="1" />
+          <line x1="7" y1="20" x2="17" y2="20" />
+          <line x1="9" y1="16" x2="9" y2="20" />
+          <line x1="15" y1="16" x2="15" y2="20" />
+        </symbol>
+      </defs>
+    </svg>
+  </div>
+</template>
+
+<script setup>
+import { ref, computed, getCurrentInstance, onMounted } from 'vue'
+import { useRouter } from 'vue-router'
+
+import api from '@/api/axios'
+import { requestGps } from '@/utils/gpsBridge'
+import { loadKakaoMapScript } from '@/utils/kakaoMap'
+import { dateToYmd, ymdToDate } from './attdFormat'
+
+import AttendanceTodayCard from './components/AttendanceTodayCard.vue'
+import AttendanceWeekList from './components/AttendanceWeekList.vue'
+import AttendanceMonthCalendar from './components/AttendanceMonthCalendar.vue'
+import AttendanceDayDetailCard from './components/AttendanceDayDetailCard.vue'
+import AttendanceActionSheet from './components/AttendanceActionSheet.vue'
+import OffsiteReasonSheet from './components/OffsiteReasonSheet.vue'
+
+const router = useRouter()
+const { proxy } = getCurrentInstance() || { proxy: null }
+
+// 공통: alert 폴백 (앱 전역 $alert 우선, 없으면 window.alert) — MainView 패턴 동일
+const showAlert = (message) => {
+  if (proxy?.$alert) return proxy.$alert(message)
+  window.alert(message)
+  return Promise.resolve()
+}
+
+// 공통: confirm 폴백 (앱 전역 $confirm 우선, 없으면 window.confirm) — MainView 패턴 동일
+const askConfirm = async (message) => {
+  if (proxy?.$confirm) return await proxy.$confirm(message)
+  return window.confirm(message)
+}
+
+// ───────────────────────────────────────────────────────────
+// 세그먼트 / 탭 정의 (UI 토글 — 허용 범위)
+// ───────────────────────────────────────────────────────────
+const segments = [
+  { key: 'today', label: '오늘' },
+  { key: 'week', label: '이번주' },
+  { key: 'month', label: '이번달' },
+]
+const bottomTabs = [
+  { key: 'home', label: '홈', iconId: 'i-attd-home' },
+  { key: 'attd', label: '근태', iconId: 'i-attd-cal' },
+  { key: 'safety', label: '안전', iconId: 'i-attd-shield' },
+  { key: 'tbm', label: 'TBM', iconId: 'i-attd-monitor' },
+]
+
+const activeTab = ref('today')
+
+// ───────────────────────────────────────────────────────────
+// 헤더 상태
+// 알림 카운트는 공통 알림 소스가 아직 없어 0 고정(후속 연동).
+// ───────────────────────────────────────────────────────────
+const notificationCount = ref(0)
+
+// ───────────────────────────────────────────────────────────
+// 탭별 데이터 (API 응답 주입)
+// 엔드포인트(baseURL=/prafta):
+//   GET /appApi/attd/my/today
+//   GET /appApi/attd/my/week?weekStartYmd=YYYYMMDD
+//   GET /appApi/attd/my/month?yearMonth=YYYYMM
+//   GET /appApi/attd/my/day-detail?workYmd=YYYYMMDD
+// USER_CD/CMPNY_CD 등 세션 값은 axios 인터셉터가 자동 주입한다.
+// ───────────────────────────────────────────────────────────
+const todayDetail = ref(null)
+const weekData = ref(null)
+const monthData = ref(null)
+const dayDetail = ref(null)
+const selectedYmd = ref('')
+
+// 현재 보고 있는 주/월 기준값
+const currentWeekStartYmd = ref('')
+const currentYearMonth = ref('')
+
+// 탭별 최초 로드 여부 (재진입 시 불필요한 재호출 방지)
+const todayLoaded = ref(false)
+
+// 주/월 캐시 (key=weekStartYmd / yearMonth). 재조회 최소화(시안 §6.2)
+const weekCache = new Map()
+const monthCache = new Map()
+const dayDetailCache = new Map()
+
+// 바텀시트
+const actionSheetOpen = ref(false)
+const actionSheetDay = ref(null)
+
+// 표준 빈 상태 — 활성 탭의 데이터 로드가 끝났는데 비어 있을 때만 노출
+const showEmptyState = computed(() => {
+  if (activeTab.value === 'today') return todayLoaded.value && !todayDetail.value
+  if (activeTab.value === 'week') return !!currentWeekStartYmd.value && !weekData.value
+  if (activeTab.value === 'month') return !!currentYearMonth.value && !monthData.value
+  return false
+})
+
+// ───────────────────────────────────────────────────────────
+// 날짜 계산 유틸 (로컬)
+// ───────────────────────────────────────────────────────────
+// 해당 일자가 속한 주의 시작(월요일) YYYYMMDD
+const weekStartOf = (date) => {
+  const d = new Date(date.getFullYear(), date.getMonth(), date.getDate())
+  const dow = d.getDay() // 0=일 ~ 6=토
+  const diff = dow === 0 ? -6 : 1 - dow // 월요일로 보정
+  d.setDate(d.getDate() + diff)
+  return dateToYmd(d)
+}
+const addDaysYmd = (ymd, days) => {
+  const d = ymdToDate(ymd)
+  if (!d) return ymd
+  d.setDate(d.getDate() + days)
+  return dateToYmd(d)
+}
+const yearMonthOf = (date) => {
+  const y = date.getFullYear()
+  const m = String(date.getMonth() + 1).padStart(2, '0')
+  return `${y}${m}`
+}
+const shiftYearMonth = (ym, delta) => {
+  const y = Number(ym.slice(0, 4))
+  const m = Number(ym.slice(4, 6))
+  const d = new Date(y, m - 1 + delta, 1)
+  return yearMonthOf(d)
+}
+
+// ───────────────────────────────────────────────────────────
+// API 호출 (401/403/500 은 axios 인터셉터가 처리. 네트워크 실패만 안내)
+// ───────────────────────────────────────────────────────────
+const loadToday = async () => {
+  if (todayLoaded.value) return
+  try {
+    const res = await api.get('/appApi/attd/my/today')
+    todayDetail.value = res?.data ?? null
+    todayLoaded.value = true
+  } catch (e) {
+    console.error('[MyAttendance] today 조회 실패:', e?.message)
+    showAlert('근태 정보를 불러오지 못했어요. 잠시 후 다시 시도해 주세요.')
+  }
+}
+
+// 쓰기(퇴근) 성공 후 강제 재조회 — todayLoaded 가드를 우회한다.
+const reloadToday = async () => {
+  todayLoaded.value = false
+  await loadToday()
+}
+
+const loadWeek = async (weekStartYmd) => {
+  currentWeekStartYmd.value = weekStartYmd
+  if (weekCache.has(weekStartYmd)) {
+    weekData.value = weekCache.get(weekStartYmd)
+    return
+  }
+  try {
+    const res = await api.get('/appApi/attd/my/week', { params: { weekStartYmd } })
+    const data = res?.data ?? null
+    if (data) weekCache.set(weekStartYmd, data)
+    weekData.value = data
+  } catch (e) {
+    console.error('[MyAttendance] week 조회 실패:', e?.message)
+    weekData.value = null
+    showAlert('주간 근태를 불러오지 못했어요. 잠시 후 다시 시도해 주세요.')
+  }
+}
+
+const loadMonth = async (yearMonth) => {
+  currentYearMonth.value = yearMonth
+  if (monthCache.has(yearMonth)) {
+    monthData.value = monthCache.get(yearMonth)
+    return
+  }
+  try {
+    const res = await api.get('/appApi/attd/my/month', { params: { yearMonth } })
+    const data = res?.data ?? null
+    if (data) monthCache.set(yearMonth, data)
+    monthData.value = data
+  } catch (e) {
+    console.error('[MyAttendance] month 조회 실패:', e?.message)
+    monthData.value = null
+    showAlert('월간 근태를 불러오지 못했어요. 잠시 후 다시 시도해 주세요.')
+  }
+}
+
+const loadDayDetail = async (workYmd) => {
+  if (dayDetailCache.has(workYmd)) {
+    dayDetail.value = dayDetailCache.get(workYmd)
+    return
+  }
+  try {
+    const res = await api.get('/appApi/attd/my/day-detail', { params: { workYmd } })
+    const data = res?.data ?? null
+    if (data) dayDetailCache.set(workYmd, data)
+    dayDetail.value = data
+  } catch (e) {
+    console.error('[MyAttendance] day-detail 조회 실패:', e?.message)
+    dayDetail.value = null
+    showAlert('일자 상세를 불러오지 못했어요. 잠시 후 다시 시도해 주세요.')
+  }
+}
+
+// ───────────────────────────────────────────────────────────
+// 탭 전환 — 최초 진입 시 해당 기간 데이터 로드(캐시 확인 후)
+// ───────────────────────────────────────────────────────────
+const onSelectTab = (key) => {
+  activeTab.value = key
+  if (key === 'today') {
+    loadToday()
+  } else if (key === 'week') {
+    if (!currentWeekStartYmd.value) {
+      loadWeek(weekStartOf(new Date()))
+    }
+  } else if (key === 'month') {
+    if (!currentYearMonth.value) {
+      const ym = yearMonthOf(new Date())
+      // 월 진입 시 오늘 일자를 기본 선택 + 상세 조회
+      const todayYmd = dateToYmd(new Date())
+      selectedYmd.value = todayYmd
+      loadMonth(ym).then(() => loadDayDetail(todayYmd))
+    }
+  }
+}
+
+// ───────────────────────────────────────────────────────────
+// 헤더 / 하단 탭바
+// ───────────────────────────────────────────────────────────
+const onBack = () => {
+  router.push('/MainView')
+}
+const onBell = () => {
+  // TODO(developer): 알림 센터 진입(별도 라우트). 대상 화면 미구현.
+  showAlert('준비 중입니다')
+}
+const onBottomTab = (key) => {
+  if (key === 'attd') return
+  if (key === 'home') {
+    router.push('/MainView')
+    return
+  }
+  // TODO(developer): 'safety'/'tbm' 탭 진입 화면 미구현.
+  showAlert('준비 중입니다')
+}
+
+// ───────────────────────────────────────────────────────────
+// 이번주 네비
+// ───────────────────────────────────────────────────────────
+const onPrevWeek = () => {
+  loadWeek(addDaysYmd(currentWeekStartYmd.value, -7))
+}
+const onNextWeek = () => {
+  loadWeek(addDaysYmd(currentWeekStartYmd.value, 7))
+}
+const onSelectWeekDay = (day) => {
+  // 주 카드 탭 → 바텀시트 오픈 (UI 토글 — 허용 범위)
+  actionSheetDay.value = day
+  actionSheetOpen.value = true
+}
+
+// ───────────────────────────────────────────────────────────
+// 이번달 네비 / 셀 선택
+// ───────────────────────────────────────────────────────────
+const onPrevMonth = () => {
+  selectedYmd.value = ''
+  dayDetail.value = null
+  loadMonth(shiftYearMonth(currentYearMonth.value, -1))
+}
+const onNextMonth = () => {
+  selectedYmd.value = ''
+  dayDetail.value = null
+  loadMonth(shiftYearMonth(currentYearMonth.value, 1))
+}
+const onSelectDate = (ymd) => {
+  selectedYmd.value = ymd
+  loadDayDetail(ymd)
+}
+
+// ───────────────────────────────────────────────────────────
+// prafta-app-008: 외근 사유 시트 + §5.5 Case C 2-pass 출퇴근 흐름
+//   프론트는 사전에 외근 여부/선행구간 상태를 모르므로 일단 사유·확인 없이 호출하고,
+//   서버 errorCode 로 분기하여 사유 입력(086)·확인(084)·차단(085) 을 순차 처리한다.
+//   - ATTD_400_086: 외근 사유 필요 → OffsiteReasonSheet 오픈 → 사유 동봉 재호출
+//   - ATTD_400_084: §5.5 Case C(선행 1구간 스킵, check-in 만) → 확인 후 confirmSkipPrevSlot 재호출
+//   - ATTD_400_085: §5.5 Case B(1구간 미마감, 강한 차단) → 메시지만 노출하고 중단
+//   좌표·offsiteReason·confirmSkipPrevSlot 를 ctx 에 유지하며 재시도한다.
+// ───────────────────────────────────────────────────────────
+
+// 외근 사유 시트 상태 + 진행 중 출퇴근 컨텍스트
+const offsiteSheetOpen = ref(false)
+const offsiteMode = ref('checkIn') // 'checkIn' | 'checkOut'
+const offsiteCtx = ref({ lat: null, lon: null, accuracy: null })
+
+// 재시도 컨텍스트(좌표·플래그·사유 유지). 시트 제출 시 이 ctx 로 재호출한다.
+let pendingCtx = null
+
+// 출퇴근 API 단일 호출기 — 서버 errorCode 로 2-pass 분기.
+//   mode: 'checkIn'|'checkOut', ctx: { lat, lon, accuracy, isMocked, workYmd, offsiteReason, confirmSkipPrevSlot }
+const callCheckInOut = async (mode, ctx) => {
+  const url = mode === 'checkOut' ? '/appApi/attd/check-out' : '/appApi/attd/check-in'
+  // check-out 은 confirmSkipPrevSlot 미지원(check-in 전용) — 전송하지 않는다.
+  const body = {
+    lat: ctx.lat,
+    lon: ctx.lon,
+    accuracy: ctx.accuracy,
+    isMocked: ctx.isMocked,
+    workYmd: ctx.workYmd,
+    offsiteReason: ctx.offsiteReason || undefined,
+  }
+  if (mode === 'checkIn') {
+    body.confirmSkipPrevSlot = ctx.confirmSkipPrevSlot === true
+  }
+
+  try {
+    const res = await api.post(url, body)
+    await reloadToday()
+    if (res?.data?.isOffsite) {
+      showAlert('근무지 밖이라 외근으로 처리되었어요.')
+    } else {
+      showAlert(mode === 'checkOut' ? '퇴근이 등록되었어요.' : '출근이 등록되었어요.')
+    }
+    // 성공 시 진행 중 컨텍스트/시트 정리.
+    pendingCtx = null
+    offsiteSheetOpen.value = false
+  } catch (e) {
+    const errorCode = e?.response?.data?.errorCode
+    const message = e?.response?.data?.message
+
+    // 086: 외근 사유 필요 → 사유 시트 오픈(좌표·기존 ctx 유지하여 제출 시 재호출).
+    if (errorCode === 'ATTD_400_086') {
+      pendingCtx = { ...ctx }
+      offsiteMode.value = mode
+      offsiteCtx.value = { lat: ctx.lat, lon: ctx.lon, accuracy: ctx.accuracy }
+      offsiteSheetOpen.value = true
+      return
+    }
+
+    // 084: §5.5 Case C(선행 1구간 스킵, check-in 만) → 확인 후 confirmSkipPrevSlot 재호출.
+    //   (086 → 사유 입력 후 재호출에서 084 가 나올 수도 있으므로 ctx 의 사유/좌표 유지.)
+    if (errorCode === 'ATTD_400_084' && mode === 'checkIn') {
+      const ok = await askConfirm(message || '1구간 출근 데이터 없이 2구간 출근하는 게 맞나요?')
+      if (!ok) {
+        pendingCtx = null
+        return
+      }
+      await callCheckInOut(mode, { ...ctx, confirmSkipPrevSlot: true })
+      return
+    }
+
+    // 085: §5.5 Case B(1구간 미마감, 강한 차단) → 메시지만 노출하고 중단.
+    if (errorCode === 'ATTD_400_085') {
+      pendingCtx = null
+      showAlert(message || '1구간 퇴근을 먼저 처리해주세요.')
+      return
+    }
+
+    // 그 외 거부/실패 — 서버 message 우선.
+    console.error(`[MyAttendance] ${mode} 실패:`, e?.message)
+    pendingCtx = null
+    showAlert(message || (mode === 'checkOut'
+      ? '퇴근을 등록하지 못했어요. 잠시 후 다시 시도해 주세요.'
+      : '출근을 등록하지 못했어요. 잠시 후 다시 시도해 주세요.'))
+  }
+}
+
+// 외근 사유 시트 제출 — 사유를 동봉하여 동일 좌표/플래그로 재호출.
+const onOffsiteSubmit = async ({ reason }) => {
+  if (!pendingCtx) {
+    offsiteSheetOpen.value = false
+    return
+  }
+  const ctx = { ...pendingCtx, offsiteReason: reason }
+  // 시트는 재호출 성공/실패에 따라 callCheckInOut 내부에서 정리된다.
+  await callCheckInOut(offsiteMode.value, ctx)
+}
+
+// 외근 사유 시트 취소 — 출퇴근 미등록(중단).
+const onOffsiteCancel = () => {
+  pendingCtx = null
+  offsiteSheetOpen.value = false
+}
+
+// 출퇴근 진입 — 확인 → GPS 브리지 → status 분기 → 2-pass 호출 진입.
+const startCheckInOut = async (mode) => {
+  const ok = await askConfirm(mode === 'checkOut' ? '퇴근하시겠어요?' : '출근하시겠어요?')
+  if (!ok) return
+  // Flutter 위치 브리지로 현재 좌표 획득(권한은 앱 기동 시 하드게이트로 보장됨).
+  const gps = await requestGps()
+  if (gps.status === 'OK') {
+    // Mock 위치는 서버가 거부하나, 사용자 경험상 먼저 안내 후 중단.
+    if (gps.isMocked) {
+      showAlert(mode === 'checkOut'
+        ? '위치 위변조가 감지되어 퇴근할 수 없어요.'
+        : '위치 위변조가 감지되어 출근할 수 없어요.')
+      return
+    }
+    await callCheckInOut(mode, {
+      lat: gps.lat,
+      lon: gps.lon,
+      accuracy: gps.accuracy,
+      isMocked: gps.isMocked ? 'Y' : 'N',
+      // 출퇴근 대상 근무일. 오늘 카드의 workDate 기준.
+      workYmd: todayDetail.value?.workDate,
+      offsiteReason: null,
+      confirmSkipPrevSlot: false,
+    })
+    return
+  }
+  if (gps.status === 'PERMISSION_DENIED' || gps.status === 'SERVICE_DISABLED') {
+    showAlert('위치 권한 또는 위치 서비스가 꺼져 있어요. 설정에서 위치를 허용해 주세요.')
+    return
+  }
+  // TIMEOUT / BRIDGE_UNAVAILABLE 등 측위 실패.
+  showAlert('현재 위치를 확인하지 못했어요. 잠시 후 다시 시도해 주세요.')
+}
+
+// ───────────────────────────────────────────────────────────
+// prafta-app-013: 오늘/일상세 카드 응답(detail)을 4액션 바텀시트용 day 객체로 변환.
+//   - 시트(AttendanceActionSheet)는 day.workYmd(날짜)·day.actions(4플래그)·메타로 구동된다.
+//   - detail 의 날짜 필드는 workDate 이므로 workYmd 로 매핑하고, 4액션은 서버 산출 sheetActions 를 쓴다.
+//   - 메타/컨텍스트(workPlanName/scheduleSummary/attendanceSummary/leaveTypeName/nodeCd/siteName/
+//     hasIssue/slots)는 시트 메타 표시 + onSheetAction→navigateToAttdRequest 컨텍스트에 사용된다.
+//   - 게이팅은 전부 서버(sheetActions) 표시만. 프론트 비즈니스 판정 없음.
+// ───────────────────────────────────────────────────────────
+const toSheetDay = (detail) => {
+  if (!detail) return null
+  return {
+    workYmd: detail.workDate,
+    actions: detail.sheetActions || {},
+    workPlanName: detail.workPlanName,
+    leaveTypeName: detail.leaveTypeName,
+    scheduleSummary: detail.scheduleSummary,
+    attendanceSummary: detail.attendanceSummary,
+    nodeCd: detail.nodeCd,
+    siteName: detail.siteName,
+    hasIssue: detail.hasIssue,
+    slots: detail.slots,
+  }
+}
+
+// ───────────────────────────────────────────────────────────
+// 액션 핸들러 — 실 신청/보정/연차 플로우는 후속 작업(대상 화면 미구현)
+// ───────────────────────────────────────────────────────────
+// payload.type: requestModify | checkOut | checkIn
+const onTodayAction = async (payload) => {
+  const type = payload?.type
+  if (type === 'checkOut') {
+    await startCheckInOut('checkOut')
+    return
+  }
+  if (type === 'checkIn') {
+    // 2구간 출근(재출근) 포함 — 확인 → GPS → 2-pass.
+    await startCheckInOut('checkIn')
+    return
+  }
+  if (type === 'requestModify') {
+    // prafta-app-013: 오늘 탭 "수정 요청" → 이번주와 동일한 4액션 시트 오픈.
+    //   todayDetail.sheetActions 로 시트 4행을 개별 게이팅한다(결정 §3).
+    const day = toSheetDay(todayDetail.value)
+    if (!day) {
+      showAlert('근태 정보를 확인할 수 없습니다.')
+      return
+    }
+    actionSheetDay.value = day
+    actionSheetOpen.value = true
+    return
+  }
+  // 그 외 액션은 대상 플로우 미구현.
+  showAlert('준비 중입니다')
+}
+// ───────────────────────────────────────────────────────────
+// PRAFTA-APP-007: 근태 요청 폼 (스케줄 수정 / 근태 보정 / 초과근무) 라우팅
+// 컨텍스트는 sessionStorage 에 1회 저장하고 라우트 진입 시 폼이 읽고 즉시 제거한다.
+// ───────────────────────────────────────────────────────────
+const ATTD_REQ_CONTEXT_KEY = 'attd_req_ctx_v1'
+
+const buildContextFromDay = (day) => {
+  if (!day) return null
+  return {
+    workYmd: day.workYmd,
+    nodeCd: day.nodeCd,
+    siteName: day.siteName,
+    scheduleSummary: day.scheduleSummary,
+    workPlanName: day.workPlanName,
+    attendanceSummary: day.attendanceSummary,
+    hasIssue: day.hasIssue,
+    // 출퇴근 시각 프리필용 (보정 폼이 사용). 백엔드 day-detail 응답의 slots 배열.
+    slots: day.slots,
+  }
+}
+
+const navigateToAttdRequest = (formType, day) => {
+  if (!day || !day.workYmd) {
+    showAlert('대상 일자를 확인할 수 없습니다.')
+    return
+  }
+  try {
+    sessionStorage.setItem(ATTD_REQ_CONTEXT_KEY, JSON.stringify(buildContextFromDay(day)))
+  } catch (e) {
+    console.error('[MyAttendance] 컨텍스트 저장 실패:', e?.message)
+    showAlert('컨텍스트 저장에 실패했습니다.')
+    return
+  }
+  router.push({
+    path: '/AttdRequest',
+    query: { type: formType, workYmd: day.workYmd, nodeCd: day.nodeCd || '' },
+  })
+}
+
+// payload.type: requestModify
+//   prafta-app-013: 이번달 일자상세 하단 2버튼(근태 보정/초과근무)을 제거하고 시트로 통일.
+//   본체 "수정 요청" → requestModify 수신 → dayDetail 기준 4액션 시트 오픈(onSheetAction 재사용).
+const onDayDetailAction = (payload) => {
+  const type = payload?.type
+  if (type === 'requestModify') {
+    const day = toSheetDay(payload?.detail || dayDetail.value)
+    if (!day) {
+      showAlert('일자 상세를 확인할 수 없습니다.')
+      return
+    }
+    actionSheetDay.value = day
+    actionSheetOpen.value = true
+    return
+  }
+  // 그 외 액션은 대상 플로우 미구현
+  showAlert('준비 중입니다')
+}
+// payload.type: scheduleModify | attendanceCorrection | overtime | leave
+const onSheetAction = (payload) => {
+  actionSheetOpen.value = false
+  const type = payload?.type
+  const day = payload?.day || actionSheetDay.value
+  if (type === 'scheduleModify') {
+    return navigateToAttdRequest('schedModify', day)
+  }
+  if (type === 'attendanceCorrection') {
+    return navigateToAttdRequest('attdCorrection', day)
+  }
+  if (type === 'overtime') {
+    return navigateToAttdRequest('overtime', day)
+  }
+  // leave 는 본 작업 외 — 기존 stub 유지 (LeaveFlow 자산 연동은 별도 라운드)
+  showAlert('준비 중입니다')
+}
+
+// ───────────────────────────────────────────────────────────
+// 진입 시 기본 탭('오늘') 데이터 로드
+// ───────────────────────────────────────────────────────────
+onMounted(() => {
+  loadToday()
+  // prafta-app-008: 외근 사유 시트(OffsiteReasonSheet)의 카카오 지도 SDK 프리로드.
+  // 시트 오픈 시 SDK 네트워크 로드로 표시가 지연되는 문제 방지. 중복 가드로 idempotent, 실패는 폴백 동작.
+  loadKakaoMapScript().catch((e) => {
+    console.warn('[MyAttendanceView] 카카오 지도 SDK 프리로드 실패(무시):', e?.message)
+  })
+})
+</script>
+
+<style scoped>
+/*
+ * 디자인 토큰 — MainView(.home-view)와 동일 세트를 본 화면 루트에 선언.
+ * 자식 컴포넌트(scoped)는 var(--...) 를 상속받아 사용한다. 하드코딩 금지.
+ */
+.my-attd-view {
+  --color-primary: #16a34a;
+  --color-primary-tint: #f0fdf4;
+  --color-primary-tint-border: #dcfce7;
+  --color-primary-text-deep: #15803d;
+  --color-primary-text-darkest: #14532d;
+  --color-danger: #ef4444;
+  --color-danger-tint: #fef2f2;
+  --color-danger-border: #fecaca;
+  --color-danger-text: #b91c1c;
+  --color-warning: #f59e0b;
+  --color-warning-tint: #fffbeb;
+  --color-warning-text: #b45309;
+  --color-warning-border: #fed7aa;
+  --color-warning-border-light: #fef3c7;
+  --color-info: #3b82f6;
+  --color-info-strong: #1e40af;
+  --color-info-tint: #eff6ff;
+  --color-info-border: #bfdbfe;
+  --color-text-primary: #111827;
+  --color-text-secondary: #6b7280;
+  --color-text-tertiary: #9ca3af;
+  --color-border: #e5e7eb;
+  --color-border-light: #f3f4f6;
+  --color-surface: #ffffff;
+  --color-bg: #f9fafb;
+  --color-attd-cell-off: #fafafa;
+  --color-overlay: rgba(0, 0, 0, 0.45);
+  --radius-sm: 6px;
+  --radius-md: 10px;
+  --radius-lg: 14px;
+  --radius-xl: 20px;
+  --radius-full: 9999px;
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.04);
+  --space-xs: 4px;
+  --space-sm: 8px;
+  --space-md: 12px;
+  --space-lg: 16px;
+
+  position: relative;
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  background: var(--color-bg);
+  color: var(--color-text-primary);
+  font-variant-numeric: tabular-nums;
+  font-family:
+    -apple-system,
+    BlinkMacSystemFont,
+    'Apple SD Gothic Neo',
+    'Pretendard',
+    'Noto Sans KR',
+    sans-serif;
+}
+
+/* 헤더 */
+.attd-hd {
+  height: 56px;
+  flex-shrink: 0;
+  background: var(--color-surface);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 var(--space-lg);
+  border-bottom: 1px solid var(--color-border-light);
+}
+.attd-hd__back,
+.attd-hd__bell {
+  position: relative;
+  width: 44px;
+  height: 44px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: transparent;
+  border: 0;
+  cursor: pointer;
+  color: var(--color-text-primary);
+  font-family: inherit;
+}
+.attd-hd__back {
+  margin-left: -10px;
+}
+.attd-hd__bell {
+  margin-right: -10px;
+}
+.attd-hd__title {
+  margin: 0;
+  font-size: 17px;
+  font-weight: 700;
+  color: var(--color-text-primary);
+}
+.attd-hd__badge {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  min-width: 16px;
+  height: 16px;
+  padding: 0 var(--space-xs);
+  background: var(--color-danger);
+  color: var(--color-surface);
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 16px;
+  text-align: center;
+  border-radius: var(--radius-full);
+  border: 1.5px solid var(--color-surface);
+}
+
+/* 세그먼트 */
+.attd-seg {
+  margin: var(--space-md) var(--space-lg) 0;
+  padding: var(--space-xs);
+  background: var(--color-border-light);
+  border-radius: var(--radius-md);
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+}
+.attd-seg__item {
+  height: 36px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: transparent;
+  border: 0;
+  border-radius: var(--radius-sm);
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--color-text-secondary);
+  cursor: pointer;
+  font-family: inherit;
+}
+.attd-seg__item--on {
+  background: var(--color-surface);
+  color: var(--color-text-primary);
+  font-weight: 700;
+  box-shadow: var(--shadow-sm);
+}
+
+/* 본문 */
+.attd-body {
+  flex: 1;
+  overflow-y: auto;
+  padding: var(--space-md) var(--space-lg) 88px;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-md);
+}
+
+/* 표준 빈 상태 */
+.attd-empty {
+  margin: 0;
+  padding: 48px var(--space-lg);
+  text-align: center;
+  font-size: 13px;
+  color: var(--color-text-tertiary);
+}
+
+/* 하단 탭바 */
+.attd-tabbar {
+  height: 72px;
+  flex-shrink: 0;
+  background: var(--color-surface);
+  border-top: 1px solid var(--color-border);
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  align-items: center;
+  padding-bottom: var(--space-sm);
+}
+.attd-tabbar__tab {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  min-height: 56px;
+  background: transparent;
+  border: 0;
+  cursor: pointer;
+  color: var(--color-text-secondary);
+  font-family: inherit;
+}
+.attd-tabbar__tab--on {
+  color: var(--color-primary);
+  font-weight: 700;
+}
+.attd-tabbar__lbl {
+  font-size: 11px;
+  font-weight: 500;
+}
+
+.attd-sprite {
+  position: absolute;
+  width: 0;
+  height: 0;
+  overflow: hidden;
+}
+.icon {
+  display: inline-block;
+  flex-shrink: 0;
+  vertical-align: middle;
+}
+</style>

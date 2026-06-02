@@ -1,0 +1,95 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.prafta.web.user.user01.upload.mapper.UploadJobMapper">
+
+    <!-- ============ JOB_ID 채번 (prafta-031 NOTI_OUTBOX_ID 패턴 동일) ============ -->
+    <select id="selectNextJobId" resultType="string">
+    /* UploadJobMapper.selectNextJobId */
+    SELECT CONCAT('U', DATE_FORMAT(NOW(), '%Y%m%d'), FNC_CMM_SEQ_NEXTVAL(#{cmpnyCd}, 'USER_UPLOAD_JOB_ID'))
+      FROM DUAL
+    </select>
+
+    <!-- ============ 신규 잡 INSERT (PENDING 시작) ============ -->
+    <insert id="insertUploadJob" parameterType="com.prafta.web.user.user01.upload.application.command.UploadJobInsertCommand">
+    /* UploadJobMapper.insertUploadJob */
+    INSERT INTO TB_USER_UPLOAD_JOB (
+          JOB_ID
+        , CMPNY_CD
+        , USER_CD
+        , FILE_NAME
+        , FILE_SIZE
+        , TOTAL_ROWS
+        , PROCESSED_ROWS
+        , SUCCESS_COUNT
+        , FAIL_COUNT
+        , STATUS
+        , INSERT_NO
+    )
+    VALUES (
+          #{jobId}
+        , #{cmpnyCd}
+        , #{userCd}
+        , #{fileName}
+        , #{fileSize}
+        , #{totalRows}
+        , 0
+        , 0
+        , 0
+        , 'PENDING'
+        , #{insertNo}
+    )
+    </insert>
+
+    <!-- ============ 회사 스코프 + 잡 조회 ============ -->
+    <select id="selectUploadJob" resultType="com.prafta.web.user.user01.upload.result.UploadJobResult">
+    /* UploadJobMapper.selectUploadJob */
+    SELECT
+          JOB_ID         AS jobId
+        , CMPNY_CD       AS cmpnyCd
+        , USER_CD        AS userCd
+        , FILE_NAME      AS fileName
+        , FILE_SIZE      AS fileSize
+        , TOTAL_ROWS     AS totalRows
+        , PROCESSED_ROWS AS processedRows
+        , SUCCESS_COUNT  AS successCount
+        , FAIL_COUNT     AS failCount
+        , FAILS_JSON     AS failsJson
+        , STATUS         AS status
+        , ERROR_MSG      AS errorMsg
+    FROM TB_USER_UPLOAD_JOB
+    WHERE CMPNY_CD = #{cmpnyCd}
+      AND JOB_ID   = #{jobId}
+    LIMIT 1
+    </select>
+
+    <!-- ============ 진행률 UPDATE — 매 행 처리 직후 호출 ============
+      성공 1행 처리: successInc=1, failInc=0
+      실패 1행 처리: successInc=0, failInc=1
+      processedRows 는 (successInc + failInc) 만큼 증가. -->
+    <update id="updateUploadJobProgress">
+    /* UploadJobMapper.updateUploadJobProgress */
+    UPDATE TB_USER_UPLOAD_JOB
+       SET STATUS         = #{status}
+         , PROCESSED_ROWS = PROCESSED_ROWS + #{successInc} + #{failInc}
+         , SUCCESS_COUNT  = SUCCESS_COUNT + #{successInc}
+         , FAIL_COUNT     = FAIL_COUNT + #{failInc}
+         , UPDATE_NO      = #{updateNo}
+         , UPDATE_DATE    = NOW()
+     WHERE CMPNY_CD = #{cmpnyCd}
+       AND JOB_ID   = #{jobId}
+    </update>
+
+    <!-- ============ 최종 상태 UPDATE — 잡 종료 시 1회 호출 ============ -->
+    <update id="updateUploadJobFinal">
+    /* UploadJobMapper.updateUploadJobFinal */
+    UPDATE TB_USER_UPLOAD_JOB
+       SET STATUS      = #{status}
+         , FAILS_JSON  = #{failsJson}
+         , ERROR_MSG   = #{errorMsg}
+         , UPDATE_NO   = #{updateNo}
+         , UPDATE_DATE = NOW()
+     WHERE CMPNY_CD = #{cmpnyCd}
+       AND JOB_ID   = #{jobId}
+    </update>
+
+</mapper>

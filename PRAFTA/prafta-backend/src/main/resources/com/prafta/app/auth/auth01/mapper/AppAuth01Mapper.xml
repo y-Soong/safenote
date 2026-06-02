@@ -1,0 +1,62 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.prafta.app.auth.auth01.mapper.AppAuth01Mapper">
+
+    <select id="selectUserId" resultType="string">
+    /* AppAuth01Mapper.selectUserId */
+    SELECT A.USER_ID
+      FROM TB_USER A
+     WHERE A.CMPNY_CD = #{cmpnyCd}
+       AND A.USER_CD  = #{userCd}
+    </select>
+
+    <delete id="deleteMyPresetSteps">
+    /* AppAuth01Mapper.deleteMyPresetSteps */
+    DELETE D
+      FROM TB_APRV_LINE_PRESET_D D
+      INNER JOIN TB_APRV_LINE_PRESET P
+        ON  P.CMPNY_CD  = D.CMPNY_CD
+        AND P.PRESET_ID = D.PRESET_ID
+     WHERE P.CMPNY_CD = #{cmpnyCd}
+       AND P.USER_CD  = #{userCd}
+    </delete>
+
+    <delete id="deleteMyPresetMasters">
+    /* AppAuth01Mapper.deleteMyPresetMasters */
+    DELETE FROM TB_APRV_LINE_PRESET
+     WHERE CMPNY_CD = #{cmpnyCd}
+       AND USER_CD  = #{userCd}
+    </delete>
+
+    <update id="withdrawUser">
+    /* AppAuth01Mapper.withdrawUser */
+    UPDATE TB_USER
+       SET USER_NM          = #{maskedUserNm}
+         , USER_PW          = NULL
+         , MBL_NO_ENC       = NULL
+         , MBL_NO_HMAC      = NULL
+         , MBL_NO_LAST4     = NULL
+         , EMAIL_ENC        = NULL
+         , EMAIL_HMAC       = NULL
+         , EMAIL_DOMAIN     = NULL
+         , BIRTH_DT_ENC     = NULL
+         , GENDER           = NULL
+         , WITHDRAWAL_DATE  = DATE_FORMAT(NOW(), '%Y%m%d')
+         , ACCOUNT_STATUS   = '03'
+         , USE_YN           = 'N'
+         , UPDATE_NO        = #{userCd}
+         , UPDATE_DATE      = NOW()
+     WHERE CMPNY_CD = #{cmpnyCd}
+       AND USER_CD  = #{userCd}
+    </update>
+
+    <insert id="insertDelUser">
+    /* AppAuth01Mapper.insertDelUser */
+    INSERT INTO TB_DEL_USER (
+          CMPNY_CD, USER_ID, USER_NM, INSERT_NO, INSERT_DATE
+    ) VALUES (
+          #{cmpnyCd}, #{userId}, #{maskedUserNm}, #{insertNo}, NOW()
+    )
+    </insert>
+
+</mapper>

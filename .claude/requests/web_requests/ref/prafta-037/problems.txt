@@ -1,0 +1,82 @@
+Description	Resource	Path	Location	Type
+Sheet cannot be resolved to a type	UploadJobServiceImpl.java	/prafta-backend/src/main/java/com/prafta/web/user/user01/upload	line 77	Java Problem
+The import org.apache.poi cannot be resolved	UploadJobServiceImpl.java	/prafta-backend/src/main/java/com/prafta/web/user/user01/upload	line 8	Java Problem
+The import org.apache.poi cannot be resolved	UploadJobServiceImpl.java	/prafta-backend/src/main/java/com/prafta/web/user/user01/upload	line 9	Java Problem
+XSSFWorkbook cannot be resolved to a type	UploadJobServiceImpl.java	/prafta-backend/src/main/java/com/prafta/web/user/user01/upload	line 72	Java Problem
+XSSFWorkbook cannot be resolved to a type	UploadJobServiceImpl.java	/prafta-backend/src/main/java/com/prafta/web/user/user01/upload	line 72	Java Problem
+Sheet cannot be resolved to a type	User01BatchServiceImpl.java	/prafta-backend/src/main/java/com/prafta/web/user/user01/service/impl	line 202	Java Problem
+The import org.apache.poi cannot be resolved	User01BatchServiceImpl.java	/prafta-backend/src/main/java/com/prafta/web/user/user01/service/impl	line 7	Java Problem
+The import org.apache.poi cannot be resolved	User01BatchServiceImpl.java	/prafta-backend/src/main/java/com/prafta/web/user/user01/service/impl	line 8	Java Problem
+XSSFWorkbook cannot be resolved to a type	User01BatchServiceImpl.java	/prafta-backend/src/main/java/com/prafta/web/user/user01/service/impl	line 197	Java Problem
+XSSFWorkbook cannot be resolved to a type	User01BatchServiceImpl.java	/prafta-backend/src/main/java/com/prafta/web/user/user01/service/impl	line 197	Java Problem
+_NONE cannot be resolved to a variable	UserExcelRowParser.java	/prafta-backend/src/main/java/com/prafta/web/user/user01/util	line 175	Java Problem
+BLANK cannot be resolved to a variable	UserExcelRowParser.java	/prafta-backend/src/main/java/com/prafta/web/user/user01/util	line 174	Java Problem
+BOOLEAN cannot be resolved to a variable	UserExcelRowParser.java	/prafta-backend/src/main/java/com/prafta/web/user/user01/util	line 160	Java Problem
+Cell cannot be resolved to a type	UserExcelRowParser.java	/prafta-backend/src/main/java/com/prafta/web/user/user01/util	line 103	Java Problem
+Cell cannot be resolved to a type	UserExcelRowParser.java	/prafta-backend/src/main/java/com/prafta/web/user/user01/util	line 115	Java Problem
+Cell cannot be resolved to a type	UserExcelRowParser.java	/prafta-backend/src/main/java/com/prafta/web/user/user01/util	line 125	Java Problem
+Cell cannot be resolved to a type	UserExcelRowParser.java	/prafta-backend/src/main/java/com/prafta/web/user/user01/util	line 144	Java Problem
+CellType cannot be resolved to a variable	UserExcelRowParser.java	/prafta-backend/src/main/java/com/prafta/web/user/user01/util	line 128	Java Problem
+DateUtil cannot be resolved	UserExcelRowParser.java	/prafta-backend/src/main/java/com/prafta/web/user/user01/util	line 150	Java Problem
+ERROR cannot be resolved to a variable	UserExcelRowParser.java	/prafta-backend/src/main/java/com/prafta/web/user/user01/util	line 176	Java Problem
+FORMULA cannot be resolved to a variable	UserExcelRowParser.java	/prafta-backend/src/main/java/com/prafta/web/user/user01/util	line 162	Java Problem
+NUMERIC cannot be resolved to a variable	UserExcelRowParser.java	/prafta-backend/src/main/java/com/prafta/web/user/user01/util	line 149	Java Problem
+Row cannot be resolved to a type	UserExcelRowParser.java	/prafta-backend/src/main/java/com/prafta/web/user/user01/util	line 66	Java Problem
+Row cannot be resolved to a type	UserExcelRowParser.java	/prafta-backend/src/main/java/com/prafta/web/user/user01/util	line 99	Java Problem
+Row cannot be resolved to a type	UserExcelRowParser.java	/prafta-backend/src/main/java/com/prafta/web/user/user01/util	line 114	Java Problem
+Row cannot be resolved to a type	UserExcelRowParser.java	/prafta-backend/src/main/java/com/prafta/web/user/user01/util	line 124	Java Problem
+Sheet cannot be resolved to a type	UserExcelRowParser.java	/prafta-backend/src/main/java/com/prafta/web/user/user01/util	line 60	Java Problem
+STRING cannot be resolved to a variable	UserExcelRowParser.java	/prafta-backend/src/main/java/com/prafta/web/user/user01/util	line 147	Java Problem
+The import org.apache.poi cannot be resolved	UserExcelRowParser.java	/prafta-backend/src/main/java/com/prafta/web/user/user01/util	line 6	Java Problem
+The import org.apache.poi cannot be resolved	UserExcelRowParser.java	/prafta-backend/src/main/java/com/prafta/web/user/user01/util	line 7	Java Problem
+The import org.apache.poi cannot be resolved	UserExcelRowParser.java	/prafta-backend/src/main/java/com/prafta/web/user/user01/util	line 8	Java Problem
+The import org.apache.poi cannot be resolved	UserExcelRowParser.java	/prafta-backend/src/main/java/com/prafta/web/user/user01/util	line 9	Java Problem
+The import org.apache.poi cannot be resolved	UserExcelRowParser.java	/prafta-backend/src/main/java/com/prafta/web/user/user01/util	line 10	Java Problem
+BorderStyle cannot be resolved to a variable	UserExcelTemplateBuilder.java	/prafta-backend/src/main/java/com/prafta/web/user/user01/util	line 118	Java Problem
+BorderStyle cannot be resolved to a variable	UserExcelTemplateBuilder.java	/prafta-backend/src/main/java/com/prafta/web/user/user01/util	line 119	Java Problem
+BorderStyle cannot be resolved to a variable	UserExcelTemplateBuilder.java	/prafta-backend/src/main/java/com/prafta/web/user/user01/util	line 120	Java Problem
+BorderStyle cannot be resolved to a variable	UserExcelTemplateBuilder.java	/prafta-backend/src/main/java/com/prafta/web/user/user01/util	line 121	Java Problem
+Cell cannot be resolved to a type	UserExcelTemplateBuilder.java	/prafta-backend/src/main/java/com/prafta/web/user/user01/util	line 133	Java Problem
+Cell cannot be resolved to a type	UserExcelTemplateBuilder.java	/prafta-backend/src/main/java/com/prafta/web/user/user01/util	line 142	Java Problem
+Cell cannot be resolved to a type	UserExcelTemplateBuilder.java	/prafta-backend/src/main/java/com/prafta/web/user/user01/util	line 150	Java Problem
+CellRangeAddress cannot be resolved to a type	UserExcelTemplateBuilder.java	/prafta-backend/src/main/java/com/prafta/web/user/user01/util	line 137	Java Problem
+CellRangeAddressList cannot be resolved to a type	UserExcelTemplateBuilder.java	/prafta-backend/src/main/java/com/prafta/web/user/user01/util	line 193	Java Problem
+CellRangeAddressList cannot be resolved to a type	UserExcelTemplateBuilder.java	/prafta-backend/src/main/java/com/prafta/web/user/user01/util	line 193	Java Problem
+CellStyle cannot be resolved to a type	UserExcelTemplateBuilder.java	/prafta-backend/src/main/java/com/prafta/web/user/user01/util	line 102	Java Problem
+CellStyle cannot be resolved to a type	UserExcelTemplateBuilder.java	/prafta-backend/src/main/java/com/prafta/web/user/user01/util	line 110	Java Problem
+CellStyle cannot be resolved to a type	UserExcelTemplateBuilder.java	/prafta-backend/src/main/java/com/prafta/web/user/user01/util	line 123	Java Problem
+DataValidation cannot be resolved to a type	UserExcelTemplateBuilder.java	/prafta-backend/src/main/java/com/prafta/web/user/user01/util	line 199	Java Problem
+DataValidation cannot be resolved to a variable	UserExcelTemplateBuilder.java	/prafta-backend/src/main/java/com/prafta/web/user/user01/util	line 203	Java Problem
+DataValidationConstraint cannot be resolved to a type	UserExcelTemplateBuilder.java	/prafta-backend/src/main/java/com/prafta/web/user/user01/util	line 192	Java Problem
+DataValidationHelper cannot be resolved to a type	UserExcelTemplateBuilder.java	/prafta-backend/src/main/java/com/prafta/web/user/user01/util	line 191	Java Problem
+FillPatternType cannot be resolved to a variable	UserExcelTemplateBuilder.java	/prafta-backend/src/main/java/com/prafta/web/user/user01/util	line 116	Java Problem
+Font cannot be resolved to a type	UserExcelTemplateBuilder.java	/prafta-backend/src/main/java/com/prafta/web/user/user01/util	line 103	Java Problem
+Font cannot be resolved to a type	UserExcelTemplateBuilder.java	/prafta-backend/src/main/java/com/prafta/web/user/user01/util	line 111	Java Problem
+Font cannot be resolved to a type	UserExcelTemplateBuilder.java	/prafta-backend/src/main/java/com/prafta/web/user/user01/util	line 124	Java Problem
+HorizontalAlignment cannot be resolved to a variable	UserExcelTemplateBuilder.java	/prafta-backend/src/main/java/com/prafta/web/user/user01/util	line 108	Java Problem
+HorizontalAlignment cannot be resolved to a variable	UserExcelTemplateBuilder.java	/prafta-backend/src/main/java/com/prafta/web/user/user01/util	line 117	Java Problem
+IndexedColors cannot be resolved	UserExcelTemplateBuilder.java	/prafta-backend/src/main/java/com/prafta/web/user/user01/util	line 105	Java Problem
+IndexedColors cannot be resolved	UserExcelTemplateBuilder.java	/prafta-backend/src/main/java/com/prafta/web/user/user01/util	line 115	Java Problem
+IndexedColors cannot be resolved	UserExcelTemplateBuilder.java	/prafta-backend/src/main/java/com/prafta/web/user/user01/util	line 126	Java Problem
+Row cannot be resolved to a type	UserExcelTemplateBuilder.java	/prafta-backend/src/main/java/com/prafta/web/user/user01/util	line 132	Java Problem
+Row cannot be resolved to a type	UserExcelTemplateBuilder.java	/prafta-backend/src/main/java/com/prafta/web/user/user01/util	line 140	Java Problem
+Row cannot be resolved to a type	UserExcelTemplateBuilder.java	/prafta-backend/src/main/java/com/prafta/web/user/user01/util	line 148	Java Problem
+Sheet cannot be resolved to a type	UserExcelTemplateBuilder.java	/prafta-backend/src/main/java/com/prafta/web/user/user01/util	line 99	Java Problem
+Sheet cannot be resolved to a type	UserExcelTemplateBuilder.java	/prafta-backend/src/main/java/com/prafta/web/user/user01/util	line 189	Java Problem
+The import org.apache.poi cannot be resolved	UserExcelTemplateBuilder.java	/prafta-backend/src/main/java/com/prafta/web/user/user01/util	line 6	Java Problem
+The import org.apache.poi cannot be resolved	UserExcelTemplateBuilder.java	/prafta-backend/src/main/java/com/prafta/web/user/user01/util	line 7	Java Problem
+The import org.apache.poi cannot be resolved	UserExcelTemplateBuilder.java	/prafta-backend/src/main/java/com/prafta/web/user/user01/util	line 8	Java Problem
+The import org.apache.poi cannot be resolved	UserExcelTemplateBuilder.java	/prafta-backend/src/main/java/com/prafta/web/user/user01/util	line 9	Java Problem
+The import org.apache.poi cannot be resolved	UserExcelTemplateBuilder.java	/prafta-backend/src/main/java/com/prafta/web/user/user01/util	line 10	Java Problem
+The import org.apache.poi cannot be resolved	UserExcelTemplateBuilder.java	/prafta-backend/src/main/java/com/prafta/web/user/user01/util	line 11	Java Problem
+The import org.apache.poi cannot be resolved	UserExcelTemplateBuilder.java	/prafta-backend/src/main/java/com/prafta/web/user/user01/util	line 12	Java Problem
+The import org.apache.poi cannot be resolved	UserExcelTemplateBuilder.java	/prafta-backend/src/main/java/com/prafta/web/user/user01/util	line 13	Java Problem
+The import org.apache.poi cannot be resolved	UserExcelTemplateBuilder.java	/prafta-backend/src/main/java/com/prafta/web/user/user01/util	line 14	Java Problem
+The import org.apache.poi cannot be resolved	UserExcelTemplateBuilder.java	/prafta-backend/src/main/java/com/prafta/web/user/user01/util	line 15	Java Problem
+The import org.apache.poi cannot be resolved	UserExcelTemplateBuilder.java	/prafta-backend/src/main/java/com/prafta/web/user/user01/util	line 16	Java Problem
+The import org.apache.poi cannot be resolved	UserExcelTemplateBuilder.java	/prafta-backend/src/main/java/com/prafta/web/user/user01/util	line 17	Java Problem
+The import org.apache.poi cannot be resolved	UserExcelTemplateBuilder.java	/prafta-backend/src/main/java/com/prafta/web/user/user01/util	line 18	Java Problem
+The import org.apache.poi cannot be resolved	UserExcelTemplateBuilder.java	/prafta-backend/src/main/java/com/prafta/web/user/user01/util	line 19	Java Problem
+The import org.apache.poi cannot be resolved	UserExcelTemplateBuilder.java	/prafta-backend/src/main/java/com/prafta/web/user/user01/util	line 20	Java Problem
+XSSFWorkbook cannot be resolved to a type	UserExcelTemplateBuilder.java	/prafta-backend/src/main/java/com/prafta/web/user/user01/util	line 96	Java Problem
+XSSFWorkbook cannot be resolved to a type	UserExcelTemplateBuilder.java	/prafta-backend/src/main/java/com/prafta/web/user/user01/util	line 96	Java Problem

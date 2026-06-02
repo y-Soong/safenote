@@ -1,0 +1,47 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.prafta.common.cmm.audit.mapper.AuditLogMapper">
+
+    <!-- ============ 감사 로그(PRAFTA-037-F5): AUDIT_ID 채번 ============
+      'A' + YYYYMMDD + 시퀀스(FNC_CMM_SEQ_NEXTVAL, SEQ_KEY='AUDIT_LOG_ID').
+      prafta-031 NOTI_OUTBOX_ID 패턴과 동일. -->
+    <select id="selectNextAuditId" resultType="string">
+    /* AuditLogMapper.selectNextAuditId */
+    SELECT CONCAT('A', DATE_FORMAT(NOW(), '%Y%m%d'), FNC_CMM_SEQ_NEXTVAL(#{cmpnyCd}, 'AUDIT_LOG_ID'))
+      FROM DUAL
+    </select>
+
+    <!-- ============ 감사 로그(PRAFTA-037-F5): INSERT ============
+      양식 다운로드/권한 변경/상태 변경 등 감사 대상 액션 1행 적재.
+      INSERT_DATE 는 DB DEFAULT(CURRENT_TIMESTAMP) 사용. -->
+    <insert id="insertAuditLog" parameterType="com.prafta.common.cmm.audit.vo.AuditLogInsertVO">
+    /* AuditLogMapper.insertAuditLog */
+    INSERT INTO TB_AUDIT_LOG (
+          AUDIT_ID
+        , CMPNY_CD
+        , USER_CD
+        , ACTION_TYPE
+        , RESOURCE_TYPE
+        , RESOURCE_KEY
+        , IP_ADDRESS
+        , USER_AGENT
+        , DETAIL
+        , DEL_YN
+        , INSERT_NO
+    )
+    VALUES (
+          #{auditId}
+        , #{cmpnyCd}
+        , #{userCd}
+        , #{actionType}
+        , #{resourceType}
+        , #{resourceKey}
+        , #{ipAddress}
+        , #{userAgent}
+        , #{detailJson}
+        , 'N'
+        , #{insertNo}
+    )
+    </insert>
+
+</mapper>

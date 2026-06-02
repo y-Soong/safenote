@@ -1,0 +1,658 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>PRAFTA 안전점검 수행 화면 v1</title>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@2.47.0/dist/tabler-icons.min.css">
+<style>
+* { box-sizing: border-box; }
+body {
+  --p:#16A34A; --pt:#F0FDF4; --ptb:#DCFCE7; --pp:#15803D;
+  --d:#EF4444; --dt:#FEF2F2;
+  --w:#F59E0B; --wt:#FFFBEB; --wtx:#B45309;
+  --i:#3B82F6; --it:#EFF6FF;
+  --tp:#111827; --ts:#6B7280; --tt:#9CA3AF;
+  --bd:#E5E7EB; --bdl:#F3F4F6;
+  --sf:#FFFFFF; --bg:#F9FAFB;
+  font-family: -apple-system, BlinkMacSystemFont, "Apple SD Gothic Neo", "Pretendard", "Noto Sans KR", sans-serif;
+  font-variant-numeric: tabular-nums;
+  margin: 0;
+  padding: 24px;
+  background: #EFEEE8;
+  min-height: 100vh;
+}
+.title { max-width: 1400px; margin: 0 auto 8px; font-size: 18px; font-weight: 700; color: var(--tp); }
+.title small { font-weight: 400; color: var(--ts); font-size: 13px; margin-left: 8px; }
+.sub { max-width: 1400px; margin: 0 auto 24px; font-size: 13px; color: var(--ts); }
+.stage { max-width: 1400px; margin: 0 auto; display: grid; grid-template-columns: repeat(auto-fit, minmax(360px, 1fr)); gap: 24px; }
+.phone { width: 100%; max-width: 380px; background: var(--bg); border-radius: 28px; border: 1px solid var(--bd); overflow: hidden; display: flex; flex-direction: column; justify-self: center; box-shadow: 0 4px 12px rgba(0,0,0,0.04); }
+.phone-label { font-size: 12px; font-weight: 500; color: var(--ts); text-align: center; margin-bottom: 8px; }
+.col { display: flex; flex-direction: column; align-items: center; }
+
+/* 앱 셸 */
+.sb { height: 24px; background: var(--sf); display: flex; justify-content: space-between; align-items: center; padding: 0 18px; font-size: 11px; font-weight: 500; color: var(--tp); }
+.sb.dark { background: #000; color: #fff; }
+.sb-i { display: flex; gap: 5px; align-items: center; font-size: 10px; }
+.hd { height: 56px; background: var(--sf); display: flex; align-items: center; justify-content: space-between; padding: 0 16px; border-bottom: 1px solid var(--bdl); }
+.hd.dark { background: rgba(0,0,0,0.4); border-bottom: none; position: absolute; top: 24px; left: 0; right: 0; z-index: 2; }
+.hd.dark .hd-b, .hd.dark .hd-t { color: #fff; }
+.hd-b { width: 44px; height: 44px; display: flex; align-items: center; justify-content: center; margin-left: -10px; color: var(--tp); font-size: 20px; cursor: pointer; }
+.hd-t { font-size: 17px; font-weight: 700; color: var(--tp); }
+.hd-a { width: 44px; }
+
+/* 본문 */
+.main { flex: 1; padding: 12px 16px 16px; overflow-y: auto; background: var(--bg); display: flex; flex-direction: column; gap: 10px; }
+
+/* 카메라 뷰파인더 */
+.cam {
+  flex: 1;
+  background: #0A0A0A;
+  position: relative;
+  overflow: hidden;
+  color: #fff;
+}
+.cam-bg {
+  position: absolute; inset: 0;
+  background: radial-gradient(circle at 50% 45%, #2A2A2A 0%, #0A0A0A 75%);
+}
+.cam-frame {
+  position: absolute;
+  left: 50%; top: 45%;
+  transform: translate(-50%, -50%);
+  width: 240px; height: 240px;
+}
+.cam-frame::before, .cam-frame::after,
+.cam-frame > span:nth-child(1), .cam-frame > span:nth-child(2) {
+  content: "";
+  position: absolute;
+  width: 32px; height: 32px;
+  border-color: #fff;
+  border-style: solid;
+  border-width: 0;
+}
+.cam-frame::before { top: 0; left: 0; border-top-width: 3px; border-left-width: 3px; border-top-left-radius: 6px; }
+.cam-frame::after { top: 0; right: 0; border-top-width: 3px; border-right-width: 3px; border-top-right-radius: 6px; }
+.cam-frame > span:nth-child(1) { bottom: 0; left: 0; border-bottom-width: 3px; border-left-width: 3px; border-bottom-left-radius: 6px; }
+.cam-frame > span:nth-child(2) { bottom: 0; right: 0; border-bottom-width: 3px; border-right-width: 3px; border-bottom-right-radius: 6px; }
+.cam-scan {
+  position: absolute; left: 8px; right: 8px; top: 50%;
+  height: 2px; background: var(--p);
+  box-shadow: 0 0 12px var(--p);
+  border-radius: 2px;
+}
+.cam-tip {
+  position: absolute; left: 0; right: 0;
+  bottom: 88px;
+  text-align: center;
+  font-size: 14px; font-weight: 600;
+  color: #fff;
+  padding: 0 24px;
+}
+.cam-sub {
+  position: absolute; left: 0; right: 0;
+  bottom: 64px;
+  text-align: center;
+  font-size: 12px; color: rgba(255,255,255,0.7);
+  padding: 0 24px;
+}
+.cam-cancel {
+  position: absolute; left: 50%;
+  bottom: calc(20px + env(safe-area-inset-bottom));
+  transform: translateX(-50%);
+  width: 56px; height: 56px;
+  border-radius: 50%;
+  background: rgba(255,255,255,0.12);
+  border: 1px solid rgba(255,255,255,0.25);
+  display: flex; align-items: center; justify-content: center;
+  color: #fff; font-size: 22px;
+  cursor: pointer;
+}
+
+/* 폴백 안내 화면 */
+.empty {
+  flex: 1; display: flex; flex-direction: column;
+  align-items: center; justify-content: center;
+  padding: 32px 24px; text-align: center;
+  gap: 8px;
+}
+.empty-ico {
+  width: 72px; height: 72px; border-radius: 50%;
+  background: var(--bdl);
+  display: flex; align-items: center; justify-content: center;
+  color: var(--ts); font-size: 32px;
+  margin-bottom: 8px;
+}
+.empty-ico.warn { background: var(--wt); color: var(--w); }
+.empty-ico.danger { background: var(--dt); color: var(--d); }
+.empty-ico.success { background: var(--pt); color: var(--p); }
+.empty-tt { font-size: 17px; font-weight: 700; color: var(--tp); }
+.empty-sub { font-size: 13px; color: var(--ts); line-height: 1.5; max-width: 280px; }
+
+/* 점검 컨텍스트 카드 (체크포인트 정보) */
+.ctx {
+  background: var(--sf);
+  border: 1px solid var(--bd);
+  border-radius: 14px;
+  padding: 14px 16px;
+}
+.ctx-row { display: flex; align-items: center; gap: 8px; }
+.ctx-ico {
+  width: 36px; height: 36px; border-radius: 10px;
+  background: var(--pt); color: var(--p);
+  display: flex; align-items: center; justify-content: center;
+  font-size: 20px; flex-shrink: 0;
+}
+.ctx-b { flex: 1; min-width: 0; }
+.ctx-tt { font-size: 15px; font-weight: 700; color: var(--tp); line-height: 1.3; }
+.ctx-mt { font-size: 11px; color: var(--ts); margin-top: 2px; }
+
+/* 진행 카운터 */
+.progress {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 0 4px;
+  font-size: 12px; color: var(--ts);
+}
+.progress strong { color: var(--tp); font-weight: 700; }
+.progress .pp { color: var(--p); font-weight: 700; }
+.progress .pw { color: var(--wtx); font-weight: 700; }
+.pbar { height: 4px; background: var(--bdl); border-radius: 2px; overflow: hidden; }
+.pbar-fill { height: 100%; background: var(--p); border-radius: 2px; transition: width 0.2s; }
+
+/* 점검 항목 카드 */
+.it {
+  background: var(--sf);
+  border: 1px solid var(--bd);
+  border-radius: 12px;
+  padding: 12px 14px;
+}
+.it.bad { border-color: #FECACA; background: #FEF7F7; }
+.it.ok { border-color: var(--ptb); background: #F7FDF9; }
+.it-head { display: flex; align-items: flex-start; gap: 10px; }
+.it-no {
+  width: 22px; height: 22px;
+  border-radius: 50%;
+  background: var(--bdl);
+  color: var(--ts);
+  font-size: 11px; font-weight: 700;
+  display: flex; align-items: center; justify-content: center;
+  flex-shrink: 0;
+  margin-top: 1px;
+}
+.it.ok .it-no { background: var(--p); color: #fff; }
+.it.bad .it-no { background: var(--d); color: #fff; }
+.it-subj { flex: 1; min-width: 0; font-size: 14px; font-weight: 600; color: var(--tp); line-height: 1.4; }
+.it.ok .it-subj { color: #14532D; }
+.it.bad .it-subj { color: #991B1B; }
+
+/* 양호/불량 토글 */
+.toggle {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  margin-top: 10px;
+}
+.tg-i {
+  height: 40px;
+  border-radius: 10px;
+  background: var(--sf);
+  border: 1.5px solid var(--bd);
+  font-size: 13px; font-weight: 600;
+  color: var(--ts);
+  display: flex; align-items: center; justify-content: center; gap: 6px;
+  cursor: pointer;
+}
+.tg-i i { font-size: 16px; }
+.tg-i.on.ok {
+  background: var(--pt);
+  border-color: var(--p);
+  color: var(--pp);
+}
+.tg-i.on.bad {
+  background: var(--dt);
+  border-color: var(--d);
+  color: #B91C1C;
+}
+
+/* 불량 시 펼침 영역 */
+.bad-form {
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px dashed #FECACA;
+  display: flex; flex-direction: column; gap: 10px;
+}
+.bf-row { display: flex; flex-direction: column; gap: 6px; }
+.bf-lbl { font-size: 12px; font-weight: 600; color: #991B1B; display: flex; align-items: center; gap: 4px; }
+.bf-lbl .req { color: var(--d); }
+.bf-ta {
+  width: 100%;
+  min-height: 72px;
+  border: 1px solid var(--bd);
+  border-radius: 8px;
+  padding: 10px 12px;
+  font-size: 13px;
+  color: var(--tp);
+  background: var(--sf);
+  font-family: inherit;
+  resize: none;
+  line-height: 1.5;
+}
+.bf-ta::placeholder { color: var(--tt); }
+.bf-count { font-size: 11px; color: var(--tt); text-align: right; }
+.bf-photo {
+  display: flex; align-items: center; gap: 8px;
+}
+.bf-photo-btn {
+  width: 72px; height: 72px;
+  border: 1.5px dashed var(--bd);
+  border-radius: 10px;
+  background: var(--sf);
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  gap: 2px;
+  color: var(--ts);
+  font-size: 11px; font-weight: 500;
+  cursor: pointer;
+}
+.bf-photo-btn i { font-size: 22px; }
+.bf-photo-prv {
+  width: 72px; height: 72px;
+  border-radius: 10px;
+  background: linear-gradient(135deg, #A7B8C6 0%, #6B7C8C 100%);
+  position: relative;
+  overflow: hidden;
+}
+.bf-photo-prv::before {
+  content: "";
+  position: absolute; inset: 0;
+  background:
+    radial-gradient(circle at 30% 35%, rgba(255,255,255,0.4) 0, transparent 18%),
+    linear-gradient(180deg, transparent 60%, rgba(0,0,0,0.25) 100%);
+}
+.bf-photo-prv .rm {
+  position: absolute; top: 4px; right: 4px;
+  width: 20px; height: 20px; border-radius: 50%;
+  background: rgba(0,0,0,0.6); color: #fff;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 12px; cursor: pointer;
+}
+.bf-photo-meta {
+  font-size: 11px; color: var(--ts); flex: 1; min-width: 0;
+}
+.bf-photo-meta strong { color: var(--tp); font-weight: 600; display: block; }
+
+/* 인라인 알림 */
+.al { display: flex; align-items: flex-start; gap: 6px; background: var(--wt); border: 1px solid #FEF3C7; border-radius: 8px; padding: 8px 10px; font-size: 11px; color: var(--wtx); line-height: 1.4; }
+.al i { font-size: 14px; margin-top: 1px; flex-shrink: 0; }
+.al.in { background: var(--it); border-color: #BFDBFE; color: #1E40AF; }
+
+/* 푸터 */
+.ft { background: var(--sf); border-top: 1px solid var(--bd); padding: 10px 16px calc(10px + env(safe-area-inset-bottom)); display: flex; gap: 8px; flex-wrap: wrap; }
+.bt { flex: 1; height: 48px; border-radius: 10px; display: flex; align-items: center; justify-content: center; gap: 6px; font-size: 14px; font-weight: 600; cursor: pointer; border: none; white-space: nowrap; }
+.bt-p { background: var(--p); color: #fff; }
+.bt-s { background: var(--sf); color: var(--p); border: 1.5px solid var(--p); }
+.bt-x { background: var(--bdl); color: var(--tt); border: 1px solid var(--bd); cursor: not-allowed; }
+
+</style>
+</head>
+<body>
+
+<div class="title">PRAFTA 안전점검 수행 화면 v1 <small>QR 스캔 + 점검 리스트 / 7개 케이스</small></div>
+<div class="sub">메인 홈 "안전 활동 > 안전점검 시작" 진입. QR 스캔 → 체크포인트 식별 → 항목별 양호/불량 응답 → 일괄 저장.</div>
+
+<div class="stage">
+
+  <!-- 케이스 1: QR 스캔 대기 -->
+  <div class="col">
+    <div class="phone-label">1. QR 스캔 대기</div>
+    <div class="phone" style="min-height:740px; position:relative;">
+      <div class="sb dark"><span>9:41</span><div class="sb-i"><i class="ti ti-signal-4g"></i><i class="ti ti-wifi"></i><i class="ti ti-battery-3"></i></div></div>
+      <div class="hd dark">
+        <div class="hd-b"><i class="ti ti-x"></i></div>
+        <div class="hd-t">QR 스캔</div>
+        <div class="hd-a"></div>
+      </div>
+      <div class="cam">
+        <div class="cam-bg"></div>
+        <div class="cam-frame"><span></span><span></span></div>
+        <div class="cam-scan"></div>
+        <div class="cam-tip">점검 개소의 QR 코드를 스캔해 주세요</div>
+        <div class="cam-sub">QR이 사각형 안에 들어오면 자동으로 인식돼요</div>
+        <div class="cam-cancel"><i class="ti ti-x"></i></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 케이스 2: 인식 성공 + 전체 미답 -->
+  <div class="col">
+    <div class="phone-label">2. 인식 성공 · 전체 미답</div>
+    <div class="phone" style="min-height:740px">
+      <div class="sb"><span>9:41</span><div class="sb-i"><i class="ti ti-signal-4g"></i><i class="ti ti-wifi"></i><i class="ti ti-battery-3"></i></div></div>
+      <div class="hd"><div class="hd-b"><i class="ti ti-chevron-left"></i></div><div class="hd-t">안전점검</div><div class="hd-a"></div></div>
+      <div class="main">
+        <div class="ctx">
+          <div class="ctx-row">
+            <div class="ctx-ico"><i class="ti ti-truck"></i></div>
+            <div class="ctx-b">
+              <div class="ctx-tt">중곡사업장_지게차</div>
+              <div class="ctx-mt">지게차 일상점검 · 중곡사업장 · 2026-05-28</div>
+            </div>
+          </div>
+        </div>
+
+        <div class="progress">
+          <span>응답 <strong>0</strong> / <strong>6</strong></span>
+          <span>양호 <span class="pp">0</span> · 불량 <span class="pw">0</span></span>
+        </div>
+        <div class="pbar"><div class="pbar-fill" style="width:0%"></div></div>
+
+        <div class="it">
+          <div class="it-head"><div class="it-no">1</div><div class="it-subj">지게차 비상등 점등상태 여부</div></div>
+          <div class="toggle">
+            <div class="tg-i"><i class="ti ti-check"></i> 양호</div>
+            <div class="tg-i"><i class="ti ti-alert-triangle"></i> 불량</div>
+          </div>
+        </div>
+
+        <div class="it">
+          <div class="it-head"><div class="it-no">2</div><div class="it-subj">타이어 펑크상태 확인</div></div>
+          <div class="toggle">
+            <div class="tg-i"><i class="ti ti-check"></i> 양호</div>
+            <div class="tg-i"><i class="ti ti-alert-triangle"></i> 불량</div>
+          </div>
+        </div>
+
+        <div class="it">
+          <div class="it-head"><div class="it-no">3</div><div class="it-subj">지게차 시동걸림상태 확인</div></div>
+          <div class="toggle">
+            <div class="tg-i"><i class="ti ti-check"></i> 양호</div>
+            <div class="tg-i"><i class="ti ti-alert-triangle"></i> 불량</div>
+          </div>
+        </div>
+
+        <div class="it">
+          <div class="it-head"><div class="it-no">4</div><div class="it-subj">유압 오일 누유 여부</div></div>
+          <div class="toggle">
+            <div class="tg-i"><i class="ti ti-check"></i> 양호</div>
+            <div class="tg-i"><i class="ti ti-alert-triangle"></i> 불량</div>
+          </div>
+        </div>
+
+        <div class="it">
+          <div class="it-head"><div class="it-no">5</div><div class="it-subj">안전벨트 결속 정상 여부</div></div>
+          <div class="toggle">
+            <div class="tg-i"><i class="ti ti-check"></i> 양호</div>
+            <div class="tg-i"><i class="ti ti-alert-triangle"></i> 불량</div>
+          </div>
+        </div>
+
+        <div class="it">
+          <div class="it-head"><div class="it-no">6</div><div class="it-subj">후방 카메라 동작 확인</div></div>
+          <div class="toggle">
+            <div class="tg-i"><i class="ti ti-check"></i> 양호</div>
+            <div class="tg-i"><i class="ti ti-alert-triangle"></i> 불량</div>
+          </div>
+        </div>
+      </div>
+      <div class="ft">
+        <button class="bt bt-x">저장</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 케이스 3: 답변 진행 중 (양호 3개 + 불량 1개 펼침 + 미답 2개) -->
+  <div class="col">
+    <div class="phone-label">3. 답변 진행 · 불량 펼침</div>
+    <div class="phone" style="min-height:740px">
+      <div class="sb"><span>9:41</span><div class="sb-i"><i class="ti ti-signal-4g"></i><i class="ti ti-wifi"></i><i class="ti ti-battery-3"></i></div></div>
+      <div class="hd"><div class="hd-b"><i class="ti ti-chevron-left"></i></div><div class="hd-t">안전점검</div><div class="hd-a"></div></div>
+      <div class="main">
+        <div class="ctx">
+          <div class="ctx-row">
+            <div class="ctx-ico"><i class="ti ti-truck"></i></div>
+            <div class="ctx-b">
+              <div class="ctx-tt">중곡사업장_지게차</div>
+              <div class="ctx-mt">지게차 일상점검 · 중곡사업장 · 2026-05-28</div>
+            </div>
+          </div>
+        </div>
+
+        <div class="progress">
+          <span>응답 <strong>4</strong> / <strong>6</strong></span>
+          <span>양호 <span class="pp">3</span> · 불량 <span class="pw">1</span></span>
+        </div>
+        <div class="pbar"><div class="pbar-fill" style="width:67%"></div></div>
+
+        <div class="it ok">
+          <div class="it-head"><div class="it-no">1</div><div class="it-subj">지게차 비상등 점등상태 여부</div></div>
+          <div class="toggle">
+            <div class="tg-i on ok"><i class="ti ti-check"></i> 양호</div>
+            <div class="tg-i"><i class="ti ti-alert-triangle"></i> 불량</div>
+          </div>
+        </div>
+
+        <div class="it bad">
+          <div class="it-head"><div class="it-no">2</div><div class="it-subj">타이어 펑크상태 확인</div></div>
+          <div class="toggle">
+            <div class="tg-i"><i class="ti ti-check"></i> 양호</div>
+            <div class="tg-i on bad"><i class="ti ti-alert-triangle"></i> 불량</div>
+          </div>
+          <div class="bad-form">
+            <div class="bf-row">
+              <div class="bf-lbl"><span class="req">*</span> 불량 사유</div>
+              <textarea class="bf-ta" placeholder="발견한 불량 상태를 구체적으로 입력해 주세요.">우측 후륜 타이어 측면에 약 5cm 가량 갈라짐 발견. 공기압도 정상보다 낮음.</textarea>
+              <div class="bf-count">52 / 500</div>
+            </div>
+            <div class="bf-row">
+              <div class="bf-lbl">현장 사진 <span style="color:var(--ts);font-weight:500;">(선택 · 1장)</span></div>
+              <div class="bf-photo">
+                <div class="bf-photo-prv"><div class="rm"><i class="ti ti-x"></i></div></div>
+                <div class="bf-photo-meta">
+                  <strong>tire_damage.jpg</strong>
+                  방금 촬영 · 2.4MB
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="it ok">
+          <div class="it-head"><div class="it-no">3</div><div class="it-subj">지게차 시동걸림상태 확인</div></div>
+          <div class="toggle">
+            <div class="tg-i on ok"><i class="ti ti-check"></i> 양호</div>
+            <div class="tg-i"><i class="ti ti-alert-triangle"></i> 불량</div>
+          </div>
+        </div>
+
+        <div class="it ok">
+          <div class="it-head"><div class="it-no">4</div><div class="it-subj">유압 오일 누유 여부</div></div>
+          <div class="toggle">
+            <div class="tg-i on ok"><i class="ti ti-check"></i> 양호</div>
+            <div class="tg-i"><i class="ti ti-alert-triangle"></i> 불량</div>
+          </div>
+        </div>
+
+        <div class="it">
+          <div class="it-head"><div class="it-no">5</div><div class="it-subj">안전벨트 결속 정상 여부</div></div>
+          <div class="toggle">
+            <div class="tg-i"><i class="ti ti-check"></i> 양호</div>
+            <div class="tg-i"><i class="ti ti-alert-triangle"></i> 불량</div>
+          </div>
+        </div>
+
+        <div class="it">
+          <div class="it-head"><div class="it-no">6</div><div class="it-subj">후방 카메라 동작 확인</div></div>
+          <div class="toggle">
+            <div class="tg-i"><i class="ti ti-check"></i> 양호</div>
+            <div class="tg-i"><i class="ti ti-alert-triangle"></i> 불량</div>
+          </div>
+        </div>
+      </div>
+      <div class="ft">
+        <button class="bt bt-x">저장 (2개 남음)</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 케이스 4: 전체 완료 (저장 활성) -->
+  <div class="col">
+    <div class="phone-label">4. 전체 완료 · 저장 활성</div>
+    <div class="phone" style="min-height:740px">
+      <div class="sb"><span>9:41</span><div class="sb-i"><i class="ti ti-signal-4g"></i><i class="ti ti-wifi"></i><i class="ti ti-battery-3"></i></div></div>
+      <div class="hd"><div class="hd-b"><i class="ti ti-chevron-left"></i></div><div class="hd-t">안전점검</div><div class="hd-a"></div></div>
+      <div class="main">
+        <div class="ctx">
+          <div class="ctx-row">
+            <div class="ctx-ico"><i class="ti ti-truck"></i></div>
+            <div class="ctx-b">
+              <div class="ctx-tt">중곡사업장_지게차</div>
+              <div class="ctx-mt">지게차 일상점검 · 중곡사업장 · 2026-05-28</div>
+            </div>
+          </div>
+        </div>
+
+        <div class="progress">
+          <span>응답 <strong>6</strong> / <strong>6</strong></span>
+          <span>양호 <span class="pp">5</span> · 불량 <span class="pw">1</span></span>
+        </div>
+        <div class="pbar"><div class="pbar-fill" style="width:100%"></div></div>
+
+        <div class="it ok">
+          <div class="it-head"><div class="it-no">1</div><div class="it-subj">지게차 비상등 점등상태 여부</div></div>
+          <div class="toggle">
+            <div class="tg-i on ok"><i class="ti ti-check"></i> 양호</div>
+            <div class="tg-i"><i class="ti ti-alert-triangle"></i> 불량</div>
+          </div>
+        </div>
+
+        <div class="it bad">
+          <div class="it-head"><div class="it-no">2</div><div class="it-subj">타이어 펑크상태 확인</div></div>
+          <div class="toggle">
+            <div class="tg-i"><i class="ti ti-check"></i> 양호</div>
+            <div class="tg-i on bad"><i class="ti ti-alert-triangle"></i> 불량</div>
+          </div>
+          <div class="bad-form">
+            <div class="bf-row">
+              <div class="bf-lbl"><span class="req">*</span> 불량 사유</div>
+              <textarea class="bf-ta">우측 후륜 타이어 측면에 약 5cm 가량 갈라짐 발견. 공기압도 정상보다 낮음.</textarea>
+              <div class="bf-count">52 / 500</div>
+            </div>
+            <div class="bf-row">
+              <div class="bf-lbl">현장 사진 <span style="color:var(--ts);font-weight:500;">(선택 · 1장)</span></div>
+              <div class="bf-photo">
+                <div class="bf-photo-prv"><div class="rm"><i class="ti ti-x"></i></div></div>
+                <div class="bf-photo-meta">
+                  <strong>tire_damage.jpg</strong>
+                  방금 촬영 · 2.4MB
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="it ok">
+          <div class="it-head"><div class="it-no">3</div><div class="it-subj">지게차 시동걸림상태 확인</div></div>
+          <div class="toggle">
+            <div class="tg-i on ok"><i class="ti ti-check"></i> 양호</div>
+            <div class="tg-i"><i class="ti ti-alert-triangle"></i> 불량</div>
+          </div>
+        </div>
+
+        <div class="it ok">
+          <div class="it-head"><div class="it-no">4</div><div class="it-subj">유압 오일 누유 여부</div></div>
+          <div class="toggle">
+            <div class="tg-i on ok"><i class="ti ti-check"></i> 양호</div>
+            <div class="tg-i"><i class="ti ti-alert-triangle"></i> 불량</div>
+          </div>
+        </div>
+
+        <div class="it ok">
+          <div class="it-head"><div class="it-no">5</div><div class="it-subj">안전벨트 결속 정상 여부</div></div>
+          <div class="toggle">
+            <div class="tg-i on ok"><i class="ti ti-check"></i> 양호</div>
+            <div class="tg-i"><i class="ti ti-alert-triangle"></i> 불량</div>
+          </div>
+        </div>
+
+        <div class="it ok">
+          <div class="it-head"><div class="it-no">6</div><div class="it-subj">후방 카메라 동작 확인</div></div>
+          <div class="toggle">
+            <div class="tg-i on ok"><i class="ti ti-check"></i> 양호</div>
+            <div class="tg-i"><i class="ti ti-alert-triangle"></i> 불량</div>
+          </div>
+        </div>
+      </div>
+      <div class="ft">
+        <button class="bt bt-p"><i class="ti ti-device-floppy"></i> 저장</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 케이스 5: 저장 완료 안내 -->
+  <div class="col">
+    <div class="phone-label">5. 저장 완료</div>
+    <div class="phone" style="min-height:740px">
+      <div class="sb"><span>9:41</span><div class="sb-i"><i class="ti ti-signal-4g"></i><i class="ti ti-wifi"></i><i class="ti ti-battery-3"></i></div></div>
+      <div class="hd"><div class="hd-b"><i class="ti ti-chevron-left"></i></div><div class="hd-t">안전점검</div><div class="hd-a"></div></div>
+      <div class="empty">
+        <div class="empty-ico success"><i class="ti ti-circle-check"></i></div>
+        <div class="empty-tt">점검을 저장했어요</div>
+        <div class="empty-sub">중곡사업장_지게차 · 양호 5건 · 불량 1건<br>발견한 불량은 관리자에게 자동 전달돼요</div>
+      </div>
+      <div class="ft">
+        <button class="bt bt-s">다른 개소 점검</button>
+        <button class="bt bt-p">메인으로</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 케이스 6: 카메라 권한 거부 폴백 -->
+  <div class="col">
+    <div class="phone-label">6. 카메라 권한 거부</div>
+    <div class="phone" style="min-height:740px">
+      <div class="sb"><span>9:41</span><div class="sb-i"><i class="ti ti-signal-4g"></i><i class="ti ti-wifi"></i><i class="ti ti-battery-3"></i></div></div>
+      <div class="hd"><div class="hd-b"><i class="ti ti-x"></i></div><div class="hd-t">QR 스캔</div><div class="hd-a"></div></div>
+      <div class="empty">
+        <div class="empty-ico warn"><i class="ti ti-camera-off"></i></div>
+        <div class="empty-tt">카메라 접근 권한이 필요해요</div>
+        <div class="empty-sub">QR 코드를 인식하려면 카메라 사용 권한을 허용해 주세요. 설정 앱에서 PRAFTA 권한을 켤 수 있어요.</div>
+      </div>
+      <div class="ft">
+        <button class="bt bt-s">취소</button>
+        <button class="bt bt-p"><i class="ti ti-settings"></i> 설정으로 이동</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 케이스 7: 미등록 QR -->
+  <div class="col">
+    <div class="phone-label">7. 미등록 QR · 인식 실패</div>
+    <div class="phone" style="min-height:740px; position:relative;">
+      <div class="sb dark"><span>9:41</span><div class="sb-i"><i class="ti ti-signal-4g"></i><i class="ti ti-wifi"></i><i class="ti ti-battery-3"></i></div></div>
+      <div class="hd dark">
+        <div class="hd-b"><i class="ti ti-x"></i></div>
+        <div class="hd-t">QR 스캔</div>
+        <div class="hd-a"></div>
+      </div>
+      <div class="cam">
+        <div class="cam-bg"></div>
+        <div class="cam-frame" style="opacity:0.5;"><span></span><span></span></div>
+
+        <div style="position:absolute; left:16px; right:16px; bottom:calc(100px + env(safe-area-inset-bottom));">
+          <div style="background:rgba(239,68,68,0.95); color:#fff; border-radius:12px; padding:14px 16px; display:flex; align-items:flex-start; gap:10px;">
+            <i class="ti ti-alert-circle" style="font-size:20px; flex-shrink:0;"></i>
+            <div style="flex:1; min-width:0;">
+              <div style="font-size:14px; font-weight:700; margin-bottom:2px;">등록되지 않은 QR 코드예요</div>
+              <div style="font-size:12px; color:rgba(255,255,255,0.85); line-height:1.4;">소속 사업장(중곡사업장)의 점검 개소가 아니거나 관리자 등록 전 코드입니다. 다시 스캔해 주세요.</div>
+            </div>
+          </div>
+        </div>
+
+        <div class="cam-cancel"><i class="ti ti-refresh"></i></div>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+</body>
+</html>

@@ -58,6 +58,7 @@
 		<item key="incremental" value="false"/>
 		<item key="isRegEx" value="false"/>
 		<list key="findhistory">
+			<item value="selectChkptInspectItemList"/>
 			<item value="selectDailyUserCd"/>
 			<item value="insertDailyQrUser"/>
 			<item value="ATTD_MODIFY"/>
@@ -72,7 +73,6 @@
 			<item value="FNC_STD_TIME"/>
 			<item value="com.prafta.common.exception"/>
 			<item value="ATTD_400_014"/>
-			<item value="no completed work record found for the day"/>
 		</list>
 		<list key="replacehistory">
 			<item value=", "/>

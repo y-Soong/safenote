@@ -1,0 +1,1253 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>PRAFTA — 메인 홈 화면 베리에이션</title>
+<style>
+  :root {
+    --color-primary: #16A34A;
+    --color-primary-tint: #F0FDF4;
+    --color-primary-tint-border: #DCFCE7;
+    --color-danger: #EF4444;
+    --color-warning: #F59E0B;
+    --color-warning-tint: #FFFBEB;
+    --color-warning-text: #B45309;
+    --color-warning-text-strong: #92400E;
+    --color-warning-text-deep: #9A3412;
+    --color-info: #3B82F6;
+    --color-info-strong: #1D4ED8;
+    --color-info-tint: #EFF6FF;
+    --color-text-primary: #111827;
+    --color-text-secondary: #6B7280;
+    --color-text-tertiary: #9CA3AF;
+    --color-border: #E5E7EB;
+    --color-border-light: #F3F4F6;
+    --color-surface: #FFFFFF;
+    --color-bg: #F9FAFB;
+    --color-disabled-bg: #E5E7EB;
+    --color-disabled-text: #9CA3AF;
+    --radius-sm: 6px;
+    --radius-md: 10px;
+    --radius-lg: 14px;
+    --radius-full: 9999px;
+    --shadow-sm: 0 1px 2px rgba(0,0,0,0.04);
+  }
+
+  * { box-sizing: border-box; }
+  html, body {
+    margin: 0;
+    padding: 0;
+    font-family: -apple-system, BlinkMacSystemFont, 'Apple SD Gothic Neo', 'Pretendard', 'Noto Sans KR', sans-serif;
+    background: #F5F5F4;
+    color: var(--color-text-primary);
+  }
+
+  .page {
+    max-width: 1720px;
+    margin: 0 auto;
+    padding: 48px 32px 64px;
+  }
+  .page-header { margin-bottom: 32px; }
+  .page-header h1 { margin: 0 0 8px; font-size: 24px; font-weight: 600; }
+  .page-header p { margin: 0; font-size: 14px; color: var(--color-text-secondary); }
+
+  .grid {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 28px;
+    justify-items: center;
+  }
+  @media (max-width: 1700px) { .grid { grid-template-columns: repeat(2, 1fr); gap: 32px; } }
+  @media (max-width: 880px) { .grid { grid-template-columns: 1fr; } }
+
+  .case { width: 100%; max-width: 390px; }
+  .case-label {
+    text-align: center;
+    font-size: 13px;
+    font-weight: 500;
+    color: var(--color-text-secondary);
+    margin: 0 0 12px;
+  }
+  .case-label .num {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 22px; height: 22px;
+    background: #FFFFFF;
+    border: 0.5px solid var(--color-border);
+    border-radius: var(--radius-full);
+    color: var(--color-text-primary);
+    margin-right: 6px;
+    font-size: 12px;
+    font-weight: 500;
+  }
+
+  .phone {
+    width: 100%;
+    background: var(--color-bg);
+    border-radius: 28px;
+    overflow: hidden;
+    border: 0.5px solid var(--color-border);
+  }
+
+  .icon { display: inline-block; flex-shrink: 0; vertical-align: middle; }
+
+  /* 상태바 */
+  .statusbar {
+    height: 44px;
+    background: var(--color-bg);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0 24px;
+    font-size: 14px;
+    font-weight: 500;
+  }
+  .statusbar .time { font-variant-numeric: tabular-nums; }
+  .statusbar .sb-icons {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    color: var(--color-text-primary);
+  }
+
+  /* 헤더 */
+  .header {
+    height: 56px;
+    background: var(--color-bg);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0 16px;
+  }
+  .site { display: inline-flex; align-items: center; gap: 8px; padding: 0 4px; }
+  .site .name { font-size: 16px; font-weight: 500; }
+  .site .tag {
+    display: inline-flex;
+    align-items: center;
+    height: 20px;
+    padding: 0 6px;
+    background: var(--color-primary-tint);
+    color: var(--color-primary);
+    font-size: 11px;
+    font-weight: 500;
+    border-radius: 4px;
+  }
+  .h-actions { display: flex; align-items: center; gap: 4px; }
+  .h-bell {
+    position: relative;
+    width: 44px; height: 44px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    background: transparent;
+    border: 0;
+    cursor: pointer;
+    color: var(--color-text-primary);
+  }
+  .h-bell .count {
+    position: absolute;
+    top: 8px; right: 8px;
+    min-width: 18px; height: 18px;
+    padding: 0 4px;
+    background: var(--color-danger);
+    color: #FFFFFF;
+    font-size: 11px;
+    font-weight: 500;
+    line-height: 18px;
+    text-align: center;
+    border-radius: var(--radius-full);
+  }
+  .avatar {
+    width: 36px; height: 36px;
+    border-radius: var(--radius-full);
+    background: var(--color-primary-tint);
+    color: var(--color-primary);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 13px;
+    font-weight: 500;
+    border: 0.5px solid var(--color-primary-tint-border);
+    cursor: pointer;
+    padding: 0;
+  }
+
+  .main { padding: 8px 16px 88px; }
+  .greeting { padding: 4px 4px 12px; }
+  .greeting .date { margin: 0; font-size: 13px; color: var(--color-text-secondary); }
+  .greeting .msg { margin: 2px 0 0; font-size: 18px; font-weight: 500; }
+
+  .card {
+    background: var(--color-surface);
+    border-radius: var(--radius-lg);
+    border: 0.5px solid var(--color-border);
+    padding: 16px;
+    margin-bottom: 12px;
+  }
+  .card.first { box-shadow: var(--shadow-sm); }
+  .card-title { margin: 0; font-size: 18px; font-weight: 500; }
+
+  /* 출퇴근 */
+  .att-head {
+    display: flex;
+    align-items: center;
+    height: 22px;
+    margin-bottom: 12px;
+  }
+  .badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    height: 22px;
+    padding: 0 8px;
+    font-size: 12px;
+    font-weight: 500;
+    border-radius: var(--radius-sm);
+  }
+  .badge .dot { width: 6px; height: 6px; border-radius: var(--radius-full); }
+  .badge.ok { background: var(--color-primary-tint); color: var(--color-primary); }
+  .badge.ok .dot { background: var(--color-primary); }
+  .badge.before { background: var(--color-info-tint); color: var(--color-info-strong); }
+  .badge.before .dot { background: var(--color-info); }
+  .badge.warn { background: var(--color-warning-tint); color: var(--color-warning-text); }
+  .badge.neutral { background: var(--color-border-light); color: var(--color-text-secondary); }
+
+  .att-time {
+    margin-left: 8px;
+    height: 22px;
+    font-size: 14px;
+    color: var(--color-text-secondary);
+    font-variant-numeric: tabular-nums;
+    display: inline-flex;
+    align-items: center;
+  }
+  .att-time.muted { color: var(--color-text-tertiary); }
+
+  .btn-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 8px;
+    margin-bottom: 10px;
+  }
+  .btn {
+    height: 52px;
+    border-radius: var(--radius-md);
+    font-size: 16px;
+    font-weight: 500;
+    cursor: pointer;
+    border: 0;
+    padding: 0;
+    font-family: inherit;
+  }
+  .btn.primary { background: var(--color-primary); color: #FFFFFF; }
+  .btn.disabled { background: var(--color-disabled-bg); color: var(--color-disabled-text); cursor: not-allowed; }
+
+  .loc-meta {
+    padding: 8px 10px;
+    border-radius: 8px;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 12px;
+  }
+  .loc-meta.neutral { background: var(--color-bg); color: var(--color-text-secondary); }
+  .loc-meta.warn { background: var(--color-warning-tint); color: var(--color-warning-text-strong); }
+
+  /* 카드 헤더 공통 - 우측 chev-only 진입 버튼 */
+  .head-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 14px;
+  }
+  .head-row.tight { margin-bottom: 4px; }
+  .head-chev {
+    background: transparent;
+    border: 0;
+    padding: 4px;
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--color-text-tertiary);
+    font-family: inherit;
+  }
+
+  /* 근태 조회 */
+  .kpi-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+  .kpi {
+    background: #FFFFFF;
+    border: 0.5px solid var(--color-border);
+    border-radius: var(--radius-md);
+    padding: 14px 12px;
+    min-height: 76px;
+    cursor: pointer;
+  }
+  .kpi-top {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 8px;
+  }
+  .kpi-lbl { font-size: 12px; font-weight: 500; color: var(--color-text-secondary); }
+  .kpi-vals { display: flex; align-items: baseline; gap: 4px; }
+  .kpi-num {
+    font-size: 26px;
+    font-weight: 500;
+    font-variant-numeric: tabular-nums;
+  }
+  .kpi-num.warn { color: var(--color-warning); }
+  .kpi-unit { font-size: 13px; color: var(--color-text-tertiary); }
+
+  /* 안전 활동 */
+  .blocked-banner {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 8px 10px;
+    background: var(--color-warning-tint);
+    border-radius: 8px;
+    margin-bottom: 12px;
+    font-size: 12px;
+    color: var(--color-warning-text-strong);
+  }
+  .safety-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+  .safety-btn {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    min-height: 96px;
+    border-radius: var(--radius-md);
+    cursor: pointer;
+    padding: 12px;
+    font-size: 14px;
+    font-weight: 500;
+    font-family: inherit;
+  }
+  .safety-btn.active {
+    background: #FFFFFF;
+    color: var(--color-primary);
+    border: 1.5px solid var(--color-primary);
+  }
+  .safety-btn.disabled {
+    background: var(--color-bg);
+    color: var(--color-text-tertiary);
+    border: 1px solid var(--color-border);
+    cursor: not-allowed;
+  }
+
+  /* TBM */
+  .tbm-meta { margin: 0 0 12px; font-size: 13px; color: var(--color-text-secondary); }
+  .tbm-meta.muted { color: var(--color-text-tertiary); }
+  .tbm-callout {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 10px 12px;
+    border-radius: 8px;
+    margin-bottom: 12px;
+    font-size: 13px;
+    font-weight: 500;
+  }
+  .tbm-callout.warn { background: var(--color-warning-tint); color: var(--color-warning-text); }
+  .tbm-callout.success { background: var(--color-primary-tint); color: var(--color-primary); }
+  .tbm-callout.neutral { background: var(--color-bg); color: var(--color-text-secondary); }
+  .tbm-btn {
+    width: 100%;
+    height: 44px;
+    border-radius: var(--radius-md);
+    font-size: 15px;
+    font-weight: 500;
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    padding: 0;
+    font-family: inherit;
+  }
+  .tbm-btn.active {
+    background: #FFFFFF;
+    color: var(--color-primary);
+    border: 1.5px solid var(--color-primary);
+  }
+  .tbm-btn.disabled {
+    background: var(--color-bg);
+    color: var(--color-text-tertiary);
+    border: 1px solid var(--color-border);
+    cursor: not-allowed;
+  }
+
+  /* 공지사항 */
+  .notice-card { padding: 16px 0 8px; }
+  .notice-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 8px;
+    padding: 0 16px;
+  }
+  .notice-head-left { display: flex; align-items: center; gap: 8px; }
+  .notice-count {
+    min-width: 18px; height: 18px;
+    padding: 0 5px;
+    background: var(--color-danger);
+    color: #FFFFFF;
+    font-size: 11px;
+    font-weight: 500;
+    line-height: 18px;
+    text-align: center;
+    border-radius: var(--radius-full);
+  }
+  .notice-more {
+    display: inline-flex;
+    align-items: center;
+    gap: 2px;
+    font-size: 13px;
+    color: var(--color-text-secondary);
+    cursor: pointer;
+  }
+  .notice-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 12px 16px;
+    border-top: 0.5px solid var(--color-border-light);
+    cursor: pointer;
+  }
+  .notice-row .title {
+    flex: 1;
+    min-width: 0;
+    font-size: 14px;
+    font-weight: 500;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .notice-row .title.read { font-weight: 400; color: var(--color-text-secondary); }
+  .notice-row .meta { font-size: 11px; color: var(--color-text-tertiary); flex-shrink: 0; }
+  .notice-row .unread-dot {
+    width: 6px; height: 6px;
+    background: var(--color-danger);
+    border-radius: var(--radius-full);
+    flex-shrink: 0;
+  }
+  .notice-row .imp {
+    display: inline-flex;
+    align-items: center;
+    height: 20px;
+    padding: 0 6px;
+    background: var(--color-warning-tint);
+    color: var(--color-warning-text-deep);
+    font-size: 11px;
+    font-weight: 500;
+    border-radius: 4px;
+    flex-shrink: 0;
+  }
+
+  /* 탭바 */
+  .tabbar {
+    position: relative;
+    height: 72px;
+    background: var(--color-surface);
+    border-top: 0.5px solid var(--color-border);
+    display: grid;
+    grid-template-columns: repeat(5, 1fr);
+    align-items: center;
+    padding-bottom: 8px;
+  }
+  .tab {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 2px;
+    background: transparent;
+    border: 0;
+    cursor: pointer;
+    padding: 8px 0;
+    color: var(--color-text-secondary);
+    font-family: inherit;
+  }
+  .tab.active { color: var(--color-primary); }
+  .tab .lbl { font-size: 12px; font-weight: 500; }
+  .tab-badge-wrap { position: relative; }
+  .tab-badge {
+    position: absolute;
+    top: -4px; right: -10px;
+    min-width: 18px; height: 18px;
+    padding: 0 4px;
+    background: var(--color-danger);
+    color: #FFFFFF;
+    font-size: 11px;
+    font-weight: 500;
+    line-height: 18px;
+    text-align: center;
+    border-radius: var(--radius-full);
+  }
+</style>
+</head>
+<body>
+
+<!-- ==================== SVG 아이콘 정의 ==================== -->
+<svg width="0" height="0" style="position: absolute;" aria-hidden="true">
+  <defs>
+    <symbol id="i-signal" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M3 19h2"/>
+      <path d="M9 19v-4"/>
+      <path d="M15 19V9"/>
+      <path d="M21 19V5"/>
+    </symbol>
+    <symbol id="i-wifi" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M12 18l.01 0"/>
+      <path d="M9.172 15.172a4 4 0 0 1 5.656 0"/>
+      <path d="M6.343 12.343a8 8 0 0 1 11.314 0"/>
+      <path d="M3.515 9.515c4.686 -4.687 12.284 -4.687 17 0"/>
+    </symbol>
+    <symbol id="i-battery" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <rect x="2" y="8" width="18" height="8" rx="1"/>
+      <path d="M22 11v2"/>
+      <rect x="4" y="10" width="11" height="4" fill="currentColor" stroke="none"/>
+    </symbol>
+    <symbol id="i-mappin" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <circle cx="12" cy="11" r="3"/>
+      <path d="M17.657 16.657L13.414 20.9a2 2 0 0 1-2.827 0l-4.244-4.243a8 8 0 1 1 11.314 0z"/>
+    </symbol>
+    <symbol id="i-mappinoff" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M5.6 5.6c-1.6 4.1 .4 8.4 2.4 10.4l4 4.2 1.4-1.4"/>
+      <path d="M19.66 13.69c1.39-3.5-.32-7.18-2.66-9.51a8 8 0 0 0-10.3-.83"/>
+      <path d="M9 9a3 3 0 0 0 4.5 2.6"/>
+      <line x1="3" y1="3" x2="21" y2="21"/>
+    </symbol>
+    <symbol id="i-bell" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M10 5a2 2 0 0 1 4 0a7 7 0 0 1 4 6v3a4 4 0 0 0 2 3h-16a4 4 0 0 0 2 -3v-3a7 7 0 0 1 4 -6"/>
+      <path d="M9 17v1a3 3 0 0 0 6 0v-1"/>
+    </symbol>
+    <symbol id="i-chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <polyline points="9 18 15 12 9 6"/>
+    </symbol>
+    <symbol id="i-lock" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <rect x="5" y="11" width="14" height="10" rx="2"/>
+      <path d="M8 11V7a4 4 0 0 1 8 0v4"/>
+    </symbol>
+    <symbol id="i-clipboard" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M9 5H7a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2h-2"/>
+      <rect x="9" y="3" width="6" height="4" rx="1"/>
+      <path d="M9 14l2 2 4-4"/>
+    </symbol>
+    <symbol id="i-camera" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M5 7h2l2-3h6l2 3h2a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V9a2 2 0 0 1 2-2"/>
+      <circle cx="12" cy="13" r="3"/>
+      <path d="M16 6h4"/>
+      <path d="M18 4v4"/>
+    </symbol>
+    <symbol id="i-clock" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <circle cx="12" cy="12" r="9"/>
+      <polyline points="12 7 12 12 15 14"/>
+    </symbol>
+    <symbol id="i-check" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <polyline points="5 12 10 17 19 8"/>
+    </symbol>
+    <symbol id="i-circlecheck" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <circle cx="12" cy="12" r="9"/>
+      <polyline points="8 12 11 15 16 10"/>
+    </symbol>
+    <symbol id="i-usercheck" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <circle cx="9" cy="7" r="4"/>
+      <path d="M3 21v-2a4 4 0 0 1 4-4h4a4 4 0 0 1 4 4v2"/>
+      <polyline points="15 11 17 13 21 9"/>
+    </symbol>
+    <symbol id="i-caloff" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M4 7a2 2 0 0 1 2 -2h2"/>
+      <path d="M12 5h5a2 2 0 0 1 2 2v10"/>
+      <path d="M4 11v8a2 2 0 0 0 2 2h12"/>
+      <path d="M16 3v4"/>
+      <path d="M8 3v4"/>
+      <path d="M4 11h12"/>
+      <line x1="3" y1="3" x2="21" y2="21"/>
+    </symbol>
+    <symbol id="i-home" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M5 12l-2 0l9-9l9 9l-2 0"/>
+      <path d="M5 12v7a2 2 0 0 0 2 2h10a2 2 0 0 0 2 -2v-7"/>
+      <path d="M10 21v-6a2 2 0 0 1 2-2h0a2 2 0 0 1 2 2v6"/>
+    </symbol>
+    <symbol id="i-cal" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <rect x="4" y="5" width="16" height="16" rx="2"/>
+      <line x1="16" y1="3" x2="16" y2="7"/>
+      <line x1="8" y1="3" x2="8" y2="7"/>
+      <line x1="4" y1="11" x2="20" y2="11"/>
+    </symbol>
+    <symbol id="i-shield" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M12 3l8 4v6c0 4.4-3.6 8-8 8s-8-3.6-8-8V7l8-4z"/>
+    </symbol>
+    <symbol id="i-monitor" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <rect x="3" y="4" width="18" height="12" rx="1"/>
+      <line x1="7" y1="20" x2="17" y2="20"/>
+      <line x1="9" y1="16" x2="9" y2="20"/>
+      <line x1="15" y1="16" x2="15" y2="20"/>
+    </symbol>
+    <symbol id="i-user" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <circle cx="12" cy="8" r="4"/>
+      <path d="M4 21v-1a6 6 0 0 1 6-6h4a6 6 0 0 1 6 6v1"/>
+    </symbol>
+  </defs>
+</svg>
+
+<div class="page">
+  <div class="page-header">
+    <h1>PRAFTA 사용자 앱 — 메인 홈 화면 베리에이션</h1>
+    <p>출근 상태와 사업장 위치, TBM 일정 유무에 따른 4가지 케이스. 모든 카드의 영역과 버튼 위치는 동일하게 유지되며, 상태값과 활성·비활성만 케이스에 따라 달라집니다.</p>
+  </div>
+
+  <div class="grid">
+
+    <!-- ==================== 케이스 1: 출근 전 ==================== -->
+    <div class="case">
+      <p class="case-label"><span class="num">1</span>출근 전 · 안전/TBM 차단</p>
+      <div class="phone">
+
+        <div class="statusbar">
+          <span class="time">9:15</span>
+          <div class="sb-icons">
+            <svg class="icon" width="16" height="16"><use href="#i-signal"/></svg>
+            <svg class="icon" width="16" height="16"><use href="#i-wifi"/></svg>
+            <svg class="icon" width="18" height="18"><use href="#i-battery"/></svg>
+          </div>
+        </div>
+
+        <div class="header">
+          <div class="site">
+            <svg class="icon" width="18" height="18" style="color: var(--color-primary);"><use href="#i-mappin"/></svg>
+            <span class="name">중곡사업장</span>
+            <span class="tag">소속</span>
+          </div>
+          <div class="h-actions">
+            <button class="h-bell" aria-label="알림 3건">
+              <svg class="icon" width="22" height="22"><use href="#i-bell"/></svg>
+              <span class="count">3</span>
+            </button>
+            <button class="avatar">김민</button>
+          </div>
+        </div>
+
+        <div class="main">
+          <div class="greeting">
+            <p class="date">2026년 5월 20일 (수)</p>
+            <p class="msg">오늘도 좋은 하루 되세요</p>
+          </div>
+
+          <!-- 출퇴근 -->
+          <div class="card first">
+            <div class="att-head">
+              <span class="badge before"><span class="dot"></span>출근 전</span>
+              <span class="att-time muted">예정 09:30 ~ 18:00</span>
+            </div>
+            <div class="btn-grid">
+              <button class="btn primary">출근하기</button>
+              <button class="btn disabled" disabled>퇴근하기</button>
+            </div>
+            <div class="loc-meta neutral">
+              <svg class="icon" width="14" height="14" style="color: var(--color-text-tertiary);"><use href="#i-mappin"/></svg>
+              <span>-</span>
+            </div>
+          </div>
+
+          <!-- 근태 조회 -->
+          <div class="card">
+            <div class="head-row">
+              <p class="card-title">근태 조회</p>
+              <button class="head-chev" aria-label="자세히 보기">
+                <svg class="icon" width="18" height="18"><use href="#i-chev"/></svg>
+              </button>
+            </div>
+            <div class="kpi-grid">
+              <div class="kpi">
+                <div class="kpi-top"><span class="kpi-lbl">잔여 연차</span><svg class="icon" width="14" height="14" style="color: var(--color-text-tertiary);"><use href="#i-chev"/></svg></div>
+                <div class="kpi-vals"><span class="kpi-num">12</span><span class="kpi-unit">/ 20일</span></div>
+              </div>
+              <div class="kpi">
+                <div class="kpi-top"><span class="kpi-lbl">승인 요청</span><svg class="icon" width="14" height="14" style="color: var(--color-text-tertiary);"><use href="#i-chev"/></svg></div>
+                <div class="kpi-vals"><span class="kpi-num warn">3</span><span class="kpi-unit">건 대기</span></div>
+              </div>
+            </div>
+          </div>
+
+          <!-- 안전 활동: 차단 -->
+          <div class="card">
+            <div class="head-row">
+              <p class="card-title">안전 활동</p>
+              <button class="head-chev" aria-label="자세히 보기">
+                <svg class="icon" width="18" height="18"><use href="#i-chev"/></svg>
+              </button>
+            </div>
+            <div class="blocked-banner">
+              <svg class="icon" width="14" height="14"><use href="#i-lock"/></svg>
+              <span>출근 후에 이용할 수 있어요</span>
+            </div>
+            <div class="safety-grid">
+              <button class="safety-btn disabled" disabled>
+                <svg class="icon" width="26" height="26"><use href="#i-clipboard"/></svg>
+                <span>안전점검 시작</span>
+              </button>
+              <button class="safety-btn disabled" disabled>
+                <svg class="icon" width="26" height="26"><use href="#i-camera"/></svg>
+                <span>위험성 발굴</span>
+              </button>
+            </div>
+          </div>
+
+          <!-- TBM: 차단 -->
+          <div class="card">
+            <div class="head-row tight">
+              <p class="card-title">TBM 참석</p>
+              <button class="head-chev" aria-label="자세히 보기">
+                <svg class="icon" width="18" height="18"><use href="#i-chev"/></svg>
+              </button>
+            </div>
+            <p class="tbm-meta">10:00 · 1구역 회의실 · 안전팀 박과장</p>
+            <div class="tbm-callout neutral">
+              <svg class="icon" width="16" height="16"><use href="#i-lock"/></svg>
+              <span>출근 후 참석 가능</span>
+            </div>
+            <button class="tbm-btn disabled" disabled>
+              <svg class="icon" width="18" height="18"><use href="#i-usercheck"/></svg>
+              참석하기
+            </button>
+          </div>
+
+          <!-- 공지사항 -->
+          <div class="card notice-card">
+            <div class="notice-head">
+              <div class="notice-head-left">
+                <p class="card-title">공지사항</p>
+                <span class="notice-count">2</span>
+              </div>
+              <button class="head-chev" aria-label="전체보기"><svg class="icon" width="18" height="18"><use href="#i-chev"/></svg></button>
+            </div>
+            <div class="notice-row">
+              <span class="imp">중요</span>
+              <span class="title">5월 24일(토) 정기 안전교육 안내</span>
+              <span class="meta">3시간 전</span>
+              <span class="unread-dot"></span>
+            </div>
+            <div class="notice-row">
+              <span class="title">하계 휴가 신청 안내 (~ 6/15)</span>
+              <span class="meta">어제</span>
+              <span class="unread-dot"></span>
+            </div>
+            <div class="notice-row">
+              <span class="title read">사내 식당 메뉴 변경 안내</span>
+              <span class="meta">5/18</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="tabbar">
+          <button class="tab active">
+            <svg class="icon" width="24" height="24"><use href="#i-home"/></svg>
+            <span class="lbl">홈</span>
+          </button>
+          <button class="tab">
+            <svg class="icon" width="24" height="24"><use href="#i-cal"/></svg>
+            <span class="lbl">근태</span>
+          </button>
+          <button class="tab">
+            <svg class="icon" width="24" height="24"><use href="#i-shield"/></svg>
+            <span class="lbl">안전</span>
+          </button>
+          <button class="tab">
+            <span class="tab-badge-wrap">
+              <svg class="icon" width="24" height="24"><use href="#i-monitor"/></svg>
+              <span class="tab-badge">1</span>
+            </span>
+            <span class="lbl">TBM</span>
+          </button>
+          <button class="tab">
+            <svg class="icon" width="24" height="24"><use href="#i-user"/></svg>
+            <span class="lbl">마이</span>
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- ==================== 케이스 2: 근무중 ==================== -->
+    <div class="case">
+      <p class="case-label"><span class="num">2</span>근무중</p>
+      <div class="phone">
+
+        <div class="statusbar">
+          <span class="time">9:41</span>
+          <div class="sb-icons">
+            <svg class="icon" width="16" height="16"><use href="#i-signal"/></svg>
+            <svg class="icon" width="16" height="16"><use href="#i-wifi"/></svg>
+            <svg class="icon" width="18" height="18"><use href="#i-battery"/></svg>
+          </div>
+        </div>
+
+        <div class="header">
+          <div class="site">
+            <svg class="icon" width="18" height="18" style="color: var(--color-primary);"><use href="#i-mappin"/></svg>
+            <span class="name">중곡사업장</span>
+            <span class="tag">소속</span>
+          </div>
+          <div class="h-actions">
+            <button class="h-bell" aria-label="알림 3건">
+              <svg class="icon" width="22" height="22"><use href="#i-bell"/></svg>
+              <span class="count">3</span>
+            </button>
+            <button class="avatar">김민</button>
+          </div>
+        </div>
+
+        <div class="main">
+          <div class="greeting">
+            <p class="date">2026년 5월 20일 (수)</p>
+            <p class="msg">오늘도 좋은 하루 되세요</p>
+          </div>
+
+          <div class="card first">
+            <div class="att-head">
+              <span class="badge ok"><span class="dot"></span>근무중</span>
+              <span class="att-time">출근 09:28</span>
+            </div>
+            <div class="btn-grid">
+              <button class="btn disabled" disabled>출근하기</button>
+              <button class="btn primary">퇴근하기</button>
+            </div>
+            <div class="loc-meta neutral">
+              <svg class="icon" width="14" height="14" style="color: var(--color-primary);"><use href="#i-mappin"/></svg>
+              <span>중곡사업장</span>
+            </div>
+          </div>
+
+          <div class="card">
+            <div class="head-row">
+              <p class="card-title">근태 조회</p>
+              <button class="head-chev" aria-label="자세히 보기">
+                <svg class="icon" width="18" height="18"><use href="#i-chev"/></svg>
+              </button>
+            </div>
+            <div class="kpi-grid">
+              <div class="kpi">
+                <div class="kpi-top"><span class="kpi-lbl">잔여 연차</span><svg class="icon" width="14" height="14" style="color: var(--color-text-tertiary);"><use href="#i-chev"/></svg></div>
+                <div class="kpi-vals"><span class="kpi-num">12</span><span class="kpi-unit">/ 20일</span></div>
+              </div>
+              <div class="kpi">
+                <div class="kpi-top"><span class="kpi-lbl">승인 요청</span><svg class="icon" width="14" height="14" style="color: var(--color-text-tertiary);"><use href="#i-chev"/></svg></div>
+                <div class="kpi-vals"><span class="kpi-num warn">3</span><span class="kpi-unit">건 대기</span></div>
+              </div>
+            </div>
+          </div>
+
+          <div class="card">
+            <div class="head-row">
+              <p class="card-title">안전 활동</p>
+              <button class="head-chev" aria-label="자세히 보기">
+                <svg class="icon" width="18" height="18"><use href="#i-chev"/></svg>
+              </button>
+            </div>
+            <div class="safety-grid">
+              <button class="safety-btn active">
+                <svg class="icon" width="26" height="26"><use href="#i-clipboard"/></svg>
+                <span>안전점검 시작</span>
+              </button>
+              <button class="safety-btn active">
+                <svg class="icon" width="26" height="26"><use href="#i-camera"/></svg>
+                <span>위험성 발굴</span>
+              </button>
+            </div>
+          </div>
+
+          <div class="card">
+            <div class="head-row tight">
+              <p class="card-title">TBM 참석</p>
+              <button class="head-chev" aria-label="자세히 보기">
+                <svg class="icon" width="18" height="18"><use href="#i-chev"/></svg>
+              </button>
+            </div>
+            <p class="tbm-meta">10:00 · 1구역 회의실 · 안전팀 박과장</p>
+            <div class="tbm-callout warn">
+              <svg class="icon" width="16" height="16"><use href="#i-clock"/></svg>
+              <span>늦지 않게 참석해 주세요</span>
+            </div>
+            <button class="tbm-btn active">
+              <svg class="icon" width="18" height="18"><use href="#i-usercheck"/></svg>
+              참석하기
+            </button>
+          </div>
+
+          <div class="card notice-card">
+            <div class="notice-head">
+              <div class="notice-head-left">
+                <p class="card-title">공지사항</p>
+                <span class="notice-count">2</span>
+              </div>
+              <button class="head-chev" aria-label="전체보기"><svg class="icon" width="18" height="18"><use href="#i-chev"/></svg></button>
+            </div>
+            <div class="notice-row">
+              <span class="imp">중요</span>
+              <span class="title">5월 24일(토) 정기 안전교육 안내</span>
+              <span class="meta">3시간 전</span>
+              <span class="unread-dot"></span>
+            </div>
+            <div class="notice-row">
+              <span class="title">하계 휴가 신청 안내 (~ 6/15)</span>
+              <span class="meta">어제</span>
+              <span class="unread-dot"></span>
+            </div>
+            <div class="notice-row">
+              <span class="title read">사내 식당 메뉴 변경 안내</span>
+              <span class="meta">5/18</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="tabbar">
+          <button class="tab active">
+            <svg class="icon" width="24" height="24"><use href="#i-home"/></svg>
+            <span class="lbl">홈</span>
+          </button>
+          <button class="tab">
+            <svg class="icon" width="24" height="24"><use href="#i-cal"/></svg>
+            <span class="lbl">근태</span>
+          </button>
+          <button class="tab">
+            <svg class="icon" width="24" height="24"><use href="#i-shield"/></svg>
+            <span class="lbl">안전</span>
+          </button>
+          <button class="tab">
+            <span class="tab-badge-wrap">
+              <svg class="icon" width="24" height="24"><use href="#i-monitor"/></svg>
+              <span class="tab-badge">1</span>
+            </span>
+            <span class="lbl">TBM</span>
+          </button>
+          <button class="tab">
+            <svg class="icon" width="24" height="24"><use href="#i-user"/></svg>
+            <span class="lbl">마이</span>
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- ==================== 케이스 3: 사업장 외 + TBM 참석 완료 ==================== -->
+    <div class="case">
+      <p class="case-label"><span class="num">3</span>근무중 · 사업장 외 · TBM 참석 완료</p>
+      <div class="phone">
+
+        <div class="statusbar">
+          <span class="time">14:22</span>
+          <div class="sb-icons">
+            <svg class="icon" width="16" height="16"><use href="#i-signal"/></svg>
+            <svg class="icon" width="16" height="16"><use href="#i-wifi"/></svg>
+            <svg class="icon" width="18" height="18"><use href="#i-battery"/></svg>
+          </div>
+        </div>
+
+        <div class="header">
+          <div class="site">
+            <svg class="icon" width="18" height="18" style="color: var(--color-primary);"><use href="#i-mappin"/></svg>
+            <span class="name">중곡사업장</span>
+            <span class="tag">소속</span>
+          </div>
+          <div class="h-actions">
+            <button class="h-bell" aria-label="알림 3건">
+              <svg class="icon" width="22" height="22"><use href="#i-bell"/></svg>
+              <span class="count">3</span>
+            </button>
+            <button class="avatar">김민</button>
+          </div>
+        </div>
+
+        <div class="main">
+          <div class="greeting">
+            <p class="date">2026년 5월 20일 (수)</p>
+            <p class="msg">오늘도 좋은 하루 되세요</p>
+          </div>
+
+          <div class="card first">
+            <div class="att-head">
+              <span class="badge ok"><span class="dot"></span>근무중</span>
+              <span class="att-time">출근 09:28</span>
+            </div>
+            <div class="btn-grid">
+              <button class="btn disabled" disabled>출근하기</button>
+              <button class="btn primary">퇴근하기</button>
+            </div>
+            <div class="loc-meta warn">
+              <svg class="icon" width="14" height="14" style="color: var(--color-warning-text);"><use href="#i-mappinoff"/></svg>
+              <span>사업장 외</span>
+            </div>
+          </div>
+
+          <div class="card">
+            <div class="head-row">
+              <p class="card-title">근태 조회</p>
+              <button class="head-chev" aria-label="자세히 보기">
+                <svg class="icon" width="18" height="18"><use href="#i-chev"/></svg>
+              </button>
+            </div>
+            <div class="kpi-grid">
+              <div class="kpi">
+                <div class="kpi-top"><span class="kpi-lbl">잔여 연차</span><svg class="icon" width="14" height="14" style="color: var(--color-text-tertiary);"><use href="#i-chev"/></svg></div>
+                <div class="kpi-vals"><span class="kpi-num">12</span><span class="kpi-unit">/ 20일</span></div>
+              </div>
+              <div class="kpi">
+                <div class="kpi-top"><span class="kpi-lbl">승인 요청</span><svg class="icon" width="14" height="14" style="color: var(--color-text-tertiary);"><use href="#i-chev"/></svg></div>
+                <div class="kpi-vals"><span class="kpi-num warn">3</span><span class="kpi-unit">건 대기</span></div>
+              </div>
+            </div>
+          </div>
+
+          <div class="card">
+            <div class="head-row">
+              <p class="card-title">안전 활동</p>
+              <button class="head-chev" aria-label="자세히 보기">
+                <svg class="icon" width="18" height="18"><use href="#i-chev"/></svg>
+              </button>
+            </div>
+            <div class="safety-grid">
+              <button class="safety-btn active">
+                <svg class="icon" width="26" height="26"><use href="#i-clipboard"/></svg>
+                <span>안전점검 시작</span>
+              </button>
+              <button class="safety-btn active">
+                <svg class="icon" width="26" height="26"><use href="#i-camera"/></svg>
+                <span>위험성 발굴</span>
+              </button>
+            </div>
+          </div>
+
+          <div class="card">
+            <div class="head-row tight">
+              <p class="card-title">TBM 참석</p>
+              <button class="head-chev" aria-label="자세히 보기">
+                <svg class="icon" width="18" height="18"><use href="#i-chev"/></svg>
+              </button>
+            </div>
+            <p class="tbm-meta">10:00 · 1구역 회의실 · 안전팀 박과장</p>
+            <div class="tbm-callout success">
+              <svg class="icon" width="16" height="16"><use href="#i-circlecheck"/></svg>
+              <span>10:08 참석 완료</span>
+            </div>
+            <button class="tbm-btn disabled" disabled>
+              <svg class="icon" width="18" height="18"><use href="#i-usercheck"/></svg>
+              참석하기
+            </button>
+          </div>
+
+          <div class="card notice-card">
+            <div class="notice-head">
+              <div class="notice-head-left">
+                <p class="card-title">공지사항</p>
+                <span class="notice-count">2</span>
+              </div>
+              <button class="head-chev" aria-label="전체보기"><svg class="icon" width="18" height="18"><use href="#i-chev"/></svg></button>
+            </div>
+            <div class="notice-row">
+              <span class="imp">중요</span>
+              <span class="title">5월 24일(토) 정기 안전교육 안내</span>
+              <span class="meta">3시간 전</span>
+              <span class="unread-dot"></span>
+            </div>
+            <div class="notice-row">
+              <span class="title">하계 휴가 신청 안내 (~ 6/15)</span>
+              <span class="meta">어제</span>
+              <span class="unread-dot"></span>
+            </div>
+            <div class="notice-row">
+              <span class="title read">사내 식당 메뉴 변경 안내</span>
+              <span class="meta">5/18</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="tabbar">
+          <button class="tab active">
+            <svg class="icon" width="24" height="24"><use href="#i-home"/></svg>
+            <span class="lbl">홈</span>
+          </button>
+          <button class="tab">
+            <svg class="icon" width="24" height="24"><use href="#i-cal"/></svg>
+            <span class="lbl">근태</span>
+          </button>
+          <button class="tab">
+            <svg class="icon" width="24" height="24"><use href="#i-shield"/></svg>
+            <span class="lbl">안전</span>
+          </button>
+          <button class="tab">
+            <svg class="icon" width="24" height="24"><use href="#i-monitor"/></svg>
+            <span class="lbl">TBM</span>
+          </button>
+          <button class="tab">
+            <svg class="icon" width="24" height="24"><use href="#i-user"/></svg>
+            <span class="lbl">마이</span>
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- ==================== 케이스 4: TBM 없는 날 ==================== -->
+    <div class="case">
+      <p class="case-label"><span class="num">4</span>근무중 · TBM 없는 날</p>
+      <div class="phone">
+
+        <div class="statusbar">
+          <span class="time">9:41</span>
+          <div class="sb-icons">
+            <svg class="icon" width="16" height="16"><use href="#i-signal"/></svg>
+            <svg class="icon" width="16" height="16"><use href="#i-wifi"/></svg>
+            <svg class="icon" width="18" height="18"><use href="#i-battery"/></svg>
+          </div>
+        </div>
+
+        <div class="header">
+          <div class="site">
+            <svg class="icon" width="18" height="18" style="color: var(--color-primary);"><use href="#i-mappin"/></svg>
+            <span class="name">중곡사업장</span>
+            <span class="tag">소속</span>
+          </div>
+          <div class="h-actions">
+            <button class="h-bell" aria-label="알림 2건">
+              <svg class="icon" width="22" height="22"><use href="#i-bell"/></svg>
+              <span class="count">2</span>
+            </button>
+            <button class="avatar">김민</button>
+          </div>
+        </div>
+
+        <div class="main">
+          <div class="greeting">
+            <p class="date">2026년 5월 21일 (목)</p>
+            <p class="msg">오늘도 좋은 하루 되세요</p>
+          </div>
+
+          <div class="card first">
+            <div class="att-head">
+              <span class="badge ok"><span class="dot"></span>근무중</span>
+              <span class="att-time">출근 09:30</span>
+            </div>
+            <div class="btn-grid">
+              <button class="btn disabled" disabled>출근하기</button>
+              <button class="btn primary">퇴근하기</button>
+            </div>
+            <div class="loc-meta neutral">
+              <svg class="icon" width="14" height="14" style="color: var(--color-primary);"><use href="#i-mappin"/></svg>
+              <span>중곡사업장</span>
+            </div>
+          </div>
+
+          <div class="card">
+            <div class="head-row">
+              <p class="card-title">근태 조회</p>
+              <button class="head-chev" aria-label="자세히 보기">
+                <svg class="icon" width="18" height="18"><use href="#i-chev"/></svg>
+              </button>
+            </div>
+            <div class="kpi-grid">
+              <div class="kpi">
+                <div class="kpi-top"><span class="kpi-lbl">잔여 연차</span><svg class="icon" width="14" height="14" style="color: var(--color-text-tertiary);"><use href="#i-chev"/></svg></div>
+                <div class="kpi-vals"><span class="kpi-num">12</span><span class="kpi-unit">/ 20일</span></div>
+              </div>
+              <div class="kpi">
+                <div class="kpi-top"><span class="kpi-lbl">승인 요청</span><svg class="icon" width="14" height="14" style="color: var(--color-text-tertiary);"><use href="#i-chev"/></svg></div>
+                <div class="kpi-vals"><span class="kpi-num warn">3</span><span class="kpi-unit">건 대기</span></div>
+              </div>
+            </div>
+          </div>
+
+          <div class="card">
+            <div class="head-row">
+              <p class="card-title">안전 활동</p>
+              <button class="head-chev" aria-label="자세히 보기">
+                <svg class="icon" width="18" height="18"><use href="#i-chev"/></svg>
+              </button>
+            </div>
+            <div class="safety-grid">
+              <button class="safety-btn active">
+                <svg class="icon" width="26" height="26"><use href="#i-clipboard"/></svg>
+                <span>안전점검 시작</span>
+              </button>
+              <button class="safety-btn active">
+                <svg class="icon" width="26" height="26"><use href="#i-camera"/></svg>
+                <span>위험성 발굴</span>
+              </button>
+            </div>
+          </div>
+
+          <div class="card">
+            <div class="head-row tight">
+              <p class="card-title">TBM 참석</p>
+              <button class="head-chev" aria-label="자세히 보기">
+                <svg class="icon" width="18" height="18"><use href="#i-chev"/></svg>
+              </button>
+            </div>
+            <p class="tbm-meta muted">예정된 TBM이 없습니다</p>
+            <div class="tbm-callout neutral">
+              <svg class="icon" width="16" height="16"><use href="#i-caloff"/></svg>
+              <span>오늘은 TBM 일정이 없어요</span>
+            </div>
+            <button class="tbm-btn disabled" disabled>
+              <svg class="icon" width="18" height="18"><use href="#i-usercheck"/></svg>
+              참석하기
+            </button>
+          </div>
+
+          <div class="card notice-card">
+            <div class="notice-head">
+              <div class="notice-head-left">
+                <p class="card-title">공지사항</p>
+                <span class="notice-count">1</span>
+              </div>
+              <button class="head-chev" aria-label="전체보기"><svg class="icon" width="18" height="18"><use href="#i-chev"/></svg></button>
+            </div>
+            <div class="notice-row">
+              <span class="imp">중요</span>
+              <span class="title">5월 24일(토) 정기 안전교육 안내</span>
+              <span class="meta">3시간 전</span>
+              <span class="unread-dot"></span>
+            </div>
+            <div class="notice-row">
+              <span class="title">하계 휴가 신청 안내 (~ 6/15)</span>
+              <span class="meta">어제</span>
+            </div>
+            <div class="notice-row">
+              <span class="title read">사내 식당 메뉴 변경 안내</span>
+              <span class="meta">5/18</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="tabbar">
+          <button class="tab active">
+            <svg class="icon" width="24" height="24"><use href="#i-home"/></svg>
+            <span class="lbl">홈</span>
+          </button>
+          <button class="tab">
+            <svg class="icon" width="24" height="24"><use href="#i-cal"/></svg>
+            <span class="lbl">근태</span>
+          </button>
+          <button class="tab">
+            <svg class="icon" width="24" height="24"><use href="#i-shield"/></svg>
+            <span class="lbl">안전</span>
+          </button>
+          <button class="tab">
+            <svg class="icon" width="24" height="24"><use href="#i-monitor"/></svg>
+            <span class="lbl">TBM</span>
+          </button>
+          <button class="tab">
+            <svg class="icon" width="24" height="24"><use href="#i-user"/></svg>
+            <span class="lbl">마이</span>
+          </button>
+        </div>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+</body>
+</html>

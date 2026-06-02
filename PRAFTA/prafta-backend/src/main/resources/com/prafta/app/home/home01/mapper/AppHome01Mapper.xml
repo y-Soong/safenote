@@ -1,0 +1,220 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.prafta.app.home.home01.mapper.AppHome01Mapper">
+
+    <!-- DB 기준 오늘(YYYYMMDD). 4개 영역 공통 기준일. -->
+    <select id="selectTodayYmd" resultType="java.lang.String">
+    /* AppHome01Mapper.selectTodayYmd */
+    SELECT
+        DATE_FORMAT(NOW(), '%Y%m%d') AS todayYmd
+    </select>
+
+    <!-- 오늘 근태 1건. 미퇴근(진행중) 레코드를 우선, 그다음 가장 큰 WORK_SEQ. -->
+    <select id="selectTodayAttd"
+            parameterType="com.prafta.app.home.home01.application.query.HomeSummaryQuery"
+            resultType="com.prafta.app.home.home01.result.AttdMgmtResult">
+    /* AppHome01Mapper.selectTodayAttd */
+    SELECT
+          A.CHECK_IN_TIME       AS checkInTime
+        , A.CHECK_OUT_TIME      AS checkOutTime
+        , A.WORK_SEQ            AS workSeq
+    FROM TB_USER_ATTD_MGMT A
+    WHERE 1=1
+      AND A.CMPNY_CD = #{ param.cmpnyCd }
+      AND A.SITE_CD = #{ param.siteCd }
+      AND A.USER_CD = #{ param.userCd }
+      AND A.WORK_YMD = #{ param.todayYmd }
+      AND A.DEL_YN = 'N'
+    ORDER BY
+          (A.CHECK_OUT_TIME IS NULL) DESC
+        , A.WORK_SEQ DESC
+    LIMIT 1
+    </select>
+
+    <!--
+      오늘 가장 최근 출근 레코드(ATTD_ID)의 출근 GPS 행(GPS_INFO_TYPE='01') 존재 여부(외근 여부).
+      - 대상 ATTD_ID: selectTodayAttd 와 동일 우선순위(미퇴근 우선, 그다음 WORK_SEQ DESC) 1건.
+      - GPS 행은 지오펜스 밖(외근)일 때만 저장되므로(app-003 A0-2), 존재=외근.
+      - 결과 1=외근, 0=정상/오늘 출근 없음. 본인 스코프 + DEL_YN='N'.
+    -->
+    <select id="selectTodayCheckInOffsite"
+            parameterType="com.prafta.app.home.home01.application.query.HomeSummaryQuery"
+            resultType="int">
+    /* AppHome01Mapper.selectTodayCheckInOffsite */
+    SELECT
+        CASE WHEN EXISTS (
+            SELECT 1
+            FROM TB_USER_ATTD_GPS G
+            WHERE G.CMPNY_CD = #{ param.cmpnyCd }
+              AND G.ATTD_ID = (
+                    SELECT A.ATTD_ID
+                    FROM TB_USER_ATTD_MGMT A
+                    WHERE A.CMPNY_CD = #{ param.cmpnyCd }
+                      AND A.SITE_CD = #{ param.siteCd }
+                      AND A.USER_CD = #{ param.userCd }
+                      AND A.WORK_YMD = #{ param.todayYmd }
+                      AND A.DEL_YN = 'N'
+                    ORDER BY
+                          (A.CHECK_OUT_TIME IS NULL) DESC
+                        , A.WORK_SEQ DESC
+                    LIMIT 1
+              )
+              AND G.GPS_INFO_TYPE = '01'
+        ) THEN 1 ELSE 0 END AS isOffsite
+    </select>
+
+    <!-- 오늘 예정 스케줄: work_plan(WORK_PLAN_CD=SCH_CD) → sch_mgmt.
+         1·2구간 시각을 모두 조회한다(SEC_*가 채워져 있으면 2구간 스케줄).
+         LEAVE_CD(연차/휴무) 거나 매칭 스케줄 없으면 결과 없음. -->
+    <select id="selectTodaySchedule"
+            parameterType="com.prafta.app.home.home01.application.query.HomeSummaryQuery"
+            resultType="com.prafta.app.home.home01.result.ScheduleResult">
+    /* AppHome01Mapper.selectTodaySchedule */
+    SELECT
+          S.FST_SCH_STR_TIME    AS scheduleStart
+        , S.FST_SCH_END_TIME    AS scheduleEnd
+        , S.SEC_SCH_STR_TIME    AS secScheduleStart
+        , S.SEC_SCH_END_TIME    AS secScheduleEnd
+    FROM TB_USER_WORK_PLAN P
+         INNER JOIN TB_SCH_MGMT S
+         ON (
+                S.CMPNY_CD = P.CMPNY_CD
+            AND S.SITE_CD = P.SITE_CD
+            AND S.SCH_CD = P.WORK_PLAN_CD
+         )
+    WHERE 1=1
+      AND P.CMPNY_CD = #{ param.cmpnyCd }
+      AND P.SITE_CD = #{ param.siteCd }
+      AND P.USER_CD = #{ param.userCd }
+      AND P.WORK_YMD = #{ param.todayYmd }
+      AND S.USE_YN = 'Y'
+      AND S.APPLY_DATE &lt;= #{ param.todayYmd }
+    ORDER BY S.APPLY_DATE DESC
+    LIMIT 1
+    </select>
+
+    <!-- 오늘 근태 전체(구간별 WORK_SEQ 오름차순). 2구간 출퇴근 카드의 현재 구간 판정용.
+         1구간만 마친 뒤 2구간 출근 전 상태를 구분하려면 구간별 레코드가 모두 필요하다. -->
+    <select id="selectTodayAttdList"
+            parameterType="com.prafta.app.home.home01.application.query.HomeSummaryQuery"
+            resultType="com.prafta.app.home.home01.result.AttdMgmtResult">
+    /* AppHome01Mapper.selectTodayAttdList */
+    SELECT
+          A.CHECK_IN_TIME       AS checkInTime
+        , A.CHECK_OUT_TIME      AS checkOutTime
+        , A.WORK_SEQ            AS workSeq
+    FROM TB_USER_ATTD_MGMT A
+    WHERE 1=1
+      AND A.CMPNY_CD = #{ param.cmpnyCd }
+      AND A.SITE_CD = #{ param.siteCd }
+      AND A.USER_CD = #{ param.userCd }
+      AND A.WORK_YMD = #{ param.todayYmd }
+      AND A.DEL_YN = 'N'
+    ORDER BY A.WORK_SEQ ASC
+    </select>
+
+    <!--
+      prafta-app-013-1: 전일 스케줄 1건(FST/SEC 시작·종료시각). 오버나이트 기준일 판정용.
+      - 전일 WORK_YMD 의 work_plan(WORK_PLAN_CD=SCH_CD) → sch_mgmt INNER JOIN.
+      - WORK_PLAN_CD 가 null(휴무/미배정)이거나 매칭 스케줄 없으면 결과 없음 → null.
+      - selectTodaySchedule 과 동일하게 USE_YN='Y', APPLY_DATE<=전일, APPLY_DATE DESC 1건.
+    -->
+    <select id="selectScheduleEndForOvernight"
+            resultType="com.prafta.app.home.home01.result.OvernightScheduleResult">
+    /* AppHome01Mapper.selectScheduleEndForOvernight */
+    SELECT
+          S.FST_SCH_STR_TIME    AS fstSchStrTime
+        , S.FST_SCH_END_TIME    AS fstSchEndTime
+        , S.SEC_SCH_STR_TIME    AS secSchStrTime
+        , S.SEC_SCH_END_TIME    AS secSchEndTime
+    FROM TB_USER_WORK_PLAN P
+         INNER JOIN TB_SCH_MGMT S
+         ON (
+                S.CMPNY_CD = P.CMPNY_CD
+            AND S.SITE_CD = P.SITE_CD
+            AND S.SCH_CD = P.WORK_PLAN_CD
+         )
+    WHERE 1=1
+      AND P.CMPNY_CD = #{ param.cmpnyCd }
+      AND P.SITE_CD = #{ param.siteCd }
+      AND P.USER_CD = #{ param.userCd }
+      AND P.WORK_YMD = #{ prevYmd }
+      AND S.USE_YN = 'Y'
+      AND S.APPLY_DATE &lt;= #{ prevYmd }
+    ORDER BY S.APPLY_DATE DESC
+    LIMIT 1
+    </select>
+
+    <!-- 연차 요약 합산(법정+약정, ACTIVE & 미소멸). 부여 이력 없으면 SUM 이 null. -->
+    <select id="selectLeaveSummary"
+            parameterType="com.prafta.app.home.home01.application.query.HomeSummaryQuery"
+            resultType="com.prafta.app.home.home01.result.LeaveSummaryResult">
+    /* AppHome01Mapper.selectLeaveSummary */
+    SELECT
+          SUM(G.GRANT_DAYS)                       AS grantedDays
+        , SUM(G.GRANT_DAYS - G.USED_DAYS)         AS remainingDays
+    FROM TB_USER_LEAVE_GRANT G
+    WHERE 1=1
+      AND G.CMPNY_CD = #{ param.cmpnyCd }
+      AND G.USER_CD = #{ param.userCd }
+      AND G.STATUS = 'ACTIVE'
+      AND G.EXPIRE_YN = 'N'
+      AND G.DEL_YN = 'N'
+    </select>
+
+    <!-- 결재 대기(REQ_STATUS='01') 본인 건수. -->
+    <select id="selectPendingApprovalCount"
+            parameterType="com.prafta.app.home.home01.application.query.HomeSummaryQuery"
+            resultType="int">
+    /* AppHome01Mapper.selectPendingApprovalCount */
+    SELECT
+        COUNT(1) AS pendingCount
+    FROM TB_USER_ATTD_REQ R
+    WHERE 1=1
+      AND R.CMPNY_CD = #{ param.cmpnyCd }
+      AND R.SITE_CD = #{ param.siteCd }
+      AND R.USER_CD = #{ param.userCd }
+      AND R.REQ_STATUS = '01'
+      AND R.DEL_YN = 'N'
+    </select>
+
+    <!-- 오늘 TBM 세션(최신 1건, 본인 사업장) + 발표자명 + 본인 참석 상태. -->
+    <select id="selectTodayTbm"
+            parameterType="com.prafta.app.home.home01.application.query.HomeSummaryQuery"
+            resultType="com.prafta.app.home.home01.result.TbmStatusResult">
+    /* AppHome01Mapper.selectTodayTbm */
+    SELECT
+          S.SESSION_CD                              AS sessionCd
+        , S.STATUS_CD                               AS sessionStatus
+        , DATE_FORMAT(S.OPENED_AT, '%H%i')          AS openedTime
+        , S.TITLE                                   AS title
+        , M.USER_NM                                 AS presenterName
+        , DATE_FORMAT(ATT.ENTRY_AT, '%H%i')         AS myEntryTime
+        , CASE WHEN ATT.EXIT_AT IS NULL THEN 'N' ELSE 'Y' END AS exitExists
+        , ATT.COMPLETION_STATUS_CD                  AS completionStatusCd
+        , ATT.ATTENDANCE_CD                         AS attendanceCd
+    FROM TB_TBM_SESSION S
+         LEFT JOIN TB_USER M
+         ON (
+                M.CMPNY_CD = S.CMPNY_CD
+            AND M.USER_CD = S.MANAGER_USER_CD
+         )
+         LEFT JOIN TB_TBM_ATTENDANCE ATT
+         ON (
+                ATT.CMPNY_CD = S.CMPNY_CD
+            AND ATT.SESSION_CD = S.SESSION_CD
+            AND ATT.USER_TYPE_CD = 'REGULAR'
+            AND ATT.USER_CD = #{ param.userCd }
+            AND ATT.DEL_YN = 'N'
+         )
+    WHERE 1=1
+      AND S.CMPNY_CD = #{ param.cmpnyCd }
+      AND S.SITE_CD = #{ param.siteCd }
+      AND S.DEL_YN = 'N'
+      AND S.STATUS_CD IN ('OPENED', 'IN_PROGRESS', 'COMPLETED')
+      AND DATE_FORMAT(S.OPENED_AT, '%Y%m%d') = #{ param.todayYmd }
+    ORDER BY S.OPENED_AT DESC
+    LIMIT 1
+    </select>
+
+</mapper>

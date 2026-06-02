@@ -1,0 +1,134 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.prafta.app.leave.leave01.mapper.AppLeave01Mapper">
+
+    <!--
+      활성집합(전 쿼리 공통): STATUS='ACTIVE' AND EXPIRE_YN='N' AND DEL_YN='N' (home01 정합, decisions D-Q1/Q3).
+      그룹 구분: tb_user_leave_grant.GRANT_TYPE prefix (STATUTORY_% / MANUAL_%). TOTAL 은 prefix 무관 전체합.
+      LIKE 언더스코어는 '\' 이스케이프(웹 LeaveDashboardMapper 동일 규칙). 일수 컬럼 decimal(5,1).
+    -->
+
+    <!-- DB 기준 오늘(YYYYMMDD). 그룹/예정/소멸 공통 기준일. -->
+    <select id="selectTodayYmd" resultType="java.lang.String">
+    /* AppLeave01Mapper.selectTodayYmd */
+    SELECT
+        DATE_FORMAT(NOW(), '%Y%m%d') AS todayYmd
+    </select>
+
+    <!--
+      그룹별 집계(granted/usedTotal/planned). param.grantTypePrefix 로 그룹 분기.
+      - granted   = SUM(G.GRANT_DAYS)  (활성·그룹)
+      - usedTotal = SUM(G.USED_DAYS)   (활성·그룹) — 과거사용+미래예정 포함(내부값)
+      - planned   = SUM(LU.LEAVE_DAYS) (CONFIRMED, START_DATE>오늘, 동일 활성·그룹 부여에 GRANT_ID 조인)
+      used/remaining/usageRate 는 서비스에서 파생. prefix null 이면 LIKE 필터 생략(TOTAL).
+    -->
+    <select id="selectGroupAgg"
+            parameterType="com.prafta.app.leave.leave01.application.query.MyLeaveSummaryQuery"
+            resultType="com.prafta.app.leave.leave01.result.LeaveGroupAggResult">
+    /* AppLeave01Mapper.selectGroupAgg */
+    SELECT
+          (
+            SELECT SUM(G.GRANT_DAYS)
+              FROM TB_USER_LEAVE_GRANT G
+             WHERE G.CMPNY_CD = #{ param.cmpnyCd }
+               AND G.USER_CD = #{ param.userCd }
+               AND G.STATUS = 'ACTIVE'
+               AND G.EXPIRE_YN = 'N'
+               AND G.DEL_YN = 'N'
+            <if test="param.grantTypePrefix != null">
+               AND G.GRANT_TYPE LIKE #{ param.grantTypePrefix }
+            </if>
+          ) AS granted
+        , (
+            SELECT SUM(G.USED_DAYS)
+              FROM TB_USER_LEAVE_GRANT G
+             WHERE G.CMPNY_CD = #{ param.cmpnyCd }
+               AND G.USER_CD = #{ param.userCd }
+               AND G.STATUS = 'ACTIVE'
+               AND G.EXPIRE_YN = 'N'
+               AND G.DEL_YN = 'N'
+            <if test="param.grantTypePrefix != null">
+               AND G.GRANT_TYPE LIKE #{ param.grantTypePrefix }
+            </if>
+          ) AS usedTotal
+        , (
+            SELECT SUM(LU.LEAVE_DAYS)
+              FROM TB_USER_LEAVE_USE LU
+              JOIN TB_USER_LEAVE_GRANT G
+                ON G.CMPNY_CD = LU.CMPNY_CD
+               AND G.GRANT_ID = LU.GRANT_ID
+               AND G.STATUS = 'ACTIVE'
+               AND G.EXPIRE_YN = 'N'
+               AND G.DEL_YN = 'N'
+            <if test="param.grantTypePrefix != null">
+               AND G.GRANT_TYPE LIKE #{ param.grantTypePrefix }
+            </if>
+             WHERE LU.CMPNY_CD = #{ param.cmpnyCd }
+               AND LU.USER_CD = #{ param.userCd }
+               AND LU.LEAVE_STATUS = 'CONFIRMED'
+               AND LU.DEL_YN = 'N'
+               AND LU.START_DATE <![CDATA[ > ]]> #{ param.todayYmd }
+          ) AS planned
+    FROM DUAL
+    </select>
+
+    <!--
+      소멸 임박(D-30) 집계(그룹 무관, 활성집합 동일).
+      대상 = 활성 AND (GRANT_DAYS-USED_DAYS)>0 AND AVAIL_TO_DATE BETWEEN today AND today+30일.
+      - targetCount       = COUNT(*)                              (1건 이상 → exists)
+      - nearestExpiryYmd  = MIN(AVAIL_TO_DATE)
+      - daysUntilExpiry   = DATEDIFF(MIN(AVAIL_TO_DATE), today)    (YYYYMMDD → DATE 변환 후 일수차)
+      - totalRemainingDays= SUM(GRANT_DAYS - USED_DAYS)
+      today+30일 경계는 todayYmd(서버 1회 산출) 기준 DATE_ADD 로 산출(쿼리 간 자정 경계 일치).
+    -->
+    <select id="selectExpiringSoon"
+            parameterType="com.prafta.app.leave.leave01.application.query.MyLeaveSummaryQuery"
+            resultType="com.prafta.app.leave.leave01.result.LeaveExpiringResult">
+    /* AppLeave01Mapper.selectExpiringSoon */
+    SELECT
+          COUNT(*) AS targetCount
+        , MIN(G.AVAIL_TO_DATE) AS nearestExpiryYmd
+        , DATEDIFF(
+              STR_TO_DATE(MIN(G.AVAIL_TO_DATE), '%Y%m%d')
+            , STR_TO_DATE(#{ param.todayYmd }, '%Y%m%d')
+          ) AS daysUntilExpiry
+        , SUM(G.GRANT_DAYS - G.USED_DAYS) AS totalRemainingDays
+    FROM TB_USER_LEAVE_GRANT G
+    WHERE G.CMPNY_CD = #{ param.cmpnyCd }
+      AND G.USER_CD = #{ param.userCd }
+      AND G.STATUS = 'ACTIVE'
+      AND G.EXPIRE_YN = 'N'
+      AND G.DEL_YN = 'N'
+      AND (G.GRANT_DAYS - G.USED_DAYS) <![CDATA[ > ]]> 0
+      AND G.AVAIL_TO_DATE BETWEEN #{ param.todayYmd }
+                              AND DATE_FORMAT(
+                                      DATE_ADD(STR_TO_DATE(#{ param.todayYmd }, '%Y%m%d'), INTERVAL 30 DAY)
+                                    , '%Y%m%d'
+                                  )
+    </select>
+
+    <!--
+      사용자 메타(userNm/hireDate/serviceCreditMonths). 본인 자기조회 스코프(cmpnyCd+userCd).
+      serviceCreditMonths = SUM(CREDIT_MONTHS WHERE USE_YN='Y') (웹 LeaveDashboardMapper.selectCreditMonths 동일).
+      serviceMonths(실근속)는 서버 LocalDate 계산이므로 SELECT 하지 않는다.
+    -->
+    <select id="selectUser"
+            parameterType="com.prafta.app.leave.leave01.application.query.MyLeaveSummaryQuery"
+            resultType="com.prafta.app.leave.leave01.result.LeaveUserResult">
+    /* AppLeave01Mapper.selectUser */
+    SELECT
+          U.USER_NM   AS userNm
+        , U.HIRE_DATE AS hireDate
+        , IFNULL((
+              SELECT SUM(C.CREDIT_MONTHS)
+                FROM TB_USER_SERVICE_CREDIT C
+               WHERE C.CMPNY_CD = U.CMPNY_CD
+                 AND C.USER_CD = U.USER_CD
+                 AND C.USE_YN = 'Y'
+          ), 0) AS serviceCreditMonths
+    FROM TB_USER U
+    WHERE U.CMPNY_CD = #{ param.cmpnyCd }
+      AND U.USER_CD = #{ param.userCd }
+    </select>
+
+</mapper>

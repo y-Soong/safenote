@@ -1,0 +1,434 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.prafta.app.mypage.mypage01.mapper.AppMypage01Mapper">
+
+    <!-- ============================================================
+         프로필 (010-01 / 010-01b / 010-02)
+         PII(mblNo/email/birthDate)는 SELECT 자동 복호화 TypeHandler 로 평문 매핑.
+         ============================================================ -->
+
+    <resultMap id="UserProfileMap" type="com.prafta.app.mypage.mypage01.result.UserProfileResult">
+      <constructor>
+        <arg name="userId"         column="userId"         javaType="java.lang.String"/>
+        <arg name="userNm"         column="userNm"         javaType="java.lang.String"/>
+        <arg name="siteNm"         column="siteNm"         javaType="java.lang.String"/>
+        <arg name="nodeNm"         column="nodeNm"         javaType="java.lang.String"/>
+        <arg name="hireDate"       column="hireDate"       javaType="java.lang.String"/>
+        <arg name="mblNo"          column="mblNo"          javaType="java.lang.String"
+             typeHandler="com.prafta.common.security.crypto.mybatis.AesGcmDecryptTypeHandler"/>
+        <arg name="mblNoLast4"     column="mblNoLast4"     javaType="java.lang.String"/>
+        <arg name="email"          column="email"          javaType="java.lang.String"
+             typeHandler="com.prafta.common.security.crypto.mybatis.AesGcmDecryptTypeHandler"/>
+        <arg name="emailDomain"    column="emailDomain"    javaType="java.lang.String"/>
+        <arg name="birthDate"      column="birthDate"      javaType="java.lang.String"
+             typeHandler="com.prafta.common.security.crypto.mybatis.AesGcmDecryptTypeHandler"/>
+        <arg name="genderCode"     column="genderCode"     javaType="java.lang.String"/>
+        <arg name="genderNm"       column="genderNm"       javaType="java.lang.String"/>
+        <arg name="lastLoginDtime" column="lastLoginDtime" javaType="java.lang.String"/>
+      </constructor>
+    </resultMap>
+
+    <select id="selectMyProfile" resultMap="UserProfileMap">
+    /* AppMypage01Mapper.selectMyProfile */
+    SELECT
+          A.USER_ID                                                          AS userId
+        , A.USER_NM                                                          AS userNm
+        , C.SITE_NM                                                          AS siteNm
+        , FNC_CMM_INFO_SRCH(A.CMPNY_CD, 'NODE', A.SITE_CD, A.NODE_CD)         AS nodeNm
+        , A.HIRE_DATE                                                        AS hireDate
+        , A.MBL_NO_ENC                                                       AS mblNo
+        , A.MBL_NO_LAST4                                                     AS mblNoLast4
+        , A.EMAIL_ENC                                                        AS email
+        , A.EMAIL_DOMAIN                                                     AS emailDomain
+        , A.BIRTH_DT_ENC                                                     AS birthDate
+        , A.GENDER                                                          AS genderCode
+        , FNC_CMM_INFO_SRCH(A.CMPNY_CD, 'SYST_VAL', A.GENDER, 'SYS004')       AS genderNm
+        , DATE_FORMAT(A.LAST_LOGIN_DTIME, '%Y-%m-%dT%H:%i:%s')                AS lastLoginDtime
+      FROM TB_USER A
+      LEFT JOIN TB_SITE C
+        ON  A.CMPNY_CD = C.CMPNY_CD
+        AND A.SITE_CD  = C.SITE_CD
+     WHERE A.CMPNY_CD = #{cmpnyCd}
+       AND A.USER_CD  = #{userCd}
+    </select>
+
+    <select id="countMyPresets" resultType="int">
+    /* AppMypage01Mapper.countMyPresets */
+    SELECT COUNT(*)
+      FROM TB_APRV_LINE_PRESET P
+     WHERE P.CMPNY_CD = #{cmpnyCd}
+       AND P.USER_CD  = #{userCd}
+       AND P.USE_YN   = 'Y'
+    </select>
+
+    <select id="countOtherUserByMblHmac" resultType="int">
+    /* AppMypage01Mapper.countOtherUserByMblHmac */
+    SELECT COUNT(*)
+      FROM TB_USER A
+     WHERE A.CMPNY_CD    = #{cmpnyCd}
+       AND A.MBL_NO_HMAC = #{mblNoHmac}
+       AND A.USER_CD    != #{userCd}
+    </select>
+
+    <update id="updateProfileBasic">
+    /* AppMypage01Mapper.updateProfileBasic */
+    UPDATE TB_USER
+       SET USER_NM     = #{userNm}
+         , GENDER      = #{genderCode}
+         <if test="setBirth == true">
+         , BIRTH_DT_ENC = #{birthEnc}
+         </if>
+         <if test="setEmail == true">
+         , EMAIL_ENC    = #{emailEnc}
+         , EMAIL_HMAC   = #{emailHmac}
+         , EMAIL_DOMAIN = #{emailDomain}
+         </if>
+         , UPDATE_NO   = #{updateNo}
+         , UPDATE_DATE = NOW()
+     WHERE CMPNY_CD = #{cmpnyCd}
+       AND USER_CD  = #{userCd}
+    </update>
+
+    <update id="updateProfileMobile">
+    /* AppMypage01Mapper.updateProfileMobile */
+    UPDATE TB_USER
+       SET MBL_NO_ENC   = #{mblNoEnc}
+         , MBL_NO_HMAC  = #{mblNoHmac}
+         , MBL_NO_LAST4 = #{mblNoLast4}
+         , UPDATE_NO    = #{updateNo}
+         , UPDATE_DATE  = NOW()
+     WHERE CMPNY_CD = #{cmpnyCd}
+       AND USER_CD  = #{userCd}
+    </update>
+
+    <!-- ============================================================
+         휴대폰 변경 인증 (010-03, tb_sms_auth_code 재사용)
+         ============================================================ -->
+
+    <insert id="insertSmsAuthCode">
+    /* AppMypage01Mapper.insertSmsAuthCode */
+    INSERT INTO TB_SMS_AUTH_CODE (
+          MBL_NO_ENC
+        , MBL_NO_HMAC
+        , AUTH_CD
+        , EXPIRED_AT
+    ) VALUES (
+          #{mblNoEnc}
+        , #{mblNoHmac}
+        , #{authCode}
+        , DATE_ADD(NOW(), INTERVAL 3 MINUTE)
+    )
+    </insert>
+
+    <select id="selectValidSmsId" resultType="java.lang.Long">
+    /* AppMypage01Mapper.selectValidSmsId */
+    SELECT SMS_ID
+      FROM TB_SMS_AUTH_CODE
+     WHERE MBL_NO_HMAC = #{mblNoHmac}
+       AND AUTH_CD     = #{authCode}
+       AND EXPIRED_AT <![CDATA[ >= ]]> NOW()
+       AND VERIFIED_YN = 'N'
+     ORDER BY SMS_ID DESC
+     LIMIT 1
+    </select>
+
+    <select id="countUnverifiedByMblHmac" resultType="int">
+    /* AppMypage01Mapper.countUnverifiedByMblHmac */
+    SELECT COUNT(*)
+      FROM TB_SMS_AUTH_CODE
+     WHERE MBL_NO_HMAC = #{mblNoHmac}
+       AND EXPIRED_AT <![CDATA[ >= ]]> NOW()
+       AND VERIFIED_YN = 'N'
+    </select>
+
+    <update id="markSmsVerified">
+    /* AppMypage01Mapper.markSmsVerified */
+    UPDATE TB_SMS_AUTH_CODE
+       SET VERIFIED_YN = 'Y'
+         , UPDATE_NO   = 'SYSTEM'
+         , UPDATE_DATE = NOW()
+     WHERE SMS_ID      = #{smsId}
+       AND MBL_NO_HMAC = #{mblNoHmac}
+       AND AUTH_CD     = #{authCode}
+       AND EXPIRED_AT <![CDATA[ >= ]]> NOW()
+       AND VERIFIED_YN = 'N'
+    </update>
+
+    <select id="selectRecentVerifiedSmsId" resultType="java.lang.Long">
+    /* AppMypage01Mapper.selectRecentVerifiedSmsId */
+    SELECT SMS_ID
+      FROM TB_SMS_AUTH_CODE
+     WHERE MBL_NO_HMAC = #{mblNoHmac}
+       AND VERIFIED_YN = 'Y'
+       AND UPDATE_DATE <![CDATA[ >= ]]> DATE_SUB(NOW(), INTERVAL 5 MINUTE)
+     ORDER BY UPDATE_DATE DESC
+     LIMIT 1
+    </select>
+
+    <update id="consumeSmsAuth">
+    /* AppMypage01Mapper.consumeSmsAuth */
+    UPDATE TB_SMS_AUTH_CODE
+       SET VERIFIED_YN = 'C'
+         , UPDATE_NO   = 'SYSTEM'
+         , UPDATE_DATE = NOW()
+     WHERE SMS_ID      = #{smsId}
+       AND VERIFIED_YN = 'Y'
+    </update>
+
+    <!-- ============================================================
+         비밀번호 변경 (010-04)
+         ============================================================ -->
+
+    <select id="selectUserPw" resultType="string">
+    /* AppMypage01Mapper.selectUserPw */
+    SELECT A.USER_PW
+      FROM TB_USER A
+     WHERE A.CMPNY_CD = #{cmpnyCd}
+       AND A.USER_CD  = #{userCd}
+    </select>
+
+    <update id="updateUserPw">
+    /* AppMypage01Mapper.updateUserPw */
+    UPDATE TB_USER
+       SET USER_PW       = #{userPw}
+         , PWD_CHG_DTIME = NOW()
+         , UPDATE_NO     = #{userCd}
+         , UPDATE_DATE   = NOW()
+     WHERE CMPNY_CD = #{cmpnyCd}
+       AND USER_CD  = #{userCd}
+    </update>
+
+    <!-- ============================================================
+         결재선 프리셋 CRUD (010-05) — D2 앱 전용 신규 (user04 SQL 참고)
+         ============================================================ -->
+
+    <select id="selectPresetMasters" resultType="com.prafta.app.mypage.mypage01.result.PresetMasterResult">
+    /* AppMypage01Mapper.selectPresetMasters */
+    SELECT
+          P.PRESET_ID   AS presetId
+        , P.PRESET_NM   AS presetNm
+        , P.DEFAULT_YN  AS defaultYn
+      FROM TB_APRV_LINE_PRESET P
+     WHERE P.CMPNY_CD = #{cmpnyCd}
+       AND P.USER_CD  = #{userCd}
+       AND P.USE_YN   = 'Y'
+     ORDER BY (P.DEFAULT_YN = 'Y') DESC, P.PRESET_NM ASC, P.PRESET_ID ASC
+    </select>
+
+    <select id="selectPresetStepsByUser" resultType="com.prafta.app.mypage.mypage01.result.PresetStepResult">
+    /* AppMypage01Mapper.selectPresetStepsByUser */
+    SELECT
+          D.PRESET_ID         AS presetId
+        , D.STEP_NO           AS stepNo
+        , D.APPROVER_USER_CD  AS approverUserCd
+        , U.USER_NM           AS userNm
+        , U.USER_ID           AS userId
+        , FNC_CMM_INFO_SRCH(U.CMPNY_CD, 'BAIM_VAL', U.RANK_CD, 'COM007')      AS rankNm
+        , FNC_CMM_INFO_SRCH(U.CMPNY_CD, 'NODE', U.SITE_CD, U.NODE_CD)         AS nodeNm
+      FROM TB_APRV_LINE_PRESET P
+      INNER JOIN TB_APRV_LINE_PRESET_D D
+        ON  D.CMPNY_CD  = P.CMPNY_CD
+        AND D.PRESET_ID = P.PRESET_ID
+      LEFT JOIN TB_USER U
+        ON  U.CMPNY_CD = D.CMPNY_CD
+        AND U.USER_CD  = D.APPROVER_USER_CD
+     WHERE P.CMPNY_CD = #{cmpnyCd}
+       AND P.USER_CD  = #{userCd}
+       AND P.USE_YN   = 'Y'
+     ORDER BY D.PRESET_ID ASC, D.STEP_NO ASC
+    </select>
+
+    <select id="selectPresetById" resultType="com.prafta.app.mypage.mypage01.result.PresetMasterResult">
+    /* AppMypage01Mapper.selectPresetById */
+    SELECT
+          P.PRESET_ID   AS presetId
+        , P.PRESET_NM   AS presetNm
+        , P.DEFAULT_YN  AS defaultYn
+      FROM TB_APRV_LINE_PRESET P
+     WHERE P.CMPNY_CD  = #{cmpnyCd}
+       AND P.USER_CD   = #{userCd}
+       AND P.PRESET_ID = #{presetId}
+       AND P.USE_YN    = 'Y'
+     LIMIT 1
+    </select>
+
+    <select id="selectPresetStepsById" resultType="com.prafta.app.mypage.mypage01.result.PresetStepResult">
+    /* AppMypage01Mapper.selectPresetStepsById */
+    SELECT
+          D.PRESET_ID         AS presetId
+        , D.STEP_NO           AS stepNo
+        , D.APPROVER_USER_CD  AS approverUserCd
+        , U.USER_NM           AS userNm
+        , U.USER_ID           AS userId
+        , FNC_CMM_INFO_SRCH(U.CMPNY_CD, 'BAIM_VAL', U.RANK_CD, 'COM007')      AS rankNm
+        , FNC_CMM_INFO_SRCH(U.CMPNY_CD, 'NODE', U.SITE_CD, U.NODE_CD)         AS nodeNm
+      FROM TB_APRV_LINE_PRESET P
+      INNER JOIN TB_APRV_LINE_PRESET_D D
+        ON  D.CMPNY_CD  = P.CMPNY_CD
+        AND D.PRESET_ID = P.PRESET_ID
+      LEFT JOIN TB_USER U
+        ON  U.CMPNY_CD = D.CMPNY_CD
+        AND U.USER_CD  = D.APPROVER_USER_CD
+     WHERE P.CMPNY_CD  = #{cmpnyCd}
+       AND P.USER_CD   = #{userCd}
+       AND P.PRESET_ID = #{presetId}
+       AND P.USE_YN    = 'Y'
+     ORDER BY D.STEP_NO ASC
+    </select>
+
+    <select id="selectPresetOwner" resultType="string">
+    /* AppMypage01Mapper.selectPresetOwner */
+    SELECT P.USER_CD
+      FROM TB_APRV_LINE_PRESET P
+     WHERE P.CMPNY_CD  = #{cmpnyCd}
+       AND P.PRESET_ID = #{presetId}
+       AND P.USE_YN    = 'Y'
+     LIMIT 1
+    </select>
+
+    <select id="countPresetNameDup" resultType="int">
+    /* AppMypage01Mapper.countPresetNameDup */
+    SELECT COUNT(*)
+      FROM TB_APRV_LINE_PRESET P
+     WHERE P.CMPNY_CD = #{cmpnyCd}
+       AND P.USER_CD  = #{userCd}
+       AND P.PRESET_NM = #{presetNm}
+       AND P.USE_YN   = 'Y'
+     <if test="excludePresetId != null and excludePresetId != ''">
+       AND P.PRESET_ID != #{excludePresetId}
+     </if>
+    </select>
+
+    <select id="selectNextPresetId" resultType="string">
+    /* AppMypage01Mapper.selectNextPresetId */
+    SELECT CONCAT('P', DATE_FORMAT(NOW(), '%Y%m%d'), FNC_CMM_SEQ_NEXTVAL(#{cmpnyCd}, 'APRV_PRESET_ID'))
+      FROM DUAL
+    </select>
+
+    <select id="countActiveCandidate" resultType="int">
+    /* AppMypage01Mapper.countActiveCandidate */
+    SELECT COUNT(*)
+      FROM TB_USER U
+     WHERE U.CMPNY_CD = #{cmpnyCd}
+       AND U.SITE_CD  = #{siteCd}
+       AND U.USER_CD  = #{userCd}
+       AND U.USE_YN   = 'Y'
+       AND U.WITHDRAWAL_DATE IS NULL
+       AND U.ACCOUNT_STATUS  = '01'
+       AND U.AUTH_CD != 'system'
+    </select>
+
+    <insert id="insertPresetMaster">
+    /* AppMypage01Mapper.insertPresetMaster */
+    INSERT INTO TB_APRV_LINE_PRESET (
+          CMPNY_CD, PRESET_ID, USER_CD, PRESET_NM, DEFAULT_YN, USE_YN, INSERT_NO, INSERT_DATE
+    ) VALUES (
+          #{cmpnyCd}, #{presetId}, #{userCd}, #{presetNm}, #{defaultYn}, 'Y', #{insertNo}, NOW()
+    )
+    </insert>
+
+    <update id="updatePresetMaster">
+    /* AppMypage01Mapper.updatePresetMaster */
+    UPDATE TB_APRV_LINE_PRESET
+       SET PRESET_NM   = #{presetNm}
+         , DEFAULT_YN  = #{defaultYn}
+         , UPDATE_NO   = #{updateNo}
+         , UPDATE_DATE = NOW()
+     WHERE CMPNY_CD  = #{cmpnyCd}
+       AND PRESET_ID = #{presetId}
+    </update>
+
+    <insert id="insertPresetStep">
+    /* AppMypage01Mapper.insertPresetStep */
+    INSERT INTO TB_APRV_LINE_PRESET_D (
+          CMPNY_CD, PRESET_ID, STEP_NO, APPROVER_USER_CD, INSERT_NO, INSERT_DATE
+    ) VALUES (
+          #{cmpnyCd}, #{presetId}, #{stepNo}, #{approverUserCd}, #{insertNo}, NOW()
+    )
+    </insert>
+
+    <delete id="deletePresetSteps">
+    /* AppMypage01Mapper.deletePresetSteps */
+    DELETE FROM TB_APRV_LINE_PRESET_D
+     WHERE CMPNY_CD  = #{cmpnyCd}
+       AND PRESET_ID = #{presetId}
+    </delete>
+
+    <delete id="deletePresetMaster">
+    /* AppMypage01Mapper.deletePresetMaster */
+    DELETE FROM TB_APRV_LINE_PRESET
+     WHERE CMPNY_CD  = #{cmpnyCd}
+       AND PRESET_ID = #{presetId}
+    </delete>
+
+    <update id="clearDefaultForUser">
+    /* AppMypage01Mapper.clearDefaultForUser */
+    UPDATE TB_APRV_LINE_PRESET
+       SET DEFAULT_YN = 'N'
+     WHERE CMPNY_CD = #{cmpnyCd}
+       AND USER_CD  = #{userCd}
+       AND DEFAULT_YN = 'Y'
+    </update>
+
+    <update id="setDefault">
+    /* AppMypage01Mapper.setDefault */
+    UPDATE TB_APRV_LINE_PRESET
+       SET DEFAULT_YN  = 'Y'
+         , UPDATE_NO   = #{updateNo}
+         , UPDATE_DATE = NOW()
+     WHERE CMPNY_CD  = #{cmpnyCd}
+       AND PRESET_ID = #{presetId}
+    </update>
+
+    <!-- ============================================================
+         결재자 후보 (010-05) — 동일 회사/사업장 활성 사용자(본인·system 제외)
+         직급(COM007) SORT_IDX 정렬. user04 SQL 참고.
+         ============================================================ -->
+
+    <select id="selectApprovalCandidates" resultType="com.prafta.app.mypage.mypage01.result.ApprovalCandidateResult">
+    /* AppMypage01Mapper.selectApprovalCandidates */
+    SELECT
+          U.USER_CD                                                          AS userCd
+        , U.USER_ID                                                          AS userId
+        , U.USER_NM                                                          AS userNm
+        , U.RANK_CD                                                          AS rankCd
+        , FNC_CMM_INFO_SRCH(U.CMPNY_CD, 'BAIM_VAL', U.RANK_CD, 'COM007')      AS rankNm
+        , D.SORT_IDX                                                         AS rankSortIdx
+        , FNC_CMM_INFO_SRCH(U.CMPNY_CD, 'NODE', U.SITE_CD, U.NODE_CD)         AS nodeNm
+      FROM TB_USER U
+      LEFT JOIN TB_BAIM_VAL_D D
+        ON  D.CMPNY_CD     = U.CMPNY_CD
+        AND D.BAIM_VAL_CD  = 'COM007'
+        AND D.BAIM_VAL_D_CD = U.RANK_CD
+        AND D.USE_YN       = 'Y'
+     WHERE U.CMPNY_CD = #{cmpnyCd}
+       AND U.SITE_CD  = #{siteCd}
+       AND U.USE_YN   = 'Y'
+       AND U.WITHDRAWAL_DATE IS NULL
+       AND U.ACCOUNT_STATUS  = '01'
+       AND U.USER_CD != #{excludeUserCd}
+       AND U.AUTH_CD != 'system'
+       <if test="nodeCd != null and nodeCd != ''">
+         AND U.NODE_CD = #{nodeCd}
+       </if>
+       <if test="userNm != null and userNm != ''">
+         AND U.USER_NM LIKE CONCAT('%', #{userNm}, '%')
+       </if>
+     ORDER BY (D.SORT_IDX IS NULL), D.SORT_IDX ASC, U.USER_NM ASC
+    </select>
+
+    <select id="selectUserRankSortIdx" resultType="java.lang.Integer">
+    /* AppMypage01Mapper.selectUserRankSortIdx */
+    SELECT D.SORT_IDX
+      FROM TB_USER U
+      LEFT JOIN TB_BAIM_VAL_D D
+        ON  D.CMPNY_CD     = U.CMPNY_CD
+        AND D.BAIM_VAL_CD  = 'COM007'
+        AND D.BAIM_VAL_D_CD = U.RANK_CD
+        AND D.USE_YN       = 'Y'
+     WHERE U.CMPNY_CD = #{cmpnyCd}
+       AND U.USER_CD  = #{userCd}
+     LIMIT 1
+    </select>
+
+</mapper>

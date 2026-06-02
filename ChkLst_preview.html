@@ -1,0 +1,162 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>ChkLst.vue Preview</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <style>
+    /* 모바일 폭 미리보기 프레임 (데스크탑에서 볼 때 모바일처럼 보이게) */
+    body {
+      background: #e5e7eb;
+      margin: 0;
+      min-height: 100vh;
+      display: flex;
+      justify-content: center;
+      align-items: flex-start;
+      padding: 24px 0;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
+        "Helvetica Neue", Arial, sans-serif;
+    }
+    .device {
+      width: 390px;
+      min-height: 844px;
+      background: #ffffff;
+      box-shadow: 0 10px 30px rgba(0, 0, 0, 0.15);
+      border-radius: 28px;
+      overflow: hidden;
+      position: relative;
+    }
+    @media (max-width: 430px) {
+      body { padding: 0; background: #fff; }
+      .device { width: 100%; min-height: 100vh; box-shadow: none; border-radius: 0; }
+    }
+  </style>
+</head>
+<body>
+  <div class="device">
+    <!-- ===== Vue 템플릿과 동일한 구조 ===== -->
+    <div class="min-h-screen flex flex-col bg-white">
+      <!-- 상단 뒤로가기 -->
+      <div class="flex items-center p-4 mt-10">
+        <button class="mr-2 text-gray-600 hover:text-gray-900" aria-label="back">
+          <svg xmlns="http://www.w3.org/2000/svg" class="h-8 w-8" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7" />
+          </svg>
+        </button>
+      </div>
+
+      <!-- 점검 항목 1 : 양호 선택 -->
+      <div class="px-5 pb-2">
+        <div class="border border-gray-300 bg-gray-50 rounded-lg p-3 shadow-sm hover:shadow-md transition" style="background:#d5eee5">
+          <div class="flex justify-between items-center">
+            <span class="text-gray-800 font-semibold text-base sm:text-lg">
+              안전모 착용 상태
+            </span>
+            <div class="flex justify-end gap-4">
+              <label class="flex items-center gap-1 text-sm text-gray-700">
+                <input type="radio" name="chk_1" checked /> 양호
+              </label>
+              <label class="flex items-center gap-1 text-sm text-gray-700">
+                <input type="radio" name="chk_1" /> 불량
+              </label>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- 점검 항목 2 : 불량 선택 (사진 없음, 메모 빈 상태) -->
+      <div class="px-5 pb-2">
+        <div class="border border-gray-300 bg-gray-50 rounded-lg p-3 shadow-sm hover:shadow-md transition" style="background:#d5eee5">
+          <div class="flex justify-between items-center">
+            <span class="text-gray-800 font-semibold text-base sm:text-lg">
+              안전대 부착 설비 점검
+            </span>
+            <div class="flex justify-end gap-4">
+              <label class="flex items-center gap-1 text-sm text-gray-700">
+                <input type="radio" name="chk_2" /> 양호
+              </label>
+              <label class="flex items-center gap-1 text-sm text-gray-700">
+                <input type="radio" name="chk_2" checked /> 불량
+              </label>
+            </div>
+          </div>
+        </div>
+
+        <!-- 불량 추가영역 -->
+        <div class="shadow-sm mt-0">
+          <div class="flex justify-end gap-2 px-3 pt-1 pb-1">
+            <label class="rounded text-white text-sm px-3 py-1 cursor-pointer" style="background-color:#30796a">
+              사진첨부
+            </label>
+          </div>
+          <textarea
+            class="w-full p-3 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 border border-gray-300 bg-white rounded-lg"
+            rows="2"
+            placeholder="상세내용을 입력해주세요."
+          ></textarea>
+        </div>
+      </div>
+
+      <!-- 점검 항목 3 : 불량 선택 (사진 + 메모 입력됨) -->
+      <div class="px-5 pb-2">
+        <div class="border border-gray-300 bg-gray-50 rounded-lg p-3 shadow-sm hover:shadow-md transition" style="background:#d5eee5">
+          <div class="flex justify-between items-center">
+            <span class="text-gray-800 font-semibold text-base sm:text-lg">
+              작업발판 고정 상태
+            </span>
+            <div class="flex justify-end gap-4">
+              <label class="flex items-center gap-1 text-sm text-gray-700">
+                <input type="radio" name="chk_3" /> 양호
+              </label>
+              <label class="flex items-center gap-1 text-sm text-gray-700">
+                <input type="radio" name="chk_3" checked /> 불량
+              </label>
+            </div>
+          </div>
+        </div>
+
+        <!-- 불량 추가영역 -->
+        <div class="shadow-sm mt-0">
+          <div class="flex justify-end gap-2 px-3 pt-1 pb-1">
+            <label class="rounded text-white text-sm px-3 py-1 cursor-pointer" style="background-color:#30796a">
+              사진교체
+            </label>
+          </div>
+
+          <!-- 미리보기 (1장) -->
+          <div class="px-3 pb-2">
+            <div class="mt-2 grid grid-cols-3 sm:grid-cols-4 gap-2">
+              <div class="relative border rounded overflow-hidden">
+                <!-- 더미 이미지: SVG placeholder -->
+                <img
+                  src="data:image/svg+xml;utf8,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20viewBox%3D%220%200%20120%2090%22%3E%3Crect%20width%3D%22120%22%20height%3D%2290%22%20fill%3D%22%23c8d8d3%22%2F%3E%3Cpath%20d%3D%22M0%2070%20L30%2045%20L55%2060%20L80%2030%20L120%2070%20Z%22%20fill%3D%22%2330796a%22%2F%3E%3Ccircle%20cx%3D%2290%22%20cy%3D%2225%22%20r%3D%2210%22%20fill%3D%22%23f5d76e%22%2F%3E%3Ctext%20x%3D%2260%22%20y%3D%2284%22%20font-size%3D%2210%22%20fill%3D%22%23ffffff%22%20text-anchor%3D%22middle%22%20font-family%3D%22sans-serif%22%3Esample%20photo%3C%2Ftext%3E%3C%2Fsvg%3E"
+                  alt=""
+                  class="w-full h-24 object-cover"
+                />
+                <button class="absolute top-1 right-1 bg-black/60 text-white text-xs rounded px-1">
+                  삭제
+                </button>
+              </div>
+            </div>
+          </div>
+
+          <!-- 메모 입력됨 -->
+          <textarea
+            class="w-full p-3 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 border border-gray-300 bg-white rounded-lg"
+            rows="2"
+            placeholder="상세내용을 입력해주세요."
+          >발판 1개소가 결속선으로만 묶여 있어 즉시 클램프 보강 필요. 작업 일시 중지 후 보강 완료 예정.</textarea>
+        </div>
+      </div>
+
+      <!-- 저장 버튼 -->
+      <div class="p-6">
+        <button class="w-full bg-green-700 text-white py-3 rounded-md hover:bg-green-800 transition">
+          저장
+        </button>
+      </div>
+    </div>
+  </div>
+</body>
+</html>

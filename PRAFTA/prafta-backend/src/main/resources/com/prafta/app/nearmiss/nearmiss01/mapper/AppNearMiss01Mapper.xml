@@ -1,0 +1,369 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.prafta.app.nearmiss.nearmiss01.mapper.AppNearMiss01Mapper">
+
+    <!-- 사건 단건/목록 공통 SELECT 컬럼 (코드명/공정명/보고자명/파일경로 해석 포함, ADMIN_TEMP_ACTION_DESC 포함) -->
+    <sql id="incidentColumns">
+        A.CMPNY_CD                                                              AS cmpnyCd
+      , A.SITE_CD                                                               AS siteCd
+      , A.NEAR_MISS_ID                                                          AS nearMissId
+      , A.INCIDENT_TYPE_CD                                                      AS incidentTypeCd
+      , FNC_CMM_INFO_SRCH(A.CMPNY_CD, 'SYST_VAL', A.INCIDENT_TYPE_CD, 'SYS061') AS incidentTypeNm
+      , A.PROCESS_CD                                                            AS processCd
+      , C.BAIM_VAL_D_NM                                                         AS processNm
+      , DATE_FORMAT(A.OCCUR_DTIME, '%Y-%m-%d %H:%i')                            AS occurDtime
+      , A.LOCATION_DESC                                                         AS locationDesc
+      , A.DESCRIPTION                                                           AS description
+      , A.POTENTIAL_SEVERITY_CD                                                 AS potentialSeverityCd
+      , FNC_CMM_INFO_SRCH(A.CMPNY_CD, 'SYST_VAL', A.POTENTIAL_SEVERITY_CD, 'SYS062') AS potentialSeverityNm
+      , A.IMMEDIATE_ACTION_DESC                                                 AS immediateActionDesc
+      , A.ADMIN_TEMP_ACTION_DESC                                               AS adminTempActionDesc
+      , A.CAUSE_DESC                                                            AS causeDesc
+      , A.PREVENTION_DESC                                                       AS preventionDesc
+      , A.FILE_MGMT_CD                                                          AS fileMgmtCd
+      , FNC_CMM_INFO_SRCH(A.CMPNY_CD, 'FILE_NAME', A.FILE_MGMT_CD, NULL)        AS fileName
+      , FNC_CMM_INFO_SRCH(A.CMPNY_CD, 'FILE_PATH', A.FILE_MGMT_CD, NULL)        AS filePath
+      , A.REPORT_STATUS_CD                                                      AS reportStatusCd
+      , FNC_CMM_INFO_SRCH(A.CMPNY_CD, 'SYST_VAL', A.REPORT_STATUS_CD, 'SYS063') AS reportStatusNm
+      , A.REPORTER_ID                                                           AS reporterId
+      , FNC_CMM_INFO_SRCH(A.CMPNY_CD, 'USER_NM', A.REPORTER_ID, NULL)           AS reporterNm
+      , DATE_FORMAT(A.REPORT_DTIME, '%Y-%m-%d %H:%i')                           AS reportDtime
+      , A.REVIEWER_ID                                                           AS reviewerId
+      , FNC_CMM_INFO_SRCH(A.CMPNY_CD, 'USER_NM', A.REVIEWER_ID, NULL)           AS reviewerNm
+      , DATE_FORMAT(A.REVIEW_DTIME, '%Y-%m-%d %H:%i')                           AS reviewDtime
+      , A.REJECT_REASON                                                         AS rejectReason
+      , A.USE_YN                                                                AS useYn
+    </sql>
+
+    <!-- 사업장 접근 권한 확인 (tb_user_site_auth 매핑, USE_YN='Y'). 1 이상이면 접근 가능 -->
+    <select id="countUserSiteAuth" resultType="int">
+    /* AppNearMiss01Mapper.countUserSiteAuth */
+    SELECT
+        COUNT(1)
+    FROM TB_USER_SITE_AUTH A
+    WHERE A.CMPNY_CD = #{cmpnyCd}
+      AND A.USER_CD = #{userCd}
+      AND A.SITE_CD = #{siteCd}
+      AND A.USE_YN = 'Y'
+    </select>
+
+    <!-- A2 내 보고 목록 (REPORTER_ID 스코프, 상태 필터 선택) -->
+    <select id="selectMyReportList"
+            parameterType="com.prafta.app.nearmiss.nearmiss01.application.query.MyReportListQuery"
+            resultType="com.prafta.app.nearmiss.nearmiss01.result.IncidentResult">
+    /* AppNearMiss01Mapper.selectMyReportList */
+    SELECT
+        <include refid="incidentColumns" />
+    FROM TB_NEAR_MISS A
+         LEFT OUTER JOIN TB_BAIM_VAL_D C
+            ON (
+                A.CMPNY_CD = C.CMPNY_CD
+            AND C.BAIM_VAL_CD = 'COM002'
+            AND A.PROCESS_CD = C.BAIM_VAL_D_CD
+            AND C.USE_YN = 'Y'
+            )
+    WHERE A.CMPNY_CD = #{gvCmpnyCd}
+      AND A.REPORTER_ID = #{gvUserCd}
+      AND A.USE_YN = 'Y'
+      <if test="reportStatusCd != null and reportStatusCd != ''">
+        AND A.REPORT_STATUS_CD = #{reportStatusCd}
+      </if>
+    ORDER BY A.OCCUR_DTIME DESC, A.NEAR_MISS_ID DESC
+    </select>
+
+    <!-- A3 사업장 사건 목록 (사업장 스코프 + 상태/유형/잠재중대성/기간 필터) -->
+    <select id="selectSiteIncidentList"
+            parameterType="com.prafta.app.nearmiss.nearmiss01.application.query.SiteIncidentListQuery"
+            resultType="com.prafta.app.nearmiss.nearmiss01.result.IncidentResult">
+    /* AppNearMiss01Mapper.selectSiteIncidentList */
+    SELECT
+        <include refid="incidentColumns" />
+    FROM TB_NEAR_MISS A
+         LEFT OUTER JOIN TB_BAIM_VAL_D C
+            ON (
+                A.CMPNY_CD = C.CMPNY_CD
+            AND C.BAIM_VAL_CD = 'COM002'
+            AND A.PROCESS_CD = C.BAIM_VAL_D_CD
+            AND C.USE_YN = 'Y'
+            )
+    WHERE A.CMPNY_CD = #{gvCmpnyCd}
+      AND A.SITE_CD = #{siteCd}
+      AND A.USE_YN = 'Y'
+      <if test="reportStatusCd != null and reportStatusCd != ''">
+        AND A.REPORT_STATUS_CD = #{reportStatusCd}
+      </if>
+      <if test="incidentTypeCd != null and incidentTypeCd != ''">
+        AND A.INCIDENT_TYPE_CD = #{incidentTypeCd}
+      </if>
+      <if test="potentialSeverityCd != null and potentialSeverityCd != ''">
+        AND A.POTENTIAL_SEVERITY_CD = #{potentialSeverityCd}
+      </if>
+      <if test="startDate != null and startDate != ''">
+        AND A.OCCUR_DTIME &gt;= STR_TO_DATE(CONCAT(#{startDate}, ' 00:00:00'), '%Y-%m-%d %H:%i:%s')
+      </if>
+      <if test="endDate != null and endDate != ''">
+        AND A.OCCUR_DTIME &lt;= STR_TO_DATE(CONCAT(#{endDate}, ' 23:59:59'), '%Y-%m-%d %H:%i:%s')
+      </if>
+    ORDER BY A.REPORT_STATUS_CD, A.OCCUR_DTIME DESC, A.NEAR_MISS_ID DESC
+    </select>
+
+    <!-- A4 상태별 카운트 (필터 동반, 탭 배지: 접수/검토중/조치중/완료). 사업장 스코프 강제 -->
+    <select id="selectStatusCounts"
+            parameterType="com.prafta.app.nearmiss.nearmiss01.application.query.SiteIncidentListQuery"
+            resultType="com.prafta.app.nearmiss.nearmiss01.result.StatusCountResult">
+    /* AppNearMiss01Mapper.selectStatusCounts */
+    SELECT
+        COALESCE(SUM(CASE WHEN A.REPORT_STATUS_CD = '100' THEN 1 ELSE 0 END), 0) AS receivedCnt
+      , COALESCE(SUM(CASE WHEN A.REPORT_STATUS_CD = '200' THEN 1 ELSE 0 END), 0) AS reviewingCnt
+      , COALESCE(SUM(CASE WHEN A.REPORT_STATUS_CD = '300' THEN 1 ELSE 0 END), 0) AS actingCnt
+      , COALESCE(SUM(CASE WHEN A.REPORT_STATUS_CD = '400' THEN 1 ELSE 0 END), 0) AS completedCnt
+    FROM TB_NEAR_MISS A
+    WHERE A.CMPNY_CD = #{gvCmpnyCd}
+      AND A.SITE_CD = #{siteCd}
+      AND A.USE_YN = 'Y'
+      <if test="incidentTypeCd != null and incidentTypeCd != ''">
+        AND A.INCIDENT_TYPE_CD = #{incidentTypeCd}
+      </if>
+      <if test="potentialSeverityCd != null and potentialSeverityCd != ''">
+        AND A.POTENTIAL_SEVERITY_CD = #{potentialSeverityCd}
+      </if>
+      <if test="startDate != null and startDate != ''">
+        AND A.OCCUR_DTIME &gt;= STR_TO_DATE(CONCAT(#{startDate}, ' 00:00:00'), '%Y-%m-%d %H:%i:%s')
+      </if>
+      <if test="endDate != null and endDate != ''">
+        AND A.OCCUR_DTIME &lt;= STR_TO_DATE(CONCAT(#{endDate}, ' 23:59:59'), '%Y-%m-%d %H:%i:%s')
+      </if>
+    </select>
+
+    <!-- A5 사건 단건 상세 (사업장 스코프 강제) -->
+    <select id="selectIncidentInfo"
+            parameterType="com.prafta.app.nearmiss.nearmiss01.application.query.IncidentDetailQuery"
+            resultType="com.prafta.app.nearmiss.nearmiss01.result.IncidentResult">
+    /* AppNearMiss01Mapper.selectIncidentInfo */
+    SELECT
+        <include refid="incidentColumns" />
+    FROM TB_NEAR_MISS A
+         LEFT OUTER JOIN TB_BAIM_VAL_D C
+            ON (
+                A.CMPNY_CD = C.CMPNY_CD
+            AND C.BAIM_VAL_CD = 'COM002'
+            AND A.PROCESS_CD = C.BAIM_VAL_D_CD
+            AND C.USE_YN = 'Y'
+            )
+    WHERE A.CMPNY_CD = #{gvCmpnyCd}
+      AND A.SITE_CD = #{siteCd}
+      AND A.NEAR_MISS_ID = #{nearMissId}
+      AND A.USE_YN = 'Y'
+    </select>
+
+    <!-- 전이/접근 검증용: 현재 처리상태 + 보고자 단건 조회 (사업장 스코프, 없으면 null) -->
+    <select id="selectReportMeta"
+            parameterType="com.prafta.app.nearmiss.nearmiss01.application.query.IncidentDetailQuery"
+            resultType="com.prafta.app.nearmiss.nearmiss01.result.IncidentResult">
+    /* AppNearMiss01Mapper.selectReportMeta */
+    SELECT
+        A.CMPNY_CD          AS cmpnyCd
+      , A.SITE_CD           AS siteCd
+      , A.NEAR_MISS_ID      AS nearMissId
+      , A.REPORT_STATUS_CD  AS reportStatusCd
+      , A.REPORTER_ID       AS reporterId
+    FROM TB_NEAR_MISS A
+    WHERE A.CMPNY_CD = #{gvCmpnyCd}
+      AND A.SITE_CD = #{siteCd}
+      AND A.NEAR_MISS_ID = #{nearMissId}
+      AND A.USE_YN = 'Y'
+    </select>
+
+    <!-- A1 채번: NM + YYYYMMDD + 3자리 SEQ (사업장+당일 기준 MAX+1) -->
+    <select id="selectNextNearMissId"
+            parameterType="com.prafta.app.nearmiss.nearmiss01.application.query.NearMissIdSeqQuery"
+            resultType="java.lang.String">
+    /* AppNearMiss01Mapper.selectNextNearMissId */
+    SELECT
+        CONCAT(
+            'NM'
+          , DATE_FORMAT(NOW(), '%Y%m%d')
+          , LPAD(
+                IFNULL(
+                    MAX(CAST(SUBSTR(A.NEAR_MISS_ID, 11, 3) AS UNSIGNED))
+                  , 0
+                ) + 1
+              , 3, '0'
+            )
+        )
+    FROM TB_NEAR_MISS A
+    WHERE A.CMPNY_CD = #{gvCmpnyCd}
+      AND A.SITE_CD = #{siteCd}
+      AND A.NEAR_MISS_ID LIKE CONCAT('NM', DATE_FORMAT(NOW(), '%Y%m%d'), '%')
+    </select>
+
+    <!-- A1 보고 INSERT (REPORT_STATUS_CD='100' 접수, SRC_*=NULL 앱 직접보고) -->
+    <insert id="insertReport"
+            parameterType="com.prafta.app.nearmiss.nearmiss01.application.command.InsertReportCommand">
+    /* AppNearMiss01Mapper.insertReport */
+    INSERT INTO TB_NEAR_MISS
+    (
+        CMPNY_CD
+      , SITE_CD
+      , NEAR_MISS_ID
+      , INCIDENT_TYPE_CD
+      , PROCESS_CD
+      , OCCUR_DTIME
+      , LOCATION_DESC
+      , DESCRIPTION
+      , POTENTIAL_SEVERITY_CD
+      , IMMEDIATE_ACTION_DESC
+      , FILE_MGMT_CD
+      , REPORT_STATUS_CD
+      , REPORTER_ID
+      , REPORT_DTIME
+      , USE_YN
+      , INSERT_NO
+      , INSERT_DATE
+    )
+    VALUES
+    (
+        #{gvCmpnyCd}
+      , #{siteCd}
+      , #{nearMissId}
+      , #{incidentTypeCd}
+      , #{processCd}
+      , STR_TO_DATE(#{occurDtime}, '%Y-%m-%d %H:%i')
+      , #{locationDesc}
+      , #{description}
+      , #{potentialSeverityCd}
+      , #{immediateActionDesc}
+      , #{fileMgmtCd}
+      , '100'
+      , #{gvUserCd}
+      , NOW()
+      , 'Y'
+      , #{gvUserCd}
+      , NOW()
+    )
+    </insert>
+
+    <!-- A6 1차 확인 100->200 (검토중). 임시조치(ADMIN_TEMP_ACTION_DESC) + 검토자 기록.
+         보고자 IMMEDIATE_ACTION_DESC 는 건드리지 않는다(데이터 오염 방지).
+         현재 상태가 '100'(접수) 인 행만 갱신(앱 한정 전이 보장 + 동시성 가드). -->
+    <update id="updateFirstReview"
+            parameterType="com.prafta.app.nearmiss.nearmiss01.application.command.ChangeStatusCommand">
+    /* AppNearMiss01Mapper.updateFirstReview */
+    UPDATE TB_NEAR_MISS
+    SET
+        REPORT_STATUS_CD       = '200'
+      , ADMIN_TEMP_ACTION_DESC = #{adminTempActionDesc}
+      , REVIEWER_ID            = #{gvUserCd}
+      , REVIEW_DTIME           = NOW()
+      , UPDATE_NO              = #{gvUserCd}
+      , UPDATE_DATE            = NOW()
+    WHERE CMPNY_CD = #{gvCmpnyCd}
+      AND SITE_CD = #{siteCd}
+      AND NEAR_MISS_ID = #{nearMissId}
+      AND REPORT_STATUS_CD = '100'
+      AND USE_YN = 'Y'
+    </update>
+
+    <!-- A6 반려 900. 사유(REJECT_REASON) + 임시조치(있으면) + 검토자 기록. -->
+    <update id="updateReject"
+            parameterType="com.prafta.app.nearmiss.nearmiss01.application.command.ChangeStatusCommand">
+    /* AppNearMiss01Mapper.updateReject */
+    UPDATE TB_NEAR_MISS
+    SET
+        REPORT_STATUS_CD = '900'
+      , REJECT_REASON    = #{rejectReason}
+      <if test="adminTempActionDesc != null and adminTempActionDesc != ''">
+      , ADMIN_TEMP_ACTION_DESC = #{adminTempActionDesc}
+      </if>
+      , REVIEWER_ID      = #{gvUserCd}
+      , REVIEW_DTIME     = NOW()
+      , UPDATE_NO        = #{gvUserCd}
+      , UPDATE_DATE      = NOW()
+    WHERE CMPNY_CD = #{gvCmpnyCd}
+      AND SITE_CD = #{siteCd}
+      AND NEAR_MISS_ID = #{nearMissId}
+      AND REPORT_STATUS_CD = '100'
+      AND USE_YN = 'Y'
+    </update>
+
+    <!-- 푸시 대상: 사업장 안전관리자 USER_CD 목록.
+         tb_user_site_auth(해당 SITE_CD, USE_YN='Y') ∩ tb_user(안전직군 AUTH_CD, 사용중 계정). -->
+    <select id="selectSiteSafetyManagers" resultType="java.lang.String">
+    /* AppNearMiss01Mapper.selectSiteSafetyManagers */
+    SELECT
+        U.USER_CD
+    FROM TB_USER U
+         INNER JOIN TB_USER_SITE_AUTH SA
+            ON (
+                U.CMPNY_CD = SA.CMPNY_CD
+            AND U.USER_CD = SA.USER_CD
+            AND SA.SITE_CD = #{siteCd}
+            AND SA.USE_YN = 'Y'
+            )
+    WHERE U.CMPNY_CD = #{cmpnyCd}
+      AND U.USE_YN = 'Y'
+      AND U.ACCOUNT_STATUS = '01'
+      AND U.AUTH_CD IN
+      <foreach collection="authCdList" item="authCd" open="(" separator="," close=")">
+        #{authCd}
+      </foreach>
+    GROUP BY U.USER_CD
+    </select>
+
+    <!-- 푸시 outbox 1행 INSERT (SEND_STATUS='PENDING'). consumer 미구현 → 적재까지만.
+         NOTI_ID 는 INSERT 내부 서브쿼리로 회사+당일 채번('N'+YYYYMMDD+3자리, SUBSTR 시작 10).
+         DATA_PAYLOAD 는 Jackson 직렬화 JSON 문자열. -->
+    <insert id="insertNotiOutbox"
+            parameterType="com.prafta.app.nearmiss.nearmiss01.application.command.NotiOutboxCommand">
+    /* AppNearMiss01Mapper.insertNotiOutbox */
+    INSERT INTO TB_NOTI_OUTBOX
+    (
+        NOTI_ID
+      , CMPNY_CD
+      , SITE_CD
+      , TARGET_USER_CD
+      , NOTI_TYPE
+      , CHANNEL
+      , TITLE
+      , BODY
+      , DATA_PAYLOAD
+      , SEND_STATUS
+      , RETRY_CNT
+      , DEDUP_KEY
+      , DEL_YN
+      , INSERT_NO
+      , INSERT_DATE
+    )
+    VALUES
+    (
+        (SELECT CONCAT(
+            'N'
+          , DATE_FORMAT(NOW(), '%Y%m%d')
+          , LPAD(
+                IFNULL(
+                    MAX(CAST(SUBSTR(T.NOTI_ID, 10, 3) AS UNSIGNED))
+                  , 0
+                ) + 1
+              , 3, '0'
+            )
+        ) FROM TB_NOTI_OUTBOX T
+          WHERE T.CMPNY_CD = #{cmpnyCd}
+            AND T.NOTI_ID LIKE CONCAT('N', DATE_FORMAT(NOW(), '%Y%m%d'), '%'))
+      , #{cmpnyCd}
+      , #{siteCd}
+      , #{targetUserCd}
+      , #{notiType}
+      , 'PUSH'
+      , #{title}
+      , #{body}
+      , #{dataPayload}
+      , 'PENDING'
+      , 0
+      , #{dedupKey}
+      , 'N'
+      , #{insertNo}
+      , NOW()
+    )
+    </insert>
+
+</mapper>

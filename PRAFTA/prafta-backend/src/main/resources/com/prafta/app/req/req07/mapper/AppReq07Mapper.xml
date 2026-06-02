@@ -1,0 +1,96 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.prafta.app.req.req07.mapper.AppReq07Mapper">
+
+    <!-- ============ REQ_ID 채번 ============
+         LeaveFlowMapper.selectNextReqId 와 동일 시퀀스('ATTD_REQ_ID').
+         네임스페이스만 분리 (dependency 최소화). -->
+    <select id="selectNextReqId" resultType="string">
+    /* AppReq07Mapper.selectNextReqId */
+    SELECT CONCAT(DATE_FORMAT(NOW(), '%Y%m%d'), FNC_CMM_SEQ_NEXTVAL(#{cmpnyCd}, 'ATTD_REQ_ID')) FROM DUAL
+    </select>
+
+    <!-- ============ tb_user_attd_req INSERT (3 endpoint 공통) ============
+         각 endpoint 가 사용하지 않는 컬럼은 command 에서 null.
+         SCH_CD 는 prafta-app-007 마이그레이션 적용 후 가용 (REQ_TYPE='10' 전용). -->
+    <insert id="insertAttdReq" parameterType="com.prafta.app.req.req07.application.command.AttdReqInsertCommand">
+    /* AppReq07Mapper.insertAttdReq */
+    INSERT INTO TB_USER_ATTD_REQ (
+          REQ_ID
+        , CMPNY_CD
+        , SITE_CD
+        , USER_CD
+        , REQ_TYPE
+        , TARGET_ID
+        , REQ_STATUS
+        , REQ_REASON
+        , WORK_YMD
+        , NODE_CD
+        , WORK_SEQ
+        , START_DATE
+        , START_TIME
+        , END_DATE
+        , END_TIME
+        , OT_TYPE
+        , SCH_CD
+        , DEL_YN
+        , INSERT_NO
+        , INSERT_DATE
+    )
+    VALUES (
+          #{reqId}
+        , #{cmpnyCd}
+        , #{siteCd}
+        , #{userCd}
+        , #{reqType}
+        , #{targetId}
+        , #{reqStatus}
+        , #{reqReason}
+        , #{workYmd}
+        , #{nodeCd}
+        , #{workSeq}
+        , #{startDate}
+        , #{startTime}
+        , #{endDate}
+        , #{endTime}
+        , #{otType}
+        , #{schCd}
+        , 'N'
+        , #{insertNo}
+        , NOW()
+    )
+    </insert>
+
+    <!-- ============ 중복 요청 차단 (P10) ============
+         동일 USER_CD + WORK_YMD + REQ_TYPE + 미처리(REQ_STATUS='01') 행 카운트.
+         결과 > 0 이면 4xx (ATTD_400_090). DEL_YN='N' 강제. -->
+    <select id="countDuplicateReq" resultType="int">
+    /* AppReq07Mapper.countDuplicateReq */
+    SELECT COUNT(1)
+      FROM TB_USER_ATTD_REQ A
+     WHERE A.CMPNY_CD   = #{cmpnyCd}
+       AND A.SITE_CD    = #{siteCd}
+       AND A.USER_CD    = #{userCd}
+       AND A.WORK_YMD   = #{workYmd}
+       AND A.REQ_TYPE   = #{reqType}
+       AND A.REQ_STATUS = '01'
+       AND A.DEL_YN     = 'N'
+    </select>
+
+    <!-- ============ 근태 보정 자동 분기 (Q2) ============
+         해당 (USER_CD, WORK_YMD, WORK_SEQ) 의 미삭제 tb_user_attd_mgmt 행의 ATTD_ID 조회.
+         행 존재 → ATTD_ID, 부재 → null. -->
+    <select id="selectExistingAttdId" resultType="string">
+    /* AppReq07Mapper.selectExistingAttdId */
+    SELECT A.ATTD_ID
+      FROM TB_USER_ATTD_MGMT A
+     WHERE A.CMPNY_CD = #{cmpnyCd}
+       AND A.SITE_CD  = #{siteCd}
+       AND A.USER_CD  = #{userCd}
+       AND A.WORK_YMD = #{workYmd}
+       AND A.WORK_SEQ = #{workSeq}
+       AND A.DEL_YN   = 'N'
+     LIMIT 1
+    </select>
+
+</mapper>

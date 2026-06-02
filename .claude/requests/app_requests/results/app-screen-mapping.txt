@@ -1,0 +1,164 @@
+================================================================
+PRAFTA 앱(prafta-app-frontend) 화면 ↔ 파일 ↔ 요청서 매핑표
+작성일: 2026-05-30
+대상 프로젝트: PRAFTA/prafta-app-frontend/prafta-app-frontend (실제 Vite 루트)
+================================================================
+
+[보는 법]
+- "라우트 경로"  = 앱 내부 해시 라우터 path (예: /MyAttendance)
+- "컴포넌트 파일" = VS Code 에서 실제로 열리는 .vue 파일 경로 (src/views 기준)
+- "화면명(업무)" = 사용자가 부르는 화면 이름 / 메인화면 진입 버튼
+- "요청서"       = .claude/requests/app_requests/ 하위 작업 요청서
+
+라우트 정의 출처: src/router/index.js (정적 라우트)
+                 + 백엔드 app-menu-lists 기반 동적 라우트(dynamicRoutes.js)
+
+
+────────────────────────────────────────────────────────────
+1) 메인 / 진입 흐름 화면
+────────────────────────────────────────────────────────────
+
+화면명(업무)        라우트 경로     컴포넌트 파일                         요청서
+-----------------   ------------    ----------------------------------    --------------------------
+로그인              /               login/LoginView.vue                   prafta-037 / prafta-036
+앱 메인(홈)         /MainView       main/MainView.vue                     prafta-app-001(데이터연동),
+                                                                          prafta-037(화면개편)
+회원가입            /JoinUser       login/JoinUser.vue                    prafta-039(웹과 동기화)
+사업장/계정 조회    /ActInfoSrch    login/ActInfoSrch.vue                 (로그인 보조)
+약관 안내           /TermsInfo      login/TermsInfo.vue                   (로그인 보조)
+약관 상세           /TermsDetail    login/TermsDetail.vue                 (로그인 보조)
+휴대폰 본인인증     /PhoneAuth      login/PhoneAuthView.vue               prafta-037-F3(인증대기 04)
+QR 스캐너           /QrScanner      _common/QrScanner.vue                 (TBM/일용직 입실 보조)
+
+  · MainView 하위 카드 컴포넌트(VS Code 에서 같이 보이는 것들):
+      main/components/HomeHeader.vue          - 상단 헤더(이름/사업장)
+      main/components/HomeIcons.vue           - 기능 아이콘(근태조회/연차/승인요청 등 진입버튼)
+      main/components/HomeTabBar.vue          - 하단 탭바
+      main/components/AttendanceCard.vue      - 출퇴근 카드
+      main/components/AttendanceSummaryCard.vue - 근태 요약
+      main/components/TbmAttendCard.vue       - TBM 출석 카드
+      main/components/SafetyActivityCard.vue  - 안전활동(안전점검/위험성)
+      main/components/NoticeListCard.vue      - 공지 리스트
+
+
+────────────────────────────────────────────────────────────
+2) 근태(Attendance) 영역
+────────────────────────────────────────────────────────────
+
+화면명(업무)              라우트 경로      컴포넌트 파일                       요청서
+-----------------------   -------------    --------------------------------    --------------------------
+내 근태 조회              /MyAttendance    attd/MyAttendanceView.vue           prafta-app-002(신규화면)
+ (메인 "근태 조회" 버튼)                                                        + prafta-app-003(출퇴근GPS)
+                                                                                + prafta-app-008(야간2구간/외근)
+
+  · MyAttendanceView 하위 컴포넌트:
+      attd/components/AttendanceTodayCard.vue     - 오늘 탭 카드
+      attd/components/AttendanceWeekList.vue      - 이번주 리스트
+      attd/components/AttendanceMonthCalendar.vue - 이번달 캘린더
+      attd/components/AttendanceDayDetailCard.vue - 일자 상세 카드
+      attd/components/AttendanceActionSheet.vue   - 출/퇴근 액션시트 (app-003)
+      attd/components/OffsiteReasonSheet.vue      - 외근 사유 입력시트 (app-008)
+
+
+────────────────────────────────────────────────────────────
+3) 연차(Leave) 영역
+────────────────────────────────────────────────────────────
+
+화면명(업무)              라우트 경로              컴포넌트 파일                  요청서
+-----------------------   ---------------------    ----------------------------   --------------------------
+연차 현황                 /MyLeaveSummaryView      leave/MyLeaveSummaryView.vue   prafta-app-005
+ (메인 "잔여 연차" 클릭)
+
+  · 하위 컴포넌트:
+      leave/components/LeaveBalanceCard.vue   - 잔여연차 카드
+      leave/components/LeaveGroupToggle.vue   - 연차 그룹 토글
+      leave/components/LeaveSplitKpi.vue      - 분할 KPI
+      leave/components/LeaveExpiryCallout.vue - 소멸 임박 알림
+      leave/components/LeaveMetaCard.vue      - 메타 정보 카드
+
+
+────────────────────────────────────────────────────────────
+4) 요청/승인(Request) 영역
+────────────────────────────────────────────────────────────
+
+화면명(업무)              라우트 경로      컴포넌트 파일                   요청서
+-----------------------   -------------    ----------------------------    --------------------------
+내 승인요청 목록          /MyRequests      req/MyRequestsView.vue          prafta-app-006
+ (메인 "승인요청" 클릭)
+근태 요청 폼              /AttdRequest     req/AttdRequestView.vue         prafta-app-007(폼3종)
+ (스케줄수정/근태보정/                                                     + prafta-app-009(결재선 통합,
+  초과근무 신청)                                                             ※요청서 단계, 미분해)
+
+  · MyRequestsView 하위 컴포넌트:
+      req/components/RequestCard.vue              - 요청 카드
+      req/components/RequestFilterBar.vue         - 필터 바
+      req/components/RequestStatusFilterSheet.vue - 상태 필터
+      req/components/RequestTypeFilterSheet.vue   - 유형 필터
+      req/components/RequestDateRangeFilterSheet.vue - 기간 필터
+      req/components/RequestSortSheet.vue         - 정렬 시트
+      req/components/RequestEmptyState.vue        - 빈 상태
+      req/components/BaseBottomSheet.vue          - 공용 바텀시트
+
+  · AttdRequestView 하위 폼(요청 유형별):
+      req/components/SchedModifyForm.vue    - 스케줄 수정 요청 폼
+      req/components/AttdCorrectionForm.vue - 근태 보정 요청 폼
+      req/components/OvertimeForm.vue       - 초과근무 신청 폼
+      req/components/SlotCard.vue           - 슬롯 카드
+
+
+────────────────────────────────────────────────────────────
+5) 안전점검 / 위험성평가 / TBM 영역
+────────────────────────────────────────────────────────────
+
+화면명(업무)              라우트 경로     컴포넌트 파일                요청서
+-----------------------   -------------   --------------------------   --------------------------
+일일 안전점검             /ChkLst         chkLst/ChkLst.vue            prafta-036-B1(백엔드 리팩터)
+ (메인 "안전점검 시작")                                                ※화면명은 메인개편 prafta-037
+위험성 평가               /Risk_01        risk/Risk_01.vue             prafta-036-B2(백엔드 리팩터)
+ (메인 "위험성 발굴")
+TBM 입실/종료             /TbmEntry       tbm/TbmEntryView.vue         prafta-app-004
+ (보호 라우트, ?sessionCd=)
+
+  주의: prafta-036-B1/B2 는 백엔드 패키지(com.prafta.app.chkLst.chkLst01 /
+        com.prafta.app.risk.risk01) 리팩터가 핵심이며, 앱 FE 화면은
+        ChkLst.vue / Risk_01.vue 로 기존 유지(응답 키 보존). 메인 진입 라벨은
+        prafta-037 에서 "안전점검 시작 / 위험성 발굴"로 매칭됨.
+
+
+────────────────────────────────────────────────────────────
+6) 공용 / 기타 화면
+────────────────────────────────────────────────────────────
+
+화면명(업무)        라우트 경로     컴포넌트 파일                  비고
+-----------------   ------------    --------------------------    ------------------------
+사업장 목록 팝업    (팝업)          popup/SiteListPop.vue         세션 사업장 선택 팝업
+준비중              (fallback)      _common/ComingSoon.vue        동적라우트 미해석시 fallback
+404                 /:pathMatch     _common/NotFound.vue          매칭 실패
+
+
+────────────────────────────────────────────────────────────
+7) 네이밍이 헷갈리는 포인트(요약)
+────────────────────────────────────────────────────────────
+
+· 요청서 번호 != 화면 파일명. 한 화면이 여러 요청서에 걸쳐 진화함.
+    예) MyAttendanceView.vue = app-002(신규) + app-003(GPS) + app-008(야간/외근)
+
+· 메인 버튼 라벨(업무 용어) != 라우트 이름(영문).
+    "근태 조회"  -> /MyAttendance
+    "잔여 연차"  -> /MyLeaveSummaryView
+    "승인요청"   -> /MyRequests
+    "안전점검 시작" -> /ChkLst  (구 "일일 안전점검")
+    "위험성 발굴"   -> /Risk_01 (구 "위험성 평가")
+
+· prafta-app-009 / prafta-app-010 = app-007 follow-up(결재선 통합) 요청서 단계.
+    아직 plan 분해/구현 전이라 대응 신규 화면 파일 없음(AttdRequestView 확장 예정).
+
+· prafta-036-B1/B2 는 "앱 화면" 작업처럼 보이지만 실제로는 백엔드 패키지 리팩터.
+    화면(ChkLst.vue / Risk_01.vue)은 무변경 유지가 원칙.
+
+· prafta-038 = Flutter 셸(safenote) APK 빌드 정비. Vue 화면 무관.
+
+================================================================
+끝.  (출처: src/router/index.js, dynamicRoutes.js, viewResolver.js,
+        .claude/requests/app_requests/*.md)
+================================================================

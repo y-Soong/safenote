@@ -1,0 +1,33 @@
+package com.prafta.app.req.req07.dto.request;
+
+import java.util.List;
+
+import lombok.Getter;
+import lombok.NoArgsConstructor;
+import lombok.Setter;
+
+/**
+ * prafta-app-007: 근태 보정 요청 등록 body (POST /appApi/req07/attd-correction).
+ *
+ * <p>REQ_TYPE 은 서버 자동 분기 (Q2):
+ * 기존 tb_user_attd_mgmt 행 존재 → '02' 근태 수정, 부재 → '01' 근태 생성. 클라가 보낸 reqType 무시.
+ *
+ * <p>plan §4.3 PRAFTA-APP-007-3 명세.
+ */
+@Getter
+@Setter
+@NoArgsConstructor
+public class AttdCorrectionRequest {
+
+    /** 대상 근무일 (YYYYMMDD). */
+    private String workYmd;
+
+    /** 본인의 해당 일자 노드 코드. */
+    private String nodeCd;
+
+    /** 구간 배열 (1~2). 각 slot 의 workSeq + startDate/startTime/endDate/endTime 사용. */
+    private List<SlotRequest> slots;
+
+    /** 보정 사유 (필수, 최대 500자). */
+    private String reqReason;
+}

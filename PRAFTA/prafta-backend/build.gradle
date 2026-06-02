@@ -1,0 +1,64 @@
+plugins {
+    id 'org.springframework.boot' version '3.5.13'
+    id 'io.spring.dependency-management' version '1.1.7'
+    id 'java'
+}
+
+group = 'com.prafta'
+version = '0.0.1-SNAPSHOT'
+
+java {
+    toolchain {
+        languageVersion = JavaLanguageVersion.of(21)
+    }
+}
+
+repositories {
+    mavenCentral()
+}
+
+tasks.withType(JavaCompile).configureEach {
+    options.compilerArgs += ['-parameters']
+    // PRAFTA-003-8: 한글 인코딩 정렬을 위해 소스 인코딩을 UTF-8 로 명시.
+    // 별도 지정이 없으면 Windows 환경에서 플랫폼 기본 인코딩(CP949)을 사용해
+    // UTF-8 로 저장된 .java 의 한글이 깨질 수 있다.
+    options.encoding = 'UTF-8'
+}
+
+// JUnit 5(Jupiter) 테스트 실행 설정 (Spring Boot 3 = JUnit 5). 누락 시 테스트가 "No tests found"로 미실행됨.
+tasks.named('test') {
+    useJUnitPlatform()
+}
+
+dependencies {
+    implementation 'org.springframework.boot:spring-boot-starter'
+    implementation 'org.springframework.boot:spring-boot-starter-web'
+    implementation 'org.springframework.boot:spring-boot-starter-validation'
+    implementation 'org.springframework.boot:spring-boot-starter-aop'
+    implementation 'org.springframework.boot:spring-boot-starter-jdbc'
+    implementation 'org.springframework.boot:spring-boot-starter-websocket'
+
+    testImplementation 'org.springframework.boot:spring-boot-starter-test'
+    developmentOnly 'org.springframework.boot:spring-boot-devtools'
+
+    compileOnly 'org.projectlombok:lombok:1.18.44'
+    annotationProcessor 'org.projectlombok:lombok:1.18.44'
+    testCompileOnly 'org.projectlombok:lombok:1.18.44'
+    testAnnotationProcessor 'org.projectlombok:lombok:1.18.44'
+
+    implementation 'io.jsonwebtoken:jjwt-api:0.11.5'
+    runtimeOnly 'io.jsonwebtoken:jjwt-impl:0.11.5'
+    runtimeOnly 'io.jsonwebtoken:jjwt-jackson:0.11.5'
+
+    runtimeOnly 'com.mysql:mysql-connector-j'
+
+    implementation 'org.mybatis.spring.boot:mybatis-spring-boot-starter:3.0.4'
+
+    implementation 'p6spy:p6spy:3.9.1'
+
+    implementation 'org.springframework.security:spring-security-crypto'
+
+    // PRAFTA-036 — 사용자 일괄 생성 엑셀(.xlsx) 양식 다운로드/업로드.
+    // poi-ooxml 은 poi(core)와 poi-ooxml-lite(스키마 일부) 를 transitively 가져온다.
+    implementation 'org.apache.poi:poi-ooxml:5.2.5'
+}

@@ -1,0 +1,490 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+
+<!--
+  prafta-app-002: 앱 본인 근태조회(attd01) Mapper.
+  - 모든 조회는 본인 스코프(cmpnyCd/siteCd/userCd) + 일자범위(fromYmd~toYmd, 포함)로 한정한다(IDOR 가드).
+  - SQL 규칙: leading comma, #{...} 바인딩, SELECT * 금지(명시 컬럼). MySQL 8.
+-->
+<mapper namespace="com.prafta.app.attd.attd01.mapper.AppAttd01Mapper">
+
+    <!-- 사업장명 단건 -->
+    <select id="selectSiteName" resultType="string">
+    /* AppAttd01Mapper.selectSiteName */
+    SELECT
+          S.SITE_NM
+      FROM TB_SITE S
+     WHERE S.CMPNY_CD = #{cmpnyCd}
+       AND S.SITE_CD  = #{siteCd}
+     LIMIT 1
+    </select>
+
+    <!--
+      근무계획 + 스케줄정의(SCH) + 연차명(LEAVE) 조인.
+      WORK_PLAN_CD 는 SCH_CD 또는 LEAVE_CD 를 가리킨다.
+        - SCH 조인: TB_SCH_MGMT (CMPNY_CD,SITE_CD,SCH_CD)
+        - LEAVE 조인: TB_LEAVE_TYPE_MGMT (CMPNY_CD,LEAVE_CD)
+      둘 중 매칭되는 쪽만 채워진다.
+    -->
+    <select id="selectScheduleByRange" resultType="com.prafta.app.attd.attd01.result.ScheduleResult">
+    /* AppAttd01Mapper.selectScheduleByRange */
+    SELECT
+          WP.WORK_YMD          AS workYmd
+        , WP.WORK_PLAN_CD      AS workPlanCd
+        , SC.SCH_CD            AS schCd
+        , SC.SCH_NO            AS schNo
+        , SC.SCH_TYPE          AS schType
+        , SC.FST_SCH_STR_TIME  AS fstSchStrTime
+        , SC.FST_SCH_END_TIME  AS fstSchEndTime
+        , SC.FST_SCH_BRK_MIN   AS fstSchBrkMin
+        , SC.SEC_SCH_STR_TIME  AS secSchStrTime
+        , SC.SEC_SCH_END_TIME  AS secSchEndTime
+        , SC.SEC_SCH_BRK_MIN   AS secSchBrkMin
+        , LT.LEAVE_CD          AS leaveCd
+        , LT.LEAVE_NM          AS leaveNm
+      FROM TB_USER_WORK_PLAN WP
+      LEFT JOIN TB_SCH_MGMT SC
+        ON  SC.CMPNY_CD = WP.CMPNY_CD
+        AND SC.SITE_CD  = WP.SITE_CD
+        AND SC.SCH_CD   = WP.WORK_PLAN_CD
+      LEFT JOIN TB_LEAVE_TYPE_MGMT LT
+        ON  LT.CMPNY_CD = WP.CMPNY_CD
+        AND LT.LEAVE_CD = WP.WORK_PLAN_CD
+     WHERE WP.CMPNY_CD = #{q.cmpnyCd}
+       AND WP.SITE_CD  = #{q.siteCd}
+       AND WP.USER_CD  = #{q.userCd}
+       AND WP.WORK_YMD BETWEEN #{q.fromYmd} AND #{q.toYmd}
+     ORDER BY WP.WORK_YMD
+    </select>
+
+    <!--
+      실 근태 레코드 + 사업장명. DEL_YN='N' 만. 레코드당 단일 SITE_CD(출근지=퇴근지).
+    -->
+    <select id="selectAttdByRange" resultType="com.prafta.app.attd.attd01.result.AttdRecordResult">
+    /* AppAttd01Mapper.selectAttdByRange */
+    SELECT
+          A.ATTD_ID           AS attdId
+        , A.WORK_YMD          AS workYmd
+        , A.WORK_SEQ          AS workSeq
+        , A.SITE_CD           AS siteCd
+        , S.SITE_NM           AS siteNm
+        , A.CHECK_IN_DATE     AS checkInDate
+        , A.CHECK_IN_TIME     AS checkInTime
+        , A.CHECK_IN_METHOD   AS checkInMethod
+        , A.CHECK_OUT_DATE    AS checkOutDate
+        , A.CHECK_OUT_TIME    AS checkOutTime
+        , A.CHECK_OUT_METHOD  AS checkOutMethod
+      FROM TB_USER_ATTD_MGMT A
+      LEFT JOIN TB_SITE S
+        ON  S.CMPNY_CD = A.CMPNY_CD
+        AND S.SITE_CD  = A.SITE_CD
+     WHERE A.CMPNY_CD = #{q.cmpnyCd}
+       AND A.SITE_CD  = #{q.siteCd}
+       AND A.USER_CD  = #{q.userCd}
+       AND A.WORK_YMD BETWEEN #{q.fromYmd} AND #{q.toYmd}
+       AND A.DEL_YN   = 'N'
+     ORDER BY A.WORK_YMD, A.WORK_SEQ
+    </select>
+
+    <!--
+      GPS 측정 — 주어진 ATTD_ID 목록 기준. 출근(01)/퇴근(02) 각각 최신행을 위해
+      API_CALL_DATE/TIME DESC 로 정렬하여 서비스에서 첫 행만 채택한다.
+    -->
+    <select id="selectGpsByAttdIds" resultType="com.prafta.app.attd.attd01.result.GpsResult">
+    /* AppAttd01Mapper.selectGpsByAttdIds */
+    SELECT
+          G.ATTD_ID        AS attdId
+        , G.GPS_INFO_TYPE  AS gpsInfoType
+        , G.IS_MOCKED      AS isMocked
+        , G.ACCURACY       AS accuracy
+        , G.API_CALL_DATE  AS apiCallDate
+        , G.API_CALL_TIME  AS apiCallTime
+        , S.GPS_RANGE      AS siteGpsRange
+      FROM TB_USER_ATTD_GPS G
+      LEFT JOIN TB_SITE S
+        ON  S.CMPNY_CD = G.CMPNY_CD
+        AND S.SITE_CD  = G.SITE_CD
+     WHERE G.CMPNY_CD = #{cmpnyCd}
+       AND G.ATTD_ID IN
+       <foreach collection="attdIds" item="id" open="(" separator="," close=")">
+         #{id}
+       </foreach>
+     ORDER BY G.ATTD_ID, G.GPS_INFO_TYPE, G.API_CALL_DATE DESC, G.API_CALL_TIME DESC
+    </select>
+
+    <!--
+      회사 단위 출퇴근 표준화 룰 + SYS029 단위(분).
+      SYS029.VAL_D_INFO_1 이 분(minutes). 설정안함(01)이면 VAL_D_INFO_1 가 '0' 또는 null.
+    -->
+    <select id="selectStdTimeRules" resultType="com.prafta.app.attd.attd01.result.StdTimeRuleResult">
+    /* AppAttd01Mapper.selectStdTimeRules */
+    SELECT
+          R.STD_TIME_RULE_TYPE  AS stdTimeRuleType
+        , R.STD_TIME_TYPE       AS stdTimeType
+        , CAST(D.VAL_D_INFO_1 AS SIGNED) AS unitMinutes
+      FROM TB_ATTD_STD_TIME_RULE R
+      LEFT JOIN TB_SYST_VAL_D D
+        ON  D.SYST_VAL_CD   = 'SYS029'
+        AND D.SYST_VAL_D_CD = R.STD_TIME_TYPE
+     WHERE R.CMPNY_CD = #{cmpnyCd}
+    </select>
+
+    <!--
+      휴일 — 일자범위. HOLIDAY_YMD 는 date 타입 → YYYYMMDD 문자열 변환. USE_YN='Y'.
+      fromYmd/toYmd 는 YYYYMMDD 문자열 → DATE 비교를 위해 STR_TO_DATE 사용.
+    -->
+    <select id="selectHolidaysByRange" resultType="com.prafta.app.attd.attd01.result.HolidayResult">
+    /* AppAttd01Mapper.selectHolidaysByRange */
+    SELECT
+          DATE_FORMAT(H.HOLIDAY_YMD, '%Y%m%d') AS holidayYmd
+        , H.HOLIDAY_NM                          AS holidayNm
+        , H.HOLIDAY_TYPE                        AS holidayType
+      FROM TB_HOLIDAY H
+     WHERE H.CMPNY_CD = #{q.cmpnyCd}
+       AND H.USE_YN   = 'Y'
+       AND H.HOLIDAY_YMD BETWEEN STR_TO_DATE(#{q.fromYmd}, '%Y%m%d') AND STR_TO_DATE(#{q.toYmd}, '%Y%m%d')
+    </select>
+
+    <!--
+      본인 연차 사용 실적 — CONFIRMED, DEL_YN='N', 범위 겹침(START_DATE<=to AND END_DATE>=from).
+    -->
+    <select id="selectLeaveUseByRange" resultType="com.prafta.app.attd.attd01.result.LeaveUseResult">
+    /* AppAttd01Mapper.selectLeaveUseByRange */
+    SELECT
+          U.START_DATE   AS startDate
+        , U.END_DATE     AS endDate
+        , U.LEAVE_CD     AS leaveCd
+        , LT.LEAVE_NM    AS leaveNm
+        , U.LEAVE_DAYS   AS leaveDays
+      FROM TB_USER_LEAVE_USE U
+      LEFT JOIN TB_LEAVE_TYPE_MGMT LT
+        ON  LT.CMPNY_CD = U.CMPNY_CD
+        AND LT.LEAVE_CD = U.LEAVE_CD
+     WHERE U.CMPNY_CD     = #{q.cmpnyCd}
+       AND U.SITE_CD      = #{q.siteCd}
+       AND U.USER_CD      = #{q.userCd}
+       AND U.LEAVE_STATUS = 'CONFIRMED'
+       AND U.DEL_YN       = 'N'
+       AND U.START_DATE  &lt;= #{q.toYmd}
+       AND U.END_DATE    &gt;= #{q.fromYmd}
+    </select>
+
+    <!-- 본인 소속부서 NODE_CD (마감 커버리지 판정용) -->
+    <select id="selectUserNodeCd" resultType="string">
+    /* AppAttd01Mapper.selectUserNodeCd */
+    SELECT
+          U.NODE_CD
+      FROM TB_USER U
+     WHERE U.CMPNY_CD = #{cmpnyCd}
+       AND U.SITE_CD  = #{siteCd}
+       AND U.USER_CD  = #{userCd}
+     LIMIT 1
+    </select>
+
+    <!--
+      해당 월이 본인 부서를 덮는 마감(CLOSED)으로 닫혀있는지 (prafta-028 부서단위 마감).
+      커버리지: '*'(전체) / 자기노드(nodeCd) / INC_SUB_YN='Y' 상위노드.
+      AttdCloseMapper.countCovering 패턴 차용(읽기전용).
+    -->
+    <select id="countCoveringClose" resultType="int">
+    /* AppAttd01Mapper.countCoveringClose */
+    <choose>
+      <when test='"*".equals(nodeCd)'>
+        SELECT COUNT(*)
+          FROM TB_ATTD_CLOSE C
+         WHERE C.CMPNY_CD     = #{cmpnyCd}
+           AND C.SITE_CD      = #{siteCd}
+           AND C.CLOSE_YM     = #{closeYm}
+           AND C.CLOSE_STATUS = 'CLOSED'
+           AND C.NODE_CD      = '*'
+      </when>
+      <otherwise>
+        WITH RECURSIVE anc AS (
+            SELECT N.NODE_CD, N.PARENT_NODE_CD
+              FROM TB_SITE_NODE N
+             WHERE N.CMPNY_CD = #{cmpnyCd} AND N.SITE_CD = #{siteCd} AND N.NODE_CD = #{nodeCd}
+            UNION ALL
+            SELECT P.NODE_CD, P.PARENT_NODE_CD
+              FROM TB_SITE_NODE P
+              JOIN anc A2
+                ON P.CMPNY_CD = #{cmpnyCd} AND P.SITE_CD = #{siteCd} AND P.NODE_CD = A2.PARENT_NODE_CD
+        )
+        SELECT COUNT(*)
+          FROM TB_ATTD_CLOSE C
+         WHERE C.CMPNY_CD     = #{cmpnyCd}
+           AND C.SITE_CD      = #{siteCd}
+           AND C.CLOSE_YM     = #{closeYm}
+           AND C.CLOSE_STATUS = 'CLOSED'
+           AND (
+                C.NODE_CD = '*'
+             OR C.NODE_CD = #{nodeCd}
+             OR (C.INC_SUB_YN = 'Y' AND C.NODE_CD IN (SELECT NODE_CD FROM anc WHERE NODE_CD != #{nodeCd}))
+           )
+      </otherwise>
+    </choose>
+    </select>
+
+    <!-- ================================================================
+         prafta-app check-out: 셀프 퇴근 (쓰기)
+         ================================================================ -->
+
+    <!--
+      본인 열린 근태(미퇴근) 중 1건.
+      열린 근태 = DEL_YN='N' && CHECK_IN_TIME 有 && CHECK_OUT_TIME NULL.
+      workYmd(Low-1) 가 주어지면 그 일자의 열린건만 대상(우선). 미전달이면 D+1 윈도우 하한
+      (fromYmd=today-1) 이상의 가장 최근 1건(WORK_YMD DESC, 같은 날이면 큰 WORK_SEQ) 폴백.
+    -->
+    <select id="selectOpenAttd" resultType="com.prafta.app.attd.attd01.result.OpenAttdResult">
+    /* AppAttd01Mapper.selectOpenAttd */
+    SELECT
+          A.ATTD_ID    AS attdId
+        , A.WORK_YMD   AS workYmd
+        , A.WORK_SEQ   AS workSeq
+        , A.SITE_CD    AS siteCd
+        , A.NODE_CD    AS nodeCd
+      FROM TB_USER_ATTD_MGMT A
+     WHERE A.CMPNY_CD = #{cmpnyCd}
+       AND A.SITE_CD  = #{siteCd}
+       AND A.USER_CD  = #{userCd}
+       AND A.DEL_YN   = 'N'
+       AND A.CHECK_IN_TIME IS NOT NULL
+       AND A.CHECK_OUT_TIME IS NULL
+       AND A.WORK_YMD &gt;= #{fromYmd}
+       <if test="workYmd != null">
+       AND A.WORK_YMD = #{workYmd}
+       </if>
+     ORDER BY A.WORK_YMD DESC, A.WORK_SEQ DESC
+     LIMIT 1
+    </select>
+
+    <!--
+      사업장 지오펜스 기준값 (중심좌표 + 허용반경).
+      LAT/LON(decimal(10,7)), GPS_RANGE(varchar, m). 결측 시 서비스가 온사이트 폴백(A안).
+    -->
+    <select id="selectSiteGeofence" resultType="com.prafta.app.attd.attd01.result.SiteGeofenceResult">
+    /* AppAttd01Mapper.selectSiteGeofence */
+    SELECT
+          S.LAT        AS lat
+        , S.LON        AS lon
+        , S.GPS_RANGE  AS gpsRange
+      FROM TB_SITE S
+     WHERE S.CMPNY_CD = #{cmpnyCd}
+       AND S.SITE_CD  = #{siteCd}
+     LIMIT 1
+    </select>
+
+    <!-- GPS_ID 선채번 (회사별 시퀀스 'GPS_ID'). FNC_CMM_SEQ_NEXTVAL 이 키를 자동 생성. -->
+    <select id="selectGpsId" resultType="string">
+    /* AppAttd01Mapper.selectGpsId */
+    SELECT CONCAT(DATE_FORMAT(NOW(), '%Y%m%d'), FNC_CMM_SEQ_NEXTVAL(#{cmpnyCd}, 'GPS_ID')) AS gpsId
+    </select>
+
+    <!--
+      출근 레코드의 퇴근 채움 UPDATE.
+      동시성 가드: CHECK_OUT_TIME IS NULL (이미 퇴근됐으면 0건). CMPNY_CD/USER_CD 도 가드.
+      퇴근 시각은 서버 NOW() 기준 raw 실제 시각(표준화 미적용). CHECK_OUT_METHOD='01'(SYS031).
+    -->
+    <update id="updateCheckOut">
+    /* AppAttd01Mapper.updateCheckOut */
+    UPDATE TB_USER_ATTD_MGMT
+       SET
+             CHECK_OUT_DATE   = #{c.checkOutDate}
+           , CHECK_OUT_TIME   = #{c.checkOutTime}
+           , CHECK_OUT_METHOD = #{c.checkOutMethod}
+           , UPDATE_NO        = #{c.userCd}
+           , UPDATE_DATE      = NOW()
+     WHERE ATTD_ID  = #{c.attdId}
+       AND CMPNY_CD = #{c.cmpnyCd}
+       AND USER_CD  = #{c.userCd}
+       AND DEL_YN   = 'N'
+       AND CHECK_OUT_TIME IS NULL
+    </update>
+
+    <!-- 퇴근 GPS 기록 INSERT (GPS_INFO_TYPE='02' 퇴근, SYS028). OFFSITE_REASON=외근 사유(prafta-app-008). -->
+    <insert id="insertCheckOutGps">
+    /* AppAttd01Mapper.insertCheckOutGps */
+    INSERT INTO TB_USER_ATTD_GPS (
+          GPS_ID
+        , CMPNY_CD
+        , ATTD_ID
+        , SITE_CD
+        , USER_CD
+        , GPS_INFO_TYPE
+        , LAT
+        , LON
+        , ACCURACY
+        , API_CALL_DATE
+        , API_CALL_TIME
+        , IS_MOCKED
+        , IP_ADDR
+        , OFFSITE_REASON
+        , INSERT_NO
+        , INSERT_DATE
+    )
+    VALUES (
+          #{g.gpsId}
+        , #{g.cmpnyCd}
+        , #{g.attdId}
+        , #{g.siteCd}
+        , #{g.userCd}
+        , #{g.gpsInfoType}
+        , #{g.lat}
+        , #{g.lon}
+        , #{g.accuracy}
+        , #{g.apiCallDate}
+        , #{g.apiCallTime}
+        , #{g.isMocked}
+        , #{g.ipAddr}
+        , #{g.offsiteReason}
+        , #{g.insertNo}
+        , NOW()
+    )
+    </insert>
+
+    <!-- ================================================================
+         prafta-app-003 A1: 셀프 출근 (check-in, 쓰기)
+         ================================================================ -->
+
+    <!-- ATTD_ID 선채번 (회사별 시퀀스 'ATTD_ID'). web attd07 selectAttdId 와 동일 패턴. -->
+    <select id="selectAttdId" resultType="string">
+    /* AppAttd01Mapper.selectAttdId */
+    SELECT CONCAT(DATE_FORMAT(NOW(), '%Y%m%d'), FNC_CMM_SEQ_NEXTVAL(#{cmpnyCd}, 'ATTD_ID')) AS attdId
+    </select>
+
+    <!--
+      동시 출근(TOCTOU) 직렬화용 본인 행 비관적 잠금(FOR UPDATE).
+      tb_user_attd_mgmt 자연키에 UNIQUE 제약이 없어, count→insert 경쟁으로 구간한도 초과/
+      WORK_SEQ 중복 INSERT 되는 것을 막는다. 동일 사용자의 동시 출근을 트랜잭션 단위로 직렬화.
+      잠금은 @Transactional 커밋/롤백 시 자동 해제(named lock 과 달리 커넥션 풀 누수 없음).
+    -->
+    <select id="lockUserForCheckIn" resultType="string">
+    /* AppAttd01Mapper.lockUserForCheckIn */
+    SELECT U.USER_CD
+      FROM TB_USER U
+     WHERE U.CMPNY_CD = #{cmpnyCd}
+       AND U.SITE_CD  = #{siteCd}
+       AND U.USER_CD  = #{userCd}
+     FOR UPDATE
+    </select>
+
+    <!-- 본인 그 일자 근태 레코드 수 (DEL_YN='N'). WORK_SEQ 산정/출근횟수 제한 판정. -->
+    <select id="countAttdByYmd" resultType="int">
+    /* AppAttd01Mapper.countAttdByYmd */
+    SELECT COUNT(*)
+      FROM TB_USER_ATTD_MGMT A
+     WHERE A.CMPNY_CD = #{cmpnyCd}
+       AND A.SITE_CD  = #{siteCd}
+       AND A.USER_CD  = #{userCd}
+       AND A.WORK_YMD = #{workYmd}
+       AND A.DEL_YN   = 'N'
+    </select>
+
+    <!-- 본인 그 일자 열린(미퇴근) 근태 수. 재출근 가드(§5.2). -->
+    <select id="countOpenAttdByYmd" resultType="int">
+    /* AppAttd01Mapper.countOpenAttdByYmd */
+    SELECT COUNT(*)
+      FROM TB_USER_ATTD_MGMT A
+     WHERE A.CMPNY_CD = #{cmpnyCd}
+       AND A.SITE_CD  = #{siteCd}
+       AND A.USER_CD  = #{userCd}
+       AND A.WORK_YMD = #{workYmd}
+       AND A.DEL_YN   = 'N'
+       AND A.CHECK_IN_TIME IS NOT NULL
+       AND A.CHECK_OUT_TIME IS NULL
+    </select>
+
+    <!-- 본인 과거(WORK_YMD < today) 열린 근태 수. 다음날 출근 게이트(사용자 확정). -->
+    <select id="countPastOpenAttd" resultType="int">
+    /* AppAttd01Mapper.countPastOpenAttd */
+    SELECT COUNT(*)
+      FROM TB_USER_ATTD_MGMT A
+     WHERE A.CMPNY_CD = #{cmpnyCd}
+       AND A.SITE_CD  = #{siteCd}
+       AND A.USER_CD  = #{userCd}
+       AND A.WORK_YMD &lt; #{todayYmd}
+       AND A.DEL_YN   = 'N'
+       AND A.CHECK_IN_TIME IS NOT NULL
+       AND A.CHECK_OUT_TIME IS NULL
+    </select>
+
+    <!--
+      출근 레코드 INSERT. CHECK_OUT_* 는 컬럼 미지정(스키마 DEFAULT NULL).
+      CHECK_IN_DATE/TIME/METHOD/WORK_SEQ/DEL_YN 은 NOT NULL → 모두 명시.
+      INSERT_DATE 는 스키마 DEFAULT CURRENT_TIMESTAMP → 미지정(NOW() 자동).
+    -->
+    <insert id="insertCheckIn">
+    /* AppAttd01Mapper.insertCheckIn */
+    INSERT INTO TB_USER_ATTD_MGMT (
+          ATTD_ID
+        , CMPNY_CD
+        , SITE_CD
+        , USER_CD
+        , WORK_YMD
+        , NODE_CD
+        , WORK_SEQ
+        , CHECK_IN_DATE
+        , CHECK_IN_TIME
+        , CHECK_IN_METHOD
+        , DEL_YN
+        , INSERT_NO
+        , INSERT_DATE
+    )
+    VALUES (
+          #{c.attdId}
+        , #{c.cmpnyCd}
+        , #{c.siteCd}
+        , #{c.userCd}
+        , #{c.workYmd}
+        , #{c.nodeCd}
+        , #{c.workSeq}
+        , #{c.checkInDate}
+        , #{c.checkInTime}
+        , #{c.checkInMethod}
+        , 'N'
+        , #{c.insertNo}
+        , NOW()
+    )
+    </insert>
+
+    <!-- 출근 GPS 기록 INSERT (GPS_INFO_TYPE='01' 출근, SYS028). OFFSITE_REASON=외근 사유(prafta-app-008). -->
+    <insert id="insertCheckInGps">
+    /* AppAttd01Mapper.insertCheckInGps */
+    INSERT INTO TB_USER_ATTD_GPS (
+          GPS_ID
+        , CMPNY_CD
+        , ATTD_ID
+        , SITE_CD
+        , USER_CD
+        , GPS_INFO_TYPE
+        , LAT
+        , LON
+        , ACCURACY
+        , API_CALL_DATE
+        , API_CALL_TIME
+        , IS_MOCKED
+        , IP_ADDR
+        , OFFSITE_REASON
+        , INSERT_NO
+        , INSERT_DATE
+    )
+    VALUES (
+          #{g.gpsId}
+        , #{g.cmpnyCd}
+        , #{g.attdId}
+        , #{g.siteCd}
+        , #{g.userCd}
+        , #{g.gpsInfoType}
+        , #{g.lat}
+        , #{g.lon}
+        , #{g.accuracy}
+        , #{g.apiCallDate}
+        , #{g.apiCallTime}
+        , #{g.isMocked}
+        , #{g.ipAddr}
+        , #{g.offsiteReason}
+        , #{g.insertNo}
+        , NOW()
+    )
+    </insert>
+
+</mapper>

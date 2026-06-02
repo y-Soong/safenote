@@ -1,0 +1,840 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.prafta.web.user.user01.mapper.User01Mapper">
+
+	<select id="selectUserNodeAdminCheck" parameterType="com.prafta.web.user.user01.application.query.UserNodeAdminCheckQuery" resultType="int">
+    /* User01Mapper.selectUserNodeAdminCheck */
+	SELECT COUNT(*)
+	FROM TB_USER A
+	     INNER JOIN TB_SITE_NODE B
+			ON (
+				A.CMPNY_CD = B.CMPNY_CD
+			AND A.NODE_CD = B.NODE_CD
+	        AND A.SITE_CD = B.SITE_CD
+	        AND (A.USER_CD = B.MAIN_ADMIN_CD OR A.USER_CD = B.SUB_ADMIN_CD)
+	        )
+	WHERE A.CMPNY_CD = #{cmpnyCd}
+	  AND A.USER_CD = #{userCd}
+	</select>
+	
+	<resultMap id="UserInfoMap" type="com.prafta.web.user.user01.result.UserInfoResult">
+	  <constructor>
+	    <!-- record component 순서/이름과 맞추는 게 안전 -->
+	    <arg name="chk"       column="chk"       javaType="java.lang.String"/>
+	    <arg name="cmpnyCd"   column="cmpnyCd"   javaType="java.lang.String"/>
+	    <arg name="userCd"    column="userCd"    javaType="java.lang.String"/>
+	    <arg name="userId"    column="userId"    javaType="java.lang.String"/>
+	    <arg name="userNm"    column="userNm"    javaType="java.lang.String"/>
+	    <arg name="authCd"    column="authCd"    javaType="java.lang.String"/>
+	    <arg name="authLevel" column="authLevel" javaType="java.lang.String"/>
+	    <arg name="siteCd"    column="siteCd"    javaType="java.lang.String"/>
+	    <arg name="nodeCd"    column="nodeCd"    javaType="java.lang.String"/>
+	    <arg name="oriNodeCd" column="oriNodeCd" javaType="java.lang.String"/>
+	    <arg name="nodeNm"    column="nodeNm"    javaType="java.lang.String"/>
+	    <arg name="siteNm"    column="siteNm"    javaType="java.lang.String"/>
+	
+	    <!-- TypeHandler 적용: record도 constructor arg에 가능 -->
+	    <arg name="mblNo"   column="mblNo"   javaType="java.lang.String"
+	         typeHandler="com.prafta.common.security.crypto.mybatis.AesGcmDecryptTypeHandler"/>
+	    <arg name="email"   column="email"   javaType="java.lang.String"
+	         typeHandler="com.prafta.common.security.crypto.mybatis.AesGcmDecryptTypeHandler"/>
+	    <arg name="birthDt" column="birthDt" javaType="java.lang.String"
+	         typeHandler="com.prafta.common.security.crypto.mybatis.AesGcmDecryptTypeHandler"/>
+	
+	    <arg name="gender"    column="gender"    javaType="java.lang.String"/>
+	    <arg name="useYn"     column="useYn"     javaType="java.lang.String"/>
+	    <arg name="siteNmList" column="siteNmList" javaType="java.lang.String"/>
+	    <arg name="accountStatus" column="accountStatus" javaType="java.lang.String"/>
+	    <arg name="withdrawalDate" column="withdrawalDate" javaType="java.lang.String"/>
+	    <arg name="rankCd"    column="rankCd"    javaType="java.lang.String"/>
+	    <arg name="rankNm"    column="rankNm"    javaType="java.lang.String"/>
+	  </constructor>
+	</resultMap>
+
+    <select id="selectUserInfoList" parameterType="com.prafta.web.user.user01.application.query.UserInfoListQuery" resultMap="UserInfoMap">
+    /* User01Mapper.selectUserInfoList */
+	WITH RECURSIVE viewer AS (
+	    SELECT
+	        U.CMPNY_CD,
+	        U.USER_CD,
+	        U.USER_ID,
+	        U.AUTH_CD,
+	        U.SITE_CD,
+	        U.NODE_CD
+	    FROM TB_USER U
+	    WHERE U.CMPNY_CD = #{gvCmpnyCd}
+	      AND U.USER_CD  = #{gvUserCd}
+	    LIMIT 1
+	),
+	node_tree AS (
+	    /* 로그인 사용자의 node 부터 시작 */
+	    SELECT N.CMPNY_CD, N.SITE_CD, N.NODE_CD
+	    FROM TB_SITE_NODE N
+	    INNER JOIN viewer V
+	        ON N.CMPNY_CD = V.CMPNY_CD
+	       AND N.SITE_CD  = V.SITE_CD
+	       AND N.NODE_CD  = V.NODE_CD
+	
+	    UNION ALL
+	
+	    /* 하위 노드 무한 확장 */
+	    SELECT C.CMPNY_CD, C.SITE_CD, C.NODE_CD
+	    FROM TB_SITE_NODE C
+	    INNER JOIN node_tree P
+	        ON C.CMPNY_CD = P.CMPNY_CD
+	       AND C.SITE_CD  = P.SITE_CD
+	       AND C.PARENT_NODE_CD = P.NODE_CD
+	)
+	
+	SELECT
+	    null                                                              	AS chk
+	    , A.CMPNY_CD                                                       	AS cmpnyCd
+	    , A.USER_CD                                                        	AS userCd
+	    , A.USER_ID                                                        	AS userId
+	    , A.USER_NM                                                        	AS userNm
+	    , A.AUTH_CD                                                        	AS authCd
+	    , FNC_CMM_INFO_SRCH(A.CMPNY_CD, 'AUTH_LEVEL', A.AUTH_CD, null)		AS authLevel
+	    , A.SITE_CD                                                        	AS siteCd
+	    , A.NODE_CD                                                        	AS nodeCd
+	    , A.NODE_CD                                                        	AS oriNodeCd
+	    , FNC_CMM_INFO_SRCH(A.CMPNY_CD, 'NODE', A.SITE_CD, A.NODE_CD)      	AS nodeNm
+	    , C.SITE_NM                                                        	AS siteNm
+	    , A.MBL_NO_ENC														AS mblNo
+	    , A.EMAIL_ENC														AS email
+	    , A.BIRTH_DT_ENC													AS birthDt
+	    , A.GENDER                                                         	AS gender
+	    , A.USE_YN                                                         	AS useYn
+	    , IFNULL(B.SITE_NM_LIST, '')                                       	AS siteNmList
+	    , A.ACCOUNT_STATUS													AS accountStatus
+        , DATE_FORMAT(STR_TO_DATE(A.WITHDRAWAL_DATE, '%Y%m%d'), '%Y-%m-%d') AS withdrawalDate
+	    , A.RANK_CD														AS rankCd
+	    , FNC_CMM_INFO_SRCH(A.CMPNY_CD, 'BAIM_VAL', A.RANK_CD, 'COM007')	AS rankNm
+	FROM TB_USER A
+		LEFT JOIN (
+		    SELECT
+		        X.USER_CD,
+		        GROUP_CONCAT(S.SITE_NM ORDER BY S.SITE_CD SEPARATOR ',') AS SITE_NM_LIST
+		    FROM TB_USER_SITE_AUTH X
+		    INNER JOIN TB_SITE S
+		        ON X.CMPNY_CD = S.CMPNY_CD
+		       AND X.SITE_CD  = S.SITE_CD
+		    WHERE X.USE_YN = 'Y'
+		    GROUP BY X.USER_CD
+		) B 
+			ON (
+				B.USER_CD = A.USER_CD
+			)
+		INNER JOIN TB_SITE C
+		    ON (
+				A.CMPNY_CD = C.CMPNY_CD
+		   	AND A.SITE_CD  = C.SITE_CD
+		   	AND C.USE_YN   = 'Y'
+		   	)
+		WHERE 1=1
+		  AND A.CMPNY_CD = #{gvCmpnyCd}
+		  AND A.AUTH_CD != 'system'  /* 시스템관리자 권한 제외(기존 유지) */
+		  AND A.USE_YN = 'Y'
+		
+		  /* 권한별 노드/사이트 제한 */
+		  AND (
+		        (SELECT V.AUTH_CD FROM viewer V) IN ('system','master','hr','safe')
+		        OR (
+		            /* 비권한 사용자는 본인 site 고정 + 하위 node만 */
+		            A.SITE_CD = (SELECT V.SITE_CD FROM viewer V)
+		            <if test="gvNodeCd != null and gvNodeCd != ''">
+		            	AND A.NODE_CD IN (SELECT T.NODE_CD FROM node_tree T)
+		            </if>
+		        )
+		  )
+		
+		  <if test="userNm != null and userNm != ''">
+		    AND A.USER_NM LIKE CONCAT('%', #{userNm}, '%')
+		  </if>
+		
+		  <if test="userId != null and userId != ''">
+		    AND A.USER_ID = #{userId}
+		  </if>
+		
+		  <if test="useYn != null and useYn != ''">
+		    AND A.USE_YN = #{useYn}
+		  </if>
+		
+		  <!-- 권한자(system/master/hr/safe)만 site 필터가 의미있게 동작.
+		       비권한자는 위에서 viewer site로 이미 고정됨 -->
+		  <if test="siteCd != null and siteCd != ''">
+		    AND A.SITE_CD = #{siteCd}
+		  </if>
+		
+		  <if test="nodeCd != null and nodeCd != ''">
+		    AND A.NODE_CD = #{nodeCd}
+		  </if>
+    </select>
+    
+	<update id="updateUserPw" parameterType="com.prafta.web.user.user01.application.command.UserPasswdCommand">
+	/* User01Mapper.updateUserPw */
+	UPDATE
+		TB_USER
+	SET
+		USER_PW = #{userPw}
+	WHERE 1=1
+	  AND CMPNY_CD = #{cmpnyCd}
+	  AND USER_CD = #{userCd}
+	</update>
+
+	<select id="selectUserPwByUserId" resultType="com.prafta.web.user.user01.result.UserPwResult">
+	/* User01Mapper.selectUserPwByUserId */
+	SELECT
+		USER_CD  AS userCd
+		, USER_PW AS userPw
+	FROM TB_USER
+	WHERE CMPNY_CD = #{cmpnyCd}
+	  AND USER_CD  = #{userCd}
+	  AND USE_YN   = 'Y'
+	</select>
+
+	<update id="updateMyPw" parameterType="com.prafta.web.user.user01.application.command.UserPasswdCommand">
+	/* User01Mapper.updateMyPw */
+	UPDATE TB_USER
+	SET
+		USER_PW               = #{userPw}
+		, PWD_CHG_DTIME       = NOW()
+		, PWD_FAIL_CNT        = 0
+		, PWD_LOCK_YN         = 'N'
+		, PWD_LOCK_EXPIRE_DTIME = NULL
+		, UPDATE_NO           = #{userCd}
+		, UPDATE_DATE         = NOW()
+	WHERE 1=1
+	  AND CMPNY_CD = #{cmpnyCd}
+	  AND USER_CD  = #{userCd}
+	</update>
+	
+	<!-- NOTE: USER_ID column is defined NOT NULL in DDL.
+	     To allow NULL here, run: ALTER TABLE TB_USER MODIFY USER_ID VARCHAR(50) NULL; -->
+	<update id="withdrawMyAccount" parameterType="com.prafta.web.user.user01.application.command.WithdrawMyAccountCommand">
+	/* User01Mapper.withdrawMyAccount */
+	UPDATE TB_USER
+	SET
+		USER_ID                 = #{userCd}
+		, SITE_CD				= NULL
+		, NODE_CD				= NULL
+		, USER_PW				= NULL
+		, MBL_NO_ENC            = NULL
+		, MBL_NO_HMAC           = NULL
+		, MBL_NO_LAST4          = NULL
+		, EMAIL_ENC             = NULL
+		, EMAIL_HMAC            = NULL
+		, EMAIL_DOMAIN          = NULL
+		, BIRTH_DT_ENC          = NULL
+		, GENDER                = NULL
+		, WITHDRAWAL_DATE       = DATE_FORMAT(NOW(), '%Y%m%d')
+		, ACCOUNT_STATUS        = '03'
+		, USE_YN                = 'N'
+		, UPDATE_NO             = #{userCd}
+		, UPDATE_DATE           = NOW()
+	WHERE 1=1
+	  AND CMPNY_CD = #{cmpnyCd}
+	  AND USER_CD  = #{userCd}
+	</update>
+
+	<update id="scheduleWithdrawal" parameterType="com.prafta.web.user.user01.application.command.ScheduleWithdrawalCommand">
+	/* User01Mapper.scheduleWithdrawal */
+	UPDATE TB_USER
+	SET
+		WITHDRAWAL_DATE = #{withdrawalDate}
+		, UPDATE_NO     = #{gvUserCd}
+		, UPDATE_DATE   = NOW()
+	WHERE 1=1
+	  AND CMPNY_CD = #{gvCmpnyCd}
+	  AND USER_CD  = #{userCd}
+	</update>
+	
+	<update id="cancelWithdrawal" parameterType="com.prafta.web.user.user01.application.command.WithdrawalCancelCommand">
+	/* User01Mapper.cancelWithdrawal */
+	UPDATE TB_USER
+	SET WITHDRAWAL_DATE = null
+	    , UPDATE_NO     = #{gvUserCd}
+		, UPDATE_DATE   = NOW()
+	WHERE
+		CMPNY_CD = #{gvCmpnyCd}
+	AND USER_CD = #{userCd}
+		
+	</update>
+
+	<select id="selectUserSiteInfo" parameterType="com.prafta.web.user.user01.application.query.UserSiteInfoQuery" resultType="com.prafta.web.user.user01.result.UserSiteInfoResult">
+    /* User01Mapper.selectUserSiteInfo */
+    SELECT
+    	A.CMPNY_CD 	AS cmpnyCd
+    	, A.USER_CD	AS userCd
+    	, A.USER_ID	AS userId
+    	, A.SITE_CD	AS siteCd
+    	, A.USE_YN 	AS useYn 
+	FROM TB_USER A
+	WHERE A.CMPNY_CD = #{cmpnyCd}
+	  AND A.USER_CD = #{userCd}
+    </select>
+    
+    <update id="deleteUserSiteAuth" parameterType="com.prafta.web.user.user01.application.command.UserSiteAuthCommand">
+    /* User01Mapper.deleteUserSiteAuth */
+    UPDATE TB_USER_SITE_AUTH
+   	SET 
+   		USE_YN = 'N'
+   		, UPDATE_NO = #{gvUserCd}
+  		, UPDATE_DATE = NOW()
+	WHERE CMPNY_CD = #{cmpnyCd}
+	  AND USER_CD = #{userCd}
+    	
+    </update>
+    
+    <update id="insertUserSiteAuth" parameterType="com.prafta.web.user.user01.application.command.UserSiteAuthCommand">
+    /* User01Mapper.insertUserSiteAuth */
+    INSERT INTO TB_USER_SITE_AUTH (
+    	CMPNY_CD
+    	, USER_CD
+    	, SITE_CD
+    	, USE_YN
+    	, INSERT_NO
+    	, INSERT_DATE
+    	, UPDATE_NO
+    	, UPDATE_DATE
+    )
+    VALUES (
+    	#{cmpnyCd}
+    	, #{userCd}
+    	, #{siteCd}
+    	, IFNULL(#{useYn}, 'Y')
+    	, #{gvUserCd}
+    	, NOW()
+    	, #{gvUserCd}
+    	, NOW()
+    ) AS NEW
+    ON DUPLICATE KEY UPDATE
+	    USE_YN        = NEW.USE_YN
+	    , UPDATE_NO   = NEW.UPDATE_NO
+	    , UPDATE_DATE = NEW.UPDATE_DATE
+    </update>
+    
+    <insert id="mergeUserInfo" parameterType="com.prafta.web.user.user01.application.command.UserInfoCommand">
+	/* User01Mapper.mergeUserInfo */
+	UPDATE TB_USER 
+	SET 
+		SITE_CD = #{siteCd}
+		, NODE_CD = #{nodeCd}
+		, AUTH_CD = #{authCd}
+		, RANK_CD = #{rankCd}
+		, MBL_NO_ENC = #{mblNoEnc}
+		, MBL_NO_HMAC = #{mblNoHmac}
+		, EMAIL_ENC = #{emailEnc}
+		, EMAIL_HMAC = #{emailHmac}
+		, GENDER = #{gender}
+		, BIRTH_DT_ENC = #{birthDtEnc}
+		, USE_YN = IFNULL(#{useYn}, 'Y')
+		, UPDATE_NO = #{gvUserCd}
+		, UPDATE_DATE = NOW()
+	WHERE 1=1
+	  AND CMPNY_CD = #{cmpnyCd}
+	  AND USER_CD = #{userCd}
+	</insert>
+	
+	<select id="selectSiteNodeAdminCandidateLists" parameterType="com.prafta.web.user.user01.application.query.SiteNodeAdminCandidateListQuery" resultMap="UserInfoMap">
+    /* User01Mapper.selectSiteNodeAdminCandidateLists */
+		SELECT 
+			null                                                              	AS chk
+		    , A.CMPNY_CD                                                       	AS cmpnyCd
+		    , A.USER_CD                                                        	AS userCd
+		    , A.USER_ID                                                        	AS userId
+		    , A.USER_NM                                                        	AS userNm
+		    , A.AUTH_CD                                                        	AS authCd
+		    , FNC_CMM_INFO_SRCH(A.CMPNY_CD, 'AUTH_LEVEL', A.AUTH_CD, null)		AS authLevel
+		    , A.SITE_CD                                                        	AS siteCd
+		    , A.NODE_CD                                                        	AS nodeCd
+		    , A.NODE_CD                                                        	AS oriNodeCd
+		    , FNC_CMM_INFO_SRCH(A.CMPNY_CD, 'NODE', A.SITE_CD, A.NODE_CD)      	AS nodeNm
+		    , C.SITE_NM                                                        	AS siteNm
+		    , A.MBL_NO_ENC														AS mblNo
+		    , A.EMAIL_ENC														AS email
+		    , A.BIRTH_DT_ENC													AS birthDt
+		    , A.GENDER                                                         	AS gender
+		    , A.USE_YN                                                         	AS useYn
+		    , IFNULL(B.SITE_NM_LIST, '')                                       	AS siteNmList
+		    , A.ACCOUNT_STATUS													AS accountStatus
+		    , A.WITHDRAWAL_DATE													AS withdrawalDate
+		    , A.RANK_CD															AS rankCd
+		    , FNC_CMM_INFO_SRCH(A.CMPNY_CD, 'BAIM_VAL', A.RANK_CD, 'COM007')	AS rankNm
+		FROM TB_USER A
+			 LEFT JOIN (
+				SELECT 
+					A.USER_CD
+					, GROUP_CONCAT(B.SITE_NM ORDER BY B.SITE_CD SEPARATOR ',') AS SITE_NM_LIST
+				FROM TB_USER_SITE_AUTH A
+				     INNER JOIN TB_SITE B
+						ON (
+							A.CMPNY_CD = B.CMPNY_CD
+						AND A.SITE_CD = B.SITE_CD
+						)
+				WHERE A.USE_YN = 'Y'
+				GROUP BY A.USER_CD
+			) B
+			ON B.USER_CD = A.USER_CD
+			INNER JOIN TB_SITE C
+			ON (
+				A.CMPNY_CD = C.CMPNY_CD
+			AND A.SITE_CD = C.SITE_CD
+	           AND C.USE_YN = 'Y'
+	           )
+		WHERE 1=1
+		  AND A.CMPNY_CD = #{gvCmpnyCd}
+		  AND A.AUTH_CD != '999'				/* 시스템관리자 권한 제외 */
+		  AND A.USE_YN = 'Y'
+		  AND A.SITE_CD = #{siteCd}
+		  <if test="userNm != null and userNm != ''">
+		  	AND A.USER_NM LIKE CONCAT('%', #{userNm}, '%')
+		  </if>
+		  <if test="userId != null and userId != ''">
+		  	AND A.USER_ID = #{userId}
+		  </if>
+		  AND NOT EXISTS (
+		      SELECT 1
+		      FROM TB_SITE_NODE N
+		      WHERE N.CMPNY_CD = A.CMPNY_CD
+		        AND N.SITE_CD = A.SITE_CD
+		        AND N.NODE_CD = #{nodeCd}
+		        AND (
+		             N.MAIN_ADMIN_CD = A.USER_CD
+		          OR N.SUB_ADMIN_CD  = A.USER_CD
+		        )
+		  )
+	</select>
+
+	<resultMap id="MyProfileMap" type="com.prafta.web.user.user01.result.MyProfileResult">
+	  <constructor>
+	    <arg name="userId"         column="userId"         javaType="java.lang.String"/>
+	    <arg name="userNm"         column="userNm"         javaType="java.lang.String"/>
+	    <arg name="siteNm"         column="siteNm"         javaType="java.lang.String"/>
+	    <arg name="nodeNm"         column="nodeNm"         javaType="java.lang.String"/>
+	    <!-- PII 컬럼: SELECT 자동 복호화 TypeHandler 적용 -->
+	    <arg name="mblNo"          column="mblNo"          javaType="java.lang.String"
+	         typeHandler="com.prafta.common.security.crypto.mybatis.AesGcmDecryptTypeHandler"/>
+	    <arg name="email"          column="email"          javaType="java.lang.String"
+	         typeHandler="com.prafta.common.security.crypto.mybatis.AesGcmDecryptTypeHandler"/>
+	    <arg name="lastLoginDtime" column="lastLoginDtime" javaType="java.lang.String"/>
+	  </constructor>
+	</resultMap>
+
+	<select id="selectMyProfile" parameterType="com.prafta.web.user.user01.application.query.MyProfileQuery" resultMap="MyProfileMap">
+	/* User01Mapper.selectMyProfile */
+	SELECT
+		A.USER_ID													AS userId
+		, A.USER_NM													AS userNm
+		, C.SITE_NM													AS siteNm
+		, FNC_CMM_INFO_SRCH(A.CMPNY_CD, 'NODE', A.SITE_CD, A.NODE_CD)	AS nodeNm
+		, A.MBL_NO_ENC												AS mblNo
+		, A.EMAIL_ENC												AS email
+		, A.LAST_LOGIN_DTIME										AS lastLoginDtime
+	FROM TB_USER A
+		LEFT JOIN TB_SITE C
+			ON (
+				A.CMPNY_CD = C.CMPNY_CD
+			AND A.SITE_CD  = C.SITE_CD
+			)
+	WHERE A.CMPNY_CD = #{gvCmpnyCd}
+	  AND A.USER_CD  = #{gvUserCd}
+	</select>
+
+	<!-- ====================================================================
+	     PRAFTA-017-4 근태/연차 정보 (입사일 + 경력 인정)
+	     ==================================================================== -->
+
+	<select id="selectUserHireInfo" parameterType="com.prafta.web.user.user01.application.query.LeaveInfoQuery" resultType="com.prafta.web.user.user01.result.UserHireInfoResult">
+	/* User01Mapper.selectUserHireInfo */
+	SELECT
+		A.USER_CD													AS userCd
+		, DATE_FORMAT(STR_TO_DATE(A.HIRE_DATE, '%Y%m%d'), '%Y-%m-%d')	AS hireDate
+		, A.EMPLOYMENT_TYPE											AS employmentType
+	FROM TB_USER A
+	WHERE A.CMPNY_CD = #{gvCmpnyCd}
+	  AND A.USER_CD  = #{userCd}
+	</select>
+
+	<select id="selectUserServiceCreditList" parameterType="com.prafta.web.user.user01.application.query.LeaveInfoQuery" resultType="com.prafta.web.user.user01.result.ServiceCreditResult">
+	/* User01Mapper.selectUserServiceCreditList */
+	SELECT
+		A.CREDIT_ID			AS creditId
+		, A.CREDIT_MONTHS	AS creditMonths
+		, A.REASON_TYPE		AS reasonType
+		, A.REASON_DETAIL	AS reasonDetail
+	FROM TB_USER_SERVICE_CREDIT A
+	WHERE A.CMPNY_CD = #{gvCmpnyCd}
+	  AND A.USER_CD  = #{userCd}
+	  AND A.USE_YN   = 'Y'
+	ORDER BY A.CREDIT_ID
+	</select>
+
+	<select id="selectUserExistCount" resultType="int">
+	/* User01Mapper.selectUserExistCount */
+	SELECT COUNT(1)
+	FROM TB_USER A
+	WHERE A.CMPNY_CD = #{gvCmpnyCd}
+	  AND A.USER_CD  = #{userCd}
+	</select>
+
+	<update id="deleteUserServiceCredit" parameterType="com.prafta.web.user.user01.application.command.UserCreditDeleteCommand">
+	/* User01Mapper.deleteUserServiceCredit */
+	UPDATE TB_USER_SERVICE_CREDIT
+	SET
+		USE_YN        = 'N'
+		, UPDATE_NO   = #{gvUserCd}
+		, UPDATE_DATE = NOW()
+	WHERE CMPNY_CD = #{cmpnyCd}
+	  AND USER_CD  = #{userCd}
+	  AND USE_YN   = 'Y'
+	</update>
+
+	<insert id="insertUserServiceCredit" parameterType="com.prafta.web.user.user01.application.command.UserCreditInsertCommand">
+	/* User01Mapper.insertUserServiceCredit */
+	INSERT INTO TB_USER_SERVICE_CREDIT (
+		CREDIT_ID
+		, CMPNY_CD
+		, USER_CD
+		, CREDIT_MONTHS
+		, REASON_TYPE
+		, REASON_DETAIL
+		, USE_YN
+		, INSERT_NO
+		, INSERT_DATE
+	)
+	VALUES (
+		CONCAT('SC', DATE_FORMAT(NOW(), '%Y%m%d'), FNC_CMM_SEQ_NEXTVAL(#{gvCmpnyCd}, 'SERVICE_CREDIT_ID'))
+		, #{cmpnyCd}
+		, #{userCd}
+		, #{creditMonths}
+		, #{reasonType}
+		, #{reasonDetail}
+		, 'Y'
+		, #{gvUserCd}
+		, NOW()
+	)
+	</insert>
+
+	<select id="selectUserHireDate" resultType="java.lang.String">
+	/* User01Mapper.selectUserHireDate */
+	SELECT A.HIRE_DATE
+	FROM TB_USER A
+	WHERE A.CMPNY_CD = #{gvCmpnyCd}
+	  AND A.USER_CD  = #{userCd}
+	</select>
+
+	<update id="updateUserHireDate" parameterType="com.prafta.web.user.user01.application.command.UserHireDateUpdateCommand">
+	/* User01Mapper.updateUserHireDate */
+	UPDATE TB_USER
+	SET
+		HIRE_DATE     = #{newHireDate}
+		, UPDATE_NO   = #{gvUserCd}
+		, UPDATE_DATE = NOW()
+	WHERE CMPNY_CD = #{cmpnyCd}
+	  AND USER_CD  = #{userCd}
+	</update>
+
+	<!-- HIST_ID 채번 (prafta-032): 입사일 변경 + 연차 조정 멱등키(_HD{histId})에 쓰기 위해 INSERT 전 미리 채번. -->
+	<select id="selectNextHireHistId" resultType="java.lang.String">
+	/* User01Mapper.selectNextHireHistId */
+	SELECT CONCAT('HH', DATE_FORMAT(NOW(), '%Y%m%d'), FNC_CMM_SEQ_NEXTVAL(#{cmpnyCd}, 'HIRE_HIST_ID'))
+	FROM DUAL
+	</select>
+
+	<insert id="insertUserHireDateHistory" parameterType="com.prafta.web.user.user01.application.command.UserHireDateHistoryCommand">
+	/* User01Mapper.insertUserHireDateHistory */
+	INSERT INTO TB_USER_HIRE_DATE_HISTORY (
+		HIST_ID
+		, CMPNY_CD
+		, USER_CD
+		, PREV_HIRE_DATE
+		, NEW_HIRE_DATE
+		, CHANGE_REASON
+		, HANDLING_TYPE
+		, AFFECTED_GRANT_SNAPSHOT
+		, OLD_GRANT_TOTAL
+		, NEW_GRANT_TOTAL
+		, WITHDRAW_REASON
+		, INSERT_NO
+		, INSERT_DATE
+	)
+	VALUES (
+		#{histId}
+		, #{cmpnyCd}
+		, #{userCd}
+		, #{prevHireDate}
+		, #{newHireDate}
+		, #{changeReason}
+		, #{handlingType}
+		, #{affectedGrantSnapshot}
+		, #{oldGrantTotal}
+		, #{newGrantTotal}
+		, #{withdrawReason}
+		, #{gvUserCd}
+		, NOW()
+	)
+	</insert>
+
+	<!-- 입사일 변경 이력 목록 (노무 감사용). 변경자명은 INSERT_NO(=변경자 USER_CD)를 TB_USER에 조인.
+	     IX_TB_HIRE_HIST_USER(CMPNY_CD,USER_CD,INSERT_DATE) 인덱스 활용. 최신 변경이 첫 행. -->
+	<select id="selectUserHireDateHistory" resultType="com.prafta.web.user.user01.result.UserHireDateHistoryResult">
+	/* User01Mapper.selectUserHireDateHistory */
+	SELECT
+		H.HIST_ID                                          AS histId
+		, H.PREV_HIRE_DATE                                 AS prevHireDate
+		, H.NEW_HIRE_DATE                                  AS newHireDate
+		, H.CHANGE_REASON                                  AS changeReason
+		, H.HANDLING_TYPE                                  AS handlingType
+		, H.APPLIED_YN                                     AS appliedYn
+		, DATE_FORMAT(H.APPLIED_DATE, '%Y-%m-%d %H:%i')    AS appliedDate
+		, U.USER_NM                                        AS changerNm
+		, DATE_FORMAT(H.INSERT_DATE, '%Y-%m-%d %H:%i')     AS changedAt
+	FROM TB_USER_HIRE_DATE_HISTORY H
+	LEFT JOIN TB_USER U
+		ON U.CMPNY_CD = H.CMPNY_CD
+	   AND U.USER_CD  = H.INSERT_NO
+	WHERE H.CMPNY_CD = #{cmpnyCd}
+	  AND H.USER_CD  = #{userCd}
+	ORDER BY H.INSERT_DATE DESC, H.HIST_ID DESC
+	</select>
+
+	<!-- ====================================================================
+	     PRAFTA-036 — 관리자 단건/엑셀 사용자 생성
+	     ==================================================================== -->
+
+	<!-- USER_CD 채번 (LoginMapper.selectUserCd 와 동일 SQL — 모듈 결합 회피 위해 복제). -->
+	<select id="selectNextUserCd" resultType="java.lang.String">
+	/* User01Mapper.selectNextUserCd */
+	SELECT CONCAT(DATE_FORMAT(NOW(), '%Y%m'), FNC_CMM_SEQ_NEXTVAL(#{cmpnyCd}, 'USER_CD'))
+	FROM DUAL
+	</select>
+
+	<!-- SITE_NO -> SITE_CD 매핑. 사용중(USE_YN='Y') 사업장만 매칭. 없으면 결과 0행. -->
+	<select id="selectSiteCdBySiteNo" resultType="java.lang.String">
+	/* User01Mapper.selectSiteCdBySiteNo */
+	SELECT A.SITE_CD
+	FROM TB_SITE A
+	WHERE A.CMPNY_CD = #{cmpnyCd}
+	  AND A.SITE_NO  = #{siteNo}
+	  AND IFNULL(A.USE_YN, 'Y') = 'Y'
+	LIMIT 1
+	</select>
+
+	<!-- PRAFTA-037-F7: SITE_CD 존재 검증. 회사 내 사용중(USE_YN='Y') 사업장 매칭 시 1 반환. -->
+	<select id="selectSiteExistsBySiteCd" resultType="int">
+	/* User01Mapper.selectSiteExistsBySiteCd */
+	SELECT COUNT(1)
+	FROM TB_SITE A
+	WHERE A.CMPNY_CD = #{cmpnyCd}
+	  AND A.SITE_CD  = #{siteCd}
+	  AND IFNULL(A.USE_YN, 'Y') = 'Y'
+	</select>
+
+	<!-- 사이트 노드 존재 검증. CMPNY_CD + SITE_CD + NODE_CD 매칭 시 1 반환. -->
+	<select id="selectSiteNodeExists" resultType="int">
+	/* User01Mapper.selectSiteNodeExists */
+	SELECT COUNT(1)
+	FROM TB_SITE_NODE A
+	WHERE A.CMPNY_CD = #{cmpnyCd}
+	  AND A.SITE_CD  = #{siteCd}
+	  AND A.NODE_CD  = #{nodeCd}
+	</select>
+
+	<!-- USER_ID 중복 체크 (UX_TB_USER_ID UNIQUE 사전 진단). -->
+	<select id="selectUserIdExists" resultType="int">
+	/* User01Mapper.selectUserIdExists */
+	SELECT COUNT(1)
+	FROM TB_USER A
+	WHERE A.CMPNY_CD = #{cmpnyCd}
+	  AND A.USER_ID  = #{userId}
+	</select>
+
+	<!-- 휴대폰 HMAC 중복 체크 (UX_TB_USER_MBL_NO UNIQUE 사전 진단). -->
+	<select id="selectUserMblHmacExists" resultType="int">
+	/* User01Mapper.selectUserMblHmacExists */
+	SELECT COUNT(1)
+	FROM TB_USER A
+	WHERE A.CMPNY_CD     = #{cmpnyCd}
+	  AND A.MBL_NO_HMAC = #{mblNoHmac}
+	</select>
+
+	<!-- AUTH_CD 권한레벨(sortIdx) 조회. 존재하지 않으면 결과 없음. -->
+	<select id="selectAuthLevelByAuthCd" resultType="java.lang.String">
+	/* User01Mapper.selectAuthLevelByAuthCd */
+	SELECT FNC_CMM_INFO_SRCH(#{cmpnyCd}, 'AUTH_LEVEL', #{authCd}, NULL) AS authLevel
+	FROM DUAL
+	</select>
+
+	<!-- 신규 사용자 INSERT. ACCOUNT_STATUS='04' 인증대기 고정(D2). -->
+	<insert id="insertOneUser" parameterType="com.prafta.web.user.user01.application.command.UserCreateInsertCommand">
+	/* User01Mapper.insertOneUser */
+	INSERT INTO TB_USER (
+		CMPNY_CD
+		, USER_CD
+		, USER_ID
+		, USER_NM
+		, USER_PW
+		, SITE_CD
+		, NODE_CD
+		, AUTH_CD
+		, RANK_CD
+		, MBL_NO_ENC
+		, MBL_NO_HMAC
+		, MBL_NO_LAST4
+		, EMAIL_ENC
+		, EMAIL_HMAC
+		, EMAIL_DOMAIN
+		, BIRTH_DT_ENC
+		, HIRE_DATE
+		, EMPLOYMENT_TYPE
+		, CONTRACT_END_DATE
+		, GENDER
+		, USE_YN
+		, ACCOUNT_STATUS
+		, INSERT_NO
+		, INSERT_DATE
+		, UPDATE_NO
+		, UPDATE_DATE
+	)
+	VALUES (
+		#{cmpnyCd}
+		, #{userCd}
+		, #{userId}
+		, #{userNm}
+		, #{userPw}
+		, #{siteCd}
+		, #{nodeCd}
+		, #{authCd}
+		, #{rankCd}
+		, #{mblNoEnc}
+		, #{mblNoHmac}
+		, #{mblNoLast4}
+		, #{emailEnc}
+		, #{emailHmac}
+		, #{emailDomain}
+		, #{birthDtEnc}
+		, #{hireDate}
+		, #{employmentType}
+		, #{contractEndDate}
+		, #{gender}
+		, 'Y'
+		, '04'
+		, #{gvUserCd}
+		, NOW()
+		, #{gvUserCd}
+		, NOW()
+	)
+	</insert>
+
+	<!-- 단건용 TB_USER_SITE_AUTH INSERT. 신규 사용자라 UPSERT 불필요(단순 INSERT). -->
+	<insert id="insertOneUserSiteAuth">
+	/* User01Mapper.insertOneUserSiteAuth */
+	INSERT INTO TB_USER_SITE_AUTH (
+		CMPNY_CD
+		, USER_CD
+		, SITE_CD
+		, USE_YN
+		, INSERT_NO
+		, INSERT_DATE
+		, UPDATE_NO
+		, UPDATE_DATE
+	)
+	VALUES (
+		#{cmpnyCd}
+		, #{userCd}
+		, #{siteCd}
+		, 'Y'
+		, #{gvUserCd}
+		, NOW()
+		, #{gvUserCd}
+		, NOW()
+	)
+	</insert>
+
+	<!-- 활성 법정 연차 부여 합계 (prafta-022 작업 F, 입사일 변경 영향분석 실측) -->
+	<resultMap id="UserStatutoryLeaveSummaryMap" type="com.prafta.web.user.user01.result.UserStatutoryLeaveSummaryResult">
+	  <constructor>
+	    <arg name="grantedSum" column="grantedSum" javaType="java.math.BigDecimal"/>
+	    <arg name="usedSum"    column="usedSum"    javaType="java.math.BigDecimal"/>
+	  </constructor>
+	</resultMap>
+
+	<select id="selectUserStatutoryLeaveSummary" resultMap="UserStatutoryLeaveSummaryMap">
+	/* User01Mapper.selectUserStatutoryLeaveSummary */
+	SELECT
+		COALESCE(SUM(A.GRANT_DAYS), 0) AS grantedSum
+		, COALESCE(SUM(A.USED_DAYS), 0) AS usedSum
+	FROM TB_USER_LEAVE_GRANT A
+	WHERE A.CMPNY_CD = #{gvCmpnyCd}
+	  AND A.USER_CD  = #{userCd}
+	  AND A.GRANT_TYPE LIKE 'STATUTORY\_%'
+	  AND A.STATUS IN ('ACTIVE', 'EXHAUSTED')
+	  AND A.DEL_YN = 'N'
+	</select>
+
+	<!-- ====================================================================
+	     PRAFTA-042-5 — 전사 접근 역할(master/hr/safe) 사업장권한 자동부여/회수
+	     ==================================================================== -->
+
+	<!-- 변경 전 현재 AUTH_CD 조회 (역할 변경 판정용). 없으면 결과 0행. -->
+	<select id="selectUserAuthCd" resultType="java.lang.String">
+	/* User01Mapper.selectUserAuthCd */
+	SELECT A.AUTH_CD
+	FROM TB_USER A
+	WHERE A.CMPNY_CD = #{cmpnyCd}
+	  AND A.USER_CD  = #{userCd}
+	</select>
+
+	<!-- 전 사업장(tb_site) 권한을 사용자에게 멱등 부여. 신규 사업장이 늘어도 042-4가 신규생성 시 부여하므로
+	     본 구문은 사용자 신규/역할진입 시 그 시점의 전 사업장을 채운다. ON DUP UPDATE USE_YN='Y'. -->
+	<insert id="insertAllSiteAuthForUser">
+	/* User01Mapper.insertAllSiteAuthForUser */
+	INSERT INTO TB_USER_SITE_AUTH (
+		CMPNY_CD
+		, USER_CD
+		, SITE_CD
+		, USE_YN
+		, INSERT_NO
+		, INSERT_DATE
+		, UPDATE_NO
+		, UPDATE_DATE
+	)
+	SELECT
+		A.CMPNY_CD
+		, #{userCd} AS USER_CD
+		, A.SITE_CD
+		, 'Y' AS USE_YN
+		, #{gvUserCd}
+		, NOW()
+		, #{gvUserCd}
+		, NOW()
+	FROM TB_SITE A
+	WHERE A.CMPNY_CD = #{cmpnyCd}
+	ON DUPLICATE KEY UPDATE
+		USE_YN        = VALUES(USE_YN)
+		, UPDATE_NO   = VALUES(UPDATE_NO)
+		, UPDATE_DATE = VALUES(UPDATE_DATE)
+	</insert>
+
+	<!-- 자동부여 사업장권한 회수(D7). 소속 사업장(homeSiteCd) 1건만 잔존, 나머지 USE_YN='N' 소프트 회수.
+	     homeSiteCd 가 null 이면 SITE_CD != NULL 비교가 항상 true → 전량 회수(소속 없음 → 잔존 0건, 가정 처리). -->
+	<update id="deleteSiteAuthExceptHome">
+	/* User01Mapper.deleteSiteAuthExceptHome */
+	UPDATE TB_USER_SITE_AUTH
+	SET
+		USE_YN        = 'N'
+		, UPDATE_NO   = #{gvUserCd}
+		, UPDATE_DATE = NOW()
+	WHERE CMPNY_CD = #{cmpnyCd}
+	  AND USER_CD  = #{userCd}
+	  AND USE_YN   = 'Y'
+	  <choose>
+	    <when test="homeSiteCd != null and homeSiteCd != ''">
+	      AND SITE_CD &lt;&gt; #{homeSiteCd}
+	    </when>
+	    <otherwise>
+	      AND 1 = 1
+	    </otherwise>
+	  </choose>
+	</update>
+</mapper>

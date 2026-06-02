@@ -1,3 +1,28 @@
+워크스페이스 구조
+
+`C:\PRAFTA` 는 두 프로젝트를 함께 두는 워크스페이스 루트다. Claude Code 세션은 이 경로에서 띄운다.
+
+```
+C:\PRAFTA\                    ← 워크스페이스 루트 (cwd)
+├── .claude\                  ← 공용 설정 / agents / context / requests / policies
+├── CLAUDE.md                 ← 본 문서 (공용 규약)
+├── PRAFTA\                   ← 웹/백엔드 프로젝트
+│   ├── prafta-backend\           Spring Boot + MyBatis (MySQL 8.0.42)
+│   ├── prafta-web-frontend\      Vue 3 + Vite (관리자 웹)
+│   │   └── prafta-web-frontend\  실제 Vite 루트(이중 중첩, 의도된 구조)
+│   └── prafta-app-frontend\      Vue 3 + Vite (모바일 webview 콘텐츠)
+└── PRAFTA_FLUTTER\           ← 모바일 셸 앱 프로젝트
+    └── safenote\                 Flutter (webview_flutter + mobile_scanner)
+```
+
+핵심 원칙:
+
+- `.claude/` 와 `CLAUDE.md` 는 워크스페이스 레벨에 한 벌만 둔다 (정책서/에이전트/요청서 공용).
+- 두 프로젝트는 같은 도메인(PRAFTA)이지만 실행 환경/언어가 다르므로, 작업 요청 시 어느 쪽인지 명확히 식별한다 (요청서 prefix 또는 본문에서).
+- 백엔드 API 는 한 벌(`PRAFTA/prafta-backend`)이고, 웹·앱(Vue) 및 Flutter 셸이 이를 공통으로 사용한다.
+
+---
+
 DB 스키마 참조 규칙
 
 prafta는 MySQL 8.0.42를 사용한다. 스키마 정보는 다음 두 가지 방식으로 참조 가능하다.
@@ -102,7 +127,7 @@ prafta는 별도의 web-frontend 프로젝트를 가진다.
 
 스타일: scoped CSS + CSS 변수 기반 자체 디자인 시스템
 
-위치: `prafta-web-frontend/`
+위치: `PRAFTA/prafta-web-frontend/prafta-web-frontend/` (이중 중첩이 실제 Vite 루트)
 
 `src/views/{module}/` — 화면
 
@@ -113,6 +138,8 @@ prafta는 별도의 web-frontend 프로젝트를 가진다.
 `src/components/modal/` — Alert / Confirm
 
 `src/components/layout/` — 앱 셸
+
+모바일 webview 콘텐츠 프론트: `PRAFTA/prafta-app-frontend/` (별도 Vite 프로젝트, Flutter 셸의 `assets/vue_app/`에 빌드 산출물 번들).
 
 화면 작업 흐름
 
@@ -131,6 +158,54 @@ developer가 골격의 script 영역(API 호출, store, router)을 채움
 TypeScript 문법 사용 금지
 
 `<style>`은 반드시 scoped
+
+---
+
+Flutter 셸 앱 환경 (`PRAFTA_FLUTTER/safenote/`)
+
+prafta 모바일은 Flutter 셸 + 내부 webview 에 Vue 앱(`prafta-app-frontend`)을 띄우는 하이브리드 구조다.
+
+역할 분담 (반드시 준수):
+
+- **Flutter 영역**: 네이티브 권한(카메라/위치/푸시/저장소), QR 스캔(mobile_scanner), webview 호스팅(flutter_inappwebview / webview_flutter), 디바이스 식별자, 기동 시 초기 진입 라우팅. **비즈니스 로직 금지**.
+- **Vue 영역(웹뷰 내부)**: 화면/상태/API 호출 등 모든 업무 로직. 백엔드 호출은 `appApi` 프리픽스.
+- 둘 사이 통신은 webview JS-bridge (`postMessage` / `addJavaScriptChannel`). 신규 브리지 추가 시 양쪽 명세를 동시에 갱신.
+
+핵심 파일:
+
+- `lib/main.dart` — 앱 엔트리
+- `lib/web_app.dart` — webview 호스트
+- `lib/qr_scan_page.dart` — QR 스캔(일용직 입실 등)
+- `assets/vue_app/` — `prafta-app-frontend` 빌드 결과물 (수동 갱신; 빌드 후 복사)
+- `pubspec.yaml` — Flutter SDK ^3.9.2, 주요 의존성: webview_flutter, flutter_inappwebview, mobile_scanner, permission_handler
+
+Flutter 명령 (Windows + 비대화형 원칙):
+
+| 작업 | 명령 |
+|---|---|
+| 의존성 설치 | `flutter pub get` |
+| 패키지 캐시 정리 | `flutter pub cache repair` |
+| 안드로이드 디버그 빌드 | `flutter build apk --debug` |
+| 안드로이드 릴리즈 빌드 | `flutter build apk --release` |
+| 디바이스 실행 | `flutter run -d <device-id>` (디바이스 ID는 `flutter devices` 로 확인) |
+| 클린 | `flutter clean` (이후 `flutter pub get` 필수) |
+
+Bash 도구 호출 시 빌드 명령은 타임아웃 600초(10분) 권장. 첫 빌드는 Gradle 다운로드로 더 오래 걸릴 수 있으니 hang 감지 보고 임계는 5분으로 완화.
+
+절대 금지 사항:
+
+- Flutter 코드 내부에서 비즈니스 로직(연차 계산, 결재 흐름 등) 구현 금지 — Vue 측으로 위임.
+- 네이티브 권한 prompt 가 발생할 수 있는 작업은 사용자에게 사전 안내(에뮬레이터/실기기 모두).
+- `flutter run` 을 Claude Code Bash 도구로 직접 실행 금지 (실기기 hot-reload는 사용자 위임).
+- `assets/vue_app/` 하위 파일을 직접 편집 금지 — 항상 `prafta-app-frontend` 에서 빌드 후 복사.
+- `android/key.properties`, `*.keystore`, `google-services.json` 등 서명/시크릿 파일은 절대 커밋/출력 금지.
+
+스키마/정책서 규칙 적용:
+
+- Flutter 측은 직접 DB 를 보지 않으므로 스키마 참조 규칙은 적용되지 않는다.
+- 단, webview 안 Vue 가 사용하는 API 응답 필드명/타입은 백엔드 DTO 와 동일하게 매핑해야 한다 (kebab-case 엔드포인트, `gv_*` 세션 클레임 등 — 자세한 건 메모리 `project_prafta_app_vite_and_api_align` 참조).
+
+---
 
 비즈니스 정책서 참조 규칙
 
@@ -192,13 +267,32 @@ docx 원본을 직접 읽지 않는다 (분할된 .md만 참조).
 
 작업 요청서
 
-사용자가 직접 작성한 작업 요청서는 `.claude/requests/` 하위에 보관된다 (`prafta-001.txt`, `prafta-002.txt` 등). planner가 이를 정독하여 작업으로 분해한다.
+사용자가 직접 작성한 작업 요청서는 `.claude/requests/` 하위에 프로젝트별로 분리하여 보관된다. planner가 이를 정독하여 작업으로 분해한다.
 
-`.claude/requests/` — 사용자 작성 작업 요청서
+`.claude/requests/web_requests/` — 웹/백엔드(`PRAFTA/prafta-backend`, `PRAFTA/prafta-web-frontend`) 작업 요청서
+
+`.claude/requests/app_requests/` — 모바일 앱(`PRAFTA/prafta-app-frontend`, `PRAFTA_FLUTTER/safenote`) 작업 요청서
 
 `.claude/context/policies/` — PRAFTA 비즈니스 정책서
 
-두 디렉토리는 역할이 다르므로 혼동하지 않는다.
+요청서 경로와 정책서 경로는 역할이 다르므로 혼동하지 않는다.
+
+요청서 경로 분리 규칙
+
+- 요청서가 `web_requests/` 에 있으면 웹/백엔드 영역 작업, `app_requests/` 에 있으면 모바일 앱(앱 프론트 + Flutter 셸) 영역 작업으로 식별한다.
+- 요청서 파일명 prefix 가 어느 쪽이든(`prafta-NNN`, `prafta-app-NNN` 등), **요청서가 위치한 디렉토리가 작업 영역의 1차 판단 기준**이다. 본문과 디렉토리가 충돌하면 사용자에게 보고한다.
+- 신규 요청서는 작업 영역에 맞는 하위 디렉토리에 저장한다. 루트 `.claude/requests/` 직하에 새 요청서를 두지 않는다.
+
+요청서 처리 방식 (에이전트 워크플로우, 엄수)
+
+`web_requests/` · `app_requests/` 하위의 모든 요청서는 단일 세션에서 직접 처리하지 않고, 아래 서브에이전트 워크플로우로 분해·구현·검증한다.
+
+1. planner — 요청서 정독 후 개발 가능한 단위 작업으로 분해(정책서 출처 명시, 화면 작업이면 UI 명세/Vue 골격 포함).
+2. developer — planner 가 분해한 작업의 코드(백엔드 또는 프론트 script 영역)를 구현.
+3. qa — 구현 결과가 요청서/정책서를 충족하는지, 엣지 케이스를 검증.
+4. security — 인증/인가·PII·주입 등 보안 취약점 검토(인증·권한·DB·외부통신이 관여하는 작업).
+
+예외: 요청서 내용이 명백히 사소한 단건 수정(오타·문구·상수값 등)이라 분해 가치가 없으면, 그 판단 근거를 사용자에게 먼저 보고하고 동의를 받은 뒤 직접 처리할 수 있다. 서브에이전트는 Notion 접근이 없으므로 작업 로그성 Notion 기록이 필요하면 메인 세션이 대행한다(메모리 `project_prafta_subagent_notion` 참조).
 
 주석 / 식별자 명명 규칙
 

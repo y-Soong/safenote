@@ -1,0 +1,90 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.prafta.app.chkLst.chkLst01.mapper.AppChkLst01Mapper">
+
+    <!-- prafta-036-B1: 체크리스트 정보 조회 -->
+    <!-- prafta-app-011: TB_SITE LEFT JOIN 추가 -> SITE_NM, TB_CHKPT_TYPE_MGMT.CHKPT_NM 추가 -->
+    <select id="selectChkLstInfo" parameterType="com.prafta.app.chkLst.chkLst01.application.query.ChecklistInfoQuery" resultType="com.prafta.app.chkLst.chkLst01.result.ChecklistInfoResult">
+    /* AppChkLst01Mapper.selectChkLstInfo */
+    SELECT
+        A.CMPNY_CD              AS cmpnyCd
+        , A.CHKLST_TYPE         AS chklstType
+        , A.CHKPT_DESC          AS chkptDesc
+        , A.CHKPT_NM            AS chkptNm
+        , S.SITE_NM             AS siteNm
+        , B.INSPECT_ITEM_CD     AS inspectItemCd
+        , B.INSPECT_ITEM_SUBJ   AS inspectItemSubj
+        , 'Y'                   AS inspectValue
+        , B.SORT_IDX            AS sortIdx
+    FROM TB_CHKPT_TYPE_MGMT A
+         INNER JOIN TB_CHKPT_INSPECT_ITEM B
+         ON (
+             A.CMPNY_CD = B.CMPNY_CD
+         AND A.CHKLST_TYPE = B.CHKLST_TYPE
+         )
+         LEFT JOIN TB_SITE S
+         ON (
+             A.CMPNY_CD = S.CMPNY_CD
+         AND A.SITE_CD  = S.SITE_CD
+         )
+    WHERE 1=1
+      AND A.CMPNY_CD = #{ token.gv_cmpnyCd }
+      AND A.SITE_CD  = #{ param.siteCd }
+      AND A.CHKPT_CD = #{ param.chkptCd }
+      AND A.USE_YN   = 'Y'
+      AND B.USE_YN   = 'Y'
+    ORDER BY B.SORT_IDX
+    </select>
+
+    <!-- prafta-app-011: 토큰 사업장명 조회 (403 차단 시 문구 구성용) -->
+    <select id="selectSiteNm" resultType="String">
+    /* AppChkLst01Mapper.selectSiteNm */
+    SELECT
+        SITE_NM
+    FROM TB_SITE
+    WHERE 1=1
+      AND CMPNY_CD = #{ cmpnyCd }
+      AND SITE_CD  = #{ siteCd }
+    </select>
+
+    <!-- prafta-036-B1: 점검답변 UPSERT -->
+    <!-- prafta-app-011: PK 구성요소 CHKPT_CD 누락 수정 -->
+    <insert id="mergeChkptInspectAnswer" parameterType="com.prafta.app.chkLst.chkLst01.application.command.InspectResultSaveCommand">
+    /* AppChkLst01Mapper.mergeChkptInspectAnswer */
+    INSERT INTO TB_CHKPT_INSPECT_ANSWER (
+        CMPNY_CD
+        , SITE_CD
+        , CHKPT_CD
+        , INSPECT_ITEM_CD
+        , WORK_DATE
+        , INSPECT_ANSWER_TYPE
+        , ANSWER_DESC
+        , FILE_MGMT_CD
+        , INSERT_NO
+        , INSERT_DATE
+        , UPDATE_NO
+        , UPDATE_DATE
+    )
+    VALUES(
+        #{token.gv_cmpnyCd}
+        , #{param.siteCd}
+        , #{param.chkptCd}
+        , #{param.inspectItemCd}
+        , #{param.workDate}
+        , #{param.inspectAnswerType}
+        , #{param.answerDesc}
+        , #{param.fileMgmtCd}
+        , #{token.gv_userCd}
+        , NOW()
+        , #{token.gv_userCd}
+        , NOW()
+    )
+    ON DUPLICATE KEY UPDATE
+        INSPECT_ANSWER_TYPE = VALUES(INSPECT_ANSWER_TYPE)
+        , ANSWER_DESC       = VALUES(ANSWER_DESC)
+        , FILE_MGMT_CD      = VALUES(FILE_MGMT_CD)
+        , UPDATE_NO         = #{token.gv_userCd}
+        , UPDATE_DATE       = NOW()
+    </insert>
+
+</mapper>

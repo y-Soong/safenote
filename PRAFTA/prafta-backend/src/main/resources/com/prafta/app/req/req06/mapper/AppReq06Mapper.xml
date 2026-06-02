@@ -1,0 +1,110 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.prafta.app.req.req06.mapper.AppReq06Mapper">
+
+    <!-- ============ 공통 WHERE 조각 ============
+      - CMPNY_CD/SITE_CD/USER_CD 스코프 강제(IDOR)
+      - DEL_YN='N'
+      - REQ_TYPE IN ('01'~'06') 고정 (SYS032 시스템 코드 07/08/09 응답 차단)
+      - reqTypes/reqStatuses 가 있을 때만 추가 IN
+      - targetYmd 범위가 있을 때만 BETWEEN -->
+    <sql id="myReqWhere">
+        WHERE A.CMPNY_CD = #{cmpnyCd}
+          AND A.SITE_CD  = #{siteCd}
+          AND A.USER_CD  = #{userCd}
+          AND A.DEL_YN   = 'N'
+          AND A.REQ_TYPE IN ('01','02','03','04','05','06')
+        <if test="reqTypes != null and !reqTypes.isEmpty()">
+          AND A.REQ_TYPE IN
+          <foreach collection="reqTypes" item="t" open="(" separator="," close=")">
+            #{t}
+          </foreach>
+        </if>
+        <if test="reqStatuses != null and !reqStatuses.isEmpty()">
+          AND A.REQ_STATUS IN
+          <foreach collection="reqStatuses" item="s" open="(" separator="," close=")">
+            #{s}
+          </foreach>
+        </if>
+        <if test="targetYmdFrom != null">
+          AND A.WORK_YMD &gt;= #{targetYmdFrom}
+        </if>
+        <if test="targetYmdTo != null">
+          AND A.WORK_YMD &lt;= #{targetYmdTo}
+        </if>
+    </sql>
+
+    <!-- ============ 본인 전체 건수 (필터 무관) ============ -->
+    <select id="selectMyTotalCount" resultType="int">
+    /* AppReq06Mapper.selectMyTotalCount */
+    SELECT COUNT(1)
+      FROM TB_USER_ATTD_REQ A
+     WHERE A.CMPNY_CD = #{cmpnyCd}
+       AND A.SITE_CD  = #{siteCd}
+       AND A.USER_CD  = #{userCd}
+       AND A.DEL_YN   = 'N'
+       AND A.REQ_TYPE IN ('01','02','03','04','05','06')
+    </select>
+
+    <!-- ============ 필터 적용 후 총합 ============ -->
+    <select id="selectMyFilteredCount" parameterType="com.prafta.app.req.req06.application.query.MyReqListQuery" resultType="int">
+    /* AppReq06Mapper.selectMyFilteredCount */
+    SELECT COUNT(1)
+      FROM TB_USER_ATTD_REQ A
+    <include refid="myReqWhere"/>
+    </select>
+
+    <!-- ============ 페이지 행 조회 (limit+1 로 hasMore 판정) ============ -->
+    <select id="selectMyReqPage" parameterType="com.prafta.app.req.req06.application.query.MyReqListQuery"
+            resultType="com.prafta.app.req.req06.result.MyReqItemResult">
+    /* AppReq06Mapper.selectMyReqPage */
+    SELECT
+          A.REQ_ID          AS reqId
+        , A.REQ_TYPE        AS reqType
+        , A.REQ_STATUS      AS reqStatus
+        , A.WORK_YMD        AS workYmd
+        , A.START_DATE      AS startDate
+        , A.START_TIME      AS startTime
+        , A.END_DATE        AS endDate
+        , A.END_TIME        AS endTime
+        , A.OT_TYPE         AS otType
+        , A.LEAVE_TYPE      AS leaveType
+        , A.LEAVE_DAYS      AS leaveDays
+        , A.PROCESS_COMMENT AS processComment
+        , A.PROCESS_DATE    AS processDate
+        , A.INSERT_DATE     AS insertDate
+      FROM TB_USER_ATTD_REQ A
+    <include refid="myReqWhere"/>
+    <choose>
+        <when test="sort == 'RECENT'">
+            ORDER BY A.INSERT_DATE DESC, A.REQ_ID DESC
+        </when>
+        <when test="sort == 'TARGET_DATE'">
+            ORDER BY
+              ABS(DATEDIFF(STR_TO_DATE(COALESCE(A.WORK_YMD,'99991231'),'%Y%m%d'), CURDATE())) ASC
+            , A.INSERT_DATE DESC
+            , A.REQ_ID DESC
+        </when>
+        <otherwise>
+            <!-- PENDING_FIRST (기본) -->
+            ORDER BY (CASE A.REQ_STATUS WHEN '01' THEN 0 ELSE 1 END) ASC
+                   , A.INSERT_DATE DESC
+                   , A.REQ_ID DESC
+        </otherwise>
+    </choose>
+    LIMIT #{limit} OFFSET #{offset}
+    </select>
+
+    <!-- ============ SYS032/SYS033 라벨 일괄 조회 ============
+      key: SYST_VAL_D_CD, value: SYST_VAL_D_NM. 사용여부 'Y' 만. -->
+    <select id="selectSystValDLabels" resultType="java.util.HashMap">
+    /* AppReq06Mapper.selectSystValDLabels */
+    SELECT
+          SYST_VAL_D_CD AS k
+        , SYST_VAL_D_NM AS v
+      FROM TB_SYST_VAL_D
+     WHERE SYST_VAL_CD = #{systValCd}
+       AND IFNULL(USE_YN,'Y') = 'Y'
+    </select>
+
+</mapper>

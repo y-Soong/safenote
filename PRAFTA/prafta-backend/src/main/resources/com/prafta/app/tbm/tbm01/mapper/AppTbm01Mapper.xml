@@ -1,0 +1,165 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+
+<mapper namespace="com.prafta.app.tbm.tbm01.mapper.AppTbm01Mapper">
+
+    <!-- 세션 단건 조회(회사+사업장 스코프). 입실 검증/컨텍스트 공용.
+         siteCd 강제로 타 사업장 세션 접근(조직 스코프 IDOR) 차단. -->
+    <select id="selectSession"
+            parameterType="com.prafta.app.tbm.tbm01.application.query.TbmSessionQuery"
+            resultType="com.prafta.app.tbm.tbm01.result.TbmSessionResult">
+    /* AppTbm01Mapper.selectSession */
+    SELECT
+          SESSION_CD            AS sessionCd
+        , CMPNY_CD              AS cmpnyCd
+        , SITE_CD               AS siteCd
+        , TITLE                 AS title
+        , STATUS_CD             AS statusCd
+        , ENTRY_PWD             AS entryPwd
+        , EXIT_PWD              AS exitPwd
+        , MANAGER_GPS_LAT       AS managerGpsLat
+        , MANAGER_GPS_LON       AS managerGpsLon
+        , GPS_VERIFY_TYPE_CD    AS gpsVerifyTypeCd
+        , GPS_VERIFY_RADIUS_M   AS gpsVerifyRadiusM
+    FROM TB_TBM_SESSION
+    WHERE CMPNY_CD = #{cmpnyCd}
+      AND SITE_CD = #{siteCd}
+      AND SESSION_CD = #{sessionCd}
+      AND DEL_YN = 'N'
+    </select>
+
+    <!-- 본인 출결 단건 조회(세션+REGULAR+userCd). 기입실/미종료 판정. -->
+    <select id="selectMyAttendance"
+            parameterType="com.prafta.app.tbm.tbm01.application.query.TbmSessionQuery"
+            resultType="com.prafta.app.tbm.tbm01.result.TbmAttendanceResult">
+    /* AppTbm01Mapper.selectMyAttendance */
+    SELECT
+          ATTENDANCE_CD          AS attendanceCd
+        , SESSION_CD             AS sessionCd
+        , ENTRY_AT               AS entryAt
+        , ENTRY_DISTANCE_M       AS entryDistanceM
+        , EXIT_AT                AS exitAt
+        , COMPLETION_STATUS_CD   AS completionStatusCd
+    FROM TB_TBM_ATTENDANCE
+    WHERE CMPNY_CD = #{cmpnyCd}
+      AND SESSION_CD = #{sessionCd}
+      AND USER_TYPE_CD = #{userTypeCd}
+      AND USER_CD = #{userCd}
+      AND DEL_YN = 'N'
+    </select>
+
+    <!-- 최근 N초 이내 비밀번호 실패 건수(D4 잠금 판정). -->
+    <select id="countRecentPwdFail"
+            parameterType="com.prafta.app.tbm.tbm01.application.query.TbmPwdFailCountQuery"
+            resultType="int">
+    /* AppTbm01Mapper.countRecentPwdFail */
+    SELECT
+        COUNT(*)
+    FROM TB_TBM_PWD_FAIL
+    WHERE CMPNY_CD = #{cmpnyCd}
+      AND SESSION_CD = #{sessionCd}
+      AND PWD_TYPE_CD = #{pwdTypeCd}
+      AND USER_CD = #{userCd}
+      AND ATTEMPTED_AT >= DATE_SUB(NOW(), INTERVAL #{lockWindowSeconds} SECOND)
+    </select>
+
+    <!-- 비밀번호 실패 로그 INSERT(평문 미저장). -->
+    <insert id="insertPwdFail"
+            parameterType="com.prafta.app.tbm.tbm01.application.command.TbmPwdFailCommand">
+    /* AppTbm01Mapper.insertPwdFail */
+    INSERT INTO TB_TBM_PWD_FAIL (
+          CMPNY_CD
+        , SESSION_CD
+        , PWD_TYPE_CD
+        , USER_TYPE_CD
+        , USER_CD
+        , ATTEMPTED_AT
+        , INSERT_NO
+        , INSERT_DATE
+    )
+    VALUES (
+          #{cmpnyCd}
+        , #{sessionCd}
+        , #{pwdTypeCd}
+        , #{userTypeCd}
+        , #{userCd}
+        , NOW()
+        , #{insertNo}
+        , NOW()
+    )
+    </insert>
+
+    <!-- 비밀번호 성공 시 실패 로그 정리(잠금 카운터 리셋). -->
+    <delete id="deletePwdFail"
+            parameterType="com.prafta.app.tbm.tbm01.application.command.TbmPwdFailCommand">
+    /* AppTbm01Mapper.deletePwdFail */
+    DELETE FROM TB_TBM_PWD_FAIL
+    WHERE CMPNY_CD = #{cmpnyCd}
+      AND SESSION_CD = #{sessionCd}
+      AND PWD_TYPE_CD = #{pwdTypeCd}
+      AND USER_CD = #{userCd}
+    </delete>
+
+    <!-- 출결 INSERT(입실). ATTENDANCE_CD = 'A'+YYYYMMDD+SEQ 채번. -->
+    <insert id="insertAttendance"
+            parameterType="com.prafta.app.tbm.tbm01.application.command.TbmEnterCommand">
+    /* AppTbm01Mapper.insertAttendance */
+    INSERT INTO TB_TBM_ATTENDANCE (
+          ATTENDANCE_CD
+        , CMPNY_CD
+        , SESSION_CD
+        , USER_TYPE_CD
+        , USER_CD
+        , ENTRY_TYPE_CD
+        , ENTRY_AT
+        , ENTRY_GPS_LAT
+        , ENTRY_GPS_LON
+        , ENTRY_DISTANCE_M
+        , DEL_YN
+        , INSERT_NO
+        , INSERT_DATE
+        , UPDATE_NO
+        , UPDATE_DATE
+    )
+    VALUES (
+          CONCAT('A', DATE_FORMAT(NOW(), '%Y%m%d'), FNC_CMM_SEQ_NEXTVAL(#{cmpnyCd}, 'TBM_ATTENDANCE_CD'))
+        , #{cmpnyCd}
+        , #{sessionCd}
+        , #{userTypeCd}
+        , #{userCd}
+        , #{entryTypeCd}
+        , NOW()
+        , #{lat}
+        , #{lon}
+        , #{distanceM}
+        , 'N'
+        , #{insertNo}
+        , NOW()
+        , #{insertNo}
+        , NOW()
+    )
+    </insert>
+
+    <!-- 출결 UPDATE(종료). 본인+미종료만 갱신(IDOR/중복종료 차단). -->
+    <update id="updateExit"
+            parameterType="com.prafta.app.tbm.tbm01.application.command.TbmExitCommand">
+    /* AppTbm01Mapper.updateExit */
+    UPDATE TB_TBM_ATTENDANCE
+    SET
+          EXIT_TYPE_CD           = #{exitTypeCd}
+        , EXIT_AT                = NOW()
+        , EXIT_SIGN_FILE_MGMT_CD = #{exitSignFileMgmtCd}
+        , COMPLETION_STATUS_CD   = #{completionStatusCd}
+        , STATUS_UPDATED_BY      = #{updateNo}
+        , STATUS_UPDATED_AT      = NOW()
+        , UPDATE_NO              = #{updateNo}
+        , UPDATE_DATE            = NOW()
+    WHERE CMPNY_CD = #{cmpnyCd}
+      AND SESSION_CD = #{sessionCd}
+      AND USER_TYPE_CD = #{userTypeCd}
+      AND USER_CD = #{userCd}
+      AND DEL_YN = 'N'
+      AND EXIT_AT IS NULL
+    </update>
+
+</mapper>

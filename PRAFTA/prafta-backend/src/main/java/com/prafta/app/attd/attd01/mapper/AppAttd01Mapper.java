@@ -1,0 +1,174 @@
+package com.prafta.app.attd.attd01.mapper;
+
+import java.util.List;
+
+import org.apache.ibatis.annotations.Mapper;
+import org.apache.ibatis.annotations.Param;
+
+import com.prafta.app.attd.attd01.application.command.CheckInCommand;
+import com.prafta.app.attd.attd01.application.command.CheckInGpsCommand;
+import com.prafta.app.attd.attd01.application.command.CheckOutCommand;
+import com.prafta.app.attd.attd01.application.command.CheckOutGpsCommand;
+import com.prafta.app.attd.attd01.application.query.AttdRangeQuery;
+import com.prafta.app.attd.attd01.result.AttdRecordResult;
+import com.prafta.app.attd.attd01.result.GpsResult;
+import com.prafta.app.attd.attd01.result.HolidayResult;
+import com.prafta.app.attd.attd01.result.LeaveUseResult;
+import com.prafta.app.attd.attd01.result.OpenAttdResult;
+import com.prafta.app.attd.attd01.result.ScheduleResult;
+import com.prafta.app.attd.attd01.result.SiteGeofenceResult;
+import com.prafta.app.attd.attd01.result.StdTimeRuleResult;
+
+/**
+ * prafta-app-002: 앱 본인 근태조회(attd01) Mapper.
+ *
+ * <p>모든 조회는 본인 스코프(cmpnyCd/siteCd/userCd) + 일자범위로 한정된다(IDOR 가드).
+ *   산출(workStatus/표준화/액션/dayType/합계)은 전부 ServiceImpl 에서 처리하고,
+ *   여기서는 원천 데이터(스케줄/근태/GPS/표준화룰/휴일/연차/마감)만 로딩한다.
+ */
+@Mapper
+public interface AppAttd01Mapper {
+
+    /** 사업장명 단건 조회 (JWT siteCd 기준). */
+    String selectSiteName(@Param("cmpnyCd") String cmpnyCd, @Param("siteCd") String siteCd);
+
+    /** 근무계획 + 스케줄정의(SCH) + 연차명(LEAVE) 일자범위 조회. */
+    List<ScheduleResult> selectScheduleByRange(@Param("q") AttdRangeQuery query);
+
+    /** 실 근태 레코드 일자범위 조회 (DEL_YN='N', SITE_NM 조인). */
+    List<AttdRecordResult> selectAttdByRange(@Param("q") AttdRangeQuery query);
+
+    /** 근태 GPS 측정 조회 (ATTD_ID 목록 기준, 출근/퇴근 최신행). */
+    List<GpsResult> selectGpsByAttdIds(
+            @Param("cmpnyCd") String cmpnyCd
+            , @Param("attdIds") List<String> attdIds
+    );
+
+    /** 회사 단위 출퇴근 표준화 룰 + SYS029 단위(분) 조회. */
+    List<StdTimeRuleResult> selectStdTimeRules(@Param("cmpnyCd") String cmpnyCd);
+
+    /** 휴일 일자범위 조회 (USE_YN='Y', YYYYMMDD 문자열 변환). */
+    List<HolidayResult> selectHolidaysByRange(@Param("q") AttdRangeQuery query);
+
+    /** 본인 연차 사용 실적 조회 (CONFIRMED, 범위 겹침). */
+    List<LeaveUseResult> selectLeaveUseByRange(@Param("q") AttdRangeQuery query);
+
+    /**
+     * 본인 소속부서 NODE_CD 조회 (마감 커버리지 판정용).
+     * <p>없으면 null. TB_USER.
+     */
+    String selectUserNodeCd(
+            @Param("cmpnyCd") String cmpnyCd
+            , @Param("siteCd") String siteCd
+            , @Param("userCd") String userCd
+    );
+
+    /**
+     * 해당 월이 본인 부서를 덮는 마감(CLOSED)으로 닫혀 있는지 여부.
+     * <p>prafta-028 부서단위 마감 커버리지 판정: '*'(전체) / 자기노드 / INC_SUB='Y' 상위노드.
+     *   1 이상이면 마감(closed). TB_ATTD_CLOSE + TB_SITE_NODE 재귀.
+     */
+    int countCoveringClose(
+            @Param("cmpnyCd") String cmpnyCd
+            , @Param("siteCd") String siteCd
+            , @Param("nodeCd") String nodeCd
+            , @Param("closeYm") String closeYm
+    );
+
+    // ====================================================================
+    // prafta-app check-out: 셀프 퇴근 (쓰기)
+    // ====================================================================
+
+    /**
+     * 본인의 열린 근태(미퇴근) 중 가장 최근 WORK_YMD/WORK_SEQ 1건 조회.
+     * <p>열린 근태 = DEL_YN='N' && CHECK_IN_TIME 有 && CHECK_OUT_TIME NULL,
+     *   WORK_YMD &gt;= fromYmd(D+1 윈도우 하한). 없으면 null.
+     *   workYmd(Low-1) 가 주어지면 그 일자의 열린건만 대상(우선), 미전달이면 fromYmd 이상 최신 폴백.
+     *   사업장/마감/윈도우 상한 재검증은 ServiceImpl 에서 수행한다(여기서는 후보만 좁힌다).
+     */
+    OpenAttdResult selectOpenAttd(
+            @Param("cmpnyCd") String cmpnyCd
+            , @Param("siteCd") String siteCd
+            , @Param("userCd") String userCd
+            , @Param("fromYmd") String fromYmd
+            , @Param("workYmd") String workYmd
+    );
+
+    /**
+     * 사업장 지오펜스 기준값(중심좌표 LAT/LON + 허용반경 GPS_RANGE) 단건 조회.
+     * <p>지오펜스 판정용. LAT/LON/GPS_RANGE 중 결측이면 서비스가 온사이트 폴백(A안).
+     */
+    SiteGeofenceResult selectSiteGeofence(
+            @Param("cmpnyCd") String cmpnyCd
+            , @Param("siteCd") String siteCd
+    );
+
+    /** GPS_ID 선채번 (회사별 시퀀스, 'GPS_ID' 키). YYYYMMDD + 시퀀스. */
+    String selectGpsId(@Param("cmpnyCd") String cmpnyCd);
+
+    /**
+     * 출근 레코드의 퇴근 채움 UPDATE. 동시성 가드(CHECK_OUT_TIME IS NULL) 포함.
+     * @return 영향 행 수(0이면 이미 퇴근됨/대상 없음 → 서비스에서 거부).
+     */
+    int updateCheckOut(@Param("c") CheckOutCommand command);
+
+    /** 퇴근 GPS 기록 INSERT (TB_USER_ATTD_GPS, GPS_INFO_TYPE='02'). */
+    int insertCheckOutGps(@Param("g") CheckOutGpsCommand command);
+
+    // ====================================================================
+    // prafta-app-003 A1: 셀프 출근 (check-in, 쓰기)
+    // ====================================================================
+
+    /** ATTD_ID 선채번 (회사별 시퀀스, 'ATTD_ID' 키). YYYYMMDD + 시퀀스. */
+    String selectAttdId(@Param("cmpnyCd") String cmpnyCd);
+
+    /**
+     * 동시 출근(TOCTOU) 방지용 본인 행 비관적 잠금(FOR UPDATE).
+     * <p>checkIn 트랜잭션 시작부에서 호출해 동일 사용자의 동시 출근을 직렬화한다.
+     *   tb_user_attd_mgmt 자연키 UNIQUE 부재를 보완(count→insert 경쟁 차단).
+     *   잠금은 트랜잭션 커밋/롤백 시 해제. @return 잠근 USER_CD(존재 확인용), 없으면 null.
+     */
+    String lockUserForCheckIn(
+            @Param("cmpnyCd") String cmpnyCd
+            , @Param("siteCd") String siteCd
+            , @Param("userCd") String userCd
+    );
+
+    /**
+     * 본인의 그 일자 근태 레코드 수(DEL_YN='N'). WORK_SEQ 산정 + 출근횟수 제한 판정용.
+     */
+    int countAttdByYmd(
+            @Param("cmpnyCd") String cmpnyCd
+            , @Param("siteCd") String siteCd
+            , @Param("userCd") String userCd
+            , @Param("workYmd") String workYmd
+    );
+
+    /**
+     * 본인의 그 일자 "열린(미퇴근) 근태" 수(DEL_YN='N' && CHECK_IN_TIME 有 && CHECK_OUT_TIME NULL).
+     * <p>재출근 가드(§5.2): 직전 구간 미퇴근이면 재출근 차단.
+     */
+    int countOpenAttdByYmd(
+            @Param("cmpnyCd") String cmpnyCd
+            , @Param("siteCd") String siteCd
+            , @Param("userCd") String userCd
+            , @Param("workYmd") String workYmd
+    );
+
+    /**
+     * 본인의 "과거(WORK_YMD &lt; today) 열린 근태" 수(DEL_YN='N' && CHECK_OUT_TIME NULL).
+     * <p>다음날 출근 게이트(사용자 확정): 전날 이전 미완료 근태가 있으면 출근 차단.
+     */
+    int countPastOpenAttd(
+            @Param("cmpnyCd") String cmpnyCd
+            , @Param("siteCd") String siteCd
+            , @Param("userCd") String userCd
+            , @Param("todayYmd") String todayYmd
+    );
+
+    /** 출근 레코드 INSERT (TB_USER_ATTD_MGMT, CHECK_OUT_* 는 NULL). */
+    int insertCheckIn(@Param("c") CheckInCommand command);
+
+    /** 출근 GPS 기록 INSERT (TB_USER_ATTD_GPS, GPS_INFO_TYPE='01'). */
+    int insertCheckInGps(@Param("g") CheckInGpsCommand command);
+}
