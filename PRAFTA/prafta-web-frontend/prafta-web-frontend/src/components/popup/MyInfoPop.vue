@@ -197,7 +197,7 @@ const fnSelfWithdrawal = async () => {
     await axios.post("/webApi/user01/withdraw-my-account", {});
     await proxy.$alert(getMessage(MSG.MY_INFO_WITHDRAWAL_SUCCESS));
     sessionStorage.clear();
-    window.location.replace("/");
+    window.location.replace("/safenote");
   } catch (err) {
     const msg = resolveApiErrorMessage(
       err,

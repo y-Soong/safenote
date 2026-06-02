@@ -186,8 +186,8 @@ async function syncTokenIfNeeded() {
     // refresh 실패 → 정리 후 로그인 페이지로 (현재 로그인 화면이 아니라면)
     await forceLogout();
     userStore.logout();
-    if (router.currentRoute.value.path !== "/") {
-      router.push("/");
+    if (router.currentRoute.value.path !== "/safenote") {
+      router.push("/safenote");
     }
   }
 }

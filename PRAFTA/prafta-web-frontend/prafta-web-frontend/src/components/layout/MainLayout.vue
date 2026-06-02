@@ -24,7 +24,7 @@
         >
           {{ tab.label }}
           <span
-            v-if="tab.route !== '/main'"
+            v-if="tab.route !== '/safenote/main'"
             class="close-btn"
             @click.stop="closeTab(tab.route)"
           >
@@ -110,7 +110,7 @@ function selectTopMenu(topMenuId) {
 /* 메뉴/탭 네비게이션 */
 function onNavigate(menu) {
   if (typeof menu === "object" && menu.route) {
-    const route = `/main/${menu.route}`;
+    const route = `/safenote/main/${menu.route}`;
     const label = menu.label;
     const buttons = menu.buttons || {};
     addTab({ label, route, buttons });
@@ -140,7 +140,7 @@ function selectTab(route) {
 }
 
 function closeTab(route) {
-  if (route === "/main") return; // 대시보드는 닫지 않음
+  if (route === "/safenote/main") return; // 대시보드는 닫지 않음
 
   const idx = tabs.value.findIndex((t) => t.route === route);
   if (idx !== -1) {
@@ -180,7 +180,7 @@ function findMenuByRoute(targetRoute, sideMenuMap) {
 
 function findInList(list, targetRoute) {
   for (const item of list) {
-    if (item.route && `/main/${item.route}` === targetRoute) return item;
+    if (item.route && `/safenote/main/${item.route}` === targetRoute) return item;
     if (Array.isArray(item.children)) {
       const sub = findInList(item.children, targetRoute);
       if (sub) return sub;
@@ -198,13 +198,13 @@ onMounted(async () => {
     const defaultTop = topMenus.value[0];
     if (defaultTop) selectTopMenu(defaultTop.id);
 
-    addTab({ label: "🏠", route: "/main", buttons: {} });
+    addTab({ label: "🏠", route: "/safenote/main", buttons: {} });
 
     // PRAFTA-005: URL이 /main 자식 라우트로 직진입된 경우 해당 탭을 자동 추가
     if (
       route.path &&
-      route.path !== "/main" &&
-      route.path.startsWith("/main/")
+      route.path !== "/safenote/main" &&
+      route.path.startsWith("/safenote/main/")
     ) {
       const matched = findMenuByRoute(route.path, allSideMenus.value);
       if (matched) {
@@ -231,11 +231,11 @@ onMounted(async () => {
 
 function closeAllTabsExceptHome() {
   // 홈(/main)만 남기고 모두 제거
-  tabs.value = tabs.value.filter((t) => t.route === "/main");
+  tabs.value = tabs.value.filter((t) => t.route === "/safenote/main");
 
   // 홈을 활성화
-  activeTab.value = "/main";
-  router.push("/main");
+  activeTab.value = "/safenote/main";
+  router.push("/safenote/main");
 }
 </script>
 

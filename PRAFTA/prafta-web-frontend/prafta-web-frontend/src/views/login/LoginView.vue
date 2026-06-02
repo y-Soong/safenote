@@ -352,7 +352,7 @@ const focusKill = (e) => {
   }
 };
 
-const fnMoveMainPath = () => router.push("/main");
+const fnMoveMainPath = () => router.push("/safenote/main");
 
 const fnUserLogout = () => userStore.logout();
 

@@ -46,7 +46,8 @@ async function forceLogoutAndRedirect(userStore) {
   } catch (e) {
     // store 미초기화 등은 무시
   }
-  (await getRouter()).push("/");
+  // 로그인 화면 = SafeNote 서비스 진입('/safenote'). 루트('/')는 회사소개 랜딩이다.
+  (await getRouter()).push("/safenote");
 }
 
 // 요청 인터셉터

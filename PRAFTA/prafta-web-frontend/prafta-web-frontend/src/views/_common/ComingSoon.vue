@@ -2,7 +2,7 @@
   <div class="coming-soon">
     <h1>준비 중입니다</h1>
     <p>이 페이지는 곧 업데이트됩니다.</p>
-    <router-link to="/main" class="home-link">메인으로 돌아가기</router-link>
+    <router-link to="/safenote/main" class="home-link">메인으로 돌아가기</router-link>
   </div>
 </template>
 

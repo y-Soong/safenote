@@ -95,7 +95,7 @@ const logout = async () => {
     userStore.logout();
     userMenuOpen.value = false;
     await proxy.$alert("로그아웃 처리됐습니다.");
-    router.push("/"); // 로그인 화면으로 이동
+    router.push("/safenote"); // 로그인 화면으로 이동(SafeNote 서비스 진입)
   } catch (err) {
     const msg = resolveApiErrorMessage(
       err,

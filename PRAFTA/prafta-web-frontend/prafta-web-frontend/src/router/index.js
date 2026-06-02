@@ -12,18 +12,30 @@ import {
   getRefreshToken,
 } from "@/composables/useAuth";
 
+// URL 구조 (도메인 연결 시 prafta.com 기준):
+//   '/'          → 회사소개 랜딩(공개)            = prafta.com/
+//   '/safenote'  → SafeNote 서비스(로그인/관리자) = prafta.com/safenote/...
+// SafeNote 서비스의 모든 경로는 '/safenote' 프리픽스 아래에 둔다.
+const SERVICE_BASE = "/safenote";
+
 // 초기 고정 라우트만 선언 (동적 화면은 나중에 주입)
 const routes = [
-  // 로그인 (기본 진입)
-  { path: "/", name: "Login", component: LoginView },
+  // 회사소개 랜딩 (루트 도메인, 비로그인 공개)
+  {
+    path: "/",
+    name: "Home",
+    component: () => import("@/views/intro/CompanyIntroView.vue"),
+  },
+  // SafeNote 서비스 진입 = 로그인
+  { path: SERVICE_BASE, name: "Login", component: LoginView },
   // 일일계정 ID 생성용 별도 경로 (PRAFTA-007) — path 중복 해소
   {
-    path: "/daily-user-create",
+    path: `${SERVICE_BASE}/daily-user-create`,
     name: "dailyUserIdCreate",
     component: LoginView,
   },
   {
-    path: "/main",
+    path: `${SERVICE_BASE}/main`,
     name: "Main",
     component: MainLayout,
     meta: { requiresAuth: true },
@@ -39,9 +51,11 @@ const routes = [
   },
   // 일일사용자 회원가입 (비로그인 외부 화면, PRAFTA-013)
   // joinCd = {회사코드}-{사업장코드5자리}. requiresAuth 미부착 → 인증 강제 없음.
+  // 기존에 배포된 '/dailyUserJoin/...' 링크/QR 호환을 위해 alias 유지.
   {
-    path: "/dailyUserJoin/:joinCd",
+    path: `${SERVICE_BASE}/dailyUserJoin/:joinCd`,
     name: "DailyUserJoin",
+    alias: "/dailyUserJoin/:joinCd",
     component: () => import("@/views/dailyJoin/DailyUserJoin.vue"),
   },
   {
@@ -134,7 +148,7 @@ export function isDynamicInjected() {
 
 router.beforeEach(async (to, from, next) => {
   const requiresAuth = to.matched.some((r) => r.meta?.requiresAuth);
-  const isLoginPage = to.path === "/";
+  const isLoginPage = to.path === SERVICE_BASE;
 
   // catch-all/NotFound 진입 여부 (현재 시점 기준)
   const isCatchAllNow =
@@ -142,29 +156,29 @@ router.beforeEach(async (to, from, next) => {
     to.matched.length === 0 ||
     to.matched[0]?.path === "/:pathMatch(.*)*";
 
-  // /main 하위 경로에 직진입했지만 NotFound로 잡힌 경우:
+  // /safenote/main 하위 경로에 직진입했지만 NotFound로 잡힌 경우:
   // 1) 동적 라우트 미주입 상태 → 토큰 확보 후 주입 → 재평가
-  // 2) 주입 완료 후에도 매칭 실패 → /main으로 라우팅 (대시보드)
-  const isMainSubPath = to.path.startsWith("/main");
+  // 2) 주입 완료 후에도 매칭 실패 → /safenote/main으로 라우팅 (대시보드)
+  const isMainSubPath = to.path.startsWith(`${SERVICE_BASE}/main`);
 
   if (isCatchAllNow && isMainSubPath) {
-    // PRAFTA-005: 새 탭에서 /main/{path} 직진입 시 처리
+    // PRAFTA-005: 새 탭에서 /safenote/main/{path} 직진입 시 처리
     const ensured = await ensureAccessToken();
     if (!ensured) {
       // 세션 복구 실패 → 로그인
-      return next("/");
+      return next(SERVICE_BASE);
     }
     if (!dynamicInjected) {
       await injectDynamicRoutes();
     }
-    // 재해석 후에도 동적 라우트에 매칭되지 않으면 /main(대시보드)으로 보낸다.
+    // 재해석 후에도 동적 라우트에 매칭되지 않으면 대시보드로 보낸다.
     const resolved = router.resolve(to.fullPath);
     const stillNotFound =
       resolved.name === "NotFound" ||
       resolved.matched.length === 0 ||
       resolved.matched[0]?.path === "/:pathMatch(.*)*";
     if (stillNotFound) {
-      return next({ path: "/main", replace: true });
+      return next({ path: `${SERVICE_BASE}/main`, replace: true });
     }
     // 매칭되도록 재평가
     return next({ path: to.fullPath, replace: true });
@@ -173,7 +187,7 @@ router.beforeEach(async (to, from, next) => {
   // 인증 필요 라우트면 토큰을 먼저 확보(새 탭/새로고침 복구)
   if (requiresAuth) {
     const ensured = await ensureAccessToken();
-    if (!ensured) return next("/");
+    if (!ensured) return next(SERVICE_BASE);
     // 토큰 확보 후 동적 라우트 주입 (한 번만)
     if (!dynamicInjected) {
       await injectDynamicRoutes();
@@ -182,7 +196,7 @@ router.beforeEach(async (to, from, next) => {
 
   // 로그인 페이지인데 이미 세션이 있으면 메인으로 이동
   const token = sessionStorage.getItem("token");
-  if (token && isLoginPage) return next("/main");
+  if (token && isLoginPage) return next(`${SERVICE_BASE}/main`);
 
   return next();
 });

@@ -610,7 +610,8 @@ const fnCopyJoinLink = async () => {
     await proxy.$alert("발급된 가입 코드가 없습니다.");
     return;
   }
-  const url = `${window.location.origin}/dailyUserJoin/${joinCd.value}`;
+  // 신규 표준 경로는 SafeNote 서비스 프리픽스('/safenote') 하위. 기존 '/dailyUserJoin'은 라우터 alias로 호환.
+  const url = `${window.location.origin}/safenote/dailyUserJoin/${joinCd.value}`;
   try {
     await navigator.clipboard.writeText(url);
     await proxy.$alert("링크가 복사되었습니다.\n");

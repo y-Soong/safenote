@@ -53,12 +53,12 @@ watch(
 function isActive(menu) {
   if (!props.activeRoute) return false;
   const segment = menu.route && String(menu.route).trim();
-  const full = segment ? `/main/${segment}` : "/main";
+  const full = segment ? `/safenote/main/${segment}` : "/safenote/main";
   return full === props.activeRoute;
 }
 
 function goHome() {
-  router.push("/main");
+  router.push("/safenote/main");
 }
 
 function toggleImg(menu) {
