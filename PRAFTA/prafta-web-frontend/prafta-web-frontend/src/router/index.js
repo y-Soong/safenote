@@ -21,10 +21,32 @@ const SERVICE_BASE = "/safenote";
 // 초기 고정 라우트만 선언 (동적 화면은 나중에 주입)
 const routes = [
   // 회사소개 랜딩 (루트 도메인, 비로그인 공개)
+  // 기존 CompanyIntroView.vue는 보존(미라우팅). 신규 홈페이지 메인으로 교체.
   {
     path: "/",
     name: "Home",
-    component: () => import("@/views/intro/CompanyIntroView.vue"),
+    component: () => import("@/views/intro/IntroMainView.vue"),
+  },
+  // 홈페이지 intro 공개 페이지 (비로그인, requiresAuth 없음)
+  {
+    path: "/about",
+    name: "IntroAbout",
+    component: () => import("@/views/intro/IntroAboutView.vue"),
+  },
+  {
+    path: "/service",
+    name: "IntroService",
+    component: () => import("@/views/intro/IntroServiceView.vue"),
+  },
+  {
+    path: "/pricing",
+    name: "IntroPricing",
+    component: () => import("@/views/intro/IntroPricingView.vue"),
+  },
+  {
+    path: "/contact",
+    name: "IntroContact",
+    component: () => import("@/views/intro/IntroContactView.vue"),
   },
   // SafeNote 서비스 진입 = 로그인
   { path: SERVICE_BASE, name: "Login", component: LoginView },
