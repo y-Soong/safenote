@@ -115,3 +115,4 @@ docker-compose.override.yml
 data/
 local-data/
 /.metadata/
+firebase-sa.json
