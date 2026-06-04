@@ -116,3 +116,9 @@ data/
 local-data/
 /.metadata/
 firebase-sa.json
+
+############################
+# 독립 저장소 (별도 git repo로 관리: safenote_flutter.git)
+# 같은 폴더 트리에 두되 바깥(safenote.git) 추적에서 제외 = 깔끔한 폴리레포 분리
+############################
+PRAFTA_FLUTTER/
