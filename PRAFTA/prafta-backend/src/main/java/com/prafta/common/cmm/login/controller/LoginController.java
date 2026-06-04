@@ -31,7 +31,9 @@ import com.prafta.common.cmm.login.dto.response.LoginResponse;
 import com.prafta.common.cmm.login.dto.response.UserTermsAgreementCheckResponse;
 import com.prafta.common.cmm.login.service.LoginService;
 import com.prafta.common.security.JwtUtil;
+import com.prafta.common.util.ClientIpExtractor;
 
+import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -49,9 +51,11 @@ public class LoginController {
 	
     // 보안 수정(PRAFTA-006-001): 자격증명이 URL 쿼리스트링/서버 로그/Referer에 노출되지 않도록 POST + JSON 본문으로 전환
     @PostMapping("/login")
-    public ResponseEntity<?> Login(@Valid @RequestBody LoginRequest loginRequest, @RequestHeader(value = "X-Client-Type", required = false, defaultValue = "WEB") String clientType) {
-    	LoginResponse loginResponse = loginService.Login(LoginParam.from(loginRequest, clientType));
-    	
+    public ResponseEntity<?> Login(@Valid @RequestBody LoginRequest loginRequest, @RequestHeader(value = "X-Client-Type", required = false, defaultValue = "WEB") String clientType, HttpServletRequest httpRequest) {
+    	// prafta-com-003 C3: 로그인 IP 는 서버가 추출(디바이스 로그인 이력 LOGIN_IP). 클라 신뢰 안 함.
+    	String ipAddr = ClientIpExtractor.extract(httpRequest);
+    	LoginResponse loginResponse = loginService.Login(LoginParam.from(loginRequest, clientType, ipAddr));
+
     	return ResponseEntity.status(HttpStatus.OK).body(loginResponse);
     }
 

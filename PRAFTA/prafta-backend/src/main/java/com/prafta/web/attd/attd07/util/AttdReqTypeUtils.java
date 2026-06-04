@@ -70,4 +70,16 @@ public final class AttdReqTypeUtils {
     public static boolean isOvertimeModify(String reqType) {
         return REQ_TYPE_OT_MODIFY.equals(reqType);
     }
+
+    /**
+     * SEC-018 - 스케줄 수정 처리 endpoint에서 사용하는 REQ_TYPE allow-list (PRAFTA-APP-007).
+     * 스케줄 수정 요청('10') 값에 대해서만 true 를 반환한다. 근태(01/02)/OT(03/04)/연차(05/06)
+     * 값(그리고 알 수 없는 값)은 false 를 반환하여 타입 혼동(type confusion)을 차단한다.
+     * 스케줄 수정 승인은 tb_user_work_plan 의 WORK_PLAN_CD 를 교체하므로, 다른 유형의
+     * REQ row 가 이 경로로 흘러들면 잘못된 스케줄 반영이 발생할 수 있다.
+     */
+    public static boolean isScheduleModifyReqType(String reqType) {
+        if (reqType == null || reqType.isEmpty()) return false;
+        return REQ_TYPE_SCHED_MODIFY.equals(reqType);
+    }
 }

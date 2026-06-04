@@ -20,7 +20,6 @@ public record PendingReqResult(
     , String startTime
     , String endDate
     , String endTime
-    , String otType
     , String reqReason
     , String reqDate
 ) {

@@ -34,8 +34,6 @@ public record InsertUserOvertimeCommand(
     , String workYmd
     , String nodeCd
 
-    , String otType
-
     , String planStartDate
     , String planStartTime
     , String planEndDate
@@ -87,8 +85,6 @@ public record InsertUserOvertimeCommand(
 
             , param.workYmd()
             , param.nodeCd()
-
-            , ot.otType()
 
             , ot.startDate()
             , ot.startTime()

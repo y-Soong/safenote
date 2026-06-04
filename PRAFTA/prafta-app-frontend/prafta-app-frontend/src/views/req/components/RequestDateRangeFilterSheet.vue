@@ -50,9 +50,7 @@
         <button type="button" class="req-date-footer__reset" @click="onResetInternal">
           초기화
         </button>
-        <button type="button" class="req-date-footer__apply" @click="onApply">
-          적용하기
-        </button>
+        <button type="button" class="req-date-footer__apply" @click="onApply">적용하기</button>
       </div>
     </template>
   </BaseBottomSheet>

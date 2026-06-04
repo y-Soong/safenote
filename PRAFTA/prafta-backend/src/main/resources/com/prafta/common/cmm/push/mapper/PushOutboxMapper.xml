@@ -1,0 +1,127 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+
+<!--
+  FCM 공용 PUSH 전송 워커 Mapper (PRAFTA-COM-002, consumer).
+  tb_noti_outbox PENDING 행 claim/조회/상태전이 + tb_user_device 토큰 조회/무효화.
+  생산자(INSERT)는 미보유(각 기능이 별도 적재). 워커 주체 = 'PUSH_WORKER'.
+-->
+<mapper namespace="com.prafta.common.cmm.push.mapper.PushOutboxMapper">
+
+    <!--
+      발송 대기 배치 조회.
+      PENDING + 미삭제 + 재시도한도 미만, INSERT_DATE 오름차순(IX_NOTI_OUTBOX_PENDING).
+      필요 컬럼만 명시(SELECT * 금지). CHANNEL 은 현재 'PUSH' 단일이라 미선택.
+    -->
+    <select id="selectPendingForSend" resultType="com.prafta.common.cmm.push.vo.PushOutboxRowVO">
+    /* PushOutboxMapper.selectPendingForSend */
+    SELECT
+          O.NOTI_ID         AS notiId
+        , O.CMPNY_CD        AS cmpnyCd
+        , O.TARGET_USER_CD  AS targetUserCd
+        , O.NOTI_TYPE       AS notiType
+        , O.TITLE           AS title
+        , O.BODY            AS body
+        , O.DATA_PAYLOAD    AS dataPayload
+        , O.RETRY_CNT       AS retryCnt
+      FROM TB_NOTI_OUTBOX O
+     WHERE O.SEND_STATUS = 'PENDING'
+       AND O.DEL_YN      = 'N'
+       AND O.RETRY_CNT   &lt; #{maxRetry}
+     ORDER BY O.INSERT_DATE ASC
+     LIMIT #{batchSize}
+    </select>
+
+    <!--
+      claim: PENDING → SENDING 조건부 전이.
+      affected=1 일 때만 이 워커가 처리(크래시복구/중복발송 방지). 0이면 skip.
+    -->
+    <update id="claimSending">
+    /* PushOutboxMapper.claimSending */
+    UPDATE TB_NOTI_OUTBOX
+       SET SEND_STATUS = 'SENDING'
+         , UPDATE_NO   = #{actor}
+         , UPDATE_DATE = NOW()
+     WHERE NOTI_ID     = #{notiId}
+       AND SEND_STATUS = 'PENDING'
+    </update>
+
+    <!--
+      대상 사용자의 활성 FCM 토큰 조회.
+      tb_user_device 엔 CMPNY_CD 없음(글로벌 유니크) → USER_CD 단일 키.
+      DEL_YN='N' AND PUSH_TOKEN IS NOT NULL 만 대상.
+    -->
+    <select id="selectDeviceTokens" resultType="com.prafta.common.cmm.push.vo.DeviceTokenVO">
+    /* PushOutboxMapper.selectDeviceTokens */
+    SELECT
+          D.DEVICE_UUID  AS deviceUuid
+        , D.PUSH_TOKEN   AS pushToken
+      FROM TB_USER_DEVICE D
+     WHERE D.USER_CD    = #{targetUserCd}
+       AND D.DEL_YN     = 'N'
+       AND D.PUSH_TOKEN IS NOT NULL
+    </select>
+
+    <!--
+      발송 성공 전이. SENT + SENT_DATE.
+      멱등: SENDING/PENDING 상태에서만 전이(SENT 재처리 방지).
+    -->
+    <update id="markSent">
+    /* PushOutboxMapper.markSent */
+    UPDATE TB_NOTI_OUTBOX
+       SET SEND_STATUS = 'SENT'
+         , SENT_DATE   = NOW()
+         , UPDATE_NO   = #{actor}
+         , UPDATE_DATE = NOW()
+     WHERE NOTI_ID     = #{notiId}
+       AND SEND_STATUS IN ('SENDING', 'PENDING')
+    </update>
+
+    <!--
+      발송 영구 실패 전이. FAILED + RETRY_CNT + ERROR_MSG.
+      멱등: SENDING/PENDING 상태에서만 전이.
+    -->
+    <update id="markFailed">
+    /* PushOutboxMapper.markFailed */
+    UPDATE TB_NOTI_OUTBOX
+       SET SEND_STATUS = 'FAILED'
+         , RETRY_CNT   = #{retryCnt}
+         , ERROR_MSG   = #{errorMsg}
+         , UPDATE_NO   = #{actor}
+         , UPDATE_DATE = NOW()
+     WHERE NOTI_ID     = #{notiId}
+       AND SEND_STATUS IN ('SENDING', 'PENDING')
+    </update>
+
+    <!--
+      일시 실패 → PENDING 복귀(다음 주기 재시도). RETRY_CNT+1, ERROR_MSG 보존.
+      claim 으로 SENDING 이 된 행만 되돌린다.
+    -->
+    <update id="incrementRetryAndRevertPending">
+    /* PushOutboxMapper.incrementRetryAndRevertPending */
+    UPDATE TB_NOTI_OUTBOX
+       SET SEND_STATUS = 'PENDING'
+         , RETRY_CNT   = RETRY_CNT + 1
+         , ERROR_MSG   = #{errorMsg}
+         , UPDATE_NO   = #{actor}
+         , UPDATE_DATE = NOW()
+     WHERE NOTI_ID     = #{notiId}
+       AND SEND_STATUS = 'SENDING'
+    </update>
+
+    <!--
+      무효 토큰 soft-delete(B-2 옵션A). DEL_YN='Y'.
+      PUSH_TOKEN 보존(감사), 조회에서만 제외.
+    -->
+    <update id="softDeleteDeviceToken">
+    /* PushOutboxMapper.softDeleteDeviceToken */
+    UPDATE TB_USER_DEVICE
+       SET DEL_YN      = 'Y'
+         , UPDATE_NO   = #{actor}
+         , UPDATE_DATE = NOW()
+     WHERE DEVICE_UUID = #{deviceUuid}
+       AND DEL_YN      = 'N'
+    </update>
+
+</mapper>

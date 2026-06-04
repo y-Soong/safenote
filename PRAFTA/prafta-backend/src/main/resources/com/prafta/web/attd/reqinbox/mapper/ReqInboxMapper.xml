@@ -23,7 +23,6 @@
         , R.START_TIME                                                 AS startTime
         , R.END_DATE                                                   AS endDate
         , R.END_TIME                                                   AS endTime
-        , R.OT_TYPE                                                    AS otType
         , R.REQ_REASON                                                 AS reqReason
         , DATE_FORMAT(R.INSERT_DATE, '%Y-%m-%dT%H:%i:%s')              AS reqDate
       FROM TB_USER_ATTD_REQ R

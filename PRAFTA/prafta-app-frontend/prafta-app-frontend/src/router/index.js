@@ -28,6 +28,14 @@ const routes = [
     component: () => import('@/views/leave/MyLeaveSummaryView.vue'),
   },
 
+  // prafta-app-018-C: 연차 신청 폼 (보호 — beforeEach 토큰 게이트, publicPaths 미포함)
+  //   진입: /LeaveApply (연차현황) 또는 /LeaveApply?workYmd=YYYYMMDD&nodeCd=N001 (내 근태 액션시트)
+  {
+    path: '/LeaveApply',
+    name: 'LeaveApply',
+    component: () => import('@/views/leave/LeaveApplyView.vue'),
+  },
+
   // PRAFTA-APP-006: 내 승인 요청 목록 화면
   {
     path: '/MyRequests',

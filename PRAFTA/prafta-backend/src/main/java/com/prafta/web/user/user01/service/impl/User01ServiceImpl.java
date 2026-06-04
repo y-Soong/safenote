@@ -192,7 +192,18 @@ public class User01ServiceImpl implements User01Service{
 				} else {
 					throw new ApiException(UserErrorCode.USER_400_001);
 				}
-			}			
+			}
+		}
+
+		// PRAFTA-046 (A-3): 노드가 실제로 바뀌는 경우, 들어가는(새) 노드에 정/부 관리자가 있어야 한다.
+		//   비활성(useYn='N')은 노드에서 빠지는 방향이므로 미적용 (들어가는 노드 없음).
+		if (model.nodeCd() != null && model.oriNodeCd() != null
+				&& !model.nodeCd().equals(model.oriNodeCd())
+				&& !"N".equals(model.useYn())) {
+			int nodeHasAdmin = user01Mapper.selectNodeHasAdmin(model.cmpnyCd(), model.siteCd(), model.nodeCd());
+			if (nodeHasAdmin == 0) {
+				throw new ApiException(UserErrorCode.USER_400_056);
+			}
 		}
 
         UserSiteInfoResult userInfoResult = user01Mapper.selectUserSiteInfo(UserSiteInfoQuery.from(model));
@@ -611,6 +622,13 @@ public class User01ServiceImpl implements User01Service{
 		int nodeExists = user01Mapper.selectSiteNodeExists(param.gvCmpnyCd(), siteCd, param.nodeCd());
 		if (nodeExists == 0) {
 			throw new ApiException(UserErrorCode.USER_400_044);
+		}
+
+		// 8-1) PRAFTA-046: 노드-관리자 정합성 가드.
+		//   정/부 관리자가 없는 노드에는 근로자를 배정하지 않는다 (관리·승인 주체 부재 방지).
+		int nodeHasAdmin = user01Mapper.selectNodeHasAdmin(param.gvCmpnyCd(), siteCd, param.nodeCd());
+		if (nodeHasAdmin == 0) {
+			throw new ApiException(UserErrorCode.USER_400_056);
 		}
 
 		// 9) USER_ID 중복 사전 진단 (UX_TB_USER_ID UNIQUE).

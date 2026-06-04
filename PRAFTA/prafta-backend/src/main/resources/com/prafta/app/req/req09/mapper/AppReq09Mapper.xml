@@ -1,0 +1,101 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.prafta.app.req.req09.mapper.AppReq09Mapper">
+
+    <!-- ============================================================
+         D2/D3/D4 분기: 신청자 소속 노드의 SELF_ATTD_APPRV_YN 단순 조회.
+         ⚠️ 연차 selectUserNodeSelfApproveYn(본인이 노드 관리자+자체승인 ON)과 의미가 다르다.
+            여기는 "신청자가 속한 노드가 자체근태승인 부서인가"만(관리자 여부 무관) 판정.
+         노드 미존재/미배정 → 결과 0행 → null → 호출부에서 'N' 취급.
+         ============================================================ -->
+    <select id="selectAttdSelfApprvYn" resultType="string">
+    /* AppReq09Mapper.selectAttdSelfApprvYn */
+    SELECT N.SELF_ATTD_APPRV_YN
+      FROM TB_USER U
+      JOIN TB_SITE_NODE N
+        ON N.CMPNY_CD = U.CMPNY_CD
+       AND N.SITE_CD  = U.SITE_CD
+       AND N.NODE_CD  = U.NODE_CD
+     WHERE U.CMPNY_CD = #{cmpnyCd}
+       AND U.SITE_CD  = #{siteCd}
+       AND U.USER_CD  = #{userCd}
+     LIMIT 1
+    </select>
+
+    <!-- ============================================================
+         D4: 신청자가 자기 소속 노드의 정/부 관리자(MAIN_ADMIN_CD / SUB_ADMIN_CD)인지.
+         결과 > 0 이면 노드 관리자(='Y' 부서 즉시 자동승인 대상).
+         ============================================================ -->
+    <select id="selectIsNodeAdmin" resultType="int">
+    /* AppReq09Mapper.selectIsNodeAdmin */
+    SELECT COUNT(1)
+      FROM TB_USER U
+      JOIN TB_SITE_NODE N
+        ON N.CMPNY_CD = U.CMPNY_CD
+       AND N.SITE_CD  = U.SITE_CD
+       AND N.NODE_CD  = U.NODE_CD
+     WHERE U.CMPNY_CD = #{cmpnyCd}
+       AND U.SITE_CD  = #{siteCd}
+       AND U.USER_CD  = #{userCd}
+       AND (N.MAIN_ADMIN_CD = U.USER_CD OR N.SUB_ADMIN_CD = U.USER_CD)
+    </select>
+
+    <!-- ============================================================
+         D8 결재자 스코프 가드: 동일 회사/사업장·재직·활성·system 아님인 유효 결재자 수.
+         연차 AppLeaveFlowMapper.countValidApprovers 와 동일 SQL(모듈 독립 위해 복제).
+         호출부가 중복제거 수와 비교(불일치 시 cross-tenant 주입 차단).
+         ============================================================ -->
+    <select id="countValidApprovers" resultType="int">
+    /* AppReq09Mapper.countValidApprovers */
+    SELECT COUNT(DISTINCT U.USER_CD)
+      FROM TB_USER U
+     WHERE U.CMPNY_CD = #{cmpnyCd}
+       AND U.SITE_CD  = #{siteCd}
+       AND U.USE_YN   = 'Y'
+       AND U.WITHDRAWAL_DATE IS NULL
+       AND U.ACCOUNT_STATUS  = '01'
+       AND U.AUTH_CD != 'system'
+       AND U.USER_CD IN
+       <foreach collection="userCds" item="uc" open="(" separator="," close=")">
+         #{uc}
+       </foreach>
+    </select>
+
+    <!-- ============================================================
+         D7 자기승인 자격: 소속 노드 SELF_ATTD_APPRV_YN='Y' + 본인이 그 노드 정/부 관리자일 때만 'Y'.
+         연차 AppLeaveFlowMapper.selectUserNodeSelfApproveYn 와 동일 의미·SQL(모듈 독립 복제).
+         자격 미달 → 결과 0행 → null(fail-closed).
+         ============================================================ -->
+    <select id="selectUserNodeSelfApproveYn" resultType="string">
+    /* AppReq09Mapper.selectUserNodeSelfApproveYn */
+    SELECT N.SELF_ATTD_APPRV_YN
+      FROM TB_USER U
+      JOIN TB_SITE_NODE N
+        ON N.CMPNY_CD = U.CMPNY_CD
+       AND N.SITE_CD  = U.SITE_CD
+       AND N.NODE_CD  = U.NODE_CD
+     WHERE U.CMPNY_CD = #{cmpnyCd}
+       AND U.USER_CD  = #{userCd}
+       AND N.SELF_ATTD_APPRV_YN = 'Y'
+       AND (N.MAIN_ADMIN_CD = U.USER_CD OR N.SUB_ADMIN_CD = U.USER_CD)
+     LIMIT 1
+    </select>
+
+    <!-- ============================================================
+         REQ_STATUS 갱신: 'Y'+노드관리자 즉시 자동승인(D4) / 'N' 전 단계 본인 자동승인.
+         tb_user_attd_req 의 상태/처리자/처리시각만 갱신(CMPNY_CD+REQ_ID 스코프).
+         ============================================================ -->
+    <update id="updateReqStatus">
+    /* AppReq09Mapper.updateReqStatus */
+    UPDATE TB_USER_ATTD_REQ
+       SET REQ_STATUS      = #{reqStatus}
+         , PROCESS_USER_CD = #{processUserCd}
+         , PROCESS_COMMENT = #{processComment}
+         , PROCESS_DATE    = NOW()
+         , UPDATE_NO       = #{processUserCd}
+         , UPDATE_DATE     = NOW()
+     WHERE CMPNY_CD = #{cmpnyCd}
+       AND REQ_ID   = #{reqId}
+    </update>
+
+</mapper>

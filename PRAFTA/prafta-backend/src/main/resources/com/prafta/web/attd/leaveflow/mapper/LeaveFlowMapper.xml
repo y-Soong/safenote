@@ -12,6 +12,22 @@
     SELECT CONCAT('LV', DATE_FORMAT(NOW(), '%Y%m%d'), FNC_CMM_SEQ_NEXTVAL(#{cmpnyCd}, 'LEAVE_USE_ID')) FROM DUAL
     </select>
 
+    <select id="countValidApprovers" resultType="int">
+    /* LeaveFlowMapper.countValidApprovers */
+    SELECT COUNT(DISTINCT U.USER_CD)
+      FROM TB_USER U
+     WHERE U.CMPNY_CD = #{cmpnyCd}
+       AND U.SITE_CD  = #{siteCd}
+       AND U.USE_YN   = 'Y'
+       AND U.WITHDRAWAL_DATE IS NULL
+       AND U.ACCOUNT_STATUS  = '01'
+       AND U.AUTH_CD != 'system'
+       AND U.USER_CD IN
+       <foreach collection="userCds" item="uc" open="(" separator="," close=")">
+         #{uc}
+       </foreach>
+    </select>
+
     <select id="selectLeaveTypeInfo" resultType="com.prafta.web.attd.leaveflow.vo.LeaveTypeInfoVO">
     /* LeaveFlowMapper.selectLeaveTypeInfo */
     SELECT

@@ -395,6 +395,24 @@
        AND U.ACCOUNT_STATUS = '01'
     </select>
 
+    <!-- ============ 수동 부여: 타입 사용가능기간 설정 조회 (prafta-045, §8.1.1) ============
+      부여건 AVAIL_TO_DATE 를 회사 공통 AXIS6 가 아니라 타입의 사용가능기간(SYS026 01/02/03) 으로
+      산출하기 위해 조회한다. 수동 부여 타입은 항상 관리자 부여 타입(LEAVE_TYPE='02' AND GRANT_TYPE='02')
+      이므로 관리자 전용 컬럼(ADMIN_AVAIL_*)만 읽는다. CMPNY_CD 스코프 격리(타사 타입 조회 차단). -->
+    <select id="selectAdminAvailTerm" resultType="com.prafta.common.cmm.leave.vo.LeaveTypeAvailTermVO">
+    /* LeaveDashboardMapper.selectAdminAvailTerm */
+    SELECT
+          T.ADMIN_AVAIL_TERM_TYPE AS adminAvailTermType
+        , T.ADMIN_AVAIL_FROM_DT   AS adminAvailFromDt
+        , T.ADMIN_AVAIL_TO_DT     AS adminAvailToDt
+      FROM TB_LEAVE_TYPE_MGMT T
+     WHERE T.CMPNY_CD = #{cmpnyCd}
+       AND T.LEAVE_CD = #{leaveCd}
+       AND T.LEAVE_TYPE = '02'
+       AND T.GRANT_TYPE = '02'
+       AND T.USE_YN = 'Y'
+    </select>
+
     <!-- ============ 수동 부여: GRANT_ID 채번 ============ -->
     <!--
       'G' + YYYYMMDD + 5자리 시퀀스(MAX_VAL=99999 기준 LPAD) = 14자 (varchar(20) 이내).

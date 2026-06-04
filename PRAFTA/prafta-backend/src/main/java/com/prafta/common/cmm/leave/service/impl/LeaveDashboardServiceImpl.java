@@ -34,6 +34,7 @@ import com.prafta.common.cmm.leave.vo.LeaveGrantInsertVO;
 import com.prafta.common.cmm.leave.vo.LeaveRecallResultVO;
 import com.prafta.common.cmm.leave.vo.LeaveRecallTargetVO;
 import com.prafta.common.cmm.leave.vo.LeaveSummaryVO;
+import com.prafta.common.cmm.leave.vo.LeaveTypeAvailTermVO;
 import com.prafta.common.cmm.leave.vo.LeaveTypeOptionVO;
 import com.prafta.common.cmm.leave.vo.LeavePolicyVO;
 import com.prafta.common.cmm.leave.vo.ManualGrantResultVO;
@@ -73,6 +74,20 @@ public class LeaveDashboardServiceImpl implements LeaveDashboardService {
     private static final String GRANT_BY_TYPE_ADMIN = "02";
     private static final String STATUS_ACTIVE = "ACTIVE";
     private static final int DEFAULT_VALIDITY_MONTHS = 12;
+
+    // ===== 타입 "사용 가능 기간"(SYS026) 코드 — 수동부여 AVAIL_TO_DATE 산출 (prafta-045, §8.1.1) =====
+    /** 01:설정안함(무기한). AVAIL_TO_DATE 를 sentinel 먼 미래로 적재해 소비창/만료/대시보드 SQL 무변경 유지. */
+    private static final String AVAIL_TERM_NONE = "01";
+    /** 02:해당 연도 내. AVAIL_TO_DATE = (폼 사용가능일 연도)1231. */
+    private static final String AVAIL_TERM_YEAR = "02";
+    /** 03:기간 설정. AVAIL_TO_DATE = 타입 ADMIN_AVAIL_TO_DT(YYYYMMDD 절대일). */
+    private static final String AVAIL_TERM_PERIOD = "03";
+    /**
+     * 무기한(01) sentinel 종료일. {@code AVAIL_TO_DATE >= workYmd} 소비창과
+     * {@code AVAIL_TO_DATE < today} 만료 판정을 코드/ SQL 변경 없이 안전하게 통과시킨다.
+     * (null 대신 sentinel 채택 — planner §3-2 (A)안, 소비 SQL 무변경으로 회귀선 보존.)
+     */
+    private static final String AVAIL_TO_DATE_FOREVER = "99991231";
 
     /** 부여 사유 최대 길이 (GRANT_REASON varchar(500)). */
     private static final int MAX_REASON_LENGTH = 500;
@@ -345,9 +360,11 @@ public class LeaveDashboardServiceImpl implements LeaveDashboardService {
             throw new ApiException(AttdErrorCode.ATTD_400_030);
         }
 
-        // 4. AVAIL_TO_DATE = AVAIL_FROM_DATE + 활성정책 AXIS6_VALIDITY_MONTHS(없으면 12)
-        int validityMonths = resolveValidityMonths(cmpnyCd);
-        String availToDate = addMonthsYyyymmdd(availFromDate, validityMonths);
+        // 4. AVAIL_TO_DATE 산출 (prafta-045, §8.1.1) — MANUAL_ 전용:
+        //    회사 공통 AXIS6 가 아니라 부여 대상 타입의 사용가능기간(SYS026)으로 산출한다.
+        //    법정(STATUTORY_*) 경로(LeaveGrantEngineServiceImpl)는 본 변경과 무관하다(§2 회귀선).
+        //    AVAIL_FROM_DATE 는 폼 입력(availFromDate)을 그대로 유지한다(§3-3).
+        String availToDate = resolveManualAvailToDate(cmpnyCd, leaveCd, availFromDate);
 
         String today = LocalDate.now().format(DateTimeFormatter.BASIC_ISO_DATE);
         BigDecimal grantDaysScaled = grantDays.setScale(1, RoundingMode.HALF_UP);
@@ -620,6 +637,68 @@ public class LeaveDashboardServiceImpl implements LeaveDashboardService {
     // 수동 부여 보조
     // ============================================================
 
+    /**
+     * 수동 부여(MANUAL_*) 부여건의 AVAIL_TO_DATE 산출 (prafta-045, §8.1.1).
+     *
+     * <p>부여 대상 타입의 사용가능기간(SYS026 {@code ADMIN_AVAIL_TERM_TYPE})에 따라 산출한다:
+     * <ul>
+     *   <li>{@code 01} 설정안함(무기한) → sentinel {@code 99991231}(소비창/만료/대시보드 SQL 무변경).</li>
+     *   <li>{@code 02} 해당 연도 내 → 폼 사용가능일(availFromDate) 연도의 {@code YYYY1231}.</li>
+     *   <li>{@code 03} 기간 설정 → 타입 {@code ADMIN_AVAIL_TO_DT}(YYYYMMDD 절대일, prafta-044-FU2).</li>
+     *   <li>미설정(null)/조회 불가 → 안전 폴백 = 기존 회사 공통 AXIS6(폼 from + validityMonths).</li>
+     * </ul>
+     * AVAIL_FROM_DATE 는 폼 입력(availFromDate)을 그대로 유지하며, {@code from > to} 모순이면 거부한다.
+     * 법정(STATUTORY_*) 부여엔진은 본 산출과 전혀 무관하다(§2 회귀선).
+     *
+     * @param cmpnyCd       회사 코드(CMPNY_CD 스코프)
+     * @param leaveCd       부여 대상 타입 코드(수동 부여 화이트리스트 통과 후)
+     * @param availFromDate 폼 입력 사용가능일(YYYYMMDD, 검증 완료)
+     * @return 산출된 AVAIL_TO_DATE(YYYYMMDD)
+     */
+    private String resolveManualAvailToDate(String cmpnyCd, String leaveCd, String availFromDate) {
+        LeaveTypeAvailTermVO term = leaveDashboardMapper.selectAdminAvailTerm(cmpnyCd, leaveCd);
+        String termType = (term == null) ? null : blankToNull(term.getAdminAvailTermType());
+
+        String availToDate;
+        if (AVAIL_TERM_NONE.equals(termType)) {
+            // 무기한: sentinel 적재(§3-2 (A)안). from > sentinel 은 자연 성립하지 않으므로 모순검증 생략.
+            log.info("수동 부여 사용가능기간 - 설정안함(무기한). cmpnyCd={}, leaveCd={}, availTo={}",
+                    cmpnyCd, leaveCd, AVAIL_TO_DATE_FOREVER);
+            return AVAIL_TO_DATE_FOREVER;
+        } else if (AVAIL_TERM_YEAR.equals(termType)) {
+            // 해당 연도 내: 폼 사용가능일 연도의 1231 (availFromDate 는 검증 완료 8자).
+            availToDate = availFromDate.substring(0, 4) + "1231";
+        } else if (AVAIL_TERM_PERIOD.equals(termType)) {
+            // 기간 설정: 타입 ADMIN_AVAIL_TO_DT(YYYYMMDD). 미설정/형식오류면 폴백.
+            String adminTo = (term == null) ? null : blankToNull(term.getAdminAvailToDt());
+            if (!isValidYyyymmdd(adminTo)) {
+                log.warn("수동 부여 사용가능기간 - '03' 기간설정인데 ADMIN_AVAIL_TO_DT 부적합, AXIS6 폴백. "
+                        + "cmpnyCd={}, leaveCd={}, adminTo={}", cmpnyCd, leaveCd, adminTo);
+                return fallbackAxis6AvailToDate(cmpnyCd, availFromDate);
+            }
+            availToDate = adminTo;
+        } else {
+            // 미설정(null)/알 수 없는 코드: 하위호환 폴백 = 기존 AXIS6 산출.
+            log.info("수동 부여 사용가능기간 - 미설정/미인식 코드, AXIS6 폴백. cmpnyCd={}, leaveCd={}, termType={}",
+                    cmpnyCd, leaveCd, termType);
+            return fallbackAxis6AvailToDate(cmpnyCd, availFromDate);
+        }
+
+        // from > to 모순 방어 (02/03 한정). YYYYMMDD 8자 문자열 사전식 비교 == 날짜 비교.
+        if (availFromDate.compareTo(availToDate) > 0) {
+            log.warn("수동 부여 사용가능기간 - from > to 모순. cmpnyCd={}, leaveCd={}, from={}, to={}",
+                    cmpnyCd, leaveCd, availFromDate, availToDate);
+            throw new ApiException(AttdErrorCode.ATTD_400_032);
+        }
+        return availToDate;
+    }
+
+    /** 하위호환 폴백: 기존 회사 공통 AXIS6(폼 availFromDate + validityMonths) 산출(prafta-045). */
+    private String fallbackAxis6AvailToDate(String cmpnyCd, String availFromDate) {
+        int validityMonths = resolveValidityMonths(cmpnyCd);
+        return addMonthsYyyymmdd(availFromDate, validityMonths);
+    }
+
     private int resolveValidityMonths(String cmpnyCd) {
         try {
             LeavePolicyVO policy = leavePolicyService.findActivePolicy(cmpnyCd);
@@ -647,9 +726,8 @@ public class LeaveDashboardServiceImpl implements LeaveDashboardService {
         if (days.compareTo(BigDecimal.ZERO) <= 0) {
             return false;
         }
-        // 0.5일 단위: (days * 2)가 정수
-        BigDecimal doubled = days.multiply(BigDecimal.valueOf(2));
-        return doubled.stripTrailingZeros().scale() <= 0;
+        // 1일 단위: 정수만 허용 (소수부가 없어야 함)
+        return days.stripTrailingZeros().scale() <= 0;
     }
 
     private String addMonthsYyyymmdd(String yyyymmdd, int months) {

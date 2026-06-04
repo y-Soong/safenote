@@ -2,6 +2,8 @@ package com.prafta.app.req.req07.controller;
 
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.util.StringUtils;
+import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestHeader;
@@ -15,8 +17,11 @@ import com.prafta.app.req.req07.dto.request.AttdCorrectionRequest;
 import com.prafta.app.req.req07.dto.request.OvertimeRequest;
 import com.prafta.app.req.req07.dto.request.SchedModifyRequest;
 import com.prafta.app.req.req07.dto.response.RegisterReqResponse;
+import com.prafta.app.req.req07.dto.response.SchedOptionResponse;
 import com.prafta.app.req.req07.service.AppReq07Service;
 import com.prafta.common.dto.TokenInfo;
+import com.prafta.common.error.common.CommonErrorCode;
+import com.prafta.common.exception.ApiException;
 import com.prafta.common.security.JwtUtil;
 
 import lombok.RequiredArgsConstructor;
@@ -43,6 +48,27 @@ public class AppReq07Controller {
 
     private final AppReq07Service appReq07Service;
     private final JwtUtil jwtUtil;
+
+    /**
+     * 스케줄 선택 옵션 목록 조회 (prafta-app-007 F2).
+     *
+     * <p>실제 매핑: {@code GET /prafta/appApi/req07/schedules}.
+     * 식별값(cmpnyCd/siteCd)은 JWT(TokenInfo)에서만 도출한다 — 바디/쿼리 미수신 (IDOR 가드).
+     */
+    @GetMapping("/schedules")
+    public ResponseEntity<SchedOptionResponse> getSchedules(
+            @RequestHeader(value = "Authorization", required = false) String authorization
+    ) {
+        TokenInfo tokenInfo = jwtUtil.getAllClaimsAsMap(authorization);
+        if (tokenInfo == null
+                || !StringUtils.hasText(tokenInfo.gv_cmpnyCd())
+                || !StringUtils.hasText(tokenInfo.gv_siteCd())) {
+            throw new ApiException(CommonErrorCode.COMMON_400_003);
+        }
+        SchedOptionResponse response = appReq07Service.getSchedOptions(
+                tokenInfo.gv_cmpnyCd(), tokenInfo.gv_siteCd());
+        return ResponseEntity.ok(response);
+    }
 
     /**
      * 스케줄 수정 요청 등록 (REQ_TYPE='10').

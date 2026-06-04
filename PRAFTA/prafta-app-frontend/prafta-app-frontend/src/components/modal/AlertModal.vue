@@ -55,7 +55,7 @@ watch(
     } else {
       window.__alertOpen__ = false
     }
-  }
+  },
 )
 
 const handleConfirm = () => {
@@ -104,6 +104,16 @@ onMounted(() => {
   margin-top: 1rem;
   display: flex;
   justify-content: center;
+}
+
+/* 알림 버튼은 로그인 화면 로그인 버튼과 동일한 초록색으로 통일 */
+.modal-footer .btn-primary {
+  background: #16a34a;
+  color: #fff;
+  border: none;
+}
+.modal-footer .btn-primary:hover {
+  background: #15803d;
 }
 
 /* .btn.btn-primary {

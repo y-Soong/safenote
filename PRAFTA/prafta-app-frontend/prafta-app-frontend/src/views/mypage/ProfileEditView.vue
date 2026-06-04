@@ -130,7 +130,15 @@
     <!-- 인라인 SVG sprite -->
     <svg width="0" height="0" class="pe-sprite" aria-hidden="true" focusable="false">
       <defs>
-        <symbol id="i-pe-chev-left" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <symbol
+          id="i-pe-chev-left"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="2"
+          stroke-linecap="round"
+          stroke-linejoin="round"
+        >
           <polyline points="15 18 9 12 15 6" />
         </symbol>
       </defs>
@@ -233,7 +241,7 @@ const onRequestMobileCode = async (phone) => {
     showAlert(
       map[code] ||
         e?.response?.data?.message ||
-        '인증번호 발송에 실패했어요. 잠시 후 다시 시도해 주세요.'
+        '인증번호 발송에 실패했어요. 잠시 후 다시 시도해 주세요.',
     )
   }
 }
@@ -258,7 +266,7 @@ const onVerifyMobileCode = async ({ phone, code }) => {
       TOO_MANY_ATTEMPTS: '시도 횟수를 초과했어요. 다시 요청해 주세요.',
     }
     mobileFieldRef.value?.setVerifyError(
-      map[errorCode] || e?.response?.data?.message || '인증에 실패했어요.'
+      map[errorCode] || e?.response?.data?.message || '인증에 실패했어요.',
     )
   }
 }
@@ -325,7 +333,11 @@ const onSave = async () => {
       mobileVerified.value = false
       mobileVerificationToken.value = ''
     }
-    showAlert(fieldMsg[errorCode] || e?.response?.data?.message || '저장에 실패했어요. 잠시 후 다시 시도해 주세요.')
+    showAlert(
+      fieldMsg[errorCode] ||
+        e?.response?.data?.message ||
+        '저장에 실패했어요. 잠시 후 다시 시도해 주세요.',
+    )
   } finally {
     isSaving.value = false
   }

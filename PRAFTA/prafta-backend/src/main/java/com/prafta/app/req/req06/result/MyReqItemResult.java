@@ -17,7 +17,6 @@ public record MyReqItemResult(
         , String startTime
         , String endDate
         , String endTime
-        , String otType
         , String leaveType
         , BigDecimal leaveDays
         , String processComment

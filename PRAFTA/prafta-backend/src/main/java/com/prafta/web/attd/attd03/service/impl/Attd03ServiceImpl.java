@@ -1,5 +1,9 @@
 package com.prafta.web.attd.attd03.service.impl;
 
+import java.time.LocalDate;
+import java.time.format.DateTimeFormatter;
+import java.time.format.DateTimeParseException;
+import java.time.format.ResolverStyle;
 import java.util.List;
 
 import org.springframework.stereotype.Service;
@@ -23,6 +27,25 @@ import lombok.extern.slf4j.Slf4j;
 @Slf4j
 @Service
 public class Attd03ServiceImpl implements Attd03Service{
+
+	// 연차 사용 단위 화이트리스트 [SYS025]: 00=1일 / 01=반차 / 02=시간차(2h) / 03=시간차(1h) / 04=시간차(30분)
+	private static final java.util.Set<String> ALLOWED_USE_UNIT_TYPES =
+			java.util.Set.of("00", "01", "02", "03", "04");
+
+	// 연차 사용가능기간 타입 화이트리스트 [SYS026]: 01=설정안함 / 02=해당 연도 내 / 03=기간설정
+	// (DB 실측: .claude/context/policies/attd/_audit/prafta-018-syst-val-audit.md §SYS026)
+	private static final java.util.Set<String> ALLOWED_AVAIL_TERM_TYPES =
+			java.util.Set.of("01", "02", "03");
+
+	// SYS026='03'(기간설정) 코드값. 이 값일 때만 from/to 날짜를 영속한다.
+	private static final String AVAIL_TERM_PERIOD = "03";
+
+	// 관리자 부여 사용기간(ADMIN_AVAIL_FROM_DT/TO_DT) YYYYMMDD 8자 절대 날짜 검증용 포맷터.
+	// (prafta-044-FU2: 컬럼 varchar(6)→varchar(8) 확장. 화면은 YYYY-MM-DD → YYYYMMDD 8자로 전송.)
+	// STRICT: 02/30 같은 존재하지 않는 날짜를 거부한다.
+	private static final DateTimeFormatter ADMIN_AVAIL_YMD8 =
+			DateTimeFormatter.ofPattern("uuuuMMdd").withResolverStyle(ResolverStyle.STRICT);
+
 	private final Attd03Mapper attd03Mapper;
 		
 	public Attd03ServiceImpl(Attd03Mapper attd03Mapper) {
@@ -39,6 +62,18 @@ public class Attd03ServiceImpl implements Attd03Service{
 		// PRAFTA-017: 자동부여 규칙 cross-field 검증 (정책서 §8.1.2)
 		validateLeaveTypeRule(param);
 
+		// prafta-044-1: 사용 단위(USE_UNIT_TYPE) 화이트리스트 검증 (서버 권위)
+		// prafta-044-FU: 자동부여도 사용단위 입력 분기로 편입 (null 강제 제거)
+		String normalizedUseUnitType = normalizeUseUnitType(param);
+
+		// prafta-044-FU(검토 후속): 사용가능기간 타입(SYS026) 화이트리스트 검증 + 날짜 null 강제/형식 검증 (서버 권위)
+		//  - availTermType    : 사용자 신청(leaveType='01') → availFromDt/availToDt(MMDD)
+		//  - adminAvailTermType: 관리자 부여(leaveType='02', 자동/수동 모두) → adminAvailFromDt/adminAvailToDt
+		validateAvailTermType(param);
+
+		String[] normalizedAvail = normalizeUserAvailDates(param);          // [availFromDt, availToDt]
+		String[] normalizedAdminAvail = normalizeAdminAvailDates(param);    // [adminAvailFromDt, adminAvailToDt]
+
 		String leaveCd = null;
 
 		if(param.leaveCd() != null && param.leaveCd() != "") {
@@ -53,8 +88,207 @@ public class Attd03ServiceImpl implements Attd03Service{
 			throw new ApiException(AttdErrorCode.ATTD_400_003);
 		}
 
-		attd03Mapper.updateLeaveType(LeaveTypeCommand.from(param));
+		attd03Mapper.updateLeaveType(LeaveTypeCommand.from(
+				param
+				, normalizedUseUnitType
+				, normalizedAvail[0]
+				, normalizedAvail[1]
+				, normalizedAdminAvail[0]
+				, normalizedAdminAvail[1]));
 
+	}
+
+	/**
+	 * 연차 사용가능기간 타입(SYS026) 화이트리스트 검증 (prafta-044-FU 검토 후속).
+	 *
+	 * <p>정책서: {@code .claude/context/policies/attd/08-leave.md} §8.1.1(사용가능기간 속성).
+	 * SYS026 코드값은 DB 실측(prafta-018 syst-val 감사)으로 확인: 01=설정안함 / 02=해당 연도 내 / 03=기간설정.
+	 *
+	 * <p>보안 검토 지적(useUnitType 과 동일한 무검증 영속 패턴): 화면이 보내는 termType 을
+	 * 서버에서 화이트리스트 검증한다. 위반 시 {@link AttdErrorCode#ATTD_400_032}
+	 * (사용 가능일을 올바르게 입력해 주세요).
+	 *
+	 * <ul>
+	 *   <li>사용자 신청(leaveType='01'): availTermType 필수 + SYS026 화이트리스트.</li>
+	 *   <li>관리자 부여(leaveType='02', 자동/수동 모두): adminAvailTermType 은 "선택"(미입력 허용).
+	 *       값이 있으면 SYS026 화이트리스트 검증.</li>
+	 *   <li>그 외 leaveType: 본 검증 범위 밖.</li>
+	 * </ul>
+	 */
+	private void validateAvailTermType(LeaveTypeParam param) {
+		String leaveType = param.leaveType();
+
+		// 사용자 신청 타입: availTermType 필수 + 화이트리스트
+		if ("01".equals(leaveType)) {
+			String availTermType = param.availTermType();
+			if (availTermType == null || !ALLOWED_AVAIL_TERM_TYPES.contains(availTermType)) {
+				log.warn("연차 타입 사용가능기간 검증 실패 - 허용되지 않은 availTermType: leaveNo={}, availTermType={}",
+						param.leaveNo(), availTermType);
+				throw new ApiException(AttdErrorCode.ATTD_400_032);
+			}
+			return;
+		}
+
+		// 관리자 부여 타입(자동/수동): adminAvailTermType 은 선택. 값이 있으면 화이트리스트 검증.
+		if ("02".equals(leaveType)) {
+			String adminAvailTermType = param.adminAvailTermType();
+			if (adminAvailTermType != null && !adminAvailTermType.isBlank()
+					&& !ALLOWED_AVAIL_TERM_TYPES.contains(adminAvailTermType)) {
+				log.warn("연차 타입 관리자 사용가능기간 검증 실패 - 허용되지 않은 adminAvailTermType: leaveNo={}, adminAvailTermType={}",
+						param.leaveNo(), adminAvailTermType);
+				throw new ApiException(AttdErrorCode.ATTD_400_032);
+			}
+		}
+		// leaveType '01'/'02' 외이면 본 검증 범위 밖
+	}
+
+	/**
+	 * 사용자 신청(leaveType='01') 사용기간 from/to(MMDD) 정규화 (prafta-044-FU).
+	 *
+	 * <p>availTermType != '03' 이면 from/to 를 null 로 강제(설정안함/해당 연도 내는 기간 미사용).
+	 * '03'(기간설정)이면 from/to(MMDD 4자리)를 {@link MmddValidator} 로 형식 검증하고 from<=to 를 검증한다.
+	 * (AVAIL_FROM_DT/TO_DT 는 schema 상 varchar(4) MMDD — 화면도 MMDD 로 전송.)
+	 *
+	 * <p>위반 시 {@link AttdErrorCode#ATTD_400_032}.
+	 *
+	 * @return {@code [availFromDt, availToDt]} (영속할 정규화 값)
+	 */
+	private String[] normalizeUserAvailDates(LeaveTypeParam param) {
+		// 사용자 신청 타입이 아니면 입력값 그대로(다른 분기에서 처리)
+		if (!"01".equals(param.leaveType())) {
+			return new String[] { param.availFromDt(), param.availToDt() };
+		}
+
+		if (!AVAIL_TERM_PERIOD.equals(param.availTermType())) {
+			// 기간설정이 아니면 from/to null 강제
+			return new String[] { null, null };
+		}
+
+		String from = param.availFromDt();
+		String to = param.availToDt();
+
+		if (!MmddValidator.isValid(from) || !MmddValidator.isValid(to)) {
+			log.warn("연차 타입 사용기간(MMDD) 형식 검증 실패 - leaveNo={}, from={}, to={}",
+					param.leaveNo(), from, to);
+			throw new ApiException(AttdErrorCode.ATTD_400_032);
+		}
+		// MMDD 4자리 zero-padded 이므로 사전식 비교로 from<=to 판정 가능
+		if (from.compareTo(to) > 0) {
+			log.warn("연차 타입 사용기간 순서 검증 실패(from>to) - leaveNo={}, from={}, to={}",
+					param.leaveNo(), from, to);
+			throw new ApiException(AttdErrorCode.ATTD_400_032);
+		}
+		return new String[] { from, to };
+	}
+
+	/**
+	 * 관리자 부여(leaveType='02') 사용기간 from/to 정규화 (prafta-044-FU).
+	 *
+	 * <p>adminAvailTermType != '03' 이면 from/to 를 null 로 강제. '03'(기간설정)이면
+	 * from/to 가 필수이고 from<=to 여야 한다.
+	 *
+	 * <p><b>형식(prafta-044-FU2, schema 권위):</b> ADMIN_AVAIL_FROM_DT/TO_DT 는 varchar(8)
+	 * 이며 YYYYMMDD 8자리 <b>절대 날짜</b>(예 20260101~20261231)를 저장한다. 화면은
+	 * CalendarSrch(YYYY-MM-DD)에서 입력받아 전송 시 YYYYMMDD 8자로 변환한다. 본 검증은
+	 * (1) 8자리 숫자 + 실제 존재하는 날짜(STRICT, LocalDate.parse) (2) from<=to(동일 포맷
+	 * 사전식 비교) 를 강제한다. 직전 FU 의 "길이<=6 임시검증"을 본 검증으로 대체.
+	 *
+	 * <p>※ 사용자 신청('01')의 AVAIL_FROM_DT/TO_DT(varchar(4) MMDD)는 별개 설계 — 본 메서드
+	 * 범위 밖({@link #normalizeUserAvailDates}).
+	 *
+	 * <p>위반 시 {@link AttdErrorCode#ATTD_400_032}.
+	 *
+	 * @return {@code [adminAvailFromDt, adminAvailToDt]} (영속할 정규화 값)
+	 */
+	private String[] normalizeAdminAvailDates(LeaveTypeParam param) {
+		// 관리자 부여 타입이 아니면 입력값 그대로
+		if (!"02".equals(param.leaveType())) {
+			return new String[] { param.adminAvailFromDt(), param.adminAvailToDt() };
+		}
+
+		if (!AVAIL_TERM_PERIOD.equals(param.adminAvailTermType())) {
+			// 기간설정이 아니면 from/to null 강제
+			return new String[] { null, null };
+		}
+
+		String from = param.adminAvailFromDt();
+		String to = param.adminAvailToDt();
+
+		if (from == null || from.isBlank() || to == null || to.isBlank()) {
+			log.warn("관리자 부여 사용기간 누락 - leaveNo={}, from={}, to={}",
+					param.leaveNo(), from, to);
+			throw new ApiException(AttdErrorCode.ATTD_400_032);
+		}
+		// YYYYMMDD 8자리 + 실제 존재하는 날짜 검증(STRICT) — 화면 전송 포맷과 정합
+		if (!isValidYmd8(from) || !isValidYmd8(to)) {
+			log.warn("관리자 부여 사용기간(YYYYMMDD) 형식 검증 실패 - leaveNo={}, from={}, to={}",
+					param.leaveNo(), from, to);
+			throw new ApiException(AttdErrorCode.ATTD_400_032);
+		}
+		// 동일 형식(zero-padded YYYYMMDD)이므로 사전식 비교로 from<=to 판정 가능
+		if (from.compareTo(to) > 0) {
+			log.warn("관리자 부여 사용기간 순서 검증 실패(from>to) - leaveNo={}, from={}, to={}",
+					param.leaveNo(), from, to);
+			throw new ApiException(AttdErrorCode.ATTD_400_032);
+		}
+		return new String[] { from, to };
+	}
+
+	/**
+	 * YYYYMMDD 8자리 절대 날짜 형식 + 실제 존재하는 날짜 여부 검증 (prafta-044-FU2).
+	 *
+	 * @param ymd 검증 대상 (예: "20260101")
+	 * @return 8자리 숫자 + STRICT 파싱 성공 시 true, 그 외 false
+	 */
+	private boolean isValidYmd8(String ymd) {
+		if (ymd == null || ymd.length() != 8) {
+			return false;
+		}
+		try {
+			LocalDate.parse(ymd, ADMIN_AVAIL_YMD8);
+			return true;
+		} catch (DateTimeParseException e) {
+			return false;
+		}
+	}
+
+	/**
+	 * 연차 사용 단위(USE_UNIT_TYPE) 서버측 정규화 + 화이트리스트 검증 (prafta-044-1).
+	 *
+	 * <p>정책서: {@code .claude/context/policies/attd/08-leave.md} §8.1.1(사용단위 속성),
+	 * §8.5.9(SYS025 사용 단위 정책 00~04). USE_UNIT_TYPE 는 소비 단위(leaveflow) 결정의
+	 * 원천이므로, 화면이 보내는 값을 무검증 영속하지 않고 서버에서 권위 있게 검증한다.
+	 *
+	 * <p>입력 분기별 처리 (prafta-044-FU 로 자동부여 포함하도록 확대):
+	 * <ul>
+	 *   <li>사용자 신청(leaveType='01') · 관리자 부여(leaveType='02', 자동/수동 모두):
+	 *       useUnitType 입력 분기 → SYS025 허용 코드(00~04) 화이트리스트 검증 후 영속.
+	 *       위반 시 {@link AttdErrorCode#ATTD_400_054} (허용되지 않은 연차 사용 단위).
+	 *       (prafta-044-FU: 자동부여 화면에 사용단위 입력을 추가했으므로 자동부여도 영속 허용)</li>
+	 *   <li>그 외 leaveType: 입력값을 검증 없이 통과(기존 동작 유지, 별도 validation 영역).</li>
+	 * </ul>
+	 *
+	 * @return 영속할 정규화된 useUnitType
+	 */
+	private String normalizeUseUnitType(LeaveTypeParam param) {
+		String leaveType   = param.leaveType();
+		String useUnitType = param.useUnitType();
+
+		// 사용자 신청(01) · 관리자 부여(02, 자동/수동 모두): useUnitType 영속 분기 → 화이트리스트 검증
+		boolean isUnitInputBranch =
+				"01".equals(leaveType) || "02".equals(leaveType);
+
+		if (isUnitInputBranch) {
+			if (useUnitType == null || !ALLOWED_USE_UNIT_TYPES.contains(useUnitType)) {
+				log.warn("연차 타입 사용 단위 검증 실패 - 허용되지 않은 USE_UNIT_TYPE: leaveNo={}, leaveType={}, grantType={}, useUnitType={}",
+						param.leaveNo(), leaveType, param.grantType(), useUnitType);
+				throw new ApiException(AttdErrorCode.ATTD_400_054);
+			}
+			return useUnitType;
+		}
+
+		// 그 외 leaveType: 기존 동작 유지(입력값 그대로)
+		return useUnitType;
 	}
 
 	/**

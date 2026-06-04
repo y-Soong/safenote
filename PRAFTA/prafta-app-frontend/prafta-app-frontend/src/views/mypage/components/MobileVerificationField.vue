@@ -142,7 +142,7 @@ watch(
     codeSent.value = false
     code.value = ''
     verifyError.value = ''
-  }
+  },
 )
 
 onBeforeUnmount(() => {

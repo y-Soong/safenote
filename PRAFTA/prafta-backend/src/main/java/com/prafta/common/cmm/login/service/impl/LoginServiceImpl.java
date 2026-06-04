@@ -14,6 +14,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import com.prafta.common.cmm.login.application.command.ActiveTokenCommand;
 import com.prafta.common.cmm.login.application.command.AuthMenuInfoCommand;
+import com.prafta.common.cmm.login.application.command.DeviceLoginCommand;
 import com.prafta.common.cmm.login.application.command.RequiredTermsInfoCommand;
 import com.prafta.common.cmm.login.application.command.UserJoinCommand;
 import com.prafta.common.cmm.login.application.command.UserLogoutCommand;
@@ -141,7 +142,45 @@ public class LoginServiceImpl implements LoginService{
 		// 사용자 로그인 시간 기록
 		loginMapper.updateUserLastLoginDtime(userResult.userCd());
 
+		// prafta-com-003 C3: 디바이스 식별 기반 부정탐지 baseline 적재(디바이스 upsert + 로그인 이력 INSERT).
+		//   전체 try-catch 로 격리 — 적재 실패가 로그인 자체를 막거나 롤백하지 않게 한다(com-001 체크인 훅 패턴).
+		//   deviceId 가 없으면(웹 로그인/구버전 앱) skip. deviceId 는 클라 제공값(위조 가능)이라
+		//   식별/인가에는 쓰지 않고 이력/디바이스 상태 적재에만 사용한다.
+		recordDeviceLogin(userResult, param);
+
 		return LoginResponse.from(userResult, refreshToken, token);
+	}
+
+	/**
+	 * prafta-com-003 C3 — 로그인 성공 직후 디바이스/로그인 이력 적재(예외 격리).
+	 *
+	 * <p>main 로그인 경로에만 적용한다(메인세션 확정 A: verifyPhoneAuth 사전검증 경로는 미적용).
+	 * deviceId 가 비어 있으면(웹/구버전 앱) 아무 것도 하지 않는다. 적재 중 어떤 예외가 나도
+	 * 로그인 흐름에는 영향을 주지 않으며 log.error 로만 남긴다.
+	 */
+	private void recordDeviceLogin(UserResult userResult, LoginParam param) {
+		try {
+			if (param == null || param.deviceId() == null || param.deviceId().isBlank()) {
+				return; // 디바이스ID 미전송(웹/구버전 앱) → 적재 대상 아님.
+			}
+			DeviceLoginCommand command = new DeviceLoginCommand(
+					userResult.cmpnyCd()
+					, param.deviceId()
+					, userResult.userCd()
+					, param.deviceType()
+					, param.deviceModel()
+					, param.osVersion()
+					, param.appVersion()
+					, param.clientType()
+					, param.ipAddr()
+					, userResult.userCd());
+			loginMapper.upsertUserDevice(command);
+			loginMapper.insertDeviceLoginHist(command);
+			// PII(기기ID/IP) 평문 로그 금지 — 식별 키만 남긴다.
+			log.info("디바이스 로그인 이력 적재 완료 — userCd={}, clientType={}", userResult.userCd(), param.clientType());
+		} catch (Exception e) {
+			log.error("디바이스 로그인 이력 적재 실패(로그인 영향 없음) — userCd={}", userResult.userCd(), e);
+		}
 	}
 	
 	@Override
@@ -154,7 +193,14 @@ public class LoginServiceImpl implements LoginService{
 	
 	@Transactional
     public void insertUserInfo(UserJoinParam param) {
-		
+
+		// 0) PRAFTA-046: 가입 대상 노드에 정/부 관리자가 존재해야 가입 가능 (fail-closed).
+		//    노드 미존재/관리자 미지정이면 가입 거부 — 회사 내부구조 노출 없는 친화 메시지.
+		int nodeHasAdmin = loginMapper.selectNodeHasAdmin(param.cmpnyCd(), param.siteCd(), param.nodeCd());
+		if (nodeHasAdmin == 0) {
+			throw new ApiException(LoginErrorCode.LOGIN_400_015);
+		}
+
 		String userPw = "";
 
         // 1) 비밀번호 해시 (평문 저장 금지)

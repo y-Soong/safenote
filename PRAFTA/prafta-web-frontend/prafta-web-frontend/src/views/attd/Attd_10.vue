@@ -451,7 +451,7 @@ const fnApproveReq = async () => {
       reqReason: r.reqReason || "",
       overtimes: [
         {
-          otType: r.otType,
+          // prafta-043: 초과근무 유형(otType) 전면 파기 — payload 에서 제거.
           startDate: r.startDate || r.workYmd,
           startTime: r.startTime,
           endDate: r.endDate || r.workYmd,

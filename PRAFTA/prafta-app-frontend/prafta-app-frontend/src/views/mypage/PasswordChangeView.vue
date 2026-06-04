@@ -36,8 +36,15 @@
             autocomplete="current-password"
             placeholder="현재 비밀번호"
           />
-          <button type="button" class="pw-eye" aria-label="비밀번호 표시" @click="showCurrent = !showCurrent">
-            <svg class="icon" width="20" height="20" aria-hidden="true"><use href="#i-pw-eye" /></svg>
+          <button
+            type="button"
+            class="pw-eye"
+            aria-label="비밀번호 표시"
+            @click="showCurrent = !showCurrent"
+          >
+            <svg class="icon" width="20" height="20" aria-hidden="true">
+              <use href="#i-pw-eye" />
+            </svg>
           </button>
         </div>
         <p v-if="currentError" class="pw-helper pw-helper--danger">{{ currentError }}</p>
@@ -56,8 +63,15 @@
             maxlength="15"
             placeholder="새 비밀번호 (6~15자)"
           />
-          <button type="button" class="pw-eye" aria-label="비밀번호 표시" @click="showNew = !showNew">
-            <svg class="icon" width="20" height="20" aria-hidden="true"><use href="#i-pw-eye" /></svg>
+          <button
+            type="button"
+            class="pw-eye"
+            aria-label="비밀번호 표시"
+            @click="showNew = !showNew"
+          >
+            <svg class="icon" width="20" height="20" aria-hidden="true">
+              <use href="#i-pw-eye" />
+            </svg>
           </button>
         </div>
       </div>
@@ -75,8 +89,15 @@
             maxlength="15"
             placeholder="새 비밀번호 확인"
           />
-          <button type="button" class="pw-eye" aria-label="비밀번호 표시" @click="showConfirm = !showConfirm">
-            <svg class="icon" width="20" height="20" aria-hidden="true"><use href="#i-pw-eye" /></svg>
+          <button
+            type="button"
+            class="pw-eye"
+            aria-label="비밀번호 표시"
+            @click="showConfirm = !showConfirm"
+          >
+            <svg class="icon" width="20" height="20" aria-hidden="true">
+              <use href="#i-pw-eye" />
+            </svg>
           </button>
         </div>
         <p v-if="confirmMismatch" class="pw-helper pw-helper--danger">비밀번호가 일치하지 않아요</p>
@@ -102,10 +123,26 @@
     <!-- 인라인 SVG sprite -->
     <svg width="0" height="0" class="pw-sprite" aria-hidden="true" focusable="false">
       <defs>
-        <symbol id="i-pw-chev-left" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <symbol
+          id="i-pw-chev-left"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="2"
+          stroke-linecap="round"
+          stroke-linejoin="round"
+        >
           <polyline points="15 18 9 12 15 6" />
         </symbol>
-        <symbol id="i-pw-eye" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <symbol
+          id="i-pw-eye"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="2"
+          stroke-linecap="round"
+          stroke-linejoin="round"
+        >
           <path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7-11-7-11-7z" />
           <circle cx="12" cy="12" r="3" />
         </symbol>
@@ -157,7 +194,7 @@ const passwordRules = computed(() => {
   // 표시용 항목별 판정 (validatePasswordRule 과 동일한 1차 기준 사용)
   const lengthMet = v.length >= 6 && v.length <= 15
   const typeCount = [/[0-9]/.test(v), /[a-zA-Z]/.test(v), /[^a-zA-Z0-9]/.test(v)].filter(
-    Boolean
+    Boolean,
   ).length
   return [
     { key: 'length', label: '길이 6~15자', met: lengthMet },
@@ -174,10 +211,10 @@ const allRulesMet = computed(() => {
   return passwordRules.value.every((r) => r.met)
 })
 const confirmMismatch = computed(
-  () => confirmPassword.value.length > 0 && newPassword.value !== confirmPassword.value
+  () => confirmPassword.value.length > 0 && newPassword.value !== confirmPassword.value,
 )
 const sameAsCurrent = computed(
-  () => newPassword.value.length > 0 && newPassword.value === currentPassword.value
+  () => newPassword.value.length > 0 && newPassword.value === currentPassword.value,
 )
 
 // 변경하기 활성: 전 규칙 충족 + 일치 + 현재≠새 + 현재 입력
@@ -187,7 +224,7 @@ const canSubmit = computed(
     allRulesMet.value &&
     !confirmMismatch.value &&
     confirmPassword.value.length > 0 &&
-    !sameAsCurrent.value
+    !sameAsCurrent.value,
 )
 
 // ───────────────────────────────────────────────────────────
@@ -217,7 +254,9 @@ const onSubmit = async () => {
     } else if (errorCode === 'PASSWORD_RULE_VIOLATION') {
       showAlert('비밀번호 규칙을 다시 확인해 주세요.')
     } else {
-      showAlert(e?.response?.data?.message || '비밀번호 변경에 실패했어요. 잠시 후 다시 시도해 주세요.')
+      showAlert(
+        e?.response?.data?.message || '비밀번호 변경에 실패했어요. 잠시 후 다시 시도해 주세요.',
+      )
     }
   } finally {
     isSubmitting.value = false

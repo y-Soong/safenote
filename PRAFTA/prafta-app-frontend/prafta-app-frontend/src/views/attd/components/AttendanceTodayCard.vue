@@ -1,12 +1,15 @@
 <!--
   AttendanceTodayCard.vue — 오늘 근태 카드 (5 변형 통합)
-  - 작업 ID: APP002-06 (UI 명세: UI-A002)
+  - 작업 ID: APP002-06 (UI 명세: UI-A002) / 보완: prafta-app-014-C (UI-A014-1)
   - 시안 화면 1~5: 근무중 / 퇴근완료 / 사업장다름 / 2구간 / 퇴근미등록
   - 정책: attd §7.1~7.3, §10.1~10.2, §11.1 / 시안 §3.1·§3.5·§3.6·§4.2
-  - 3행(스케줄/근태/표준화) 구조는 구간(slot)마다 반복. 2구간이면 구분선으로 분리.
+  - 3행(스케줄/근태/표준화) 구조는 구간(slot)마다 반복. slotCount>=2 면 구분선으로 분리.
   - 활성/비활성은 detail.actions(서버 산출) 표시만. 비즈니스 판정 금지.
   - 참조 패턴: views/main/components/AttendanceCard.vue (badge/btn/HHMM 포맷)
   - prafta-app-013: "수정 요청"은 항상 활성(4액션 시트를 연다). 개별 게이팅은 시트가 담당.
+  - prafta-app-014: 슬롯/버튼 판정을 isTwoSlot → slotCount(서버) 로 이관.
+      스케줄 미대응 슬롯(slot.schedule==null)은 표준화 행 숨김 + "스케줄 없음(추가근무)" 표기(D2).
+      primary "출근" 버튼은 actions.canCheckIn(서버 effective 산출) 단독 기준(D4).
 -->
 <template>
   <div v-if="detail" class="cd today-card">
@@ -18,25 +21,40 @@
 
     <!-- 상태 배지 + 근무타입명 -->
     <div class="sl">
-      <span class="bd" :class="statusBadgeClass">
-        <span class="bd__dot" />{{ statusText }}
-      </span>
+      <span class="bd" :class="statusBadgeClass"> <span class="bd__dot" />{{ statusText }} </span>
       <strong>{{ detail.workPlanName }}</strong>
     </div>
 
+    <!-- prafta-app-018-E: 연차 사용 마커 1줄(부분연차 상세). 근무 행은 그대로 유지. -->
+    <p v-if="isLeaveUsed" class="lv-marker">{{ leaveMarkerText }}</p>
+
     <!-- 구간별 3행 정보 -->
     <template v-for="(slot, idx) in slots" :key="slot.workSeq">
-      <div v-if="isTwoSlot" class="dv">{{ idx === 0 ? '1구간' : '2구간' }}</div>
+      <!--
+        prafta-app-014: 구분선은 slotCount>=2 일 때. 라벨은 스케줄 대응 여부에 따라:
+          스케줄 대응 슬롯 → "1구간"/"2구간", 스케줄 미대응(추가 출근) → "추가 근무".
+      -->
+      <div v-if="hasMultiSlot" class="dv">{{ slotDividerLabel(slot, idx) }}</div>
       <div class="tr">
-        <!-- 스케줄 -->
-        <div class="tw">
+        <!-- 스케줄 (미대응 슬롯이면 "스케줄 없음(추가근무)") -->
+        <div class="tw" :class="{ x: !slotHasSchedule(slot) }">
           <div class="tl">
-            <svg class="icon" width="13" height="13" aria-hidden="true"><use href="#i-attd-cal-ev" /></svg>
+            <svg class="icon" width="13" height="13" aria-hidden="true">
+              <use href="#i-attd-cal-ev" />
+            </svg>
             스케줄
           </div>
-          <div class="tb">
-            <div class="tt2">{{ formatRange(slot.schedule.startTime, slot.schedule.endTime) }}</div>
-            <div class="tm">{{ scheduleMetaText(slot.schedule) }}</div>
+          <div class="tb" :class="{ x: !slotHasSchedule(slot) }">
+            <template v-if="slotHasSchedule(slot)">
+              <div class="tt2">
+                {{ formatRange(slot.schedule.startTime, slot.schedule.endTime) }}
+              </div>
+              <div class="tm">{{ scheduleMetaText(slot.schedule) }}</div>
+            </template>
+            <template v-else>
+              <div class="tt2">스케줄 없음</div>
+              <div class="tm">추가근무 (사후 초과근무 상신 대상)</div>
+            </template>
           </div>
         </div>
 
@@ -44,7 +62,13 @@
         <div class="tw a" :class="attendanceRowClass(slot)">
           <div class="tl">
             <svg class="icon" width="13" height="13" aria-hidden="true">
-              <use :href="slot.attendance && slot.attendance.isMissingCheckOut ? '#i-attd-alert-c' : '#i-attd-finger'" />
+              <use
+                :href="
+                  slot.attendance && slot.attendance.isMissingCheckOut
+                    ? '#i-attd-alert-c'
+                    : '#i-attd-finger'
+                "
+              />
             </svg>
             근태
           </div>
@@ -54,10 +78,19 @@
           </div>
         </div>
 
-        <!-- 표준화 -->
-        <div class="tw st" :class="{ x: !stdApplied(slot) && !stdUnmet(slot), unmet: stdUnmet(slot) }">
+        <!--
+          표준화 — 스케줄 대응 슬롯에만 노출(D2).
+          스케줄 미대응(추가 출근) 슬롯은 표준화 자체가 비대상 → 행 숨김.
+        -->
+        <div
+          v-if="slotHasSchedule(slot)"
+          class="tw st"
+          :class="{ x: !stdApplied(slot) && !stdUnmet(slot), unmet: stdUnmet(slot) }"
+        >
           <div class="tl">
-            <svg class="icon" width="13" height="13" aria-hidden="true"><use href="#i-attd-adjust" /></svg>
+            <svg class="icon" width="13" height="13" aria-hidden="true">
+              <use href="#i-attd-adjust" />
+            </svg>
             표준화
           </div>
           <div class="tb" :class="{ x: !stdApplied(slot) && !stdUnmet(slot) }">
@@ -86,22 +119,45 @@
         개별 게이팅은 시트 내부 4행(sheetActions)이 담당하므로 버튼 자체는 항상 활성.
         종전 canRequestModify(서버) 의존을 끊었다.
       -->
-      <button
-        type="button"
-        class="bt bt-s"
-        @click="onModify"
-      >
-        <svg class="icon" width="16" height="16" aria-hidden="true"><use href="#i-attd-edit" /></svg>
+      <button type="button" class="bt bt-s" @click="onModify">
+        <svg class="icon" width="16" height="16" aria-hidden="true">
+          <use href="#i-attd-edit" />
+        </svg>
         수정 요청
       </button>
+
+      <!--
+        prafta-app-015: 2구간 스케줄이고 출근 가능 구간이 있으면 "1구간 출근"/"2구간 출근" 2버튼.
+          각 버튼 enabled = 서버 구간 플래그(slot.canCheckInThisSlot). 이미 등록 구간 disabled(bt-x).
+          그 외(1구간/스케줄없음/모든 구간 등록 완료)는 기존 단일 primary 버튼 유지.
+      -->
+      <template v-if="showSlotCheckInButtons">
+        <button
+          v-for="slot in checkInSlots"
+          :key="`ci-${slot.workSeq}`"
+          type="button"
+          class="bt"
+          :class="slot.canCheckInThisSlot ? 'bt-p' : 'bt-x'"
+          :disabled="!slot.canCheckInThisSlot"
+          @click="onSlotCheckIn(slot.workSeq)"
+        >
+          <svg class="icon" width="16" height="16" aria-hidden="true">
+            <use href="#i-attd-login" />
+          </svg>
+          {{ slot.workSeq === 1 ? '1구간 출근' : '2구간 출근' }}
+        </button>
+      </template>
       <button
+        v-else
         type="button"
         class="bt"
         :class="primaryActionEnabled ? 'bt-p' : 'bt-x'"
         :disabled="!primaryActionEnabled"
         @click="onPrimaryAction"
       >
-        <svg class="icon" width="16" height="16" aria-hidden="true"><use :href="primaryActionIcon" /></svg>
+        <svg class="icon" width="16" height="16" aria-hidden="true">
+          <use :href="primaryActionIcon" />
+        </svg>
         {{ primaryActionLabel }}
       </button>
     </div>
@@ -109,15 +165,130 @@
     <!-- 본 카드 전용 sprite -->
     <svg width="0" height="0" class="card-sprite" aria-hidden="true" focusable="false">
       <defs>
-        <symbol id="i-attd-cal-ev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="5" width="16" height="16" rx="2" /><line x1="16" y1="3" x2="16" y2="7" /><line x1="8" y1="3" x2="8" y2="7" /><line x1="4" y1="11" x2="20" y2="11" /><line x1="8" y1="15" x2="8" y2="15" /></symbol>
-        <symbol id="i-attd-finger" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18.9 7a8 8 0 0 1 1.1 5v1a6 6 0 0 0 .8 3" /><path d="M8 11a4 4 0 0 1 8 0v1a10 10 0 0 0 2 6" /><path d="M12 11v2a14 14 0 0 0 2.5 8" /><path d="M8 15a18 18 0 0 0 1.8 6" /><path d="M4.9 19a22 22 0 0 1-.9-7a8 8 0 0 1 12-7" /></symbol>
-        <symbol id="i-attd-adjust" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="4" y1="8" x2="14" y2="8" /><line x1="4" y1="16" x2="10" y2="16" /><circle cx="17" cy="8" r="3" /><circle cx="13" cy="16" r="3" /></symbol>
-        <symbol id="i-attd-alert-c" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9" /><line x1="12" y1="8" x2="12" y2="12" /><line x1="12" y1="16" x2="12" y2="16" /></symbol>
-        <symbol id="i-attd-info" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9" /><line x1="12" y1="8" x2="12" y2="8" /><line x1="11" y1="12" x2="12" y2="12" /><line x1="12" y1="12" x2="12" y2="16" /></symbol>
-        <symbol id="i-attd-alert-t" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 9v4" /><path d="M10.4 4.6l-8 14a1.7 1.7 0 0 0 1.5 2.4h16.2a1.7 1.7 0 0 0 1.5-2.4l-8-14a1.7 1.7 0 0 0-3 0z" /><line x1="12" y1="17" x2="12" y2="17" /></symbol>
-        <symbol id="i-attd-edit" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20h4l10.5-10.5a2.1 2.1 0 0 0-3-3L5 17v3z" /><line x1="13.5" y1="6.5" x2="17.5" y2="10.5" /></symbol>
-        <symbol id="i-attd-logout" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 8V6a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h7a2 2 0 0 0 2-2v-2" /><line x1="9" y1="12" x2="21" y2="12" /><polyline points="18 9 21 12 18 15" /></symbol>
-        <symbol id="i-attd-login" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 8V6a2 2 0 0 1 2-2h7a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2h-7a2 2 0 0 1-2-2v-2" /><line x1="3" y1="12" x2="15" y2="12" /><polyline points="6 9 3 12 6 15" /></symbol>
+        <symbol
+          id="i-attd-cal-ev"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="2"
+          stroke-linecap="round"
+          stroke-linejoin="round"
+        >
+          <rect x="4" y="5" width="16" height="16" rx="2" />
+          <line x1="16" y1="3" x2="16" y2="7" />
+          <line x1="8" y1="3" x2="8" y2="7" />
+          <line x1="4" y1="11" x2="20" y2="11" />
+          <line x1="8" y1="15" x2="8" y2="15" />
+        </symbol>
+        <symbol
+          id="i-attd-finger"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="2"
+          stroke-linecap="round"
+          stroke-linejoin="round"
+        >
+          <path d="M18.9 7a8 8 0 0 1 1.1 5v1a6 6 0 0 0 .8 3" />
+          <path d="M8 11a4 4 0 0 1 8 0v1a10 10 0 0 0 2 6" />
+          <path d="M12 11v2a14 14 0 0 0 2.5 8" />
+          <path d="M8 15a18 18 0 0 0 1.8 6" />
+          <path d="M4.9 19a22 22 0 0 1-.9-7a8 8 0 0 1 12-7" />
+        </symbol>
+        <symbol
+          id="i-attd-adjust"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="2"
+          stroke-linecap="round"
+          stroke-linejoin="round"
+        >
+          <line x1="4" y1="8" x2="14" y2="8" />
+          <line x1="4" y1="16" x2="10" y2="16" />
+          <circle cx="17" cy="8" r="3" />
+          <circle cx="13" cy="16" r="3" />
+        </symbol>
+        <symbol
+          id="i-attd-alert-c"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="2"
+          stroke-linecap="round"
+          stroke-linejoin="round"
+        >
+          <circle cx="12" cy="12" r="9" />
+          <line x1="12" y1="8" x2="12" y2="12" />
+          <line x1="12" y1="16" x2="12" y2="16" />
+        </symbol>
+        <symbol
+          id="i-attd-info"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="2"
+          stroke-linecap="round"
+          stroke-linejoin="round"
+        >
+          <circle cx="12" cy="12" r="9" />
+          <line x1="12" y1="8" x2="12" y2="8" />
+          <line x1="11" y1="12" x2="12" y2="12" />
+          <line x1="12" y1="12" x2="12" y2="16" />
+        </symbol>
+        <symbol
+          id="i-attd-alert-t"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="2"
+          stroke-linecap="round"
+          stroke-linejoin="round"
+        >
+          <path d="M12 9v4" />
+          <path
+            d="M10.4 4.6l-8 14a1.7 1.7 0 0 0 1.5 2.4h16.2a1.7 1.7 0 0 0 1.5-2.4l-8-14a1.7 1.7 0 0 0-3 0z"
+          />
+          <line x1="12" y1="17" x2="12" y2="17" />
+        </symbol>
+        <symbol
+          id="i-attd-edit"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="2"
+          stroke-linecap="round"
+          stroke-linejoin="round"
+        >
+          <path d="M4 20h4l10.5-10.5a2.1 2.1 0 0 0-3-3L5 17v3z" />
+          <line x1="13.5" y1="6.5" x2="17.5" y2="10.5" />
+        </symbol>
+        <symbol
+          id="i-attd-logout"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="2"
+          stroke-linecap="round"
+          stroke-linejoin="round"
+        >
+          <path d="M14 8V6a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h7a2 2 0 0 0 2-2v-2" />
+          <line x1="9" y1="12" x2="21" y2="12" />
+          <polyline points="18 9 21 12 18 15" />
+        </symbol>
+        <symbol
+          id="i-attd-login"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="2"
+          stroke-linecap="round"
+          stroke-linejoin="round"
+        >
+          <path d="M10 8V6a2 2 0 0 1 2-2h7a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2h-7a2 2 0 0 1-2-2v-2" />
+          <line x1="3" y1="12" x2="15" y2="12" />
+          <polyline points="6 9 3 12 6 15" />
+        </symbol>
       </defs>
     </svg>
   </div>
@@ -131,10 +302,11 @@ import {
   formatYmdLong,
   formatDowLong,
   minutesToKorean,
+  formatLeaveMarker,
 } from '../attdFormat'
 
 const props = defineProps({
-  // GET /api/app/attd/my/today (또는 day-detail) 응답 1건. null=로딩/미주입
+  // GET /appApi/attd/my/today (또는 day-detail) 응답 1건. null=로딩/미주입
   detail: {
     type: Object,
     default: null,
@@ -147,7 +319,30 @@ const emit = defineEmits(['action'])
 // 파생 값 (단순 포맷/표시 — 비즈니스 로직 아님)
 // ───────────────────────────────────────────────────────────
 const slots = computed(() => (props.detail && props.detail.slots) || [])
-const isTwoSlot = computed(() => !!(props.detail && props.detail.isTwoSlot))
+
+// prafta-app-018-E: 부분연차(시간차/반차) 마커 — 근무 행은 그대로 두고 1줄만 부가 표시(근무일 유지).
+//   종일연차일도 동일 마커. 연차 미사용일은 isLeaveUsed=false → 미렌더.
+const isLeaveUsed = computed(() => !!(props.detail && props.detail.isLeaveUsed))
+const leaveMarkerText = computed(() => formatLeaveMarker(props.detail || {}))
+
+// prafta-app-014: 슬롯 개수 판정 단일 출처를 서버 slotCount 로 이관.
+//   서버 미제공(구버전 응답) 폴백: slots.length, 그래도 없으면 isTwoSlot.
+const slotCount = computed(() => {
+  if (props.detail && typeof props.detail.slotCount === 'number') return props.detail.slotCount
+  if (slots.value.length) return slots.value.length
+  return props.detail && props.detail.isTwoSlot ? 2 : 1
+})
+const hasMultiSlot = computed(() => slotCount.value >= 2)
+
+// 슬롯이 스케줄 대응(표준화/지각·조퇴 적용 대상)인지: schedule 객체+시작시각 존재.
+//   서버는 미대응 슬롯의 schedule 을 null 로 내려준다(D2).
+const slotHasSchedule = (slot) => !!(slot && slot.schedule && slot.schedule.startTime)
+
+// 구분선 라벨: 스케줄 대응이면 "1구간"/"2구간", 미대응이면 "추가 근무".
+const slotDividerLabel = (slot, idx) => {
+  if (!slotHasSchedule(slot)) return '추가 근무'
+  return idx === 0 ? '1구간' : '2구간'
+}
 
 // 날짜 헤더 — "2026년 5월 20일" / "수요일 · 중곡사업장"
 const dateMainText = computed(() => formatYmdLong(props.detail && props.detail.workDate))
@@ -177,7 +372,8 @@ const statusText = computed(() => {
     case 'WORKING':
       return '근무중'
     case 'TWO_SLOT_WORKING':
-      return '2구간 근무'
+      // prafta-app-014: slotCount>=2 의 진행 상태(야간2구간 또는 추가 출근) 공통 라벨.
+      return '근무중'
     case 'CHECK_OUT_MISSING':
       return '퇴근 미등록'
     case 'CHECKED_OUT':
@@ -254,8 +450,13 @@ const attendanceMetaHtml = (slot) => {
 //   applied : 표준화 적용(시각 + 근무시간 표시)
 //   unmet   : 출퇴근은 등록됐으나 회사유리(출근올림/퇴근내림) 적용 시 시간규칙 위반 → 미적용 안내
 //   na      : 표준화 비대상(출퇴근 미완료 등 standardized=null)
+//   ※ 스케줄 미대응 슬롯은 표준화 행 자체를 렌더하지 않음(template v-if).
 const stdApplied = (slot) =>
-  !!(slot.standardized && slot.standardized.applied === true && slot.standardized.settledMinutes != null)
+  !!(
+    slot.standardized &&
+    slot.standardized.applied === true &&
+    slot.standardized.settledMinutes != null
+  )
 const stdUnmet = (slot) => !!(slot.standardized && slot.standardized.applied === false)
 const standardizedText = (slot) => {
   if (!stdApplied(slot)) return '-'
@@ -275,7 +476,8 @@ const alertText = computed(() => {
     case 'WORKING':
       return '근무 중에는 근태 수정을 요청할 수 없어요.'
     case 'TWO_SLOT_WORKING':
-      return '2구간 근무까지 모두 끝난 뒤에 수정 요청을 등록할 수 있어요.'
+      // prafta-app-014: slotCount>=2 진행 중 공통 문구(야간2구간/추가 출근 모두 포함).
+      return '오늘 근무가 모두 끝난 뒤에 수정 요청을 등록할 수 있어요.'
     case 'CHECK_OUT_MISSING':
       return '퇴근은 오늘 안에만 가능해요.'
     case 'CHECKED_OUT':
@@ -286,46 +488,70 @@ const alertText = computed(() => {
   }
 })
 const hasDifferentSite = computed(() =>
-  slots.value.some((s) => s.attendance && s.attendance.isDifferentSite)
+  slots.value.some((s) => s.attendance && s.attendance.isDifferentSite),
 )
 const alertToneClass = computed(() =>
-  (props.detail && props.detail.workStatus) === 'CHECK_OUT_MISSING' ? 'dg' : 'in'
+  (props.detail && props.detail.workStatus) === 'CHECK_OUT_MISSING' ? 'dg' : 'in',
 )
 const alertIconId = computed(() =>
   (props.detail && props.detail.workStatus) === 'CHECK_OUT_MISSING'
     ? '#i-attd-alert-t'
-    : '#i-attd-info'
+    : '#i-attd-info',
 )
 
 // ───────────────────────────────────────────────────────────
 // 푸터 액션 (서버 산출 actions 표시만)
 //   prafta-app-013: "수정 요청"은 항상 활성(시트 오픈). canRequestModify 의존 제거.
-//   primary 버튼(퇴근/2구간 출근)은 종전대로 actions.canCheckOut/canCheckIn 사용.
+//   prafta-app-014: primary 버튼은 actions.canCheckIn/canCheckOut(서버 effective 산출) 단독 기준.
+//     상태 문자열(TWO_SLOT_WORKING) 의존을 끊어 1구간 스케줄/스케줄없음의 2번째 출근도 포괄.
 // ───────────────────────────────────────────────────────────
 const actions = computed(() => (props.detail && props.detail.actions) || {})
 
-// Primary 버튼: 2구간 미시작이면 "2구간 출근"(canCheckIn), 그 외 "퇴근하기"(canCheckOut)
-const isTwoSlotCheckIn = computed(
-  () => (props.detail && props.detail.workStatus) === 'TWO_SLOT_WORKING' && !!actions.value.canCheckIn
+// prafta-app-015: 2구간 스케줄이면 구간 선택 버튼(서버 slot.canCheckInThisSlot 게이팅).
+//   - isTwoSlot && 퇴근 우선 상태가 아니고(canCheckOut=false) && 출근 가능 구간이 1개 이상이면 2버튼 노출.
+//   - 퇴근 우선(진행 중 구간 존재)이거나 1구간/스케줄없음/모든 구간 완료면 단일 primary 버튼.
+const isTwoSlotSchedule = computed(() => !!(props.detail && props.detail.isTwoSlot))
+const checkInSlots = computed(() =>
+  // 표시 일관: 1구간/2구간 순으로 노출(slots 는 workSeq 오름차순으로 가정하나 명시 정렬).
+  slots.value
+    .filter((s) => s && (s.workSeq === 1 || s.workSeq === 2))
+    .slice()
+    .sort((a, b) => a.workSeq - b.workSeq),
 )
+const showSlotCheckInButtons = computed(
+  () =>
+    isTwoSlotSchedule.value &&
+    !actions.value.canCheckOut &&
+    checkInSlots.value.some((s) => s.canCheckInThisSlot === true),
+)
+
+// Primary 버튼(단일): 추가 출근 가능(canCheckIn)이면 "출근", 그 외 "퇴근하기"(canCheckOut)
+const isCheckInAction = computed(() => !!actions.value.canCheckIn)
 const primaryActionEnabled = computed(() =>
-  isTwoSlotCheckIn.value ? !!actions.value.canCheckIn : !!actions.value.canCheckOut
+  isCheckInAction.value ? !!actions.value.canCheckIn : !!actions.value.canCheckOut,
 )
-const primaryActionLabel = computed(() => (isTwoSlotCheckIn.value ? '2구간 출근' : '퇴근하기'))
+const primaryActionLabel = computed(() => (isCheckInAction.value ? '출근하기' : '퇴근하기'))
 const primaryActionIcon = computed(() =>
-  isTwoSlotCheckIn.value ? '#i-attd-login' : '#i-attd-logout'
+  isCheckInAction.value ? '#i-attd-login' : '#i-attd-logout',
 )
 
 const onModify = () => {
-  // prafta-app-013: 4액션 시트를 열도록 컨테이너에 위임 — 본 라운드는 emit만.
-  // TODO(developer): MyAttendanceView.onTodayAction 에서 sheetActions 로 시트용 day 구성 후 오픈.
+  // prafta-app-013: 4액션 시트를 열도록 컨테이너에 위임.
   emit('action', { type: 'requestModify', detail: props.detail })
 }
 const onPrimaryAction = () => {
-  // TODO(developer): 퇴근/2구간 출근 확인 모달 → POST check-out/check-in — 본 라운드는 emit만
+  // 단일 버튼 경로: 1구간/스케줄없음의 출근 또는 퇴근. targetWorkSeq 미동봉(서버 existing+1 채번).
   emit('action', {
-    type: isTwoSlotCheckIn.value ? 'checkIn' : 'checkOut',
+    type: isCheckInAction.value ? 'checkIn' : 'checkOut',
     detail: props.detail,
+  })
+}
+// prafta-app-015: 2구간 구간 선택 출근 — 선택 구간(workSeq)을 targetWorkSeq 로 동봉하여 emit.
+const onSlotCheckIn = (workSeq) => {
+  emit('action', {
+    type: 'checkIn',
+    detail: props.detail,
+    targetWorkSeq: workSeq,
   })
 }
 </script>
@@ -368,6 +594,14 @@ const onPrimaryAction = () => {
   font-size: 14px;
   font-weight: 700;
   color: var(--color-text-primary);
+}
+
+/* prafta-app-018-E: 부분연차 마커 라인(warning 톤 — 주간 연차 배지/캘린더 lv 셀과 톤 일관). */
+.lv-marker {
+  margin: 2px 0 6px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--color-warning-text);
 }
 
 /* 상태 배지 */
@@ -416,7 +650,7 @@ const onPrimaryAction = () => {
   background: var(--color-info);
 }
 
-/* 구분선 (2구간) */
+/* 구분선 (slotCount>=2) */
 .dv {
   display: flex;
   align-items: center;
@@ -449,6 +683,14 @@ const onPrimaryAction = () => {
   border: 1px solid var(--color-border);
   border-radius: var(--radius-md);
   padding: 10px 12px;
+}
+/* 스케줄 미대응 슬롯의 스케줄 행 (흐림) */
+.tw.x {
+  border-color: var(--color-border);
+  background: var(--color-border-light);
+}
+.tw.x .tl {
+  color: var(--color-text-tertiary);
 }
 .tw.a {
   border-color: var(--color-primary-tint-border);

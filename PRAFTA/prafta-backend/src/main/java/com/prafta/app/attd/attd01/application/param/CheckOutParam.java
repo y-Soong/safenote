@@ -36,6 +36,7 @@ public record CheckOutParam(
     , String isMocked
     , String workYmd
     , String offsiteReason   // prafta-app-008: 외근 사유(외근일 때 필수). 온사이트면 무시.
+    , String deviceUuid      // prafta-com-003 D3: 퇴근 실행 디바이스UUID(클라 제공·신뢰경계 밖, 표시·탐지 보조).
     , String ipAddr
     , TokenInfo tokenInfo
 ) {
@@ -86,6 +87,18 @@ public record CheckOutParam(
             }
         }
 
+        // prafta-com-003 D3: 디바이스UUID 정규화 — 트림 후 빈값이면 null, varchar(100) 초과분 컷.
+        //   클라 제공값(위조 가능)이라 식별/인가에는 일절 쓰지 않고 도장(표시·탐지 보조)에만 사용한다.
+        String deviceUuid = request.getDeviceId();
+        if (deviceUuid != null) {
+            deviceUuid = deviceUuid.trim();
+            if (deviceUuid.isEmpty()) {
+                deviceUuid = null;
+            } else if (deviceUuid.length() > 100) {
+                deviceUuid = deviceUuid.substring(0, 100);
+            }
+        }
+
         return new CheckOutParam(
             cmpnyCd
             , userCd
@@ -96,6 +109,7 @@ public record CheckOutParam(
             , isMocked
             , workYmd
             , offsiteReason
+            , deviceUuid
             , ipAddr
             , tokenInfo
         );

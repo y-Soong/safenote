@@ -23,5 +23,14 @@ public record UserAttdReqResult(
     , String reqType
     , String reqStatus
     , String delYn
+
+    /**
+     * 목표 스케줄 코드 (PRAFTA-APP-007).
+     *
+     * REQ_TYPE='10'(스케줄 수정 요청)일 때만 의미를 가지며, 승인 시 tb_user_work_plan 의
+     * WORK_PLAN_CD 로 upsert 되는 서버 권위 값이다. 클라이언트가 보낸 SCH_CD 는 신뢰하지
+     * 않고 이 REQ row 의 값을 사용한다(IDOR/변조 차단). 다른 REQ_TYPE 에서는 NULL.
+     */
+    , String schCd
 ) {
 }

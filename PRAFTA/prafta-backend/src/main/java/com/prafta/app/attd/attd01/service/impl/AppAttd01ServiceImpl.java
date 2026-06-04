@@ -49,6 +49,7 @@ import com.prafta.app.attd.attd01.result.ScheduleResult;
 import com.prafta.app.attd.attd01.result.SiteGeofenceResult;
 import com.prafta.app.attd.attd01.result.StdTimeRuleResult;
 import com.prafta.app.attd.attd01.service.AppAttd01Service;
+import com.prafta.common.cmm.leave.service.LeaveRefusalDetectService;
 import com.prafta.common.error.attd.AttdErrorCode;
 import com.prafta.common.exception.ApiException;
 
@@ -114,6 +115,9 @@ public class AppAttd01ServiceImpl implements AppAttd01Service {
 
     private final AppAttd01Mapper appAttd01Mapper;
 
+    /** PRAFTA-COM-001: 노무수령거부 대상일 출근 감지 + 관리자 PUSH(체크인 hook 전용, 예외 격리). */
+    private final LeaveRefusalDetectService leaveRefusalDetectService;
+
     // ====================================================================
     // 1) 오늘 / 일자 상세 (동일 응답 구조)
     // ====================================================================
@@ -150,6 +154,12 @@ public class AppAttd01ServiceImpl implements AppAttd01Service {
         List<AttdRecordResult> attds = nullSafe(appAttd01Mapper.selectAttdByRange(q));
         List<StdTimeRuleResult> stdRules = nullSafe(appAttd01Mapper.selectStdTimeRules(cmpnyCd));
 
+        // prafta-app-018-E: 그날 연차 사용내역(CONFIRMED) 단일일 조회 — 부분연차 상세 표시 전용.
+        //   ⚠️ 표시만 한다. isLeaveDay/slotCount/slots/workStatus/dayType/합계 등 근무일 산출 로직은
+        //   일절 건드리지 않는다(근무일 유지). 다건이면 첫 1건만 안전 채택(주간 putIfAbsent 와 일관).
+        List<LeaveUseResult> dayLeaves = nullSafe(appAttd01Mapper.selectLeaveUseByRange(q));
+        LeaveUseResult dayLeave = dayLeaves.isEmpty() ? null : dayLeaves.get(0);
+
         // GPS 는 해당 일자 근태레코드(ATTD_ID) 기준으로만 로딩.
         Map<String, GpsResult> gpsByCheckIn = new HashMap<>();
         Map<String, GpsResult> gpsByCheckOut = new HashMap<>();
@@ -161,12 +171,21 @@ public class AppAttd01ServiceImpl implements AppAttd01Service {
         ScheduleResult sched = schedules.isEmpty() ? null : schedules.get(0);
         boolean isLeaveDay = sched != null && sched.leaveCd() != null && sched.leaveNm() != null;
         boolean isTwoSlot = sched != null && StringUtils.hasText(sched.secSchStrTime());
+        boolean hasScheduleDay = sched != null && !isLeaveDay;
 
         // workSeq -> 근태레코드 매핑.
         Map<Integer, AttdRecordResult> attdBySeq = new HashMap<>();
         for (AttdRecordResult a : attds) {
             attdBySeq.putIfAbsent(a.workSeq(), a);
         }
+
+        // prafta-app-014: 화면/상태/액션의 단일 기준 = effectiveSlotCount(1~2).
+        //   연차일은 슬롯 비대상(0). 스케줄도 출근기록도 없는 순수 휴무일도 0(종전과 동일하게 슬롯 미생성).
+        //   스케줄 없는 날도 실제 출근기록이 있으면 슬롯을 만든다(추가근무 슬롯, D2).
+        boolean hasAnyAttd = attdBySeq.get(1) != null || attdBySeq.get(2) != null;
+        int slotCount = (isLeaveDay || (!hasScheduleDay && !hasAnyAttd))
+                ? 0
+                : effectiveSlotCount(isTwoSlot, hasScheduleDay, attdBySeq);
 
         int unitIn = unitMinutesOf(stdRules, STD_RULE_CHECK_IN);
         int unitOut = unitMinutesOf(stdRules, STD_RULE_CHECK_OUT);
@@ -175,28 +194,43 @@ public class AppAttd01ServiceImpl implements AppAttd01Service {
         boolean isToday = targetYmd.equals(todayYmd);
         int nowMinIfToday = isToday ? nowMinutes() : -1;
 
+        // prafta-app-015: 2구간 스케줄 구간 선택 버튼 게이팅(서버 산출, 프론트 표시 전용).
+        //   퇴근 가능 윈도우 = 근무일 당일(D) ~ 다음날(D+1). 같은 구간 진행중(미퇴근) 여부도 반영한다.
+        String yesterdayYmdForSlot = LocalDate.parse(todayYmd, YMD).minusDays(1).format(YMD);
+        boolean withinCheckoutWindowForSlot = isToday || targetYmd.equals(yesterdayYmdForSlot);
+        int attdCountForSlot = (attdBySeq.get(1) != null ? 1 : 0) + (attdBySeq.get(2) != null ? 1 : 0);
+
         List<SlotResponse> slots = new ArrayList<>();
-        if (sched != null && !isLeaveDay) {
-            // 1구간
-            slots.add(buildSlot(sched, 1, attdBySeq.get(1), gpsByCheckIn, gpsByCheckOut,
-                    unitIn, unitOut, isToday, isPast, nowMinIfToday));
-            // 2구간 (스케줄이 2구간인 경우)
-            if (isTwoSlot) {
-                slots.add(buildSlot(sched, 2, attdBySeq.get(2), gpsByCheckIn, gpsByCheckOut,
-                        unitIn, unitOut, isToday, isPast, nowMinIfToday));
+        if (!isLeaveDay) {
+            // prafta-app-014: effectiveSlotCount 만큼 슬롯 생성. 스케줄 미대응 슬롯은 schedule=null(D2).
+            //   슬롯1 스케줄 대응 = 스케줄 있는 날. 슬롯2 스케줄 대응 = 스케줄 2구간일 때만.
+            for (int seq = 1; seq <= slotCount; seq++) {
+                boolean slotHasSchedule = (seq == 1) ? hasScheduleDay : isTwoSlot;
+                AttdRecordResult slotAttd = attdBySeq.get(seq);
+
+                // prafta-app-015: 구간 플래그(2구간 스케줄 한정). 1구간/스케줄없음은 단일 actions.canCheckIn 유지(false).
+                boolean alreadyCheckedIn = slotAttd != null;
+                boolean canCheckInThisSlot = isTwoSlot
+                        && !alreadyCheckedIn
+                        && !closed
+                        && withinCheckoutWindowForSlot
+                        && attdCountForSlot < 2;
+
+                slots.add(buildSlot(sched, seq, slotHasSchedule, slotAttd,
+                        gpsByCheckIn, gpsByCheckOut, unitIn, unitOut, isToday, isPast, nowMinIfToday,
+                        canCheckInThisSlot, alreadyCheckedIn));
             }
         }
 
-        String workStatus = computeWorkStatus(sched, isLeaveDay, isTwoSlot, attdBySeq, isToday, isPast, nowMinIfToday);
+        String workStatus = computeWorkStatus(sched, isLeaveDay, slotCount, attdBySeq, isToday, isPast, nowMinIfToday);
 
         DayActionsResponse actions = computeDayActions(
-                sched, isLeaveDay, isTwoSlot, attdBySeq, isToday, isPast, closed, targetYmd, todayYmd);
+                sched, isLeaveDay, attdBySeq, isToday, isPast, closed, targetYmd, todayYmd);
 
         // prafta-app-013: 오늘/일상세 바텀시트 4액션(+leaveFullDayOnly) — 이번주와 동일 규칙(결정 §2).
-        boolean hasSchedule = sched != null && !isLeaveDay;
-        boolean s1Out = attdBySeq.get(1) != null && StringUtils.hasText(attdBySeq.get(1).checkOutTime());
-        boolean s2Out = attdBySeq.get(2) != null && StringUtils.hasText(attdBySeq.get(2).checkOutTime());
-        boolean completedForSheet = isTwoSlot ? (s1Out && s2Out) : s1Out;
+        // prafta-app-014: completed/합계/요약 게이트를 isTwoSlot → effectiveSlotCount 로 이관.
+        boolean hasSchedule = hasScheduleDay;
+        boolean completedForSheet = allSlotsCompleted(slotCount, attdBySeq);
         boolean hasAttendanceForSheet = attdBySeq.get(1) != null || attdBySeq.get(2) != null;
         WeekDayActionsResponse sheetActions = computeActionFlags(
                 hasSchedule, isPast, isToday, hasAttendanceForSheet, completedForSheet, closed);
@@ -205,12 +239,12 @@ public class AppAttd01ServiceImpl implements AppAttd01Service {
 
         // prafta-app-013: 시트 메타 1줄(이번주와 동일) — 근무 스케줄 있을 때만 산출.
         String scheduleSummary = hasSchedule ? scheduleSummary(sched, isTwoSlot) : null;
-        String attendanceSummary = hasSchedule ? attendanceSummary(attdBySeq, isTwoSlot) : null;
+        String attendanceSummary = hasSchedule ? attendanceSummary(attdBySeq, slotCount) : null;
 
         // dayType/hasIssue 산출 — selectMonth 와 동일 규칙(처리 필요 빠른 액션 노출 근거, 시안 §4.4.3).
         boolean hasSchCd = sched != null && !isLeaveDay;
         boolean actionRequired = isPast && hasSchCd
-                && hasActionRequired(sched, isTwoSlot, attdBySeq, attds, gpsByCheckIn, gpsByCheckOut, closed, targetYmd);
+                && hasActionRequired(sched, slotCount, attdBySeq, attds, gpsByCheckIn, gpsByCheckOut, closed, targetYmd);
         String dayType;
         if (actionRequired) {
             dayType = DAY_ACTION_REQUIRED;
@@ -231,32 +265,52 @@ public class AppAttd01ServiceImpl implements AppAttd01Service {
                 .attendanceSummary(attendanceSummary)
                 .workStatus(workStatus)
                 .isTwoSlot(isTwoSlot)
+                .slotCount(slotCount)
                 .slots(slots)
                 .actions(actions)
                 .sheetActions(sheetActions)
                 .dayType(dayType)
                 .hasIssue(DAY_ACTION_REQUIRED.equals(dayType))
+                // prafta-app-018-E: 부분연차 상세필드(표시 전용·근무일 유지). 사용내역 없으면 전부 null/false.
+                .isLeaveUsed(dayLeave != null)
+                .leaveTypeName(dayLeave == null ? null : dayLeave.leaveNm())
+                .leaveUnitType(dayLeave == null ? null : dayLeave.useUnitType())
+                .leaveTimeRange(dayLeave == null ? null : leaveTimeRange(dayLeave.startTime(), dayLeave.endTime()))
+                .leaveDays(dayLeave == null ? null : dayLeave.leaveDays())
                 .build();
     }
 
-    /** 구간(슬롯) 응답 빌드. */
+    /**
+     * 구간(슬롯) 응답 빌드.
+     *
+     * <p>prafta-app-014: {@code hasScheduleForSlot} 가 false 면 "스케줄 미대응 슬롯"(스케줄 없는 날의
+     *   슬롯, 1구간 스케줄의 2번째 출근 등)으로 보고 {@code schedule=null} 로 내리며 표준화/지각·조퇴를
+     *   적용하지 않는다(원본 출퇴근 시각만). 미등록 판정도 스케줄 종료가 없으므로 적용하지 않는다(D2).
+     */
     private SlotResponse buildSlot(
-            ScheduleResult sched, int seq, AttdRecordResult attd,
+            ScheduleResult sched, int seq, boolean hasScheduleForSlot, AttdRecordResult attd,
             Map<String, GpsResult> gpsByCheckIn, Map<String, GpsResult> gpsByCheckOut,
-            int unitIn, int unitOut, boolean isToday, boolean isPast, int nowMinIfToday) {
+            int unitIn, int unitOut, boolean isToday, boolean isPast, int nowMinIfToday,
+            boolean canCheckInThisSlot, boolean alreadyCheckedIn) {
 
-        String schStr = seq == 1 ? sched.fstSchStrTime() : sched.secSchStrTime();
-        String schEnd = seq == 1 ? sched.fstSchEndTime() : sched.secSchEndTime();
-        String schBrk = seq == 1 ? sched.fstSchBrkMin() : sched.secSchBrkMin();
-        Integer brkMin = parseIntOrZero(schBrk);
-        Integer schWorkMin = computeWorkMinutes(schStr, schEnd, brkMin);
-
-        ScheduleResponse scheduleRes = ScheduleResponse.builder()
-                .startTime(schStr)
-                .endTime(schEnd)
-                .breakMinutes(brkMin)
-                .workMinutes(schWorkMin)
-                .build();
+        // 스케줄 미대응 슬롯: 스케줄 메타/표준화/미등록 판정 비대상.
+        String schStr = null;
+        String schEnd = null;
+        Integer brkMin = 0;
+        ScheduleResponse scheduleRes = null;
+        if (hasScheduleForSlot && sched != null) {
+            schStr = seq == 1 ? sched.fstSchStrTime() : sched.secSchStrTime();
+            schEnd = seq == 1 ? sched.fstSchEndTime() : sched.secSchEndTime();
+            String schBrk = seq == 1 ? sched.fstSchBrkMin() : sched.secSchBrkMin();
+            brkMin = parseIntOrZero(schBrk);
+            Integer schWorkMin = computeWorkMinutes(schStr, schEnd, brkMin);
+            scheduleRes = ScheduleResponse.builder()
+                    .startTime(schStr)
+                    .endTime(schEnd)
+                    .breakMinutes(brkMin)
+                    .workMinutes(schWorkMin)
+                    .build();
+        }
 
         AttendanceResponse attendanceRes = null;
         StandardizedResponse standardizedRes = null;
@@ -265,7 +319,9 @@ public class AppAttd01ServiceImpl implements AppAttd01Service {
             boolean hasCheckOut = StringUtils.hasText(attd.checkOutTime());
 
             // 퇴근 미등록 판정: 출근有 && 퇴근NULL && 스케줄 종료 경과(당일) 또는 과거일.
-            boolean missingCheckOut = !hasCheckOut && isCheckOutMissing(schEnd, isToday, isPast, nowMinIfToday);
+            //   스케줄 미대응 슬롯은 종료 기준이 없으므로 미등록 표시 비대상(과거일만 보정 필요로 봄은 hasActionRequired 가 별도 처리).
+            boolean missingCheckOut = hasScheduleForSlot
+                    && !hasCheckOut && isCheckOutMissing(schEnd, isToday, isPast, nowMinIfToday);
 
             // 외근 여부(prafta-app-003 B-2): GPS 행 존재 = 지오펜스 밖(외근). 출근=01행, 퇴근=02행.
             //   GPS 행은 외근일 때만 저장되므로(A0-2 확정 모델) 존재여부만 본다(Mock/유효 판정 제거).
@@ -287,9 +343,10 @@ public class AppAttd01ServiceImpl implements AppAttd01Service {
                     .isDifferentSite(false)
                     .build();
 
-            // 표준화: 출퇴근 모두 등록된 경우에만 산출(attd §10.2). 미완료면 null.
+            // 표준화: 출퇴근 모두 등록 + 스케줄 대응 슬롯일 때만 산출(attd §10.2, prafta-app-014 D2).
             //   방향(회사 유리): 출근 올림 / 퇴근 내림. 규칙 위반 시 applied=false(원본 표시).
-            if (hasCheckOut) {
+            //   스케줄 미대응 슬롯(추가 출근)은 표준화 비대상 → standardized=null(프론트 표준화 행 숨김).
+            if (hasScheduleForSlot && hasCheckOut) {
                 standardizedRes = buildStandardized(
                         attd.checkInTime(), attd.checkOutTime(), brkMin, unitIn, unitOut);
             }
@@ -300,16 +357,26 @@ public class AppAttd01ServiceImpl implements AppAttd01Service {
                 .schedule(scheduleRes)
                 .attendance(attendanceRes)
                 .standardized(standardizedRes)
+                .canCheckInThisSlot(canCheckInThisSlot)   // prafta-app-015: 2구간 구간 선택 게이팅.
+                .alreadyCheckedIn(alreadyCheckedIn)
                 .build();
     }
 
-    /** workStatus 산출 (시안 §2.2). */
+    /**
+     * workStatus 산출 (시안 §2.2).
+     *
+     * <p>prafta-app-014: 판정 기준을 isTwoSlot → effectiveSlotCount 로 이관.
+     *   slotCount==2(스케줄 2구간 또는 1구간/스케줄없음의 2번째 출근)면 2슬롯 진행/완료 로직,
+     *   slotCount==1 이면 1슬롯 로직을 적용한다. 단 "2번째 출근 가능 여부"는 상태와 분리하여
+     *   {@link #computeDayActions} 에서 effective 상한으로 산출한다(1구간 1회 퇴근 후 slotCount=1
+     *   이어도 canCheckIn 이 뜰 수 있음).
+     */
     private String computeWorkStatus(
-            ScheduleResult sched, boolean isLeaveDay, boolean isTwoSlot,
+            ScheduleResult sched, boolean isLeaveDay, int slotCount,
             Map<Integer, AttdRecordResult> attdBySeq, boolean isToday, boolean isPast, int nowMinIfToday) {
 
         if (sched == null || isLeaveDay) {
-            return null; // 스케줄 없음/연차일은 카드 상태 비대상.
+            return null; // 스케줄 없음(스케줄 없는 날의 카드 상태는 별도 표시 안함)/연차일은 카드 상태 비대상.
         }
 
         AttdRecordResult s1 = attdBySeq.get(1);
@@ -319,14 +386,16 @@ public class AppAttd01ServiceImpl implements AppAttd01Service {
         boolean s2In = s2 != null;
         boolean s2Out = s2 != null && StringUtils.hasText(s2.checkOutTime());
 
-        if (isTwoSlot) {
+        if (slotCount >= 2) {
             if (s1Out && s2Out) return STATUS_CHECKED_OUT;
-            // 1구간만 진행/완료, 또는 2구간 진행 중 → 2구간 근무 상태로 통일(시안 §2.2).
-            if (s1In) return STATUS_TWO_SLOT_WORKING;
+            // prafta-app-015: 2구간 단독 진행(WORK_SEQ=2 먼저 출근, s1In=false·s2In=true)도 정식 도달 가능.
+            //   1구간만/2구간만/양 구간 진행 중 어느 쪽이든 근무 중으로 통일(시안 §2.2).
+            //   home01 buildAttendance 의 STATUS_WORKING(2구간 진행 중) 산출과 의미 정합.
+            if (s1In || s2In) return STATUS_TWO_SLOT_WORKING;
             return STATUS_BEFORE_WORK;
         }
 
-        // 1구간 스케줄
+        // 1슬롯
         if (!s1In) {
             return STATUS_BEFORE_WORK;
         }
@@ -354,7 +423,7 @@ public class AppAttd01ServiceImpl implements AppAttd01Service {
      *   </ul>
      */
     private DayActionsResponse computeDayActions(
-            ScheduleResult sched, boolean isLeaveDay, boolean isTwoSlot,
+            ScheduleResult sched, boolean isLeaveDay,
             Map<Integer, AttdRecordResult> attdBySeq, boolean isToday, boolean isPast,
             boolean closed, String targetYmd, String todayYmd) {
 
@@ -366,7 +435,9 @@ public class AppAttd01ServiceImpl implements AppAttd01Service {
         String yesterdayYmd = LocalDate.parse(todayYmd, YMD).minusDays(1).format(YMD);
         boolean withinCheckoutWindow = isToday || targetYmd.equals(yesterdayYmd);
 
-        if (sched != null && !isLeaveDay) {
+        // prafta-app-014: 연차일이 아니면(스케줄 유무 무관) effective 상한(2)으로 액션 산출.
+        //   스케줄 없는 날도 실제 출근기록 기준으로 퇴근/추가 출근을 허용한다(D3·D4).
+        if (!isLeaveDay) {
             AttdRecordResult s1 = attdBySeq.get(1);
             AttdRecordResult s2 = attdBySeq.get(2);
             boolean s1In = s1 != null;
@@ -374,28 +445,26 @@ public class AppAttd01ServiceImpl implements AppAttd01Service {
             boolean s2In = s2 != null;
             boolean s2Out = s2 != null && StringUtils.hasText(s2.checkOutTime());
 
-            boolean allCompleted = isTwoSlot ? (s1Out && s2Out) : s1Out;
+            int attdCount = (s1In ? 1 : 0) + (s2In ? 1 : 0);
+            // 진행 중(출근有 퇴근NULL) 슬롯 존재 여부.
+            boolean hasOpen = (s1In && !s1Out) || (s2In && !s2Out);
+            // 전 슬롯 퇴근 완료(출근기록이 1건 이상이고 모두 퇴근).
+            boolean allCompleted = attdCount > 0 && !hasOpen;
 
             if (withinCheckoutWindow) {
-                if (isTwoSlot) {
-                    // 1구간 진행 중(출근有 퇴근NULL) → 퇴근 가능.
-                    if (s1In && !s1Out) {
-                        canCheckOut = true;
-                    } else if (s1Out && !s2In) {
-                        // 1구간 퇴근 완료 + 2구간 미출근 → 재출근(2구간 출근) 가능 (attd §5.2).
-                        canCheckIn = true;
-                    } else if (s2In && !s2Out) {
-                        // 2구간 진행 중 → 퇴근 가능.
-                        canCheckOut = true;
-                    }
-                } else {
-                    if (s1In && !s1Out) {
-                        canCheckOut = true; // 진행 중(근무중/퇴근미등록) → 퇴근 가능.
-                    }
+                // 퇴근: 진행 중 슬롯이 있으면 가능.
+                if (hasOpen) {
+                    canCheckOut = true;
+                } else if (attdCount < 2) {
+                    // prafta-app-014 §4-B 6항: 추가 출근 = 직전 슬롯 퇴근 완료 && 실제 출근기록<2 && 미마감.
+                    //   1구간 스케줄에서 1회 퇴근 후(attdCount=1, slotCount=1)에도 canCheckIn=true 가 나오는 게 핵심.
+                    //   stock §5.2(2구간 1구간 퇴근 후 재출근)도 이 식으로 포괄. attdCount==0(출근 전)도 출근 가능.
+                    canCheckIn = !closed;
                 }
             }
 
-            // 수정요청: 확정(전 구간 출퇴근 완료) && 해당월 미마감.
+            // 수정요청: 확정(전 슬롯 출퇴근 완료) && 해당월 미마감.
+            //   스케줄 없는 날에도 출퇴근이 모두 완료됐으면 수정요청(보정/초과근무 상신) 활성.
             canRequestModify = allCompleted && !closed;
         }
 
@@ -454,20 +523,23 @@ public class AppAttd01ServiceImpl implements AppAttd01Service {
             Map<Integer, AttdRecordResult> attdBySeq = new HashMap<>();
             for (AttdRecordResult a : dayAttds) attdBySeq.putIfAbsent(a.workSeq(), a);
 
-            // 합계: 예정=스케줄 합, 실=완료된 근무(출퇴근 모두 등록)만 합.
+            // prafta-app-014: 주간 요약/합계/상태도 effective 기준으로 일관화(1구간 2회 출근 반영).
+            int slotCount = isLeaveDay ? 0 : effectiveSlotCount(isTwoSlot, hasSchCd, attdBySeq);
+
+            // 합계: 예정=스케줄 합, 실=완료된 근무(출퇴근 모두 등록)만 합(slot2 기록 있으면 합산).
             if (hasSchCd) {
                 plannedSum += plannedMinutes(sched, isTwoSlot);
             }
             actualSum += actualCompletedMinutes(sched, isTwoSlot, attdBySeq);
 
             String scheduleSummary = hasSchCd ? scheduleSummary(sched, isTwoSlot) : null;
-            String attendanceSummary = hasSchCd ? attendanceSummary(attdBySeq, isTwoSlot) : null;
+            String attendanceSummary = hasSchCd ? attendanceSummary(attdBySeq, slotCount) : null;
             String attendanceStatus = hasSchCd
-                    ? computeAttendanceStatus(sched, isTwoSlot, attdBySeq, isToday, isPast)
+                    ? computeAttendanceStatus(sched, slotCount, attdBySeq, isToday, isPast)
                     : null;
 
             WeekDayActionsResponse actions = computeWeekActions(
-                    hasSchCd, isLeaveDay, isTwoSlot, attdBySeq, isToday, isPast, dayClosed);
+                    hasSchCd, isLeaveDay, slotCount, attdBySeq, isToday, isPast, dayClosed);
 
             days.add(WeekDayResponse.builder()
                     .workYmd(ymd)
@@ -477,6 +549,10 @@ public class AppAttd01ServiceImpl implements AppAttd01Service {
                     .holidayName(holiday == null ? null : holiday.holidayNm())
                     .isLeaveUsed(leave != null)
                     .leaveTypeName(leave == null ? null : leave.leaveNm())
+                    // prafta-app-018-E: 부분연차 상세필드(표시 전용). leaveByYmd 의 첫 1건(putIfAbsent) 기준.
+                    .leaveUnitType(leave == null ? null : leave.useUnitType())
+                    .leaveTimeRange(leave == null ? null : leaveTimeRange(leave.startTime(), leave.endTime()))
+                    .leaveDays(leave == null ? null : leave.leaveDays())
                     .workPlanCode(sched == null ? null : sched.workPlanCd())
                     .workPlanName(resolveWorkPlanName(sched, isLeaveDay))
                     .isTwoSlot(isTwoSlot)
@@ -501,28 +577,45 @@ public class AppAttd01ServiceImpl implements AppAttd01Service {
                 .build();
     }
 
-    /** attendanceStatus 산출 (attd §10.1). */
+    /**
+     * attendanceStatus 산출 (attd §10.1).
+     *
+     * <p>prafta-app-014: 지각/조퇴는 "스케줄 대응 슬롯"에만 판정한다(D2). 주간은 hasSchCd 가
+     *   true 일 때만 호출되므로 슬롯1은 항상 스케줄 대응이다. 슬롯2 는 스케줄 2구간(isTwoSlot)일
+     *   때만 스케줄 대응 → 조퇴 기준 종료시각을 2구간 종료로 본다. 1구간 스케줄의 2번째 출근(추가
+     *   근무)은 스케줄 미대응이므로 조퇴 판정 기준에서 제외하고 1구간 종료로 본다. 진행 여부는
+     *   실제 마지막 출근기록(마지막 슬롯) 기준으로 본다.
+     */
     private String computeAttendanceStatus(
-            ScheduleResult sched, boolean isTwoSlot, Map<Integer, AttdRecordResult> attdBySeq,
+            ScheduleResult sched, int slotCount, Map<Integer, AttdRecordResult> attdBySeq,
             boolean isToday, boolean isPast) {
+
+        boolean isTwoSlot = StringUtils.hasText(sched.secSchStrTime());
 
         AttdRecordResult s1 = attdBySeq.get(1);
         if (s1 == null) {
             // 출근 자체가 없음: 과거=결근(MISSING), 미래/오늘=미시작(NOT_STARTED).
             return isPast ? ATTD_MISSING : ATTD_NOT_STARTED;
         }
-        boolean s1Out = StringUtils.hasText(s1.checkOutTime());
-        // 마지막 구간 기준으로 진행 여부 판정.
-        AttdRecordResult last = isTwoSlot && attdBySeq.get(2) != null ? attdBySeq.get(2) : s1;
+        // 진행 여부 판정: 실제 마지막 출근기록(slot2 가 있으면 slot2, 없으면 slot1) 기준.
+        AttdRecordResult last = (slotCount >= 2 && attdBySeq.get(2) != null) ? attdBySeq.get(2) : s1;
         boolean lastOut = StringUtils.hasText(last.checkOutTime());
         if (!lastOut) {
             return ATTD_WORKING; // 진행 중(퇴근 전).
         }
 
-        // 완료: 지각/조퇴 판정. 지각=출근>스케줄시작, 조퇴=퇴근<스케줄종료(attd §10.1).
-        boolean late = isLate(s1.checkInTime(), sched.fstSchStrTime());
+        // 완료: 지각/조퇴 판정. 시:분만 비교하면 야간/자정 넘김(슬롯 시작 00:00, 전일 출근,
+        //   익일 퇴근)에서 오판하므로, 웹 Attd_11(PRAFTA-034)과 동일하게 실제 (일자+시각)
+        //   타임스탬프로 스케줄 일시와 비교한다.
+        // 지각 = 슬롯1 실제 출근일시(출근일자+시각) > 스케줄 시작일시(슬롯1, 항상 스케줄 대응).
+        boolean late = isLateStamp(s1, sched.workYmd(), sched.fstSchStrTime());
+        // 조퇴 기준 종료시각/대상 슬롯: 스케줄 2구간이면 2구간 종료·slot2 퇴근, 그 외(1구간 스케줄)는
+        //   스케줄 대응 마지막 슬롯=slot1 기준(추가 근무 slot2 는 스케줄 미대응 → 조퇴 판정 제외).
+        AttdRecordResult lastScheduledSlot = isTwoSlot && attdBySeq.get(2) != null ? attdBySeq.get(2) : s1;
+        String schStrForEnd = isTwoSlot ? sched.secSchStrTime() : sched.fstSchStrTime();
         String schEnd = isTwoSlot ? sched.secSchEndTime() : sched.fstSchEndTime();
-        boolean early = isEarlyLeave(last.checkOutTime(), schEnd);
+        // 조퇴 = 실제 퇴근일시 < 스케줄 종료일시. 야간(종료<시작)이면 종료를 익일로 본다.
+        boolean early = isEarlyStamp(lastScheduledSlot, sched.workYmd(), schStrForEnd, schEnd);
         if (late) return ATTD_LATE;
         if (early) return ATTD_EARLY_LEAVE;
         return ATTD_NORMAL;
@@ -535,12 +628,11 @@ public class AppAttd01ServiceImpl implements AppAttd01Service {
      *   오늘/이번주/이번달 3탭이 동일 규칙(결정 §2)을 쓰도록 통일. 시그니처는 유지.
      */
     private WeekDayActionsResponse computeWeekActions(
-            boolean hasSchCd, boolean isLeaveDay, boolean isTwoSlot,
+            boolean hasSchCd, boolean isLeaveDay, int slotCount,
             Map<Integer, AttdRecordResult> attdBySeq, boolean isToday, boolean isPast, boolean closed) {
 
-        boolean s1Out = attdBySeq.get(1) != null && StringUtils.hasText(attdBySeq.get(1).checkOutTime());
-        boolean s2Out = attdBySeq.get(2) != null && StringUtils.hasText(attdBySeq.get(2).checkOutTime());
-        boolean completed = isTwoSlot ? (s1Out && s2Out) : s1Out;
+        // prafta-app-014: completed 를 effective 기준으로(1구간 2회 출근·둘 다 퇴근해야 완료).
+        boolean completed = allSlotsCompleted(slotCount, attdBySeq);
         // hasAttendance = 출근 기록 1건 이상 존재(퇴근/완료 무관, 결정 Q2=a).
         boolean hasAttendance = attdBySeq.get(1) != null || attdBySeq.get(2) != null;
 
@@ -642,6 +734,9 @@ public class AppAttd01ServiceImpl implements AppAttd01Service {
             Map<Integer, AttdRecordResult> attdBySeq = new HashMap<>();
             for (AttdRecordResult a : dayAttds) attdBySeq.putIfAbsent(a.workSeq(), a);
 
+            // prafta-app-014: 월간도 effective 기준(처리필요/합계에 1구간 2회 출근 반영).
+            int slotCount = isLeaveDay ? 0 : effectiveSlotCount(isTwoSlot, hasSchCd, attdBySeq);
+
             if (hasSchCd) {
                 plannedSum += plannedMinutes(sched, isTwoSlot);
             }
@@ -649,7 +744,7 @@ public class AppAttd01ServiceImpl implements AppAttd01Service {
 
             // dayType 우선순위 ACTION_REQUIRED > LEAVE > WORK > OFF.
             boolean actionRequired = isPast && hasSchCd
-                    && hasActionRequired(sched, isTwoSlot, attdBySeq, dayAttds, gpsByCheckIn, gpsByCheckOut, closed, ymd);
+                    && hasActionRequired(sched, slotCount, attdBySeq, dayAttds, gpsByCheckIn, gpsByCheckOut, closed, ymd);
 
             String dayType;
             if (actionRequired) {
@@ -758,7 +853,7 @@ public class AppAttd01ServiceImpl implements AppAttd01Service {
 
         // 6) 퇴근 UPDATE (동시성 가드: CHECK_OUT_TIME IS NULL). 0건이면 이미 퇴근됨.
         CheckOutCommand updateCmd = new CheckOutCommand(
-                open.attdId(), cmpnyCd, userCd, today, checkOutTime, CHECK_OUT_METHOD_USER);
+                open.attdId(), cmpnyCd, userCd, today, checkOutTime, CHECK_OUT_METHOD_USER, param.deviceUuid());
         int updated = appAttd01Mapper.updateCheckOut(updateCmd);
         if (updated == 0) {
             log.info("[attd01] 셀프 퇴근 거부: 동시성(이미 퇴근됨) (userCd={}, attdId={})", userCd, open.attdId());
@@ -799,11 +894,13 @@ public class AppAttd01ServiceImpl implements AppAttd01Service {
      *     <li>④ 다음날 게이트(사용자 확정): 과거(WORK_YMD&lt;today) 열린 근태가 있으면 차단
      *         ("전날 퇴근을 먼저 등록하세요").</li>
      *     <li>⑤ 스케줄 조회: 연차일(LEAVE)이면 출근 차단(§8.3 노무수령거부).</li>
-     *     <li>⑥ 출근횟수/구간 제한(§5.1~§5.4):
-     *         1구간=최대1회, 2구간=최대2회. 초과 출근 차단(+"초과근무 상신"안내).
-     *         직전 구간 미퇴근 상태 재출근 차단(근태보정 안내, §5.2).
+     *     <li>⑥ 출근횟수/구간 제한(§5.1~§5.4) + 2구간 스케줄 구간 명시 선택(prafta-app-015, 구 §5.5 정정):
+     *         하루 최대 2회(prafta-app-014). 2구간 스케줄은 사용자가 출근 구간(targetWorkSeq=1|2)을
+     *         선택하며 선택 구간이 곧 WORK_SEQ 가 된다(순서 자유·1구간 누락 허용·각 구간 1회).
+     *         구간 미선택→087, 선택 구간 중복→088. 자동추정(구 §5.5 Case A/B/C·084·085)은 폐기.
+     *         1구간 스케줄 재출근은 직전 구간 미퇴근이면 차단(081, §5.2).
      *         스케줄 없는 날은 허용(전량 추가근무 대상, §7.5 — 출근 등록까지).</li>
-     *     <li>⑦ WORK_SEQ = 그 일자 기존 근태 개수 + 1.</li>
+     *     <li>⑦ WORK_SEQ: 2구간 스케줄=선택 구간 직접 채번. 그 외=그 일자 기존 근태 개수 + 1.</li>
      *     <li>⑧ 지오펜스: 밖이면 외근(isOffsite) + GPS행(GPS_INFO_TYPE='01') INSERT. 안/폴백=미저장.</li>
      *     <li>출근 시각 = 서버 NOW() raw(표준화 미적용). CHECK_IN_METHOD='01'(SYS031).</li>
      *   </ul>
@@ -855,70 +952,55 @@ public class AppAttd01ServiceImpl implements AppAttd01Service {
             throw new ApiException(AttdErrorCode.ATTD_400_083);
         }
 
-        // 6) 출근횟수/구간 제한(§5.1~§5.4) + 야간 2구간 선행구간 마감 규칙(§5.5).
+        // 6) 출근횟수/구간 제한(§5.1~§5.4) + 2구간 스케줄 출근 구간 명시 선택(prafta-app-015, 구 §5.5 정정).
         int existing = appAttd01Mapper.countAttdByYmd(cmpnyCd, siteCd, userCd, workYmd);
 
-        // §5.5 Case C 통과 시 WORK_SEQ 를 2 로 강제 채번하기 위한 플래그(아래 7) 채번에서 사용).
-        //   Case C 가 아니면 기존 existing+1 채번을 그대로 따른다.
-        boolean forceSecondSlotSeq = false;
+        // prafta-app-015: 2구간 스케줄에서 사용자가 선택한 구간(targetWorkSeq)을 그대로 WORK_SEQ 로 채번한다.
+        //   selectWorkSeq != null 이면 그 값으로, null 이면 기존 existing+1 채번을 따른다(1구간/스케줄없음).
+        Integer selectWorkSeq = null;
 
         if (hasSchedule) {
-            // 스케줄 있는 날: 1구간=최대1회, 2구간=최대2회.
-            int maxCheckIn = isTwoSlot ? 2 : 1;
+            // prafta-app-014: 출근 상한을 스케줄 구간 수 무관 "하루 최대 2회"로 고정(§5.1 정정).
+            //   1구간 스케줄도 출근→퇴근 후 추가 1회(2번째=일반 근무) 허용. 2구간 스케줄은 구간별 1회로 최대 2회.
+            int maxCheckIn = 2;
 
             // 초과 출근 차단(+"초과근무 상신"안내, §5.3/§5.4).
             if (existing >= maxCheckIn) {
-                log.info("[attd01] 셀프 출근 거부: 스케줄 구간 수 초과 → 초과근무 상신으로 처리 대상 (userCd={}, workYmd={}, existing={}, max={})",
+                log.info("[attd01] 셀프 출근 거부: 하루 출근 상한(2회) 초과 → 초과근무 상신으로 처리 대상 (userCd={}, workYmd={}, existing={}, max={})",
                         userCd, workYmd, existing, maxCheckIn);
                 throw new ApiException(AttdErrorCode.ATTD_400_080);
             }
 
-            // ── §5.5 야간 2구간 출근 분기(Case A/B/C) ──
-            //   대상: 2구간 스케줄에서 "이번 출근이 2구간 시간대(SEC 윈도우) 시도"로 판정되는 경우.
-            //   선행 1구간 = 같은 WORK_YMD 의 WORK_SEQ=1 레코드(P1-D4 해석 a, 같은 WORK_YMD 방식).
-            //   야간(SEC 종료<시작=자정넘김) 자정 보정은 시간대 판정/근로분 계산(기존 +1440)에서 처리.
+            // ── prafta-app-015: 2구간 스케줄 출근 구간 명시 선택(자동추정·구 §5.5 Case A/B/C 폐기) ──
+            //   사용자가 1구간/2구간을 선택하며(targetWorkSeq), 선택 구간이 곧 WORK_SEQ 가 된다.
+            //   순서 자유(2구간 먼저 가능)·1구간 누락 허용·각 구간 1회 제한.
+            //   잠금(lockUserForCheckIn) 범위 내에서 같은 일자 레코드를 다시 로딩해 구간 중복 INSERT 를 직렬화 방어한다.
             if (isTwoSlot) {
-                // 현재 출근이 2구간 시간대인지(FST 윈도우보다 SEC 윈도우에 가까운지) 판정.
-                boolean secWindowAttempt = isSecondSlotTimeWindow(
-                        nowMinutes(), sched.fstSchStrTime(), sched.secSchStrTime());
-
-                if (secWindowAttempt) {
-                    if (existing == 0) {
-                        // Case C — 선행 1구간 자체가 없음(스킵). 소프트 차단(확인 필요).
-                        //   확인 전(confirmSkipPrevSlot=false)이면 ATTD_400_084 반환 → 프론트 얼럿.
-                        //   확인 후(true)면 1구간 레코드 없이 2구간(WORK_SEQ=2)만 단독 출근 허용(P1-D2).
-                        //   누락 1구간 보정은 별도 강제생성/마커 없이 기존 마감 보정 흐름에 맡긴다.
-                        if (!param.confirmSkipPrevSlot()) {
-                            log.info("[attd01] 셀프 출근 소프트 차단(§5.5 Case C, 확인 필요): 선행 1구간 없음 (userCd={}, workYmd={})",
-                                    userCd, workYmd);
-                            throw new ApiException(AttdErrorCode.ATTD_400_084);
-                        }
-                        log.info("[attd01] §5.5 Case C 확인 후 진행: 1구간 스킵, 2구간 단독 출근 (userCd={}, workYmd={})",
-                                userCd, workYmd);
-                        forceSecondSlotSeq = true; // WORK_SEQ=2 로 강제 채번.
-                    } else {
-                        // existing >= 1: 선행 1구간 레코드 존재. 마감 상태로 Case A/B 분기.
-                        int open = appAttd01Mapper.countOpenAttdByYmd(cmpnyCd, siteCd, userCd, workYmd);
-                        if (open > 0) {
-                            // Case B — 선행 1구간 미마감(퇴근 누락). 강한 차단(§5.5.2).
-                            log.info("[attd01] 셀프 출근 거부(§5.5 Case B): 선행 1구간 미마감 → 1구간 퇴근 선행 (userCd={}, workYmd={})",
-                                    userCd, workYmd);
-                            throw new ApiException(AttdErrorCode.ATTD_400_085);
-                        }
-                        // Case A — 선행 1구간 마감 완료. 즉시 2구간 출근(기존 정상 흐름으로 진행).
-                        log.info("[attd01] §5.5 Case A: 선행 1구간 마감 완료 → 2구간 출근 허용 (userCd={}, workYmd={})",
-                                userCd, workYmd);
-                    }
-                } else if (existing >= 1) {
-                    // SEC 윈도우 시도가 아닌데 이미 1구간이 있는 재출근 — 기존 §5.2 가드(직전 미퇴근 차단).
-                    int open = appAttd01Mapper.countOpenAttdByYmd(cmpnyCd, siteCd, userCd, workYmd);
-                    if (open > 0) {
-                        log.info("[attd01] 셀프 출근 거부: 직전 구간 미퇴근 상태 재출근 → 근태 보정 요청 대상 (userCd={}, workYmd={})",
-                                userCd, workYmd);
-                        throw new ApiException(AttdErrorCode.ATTD_400_081);
-                    }
+                Integer target = param.targetWorkSeq();
+                // (a) 구간 미선택/범위외(Param.from 에서 1·2 만 채택) → 400(구간 선택 필요).
+                if (target == null) {
+                    log.info("[attd01] 셀프 출근 거부: 2구간 스케줄 구간 미선택 (userCd={}, workYmd={})", userCd, workYmd);
+                    throw new ApiException(AttdErrorCode.ATTD_400_087);
                 }
-                // (secWindowAttempt=false && existing==0): 정상 1구간 출근 → 추가 차단 없음(§5.5.4, P1-D1 현행 유지).
+
+                // 잠금 범위 내 같은 일자 근태 로딩 → 구간(WORK_SEQ) 점유 여부 판정(동시 INSERT 중복 방어).
+                AttdRangeQuery dayQ = new AttdRangeQuery(cmpnyCd, siteCd, userCd, workYmd, workYmd);
+                Map<Integer, AttdRecordResult> attdBySeq = new HashMap<>();
+                for (AttdRecordResult a : nullSafe(appAttd01Mapper.selectAttdByRange(dayQ))) {
+                    attdBySeq.putIfAbsent(a.workSeq(), a);
+                }
+
+                // (b) 선택 구간에 이미 레코드 존재 → 구간 중복 차단(각 구간 1회).
+                //   "동일 구간이 진행 중(미퇴근)인데 같은 구간 재출근"(구 081 의미)도 여기서 함께 차단된다.
+                //   다른 구간 출근(예: 1구간 미퇴근 + 2구간 출근)은 허용한다(순서 자유 — 구 §5.5 Case B 폐기).
+                if (attdBySeq.get(target) != null) {
+                    log.info("[attd01] 셀프 출근 거부: 선택 구간 이미 등록됨(구간 중복) (userCd={}, workYmd={}, targetWorkSeq={})",
+                            userCd, workYmd, target);
+                    throw new ApiException(AttdErrorCode.ATTD_400_088);
+                }
+
+                // (c) WORK_SEQ = 선택 구간 직접 채번(순서 무관, existing+1 추정 폐기).
+                selectWorkSeq = target;
             } else if (existing >= 1) {
                 // 1구간 스케줄의 재출근 시도(§5.2): 직전 구간 미퇴근이면 차단.
                 int open = appAttd01Mapper.countOpenAttdByYmd(cmpnyCd, siteCd, userCd, workYmd);
@@ -929,7 +1011,15 @@ public class AppAttd01ServiceImpl implements AppAttd01Service {
                 }
             }
         } else {
-            // 스케줄 없는 날(§7.5): 출근 허용(전량 추가근무 대상). 단 직전 미퇴근이면 재출근 차단(중복 출근 방지).
+            // 스케줄 없는 날(§7.5): 출근 허용(전량 추가근무 대상). 단 하루 2회로 상한(prafta-app-014, §7.5 정정).
+            //   prafta-app-014 이전: "직전 퇴근만 했으면 무제한" → 2회 캡으로 변경.
+            if (existing >= 2) {
+                // 2회 초과 출근 차단(+"초과근무 상신"안내). 스케줄 있는 날과 동일 캡.
+                log.info("[attd01] 셀프 출근 거부: (스케줄 없는 날) 하루 출근 상한(2회) 초과 (userCd={}, workYmd={}, existing={})",
+                        userCd, workYmd, existing);
+                throw new ApiException(AttdErrorCode.ATTD_400_080);
+            }
+            // 직전 미퇴근이면 재출근 차단(중복 출근 방지).
             if (existing >= 1) {
                 int open = appAttd01Mapper.countOpenAttdByYmd(cmpnyCd, siteCd, userCd, workYmd);
                 if (open > 0) {
@@ -940,9 +1030,10 @@ public class AppAttd01ServiceImpl implements AppAttd01Service {
             }
         }
 
-        // 7) WORK_SEQ = 그 일자 기존 근태 개수 + 1.
-        //    단 §5.5 Case C(선행 1구간 스킵, 확인 후 진행)는 시간상 2구간이므로 WORK_SEQ=2 로 강제 채번.
-        int workSeq = forceSecondSlotSeq ? 2 : (existing + 1);
+        // 7) WORK_SEQ 채번.
+        //    prafta-app-015: 2구간 스케줄은 사용자가 선택한 구간(selectWorkSeq=1|2)을 직접 채번한다(순서 자유).
+        //    그 외(1구간 스케줄/스케줄없음)는 기존 existing+1 채번을 따른다.
+        int workSeq = (selectWorkSeq != null) ? selectWorkSeq : (existing + 1);
 
         // 8) 지오펜스 판정(밖=외근). 세션 siteCd 기준 사업장 중심좌표 vs GPS_RANGE.
         boolean isOffsite = isOutsideGeofence(cmpnyCd, siteCd, param.lat(), param.lon());
@@ -963,7 +1054,7 @@ public class AppAttd01ServiceImpl implements AppAttd01Service {
         String attdId = appAttd01Mapper.selectAttdId(cmpnyCd);
         CheckInCommand insertCmd = new CheckInCommand(
                 attdId, cmpnyCd, siteCd, userCd, workYmd, nodeCd, workSeq,
-                today, checkInTime, CHECK_IN_METHOD_USER, userCd);
+                today, checkInTime, CHECK_IN_METHOD_USER, param.deviceUuid(), userCd);
         appAttd01Mapper.insertCheckIn(insertCmd);
 
         // GPS 행은 "지오펜스 밖(외근)"일 때만 INSERT(GPS_INFO_TYPE='01'). 안/폴백=정상이면 미저장.
@@ -978,6 +1069,14 @@ public class AppAttd01ServiceImpl implements AppAttd01Service {
 
         log.info("[attd01] 셀프 출근 완료 (userCd={}, attdId={}, workYmd={}, workSeq={}, checkInTime={}, isOffsite={})",
                 userCd, attdId, workYmd, workSeq, checkInTime, isOffsite);
+
+        // 9-1) PRAFTA-COM-001: 노무수령거부 대상일 출근 감지 + 관리자 PUSH(기능2/3).
+        //      전체 try-catch 로 격리 — 감지/알림 실패가 체크인을 롤백/실패시키지 않게 한다(실패 시 log.error).
+        try {
+            leaveRefusalDetectService.detectAndAlert(cmpnyCd, siteCd, userCd, nodeCd, workYmd, attdId, userCd);
+        } catch (Exception e) {
+            log.error("[attd01] 노무수령거부 감지 hook 실패(체크인 영향 없음) (userCd={}, workYmd={})", userCd, workYmd, e);
+        }
 
         // 10) 갱신된 해당 근무일 카드 재빌드(오늘 탭과 동일 구조) + isOffsite 주입.
         MyAttendanceDayResponse card = buildDayResponse(
@@ -1034,8 +1133,11 @@ public class AppAttd01ServiceImpl implements AppAttd01Service {
                 .siteName(src.getSiteName())
                 .workPlanCode(src.getWorkPlanCode())
                 .workPlanName(src.getWorkPlanName())
+                .scheduleSummary(src.getScheduleSummary())
+                .attendanceSummary(src.getAttendanceSummary())
                 .workStatus(src.getWorkStatus())
                 .isTwoSlot(src.isTwoSlot())
+                .slotCount(src.getSlotCount())
                 .slots(src.getSlots())
                 .actions(src.getActions())
                 .sheetActions(src.getSheetActions())
@@ -1058,7 +1160,7 @@ public class AppAttd01ServiceImpl implements AppAttd01Service {
      *   세분 카운트하지 않는다(마감 화면이 단일 출처). 본인 화면은 위 3종 사유로 보수적으로 표시한다.
      */
     private boolean hasActionRequired(
-            ScheduleResult sched, boolean isTwoSlot, Map<Integer, AttdRecordResult> attdBySeq,
+            ScheduleResult sched, int slotCount, Map<Integer, AttdRecordResult> attdBySeq,
             List<AttdRecordResult> dayAttds, Map<String, GpsResult> gpsByCheckIn,
             Map<String, GpsResult> gpsByCheckOut, boolean closed, String ymd) {
 
@@ -1071,16 +1173,16 @@ public class AppAttd01ServiceImpl implements AppAttd01Service {
         if (attdBySeq.get(1) == null) {
             return true;
         }
-        // 퇴근 미등록(전/후 구간 중 하나라도) → 보정 필요.
-        if (isTwoSlot) {
-            AttdRecordResult s1 = attdBySeq.get(1);
-            AttdRecordResult s2 = attdBySeq.get(2);
-            if (s1 != null && !StringUtils.hasText(s1.checkOutTime())) return true;
-            if (s2 == null || !StringUtils.hasText(s2.checkOutTime())) return true;
-        } else {
-            AttdRecordResult s1 = attdBySeq.get(1);
-            if (s1 != null && !StringUtils.hasText(s1.checkOutTime())) return true;
-        }
+        // prafta-app-014: 퇴근 미등록 판정을 effective 기준으로.
+        //   slotCount==2(스케줄 2구간) 면 2구간 출근기록 부재(스케줄상 와야 할 2구간 누락)도 보정 필요.
+        //   존재하는 출근기록(slot1·slot2)이 퇴근 누락이면 보정 필요(1구간 2번째 출근의 퇴근 누락 포함).
+        AttdRecordResult s1 = attdBySeq.get(1);
+        AttdRecordResult s2 = attdBySeq.get(2);
+        boolean isTwoSlot = StringUtils.hasText(sched.secSchStrTime());
+        if (s1 != null && !StringUtils.hasText(s1.checkOutTime())) return true;
+        if (s2 != null && !StringUtils.hasText(s2.checkOutTime())) return true;
+        // 스케줄 2구간인데 2구간 출근기록 자체가 없음 → 보정 필요(스케줄상 와야 할 구간 누락).
+        if (isTwoSlot && s2 == null) return true;
 
         // GPS 미확인(IS_MOCKED='Y') → 마감 차단 사유(attd §7.3).
         for (AttdRecordResult a : dayAttds) {
@@ -1157,6 +1259,19 @@ public class AppAttd01ServiceImpl implements AppAttd01Service {
             }
         }
         return map;
+    }
+
+    /**
+     * prafta-app-018-E: 부분연차 시각 범위 "HHMM~HHMM" 조합(표시 전용).
+     *
+     * <p>START_TIME/END_TIME 이 둘 다 있을 때만 range 를 만들고, 하나라도 없으면 null.
+     *   콜론(:) 삽입(HHMM→HH:MM)은 FE(attdFormat.js)가 한다. 단위 기준 시각 표시 여부도 FE 판단.
+     */
+    private String leaveTimeRange(String startTime, String endTime) {
+        if (StringUtils.hasText(startTime) && StringUtils.hasText(endTime)) {
+            return startTime + "~" + endTime;
+        }
+        return null;
     }
 
     /** 해당 월(YYYYMM)이 본인 부서를 덮는 마감으로 닫혀있는지. */
@@ -1288,45 +1403,94 @@ public class AppAttd01ServiceImpl implements AppAttd01Service {
         return false;
     }
 
-    private boolean isLate(String checkInHhmm, String schStrHhmm) {
-        Integer in = toMinutes(checkInHhmm);
-        Integer s = toMinutes(schStrHhmm);
-        if (in == null || s == null) return false;
-        return in > s;
-    }
-
-    private boolean isEarlyLeave(String checkOutHhmm, String schEndHhmm) {
-        Integer out = toMinutes(checkOutHhmm);
-        Integer e = toMinutes(schEndHhmm);
-        if (out == null || e == null) return false;
-        return out < e;
+    /**
+     * 지각 판정: 실제 출근 일시(출근일자+출근시각) &gt; 스케줄 시작 일시(근무일자+시작시각).
+     *
+     * <p>시:분만 비교하던 종전 방식은 야간/자정 넘김에서 오판했다. 예) 슬롯 시작이 00:00 이고
+     *   근무자가 전일 23:54 에 출근하면 실제로는 6분 전 출근이지만 시:분 비교(2354&gt;0000)로는
+     *   지각으로 잘못 잡혔다. 출근일자(CHECK_IN_DATE)를 포함한 통합 분 stamp 로 비교하여
+     *   웹 Attd_11(PRAFTA-034) 과 동일 기준으로 판정한다. 시작에는 자정 보정을 적용하지 않는다.
+     */
+    private boolean isLateStamp(AttdRecordResult attd, String workYmd, String schStrHhmm) {
+        if (attd == null || !hasHhmm(attd.checkInTime()) || !hasHhmm(schStrHhmm) || workYmd == null) {
+            return false;
+        }
+        long schStartStamp = toMinuteStamp(workYmd, schStrHhmm);
+        String inYmd = StringUtils.hasText(attd.checkInDate()) ? attd.checkInDate() : workYmd;
+        long actInStamp = toMinuteStamp(inYmd, attd.checkInTime());
+        return actInStamp > schStartStamp;
     }
 
     /**
-     * §5.5 야간 2구간 시간대 판정: 현재 출근 시각이 1구간(FST) 시작보다 2구간(SEC) 시작에
-     * "더 가까운지" 여부. 자정 넘김(야간 교대)을 고려해 원형(0~1439분) 최단거리로 비교한다.
+     * 조퇴 판정: 실제 퇴근 일시(퇴근일자+퇴근시각) &lt; 스케줄 종료 일시.
      *
-     * <p>판정 규칙: SEC 시작까지의 원형거리 ≤ FST 시작까지의 원형거리 이면 "2구간 시도"로 본다.
-     *   예) FST 시작 0900, SEC 시작 2300 일 때 현재 2330 → SEC 더 가까움 = 2구간 시도.
-     *       현재 0030(자정 직후) → 2300 과의 원형거리(90분)가 0900 과의 거리(510분)보다 작음 = 2구간 시도.
-     * <p>시각/스케줄 결측(파싱 불가)이면 false(보수적으로 1구간으로 취급 → §5.5 분기 미적용).
-     *   동거리(타이)면 SEC 쪽으로 본다(2구간 출근 의도를 우선).
+     * <p>야간(스케줄 종료 &lt; 시작)이면 종료는 근무일자 익일로 본다(웹 Attd_11 / Attd_08 동일).
+     *   퇴근일자(CHECK_OUT_DATE)를 포함한 통합 분 stamp 로 비교한다.
      */
-    private boolean isSecondSlotTimeWindow(int nowMin, String fstStrHhmm, String secStrHhmm) {
-        Integer fst = toMinutes(fstStrHhmm);
-        Integer sec = toMinutes(secStrHhmm);
-        if (fst == null || sec == null) {
+    private boolean isEarlyStamp(AttdRecordResult attd, String workYmd, String schStrHhmm, String schEndHhmm) {
+        if (attd == null || !hasHhmm(attd.checkOutTime()) || !hasHhmm(schEndHhmm) || workYmd == null) {
             return false;
         }
-        int distFst = circularMinuteDistance(nowMin, fst);
-        int distSec = circularMinuteDistance(nowMin, sec);
-        return distSec <= distFst;
+        String endYmd = workYmd;
+        if (hasHhmm(schStrHhmm) && schEndHhmm.compareTo(schStrHhmm) < 0) {
+            endYmd = ymdPlusDays(workYmd, 1); // 야간 자정 넘김: 종료는 익일.
+        }
+        long schEndStamp = toMinuteStamp(endYmd, schEndHhmm);
+        String outYmd = StringUtils.hasText(attd.checkOutDate()) ? attd.checkOutDate() : workYmd;
+        long actOutStamp = toMinuteStamp(outYmd, attd.checkOutTime());
+        return actOutStamp < schEndStamp;
     }
 
-    /** 두 분(0~1439) 간 원형 최단거리(분). 자정 경계(23:59↔00:00)를 넘어 가까운 쪽을 본다. */
-    private int circularMinuteDistance(int a, int b) {
-        int diff = Math.abs(a - b) % 1440;
-        return Math.min(diff, 1440 - diff);
+    /** HHMM(4자리 숫자) 유효성. */
+    private boolean hasHhmm(String hhmm) {
+        return hhmm != null && hhmm.matches("\\d{4}");
+    }
+
+    /** 일자(YYYYMMDD) + 시각(HHmm) 을 1970-01-01 기준 통합 분(minute) stamp 로 환산(웹 Attd_11 동일). */
+    private long toMinuteStamp(String ymd, String hhmm) {
+        LocalDate d = LocalDate.parse(ymd, YMD);
+        int hh = Integer.parseInt(hhmm.substring(0, 2));
+        int mm = Integer.parseInt(hhmm.substring(2, 4));
+        return d.toEpochDay() * 1440L + (long) hh * 60L + mm;
+    }
+
+    /** YYYYMMDD 에 days 일을 더한 YYYYMMDD 반환. */
+    private String ymdPlusDays(String ymd, int days) {
+        return LocalDate.parse(ymd, YMD).plusDays(days).format(YMD);
+    }
+
+    // prafta-app-015: (제거) isSecondSlotTimeWindow / circularMinuteDistance —
+    //   2구간 출근 구간 자동추정(구 §5.5 Case A/B/C)이 폐기되어 호출부 0건. 사용자 명시 선택으로 대체됨.
+
+    /**
+     * prafta-app-014: effectiveSlotCount 산출(1~2).
+     *
+     * <p>{@code min( max(scheduleSlots, attdSlots, 1), 2 )}.
+     *   scheduleSlots = 스케줄이 정의한 구간 수(2구간=2, 1구간=1, 스케줄없음=0),
+     *   attdSlots = 실제 출근기록(WORK_SEQ 1·2) 존재 개수.
+     *   스케줄 유무와 무관하게 화면/상태/액션이 일관 동작하도록 항상 1~2 로 캡한다.
+     */
+    private int effectiveSlotCount(boolean isTwoSlot, boolean hasSchedule, Map<Integer, AttdRecordResult> attdBySeq) {
+        int scheduleSlots = isTwoSlot ? 2 : (hasSchedule ? 1 : 0);
+        int attdSlots = (attdBySeq.get(1) != null ? 1 : 0) + (attdBySeq.get(2) != null ? 1 : 0);
+        int eff = Math.max(Math.max(scheduleSlots, attdSlots), 1);
+        return Math.min(eff, 2);
+    }
+
+    /**
+     * prafta-app-014: effective 기준 "전 슬롯 출퇴근 완료" 판정.
+     *   출근기록 수 == slotCount && 모든 출근기록이 퇴근 완료.
+     */
+    private boolean allSlotsCompleted(int slotCount, Map<Integer, AttdRecordResult> attdBySeq) {
+        AttdRecordResult s1 = attdBySeq.get(1);
+        AttdRecordResult s2 = attdBySeq.get(2);
+        int attdCount = (s1 != null ? 1 : 0) + (s2 != null ? 1 : 0);
+        if (attdCount == 0 || attdCount != slotCount) {
+            return false;
+        }
+        if (s1 != null && !StringUtils.hasText(s1.checkOutTime())) return false;
+        if (s2 != null && !StringUtils.hasText(s2.checkOutTime())) return false;
+        return true;
     }
 
     /** 스케줄 예정 근로분(1구간 + (2구간)). */
@@ -1354,13 +1518,14 @@ public class AppAttd01ServiceImpl implements AppAttd01Service {
             Integer m = computeWorkMinutes(s1.checkInTime(), s1.checkOutTime(), brk);
             if (m != null) total += m;
         }
-        if (isTwoSlot) {
-            AttdRecordResult s2 = attdBySeq.get(2);
-            if (s2 != null && StringUtils.hasText(s2.checkOutTime())) {
-                Integer brk = sched == null ? 0 : parseIntOrZero(sched.secSchBrkMin());
-                Integer m = computeWorkMinutes(s2.checkInTime(), s2.checkOutTime(), brk);
-                if (m != null) total += m;
-            }
+        // prafta-app-014 §4-B 8항: 실근로 합계는 실제 출퇴근 기준이므로 slot2 기록이 있으면 무조건 합산
+        //   (isTwoSlot 게이트 제거). 1구간 스케줄/스케줄 없는 날의 2번째 근무도 합계에 포함.
+        //   휴게 공제는 스케줄 2구간일 때만 SEC 휴게를 적용(스케줄 미대응 슬롯은 공제 없음).
+        AttdRecordResult s2 = attdBySeq.get(2);
+        if (s2 != null && StringUtils.hasText(s2.checkOutTime())) {
+            Integer brk = (isTwoSlot && sched != null) ? parseIntOrZero(sched.secSchBrkMin()) : 0;
+            Integer m = computeWorkMinutes(s2.checkInTime(), s2.checkOutTime(), brk);
+            if (m != null) total += m;
         }
         return total;
     }
@@ -1379,15 +1544,22 @@ public class AppAttd01ServiceImpl implements AppAttd01Service {
      * 근태 요약 문자열. 미래/미생성(근태 전무)이면 null.
      * 진행 중(퇴근 전)은 종료 자리에 빈 값을 두지 않고 출근 시각만 노출(프론트가 "근무중" 표기).
      */
-    private String attendanceSummary(Map<Integer, AttdRecordResult> attdBySeq, boolean isTwoSlot) {
+    private String attendanceSummary(Map<Integer, AttdRecordResult> attdBySeq, int slotCount) {
         AttdRecordResult s1 = attdBySeq.get(1);
-        if (s1 == null) {
+        AttdRecordResult s2 = attdBySeq.get(2);
+        // prafta-app-015: 2구간 먼저 출근(WORK_SEQ=2 단독, s1==null·s2!=null)이 정식 도달 가능.
+        //   기존엔 s1==null 이면 즉시 null 반환(요약 공란) → s2 단독일 때도 요약을 산출한다.
+        if (s1 == null && s2 == null) {
             return null; // 근태 미생성.
+        }
+        if (s1 == null) {
+            // 2구간 단독: 2구간 시각만 단독 표기(s1 존재 경로의 "1 / 2" 포맷은 보존).
+            return nz(s2.checkInTime()) + "~" + (s2.checkOutTime() == null ? "" : s2.checkOutTime());
         }
         StringBuilder sb = new StringBuilder();
         sb.append(nz(s1.checkInTime())).append("~").append(s1.checkOutTime() == null ? "" : s1.checkOutTime());
-        if (isTwoSlot && attdBySeq.get(2) != null) {
-            AttdRecordResult s2 = attdBySeq.get(2);
+        // prafta-app-014: slot2 요약은 실제 출근기록 존재 기준(스케줄 구간 수 무관) — 1구간 2회 출근도 포함.
+        if (slotCount >= 2 && s2 != null) {
             sb.append(" / ").append(nz(s2.checkInTime())).append("~")
                     .append(s2.checkOutTime() == null ? "" : s2.checkOutTime());
         }

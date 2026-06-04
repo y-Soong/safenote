@@ -7,6 +7,7 @@ import java.time.LocalDate;
 import java.time.format.DateTimeFormatter;
 import java.util.Set;
 
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
 import com.prafta.common.cmm.file.application.command.FileInfoCommand;
@@ -25,6 +26,14 @@ import lombok.extern.slf4j.Slf4j;
 public class FileServiceImpl implements FileService {
 
 	private final FileMapper fileMapper;
+
+	/**
+	 * 업로드 파일 루트 디렉토리.
+	 * 환경변수 FILE_UPLOAD_BASE_DIR 로 덮어쓰며, 미지정 시 ${user.dir}/uploads.
+	 * 정적 서빙 핸들러(ApiPrefixConfig)와 동일한 값을 사용해 저장/서빙 경로 불일치를 방지한다.
+	 */
+	@Value("${file.upload.base-dir}")
+	private String uploadBaseDir;
 
 	/**
 	 * 업로드 허용 확장자 화이트리스트(소문자, 점 제외).
@@ -78,16 +87,14 @@ public class FileServiceImpl implements FileService {
 			String today = LocalDate.now()
 	                .format(DateTimeFormatter.ofPattern("yyyyMMdd"));
 
-	        String projectRoot = System.getProperty("user.dir");
-	        
-	        // 파일 절대경로
+	        // 파일 절대경로 — 디스크 저장 위치는 공통 설정(file.upload.base-dir) 기준.
 	        Path absoluteFilePath = Paths.get(
-	        		projectRoot,"/uploads",
+	        		uploadBaseDir,
 	        		param.cmpnyCd(), today,
 	        		param.siteCd(), param.fileType()
 			).toAbsolutePath().normalize();
-	        
-	        // Project Root 디렉토리 기준 파일 상대경로
+
+	        // 공개 URL/DB 저장용 상대경로 — '/uploads' 는 정적 서빙 마운트 경로(디스크 위치와 무관)이므로 고정.
 	        Path filePath = Paths.get(
 	        		"/uploads",
 	        		param.cmpnyCd(), today,

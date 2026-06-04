@@ -107,8 +107,7 @@ public record UpdateUserOvertimeRequestParam(
                 throw new ApiException(CommonErrorCode.COMMON_400_001);
             }
             models.add(new OvertimeItemModel(
-                  ot.getOtType()
-                , ot.getStartDate()
+                  ot.getStartDate()
                 , ot.getStartTime()
                 , ot.getEndDate()
                 , ot.getEndTime()

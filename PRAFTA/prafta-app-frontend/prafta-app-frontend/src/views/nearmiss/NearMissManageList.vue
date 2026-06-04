@@ -54,10 +54,7 @@
           @click="onCardClick(item)"
         >
           <div class="nml-card__top">
-            <span
-              class="nml-badge"
-              :class="severityClass(item.potentialSeverityCd)"
-            >
+            <span class="nml-badge" :class="severityClass(item.potentialSeverityCd)">
               {{ item.potentialSeverityNm || '미분류' }}
             </span>
             <span class="nml-card__id">{{ item.nearMissId }}</span>
@@ -215,7 +212,9 @@ const handleListError = async (err) => {
     return
   }
   console.error('[NearMissManageList] 목록 조회 실패:', err?.message)
-  showAlert(err?.response?.data?.message || '사건 목록을 불러오지 못했어요. 잠시 후 다시 시도해 주세요.')
+  showAlert(
+    err?.response?.data?.message || '사건 목록을 불러오지 못했어요. 잠시 후 다시 시도해 주세요.',
+  )
 }
 
 // ───────────────────────────────────────────────────────────

@@ -37,7 +37,8 @@ public record CheckInParam(
     , String isMocked
     , String workYmd
     , String offsiteReason          // prafta-app-008: 외근 사유(외근일 때 필수). 온사이트면 무시.
-    , boolean confirmSkipPrevSlot   // prafta-app-008: §5.5 Case C 확인 플래그(2구간 선행 1구간 스킵 동의).
+    , Integer targetWorkSeq         // prafta-app-015: 2구간 스케줄 출근 구간 명시 선택(1|2). 그 외 무시.
+    , String deviceUuid             // prafta-com-003 D3: 출근 실행 디바이스UUID(클라 제공·신뢰경계 밖, 표시·탐지 보조).
     , String ipAddr
     , TokenInfo tokenInfo
 ) {
@@ -91,8 +92,24 @@ public record CheckInParam(
             }
         }
 
-        // Case C 확인 플래그: null 은 false(미동의)로 본다. true 일 때만 선행 1구간 스킵 출근 허용.
-        boolean confirmSkipPrevSlot = Boolean.TRUE.equals(request.getConfirmSkipPrevSlot());
+        // prafta-app-015: 출근 구간 선택 정규화 — 1·2 만 채택, 그 외(null/범위외)는 null.
+        //   2구간 스케줄 여부/누락 검증은 서비스에서 수행한다(여기서는 값만 정규화).
+        Integer targetWorkSeq = request.getTargetWorkSeq();
+        if (targetWorkSeq != null && targetWorkSeq != 1 && targetWorkSeq != 2) {
+            targetWorkSeq = null;
+        }
+
+        // prafta-com-003 D3: 디바이스UUID 정규화 — 트림 후 빈값이면 null, varchar(100) 초과분 컷.
+        //   클라 제공값(위조 가능)이라 식별/인가에는 일절 쓰지 않고 도장(표시·탐지 보조)에만 사용한다.
+        String deviceUuid = request.getDeviceId();
+        if (deviceUuid != null) {
+            deviceUuid = deviceUuid.trim();
+            if (deviceUuid.isEmpty()) {
+                deviceUuid = null;
+            } else if (deviceUuid.length() > 100) {
+                deviceUuid = deviceUuid.substring(0, 100);
+            }
+        }
 
         return new CheckInParam(
             cmpnyCd
@@ -105,7 +122,8 @@ public record CheckInParam(
             , isMocked
             , workYmd
             , offsiteReason
-            , confirmSkipPrevSlot
+            , targetWorkSeq
+            , deviceUuid
             , ipAddr
             , tokenInfo
         );

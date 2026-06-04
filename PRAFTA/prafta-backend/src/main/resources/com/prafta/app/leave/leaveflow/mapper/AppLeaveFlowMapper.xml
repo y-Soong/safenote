@@ -1,0 +1,341 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.prafta.app.leave.leaveflow.mapper.AppLeaveFlowMapper">
+
+    <!-- ============================================================
+         apply-meta: 회사 활성 연차종류 + 종류별 현재 잔여
+         - USE_YN='Y' 만. balanceDays = 활성집합 SUM(GRANT_DAYS)-SUM(USED_DAYS).
+         - 결과 record LeaveTypeMetaRow 의 생성자 인자 순서와 SELECT 컬럼 순서가 동일해야 함(위치매핑).
+         ============================================================ -->
+    <select id="selectApplicableLeaveTypes" resultType="com.prafta.app.leave.leaveflow.result.LeaveTypeMetaRow">
+    /* AppLeaveFlowMapper.selectApplicableLeaveTypes */
+    SELECT
+          T.LEAVE_CD        AS leaveCd
+        , T.LEAVE_NM        AS leaveNm
+        , T.SYSTEM_YN       AS systemYn
+        , T.APRV_USE_YN     AS typeAprvUseYn
+        , T.USE_UNIT_TYPE   AS useUnitType
+        , IFNULL((
+              SELECT SUM(G.GRANT_DAYS) - SUM(G.USED_DAYS)
+                FROM TB_USER_LEAVE_GRANT G
+               WHERE G.CMPNY_CD  = T.CMPNY_CD
+                 AND G.USER_CD   = #{userCd}
+                 AND G.LEAVE_CD  = T.LEAVE_CD
+                 AND G.STATUS    = 'ACTIVE'
+                 AND G.EXPIRE_YN = 'N'
+                 AND G.DEL_YN    = 'N'
+          ), 0)             AS balanceDays
+      FROM TB_LEAVE_TYPE_MGMT T
+     WHERE T.CMPNY_CD = #{cmpnyCd}
+       AND T.USE_YN   = 'Y'
+     ORDER BY T.SYSTEM_YN DESC, T.LEAVE_NO ASC, T.LEAVE_CD ASC
+    </select>
+
+    <!-- ============================================================
+         apply-meta: 회사 활성 법정정책의 단일 허용단위 + 법정 결재여부
+         - tb_leave_policy(활성 1건) JOIN tb_leave_usage_policy(POLICY_SEQ 1:1).
+         - 결과 record LeaveUsagePolicyRow(usageUnit, policyAprvUseYn) 순서 일치.
+         ============================================================ -->
+    <select id="selectCompanyUsageUnit" resultType="com.prafta.app.leave.leaveflow.result.LeaveUsagePolicyRow">
+    /* AppLeaveFlowMapper.selectCompanyUsageUnit */
+    SELECT
+          UP.USAGE_UNIT    AS usageUnit
+        , P.APRV_USE_YN    AS policyAprvUseYn
+      FROM TB_LEAVE_POLICY P
+      JOIN TB_LEAVE_USAGE_POLICY UP
+        ON UP.POLICY_SEQ = P.POLICY_SEQ
+     WHERE P.CMPNY_CD = #{cmpnyCd}
+       AND P.USE_YN   = 'Y'
+     ORDER BY P.POLICY_SEQ DESC
+     LIMIT 1
+    </select>
+
+    <!-- ============================================================
+         approver-search: 결재자 후보 검색 (mypage01.selectApprovalCandidates 차용 + LIMIT/OFFSET)
+         - 사업장 스코프(siteCd)는 토큰 강제(cross-site IDOR 차단).
+         - 본인·system·비활성(USE_YN/탈퇴/ACCOUNT_STATUS) 제외.
+         - PII 정렬보조(rankCd/sortIdx)는 SELECT 하지 않음(노출 최소화). 정렬용 D.SORT_IDX 는 ORDER BY 에만.
+         - 결과 record ApproverRow(userCd,userId,userNm,rankNm,nodeNm) 순서 일치.
+         ============================================================ -->
+    <select id="searchApprovers" resultType="com.prafta.app.leave.leaveflow.result.ApproverRow">
+    /* AppLeaveFlowMapper.searchApprovers */
+    SELECT
+          U.USER_CD                                                          AS userCd
+        , U.USER_ID                                                          AS userId
+        , U.USER_NM                                                          AS userNm
+        , FNC_CMM_INFO_SRCH(U.CMPNY_CD, 'BAIM_VAL', U.RANK_CD, 'COM007')      AS rankNm
+        , FNC_CMM_INFO_SRCH(U.CMPNY_CD, 'NODE', U.SITE_CD, U.NODE_CD)         AS nodeNm
+      FROM TB_USER U
+      LEFT JOIN TB_BAIM_VAL_D D
+        ON  D.CMPNY_CD      = U.CMPNY_CD
+        AND D.BAIM_VAL_CD   = 'COM007'
+        AND D.BAIM_VAL_D_CD = U.RANK_CD
+        AND D.USE_YN        = 'Y'
+     WHERE U.CMPNY_CD = #{cmpnyCd}
+       AND U.SITE_CD  = #{siteCd}
+       AND U.USE_YN   = 'Y'
+       AND U.WITHDRAWAL_DATE IS NULL
+       AND U.ACCOUNT_STATUS  = '01'
+       AND U.USER_CD != #{excludeUserCd}
+       AND U.AUTH_CD != 'system'
+       <if test="keyword != null and keyword != ''">
+         AND U.USER_NM LIKE CONCAT('%', #{keyword}, '%')
+       </if>
+     ORDER BY (D.SORT_IDX IS NULL), D.SORT_IDX ASC, U.USER_NM ASC, U.USER_CD ASC
+     LIMIT #{limit} OFFSET #{offset}
+    </select>
+
+    <!-- ============================================================
+         prafta-app-018-B: 연차 신청 쓰기 (웹 LeaveFlowMapper.xml 동명 statement 미러)
+         SQL 본문/컬럼/바인딩/FOR UPDATE/ON DUPLICATE KEY 는 웹과 100% 동일(검증된 원본).
+         ============================================================ -->
+
+    <!-- prafta-app-018-B 보안: 결재자 스코프 가드. searchApprovers 화이트리스트와 동일 조건으로
+         목록 중 유효(동일 회사/사업장·재직·system 아님) 사용자 수를 센다. 호출부가 중복제거 수와 비교. -->
+    <select id="countValidApprovers" resultType="int">
+    /* AppLeaveFlowMapper.countValidApprovers */
+    SELECT COUNT(DISTINCT U.USER_CD)
+      FROM TB_USER U
+     WHERE U.CMPNY_CD = #{cmpnyCd}
+       AND U.SITE_CD  = #{siteCd}
+       AND U.USE_YN   = 'Y'
+       AND U.WITHDRAWAL_DATE IS NULL
+       AND U.ACCOUNT_STATUS  = '01'
+       AND U.AUTH_CD != 'system'
+       AND U.USER_CD IN
+       <foreach collection="userCds" item="uc" open="(" separator="," close=")">
+         #{uc}
+       </foreach>
+    </select>
+
+    <select id="selectNextReqId" resultType="string">
+    /* AppLeaveFlowMapper.selectNextReqId */
+    SELECT CONCAT(DATE_FORMAT(NOW(), '%Y%m%d'), FNC_CMM_SEQ_NEXTVAL(#{cmpnyCd}, 'ATTD_REQ_ID')) FROM DUAL
+    </select>
+
+    <select id="selectNextLeaveId" resultType="string">
+    /* AppLeaveFlowMapper.selectNextLeaveId */
+    SELECT CONCAT('LV', DATE_FORMAT(NOW(), '%Y%m%d'), FNC_CMM_SEQ_NEXTVAL(#{cmpnyCd}, 'LEAVE_USE_ID')) FROM DUAL
+    </select>
+
+    <!-- 결과 record LeaveTypeInfoRow(systemYn, aprvUseYn, useUnitType) 순서 일치(위치매핑) -->
+    <select id="selectLeaveTypeInfo" resultType="com.prafta.app.leave.leaveflow.result.LeaveTypeInfoRow">
+    /* AppLeaveFlowMapper.selectLeaveTypeInfo */
+    SELECT
+          A.SYSTEM_YN     AS systemYn
+        , A.APRV_USE_YN   AS aprvUseYn
+        , A.USE_UNIT_TYPE AS useUnitType
+      FROM TB_LEAVE_TYPE_MGMT A
+     WHERE A.CMPNY_CD = #{cmpnyCd}
+       AND A.LEAVE_CD = #{leaveCd}
+     LIMIT 1
+    </select>
+
+    <select id="selectPolicyAprvUseYn" resultType="string">
+    /* AppLeaveFlowMapper.selectPolicyAprvUseYn */
+    SELECT P.APRV_USE_YN
+      FROM TB_LEAVE_POLICY P
+     WHERE P.CMPNY_CD = #{cmpnyCd}
+       AND P.USE_YN = 'Y'
+     ORDER BY P.POLICY_SEQ DESC
+     LIMIT 1
+    </select>
+
+    <!--
+      차감 대상 부여: 활성(STATUS='ACTIVE', DEL_YN='N') + 유효기간(AVAIL_FROM~TO가 workYmd 포함)
+      + 잔여(GRANT_DAYS - USED_DAYS) >= 신청 차감. 만료 임박(AVAIL_TO_DATE) → 오래된 부여 우선 소진.
+      결과 record DeductibleGrantRow(grantId, grantDays, usedDays) 순서 일치(위치매핑).
+    -->
+    <select id="selectDeductibleGrant" resultType="com.prafta.app.leave.leaveflow.result.DeductibleGrantRow">
+    /* AppLeaveFlowMapper.selectDeductibleGrant */
+    SELECT
+          G.GRANT_ID   AS grantId
+        , G.GRANT_DAYS AS grantDays
+        , G.USED_DAYS  AS usedDays
+      FROM TB_USER_LEAVE_GRANT G
+     WHERE G.CMPNY_CD = #{cmpnyCd}
+       AND G.USER_CD  = #{userCd}
+       AND G.LEAVE_CD = #{leaveCd}
+       AND G.DEL_YN   = 'N'
+       AND G.STATUS   = 'ACTIVE'
+       AND G.AVAIL_FROM_DATE &lt;= #{workYmd}
+       AND G.AVAIL_TO_DATE   &gt;= #{workYmd}
+       AND (G.GRANT_DAYS - G.USED_DAYS) &gt;= #{neededDays}
+     ORDER BY G.AVAIL_TO_DATE ASC, G.GRANT_DATE ASC
+     LIMIT 1
+     FOR UPDATE
+    </select>
+
+    <insert id="insertLeaveReq" parameterType="com.prafta.app.leave.leaveflow.application.command.LeaveReqInsertCommand">
+    /* AppLeaveFlowMapper.insertLeaveReq */
+    INSERT INTO TB_USER_ATTD_REQ (
+          REQ_ID
+        , CMPNY_CD
+        , SITE_CD
+        , USER_CD
+        , REQ_TYPE
+        , REQ_STATUS
+        , REQ_REASON
+        , WORK_YMD
+        , NODE_CD
+        , START_DATE
+        , START_TIME
+        , END_DATE
+        , END_TIME
+        , LEAVE_TYPE
+        , LEAVE_DAYS
+        , DEL_YN
+        , INSERT_NO
+        , INSERT_DATE
+    )
+    VALUES (
+          #{reqId}
+        , #{cmpnyCd}
+        , #{siteCd}
+        , #{userCd}
+        , '05'
+        , #{reqStatus}
+        , #{reqReason}
+        , #{workYmd}
+        , #{nodeCd}
+        , #{startDate}
+        , #{startTime}
+        , #{endDate}
+        , #{endTime}
+        , #{leaveType}
+        , #{leaveDays}
+        , 'N'
+        , #{insertNo}
+        , NOW()
+    )
+    </insert>
+
+    <insert id="insertLeaveUse" parameterType="com.prafta.app.leave.leaveflow.application.command.LeaveUseCommand">
+    /* AppLeaveFlowMapper.insertLeaveUse */
+    INSERT INTO TB_USER_LEAVE_USE (
+          LEAVE_ID
+        , CMPNY_CD
+        , SITE_CD
+        , USER_CD
+        , LEAVE_CD
+        , REQ_ID
+        , GRANT_ID
+        , START_DATE
+        , START_TIME
+        , END_DATE
+        , END_TIME
+        , USE_UNIT_TYPE
+        , LEAVE_DAYS
+        , LEAVE_MINUTES
+        , LEAVE_REASON
+        , LEAVE_STATUS
+        , DEL_YN
+        , INSERT_NO
+        , INSERT_DATE
+    )
+    VALUES (
+          #{leaveId}
+        , #{cmpnyCd}
+        , #{siteCd}
+        , #{userCd}
+        , #{leaveCd}
+        , #{reqId}
+        , #{grantId}
+        , #{startDate}
+        , #{startTime}
+        , #{endDate}
+        , #{endTime}
+        , #{useUnitType}
+        , #{leaveDays}
+        , #{leaveMinutes}
+        , #{leaveReason}
+        , #{leaveStatus}
+        , 'N'
+        , #{insertNo}
+        , NOW()
+    )
+    </insert>
+
+    <!-- USED_DAYS = 해당 부여에 연결된 CONFIRMED 사용 합계 (차감 후 동기화) -->
+    <update id="recomputeGrantUsedDays">
+    /* AppLeaveFlowMapper.recomputeGrantUsedDays */
+    UPDATE TB_USER_LEAVE_GRANT G
+       SET G.USED_DAYS = IFNULL((
+               SELECT SUM(U.LEAVE_DAYS)
+                 FROM TB_USER_LEAVE_USE U
+                WHERE U.CMPNY_CD     = G.CMPNY_CD
+                  AND U.GRANT_ID     = G.GRANT_ID
+                  AND U.LEAVE_STATUS = 'CONFIRMED'
+                  AND U.DEL_YN       = 'N'
+           ), 0)
+         , G.UPDATE_NO   = #{updateNo}
+         , G.UPDATE_DATE = NOW()
+     WHERE G.CMPNY_CD = #{cmpnyCd}
+       AND G.GRANT_ID = #{grantId}
+    </update>
+
+    <update id="updateReqStatus">
+    /* AppLeaveFlowMapper.updateReqStatus */
+    UPDATE TB_USER_ATTD_REQ
+       SET REQ_STATUS      = #{reqStatus}
+         , PROCESS_USER_CD = #{processUserCd}
+         , PROCESS_COMMENT = #{processComment}
+         , PROCESS_DATE    = NOW()
+         , UPDATE_NO       = #{processUserCd}
+         , UPDATE_DATE     = NOW()
+     WHERE CMPNY_CD = #{cmpnyCd}
+       AND REQ_ID   = #{reqId}
+    </update>
+
+    <!-- 출근 차단: 일 단위 휴가 확정 시 해당 일자 근무계획을 연차코드로 덮어 출근을 차단 -->
+    <insert id="upsertWorkPlanLeave">
+    /* AppLeaveFlowMapper.upsertWorkPlanLeave */
+    INSERT INTO TB_USER_WORK_PLAN (
+          CMPNY_CD
+        , SITE_CD
+        , USER_CD
+        , WORK_YMD
+        , WORK_PLAN_CD
+        , INSERT_NO
+        , INSERT_DATE
+        , UPDATE_NO
+        , UPDATE_DATE
+    )
+    VALUES (
+          #{cmpnyCd}
+        , #{siteCd}
+        , #{userCd}
+        , #{workYmd}
+        , #{leaveCd}
+        , #{insertNo}
+        , NOW()
+        , #{insertNo}
+        , NOW()
+    ) AS NEW
+    ON DUPLICATE KEY UPDATE
+          WORK_PLAN_CD = NEW.WORK_PLAN_CD
+        , UPDATE_NO    = NEW.UPDATE_NO
+        , UPDATE_DATE  = NOW()
+    </insert>
+
+    <!--
+      신청자의 자체근태승인 자격 (자기 승인 원칙 §9.5).
+      소속 노드 SELF_ATTD_APPRV_YN='Y' 이면서 신청자가 그 노드 담당 정/부
+      (MAIN_ADMIN_CD / SUB_ADMIN_CD)인 경우에만 'Y' 반환. 자격 미달이면 행 없음(NULL=fail-closed).
+    -->
+    <select id="selectUserNodeSelfApproveYn" resultType="string">
+    /* AppLeaveFlowMapper.selectUserNodeSelfApproveYn */
+    SELECT N.SELF_ATTD_APPRV_YN
+      FROM TB_USER U
+      JOIN TB_SITE_NODE N
+        ON N.CMPNY_CD = U.CMPNY_CD
+       AND N.SITE_CD  = U.SITE_CD
+       AND N.NODE_CD  = U.NODE_CD
+     WHERE U.CMPNY_CD = #{cmpnyCd}
+       AND U.USER_CD  = #{userCd}
+       AND N.SELF_ATTD_APPRV_YN = 'Y'
+       AND (N.MAIN_ADMIN_CD = U.USER_CD OR N.SUB_ADMIN_CD = U.USER_CD)
+     LIMIT 1
+    </select>
+
+</mapper>

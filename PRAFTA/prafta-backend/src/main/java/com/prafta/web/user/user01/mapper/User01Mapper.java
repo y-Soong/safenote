@@ -98,6 +98,10 @@ public interface User01Mapper {
 	// 사이트 노드 존재 검증 (CMPNY_CD + SITE_CD + NODE_CD 매칭 행 1건 이상이면 1 반환)
 	int selectSiteNodeExists(@Param("cmpnyCd") String cmpnyCd, @Param("siteCd") String siteCd, @Param("nodeCd") String nodeCd);
 
+	// ===== PRAFTA-046 - 노드-관리자 정합성 가드 =====
+	// 노드에 정(MAIN) 또는 부(SUB) 관리자가 존재하면 1, 아니면(노드 미존재 포함) 0 반환.
+	int selectNodeHasAdmin(@Param("cmpnyCd") String cmpnyCd, @Param("siteCd") String siteCd, @Param("nodeCd") String nodeCd);
+
 	// 회사 내 USER_ID 중복 여부 (있으면 1)
 	int selectUserIdExists(@Param("cmpnyCd") String cmpnyCd, @Param("userId") String userId);
 

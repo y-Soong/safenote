@@ -143,7 +143,6 @@
             /* row type discriminator (PRAFTA-015) - 정규근태 분기 */
             , 'NORMAL'                                                           AS rowType
             , NULL                                                               AS otId
-            , NULL                                                               AS otType
 
         FROM TB_USER_ATTD_MGMT A
         INNER JOIN node_tree NT
@@ -258,7 +257,6 @@
             /* row type discriminator (PRAFTA-015) - 초과근무 분기 */
             , 'OT'                                                               AS rowType
             , O.OT_ID                                                            AS otId
-            , O.OT_TYPE                                                          AS otType
 
         /* 초과근무의 NODE_CD 는 nullable 이다. node_tree 와 INNER JOIN 하므로
            NODE_CD 가 NULL 인 초과근무 행은 결과에서 제외된다. 이는 정규근태 분기와

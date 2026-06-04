@@ -11,6 +11,7 @@ import com.prafta.common.cmm.leave.vo.LeaveDetailUserVO;
 import com.prafta.common.cmm.leave.vo.LeaveGrantHistoryRowVO;
 import com.prafta.common.cmm.leave.vo.LeaveGrantInsertVO;
 import com.prafta.common.cmm.leave.vo.LeaveRecallTargetVO;
+import com.prafta.common.cmm.leave.vo.LeaveTypeAvailTermVO;
 import com.prafta.common.cmm.leave.vo.LeaveTypeOptionVO;
 import com.prafta.common.cmm.leave.vo.NotiOutboxInsertVO;
 
@@ -102,6 +103,19 @@ public interface LeaveDashboardMapper {
      */
     int countActiveUser(@Param("cmpnyCd") String cmpnyCd,
                         @Param("userCd") String userCd);
+
+    /**
+     * 수동 부여 타입의 "사용 가능 기간" 설정 단건 조회 (prafta-045, §8.1.1).
+     *
+     * <p>부여건 AVAIL_TO_DATE를 회사 공통 AXIS6가 아니라 해당 타입의
+     * {@code ADMIN_AVAIL_TERM_TYPE}(SYS026 01/02/03) + {@code ADMIN_AVAIL_FROM_DT}/{@code ADMIN_AVAIL_TO_DT}
+     * (YYYYMMDD 8자, prafta-044-FU2)로 산출하기 위해 조회한다. 수동 부여 타입은 항상 관리자 부여
+     * 타입(LEAVE_TYPE='02' AND GRANT_TYPE='02')이므로 관리자 전용 컬럼만 읽는다.
+     *
+     * <p>CMPNY_CD 스코프로 격리한다(타사 타입 avail-term 조회 차단). 미존재/스코프 밖이면 null.
+     */
+    LeaveTypeAvailTermVO selectAdminAvailTerm(@Param("cmpnyCd") String cmpnyCd,
+                                              @Param("leaveCd") String leaveCd);
 
     /**
      * GRANT_ID 채번. 'G' + YYYYMMDD + 시퀀스(FNC_CMM_SEQ_NEXTVAL, SEQ_KEY='LEAVE_GRANT_ID').

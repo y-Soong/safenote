@@ -15,6 +15,7 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
 import com.prafta.common.security.JwtUtil;
+import com.prafta.web.attd.attd07.application.param.ApproveSchedModifyRequestParam;
 import com.prafta.web.attd.attd07.application.param.DailyAttdDetailDeleteParam;
 import com.prafta.web.attd.attd07.application.param.DailyAttdDetailsParam;
 import com.prafta.web.attd.attd07.application.param.MonthlyAttdListParam;
@@ -23,6 +24,7 @@ import com.prafta.web.attd.attd07.application.param.RejectUserOvertimeRequestPar
 import com.prafta.web.attd.attd07.application.param.UpdateUserAttdInfosParam;
 import com.prafta.web.attd.attd07.application.param.UpdateUserAttdRequestParam;
 import com.prafta.web.attd.attd07.application.param.UpdateUserOvertimeRequestParam;
+import com.prafta.web.attd.attd07.dto.request.ApproveSchedModifyRequestRequest;
 import com.prafta.web.attd.attd07.dto.request.DailyAttdDetailDeleteRequest;
 import com.prafta.web.attd.attd07.dto.request.DailyAttdDetailsRequest;
 import com.prafta.web.attd.attd07.dto.request.MonthlyAttdListRequest;
@@ -141,6 +143,30 @@ public class Attd07Controller {
 
         attd07Service.rejectUserOvertimeRequest(
                 RejectUserOvertimeRequestParam.from(request, jwtUtil.getAllClaimsAsMap(authorization)));
+
+        return ResponseEntity.status(HttpStatus.OK).build();
+    }
+
+    /** PRAFTA-APP-007 - 스케줄 수정 요청('10') 승인. */
+    @PostMapping("/approve-sched-modify-requests")
+    public ResponseEntity<?> approveSchedModifyRequest(
+            @RequestBody @Valid ApproveSchedModifyRequestRequest request,
+            @RequestHeader(value = "Authorization", required = true) String authorization) {
+
+        attd07Service.approveSchedModifyRequest(
+                ApproveSchedModifyRequestParam.from(request, jwtUtil.getAllClaimsAsMap(authorization)));
+
+        return ResponseEntity.status(HttpStatus.OK).build();
+    }
+
+    /** PRAFTA-APP-007 - 스케줄 수정 요청('10') 반려 (반려 DTO/Param 은 근태 반려와 공유). */
+    @PostMapping("/reject-sched-modify-requests")
+    public ResponseEntity<?> rejectSchedModifyRequest(
+            @RequestBody @Valid RejectUserAttdRequestRequest request,
+            @RequestHeader(value = "Authorization", required = true) String authorization) {
+
+        attd07Service.rejectSchedModifyRequest(
+                RejectUserAttdRequestParam.from(request, jwtUtil.getAllClaimsAsMap(authorization)));
 
         return ResponseEntity.status(HttpStatus.OK).build();
     }

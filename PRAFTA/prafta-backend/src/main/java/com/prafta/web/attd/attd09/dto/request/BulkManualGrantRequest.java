@@ -25,7 +25,7 @@ public class BulkManualGrantRequest {
     /** 연차 코드 (수동 부여 가능 휴가 종류) */
     private String leaveCd;
 
-    /** 부여 일수 (양수, 0.5일 단위) */
+    /** 부여 일수 (양수, 1일 단위 정수) */
     private BigDecimal grantDays;
 
     /** 사용 가능 시작일 (YYYYMMDD) */

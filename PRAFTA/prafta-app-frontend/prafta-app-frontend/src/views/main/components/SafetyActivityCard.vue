@@ -88,12 +88,7 @@
       </button>
 
       <!-- 사건 관리 (관리자/안전직군) — 사업장 권한 최종 판정은 서버 -->
-      <button
-        v-if="isSafetyManager"
-        type="button"
-        class="action-row"
-        @click="onNearMissManage"
-      >
+      <button v-if="isSafetyManager" type="button" class="action-row" @click="onNearMissManage">
         <svg class="icon row-icon" width="20" height="20" aria-hidden="true">
           <use href="#i-clipboard" />
         </svg>

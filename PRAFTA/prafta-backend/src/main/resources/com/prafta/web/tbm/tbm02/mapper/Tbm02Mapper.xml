@@ -499,7 +499,8 @@
 	        AND A.SITE_CD IS NULL
 	      </when>
 	      <otherwise>
-	        AND A.SITE_CD = #{siteCd}
+	        /* 세션 콘텐츠 선택: 해당 사업장 자료 + 회사공통(SITE_CD IS NULL) 자료 포함 */
+	        AND (A.SITE_CD IS NULL OR A.SITE_CD = #{siteCd})
 	      </otherwise>
 	    </choose>
 	  </if>

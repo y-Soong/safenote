@@ -55,4 +55,27 @@ public interface AppHome01Mapper {
 
     /** 오늘 TBM 세션(최신 1건) + 본인 참석 상태. 세션 없으면 null. */
     TbmStatusResult selectTodayTbm(@Param("param") HomeSummaryQuery query);
+
+    /**
+     * prafta-app-015: 본인 소속부서 NODE_CD 조회 (월마감 커버리지 판정용).
+     * <p>없으면 null. TB_USER. (AppAttd01Mapper.selectUserNodeCd 동일 패턴)
+     */
+    String selectUserNodeCd(
+            @Param("cmpnyCd") String cmpnyCd
+            , @Param("siteCd") String siteCd
+            , @Param("userCd") String userCd
+    );
+
+    /**
+     * prafta-app-015: 해당 월이 본인 부서를 덮는 마감(CLOSED)으로 닫혀 있는지 여부.
+     * <p>1 이상이면 마감(closed). prafta-028 부서단위 마감 커버리지('*'/자기노드/INC_SUB 상위).
+     *   attd01 의 구간 게이팅(canCheckInThisSlot)과 의미 정렬을 위해 home01 도 동일 판정.
+     *   (AppAttd01Mapper.countCoveringClose 동일 패턴)
+     */
+    int countCoveringClose(
+            @Param("cmpnyCd") String cmpnyCd
+            , @Param("siteCd") String siteCd
+            , @Param("nodeCd") String nodeCd
+            , @Param("closeYm") String closeYm
+    );
 }

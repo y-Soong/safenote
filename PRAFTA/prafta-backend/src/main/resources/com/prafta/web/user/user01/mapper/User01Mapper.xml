@@ -640,6 +640,20 @@
 	  AND A.NODE_CD  = #{nodeCd}
 	</select>
 
+	<!-- PRAFTA-046: 노드에 정/부 관리자가 존재하면 1, 아니면(노드 미존재 포함) 0. -->
+	<select id="selectNodeHasAdmin" resultType="int">
+	/* User01Mapper.selectNodeHasAdmin */
+	SELECT COUNT(1)
+	FROM TB_SITE_NODE A
+	WHERE A.CMPNY_CD = #{cmpnyCd}
+	  AND A.SITE_CD  = #{siteCd}
+	  AND A.NODE_CD  = #{nodeCd}
+	  AND (
+	        NULLIF(TRIM(A.MAIN_ADMIN_CD), '') IS NOT NULL
+	     OR NULLIF(TRIM(A.SUB_ADMIN_CD), '')  IS NOT NULL
+	      )
+	</select>
+
 	<!-- USER_ID 중복 체크 (UX_TB_USER_ID UNIQUE 사전 진단). -->
 	<select id="selectUserIdExists" resultType="int">
 	/* User01Mapper.selectUserIdExists */

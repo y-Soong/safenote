@@ -7,11 +7,13 @@ package com.prafta.app.req.req07.application.command;
  * 각 endpoint 가 사용하지 않는 컬럼은 null 로 전달한다.
  *
  * <ul>
- *   <li>스케줄 수정 (REQ_TYPE='10'): startDate/startTime/endDate/endTime=null, otType=null, schCd 채움.</li>
- *   <li>근태 보정 (REQ_TYPE='01' or '02'): 시각 4종 채움, otType=null, schCd=null.
+ *   <li>스케줄 수정 (REQ_TYPE='10'): startDate/startTime/endDate/endTime=null, schCd 채움.</li>
+ *   <li>근태 보정 (REQ_TYPE='01' or '02'): 시각 4종 채움, schCd=null.
  *       REQ_TYPE='02' 면 targetId=기존 ATTD_ID, '01' 이면 null.</li>
- *   <li>초과근무 (REQ_TYPE='03'): 시각 4종 채움, otType 채움, schCd=null, targetId=null.</li>
+ *   <li>초과근무 (REQ_TYPE='03'): 시각 4종 채움, schCd=null, targetId=null.</li>
  * </ul>
+ *
+ * <p>prafta-043: 초과근무 유형(OT_TYPE) 전면 파기로 otType 컬럼/필드 제거.
  *
  * <p>공통 컬럼: reqId / cmpnyCd / siteCd / userCd / workYmd / nodeCd / workSeq / reqReason / insertNo.
  */
@@ -31,7 +33,6 @@ public record AttdReqInsertCommand(
         , String startTime
         , String endDate
         , String endTime
-        , String otType
         , String schCd
         , String insertNo
 ) {

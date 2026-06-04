@@ -13,7 +13,9 @@
       </p>
       <div class="ctx__row">
         <span class="ctx__lbl">스케줄</span>
-        <span class="ctx__val">{{ context.workPlanName }} · {{ context.scheduleSummary || '-' }}</span>
+        <span class="ctx__val"
+          >{{ context.workPlanName }} · {{ context.scheduleSummary || '-' }}</span
+        >
       </div>
       <div v-if="context.attendanceSummary" class="ctx__row">
         <span class="ctx__lbl">현재 근태</span>
@@ -51,13 +53,18 @@
         </label>
       </SlotCard>
 
-      <button
-        v-if="slots.length === 1"
-        type="button"
-        class="btn-add"
-        @click="onAddSlot"
-      >
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+      <button v-if="slots.length === 1" type="button" class="btn-add" @click="onAddSlot">
+        <svg
+          width="16"
+          height="16"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="2"
+          stroke-linecap="round"
+          stroke-linejoin="round"
+          aria-hidden="true"
+        >
           <line x1="12" y1="5" x2="12" y2="19" />
           <line x1="5" y1="12" x2="19" y2="12" />
         </svg>
@@ -84,6 +91,19 @@
       </label>
     </section>
 
+    <!-- 결재선 (prafta-app-009) -->
+    <ApprovalLineSection
+      v-if="showApprovalSection"
+      ref="approvalSectionRef"
+      v-model="approverList"
+      :presets="presets"
+      @open-picker="onOpenApproverPicker"
+    />
+    <p v-else-if="approvalNotice" class="aprv-notice">
+      <span class="aprv-notice__dot" aria-hidden="true">·</span>
+      {{ approvalNotice }}
+    </p>
+
     <p class="helper">
       <span class="helper__dot" aria-hidden="true">·</span>
       관리자 승인 후 근태에 반영돼요. 근태 마감 전까지 신청해 주세요. 원본 출퇴근 기록은 보존돼요.
@@ -95,6 +115,14 @@
         {{ submitting ? '등록 중...' : '요청하기' }}
       </button>
     </footer>
+
+    <!-- 결재자 추가 바텀시트 (prafta-app-009) -->
+    <AttdApproverPickerSheet
+      v-if="showApprovalSection"
+      v-model="approverPickerOpen"
+      :excluded-user-cds="approverUserCds"
+      @add="onAddApprovers"
+    />
   </form>
 </template>
 
@@ -103,10 +131,16 @@ import { ref, computed, getCurrentInstance } from 'vue'
 import SlotCard from './SlotCard.vue'
 import DateStepperField from '@/components/common/DateStepperField.vue'
 import TimeStepperField from '@/components/common/TimeStepperField.vue'
+import ApprovalLineSection from './ApprovalLineSection.vue'
+import AttdApproverPickerSheet from './AttdApproverPickerSheet.vue'
 
 const props = defineProps({
   context: { type: Object, required: true },
   submitting: { type: Boolean, default: false },
+  // prafta-app-009: 본인 소유 결재선 프리셋([{ presetId, presetNm, defaultYn, steps[] }]).
+  presets: { type: Array, default: () => [] },
+  // prafta-app-009: 결재선 분기 컨텍스트 { selfApprvYn:'Y'|'N', isNodeAdmin:bool } | null(미상).
+  approvalContext: { type: Object, default: null },
 })
 const emit = defineEmits(['submit', 'cancel'])
 
@@ -131,14 +165,16 @@ function timeToHhmm(s) {
   return s ? s.replace(':', '').slice(0, 4) : ''
 }
 
-// 현재 근태 시각으로 프리필 (P16). context.slots[*].attendance.startTime/endTime 가정.
+// 현재 근태 시각으로 프리필 (P16).
+// prafta-app-016-FU1: 실제 attendance 응답 키는 checkInTime/checkOutTime(+checkInDate/checkOutDate).
+//   종전 코드는 attendance.startTime/endTime(존재하지 않는 키)을 읽어 프리필이 빈 값이던 잠복 버그 → 교정.
 const buildInitialSlots = () => {
   const ctxSlots = (props.context?.slots || []).map((s, i) => ({
     workSeq: s.workSeq ?? i + 1,
-    startDate: ymdToInput(props.context.workYmd),
-    startTime: hhmmToTime(s.attendance?.startTime),
-    endDate: ymdToInput(props.context.workYmd),
-    endTime: hhmmToTime(s.attendance?.endTime),
+    startDate: ymdToInput(s.attendance?.checkInDate || props.context.workYmd),
+    startTime: hhmmToTime(s.attendance?.checkInTime),
+    endDate: ymdToInput(s.attendance?.checkOutDate || props.context.workYmd),
+    endTime: hhmmToTime(s.attendance?.checkOutTime),
   }))
   if (ctxSlots.length === 0) {
     return [
@@ -156,6 +192,45 @@ const buildInitialSlots = () => {
 
 const slots = ref(buildInitialSlots())
 const reqReason = ref('')
+
+// ── 결재선 상태 (prafta-app-009) ─────────────────────────────────────────
+const approverList = ref([]) // [{ approverUserCd, userNm, userId, rankNm, nodeNm }] (순서 = 결재 단계)
+const approverPickerOpen = ref(false)
+const approvalSectionRef = ref(null)
+
+const selfApprvYn = computed(() => props.approvalContext?.selfApprvYn || null)
+const showApprovalSection = computed(() => selfApprvYn.value !== 'Y')
+const approvalNotice = computed(() => {
+  if (selfApprvYn.value !== 'Y') return ''
+  return props.approvalContext?.isNodeAdmin
+    ? '요청하면 즉시 승인 처리돼요.'
+    : '부서 관리자 승인 후 반영돼요. 결재선을 지정하지 않아도 돼요.'
+})
+const approverUserCds = computed(() => approverList.value.map((a) => a.approverUserCd))
+const approverRequired = computed(() => selfApprvYn.value === 'N')
+
+const onOpenApproverPicker = () => {
+  approverPickerOpen.value = true
+}
+
+// 시트 add(picked[]) 수신 → approverList 순서 append. userCd 식별자 dedup. 직접 추가 시 프리셋 이탈.
+const onAddApprovers = (picked) => {
+  const existing = new Set(approverList.value.map((a) => a.approverUserCd))
+  const additions = (picked || [])
+    .filter((p) => p && p.userCd && !existing.has(p.userCd))
+    .map((p) => ({
+      approverUserCd: p.userCd,
+      userNm: p.userNm,
+      userId: p.userId,
+      rankNm: p.rankNm,
+      nodeNm: p.nodeNm,
+    }))
+  if (additions.length > 0) {
+    approverList.value = [...approverList.value, ...additions]
+    approvalSectionRef.value?.resetPreset?.()
+  }
+  approverPickerOpen.value = false
+}
 
 const ctxDateDisplay = computed(() => {
   const y = props.context.workYmd?.slice(0, 4)
@@ -175,28 +250,52 @@ const overlapWarning = computed(() => {
 })
 
 const isValid = computed(() => {
-  if (!reqReason.value.trim()) return false
-  return slots.value.every(
-    (s) => s.startDate && s.startTime && s.endDate && s.endTime,
-  )
+  // 사유 미입력은 버튼 비활성 사유에서 제외(제출 시 사유 전용 alert 로 안내).
+  if (!slots.value.every((s) => s.startDate && s.startTime && s.endDate && s.endTime)) return false
+  // 결재 필수('N') 케이스는 결재자 1명 이상이어야 제출 활성.
+  if (approverRequired.value && approverList.value.length === 0) return false
+  return true
 })
+
+// context.slots 에서 해당 workSeq 의 현재 근태 시각을 찾아 폼 slot 으로 변환 (없으면 빈 값).
+// prafta-app-016-FU1: checkInTime/checkOutTime(+checkInDate/checkOutDate) 키로 교정.
+const makeSlotFromContext = (workSeq) => {
+  const ctx = (props.context?.slots || []).find((s, i) => (s.workSeq ?? i + 1) === workSeq)
+  return {
+    workSeq,
+    startDate: ymdToInput(ctx?.attendance?.checkInDate || props.context.workYmd),
+    startTime: hhmmToTime(ctx?.attendance?.checkInTime),
+    endDate: ymdToInput(ctx?.attendance?.checkOutDate || props.context.workYmd),
+    endTime: hhmmToTime(ctx?.attendance?.checkOutTime),
+  }
+}
 
 const onAddSlot = () => {
   if (slots.value.length >= 2) return
-  slots.value.push({
-    workSeq: 2,
-    startDate: ymdToInput(props.context.workYmd),
-    startTime: '',
-    endDate: ymdToInput(props.context.workYmd),
-    endTime: '',
-  })
+  // workSeq 는 구간 식별자(1/2)이므로 비어 있는 번호를 채운다. (위치 기반 재인덱싱 금지)
+  const existing = new Set(slots.value.map((s) => s.workSeq))
+  const missing = [1, 2].find((n) => !existing.has(n))
+  if (!missing) return
+  slots.value.push(makeSlotFromContext(missing))
+  slots.value.sort((a, b) => a.workSeq - b.workSeq)
 }
+
+// 구간 삭제 — workSeq 는 구간 식별자이므로 남은 구간 번호를 재인덱싱하지 않는다.
+// (1구간 삭제 시 2구간이 1구간으로 바뀌던 버그 수정)
 const onRemoveSlot = (workSeq) => {
   slots.value = slots.value.filter((s) => s.workSeq !== workSeq)
-  slots.value.forEach((s, i) => (s.workSeq = i + 1))
 }
 
 const onSubmit = () => {
+  // 사유 전용 가드(버튼은 기본 활성 → 빈값 제출 시 사유 안내).
+  if (!reqReason.value.trim()) {
+    showAlert('사유를 입력해 주세요.')
+    return
+  }
+  if (approverRequired.value && approverList.value.length === 0) {
+    showAlert('결재자를 1명 이상 추가해 주세요.')
+    return
+  }
   if (!isValid.value) {
     showAlert('모든 필수 항목을 입력해 주세요.')
     return
@@ -210,6 +309,9 @@ const onSubmit = () => {
       endTime: timeToHhmm(s.endTime),
     })),
     reqReason: reqReason.value.trim(),
+    // prafta-app-009: 결재선 노출 케이스만 approverUserCds 전개 전송(SSOT). 'Y' 케이스는 미전송(서버 분기).
+    approverUserCds: showApprovalSection.value ? approverUserCds.value : undefined,
+    presetId: undefined,
   })
 }
 </script>
@@ -365,6 +467,21 @@ const onSubmit = () => {
   border-radius: var(--radius-sm);
   font-size: 12px;
   color: var(--color-danger);
+}
+
+.aprv-notice {
+  margin: 0;
+  padding: var(--space-sm) var(--space-md);
+  background: var(--color-primary-tint);
+  border: 0.5px solid var(--color-primary-tint-border);
+  border-radius: var(--radius-md);
+  font-size: 12px;
+  color: var(--color-primary-text-deep);
+  display: flex;
+  gap: var(--space-xs);
+}
+.aprv-notice__dot {
+  color: var(--color-primary);
 }
 
 .helper {

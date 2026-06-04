@@ -1,0 +1,81 @@
+-- ============================================================================
+-- PRAFTA-043 단계 1 (EXPAND) — 초과근무 유형(OT_TYPE) 파기를 위한 하위호환 완충
+-- 작성일: 2026-06-03
+-- 적용 환경: MySQL 8.0.42
+-- 참조: .claude/requests/web_requests/prafta-043-plan.md §3 / §0-1 / D1
+--       .claude/requests/web_requests/prafta-043.md §요청 4
+--       보안 검토 High (배포 순서 가용성 리스크) 해소 — expand/contract 2단계 분리
+--
+-- 변경 요약 (EXPAND = 사전/동시 적용, 하위호환)
+--   초과근무 "유형"(연장/야간/휴일) 개념을 전면 파기하는 prafta-043 의 1단계.
+--   본 단계에서는 컬럼을 DROP 하지 않고, tb_user_overtime_mgmt.OT_TYPE 의
+--   NOT NULL 제약만 해제하여 NULL 허용 + DEFAULT NULL 로 완화한다.
+--
+--   효과(핵심): OT_TYPE 을 NULL 허용으로 바꾸면
+--     - 구버전 코드(OT_TYPE 에 값 INSERT) → 그대로 동작 (값을 넣어도 무방)
+--     - 신버전 코드(OT_TYPE 컬럼 생략 INSERT) → 그대로 동작 (DEFAULT NULL 적용)
+--   둘 다 깨지지 않으므로 "코드 배포 ↔ 마이그 적용" 순서를 따질 필요가 없다.
+--   → 배포 순서 무관, NOT NULL 위반/Unknown column 가용성 창이 제거된다.
+--
+--   tb_user_attd_req.OT_TYPE 는 원래부터 varchar(10) DEFAULT NULL (nullable) 이므로
+--   EXPAND 가 불필요하다. 본 파일에서는 적용하지 않고 "확인만" 한다(아래 검증 SQL).
+--   ※ 일용직 슬롯 SLOT_TYPE(SYS014)은 별개 도메인 — 본 마이그와 무관, 건드리지 않음.
+--
+-- 적용 전 존재/현재 상태 확인 (운영 적용 직전 권장):
+--   -- overtime_mgmt: 현재 Null = 'NO' (NOT NULL) 인지 확인 → EXPAND 대상
+--   SHOW COLUMNS FROM tb_user_overtime_mgmt  LIKE 'OT_TYPE';
+--   -- attd_req: 현재 Null = 'YES' (이미 nullable) 인지 확인 → EXPAND 불요(변경 없음)
+--   SHOW COLUMNS FROM tb_user_attd_req       LIKE 'OT_TYPE';
+--
+-- 멱등성: MODIFY COLUMN 은 동일 정의로 재실행해도 안전(동일 결과). 단 운영 관례상 1회 적용 권장.
+-- 운영 적용: 사용자 수동(read-only MCP). 본 파일은 작성만, DB 직접 적용 금지.
+--
+-- ────────────────────────────────────────────────────────────────────────────
+-- 운영 런북 (전체 prafta-043 OT_TYPE 파기 권장 순서 — 체크리스트)
+--   [ ] ① 본 EXPAND(prafta-043-1) 적용
+--          - 아무 때나 적용 가능. 구버전 코드가 돌고 있어도 안전(값 INSERT 계속 동작).
+--          - 적용 직후부터 신버전 코드(컬럼 생략 INSERT)도 동작 가능 상태가 된다.
+--   [ ] ② 신버전 코드(prafta-043) 배포 + 재기동
+--          - web attd07 / reqinbox / attd08, app req07 / req06 의 OT_TYPE 참조 제거 버전.
+--          - 이 시점부터 OT_TYPE 컬럼은 더 이상 읽기/쓰기 되지 않는다(잔존하나 무참조).
+--   [ ] ③ 안정화 확인 후 CONTRACT(prafta-043-2) 적용 → 두 컬럼 DROP
+--          - 신버전이 전 인스턴스에 롤아웃되고 OT_TYPE 무참조가 확인된 뒤에만.
+--
+--   * 부분 배포/혼재 구간 안전성:
+--       EXPAND 적용 후에는 구버전·신버전 인스턴스가 섞여 돌아도 모두 정상.
+--       (구버전=값 INSERT 가능, 신버전=컬럼 생략 INSERT 가능)
+--   * 역순/누락 시 위험과 회피:
+--       - CONTRACT 를 신버전 롤아웃 전에 적용하면 구버전이 "Unknown column" 으로 실패한다.
+--         → CONTRACT 는 반드시 ③ 단계(신버전 전면 롤아웃·안정화 후)에만 적용.
+--       - EXPAND 를 건너뛰고 구버전 상태에서 컬럼만 NOT NULL 로 두면, 신버전 컬럼 생략
+--         INSERT 가 NOT NULL 위반으로 실패한다. → 신버전 배포 전 반드시 EXPAND 선적용.
+--   * CONTRACT 보류 무방:
+--       EXPAND 만 적용하고 CONTRACT(DROP)를 무기한 미뤄도 무해하다.
+--       컬럼이 잔존하나 NULL 허용이고 무참조이므로 운영에 영향이 없다.
+-- ────────────────────────────────────────────────────────────────────────────
+-- ============================================================================
+
+-- 1) tb_user_overtime_mgmt.OT_TYPE : NOT NULL → NULL 허용 + DEFAULT NULL 로 완화
+--    (타입/길이/COLLATE/위치는 기존 그대로 유지. NOT NULL 만 해제)
+ALTER TABLE `tb_user_overtime_mgmt`
+    MODIFY COLUMN `OT_TYPE` varchar(10) COLLATE utf8mb4_unicode_ci NULL DEFAULT NULL
+        COMMENT '초과근무 유형 (EXTEND:연장 / NIGHT:야간 / HOLIDAY:휴일) [prafta-043 파기 진행: EXPAND 단계 NULL 허용]';
+
+-- 2) tb_user_attd_req.OT_TYPE : 이미 nullable → 변경 불요(확인만).
+--    (현재 정의: varchar(10) COLLATE utf8mb4_unicode_ci DEFAULT NULL, AFTER END_TIME)
+--    필요 시 아래 확인 쿼리로 Null='YES' 임을 검증한다:
+--    SHOW COLUMNS FROM tb_user_attd_req LIKE 'OT_TYPE';
+
+-- ============================================================================
+-- 롤백 (EXPAND 되돌리기 — overtime_mgmt 를 다시 NOT NULL 로 복원)
+--   ⚠️ 주의: NOT NULL 재부여 전, NULL 행이 있으면 ALTER 가 실패한다.
+--            EXPAND 직후(아직 신버전 미배포)라면 NULL 행이 없어 바로 복원 가능.
+--            신버전이 한 번이라도 컬럼 생략 INSERT 를 했다면 NULL 행이 생겼을 수 있으므로
+--            백필 후 NOT NULL 재부여(2단계).
+-- ----------------------------------------------------------------------------
+-- -- (필요 시) NULL 행 백필:
+-- -- UPDATE tb_user_overtime_mgmt SET OT_TYPE = 'EXTEND' WHERE OT_TYPE IS NULL;
+-- ALTER TABLE `tb_user_overtime_mgmt`
+--     MODIFY COLUMN `OT_TYPE` varchar(10) COLLATE utf8mb4_unicode_ci NOT NULL
+--         COMMENT '초과근무 유형 (EXTEND:연장 / NIGHT:야간 / HOLIDAY:휴일)';
+-- ============================================================================

@@ -1,0 +1,175 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+
+<!--
+  노무수령거부 통지/감지/알림 공용 Mapper (PRAFTA-COM-001).
+  web 기능1(통지) + app 기능2/3(감지·관리자 PUSH) 공용.
+  outbox INSERT / NOTI_ID 채번은 LeaveDashboardMapper 재사용(여기 미보유).
+-->
+<mapper namespace="com.prafta.common.cmm.leave.mapper.LeaveRefusalMapper">
+
+    <!-- REFUSAL_ID 채번: 'LR' + YYYYMMDD + 회사별 시퀀스. -->
+    <select id="selectNextRefusalId" resultType="string">
+    /* LeaveRefusalMapper.selectNextRefusalId */
+    SELECT CONCAT('LR', DATE_FORMAT(NOW(), '%Y%m%d'), FNC_CMM_SEQ_NEXTVAL(#{cmpnyCd}, 'LEAVE_REFUSAL_ID'))
+      FROM DUAL
+    </select>
+
+    <!--
+      기능1 통지 대상 정합성 검증(IDOR 가드).
+      대상 userCd 가 호출자 회사(CMPNY_CD) 소속의 실재·활성 사용자이고, 요청 siteCd 와
+      TB_USER.SITE_CD 가 정합인지 확인. 활성 = USE_YN='Y', ACCOUNT_STATUS='01'.
+      회사 내 임의/미존재/부정합 (siteCd,userCd) 통지 주입 차단.
+    -->
+    <select id="countValidTarget" resultType="int">
+    /* LeaveRefusalMapper.countValidTarget */
+    SELECT COUNT(1)
+      FROM TB_USER U
+     WHERE U.CMPNY_CD       = #{cmpnyCd}
+       AND U.USER_CD        = #{userCd}
+       AND U.SITE_CD        = #{siteCd}
+       AND U.USE_YN         = 'Y'
+       AND U.ACCOUNT_STATUS = '01'
+    </select>
+
+    <!--
+      기능2 대상일 판정.
+      (1) tb_leave_refusal_log 의 NOTICED 행이 (회사+사업장+사용자+대상일=출근근무일)로 존재.
+      (2) 그 대상일이 휴일이 아님 — tb_holiday(일자 휴일) NOT EXISTS 및
+          tb_holiday_rule(매년 MM/DD 고정 휴일) NOT EXISTS 둘 다 통과.
+      위 두 게이트를 모두 통과해야 1행 반환(=노무수령거부 대상). 그 외 결과 없음(대상 아님).
+    -->
+    <select id="selectRefusalTarget" resultType="com.prafta.common.cmm.leave.vo.RefusalTargetVO">
+    /* LeaveRefusalMapper.selectRefusalTarget */
+    SELECT
+          L.REFUSAL_ID   AS refusalId
+        , L.TARGET_YMD   AS targetYmd
+      FROM TB_LEAVE_REFUSAL_LOG L
+     WHERE L.CMPNY_CD   = #{cmpnyCd}
+       AND L.SITE_CD    = #{siteCd}
+       AND L.USER_CD    = #{userCd}
+       AND L.TARGET_YMD = #{targetYmd}
+       AND L.EVENT_TYPE = 'NOTICED'
+       AND L.DEL_YN     = 'N'
+       AND NOT EXISTS (
+             SELECT 1
+               FROM TB_HOLIDAY H
+              WHERE H.CMPNY_CD = #{cmpnyCd}
+                AND H.USE_YN   = 'Y'
+                AND H.HOLIDAY_YMD = STR_TO_DATE(#{targetYmd}, '%Y%m%d')
+           )
+       AND NOT EXISTS (
+             SELECT 1
+               FROM TB_HOLIDAY_RULE R
+              WHERE R.CMPNY_CD = #{cmpnyCd}
+                AND R.USE_YN   = 'Y'
+                AND R.HOLIDAY_MM = SUBSTR(#{targetYmd}, 5, 2)
+                AND R.HOLIDAY_DD = SUBSTR(#{targetYmd}, 7, 2)
+           )
+     LIMIT 1
+    </select>
+
+    <!--
+      사실 로그 append(공용). dedup UNIQUE(CMPNY_CD, DEDUP_KEY) 충돌 시 UPDATE_DATE 만 갱신(멱등).
+      row alias(NEW) 문법 사용 — VALUES() 미사용(MySQL 8.0.20+ 권장).
+      DETECT_DTIME 은 CHECKIN_DETECTED(detectNow=true) 일 때만 NOW().
+    -->
+    <insert id="insertRefusalLog" parameterType="com.prafta.common.cmm.leave.vo.RefusalLogInsertVO">
+    /* LeaveRefusalMapper.insertRefusalLog */
+    INSERT INTO TB_LEAVE_REFUSAL_LOG (
+          REFUSAL_ID
+        , CMPNY_CD
+        , SITE_CD
+        , USER_CD
+        , TARGET_YMD
+        , EVENT_TYPE
+        , RELATED_NOTI_ID
+        , RELATED_ATTD_ID
+        , DETECT_DTIME
+        , DEL_YN
+        , INSERT_NO
+        , INSERT_DATE
+        , DEDUP_KEY
+    )
+    VALUES (
+          #{refusalId}
+        , #{cmpnyCd}
+        , #{siteCd}
+        , #{userCd}
+        , #{targetYmd}
+        , #{eventType}
+        , #{relatedNotiId}
+        , #{relatedAttdId}
+        , <choose><when test="detectNow">NOW()</when><otherwise>NULL</otherwise></choose>
+        , 'N'
+        , #{insertNo}
+        , NOW()
+        , #{dedupKey}
+    ) AS NEW
+    ON DUPLICATE KEY UPDATE
+          UPDATE_DATE = NOW()
+    </insert>
+
+    <!--
+      기능3 알림 대상 관리자 USER_CD 목록.
+      (1) 역할 master/hr: tb_user_site_auth(해당 SITE_CD, USE_YN='Y') ∩ tb_user(AUTH_CD IN list).
+      (2) 노드 어드민: 대상 근로자의 NODE_CD(tb_user) 가 매칭되는 tb_site_node 의
+          MAIN_ADMIN_CD / SUB_ADMIN_CD (해당 회사/사업장).
+      UNION 으로 USER_CD DISTINCT, 사용중 계정(USE_YN='Y', ACCOUNT_STATUS='01')만.
+    -->
+    <select id="selectSiteRefusalAdmins" resultType="java.lang.String">
+    /* LeaveRefusalMapper.selectSiteRefusalAdmins */
+    SELECT DISTINCT M.USER_CD
+      FROM (
+            <!-- (1) 역할 기반 관리자(master/hr) -->
+            SELECT U.USER_CD
+              FROM TB_USER U
+                   INNER JOIN TB_USER_SITE_AUTH SA
+                      ON  U.CMPNY_CD = SA.CMPNY_CD
+                      AND U.USER_CD  = SA.USER_CD
+                      AND SA.SITE_CD = #{siteCd}
+                      AND SA.USE_YN  = 'Y'
+             WHERE U.CMPNY_CD = #{cmpnyCd}
+               AND U.USE_YN   = 'Y'
+               AND U.ACCOUNT_STATUS = '01'
+               AND U.AUTH_CD IN
+                   <foreach collection="authCdList" item="authCd" open="(" separator="," close=")">
+                       #{authCd}
+                   </foreach>
+
+            UNION
+
+            <!-- (2) 대상 근로자 소속 노드의 main/sub 관리자 -->
+            SELECT A.USER_CD
+              FROM TB_USER A
+             WHERE A.CMPNY_CD = #{cmpnyCd}
+               AND A.USE_YN   = 'Y'
+               AND A.ACCOUNT_STATUS = '01'
+               AND A.USER_CD IN (
+                     SELECT N.MAIN_ADMIN_CD
+                       FROM TB_SITE_NODE N
+                            INNER JOIN TB_USER W
+                               ON  W.CMPNY_CD = N.CMPNY_CD
+                               AND W.NODE_CD  = N.NODE_CD
+                               AND W.SITE_CD  = N.SITE_CD
+                      WHERE N.CMPNY_CD = #{cmpnyCd}
+                        AND N.SITE_CD  = #{siteCd}
+                        AND W.USER_CD  = #{userCd}
+                        AND NULLIF(TRIM(N.MAIN_ADMIN_CD), '') IS NOT NULL
+                     UNION
+                     SELECT N.SUB_ADMIN_CD
+                       FROM TB_SITE_NODE N
+                            INNER JOIN TB_USER W
+                               ON  W.CMPNY_CD = N.CMPNY_CD
+                               AND W.NODE_CD  = N.NODE_CD
+                               AND W.SITE_CD  = N.SITE_CD
+                      WHERE N.CMPNY_CD = #{cmpnyCd}
+                        AND N.SITE_CD  = #{siteCd}
+                        AND W.USER_CD  = #{userCd}
+                        AND NULLIF(TRIM(N.SUB_ADMIN_CD), '') IS NOT NULL
+                   )
+           ) M
+    </select>
+
+</mapper>

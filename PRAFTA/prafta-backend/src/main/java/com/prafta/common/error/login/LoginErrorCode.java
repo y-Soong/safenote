@@ -18,6 +18,9 @@ public enum LoginErrorCode implements ApiErrorCode {
     , LOGIN_400_012(HttpStatus.BAD_REQUEST, "인증 요청 토큰이 유효하지 않습니다. 다시 로그인해 주세요.")
     , LOGIN_400_013(HttpStatus.BAD_REQUEST, "인증대기 상태의 계정이 아닙니다.")
     , LOGIN_400_014(HttpStatus.BAD_REQUEST, "탈퇴 처리된 계정입니다.")
+
+    // ===== PRAFTA-046 - 노드-관리자 정합성 가드 (가입자 친화 메시지, 내부구조 노출 차단) =====
+    , LOGIN_400_015(HttpStatus.BAD_REQUEST, "선택하신 부서는 현재 가입할 수 없습니다.\n관리자에게 문의해 주세요.")
     ;
 
     private final HttpStatus httpStatus;

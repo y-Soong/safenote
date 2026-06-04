@@ -15,8 +15,26 @@
       <span class="att-time" :class="{ 'att-time--muted': isTimeMuted }">{{ timeText }}</span>
     </div>
 
-    <!-- 3·4영역: 출근/퇴근 버튼 2분할 -->
-    <div class="btn-grid">
+    <!-- 3·4영역: 출근/퇴근 버튼 -->
+    <!--
+      prafta-app-015: 2구간 스케줄이고 출근 우선 상태(퇴근 불가)이면 "1구간 출근"/"2구간 출근" 컴팩트 2버튼.
+        각 버튼 enabled = 서버 구간 플래그(slot.canCheckInThisSlot). 그 외(1구간/스케줄없음/퇴근 우선)는
+        기존 출근하기/퇴근하기 2분할 유지.
+    -->
+    <div v-if="showSlotCheckInButtons" class="btn-grid">
+      <button
+        v-for="slot in checkInSlots"
+        :key="`ci-${slot.workSeq}`"
+        type="button"
+        class="btn"
+        :class="slot.canCheckInThisSlot ? 'btn--primary' : 'btn--disabled'"
+        :disabled="!slot.canCheckInThisSlot"
+        @click="onSlotCheckIn(slot.workSeq)"
+      >
+        {{ slot.workSeq === 1 ? '1구간 출근' : '2구간 출근' }}
+      </button>
+    </div>
+    <div v-else class="btn-grid">
       <button
         type="button"
         class="btn"
@@ -115,8 +133,19 @@ const props = defineProps({
     type: Boolean,
     default: false,
   },
+  // prafta-app-015: 2구간 스케줄 여부(구간 선택 버튼 노출 판정)
+  isTwoSlot: {
+    type: Boolean,
+    default: false,
+  },
+  // prafta-app-015: 구간별 게이팅 플래그 [{ workSeq, canCheckInThisSlot, alreadyCheckedIn }]
+  slots: {
+    type: Array,
+    default: () => [],
+  },
 })
 
+// prafta-app-015: 구간 선택 출근 시 workSeq 를 payload 로 전달.
 const emit = defineEmits(['click:checkin', 'click:checkout'])
 
 const isBeforeWork = computed(() => props.status === 'BEFORE_WORK')
@@ -167,16 +196,32 @@ const locationText = computed(() => {
   return props.siteName || '-'
 })
 
-// 액션 핸들러 — 확인 모달은 본 라운드 outside scope
+// prafta-app-015: 2구간 스케줄 구간 선택 버튼 노출 판정(today 카드와 동일 규칙).
+//   isTwoSlot && 퇴근 우선 아님(canCheckOut=false) && 출근 가능 구간이 1개 이상.
+const checkInSlots = computed(() =>
+  (props.slots || [])
+    .filter((s) => s && (s.workSeq === 1 || s.workSeq === 2))
+    .slice()
+    .sort((a, b) => a.workSeq - b.workSeq),
+)
+const showSlotCheckInButtons = computed(
+  () =>
+    props.isTwoSlot &&
+    !props.canCheckOut &&
+    checkInSlots.value.some((s) => s.canCheckInThisSlot === true),
+)
+
+// 액션 핸들러 — 확인 모달/GPS/API 는 컨테이너(MainView)가 처리. 본 컴포넌트는 emit 만.
 const onCheckIn = () => {
-  // TODO(developer): 출근 확인 모달 호출(가이드 §4.9.1) → 확인 시 POST /api/app/attd/check-in
-  //                  사업장 외 출근은 정책 7.1 확정 후 모달 분기. 본 라운드는 emit 만.
+  // 단일 출근(1구간/스케줄없음) — targetWorkSeq 미동봉.
   emit('click:checkin')
+}
+const onSlotCheckIn = (workSeq) => {
+  // prafta-app-015: 2구간 구간 선택 출근 — 선택 구간을 payload 로 전달.
+  emit('click:checkin', { targetWorkSeq: workSeq })
 }
 
 const onCheckOut = () => {
-  // TODO(developer): 퇴근 확인 모달 호출. 사업장 외 퇴근은 지도 카드 포함 모달(가이드 §5.1.2)
-  //                  → 확인 시 POST /api/app/attd/check-out. 본 라운드는 emit 만.
   emit('click:checkout')
 }
 </script>

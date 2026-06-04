@@ -31,7 +31,6 @@
         , START_TIME
         , END_DATE
         , END_TIME
-        , OT_TYPE
         , SCH_CD
         , DEL_YN
         , INSERT_NO
@@ -53,7 +52,6 @@
         , #{startTime}
         , #{endDate}
         , #{endTime}
-        , #{otType}
         , #{schCd}
         , 'N'
         , #{insertNo}
@@ -91,6 +89,131 @@
        AND A.WORK_SEQ = #{workSeq}
        AND A.DEL_YN   = 'N'
      LIMIT 1
+    </select>
+
+    <!-- ============ 스케줄 선택 옵션 목록 (prafta-app-007 F2) ============
+         사용중(USE_YN='Y') 스케줄을 회사/사업장 범위로 조회.
+         식별값은 JWT 도출값만 사용 (IDOR). 라벨은 프론트 포맷 → 원시 시각 컬럼만 내려준다.
+         정렬: 기본 스케줄(BASE_YN='Y') 우선, 그 다음 SCH_NO 오름차순. -->
+    <select id="selectSchedOptions" resultType="com.prafta.app.req.req07.dto.response.result.SchedOptionResult">
+    /* AppReq07Mapper.selectSchedOptions */
+    SELECT S.SCH_CD            AS schCd
+         , S.SCH_NO            AS schNo
+         , S.BASE_YN           AS baseYn
+         , S.FST_SCH_STR_TIME  AS fstStrTime
+         , S.FST_SCH_END_TIME  AS fstEndTime
+         , S.SEC_SCH_STR_TIME  AS secStrTime
+         , S.SEC_SCH_END_TIME  AS secEndTime
+      FROM TB_SCH_MGMT S
+     WHERE S.CMPNY_CD = #{cmpnyCd}
+       AND S.SITE_CD  = #{siteCd}
+       AND S.USE_YN   = 'Y'
+     ORDER BY S.BASE_YN DESC, S.SCH_NO ASC
+    </select>
+
+    <!-- ============ prafta-app-017(이슈①): 근무계획 스케줄 1건 (OT 겹침 검증용) ============
+         TB_USER_WORK_PLAN(하루 1행).WORK_PLAN_CD 가 SCH_CD 일 때만 TB_SCH_MGMT 와 INNER 조인 성립.
+         LEAVE_CD/NULL/미존재 → 결과 0행 → Service 에서 면제(전량 OT 허용).
+         식별값은 JWT 도출값만 사용(IDOR).
+         ⚠️ SELECT 컬럼 순서 = ScheduleWindowResult 생성자 인자 순서(위치 기반 record 매핑). -->
+    <select id="selectWorkPlanSchedule" resultType="com.prafta.app.req.req07.dto.response.result.ScheduleWindowResult">
+    /* AppReq07Mapper.selectWorkPlanSchedule */
+    SELECT S.SCH_CD            AS schCd
+         , S.FST_SCH_STR_TIME  AS fstStrTime
+         , S.FST_SCH_END_TIME  AS fstEndTime
+         , S.SEC_SCH_STR_TIME  AS secStrTime
+         , S.SEC_SCH_END_TIME  AS secEndTime
+      FROM TB_USER_WORK_PLAN P
+      INNER JOIN TB_SCH_MGMT S
+         ON S.CMPNY_CD = P.CMPNY_CD
+        AND S.SITE_CD  = P.SITE_CD
+        AND S.SCH_CD   = P.WORK_PLAN_CD
+     WHERE P.CMPNY_CD = #{cmpnyCd}
+       AND P.SITE_CD  = #{siteCd}
+       AND P.USER_CD  = #{userCd}
+       AND P.WORK_YMD = #{workYmd}
+     LIMIT 1
+    </select>
+
+    <!-- ============ prafta-app-017(이슈②): 미처리 근태보정 요청 카운트(구간 단위) ============
+         REQ_TYPE IN('01','02') AND REQ_STATUS='01'(미처리) AND DEL_YN='N', 해당 WORK_SEQ.
+         결과 > 0 이면 그 구간 OT 거부(ATTD_400_101). -->
+    <select id="countPendingAttdCorrectionBySlot" resultType="int">
+    /* AppReq07Mapper.countPendingAttdCorrectionBySlot */
+    SELECT COUNT(1)
+      FROM TB_USER_ATTD_REQ A
+     WHERE A.CMPNY_CD   = #{cmpnyCd}
+       AND A.SITE_CD    = #{siteCd}
+       AND A.USER_CD    = #{userCd}
+       AND A.WORK_YMD   = #{workYmd}
+       AND A.WORK_SEQ   = #{workSeq}
+       AND A.REQ_TYPE   IN ('01', '02')
+       AND A.REQ_STATUS = '01'
+       AND A.DEL_YN     = 'N'
+    </select>
+
+    <!-- ============ prafta-app-017(이슈②): 미처리 스케줄수정 요청 카운트(그날 전체) ============
+         REQ_TYPE='10' AND REQ_STATUS='01'(미처리) AND DEL_YN='N'.
+         결과 > 0 이면 그날 모든 구간 OT 거부(ATTD_400_101). -->
+    <select id="countPendingSchedModify" resultType="int">
+    /* AppReq07Mapper.countPendingSchedModify */
+    SELECT COUNT(1)
+      FROM TB_USER_ATTD_REQ A
+     WHERE A.CMPNY_CD   = #{cmpnyCd}
+       AND A.SITE_CD    = #{siteCd}
+       AND A.USER_CD    = #{userCd}
+       AND A.WORK_YMD   = #{workYmd}
+       AND A.REQ_TYPE   = '10'
+       AND A.REQ_STATUS = '01'
+       AND A.DEL_YN     = 'N'
+    </select>
+
+    <!-- ============ prafta-app-019(1-A): 실근태 범위 1건 (OT 실근태 범위 검증용) ============
+         해당 (USER_CD, WORK_YMD, WORK_SEQ) 의 미삭제 실근태기록 1건([CHECK_IN ~ CHECK_OUT] 원본 시각).
+         행 부재(또는 CHECK_OUT_TIME null) → Service 에서 그 구간 OT 거부(ATTD_400_104).
+         식별값은 JWT 도출값만 사용(IDOR). IDX_ATTD_USER_DATE(CMPNY/SITE/USER/WORK_YMD/DEL_YN) 활용.
+         ⚠️ SELECT 컬럼 순서 = ActualAttdWindowResult 생성자 인자 순서(위치 기반 record 매핑). -->
+    <select id="selectActualAttdWindowBySlot" resultType="com.prafta.app.req.req07.dto.response.result.ActualAttdWindowResult">
+    /* AppReq07Mapper.selectActualAttdWindowBySlot */
+    SELECT A.CHECK_IN_DATE   AS checkInDate
+         , A.CHECK_IN_TIME   AS checkInTime
+         , A.CHECK_OUT_DATE  AS checkOutDate
+         , A.CHECK_OUT_TIME  AS checkOutTime
+      FROM TB_USER_ATTD_MGMT A
+     WHERE A.CMPNY_CD = #{cmpnyCd}
+       AND A.SITE_CD  = #{siteCd}
+       AND A.USER_CD  = #{userCd}
+       AND A.WORK_YMD = #{workYmd}
+       AND A.WORK_SEQ = #{workSeq}
+       AND A.DEL_YN   = 'N'
+     LIMIT 1
+    </select>
+
+    <!-- ============ prafta-app-009 F13: 본인 근무계획 행 존재 여부 ============
+         TB_USER_WORK_PLAN 하루 1행(스케줄/연차 무관 — 배정 자체 존재만 확인).
+         스케줄 수정/근태 보정은 배정된 근무일에 대해서만 요청 가능. 0 이면 ATTD_400_098 거부.
+         식별값은 JWT 도출 Param 만 사용(IDOR). -->
+    <select id="countUserWorkPlan" resultType="int">
+    /* AppReq07Mapper.countUserWorkPlan */
+    SELECT COUNT(1)
+      FROM TB_USER_WORK_PLAN P
+     WHERE P.CMPNY_CD = #{cmpnyCd}
+       AND P.SITE_CD  = #{siteCd}
+       AND P.USER_CD  = #{userCd}
+       AND P.WORK_YMD = #{workYmd}
+    </select>
+
+    <!-- ============ prafta-app-009 F15: advisory lock(중복 차단 race window 직렬화) ============
+         같은 (회사+사업장+사용자+일자+요청유형) 키로 SELECT→INSERT 를 세션 단위 직렬화.
+         1=획득, 0=타임아웃, null=오류. 트랜잭션 무관(세션 단위) → 호출부 finally 에서 RELEASE_LOCK. -->
+    <select id="getAdvisoryLock" resultType="java.lang.Integer">
+    /* AppReq07Mapper.getAdvisoryLock */
+    SELECT GET_LOCK(#{lockKey}, #{timeoutSec})
+    </select>
+
+    <select id="releaseAdvisoryLock" resultType="java.lang.Integer">
+    /* AppReq07Mapper.releaseAdvisoryLock */
+    SELECT RELEASE_LOCK(#{lockKey})
     </select>
 
 </mapper>

@@ -1,9 +1,11 @@
 package com.prafta.common.config;
 
 import java.lang.reflect.Method;
+import java.nio.file.Paths;
 import java.util.Set;
 import java.util.stream.Collectors;
 
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.autoconfigure.web.servlet.WebMvcRegistrations;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.web.servlet.config.annotation.CorsRegistry;
@@ -16,6 +18,10 @@ import org.springframework.web.bind.annotation.RequestMethod;
 
 @Configuration
 public class ApiPrefixConfig implements WebMvcRegistrations, WebMvcConfigurer {
+
+    /** 업로드 파일 루트 디렉토리(환경변수 FILE_UPLOAD_BASE_DIR, 기본 ${user.dir}/uploads). */
+    @Value("${file.upload.base-dir}")
+    private String uploadBaseDir;
 
     /** ✅ CORS 전역 허용 설정 */
     @Override
@@ -31,11 +37,16 @@ public class ApiPrefixConfig implements WebMvcRegistrations, WebMvcConfigurer {
     /** ✅ 업로드 파일 정적 리소스 매핑 */
     @Override
     public void addResourceHandlers(ResourceHandlerRegistry registry) {
-        // URL:  http://localhost:8080/uploads/001/20251120/00001/001/001-20251120-00008.jpg
-        // 실제: C:/PRAFTA/PRAFTA/prafta-backend/uploads/001/20251120/00001/001/001-20251120-00008.jpg
+        // URL:  {host}/uploads/001/20251120/00001/001/001-20251120-00008.jpg
+        // 실제: {file.upload.base-dir}/001/20251120/00001/001/001-20251120-00008.jpg
+        // 디스크 경로는 환경변수 FILE_UPLOAD_BASE_DIR(미지정 시 ${user.dir}/uploads)로 결정한다.
+        // OS 무관하게 file: URI 로 변환하고, 디렉토리 location 이므로 마지막에 '/' 를 보장한다.
+        String location = Paths.get(uploadBaseDir).toAbsolutePath().normalize().toUri().toString();
+        if (!location.endsWith("/")) {
+            location += "/";
+        }
         registry.addResourceHandler("/uploads/**")
-                .addResourceLocations("file:///C:/PRAFTA/PRAFTA/prafta-backend/uploads/");
-                // or .addResourceLocations("file:C:/PRAFTA/PRAFTA/prafta-backend/uploads/");
+                .addResourceLocations(location);
     }
 
     /** ✅ Prefix 자동 등록 핸들러 매핑 */

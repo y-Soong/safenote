@@ -1,0 +1,65 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+
+<!--
+  연차 결재 PUSH(차례 도래 / 무결재 사용 통보) 전용 Mapper (PRAFTA-COM-004).
+  web 신청·승인 + app 신청 공용. outbox INSERT / NOTI_ID 채번은 LeaveDashboardMapper 재사용(여기 미보유).
+-->
+<mapper namespace="com.prafta.common.cmm.leave.mapper.LeaveApprovalNotiMapper">
+
+    <!--
+      시나리오 B 수신자: 신청자 소속 노드의 main/sub 관리자 USER_CD 목록.
+      LeaveRefusalMapper.selectSiteRefusalAdmins 의 (2)번 노드 서브쿼리만 분리(역할 master/hr UNION 제외).
+      대상 = 신청자 NODE_CD(tb_user) 매칭 tb_site_node 의 MAIN_ADMIN_CD ∪ SUB_ADMIN_CD (회사/사업장 스코프),
+      활성 계정(USE_YN='Y', ACCOUNT_STATUS='01')만, USER_CD DISTINCT. 빈 칸은 NULLIF(TRIM())로 제외.
+      CMPNY_CD + SITE_CD + 신청자 USER_CD(→NODE_CD 조인) 스코프 격리(IDOR — 타 사업장/회사 관리자 누수 차단).
+    -->
+    <select id="selectNodeAdmins" resultType="java.lang.String">
+    /* LeaveApprovalNotiMapper.selectNodeAdmins */
+    SELECT A.USER_CD
+      FROM TB_USER A
+     WHERE A.CMPNY_CD = #{cmpnyCd}
+       AND A.USE_YN   = 'Y'
+       AND A.ACCOUNT_STATUS = '01'
+       AND A.USER_CD IN (
+             SELECT N.MAIN_ADMIN_CD
+               FROM TB_SITE_NODE N
+                    INNER JOIN TB_USER W
+                       ON  W.CMPNY_CD = N.CMPNY_CD
+                       AND W.NODE_CD  = N.NODE_CD
+                       AND W.SITE_CD  = N.SITE_CD
+              WHERE N.CMPNY_CD = #{cmpnyCd}
+                AND N.SITE_CD  = #{siteCd}
+                AND W.USER_CD  = #{userCd}
+                AND NULLIF(TRIM(N.MAIN_ADMIN_CD), '') IS NOT NULL
+             UNION
+             SELECT N.SUB_ADMIN_CD
+               FROM TB_SITE_NODE N
+                    INNER JOIN TB_USER W
+                       ON  W.CMPNY_CD = N.CMPNY_CD
+                       AND W.NODE_CD  = N.NODE_CD
+                       AND W.SITE_CD  = N.SITE_CD
+              WHERE N.CMPNY_CD = #{cmpnyCd}
+                AND N.SITE_CD  = #{siteCd}
+                AND W.USER_CD  = #{userCd}
+                AND NULLIF(TRIM(N.SUB_ADMIN_CD), '') IS NOT NULL
+           )
+    </select>
+
+    <!--
+      본문 합성용 신청자 실명(평문 USER_NM). 활성 계정만, CMPNY_CD 스코프. 없으면 결과 없음(null).
+      USER_NM 은 평문 컬럼(AES-GCM 대상 아님) — 복호화 불필요.
+    -->
+    <select id="selectUserNm" resultType="java.lang.String">
+    /* LeaveApprovalNotiMapper.selectUserNm */
+    SELECT U.USER_NM
+      FROM TB_USER U
+     WHERE U.CMPNY_CD       = #{cmpnyCd}
+       AND U.USER_CD        = #{userCd}
+       AND U.USE_YN         = 'Y'
+       AND U.ACCOUNT_STATUS = '01'
+     LIMIT 1
+    </select>
+
+</mapper>

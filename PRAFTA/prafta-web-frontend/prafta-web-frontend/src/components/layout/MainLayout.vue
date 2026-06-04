@@ -180,7 +180,8 @@ function findMenuByRoute(targetRoute, sideMenuMap) {
 
 function findInList(list, targetRoute) {
   for (const item of list) {
-    if (item.route && `/safenote/main/${item.route}` === targetRoute) return item;
+    if (item.route && `/safenote/main/${item.route}` === targetRoute)
+      return item;
     if (Array.isArray(item.children)) {
       const sub = findInList(item.children, targetRoute);
       if (sub) return sub;

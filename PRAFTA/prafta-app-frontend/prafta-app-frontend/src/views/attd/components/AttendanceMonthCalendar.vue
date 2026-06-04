@@ -12,11 +12,31 @@
     <div class="mn">
       <div class="mn__nav">
         <button type="button" class="mn__btn" aria-label="이전 달" @click="$emit('prev-month')">
-          <svg class="icon" width="18" height="18" aria-hidden="true"><use href="#i-mo-left" /></svg>
+          <svg class="icon" width="18" height="18" aria-hidden="true">
+            <use href="#i-mo-left" />
+          </svg>
         </button>
-        <span class="mn__label">{{ monthLabel }}</span>
+        <button type="button" class="mn__label" aria-label="연월 선택" @click="openMonthPicker">
+          <span>{{ monthLabel }}</span>
+          <svg
+            class="mn__label-ic"
+            width="14"
+            height="14"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="2.2"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+            aria-hidden="true"
+          >
+            <polyline points="6 9 12 15 18 9" />
+          </svg>
+        </button>
         <button type="button" class="mn__btn" aria-label="다음 달" @click="$emit('next-month')">
-          <svg class="icon" width="18" height="18" aria-hidden="true"><use href="#i-mo-right" /></svg>
+          <svg class="icon" width="18" height="18" aria-hidden="true">
+            <use href="#i-mo-right" />
+          </svg>
         </button>
       </div>
     </div>
@@ -60,19 +80,47 @@
       </button>
     </div>
 
+    <!-- 연월 선택 시트 -->
+    <MonthPickerSheet
+      v-model="showMonthPicker"
+      :year-month="currentYearMonth"
+      @confirm="onConfirmMonth"
+    />
+
     <!-- sprite -->
     <svg width="0" height="0" class="mo-sprite" aria-hidden="true" focusable="false">
       <defs>
-        <symbol id="i-mo-left" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6" /></symbol>
-        <symbol id="i-mo-right" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6" /></symbol>
+        <symbol
+          id="i-mo-left"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="2"
+          stroke-linecap="round"
+          stroke-linejoin="round"
+        >
+          <polyline points="15 18 9 12 15 6" />
+        </symbol>
+        <symbol
+          id="i-mo-right"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="2"
+          stroke-linecap="round"
+          stroke-linejoin="round"
+        >
+          <polyline points="9 18 15 12 9 6" />
+        </symbol>
       </defs>
     </svg>
   </div>
 </template>
 
 <script setup>
-import { computed } from 'vue'
+import { computed, ref } from 'vue'
 import { formatYearMonth, minutesToHhMm, dateToYmd, dayNumber as fmtDayNumber } from '../attdFormat'
+import MonthPickerSheet from '@/components/common/MonthPickerSheet.vue'
 
 const props = defineProps({
   // GET /api/app/attd/my/month 응답. null=로딩/미주입
@@ -87,12 +135,22 @@ const props = defineProps({
   },
 })
 
-const emit = defineEmits(['prev-month', 'next-month', 'select-date'])
+const emit = defineEmits(['prev-month', 'next-month', 'select-date', 'select-month'])
 
 const monthSummary = computed(() => (props.month && props.month.monthlySummary) || {})
 
 // 월 라벨 — "2026년 5월"
 const monthLabel = computed(() => formatYearMonth(props.month && props.month.yearMonth))
+
+// 연월 선택 시트 ('YYYYMM')
+const currentYearMonth = computed(() => String((props.month && props.month.yearMonth) || ''))
+const showMonthPicker = ref(false)
+const openMonthPicker = () => {
+  showMonthPicker.value = true
+}
+const onConfirmMonth = (yyyymm) => {
+  if (yyyymm && yyyymm !== currentYearMonth.value) emit('select-month', yyyymm)
+}
 
 // 합계 — "163h 30m"
 const plannedText = computed(() => minutesToHhMm(monthSummary.value.plannedWorkMinutes))
@@ -203,7 +261,8 @@ const cellClass = (cell) => {
 
 const isSelected = (cell) => !cell.isOutside && cell.ymd === props.selectedYmd
 const hasMarker = (cell) =>
-  !cell.isOutside && (cell.dayType === 'WORK' || cell.dayType === 'LEAVE' || cell.dayType === 'ACTION_REQUIRED')
+  !cell.isOutside &&
+  (cell.dayType === 'WORK' || cell.dayType === 'LEAVE' || cell.dayType === 'ACTION_REQUIRED')
 
 const onSelectCell = (cell) => {
   if (cell.isOutside) return
@@ -244,6 +303,26 @@ const onSelectCell = (cell) => {
   cursor: pointer;
   color: var(--color-text-secondary);
   font-family: inherit;
+}
+.mn__label {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  background: transparent;
+  border: 0;
+  cursor: pointer;
+  font-family: inherit;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--color-text-primary);
+  padding: 4px 6px;
+  border-radius: var(--radius-sm);
+}
+.mn__label:active {
+  background: var(--color-bg);
+}
+.mn__label-ic {
+  color: var(--color-text-tertiary);
 }
 .mn__sum {
   font-size: 11px;

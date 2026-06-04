@@ -114,3 +114,79 @@ export function minutesToKorean(min) {
   if (h > 0) return `${h}시간`
   return `${m}분`
 }
+
+// ====================================================================
+// prafta-app-018-E: 부분연차(시간차/반차) 마커 표시 헬퍼 (표시 전용, 순수함수)
+//   단위 라벨은 BE 가 아니라 FE 에서 매핑한다(앱 관례 + 한글 인코딩 함정 회피).
+//   02·03·04(2시간/1시간/30분)는 모두 "시간차" 그룹라벨로 묶고, 정밀 단위는 시각 range 로 대체한다.
+// ====================================================================
+
+/** SYS025 사용단위 코드 → 표시 라벨(그룹). 02~04 는 모두 "시간차". */
+const LEAVE_UNIT_LABELS = {
+  '00': '종일',
+  '01': '반차',
+  '02': '시간차',
+  '03': '시간차',
+  '04': '시간차',
+}
+
+/** SYS025 코드 → 단위 라벨. 미상이면 ''. */
+export function leaveUnitLabel(useUnitType) {
+  return LEAVE_UNIT_LABELS[useUnitType] || ''
+}
+
+/** 시간 단위(시간차) 코드 여부 — 02/03/04. */
+export function isLeaveTimeUnit(useUnitType) {
+  return ['02', '03', '04'].includes(useUnitType)
+}
+
+/** BE 가 준 "HHMM~HHMM" → "HH:MM~HH:MM". 입력 null/형식불충분이면 null. */
+export function formatLeaveTimeRange(rangeStr) {
+  if (!rangeStr || typeof rangeStr !== 'string') return null
+  const parts = rangeStr.split('~')
+  if (parts.length !== 2) return null
+  const s = formatHHMM(parts[0].trim())
+  const e = formatHHMM(parts[1].trim())
+  if (!s || !e) return null
+  return `${s}~${e}`
+}
+
+/**
+ * 차감일수 → 소수 2자리 반올림 + trailing zero 정리 문자열.
+ *   예 0.1875→"0.19", 0.5→"0.5", 1→"1". 비유효 입력이면 null.
+ *   ⚠️ 앱 E 의 표시 자릿수 단일 출처. 웹 D(무반올림 trim)와 혼용 금지.
+ */
+export function formatLeaveDays(days) {
+  if (days === null || days === undefined || days === '') return null
+  const n = parseFloat(days)
+  if (!Number.isFinite(n)) return null
+  return String(Number(n.toFixed(2)))
+}
+
+/**
+ * 연차 사용 마커 1줄 문자열 생성(부분/종일 공통). 단위코드로 토큰 구성 분기.
+ *   00 종일  → "월차 · 종일"
+ *   01 반차  → "월차 · 반차 · 0.5일"
+ *   02~04 시간차 → "월차 · 시간차 · 03:00~04:30 · 0.19일"
+ *   (코드 null/미상) → "월차"
+ *   시간차인데 시각 결측이면 시각 토큰만 생략(나머지 유지).
+ */
+export function formatLeaveMarker(detail) {
+  const d = detail || {}
+  const typeName = d.leaveTypeName || ''
+  const code = d.leaveUnitType
+  const tokens = [typeName, leaveUnitLabel(code)]
+
+  if (isLeaveTimeUnit(code)) {
+    const range = formatLeaveTimeRange(d.leaveTimeRange)
+    if (range) tokens.push(range)
+  }
+
+  // 종일(00)은 차감일수 토큰 생략(현행 유지). 반차/시간차만 일수 표기.
+  if (code !== '00') {
+    const days = formatLeaveDays(d.leaveDays)
+    if (days) tokens.push(`${days}일`)
+  }
+
+  return tokens.filter(Boolean).join(' · ')
+}

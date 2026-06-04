@@ -1,7 +1,7 @@
 <template>
   <Teleport to="body">
     <Transition name="fade">
-      <div class="modal-overlay" tabindex="0">
+      <div v-if="visible" class="modal-overlay" tabindex="0">
         <div class="modal-content">
           <div class="modal-body">
             <p style="white-space: pre-line">{{ message }}</p>
@@ -21,6 +21,10 @@ import { defineProps } from 'vue'
 
 defineProps({
   message: String,
+  visible: {
+    type: Boolean,
+    default: true,
+  },
 })
 </script>
 
@@ -52,6 +56,16 @@ defineProps({
   display: flex;
   justify-content: center;
   gap: 1rem;
+}
+
+/* 확인 버튼은 로그인 화면 로그인 버튼과 동일한 초록색으로 통일 */
+.modal-footer .btn-primary {
+  background: #16a34a;
+  color: #fff;
+  border: none;
+}
+.modal-footer .btn-primary:hover {
+  background: #15803d;
 }
 
 /* .btn.btn-primary {

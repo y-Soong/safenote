@@ -31,30 +31,96 @@
           @click="onAction(act)"
         >
           <span class="sa__icon">
-            <svg class="icon" width="18" height="18" aria-hidden="true"><use :href="act.iconId" /></svg>
+            <svg class="icon" width="18" height="18" aria-hidden="true">
+              <use :href="act.iconId" />
+            </svg>
           </span>
           <span class="sa__body">
             <span class="sa__title">{{ act.label }}</span>
           </span>
-          <svg
-            v-if="act.enabled"
-            class="icon sa__chev"
-            width="16"
-            height="16"
-            aria-hidden="true"
-          >
+          <svg v-if="act.enabled" class="icon sa__chev" width="16" height="16" aria-hidden="true">
             <use href="#i-as-chev" />
           </svg>
         </button>
 
         <svg width="0" height="0" class="as-sprite" aria-hidden="true" focusable="false">
           <defs>
-            <symbol id="i-as-x" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="6" y1="6" x2="18" y2="18" /><line x1="18" y1="6" x2="6" y2="18" /></symbol>
-            <symbol id="i-as-chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6" /></symbol>
-            <symbol id="i-as-cal" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="5" width="16" height="16" rx="2" /><line x1="16" y1="3" x2="16" y2="7" /><line x1="8" y1="3" x2="8" y2="7" /><line x1="4" y1="11" x2="20" y2="11" /></symbol>
-            <symbol id="i-as-edit" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20h4l10.5-10.5a2.1 2.1 0 0 0-3-3L5 17v3z" /><line x1="13.5" y1="6.5" x2="17.5" y2="10.5" /></symbol>
-            <symbol id="i-as-clock" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="13" r="8" /><polyline points="12 9 12 13 15 13" /><line x1="18" y1="4" x2="22" y2="4" /><line x1="20" y1="2" x2="20" y2="6" /></symbol>
-            <symbol id="i-as-umbrella" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 0 1 18 0z" /><line x1="12" y1="4" x2="12" y2="3" /><path d="M12 12v6a2 2 0 0 0 4 0" /></symbol>
+            <symbol
+              id="i-as-x"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+            >
+              <line x1="6" y1="6" x2="18" y2="18" />
+              <line x1="18" y1="6" x2="6" y2="18" />
+            </symbol>
+            <symbol
+              id="i-as-chev"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+            >
+              <polyline points="9 18 15 12 9 6" />
+            </symbol>
+            <symbol
+              id="i-as-cal"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+            >
+              <rect x="4" y="5" width="16" height="16" rx="2" />
+              <line x1="16" y1="3" x2="16" y2="7" />
+              <line x1="8" y1="3" x2="8" y2="7" />
+              <line x1="4" y1="11" x2="20" y2="11" />
+            </symbol>
+            <symbol
+              id="i-as-edit"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+            >
+              <path d="M4 20h4l10.5-10.5a2.1 2.1 0 0 0-3-3L5 17v3z" />
+              <line x1="13.5" y1="6.5" x2="17.5" y2="10.5" />
+            </symbol>
+            <symbol
+              id="i-as-clock"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+            >
+              <circle cx="12" cy="13" r="8" />
+              <polyline points="12 9 12 13 15 13" />
+              <line x1="18" y1="4" x2="22" y2="4" />
+              <line x1="20" y1="2" x2="20" y2="6" />
+            </symbol>
+            <symbol
+              id="i-as-umbrella"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+            >
+              <path d="M3 12a9 9 0 0 1 18 0z" />
+              <line x1="12" y1="4" x2="12" y2="3" />
+              <path d="M12 12v6a2 2 0 0 0 4 0" />
+            </symbol>
           </defs>
         </svg>
       </div>
@@ -104,9 +170,24 @@ const metaText = computed(() => {
 const actionList = computed(() => {
   const a = (props.day && props.day.actions) || {}
   return [
-    { type: 'scheduleModify', label: '스케줄 수정 요청', iconId: '#i-as-cal', enabled: !!a.canRequestScheduleModify },
-    { type: 'attendanceCorrection', label: '근태 보정 요청', iconId: '#i-as-edit', enabled: !!a.canRequestAttendanceCorrection },
-    { type: 'overtime', label: '초과근무 신청', iconId: '#i-as-clock', enabled: !!a.canRequestOvertime },
+    {
+      type: 'scheduleModify',
+      label: '스케줄 수정 요청',
+      iconId: '#i-as-cal',
+      enabled: !!a.canRequestScheduleModify,
+    },
+    {
+      type: 'attendanceCorrection',
+      label: '근태 보정 요청',
+      iconId: '#i-as-edit',
+      enabled: !!a.canRequestAttendanceCorrection,
+    },
+    {
+      type: 'overtime',
+      label: '초과근무 신청',
+      iconId: '#i-as-clock',
+      enabled: !!a.canRequestOvertime,
+    },
     { type: 'leave', label: '연차 신청', iconId: '#i-as-umbrella', enabled: !!a.canRequestLeave },
   ]
 })

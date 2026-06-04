@@ -50,7 +50,15 @@
     <!-- 인라인 SVG sprite (본 컴포넌트 전용) -->
     <svg width="0" height="0" class="req-card__sprite" aria-hidden="true" focusable="false">
       <defs>
-        <symbol id="i-req-chev-right" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <symbol
+          id="i-req-chev-right"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="2"
+          stroke-linecap="round"
+          stroke-linejoin="round"
+        >
           <polyline points="9 18 15 12 9 6" />
         </symbol>
       </defs>

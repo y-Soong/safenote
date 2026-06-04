@@ -19,11 +19,7 @@
         </svg>
       </button>
       <h1 class="nmd-hd__title">사건 상세</h1>
-      <span
-        v-if="incident"
-        class="nmd-badge"
-        :class="severityClass(incident.potentialSeverityCd)"
-      >
+      <span v-if="incident" class="nmd-badge" :class="severityClass(incident.potentialSeverityCd)">
         {{ incident.potentialSeverityNm || '미분류' }}
       </span>
       <span v-else class="nmd-hd__spacer" aria-hidden="true"></span>
@@ -98,9 +94,7 @@
 
     <!-- 푸터: 반려 / 접수→검토중 전환 -->
     <footer v-if="incident && canFirstReview" class="nmd-footer">
-      <button type="button" class="nmd-btn nmd-btn--secondary" @click="onReject">
-        반려
-      </button>
+      <button type="button" class="nmd-btn nmd-btn--secondary" @click="onReject">반려</button>
       <button
         type="button"
         class="nmd-btn nmd-btn--primary"
@@ -144,10 +138,6 @@ const showAlert = (message) => {
   if (proxy?.$alert) return proxy.$alert(message)
   window.alert(message)
   return Promise.resolve()
-}
-const askConfirm = async (message) => {
-  if (proxy?.$confirm) return await proxy.$confirm(message)
-  return window.confirm(message)
 }
 
 // 진입 query (목록 카드 → nearMissId)

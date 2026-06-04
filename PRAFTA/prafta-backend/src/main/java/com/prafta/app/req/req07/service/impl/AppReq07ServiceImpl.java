@@ -15,10 +15,16 @@ import com.prafta.app.req.req07.application.param.OvertimeParam;
 import com.prafta.app.req.req07.application.param.SchedModifyParam;
 import com.prafta.app.req.req07.dto.request.SlotRequest;
 import com.prafta.app.req.req07.dto.response.RegisterReqResponse;
+import com.prafta.app.req.req07.dto.response.SchedOptionResponse;
+import com.prafta.app.req.req07.dto.response.result.ActualAttdWindowResult;
+import com.prafta.app.req.req07.dto.response.result.ScheduleWindowResult;
+import com.prafta.app.req.req07.dto.response.result.SchedOptionResult;
 import com.prafta.app.req.req07.mapper.AppReq07Mapper;
 import com.prafta.app.req.req07.service.AppReq07Service;
+import com.prafta.app.req.req09.service.AttdApprovalLineService;
 import com.prafta.common.error.attd.AttdErrorCode;
 import com.prafta.common.exception.ApiException;
+import com.prafta.web.attd.attd07.service.AttdCloseService;
 import com.prafta.web.attd.attd07.util.AttdReqTypeUtils;
 
 import lombok.RequiredArgsConstructor;
@@ -50,12 +56,16 @@ import lombok.extern.slf4j.Slf4j;
 public class AppReq07ServiceImpl implements AppReq07Service {
 
     private final AppReq07Mapper mapper;
+    /** prafta-app-009: 결재 분기/라인 INSERT 공용 서비스(같은 @Transactional 참여). */
+    private final AttdApprovalLineService attdApprovalLineService;
+    /** prafta-app-009 F12: 근태/스케줄 마감 가드(web 빈 재사용 — 로직 미복제). */
+    private final AttdCloseService attdCloseService;
 
-    /** REQ_STATUS = '01' 신청 (등록 직후 고정 — P3, Q3 결재선 미포함). */
+    /** REQ_STATUS = '01' 신청 (등록 직후 고정 — P3). */
     private static final String REQ_STATUS_REQUESTED = AttdReqTypeUtils.REQ_STATUS_REQUESTED;
 
-    /** OT_TYPE allow-list (P12). */
-    private static final Set<String> ALLOWED_OT_TYPES = Set.of("EXTEND", "NIGHT", "HOLIDAY");
+    /** prafta-app-009 F15: advisory lock 타임아웃(초). 짧게 — 동시 중복 제출 직렬화용. */
+    private static final int DUP_LOCK_TIMEOUT_SEC = 3;
 
     // ============================================================
     // 1) 스케줄 수정 (POST /appApi/req07/sched-modify)
@@ -76,43 +86,57 @@ public class AppReq07ServiceImpl implements AppReq07Service {
             }
         }
 
-        // ----- 중복 요청 차단 (P10) -----
-        int dup = mapper.countDuplicateReq(
-                param.cmpnyCd(), param.siteCd(), param.userCd(),
+        // ----- prafta-app-009 가드(INSERT 시작 전 fail-closed) -----
+        //   F12 마감: 해당 월이 사용자 부서 마감 커버리지에 포함되면 거부(ATTD_400_099).
+        assertNotClosed(param.cmpnyCd(), param.siteCd(), param.userCd(), param.workYmd());
+        //   F13 스케줄 존재: 배정된 근무일(근무계획 행)이 아니면 거부(ATTD_400_098).
+        assertWorkPlanExists(param.cmpnyCd(), param.siteCd(), param.userCd(), param.workYmd());
+
+        // ----- prafta-app-009 F15: 중복 차단 SELECT→INSERT race window 직렬화(advisory lock) -----
+        String lockKey = dupLockKey(param.cmpnyCd(), param.siteCd(), param.userCd(),
                 param.workYmd(), AttdReqTypeUtils.REQ_TYPE_SCHED_MODIFY);
-        if (dup > 0) {
-            throw new ApiException(AttdErrorCode.ATTD_400_090);
-        }
-
-        // ----- REQ_ID 채번 -----
-        String reqId = mapper.selectNextReqId(param.cmpnyCd());
-
-        // ----- INSERT × slots.length -----
+        String reqId = null; // 응답/로그용 대표값(첫 슬롯의 REQ_ID)
         List<Integer> workSeqs = new ArrayList<>(param.slots().size());
-        for (SlotRequest s : param.slots()) {
-            AttdReqInsertCommand cmd = new AttdReqInsertCommand(
-                    reqId,
+        acquireDupLock(lockKey);
+        try {
+            // ----- 중복 요청 차단 (P10) -----
+            int dup = mapper.countDuplicateReq(
                     param.cmpnyCd(), param.siteCd(), param.userCd(),
-                    AttdReqTypeUtils.REQ_TYPE_SCHED_MODIFY,
-                    null,                            // TARGET_ID (스케줄 수정은 null)
-                    REQ_STATUS_REQUESTED,
-                    param.reqReason(),
-                    param.workYmd(), param.nodeCd(),
-                    s.getWorkSeq(),
-                    null, null, null, null,          // START/END_DATE/TIME (스케줄 수정은 null)
-                    null,                            // OT_TYPE
-                    s.getSchCd(),                    // SCH_CD (REQ_TYPE='10' 전용)
-                    param.userCd()                   // INSERT_NO
-            );
-            mapper.insertAttdReq(cmd);
-            workSeqs.add(s.getWorkSeq());
+                    param.workYmd(), AttdReqTypeUtils.REQ_TYPE_SCHED_MODIFY);
+            if (dup > 0) {
+                throw new ApiException(AttdErrorCode.ATTD_400_090);
+            }
+
+            // ----- INSERT × slots.length (REQ_ID 는 PK 단일 컬럼이므로 slot 마다 새로 채번) -----
+            for (SlotRequest s : param.slots()) {
+                String slotReqId = mapper.selectNextReqId(param.cmpnyCd());
+                if (reqId == null) reqId = slotReqId;
+                AttdReqInsertCommand cmd = new AttdReqInsertCommand(
+                        slotReqId,
+                        param.cmpnyCd(), param.siteCd(), param.userCd(),
+                        AttdReqTypeUtils.REQ_TYPE_SCHED_MODIFY,
+                        null,                            // TARGET_ID (스케줄 수정은 null)
+                        REQ_STATUS_REQUESTED,
+                        param.reqReason(),
+                        param.workYmd(), param.nodeCd(),
+                        s.getWorkSeq(),
+                        null, null, null, null,          // START/END_DATE/TIME (스케줄 수정은 null)
+                        s.getSchCd(),                    // SCH_CD (REQ_TYPE='10' 전용)
+                        param.userCd()                   // INSERT_NO
+                );
+                mapper.insertAttdReq(cmd);
+                // prafta-app-009: 슬롯(REQ_ID)마다 결재 분기/라인 처리(같은 @Transactional).
+                attdApprovalLineService.applyApprovalFlow(
+                        param.cmpnyCd(), param.siteCd(), param.userCd(), slotReqId,
+                        param.approverUserCds(), param.presetId(), param.userCd());
+                workSeqs.add(s.getWorkSeq());
+            }
+        } finally {
+            releaseDupLock(lockKey);
         }
 
         log.info("[prafta-app-007] 스케줄 수정 요청 등록 — reqId={}, userCd={}, workYmd={}, slots={}",
                 reqId, param.userCd(), param.workYmd(), workSeqs.size());
-
-        // TODO(prafta-app-009): tb_user_attd_req_approval INSERT (결재선 통합)
-        // TODO(prafta-031): tb_noti_outbox INSERT (관리자 push 알림)
 
         return new RegisterReqResponse(
                 reqId,
@@ -136,84 +160,96 @@ public class AppReq07ServiceImpl implements AppReq07Service {
         }
         validateSlotsTimes(param.slots());
 
-        // ----- 자동 분기 (Q2) — slot 별 사전 조회 -----
-        // 트랜잭션 시작 직후 일괄 조회. INSERT 중간에 다른 트랜잭션이 ATTD 행을 만들 가능성은
-        // 본 1차 모델에서 무시 (다음 처리 단계에서 관리자 승인 시 재검증).
-        List<String> targetIds = new ArrayList<>(param.slots().size());
-        List<String> reqTypes = new ArrayList<>(param.slots().size());
-        boolean hasCreate = false;
-        boolean hasModify = false;
-        for (SlotRequest s : param.slots()) {
-            String existingAttdId = mapper.selectExistingAttdId(
-                    param.cmpnyCd(), param.siteCd(), param.userCd(),
-                    param.workYmd(), s.getWorkSeq());
-            if (existingAttdId != null) {
-                targetIds.add(existingAttdId);
-                reqTypes.add(AttdReqTypeUtils.REQ_TYPE_ATTD_MODIFY);
-                hasModify = true;
-            } else {
-                targetIds.add(null);
-                reqTypes.add(AttdReqTypeUtils.REQ_TYPE_ATTD_CREATE);
-                hasCreate = true;
-            }
-        }
+        // ----- prafta-app-009 가드(INSERT 시작 전 fail-closed) -----
+        //   F12 마감 / F13 본인 근무계획 존재. (근태 보정도 배정된 근무일 대상으로 한정.)
+        assertNotClosed(param.cmpnyCd(), param.siteCd(), param.userCd(), param.workYmd());
+        assertWorkPlanExists(param.cmpnyCd(), param.siteCd(), param.userCd(), param.workYmd());
 
-        // ----- 중복 요청 차단 (P10) — 각 사용한 REQ_TYPE 에 대해 검사 -----
-        // 같은 일자 동일 REQ_TYPE 의 미처리 행 존재 시 차단. 한 요청에서 01/02 가 섞이면 둘 다 검사.
-        if (hasCreate) {
-            int dup = mapper.countDuplicateReq(
-                    param.cmpnyCd(), param.siteCd(), param.userCd(),
-                    param.workYmd(), AttdReqTypeUtils.REQ_TYPE_ATTD_CREATE);
-            if (dup > 0) throw new ApiException(AttdErrorCode.ATTD_400_090);
-        }
-        if (hasModify) {
-            int dup = mapper.countDuplicateReq(
-                    param.cmpnyCd(), param.siteCd(), param.userCd(),
-                    param.workYmd(), AttdReqTypeUtils.REQ_TYPE_ATTD_MODIFY);
-            if (dup > 0) throw new ApiException(AttdErrorCode.ATTD_400_090);
-        }
-
-        // ----- REQ_ID 채번 -----
-        String reqId = mapper.selectNextReqId(param.cmpnyCd());
-
-        // ----- INSERT × slots.length -----
+        // ----- prafta-app-009 F15: 보정 제출 직렬화(advisory lock — 01/02 혼합 포함 그날 단위) -----
+        String lockKey = dupLockKey(param.cmpnyCd(), param.siteCd(), param.userCd(),
+                param.workYmd(), "ATTD_CORR");
+        String reqId = null; // 응답/로그용 대표값(첫 슬롯의 REQ_ID)
         List<Integer> workSeqs = new ArrayList<>(param.slots().size());
-        for (int i = 0; i < param.slots().size(); i++) {
-            SlotRequest s = param.slots().get(i);
-            AttdReqInsertCommand cmd = new AttdReqInsertCommand(
-                    reqId,
-                    param.cmpnyCd(), param.siteCd(), param.userCd(),
-                    reqTypes.get(i),
-                    targetIds.get(i),
-                    REQ_STATUS_REQUESTED,
-                    param.reqReason(),
-                    param.workYmd(), param.nodeCd(),
-                    s.getWorkSeq(),
-                    s.getStartDate(), s.getStartTime(),
-                    s.getEndDate(), s.getEndTime(),
-                    null,                            // OT_TYPE (보정 미사용)
-                    null,                            // SCH_CD (보정 미사용)
-                    param.userCd()
-            );
-            mapper.insertAttdReq(cmd);
-            workSeqs.add(s.getWorkSeq());
-        }
-
-        // 응답 reqType: 단일 슬롯이면 해당 REQ_TYPE, 1구간 행 존재 + 2구간 부재 등 다른 케이스 → 'MIXED'
         String responseReqType;
-        if (hasCreate && hasModify) {
-            responseReqType = "MIXED";
-        } else if (hasModify) {
-            responseReqType = AttdReqTypeUtils.REQ_TYPE_ATTD_MODIFY;
-        } else {
-            responseReqType = AttdReqTypeUtils.REQ_TYPE_ATTD_CREATE;
+        acquireDupLock(lockKey);
+        try {
+            // ----- 자동 분기 (Q2) — slot 별 사전 조회 -----
+            List<String> targetIds = new ArrayList<>(param.slots().size());
+            List<String> reqTypes = new ArrayList<>(param.slots().size());
+            boolean hasCreate = false;
+            boolean hasModify = false;
+            for (SlotRequest s : param.slots()) {
+                String existingAttdId = mapper.selectExistingAttdId(
+                        param.cmpnyCd(), param.siteCd(), param.userCd(),
+                        param.workYmd(), s.getWorkSeq());
+                if (existingAttdId != null) {
+                    targetIds.add(existingAttdId);
+                    reqTypes.add(AttdReqTypeUtils.REQ_TYPE_ATTD_MODIFY);
+                    hasModify = true;
+                } else {
+                    targetIds.add(null);
+                    reqTypes.add(AttdReqTypeUtils.REQ_TYPE_ATTD_CREATE);
+                    hasCreate = true;
+                }
+            }
+
+            // ----- 중복 요청 차단 (P10) — 각 사용한 REQ_TYPE 에 대해 검사 -----
+            // 같은 일자 동일 REQ_TYPE 의 미처리 행 존재 시 차단. 한 요청에서 01/02 가 섞이면 둘 다 검사.
+            if (hasCreate) {
+                int dup = mapper.countDuplicateReq(
+                        param.cmpnyCd(), param.siteCd(), param.userCd(),
+                        param.workYmd(), AttdReqTypeUtils.REQ_TYPE_ATTD_CREATE);
+                if (dup > 0) throw new ApiException(AttdErrorCode.ATTD_400_090);
+            }
+            if (hasModify) {
+                int dup = mapper.countDuplicateReq(
+                        param.cmpnyCd(), param.siteCd(), param.userCd(),
+                        param.workYmd(), AttdReqTypeUtils.REQ_TYPE_ATTD_MODIFY);
+                if (dup > 0) throw new ApiException(AttdErrorCode.ATTD_400_090);
+            }
+
+            // ----- INSERT × slots.length (REQ_ID 는 PK 단일 컬럼이므로 slot 마다 새로 채번) -----
+            for (int i = 0; i < param.slots().size(); i++) {
+                SlotRequest s = param.slots().get(i);
+                String slotReqId = mapper.selectNextReqId(param.cmpnyCd());
+                if (reqId == null) reqId = slotReqId;
+                AttdReqInsertCommand cmd = new AttdReqInsertCommand(
+                        slotReqId,
+                        param.cmpnyCd(), param.siteCd(), param.userCd(),
+                        reqTypes.get(i),
+                        targetIds.get(i),
+                        REQ_STATUS_REQUESTED,
+                        param.reqReason(),
+                        param.workYmd(), param.nodeCd(),
+                        s.getWorkSeq(),
+                        s.getStartDate(), s.getStartTime(),
+                        s.getEndDate(), s.getEndTime(),
+                        null,                            // SCH_CD (보정 미사용)
+                        param.userCd()
+                );
+                mapper.insertAttdReq(cmd);
+                // prafta-app-009: 슬롯(REQ_ID)마다 결재 분기/라인 처리(같은 @Transactional).
+                attdApprovalLineService.applyApprovalFlow(
+                        param.cmpnyCd(), param.siteCd(), param.userCd(), slotReqId,
+                        param.approverUserCds(), param.presetId(), param.userCd());
+                workSeqs.add(s.getWorkSeq());
+            }
+
+            // 응답 reqType: 생성/수정 혼합이면 'MIXED'.
+            if (hasCreate && hasModify) {
+                responseReqType = "MIXED";
+            } else if (hasModify) {
+                responseReqType = AttdReqTypeUtils.REQ_TYPE_ATTD_MODIFY;
+            } else {
+                responseReqType = AttdReqTypeUtils.REQ_TYPE_ATTD_CREATE;
+            }
+        } finally {
+            releaseDupLock(lockKey);
         }
 
+        // (응답 reqType 산출은 락 블록 내에서 완료됨)
         log.info("[prafta-app-007] 근태 보정 요청 등록 — reqId={}, userCd={}, workYmd={}, slots={}, reqType={}",
                 reqId, param.userCd(), param.workYmd(), workSeqs.size(), responseReqType);
-
-        // TODO(prafta-app-009): tb_user_attd_req_approval INSERT
-        // TODO(prafta-031): tb_noti_outbox INSERT
 
         return new RegisterReqResponse(reqId, responseReqType, REQ_STATUS_REQUESTED, workSeqs);
     }
@@ -233,58 +269,176 @@ public class AppReq07ServiceImpl implements AppReq07Service {
         }
         validateSlotsTimes(param.slots());
 
-        // OT_TYPE allow-list (P12)
-        for (SlotRequest s : param.slots()) {
-            String otType = s.getOtType();
-            if (otType == null || !ALLOWED_OT_TYPES.contains(otType)) {
-                throw new ApiException(AttdErrorCode.ATTD_400_095);
-            }
-        }
+        // prafta-043: OT_TYPE(초과근무 유형) 전면 파기.
+        //   - tb_user_attd_req.OT_TYPE 컬럼 자체를 제거(마이그 prafta-043-2-contract-drop-ot-type.sql).
+        //   - 초과근무는 유형(연장/야간/휴일) 구분 없이 단일 '초과근무'로만 관리한다.
+        //   - 종전 OT_TYPE allow-list 강제 + ATTD_400_095 발화는 prafta-app-016에서 이미 제거됨.
 
-        // ----- 중복 요청 차단 (P10) -----
-        int dup = mapper.countDuplicateReq(
-                param.cmpnyCd(), param.siteCd(), param.userCd(),
+        // ----- prafta-app-009 F12 마감 가드(INSERT 시작 전 fail-closed) -----
+        //   F13(스케줄 존재)은 OT 에 추가하지 않는다(기존 실근태 범위 가드 ATTD_400_104 로 충족).
+        assertNotClosed(param.cmpnyCd(), param.siteCd(), param.userCd(), param.workYmd());
+
+        // ----- prafta-app-009 F15: OT 제출 직렬화(advisory lock) -----
+        String lockKey = dupLockKey(param.cmpnyCd(), param.siteCd(), param.userCd(),
                 param.workYmd(), AttdReqTypeUtils.REQ_TYPE_OT_REGISTER);
-        if (dup > 0) {
-            throw new ApiException(AttdErrorCode.ATTD_400_090);
-        }
-
-        // ----- REQ_ID 채번 -----
-        String reqId = mapper.selectNextReqId(param.cmpnyCd());
-
-        // ----- INSERT × slots.length -----
+        String reqId = null; // 응답/로그용 대표값(첫 슬롯의 REQ_ID)
         List<Integer> workSeqs = new ArrayList<>(param.slots().size());
-        for (SlotRequest s : param.slots()) {
-            AttdReqInsertCommand cmd = new AttdReqInsertCommand(
-                    reqId,
+        acquireDupLock(lockKey);
+        try {
+            // ----- 중복 요청 차단 (P10) -----
+            int dup = mapper.countDuplicateReq(
                     param.cmpnyCd(), param.siteCd(), param.userCd(),
-                    AttdReqTypeUtils.REQ_TYPE_OT_REGISTER,
-                    null,                            // TARGET_ID (생성 요청)
-                    REQ_STATUS_REQUESTED,
-                    param.reqReason(),
-                    param.workYmd(), param.nodeCd(),
-                    s.getWorkSeq(),
-                    s.getStartDate(), s.getStartTime(),
-                    s.getEndDate(), s.getEndTime(),
-                    s.getOtType(),
-                    null,                            // SCH_CD
-                    param.userCd()
-            );
-            mapper.insertAttdReq(cmd);
-            workSeqs.add(s.getWorkSeq());
+                    param.workYmd(), AttdReqTypeUtils.REQ_TYPE_OT_REGISTER);
+            if (dup > 0) {
+                throw new ApiException(AttdErrorCode.ATTD_400_090);
+            }
+
+            // ===== prafta-app-017 등록 가드 — 모든 거부 게이트를 INSERT 시작 전에 모아 fail-closed =====
+            //   순서: (이슈②) 스케줄수정 미처리(전일 차단) → (이슈②) 슬롯별 근태보정 미처리(구간 차단)
+            //         → (이슈①) 슬롯별 스케줄 겹침(구간 차단). 위반 시 즉시 throw(부분 INSERT 방지).
+
+            // ----- 이슈② 스케줄수정 미처리(전일 차단) — slots 루프 전 1회 -----
+            int pendSched = mapper.countPendingSchedModify(
+                    param.cmpnyCd(), param.siteCd(), param.userCd(), param.workYmd());
+            if (pendSched > 0) {
+                log.info("[prafta-app-017] OT 미처리 스케줄수정 거부 — userCd={}, workYmd={}, pendSched={}",
+                        param.userCd(), param.workYmd(), pendSched);
+                throw new ApiException(AttdErrorCode.ATTD_400_101);
+            }
+
+            // ----- 이슈① 겹침 검증용 근무계획 스케줄 1건 조회(없으면 전 구간 면제) -----
+            ScheduleWindowResult schedule = mapper.selectWorkPlanSchedule(
+                    param.cmpnyCd(), param.siteCd(), param.userCd(), param.workYmd());
+
+            // ----- slot 단위 가드(이슈② 근태보정 미처리 → 이슈① 스케줄 겹침) -----
+            for (SlotRequest s : param.slots()) {
+                // (이슈②) 해당 구간 근태보정 미처리(생성01·수정02) 존재 → 그 구간 거부.
+                int pendCorr = mapper.countPendingAttdCorrectionBySlot(
+                        param.cmpnyCd(), param.siteCd(), param.userCd(),
+                        param.workYmd(), s.getWorkSeq());
+                if (pendCorr > 0) {
+                    log.info("[prafta-app-017] OT 미처리 근태보정 거부 — userCd={}, workYmd={}, workSeq={}, pendCorr={}",
+                            param.userCd(), param.workYmd(), s.getWorkSeq(), pendCorr);
+                    throw new ApiException(AttdErrorCode.ATTD_400_101);
+                }
+                // (prafta-app-019) OT 슬롯이 해당 구간 실제 근태기록 [CHECK_IN~CHECK_OUT] 범위 안에 포함되는지 검증.
+                //   실근태 포함검증(신규 104) → 스케줄 겹침(기존 100) 순서. 둘 다 INSERT 시작 전 fail-closed.
+                assertWithinActualAttdWindow(param.cmpnyCd(), param.siteCd(), param.userCd(),
+                        param.workYmd(), s);
+                // (이슈①) OT 시각이 해당 구간 정규 스케줄과 겹치면 거부.
+                assertNoScheduleOverlap(param.workYmd(), schedule, s, param.userCd());
+            }
+
+            // ----- INSERT × slots.length (REQ_ID 는 PK 단일 컬럼이므로 slot 마다 새로 채번) -----
+            for (SlotRequest s : param.slots()) {
+                String slotReqId = mapper.selectNextReqId(param.cmpnyCd());
+                if (reqId == null) reqId = slotReqId;
+                AttdReqInsertCommand cmd = new AttdReqInsertCommand(
+                        slotReqId,
+                        param.cmpnyCd(), param.siteCd(), param.userCd(),
+                        AttdReqTypeUtils.REQ_TYPE_OT_REGISTER,
+                        null,                            // TARGET_ID (생성 요청)
+                        REQ_STATUS_REQUESTED,
+                        param.reqReason(),
+                        param.workYmd(), param.nodeCd(),
+                        s.getWorkSeq(),
+                        s.getStartDate(), s.getStartTime(),
+                        s.getEndDate(), s.getEndTime(),
+                        null,                            // SCH_CD
+                        param.userCd()
+                );
+                mapper.insertAttdReq(cmd);
+                // prafta-app-009: 슬롯(REQ_ID)마다 결재 분기/라인 처리(같은 @Transactional).
+                attdApprovalLineService.applyApprovalFlow(
+                        param.cmpnyCd(), param.siteCd(), param.userCd(), slotReqId,
+                        param.approverUserCds(), param.presetId(), param.userCd());
+                workSeqs.add(s.getWorkSeq());
+            }
+        } finally {
+            releaseDupLock(lockKey);
         }
 
         log.info("[prafta-app-007] 초과근무 신청 등록 — reqId={}, userCd={}, workYmd={}, slots={}",
                 reqId, param.userCd(), param.workYmd(), workSeqs.size());
-
-        // TODO(prafta-app-009): tb_user_attd_req_approval INSERT
-        // TODO(prafta-031): tb_noti_outbox INSERT
 
         return new RegisterReqResponse(
                 reqId,
                 AttdReqTypeUtils.REQ_TYPE_OT_REGISTER,
                 REQ_STATUS_REQUESTED,
                 workSeqs);
+    }
+
+    // ============================================================
+    // 4) 스케줄 선택 옵션 목록 (GET /appApi/req07/schedules)
+    // ============================================================
+    @Override
+    @Transactional(readOnly = true)
+    public SchedOptionResponse getSchedOptions(String cmpnyCd, String siteCd) {
+        List<SchedOptionResult> schedules = mapper.selectSchedOptions(cmpnyCd, siteCd);
+        if (schedules == null) {
+            schedules = new ArrayList<>();
+        }
+        log.info("[prafta-app-007] 스케줄 옵션 조회 — cmpnyCd={}, siteCd={}, count={}",
+                cmpnyCd, siteCd, schedules.size());
+        return new SchedOptionResponse(schedules);
+    }
+
+    // ============================================================
+    // prafta-app-009 가드/락 헬퍼 (private — 모듈 내부 한정)
+    // ============================================================
+
+    /**
+     * F12 마감 가드: 해당 근무월(YYYYMM)이 사용자 소속 부서 마감 커버리지에 포함되면 거부(ATTD_400_099).
+     * 스케줄 수정은 미래도 마감 대상일 수 있으므로 일자 무관(과거/미래 모두)으로 적용한다.
+     * web {@code AttdCloseService.isClosedForUser} 재사용(부서 단위 PRAFTA-028 정밀판정).
+     */
+    private void assertNotClosed(String cmpnyCd, String siteCd, String userCd, String workYmd) {
+        if (workYmd == null || workYmd.length() < 6) {
+            return; // 형식 이상은 상위 구조검증에서 처리(여기선 no-op).
+        }
+        String closeYm = workYmd.substring(0, 6);
+        if (attdCloseService.isClosedForUser(cmpnyCd, siteCd, userCd, closeYm)) {
+            log.info("[prafta-app-009] 마감 가드 거부 — userCd={}, closeYm={}", userCd, closeYm);
+            throw new ApiException(AttdErrorCode.ATTD_400_099);
+        }
+    }
+
+    /**
+     * F13 스케줄 존재 가드: 본인 근무계획 행이 없는 일자(미배정)면 거부(ATTD_400_098).
+     * 스케줄 수정/근태 보정은 배정된 근무일 대상으로만 요청 가능.
+     */
+    private void assertWorkPlanExists(String cmpnyCd, String siteCd, String userCd, String workYmd) {
+        int cnt = mapper.countUserWorkPlan(cmpnyCd, siteCd, userCd, workYmd);
+        if (cnt <= 0) {
+            log.info("[prafta-app-009] 스케줄 존재 가드 거부 — userCd={}, workYmd={}", userCd, workYmd);
+            throw new ApiException(AttdErrorCode.ATTD_400_098);
+        }
+    }
+
+    /** F15 advisory lock 키: 중복 차단 단위(회사+사업장+사용자+일자+요청유형)로 직렬화. */
+    private String dupLockKey(String cmpnyCd, String siteCd, String userCd, String workYmd, String reqType) {
+        return "ATTD_REQ:" + cmpnyCd + ":" + siteCd + ":" + userCd + ":" + workYmd + ":" + reqType;
+    }
+
+    /**
+     * F15 advisory lock 획득. 타임아웃/오류면 동시 처리로 보고 ATTD_400_090(중복 요청)으로 변환.
+     * (락을 못 잡았다는 것은 동일 키의 다른 제출이 진행 중이라는 뜻 — 사용자에게는 중복 요청 안내.)
+     */
+    private void acquireDupLock(String lockKey) {
+        Integer got = mapper.getAdvisoryLock(lockKey, DUP_LOCK_TIMEOUT_SEC);
+        if (got == null || got != 1) {
+            log.info("[prafta-app-009] 중복차단 advisory lock 미획득 — lockKey={}, got={}", lockKey, got);
+            throw new ApiException(AttdErrorCode.ATTD_400_090);
+        }
+    }
+
+    /** F15 advisory lock 해제(예외 무시 — 세션 종료 시 자동 해제됨). */
+    private void releaseDupLock(String lockKey) {
+        try {
+            mapper.releaseAdvisoryLock(lockKey);
+        } catch (Exception e) {
+            log.warn("[prafta-app-009] 중복차단 advisory lock 해제 실패(무시) — lockKey={}", lockKey, e);
+        }
     }
 
     // ============================================================
@@ -352,6 +506,128 @@ public class AppReq07ServiceImpl implements AppReq07Service {
         }
     }
 
+    /**
+     * prafta-app-019(1-A/1-B): OT 슬롯이 해당 구간의 실제 근태기록 [CHECK_IN~CHECK_OUT] 범위 안에
+     * 포함되는지 검증한다(차집합 = 실근태 − 스케줄 안에서만 OT 허용). 미포함/근태부재/미퇴근이면 거부(ATTD_400_104).
+     *
+     * <ul>
+     *   <li>1-A 구간별 매칭: slot.workSeq 에 대응하는 그 구간(WORK_SEQ)의 실근태 1건으로 검증(통합범위 아님).</li>
+     *   <li>1-B: 실근태 행이 없거나 CHECK_OUT_TIME 이 공백/null(체크아웃 미완료) → 범위 확정 불가 → 거부.</li>
+     *   <li>시각 기준은 원본 CHECK_IN_TIME/CHECK_OUT_TIME(표준화 적용시각 아님).</li>
+     *   <li>인스턴트 환산은 ymdToDays(date)*1440 + parseHHmm(time)(assertNoScheduleOverlap 과 동일 유틸).
+     *       자정 넘김은 CHECK_OUT_DATE/CHECK_IN_DATE 를 그대로 사용.</li>
+     *   <li>실근태 out ≤ in(데이터 이상) → 범위 신뢰 불가 → 거부.</li>
+     *   <li>포함 조건: attdIn ≤ otStart && otEnd ≤ attdOut(경계 일치 통과 — ≤).</li>
+     * </ul>
+     *
+     * <p>OT 측(otStart/otEnd)은 validateSlotsTimes 통과분이므로 형식·순서 안전.
+     */
+    private void assertWithinActualAttdWindow(String cmpnyCd, String siteCd, String userCd,
+                                              String workYmd, SlotRequest slot) {
+        ActualAttdWindowResult attd = mapper.selectActualAttdWindowBySlot(
+                cmpnyCd, siteCd, userCd, workYmd, slot.getWorkSeq());
+
+        // 1-B: 실근태 행 부재 또는 체크아웃 미완료(시각 공백/null) → 범위 확정 불가 → 거부.
+        if (attd == null
+                || !StringUtils.hasText(attd.checkInTime())
+                || !StringUtils.hasText(attd.checkOutTime())) {
+            log.info("[prafta-app-019] OT 실근태 범위 확정불가 거부 — userCd={}, workYmd={}, workSeq={}, attdNull={}",
+                    userCd, workYmd, slot.getWorkSeq(), (attd == null));
+            throw new ApiException(AttdErrorCode.ATTD_400_104);
+        }
+
+        // 실근태 시각 환산(원본 CHECK_IN/OUT). CHECK_OUT_DATE 가 공백이면 CHECK_IN_DATE 로 폴백(자정 미넘김 가정).
+        String outDate = StringUtils.hasText(attd.checkOutDate()) ? attd.checkOutDate() : attd.checkInDate();
+        long attdIn = ymdToDays(attd.checkInDate()) * 1440L + parseHHmm(attd.checkInTime());
+        long attdOut = ymdToDays(outDate) * 1440L + parseHHmm(attd.checkOutTime());
+
+        // 실근태 시각 파싱 실패(예외 데이터) 또는 out ≤ in(범위 신뢰 불가) → 거부(fail-closed).
+        if (parseHHmm(attd.checkInTime()) < 0 || parseHHmm(attd.checkOutTime()) < 0 || attdOut <= attdIn) {
+            log.info("[prafta-app-019] OT 실근태 범위 이상 거부 — userCd={}, workYmd={}, workSeq={}, attd=[{} {}~{} {}]",
+                    userCd, workYmd, slot.getWorkSeq(),
+                    attd.checkInDate(), attd.checkInTime(), outDate, attd.checkOutTime());
+            throw new ApiException(AttdErrorCode.ATTD_400_104);
+        }
+
+        // OT 슬롯 환산(validateSlotsTimes 통과분).
+        long otStart = ymdToDays(slot.getStartDate()) * 1440L + parseHHmm(slot.getStartTime());
+        long otEnd = ymdToDays(slot.getEndDate()) * 1440L + parseHHmm(slot.getEndTime());
+
+        // 포함 조건: attdIn ≤ otStart && otEnd ≤ attdOut. 벗어나면 거부.
+        if (!(attdIn <= otStart && otEnd <= attdOut)) {
+            log.info("[prafta-app-019] OT 실근태범위 이탈 거부 — userCd={}, workYmd={}, workSeq={}, ot=[{}~{}], attd=[{}~{}]",
+                    userCd, workYmd, slot.getWorkSeq(),
+                    slot.getStartTime(), slot.getEndTime(), attd.checkInTime(), attd.checkOutTime());
+            throw new ApiException(AttdErrorCode.ATTD_400_104);
+        }
+    }
+
+    /**
+     * prafta-app-017(이슈①): OT 슬롯이 해당 구간 정규 스케줄과 겹치면 거부(ATTD_400_100).
+     *
+     * <ul>
+     *   <li>스케줄 행 자체가 없으면(연차/NULL/미존재) 정규구간 부재 → 면제(전량 OT 허용).</li>
+     *   <li>slot.workSeq==1 → FST*, ==2 → SEC* 와 비교. 해당 구간 시각이 공백이면 그 구간 면제.</li>
+     *   <li>스케줄 시각 파싱 실패(예외적 데이터)면 그 구간 정규구간 판정 불가 →
+     *       겹침검사 면제(WARN 로그). 데이터 오류로 정상요청을 막지 않는다(스케줄 행 부재와 구분 로그).</li>
+     *   <li>인스턴트 비교: stamp = epochDay*1440 + 분. 스케줄 종료 ≤ 시작이면 익일 보정(+1440).</li>
+     *   <li>겹침 조건: otStart &lt; schEnd && schStart &lt; otEnd (접함은 겹침 아님 → 허용).</li>
+     * </ul>
+     *
+     * <p>OT 측(otStart/otEnd)은 validateSlotsTimes 통과분이므로 형식·순서 안전.
+     */
+    private void assertNoScheduleOverlap(String workYmd, ScheduleWindowResult schedule,
+                                         SlotRequest slot, String userCd) {
+        // 스케줄 행 부재(연차/NULL/미매칭) → 정규구간 없음 → 면제.
+        if (schedule == null) {
+            return;
+        }
+
+        // 구간 매핑(workSeq 기준).
+        String schStrTime;
+        String schEndTime;
+        if (slot.getWorkSeq() != null && slot.getWorkSeq() == 2) {
+            schStrTime = schedule.secStrTime();
+            schEndTime = schedule.secEndTime();
+        } else {
+            schStrTime = schedule.fstStrTime();
+            schEndTime = schedule.fstEndTime();
+        }
+
+        // 해당 구간 시각 공백(예: 1구간 전용 스케줄에 2구간 OT) → 정규구간 없음 → 면제.
+        if (!StringUtils.hasText(schStrTime) || !StringUtils.hasText(schEndTime)) {
+            return;
+        }
+
+        int schStrMin = parseHHmm(schStrTime);
+        int schEndMin = parseHHmm(schEndTime);
+        // 스케줄 시각 파싱 실패(예외적 데이터) → 겹침검사 면제(fail-open, WARN). 스케줄 행 부재와 구분.
+        if (schStrMin < 0 || schEndMin < 0) {
+            log.warn("[prafta-app-017] OT 겹침검사 스케줄 시각 파싱 실패(면제) — userCd={}, workYmd={}, workSeq={}, schCd={}, str={}, end={}",
+                    userCd, workYmd, slot.getWorkSeq(), schedule.schCd(), schStrTime, schEndTime);
+            return;
+        }
+
+        long base = ymdToDays(workYmd) * 1440L;
+        long schStart = base + schStrMin;
+        long schEnd = base + schEndMin;
+        // 종료 ≤ 시작 → 야간/자정 넘김 → 익일 보정.
+        if (schEnd <= schStart) {
+            schEnd += 1440L;
+        }
+
+        long otStart = ymdToDays(slot.getStartDate()) * 1440L + parseHHmm(slot.getStartTime());
+        long otEnd = ymdToDays(slot.getEndDate()) * 1440L + parseHHmm(slot.getEndTime());
+
+        // 겹침: otStart < schEnd && schStart < otEnd (접함 허용).
+        if (otStart < schEnd && schStart < otEnd) {
+            log.info("[prafta-app-017] OT 스케줄 겹침 거부 — userCd={}, workYmd={}, workSeq={}, ot=[{}~{}], sch=[{}~{}]",
+                    userCd, workYmd, slot.getWorkSeq(),
+                    slot.getStartTime(), slot.getEndTime(), schStrTime, schEndTime);
+            throw new ApiException(AttdErrorCode.ATTD_400_100);
+        }
+    }
+
     /** HHmm 문자열 → 분 단위 정수. 형식 위반 시 -1. */
     private int parseHHmm(String hhmm) {
         if (hhmm == null || hhmm.length() != 4) return -1;
@@ -366,14 +642,12 @@ public class AppReq07ServiceImpl implements AppReq07Service {
     }
 
     /**
-     * YYYYMMDD 문자열을 epoch-day 와 무관한 단순 정수로 매핑 (비교 전용).
-     * year*10000 + month*100 + day 는 월 경계에서 일수 차가 비선형이지만,
-     * 같은 달 안에서는 단조 증가. 자정 넘김 보정은 endDate = workYmd 또는 +1 일만 1차로 허용.
-     * 본 함수는 동등 비교 + workYmd vs workYmd+1 의 1일 차이만 사용한다 (Service 의 absMin 계산은 같은 달
-     * 가정 — 자정 넘김의 실제 day-of-week 산출은 follow-up 단계에서 정밀화).
-     *
-     * <p>1차 단순 처리 (plan P9 "자정 보정 단순"). 월 경계에서 잘못된 차이가 나도
-     * end ≤ start 검증과 ATTD_400_093 메시지로 사용자가 인지 가능.
+     * YYYYMMDD 문자열을 1970-01-01 기준 epoch-day(정수)로 매핑한다.
+     * {@link java.time.LocalDate#toEpochDay()} 기반이라 월/연 경계와 자정 넘김에서도 전역으로
+     * 단조 증가한다(같은 달 가정 불필요). 시각과 결합해 {@code ymdToDays(ymd)*1440 + 분} 형태의
+     * (일자+시각) 인스턴트 비교에 사용한다 — validateSlotsTimes 의 absMin, assertNoScheduleOverlap 의
+     * 겹침 판정이 모두 이 함수에 의존하므로 단순 정수(year*10000+...)로 바꾸지 말 것(경계 오판 발생).
+     * 파싱 불가(형식 위반)면 0L 반환.
      */
     private long ymdToDays(String ymd) {
         if (ymd == null || ymd.length() != 8) return 0L;

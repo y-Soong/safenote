@@ -2,6 +2,29 @@
 
 본 디렉토리(`.claude/context/policies/`)의 분할된 정책서가 docx 원본과 동기화된 이력을 기록한다.
 
+## 2026-06-03 — prafta-043 (초과근무 유형 OT_TYPE 전면 파기)
+
+근태관리 §9.3.4 명확화 1줄 추가. 초과근무 "유형"(연장/야간/휴일) 개념을 시스템에서 **전면 파기** — 입력·저장·표시하지 않고 단일 '초과근무'로만 관리한다. 정책서는 애초에 OT_TYPE 저장값을 규정한 적이 없으므로(§9.3.3 표는 발생 시나리오 설명) 본문 정정이 아닌 비저장/비표시 명확화만 추가. 단일 출처 `.claude/requests/web_requests/prafta-043-plan.md`(선행 prafta-app-016: 앱 입력 칩 제거 + 신청 행 NULL 저장).
+
+- **§9.3.4 명확화**: "초과근무는 유형(연장/야간/휴일)을 입력·저장·표시하지 않는다(단일 '초과근무')" + OT_TYPE 컬럼 파기 명시. §9.3.3 발생 케이스 표는 시나리오 설명으로 유지.
+- **DB**: `tb_user_attd_req.OT_TYPE`(nullable)·`tb_user_overtime_mgmt.OT_TYPE`(NOT NULL) 두 컬럼 파기. 보안 검토 High(배포 순서 가용성 리스크) 해소로 **expand/contract 2단계** 분리: `prafta-043-1-expand-ot-type-nullable.sql`(overtime_mgmt NOT NULL→NULL 완화 → 구/신버전 동시 안전, 코드 배포 전 선적용 가능) + `prafta-043-2-contract-drop-ot-type.sql`(두 컬럼 DROP, 신버전 전면 롤아웃·안정화 후). 각 롤백 주석 동반(위치 AFTER 복원), 운영 미적용·사용자 수동. 일용직 슬롯 SLOT_TYPE(SYS014)은 별개 도메인으로 무관·보존.
+- **백엔드 코드 제거**: web attd07(OvertimeItemRequest/Model·InsertUserOvertimeCommand·UpdateUserOvertimeRequestParam·Attd07ServiceImpl·Attd07Mapper(.java/.xml) INSERT/UPDATE/SELECT, MonthlyOvertimeResult/DailyOvertimeResult/MonthlyAttdReqResult record↔SELECT 동시 정합), reqinbox(PendingReqResult), attd08(AttdListsResult NORMAL/OT 양 분기), app req07(AttdReqInsertCommand·OvertimeRequest/SlotRequest·AppReq07Mapper.xml INSERT), app req06(MyReqItemResult·AppReq06Mapper.xml·AppReq06ServiceImpl OT_TYPE_LABEL 맵/라벨 append). `ATTD_400_095`는 데드 보존(enum 유지, 호출 0건 — app-015 084/085 선례와 일관).
+- **프론트**: 웹 Attd_08(근무구분 "초과근무(유형)"→"초과근무" 격하, otTypeLabel 제거)·Attd_10(승인 payload otType 제거)·AttdDayDetailPop(reverseOtType/mapOtType/type 기본값/payload otType 제거, 템플릿 무변경). 앱 OvertimeForm(거짓 안내문구 "유형은 승인 시 확정" 제거).
+- 빌드 검증: 백엔드 compileJava·웹 vite build·앱 vite build 모두 성공. MyBatis record 컬럼순서 함정(feedback_mybatis_record_column_order) 준수 — 6개 result record의 otType 제거와 동일 위치 SELECT 컬럼 제거를 1:1 정합.
+
+## 2026-06-03 — prafta-app-015 (2구간 스케줄 출근 구간 명시 선택 — 자동추정 폐기)
+
+근태관리 §5.2/§5.4 정정 + §5.5 신설. 2구간(야간 2교대 등) 스케줄에서 출근 구간(1구간/2구간)을 **서버 시각 자동 추정(`isSecondSlotTimeWindow`)에서 사용자 명시 선택(`targetWorkSeq`)으로 전환**. 선택 구간이 곧 WORK_SEQ(1구간=1, 2구간=2)가 되며 순서 자유(2→1 가능)·1구간 누락 허용·각 구간 1회 제한. 단일 출처 `.claude/requests/app_requests/prafta-app-015-plan.md`.
+
+- **§5.2 정정**: "재출근은 반드시 이전 퇴근 완료 후"에 **2구간 스케줄 예외** 명문화 — 구간을 명시 선택하므로 순서 자유(다른 구간 출근은 이전 구간 퇴근 불요), 동일 구간 중복만 차단.
+- **§5.4 정정**: "퇴근 미등록 상태 재출근 차단"을 2구간 스케줄에서 **다른 구간 출근은 허용**(동일 구간 중복만 차단)으로 정정. (1구간 미퇴근 + 2구간 출근 가능 → 1구간 퇴근 누락은 다음날 게이트(082)/근태 보정으로 해소.)
+- **§5.5 신설(2구간 출근 구간 선택)**: 자동추정 폐기, 사용자가 1구간/2구간 선택, WORK_SEQ=선택 구간, 각 구간 1회. 구버전 자동추정·Case A/B/C·`confirmSkipPrevSlot`·`ATTD_400_084`(소프트 차단)·`ATTD_400_085`(1구간 미마감 차단)는 **폐기**. 신규 `ATTD_400_087`(구간 미선택)·`ATTD_400_088`(구간 중복).
+- 구현: BE `AppAttd01ServiceImpl.checkIn`(targetWorkSeq 직접 채번·구간 중복 잠금 방어, `isSecondSlotTimeWindow`/`circularMinuteDistance` 제거), `CheckInRequest`/`CheckInParam`(targetWorkSeq 추가·confirmSkipPrevSlot 제거), `SlotResponse`(canCheckInThisSlot/alreadyCheckedIn 구간 플래그), `HomeSummaryResponse.Attendance`(isTwoSlot·slots 플래그 확장). FE `AttendanceTodayCard.vue`·`MyAttendanceView.vue`·`MainView.vue`·`main/components/AttendanceCard.vue`(2구간 구간 선택 버튼, 084/자동추정 흐름 제거). DB 마이그레이션 없음(WORK_SEQ 기존 컬럼). 084/085 enum 상수는 외부 안정성 위해 보존하되 사용처 0건(데드).
+
+## 2026-06-02 — prafta-app-014 (앱 출퇴근 "하루 최대 2회" 상한 — 스케줄 구간 수 무관)
+
+근태관리 §5.1/§5.3/§5.4/§7.1/§7.5 정정. 출근 상한을 "스케줄 구간 수 기반"에서 **"하루 2회 고정"**으로 변경. 2번째 출근은 일반 근무(자동 초과근무 분류 아님)로 기록하며, 스케줄 미대응 슬롯(스케줄 없는 날의 슬롯·1구간 스케줄의 2번째 출근)은 표준화·지각/조퇴 미적용(원본 시각만). 스케줄 없는 날도 하루 2회로 상한(종전 "직전 퇴근 후 무제한" → 2회 캡). §5.5 야간 2구간(WORK_SEQ=2 강제 채번)은 보존. 단일 출처 `.claude/requests/app_requests/prafta-app-014-plan.md`(§2 설계·§6 정정 문구).
+
 ## 2026-05-27 — prafta-032 (입사일 변경 "처리방식" 폐기 → 관리자 수동 연차 조정 전환)
 
 근태관리 §8.5.6 갱신. 단일 출처 `.claude/requests/prafta-032-decisions.md`(D1·D3·D4·D5·D8). prafta-030(차액 보전)·prafta-031(수동부여 회수·noti outbox)을 전제로, 입사일 변경 시 동작하던 **자동 처리방식(SYS039: `KEEP_AND_BACKFILL`/`KEEP_AND_APPLY_NEW`/`RESET_ALL`)을 폐기**하고 **관리자 수동 목표 부여량 입력**으로 전환. 사유: 처리방식 자동계산은 회사/근로자 유불리가 일률적이지 않아 고정 자동계산 리스크가 큼 — 시스템은 검증·이력만, 부여량은 관리자가 직접 결정.

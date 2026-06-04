@@ -2,6 +2,7 @@ package com.prafta.web.attd.attd07.dto.response;
 
 import java.util.List;
 
+import com.prafta.web.attd.attd07.result.ConfirmedLeaveResult;
 import com.prafta.web.attd.attd07.result.DailyAttdDetailHistoryResult;
 import com.prafta.web.attd.attd07.result.DailyAttdDetailsResult;
 import com.prafta.web.attd.attd07.result.DailyOvertimeResult;
@@ -19,4 +20,6 @@ public class DailyAttdDetailsResponse {
     List<MonthlyAttdReqResult> monthlyAttdReqResultList;
     /** PRAFTA-003-6: 해당 일자에 등록된 초과근무(OT) 목록. 응답 키는 lowerCamel(`dailyOvertimeResultList`). */
     List<DailyOvertimeResult> dailyOvertimeResultList;
+    /** PRAFTA-APP-018-F: 그날 확정 연차 사용내역(자동확정/직접 포함, 미처리 결재대기 제외). 표시 전용. */
+    List<ConfirmedLeaveResult> confirmedLeaveResultList;
 }

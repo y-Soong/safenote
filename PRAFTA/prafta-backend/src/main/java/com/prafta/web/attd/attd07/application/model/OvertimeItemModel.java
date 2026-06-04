@@ -5,8 +5,7 @@ package com.prafta.web.attd.attd07.application.model;
  * Field semantics match {@code TB_USER_OVERTIME_MGMT} columns.
  */
 public record OvertimeItemModel(
-      String otType
-    , String startDate
+      String startDate
     , String startTime
     , String endDate
     , String endTime

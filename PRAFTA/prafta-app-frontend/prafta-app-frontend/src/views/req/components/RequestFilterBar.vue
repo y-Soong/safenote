@@ -86,10 +86,26 @@
     <!-- 인라인 SVG sprite (본 컴포넌트 전용) -->
     <svg width="0" height="0" class="req-filter-bar__sprite" aria-hidden="true" focusable="false">
       <defs>
-        <symbol id="i-req-chev-down" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <symbol
+          id="i-req-chev-down"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="2"
+          stroke-linecap="round"
+          stroke-linejoin="round"
+        >
           <polyline points="6 9 12 15 18 9" />
         </symbol>
-        <symbol id="i-req-x" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <symbol
+          id="i-req-x"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="2"
+          stroke-linecap="round"
+          stroke-linejoin="round"
+        >
           <line x1="18" y1="6" x2="6" y2="18" />
           <line x1="6" y1="6" x2="18" y2="18" />
         </symbol>
@@ -113,9 +129,7 @@ const props = defineProps({
 
 defineEmits(['openStatusSheet', 'openDateSheet', 'openTypeSheet', 'openSortSheet', 'reset'])
 
-const hasDateRange = computed(
-  () => !!props.activeFilters.dateFrom || !!props.activeFilters.dateTo,
-)
+const hasDateRange = computed(() => !!props.activeFilters.dateFrom || !!props.activeFilters.dateTo)
 
 const activeFilterCount = computed(() => {
   let n = 0

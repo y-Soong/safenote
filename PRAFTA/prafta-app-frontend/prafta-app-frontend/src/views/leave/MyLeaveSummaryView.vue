@@ -31,11 +31,7 @@
         <LeaveGroupToggle v-model="activeGroup" />
 
         <!-- 소멸 임박 콜아웃 (전체 토글 + 노출 조건 충족 + 미닫힘) -->
-        <LeaveExpiryCallout
-          v-if="showCallout"
-          :info="expiringSoon"
-          @close="onCalloutClose"
-        />
+        <LeaveExpiryCallout v-if="showCallout" :info="expiringSoon" @close="onCalloutClose" />
 
         <!-- 메인 잔여 카드 -->
         <LeaveBalanceCard :label="balanceLabel" :group="currentGroup" />
@@ -70,10 +66,26 @@
     <!-- 인라인 SVG sprite (본 화면 전용) -->
     <svg width="0" height="0" class="lv-sprite" aria-hidden="true" focusable="false">
       <defs>
-        <symbol id="i-lv-chev-left" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <symbol
+          id="i-lv-chev-left"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="2"
+          stroke-linecap="round"
+          stroke-linejoin="round"
+        >
           <polyline points="15 18 9 12 15 6" />
         </symbol>
-        <symbol id="i-lv-plus" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <symbol
+          id="i-lv-plus"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="2"
+          stroke-linecap="round"
+          stroke-linejoin="round"
+        >
           <line x1="12" y1="5" x2="12" y2="19" />
           <line x1="5" y1="12" x2="19" y2="12" />
         </symbol>
@@ -139,7 +151,7 @@ const currentUsageRate = computed(() => currentGroup.value?.usageRate ?? 0)
 
 // 소멸 임박 콜아웃: 전체 토글 + exists + 미닫힘 (§3.4)
 const showCallout = computed(
-  () => activeGroup.value === 'TOTAL' && !!expiringSoon.value?.exists && !calloutDismissed.value
+  () => activeGroup.value === 'TOTAL' && !!expiringSoon.value?.exists && !calloutDismissed.value,
 )
 
 // 푸터 활성: 현재 토글 그룹 잔여 > 0 (§3.5)
@@ -163,9 +175,9 @@ const onCalloutClose = () => {
 }
 
 const onApply = () => {
-  // 잔여 0이면 비활성(버튼 disabled)이라 호출되지 않음. 활성 시에도 앱 연차신청 폼 미구현.
-  // TODO(developer): 연차신청 폼 연동(앱 FE 미구현)
-  showAlert('준비 중입니다')
+  // prafta-app-018-C: 연차 신청 폼. 특정 일자 컨텍스트 없음 → 폼에서 날짜 직접 선택.
+  //   (잔여 0이면 버튼 disabled 로 진입 차단 — canApply 가드 현행 유지.)
+  router.push('/LeaveApply')
 }
 
 // ───────────────────────────────────────────────────────────
@@ -226,11 +238,7 @@ onMounted(async () => {
   color: var(--color-text-primary);
   font-variant-numeric: tabular-nums;
   font-family:
-    -apple-system,
-    BlinkMacSystemFont,
-    'Apple SD Gothic Neo',
-    'Pretendard',
-    'Noto Sans KR',
+    -apple-system, BlinkMacSystemFont, 'Apple SD Gothic Neo', 'Pretendard', 'Noto Sans KR',
     sans-serif;
 }
 

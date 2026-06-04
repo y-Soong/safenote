@@ -100,8 +100,8 @@
                   v-model="form.grantDays"
                   class="mg-input"
                   type="number"
-                  min="0.5"
-                  step="0.5"
+                  min="1"
+                  step="1"
                 />
                 <span class="mg-suffix">일</span>
               </div>
@@ -296,7 +296,7 @@ const fnSubmit = async () => {
 };
 
 // ================ Methods/Functions ================
-// 1차 검증 (필수/일수/0.5단위/날짜 형식)
+// 1차 검증 (필수/일수/1일 단위 정수/날짜 형식)
 const fnValidate = () => {
   if (!form.value.leaveCd) {
     proxy.$alert("부여 유형을 선택해 주세요.");
@@ -308,9 +308,9 @@ const fnValidate = () => {
     proxy.$alert("부여 일수는 0보다 커야 합니다.");
     return false;
   }
-  // 0.5일 단위 (값*2가 정수)
-  if (!Number.isInteger(days * 2)) {
-    proxy.$alert("부여 일수는 0.5일 단위로 입력해 주세요.");
+  // 1일 단위 (정수만 허용)
+  if (!Number.isInteger(days)) {
+    proxy.$alert("부여 일수는 1일 단위로 입력해 주세요.");
     return false;
   }
 

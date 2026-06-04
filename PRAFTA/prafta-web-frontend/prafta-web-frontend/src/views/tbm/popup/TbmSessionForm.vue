@@ -7,7 +7,7 @@
         ref="modalRef"
       >
         <div class="modal-header" @mousedown="startDrag">
-          <span>{{ isEditMode ? "TBM 세션 수정" : "TBM 세션 개설" }}</span>
+          <span>{{ isEditMode ? "TBM 교육 수정" : "TBM 교육 개설" }}</span>
           <button class="icon-button" @click="$emit('close')">
             <svg
               xmlns="http://www.w3.org/2000/svg"
@@ -54,12 +54,12 @@
 
             <!-- 제목 -->
             <div class="form-row-max">
-              <label>세션 제목</label>
+              <label>교육 제목</label>
               <input
                 id="title"
                 v-model="formData.title"
                 maxlength="200"
-                placeholder="세션 제목"
+                placeholder="교육 제목"
                 style="width: 100%"
               />
             </div>
@@ -88,7 +88,7 @@
                     value="AUTO"
                     v-model="formData.gpsVerifyTypeCd"
                   />
-                  자동(현재 위치)
+                  활성화
                 </label>
                 <label class="radio-item">
                   <input
@@ -96,7 +96,7 @@
                     value="MANUAL"
                     v-model="formData.gpsVerifyTypeCd"
                   />
-                  수동 확인
+                  수동 확인(위치정보만 수집, 입실 시 관리자가 직접 확인)
                 </label>
                 <label class="radio-item">
                   <input
@@ -104,7 +104,7 @@
                     value="DISABLED"
                     v-model="formData.gpsVerifyTypeCd"
                   />
-                  비활성
+                  비활성화
                 </label>
               </div>
             </div>
@@ -173,7 +173,7 @@
                     class="btn btn-second btn-sm"
                     @click="fnOpenContentSelector"
                   >
-                    콘텐츠 선택
+                    교육자료 선택
                   </button>
                 </div>
                 <table class="data-grid sub-grid">
@@ -182,7 +182,7 @@
                       <th style="width: 6%; text-align: center">순서</th>
                       <th style="width: 35%">콘텐츠 제목</th>
                       <th style="width: 14%">카테고리</th>
-                      <th>세션별 설명(선택)</th>
+                      <th>비고</th>
                       <th style="width: 8%; text-align: center">삭제</th>
                     </tr>
                   </thead>
@@ -330,7 +330,7 @@ const { proxy } = getCurrentInstance();
 const { open: openPop } = useModal();
 
 const props = defineProps({
-  sessionCd_p: String, // 수정 모드 진입 시 세션코드
+  sessionCd_p: String, // 수정 모드 진입 시 교육코드
   detail_p: Object, // 수정 모드 진입 시 기존 상세(상세 팝업에서 전달)
   onSearch: Function, // 목록 갱신 콜백
   onCreated: Function, // 개설/임시저장 성공 시 sessionCd 전달
@@ -504,7 +504,7 @@ const fnValidate = (mode) => {
     return false;
   }
   if (proxy.$util.isEmpty(formData.title)) {
-    proxy.$alert("세션 제목을 입력해 주세요.");
+    proxy.$alert("교육 제목을 입력해 주세요.");
     return false;
   }
   // 개설 시에만 교육 내용/ GPS 강제
@@ -572,7 +572,7 @@ const fnSave = async (mode) => {
 
   const confirmMsg =
     mode === "OPENED"
-      ? "TBM 세션을 개설하시겠습니까? (입실/종료 비밀번호가 발급됩니다.)"
+      ? "TBM 교육을 개설하시겠습니까? (입실/종료 비밀번호가 발급됩니다.)"
       : "임시저장하시겠습니까?";
   const ok = await proxy.$confirm(confirmMsg);
   if (!ok) return;
@@ -638,9 +638,17 @@ const fnUpdate = async () => {
 </script>
 
 <style scoped>
+.modal-content-wide {
+  width: min(1100px, 95vw);
+  max-height: 90vh;
+}
+
 .content-wrapper {
   padding: 1.2rem;
-  height: calc(100% - 60px);
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
   overflow: hidden;
 }
 
@@ -651,6 +659,7 @@ const fnUpdate = async () => {
   overflow-y: auto;
   padding-right: 0.5rem;
   height: 100%;
+  min-height: 0;
 }
 
 .hint {
@@ -668,10 +677,11 @@ const fnUpdate = async () => {
 }
 
 .gps-group {
-  display: flex;
-  align-items: center;
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, max-content));
   gap: 1rem;
-  flex-wrap: wrap;
+  align-items: center;
+  white-space: nowrap;
 }
 
 .radio-item {
@@ -680,13 +690,22 @@ const fnUpdate = async () => {
   gap: 0.25rem;
   cursor: pointer;
   color: var(--color-text);
+  white-space: nowrap;
 }
 
 .gps-coord {
-  display: flex;
-  align-items: center;
+  display: grid;
+  grid-template-columns: 1fr auto;
   gap: 0.75rem;
-  flex-wrap: wrap;
+  align-items: center;
+  min-width: 0;
+  white-space: nowrap;
+}
+
+.gps-coord span {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .gps-ok {
@@ -714,6 +733,14 @@ const fnUpdate = async () => {
   display: flex;
   align-items: center;
   gap: 0.75rem;
+  flex-wrap: nowrap;
+  white-space: nowrap;
+}
+
+.risk-warn {
+  font-size: var(--btn-font-sm);
+  color: var(--color-danger);
+  white-space: nowrap;
 }
 
 .sub-grid {

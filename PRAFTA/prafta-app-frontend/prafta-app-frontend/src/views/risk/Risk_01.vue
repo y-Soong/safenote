@@ -282,8 +282,8 @@
       :isLoading="isLoading"
       :isError="isError"
       :items="siteList"
-      keyField="SITE_ID"
-      labelField="SITE_NM"
+      keyField="siteCd"
+      labelField="siteNm"
       :multiple="false"
       v-model="siteCd"
       @close="showSitePanel = false"
@@ -737,13 +737,16 @@ const fetchSiteList = async (keyword) => {
   isLoading.value = true
   isError.value = false
   try {
-    const response = await axios.post('/comApi/baseinfo/getSiteInfoList', {
-      cmpnyCd: sessionStorage.getItem('gv_cmpnyCd') || '',
-      siteNm: keyword,
+    // 앱 통신정렬: GET /comApi/baseinfo/site-lists (인증 변형, cmpnyCd 는 JWT 클레임에서 도출)
+    const response = await axios.get('/comApi/baseinfo/site-lists', {
+      params: {
+        siteNm: keyword || '',
+      },
     })
 
     if (response.status === 200) {
-      siteList.value = response.data
+      // 응답 스키마 { siteInfoResultList: [...] } — JoinUser 정렬 패턴과 동일
+      siteList.value = response.data?.siteInfoResultList || []
     }
   } catch (err) {
     isError.value = true
@@ -753,9 +756,10 @@ const fetchSiteList = async (keyword) => {
 }
 
 const selectSites = (selected) => {
-  siteCd.value = selected.SITE_CD
-  siteNo.value = selected.SITE_NO
-  siteNm.value = selected.SITE_NM
+  // prafta-036-A: 응답 키 camelCase (SITE_CD/SITE_NO/SITE_NM → siteCd/siteNo/siteNm)
+  siteCd.value = selected.siteCd
+  siteNo.value = selected.siteNo
+  siteNm.value = selected.siteNm
   showSitePanel.value = false
 }
 </script>

@@ -98,14 +98,14 @@ public class LeaveTypeRequest {
     @Size(max = 2)
     private String adminAvailTermType;
 
-    /** 기간설정 시작일 (adminAvailTermType=03일 때) */
+    /** 기간설정 시작일 (adminAvailTermType=03일 때, YYYYMMDD 8자 절대 날짜) */
     @FieldLabel("관리자 사용기간 시작일")
-    @Size(max = 6)
+    @Size(max = 8)
     private String adminAvailFromDt;
 
-    /** 기간설정 종료일 (adminAvailTermType=03일 때) */
+    /** 기간설정 종료일 (adminAvailTermType=03일 때, YYYYMMDD 8자 절대 날짜) */
     @FieldLabel("관리자 사용기간 종료일")
-    @Size(max = 6)
+    @Size(max = 8)
     private String adminAvailToDt;
 
     // C. 사용규칙 - 관리자 부여 타입(자동부여: leaveType=02 & grantType=01)

@@ -7,7 +7,7 @@
         ref="modalRef"
       >
         <div class="modal-header" @mousedown="startDrag">
-          <span>콘텐츠 선택</span>
+          <span>교육자료 선택</span>
           <button class="icon-button" @click="$emit('close')">
             <svg
               xmlns="http://www.w3.org/2000/svg"

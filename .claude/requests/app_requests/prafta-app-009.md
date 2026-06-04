@@ -127,6 +127,18 @@ prafta-app-007 endpoint 의 확장 지점 (`AppReq07ServiceImpl` 각 register �
 - prafta-020 의 web 측 결재 처리 패턴 (`com.prafta.web.user.user04.*` 또는 결재 처리 service) 참조.
 - LeaveFlow 의 다단 결재 처리 (`LeaveFlowServiceImpl#applyLeave` 의 6번째 단계 "결재 Y → 라인 일괄 생성") 직접 참조 가능.
 
+### (E) 결재 "차례 도래" PUSH 통합 (신규 — prafta-com-004 와 동일 유형)
+
+> 사용자 요청(2026-06-03): 근태·초과근무·스케줄수정 요청이 결재선을 탈 때, **결재 단계가 진행되어 '내 차례'가 도래하는 결재자에게 PUSH**. 연차는 결재선 인프라가 이미 있어 `prafta-com-004` 로 선행 처리하고, 근태/OT/스케줄수정은 결재선 자체가 본 작업(§1 A~D)에서 신설되므로 **본 작업에 PUSH 를 함께 통합**한다.
+
+발송 시점(코드 hook):
+1. **신청 시 첫 결재자 지정** — 본 작업 §1.D 의 결재선 INSERT 흐름에서 `tb_user_attd_req_approval` 의 첫 수동(비-자동승인) 단계를 `APPROVAL_STATUS='01'(신청)` 로 INSERT 하는 지점. (연차 `submitLeave` 의 `currentIdx` 단계 패턴 미러)
+2. **다음 단계 진행** — 근태/OT/스케줄수정 결재 승인에서 다음 대기 단계를 `01` 로 전환하는 지점. ⚠️ **현재 근태/OT/스케줄수정 승인은 단계 개념 없는 단일 승인**(`Attd07ServiceImpl.updateUserAttdRequest` / `updateUserOvertimeRequests` / `approveSchedModifyRequest` — REQ_STATUS `01→02` 직접 전이)이다. 본 작업에서 다단계 승인 처리(연차 `approveStep` 의 `selectFirstWaitingStep`→`STEP_APPLIED` 패턴)를 **웹 승인 경로에 신설**해야 차례 도래 개념이 성립한다. 이는 §1.D(신청 측 INSERT)보다 범위가 큼(웹 승인 화면/서비스 다단계화) → 분해 시 별도 작업 단위로 분리 가능.
+
+발송 대상/제외: 연차(prafta-com-004 §1.A)와 동일 규칙 — 진행되는 단계의 `APPROVER_USER_CD` 1인만. 자기 승인 자동 `02` 로 건너뛴 단계·신청자 본인 단계·반려·최종 승인(다음 단계 없음)은 제외. master/hr 자동 포함 없음.
+
+재사용: `NotiOutboxInsertVO` + `LeaveDashboardMapper.insertNotiOutbox`(prafta-031), 발송은 prafta-com-002 공용 워커. SYS045 신규 코드 `ATTD_APPROVAL_TURN`(또는 prafta-com-004 의 `LEAVE_APPROVAL_TURN` 과 합친 범용 `APPROVAL_TURN` — 분해 시 결정). dedupKey = `"REQ_TURN_" + reqId + "_" + approvalStep`. PII/IDOR/트랜잭션 격리 검토는 prafta-com-004 §5 와 동일.
+
 ---
 
 ## 2. prafta-app-007 plan §7 follow-up 후보 (인용)
@@ -135,7 +147,7 @@ prafta-app-007-plan.md §7 의 F-A 는 본 문서 (=prafta-app-009) 로 이전. 
 
 | # | 항목 | 비고 |
 |---|---|---|
-| F1 | 알림 발송 (등록 직후 관리자 push outbox INSERT) | `prafta-031` outbox consumer 구현 후. 결재 단계 진행 시 단계별 알림도 본 작업 범위로 끌어올 수 있음. |
+| F1 | 알림 발송 (등록 직후 관리자 push outbox INSERT) | **→ §1.E 로 승격(2026-06-03)**. 결재 "차례 도래" PUSH 를 본 작업에 통합. com-002 워커·com-001 마이그 운영 반영 완료. |
 | F2 | SCH_CD 목록 조회 endpoint (스케줄 수정 폼) | 본 작업과 독립. 분해 시 우선순위 분리. |
 | F3 | 시안 §3-1 "신청 가능 범위 안내" (스케줄 종료~근태 퇴근 사이 자동 계산) | OT 폼 UX 강화. 본 작업과 독립. |
 | F4 | OT_TYPE 자동 추정 | OT 폼 UX. |
@@ -248,3 +260,44 @@ prafta-app-007-plan.md §7 의 F-A 는 본 문서 (=prafta-app-009) 로 이전. 
 - Q5 (최대 결재 단계 수) — 데이터 한계.
 - Q8 (F1~F17 묶음 범위) — 분해 규모.
 - **(신규)** 본 작업 1차 분해 시 F12~F15 High 가드를 결재선과 묶을지 분리할지. 분리 시 별도 단기 작업 (`prafta-app-008` 등) 으로 처리 가능.
+
+---
+
+## 8. 분해 확정 결정 (2026-06-04) — 단일 출처
+
+본 섹션이 분해의 단일 출처다. 본문 §1~§7 의 일부 가정은 코드/스키마 실측으로 정정되었으니, **충돌 시 본 §8 이 우선**한다.
+
+### 8.0 스키마/코드 실측 정정 (요청서 추측 → 실제)
+
+| 항목 | 요청서 본문 가정 | 실제(2026-06-04 실측) |
+|---|---|---|
+| 결재단계 컬럼명 (§1.D) | `STEP_NO / APROVER_USER_CD / STATUS / DECIDED_DATE / COMMENT` | **`APPROVAL_STEP / APPROVER_USER_CD / APPROVAL_STATUS / APPROVAL_COMMENT / APPROVAL_DATE`** (`tb_user_attd_req_approval` 실재, REQ_ID→tb_user_attd_req, 현재 연차만 사용) |
+| 결재단계 상태값 (§1.D) | `'01'대기/'02'승인/'03'반려` | **SYS044: `00`대기 / `01`신청(차례도래) / `02`승인 / `03`반려** (연차와 동일) |
+| 프리셋 USE_TYPE (§1.B/§3/§6) | `tb_aprv_line_preset.USE_TYPE='ATTD_REQ'` 로 분류 | **USE_TYPE 컬럼 없음.** 프리셋은 용도 구분 없이 사용자별 다중 보유. → **연차와 프리셋 풀 공유**(아래 D1). |
+| SYS045 PUSH 타입 | `ATTD_APPROVAL_TURN` 신규 | 현재 `LEAVE_APPROVAL_TURN` 만 존재. 근태용 신규 코드 필요(D5). |
+
+### 8.1 확정 결정
+
+| # | 결정 | 내용 |
+|---|---|---|
+| **D1** | 프리셋 공유 (Q1.B / 본문 §1.B) | **연차와 동일 프리셋 풀 공유**(b안). `tb_aprv_line_preset` 에 USE_TYPE 컬럼 **추가하지 않음**, 마이그 없음. 결재자 풀이 사실상 동일하므로 분리 불필요. |
+| **D2** | 결재 분기 기준 | 신청자 소속 노드 `tb_site_node.SELF_ATTD_APPRV_YN` 으로 분기. ⚠️ **이 컬럼은 연차에서는 "본인 결재자 자동승인 자격"** 의미이나, **근태에서는 아래 D3/D4 의미로 사용**(도메인 간 의미 상이 — 정책서에 명시). |
+| **D3** | `'Y'`(자체근태승인) 케이스 | 결재선 **미사용**. 현행 단일승인(`REQ_STATUS '01'→'02'`) 유지하되, **승인 가능자 = 그 노드 Main/Sub 관리자**로 권한 게이팅. **둘 중 1인이라도 승인하면 완료(OR 승인)** — 단일 전이라 자연 성립. 신청 측(§1.D) 결재선 INSERT **안 함**(tb_user_attd_req 만 INSERT). 승인자(Main+Sub)에게 "승인 요망" PUSH. |
+| **D4** | `'Y'` + 신청자가 그 노드 Main/Sub 관리자 | **즉시 자동 승인**(정책 §9.5 자기 승인 원칙). PUSH 미발송. |
+| **D5** | `'Y'` + 노드 Main/Sub 관리자 0명 | **설정오류 에러**(폴백 없음). master/hr 폴백 **하지 않음** — prafta-046 이 "관리자 없는 노드에 근로자 배정"을 구조적으로 차단하므로 정상 흐름에선 발생 불가. 만약을 위한 최소 방어로 `ATTD_4xx` throw. |
+| **D6** | `'N'` 케이스 | 결재선(다단계). 신청 측 §1.A~D(앱 폼 결재자 지정 → `tb_user_attd_req_approval` 다중행 INSERT). **웹 승인 다단계화는 본 작업 범위 밖 → `prafta-app-020`**. 차례도래 PUSH 도 app-020. |
+| **D7** | `'N'` 자기 승인 자격 (Q4) | 연차 패턴 미러: `selectUserNodeSelfApproveYn` 으로 본인 결재자 단계 자동승인('Y'면 `02`, 'N'이면 본인 지정 불가 `ATTD_400_056` 등가). |
+| **D8** | 결재자 스코프 가드 | 연차 web `countValidApprovers` 미러(CMPNY+SITE+재직+활성). 클라 결재자 주입 차단(cross-tenant PII 누수 방지). |
+| **D9** | SYS045 PUSH 코드 | 근태 차례도래 코드 신규(D6 PUSH는 app-020). 연차 `LEAVE_APPROVAL_TURN` 과 통합한 범용 `APPROVAL_TURN` vs 신규 `ATTD_APPROVAL_TURN` — **planner 가 app-020 과 일치시켜 결정**(중복 정의 금지). |
+
+### 8.2 선행/범위 경계
+
+- **선행**: `prafta-046`(노드–관리자 정합성 가드, web/user). D5 의 전제. **app-009 착수 전 또는 병행**하되, app-009 `'Y'` 케이스 동작 검증 전 완료 권장.
+- **범위 밖(분리)**: `'N'` 웹 승인 다단계화 + 차례도래 PUSH → `prafta-app-020`.
+- **본 작업(app-009) 범위**: ① 결재선 신청 INSERT(`'N'` 케이스, §1.A~D) ② 프리셋 CRUD+사용자검색 앱 endpoint(§1.B, 공유 풀) ③ `'Y'`/`'N'` 분기 + `'Y'` 단일승인 노드관리자 게이팅(D3/D4/D5) ④ 앱 폼 결재선 UI(§1.A·C).
+- **F12~F17**: High 가드(F12 마감/F13 스케줄존재/F14 NODE_CD IDOR/F15 race)는 planner 가 본 작업과 묶을지 분리 결정(Q8). 권장: 함께.
+
+### 8.3 미해결/주의
+
+- **PUSH 실도달 0**: `tb_user_device` PUSH_TOKEN 0건 + 워커 게이트 OFF → `'Y'` 승인요망 PUSH 도 outbox 적재까지만. 실발송은 앱 토큰등록+게이트 ON 별도 선행(prafta-com-002 참조).
+- **D2 의미 상이**: `SELF_ATTD_APPRV_YN` 이 연차/근태에서 다른 의미 → 정책서(`attd/09` 또는 노드 관리)에 1줄 명시 필요.

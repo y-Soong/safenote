@@ -24,8 +24,17 @@
         <header class="aps__header">
           <h2 class="aps__title">결재자 추가</h2>
           <button type="button" class="aps__close" aria-label="닫기" @click="onCancel">
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-                 stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <svg
+              width="20"
+              height="20"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              aria-hidden="true"
+            >
               <line x1="18" y1="6" x2="6" y2="18" />
               <line x1="6" y1="6" x2="18" y2="18" />
             </svg>
@@ -45,9 +54,7 @@
         <!-- 후보 리스트 -->
         <div class="aps__body">
           <p v-if="isLoading" class="aps__state">불러오는 중...</p>
-          <p v-else-if="filteredCandidates.length === 0" class="aps__state">
-            검색 결과가 없어요
-          </p>
+          <p v-else-if="filteredCandidates.length === 0" class="aps__state">검색 결과가 없어요</p>
 
           <button
             v-for="cand in filteredCandidates"
@@ -63,7 +70,9 @@
               <p class="aps__item-meta">{{ metaOf(cand) }}</p>
             </div>
             <span v-if="isExcluded(cand.userCd)" class="aps__item-tag">추가됨</span>
-            <span v-else-if="isChecked(cand.userCd)" class="aps__item-check" aria-hidden="true">✓</span>
+            <span v-else-if="isChecked(cand.userCd)" class="aps__item-check" aria-hidden="true"
+              >✓</span
+            >
           </button>
         </div>
 
@@ -132,9 +141,7 @@ const filteredCandidates = computed(() => {
   return candidates.value.filter((c) => (c.userNm || '').includes(kw))
 })
 
-const checkedList = computed(() =>
-  candidates.value.filter((c) => checkedSet.value.has(c.userCd))
-)
+const checkedList = computed(() => candidates.value.filter((c) => checkedSet.value.has(c.userCd)))
 
 const metaOf = (cand) => [cand.nodeNm, cand.rankNm].filter(Boolean).join(' · ')
 
@@ -188,7 +195,7 @@ watch(
     checkedSet.value = new Set()
     keyword.value = ''
     loadCandidates()
-  }
+  },
 )
 </script>
 

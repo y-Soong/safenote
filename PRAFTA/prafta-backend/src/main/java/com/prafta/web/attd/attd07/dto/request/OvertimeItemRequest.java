@@ -3,6 +3,7 @@ package com.prafta.web.attd.attd07.dto.request;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.Pattern;
 import lombok.Getter;
+// prafta-043: 초과근무 유형(OT_TYPE) 전면 파기 — otType 필드/검증 제거.
 import lombok.NoArgsConstructor;
 import lombok.Setter;
 
@@ -14,10 +15,6 @@ import lombok.Setter;
 @Setter
 @NoArgsConstructor
 public class OvertimeItemRequest {
-
-    @NotBlank
-    @Pattern(regexp = "^(EXTEND|NIGHT|HOLIDAY)$")
-    private String otType;
 
     @NotBlank
     @Pattern(regexp = "^[0-9]{8}$")

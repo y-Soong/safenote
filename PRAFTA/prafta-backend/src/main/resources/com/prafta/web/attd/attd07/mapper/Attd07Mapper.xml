@@ -491,8 +491,6 @@
             , O.WORK_YMD             AS workYmd
             , O.NODE_CD              AS nodeCd
 
-            , O.OT_TYPE              AS otType
-
             , O.PLAN_START_DATE      AS planStartDate
             , O.PLAN_START_TIME      AS planStartTime
             , O.PLAN_END_DATE        AS planEndDate
@@ -908,6 +906,16 @@
 			, null
 		) 							AS insertNm
 	    , B.INSERT_DATE				AS insertDate
+	    <!-- PRAFTA-APP-007-WEB-6: 스케줄 수정 이력 전용 8필드(record 끝). 근태/OT 이력은 해당 없음 → NULL.
+	         (record DailyAttdDetailHistoryResult 끝 8필드와 동일 순서·위치) -->
+	    , NULL						AS befSchedFstStrTime
+	    , NULL						AS befSchedFstEndTime
+	    , NULL						AS befSchedSecStrTime
+	    , NULL						AS befSchedSecEndTime
+	    , NULL						AS aftSchedFstStrTime
+	    , NULL						AS aftSchedFstEndTime
+	    , NULL						AS aftSchedSecStrTime
+	    , NULL						AS aftSchedSecEndTime
 	FROM TB_USER_ATTD_HIST B
 	     LEFT JOIN TB_USER_ATTD_MGMT A
 			 ON (
@@ -964,7 +972,6 @@
 	    , A.START_TIME		AS startTime
 	    , A.END_DATE		AS endDate
 	    , A.END_TIME		AS endTime
-	    , A.OT_TYPE			AS otType
 	    , A.REQ_REASON		AS reqReason
 	    , A.INSERT_DATE		AS insertDate
 	    , ( SELECT AP.APPROVAL_STEP
@@ -974,7 +981,63 @@
 	           AND AP.APPROVER_USER_CD = #{gvUserCd}
 	           AND AP.APPROVAL_STATUS  = '01'
 	         LIMIT 1 )  AS approvalStep
+	    <!-- PRAFTA-APP-007: 스케줄 수정(10) 요청 카드의 목표 스케줄 코드.
+	         MyBatis record 생성자 매핑은 컬럼 순서=필드 순서(위치 기반)이므로
+	         record 의 마지막 필드 schCd 와 동일하게 SELECT 맨 끝에 둔다. -->
+	    , A.SCH_CD			AS schCd
+	    <!-- PRAFTA-APP-007-WEB-5: 스케줄 수정(10) 카드 BEFORE/AFTER 표시용 원시 시각.
+	         record(MonthlyAttdReqResult) 의 schCd 뒤 10필드와 "동일 순서"로 SELECT 끝에 둔다.
+	         (record 끝 = SELECT 끝 — 위치 기반 매핑. 순서 어긋나면 런타임 변환 폭발.)
+	         목표(tgt*) = REQ.SCH_CD → tb_sch_mgmt(TS), 현재(cur*) = WORK_PLAN_CD → tb_sch_mgmt(CS).
+	         type='10' 외 요청은 SCH_CD NULL → TS 미매칭 → tgt* NULL. WORK_PLAN_CD 가 LEAVE_CD 면 CS 미매칭 → cur* NULL. -->
+	    , TS.SCH_TYPE			AS tgtSchType
+	    , TS.FST_SCH_STR_TIME	AS tgtFstStrTime
+	    , TS.FST_SCH_END_TIME	AS tgtFstEndTime
+	    , TS.SEC_SCH_STR_TIME	AS tgtSecStrTime
+	    , TS.SEC_SCH_END_TIME	AS tgtSecEndTime
+	    , CS.SCH_TYPE			AS curSchType
+	    , CS.FST_SCH_STR_TIME	AS curFstStrTime
+	    , CS.FST_SCH_END_TIME	AS curFstEndTime
+	    , CS.SEC_SCH_STR_TIME	AS curSecStrTime
+	    , CS.SEC_SCH_END_TIME	AS curSecEndTime
+	    <!-- PRAFTA-APP-018-D: 연차(05/06) 카드 표시용 사용단위·차감일수.
+	         record(MonthlyAttdReqResult) 의 curSecEndTime 뒤 3필드와 "동일 순서"로 SELECT 끝에 둔다.
+	         (record 끝 = SELECT 끝 — 위치 기반 매핑. 순서 어긋나면 런타임 변환 폭발.)
+	         leaveDays = A.LEAVE_DAYS(요청에 직접 존재), useUnitType/unitNm = U(TB_USER_LEAVE_USE) 조인.
+	         01~04/10 요청은 U 미매칭 → useUnitType/unitNm NULL. -->
+	    , A.LEAVE_DAYS			AS leaveDays
+	    , U.USE_UNIT_TYPE		AS useUnitType
+	    , FNC_CMM_INFO_SRCH(
+			A.CMPNY_CD
+		    , 'SYST_VAL'
+		    , U.USE_UNIT_TYPE
+		    , 'SYS025'
+		) 						AS unitNm
 	FROM TB_USER_ATTD_REQ A
+	     <!-- 목표 스케줄: REQ 의 SCH_CD 로 스케줄 마스터 조인 (회사/사업장 스코프 고정 — 타 사업장 스케줄 유출 차단) -->
+	     LEFT JOIN TB_SCH_MGMT TS
+	            ON TS.CMPNY_CD = A.CMPNY_CD
+	           AND TS.SITE_CD  = A.SITE_CD
+	           AND TS.SCH_CD   = A.SCH_CD
+	     <!-- 현재 스케줄: 해당 사용자-일자의 근무계획(WORK_PLAN_CD) → 스케줄 마스터 조인 -->
+	     LEFT JOIN TB_USER_WORK_PLAN WP
+	            ON WP.CMPNY_CD = A.CMPNY_CD
+	           AND WP.SITE_CD  = A.SITE_CD
+	           AND WP.USER_CD  = A.USER_CD
+	           AND WP.WORK_YMD = A.WORK_YMD
+	     LEFT JOIN TB_SCH_MGMT CS
+	            ON CS.CMPNY_CD     = A.CMPNY_CD
+	           AND CS.SITE_CD      = A.SITE_CD
+	           AND CS.SCH_CD       = WP.WORK_PLAN_CD
+	     <!-- PRAFTA-APP-018-D: 연차 사용단위 산출용 사용기록 조인 (selectMyPendingLeaveApprovals 미러).
+	          05(연차사용)=U.REQ_ID=A.REQ_ID(CONFIRMED), 06(연차수정)=U.LEAVE_ID=A.TARGET_ID.
+	          CMPNY_CD 동일성 + 1:1 키 고정으로 타 사용자 사용기록 유출 차단(IDOR 불변).
+	          LEFT JOIN 이므로 01~04/10 요청은 U.* NULL → 회귀 없음. -->
+	     LEFT JOIN TB_USER_LEAVE_USE U
+	            ON U.CMPNY_CD = A.CMPNY_CD
+	           AND U.DEL_YN   = 'N'
+	           AND ( (A.REQ_TYPE = '05' AND U.REQ_ID   = A.REQ_ID AND U.LEAVE_STATUS = 'CONFIRMED')
+	              OR (A.REQ_TYPE = '06' AND U.LEAVE_ID = A.TARGET_ID) )
 	WHERE A.CMPNY_CD = #{gvCmpnyCd}
 	  AND A.SITE_CD = #{siteCd}
 	  AND A.USER_CD = #{userCd}
@@ -989,6 +1052,41 @@
                            AND AP.REQ_ID   = A.REQ_ID
                            AND AP.APPROVER_USER_CD = #{gvUserCd}
                            AND AP.APPROVAL_STATUS  = '01' ) )
+    </select>
+
+    <select id="selectDailyConfirmedLeave"
+            parameterType="com.prafta.web.attd.attd07.application.query.DailyAttdDetailsQuery"
+            resultType="com.prafta.web.attd.attd07.result.ConfirmedLeaveResult">
+    /* Attd07Mapper.selectDailyConfirmedLeave */
+    <!-- PRAFTA-APP-018-F: 그날 확정 연차(TB_USER_LEAVE_USE, CONFIRMED) 표시.
+         결재형은 leave_use 가 즉시 CONFIRMED 라도 REQ 미처리(01)면 D 의 '근로자 요청' 카드가 소유 →
+         ( U.REQ_ID IS NULL OR R.REQ_STATUS <> '01' ) 로 미처리 결재대기분을 제외해 D/F 이중표시를 막는다.
+         반려(03)는 leave_use 가 CANCELLED 로 전이되어 CONFIRMED 필터에서 자동 제외된다.
+         단위라벨은 SYS025, 종류명은 TB_LEAVE_TYPE_MGMT(LT). 스코프는 일자상세와 동일(CMPNY/SITE/USER). -->
+    SELECT
+          U.LEAVE_CD                                                            AS leaveCd
+        , LT.LEAVE_NM                                                           AS leaveNm
+        , U.USE_UNIT_TYPE                                                       AS useUnitType
+        , FNC_CMM_INFO_SRCH(U.CMPNY_CD, 'SYST_VAL', U.USE_UNIT_TYPE, 'SYS025')  AS unitNm
+        , U.START_TIME                                                          AS startTime
+        , U.END_TIME                                                            AS endTime
+        , U.LEAVE_DAYS                                                          AS leaveDays
+      FROM TB_USER_LEAVE_USE U
+      LEFT JOIN TB_LEAVE_TYPE_MGMT LT
+             ON LT.CMPNY_CD = U.CMPNY_CD
+            AND LT.LEAVE_CD = U.LEAVE_CD
+      <!-- 미처리(01) 결재대기 연차 제외용: 연결 REQ 의 상태 확인(LEFT JOIN — 직접사용은 REQ_ID NULL). -->
+      LEFT JOIN TB_USER_ATTD_REQ R
+             ON R.CMPNY_CD = U.CMPNY_CD
+            AND R.REQ_ID   = U.REQ_ID
+     WHERE U.CMPNY_CD     = #{gvCmpnyCd}
+       AND U.SITE_CD      = #{siteCd}
+       AND U.USER_CD      = #{userCd}
+       AND U.START_DATE   = #{workYmd}
+       AND U.LEAVE_STATUS = 'CONFIRMED'
+       AND U.DEL_YN       = 'N'
+       AND ( U.REQ_ID IS NULL OR R.REQ_STATUS != '01' )   <!-- 미처리 결재대기분은 D 카드가 소유(이중표시 방지) -->
+     ORDER BY U.START_TIME, U.LEAVE_ID
     </select>
 
     <select id="selectDailyLeaveApprovalHistory" parameterType="com.prafta.web.attd.attd07.application.query.DailyAttdDetailsQuery" resultType="com.prafta.web.attd.attd07.result.DailyAttdDetailHistoryResult">
@@ -1020,6 +1118,15 @@
         , AP.APPROVER_USER_CD                                                  AS insertNo
         , FNC_CMM_INFO_SRCH(AP.CMPNY_CD, 'USER_NM', AP.APPROVER_USER_CD, null) AS insertNm
         , AP.APPROVAL_DATE                                                     AS insertDate
+        <!-- PRAFTA-APP-007-WEB-6: 스케줄 수정 이력 전용 8필드(record 끝). 연차 이력은 해당 없음 → NULL. -->
+        , NULL                                                                 AS befSchedFstStrTime
+        , NULL                                                                 AS befSchedFstEndTime
+        , NULL                                                                 AS befSchedSecStrTime
+        , NULL                                                                 AS befSchedSecEndTime
+        , NULL                                                                 AS aftSchedFstStrTime
+        , NULL                                                                 AS aftSchedFstEndTime
+        , NULL                                                                 AS aftSchedSecStrTime
+        , NULL                                                                 AS aftSchedSecEndTime
       FROM TB_USER_ATTD_REQ_APPROVAL AP
       JOIN TB_USER_ATTD_REQ R
         ON R.CMPNY_CD = AP.CMPNY_CD
@@ -1035,6 +1142,85 @@
      ORDER BY AP.APPROVAL_DATE DESC
     </select>
 
+    <select id="selectDailySchedModifyHistory" parameterType="com.prafta.web.attd.attd07.application.query.DailyAttdDetailsQuery" resultType="com.prafta.web.attd.attd07.result.DailyAttdDetailHistoryResult">
+    /* Attd07Mapper.selectDailySchedModifyHistory - PRAFTA-APP-007-WEB-6 + D15 */
+    <!-- 스케줄 수정(REQ_TYPE='10') 처리된 요청(승인 '02' / 반려 '03')을 일자 상세 '처리 이력'에 노출.
+         결재라인(TB_USER_ATTD_REQ_APPROVAL) 미사용(단순 매니저 모델 — REQ 행에 PROCESS_* 직접 기록).
+         시각/구간(출퇴근) 컬럼은 스케줄 수정과 무관 → NULL. 유형명은 코드마스터로 조립한다.
+           - REQ_TYPE 명: SYS032 (예 "스케줄 수정 요청")
+           - REQ_STATUS 명: SYS033 (예 "승인"/"반려")  ⚠️ 연차 이력은 SYS044(결재상태)를 쓰지만
+             스케줄 수정은 결재단계가 아닌 REQ 상태이므로 SYS033 사용(코드그룹 혼동 금지).
+         insertDate 는 PROCESS_DATE(datetime). 연차 이력 AP.APPROVAL_DATE 와 동일 타입/표시·정렬 정합.
+
+         D15 변경 전→후 스케줄:
+           - 승인('02'): PROCESS_COMMENT 는 마커 'SCHED_MODIFY_APPROVED:OLD=<oldCode>'. SUBSTRING_INDEX 로
+             OLD=뒤(=변경 전 SCH_CD) 추출 → BS(tb_sch_mgmt) 조인으로 변경 전 원시 시각.
+             변경 후는 R.SCH_CD → AS(tb_sch_mgmt) 조인.
+             oldCode 가 빈값(승인 직전 근무계획 없음)이거나 스케줄 마스터에 없으면 befSched* NULL(프론트 "없음").
+           - 반려('03'): 스케줄 무변경 → bef/aft 전부 NULL. processReason = PROCESS_COMMENT(반려 사유).
+           - 승인 마커는 사용자에게 노출 금지 → processReason 은 승인 시 NULL(fail-safe, 프론트도 마커 숨김). -->
+    SELECT
+          R.CMPNY_CD                                                       AS cmpnyCd
+        , NULL                                                             AS histId
+        , NULL                                                             AS attdId
+        , R.REQ_STATUS                                                     AS histType
+        , CONCAT(
+              FNC_CMM_INFO_SRCH(R.CMPNY_CD, 'SYST_VAL', R.REQ_TYPE,   'SYS032')
+            , ' '
+            , FNC_CMM_INFO_SRCH(R.CMPNY_CD, 'SYST_VAL', R.REQ_STATUS, 'SYS033')
+          )                                                                AS histTypeNm
+        , NULL                                                             AS workSeq
+        , NULL                                                             AS befCheckInDate
+        , NULL                                                             AS befCheckInTime
+        , NULL                                                             AS befCheckOutDate
+        , NULL                                                             AS befCheckOutTime
+        , NULL                                                             AS aftCheckInDate
+        , NULL                                                             AS aftCheckInTime
+        , NULL                                                             AS aftCheckOutDate
+        , NULL                                                             AS aftCheckOutTime
+        <!-- 승인 마커는 숨기고(NULL), 반려 사유만 노출 -->
+        , CASE WHEN R.REQ_STATUS = '02' THEN NULL ELSE R.PROCESS_COMMENT END AS processReason
+        , R.PROCESS_USER_CD                                                AS insertNo
+        , FNC_CMM_INFO_SRCH(R.CMPNY_CD, 'USER_NM', R.PROCESS_USER_CD, null) AS insertNm
+        , R.PROCESS_DATE                                                   AS insertDate
+        <!-- D15: 변경 전(BS)→후(AS) 스케줄 원시 시각 (record 끝 8필드 — 위치 일치) -->
+        , BS.FST_SCH_STR_TIME                                              AS befSchedFstStrTime
+        , BS.FST_SCH_END_TIME                                              AS befSchedFstEndTime
+        , BS.SEC_SCH_STR_TIME                                              AS befSchedSecStrTime
+        , BS.SEC_SCH_END_TIME                                              AS befSchedSecEndTime
+        , AS_.FST_SCH_STR_TIME                                             AS aftSchedFstStrTime
+        , AS_.FST_SCH_END_TIME                                             AS aftSchedFstEndTime
+        , AS_.SEC_SCH_STR_TIME                                             AS aftSchedSecStrTime
+        , AS_.SEC_SCH_END_TIME                                             AS aftSchedSecEndTime
+      FROM TB_USER_ATTD_REQ R
+        <!-- 변경 후 스케줄: 승인('02')일 때만 조인한다. 반려('03')는 스케줄 무변경이므로
+             AS_ 도 미매칭(NULL) → 프론트 isSchedApprove=false → 시각분기로 빠져 사유만 표시.
+             (BS 와 대칭으로 REQ_STATUS='02' 가드 필수 — 없으면 반려 행도 aftSched 가 채워져
+              "변경 후 스케줄"이 잘못 노출되는 버그 발생.) -->
+        LEFT JOIN TB_SCH_MGMT AS_
+               ON AS_.CMPNY_CD = R.CMPNY_CD
+              AND AS_.SITE_CD  = R.SITE_CD
+              AND R.REQ_STATUS = '02'
+              AND AS_.SCH_CD   = R.SCH_CD
+        <!-- 변경 전 스케줄: 승인 마커 'SCHED_MODIFY_APPROVED:OLD=<oldCode>' 의 OLD= 뒤를 추출해 조인.
+             마커가 아니거나(반려) OLD 가 빈값이면 추출 결과가 '' 또는 원문 → 스케줄 마스터 미매칭 → NULL. -->
+        LEFT JOIN TB_SCH_MGMT BS
+               ON BS.CMPNY_CD = R.CMPNY_CD
+              AND BS.SITE_CD  = R.SITE_CD
+              AND R.REQ_STATUS = '02'
+              AND R.PROCESS_COMMENT LIKE 'SCHED_MODIFY_APPROVED:OLD=%'
+              AND BS.SCH_CD = SUBSTRING_INDEX(R.PROCESS_COMMENT, 'OLD=', -1)
+     WHERE R.CMPNY_CD  = #{gvCmpnyCd}
+       AND R.SITE_CD   = #{siteCd}
+       AND R.USER_CD   = #{userCd}
+       AND R.WORK_YMD  = #{workYmd}
+       AND R.REQ_TYPE  = '10'
+       AND R.REQ_STATUS IN ('02','03')
+       AND R.PROCESS_DATE IS NOT NULL
+       AND R.DEL_YN    = 'N'
+     ORDER BY R.PROCESS_DATE DESC
+    </select>
+
 
     <select id="selectAttdWorkYmd" resultType="string">
     /* Attd07Mapper.selectAttdWorkYmd */
@@ -1042,6 +1228,22 @@
       FROM TB_USER_ATTD_MGMT M
      WHERE M.CMPNY_CD = #{gvCmpnyCd}
        AND M.ATTD_ID  = #{attdId}
+     LIMIT 1
+    </select>
+
+    <!-- 승인 직전 근태 현재 출퇴근 스냅샷 — 처리 이력 "변경 전(BEF_*)" 을 서버 권위값으로 채운다.
+         기존 행이 없으면(생성요청: 사전 채번된 ATTD_ID 가 아직 MGMT 에 없음) 결과 없음 → BEF NULL. -->
+    <select id="selectAttdSnapshotById" resultType="com.prafta.web.attd.attd07.result.AttdSnapshotResult">
+    /* Attd07Mapper.selectAttdSnapshotById */
+    SELECT
+          M.CHECK_IN_DATE   AS checkInDate
+        , M.CHECK_IN_TIME   AS checkInTime
+        , M.CHECK_OUT_DATE  AS checkOutDate
+        , M.CHECK_OUT_TIME  AS checkOutTime
+      FROM TB_USER_ATTD_MGMT M
+     WHERE M.CMPNY_CD = #{gvCmpnyCd}
+       AND M.ATTD_ID  = #{attdId}
+       AND M.DEL_YN   = 'N'
      LIMIT 1
     </select>
 
@@ -1060,8 +1262,6 @@
 
         , O.WORK_YMD             AS workYmd
         , O.NODE_CD              AS nodeCd
-
-        , O.OT_TYPE              AS otType
 
         , O.PLAN_START_DATE      AS planStartDate
         , O.PLAN_START_TIME      AS planStartTime
@@ -1198,6 +1398,67 @@
       AND REQ_STATUS = '01'
     </update>
 
+    <update id="updateUserSchedModifyReqApprove">
+    /* Attd07Mapper.updateUserSchedModifyReqApprove */
+<!--   PRAFTA-APP-007 스케줄 수정(10) 요청 승인.
+       TARGET_ID 는 스케줄 수정에 무의미하므로 건드리지 않는다. REQ_STATUS='01'(신청) 가드로 정확히 1행만 전이.
+       D15: PROCESS_COMMENT 는 호출부가 구성한 구조화 마커('SCHED_MODIFY_APPROVED:OLD=<oldCode>')를 저장한다.
+            변경 전 근무계획 코드(oldCode)를 담아 처리 이력에서 변경 전→후 스케줄을 복원한다(무마이그).
+-->
+    UPDATE TB_USER_ATTD_REQ
+    SET REQ_STATUS        = '02'
+        , PROCESS_USER_CD = #{gvUserCd}
+        , PROCESS_COMMENT = #{processComment}
+        , PROCESS_DATE    = NOW()
+        , UPDATE_NO       = #{gvUserCd}
+        , UPDATE_DATE     = NOW()
+    WHERE CMPNY_CD   = #{gvCmpnyCd}
+      AND SITE_CD    = #{siteCd}
+      AND REQ_ID     = #{reqId}
+      AND DEL_YN     = 'N'
+      AND REQ_STATUS = '01'
+    </update>
+
+    <select id="selectUserWorkPlanCd" resultType="string">
+    /* Attd07Mapper.selectUserWorkPlanCd - PRAFTA-APP-007 D15 승인 직전 현재 근무계획 코드 캡처 */
+    SELECT WP.WORK_PLAN_CD
+      FROM TB_USER_WORK_PLAN WP
+     WHERE WP.CMPNY_CD = #{gvCmpnyCd}
+       AND WP.SITE_CD  = #{siteCd}
+       AND WP.USER_CD  = #{userCd}
+       AND WP.WORK_YMD = #{workYmd}
+     LIMIT 1
+    </select>
+
+    <update id="upsertUserWorkPlan" parameterType="com.prafta.web.attd.attd07.application.command.UpsertUserWorkPlanCommand">
+    /* Attd07Mapper.upsertUserWorkPlan - PRAFTA-APP-007 스케줄 수정(10) 승인 시 근무계획 한 칸 교체 (Attd05.saveUserWorkPlans 동형) */
+    INSERT INTO TB_USER_WORK_PLAN (
+        CMPNY_CD
+        , SITE_CD
+        , USER_CD
+        , WORK_YMD
+        , WORK_PLAN_CD
+        , INSERT_NO
+        , INSERT_DATE
+        , UPDATE_NO
+        , UPDATE_DATE
+    ) VALUES (
+        #{gvCmpnyCd}
+        , #{siteCd}
+        , #{userCd}
+        , #{workYmd}
+        , #{workPlanCd}
+        , #{gvUserCd}
+        , NOW()
+        , #{gvUserCd}
+        , NOW()
+    ) AS NEW
+    ON DUPLICATE KEY UPDATE
+        WORK_PLAN_CD	= NEW.WORK_PLAN_CD
+        , UPDATE_NO		= NEW.UPDATE_NO
+        , UPDATE_DATE	= NOW()
+    </update>
+
     <update id="updateUserOvertimeReqApprove">
     /* Attd07Mapper.updateUserOvertimeReqApprove - 초과근무 요청 승인(요청 승인 관리 인박스 경유) */
     UPDATE TB_USER_ATTD_REQ
@@ -1227,6 +1488,7 @@
         , R.REQ_TYPE     AS reqType
         , R.REQ_STATUS   AS reqStatus
         , R.DEL_YN       AS delYn
+        , R.SCH_CD       AS schCd	<!-- PRAFTA-APP-007: 스케줄 수정(10) 승인 시 반영할 목표 스케줄 코드(서버 권위) -->
     FROM TB_USER_ATTD_REQ R
     WHERE R.CMPNY_CD = #{gvCmpnyCd}
       AND R.REQ_ID   = #{reqId}
@@ -1475,8 +1737,6 @@
         , WORK_YMD
         , NODE_CD
 
-        , OT_TYPE
-
         , PLAN_START_DATE
         , PLAN_START_TIME
         , PLAN_END_DATE
@@ -1508,8 +1768,6 @@
         , #{workYmd}
         , #{nodeCd}
 
-        , #{otType}
-
         , #{planStartDate}
         , #{planStartTime}
         , #{planEndDate}
@@ -1537,8 +1795,7 @@
     <update id="updateUserOvertimeModify">
     /* Attd07Mapper.updateUserOvertimeModify - PRAFTA-025 초과근무 수정 승인 */
     UPDATE TB_USER_OVERTIME_MGMT
-       SET OT_TYPE           = #{otType}
-         , PLAN_START_DATE   = #{startDate}
+       SET PLAN_START_DATE   = #{startDate}
          , PLAN_START_TIME   = #{startTime}
          , PLAN_END_DATE     = #{endDate}
          , PLAN_END_TIME     = #{endTime}

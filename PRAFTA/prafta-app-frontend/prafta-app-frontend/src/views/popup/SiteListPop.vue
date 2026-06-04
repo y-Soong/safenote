@@ -1,6 +1,6 @@
 <template>
   <Transition name="fade">
-    <div class="modal-overlay">
+    <div v-if="visible" class="modal-overlay">
       <div class="modal-content-wide" ref="modalRef">
         <!-- 🔹 1. Title 영역 -->
         <div class="modal-header" @mousedown="startDrag">
@@ -48,21 +48,21 @@
               <tbody>
                 <tr
                   v-for="site in siteList"
-                  :key="site.SITE_CD"
-                  @dblclick="fnSelectRow(site.SITE_CD, site.SITE_NO, site.SITE_NM)"
+                  :key="site.siteCd"
+                  @dblclick="fnSelectRow(site.siteCd, site.siteNo, site.siteNm)"
                 >
-                  <td style="display: none">{{ site.SITE_CD }}</td>
-                  <td>{{ site.SITE_NO }}</td>
-                  <td>{{ site.SITE_NM }}</td>
-                  <td>{{ site.SITE_ADMIN_ID }}</td>
+                  <td style="display: none">{{ site.siteCd }}</td>
+                  <td>{{ site.siteNo }}</td>
+                  <td>{{ site.siteNm }}</td>
+                  <td>{{ site.siteAdminNm }}</td>
                   <td>
                     {{
-                      proxy.$util.isNotEmpty(site.TEL_NO)
-                        ? proxy.$util.formatPhoneNumber(site.TEL_NO)
-                        : site.TEL_NO
+                      proxy.$util.isNotEmpty(site.telNo)
+                        ? proxy.$util.formatPhoneNumber(site.telNo)
+                        : site.telNo
                     }}
                   </td>
-                  <td>{{ site.ADDR_1 || site.ADDR_2 }}</td>
+                  <td>{{ site.addr1 || site.addr2 }}</td>
                 </tr>
               </tbody>
             </table>
@@ -106,14 +106,17 @@ const fnSearch = async () => {
   siteList.value = []
   try {
     if (!proxy.$util.isEmpty(cmpnyCd.value)) {
-      const response = await axios.post('/comApi/baseinfo/getSiteInfoList', {
-        cmpnyCd: cmpnyCd.value,
-        siteNo: siteNo.value,
-        siteNm: siteNm.value,
+      // 앱 통신정렬: GET /comApi/baseinfo/site-lists (인증 변형, cmpnyCd 는 JWT 클레임에서 도출)
+      const response = await axios.get('/comApi/baseinfo/site-lists', {
+        params: {
+          siteNo: siteNo.value,
+          siteNm: siteNm.value,
+        },
       })
 
       if (response.status === 200) {
-        siteList.value = response.data
+        // 응답 스키마 { siteInfoResultList: [...] }
+        siteList.value = response.data?.siteInfoResultList || []
       }
     }
   } catch (err) {

@@ -1,5 +1,7 @@
 package com.prafta.app.attd.attd01.dto.response;
 
+import java.math.BigDecimal;
+
 import com.fasterxml.jackson.annotation.JsonProperty;
 
 import lombok.Builder;
@@ -26,6 +28,12 @@ public class WeekDayResponse {
     @JsonProperty("isLeaveUsed")
     private final boolean isLeaveUsed;
     private final String leaveTypeName;
+    // prafta-app-018-E: 부분연차(시간차/반차) 상세 표시필드. 라벨 산출은 FE(attdFormat.js).
+    //   leaveUnitType=SYS025 코드 원값, leaveTimeRange="HHMM~HHMM"(둘 다 있을 때만, 없으면 null),
+    //   leaveDays=차감일수 원값(정규화는 FE). 연차 미사용일이면 모두 null.
+    private final String leaveUnitType;
+    private final String leaveTimeRange;
+    private final BigDecimal leaveDays;
     private final String workPlanCode;
     private final String workPlanName;
     @JsonProperty("isTwoSlot")

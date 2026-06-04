@@ -21,8 +21,6 @@ public record MonthlyOvertimeResult(
     , String workYmd
     , String nodeCd
 
-    , String otType
-
     /* 계획 시각 (신청/승인 시점) */
     , String planStartDate
     , String planStartTime

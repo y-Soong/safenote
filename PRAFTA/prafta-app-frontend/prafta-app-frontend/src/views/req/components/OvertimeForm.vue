@@ -1,8 +1,13 @@
 <!--
-  OvertimeForm.vue — 초과근무 신청 폼
-  - 작업 ID: PRAFTA-APP-007-8 (분해: .claude/requests/app_requests/prafta-app-007-plan.md §8.5)
-  - emits: submit ({ slots:[{workSeq, startDate, startTime, endDate, endTime, otType}], reqReason }), cancel
-  - OT_TYPE 은 인라인 칩 단일 선택 (EXTEND/NIGHT/HOLIDAY, P12). BaseBottomSheet 미사용.
+  OvertimeForm.vue — 초과근무 신청 폼 (prafta-app-016 개선)
+  - 작업 ID: prafta-app-016-2 (분해: .claude/requests/app_requests/prafta-app-016-plan.md)
+  - 변경점:
+      #1 근태 기반 프리필: context.slots 의 존재 구간 모두 카드화 + 실 출퇴근(checkInTime/checkOutTime) 프리필.
+      #2 유형(OT_TYPE) 칩 제거 — emit payload 에서 otType 미포함(백엔드가 NULL 저장: 016-1).
+          prafta-043: 초과근무 유형(OT_TYPE) 전면 파기 — 유형 안내 문구 제거(컬럼 DROP, 단일 '초과근무').
+      #3 구간별 등록 가능 시간 표시(앞 OT=실출근~스케줄시작 / 뒤 OT=스케줄종료~실퇴근). 표시 전용, 차단 아님.
+  - emits: submit ({ slots:[{workSeq, startDate, startTime, endDate, endTime}], reqReason }), cancel
+  - ⚠️ workSeq 는 구간 식별자(1/2). 위치 기반 재인덱싱 금지(prafta-app-007 메모리).
 -->
 <template>
   <form class="ot-form" @submit.prevent="onSubmit">
@@ -14,7 +19,9 @@
       </p>
       <div class="ctx__row">
         <span class="ctx__lbl">스케줄</span>
-        <span class="ctx__val">{{ context.workPlanName }} · {{ context.scheduleSummary || '-' }}</span>
+        <span class="ctx__val"
+          >{{ context.workPlanName }} · {{ context.scheduleSummary || '-' }}</span
+        >
       </div>
       <div v-if="context.attendanceSummary" class="ctx__row">
         <span class="ctx__lbl">근태</span>
@@ -34,6 +41,19 @@
         :removable="slots.length > 1"
         @remove="onRemoveSlot"
       >
+        <!-- #3 등록 가능 시간 안내 (구간별, 표시 전용) -->
+        <div class="ot-window" :class="{ 'ot-window--empty': !slotWindowText(slot.workSeq) }">
+          <span class="ot-window__lbl">등록 가능 시간</span>
+          <span class="ot-window__val">
+            {{ slotWindowText(slot.workSeq) || '등록 가능한 초과 시간이 없어요' }}
+          </span>
+        </div>
+
+        <!-- prafta-app-017(이슈①) 정규 스케줄 겹침 경고 (구간별, 사전차단) -->
+        <p v-if="slotOverlap(slot.workSeq)" class="warn-msg">
+          스케줄 시간 내에는 초과근무를 등록할 수 없어요.
+        </p>
+
         <label class="field">
           <span class="field__label"><span class="req">*</span>시작</span>
           <div class="input-dt">
@@ -48,30 +68,21 @@
             <TimeStepperField v-model="slot.endTime" placeholder="시각" />
           </div>
         </label>
-        <label class="field">
-          <span class="field__label"><span class="req">*</span>유형</span>
-          <div class="ot-type-row">
-            <button
-              v-for="opt in OT_TYPE_OPTIONS"
-              :key="opt.code"
-              type="button"
-              class="ot-type-chip"
-              :class="{ 'ot-type-chip--on': slot.otType === opt.code }"
-              @click="slot.otType = opt.code"
-            >
-              {{ opt.label }}
-            </button>
-          </div>
-        </label>
+        <!-- #2 유형(OT_TYPE) 칩 제거됨 — 유형 확정은 관리자 승인 단계(서버 NULL 저장) -->
       </SlotCard>
 
-      <button
-        v-if="slots.length === 1"
-        type="button"
-        class="btn-add"
-        @click="onAddSlot"
-      >
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+      <button v-if="slots.length === 1" type="button" class="btn-add" @click="onAddSlot">
+        <svg
+          width="16"
+          height="16"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="2"
+          stroke-linecap="round"
+          stroke-linejoin="round"
+          aria-hidden="true"
+        >
           <line x1="12" y1="5" x2="12" y2="19" />
           <line x1="5" y1="12" x2="19" y2="12" />
         </svg>
@@ -103,9 +114,22 @@
       </label>
     </section>
 
+    <!-- 결재선 (prafta-app-009) -->
+    <ApprovalLineSection
+      v-if="showApprovalSection"
+      ref="approvalSectionRef"
+      v-model="approverList"
+      :presets="presets"
+      @open-picker="onOpenApproverPicker"
+    />
+    <p v-else-if="approvalNotice" class="aprv-notice">
+      <span class="aprv-notice__dot" aria-hidden="true">·</span>
+      {{ approvalNotice }}
+    </p>
+
     <p class="helper">
       <span class="helper__dot" aria-hidden="true">·</span>
-      관리자 승인 후 추가근무로 반영돼요. 근태 마감 전까지 신청해 주세요.
+      관리자 승인 후 추가근무로 반영돼요.
     </p>
 
     <footer class="form-ft">
@@ -114,6 +138,14 @@
         {{ submitting ? '등록 중...' : '요청하기' }}
       </button>
     </footer>
+
+    <!-- 결재자 추가 바텀시트 (prafta-app-009) -->
+    <AttdApproverPickerSheet
+      v-if="showApprovalSection"
+      v-model="approverPickerOpen"
+      :excluded-user-cds="approverUserCds"
+      @add="onAddApprovers"
+    />
   </form>
 </template>
 
@@ -122,25 +154,32 @@ import { ref, computed, getCurrentInstance } from 'vue'
 import SlotCard from './SlotCard.vue'
 import DateStepperField from '@/components/common/DateStepperField.vue'
 import TimeStepperField from '@/components/common/TimeStepperField.vue'
+import ApprovalLineSection from './ApprovalLineSection.vue'
+import AttdApproverPickerSheet from './AttdApproverPickerSheet.vue'
 
 const props = defineProps({
   context: { type: Object, required: true },
   submitting: { type: Boolean, default: false },
+  // prafta-app-009: 본인 소유 결재선 프리셋([{ presetId, presetNm, defaultYn, steps[] }]).
+  presets: { type: Array, default: () => [] },
+  // prafta-app-009: 결재선 분기 컨텍스트 { selfApprvYn:'Y'|'N', isNodeAdmin:bool } | null(미상).
+  approvalContext: { type: Object, default: null },
 })
 const emit = defineEmits(['submit', 'cancel'])
 
 const { proxy } = getCurrentInstance() || { proxy: null }
 const showAlert = (m) => (proxy?.$alert ? proxy.$alert(m) : window.alert(m))
 
-const OT_TYPE_OPTIONS = [
-  { code: 'EXTEND', label: '연장' },
-  { code: 'NIGHT', label: '야간' },
-  { code: 'HOLIDAY', label: '휴일' },
-]
-
+// ── 형식 유틸 (input 값 ↔ 컨텍스트/emit 값) ─────────────────────────────
 function ymdToInput(ymd) {
   if (!ymd || ymd.length !== 8) return ''
   return `${ymd.slice(0, 4)}-${ymd.slice(4, 6)}-${ymd.slice(6, 8)}`
+}
+function hhmmToTime(hhmm) {
+  if (!hhmm) return ''
+  if (hhmm.length === 4) return `${hhmm.slice(0, 2)}:${hhmm.slice(2)}`
+  if (/^\d{2}:\d{2}/.test(hhmm)) return hhmm.slice(0, 5)
+  return ''
 }
 function inputToYmd(s) {
   return s ? s.replace(/-/g, '') : ''
@@ -149,18 +188,86 @@ function timeToHhmm(s) {
   return s ? s.replace(':', '').slice(0, 4) : ''
 }
 
-const slots = ref([
-  {
-    workSeq: 1,
-    startDate: ymdToInput(props.context.workYmd),
-    startTime: '',
-    endDate: ymdToInput(props.context.workYmd),
-    endTime: '',
-    otType: 'EXTEND',
-  },
-])
+// HHMM(4자리) → "HH:MM" 표시. 형식 위반 시 ''.
+function hhmmDisplay(hhmm) {
+  if (!hhmm || hhmm.length !== 4) return ''
+  if (!/^\d{4}$/.test(hhmm)) return ''
+  return `${hhmm.slice(0, 2)}:${hhmm.slice(2)}`
+}
+
+// ── #1 근태 기반 프리필 ─────────────────────────────────────────────────
+// ⚠️ 백엔드 attendance 응답 키는 checkInDate/checkInTime/checkOutDate/checkOutTime 이다.
+//    (AttdCorrectionForm 이 쓰던 attendance.startTime/endTime 은 잘못된 키 — 본 폼은 정확한 키 사용.)
+const slotFromContext = (s, idx) => ({
+  workSeq: s?.workSeq ?? idx + 1,
+  startDate: ymdToInput(s?.attendance?.checkInDate || props.context.workYmd),
+  startTime: hhmmToTime(s?.attendance?.checkInTime),
+  endDate: ymdToInput(s?.attendance?.checkOutDate || props.context.workYmd),
+  endTime: hhmmToTime(s?.attendance?.checkOutTime),
+})
+
+const buildInitialSlots = () => {
+  const ctxSlots = props.context?.slots || []
+  if (!Array.isArray(ctxSlots) || ctxSlots.length === 0) {
+    // 폴백: 슬롯 정보 없음 → 1구간 빈 카드.
+    return [makeEmptySlot(1)]
+  }
+  // 존재하는 구간 모두를 카드로 생성(최대 2). attendance 없는 구간은 시각 공란 카드.
+  return ctxSlots.slice(0, 2).map((s, i) => slotFromContext(s, i))
+}
+
+// 빈 카드(폴백/수동 추가용).
+const makeEmptySlot = (workSeq) => ({
+  workSeq,
+  startDate: ymdToInput(props.context.workYmd),
+  startTime: '',
+  endDate: ymdToInput(props.context.workYmd),
+  endTime: '',
+})
+
+const slots = ref(buildInitialSlots())
 const reqReason = ref('')
 
+// ── 결재선 상태 (prafta-app-009) ─────────────────────────────────────────
+const approverList = ref([]) // [{ approverUserCd, userNm, userId, rankNm, nodeNm }] (순서 = 결재 단계)
+const approverPickerOpen = ref(false)
+const approvalSectionRef = ref(null)
+
+const selfApprvYn = computed(() => props.approvalContext?.selfApprvYn || null)
+const showApprovalSection = computed(() => selfApprvYn.value !== 'Y')
+const approvalNotice = computed(() => {
+  if (selfApprvYn.value !== 'Y') return ''
+  return props.approvalContext?.isNodeAdmin
+    ? '요청하면 즉시 승인 처리돼요.'
+    : '부서 관리자 승인 후 반영돼요. 결재선을 지정하지 않아도 돼요.'
+})
+const approverUserCds = computed(() => approverList.value.map((a) => a.approverUserCd))
+const approverRequired = computed(() => selfApprvYn.value === 'N')
+
+const onOpenApproverPicker = () => {
+  approverPickerOpen.value = true
+}
+
+// 시트 add(picked[]) 수신 → approverList 순서 append. userCd 식별자 dedup. 직접 추가 시 프리셋 이탈.
+const onAddApprovers = (picked) => {
+  const existing = new Set(approverList.value.map((a) => a.approverUserCd))
+  const additions = (picked || [])
+    .filter((p) => p && p.userCd && !existing.has(p.userCd))
+    .map((p) => ({
+      approverUserCd: p.userCd,
+      userNm: p.userNm,
+      userId: p.userId,
+      rankNm: p.rankNm,
+      nodeNm: p.nodeNm,
+    }))
+  if (additions.length > 0) {
+    approverList.value = [...approverList.value, ...additions]
+    approvalSectionRef.value?.resetPreset?.()
+  }
+  approverPickerOpen.value = false
+}
+
+// ── 컨텍스트 표시 ───────────────────────────────────────────────────────
 const ctxDateDisplay = computed(() => {
   const y = props.context.workYmd?.slice(0, 4)
   const m = props.context.workYmd?.slice(4, 6)
@@ -169,6 +276,88 @@ const ctxDateDisplay = computed(() => {
 })
 const ctxSiteDisplay = computed(() => props.context.siteName || '')
 
+// ── #3 구간별 등록 가능 시간 (표시 전용) ───────────────────────────────
+// 산식(plan §0-4): 앞 OT=실출근~스케줄시작, 뒤 OT=스케줄종료~실퇴근.
+//   schedule == null 인 구간 → 그 구간 실근무 전체가 등록 가능.
+//   윈도우가 없으면 '' 반환(템플릿이 "없어요" 안내로 표시).
+//   ⚠️ 표시 전용이므로 계산 실패 시 예외 던지지 않고 '' 반환(차단 아님).
+const slotWindowText = (workSeq) => {
+  try {
+    const ctxSlots = props.context?.slots || []
+    const ctx = ctxSlots.find((s, i) => (s?.workSeq ?? i + 1) === workSeq)
+    if (!ctx) return ''
+
+    const attendance = ctx.attendance
+    const schedule = ctx.schedule
+    // 근태(실 출퇴근)가 없으면 등록가능 윈도우 산출 불가.
+    if (!attendance) return ''
+
+    const inHhmm = attendance.checkInTime
+    const outHhmm = attendance.checkOutTime
+    const inDisp = hhmmDisplay(inHhmm)
+    const outDisp = hhmmDisplay(outHhmm)
+
+    // 스케줄 없는 구간(추가 출근 등) → 실근무 전체가 등록 가능(§9.3.3 "스케줄 없는 날 전량").
+    if (!schedule || (!schedule.startTime && !schedule.endTime)) {
+      if (inDisp && outDisp) return `${inDisp}~${outDisp}`
+      if (inDisp) return `${inDisp}~`
+      return ''
+    }
+
+    const schStart = schedule.startTime // HHMM
+    const schEnd = schedule.endTime // HHMM
+    const windows = []
+
+    // 앞 OT: 실 출근 일시 < 스케줄 시작 일시. 시:분만 비교하면 야간/자정(전날 출근 + 스케줄
+    //   0시 시작 등)에서 전날 근무분(예: 전날 23:57~00:00)이 누락되므로 (일자+시각)으로 비교한다.
+    //   스케줄 시작일자 = 해당 근무일(workYmd), 실 출근일자 = checkInDate(없으면 workYmd 폴백).
+    const inYmd = attendance.checkInDate || props.context.workYmd
+    const schStartStamp = stampOf(props.context.workYmd, schStart)
+    const inStamp = stampOf(inYmd, inHhmm)
+    if (!Number.isNaN(inStamp) && !Number.isNaN(schStartStamp) && inStamp < schStartStamp) {
+      windows.push(`${inDisp}~${hhmmDisplay(schStart)}`)
+    }
+    // 뒤 OT: 실퇴근 > 스케줄종료. 자정 넘김(checkOutDate > checkInDate)이면 뒤 OT 인정.
+    if (outHhmm && schEnd && toMin(outHhmm) >= 0 && toMin(schEnd) >= 0) {
+      const overnight =
+        attendance.checkOutDate &&
+        attendance.checkInDate &&
+        attendance.checkOutDate > attendance.checkInDate
+      if (overnight || toMin(outHhmm) > toMin(schEnd)) {
+        windows.push(`${hhmmDisplay(schEnd)}~${outDisp}`)
+      }
+    }
+
+    return windows.join(', ')
+  } catch (e) {
+    // 표시 전용 — 계산 실패는 무음 처리.
+    return ''
+  }
+}
+
+// HHMM(4자리) → 분. 형식 위반 시 -1.
+function toMin(hhmm) {
+  if (!hhmm || hhmm.length !== 4 || !/^\d{4}$/.test(hhmm)) return -1
+  const h = Number(hhmm.slice(0, 2))
+  const m = Number(hhmm.slice(2))
+  if (h > 23 || m > 59) return -1
+  return h * 60 + m
+}
+
+// YYYYMMDD + HHMM → 통합 분(minute) stamp. 일자+시각을 함께 비교(자정/야간 넘김 안전).
+//   형식 위반 시 NaN(호출부에서 Number.isNaN 으로 가드).
+function stampOf(ymd, hhmm) {
+  if (!ymd || ymd.length !== 8 || !/^\d{8}$/.test(ymd)) return NaN
+  const m = toMin(hhmm)
+  if (m < 0) return NaN
+  const y = Number(ymd.slice(0, 4))
+  const mo = Number(ymd.slice(4, 6))
+  const d = Number(ymd.slice(6, 8))
+  const days = Math.round(Date.UTC(y, mo - 1, d) / 86400000)
+  return days * 1440 + m
+}
+
+// ── 겹침 경고 ───────────────────────────────────────────────────────────
 const overlapWarning = computed(() => {
   if (slots.value.length < 2) return false
   const s1End = slots.value[0].endTime
@@ -177,7 +366,60 @@ const overlapWarning = computed(() => {
   return s2Start < s1End
 })
 
-// 신청 합계 (분 단위 → 시간/분 표시)
+// ── #프라프타-app-017(이슈①) 정규 스케줄 겹침 사전차단 ───────────────────────
+//   OT [start,end] ∩ 정규스케줄[schStart,schEnd] ≠ ∅ 이면 제출 비활성 + 경고.
+//   서버(작업1)가 최종 권위. FE 는 UX 사전차단이므로 계산 불가(NaN) 시 false(비차단) — BE 가 막는다.
+//   ⚠️ workSeq 식별자로 schedule/slot 매칭(위치 index 금지).
+//   ⚠️ slots.value 의 startDate/startTime 은 input 포맷(YYYY-MM-DD / HH:MM) →
+//      inputToYmd()/timeToHhmm() 로 변환 후 stampOf(YYYYMMDD, HHMM) 에 전달.
+const slotOverlap = (workSeq) => {
+  try {
+    const ctxSlots = props.context?.slots || []
+    const ctx = ctxSlots.find((s, i) => (s?.workSeq ?? i + 1) === workSeq)
+    const schedule = ctx?.schedule
+    // 정규구간 없음(스케줄 없는 날/구간) → 겹침 아님.
+    if (!schedule || (!schedule.startTime && !schedule.endTime)) return false
+
+    const slot = slots.value.find((s) => s.workSeq === workSeq)
+    if (!slot) return false
+
+    // 입력값(input 포맷) → YYYYMMDD / HHMM 변환 후 인스턴트화.
+    const otStart = stampOf(inputToYmd(slot.startDate), timeToHhmm(slot.startTime))
+    const otEnd = stampOf(inputToYmd(slot.endDate), timeToHhmm(slot.endTime))
+
+    // 스케줄 인스턴트(근무일 기준). 종료 ≤ 시작 → 익일 보정(야간).
+    const schStartStamp = stampOf(props.context.workYmd, schedule.startTime)
+    let schEndStamp = stampOf(props.context.workYmd, schedule.endTime)
+    if (
+      !Number.isNaN(schEndStamp) &&
+      !Number.isNaN(schStartStamp) &&
+      schEndStamp <= schStartStamp
+    ) {
+      schEndStamp += 1440
+    }
+
+    // 어느 값이라도 NaN → 계산 불가 → false(차단 안 함, BE 최종 판정).
+    if (
+      Number.isNaN(otStart) ||
+      Number.isNaN(otEnd) ||
+      Number.isNaN(schStartStamp) ||
+      Number.isNaN(schEndStamp)
+    ) {
+      return false
+    }
+
+    // 겹침: otStart < schEnd && schStart < otEnd (접함 허용).
+    return otStart < schEndStamp && schStartStamp < otEnd
+  } catch (e) {
+    // 사전차단 계산 실패는 무음(BE 가 최종 차단).
+    return false
+  }
+}
+
+// 어느 한 구간이라도 정규 스케줄과 겹치면 true.
+const hasOverlap = computed(() => slots.value.some((s) => slotOverlap(s.workSeq)))
+
+// ── 신청 합계 ───────────────────────────────────────────────────────────
 function toMinutes(hhmm) {
   if (!/^\d{2}:\d{2}/.test(hhmm)) return -1
   return Number(hhmm.slice(0, 2)) * 60 + Number(hhmm.slice(3, 5))
@@ -205,30 +447,50 @@ const totalDisplay = computed(() => {
   return `${h}시간 ${min}분`
 })
 
+// ── 검증 (#2: otType 조건 제거 / prafta-app-017: 스케줄 겹침 사전차단) ─────
 const isValid = computed(() => {
-  if (!reqReason.value.trim()) return false
-  return slots.value.every(
-    (s) => s.startDate && s.startTime && s.endDate && s.endTime && s.otType,
-  )
+  // 사유 미입력은 버튼 비활성 사유에서 제외(제출 시 사유 전용 alert 로 안내).
+  if (hasOverlap.value) return false
+  if (!slots.value.every((s) => s.startDate && s.startTime && s.endDate && s.endTime)) return false
+  // 결재 필수('N') 케이스는 결재자 1명 이상이어야 제출 활성.
+  if (approverRequired.value && approverList.value.length === 0) return false
+  return true
 })
 
+// ── 구간 추가/삭제 (workSeq 식별자 보존) ────────────────────────────────
 const onAddSlot = () => {
   if (slots.value.length >= 2) return
-  slots.value.push({
-    workSeq: 2,
-    startDate: ymdToInput(props.context.workYmd),
-    startTime: '',
-    endDate: ymdToInput(props.context.workYmd),
-    endTime: '',
-    otType: 'EXTEND',
-  })
+  const existing = new Set(slots.value.map((s) => s.workSeq))
+  const missing = [1, 2].find((n) => !existing.has(n))
+  if (!missing) return
+  // 추가 구간도 context.slots 의 해당 workSeq 근태로 프리필, 없으면 빈 카드.
+  const ctxSlots = props.context?.slots || []
+  const idx = ctxSlots.findIndex((s, i) => (s?.workSeq ?? i + 1) === missing)
+  const added = idx >= 0 ? slotFromContext(ctxSlots[idx], idx) : makeEmptySlot(missing)
+  added.workSeq = missing
+  slots.value.push(added)
+  slots.value.sort((a, b) => a.workSeq - b.workSeq)
 }
 const onRemoveSlot = (workSeq) => {
   slots.value = slots.value.filter((s) => s.workSeq !== workSeq)
-  slots.value.forEach((s, i) => (s.workSeq = i + 1))
 }
 
+// ── 제출 (#2: emit 에서 otType 제거) ────────────────────────────────────
 const onSubmit = () => {
+  // prafta-app-017(이슈①): 정규 스케줄 겹침은 우선 안내(서버도 ATTD_400_100 으로 최종 차단).
+  if (hasOverlap.value) {
+    showAlert('스케줄 시간 내에는 초과근무를 등록할 수 없어요.')
+    return
+  }
+  // 사유 전용 가드(버튼은 기본 활성 → 빈값 제출 시 사유 안내).
+  if (!reqReason.value.trim()) {
+    showAlert('사유를 입력해 주세요.')
+    return
+  }
+  if (approverRequired.value && approverList.value.length === 0) {
+    showAlert('결재자를 1명 이상 추가해 주세요.')
+    return
+  }
   if (!isValid.value) {
     showAlert('모든 필수 항목을 입력해 주세요.')
     return
@@ -240,9 +502,11 @@ const onSubmit = () => {
       startTime: timeToHhmm(s.startTime),
       endDate: inputToYmd(s.endDate),
       endTime: timeToHhmm(s.endTime),
-      otType: s.otType,
     })),
     reqReason: reqReason.value.trim(),
+    // prafta-app-009: 결재선 노출 케이스만 approverUserCds 전개 전송(SSOT). 'Y' 케이스는 미전송(서버 분기).
+    approverUserCds: showApprovalSection.value ? approverUserCds.value : undefined,
+    presetId: undefined,
   })
 }
 </script>
@@ -254,7 +518,6 @@ const onSubmit = () => {
   gap: var(--space-md);
 }
 
-/* (ctx / fs / field / input-dt / btn-add / helper / form-ft / btn 은 AttdCorrectionForm 과 동일 패턴 — 향후 공통 SCSS 모듈로 분리 가능) */
 .ctx {
   background: var(--color-surface);
   border: 0.5px solid var(--color-border);
@@ -306,6 +569,38 @@ const onSubmit = () => {
   color: var(--color-text-primary);
 }
 
+/* #3 등록 가능 시간 안내 (카드 상단) */
+.ot-window {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-sm);
+  padding: var(--space-sm) var(--space-md);
+  background: var(--color-primary-tint);
+  border: 0.5px solid var(--color-primary-tint-border);
+  border-radius: var(--radius-md);
+}
+.ot-window--empty {
+  background: var(--color-surface);
+  border-color: var(--color-border);
+}
+.ot-window__lbl {
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--color-primary-text-deep);
+  white-space: nowrap;
+}
+.ot-window--empty .ot-window__lbl {
+  color: var(--color-text-tertiary);
+}
+.ot-window__val {
+  font-size: 12px;
+  color: var(--color-primary-text-darkest);
+  font-variant-numeric: tabular-nums;
+}
+.ot-window--empty .ot-window__val {
+  color: var(--color-text-tertiary);
+}
+
 .field {
   display: flex;
   flex-direction: column;
@@ -334,22 +629,6 @@ const onSubmit = () => {
   gap: var(--space-sm);
 }
 
-.field__input {
-  height: 44px;
-  background: var(--color-surface);
-  border: 0.5px solid var(--color-border);
-  border-radius: var(--radius-md);
-  padding: 0 12px;
-  font-size: 14px;
-  color: var(--color-text-primary);
-  font-family: inherit;
-  font-variant-numeric: tabular-nums;
-  box-sizing: border-box;
-}
-.field__input:focus {
-  outline: none;
-  border-color: var(--color-primary);
-}
 .field__textarea {
   width: 100%;
   background: var(--color-surface);
@@ -366,30 +645,6 @@ const onSubmit = () => {
 .field__textarea:focus {
   outline: none;
   border-color: var(--color-primary);
-}
-
-/* OT_TYPE 칩 (단일 선택 인라인) */
-.ot-type-row {
-  display: flex;
-  gap: 6px;
-  flex-wrap: wrap;
-}
-.ot-type-chip {
-  height: 36px;
-  padding: 0 14px;
-  background: var(--color-surface);
-  border: 0.5px solid var(--color-border);
-  border-radius: var(--radius-full);
-  color: var(--color-text-secondary);
-  font-size: 13px;
-  cursor: pointer;
-  font-family: inherit;
-}
-.ot-type-chip--on {
-  background: var(--color-primary-tint);
-  border-color: var(--color-primary-tint-border);
-  color: var(--color-primary);
-  font-weight: 500;
 }
 
 .btn-add {
@@ -411,7 +666,6 @@ const onSubmit = () => {
   color: var(--color-primary);
 }
 
-/* 신청 합계 박스 */
 .total-box {
   background: var(--color-primary-tint);
   border: 0.5px solid var(--color-primary-tint-border);
@@ -441,6 +695,21 @@ const onSubmit = () => {
   border-radius: var(--radius-sm);
   font-size: 12px;
   color: var(--color-danger);
+}
+
+.aprv-notice {
+  margin: 0;
+  padding: var(--space-sm) var(--space-md);
+  background: var(--color-primary-tint);
+  border: 0.5px solid var(--color-primary-tint-border);
+  border-radius: var(--radius-md);
+  font-size: 12px;
+  color: var(--color-primary-text-deep);
+  display: flex;
+  gap: var(--space-xs);
+}
+.aprv-notice__dot {
+  color: var(--color-primary);
 }
 
 .helper {

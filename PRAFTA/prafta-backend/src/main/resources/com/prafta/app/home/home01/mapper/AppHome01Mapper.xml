@@ -217,4 +217,62 @@
     LIMIT 1
     </select>
 
+    <!--
+      prafta-app-015: 본인 소속부서 NODE_CD (월마감 커버리지 판정용).
+      AppAttd01Mapper.selectUserNodeCd 동일 패턴.
+    -->
+    <select id="selectUserNodeCd" resultType="string">
+    /* AppHome01Mapper.selectUserNodeCd */
+    SELECT
+          U.NODE_CD
+      FROM TB_USER U
+     WHERE U.CMPNY_CD = #{cmpnyCd}
+       AND U.SITE_CD  = #{siteCd}
+       AND U.USER_CD  = #{userCd}
+     LIMIT 1
+    </select>
+
+    <!--
+      prafta-app-015: 해당 월이 본인 부서를 덮는 마감(CLOSED)으로 닫혀있는지 (prafta-028 부서단위 마감).
+      커버리지: '*'(전체) / 자기노드(nodeCd) / INC_SUB_YN='Y' 상위노드.
+      AppAttd01Mapper.countCoveringClose 동일 패턴(읽기전용) — attd01 구간 게이팅과 정합.
+    -->
+    <select id="countCoveringClose" resultType="int">
+    /* AppHome01Mapper.countCoveringClose */
+    <choose>
+      <when test='"*".equals(nodeCd)'>
+        SELECT COUNT(*)
+          FROM TB_ATTD_CLOSE C
+         WHERE C.CMPNY_CD     = #{cmpnyCd}
+           AND C.SITE_CD      = #{siteCd}
+           AND C.CLOSE_YM     = #{closeYm}
+           AND C.CLOSE_STATUS = 'CLOSED'
+           AND C.NODE_CD      = '*'
+      </when>
+      <otherwise>
+        WITH RECURSIVE anc AS (
+            SELECT N.NODE_CD, N.PARENT_NODE_CD
+              FROM TB_SITE_NODE N
+             WHERE N.CMPNY_CD = #{cmpnyCd} AND N.SITE_CD = #{siteCd} AND N.NODE_CD = #{nodeCd}
+            UNION ALL
+            SELECT P.NODE_CD, P.PARENT_NODE_CD
+              FROM TB_SITE_NODE P
+              JOIN anc A2
+                ON P.CMPNY_CD = #{cmpnyCd} AND P.SITE_CD = #{siteCd} AND P.NODE_CD = A2.PARENT_NODE_CD
+        )
+        SELECT COUNT(*)
+          FROM TB_ATTD_CLOSE C
+         WHERE C.CMPNY_CD     = #{cmpnyCd}
+           AND C.SITE_CD      = #{siteCd}
+           AND C.CLOSE_YM     = #{closeYm}
+           AND C.CLOSE_STATUS = 'CLOSED'
+           AND (
+                C.NODE_CD = '*'
+             OR C.NODE_CD = #{nodeCd}
+             OR (C.INC_SUB_YN = 'Y' AND C.NODE_CD IN (SELECT NODE_CD FROM anc WHERE NODE_CD != #{nodeCd}))
+           )
+      </otherwise>
+    </choose>
+    </select>
+
 </mapper>

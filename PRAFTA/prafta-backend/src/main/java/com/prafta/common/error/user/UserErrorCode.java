@@ -66,6 +66,10 @@ public enum UserErrorCode implements ApiErrorCode {
     // ===== PRAFTA-037-F6 - 비동기 업로드 잡 =====
     // 잡 없음 또는 본인 잡 아님 (둘을 같은 메시지로 통합 — 회사/존재 노출 차단).
     , USER_404_002(HttpStatus.NOT_FOUND, "업로드 작업을 찾을 수 없습니다.")
+
+    // ===== PRAFTA-046 - 노드-관리자 정합성 가드 (BatchResultPop 표시용, D6 한글 사유 일관) =====
+    // 관리자(정/부)가 지정되지 않은 노드에 사용자 생성/이동 차단.
+    , USER_400_056(HttpStatus.BAD_REQUEST, "관리자미지정부서")
     ;
 
     private final HttpStatus httpStatus;

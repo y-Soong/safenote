@@ -1,5 +1,7 @@
 package com.prafta.app.home.home01.dto.response;
 
+import java.util.List;
+
 import com.fasterxml.jackson.annotation.JsonProperty;
 
 import lombok.Builder;
@@ -51,6 +53,28 @@ public class HomeSummaryResponse {
         private final boolean canCheckIn;
         /** 퇴근 가능 여부 (서버 산출) */
         private final boolean canCheckOut;
+        /**
+         * prafta-app-015: 2구간 스케줄 여부. 메인 홈 출퇴근 카드가 구간 선택(1구간/2구간) 버튼을
+         * 노출할지 판정한다(attd01 isTwoSlot 과 동일 의미). is-접두 회피로 직렬화 키 "isTwoSlot" 고정.
+         */
+        @JsonProperty("isTwoSlot")
+        private final boolean isTwoSlot;
+        /**
+         * prafta-app-015: 2구간 스케줄 구간 선택 게이팅용 슬롯 플래그(서버 산출, 1·2구간).
+         *   1구간/스케줄없음은 비어 있다(MainView 는 단일 canCheckIn 버튼 유지).
+         */
+        private final List<SlotFlag> slots;
+    }
+
+    /**
+     * prafta-app-015: 2구간 스케줄 구간 선택 버튼 게이팅(attd01 SlotResponse 플래그와 동일 의미).
+     */
+    @Getter
+    @Builder
+    public static class SlotFlag {
+        private final int workSeq;
+        private final boolean canCheckInThisSlot;
+        private final boolean alreadyCheckedIn;
     }
 
     /** 연차 요약 영역(법정+약정 합산). */

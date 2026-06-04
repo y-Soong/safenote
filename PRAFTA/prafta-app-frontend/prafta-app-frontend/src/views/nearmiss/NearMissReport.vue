@@ -33,12 +33,7 @@
             class="nmr-radio"
             :class="{ 'nmr-radio--on': incidentTypeCd === opt.code }"
           >
-            <input
-              type="radio"
-              name="incidentType"
-              :value="opt.code"
-              v-model="incidentTypeCd"
-            />
+            <input type="radio" name="incidentType" :value="opt.code" v-model="incidentTypeCd" />
             <span>{{ opt.label }}</span>
           </label>
         </div>
@@ -58,7 +53,10 @@
       <!-- 발생일시 (필수) -->
       <section class="nmr-field">
         <p class="nmr-label">발생일시 <span class="nmr-req" aria-hidden="true">*</span></p>
-        <input v-model="occurDtimeLocal" type="datetime-local" class="nmr-input" />
+        <div class="nmr-dtime">
+          <DateStepperField v-model="occurDate" placeholder="발생일자" />
+          <TimeStepperField v-model="occurTime" placeholder="발생시각" />
+        </div>
       </section>
 
       <!-- 발생장소 (선택) -->
@@ -75,7 +73,9 @@
 
       <!-- 경위 (필수) -->
       <section class="nmr-field">
-        <p class="nmr-label">무슨 일이 있었나요? <span class="nmr-req" aria-hidden="true">*</span></p>
+        <p class="nmr-label">
+          무슨 일이 있었나요? <span class="nmr-req" aria-hidden="true">*</span>
+        </p>
         <textarea
           v-model="description"
           class="nmr-textarea"
@@ -95,12 +95,7 @@
             class="nmr-radio"
             :class="{ 'nmr-radio--on': potentialSeverityCd === opt.code }"
           >
-            <input
-              type="radio"
-              name="severity"
-              :value="opt.code"
-              v-model="potentialSeverityCd"
-            />
+            <input type="radio" name="severity" :value="opt.code" v-model="potentialSeverityCd" />
             <span>{{ opt.label }}</span>
           </label>
         </div>
@@ -147,12 +142,7 @@
 
     <!-- 푸터 -->
     <footer class="nmr-footer">
-      <button
-        type="button"
-        class="nmr-submit"
-        :disabled="isSubmitting"
-        @click="onSubmit"
-      >
+      <button type="button" class="nmr-submit" :disabled="isSubmitting" @click="onSubmit">
         {{ isSubmitting ? '보고 중...' : '보고하기' }}
       </button>
     </footer>
@@ -180,7 +170,9 @@
           stroke-linecap="round"
           stroke-linejoin="round"
         >
-          <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z" />
+          <path
+            d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"
+          />
           <circle cx="12" cy="13" r="4" />
         </symbol>
       </defs>
@@ -193,6 +185,8 @@ import { ref, onMounted, onBeforeUnmount, getCurrentInstance } from 'vue'
 import { useRouter } from 'vue-router'
 
 import api from '@/api/axios'
+import DateStepperField from '@/components/common/DateStepperField.vue'
+import TimeStepperField from '@/components/common/TimeStepperField.vue'
 
 const router = useRouter()
 const { proxy } = getCurrentInstance() || { proxy: null }
@@ -251,7 +245,8 @@ const loadCodeOptions = async () => {
 // ───────────────────────────────────────────────────────────
 const incidentTypeCd = ref('100') // 기본 아차사고
 const processCd = ref('')
-const occurDtimeLocal = ref('') // 'YYYY-MM-DDTHH:mm' (datetime-local) — 진입 시 현재시각 기본값(onMounted)
+const occurDate = ref('') // 'YYYY-MM-DD' (DateStepperField) — 진입 시 오늘 기본값(onMounted)
+const occurTime = ref('') // 'HH:MM' 24h (TimeStepperField) — 진입 시 현재시각 기본값(onMounted)
 const locationDesc = ref('')
 const description = ref('')
 const potentialSeverityCd = ref('')
@@ -307,7 +302,7 @@ const onSubmit = async () => {
     showAlert('유형을 선택해주세요.')
     return
   }
-  if (!occurDtimeLocal.value) {
+  if (!occurDate.value || !occurTime.value) {
     showAlert('발생일시를 입력해주세요.')
     return
   }
@@ -323,8 +318,8 @@ const onSubmit = async () => {
     const formData = new FormData()
     formData.append('incidentTypeCd', incidentTypeCd.value)
     if (processCd.value) formData.append('processCd', processCd.value)
-    // datetime-local('YYYY-MM-DDTHH:mm') → 서버 포맷('YYYY-MM-DD HH:mm')
-    formData.append('occurDtime', toServerDtime(occurDtimeLocal.value))
+    // 일자('YYYY-MM-DD') + 시각('HH:MM') → 서버 포맷('YYYY-MM-DD HH:mm')
+    formData.append('occurDtime', `${occurDate.value} ${occurTime.value}`)
     if (locationDesc.value.trim()) formData.append('locationDesc', locationDesc.value.trim())
     formData.append('description', description.value.trim())
     if (potentialSeverityCd.value) formData.append('potentialSeverityCd', potentialSeverityCd.value)
@@ -343,16 +338,12 @@ const onSubmit = async () => {
     router.back()
   } catch (err) {
     console.error('[NearMissReport] 보고 실패:', err?.message)
-    showAlert(err?.response?.data?.message || '보고를 등록하지 못했어요. 잠시 후 다시 시도해 주세요.')
+    showAlert(
+      err?.response?.data?.message || '보고를 등록하지 못했어요. 잠시 후 다시 시도해 주세요.',
+    )
   } finally {
     isSubmitting.value = false
   }
-}
-
-// 'YYYY-MM-DDTHH:mm'(datetime-local) → 'YYYY-MM-DD HH:mm'(서버 포맷). 초 단위가 붙어 와도 분까지만 사용.
-const toServerDtime = (local) => {
-  if (!local) return ''
-  return local.replace('T', ' ').slice(0, 16)
 }
 
 // 파일명 생성(ChkLst/Risk_01 동일 방식): prefix_타임스탬프_원본명(안전화).
@@ -366,10 +357,13 @@ const buildFileName = (prefix, originalName = 'photo.jpg') => {
 // 라이프사이클
 // ───────────────────────────────────────────────────────────
 onMounted(() => {
-  // 발생일시 기본값 = 현재시각(분까지). 로컬 타임존 보정 후 datetime-local 포맷으로.
+  // 발생일시 기본값 = 오늘 일자 + 현재시각(분까지). 로컬 타임존 기준.
   const now = new Date()
-  now.setMinutes(now.getMinutes() - now.getTimezoneOffset())
-  occurDtimeLocal.value = now.toISOString().slice(0, 16)
+  const yyyy = now.getFullYear()
+  const mm = String(now.getMonth() + 1).padStart(2, '0')
+  const dd = String(now.getDate()).padStart(2, '0')
+  occurDate.value = `${yyyy}-${mm}-${dd}`
+  occurTime.value = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`
   loadCodeOptions()
 })
 
@@ -520,6 +514,12 @@ onBeforeUnmount(() => {
 .nmr-textarea {
   resize: vertical;
   line-height: 1.5;
+}
+/* 발생일시 — 일자/시각 2열 */
+.nmr-dtime {
+  display: grid;
+  grid-template-columns: 1.4fr 1fr;
+  gap: 8px;
 }
 .nmr-input:focus,
 .nmr-select:focus,

@@ -151,11 +151,16 @@
     <select id="selectLeaveUseByRange" resultType="com.prafta.app.attd.attd01.result.LeaveUseResult">
     /* AppAttd01Mapper.selectLeaveUseByRange */
     SELECT
-          U.START_DATE   AS startDate
-        , U.END_DATE     AS endDate
-        , U.LEAVE_CD     AS leaveCd
-        , LT.LEAVE_NM    AS leaveNm
-        , U.LEAVE_DAYS   AS leaveDays
+          U.START_DATE     AS startDate
+        , U.END_DATE       AS endDate
+        , U.LEAVE_CD       AS leaveCd
+        , LT.LEAVE_NM      AS leaveNm
+        , U.LEAVE_DAYS     AS leaveDays
+        <!-- prafta-app-018-E: 부분연차 상세(위치매핑 — LeaveUseResult append 순서와 일치) -->
+        , U.USE_UNIT_TYPE  AS useUnitType
+        , U.START_TIME     AS startTime
+        , U.END_TIME       AS endTime
+        , U.LEAVE_MINUTES  AS leaveMinutes
       FROM TB_USER_LEAVE_USE U
       LEFT JOIN TB_LEAVE_TYPE_MGMT LT
         ON  LT.CMPNY_CD = U.CMPNY_CD
@@ -291,6 +296,7 @@
              CHECK_OUT_DATE   = #{c.checkOutDate}
            , CHECK_OUT_TIME   = #{c.checkOutTime}
            , CHECK_OUT_METHOD = #{c.checkOutMethod}
+           , CHECK_OUT_DEVICE_UUID = #{c.deviceUuid}
            , UPDATE_NO        = #{c.userCd}
            , UPDATE_DATE      = NOW()
      WHERE ATTD_ID  = #{c.attdId}
@@ -425,6 +431,7 @@
         , CHECK_IN_DATE
         , CHECK_IN_TIME
         , CHECK_IN_METHOD
+        , CHECK_IN_DEVICE_UUID
         , DEL_YN
         , INSERT_NO
         , INSERT_DATE
@@ -440,6 +447,7 @@
         , #{c.checkInDate}
         , #{c.checkInTime}
         , #{c.checkInMethod}
+        , #{c.deviceUuid}
         , 'N'
         , #{c.insertNo}
         , NOW()

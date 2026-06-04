@@ -11,11 +11,15 @@
     <div class="cd cd--nav">
       <div class="wn">
         <button type="button" class="wn__btn" aria-label="이전 주" @click="$emit('prev-week')">
-          <svg class="icon" width="18" height="18" aria-hidden="true"><use href="#i-wk-left" /></svg>
+          <svg class="icon" width="18" height="18" aria-hidden="true">
+            <use href="#i-wk-left" />
+          </svg>
         </button>
         <span class="wn__label">{{ weekRangeText }}</span>
         <button type="button" class="wn__btn" aria-label="다음 주" @click="$emit('next-week')">
-          <svg class="icon" width="18" height="18" aria-hidden="true"><use href="#i-wk-right" /></svg>
+          <svg class="icon" width="18" height="18" aria-hidden="true">
+            <use href="#i-wk-right" />
+          </svg>
         </button>
       </div>
     </div>
@@ -30,7 +34,9 @@
       @click="$emit('select-day', day)"
     >
       <span class="dp">
-        <span class="dp__dow" :class="dowToneClass(day.dayOfWeek)">{{ dowLabel(day.dayOfWeek) }}</span>
+        <span class="dp__dow" :class="dowToneClass(day.dayOfWeek)">{{
+          dowLabel(day.dayOfWeek)
+        }}</span>
         <span class="dp__num">{{ dayNumber(day.workYmd) }}</span>
       </span>
       <span class="db">
@@ -40,18 +46,22 @@
           <span v-else-if="isLeave(day)" class="bd bd-w">연차</span>
           <span v-else-if="isWorkDay(day)" class="bd bd-n">{{ planShortCode(day) }}</span>
           <span v-if="day.holidayName" class="bd bd-h">{{ day.holidayName }}</span>
-          <span class="db__name" :class="{ 'db__name--muted': isOffDay(day) }">{{ planTitleText(day) }}</span>
+          <span class="db__name" :class="{ 'db__name--muted': isOffDay(day) }">{{
+            planTitleText(day)
+          }}</span>
         </span>
-        <span v-if="summaryHtml(day)" class="db__summary" v-html="summaryHtml(day)"></span>
+        <!-- prafta-app-018-E: 연차일은 부분연차 마커(plain text). 근무/휴무는 기존 시간요약(v-html). -->
+        <span v-if="isLeave(day)" class="db__summary">{{ leaveMarkerText(day) }}</span>
+        <span v-else-if="summaryHtml(day)" class="db__summary" v-html="summaryHtml(day)"></span>
       </span>
-      <svg class="icon dc__chev" width="16" height="16" aria-hidden="true"><use href="#i-wk-right" /></svg>
+      <svg class="icon dc__chev" width="16" height="16" aria-hidden="true">
+        <use href="#i-wk-right" />
+      </svg>
     </button>
 
     <!-- 주 합계 -->
     <div class="ws">
-      <p class="ws__title">
-        이번주 합계 <span class="ws__note">완료된 근무만</span>
-      </p>
+      <p class="ws__title">이번주 합계 <span class="ws__note">완료된 근무만</span></p>
       <div class="ws__grid">
         <div class="ws__item">
           <p class="ws__lbl">예정 근로시간</p>
@@ -67,8 +77,28 @@
     <!-- sprite -->
     <svg width="0" height="0" class="week-sprite" aria-hidden="true" focusable="false">
       <defs>
-        <symbol id="i-wk-left" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6" /></symbol>
-        <symbol id="i-wk-right" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6" /></symbol>
+        <symbol
+          id="i-wk-left"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="2"
+          stroke-linecap="round"
+          stroke-linejoin="round"
+        >
+          <polyline points="15 18 9 12 15 6" />
+        </symbol>
+        <symbol
+          id="i-wk-right"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="2"
+          stroke-linecap="round"
+          stroke-linejoin="round"
+        >
+          <polyline points="9 18 15 12 9 6" />
+        </symbol>
       </defs>
     </svg>
   </div>
@@ -76,7 +106,13 @@
 
 <script setup>
 import { computed } from 'vue'
-import { dowShort, dowKey, dayNumber as fmtDayNumber, minutesToHhMm } from '../attdFormat'
+import {
+  dowShort,
+  dowKey,
+  dayNumber as fmtDayNumber,
+  minutesToHhMm,
+  formatLeaveMarker,
+} from '../attdFormat'
 
 const props = defineProps({
   // GET /api/app/attd/my/week 응답. null=로딩/미주입
@@ -183,6 +219,10 @@ const summaryHtml = (day) => {
   }
   return html
 }
+
+// prafta-app-018-E: 연차일 마커 1줄 — "월차 · 시간차 · 03:00~04:30 · 0.19일"(종일=라벨만).
+//   day 객체는 BE(E-1)에서 leaveTypeName/leaveUnitType/leaveTimeRange/leaveDays 를 이미 보유.
+const leaveMarkerText = (day) => formatLeaveMarker(day)
 
 // 합계 — "Nh Nm"
 const plannedText = computed(() => minutesToHhMm(summary.value.plannedWorkMinutes))

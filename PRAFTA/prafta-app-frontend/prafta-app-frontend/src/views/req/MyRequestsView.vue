@@ -34,10 +34,7 @@
     <!-- 본문 (스크롤 영역) -->
     <main class="req-body" ref="bodyRef">
       <!-- 빈 상태 -->
-      <RequestEmptyState
-        v-if="items.length === 0 && !isLoading && totalCount === 0"
-        kind="total"
-      />
+      <RequestEmptyState v-if="items.length === 0 && !isLoading && totalCount === 0" kind="total" />
       <RequestEmptyState
         v-else-if="items.length === 0 && !isLoading && totalCount > 0"
         kind="filtered"
@@ -74,16 +71,20 @@
       :selected="selectedTypes"
       @apply="onApplyType"
     />
-    <RequestSortSheet
-      v-model="sortSheetOpen"
-      :selected="sort"
-      @apply="onApplySort"
-    />
+    <RequestSortSheet v-model="sortSheetOpen" :selected="sort" @apply="onApplySort" />
 
     <!-- 인라인 SVG sprite (본 화면 전용) -->
     <svg width="0" height="0" class="req-sprite" aria-hidden="true" focusable="false">
       <defs>
-        <symbol id="i-req-chev-left" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <symbol
+          id="i-req-chev-left"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="2"
+          stroke-linecap="round"
+          stroke-linejoin="round"
+        >
           <polyline points="15 18 9 12 15 6" />
         </symbol>
       </defs>
@@ -227,7 +228,10 @@ const loadPage = async (append = false) => {
     if (mySeq !== inflightSeq) return
     // 401/403 은 axios 인터셉터가 처리. 그 외만 폴백 알림.
     console.error('[MyRequests] 목록 조회 실패')
-    const msg = resolveApiErrorMessage(e, '요청 목록을 불러오지 못했어요. 잠시 후 다시 시도해 주세요.')
+    const msg = resolveApiErrorMessage(
+      e,
+      '요청 목록을 불러오지 못했어요. 잠시 후 다시 시도해 주세요.',
+    )
     showAlert(msg)
     if (!append) {
       // 첫 페이지 실패 시 빈 상태로 보이지 않도록 표시 카운트는 그대로 둠
@@ -324,7 +328,7 @@ const onResetFilters = async () => {
   await reobserveAfterRender()
 }
 
-const onCardClick = (_item) => {
+const onCardClick = () => {
   // 요청 상세 화면 진입 (§7 follow-up F1) — 1차는 stub.
   showAlert('준비 중입니다')
 }

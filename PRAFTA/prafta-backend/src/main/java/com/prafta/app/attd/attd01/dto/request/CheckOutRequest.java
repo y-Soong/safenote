@@ -2,6 +2,8 @@ package com.prafta.app.attd.attd01.dto.request;
 
 import java.math.BigDecimal;
 
+import com.fasterxml.jackson.annotation.JsonProperty;
+
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.Setter;
@@ -38,4 +40,8 @@ public class CheckOutRequest {
     private String isMocked;
     private String workYmd;
     private String offsiteReason;
+    // prafta-com-003 D3: 퇴근 실행 디바이스UUID(클라 제공값, 부정탐지 보조). axios 가 보내는 키는 gv_deviceId.
+    //   신뢰경계 밖(위조 가능) — 식별/인가에는 쓰지 않고 표시·탐지 보조용으로만 CHECK_OUT_DEVICE_UUID 에 도장한다.
+    @JsonProperty("gv_deviceId")
+    private String deviceId;
 }

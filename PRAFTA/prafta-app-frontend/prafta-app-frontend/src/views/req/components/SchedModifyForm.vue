@@ -2,7 +2,11 @@
   SchedModifyForm.vue — 스케줄 수정 요청 폼
   - 작업 ID: PRAFTA-APP-007-6 (분해: .claude/requests/app_requests/prafta-app-007-plan.md §8.3)
   - props.context: day 객체 { workYmd, nodeCd, siteName, scheduleSummary, workPlanName, slots[] }
-  - emits: submit ({ slots:[{workSeq, schCd}], reqReason }), cancel
+  - 스케줄은 그 자체에 1·2구간 정의가 포함되므로 구간별로 따로 고르지 않고
+    "하나의 스케줄"만 선택한다.
+  - emits: submit ({ slots:[{workSeq:1, schCd}], reqReason }), cancel
+    (백엔드 /appApi/req07/sched-modify 가 slots 배열을 받으므로, 단일 스케줄을
+     대표 구간 한 건으로 감싸 전송한다.)
 -->
 <template>
   <form class="sched-form" @submit.prevent="onSubmit">
@@ -26,42 +30,43 @@
     <section class="fs">
       <p class="fs__title">변경할 스케줄</p>
 
-      <SlotCard
-        v-for="slot in slots"
-        :key="slot.workSeq"
-        :work-seq="slot.workSeq"
-        :title="slot.workSeq + '구간'"
-        :removable="slots.length > 1"
-        @remove="onRemoveSlot"
-      >
-        <label class="field">
-          <span class="field__label"><span class="req">*</span>근무 타입</span>
-          <!--
-            1차: SCH_CD 목록 endpoint 미도입 → 사용자 직접 코드 입력.
-            follow-up F2 도입 시 BaseBottomSheet 로 교체 예정.
-          -->
-          <input
-            v-model="slot.schCd"
-            class="field__input"
-            type="text"
-            placeholder="스케줄 코드를 입력해 주세요"
-            maxlength="20"
-          />
-        </label>
-      </SlotCard>
-
-      <button
-        v-if="slots.length === 1"
-        type="button"
-        class="btn-add"
-        @click="onAddSlot"
-      >
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-          <line x1="12" y1="5" x2="12" y2="19" />
-          <line x1="5" y1="12" x2="19" y2="12" />
-        </svg>
-        구간 추가
-      </button>
+      <label class="field">
+        <span class="field__label"><span class="req">*</span>스케줄</span>
+        <!--
+          스케줄은 그 자체에 1·2구간이 포함되므로 구간별로 따로 고르지 않고
+          하나의 스케줄만 선택한다.
+          F2: GET /appApi/req07/schedules 목록 → 바텀시트 선택형.
+        -->
+        <button
+          type="button"
+          class="field__trigger"
+          :class="{ 'field__trigger--placeholder': !schCd }"
+          :disabled="optDisabled"
+          @click="openSheet"
+        >
+          <span class="field__trigger-text">{{ triggerLabel }}</span>
+          <svg
+            class="field__chevron"
+            width="18"
+            height="18"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="2"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+            aria-hidden="true"
+          >
+            <polyline points="6 9 12 15 18 9" />
+          </svg>
+        </button>
+        <span v-if="optError" class="field__error">
+          스케줄을 불러오지 못했어요. 잠시 후 다시 시도해 주세요.
+        </span>
+        <span v-else-if="!optLoading && !schedOptions.length" class="field__error">
+          선택 가능한 스케줄이 없어요. 관리자에게 문의해 주세요.
+        </span>
+      </label>
 
       <label class="field">
         <span class="field__label">
@@ -78,6 +83,20 @@
       </label>
     </section>
 
+    <!-- 결재선 (prafta-app-009) -->
+    <!-- selfApprvYn='N'(또는 미상=폴백) → 결재선 섹션 노출. 'Y' → 안내문만(서버 분기 위임). -->
+    <ApprovalLineSection
+      v-if="showApprovalSection"
+      ref="approvalSectionRef"
+      v-model="approverList"
+      :presets="presets"
+      @open-picker="onOpenApproverPicker"
+    />
+    <p v-else-if="approvalNotice" class="aprv-notice">
+      <span class="aprv-notice__dot" aria-hidden="true">·</span>
+      {{ approvalNotice }}
+    </p>
+
     <!-- 헬퍼 메시지 -->
     <p class="helper">
       <span class="helper__dot" aria-hidden="true">·</span>
@@ -91,25 +110,108 @@
         {{ submitting ? '등록 중...' : '요청하기' }}
       </button>
     </footer>
+
+    <!-- 스케줄 선택 바텀시트 -->
+    <SchedPickSheet
+      v-model="sheetOpen"
+      :options="schedOptions"
+      :selected="schCd"
+      :loading="optLoading"
+      :error="optError"
+      @apply="onPickSched"
+    />
+
+    <!-- 결재자 추가 바텀시트 (prafta-app-009) -->
+    <AttdApproverPickerSheet
+      v-if="showApprovalSection"
+      v-model="approverPickerOpen"
+      :excluded-user-cds="approverUserCds"
+      @add="onAddApprovers"
+    />
   </form>
 </template>
 
 <script setup>
-import { ref, computed, getCurrentInstance } from 'vue'
-import SlotCard from './SlotCard.vue'
+import { ref, computed, onMounted, getCurrentInstance } from 'vue'
+import api from '@/api/axios'
+import SchedPickSheet from './SchedPickSheet.vue'
+import ApprovalLineSection from './ApprovalLineSection.vue'
+import AttdApproverPickerSheet from './AttdApproverPickerSheet.vue'
 
 const props = defineProps({
   context: { type: Object, required: true },
   submitting: { type: Boolean, default: false },
+  // prafta-app-009: 본인 소유 결재선 프리셋([{ presetId, presetNm, defaultYn, steps[] }]).
+  presets: { type: Array, default: () => [] },
+  // prafta-app-009: 결재선 분기 컨텍스트 { selfApprvYn:'Y'|'N', isNodeAdmin:bool } | null(미상).
+  approvalContext: { type: Object, default: null },
 })
 const emit = defineEmits(['submit', 'cancel'])
 
 const { proxy } = getCurrentInstance() || { proxy: null }
 const showAlert = (m) => (proxy?.$alert ? proxy.$alert(m) : window.alert(m))
 
-// 1구간 기본 (사용자가 "구간 추가" 누르면 2구간 추가)
-const slots = ref([{ workSeq: 1, schCd: '' }])
+// 스케줄은 그 자체에 1·2구간이 포함되므로 구간별이 아니라 "하나의 스케줄"만 선택한다.
+const schCd = ref('')
+const selectedSchNm = ref('')
 const reqReason = ref('')
+
+// 스케줄 옵션 조회 상태
+const schedOptions = ref([])
+const optLoading = ref(false)
+const optError = ref(false)
+const sheetOpen = ref(false)
+
+// ── 결재선 상태 (prafta-app-009) ─────────────────────────────────────────
+// approverList: [{ approverUserCd, userNm, userId, rankNm, nodeNm }] (순서 = 결재 단계)
+const approverList = ref([])
+const approverPickerOpen = ref(false)
+const approvalSectionRef = ref(null)
+
+// 분기값. approvalContext 미상(null)이면 결재선 노출 폴백(서버가 'Y'면 무시).
+const selfApprvYn = computed(() => props.approvalContext?.selfApprvYn || null)
+// 결재선 섹션 노출: 'Y'(자체근태승인)가 아닐 때(= 'N' 또는 미상). 'Y'면 안내문만.
+const showApprovalSection = computed(() => selfApprvYn.value !== 'Y')
+// 'Y' 케이스 안내문(섹션 숨김 시): 노드 관리자면 즉시 승인, 일반 근로자면 관리자 승인.
+const approvalNotice = computed(() => {
+  if (selfApprvYn.value !== 'Y') return ''
+  return props.approvalContext?.isNodeAdmin
+    ? '요청하면 즉시 승인 처리돼요.'
+    : '부서 관리자 승인 후 반영돼요. 결재선을 지정하지 않아도 돼요.'
+})
+// 결재자 emit 용 userCd 배열(순서 보존 — 위치 재인덱싱 아님, 표시 순서 그대로).
+const approverUserCds = computed(() => approverList.value.map((a) => a.approverUserCd))
+// 결재 필수 여부: 'N'(결재선 사용)일 때만. 미상이면 폴백상 필수 아님(서버가 최종 판정).
+const approverRequired = computed(() => selfApprvYn.value === 'N')
+
+/**
+ * 'HHmm' → 'HH:MM'. 형식이 4자리 숫자가 아니면 원본 반환.
+ */
+const fmtTime = (t) => {
+  if (!t || t.length !== 4) return t || ''
+  return `${t.slice(0, 2)}:${t.slice(2, 4)}`
+}
+
+/**
+ * 스케줄 옵션 라벨 조립.
+ * - 1구간만: "09:00~18:00"
+ * - 2구간: "09:00~12:00 / 13:00~18:00"
+ */
+const buildLabel = (s) => {
+  const fst = `${fmtTime(s.fstStrTime)}~${fmtTime(s.fstEndTime)}`
+  if (s.secStrTime && s.secEndTime) {
+    return `${fst} / ${fmtTime(s.secStrTime)}~${fmtTime(s.secEndTime)}`
+  }
+  return fst
+}
+
+// 트리거 버튼 표시 라벨
+const triggerLabel = computed(() => (schCd.value ? selectedSchNm.value : '스케줄을 선택해 주세요'))
+
+// 옵션 0건 또는 조회 실패 시 트리거 비활성 (제출 차단)
+const optDisabled = computed(
+  () => optLoading.value || optError.value || schedOptions.value.length === 0,
+)
 
 // 컨텍스트 표시 (workYmd → "YYYY년 M월 D일")
 const ctxDateDisplay = computed(() => {
@@ -120,30 +222,95 @@ const ctxDateDisplay = computed(() => {
 })
 const ctxSiteDisplay = computed(() => props.context.siteName || '')
 
+// 사유 미입력은 버튼 비활성 사유에서 제외(제출 시 사유 전용 alert 로 안내).
+//   결재 필수('N') 케이스는 결재자 1명 이상이어야 제출 활성.
 const isValid = computed(() => {
-  if (!reqReason.value.trim()) return false
-  return slots.value.every((s) => s.schCd.trim())
+  if (!schCd.value) return false
+  if (approverRequired.value && approverList.value.length === 0) return false
+  return true
 })
 
-const onAddSlot = () => {
-  if (slots.value.length >= 2) return
-  slots.value.push({ workSeq: 2, schCd: '' })
+const openSheet = () => {
+  if (optDisabled.value) return
+  sheetOpen.value = true
 }
 
-const onRemoveSlot = (workSeq) => {
-  slots.value = slots.value.filter((s) => s.workSeq !== workSeq)
-  // workSeq 재정렬 (1구간 단독 케이스)
-  slots.value.forEach((s, i) => (s.workSeq = i + 1))
+// 시트에서 스케줄 선택 적용
+const onPickSched = ({ schCd: code, label }) => {
+  schCd.value = code
+  selectedSchNm.value = label
 }
+
+// ── 결재자 추가/제거 (prafta-app-009, LeaveApplyForm 패턴 차용) ───────────
+const onOpenApproverPicker = () => {
+  approverPickerOpen.value = true
+}
+
+// 시트 add(picked[]) 수신 → approverList 에 순서 append. userCd 식별자 dedup.
+//   직접 추가 시 프리셋 이탈(섹션의 selectedPresetId 해제) — approverUserCds 가 SSOT 라 정합.
+const onAddApprovers = (picked) => {
+  const existing = new Set(approverList.value.map((a) => a.approverUserCd))
+  const additions = (picked || [])
+    .filter((p) => p && p.userCd && !existing.has(p.userCd))
+    .map((p) => ({
+      approverUserCd: p.userCd,
+      userNm: p.userNm,
+      userId: p.userId,
+      rankNm: p.rankNm,
+      nodeNm: p.nodeNm,
+    }))
+  if (additions.length > 0) {
+    approverList.value = [...approverList.value, ...additions]
+    approvalSectionRef.value?.resetPreset?.()
+  }
+  approverPickerOpen.value = false
+}
+
+// 스케줄 옵션 조회 (식별값은 서버가 JWT 로 도출 — 쿼리 미전송)
+const fetchSchedOptions = async () => {
+  optLoading.value = true
+  optError.value = false
+  try {
+    const { data } = await api.get('/appApi/req07/schedules')
+    const list = Array.isArray(data?.schedules) ? data.schedules : []
+    schedOptions.value = list.map((s) => ({
+      schCd: s.schCd,
+      schNo: s.schNo,
+      baseYn: s.baseYn,
+      label: buildLabel(s),
+    }))
+  } catch (e) {
+    optError.value = true
+    schedOptions.value = []
+  } finally {
+    optLoading.value = false
+  }
+}
+
+onMounted(fetchSchedOptions)
 
 const onSubmit = () => {
+  // 사유 전용 가드(버튼은 기본 활성 → 빈값 제출 시 사유 안내).
+  if (!reqReason.value.trim()) {
+    showAlert('사유를 입력해 주세요.')
+    return
+  }
+  if (approverRequired.value && approverList.value.length === 0) {
+    showAlert('결재자를 1명 이상 추가해 주세요.')
+    return
+  }
   if (!isValid.value) {
     showAlert('모든 필수 항목을 입력해 주세요.')
     return
   }
+  // 단일 스케줄을 대표 구간(workSeq=1) 한 건으로 감싸 보낸다.
+  // (백엔드 /appApi/req07/sched-modify 가 slots 배열을 받으므로 계약 호환 유지.)
+  // prafta-app-009: 결재선 노출 케이스만 approverUserCds 전개 전송(SSOT). 'Y' 케이스는 미전송(서버 분기).
   emit('submit', {
-    slots: slots.value.map((s) => ({ workSeq: s.workSeq, schCd: s.schCd.trim() })),
+    slots: [{ workSeq: 1, schCd: schCd.value }],
     reqReason: reqReason.value.trim(),
+    approverUserCds: showApprovalSection.value ? approverUserCds.value : undefined,
+    presetId: undefined,
   })
 }
 </script>
@@ -256,23 +423,65 @@ const onSubmit = () => {
   border-color: var(--color-primary);
 }
 
-/* 구간 추가 버튼 */
-.btn-add {
-  display: inline-flex;
+/* 스케줄 선택 트리거 버튼 (input 룩 미러링) */
+.field__trigger {
+  width: 100%;
+  display: flex;
   align-items: center;
-  justify-content: center;
-  gap: 4px;
-  height: 40px;
+  justify-content: space-between;
+  gap: var(--space-sm);
   background: var(--color-surface);
-  border: 0.5px dashed var(--color-border);
+  border: 0.5px solid var(--color-border);
   border-radius: var(--radius-md);
-  color: var(--color-text-secondary);
-  font-size: 13px;
-  font-weight: 500;
+  padding: 10px 12px;
+  font-size: 14px;
+  color: var(--color-text-primary);
+  font-family: inherit;
+  box-sizing: border-box;
   cursor: pointer;
+  text-align: left;
 }
-.btn-add:hover {
+.field__trigger:focus-visible {
+  outline: none;
   border-color: var(--color-primary);
+}
+.field__trigger--placeholder .field__trigger-text {
+  color: var(--color-text-tertiary);
+}
+.field__trigger:disabled {
+  background: var(--color-bg);
+  color: var(--color-text-tertiary);
+  cursor: not-allowed;
+}
+.field__trigger-text {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.field__chevron {
+  flex-shrink: 0;
+  color: var(--color-text-tertiary);
+}
+.field__error {
+  font-size: 11px;
+  color: var(--color-danger);
+}
+
+/* 결재선 안내문('Y' 케이스) */
+.aprv-notice {
+  margin: 0;
+  padding: var(--space-sm) var(--space-md);
+  background: var(--color-primary-tint);
+  border: 0.5px solid var(--color-primary-tint-border);
+  border-radius: var(--radius-md);
+  font-size: 12px;
+  color: var(--color-primary-text-deep);
+  display: flex;
+  gap: var(--space-xs);
+}
+.aprv-notice__dot {
   color: var(--color-primary);
 }
 

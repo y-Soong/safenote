@@ -1,10 +1,10 @@
 <!--
-  DateStepperField.vue — 공통 날짜 선택 필드 + 스텝퍼 모달
-  - 목적: 앱 webview 에서 native <input type="date"> 의 OS 기본 피커(+/- 스피너, 설정/삭제/취소)를
-    앱 디자인(초록 계열)에 맞춘 인앱 모달로 대체한다.
-  - UI: 년 / 월 / 일 3열, 각 열마다 값 박스 + (+,−) 버튼. 하단 액션은 [취소][설정] 2종.
+  DateStepperField.vue — 공통 날짜 선택 필드 + 휠(드럼) 바텀시트
+  - 목적: 앱 webview 에서 native <input type="date"> 의 OS 기본 피커를
+    토스 스타일 휠 바텀시트(연/월/일 드럼 + 직접입력)로 대체한다.
+  - UI: 트리거 필드 → 하단 시트(키보드 직접입력 + 연/월/일 휠 3열) → [확인].
   - v-model: 'YYYY-MM-DD' 문자열 (기존 native date input 과 동일 포맷 → 교체 시 부모 로직 무변경).
-  - 색상: 부모 토큰에 의존하지 않도록 초록 계열을 리터럴로 고정(어느 화면에서도 동일).
+  - 색상: 앱 브랜드 초록 계열을 리터럴로 고정(시트가 body 로 teleport 되어 화면 토큰 밖이므로).
 -->
 <template>
   <button
@@ -15,8 +15,18 @@
     @click="open"
   >
     <span class="dsf-field__text">{{ displayText || placeholder }}</span>
-    <svg class="dsf-field__ic" width="18" height="18" viewBox="0 0 24 24" fill="none"
-         stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+    <svg
+      class="dsf-field__ic"
+      width="18"
+      height="18"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      stroke-width="2"
+      stroke-linecap="round"
+      stroke-linejoin="round"
+      aria-hidden="true"
+    >
       <rect x="3" y="4" width="18" height="18" rx="2" />
       <line x1="16" y1="2" x2="16" y2="6" />
       <line x1="8" y1="2" x2="8" y2="6" />
@@ -25,106 +35,148 @@
   </button>
 
   <Teleport to="body">
-    <div v-if="isOpen" class="dsp-dimmer" @click.self="onCancel">
-      <div class="dsp-card" role="dialog" aria-modal="true" aria-label="날짜 선택">
-        <p class="dsp-preview">{{ previewText }}</p>
+    <div v-if="isOpen" class="wp-dim" :class="{ 'wp-dim--on': shown }" @click.self="onCancel">
+      <div
+        class="wp-sheet"
+        :class="{ 'wp-sheet--on': shown }"
+        role="dialog"
+        aria-modal="true"
+        aria-label="날짜 선택"
+      >
+        <div class="wp-grip" aria-hidden="true"></div>
+        <div class="wp-top">
+          <span class="wp-top__title">날짜 선택</span>
+          <button type="button" class="wp-top__close" aria-label="닫기" @click="onCancel">
+            <svg
+              width="20"
+              height="20"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2.2"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+            >
+              <line x1="18" y1="6" x2="6" y2="18" />
+              <line x1="6" y1="6" x2="18" y2="18" />
+            </svg>
+          </button>
+        </div>
 
-        <div class="dsp-cols">
-          <!-- 년 -->
-          <div class="dsp-col dsp-col--year">
-            <div class="dsp-box">
-              <input
-                class="dsp-val"
-                type="text"
-                inputmode="numeric"
-                pattern="[0-9]*"
-                maxlength="4"
-                :value="year"
-                aria-label="연도"
-                @focus="onFocusSelect"
-                @input="onYearInput"
-                @blur="onYearBlur"
-              />
-              <span class="dsp-unit">년</span>
+        <!-- 직접 입력 필드 -->
+        <div class="wp-keyin">
+          <input
+            class="wp-keyin__in wp-keyin__in--y"
+            type="text"
+            inputmode="numeric"
+            pattern="[0-9]*"
+            maxlength="4"
+            :value="year"
+            aria-label="연도"
+            @focus="onFocusSelect"
+            @input="onYearInput"
+            @blur="onYearBlur"
+          />
+          <span class="wp-keyin__dot">.</span>
+          <input
+            class="wp-keyin__in"
+            type="text"
+            inputmode="numeric"
+            pattern="[0-9]*"
+            maxlength="2"
+            :value="month"
+            aria-label="월"
+            @focus="onFocusSelect"
+            @input="onMonthInput"
+            @blur="onMonthBlur"
+          />
+          <span class="wp-keyin__dot">.</span>
+          <input
+            class="wp-keyin__in"
+            type="text"
+            inputmode="numeric"
+            pattern="[0-9]*"
+            maxlength="2"
+            :value="day"
+            aria-label="일"
+            @focus="onFocusSelect"
+            @input="onDayInput"
+            @blur="onDayBlur"
+          />
+        </div>
+
+        <!-- 휠 -->
+        <div class="wp-picker">
+          <div class="wp-band" aria-hidden="true"></div>
+          <div class="wp-wheels wp-wheels--date">
+            <div ref="yEl" class="wp-wheel" aria-label="연도 휠">
+              <div class="wp-pad"></div>
+              <div v-for="v in years" :key="'y' + v" class="wp-item">{{ v }}</div>
+              <div class="wp-pad"></div>
             </div>
-            <div class="dsp-pm">
-              <button type="button" class="dsp-pm__btn" aria-label="연도 증가" @click="stepYear(1)">+</button>
-              <button type="button" class="dsp-pm__btn" aria-label="연도 감소" @click="stepYear(-1)">−</button>
+            <div ref="mEl" class="wp-wheel" aria-label="월 휠">
+              <div class="wp-pad"></div>
+              <div v-for="v in months" :key="'m' + v" class="wp-item">{{ v }}</div>
+              <div class="wp-pad"></div>
             </div>
-          </div>
-          <!-- 월 -->
-          <div class="dsp-col">
-            <div class="dsp-box">
-              <input
-                class="dsp-val"
-                type="text"
-                inputmode="numeric"
-                pattern="[0-9]*"
-                maxlength="2"
-                :value="month"
-                aria-label="월"
-                @focus="onFocusSelect"
-                @input="onMonthInput"
-                @blur="onMonthBlur"
-              />
-              <span class="dsp-unit">월</span>
-            </div>
-            <div class="dsp-pm">
-              <button type="button" class="dsp-pm__btn" aria-label="월 증가" @click="stepMonth(1)">+</button>
-              <button type="button" class="dsp-pm__btn" aria-label="월 감소" @click="stepMonth(-1)">−</button>
-            </div>
-          </div>
-          <!-- 일 -->
-          <div class="dsp-col">
-            <div class="dsp-box">
-              <input
-                class="dsp-val"
-                type="text"
-                inputmode="numeric"
-                pattern="[0-9]*"
-                maxlength="2"
-                :value="day"
-                aria-label="일"
-                @focus="onFocusSelect"
-                @input="onDayInput"
-                @blur="onDayBlur"
-              />
-              <span class="dsp-unit">일</span>
-            </div>
-            <div class="dsp-pm">
-              <button type="button" class="dsp-pm__btn" aria-label="일 증가" @click="stepDay(1)">+</button>
-              <button type="button" class="dsp-pm__btn" aria-label="일 감소" @click="stepDay(-1)">−</button>
+            <div ref="dEl" class="wp-wheel" aria-label="일 휠">
+              <div class="wp-pad"></div>
+              <div v-for="v in days" :key="'d' + v" class="wp-item">{{ v }}</div>
+              <div class="wp-pad"></div>
             </div>
           </div>
         </div>
 
-        <div class="dsp-actions">
-          <button type="button" class="dsp-btn dsp-btn--ghost" @click="onCancel">취소</button>
-          <button type="button" class="dsp-btn dsp-btn--primary" @click="onConfirm">설정</button>
-        </div>
+        <button type="button" class="wp-confirm" @click="onConfirm">확인</button>
       </div>
     </div>
   </Teleport>
 </template>
 
 <script setup>
-import { ref, computed } from 'vue'
+import { ref, computed, nextTick, onBeforeUnmount } from 'vue'
+import { scrollToIndex, centerIndex, attachWheelScroll } from '@/utils/wheelPicker'
 
 const props = defineProps({
   // 'YYYY-MM-DD' 문자열 (빈값이면 미선택)
   modelValue: { type: String, default: '' },
   placeholder: { type: String, default: '날짜 선택' },
   disabled: { type: Boolean, default: false },
-  // 스텝퍼 연도 클램프 범위
+  // 휠/입력 연도 클램프 범위
   minYear: { type: Number, default: 1900 },
   maxYear: { type: Number, default: 2100 },
 })
 const emit = defineEmits(['update:modelValue'])
 
 const isOpen = ref(false)
+const shown = ref(false) // 슬라이드 업 애니메이션용
 const year = ref(2000)
 const month = ref(1)
 const day = ref(1)
+
+const yEl = ref(null)
+const mEl = ref(null)
+const dEl = ref(null)
+let detachers = []
+
+// 휠 항목 배열 — 연도는 최신이 위(내림차순), 월/일은 오름차순
+const years = computed(() => {
+  const arr = []
+  for (let y = props.maxYear; y >= props.minYear; y -= 1) arr.push(y)
+  return arr
+})
+const months = computed(() => {
+  const arr = []
+  for (let m = 1; m <= 12; m += 1) arr.push(m)
+  return arr
+})
+const daysInMonth = (y, mo) => new Date(y, mo, 0).getDate()
+const days = computed(() => {
+  const max = daysInMonth(year.value, month.value)
+  const arr = []
+  for (let d = 1; d <= max; d += 1) arr.push(d)
+  return arr
+})
 
 // 'YYYY-MM-DD' → {y,m,d} | null
 const parse = (s) => {
@@ -134,62 +186,83 @@ const parse = (s) => {
   return { y: Number(m[1]), m: Number(m[2]), d: Number(m[3]) }
 }
 
-// 해당 연/월의 마지막 일수 (m: 1~12)
-const daysInMonth = (y, mo) => new Date(y, mo, 0).getDate()
-
-// 표시용 텍스트 (필드)
+// 표시용 텍스트 (트리거 필드)
 const displayText = computed(() => {
   const p = parse(props.modelValue)
   if (!p) return ''
   return `${p.y}-${String(p.m).padStart(2, '0')}-${String(p.d).padStart(2, '0')}`
 })
 
-// 모달 상단 미리보기
-const previewText = computed(() => `${year.value}년 ${month.value}월 ${day.value}일`)
-
-const open = () => {
-  if (props.disabled) return
-  const init = parse(props.modelValue) || (() => {
-    const t = new Date()
-    return { y: t.getFullYear(), m: t.getMonth() + 1, d: t.getDate() }
-  })()
-  year.value = Math.min(props.maxYear, Math.max(props.minYear, init.y))
-  month.value = init.m
-  day.value = init.d
-  isOpen.value = true
-}
-
-// 연/월 변경 후 일자가 말일을 넘으면 말일로 보정
-const clampDay = () => {
+const clampDayToMonth = () => {
   const max = daysInMonth(year.value, month.value)
   if (day.value > max) day.value = max
 }
 
-const stepYear = (delta) => {
-  year.value = Math.min(props.maxYear, Math.max(props.minYear, year.value + delta))
-  clampDay()
-}
-const stepMonth = (delta) => {
-  let m = month.value + delta
-  if (m > 12) m = 1
-  if (m < 1) m = 12
-  month.value = m
-  clampDay()
-}
-const stepDay = (delta) => {
-  const max = daysInMonth(year.value, month.value)
-  let d = day.value + delta
-  if (d > max) d = 1
-  if (d < 1) d = max
-  day.value = d
+// 현재 state 값에 맞춰 세 휠을 정렬
+const positionWheels = () => {
+  scrollToIndex(yEl.value, years.value.indexOf(year.value))
+  scrollToIndex(mEl.value, months.value.indexOf(month.value))
+  scrollToIndex(dEl.value, days.value.indexOf(day.value))
 }
 
-// ── 키인(직접 입력) ──────────────────────────────────────
-// 값을 누르면 전체 선택 → 사용자가 입력한 값으로 즉시 치환되도록.
-const onFocusSelect = (e) => {
-  e.target.select()
+// 휠 settle 콜백 (스크롤이 멈추면 중앙값을 state 로 반영)
+const onYearSettle = () => {
+  year.value = years.value[centerIndex(yEl.value, years.value.length)]
+  clampDayToMonth()
+  nextTick(() => scrollToIndex(dEl.value, days.value.indexOf(day.value)))
 }
-// 입력 중에는 숫자만 허용/자릿수 제한만 하고, 범위 보정은 blur 에서.
+const onMonthSettle = () => {
+  month.value = months.value[centerIndex(mEl.value, months.value.length)]
+  clampDayToMonth()
+  nextTick(() => scrollToIndex(dEl.value, days.value.indexOf(day.value)))
+}
+const onDaySettle = () => {
+  day.value = days.value[centerIndex(dEl.value, days.value.length)]
+}
+
+const attach = () => {
+  detachers = [
+    attachWheelScroll(yEl.value, onYearSettle),
+    attachWheelScroll(mEl.value, onMonthSettle),
+    attachWheelScroll(dEl.value, onDaySettle),
+  ]
+}
+const detachAll = () => {
+  detachers.forEach((fn) => fn && fn())
+  detachers = []
+}
+
+const open = () => {
+  if (props.disabled) return
+  const init =
+    parse(props.modelValue) ||
+    (() => {
+      const t = new Date()
+      return { y: t.getFullYear(), m: t.getMonth() + 1, d: t.getDate() }
+    })()
+  year.value = Math.min(props.maxYear, Math.max(props.minYear, init.y))
+  month.value = Math.min(12, Math.max(1, init.m))
+  day.value = Math.min(daysInMonth(year.value, month.value), Math.max(1, init.d))
+  isOpen.value = true
+  nextTick(() => {
+    requestAnimationFrame(() => {
+      shown.value = true
+      positionWheels()
+      attach()
+    })
+  })
+}
+
+const close = () => {
+  shown.value = false
+  setTimeout(() => {
+    detachAll()
+    isOpen.value = false
+  }, 280)
+}
+
+// ── 키보드 직접 입력 ─────────────────────────────────────
+const onFocusSelect = (e) => e.target.select()
 const onYearInput = (e) => {
   const digits = e.target.value.replace(/\D/g, '').slice(0, 4)
   year.value = digits === '' ? 0 : Number(digits)
@@ -202,21 +275,23 @@ const onDayInput = (e) => {
   const digits = e.target.value.replace(/\D/g, '').slice(0, 2)
   day.value = digits === '' ? 0 : Number(digits)
 }
-// blur 시 유효 범위로 보정.
 const onYearBlur = () => {
   year.value = Math.min(props.maxYear, Math.max(props.minYear, year.value || props.minYear))
-  clampDay()
+  clampDayToMonth()
+  nextTick(positionWheels)
 }
 const onMonthBlur = () => {
   month.value = Math.min(12, Math.max(1, month.value || 1))
-  clampDay()
+  clampDayToMonth()
+  nextTick(positionWheels)
 }
 const onDayBlur = () => {
   const max = daysInMonth(year.value, month.value)
   day.value = Math.min(max, Math.max(1, day.value || 1))
+  nextTick(positionWheels)
 }
 
-// 설정 직전 최종 보정(입력 도중 blur 없이 확정하는 경우 방어).
+// 확정 직전 최종 보정
 const normalize = () => {
   year.value = Math.min(props.maxYear, Math.max(props.minYear, year.value || props.minYear))
   month.value = Math.min(12, Math.max(1, month.value || 1))
@@ -225,19 +300,24 @@ const normalize = () => {
 }
 
 const onConfirm = () => {
+  // 휠이 settle 전이어도 현재 중앙값을 확정값으로 채택
+  if (yEl.value) year.value = years.value[centerIndex(yEl.value, years.value.length)]
+  if (mEl.value) month.value = months.value[centerIndex(mEl.value, months.value.length)]
+  clampDayToMonth()
+  if (dEl.value) day.value = days.value[centerIndex(dEl.value, days.value.length)]
   normalize()
   const mm = String(month.value).padStart(2, '0')
   const dd = String(day.value).padStart(2, '0')
   emit('update:modelValue', `${year.value}-${mm}-${dd}`)
-  isOpen.value = false
+  close()
 }
-const onCancel = () => {
-  isOpen.value = false
-}
+const onCancel = () => close()
+
+onBeforeUnmount(detachAll)
 </script>
 
 <style scoped>
-/* ── 필드(트리거) ───────────────────────────────────────── */
+/* ── 트리거 필드 ─────────────────────────────────────────── */
 .dsf-field {
   width: 100%;
   height: 44px;
@@ -245,7 +325,6 @@ const onCancel = () => {
   align-items: center;
   justify-content: space-between;
   gap: 8px;
-  /* 토큰 정의 화면이면 토큰, 아니면 리터럴 폴백 */
   background: var(--color-surface, #ffffff);
   border: 0.5px solid var(--color-border, #e5e7eb);
   border-radius: var(--radius-md, 10px);
@@ -276,131 +355,173 @@ const onCancel = () => {
   color: #16a34a;
 }
 
-/* ── 모달 ───────────────────────────────────────────────── */
-.dsp-dimmer {
+/* ── 휠 바텀시트 (공통) ──────────────────────────────────── */
+.wp-dim {
   position: fixed;
   inset: 0;
-  background: rgba(0, 0, 0, 0.45);
+  background: rgba(0, 0, 0, 0.42);
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  z-index: 1000;
+  opacity: 0;
+  transition: opacity 0.25s;
+}
+.wp-dim--on {
+  opacity: 1;
+}
+.wp-sheet {
+  width: 100%;
+  max-width: 414px;
+  background: #ffffff;
+  border-radius: 22px 22px 0 0;
+  padding: 8px 20px calc(24px + env(safe-area-inset-bottom, 0px));
+  transform: translateY(110%);
+  transition: transform 0.3s cubic-bezier(0.2, 0.8, 0.2, 1);
+  box-sizing: border-box;
+}
+.wp-sheet--on {
+  transform: translateY(0);
+}
+.wp-grip {
+  width: 38px;
+  height: 4px;
+  background: #d1d6db;
+  border-radius: 2px;
+  margin: 8px auto 16px;
+}
+.wp-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 8px;
+}
+.wp-top__title {
+  font-size: 17px;
+  font-weight: 600;
+  color: #191f28;
+}
+.wp-top__close {
+  width: 32px;
+  height: 32px;
+  border: 0;
+  background: transparent;
+  color: #6b7684;
+  cursor: pointer;
   display: flex;
   align-items: center;
   justify-content: center;
-  z-index: 1000;
-  padding: 24px;
-}
-.dsp-card {
-  width: 100%;
-  max-width: 360px;
-  background: #ffffff;
-  border-radius: 16px;
-  padding: 20px 16px 16px;
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.18);
-}
-.dsp-preview {
-  margin: 0 0 16px;
-  text-align: center;
-  font-size: 16px;
-  font-weight: 700;
-  color: #111827;
-  font-variant-numeric: tabular-nums;
+  padding: 0;
 }
 
-.dsp-cols {
+/* 직접 입력 필드 */
+.wp-keyin {
   display: flex;
-  gap: 10px;
-  align-items: flex-start;
-}
-.dsp-col {
-  flex: 1 1 0;
-  display: flex;
-  flex-direction: column;
-  align-items: stretch;
-  gap: 6px;
-  min-width: 0;
-}
-.dsp-col--year {
-  flex: 1.6 1 0; /* 연도 4자리 + 단위라 더 넓게 */
-}
-/* 값 입력칸 + 단위(년/월/일) 가로 배치 */
-.dsp-box {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-}
-.dsp-unit {
-  flex-shrink: 0;
-  font-size: 13px;
-  color: #374151;
-}
-/* 값 박스 = 키인 가능한 input. 흰 배경 + 초록 테두리 + 검정 텍스트. */
-.dsp-val {
-  flex: 1;
-  width: 100%;
-  min-width: 0;
-  height: 56px;
-  text-align: center;
-  background: #ffffff;
-  color: #111827;
-  border: 1.5px solid #16a34a;
-  border-radius: 10px;
-  padding: 0 4px;
-  font-size: 22px;
-  font-weight: 700;
-  font-variant-numeric: tabular-nums;
-  font-family: inherit;
-  box-sizing: border-box;
-  outline: none;
-  -webkit-appearance: none;
-  appearance: none;
-}
-.dsp-val:focus {
-  border-color: #15803d;
-  box-shadow: 0 0 0 2px rgba(22, 163, 74, 0.18);
-}
-.dsp-pm {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 6px;
-}
-.dsp-pm__btn {
-  height: 40px;
-  border: 1px solid #16a34a;
-  border-radius: 8px;
-  background: #f0fdf4;
-  color: #16a34a;
-  font-size: 20px;
-  font-weight: 700;
-  line-height: 1;
-  cursor: pointer;
-  font-family: inherit;
-  -webkit-user-select: none;
-  user-select: none;
-}
-.dsp-pm__btn:active {
-  background: #dcfce7;
-}
-
-.dsp-actions {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
+  align-items: flex-end;
+  justify-content: center;
   gap: 8px;
-  margin-top: 18px;
+  border-bottom: 2px solid #16a34a;
+  padding: 6px 4px 10px;
+  margin: 4px 0 8px;
 }
-.dsp-btn {
-  height: 48px;
-  border-radius: 10px;
-  font-size: 15px;
+.wp-keyin__in {
+  border: 0;
+  background: transparent;
+  font-family: 'SF Mono', 'Roboto Mono', ui-monospace, monospace;
   font-weight: 600;
+  font-size: 24px;
+  color: #191f28;
+  outline: none;
+  padding: 0;
+  text-align: center;
+  width: 46px;
+}
+.wp-keyin__in--y {
+  width: 78px;
+}
+.wp-keyin__in::placeholder {
+  color: #b0b8c1;
+  font-weight: 400;
+}
+.wp-keyin__dot {
+  font-size: 20px;
+  color: #b0b8c1;
+  padding-bottom: 2px;
+}
+
+/* 휠 영역 */
+.wp-picker {
+  position: relative;
+  height: 200px;
+  margin: 8px 0 20px;
+}
+.wp-band {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 80px;
+  height: 40px;
+  background: #f0fdf4;
+  border-radius: 12px;
+  z-index: 0;
+}
+.wp-wheels {
+  position: relative;
+  z-index: 1;
+  display: grid;
+  height: 100%;
+}
+.wp-wheels--date {
+  grid-template-columns: 1.3fr 1fr 1fr;
+}
+.wp-wheel {
+  overflow-y: scroll;
+  scroll-snap-type: y mandatory;
+  scrollbar-width: none;
+  text-align: center;
+  -webkit-overflow-scrolling: touch;
+}
+.wp-wheel::-webkit-scrollbar {
+  display: none;
+}
+.wp-item {
+  height: 40px;
+  line-height: 40px;
+  font-size: 18px;
+  scroll-snap-align: center;
+  color: #b0b8c1;
+  font-family: 'SF Mono', 'Roboto Mono', ui-monospace, monospace;
+  font-variant-numeric: tabular-nums;
+  opacity: 0.55;
+  transition:
+    color 0.12s,
+    transform 0.12s,
+    opacity 0.12s;
+}
+.wp-item--on {
+  color: #16a34a;
+  font-weight: 700;
+  opacity: 1;
+  transform: scale(1.06);
+}
+.wp-pad {
+  height: 80px;
+}
+
+.wp-confirm {
+  width: 100%;
+  height: 54px;
+  border: 0;
+  background: #16a34a;
+  color: #ffffff;
+  font-size: 16px;
+  font-weight: 600;
+  border-radius: 14px;
   cursor: pointer;
   font-family: inherit;
+  transition: opacity 0.15s;
 }
-.dsp-btn--ghost {
-  background: #f3f4f6;
-  border: 0;
-  color: #6b7280;
-}
-.dsp-btn--primary {
-  background: #16a34a;
-  border: 0;
-  color: #ffffff;
+.wp-confirm:active {
+  opacity: 0.85;
 }
 </style>

@@ -10,9 +10,11 @@ import lombok.Setter;
  * <p>3 endpoint 가 동일 SlotRequest 를 공유한다. 각 endpoint 가 사용하지 않는 필드는 무시한다.
  * <ul>
  *   <li>스케줄 수정: workSeq + schCd 사용. 시각 필드 무시.</li>
- *   <li>근태 보정: workSeq + startDate/startTime/endDate/endTime 사용. schCd/otType 무시.</li>
- *   <li>초과근무: workSeq + startDate/startTime/endDate/endTime + otType 사용. schCd 무시.</li>
+ *   <li>근태 보정: workSeq + startDate/startTime/endDate/endTime 사용. schCd 무시.</li>
+ *   <li>초과근무: workSeq + startDate/startTime/endDate/endTime 사용. schCd 무시.</li>
  * </ul>
+ *
+ * <p>prafta-043: 초과근무 유형(OT_TYPE) 전면 파기로 otType 필드 제거.
  *
  * <p>시각 형식 (P15):
  * <ul>
@@ -42,7 +44,4 @@ public class SlotRequest {
 
     /** 종료 시각 (HHmm). 근태 보정 / 초과근무 전용. */
     private String endTime;
-
-    /** 초과근무 유형 (EXTEND / NIGHT / HOLIDAY). 초과근무 전용. */
-    private String otType;
 }

@@ -123,7 +123,7 @@
             >
               <td>{{ r.userNm }}</td>
               <td>{{ r.nodeNm }}</td>
-              <!-- 근무구분: 정상근무 / 초과근무(유형) -->
+              <!-- 근무구분: 정상근무 / 초과근무 (prafta-043: 유형 파기) -->
               <td>
                 <span
                   :class="['a08-badge', r._isOt ? 'b-ot' : 'b-work-normal']"
@@ -146,9 +146,13 @@
               <!-- 정규화근무: 초과근무 행은 정규화 개념이 없어 '-'.
                    표준화 규칙 위반(_stdViolated) 구간은 미적용 → 공백('-'). 원본은 실제근무 컬럼 참조. -->
               <td>{{ r._isOt || r._stdViolated ? "-" : dCell(r._inDate) }}</td>
-              <td>{{ r._isOt || r._stdViolated ? "-" : tCell(r._inStdTime) }}</td>
+              <td>
+                {{ r._isOt || r._stdViolated ? "-" : tCell(r._inStdTime) }}
+              </td>
               <td>{{ r._isOt || r._stdViolated ? "-" : dCell(r._outDate) }}</td>
-              <td>{{ r._isOt || r._stdViolated ? "-" : tCell(r._outStdTime) }}</td>
+              <td>
+                {{ r._isOt || r._stdViolated ? "-" : tCell(r._outStdTime) }}
+              </td>
               <!-- 상태: 초과근무 행은 배지 없이 '-' 텍스트만 -->
               <td>
                 <template v-if="r._isOt">-</template>
@@ -187,7 +191,7 @@
         </div>
 
         <div class="a08-detail-meta">
-          <!-- 근무구분 (PRAFTA-015): 정상근무 / 초과근무(유형) -->
+          <!-- 근무구분 (PRAFTA-015): 정상근무 / 초과근무 (prafta-043: 유형 파기) -->
           <div class="meta-row">
             <span class="meta-label">근무구분</span>
             <span class="meta-value">
@@ -801,24 +805,11 @@ const statusBadgeClass = (cd) => {
   }
 };
 
-// 초과근무 유형 라벨 (EXTEND:연장 / NIGHT:야간 / HOLIDAY:휴일)
-const otTypeLabel = (otType) => {
-  switch (otType) {
-    case "EXTEND":
-      return "연장";
-    case "NIGHT":
-      return "야간";
-    case "HOLIDAY":
-      return "휴일";
-    default:
-      return otType ?? "";
-  }
-};
-// 근무구분 라벨: 정상근무 / 초과근무(유형)
+// 근무구분 라벨: 정상근무 / 초과근무
+// prafta-043: 초과근무 유형(연장/야간/휴일) 전면 파기 — 유형 표기 없이 '초과근무' 단일 표기.
 const workTypeLabel = (r) => {
   if (!r || !r._isOt) return "정상근무";
-  const t = otTypeLabel(r.otType);
-  return t ? `초과근무(${t})` : "초과근무";
+  return "초과근무";
 };
 
 // yyyyMMdd 에 일수를 더해 yyyyMMdd 로 반환

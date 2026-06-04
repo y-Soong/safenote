@@ -1,0 +1,71 @@
+-- ============================================================================
+-- PRAFTA-043 단계 2 (CONTRACT) — 초과근무 유형(OT_TYPE) 컬럼 DROP
+-- 작성일: 2026-06-03
+-- 적용 환경: MySQL 8.0.42
+-- 참조: .claude/requests/web_requests/prafta-043-plan.md §3 / §0-1 / D1
+--       .claude/requests/web_requests/prafta-043.md §요청 4
+--       보안 검토 High (배포 순서 가용성 리스크) 해소 — expand/contract 2단계 분리
+--
+-- 변경 요약 (CONTRACT = 신버전 코드 전면 롤아웃 후 적용)
+--   초과근무 "유형"(연장/야간/휴일) 개념 파기의 최종 단계.
+--   더 이상 어떤 코드도 OT_TYPE 을 읽거나 쓰지 않는 상태(신버전 전면 롤아웃·안정화)에서
+--   아래 두 컬럼을 영구 DROP 한다(둘 다 인덱스/PK/FK 미포함 → 제약 선제거 불요).
+--     1) tb_user_attd_req.OT_TYPE        : varchar(10) NULL          (AFTER END_TIME)
+--     2) tb_user_overtime_mgmt.OT_TYPE   : varchar(10) NULL(EXPAND후) (AFTER NODE_CD)
+--        ※ 원래 NOT NULL 이었으나 prafta-043-1(EXPAND)에서 NULL 허용으로 완화됨.
+--   ※ 일용직 슬롯 SLOT_TYPE(SYS014)은 별개 도메인 — 본 마이그와 무관, 건드리지 않음.
+--
+-- ⚠️ 선행 조건(엄수): 본 CONTRACT 는 아래가 모두 충족된 뒤에만 적용한다.
+--   - prafta-043-1 (EXPAND) 적용 완료.
+--   - prafta-043 신버전 코드가 전 인스턴스에 배포·재기동되어 OT_TYPE 무참조.
+--     (web attd07 / reqinbox / attd08, app req07 / req06 OT_TYPE 제거 버전)
+--   미충족 상태에서 DROP 하면 구버전 코드가 "Unknown column" 으로
+--   초과근무 등록/승인/조회가 전면 실패한다.
+--   ※ EXPAND 만 적용하고 본 CONTRACT 를 무기한 보류해도 무해하다(컬럼 잔존·NULL 허용·무참조).
+--
+-- 적용 전 존재 확인 (운영 적용 직전 권장):
+--   SHOW COLUMNS FROM tb_user_attd_req       LIKE 'OT_TYPE';
+--   SHOW COLUMNS FROM tb_user_overtime_mgmt  LIKE 'OT_TYPE';
+--
+-- (선택) 적용 전 값 백업 스냅샷 — 파기 결정상 불요지만 안전망(필요 시 주석 해제):
+--   CREATE TABLE bak_prafta_043_attd_req_ot      AS SELECT REQ_ID, OT_TYPE FROM tb_user_attd_req      WHERE OT_TYPE IS NOT NULL;
+--   CREATE TABLE bak_prafta_043_overtime_mgmt_ot AS SELECT OT_ID,  OT_TYPE FROM tb_user_overtime_mgmt WHERE OT_TYPE IS NOT NULL;
+--
+-- 멱등성: MySQL 8.0.42 는 DROP COLUMN IF EXISTS 미지원 → 본 파일은 1회 적용 후 보관용(재실행 금지).
+-- 운영 적용: 사용자 수동(read-only MCP). 본 파일은 작성만, DB 직접 적용 금지.
+--
+-- ────────────────────────────────────────────────────────────────────────────
+-- 운영 런북 (권장 순서 — 상세는 prafta-043-1-expand-ot-type-nullable.sql 헤더 참조)
+--   ① EXPAND(prafta-043-1) 적용  →  ② 신버전 코드 배포·재기동  →  ③ 본 CONTRACT 적용
+--   본 파일은 ③ 단계 전용. ①②가 끝나기 전에는 적용하지 말 것.
+-- ────────────────────────────────────────────────────────────────────────────
+-- ============================================================================
+
+-- 1) 신청 행 OT_TYPE (varchar(10) NULL) DROP
+ALTER TABLE `tb_user_attd_req`
+    DROP COLUMN `OT_TYPE`;
+
+-- 2) 최종 정산 행 OT_TYPE (EXPAND 후 varchar(10) NULL) DROP
+ALTER TABLE `tb_user_overtime_mgmt`
+    DROP COLUMN `OT_TYPE`;
+
+-- ============================================================================
+-- 롤백 (컬럼 구조 복원 — 값은 파기 본질상 복원 불가)
+--   원래 타입/길이/COLLATE/위치(AFTER)를 정확히 복원한다.
+--   tb_user_attd_req.OT_TYPE      : varchar(10) NULL,  AFTER END_TIME   (원래 nullable → 무손실 구조 롤백)
+--   tb_user_overtime_mgmt.OT_TYPE : varchar(10) NULL,  AFTER NODE_CD    (원래 NOT NULL 이었으나
+--                                   DROP 후 값 소실 → 우선 NULL 로 복원, 필요 시 백필 후 NOT NULL 재부여)
+-- ----------------------------------------------------------------------------
+-- ALTER TABLE `tb_user_attd_req`
+--     ADD COLUMN `OT_TYPE` varchar(10) COLLATE utf8mb4_unicode_ci NULL DEFAULT NULL
+--         COMMENT '초과근무 유형 (EXTEND:연장 / NIGHT:야간 / HOLIDAY:휴일) [prafta-043 파기 복원]'
+--         AFTER `END_TIME`;
+--
+-- ALTER TABLE `tb_user_overtime_mgmt`
+--     ADD COLUMN `OT_TYPE` varchar(10) COLLATE utf8mb4_unicode_ci NULL DEFAULT NULL
+--         COMMENT '초과근무 유형 (EXTEND:연장 / NIGHT:야간 / HOLIDAY:휴일) [prafta-043 파기 복원, NOT NULL 재부여 전 백필 필요]'
+--         AFTER `NODE_CD`;
+--   -- (2단계) 원래의 NOT NULL 로 되돌리려면 값 백필 후 재부여:
+--   -- UPDATE tb_user_overtime_mgmt SET OT_TYPE = 'EXTEND' WHERE OT_TYPE IS NULL;
+--   -- ALTER TABLE tb_user_overtime_mgmt MODIFY COLUMN OT_TYPE varchar(10) COLLATE utf8mb4_unicode_ci NOT NULL;
+-- ============================================================================

@@ -36,8 +36,9 @@ import lombok.extern.slf4j.Slf4j;
  *   <li>limit+1 의 마지막 행이 있으면 hasMore=true 로 잘라낸다</li>
  * </ol>
  *
- * <p>LEAVE_TYPE/OT_TYPE 은 SYS 코드가 아닌 자유 텍스트 컬럼이므로 본 서비스 내부의 하드코딩 맵으로 매핑한다.
+ * <p>LEAVE_TYPE 은 SYS 코드가 아닌 자유 텍스트 컬럼이므로 본 서비스 내부의 하드코딩 맵으로 매핑한다.
  * 미매핑 값은 원본 코드 그대로 노출(fallback).
+ * prafta-043: 초과근무 유형(OT_TYPE) 전면 파기로 OT_TYPE 라벨 매핑/노출 제거.
  */
 @Slf4j
 @Service
@@ -49,19 +50,15 @@ public class AppReq06ServiceImpl implements AppReq06Service {
     private static final DateTimeFormatter F_ISO = DateTimeFormatter.ISO_LOCAL_DATE_TIME;
     private static final DateTimeFormatter F_YMD = DateTimeFormatter.ofPattern("yyyyMMdd");
 
-    // ─────────────── 자유 텍스트 LEAVE_TYPE / OT_TYPE 하드코딩 매핑 ───────────────
-    // (SYS006/SYS010 가정은 plan 의 가정 오류 — 실제는 자유 텍스트 컬럼. 정밀 매핑은 §7 follow-up.)
+    // ─────────────── 자유 텍스트 LEAVE_TYPE 하드코딩 매핑 ───────────────
+    // (SYS006 가정은 plan 의 가정 오류 — 실제는 자유 텍스트 컬럼. 정밀 매핑은 §7 follow-up.)
+    // prafta-043: 초과근무 유형(OT_TYPE) 전면 파기로 OT_TYPE_LABEL 맵 제거.
     private static final Map<String, String> LEAVE_TYPE_LABEL = Map.of(
             "ANNUAL", "연차",
             "HALF_AM", "오전반차",
             "HALF_PM", "오후반차",
             "SICK", "병가",
             "FAMILY", "경조사"
-    );
-    private static final Map<String, String> OT_TYPE_LABEL = Map.of(
-            "EXTEND", "연장",
-            "NIGHT", "야간",
-            "HOLIDAY", "휴일"
     );
 
     @Override
@@ -138,12 +135,7 @@ public class AppReq06ServiceImpl implements AppReq06Service {
             StringBuilder sb = new StringBuilder();
             sb.append(s).append(" ~ ").append(e);
             if (minutes > 0) sb.append(" (").append(minutes).append("분)");
-            String otLabel = OT_TYPE_LABEL.get(safe(r.otType()));
-            if (otLabel != null) {
-                sb.append(" · ").append(otLabel);
-            } else if (r.otType() != null && !r.otType().isBlank()) {
-                sb.append(" · ").append(r.otType());
-            }
+            // prafta-043: 초과근무 유형(연장/야간/휴일) 표기 제거 — 시각/소요시간만 노출.
             lines.add(sb.toString());
         } else if ("05".equals(reqType) || "06".equals(reqType)) {
             // 연차 사용/수정

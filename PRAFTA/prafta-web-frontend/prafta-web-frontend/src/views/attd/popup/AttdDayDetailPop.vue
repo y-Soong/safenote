@@ -207,41 +207,83 @@
                   <div class="req-card-sub">{{ card.insertDate }} 신청</div>
 
                   <div class="req-diff">
-                    <div class="req-diff-col">
-                      <div class="req-diff-head">BEFORE</div>
-                      <div class="req-diff-row">
-                        <span class="req-diff-lbl">출근</span>
-                        <span class="req-diff-val">{{ card.befIn }}</span>
+                    <!-- 스케줄 수정(10): 근무시간(스케줄) 기준 BEFORE/AFTER (PRAFTA-APP-007-WEB-7) -->
+                    <template v-if="card.mode === 'sched'">
+                      <div class="req-diff-col">
+                        <div class="req-diff-head">BEFORE</div>
+                        <div class="req-diff-row">
+                          <span class="req-diff-lbl">스케줄</span>
+                          <span class="req-diff-val">{{ card.befSched }}</span>
+                        </div>
                       </div>
-                      <div class="req-diff-row">
-                        <span class="req-diff-lbl">퇴근</span>
-                        <span class="req-diff-val">{{ card.befOut }}</span>
+                      <div class="req-diff-arrow">→</div>
+                      <div class="req-diff-col">
+                        <div class="req-diff-head">AFTER</div>
+                        <div class="req-diff-row">
+                          <span class="req-diff-lbl">스케줄</span>
+                          <span
+                            class="req-diff-val"
+                            :class="{ 'is-changed': card.schedChanged }"
+                            >{{ card.aftSched }}</span
+                          >
+                        </div>
                       </div>
-                    </div>
-                    <div class="req-diff-arrow">→</div>
-                    <div class="req-diff-col">
-                      <div class="req-diff-head">AFTER</div>
-                      <div class="req-diff-row">
-                        <span class="req-diff-lbl">출근</span>
+                    </template>
+                    <!-- 연차(05/06): 사용단위·(시간차 범위)·차감일수 전용 1줄 표시 (PRAFTA-APP-018-D) -->
+                    <template v-else-if="card.mode === 'leave'">
+                      <div class="req-leave-line">
+                        <span class="req-leave-seg">{{ card.reqTypeNm }}</span>
+                        <span class="req-leave-seg">{{
+                          card.leaveTypeLabel
+                        }}</span>
+                        <span v-if="card.timeRange" class="req-leave-seg">{{
+                          card.timeRange
+                        }}</span>
                         <span
-                          class="req-diff-val"
-                          :class="{
-                            'is-changed': card.befIn !== card.aftIn,
-                          }"
-                          >{{ card.aftIn }}</span
+                          v-if="card.leaveDaysLabel"
+                          class="req-leave-seg"
+                          >{{ card.leaveDaysLabel }}</span
                         >
                       </div>
-                      <div class="req-diff-row">
-                        <span class="req-diff-lbl">퇴근</span>
-                        <span
-                          class="req-diff-val"
-                          :class="{
-                            'is-changed': card.befOut !== card.aftOut,
-                          }"
-                          >{{ card.aftOut }}</span
-                        >
+                    </template>
+                    <!-- 그 외(01~04): 기존 출퇴근 시각 BEFORE/AFTER (현행 유지) -->
+                    <template v-else>
+                      <div class="req-diff-col">
+                        <div class="req-diff-head">BEFORE</div>
+                        <div class="req-diff-row">
+                          <span class="req-diff-lbl">출근</span>
+                          <span class="req-diff-val">{{ card.befIn }}</span>
+                        </div>
+                        <div class="req-diff-row">
+                          <span class="req-diff-lbl">퇴근</span>
+                          <span class="req-diff-val">{{ card.befOut }}</span>
+                        </div>
                       </div>
-                    </div>
+                      <div class="req-diff-arrow">→</div>
+                      <div class="req-diff-col">
+                        <div class="req-diff-head">AFTER</div>
+                        <div class="req-diff-row">
+                          <span class="req-diff-lbl">출근</span>
+                          <span
+                            class="req-diff-val"
+                            :class="{
+                              'is-changed': card.befIn !== card.aftIn,
+                            }"
+                            >{{ card.aftIn }}</span
+                          >
+                        </div>
+                        <div class="req-diff-row">
+                          <span class="req-diff-lbl">퇴근</span>
+                          <span
+                            class="req-diff-val"
+                            :class="{
+                              'is-changed': card.befOut !== card.aftOut,
+                            }"
+                            >{{ card.aftOut }}</span
+                          >
+                        </div>
+                      </div>
+                    </template>
                   </div>
 
                   <div v-if="card.reqReason" class="req-reason-row">
@@ -273,6 +315,32 @@
                       반려
                     </button>
                   </div>
+                </div>
+              </div>
+            </div>
+
+            <!-- PRAFTA-APP-018-F: 확정 연차 사용 섹션 (자동확정/직접 포함, 요청 카드와 별개 · 표시 전용) -->
+            <div v-if="confirmedLeaveCards.length" class="leave-use-section">
+              <div class="req-section-head">
+                <h3>연차 사용</h3>
+                <span class="req-count"
+                  >({{ confirmedLeaveCards.length }})</span
+                >
+              </div>
+              <div class="leave-use-list">
+                <div
+                  v-for="card in confirmedLeaveCards"
+                  :key="card.key"
+                  class="req-leave-line"
+                >
+                  <span class="req-leave-seg">{{ card.leaveNm }}</span>
+                  <span class="req-leave-seg">{{ card.unitLabel }}</span>
+                  <span v-if="card.timeRange" class="req-leave-seg">{{
+                    card.timeRange
+                  }}</span>
+                  <span v-if="card.leaveDaysLabel" class="req-leave-seg">{{
+                    card.leaveDaysLabel
+                  }}</span>
                 </div>
               </div>
             </div>
@@ -880,18 +948,32 @@
                   <tr v-for="(h, i) in cfg.history" :key="i">
                     <td class="cell-type">{{ h.histTypeNm }}</td>
                     <td>{{ h.workSeq }}</td>
-                    <td class="cell-time">{{ h.befCheckIn }}</td>
-                    <td class="cell-time">{{ h.befCheckOut }}</td>
-                    <td class="cell-time">{{ h.aftCheckIn }}</td>
-                    <td class="cell-time">{{ h.aftCheckOut }}</td>
+                    <!-- 스케줄 수정 승인 이력: 변경 전/후 스케줄 라벨을 각 컬럼에 colspan 으로 노출 (PRAFTA-APP-007-WEB-7) -->
+                    <template v-if="h.isSchedApprove">
+                      <td class="cell-time" colspan="2">
+                        {{ h.befSchedLabel }}
+                      </td>
+                      <td class="cell-time" colspan="2">
+                        {{ h.aftSchedLabel }}
+                      </td>
+                    </template>
+                    <!-- 그 외(근태/OT/연차/스케줄 반려): 기존 출퇴근 시각 -->
+                    <template v-else>
+                      <td class="cell-time">{{ h.befCheckIn }}</td>
+                      <td class="cell-time">{{ h.befCheckOut }}</td>
+                      <td class="cell-time">{{ h.aftCheckIn }}</td>
+                      <td class="cell-time">{{ h.aftCheckOut }}</td>
+                    </template>
                     <td>
                       <button
+                        v-if="h.reason"
                         class="hist-reason-btn"
                         type="button"
                         @click="openReasonPopup(h.reason)"
                       >
                         보기
                       </button>
+                      <span v-else>-</span>
                     </td>
                     <td>{{ h.insertNm }}</td>
                     <td class="cell-time">{{ h.insertDate }}</td>
@@ -1035,6 +1117,8 @@ const record = ref({}); // 일자 근태 상세 (plan/act/leave …)
 const userInfo = ref({}); // 사용자 정보 (헤더용)
 const historyList = ref([]); // 처리 이력
 const reqList = ref([]); // 근로자 요청 (monthlyAttdReqResultList)
+// PRAFTA-APP-018-F: 그날 확정 연차 사용내역 (confirmedLeaveResultList). 표시 전용.
+const confirmedLeaves = ref([]);
 // PRAFTA-003-7: getDailyAttdDetails 응답의 dailyOvertimeResultList 원본 보관용.
 //   initForm()에서 segments[*].otList 에 분배해서 프리필하는 데 사용한다.
 const dailyOvertimeList = ref([]);
@@ -1051,6 +1135,29 @@ const fmtTime = (hhmm) => {
   const v = String(hhmm);
   if (v.length < 4) return v;
   return `${v.slice(0, 2)}:${v.slice(2, 4)}`;
+};
+
+// PRAFTA-APP-007-WEB-7: 스케줄 원시 시각(HHmm) → 표시 라벨.
+//   1구간/2구간 자동 판별(2구간 시작·종료가 모두 있으면 2구간) + 구간 수 suffix.
+//   입력은 tb_sch_mgmt 의 HHmm 4자리 문자열. 1구간 데이터(fst)도 없으면 "-".
+//   앱 SchedModifyForm 라벨 포맷과 동형(웹/앱 프론트 분리 — 각자 보유, D13).
+const schedLabel = (fstStr, fstEnd, secStr, secEnd) => {
+  if (!fstStr && !fstEnd) return "-"; // 스케줄 데이터 부재(예: 삭제된 SCH_CD)
+  const fst = `${fmtTime(fstStr)}~${fmtTime(fstEnd)}`;
+  if (secStr && secEnd) {
+    return `${fst} / ${fmtTime(secStr)}~${fmtTime(secEnd)} (2구간)`;
+  }
+  return `${fst} (1구간)`;
+};
+
+// PRAFTA-APP-018-D: 연차 차감일수 표시 정규화 (순수 표시 함수 — 비즈니스 로직 아님).
+//   '1.0'/'0.5'/'0.12500'/null → '1'/'0.5'/'0.125'/''.
+//   숫자 변환 후 toFixed(5) 로 trailing 0 제거. NaN/null → '' (카드에서 라벨 숨김).
+const normalizeDays = (v) => {
+  if (v === null || v === undefined || v === "") return "";
+  const n = Number(v);
+  if (Number.isNaN(n)) return "";
+  return String(parseFloat(n.toFixed(5)));
 };
 
 // "1230" → "12:30" (포커스 잃을 때 표시)
@@ -1476,17 +1583,44 @@ const fmtInsertDate = (v) => {
   return s;
 };
 const historyView = computed(() =>
-  (historyList.value || []).map((h) => ({
-    histTypeNm: h.histTypeNm || "-",
-    workSeq: h.workSeq != null && h.workSeq !== "" ? `${h.workSeq}구간` : "-",
-    befCheckIn: fmtDateTime(h.befCheckInDate, h.befCheckInTime),
-    befCheckOut: fmtDateTime(h.befCheckOutDate, h.befCheckOutTime),
-    aftCheckIn: fmtDateTime(h.aftCheckInDate, h.aftCheckInTime),
-    aftCheckOut: fmtDateTime(h.aftCheckOutDate, h.aftCheckOutTime),
-    reason: h.processReason ?? "",
-    insertNm: h.insertNm || "-",
-    insertDate: fmtInsertDate(h.insertDate),
-  }))
+  (historyList.value || []).map((h) => {
+    // PRAFTA-APP-007-WEB-7 + D15: 스케줄 수정 승인 이력은 출퇴근 시각 대신 "변경 전→후 스케줄 라벨"을 표시한다.
+    //   백엔드(selectDailySchedModifyHistory)는 승인 행에만 befSched*/aftSched* 원시 시각을 채운다(반려는 NULL).
+    //   따라서 aftSched 1구간 시각 유무로 스케줄 승인 이력을 식별한다. (반려/근태/OT/연차 이력은 기존 시각 렌더링.)
+    const isSchedApprove = !!(h.aftSchedFstStrTime || h.aftSchedFstEndTime);
+    const hasBefSched = !!(h.befSchedFstStrTime || h.befSchedFstEndTime);
+    return {
+      histTypeNm: h.histTypeNm || "-",
+      workSeq: h.workSeq != null && h.workSeq !== "" ? `${h.workSeq}구간` : "-",
+      // 스케줄 승인 행: 변경 전 라벨(없으면 "없음"), 변경 후 라벨을 단일 라벨로 노출.
+      isSchedApprove,
+      befSchedLabel: isSchedApprove
+        ? hasBefSched
+          ? schedLabel(
+              h.befSchedFstStrTime,
+              h.befSchedFstEndTime,
+              h.befSchedSecStrTime,
+              h.befSchedSecEndTime
+            )
+          : "없음"
+        : "",
+      aftSchedLabel: isSchedApprove
+        ? schedLabel(
+            h.aftSchedFstStrTime,
+            h.aftSchedFstEndTime,
+            h.aftSchedSecStrTime,
+            h.aftSchedSecEndTime
+          )
+        : "",
+      befCheckIn: fmtDateTime(h.befCheckInDate, h.befCheckInTime),
+      befCheckOut: fmtDateTime(h.befCheckOutDate, h.befCheckOutTime),
+      aftCheckIn: fmtDateTime(h.aftCheckInDate, h.aftCheckInTime),
+      aftCheckOut: fmtDateTime(h.aftCheckOutDate, h.aftCheckOutTime),
+      reason: h.processReason ?? "",
+      insertNm: h.insertNm || "-",
+      insertDate: fmtInsertDate(h.insertDate),
+    };
+  })
 );
 
 // ── 근로자 요청 (monthlyAttdReqResultList) ──────────────────
@@ -1495,7 +1629,7 @@ const reqCards = computed(() => {
   const r = record.value ?? {};
   return (reqList.value || []).map((req) => {
     const n = parseInt(req.workSeq, 10) || 1;
-    return {
+    const base = {
       raw: req,
       reqId: req.reqId,
       reqType: req.reqType,
@@ -1504,16 +1638,105 @@ const reqCards = computed(() => {
       reqStatusNm: req.reqStatusNm || "",
       insertDate: fmtInsertDate(req.insertDate),
       workSeq: n,
-      befIn: fmtTime(r[`act${n}InTime`]) || "-",
-      befOut: fmtTime(r[`act${n}OutTime`]) || "-",
-      aftIn: fmtTime(req.startTime) || "-",
-      aftOut: fmtTime(req.endTime) || "-",
       reqReason: req.reqReason || "",
       // 연차(05/06) 결재 라우팅용 — 백엔드가 현재 로그인 사용자의 처리 단계를 내려줌(비결재자/그 외 타입은 null)
       approvalStep: req.approvalStep ?? null,
     };
+    // PRAFTA-APP-007-WEB-7: 스케줄 수정(10) 은 출퇴근 시각이 아니라 "현재→목표 스케줄"을 비교한다.
+    //   현재(cur*)는 tb_user_work_plan→tb_sch_mgmt, 목표(tgt*)는 REQ.SCH_CD→tb_sch_mgmt (WEB-5 응답).
+    //   현재 스케줄이 없거나(WORK_PLAN_CD 없음) 연차코드면 cur* 전부 NULL → BEFORE "없음".
+    if (req.reqType === "10") {
+      const hasCur = !!(req.curFstStrTime || req.curFstEndTime);
+      const befSched = hasCur
+        ? schedLabel(
+            req.curFstStrTime,
+            req.curFstEndTime,
+            req.curSecStrTime,
+            req.curSecEndTime
+          )
+        : "없음";
+      const aftSched = schedLabel(
+        req.tgtFstStrTime,
+        req.tgtFstEndTime,
+        req.tgtSecStrTime,
+        req.tgtSecEndTime
+      );
+      return {
+        ...base,
+        mode: "sched",
+        befSched,
+        aftSched,
+        schedChanged: befSched !== aftSched,
+      };
+    }
+    // PRAFTA-APP-018-D: 연차(05 연차사용 / 06 연차수정)는 출퇴근 BEFORE/AFTER 가 아니라
+    //   사용단위·(시간차 범위)·차감일수를 보여주는 전용 카드(mode='leave')로 분리한다.
+    //   정규근태(act{n}*)를 끌어오지 않는다(BEFORE 혼입 금지). 단위 출처는 백엔드 useUnitType/unitNm(SYS025).
+    if (req.reqType === "05" || req.reqType === "06") {
+      const unitCode = req.useUnitType ?? null; // '00'~'04' 또는 null(U 미매칭)
+      // 시간차(02 2시간 / 03 1시간 / 04 30분)일 때만 시작~종료 범위 표시
+      const isTimed = ["02", "03", "04"].includes(unitCode);
+      // 라벨: 시간차면 '시간차 ' 접두(목표 포맷), 그 외엔 unitNm 그대로. unitNm 없으면 '연차' fallback.
+      const leaveTypeLabel = req.unitNm
+        ? isTimed
+          ? `시간차 ${req.unitNm}`
+          : req.unitNm
+        : "연차";
+      const days = normalizeDays(req.leaveDays);
+      return {
+        ...base,
+        mode: "leave",
+        unitCode,
+        leaveTypeLabel,
+        timeRange: isTimed
+          ? `${fmtTime(req.startTime)}~${fmtTime(req.endTime)}`
+          : null,
+        leaveDaysLabel: days ? `${days}일 차감` : "",
+      };
+    }
+    // 그 외(01~04): 출퇴근 시각 BEFORE/AFTER 모델.
+    //   [prafta-app-017 이슈③] OT '생성'(03, TARGET_ID null)은 "변경 전"이 없으므로
+    //   BEFORE 를 정규근태(act{n}*)에서 끌어오면 안 된다 → 공란("-").
+    //   OT '수정'(04, TARGET_ID=기존 OT)·근태보정(01/02)은 현행 유지(회귀 금지).
+    //   TODO(developer): OT 수정(04) BEFORE 를 기존 OT 행 값으로 정밀화 — 별도 작업(prafta-app-017 follow-up).
+    const isOtCreate = req.reqType === "03";
+    return {
+      ...base,
+      mode: "time",
+      befIn: isOtCreate ? "-" : fmtTime(r[`act${n}InTime`]) || "-",
+      befOut: isOtCreate ? "-" : fmtTime(r[`act${n}OutTime`]) || "-",
+      aftIn: fmtTime(req.startTime) || "-",
+      aftOut: fmtTime(req.endTime) || "-",
+    };
   });
 });
+
+// ── 확정 연차 사용 (confirmedLeaveResultList) ────────────────
+// PRAFTA-APP-018-F: 그날 확정 연차(자동확정/직접 포함) 표시 카드.
+//   D 의 요청 카드(미처리 결재대기)와 상호배타(백엔드가 미처리01 제외) → 이중표시 없음.
+//   포맷: {leaveNm} · {단위(시간차면 '시간차 ' 접두)} · (시간차면 시각) · {정규화}일 차감.
+//   normalizeDays/fmtTime 기존 헬퍼 재사용(신규 헬퍼 불필요).
+const confirmedLeaveCards = computed(() =>
+  (confirmedLeaves.value || []).map((lv, i) => {
+    const unitCode = lv.useUnitType ?? null; // '00'~'04' 또는 null
+    const isTimed = ["02", "03", "04"].includes(unitCode);
+    const unitLabel = lv.unitNm
+      ? isTimed
+        ? `시간차 ${lv.unitNm}`
+        : lv.unitNm
+      : "연차";
+    const days = normalizeDays(lv.leaveDays);
+    return {
+      key: `cl-${i}`,
+      leaveNm: lv.leaveNm || "연차사용",
+      unitLabel,
+      timeRange: isTimed
+        ? `${fmtTime(lv.startTime)}~${fmtTime(lv.endTime)}`
+        : null,
+      leaveDaysLabel: days ? `${days}일 차감` : "",
+    };
+  })
+);
 
 // ── 최종 cfg ──────────────────────────────────────────────
 const cfg = computed(() => ({
@@ -1530,22 +1753,14 @@ const cfg = computed(() => ({
 // ── 폼 상태 ───────────────────────────────────────────────
 // API 응답 전엔 비어 있고, fnSearch 완료 후 initForm()으로 채워진다.
 //   각 segment 는 정규근무 입력(startTime/endTime) + 초과근무 리스트(otList) 를 가진다.
-//   otList: [{ startDate, startTime, endDate, endTime, type: 'extend'|'night'|'holiday', otId?, reqId? }]
+//   otList: [{ startDate, startTime, endDate, endTime, otId?, reqId? }]
+//   prafta-043: 초과근무 유형(type/otType) 전면 파기 — otList 항목에서 type 제거.
 // PRAFTA-003-7: 백엔드 dailyOvertimeResultList 응답을 segment 별로 분배해 프리필한다.
 const form = ref({ segments: [], reason: "" });
 
 // "초기화" 버튼 복원 기준점 — initForm() 으로 form 이 채워질 때마다 그 시점 값을 깊은 복사로 보관.
 const formSnapshot = ref(null);
 const cloneForm = (v) => JSON.parse(JSON.stringify(v));
-
-// 백엔드 OT_TYPE enum(EXTEND/NIGHT/HOLIDAY) → 프론트 type 소문자.
-//   mapOtType 의 역방향. 알 수 없는 값은 'extend' 로 보수적으로 매핑한다.
-const reverseOtType = (raw) => {
-  const v = (raw || "").toUpperCase();
-  if (v === "NIGHT") return "night";
-  if (v === "HOLIDAY") return "holiday";
-  return "extend";
-};
 
 // "20260514" + "0900" 형식의 (날짜, 시각) → 분 stamp.
 //   [QA 재작업 D1] 분 stamp 기준을 buildStdSegments 와 동일하게 workYmd-1 00:00 으로 통일.
@@ -1621,7 +1836,6 @@ function initForm() {
         startTime: ot.actualStartTime || "",
         endDate: ymdNumToDash(ot.actualEndDate) || props.date_p,
         endTime: ot.actualEndTime || "",
-        type: reverseOtType(ot.otType),
       });
     }
 
@@ -1684,13 +1898,13 @@ const addOt = (segIdx) => {
   // DB 적재 구간이 아니면 초과근무 등록 차단 (UI 가드와 동일 규칙).
   if (!isSegmentFromDb(segIdx)) return;
   if (!Array.isArray(seg.otList)) seg.otList = [];
-  // 기본값: 해당 구간 퇴근 직후 시작, 동일 일자, 타입은 '연장'
+  // 기본값: 해당 구간 퇴근 직후 시작, 동일 일자
+  // prafta-043: 초과근무 유형(type) 전면 파기 — 기본 타입 미부여.
   seg.otList.push({
     startDate: seg.endDate || seg.startDate || props.date_p,
     startTime: "",
     endDate: seg.endDate || seg.startDate || props.date_p,
     endTime: "",
-    type: "extend",
   });
 };
 
@@ -2062,12 +2276,7 @@ const validateOtBeforeSave = async (segIdx) => {
   return true;
 };
 
-// otList 의 type 값(소문자) → 백엔드 OT_TYPE enum
-const mapOtType = (t) => {
-  if (t === "night") return "NIGHT";
-  if (t === "holiday") return "HOLIDAY";
-  return "EXTEND";
-};
+// prafta-043: 초과근무 유형(OT_TYPE) 전면 파기 — mapOtType 매핑 제거.
 
 // 저장: POST /attd07/update-user-overtime-requests
 const fnApproveOvertime = async (segIdx) => {
@@ -2085,7 +2294,7 @@ const fnApproveOvertime = async (segIdx) => {
   const workYmd = ymdToYmdNum(props.date_p);
 
   const overtimes = (seg.otList || []).map((o) => ({
-    otType: mapOtType(o.type),
+    // prafta-043: 초과근무 유형(otType) 전면 파기 — payload 에서 제거.
     startDate: ymdToYmdNum(o.startDate),
     startTime: o.startTime,
     endDate: ymdToYmdNum(o.endDate),
@@ -2330,7 +2539,7 @@ const fnApproveReq = async (card) => {
       reqReason: raw.reqReason || "",
       overtimes: [
         {
-          otType: raw.otType,
+          // prafta-043: 초과근무 유형(otType) 전면 파기 — payload 에서 제거.
           startDate: raw.startDate || raw.workYmd || ymdDashToNum(props.date_p),
           startTime: raw.startTime,
           endDate: raw.endDate || raw.workYmd || ymdDashToNum(props.date_p),
@@ -2349,6 +2558,40 @@ const fnApproveReq = async (card) => {
       }
     } catch (err) {
       console.error("[AttdDayDetailPop] approve OT request failed", err);
+      await proxy.$alert(
+        resolveApiErrorMessage(err, getMessage(MSG.SAVE_ERROR))
+      );
+    }
+    return;
+  }
+
+  // [PRAFTA-APP-007] 스케줄 수정 요청(10)은 전용 승인 엔드포인트로 라우팅한다.
+  //   근태 승인 엔드포인트(update-user-attd-requests)는 SEC-018 가드(01/02)에 막힌다.
+  //   목표 스케줄 코드(SCH_CD)는 서버가 REQ row 에서 권위 조회하므로 전송하지 않는다(IDOR/변조 방지).
+  const isSchedModifyReq = card?.reqType === "10";
+  if (isSchedModifyReq) {
+    const payload = {
+      reqId: raw.reqId,
+      userCd: raw.userCd || props.userCd_p,
+      siteCd: raw.siteCd || props.siteCd_p,
+      nodeCd: raw.nodeCd || props.nodeCd_p || "",
+      workYmd: raw.workYmd || ymdDashToNum(props.date_p),
+      workSeq: String(n),
+    };
+    try {
+      const response = await axios.post(
+        "/webApi/attd07/approve-sched-modify-requests",
+        payload
+      );
+      if (response.status === 200) {
+        await proxy.$alert(getMessage(MSG.SAVE_COMPLETED));
+        await fnSearch();
+      }
+    } catch (err) {
+      console.error(
+        "[AttdDayDetailPop] approve sched-modify request failed",
+        err
+      );
       await proxy.$alert(
         resolveApiErrorMessage(err, getMessage(MSG.SAVE_ERROR))
       );
@@ -2444,9 +2687,17 @@ const fnRejectReq = (card) => {
   const isOtReq = card?.reqType === "03" || card?.reqType === "04";
   // [A] 연차(05 사용 / 06 수정)는 LeaveFlow 반려 엔드포인트로 라우팅(다단계 결재 → approvalStep 동반).
   const isLeaveReq = card?.reqType === "05" || card?.reqType === "06";
+  // [PRAFTA-APP-007] 스케줄 수정 요청(10)은 전용 반려 엔드포인트로 라우팅한다.
+  const isSchedModifyReq = card?.reqType === "10";
   rejectModal.value = {
     open: true,
-    kind: isLeaveReq ? "leave" : isOtReq ? "overtime" : "attd",
+    kind: isLeaveReq
+      ? "leave"
+      : isOtReq
+        ? "overtime"
+        : isSchedModifyReq
+          ? "schedModify"
+          : "attd",
     busy: false,
     context: {
       reqId: raw.reqId,
@@ -2486,6 +2737,18 @@ const onRejectConfirm = async (reason) => {
         reqId: context.reqId,
         approvalStep: context.approvalStep,
         comment: reason,
+      });
+    } else if (kind === "schedModify") {
+      // [PRAFTA-APP-007] 스케줄 수정 요청(10) 반려 — 전용 엔드포인트. 반려 사유(rejectReason) 서버 필수.
+      //   body 의 키 필드는 서버 REQ row 와 일치 검증되며, 스케줄(tb_user_work_plan)은 미반영.
+      await axios.post("/webApi/attd07/reject-sched-modify-requests", {
+        reqId: context.reqId,
+        siteCd: context.siteCd,
+        userCd: context.userCd,
+        workYmd: context.workYmd,
+        workSeq: context.workSeq,
+        nodeCd: context.nodeCd,
+        rejectReason: reason,
       });
     } else {
       await axios.post("/webApi/attd07/reject-user-overtime-requests", {
@@ -2677,6 +2940,8 @@ const fnSearch = async () => {
       reqList.value = response.data?.monthlyAttdReqResultList ?? [];
       // PRAFTA-003-7: OT 응답 키도 lowerCamel(`dailyOvertimeResultList`)로 정규화 완료.
       dailyOvertimeList.value = response.data?.dailyOvertimeResultList ?? [];
+      // PRAFTA-APP-018-F: 그날 확정 연차 사용내역(자동확정/직접 포함, 미처리 결재대기 제외).
+      confirmedLeaves.value = response.data?.confirmedLeaveResultList ?? [];
     }
   } catch (err) {
     // 조회 실패해도 fallback 값으로 화면은 정상 렌더되도록 알림만 띄움
@@ -3202,6 +3467,37 @@ onMounted(() => {
 .req-diff-arrow {
   color: #9ca3af;
   font-size: 14px;
+}
+/* PRAFTA-APP-018-D: 연차(05/06) 전용 1줄 표시 (사용단위·범위·차감일수, 가운데점 구분) */
+.req-leave-line {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  padding: 10px 12px;
+  background: var(--bg-subtle, var(--color-surface, #f9fafb));
+  border: 1px solid var(--color-border, #f1f3f5);
+  border-radius: 8px;
+  font-size: 12.5px;
+  font-weight: 700;
+  color: var(--color-text-strong, var(--color-text, #111827));
+  font-variant-numeric: tabular-nums;
+}
+.req-leave-seg + .req-leave-seg::before {
+  content: "·";
+  margin-right: 6px;
+  color: var(--color-text-muted, #9ca3af);
+  font-weight: 400;
+}
+/* PRAFTA-APP-018-F: 확정 연차 사용 섹션 (요청 카드와 구분, 표시 전용) */
+.leave-use-section {
+  margin-top: 14px;
+}
+.leave-use-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 8px;
 }
 .req-reason-row {
   display: flex;

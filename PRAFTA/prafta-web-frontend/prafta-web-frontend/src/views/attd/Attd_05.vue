@@ -1057,8 +1057,7 @@ const fnSave = async () => {
           return `· ${s.workYmd} / ${schNm} : ${s.reason}`;
         })
         .join("\n");
-      resultMsg +=
-        `\n아래 ${skippedList.length}건은 근무타입 지정이 불가하여 제외되었습니다.\n${detail}`;
+      resultMsg += `\n아래 ${skippedList.length}건은 근무타입 지정이 불가하여 제외되었습니다.\n${detail}`;
     }
     await proxy.$alert(resultMsg);
 

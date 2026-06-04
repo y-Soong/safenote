@@ -1,5 +1,6 @@
 package com.prafta.app.attd.attd01.dto.response;
 
+import java.math.BigDecimal;
 import java.util.List;
 
 import com.fasterxml.jackson.annotation.JsonProperty;
@@ -28,6 +29,9 @@ public class MyAttendanceDayResponse {
     private final String workStatus;
     @JsonProperty("isTwoSlot")
     private final boolean isTwoSlot;
+    // prafta-app-014: effectiveSlotCount(1~2). 프론트 구분선/슬롯 반복·상태·버튼의 단일 기준.
+    //   isTwoSlot 은 "스케줄이 2구간인가"(현행 의미 유지)로 남기고, 슬롯/상태/버튼 판정은 slotCount 로 이관.
+    private final int slotCount;
     private final List<SlotResponse> slots;
     private final DayActionsResponse actions;
     // prafta-app-013: 오늘/일상세 바텀시트(4액션) 구동용. 이번주 days[].actions 와 동일 구조/규칙.
@@ -41,4 +45,14 @@ public class MyAttendanceDayResponse {
     // check-out 응답에서만 의미를 가진다(조회 경로는 false 로 빌드 — read 의미 재해석은 B에서).
     @JsonProperty("isOffsite")
     private final boolean isOffsite;
+    // prafta-app-018-E: 부분연차(시간차/반차) 상세 표시필드(표시 전용, 근무일 유지 — slot/dayType/status 무영향).
+    //   isLeaveUsed: 그날 CONFIRMED 연차 사용 존재 여부(@JsonProperty 로 is 탈락 방지, 계약 키 고정).
+    //   leaveUnitType=SYS025 코드 원값(라벨은 FE), leaveTimeRange="HHMM~HHMM"(둘 다 있을 때만; 없으면 null),
+    //   leaveDays=차감일수 원값(정규화 FE), leaveTypeName=연차종류명. 연차 미사용일이면 전부 null/false.
+    @JsonProperty("isLeaveUsed")
+    private final boolean isLeaveUsed;
+    private final String leaveTypeName;
+    private final String leaveUnitType;
+    private final String leaveTimeRange;
+    private final BigDecimal leaveDays;
 }

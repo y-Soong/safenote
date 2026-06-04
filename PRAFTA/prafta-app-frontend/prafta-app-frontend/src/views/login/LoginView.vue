@@ -34,15 +34,35 @@
           @click="showPassword = !showPassword"
           :aria-label="showPassword ? '비밀번호 숨기기' : '비밀번호 표시'"
         >
-          <svg v-if="showPassword" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-            <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/>
-            <circle cx="12" cy="12" r="3"/>
+          <svg
+            v-if="showPassword"
+            xmlns="http://www.w3.org/2000/svg"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="2"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+          >
+            <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" />
+            <circle cx="12" cy="12" r="3" />
           </svg>
-          <svg v-else xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-            <path d="M17.94 17.94A10.94 10.94 0 0 1 12 20c-7 0-11-8-11-8a21.85 21.85 0 0 1 5.06-5.94"/>
-            <path d="M9.9 4.24A10.94 10.94 0 0 1 12 4c7 0 11 8 11 8a21.78 21.78 0 0 1-3.16 4.19"/>
-            <path d="M1 1l22 22"/>
-            <path d="M14.12 14.12a3 3 0 1 1-4.24-4.24"/>
+          <svg
+            v-else
+            xmlns="http://www.w3.org/2000/svg"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="2"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+          >
+            <path
+              d="M17.94 17.94A10.94 10.94 0 0 1 12 20c-7 0-11-8-11-8a21.85 21.85 0 0 1 5.06-5.94"
+            />
+            <path d="M9.9 4.24A10.94 10.94 0 0 1 12 4c7 0 11 8 11 8a21.78 21.78 0 0 1-3.16 4.19" />
+            <path d="M1 1l22 22" />
+            <path d="M14.12 14.12a3 3 0 1 1-4.24-4.24" />
           </svg>
         </button>
       </div>
@@ -87,6 +107,7 @@ import { ref, getCurrentInstance, onMounted } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import safenote_logo from '@/assets/img/safenote_sign.png'
 import axios from '@/api/axios'
+import { requestDeviceInfo, getCachedDeviceMeta } from '@/utils/deviceBridge'
 
 const userId = ref('')
 const password = ref('')
@@ -132,9 +153,20 @@ const fnSubmitLogin = async () => {
   }
 
   try {
+    // prafta-com-003 C4: 네이티브 디바이스 정보 취득(브리지 부재/실패 시 폴백, 로그인 차단 안 함).
+    //   deviceId 는 axios 인터셉터가 gv_deviceId 로 동봉하므로 여기서는 메타(type/model/os/app)만 body 에 추가한다.
+    //   브리지가 deviceId 를 반환하면 localStorage('gv_deviceId')가 네이티브값으로 갱신된 뒤 인터셉터가 읽는다.
+    try {
+      await requestDeviceInfo()
+    } catch (e) {
+      console.warn('[Login] 디바이스 정보 취득 실패(로그인 영향 없음):', e?.message)
+    }
+    const deviceMeta = getCachedDeviceMeta()
+
     const response = await axios.post('/comApi/login/login', {
       userId: userId.value,
       userPw: password.value,
+      ...deviceMeta,
     })
 
     if (response.status === 200) {

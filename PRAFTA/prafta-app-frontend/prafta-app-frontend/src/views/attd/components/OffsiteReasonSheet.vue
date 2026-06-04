@@ -21,10 +21,21 @@
         <div class="ofs__handle" aria-hidden="true"></div>
 
         <header class="ofs__header">
-          <h2 class="ofs__title">{{ mode === 'checkOut' ? '외근 퇴근 등록' : '외근 출근 등록' }}</h2>
+          <h2 class="ofs__title">
+            {{ mode === 'checkOut' ? '외근 퇴근 등록' : '외근 출근 등록' }}
+          </h2>
           <button type="button" class="ofs__close" aria-label="닫기" @click="onCancel">
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-                 stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <svg
+              width="20"
+              height="20"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              aria-hidden="true"
+            >
               <line x1="18" y1="6" x2="6" y2="18" />
               <line x1="6" y1="6" x2="18" y2="18" />
             </svg>
@@ -34,8 +45,18 @@
         <div class="ofs__body">
           <!-- 안내 배너 -->
           <div class="ofs__notice">
-            <svg class="ofs__notice-ic" width="16" height="16" viewBox="0 0 24 24" fill="none"
-                 stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <svg
+              class="ofs__notice-ic"
+              width="16"
+              height="16"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              aria-hidden="true"
+            >
               <path d="M21 10c0 7-9 12-9 12s-9-5-9-12a9 9 0 0 1 18 0z" />
               <circle cx="12" cy="10" r="3" />
             </svg>
@@ -44,15 +65,19 @@
 
           <!-- 지도 영역 (Kakao JS SDK) -->
           <div class="ofs__map-wrap">
-            <div id="ofsMap" ref="mapEl" class="ofs__map" role="img" aria-label="현재 위치 지도"></div>
+            <div
+              id="ofsMap"
+              ref="mapEl"
+              class="ofs__map"
+              role="img"
+              aria-label="현재 위치 지도"
+            ></div>
             <p v-if="!mapReady && !mapError" class="ofs__map-fallback">지도를 불러오는 중…</p>
             <p v-else-if="mapError" class="ofs__map-fallback">지도를 불러오지 못했어요.</p>
           </div>
 
           <!-- 현위치 주소/좌표 요약 -->
-          <p class="ofs__coord">
-            현재 위치: {{ addressText || coordText }}
-          </p>
+          <p class="ofs__coord">현재 위치: {{ addressText || coordText }}</p>
 
           <!-- 사유 입력 -->
           <label class="ofs__label" for="ofsReason">외근 사유<span class="ofs__req">*</span></label>
@@ -72,7 +97,6 @@
           <button
             type="button"
             class="ofs__btn ofs__btn--primary"
-            :disabled="!canSubmit"
             @click="onSubmit"
           >
             외근으로 등록
@@ -84,8 +108,12 @@
 </template>
 
 <script setup>
-import { ref, computed, watch, nextTick, onBeforeUnmount } from 'vue'
+import { ref, computed, watch, nextTick, onBeforeUnmount, getCurrentInstance } from 'vue'
 import { loadKakaoMapScript } from '@/utils/kakaoMap'
+
+// 전역 alert 프록시($alert 있으면 우선, 없으면 window.alert). 사유 미입력 안내용.
+const { proxy } = getCurrentInstance() || { proxy: null }
+const showAlert = (m) => (proxy?.$alert ? proxy.$alert(m) : window.alert(m))
 
 // props: modelValue(v-model), mode('checkIn'|'checkOut'), lat/lon/accuracy(현위치 좌표)
 const props = defineProps({
@@ -120,16 +148,17 @@ const coordText = computed(() => {
   return `${props.lat.toFixed(5)}, ${props.lon.toFixed(5)}`
 })
 
-// 등록 가능 여부: 사유 필수(서버도 ATTD_400_086 으로 재검증)
-const canSubmit = computed(() => reason.value.trim().length > 0)
-
 const onCancel = () => {
   emit('cancel')
   emit('update:modelValue', false)
 }
 
 const onSubmit = () => {
-  if (!canSubmit.value) return
+  // 등록 버튼은 기본 활성 → 사유 빈값 제출 시 사유 안내(서버도 ATTD_400_086 으로 재검증).
+  if (!reason.value.trim()) {
+    showAlert('사유를 입력해 주세요.')
+    return
+  }
   emit('submit', { reason: reason.value.trim() })
   // 닫기/초기화는 부모(성공 후)가 modelValue=false 로 처리.
 }

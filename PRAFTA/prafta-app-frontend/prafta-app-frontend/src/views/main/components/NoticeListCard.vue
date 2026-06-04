@@ -12,12 +12,7 @@
         <p class="card-title">공지사항</p>
         <span v-if="unreadCount > 0" class="notice-count">{{ unreadCount }}</span>
       </div>
-      <button
-        type="button"
-        class="head-chev"
-        aria-label="전체보기"
-        @click="$emit('click:more')"
-      >
+      <button type="button" class="head-chev" aria-label="전체보기" @click="$emit('click:more')">
         <svg class="icon" width="18" height="18" aria-hidden="true">
           <use href="#i-chev" />
         </svg>
@@ -44,9 +39,7 @@
     </div>
 
     <!-- 빈 상태 -->
-    <div v-if="!items || items.length === 0" class="notice-empty">
-      등록된 공지사항이 없습니다
-    </div>
+    <div v-if="!items || items.length === 0" class="notice-empty">등록된 공지사항이 없습니다</div>
   </div>
 </template>
 

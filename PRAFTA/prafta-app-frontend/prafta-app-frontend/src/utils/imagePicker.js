@@ -67,7 +67,7 @@ export async function ensureJpeg(file, quality = 0.92) {
       lastModified: Date.now(),
     })
     console.log(
-      `[ensureJpeg] HEIC->JPEG done: name=${newFile.name}, type=${newFile.type}, size=${newFile.size}`
+      `[ensureJpeg] HEIC->JPEG done: name=${newFile.name}, type=${newFile.type}, size=${newFile.size}`,
     )
     return newFile
   } catch (e) {
@@ -168,7 +168,7 @@ function openChooser(source) {
         console.log(
           `[openChooser] 폴백 감지: name=${f2 && f2.name}, type=${f2 && f2.type}, size=${
             f2 && f2.size
-          }`
+          }`,
         )
         resolve(f2)
       }
@@ -180,7 +180,7 @@ export async function selectImage(source) {
   try {
     const raw = await openChooser(source)
     console.log(
-      `[imagePicker] raw: name=${raw && raw.name}, type=${raw && raw.type}, size=${raw && raw.size}`
+      `[imagePicker] raw: name=${raw && raw.name}, type=${raw && raw.type}, size=${raw && raw.size}`,
     )
 
     let file = raw
@@ -198,7 +198,7 @@ export async function selectImage(source) {
     console.log(
       `[selectImage] return: name=${file && file.name}, type=${
         file && file.type
-      }, isObjectURL=${isObjectURL}`
+      }, isObjectURL=${isObjectURL}`,
     )
     return { file, previewUrl: url, isObjectURL }
   } catch (e) {

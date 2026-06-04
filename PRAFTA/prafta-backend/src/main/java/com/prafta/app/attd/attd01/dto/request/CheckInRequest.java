@@ -2,6 +2,8 @@ package com.prafta.app.attd.attd01.dto.request;
 
 import java.math.BigDecimal;
 
+import com.fasterxml.jackson.annotation.JsonProperty;
+
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.Setter;
@@ -26,9 +28,14 @@ import lombok.Setter;
  *   <ul>
  *     <li>offsiteReason: 외근(지오펜스 밖) 사유. 외근일 때 필수(미작성 시 거부, P2-D3).
  *         온사이트(범위 안)이면 무시(GPS 행 미저장). varchar(500).</li>
- *     <li>confirmSkipPrevSlot: §5.5 Case C(2구간 출근 시 선행 1구간 스킵) 확인 플래그.
- *         false/미전달이면 서버가 "확인 필요" 코드(ATTD_400_084) 반환 → 프론트 얼럿,
- *         true 면 1구간 레코드 없이 2구간(WORK_SEQ=2)만 단독 출근 허용(P1-D2).</li>
+ *   </ul>
+ *
+ * <p>prafta-app-015 변경: 2구간 스케줄 출근 구간 자동추정 폐기 → 사용자 명시 선택.
+ *   <ul>
+ *     <li>targetWorkSeq: 2구간 스케줄에서 출근할 구간(1=1구간, 2=2구간). 1구간 스케줄/스케줄 없는
+ *         날은 무시한다(서버가 강제 무시). 선택 구간이 곧 WORK_SEQ 로 채번된다(순서 자유).</li>
+ *     <li>(폐기) confirmSkipPrevSlot: §5.5 Case C 확인 플래그. 자동추정/Case A/B/C 가 폐기되어
+ *         더 이상 사용하지 않는다(필드 제거).</li>
  *   </ul>
  */
 @Getter
@@ -41,5 +48,10 @@ public class CheckInRequest {
     private String isMocked;
     private String workYmd;
     private String offsiteReason;
-    private Boolean confirmSkipPrevSlot;
+    // prafta-app-015: 2구간 스케줄 출근 구간 명시 선택(1|2). 그 외 스케줄에서는 무시.
+    private Integer targetWorkSeq;
+    // prafta-com-003 D3: 출근 실행 디바이스UUID(클라 제공값, 부정탐지 보조). axios 가 보내는 키는 gv_deviceId.
+    //   신뢰경계 밖(위조 가능) — 식별/인가에는 쓰지 않고 표시·탐지 보조용으로만 CHECK_IN_DEVICE_UUID 에 도장한다.
+    @JsonProperty("gv_deviceId")
+    private String deviceId;
 }

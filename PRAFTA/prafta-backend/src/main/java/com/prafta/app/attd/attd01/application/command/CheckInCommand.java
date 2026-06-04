@@ -19,6 +19,7 @@ public record CheckInCommand(
     , String checkInDate   // YYYYMMDD (서버 today)
     , String checkInTime   // HHMM (서버 NOW)
     , String checkInMethod // '01'
+    , String deviceUuid    // prafta-com-003 D3: 출근 실행 디바이스UUID(CHECK_IN_DEVICE_UUID, nullable)
     , String insertNo      // userCd
 ) {
 }

@@ -18,8 +18,10 @@ import com.prafta.web.attd.attd07.application.command.InsertUserOvertimeCommand;
 import com.prafta.web.attd.attd07.application.command.RejectUserAttdRequestCommand;
 import com.prafta.web.attd.attd07.application.command.UpdateUserAttdInfosCommand;
 import com.prafta.web.attd.attd07.application.command.UpdateUserAttdRequestCommand;
+import com.prafta.web.attd.attd07.application.command.UpsertUserWorkPlanCommand;
 import com.prafta.web.attd.attd07.application.model.OvertimeItemModel;
 import com.prafta.web.attd.attd07.application.model.UpdateUserAttdInfosModel;
+import com.prafta.web.attd.attd07.application.param.ApproveSchedModifyRequestParam;
 import com.prafta.web.attd.attd07.application.param.DailyAttdDetailDeleteParam;
 import com.prafta.web.attd.attd07.application.param.DailyAttdDetailsParam;
 import com.prafta.web.attd.attd07.application.param.MonthlyAttdListParam;
@@ -35,6 +37,8 @@ import com.prafta.web.attd.attd07.dto.response.AttdRecordListResponse;
 import com.prafta.web.attd.attd07.dto.response.DailyAttdDetailsResponse;
 import com.prafta.web.attd.attd07.mapper.Attd07Mapper;
 import com.prafta.web.attd.attd07.result.AllowedWindowResult;
+import com.prafta.web.attd.attd07.result.AttdSnapshotResult;
+import com.prafta.web.attd.attd07.result.ConfirmedLeaveResult;
 import com.prafta.web.attd.attd07.result.DailyAttdDetailHistoryResult;
 import com.prafta.web.attd.attd07.result.DailyAttdDetailsResult;
 import com.prafta.web.attd.attd07.result.DailyOvertimeResult;
@@ -143,10 +147,19 @@ public class Attd07ServiceImpl implements Attd07Service {
         // PRAFTA: 연차(05/06) 승인/반려 처리 이력을 같은 '처리 이력' 목록에 병합한다(처리일시 최신순).
         //   근태/OT 이력(TB_USER_ATTD_HIST)에는 연차 결재 기록이 남지 않으므로 결재라인에서 별도 조회한다.
         List<DailyAttdDetailHistoryResult> leaveApprovalHistory = attd07Mapper.selectDailyLeaveApprovalHistory(DailyAttdDetailsQuery.from(param));
-        if (leaveApprovalHistory != null && !leaveApprovalHistory.isEmpty()) {
+
+        // PRAFTA-APP-007-WEB-6: 스케줄 수정(10) 승인/반려 처리 이력도 같은 타임라인에 병합한다.
+        //   결재라인/HIST 어디에도 안 잡히므로 처리된 REQ 행(REQ_STATUS 02/03)을 직접 소스로 추가한다.
+        List<DailyAttdDetailHistoryResult> schedModifyHistory = attd07Mapper.selectDailySchedModifyHistory(DailyAttdDetailsQuery.from(param));
+
+        boolean hasLeave = leaveApprovalHistory != null && !leaveApprovalHistory.isEmpty();
+        boolean hasSched = schedModifyHistory != null && !schedModifyHistory.isEmpty();
+        if (hasLeave || hasSched) {
             List<DailyAttdDetailHistoryResult> merged = new ArrayList<>(dailyAttdDetailHistoryResultList);
-            merged.addAll(leaveApprovalHistory);
-            // insertDate 는 양쪽 모두 원본 datetime 문자열("YYYY-MM-DD HH:mm:ss")이라 문자열 내림차순 = 최신순.
+            if (hasLeave) merged.addAll(leaveApprovalHistory);
+            if (hasSched) merged.addAll(schedModifyHistory);
+            // insertDate 는 모든 소스가 원본 datetime 문자열("YYYY-MM-DD HH:mm:ss")이라 문자열 내림차순 = 최신순.
+            //   (근태 HIST.INSERT_DATE / 연차 AP.APPROVAL_DATE / 스케줄 REQ.PROCESS_DATE 모두 datetime — 동일 포맷.)
             merged.sort((a, b) -> {
                 String ad = a.insertDate() == null ? "" : a.insertDate();
                 String bd = b.insertDate() == null ? "" : b.insertDate();
@@ -160,11 +173,17 @@ public class Attd07ServiceImpl implements Attd07Service {
         // PRAFTA-003-6: 해당 일자에 등록된 초과근무 목록을 함께 조회한다.
         List<DailyOvertimeResult> dailyOvertimeResultList = attd07Mapper.selectDailyOvertimeList(DailyAttdDetailsQuery.from(param));
 
+        // PRAFTA-APP-018-F: 그날 확정 연차 사용내역(자동확정/직접 포함, 미처리 결재대기는 제외 — D 카드 소유).
+        //   진입부 2단 권한 가드(canManageNode + selectUserExistInCmpnySite) 통과 후 호출되므로
+        //   추가 권한 코드 불필요. 쿼리 WHERE 의 CMPNY/SITE/USER 스코프로 cross-site IDOR 이중 차단.
+        List<ConfirmedLeaveResult> confirmedLeaveResultList = attd07Mapper.selectDailyConfirmedLeave(DailyAttdDetailsQuery.from(param));
+
         return DailyAttdDetailsResponse.builder()
                 .dailyAttdDetailsResult(dailyAttdDetailsResult)
                 .dailyAttdDetailHistoryResultList(dailyAttdDetailHistoryResultList)
                 .monthlyAttdReqResultList(monthlyAttdReqResultList)
                 .dailyOvertimeResultList(dailyOvertimeResultList)
+                .confirmedLeaveResultList(confirmedLeaveResultList)
                 .build();
     }
 
@@ -309,7 +328,19 @@ public class Attd07ServiceImpl implements Attd07Service {
             }
         }
 
-        // 6. 서버 권위 키 필드를 사용해 merge/hist 모델을 빌드한다.
+        // 6. 처리 이력 "변경 전(BEF_*)" 은 클라이언트 입력(param.oriCheckIn*)을 신뢰하지 않고
+        //    서버 권위 데이터로 채운다(감사 무결성). MERGE(7.) 직전 시점의 MGMT 현재값을 읽는다.
+        //      - 수정요청(REQ_TYPE='02'): targetId 가 가리키는 기존 행의 현재 출퇴근값.
+        //      - 생성요청(REQ_TYPE='01'): 사전 채번 ATTD_ID 가 아직 MGMT 에 없으므로 결과 없음 → BEF NULL(정상).
+        //    이전에는 프론트가 보낸 oriAct{n}* 에 의존하여, 멀티 구간(2구간) 승인 시 그 값이 비면
+        //    "변경 전" 이 누락되는 문제가 있었다. 서버 조회로 구간 무관하게 정확히 기록한다.
+        AttdSnapshotResult beforeSnapshot = attd07Mapper.selectAttdSnapshotById(param.gvCmpnyCd(), targetId);
+        String befCheckInDate  = beforeSnapshot != null ? beforeSnapshot.checkInDate()  : null;
+        String befCheckInTime  = beforeSnapshot != null ? beforeSnapshot.checkInTime()  : null;
+        String befCheckOutDate = beforeSnapshot != null ? beforeSnapshot.checkOutDate() : null;
+        String befCheckOutTime = beforeSnapshot != null ? beforeSnapshot.checkOutTime() : null;
+
+        // 7. 서버 권위 키 필드를 사용해 merge/hist 모델을 빌드한다.
         //    body로 전달된 출퇴근 값은 작업자가 기록 요청한 값이므로 그대로 사용한다.
         UpdateUserAttdInfosModel model = new UpdateUserAttdInfosModel(
             targetId
@@ -320,10 +351,10 @@ public class Attd07ServiceImpl implements Attd07Service {
             , reqRow.workSeq()
             , reqRow.workYmd()
 
-            , param.oriCheckInDate()
-            , param.oriCheckInTime()
-            , param.oriCheckOutDate()
-            , param.oriCheckOutTime()
+            , befCheckInDate
+            , befCheckInTime
+            , befCheckOutDate
+            , befCheckOutTime
 
             , param.checkInDate()
             , param.checkInTime()
@@ -336,14 +367,14 @@ public class Attd07ServiceImpl implements Attd07Service {
             , param.gvUserCd()
         );
 
-        // 7. TB_USER_ATTD_MGMT MERGE.
+        // 8. TB_USER_ATTD_MGMT MERGE.
         attd07Mapper.updateUserAttdInfos(UpdateUserAttdInfosCommand.from(targetId, model));
 
-        // 8. TB_USER_ATTD_HIST INSERT (HIST_TYPE='01').
+        // 9. TB_USER_ATTD_HIST INSERT (HIST_TYPE='01').
         String histId = attd07Mapper.selectHistId(param.gvCmpnyCd());
         attd07Mapper.insertUserAttdInfos(InsertUserAttdHistsCommand.from(histId, targetId, model));
 
-        // 9. TB_USER_ATTD_REQ UPDATE - 정확히 1행만 영향을 받아야 한다 (REQ_STATUS='01'(신청) 가드).
+        // 10. TB_USER_ATTD_REQ UPDATE - 정확히 1행만 영향을 받아야 한다 (REQ_STATUS='01'(신청) 가드).
         int updated = attd07Mapper.updateUserAttdReqApprove(UpdateUserAttdRequestCommand.from(targetId, param));
         if (updated == 0) {
             // lost-update / 동시 승인 충돌: @Transactional 경계로 전체 롤백.
@@ -448,6 +479,190 @@ public class Attd07ServiceImpl implements Attd07Service {
 
         log.info("근태 요청 반려 완료. reqId={}, reqType={}, attdId={}",
                 reqRow.reqId(), reqRow.reqType(), histAttdId);
+    }
+
+    // ============================================================
+    // PRAFTA-APP-007 - 스케줄 수정 요청('10') 승인 / 반려
+    //   정책: attd/09 §9.2(승인 효과=스케줄 갱신/반려 시 기존 유지),
+    //        request-approval/06 §6.1(승인=스케줄 갱신, 차단 사유 3종), §9.5(반려 사유 필수).
+    //   tb_user_work_plan 은 사용자-일자당 단일 WORK_PLAN_CD 한 칸이다(WORK_SEQ 없음).
+    //   승인 = 그 칸을 REQ 의 SCH_CD 로 upsert. 반려 = 미반영(상태 전이만). HIST 미기록(D3).
+    // ============================================================
+
+    /**
+     * [D15] 스케줄 수정 승인 시 PROCESS_COMMENT 에 저장하는 구조화 마커의 접두.
+     * 전체 형식은 'SCHED_MODIFY_APPROVED:OLD=<변경 전 WORK_PLAN_CD>' 이며,
+     * 처리 이력 쿼리가 OLD= 뒤 코드로 "변경 전 스케줄" 시각을 복원한다(after 는 R.SCH_CD).
+     * 이 마커는 사용자에게 노출하지 않는다(이력 쿼리에서 승인 사유는 NULL 로 치환).
+     */
+    private static final String SCHED_MODIFY_APPROVED_MARKER_PREFIX = "SCHED_MODIFY_APPROVED:OLD=";
+
+    @Override
+    @Transactional
+    public void approveSchedModifyRequest(ApproveSchedModifyRequestParam param) {
+
+        // 1. 회사 scope 으로 권위 있는 REQ row 를 로드한다. 없으면 거부한다.
+        UserAttdReqResult reqRow = attd07Mapper.selectUserAttdReqByReqId(param.reqId(), param.gvCmpnyCd());
+        if (reqRow == null) {
+            log.warn("sched-modify approve rejected - REQ not found. reqId={}, cmpnyCd={}", param.reqId(), param.gvCmpnyCd());
+            throw new ApiException(AttdErrorCode.ATTD_404_001);
+        }
+
+        // SEC-018: REQ_TYPE 가드. 본 endpoint 는 스케줄 수정 요청('10')만 처리한다.
+        // 근태/OT/연차 요청이 이 경로로 흘러들어 잘못된 스케줄 반영(타입 혼동)을 일으키지
+        // 않도록 fail-closed 로 거부한다.
+        if (!AttdReqTypeUtils.isScheduleModifyReqType(reqRow.reqType())) {
+            log.warn("sched-modify approve rejected - wrong REQ_TYPE. reqId={}, reqType={}",
+                    reqRow.reqId(), reqRow.reqType());
+            throw new ApiException(AttdErrorCode.ATTD_400_006);
+        }
+
+        // SEC-015 - 매니저 전용 게이트. 역할 검사는 JWT 기반 gvAuthCd 를 사용하므로
+        // body 위조로 권한 escalation 을 할 수 없다.
+        //   [보안 정렬] 권한 판정 대상 부서/사업장은 클라 body 가 아닌 REQ 의 권위값을 사용한다
+        //   (반려 경로와 동일 불변식). body 값은 이후 body↔REQ mismatch 검사로 별도 차단된다.
+        if (!attdCloseService.canManageNode(param.gvAuthCd(), param.gvUserCd(), param.gvCmpnyCd(), reqRow.siteCd(), reqRow.nodeCd())) {
+            log.warn("sched-modify approve rejected - insufficient privilege. userCd={}, authCd={}",
+                    param.gvUserCd(), param.gvAuthCd());
+            throw new ApiException(AttdErrorCode.ATTD_403_002);
+        }
+
+        // PRAFTA-028 - 마감된 기간(부서)의 스케줄 변경 차단 (REQ 의 권위 부서/근무일 기준).
+        //   현행 PRAFTA 마감 메커니즘은 근태 월마감(tb_attd_close) 단일이므로 그것으로 매핑한다(D5-a).
+        ensureNotClosed(param.gvCmpnyCd(), reqRow.siteCd(), reqRow.nodeCd(), reqRow.workYmd());
+
+        // 2. 대기(pending '01' 신청) 상태의 요청만 승인 가능 (UPDATE 측에서도 REQ_STATUS='01' 가드).
+        if (!AttdReqTypeUtils.REQ_STATUS_REQUESTED.equals(reqRow.reqStatus())) {
+            log.warn("sched-modify approve rejected - REQ already processed. reqId={}, status={}",
+                    reqRow.reqId(), reqRow.reqStatus());
+            throw new ApiException(AttdErrorCode.ATTD_409_001);
+        }
+
+        // 3. body 의 키 필드가 저장된 REQ row 와 일치하는지 검증한다(변조/IDOR 차단).
+        if (StringEqualsUtils.isMismatched(param.userCd(),  reqRow.userCd())
+            || StringEqualsUtils.isMismatched(param.siteCd(),  reqRow.siteCd())
+            || StringEqualsUtils.isMismatched(param.workYmd(), reqRow.workYmd())
+            || StringEqualsUtils.isMismatched(param.workSeq(), reqRow.workSeq())
+            || StringEqualsUtils.isMismatched(param.nodeCd(),  reqRow.nodeCd())) {
+            log.warn("sched-modify approve rejected - body/REQ mismatch. reqId={}", reqRow.reqId());
+            throw new ApiException(AttdErrorCode.ATTD_400_005);
+        }
+
+        // 4. 대상 사용자가 호출자의 회사/사이트 scope 안에 실재하는지 DB 로 재확인한다.
+        int userExists = attd07Mapper.selectUserExistInCmpnySite(
+                param.gvCmpnyCd(), reqRow.siteCd(), reqRow.userCd());
+        if (userExists <= 0) {
+            log.warn("sched-modify approve rejected - target user not in scope. cmpnyCd={}, siteCd={}, userCd={}",
+                    param.gvCmpnyCd(), reqRow.siteCd(), reqRow.userCd());
+            throw new ApiException(AttdErrorCode.ATTD_404_011);
+        }
+
+        // 5. 목표 스케줄 코드는 서버 권위 값(REQ row 의 SCH_CD)만 사용한다(클라 미신뢰).
+        //    null/빈값이면 마이그 미적용 또는 등록 오류로 보고 fail-closed 거부한다(WORK_PLAN_CD 오염 방지).
+        String schCd = reqRow.schCd();
+        if (schCd == null || schCd.isEmpty()) {
+            log.warn("sched-modify approve rejected - REQ.SCH_CD missing(데이터 부재/마이그 미적용). reqId={}", reqRow.reqId());
+            throw new ApiException(AttdErrorCode.ATTD_400_005);
+        }
+
+        // 5-1. [D15] upsert 로 덮어쓰기 전에 "변경 전 근무계획 코드"를 캡처한다(같은 트랜잭션).
+        //      이 값을 PROCESS_COMMENT 마커에 직렬화하여, 처리 이력에서 변경 전→후 스케줄을 복원한다(무마이그).
+        //      해당 일자에 근무계획이 없으면 null → 마커는 OLD= 빈값(변경 전 "없음")으로 남는다.
+        String oldWorkPlanCd = attd07Mapper.selectUserWorkPlanCd(
+                param.gvCmpnyCd(), reqRow.siteCd(), reqRow.userCd(), reqRow.workYmd());
+
+        // 6. tb_user_work_plan 의 (cmpny, site, user, ymd) 한 칸 WORK_PLAN_CD 를 SCH_CD 로 upsert (D1/D2).
+        attd07Mapper.upsertUserWorkPlan(UpsertUserWorkPlanCommand.of(
+                param.gvCmpnyCd(), reqRow.siteCd(), reqRow.userCd(), reqRow.workYmd(), schCd, param.gvUserCd()));
+
+        // 7. TB_USER_ATTD_REQ UPDATE - 정확히 1행만 영향(REQ_STATUS='01' 가드). 0행이면 동시 처리 충돌 → 롤백.
+        //    [D15] 승인 마커: 'SCHED_MODIFY_APPROVED:OLD=<oldWorkPlanCd>' (oldWorkPlanCd null 이면 빈값).
+        //          마커 자체는 사용자에게 노출하지 않으며(이력 쿼리에서 승인 사유는 NULL 처리), oldCode 만 담는다
+        //          (after 는 R.SCH_CD 로 이미 복원 가능). PROCESS_COMMENT 는 varchar(500) 이라 코드 1개는 충분.
+        String approveMarker = SCHED_MODIFY_APPROVED_MARKER_PREFIX
+                + (oldWorkPlanCd == null ? "" : oldWorkPlanCd);
+        int updated = attd07Mapper.updateUserSchedModifyReqApprove(
+                reqRow.reqId(), param.gvCmpnyCd(), reqRow.siteCd(), param.gvUserCd(), approveMarker);
+        if (updated == 0) {
+            log.warn("sched-modify approve rejected - REQ status changed concurrently. reqId={}", reqRow.reqId());
+            throw new ApiException(AttdErrorCode.ATTD_409_001);
+        }
+
+        log.info("스케줄 수정 요청 승인 완료. reqId={}, userCd={}, workYmd={}, schCd={}",
+                reqRow.reqId(), reqRow.userCd(), reqRow.workYmd(), schCd);
+    }
+
+    @Override
+    @Transactional
+    public void rejectSchedModifyRequest(RejectUserAttdRequestParam param) {
+
+        // 1. 회사 scope 으로 권위 있는 REQ row 를 로드한다. 없으면 거부한다.
+        UserAttdReqResult reqRow = attd07Mapper.selectUserAttdReqByReqId(param.reqId(), param.gvCmpnyCd());
+        if (reqRow == null) {
+            log.warn("sched-modify reject rejected - REQ not found. reqId={}, cmpnyCd={}", param.reqId(), param.gvCmpnyCd());
+            throw new ApiException(AttdErrorCode.ATTD_404_001);
+        }
+
+        // SEC-018: REQ_TYPE 가드. 본 endpoint 는 스케줄 수정 요청('10')만 반려한다.
+        if (!AttdReqTypeUtils.isScheduleModifyReqType(reqRow.reqType())) {
+            log.warn("sched-modify reject rejected - wrong REQ_TYPE. reqId={}, reqType={}",
+                    reqRow.reqId(), reqRow.reqType());
+            throw new ApiException(AttdErrorCode.ATTD_400_006);
+        }
+
+        // SEC-015 - 매니저 전용 게이트 (REQ 권위 부서 기준).
+        if (!attdCloseService.canManageNode(param.gvAuthCd(), param.gvUserCd(), param.gvCmpnyCd(), reqRow.siteCd(), reqRow.nodeCd())) {
+            log.warn("sched-modify reject rejected - insufficient privilege. userCd={}, authCd={}",
+                    param.gvUserCd(), param.gvAuthCd());
+            throw new ApiException(AttdErrorCode.ATTD_403_002);
+        }
+
+        // PRAFTA-028 - 마감된 기간(부서)의 스케줄 요청 반려 차단 (REQ 의 권위 부서/근무일 기준).
+        ensureNotClosed(param.gvCmpnyCd(), reqRow.siteCd(), reqRow.nodeCd(), reqRow.workYmd());
+
+        // 2. 대기('01' 신청) 상태의 요청만 반려 가능 (UPDATE 측에서도 REQ_STATUS='01' 가드).
+        if (!AttdReqTypeUtils.REQ_STATUS_REQUESTED.equals(reqRow.reqStatus())) {
+            log.warn("sched-modify reject rejected - REQ already processed. reqId={}, status={}",
+                    reqRow.reqId(), reqRow.reqStatus());
+            throw new ApiException(AttdErrorCode.ATTD_409_001);
+        }
+
+        // 3. body 의 키 필드가 저장된 REQ row 와 일치하는지 검증한다(변조/IDOR 차단).
+        if (StringEqualsUtils.isMismatched(param.userCd(),  reqRow.userCd())
+            || StringEqualsUtils.isMismatched(param.siteCd(),  reqRow.siteCd())
+            || StringEqualsUtils.isMismatched(param.workYmd(), reqRow.workYmd())
+            || StringEqualsUtils.isMismatched(param.workSeq(), reqRow.workSeq())
+            || StringEqualsUtils.isMismatched(param.nodeCd(),  reqRow.nodeCd())) {
+            log.warn("sched-modify reject rejected - body/REQ mismatch. reqId={}", reqRow.reqId());
+            throw new ApiException(AttdErrorCode.ATTD_400_005);
+        }
+
+        // 4. 대상 사용자가 호출자의 회사/사이트 scope 안에 실재하는지 DB 로 재확인한다.
+        int userExists = attd07Mapper.selectUserExistInCmpnySite(
+                param.gvCmpnyCd(), reqRow.siteCd(), reqRow.userCd());
+        if (userExists <= 0) {
+            log.warn("sched-modify reject rejected - target user not in scope. cmpnyCd={}, siteCd={}, userCd={}",
+                    param.gvCmpnyCd(), reqRow.siteCd(), reqRow.userCd());
+            throw new ApiException(AttdErrorCode.ATTD_404_011);
+        }
+
+        // 5. 반려 사유 필수(§9.5). Param.from 에서 이미 @NotBlank/rejectReason 비어있음 검증되나
+        //    defence-in-depth 로 service 에서도 재확인한다.
+        if (param.rejectReason() == null || param.rejectReason().isBlank()) {
+            log.warn("sched-modify reject rejected - empty rejectReason. reqId={}", reqRow.reqId());
+            throw new ApiException(AttdErrorCode.ATTD_400_005);
+        }
+
+        // 6. TB_USER_ATTD_REQ UPDATE(반려 '03', 사유 기록). tb_user_work_plan 은 미변경(D4). HIST 미기록(D3).
+        //    근태/OT 반려와 동일 command/mapper 재사용. 0행이면 동시 처리 충돌 → 롤백.
+        int updated = attd07Mapper.updateUserAttdReqReject(RejectUserAttdRequestCommand.from(param));
+        if (updated == 0) {
+            log.warn("sched-modify reject rejected - REQ status changed concurrently. reqId={}", reqRow.reqId());
+            throw new ApiException(AttdErrorCode.ATTD_409_001);
+        }
+
+        log.info("스케줄 수정 요청 반려 완료. reqId={}, userCd={}, workYmd={}",
+                reqRow.reqId(), reqRow.userCd(), reqRow.workYmd());
     }
 
     // ============================================================
@@ -761,7 +976,7 @@ public class Attd07ServiceImpl implements Attd07Service {
             int workMinutes = stamp[1] - stamp[0];
             int updatedOt = attd07Mapper.updateUserOvertimeModify(
                     reqRow.targetId(), param.gvCmpnyCd(), param.siteCd(), param.userCd(),
-                    ot.otType(), ot.startDate(), ot.startTime(), ot.endDate(), ot.endTime(),
+                    ot.startDate(), ot.startTime(), ot.endDate(), ot.endTime(),
                     workMinutes, param.gvUserCd());
             if (updatedOt == 0) {
                 // 대상 OT가 스코프 밖이거나 이미 취소/삭제됨 → 잘못된 TARGET_ID 또는 변조.

@@ -3,13 +3,21 @@
     <!-- 상단 헤더 (뒤로가기 + 임시 토큰 잔여시간) -->
     <div class="header">
       <button @click="fnCancel" class="back-btn" aria-label="뒤로가기">
-        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7" />
+        <svg
+          xmlns="http://www.w3.org/2000/svg"
+          fill="none"
+          viewBox="0 0 24 24"
+          stroke="currentColor"
+        >
+          <path
+            stroke-linecap="round"
+            stroke-linejoin="round"
+            stroke-width="2"
+            d="M15 19l-7-7 7-7"
+          />
         </svg>
       </button>
-      <span class="ttl-timer" v-if="ttlSeconds > 0">
-        남은 시간 {{ formattedTtl }}
-      </span>
+      <span class="ttl-timer" v-if="ttlSeconds > 0"> 남은 시간 {{ formattedTtl }} </span>
     </div>
 
     <!-- 본문 -->
@@ -60,11 +68,7 @@
             :disabled="!authReqSent || verified"
             class="form-input"
           />
-          <button
-            class="btn btn-primary"
-            @click="fnVerify"
-            :disabled="!authReqSent || verified"
-          >
+          <button class="btn btn-primary" @click="fnVerify" :disabled="!authReqSent || verified">
             확인
           </button>
           <span class="ok-mark" v-show="verified">✅</span>
@@ -173,7 +177,9 @@ onBeforeRouteLeave(async (to, from, next) => {
     next()
     return
   }
-  const ok = await proxy.$confirm('본인인증을 취소하면 로그인 화면으로 돌아갑니다.\n계속하시겠습니까?')
+  const ok = await proxy.$confirm(
+    '본인인증을 취소하면 로그인 화면으로 돌아갑니다.\n계속하시겠습니까?',
+  )
   if (ok) {
     fnCleanupToken()
     next()
@@ -351,7 +357,9 @@ const fnApplyLoginResponse = (data) => {
 }
 
 const fnCancel = async () => {
-  const ok = await proxy.$confirm('본인인증을 취소하면 로그인 화면으로 돌아갑니다.\n계속하시겠습니까?')
+  const ok = await proxy.$confirm(
+    '본인인증을 취소하면 로그인 화면으로 돌아갑니다.\n계속하시겠습니까?',
+  )
   if (!ok) return
   fnCleanupToken()
   router.replace('/')

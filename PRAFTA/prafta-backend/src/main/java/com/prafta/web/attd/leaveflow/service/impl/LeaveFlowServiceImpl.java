@@ -2,6 +2,8 @@ package com.prafta.web.attd.leaveflow.service.impl;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
+import java.util.ArrayList;
+import java.util.LinkedHashSet;
 import java.util.List;
 
 import org.springframework.stereotype.Service;
@@ -9,6 +11,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import com.prafta.common.cmm.approval.mapper.ApprovalLineMapper;
 import com.prafta.common.cmm.approval.vo.ApprovalStepVO;
+import com.prafta.common.cmm.leave.service.LeaveApprovalNotiService;
 import com.prafta.common.cmm.leave.service.LeaveDeductionService;
 import com.prafta.common.error.attd.AttdErrorCode;
 import com.prafta.common.error.common.CommonErrorCode;
@@ -67,6 +70,8 @@ public class LeaveFlowServiceImpl implements LeaveFlowService {
     private final ApprovalLineMapper approvalLineMapper;
     private final LeaveDeductionService leaveDeductionService;
     private final AttdCloseService attdCloseService;
+    /** PRAFTA-COM-004: 연차 결재 PUSH 생산자(outbox 적재, 예외 격리). */
+    private final LeaveApprovalNotiService leaveApprovalNotiService;
 
     @Override
     @Transactional
@@ -162,9 +167,23 @@ public class LeaveFlowServiceImpl implements LeaveFlowService {
         //    소속 노드 자체근태승인(SELF_ATTD_APPRV_YN) ON + 본인이 그 노드 담당 정/부일 때만
         //    자동승인('02'), 자격 미달이면 본인 지정 불가(ATTD_400_056).
         boolean fullyAutoApproved = false;
+        // PRAFTA-COM-004 시나리오 A hook 용: 차례가 도래한(=STEP_APPLIED) 첫 수동 단계의 결재자/단계번호.
+        String turnApprover = null;
+        int turnStep = -1;
         if (aprvRequired) {
             List<String> approvers = p.approverUserCds();
             if (approvers == null || approvers.isEmpty()) {
+                throw new ApiException(CommonErrorCode.COMMON_400_001);
+            }
+            // PRAFTA-COM-004 보안(결재자 스코프 가드): 본문 approverUserCds 는 신뢰 입력이므로, 각 결재자가
+            //   동일 회사 + 동일 사업장 + 재직 사용자인지 서버에서 검증한다(타 사업장/회사/존재없는
+            //   USER_CD 를 결재자로 주입 → 그 결재함에 신청자 실명 PUSH 가 노출되는 cross-tenant 침해 차단).
+            //   중복 제거 수와 유효 사용자 수가 다르면 거부(앱 AppLeaveFlowServiceImpl 미러).
+            List<String> distinctApprovers = new ArrayList<>(new LinkedHashSet<>(approvers));
+            int validCount = leaveFlowMapper.countValidApprovers(cmpny, site, distinctApprovers);
+            if (validCount != distinctApprovers.size()) {
+                log.info("[leaveflow] 연차 신청 거부: 유효하지 않은 결재자 포함 (userCd={}, 요청={}, 유효={})",
+                        user, distinctApprovers.size(), validCount);
                 throw new ApiException(CommonErrorCode.COMMON_400_001);
             }
             boolean selfAllowed = "Y".equals(leaveFlowMapper.selectUserNodeSelfApproveYn(cmpny, user));
@@ -197,6 +216,11 @@ public class LeaveFlowServiceImpl implements LeaveFlowService {
                 approvalLineMapper.insertApprovalStep(s);
             }
             fullyAutoApproved = (currentIdx < 0); // 전 단계가 본인 자동승인 → 즉시 확정
+            if (currentIdx >= 0) {
+                // 차례가 도래한 첫 수동 단계(STEP_APPLIED) — 시나리오 A 발송 대상.
+                turnApprover = approvers.get(currentIdx);
+                turnStep = currentIdx + 1; // approvalStep 은 1-based
+            }
         }
 
         // 7) 차감 예약 (CONFIRMED) + 부여 USED_DAYS 동기화
@@ -220,6 +244,22 @@ public class LeaveFlowServiceImpl implements LeaveFlowService {
         boolean confirmedNow = !aprvRequired || fullyAutoApproved;
         if (confirmedNow && UNIT_FULL.equals(unit)) {
             leaveFlowMapper.upsertWorkPlanLeave(cmpny, site, user, workYmd, leaveCd, user);
+        }
+
+        // PRAFTA-COM-004 PUSH 적재 hook (예외 격리 — 연차 신청 본 흐름에 영향 금지).
+        //  - 시나리오 A: 결재 Y + 차례 도래 단계(첫 수동)가 있을 때 그 결재자 1인에게.
+        //    fullyAutoApproved(전건 본인 자동승인)면 turnApprover=null → 미발송(D1).
+        //  - 시나리오 B: 순수 무결재(!aprvRequired) 즉시확정만. fullyAutoApproved 는 제외(D1).
+        try {
+            if (aprvRequired && turnApprover != null) {
+                leaveApprovalNotiService.notifyApprovalTurn(cmpny, site, user, reqId, turnStep, turnApprover, user);
+            }
+            if (!aprvRequired) {
+                leaveApprovalNotiService.notifyLeaveUsedNoAprv(cmpny, site, user, leaveId, unit, leaveDays,
+                        workYmd, startTime, endTime, user);
+            }
+        } catch (Exception e) {
+            log.error("연차 신청 PUSH 적재 hook 실패(신청 영향 없음). reqId={}", reqId, e);
         }
 
         log.info("연차 신청 완료. reqId={}, user={}, leaveCd={}, unit={}, days={}, aprv={}",
@@ -250,6 +290,19 @@ public class LeaveFlowServiceImpl implements LeaveFlowService {
         Integer nextStep = approvalLineMapper.selectFirstWaitingStep(p.gvCmpnyCd(), p.reqId());
         if (nextStep != null) {
             approvalLineMapper.updateStepStatus(p.gvCmpnyCd(), p.reqId(), nextStep, STEP_APPLIED, null, p.gvUserCd());
+            // PRAFTA-COM-004 시나리오 A hook: 다음 단계로 차례가 도래한 결재자 1인에게 PUSH 적재(예외 격리).
+            //  단계 번호↔결재자 매핑은 selectApprovalStep 으로 정확히 조회(인덱스 위치밀림 방지).
+            try {
+                ApprovalStepVO nextStepVo =
+                        approvalLineMapper.selectApprovalStep(p.gvCmpnyCd(), p.reqId(), nextStep);
+                if (nextStepVo != null) {
+                    leaveApprovalNotiService.notifyApprovalTurn(p.gvCmpnyCd(), req.siteCd(), req.userCd(),
+                            p.reqId(), nextStep, nextStepVo.getApproverUserCd(), p.gvUserCd());
+                }
+            } catch (Exception e) {
+                log.error("연차 승인 다음단계 PUSH 적재 hook 실패(승인 영향 없음). reqId={}, step={}",
+                        p.reqId(), nextStep, e);
+            }
         } else {
             leaveFlowMapper.updateReqStatus(p.gvCmpnyCd(), p.reqId(), REQ_APPROVED, p.gvUserCd(), p.comment());
             // PRAFTA-025: 06(연차수정)은 최종 승인 시 기존 사용기록(TARGET_ID)을 새 값으로 in-place 갱신,

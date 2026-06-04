@@ -15,5 +15,6 @@ public record CheckOutCommand(
     , String checkOutDate   // YYYYMMDD (서버 today)
     , String checkOutTime   // HHMM (서버 NOW)
     , String checkOutMethod // '01'
+    , String deviceUuid     // prafta-com-003 D3: 퇴근 실행 디바이스UUID(CHECK_OUT_DEVICE_UUID, nullable)
 ) {
 }

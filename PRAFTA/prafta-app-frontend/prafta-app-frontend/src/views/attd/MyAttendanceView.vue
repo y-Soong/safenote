@@ -67,12 +67,10 @@
           :selected-ymd="selectedYmd"
           @prev-month="onPrevMonth"
           @next-month="onNextMonth"
+          @select-month="onSelectMonth"
           @select-date="onSelectDate"
         />
-        <AttendanceDayDetailCard
-          :detail="dayDetail"
-          @action="onDayDetailAction"
-        />
+        <AttendanceDayDetailCard :detail="dayDetail" @action="onDayDetailAction" />
       </template>
 
       <!-- 표준 빈 상태 (로드 완료했으나 표시할 근태가 없을 때) -->
@@ -117,28 +115,78 @@
     <!-- 인라인 SVG sprite (본 화면 전용) -->
     <svg width="0" height="0" class="attd-sprite" aria-hidden="true" focusable="false">
       <defs>
-        <symbol id="i-attd-chev-left" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <symbol
+          id="i-attd-chev-left"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="2"
+          stroke-linecap="round"
+          stroke-linejoin="round"
+        >
           <polyline points="15 18 9 12 15 6" />
         </symbol>
-        <symbol id="i-attd-bell" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-          <path d="M10 5a2 2 0 0 1 4 0a7 7 0 0 1 4 6v3a4 4 0 0 0 2 3h-16a4 4 0 0 0 2 -3v-3a7 7 0 0 1 4 -6" />
+        <symbol
+          id="i-attd-bell"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="2"
+          stroke-linecap="round"
+          stroke-linejoin="round"
+        >
+          <path
+            d="M10 5a2 2 0 0 1 4 0a7 7 0 0 1 4 6v3a4 4 0 0 0 2 3h-16a4 4 0 0 0 2 -3v-3a7 7 0 0 1 4 -6"
+          />
           <path d="M9 17v1a3 3 0 0 0 6 0v-1" />
         </symbol>
-        <symbol id="i-attd-home" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <symbol
+          id="i-attd-home"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="2"
+          stroke-linecap="round"
+          stroke-linejoin="round"
+        >
           <path d="M5 12l-2 0l9-9l9 9l-2 0" />
           <path d="M5 12v7a2 2 0 0 0 2 2h10a2 2 0 0 0 2 -2v-7" />
           <path d="M10 21v-6a2 2 0 0 1 2-2h0a2 2 0 0 1 2 2v6" />
         </symbol>
-        <symbol id="i-attd-cal" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <symbol
+          id="i-attd-cal"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="2"
+          stroke-linecap="round"
+          stroke-linejoin="round"
+        >
           <rect x="4" y="5" width="16" height="16" rx="2" />
           <line x1="16" y1="3" x2="16" y2="7" />
           <line x1="8" y1="3" x2="8" y2="7" />
           <line x1="4" y1="11" x2="20" y2="11" />
         </symbol>
-        <symbol id="i-attd-shield" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <symbol
+          id="i-attd-shield"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="2"
+          stroke-linecap="round"
+          stroke-linejoin="round"
+        >
           <path d="M12 3l8 4v6c0 4.4-3.6 8-8 8s-8-3.6-8-8V7l8-4z" />
         </symbol>
-        <symbol id="i-attd-monitor" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <symbol
+          id="i-attd-monitor"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="2"
+          stroke-linecap="round"
+          stroke-linejoin="round"
+        >
           <rect x="3" y="4" width="18" height="12" rx="1" />
           <line x1="7" y1="20" x2="17" y2="20" />
           <line x1="9" y1="16" x2="9" y2="20" />
@@ -416,19 +464,26 @@ const onNextMonth = () => {
   dayDetail.value = null
   loadMonth(shiftYearMonth(currentYearMonth.value, 1))
 }
+// 연월 시트에서 임의 월 선택
+const onSelectMonth = (yearMonth) => {
+  if (!yearMonth || yearMonth === currentYearMonth.value) return
+  selectedYmd.value = ''
+  dayDetail.value = null
+  loadMonth(yearMonth)
+}
 const onSelectDate = (ymd) => {
   selectedYmd.value = ymd
   loadDayDetail(ymd)
 }
 
 // ───────────────────────────────────────────────────────────
-// prafta-app-008: 외근 사유 시트 + §5.5 Case C 2-pass 출퇴근 흐름
-//   프론트는 사전에 외근 여부/선행구간 상태를 모르므로 일단 사유·확인 없이 호출하고,
-//   서버 errorCode 로 분기하여 사유 입력(086)·확인(084)·차단(085) 을 순차 처리한다.
+// prafta-app-008/015: 외근 사유 시트 + 2-pass 출퇴근 흐름
+//   프론트는 사전에 외근 여부를 모르므로 일단 사유 없이 호출하고, 서버 errorCode 로 분기한다.
 //   - ATTD_400_086: 외근 사유 필요 → OffsiteReasonSheet 오픈 → 사유 동봉 재호출
-//   - ATTD_400_084: §5.5 Case C(선행 1구간 스킵, check-in 만) → 확인 후 confirmSkipPrevSlot 재호출
-//   - ATTD_400_085: §5.5 Case B(1구간 미마감, 강한 차단) → 메시지만 노출하고 중단
-//   좌표·offsiteReason·confirmSkipPrevSlot 를 ctx 에 유지하며 재시도한다.
+//   prafta-app-015: 2구간 출근 구간은 사용자가 명시 선택(targetWorkSeq)하므로 자동추정/084/085/
+//     confirmSkipPrevSlot 2-pass 흐름은 폐기. 087(구간 미선택)·088(구간 중복)은 정상 흐름에서는
+//     발생하지 않으나 방어적으로 서버 message 를 노출한다(아래 기본 분기에서 처리).
+//   좌표·offsiteReason·targetWorkSeq 를 ctx 에 유지하며 재시도한다.
 // ───────────────────────────────────────────────────────────
 
 // 외근 사유 시트 상태 + 진행 중 출퇴근 컨텍스트
@@ -439,11 +494,10 @@ const offsiteCtx = ref({ lat: null, lon: null, accuracy: null })
 // 재시도 컨텍스트(좌표·플래그·사유 유지). 시트 제출 시 이 ctx 로 재호출한다.
 let pendingCtx = null
 
-// 출퇴근 API 단일 호출기 — 서버 errorCode 로 2-pass 분기.
-//   mode: 'checkIn'|'checkOut', ctx: { lat, lon, accuracy, isMocked, workYmd, offsiteReason, confirmSkipPrevSlot }
+// 출퇴근 API 단일 호출기 — 서버 errorCode 로 2-pass 분기(086 외근 사유만).
+//   mode: 'checkIn'|'checkOut', ctx: { lat, lon, accuracy, isMocked, workYmd, offsiteReason, targetWorkSeq }
 const callCheckInOut = async (mode, ctx) => {
   const url = mode === 'checkOut' ? '/appApi/attd/check-out' : '/appApi/attd/check-in'
-  // check-out 은 confirmSkipPrevSlot 미지원(check-in 전용) — 전송하지 않는다.
   const body = {
     lat: ctx.lat,
     lon: ctx.lon,
@@ -452,8 +506,9 @@ const callCheckInOut = async (mode, ctx) => {
     workYmd: ctx.workYmd,
     offsiteReason: ctx.offsiteReason || undefined,
   }
-  if (mode === 'checkIn') {
-    body.confirmSkipPrevSlot = ctx.confirmSkipPrevSlot === true
+  // prafta-app-015: 2구간 스케줄 출근 구간 명시 선택(check-in 전용). 미선택이면 미전송(1구간/스케줄없음).
+  if (mode === 'checkIn' && (ctx.targetWorkSeq === 1 || ctx.targetWorkSeq === 2)) {
+    body.targetWorkSeq = ctx.targetWorkSeq
   }
 
   try {
@@ -480,31 +535,16 @@ const callCheckInOut = async (mode, ctx) => {
       return
     }
 
-    // 084: §5.5 Case C(선행 1구간 스킵, check-in 만) → 확인 후 confirmSkipPrevSlot 재호출.
-    //   (086 → 사유 입력 후 재호출에서 084 가 나올 수도 있으므로 ctx 의 사유/좌표 유지.)
-    if (errorCode === 'ATTD_400_084' && mode === 'checkIn') {
-      const ok = await askConfirm(message || '1구간 출근 데이터 없이 2구간 출근하는 게 맞나요?')
-      if (!ok) {
-        pendingCtx = null
-        return
-      }
-      await callCheckInOut(mode, { ...ctx, confirmSkipPrevSlot: true })
-      return
-    }
-
-    // 085: §5.5 Case B(1구간 미마감, 강한 차단) → 메시지만 노출하고 중단.
-    if (errorCode === 'ATTD_400_085') {
-      pendingCtx = null
-      showAlert(message || '1구간 퇴근을 먼저 처리해주세요.')
-      return
-    }
-
-    // 그 외 거부/실패 — 서버 message 우선.
+    // 그 외 거부/실패(087 구간 미선택·088 구간 중복 포함) — 서버 message 우선 노출.
+    //   087/088 은 정상 흐름(버튼 게이팅)에서는 발생하지 않으나 방어적으로 처리.
     console.error(`[MyAttendance] ${mode} 실패:`, e?.message)
     pendingCtx = null
-    showAlert(message || (mode === 'checkOut'
-      ? '퇴근을 등록하지 못했어요. 잠시 후 다시 시도해 주세요.'
-      : '출근을 등록하지 못했어요. 잠시 후 다시 시도해 주세요.'))
+    showAlert(
+      message ||
+        (mode === 'checkOut'
+          ? '퇴근을 등록하지 못했어요. 잠시 후 다시 시도해 주세요.'
+          : '출근을 등록하지 못했어요. 잠시 후 다시 시도해 주세요.'),
+    )
   }
 }
 
@@ -526,17 +566,25 @@ const onOffsiteCancel = () => {
 }
 
 // 출퇴근 진입 — 확인 → GPS 브리지 → status 분기 → 2-pass 호출 진입.
-const startCheckInOut = async (mode) => {
-  const ok = await askConfirm(mode === 'checkOut' ? '퇴근하시겠어요?' : '출근하시겠어요?')
+//   prafta-app-015: targetWorkSeq(1|2|null) — 2구간 스케줄 출근 구간 선택. 그 외(퇴근/단일출근)는 null.
+const startCheckInOut = async (mode, targetWorkSeq = null) => {
+  let confirmMsg
+  if (mode === 'checkOut') confirmMsg = '퇴근하시겠어요?'
+  else if (targetWorkSeq === 1) confirmMsg = '1구간 출근하시겠어요?'
+  else if (targetWorkSeq === 2) confirmMsg = '2구간 출근하시겠어요?'
+  else confirmMsg = '출근하시겠어요?'
+  const ok = await askConfirm(confirmMsg)
   if (!ok) return
   // Flutter 위치 브리지로 현재 좌표 획득(권한은 앱 기동 시 하드게이트로 보장됨).
   const gps = await requestGps()
   if (gps.status === 'OK') {
     // Mock 위치는 서버가 거부하나, 사용자 경험상 먼저 안내 후 중단.
     if (gps.isMocked) {
-      showAlert(mode === 'checkOut'
-        ? '위치 위변조가 감지되어 퇴근할 수 없어요.'
-        : '위치 위변조가 감지되어 출근할 수 없어요.')
+      showAlert(
+        mode === 'checkOut'
+          ? '위치 위변조가 감지되어 퇴근할 수 없어요.'
+          : '위치 위변조가 감지되어 출근할 수 없어요.',
+      )
       return
     }
     await callCheckInOut(mode, {
@@ -547,7 +595,7 @@ const startCheckInOut = async (mode) => {
       // 출퇴근 대상 근무일. 오늘 카드의 workDate 기준.
       workYmd: todayDetail.value?.workDate,
       offsiteReason: null,
-      confirmSkipPrevSlot: false,
+      targetWorkSeq,
     })
     return
   }
@@ -594,8 +642,11 @@ const onTodayAction = async (payload) => {
     return
   }
   if (type === 'checkIn') {
-    // 2구간 출근(재출근) 포함 — 확인 → GPS → 2-pass.
-    await startCheckInOut('checkIn')
+    // prafta-app-015: 2구간 스케줄은 카드에서 선택한 구간(payload.targetWorkSeq=1|2)을 전달.
+    //   1구간/스케줄없음 단일 출근은 targetWorkSeq 미동봉(null).
+    const targetWorkSeq =
+      payload?.targetWorkSeq === 1 || payload?.targetWorkSeq === 2 ? payload.targetWorkSeq : null
+    await startCheckInOut('checkIn', targetWorkSeq)
     return
   }
   if (type === 'requestModify') {
@@ -618,6 +669,8 @@ const onTodayAction = async (payload) => {
 // 컨텍스트는 sessionStorage 에 1회 저장하고 라우트 진입 시 폼이 읽고 즉시 제거한다.
 // ───────────────────────────────────────────────────────────
 const ATTD_REQ_CONTEXT_KEY = 'attd_req_ctx_v1'
+// prafta-app-018-C: 연차 신청 폼 전용 컨텍스트 키(근태요청 키와 분리). LeaveApplyView 가 읽고 제거.
+const LEAVE_APPLY_CONTEXT_KEY = 'leave_apply_ctx_v1'
 
 const buildContextFromDay = (day) => {
   if (!day) return null
@@ -684,7 +737,26 @@ const onSheetAction = (payload) => {
   if (type === 'overtime') {
     return navigateToAttdRequest('overtime', day)
   }
-  // leave 는 본 작업 외 — 기존 stub 유지 (LeaveFlow 자산 연동은 별도 라운드)
+  if (type === 'leave') {
+    // prafta-app-018-C: 연차 신청 폼 라우팅. day 컨텍스트(workYmd/nodeCd/siteName/schedule)를
+    //   연차 전용 sessionStorage 키(attd_req_ctx_v1 와 분리)로 저장 → 폼 컨테이너가 1회 읽고 제거.
+    if (!day || !day.workYmd) {
+      showAlert('대상 일자를 확인할 수 없습니다.')
+      return
+    }
+    try {
+      sessionStorage.setItem(LEAVE_APPLY_CONTEXT_KEY, JSON.stringify(buildContextFromDay(day)))
+    } catch (e) {
+      console.error('[MyAttendance] 연차 컨텍스트 저장 실패:', e?.message)
+      showAlert('컨텍스트 저장에 실패했습니다.')
+      return
+    }
+    return router.push({
+      path: '/LeaveApply',
+      query: { workYmd: day.workYmd, nodeCd: day.nodeCd || '' },
+    })
+  }
+  // 그 외 액션은 대상 플로우 미구현.
   showAlert('준비 중입니다')
 }
 
@@ -753,11 +825,7 @@ onMounted(() => {
   color: var(--color-text-primary);
   font-variant-numeric: tabular-nums;
   font-family:
-    -apple-system,
-    BlinkMacSystemFont,
-    'Apple SD Gothic Neo',
-    'Pretendard',
-    'Noto Sans KR',
+    -apple-system, BlinkMacSystemFont, 'Apple SD Gothic Neo', 'Pretendard', 'Noto Sans KR',
     sans-serif;
 }
 

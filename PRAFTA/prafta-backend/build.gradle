@@ -61,4 +61,9 @@ dependencies {
     // PRAFTA-036 — 사용자 일괄 생성 엑셀(.xlsx) 양식 다운로드/업로드.
     // poi-ooxml 은 poi(core)와 poi-ooxml-lite(스키마 일부) 를 transitively 가져온다.
     implementation 'org.apache.poi:poi-ooxml:5.2.5'
+
+    // PRAFTA-COM-002 — FCM 공용 PUSH 전송 워커(consumer).
+    // Firebase Admin SDK(Java). grpc/guava 등 transitive 의존이 다수 유입되어 첫 빌드시간이 길어질 수 있음.
+    // FCM 호출은 FcmClient 래퍼에만 격리한다. 키 부재/게이트 off 시 초기화하지 않아 부팅 영향 0.
+    implementation 'com.google.firebase:firebase-admin:9.4.3'
 }

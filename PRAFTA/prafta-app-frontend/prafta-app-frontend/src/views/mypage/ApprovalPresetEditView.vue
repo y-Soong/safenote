@@ -83,11 +83,7 @@
           </p>
 
           <!-- 결재자 행 -->
-          <div
-            v-for="(approver, idx) in approvers"
-            :key="approver.userCd"
-            class="ed-row"
-          >
+          <div v-for="(approver, idx) in approvers" :key="approver.userCd" class="ed-row">
             <span class="ed-row__seq" aria-hidden="true">{{ idx + 1 }}</span>
             <div class="ed-row__info">
               <p class="ed-row__name">{{ approver.userNm }}</p>
@@ -101,7 +97,9 @@
                 :disabled="idx === 0"
                 @click="onMoveUp(idx)"
               >
-                <svg class="icon" width="18" height="18" aria-hidden="true"><use href="#i-ed-up" /></svg>
+                <svg class="icon" width="18" height="18" aria-hidden="true">
+                  <use href="#i-ed-up" />
+                </svg>
               </button>
               <button
                 type="button"
@@ -110,7 +108,9 @@
                 :disabled="idx === approvers.length - 1"
                 @click="onMoveDown(idx)"
               >
-                <svg class="icon" width="18" height="18" aria-hidden="true"><use href="#i-ed-down" /></svg>
+                <svg class="icon" width="18" height="18" aria-hidden="true">
+                  <use href="#i-ed-down" />
+                </svg>
               </button>
               <button
                 type="button"
@@ -118,14 +118,18 @@
                 aria-label="삭제"
                 @click="onRemoveApprover(idx)"
               >
-                <svg class="icon" width="18" height="18" aria-hidden="true"><use href="#i-ed-x" /></svg>
+                <svg class="icon" width="18" height="18" aria-hidden="true">
+                  <use href="#i-ed-x" />
+                </svg>
               </button>
             </div>
           </div>
 
           <!-- 결재자 추가 (dashed) -->
           <button type="button" class="ed-add" @click="onAddApprover">
-            <svg class="icon" width="18" height="18" aria-hidden="true"><use href="#i-ed-plus" /></svg>
+            <svg class="icon" width="18" height="18" aria-hidden="true">
+              <use href="#i-ed-plus" />
+            </svg>
             결재자 추가
           </button>
         </div>
@@ -156,24 +160,74 @@
     <!-- 인라인 SVG sprite -->
     <svg width="0" height="0" class="ed-sprite" aria-hidden="true" focusable="false">
       <defs>
-        <symbol id="i-ed-chev-left" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <symbol
+          id="i-ed-chev-left"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="2"
+          stroke-linecap="round"
+          stroke-linejoin="round"
+        >
           <polyline points="15 18 9 12 15 6" />
         </symbol>
-        <symbol id="i-ed-trash" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <symbol
+          id="i-ed-trash"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="2"
+          stroke-linecap="round"
+          stroke-linejoin="round"
+        >
           <polyline points="3 6 5 6 21 6" />
-          <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
+          <path
+            d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"
+          />
         </symbol>
-        <symbol id="i-ed-up" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <symbol
+          id="i-ed-up"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="2"
+          stroke-linecap="round"
+          stroke-linejoin="round"
+        >
           <polyline points="18 15 12 9 6 15" />
         </symbol>
-        <symbol id="i-ed-down" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <symbol
+          id="i-ed-down"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="2"
+          stroke-linecap="round"
+          stroke-linejoin="round"
+        >
           <polyline points="6 9 12 15 18 9" />
         </symbol>
-        <symbol id="i-ed-x" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <symbol
+          id="i-ed-x"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="2"
+          stroke-linecap="round"
+          stroke-linejoin="round"
+        >
           <line x1="18" y1="6" x2="6" y2="18" />
           <line x1="6" y1="6" x2="18" y2="18" />
         </symbol>
-        <symbol id="i-ed-plus" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <symbol
+          id="i-ed-plus"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="2"
+          stroke-linecap="round"
+          stroke-linejoin="round"
+        >
           <line x1="12" y1="5" x2="12" y2="19" />
           <line x1="5" y1="12" x2="19" y2="12" />
         </symbol>
@@ -244,7 +298,7 @@ const currentSnapshot = computed(() =>
     presetNm: presetNm.value,
     isDefault: isDefault.value,
     userCds: approvers.value.map((a) => a.userCd),
-  })
+  }),
 )
 const isDirty = computed(() => initialSnapshot.value !== currentSnapshot.value)
 
@@ -261,14 +315,12 @@ const metaOf = (approver) => {
 const forceDefaultOn = computed(() => !isEditMode.value && isFirstPreset.value)
 
 const defaultHelperText = computed(() =>
-  forceDefaultOn.value
-    ? '첫 프리셋은 자동으로 기본이 됩니다'
-    : '연차 신청 시 자동 적용됩니다.'
+  forceDefaultOn.value ? '첫 프리셋은 자동으로 기본이 됩니다' : '연차 신청 시 자동 적용됩니다.',
 )
 
 // 저장 가능: 이름 1자+ AND 결재자 1명+ (본인 미포함/중복 없음은 서버 검증 + developer 보완)
 const canSave = computed(
-  () => !!presetNm.value && !!presetNm.value.trim() && approvers.value.length > 0
+  () => !!presetNm.value && !!presetNm.value.trim() && approvers.value.length > 0,
 )
 
 // ───────────────────────────────────────────────────────────
@@ -400,7 +452,7 @@ onMounted(async () => {
     if (isEditMode.value) {
       // 수정: 상세 조회 후 폼 주입.
       const { data } = await api.get(
-        `/appApi/mypage/approval-presets/${encodeURIComponent(presetId.value)}`
+        `/appApi/mypage/approval-presets/${encodeURIComponent(presetId.value)}`,
       )
       presetNm.value = data?.presetNm || ''
       isDefault.value = data?.defaultYn === 'Y'

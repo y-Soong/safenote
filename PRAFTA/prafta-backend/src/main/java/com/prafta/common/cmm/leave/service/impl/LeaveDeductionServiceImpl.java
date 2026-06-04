@@ -132,4 +132,30 @@ public class LeaveDeductionServiceImpl implements LeaveDeductionService {
         }
         return startMin < be && bs < endMin;
     }
+
+    @Override
+    public boolean withinScheduledWorkHours(String cmpnyCd, String siteCd, String userCd, String workYmd,
+                                            int startMin, int endMin) {
+        if (startMin >= endMin) {
+            return false;
+        }
+        DailyScheduleVO sch = leaveDeductionMapper.selectDailySchedule(cmpnyCd, siteCd, userCd, workYmd);
+        if (sch == null) {
+            // 스케줄(근무시간) 자체가 없으면 시간차 신청 불가 → 포함 아님.
+            return false;
+        }
+        return containedInWork(startMin, endMin, sch.getFstSchStrTime(), sch.getFstSchEndTime())
+                || containedInWork(startMin, endMin, sch.getSecSchStrTime(), sch.getSecSchEndTime());
+    }
+
+    /** 신청 구간 [startMin,endMin] 이 근무구간 [schStr,schEnd] 에 완전히 포함되면 true. 구간 미설정이면 false. 야간(종료≤시작)은 +1440 보정. */
+    private boolean containedInWork(int startMin, int endMin, String schStr, String schEnd) {
+        Integer s = DateTimeUtils.hhmmToMinutes(schStr);
+        Integer e = DateTimeUtils.hhmmToMinutes(schEnd);
+        if (s == null || e == null) {
+            return false;
+        }
+        int end = (e <= s) ? e + MINUTES_PER_DAY : e; // 야간 자정 넘김 보정
+        return startMin >= s && endMin <= end;
+    }
 }

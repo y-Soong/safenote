@@ -306,13 +306,75 @@
                     {{ autoGrantInfoMsg }}
                   </p>
                 </div>
+                <div class="form-grid auto-grant-rule">
+                  <div class="form-item">
+                    <label>사용단위 <span class="required">*</span></label>
+                    <select v-model="useUnitType" :disabled="isEditMode">
+                      <option
+                        v-for="opt in (systCodeArr['SYS025'] || []).filter(
+                          (o) => o.systValDCd != null
+                        )"
+                        :key="opt.systValDCd"
+                        :value="opt.systValDCd"
+                      >
+                        {{ opt.systValDNm }}
+                      </option>
+                    </select>
+                  </div>
+                  <div class="form-item">
+                    <label>사용 가능기간 (선택)</label>
+                    <select v-model="adminAvailTermType" :disabled="isEditMode">
+                      <option
+                        v-for="opt in (systCodeArr['SYS026'] || []).filter(
+                          (o) => o.systValDCd != null
+                        )"
+                        :key="opt.systValDCd"
+                        :value="opt.systValDCd"
+                      >
+                        {{ opt.systValDNm }}
+                      </option>
+                    </select>
+                  </div>
+                  <div
+                    v-if="adminAvailTermType === '03'"
+                    class="form-item full-width"
+                  >
+                    <label>기간 설정</label>
+                    <div class="period-date-range">
+                      <div class="period-date-calendar">
+                        <CalendarSrch
+                          v-model="adminAvailFromDt"
+                          :readonly="isEditMode"
+                        />
+                      </div>
+                      <span class="period-date-sep">~</span>
+                      <div class="period-date-calendar">
+                        <CalendarSrch
+                          v-model="adminAvailToDt"
+                          :readonly="isEditMode"
+                        />
+                      </div>
+                    </div>
+                  </div>
+                </div>
               </div>
               <!-- 관리자 부여 타입 - 수동 부여 -->
               <div v-else class="form-grid">
-                <div
-                  class="form-item"
-                  :class="{ 'full-width': adminAvailTermType !== '03' }"
-                >
+                <div class="form-item">
+                  <label>사용단위 <span class="required">*</span></label>
+                  <select v-model="useUnitType" :disabled="isEditMode">
+                    <option
+                      v-for="opt in (systCodeArr['SYS025'] || []).filter(
+                        (o) => o.systValDCd != null
+                      )"
+                      :key="opt.systValDCd"
+                      :value="opt.systValDCd"
+                    >
+                      {{ opt.systValDNm }}
+                    </option>
+                  </select>
+                </div>
+                <div class="form-item">
                   <label>사용 가능기간 (선택)</label>
                   <select v-model="adminAvailTermType" :disabled="isEditMode">
                     <option
@@ -532,6 +594,20 @@ const toMMDD = (val) => {
   return String(val).replace(/\D/g, "").slice(0, 4);
 };
 
+// prafta-044-FU2: 관리자 부여 사용기간(절대 날짜) 변환
+// CalendarSrch 네이티브(YYYY-MM-DD) -> 저장 payload(YYYYMMDD 8자)
+const toYmd8 = (val) => {
+  if (!val) return "";
+  return String(val).replace(/\D/g, "").slice(0, 8);
+};
+// DB 저장값(YYYYMMDD 8자) -> CalendarSrch 채우기(YYYY-MM-DD)
+const fromYmd8 = (val) => {
+  if (!val) return null;
+  const s = String(val).replace(/\D/g, "");
+  if (s.length !== 8) return null;
+  return `${s.slice(0, 4)}-${s.slice(4, 6)}-${s.slice(6, 8)}`;
+};
+
 const canSave = computed(() => {
   if (!leaveNo.value.trim() || !leaveNm.value.trim()) return false;
   if (leaveType.value === "01") {
@@ -543,16 +619,22 @@ const canSave = computed(() => {
       if (from > to) return false;
     }
   }
-  if (
-    leaveType.value === "02" &&
-    grantType.value === "02" &&
-    adminAvailTermType.value === "03"
-  ) {
-    if (!adminAvailFromDt.value || !adminAvailToDt.value) return false;
-    if (adminAvailFromDt.value > adminAvailToDt.value) return false;
+  if (leaveType.value === "02" && grantType.value === "02") {
+    // 관리자 수동부여: 사용단위 필수 (소비 단위 결정 출처)
+    if (!useUnitType.value) return false;
+    if (adminAvailTermType.value === "03") {
+      if (!adminAvailFromDt.value || !adminAvailToDt.value) return false;
+      if (adminAvailFromDt.value > adminAvailToDt.value) return false;
+    }
   }
   if (leaveType.value === "02" && grantType.value === "01") {
-    // 관리자 부여 + 자동 부여: 정책서 §8.1.2에 따라 기준일별 cross-field 검증
+    // 관리자 부여 + 자동 부여: 사용단위 필수 (수동부여와 동일, 소비 단위 출처)
+    if (!useUnitType.value) return false;
+    if (adminAvailTermType.value === "03") {
+      if (!adminAvailFromDt.value || !adminAvailToDt.value) return false;
+      if (adminAvailFromDt.value > adminAvailToDt.value) return false;
+    }
+    // 정책서 §8.1.2에 따라 기준일별 cross-field 검증
     if (grantBaseType.value === "01" || grantBaseType.value === "02") {
       // 입사일/생일 기준: 실행시점 개월수 1-11 필수
       const m = Number(grantOffsetMonth.value);
@@ -645,8 +727,9 @@ const fnGetSystinfoList = async () => {
           r.adminAvailTermType ??
           firstValid("SYS026") ??
           adminAvailTermType.value;
-        adminAvailFromDt.value = r.adminAvailFromDt ?? adminAvailFromDt.value;
-        adminAvailToDt.value = r.adminAvailToDt ?? adminAvailToDt.value;
+        // prafta-044-FU2: DB는 YYYYMMDD 8자 → CalendarSrch가 받는 YYYY-MM-DD로 변환
+        adminAvailFromDt.value = fromYmd8(r.adminAvailFromDt) ?? adminAvailFromDt.value;
+        adminAvailToDt.value = fromYmd8(r.adminAvailToDt) ?? adminAvailToDt.value;
         // 자동 부여 기준일, 실행시점
         grantBaseType.value =
           r.grantBaseType ?? firstValid("SYS027") ?? grantBaseType.value;
@@ -721,8 +804,11 @@ const fnSave = async () => {
       // 사용자 신청 타입
       // 최대 신청일수 (사용자 신청 타입)
       maxAplyDays: leaveType.value === "01" ? maxAplyDays.value : null,
-      // 연차 사용 단위
-      useUnitType: leaveType.value === "01" ? useUnitType.value : null,
+      // 연차 사용 단위 (사용자 신청 + 관리자 부여 전체(자동/수동) 입력값 전송)
+      useUnitType:
+        leaveType.value === "01" || leaveType.value === "02"
+          ? useUnitType.value
+          : null,
       // 사용가능기간
       availTermType: leaveType.value === "01" ? availTermType.value : null,
       // 기간설정 시작일 (사용자 신청) MMDD 4자리
@@ -736,25 +822,19 @@ const fnSave = async () => {
           ? toMMDD(availToDt.value)
           : null,
 
-      // 관리자 부여 타입 (수동부여)
+      // 관리자 부여 타입 (자동/수동 공통)
       // 사용가능기간
       adminAvailTermType:
-        leaveType.value === "02" && grantType.value === "02"
-          ? adminAvailTermType.value
-          : null,
-      // 기간설정 시작일
+        leaveType.value === "02" ? adminAvailTermType.value : null,
+      // 기간설정 시작일 (절대 날짜 YYYYMMDD 8자, prafta-044-FU2)
       adminAvailFromDt:
-        leaveType.value === "02" &&
-        grantType.value === "02" &&
-        adminAvailTermType.value === "03"
-          ? adminAvailFromDt.value
+        leaveType.value === "02" && adminAvailTermType.value === "03"
+          ? toYmd8(adminAvailFromDt.value)
           : null,
-      // 기간설정 종료일
+      // 기간설정 종료일 (절대 날짜 YYYYMMDD 8자, prafta-044-FU2)
       adminAvailToDt:
-        leaveType.value === "02" &&
-        grantType.value === "02" &&
-        adminAvailTermType.value === "03"
-          ? adminAvailToDt.value
+        leaveType.value === "02" && adminAvailTermType.value === "03"
+          ? toYmd8(adminAvailToDt.value)
           : null,
 
       // 관리자 부여 타입 (자동부여)
@@ -787,8 +867,6 @@ const fnSave = async () => {
       evidenceGuideMsg:
         evidenceYn.value === "Y" ? evidenceGuideMsg.value : null,
     };
-
-    console.log(payload);
 
     await axios.post("/webApi/attd03/update-leave-types", payload);
 
@@ -1166,6 +1244,10 @@ onMounted(async () => {
 
 .admin-grant-auto {
   width: 100%;
+}
+
+.auto-grant-rule {
+  margin-top: 1rem;
 }
 
 .auto-grant-panel {

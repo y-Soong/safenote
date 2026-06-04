@@ -30,4 +30,13 @@ public class AttdCorrectionRequest {
 
     /** 보정 사유 (필수, 최대 500자). */
     private String reqReason;
+
+    /**
+     * prafta-app-009: 'N' 결재선 결재자 순서 목록(1차). 비면 presetId 폴백.
+     * 'Y'/즉시승인 케이스에서는 무시/빈 허용(서버가 노드 SELF_ATTD_APPRV_YN 으로 분기).
+     */
+    private List<String> approverUserCds;
+
+    /** prafta-app-009: approverUserCds 가 비었을 때 전개할 본인 소유 프리셋 ID(없으면 null). */
+    private String presetId;
 }

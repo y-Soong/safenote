@@ -11,12 +11,12 @@ import java.util.List;
  * <p>본 record는 attd09 모듈의 Param에서 변환되어 {@code LeaveDashboardService}로 전달된다.
  * 회사 코드/권한/수행자는 별도 인자로 전달하므로 본 record에는 포함하지 않는다.
  *
- * <p>입력 검증(일수 0.5 단위/양수, 날짜 8자리, leaveCd 화이트리스트)은 서비스 계층에서
+ * <p>입력 검증(일수 1일 단위 정수/양수, 날짜 8자리, leaveCd 화이트리스트)은 서비스 계층에서
  * 서버 권위로 재수행한다(프론트 1차 검증은 게이트일 뿐).
  *
  * @param userCds        대상 사용자 코드 목록 (단일=1건, 일괄=N건). 직원당 1건 INSERT.
  * @param leaveCd        연차 코드 (수동 부여 가능 휴가 종류 화이트리스트 내에서만 허용)
- * @param grantDays      부여 일수 (양수, 0.5일 단위)
+ * @param grantDays      부여 일수 (양수, 1일 단위 정수)
  * @param availFromDate  사용 가능 시작일 (YYYYMMDD)
  * @param reason         부여 사유 (GRANT_REASON, NULL 허용)
  */

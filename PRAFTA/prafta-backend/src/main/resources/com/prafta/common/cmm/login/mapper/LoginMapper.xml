@@ -231,7 +231,21 @@
     SELECT CONCAT(DATE_FORMAT(NOW(), '%Y%m'), FNC_CMM_SEQ_NEXTVAL(#{cmpnyCd}, 'USER_CD'))
     FROM DUAL
     </select>
-    
+
+    <!-- PRAFTA-046: 노드에 정/부 관리자가 존재하면 1, 아니면(노드 미존재 포함) 0. -->
+    <select id="selectNodeHasAdmin" resultType="int">
+    /* LoginMapper.selectNodeHasAdmin */
+    SELECT COUNT(1)
+    FROM TB_SITE_NODE A
+    WHERE A.CMPNY_CD = #{cmpnyCd}
+      AND A.SITE_CD  = #{siteCd}
+      AND A.NODE_CD  = #{nodeCd}
+      AND (
+            NULLIF(TRIM(A.MAIN_ADMIN_CD), '') IS NOT NULL
+         OR NULLIF(TRIM(A.SUB_ADMIN_CD), '')  IS NOT NULL
+          )
+    </select>
+
     <insert id="insertUserInfo" parameterType="com.prafta.common.cmm.login.application.command.UserJoinCommand">
     /* LoginMapper.insertUserInfo */
     INSERT INTO TB_USER (
@@ -419,4 +433,87 @@
 	WHERE 1=1
 	  AND TERMS_ID = #{systValDCd}
     </update>
+
+    <!-- ====================================================================
+         prafta-com-003 C3 — 로그인 성공 시 디바이스 식별/이력 적재(부정탐지 baseline).
+         deviceUuid/메타는 클라 제공값(신뢰경계 밖). loginIp 는 서버 추출 IP.
+         호출은 LoginServiceImpl 에서 try-catch 격리되어 적재 실패가 로그인을 막지 않는다.
+         ==================================================================== -->
+
+    <!-- tb_user_device(현재 상태 1행, PK DEVICE_UUID) upsert.
+         재로그인 시 USER_CD/메타/LAST_LOGIN_* 갱신 + DEL_YN='N' 회복(com-002 soft-delete 되살림).
+         DEVICE_TYPE 은 NOT NULL 이므로 미주입(null) 시 'UNKNOWN' 으로 폴백한다(웹/구버전 앱 호환). -->
+    <insert id="upsertUserDevice" parameterType="com.prafta.common.cmm.login.application.command.DeviceLoginCommand">
+    /* LoginMapper.upsertUserDevice */
+    INSERT INTO TB_USER_DEVICE (
+          DEVICE_UUID
+        , USER_CD
+        , DEVICE_TYPE
+        , DEVICE_MODEL
+        , OS_VERSION
+        , APP_VERSION
+        , LAST_LOGIN_DTIME
+        , LAST_LOGIN_IP
+        , DEL_YN
+        , INSERT_NO
+        , INSERT_DATE
+    ) VALUES (
+          #{deviceUuid}
+        , #{userCd}
+        , IFNULL(#{deviceType}, 'UNKNOWN')
+        , #{deviceModel}
+        , #{osVersion}
+        , #{appVersion}
+        , NOW()
+        , #{loginIp}
+        , 'N'
+        , #{insertNo}
+        , NOW()
+    )
+    ON DUPLICATE KEY UPDATE
+          USER_CD          = VALUES(USER_CD)
+        , DEVICE_TYPE      = VALUES(DEVICE_TYPE)
+        , DEVICE_MODEL     = VALUES(DEVICE_MODEL)
+        , OS_VERSION       = VALUES(OS_VERSION)
+        , APP_VERSION      = VALUES(APP_VERSION)
+        , LAST_LOGIN_DTIME = VALUES(LAST_LOGIN_DTIME)
+        , LAST_LOGIN_IP    = VALUES(LAST_LOGIN_IP)
+        , DEL_YN           = 'N'
+        , UPDATE_NO        = #{insertNo}
+        , UPDATE_DATE      = NOW()
+    </insert>
+
+    <!-- tb_user_device_login_hist(append-only) INSERT. PK 는 회사별 시퀀스 채번(selectUserCd 패턴 동일). -->
+    <insert id="insertDeviceLoginHist" parameterType="com.prafta.common.cmm.login.application.command.DeviceLoginCommand">
+    /* LoginMapper.insertDeviceLoginHist */
+    INSERT INTO TB_USER_DEVICE_LOGIN_HIST (
+          DEVICE_LOGIN_NO
+        , CMPNY_CD
+        , DEVICE_UUID
+        , USER_CD
+        , DEVICE_TYPE
+        , DEVICE_MODEL
+        , OS_VERSION
+        , APP_VERSION
+        , CLIENT_TYPE
+        , LOGIN_IP
+        , LOGIN_DTIME
+        , INSERT_NO
+        , INSERT_DATE
+    ) VALUES (
+          CONCAT(DATE_FORMAT(NOW(), '%Y%m'), FNC_CMM_SEQ_NEXTVAL(#{cmpnyCd}, 'DEVICE_LOGIN_NO'))
+        , #{cmpnyCd}
+        , #{deviceUuid}
+        , #{userCd}
+        , #{deviceType}
+        , #{deviceModel}
+        , #{osVersion}
+        , #{appVersion}
+        , #{clientType}
+        , #{loginIp}
+        , NOW()
+        , #{insertNo}
+        , NOW()
+    )
+    </insert>
 </mapper>

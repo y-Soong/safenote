@@ -111,7 +111,8 @@
           <!-- 생성 모드 안내: 초기 비밀번호는 휴대폰번호이며, 첫 로그인 시 본인인증이 필요함(D2/D3). -->
           <p class="leave-section-hint" v-if="isCreate">
             ⓘ 초기 비밀번호는 입력하신 휴대폰번호(하이픈 제외)로 설정됩니다.<br />
-            계정 상태는 <strong>'인증대기'</strong>이며, 첫 로그인 시 휴대폰 본인인증을 통과하면 활성화됩니다.
+            계정 상태는 <strong>'인증대기'</strong>이며, 첫 로그인 시 휴대폰
+            본인인증을 통과하면 활성화됩니다.
           </p>
 
           <div class="form-row-max">
@@ -177,7 +178,10 @@
             </BaseSelect>
           </div>
 
-          <div class="form-row-max" v-if="isCreate && employmentType === 'CONTRACT'">
+          <div
+            class="form-row-max"
+            v-if="isCreate && employmentType === 'CONTRACT'"
+          >
             <label>계약종료일</label>
             <input
               v-model="contractEndDateInput"
@@ -228,9 +232,15 @@
                     class="site-chip-remove"
                     @click="fnRemoveAdditionalSite(idx)"
                     aria-label="삭제"
-                  >×</button>
+                  >
+                    ×
+                  </button>
                 </span>
-                <span v-if="additionalSites.length === 0" class="site-chip-empty">없음</span>
+                <span
+                  v-if="additionalSites.length === 0"
+                  class="site-chip-empty"
+                  >없음</span
+                >
               </div>
               <button
                 type="button"

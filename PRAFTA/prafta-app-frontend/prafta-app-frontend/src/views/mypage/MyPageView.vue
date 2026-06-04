@@ -94,13 +94,37 @@
     <!-- 인라인 SVG sprite (본 화면 전용) -->
     <svg width="0" height="0" class="mp-sprite" aria-hidden="true" focusable="false">
       <defs>
-        <symbol id="i-mp-chev-right" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <symbol
+          id="i-mp-chev-right"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="2"
+          stroke-linecap="round"
+          stroke-linejoin="round"
+        >
           <polyline points="9 18 15 12 9 6" />
         </symbol>
-        <symbol id="i-mp-chev-left" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <symbol
+          id="i-mp-chev-left"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="2"
+          stroke-linecap="round"
+          stroke-linejoin="round"
+        >
           <polyline points="15 18 9 12 15 6" />
         </symbol>
-        <symbol id="i-mp-logout" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <symbol
+          id="i-mp-logout"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="2"
+          stroke-linecap="round"
+          stroke-linejoin="round"
+        >
           <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" />
           <polyline points="16 17 21 12 16 7" />
           <line x1="21" y1="12" x2="9" y2="12" />
@@ -218,7 +242,8 @@ const onWithdrawConfirm = async () => {
     }
     router.replace('/')
   } catch (e) {
-    const msg = e?.response?.data?.message || '탈퇴 처리 중 문제가 발생했어요. 잠시 후 다시 시도해 주세요.'
+    const msg =
+      e?.response?.data?.message || '탈퇴 처리 중 문제가 발생했어요. 잠시 후 다시 시도해 주세요.'
     showAlert(msg)
   } finally {
     isWithdrawing.value = false

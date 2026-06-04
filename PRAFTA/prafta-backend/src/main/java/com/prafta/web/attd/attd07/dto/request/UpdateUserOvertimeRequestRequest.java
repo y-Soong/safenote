@@ -17,7 +17,6 @@ import lombok.Setter;
  *
  * Each element of {@link #overtimes} represents one OT segment. Validation:
  *   - all four (startDate/startTime/endDate/endTime) must be present and formatted.
- *   - otType must be EXTEND / NIGHT / HOLIDAY.
  *   - server-side will additionally enforce the "allowed window" rule
  *     (overtime is only allowed in standardized-work-time minus scheduled-time).
  */

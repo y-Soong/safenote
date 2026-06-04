@@ -21,6 +21,11 @@ const getRouter = async () => {
 /**
  * Device ID 가져오기 (APP 고유 — localStorage에 영속, 로그아웃에도 유지).
  * 백엔드 인증/리프레시/로그아웃 흐름이 gv_deviceId를 사용한다.
+ *
+ * prafta-com-003 C4: 네이티브 deviceId 우선 — utils/deviceBridge.requestDeviceInfo() 가
+ * 네이티브(Flutter) ANDROID_ID/IDFV 를 받으면 localStorage('gv_deviceId')를 그 값으로
+ * 덮어쓴다. 따라서 여기서 localStorage 값을 그대로 읽으면 네이티브값이 우선되고,
+ * 브리지 미동작(웹 디버그)/취득 실패 시에는 기존 클라 생성 UUID 폴백이 유지된다.
  */
 function getDeviceId() {
   if (typeof window === 'undefined') return ''
@@ -54,9 +59,7 @@ const api = axios.create({
  * - errorCode가 없으면 보수적으로 토큰 에러로 간주한다 (기존 동작 유지).
  */
 function isTokenError(errorCode) {
-  return (
-    !errorCode || errorCode === 'COMMON_400_600' || String(errorCode).startsWith('AUTH_')
-  )
+  return !errorCode || errorCode === 'COMMON_400_600' || String(errorCode).startsWith('AUTH_')
 }
 
 /** 강제 로그아웃 + 로그인 페이지 이동 (인터셉터 내부에서 일관 사용). */
@@ -138,7 +141,7 @@ api.interceptors.request.use(
       console.error('[AXIOS] error log :', err)
     }
     return Promise.reject(error)
-  }
+  },
 )
 
 // 응답 인터셉터
@@ -215,10 +218,10 @@ api.interceptors.response.use(
       status,
       error?.message,
       error?.config?.method,
-      error?.config?.url
+      error?.config?.url,
     )
     return Promise.reject(error)
-  }
+  },
 )
 
 export default api

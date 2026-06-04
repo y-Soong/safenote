@@ -2,6 +2,7 @@ package com.prafta.web.attd.attd07.service;
 
 import com.prafta.web.attd.attd07.application.param.DailyAttdDetailDeleteParam;
 import com.prafta.web.attd.attd07.application.param.DailyAttdDetailsParam;
+import com.prafta.web.attd.attd07.application.param.ApproveSchedModifyRequestParam;
 import com.prafta.web.attd.attd07.application.param.MonthlyAttdListParam;
 import com.prafta.web.attd.attd07.application.param.RejectUserAttdRequestParam;
 import com.prafta.web.attd.attd07.application.param.RejectUserOvertimeRequestParam;
@@ -50,4 +51,24 @@ public interface Attd07Service {
      * specified work day. PRAFTA-003.
      */
     void updateUserOvertimeRequests(UpdateUserOvertimeRequestParam param);
+
+    /**
+     * PRAFTA-APP-007 - 스케줄 수정 요청(REQ_TYPE='10')을 승인한다.
+     *
+     * 근태 승인(updateUserAttdRequest)과 동일한 권위 검증(REQ row 로더 / REQ_TYPE 가드 /
+     * 매니저 게이트 / 마감 가드 / 신청('01') 상태 가드 / body-REQ 변조검증 / 대상 사용자 scope)을
+     * 거친 뒤, REQ row 의 SCH_CD 를 권위 값으로 tb_user_work_plan 의 WORK_PLAN_CD 한 칸을
+     * upsert 하고 TB_USER_ATTD_REQ 를 승인('02') 상태로 전이한다. 처리 이력(HIST)은 남기지 않는다(D3).
+     */
+    void approveSchedModifyRequest(ApproveSchedModifyRequestParam param);
+
+    /**
+     * PRAFTA-APP-007 - 스케줄 수정 요청(REQ_TYPE='10')을 반려한다.
+     *
+     * 승인과 동일한 권위 검증을 거치되 tb_user_work_plan 은 일절 건드리지 않고(D4),
+     * TB_USER_ATTD_REQ 를 반려('03') 상태로 전이하며 처리자 / 반려사유(필수) / 처리일시를
+     * 기록한다. 처리 이력(HIST)은 남기지 않는다(D3). 반려 DTO/Param/Command 는 근태 반려와
+     * 공유한다(RejectUserAttdRequest*).
+     */
+    void rejectSchedModifyRequest(RejectUserAttdRequestParam param);
 }

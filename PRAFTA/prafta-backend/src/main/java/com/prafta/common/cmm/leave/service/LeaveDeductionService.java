@@ -49,4 +49,17 @@ public interface LeaveDeductionService {
      */
     boolean crossesBreak(String cmpnyCd, String siteCd, String userCd, String workYmd,
                          int startMin, int endMin);
+
+    /**
+     * 신청 시간대 {@code [startMin, endMin]}가 그날 스케줄의 정규 근무구간(1구간 또는 2구간) 안에
+     * 완전히 포함되는지 판정한다. 시간차 연차는 "근무하는 시간"에서만 신청 가능하므로, 근무구간 밖
+     * (예: 스케줄 07:00~15:00 인데 03:00~04:30 신청)은 거부 대상이다.
+     *
+     * <p>1구간 또는 2구간 중 한 구간에 {@code [start,end]}가 완전히 포함되면 {@code true}.
+     * 스케줄이 없으면(근무시간 자체가 없음) {@code false}. 야간(종료&le;시작) 구간은 종료를 +1440 보정한다.
+     *
+     * @return 어느 근무구간에도 완전히 포함되지 않으면 {@code false}.
+     */
+    boolean withinScheduledWorkHours(String cmpnyCd, String siteCd, String userCd, String workYmd,
+                                     int startMin, int endMin);
 }

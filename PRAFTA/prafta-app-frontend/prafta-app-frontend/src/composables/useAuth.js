@@ -80,7 +80,7 @@ export async function performServerLogout(refreshToken) {
     await plain.post(
       '/comApi/login/logout',
       { refreshToken: rt },
-      { headers: { 'X-Client-Type': 'APP' } }
+      { headers: { 'X-Client-Type': 'APP' } },
     )
   } catch (e) {
     // 서버 로그아웃 실패는 무시 (클라이언트 정리는 별도로 수행됨)
@@ -111,7 +111,7 @@ export async function refreshAccessToken() {
       const res = await plain.post(
         '/comApi/auth/refresh',
         { refreshToken: rt },
-        { headers: { 'X-Client-Type': 'APP' } }
+        { headers: { 'X-Client-Type': 'APP' } },
       )
       const newToken = res.data?.token
       if (!newToken) throw new Error('NO_TOKEN_IN_REFRESH_RESPONSE')

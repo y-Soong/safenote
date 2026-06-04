@@ -11,10 +11,13 @@ import com.prafta.web.attd.attd07.application.command.InsertUserOvertimeCommand;
 import com.prafta.web.attd.attd07.application.command.RejectUserAttdRequestCommand;
 import com.prafta.web.attd.attd07.application.command.UpdateUserAttdInfosCommand;
 import com.prafta.web.attd.attd07.application.command.UpdateUserAttdRequestCommand;
+import com.prafta.web.attd.attd07.application.command.UpsertUserWorkPlanCommand;
 import com.prafta.web.attd.attd07.application.query.DailyAttdDetailsQuery;
 import com.prafta.web.attd.attd07.application.query.MonthlyAttdListQuery;
 import com.prafta.web.attd.attd07.application.query.OvertimeAllowedWindowQuery;
 import com.prafta.web.attd.attd07.result.AllowedWindowResult;
+import com.prafta.web.attd.attd07.result.AttdSnapshotResult;
+import com.prafta.web.attd.attd07.result.ConfirmedLeaveResult;
 import com.prafta.web.attd.attd07.result.DailyAttdDetailHistoryResult;
 import com.prafta.web.attd.attd07.result.DailyAttdDetailsResult;
 import com.prafta.web.attd.attd07.result.DailyOvertimeResult;
@@ -55,7 +58,34 @@ public interface Attd07Mapper {
     /** PRAFTA: 연차(05/06) 승인/반려 처리 이력 — 결재라인 기준. 일자 상세 '처리 이력'에 병합 노출. */
     List<DailyAttdDetailHistoryResult> selectDailyLeaveApprovalHistory(DailyAttdDetailsQuery query);
 
+    /**
+     * PRAFTA-APP-007-WEB-6 + D15 - 스케줄 수정(REQ_TYPE='10') 처리된 요청(승인 '02'/반려 '03')을
+     * 일자 상세 '처리 이력'에 노출. TB_USER_ATTD_REQ 직접 조회(결재라인 미사용 — 매니저 모델).
+     * 승인 행은 PROCESS_COMMENT 마커에서 변경 전 스케줄 코드를 추출해 변경 전/후 원시 시각을 함께 내린다.
+     * (승인 마커는 사용자 노출 금지 → processReason NULL.)
+     */
+    List<DailyAttdDetailHistoryResult> selectDailySchedModifyHistory(DailyAttdDetailsQuery query);
+
+    /**
+     * PRAFTA-APP-007 D15 - 스케줄 수정 승인 직전 현재 근무계획 코드(WORK_PLAN_CD) 조회.
+     * upsert 로 덮어쓰기 전에 "변경 전 스케줄"을 캡처해 PROCESS_COMMENT 마커에 직렬화하기 위함.
+     * 해당 일자에 근무계획이 없으면 null(변경 전 없음).
+     */
+    String selectUserWorkPlanCd(
+            @Param("gvCmpnyCd") String gvCmpnyCd,
+            @Param("siteCd") String siteCd,
+            @Param("userCd") String userCd,
+            @Param("workYmd") String workYmd);
+
     List<MonthlyAttdReqResult> selectMonthlyAttdReq(DailyAttdDetailsQuery query);
+
+    /**
+     * PRAFTA-APP-018-F - 그날(workYmd) 확정 연차 사용내역(TB_USER_LEAVE_USE, CONFIRMED).
+     *   결재 유무 무관. 단, 미처리(01) 결재대기분은 D 의 '근로자 요청' 카드가 소유하므로 제외(이중표시 방지).
+     *   자동확정(02)/직접 적용(REQ_ID NULL)/직접 사용분만 표시 전용 섹션에 내린다.
+     *   스코프는 일자상세와 동일(CMPNY/SITE/USER), 진입부 2단 권한 가드 승계.
+     */
+    List<ConfirmedLeaveResult> selectDailyConfirmedLeave(DailyAttdDetailsQuery query);
 
     /**
      * PRAFTA-003-6: 일자 상세 조회 시 함께 노출되는 OT(초과근무) 리스트.
@@ -66,6 +96,14 @@ public interface Attd07Mapper {
 
     /** ATTD_ID 의 근무일자(WORK_YMD) 조회 — 마감 가드용 (PRAFTA-028). */
     String selectAttdWorkYmd(@Param("gvCmpnyCd") String gvCmpnyCd, @Param("attdId") String attdId);
+
+    /**
+     * 승인 처리 직전 근태(MGMT) 현재 출퇴근 스냅샷 조회 — 처리 이력 "변경 전(BEF_*)" 을
+     * 서버 권위 데이터로 채우기 위한 용도(감사 무결성). 기존 행이 없으면(생성요청) null.
+     */
+    AttdSnapshotResult selectAttdSnapshotById(
+            @Param("gvCmpnyCd") String gvCmpnyCd,
+            @Param("attdId") String attdId);
 
     void dailyAttdDetailDelete(DailyAttdDetailDeleteCommand command);
 
@@ -118,6 +156,31 @@ public interface Attd07Mapper {
             @Param("workYmd") String workYmd);
 
     int updateUserAttdReqApprove(UpdateUserAttdRequestCommand command);
+
+    /**
+     * PRAFTA-APP-007 - 스케줄 수정 요청(REQ_TYPE='10') 승인 시 tb_user_work_plan 의
+     * 단일 행(CMPNY_CD, SITE_CD, USER_CD, WORK_YMD) 의 WORK_PLAN_CD 를 목표 스케줄
+     * 코드로 upsert 한다. Attd_05 의 saveUserWorkPlans 와 동형
+     * (INSERT ... ON DUPLICATE KEY UPDATE). 모든 값은 서버 권위 값으로 구성한다.
+     *
+     * @return 영향받은 행 수 (INSERT=1, UPDATE 시 MySQL 은 값 변경 시 2 / 무변경 시 0~1)
+     */
+    int upsertUserWorkPlan(UpsertUserWorkPlanCommand command);
+
+    /**
+     * PRAFTA-APP-007 - 스케줄 수정 요청(REQ_TYPE='10') 승인. TB_USER_ATTD_REQ 를
+     * REQ_STATUS='02'(승인) 로 전이하고 처리자/처리일시를 기록한다. TARGET_ID 는
+     * 스케줄 수정에 무의미하므로 건드리지 않는다. WHERE 절에 REQ_STATUS='01'(신청)
+     * 가드를 두어 정확히 1행만 영향을 받게 하며, 0행이면 동시 처리 충돌로 보고 롤백한다.
+     *
+     * @return 영향받은 행 수 (0 또는 1)
+     */
+    int updateUserSchedModifyReqApprove(
+            @Param("reqId") String reqId,
+            @Param("gvCmpnyCd") String gvCmpnyCd,
+            @Param("siteCd") String siteCd,
+            @Param("gvUserCd") String gvUserCd,
+            @Param("processComment") String processComment);
 
     /**
      * PRAFTA-008 / PRAFTA-010 - 근태 / 초과근무 요청 반려.
@@ -212,7 +275,8 @@ public interface Attd07Mapper {
      * PRAFTA-025 - 초과근무 수정('04') 승인: 기존 OT 행(OT_ID=otId)을 요청 구간으로 UPDATE한다.
      *
      * 완료된 OT 확정 모델에 맞춰 PLAN 및 ACTUAL 시각을 동일 값으로 갱신하고
-     * OT_TYPE 과 WORK_MINUTES 를 반영한다. BREAK_MINUTES, OT_STATUS 는 변경하지 않는다.
+     * WORK_MINUTES 를 반영한다. BREAK_MINUTES, OT_STATUS 는 변경하지 않는다.
+     * prafta-043: 초과근무 유형(OT_TYPE) 파기로 otType 파라미터 제거.
      * 스코프(cmpnyCd/siteCd/userCd) 일치 + 활성 행(DEL_YN N, OT_STATUS 가 CANCELLED 아님)만 대상이며,
      * 0행이면 스코프 밖이거나 취소/삭제된 OT 로 보고 호출부에서 롤백한다.
      *
@@ -223,7 +287,6 @@ public interface Attd07Mapper {
             @Param("cmpnyCd") String cmpnyCd,
             @Param("siteCd") String siteCd,
             @Param("userCd") String userCd,
-            @Param("otType") String otType,
             @Param("startDate") String startDate,
             @Param("startTime") String startTime,
             @Param("endDate") String endDate,

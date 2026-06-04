@@ -67,7 +67,6 @@
         , A.START_TIME      AS startTime
         , A.END_DATE        AS endDate
         , A.END_TIME        AS endTime
-        , A.OT_TYPE         AS otType
         , A.LEAVE_TYPE      AS leaveType
         , A.LEAVE_DAYS      AS leaveDays
         , A.PROCESS_COMMENT AS processComment

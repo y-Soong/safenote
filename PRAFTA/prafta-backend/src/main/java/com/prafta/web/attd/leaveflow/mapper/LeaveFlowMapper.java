@@ -31,6 +31,15 @@ public interface LeaveFlowMapper {
     String selectPolicyAprvUseYn(@Param("cmpnyCd") String cmpnyCd);
 
     /**
+     * PRAFTA-COM-004 보안: 주어진 USER_CD 목록 중 동일 회사 + 동일 사업장 + 재직(활성) 상태인
+     * 사용자 수를 센다. 호출부는 중복 제거한 결재자 수와 비교하여 불일치(타 사업장/회사/비재직/존재없음)
+     * 시 거부한다(cross-site/cross-company 결재자 주입 차단 — 앱 AppLeaveFlowMapper.countValidApprovers 미러).
+     */
+    int countValidApprovers(@Param("cmpnyCd") String cmpnyCd,
+                            @Param("siteCd") String siteCd,
+                            @Param("userCds") java.util.List<String> userCds);
+
+    /**
      * 차감 대상 부여 1건 — 활성/유효기간 포함/잔여 충분, 만료 임박(AVAIL_TO_DATE) 우선.
      * 충분한 잔여를 가진 grant가 없으면 null.
      */

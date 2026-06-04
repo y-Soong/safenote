@@ -58,6 +58,7 @@
 		<item key="incremental" value="false"/>
 		<item key="isRegEx" value="false"/>
 		<list key="findhistory">
+			<item value="oldCode"/>
 			<item value="selectChkptInspectItemList"/>
 			<item value="selectDailyUserCd"/>
 			<item value="insertDailyQrUser"/>
@@ -72,7 +73,6 @@
 			<item value="update-sch-infos"/>
 			<item value="FNC_STD_TIME"/>
 			<item value="com.prafta.common.exception"/>
-			<item value="ATTD_400_014"/>
 		</list>
 		<list key="replacehistory">
 			<item value=", "/>

@@ -51,7 +51,11 @@
               </div>
               <div class="form-row">
                 <label>경위</label>
-                <textarea v-model="formData.description" readonly rows="3"></textarea>
+                <textarea
+                  v-model="formData.description"
+                  readonly
+                  rows="3"
+                ></textarea>
               </div>
               <div class="form-row">
                 <label>잠재중대성</label>
@@ -117,7 +121,10 @@
               </div>
               <div class="form-row">
                 <label>처리상태</label>
-                <select v-model="formData.reportStatusCd" :disabled="isReadOnly">
+                <select
+                  v-model="formData.reportStatusCd"
+                  :disabled="isReadOnly"
+                >
                   <!-- 현재 상태 기준 전이 가능한 다음 상태만 노출(설계 §4 상태전이) -->
                   <option
                     v-for="opt in statusOptions"
@@ -131,7 +138,9 @@
               <!-- 이미 반려된 건: 저장된 반려 사유 표시(읽기) -->
               <div
                 class="form-row"
-                v-if="isReadOnly && currentStatusCd === '900' && storedRejectReason"
+                v-if="
+                  isReadOnly && currentStatusCd === '900' && storedRejectReason
+                "
               >
                 <label>반려 사유</label>
                 <textarea
@@ -168,7 +177,10 @@
         <div class="modal-footer">
           <div class="footer-buttons-left">
             <!-- 경미사고(SYS061 200) 산재 보고 안내 게이트 (결정필요 D4) -->
-            <span v-if="formData.incidentTypeCd === '200'" class="industrial-notice">
+            <span
+              v-if="formData.incidentTypeCd === '200'"
+              class="industrial-notice"
+            >
               산업재해 보고 대상 여부를 확인하세요(별도 절차).
             </span>
           </div>

@@ -40,9 +40,17 @@ public class GlobalExceptionHandler {
 
     @ExceptionHandler(Exception.class)
     public ResponseEntity<Map<String, Object>> handleGeneralException(Exception ex) {
-        // [DIAG-A] 일반 예외도 클래스/메시지를 로그로 남겨 정체 파악
-        log.warn("[GeneralException] type={} message={}",
-                ex.getClass().getName(), ex.getMessage());
+        // [DIAG-A] 일반 예외는 래핑되어 표면 메시지만으로는 원인 파악이 어렵다
+        // (예: CannotCreateTransactionException 의 "Could not open JDBC Connection"
+        //  뒤에 가려진 SQLException "Access denied ... using password: NO").
+        // 래핑 체인의 최하위 원인까지 함께 남겨 실제 원인을 식별한다.
+        Throwable rootCause = ex;
+        while (rootCause.getCause() != null && rootCause.getCause() != rootCause) {
+            rootCause = rootCause.getCause();
+        }
+        log.warn("[GeneralException] type={} message={} rootCauseType={} rootCauseMessage={}",
+                ex.getClass().getName(), ex.getMessage(),
+                rootCause.getClass().getName(), rootCause.getMessage());
 
         Map<String, Object> response = new HashMap<>();
         response.put("success", false);

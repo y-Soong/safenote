@@ -4,6 +4,7 @@ import com.prafta.app.req.req07.application.param.AttdCorrectionParam;
 import com.prafta.app.req.req07.application.param.OvertimeParam;
 import com.prafta.app.req.req07.application.param.SchedModifyParam;
 import com.prafta.app.req.req07.dto.response.RegisterReqResponse;
+import com.prafta.app.req.req07.dto.response.SchedOptionResponse;
 
 /**
  * prafta-app-007: 모바일 앱 근태 요청 등록 (스케줄 수정 / 근태 보정 / 초과근무) 서비스.
@@ -21,4 +22,10 @@ public interface AppReq07Service {
 
     /** 초과근무 신청 등록 (REQ_TYPE='03' 고정). */
     RegisterReqResponse registerOvertime(OvertimeParam param);
+
+    /**
+     * 스케줄 선택 옵션 목록 조회 (prafta-app-007 F2).
+     * 식별값(cmpnyCd/siteCd)은 JWT 도출값을 사용한다 (IDOR). 빈 결과는 빈 배열.
+     */
+    SchedOptionResponse getSchedOptions(String cmpnyCd, String siteCd);
 }

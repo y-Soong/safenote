@@ -108,7 +108,11 @@
             <button class="btn btn-custom" @click="fnDownloadTemplate">
               양식 다운로드
             </button>
-            <button class="btn btn-custom" @click="fnUploadExcelClick" :disabled="uploadJobActive">
+            <button
+              class="btn btn-custom"
+              @click="fnUploadExcelClick"
+              :disabled="uploadJobActive"
+            >
               엑셀 업로드
             </button>
             <input
@@ -126,8 +130,8 @@
           <div class="upload-progress-modal">
             <h3>엑셀 업로드 처리 중</h3>
             <p class="upload-progress-text">
-              처리 중 {{ uploadProgress.processedRows }} / {{ uploadProgress.totalRows }}
-              ({{ uploadProgress.percent }}%)
+              처리 중 {{ uploadProgress.processedRows }} /
+              {{ uploadProgress.totalRows }} ({{ uploadProgress.percent }}%)
             </p>
             <div class="upload-progress-bar">
               <div

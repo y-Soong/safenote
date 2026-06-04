@@ -23,6 +23,8 @@ public record AttdCorrectionParam(
         , String nodeCd
         , List<SlotRequest> slots
         , String reqReason
+        , List<String> approverUserCds
+        , String presetId
 ) {
 
     public static AttdCorrectionParam from(AttdCorrectionRequest request, TokenInfo tokenInfo) {
@@ -57,7 +59,14 @@ public record AttdCorrectionParam(
                 ? new ArrayList<>()
                 : new ArrayList<>(request.getSlots());
 
-        return new AttdCorrectionParam(cmpnyCd, siteCd, userCd, workYmd, nodeCd, slots, reqReason);
+        // prafta-app-009: 결재선(approverUserCds/presetId)은 바디 신뢰 입력(스코프 가드는 결재 서비스가 수행).
+        List<String> approverUserCds = request.getApproverUserCds() == null
+                ? new ArrayList<>()
+                : new ArrayList<>(request.getApproverUserCds());
+        String presetId = trim(request.getPresetId());
+
+        return new AttdCorrectionParam(cmpnyCd, siteCd, userCd, workYmd, nodeCd, slots, reqReason,
+                approverUserCds, presetId);
     }
 
     private static String trim(String s) {

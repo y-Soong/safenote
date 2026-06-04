@@ -118,8 +118,10 @@ public class AppHome01ServiceImpl implements AppHome01Service {
 
         // 진행 중(미퇴근) 레코드 존재 여부 → 퇴근 가능 판정 근거.
         boolean hasOpen = (s1In && !s1Out) || (s2In && !s2Out);
-        // 그날 채울 수 있는 최대 구간 수(1구간=1, 2구간=2). 출근 가능 여부 산출에 사용.
-        int maxSlots = isTwoSlot ? 2 : 1;
+        // prafta-app-014: 출근 상한을 attd01 과 동일하게 "하루 2회"로 고정(스케줄 구간 수 무관).
+        //   1구간/스케줄 없는 날에서도 1회 퇴근 후 2번째 출근 버튼이 뜨도록(canCheckIn = !hasOpen && existing<2).
+        //   2구간 스케줄 표시 로직(아래 §5.5 "2구간을 예정으로 노출")은 그대로 보존.
+        int maxSlots = 2;
         int existing = (s1In ? 1 : 0) + (s2In ? 1 : 0);
 
         String status;
@@ -167,6 +169,26 @@ public class AppHome01ServiceImpl implements AppHome01Service {
         boolean canCheckOut = hasOpen;
         boolean canCheckIn = !hasOpen && existing < maxSlots;
 
+        // prafta-app-015: 2구간 스케줄 구간 선택 게이팅 플래그(attd01 SlotResponse 와 동일 의미).
+        //   1구간/스케줄없음은 빈 리스트(MainView 는 단일 canCheckIn 버튼 유지).
+        //   canCheckInThisSlot = isTwoSlot && 해당 구간 미등록 && 월미마감(!closed) && 하루 2회 미초과.
+        //   진행 중(미퇴근) 구간 존재 시 "퇴근 우선" 게이팅은 프론트가 canCheckOut 으로 처리한다(attd01 today 카드와 동일).
+        //   월마감 여부(!closed)는 attd01 buildSlot 의 canCheckInThisSlot(약 209행) 과 의미 정렬 — 마감 당일 버튼 활성 오노출 방지.
+        boolean closed = isMonthClosed(query, query.todayYmd().substring(0, 6));
+        java.util.List<HomeSummaryResponse.SlotFlag> slots = new java.util.ArrayList<>();
+        if (isTwoSlot) {
+            slots.add(HomeSummaryResponse.SlotFlag.builder()
+                    .workSeq(1)
+                    .alreadyCheckedIn(s1In)
+                    .canCheckInThisSlot(!s1In && !closed && existing < maxSlots)
+                    .build());
+            slots.add(HomeSummaryResponse.SlotFlag.builder()
+                    .workSeq(2)
+                    .alreadyCheckedIn(s2In)
+                    .canCheckInThisSlot(!s2In && !closed && existing < maxSlots)
+                    .build());
+        }
+
         return HomeSummaryResponse.Attendance.builder()
                 .status(status)
                 .scheduleExists(scheduleExists) // prafta-app-013-2: 기준일 스케줄 존재 여부.
@@ -177,7 +199,24 @@ public class AppHome01ServiceImpl implements AppHome01Service {
                 .isOffsite(isOffsite) // 오늘 최근 출근 GPS 행(01) 존재=외근 (prafta-app-003 B-1).
                 .canCheckIn(canCheckIn)
                 .canCheckOut(canCheckOut)
+                .isTwoSlot(isTwoSlot)   // prafta-app-015: 구간 선택 버튼 노출 판정.
+                .slots(slots)           // prafta-app-015: 구간별 게이팅 플래그(2구간만).
                 .build();
+    }
+
+    /**
+     * prafta-app-015: 해당 월(closeYm, YYYYMM)이 본인 부서를 덮는 마감으로 닫혀 있는지.
+     * <p>attd01 의 isMonthClosed 동일 로직(NODE_CD 미상이면 '*' 전체 마감만 판정).
+     *   메인홈 구간 게이팅이 attd01 today 카드와 동일 의미를 갖도록 사용.
+     */
+    private boolean isMonthClosed(HomeSummaryQuery query, String closeYm) {
+        String nodeCd = appHome01Mapper.selectUserNodeCd(query.cmpnyCd(), query.siteCd(), query.userCd());
+        if (!StringUtils.hasText(nodeCd)) {
+            // 소속부서 미상이면 '*'(전체 사업장) 마감만으로 판정.
+            nodeCd = "*";
+        }
+        int covering = appHome01Mapper.countCoveringClose(query.cmpnyCd(), query.siteCd(), nodeCd, closeYm);
+        return covering > 0;
     }
 
     /**

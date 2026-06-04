@@ -38,11 +38,7 @@
         </section>
 
         <!-- GPS 콜아웃 (DISABLED 면 숨김 — C-D5) -->
-        <div
-          v-if="showGpsCallout"
-          class="callout"
-          :class="gpsToneClass"
-        >
+        <div v-if="showGpsCallout" class="callout" :class="gpsToneClass">
           <svg class="icon" width="16" height="16" aria-hidden="true">
             <use :href="`#${gpsIconId}`" />
           </svg>
@@ -158,10 +154,58 @@
     <!-- 아이콘 스프라이트 -->
     <svg width="0" height="0" class="tbm-sprite" aria-hidden="true" focusable="false">
       <defs>
-        <symbol id="i-tbm-chev-left" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6" /></symbol>
-        <symbol id="i-tbm-qr" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7" rx="1" /><rect x="14" y="3" width="7" height="7" rx="1" /><rect x="3" y="14" width="7" height="7" rx="1" /><line x1="14" y1="14" x2="14" y2="21" /><line x1="18" y1="14" x2="21" y2="14" /><line x1="21" y1="18" x2="21" y2="21" /></symbol>
-        <symbol id="i-tbm-loc-ok" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 21s-7-6.5-7-11a7 7 0 0 1 14 0c0 4.5-7 11-7 11z" /><polyline points="9 10 11 12 15 8" /></symbol>
-        <symbol id="i-tbm-loc-warn" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 21s-7-6.5-7-11a7 7 0 0 1 14 0c0 4.5-7 11-7 11z" /><line x1="12" y1="7" x2="12" y2="11" /><line x1="12" y1="14" x2="12" y2="14" /></symbol>
+        <symbol
+          id="i-tbm-chev-left"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="2"
+          stroke-linecap="round"
+          stroke-linejoin="round"
+        >
+          <polyline points="15 18 9 12 15 6" />
+        </symbol>
+        <symbol
+          id="i-tbm-qr"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="2"
+          stroke-linecap="round"
+          stroke-linejoin="round"
+        >
+          <rect x="3" y="3" width="7" height="7" rx="1" />
+          <rect x="14" y="3" width="7" height="7" rx="1" />
+          <rect x="3" y="14" width="7" height="7" rx="1" />
+          <line x1="14" y1="14" x2="14" y2="21" />
+          <line x1="18" y1="14" x2="21" y2="14" />
+          <line x1="21" y1="18" x2="21" y2="21" />
+        </symbol>
+        <symbol
+          id="i-tbm-loc-ok"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="2"
+          stroke-linecap="round"
+          stroke-linejoin="round"
+        >
+          <path d="M12 21s-7-6.5-7-11a7 7 0 0 1 14 0c0 4.5-7 11-7 11z" />
+          <polyline points="9 10 11 12 15 8" />
+        </symbol>
+        <symbol
+          id="i-tbm-loc-warn"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="2"
+          stroke-linecap="round"
+          stroke-linejoin="round"
+        >
+          <path d="M12 21s-7-6.5-7-11a7 7 0 0 1 14 0c0 4.5-7 11-7 11z" />
+          <line x1="12" y1="7" x2="12" y2="11" />
+          <line x1="12" y1="14" x2="12" y2="14" />
+        </symbol>
       </defs>
     </svg>
   </div>
@@ -194,8 +238,8 @@ const isLoading = ref(false)
 const session = ref({
   sessionCd: '',
   title: '',
-  status: '',            // SYS046: OPENED / IN_PROGRESS / COMPLETED / ... (서버 statusCd)
-  gpsVerifyType: '',     // SYS048: AUTO / MANUAL / DISABLED (서버 gpsVerifyTypeCd)
+  status: '', // SYS046: OPENED / IN_PROGRESS / COMPLETED / ... (서버 statusCd)
+  gpsVerifyType: '', // SYS048: AUTO / MANUAL / DISABLED (서버 gpsVerifyTypeCd)
   gpsVerifyRadiusM: 0,
   managerLeader: '',
   location: '',
@@ -204,13 +248,13 @@ const session = ref({
 // 입실 허용 여부는 서버(entryAvailable, D3=OPENED)가 단일 권위. 클라 추측 금지.
 const entryAvailable = ref(false)
 
-const requireEntrySign = ref(false)   // C-D1: 입실 서명 없음(종료만)
-const requireExitSign = ref(false)    // C-D1: 종료 서명 필수(requiresExitSignature)
+const requireEntrySign = ref(false) // C-D1: 입실 서명 없음(종료만)
+const requireExitSign = ref(false) // C-D1: 종료 서명 필수(requiresExitSignature)
 const exitPwdRequired = ref(true)
 
 // GPS 결과(developer: requestGps 결과 매핑)
-const gpsStatus = ref('')             // OK / PERMISSION_DENIED / SERVICE_DISABLED / TIMEOUT / BRIDGE_UNAVAILABLE
-const gpsDistanceM = ref(null)        // 입실 응답의 서버 산출 거리(entryDistanceM)
+const gpsStatus = ref('') // OK / PERMISSION_DENIED / SERVICE_DISABLED / TIMEOUT / BRIDGE_UNAVAILABLE
+const gpsDistanceM = ref(null) // 입실 응답의 서버 산출 거리(entryDistanceM)
 
 // 입실/종료 입력
 const entryPwd = ref('')
@@ -322,7 +366,8 @@ const loadEntryContext = async (sessionCd) => {
     isEntered.value = !!data.alreadyEntered
   } catch (e) {
     console.error('[TbmEntry] entry-context 조회 실패:', e?.message)
-    const msg = e?.response?.data?.message || '세션 정보를 불러오지 못했어요. 잠시 후 다시 시도해 주세요.'
+    const msg =
+      e?.response?.data?.message || '세션 정보를 불러오지 못했어요. 잠시 후 다시 시도해 주세요.'
     showAlert(msg)
   } finally {
     isLoading.value = false

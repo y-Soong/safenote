@@ -114,8 +114,14 @@
 		, A.APRV_USE_YN	AS aprvUseYn
 		, A.EVIDENCE_YN AS evidenceYn
 		, A.EVIDENCE_GUIDE_MSG AS evidenceGuideMsg
-	FROM 
-	(	
+
+		/* prafta-044-FU: 관리자 부여 사용가능기간 편집 복원용 원본 컬럼 직접 노출
+		   (record LeaveTypeResult 끝 3필드와 위치 1:1 정합 — 끝에 추가) */
+		, A.ADMIN_AVAIL_TERM_TYPE AS adminAvailTermType
+		, A.ADMIN_AVAIL_FROM_DT   AS adminAvailFromDt
+		, A.ADMIN_AVAIL_TO_DT     AS adminAvailToDt
+	FROM
+	(
 	    SELECT 
 			A.CMPNY_CD
 			, A.LEAVE_CD
@@ -153,6 +159,11 @@
             , A.APRV_USE_YN
             , A.EVIDENCE_YN
             , A.EVIDENCE_GUIDE_MSG
+
+            /* prafta-044-FU: 편집 복원용 관리자 부여 사용가능기간 원본 컬럼 (목록 표시용 CASE/CONCAT 과 병존) */
+            , A.ADMIN_AVAIL_TERM_TYPE
+            , A.ADMIN_AVAIL_FROM_DT
+            , A.ADMIN_AVAIL_TO_DT
 		FROM TB_LEAVE_TYPE_MGMT A
 		WHERE A.CMPNY_CD = #{gvCmpnyCd}
 		  <if test="leaveNo != null and leaveNo != ''">
