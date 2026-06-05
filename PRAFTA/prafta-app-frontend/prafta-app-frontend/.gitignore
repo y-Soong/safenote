@@ -28,3 +28,6 @@ coverage
 *.sw?
 
 *.tsbuildinfo
+
+# mkcert 개발용 HTTPS 인증서 (머신별 LAN IP 전용 — 개인키 포함, 커밋 금지)
+cert/
