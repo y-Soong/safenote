@@ -118,6 +118,24 @@ local-data/
 firebase-sa.json
 
 ############################
+# 도구 배포본 (저장소 트리 밖 이동 권장 / 최소한 추적 제외)
+############################
+/gradle-7.6.3/
+/lombok/
+/mysql-connector-j-8.0.33/
+
+############################
+# 이클립스 서버 / 임시 / 프로젝트 설정
+############################
+# Servers/ 는 루트·각 프로젝트 하위 어디든 매칭 (tc Server 런타임 설정 = jmxremote.password 등 자격증명 포함 가능)
+Servers/
+/RemoteSystemsTempFiles/
+.tmp_p*/
+.settings/
+.project
+.classpath
+
+############################
 # 독립 저장소 (별도 git repo로 관리: safenote_flutter.git)
 # 같은 폴더 트리에 두되 바깥(safenote.git) 추적에서 제외 = 깔끔한 폴리레포 분리
 ############################
