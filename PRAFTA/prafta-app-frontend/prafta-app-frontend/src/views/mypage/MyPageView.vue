@@ -36,6 +36,19 @@
           </div>
         </section>
 
+        <!-- 관리자 모드 진입점 (001-Phase1-F4) — 서버 access-context.canEnterAdmin 시에만 노출. -->
+        <template v-if="canEnterAdmin">
+          <p class="mp-group-label">관리자</p>
+          <nav class="mp-menu">
+            <button type="button" class="mp-menu__row" @click="onAdminMode">
+              <span class="mp-menu__text">관리자 모드</span>
+              <svg class="icon mp-menu__chev" width="20" height="20" aria-hidden="true">
+                <use href="#i-mp-chev-right" />
+              </svg>
+            </button>
+          </nav>
+        </template>
+
         <!-- 계정 그룹 -->
         <p class="mp-group-label">계정</p>
         <nav class="mp-menu">
@@ -167,6 +180,11 @@ const siteNm = ref('')
 const nodeNm = ref('')
 const presetCount = ref(0)
 
+// 001-Phase1-F4: 관리자 모드 진입점 노출 판정(서버 access-context.canEnterAdmin).
+//   판정 출처를 별도 경량 엔드포인트로 분리하지 않고 진입판정 단일 출처(access-context)를 재사용한다
+//   — 판정 일관성 유지 + 엔드포인트 중복 방지. 프로필 조회와 병렬 호출(아래 onMounted)로 추가 지연 최소화.
+const canEnterAdmin = ref(false)
+
 // 모달 토글 (UI 상태 — 허용 범위)
 const logoutDialogOpen = ref(false)
 const withdrawDialogOpen = ref(false)
@@ -192,6 +210,10 @@ const onPasswordChange = () => {
 }
 const onPresetManage = () => {
   router.push('/ApprovalPresetList')
+}
+// 001-Phase1-F4: 관리자 모드 진입(보호 라우트). 서버가 최종 진입 판정.
+const onAdminMode = () => {
+  router.push('/AdminHome')
 }
 
 // ───────────────────────────────────────────────────────────
@@ -253,7 +275,21 @@ const onWithdrawConfirm = async () => {
 // ───────────────────────────────────────────────────────────
 // 진입 시 1회 조회 (프로필 + presetCount). 401/403은 axios 인터셉터 처리.
 // ───────────────────────────────────────────────────────────
+// 001-Phase1-F4: 관리자 진입점 노출 판정(경량). 실패는 비치명적 → 미노출 폴백.
+const loadAdminEntryFlag = async () => {
+  try {
+    const { data } = await api.get('/appApi/admin/access-context')
+    canEnterAdmin.value = data?.canEnterAdmin === true
+  } catch (e) {
+    canEnterAdmin.value = false
+    console.warn('[MyPage] 관리자 진입판정 실패:', e?.message)
+  }
+}
+
 onMounted(async () => {
+  // 관리자 진입점 판정은 프로필 조회와 병렬(추가 지연 최소화). 비치명적이므로 await 로 본문 로딩을 막지 않는다.
+  const adminEntryPromise = loadAdminEntryFlag()
+
   // GET /appApi/mypage/profile (마스킹 응답 D1). 메인 화면은 마스킹 PII를 사용하지 않고
   //   이름/사업장/부서/프리셋개수만 표시한다.
   try {
@@ -272,6 +308,9 @@ onMounted(async () => {
   } finally {
     isLoading.value = false
   }
+
+  // 진입점 판정 완료 대기(이미 내부에서 예외를 흡수하므로 reject 없음).
+  await adminEntryPromise
 })
 </script>
 

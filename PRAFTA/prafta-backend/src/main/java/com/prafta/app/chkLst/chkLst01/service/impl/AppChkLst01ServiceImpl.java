@@ -30,6 +30,7 @@ import com.prafta.common.cmm.file.application.query.FileInfoQuery;
 import com.prafta.common.cmm.file.dto.param.FileInfoParam;
 import com.prafta.common.cmm.file.mapper.FileMapper;
 import com.prafta.common.cmm.file.service.FileService;
+import com.prafta.common.cmm.worktime.service.WorktimeGateService;
 import com.prafta.common.dto.TokenInfo;
 import com.prafta.common.error.chkLst.ChkLstErrorCode;
 import com.prafta.common.error.common.CommonErrorCode;
@@ -60,6 +61,9 @@ public class AppChkLst01ServiceImpl implements AppChkLst01Service {
     private final ObjectMapper objectMapper;
     private final FileService fileService;
     private final FileMapper fileMapper;
+
+    /** prafta-app-022: 안전점검 등록 근무중 게이트(근무중에만 등록 허용). */
+    private final WorktimeGateService worktimeGateService;
 
     @Override
     public ChecklistInfoResponse selectChkLstInfo(ChecklistInfoParam param) {
@@ -131,6 +135,10 @@ public class AppChkLst01ServiceImpl implements AppChkLst01Service {
                     , Map.of("userSiteName", siteLabel)
             );
         }
+
+        // prafta-app-022: 근무중 게이트 — siteCd 가드 통과 후, 저장 루프 진입 직전에 차단.
+        //   미근무 시 WORKTIME_403_001(저장 미수행). 조회성 메서드(selectChkLstInfo)에는 미적용.
+        worktimeGateService.assertWorking(param.tokenInfo());
 
         try {
             // 1) multipart 'items' (JSON 묶음 파일) 파싱

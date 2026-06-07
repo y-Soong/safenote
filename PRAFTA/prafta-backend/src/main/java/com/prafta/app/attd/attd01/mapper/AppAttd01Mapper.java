@@ -156,14 +156,15 @@ public interface AppAttd01Mapper {
     );
 
     /**
-     * 본인의 "과거(WORK_YMD &lt; today) 열린 근태" 수(DEL_YN='N' && CHECK_OUT_TIME NULL).
-     * <p>다음날 출근 게이트(사용자 확정): 전날 이전 미완료 근태가 있으면 출근 차단.
+     * 본인의 "직전일(WORK_YMD = today-1) 열린 근태" 수(DEL_YN='N' && CHECK_IN_TIME 有 && CHECK_OUT_TIME NULL).
+     * <p>다음날 출근 게이트(prafta-app-021 §7.6): 직전일(D) 미퇴근이면 D+1 출근만 차단.
+     *   D+2 이상 과거 미퇴근은 차단하지 않는다(출근 허용, 근태 보정 §7.4 로 해소).
      */
     int countPastOpenAttd(
             @Param("cmpnyCd") String cmpnyCd
             , @Param("siteCd") String siteCd
             , @Param("userCd") String userCd
-            , @Param("todayYmd") String todayYmd
+            , @Param("yesterdayYmd") String yesterdayYmd
     );
 
     /** 출근 레코드 INSERT (TB_USER_ATTD_MGMT, CHECK_OUT_* 는 NULL). */

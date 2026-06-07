@@ -38,8 +38,8 @@
       <button
         type="button"
         class="btn"
-        :class="canCheckIn ? 'btn--primary' : 'btn--disabled'"
-        :disabled="!canCheckIn"
+        :class="checkInEnabled ? 'btn--primary' : 'btn--disabled'"
+        :disabled="!checkInEnabled"
         @click="onCheckIn"
       >
         출근하기
@@ -54,6 +54,11 @@
         퇴근하기
       </button>
     </div>
+
+    <!-- prafta-app-021: 전날 미퇴근 마감 대기 안내 -->
+    <p v-if="prevDayCheckoutPending" class="prevday-hint">
+      전날 근무가 아직 안 닫혔어요. 먼저 퇴근을 등록해 주세요.
+    </p>
 
     <!-- 5영역: 하단 위치 표시 -->
     <div class="loc-meta" :class="isOffsite ? 'loc-meta--warn' : 'loc-meta--neutral'">
@@ -143,6 +148,16 @@ const props = defineProps({
     type: Array,
     default: () => [],
   },
+  // prafta-app-021: 전날 미퇴근 마감 대기 여부 — true 시 출근 차단·퇴근 유도.
+  prevDayCheckoutPending: {
+    type: Boolean,
+    default: false,
+  },
+  // prafta-app-021: 전날 출근 시각 (HHMM) — "출근 {HH:MM} (전날)" 표시용.
+  prevDayCheckInTime: {
+    type: String,
+    default: '',
+  },
 })
 
 // prafta-app-015: 구간 선택 출근 시 workSeq 를 payload 로 전달.
@@ -156,14 +171,20 @@ const isOffWork = computed(() => props.status === 'OFF_WORK')
 const isTimeMuted = computed(() => isBeforeWork.value)
 
 // 상태 배지 — OFF_WORK(퇴근 완료, 중립) / WORKING(근무중) / 그외(출근 전)
+// prafta-app-021: 전날 미퇴근 마감 대기 시 최우선 분기.
 const badgeClass = computed(() => {
+  if (props.prevDayCheckoutPending) return 'badge--warn'
   if (isOffWork.value) return 'badge--done'
   return isWorking.value ? 'badge--ok' : 'badge--before'
 })
 const badgeText = computed(() => {
+  if (props.prevDayCheckoutPending) return '전날 미퇴근'
   if (isOffWork.value) return '퇴근 완료'
   return isWorking.value ? '근무중' : '출근 전'
 })
+
+// prafta-app-021: 출근 버튼 활성 — 전날 미퇴근 대기 중에는 출근 차단(퇴근 선행 유도).
+const checkInEnabled = computed(() => !props.prevDayCheckoutPending && props.canCheckIn)
 
 // 시간 텍스트 — 단순 포매팅만 (HHMM → HH:MM)
 const formatHHMM = (s) => {
@@ -171,6 +192,11 @@ const formatHHMM = (s) => {
   return `${s.slice(0, 2)}:${s.slice(2, 4)}`
 }
 const timeText = computed(() => {
+  // prafta-app-021: 전날 미퇴근 마감 대기 시 전날 출근 시각을 우선 표시.
+  if (props.prevDayCheckoutPending) {
+    const t = formatHHMM(props.prevDayCheckInTime)
+    return t ? `출근 ${t} (전날)` : '출근 --:-- (전날)'
+  }
   if (isOffWork.value) {
     const inT = formatHHMM(props.checkInTime)
     const outT = formatHHMM(props.checkOutTime)
@@ -204,8 +230,10 @@ const checkInSlots = computed(() =>
     .slice()
     .sort((a, b) => a.workSeq - b.workSeq),
 )
+// prafta-app-021: 전날 미퇴근 대기 시엔 구간 출근 버튼도 노출하지 않음(표시 정합).
 const showSlotCheckInButtons = computed(
   () =>
+    !props.prevDayCheckoutPending &&
     props.isTwoSlot &&
     !props.canCheckOut &&
     checkInSlots.value.some((s) => s.canCheckInThisSlot === true),
@@ -281,6 +309,14 @@ const onCheckOut = () => {
 .badge--done .badge__dot {
   background: var(--color-text-tertiary);
 }
+/* prafta-app-021: 전날 미퇴근 마감 대기 배지(토큰은 MainView.home-view 선언분 상속) */
+.badge--warn {
+  background: var(--color-warning-tint);
+  color: var(--color-warning-text-strong);
+}
+.badge--warn .badge__dot {
+  background: var(--color-warning);
+}
 
 .att-time {
   margin-left: 8px;
@@ -320,6 +356,14 @@ const onCheckOut = () => {
   background: var(--color-disabled-bg);
   color: var(--color-disabled-text);
   cursor: not-allowed;
+}
+
+/* prafta-app-021: 전날 미퇴근 마감 대기 안내 문구 */
+.prevday-hint {
+  margin: 0 0 10px;
+  font-size: 12px;
+  color: var(--color-warning-text-strong);
+  line-height: 1.4;
 }
 
 .loc-meta {

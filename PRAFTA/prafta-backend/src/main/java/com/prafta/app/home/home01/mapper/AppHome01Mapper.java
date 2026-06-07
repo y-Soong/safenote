@@ -7,6 +7,7 @@ import com.prafta.app.home.home01.application.query.HomeSummaryQuery;
 import com.prafta.app.home.home01.result.AttdMgmtResult;
 import com.prafta.app.home.home01.result.LeaveSummaryResult;
 import com.prafta.app.home.home01.result.OvernightScheduleResult;
+import com.prafta.app.home.home01.result.PrevDayOpenAttdResult;
 import com.prafta.app.home.home01.result.ScheduleResult;
 import com.prafta.app.home.home01.result.TbmStatusResult;
 
@@ -44,6 +45,17 @@ public interface AppHome01Mapper {
      * @param prevYmd 전일 일자(YYYYMMDD)
      */
     OvernightScheduleResult selectScheduleEndForOvernight(
+            @Param("param") HomeSummaryQuery query
+            , @Param("prevYmd") String prevYmd);
+
+    /**
+     * prafta-app-021: 직전일(WORK_YMD = today-1) 열린(미퇴근) 근태 1건(WORK_SEQ DESC). 없으면 null.
+     * <p>존재하면 메인 카드의 전날 미퇴근 마감 대기 신호(prevDayCheckoutPending)와 퇴근 버튼 활성(canCheckOut)
+     *   근거가 된다(§7.6). 본인 스코프(cmpny/site/user) + DEL_YN='N' + CHECK_IN_TIME 有 + CHECK_OUT_TIME NULL.
+     * @param query  본인 스코프(query.todayYmd() 는 baseYmd 가 아닌 DB 기준 오늘 — 호출부에서 today 주입)
+     * @param prevYmd 직전일(today-1, YYYYMMDD)
+     */
+    PrevDayOpenAttdResult selectPrevDayOpenAttd(
             @Param("param") HomeSummaryQuery query
             , @Param("prevYmd") String prevYmd);
 

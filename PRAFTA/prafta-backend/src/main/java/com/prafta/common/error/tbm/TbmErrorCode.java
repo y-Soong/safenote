@@ -52,6 +52,22 @@ public enum TbmErrorCode implements ApiErrorCode {
     // 비밀번호 재발급 불가 상태(OPENED 외) - 비즈니스 룰
     , TBM_409_012(HttpStatus.CONFLICT, "개설 상태에서만 비밀번호를 재발급할 수 있습니다.")
 
+    // ===== 001-P5 R3 라이브 제어(교육 시작/종료/강제퇴실/개별 미이수) =====
+    // 개설자만 시작/종료 가능(T1) - 비즈니스 룰, 사용자 안내
+    , TBM_403_012(HttpStatus.FORBIDDEN, "교육을 개설한 관리자만 시작 또는 종료할 수 있습니다.")
+    // GPS 비검증(DISABLED) 세션에서 개별 이수처리 시도(T4) - 비즈니스 룰, 사용자 안내
+    , TBM_403_013(HttpStatus.FORBIDDEN, "GPS 검증을 사용한 세션에서만 개별 이수처리를 할 수 있습니다.")
+    // 교육 시작 불가 상태(OPENED 외) - 비즈니스 룰(상태 전이 충돌)
+    , TBM_409_013(HttpStatus.CONFLICT, "개설 상태에서만 교육을 시작할 수 있습니다.")
+    // 교육 종료 불가 상태(IN_PROGRESS 외) - 비즈니스 룰(상태 전이 충돌)
+    , TBM_409_014(HttpStatus.CONFLICT, "진행 중 상태에서만 교육을 종료할 수 있습니다.")
+    // 강제 퇴실 불가 세션 상태(IN_PROGRESS 외) - 비즈니스 룰
+    , TBM_409_015(HttpStatus.CONFLICT, "진행 중 세션에서만 강제 퇴실할 수 있습니다.")
+    // 강제 퇴실 대상 없음/이미 퇴실(멱등 가드 0건) - 비즈니스 룰
+    , TBM_409_016(HttpStatus.CONFLICT, "이미 퇴실 처리되었거나 대상 출결이 없습니다.")
+    // 개별 이수처리 불가 세션 상태(COMPLETED 외) - 비즈니스 룰
+    , TBM_409_017(HttpStatus.CONFLICT, "종료된 세션에서만 개별 이수처리를 할 수 있습니다.")
+
     // ===== PRAFTA-033-D TBM 이력 관리 =====
     // 미이수 처리 권한 부족(개설자/safe/master) - 보안 민감, 일반 메시지
     , TBM_403_020(HttpStatus.FORBIDDEN, "권한이 없습니다.")
@@ -69,10 +85,8 @@ public enum TbmErrorCode implements ApiErrorCode {
     , TBM_404_030(HttpStatus.NOT_FOUND, "입실할 TBM 세션을 찾을 수 없습니다.")
     // 입실 불가 상태(개설 상태에서만 입실 가능, D3) - 비즈니스 룰
     , TBM_409_030(HttpStatus.CONFLICT, "현재 입실할 수 없는 세션 상태입니다.")
-    // 입실/종료 비밀번호 불일치 - 사용자 안내
+    // 입실/종료 비밀번호 불일치 - 사용자 안내(현장 공유 passcode 특성상 잠금 없이 재시도 가능)
     , TBM_400_030(HttpStatus.BAD_REQUEST, "비밀번호가 일치하지 않습니다.")
-    // 비밀번호 연속 실패로 잠금(D4: 5회/1분) - 사용자 안내
-    , TBM_429_030(HttpStatus.TOO_MANY_REQUESTS, "비밀번호를 여러 번 잘못 입력했습니다. 잠시 후 다시 시도해 주세요.")
     // GPS 검증 반경 밖(AUTO 모드, D5) - 사용자 안내(좌표 비노출, 거리만)
     , TBM_403_030(HttpStatus.FORBIDDEN, "근무지 반경 밖에서는 입실할 수 없습니다.")
     // 종료 시 본인 입실 기록 없음 - 비즈니스 룰
@@ -81,6 +95,20 @@ public enum TbmErrorCode implements ApiErrorCode {
     , TBM_409_032(HttpStatus.CONFLICT, "이미 종료 처리된 출결입니다.")
     // 종료 서명 누락(D1: 종료 시 서명 필수) - 사용자 안내
     , TBM_400_031(HttpStatus.BAD_REQUEST, "종료 서명을 등록해 주세요.")
+
+    // ===== 001-P5 R5 교육자료 관리 =====
+    // 자료 조회 결과 없음(스코프 밖 mtrlCd 포함)
+    , TBM_404_040(HttpStatus.NOT_FOUND, "해당 교육자료를 찾을 수 없습니다.")
+    // 자료 제목 누락/길이 초과 - 사용자 안내
+    , TBM_400_040(HttpStatus.BAD_REQUEST, "자료 제목을 200자 이내로 입력해 주세요.")
+    // 자료 타입(COM003) 부적합 - 사용자 안내
+    , TBM_400_041(HttpStatus.BAD_REQUEST, "자료 타입 값이 올바르지 않습니다.")
+    // 항목 누락(최소 1개) 또는 항목 구성 부적합(파일/URL 누락) - 사용자 안내
+    , TBM_400_042(HttpStatus.BAD_REQUEST, "자료 항목을 올바르게 구성해 주세요.")
+    // 업로드 파일 부적합(MIME/확장자/크기) - 사용자 안내
+    , TBM_400_043(HttpStatus.BAD_REQUEST, "업로드할 수 없는 파일입니다. 형식과 크기를 확인해 주세요.")
+    // 회사공통 자료 등록/수정/삭제 권한 부족(master/safe 전용) - 사용자 안내
+    , TBM_403_040(HttpStatus.FORBIDDEN, "회사 공통 자료는 안전관리자만 관리할 수 있습니다.")
 
     ;
 

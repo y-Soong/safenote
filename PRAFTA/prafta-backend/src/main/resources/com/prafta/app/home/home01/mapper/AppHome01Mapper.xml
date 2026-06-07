@@ -145,6 +145,32 @@
     LIMIT 1
     </select>
 
+    <!--
+      prafta-app-021: 직전일(WORK_YMD = today-1) 열린(미퇴근) 근태 1건. 메인 전날 미퇴근 마감 대기 신호(§7.6).
+      - 열린 근태 = DEL_YN='N' && CHECK_IN_TIME 有 && CHECK_OUT_TIME NULL.
+      - 본인 스코프(cmpny/site/user). 같은 날 여러 구간이면 WORK_SEQ DESC 로 최신 1건.
+      - 필요 컬럼만(WORK_YMD/WORK_SEQ/CHECK_IN_TIME). SELECT * 금지, #{} 바인딩.
+    -->
+    <select id="selectPrevDayOpenAttd"
+            resultType="com.prafta.app.home.home01.result.PrevDayOpenAttdResult">
+    /* AppHome01Mapper.selectPrevDayOpenAttd */
+    SELECT
+          A.WORK_YMD            AS workYmd
+        , A.WORK_SEQ            AS workSeq
+        , A.CHECK_IN_TIME       AS checkInTime
+    FROM TB_USER_ATTD_MGMT A
+    WHERE 1=1
+      AND A.CMPNY_CD = #{ param.cmpnyCd }
+      AND A.SITE_CD = #{ param.siteCd }
+      AND A.USER_CD = #{ param.userCd }
+      AND A.WORK_YMD = #{ prevYmd }
+      AND A.DEL_YN = 'N'
+      AND A.CHECK_IN_TIME IS NOT NULL
+      AND A.CHECK_OUT_TIME IS NULL
+    ORDER BY A.WORK_SEQ DESC
+    LIMIT 1
+    </select>
+
     <!-- 연차 요약 합산(법정+약정, ACTIVE & 미소멸). 부여 이력 없으면 SUM 이 null. -->
     <select id="selectLeaveSummary"
             parameterType="com.prafta.app.home.home01.application.query.HomeSummaryQuery"

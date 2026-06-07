@@ -479,7 +479,7 @@ const alertText = computed(() => {
       // prafta-app-014: slotCount>=2 진행 중 공통 문구(야간2구간/추가 출근 모두 포함).
       return '오늘 근무가 모두 끝난 뒤에 수정 요청을 등록할 수 있어요.'
     case 'CHECK_OUT_MISSING':
-      return '퇴근은 오늘 안에만 가능해요.'
+      return '퇴근은 다음 날까지 등록할 수 있어요.'
     case 'CHECKED_OUT':
       // 사업장다름(.wr)이면 안내 문구 없음(시안 §3.1)
       return hasDifferentSite.value ? '' : '출퇴근 기록과 근태가 다르면 수정 요청해 주세요.'

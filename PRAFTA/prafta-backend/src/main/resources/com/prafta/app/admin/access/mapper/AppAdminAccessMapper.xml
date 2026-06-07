@@ -1,0 +1,57 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+
+<mapper namespace="com.prafta.app.admin.access.mapper.AppAdminAccessMapper">
+
+    <!-- [권한매트릭스 §1] 전사(사업장 무관) 노드 정/부 관리자 존재 여부 → 진입조건.
+         식별자(cmpnyCd/userCd)는 token 출처. EXISTS 0/1 반환. -->
+    <select id="existsNodeAdminAnySite"
+            parameterType="com.prafta.app.admin.access.application.query.AdminAccessQuery"
+            resultType="int">
+    /* AppAdminAccessMapper.existsNodeAdminAnySite */
+    SELECT EXISTS(
+        SELECT 1
+        FROM TB_SITE_NODE
+        WHERE CMPNY_CD = #{cmpnyCd}
+          AND ( MAIN_ADMIN_CD = #{userCd} OR SUB_ADMIN_CD = #{userCd} )
+    )
+    </select>
+
+    <!-- 현재 선택 사업장 기준 노드 정/부 관리자 존재 여부(moduleActiveMap 산출 입력, D5).
+         SITE_CD 강제로 타 사업장 노드관리자 권한이 현재 사업장 모듈을 열지 못하도록 차단(스코프 누수 방지). -->
+    <select id="existsNodeAdminInSite"
+            parameterType="com.prafta.app.admin.access.application.query.AdminAccessQuery"
+            resultType="int">
+    /* AppAdminAccessMapper.existsNodeAdminInSite */
+    SELECT EXISTS(
+        SELECT 1
+        FROM TB_SITE_NODE
+        WHERE CMPNY_CD = #{cmpnyCd}
+          AND SITE_CD = #{siteCd}
+          AND ( MAIN_ADMIN_CD = #{userCd} OR SUB_ADMIN_CD = #{userCd} )
+    )
+    </select>
+
+    <!-- [권한매트릭스 §3.1] 접근 가능 사업장 목록(현장전환 셀렉터용, D6).
+         TB_USER_SITE_AUTH(USE_YN='Y') ⨝ TB_SITE(USE_YN='Y'). 사업장명 소스 = TB_SITE.SITE_NM. -->
+    <select id="selectAccessibleSites"
+            parameterType="com.prafta.app.admin.access.application.query.AdminAccessQuery"
+            resultType="com.prafta.app.admin.access.result.AccessibleSiteResult">
+    /* AppAdminAccessMapper.selectAccessibleSites */
+    SELECT
+          S.SITE_CD   AS siteCd
+        , S.SITE_NO   AS siteNo
+        , S.SITE_NM   AS siteNm
+    FROM TB_USER_SITE_AUTH USA
+    INNER JOIN TB_SITE S
+        ON S.CMPNY_CD = USA.CMPNY_CD
+       AND S.SITE_CD = USA.SITE_CD
+    WHERE USA.CMPNY_CD = #{cmpnyCd}
+      AND USA.USER_CD = #{userCd}
+      AND USA.USE_YN = 'Y'
+      AND S.USE_YN = 'Y'
+    ORDER BY S.SITE_NM, S.SITE_CD
+    LIMIT 100
+    </select>
+
+</mapper>

@@ -1,11 +1,11 @@
 <!--
   SafetyActivityCard.vue — 안전 활동 카드 (안전점검 시작 + 위험성 발굴 + 아차사고)
   - 상세 요청서 §3.4, §4.4
-  - 산업안전 정책서 §3 (소속 현장 출근 후에만 사용 가능) — 차단 배너 노출
+  - 근무시간 게이트 정책 (PRAFTA-022): 근무 중(WORKING)에만 안전점검·위험성 발굴 사용 가능 — 차단 배너 노출
   - 매핑 (작업 요청서 본문 명시):
-      "안전점검 시작" → 기존 fnDayChkLst() 라우팅 (/QrScanner) 보존
-      "위험성 발굴"   → 기존 fnRisk_01()    라우팅 (/Risk_01)  보존
-      "아차사고 보고" → prafta-app-012 보고 화면 (/NearMissReport) — 출근 후에만 사용 가능
+      "안전점검 시작" → 기존 fnDayChkLst() 라우팅 (/QrScanner) 보존 — 근무중에만 허용
+      "위험성 발굴"   → 기존 fnRisk_01()    라우팅 (/Risk_01)  보존 — 근무중에만 허용
+      "아차사고 보고" → prafta-app-012 보고 화면 (/NearMissReport) — 즉시성 예외(게이트 미적용, 항상 활성)
       "사건 관리"     → prafta-app-012 목록 화면 (/NearMissManageList) — 안전직군에게만 노출
     실제 router.push 는 부모(MainView)에서 emit 받아 처리한다.
   - 레이아웃: 네모난 버튼 그리드 대신 한 줄(row) 리스트로 표현.
@@ -26,17 +26,17 @@
       </button>
     </div>
 
-    <!-- 차단 배너 (출근 전) -->
+    <!-- 차단 배너 (근무중 아님 — 출근 전·퇴근 후) -->
     <div v-if="blocked" class="blocked-banner">
       <svg class="icon" width="14" height="14" aria-hidden="true">
         <use href="#i-lock" />
       </svg>
-      <span>출근 후에 이용할 수 있어요</span>
+      <span>근무 중에만 이용할 수 있어요</span>
     </div>
 
     <!-- 액션 리스트 (한 줄씩) -->
     <div class="action-list">
-      <!-- 안전점검 시작 (출근 후) -->
+      <!-- 안전점검 시작 (근무중에만 허용) -->
       <button
         type="button"
         class="action-row"
@@ -53,7 +53,7 @@
         </svg>
       </button>
 
-      <!-- 위험성 발굴 (출근 후) -->
+      <!-- 위험성 발굴 (근무중에만 허용) -->
       <button
         type="button"
         class="action-row"
@@ -70,12 +70,10 @@
         </svg>
       </button>
 
-      <!-- 아차사고 보고 (근로자) — 출근 후에만 사용 가능(출근 전 비활성) -->
+      <!-- 아차사고 보고 (근로자) — 즉시성 예외: 근무중 게이트 미적용(항상 활성) — PRAFTA-022 -->
       <button
         type="button"
         class="action-row"
-        :class="{ 'action-row--disabled': blocked }"
-        :disabled="blocked"
         @click="onNearMissReport"
       >
         <svg class="icon row-icon" width="20" height="20" aria-hidden="true">
@@ -103,7 +101,8 @@
 
 <script setup>
 const props = defineProps({
-  // true 면 차단 배너 노출 + 안전점검/위험성 발굴 row disabled (아차사고 보고는 게이트 미적용)
+  // true(근무중 아님) 면 차단 배너 노출 + 안전점검·위험성 발굴 row disabled (근무중에만 허용 — PRAFTA-022).
+  // 아차사고 보고는 즉시성 예외로 게이트 미적용(항상 활성).
   blocked: {
     type: Boolean,
     default: false,
@@ -137,9 +136,8 @@ const onRiskDiscovery = () => {
   emit('click:risk-discovery')
 }
 
-// "아차사고 보고" → /NearMissReport (출근 후에만 사용 가능)
+// "아차사고 보고" → /NearMissReport (즉시성 예외: 근무중 게이트 미적용 — 항상 보고 가능)
 const onNearMissReport = () => {
-  if (props.blocked) return
   emit('click:near-miss-report')
 }
 

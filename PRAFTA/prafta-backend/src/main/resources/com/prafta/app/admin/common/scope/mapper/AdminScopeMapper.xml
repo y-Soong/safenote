@@ -1,0 +1,46 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+
+<mapper namespace="com.prafta.app.admin.common.scope.mapper.AdminScopeMapper">
+
+    <!--
+      [권한매트릭스 §2] 노드관리자 스코프(자기노드 + 자손) 재귀 전개 공용 조각(D2).
+      - seed: 선택 사업장 내 내가 정/부 관리자인 노드.
+      - 재귀: PARENT_NODE_CD = 부모 NODE_CD 로 자손 확장(IX_NODE_PARENT 활용).
+      - 순환 가드: DEPTH < 100 (PARENT 자기참조/순환 시 무한루프 방지).
+      - 파라미터: cmpnyCd / siteCd / userCd (token 출처).
+      - 재사용: Phase 2~8 매퍼가 `... WHERE x.NODE_CD IN ( <include refid="scopedNodeCds"/> )` 형태로 임베드.
+        (MySQL 8.0 은 서브쿼리 내 WITH RECURSIVE 를 지원한다.)
+    -->
+    <sql id="scopedNodeCds">
+        WITH RECURSIVE scope_node (NODE_CD, DEPTH) AS (
+            SELECT
+                  n.NODE_CD
+                , 0 AS DEPTH
+            FROM TB_SITE_NODE n
+            WHERE n.CMPNY_CD = #{cmpnyCd}
+              AND n.SITE_CD = #{siteCd}
+              AND ( n.MAIN_ADMIN_CD = #{userCd} OR n.SUB_ADMIN_CD = #{userCd} )
+            UNION ALL
+            SELECT
+                  c.NODE_CD
+                , p.DEPTH + 1 AS DEPTH
+            FROM TB_SITE_NODE c
+            INNER JOIN scope_node p
+                ON c.CMPNY_CD = #{cmpnyCd}
+               AND c.SITE_CD = #{siteCd}
+               AND c.PARENT_NODE_CD = p.NODE_CD
+            WHERE p.DEPTH &lt; 100
+        )
+        SELECT NODE_CD FROM scope_node
+    </sql>
+
+    <!-- 내 노드 + 자손 NODE_CD 집합 조회(독립 호출용). -->
+    <select id="selectScopedNodeCds"
+            parameterType="com.prafta.app.admin.common.scope.application.query.ScopedNodeQuery"
+            resultType="string">
+    /* AdminScopeMapper.selectScopedNodeCds */
+    <include refid="scopedNodeCds"/>
+    </select>
+
+</mapper>

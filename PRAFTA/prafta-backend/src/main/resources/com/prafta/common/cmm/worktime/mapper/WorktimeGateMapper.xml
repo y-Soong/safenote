@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+
+<!--
+  prafta-app-022: 근무중 게이트(WorktimeGate) 공용 Mapper.
+  - 식별값(cmpnyCd/siteCd/userCd)은 TokenInfo 출처만 전달(IDOR 가드).
+  - SQL 규칙: leading comma, #{...} 바인딩, SELECT * 금지(명시 컬럼). MySQL 8.
+  - 오늘 일자는 DB NOW() 기준(자정 경계 일관).
+-->
+<mapper namespace="com.prafta.common.cmm.worktime.mapper.WorktimeGateMapper">
+
+    <!-- DB 서버 NOW() 기준 오늘 일자(YYYYMMDD). JVM 시계가 아닌 DB 시계 단일 기준. -->
+    <select id="selectTodayYmd" resultType="string">
+    /* WorktimeGateMapper.selectTodayYmd */
+    SELECT DATE_FORMAT(NOW(), '%Y%m%d') AS todayYmd
+    </select>
+
+    <!--
+      오늘(todayYmd) 본인 열린 근태(미퇴근) 건수.
+      열린 근태 = DEL_YN='N' AND CHECK_IN_TIME IS NOT NULL AND CHECK_OUT_TIME IS NULL.
+      AppAttd01Mapper.selectOpenAttd 의 열린 근태 정의를 당일 COUNT 로 차용.
+    -->
+    <select id="countOpenAttdToday" resultType="int">
+    /* WorktimeGateMapper.countOpenAttdToday */
+    SELECT
+          COUNT(*)
+      FROM TB_USER_ATTD_MGMT A
+     WHERE A.CMPNY_CD = #{cmpnyCd}
+       AND A.SITE_CD  = #{siteCd}
+       AND A.USER_CD  = #{userCd}
+       AND A.WORK_YMD = #{todayYmd}
+       AND A.DEL_YN   = 'N'
+       AND A.CHECK_IN_TIME IS NOT NULL
+       AND A.CHECK_OUT_TIME IS NULL
+    </select>
+
+</mapper>

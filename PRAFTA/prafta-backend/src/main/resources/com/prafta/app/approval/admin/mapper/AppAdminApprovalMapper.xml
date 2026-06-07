@@ -1,0 +1,444 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+
+<mapper namespace="com.prafta.app.approval.admin.mapper.AppAdminApprovalMapper">
+
+    <!--
+      001-P2 앱 관리자 승인 관리 — web reqinbox/leaveflow/attd07 조회 SQL 포팅 + 토큰·노드 스코프.
+      식별자(cmpny/user/site)는 서비스에서 토큰값만 전달(IDOR 차단). 노드 스코프는 Phase 1 재귀 CTE 결과 List.
+    -->
+
+    <!--
+      근태보정/초과(TB_USER_ATTD_REQ) 공통 스코프 WHERE 조각.
+      - companyWide(master): 사업장/노드 무필터.
+      - siteFilter(hr): R.SITE_CD = 사업장.
+      - useNodeScope(노드관리자): R.SITE_CD = nodeSiteCd AND COALESCE(R.NODE_CD, 요청자 U.NODE_CD) ∈ scopedNodeCds(A4 fallback).
+      - keyword: 사번(USER_CD) 또는 요청자명(복호화) 부분일치.
+      - startYmd/endYmd: WORK_YMD 범위(이력).
+      ⚠ useNodeScope=true 일 때 scopedNodeCds 는 서비스가 비어있지 않음을 보장(safe 단독/비노드관리자는 진입 차단).
+    -->
+    <sql id="scopeWhere">
+        AND R.CMPNY_CD = #{cmpnyCd}
+        AND R.DEL_YN   = 'N'
+        AND R.REQ_TYPE IN
+        <foreach collection="reqTypes" item="rt" open="(" separator="," close=")">
+            #{rt}
+        </foreach>
+        AND R.REQ_STATUS IN
+        <foreach collection="reqStatuses" item="rs" open="(" separator="," close=")">
+            #{rs}
+        </foreach>
+        <if test="siteFilter != null">
+            AND R.SITE_CD = #{siteFilter}
+        </if>
+        <if test="useNodeScope">
+            AND R.SITE_CD = #{nodeSiteCd}
+            AND COALESCE(R.NODE_CD, U.NODE_CD) IN
+            <foreach collection="scopedNodeCds" item="nc" open="(" separator="," close=")">
+                #{nc}
+            </foreach>
+        </if>
+        <if test="keyword != null">
+            AND (
+                  R.USER_CD LIKE CONCAT('%', #{keyword}, '%')
+               OR FNC_CMM_INFO_SRCH(R.CMPNY_CD, 'USER_NM', R.USER_CD, null) LIKE CONCAT('%', #{keyword}, '%')
+            )
+        </if>
+        <if test="startYmd != null">
+            AND R.WORK_YMD &gt;= #{startYmd}
+        </if>
+        <if test="endYmd != null">
+            AND R.WORK_YMD &lt;= #{endYmd}
+        </if>
+    </sql>
+
+    <!-- ============================ A-1 대기: 근태보정/초과 ============================ -->
+
+    <select id="selectPendingCorrOt"
+            parameterType="com.prafta.app.approval.admin.application.query.ApprovalScopeQuery"
+            resultType="com.prafta.app.approval.admin.result.PendingCorrOtRow">
+    /* AppAdminApprovalMapper.selectPendingCorrOt */
+    SELECT
+          R.REQ_ID                                                       AS reqId
+        , R.REQ_TYPE                                                     AS reqType
+        , R.USER_CD                                                      AS userCd
+        , FNC_CMM_INFO_SRCH(R.CMPNY_CD, 'USER_NM', R.USER_CD, null)      AS userNm
+        , R.SITE_CD                                                      AS siteCd
+        , R.NODE_CD                                                      AS nodeCd
+        , FNC_CMM_INFO_SRCH(R.CMPNY_CD, 'NODE', R.SITE_CD, COALESCE(R.NODE_CD, U.NODE_CD)) AS nodeNm
+        , R.WORK_YMD                                                     AS workYmd
+        , R.WORK_SEQ                                                     AS workSeq
+        , R.START_DATE                                                   AS startDate
+        , R.START_TIME                                                   AS startTime
+        , R.END_DATE                                                     AS endDate
+        , R.END_TIME                                                     AS endTime
+        , R.REQ_REASON                                                   AS reqReason
+        , DATE_FORMAT(R.INSERT_DATE, '%Y-%m-%dT%H:%i:%s')               AS reqDate
+      FROM TB_USER_ATTD_REQ R
+      LEFT JOIN TB_USER U
+        ON U.CMPNY_CD = R.CMPNY_CD
+       AND U.USER_CD  = R.USER_CD
+     WHERE 1 = 1
+     <include refid="scopeWhere"/>
+     ORDER BY R.INSERT_DATE DESC
+     LIMIT #{limit} OFFSET #{offset}
+    </select>
+
+    <select id="countPendingCorrOt"
+            parameterType="com.prafta.app.approval.admin.application.query.ApprovalScopeQuery"
+            resultType="int">
+    /* AppAdminApprovalMapper.countPendingCorrOt */
+    SELECT COUNT(1)
+      FROM TB_USER_ATTD_REQ R
+      LEFT JOIN TB_USER U
+        ON U.CMPNY_CD = R.CMPNY_CD
+       AND U.USER_CD  = R.USER_CD
+     WHERE 1 = 1
+     <include refid="scopeWhere"/>
+    </select>
+
+    <!-- ============================ A-1 대기: 연차(결재선 기반) ============================ -->
+    <!--
+      web LeaveFlowMapper.selectMyPendingLeaveApprovals 포팅: 내가 현재 단계('01' 신청) 결재자인 05/06 요청.
+      관리자 스코프(master/hr/node)와 무관하게 web 동일 — 결재선이 곧 노출 스코프(결재자 본인).
+    -->
+    <select id="selectPendingLeave" resultType="com.prafta.app.approval.admin.result.PendingLeaveRow">
+    /* AppAdminApprovalMapper.selectPendingLeave */
+    SELECT
+          AP.REQ_ID                                                          AS reqId
+        , AP.APPROVAL_STEP                                                   AS approvalStep
+        , R.REQ_TYPE                                                         AS reqType
+        , R.USER_CD                                                          AS requesterUserCd
+        , FNC_CMM_INFO_SRCH(R.CMPNY_CD, 'USER_NM', R.USER_CD, null)          AS requesterUserNm
+        , FNC_CMM_INFO_SRCH(R.CMPNY_CD, 'NODE', R.SITE_CD, R.NODE_CD)        AS nodeNm
+        , R.WORK_YMD                                                         AS workYmd
+        , R.LEAVE_TYPE                                                       AS leaveType
+        , U.LEAVE_CD                                                         AS leaveCd
+        , LT.LEAVE_NO                                                        AS leaveNo
+        , LT.LEAVE_NM                                                        AS leaveNm
+        , U.USE_UNIT_TYPE                                                    AS useUnitType
+        , FNC_CMM_INFO_SRCH(R.CMPNY_CD, 'SYST_VAL', U.USE_UNIT_TYPE, 'SYS025') AS unitNm
+        , R.LEAVE_DAYS                                                       AS leaveDays
+        , U.LEAVE_MINUTES                                                    AS leaveMinutes
+        , R.START_TIME                                                       AS startTime
+        , R.END_TIME                                                         AS endTime
+        , R.REQ_REASON                                                       AS reqReason
+        , DATE_FORMAT(R.INSERT_DATE, '%Y-%m-%dT%H:%i:%s')                    AS reqDate
+        , CASE WHEN R.USER_CD = #{approverUserCd} THEN 'Y' ELSE 'N' END      AS selfYn
+      FROM TB_USER_ATTD_REQ_APPROVAL AP
+      JOIN TB_USER_ATTD_REQ R
+        ON R.CMPNY_CD = AP.CMPNY_CD
+       AND R.REQ_ID   = AP.REQ_ID
+      LEFT JOIN TB_USER_LEAVE_USE U
+        ON U.CMPNY_CD = R.CMPNY_CD
+       AND U.DEL_YN   = 'N'
+       AND (
+             (R.REQ_TYPE = '05' AND U.REQ_ID   = R.REQ_ID AND U.LEAVE_STATUS = 'CONFIRMED')
+          OR (R.REQ_TYPE = '06' AND U.LEAVE_ID = R.TARGET_ID)
+       )
+      LEFT JOIN TB_LEAVE_TYPE_MGMT LT
+        ON LT.CMPNY_CD = U.CMPNY_CD
+       AND LT.LEAVE_CD = U.LEAVE_CD
+     WHERE AP.CMPNY_CD         = #{cmpnyCd}
+       AND AP.APPROVER_USER_CD = #{approverUserCd}
+       AND AP.APPROVAL_STATUS  = '01'
+       AND R.REQ_TYPE IN ('05', '06')
+       AND R.REQ_STATUS        = '01'
+       AND R.DEL_YN            = 'N'
+       <if test="keyword != null">
+       AND (
+             R.USER_CD LIKE CONCAT('%', #{keyword}, '%')
+          OR FNC_CMM_INFO_SRCH(R.CMPNY_CD, 'USER_NM', R.USER_CD, null) LIKE CONCAT('%', #{keyword}, '%')
+       )
+       </if>
+     ORDER BY R.INSERT_DATE DESC
+     LIMIT #{limit} OFFSET #{offset}
+    </select>
+
+    <select id="countPendingLeave" resultType="int">
+    /* AppAdminApprovalMapper.countPendingLeave */
+    SELECT COUNT(1)
+      FROM TB_USER_ATTD_REQ_APPROVAL AP
+      JOIN TB_USER_ATTD_REQ R
+        ON R.CMPNY_CD = AP.CMPNY_CD
+       AND R.REQ_ID   = AP.REQ_ID
+     WHERE AP.CMPNY_CD         = #{cmpnyCd}
+       AND AP.APPROVER_USER_CD = #{approverUserCd}
+       AND AP.APPROVAL_STATUS  = '01'
+       AND R.REQ_TYPE IN ('05', '06')
+       AND R.REQ_STATUS        = '01'
+       AND R.DEL_YN            = 'N'
+       <if test="keyword != null">
+       AND (
+             R.USER_CD LIKE CONCAT('%', #{keyword}, '%')
+          OR FNC_CMM_INFO_SRCH(R.CMPNY_CD, 'USER_NM', R.USER_CD, null) LIKE CONCAT('%', #{keyword}, '%')
+       )
+       </if>
+    </select>
+
+    <!-- ============================ A-2 상세 ============================ -->
+
+    <select id="selectReqMeta" resultType="com.prafta.app.approval.admin.result.ReqMetaRow">
+    /* AppAdminApprovalMapper.selectReqMeta */
+    SELECT
+          R.REQ_ID                                                       AS reqId
+        , R.REQ_TYPE                                                     AS reqType
+        , R.REQ_STATUS                                                   AS reqStatus
+        , R.USER_CD                                                      AS userCd
+        , FNC_CMM_INFO_SRCH(R.CMPNY_CD, 'USER_NM', R.USER_CD, null)      AS requesterUserNm
+        , R.SITE_CD                                                      AS siteCd
+        , R.NODE_CD                                                      AS nodeCd
+        , U.NODE_CD                                                      AS requesterNodeCd
+        , FNC_CMM_INFO_SRCH(R.CMPNY_CD, 'NODE', R.SITE_CD, COALESCE(R.NODE_CD, U.NODE_CD)) AS nodeNm
+        , R.WORK_YMD                                                     AS workYmd
+        , R.WORK_SEQ                                                     AS workSeq
+        , R.TARGET_ID                                                    AS targetId
+        , R.START_DATE                                                   AS startDate
+        , R.START_TIME                                                   AS startTime
+        , R.END_DATE                                                     AS endDate
+        , R.END_TIME                                                     AS endTime
+        , R.LEAVE_TYPE                                                   AS leaveType
+        , R.LEAVE_DAYS                                                   AS leaveDays
+        , R.REQ_REASON                                                   AS reqReason
+        , DATE_FORMAT(R.INSERT_DATE, '%Y-%m-%dT%H:%i:%s')               AS reqDate
+      FROM TB_USER_ATTD_REQ R
+      LEFT JOIN TB_USER U
+        ON U.CMPNY_CD = R.CMPNY_CD
+       AND U.USER_CD  = R.USER_CD
+     WHERE R.CMPNY_CD = #{cmpnyCd}
+       AND R.REQ_ID   = #{reqId}
+       AND R.DEL_YN   = 'N'
+     LIMIT 1
+    </select>
+
+    <!-- 근태보정 Before(원본 출퇴근) — web Attd07Mapper.selectAttdSnapshotById 포팅. -->
+    <select id="selectAttdSnapshot" resultType="com.prafta.app.approval.admin.result.AttdSnapshotRow">
+    /* AppAdminApprovalMapper.selectAttdSnapshot */
+    SELECT
+          M.CHECK_IN_DATE   AS checkInDate
+        , M.CHECK_IN_TIME   AS checkInTime
+        , M.CHECK_OUT_DATE  AS checkOutDate
+        , M.CHECK_OUT_TIME  AS checkOutTime
+      FROM TB_USER_ATTD_MGMT M
+     WHERE M.CMPNY_CD = #{cmpnyCd}
+       AND M.ATTD_ID  = #{attdId}
+       AND M.DEL_YN   = 'N'
+     LIMIT 1
+    </select>
+
+    <!-- 연차 본문: 05=요청연결 사용기록 / 06=수정대상 사용기록(LEAVE_ID=TARGET_ID). -->
+    <select id="selectLeaveBody" resultType="com.prafta.app.approval.admin.result.LeaveBodyRow">
+    /* AppAdminApprovalMapper.selectLeaveBody */
+    SELECT
+          U.LEAVE_CD                                                     AS leaveCd
+        , LT.LEAVE_NO                                                    AS leaveNo
+        , LT.LEAVE_NM                                                    AS leaveNm
+        , U.USE_UNIT_TYPE                                                AS useUnitType
+        , FNC_CMM_INFO_SRCH(U.CMPNY_CD, 'SYST_VAL', U.USE_UNIT_TYPE, 'SYS025') AS unitNm
+        , U.LEAVE_DAYS                                                   AS leaveDays
+        , U.LEAVE_MINUTES                                                AS leaveMinutes
+        , U.START_DATE                                                   AS startDate
+        , U.START_TIME                                                   AS startTime
+        , U.END_DATE                                                     AS endDate
+        , U.END_TIME                                                     AS endTime
+      FROM TB_USER_LEAVE_USE U
+      LEFT JOIN TB_LEAVE_TYPE_MGMT LT
+        ON LT.CMPNY_CD = U.CMPNY_CD
+       AND LT.LEAVE_CD = U.LEAVE_CD
+     WHERE U.CMPNY_CD = #{cmpnyCd}
+       AND U.DEL_YN   = 'N'
+       AND (
+             (U.REQ_ID = #{reqId} AND U.LEAVE_STATUS = 'CONFIRMED')
+          OR (#{targetId} IS NOT NULL AND U.LEAVE_ID = #{targetId})
+       )
+     ORDER BY U.INSERT_DATE DESC
+     LIMIT 1
+    </select>
+
+    <!-- 연차 잔여: 활성 부여 합계(app selectApplicableLeaveTypes 동형). -->
+    <select id="selectLeaveBalance" resultType="com.prafta.app.approval.admin.result.LeaveBalanceRow">
+    /* AppAdminApprovalMapper.selectLeaveBalance */
+    SELECT
+          IFNULL(SUM(G.GRANT_DAYS), 0)                  AS granted
+        , IFNULL(SUM(G.USED_DAYS), 0)                   AS used
+        , IFNULL(SUM(G.GRANT_DAYS) - SUM(G.USED_DAYS), 0) AS remain
+      FROM TB_USER_LEAVE_GRANT G
+     WHERE G.CMPNY_CD  = #{cmpnyCd}
+       AND G.USER_CD   = #{userCd}
+       AND G.LEAVE_CD  = #{leaveCd}
+       AND G.STATUS    = 'ACTIVE'
+       AND G.EXPIRE_YN = 'N'
+       AND G.DEL_YN    = 'N'
+    </select>
+
+    <!-- ④ 마감 차단 판정 — web AttdCloseMapper.countCovering 포팅(자기/상위(INC_SUB)/전체 '*'). -->
+    <select id="countCloseCovering" resultType="int">
+    /* AppAdminApprovalMapper.countCloseCovering */
+    <choose>
+      <when test='"*".equals(nodeCd)'>
+        SELECT COUNT(*)
+          FROM TB_ATTD_CLOSE C
+         WHERE C.CMPNY_CD = #{cmpnyCd}
+           AND C.SITE_CD  = #{siteCd}
+           AND C.CLOSE_YM = #{closeYm}
+           AND C.CLOSE_STATUS = 'CLOSED'
+           AND C.NODE_CD = '*'
+      </when>
+      <otherwise>
+        WITH RECURSIVE anc AS (
+            SELECT N.NODE_CD, N.PARENT_NODE_CD
+              FROM TB_SITE_NODE N
+             WHERE N.CMPNY_CD = #{cmpnyCd} AND N.SITE_CD = #{siteCd} AND N.NODE_CD = #{nodeCd}
+            UNION ALL
+            SELECT P.NODE_CD, P.PARENT_NODE_CD
+              FROM TB_SITE_NODE P
+              JOIN anc A2
+                ON P.CMPNY_CD = #{cmpnyCd} AND P.SITE_CD = #{siteCd} AND P.NODE_CD = A2.PARENT_NODE_CD
+        )
+        SELECT COUNT(*)
+          FROM TB_ATTD_CLOSE C
+         WHERE C.CMPNY_CD = #{cmpnyCd}
+           AND C.SITE_CD  = #{siteCd}
+           AND C.CLOSE_YM = #{closeYm}
+           AND C.CLOSE_STATUS = 'CLOSED'
+           AND (
+                 C.NODE_CD = '*'
+              OR C.NODE_CD = #{nodeCd}
+              OR ( C.INC_SUB_YN = 'Y' AND C.NODE_CD IN (SELECT NODE_CD FROM anc WHERE NODE_CD &lt;&gt; #{nodeCd}) )
+           )
+      </otherwise>
+    </choose>
+    </select>
+
+    <!-- ============================ A-5 이력: 근태보정/초과 ============================ -->
+
+    <select id="selectHistoryCorrOt"
+            parameterType="com.prafta.app.approval.admin.application.query.ApprovalScopeQuery"
+            resultType="com.prafta.app.approval.admin.result.HistoryRow">
+    /* AppAdminApprovalMapper.selectHistoryCorrOt */
+    SELECT
+          R.REQ_ID                                                       AS reqId
+        , R.REQ_TYPE                                                     AS reqType
+        , R.USER_CD                                                      AS userCd
+        , FNC_CMM_INFO_SRCH(R.CMPNY_CD, 'USER_NM', R.USER_CD, null)      AS requesterUserNm
+        , FNC_CMM_INFO_SRCH(R.CMPNY_CD, 'NODE', R.SITE_CD, COALESCE(R.NODE_CD, U.NODE_CD)) AS nodeNm
+        , R.WORK_YMD                                                     AS workYmd
+        , DATE_FORMAT(R.INSERT_DATE, '%Y-%m-%dT%H:%i:%s')               AS reqDate
+        , DATE_FORMAT(R.PROCESS_DATE, '%Y-%m-%dT%H:%i:%s')              AS processDate
+        , R.REQ_STATUS                                                   AS reqStatus
+        , R.PROCESS_USER_CD                                             AS processUserCd
+        , FNC_CMM_INFO_SRCH(R.CMPNY_CD, 'USER_NM', R.PROCESS_USER_CD, null) AS processUserNm
+        , R.PROCESS_COMMENT                                             AS rejectReason
+      FROM TB_USER_ATTD_REQ R
+      LEFT JOIN TB_USER U
+        ON U.CMPNY_CD = R.CMPNY_CD
+       AND U.USER_CD  = R.USER_CD
+     WHERE 1 = 1
+     <include refid="scopeWhere"/>
+     ORDER BY R.PROCESS_DATE DESC
+     LIMIT #{limit} OFFSET #{offset}
+    </select>
+
+    <select id="countHistoryCorrOt"
+            parameterType="com.prafta.app.approval.admin.application.query.ApprovalScopeQuery"
+            resultType="int">
+    /* AppAdminApprovalMapper.countHistoryCorrOt */
+    SELECT COUNT(1)
+      FROM TB_USER_ATTD_REQ R
+      LEFT JOIN TB_USER U
+        ON U.CMPNY_CD = R.CMPNY_CD
+       AND U.USER_CD  = R.USER_CD
+     WHERE 1 = 1
+     <include refid="scopeWhere"/>
+    </select>
+
+    <!-- ============================ A-5 이력: 연차(결재선 참여) ============================ -->
+
+    <select id="selectHistoryLeave" resultType="com.prafta.app.approval.admin.result.HistoryRow">
+    /* AppAdminApprovalMapper.selectHistoryLeave */
+    SELECT DISTINCT
+          R.REQ_ID                                                       AS reqId
+        , R.REQ_TYPE                                                     AS reqType
+        , R.USER_CD                                                      AS userCd
+        , FNC_CMM_INFO_SRCH(R.CMPNY_CD, 'USER_NM', R.USER_CD, null)      AS requesterUserNm
+        , FNC_CMM_INFO_SRCH(R.CMPNY_CD, 'NODE', R.SITE_CD, COALESCE(R.NODE_CD, U.NODE_CD)) AS nodeNm
+        , R.WORK_YMD                                                     AS workYmd
+        , DATE_FORMAT(R.INSERT_DATE, '%Y-%m-%dT%H:%i:%s')               AS reqDate
+        , DATE_FORMAT(R.PROCESS_DATE, '%Y-%m-%dT%H:%i:%s')              AS processDate
+        , R.REQ_STATUS                                                   AS reqStatus
+        , R.PROCESS_USER_CD                                             AS processUserCd
+        , FNC_CMM_INFO_SRCH(R.CMPNY_CD, 'USER_NM', R.PROCESS_USER_CD, null) AS processUserNm
+        , R.PROCESS_COMMENT                                             AS rejectReason
+      FROM TB_USER_ATTD_REQ R
+      JOIN TB_USER_ATTD_REQ_APPROVAL AP
+        ON AP.CMPNY_CD = R.CMPNY_CD
+       AND AP.REQ_ID   = R.REQ_ID
+       AND AP.APPROVER_USER_CD = #{approverUserCd}
+      LEFT JOIN TB_USER U
+        ON U.CMPNY_CD = R.CMPNY_CD
+       AND U.USER_CD  = R.USER_CD
+     WHERE R.CMPNY_CD  = #{cmpnyCd}
+       AND R.REQ_TYPE IN ('05', '06')
+       AND R.REQ_STATUS IN ('02', '03', '04')
+       AND R.DEL_YN     = 'N'
+       <if test="startYmd != null">
+       AND R.WORK_YMD &gt;= #{startYmd}
+       </if>
+       <if test="endYmd != null">
+       AND R.WORK_YMD &lt;= #{endYmd}
+       </if>
+       <if test="keyword != null">
+       AND (
+             R.USER_CD LIKE CONCAT('%', #{keyword}, '%')
+          OR FNC_CMM_INFO_SRCH(R.CMPNY_CD, 'USER_NM', R.USER_CD, null) LIKE CONCAT('%', #{keyword}, '%')
+       )
+       </if>
+     ORDER BY R.PROCESS_DATE DESC
+     LIMIT #{limit} OFFSET #{offset}
+    </select>
+
+    <select id="countHistoryLeave" resultType="int">
+    /* AppAdminApprovalMapper.countHistoryLeave */
+    SELECT COUNT(DISTINCT R.REQ_ID)
+      FROM TB_USER_ATTD_REQ R
+      JOIN TB_USER_ATTD_REQ_APPROVAL AP
+        ON AP.CMPNY_CD = R.CMPNY_CD
+       AND AP.REQ_ID   = R.REQ_ID
+       AND AP.APPROVER_USER_CD = #{approverUserCd}
+     WHERE R.CMPNY_CD  = #{cmpnyCd}
+       AND R.REQ_TYPE IN ('05', '06')
+       AND R.REQ_STATUS IN ('02', '03', '04')
+       AND R.DEL_YN     = 'N'
+       <if test="startYmd != null">
+       AND R.WORK_YMD &gt;= #{startYmd}
+       </if>
+       <if test="endYmd != null">
+       AND R.WORK_YMD &lt;= #{endYmd}
+       </if>
+       <if test="keyword != null">
+       AND (
+             R.USER_CD LIKE CONCAT('%', #{keyword}, '%')
+          OR FNC_CMM_INFO_SRCH(R.CMPNY_CD, 'USER_NM', R.USER_CD, null) LIKE CONCAT('%', #{keyword}, '%')
+       )
+       </if>
+    </select>
+
+    <!-- ============================ A-3 처리 보조 ============================ -->
+
+    <!--
+      Fix3(F1): NODE_CD NULL 근태보정/초과 건을 노드관리자가 처리하기 직전 요청자 실제 노드로 백필.
+      NODE_CD IS NULL 가드로 기존 값을 덮어쓰지 않으며(데이터품질 교정), 처리 트랜잭션과 동일 경계에서 실행된다.
+    -->
+    <update id="backfillReqNodeCd">
+    /* AppAdminApprovalMapper.backfillReqNodeCd */
+    UPDATE TB_USER_ATTD_REQ
+       SET NODE_CD     = #{nodeCd}
+         , UPDATE_NO   = #{updateNo}
+         , UPDATE_DATE = NOW()
+     WHERE CMPNY_CD = #{cmpnyCd}
+       AND REQ_ID   = #{reqId}
+       AND NODE_CD IS NULL
+       AND DEL_YN   = 'N'
+    </update>
+
+</mapper>

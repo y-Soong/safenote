@@ -16,6 +16,7 @@ import com.prafta.app.home.home01.mapper.AppHome01Mapper;
 import com.prafta.app.home.home01.result.AttdMgmtResult;
 import com.prafta.app.home.home01.result.LeaveSummaryResult;
 import com.prafta.app.home.home01.result.OvernightScheduleResult;
+import com.prafta.app.home.home01.result.PrevDayOpenAttdResult;
 import com.prafta.app.home.home01.result.ScheduleResult;
 import com.prafta.app.home.home01.result.TbmStatusResult;
 import com.prafta.app.home.home01.service.AppHome01Service;
@@ -64,7 +65,7 @@ public class AppHome01ServiceImpl implements AppHome01Service {
                 param.userCd(), todayYmd, baseYmd);
 
         HomeSummaryResponse response = HomeSummaryResponse.builder()
-                .attendance(buildAttendance(attdQuery))
+                .attendance(buildAttendance(attdQuery, todayYmd, baseYmd))
                 .leave(buildLeave(query))
                 .approval(buildApproval(query))
                 .tbm(buildTbm(query))
@@ -83,14 +84,32 @@ public class AppHome01ServiceImpl implements AppHome01Service {
      *   특히 1구간 퇴근 완료 + 2구간 미출근 상태에서는 1구간의 출퇴근 기록을 보여주지 않고
      *   2구간 스케줄을 "예정"(BEFORE_WORK)으로 노출한다(attd01 의 구간 전환 규칙과 정합).
      * <p>isOffsite(prafta-app-003 B-1): 오늘 가장 최근 출근 레코드에 출근 GPS 행이 존재(=지오펜스 밖)하면 외근.
+     * <p>prevDayCheckoutPending(prafta-app-021 §7.6): baseYmd 가 오늘일 때만, 직전일(today-1) 미퇴근이 남아 있으면
+     *   전날 마감 대기 신호를 켜고 퇴근 버튼을 활성화한다. 오버나이트(baseYmd=전일)면 기존 hasOpen 경로로 처리되므로
+     *   중복 표시를 피하기 위해 신호를 켜지 않는다(E6).
+     *
+     * @param query    attendance 전용 기준일(baseYmd) 스코프 쿼리
+     * @param todayYmd DB 기준 오늘(YYYYMMDD) — 직전일 산출용
+     * @param baseYmd  attendance 기준일(YYYYMMDD) — 오버나이트면 today-1
      */
-    private HomeSummaryResponse.Attendance buildAttendance(HomeSummaryQuery query) {
+    private HomeSummaryResponse.Attendance buildAttendance(HomeSummaryQuery query, String todayYmd, String baseYmd) {
 
         List<AttdMgmtResult> attds = appHome01Mapper.selectTodayAttdList(query);
         // prafta-app-013-1: sch 는 attendance 전용 기준일(baseYmd) 로 조회된다(query 가 attdQuery).
         ScheduleResult sch = appHome01Mapper.selectTodaySchedule(query);
         // 외근 여부: 오늘 최근 출근 레코드의 출근 GPS 행(01) 존재 여부(존재=외근). 오늘 출근 없으면 0.
         boolean isOffsite = appHome01Mapper.selectTodayCheckInOffsite(query) > 0;
+
+        // prafta-app-021 (§7.6): 직전일(today-1) 미퇴근 조회. baseYmd 가 오늘일 때만 신호로 사용한다(오버나이트 중복 표시 회피, E6).
+        //   오버나이트(baseYmd != today)면 전일 근무는 기존 hasOpen 경로로 표시되므로 별도 신호를 켜지 않는다.
+        boolean baseIsToday = baseYmd != null && baseYmd.equals(todayYmd);
+        PrevDayOpenAttdResult prevDayOpen = null;
+        if (baseIsToday) {
+            String prevYmd = prevDayOf(todayYmd);
+            if (prevYmd != null) {
+                prevDayOpen = appHome01Mapper.selectPrevDayOpenAttd(query, prevYmd);
+            }
+        }
 
         // prafta-app-013-2: 기준일 스케줄(work_plan→sch_mgmt) 존재 여부. 휴무/미배정/미존재면 false.
         boolean scheduleExists = (sch != null);
@@ -155,18 +174,47 @@ public class AppHome01ServiceImpl implements AppHome01Service {
                 checkOutTime = s2.checkOutTime();
             }
         } else {
-            // 1구간 스케줄(기존 동작 유지) — 다만 canCheckIn 은 아래 공통 규칙으로 산출.
-            if (!s1In) {
+            // 1구간 스케줄 또는 스케줄 없는 날(추가 출근 WORK_SEQ 2 포함).
+            //   prafta-app-023: 추가 출근으로 생긴 진행 중(미퇴근) 구간을 status 에 반영한다.
+            //   기존엔 s1(WORK_SEQ 1)만 보고 status 를 산출해, 1구간 퇴근 후 2번째 출근(미퇴근)
+            //   상태가 "퇴근 완료"로 오표시되고 퇴근 버튼(hasOpen 기반 활성)과 불일치했다.
+            if (!s1In && !s2In) {
                 status = STATUS_BEFORE_WORK;
-            } else {
+            } else if (s1In && !s1Out) {
+                // 1구간 진행 중.
+                status = STATUS_WORKING;
                 checkInTime = s1.checkInTime();
-                checkOutTime = s1.checkOutTime();
-                status = s1Out ? STATUS_OFF_WORK : STATUS_WORKING;
+            } else if (s2In && !s2Out) {
+                // 2번째(추가) 출근 진행 중 → 근무중(2번째 출근시각 표시).
+                status = STATUS_WORKING;
+                checkInTime = s2.checkInTime();
+            } else {
+                // 전 구간 퇴근 완료 → 첫 출근 ~ 마지막 퇴근으로 표시.
+                status = STATUS_OFF_WORK;
+                checkInTime = s1In ? s1.checkInTime() : s2.checkInTime();
+                checkOutTime = s2In ? s2.checkOutTime() : s1.checkOutTime();
             }
         }
 
+        // prafta-app-021 (§7.6): 전날 미퇴근 마감 대기 신호.
+        //   오늘 진행 중(hasOpen) 케이스가 우선이므로, hasOpen 이 아닐 때만 전날 신호를 켠다(이중 표시 방지).
+        //   예외(prafta-app-021-6): 직전일 미퇴근의 WORK_YMD 월이 이미 마감이면 퇴근이 월마감으로 막히므로
+        //   퇴근 유도(prevDayCheckoutPending)를 켜지 않는다. attd01 출근 게이트 예외와 신호 일관성을 맞춰,
+        //   출근 흐름이 정상 진행(게이트 예외로 출근 허용)되도록 둔다. 마감 판정 데이터소스는
+        //   attd01.isMonthClosed 와 동일(부서단위 월마감, prafta-028 / TB_ATTD_CLOSE).
+        boolean prevDayClosedMonth = prevDayOpen != null
+                && isMonthClosed(query, prevDayOpen.workYmd().substring(0, 6));
+        boolean prevDayCheckoutPending = !hasOpen && prevDayOpen != null && !prevDayClosedMonth;
+        if (prevDayClosedMonth) {
+            log.info("[home01] 직전일 미퇴근이 마감된 월이라 퇴근 유도 생략(보정 대상) — prafta-app-021-6 (prevDayWorkYmd={})", prevDayOpen.workYmd());
+        }
+        String prevDayCheckInTime = prevDayCheckoutPending ? prevDayOpen.checkInTime() : null;
+
         // 공통 액션 규칙(attd01 정합): 진행중 레코드 있으면 퇴근만, 없고 잔여 구간 있으면 출근만.
-        boolean canCheckOut = hasOpen;
+        //   prafta-app-021: 전날 미퇴근이 남아 있으면(prevDayCheckoutPending) 메인에서 전날 마감이 가능하도록 퇴근 버튼 활성화.
+        //   canCheckOut = 오늘 진행 중(hasOpen) 우선, 없으면 전날 미퇴근(prevDayCheckoutPending).
+        boolean canCheckOut = hasOpen || prevDayCheckoutPending;
+        // canCheckIn 은 기존 유지(전날 미퇴근만으로 끄지 않음 — 서버 게이트 021-1 이 출근 차단). 프론트가 prevDayCheckoutPending 로 출근 버튼 비활성 표시.
         boolean canCheckIn = !hasOpen && existing < maxSlots;
 
         // prafta-app-015: 2구간 스케줄 구간 선택 게이팅 플래그(attd01 SlotResponse 와 동일 의미).
@@ -199,6 +247,8 @@ public class AppHome01ServiceImpl implements AppHome01Service {
                 .isOffsite(isOffsite) // 오늘 최근 출근 GPS 행(01) 존재=외근 (prafta-app-003 B-1).
                 .canCheckIn(canCheckIn)
                 .canCheckOut(canCheckOut)
+                .prevDayCheckoutPending(prevDayCheckoutPending) // prafta-app-021 §7.6: 전날 미퇴근 마감 대기 신호.
+                .prevDayCheckInTime(prevDayCheckInTime)         // prafta-app-021: 전날 출근시각 HHMM(카드 표기용).
                 .isTwoSlot(isTwoSlot)   // prafta-app-015: 구간 선택 버튼 노출 판정.
                 .slots(slots)           // prafta-app-015: 구간별 게이팅 플래그(2구간만).
                 .build();
@@ -351,6 +401,20 @@ public class AppHome01ServiceImpl implements AppHome01Service {
             return yesterdayYmd; // 새벽, 아직 전일 근무 진행 중 → 전일 기준.
         }
         return todayYmd;
+    }
+
+    /**
+     * prafta-app-021: 직전일(today-1, YYYYMMDD) 산출. 파싱 실패 시 null(전날 신호 미사용).
+     * resolveAttendanceBaseYmd 의 BASIC_ISO_DATE 해석과 동일.
+     */
+    private String prevDayOf(String todayYmd) {
+        try {
+            LocalDate today = LocalDate.parse(todayYmd, DateTimeFormatter.BASIC_ISO_DATE);
+            return today.minusDays(1).format(DateTimeFormatter.BASIC_ISO_DATE);
+        } catch (Exception e) {
+            log.warn("[home01] 직전일 산출 중 today 파싱 실패 today={} → 전날 미퇴근 신호 미사용", todayYmd);
+            return null;
+        }
     }
 
     /** HHMM -> 자정 기준 분(HH*60+MM). 잘못된 값이면 null. (attd01 toMinutes 와 동일 해석) */

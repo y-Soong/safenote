@@ -1,0 +1,48 @@
+-- ============================================================================
+-- PRAFTA-045 — TBM 입실/종료 비밀번호 실패 잠금(D4) 폐기: tb_tbm_pwd_fail DROP
+-- 작성일: 2026-06-06
+-- 적용 환경: MySQL 8.0.42
+-- 참조: 사용자 결정 — 입실 비밀번호는 현장에서 공유받는 passcode 이므로
+--       "5회 실패 시 1분 잠금"(D4) 프로세스를 전면 제거한다.
+--       맞는 비밀번호로만 입실/종료가 가능하되, 틀려도 잠금 없이 무한 재시도 허용.
+--
+-- 변경 요약 (CONTRACT = 잠금 미참조 신버전 코드 롤아웃 후 적용)
+--   D4 잠금 로직 제거에 따라 더 이상 어떤 코드도 tb_tbm_pwd_fail 을 읽거나 쓰지 않는다.
+--   (AppTbm01ServiceImpl.verifyPassword 단순화, AppTbm01Mapper 의
+--    countRecentPwdFail/insertPwdFail/deletePwdFail 및 매핑 SQL 제거,
+--    TbmPwdFailCommand/TbmPwdFailCountQuery 삭제, TbmErrorCode.TBM_429_030 제거)
+--   해당 테이블은 인덱스만 가질 뿐 다른 테이블의 FK 대상이 아니므로 단독 DROP 가능.
+--
+-- ⚠️ 선행 조건(엄수): 본 DROP 은 아래가 충족된 뒤에만 적용한다.
+--   - 위 코드 변경분이 전 인스턴스에 배포·재기동되어 tb_tbm_pwd_fail 무참조 상태.
+--   미충족 상태에서 DROP 하면 구버전 코드가 "Table doesn't exist" 로
+--   입실/종료 비밀번호 검증이 실패한다.
+--   ※ 테이블을 잔존시켜도 무해하다(코드 무참조). DROP 은 정리 목적의 선택 사항.
+--
+-- 적용 전 존재 확인 (운영 적용 직전 권장):
+--   SHOW TABLES LIKE 'tb_tbm_pwd_fail';
+--
+-- 멱등성: 본 파일은 1회 적용 후 보관용(재실행 금지).
+-- 운영 적용: 사용자 수동(read-only MCP). 본 파일은 작성만, DB 직접 적용 금지.
+-- ============================================================================
+
+DROP TABLE IF EXISTS `tb_tbm_pwd_fail`;
+
+-- ============================================================================
+-- 롤백 (테이블 구조 복원 — 누적 실패 로그 값은 파기 본질상 복원 불가)
+--   원래 정의(prafta-033-A-tbm-attendance.sql (3))를 그대로 복원한다.
+-- ----------------------------------------------------------------------------
+-- CREATE TABLE `tb_tbm_pwd_fail` (
+--   `FAIL_NO`       bigint      NOT NULL AUTO_INCREMENT COMMENT '실패 일련번호 (PK)',
+--   `CMPNY_CD`      varchar(50) NOT NULL COMMENT '회사코드',
+--   `SESSION_CD`    varchar(20) NOT NULL COMMENT 'TBM 세션코드',
+--   `PWD_TYPE_CD`   varchar(10) NOT NULL COMMENT '비번유형[SYS055] ENTRY:입실 EXIT:종료',
+--   `USER_TYPE_CD`  varchar(20) NULL     COMMENT '대상유형[SYS050] REGULAR:정규직 DAILY:일용직',
+--   `USER_CD`       varchar(20) NULL     COMMENT '시도자 USER_CD(식별 가능 시)',
+--   `ATTEMPTED_AT`  datetime    NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '시도 시각',
+--   `INSERT_NO`     varchar(50) NULL     COMMENT '입력자',
+--   `INSERT_DATE`   datetime    NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '입력일시',
+--   PRIMARY KEY (`FAIL_NO`),
+--   KEY `IX_TBM_PWD_FAIL_01` (`CMPNY_CD`, `SESSION_CD`, `ATTEMPTED_AT`)
+-- ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='TBM 비밀번호 실패 로그';
+-- ============================================================================
