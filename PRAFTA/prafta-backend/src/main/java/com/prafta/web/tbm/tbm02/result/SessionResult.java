@@ -27,6 +27,7 @@ public record SessionResult(
 	, Integer gpsVerifyRadiusM
 	, String gpsManualConfirmYn
 	, String openedAt
+	, String prepStartAt
 	, String startedAt
 	, String endedAt
 	, String cancelledAt

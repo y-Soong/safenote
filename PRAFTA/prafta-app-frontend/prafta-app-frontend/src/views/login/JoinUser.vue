@@ -628,7 +628,7 @@ const fnUserIdDupleChk = async () => {
     const response = await axios.get('/comApi/baseinfo/user-id-duple-checks', {
       params: {
         cmpnyCd: cmpnyCd.value,
-        userId: proxy.$util.toUpperCase(userId.value),
+        userId: userId.value,
       },
     })
     if (response.status === 200) {
@@ -641,7 +641,6 @@ const fnUserIdDupleChk = async () => {
           userIdFcs.value.focus()
         })
       } else {
-        userId.value = proxy.$util.toUpperCase(userId.value)
         userIdMsg.value = '✅'
       }
     }

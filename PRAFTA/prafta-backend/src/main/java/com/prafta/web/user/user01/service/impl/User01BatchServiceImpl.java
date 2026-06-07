@@ -65,7 +65,8 @@ public class User01BatchServiceImpl implements User01BatchService {
                         i,
                         model.userId(),
                         e.getErrorCode().code(),
-                        e.getResolvedMessage()
+                        e.getResolvedMessage(),
+                        null   // prafta-052: 그리드 경로는 양식 원본 행 없음(단일 시트 유지)
                 ));
 
                 // 정책 1) 실패해도 계속 진행
@@ -82,7 +83,8 @@ public class User01BatchServiceImpl implements User01BatchService {
                         i,
                         model.userId(),
                         CommonErrorCode.COMMON_500_001.code(),
-                        "처리 중 오류가 발생했습니다.\n관리자에게 문의해주세요."
+                        "처리 중 오류가 발생했습니다.\n관리자에게 문의해주세요.",
+                        null   // prafta-052: 그리드 경로는 양식 원본 행 없음(단일 시트 유지)
                 ));
 
                 // continue;  // 계속 진행
@@ -139,7 +141,8 @@ public class User01BatchServiceImpl implements User01BatchService {
                         i,
                         p.userId(),
                         code.code(),
-                        e.getResolvedMessage()
+                        e.getResolvedMessage(),
+                        UserExcelRowParser.toSourceRow(p)   // prafta-052: 실패 행 재업로드용 원본값
                 ));
 
             } catch (Exception e) {
@@ -148,7 +151,8 @@ public class User01BatchServiceImpl implements User01BatchService {
                         i,
                         p.userId(),
                         CommonErrorCode.COMMON_500_001.code(),
-                        "처리 중 오류가 발생했습니다.\n관리자에게 문의해주세요."
+                        "처리 중 오류가 발생했습니다.\n관리자에게 문의해주세요.",
+                        UserExcelRowParser.toSourceRow(p)   // prafta-052: 실패 행 재업로드용 원본값
                 ));
             }
         }

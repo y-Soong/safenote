@@ -61,6 +61,9 @@ public class AppTbm01ServiceImpl implements AppTbm01Service {
     private static final int PWD_LOCK_THRESHOLD = 5;
 
     private static final String STATUS_OPENED = "OPENED";
+    /** prafta-051-08 C6: 종료 허용 상태 — 교육시작/교육종료 둘 다 허용. */
+    private static final String STATUS_IN_PROGRESS = "IN_PROGRESS";
+    private static final String STATUS_COMPLETED = "COMPLETED";
     private static final String PWD_TYPE_ENTRY = "ENTRY";
     private static final String PWD_TYPE_EXIT = "EXIT";
 
@@ -200,6 +203,14 @@ public class AppTbm01ServiceImpl implements AppTbm01Service {
             throw new ApiException(TbmErrorCode.TBM_404_030);
         }
 
+        // prafta-051-08 C6: 종료는 교육시작(IN_PROGRESS)/교육종료(COMPLETED) 상태에서만 허용.
+        // (개설준비 OPENED 단계는 아직 교육 진행 전이므로 종료 불가)
+        String statusCd = session.getStatusCd();
+        if (!STATUS_IN_PROGRESS.equals(statusCd) && !STATUS_COMPLETED.equals(statusCd)) {
+            log.info("[tbm01] 종료 불가 상태: sessionCd={}, status={}", sessionCd, statusCd);
+            throw new ApiException(TbmErrorCode.TBM_409_033);
+        }
+
         // 본인 입실 기록 확인.
         TbmAttendanceResult attendance = appTbm01Mapper.selectMyAttendance(
                 TbmSessionQuery.from(cmpnyCd, siteCd, sessionCd, userCd));
@@ -227,7 +238,10 @@ public class AppTbm01ServiceImpl implements AppTbm01Service {
         String signFileMgmtCd = saveSignatureFile(cmpnyCd, userCd, session.getSiteCd(), signFile);
 
         // 출결 UPDATE(본인+미종료만).
-        TbmExitCommand command = TbmExitCommand.of(cmpnyCd, sessionCd, userCd, signFileMgmtCd);
+        // prafta-051-08: appForegroundSec(앱 포그라운드 누적초, nullable) 동반 저장.
+        //   SELF_DEVICE 본인 종료 경로이므로 자연히 본인 출결에만 값이 기록된다(대리/검색입실 NULL).
+        TbmExitCommand command = TbmExitCommand.of(
+                cmpnyCd, sessionCd, userCd, signFileMgmtCd, param.appForegroundSec());
         int updated = appTbm01Mapper.updateExit(command);
         if (updated == 0) {
             // 동시성: 그 사이 종료됨.

@@ -2,6 +2,45 @@
 <!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
 <mapper namespace="com.prafta.web.user.user01.mapper.User01Mapper">
 
+	<!-- PRAFTA-049 — 사용자 생성 양식 참조 시트②: 사업장(명/번호/코드). 회사 스코프 고정 -->
+	<select id="selectTemplateSiteList" resultType="com.prafta.web.user.user01.result.TemplateSiteRow">
+	/* User01Mapper.selectTemplateSiteList */
+	SELECT
+		  S.SITE_NM		AS siteNm
+		, S.SITE_NO		AS siteNo
+		, S.SITE_CD		AS siteCd
+	FROM TB_SITE S
+	WHERE S.CMPNY_CD = #{cmpnyCd}
+	ORDER BY S.SITE_NO ASC, S.SITE_CD ASC
+	</select>
+
+	<!-- PRAFTA-049 — 참조 시트③: 소속부서(사업장명/부서코드/부서명). 부서코드는 사업장 단위라 사업장명 동반 -->
+	<select id="selectTemplateNodeList" resultType="com.prafta.web.user.user01.result.TemplateNodeRow">
+	/* User01Mapper.selectTemplateNodeList */
+	SELECT
+		  S.SITE_NM		AS siteNm
+		, N.NODE_CD		AS nodeCd
+		, N.NODE_NM		AS nodeNm
+	FROM TB_SITE_NODE N
+	INNER JOIN TB_SITE S
+		ON S.CMPNY_CD = N.CMPNY_CD AND S.SITE_CD = N.SITE_CD
+	WHERE N.CMPNY_CD = #{cmpnyCd}
+	ORDER BY S.SITE_NO ASC, N.NODE_CD ASC
+	</select>
+
+	<!-- PRAFTA-049 — 참조 시트④: 권한(코드/명). 회사 코드그룹 BAIM_VAL 'COM005' 에서 조회 -->
+	<select id="selectTemplateAuthList" resultType="com.prafta.web.user.user01.result.TemplateAuthRow">
+	/* User01Mapper.selectTemplateAuthList */
+	SELECT
+		  D.BAIM_VAL_D_CD	AS authCd
+		, D.BAIM_VAL_D_NM	AS authNm
+	FROM TB_BAIM_VAL_D D
+	WHERE D.CMPNY_CD = #{cmpnyCd}
+	  AND D.BAIM_VAL_CD = 'COM005'
+	  AND IFNULL(D.USE_YN, 'Y') = 'Y'
+	ORDER BY D.SORT_IDX ASC, D.BAIM_VAL_D_CD ASC
+	</select>
+
 	<select id="selectUserNodeAdminCheck" parameterType="com.prafta.web.user.user01.application.query.UserNodeAdminCheckQuery" resultType="int">
     /* User01Mapper.selectUserNodeAdminCheck */
 	SELECT COUNT(*)

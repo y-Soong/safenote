@@ -64,6 +64,9 @@ import com.prafta.web.user.user01.dto.response.UserInfoListResponse;
 import com.prafta.web.user.user01.mapper.User01Mapper;
 import com.prafta.web.user.user01.result.MyProfileResult;
 import com.prafta.web.user.user01.result.ServiceCreditResult;
+import com.prafta.web.user.user01.result.TemplateAuthRow;
+import com.prafta.web.user.user01.result.TemplateNodeRow;
+import com.prafta.web.user.user01.result.TemplateSiteRow;
 import com.prafta.web.user.user01.result.UserHireDateHistoryResult;
 import com.prafta.web.user.user01.result.UserHireInfoResult;
 import com.prafta.web.user.user01.result.UserInfoResult;
@@ -801,7 +804,27 @@ public class User01ServiceImpl implements User01Service{
 		);
 
 		log.info("사용자 생성 양식 다운로드 - 요청자={}", tokenInfo.gv_userCd());
-		return UserExcelTemplateBuilder.build();
+
+		// PRAFTA-049: 입력 코드 참조 시트②③④ 데이터(회사 스코프) 조회 후 양식에 동봉.
+		String cmpnyCd = tokenInfo.gv_cmpnyCd();
+
+		List<String[]> siteRows = new ArrayList<>();
+		for (TemplateSiteRow s : user01Mapper.selectTemplateSiteList(cmpnyCd)) {
+			// 참조 시트는 입력 대상인 사업장번호만 노출(사업장코드는 내부 변환값이라 혼동 방지 위해 제외).
+			siteRows.add(new String[] { s.siteNm(), s.siteNo() });
+		}
+
+		List<String[]> nodeRows = new ArrayList<>();
+		for (TemplateNodeRow n : user01Mapper.selectTemplateNodeList(cmpnyCd)) {
+			nodeRows.add(new String[] { n.siteNm(), n.nodeCd(), n.nodeNm() });
+		}
+
+		List<String[]> authRows = new ArrayList<>();
+		for (TemplateAuthRow a : user01Mapper.selectTemplateAuthList(cmpnyCd)) {
+			authRows.add(new String[] { a.authCd(), a.authNm() });
+		}
+
+		return UserExcelTemplateBuilder.build(siteRows, nodeRows, authRows);
 	}
 
 	// 법정 본연차 기본 일수 (근로기준법 §60① 1년 이상 근로자, AXIS 정밀 반영 아님)

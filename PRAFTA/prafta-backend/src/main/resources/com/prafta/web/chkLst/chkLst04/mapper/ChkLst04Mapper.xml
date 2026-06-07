@@ -1,0 +1,185 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.prafta.web.chkLst.chkLst04.mapper.ChkLst04Mapper">
+
+    <!-- 불량(INSPECT_ANSWER_TYPE='N') 목록 + 조치(LEFT JOIN) 조회.
+         사업장 스코프/IDOR: TB_USER_SITE_AUTH 조인으로 호출자 권한 사업장만 노출(chkLst03 표준). -->
+    <select id="selectDefectList" parameterType="com.prafta.web.chkLst.chkLst04.application.query.DefectListQuery" resultType="com.prafta.web.chkLst.chkLst04.result.DefectResult">
+    /* ChkLst04Mapper.selectDefectList */
+    SELECT
+          A.CMPNY_CD                                    AS cmpnyCd
+        , A.SITE_CD                                     AS siteCd
+        , S.SITE_NM                                     AS siteNm
+        , T.CHKLST_TYPE                                 AS chkLstType
+        , FNC_CMM_INFO_SRCH(A.CMPNY_CD, 'BAIM_VAL', T.CHKLST_TYPE, 'COM001') AS chkLstTypeNm
+        , A.CHKPT_CD                                    AS chkptCd
+        , T.CHKPT_NM                                    AS chkptNm
+        , A.INSPECT_ITEM_CD                             AS inspectItemCd
+        , I.INSPECT_ITEM_SUBJ                           AS inspectItemSubj
+        , FNC_CMM_INFO_SRCH(A.CMPNY_CD, 'USER_NM', A.INSERT_NO, NULL) AS inspectorNm
+        , A.WORK_DATE                                   AS workDate
+        , A.ANSWER_DESC                                 AS answerDesc
+        , CONCAT(A.FILE_MGMT_CD, IFNULL(F.FILE_EXT, '')) AS fileMgmtCd
+        , F.FILE_PATH                                   AS filePath
+        , D.ACTION_DESC                                 AS actionDesc
+        , CASE WHEN D.ACTION_DESC IS NOT NULL THEN 'Y' ELSE 'N' END AS actionStatus
+    FROM TB_CHKPT_INSPECT_ANSWER A
+         INNER JOIN TB_USER_SITE_AUTH AU
+            ON (
+                A.CMPNY_CD = AU.CMPNY_CD
+            AND A.SITE_CD = AU.SITE_CD
+            AND AU.USER_CD = #{gvUserCd}
+            )
+         INNER JOIN TB_SITE S
+            ON (
+                A.CMPNY_CD = S.CMPNY_CD
+            AND A.SITE_CD = S.SITE_CD
+            )
+         INNER JOIN TB_CHKPT_TYPE_MGMT T
+            ON (
+                A.CMPNY_CD = T.CMPNY_CD
+            AND A.SITE_CD = T.SITE_CD
+            AND A.CHKPT_CD = T.CHKPT_CD
+            )
+         INNER JOIN TB_CHKPT_INSPECT_ITEM I
+            ON (
+                A.CMPNY_CD = I.CMPNY_CD
+            AND T.CHKLST_TYPE = I.CHKLST_TYPE
+            AND A.INSPECT_ITEM_CD = I.INSPECT_ITEM_CD
+            )
+         LEFT JOIN TB_FILE_INFO F
+            ON (
+                A.CMPNY_CD = F.CMPNY_CD
+            AND A.FILE_MGMT_CD = F.FILE_MGMT_CD
+            AND F.FILE_TYPE = #{fileType}
+            )
+         LEFT JOIN TB_CHKPT_DEFECT_ACTION D
+            ON (
+                A.CMPNY_CD = D.CMPNY_CD
+            AND A.SITE_CD = D.SITE_CD
+            AND A.CHKPT_CD = D.CHKPT_CD
+            AND A.INSPECT_ITEM_CD = D.INSPECT_ITEM_CD
+            AND A.WORK_DATE = D.WORK_DATE
+            )
+    WHERE 1=1
+      AND A.CMPNY_CD = #{gvCmpnyCd}
+      AND A.INSPECT_ANSWER_TYPE = 'N'
+      <if test="siteCd != null and siteCd != ''">
+        AND A.SITE_CD = #{siteCd}
+      </if>
+      <if test="chkLstType != null and chkLstType != ''">
+        AND T.CHKLST_TYPE = #{chkLstType}
+      </if>
+      <if test="chkptCd != null and chkptCd != ''">
+        AND A.CHKPT_CD = #{chkptCd}
+      </if>
+      <if test="inspectItemCd != null and inspectItemCd != ''">
+        AND A.INSPECT_ITEM_CD = #{inspectItemCd}
+      </if>
+      <if test='"Y".equals(actionStatus)'>
+        AND D.ACTION_DESC IS NOT NULL
+      </if>
+      <if test='"N".equals(actionStatus)'>
+        AND D.ACTION_DESC IS NULL
+      </if>
+    ORDER BY A.WORK_DATE DESC, A.SITE_CD, A.CHKPT_CD, A.INSPECT_ITEM_CD
+    </select>
+
+    <!-- 점검대상 검색팝업(siteCd + chkLstType 필수). USE_YN='Y' -->
+    <select id="selectChkptTargetList" parameterType="com.prafta.web.chkLst.chkLst04.application.query.ChkptTargetListQuery" resultType="com.prafta.web.chkLst.chkLst04.result.ChkptTargetResult">
+    /* ChkLst04Mapper.selectChkptTargetList */
+    SELECT
+          A.CHKPT_CD                AS chkptCd
+        , A.CHKPT_NM                AS chkptNm
+        , FNC_CMM_INFO_SRCH(A.CMPNY_CD, 'USER_NM', A.MGMT_USER_CD, NULL) AS mgmtUserNm
+        , A.CHKPT_DESC              AS chkptDesc
+    FROM TB_CHKPT_TYPE_MGMT A
+         INNER JOIN TB_USER_SITE_AUTH AU
+            ON (
+                A.CMPNY_CD = AU.CMPNY_CD
+            AND A.SITE_CD = AU.SITE_CD
+            AND AU.USER_CD = #{gvUserCd}
+            )
+    WHERE 1=1
+      AND A.CMPNY_CD = #{gvCmpnyCd}
+      AND A.SITE_CD = #{siteCd}
+      AND A.CHKLST_TYPE = #{chkLstType}
+      AND A.USE_YN = 'Y'
+      <if test="chkptNm != null and chkptNm != ''">
+        AND A.CHKPT_NM LIKE CONCAT('%', #{chkptNm}, '%')
+      </if>
+    ORDER BY A.CHKPT_NM
+    </select>
+
+    <!-- 점검문항 검색팝업(chkLstType 필수, 사업장 무관). USE_YN='Y' -->
+    <select id="selectInspectItemList" parameterType="com.prafta.web.chkLst.chkLst04.application.query.InspectItemListQuery" resultType="com.prafta.web.chkLst.chkLst04.result.InspectItemResult">
+    /* ChkLst04Mapper.selectInspectItemList */
+    SELECT
+          A.INSPECT_ITEM_CD         AS inspectItemCd
+        , A.INSPECT_ITEM_SUBJ       AS inspectItemSubj
+        , A.STR_DATE                AS strDate
+    FROM TB_CHKPT_INSPECT_ITEM A
+    WHERE 1=1
+      AND A.CMPNY_CD = #{gvCmpnyCd}
+      AND A.CHKLST_TYPE = #{chkLstType}
+      AND A.USE_YN = 'Y'
+      <if test="inspectItemSubj != null and inspectItemSubj != ''">
+        AND A.INSPECT_ITEM_SUBJ LIKE CONCAT('%', #{inspectItemSubj}, '%')
+      </if>
+    ORDER BY A.SORT_IDX, A.INSPECT_ITEM_CD
+    </select>
+
+    <!-- IDOR 가드: 조치 대상이 호출자 권한 사업장에 실재하는 불량('N')인지 검증 -->
+    <select id="countDefectInScope" parameterType="com.prafta.web.chkLst.chkLst04.application.command.DefectActionCommand" resultType="int">
+    /* ChkLst04Mapper.countDefectInScope */
+    SELECT COUNT(1)
+    FROM TB_CHKPT_INSPECT_ANSWER A
+         INNER JOIN TB_USER_SITE_AUTH AU
+            ON (
+                A.CMPNY_CD = AU.CMPNY_CD
+            AND A.SITE_CD = AU.SITE_CD
+            AND AU.USER_CD = #{gvUserCd}
+            )
+    WHERE 1=1
+      AND A.CMPNY_CD = #{gvCmpnyCd}
+      AND A.SITE_CD = #{siteCd}
+      AND A.CHKPT_CD = #{chkptCd}
+      AND A.INSPECT_ITEM_CD = #{inspectItemCd}
+      AND A.WORK_DATE = #{workDate}
+      AND A.INSPECT_ANSWER_TYPE = 'N'
+    </select>
+
+    <!-- 조치 upsert. PK 존재 시 ACTION_DESC/UPDATE_NO/UPDATE_DATE 갱신, 없으면 INSERT. -->
+    <insert id="saveDefectAction" parameterType="com.prafta.web.chkLst.chkLst04.application.command.DefectActionCommand">
+    /* ChkLst04Mapper.saveDefectAction */
+    INSERT INTO TB_CHKPT_DEFECT_ACTION (
+          CMPNY_CD
+        , SITE_CD
+        , CHKPT_CD
+        , INSPECT_ITEM_CD
+        , WORK_DATE
+        , ACTION_DESC
+        , INSERT_NO
+        , INSERT_DATE
+        , UPDATE_NO
+        , UPDATE_DATE
+    )
+    VALUES (
+          #{gvCmpnyCd}
+        , #{siteCd}
+        , #{chkptCd}
+        , #{inspectItemCd}
+        , #{workDate}
+        , #{actionDesc}
+        , #{gvUserCd}
+        , NOW()
+        , NULL
+        , NULL
+    ) AS NEW
+    ON DUPLICATE KEY UPDATE
+          ACTION_DESC = NEW.ACTION_DESC
+        , UPDATE_NO   = #{gvUserCd}
+        , UPDATE_DATE = NOW()
+    </insert>
+
+</mapper>

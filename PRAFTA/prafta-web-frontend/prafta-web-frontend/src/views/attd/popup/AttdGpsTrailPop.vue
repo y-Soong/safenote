@@ -113,6 +113,8 @@ onMounted(async () => {
   border-radius: var(--card-radius);
   width: 90%;
   max-width: 520px;
+  /* 커스텀 루트(modal-content 미사용)라 가이드 max-height 가 안 먹음 → 직접 바운딩 */
+  max-height: 90vh;
   display: flex;
   flex-direction: column;
   overflow: hidden;
@@ -160,5 +162,8 @@ onMounted(async () => {
 
 .gps-pop__body {
   padding: var(--card-padding);
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
 }
 </style>

@@ -20,6 +20,9 @@ public final class AuthRoleUtils {
     /** 안전관리자. */
     public static final String AUTH_SAFETY_MANAGER = "safe";
 
+    /** 시스템(전역 운영) 계정. */
+    public static final String AUTH_SYSTEM = "system";
+
     /** 권한 미부여(접근 차단) 계정. */
     public static final String AUTH_NONE = "999999";
 
@@ -76,5 +79,35 @@ public final class AuthRoleUtils {
         return AUTH_MASTER.equals(authCd)
             || AUTH_HR_MANAGER.equals(authCd)
             || AUTH_SAFETY_MANAGER.equals(authCd);
+    }
+
+    /**
+     * 시스템 운영 권한(master / system)인지 판정한다. 삭제 등 파괴적(destructive) 동작의
+     * 서버 게이트에 사용한다.
+     *
+     * <p>출처: prafta-048 권한 시드(tb_syst_auth_menu, MENU_D_ID='Acct_01')의 BTN_DELT='Y'
+     * 행은 master/system 두 역할뿐이다. MenuLockPolicy 상 master 는 모든 BTN_* 가 강제 'Y' 로
+     * 보정되므로 정합을 유지한다.
+     */
+    public static boolean isSystemOperator(String authCd) {
+        if (authCd == null || authCd.isEmpty()) return false;
+        return AUTH_MASTER.equals(authCd)
+            || AUTH_SYSTEM.equals(authCd);
+    }
+
+    /**
+     * 안전관리 도메인의 등록/저장(BTN_NEW / BTN_SAVE) 권한 역할인지 판정한다.
+     * (master / hr / safe / system).
+     *
+     * <p>출처: prafta-048 권한 시드(tb_syst_auth_menu, MENU_D_ID='Acct_01')의 BTN_NEW='Y'
+     * 및 BTN_SAVE='Y' 행은 master/hr/safe/system 네 역할이다. 사원권한(00001 등)·미부여(99999)는
+     * BTN_NEW/SAVE='N' 이므로 제외된다. master 는 MenuLockPolicy 강제 'Y' 보정 대상이라 정합.
+     */
+    public static boolean canWriteSafetyContent(String authCd) {
+        if (authCd == null || authCd.isEmpty()) return false;
+        return AUTH_MASTER.equals(authCd)
+            || AUTH_HR_MANAGER.equals(authCd)
+            || AUTH_SAFETY_MANAGER.equals(authCd)
+            || AUTH_SYSTEM.equals(authCd);
     }
 }

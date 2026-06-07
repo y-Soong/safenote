@@ -24,6 +24,9 @@ import com.prafta.web.user.user01.application.query.UserNodeAdminCheckQuery;
 import com.prafta.web.user.user01.application.query.UserSiteInfoQuery;
 import com.prafta.web.user.user01.result.MyProfileResult;
 import com.prafta.web.user.user01.result.ServiceCreditResult;
+import com.prafta.web.user.user01.result.TemplateAuthRow;
+import com.prafta.web.user.user01.result.TemplateNodeRow;
+import com.prafta.web.user.user01.result.TemplateSiteRow;
 import com.prafta.web.user.user01.result.UserHireDateHistoryResult;
 import com.prafta.web.user.user01.result.UserHireInfoResult;
 import com.prafta.web.user.user01.result.UserInfoResult;
@@ -34,8 +37,15 @@ import com.prafta.web.user.user01.result.UserStatutoryLeaveSummaryResult;
 @Mapper
 public interface User01Mapper {
 	int selectUserNodeAdminCheck(UserNodeAdminCheckQuery query);
-	
+
 	List<UserInfoResult> selectUserInfoList(UserInfoListQuery query);
+
+	// PRAFTA-049 — 사용자 생성 양식 참조 시트(사업장/소속부서/권한) 조회. 회사 스코프 고정.
+	List<TemplateSiteRow> selectTemplateSiteList(@Param("cmpnyCd") String cmpnyCd);
+
+	List<TemplateNodeRow> selectTemplateNodeList(@Param("cmpnyCd") String cmpnyCd);
+
+	List<TemplateAuthRow> selectTemplateAuthList(@Param("cmpnyCd") String cmpnyCd);
 	
 	int updateUserPw(UserPasswdCommand dto);
 

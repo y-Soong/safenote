@@ -443,7 +443,8 @@ const gpsTypeNm = (type) => {
 
 .detail-wrapper {
   padding: 1.2rem;
-  height: calc(100% - 110px);
+  flex: 1 1 auto;
+  min-height: 0;
   overflow-y: auto;
 }
 

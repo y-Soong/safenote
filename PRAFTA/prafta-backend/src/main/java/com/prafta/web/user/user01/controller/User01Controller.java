@@ -226,7 +226,9 @@ public class User01Controller {
 
     	HttpHeaders headers = new HttpHeaders();
     	headers.setContentType(MediaType.parseMediaType("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"));
-    	headers.add(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=\"" + filename + "\"; filename*=UTF-8''" + encoded);
+    	// filename= 에 원본 한글을 그대로 넣으면 Tomcat 이 헤더(ISO-8859-1) 인코딩 불가로 헤더를 제거한다.
+    	// Notice01Controller 와 동일하게 양쪽 모두 URL 인코딩된 값을 사용한다(modern 브라우저는 filename* 사용).
+    	headers.add(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=\"" + encoded + "\"; filename*=UTF-8''" + encoded);
     	headers.setContentLength(xlsx.length);
 
     	return ResponseEntity.status(HttpStatus.OK).headers(headers).body(xlsx);

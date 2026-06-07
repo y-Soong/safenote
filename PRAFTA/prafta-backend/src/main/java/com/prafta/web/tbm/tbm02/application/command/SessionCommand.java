@@ -13,39 +13,43 @@ public record SessionCommand(
 	, String siteCd
 	, String title
 	, String contentBody
-	, String statusCd			// DRAFT / OPENED
-	, String entryPwd			// OPENED 시에만 값(서버 생성), DRAFT 시 null
-	, String exitPwd
+	, String statusCd			// 개설(saveSession)은 DRAFT 고정(prafta-051 C2)
+	, String entryPwd			// 개설 시 항상 null. 입실비번은 교육준비(prepare) 전이 시 발급
+	, String exitPwd			// 개설 시 항상 null. 종료비번은 교육종료(complete) 전이 시 발급
 	, String managerUserCd
 	, String managerGpsLat
 	, String managerGpsLon
 	, String gpsVerifyTypeCd
 	, Integer gpsVerifyRadiusM
 	, String gpsManualConfirmYn
-	, boolean opened			// true=OPENED_AT=NOW() 설정
+	, boolean opened			// 개설은 항상 false(OPENED_AT/PREP_START_AT은 prepare 전이에서 설정)
 	, String gvCmpnyCd
 	, String gvUserCd
 ){
-	/** 개설/임시저장(INSERT) 커맨드. */
-	public static SessionCommand forSave(
-			SessionSaveParam param, String sessionCd, String statusCd,
-			String entryPwd, String exitPwd, boolean opened) {
+	/**
+	 * 개설(INSERT) 커맨드. prafta-051 C2: 개설 결과는 항상 DRAFT.
+	 *
+	 * <p>비밀번호/GPS 좌표 수집은 교육준비(prepare) 전이로 이동했으므로 개설 시점에는
+	 * 비번 null·OPENED_AT 미설정(opened=false)으로 일관 저장한다. 단, GPS 검증 설정값
+	 * (타입/반경/수동확인)은 DRAFT 단계에서 미리 지정 가능하므로 보존한다.
+	 */
+	public static SessionCommand forSave(SessionSaveParam param, String sessionCd) {
 
 		return new SessionCommand(
 			sessionCd
 			, normalize(param.siteCd())
 			, trim(param.title())
 			, param.contentBody()
-			, statusCd
-			, entryPwd
-			, exitPwd
+			, "DRAFT"
+			, null
+			, null
 			, param.gvUserCd()
 			, normalize(param.managerGpsLat())
 			, normalize(param.managerGpsLon())
 			, param.gpsVerifyTypeCd()
 			, param.gpsVerifyRadiusM()
 			, normalizeYn(param.gpsManualConfirmYn())
-			, opened
+			, false
 			, param.gvCmpnyCd()
 			, param.gvUserCd()
 		);

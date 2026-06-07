@@ -312,13 +312,12 @@ const handleUserIdDupleCheck = async () => {
     const response = await axios.get("/comApi/dailyJoin/user-id-duple-checks", {
       params: {
         cmpnyCd: cmpnyCd.value,
-        userId: proxy.$util.toUpperCase(userId.value),
+        userId: userId.value,
       },
     });
 
     if (response.status === 200) {
       if (response.data?.uniqueYn === "Y") {
-        userId.value = proxy.$util.toUpperCase(userId.value);
         checkedUserId.value = userId.value;
         userIdChecked.value = true;
         userIdMsg.value = "✅ 사용 가능한 아이디입니다.";
@@ -336,7 +335,7 @@ const handleUserIdDupleCheck = async () => {
 
 /** 아이디 입력값 변경 시 중복확인 상태 리셋 (확인 후 ID 변조 방지). */
 watch(userId, (newVal) => {
-  // 중복확인 통과 시 toUpperCase 재대입으로 인한 불필요한 리셋 방지
+  // 중복확인 통과 직후 동일값 재평가로 인한 불필요한 리셋 방지
   if (newVal === checkedUserId.value) {
     return;
   }

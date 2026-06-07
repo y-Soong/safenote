@@ -23,6 +23,14 @@ public final class JwtScope {
      */
     public static final String PHONE_CHANGE_AUTH = "PHONE_CHANGE_AUTH";
 
+    /**
+     * 공지 첨부 다운로드 전용 단기 토큰 (PRAFTA-047, 만료 5분).
+     *
+     * <p>/notice01/file-download-token 으로 발급되어 /notice01/file-download 만 통과한다.
+     * claim: gv_cmpnyCd / gv_userCd / gv_scope / gv_noticeId / gv_fileMgmtCd.
+     */
+    public static final String NOTICE_FILE_DL = "NOTICE_FILE_DL";
+
     private JwtScope() {
         // 상수 카탈로그 — 인스턴스화 방지
     }

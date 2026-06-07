@@ -18,6 +18,7 @@ public record TbmExitParam(
     String sessionCd
     , String exitPwd
     , MultipartFile signFile
+    , Integer appForegroundSec
     , TokenInfo tokenInfo
 ) {
     public static TbmExitParam from(TbmExitRequest request, MultipartFile signFile, TokenInfo tokenInfo) {
@@ -33,10 +34,12 @@ public record TbmExitParam(
         if (!StringUtils.hasText(tokenInfo.gv_cmpnyCd()) || !StringUtils.hasText(tokenInfo.gv_userCd()))
             throw new ApiException(CommonErrorCode.COMMON_400_003);
 
+        // prafta-051-08: 포그라운드 누적초는 nullable 보조지표 — 검증 없이 그대로 전달(방어는 service 에서).
         return new TbmExitParam(
             request.getSessionCd()
             , request.getExitPwd()
             , signFile
+            , request.getAppForegroundSec()
             , tokenInfo
         );
     }

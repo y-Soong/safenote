@@ -27,6 +27,8 @@ public record SessionAttendanceResult(
 	, String statusUpdatedBy
 	, String statusUpdatedByNm
 	, String statusUpdatedAt
+	, Integer appForegroundSec	// prafta-051-08: 앱 포그라운드 누적초(SELF_DEVICE만, NULL=미수신/대리입실)
+	, Integer entryDistanceM	// prafta-051-16: 입실 GPS 거리(m), 대리/검색입실 NULL
 	// ===== 이상신호 요약(백엔드 집계) =====
 	, int backgroundCount		// BACKGROUND_OUT 발생 횟수
 	, int gpsOutOfRangeCount	// GPS 범위 이탈 횟수

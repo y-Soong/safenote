@@ -44,6 +44,7 @@ public class SessionDetailResponse {
 		private Integer gpsVerifyRadiusM;
 		private String gpsManualConfirmYn;
 		private String openedAt;
+		private String prepStartAt;		// 교육준비 타이머 기준시각(15분 자동 교육시작 기준, FE 카운트다운용)
 		private String startedAt;
 		private String endedAt;
 		private String cancelledAt;

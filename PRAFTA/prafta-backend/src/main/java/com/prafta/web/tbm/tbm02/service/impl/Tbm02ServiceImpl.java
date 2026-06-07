@@ -4,6 +4,7 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 
+import org.springframework.dao.DuplicateKeyException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
@@ -16,30 +17,50 @@ import com.prafta.common.util.NumericPwdGenerator;
 import com.prafta.web.tbm.tbm02.application.command.SessionCancelCommand;
 import com.prafta.web.tbm.tbm02.application.command.SessionCommand;
 import com.prafta.web.tbm.tbm02.application.command.SessionContentCommand;
-import com.prafta.web.tbm.tbm02.application.command.SessionPwdCommand;
+import com.prafta.web.tbm.tbm02.application.command.SessionPrepareCommand;
 import com.prafta.web.tbm.tbm02.application.command.SessionRiskCommand;
+import com.prafta.web.tbm.tbm02.application.command.SessionSinglePwdCommand;
 import com.prafta.web.tbm.tbm02.application.command.SessionStateCommand;
+import com.prafta.web.tbm.tbm02.application.command.SessionStateTransitionCommand;
+import com.prafta.web.tbm.tbm02.application.command.EjectAttendanceCommand;
+import com.prafta.web.tbm.tbm02.application.command.ManagerEnterCommand;
 import com.prafta.web.tbm.tbm02.application.model.SessionContentModel;
 import com.prafta.web.tbm.tbm02.application.model.SessionRiskModel;
+import com.prafta.web.tbm.tbm02.application.param.EjectAttendanceParam;
+import com.prafta.web.tbm.tbm02.application.param.EntryCandidateParam;
+import com.prafta.web.tbm.tbm02.application.param.ManagerEnterParam;
 import com.prafta.web.tbm.tbm02.application.param.OptionParam;
 import com.prafta.web.tbm.tbm02.application.param.SessionCancelParam;
 import com.prafta.web.tbm.tbm02.application.param.SessionDetailParam;
 import com.prafta.web.tbm.tbm02.application.param.SessionListParam;
+import com.prafta.web.tbm.tbm02.application.param.SessionPrepareParam;
 import com.prafta.web.tbm.tbm02.application.param.SessionPwdParam;
 import com.prafta.web.tbm.tbm02.application.param.SessionSaveParam;
+import com.prafta.web.tbm.tbm02.application.param.SessionTransitionParam;
 import com.prafta.web.tbm.tbm02.application.param.SessionUpdateParam;
 import com.prafta.web.tbm.tbm02.application.query.OptionQuery;
 import com.prafta.web.tbm.tbm02.application.query.SessionDetailQuery;
 import com.prafta.web.tbm.tbm02.application.query.SessionListQuery;
+import com.prafta.web.tbm.tbm02.application.query.EntryCandidateQuery;
+import com.prafta.web.tbm.tbm02.application.query.EntryTargetQuery;
 import com.prafta.web.tbm.tbm02.dto.response.ContentOptionResponse;
+import com.prafta.web.tbm.tbm02.dto.response.EntryCandidateResponse;
+import com.prafta.web.tbm.tbm02.dto.response.ManagerEnterResponse;
 import com.prafta.web.tbm.tbm02.dto.response.RiskOptionResponse;
+import com.prafta.web.tbm.tbm02.dto.response.SessionAttendanceListResponse;
+import com.prafta.web.tbm.tbm02.dto.response.SessionCompleteResponse;
 import com.prafta.web.tbm.tbm02.dto.response.SessionDetailResponse;
+import com.prafta.web.tbm.tbm02.dto.response.SessionExitPwdResponse;
 import com.prafta.web.tbm.tbm02.dto.response.SessionListResponse;
+import com.prafta.web.tbm.tbm02.dto.response.SessionPrepareResponse;
 import com.prafta.web.tbm.tbm02.dto.response.SessionPwdResponse;
 import com.prafta.web.tbm.tbm02.dto.response.SessionSaveResponse;
 import com.prafta.web.tbm.tbm02.dto.response.SiteOptionResponse;
 import com.prafta.web.tbm.tbm02.mapper.Tbm02Mapper;
+import com.prafta.web.tbm.tbm02.result.AttendanceSlotResult;
+import com.prafta.web.tbm.tbm02.result.EntryCandidateResult;
 import com.prafta.web.tbm.tbm02.result.RiskOptionResult;
+import com.prafta.web.tbm.tbm02.result.SessionAttendanceResult;
 import com.prafta.web.tbm.tbm02.result.SessionContentResult;
 import com.prafta.web.tbm.tbm02.result.SessionGuardResult;
 import com.prafta.web.tbm.tbm02.result.SessionListResult;
@@ -143,6 +164,7 @@ public class Tbm02ServiceImpl implements Tbm02Service {
 				.gpsVerifyRadiusM(session.gpsVerifyRadiusM())
 				.gpsManualConfirmYn(session.gpsManualConfirmYn())
 				.openedAt(session.openedAt())
+				.prepStartAt(session.prepStartAt())
 				.startedAt(session.startedAt())
 				.endedAt(session.endedAt())
 				.cancelledAt(session.cancelledAt())
@@ -183,18 +205,18 @@ public class Tbm02ServiceImpl implements Tbm02Service {
 
 	// ============================ W-05 개설/임시저장 ============================
 
+	/**
+	 * 세션 개설(prafta-051 C2). 개설 결과는 <b>항상 DRAFT</b>로 고정한다.
+	 *
+	 * <p>비밀번호 발급/GPS 좌표 검증/상태 row 초기화는 모두 교육준비(prepare) 전이로 이동했으므로
+	 * 여기서는 수행하지 않는다(미완성 허용). 제목 필수 + 사업장 스코프 검증만 강제하며, 교육 내용/GPS는
+	 * DRAFT 단계에서 강제하지 않는다. 응답의 entryPwd/exitPwd 는 항상 null.
+	 */
 	@Override
 	@Transactional
 	public SessionSaveResponse saveSession(SessionSaveParam param) {
 		// 권한 게이트: 개설=safe + 회사 전체 권한(master/safe). 999999 차단.
 		verifyManageAuth(param.gvAuthCd());
-
-		boolean opened = "OPENED".equals(param.saveMode());
-		// saveMode 검증: OPENED / DRAFT 만 허용
-		if (!opened && !"DRAFT".equals(param.saveMode())) {
-			log.warn("TBM 세션 저장 모드 부적합 - saveMode={}", param.saveMode());
-			throw new ApiException(CommonErrorCode.COMMON_400_002);
-		}
 
 		// 사업장 필수 + 스코프 격리(회사 전체 권한이 아니면 자기 사업장만)
 		if (!StringUtils.hasText(param.siteCd())) {
@@ -202,17 +224,10 @@ public class Tbm02ServiceImpl implements Tbm02Service {
 		}
 		verifyScope(param.gvAuthCd(), param.gvSiteCd(), param.siteCd());
 
-		// 제목 검증
+		// 제목 검증(개설 시점 유일 필수 항목)
 		String title = param.title() != null ? param.title().trim() : "";
 		if (!StringUtils.hasText(title) || title.length() > 200) {
 			throw new ApiException(TbmErrorCode.TBM_400_011);
-		}
-
-		// 개설 시: 교육 내용 텍스트 >= 10자, GPS 검증
-		if (opened) {
-			validateContentBody(param.contentBody());
-			validateGps(param.gpsVerifyTypeCd(), param.managerGpsLat(), param.managerGpsLon(),
-					param.gpsVerifyRadiusM(), param.gpsManualConfirmYn());
 		}
 
 		String sessionCd = tbm02Mapper.selectSessionCd(param.gvCmpnyCd());
@@ -221,18 +236,8 @@ public class Tbm02ServiceImpl implements Tbm02Service {
 			throw new ApiException(CommonErrorCode.COMMON_500_001);
 		}
 
-		String entryPwd = null;
-		String exitPwd = null;
-		if (opened) {
-			String[] pair = NumericPwdGenerator.generatePair(PWD_LENGTH);
-			entryPwd = pair[0];
-			exitPwd = pair[1];
-		}
-
-		String statusCd = opened ? "OPENED" : "DRAFT";
-
-		// 1. 세션 헤더 INSERT
-		tbm02Mapper.insertSession(SessionCommand.forSave(param, sessionCd, statusCd, entryPwd, exitPwd, opened));
+		// 1. 세션 헤더 INSERT(DRAFT 고정, 비번/OPENED_AT 미설정)
+		tbm02Mapper.insertSession(SessionCommand.forSave(param, sessionCd));
 
 		// 2. 콘텐츠 매핑 INSERT
 		insertContents(param.contents(), sessionCd, param.gvCmpnyCd(), param.gvUserCd());
@@ -240,21 +245,215 @@ public class Tbm02ServiceImpl implements Tbm02Service {
 		// 3. 위험성평가 매핑 INSERT(옵션)
 		insertRisks(param.risks(), sessionCd, param.gvCmpnyCd(), param.gvUserCd());
 
-		// 4. 개설 시 상태 row 초기 UPSERT(C 단계가 사용할 동기화 상태 초기값)
-		if (opened) {
-			tbm02Mapper.upsertSessionState(SessionStateCommand.of(sessionCd, param.gvCmpnyCd(), param.gvUserCd()));
-		}
+		// 상태 row 초기화(upsertSessionState)는 교육준비(prepare) 전이로 이동(개설 시 미수행).
 
 		boolean riskEmpty = param.risks() == null || param.risks().isEmpty();
 
-		log.info("TBM 세션 저장 완료 - sessionCd={}, status={}, riskEmpty={}", sessionCd, statusCd, riskEmpty);
+		log.info("TBM 세션 개설 완료(DRAFT 고정) - sessionCd={}, riskEmpty={}", sessionCd, riskEmpty);
 
 		return SessionSaveResponse.builder()
 				.sessionCd(sessionCd)
-				.statusCd(statusCd)
-				.entryPwd(entryPwd)
-				.exitPwd(exitPwd)
+				.statusCd("DRAFT")
+				.entryPwd(null)
+				.exitPwd(null)
 				.warningMessage(riskEmpty ? RISK_WARNING_MESSAGE : null)
+				.build();
+	}
+
+	// ============================ 교육준비(OPENED) 전이 (prafta-051-03) ============================
+
+	/**
+	 * 교육준비(OPENED) 전이. DRAFT 세션을 교육준비 상태로 전이하며 입실비번 발급 + 관리자 GPS
+	 * 중심좌표 + PREP_START_AT 기준시각을 확정한다(15분 자동 교육시작 타이머 시작).
+	 *
+	 * <p>전이 가능 시점: DRAFT 만(C3). OPENED 이상은 거부(TBM_409_013). 교육 내용 텍스트 &gt;= 10자,
+	 * GPS 검증(AUTO면 좌표 필수)을 강제한다. 종료비번(EXIT_PWD)은 발급하지 않는다(교육종료 소관).
+	 */
+	@Override
+	@Transactional
+	public SessionPrepareResponse prepareSession(SessionPrepareParam param) {
+		verifyManageAuth(param.gvAuthCd());
+
+		if (!StringUtils.hasText(param.sessionCd())) {
+			throw new ApiException(CommonErrorCode.COMMON_400_001);
+		}
+
+		SessionGuardResult guard = loadGuard(param.gvCmpnyCd(), param.sessionCd());
+		verifyScope(param.gvAuthCd(), param.gvSiteCd(), guard.siteCd());
+
+		// 전이 가능 시점: DRAFT 만(C3)
+		if (!"DRAFT".equals(guard.statusCd())) {
+			log.warn("TBM 교육준비 전이 불가 상태 - sessionCd={}, status={}", param.sessionCd(), guard.statusCd());
+			throw new ApiException(TbmErrorCode.TBM_409_013);
+		}
+
+		// 제목 검증
+		String title = param.title() != null ? param.title().trim() : "";
+		if (!StringUtils.hasText(title) || title.length() > 200) {
+			throw new ApiException(TbmErrorCode.TBM_400_011);
+		}
+
+		// 교육 내용/GPS 검증(개설 수준): 교육준비 시점에 최종 강제
+		validateContentBody(param.contentBody());
+		validateGps(param.gpsVerifyTypeCd(), param.managerGpsLat(), param.managerGpsLon(),
+				param.gpsVerifyRadiusM(), param.gpsManualConfirmYn());
+
+		// 콘텐츠/위험성 매핑 최종 반영(기존 delete 후 재insert)
+		tbm02Mapper.deleteSessionContents(param.gvCmpnyCd(), param.sessionCd());
+		insertContents(param.contents(), param.sessionCd(), param.gvCmpnyCd(), param.gvUserCd());
+
+		tbm02Mapper.deleteSessionRisks(param.gvCmpnyCd(), param.sessionCd());
+		insertRisks(param.risks(), param.sessionCd(), param.gvCmpnyCd(), param.gvUserCd());
+
+		// 입실비번 발급(6자리). 종료비번은 발급하지 않음(null 유지).
+		String entryPwd = NumericPwdGenerator.generate(PWD_LENGTH);
+
+		// 교육준비 전이 UPDATE(WHERE STATUS_CD='DRAFT' 경합 가드)
+		int affected = tbm02Mapper.prepareSession(SessionPrepareCommand.of(param, entryPwd));
+		if (affected == 0) {
+			// 동시 전이/상태 변경으로 DRAFT 가 아님
+			log.warn("TBM 교육준비 전이 경합/상태부적합 - sessionCd={}", param.sessionCd());
+			throw new ApiException(TbmErrorCode.TBM_409_013);
+		}
+
+		// 상태 row 초기 UPSERT(C 단계 동기화 상태 초기값) — 개설에서 이 시점으로 이동
+		tbm02Mapper.upsertSessionState(
+				SessionStateCommand.of(param.sessionCd(), param.gvCmpnyCd(), param.gvUserCd()));
+
+		boolean riskEmpty = param.risks() == null || param.risks().isEmpty();
+
+		log.info("TBM 교육준비 전이 완료(OPENED) - sessionCd={}, riskEmpty={}", param.sessionCd(), riskEmpty);
+
+		return SessionPrepareResponse.builder()
+				.sessionCd(param.sessionCd())
+				.statusCd("OPENED")
+				.entryPwd(entryPwd)
+				.warningMessage(riskEmpty ? RISK_WARNING_MESSAGE : null)
+				.build();
+	}
+
+	// ============================ 교육시작(IN_PROGRESS)/연장 (prafta-051-04) ============================
+
+	/**
+	 * 교육시작(IN_PROGRESS) 수동 전이. OPENED 세션만 전이 가능(C). STARTED_AT=NOW().
+	 *
+	 * <p>입실 마감은 앱 enter 가 OPENED 만 허용하므로 자동 충족된다(prafta-051-07 정합).
+	 * WHERE STATUS_CD='OPENED' 경합 가드로 자동시작 배치와 원자적.
+	 */
+	@Override
+	@Transactional
+	public void startSession(SessionTransitionParam param) {
+		SessionGuardResult guard = loadTransitionGuard(param);
+
+		if (!"OPENED".equals(guard.statusCd())) {
+			log.warn("TBM 교육시작 전이 불가 상태 - sessionCd={}, status={}", param.sessionCd(), guard.statusCd());
+			throw new ApiException(TbmErrorCode.TBM_409_014);
+		}
+
+		int affected = tbm02Mapper.startSession(
+				SessionStateTransitionCommand.of(param.sessionCd(), param.gvCmpnyCd(), param.gvUserCd()));
+		if (affected == 0) {
+			// 자동시작 배치/동시 전이로 OPENED 가 아님
+			log.warn("TBM 교육시작 전이 경합/상태부적합 - sessionCd={}", param.sessionCd());
+			throw new ApiException(TbmErrorCode.TBM_409_014);
+		}
+
+		log.info("TBM 교육시작 전이 완료(IN_PROGRESS) - sessionCd={}", param.sessionCd());
+	}
+
+	/**
+	 * 교육준비 연장. OPENED 이면서 PREP_START_AT+15분 미도래일 때만 PREP_START_AT 를 NOW() 로
+	 * 리셋해 15분 타이머를 재시작한다. 경과/상태부적합이면 거부(TBM_409_015).
+	 *
+	 * <p>경합 가드: UPDATE WHERE STATUS_CD='OPENED' AND PREP_START_AT &gt; NOW()-15분.
+	 * 영향행 0이면 자동전이 임박/완료 또는 상태부적합으로 판단해 거부한다.
+	 */
+	@Override
+	@Transactional
+	public void extendPrep(SessionTransitionParam param) {
+		SessionGuardResult guard = loadTransitionGuard(param);
+
+		// 상태 1차 확인(경합은 UPDATE WHERE 가 최종 판정)
+		if (!"OPENED".equals(guard.statusCd())) {
+			log.warn("TBM 교육준비 연장 불가 상태 - sessionCd={}, status={}", param.sessionCd(), guard.statusCd());
+			throw new ApiException(TbmErrorCode.TBM_409_015);
+		}
+
+		int affected = tbm02Mapper.extendPrep(
+				SessionStateTransitionCommand.of(param.sessionCd(), param.gvCmpnyCd(), param.gvUserCd()));
+		if (affected == 0) {
+			// 15분 경과(자동전이 임박/완료) 또는 OPENED 아님
+			log.warn("TBM 교육준비 연장 경합/시간경과 - sessionCd={}", param.sessionCd());
+			throw new ApiException(TbmErrorCode.TBM_409_015);
+		}
+
+		log.info("TBM 교육준비 연장 완료(PREP_START_AT 리셋) - sessionCd={}", param.sessionCd());
+	}
+
+	// ============================ 교육종료(COMPLETED) (prafta-051-05) ============================
+
+	/**
+	 * 교육종료(COMPLETED) 전이. IN_PROGRESS 세션만 전이 가능(C4). ENDED_AT=NOW() +
+	 * 종료비번 신규 발급(입실비번 미변경). WHERE STATUS_CD='IN_PROGRESS' 경합 가드.
+	 */
+	@Override
+	@Transactional
+	public SessionCompleteResponse completeSession(SessionTransitionParam param) {
+		SessionGuardResult guard = loadTransitionGuard(param);
+
+		if (!"IN_PROGRESS".equals(guard.statusCd())) {
+			log.warn("TBM 교육종료 전이 불가 상태 - sessionCd={}, status={}", param.sessionCd(), guard.statusCd());
+			throw new ApiException(TbmErrorCode.TBM_409_016);
+		}
+
+		// 종료비번 발급(6자리). 입실비번은 미변경.
+		String exitPwd = NumericPwdGenerator.generate(PWD_LENGTH);
+
+		int affected = tbm02Mapper.completeSession(SessionStateTransitionCommand.ofComplete(
+				param.sessionCd(), exitPwd, param.gvCmpnyCd(), param.gvUserCd()));
+		if (affected == 0) {
+			log.warn("TBM 교육종료 전이 경합/상태부적합 - sessionCd={}", param.sessionCd());
+			throw new ApiException(TbmErrorCode.TBM_409_016);
+		}
+
+		log.info("TBM 교육종료 전이 완료(COMPLETED) - sessionCd={}", param.sessionCd());
+
+		return SessionCompleteResponse.builder()
+				.sessionCd(param.sessionCd())
+				.statusCd("COMPLETED")
+				.exitPwd(exitPwd)
+				.build();
+	}
+
+	/**
+	 * 종료 비밀번호 재발급(COMPLETED 만). 입실비번은 미변경.
+	 *
+	 * <p>기종료자 무영향: 종료비번은 exit 시점에만 검증되고 결과는 TB_TBM_ATTENDANCE 에 확정되므로,
+	 * 본 재발급은 SESSION 만 UPDATE 하고 ATTENDANCE 는 미변경한다.
+	 */
+	@Override
+	@Transactional
+	public SessionExitPwdResponse regenerateExitPassword(SessionTransitionParam param) {
+		SessionGuardResult guard = loadTransitionGuard(param);
+
+		if (!"COMPLETED".equals(guard.statusCd())) {
+			log.warn("TBM 종료비번 재발급 불가 상태 - sessionCd={}, status={}", param.sessionCd(), guard.statusCd());
+			throw new ApiException(TbmErrorCode.TBM_409_017);
+		}
+
+		String exitPwd = NumericPwdGenerator.generate(PWD_LENGTH);
+		int affected = tbm02Mapper.updateExitPwd(SessionSinglePwdCommand.of(
+				param.sessionCd(), exitPwd, param.gvCmpnyCd(), param.gvUserCd()));
+		if (affected == 0) {
+			log.warn("TBM 종료비번 재발급 경합/상태부적합 - sessionCd={}", param.sessionCd());
+			throw new ApiException(TbmErrorCode.TBM_409_017);
+		}
+
+		log.info("TBM 종료비번 재발급 완료 - sessionCd={}", param.sessionCd());
+
+		return SessionExitPwdResponse.builder()
+				.sessionCd(param.sessionCd())
+				.exitPwd(exitPwd)
 				.build();
 	}
 
@@ -334,6 +533,12 @@ public class Tbm02ServiceImpl implements Tbm02Service {
 
 	// ============================ W-06 비밀번호 재발급 ============================
 
+	/**
+	 * 입실 비밀번호 재발급(OPENED 만, prafta-051-02). <b>입실비번만</b> 재발급하며 종료비번은 미변경.
+	 *
+	 * <p>기입실자 무영향: 입실비번은 enter 시점에만 검증되고 결과는 TB_TBM_ATTENDANCE 에 확정되므로,
+	 * 본 재발급은 SESSION 만 UPDATE 하고 ATTENDANCE 는 미변경한다. 응답의 exitPwd 는 null.
+	 */
 	@Override
 	@Transactional
 	public SessionPwdResponse regeneratePasswords(SessionPwdParam param) {
@@ -348,21 +553,212 @@ public class Tbm02ServiceImpl implements Tbm02Service {
 
 		// 재발급 가능 시점: OPENED 만
 		if (!"OPENED".equals(guard.statusCd())) {
-			log.warn("TBM 세션 비번 재발급 불가 상태 - sessionCd={}, status={}", param.sessionCd(), guard.statusCd());
+			log.warn("TBM 세션 입실비번 재발급 불가 상태 - sessionCd={}, status={}", param.sessionCd(), guard.statusCd());
 			throw new ApiException(TbmErrorCode.TBM_409_012);
 		}
 
-		String[] pair = NumericPwdGenerator.generatePair(PWD_LENGTH);
-		tbm02Mapper.updateSessionPwd(SessionPwdCommand.of(
-				param.sessionCd(), pair[0], pair[1], param.gvCmpnyCd(), param.gvUserCd()));
+		String entryPwd = NumericPwdGenerator.generate(PWD_LENGTH);
+		int affected = tbm02Mapper.updateEntryPwd(SessionSinglePwdCommand.of(
+				param.sessionCd(), entryPwd, param.gvCmpnyCd(), param.gvUserCd()));
+		if (affected == 0) {
+			log.warn("TBM 입실비번 재발급 경합/상태부적합 - sessionCd={}", param.sessionCd());
+			throw new ApiException(TbmErrorCode.TBM_409_012);
+		}
 
-		log.info("TBM 세션 비번 재발급 완료 - sessionCd={}", param.sessionCd());
+		log.info("TBM 세션 입실비번 재발급 완료 - sessionCd={}", param.sessionCd());
 
 		return SessionPwdResponse.builder()
 				.sessionCd(param.sessionCd())
-				.entryPwd(pair[0])
-				.exitPwd(pair[1])
+				.entryPwd(entryPwd)
+				.exitPwd(null)
 				.build();
+	}
+
+	// ============================ 관리자 대리/검색 입실 (prafta-051-11) ============================
+
+	/**
+	 * 입실 후보 검색. 세션을 먼저 조회·권한·스코프 검증(cross-site IDOR 차단)한 뒤, 세션 사업장
+	 * (guard.siteCd) 기준으로 정규직/일용직 후보를 조회한다. 클라이언트가 보낸 사업장은 신뢰하지 않는다.
+	 *
+	 * <p>일용직은 C7(USE_YN='Y' + ACCOUNT_STATUS='01' + WITHDRAWAL_DATE IS NULL +
+	 * WORK_EXPIRE_DATE&gt;=오늘) 만 노출하며 PII 는 끝 4자리만 포함한다.
+	 */
+	@Override
+	public EntryCandidateResponse selectEntryCandidates(EntryCandidateParam param) {
+		verifyManageAuth(param.gvAuthCd());
+
+		if (!StringUtils.hasText(param.sessionCd())) {
+			throw new ApiException(CommonErrorCode.COMMON_400_001);
+		}
+		String userTypeCd = normalizeUserType(param.userTypeCd());
+
+		SessionGuardResult guard = loadGuard(param.gvCmpnyCd(), param.sessionCd());
+		verifyScope(param.gvAuthCd(), param.gvSiteCd(), guard.siteCd());
+
+		EntryCandidateQuery query = EntryCandidateQuery.of(param, guard.siteCd());
+
+		List<EntryCandidateResult> list = "DAILY".equals(userTypeCd)
+				? tbm02Mapper.selectDailyCandidates(query)
+				: tbm02Mapper.selectRegularCandidates(query);
+
+		log.info("TBM 입실 후보 검색 완료 - sessionCd={}, userType={}, count={}",
+				param.sessionCd(), userTypeCd, list != null ? list.size() : 0);
+
+		return EntryCandidateResponse.builder()
+				.userTypeCd(userTypeCd)
+				.candidateList(list != null ? list : Collections.emptyList())
+				.build();
+	}
+
+	/**
+	 * 관리자 직접 입실(MANAGER_DIRECT). OPENED 상태만 허용하며, 대상이 세션 사업장 소속 활성 사용자
+	 * (일용직은 C7 만료/탈퇴 재확인)인지 서버에서 재검증한다.
+	 *
+	 * <p>재입실 처리(UK_TBM_ATTENDANCE_01 는 DEL_YN 미포함): 동일 슬롯에
+	 * <ul>
+	 *   <li>DEL_YN='N' 행 존재 → 이미 입실(TBM_409_041, 멱등 안내)</li>
+	 *   <li>DEL_YN='Y' 행 존재 → 내보내기 후 재입실: 해당 행 RESTORE(UNIQUE 충돌 회피)</li>
+	 *   <li>행 없음 → 신규 INSERT. INSERT 직전 동시 입실 경합은 DuplicateKeyException 으로 안내 처리</li>
+	 * </ul>
+	 */
+	@Override
+	@Transactional
+	public ManagerEnterResponse managerEnter(ManagerEnterParam param) {
+		verifyManageAuth(param.gvAuthCd());
+
+		if (!StringUtils.hasText(param.sessionCd()) || !StringUtils.hasText(param.userCd())) {
+			throw new ApiException(CommonErrorCode.COMMON_400_001);
+		}
+		String userTypeCd = normalizeUserType(param.userTypeCd());
+
+		SessionGuardResult guard = loadGuard(param.gvCmpnyCd(), param.sessionCd());
+		verifyScope(param.gvAuthCd(), param.gvSiteCd(), guard.siteCd());
+
+		// 교육준비(OPENED) 상태에서만 입실 처리(C)
+		if (!"OPENED".equals(guard.statusCd())) {
+			log.warn("TBM 대리입실 불가 상태 - sessionCd={}, status={}", param.sessionCd(), guard.statusCd());
+			throw new ApiException(TbmErrorCode.TBM_409_040);
+		}
+
+		// 대상이 세션 사업장 소속 활성 사용자인지 재검증(일용직은 C7 만료/탈퇴 차단)
+		int valid = tbm02Mapper.countEntryTarget(
+				new EntryTargetQuery(param.gvCmpnyCd(), guard.siteCd(), userTypeCd, param.userCd()));
+		if (valid <= 0) {
+			log.warn("TBM 대리입실 대상 부적합 - sessionCd={}, userType={}, userCd={}, site={}",
+					param.sessionCd(), userTypeCd, param.userCd(), guard.siteCd());
+			throw new ApiException(TbmErrorCode.TBM_403_040);
+		}
+
+		ManagerEnterCommand command = new ManagerEnterCommand(
+				param.gvCmpnyCd(), param.sessionCd(), userTypeCd, param.userCd(), param.gvUserCd());
+
+		// 슬롯(UNIQUE 키) 점유 확인 후 INSERT/RESTORE 분기
+		AttendanceSlotResult slot = tbm02Mapper.selectAttendanceSlot(command);
+		boolean restored;
+		if (slot == null) {
+			try {
+				tbm02Mapper.insertManagerEntry(command);
+				restored = false;
+			} catch (DuplicateKeyException e) {
+				// 조회~INSERT 사이 동시 입실 경합(이미 입실)
+				log.warn("TBM 대리입실 UNIQUE 충돌(동시 입실) - sessionCd={}, userCd={}",
+						param.sessionCd(), param.userCd());
+				throw new ApiException(TbmErrorCode.TBM_409_041);
+			}
+		} else if ("N".equals(slot.delYn())) {
+			// 이미 입실 처리됨(멱등 안내)
+			log.info("TBM 대리입실 멱등 - 이미 입실됨 sessionCd={}, userCd={}", param.sessionCd(), param.userCd());
+			throw new ApiException(TbmErrorCode.TBM_409_041);
+		} else {
+			// 내보내기 후 재입실: DEL_YN='Y' 행 RESTORE
+			int affected = tbm02Mapper.restoreManagerEntry(command);
+			if (affected == 0) {
+				// 경합으로 슬롯 상태 변경됨
+				log.warn("TBM 대리입실 RESTORE 경합 - sessionCd={}, userCd={}", param.sessionCd(), param.userCd());
+				throw new ApiException(TbmErrorCode.TBM_409_041);
+			}
+			restored = true;
+		}
+
+		log.info("TBM 대리입실 완료 - sessionCd={}, userType={}, userCd={}, manager={}, restored={}",
+				param.sessionCd(), userTypeCd, param.userCd(), param.gvUserCd(), restored);
+
+		return ManagerEnterResponse.builder()
+				.sessionCd(param.sessionCd())
+				.userTypeCd(userTypeCd)
+				.userCd(param.userCd())
+				.restored(restored)
+				.build();
+	}
+
+	// ============================ 입실자 명단/내보내기 (prafta-051-12) ============================
+
+	/**
+	 * 교육준비 단계 입실자 명단(거리/입실유형 포함). 권한 + 세션 스코프 검증 후 DEL_YN='N' 입실자만
+	 * 조회한다. tbm04 와 달리 OPENED 단계에서 호출되므로 tbm02 전용 쿼리로 권한/상태 일관성을 유지한다.
+	 */
+	@Override
+	public SessionAttendanceListResponse selectSessionAttendances(SessionDetailParam param) {
+		verifyManageAuth(param.gvAuthCd());
+
+		if (!StringUtils.hasText(param.sessionCd())) {
+			throw new ApiException(CommonErrorCode.COMMON_400_001);
+		}
+
+		SessionGuardResult guard = loadGuard(param.gvCmpnyCd(), param.sessionCd());
+		verifyScope(param.gvAuthCd(), param.gvSiteCd(), guard.siteCd());
+
+		List<SessionAttendanceResult> list = tbm02Mapper.selectSessionAttendances(
+				new SessionDetailQuery(param.sessionCd(), param.gvCmpnyCd()));
+
+		log.info("TBM 입실자 명단 조회 완료 - sessionCd={}, count={}",
+				param.sessionCd(), list != null ? list.size() : 0);
+
+		return SessionAttendanceListResponse.builder()
+				.sessionCd(param.sessionCd())
+				.totalCount(list != null ? list.size() : 0)
+				.attendanceList(list != null ? list : Collections.emptyList())
+				.build();
+	}
+
+	/**
+	 * 입실자 내보내기(soft delete). 교육준비(OPENED) 상태만 허용(C8). 사유 필수. 대상 출결이 해당
+	 * 세션 소속이고 DEL_YN='N' 인 행만 갱신하며, 영향행 0 이면 이미 제거/세션 불일치로 거부한다.
+	 *
+	 * <p>UK_TBM_ATTENDANCE_01 는 DEL_YN 미포함이므로 내보낸 사용자의 재입실은 managerEnter 가
+	 * 기존 행 RESTORE 로 처리한다(UNIQUE 충돌 회피).
+	 */
+	@Override
+	@Transactional
+	public void ejectAttendance(EjectAttendanceParam param) {
+		verifyManageAuth(param.gvAuthCd());
+
+		if (!StringUtils.hasText(param.sessionCd()) || !StringUtils.hasText(param.attendanceCd())) {
+			throw new ApiException(CommonErrorCode.COMMON_400_001);
+		}
+		if (!StringUtils.hasText(param.reason())) {
+			throw new ApiException(TbmErrorCode.TBM_400_041);
+		}
+
+		SessionGuardResult guard = loadGuard(param.gvCmpnyCd(), param.sessionCd());
+		verifyScope(param.gvAuthCd(), param.gvSiteCd(), guard.siteCd());
+
+		// 교육준비(OPENED) 상태에서만 내보내기(C8)
+		if (!"OPENED".equals(guard.statusCd())) {
+			log.warn("TBM 입실자 내보내기 불가 상태 - sessionCd={}, status={}", param.sessionCd(), guard.statusCd());
+			throw new ApiException(TbmErrorCode.TBM_409_042);
+		}
+
+		int affected = tbm02Mapper.ejectAttendance(EjectAttendanceCommand.of(param));
+		if (affected == 0) {
+			// 세션 불일치 / 이미 제거 / 부적합
+			log.warn("TBM 입실자 내보내기 대상 없음/부적합 - sessionCd={}, attendanceCd={}",
+					param.sessionCd(), param.attendanceCd());
+			throw new ApiException(TbmErrorCode.TBM_409_043);
+		}
+
+		log.info("TBM 입실자 내보내기 완료 - sessionCd={}, attendanceCd={}, manager={}",
+				param.sessionCd(), param.attendanceCd(), param.gvUserCd());
 	}
 
 	// ============================ 보조 조회 ============================
@@ -456,6 +852,22 @@ public class Tbm02ServiceImpl implements Tbm02Service {
 		}
 	}
 
+	/**
+	 * 단순 상태 전이(start/extend/complete/regenerate-exit) 공통 가드:
+	 * 권한 + sessionCd 필수 + 세션 조회 + 스코프 격리를 한 번에 수행하고 가드를 반환한다.
+	 */
+	private SessionGuardResult loadTransitionGuard(SessionTransitionParam param) {
+		verifyManageAuth(param.gvAuthCd());
+
+		if (!StringUtils.hasText(param.sessionCd())) {
+			throw new ApiException(CommonErrorCode.COMMON_400_001);
+		}
+
+		SessionGuardResult guard = loadGuard(param.gvCmpnyCd(), param.sessionCd());
+		verifyScope(param.gvAuthCd(), param.gvSiteCd(), guard.siteCd());
+		return guard;
+	}
+
 	/** 게이트 검증용 세션 조회(없으면 404). */
 	private SessionGuardResult loadGuard(String gvCmpnyCd, String sessionCd) {
 		SessionGuardResult guard = tbm02Mapper.selectSessionGuard(
@@ -464,6 +876,15 @@ public class Tbm02ServiceImpl implements Tbm02Service {
 			throw new ApiException(TbmErrorCode.TBM_404_010);
 		}
 		return guard;
+	}
+
+	/** 대상유형 정규화/검증(REGULAR|DAILY 외 거부). 미입력 시 REGULAR 기본 아님 - 명시 강제. */
+	private String normalizeUserType(String userTypeCd) {
+		if (!"REGULAR".equals(userTypeCd) && !"DAILY".equals(userTypeCd)) {
+			log.warn("TBM 입실 대상유형 부적합 - userTypeCd={}", userTypeCd);
+			throw new ApiException(TbmErrorCode.TBM_400_040);
+		}
+		return userTypeCd;
 	}
 
 	/** 개설/수정/취소/재발급 권한 게이트: 회사 전체 권한(master/safe)만 허용. */

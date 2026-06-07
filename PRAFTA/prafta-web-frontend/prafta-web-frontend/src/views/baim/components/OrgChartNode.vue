@@ -3,6 +3,13 @@
     <!-- 노드 카드: 아이콘 + 이름 + 직책, 계층 시각화 -->
     <div class="org-node-card" :style="{ '--node-color': branchColor }">
       <span v-if="node.isNew" class="org-node-badge-new">[등록전]</span>
+      <!-- 저장된 노드: 좌측 번호 배지와 동일 양식으로 우측 상단에 노드 코드 노출 -->
+      <span
+        v-else
+        class="org-node-badge-code"
+        :title="`노드 코드: ${node.nodeCd || '-'}`"
+        >{{ node.nodeCd || "-" }}</span
+      >
       <div class="org-node-header">
         <span v-if="branchIndex >= 0" class="org-node-badge">
           {{ String(branchIndex + 1).padStart(2, "0") }}
@@ -367,6 +374,23 @@ const onTypeChange = (e) => {
   color: #6b7280;
   margin-top: 6px;
   text-align: center;
+}
+
+/* 노드 코드 배지: 좌측 번호 배지(.org-node-badge)와 동일 양식, 우측 상단 배치 */
+.org-node-badge-code {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  max-width: 96px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--node-color);
+  background: rgba(22, 163, 74, 0.1);
+  padding: 2px 6px;
+  border-radius: 4px;
 }
 
 .org-node-managers {

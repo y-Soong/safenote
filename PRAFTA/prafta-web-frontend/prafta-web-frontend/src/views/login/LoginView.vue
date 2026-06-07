@@ -157,6 +157,7 @@ import { resolveApiErrorMessage } from "@/utils/apiError";
 import TermsPop from "./popup/TermsPop.vue";
 import PhoneAuthPop from "./popup/PhoneAuthPop.vue";
 import ActInfoSrch from "@/components/popup/ActInfoSrchPop.vue";
+import NoticePopupCarousel from "@/components/popup/NoticePopupCarousel.vue";
 
 // ================ Instance & Composables ================
 const { proxy } = getCurrentInstance();
@@ -346,21 +347,37 @@ const fnUserTermsAgrChk = async () => {
 };
 
 // ================ Methods/Functions ================
-const focusKill = (e) => {
-  if (e.target.id == "userId") {
-    if (proxy.$util.isNotEmpty(userId.value)) userIdFocusKill();
-  }
+const focusKill = () => {
+  // 사용자 ID 자동 대문자 변환 제거: 입력값을 변형하지 않음
 };
 
-const fnMoveMainPath = () => router.push("/safenote/main");
+const fnMoveMainPath = async () => {
+  await router.push("/safenote/main");
+  // PRAFTA-047: 로그인 후 메인 진입 1회 — 노출 대상 공지가 있으면 로그인 팝업(캐러셀) 표시.
+  // 라우팅 흐름을 막지 않도록 팝업 조회 실패/0건이면 조용히 넘어간다.
+  fnShowLoginNoticePopup();
+};
+
+// 로그인 팝업 공지 조회 후 1건 이상이면 캐러셀 오픈(0건이면 미오픈)
+const fnShowLoginNoticePopup = async () => {
+  try {
+    const response = await axios.post(
+      "/webApi/notice01/popup",
+      {},
+      { headers: { "Content-Type": "application/json" } }
+    );
+    const popupList = response?.data?.popupList || [];
+    if (popupList.length > 0) {
+      openPop(NoticePopupCarousel, { notices: popupList });
+    }
+  } catch (err) {
+    // 메인 진입을 막지 않도록 팝업 조회 오류는 무시
+  }
+};
 
 const fnUserLogout = () => userStore.logout();
 
 const fnOpenTermsPop = () => openPop(TermsPop, {});
-
-const userIdFocusKill = () => {
-  userId.value = proxy.$util.toUpperCase(userId.value);
-};
 
 const fnAcountInfoSrch = () => {
   fnSiteOpenPop(ActInfoSrch, {

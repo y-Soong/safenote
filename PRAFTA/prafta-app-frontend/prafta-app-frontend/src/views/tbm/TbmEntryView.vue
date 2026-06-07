@@ -217,6 +217,7 @@ import { useRoute, useRouter } from 'vue-router'
 
 import api from '@/api/axios'
 import { requestGps } from '@/utils/gpsBridge'
+import { requestForegroundSec } from '@/utils/foregroundBridge'
 
 const route = useRoute()
 const router = useRouter()
@@ -540,11 +541,26 @@ const onSubmitExit = async () => {
     return
   }
 
+  // prafta-051-10: 종료 직전 1회 앱 포그라운드 누적초를 네이티브 브리지로 pull.
+  // 브리지 부재/실패(BRIDGE_UNAVAILABLE/null)면 필드 생략 → 서버 NULL 저장.
+  let appForegroundSec = null
+  try {
+    const fg = await requestForegroundSec()
+    if (fg.status === 'OK' && typeof fg.foregroundSec === 'number') {
+      appForegroundSec = fg.foregroundSec
+    }
+  } catch (e) {
+    // 보조지표라 실패해도 종료 흐름은 계속(필드 생략).
+    console.log('[TbmEntry] 포그라운드 누적초 취득 실패(무시):', e?.message)
+  }
+
   // FormData 구성(Content-Type 은 axios 가 multipart 로 자동 설정 — 인터셉터가 gv_* append).
   const formData = new FormData()
   formData.append('sessionCd', session.value.sessionCd)
   formData.append('exitPwd', exitPwd.value)
   if (signFile) formData.append('item', signFile)
+  // 유효값일 때만 동봉(null 이면 생략 → BE NULL).
+  if (appForegroundSec !== null) formData.append('appForegroundSec', appForegroundSec)
 
   isSubmitting.value = true
   try {

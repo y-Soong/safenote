@@ -1,0 +1,846 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.prafta.web.acct.acct01.mapper.Acct01Mapper">
+
+    <!-- ============================ 권한 ============================ -->
+    <!-- 사업장 접근 권한 확인 (tb_user_site_auth, USE_YN='Y'). 1 이상이면 접근 가능 -->
+    <select id="countUserSiteAuth" resultType="int">
+    /* Acct01Mapper.countUserSiteAuth */
+    SELECT
+        COUNT(1)
+    FROM TB_USER_SITE_AUTH A
+    WHERE A.CMPNY_CD = #{cmpnyCd}
+      AND A.USER_CD = #{userCd}
+      AND A.SITE_CD = #{siteCd}
+      AND A.USE_YN = 'Y'
+    </select>
+
+    <!-- ============================ 048-03 CRUD ============================ -->
+
+    <!-- 사고 단건/목록 공통 SELECT 컬럼 (AcctResult 생성자 인자 순서와 1:1 일치).
+         재해자 PII: 이름은 마스킹(앞2자 + *), 휴대폰은 끝4자리만. 평문 복호화 없음. -->
+    <sql id="acctColumns">
+        A.CMPNY_CD                                                                  AS cmpnyCd
+      , A.SITE_CD                                                                   AS siteCd
+      , ST.SITE_NM                                                                  AS siteNm
+      , A.ACCT_ID                                                               AS acctId
+      , A.VICTIM_USER_TYPE_CD                                                       AS victimUserTypeCd
+      , FNC_CMM_INFO_SRCH(A.CMPNY_CD, 'SYST_VAL', A.VICTIM_USER_TYPE_CD, 'SYS050')  AS victimUserTypeNm
+      , A.VICTIM_USER_CD                                                            AS victimUserCd
+      , CASE
+            WHEN VU.VU_NM IS NULL THEN NULL
+            WHEN CHAR_LENGTH(VU.VU_NM) &lt;= 1 THEN VU.VU_NM
+            WHEN CHAR_LENGTH(VU.VU_NM) = 2 THEN CONCAT(LEFT(VU.VU_NM, 1), '*')
+            ELSE CONCAT(LEFT(VU.VU_NM, 2), REPEAT('*', CHAR_LENGTH(VU.VU_NM) - 2))
+        END                                                                         AS victimUserNm
+      , VU.VU_LAST4                                                                 AS victimMblNoLast4
+      , A.OCCUR_YMD                                                                 AS occurYmd
+      , A.OCCUR_TIME                                                                AS occurTime
+      , A.OCCUR_PLACE                                                               AS occurPlace
+      , A.ACCT_GRADE_CD                                                         AS acctGradeCd
+      , FNC_CMM_INFO_SRCH(A.CMPNY_CD, 'SYST_VAL', A.ACCT_GRADE_CD, 'SYS065')    AS acctGradeNm
+      , A.ACCT_DESC                                                             AS acctDesc
+      , A.EMPLOYER_DESC                                                             AS employerDesc
+      , A.PROCESS_STATUS_CD                                                         AS processStatusCd
+      , FNC_CMM_INFO_SRCH(A.CMPNY_CD, 'SYST_VAL', A.PROCESS_STATUS_CD, 'SYS066')    AS processStatusNm
+      , A.INSERT_NO                                                                 AS insertNo
+      , DATE_FORMAT(A.INSERT_DATE, '%Y-%m-%d %H:%i')                                AS insertDate
+      , A.UPDATE_NO                                                                 AS updateNo
+      , DATE_FORMAT(A.UPDATE_DATE, '%Y-%m-%d %H:%i')                                AS updateDate
+    </sql>
+
+    <!-- 재해자 이름/끝4자리 결합용 서브쿼리 (정규 tb_user + 일용 tb_daily_user) -->
+    <sql id="acctVictimJoin">
+        LEFT OUTER JOIN TB_SITE ST
+            ON (
+                A.CMPNY_CD = ST.CMPNY_CD
+            AND A.SITE_CD = ST.SITE_CD
+            )
+        LEFT OUTER JOIN TB_USER RU
+            ON (
+                A.VICTIM_USER_TYPE_CD = 'REGULAR'
+            AND A.CMPNY_CD = RU.CMPNY_CD
+            AND A.VICTIM_USER_CD = RU.USER_CD
+            )
+        LEFT OUTER JOIN TB_DAILY_USER DU
+            ON (
+                A.VICTIM_USER_TYPE_CD = 'DAILY'
+            AND A.CMPNY_CD = DU.CMPNY_CD
+            AND A.VICTIM_USER_CD = DU.USER_CD
+            )
+        LEFT OUTER JOIN LATERAL (
+            SELECT
+                CASE WHEN A.VICTIM_USER_TYPE_CD = 'REGULAR' THEN RU.USER_NM ELSE DU.USER_NM END AS VU_NM
+              , CASE WHEN A.VICTIM_USER_TYPE_CD = 'REGULAR' THEN RU.MBL_NO_LAST4 ELSE DU.MBL_NO_LAST4 END AS VU_LAST4
+        ) VU ON TRUE
+    </sql>
+
+    <!-- 사고 목록 (사업장 스코프 + 등급/상태/기간/재해자명 필터) -->
+    <select id="selectAcctList"
+            parameterType="com.prafta.web.acct.acct01.application.param.AcctListParam"
+            resultType="com.prafta.web.acct.acct01.result.AcctResult">
+    /* Acct01Mapper.selectAcctList */
+    SELECT
+        <include refid="acctColumns" />
+    FROM TB_ACCT A
+         <include refid="acctVictimJoin" />
+    WHERE A.CMPNY_CD = #{gvCmpnyCd}
+      AND A.DEL_YN = 'N'
+      AND A.USE_YN = 'Y'
+      <if test="siteCd != null and siteCd != ''">
+        AND A.SITE_CD = #{siteCd}
+      </if>
+      <if test="acctGradeCd != null and acctGradeCd != ''">
+        AND A.ACCT_GRADE_CD = #{acctGradeCd}
+      </if>
+      <if test="processStatusCd != null and processStatusCd != ''">
+        AND A.PROCESS_STATUS_CD = #{processStatusCd}
+      </if>
+      <if test="startDate != null and startDate != ''">
+        AND A.OCCUR_YMD &gt;= REPLACE(#{startDate}, '-', '')
+      </if>
+      <if test="endDate != null and endDate != ''">
+        AND A.OCCUR_YMD &lt;= REPLACE(#{endDate}, '-', '')
+      </if>
+      <if test="searchKeyword != null and searchKeyword != ''">
+        AND (
+            (A.VICTIM_USER_TYPE_CD = 'REGULAR' AND RU.USER_NM LIKE CONCAT('%', #{searchKeyword}, '%'))
+         OR (A.VICTIM_USER_TYPE_CD = 'DAILY'   AND DU.USER_NM LIKE CONCAT('%', #{searchKeyword}, '%'))
+         OR A.OCCUR_PLACE LIKE CONCAT('%', #{searchKeyword}, '%')
+        )
+      </if>
+    ORDER BY A.OCCUR_YMD DESC, A.OCCUR_TIME DESC, A.ACCT_ID DESC
+    </select>
+
+    <!-- 사고 단건 상세 (사업장 스코프 강제) -->
+    <select id="selectAcctInfo"
+            parameterType="com.prafta.web.acct.acct01.application.param.AcctInfoParam"
+            resultType="com.prafta.web.acct.acct01.result.AcctResult">
+    /* Acct01Mapper.selectAcctInfo */
+    SELECT
+        <include refid="acctColumns" />
+    FROM TB_ACCT A
+         <include refid="acctVictimJoin" />
+    WHERE A.CMPNY_CD = #{gvCmpnyCd}
+      AND A.SITE_CD = #{siteCd}
+      AND A.ACCT_ID = #{acctId}
+      AND A.DEL_YN = 'N'
+      AND A.USE_YN = 'Y'
+    </select>
+
+    <!-- 연계 조회용 사고 헤더 (PII 마스킹 동일, 발생일/시각/재해자/유형/사업장 도출). 사업장 스코프 강제 -->
+    <select id="selectAcctHeader"
+            resultType="com.prafta.web.acct.acct01.result.AcctResult">
+    /* Acct01Mapper.selectAcctHeader */
+    SELECT
+        <include refid="acctColumns" />
+    FROM TB_ACCT A
+         <include refid="acctVictimJoin" />
+    WHERE A.CMPNY_CD = #{gvCmpnyCd}
+      AND A.SITE_CD = #{siteCd}
+      AND A.ACCT_ID = #{acctId}
+      AND A.DEL_YN = 'N'
+      AND A.USE_YN = 'Y'
+    </select>
+
+    <!-- 채번: ACC + YYYYMMDD(발생일) + 4자리 SEQ (사업장+발생일 기준 MAX+1).
+         ID 길이 = 'ACC'(3)+8+4 = 15. SUBSTR 시작 12 부터 4자리 SEQ. -->
+    <select id="selectNextAcctId" resultType="java.lang.String">
+    /* Acct01Mapper.selectNextAcctId */
+    SELECT
+        CONCAT(
+            'ACC'
+          , #{occurYmd}
+          , LPAD(
+                IFNULL(
+                    MAX(CAST(SUBSTR(A.ACCT_ID, 12, 4) AS UNSIGNED))
+                  , 0
+                ) + 1
+              , 4, '0'
+            )
+        )
+    FROM TB_ACCT A
+    WHERE A.CMPNY_CD = #{gvCmpnyCd}
+      AND A.SITE_CD = #{siteCd}
+      AND A.ACCT_ID LIKE CONCAT('ACC', #{occurYmd}, '%')
+    </select>
+
+    <!-- 사고 INSERT (PROCESS_STATUS_CD='100' 접수) -->
+    <insert id="insertAcct"
+            parameterType="com.prafta.web.acct.acct01.application.command.AcctInsertCommand">
+    /* Acct01Mapper.insertAcct */
+    INSERT INTO TB_ACCT
+    (
+        CMPNY_CD
+      , SITE_CD
+      , ACCT_ID
+      , VICTIM_USER_TYPE_CD
+      , VICTIM_USER_CD
+      , OCCUR_YMD
+      , OCCUR_TIME
+      , OCCUR_PLACE
+      , ACCT_GRADE_CD
+      , ACCT_DESC
+      , EMPLOYER_DESC
+      , PROCESS_STATUS_CD
+      , USE_YN
+      , DEL_YN
+      , INSERT_NO
+      , INSERT_DATE
+    )
+    VALUES
+    (
+        #{gvCmpnyCd}
+      , #{siteCd}
+      , #{acctId}
+      , #{victimUserTypeCd}
+      , #{victimUserCd}
+      , #{occurYmd}
+      , #{occurTime}
+      , #{occurPlace}
+      , #{acctGradeCd}
+      , #{acctDesc}
+      , #{employerDesc}
+      , '100'
+      , 'Y'
+      , 'N'
+      , #{gvUserCd}
+      , NOW()
+    )
+    </insert>
+
+    <!-- 사고 UPDATE (등급/경위/상태/장소/발생일시 등) -->
+    <update id="updateAcct"
+            parameterType="com.prafta.web.acct.acct01.application.param.AcctUpdateParam">
+    /* Acct01Mapper.updateAcct */
+    UPDATE TB_ACCT
+    SET
+        OCCUR_YMD         = #{occurYmd}
+      , OCCUR_TIME        = #{occurTime}
+      , OCCUR_PLACE       = #{occurPlace}
+      , ACCT_GRADE_CD = #{acctGradeCd}
+      , ACCT_DESC     = #{acctDesc}
+      , EMPLOYER_DESC     = #{employerDesc}
+      <if test="processStatusCd != null and processStatusCd != ''">
+      , PROCESS_STATUS_CD = #{processStatusCd}
+      </if>
+      , UPDATE_NO         = #{gvUserCd}
+      , UPDATE_DATE       = NOW()
+    WHERE CMPNY_CD = #{gvCmpnyCd}
+      AND SITE_CD = #{siteCd}
+      AND ACCT_ID = #{acctId}
+      AND DEL_YN = 'N'
+    </update>
+
+    <!-- 사고 soft delete (DEL_YN='Y') -->
+    <update id="deleteAcct">
+    /* Acct01Mapper.deleteAcct */
+    UPDATE TB_ACCT
+    SET
+        DEL_YN      = 'Y'
+      , UPDATE_NO   = #{gvUserCd}
+      , UPDATE_DATE = NOW()
+    WHERE CMPNY_CD = #{gvCmpnyCd}
+      AND SITE_CD = #{siteCd}
+      AND ACCT_ID = #{acctId}
+      AND DEL_YN = 'N'
+    </update>
+
+    <!-- 재해자 검색 (정규 tb_user + 일용 tb_daily_user UNION, 사업장 스코프).
+         VictimResult 생성자 순서: userTypeCd, userTypeNm, userCd, userNm(마스킹), mblNoLast4, siteCd, siteNm, nodeNm -->
+    <select id="selectVictimList"
+            parameterType="com.prafta.web.acct.acct01.application.param.VictimSearchParam"
+            resultType="com.prafta.web.acct.acct01.result.VictimResult">
+    /* Acct01Mapper.selectVictimList */
+    <if test="userTypeCd == null or userTypeCd == '' or userTypeCd == 'REGULAR'">
+        SELECT
+            'REGULAR'                                                       AS userTypeCd
+          , '정규'                                                          AS userTypeNm
+          , RU.USER_CD                                                      AS userCd
+          , CASE
+                WHEN CHAR_LENGTH(RU.USER_NM) &lt;= 1 THEN RU.USER_NM
+                WHEN CHAR_LENGTH(RU.USER_NM) = 2 THEN CONCAT(LEFT(RU.USER_NM, 1), '*')
+                ELSE CONCAT(LEFT(RU.USER_NM, 2), REPEAT('*', CHAR_LENGTH(RU.USER_NM) - 2))
+            END                                                             AS userNm
+          , RU.MBL_NO_LAST4                                                 AS mblNoLast4
+          , RU.SITE_CD                                                      AS siteCd
+          , ST.SITE_NM                                                      AS siteNm
+          , ND.NODE_NM                                                      AS nodeNm
+        FROM TB_USER RU
+             LEFT OUTER JOIN TB_SITE ST
+                ON (RU.CMPNY_CD = ST.CMPNY_CD AND RU.SITE_CD = ST.SITE_CD)
+             LEFT OUTER JOIN TB_SITE_NODE ND
+                ON (RU.CMPNY_CD = ND.CMPNY_CD AND RU.SITE_CD = ND.SITE_CD AND RU.NODE_CD = ND.NODE_CD)
+        WHERE RU.CMPNY_CD = #{gvCmpnyCd}
+          AND RU.USE_YN = 'Y'
+          <if test="siteCd != null and siteCd != ''">
+            AND RU.SITE_CD = #{siteCd}
+          </if>
+          <if test="userNm != null and userNm != ''">
+            AND RU.USER_NM LIKE CONCAT('%', #{userNm}, '%')
+          </if>
+    </if>
+    <if test="(userTypeCd == null or userTypeCd == '') ">
+        UNION ALL
+    </if>
+    <if test="userTypeCd == null or userTypeCd == '' or userTypeCd == 'DAILY'">
+        SELECT
+            'DAILY'                                                         AS userTypeCd
+          , '일용'                                                          AS userTypeNm
+          , DU.USER_CD                                                      AS userCd
+          , CASE
+                WHEN CHAR_LENGTH(DU.USER_NM) &lt;= 1 THEN DU.USER_NM
+                WHEN CHAR_LENGTH(DU.USER_NM) = 2 THEN CONCAT(LEFT(DU.USER_NM, 1), '*')
+                ELSE CONCAT(LEFT(DU.USER_NM, 2), REPEAT('*', CHAR_LENGTH(DU.USER_NM) - 2))
+            END                                                             AS userNm
+          , DU.MBL_NO_LAST4                                                 AS mblNoLast4
+          , DU.SITE_CD                                                      AS siteCd
+          , ST.SITE_NM                                                      AS siteNm
+          , NULL                                                            AS nodeNm
+        FROM TB_DAILY_USER DU
+             LEFT OUTER JOIN TB_SITE ST
+                ON (DU.CMPNY_CD = ST.CMPNY_CD AND DU.SITE_CD = ST.SITE_CD)
+        WHERE DU.CMPNY_CD = #{gvCmpnyCd}
+          AND DU.USE_YN = 'Y'
+          <if test="siteCd != null and siteCd != ''">
+            AND DU.SITE_CD = #{siteCd}
+          </if>
+          <if test="userNm != null and userNm != ''">
+            AND DU.USER_NM LIKE CONCAT('%', #{userNm}, '%')
+          </if>
+    </if>
+    ORDER BY userNm
+    </select>
+
+    <!-- 재해자 실재/소속 검증 (등록 시). victimUserTypeCd 분기:
+         REGULAR → tb_user, DAILY → tb_daily_user 에서 cmpnyCd + siteCd + userCd + USE_YN='Y' 매칭 COUNT.
+         화이트리스트 밖(REGULAR/DAILY 아님)이면 어느 분기에도 걸리지 않아 0 반환 → 차단.
+         victim-search(selectVictimList)의 두 풀 조회/USE_YN 조건과 동일 패턴. -->
+    <select id="countVictim" resultType="int">
+    /* Acct01Mapper.countVictim */
+    SELECT
+        COUNT(1)
+    FROM (
+        <if test="victimUserTypeCd == 'REGULAR'">
+        SELECT RU.USER_CD
+        FROM TB_USER RU
+        WHERE RU.CMPNY_CD = #{cmpnyCd}
+          AND RU.SITE_CD = #{siteCd}
+          AND RU.USER_CD = #{victimUserCd}
+          AND RU.USE_YN = 'Y'
+        </if>
+        <if test="victimUserTypeCd == 'DAILY'">
+        SELECT DU.USER_CD
+        FROM TB_DAILY_USER DU
+        WHERE DU.CMPNY_CD = #{cmpnyCd}
+          AND DU.SITE_CD = #{siteCd}
+          AND DU.USER_CD = #{victimUserCd}
+          AND DU.USE_YN = 'Y'
+        </if>
+        <!-- 화이트리스트 밖 유형은 빈 결과로 만들어 COUNT=0 → 차단 -->
+        <if test="victimUserTypeCd != 'REGULAR' and victimUserTypeCd != 'DAILY'">
+        SELECT NULL AS USER_CD FROM DUAL WHERE 1 = 0
+        </if>
+    ) V
+    </select>
+
+    <!-- ============================ 048-04 연계 조회 ============================ -->
+
+    <!-- 근태: 정규직 당일 스케줄 (tb_user_work_plan WORK_PLAN_CD → tb_sch_mgmt 시각 결합).
+         WORK_PLAN_CD 가 LEAVE_CD 이면 sch JOIN 미스로 시각 NULL. 일용직은 서비스에서 호출 안 함.
+         ScheduleLinkResult 순서: workYmd, workPlanCd, schCd, schType, fstStr, fstEnd, secStr, secEnd -->
+    <select id="selectAttendanceSchedule"
+            parameterType="com.prafta.web.acct.acct01.application.command.LinkQueryContext"
+            resultType="com.prafta.web.acct.acct01.result.ScheduleLinkResult">
+    /* Acct01Mapper.selectAttendanceSchedule */
+    SELECT
+        WP.WORK_YMD          AS workYmd
+      , WP.WORK_PLAN_CD      AS workPlanCd
+      , SM.SCH_CD            AS schCd
+      , SM.SCH_TYPE          AS schType
+      , SM.FST_SCH_STR_TIME  AS fstSchStrTime
+      , SM.FST_SCH_END_TIME  AS fstSchEndTime
+      , SM.SEC_SCH_STR_TIME  AS secSchStrTime
+      , SM.SEC_SCH_END_TIME  AS secSchEndTime
+    FROM TB_USER_WORK_PLAN WP
+         LEFT OUTER JOIN TB_SCH_MGMT SM
+            ON (
+                WP.CMPNY_CD = SM.CMPNY_CD
+            AND WP.SITE_CD = SM.SITE_CD
+            AND WP.WORK_PLAN_CD = SM.SCH_CD
+            )
+    WHERE WP.CMPNY_CD = #{gvCmpnyCd}
+      AND WP.SITE_CD = #{siteCd}
+      AND WP.USER_CD = #{victimUserCd}
+      AND WP.WORK_YMD = #{occurYmd}
+    LIMIT 1
+    </select>
+
+    <!-- 근태: 당일 실근태 (tb_user_attd_mgmt, WORK_SEQ 단위).
+         AttendanceLinkResult 순서: attdId, userCd, workYmd, workSeq, checkInDate, checkInTime, checkOutDate, checkOutTime -->
+    <select id="selectAttendanceRecords"
+            parameterType="com.prafta.web.acct.acct01.application.command.LinkQueryContext"
+            resultType="com.prafta.web.acct.acct01.result.AttendanceLinkResult">
+    /* Acct01Mapper.selectAttendanceRecords */
+    SELECT
+        A.ATTD_ID         AS attdId
+      , A.USER_CD         AS userCd
+      , A.WORK_YMD        AS workYmd
+      , A.WORK_SEQ        AS workSeq
+      , A.CHECK_IN_DATE   AS checkInDate
+      , A.CHECK_IN_TIME   AS checkInTime
+      , A.CHECK_OUT_DATE  AS checkOutDate
+      , A.CHECK_OUT_TIME  AS checkOutTime
+    FROM TB_USER_ATTD_MGMT A
+    WHERE A.CMPNY_CD = #{gvCmpnyCd}
+      AND A.SITE_CD = #{siteCd}
+      AND A.USER_CD = #{victimUserCd}
+      AND A.WORK_YMD = #{occurYmd}
+      AND A.DEL_YN = 'N'
+    ORDER BY A.WORK_SEQ
+    </select>
+
+    <!-- 순회점검: 점검대상별 1주일(사고일-7 ~ 사고일) 양호/불량 집계.
+         조건 미입력 시 사업장 전체 CHKPT 펼침.
+         PatrolLinkResult 순서: chkptCd, chkptNm, chklstType, totalCnt, goodCnt, badCnt -->
+    <select id="selectPatrolSummary"
+            parameterType="com.prafta.web.acct.acct01.application.command.LinkQueryContext"
+            resultType="com.prafta.web.acct.acct01.result.PatrolLinkResult">
+    /* Acct01Mapper.selectPatrolSummary */
+    SELECT
+        AN.CHKPT_CD                                                          AS chkptCd
+      , MAX(TM.CHKPT_NM)                                                     AS chkptNm
+      , MAX(TM.CHKLST_TYPE)                                                  AS chklstType
+      , COUNT(1)                                                             AS totalCnt
+      , IFNULL(SUM(CASE WHEN AN.INSPECT_ANSWER_TYPE = 'Y' THEN 1 ELSE 0 END), 0) AS goodCnt
+      , IFNULL(SUM(CASE WHEN AN.INSPECT_ANSWER_TYPE = 'N' THEN 1 ELSE 0 END), 0) AS badCnt
+    FROM TB_CHKPT_INSPECT_ANSWER AN
+         LEFT OUTER JOIN TB_CHKPT_TYPE_MGMT TM
+            ON (
+                AN.CMPNY_CD = TM.CMPNY_CD
+            AND AN.SITE_CD = TM.SITE_CD
+            AND AN.CHKPT_CD = TM.CHKPT_CD
+            <!-- chklstType 필터는 ON 절에 둔다. WHERE 로 옮기면 TM 매칭 실패 행이 NULL 로 탈락해
+                 LEFT JOIN 이 사실상 INNER 로 강등되어 과거 점검결과가 누락된다. -->
+            <if test="chklstType != null and chklstType != ''">
+            AND TM.CHKLST_TYPE = #{chklstType}
+            </if>
+            )
+    WHERE AN.CMPNY_CD = #{gvCmpnyCd}
+      AND AN.SITE_CD = #{siteCd}
+      AND AN.WORK_DATE &gt;= DATE_FORMAT(DATE_SUB(STR_TO_DATE(#{occurYmd}, '%Y%m%d'), INTERVAL 7 DAY), '%Y%m%d')
+      AND AN.WORK_DATE &lt;= #{occurYmd}
+      <if test="chkptCd != null and chkptCd != ''">
+        AND AN.CHKPT_CD = #{chkptCd}
+      </if>
+    GROUP BY AN.CHKPT_CD
+    ORDER BY badCnt DESC, AN.CHKPT_CD
+    </select>
+
+    <!-- 순회점검: 불량 항목 상세 (양호/불량 집계 드릴다운).
+         PatrolItemResult 순서: chkptCd, inspectItemCd, inspectItemSubj, workDate, inspectAnswerType, answerDesc -->
+    <select id="selectPatrolBadItems"
+            parameterType="com.prafta.web.acct.acct01.application.command.LinkQueryContext"
+            resultType="com.prafta.web.acct.acct01.result.PatrolItemResult">
+    /* Acct01Mapper.selectPatrolBadItems */
+    SELECT
+        AN.CHKPT_CD            AS chkptCd
+      , AN.INSPECT_ITEM_CD     AS inspectItemCd
+      , II.INSPECT_ITEM_SUBJ   AS inspectItemSubj
+      , AN.WORK_DATE           AS workDate
+      , AN.INSPECT_ANSWER_TYPE AS inspectAnswerType
+      , AN.ANSWER_DESC         AS answerDesc
+    FROM TB_CHKPT_INSPECT_ANSWER AN
+         LEFT OUTER JOIN TB_CHKPT_TYPE_MGMT TM
+            ON (
+                AN.CMPNY_CD = TM.CMPNY_CD
+            AND AN.SITE_CD = TM.SITE_CD
+            AND AN.CHKPT_CD = TM.CHKPT_CD
+            <!-- chklstType 필터는 ON 절에 둔다. WHERE 로 옮기면 TM 매칭 실패 행이 NULL 로 탈락해
+                 LEFT JOIN 이 사실상 INNER 로 강등되어 과거 불량항목이 누락된다. -->
+            <if test="chklstType != null and chklstType != ''">
+            AND TM.CHKLST_TYPE = #{chklstType}
+            </if>
+            )
+         LEFT OUTER JOIN TB_CHKPT_INSPECT_ITEM II
+            ON (
+                AN.CMPNY_CD = II.CMPNY_CD
+            AND TM.CHKLST_TYPE = II.CHKLST_TYPE
+            AND AN.INSPECT_ITEM_CD = II.INSPECT_ITEM_CD
+            )
+    WHERE AN.CMPNY_CD = #{gvCmpnyCd}
+      AND AN.SITE_CD = #{siteCd}
+      AND AN.INSPECT_ANSWER_TYPE = 'N'
+      AND AN.WORK_DATE &gt;= DATE_FORMAT(DATE_SUB(STR_TO_DATE(#{occurYmd}, '%Y%m%d'), INTERVAL 7 DAY), '%Y%m%d')
+      AND AN.WORK_DATE &lt;= #{occurYmd}
+      <if test="chkptCd != null and chkptCd != ''">
+        AND AN.CHKPT_CD = #{chkptCd}
+      </if>
+    ORDER BY AN.WORK_DATE DESC, AN.CHKPT_CD, AN.INSPECT_ITEM_CD
+    </select>
+
+    <!-- 위험성평가: 3계층 매칭 + 사고일-3M ~ 사고일 유효 평가 (INIT_ASSESS_DATE 기준).
+         RiskLinkResult 순서: processCd, processNm, riskTypeCd, riskTypeNm, hazardCd, hazardNm,
+         assessmentCd, assessmentStatus, assessmentStatusNm, initRiskLv, revalRiskLv, initAssessDate -->
+    <select id="selectRiskList"
+            parameterType="com.prafta.web.acct.acct01.application.command.LinkQueryContext"
+            resultType="com.prafta.web.acct.acct01.result.RiskLinkResult">
+    /* Acct01Mapper.selectRiskList */
+    SELECT
+        A.PROCESS_CD                                                            AS processCd
+      , FNC_CMM_INFO_SRCH(A.CMPNY_CD, 'BAIM_VAL', A.PROCESS_CD, 'COM002')       AS processNm
+      , A.RISK_TYPE_CD                                                          AS riskTypeCd
+      , RT.RISK_TYPE_NM                                                         AS riskTypeNm
+      , A.HAZARD_CD                                                             AS hazardCd
+      , SH.HAZARD_NM                                                            AS hazardNm
+      , A.ASSESSMENT_CD                                                         AS assessmentCd
+      , A.ASSESSMENT_STATUS                                                     AS assessmentStatus
+      , FNC_CMM_INFO_SRCH(A.CMPNY_CD, 'SYST_VAL', A.ASSESSMENT_STATUS, 'SYS011') AS assessmentStatusNm
+      , A.INIT_RISK_LV                                                          AS initRiskLv
+      , A.REVAL_RISK_LV                                                         AS revalRiskLv
+      , DATE_FORMAT(A.INIT_ASSESS_DATE, '%Y-%m-%d')                             AS initAssessDate
+    FROM TB_RISK_ASSESSMENT A
+         LEFT OUTER JOIN TB_RISK_TYPE RT
+            ON (A.CMPNY_CD = RT.CMPNY_CD AND A.RISK_TYPE_CD = RT.RISK_TYPE_CD)
+         LEFT OUTER JOIN TB_RISK_SITE_HAZARD SH
+            ON (A.CMPNY_CD = SH.CMPNY_CD AND A.RISK_TYPE_CD = SH.RISK_TYPE_CD AND A.HAZARD_CD = SH.HAZARD_CD)
+    WHERE A.CMPNY_CD = #{gvCmpnyCd}
+      AND A.SITE_CD = #{siteCd}
+      AND A.INIT_ASSESS_DATE IS NOT NULL
+      AND A.INIT_ASSESS_DATE &gt;= DATE_SUB(STR_TO_DATE(#{occurYmd}, '%Y%m%d'), INTERVAL 3 MONTH)
+      AND A.INIT_ASSESS_DATE &lt; DATE_ADD(STR_TO_DATE(#{occurYmd}, '%Y%m%d'), INTERVAL 1 DAY)
+      <if test="processCd != null and processCd != ''">
+        AND A.PROCESS_CD = #{processCd}
+      </if>
+      <if test="riskTypeCd != null and riskTypeCd != ''">
+        AND A.RISK_TYPE_CD = #{riskTypeCd}
+      </if>
+      <if test="hazardCd != null and hazardCd != ''">
+        AND A.HAZARD_CD = #{hazardCd}
+      </if>
+    ORDER BY A.INIT_ASSESS_DATE DESC, A.ASSESSMENT_CD DESC
+    </select>
+
+    <!-- TBM: 사고 발생 당일(OPENED_AT 날짜=발생일) 세션 + 재해자 이수여부.
+         TbmLinkResult 순서: sessionCd, siteCd, title, statusCd, statusNm, managerUserCd,
+         managerUserNm, openedAt, victimCompletionStatusCd, victimCompletionStatusNm -->
+    <select id="selectTbmList"
+            parameterType="com.prafta.web.acct.acct01.application.command.LinkQueryContext"
+            resultType="com.prafta.web.acct.acct01.result.TbmLinkResult">
+    /* Acct01Mapper.selectTbmList */
+    SELECT
+        S.SESSION_CD                                                           AS sessionCd
+      , S.SITE_CD                                                              AS siteCd
+      , S.TITLE                                                                AS title
+      , S.STATUS_CD                                                            AS statusCd
+      , FNC_CMM_INFO_SRCH(S.CMPNY_CD, 'SYST_VAL', S.STATUS_CD, 'SYS046')       AS statusNm
+      , S.MANAGER_USER_CD                                                      AS managerUserCd
+      , FNC_CMM_INFO_SRCH(S.CMPNY_CD, 'USER_NM', S.MANAGER_USER_CD, NULL)      AS managerUserNm
+      , DATE_FORMAT(S.OPENED_AT, '%Y-%m-%d %H:%i')                             AS openedAt
+      , AT.COMPLETION_STATUS_CD                                                AS victimCompletionStatusCd
+      , FNC_CMM_INFO_SRCH(S.CMPNY_CD, 'SYST_VAL', AT.COMPLETION_STATUS_CD, 'SYS053') AS victimCompletionStatusNm
+    FROM TB_TBM_SESSION S
+         LEFT OUTER JOIN TB_TBM_ATTENDANCE AT
+            ON (
+                S.CMPNY_CD = AT.CMPNY_CD
+            AND S.SESSION_CD = AT.SESSION_CD
+            AND AT.USER_CD = #{victimUserCd}
+            AND AT.USER_TYPE_CD = #{victimUserTypeCd}
+            AND AT.DEL_YN = 'N'
+            )
+    WHERE S.CMPNY_CD = #{gvCmpnyCd}
+      AND S.SITE_CD = #{siteCd}
+      AND DATE(S.OPENED_AT) = STR_TO_DATE(#{occurYmd}, '%Y%m%d')
+    ORDER BY S.OPENED_AT DESC, S.SESSION_CD DESC
+    </select>
+
+    <!-- 아차사고: 사고일-3M ~ 사고일, USE_YN='Y'.
+         NearMissLinkResult 순서: nearMissId, incidentTypeCd, incidentTypeNm, occurDtime,
+         locationDesc, description, potentialSeverityCd, potentialSeverityNm, reportStatusCd, reportStatusNm -->
+    <select id="selectNearMissList"
+            parameterType="com.prafta.web.acct.acct01.application.command.LinkQueryContext"
+            resultType="com.prafta.web.acct.acct01.result.NearMissLinkResult">
+    /* Acct01Mapper.selectNearMissList */
+    SELECT
+        A.NEAR_MISS_ID                                                              AS nearMissId
+      , A.INCIDENT_TYPE_CD                                                          AS incidentTypeCd
+      , FNC_CMM_INFO_SRCH(A.CMPNY_CD, 'SYST_VAL', A.INCIDENT_TYPE_CD, 'SYS061')     AS incidentTypeNm
+      , DATE_FORMAT(A.OCCUR_DTIME, '%Y-%m-%d %H:%i')                                AS occurDtime
+      , A.LOCATION_DESC                                                             AS locationDesc
+      , A.DESCRIPTION                                                               AS description
+      , A.POTENTIAL_SEVERITY_CD                                                     AS potentialSeverityCd
+      , FNC_CMM_INFO_SRCH(A.CMPNY_CD, 'SYST_VAL', A.POTENTIAL_SEVERITY_CD, 'SYS062') AS potentialSeverityNm
+      , A.REPORT_STATUS_CD                                                          AS reportStatusCd
+      , FNC_CMM_INFO_SRCH(A.CMPNY_CD, 'SYST_VAL', A.REPORT_STATUS_CD, 'SYS063')     AS reportStatusNm
+    FROM TB_NEAR_MISS A
+    WHERE A.CMPNY_CD = #{gvCmpnyCd}
+      AND A.SITE_CD = #{siteCd}
+      AND A.USE_YN = 'Y'
+      AND A.OCCUR_DTIME &gt;= DATE_SUB(STR_TO_DATE(#{occurYmd}, '%Y%m%d'), INTERVAL 3 MONTH)
+      AND A.OCCUR_DTIME &lt; DATE_ADD(STR_TO_DATE(#{occurYmd}, '%Y%m%d'), INTERVAL 1 DAY)
+      <if test="incidentTypeCd != null and incidentTypeCd != ''">
+        AND A.INCIDENT_TYPE_CD = #{incidentTypeCd}
+      </if>
+      <if test="potentialSeverityCd != null and potentialSeverityCd != ''">
+        AND A.POTENTIAL_SEVERITY_CD = #{potentialSeverityCd}
+      </if>
+    ORDER BY A.OCCUR_DTIME DESC, A.NEAR_MISS_ID DESC
+    </select>
+
+    <!-- 점검대상 검색 옵션 (ChkptSearchPop).
+         ChkptOptionResult 순서: chklstType, chklstTypeNm, chkptCd, chkptNm, mgmtUserCd, mgmtUserNm -->
+    <select id="selectChkptOptions"
+            parameterType="com.prafta.web.acct.acct01.application.param.ChkptOptionParam"
+            resultType="com.prafta.web.acct.acct01.result.ChkptOptionResult">
+    /* Acct01Mapper.selectChkptOptions */
+    SELECT
+        TM.CHKLST_TYPE                                                       AS chklstType
+      , FNC_CMM_INFO_SRCH(TM.CMPNY_CD, 'BAIM_VAL', TM.CHKLST_TYPE, 'COM001') AS chklstTypeNm
+      , TM.CHKPT_CD                                                          AS chkptCd
+      , TM.CHKPT_NM                                                          AS chkptNm
+      , TM.MGMT_USER_CD                                                      AS mgmtUserCd
+      , FNC_CMM_INFO_SRCH(TM.CMPNY_CD, 'USER_NM', TM.MGMT_USER_CD, NULL)     AS mgmtUserNm
+    FROM TB_CHKPT_TYPE_MGMT TM
+    WHERE TM.CMPNY_CD = #{gvCmpnyCd}
+      AND TM.SITE_CD = #{siteCd}
+      AND TM.USE_YN = 'Y'
+      <if test="chklstType != null and chklstType != ''">
+        AND TM.CHKLST_TYPE = #{chklstType}
+      </if>
+      <if test="chkptNm != null and chkptNm != ''">
+        AND TM.CHKPT_NM LIKE CONCAT('%', #{chkptNm}, '%')
+      </if>
+    ORDER BY TM.CHKLST_TYPE, TM.CHKPT_CD
+    </select>
+
+    <!-- 위험성평가 3계층 옵션 (공정/위험요인구분/유해요인 UNION).
+         공정(PROCESS)은 COM002 베이스코드. 위험요인구분/유해요인은 사업장 공통(SITE_CD NULL) + 해당 사업장.
+         RiskCategoryOptionResult 순서: categoryType, code, name, parentCode -->
+    <select id="selectRiskCategoryOptions"
+            parameterType="com.prafta.web.acct.acct01.application.param.RiskCategoryOptionParam"
+            resultType="com.prafta.web.acct.acct01.result.RiskCategoryOptionResult">
+    /* Acct01Mapper.selectRiskCategoryOptions */
+    SELECT
+        'PROCESS'           AS categoryType
+      , BD.BAIM_VAL_D_CD    AS code
+      , BD.BAIM_VAL_D_NM    AS name
+      , NULL                AS parentCode
+    FROM TB_BAIM_VAL_D BD
+    WHERE BD.CMPNY_CD = #{gvCmpnyCd}
+      AND BD.BAIM_VAL_CD = 'COM002'
+      AND BD.USE_YN = 'Y'
+    UNION ALL
+    SELECT
+        'RISK_TYPE'         AS categoryType
+      , RT.RISK_TYPE_CD     AS code
+      , RT.RISK_TYPE_NM     AS name
+      , RT.PROCESS_CD       AS parentCode
+    FROM TB_RISK_TYPE RT
+    WHERE RT.CMPNY_CD = #{gvCmpnyCd}
+      AND RT.USE_YN = 'Y'
+      AND (RT.SITE_CD IS NULL OR RT.SITE_CD = ''
+        <if test="siteCd != null and siteCd != ''">
+          OR RT.SITE_CD = #{siteCd}
+        </if>
+      )
+      <if test="processCd != null and processCd != ''">
+        AND RT.PROCESS_CD = #{processCd}
+      </if>
+    UNION ALL
+    SELECT
+        'HAZARD'            AS categoryType
+      , SH.HAZARD_CD        AS code
+      , SH.HAZARD_NM        AS name
+      , SH.RISK_TYPE_CD     AS parentCode
+    FROM TB_RISK_SITE_HAZARD SH
+    WHERE SH.CMPNY_CD = #{gvCmpnyCd}
+      AND SH.USE_YN = 'Y'
+      AND (SH.SITE_CD IS NULL OR SH.SITE_CD = ''
+        <if test="siteCd != null and siteCd != ''">
+          OR SH.SITE_CD = #{siteCd}
+        </if>
+      )
+      <if test="riskTypeCd != null and riskTypeCd != ''">
+        AND SH.RISK_TYPE_CD = #{riskTypeCd}
+      </if>
+    ORDER BY categoryType, name
+    </select>
+
+    <!-- ============================ 048-05 스냅샷/법정절차 ============================ -->
+
+    <!-- 확정 스냅샷 조회 (tb_acct_link).
+         LinkSnapshotResult 순서: acctId, linkDomainCd, linkDomainNm, linkSeq,
+         linkKeyJson, snapshotJson, insertNo, insertDate -->
+    <select id="selectLinkSnapshots"
+            parameterType="com.prafta.web.acct.acct01.application.param.LinkSnapshotParam"
+            resultType="com.prafta.web.acct.acct01.result.LinkSnapshotResult">
+    /* Acct01Mapper.selectLinkSnapshots */
+    SELECT
+        L.ACCT_ID                                                       AS acctId
+      , L.LINK_DOMAIN_CD                                                    AS linkDomainCd
+      , FNC_CMM_INFO_SRCH(L.CMPNY_CD, 'SYST_VAL', L.LINK_DOMAIN_CD, 'SYS067') AS linkDomainNm
+      , L.LINK_SEQ                                                          AS linkSeq
+      , L.LINK_KEY_JSON                                                     AS linkKeyJson
+      , L.SNAPSHOT_JSON                                                     AS snapshotJson
+      , L.INSERT_NO                                                         AS insertNo
+      , DATE_FORMAT(L.INSERT_DATE, '%Y-%m-%d %H:%i')                        AS insertDate
+    FROM TB_ACCT_LINK L
+    WHERE L.CMPNY_CD = #{gvCmpnyCd}
+      AND L.SITE_CD = #{siteCd}
+      AND L.ACCT_ID = #{acctId}
+      <if test="linkDomainCd != null and linkDomainCd != ''">
+        AND L.LINK_DOMAIN_CD = #{linkDomainCd}
+      </if>
+    ORDER BY L.LINK_DOMAIN_CD, L.LINK_SEQ
+    </select>
+
+    <!-- 재확정 전 해당 사고+도메인 스냅샷 전체 삭제 (REPLACE 전략, 물리 삭제) -->
+    <delete id="deleteLinkByDomain">
+    /* Acct01Mapper.deleteLinkByDomain */
+    DELETE FROM TB_ACCT_LINK
+    WHERE CMPNY_CD = #{gvCmpnyCd}
+      AND SITE_CD = #{siteCd}
+      AND ACCT_ID = #{acctId}
+      AND LINK_DOMAIN_CD = #{linkDomainCd}
+    </delete>
+
+    <!-- 스냅샷 1행 INSERT -->
+    <insert id="insertLink">
+    /* Acct01Mapper.insertLink */
+    INSERT INTO TB_ACCT_LINK
+    (
+        CMPNY_CD
+      , SITE_CD
+      , ACCT_ID
+      , LINK_DOMAIN_CD
+      , LINK_SEQ
+      , LINK_KEY_JSON
+      , SNAPSHOT_JSON
+      , INSERT_NO
+      , INSERT_DATE
+    )
+    VALUES
+    (
+        #{gvCmpnyCd}
+      , #{siteCd}
+      , #{acctId}
+      , #{linkDomainCd}
+      , #{linkSeq}
+      , #{linkKeyJson}
+      , #{snapshotJson}
+      , #{gvUserCd}
+      , NOW()
+    )
+    </insert>
+
+    <!-- ②탭 법정절차 + 진행상태 (master 를 등급 기준으로 필터, tb_acct_legal_step LEFT JOIN lazy).
+         (ACCT_GRADE_CD = 사고등급 OR 'ALL'). 미저장 절차는 IS_DONE_YN 기본 'N'.
+         LegalStepResult 순서: stepCd, acctGradeCd, stepIdx, stepNm, actionGuide, legalBasis,
+         deadlineRuleCd, stepNote, isDoneYn, doneDtime, doneUserCd, doneUserNm, remark -->
+    <select id="selectLegalStepList"
+            resultType="com.prafta.web.acct.acct01.result.LegalStepResult">
+    /* Acct01Mapper.selectLegalStepList */
+    SELECT
+        M.STEP_CD                                                       AS stepCd
+      , M.ACCT_GRADE_CD                                             AS acctGradeCd
+      , M.STEP_IDX                                                      AS stepIdx
+      , M.STEP_NM                                                       AS stepNm
+      , M.ACTION_GUIDE                                                  AS actionGuide
+      , M.LEGAL_BASIS                                                   AS legalBasis
+      , M.DEADLINE_RULE_CD                                              AS deadlineRuleCd
+      , M.STEP_NOTE                                                     AS stepNote
+      , IFNULL(S.IS_DONE_YN, 'N')                                       AS isDoneYn
+      , DATE_FORMAT(S.DONE_DTIME, '%Y-%m-%d %H:%i')                     AS doneDtime
+      , S.DONE_USER_CD                                                  AS doneUserCd
+      , FNC_CMM_INFO_SRCH(#{gvCmpnyCd}, 'USER_NM', S.DONE_USER_CD, NULL) AS doneUserNm
+      , S.REMARK                                                        AS remark
+    FROM TB_ACCT_LEGAL_STEP_MASTER M
+         LEFT OUTER JOIN TB_ACCT_LEGAL_STEP S
+            ON (
+                S.CMPNY_CD = #{gvCmpnyCd}
+            AND S.SITE_CD = #{siteCd}
+            AND S.ACCT_ID = #{acctId}
+            AND S.STEP_CD = M.STEP_CD
+            )
+    WHERE M.USE_YN = 'Y'
+      AND (M.ACCT_GRADE_CD = #{acctGradeCd} OR M.ACCT_GRADE_CD = 'ALL')
+    ORDER BY M.STEP_IDX, M.STEP_CD
+    </select>
+
+    <!-- ②탭 조치완료 체크/비고 UPSERT.
+         IS_DONE_YN='Y' 로 전환 시 DONE_DTIME/DONE_USER_CD 기록, 'N' 이면 NULL 로 초기화. -->
+    <insert id="upsertLegalStep"
+            parameterType="com.prafta.web.acct.acct01.application.param.LegalStepSaveParam">
+    /* Acct01Mapper.upsertLegalStep */
+    INSERT INTO TB_ACCT_LEGAL_STEP
+    (
+        CMPNY_CD
+      , SITE_CD
+      , ACCT_ID
+      , STEP_CD
+      , IS_DONE_YN
+      , DONE_DTIME
+      , DONE_USER_CD
+      , REMARK
+      , INSERT_NO
+      , INSERT_DATE
+    )
+    VALUES
+    (
+        #{gvCmpnyCd}
+      , #{siteCd}
+      , #{acctId}
+      , #{stepCd}
+      , IFNULL(#{isDoneYn}, 'N')
+      , CASE WHEN #{isDoneYn} = 'Y' THEN NOW() ELSE NULL END
+      , CASE WHEN #{isDoneYn} = 'Y' THEN #{gvUserCd} ELSE NULL END
+      , #{remark}
+      , #{gvUserCd}
+      , NOW()
+    )
+    ON DUPLICATE KEY UPDATE
+      <!-- 완료일시/완료자 보존: 이미 완료('Y')된 절차를 다시 'Y' 로 저장(비고만 수정 등)하면
+           기존 DONE_DTIME / DONE_USER_CD 를 유지해 실제 완료시점·완료자가 어긋나지 않게 한다.
+           'N'→'Y' 전이 시에만 NOW()/현재사용자로 신규 기록, 'Y'/'N'→'N' 이면 NULL 로 초기화.
+           ⚠️ IS_DONE_YN 은 마지막에 갱신한다. MySQL ON DUPLICATE 는 좌→우로 평가하므로,
+              아래 CASE 들이 IS_DONE_YN 의 '기존값(pre-update)' 을 참조하도록 보장하기 위함이다. -->
+        DONE_DTIME   = CASE
+                         WHEN IFNULL(#{isDoneYn}, 'N') = 'Y' AND IS_DONE_YN = 'Y' THEN DONE_DTIME
+                         WHEN IFNULL(#{isDoneYn}, 'N') = 'Y' THEN NOW()
+                         ELSE NULL
+                       END
+      , DONE_USER_CD = CASE
+                         WHEN IFNULL(#{isDoneYn}, 'N') = 'Y' AND IS_DONE_YN = 'Y' THEN DONE_USER_CD
+                         WHEN IFNULL(#{isDoneYn}, 'N') = 'Y' THEN #{gvUserCd}
+                         ELSE NULL
+                       END
+      , REMARK       = #{remark}
+      , UPDATE_NO    = #{gvUserCd}
+      , UPDATE_DATE  = NOW()
+      , IS_DONE_YN   = IFNULL(#{isDoneYn}, 'N')
+    </insert>
+
+    <!-- ③탭 처리 이력 파생 롤업 (IS_DONE_YN='Y' 완료절차를 완료일시순).
+         LegalStepHistoryResult 순서: stepCd, stepNm, doneDtime, doneUserCd, doneUserNm, remark -->
+    <select id="selectLegalStepHistory"
+            parameterType="com.prafta.web.acct.acct01.application.param.LegalStepListParam"
+            resultType="com.prafta.web.acct.acct01.result.LegalStepHistoryResult">
+    /* Acct01Mapper.selectLegalStepHistory */
+    SELECT
+        S.STEP_CD                                                       AS stepCd
+      , M.STEP_NM                                                       AS stepNm
+      , DATE_FORMAT(S.DONE_DTIME, '%Y-%m-%d %H:%i')                     AS doneDtime
+      , S.DONE_USER_CD                                                  AS doneUserCd
+      , FNC_CMM_INFO_SRCH(S.CMPNY_CD, 'USER_NM', S.DONE_USER_CD, NULL)  AS doneUserNm
+      , S.REMARK                                                        AS remark
+    FROM TB_ACCT_LEGAL_STEP S
+         LEFT OUTER JOIN TB_ACCT_LEGAL_STEP_MASTER M
+            ON (S.STEP_CD = M.STEP_CD)
+    WHERE S.CMPNY_CD = #{gvCmpnyCd}
+      AND S.SITE_CD = #{siteCd}
+      AND S.ACCT_ID = #{acctId}
+      AND S.IS_DONE_YN = 'Y'
+    ORDER BY S.DONE_DTIME DESC, M.STEP_IDX
+    </select>
+
+</mapper>

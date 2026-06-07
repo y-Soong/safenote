@@ -147,6 +147,8 @@ public class Tbm04ServiceImpl implements Tbm04Service {
 						.statusUpdatedBy(r.statusUpdatedBy())
 						.statusUpdatedByNm(r.statusUpdatedByNm())
 						.statusUpdatedAt(r.statusUpdatedAt())
+						.appForegroundSec(r.appForegroundSec())
+						.entryDistanceM(r.entryDistanceM())
 						.backgroundCount(r.backgroundCount())
 						.gpsOutOfRangeCount(r.gpsOutOfRangeCount())
 						.networkLostCount(r.networkLostCount())

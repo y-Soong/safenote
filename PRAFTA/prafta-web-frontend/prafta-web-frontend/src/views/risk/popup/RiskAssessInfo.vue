@@ -387,7 +387,7 @@ import {
   defineEmits,
   getCurrentInstance,
 } from "vue";
-import { useDraggable } from "@/composables/useDraggable";
+import { useCenteredDraggable } from "@/composables/useCenteredDraggable";
 import CalendarSrch from "@/components/common/CalendarSrch.vue";
 import axios from "@/api/axios";
 import { getMessage, MSG } from "@/messages";
@@ -459,10 +459,11 @@ const props = defineProps({
 
 const emit = defineEmits(["close", "save"]);
 
-const { position, startDrag } = useDraggable(
-  window.innerWidth / 2 - 650,
-  window.innerHeight / 10
-);
+const modalRef = ref(null);
+const { position, startDrag } = useCenteredDraggable(modalRef, {
+  horizontalRatio: 2,
+  verticalRatio: 3.5,
+});
 
 // 폼 데이터
 const formData = ref({

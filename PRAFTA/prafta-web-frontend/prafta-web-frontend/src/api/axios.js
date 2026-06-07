@@ -42,12 +42,28 @@ function isTokenError(errorCode) {
 async function forceLogoutAndRedirect(userStore) {
   await forceLogout();
   try {
-    userStore.logout();
+    userStore?.logout();
   } catch (e) {
     // store 미초기화 등은 무시
   }
   // 로그인 화면 = SafeNote 서비스 진입('/safenote'). 루트('/')는 회사소개 랜딩이다.
-  (await getRouter()).push("/safenote");
+  // router.push 가 (동일 라우트/네비게이션 취소 등으로) 무시되어 화면이 그대로 남는
+  // 케이스가 있어, 라우팅이 적용되지 않으면 하드 리다이렉트로 확실히 로그인 화면으로 보낸다.
+  try {
+    const r = await getRouter();
+    if (r?.currentRoute?.value?.path !== "/safenote") {
+      await r.push("/safenote");
+    }
+  } catch (e) {
+    // 네비게이션 실패는 아래 하드 폴백에서 처리
+  }
+  if (
+    typeof window !== "undefined" &&
+    window.location?.pathname !== "/safenote"
+  ) {
+    // SPA 라우팅이 적용되지 않은 경우 최종 폴백(전체 새로고침으로 세션 초기화)
+    window.location.assign("/safenote");
+  }
 }
 
 // 요청 인터셉터
@@ -152,7 +168,14 @@ api.interceptors.response.use(
       console.log(error);
     }
 
-    const userStore = useUserStore();
+    // Pinia 미초기화 등으로 useUserStore() 가 throw 하면 이후 로그아웃 분기가 통째로
+    // 건너뛰어져(에러만 노출·로그아웃 안 됨) 버리므로 방어적으로 감싼다.
+    let userStore = null;
+    try {
+      userStore = useUserStore();
+    } catch (e) {
+      userStore = null;
+    }
     const status = error?.response?.status;
     const originalRequest = error?.config;
 
@@ -162,7 +185,8 @@ api.interceptors.response.use(
     // COMMON_400_003 → 세션 만료 등 서버가 명시적으로 로그아웃 요구
     if (errorCode === "COMMON_400_003") {
       await forceLogoutAndRedirect(userStore);
-      return Promise.reject(error);
+      // 로그아웃/리다이렉트 중이므로 호출자 catch(예: "조회 중 오류") 가 뜨지 않도록 보류.
+      return new Promise(() => {});
     }
 
     // 1) 401 → refresh → retry
@@ -171,7 +195,7 @@ api.interceptors.response.use(
     // 재시도(_retry) 후에도 401이면 토큰 자체가 무효 → 강제 로그아웃
     if (status === 401 && tokenError && originalRequest?._retry) {
       await forceLogoutAndRedirect(userStore);
-      return Promise.reject(error);
+      return new Promise(() => {});
     }
 
     if (
@@ -189,7 +213,7 @@ api.interceptors.response.use(
         reqUrl.includes("/comApi/auth/refresh")
       ) {
         await forceLogoutAndRedirect(userStore);
-        return Promise.reject(error);
+        return new Promise(() => {});
       }
 
       try {
@@ -205,7 +229,7 @@ api.interceptors.response.use(
         return api(originalRequest);
       } catch (e) {
         await forceLogoutAndRedirect(userStore);
-        return Promise.reject(e);
+        return new Promise(() => {});
       }
     }
 

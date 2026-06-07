@@ -10,12 +10,14 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.prafta.common.error.ApiErrorCode;
 import com.prafta.common.error.common.CommonErrorCode;
 import com.prafta.common.exception.ApiException;
+import com.prafta.common.security.crypto.AesGcmCrypto;
 import com.prafta.web.user.user01.application.param.UserCreateParam;
 import com.prafta.web.user.user01.dto.UserUpdateFailItem;
 import com.prafta.web.user.user01.service.User01Service;
 import com.prafta.web.user.user01.upload.constant.UploadJobStatus;
 import com.prafta.web.user.user01.upload.mapper.UploadJobMapper;
 import com.prafta.web.user.user01.upload.service.UploadJobAsyncRunner;
+import com.prafta.web.user.user01.util.UserExcelRowParser;
 
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -35,6 +37,8 @@ public class UploadJobAsyncRunnerImpl implements UploadJobAsyncRunner {
     private final User01Service user01Service;
     private final UploadJobMapper uploadJobMapper;
     private final ObjectMapper objectMapper;
+    // prafta-052(보안): 실패 항목(평문 PII 포함) FAILS_JSON at-rest 암호화용.
+    private final AesGcmCrypto aesGcmCrypto;
 
     @Override
     @Async
@@ -72,7 +76,9 @@ public class UploadJobAsyncRunnerImpl implements UploadJobAsyncRunner {
                     incrementProgress(cmpnyCd, jobId, userCd, 1, 0);
                 } else {
                     failCount++;
-                    fails.add(new UserUpdateFailItem(i, p == null ? null : p.userId(), errorCode, message));
+                    // prafta-052: 실패 행 재업로드용 원본값 보존. toSourceRow 는 p==null 가드 내장(빈 리스트).
+                    fails.add(new UserUpdateFailItem(i, p == null ? null : p.userId(), errorCode, message,
+                            UserExcelRowParser.toSourceRow(p)));
                     incrementProgress(cmpnyCd, jobId, userCd, 0, 1);
                 }
             }
@@ -115,12 +121,22 @@ public class UploadJobAsyncRunnerImpl implements UploadJobAsyncRunner {
         uploadJobMapper.updateUploadJobFinal(cmpnyCd, jobId, status, failsJson, errorMsg, userCd);
     }
 
+    /**
+     * 실패 항목 목록을 직렬화한다.
+     *
+     * <p>prafta-052(보안): 실패 행 원본값(sourceRow)에는 휴대폰/이메일/생년월일 등 평문 PII 가
+     * 포함되므로, 직렬화한 JSON 페이로드 전체를 AES-GCM 으로 암호화("v1.*")하여 DB(FAILS_JSON)에
+     * 평문이 저장되지 않게 한다. 폴링 응답 빌드 시 {@code parseFails} 가 복호화한다.
+     * 실패가 없으면 저장할 페이로드가 없으므로 null 을 저장한다(빈 "[]" 도 암호화 대상 아님).
+     * 로그에는 PII/본문(JSON·암호문)을 절대 남기지 않는다.
+     */
     private String serializeFails(List<UserUpdateFailItem> fails) {
-        if (fails == null || fails.isEmpty()) return "[]";
+        if (fails == null || fails.isEmpty()) return null;
         try {
-            return objectMapper.writeValueAsString(fails);
+            String json = objectMapper.writeValueAsString(fails);
+            return aesGcmCrypto.encrypt(json); // at-rest 암호화 ("v1.<base64url>")
         } catch (Exception e) {
-            log.error("실패 목록 JSON 직렬화 실패 — failsJson=null 로 저장", e);
+            log.error("실패 목록 직렬화/암호화 실패 — failsJson=null 로 저장", e);
             return null;
         }
     }

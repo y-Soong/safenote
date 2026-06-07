@@ -145,6 +145,8 @@
 		, A.GPS_VERIFY_RADIUS_M	AS gpsVerifyRadiusM
 		, A.GPS_MANUAL_CONFIRM_YN	AS gpsManualConfirmYn
 		, DATE_FORMAT(A.OPENED_AT, '%Y-%m-%d %H:%i')		AS openedAt
+		/* 교육준비 타이머 기준시각(15분 자동 교육시작 기준). FE 카운트다운용. 초 단위까지 노출 */
+		, DATE_FORMAT(A.PREP_START_AT, '%Y-%m-%d %H:%i:%s')	AS prepStartAt
 		, DATE_FORMAT(A.STARTED_AT, '%Y-%m-%d %H:%i')		AS startedAt
 		, DATE_FORMAT(A.ENDED_AT, '%Y-%m-%d %H:%i')			AS endedAt
 		, DATE_FORMAT(A.CANCELLED_AT, '%Y-%m-%d %H:%i')		AS cancelledAt
@@ -449,18 +451,149 @@
 	  AND STATUS_CD IN ('DRAFT', 'OPENED')
 	</update>
 
-	<update id="updateSessionPwd" parameterType="com.prafta.web.tbm.tbm02.application.command.SessionPwdCommand">
-	/* Tbm02Mapper.updateSessionPwd */
+	<!-- ============================ PRAFTA-051 상태머신 재설계 ============================ -->
+
+	<!--
+		교육준비(OPENED) 전이(prafta-051-03).
+		DRAFT → OPENED 로 전이하며 입실비번 발급 + 관리자 GPS 중심좌표 + PREP_START_AT 기준시각 확정.
+		OPENED_AT 은 최초 준비시각 감사기록이므로 IFNULL 로 최초 1회만 기록(덮어쓰기 금지).
+		종료비번(EXIT_PWD)은 이 시점에 발급하지 않는다(교육종료 전이 소관).
+		WHERE STATUS_CD='DRAFT' 경합 가드: 동시 전이/이미 전이된 경우 영향행 0 → 서비스가 409 거부.
+	-->
+	<update id="prepareSession" parameterType="com.prafta.web.tbm.tbm02.application.command.SessionPrepareCommand">
+	/* Tbm02Mapper.prepareSession */
 	UPDATE TB_TBM_SESSION
 	SET
-		ENTRY_PWD		= #{entryPwd}
-		, EXIT_PWD		= #{exitPwd}
+		STATUS_CD				= 'OPENED'
+		, TITLE					= #{title}
+		, CONTENT_BODY			= #{contentBody}
+		, ENTRY_PWD				= #{entryPwd}
+		, MANAGER_GPS_LAT		= #{managerGpsLat}
+		, MANAGER_GPS_LON		= #{managerGpsLon}
+		, GPS_VERIFY_TYPE_CD	= IFNULL(#{gpsVerifyTypeCd}, GPS_VERIFY_TYPE_CD)
+		, GPS_VERIFY_RADIUS_M	= IFNULL(#{gpsVerifyRadiusM}, GPS_VERIFY_RADIUS_M)
+		, GPS_MANUAL_CONFIRM_YN	= #{gpsManualConfirmYn}
+		, OPENED_AT				= IFNULL(OPENED_AT, NOW())
+		, PREP_START_AT			= NOW()
+		, UPDATE_NO				= #{gvUserCd}
+		, UPDATE_DATE			= NOW()
+	WHERE CMPNY_CD = #{gvCmpnyCd}
+	  AND SESSION_CD = #{sessionCd}
+	  AND DEL_YN = 'N'
+	  AND STATUS_CD = 'DRAFT'
+	</update>
+
+	<!--
+		입실비번 전용 재발급(prafta-051-02, OPENED 만).
+		EXIT_PWD 는 건드리지 않는다(종료비번까지 덮는 부작용 방지).
+		비번은 enter 시점에만 검증되고 결과는 TB_TBM_ATTENDANCE 에 확정되므로, 본 UPDATE 는
+		SESSION 만 변경하고 ATTENDANCE 는 미변경 → 기입실자에 영향 없음.
+	-->
+	<update id="updateEntryPwd" parameterType="com.prafta.web.tbm.tbm02.application.command.SessionSinglePwdCommand">
+	/* Tbm02Mapper.updateEntryPwd */
+	UPDATE TB_TBM_SESSION
+	SET
+		ENTRY_PWD		= #{pwd}
 		, UPDATE_NO		= #{gvUserCd}
 		, UPDATE_DATE	= NOW()
 	WHERE CMPNY_CD = #{gvCmpnyCd}
 	  AND SESSION_CD = #{sessionCd}
 	  AND DEL_YN = 'N'
 	  AND STATUS_CD = 'OPENED'
+	</update>
+
+	<!--
+		종료비번 전용 재발급(prafta-051-02, COMPLETED 만).
+		ENTRY_PWD 는 건드리지 않는다. 기종료자 무영향(비번은 exit 시점에만 검증, 결과는 ATTENDANCE 확정).
+	-->
+	<update id="updateExitPwd" parameterType="com.prafta.web.tbm.tbm02.application.command.SessionSinglePwdCommand">
+	/* Tbm02Mapper.updateExitPwd */
+	UPDATE TB_TBM_SESSION
+	SET
+		EXIT_PWD		= #{pwd}
+		, UPDATE_NO		= #{gvUserCd}
+		, UPDATE_DATE	= NOW()
+	WHERE CMPNY_CD = #{gvCmpnyCd}
+	  AND SESSION_CD = #{sessionCd}
+	  AND DEL_YN = 'N'
+	  AND STATUS_CD = 'COMPLETED'
+	</update>
+
+	<!--
+		교육시작(IN_PROGRESS) 수동 전이(prafta-051-04).
+		WHERE STATUS_CD='OPENED' 경합 가드. 자동시작 배치(bulkStartExpiredPrep)와 원자적.
+	-->
+	<update id="startSession" parameterType="com.prafta.web.tbm.tbm02.application.command.SessionStateTransitionCommand">
+	/* Tbm02Mapper.startSession */
+	UPDATE TB_TBM_SESSION
+	SET
+		STATUS_CD		= 'IN_PROGRESS'
+		, STARTED_AT	= NOW()
+		, UPDATE_NO		= #{gvUserCd}
+		, UPDATE_DATE	= NOW()
+	WHERE CMPNY_CD = #{gvCmpnyCd}
+	  AND SESSION_CD = #{sessionCd}
+	  AND DEL_YN = 'N'
+	  AND STATUS_CD = 'OPENED'
+	</update>
+
+	<!--
+		교육준비 연장(prafta-051-04): PREP_START_AT 을 NOW() 로 리셋해 15분 타이머 재시작.
+		WHERE STATUS_CD='OPENED' AND PREP_START_AT > NOW()-15분 경합 가드.
+		이미 15분 경과(자동전이 임박/완료) 또는 OPENED 아님 → 영향행 0 → 서비스가 409 거부.
+	-->
+	<update id="extendPrep" parameterType="com.prafta.web.tbm.tbm02.application.command.SessionStateTransitionCommand">
+	/* Tbm02Mapper.extendPrep */
+	UPDATE TB_TBM_SESSION
+	SET
+		PREP_START_AT	= NOW()
+		, UPDATE_NO		= #{gvUserCd}
+		, UPDATE_DATE	= NOW()
+	WHERE CMPNY_CD = #{gvCmpnyCd}
+	  AND SESSION_CD = #{sessionCd}
+	  AND DEL_YN = 'N'
+	  AND STATUS_CD = 'OPENED'
+	  AND PREP_START_AT IS NOT NULL
+	  AND PREP_START_AT &gt; (NOW() - INTERVAL 15 MINUTE)
+	</update>
+
+	<!--
+		교육종료(COMPLETED) 전이(prafta-051-05): ENDED_AT=NOW() + 종료비번 발급(입실비번 미변경).
+		WHERE STATUS_CD='IN_PROGRESS' 경합 가드.
+	-->
+	<update id="completeSession" parameterType="com.prafta.web.tbm.tbm02.application.command.SessionStateTransitionCommand">
+	/* Tbm02Mapper.completeSession */
+	UPDATE TB_TBM_SESSION
+	SET
+		STATUS_CD		= 'COMPLETED'
+		, ENDED_AT		= NOW()
+		, EXIT_PWD		= #{exitPwd}
+		, UPDATE_NO		= #{gvUserCd}
+		, UPDATE_DATE	= NOW()
+	WHERE CMPNY_CD = #{gvCmpnyCd}
+	  AND SESSION_CD = #{sessionCd}
+	  AND DEL_YN = 'N'
+	  AND STATUS_CD = 'IN_PROGRESS'
+	</update>
+
+	<!--
+		15분 자동 교육시작 배치(prafta-051-06).
+		OPENED 이면서 PREP_START_AT 이 15분 이상 경과한 세션을 IN_PROGRESS 로 일괄 전이.
+		WHERE 에 상태+시각 조건을 동시 포함하므로 수동 시작(startSession)/연장(extendPrep)과 원자적.
+		파라미터 없음(전수 스캔, 상태+시각 조건만으로 안전).
+	-->
+	<update id="bulkStartExpiredPrep">
+	/* Tbm02Mapper.bulkStartExpiredPrep */
+	UPDATE TB_TBM_SESSION
+	SET
+		STATUS_CD		= 'IN_PROGRESS'
+		, STARTED_AT	= NOW()
+		, UPDATE_NO		= 'SYSTEM'
+		, UPDATE_DATE	= NOW()
+	WHERE STATUS_CD = 'OPENED'
+	  AND DEL_YN = 'N'
+	  AND PREP_START_AT IS NOT NULL
+	  AND PREP_START_AT &lt;= (NOW() - INTERVAL 15 MINUTE)
 	</update>
 
 	<!-- ============================ 보조 조회 ============================ -->
@@ -579,5 +712,250 @@
 	  AND A.USE_YN = 'Y'
 	ORDER BY A.SITE_NM
 	</select>
+
+	<!-- ============================ PRAFTA-051-11 관리자 대리/검색 입실 ============================ -->
+
+	<!-- 정규직 입실 후보(세션 사업장 활성 사용자). alreadyEntered = DEL_YN='N' 출결 존재.
+	     resultType record(EntryCandidateResult): SELECT 컬럼 순서 = 필드 순서 고정. -->
+	<select id="selectRegularCandidates" parameterType="com.prafta.web.tbm.tbm02.application.query.EntryCandidateQuery" resultType="com.prafta.web.tbm.tbm02.result.EntryCandidateResult">
+	/* Tbm02Mapper.selectRegularCandidates */
+	SELECT
+		U.USER_CD		AS userCd
+		, U.USER_ID		AS userId
+		, U.USER_NM		AS userNm
+		, U.SITE_CD		AS siteCd
+		, ST.SITE_NM	AS siteNm
+		, NULL			AS mblNoLast4
+		, CASE WHEN EXISTS (
+			SELECT 1
+			FROM TB_TBM_ATTENDANCE AT
+			WHERE AT.CMPNY_CD = #{gvCmpnyCd}
+			  AND AT.SESSION_CD = #{sessionCd}
+			  AND AT.USER_TYPE_CD = 'REGULAR'
+			  AND AT.USER_CD = U.USER_CD
+			  AND AT.DEL_YN = 'N'
+		  ) THEN 1 ELSE 0 END	AS alreadyEntered
+	FROM TB_USER U
+		 LEFT OUTER JOIN TB_SITE ST
+		 	ON (
+		 		U.CMPNY_CD = ST.CMPNY_CD
+		 	AND U.SITE_CD = ST.SITE_CD
+		 	)
+	WHERE U.CMPNY_CD = #{gvCmpnyCd}
+	  AND U.SITE_CD = #{siteCd}
+	  AND U.USE_YN = 'Y'
+	  AND U.ACCOUNT_STATUS = '01'
+	  <if test="keyword != null and keyword != ''">
+	    AND (
+	         U.USER_NM LIKE CONCAT('%', #{keyword}, '%')
+	      OR U.USER_ID LIKE CONCAT('%', #{keyword}, '%')
+	    )
+	  </if>
+	ORDER BY U.USER_NM, U.USER_CD
+	LIMIT 100
+	</select>
+
+	<!-- 일용직 입실 후보(C7: 만료/탈퇴 제외). 평문 휴대폰 SELECT 금지 - MBL_NO_LAST4 만.
+	     WORK_EXPIRE_DATE 는 varchar8 이라 문자열 비교=시간순, 경계 '오늘' 포함(>=). -->
+	<select id="selectDailyCandidates" parameterType="com.prafta.web.tbm.tbm02.application.query.EntryCandidateQuery" resultType="com.prafta.web.tbm.tbm02.result.EntryCandidateResult">
+	/* Tbm02Mapper.selectDailyCandidates */
+	SELECT
+		DU.USER_CD		AS userCd
+		, DU.USER_ID	AS userId
+		, DU.USER_NM	AS userNm
+		, DU.SITE_CD	AS siteCd
+		, ST.SITE_NM	AS siteNm
+		, DU.MBL_NO_LAST4	AS mblNoLast4
+		, CASE WHEN EXISTS (
+			SELECT 1
+			FROM TB_TBM_ATTENDANCE AT
+			WHERE AT.CMPNY_CD = #{gvCmpnyCd}
+			  AND AT.SESSION_CD = #{sessionCd}
+			  AND AT.USER_TYPE_CD = 'DAILY'
+			  AND AT.USER_CD = DU.USER_CD
+			  AND AT.DEL_YN = 'N'
+		  ) THEN 1 ELSE 0 END	AS alreadyEntered
+	FROM TB_DAILY_USER DU
+		 LEFT OUTER JOIN TB_SITE ST
+		 	ON (
+		 		DU.CMPNY_CD = ST.CMPNY_CD
+		 	AND DU.SITE_CD = ST.SITE_CD
+		 	)
+	WHERE DU.CMPNY_CD = #{gvCmpnyCd}
+	  AND DU.SITE_CD = #{siteCd}
+	  AND DU.USE_YN = 'Y'
+	  AND DU.ACCOUNT_STATUS = '01'
+	  AND DU.WITHDRAWAL_DATE IS NULL
+	  AND DU.WORK_EXPIRE_DATE &gt;= DATE_FORMAT(NOW(), '%Y%m%d')
+	  <if test="keyword != null and keyword != ''">
+	    AND (
+	         DU.USER_NM LIKE CONCAT('%', #{keyword}, '%')
+	      OR DU.USER_ID LIKE CONCAT('%', #{keyword}, '%')
+	    )
+	  </if>
+	ORDER BY DU.USER_NM, DU.USER_CD
+	LIMIT 100
+	</select>
+
+	<!-- 대리입실 대상 유효성: 세션 사업장 소속 활성 사용자 여부(정규직/일용직 C7). 1=유효, 0=무효. -->
+	<select id="countEntryTarget" parameterType="com.prafta.web.tbm.tbm02.application.query.EntryTargetQuery" resultType="int">
+	/* Tbm02Mapper.countEntryTarget */
+	<choose>
+		<when test="userTypeCd == 'DAILY'">
+			SELECT COUNT(1)
+			FROM TB_DAILY_USER DU
+			WHERE DU.CMPNY_CD = #{gvCmpnyCd}
+			  AND DU.SITE_CD = #{siteCd}
+			  AND DU.USER_CD = #{userCd}
+			  AND DU.USE_YN = 'Y'
+			  AND DU.ACCOUNT_STATUS = '01'
+			  AND DU.WITHDRAWAL_DATE IS NULL
+			  AND DU.WORK_EXPIRE_DATE &gt;= DATE_FORMAT(NOW(), '%Y%m%d')
+		</when>
+		<otherwise>
+			SELECT COUNT(1)
+			FROM TB_USER U
+			WHERE U.CMPNY_CD = #{gvCmpnyCd}
+			  AND U.SITE_CD = #{siteCd}
+			  AND U.USER_CD = #{userCd}
+			  AND U.USE_YN = 'Y'
+			  AND U.ACCOUNT_STATUS = '01'
+		</otherwise>
+	</choose>
+	</select>
+
+	<!-- 대리입실 슬롯(UNIQUE 키) 점유 행 조회. 없으면 결과 null(→INSERT). -->
+	<select id="selectAttendanceSlot" parameterType="com.prafta.web.tbm.tbm02.application.command.ManagerEnterCommand" resultType="com.prafta.web.tbm.tbm02.result.AttendanceSlotResult">
+	/* Tbm02Mapper.selectAttendanceSlot */
+	SELECT
+		AT.ATTENDANCE_CD	AS attendanceCd
+		, AT.DEL_YN			AS delYn
+	FROM TB_TBM_ATTENDANCE AT
+	WHERE AT.CMPNY_CD = #{gvCmpnyCd}
+	  AND AT.SESSION_CD = #{sessionCd}
+	  AND AT.USER_TYPE_CD = #{userTypeCd}
+	  AND AT.USER_CD = #{userCd}
+	LIMIT 1
+	</select>
+
+	<!-- 관리자 직접 입실 INSERT. ENTRY_TYPE_CD='MANAGER_DIRECT', GPS/거리/APP_FOREGROUND_SEC NULL. -->
+	<insert id="insertManagerEntry" parameterType="com.prafta.web.tbm.tbm02.application.command.ManagerEnterCommand">
+	/* Tbm02Mapper.insertManagerEntry */
+	INSERT INTO TB_TBM_ATTENDANCE (
+		  ATTENDANCE_CD
+		, CMPNY_CD
+		, SESSION_CD
+		, USER_TYPE_CD
+		, USER_CD
+		, ENTRY_TYPE_CD
+		, ENTRY_BY_MANAGER_USER_CD
+		, ENTRY_AT
+		, DEL_YN
+		, INSERT_NO
+		, INSERT_DATE
+		, UPDATE_NO
+		, UPDATE_DATE
+	)
+	VALUES (
+		  CONCAT('A', DATE_FORMAT(NOW(), '%Y%m%d'), FNC_CMM_SEQ_NEXTVAL(#{gvCmpnyCd}, 'TBM_ATTENDANCE_CD'))
+		, #{gvCmpnyCd}
+		, #{sessionCd}
+		, #{userTypeCd}
+		, #{userCd}
+		, 'MANAGER_DIRECT'
+		, #{managerUserCd}
+		, NOW()
+		, 'N'
+		, #{managerUserCd}
+		, NOW()
+		, #{managerUserCd}
+		, NOW()
+	)
+	</insert>
+
+	<!-- 내보내기 후 재입실: DEL_YN='Y' 슬롯 행을 MANAGER_DIRECT 로 복구.
+	     UNIQUE(CMPNY,SESSION,USER_TYPE,USER) 가 DEL_YN 미포함이라 재INSERT 충돌 → RESTORE 로 처리.
+	     이전 강제종료/내보내기 흔적(EXIT_*) 초기화하여 새 입실로 재기록. -->
+	<update id="restoreManagerEntry" parameterType="com.prafta.web.tbm.tbm02.application.command.ManagerEnterCommand">
+	/* Tbm02Mapper.restoreManagerEntry */
+	UPDATE TB_TBM_ATTENDANCE
+	SET
+		  DEL_YN				= 'N'
+		, ENTRY_TYPE_CD			= 'MANAGER_DIRECT'
+		, ENTRY_BY_MANAGER_USER_CD	= #{managerUserCd}
+		, ENTRY_AT				= NOW()
+		, ENTRY_GPS_LAT			= NULL
+		, ENTRY_GPS_LON			= NULL
+		, ENTRY_DISTANCE_M		= NULL
+		, APP_FOREGROUND_SEC	= NULL
+		, EXIT_TYPE_CD			= NULL
+		, EXIT_BY_MANAGER_USER_CD	= NULL
+		, EXIT_AT				= NULL
+		, EXIT_SIGN_FILE_MGMT_CD	= NULL
+		, EXIT_FORCED_REASON	= NULL
+		, COMPLETION_STATUS_CD	= NULL
+		, NOT_COMPLETED_REASON	= NULL
+		, STATUS_UPDATED_BY		= NULL
+		, STATUS_UPDATED_AT		= NULL
+		, UPDATE_NO				= #{managerUserCd}
+		, UPDATE_DATE			= NOW()
+	WHERE CMPNY_CD = #{gvCmpnyCd}
+	  AND SESSION_CD = #{sessionCd}
+	  AND USER_TYPE_CD = #{userTypeCd}
+	  AND USER_CD = #{userCd}
+	  AND DEL_YN = 'Y'
+	</update>
+
+	<!-- ============================ PRAFTA-051-12 입실자 명단/내보내기 ============================ -->
+
+	<!-- 교육준비 단계 입실자 명단(DEL_YN='N'). 정규직/일용직 통합, 일용직 PII 는 끝 4자리만.
+	     resultType record(SessionAttendanceResult): SELECT 컬럼 순서 = 필드 순서 고정. -->
+	<select id="selectSessionAttendances" parameterType="com.prafta.web.tbm.tbm02.application.query.SessionDetailQuery" resultType="com.prafta.web.tbm.tbm02.result.SessionAttendanceResult">
+	/* Tbm02Mapper.selectSessionAttendances */
+	SELECT
+		AT.ATTENDANCE_CD	AS attendanceCd
+		, AT.USER_TYPE_CD	AS userTypeCd
+		, CASE
+			WHEN AT.USER_TYPE_CD = 'REGULAR' THEN RU.USER_NM
+			ELSE DU.USER_NM
+		  END				AS userNm
+		, DU.MBL_NO_LAST4	AS mblNoLast4
+		, AT.ENTRY_TYPE_CD	AS entryTypeCd
+		, DATE_FORMAT(AT.ENTRY_AT, '%Y-%m-%d %H:%i')	AS entryAt
+		, AT.ENTRY_DISTANCE_M	AS entryDistanceM
+		, CASE WHEN AT.EXIT_AT IS NOT NULL THEN 1 ELSE 0 END	AS exited
+	FROM TB_TBM_ATTENDANCE AT
+		 LEFT OUTER JOIN TB_USER RU
+		 	ON (
+		 		AT.USER_TYPE_CD = 'REGULAR'
+		 	AND AT.CMPNY_CD = RU.CMPNY_CD
+		 	AND AT.USER_CD = RU.USER_CD
+		 	)
+		 LEFT OUTER JOIN TB_DAILY_USER DU
+		 	ON (
+		 		AT.USER_TYPE_CD = 'DAILY'
+		 	AND AT.CMPNY_CD = DU.CMPNY_CD
+		 	AND AT.USER_CD = DU.USER_CD
+		 	)
+	WHERE AT.CMPNY_CD = #{gvCmpnyCd}
+	  AND AT.SESSION_CD = #{sessionCd}
+	  AND AT.DEL_YN = 'N'
+	ORDER BY AT.ENTRY_AT IS NULL, AT.ENTRY_AT, AT.ATTENDANCE_CD
+	</select>
+
+	<!-- 입실자 내보내기(soft delete). 세션 일치 + DEL_YN='N' 만 갱신(영향행 0=부적합 거부). -->
+	<update id="ejectAttendance" parameterType="com.prafta.web.tbm.tbm02.application.command.EjectAttendanceCommand">
+	/* Tbm02Mapper.ejectAttendance */
+	UPDATE TB_TBM_ATTENDANCE
+	SET
+		  DEL_YN				= 'Y'
+		, EXIT_FORCED_REASON	= #{reason}
+		, UPDATE_NO				= #{gvUserCd}
+		, UPDATE_DATE			= NOW()
+	WHERE CMPNY_CD = #{gvCmpnyCd}
+	  AND SESSION_CD = #{sessionCd}
+	  AND ATTENDANCE_CD = #{attendanceCd}
+	  AND DEL_YN = 'N'
+	</update>
 
 </mapper>

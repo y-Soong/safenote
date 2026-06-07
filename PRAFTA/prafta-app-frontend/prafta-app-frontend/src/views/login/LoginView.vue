@@ -137,12 +137,8 @@ onMounted(() => {
   }
 })
 
-function focusKill(e) {
-  if (e.target.id == 'userId') {
-    if (proxy.$util.isNotEmpty(userId.value)) {
-      userIdFocusKill()
-    }
-  }
+function focusKill() {
+  // 사용자 ID 자동 대문자 변환 제거: 입력값을 변형하지 않음
 }
 
 /* API Call */
@@ -265,10 +261,6 @@ const fnSubmitLogin = async () => {
 // };
 
 /* User Function */
-function userIdFocusKill() {
-  userId.value = proxy.$util.toUpperCase(userId.value)
-}
-
 function fnOpenTerms() {
   router.push('/TermsInfo')
 }

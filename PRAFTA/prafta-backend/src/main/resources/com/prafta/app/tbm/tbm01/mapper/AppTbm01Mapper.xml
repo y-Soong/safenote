@@ -150,6 +150,8 @@
         , EXIT_AT                = NOW()
         , EXIT_SIGN_FILE_MGMT_CD = #{exitSignFileMgmtCd}
         , COMPLETION_STATUS_CD   = #{completionStatusCd}
+        /* prafta-051-08: 앱 포그라운드 누적초(nullable). null 이면 그대로 NULL 저장. */
+        , APP_FOREGROUND_SEC     = #{appForegroundSec}
         , STATUS_UPDATED_BY      = #{updateNo}
         , STATUS_UPDATED_AT      = NOW()
         , UPDATE_NO              = #{updateNo}

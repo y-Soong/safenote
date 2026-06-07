@@ -269,7 +269,7 @@ import {
   defineEmits,
   computed,
 } from "vue";
-import { useDraggable } from "@/composables/useDraggable";
+import { useCenteredDraggable } from "@/composables/useCenteredDraggable";
 import axios from "@/api/axios";
 import { resolveApiErrorMessage } from "@/utils/apiError";
 
@@ -281,10 +281,11 @@ const props = defineProps({
 // const emit =
 defineEmits(["close"]);
 
-const { position, startDrag, stopDrag } = useDraggable(
-  window.innerWidth / 2 - 600,
-  window.innerHeight / 2 - 400
-);
+const modalRef = ref(null);
+const { position, startDrag, stopDrag } = useCenteredDraggable(modalRef, {
+  horizontalRatio: 2,
+  verticalRatio: 3.5,
+});
 
 const { proxy } = getCurrentInstance();
 
@@ -294,7 +295,6 @@ const subjRowItemSubj = (row) =>
   row?.inspectItemSubj ?? row?.InspectItemSubj;
 
 const printArea = ref(null);
-const modalRef = ref(null);
 const workMonthIdx = ref(0);
 
 const formData = reactive({

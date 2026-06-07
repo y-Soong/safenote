@@ -683,6 +683,8 @@ const fnApplyHireDate = async () => {
 
 .hire-date-pop__body {
   padding: 1.25rem 1.5rem;
+  flex: 1 1 auto;
+  min-height: 0;
   overflow-y: auto;
   font-family: "Pretendard", sans-serif;
   color: var(--color-text);

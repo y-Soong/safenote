@@ -10,6 +10,7 @@ public enum ChkLstErrorCode implements ApiErrorCode {
     CHKLST_400_001(HttpStatus.BAD_REQUEST, "등록된 점검항목이 없습니다.")
     , CHKLST_403_001(HttpStatus.FORBIDDEN, "현재 소속 사업장과 다른 QR 코드입니다.")
     , CHKLST_404_001(HttpStatus.NOT_FOUND, "등록되지 않은 체크포인트입니다.")
+    , CHKLST_403_002(HttpStatus.FORBIDDEN, "접근 권한이 없는 사업장이거나 존재하지 않는 불량 항목입니다.")
     ;
 
     private final HttpStatus httpStatus;

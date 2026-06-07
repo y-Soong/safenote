@@ -1,0 +1,379 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Prafta · 사고관리</title>
+<style>
+  :root{
+    --primary:#16A34A;--primary-d:#15803d;--primary-tint:#f0fdf4;--primary-tint2:#dcfce7;
+    --danger:#EF4444;--danger-tint:#fef2f2;--warn:#F59E0B;--warn-tint:#fffbeb;
+    --bg:#f7f8fa;--white:#ffffff;--line:#e6e8ec;--line-2:#eef0f3;
+    --text:#1f2430;--text-2:#5b6472;--text-3:#8b94a3;--radius:10px;
+    --sans:'Pretendard','Apple SD Gothic Neo','Malgun Gothic',system-ui,sans-serif;
+    --mono:'SFMono-Regular',Consolas,Menlo,monospace;
+    --shadow:0 1px 2px rgba(16,24,40,.05);--shadow-lg:0 12px 40px rgba(16,24,40,.18);
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  html,body{background:var(--bg);color:var(--text);font-family:var(--sans);font-size:14px;line-height:1.5}
+  .topbar{display:flex;align-items:center;gap:16px;padding:12px 22px;background:var(--primary-tint);border-bottom:1px solid var(--primary-tint2);position:sticky;top:0;z-index:20}
+  .logo{font-weight:800;font-size:17px;letter-spacing:-.5px;color:var(--primary-d)}
+  .crumb{color:var(--text-3);font-size:13px}.crumb b{color:var(--text-2);font-weight:600}
+  .spacer{flex:1}.who{font-size:13px;color:var(--text-2)}.who b{color:var(--text)}
+  .wrap{display:flex;min-height:calc(100vh - 49px)}
+  .side{width:308px;background:var(--white);border-right:1px solid var(--line);flex-shrink:0;display:flex;flex-direction:column}
+  .main{flex:1;padding:22px 26px;overflow-y:auto}
+  .side-head{padding:15px 18px;border-bottom:1px solid var(--line);display:flex;align-items:center;justify-content:space-between}
+  .side-head h2{font-size:12px;letter-spacing:.05em;color:var(--text-3);text-transform:uppercase}
+  .btn-new{background:var(--primary);color:#fff;border:none;border-radius:7px;padding:7px 12px;font-size:12.5px;font-weight:700;cursor:pointer;box-shadow:var(--shadow)}
+  .btn-new:hover{background:var(--primary-d)}
+  .acc-scroll{overflow-y:auto;flex:1}
+  .acc-item{padding:13px 18px;border-bottom:1px solid var(--line-2);cursor:pointer;border-left:3px solid transparent}
+  .acc-item:hover{background:var(--primary-tint)}
+  .acc-item.active{background:var(--primary-tint);border-left-color:var(--primary)}
+  .acc-item .row1{display:flex;align-items:center;gap:7px;margin-bottom:5px;flex-wrap:wrap}
+  .acc-item .name{font-weight:700;font-size:14px}
+  .acc-item .meta{font-size:11.5px;color:var(--text-3);font-family:var(--mono)}
+  .acc-item .site{font-size:12px;color:var(--text-2);margin-top:3px}
+  .grade{font-size:11px;font-weight:700;padding:2px 7px;border-radius:5px;white-space:nowrap}
+  .grade.critical{background:var(--danger-tint);color:var(--danger);border:1px solid #fecaca}
+  .grade.normal{background:var(--warn-tint);color:#b45309;border:1px solid #fde68a}
+  .grade.exempt{background:#f1f5f9;color:#475569;border:1px solid #e2e8f0}
+  .st{font-size:11px;font-weight:600;padding:2px 9px;border-radius:20px;white-space:nowrap}
+  .st.open{background:var(--primary-tint2);color:var(--primary-d)}.st.proc{background:var(--warn-tint);color:#b45309}.st.done{background:#f1f5f9;color:#64748b}
+  .det-head{display:flex;align-items:center;gap:12px;margin-bottom:5px;flex-wrap:wrap}
+  .det-head h1{font-size:21px;font-weight:800;letter-spacing:-.4px}
+  .det-sub{color:var(--text-2);font-size:12.5px;margin-bottom:18px;font-family:var(--mono)}.det-sub b{color:var(--text)}
+  .tabs{display:flex;gap:4px;border-bottom:1px solid var(--line);margin-bottom:20px}
+  .tab{padding:9px 15px;font-size:13px;font-weight:600;color:var(--text-3);cursor:pointer;border-bottom:2px solid transparent;margin-bottom:-1px}
+  .tab:hover{color:var(--text-2)}.tab.active{color:var(--primary-d);border-bottom-color:var(--primary)}
+  .grid{display:grid;grid-template-columns:repeat(2,1fr);gap:14px}
+  .card{background:var(--white);border:1px solid var(--line);border-radius:var(--radius);padding:16px 18px;box-shadow:var(--shadow)}
+  .card.full{grid-column:1/-1}
+  .card h3{font-size:11.5px;letter-spacing:.04em;text-transform:uppercase;color:var(--text-3);margin-bottom:12px;display:flex;align-items:center;gap:8px;font-weight:700}
+  .card h3 .dot{width:6px;height:6px;border-radius:50%;background:var(--primary)}
+  .card h3 .sub{color:var(--text-3);font-weight:400;text-transform:none;letter-spacing:0;font-size:11px}
+  .kv{display:flex;justify-content:space-between;gap:12px;padding:7px 0;border-bottom:1px solid var(--line-2);font-size:13px}
+  .kv:last-child{border-bottom:none}.kv .k{color:var(--text-3);flex-shrink:0}
+  .kv .v{color:var(--text);font-weight:600;text-align:right}.kv .v.mono{font-family:var(--mono);font-weight:500;font-size:12px}
+  .pill{display:inline-flex;align-items:center;gap:5px;font-size:12px;padding:3px 9px;border-radius:20px;font-weight:600}
+  .pill.yes{background:var(--primary-tint2);color:var(--primary-d)}.pill.no{background:var(--danger-tint);color:var(--danger)}
+  .note{font-size:11.5px;color:var(--text-3);margin-top:10px;line-height:1.55;border-top:1px dashed var(--line);padding-top:9px}
+  .list-row{display:flex;align-items:flex-start;gap:10px;padding:9px 0;border-bottom:1px solid var(--line-2);font-size:13px}
+  .list-row:last-child{border-bottom:none}
+  .list-row .lead{font-family:var(--mono);font-size:11.5px;color:var(--text-3);min-width:78px;padding-top:1px}
+  .list-row .body{flex:1}.list-row .body b{font-weight:600}.list-row .body .d2{color:var(--text-2);font-size:12.5px}
+  .list-row .tail{font-size:12px;color:var(--text-2);text-align:right;white-space:nowrap}
+  .action-grid{display:flex;flex-direction:column;gap:11px}
+  .action{background:var(--white);border:1px solid var(--line);border-radius:var(--radius);padding:14px 16px;display:flex;align-items:center;gap:15px;box-shadow:var(--shadow)}
+  .action.alert{border-color:#fca5a5;background:var(--danger-tint)}
+  .action.warnbox{border-color:#fcd34d;background:var(--warn-tint)}
+  .action.complete{border-color:var(--primary-tint2)}
+  .action .num{width:28px;height:28px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:13px;background:#f1f5f9;color:var(--text-3);flex-shrink:0}
+  .action.complete .num{background:var(--primary);color:#fff}
+  .action .info{flex:1}.action .info .t{font-weight:700;font-size:14px;margin-bottom:2px}
+  .action .info .d{font-size:12px;color:var(--text-2)}.action .info .law{font-size:11px;color:var(--text-3);font-family:var(--mono);margin-top:3px}
+  .action .deadline{text-align:right;min-width:128px}
+  .action .deadline .dl-label{font-size:10.5px;color:var(--text-3);margin-bottom:1px}
+  .action .deadline .dl-val{font-weight:700;font-size:13px;font-family:var(--mono)}
+  .dl-val.over{color:var(--danger)}.dl-val.soon{color:#b45309}.dl-val.ok{color:var(--primary-d)}.dl-val.imm{color:var(--danger)}
+  .act-btn{background:var(--white);border:1px solid var(--line);color:var(--text-2);border-radius:7px;padding:6px 13px;font-size:12px;font-weight:600;cursor:pointer;min-width:78px;text-align:center}
+  .act-btn:hover{border-color:var(--primary);color:var(--primary-d)}
+  .action.complete .act-btn{color:var(--primary-d);border-color:var(--primary-tint2);background:var(--primary-tint)}
+  .log-add{display:flex;gap:9px;margin-bottom:18px;align-items:flex-start;background:var(--white);border:1px solid var(--line);border-radius:var(--radius);padding:12px;box-shadow:var(--shadow)}
+  .log-add select,.log-add textarea{background:var(--white);border:1px solid var(--line);color:var(--text);border-radius:7px;padding:9px 11px;font-size:13px;font-family:var(--sans)}
+  .log-add select{min-width:120px}.log-add textarea{flex:1;resize:vertical;min-height:38px}
+  .log-add .add-btn{background:var(--primary);border:none;color:#fff;font-weight:700;border-radius:7px;padding:9px 16px;cursor:pointer;font-size:13px;white-space:nowrap}
+  .log-add .add-btn:hover{background:var(--primary-d)}
+  .timeline{position:relative;padding-left:24px}
+  .timeline::before{content:'';position:absolute;left:7px;top:4px;bottom:4px;width:2px;background:var(--line)}
+  .tl-item{position:relative;padding:0 0 17px 0}
+  .tl-item::before{content:'';position:absolute;left:-21px;top:3px;width:10px;height:10px;border-radius:50%;background:#fff;border:2px solid var(--primary)}
+  .tl-item.report::before{border-color:var(--warn)}.tl-item.medical::before{border-color:var(--danger)}.tl-item.settle::before{border-color:var(--primary)}
+  .tl-head{display:flex;align-items:center;gap:8px;margin-bottom:3px}
+  .tl-cat{font-size:11px;font-weight:700;padding:1px 7px;border-radius:5px;background:#f1f5f9;color:var(--text-2)}
+  .tl-cat.report{background:var(--warn-tint);color:#b45309}.tl-cat.medical{background:var(--danger-tint);color:var(--danger)}.tl-cat.settle{background:var(--primary-tint2);color:var(--primary-d)}
+  .tl-date{font-size:11.5px;color:var(--text-3);font-family:var(--mono)}
+  .tl-body{font-size:13.5px;color:var(--text);margin-bottom:2px}.tl-author{font-size:11.5px;color:var(--text-3)}
+  .tl-attach{font-size:11.5px;color:var(--primary-d);margin-top:4px;display:inline-flex;gap:5px;align-items:center;cursor:pointer}
+  .banner{padding:11px 15px;border-radius:9px;font-size:13px;margin-bottom:18px;display:flex;align-items:center;gap:10px;font-weight:500}
+  .banner.crit{background:var(--danger-tint);border:1px solid #fca5a5;color:#b91c1c}
+  .legend{font-size:11px;color:var(--text-3);margin-top:16px;line-height:1.65;border-top:1px solid var(--line);padding-top:12px}.legend b{color:var(--text-2)}
+  .hide{display:none}
+  .overlay{position:fixed;inset:0;background:rgba(16,24,40,.45);display:flex;align-items:flex-start;justify-content:center;padding:40px 16px;z-index:50;overflow-y:auto}
+  .overlay.hide{display:none}
+  .modal{background:var(--white);border-radius:14px;width:100%;max-width:620px;box-shadow:var(--shadow-lg);overflow:hidden}
+  .modal-head{padding:18px 22px;border-bottom:1px solid var(--line);display:flex;align-items:center;justify-content:space-between;background:var(--primary-tint)}
+  .modal-head h2{font-size:17px;font-weight:800;color:var(--primary-d)}
+  .modal-head .x{cursor:pointer;color:var(--text-3);font-size:20px;background:none;border:none;line-height:1}
+  .modal-body{padding:20px 22px;max-height:62vh;overflow-y:auto}
+  .modal-foot{padding:14px 22px;border-top:1px solid var(--line);display:flex;gap:10px;justify-content:flex-end;background:var(--bg)}
+  .form-row{margin-bottom:15px}.form-row.two{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+  .form-row label{display:block;font-size:12px;font-weight:700;color:var(--text-2);margin-bottom:6px}
+  .form-row label .req{color:var(--danger);margin-left:2px}
+  .form-row input,.form-row select,.form-row textarea{width:100%;border:1px solid var(--line);border-radius:8px;padding:9px 11px;font-size:13.5px;font-family:var(--sans);color:var(--text);background:var(--white)}
+  .form-row input:focus,.form-row select:focus,.form-row textarea:focus{outline:none;border-color:var(--primary);box-shadow:0 0 0 3px var(--primary-tint2)}
+  .form-row textarea{resize:vertical;min-height:62px}
+  .form-hint{font-size:11px;color:var(--text-3);margin-top:5px;line-height:1.5}
+  .grade-pick{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}
+  .grade-opt{border:1.5px solid var(--line);border-radius:9px;padding:11px 10px;cursor:pointer;text-align:center}
+  .grade-opt:hover{border-color:var(--primary-tint2)}.grade-opt.sel{border-color:var(--primary);background:var(--primary-tint)}
+  .grade-opt .gt{font-weight:800;font-size:13.5px;margin-bottom:3px}.grade-opt .gd{font-size:10.5px;color:var(--text-3);line-height:1.45}
+  .btn{border:none;border-radius:8px;padding:10px 18px;font-size:13.5px;font-weight:700;cursor:pointer}
+  .btn.ghost{background:var(--white);border:1px solid var(--line);color:var(--text-2)}.btn.ghost:hover{background:var(--bg)}
+  .btn.primary{background:var(--primary);color:#fff}.btn.primary:hover{background:var(--primary-d)}
+  .modal-callout{background:var(--warn-tint);border:1px solid #fde68a;border-radius:8px;padding:10px 12px;font-size:11.5px;color:#92400e;margin-bottom:16px;line-height:1.55}
+  .section-divider{font-size:12px;font-weight:800;color:var(--primary-d);margin:18px 0 12px;padding-top:14px;border-top:1px solid var(--line);display:flex;align-items:baseline;gap:8px;flex-wrap:wrap}
+  .section-divider span{font-weight:400;color:var(--text-3);font-size:10.5px;letter-spacing:0}
+</style>
+</head>
+<body>
+  <div class="topbar">
+    <div class="logo">Prafta</div>
+    <div class="crumb">SAFETY NOTE &nbsp;›&nbsp; <b>사고관리</b></div>
+    <div class="spacer"></div>
+    <div class="who">㈜대한건설 · 산업안전관리자 <b>김관리</b></div>
+  </div>
+  <div class="wrap">
+    <aside class="side">
+      <div class="side-head"><h2>사고 목록</h2><button class="btn-new" onclick="openModal()">+ 사고 등록</button></div>
+      <div class="acc-scroll" id="accList"></div>
+      <div class="legend" style="padding:12px 18px;margin:0">
+        <b style="color:var(--danger)">중대재해</b> 사망1↑·3개월요양 2↑·10명↑<br>
+        <b style="color:#b45309">일반산재</b> 사망 또는 3일↑ 휴업<br>
+        <b style="color:#475569">신고제외</b> 3일 미만 휴업 (기록·보존만)
+      </div>
+    </aside>
+    <main class="main">
+      <div class="det-head"><h1 id="dName">—</h1><span id="dGrade"></span><span id="dStatus"></span></div>
+      <div class="det-sub" id="dSub"></div>
+      <div class="tabs">
+        <div class="tab active" data-tab="context">① 안전관리 현황 (사고일 기준)</div>
+        <div class="tab" data-tab="actions">② 법정 처리 / 기한</div>
+        <div class="tab" data-tab="log">③ 처리 이력</div>
+      </div>
+      <section id="tab-context"></section>
+      <section id="tab-actions" class="hide"></section>
+      <section id="tab-log" class="hide"></section>
+    </main>
+  </div>
+  <div class="overlay hide" id="overlay" role="dialog" aria-modal="true" aria-labelledby="modalTitle">
+    <div class="modal">
+      <div class="modal-head"><h2 id="modalTitle">사고 등록</h2><button class="x" onclick="closeModal()" aria-label="닫기">✕</button></div>
+      <div class="modal-body">
+        <div class="modal-callout">⚠ 사고관리는 <b>실제 피해(부상·사망 등)가 발생한 사고</b>를 대상으로 합니다. 인적·물적 피해가 없는 사건은 <b>아차사고 보고</b>로 등록하세요.</div>
+
+        <div class="form-row two">
+          <div><label>사고 발생일<span class="req">*</span></label><input type="date" value="2026-05-30"></div>
+          <div><label>발생 시각<span class="req">*</span></label><input type="time" value="15:20"></div>
+        </div>
+
+        <div class="form-row">
+          <label>발생 사업장<span class="req">*</span></label>
+          <select id="mSite" onchange="onSiteChange()">
+            <option value="">— 사업장 선택 —</option>
+            <option value="00012" selected>동탄2 물류센터 신축현장</option>
+            <option value="00008">평택 반도체 부속동</option>
+            <option value="00003">인천 데이터센터</option>
+          </select>
+          <div class="form-hint">사업장을 먼저 선택하면 아래 재해자·연결 항목이 해당 사업장 기준으로 조회됩니다.</div>
+        </div>
+
+        <div class="form-row">
+          <label>재해자<span class="req">*</span></label>
+          <select id="mWorker"><option>이현수 (토목2팀 · 형틀목공)</option><option>김도윤 (토목2팀)</option><option>한지훈 (가설팀)</option></select>
+        </div>
+
+        <div class="section-divider">연관 데이터 조회 조건 <span>· 해당 사고와 관련된 순회점검·위험성평가만 좁혀서 가져오기 위한 값입니다</span></div>
+
+        <div class="form-row two">
+          <div>
+            <label>순회점검 — 점검구분</label>
+            <select id="mChklst" onchange="onChklstChange()">
+              <option value="">— 선택 —</option>
+              <option value="HIGH_WORK" selected>고소작업장</option>
+              <option value="PIT">지하 PIT 구간</option>
+              <option value="ELEC">전기작업장</option>
+            </select>
+            <div class="form-hint">발생장소를 점검구분으로 특정합니다.</div>
+          </div>
+          <div></div>
+        </div>
+
+        <div class="form-row two">
+          <div>
+            <label>위험성평가 — 위험분류</label>
+            <select id="mProcess">
+              <option value="">— 선택 —</option>
+              <option value="P010" selected>거푸집 해체</option>
+              <option value="P011">고소작업 일반</option>
+              <option value="P020">중량물 취급</option>
+            </select>
+          </div>
+          <div>
+            <label>위험성평가 — 위험발생상황</label>
+            <select id="mRisk">
+              <option value="">— 전체 —</option>
+              <option value="R01" selected>추락</option>
+              <option value="R02">낙하</option>
+              <option value="R03">협착</option>
+            </select>
+            <div class="form-hint">미지정 시 해당 사업장 전체 위험성평가가 조회됩니다.</div>
+          </div>
+        </div>
+
+        <div class="section-divider">사고 내용</div>
+
+        <div class="form-row">
+          <label>재해 등급<span class="req">*</span></label>
+          <div class="grade-pick">
+            <div class="grade-opt sel"><div class="gt" style="color:var(--danger)">중대재해</div><div class="gd">사망1↑ / 3개월요양 2↑ / 10명↑ — 지체없이 보고</div></div>
+            <div class="grade-opt"><div class="gt" style="color:#b45309">일반산재</div><div class="gd">사망 또는 3일↑ 휴업 — 1개월 내 조사표</div></div>
+            <div class="grade-opt"><div class="gt" style="color:#475569">신고제외</div><div class="gd">3일 미만 휴업 — 신고 의무 없음, 기록·보존만</div></div>
+          </div>
+          <div class="form-hint">휴업일수는 사고 직후 미확정일 수 있습니다. 등급은 추후 정밀진단에 따라 <b>변경 가능</b>하며, 변경 시 법정 기한이 재계산됩니다.</div>
+        </div>
+
+        <div class="form-row"><label>사고 경위<span class="req">*</span></label><textarea>거푸집 해체 작업 중 약 4m 높이에서 추락. 의식 있으나 골반·척추 부상으로 후송.</textarea></div>
+
+        <div class="form-hint" style="background:var(--primary-tint);border:1px solid var(--primary-tint2);border-radius:8px;padding:10px 12px;margin-top:4px">
+          ℹ 등록하면 위 조건을 기준으로 <b>사고일 시점의 순회점검 결과 · 위험성평가 · 당일 TBM 이력</b>을 시스템이 자동으로 조회하여 ① 안전관리 현황 탭에 연결합니다.
+        </div>
+      </div>
+      <div class="modal-foot"><button class="btn ghost" onclick="closeModal()">취소</button><button class="btn primary" onclick="closeModal()">등록</button></div>
+    </div>
+  </div>
+<script>
+const TODAY = new Date('2026-06-05');
+const ACCIDENTS = [
+  { id:'ACC-20260530-001', worker:'이현수', workerId:'U10293', dept:'토목2팀 · 형틀목공', site:'동탄2 물류센터 신축현장', grade:'critical', status:'open', occurDt:'2026-05-30', occurTm:'15:20', place:'지하1층 PIT 구간', summary:'거푸집 해체 작업 중 약 4m 높이에서 추락.', employer:'㈜정밀건설 (하수급인)', employerNote:'신고의무자 = 근로자의 사업주(하수급인). 현재 수동 지정.', srcNearMiss:'NM-20260520-003',
+    workPlan:{from:'2026-03-02',to:'(재직중)',siteSpan:'2026-03-02 ~ 사고일 동일 현장'},
+    patrol:[{date:'2026-05-29',type:'고소작업 점검',result:'지적 2건 (안전대 미체결 / 개구부 덮개 미흡)',closed:'미처리 1건'},{date:'2026-05-22',type:'정기 순회점검',result:'적합',closed:'완료'}],
+    riskAssess:[{id:'RA-2026-0188',title:'거푸집 해체 작업 위험성평가',date:'2026-04-15',level:'상(높음)',status:'개선완료',items:'추락(상)/낙하(중)/협착(중)'},{id:'RA-2026-0151',title:'고소작업 일반 위험성평가',date:'2026-03-10',level:'중',status:'개선완료',items:'추락(상)/전도(중)'}],
+    tbm:{attended:true,date:'2026-05-30',time:'07:40',title:'고소작업 추락방지 TBM',linkedRA:'RA-2026-0188',note:'사고일 오전 참석 기록 있음. 사고는 15:20 발생.'} },
+  { id:'ACC-20260418-004', worker:'박정호', workerId:'U10455', dept:'설비팀 · 배관공', site:'평택 반도체 부속동', grade:'normal', status:'proc', occurDt:'2026-04-18', occurTm:'10:05', place:'2층 기계실', summary:'배관 자재 운반 중 허리 부상.', employer:'㈜대한건설 (직영)', employerNote:'직영 근로자. 신고의무자 = 당사.', srcNearMiss:null,
+    workPlan:{from:'2026-01-10',to:'(재직중)',siteSpan:'2026-04-01 ~ 사고일 동일 현장'},
+    patrol:[{date:'2026-04-17',type:'정기 순회점검',result:'적합',closed:'완료'}],
+    riskAssess:[{id:'RA-2026-0142',title:'중량물 취급 작업 위험성평가',date:'2026-02-28',level:'중',status:'개선완료',items:'근골격계(중)/협착(하)'}],
+    tbm:{attended:false,date:null,time:null,title:null,linkedRA:null,note:'사고일 본 시스템 내 TBM 참석 기록 없음. (미실시/불참/입력누락 여부는 별도 확인 필요)'} },
+  { id:'ACC-20260120-009', worker:'최민영', workerId:'U10588', dept:'전기팀', site:'인천 데이터센터', grade:'exempt', status:'done', occurDt:'2026-01-20', occurTm:'14:30', place:'1층 전기실', summary:'공구함 모서리에 손등 열상. 휴업 1일(3일 미만).', employer:'㈜대한건설 (직영)', employerNote:'직영 근로자.', srcNearMiss:null,
+    workPlan:{from:'2025-11-05',to:'(재직중)',siteSpan:'2025-12-01 ~ 사고일 동일 현장'},
+    patrol:[{date:'2026-01-19',type:'정기 순회점검',result:'적합',closed:'완료'}],
+    riskAssess:[{id:'RA-2025-0901',title:'전기설비 작업 위험성평가',date:'2025-12-15',level:'중',status:'개선완료',items:'감전(중)/충돌(하)'}],
+    tbm:{attended:true,date:'2026-01-20',time:'08:00',title:'전기작업 안전 TBM',linkedRA:'RA-2025-0901',note:'사고일 참석 기록 있음.'} },
+];
+function buildActions(acc){
+  const occur=new Date(acc.occurDt); const rd=new Date(occur); rd.setMonth(rd.getMonth()+1);
+  const A=[]; A.push({t:'초기 조치 / 응급',d:'부상자 처치 · 현장 보존 · 2차 재해 방지',law:'사업주 일반 안전조치 의무',mode:'check',done:acc.grade!=='critical'});
+  if(acc.grade==='critical'){
+    A.push({t:'중대재해 발생보고',d:'재해개요·피해상황·조치·전망을 관할 지방고용노동관서에 보고',law:'산업안전보건법 §54② / 시행규칙 §67 · 미이행 과태료 3,000만원',mode:'imm',done:false,note:'"지체없이" — 시스템이 기한을 계산하지 않습니다. 즉시 보고 후 완료 처리하세요.'});
+    A.push({t:'산업재해조사표 제출',d:'관할 지방고용노동관서 제출 (중대재해도 별도 제출)',law:'산업안전보건법 §57③ / 시행규칙 §73',mode:'deadline',deadline:rd,done:false});
+  } else if(acc.grade==='normal'){
+    A.push({t:'산업재해조사표 제출',d:'사망 또는 3일↑ 휴업 시 관할 지방고용노동관서 제출',law:'산업안전보건법 §57③ / 시행규칙 §73 · 미제출 과태료 1,500만원',mode:'deadline',deadline:rd,done:acc.status==='done'});
+  } else {
+    A.push({t:'재해 기록·보존',d:'신고 의무 없음. 단, 사업장·인적사항·발생경위·재발방지계획 기록·보존 의무',law:'산업안전보건법 §57① · 3일 미만 휴업도 기록 대상',mode:'check',done:acc.status==='done'});
+  }
+  if(acc.grade!=='exempt') A.push({t:'근로복지공단 요양급여 신청',d:'산재조사표 제출과 별개 트랙. 재해자/유족이 신청, 회사는 지원',law:'산업재해보상보험법 §41 · 조사표 제출과 독립',mode:'track',done:acc.status==='done'});
+  A.push({t:'사고 조사 / 재발방지 계획',d:'원인 분석 · 재발방지 대책 수립 · 기록 보존',law:'§57① 기록·보존 의무',mode:'check',done:acc.status==='done'});
+  if(acc.grade!=='exempt') A.push({t:'보상 / 합의',d:'위로금·합의 진행 및 합의서 보관',law:'민사 · 사내 절차',mode:'track',done:acc.status==='done'});
+  return A;
+}
+const LOGS={
+  'ACC-20260530-001':[{cat:'medical',date:'2026-05-30 16:10',author:'김관리',body:'119 후송, 화성○○병원 응급실 입원. 골반 골절·요추 압박골절 진단. 수술 예정.',attach:'응급실_소견서.pdf'},{cat:'report',date:'2026-05-30 17:30',author:'김관리',body:'관할 지방고용노동관서에 중대재해 발생 유선 보고 완료 (담당 근로감독관 통화).',attach:null},{cat:'etc',date:'2026-05-31 09:00',author:'박소장',body:'현장 작업 중지 명령 수령. 사고지점 출입통제 및 보존 조치.',attach:'작업중지명령서.pdf'}],
+  'ACC-20260418-004':[{cat:'medical',date:'2026-04-18 11:00',author:'김관리',body:'인근 정형외과 내원. 요추 염좌, 7일 휴업 소견. 통원 치료 중.',attach:'진단서.pdf'},{cat:'report',date:'2026-04-25 14:00',author:'김관리',body:'산업재해조사표 작성 완료, 근로자대표 확인 받음.',attach:'산재조사표_초안.pdf'}],
+  'ACC-20260120-009':[{cat:'medical',date:'2026-01-20 14:45',author:'이반장',body:'현장 구급함 응급처치 후 인근 의원 통원 1회. 휴업 1일.',attach:null},{cat:'etc',date:'2026-01-21 10:00',author:'김관리',body:'휴업 3일 미만 → 신고 대상 아님. 재해 기록·보존 처리 완료, 재발방지 게시.',attach:null},{cat:'settle',date:'2026-01-21 10:05',author:'김관리',body:'종결 처리.',attach:null}],
+};
+const CAT_LABEL={medical:'의료/치료',report:'당국신고',settle:'보상/합의',etc:'기타'};
+const GRADE_KO={critical:'중대재해',normal:'일반산재',exempt:'신고제외'};
+let current=ACCIDENTS[0].id;
+const gradeChip=g=>`<span class="grade ${g}">${GRADE_KO[g]}</span>`;
+const statusChip=s=>{const m={open:['open','처리시작'],proc:['proc','처리중'],done:['done','종결']};return `<span class="st ${m[s][0]}">${m[s][1]}</span>`;};
+function renderList(){document.getElementById('accList').innerHTML=ACCIDENTS.map(a=>`<div class="acc-item ${a.id===current?'active':''}" onclick="select('${a.id}')"><div class="row1"><span class="name">${a.worker}</span>${gradeChip(a.grade)}${statusChip(a.status)}</div><div class="meta">${a.occurDt} ${a.occurTm} · ${a.id}</div><div class="site">${a.site}</div></div>`).join('');}
+function renderHeader(a){document.getElementById('dName').textContent=a.worker;document.getElementById('dGrade').innerHTML=gradeChip(a.grade);document.getElementById('dStatus').innerHTML=statusChip(a.status);document.getElementById('dSub').innerHTML=`${a.id} · 사고일시 <b>${a.occurDt} ${a.occurTm}</b> · ${a.place} · ${a.site} · 재해자 ${a.worker}(${a.dept})`;}
+function renderContext(a){
+  const p=a.patrol.map(x=>`<div class="list-row"><span class="lead">${x.date}</span><span class="body"><b>${x.type}</b><br><span class="d2">${x.result}</span></span><span class="tail">${x.closed}</span></div>`).join('');
+  const ra=a.riskAssess.map(x=>`<div class="list-row"><span class="lead">${x.id}</span><span class="body"><b>${x.title}</b><br><span class="d2">${x.items}</span></span><span class="tail">위험도 ${x.level}<br><span style="color:var(--primary-d)">${x.status}</span></span></div>`).join('');
+  const tbm=a.tbm.attended?`<div class="kv"><span class="k">사고일 TBM</span><span class="v"><span class="pill yes">● 참석 기록 있음</span></span></div><div class="kv"><span class="k">교육명</span><span class="v">${a.tbm.title}</span></div><div class="kv"><span class="k">참석시각</span><span class="v mono">${a.tbm.date} ${a.tbm.time}</span></div><div class="kv"><span class="k">연결 위험성평가</span><span class="v mono">${a.tbm.linkedRA}</span></div>`:`<div class="kv"><span class="k">사고일 TBM</span><span class="v"><span class="pill no">● 시스템 기록 없음</span></span></div>`;
+  const src=a.srcNearMiss?`<div class="kv"><span class="k">연관 아차사고</span><span class="v mono">${a.srcNearMiss}</span></div>`:'';
+  document.getElementById('tab-context').innerHTML=`<div class="grid">
+    <div class="card"><h3><span class="dot"></span>재해자 / 근무 현황</h3>
+      <div class="kv"><span class="k">성명 / 사번</span><span class="v">${a.worker} · ${a.workerId}</span></div>
+      <div class="kv"><span class="k">소속</span><span class="v">${a.dept}</span></div>
+      <div class="kv"><span class="k">근무 사업장</span><span class="v">${a.site}</span></div>
+      <div class="kv"><span class="k">재직 기간</span><span class="v mono">${a.workPlan.from} ~ ${a.workPlan.to}</span></div>
+      <div class="kv"><span class="k">해당 현장 근무</span><span class="v mono" style="font-size:11.5px">${a.workPlan.siteSpan}</span></div>
+      <div class="kv"><span class="k">신고의무자</span><span class="v">${a.employer}</span></div>${src}
+      <div class="note">${a.employerNote}</div></div>
+    <div class="card"><h3><span class="dot"></span>당일 TBM 이력</h3>${tbm}<div class="note">${a.tbm.note}</div></div>
+    <div class="card full"><h3><span class="dot"></span>사고일 기준 순회점검 이력 <span class="sub">· 시스템 기록 기준</span></h3>${p||'<div class="note">해당 사업장 · 기간 내 순회점검 기록 없음</div>'}</div>
+    <div class="card full"><h3><span class="dot"></span>해당 사업장 위험성평가 <span class="sub">· 사고일 시점 유효 기록</span></h3>${ra||'<div class="note">해당 사업장 위험성평가 기록 없음</div>'}</div>
+  </div>
+  <div class="legend">※ 모든 항목은 <b>본 시스템에 기록된 데이터</b> 기준이며, 사고일(<b>${a.occurDt}</b>) 시점의 유효 기록을 표시합니다. 순회점검·위험성평가 결과는 확정 후 수정·삭제가 불가하여 사고 시점 정합성이 보존됩니다. "기록 없음"은 행위의 부재가 아니라 시스템 입력의 부재를 의미할 수 있습니다.</div>`;
+}
+const fmtDl=d=>`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+const daysBtw=(a,b)=>Math.round((b-a)/864e5);
+function renderActions(a){
+  const actions=buildActions(a);
+  let banner=(a.grade==='critical'&&a.status!=='done')?`<div class="banner crit">⚠ <b>중대재해</b> — 발생보고는 "지체없이" 이행해야 합니다. 시스템은 기한을 계산하지 않으니 즉시 보고 후 완료 처리하세요.</div>`:'';
+  const rows=actions.map((ac,i)=>{
+    let dl='',cls='';
+    if(ac.mode==='deadline'){const left=daysBtw(TODAY,ac.deadline);
+      if(ac.done)dl=`<div class="dl-label">제출</div><div class="dl-val ok">완료</div>`;
+      else if(left<0){dl=`<div class="dl-label">제출기한</div><div class="dl-val over">${fmtDl(ac.deadline)} · ${Math.abs(left)}일 경과</div>`;cls='alert';}
+      else if(left<=7){dl=`<div class="dl-label">제출기한</div><div class="dl-val soon">${fmtDl(ac.deadline)} · D-${left}</div>`;cls='warnbox';}
+      else dl=`<div class="dl-label">제출기한</div><div class="dl-val ok">${fmtDl(ac.deadline)} · D-${left}</div>`;
+    } else if(ac.mode==='imm'){dl=ac.done?`<div class="dl-label">보고</div><div class="dl-val ok">완료</div>`:`<div class="dl-label">기한</div><div class="dl-val imm">지체없이</div>`;if(!ac.done)cls='alert';}
+    else if(ac.mode==='track')dl=ac.done?`<div class="dl-label">진행</div><div class="dl-val ok">완료</div>`:`<div class="dl-label">진행</div><div class="dl-val">별도 트랙</div>`;
+    else dl=ac.done?`<div class="dl-label">상태</div><div class="dl-val ok">완료</div>`:`<div class="dl-label">상태</div><div class="dl-val soon">미완료</div>`;
+    return `<div class="action ${ac.done?'complete':''} ${cls}"><div class="num">${ac.done?'✓':(i+1)}</div><div class="info"><div class="t">${ac.t}</div><div class="d">${ac.d}</div><div class="law">${ac.law}</div>${ac.note?`<div class="note" style="margin-top:6px">${ac.note}</div>`:''}</div><div class="deadline">${dl}</div><button class="act-btn">${ac.done?'완료됨':'처리 ▸'}</button></div>`;
+  }).join('');
+  document.getElementById('tab-actions').innerHTML=`${banner}<div class="action-grid">${rows}</div><div class="legend">※ 의무·기한은 재해등급(<b>${GRADE_KO[a.grade]}</b>)에 따라 분기됩니다. 당국 신고와 근로복지공단 요양급여 신청은 <b>독립된 별도 트랙</b>입니다. 기한·등급 기준은 노무사 최종 확인 대상이며, 본 화면은 실무 보조용입니다.</div>`;
+}
+function renderLog(a){
+  const logs=LOGS[a.id]||[];
+  const items=logs.map(l=>`<div class="tl-item ${l.cat}"><div class="tl-head"><span class="tl-cat ${l.cat}">${CAT_LABEL[l.cat]||l.cat}</span><span class="tl-date">${l.date}</span></div><div class="tl-body">${l.body}</div><div class="tl-author">작성 · ${l.author}</div>${l.attach?`<div class="tl-attach">📎 ${l.attach}</div>`:''}</div>`).join('');
+  document.getElementById('tab-log').innerHTML=`<div class="log-add"><select><option>의료/치료</option><option>당국신고</option><option>보상/합의</option><option>기타</option></select><textarea placeholder="처리 내용을 입력하세요. (예: ○○병원 입원, 합의금 ○○만원 협의 등)"></textarea><button class="add-btn">이력 추가</button></div><div class="timeline">${items||'<div class="note">등록된 처리 이력이 없습니다.</div>'}</div><div class="legend">※ 처리 이력은 ②번 법정 처리 단계와 별개로, 사고 처리 과정의 <b>서술적 경과</b>를 시간순 누적합니다. 각 이력에는 분류·첨부파일을 함께 보관합니다.</div>`;
+}
+function select(id){current=id;const a=ACCIDENTS.find(x=>x.id===id);renderList();renderHeader(a);renderContext(a);renderActions(a);renderLog(a);}
+document.querySelectorAll('.tab').forEach(t=>t.addEventListener('click',()=>{document.querySelectorAll('.tab').forEach(x=>x.classList.remove('active'));t.classList.add('active');['context','actions','log'].forEach(k=>document.getElementById('tab-'+k).classList.toggle('hide',k!==t.dataset.tab));}));
+document.querySelectorAll('.grade-opt').forEach(o=>o.addEventListener('click',()=>{document.querySelectorAll('.grade-opt').forEach(x=>x.classList.remove('sel'));o.classList.add('sel');}));
+function openModal(){document.getElementById('overlay').classList.remove('hide');}
+function closeModal(){document.getElementById('overlay').classList.add('hide');}
+document.getElementById('overlay').addEventListener('click',e=>{if(e.target.id==='overlay')closeModal();});
+
+// 사업장 종속 드롭다운 (mock) — 사업장 선택 시 재해자/순회점검/위험성평가 옵션이 해당 사업장 기준으로 재조회됨
+const SITE_DEP={
+  '00012':{workers:['이현수 (토목2팀 · 형틀목공)','김도윤 (토목2팀)','한지훈 (가설팀)'],
+           chklst:[['HIGH_WORK','고소작업장'],['PIT','지하 PIT 구간']],
+           process:[['P010','거푸집 해체'],['P011','고소작업 일반']],
+           risk:[['R01','추락'],['R02','낙하'],['R03','협착']]},
+  '00008':{workers:['박정호 (설비팀 · 배관공)','오세준 (설비팀)'],
+           chklst:[['MECH','기계실'],['PIPE','배관작업장']],
+           process:[['P020','중량물 취급'],['P021','배관 설치']],
+           risk:[['R04','근골격계'],['R03','협착']]},
+  '00003':{workers:['최민영 (전기팀)','정해인 (전기팀)'],
+           chklst:[['ELEC','전기작업장']],
+           process:[['P030','전기설비 작업']],
+           risk:[['R05','감전'],['R06','충돌']]},
+};
+function fillSel(id,arr,withEmpty,emptyLabel){
+  const el=document.getElementById(id); if(!el)return;
+  let html = withEmpty?`<option value="">${emptyLabel||'— 선택 —'}</option>`:'';
+  html += arr.map(o=>Array.isArray(o)?`<option value="${o[0]}">${o[1]}</option>`:`<option>${o}</option>`).join('');
+  el.innerHTML=html;
+}
+function onSiteChange(){
+  const site=document.getElementById('mSite').value;
+  const d=SITE_DEP[site];
+  if(!d){ ['mWorker','mChklst','mProcess','mRisk'].forEach(id=>{const e=document.getElementById(id);if(e)e.innerHTML='<option value="">— 사업장 먼저 선택 —</option>';}); return; }
+  fillSel('mWorker',d.workers,false);
+  fillSel('mChklst',d.chklst,true);
+  fillSel('mProcess',d.process,true);
+  fillSel('mRisk',d.risk,true,'— 전체 —');
+}
+function onChklstChange(){ /* 실제로는 선택한 체크리스트 타입의 점검항목만 재조회 — mock에서는 생략 */ }
+
+select(current);
+</script>
+</body>
+</html>

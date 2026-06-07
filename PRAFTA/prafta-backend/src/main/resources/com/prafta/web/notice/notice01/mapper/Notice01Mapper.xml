@@ -1,0 +1,950 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.prafta.web.notice.notice01.mapper.Notice01Mapper">
+
+    <!-- ================================================================
+         PRAFTA-047 공지사항(Notice). 전 쿼리 CMPNY_CD 스코프 필수, SELECT * 금지, leading comma.
+         ⚠️ MyBatis record 매핑 — SELECT 컬럼 순서 = result record 생성자 인자 순서(위치 기반).
+         ================================================================ -->
+
+    <!-- ── 권한/스코프 검증 ──────────────────────────────────── -->
+
+    <!-- 사업장 접근 권한 (tb_user_site_auth, USE_YN='Y') -->
+    <select id="countUserSiteAuth" resultType="int">
+    /* Notice01Mapper.countUserSiteAuth */
+    SELECT
+        COUNT(1)
+    FROM TB_USER_SITE_AUTH A
+    WHERE A.CMPNY_CD = #{cmpnyCd}
+      AND A.USER_CD = #{userCd}
+      AND A.SITE_CD = #{siteCd}
+      AND A.USE_YN = 'Y'
+    </select>
+
+    <!-- 노드가 발행자 소속 노드(rootNodeCd) 또는 그 자손인지 확인 (소속 사업장, 재귀 CTE).
+         순환 가드: MySQL 8 재귀 CTE 는 기본 cte_max_recursion_depth(1000)로 무한루프 방지. -->
+    <select id="countNodeInSelfSubtree" resultType="int">
+    /* Notice01Mapper.countNodeInSelfSubtree */
+        WITH RECURSIVE node_tree AS (
+            SELECT
+                  N.CMPNY_CD
+                , N.SITE_CD
+                , N.NODE_CD
+            FROM TB_SITE_NODE N
+            WHERE N.CMPNY_CD = #{cmpnyCd}
+              AND N.SITE_CD  = #{siteCd}
+              AND N.NODE_CD  = #{rootNodeCd}
+
+            UNION ALL
+
+            SELECT
+                  C.CMPNY_CD
+                , C.SITE_CD
+                , C.NODE_CD
+            FROM TB_SITE_NODE C
+            INNER JOIN node_tree P
+                ON  C.CMPNY_CD       = P.CMPNY_CD
+                AND C.SITE_CD        = P.SITE_CD
+                AND C.PARENT_NODE_CD = P.NODE_CD
+        )
+        SELECT COUNT(1)
+        FROM node_tree T
+        WHERE T.NODE_CD = #{targetNodeCd}
+    </select>
+
+    <!-- 노드가 해당 사업장에 실재하는지 (권한 보유 사업장 전 노드 허용 판정용) -->
+    <select id="countNodeInSite" resultType="int">
+    /* Notice01Mapper.countNodeInSite */
+    SELECT
+        COUNT(1)
+    FROM TB_SITE_NODE N
+    WHERE N.CMPNY_CD = #{cmpnyCd}
+      AND N.SITE_CD = #{siteCd}
+      AND N.NODE_CD = #{nodeCd}
+    </select>
+
+    <!-- 일용직 여부 (tb_daily_user, USE_YN='Y') -->
+    <select id="countDailyUser" resultType="int">
+    /* Notice01Mapper.countDailyUser */
+    SELECT
+        COUNT(1)
+    FROM TB_DAILY_USER D
+    WHERE D.CMPNY_CD = #{cmpnyCd}
+      AND D.USER_CD = #{userCd}
+      AND D.USE_YN = 'Y'
+    </select>
+
+    <!-- ── 047-3 관리 목록/상세 ─────────────────────────────── -->
+
+    <!-- 공통 마스터 컬럼 (NoticeResult record 위치 매핑).
+         A=tb_notice, U=등록자 tb_user, K=본인 ack, FC=첨부수, TS=대상요약.
+         EDIT_PWD 는 절대 SELECT 하지 않는다(보안). -->
+    <sql id="noticeBaseColumns">
+        A.CMPNY_CD                                                   AS cmpnyCd
+      , A.NOTICE_ID                                                  AS noticeId
+      , A.TITLE                                                      AS title
+      , A.CONTENT                                                    AS content
+      , A.TARGET_SCOPE                                               AS targetScope
+      , A.INCLUDE_DAILY_YN                                           AS includeDailyYn
+      , A.POPUP_YN                                                   AS popupYn
+      , A.POPUP_FROM_YMD                                             AS popupFromYmd
+      , A.POPUP_TO_YMD                                               AS popupToYmd
+      , A.PIN_YN                                                     AS pinYn
+      , A.PIN_ORDER                                                  AS pinOrder
+      , A.INSERT_NO                                                  AS insertNo
+      , DATE_FORMAT(A.INSERT_DATE, '%Y-%m-%d %H:%i')                 AS insertDate
+      , U.USER_NM                                                    AS insertUserNm
+      , DATE_FORMAT(A.UPDATE_DATE, '%Y-%m-%d %H:%i')                 AS updateDate
+    </sql>
+
+    <!-- 관리 목록 (검색 + 본인 뱃지 + 대상요약). 정렬 §5. -->
+    <select id="selectNoticeList"
+            parameterType="com.prafta.web.notice.notice01.application.query.NoticeListQuery"
+            resultType="com.prafta.web.notice.notice01.result.NoticeResult">
+    /* Notice01Mapper.selectNoticeList */
+    SELECT
+        <include refid="noticeBaseColumns" />
+      , (
+            SELECT COUNT(1) FROM TB_NOTICE_FILE NF
+            WHERE NF.CMPNY_CD = A.CMPNY_CD AND NF.NOTICE_ID = A.NOTICE_ID
+        )                                                           AS fileCnt
+      , CASE WHEN K.LAST_READ_DATE IS NULL THEN 1 ELSE 0 END        AS isUnread
+      , CASE WHEN K.LAST_READ_DATE IS NOT NULL
+                  AND A.UPDATE_DATE IS NOT NULL
+                  AND A.UPDATE_DATE &gt; K.LAST_READ_DATE
+             THEN 1 ELSE 0 END                                      AS isUpdated
+      , (
+            SELECT
+                CASE
+                    WHEN A.TARGET_SCOPE = 'ALL' THEN '전사'
+                    ELSE CONCAT(
+                        IFNULL(MIN(TGT.LABEL), '')
+                      , CASE WHEN COUNT(1) &gt; 1
+                             THEN CONCAT(' 외 ', COUNT(1) - 1, '건') ELSE '' END
+                    )
+                END
+            FROM (
+                SELECT
+                    CONCAT(
+                        IFNULL(S.SITE_NM, T.SITE_CD)
+                      , CASE WHEN T.NODE_CD IS NOT NULL
+                             THEN CONCAT(' / ', IFNULL(N.NODE_NM, T.NODE_CD)) ELSE '' END
+                    ) AS LABEL
+                  , T.TARGET_SEQ
+                FROM TB_NOTICE_TARGET T
+                LEFT OUTER JOIN TB_SITE S
+                    ON S.CMPNY_CD = T.CMPNY_CD AND S.SITE_CD = T.SITE_CD
+                LEFT OUTER JOIN TB_SITE_NODE N
+                    ON N.CMPNY_CD = T.CMPNY_CD AND N.SITE_CD = T.SITE_CD AND N.NODE_CD = T.NODE_CD
+                WHERE T.CMPNY_CD = A.CMPNY_CD AND T.NOTICE_ID = A.NOTICE_ID
+            ) TGT
+        )                                                           AS targetSummary
+    FROM TB_NOTICE A
+    LEFT OUTER JOIN TB_USER U
+        ON U.CMPNY_CD = A.CMPNY_CD AND U.USER_CD = A.INSERT_NO
+    LEFT OUTER JOIN TB_NOTICE_USER_ACK K
+        ON K.CMPNY_CD = A.CMPNY_CD AND K.NOTICE_ID = A.NOTICE_ID AND K.USER_CD = #{gvUserCd}
+    WHERE A.CMPNY_CD = #{gvCmpnyCd}
+      AND A.DEL_YN = 'N'
+      <!-- titleKeyword: 제목/내용 통합 검색(둘 중 하나라도 매칭) -->
+      <if test="titleKeyword != null and titleKeyword != ''">
+        AND (
+              A.TITLE   LIKE CONCAT('%', #{titleKeyword}, '%')
+           OR A.CONTENT LIKE CONCAT('%', #{titleKeyword}, '%')
+        )
+      </if>
+      <if test="popupYn != null and popupYn != ''">
+        AND A.POPUP_YN = #{popupYn}
+      </if>
+      <if test="pinYn != null and pinYn != ''">
+        AND A.PIN_YN = #{pinYn}
+      </if>
+      <if test="startDate != null and startDate != ''">
+        AND A.INSERT_DATE &gt;= STR_TO_DATE(CONCAT(#{startDate}, ' 00:00:00'), '%Y-%m-%d %H:%i:%s')
+      </if>
+      <if test="endDate != null and endDate != ''">
+        AND A.INSERT_DATE &lt;= STR_TO_DATE(CONCAT(#{endDate}, ' 23:59:59'), '%Y-%m-%d %H:%i:%s')
+      </if>
+      <!-- 049-01 사업장/노드 대상 필터 (가정 A: ALL 포함 / 가정 B: 노드 하위포함 역방향 / 가정 C: site 매칭).
+           EXISTS+WITH RECURSIVE 중첩은 selectPopupNoticeList / countNoticeVisibleToUser 에서 검증된 패턴 재사용. -->
+      <if test="siteCd != null and siteCd != ''">
+        AND (
+          A.TARGET_SCOPE = 'ALL'
+          OR EXISTS (
+            SELECT 1
+            FROM TB_NOTICE_TARGET T
+            WHERE T.CMPNY_CD = A.CMPNY_CD
+              AND T.NOTICE_ID = A.NOTICE_ID
+              AND T.SITE_CD = #{siteCd}
+              <if test="nodeCd != null and nodeCd != ''">
+                AND (
+                  T.NODE_CD = #{nodeCd}
+                  OR T.NODE_CD IS NULL  <!-- SITE 스코프 타겟은 사업장 전체 노출 → 노드조회에도 포함 -->
+                  OR (
+                    T.INCLUDE_DESCENDANTS_YN = 'Y'
+                    AND EXISTS (
+                      WITH RECURSIVE node_tree AS (
+                          SELECT
+                                N.CMPNY_CD
+                              , N.SITE_CD
+                              , N.NODE_CD
+                          FROM TB_SITE_NODE N
+                          WHERE N.CMPNY_CD = T.CMPNY_CD
+                            AND N.SITE_CD  = T.SITE_CD
+                            AND N.NODE_CD  = T.NODE_CD
+                          UNION ALL
+                          SELECT
+                                C.CMPNY_CD
+                              , C.SITE_CD
+                              , C.NODE_CD
+                          FROM TB_SITE_NODE C
+                          INNER JOIN node_tree P
+                              ON  C.CMPNY_CD       = P.CMPNY_CD
+                              AND C.SITE_CD        = P.SITE_CD
+                              AND C.PARENT_NODE_CD = P.NODE_CD
+                      )
+                      SELECT 1 FROM node_tree TT WHERE TT.NODE_CD = #{nodeCd}
+                    )
+                  )
+                )
+              </if>
+          )
+        )
+      </if>
+    ORDER BY A.PIN_YN DESC, A.PIN_ORDER ASC, A.INSERT_DATE DESC
+    </select>
+
+    <!-- 단건 상세 마스터 (본인 뱃지 포함) -->
+    <select id="selectNoticeOne"
+            parameterType="com.prafta.web.notice.notice01.application.query.NoticeInfoQuery"
+            resultType="com.prafta.web.notice.notice01.result.NoticeResult">
+    /* Notice01Mapper.selectNoticeOne */
+    SELECT
+        <include refid="noticeBaseColumns" />
+      , (
+            SELECT COUNT(1) FROM TB_NOTICE_FILE NF
+            WHERE NF.CMPNY_CD = A.CMPNY_CD AND NF.NOTICE_ID = A.NOTICE_ID
+        )                                                           AS fileCnt
+      , CASE WHEN K.LAST_READ_DATE IS NULL THEN 1 ELSE 0 END        AS isUnread
+      , CASE WHEN K.LAST_READ_DATE IS NOT NULL
+                  AND A.UPDATE_DATE IS NOT NULL
+                  AND A.UPDATE_DATE &gt; K.LAST_READ_DATE
+             THEN 1 ELSE 0 END                                      AS isUpdated
+      , NULL                                                        AS targetSummary
+    FROM TB_NOTICE A
+    LEFT OUTER JOIN TB_USER U
+        ON U.CMPNY_CD = A.CMPNY_CD AND U.USER_CD = A.INSERT_NO
+    LEFT OUTER JOIN TB_NOTICE_USER_ACK K
+        ON K.CMPNY_CD = A.CMPNY_CD AND K.NOTICE_ID = A.NOTICE_ID AND K.USER_CD = #{gvUserCd}
+    WHERE A.CMPNY_CD = #{gvCmpnyCd}
+      AND A.NOTICE_ID = #{noticeId}
+      AND A.DEL_YN = 'N'
+    </select>
+
+    <!-- 단건 첨부 list (tb_notice_file + tb_file_info).
+         NoticeFileResult: fileMgmtCd, fileNm, fileExt, filePath, sortIdx -->
+    <select id="selectNoticeFileList"
+            parameterType="com.prafta.web.notice.notice01.application.query.NoticeInfoQuery"
+            resultType="com.prafta.web.notice.notice01.result.NoticeFileResult">
+    /* Notice01Mapper.selectNoticeFileList */
+    SELECT
+        NF.FILE_MGMT_CD     AS fileMgmtCd
+      , FI.FILE_NM          AS fileNm
+      , FI.FILE_EXT         AS fileExt
+      , FI.FILE_PATH        AS filePath
+      , NF.SORT_IDX         AS sortIdx
+    FROM TB_NOTICE_FILE NF
+    INNER JOIN TB_FILE_INFO FI
+        ON FI.CMPNY_CD = NF.CMPNY_CD AND FI.FILE_MGMT_CD = NF.FILE_MGMT_CD
+    WHERE NF.CMPNY_CD = #{gvCmpnyCd}
+      AND NF.NOTICE_ID = #{noticeId}
+    ORDER BY NF.SORT_IDX ASC, NF.FILE_MGMT_CD ASC
+    </select>
+
+    <!-- 단건 대상 list (tb_notice_target + 사업장/노드명).
+         NoticeTargetResult: targetSeq, siteCd, siteNm, nodeCd, nodeNm, includeDescendantsYn -->
+    <select id="selectNoticeTargetList"
+            parameterType="com.prafta.web.notice.notice01.application.query.NoticeInfoQuery"
+            resultType="com.prafta.web.notice.notice01.result.NoticeTargetResult">
+    /* Notice01Mapper.selectNoticeTargetList */
+    SELECT
+        T.TARGET_SEQ              AS targetSeq
+      , T.SITE_CD                 AS siteCd
+      , S.SITE_NM                 AS siteNm
+      , T.NODE_CD                 AS nodeCd
+      , N.NODE_NM                 AS nodeNm
+      , T.INCLUDE_DESCENDANTS_YN  AS includeDescendantsYn
+    FROM TB_NOTICE_TARGET T
+    LEFT OUTER JOIN TB_SITE S
+        ON S.CMPNY_CD = T.CMPNY_CD AND S.SITE_CD = T.SITE_CD
+    LEFT OUTER JOIN TB_SITE_NODE N
+        ON N.CMPNY_CD = T.CMPNY_CD AND N.SITE_CD = T.SITE_CD AND N.NODE_CD = T.NODE_CD
+    WHERE T.CMPNY_CD = #{gvCmpnyCd}
+      AND T.NOTICE_ID = #{noticeId}
+    ORDER BY T.TARGET_SEQ ASC
+    </select>
+
+    <!-- 채번: N + YYYYMMDD + 3자리 SEQ (회사+당일 MAX+1). near_miss 패턴 미러(회사 단위) -->
+    <select id="selectNextNoticeId"
+            parameterType="com.prafta.web.notice.notice01.application.query.NoticeIdSeqQuery"
+            resultType="java.lang.String">
+    /* Notice01Mapper.selectNextNoticeId */
+    SELECT
+        CONCAT(
+            'N'
+          , DATE_FORMAT(NOW(), '%Y%m%d')
+          , LPAD(
+                IFNULL(MAX(CAST(SUBSTR(A.NOTICE_ID, 10, 3) AS UNSIGNED)), 0) + 1
+              , 3, '0'
+            )
+        )
+    FROM TB_NOTICE A
+    WHERE A.CMPNY_CD = #{gvCmpnyCd}
+      AND A.NOTICE_ID LIKE CONCAT('N', DATE_FORMAT(NOW(), '%Y%m%d'), '%')
+    </select>
+
+    <!-- 마스터 INSERT -->
+    <insert id="insertNotice"
+            parameterType="com.prafta.web.notice.notice01.application.command.NoticeSaveCommand">
+    /* Notice01Mapper.insertNotice */
+    INSERT INTO TB_NOTICE
+    (
+        CMPNY_CD
+      , NOTICE_ID
+      , TITLE
+      , CONTENT
+      , EDIT_PWD
+      , TARGET_SCOPE
+      , INCLUDE_DAILY_YN
+      , POPUP_YN
+      , POPUP_FROM_YMD
+      , POPUP_TO_YMD
+      , PIN_YN
+      , PIN_ORDER
+      , DEL_YN
+      , INSERT_NO
+      , INSERT_DATE
+    )
+    VALUES
+    (
+        #{gvCmpnyCd}
+      , #{noticeId}
+      , #{title}
+      , #{content}
+      , #{editPwdHash}
+      , #{targetScope}
+      , #{includeDailyYn}
+      , #{popupYn}
+      , #{popupFromYmd}
+      , #{popupToYmd}
+      , #{pinYn}
+      , #{pinOrder}
+      , 'N'
+      , #{gvUserCd}
+      , NOW()
+    )
+    </insert>
+
+    <!-- 마스터 UPDATE (EDIT_PWD 미변경). UPDATE_DATE 갱신 = "수정됨" 뱃지 기준(§7) -->
+    <update id="updateNotice"
+            parameterType="com.prafta.web.notice.notice01.application.command.NoticeUpdateCommand">
+    /* Notice01Mapper.updateNotice */
+    UPDATE TB_NOTICE
+    SET
+        TITLE            = #{title}
+      , CONTENT          = #{content}
+      , TARGET_SCOPE     = #{targetScope}
+      , INCLUDE_DAILY_YN = #{includeDailyYn}
+      , POPUP_YN         = #{popupYn}
+      , POPUP_FROM_YMD   = #{popupFromYmd}
+      , POPUP_TO_YMD     = #{popupToYmd}
+      , PIN_YN           = #{pinYn}
+      , PIN_ORDER        = #{pinOrder}
+      , UPDATE_NO        = #{gvUserCd}
+      , UPDATE_DATE      = NOW()
+    WHERE CMPNY_CD = #{gvCmpnyCd}
+      AND NOTICE_ID = #{noticeId}
+      AND DEL_YN = 'N'
+    </update>
+
+    <!-- 대상 다건 INSERT (foreach, TARGET_SEQ = index+1) -->
+    <insert id="insertNoticeTargets"
+            parameterType="com.prafta.web.notice.notice01.application.command.NoticeTargetSaveCommand">
+    /* Notice01Mapper.insertNoticeTargets */
+    INSERT INTO TB_NOTICE_TARGET
+    (
+        CMPNY_CD
+      , NOTICE_ID
+      , TARGET_SEQ
+      , SITE_CD
+      , NODE_CD
+      , INCLUDE_DESCENDANTS_YN
+      , INSERT_NO
+      , INSERT_DATE
+    )
+    VALUES
+    <foreach collection="targetList" item="t" index="idx" separator=",">
+    (
+        #{gvCmpnyCd}
+      , #{noticeId}
+      , #{idx} + 1
+      , #{t.siteCd}
+      , #{t.nodeCd}
+      , IFNULL(#{t.includeDescendantsYn}, 'Y')
+      , #{gvUserCd}
+      , NOW()
+    )
+    </foreach>
+    </insert>
+
+    <!-- 첨부 다건 INSERT (foreach) -->
+    <insert id="insertNoticeFiles"
+            parameterType="com.prafta.web.notice.notice01.application.command.NoticeFileSaveCommand">
+    /* Notice01Mapper.insertNoticeFiles */
+    INSERT INTO TB_NOTICE_FILE
+    (
+        CMPNY_CD
+      , NOTICE_ID
+      , FILE_MGMT_CD
+      , SORT_IDX
+      , INSERT_NO
+      , INSERT_DATE
+    )
+    VALUES
+    <foreach collection="fileList" item="f" index="idx" separator=",">
+    (
+        #{gvCmpnyCd}
+      , #{noticeId}
+      , #{f.fileMgmtCd}
+      , IFNULL(#{f.sortIdx}, #{idx} + 1)
+      , #{gvUserCd}
+      , NOW()
+    )
+    </foreach>
+    </insert>
+
+    <!-- 대상 전체 삭제 (수정 재설정용, 물리 삭제) -->
+    <delete id="deleteNoticeTargetByNoticeId">
+    /* Notice01Mapper.deleteNoticeTargetByNoticeId */
+    DELETE FROM TB_NOTICE_TARGET
+    WHERE CMPNY_CD = #{cmpnyCd}
+      AND NOTICE_ID = #{noticeId}
+    </delete>
+
+    <!-- 첨부 매핑 전체 삭제 (수정 재설정용, 물리 삭제. tb_file_info 는 유지) -->
+    <delete id="deleteNoticeFileByNoticeId">
+    /* Notice01Mapper.deleteNoticeFileByNoticeId */
+    DELETE FROM TB_NOTICE_FILE
+    WHERE CMPNY_CD = #{cmpnyCd}
+      AND NOTICE_ID = #{noticeId}
+    </delete>
+
+    <!-- 논리삭제 (DEL_YN='Y'). 고정 해제(PIN 재압축은 service 에서 후처리) -->
+    <update id="updateNoticeDelYn"
+            parameterType="com.prafta.web.notice.notice01.application.command.NoticeDeleteCommand">
+    /* Notice01Mapper.updateNoticeDelYn */
+    UPDATE TB_NOTICE
+    SET
+        DEL_YN      = 'Y'
+      , PIN_YN      = 'N'
+      , PIN_ORDER   = NULL
+      , UPDATE_NO   = #{gvUserCd}
+      , UPDATE_DATE = NOW()
+    WHERE CMPNY_CD = #{gvCmpnyCd}
+      AND NOTICE_ID = #{noticeId}
+      AND DEL_YN = 'N'
+    </update>
+
+    <!-- 비번 해시 조회 (검증용). 없으면 null -->
+    <select id="selectNoticePwdHash"
+            parameterType="com.prafta.web.notice.notice01.application.query.NoticeInfoQuery"
+            resultType="java.lang.String">
+    /* Notice01Mapper.selectNoticePwdHash */
+    SELECT
+        A.EDIT_PWD
+    FROM TB_NOTICE A
+    WHERE A.CMPNY_CD = #{gvCmpnyCd}
+      AND A.NOTICE_ID = #{noticeId}
+      AND A.DEL_YN = 'N'
+    </select>
+
+    <!-- 수정 정책 판정용 마스터 단건(상태값만). targetSummary 등 가공 컬럼은 NULL.
+         NoticeResult 위치 매핑 유지. -->
+    <select id="selectNoticeForUpdate"
+            parameterType="com.prafta.web.notice.notice01.application.query.NoticeInfoQuery"
+            resultType="com.prafta.web.notice.notice01.result.NoticeResult">
+    /* Notice01Mapper.selectNoticeForUpdate */
+    SELECT
+        A.CMPNY_CD                                     AS cmpnyCd
+      , A.NOTICE_ID                                    AS noticeId
+      , A.TITLE                                        AS title
+      , A.CONTENT                                      AS content
+      , A.TARGET_SCOPE                                 AS targetScope
+      , A.INCLUDE_DAILY_YN                             AS includeDailyYn
+      , A.POPUP_YN                                     AS popupYn
+      , A.POPUP_FROM_YMD                               AS popupFromYmd
+      , A.POPUP_TO_YMD                                 AS popupToYmd
+      , A.PIN_YN                                       AS pinYn
+      , A.PIN_ORDER                                    AS pinOrder
+      , A.INSERT_NO                                    AS insertNo
+      , DATE_FORMAT(A.INSERT_DATE, '%Y-%m-%d %H:%i')   AS insertDate
+      , NULL                                           AS insertUserNm
+      , DATE_FORMAT(A.UPDATE_DATE, '%Y-%m-%d %H:%i')   AS updateDate
+      , 0                                              AS fileCnt
+      , 0                                              AS isUnread
+      , 0                                              AS isUpdated
+      , NULL                                           AS targetSummary
+    FROM TB_NOTICE A
+    WHERE A.CMPNY_CD = #{gvCmpnyCd}
+      AND A.NOTICE_ID = #{noticeId}
+      AND A.DEL_YN = 'N'
+    </select>
+
+    <!-- ── PIN 정규화 (§5) ─────────────────────────────────── -->
+
+    <!-- 현재 고정 공지 수 (CMPNY_CD 단위, FOR UPDATE). 수정 대상 본인 제외 가능 -->
+    <select id="selectPinnedCountForUpdate" resultType="int">
+    /* Notice01Mapper.selectPinnedCountForUpdate */
+    SELECT
+        COUNT(1)
+    FROM TB_NOTICE A
+    WHERE A.CMPNY_CD = #{cmpnyCd}
+      AND A.DEL_YN = 'N'
+      AND A.PIN_YN = 'Y'
+      <if test="excludeNoticeId != null and excludeNoticeId != ''">
+        AND A.NOTICE_ID != #{excludeNoticeId}
+      </if>
+    FOR UPDATE
+    </select>
+
+    <!-- 지정 순번 이상(>=) 고정 공지 +1 시프트 -->
+    <update id="shiftPinOrderUp">
+    /* Notice01Mapper.shiftPinOrderUp */
+    UPDATE TB_NOTICE
+    SET
+        PIN_ORDER   = PIN_ORDER + 1
+      , UPDATE_NO   = #{gvUserCd}
+      , UPDATE_DATE = UPDATE_DATE
+    WHERE CMPNY_CD = #{cmpnyCd}
+      AND DEL_YN = 'N'
+      AND PIN_YN = 'Y'
+      AND PIN_ORDER &gt;= #{fromOrder}
+      <if test="excludeNoticeId != null and excludeNoticeId != ''">
+        AND NOTICE_ID != #{excludeNoticeId}
+      </if>
+    </update>
+
+    <!-- 고정 공지 순번 1..M 재압축 (삭제/해제 후). 변수 기반 ROW_NUMBER 재부여 -->
+    <update id="compactPinOrder">
+    /* Notice01Mapper.compactPinOrder */
+    UPDATE TB_NOTICE TGT
+    INNER JOIN (
+        SELECT
+            R.NOTICE_ID
+          , ROW_NUMBER() OVER (ORDER BY R.PIN_ORDER ASC, R.INSERT_DATE DESC) AS RN
+        FROM TB_NOTICE R
+        WHERE R.CMPNY_CD = #{cmpnyCd}
+          AND R.DEL_YN = 'N'
+          AND R.PIN_YN = 'Y'
+    ) SEQ
+        ON SEQ.NOTICE_ID = TGT.NOTICE_ID
+    SET TGT.PIN_ORDER = SEQ.RN
+    WHERE TGT.CMPNY_CD = #{cmpnyCd}
+    </update>
+
+    <!-- ── 047-3 발행자 대상선택 트리 ───────────────────────── -->
+
+    <!-- 발행자 스코프 사업장/노드 트리.
+         isCompanyWide=true → 전사 사업장+노드.
+         아니면 (권한보유 사업장 tb_user_site_auth 전 노드) UNION (소속 사업장 자기노드+자손).
+         NoticeScopeResult: level, siteCd, siteNm, nodeCd, nodeNm, parentNodeCd -->
+    <select id="selectScopeSiteNodeTree"
+            parameterType="com.prafta.web.notice.notice01.application.query.NoticeScopeQuery"
+            resultType="com.prafta.web.notice.notice01.result.NoticeScopeResult">
+    /* Notice01Mapper.selectScopeSiteNodeTree */
+    <choose>
+      <when test="isCompanyWide">
+        <!-- 전사: 모든 사업장 + 모든 노드 -->
+        SELECT
+            'SITE'          AS level
+          , S.SITE_CD       AS siteCd
+          , S.SITE_NM       AS siteNm
+          , NULL            AS nodeCd
+          , NULL            AS nodeNm
+          , NULL            AS parentNodeCd
+        FROM TB_SITE S
+        WHERE S.CMPNY_CD = #{gvCmpnyCd}
+        UNION ALL
+        SELECT
+            'NODE'              AS level
+          , N.SITE_CD           AS siteCd
+          , NULL                AS siteNm
+          , N.NODE_CD           AS nodeCd
+          , N.NODE_NM           AS nodeNm
+          , N.PARENT_NODE_CD    AS parentNodeCd
+        FROM TB_SITE_NODE N
+        WHERE N.CMPNY_CD = #{gvCmpnyCd}
+        ORDER BY level DESC, siteCd, parentNodeCd, nodeCd
+      </when>
+      <otherwise>
+        WITH RECURSIVE
+        auth_site AS (
+            <!-- 권한 보유 사업장(tb_user_site_auth) + 소속 사업장 -->
+            SELECT DISTINCT US.SITE_CD
+            FROM TB_USER_SITE_AUTH US
+            WHERE US.CMPNY_CD = #{gvCmpnyCd}
+              AND US.USER_CD = #{gvUserCd}
+              AND US.USE_YN = 'Y'
+            <if test="gvSiteCd != null and gvSiteCd != ''">
+            UNION
+            SELECT #{gvSiteCd} AS SITE_CD
+            </if>
+        ),
+        self_subtree AS (
+            <!-- 소속 사업장의 자기노드 + 자손(소속 노드 기준) -->
+            SELECT
+                  N.CMPNY_CD, N.SITE_CD, N.NODE_CD, N.NODE_NM, N.PARENT_NODE_CD
+            FROM TB_SITE_NODE N
+            WHERE N.CMPNY_CD = #{gvCmpnyCd}
+              AND N.SITE_CD = #{gvSiteCd}
+              AND N.NODE_CD = #{gvNodeCd}
+              <if test="gvNodeCd == null or gvNodeCd == ''">
+              AND 1 = 0
+              </if>
+            UNION ALL
+            SELECT
+                  C.CMPNY_CD, C.SITE_CD, C.NODE_CD, C.NODE_NM, C.PARENT_NODE_CD
+            FROM TB_SITE_NODE C
+            INNER JOIN self_subtree P
+                ON C.CMPNY_CD = P.CMPNY_CD AND C.SITE_CD = P.SITE_CD
+               AND C.PARENT_NODE_CD = P.NODE_CD
+        )
+        <!-- 사업장 행: 권한 보유 사업장(소속 사업장은 노드만 제한되므로 사업장 행은 권한 보유분만 전노드) -->
+        SELECT
+            'SITE'          AS level
+          , S.SITE_CD       AS siteCd
+          , S.SITE_NM       AS siteNm
+          , NULL            AS nodeCd
+          , NULL            AS nodeNm
+          , NULL            AS parentNodeCd
+        FROM TB_SITE S
+        INNER JOIN auth_site A2 ON A2.SITE_CD = S.SITE_CD
+        WHERE S.CMPNY_CD = #{gvCmpnyCd}
+        UNION ALL
+        <!-- 권한 보유 사업장(소속 외)의 전 노드 -->
+        SELECT
+            'NODE'              AS level
+          , N.SITE_CD           AS siteCd
+          , NULL                AS siteNm
+          , N.NODE_CD           AS nodeCd
+          , N.NODE_NM           AS nodeNm
+          , N.PARENT_NODE_CD    AS parentNodeCd
+        FROM TB_SITE_NODE N
+        INNER JOIN auth_site A3 ON A3.SITE_CD = N.SITE_CD
+        WHERE N.CMPNY_CD = #{gvCmpnyCd}
+          AND ( #{gvSiteCd} IS NULL OR N.SITE_CD != #{gvSiteCd} )
+        UNION ALL
+        <!-- 소속 사업장은 자기노드+자손만 -->
+        SELECT
+            'NODE'              AS level
+          , T.SITE_CD           AS siteCd
+          , NULL                AS siteNm
+          , T.NODE_CD           AS nodeCd
+          , T.NODE_NM           AS nodeNm
+          , T.PARENT_NODE_CD    AS parentNodeCd
+        FROM self_subtree T
+      </otherwise>
+    </choose>
+    </select>
+
+    <!-- ── 047-4 노출/ACK/다운로드 ──────────────────────────── -->
+
+    <!-- 로그인 팝업 노출 공지 list (§6 의사쿼리). LIMIT 10 + 정렬 §5.
+         NoticePopupResult: noticeId, title, content, pinYn, popupFromYmd, popupToYmd, insertDate, fileCnt, isDaily -->
+    <select id="selectPopupNoticeList"
+            parameterType="com.prafta.web.notice.notice01.application.query.NoticePopupQuery"
+            resultType="com.prafta.web.notice.notice01.result.NoticePopupResult">
+    /* Notice01Mapper.selectPopupNoticeList */
+    SELECT
+        N.NOTICE_ID                                     AS noticeId
+      , N.TITLE                                         AS title
+      , N.CONTENT                                       AS content
+      , N.PIN_YN                                        AS pinYn
+      , N.POPUP_FROM_YMD                                AS popupFromYmd
+      , N.POPUP_TO_YMD                                  AS popupToYmd
+      , DATE_FORMAT(N.INSERT_DATE, '%Y-%m-%d %H:%i')    AS insertDate
+      , (
+            SELECT COUNT(1) FROM TB_NOTICE_FILE NF
+            WHERE NF.CMPNY_CD = N.CMPNY_CD AND NF.NOTICE_ID = N.NOTICE_ID
+        )                                               AS fileCnt
+      , <choose><when test="isDaily">1</when><otherwise>0</otherwise></choose> AS isDaily
+    FROM TB_NOTICE N
+    WHERE N.CMPNY_CD = #{gvCmpnyCd}
+      AND N.DEL_YN = 'N'
+      AND N.POPUP_YN = 'Y'
+      AND DATE_FORMAT(NOW(), '%Y%m%d') BETWEEN N.POPUP_FROM_YMD AND N.POPUP_TO_YMD
+      <!-- (A) 대상 매칭 §6-1 (일용직이면 NODE 제외 + INCLUDE_DAILY_YN='Y' 강제) -->
+      <choose>
+        <when test="isDaily">
+          AND N.INCLUDE_DAILY_YN = 'Y'
+          AND (
+            N.TARGET_SCOPE = 'ALL'
+            OR ( N.TARGET_SCOPE = 'SITE'
+                 AND EXISTS (
+                    SELECT 1 FROM TB_NOTICE_TARGET T
+                    WHERE T.CMPNY_CD = N.CMPNY_CD AND T.NOTICE_ID = N.NOTICE_ID
+                      AND T.SITE_CD = #{curSiteCd} AND T.NODE_CD IS NULL ) )
+          )
+        </when>
+        <otherwise>
+          AND (
+            N.TARGET_SCOPE = 'ALL'
+            OR ( N.TARGET_SCOPE = 'SITE'
+                 AND EXISTS (
+                    SELECT 1 FROM TB_NOTICE_TARGET T
+                    WHERE T.CMPNY_CD = N.CMPNY_CD AND T.NOTICE_ID = N.NOTICE_ID
+                      AND T.SITE_CD = #{curSiteCd} AND T.NODE_CD IS NULL ) )
+            OR ( N.TARGET_SCOPE = 'NODE'
+                 AND EXISTS (
+                    <!-- 직접 매칭 OR 자손 매칭(자손 판정: 대상노드 기준 하향 재귀) -->
+                    SELECT 1 FROM TB_NOTICE_TARGET T
+                    WHERE T.CMPNY_CD = N.CMPNY_CD AND T.NOTICE_ID = N.NOTICE_ID
+                      AND T.SITE_CD = #{curSiteCd}
+                      AND (
+                        T.NODE_CD = #{curNodeCd}
+                        OR (
+                          T.INCLUDE_DESCENDANTS_YN = 'Y'
+                          AND EXISTS (
+                            WITH RECURSIVE desc_tree AS (
+                                SELECT DN.CMPNY_CD, DN.SITE_CD, DN.NODE_CD
+                                FROM TB_SITE_NODE DN
+                                WHERE DN.CMPNY_CD = N.CMPNY_CD
+                                  AND DN.SITE_CD = T.SITE_CD
+                                  AND DN.NODE_CD = T.NODE_CD
+                                UNION ALL
+                                SELECT DC.CMPNY_CD, DC.SITE_CD, DC.NODE_CD
+                                FROM TB_SITE_NODE DC
+                                INNER JOIN desc_tree DP
+                                    ON DC.CMPNY_CD = DP.CMPNY_CD AND DC.SITE_CD = DP.SITE_CD
+                                   AND DC.PARENT_NODE_CD = DP.NODE_CD
+                            )
+                            SELECT 1 FROM desc_tree DT WHERE DT.NODE_CD = #{curNodeCd}
+                          )
+                        )
+                      ) ) )
+          )
+        </otherwise>
+      </choose>
+      <!-- (B) 한시 숨김 제외 (정규직만) -->
+      <if test="!isDaily">
+      AND NOT EXISTS (
+            SELECT 1 FROM TB_NOTICE_USER_ACK A
+            WHERE A.CMPNY_CD = N.CMPNY_CD AND A.NOTICE_ID = N.NOTICE_ID
+              AND A.USER_CD = #{gvUserCd}
+              AND A.ACK_TYPE = 'SNOOZED'
+              AND A.SNOOZE_UNTIL_YMD &gt;= DATE_FORMAT(NOW(), '%Y%m%d')
+        )
+      </if>
+      <!-- (C) 비고정 + CONFIRMED 제외 (고정은 CONFIRMED 무시 = 계속 노출) -->
+      AND (
+            N.PIN_YN = 'Y'
+            OR NOT EXISTS (
+                SELECT 1 FROM TB_NOTICE_USER_ACK A2
+                WHERE A2.CMPNY_CD = N.CMPNY_CD AND A2.NOTICE_ID = N.NOTICE_ID
+                  AND A2.USER_CD = #{gvUserCd}
+                  AND A2.ACK_TYPE = 'CONFIRMED'
+            )
+        )
+    ORDER BY N.PIN_YN DESC, N.PIN_ORDER ASC, N.INSERT_DATE DESC
+    LIMIT 10
+    </select>
+
+    <!-- 확인/숨김 UPSERT (CONFIRMED/SNOOZED). LAST_READ_DATE 동시 갱신 -->
+    <insert id="upsertNoticeAck"
+            parameterType="com.prafta.web.notice.notice01.application.command.NoticeAckCommand">
+    /* Notice01Mapper.upsertNoticeAck */
+    INSERT INTO TB_NOTICE_USER_ACK
+    (
+        CMPNY_CD
+      , NOTICE_ID
+      , USER_CD
+      , ACK_TYPE
+      , SNOOZE_UNTIL_YMD
+      , LAST_READ_DATE
+      , INSERT_NO
+      , INSERT_DATE
+    )
+    VALUES
+    (
+        #{gvCmpnyCd}
+      , #{noticeId}
+      , #{gvUserCd}
+      , #{ackType}
+      , #{snoozeUntilYmd}
+      , NOW()
+      , #{gvUserCd}
+      , NOW()
+    ) AS NEW
+    ON DUPLICATE KEY UPDATE
+        ACK_TYPE         = NEW.ACK_TYPE
+      , SNOOZE_UNTIL_YMD = NEW.SNOOZE_UNTIL_YMD
+      , LAST_READ_DATE   = NOW()
+      , UPDATE_NO        = #{gvUserCd}
+      , UPDATE_DATE      = NOW()
+    </insert>
+
+    <!-- 열람(read) UPSERT — LAST_READ_DATE 만 갱신/생성(ACK_TYPE 보존).
+         신규 행이면 ACK_TYPE 미정이라 NOT NULL 충돌 → 빈 마커 'READ' 로 적재(확인/숨김 아님). -->
+    <insert id="upsertNoticeRead"
+            parameterType="com.prafta.web.notice.notice01.application.command.NoticeAckCommand">
+    /* Notice01Mapper.upsertNoticeRead */
+    INSERT INTO TB_NOTICE_USER_ACK
+    (
+        CMPNY_CD
+      , NOTICE_ID
+      , USER_CD
+      , ACK_TYPE
+      , LAST_READ_DATE
+      , INSERT_NO
+      , INSERT_DATE
+    )
+    VALUES
+    (
+        #{gvCmpnyCd}
+      , #{noticeId}
+      , #{gvUserCd}
+      , 'READ'
+      , NOW()
+      , #{gvUserCd}
+      , NOW()
+    ) AS NEW
+    ON DUPLICATE KEY UPDATE
+        LAST_READ_DATE = NOW()
+      , UPDATE_NO      = #{gvUserCd}
+      , UPDATE_DATE    = NOW()
+    </insert>
+
+    <!-- 다운로드 발급 시 노출 대상 재검증 (047-001).
+         특정 noticeId 1건에 대해 "요청자가 이 공지의 노출 대상인가"를 COUNT 로 반환.
+         selectPopupNoticeList 의 (A) 대상 매칭(ALL/SITE/NODE+자손 재귀, 일용직 §6-2) 만 재사용하고
+         팝업 게이트(POPUP_YN/기간/이력제외)는 제외한다(관리 목록 다운로드도 기간 무관해야 함).
+         DEL_YN='N' + CMPNY_CD 스코프만 추가로 본다. -->
+    <select id="countNoticeVisibleToUser" resultType="int">
+    /* Notice01Mapper.countNoticeVisibleToUser */
+    SELECT
+        COUNT(1)
+    FROM TB_NOTICE N
+    WHERE N.CMPNY_CD = #{cmpnyCd}
+      AND N.NOTICE_ID = #{noticeId}
+      AND N.DEL_YN = 'N'
+      <!-- (A) 대상 매칭 §6-1 (일용직이면 NODE 제외 + INCLUDE_DAILY_YN='Y' 강제) -->
+      <choose>
+        <when test="isDaily">
+          AND N.INCLUDE_DAILY_YN = 'Y'
+          AND (
+            N.TARGET_SCOPE = 'ALL'
+            OR ( N.TARGET_SCOPE = 'SITE'
+                 AND EXISTS (
+                    SELECT 1 FROM TB_NOTICE_TARGET T
+                    WHERE T.CMPNY_CD = N.CMPNY_CD AND T.NOTICE_ID = N.NOTICE_ID
+                      AND T.SITE_CD = #{curSiteCd} AND T.NODE_CD IS NULL ) )
+          )
+        </when>
+        <otherwise>
+          AND (
+            N.TARGET_SCOPE = 'ALL'
+            OR ( N.TARGET_SCOPE = 'SITE'
+                 AND EXISTS (
+                    SELECT 1 FROM TB_NOTICE_TARGET T
+                    WHERE T.CMPNY_CD = N.CMPNY_CD AND T.NOTICE_ID = N.NOTICE_ID
+                      AND T.SITE_CD = #{curSiteCd} AND T.NODE_CD IS NULL ) )
+            OR ( N.TARGET_SCOPE = 'NODE'
+                 AND EXISTS (
+                    <!-- 직접 매칭 OR 자손 매칭(자손 판정: 대상노드 기준 하향 재귀) -->
+                    SELECT 1 FROM TB_NOTICE_TARGET T
+                    WHERE T.CMPNY_CD = N.CMPNY_CD AND T.NOTICE_ID = N.NOTICE_ID
+                      AND T.SITE_CD = #{curSiteCd}
+                      AND (
+                        T.NODE_CD = #{curNodeCd}
+                        OR (
+                          T.INCLUDE_DESCENDANTS_YN = 'Y'
+                          AND EXISTS (
+                            WITH RECURSIVE desc_tree AS (
+                                SELECT DN.CMPNY_CD, DN.SITE_CD, DN.NODE_CD
+                                FROM TB_SITE_NODE DN
+                                WHERE DN.CMPNY_CD = N.CMPNY_CD
+                                  AND DN.SITE_CD = T.SITE_CD
+                                  AND DN.NODE_CD = T.NODE_CD
+                                UNION ALL
+                                SELECT DC.CMPNY_CD, DC.SITE_CD, DC.NODE_CD
+                                FROM TB_SITE_NODE DC
+                                INNER JOIN desc_tree DP
+                                    ON DC.CMPNY_CD = DP.CMPNY_CD AND DC.SITE_CD = DP.SITE_CD
+                                   AND DC.PARENT_NODE_CD = DP.NODE_CD
+                            )
+                            SELECT 1 FROM desc_tree DT WHERE DT.NODE_CD = #{curNodeCd}
+                          )
+                        )
+                      ) ) )
+          )
+        </otherwise>
+      </choose>
+    </select>
+
+    <!-- 공지 등록자(INSERT_NO) 조회 — 발행자 본인 다운로드 통과 판정용(047-001). 없으면 null -->
+    <select id="selectNoticeInsertNo" resultType="java.lang.String">
+    /* Notice01Mapper.selectNoticeInsertNo */
+    SELECT
+        N.INSERT_NO
+    FROM TB_NOTICE N
+    WHERE N.CMPNY_CD = #{cmpnyCd}
+      AND N.NOTICE_ID = #{noticeId}
+      AND N.DEL_YN = 'N'
+    </select>
+
+    <!-- PIN 직렬화 advisory 잠금 (047 BUG-3).
+         tb_cmm_seq(SEQ_KEY='NOTICE_PIN_LOCK') 행을 회사 단위로 원자 UPDATE(=행잠금) 하여
+         같은 트랜잭션 동안 동일 회사의 고정 순번 연산을 직렬화한다(첫 고정 0건 시 잠글 행 부재 문제 해소).
+         함수가 행 없으면 자동 INSERT 후 UPDATE 하므로 신규 회사도 안전. 반환값은 사용하지 않는다. -->
+    <select id="lockPinSerialization" resultType="java.lang.String">
+    /* Notice01Mapper.lockPinSerialization */
+    SELECT FNC_CMM_SEQ_NEXTVAL(#{cmpnyCd}, 'NOTICE_PIN_LOCK')
+    </select>
+
+    <!-- 첨부 단건 조회 (토큰 발급/스트림용) -->
+    <select id="selectNoticeFileOne"
+            parameterType="com.prafta.web.notice.notice01.application.query.NoticeFileQuery"
+            resultType="com.prafta.web.notice.notice01.result.NoticeFileResult">
+    /* Notice01Mapper.selectNoticeFileOne */
+    SELECT
+        NF.FILE_MGMT_CD     AS fileMgmtCd
+      , FI.FILE_NM          AS fileNm
+      , FI.FILE_EXT         AS fileExt
+      , FI.FILE_PATH        AS filePath
+      , NF.SORT_IDX         AS sortIdx
+    FROM TB_NOTICE_FILE NF
+    INNER JOIN TB_FILE_INFO FI
+        ON FI.CMPNY_CD = NF.CMPNY_CD AND FI.FILE_MGMT_CD = NF.FILE_MGMT_CD
+    INNER JOIN TB_NOTICE N
+        ON N.CMPNY_CD = NF.CMPNY_CD AND N.NOTICE_ID = NF.NOTICE_ID AND N.DEL_YN = 'N'
+    WHERE NF.CMPNY_CD = #{gvCmpnyCd}
+      AND NF.NOTICE_ID = #{noticeId}
+      AND NF.FILE_MGMT_CD = #{fileMgmtCd}
+    </select>
+
+    <!-- ── 047-5 배치 ───────────────────────────────────────── -->
+
+    <!-- 팝업 종료 6개월 경과 공지의 확인이력 물리삭제.
+         현행 노출중(today BETWEEN FROM~TO) 공지는 제외(=POPUP_TO_YMD < cutoff 조건으로 자동 배제). -->
+    <delete id="deleteExpiredNoticeAck">
+    /* Notice01Mapper.deleteExpiredNoticeAck */
+    DELETE A
+    FROM TB_NOTICE_USER_ACK A
+    INNER JOIN TB_NOTICE N
+        ON N.CMPNY_CD = A.CMPNY_CD AND N.NOTICE_ID = A.NOTICE_ID
+    WHERE N.POPUP_YN = 'Y'
+      AND N.POPUP_TO_YMD IS NOT NULL
+      AND N.POPUP_TO_YMD &lt; #{cutoffYmd}
+    </delete>
+
+</mapper>

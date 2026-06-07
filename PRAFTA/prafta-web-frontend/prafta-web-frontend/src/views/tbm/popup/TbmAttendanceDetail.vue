@@ -82,11 +82,13 @@
                   <th style="width: 7%">유형</th>
                   <th style="width: 14%">이름</th>
                   <th style="width: 13%">소속/끝4자리</th>
-                  <th style="width: 12%">입실</th>
-                  <th style="width: 12%">종료</th>
-                  <th style="width: 13%">이상신호</th>
-                  <th style="width: 8%; text-align: center">이수</th>
-                  <th style="width: 17%; text-align: center" class="no-print">
+                  <th style="width: 11%">입실</th>
+                  <th style="width: 11%">종료</th>
+                  <th style="width: 8%; text-align: center">입실거리</th>
+                  <th style="width: 8%; text-align: center">앱실행시간</th>
+                  <th style="width: 11%">이상신호</th>
+                  <th style="width: 7%; text-align: center">이수</th>
+                  <th style="width: 15%; text-align: center" class="no-print">
                     액션
                   </th>
                 </tr>
@@ -94,7 +96,7 @@
               <tbody>
                 <template v-if="!attendanceList || attendanceList.length === 0">
                   <tr>
-                    <td colspan="9" class="edu-grid-empty">
+                    <td colspan="11" class="edu-grid-empty">
                       출결 명단이 없습니다. (실시간 진행/모바일 앱 이후
                       채워집니다)
                     </td>
@@ -140,6 +142,12 @@
                     <td>
                       <template v-if="row.exited">{{ row.exitAt }}</template>
                       <span v-else class="not-exited">미종료</span>
+                    </td>
+                    <td style="text-align: center">
+                      {{ distanceText(row.entryDistanceM) }}
+                    </td>
+                    <td style="text-align: center">
+                      {{ foregroundText(row.appForegroundSec) }}
                     </td>
                     <td>
                       <span
@@ -197,7 +205,7 @@
                     v-if="expandedCd === row.attendanceCd"
                     :key="row.attendanceCd + '-ev'"
                   >
-                    <td colspan="9" class="event-cell-row">
+                    <td colspan="11" class="event-cell-row">
                       <TbmEventTimeline
                         :attendanceCd_p="row.attendanceCd"
                         :userNm_p="row.userNm"
@@ -366,6 +374,23 @@ const completionRate = (completed, total) => {
 
 const typeNm = (code) => (code === "DAILY" ? "일용직" : "정규직");
 
+// prafta-051-16: 입실 거리(m). null/미수신은 '-' (대리/검색입실은 거리 없음)
+const distanceText = (m) => {
+  if (m == null || m === "") return "-";
+  return `${m}m`;
+};
+
+// prafta-051-16: 앱 포그라운드 누적초 → MM:SS(1시간 이상은 HH:MM:SS). null/대리입실은 '-'
+const foregroundText = (sec) => {
+  if (sec == null || sec === "") return "-";
+  const total = Math.max(0, Number(sec) || 0);
+  const h = Math.floor(total / 3600);
+  const mm = String(Math.floor((total % 3600) / 60)).padStart(2, "0");
+  const ss = String(total % 60).padStart(2, "0");
+  if (h > 0) return `${String(h).padStart(2, "0")}:${mm}:${ss}`;
+  return `${mm}:${ss}`;
+};
+
 const compMark = (code) => {
   if (code === "COMPLETED") return "✓";
   if (code === "NOT_COMPLETED") return "✕";
@@ -404,7 +429,8 @@ const anomalyClass = (level) => {
 
 .detail-wrapper {
   padding: 1.2rem;
-  height: calc(100% - 110px);
+  flex: 1 1 auto;
+  min-height: 0;
   overflow-y: auto;
 }
 

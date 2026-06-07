@@ -2,6 +2,7 @@ package com.prafta.web.user.user01.util;
 
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
+import java.util.List;
 
 import org.apache.poi.ss.usermodel.BorderStyle;
 import org.apache.poi.ss.usermodel.Cell;
@@ -89,9 +90,19 @@ public final class UserExcelTemplateBuilder {
     /**
      * 사용자 일괄 생성 .xlsx 양식 바이트를 생성한다.
      *
+     * <p>PRAFTA-049 — 입력 코드 참조용 시트 3개를 함께 생성한다(요청 시트 순서 = 2/3/4):
+     * <ul>
+     *   <li>시트②(사업장): 사업장명 / 사업장번호</li>
+     *   <li>시트③(소속부서): 사업장명 / 부서코드 / 부서명</li>
+     *   <li>시트④(권한): 권한코드 / 권한명</li>
+     * </ul>
+     *
+     * @param siteRows 사업장 참조 행 목록 — 각 행 {siteNm, siteNo}
+     * @param nodeRows 소속부서 참조 행 목록 — 각 행 {siteNm, nodeCd, nodeNm}
+     * @param authRows 권한 참조 행 목록 — 각 행 {authCd, authNm}
      * @return 생성된 .xlsx 바이트 배열
      */
-    public static byte[] build() {
+    public static byte[] build(List<String[]> siteRows, List<String[]> nodeRows, List<String[]> authRows) {
 
         try (XSSFWorkbook workbook = new XSSFWorkbook();
              ByteArrayOutputStream out = new ByteArrayOutputStream()) {
@@ -174,11 +185,53 @@ public final class UserExcelTemplateBuilder {
                     "사유 유형 선택",
                     "정의된 SYS042 사유 코드 중에서 선택해 주세요.");
 
+            // PRAFTA-049: 입력 코드 참조 시트②③④ (헤더 스타일 재사용) -------
+            buildReferenceSheet(workbook, headerStyle, "사업장",
+                    new String[] { "사업장명", "사업장번호" }, siteRows);
+            buildReferenceSheet(workbook, headerStyle, "소속부서",
+                    new String[] { "사업장명", "부서코드", "부서명" }, nodeRows);
+            buildReferenceSheet(workbook, headerStyle, "권한",
+                    new String[] { "권한코드", "권한명" }, authRows);
+
             workbook.write(out);
             return out.toByteArray();
 
         } catch (IOException e) {
             throw new ApiException(CommonErrorCode.COMMON_500_001);
+        }
+    }
+
+    /**
+     * PRAFTA-049 — 코드 참조용 단순 시트(헤더 1행 + 데이터 N행)를 추가한다.
+     * 업로드 파서는 첫 시트(사용자생성)만 읽으므로, 본 시트들은 조회 편의용 참조 데이터일 뿐이다.
+     *
+     * @param headers 헤더 라벨 (컬럼 수 = 각 데이터 행 길이와 동일해야 함)
+     * @param rows    데이터 행 목록 (행이 없으면 헤더만 생성)
+     */
+    private static void buildReferenceSheet(XSSFWorkbook workbook, CellStyle headerStyle,
+                                            String sheetName, String[] headers, List<String[]> rows) {
+        Sheet sheet = workbook.createSheet(sheetName);
+
+        Row headerRow = sheet.createRow(0);
+        for (int c = 0; c < headers.length; c++) {
+            Cell cell = headerRow.createCell(c);
+            cell.setCellValue(headers[c]);
+            cell.setCellStyle(headerStyle);
+        }
+
+        int rowIdx = 1;
+        if (rows != null) {
+            for (String[] row : rows) {
+                Row dataRow = sheet.createRow(rowIdx++);
+                for (int c = 0; c < headers.length; c++) {
+                    String value = (row != null && c < row.length && row[c] != null) ? row[c] : "";
+                    dataRow.createCell(c).setCellValue(value);
+                }
+            }
+        }
+
+        for (int c = 0; c < headers.length; c++) {
+            sheet.setColumnWidth(c, 5000);
         }
     }
 

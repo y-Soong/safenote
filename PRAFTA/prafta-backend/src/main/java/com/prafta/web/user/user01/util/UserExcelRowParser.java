@@ -95,6 +95,44 @@ public final class UserExcelRowParser {
         return result;
     }
 
+    /**
+     * prafta-052 — 실패 행 재업로드용 원본 행(양식 16컬럼 순서)으로 변환한다.
+     * {@link #HEADERS} 순서와 1:1 일치해야 한다(시트1 재업로드 호환의 핵심).
+     * creditMonths(Integer)는 문자열로, null 은 빈 문자열로 정규화한다.
+     * additionalSiteCdList/gv* 토큰 클레임은 양식 16컬럼이 아니므로 포함하지 않는다.
+     *
+     * @param p 실패한 행의 생성 파라미터(null 이면 빈 리스트)
+     * @return 양식 16컬럼 순서의 문자열 리스트(시트1에 그대로 펼침)
+     */
+    public static List<String> toSourceRow(UserCreateParam p) {
+        if (p == null) {
+            return java.util.Collections.emptyList();
+        }
+        return java.util.Arrays.asList(
+                nz(p.userId())            // 0  사용자ID(필수)
+              , nz(p.userNm())            // 1  사용자명(필수)
+              , nz(p.authCd())            // 2  권한코드(필수)
+              , nz(p.siteNo())            // 3  사업장번호(필수)
+              , nz(p.nodeCd())            // 4  소속부서코드(필수)
+              , nz(p.mblNo())             // 5  휴대폰번호(필수)
+              , nz(p.email())             // 6  이메일
+              , nz(p.gender())            // 7  성별(M/F)
+              , nz(p.birthDt())           // 8  생년월일(YYMMDD)
+              , nz(p.rankCd())            // 9  직급코드
+              , nz(p.hireDate())          // 10 입사일(YYYYMMDD)
+              , nz(p.employmentType())    // 11 고용형태
+              , nz(p.contractEndDate())   // 12 계약종료일(YYYYMMDD)
+              , p.creditMonths() == null ? "" : String.valueOf(p.creditMonths()) // 13 경력인정개월수
+              , nz(p.creditReasonType())  // 14 경력인정사유유형(SYS042)
+              , nz(p.creditReasonDetail())// 15 경력인정상세
+        );
+    }
+
+    /** null 을 빈 문자열로 정규화. */
+    private static String nz(String s) {
+        return s == null ? "" : s;
+    }
+
     /** 행 전체가 비어있는지(모든 셀이 null/blank) 판정. */
     private static boolean isEmptyRow(Row row) {
         short last = row.getLastCellNum();

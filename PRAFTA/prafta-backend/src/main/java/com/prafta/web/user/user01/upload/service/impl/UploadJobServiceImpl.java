@@ -16,6 +16,7 @@ import com.prafta.common.dto.TokenInfo;
 import com.prafta.common.error.common.CommonErrorCode;
 import com.prafta.common.error.user.UserErrorCode;
 import com.prafta.common.exception.ApiException;
+import com.prafta.common.security.crypto.AesGcmCrypto;
 import com.prafta.common.util.AuthRoleUtils;
 import com.prafta.web.user.user01.application.param.UserCreateParam;
 import com.prafta.web.user.user01.dto.UserUpdateFailItem;
@@ -49,6 +50,8 @@ public class UploadJobServiceImpl implements UploadJobService {
     private final UploadJobMapper uploadJobMapper;
     private final UploadJobAsyncRunner uploadJobAsyncRunner;
     private final ObjectMapper objectMapper;
+    // prafta-052(보안): FAILS_JSON at-rest 암호문 복호화용(폴링 응답 빌드 시 평문 복원).
+    private final AesGcmCrypto aesGcmCrypto;
 
     @Override
     public UserUploadJobStartResponse startUpload(MultipartFile file, TokenInfo tokenInfo) {
@@ -158,14 +161,27 @@ public class UploadJobServiceImpl implements UploadJobService {
         );
     }
 
+    /**
+     * 저장된 FAILS_JSON 을 실패 항목 목록으로 역직렬화한다.
+     *
+     * <p>prafta-052(보안): 비동기 경로는 평문 PII 노출을 막기 위해 페이로드를 AES-GCM 으로
+     * 암호화("v1.*")하여 저장한다. 따라서 값이 "v1." 로 시작하면 먼저 복호화한 뒤 역직렬화하고,
+     * 그렇지 않으면(prafta-052 이전 평문 json 으로 저장된 레거시 행) 기존처럼 직접 역직렬화한다.
+     * 복호화/파싱 실패 시 기존과 동일하게 빈 리스트로 폴백한다(jobId 만 로깅 — 본문/PII 비기록).
+     */
     private List<UserUpdateFailItem> parseFails(String json, String jobId) {
         if (json == null || json.isBlank()) {
             return Collections.emptyList();
         }
         try {
-            return objectMapper.readValue(json, new TypeReference<List<UserUpdateFailItem>>() {});
+            // "v1." prefix = AES-GCM 암호문 → 복호화 후 역직렬화. 아니면 레거시 평문 json 직접 역직렬화.
+            String plainJson = json.startsWith("v1.") ? aesGcmCrypto.decrypt(json) : json;
+            if (plainJson == null || plainJson.isBlank()) {
+                return Collections.emptyList();
+            }
+            return objectMapper.readValue(plainJson, new TypeReference<List<UserUpdateFailItem>>() {});
         } catch (Exception e) {
-            log.error("실패 목록 JSON 역직렬화 실패 - jobId={}", jobId, e);
+            log.error("실패 목록 복호화/역직렬화 실패 - jobId={}", jobId, e);
             return new ArrayList<>();
         }
     }

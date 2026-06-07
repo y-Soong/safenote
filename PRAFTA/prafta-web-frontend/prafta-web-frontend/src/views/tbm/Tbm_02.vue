@@ -231,7 +231,7 @@ import {
 import search_icon from "@/assets/img/search_icon.png";
 import SiteSearchPop from "@/components/popup/SiteSearchPop.vue";
 import TbmSessionForm from "./popup/TbmSessionForm.vue";
-import TbmSessionDetail from "./popup/TbmSessionDetail.vue";
+import TbmSessionConsole from "./popup/TbmSessionConsole.vue";
 
 // ================ Options ================
 defineOptions({ name: "Tbm_02" });
@@ -414,9 +414,9 @@ const fnDetail = (row) => {
   fnOpenDetailByCd(row.sessionCd);
 };
 
-// prafta-033-B: 개설 성공 후 W-06 상세로 이동(W-07 콘솔 아님, C 보류)
+// prafta-051-13: 상세 진입 시 상태머신 콘솔(TbmSessionConsole)로 이동
 const fnOpenDetailByCd = (sessionCd) => {
-  openPop(TbmSessionDetail, {
+  openPop(TbmSessionConsole, {
     sessionCd_p: sessionCd,
     onSearch: fnSearch,
   });

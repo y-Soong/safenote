@@ -42,6 +42,8 @@ public class SessionAttendanceResponse {
 		private String statusUpdatedBy;
 		private String statusUpdatedByNm;
 		private String statusUpdatedAt;
+		private Integer appForegroundSec;	// prafta-051-08/16: 앱 포그라운드 누적초(NULL=미수신/대리입실)
+		private Integer entryDistanceM;		// prafta-051-16: 입실 GPS 거리(m), 대리/검색입실 NULL
 		// ===== 이상신호 요약 =====
 		private int backgroundCount;
 		private int gpsOutOfRangeCount;

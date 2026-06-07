@@ -28,24 +28,26 @@
 
         <div class="content-wrapper">
           <div class="form-container">
-            <!-- 사업장 -->
+            <!-- 사업장: NoticeCreatePop 패턴 — 사업장명(readonly) + 조회 팝업 버튼 -->
             <div class="form-row-max">
               <label>사업장</label>
-              <div style="width: 40%">
-                <BaseSelect
+              <div class="site-search-field">
+                <input
                   id="siteCd"
-                  v-model="formData.siteCd"
+                  type="text"
+                  :value="siteNm"
+                  placeholder="사업장 조회"
+                  readonly
                   :disabled="isEditMode"
+                  @click="onSiteSearchClick"
+                />
+                <button
+                  class="search-btn"
+                  :disabled="isEditMode"
+                  @click="onSiteSearchClick"
                 >
-                  <option value="">선택</option>
-                  <option
-                    v-for="opt in siteList || []"
-                    :key="opt.siteCd"
-                    :value="opt.siteCd"
-                  >
-                    {{ opt.siteNm }}
-                  </option>
-                </BaseSelect>
+                  <img class="search_icon" :src="search_icon" alt="사업장 조회" />
+                </button>
               </div>
               <span v-if="isEditMode" class="hint">
                 ⓘ 사업장은 수정할 수 없습니다.
@@ -322,9 +324,10 @@ import { getMessage, MSG } from "@/messages";
 import { resolveApiErrorMessage } from "@/utils/apiError";
 import { useModal } from "@/utils/useModal";
 import { useCenteredDraggable } from "@/composables/useCenteredDraggable";
-import BaseSelect from "@/components/common/BaseSelect.vue";
 import TbmContentSelector from "./TbmContentSelector.vue";
 import TbmRiskSelector from "./TbmRiskSelector.vue";
+import SiteSearchPop from "@/components/popup/SiteSearchPop.vue";
+import search_icon from "@/assets/img/search_icon.png";
 
 const { proxy } = getCurrentInstance();
 const { open: openPop } = useModal();
@@ -340,6 +343,7 @@ const emit = defineEmits(["close"]);
 const modalRef = ref(null);
 const editorRef = ref(null);
 const siteList = ref([]);
+const siteNm = ref(""); // 사업장명 표시용(조회 팝업 선택값)
 const contentRows = ref([]);
 const riskRows = ref([]);
 const manualConfirm = ref(false);
@@ -373,10 +377,40 @@ onMounted(async () => {
   } else {
     // 신규: 기본 사업장 = 본인 사업장
     formData.siteCd = sessionStorage.getItem("gv_siteCd") || "";
+    siteNm.value =
+      resolveSiteNm(formData.siteCd) ||
+      sessionStorage.getItem("gv_siteNm") ||
+      "";
     // AUTO 모드 기본: 현재 위치 수집 시도
     fnCaptureGps();
   }
 });
+
+// 사업장코드 → 사업장명 매핑(siteList 기준). 표시용 siteNm 복원에 사용
+const resolveSiteNm = (cd) => {
+  if (proxy.$util.isEmpty(cd)) return "";
+  const found = (siteList.value || []).find((s) => s.siteCd === cd);
+  return found ? found.siteNm : "";
+};
+
+// 사업장 조회 팝업 열기(수정 모드에서는 잠금 — 사업장 변경 불가)
+const onSiteSearchClick = () => {
+  if (isEditMode.value) return;
+  fnOpenSiteSearch();
+};
+
+const fnOpenSiteSearch = () => {
+  openPop(SiteSearchPop, {
+    cmpnyCd_p: sessionStorage.getItem("gv_cmpnyCd"),
+    siteNo_p: "",
+    siteNm_p: "",
+    // SiteSearchPop onSelect 인자 순서 = (siteCd, siteNo, siteNm)
+    onSelect: (siteCdVal, siteNoVal, siteNmVal) => {
+      formData.siteCd = siteCdVal ?? "";
+      siteNm.value = siteNmVal ?? "";
+    },
+  });
+};
 
 const fnGetSiteList = async () => {
   try {
@@ -395,6 +429,7 @@ const fnGetSiteList = async () => {
 const fnLoadFromDetail = (detail) => {
   const s = detail.session || {};
   formData.siteCd = s.siteCd || "";
+  siteNm.value = s.siteNm || resolveSiteNm(formData.siteCd);
   formData.title = s.title || "";
   formData.contentBody = s.contentBody || "";
   formData.gpsVerifyTypeCd = s.gpsVerifyTypeCd || "AUTO";
@@ -665,6 +700,26 @@ const fnUpdate = async () => {
 .hint {
   font-size: var(--btn-font-sm);
   color: var(--color-text-muted);
+  flex: 0 0 auto;
+  white-space: nowrap;
+}
+
+/* 사업장 조회: 사업장명(readonly) + 돋보기 버튼 (NoticeCreatePop 패턴) */
+.site-search-field {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  width: 20%;
+}
+
+.site-search-field input {
+  flex: 1 1 auto;
+  min-width: 0;
+  cursor: pointer;
+}
+
+.site-search-field input:disabled {
+  cursor: not-allowed;
 }
 
 .editor-row {

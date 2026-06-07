@@ -8,12 +8,18 @@ import org.apache.ibatis.annotations.Param;
 import com.prafta.web.tbm.tbm02.application.command.SessionCancelCommand;
 import com.prafta.web.tbm.tbm02.application.command.SessionCommand;
 import com.prafta.web.tbm.tbm02.application.command.SessionContentCommand;
-import com.prafta.web.tbm.tbm02.application.command.SessionPwdCommand;
+import com.prafta.web.tbm.tbm02.application.command.SessionPrepareCommand;
 import com.prafta.web.tbm.tbm02.application.command.SessionRiskCommand;
+import com.prafta.web.tbm.tbm02.application.command.SessionSinglePwdCommand;
 import com.prafta.web.tbm.tbm02.application.command.SessionStateCommand;
+import com.prafta.web.tbm.tbm02.application.command.SessionStateTransitionCommand;
+import com.prafta.web.tbm.tbm02.application.command.EjectAttendanceCommand;
+import com.prafta.web.tbm.tbm02.application.command.ManagerEnterCommand;
 import com.prafta.web.tbm.tbm02.application.query.OptionQuery;
 import com.prafta.web.tbm.tbm02.application.query.SessionDetailQuery;
 import com.prafta.web.tbm.tbm02.application.query.SessionListQuery;
+import com.prafta.web.tbm.tbm02.application.query.EntryCandidateQuery;
+import com.prafta.web.tbm.tbm02.application.query.EntryTargetQuery;
 import com.prafta.web.tbm.tbm02.result.ContentOptionResult;
 import com.prafta.web.tbm.tbm02.result.RiskOptionResult;
 import com.prafta.web.tbm.tbm02.result.SessionContentResult;
@@ -22,6 +28,9 @@ import com.prafta.web.tbm.tbm02.result.SessionListResult;
 import com.prafta.web.tbm.tbm02.result.SessionResult;
 import com.prafta.web.tbm.tbm02.result.SessionRiskResult;
 import com.prafta.web.tbm.tbm02.result.SiteOptionResult;
+import com.prafta.web.tbm.tbm02.result.AttendanceSlotResult;
+import com.prafta.web.tbm.tbm02.result.EntryCandidateResult;
+import com.prafta.web.tbm.tbm02.result.SessionAttendanceResult;
 
 @Mapper
 public interface Tbm02Mapper {
@@ -62,7 +71,56 @@ public interface Tbm02Mapper {
 
 	void cancelSession(SessionCancelCommand command);
 
-	void updateSessionPwd(SessionPwdCommand command);
+	/* ===== PRAFTA-051 상태머신 재설계 ===== */
+
+	/** 교육준비(OPENED) 전이: 입실비번 발급 + GPS 중심좌표 + PREP_START_AT 확정. WHERE STATUS_CD='DRAFT' 경합 가드. */
+	int prepareSession(SessionPrepareCommand command);
+
+	/** 입실비번만 재발급(OPENED). 종료비번 미변경. */
+	int updateEntryPwd(SessionSinglePwdCommand command);
+
+	/** 종료비번만 재발급(COMPLETED). 입실비번 미변경. */
+	int updateExitPwd(SessionSinglePwdCommand command);
+
+	/** 교육시작(IN_PROGRESS) 전이: STARTED_AT=NOW(). WHERE STATUS_CD='OPENED' 경합 가드. */
+	int startSession(SessionStateTransitionCommand command);
+
+	/** 교육준비 연장: PREP_START_AT=NOW() 리셋. WHERE STATUS_CD='OPENED' AND 15분 미경과 경합 가드. */
+	int extendPrep(SessionStateTransitionCommand command);
+
+	/** 교육종료(COMPLETED) 전이: ENDED_AT=NOW() + 종료비번 발급. WHERE STATUS_CD='IN_PROGRESS' 경합 가드. */
+	int completeSession(SessionStateTransitionCommand command);
+
+	/** 15분 자동 교육시작 배치(prafta-051-06): OPENED AND PREP_START_AT+15분 경과 → IN_PROGRESS 일괄 전이. */
+	int bulkStartExpiredPrep();
+
+	/* ===== PRAFTA-051-11 관리자 대리/검색 입실 ===== */
+
+	/** 정규직 입실 후보 검색(세션 사업장 활성 사용자 + alreadyEntered). */
+	List<EntryCandidateResult> selectRegularCandidates(EntryCandidateQuery query);
+
+	/** 일용직 입실 후보 검색(C7 만료/탈퇴 필터 + alreadyEntered). */
+	List<EntryCandidateResult> selectDailyCandidates(EntryCandidateQuery query);
+
+	/** 대리입실 대상 유효성: 세션 사업장 소속 활성(정규직/일용직 C7) 여부. 1=유효, 0=무효. */
+	int countEntryTarget(EntryTargetQuery query);
+
+	/** 대리입실 슬롯(UNIQUE 키) 점유 행 조회. 없으면 null(→INSERT), 있으면 DEL_YN 으로 분기. */
+	AttendanceSlotResult selectAttendanceSlot(ManagerEnterCommand command);
+
+	/** 관리자 직접 입실 INSERT(MANAGER_DIRECT, GPS/거리/비번 NULL). */
+	void insertManagerEntry(ManagerEnterCommand command);
+
+	/** 내보내기 후 재입실: DEL_YN='Y' 행을 'N' 으로 복구 + MANAGER_DIRECT 재기록. */
+	int restoreManagerEntry(ManagerEnterCommand command);
+
+	/* ===== PRAFTA-051-12 입실자 명단/내보내기 ===== */
+
+	/** 교육준비 단계 입실자 명단(DEL_YN='N', 정규직/일용직 통합, 거리/입실유형 포함). */
+	List<SessionAttendanceResult> selectSessionAttendances(SessionDetailQuery query);
+
+	/** 입실자 내보내기(soft delete): DEL_YN='Y' + EXIT_FORCED_REASON. 세션 일치 + DEL_YN='N' 만. */
+	int ejectAttendance(EjectAttendanceCommand command);
 
 	/* ===== 보조 조회 ===== */
 	List<ContentOptionResult> selectContentOptions(OptionQuery query);

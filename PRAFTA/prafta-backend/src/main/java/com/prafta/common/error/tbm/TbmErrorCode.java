@@ -52,6 +52,18 @@ public enum TbmErrorCode implements ApiErrorCode {
     // 비밀번호 재발급 불가 상태(OPENED 외) - 비즈니스 룰
     , TBM_409_012(HttpStatus.CONFLICT, "개설 상태에서만 비밀번호를 재발급할 수 있습니다.")
 
+    // ===== PRAFTA-051 TBM 세션 상태머신 재설계 =====
+    // 교육준비(OPENED) 전이 불가 상태(DRAFT 외) - 비즈니스 룰. 동시 전이 경합 시에도 사용.
+    , TBM_409_013(HttpStatus.CONFLICT, "개설 상태에서만 교육준비를 시작할 수 있습니다.")
+    // 교육시작(IN_PROGRESS) 전이 불가 상태(OPENED 외) - 비즈니스 룰. 동시 전이 경합 시에도 사용.
+    , TBM_409_014(HttpStatus.CONFLICT, "교육준비 상태에서만 교육을 시작할 수 있습니다.")
+    // 교육준비 연장 불가(OPENED 아님 또는 15분 경과) - 비즈니스 룰
+    , TBM_409_015(HttpStatus.CONFLICT, "교육준비 시간이 지나 연장할 수 없습니다.")
+    // 교육종료(COMPLETED) 전이 불가 상태(IN_PROGRESS 외) - 비즈니스 룰. 동시 전이 경합 시에도 사용.
+    , TBM_409_016(HttpStatus.CONFLICT, "교육시작 상태에서만 교육을 종료할 수 있습니다.")
+    // 종료비밀번호 재발급 불가 상태(COMPLETED 외) - 비즈니스 룰
+    , TBM_409_017(HttpStatus.CONFLICT, "교육종료 상태에서만 종료 비밀번호를 재발급할 수 있습니다.")
+
     // ===== PRAFTA-033-D TBM 이력 관리 =====
     // 미이수 처리 권한 부족(개설자/safe/master) - 보안 민감, 일반 메시지
     , TBM_403_020(HttpStatus.FORBIDDEN, "권한이 없습니다.")
@@ -81,6 +93,28 @@ public enum TbmErrorCode implements ApiErrorCode {
     , TBM_409_032(HttpStatus.CONFLICT, "이미 종료 처리된 출결입니다.")
     // 종료 서명 누락(D1: 종료 시 서명 필수) - 사용자 안내
     , TBM_400_031(HttpStatus.BAD_REQUEST, "종료 서명을 등록해 주세요.")
+
+    // ===== PRAFTA-051-08 앱 종료 상태 가드 =====
+    // 종료 불가 상태(교육시작/교육종료에서만 종료 가능, C6) - 비즈니스 룰
+    , TBM_409_033(HttpStatus.CONFLICT, "현재 종료할 수 없는 세션 상태입니다.")
+
+    // ===== PRAFTA-051-11 관리자 대리/검색 입실 =====
+    // 대상유형 코드 부적합(REGULAR/DAILY 외) - 사용자 안내
+    , TBM_400_040(HttpStatus.BAD_REQUEST, "입실 대상 유형이 올바르지 않습니다.")
+    // 대리입실 대상 사용자가 세션 사업장 소속이 아님/일용직 만료·탈퇴 - 사용자 안내
+    , TBM_403_040(HttpStatus.FORBIDDEN, "해당 세션에 입실할 수 없는 대상입니다.")
+    // 대리입실 불가 상태(교육준비 상태에서만 입실 처리 가능) - 비즈니스 룰
+    , TBM_409_040(HttpStatus.CONFLICT, "교육준비 상태에서만 입실 처리할 수 있습니다.")
+    // 이미 입실 처리된 대상(UNIQUE 충돌) - 비즈니스 룰(멱등 안내)
+    , TBM_409_041(HttpStatus.CONFLICT, "이미 입실 처리된 대상입니다.")
+
+    // ===== PRAFTA-051-12 입실자 내보내기(eject) =====
+    // 내보내기 사유 누락 - 사용자 안내
+    , TBM_400_041(HttpStatus.BAD_REQUEST, "내보내기 사유를 입력해 주세요.")
+    // 내보내기 불가 상태(교육준비 상태에서만 가능, C8) - 비즈니스 룰
+    , TBM_409_042(HttpStatus.CONFLICT, "교육준비 상태에서만 입실자를 내보낼 수 있습니다.")
+    // 내보내기 대상 출결 없음/세션 불일치/이미 제거됨 - 비즈니스 룰
+    , TBM_409_043(HttpStatus.CONFLICT, "내보낼 수 있는 입실 기록을 찾을 수 없습니다.")
 
     ;
 

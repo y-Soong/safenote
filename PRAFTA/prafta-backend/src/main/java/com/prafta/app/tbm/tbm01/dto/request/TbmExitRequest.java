@@ -12,4 +12,10 @@ import lombok.Data;
 public class TbmExitRequest {
     private String sessionCd;
     private String exitPwd;
+    /**
+     * prafta-051-08: 앱 포그라운드 누적초(SELF_DEVICE 종료 시 1회 수신, nullable).
+     * <p>Flutter GET_APP_FOREGROUND_SEC 브리지 → Vue → multipart 바디로 도착.
+     * <p>브리지 부재/실패 시 앱FE 가 필드 생략 → null → BE NULL 저장.
+     */
+    private Integer appForegroundSec;
 }

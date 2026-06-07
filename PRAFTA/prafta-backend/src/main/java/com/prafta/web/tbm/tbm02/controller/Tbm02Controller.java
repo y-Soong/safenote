@@ -12,24 +12,40 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
 import com.prafta.common.security.JwtUtil;
+import com.prafta.web.tbm.tbm02.application.param.EjectAttendanceParam;
+import com.prafta.web.tbm.tbm02.application.param.EntryCandidateParam;
+import com.prafta.web.tbm.tbm02.application.param.ManagerEnterParam;
 import com.prafta.web.tbm.tbm02.application.param.OptionParam;
 import com.prafta.web.tbm.tbm02.application.param.SessionCancelParam;
 import com.prafta.web.tbm.tbm02.application.param.SessionDetailParam;
 import com.prafta.web.tbm.tbm02.application.param.SessionListParam;
+import com.prafta.web.tbm.tbm02.application.param.SessionPrepareParam;
 import com.prafta.web.tbm.tbm02.application.param.SessionPwdParam;
 import com.prafta.web.tbm.tbm02.application.param.SessionSaveParam;
+import com.prafta.web.tbm.tbm02.application.param.SessionTransitionParam;
 import com.prafta.web.tbm.tbm02.application.param.SessionUpdateParam;
+import com.prafta.web.tbm.tbm02.dto.request.EjectAttendanceRequest;
+import com.prafta.web.tbm.tbm02.dto.request.EntryCandidateRequest;
+import com.prafta.web.tbm.tbm02.dto.request.ManagerEnterRequest;
 import com.prafta.web.tbm.tbm02.dto.request.OptionRequest;
 import com.prafta.web.tbm.tbm02.dto.request.SessionCancelRequest;
 import com.prafta.web.tbm.tbm02.dto.request.SessionDetailRequest;
 import com.prafta.web.tbm.tbm02.dto.request.SessionListRequest;
+import com.prafta.web.tbm.tbm02.dto.request.SessionPrepareRequest;
 import com.prafta.web.tbm.tbm02.dto.request.SessionPwdRequest;
 import com.prafta.web.tbm.tbm02.dto.request.SessionSaveRequest;
+import com.prafta.web.tbm.tbm02.dto.request.SessionTransitionRequest;
 import com.prafta.web.tbm.tbm02.dto.request.SessionUpdateRequest;
 import com.prafta.web.tbm.tbm02.dto.response.ContentOptionResponse;
+import com.prafta.web.tbm.tbm02.dto.response.EntryCandidateResponse;
+import com.prafta.web.tbm.tbm02.dto.response.ManagerEnterResponse;
 import com.prafta.web.tbm.tbm02.dto.response.RiskOptionResponse;
+import com.prafta.web.tbm.tbm02.dto.response.SessionAttendanceListResponse;
+import com.prafta.web.tbm.tbm02.dto.response.SessionCompleteResponse;
 import com.prafta.web.tbm.tbm02.dto.response.SessionDetailResponse;
+import com.prafta.web.tbm.tbm02.dto.response.SessionExitPwdResponse;
 import com.prafta.web.tbm.tbm02.dto.response.SessionListResponse;
+import com.prafta.web.tbm.tbm02.dto.response.SessionPrepareResponse;
 import com.prafta.web.tbm.tbm02.dto.response.SessionPwdResponse;
 import com.prafta.web.tbm.tbm02.dto.response.SessionSaveResponse;
 import com.prafta.web.tbm.tbm02.dto.response.SiteOptionResponse;
@@ -39,10 +55,11 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 
 /**
- * TBM 세션 관리(W-04~06). prafta-033-B.
+ * TBM 세션 관리(W-04~06 + 상태머신 재설계). prafta-033-B / prafta-051.
  *
- * <p>경계: 세션은 OPENED까지만 다룬다. 교육 시작(IN_PROGRESS 전이)/동기화/종료/QR출결은
- * C 단계(tbm03) 소관이므로 본 컨트롤러에 없다.
+ * <p>상태 흐름(prafta-051): 개설(DRAFT) → 교육준비(OPENED) → 교육시작(IN_PROGRESS)
+ * → 교육종료(COMPLETED), 취소(CANCELLED)는 DRAFT/OPENED에서만.
+ * 동기화/QR출결은 앱(tbm01) 소관이므로 본 컨트롤러에 없다.
  */
 @Slf4j
 @RestController
@@ -108,7 +125,7 @@ public class Tbm02Controller {
 		return ResponseEntity.ok().build();
 	}
 
-	/** W-06 비밀번호 재발급(OPENED만). */
+	/** 입실 비밀번호 재발급(OPENED만, 입실비번 전용). */
 	@PostMapping(value = "/regenerate-passwords", consumes = MediaType.APPLICATION_JSON_VALUE)
 	public ResponseEntity<?> regeneratePasswords(@RequestBody SessionPwdRequest request,
 			@RequestHeader(value = "Authorization", required = false) String authorization) {
@@ -117,6 +134,105 @@ public class Tbm02Controller {
 				SessionPwdParam.from(request, jwtUtil.getAllClaimsAsMap(authorization)));
 
 		return ResponseEntity.status(HttpStatus.OK).body(response);
+	}
+
+	/** 종료 비밀번호 재발급(COMPLETED만, 종료비번 전용, prafta-051-02). */
+	@PostMapping(value = "/regenerate-exit-password", consumes = MediaType.APPLICATION_JSON_VALUE)
+	public ResponseEntity<?> regenerateExitPassword(@RequestBody SessionTransitionRequest request,
+			@RequestHeader(value = "Authorization", required = false) String authorization) {
+
+		SessionExitPwdResponse response = tbm02Service.regenerateExitPassword(
+				SessionTransitionParam.from(request, jwtUtil.getAllClaimsAsMap(authorization)));
+
+		return ResponseEntity.status(HttpStatus.OK).body(response);
+	}
+
+	/** 교육준비(OPENED) 전이 + 입실비번 발급 + GPS 중심좌표(prafta-051-03). */
+	@PostMapping(value = "/prepare-session", consumes = MediaType.APPLICATION_JSON_VALUE)
+	public ResponseEntity<?> prepareSession(@RequestBody SessionPrepareRequest request,
+			@RequestHeader(value = "Authorization", required = false) String authorization) {
+
+		SessionPrepareResponse response = tbm02Service.prepareSession(
+				SessionPrepareParam.from(request, jwtUtil.getAllClaimsAsMap(authorization)));
+
+		return ResponseEntity.status(HttpStatus.OK).body(response);
+	}
+
+	/** 교육시작(IN_PROGRESS) 수동 전이(OPENED만, prafta-051-04). */
+	@PostMapping(value = "/start-session", consumes = MediaType.APPLICATION_JSON_VALUE)
+	public ResponseEntity<?> startSession(@RequestBody SessionTransitionRequest request,
+			@RequestHeader(value = "Authorization", required = false) String authorization) {
+
+		tbm02Service.startSession(
+				SessionTransitionParam.from(request, jwtUtil.getAllClaimsAsMap(authorization)));
+
+		return ResponseEntity.ok().build();
+	}
+
+	/** 교육준비 연장(OPENED + 15분 미도래만, PREP_START_AT 리셋, prafta-051-04). */
+	@PostMapping(value = "/extend-prep", consumes = MediaType.APPLICATION_JSON_VALUE)
+	public ResponseEntity<?> extendPrep(@RequestBody SessionTransitionRequest request,
+			@RequestHeader(value = "Authorization", required = false) String authorization) {
+
+		tbm02Service.extendPrep(
+				SessionTransitionParam.from(request, jwtUtil.getAllClaimsAsMap(authorization)));
+
+		return ResponseEntity.ok().build();
+	}
+
+	/** 교육종료(COMPLETED) 전이 + 종료비번 발급(IN_PROGRESS만, prafta-051-05). */
+	@PostMapping(value = "/complete-session", consumes = MediaType.APPLICATION_JSON_VALUE)
+	public ResponseEntity<?> completeSession(@RequestBody SessionTransitionRequest request,
+			@RequestHeader(value = "Authorization", required = false) String authorization) {
+
+		SessionCompleteResponse response = tbm02Service.completeSession(
+				SessionTransitionParam.from(request, jwtUtil.getAllClaimsAsMap(authorization)));
+
+		return ResponseEntity.status(HttpStatus.OK).body(response);
+	}
+
+	/** 입실 후보 검색(정규직/일용직, prafta-051-11). */
+	@GetMapping("/entry-candidates")
+	public ResponseEntity<?> getEntryCandidates(@ModelAttribute EntryCandidateRequest request,
+			@RequestHeader(value = "Authorization", required = false) String authorization) {
+
+		EntryCandidateResponse response = tbm02Service.selectEntryCandidates(
+				EntryCandidateParam.from(request, jwtUtil.getAllClaimsAsMap(authorization)));
+
+		return ResponseEntity.status(HttpStatus.OK).body(response);
+	}
+
+	/** 관리자 직접 입실(MANAGER_DIRECT, OPENED만, prafta-051-11). */
+	@PostMapping(value = "/manager-enter", consumes = MediaType.APPLICATION_JSON_VALUE)
+	public ResponseEntity<?> managerEnter(@RequestBody ManagerEnterRequest request,
+			@RequestHeader(value = "Authorization", required = false) String authorization) {
+
+		ManagerEnterResponse response = tbm02Service.managerEnter(
+				ManagerEnterParam.from(request, jwtUtil.getAllClaimsAsMap(authorization)));
+
+		return ResponseEntity.status(HttpStatus.OK).body(response);
+	}
+
+	/** 교육준비 단계 입실자 명단(거리/입실유형, prafta-051-12). */
+	@GetMapping("/session-attendances")
+	public ResponseEntity<?> getSessionAttendances(@ModelAttribute SessionDetailRequest request,
+			@RequestHeader(value = "Authorization", required = false) String authorization) {
+
+		SessionAttendanceListResponse response = tbm02Service.selectSessionAttendances(
+				SessionDetailParam.from(request, jwtUtil.getAllClaimsAsMap(authorization)));
+
+		return ResponseEntity.status(HttpStatus.OK).body(response);
+	}
+
+	/** 입실자 내보내기(soft delete, OPENED만, 사유 필수, prafta-051-12). */
+	@PostMapping(value = "/eject-attendance", consumes = MediaType.APPLICATION_JSON_VALUE)
+	public ResponseEntity<?> ejectAttendance(@RequestBody EjectAttendanceRequest request,
+			@RequestHeader(value = "Authorization", required = false) String authorization) {
+
+		tbm02Service.ejectAttendance(
+				EjectAttendanceParam.from(request, jwtUtil.getAllClaimsAsMap(authorization)));
+
+		return ResponseEntity.ok().build();
 	}
 
 	/** 보조: 콘텐츠 선택 모달 옵션(tbm01 스코프 필터 재사용). */

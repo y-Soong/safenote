@@ -1,0 +1,64 @@
+-- ============================================================================
+-- PRAFTA-052 (보안 재작업) — tb_user_upload_job.FAILS_JSON 암호문 저장 대응 컬럼 변경
+-- 작성일: 2026-06-07
+-- 적용 환경: MySQL 8.0.42
+-- 참조: .claude/requests/web_requests/prafta-052.md (High 이슈 — 실패 행 평문 PII 영속화)
+--       .claude/requests/web_requests/prafta-052-plan.md §4 / §6 S3
+--       security 리뷰 High — 비동기 업로드 실패 행 원본값(sourceRow: 사용자명/휴대폰/
+--       이메일/생년월일 등 평문 PII 16컬럼)이 FAILS_JSON 에 평문 JSON 으로 무기한 영속화.
+--
+-- 변경 요약
+--   비동기 업로드 잡(tb_user_upload_job)의 FAILS_JSON 페이로드를 AES-GCM 으로 암호화하여
+--   at-rest 저장한다(평문 PII 영속화 제거). 암호문은 "v1.<base64url>" 형태의 opaque 문자열로,
+--   유효한 JSON 이 아니므로 컬럼 타입을 json → mediumtext(최대 16MB)로 변경한다.
+--   - 동기 경로(UserBatchUpdateResponse.fails)·프론트 다운로드는 요청 스코프(영속화 아님)이라 무변경.
+--   - 폴링 응답 빌드 시 복호화하여 클라이언트(master/hr)에게는 평문(재업로드 가능)을 내려준다.
+--
+--   ※ json → mediumtext 가 필수인 이유:
+--     암호문("v1.*")은 유효한 JSON 문서가 아니다. json 컬럼에 INSERT 하면 MySQL 이 거부한다.
+--     따라서 본 ALTER 가 암호문 저장보다 반드시 선적용되어야 한다(아래 운영 순서 참조).
+--   ※ 길이: 16컬럼 × 최대 1000행 평문 + AES-GCM 오버헤드(nonce/tag/base64) 대비
+--     mediumtext(16MB)로 충분하다(기존 json 은 ~1GB, mediumtext 16MB 로 축소되나 페이로드 여유).
+--
+-- 적용 전 존재/현재 상태 확인 (운영 적용 직전 권장):
+--   -- 037-F6 적용으로 테이블이 생성되어 있는지 (미생성이면 037-F6 선적용 필요):
+--   SELECT 1 FROM information_schema.tables
+--    WHERE table_name='tb_user_upload_job';
+--   -- 현재 FAILS_JSON 타입이 json 인지 (이미 mediumtext 면 본 ALTER 불요):
+--   SHOW COLUMNS FROM tb_user_upload_job LIKE 'FAILS_JSON';
+--
+-- 멱등성: MODIFY COLUMN 은 동일 정의 재실행 시 안전(동일 결과). 단 운영 관례상 1회 적용 권장.
+-- 운영 적용: 사용자 수동(read-only MCP). 본 파일은 작성만, DB 직접 적용 금지.
+--
+-- ────────────────────────────────────────────────────────────────────────────
+-- ⚠️ 운영 순서 (반드시 준수)
+--   [전제] 037-F6(tb_user_upload_job 신설)이 선적용되어 있어야 한다.
+--          현재 연결된 dev DB 에는 037-F6 미적용으로 테이블 자체가 부재일 수 있다.
+--          → 037-F6 적용 → 본 ALTER 적용 순서.
+--   [필수] 본 ALTER(json → mediumtext)는 PRAFTA-052 암호화 코드 배포보다 반드시 선적용한다.
+--          코드가 FAILS_JSON 에 암호문("v1.*")을 저장하는데 컬럼이 아직 json 이면
+--          MySQL 이 INSERT/UPDATE 를 거부하여 비동기 잡 finalize 가 전면 실패한다.
+--          순서: ① 037-F6 적용 → ② 본 ALTER 적용 → ③ PRAFTA-052 코드 배포.
+--   [하위호환] 기존에 평문 json 으로 저장된 진행분 행이 있어도, mediumtext 로의 ALTER 는
+--          기존 평문 값을 그대로 보존한다. 읽기 측(parseFails)은 "v1." prefix 유무로
+--          암호문/평문(레거시)을 분기하여 양쪽을 모두 역직렬화한다.
+-- ────────────────────────────────────────────────────────────────────────────
+-- ============================================================================
+
+-- 1) tb_user_upload_job.FAILS_JSON : json → mediumtext (AES-GCM 암호문 저장용)
+ALTER TABLE `tb_user_upload_job`
+    MODIFY COLUMN `FAILS_JSON` mediumtext
+        CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NULL
+        COMMENT 'AES-GCM 암호화된 실패 항목 JSON 배열(v1.*). 복호화 시 [{index,errorItem,errorCode,message,sourceRow}]. 레거시 행은 평문 json 가능(읽기 측 prefix 분기)';
+
+-- ============================================================================
+-- 롤백 (mediumtext → json 복원)
+--   ⚠️ 주의: FAILS_JSON 에 암호문("v1.*") 또는 비-JSON 값이 한 행이라도 있으면
+--            json 으로의 ALTER 가 "Invalid JSON text" 로 실패한다.
+--            → PRAFTA-052 코드를 먼저 롤백(평문 json 저장 복귀)하고,
+--              암호문 행을 정리(또는 비움)한 뒤에만 아래 복원을 적용한다.
+-- ----------------------------------------------------------------------------
+-- ALTER TABLE `tb_user_upload_job`
+--     MODIFY COLUMN `FAILS_JSON` json NULL
+--         COMMENT '실패 항목 JSON 배열 [{index,userId,errorCode,message}]';
+-- ============================================================================

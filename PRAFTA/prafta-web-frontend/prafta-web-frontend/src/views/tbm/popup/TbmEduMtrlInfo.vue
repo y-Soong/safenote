@@ -103,21 +103,24 @@
 
             <div v-if="formData.scopeType === 'SITE'" class="form-row-max">
               <label>사업장</label>
-              <div style="width: 35%">
-                <BaseSelect
+              <!-- NoticeCreatePop 패턴: select 대신 사업장명(readonly) + 조회 팝업 버튼 -->
+              <div class="site-search-field">
+                <input
                   id="siteCd"
-                  v-model="formData.siteCd"
+                  type="text"
+                  :value="siteNm"
+                  placeholder="사업장 조회"
+                  readonly
                   :disabled="isEditMode"
+                  @click="onSiteSearchClick"
+                />
+                <button
+                  class="search-btn"
+                  :disabled="isEditMode"
+                  @click="onSiteSearchClick"
                 >
-                  <option value="">선택</option>
-                  <option
-                    v-for="opt in siteList || []"
-                    :key="opt.siteCd"
-                    :value="opt.siteCd"
-                  >
-                    {{ opt.siteNm }}
-                  </option>
-                </BaseSelect>
+                  <img class="search_icon" :src="search_icon" alt="사업장 조회" />
+                </button>
               </div>
             </div>
 
@@ -368,10 +371,14 @@ import { resolveApiErrorMessage } from "@/utils/apiError";
 import { readFileAsBase64 } from "@/utils/fileUtil";
 import { useFieldWatcher } from '@/utils/useFieldWatcher';
 import { useCenteredDraggable } from "@/composables/useCenteredDraggable";
+import { useModal } from "@/utils/useModal";
 import BaseSelect from "@/components/common/BaseSelect.vue";
+import SiteSearchPop from "@/components/popup/SiteSearchPop.vue";
+import search_icon from "@/assets/img/search_icon.png";
 
 // ================ Instance ================
 const { proxy } = getCurrentInstance();
+const { open: openPop } = useModal();
 
 // ================ define Props, define Emits ================
 const props = defineProps({
@@ -391,6 +398,7 @@ const eduMtrlItemList = ref([]);
 const headChk = ref(false);
 const fileInputRefs = ref({});
 const siteList = ref([]); // prafta-033-A: 사업장 목록
+const siteNm = ref(""); // 사업장명 표시용(조회 팝업 선택값)
 
 // prafta-033-A: 수정 모드 여부(mtrlCd_p 존재 시). 스코프 변경 잠금에 사용
 const isEditMode = computed(() => !proxy.$util.isEmpty(props.mtrlCd_p));
@@ -437,6 +445,10 @@ onMounted(async () => {
     } else {
       formData.scopeType = "SITE";
       formData.siteCd = sessionStorage.getItem("gv_siteCd") || "";
+      siteNm.value =
+        resolveSiteNm(formData.siteCd) ||
+        sessionStorage.getItem("gv_siteNm") ||
+        "";
     }
   }
 });
@@ -529,6 +541,32 @@ const fnGetSiteList = async () => {
 
     await proxy.$alert(msg);
   }
+};
+
+// 사업장코드 → 사업장명 매핑(siteList 기준). 표시용 siteNm 복원에 사용
+const resolveSiteNm = (cd) => {
+  if (proxy.$util.isEmpty(cd)) return '';
+  const found = (siteList.value || []).find((s) => s.siteCd === cd);
+  return found ? found.siteNm : '';
+};
+
+// 사업장 조회 팝업 열기(수정 모드에서는 잠금)
+const onSiteSearchClick = () => {
+  if (isEditMode.value) return;
+  fnOpenSiteSearch();
+};
+
+const fnOpenSiteSearch = () => {
+  openPop(SiteSearchPop, {
+    cmpnyCd_p: sessionStorage.getItem('gv_cmpnyCd'),
+    siteNo_p: '',
+    siteNm_p: '',
+    // SiteSearchPop onSelect 인자 순서 = (siteCd, siteNo, siteNm)
+    onSelect: (siteCdVal, siteNoVal, siteNmVal) => {
+      formData.siteCd = siteCdVal ?? '';
+      siteNm.value = siteNmVal ?? '';
+    },
+  });
 };
 
 /** 서버 전송용 파일명 생성 (RiskAssessInfo와 동일 패턴) */
@@ -635,6 +673,7 @@ const fnSearch = async () => {
         // prafta-033-A: 스코프 복원(수정 모드에서는 잠금)
         formData.scopeType = master.isCommonContent === 'Y' ? 'COMMON' : 'SITE';
         formData.siteCd = master.siteCd || '';
+        siteNm.value = master.siteNm || resolveSiteNm(formData.siteCd);
       }
       eduMtrlItemList.value = response.data?.tbmEduItemInfoResultList ?? [];
 
@@ -882,8 +921,13 @@ const getFileAccept = (mtrlItemType) => {
 const onScopeChange = () => {
   if (formData.scopeType === 'COMMON') {
     formData.siteCd = '';
+    siteNm.value = '';
   } else if (formData.scopeType === 'SITE' && proxy.$util.isEmpty(formData.siteCd)) {
     formData.siteCd = sessionStorage.getItem('gv_siteCd') || '';
+    siteNm.value =
+      resolveSiteNm(formData.siteCd) ||
+      sessionStorage.getItem('gv_siteNm') ||
+      '';
   }
 };
 
@@ -953,6 +997,24 @@ const fnAddRow = () => {
 </script>
 
 <style scoped>
+/* 사업장 조회: 사업장명(readonly) + 돋보기 버튼 (NoticeCreatePop 패턴) */
+.site-search-field {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  width: 18%;
+}
+
+.site-search-field input {
+  flex: 1 1 auto;
+  min-width: 0;
+  cursor: pointer;
+}
+
+.site-search-field input:disabled {
+  cursor: not-allowed;
+}
+
 /* prafta-033-A: 스코프 라디오/안내/썸네일 */
 .scope-radio-group {
   display: flex;

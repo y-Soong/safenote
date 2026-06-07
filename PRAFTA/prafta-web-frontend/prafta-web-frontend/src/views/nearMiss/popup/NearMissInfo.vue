@@ -213,7 +213,7 @@ import {
   defineEmits,
   getCurrentInstance,
 } from "vue";
-import { useDraggable } from "@/composables/useDraggable";
+import { useCenteredDraggable } from "@/composables/useCenteredDraggable";
 import axios from "@/api/axios";
 import { resolveApiErrorMessage } from "@/utils/apiError";
 
@@ -232,10 +232,11 @@ const props = defineProps({
 
 const emit = defineEmits(["close", "save"]);
 
-const { position, startDrag } = useDraggable(
-  window.innerWidth / 2 - 650,
-  window.innerHeight / 10
-);
+const modalRef = ref(null);
+const { position, startDrag } = useCenteredDraggable(modalRef, {
+  horizontalRatio: 2,
+  verticalRatio: 3.5,
+});
 
 const systCodeArr = ref([]);
 const rejectReason = ref("");
