@@ -54,6 +54,16 @@ public class HomeSummaryResponse {
         /** 퇴근 가능 여부 (서버 산출) */
         private final boolean canCheckOut;
         /**
+         * prafta-app-021 (§7.6): 직전일(today-1) 미퇴근이 남아 메인에서 마감 대기 중인지 여부.
+         * true 면 프론트가 "전날 미퇴근" 배지/안내를 노출하고 출근 버튼을 비활성, 퇴근 버튼을 활성화한다.
+         * (오늘 진행 중(canCheckOut=hasOpen) 케이스가 우선이며, 그 경우 false 일 수 있다.)
+         * Jackson 이 boolean is* getter 에서 "is" 를 떼는 것을 방지(계약 키 고정).
+         */
+        @JsonProperty("prevDayCheckoutPending")
+        private final boolean prevDayCheckoutPending;
+        /** prafta-app-021: 직전일 미퇴근 근무의 출근시각 HHMM (없으면 null). 카드 "출근 HH:MM (전날)" 표기용. */
+        private final String prevDayCheckInTime;
+        /**
          * prafta-app-015: 2구간 스케줄 여부. 메인 홈 출퇴근 카드가 구간 선택(1구간/2구간) 버튼을
          * 노출할지 판정한다(attd01 isTwoSlot 과 동일 의미). is-접두 회피로 직렬화 키 "isTwoSlot" 고정.
          */

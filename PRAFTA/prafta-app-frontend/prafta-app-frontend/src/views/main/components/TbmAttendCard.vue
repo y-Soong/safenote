@@ -30,20 +30,6 @@
       </svg>
       <span>{{ calloutText }}</span>
     </div>
-
-    <!-- 참석하기 버튼 -->
-    <button
-      type="button"
-      class="tbm-btn"
-      :class="canAttend ? 'tbm-btn--active' : 'tbm-btn--disabled'"
-      :disabled="!canAttend"
-      @click="onAttend"
-    >
-      <svg class="icon" width="18" height="18" aria-hidden="true">
-        <use href="#i-usercheck" />
-      </svg>
-      참석하기
-    </button>
   </div>
 </template>
 
@@ -78,10 +64,9 @@ const props = defineProps({
   },
 })
 
-const emit = defineEmits(['click:detail', 'click:attend'])
+defineEmits(['click:detail'])
 
 const isNone = computed(() => props.tbmStatus === 'NONE')
-const canAttend = computed(() => props.tbmStatus === 'AVAILABLE')
 
 // 메타 1행: "HH:MM · 장소 · 진행자" 또는 "예정된 TBM이 없습니다"
 const formatHHMM = (s) => {
@@ -127,7 +112,7 @@ const calloutIconId = computed(() => {
 const calloutText = computed(() => {
   switch (props.tbmStatus) {
     case 'BEFORE_CHECK_IN':
-      return '출근 후 참석 가능'
+      return '근무 중에만 참석 가능'
     case 'AVAILABLE':
       // 동적 카운트다운 금지 (상세 §3.5.4)
       return '늦지 않게 참석해 주세요'
@@ -138,13 +123,6 @@ const calloutText = computed(() => {
       return '오늘은 TBM 일정이 없어요'
   }
 })
-
-const onAttend = () => {
-  if (!canAttend.value) return
-  // TODO(developer): TBM 참석 본인 체크 흐름 (정책 7.6 확정 후)
-  //                  POST /api/app/tbm/attend { tbmSessionId } 호출
-  emit('click:attend')
-}
 </script>
 
 <style scoped>

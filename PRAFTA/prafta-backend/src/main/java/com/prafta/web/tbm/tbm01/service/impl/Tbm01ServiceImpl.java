@@ -16,6 +16,7 @@ import com.prafta.common.cmm.file.service.FileService;
 import com.prafta.common.error.common.CommonErrorCode;
 import com.prafta.common.error.tbm.TbmErrorCode;
 import com.prafta.common.exception.ApiException;
+import com.prafta.common.security.FileUrlSigner;
 import com.prafta.common.util.AuthRoleUtils;
 import com.prafta.web.tbm.tbm01.application.command.TbmEduInfoCommand;
 import com.prafta.web.tbm.tbm01.application.command.TbmEduItemCommand;
@@ -54,6 +55,7 @@ public class Tbm01ServiceImpl implements Tbm01Service{
 	private final Tbm01Mapper tbm01Mapper;
 	private final FileService fileService;
     private final FileMapper fileMapper;
+    private final FileUrlSigner fileUrlSigner;   // 파일 서빙 서명 URL 발급(공통 인프라)
 
 	public TbmEduInfoListResponse selectTbmEduInfo(TbmEduInfoListParam param) {
 		// prafta-033-A: 999999(권한 미부여)는 콘텐츠 화면 진입 차단(서버에서도 거부)
@@ -67,6 +69,9 @@ public class Tbm01ServiceImpl implements Tbm01Service{
 		List<TbmEduInfoResult> tbmEduInfoResultList = tbm01Mapper.selectTbmEduInfo(TbmEduInfoListQuery.from(param));
 
 		List<TbmEduItemInfoResult> tbmEduItemInfoResult = tbm01Mapper.selectTbmEduItemInfo(TbmEduItemInfoListQuery.from(param));
+
+		// 서명 URL 전환: 파일형 항목에 서명 절대 URL(fileUrl) 채움.
+		applyFileUrls(tbmEduItemInfoResult, param.gvCmpnyCd());
 
 		response = TbmEduInfoListResponse.builder()
 										.tbmEduInfoResultList(tbmEduInfoResultList)
@@ -106,6 +111,9 @@ public class Tbm01ServiceImpl implements Tbm01Service{
 		List<TbmEduItemInfoResult> items = tbm01Mapper.selectTbmEduDetailItems(query);
 		List<TbmEduUsedSessionResult> usedSessions = tbm01Mapper.selectTbmEduUsedSessions(query);
 
+		// 서명 URL 전환: 파일형 항목에 서명 절대 URL(fileUrl) 채움.
+		applyFileUrls(items, param.gvCmpnyCd());
+
 		return TbmEduDetailResponse.builder()
 				.tbmEduInfo(master)
 				.tbmEduItemInfoList(items != null ? items : Collections.emptyList())
@@ -118,7 +126,10 @@ public class Tbm01ServiceImpl implements Tbm01Service{
 		TbmEduItemInfoListResponse response = null;
 		
 		List<TbmEduItemInfoResult> tbmEduItemInfoList = tbm01Mapper.selectTbmEduItemInfo(TbmEduItemInfoListQuery.from(param));
-		
+
+		// 서명 URL 전환: 파일형 항목에 서명 절대 URL(fileUrl) 채움.
+		applyFileUrls(tbmEduItemInfoList, param.gvCmpnyCd());
+
 		if(tbmEduItemInfoList!= null && tbmEduItemInfoList.size() > 0) {
 			response = TbmEduItemInfoListResponse.builder()
 						.tbmEduItemInfoList(tbmEduItemInfoList)
@@ -213,6 +224,23 @@ public class Tbm01ServiceImpl implements Tbm01Service{
 		} catch (Exception e) {
 			log.error("TBM 콘텐츠 저장 중 오류", e);
 			throw new ApiException(CommonErrorCode.COMMON_500_001);
+		}
+	}
+
+	/**
+	 * 서명 URL 전환: 세부항목 리스트의 파일형 항목에 서명 절대 URL(fileUrl)을 채운다.
+	 * <p>relPath = FILE_PATH + '/' + FILE_MGMT_CD + FILE_EXT(기존 프론트 조립 규칙 정합). 파일 없으면 미설정(NULL).
+	 */
+	private void applyFileUrls(List<TbmEduItemInfoResult> items, String cmpnyCd) {
+		if (items == null) {
+			return;
+		}
+		for (TbmEduItemInfoResult it : items) {
+			if (StringUtils.hasText(it.getFilePath()) && StringUtils.hasText(it.getFileMgmtCd())) {
+				String relPath = it.getFilePath() + "/" + it.getFileMgmtCd()
+						+ (it.getFileExt() != null ? it.getFileExt() : "");
+				it.setFileUrl(fileUrlSigner.sign(relPath, cmpnyCd));
+			}
 		}
 	}
 

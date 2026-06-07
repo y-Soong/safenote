@@ -66,4 +66,8 @@ dependencies {
     // Firebase Admin SDK(Java). grpc/guava 등 transitive 의존이 다수 유입되어 첫 빌드시간이 길어질 수 있음.
     // FCM 호출은 FcmClient 래퍼에만 격리한다. 키 부재/게이트 off 시 초기화하지 않아 부팅 영향 0.
     implementation 'com.google.firebase:firebase-admin:9.4.3'
+
+    // 저장형 XSS 방어 — 앱 TBM 교육내용(리치 HTML) 서버측 sanitize(Jsoup Safelist).
+    // 기존 의존성과 동일하게 명시 버전 고정.
+    implementation 'org.jsoup:jsoup:1.18.3'
 }

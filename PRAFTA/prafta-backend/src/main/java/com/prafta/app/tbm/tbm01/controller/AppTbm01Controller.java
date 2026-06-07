@@ -5,6 +5,7 @@ import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.ModelAttribute;
+import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestHeader;
@@ -16,12 +17,22 @@ import org.springframework.web.multipart.MultipartFile;
 import com.prafta.app.tbm.tbm01.application.param.TbmEnterParam;
 import com.prafta.app.tbm.tbm01.application.param.TbmEntryContextParam;
 import com.prafta.app.tbm.tbm01.application.param.TbmExitParam;
+import com.prafta.app.tbm.tbm01.application.param.TbmSessionDetailParam;
+import com.prafta.app.tbm.tbm01.application.param.TbmSessionListParam;
 import com.prafta.app.tbm.tbm01.dto.request.TbmEnterRequest;
 import com.prafta.app.tbm.tbm01.dto.request.TbmEntryContextRequest;
 import com.prafta.app.tbm.tbm01.dto.request.TbmExitRequest;
+import com.prafta.app.tbm.tbm01.dto.request.TbmSessionListRequest;
+import com.prafta.app.tbm.tbm01.dto.response.TbmActionResponse;
+import com.prafta.app.tbm.tbm01.dto.response.TbmAttendeeListResponse;
+import com.prafta.app.tbm.tbm01.dto.response.TbmCompletionResponse;
+import com.prafta.app.tbm.tbm01.dto.response.TbmContentResponse;
 import com.prafta.app.tbm.tbm01.dto.response.TbmEnterResponse;
 import com.prafta.app.tbm.tbm01.dto.response.TbmEntryContextResponse;
 import com.prafta.app.tbm.tbm01.dto.response.TbmExitResponse;
+import com.prafta.app.tbm.tbm01.dto.response.TbmRiskListResponse;
+import com.prafta.app.tbm.tbm01.dto.response.TbmSessionListResponse;
+import com.prafta.app.tbm.tbm01.dto.response.TbmSessionStateResponse;
 import com.prafta.app.tbm.tbm01.service.AppTbm01Service;
 import com.prafta.common.dto.TokenInfo;
 import com.prafta.common.security.JwtUtil;
@@ -90,6 +101,124 @@ public class AppTbm01Controller {
 
         TbmExitResponse response = appTbm01Service.exit(
                 TbmExitParam.from(request, file, tokenInfo));
+
+        return ResponseEntity.status(HttpStatus.OK).body(response);
+    }
+
+    // -------------------------------------------------------------------------
+    // prafta-app-tbm: 사용자 앱 TBM 허브 조회/액션 (A1~A10)
+    //  - 식별자(CMPNY/SITE/USER/USER_TYPE)는 JWT 클레임에서만 도출(IDOR 차단).
+    //  - sessionCd 외 어떤 식별자도 path/query/body 로 받지 않는다.
+    // -------------------------------------------------------------------------
+
+    /** A1/A2/A3: 탭별 세션 리스트(tab=AVAILABLE|IN_PROGRESS|COMPLETED). */
+    @GetMapping("/sessions")
+    public ResponseEntity<?> getSessions(
+            @ModelAttribute TbmSessionListRequest request
+            , @RequestHeader(value = "Authorization", required = false) String authorization
+    ) {
+        TokenInfo tokenInfo = jwtUtil.getAllClaimsAsMap(authorization);
+
+        TbmSessionListResponse response = appTbm01Service.selectSessions(
+                TbmSessionListParam.from(request, tokenInfo));
+
+        return ResponseEntity.status(HttpStatus.OK).body(response);
+    }
+
+    /** A4: 참석자 리스트(이름+입실시각, PII 최소). */
+    @GetMapping("/sessions/{sessionCd}/attendees")
+    public ResponseEntity<?> getAttendees(
+            @PathVariable("sessionCd") String sessionCd
+            , @RequestHeader(value = "Authorization", required = false) String authorization
+    ) {
+        TokenInfo tokenInfo = jwtUtil.getAllClaimsAsMap(authorization);
+
+        TbmAttendeeListResponse response = appTbm01Service.selectAttendees(
+                TbmSessionDetailParam.from(sessionCd, tokenInfo));
+
+        return ResponseEntity.status(HttpStatus.OK).body(response);
+    }
+
+    /** A5: 세션 시작/종료 상태(STATUS_CD 판정). on-demand 분기용. */
+    @GetMapping("/sessions/{sessionCd}/state")
+    public ResponseEntity<?> getState(
+            @PathVariable("sessionCd") String sessionCd
+            , @RequestHeader(value = "Authorization", required = false) String authorization
+    ) {
+        TokenInfo tokenInfo = jwtUtil.getAllClaimsAsMap(authorization);
+
+        TbmSessionStateResponse response = appTbm01Service.selectState(
+                TbmSessionDetailParam.from(sessionCd, tokenInfo));
+
+        return ResponseEntity.status(HttpStatus.OK).body(response);
+    }
+
+    /** A6: 교육내용 + 자료 묶음(≤3). */
+    @GetMapping("/sessions/{sessionCd}/content")
+    public ResponseEntity<?> getContent(
+            @PathVariable("sessionCd") String sessionCd
+            , @RequestHeader(value = "Authorization", required = false) String authorization
+    ) {
+        TokenInfo tokenInfo = jwtUtil.getAllClaimsAsMap(authorization);
+
+        TbmContentResponse response = appTbm01Service.selectContent(
+                TbmSessionDetailParam.from(sessionCd, tokenInfo));
+
+        return ResponseEntity.status(HttpStatus.OK).body(response);
+    }
+
+    /** A7: 연계 위험성평가 리스트. */
+    @GetMapping("/sessions/{sessionCd}/risks")
+    public ResponseEntity<?> getRisks(
+            @PathVariable("sessionCd") String sessionCd
+            , @RequestHeader(value = "Authorization", required = false) String authorization
+    ) {
+        TokenInfo tokenInfo = jwtUtil.getAllClaimsAsMap(authorization);
+
+        TbmRiskListResponse response = appTbm01Service.selectRisks(
+                TbmSessionDetailParam.from(sessionCd, tokenInfo));
+
+        return ResponseEntity.status(HttpStatus.OK).body(response);
+    }
+
+    /** A8: 시작전 퇴실(출결 취소, 물리 삭제). 멱등. */
+    @PostMapping("/sessions/{sessionCd}/leave-before")
+    public ResponseEntity<?> leaveBefore(
+            @PathVariable("sessionCd") String sessionCd
+            , @RequestHeader(value = "Authorization", required = false) String authorization
+    ) {
+        TokenInfo tokenInfo = jwtUtil.getAllClaimsAsMap(authorization);
+
+        TbmActionResponse response = appTbm01Service.leaveBefore(
+                TbmSessionDetailParam.from(sessionCd, tokenInfo));
+
+        return ResponseEntity.status(HttpStatus.OK).body(response);
+    }
+
+    /** A9: 중도퇴실(미이수 종료). 멱등. */
+    @PostMapping("/sessions/{sessionCd}/withdraw")
+    public ResponseEntity<?> withdraw(
+            @PathVariable("sessionCd") String sessionCd
+            , @RequestHeader(value = "Authorization", required = false) String authorization
+    ) {
+        TokenInfo tokenInfo = jwtUtil.getAllClaimsAsMap(authorization);
+
+        TbmActionResponse response = appTbm01Service.withdraw(
+                TbmSessionDetailParam.from(sessionCd, tokenInfo));
+
+        return ResponseEntity.status(HttpStatus.OK).body(response);
+    }
+
+    /** A10: 완료 상세(교육내용/자료명/위험성제목/서명파일코드). */
+    @GetMapping("/sessions/{sessionCd}/my-completion")
+    public ResponseEntity<?> getMyCompletion(
+            @PathVariable("sessionCd") String sessionCd
+            , @RequestHeader(value = "Authorization", required = false) String authorization
+    ) {
+        TokenInfo tokenInfo = jwtUtil.getAllClaimsAsMap(authorization);
+
+        TbmCompletionResponse response = appTbm01Service.selectMyCompletion(
+                TbmSessionDetailParam.from(sessionCd, tokenInfo));
 
         return ResponseEntity.status(HttpStatus.OK).body(response);
     }

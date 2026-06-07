@@ -841,15 +841,9 @@ const handleFileButtonClick = (idx) => {
   }
 };
 
-/** 서버 파일: 서비스 URL + filePath + fileMgmtCd + fileExt (fileMgmtCd와 fileExt 사이에는 '/' 없음) */
-const getDownloadUrl = (item) => {
-  if (!item?.filePath || !item?.fileMgmtCd) return '';
-  const base = (apiBaseUrl || '').replace(/\/$/, '');
-  const path = (item.filePath || '').replace(/^\//, '').replace(/\/$/, '');
-  const code = (item.fileMgmtCd || '').replace(/^\//, '');
-  const ext = (item.fileExt || '').replace(/^\//, '');
-  return [base, path, code + ext].filter(Boolean).join('/');
-};
+/** 서버 파일 URL — 서명 URL 전환: 서버가 발급한 서명 절대 URL(item.fileUrl)을 그대로 사용.
+ *  (기존 baseUrl + filePath + fileMgmtCd + fileExt 수동 조립 제거.) 파일 없으면 빈 문자열. */
+const getDownloadUrl = (item) => item?.fileUrl || '';
 
 /** 다운로드 버튼 표시: 서버 파일(filePath+fileMgmtCd) 또는 새로 첨부한 파일(item.file)이 있을 때 */
 const canDownloadFile = (item) => {

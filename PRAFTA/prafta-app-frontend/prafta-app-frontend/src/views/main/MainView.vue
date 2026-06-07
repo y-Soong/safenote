@@ -68,6 +68,8 @@
           :can-check-out="canCheckOut"
           :is-two-slot="attdIsTwoSlot"
           :slots="attdSlots"
+          :prev-day-checkout-pending="prevDayCheckoutPending"
+          :prev-day-check-in-time="prevDayCheckInTime"
           @click:checkin="onCheckIn"
           @click:checkout="onCheckOut"
         />
@@ -101,7 +103,6 @@
           :session-leader="tbmSessionLeader"
           :attended-at="tbmAttendedAt"
           @click:detail="onTbmDetail"
-          @click:attend="onTbmAttend"
         />
 
         <!-- 공지사항 -->
@@ -196,6 +197,9 @@ const canCheckOut = ref(false)
 // prafta-app-015: 2구간 스케줄 구간 선택 게이팅(home-summary attendance 확장).
 const attdIsTwoSlot = ref(false)
 const attdSlots = ref([]) // [{ workSeq, canCheckInThisSlot, alreadyCheckedIn }]
+// prafta-app-021: 전날 미퇴근 마감 대기 신호(home-summary attendance 확장).
+const prevDayCheckoutPending = ref(false)
+const prevDayCheckInTime = ref('') // HHMM
 
 // ───────────────────────────────────────────────────────────
 // 근태 조회 카드 — home-summary leave / approval 매핑
@@ -206,9 +210,10 @@ const approvalPendingCount = ref(0)
 
 // ───────────────────────────────────────────────────────────
 // 안전 활동 카드
-// blocked = (attdStatus === 'BEFORE_WORK') — 산업안전 정책서 §3
+// blocked = (attdStatus !== 'WORKING') — 근무중(WORKING)에만 허용 — PRAFTA-022
+//   (출근 전 BEFORE_WORK·퇴근 후 OFF_WORK 모두 차단. 산업안전/근무시간 게이트 정책)
 // ───────────────────────────────────────────────────────────
-const safetyBlocked = computed(() => attdStatus.value === 'BEFORE_WORK')
+const safetyBlocked = computed(() => attdStatus.value !== 'WORKING')
 
 // ───────────────────────────────────────────────────────────
 // 아차사고 (prafta-app-012)
@@ -232,10 +237,6 @@ const tbmSessionTime = ref('') // HHMM (openedTime)
 const tbmSessionLocation = ref('') // 장소 소스 없음 → title 로 대체 (계약서 §3)
 const tbmSessionLeader = ref('') // presenterName
 const tbmAttendedAt = ref('') // HHMM (myEntryTime)
-// prafta-app-004-C5: 입실 화면(/TbmEntry) 진입에 필요한 세션 식별자.
-// ⚠️ 현재 home-summary 응답(HomeSummaryResponse.Tbm)에는 sessionCd 가 없다 → 빈 값.
-//    백엔드가 tbm.sessionCd 를 노출하면 자동으로 라우팅이 동작한다(아래 onTbmAttend).
-const tbmSessionCd = ref('')
 
 // ───────────────────────────────────────────────────────────
 // 공지사항 카드
@@ -286,6 +287,9 @@ const applyAttendance = (attd) => {
   // prafta-app-015: 2구간 스케줄 구간 선택 게이팅 플래그.
   attdIsTwoSlot.value = !!attd.isTwoSlot
   attdSlots.value = Array.isArray(attd.slots) ? attd.slots : []
+  // prafta-app-021: 전날 미퇴근 마감 대기 신호(021-2 백엔드 필드명 그대로 사용).
+  prevDayCheckoutPending.value = !!attd.prevDayCheckoutPending
+  prevDayCheckInTime.value = attd.prevDayCheckInTime || ''
 }
 
 const applyLeave = (leave) => {
@@ -304,22 +308,19 @@ const applyTbm = (tbm) => {
     tbmSessionLocation.value = ''
     tbmSessionLeader.value = ''
     tbmAttendedAt.value = ''
-    tbmSessionCd.value = ''
     return
   }
 
-  // sessionCd 는 현재 계약에 없으므로 있으면 사용, 없으면 빈 값(라우팅 가드에서 처리).
-  tbmSessionCd.value = tbm.sessionCd || ''
   tbmSessionTime.value = tbm.openedTime || ''
   // 장소(location) 백엔드 소스 없음 → title 을 메타 표시에 사용 (계약서 §3, 카드 수정 최소화)
   tbmSessionLocation.value = tbm.title || ''
   tbmSessionLeader.value = tbm.presenterName || ''
   tbmAttendedAt.value = tbm.myEntryTime || ''
 
-  // 카드 상태 산출
+  // 카드 상태 산출 — PRAFTA-022: 근무중(WORKING)에만 참석 가능
   // - 내가 참석 완료 → ATTENDED
-  // - 미참석 + 출근 전 → BEFORE_CHECK_IN (출근 후 참석 가능)
   // - 미참석 + 근무중 → AVAILABLE
+  // - 미참석 + 근무중 아님(출근 전·퇴근 후) → BEFORE_CHECK_IN (의미="근무중 아님", 근무 중에만 참석 가능)
   if (tbm.myAttendanceStatus === 'COMPLETED') {
     tbmStatus.value = 'ATTENDED'
   } else if (attdStatus.value === 'WORKING') {
@@ -627,21 +628,14 @@ const onNearMissManage = () => {
   router.push('/NearMissManageList')
 }
 
-// TBM
-const onTbmDetail = () => {
-  // TODO(developer): 본인이 받은 TBM 리스트 진입 (별도 라우트)
-  showAlert('준비 중입니다')
-}
-
-const onTbmAttend = () => {
-  // prafta-app-004-C5: TBM 입실 화면 진입. sessionCd 가 있어야 entry-context 조회 가능.
-  // ⚠️ home-summary 응답에 sessionCd 가 아직 없어 빈 값이면 진입 불가 → 안내.
-  // TODO(developer): 백엔드 home-summary(tbm) 응답에 sessionCd 추가 필요(planner 재분해).
-  if (!tbmSessionCd.value) {
-    showAlert('세션 정보를 불러오는 중입니다. 잠시 후 다시 시도해 주세요.')
+// TBM — 카드 `>` 진입: 사용자 TBM 허브(3탭) 화면으로 이동.
+//   PRAFTA-022: 근무 중에만 TBM 참석 허용 — 출근 전·퇴근 후 진입 가드.
+const onTbmDetail = async () => {
+  if (attdStatus.value !== 'WORKING') {
+    await showAlert('근무 중에만 TBM에 참석할 수 있어요. 출근 후 다시 시도해 주세요.')
     return
   }
-  router.push({ path: '/TbmEntry', query: { sessionCd: tbmSessionCd.value } })
+  router.push('/TbmHub')
 }
 
 // 공지 — prafta-app-001: 공지 도메인 미구축으로 보류 (빈 리스트 렌더)

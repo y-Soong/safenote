@@ -399,7 +399,10 @@
        AND A.CHECK_OUT_TIME IS NULL
     </select>
 
-    <!-- 본인 과거(WORK_YMD < today) 열린 근태 수. 다음날 출근 게이트(사용자 확정). -->
+    <!--
+      본인 직전일(WORK_YMD = today-1) 열린(미퇴근) 근태 수. 다음날 출근 게이트(prafta-app-021).
+      D 미퇴근이 남아 있으면 D+1 출근만 차단(직전일만). D+2 이상 과거 미퇴근은 차단하지 않는다(출근 허용, §7.6).
+    -->
     <select id="countPastOpenAttd" resultType="int">
     /* AppAttd01Mapper.countPastOpenAttd */
     SELECT COUNT(*)
@@ -407,7 +410,7 @@
      WHERE A.CMPNY_CD = #{cmpnyCd}
        AND A.SITE_CD  = #{siteCd}
        AND A.USER_CD  = #{userCd}
-       AND A.WORK_YMD &lt; #{todayYmd}
+       AND A.WORK_YMD = #{yesterdayYmd}
        AND A.DEL_YN   = 'N'
        AND A.CHECK_IN_TIME IS NOT NULL
        AND A.CHECK_OUT_TIME IS NULL

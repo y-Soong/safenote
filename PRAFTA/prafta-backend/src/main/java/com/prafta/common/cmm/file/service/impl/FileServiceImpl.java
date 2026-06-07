@@ -49,7 +49,9 @@ public class FileServiceImpl implements FileService {
 			// 동영상
 			"mp4", "mov", "avi", "mkv", "webm", "m4v", "3gp", "wmv", "flv", "mpeg", "mpg",
 			// 음성
-			"mp3", "wav", "m4a", "aac", "ogg", "flac", "amr", "wma", "opus"
+			"mp3", "wav", "m4a", "aac", "ogg", "flac", "amr", "wma", "opus",
+			// 문서 — PDF 교육자료 지원(SYS018 04). 스펙상 정식 지원 형식.
+			"pdf"
 	);
 
 	/**

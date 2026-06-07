@@ -48,58 +48,6 @@
       AND DEL_YN = 'N'
     </select>
 
-    <!-- 최근 N초 이내 비밀번호 실패 건수(D4 잠금 판정). -->
-    <select id="countRecentPwdFail"
-            parameterType="com.prafta.app.tbm.tbm01.application.query.TbmPwdFailCountQuery"
-            resultType="int">
-    /* AppTbm01Mapper.countRecentPwdFail */
-    SELECT
-        COUNT(*)
-    FROM TB_TBM_PWD_FAIL
-    WHERE CMPNY_CD = #{cmpnyCd}
-      AND SESSION_CD = #{sessionCd}
-      AND PWD_TYPE_CD = #{pwdTypeCd}
-      AND USER_CD = #{userCd}
-      AND ATTEMPTED_AT >= DATE_SUB(NOW(), INTERVAL #{lockWindowSeconds} SECOND)
-    </select>
-
-    <!-- 비밀번호 실패 로그 INSERT(평문 미저장). -->
-    <insert id="insertPwdFail"
-            parameterType="com.prafta.app.tbm.tbm01.application.command.TbmPwdFailCommand">
-    /* AppTbm01Mapper.insertPwdFail */
-    INSERT INTO TB_TBM_PWD_FAIL (
-          CMPNY_CD
-        , SESSION_CD
-        , PWD_TYPE_CD
-        , USER_TYPE_CD
-        , USER_CD
-        , ATTEMPTED_AT
-        , INSERT_NO
-        , INSERT_DATE
-    )
-    VALUES (
-          #{cmpnyCd}
-        , #{sessionCd}
-        , #{pwdTypeCd}
-        , #{userTypeCd}
-        , #{userCd}
-        , NOW()
-        , #{insertNo}
-        , NOW()
-    )
-    </insert>
-
-    <!-- 비밀번호 성공 시 실패 로그 정리(잠금 카운터 리셋). -->
-    <delete id="deletePwdFail"
-            parameterType="com.prafta.app.tbm.tbm01.application.command.TbmPwdFailCommand">
-    /* AppTbm01Mapper.deletePwdFail */
-    DELETE FROM TB_TBM_PWD_FAIL
-    WHERE CMPNY_CD = #{cmpnyCd}
-      AND SESSION_CD = #{sessionCd}
-      AND PWD_TYPE_CD = #{pwdTypeCd}
-      AND USER_CD = #{userCd}
-    </delete>
-
     <!-- 출결 INSERT(입실). ATTENDANCE_CD = 'A'+YYYYMMDD+SEQ 채번. -->
     <insert id="insertAttendance"
             parameterType="com.prafta.app.tbm.tbm01.application.command.TbmEnterCommand">
@@ -163,5 +111,423 @@
       AND DEL_YN = 'N'
       AND EXIT_AT IS NULL
     </update>
+
+    <!-- ============================================================ -->
+    <!-- prafta-app-tbm: 사용자 앱 TBM 허브 조회/액션 (A1~A10)         -->
+    <!--  - 식별자(CMPNY/SITE/USER)는 token 출처(IDOR 차단).           -->
+    <!--  - 모든 조회는 회사+사업장 스코프로 제한. USER_TYPE_CD='REGULAR'. -->
+    <!-- ============================================================ -->
+
+    <!-- A1: 참석가능(OPENED) 세션 리스트. web Tbm02Mapper.selectSessionList SELECT 축약 포팅
+         (관리자 필터 제거, STATUS_CD='OPENED' 고정, 사용자 사업장 스코프 강제). -->
+    <select id="selectAvailableSessions"
+            parameterType="com.prafta.app.tbm.tbm01.application.query.TbmSessionListQuery"
+            resultType="com.prafta.app.tbm.tbm01.result.TbmSessionListResult">
+    /* AppTbm01Mapper.selectAvailableSessions */
+    SELECT
+          S.SESSION_CD                                                       AS sessionCd
+        , S.TITLE                                                            AS title
+        , FNC_CMM_INFO_SRCH(S.CMPNY_CD, 'USER_NM', S.MANAGER_USER_CD, NULL)  AS managerUserNm
+        , DATE_FORMAT(S.OPENED_AT, '%Y-%m-%d %H:%i')                         AS openedAt
+    FROM TB_TBM_SESSION S
+    WHERE S.CMPNY_CD = #{cmpnyCd}
+      AND S.SITE_CD = #{siteCd}
+      AND S.STATUS_CD = 'OPENED'
+      AND S.DEL_YN = 'N'
+    ORDER BY S.OPENED_AT DESC, S.SESSION_CD DESC
+    </select>
+
+    <!-- A2: 교육중(IN_PROGRESS) + 내 출결 존재 세션 리스트(Q9: 내 출결 있는 IN_PROGRESS만). -->
+    <select id="selectInProgressSessions"
+            parameterType="com.prafta.app.tbm.tbm01.application.query.TbmSessionListQuery"
+            resultType="com.prafta.app.tbm.tbm01.result.TbmSessionListResult">
+    /* AppTbm01Mapper.selectInProgressSessions */
+    SELECT
+          S.SESSION_CD                                                       AS sessionCd
+        , S.TITLE                                                            AS title
+        , FNC_CMM_INFO_SRCH(S.CMPNY_CD, 'USER_NM', S.MANAGER_USER_CD, NULL)  AS managerUserNm
+        , DATE_FORMAT(S.OPENED_AT, '%Y-%m-%d %H:%i')                         AS openedAt
+        , DATE_FORMAT(S.STARTED_AT, '%Y-%m-%d %H:%i')                        AS startedAt
+    FROM TB_TBM_SESSION S
+    WHERE S.CMPNY_CD = #{cmpnyCd}
+      AND S.SITE_CD = #{siteCd}
+      AND S.STATUS_CD = 'IN_PROGRESS'
+      AND S.DEL_YN = 'N'
+      AND EXISTS (
+            SELECT 1
+            FROM TB_TBM_ATTENDANCE AT
+            WHERE AT.CMPNY_CD = S.CMPNY_CD
+              AND AT.SESSION_CD = S.SESSION_CD
+              AND AT.USER_TYPE_CD = #{userTypeCd}
+              AND AT.USER_CD = #{userCd}
+              AND AT.DEL_YN = 'N'
+          )
+    ORDER BY S.STARTED_AT DESC, S.SESSION_CD DESC
+    </select>
+
+    <!-- A3: 교육완료. 내 출결 존재 AND (세션 COMPLETED OR 내 EXIT_AT 존재).
+         endedAt = IFNULL(S.ENDED_AT, AT.EXIT_AT) (Q10: 중도퇴실 케이스 보정). -->
+    <select id="selectCompletedSessions"
+            parameterType="com.prafta.app.tbm.tbm01.application.query.TbmSessionListQuery"
+            resultType="com.prafta.app.tbm.tbm01.result.TbmSessionListResult">
+    /* AppTbm01Mapper.selectCompletedSessions */
+    SELECT
+          S.SESSION_CD                                                       AS sessionCd
+        , S.TITLE                                                            AS title
+        , FNC_CMM_INFO_SRCH(S.CMPNY_CD, 'USER_NM', S.MANAGER_USER_CD, NULL)  AS managerUserNm
+        , DATE_FORMAT(S.OPENED_AT, '%Y-%m-%d %H:%i')                         AS openedAt
+        , DATE_FORMAT(S.STARTED_AT, '%Y-%m-%d %H:%i')                        AS startedAt
+        , DATE_FORMAT(IFNULL(S.ENDED_AT, AT.EXIT_AT), '%Y-%m-%d %H:%i')      AS endedAt
+        , AT.COMPLETION_STATUS_CD                                            AS completionStatusCd
+    FROM TB_TBM_ATTENDANCE AT
+         INNER JOIN TB_TBM_SESSION S
+            ON (
+                AT.CMPNY_CD = S.CMPNY_CD
+            AND AT.SESSION_CD = S.SESSION_CD
+            )
+    WHERE AT.CMPNY_CD = #{cmpnyCd}
+      AND S.SITE_CD = #{siteCd}
+      AND AT.USER_TYPE_CD = #{userTypeCd}
+      AND AT.USER_CD = #{userCd}
+      AND AT.DEL_YN = 'N'
+      AND S.DEL_YN = 'N'
+      AND (S.STATUS_CD = 'COMPLETED' OR AT.EXIT_AT IS NOT NULL)
+    ORDER BY IFNULL(S.ENDED_AT, AT.EXIT_AT) DESC, AT.ATTENDANCE_CD DESC
+    </select>
+
+    <!-- A4: 참석자 리스트(이름+입실시각, PII 최소). web Tbm04Mapper.selectSessionAttendances 축약.
+         세션이 토큰 사업장 스코프에 속함을 EXISTS 로 강제(타 사업장 세션 출결 열람 차단). -->
+    <select id="selectSessionAttendees"
+            parameterType="com.prafta.app.tbm.tbm01.application.query.TbmDetailQuery"
+            resultType="com.prafta.app.tbm.tbm01.result.TbmAttendeeResult">
+    /* AppTbm01Mapper.selectSessionAttendees */
+    SELECT
+          CASE
+            WHEN AT.USER_TYPE_CD = 'REGULAR' THEN RU.USER_NM
+            ELSE DU.USER_NM
+          END                                            AS userNm
+        , DATE_FORMAT(AT.ENTRY_AT, '%Y-%m-%d %H:%i')     AS entryAt
+    FROM TB_TBM_ATTENDANCE AT
+         LEFT OUTER JOIN TB_USER RU
+            ON (
+                AT.USER_TYPE_CD = 'REGULAR'
+            AND AT.CMPNY_CD = RU.CMPNY_CD
+            AND AT.USER_CD = RU.USER_CD
+            )
+         LEFT OUTER JOIN TB_DAILY_USER DU
+            ON (
+                AT.USER_TYPE_CD = 'DAILY'
+            AND AT.CMPNY_CD = DU.CMPNY_CD
+            AND AT.USER_CD = DU.USER_CD
+            )
+    WHERE AT.CMPNY_CD = #{cmpnyCd}
+      AND AT.SESSION_CD = #{sessionCd}
+      AND AT.DEL_YN = 'N'
+      AND AT.ENTRY_AT IS NOT NULL
+      AND EXISTS (
+            SELECT 1
+            FROM TB_TBM_SESSION S
+            WHERE S.CMPNY_CD = AT.CMPNY_CD
+              AND S.SESSION_CD = AT.SESSION_CD
+              AND S.SITE_CD = #{siteCd}
+              AND S.DEL_YN = 'N'
+          )
+    ORDER BY AT.ENTRY_AT, AT.ATTENDANCE_CD
+    </select>
+
+    <!-- A5: 세션 상태. STATUS_CD 기준 판정 + STARTED_AT/ENDED_AT 보조 + 동기화상태 LEFT JOIN(참고). -->
+    <select id="selectSessionState"
+            parameterType="com.prafta.app.tbm.tbm01.application.query.TbmDetailQuery"
+            resultType="com.prafta.app.tbm.tbm01.result.TbmSessionStateResult">
+    /* AppTbm01Mapper.selectSessionState */
+    SELECT
+          S.STATUS_CD                                       AS statusCd
+        , DATE_FORMAT(S.STARTED_AT, '%Y-%m-%d %H:%i')       AS startedAt
+        , DATE_FORMAT(S.ENDED_AT, '%Y-%m-%d %H:%i')         AS endedAt
+        , ST.SYNC_STATE_CD                                  AS syncStateCd
+    FROM TB_TBM_SESSION S
+         LEFT OUTER JOIN TB_TBM_SESSION_STATE ST
+            ON (
+                S.CMPNY_CD = ST.CMPNY_CD
+            AND S.SESSION_CD = ST.SESSION_CD
+            )
+    WHERE S.CMPNY_CD = #{cmpnyCd}
+      AND S.SITE_CD = #{siteCd}
+      AND S.SESSION_CD = #{sessionCd}
+      AND S.DEL_YN = 'N'
+    </select>
+
+    <!-- A6/A10: 세션 교육내용 본문(CONTENT_BODY). 세션 사업장 스코프 강제. -->
+    <select id="selectSessionContentBody"
+            parameterType="com.prafta.app.tbm.tbm01.application.query.TbmDetailQuery"
+            resultType="java.lang.String">
+    /* AppTbm01Mapper.selectSessionContentBody */
+    SELECT
+        S.CONTENT_BODY
+    FROM TB_TBM_SESSION S
+    WHERE S.CMPNY_CD = #{cmpnyCd}
+      AND S.SITE_CD = #{siteCd}
+      AND S.SESSION_CD = #{sessionCd}
+      AND S.DEL_YN = 'N'
+    </select>
+
+    <!-- A6: 자료 묶음 헤더(콘텐츠 ⨝ 자료마스터). web Tbm02Mapper.selectSessionContents 축약. -->
+    <select id="selectSessionContents"
+            parameterType="com.prafta.app.tbm.tbm01.application.query.TbmDetailQuery"
+            resultType="com.prafta.app.tbm.tbm01.result.TbmSessionContentResult">
+    /* AppTbm01Mapper.selectSessionContents */
+    SELECT
+          SC.MTRL_CD          AS mtrlCd
+        , M.TITLE             AS title
+        , SC.DISPLAY_ORDER    AS displayOrder
+        , SC.OVERRIDE_DESC    AS overrideDesc
+    FROM TB_TBM_SESSION_CONTENT SC
+         LEFT OUTER JOIN TB_TBM_EDU_MTRL M
+            ON (
+                SC.MTRL_CD = M.MTRL_CD
+            AND SC.CMPNY_CD = M.CMPNY_CD
+            )
+    WHERE SC.CMPNY_CD = #{cmpnyCd}
+      AND SC.SESSION_CD = #{sessionCd}
+      AND EXISTS (
+            SELECT 1
+            FROM TB_TBM_SESSION S
+            WHERE S.CMPNY_CD = SC.CMPNY_CD
+              AND S.SESSION_CD = SC.SESSION_CD
+              AND S.SITE_CD = #{siteCd}
+              AND S.DEL_YN = 'N'
+          )
+    ORDER BY SC.DISPLAY_ORDER
+    </select>
+
+    <!-- A6: 자료 묶음 세부항목(TB_TBM_EDU_MTRL_ITEM, USE_YN='Y'). 세션의 모든 묶음 항목 일괄 조회.
+         컬럼 매핑(DDL 확정): MTRL_ITEM_TYPE/FILE_MGMT_CD/URL/MTRL_DESC/SORT_IDX. -->
+    <select id="selectSessionContentItems"
+            parameterType="com.prafta.app.tbm.tbm01.application.query.TbmDetailQuery"
+            resultType="com.prafta.app.tbm.tbm01.result.TbmContentItemResult">
+    /* AppTbm01Mapper.selectSessionContentItems */
+    SELECT
+          I.MTRL_CD          AS mtrlCd
+        , I.MTRL_ITEM_CD     AS mtrlItemCd
+        , I.MTRL_ITEM_TYPE   AS itemType
+        , I.FILE_MGMT_CD     AS fileMgmtCd
+        , I.URL              AS url
+        , I.MTRL_DESC        AS itemDesc
+        , I.SORT_IDX         AS sortIdx
+        <!-- 서명 URL 전환: 파일 원시 경로/확장자(서비스에서 FileUrlSigner 로 서명). 파일 없으면 NULL. -->
+        , F.FILE_PATH        AS filePath
+        , F.FILE_EXT         AS fileExt
+    FROM TB_TBM_EDU_MTRL_ITEM I
+         INNER JOIN TB_TBM_SESSION_CONTENT SC
+            ON (
+                I.MTRL_CD = SC.MTRL_CD
+            )
+         LEFT OUTER JOIN TB_FILE_INFO F
+            ON (
+                F.CMPNY_CD = SC.CMPNY_CD
+            AND F.FILE_MGMT_CD = I.FILE_MGMT_CD
+            )
+    WHERE SC.CMPNY_CD = #{cmpnyCd}
+      AND SC.SESSION_CD = #{sessionCd}
+      AND I.USE_YN = 'Y'
+      <!-- 회사 스코프 보강: 항목이 속한 교육자료(M)가 동일 회사 소유인지 EXISTS 가드.
+           MTRL_CD 값이 회사 간 겹쳐도 타 회사 자료 항목이 노출되지 않도록 격리만 강화(결과 동일). -->
+      AND EXISTS (
+            SELECT 1
+            FROM TB_TBM_EDU_MTRL M
+            WHERE M.MTRL_CD = I.MTRL_CD
+              AND M.CMPNY_CD = #{cmpnyCd}
+          )
+      AND EXISTS (
+            SELECT 1
+            FROM TB_TBM_SESSION S
+            WHERE S.CMPNY_CD = SC.CMPNY_CD
+              AND S.SESSION_CD = SC.SESSION_CD
+              AND S.SITE_CD = #{siteCd}
+              AND S.DEL_YN = 'N'
+          )
+    ORDER BY SC.DISPLAY_ORDER, I.SORT_IDX
+    </select>
+
+    <!-- A7/A10: 연계 위험성평가. web Tbm02Mapper.selectSessionRisks 4필드 포팅(사업장 스코프 강제). -->
+    <select id="selectSessionRisks"
+            parameterType="com.prafta.app.tbm.tbm01.application.query.TbmDetailQuery"
+            resultType="com.prafta.app.tbm.tbm01.result.TbmSessionRiskResult">
+    /* AppTbm01Mapper.selectSessionRisks */
+    SELECT
+          C.BAIM_VAL_D_NM     AS processNm
+        , RT.RISK_TYPE_NM     AS riskTypeNm
+        , CASE
+            WHEN RA.HAZARD_CD = 'self'
+                THEN RA.ASSESSMENT_DESC
+            ELSE E.HAZARD_NM
+          END                 AS hazardNm
+        , RA.ASSESSMENT_STATUS    AS assessmentStatus
+        , B.SYST_VAL_D_NM     AS assessmentStatusNm
+        , SR.DISPLAY_ORDER    AS displayOrder
+    FROM TB_TBM_SESSION_RISK SR
+         INNER JOIN TB_RISK_ASSESSMENT RA
+            ON (
+                SR.CMPNY_CD = RA.CMPNY_CD
+            AND SR.SITE_CD = RA.SITE_CD
+            AND SR.PROCESS_CD = RA.PROCESS_CD
+            AND SR.ASSESSMENT_CD = RA.ASSESSMENT_CD
+            )
+         LEFT OUTER JOIN (
+            SELECT D.SYST_VAL_D_CD, D.SYST_VAL_D_NM
+            FROM TB_SYST_VAL_D D
+            WHERE D.SYST_VAL_CD = 'SYS011'
+              AND D.USE_YN = 'Y'
+         ) B
+            ON (
+                RA.ASSESSMENT_STATUS = B.SYST_VAL_D_CD
+            )
+         LEFT OUTER JOIN TB_BAIM_VAL_D C
+            ON (
+                C.CMPNY_CD = RA.CMPNY_CD
+            AND C.BAIM_VAL_CD = 'COM002'
+            AND C.BAIM_VAL_D_CD = RA.PROCESS_CD
+            AND C.USE_YN = 'Y'
+            )
+         LEFT OUTER JOIN TB_RISK_TYPE RT
+            ON (
+                RA.CMPNY_CD = RT.CMPNY_CD
+            AND RA.RISK_TYPE_CD = RT.RISK_TYPE_CD
+            )
+         LEFT OUTER JOIN TB_RISK_SITE_HAZARD E
+            ON (
+                RA.CMPNY_CD = E.CMPNY_CD
+            AND RA.RISK_TYPE_CD = E.RISK_TYPE_CD
+            AND RA.HAZARD_CD = E.HAZARD_CD
+            )
+    WHERE SR.CMPNY_CD = #{cmpnyCd}
+      AND SR.SESSION_CD = #{sessionCd}
+      AND EXISTS (
+            SELECT 1
+            FROM TB_TBM_SESSION S
+            WHERE S.CMPNY_CD = SR.CMPNY_CD
+              AND S.SESSION_CD = SR.SESSION_CD
+              AND S.SITE_CD = #{siteCd}
+              AND S.DEL_YN = 'N'
+          )
+    ORDER BY SR.DISPLAY_ORDER
+    </select>
+
+    <!-- A10: 완료 상세 헤더. 세션(title/contentBody) + 본인 출결(이수상태/서명파일코드/종료일시).
+         endedAt = IFNULL(S.ENDED_AT, AT.EXIT_AT) (Q10). 본인 출결 INNER(이수 이력 없으면 미반환). -->
+    <select id="selectMyCompletion"
+            parameterType="com.prafta.app.tbm.tbm01.application.query.TbmDetailQuery"
+            resultType="com.prafta.app.tbm.tbm01.result.TbmCompletionResult">
+    /* AppTbm01Mapper.selectMyCompletion */
+    SELECT
+          S.TITLE                                                         AS title
+        , S.CONTENT_BODY                                                  AS contentBody
+        , AT.EXIT_SIGN_FILE_MGMT_CD                                       AS mySignFileMgmtCd
+        , AT.COMPLETION_STATUS_CD                                         AS completionStatusCd
+        , DATE_FORMAT(IFNULL(S.ENDED_AT, AT.EXIT_AT), '%Y-%m-%d %H:%i')   AS endedAt
+    FROM TB_TBM_ATTENDANCE AT
+         INNER JOIN TB_TBM_SESSION S
+            ON (
+                AT.CMPNY_CD = S.CMPNY_CD
+            AND AT.SESSION_CD = S.SESSION_CD
+            )
+    WHERE AT.CMPNY_CD = #{cmpnyCd}
+      AND S.SITE_CD = #{siteCd}
+      AND AT.SESSION_CD = #{sessionCd}
+      AND AT.USER_TYPE_CD = #{userTypeCd}
+      AND AT.USER_CD = #{userCd}
+      AND AT.DEL_YN = 'N'
+      AND S.DEL_YN = 'N'
+    </select>
+
+    <!-- A10: 자료 묶음 제목 목록(명만). 표시 순서 정렬. -->
+    <select id="selectSessionMaterialTitles"
+            parameterType="com.prafta.app.tbm.tbm01.application.query.TbmDetailQuery"
+            resultType="java.lang.String">
+    /* AppTbm01Mapper.selectSessionMaterialTitles */
+    SELECT
+        M.TITLE
+    FROM TB_TBM_SESSION_CONTENT SC
+         INNER JOIN TB_TBM_EDU_MTRL M
+            ON (
+                SC.MTRL_CD = M.MTRL_CD
+            AND SC.CMPNY_CD = M.CMPNY_CD
+            )
+    WHERE SC.CMPNY_CD = #{cmpnyCd}
+      AND SC.SESSION_CD = #{sessionCd}
+      AND EXISTS (
+            SELECT 1
+            FROM TB_TBM_SESSION S
+            WHERE S.CMPNY_CD = SC.CMPNY_CD
+              AND S.SESSION_CD = SC.SESSION_CD
+              AND S.SITE_CD = #{siteCd}
+              AND S.DEL_YN = 'N'
+          )
+    ORDER BY SC.DISPLAY_ORDER
+    </select>
+
+    <!-- A8: 시작전 퇴실(출결 물리 삭제). UK 에 DEL_YN 미포함 → 재입실 멱등 위해 DELETE.
+         본인(REGULAR+USER_CD) + 미종료(EXIT_AT IS NULL) + DEL_YN='N' 가드(IDOR/오삭제 차단). -->
+    <delete id="deleteAttendance"
+            parameterType="com.prafta.app.tbm.tbm01.application.command.TbmLeaveBeforeCommand">
+    /* AppTbm01Mapper.deleteAttendance */
+    DELETE FROM TB_TBM_ATTENDANCE
+    WHERE CMPNY_CD = #{cmpnyCd}
+      AND SESSION_CD = #{sessionCd}
+      AND USER_TYPE_CD = #{userTypeCd}
+      AND USER_CD = #{userCd}
+      AND DEL_YN = 'N'
+      AND EXIT_AT IS NULL
+    </delete>
+
+    <!-- A9: 중도퇴실(미이수 종료). EXIT_TYPE_CD='SELF', COMPLETION_STATUS_CD='NOT_COMPLETED'.
+         서명/사유 없음(EXIT_SIGN_FILE_MGMT_CD/NOT_COMPLETED_REASON 미갱신). 본인+미종료만. -->
+    <update id="updateWithdraw"
+            parameterType="com.prafta.app.tbm.tbm01.application.command.TbmWithdrawCommand">
+    /* AppTbm01Mapper.updateWithdraw */
+    UPDATE TB_TBM_ATTENDANCE
+    SET
+          EXIT_TYPE_CD         = #{exitTypeCd}
+        , EXIT_AT              = NOW()
+        , COMPLETION_STATUS_CD = #{completionStatusCd}
+        , STATUS_UPDATED_BY    = #{updateNo}
+        , STATUS_UPDATED_AT    = NOW()
+        , UPDATE_NO            = #{updateNo}
+        , UPDATE_DATE          = NOW()
+    WHERE CMPNY_CD = #{cmpnyCd}
+      AND SESSION_CD = #{sessionCd}
+      AND USER_TYPE_CD = #{userTypeCd}
+      AND USER_CD = #{userCd}
+      AND DEL_YN = 'N'
+      AND EXIT_AT IS NULL
+    </update>
+
+    <!-- prafta-app-022-6: 본인 진행중(입실O·미종료) TBM 출결의 SESSION_CD 목록.
+         진행중 = ENTRY_AT IS NOT NULL AND EXIT_AT IS NULL. 본인(REGULAR+USER_CD) + DEL_YN='N'.
+         사업장 스코프는 세션(S.SITE_CD) EXISTS 로 강제(TB_TBM_ATTENDANCE 에 SITE_CD 컬럼 없음).
+         퇴근 시 자동 중도퇴실 대상 식별 전용(조회). -->
+    <select id="selectInProgressAttendanceSessionCds"
+            parameterType="com.prafta.app.tbm.tbm01.application.query.TbmSessionListQuery"
+            resultType="java.lang.String">
+    /* AppTbm01Mapper.selectInProgressAttendanceSessionCds */
+    SELECT
+        AT.SESSION_CD
+    FROM TB_TBM_ATTENDANCE AT
+    WHERE AT.CMPNY_CD = #{cmpnyCd}
+      AND AT.USER_TYPE_CD = #{userTypeCd}
+      AND AT.USER_CD = #{userCd}
+      AND AT.DEL_YN = 'N'
+      AND AT.ENTRY_AT IS NOT NULL
+      AND AT.EXIT_AT IS NULL
+      AND EXISTS (
+            SELECT 1
+            FROM TB_TBM_SESSION S
+            WHERE S.CMPNY_CD = AT.CMPNY_CD
+              AND S.SESSION_CD = AT.SESSION_CD
+              AND S.SITE_CD = #{siteCd}
+              AND S.DEL_YN = 'N'
+          )
+    ORDER BY AT.SESSION_CD
+    </select>
 
 </mapper>

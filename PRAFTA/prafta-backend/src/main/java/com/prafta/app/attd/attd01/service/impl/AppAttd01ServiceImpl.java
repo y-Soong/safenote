@@ -49,6 +49,7 @@ import com.prafta.app.attd.attd01.result.ScheduleResult;
 import com.prafta.app.attd.attd01.result.SiteGeofenceResult;
 import com.prafta.app.attd.attd01.result.StdTimeRuleResult;
 import com.prafta.app.attd.attd01.service.AppAttd01Service;
+import com.prafta.app.tbm.tbm01.service.AppTbm01Service;
 import com.prafta.common.cmm.leave.service.LeaveRefusalDetectService;
 import com.prafta.common.error.attd.AttdErrorCode;
 import com.prafta.common.exception.ApiException;
@@ -117,6 +118,9 @@ public class AppAttd01ServiceImpl implements AppAttd01Service {
 
     /** PRAFTA-COM-001: 노무수령거부 대상일 출근 감지 + 관리자 PUSH(체크인 hook 전용, 예외 격리). */
     private final LeaveRefusalDetectService leaveRefusalDetectService;
+
+    /** prafta-app-022-6: 퇴근 시 진행중 TBM 자동 중도퇴실(attd01 → tbm01 단방향, best-effort). */
+    private final AppTbm01Service appTbm01Service;
 
     // ====================================================================
     // 1) 오늘 / 일자 상세 (동일 응답 구조)
@@ -871,6 +875,19 @@ public class AppAttd01ServiceImpl implements AppAttd01Service {
             appAttd01Mapper.insertCheckOutGps(gpsCmd);
         }
 
+        // prafta-app-022-6: 퇴근 UPDATE 성공 직후, 본인 진행중(입실O·미종료) TBM 세션을 자동 중도퇴실.
+        //   attd01 → tbm01 단방향 호출(순환 금지). best-effort: withdraw 실패가 퇴근 커밋을 막지 않도록
+        //   예외를 삼키고 로그만 남긴다(퇴근 자체가 우선). 진행중 세션 없으면 no-op(멱등).
+        try {
+            int withdrawn = appTbm01Service.withdrawAllInProgress(param.tokenInfo());
+            if (withdrawn > 0) {
+                log.info("[attd01] 퇴근 연동 TBM 자동 중도퇴실 처리 (userCd={}, count={})", userCd, withdrawn);
+            }
+        } catch (Exception e) {
+            // 퇴근은 이미 커밋 대상. TBM 중도퇴실 실패는 퇴근을 막지 않는다(원인 로깅 후 계속).
+            log.error("[attd01] 퇴근 연동 TBM 자동 중도퇴실 실패 (userCd={}) — 퇴근은 계속 진행", userCd, e);
+        }
+
         log.info("[attd01] 셀프 퇴근 완료 (userCd={}, attdId={}, workYmd={}, checkOutTime={}, isOffsite={})",
                 userCd, open.attdId(), open.workYmd(), checkOutTime, isOffsite);
 
@@ -932,11 +949,20 @@ public class AppAttd01ServiceImpl implements AppAttd01Service {
             throw new ApiException(AttdErrorCode.ATTD_400_042);
         }
 
-        // 4) 다음날 게이트(사용자 확정): 과거(전날 이전) 열린 근태가 있으면 출근 차단.
-        int pastOpen = appAttd01Mapper.countPastOpenAttd(cmpnyCd, siteCd, userCd, today);
-        if (pastOpen > 0) {
-            log.info("[attd01] 셀프 출근 거부: 과거 미완료(미퇴근) 근태 존재 → 전날 퇴근 등록 안내 (userCd={}, count={})", userCd, pastOpen);
+        // 4) 다음날 게이트(prafta-app-021 §7.6): 직전일(today-1) 열린 근태가 있으면 출근 차단.
+        //    D+2 이상 과거 미퇴근은 차단하지 않는다(출근 허용, 근태 보정 §7.4 로 해소).
+        //    예외(prafta-app-021-6): 직전일이 이미 마감된 월(전월 말일 미퇴근 + 전월 마감 등)이면
+        //    퇴근도 월마감(ATTD_400_042)으로 막혀 출근·퇴근 모두 닫히는 데드락이 된다. 이 경우는
+        //    마감된 월의 직전일 미퇴근은 게이트 예외(보정 대상)로 두고 당월 출근을 허용한다.
+        String yesterday = LocalDate.parse(today, YMD).minusDays(1).format(YMD);
+        int pastOpen = appAttd01Mapper.countPastOpenAttd(cmpnyCd, siteCd, userCd, yesterday);
+        if (pastOpen > 0 && !isMonthClosed(cmpnyCd, siteCd, userCd, yesterday.substring(0, 6))) {
+            log.info("[attd01] 셀프 출근 거부: 직전일(today-1) 미퇴근 근태 존재 → 전날 퇴근 등록 안내 (userCd={}, yesterday={}, count={})", userCd, yesterday, pastOpen);
             throw new ApiException(AttdErrorCode.ATTD_400_082);
+        }
+        if (pastOpen > 0) {
+            // 마감된 월의 직전일 미퇴근은 게이트 예외(보정 대상) — prafta-app-021-6.
+            log.info("[attd01] 셀프 출근 게이트 예외: 직전일이 마감된 월이라 퇴근으로 닫을 수 없음 → 출근 허용(보정 대상) (userCd={}, yesterday={}, count={})", userCd, yesterday, pastOpen);
         }
 
         // 5) 스케줄 조회(그 일자). 연차일(LEAVE)이면 출근 차단(§8.3).

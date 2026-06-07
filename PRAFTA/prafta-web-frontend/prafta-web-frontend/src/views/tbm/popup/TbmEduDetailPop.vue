@@ -300,15 +300,9 @@ const fnEdit = () => {
   }
 };
 
-/** 서버 파일 URL (TbmEduMtrlInfo 의 getDownloadUrl 과 동일 규약) */
-const fileUrl = (item) => {
-  if (!item?.filePath || !item?.fileMgmtCd) return "";
-  const base = (apiBaseUrl || "").replace(/\/$/, "");
-  const path = (item.filePath || "").replace(/^\//, "").replace(/\/$/, "");
-  const code = (item.fileMgmtCd || "").replace(/^\//, "");
-  const ext = (item.fileExt || "").replace(/^\//, "");
-  return [base, path, code + ext].filter(Boolean).join("/");
-};
+/** 서버 파일 URL — 서명 URL 전환: 서버가 발급한 서명 절대 URL(item.fileUrl)을 그대로 사용.
+ *  (기존 baseUrl + filePath + fileMgmtCd 수동 조립 제거.) 파일 없으면 빈 문자열. */
+const fileUrl = (item) => item?.fileUrl || "";
 
 /** 유튜브 URL -> embed URL 변환 (watch?v= / youtu.be/) */
 const youtubeEmbed = (url) => {

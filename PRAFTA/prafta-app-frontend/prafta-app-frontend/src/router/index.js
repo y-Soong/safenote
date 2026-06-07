@@ -21,6 +21,32 @@ const routes = [
     component: () => import('@/views/tbm/TbmEntryView.vue'),
   },
 
+  // PRAFTA-TBM-HUB: 사용자 TBM 허브 트리 (보호 — publicPaths 미포함, beforeEach 토큰 게이트).
+  //   진입: MainView › TbmAttendCard › `>` → /TbmHub (3탭: 참석가능/교육중/교육완료)
+  {
+    path: '/TbmHub',
+    name: 'TbmHub',
+    component: () => import('@/views/tbm/TbmHubView.vue'),
+  },
+  // 입실(enter) 성공 후 진입: /TbmBeforeStart?sessionCd=...
+  {
+    path: '/TbmBeforeStart',
+    name: 'TbmBeforeStart',
+    component: () => import('@/views/tbm/TbmBeforeStartView.vue'),
+  },
+  // 관리자 시작(IN_PROGRESS) 확인 또는 교육중 탭 재참여 후 진입: /TbmInProgress?sessionCd=...
+  {
+    path: '/TbmInProgress',
+    name: 'TbmInProgress',
+    component: () => import('@/views/tbm/TbmInProgressView.vue'),
+  },
+  // 교육완료 탭 카드 선택 후 진입: /TbmCompletedDetail?sessionCd=...
+  {
+    path: '/TbmCompletedDetail',
+    name: 'TbmCompletedDetail',
+    component: () => import('@/views/tbm/TbmCompletedDetailView.vue'),
+  },
+
   // prafta-app-005: 연차 현황 (본인 잔여연차 상세)
   {
     path: '/MyLeaveSummaryView',
@@ -48,6 +74,85 @@ const routes = [
     path: '/AttdRequest',
     name: 'AttdRequest',
     component: () => import('@/views/req/AttdRequestView.vue'),
+  },
+
+  // 001-Phase1: 관리자 모드 런처 (보호 — publicPaths 미포함, beforeEach 토큰 게이트).
+  //   진입: 마이페이지 '관리자 모드' row(canEnterAdmin 시) → /AdminHome.
+  //   서버 access-context 가 진입 최종 판정(클라 가드는 UX 보조).
+  {
+    path: '/AdminHome',
+    name: 'AdminHome',
+    component: () => import('@/views/admin/AdminLauncherView.vue'),
+  },
+  // 001-Phase1: 관리자 모듈 빈 골격(Phase 2~8 실화면 교체 전). query.module 로 모듈 키 전달.
+  {
+    path: '/ComingSoon',
+    name: 'ComingSoon',
+    component: () => import('@/views/_common/ComingSoon.vue'),
+  },
+
+  // 001-Phase5: 관리자 모드 TBM 관리 (보호 — publicPaths 미포함, beforeEach 토큰 게이트).
+  //   진입: AdminLauncherView/AdminTabBar 의 TBM → /AdminTbm. 서버 access-context 가 진입 최종 판정.
+  {
+    path: '/AdminTbm',
+    name: 'AdminTbm',
+    component: () => import('@/views/admin/tbm/AdminTbmView.vue'),
+  },
+  // 세션 상세(교육관리 카드/개설 성공 후 진입): /AdminTbmSessionDetail?sessionCd=...
+  {
+    path: '/AdminTbmSessionDetail',
+    name: 'AdminTbmSessionDetail',
+    component: () => import('@/views/admin/tbm/AdminTbmSessionDetailView.vue'),
+  },
+  // 001-Phase5 R3: TBM 진행 화면(IN_PROGRESS) — 세션 상세 "교육 시작"/"진행 화면으로" 진입.
+  //   보호 라우트(publicPaths 미포함, beforeEach 토큰 게이트). 진입: /AdminTbmLive?sessionCd=...
+  {
+    path: '/AdminTbmLive',
+    name: 'AdminTbmLive',
+    component: () => import('@/views/admin/tbm/AdminTbmLiveView.vue'),
+  },
+  // 001-Phase5 R3: TBM 종료 화면(COMPLETED) — 진행화면 종료 후/세션 상세 "종료 화면으로" 진입.
+  //   보호 라우트(publicPaths 미포함, beforeEach 토큰 게이트). 진입: /AdminTbmCompleted?sessionCd=...
+  {
+    path: '/AdminTbmCompleted',
+    name: 'AdminTbmCompleted',
+    component: () => import('@/views/admin/tbm/AdminTbmCompletedView.vue'),
+  },
+  // 001-Phase5 R5: 교육자료 상세/미리보기 — 자료 탭 카드 선택 진입.
+  //   보호 라우트(publicPaths 미포함, beforeEach 토큰 게이트). 진입: /AdminTbmMaterialDetail?mtrlCd=...
+  {
+    path: '/AdminTbmMaterialDetail',
+    name: 'AdminTbmMaterialDetail',
+    component: () => import('@/views/admin/tbm/AdminTbmMaterialDetailView.vue'),
+  },
+  // 001-Phase5 R5: 교육자료 등록/수정 — "자료 등록"(신규) 또는 상세 "수정"(mtrlCd 있음) 진입.
+  //   보호 라우트. 진입: /AdminTbmMaterialForm 또는 /AdminTbmMaterialForm?mtrlCd=...
+  {
+    path: '/AdminTbmMaterialForm',
+    name: 'AdminTbmMaterialForm',
+    component: () => import('@/views/admin/tbm/AdminTbmMaterialFormView.vue'),
+  },
+  // 001-Phase5 R6: TBM 이력 상세(출결 명단, 조회 전용) — 이력 탭 카드 선택 진입.
+  //   보호 라우트. 진입: /AdminTbmHistoryDetail?sessionCd=...
+  {
+    path: '/AdminTbmHistoryDetail',
+    name: 'AdminTbmHistoryDetail',
+    component: () => import('@/views/admin/tbm/AdminTbmHistoryDetailView.vue'),
+  },
+
+  // 001-Phase2: 관리자 모드 승인 관리 (보호 — publicPaths 미포함, beforeEach 토큰 게이트).
+  //   진입: AdminLauncherView/AdminTabBar 의 APPROVAL → /AdminApproval. 서버 access-context 가 진입 최종 판정.
+  {
+    path: '/AdminApproval',
+    name: 'AdminApproval',
+    component: () => import('@/views/admin/approval/AdminApprovalView.vue'),
+  },
+  // 승인 상세(대기/이력 카드 선택 후 진입): /AdminApprovalDetail?reqId=...&group=...
+  //   보호 라우트(publicPaths 미포함, beforeEach 토큰 게이트).
+  {
+    path: '/AdminApprovalDetail',
+    name: 'AdminApprovalDetail',
+    component: () => import('@/views/admin/approval/AdminApprovalDetailView.vue'),
   },
 
   // PRAFTA-APP-010: 마이페이지 (인증 필수 — publicPaths 미포함)
