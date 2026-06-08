@@ -31,6 +31,15 @@ public final class JwtScope {
      */
     public static final String NOTICE_FILE_DL = "NOTICE_FILE_DL";
 
+    /**
+     * 자료실(Archive) 첨부 다운로드 전용 단기 토큰 (PRAFTA-053, 만료 5분).
+     *
+     * <p>/notice02/file-download-token 으로 발급되어 /notice02/file-download 만 통과한다.
+     * 공지(NOTICE_FILE_DL)와 분리하여 자료실 다운로드 흐름을 구조적으로 구분한다(타입 누수 방지).
+     * claim: gv_cmpnyCd / gv_userCd / gv_scope / gv_noticeId / gv_fileMgmtCd.
+     */
+    public static final String ARCHIVE_FILE_DL = "ARCHIVE_FILE_DL";
+
     private JwtScope() {
         // 상수 카탈로그 — 인스턴스화 방지
     }

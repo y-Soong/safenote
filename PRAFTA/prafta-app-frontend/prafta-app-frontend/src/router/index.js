@@ -226,6 +226,20 @@ const routes = [
     component: () => import('@/views/nearmiss/NearMissManageDetail.vue'),
   },
 
+  // prafta-app-023: 공지 표시 (인증 필수 — publicPaths 미포함, beforeEach 토큰 게이트)
+  //   진입: 메인 홈 공지카드 행/전체보기, 로그인 팝업 → 상세/전체목록.
+  //   대상 노출 판정은 서버(countNoticeVisibleToUser)가 최종(403 NOTICE_403_003).
+  {
+    path: '/NoticeDetail',
+    name: 'NoticeDetail',
+    component: () => import('@/views/notice/NoticeDetailView.vue'),
+  },
+  {
+    path: '/NoticeList',
+    name: 'NoticeList',
+    component: () => import('@/views/notice/NoticeListView.vue'),
+  },
+
   { path: '/JoinUser', name: 'JoinUser', component: () => import('@/views/login/JoinUser.vue') },
 
   // PRAFTA-037-F3: 인증대기(SYS013='04') 계정의 휴대폰 본인인증 화면.

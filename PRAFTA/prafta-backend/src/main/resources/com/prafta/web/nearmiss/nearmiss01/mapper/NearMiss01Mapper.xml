@@ -229,6 +229,7 @@
       , DESCRIPTION
       , POTENTIAL_SEVERITY_CD
       , IMMEDIATE_ACTION_DESC
+      , FILE_MGMT_CD
       , REPORT_STATUS_CD
       , REPORTER_ID
       , REPORT_DTIME
@@ -250,6 +251,7 @@
       , #{description}
       , #{potentialSeverityCd}
       , #{immediateActionDesc}
+      , #{fileMgmtCd}
       , '100'
       , #{gvUserCd}
       , NOW()
@@ -262,7 +264,7 @@
     </insert>
 
     <!-- E6 원 위험성평가 건 전환 가능 여부 확인 (사업장 스코프 + 전환 허용 상태만).
-         이미 개선완료(003)/미처리대상(004)/아차사고 이관(005) 건은 재전환 차단(중복 INSERT 방지). -->
+         검토요청(001) 단계만 전환 허용. 그 외 상태(개선예정/완료/미처리/이관)는 전환 차단(중복 INSERT 방지). -->
     <select id="countAssessment"
             parameterType="com.prafta.web.nearmiss.nearmiss01.application.command.AssessmentTransferCommand"
             resultType="int">
@@ -274,7 +276,7 @@
       AND A.SITE_CD = #{siteCd}
       AND A.PROCESS_CD = #{srcProcessCd}
       AND A.ASSESSMENT_CD = #{srcAssessmentCd}
-      AND A.ASSESSMENT_STATUS NOT IN ('003', '004', '005')
+      AND A.ASSESSMENT_STATUS = '001'
     </select>
 
     <!-- E6 원 위험성평가 건 단순 존재 확인 (상태 무관, 사업장 스코프).
@@ -285,6 +287,20 @@
     /* NearMiss01Mapper.countAssessmentAny */
     SELECT
         COUNT(1)
+    FROM TB_RISK_ASSESSMENT A
+    WHERE A.CMPNY_CD = #{gvCmpnyCd}
+      AND A.SITE_CD = #{siteCd}
+      AND A.PROCESS_CD = #{srcProcessCd}
+      AND A.ASSESSMENT_CD = #{srcAssessmentCd}
+    </select>
+
+    <!-- E6 원 위험성평가 건의 현장 사진 관리코드(INIT_FILE_MGMT_CD) 조회. 전환 시 아차사고로 사진 복사용 -->
+    <select id="selectAssessmentFileMgmtCd"
+            parameterType="com.prafta.web.nearmiss.nearmiss01.application.command.AssessmentTransferCommand"
+            resultType="java.lang.String">
+    /* NearMiss01Mapper.selectAssessmentFileMgmtCd */
+    SELECT
+        A.INIT_FILE_MGMT_CD
     FROM TB_RISK_ASSESSMENT A
     WHERE A.CMPNY_CD = #{gvCmpnyCd}
       AND A.SITE_CD = #{siteCd}

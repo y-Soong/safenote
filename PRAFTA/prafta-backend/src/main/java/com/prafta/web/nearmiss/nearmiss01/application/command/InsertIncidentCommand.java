@@ -19,6 +19,7 @@ public record InsertIncidentCommand(
     , String description
     , String potentialSeverityCd
     , String immediateActionDesc
+    , String fileMgmtCd
     , String srcProcessCd
     , String srcAssessmentCd
     , String gvCmpnyCd
@@ -41,6 +42,7 @@ public record InsertIncidentCommand(
             , param.description()
             , param.potentialSeverityCd()
             , param.immediateActionDesc()
+            , null // fileMgmtCd: 원 평가건 사진 관리코드는 서비스에서 조회 후 주입
             , param.srcProcessCd()
             , param.srcAssessmentCd()
             , param.gvCmpnyCd()
@@ -67,6 +69,35 @@ public record InsertIncidentCommand(
             , description
             , source.potentialSeverityCd()
             , source.immediateActionDesc()
+            , source.fileMgmtCd()
+            , source.srcProcessCd()
+            , source.srcAssessmentCd()
+            , source.gvCmpnyCd()
+            , source.gvUserCd()
+        );
+    }
+
+    /**
+     * fileMgmtCd 만 교체한 사본을 반환한다.
+     * 원 위험성평가건의 현장 사진(INIT_FILE_MGMT_CD)을 아차사고로 복사하기 위함.
+     * 원본 사진이 없으면 fileMgmtCd 는 null 로 INSERT 되어 사진 없는 케이스도 정상 동작한다.
+     */
+    public static InsertIncidentCommand withFileMgmtCd(InsertIncidentCommand source, String fileMgmtCd) {
+
+        if (source == null)
+            throw new ApiException(CommonErrorCode.COMMON_400_001);
+
+        return new InsertIncidentCommand(
+            source.siteCd()
+            , source.nearMissId()
+            , source.incidentTypeCd()
+            , source.processCd()
+            , source.occurDtime()
+            , source.locationDesc()
+            , source.description()
+            , source.potentialSeverityCd()
+            , source.immediateActionDesc()
+            , fileMgmtCd
             , source.srcProcessCd()
             , source.srcAssessmentCd()
             , source.gvCmpnyCd()

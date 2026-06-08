@@ -4,8 +4,12 @@ package com.prafta.web.attd.attd07.result;
  * {@code Attd07Mapper.selectAllowedWindow}의 결과.
  *
  * (a) SCH_MGMT의 스케줄된 근무 구간(plan1/plan2)과
- * (b) FNC_STD_TIME으로 표준화된 실제 근무 구간(act1/act2)을
+ * (b) 실제(raw) 출퇴근 근무 구간(act1/act2)을
  * (cmpny, site, user, workYmd) 튜플 단위로 함께 담는다.
+ *
+ * <p>초과근무 등록 가능 범위는 "실근태 − 스케줄" 로 계산한다(표준화 미반영).
+ * 표준화 시각은 화면 보조 표시용일 뿐 OT 등록에 영향을 주지 않으므로,
+ * 본 결과에는 raw 출퇴근 일자/시각만 담는다.
  *
  * 시간 컬럼은 0 패딩 적용 HH:mm 형식(varchar(4))이며, 데이터가 없으면 null.
  *
@@ -21,24 +25,20 @@ public record AllowedWindowResult(
     , String plan2Start
     , String plan2End
 
-    /** 1차 근태 row — 출근 raw 일자 / 표준화 일자 / 표준화 시각. */
+    /** 1차 근태 row — 출근 raw 일자 / 시각. */
     , String act1InDate
-    , String act1InStdDate
-    , String act1InStdTime
+    , String act1InTime
 
-    /** 1차 근태 row — 퇴근 raw 일자 / 표준화 일자 / 표준화 시각. */
+    /** 1차 근태 row — 퇴근 raw 일자 / 시각. */
     , String act1OutDate
-    , String act1OutStdDate
-    , String act1OutStdTime
+    , String act1OutTime
 
-    /** 2차 근태 row — 출근 raw 일자 / 표준화 일자 / 표준화 시각. */
+    /** 2차 근태 row — 출근 raw 일자 / 시각. */
     , String act2InDate
-    , String act2InStdDate
-    , String act2InStdTime
+    , String act2InTime
 
-    /** 2차 근태 row — 퇴근 raw 일자 / 표준화 일자 / 표준화 시각. */
+    /** 2차 근태 row — 퇴근 raw 일자 / 시각. */
     , String act2OutDate
-    , String act2OutStdDate
-    , String act2OutStdTime
+    , String act2OutTime
 ) {
 }

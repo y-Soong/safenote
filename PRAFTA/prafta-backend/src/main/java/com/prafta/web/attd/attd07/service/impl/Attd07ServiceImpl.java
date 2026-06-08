@@ -867,7 +867,8 @@ public class Attd07ServiceImpl implements Attd07Service {
             throw new ApiException(AttdErrorCode.ATTD_400_013);
         }
 
-        // 4. 스케줄과 표준화된 actual 구간을 로드한다.
+        // 4. 스케줄과 raw 실근태 구간을 로드한다.
+        //    초과근무 등록 가능 범위는 "실근태 − 스케줄" 로 계산한다(표준화 미반영).
         AllowedWindowResult windows = attd07Mapper.selectAllowedWindow(
                 OvertimeAllowedWindowQuery.from(param));
         if (windows == null) {
@@ -877,16 +878,16 @@ public class Attd07ServiceImpl implements Attd07Service {
         }
 
         // PRAFTA-011 - WORK_SEQ 인덱스를 보존한 구간 배열을 사용한다.
-        //   schBySeq[1]/[2] = 1·2구간 스케줄, stdBySeq[1]/[2] = 1·2구간 표준화 actual.
+        //   schBySeq[1]/[2] = 1·2구간 스케줄, actBySeq[1]/[2] = 1·2구간 raw 실근태.
         int[][] schBySeq = AttdScheduleUtils.buildScheduledSegmentsBySeq(param.workYmd(), windows);
-        int[][] stdBySeq = AttdScheduleUtils.buildStandardizedSegmentsBySeq(param.workYmd(), windows);
+        int[][] actBySeq = AttdScheduleUtils.buildActualSegmentsBySeq(param.workYmd(), windows);
 
         // PRAFTA-003-1 (Q1) - 해당 일자에 완료된 근무 기록이 없는 경우, 별도 에러 코드로 분리.
         // 완료된 actual 근무 구간이 없으면 "스케줄 외 시간(outside of schedule)" 윈도우를
         // 도출할 수 없으므로, OT 범위 자체가 잘못되었다고 시사하는 대신 "출퇴근 기록 누락"이라는
         // 사전조건이 누락되었다는 점을 호출자에게 알린다.
-        if (stdBySeq[1] == null && stdBySeq[2] == null) {
-            log.warn("OT register rejected - no standardized actual work segments. userCd={}, workYmd={}",
+        if (actBySeq[1] == null && actBySeq[2] == null) {
+            log.warn("OT register rejected - no actual work segments. userCd={}, workYmd={}",
                     param.userCd(), param.workYmd());
             throw new ApiException(AttdErrorCode.ATTD_400_014);
         }
@@ -898,7 +899,7 @@ public class Attd07ServiceImpl implements Attd07Service {
         //    1구간/2구간 actual 은 (오버나이트 보정 포함) 서로 겹치지 않도록 stamp 되어 있다.
         List<int[]> allowedAll = new ArrayList<>(2);
         for (int seq = 1; seq <= 2; seq++) {
-            int[] actSeg = stdBySeq[seq];
+            int[] actSeg = actBySeq[seq];
             if (actSeg == null) {
                 // 해당 구간의 actual 근무 기록이 없으면 등록가능시간도 없다.
                 continue;

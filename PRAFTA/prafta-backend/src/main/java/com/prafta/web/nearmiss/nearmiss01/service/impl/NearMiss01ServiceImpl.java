@@ -190,6 +190,9 @@ public class NearMiss01ServiceImpl implements NearMiss01Service {
             throw new ApiException(NearMissErrorCode.NEARMISS_404_002);
         }
 
+        // 원 위험성평가 건의 현장 사진 관리코드 조회 (없으면 null → 사진 없는 케이스로 정상 처리)
+        String srcFileMgmtCd = nearMiss01Mapper.selectAssessmentFileMgmtCd(transferCommand);
+
         // 채번: NM + YYYYMMDD + 3자리 SEQ (사업장+당일 기준)
         String nearMissId = nearMiss01Mapper.selectNextNearMissId(NearMissIdSeqQuery.from(param));
 
@@ -202,6 +205,8 @@ public class NearMiss01ServiceImpl implements NearMiss01Service {
                 param.srcProcessCd(), param.srcAssessmentCd());
             insertCommand = InsertIncidentCommand.withDescription(insertCommand, fallbackDesc);
         }
+        // 원 평가건 현장 사진 관리코드 주입 (null/공백이면 그대로 null 로 INSERT)
+        insertCommand = InsertIncidentCommand.withFileMgmtCd(insertCommand, srcFileMgmtCd);
         nearMiss01Mapper.insertIncident(insertCommand);
 
         // (2) 원 tb_risk_assessment 상태 -> '005' 이관 (D2: 상태값 신설, 추적 보존)

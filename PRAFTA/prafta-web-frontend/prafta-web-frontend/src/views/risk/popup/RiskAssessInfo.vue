@@ -344,13 +344,10 @@
             >
               개선완료보고서
             </button>
-            <!-- PRAFTA-040-5: 아차사고로 전환 (설계 §4-B). 완료(003)/마감(004) 외 상태에서만 노출. -->
+            <!-- PRAFTA-040-5: 아차사고로 전환 (설계 §4-B). 검토요청(001) 단계에서만 노출. -->
             <button
               class="btn btn-report"
-              v-if="
-                props.riskAssessmentData.assessmentStatus != '003' &&
-                props.riskAssessmentData.assessmentStatus != '004'
-              "
+              v-if="props.riskAssessmentData.assessmentStatus == '001'"
               @click="fnConvertToNearMiss()"
             >
               아차사고로 전환

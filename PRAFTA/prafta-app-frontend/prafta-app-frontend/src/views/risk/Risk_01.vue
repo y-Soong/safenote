@@ -704,8 +704,9 @@ const fnSave = async () => {
     })
 
     if (res.status >= 200 && res.status < 300) {
-      proxy.$alert('저장되었습니다.')
-      //      router.push('/MainView')
+      // 저장 성공 알림 확인 후 메인 화면으로 복귀 (뒤로가기 시 폼 재진입 방지 위해 replace 사용)
+      await proxy.$alert('저장되었습니다.')
+      router.replace('/MainView')
     } else {
       const msg = res.data?.message || res.data?.error || `HTTP ${res.status}`
       alert(`저장 실패: ${msg}`)

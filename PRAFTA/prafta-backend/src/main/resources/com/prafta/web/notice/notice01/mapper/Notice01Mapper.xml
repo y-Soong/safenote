@@ -145,6 +145,7 @@
     LEFT OUTER JOIN TB_NOTICE_USER_ACK K
         ON K.CMPNY_CD = A.CMPNY_CD AND K.NOTICE_ID = A.NOTICE_ID AND K.USER_CD = #{gvUserCd}
     WHERE A.CMPNY_CD = #{gvCmpnyCd}
+      AND A.NOTICE_TYPE = 'NOTICE'  <!-- 053-2 회귀: 자료실(ARCHIVE) 행 혼입 차단 -->
       AND A.DEL_YN = 'N'
       <!-- titleKeyword: 제목/내용 통합 검색(둘 중 하나라도 매칭) -->
       <if test="titleKeyword != null and titleKeyword != ''">
@@ -238,6 +239,7 @@
         ON K.CMPNY_CD = A.CMPNY_CD AND K.NOTICE_ID = A.NOTICE_ID AND K.USER_CD = #{gvUserCd}
     WHERE A.CMPNY_CD = #{gvCmpnyCd}
       AND A.NOTICE_ID = #{noticeId}
+      AND A.NOTICE_TYPE = 'NOTICE'  <!-- 053-2 회귀: 자료실(ARCHIVE) 단건 혼입 차단 -->
       AND A.DEL_YN = 'N'
     </select>
 
@@ -300,6 +302,7 @@
         )
     FROM TB_NOTICE A
     WHERE A.CMPNY_CD = #{gvCmpnyCd}
+      AND A.NOTICE_TYPE = 'NOTICE'  <!-- 053-2 회귀: 공지 채번 스코프 방어(자료실은 'A' prefix + ARCHIVE) -->
       AND A.NOTICE_ID LIKE CONCAT('N', DATE_FORMAT(NOW(), '%Y%m%d'), '%')
     </select>
 
@@ -311,6 +314,7 @@
     (
         CMPNY_CD
       , NOTICE_ID
+      , NOTICE_TYPE
       , TITLE
       , CONTENT
       , EDIT_PWD
@@ -329,6 +333,7 @@
     (
         #{gvCmpnyCd}
       , #{noticeId}
+      , 'NOTICE'  <!-- 053-2 회귀: 공지 생성은 NOTICE 타입 명시 고정 -->
       , #{title}
       , #{content}
       , #{editPwdHash}
@@ -364,6 +369,7 @@
       , UPDATE_DATE      = NOW()
     WHERE CMPNY_CD = #{gvCmpnyCd}
       AND NOTICE_ID = #{noticeId}
+      AND NOTICE_TYPE = 'NOTICE'  <!-- 053-2 회귀: 자료실 행 오수정 차단 -->
       AND DEL_YN = 'N'
     </update>
 
@@ -452,6 +458,7 @@
       , UPDATE_DATE = NOW()
     WHERE CMPNY_CD = #{gvCmpnyCd}
       AND NOTICE_ID = #{noticeId}
+      AND NOTICE_TYPE = 'NOTICE'  <!-- 053-2 회귀: 자료실 행 오삭제 차단 -->
       AND DEL_YN = 'N'
     </update>
 
@@ -465,6 +472,7 @@
     FROM TB_NOTICE A
     WHERE A.CMPNY_CD = #{gvCmpnyCd}
       AND A.NOTICE_ID = #{noticeId}
+      AND A.NOTICE_TYPE = 'NOTICE'  <!-- 053-2 회귀: 자료실 비번 해시 노출 차단 -->
       AND A.DEL_YN = 'N'
     </select>
 
@@ -497,6 +505,7 @@
     FROM TB_NOTICE A
     WHERE A.CMPNY_CD = #{gvCmpnyCd}
       AND A.NOTICE_ID = #{noticeId}
+      AND A.NOTICE_TYPE = 'NOTICE'  <!-- 053-2 회귀: 자료실 수정판정 혼입 차단 -->
       AND A.DEL_YN = 'N'
     </select>
 
@@ -509,6 +518,7 @@
         COUNT(1)
     FROM TB_NOTICE A
     WHERE A.CMPNY_CD = #{cmpnyCd}
+      AND A.NOTICE_TYPE = 'NOTICE'  <!-- 053-2 회귀(방어): 자료실은 PIN_YN='N' 이라 무관하나 명시 -->
       AND A.DEL_YN = 'N'
       AND A.PIN_YN = 'Y'
       <if test="excludeNoticeId != null and excludeNoticeId != ''">
@@ -526,6 +536,7 @@
       , UPDATE_NO   = #{gvUserCd}
       , UPDATE_DATE = UPDATE_DATE
     WHERE CMPNY_CD = #{cmpnyCd}
+      AND NOTICE_TYPE = 'NOTICE'  <!-- 053-2 회귀(방어): 자료실 PIN 시프트 차단 -->
       AND DEL_YN = 'N'
       AND PIN_YN = 'Y'
       AND PIN_ORDER &gt;= #{fromOrder}
@@ -544,6 +555,7 @@
           , ROW_NUMBER() OVER (ORDER BY R.PIN_ORDER ASC, R.INSERT_DATE DESC) AS RN
         FROM TB_NOTICE R
         WHERE R.CMPNY_CD = #{cmpnyCd}
+          AND R.NOTICE_TYPE = 'NOTICE'  <!-- 053-2 회귀(방어): 자료실 PIN 재압축 차단 -->
           AND R.DEL_YN = 'N'
           AND R.PIN_YN = 'Y'
     ) SEQ
@@ -680,6 +692,7 @@
       , <choose><when test="isDaily">1</when><otherwise>0</otherwise></choose> AS isDaily
     FROM TB_NOTICE N
     WHERE N.CMPNY_CD = #{gvCmpnyCd}
+      AND N.NOTICE_TYPE = 'NOTICE'  <!-- ★053-2 회귀(최우선): 자료실이 로그인 팝업으로 새지 않게 -->
       AND N.DEL_YN = 'N'
       AND N.POPUP_YN = 'Y'
       AND DATE_FORMAT(NOW(), '%Y%m%d') BETWEEN N.POPUP_FROM_YMD AND N.POPUP_TO_YMD
@@ -836,6 +849,7 @@
     FROM TB_NOTICE N
     WHERE N.CMPNY_CD = #{cmpnyCd}
       AND N.NOTICE_ID = #{noticeId}
+      AND N.NOTICE_TYPE = 'NOTICE'  <!-- 053-2 회귀: 자료실 다운로드 노출검증 혼입 차단 -->
       AND N.DEL_YN = 'N'
       <!-- (A) 대상 매칭 §6-1 (일용직이면 NODE 제외 + INCLUDE_DAILY_YN='Y' 강제) -->
       <choose>
@@ -899,6 +913,7 @@
     FROM TB_NOTICE N
     WHERE N.CMPNY_CD = #{cmpnyCd}
       AND N.NOTICE_ID = #{noticeId}
+      AND N.NOTICE_TYPE = 'NOTICE'  <!-- 053-2 회귀: 자료실 등록자 조회 혼입 차단 -->
       AND N.DEL_YN = 'N'
     </select>
 
@@ -926,7 +941,9 @@
     INNER JOIN TB_FILE_INFO FI
         ON FI.CMPNY_CD = NF.CMPNY_CD AND FI.FILE_MGMT_CD = NF.FILE_MGMT_CD
     INNER JOIN TB_NOTICE N
-        ON N.CMPNY_CD = NF.CMPNY_CD AND N.NOTICE_ID = NF.NOTICE_ID AND N.DEL_YN = 'N'
+        ON N.CMPNY_CD = NF.CMPNY_CD AND N.NOTICE_ID = NF.NOTICE_ID
+       AND N.NOTICE_TYPE = 'NOTICE'  <!-- 053-2 회귀: 자료실 첨부 공지경로 다운로드 차단 -->
+       AND N.DEL_YN = 'N'
     WHERE NF.CMPNY_CD = #{gvCmpnyCd}
       AND NF.NOTICE_ID = #{noticeId}
       AND NF.FILE_MGMT_CD = #{fileMgmtCd}
@@ -942,7 +959,8 @@
     FROM TB_NOTICE_USER_ACK A
     INNER JOIN TB_NOTICE N
         ON N.CMPNY_CD = A.CMPNY_CD AND N.NOTICE_ID = A.NOTICE_ID
-    WHERE N.POPUP_YN = 'Y'
+    WHERE N.NOTICE_TYPE = 'NOTICE'  <!-- 053-2 회귀: 자료실 ack 정리 혼입 차단(자료실은 POPUP_YN='N') -->
+      AND N.POPUP_YN = 'Y'
       AND N.POPUP_TO_YMD IS NOT NULL
       AND N.POPUP_TO_YMD &lt; #{cutoffYmd}
     </delete>

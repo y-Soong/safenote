@@ -385,16 +385,20 @@ const fnClose = () => {
   padding: 0;
   display: flex;
   flex-direction: column;
+  /* 각 첨부 항목이 가로 전체로 늘어나지 않고 내용만큼만 잡히도록 */
+  align-items: flex-start;
   gap: var(--space-xxs, 0.25rem);
   max-height: 96px;
   overflow-y: auto;
 }
 
 .file-item {
-  display: flex;
+  display: inline-flex;
   align-items: center;
-  justify-content: space-between;
-  gap: var(--space-sm, 0.5rem);
+  /* 파일명 + 다운로드 아이콘 폭만큼만 차지 */
+  width: fit-content;
+  max-width: 100%;
+  gap: var(--space-xs, 0.375rem);
   padding: var(--space-xxs, 0.25rem) var(--space-sm, 0.5rem);
   border: 1px solid var(--color-border, #e5e7eb);
   border-radius: var(--btn-radius, 8px);
@@ -402,8 +406,8 @@ const fnClose = () => {
 }
 
 .file-name {
-  flex: 1;
   min-width: 0;
+  /* 지나치게 긴 파일명만 말줄임(카드 폭 보호), 평소엔 내용 길이만큼 */
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -413,11 +417,15 @@ const fnClose = () => {
 
 .file-dl-btn {
   flex-shrink: 0;
-  width: 28px;
-  height: 24px;
-  border: 1px solid var(--color-border-strong, #d1d5db);
-  border-radius: var(--btn-radius, 8px);
-  background: var(--color-surface, #ffffff);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  border: none;
+  border-radius: var(--btn-radius, 6px);
+  background: transparent;
   color: var(--color-primary, #16a34a);
   font-size: var(--font-size-sm, 0.875rem);
   line-height: 1;
@@ -426,7 +434,6 @@ const fnClose = () => {
 
 .file-dl-btn:hover {
   background: var(--color-primary-soft, #ecfdf3);
-  border-color: var(--color-primary, #16a34a);
 }
 
 .notice-popup-dots {
@@ -453,6 +460,14 @@ const fnClose = () => {
   justify-content: flex-end;
   gap: var(--space-sm, 0.5rem);
   flex-shrink: 0;
+}
+
+.notice-popup-actions .btn-primary,
+.notice-popup-actions .btn-secondary {
+  /* 텍스트 폭만큼만(가로로 늘어나지 않게) + 우측 정렬 유지 */
+  flex: 0 0 auto;
+  width: auto;
+  white-space: nowrap;
 }
 
 .btn-primary {

@@ -1535,21 +1535,19 @@
         , SCH.SEC_SCH_STR_TIME                                             AS plan2Start
         , SCH.SEC_SCH_END_TIME                                             AS plan2End
 
-        /* 1st attd row - standardized check-in / check-out (PRAFTA-015 룰 + 자정 넘김 보정) */
+        /* 1st attd row - raw 출퇴근 일자/시각.
+           초과근무 등록 가능 범위는 "실근태 − 스케줄" 로 계산하므로 표준화 미반영
+           (표준화 시각은 화면 보조 표시용으로 selectDailyAttdDetails 에서만 사용). */
         , A1.CHECK_IN_DATE                                                 AS act1InDate
-        , <include refid="frag_std_date"><property name="cmpny" value="#{gvCmpnyCd}"/><property name="ymd" value="WP.WORK_YMD"/><property name="dtCol" value="A1.CHECK_IN_DATE"/><property name="tmCol" value="A1.CHECK_IN_TIME"/><property name="rule" value="'01'"/><property name="round" value="CEIL"/></include> AS act1InStdDate
-        , <include refid="frag_std_time"><property name="cmpny" value="#{gvCmpnyCd}"/><property name="ymd" value="WP.WORK_YMD"/><property name="dtCol" value="A1.CHECK_IN_DATE"/><property name="tmCol" value="A1.CHECK_IN_TIME"/><property name="rule" value="'01'"/><property name="round" value="CEIL"/></include> AS act1InStdTime
+        , A1.CHECK_IN_TIME                                                 AS act1InTime
         , A1.CHECK_OUT_DATE                                                AS act1OutDate
-        , <include refid="frag_std_date"><property name="cmpny" value="#{gvCmpnyCd}"/><property name="ymd" value="WP.WORK_YMD"/><property name="dtCol" value="A1.CHECK_OUT_DATE"/><property name="tmCol" value="A1.CHECK_OUT_TIME"/><property name="rule" value="'02'"/><property name="round" value="FLOOR"/></include> AS act1OutStdDate
-        , <include refid="frag_std_time"><property name="cmpny" value="#{gvCmpnyCd}"/><property name="ymd" value="WP.WORK_YMD"/><property name="dtCol" value="A1.CHECK_OUT_DATE"/><property name="tmCol" value="A1.CHECK_OUT_TIME"/><property name="rule" value="'02'"/><property name="round" value="FLOOR"/></include> AS act1OutStdTime
+        , A1.CHECK_OUT_TIME                                                AS act1OutTime
 
-        /* 2nd attd row - standardized check-in / check-out (PRAFTA-015 룰 + 자정 넘김 보정) */
+        /* 2nd attd row - raw 출퇴근 일자/시각. */
         , A2.CHECK_IN_DATE                                                 AS act2InDate
-        , <include refid="frag_std_date"><property name="cmpny" value="#{gvCmpnyCd}"/><property name="ymd" value="WP.WORK_YMD"/><property name="dtCol" value="A2.CHECK_IN_DATE"/><property name="tmCol" value="A2.CHECK_IN_TIME"/><property name="rule" value="'01'"/><property name="round" value="CEIL"/></include> AS act2InStdDate
-        , <include refid="frag_std_time"><property name="cmpny" value="#{gvCmpnyCd}"/><property name="ymd" value="WP.WORK_YMD"/><property name="dtCol" value="A2.CHECK_IN_DATE"/><property name="tmCol" value="A2.CHECK_IN_TIME"/><property name="rule" value="'01'"/><property name="round" value="CEIL"/></include> AS act2InStdTime
+        , A2.CHECK_IN_TIME                                                 AS act2InTime
         , A2.CHECK_OUT_DATE                                                AS act2OutDate
-        , <include refid="frag_std_date"><property name="cmpny" value="#{gvCmpnyCd}"/><property name="ymd" value="WP.WORK_YMD"/><property name="dtCol" value="A2.CHECK_OUT_DATE"/><property name="tmCol" value="A2.CHECK_OUT_TIME"/><property name="rule" value="'02'"/><property name="round" value="FLOOR"/></include> AS act2OutStdDate
-        , <include refid="frag_std_time"><property name="cmpny" value="#{gvCmpnyCd}"/><property name="ymd" value="WP.WORK_YMD"/><property name="dtCol" value="A2.CHECK_OUT_DATE"/><property name="tmCol" value="A2.CHECK_OUT_TIME"/><property name="rule" value="'02'"/><property name="round" value="FLOOR"/></include> AS act2OutStdTime
+        , A2.CHECK_OUT_TIME                                                AS act2OutTime
 
     FROM TB_USER_WORK_PLAN WP
 

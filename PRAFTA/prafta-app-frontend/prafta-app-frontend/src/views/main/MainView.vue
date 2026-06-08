@@ -128,6 +128,16 @@
       @submit="onOffsiteSubmit"
       @cancel="onOffsiteCancel"
     />
+
+    <!-- 로그인(앱 진입) 공지 팝업 — /popup 결과 있으면 진입 시 오픈 (prafta-app-023-3) -->
+    <NoticeLoginPopup
+      v-model:open="noticePopupOpen"
+      :items="noticePopupItems"
+      @confirm="onNoticePopupConfirm"
+      @snooze="onNoticePopupSnooze"
+      @read="onNoticePopupRead"
+      @closed="onNoticePopupClosed"
+    />
   </div>
 </template>
 
@@ -146,6 +156,7 @@ import AttendanceSummaryCard from './components/AttendanceSummaryCard.vue'
 import SafetyActivityCard from './components/SafetyActivityCard.vue'
 import TbmAttendCard from './components/TbmAttendCard.vue'
 import NoticeListCard from './components/NoticeListCard.vue'
+import NoticeLoginPopup from './components/NoticeLoginPopup.vue'
 import HomeTabBar from './components/HomeTabBar.vue'
 import OffsiteReasonSheet from '@/views/attd/components/OffsiteReasonSheet.vue'
 
@@ -239,11 +250,16 @@ const tbmSessionLeader = ref('') // presenterName
 const tbmAttendedAt = ref('') // HHMM (myEntryTime)
 
 // ───────────────────────────────────────────────────────────
-// 공지사항 카드
-// prafta-app-001: 공지 도메인 미구축으로 보류 → 빈 배열 / 미열람 0
+// 공지사항 카드 — prafta-app-023-2: /appApi/notice01/my-notices 연동
+//   notices = 응답 noticeList 를 카드 계약({noticeId,isImportant,title,displayTime,isRead})으로
+//             변환 후 slice(0,3). noticeUnreadCount = 응답 unreadCount(전체 모수, slice 무관).
 // ───────────────────────────────────────────────────────────
 const notices = ref([])
 const noticeUnreadCount = ref(0)
+
+// 로그인(앱 진입) 공지 팝업 상태 — /appApi/notice01/popup 결과를 NoticeLoginPopup 으로 전달
+const noticePopupOpen = ref(false)
+const noticePopupItems = ref([])
 
 // ───────────────────────────────────────────────────────────
 // 하단 탭바 — TBM 미참석 카운트 (참석 가능 상태면 1)
@@ -355,6 +371,100 @@ const loadHomeSummary = async ({ showLoading = true } = {}) => {
 }
 
 // ───────────────────────────────────────────────────────────
+// prafta-app-023-2: 공지 — 메인 카드 목록 + 미열람 배지
+//   GET /appApi/notice01/my-notices → { noticeList:[{noticeId,title,pinYn,insertDate,fileCnt,isUnread,isImportant}], unreadCount }
+//   카드 계약(NoticeListCard)으로 변환: { noticeId, isImportant, title, displayTime, isRead }
+//   - displayTime: insertDate('YYYY-MM-DD HH:mm')에서 'MM-DD' 만 추출(카드 메타 컬럼은 좁음).
+//   - isRead: !isUnread (카드/목록은 읽음 여부로 강조 토글).
+//   - isImportant: 응답 isImportant(=pinYn==='Y') 그대로 신뢰.
+// ───────────────────────────────────────────────────────────
+const toCardDisplayTime = (insertDate) => {
+  // insertDate 형식 'YYYY-MM-DD HH:mm' (서버 가공). 카드 메타는 'MM-DD' 만 표시.
+  if (!insertDate || typeof insertDate !== 'string') return ''
+  const datePart = insertDate.split(' ')[0] // 'YYYY-MM-DD'
+  const seg = datePart.split('-')
+  if (seg.length === 3) return `${seg[1]}-${seg[2]}`
+  return datePart
+}
+
+const toCardRow = (row) => ({
+  noticeId: row.noticeId,
+  isImportant: !!row.isImportant,
+  title: row.title,
+  displayTime: toCardDisplayTime(row.insertDate),
+  isRead: !row.isUnread,
+})
+
+// 메인 카드/배지 로드. home-summary 와 독립 try/catch — 한쪽 실패가 다른 쪽을 막지 않는다.
+const loadMyNotices = async () => {
+  try {
+    const { data } = await api.get('/appApi/notice01/my-notices')
+    const list = Array.isArray(data?.noticeList) ? data.noticeList : []
+    // 정렬은 백엔드 신뢰(고정 우선→최신). 카드는 최대 3행만(slice).
+    notices.value = list.slice(0, 3).map(toCardRow)
+    noticeUnreadCount.value = data?.unreadCount ?? 0
+  } catch (e) {
+    // 공지 로드 실패는 전체 화면 에러로 키우지 않고 카드 빈 상태로 폴백.
+    console.warn('[MainView] my-notices 조회 실패(무시):', e?.message)
+    notices.value = []
+    noticeUnreadCount.value = 0
+  }
+}
+
+// 로그인(앱 진입) 공지 팝업 로드 — POST /appApi/notice01/popup (바디 없음).
+//   결과 있으면 NoticeLoginPopup 오픈(백엔드 정렬 순서 그대로 스택 표시).
+const loadNoticePopup = async () => {
+  try {
+    const { data } = await api.post('/appApi/notice01/popup')
+    const list = Array.isArray(data?.popupList) ? data.popupList : []
+    noticePopupItems.value = list
+    noticePopupOpen.value = list.length > 0
+  } catch (e) {
+    // 팝업 판정 실패는 조용히 무시(진입 차단 금지).
+    console.warn('[MainView] notice popup 조회 실패(무시):', e?.message)
+    noticePopupItems.value = []
+    noticePopupOpen.value = false
+  }
+}
+
+// ───────────────────────────────────────────────────────────
+// prafta-app-023-3: 로그인 팝업 액션 — 각 ACK EP 호출(child 가 인덱스 진행 담당).
+//   child(NoticeLoginPopup)는 emit 직후 자체적으로 다음 항목으로 advance() 한다.
+//   여기서는 서버 ACK 만 비동기로 수행(실패해도 진행을 막지 않음 — UX 우선).
+// ───────────────────────────────────────────────────────────
+const onNoticePopupConfirm = async (noticeId) => {
+  try {
+    await api.post('/appApi/notice01/ack-confirm', { noticeId })
+  } catch (e) {
+    console.warn('[MainView] ack-confirm 실패(무시):', e?.message)
+  }
+}
+
+const onNoticePopupSnooze = async (noticeId) => {
+  try {
+    await api.post('/appApi/notice01/ack-snooze', { noticeId })
+  } catch (e) {
+    // NOTICE_400_004(일용직/비고정) 등은 버튼 게이팅으로 정상 흐름에선 발생하지 않으나 방어.
+    const message = e?.response?.data?.message
+    if (message) showAlert(message)
+    else console.warn('[MainView] ack-snooze 실패(무시):', e?.message)
+  }
+}
+
+const onNoticePopupRead = async (noticeId) => {
+  try {
+    await api.post('/appApi/notice01/read', { noticeId })
+  } catch (e) {
+    console.warn('[MainView] notice read 실패(무시):', e?.message)
+  }
+}
+
+// 팝업 전체 종료 — 닫힌 뒤 카드/배지를 최신(읽음 반영)으로 재동기화.
+const onNoticePopupClosed = () => {
+  loadMyNotices()
+}
+
+// ───────────────────────────────────────────────────────────
 // 당겨서 새로고침 — 스크롤 최상단에서 아래로 더 당기면(overscroll) home-summary 재조회.
 //   1) touchstart 시점에 스크롤이 최상단이면 추적 시작
 //   2) touchmove 에서 아래로 당긴 거리(저항감 0.5배)를 인디케이터 높이로 환산
@@ -411,7 +521,8 @@ const onPullEnd = async () => {
   isRefreshing.value = true
   try {
     applySessionHeader()
-    await loadHomeSummary({ showLoading: false })
+    // 홈 요약과 공지 카드를 함께 갱신(공지 실패는 자체 폴백으로 흡수).
+    await Promise.all([loadHomeSummary({ showLoading: false }), loadMyNotices()])
   } finally {
     isRefreshing.value = false
   }
@@ -420,6 +531,9 @@ const onPullEnd = async () => {
 onMounted(() => {
   applySessionHeader()
   loadHomeSummary()
+  // prafta-app-023-2: 공지 카드/배지 + 로그인 팝업을 home-summary 와 병행 로드(독립 실패 격리).
+  loadMyNotices()
+  loadNoticePopup()
   // prafta-app-008: 외근 사유 시트(OffsiteReasonSheet)의 카카오 지도 SDK 를 미리 1회 로드해 둔다.
   // 시트를 열 때 네트워크로 SDK 를 받느라 시트 표시가 지연되는 문제 방지(프리로드).
   // 로드 함수는 중복 가드가 있어 idempotent 하며, 실패해도 시트의 좌표 텍스트 폴백이 동작하므로 조용히 무시.
@@ -437,7 +551,7 @@ onMounted(() => {
 
 // 헤더
 const onBellClick = () => {
-  // prafta-app-001: 공지/알림 도메인 미구축으로 보류
+  // prafta-app-023: 본 라운드 범위는 공지 카드/배지까지. 헤더 벨(알림센터)은 별도 도메인으로 보류.
   showAlert('준비 중입니다')
 }
 
@@ -638,15 +752,16 @@ const onTbmDetail = async () => {
   router.push('/TbmHub')
 }
 
-// 공지 — prafta-app-001: 공지 도메인 미구축으로 보류 (빈 리스트 렌더)
+// 공지 — prafta-app-023-2: 카드 행/전체보기 라우팅.
 const onNoticeMore = () => {
-  showAlert('준비 중입니다')
+  // "전체보기" → 공지 전체목록 화면(prafta-app-023-5).
+  router.push('/NoticeList')
 }
 
 const onNoticeRow = (noticeId) => {
-  // prafta-app-001: 공지 도메인 미구축으로 보류
-  console.log('[MainView] notice row click — noticeId=', noticeId)
-  showAlert('준비 중입니다')
+  // 행 클릭 → 공지 상세 화면(prafta-app-023-4).
+  if (!noticeId) return
+  router.push({ path: '/NoticeDetail', query: { noticeId } })
 }
 
 // 하단 탭

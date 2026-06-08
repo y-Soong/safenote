@@ -43,8 +43,11 @@
       <div>
         <label>진행상태</label>
         <select v-model="assessmentStatus" name="combo">
+          <!-- 005(아차사고로 이관)는 목록에서 제외되므로 진행상태 필터 선택지에서도 숨김 -->
           <option
-            v-for="opt in systCodeArr['SYS011'] || []"
+            v-for="opt in (systCodeArr['SYS011'] || []).filter(
+              (item) => item.systValDCd !== '005'
+            )"
             :key="opt.systValDCd"
             :value="opt.systValDCd"
           >

@@ -68,7 +68,7 @@ public final class AttdScheduleUtils {
 
     /**
      * SCH_MGMT의 스케줄 구간(plan1, plan2)을 workYmd 기준 분 stamp 리스트로 반환한다.
-     * {@link #buildStandardizedSegments(String, AllowedWindowResult)}와 동일한 origin을
+     * {@link #buildActualSegments(String, AllowedWindowResult)}와 동일한 origin을
      * 사용하므로 후속 merge / subtract 연산에서 동등한 비교가 가능하다.
      */
     public static List<int[]> buildScheduledSegments(String workYmd, AllowedWindowResult w) {
@@ -110,17 +110,19 @@ public final class AttdScheduleUtils {
     }
 
     /**
-     * FNC_STD_TIME으로 표준화된 actual 구간(act1, act2)을 workYmd 기준 분 stamp
-     * 리스트로 반환한다. 각 row는 (in/out) date/time 컬럼 쌍을 사용하므로
-     * 자정을 넘는 actual도 정확하게 stamp된다.
+     * raw 실제 출퇴근 구간(act1, act2)을 workYmd 기준 분 stamp 리스트로 반환한다.
+     * 각 row는 (in/out) date/time 컬럼 쌍을 사용하므로 자정을 넘는 actual도 정확하게 stamp된다.
+     *
+     * <p>초과근무 등록 가능 범위는 "실근태 − 스케줄" 로 계산한다. 표준화 시각은
+     * 화면 보조 표시용일 뿐 OT 등록에 영향을 주지 않으므로 여기서는 raw 시각을 사용한다.
      */
-    public static List<int[]> buildStandardizedSegments(String workYmd, AllowedWindowResult w) {
+    public static List<int[]> buildActualSegments(String workYmd, AllowedWindowResult w) {
         List<int[]> out = new ArrayList<>(2);
-        int[] s1 = buildActualSegment(workYmd, w.act1InDate(), w.act1InStdTime(),
-                                      w.act1OutDate(), w.act1OutStdTime());
+        int[] s1 = buildActualSegment(workYmd, w.act1InDate(), w.act1InTime(),
+                                      w.act1OutDate(), w.act1OutTime());
         if (s1 != null) out.add(s1);
-        int[] s2 = buildActualSegment(workYmd, w.act2InDate(), w.act2InStdTime(),
-                                      w.act2OutDate(), w.act2OutStdTime());
+        int[] s2 = buildActualSegment(workYmd, w.act2InDate(), w.act2InTime(),
+                                      w.act2OutDate(), w.act2OutTime());
         if (s2 != null) out.add(s2);
         return out;
     }
@@ -128,7 +130,7 @@ public final class AttdScheduleUtils {
     // ============================================================
     // PRAFTA-011 - WORK_SEQ 인덱스를 보존하는 구간 빌더
     //
-    // 기존 buildScheduledSegments / buildStandardizedSegments 는 1·2구간을
+    // 기존 buildScheduledSegments / buildActualSegments 는 1·2구간을
     // 단일 List 로 flatten 하므로 "1구간 actual ↔ 1구간 schedule" 같은
     // 구간별 매칭 계산이 불가능하다. 아래 메서드는 결과를 길이 3의 배열에
     // 담아 index 1 = WORK_SEQ 1, index 2 = WORK_SEQ 2 로 자리를 보존한다
@@ -155,8 +157,7 @@ public final class AttdScheduleUtils {
     }
 
     /**
-     * FNC_STD_TIME 으로 표준화된 actual 구간(act1 / act2)을 WORK_SEQ 인덱스를
-     * 보존한 길이 3의 배열로 반환한다.
+     * raw 실제 출퇴근 구간(act1 / act2)을 WORK_SEQ 인덱스를 보존한 길이 3의 배열로 반환한다.
      *
      * <ul>
      *   <li>index 1 - WORK_SEQ 1 actual 구간 (act1). 없으면 null.</li>
@@ -167,13 +168,16 @@ public final class AttdScheduleUtils {
      * 각 원소의 stamp 산출 규칙은
      * {@link #buildActualSegment(String, String, String, String, String)}와 동일하며,
      * (in/out) date/time 컬럼 쌍을 사용하므로 자정을 넘는 actual 도 정확히 stamp 된다.
+     *
+     * <p>초과근무 등록 가능 범위는 "실근태 − 스케줄" 로 계산하므로 표준화 시각이 아닌
+     * raw 출퇴근 시각을 사용한다(표준화는 화면 보조 표시용).
      */
-    public static int[][] buildStandardizedSegmentsBySeq(String workYmd, AllowedWindowResult w) {
+    public static int[][] buildActualSegmentsBySeq(String workYmd, AllowedWindowResult w) {
         int[][] bySeq = new int[3][];
-        bySeq[1] = buildActualSegment(workYmd, w.act1InDate(), w.act1InStdTime(),
-                                      w.act1OutDate(), w.act1OutStdTime());
-        bySeq[2] = buildActualSegment(workYmd, w.act2InDate(), w.act2InStdTime(),
-                                      w.act2OutDate(), w.act2OutStdTime());
+        bySeq[1] = buildActualSegment(workYmd, w.act1InDate(), w.act1InTime(),
+                                      w.act1OutDate(), w.act1OutTime());
+        bySeq[2] = buildActualSegment(workYmd, w.act2InDate(), w.act2InTime(),
+                                      w.act2OutDate(), w.act2OutTime());
         return bySeq;
     }
 }

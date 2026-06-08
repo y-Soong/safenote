@@ -55,6 +55,9 @@ public interface NearMiss01Mapper {
     // E6 원 위험성평가 단순 존재 확인 (상태 무관). 404 vs 422 구분용
     int countAssessmentAny(AssessmentTransferCommand command);
 
+    // E6 원 위험성평가 건의 현장 사진 관리코드(INIT_FILE_MGMT_CD) 조회. 전환 시 아차사고로 사진 복사용
+    String selectAssessmentFileMgmtCd(AssessmentTransferCommand command);
+
     // E6 원 위험성평가 상태 -> '005' 이관
     int transferAssessmentStatus(AssessmentTransferCommand command);
 }

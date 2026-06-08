@@ -1763,7 +1763,7 @@ const formSnapshot = ref(null);
 const cloneForm = (v) => JSON.parse(JSON.stringify(v));
 
 // "20260514" + "0900" 형식의 (날짜, 시각) → 분 stamp.
-//   [QA 재작업 D1] 분 stamp 기준을 buildStdSegments 와 동일하게 workYmd-1 00:00 으로 통일.
+//   [QA 재작업 D1] 분 stamp 기준을 buildActualSegments 와 동일하게 workYmd-1 00:00 으로 통일.
 //   (dayDiff + 1) * 1440 + m 으로 산출해 workYmd 00:00 = 1440 이 되도록 한다.
 //   잘못된 값이면 null.
 const otStampFromYmdHm = (ymd, hhmm) => {
@@ -1786,14 +1786,14 @@ const otStampFromYmdHm = (ymd, hhmm) => {
 };
 
 // OT row 1건을 form.segments 의 어느 구간에 넣을지 판정한다.
-//   분 stamp 기준으로 actual std 구간(buildStdSegments) 중 어느 구간에 OT 시작이
-//   포함되는지 검사. 어디에도 포함되지 않으면 가장 가까운(시작이 더 작은 std 구간 끝
+//   분 stamp 기준으로 실근태 구간(buildActualSegments) 중 어느 구간에 OT 시작이
+//   포함되는지 검사. 어디에도 포함되지 않으면 가장 가까운(시작이 더 작은 구간 끝
 //   이후에 있는) 구간으로 fallback. segment 개수가 부족하면 0(1구간)으로 fallback.
 const assignOtToSegment = (otRow, stdSegs, segCount) => {
   if (!segCount) return -1;
   if (segCount === 1) return 0;
-  // segCount === 2 — std 구간이 인덱스별로 1:1 대응한다는 가정.
-  // buildStdSegments 는 act1, act2 순서로 push 하므로 인덱스 의미가 일치.
+  // segCount === 2 — 실근태 구간이 인덱스별로 1:1 대응한다는 가정.
+  // buildActualSegments 는 act1, act2 순서로 push 하므로 인덱스 의미가 일치.
   const start = otStampFromYmdHm(otRow.actualStartDate, otRow.actualStartTime);
   const end = otStampFromYmdHm(otRow.actualEndDate, otRow.actualEndTime);
   if (start == null) return 0;
@@ -1824,10 +1824,10 @@ function initForm() {
     const segments = panel.segments.map((s) => ({ ...s, otList: [] }));
 
     // 2) PRAFTA-003-7: dailyOvertimeResultList 를 segment 인덱스별로 분배.
-    const stdSegs = buildStdSegments();
+    const actSegs = buildActualSegments();
     const otRows = dailyOvertimeList.value || [];
     for (const ot of otRows) {
-      const idx = assignOtToSegment(ot, stdSegs, segments.length);
+      const idx = assignOtToSegment(ot, actSegs, segments.length);
       if (idx < 0 || !segments[idx]) continue;
       segments[idx].otList.push({
         otId: ot.otId,
@@ -2057,13 +2057,16 @@ const buildSchSegments = () => {
   return segs;
 };
 
-// 표준화 적용 실제 근무 구간 (act{n}InStdTime, act{n}OutStdTime) → 분 stamp.
+// raw 실제 근무 구간 (act{n}InTime, act{n}OutTime) → 분 stamp.
 // 출퇴근 일자 (act{n}InDate, act{n}OutDate) 차이로 자정 넘김 보정.
 // [QA 재작업 D1] stamp origin 을 workYmd-1 00:00 기준으로 통일(백엔드와 동일).
 //   (dayDiff + 1) * 1440 + hhmm 으로 산출해 workYmd 00:00 = 1440 이 되도록 한다.
 // [QA 재작업 D3] 구간 인덱스(idx0=1구간, idx1=2구간)를 보존한다.
 //   값이 null/invalid 여도 push 를 건너뛰지 않고 null 을 채워 자리를 유지한다(compaction 금지).
-const buildStdSegments = () => {
+// 초과근무 등록 가능 범위는 "실근태 − 스케줄" 로 계산한다(표준화 미반영).
+//   표준화 시각은 화면 보조 표시용일 뿐 OT 등록에 영향을 주지 않으므로 raw 시각을 쓴다.
+//   (백엔드 AttdScheduleUtils.buildActualSegmentsBySeq 와 동일 규칙.)
+const buildActualSegments = () => {
   const r = record.value ?? {};
   const baseYmd = ymdDashToNum(props.date_p);
   if (baseYmd.length !== 8) return [null, null];
@@ -2093,12 +2096,8 @@ const buildStdSegments = () => {
     return [sStamp, eStamp];
   };
 
-  segs.push(
-    build(r.act1InDate, r.act1InStdTime, r.act1OutDate, r.act1OutStdTime)
-  );
-  segs.push(
-    build(r.act2InDate, r.act2InStdTime, r.act2OutDate, r.act2OutStdTime)
-  );
+  segs.push(build(r.act1InDate, r.act1InTime, r.act1OutDate, r.act1OutTime));
+  segs.push(build(r.act2InDate, r.act2InTime, r.act2OutDate, r.act2OutTime));
   return segs;
 };
 
@@ -2135,22 +2134,23 @@ const subtractIntervals = (a, b) => {
 
 // 화면 노출용 — 등록 가능 OT 구간 리스트 (구간별 분리 계산).
 //   PRAFTA-011 백엔드 규칙과 동일하게 1구간/2구간 각각 따로 계산한다.
-//   - 매칭 스케줄이 있는 구간: (해당 구간 표준화 근무) - (해당 구간 스케줄)
-//   - 매칭 스케줄이 없는 구간: 해당 구간 표준화 근무 전체가 등록 가능
-//   [QA 재작업 D3] buildStdSegments / buildSchSegments 는 구간 인덱스를 보존하며
+//   - 매칭 스케줄이 있는 구간: (해당 구간 실근태) - (해당 구간 스케줄)
+//   - 매칭 스케줄이 없는 구간: 해당 구간 실근태 전체가 등록 가능
+//   초과근무 등록 가능 범위는 "실근태 − 스케줄" 로 계산한다(표준화 미반영).
+//   [QA 재작업 D3] buildActualSegments / buildSchSegments 는 구간 인덱스를 보존하며
 //   해당 구간 값이 없으면 null 을 둔다. idx0=1구간, idx1=2구간 1:1 매핑이 정상 동작한다.
-//   - std 가 null 인 구간: 등록 가능 OT 없음 → 빈 배열.
-//   - sch 가 null 인 구간: 매칭 스케줄 없음 → 표준화 근무 전체가 등록 가능.
+//   - act 가 null 인 구간: 등록 가능 OT 없음 → 빈 배열.
+//   - sch 가 null 인 구간: 매칭 스케줄 없음 → 실근태 전체가 등록 가능.
 const otAllowedWindowsBySeg = computed(() => {
-  const stdSegs = buildStdSegments();
+  const actSegs = buildActualSegments();
   const schSegs = buildSchSegments();
-  return stdSegs.map((std, i) => {
-    if (!std) return [];
+  return actSegs.map((act, i) => {
+    if (!act) return [];
     const sch = schSegs[i];
-    // 매칭 스케줄이 있으면 차집합, 없으면 표준화 근무 전체.
+    // 매칭 스케줄이 있으면 차집합, 없으면 실근태 전체.
     const allowed = sch
-      ? subtractIntervals(mergeIntervals([std]), mergeIntervals([sch]))
-      : [std];
+      ? subtractIntervals(mergeIntervals([act]), mergeIntervals([sch]))
+      : [act];
     return allowed.map(([s, e]) => ({
       startMin: s,
       endMin: e,
