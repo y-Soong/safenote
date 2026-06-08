@@ -52,8 +52,7 @@ public enum TbmErrorCode implements ApiErrorCode {
     // 비밀번호 재발급 불가 상태(OPENED 외) - 비즈니스 룰
     , TBM_409_012(HttpStatus.CONFLICT, "개설 상태에서만 비밀번호를 재발급할 수 있습니다.")
 
-<<<<<<< HEAD
-    // ===== PRAFTA-051 TBM 세션 상태머신 재설계 =====
+    // ===== PRAFTA-051 TBM 세션 상태머신 재설계 (웹 관리자 tbm02) =====
     // 교육준비(OPENED) 전이 불가 상태(DRAFT 외) - 비즈니스 룰. 동시 전이 경합 시에도 사용.
     , TBM_409_013(HttpStatus.CONFLICT, "개설 상태에서만 교육준비를 시작할 수 있습니다.")
     // 교육시작(IN_PROGRESS) 전이 불가 상태(OPENED 외) - 비즈니스 룰. 동시 전이 경합 시에도 사용.
@@ -64,23 +63,23 @@ public enum TbmErrorCode implements ApiErrorCode {
     , TBM_409_016(HttpStatus.CONFLICT, "교육시작 상태에서만 교육을 종료할 수 있습니다.")
     // 종료비밀번호 재발급 불가 상태(COMPLETED 외) - 비즈니스 룰
     , TBM_409_017(HttpStatus.CONFLICT, "교육종료 상태에서만 종료 비밀번호를 재발급할 수 있습니다.")
-=======
-    // ===== 001-P5 R3 라이브 제어(교육 시작/종료/강제퇴실/개별 미이수) =====
+
+    // ===== 001-P5 R3 라이브 제어(앱 관리자 admin: 교육 시작/종료/강제퇴실/개별 미이수) =====
+    // [머지 com-007] prafta-051 과 409_013~017 번호 충돌하여 본 기능셋을 05x 블록으로 재배정.
     // 개설자만 시작/종료 가능(T1) - 비즈니스 룰, 사용자 안내
     , TBM_403_012(HttpStatus.FORBIDDEN, "교육을 개설한 관리자만 시작 또는 종료할 수 있습니다.")
     // GPS 비검증(DISABLED) 세션에서 개별 이수처리 시도(T4) - 비즈니스 룰, 사용자 안내
     , TBM_403_013(HttpStatus.FORBIDDEN, "GPS 검증을 사용한 세션에서만 개별 이수처리를 할 수 있습니다.")
-    // 교육 시작 불가 상태(OPENED 외) - 비즈니스 룰(상태 전이 충돌)
-    , TBM_409_013(HttpStatus.CONFLICT, "개설 상태에서만 교육을 시작할 수 있습니다.")
-    // 교육 종료 불가 상태(IN_PROGRESS 외) - 비즈니스 룰(상태 전이 충돌)
-    , TBM_409_014(HttpStatus.CONFLICT, "진행 중 상태에서만 교육을 종료할 수 있습니다.")
-    // 강제 퇴실 불가 세션 상태(IN_PROGRESS 외) - 비즈니스 룰
-    , TBM_409_015(HttpStatus.CONFLICT, "진행 중 세션에서만 강제 퇴실할 수 있습니다.")
-    // 강제 퇴실 대상 없음/이미 퇴실(멱등 가드 0건) - 비즈니스 룰
-    , TBM_409_016(HttpStatus.CONFLICT, "이미 퇴실 처리되었거나 대상 출결이 없습니다.")
-    // 개별 이수처리 불가 세션 상태(COMPLETED 외) - 비즈니스 룰
-    , TBM_409_017(HttpStatus.CONFLICT, "종료된 세션에서만 개별 이수처리를 할 수 있습니다.")
->>>>>>> origin/main
+    // 교육 시작 불가 상태(OPENED 외) - 비즈니스 룰(상태 전이 충돌). (구 TBM_409_013)
+    , TBM_409_050(HttpStatus.CONFLICT, "개설 상태에서만 교육을 시작할 수 있습니다.")
+    // 교육 종료 불가 상태(IN_PROGRESS 외) - 비즈니스 룰(상태 전이 충돌). (구 TBM_409_014)
+    , TBM_409_051(HttpStatus.CONFLICT, "진행 중 상태에서만 교육을 종료할 수 있습니다.")
+    // 강제 퇴실 불가 세션 상태(IN_PROGRESS 외) - 비즈니스 룰. (구 TBM_409_015)
+    , TBM_409_052(HttpStatus.CONFLICT, "진행 중 세션에서만 강제 퇴실할 수 있습니다.")
+    // 강제 퇴실 대상 없음/이미 퇴실(멱등 가드 0건) - 비즈니스 룰. (구 TBM_409_016)
+    , TBM_409_053(HttpStatus.CONFLICT, "이미 퇴실 처리되었거나 대상 출결이 없습니다.")
+    // 개별 이수처리 불가 세션 상태(COMPLETED 외) - 비즈니스 룰. (구 TBM_409_017)
+    , TBM_409_054(HttpStatus.CONFLICT, "종료된 세션에서만 개별 이수처리를 할 수 있습니다.")
 
     // ===== PRAFTA-033-D TBM 이력 관리 =====
     // 미이수 처리 권한 부족(개설자/safe/master) - 보안 민감, 일반 메시지
@@ -110,7 +109,6 @@ public enum TbmErrorCode implements ApiErrorCode {
     // 종료 서명 누락(D1: 종료 시 서명 필수) - 사용자 안내
     , TBM_400_031(HttpStatus.BAD_REQUEST, "종료 서명을 등록해 주세요.")
 
-<<<<<<< HEAD
     // ===== PRAFTA-051-08 앱 종료 상태 가드 =====
     // 종료 불가 상태(교육시작/교육종료에서만 종료 가능, C6) - 비즈니스 룰
     , TBM_409_033(HttpStatus.CONFLICT, "현재 종료할 수 없는 세션 상태입니다.")
@@ -132,21 +130,21 @@ public enum TbmErrorCode implements ApiErrorCode {
     , TBM_409_042(HttpStatus.CONFLICT, "교육준비 상태에서만 입실자를 내보낼 수 있습니다.")
     // 내보내기 대상 출결 없음/세션 불일치/이미 제거됨 - 비즈니스 룰
     , TBM_409_043(HttpStatus.CONFLICT, "내보낼 수 있는 입실 기록을 찾을 수 없습니다.")
-=======
-    // ===== 001-P5 R5 교육자료 관리 =====
-    // 자료 조회 결과 없음(스코프 밖 mtrlCd 포함)
+
+    // ===== 001-P5 R5 교육자료 관리(앱 관리자 admin) =====
+    // [머지 com-007] prafta-051 과 400_040/400_041/403_040 번호 충돌하여 05x 블록으로 재배정.
+    // 자료 조회 결과 없음(스코프 밖 mtrlCd 포함). (충돌 없음, 번호 유지)
     , TBM_404_040(HttpStatus.NOT_FOUND, "해당 교육자료를 찾을 수 없습니다.")
-    // 자료 제목 누락/길이 초과 - 사용자 안내
-    , TBM_400_040(HttpStatus.BAD_REQUEST, "자료 제목을 200자 이내로 입력해 주세요.")
-    // 자료 타입(COM003) 부적합 - 사용자 안내
-    , TBM_400_041(HttpStatus.BAD_REQUEST, "자료 타입 값이 올바르지 않습니다.")
-    // 항목 누락(최소 1개) 또는 항목 구성 부적합(파일/URL 누락) - 사용자 안내
+    // 자료 제목 누락/길이 초과 - 사용자 안내. (구 TBM_400_040)
+    , TBM_400_050(HttpStatus.BAD_REQUEST, "자료 제목을 200자 이내로 입력해 주세요.")
+    // 자료 타입(COM003) 부적합 - 사용자 안내. (구 TBM_400_041)
+    , TBM_400_051(HttpStatus.BAD_REQUEST, "자료 타입 값이 올바르지 않습니다.")
+    // 항목 누락(최소 1개) 또는 항목 구성 부적합(파일/URL 누락) - 사용자 안내. (충돌 없음, 번호 유지)
     , TBM_400_042(HttpStatus.BAD_REQUEST, "자료 항목을 올바르게 구성해 주세요.")
-    // 업로드 파일 부적합(MIME/확장자/크기) - 사용자 안내
+    // 업로드 파일 부적합(MIME/확장자/크기) - 사용자 안내. (충돌 없음, 번호 유지)
     , TBM_400_043(HttpStatus.BAD_REQUEST, "업로드할 수 없는 파일입니다. 형식과 크기를 확인해 주세요.")
-    // 회사공통 자료 등록/수정/삭제 권한 부족(master/safe 전용) - 사용자 안내
-    , TBM_403_040(HttpStatus.FORBIDDEN, "회사 공통 자료는 안전관리자만 관리할 수 있습니다.")
->>>>>>> origin/main
+    // 회사공통 자료 등록/수정/삭제 권한 부족(master/safe 전용) - 사용자 안내. (구 TBM_403_040)
+    , TBM_403_050(HttpStatus.FORBIDDEN, "회사 공통 자료는 안전관리자만 관리할 수 있습니다.")
 
     ;
 

@@ -581,7 +581,7 @@ public class AppAdminTbmServiceImpl implements AppAdminTbmService {
         if (updated == 0) {
             // 가드(STATUS_CD='OPENED') 0건 = 이미 진행/종료 등 전이 충돌.
             log.warn("TBM 교육 시작 상태 전이 충돌 - sessionCd={}, status={}", param.sessionCd(), guard.statusCd());
-            throw new ApiException(TbmErrorCode.TBM_409_013);
+            throw new ApiException(TbmErrorCode.TBM_409_050);
         }
 
         // 동기화 상태 PLAYING UPSERT(실시간 동기화 도입 대비 초기값). 브로드캐스트는 R3 범위 외.
@@ -623,7 +623,7 @@ public class AppAdminTbmServiceImpl implements AppAdminTbmService {
         if (updated == 0) {
             // 가드(STATUS_CD='IN_PROGRESS') 0건 = 진행 중이 아님(전이 충돌).
             log.warn("TBM 교육 종료 상태 전이 충돌 - sessionCd={}, status={}", param.sessionCd(), guard.statusCd());
-            throw new ApiException(TbmErrorCode.TBM_409_014);
+            throw new ApiException(TbmErrorCode.TBM_409_051);
         }
 
         // T2: 미종료(EXIT_AT IS NULL) 출결 일괄 자동이수(EXIT_TYPE_CD 는 NULL 유지 — SYS052 종료자동 코드 없음).
@@ -687,7 +687,7 @@ public class AppAdminTbmServiceImpl implements AppAdminTbmService {
         // 진행 중 세션에서만 강제 퇴실 허용.
         if (!"IN_PROGRESS".equals(guard.statusCd())) {
             log.warn("TBM 강제 퇴실 불가 세션 상태 - sessionCd={}, status={}", param.sessionCd(), guard.statusCd());
-            throw new ApiException(TbmErrorCode.TBM_409_015);
+            throw new ApiException(TbmErrorCode.TBM_409_052);
         }
 
         // 사유는 선택값. 빈문자는 NULL 로 정규화(EXIT_FORCED_REASON nullable).
@@ -699,7 +699,7 @@ public class AppAdminTbmServiceImpl implements AppAdminTbmService {
             // 멱등 가드(EXIT_AT IS NULL) 0건 = 이미 퇴실 또는 대상 없음(타 세션/회사 attendanceCd 포함).
             log.warn("TBM 강제 퇴실 대상 없음/이미 퇴실 - sessionCd={}, attendanceCd={}",
                     param.sessionCd(), param.attendanceCd());
-            throw new ApiException(TbmErrorCode.TBM_409_016);
+            throw new ApiException(TbmErrorCode.TBM_409_053);
         }
 
         log.info("앱 관리자 TBM 강제 퇴실 완료 - sessionCd={}, attendanceCd={}, byManager={}",
@@ -742,7 +742,7 @@ public class AppAdminTbmServiceImpl implements AppAdminTbmService {
         // 종료된 세션에서만 보정 가능.
         if (!"COMPLETED".equals(guard.statusCd())) {
             log.warn("TBM 개별 이수처리 불가 세션 상태 - sessionCd={}, status={}", param.sessionCd(), guard.statusCd());
-            throw new ApiException(TbmErrorCode.TBM_409_017);
+            throw new ApiException(TbmErrorCode.TBM_409_054);
         }
 
         // 미이수 시 사유 10자 이상 서버 검증. 이수 시 사유 NULL.
@@ -1238,11 +1238,11 @@ public class AppAdminTbmServiceImpl implements AppAdminTbmService {
     private void validateMaterialSave(AdminEduMaterialSaveParam param) {
         String title = param.title() != null ? param.title().trim() : "";
         if (!StringUtils.hasText(title) || title.length() > TITLE_MAX) {
-            throw new ApiException(TbmErrorCode.TBM_400_040);
+            throw new ApiException(TbmErrorCode.TBM_400_050);
         }
         // 자료 타입(COM003) 유효성 — 회사 코드그룹에 존재하는지 확인.
         if (!StringUtils.hasText(param.mtrlType()) || !isValidMaterialType(param.gvCmpnyCd(), param.mtrlType())) {
-            throw new ApiException(TbmErrorCode.TBM_400_041);
+            throw new ApiException(TbmErrorCode.TBM_400_051);
         }
         // 항목 1개 이상.
         if (param.items() == null || param.items().isEmpty()) {
@@ -1577,7 +1577,7 @@ public class AppAdminTbmServiceImpl implements AppAdminTbmService {
         if (isCommon) {
             if (!AuthRoleUtils.canManageCommon(param.gvAuthCd())) {
                 log.warn("TBM 회사공통 자료 쓰기 권한 없음 - authCd={}", param.gvAuthCd());
-                throw new ApiException(TbmErrorCode.TBM_403_040);
+                throw new ApiException(TbmErrorCode.TBM_403_050);
             }
             return;
         }
@@ -1597,7 +1597,7 @@ public class AppAdminTbmServiceImpl implements AppAdminTbmService {
         if (isCommon) {
             if (!scope.companyWide()) {
                 log.warn("TBM 회사공통 자료 수정/삭제 권한 없음 - companyWide=false");
-                throw new ApiException(TbmErrorCode.TBM_403_040);
+                throw new ApiException(TbmErrorCode.TBM_403_050);
             }
             return;
         }

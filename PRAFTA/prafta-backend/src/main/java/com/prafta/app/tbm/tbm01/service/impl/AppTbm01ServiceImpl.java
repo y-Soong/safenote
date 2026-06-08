@@ -290,9 +290,7 @@ public class AppTbm01ServiceImpl implements AppTbm01Service {
     // -------------------------------------------------------------------------
     // prafta-app-tbm: 사용자 앱 TBM 허브 조회/액션 (A1~A10)
     // -------------------------------------------------------------------------
-
-    private static final String STATUS_IN_PROGRESS = "IN_PROGRESS";
-    private static final String STATUS_COMPLETED = "COMPLETED";
+    // [머지 com-007] STATUS_IN_PROGRESS/STATUS_COMPLETED 중복 선언 제거 — 클래스 상단(85~88행) 정의 재사용.
 
     // A1/A2/A3: 탭별 세션 리스트
     @Override
