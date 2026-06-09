@@ -108,6 +108,23 @@
        </foreach>
     </select>
 
+    <!-- ============================================================
+         PRAFTA-APP-022 룰B: 해당 일자 출근 기록(TB_USER_ATTD_MGMT) 존재 카운트
+         - 같은 (CMPNY/SITE/USER/WORK_YMD) DEL_YN='N' 행 수. CHECK_IN_* 가 NOT NULL 이므로
+           행 존재 = 출근 기록 존재. 결과 > 0 이면 연차 신청 거부(ATTD_400_108).
+         - 식별값은 JWT 도출 Param 만 사용(IDOR). IDX_ATTD_USER_DATE 활용.
+         ============================================================ -->
+    <select id="countAttendanceByDate" resultType="int">
+    /* AppLeaveFlowMapper.countAttendanceByDate */
+    SELECT COUNT(1)
+      FROM TB_USER_ATTD_MGMT A
+     WHERE A.CMPNY_CD = #{cmpnyCd}
+       AND A.SITE_CD  = #{siteCd}
+       AND A.USER_CD  = #{userCd}
+       AND A.WORK_YMD = #{workYmd}
+       AND A.DEL_YN   = 'N'
+    </select>
+
     <select id="selectNextReqId" resultType="string">
     /* AppLeaveFlowMapper.selectNextReqId */
     SELECT CONCAT(DATE_FORMAT(NOW(), '%Y%m%d'), FNC_CMM_SEQ_NEXTVAL(#{cmpnyCd}, 'ATTD_REQ_ID')) FROM DUAL

@@ -32,6 +32,14 @@
       >
         {{ completionLabel }}
       </span>
+      <!-- 교육준비 입실자 거리 배지(PREP variant) — 반경 초과 시 danger 톤 -->
+      <span
+        v-else-if="variant === 'PREP' && distanceLabel"
+        class="attendee-badge"
+        :class="distanceToneClass"
+      >
+        {{ distanceLabel }}
+      </span>
       <!-- 진행 중 퇴실 상태(LIVE variant) -->
       <span v-else-if="isExited" class="attendee-badge attendee-badge--exited">퇴실</span>
 
@@ -43,6 +51,16 @@
         @click="$emit('force-exit', attendee)"
       >
         강제 퇴실
+      </button>
+
+      <!-- PREP: 입실자 내보내기(입실취소, D-3) -->
+      <button
+        v-if="variant === 'PREP'"
+        type="button"
+        class="attendee-btn attendee-btn--danger"
+        @click="$emit('cancel-entry', attendee)"
+      >
+        내보내기
       </button>
 
       <!-- COMPLETED: 개별 미이수 처리(GPS 세션 한정 — 부모가 canManageCompletion 으로 제어) -->
@@ -62,18 +80,20 @@
 import { computed } from 'vue'
 
 const props = defineProps({
-  // 출결 항목: { attendanceCd, userNm, userTypeCd, deptNm, entryAt, exitAt, completionStatusCd }
+  // 출결 항목: { attendanceCd, userNm, userTypeCd, deptNm, entryAt, exitAt, completionStatusCd, distanceM }
   attendee: { type: Object, required: true },
-  // 'LIVE'(진행화면) | 'COMPLETED'(종료화면)
+  // 'LIVE'(진행화면) | 'COMPLETED'(종료화면) | 'PREP'(교육준비화면)
   variant: { type: String, default: 'LIVE' },
   // LIVE: 강제퇴실 버튼 노출 여부(세션 IN_PROGRESS 일 때 부모가 true)
   canForceExit: { type: Boolean, default: true },
   // COMPLETED: 미이수 처리 버튼 노출(GPS 검증 세션 한정 — 부모가 서버값으로 판정해 전달)
   canManageCompletion: { type: Boolean, default: false },
+  // PREP: 세션 GPS 검증 반경(m). distanceM > radiusM 면 거리 배지 danger 톤
+  radiusM: { type: Number, default: null },
 })
 
-// force-exit: 강제퇴실 시트 열기 / toggle-completion: 이수상태 변경 시트 열기
-defineEmits(['force-exit', 'toggle-completion'])
+// force-exit: 강제퇴실 / toggle-completion: 이수상태 변경 / cancel-entry: 입실취소(내보내기, PREP)
+defineEmits(['force-exit', 'toggle-completion', 'cancel-entry'])
 
 // 대상유형(SYS050) — 표시용
 const USER_TYPE_LABELS = { REGULAR: '정규직', DAILY: '일용직' }
@@ -102,6 +122,22 @@ const completionToneClass = computed(() => {
     default:
       return 'attendee-badge--pending'
   }
+})
+
+// 교육준비(PREP) 거리 배지: distanceM(m) 표시. 값 없으면 미표시.
+const distanceLabel = computed(() => {
+  const d = props.attendee?.distanceM
+  if (d == null || Number.isNaN(Number(d))) return ''
+  return `${Math.round(Number(d))}m`
+})
+// 반경(radiusM) 초과 시 danger 톤(반경 미지정 시 중립).
+const distanceToneClass = computed(() => {
+  const d = Number(props.attendee?.distanceM)
+  const r = Number(props.radiusM)
+  if (!Number.isNaN(d) && !Number.isNaN(r) && r > 0 && d > r) {
+    return 'attendee-badge--not-completed'
+  }
+  return 'attendee-badge--pending'
 })
 </script>
 

@@ -2,8 +2,8 @@
   AdminTbmSessionDetailView.vue — 관리자 TBM 세션 상세
   - 작업 ID: 001-P5-T-F6 (분해: 001-phase5-admin-tbm-plan.md §2-3, §3 T-A2)
   - 진입: 교육관리 카드 선택 / 개설 성공 후 → /AdminTbmSessionDetail?sessionCd=...
-  - 백엔드: GET /appApi/admin/tbm/sessions/{sessionCd} (T-A2) /
-            POST .../{sessionCd}/cancel (취소) / POST .../{sessionCd}/regenerate-password (비번 재발급)
+  - 백엔드: GET /appApi/admin/tbm/sessions/{sessionCd} (T-A2) / POST .../{sessionCd}/cancel (취소)
+            POST .../{sessionCd}/prepare (교육준비 전이 E2) / regenerate-entry-password (E6) / regenerate-exit-password (E7)
   - 표시: 메타(사업장/개설자/등록일/개설일시) + 교육 내용(plain text) + GPS 설정 + 콘텐츠 + 위험성평가
           + (OPENED/IN_PROGRESS) 입실/종료 비밀번호 카드(AdminTbmPwdCard, pwdVisible 서버 산출)
   - 상태별 액션: DRAFT/OPENED → 수정 / 취소(사유). OPENED → "교육 시작"(핸들러 TODO = 후속 R3 라이브).
@@ -41,9 +41,10 @@
           <h2 class="admin-tbm-detail__title">{{ session.title || 'TBM 세션' }}</h2>
         </div>
 
-        <!-- 입실/종료 비밀번호(OPENED/IN_PROGRESS, pwdVisible 서버 산출) -->
+        <!-- 입실/종료 비밀번호(pwdVisible 서버 산출). OPENED=입실 / COMPLETED=종료 모드(prafta-051) -->
         <AdminTbmPwdCard
           v-if="session.pwdVisible"
+          :mode="pwdMode"
           :entry-pwd="session.entryPwd"
           :exit-pwd="session.exitPwd"
           :can-regenerate="canRegenerate"
@@ -134,7 +135,7 @@
 
         <!-- 상태별 액션 -->
         <div
-          v-if="canEdit || canStart || canGoLive || canGoCompleted"
+          v-if="canEdit || canPrepare || canGoPrep || canGoLive || canGoCompleted"
           class="admin-tbm-detail__actions"
         >
           <button
@@ -156,13 +157,22 @@
             취소
           </button>
           <button
-            v-if="canStart"
+            v-if="canPrepare"
             type="button"
             class="btn btn--primary"
             :disabled="busy"
-            @click="onStart"
+            @click="onPrepare"
           >
-            교육 시작
+            교육준비 시작
+          </button>
+          <button
+            v-if="canGoPrep"
+            type="button"
+            class="btn btn--primary"
+            :disabled="busy"
+            @click="onGoPrep"
+          >
+            교육준비 화면으로
           </button>
           <button
             v-if="canGoLive"
@@ -210,6 +220,7 @@ import { ref, computed, getCurrentInstance, onMounted } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 
 import api from '@/api/axios'
+import { requestGps } from '@/utils/gpsBridge'
 import AdminTbmPwdCard from './components/AdminTbmPwdCard.vue'
 
 const router = useRouter()
@@ -276,8 +287,14 @@ const gpsTypeLabel = computed(
 
 // 상태별 가용 액션(서버 상태 기준 — 클라 역할 분기 아님)
 const canEdit = computed(() => ['DRAFT', 'OPENED'].includes(session.value?.statusCd))
-const canStart = computed(() => session.value?.statusCd === 'OPENED')
-const canRegenerate = computed(() => session.value?.statusCd === 'OPENED')
+// prafta-051: DRAFT→교육준비 시작(/prepare 전이), OPENED→교육준비 화면으로(/AdminTbmPrep).
+const canPrepare = computed(() => session.value?.statusCd === 'DRAFT')
+const canGoPrep = computed(() => session.value?.statusCd === 'OPENED')
+// 비번 카드 모드/재발급: OPENED=입실(E6), COMPLETED=종료(E7). IN_PROGRESS 는 입실비번 읽기전용.
+const pwdMode = computed(() => (session.value?.statusCd === 'COMPLETED' ? 'EXIT' : 'ENTRY'))
+const canRegenerate = computed(() =>
+  ['OPENED', 'COMPLETED'].includes(session.value?.statusCd),
+)
 // 진행/종료 화면 진입(조회는 스코프 관리자 가능 — statusCd 기준으로 버튼 노출).
 const canGoLive = computed(() => session.value?.statusCd === 'IN_PROGRESS')
 const canGoCompleted = computed(() => session.value?.statusCd === 'COMPLETED')
@@ -342,25 +359,43 @@ const onCancel = async () => {
   }
 }
 
-// 교육 시작(→ IN_PROGRESS, 개설자만): POST .../{sessionCd}/start → 성공 시 진행 화면 라우팅.
-// 개설자가 아니면 서버가 에러를 내려보내며, 그 메시지를 표시한다.
-const onStart = async () => {
+// 교육준비 시작(DRAFT→OPENED, 개설자만): POST .../{sessionCd}/prepare → 성공 시 교육준비 화면 라우팅.
+// GPS 검증세션(AUTO)이면 관리자 현재 좌표를 수집해 함께 전송한다(서버가 AUTO 시 좌표 필수 검증).
+const onPrepare = async () => {
   if (busy.value) return
-  const ok = await askConfirm('교육을 시작할까요? 시작하면 입실자 진행 관리가 가능해요.')
+  const ok = await askConfirm('교육준비를 시작할까요? 입실 비밀번호가 발급되고 근로자가 입실할 수 있어요.')
   if (!ok) return
   busy.value = true
   try {
-    await api.post(`/appApi/admin/tbm/sessions/${encodeURIComponent(sessionCd.value)}/start`)
-    router.push({ path: '/AdminTbmLive', query: { sessionCd: sessionCd.value } })
+    let managerGpsLat = ''
+    let managerGpsLon = ''
+    if (session.value?.gpsVerifyTypeCd === 'AUTO') {
+      const gps = await requestGps()
+      if (gps?.status === 'OK' && gps.lat != null && gps.lon != null) {
+        managerGpsLat = String(gps.lat)
+        managerGpsLon = String(gps.lon)
+      } else {
+        await showAlert('현재 위치를 가져오지 못했어요. 위치 권한을 확인한 뒤 다시 시도해 주세요.')
+        return
+      }
+    }
+    await api.post(`/appApi/admin/tbm/sessions/${encodeURIComponent(sessionCd.value)}/prepare`, {
+      managerGpsLat,
+      managerGpsLon,
+    })
+    router.replace({ path: '/AdminTbmPrep', query: { sessionCd: sessionCd.value } })
   } catch (e) {
-    const msg = e?.response?.data?.message || '교육 시작에 실패했어요. 잠시 후 다시 시도해 주세요.'
+    const msg = e?.response?.data?.message || '교육준비 시작에 실패했어요. 잠시 후 다시 시도해 주세요.'
     await showAlert(msg)
   } finally {
     busy.value = false
   }
 }
 
-// 진행 화면으로(IN_PROGRESS) / 종료 화면으로(COMPLETED) — 상태별 진입.
+// 교육준비 화면으로(OPENED) / 진행 화면으로(IN_PROGRESS) / 종료 화면으로(COMPLETED) — 상태별 진입.
+const onGoPrep = () => {
+  router.push({ path: '/AdminTbmPrep', query: { sessionCd: sessionCd.value } })
+}
 const onGoLive = () => {
   router.push({ path: '/AdminTbmLive', query: { sessionCd: sessionCd.value } })
 }
@@ -368,21 +403,24 @@ const onGoCompleted = () => {
   router.push({ path: '/AdminTbmCompleted', query: { sessionCd: sessionCd.value } })
 }
 
-// 비밀번호 재발급(OPENED만) — POST .../{sessionCd}/regenerate-password
+// 비밀번호 재발급(prafta-051): OPENED=입실비번(E6) / COMPLETED=종료비번(E7) 상태별 분리.
 const onRegenerate = async () => {
   if (regenerating.value) return
+  const isExit = session.value?.statusCd === 'COMPLETED'
+  const label = isExit ? '종료' : '입실'
   const ok = await askConfirm(
-    '입실/종료 비밀번호를 재발급할까요? 기존 비밀번호는 사용할 수 없게 돼요.',
+    `${label} 비밀번호를 재발급할까요? 기존 ${label} 비밀번호는 사용할 수 없게 돼요.`,
   )
   if (!ok) return
   regenerating.value = true
   try {
+    const endpoint = isExit ? 'regenerate-exit-password' : 'regenerate-entry-password'
     const { data } = await api.post(
-      `/appApi/admin/tbm/sessions/${encodeURIComponent(sessionCd.value)}/regenerate-password`,
+      `/appApi/admin/tbm/sessions/${encodeURIComponent(sessionCd.value)}/${endpoint}`,
     )
-    if (data?.entryPwd && session.value) {
-      session.value.entryPwd = data.entryPwd
-      session.value.exitPwd = data.exitPwd
+    if (session.value) {
+      if (isExit && data?.exitPwd) session.value.exitPwd = data.exitPwd
+      if (!isExit && data?.entryPwd) session.value.entryPwd = data.entryPwd
     }
   } catch (e) {
     const msg = e?.response?.data?.message || '재발급에 실패했어요. 잠시 후 다시 시도해 주세요.'

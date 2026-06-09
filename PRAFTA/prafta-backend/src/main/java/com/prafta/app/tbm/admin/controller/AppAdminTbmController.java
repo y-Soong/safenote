@@ -20,21 +20,29 @@ import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.multipart.MultipartFile;
 
 import com.prafta.app.tbm.admin.application.param.AdminAttendeeListParam;
+import com.prafta.app.tbm.admin.application.param.AdminCancelEntryParam;
 import com.prafta.app.tbm.admin.application.param.AdminCompletionParam;
 import com.prafta.app.tbm.admin.application.param.AdminEduMaterialDetailParam;
 import com.prafta.app.tbm.admin.application.param.AdminEduMaterialListParam;
 import com.prafta.app.tbm.admin.application.param.AdminEduMaterialSaveParam;
 import com.prafta.app.tbm.admin.application.param.AdminForceExitParam;
+import com.prafta.app.tbm.admin.application.param.AdminEligibleRegularParam;
 import com.prafta.app.tbm.admin.application.param.AdminHistoryListParam;
 import com.prafta.app.tbm.admin.application.param.AdminLiveTransitionParam;
+import com.prafta.app.tbm.admin.application.param.AdminManagerDirectParam;
+import com.prafta.app.tbm.admin.application.param.AdminQrScanParam;
 import com.prafta.app.tbm.admin.application.param.AdminOptionParam;
 import com.prafta.app.tbm.admin.application.param.AdminSessionCancelParam;
 import com.prafta.app.tbm.admin.application.param.AdminSessionDetailParam;
 import com.prafta.app.tbm.admin.application.param.AdminSessionListParam;
+import com.prafta.app.tbm.admin.application.param.AdminSessionPrepareParam;
 import com.prafta.app.tbm.admin.application.param.AdminSessionPwdParam;
 import com.prafta.app.tbm.admin.application.param.AdminSessionSaveParam;
 import com.prafta.app.tbm.admin.application.param.AdminSessionUpdateParam;
 import com.prafta.app.tbm.admin.dto.request.AdminCompletionRequest;
+import com.prafta.app.tbm.admin.dto.request.AdminManagerDirectRequest;
+import com.prafta.app.tbm.admin.dto.request.AdminQrScanRequest;
+import com.prafta.app.tbm.admin.dto.request.AdminSessionPrepareRequest;
 import com.prafta.app.tbm.admin.dto.request.AdminEduMaterialSaveRequest;
 import com.prafta.app.tbm.admin.dto.request.AdminForceExitRequest;
 import com.prafta.app.tbm.admin.dto.request.AdminSessionCancelRequest;
@@ -47,7 +55,10 @@ import com.prafta.app.tbm.admin.dto.response.AdminContentOptionResponse;
 import com.prafta.app.tbm.admin.dto.response.AdminEduMaterialDetailResponse;
 import com.prafta.app.tbm.admin.dto.response.AdminEduMaterialListResponse;
 import com.prafta.app.tbm.admin.dto.response.AdminEduMaterialSaveResponse;
+import com.prafta.app.tbm.admin.dto.response.AdminEligibleRegularResponse;
 import com.prafta.app.tbm.admin.dto.response.AdminForceExitResponse;
+import com.prafta.app.tbm.admin.dto.response.AdminManagerDirectResponse;
+import com.prafta.app.tbm.admin.dto.response.AdminQrScanResponse;
 import com.prafta.app.tbm.admin.dto.response.AdminHistoryListResponse;
 import com.prafta.app.tbm.admin.dto.response.AdminLiveTransitionResponse;
 import com.prafta.app.tbm.admin.dto.response.AdminMaterialTypeOptionResponse;
@@ -159,13 +170,25 @@ public class AppAdminTbmController {
         return ResponseEntity.ok().build();
     }
 
-    /** T-A4 비밀번호 재발급(OPENED만). */
-    @PostMapping(value = "/sessions/{sessionCd}/regenerate-password")
-    public ResponseEntity<?> regeneratePassword(@PathVariable("sessionCd") String sessionCd,
+    /** prafta-051 E6 입실비밀번호 전용 재발급(OPENED만). */
+    @PostMapping(value = "/sessions/{sessionCd}/regenerate-entry-password")
+    public ResponseEntity<?> regenerateEntryPassword(@PathVariable("sessionCd") String sessionCd,
             @RequestHeader(value = "Authorization", required = false) String authorization) {
 
         TokenInfo tokenInfo = jwtUtil.getAllClaimsAsMap(authorization);
-        AdminSessionPwdResponse response = appAdminTbmService.regeneratePassword(
+        AdminSessionPwdResponse response = appAdminTbmService.regenerateEntryPassword(
+                AdminSessionPwdParam.of(sessionCd, tokenInfo));
+
+        return ResponseEntity.status(HttpStatus.OK).body(response);
+    }
+
+    /** prafta-051 E7 종료비밀번호 전용 재발급(COMPLETED만). */
+    @PostMapping(value = "/sessions/{sessionCd}/regenerate-exit-password")
+    public ResponseEntity<?> regenerateExitPassword(@PathVariable("sessionCd") String sessionCd,
+            @RequestHeader(value = "Authorization", required = false) String authorization) {
+
+        TokenInfo tokenInfo = jwtUtil.getAllClaimsAsMap(authorization);
+        AdminSessionPwdResponse response = appAdminTbmService.regenerateExitPassword(
                 AdminSessionPwdParam.of(sessionCd, tokenInfo));
 
         return ResponseEntity.status(HttpStatus.OK).body(response);
@@ -208,6 +231,32 @@ public class AppAdminTbmController {
         AdminSiteOptionResponse response = appAdminTbmService.selectSiteOptions(tokenInfo);
 
         return ResponseEntity.status(HttpStatus.OK).body(response);
+    }
+
+    // ============================ prafta-051 R-A 교육준비/연장 ============================
+
+    /** prafta-051 E2 교육준비 전이(DRAFT→OPENED). 입실비번/관리자좌표/PREP_START_AT 확정. 개설자만. */
+    @PostMapping(value = "/sessions/{sessionCd}/prepare", consumes = MediaType.APPLICATION_JSON_VALUE)
+    public ResponseEntity<?> prepareSession(@PathVariable("sessionCd") String sessionCd,
+            @RequestBody(required = false) AdminSessionPrepareRequest request,
+            @RequestHeader(value = "Authorization", required = false) String authorization) {
+
+        TokenInfo tokenInfo = jwtUtil.getAllClaimsAsMap(authorization);
+        AdminLiveTransitionResponse response = appAdminTbmService.prepareSession(
+                AdminSessionPrepareParam.from(sessionCd, request, tokenInfo));
+
+        return ResponseEntity.status(HttpStatus.OK).body(response);
+    }
+
+    /** prafta-051 E3 교육준비 연장(PREP_START_AT 리셋). 개설자만. */
+    @PostMapping("/sessions/{sessionCd}/extend-prep")
+    public ResponseEntity<?> extendPrep(@PathVariable("sessionCd") String sessionCd,
+            @RequestHeader(value = "Authorization", required = false) String authorization) {
+
+        TokenInfo tokenInfo = jwtUtil.getAllClaimsAsMap(authorization);
+        appAdminTbmService.extendPrep(AdminLiveTransitionParam.of(sessionCd, tokenInfo));
+
+        return ResponseEntity.ok().build();
     }
 
     // ============================ R3 라이브 제어 ============================
@@ -277,6 +326,81 @@ public class AppAdminTbmController {
                 AdminCompletionParam.from(sessionCd, attendanceCd, request, tokenInfo));
 
         return ResponseEntity.status(HttpStatus.OK).body(response);
+    }
+
+    // ============================ prafta-051 R-B 입실경로(정규직 대리입실) ============================
+
+    /**
+     * prafta-051 E9 정규직 대리입실 후보 검색(세션 사업장/노드 스코프 내 정규직, 이름/사번).
+     * 이미 입실한 사용자는 alreadyEntered=true 로 표시(목록 유지, 프론트가 비활성 처리).
+     */
+    @GetMapping("/sessions/{sessionCd}/eligible-regulars")
+    public ResponseEntity<?> getEligibleRegulars(@PathVariable("sessionCd") String sessionCd,
+            @RequestParam(value = "keyword", required = false) String keyword,
+            @RequestParam(value = "page", required = false) Integer page,
+            @RequestParam(value = "pageSize", required = false) Integer pageSize,
+            @RequestHeader(value = "Authorization", required = false) String authorization) {
+
+        TokenInfo tokenInfo = jwtUtil.getAllClaimsAsMap(authorization);
+        AdminEligibleRegularResponse response = appAdminTbmService.selectEligibleRegulars(
+                AdminEligibleRegularParam.of(sessionCd, keyword, page, pageSize, tokenInfo));
+
+        return ResponseEntity.status(HttpStatus.OK).body(response);
+    }
+
+    /**
+     * prafta-051 E10 정규직 관리자 대리입실(MANAGER_DIRECT). 세션 OPENED + 대상 스코프 재검증 + UK 멱등.
+     * 비번 입력 없음, GPS 반경검증 안 함(D-4). ENTRY_GPS 는 세션 관리자 좌표를 감사용으로 복사.
+     */
+    @PostMapping(value = "/sessions/{sessionCd}/attendees/manager-direct",
+            consumes = MediaType.APPLICATION_JSON_VALUE)
+    public ResponseEntity<?> managerDirectEnter(@PathVariable("sessionCd") String sessionCd,
+            @RequestBody AdminManagerDirectRequest request,
+            @RequestHeader(value = "Authorization", required = false) String authorization) {
+
+        TokenInfo tokenInfo = jwtUtil.getAllClaimsAsMap(authorization);
+        AdminManagerDirectResponse response = appAdminTbmService.managerDirectEnter(
+                AdminManagerDirectParam.from(sessionCd, request, tokenInfo));
+
+        return ResponseEntity.status(HttpStatus.OK).body(response);
+    }
+
+    // ============================ prafta-051 R-D 입실경로(일용직 QR 입실) ============================
+
+    /**
+     * prafta-051 E11 일용직 QR 입실(MANAGER_QR_SCAN). 세션 OPENED + QR 페이로드 파싱(userCd) + 일용직 유효성
+     * 재검증 + UK 멱등. 비번 입력 없음, GPS 반경검증 안 함(D-4). QR 의 회사/사업장은 신뢰하지 않고 토큰 CMPNY +
+     * 세션 SITE 로 서버 재검증한다(#DF-1). 파싱 실패/userCd 누락은 400.
+     */
+    @PostMapping(value = "/sessions/{sessionCd}/attendees/qr-scan",
+            consumes = MediaType.APPLICATION_JSON_VALUE)
+    public ResponseEntity<?> qrScanEnter(@PathVariable("sessionCd") String sessionCd,
+            @RequestBody AdminQrScanRequest request,
+            @RequestHeader(value = "Authorization", required = false) String authorization) {
+
+        TokenInfo tokenInfo = jwtUtil.getAllClaimsAsMap(authorization);
+        AdminQrScanResponse response = appAdminTbmService.qrScanEnter(
+                AdminQrScanParam.from(sessionCd, request, tokenInfo));
+
+        return ResponseEntity.status(HttpStatus.OK).body(response);
+    }
+
+    // ============================ prafta-051 R-C 이탈자 내보내기(입실취소) ============================
+
+    /**
+     * prafta-051 E13 입실취소(GPS 이탈자 내보내기). 세션 OPENED(교육 미시작) + 스코프 재검증 후 물리삭제(#D-RE2).
+     * 강제퇴실(force-exit, IN_PROGRESS)/미이수와 구분되는 교육 미시작 단계의 단순 입실취소다. 재입실 자유.
+     */
+    @PostMapping("/sessions/{sessionCd}/attendees/{attendanceCd}/cancel-entry")
+    public ResponseEntity<?> cancelEntry(@PathVariable("sessionCd") String sessionCd,
+            @PathVariable("attendanceCd") String attendanceCd,
+            @RequestHeader(value = "Authorization", required = false) String authorization) {
+
+        TokenInfo tokenInfo = jwtUtil.getAllClaimsAsMap(authorization);
+        appAdminTbmService.cancelEntry(
+                AdminCancelEntryParam.of(sessionCd, attendanceCd, tokenInfo));
+
+        return ResponseEntity.ok().build();
     }
 
     /** R3 진행화면 슬라이드용 자료 항목 조회. */

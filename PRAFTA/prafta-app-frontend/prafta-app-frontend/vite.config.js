@@ -1,5 +1,6 @@
 import { fileURLToPath, URL } from "node:url";
 import fs from "node:fs";
+import path from "node:path";
 import { defineConfig } from "vite";
 import vue from "@vitejs/plugin-vue";
 import tailwindcss from "tailwindcss";
@@ -7,13 +8,28 @@ import autoprefixer from "autoprefixer";
 
 // 모바일(휴대폰)에서 LAN IP로 접속해 카메라/QR(getUserMedia)을 쓰려면
 // 보안 컨텍스트(HTTPS)가 필수다. mkcert로 발급한 인증서를 그대로 사용한다.
+// cert 폴더의 '<IP>-key.pem' / '<IP>.pem' 쌍을 자동 감지하므로,
+// 로컬 IP가 바뀌어 인증서를 재발급해도 이 파일은 수정할 필요가 없다.
+const certDir = fileURLToPath(new URL("./cert", import.meta.url));
+const keyFile = fs
+  .readdirSync(certDir)
+  .find((f) => f.endsWith("-key.pem"));
+if (!keyFile) {
+  throw new Error(
+    `[vite] cert 폴더에 '*-key.pem' 인증서가 없습니다: ${certDir}\n` +
+      `mkcert 로 '<IP>-key.pem' / '<IP>.pem' 쌍을 먼저 생성해 주세요.`
+  );
+}
+const certFile = keyFile.replace(/-key\.pem$/, ".pem");
+const certPath = path.join(certDir, certFile);
+if (!fs.existsSync(certPath)) {
+  throw new Error(
+    `[vite] '${keyFile}' 에 대응하는 인증서 '${certFile}' 가 없습니다: ${certDir}`
+  );
+}
 const https = {
-  key: fs.readFileSync(
-    fileURLToPath(new URL("./cert/172.30.1.4-key.pem", import.meta.url))
-  ),
-  cert: fs.readFileSync(
-    fileURLToPath(new URL("./cert/172.30.1.4.pem", import.meta.url))
-  ),
+  key: fs.readFileSync(path.join(certDir, keyFile)),
+  cert: fs.readFileSync(certPath),
 };
 
 export default defineConfig({
@@ -33,7 +49,7 @@ export default defineConfig({
   },
   server: {
     port: 8082,
-    host: true, // 0.0.0.0 - 휴대폰에서 LAN IP(172.30.1.4)로 접근 가능하게
+    host: true, // 0.0.0.0 - 휴대폰에서 LAN IP로 접근 가능하게
     https,
     proxy: {
       "/prafta": {

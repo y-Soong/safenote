@@ -44,6 +44,16 @@
           <h2 class="admin-tbm-completed__title">{{ session.title || 'TBM 세션' }}</h2>
         </div>
 
+        <!-- 종료 비밀번호(COMPLETED, pwdVisible 서버 산출) + 재발급(E7) -->
+        <AdminTbmPwdCard
+          v-if="session.pwdVisible"
+          mode="EXIT"
+          :exit-pwd="session.exitPwd"
+          :can-regenerate="true"
+          :regenerating="regenerating"
+          @regenerate="onRegenerateExit"
+        />
+
         <!-- 이수 집계 요약 -->
         <section class="card">
           <dl class="summary">
@@ -127,6 +137,7 @@ import { useRoute, useRouter } from 'vue-router'
 import api from '@/api/axios'
 import AdminTbmAttendeeRow from './components/AdminTbmAttendeeRow.vue'
 import AdminTbmCompletionSheet from './components/AdminTbmCompletionSheet.vue'
+import AdminTbmPwdCard from './components/AdminTbmPwdCard.vue'
 
 const route = useRoute()
 const router = useRouter()
@@ -152,6 +163,9 @@ const attendees = ref([]) // [{ attendanceCd, userNm, userTypeCd, deptNm, entryA
 const completionOpen = ref(false)
 const completionSaving = ref(false)
 const targetAttendee = ref(null)
+
+// 종료 비밀번호 재발급(E7) 진행 가드
+const regenerating = ref(false)
 
 // ── 파생값(표시 전용) ──────────────────────────────────────────────
 // 개별 미이수 처리 노출 = GPS 검증 세션(AUTO/MANUAL). 서버 산출값(gpsVerifyTypeCd) 기준(T4).
@@ -251,6 +265,30 @@ const onConfirmCompletion = async ({ completionStatusCd, reason } = {}) => {
     await showAlert(msg)
   } finally {
     completionSaving.value = false
+  }
+}
+
+// 종료 비밀번호 재발급(COMPLETED, E7) — POST .../{sessionCd}/regenerate-exit-password
+const onRegenerateExit = async () => {
+  if (regenerating.value) return
+  const confirmFn = proxy?.$confirm
+    ? proxy.$confirm
+    : (m) => Promise.resolve(window.confirm(m))
+  const ok = await confirmFn('종료 비밀번호를 재발급할까요? 기존 종료 비밀번호는 사용할 수 없게 돼요.')
+  if (!ok) return
+  regenerating.value = true
+  try {
+    const { data } = await api.post(
+      `/appApi/admin/tbm/sessions/${encodeURIComponent(sessionCd.value)}/regenerate-exit-password`,
+    )
+    if (data?.exitPwd && session.value) {
+      session.value.exitPwd = data.exitPwd
+    }
+  } catch (e) {
+    const msg = e?.response?.data?.message || '재발급에 실패했어요. 잠시 후 다시 시도해 주세요.'
+    await showAlert(msg)
+  } finally {
+    regenerating.value = false
   }
 }
 

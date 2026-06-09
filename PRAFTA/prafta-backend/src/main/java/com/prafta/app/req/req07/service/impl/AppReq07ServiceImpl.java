@@ -93,11 +93,16 @@ public class AppReq07ServiceImpl implements AppReq07Service {
         assertWorkPlanExists(param.cmpnyCd(), param.siteCd(), param.userCd(), param.workYmd());
 
         // ----- prafta-app-009 F15: 중복 차단 SELECT→INSERT race window 직렬화(advisory lock) -----
+        //   PRAFTA-APP-022 TOCTOU: 룰A 상호배제(OT↔스케줄수정 cross-type)는 타입별 dupLock 만으론 직렬화되지
+        //   않으므로, 요청유형 제외 공통 mutex 를 [공통키 → 타입별키] 순서로 추가 획득한다(registerOvertime 과 동일 순서 → 데드락 회피).
+        String mutexKey = ruleAMutexKey(param.cmpnyCd(), param.siteCd(), param.userCd(), param.workYmd());
         String lockKey = dupLockKey(param.cmpnyCd(), param.siteCd(), param.userCd(),
                 param.workYmd(), AttdReqTypeUtils.REQ_TYPE_SCHED_MODIFY);
         String reqId = null; // 응답/로그용 대표값(첫 슬롯의 REQ_ID)
         List<Integer> workSeqs = new ArrayList<>(param.slots().size());
-        acquireDupLock(lockKey);
+        acquireDupLock(mutexKey);   // (1) 공통 mutex 먼저
+        try {
+        acquireDupLock(lockKey);    // (2) 타입별 dup 락 다음
         try {
             // ----- 중복 요청 차단 (P10) -----
             int dup = mapper.countDuplicateReq(
@@ -105,6 +110,16 @@ public class AppReq07ServiceImpl implements AppReq07Service {
                     param.workYmd(), AttdReqTypeUtils.REQ_TYPE_SCHED_MODIFY);
             if (dup > 0) {
                 throw new ApiException(AttdErrorCode.ATTD_400_090);
+            }
+
+            // ----- PRAFTA-APP-022 룰A2/A3: 활성 초과근무 요청(생성03·수정04, 대기01+승인02) 존재 시
+            //   스케줄수정 거부(상호배제). 그날 전체(WORK_SEQ 무관). lock 후·INSERT 전 fail-closed. -----
+            int activeOt = mapper.countActiveOvertimeReq(
+                    param.cmpnyCd(), param.siteCd(), param.userCd(), param.workYmd());
+            if (activeOt > 0) {
+                log.info("[prafta-app-022] 스케줄수정 거부: 활성 초과근무 요청 존재 — userCd={}, workYmd={}, activeOt={}",
+                        param.userCd(), param.workYmd(), activeOt);
+                throw new ApiException(AttdErrorCode.ATTD_400_107);
             }
 
             // ----- INSERT × slots.length (REQ_ID 는 PK 단일 컬럼이므로 slot 마다 새로 채번) -----
@@ -132,7 +147,10 @@ public class AppReq07ServiceImpl implements AppReq07Service {
                 workSeqs.add(s.getWorkSeq());
             }
         } finally {
-            releaseDupLock(lockKey);
+            releaseDupLock(lockKey);    // (2) 타입별 락 해제(획득 역순)
+        }
+        } finally {
+            releaseDupLock(mutexKey);   // (1) 공통 mutex 해제
         }
 
         log.info("[prafta-app-007] 스케줄 수정 요청 등록 — reqId={}, userCd={}, workYmd={}, slots={}",
@@ -159,6 +177,16 @@ public class AppReq07ServiceImpl implements AppReq07Service {
             throw new ApiException(AttdErrorCode.ATTD_400_096);
         }
         validateSlotsTimes(param.slots());
+
+        // ----- PRAFTA-APP-022 룰C: 미래(미도래) 일자 근태 보정 차단 -----
+        //   정책 §11.2 "과거·현재만 신청 가능, 미래 차단". 당일은 허용(미래만 차단 — 확정 결정 4).
+        //   순수 날짜 비교(lock 불필요)이므로 구조검증 직후 배치. 프론트 게이팅과 별개의 백엔드 권위 가드(변조/직접호출 방어).
+        //   ※ 룰D 회귀: 출퇴근 실적 없는 과거/당일은 본 가드를 통과하여 REQ_TYPE='01' 생성 경로로 정상 진입한다(무변경).
+        if (param.workYmd() != null && param.workYmd().compareTo(todayYmd()) > 0) {
+            log.info("[prafta-app-022] 근태 보정 거부: 미래 일자 — userCd={}, workYmd={}",
+                    param.userCd(), param.workYmd());
+            throw new ApiException(AttdErrorCode.ATTD_400_109);
+        }
 
         // ----- prafta-app-009 가드(INSERT 시작 전 fail-closed) -----
         //   F12 마감 / F13 본인 근무계획 존재. (근태 보정도 배정된 근무일 대상으로 한정.)
@@ -279,11 +307,16 @@ public class AppReq07ServiceImpl implements AppReq07Service {
         assertNotClosed(param.cmpnyCd(), param.siteCd(), param.userCd(), param.workYmd());
 
         // ----- prafta-app-009 F15: OT 제출 직렬화(advisory lock) -----
+        //   PRAFTA-APP-022 TOCTOU: 룰A 상호배제(OT↔스케줄수정 cross-type)를 위해 요청유형 제외 공통 mutex 를
+        //   [공통키 → 타입별키] 순서로 추가 획득한다(registerSchedModify 와 동일 순서 → 데드락 회피).
+        String mutexKey = ruleAMutexKey(param.cmpnyCd(), param.siteCd(), param.userCd(), param.workYmd());
         String lockKey = dupLockKey(param.cmpnyCd(), param.siteCd(), param.userCd(),
                 param.workYmd(), AttdReqTypeUtils.REQ_TYPE_OT_REGISTER);
         String reqId = null; // 응답/로그용 대표값(첫 슬롯의 REQ_ID)
         List<Integer> workSeqs = new ArrayList<>(param.slots().size());
-        acquireDupLock(lockKey);
+        acquireDupLock(mutexKey);   // (1) 공통 mutex 먼저
+        try {
+        acquireDupLock(lockKey);    // (2) 타입별 dup 락 다음
         try {
             // ----- 중복 요청 차단 (P10) -----
             int dup = mapper.countDuplicateReq(
@@ -297,13 +330,14 @@ public class AppReq07ServiceImpl implements AppReq07Service {
             //   순서: (이슈②) 스케줄수정 미처리(전일 차단) → (이슈②) 슬롯별 근태보정 미처리(구간 차단)
             //         → (이슈①) 슬롯별 스케줄 겹침(구간 차단). 위반 시 즉시 throw(부분 INSERT 방지).
 
-            // ----- 이슈② 스케줄수정 미처리(전일 차단) — slots 루프 전 1회 -----
-            int pendSched = mapper.countPendingSchedModify(
+            // ----- PRAFTA-APP-022 룰A1(이슈② 확장): 활성 스케줄수정(대기01+승인02) 존재 시 그날 OT 거부 -----
+            //   확정 결정 1: 승인분도 충돌 범위 → IN('01','02'). 거부 코드는 신규 106(승인 포함 정확 문구).
+            int activeSched = mapper.countActiveSchedModify(
                     param.cmpnyCd(), param.siteCd(), param.userCd(), param.workYmd());
-            if (pendSched > 0) {
-                log.info("[prafta-app-017] OT 미처리 스케줄수정 거부 — userCd={}, workYmd={}, pendSched={}",
-                        param.userCd(), param.workYmd(), pendSched);
-                throw new ApiException(AttdErrorCode.ATTD_400_101);
+            if (activeSched > 0) {
+                log.info("[prafta-app-022] OT 거부: 활성 스케줄수정 요청 존재 — userCd={}, workYmd={}, activeSched={}",
+                        param.userCd(), param.workYmd(), activeSched);
+                throw new ApiException(AttdErrorCode.ATTD_400_106);
             }
 
             // ----- 이슈① 겹침 검증용 근무계획 스케줄 1건 조회(없으면 전 구간 면제) -----
@@ -355,7 +389,10 @@ public class AppReq07ServiceImpl implements AppReq07Service {
                 workSeqs.add(s.getWorkSeq());
             }
         } finally {
-            releaseDupLock(lockKey);
+            releaseDupLock(lockKey);    // (2) 타입별 락 해제(획득 역순)
+        }
+        } finally {
+            releaseDupLock(mutexKey);   // (1) 공통 mutex 해제
         }
 
         log.info("[prafta-app-007] 초과근무 신청 등록 — reqId={}, userCd={}, workYmd={}, slots={}",
@@ -418,6 +455,19 @@ public class AppReq07ServiceImpl implements AppReq07Service {
     /** F15 advisory lock 키: 중복 차단 단위(회사+사업장+사용자+일자+요청유형)로 직렬화. */
     private String dupLockKey(String cmpnyCd, String siteCd, String userCd, String workYmd, String reqType) {
         return "ATTD_REQ:" + cmpnyCd + ":" + siteCd + ":" + userCd + ":" + workYmd + ":" + reqType;
+    }
+
+    /**
+     * PRAFTA-APP-022 룰A 상호배제용 <b>공통</b> advisory lock 키: 요청유형을 <b>제외</b>(회사+사업장+사용자+일자).
+     *
+     * <p>타입별 {@link #dupLockKey}(OT='03' vs 스케줄수정='10')는 서로 다른 락이라, 같은 cmpny/site/user/workYmd
+     * 에 초과근무와 스케줄수정이 거의 동시에 제출되면 두 트랜잭션이 각자 다른 락만 잡고 병렬 진행하여
+     * 상호배제 카운트(countActiveOvertimeReq / countActiveSchedModify)를 INSERT 커밋 전 0으로 읽어 둘 다 등록되는
+     * TOCTOU 갭이 있었다. 이를 막기 위해 {@code registerOvertime}/{@code registerSchedModify} <b>양쪽</b>이 동일한
+     * 이 키를 1개 더 잡아 cross-type 제출을 직렬화한다. 획득/해제는 dupLock 과 동일 유틸(GET_LOCK/RELEASE_LOCK) 재사용.
+     */
+    private String ruleAMutexKey(String cmpnyCd, String siteCd, String userCd, String workYmd) {
+        return "ATTD_REQ_MUTEX:" + cmpnyCd + ":" + siteCd + ":" + userCd + ":" + workYmd;
     }
 
     /**
@@ -626,6 +676,15 @@ public class AppReq07ServiceImpl implements AppReq07Service {
                     slot.getStartTime(), slot.getEndTime(), schStrTime, schEndTime);
             throw new ApiException(AttdErrorCode.ATTD_400_100);
         }
+    }
+
+    /**
+     * PRAFTA-APP-022 룰C: 오늘 일자(yyyyMMdd) 문자열. WORK_YMD(varchar8) 문자열 비교용.
+     * (leaveflow AppLeaveFlowServiceImpl.todayYmd 와 동일 패턴 — 서버 로컬 일자 기준.)
+     */
+    private String todayYmd() {
+        java.time.LocalDate d = java.time.LocalDate.now();
+        return String.format("%04d%02d%02d", d.getYear(), d.getMonthValue(), d.getDayOfMonth());
     }
 
     /** HHmm 문자열 → 분 단위 정수. 형식 위반 시 -1. */

@@ -43,6 +43,8 @@ public class AdminSessionDetailResponse {
         private Integer gpsVerifyRadiusM;
         private String gpsManualConfirmYn;
         private String openedAt;
+        private String prepStartAt;       // 교육준비 타이머 기준시각(OPENED, 초 단위)
+        private String prepAutoStartAt;   // 자동 교육시작 예정시각(=prepStartAt + 자동시작분, 서버 산출)
         private String startedAt;
         private String endedAt;
         private String cancelledAt;

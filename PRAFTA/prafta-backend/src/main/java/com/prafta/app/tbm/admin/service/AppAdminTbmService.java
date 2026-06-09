@@ -1,17 +1,22 @@
 package com.prafta.app.tbm.admin.service;
 
 import com.prafta.app.tbm.admin.application.param.AdminAttendeeListParam;
+import com.prafta.app.tbm.admin.application.param.AdminCancelEntryParam;
 import com.prafta.app.tbm.admin.application.param.AdminCompletionParam;
 import com.prafta.app.tbm.admin.application.param.AdminEduMaterialDetailParam;
 import com.prafta.app.tbm.admin.application.param.AdminEduMaterialListParam;
 import com.prafta.app.tbm.admin.application.param.AdminEduMaterialSaveParam;
+import com.prafta.app.tbm.admin.application.param.AdminEligibleRegularParam;
 import com.prafta.app.tbm.admin.application.param.AdminForceExitParam;
+import com.prafta.app.tbm.admin.application.param.AdminManagerDirectParam;
+import com.prafta.app.tbm.admin.application.param.AdminQrScanParam;
 import com.prafta.app.tbm.admin.application.param.AdminHistoryListParam;
 import com.prafta.app.tbm.admin.application.param.AdminLiveTransitionParam;
 import com.prafta.app.tbm.admin.application.param.AdminOptionParam;
 import com.prafta.app.tbm.admin.application.param.AdminSessionCancelParam;
 import com.prafta.app.tbm.admin.application.param.AdminSessionDetailParam;
 import com.prafta.app.tbm.admin.application.param.AdminSessionListParam;
+import com.prafta.app.tbm.admin.application.param.AdminSessionPrepareParam;
 import com.prafta.app.tbm.admin.application.param.AdminSessionPwdParam;
 import com.prafta.app.tbm.admin.application.param.AdminSessionSaveParam;
 import com.prafta.app.tbm.admin.application.param.AdminSessionUpdateParam;
@@ -21,7 +26,10 @@ import com.prafta.app.tbm.admin.dto.response.AdminContentOptionResponse;
 import com.prafta.app.tbm.admin.dto.response.AdminEduMaterialDetailResponse;
 import com.prafta.app.tbm.admin.dto.response.AdminEduMaterialListResponse;
 import com.prafta.app.tbm.admin.dto.response.AdminEduMaterialSaveResponse;
+import com.prafta.app.tbm.admin.dto.response.AdminEligibleRegularResponse;
 import com.prafta.app.tbm.admin.dto.response.AdminForceExitResponse;
+import com.prafta.app.tbm.admin.dto.response.AdminManagerDirectResponse;
+import com.prafta.app.tbm.admin.dto.response.AdminQrScanResponse;
 import com.prafta.app.tbm.admin.dto.response.AdminHistoryListResponse;
 import com.prafta.app.tbm.admin.dto.response.AdminLiveTransitionResponse;
 import com.prafta.app.tbm.admin.dto.response.AdminMaterialTypeOptionResponse;
@@ -47,7 +55,18 @@ public interface AppAdminTbmService {
 
     void cancelSession(AdminSessionCancelParam param);
 
-    AdminSessionPwdResponse regeneratePassword(AdminSessionPwdParam param);
+    /* ===== prafta-051 R-A 상태머신 재정렬 ===== */
+    /** E2 교육준비(OPENED) 전이(DRAFT→OPENED). 입실비번/관리자좌표/PREP_START_AT 확정. 개설자만. */
+    AdminLiveTransitionResponse prepareSession(AdminSessionPrepareParam param);
+
+    /** E3 교육준비 연장(PREP_START_AT 리셋). 개설자만. */
+    void extendPrep(AdminLiveTransitionParam param);
+
+    /** E6 입실비번 전용 재발급(OPENED 한정). */
+    AdminSessionPwdResponse regenerateEntryPassword(AdminSessionPwdParam param);
+
+    /** E7 종료비번 전용 재발급(COMPLETED 한정). */
+    AdminSessionPwdResponse regenerateExitPassword(AdminSessionPwdParam param);
 
     AdminContentOptionResponse selectContentOptions(AdminOptionParam param);
 
@@ -67,6 +86,21 @@ public interface AppAdminTbmService {
     AdminCompletionResponse updateAttendeeCompletion(AdminCompletionParam param);
 
     AdminSessionContentsResponse selectSessionContents(AdminSessionDetailParam param);
+
+    /* ===== prafta-051 R-B 입실경로(정규직 대리입실) ===== */
+    /** E9 정규직 대리입실 후보 검색(세션 사업장/노드 스코프 내 정규직, 이름/사번). */
+    AdminEligibleRegularResponse selectEligibleRegulars(AdminEligibleRegularParam param);
+
+    /** E10 정규직 관리자 대리입실(MANAGER_DIRECT). 세션 OPENED + 스코프 재검증 + UK 멱등. */
+    AdminManagerDirectResponse managerDirectEnter(AdminManagerDirectParam param);
+
+    /* ===== prafta-051 R-D 입실경로(일용직 QR 입실) ===== */
+    /** E11 일용직 QR 입실(MANAGER_QR_SCAN). QR 페이로드 파싱(userCd) + 세션 OPENED + 일용직 유효성 재검증 + UK 멱등. */
+    AdminQrScanResponse qrScanEnter(AdminQrScanParam param);
+
+    /* ===== prafta-051 R-C 이탈자 내보내기(입실취소) ===== */
+    /** E13 입실취소(GPS 이탈자 내보내기). 세션 OPENED + 스코프 재검증 + 물리삭제(#D-RE2). 재입실 자유. */
+    void cancelEntry(AdminCancelEntryParam param);
 
     /* ===== R5 교육자료 관리 ===== */
     AdminEduMaterialListResponse selectEduMaterials(AdminEduMaterialListParam param);

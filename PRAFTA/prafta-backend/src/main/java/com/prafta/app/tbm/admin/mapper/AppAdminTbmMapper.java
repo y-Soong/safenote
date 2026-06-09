@@ -5,6 +5,7 @@ import java.util.List;
 import org.apache.ibatis.annotations.Mapper;
 import org.apache.ibatis.annotations.Param;
 
+import com.prafta.app.tbm.admin.application.command.AdminCancelEntryCommand;
 import com.prafta.app.tbm.admin.application.command.AdminCompletionCommand;
 import com.prafta.app.tbm.admin.application.command.AdminEduMaterialCommand;
 import com.prafta.app.tbm.admin.application.command.AdminEduMaterialItemCommand;
@@ -12,11 +13,15 @@ import com.prafta.app.tbm.admin.application.command.AdminForceExitCommand;
 import com.prafta.app.tbm.admin.application.command.AdminSessionCancelCommand;
 import com.prafta.app.tbm.admin.application.command.AdminSessionCommand;
 import com.prafta.app.tbm.admin.application.command.AdminSessionContentCommand;
-import com.prafta.app.tbm.admin.application.command.AdminSessionPwdCommand;
+import com.prafta.app.tbm.admin.application.command.AdminSessionPrepareCommand;
 import com.prafta.app.tbm.admin.application.command.AdminSessionRiskCommand;
+import com.prafta.app.tbm.admin.application.command.AdminSessionSinglePwdCommand;
 import com.prafta.app.tbm.admin.application.command.AdminSessionStateCommand;
+import com.prafta.app.tbm.admin.application.command.AdminManagerEnterCommand;
 import com.prafta.app.tbm.admin.application.command.AdminSessionTransitionCommand;
 import com.prafta.app.tbm.admin.application.query.AdminAttendeeListQuery;
+import com.prafta.app.tbm.admin.application.query.AdminEligibleRegularQuery;
+import com.prafta.app.tbm.admin.application.query.AdminEntryTargetQuery;
 import com.prafta.app.tbm.admin.application.query.AdminEduMaterialDetailQuery;
 import com.prafta.app.tbm.admin.application.query.AdminEduMaterialListQuery;
 import com.prafta.app.tbm.admin.application.query.AdminHistoryListQuery;
@@ -24,8 +29,10 @@ import com.prafta.app.tbm.admin.application.query.AdminOptionQuery;
 import com.prafta.app.tbm.admin.application.query.AdminSessionDetailQuery;
 import com.prafta.app.tbm.admin.application.query.AdminSessionListQuery;
 import com.prafta.app.tbm.admin.result.AdminAttendeeResult;
+import com.prafta.app.tbm.admin.result.AdminCancelEntrySnapshotResult;
 import com.prafta.app.tbm.admin.result.AdminContentItemResult;
 import com.prafta.app.tbm.admin.result.AdminContentOptionResult;
+import com.prafta.app.tbm.admin.result.AdminEligibleRegularResult;
 import com.prafta.app.tbm.admin.result.AdminEduMaterialItemResult;
 import com.prafta.app.tbm.admin.result.AdminEduMaterialListResult;
 import com.prafta.app.tbm.admin.result.AdminEduMaterialResult;
@@ -82,7 +89,25 @@ public interface AppAdminTbmMapper {
 
     void cancelSession(AdminSessionCancelCommand command);
 
-    void updateSessionPwd(AdminSessionPwdCommand command);
+    /* ===== prafta-051 R-A 상태머신 재정렬 ===== */
+    /** E2 교육준비 전이(DRAFT→OPENED). WHERE STATUS_CD='DRAFT' 가드. 영향 행수 반환. */
+    int prepareSession(AdminSessionPrepareCommand command);
+
+    /** E3 교육준비 연장(PREP_START_AT=NOW() 리셋). WHERE STATUS_CD='OPENED' 가드. 영향 행수 반환. */
+    int extendPrep(AdminSessionTransitionCommand command);
+
+    /** E6 입실비번 전용 재발급(OPENED 한정 ENTRY_PWD). 영향 행수 반환. */
+    int updateEntryPwd(AdminSessionSinglePwdCommand command);
+
+    /** E7 종료비번 전용 재발급(COMPLETED 한정 EXIT_PWD). 영향 행수 반환. */
+    int updateExitPwd(AdminSessionSinglePwdCommand command);
+
+    /**
+     * 15분 자동 교육시작 지연평가(OPENED + PREP_START_AT 만료 → IN_PROGRESS). 멱등 UPDATE.
+     * WHERE STATUS_CD='OPENED' AND PREP_START_AT 만료 가드. 영향 행수 반환(0=no-op).
+     */
+    int evaluateAutoStart(@Param("gvCmpnyCd") String gvCmpnyCd,
+            @Param("sessionCd") String sessionCd, @Param("minutes") int minutes);
 
     /* ===== T6: 개설 사업장 서버 검증(접근가능 사업장 USE_YN='Y') ===== */
     int existsAccessibleSite(@Param("gvCmpnyCd") String gvCmpnyCd,
@@ -97,8 +122,11 @@ public interface AppAdminTbmMapper {
     /** T1 교육 시작(OPENED→IN_PROGRESS). WHERE STATUS_CD='OPENED' 가드. 영향 행수 반환. */
     int startSession(AdminSessionTransitionCommand command);
 
-    /** T1 교육 종료(IN_PROGRESS→COMPLETED). WHERE STATUS_CD='IN_PROGRESS' 가드. 영향 행수 반환. */
-    int endSession(AdminSessionTransitionCommand command);
+    /**
+     * T1 교육 종료(IN_PROGRESS→COMPLETED) + 종료비번(EXIT_PWD) 최초 발급(prafta-051 E5).
+     * WHERE STATUS_CD='IN_PROGRESS' 가드. 영향 행수 반환.
+     */
+    int endSession(AdminSessionSinglePwdCommand command);
 
     /** T2 종료 자동이수 일괄(EXIT_AT IS NULL 출결 → COMPLETED). 처리 인원 수 반환. */
     int autoCompleteOnEnd(AdminSessionTransitionCommand command);
@@ -117,6 +145,39 @@ public interface AppAdminTbmMapper {
 
     /** 슬라이드용 자료 세부항목(사용자 TBM tbm01 selectSessionContentItems 포팅). */
     List<AdminContentItemResult> selectSessionContentItems(AdminSessionDetailQuery query);
+
+    /* ===== prafta-051 R-B 입실경로(정규직 대리입실) ===== */
+    /**
+     * E9 정규직 대리입실 후보 검색(세션 사업장 활성 정규직 + 노드 스코프). 이름/사번 LIKE, 미입실 우선.
+     * web Tbm02.selectRegularCandidates 포팅 + 노드 스코프(scopedNodeCds) 결합. LIMIT 페이징.
+     */
+    List<AdminEligibleRegularResult> selectEligibleRegulars(AdminEligibleRegularQuery query);
+
+    /**
+     * E10/E11 대리입실 대상 유효성. web Tbm02.countEntryTarget 포팅(userTypeCd 분기). 1=유효, 0=무효.
+     * REGULAR=TB_USER(사업장+노드 스코프), DAILY=TB_DAILY_USER(사업장 단위, NODE_CD 없음 — 노드 스코프 미적용).
+     */
+    int countEntryTarget(AdminEntryTargetQuery query);
+
+    /**
+     * E10/E11 관리자 직접 입실 INSERT. ENTRY_TYPE_CD 는 호출부 분기(정규직 대리=MANAGER_DIRECT / 일용직 QR=MANAGER_QR_SCAN).
+     * ENTRY_GPS_LAT/LON 은 세션 MANAGER_GPS_LAT/LON 복사(INSERT...SELECT, 감사용). UK 충돌 시 DuplicateKeyException.
+     * INSERT...SELECT 가드(STATUS_CD='OPENED')로 영향 행수 반환(0=TOCTOU 전이로 OPENED 이탈, 멱등 거부).
+     */
+    int insertManagerDirectEntry(AdminManagerEnterCommand command);
+
+    /* ===== prafta-051 R-C 이탈자 내보내기(입실취소) ===== */
+    /**
+     * E13 입실취소 물리삭제 직전 감사 스냅샷 조회. 대상 출결의 USER_CD/USER_TYPE_CD 코드값만 반환한다
+     * (물리 DELETE 후 추적 흔적 보강용). DELETE 와 동일 @Transactional 안에서 일관 조회. 없으면 null.
+     */
+    AdminCancelEntrySnapshotResult selectCancelEntrySnapshot(AdminCancelEntryCommand command);
+
+    /**
+     * E13 입실취소 물리삭제(#D-RE2). 본 세션+attendanceCd+토큰 CMPNY + 미종료 + DEL_YN='N' + 세션 OPENED
+     * (서브쿼리 가드 — TOCTOU 자동전이 차단). 영향 행수 반환(0=이미 취소/없음 또는 OPENED 이탈 → 멱등).
+     */
+    int deleteCancelEntry(AdminCancelEntryCommand command);
 
     /* ===== R5 교육자료 관리(web Tbm01 SQL 포팅 + 토큰/사업장 스코프) ===== */
     /** 자료 채번(web Tbm01.selectMtrlCd 포팅). */

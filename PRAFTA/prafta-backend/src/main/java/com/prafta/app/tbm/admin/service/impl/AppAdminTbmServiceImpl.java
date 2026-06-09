@@ -6,25 +6,32 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.dao.DuplicateKeyException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
 import org.springframework.web.multipart.MultipartFile;
 
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.prafta.app.admin.access.application.query.AdminAccessQuery;
 import com.prafta.app.admin.access.mapper.AppAdminAccessMapper;
 import com.prafta.app.admin.access.result.AccessibleSiteResult;
 import com.prafta.app.admin.common.scope.application.query.ScopedNodeQuery;
 import com.prafta.app.admin.common.scope.mapper.AdminScopeMapper;
+import com.prafta.app.tbm.admin.application.command.AdminCancelEntryCommand;
 import com.prafta.app.tbm.admin.application.command.AdminCompletionCommand;
 import com.prafta.app.tbm.admin.application.command.AdminEduMaterialCommand;
 import com.prafta.app.tbm.admin.application.command.AdminEduMaterialItemCommand;
 import com.prafta.app.tbm.admin.application.command.AdminForceExitCommand;
+import com.prafta.app.tbm.admin.application.command.AdminManagerEnterCommand;
 import com.prafta.app.tbm.admin.application.command.AdminSessionCancelCommand;
 import com.prafta.app.tbm.admin.application.command.AdminSessionCommand;
 import com.prafta.app.tbm.admin.application.command.AdminSessionContentCommand;
-import com.prafta.app.tbm.admin.application.command.AdminSessionPwdCommand;
+import com.prafta.app.tbm.admin.application.command.AdminSessionPrepareCommand;
 import com.prafta.app.tbm.admin.application.command.AdminSessionRiskCommand;
+import com.prafta.app.tbm.admin.application.command.AdminSessionSinglePwdCommand;
 import com.prafta.app.tbm.admin.application.command.AdminSessionStateCommand;
 import com.prafta.app.tbm.admin.application.command.AdminSessionTransitionCommand;
 import com.prafta.app.tbm.admin.application.model.AdminSessionContentModel;
@@ -33,20 +40,27 @@ import com.prafta.app.tbm.admin.application.param.AdminAttendeeListParam;
 import com.prafta.app.tbm.admin.application.param.AdminCompletionParam;
 import com.prafta.app.tbm.admin.application.param.AdminEduMaterialDetailParam;
 import com.prafta.app.tbm.admin.application.param.AdminEduMaterialListParam;
+import com.prafta.app.tbm.admin.application.param.AdminCancelEntryParam;
 import com.prafta.app.tbm.admin.application.param.AdminEduMaterialSaveParam;
+import com.prafta.app.tbm.admin.application.param.AdminEligibleRegularParam;
 import com.prafta.app.tbm.admin.application.param.AdminForceExitParam;
 import com.prafta.app.tbm.admin.application.param.AdminHistoryListParam;
+import com.prafta.app.tbm.admin.application.param.AdminManagerDirectParam;
+import com.prafta.app.tbm.admin.application.param.AdminQrScanParam;
 import com.prafta.app.tbm.admin.application.param.AdminLiveTransitionParam;
 import com.prafta.app.tbm.admin.application.param.AdminOptionParam;
 import com.prafta.app.tbm.admin.application.param.AdminSessionCancelParam;
 import com.prafta.app.tbm.admin.application.param.AdminSessionDetailParam;
 import com.prafta.app.tbm.admin.application.param.AdminSessionListParam;
+import com.prafta.app.tbm.admin.application.param.AdminSessionPrepareParam;
 import com.prafta.app.tbm.admin.application.param.AdminSessionPwdParam;
 import com.prafta.app.tbm.admin.application.param.AdminSessionSaveParam;
 import com.prafta.app.tbm.admin.application.param.AdminSessionUpdateParam;
 import com.prafta.app.tbm.admin.application.query.AdminAttendeeListQuery;
 import com.prafta.app.tbm.admin.application.query.AdminEduMaterialDetailQuery;
 import com.prafta.app.tbm.admin.application.query.AdminEduMaterialListQuery;
+import com.prafta.app.tbm.admin.application.query.AdminEligibleRegularQuery;
+import com.prafta.app.tbm.admin.application.query.AdminEntryTargetQuery;
 import com.prafta.app.tbm.admin.application.query.AdminHistoryListQuery;
 import com.prafta.app.tbm.admin.application.query.AdminOptionQuery;
 import com.prafta.app.tbm.admin.application.query.AdminSessionDetailQuery;
@@ -57,8 +71,11 @@ import com.prafta.app.tbm.admin.dto.response.AdminContentOptionResponse;
 import com.prafta.app.tbm.admin.dto.response.AdminEduMaterialDetailResponse;
 import com.prafta.app.tbm.admin.dto.response.AdminEduMaterialListResponse;
 import com.prafta.app.tbm.admin.dto.response.AdminEduMaterialSaveResponse;
+import com.prafta.app.tbm.admin.dto.response.AdminEligibleRegularResponse;
 import com.prafta.app.tbm.admin.dto.response.AdminForceExitResponse;
 import com.prafta.app.tbm.admin.dto.response.AdminHistoryListResponse;
+import com.prafta.app.tbm.admin.dto.response.AdminManagerDirectResponse;
+import com.prafta.app.tbm.admin.dto.response.AdminQrScanResponse;
 import com.prafta.app.tbm.admin.dto.response.AdminLiveTransitionResponse;
 import com.prafta.app.tbm.admin.dto.response.AdminMaterialTypeOptionResponse;
 import com.prafta.app.tbm.admin.dto.response.AdminRiskOptionResponse;
@@ -70,9 +87,11 @@ import com.prafta.app.tbm.admin.dto.response.AdminSessionSaveResponse;
 import com.prafta.app.tbm.admin.dto.response.AdminSiteOptionResponse;
 import com.prafta.app.tbm.admin.mapper.AppAdminTbmMapper;
 import com.prafta.app.tbm.admin.result.AdminAttendeeResult;
+import com.prafta.app.tbm.admin.result.AdminCancelEntrySnapshotResult;
 import com.prafta.app.tbm.admin.result.AdminContentItemResult;
 import com.prafta.app.tbm.admin.result.AdminContentOptionResult;
 import com.prafta.app.tbm.admin.result.AdminEduMaterialItemResult;
+import com.prafta.app.tbm.admin.result.AdminEligibleRegularResult;
 import com.prafta.app.tbm.admin.result.AdminEduMaterialListResult;
 import com.prafta.app.tbm.admin.result.AdminEduMaterialResult;
 import com.prafta.app.tbm.admin.result.AdminHistoryListResult;
@@ -120,12 +139,19 @@ public class AppAdminTbmServiceImpl implements AppAdminTbmService {
     private final FileService fileService;                     // R5 자료 파일 저장(공통 인프라)
     private final FileMapper fileMapper;                       // R5 자료 파일코드 채번/메타
     private final FileUrlSigner fileUrlSigner;                 // 파일 서빙 서명 URL 발급(공통 인프라)
+    private final ObjectMapper objectMapper;                   // E11 QR 페이로드(JSON) 파싱
 
     private static final int PWD_LENGTH = 6;
+    /** prafta-051 §2: 교육준비→교육시작 자동전이 기본 경과시간(분). properties 로 오버라이드 가능(#DF-3). */
+    private static final int DEFAULT_PREP_AUTO_START_MINUTES = 15;
+    /** 15분 자동 교육시작 경과 임계(분). 기본 15, application.properties 의 tbm.prep.auto-start-minutes 로 조정. */
+    @Value("${tbm.prep.auto-start-minutes:15}")
+    private int prepAutoStartMinutes = DEFAULT_PREP_AUTO_START_MINUTES;
     private static final int GPS_RADIUS_MIN = 50;
     private static final int GPS_RADIUS_MAX = 1000;
     private static final int CONTENT_TEXT_MIN = 10;
     private static final int NOT_COMPLETED_REASON_MIN = 10;   // R3 T4 미이수 사유 최소 길이
+    private static final int QR_PAYLOAD_MAX_LENGTH = 4096;     // R-D 일용직 QR 페이로드 방어적 길이 상한(정상 ~3KB)
 
     // ===== R5 교육자료 =====
     private static final int TITLE_MAX = 200;
@@ -242,6 +268,9 @@ public class AppAdminTbmServiceImpl implements AppAdminTbmService {
             throw new ApiException(CommonErrorCode.COMMON_400_001);
         }
 
+        // prafta-051 §2: 진입 시 15분 자동 교육시작 지연평가(멱등). 평가 후 상태를 재조회해 응답에 반영.
+        evaluateAutoStart(param.gvCmpnyCd(), param.sessionCd());
+
         AdminSessionDetailQuery query = AdminSessionDetailQuery.of(param.sessionCd(), param.gvCmpnyCd());
 
         AdminSessionResult session = appAdminTbmMapper.selectSessionDetail(query);
@@ -259,7 +288,10 @@ public class AppAdminTbmServiceImpl implements AppAdminTbmService {
         List<AdminSessionContentResult> contents = appAdminTbmMapper.selectSessionContents(query);
         List<AdminSessionRiskResult> risks = appAdminTbmMapper.selectSessionRisks(query);
 
-        boolean pwdVisible = isPwdVisible(session.statusCd(), param.gvAuthCd(), scope.companyWide());
+        // prafta-051: 비번 노출 시점 정합 — ENTRY_PWD=OPENED 이상, EXIT_PWD=COMPLETED 이상(관리자 한정).
+        boolean entryPwdVisible = isEntryPwdVisible(session.statusCd(), param.gvAuthCd(), scope.companyWide());
+        boolean exitPwdVisible = isExitPwdVisible(session.statusCd(), param.gvAuthCd(), scope.companyWide());
+        boolean pwdVisible = entryPwdVisible || exitPwdVisible;
 
         AdminSessionDetailResponse.SessionDetailItem item = AdminSessionDetailResponse.SessionDetailItem.builder()
                 .sessionCd(session.sessionCd())
@@ -271,8 +303,8 @@ public class AppAdminTbmServiceImpl implements AppAdminTbmService {
                 .contentFormatCd(session.contentFormatCd())
                 .statusCd(session.statusCd())
                 .statusNm(session.statusNm())
-                .entryPwd(pwdVisible ? session.entryPwd() : null)
-                .exitPwd(pwdVisible ? session.exitPwd() : null)
+                .entryPwd(entryPwdVisible ? session.entryPwd() : null)
+                .exitPwd(exitPwdVisible ? session.exitPwd() : null)
                 .pwdVisible(pwdVisible)
                 .managerUserCd(session.managerUserCd())
                 .managerUserNm(session.managerUserNm())
@@ -282,6 +314,8 @@ public class AppAdminTbmServiceImpl implements AppAdminTbmService {
                 .gpsVerifyRadiusM(session.gpsVerifyRadiusM())
                 .gpsManualConfirmYn(session.gpsManualConfirmYn())
                 .openedAt(session.openedAt())
+                .prepStartAt(session.prepStartAt())
+                .prepAutoStartAt(computePrepAutoStartAt(session.statusCd(), session.prepStartAt()))
                 .startedAt(session.startedAt())
                 .endedAt(session.endedAt())
                 .cancelledAt(session.cancelledAt())
@@ -327,9 +361,10 @@ public class AppAdminTbmServiceImpl implements AppAdminTbmService {
     public AdminSessionSaveResponse saveSession(AdminSessionSaveParam param) {
         ScopeContext scope = resolveScope(param.gvCmpnyCd(), param.gvUserCd(), param.gvSiteCd(), param.gvAuthCd());
 
-        boolean opened = "OPENED".equals(param.saveMode());
-        if (!opened && !"DRAFT".equals(param.saveMode())) {
-            log.warn("TBM 세션 저장 모드 부적합 - saveMode={}", param.saveMode());
+        // prafta-051 #D-RE1: 개설은 항상 DRAFT 고정. saveMode='OPENED' 직접생성은 제거(거부).
+        // 교육준비(OPENED)는 별도 /prepare 전이로만 도달한다(입실비번·GPS·PREP_START_AT 그때 발급).
+        if (!"DRAFT".equals(param.saveMode())) {
+            log.warn("TBM 세션 저장 모드 부적합(개설=DRAFT만 허용) - saveMode={}", param.saveMode());
             throw new ApiException(CommonErrorCode.COMMON_400_002);
         }
 
@@ -342,17 +377,10 @@ public class AppAdminTbmServiceImpl implements AppAdminTbmService {
             throw new ApiException(TbmErrorCode.TBM_403_011);
         }
 
-        // 제목 검증
+        // 제목 검증(개설 시점 유일 필수 항목). 교육내용/GPS 는 교육준비 전이에서 최종 강제.
         String title = param.title() != null ? param.title().trim() : "";
         if (!StringUtils.hasText(title) || title.length() > 200) {
             throw new ApiException(TbmErrorCode.TBM_400_011);
-        }
-
-        // 개설 시: 교육 내용 텍스트 >= 10자(T5: plain text), GPS 검증
-        if (opened) {
-            validateContentBody(param.contentBody());
-            validateGps(param.gpsVerifyTypeCd(), param.managerGpsLat(), param.managerGpsLon(),
-                    param.gpsVerifyRadiusM(), param.gpsManualConfirmYn());
         }
 
         String sessionCd = appAdminTbmMapper.selectSessionCd(param.gvCmpnyCd());
@@ -361,36 +389,24 @@ public class AppAdminTbmServiceImpl implements AppAdminTbmService {
             throw new ApiException(CommonErrorCode.COMMON_500_001);
         }
 
-        String entryPwd = null;
-        String exitPwd = null;
-        if (opened) {
-            String[] pair = NumericPwdGenerator.generatePair(PWD_LENGTH);
-            entryPwd = pair[0];
-            exitPwd = pair[1];
-        }
-
-        String statusCd = opened ? "OPENED" : "DRAFT";
-
+        // DRAFT 고정: 비번·GPS좌표·OPENED_AT·PREP_START_AT 미발급(opened=false).
         appAdminTbmMapper.insertSession(
-                AdminSessionCommand.forSave(param, sessionCd, statusCd, entryPwd, exitPwd, opened));
+                AdminSessionCommand.forSave(param, sessionCd, "DRAFT", null, null, false));
 
         insertContents(param.contents(), sessionCd, param.gvCmpnyCd(), param.gvUserCd());
         insertRisks(param.risks(), sessionCd, param.gvCmpnyCd(), param.gvUserCd());
 
-        if (opened) {
-            appAdminTbmMapper.upsertSessionState(
-                    AdminSessionStateCommand.of(sessionCd, param.gvCmpnyCd(), param.gvUserCd()));
-        }
+        // 상태 row 초기 UPSERT(upsertSessionState)는 교육준비(prepare) 전이로 이동 — 개설 시 미수행.
 
         boolean riskEmpty = param.risks() == null || param.risks().isEmpty();
 
-        log.info("앱 관리자 TBM 세션 저장 완료 - sessionCd={}, status={}, riskEmpty={}", sessionCd, statusCd, riskEmpty);
+        log.info("앱 관리자 TBM 세션 개설 완료(DRAFT 고정) - sessionCd={}, riskEmpty={}", sessionCd, riskEmpty);
 
         return AdminSessionSaveResponse.builder()
                 .sessionCd(sessionCd)
-                .statusCd(statusCd)
-                .entryPwd(entryPwd)
-                .exitPwd(exitPwd)
+                .statusCd("DRAFT")
+                .entryPwd(null)
+                .exitPwd(null)
                 .warningMessage(riskEmpty ? RISK_WARNING_MESSAGE : null)
                 .build();
     }
@@ -465,9 +481,13 @@ public class AppAdminTbmServiceImpl implements AppAdminTbmService {
 
     // ============================ T-A4 비밀번호 재발급 ============================
 
+    /**
+     * E6 입실비번 전용 재발급(OPENED 한정). EXIT_PWD 미변경. 기입실자 무영향
+     * (비번은 enter 시점에만 검증, 결과는 TB_TBM_ATTENDANCE 에 확정).
+     */
     @Override
     @Transactional
-    public AdminSessionPwdResponse regeneratePassword(AdminSessionPwdParam param) {
+    public AdminSessionPwdResponse regenerateEntryPassword(AdminSessionPwdParam param) {
         ScopeContext scope = resolveScope(param.gvCmpnyCd(), param.gvUserCd(), param.gvSiteCd(), param.gvAuthCd());
 
         if (!StringUtils.hasText(param.sessionCd())) {
@@ -476,22 +496,65 @@ public class AppAdminTbmServiceImpl implements AppAdminTbmService {
 
         AdminSessionGuardResult guard = loadGuard(param.gvCmpnyCd(), param.sessionCd());
         verifyScope(scope, guard.siteCd(), guard.managerNodeCd(), param.gvCmpnyCd(), param.gvUserCd());
+        verifyManager(guard, param.gvUserCd());   // [prafta-051-ra-M1] 비번 재발급도 개설자만(start/end/prepare 동일 기준)
 
         if (!"OPENED".equals(guard.statusCd())) {
-            log.warn("TBM 세션 비번 재발급 불가 상태 - sessionCd={}, status={}", param.sessionCd(), guard.statusCd());
+            log.warn("TBM 입실비번 재발급 불가 상태 - sessionCd={}, status={}", param.sessionCd(), guard.statusCd());
             throw new ApiException(TbmErrorCode.TBM_409_012);
         }
 
-        String[] pair = NumericPwdGenerator.generatePair(PWD_LENGTH);
-        appAdminTbmMapper.updateSessionPwd(AdminSessionPwdCommand.of(
-                param.sessionCd(), pair[0], pair[1], param.gvCmpnyCd(), param.gvUserCd()));
+        String entryPwd = NumericPwdGenerator.generate(PWD_LENGTH);
+        int affected = appAdminTbmMapper.updateEntryPwd(AdminSessionSinglePwdCommand.of(
+                param.sessionCd(), entryPwd, param.gvCmpnyCd(), param.gvUserCd()));
+        if (affected == 0) {
+            log.warn("TBM 입실비번 재발급 경합/상태부적합 - sessionCd={}", param.sessionCd());
+            throw new ApiException(TbmErrorCode.TBM_409_012);
+        }
 
-        log.info("앱 관리자 TBM 세션 비번 재발급 완료 - sessionCd={}", param.sessionCd());
+        log.info("앱 관리자 TBM 입실비번 재발급 완료 - sessionCd={}", param.sessionCd());
 
         return AdminSessionPwdResponse.builder()
                 .sessionCd(param.sessionCd())
-                .entryPwd(pair[0])
-                .exitPwd(pair[1])
+                .entryPwd(entryPwd)
+                .exitPwd(null)
+                .build();
+    }
+
+    /**
+     * E7 종료비번 전용 재발급(COMPLETED 한정). ENTRY_PWD 미변경. 기종료자 무영향.
+     */
+    @Override
+    @Transactional
+    public AdminSessionPwdResponse regenerateExitPassword(AdminSessionPwdParam param) {
+        ScopeContext scope = resolveScope(param.gvCmpnyCd(), param.gvUserCd(), param.gvSiteCd(), param.gvAuthCd());
+
+        if (!StringUtils.hasText(param.sessionCd())) {
+            throw new ApiException(CommonErrorCode.COMMON_400_001);
+        }
+
+        AdminSessionGuardResult guard = loadGuard(param.gvCmpnyCd(), param.sessionCd());
+        verifyScope(scope, guard.siteCd(), guard.managerNodeCd(), param.gvCmpnyCd(), param.gvUserCd());
+        verifyManager(guard, param.gvUserCd());   // [prafta-051-ra-M1] 비번 재발급도 개설자만(start/end/prepare 동일 기준)
+
+        if (!"COMPLETED".equals(guard.statusCd())) {
+            log.warn("TBM 종료비번 재발급 불가 상태 - sessionCd={}, status={}", param.sessionCd(), guard.statusCd());
+            throw new ApiException(TbmErrorCode.TBM_409_017);
+        }
+
+        String exitPwd = NumericPwdGenerator.generate(PWD_LENGTH);
+        int affected = appAdminTbmMapper.updateExitPwd(AdminSessionSinglePwdCommand.of(
+                param.sessionCd(), exitPwd, param.gvCmpnyCd(), param.gvUserCd()));
+        if (affected == 0) {
+            log.warn("TBM 종료비번 재발급 경합/상태부적합 - sessionCd={}", param.sessionCd());
+            throw new ApiException(TbmErrorCode.TBM_409_017);
+        }
+
+        log.info("앱 관리자 TBM 종료비번 재발급 완료 - sessionCd={}", param.sessionCd());
+
+        return AdminSessionPwdResponse.builder()
+                .sessionCd(param.sessionCd())
+                .entryPwd(null)
+                .exitPwd(exitPwd)
                 .build();
     }
 
@@ -576,11 +639,28 @@ public class AppAdminTbmServiceImpl implements AppAdminTbmService {
         verifyScope(scope, guard.siteCd(), guard.managerNodeCd(), param.gvCmpnyCd(), param.gvUserCd());
         verifyManager(guard, param.gvUserCd());   // T1: 개설자만
 
+        // prafta-051 §2/#DF-5: 진입 시 15분 자동전이 멱등 평가. 이미 자동전이됐으면 409 대신 현재상태 멱등 반환.
+        evaluateAutoStart(param.gvCmpnyCd(), param.sessionCd());
+
         int updated = appAdminTbmMapper.startSession(
                 AdminSessionTransitionCommand.of(param.sessionCd(), param.gvCmpnyCd(), param.gvUserCd()));
         if (updated == 0) {
-            // 가드(STATUS_CD='OPENED') 0건 = 이미 진행/종료 등 전이 충돌.
-            log.warn("TBM 교육 시작 상태 전이 충돌 - sessionCd={}, status={}", param.sessionCd(), guard.statusCd());
+            // 가드(STATUS_CD='OPENED') 0건 = 이미 진행(자동/동시전이) 또는 종료 등 전이 충돌.
+            AdminSessionResult cur = appAdminTbmMapper.selectSessionDetail(
+                    AdminSessionDetailQuery.of(param.sessionCd(), param.gvCmpnyCd()));
+            if (cur != null && "IN_PROGRESS".equals(cur.statusCd())) {
+                // 멱등 안내: 자동전이로 이미 교육시작됨 → 현재 상태 반환(#DF-5).
+                log.info("TBM 교육 시작 멱등(이미 진행중/자동전이) - sessionCd={}", param.sessionCd());
+                appAdminTbmMapper.upsertSessionStatePlaying(
+                        AdminSessionStateCommand.of(param.sessionCd(), param.gvCmpnyCd(), param.gvUserCd()));
+                return AdminLiveTransitionResponse.builder()
+                        .sessionCd(param.sessionCd())
+                        .statusCd("IN_PROGRESS")
+                        .startedAt(cur.startedAt())
+                        .build();
+            }
+            log.warn("TBM 교육 시작 상태 전이 충돌 - sessionCd={}, status={}",
+                    param.sessionCd(), cur != null ? cur.statusCd() : guard.statusCd());
             throw new ApiException(TbmErrorCode.TBM_409_050);
         }
 
@@ -601,6 +681,99 @@ public class AppAdminTbmServiceImpl implements AppAdminTbmService {
                 .build();
     }
 
+    // ============================ prafta-051 R-A 교육준비/연장 ============================
+
+    /**
+     * E2 교육준비(OPENED) 전이. DRAFT→OPENED 전이 시 입실비번 발급 + 관리자 GPS 중심좌표 +
+     * PREP_START_AT(NOW) 를 확정한다(15분 자동 교육시작 타이머 시작). OPENED_AT 은 감사 보존(IFNULL).
+     * 종료비번(EXIT_PWD)은 발급하지 않는다(교육종료 소관).
+     *
+     * <p>권한=개설자(verifyManager). 가드 WHERE STATUS_CD='DRAFT'(0건=이미 전이/충돌 409).
+     * GPS_VERIFY_TYPE_CD='AUTO' 세션이면 관리자 현재좌표(lat/lon) 필수.
+     */
+    @Override
+    @Transactional
+    public AdminLiveTransitionResponse prepareSession(AdminSessionPrepareParam param) {
+        ScopeContext scope = resolveScope(param.gvCmpnyCd(), param.gvUserCd(), param.gvSiteCd(), param.gvAuthCd());
+
+        if (!StringUtils.hasText(param.sessionCd())) {
+            throw new ApiException(CommonErrorCode.COMMON_400_001);
+        }
+
+        AdminSessionGuardResult guard = loadGuard(param.gvCmpnyCd(), param.sessionCd());
+        verifyScope(scope, guard.siteCd(), guard.managerNodeCd(), param.gvCmpnyCd(), param.gvUserCd());
+        verifyManager(guard, param.gvUserCd());   // 개설자만(start/end 동일 기준)
+
+        // 전이 가능 시점: DRAFT 만.
+        if (!"DRAFT".equals(guard.statusCd())) {
+            log.warn("TBM 교육준비 전이 불가 상태 - sessionCd={}, status={}", param.sessionCd(), guard.statusCd());
+            throw new ApiException(TbmErrorCode.TBM_409_013);
+        }
+
+        // GPS 검증세션(AUTO)이면 관리자 현재좌표 필수(개설 시 저장된 GPS_VERIFY_TYPE_CD 기준).
+        if ("AUTO".equals(guard.gpsVerifyTypeCd())
+                && (!StringUtils.hasText(param.managerGpsLat()) || !StringUtils.hasText(param.managerGpsLon()))) {
+            log.warn("TBM 교육준비 GPS(AUTO) 좌표 누락 - sessionCd={}", param.sessionCd());
+            throw new ApiException(TbmErrorCode.TBM_400_012);
+        }
+
+        // 입실비번 발급(6자리). 종료비번은 미발급(null 유지).
+        String entryPwd = NumericPwdGenerator.generate(PWD_LENGTH);
+
+        int affected = appAdminTbmMapper.prepareSession(AdminSessionPrepareCommand.of(
+                param.sessionCd(), entryPwd, param.managerGpsLat(), param.managerGpsLon(),
+                param.gvCmpnyCd(), param.gvUserCd()));
+        if (affected == 0) {
+            // 동시 전이/상태 변경으로 DRAFT 가 아님.
+            log.warn("TBM 교육준비 전이 경합/상태부적합 - sessionCd={}", param.sessionCd());
+            throw new ApiException(TbmErrorCode.TBM_409_013);
+        }
+
+        // 상태 row 초기 UPSERT(동기화 초기값) — 개설에서 이 시점으로 이동.
+        appAdminTbmMapper.upsertSessionState(
+                AdminSessionStateCommand.of(param.sessionCd(), param.gvCmpnyCd(), param.gvUserCd()));
+
+        log.info("앱 관리자 TBM 교육준비 전이 완료(OPENED) - sessionCd={}, manager={}",
+                param.sessionCd(), param.gvUserCd());
+
+        return AdminLiveTransitionResponse.builder()
+                .sessionCd(param.sessionCd())
+                .statusCd("OPENED")
+                .build();
+    }
+
+    /**
+     * E3 교육준비 연장. PREP_START_AT 을 NOW() 로 리셋해 15분 타이머를 재시작한다. 권한=개설자.
+     *
+     * <p>진입 시 자동전이를 먼저 평가(evaluateAutoStart)하므로, 이미 15분 경과했으면 OPENED 가 아니게 되어
+     * 연장 UPDATE 가 0건→409 로 거부된다(가드 WHERE STATUS_CD='OPENED').
+     */
+    @Override
+    @Transactional
+    public void extendPrep(AdminLiveTransitionParam param) {
+        ScopeContext scope = resolveScope(param.gvCmpnyCd(), param.gvUserCd(), param.gvSiteCd(), param.gvAuthCd());
+
+        if (!StringUtils.hasText(param.sessionCd())) {
+            throw new ApiException(CommonErrorCode.COMMON_400_001);
+        }
+
+        AdminSessionGuardResult guard = loadGuard(param.gvCmpnyCd(), param.sessionCd());
+        verifyScope(scope, guard.siteCd(), guard.managerNodeCd(), param.gvCmpnyCd(), param.gvUserCd());
+        verifyManager(guard, param.gvUserCd());
+
+        // 만료된 교육준비는 자동전이시켜 연장 불가로 일관(멱등).
+        evaluateAutoStart(param.gvCmpnyCd(), param.sessionCd());
+
+        int affected = appAdminTbmMapper.extendPrep(
+                AdminSessionTransitionCommand.of(param.sessionCd(), param.gvCmpnyCd(), param.gvUserCd()));
+        if (affected == 0) {
+            log.warn("TBM 교육준비 연장 경합/상태부적합 - sessionCd={}", param.sessionCd());
+            throw new ApiException(TbmErrorCode.TBM_409_015);
+        }
+
+        log.info("앱 관리자 TBM 교육준비 연장 완료(PREP_START_AT 리셋) - sessionCd={}", param.sessionCd());
+    }
+
     // ============================ R3 T1 교육 종료 + T2 자동이수 ============================
 
     @Override
@@ -616,10 +789,11 @@ public class AppAdminTbmServiceImpl implements AppAdminTbmService {
         verifyScope(scope, guard.siteCd(), guard.managerNodeCd(), param.gvCmpnyCd(), param.gvUserCd());
         verifyManager(guard, param.gvUserCd());   // T1: 개설자만
 
-        AdminSessionTransitionCommand command =
-                AdminSessionTransitionCommand.of(param.sessionCd(), param.gvCmpnyCd(), param.gvUserCd());
+        // prafta-051 E5: 종료비번(EXIT_PWD)을 이 전이에서 최초 발급(개설/준비 시 동시발급 제거).
+        String exitPwd = NumericPwdGenerator.generate(PWD_LENGTH);
 
-        int updated = appAdminTbmMapper.endSession(command);
+        int updated = appAdminTbmMapper.endSession(AdminSessionSinglePwdCommand.of(
+                param.sessionCd(), exitPwd, param.gvCmpnyCd(), param.gvUserCd()));
         if (updated == 0) {
             // 가드(STATUS_CD='IN_PROGRESS') 0건 = 진행 중이 아님(전이 충돌).
             log.warn("TBM 교육 종료 상태 전이 충돌 - sessionCd={}, status={}", param.sessionCd(), guard.statusCd());
@@ -627,7 +801,8 @@ public class AppAdminTbmServiceImpl implements AppAdminTbmService {
         }
 
         // T2: 미종료(EXIT_AT IS NULL) 출결 일괄 자동이수(EXIT_TYPE_CD 는 NULL 유지 — SYS052 종료자동 코드 없음).
-        int autoCompletedCount = appAdminTbmMapper.autoCompleteOnEnd(command);
+        int autoCompletedCount = appAdminTbmMapper.autoCompleteOnEnd(
+                AdminSessionTransitionCommand.of(param.sessionCd(), param.gvCmpnyCd(), param.gvUserCd()));
 
         AdminSessionResult session = appAdminTbmMapper.selectSessionDetail(
                 AdminSessionDetailQuery.of(param.sessionCd(), param.gvCmpnyCd()));
@@ -657,9 +832,11 @@ public class AppAdminTbmServiceImpl implements AppAdminTbmService {
         AdminSessionGuardResult guard = loadGuard(param.gvCmpnyCd(), param.sessionCd());
         verifyScope(scope, guard.siteCd(), guard.managerNodeCd(), param.gvCmpnyCd(), param.gvUserCd());
 
-        boolean liveOnly = "LIVE".equals(param.phase());
+        // phase=LIVE(진행화면) 와 PREP(교육준비, prafta-051 R-C/E12) 는 입실자만(ENTRY_AT IS NOT NULL).
+        // COMPLETED(종료화면) 는 출결 전체. PREP 는 응답의 distanceM 으로 이탈자 판단(정밀좌표 미노출).
+        boolean enteredOnly = "LIVE".equals(param.phase()) || "PREP".equals(param.phase());
         List<AdminAttendeeResult> list = appAdminTbmMapper.selectSessionAttendeesAdmin(
-                AdminAttendeeListQuery.of(param.sessionCd(), param.gvCmpnyCd(), liveOnly));
+                AdminAttendeeListQuery.of(param.sessionCd(), param.gvCmpnyCd(), enteredOnly));
 
         log.info("앱 관리자 TBM 출결 리스트 조회 완료 - sessionCd={}, phase={}, count={}",
                 param.sessionCd(), param.phase(), list != null ? list.size() : 0);
@@ -829,6 +1006,316 @@ public class AppAdminTbmServiceImpl implements AppAdminTbmService {
         return AdminSessionContentsResponse.builder()
                 .materials(materials)
                 .build();
+    }
+
+    // ============================ prafta-051 R-B 입실경로(정규직 대리입실) ============================
+
+    /**
+     * E9 정규직 대리입실 후보 검색. 세션을 먼저 조회·스코프 검증(cross-site IDOR 차단)한 뒤, 세션 사업장
+     * (guard.siteCd) 기준으로 활성 정규직(TB_USER) 후보를 이름/사번으로 검색한다. 클라이언트가 보낸 사업장은
+     * 신뢰하지 않는다(web Tbm02.selectEntryCandidates 동형).
+     *
+     * <p>노드관리자(비 companyWide)는 세션 사업장 기준 자기노드+자손(scopedNodeCds)으로 TB_USER.NODE_CD 를
+     * 제한한다(R1~R6 동일 패턴). 이미 입실(DEL_YN='N' 출결)한 사용자는 alreadyEntered=true 로 표시하되 목록에서
+     * 제외하지 않는다(프론트가 비활성 처리). PII 최소(userCd/userNm/deptNm).
+     */
+    @Override
+    public AdminEligibleRegularResponse selectEligibleRegulars(AdminEligibleRegularParam param) {
+        ScopeContext scope = resolveScope(param.gvCmpnyCd(), param.gvUserCd(), param.gvSiteCd(), param.gvAuthCd());
+
+        if (!StringUtils.hasText(param.sessionCd())) {
+            throw new ApiException(CommonErrorCode.COMMON_400_001);
+        }
+
+        // 15분 자동 교육시작 지연평가(멱등) 후, 세션 소유/스코프 재검증(IDOR).
+        evaluateAutoStart(param.gvCmpnyCd(), param.sessionCd());
+
+        AdminSessionGuardResult guard = loadGuard(param.gvCmpnyCd(), param.sessionCd());
+        verifyScope(scope, guard.siteCd(), guard.managerNodeCd(), param.gvCmpnyCd(), param.gvUserCd());
+
+        // D-2: 입실(대리 포함)은 교육준비(OPENED) 상태에서만 의미가 있다. 그 외 상태는 후보 검색 거부.
+        if (!"OPENED".equals(guard.statusCd())) {
+            log.warn("TBM 대리입실 후보 검색 불가 상태 - sessionCd={}, status={}",
+                    param.sessionCd(), guard.statusCd());
+            throw new ApiException(TbmErrorCode.TBM_409_040);
+        }
+
+        // 노드관리자면 세션 사업장 기준 자기노드+자손 NODE_CD 집합으로 TB_USER 를 제한한다.
+        List<String> scopedNodeCds = Collections.emptyList();
+        if (!scope.companyWide()) {
+            scopedNodeCds = adminScopeMapper.selectScopedNodeCds(
+                    ScopedNodeQuery.of(param.gvCmpnyCd(), guard.siteCd(), param.gvUserCd()));
+        }
+
+        AdminEligibleRegularQuery query = AdminEligibleRegularQuery.of(
+                param.sessionCd(), param.gvCmpnyCd(), guard.siteCd(), param.keyword(),
+                scope.companyWide(), scopedNodeCds,
+                (param.page() - 1) * param.pageSize(), param.pageSize());
+
+        List<AdminEligibleRegularResult> users = appAdminTbmMapper.selectEligibleRegulars(query);
+
+        log.info("앱 관리자 TBM 정규직 대리입실 후보 검색 완료 - sessionCd={}, count={}",
+                param.sessionCd(), users != null ? users.size() : 0);
+
+        return AdminEligibleRegularResponse.builder()
+                .users(users != null ? users : Collections.emptyList())
+                .page(param.page())
+                .pageSize(param.pageSize())
+                .build();
+    }
+
+    /**
+     * E10 정규직 관리자 대리입실(MANAGER_DIRECT). 세션 OPENED(D-2) + 대상이 세션 사업장 소속 활성 정규직인지
+     * 서버 재검증(IDOR) 후 TB_TBM_ATTENDANCE 에 입실 INSERT 한다. 비번/GPS 반경검증은 하지 않고(D-4),
+     * ENTRY_GPS_LAT/LON 은 세션의 관리자 좌표를 감사용으로 복사한다(매퍼 INSERT...SELECT).
+     *
+     * <p>UK(CMPNY,SESSION,USER_TYPE,USER) 충돌(이미 입실 또는 동시 입실 경합)은 DuplicateKeyException 으로
+     * 멱등 안내(TBM_409_041)한다. 내보내기(DEL_YN='Y') 후 재입실 복구는 R-C(#D-RE2) 소관으로, 본 라운드는
+     * 멱등 안내로 일관한다(에러 대신 사용자 안내 — 프론트에서 "이미 입실됨"으로 처리).
+     */
+    @Override
+    @Transactional
+    public AdminManagerDirectResponse managerDirectEnter(AdminManagerDirectParam param) {
+        ScopeContext scope = resolveScope(param.gvCmpnyCd(), param.gvUserCd(), param.gvSiteCd(), param.gvAuthCd());
+
+        if (!StringUtils.hasText(param.sessionCd()) || !StringUtils.hasText(param.userCd())) {
+            throw new ApiException(CommonErrorCode.COMMON_400_001);
+        }
+
+        // 자동전이 지연평가 후 세션 소유/스코프 재검증(IDOR).
+        evaluateAutoStart(param.gvCmpnyCd(), param.sessionCd());
+
+        AdminSessionGuardResult guard = loadGuard(param.gvCmpnyCd(), param.sessionCd());
+        verifyScope(scope, guard.siteCd(), guard.managerNodeCd(), param.gvCmpnyCd(), param.gvUserCd());
+
+        // D-2: 교육준비(OPENED) 상태에서만 입실 처리.
+        if (!"OPENED".equals(guard.statusCd())) {
+            log.warn("TBM 정규직 대리입실 불가 상태 - sessionCd={}, status={}",
+                    param.sessionCd(), guard.statusCd());
+            throw new ApiException(TbmErrorCode.TBM_409_040);
+        }
+
+        // 노드관리자면 세션 사업장 기준 자기노드+자손 NODE_CD 집합으로 대상 정규직을 제한한다(E9 동형).
+        // 읽기(E9 검색)/쓰기(E10 대리입실) 권한 비대칭 차단 — 서브트리 밖 정규직 대리입실 거부.
+        List<String> scopedNodeCds = Collections.emptyList();
+        if (!scope.companyWide()) {
+            scopedNodeCds = adminScopeMapper.selectScopedNodeCds(
+                    ScopedNodeQuery.of(param.gvCmpnyCd(), guard.siteCd(), param.gvUserCd()));
+        }
+
+        // 대상이 세션 사업장 소속 활성 정규직 + 노드 스코프 내인지 서버 재검증(IDOR — 임의 userCd 입실 차단).
+        int valid = appAdminTbmMapper.countEntryTarget(
+                AdminEntryTargetQuery.of(param.gvCmpnyCd(), guard.siteCd(), "REGULAR", param.userCd(),
+                        scope.companyWide(), scopedNodeCds));
+        if (valid <= 0) {
+            log.warn("TBM 정규직 대리입실 대상 부적합(사업장/노드 스코프 밖) - sessionCd={}, userCd={}, site={}",
+                    param.sessionCd(), param.userCd(), guard.siteCd());
+            throw new ApiException(TbmErrorCode.TBM_403_040);
+        }
+
+        // UK 멱등: 이미 입실(DEL_YN 무관) 행이 있으면 UNIQUE 충돌 → 멱등 안내. 재입실 복구는 R-C(#D-RE2).
+        try {
+            int inserted = appAdminTbmMapper.insertManagerDirectEntry(AdminManagerEnterCommand.of(
+                    param.gvCmpnyCd(), param.sessionCd(), "REGULAR", param.userCd(),
+                    "MANAGER_DIRECT", param.gvUserCd()));
+            if (inserted == 0) {
+                // TOCTOU: 가드~INSERT 사이 자동/동시 전이로 OPENED 이탈(D-2 우회 차단). INSERT...SELECT 가드 0건.
+                log.warn("TBM 정규직 대리입실 상태 전이 충돌(교육준비 상태 아님) - sessionCd={}, userCd={}",
+                        param.sessionCd(), param.userCd());
+                throw new ApiException(TbmErrorCode.TBM_409_040);
+            }
+        } catch (DuplicateKeyException e) {
+            log.info("TBM 정규직 대리입실 멱등(이미 입실/경합) - sessionCd={}, userCd={}",
+                    param.sessionCd(), param.userCd());
+            throw new ApiException(TbmErrorCode.TBM_409_041);
+        }
+
+        log.info("앱 관리자 TBM 정규직 대리입실 완료 - sessionCd={}, userCd={}, manager={}",
+                param.sessionCd(), param.userCd(), param.gvUserCd());
+
+        return AdminManagerDirectResponse.builder()
+                .sessionCd(param.sessionCd())
+                .userTypeCd("REGULAR")
+                .userCd(param.userCd())
+                .build();
+    }
+
+    // ============================ prafta-051 R-D 입실경로(일용직 QR 입실) ============================
+
+    /**
+     * E11 일용직 QR 입실(MANAGER_QR_SCAN). Flutter SCAN_QR 브리지가 전달한 QR raw 문자열(JSON)을 파싱해
+     * 일용직 식별키(userCd)를 추출하고, 세션 OPENED(D-2) + 대상이 세션 사업장 소속 유효 일용직인지 서버 재검증(IDOR)
+     * 후 TB_TBM_ATTENDANCE 에 입실 INSERT 한다. 비번/GPS 반경검증은 하지 않고(D-4), ENTRY_GPS_LAT/LON 은 세션의
+     * 관리자 좌표를 감사용으로 복사한다(R-B 동형 INSERT 공유).
+     *
+     * <p>⚠️ 보안(#DF-1): QR 안의 cmpnyCd/siteCd 는 신뢰하지 않는다. 회사는 토큰 CMPNY, 대상 사업장은 세션 SITE 를
+     * 단일 출처로 쓰고, QR 에 cmpnyCd/siteCd 가 들어 있으면 토큰/세션과 일치하는지만 추가 검증한다(불일치 시 거부).
+     * 직접가입 QR 은 userCd 가 없으므로 userCd 누락/파싱 실패는 400(TBM_400_044).
+     *
+     * <p>일용직 유효성(web Tbm02.countEntryTarget DAILY 포팅): USE_YN='Y', ACCOUNT_STATUS='01',
+     * WITHDRAWAL_DATE IS NULL, WORK_EXPIRE_DATE&gt;=오늘, 동일 회사/사업장. tb_daily_user 에는 NODE_CD 가
+     * 없으므로([developer 확정] 스키마 확인) 노드 스코프는 적용하지 않고 사업장 단위로 검증한다.
+     *
+     * <p>UK(CMPNY,SESSION,USER_TYPE,USER) 충돌은 DuplicateKeyException 으로 멱등 안내(TBM_409_041).
+     * INSERT...SELECT 의 STATUS_CD='OPENED' 가드로 TOCTOU(가드~INSERT 사이 자동/동시 전이) 를 차단한다(R-C 교훈).
+     */
+    @Override
+    @Transactional
+    public AdminQrScanResponse qrScanEnter(AdminQrScanParam param) {
+        ScopeContext scope = resolveScope(param.gvCmpnyCd(), param.gvUserCd(), param.gvSiteCd(), param.gvAuthCd());
+
+        if (!StringUtils.hasText(param.sessionCd()) || !StringUtils.hasText(param.qrPayload())) {
+            throw new ApiException(CommonErrorCode.COMMON_400_001);
+        }
+
+        // 방어적 길이 상한(application/json 은 multipart 캡 미적용) — 정상 QR 은 ~3KB. 초과 시 파싱 전 거부.
+        if (param.qrPayload().length() > QR_PAYLOAD_MAX_LENGTH) {
+            log.warn("TBM 일용직 QR 입실 페이로드 길이 초과({}자) - sessionCd={}", param.qrPayload().length(), param.sessionCd());
+            throw new ApiException(TbmErrorCode.TBM_400_044);
+        }
+
+        // QR 페이로드(JSON) 파싱 → 일용직 식별키 userCd 추출(필수). QR 의 cmpnyCd/siteCd 는 신뢰하지 않고 검증용으로만 본다.
+        String qrUserCd;
+        String qrCmpnyCd;
+        String qrSiteCd;
+        try {
+            JsonNode node = objectMapper.readTree(param.qrPayload());
+            qrUserCd = textOrNull(node, "userCd");
+            qrCmpnyCd = textOrNull(node, "cmpnyCd");
+            qrSiteCd = textOrNull(node, "siteCd");
+        } catch (Exception e) {
+            // 파싱 실패/형식오류(직접가입 QR 등) → 사용자 안내(평문 PII 미출력, payload 원문 로깅 금지).
+            log.warn("TBM 일용직 QR 입실 페이로드 파싱 실패 - sessionCd={}", param.sessionCd());
+            throw new ApiException(TbmErrorCode.TBM_400_044);
+        }
+        if (!StringUtils.hasText(qrUserCd)) {
+            log.warn("TBM 일용직 QR 입실 식별키(userCd) 누락 - sessionCd={}", param.sessionCd());
+            throw new ApiException(TbmErrorCode.TBM_400_044);
+        }
+
+        // 자동전이 지연평가 후 세션 소유/스코프 재검증(IDOR).
+        evaluateAutoStart(param.gvCmpnyCd(), param.sessionCd());
+
+        AdminSessionGuardResult guard = loadGuard(param.gvCmpnyCd(), param.sessionCd());
+        verifyScope(scope, guard.siteCd(), guard.managerNodeCd(), param.gvCmpnyCd(), param.gvUserCd());
+
+        // D-2: 교육준비(OPENED) 상태에서만 입실 처리.
+        if (!"OPENED".equals(guard.statusCd())) {
+            log.warn("TBM 일용직 QR 입실 불가 상태 - sessionCd={}, status={}",
+                    param.sessionCd(), guard.statusCd());
+            throw new ApiException(TbmErrorCode.TBM_409_040);
+        }
+
+        // 보안: QR 에 회사/사업장이 들어 있으면 토큰 회사 + 세션 사업장과 일치하는지만 검증(불일치 = 위·변조/타사 QR → 거부).
+        if (StringUtils.hasText(qrCmpnyCd) && !qrCmpnyCd.equals(param.gvCmpnyCd())) {
+            log.warn("TBM 일용직 QR 입실 회사 불일치 거부 - sessionCd={}, userCd={}", param.sessionCd(), qrUserCd);
+            throw new ApiException(TbmErrorCode.TBM_403_040);
+        }
+        if (StringUtils.hasText(qrSiteCd) && !qrSiteCd.equals(guard.siteCd())) {
+            log.warn("TBM 일용직 QR 입실 사업장 불일치 거부 - sessionCd={}, userCd={}, sessionSite={}",
+                    param.sessionCd(), qrUserCd, guard.siteCd());
+            throw new ApiException(TbmErrorCode.TBM_403_040);
+        }
+
+        // 대상이 세션 사업장(서버 확정) 소속 유효 일용직인지 서버 재검증(IDOR). tb_daily_user 는 NODE_CD 없음 → 사업장 단위.
+        int valid = appAdminTbmMapper.countEntryTarget(
+                AdminEntryTargetQuery.of(param.gvCmpnyCd(), guard.siteCd(), "DAILY", qrUserCd,
+                        true, Collections.emptyList()));
+        if (valid <= 0) {
+            log.warn("TBM 일용직 QR 입실 대상 부적합(사업장 밖/만료/탈퇴) - sessionCd={}, userCd={}, site={}",
+                    param.sessionCd(), qrUserCd, guard.siteCd());
+            throw new ApiException(TbmErrorCode.TBM_403_040);
+        }
+
+        // UK 멱등: 이미 입실 행이 있으면 UNIQUE 충돌 → 멱등 안내. INSERT...SELECT 가드(OPENED)로 TOCTOU 차단.
+        try {
+            int inserted = appAdminTbmMapper.insertManagerDirectEntry(AdminManagerEnterCommand.of(
+                    param.gvCmpnyCd(), param.sessionCd(), "DAILY", qrUserCd,
+                    "MANAGER_QR_SCAN", param.gvUserCd()));
+            if (inserted == 0) {
+                log.warn("TBM 일용직 QR 입실 상태 전이 충돌(교육준비 상태 아님) - sessionCd={}, userCd={}",
+                        param.sessionCd(), qrUserCd);
+                throw new ApiException(TbmErrorCode.TBM_409_040);
+            }
+        } catch (DuplicateKeyException e) {
+            log.info("TBM 일용직 QR 입실 멱등(이미 입실/경합) - sessionCd={}, userCd={}",
+                    param.sessionCd(), qrUserCd);
+            throw new ApiException(TbmErrorCode.TBM_409_041);
+        }
+
+        log.info("앱 관리자 TBM 일용직 QR 입실 완료 - sessionCd={}, userCd={}, manager={}",
+                param.sessionCd(), qrUserCd, param.gvUserCd());
+
+        return AdminQrScanResponse.builder()
+                .sessionCd(param.sessionCd())
+                .userTypeCd("DAILY")
+                .userCd(qrUserCd)
+                .build();
+    }
+
+    /** QR JSON 노드에서 텍스트 필드를 안전 추출(없거나 null 이면 null). */
+    private String textOrNull(JsonNode node, String field) {
+        if (node == null) {
+            return null;
+        }
+        JsonNode v = node.get(field);
+        return (v != null && !v.isNull()) ? v.asText() : null;
+    }
+
+    // ============================ prafta-051 R-C 이탈자 내보내기(입실취소) ============================
+
+    /**
+     * prafta-051 E13 입실취소(GPS 이탈자 내보내기). D-3: 교육 미시작(OPENED) 단계의 단순 입실취소다
+     * (강제퇴실 MANAGER_FORCED/미이수와 구분 — IN_PROGRESS 강제퇴실은 forceExitAttendee 소관).
+     *
+     * <p>#D-RE2 = 물리삭제: 출결행을 물리 DELETE 한다(사용자 leaveBefore deleteAttendance 동형).
+     * 소프트삭제가 아니므로 UK(CMPNY,SESSION,USER_TYPE,USER) 잔여행이 남지 않아, 취소 대상은
+     * 재입실(본인 입실/대리입실) 시 UK 충돌 없이 신규 INSERT 된다(R-B managerDirectEnter 의 UK 멱등과 정합).
+     *
+     * <p>가드: 자동전이 지연평가(D-1) 후 세션 OPENED + 스코프 재검증(IDOR). 매퍼 DELETE 는 세션 OPENED
+     * 서브쿼리로 TOCTOU(가드~삭제 사이 자동/동시 전이) 를 차단한다. 영향 0건이면 멱등 안내(이미 취소/없음).
+     */
+    @Override
+    @Transactional
+    public void cancelEntry(AdminCancelEntryParam param) {
+        ScopeContext scope = resolveScope(param.gvCmpnyCd(), param.gvUserCd(), param.gvSiteCd(), param.gvAuthCd());
+
+        if (!StringUtils.hasText(param.sessionCd()) || !StringUtils.hasText(param.attendanceCd())) {
+            throw new ApiException(CommonErrorCode.COMMON_400_001);
+        }
+
+        // 자동전이 지연평가 후 세션 소유/스코프 재검증(IDOR).
+        evaluateAutoStart(param.gvCmpnyCd(), param.sessionCd());
+
+        AdminSessionGuardResult guard = loadGuard(param.gvCmpnyCd(), param.sessionCd());
+        verifyScope(scope, guard.siteCd(), guard.managerNodeCd(), param.gvCmpnyCd(), param.gvUserCd());
+
+        // D-3: 교육준비(OPENED) 상태에서만 입실취소 허용(교육 미시작 단계).
+        if (!"OPENED".equals(guard.statusCd())) {
+            log.warn("TBM 입실취소 불가 상태 - sessionCd={}, status={}", param.sessionCd(), guard.statusCd());
+            throw new ApiException(TbmErrorCode.TBM_409_042);
+        }
+
+        AdminCancelEntryCommand cmd = AdminCancelEntryCommand.of(
+                param.sessionCd(), param.attendanceCd(), param.gvCmpnyCd());
+
+        // 물리삭제 후에는 행이 사라지므로, 동일 트랜잭션 내에서 삭제 직전 대상 식별 코드값을 스냅샷한다(감사 추적용).
+        AdminCancelEntrySnapshotResult snapshot = appAdminTbmMapper.selectCancelEntrySnapshot(cmd);
+
+        int deleted = appAdminTbmMapper.deleteCancelEntry(cmd);
+        if (deleted == 0) {
+            // 멱등: 이미 취소/없음, 이미 종료, 또는 TOCTOU 자동전이로 OPENED 이탈(서브쿼리 가드 0건).
+            log.warn("TBM 입실취소 대상 없음/이미 취소/상태 전이 - sessionCd={}, attendanceCd={}",
+                    param.sessionCd(), param.attendanceCd());
+            throw new ApiException(TbmErrorCode.TBM_409_043);
+        }
+
+        // 누가(byManager) 누구를(userCd/userTypeCd) 취소했는지 코드값만 기록(평문 이름/좌표 미포함).
+        log.info("앱 관리자 TBM 입실취소(물리삭제) 완료 - sessionCd={}, attendanceCd={}, targetUserCd={}, targetUserTypeCd={}, byManager={}",
+                param.sessionCd(), param.attendanceCd(),
+                snapshot != null ? snapshot.userCd() : null,
+                snapshot != null ? snapshot.userTypeCd() : null,
+                param.gvUserCd());
     }
 
     // ============================ R5 교육자료 리스트 ============================
@@ -1178,10 +1665,54 @@ public class AppAdminTbmServiceImpl implements AppAdminTbmService {
                 .format(java.time.format.DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm"));
     }
 
-    private boolean isPwdVisible(String statusCd, String authCd, boolean companyWide) {
-        boolean openStatus = "OPENED".equals(statusCd) || "IN_PROGRESS".equals(statusCd);
-        boolean isManager = companyWide || AuthRoleUtils.canManageCommon(authCd) || AuthRoleUtils.isManager(authCd);
-        return openStatus && isManager;
+    /** 입실비번 노출(prafta-051): OPENED 이상(OPENED/IN_PROGRESS/COMPLETED) + 관리자. */
+    private boolean isEntryPwdVisible(String statusCd, String authCd, boolean companyWide) {
+        boolean entryStatus = "OPENED".equals(statusCd)
+                || "IN_PROGRESS".equals(statusCd)
+                || "COMPLETED".equals(statusCd);
+        return entryStatus && isManagerRole(authCd, companyWide);
+    }
+
+    /** 종료비번 노출(prafta-051): COMPLETED 이상 + 관리자. */
+    private boolean isExitPwdVisible(String statusCd, String authCd, boolean companyWide) {
+        return "COMPLETED".equals(statusCd) && isManagerRole(authCd, companyWide);
+    }
+
+    /** 비번 노출 가능 권한(전사 master/safe + 공통관리/노드관리자). */
+    private boolean isManagerRole(String authCd, boolean companyWide) {
+        return companyWide || AuthRoleUtils.canManageCommon(authCd) || AuthRoleUtils.isManager(authCd);
+    }
+
+    /**
+     * prafta-051 §2: 15분 자동 교육시작 지연평가(멱등). OPENED + PREP_START_AT 만료 세션을
+     * IN_PROGRESS 로 전이한다. 영향행 0 = 이미 전이됐거나 아직 시간 전(no-op).
+     * 조회/시작/연장 진입부에서 호출(트랜잭션 경계는 호출 메서드에 위임 — #DF-4 단순 분리 호출).
+     */
+    private void evaluateAutoStart(String cmpnyCd, String sessionCd) {
+        int n = appAdminTbmMapper.evaluateAutoStart(cmpnyCd, sessionCd, prepAutoStartMinutes);
+        if (n > 0) {
+            log.info("TBM 교육준비 {}분 경과 자동 교육시작 전이 - sessionCd={}", prepAutoStartMinutes, sessionCd);
+        }
+    }
+
+    /**
+     * 자동 교육시작 예정시각 산출(=prepStartAt + 자동시작분). OPENED 이며 prepStartAt 존재 시에만 산출.
+     * prepStartAt 포맷('yyyy-MM-dd HH:mm:ss')을 파싱해 분을 더한 동일 포맷 문자열을 반환한다.
+     */
+    private String computePrepAutoStartAt(String statusCd, String prepStartAt) {
+        if (!"OPENED".equals(statusCd) || !StringUtils.hasText(prepStartAt)) {
+            return null;
+        }
+        try {
+            java.time.format.DateTimeFormatter f =
+                    java.time.format.DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
+            return java.time.LocalDateTime.parse(prepStartAt, f)
+                    .plusMinutes(prepAutoStartMinutes)
+                    .format(f);
+        } catch (Exception e) {
+            log.warn("TBM 자동 교육시작 예정시각 산출 실패 - prepStartAt={}", prepStartAt);
+            return null;
+        }
     }
 
     private void validateContentBody(String contentBody) {

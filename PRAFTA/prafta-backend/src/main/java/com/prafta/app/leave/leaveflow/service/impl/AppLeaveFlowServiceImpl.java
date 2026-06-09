@@ -251,6 +251,14 @@ public class AppLeaveFlowServiceImpl implements AppLeaveFlowService {
             aprvRequired = isYes(type.aprvUseYn());
         }
 
+        // 1-B) PRAFTA-APP-022 룰B: 출근 기록이 존재하는 일자의 연차 신청 차단(전 사용단위 공통 게이트).
+        //   정책 §9.4 "연차 신청 조건 = 해당 일자에 출근 기록이 없을 것"(시간 방향 무관). 단위 분기/차감 진입 전
+        //   단일 게이트로 빠르게 거부한다. 식별값은 토큰 도출값(IDOR). 미래엔 실적이 없어 자연 통과.
+        if (appLeaveFlowMapper.countAttendanceByDate(cmpny, site, user, workYmd) > 0) {
+            log.info("[leaveflow] 연차 신청 거부: 출근 기록 존재 일자 (userCd={}, workYmd={})", user, workYmd);
+            throw new ApiException(AttdErrorCode.ATTD_400_108);
+        }
+
         // 2) 단위 게이팅(D2, 웹엔 없음) — 허용단위 산출(018-A LeaveUnitGranularity SSOT 재사용)
         //    법정 = 회사 USAGE_UNIT 계층 / 비법정 = 타입 USE_UNIT_TYPE 계층(NULL→00 폴백).
         //    잘못된 단위로 차감계산에 진입하지 않도록 구조검증/차감 전에 거부한다.

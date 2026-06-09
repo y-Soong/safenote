@@ -86,14 +86,26 @@ public interface AppReq07Mapper {
                                          , @Param("workSeq") Integer workSeq);
 
     /**
-     * prafta-app-017(이슈②): 미처리 스케줄수정 요청(10) 카운트 — 그날 전체(구간 무관).
-     * REQ_TYPE='10' AND REQ_STATUS='01' AND DEL_YN='N'.
-     * 결과 > 0 이면 그날 모든 구간 OT 거부(ATTD_400_101).
+     * PRAFTA-APP-022 룰A1(prafta-app-017 이슈② 확장): 활성 스케줄수정 요청(10) 카운트 — 그날 전체(구간 무관).
+     * REQ_TYPE='10' AND REQ_STATUS IN ('01','02') AND DEL_YN='N'.
+     * (확정 결정 1: 대기01 + 승인02 모두 충돌 범위에 포함 → 승인분도 차단.)
+     * 결과 > 0 이면 그날 모든 구간 OT 거부(ATTD_400_106).
      */
-    int countPendingSchedModify(@Param("cmpnyCd") String cmpnyCd
-                                , @Param("siteCd") String siteCd
-                                , @Param("userCd") String userCd
-                                , @Param("workYmd") String workYmd);
+    int countActiveSchedModify(@Param("cmpnyCd") String cmpnyCd
+                               , @Param("siteCd") String siteCd
+                               , @Param("userCd") String userCd
+                               , @Param("workYmd") String workYmd);
+
+    /**
+     * PRAFTA-APP-022 룰A2/A3: 활성 초과근무 요청(생성03·수정04) 카운트 — 그날 전체(WORK_SEQ 무관).
+     * REQ_TYPE IN ('03','04') AND REQ_STATUS IN ('01','02') AND DEL_YN='N'.
+     * (확정 결정 1: 대기01 + 승인02 모두 충돌 범위.)
+     * 결과 > 0 이면 스케줄수정 거부(ATTD_400_107). 식별값은 JWT 도출 Param 만 사용(IDOR).
+     */
+    int countActiveOvertimeReq(@Param("cmpnyCd") String cmpnyCd
+                               , @Param("siteCd") String siteCd
+                               , @Param("userCd") String userCd
+                               , @Param("workYmd") String workYmd);
 
     /**
      * prafta-app-019(1-A): OT 실근태 범위 검증용 — 해당 (USER_CD, WORK_YMD, WORK_SEQ) 의

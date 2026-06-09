@@ -104,6 +104,13 @@ const routes = [
     name: 'AdminTbmSessionDetail',
     component: () => import('@/views/admin/tbm/AdminTbmSessionDetailView.vue'),
   },
+  // prafta-051 R-A: TBM 교육준비 화면(OPENED) — 세션 상세 "교육준비 시작"(/prepare 성공)/"교육준비 화면으로" 진입.
+  //   보호 라우트(publicPaths 미포함, beforeEach 토큰 게이트). 진입: /AdminTbmPrep?sessionCd=...
+  {
+    path: '/AdminTbmPrep',
+    name: 'AdminTbmPrep',
+    component: () => import('@/views/admin/tbm/AdminTbmPrepView.vue'),
+  },
   // 001-Phase5 R3: TBM 진행 화면(IN_PROGRESS) — 세션 상세 "교육 시작"/"진행 화면으로" 진입.
   //   보호 라우트(publicPaths 미포함, beforeEach 토큰 게이트). 진입: /AdminTbmLive?sessionCd=...
   {
@@ -181,6 +188,22 @@ const routes = [
     name: 'ApprovalPresetEdit',
     component: () => import('@/views/mypage/ApprovalPresetEditView.vue'),
   },
+
+  // 사용자연차결재-02: 연차 결재 관리(결재 대기/처리 내역 2탭) — 보호 라우트(publicPaths 미포함, beforeEach 토큰 게이트).
+  //   진입: 마이페이지 결재 그룹 "연차 결재 관리" → /LeaveApproval.
+  {
+    path: '/LeaveApproval',
+    name: 'LeaveApproval',
+    component: () => import('@/views/mypage/LeaveApprovalView.vue'),
+  },
+  // 사용자연차결재-03: 연차 결재 상세 + 결정(승인/반려) — 보호 라우트.
+  //   진입: 결재 카드 선택 → /LeaveApprovalDetail?reqId=...&approvalStep=...
+  {
+    path: '/LeaveApprovalDetail',
+    name: 'LeaveApprovalDetail',
+    component: () => import('@/views/mypage/LeaveApprovalDetailView.vue'),
+  },
+
 
   // 퍼블릭
   {

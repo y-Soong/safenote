@@ -5,15 +5,17 @@
   - 필드(요청서 = web popup/TbmSessionForm.vue 정합):
       교육제목 / 교육내용 / GPS검증여부(AUTO 활성화 · MANUAL 수동확인 · DISABLED 비활성화) /
       현재 위치 표시(AUTO 시) / 검증 반경(AUTO·MANUAL 시, 50~1000m) / 교육자료 선택 / 위험성평가 선택
-  - 액션(요청서): 임시저장(DRAFT) / 개설하기(OPENED, 비번 발급) / 닫기(미저장 시 삭제 확인 얼럿)
-  - GPS: 앱 GPS 브리지 requestGps() 사용(TbmHubView 패턴). webview 네이티브 위치.
+  - 액션(R-A/#D-RE1): 개설(DRAFT 생성) / 닫기(미저장 시 삭제 확인 얼럿).
+      OPENED(교육준비) 도달은 세션상세 "교육준비 시작"(/prepare 전이)으로 일원화 → POST /sessions 는 DRAFT 만 허용.
+  - GPS: 검증유형(AUTO/MANUAL/DISABLED)·반경은 세션 설정값으로 개설 단계 유지.
+      관리자 현재좌표 수집(requestGps)은 교육준비(/prepare) 전이에서 수행 → 개설 폼에서 제거.
   - 교육내용 입력기: web 은 QuillEditor(리치HTML). 모바일은 plain textarea(저장 텍스트, 표시는 contentBody) — 플래그 T5.
   - 디자인 토큰은 부모(.admin-tbm-view)에서 상속. 자료/위험성 선택 시트는 후속 골격(R2) — 본 골격은 트리거/요약만.
   - planner 라운드 스코프: template + style 완성. script 는 선언/TODO + v-model + 단순 검증 + UI 토글만.
       ⚠️ API 호출/저장/라우팅/store 는 developer(R2).
 -->
 <template>
-  <form class="admin-tbm-form" @submit.prevent="onOpen">
+  <form class="admin-tbm-form" @submit.prevent="onCreate">
     <!-- 사업장(접근가능 사업장 셀렉트 — 기본 현재 사업장. 플래그 T6) -->
     <div class="admin-tbm-form__field">
       <label class="admin-tbm-form__label" for="tbm-site">사업장</label>
@@ -66,34 +68,10 @@
             name="gpsVerifyType"
             :value="opt.value"
             v-model="form.gpsVerifyTypeCd"
-            @change="onChangeGpsType"
           />
           <span>{{ opt.label }}</span>
         </label>
       </div>
-    </div>
-
-    <!-- 현재 위치(AUTO 시) -->
-    <div v-if="form.gpsVerifyTypeCd === 'AUTO'" class="admin-tbm-form__field">
-      <span class="admin-tbm-form__label">현재 위치</span>
-      <div class="admin-tbm-form__gps">
-        <span v-if="gpsStatus === 'ok'" class="gps-ok">
-          위도 {{ form.managerGpsLat }} / 경도 {{ form.managerGpsLon }}
-        </span>
-        <span v-else-if="gpsStatus === 'loading'" class="gps-muted">위치 수집 중…</span>
-        <span v-else class="gps-muted">위치를 가져오지 못했어요</span>
-        <button type="button" class="admin-tbm-form__gps-btn" @click="onCaptureGps">
-          위치 다시 가져오기
-        </button>
-      </div>
-    </div>
-
-    <!-- 수동 확인 체크(MANUAL 시) -->
-    <div v-if="form.gpsVerifyTypeCd === 'MANUAL'" class="admin-tbm-form__field">
-      <label class="radio-item" :class="{ 'is-checked': manualConfirm }">
-        <input type="checkbox" v-model="manualConfirm" />
-        <span>개설 위치를 직접 확인했습니다</span>
-      </label>
     </div>
 
     <!-- 검증 반경(AUTO·MANUAL 시) -->
@@ -164,10 +142,7 @@
       <button type="button" class="btn btn--ghost" :disabled="submitting" @click="onClose">
         닫기
       </button>
-      <button type="button" class="btn btn--second" :disabled="submitting" @click="onDraft">
-        임시저장
-      </button>
-      <button type="submit" class="btn btn--primary" :disabled="submitting">개설하기</button>
+      <button type="submit" class="btn btn--primary" :disabled="submitting">개설</button>
     </div>
 
     <!-- 교육자료/위험성평가 선택 시트 (R2-gap developer 연동) -->
@@ -191,7 +166,6 @@
 <script setup>
 import { ref, reactive, getCurrentInstance, onMounted } from 'vue'
 import api from '@/api/axios'
-import { requestGps } from '@/utils/gpsBridge'
 import AdminTbmContentPickSheet from './AdminTbmContentPickSheet.vue'
 import AdminTbmRiskPickSheet from './AdminTbmRiskPickSheet.vue'
 
@@ -208,7 +182,8 @@ const askConfirm = async (message) => {
   return window.confirm(message)
 }
 
-// created: 개설/임시저장 성공 시 { sessionCd, saveMode, entryPwd, exitPwd } 전달(부모가 상세로 이동)
+// created: 개설(DRAFT) 성공 시 { sessionCd, saveMode } 전달(부모가 세션상세로 이동).
+//   비번(entryPwd/exitPwd)은 교육준비(/prepare) 시 발급 → 개설 단계에서는 전달 안 함.
 // close: 닫기(미저장 삭제 확인 후)
 const emit = defineEmits(['created', 'close'])
 
@@ -225,12 +200,8 @@ const form = reactive({
   title: '',
   contentBody: '',
   gpsVerifyTypeCd: 'AUTO',
-  managerGpsLat: '',
-  managerGpsLon: '',
   gpsVerifyRadiusM: 100,
 })
-const manualConfirm = ref(false)
-const gpsStatus = ref('idle') // idle | loading | ok | fail
 
 // 선택 목록(자료/위험성). 선택 시트(R2-gap)에서 다중선택 → 칩 반영.
 const contentRows = ref([]) // [{ mtrlCd, title }]
@@ -258,32 +229,6 @@ const loadSiteOptions = async () => {
     }
   } catch (e) {
     console.error('[AdminTbmCreateForm] 사업장 옵션 조회 실패:', e?.message)
-  }
-}
-
-// ── GPS ──────────────────────────────────────────────────────────
-// GPS 유형 변경 시: AUTO 면 위치 수집 시도.
-const onChangeGpsType = () => {
-  if (form.gpsVerifyTypeCd === 'AUTO') onCaptureGps()
-}
-
-// 현재 위치 수집(앱 GPS 브리지 — TbmHubView/출퇴근 패턴 재사용).
-const onCaptureGps = async () => {
-  gpsStatus.value = 'loading'
-  try {
-    const gps = await requestGps()
-    if (gps?.status === 'OK' && gps.lat != null && gps.lon != null) {
-      form.managerGpsLat = String(gps.lat)
-      form.managerGpsLon = String(gps.lon)
-      gpsStatus.value = 'ok'
-    } else {
-      form.managerGpsLat = ''
-      form.managerGpsLon = ''
-      gpsStatus.value = 'fail'
-    }
-  } catch (e) {
-    console.error('[AdminTbmCreateForm] GPS 수집 실패:', e?.message)
-    gpsStatus.value = 'fail'
   }
 }
 
@@ -332,8 +277,8 @@ const onRemoveRisk = (i) => {
 }
 
 // ── 검증(클라이언트 1차 — 서버가 최종 권위) ──────────────────────
-// 단순 필수/길이 검증만(허용 범위). 비즈니스 분기는 서버.
-const validate = (mode) => {
+// 개설(DRAFT)은 단순 필수 검증만. GPS 좌표/내용 길이 등 OPENED 게이트는 교육준비(/prepare) 단계로 이관.
+const validate = () => {
   if (!form.siteCd) {
     showAlert('사업장을 선택해 주세요.')
     return false
@@ -341,20 +286,6 @@ const validate = (mode) => {
   if (!form.title) {
     showAlert('교육 제목을 입력해 주세요.')
     return false
-  }
-  if (mode === 'OPENED') {
-    if ((form.contentBody || '').trim().length < 10) {
-      showAlert('교육 내용을 10자 이상 입력해 주세요.')
-      return false
-    }
-    if (form.gpsVerifyTypeCd === 'AUTO' && (!form.managerGpsLat || !form.managerGpsLon)) {
-      showAlert('현재 위치를 가져오지 못했어요. 위치를 다시 가져오거나 수동 확인을 선택해 주세요.')
-      return false
-    }
-    if (form.gpsVerifyTypeCd === 'MANUAL' && !manualConfirm.value) {
-      showAlert('수동 확인 체크박스를 확인해 주세요.')
-      return false
-    }
   }
   return true
 }
@@ -368,17 +299,15 @@ const isDirty = () =>
     riskRows.value.length
   )
 
-// 저장 payload 구성(서버 계약 = T-A3). 식별자(회사/사용자)는 서버가 토큰에서 채운다(전송 안 함).
-const buildPayload = (saveMode) => ({
-  saveMode,
+// 저장 payload 구성(서버 계약 = T-A3, #D-RE1: DRAFT 만 허용). 식별자(회사/사용자)는 서버가 토큰에서 채운다(전송 안 함).
+// 관리자 현재좌표(managerGpsLat/Lon)·수동확인(gpsManualConfirmYn)은 개설 단계 미수집 → 교육준비(/prepare) 에서 전송.
+const buildPayload = () => ({
+  saveMode: 'DRAFT',
   siteCd: form.siteCd,
   title: form.title,
   contentBody: form.contentBody,
   gpsVerifyTypeCd: form.gpsVerifyTypeCd,
-  managerGpsLat: form.gpsVerifyTypeCd === 'AUTO' ? form.managerGpsLat : '',
-  managerGpsLon: form.gpsVerifyTypeCd === 'AUTO' ? form.managerGpsLon : '',
   gpsVerifyRadiusM: form.gpsVerifyTypeCd === 'DISABLED' ? null : form.gpsVerifyRadiusM,
-  gpsManualConfirmYn: form.gpsVerifyTypeCd === 'MANUAL' && manualConfirm.value ? 'Y' : 'N',
   contents: contentRows.value.map((c, i) => ({
     mtrlCd: c.mtrlCd,
     displayOrder: i,
@@ -392,11 +321,11 @@ const buildPayload = (saveMode) => ({
   })),
 })
 
-// 공통 저장 — POST /appApi/admin/tbm/sessions. 성공 시 created emit(부모가 상세로 이동).
-const submitSession = async (saveMode) => {
+// 개설(DRAFT) 저장 — POST /appApi/admin/tbm/sessions. 성공 시 created emit(부모가 세션상세로 이동).
+const submitSession = async () => {
   submitting.value = true
   try {
-    const { data } = await api.post('/appApi/admin/tbm/sessions', buildPayload(saveMode))
+    const { data } = await api.post('/appApi/admin/tbm/sessions', buildPayload())
     if (!data?.sessionCd) {
       await showAlert('저장에 실패했어요. 잠시 후 다시 시도해 주세요.')
       return
@@ -406,9 +335,7 @@ const submitSession = async (saveMode) => {
     }
     emit('created', {
       sessionCd: data.sessionCd,
-      saveMode: data.statusCd || saveMode,
-      entryPwd: data.entryPwd,
-      exitPwd: data.exitPwd,
+      saveMode: data.statusCd || 'DRAFT',
     })
   } catch (e) {
     const msg = e?.response?.data?.message || '저장에 실패했어요. 잠시 후 다시 시도해 주세요.'
@@ -419,22 +346,13 @@ const submitSession = async (saveMode) => {
 }
 
 // ── 액션 ──────────────────────────────────────────────────────────
-// 임시저장(DRAFT)
-const onDraft = async () => {
+// 개설(DRAFT 생성). OPENED(교육준비) 도달은 세션상세 "교육준비 시작"(/prepare)에서 처리.
+const onCreate = async () => {
   if (submitting.value) return
-  if (!validate('DRAFT')) return
-  const ok = await askConfirm('임시저장하시겠어요?')
+  if (!validate()) return
+  const ok = await askConfirm('TBM 교육을 개설하시겠어요?')
   if (!ok) return
-  await submitSession('DRAFT')
-}
-
-// 개설하기(OPENED)
-const onOpen = async () => {
-  if (submitting.value) return
-  if (!validate('OPENED')) return
-  const ok = await askConfirm('TBM 교육을 개설하시겠어요? (입실/종료 비밀번호가 발급돼요.)')
-  if (!ok) return
-  await submitSession('OPENED')
+  await submitSession()
 }
 
 // 닫기(미저장 삭제 확인 — 요청서: "저장하지 않은 내용은 삭제됩니다")
@@ -446,10 +364,9 @@ const onClose = async () => {
   emit('close')
 }
 
-// 진입 시: 사업장 옵션 로드 + 기본 AUTO 모드 현재 위치 1회 수집.
+// 진입 시: 사업장 옵션 로드(현재좌표 수집은 교육준비 단계로 이관 → 개설 폼에서 미수행).
 onMounted(async () => {
   await loadSiteOptions()
-  if (form.gpsVerifyTypeCd === 'AUTO') onCaptureGps()
 })
 </script>
 
@@ -535,34 +452,6 @@ onMounted(async () => {
   background: var(--color-primary-tint);
   color: var(--color-primary);
   font-weight: 600;
-}
-
-/* GPS 현재 위치 */
-.admin-tbm-form__gps {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-sm);
-}
-.gps-ok {
-  font-size: 14px;
-  color: var(--color-text-primary);
-}
-.gps-muted {
-  font-size: 13px;
-  color: var(--color-text-tertiary);
-}
-.admin-tbm-form__gps-btn {
-  align-self: flex-start;
-  height: 36px;
-  padding: 0 var(--space-lg);
-  background: var(--color-surface);
-  border: 1px solid var(--color-primary);
-  border-radius: var(--radius-md);
-  color: var(--color-primary);
-  font-size: 13px;
-  font-weight: 600;
-  cursor: pointer;
-  font-family: inherit;
 }
 
 /* 자료/위험성 선택 트리거 + 칩 */
@@ -652,11 +541,6 @@ onMounted(async () => {
   background: var(--color-primary);
   color: var(--color-surface);
   border: 0;
-}
-.btn--second {
-  background: var(--color-surface);
-  color: var(--color-primary);
-  border: 1.5px solid var(--color-primary);
 }
 .btn--ghost {
   background: var(--color-surface);

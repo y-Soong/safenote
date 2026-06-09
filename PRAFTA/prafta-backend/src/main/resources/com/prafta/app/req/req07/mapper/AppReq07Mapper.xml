@@ -152,11 +152,11 @@
        AND A.DEL_YN     = 'N'
     </select>
 
-    <!-- ============ prafta-app-017(이슈②): 미처리 스케줄수정 요청 카운트(그날 전체) ============
-         REQ_TYPE='10' AND REQ_STATUS='01'(미처리) AND DEL_YN='N'.
-         결과 > 0 이면 그날 모든 구간 OT 거부(ATTD_400_101). -->
-    <select id="countPendingSchedModify" resultType="int">
-    /* AppReq07Mapper.countPendingSchedModify */
+    <!-- ============ PRAFTA-APP-022 룰A1(prafta-app-017 이슈② 확장): 활성 스케줄수정 요청 카운트(그날 전체) ============
+         REQ_TYPE='10' AND REQ_STATUS IN ('01','02')(대기+승인) AND DEL_YN='N'.
+         (확정 결정 1: 승인분도 충돌 범위에 포함.) 결과 > 0 이면 그날 모든 구간 OT 거부(ATTD_400_106). -->
+    <select id="countActiveSchedModify" resultType="int">
+    /* AppReq07Mapper.countActiveSchedModify */
     SELECT COUNT(1)
       FROM TB_USER_ATTD_REQ A
      WHERE A.CMPNY_CD   = #{cmpnyCd}
@@ -164,7 +164,23 @@
        AND A.USER_CD    = #{userCd}
        AND A.WORK_YMD   = #{workYmd}
        AND A.REQ_TYPE   = '10'
-       AND A.REQ_STATUS = '01'
+       AND A.REQ_STATUS IN ('01', '02')
+       AND A.DEL_YN     = 'N'
+    </select>
+
+    <!-- ============ PRAFTA-APP-022 룰A2/A3: 활성 초과근무 요청 카운트(그날 전체, WORK_SEQ 무관) ============
+         REQ_TYPE IN ('03','04')(생성/수정) AND REQ_STATUS IN ('01','02')(대기+승인) AND DEL_YN='N'.
+         결과 > 0 이면 스케줄수정 거부(ATTD_400_107). 식별값은 JWT 도출값만 사용(IDOR). -->
+    <select id="countActiveOvertimeReq" resultType="int">
+    /* AppReq07Mapper.countActiveOvertimeReq */
+    SELECT COUNT(1)
+      FROM TB_USER_ATTD_REQ A
+     WHERE A.CMPNY_CD   = #{cmpnyCd}
+       AND A.SITE_CD    = #{siteCd}
+       AND A.USER_CD    = #{userCd}
+       AND A.WORK_YMD   = #{workYmd}
+       AND A.REQ_TYPE   IN ('03', '04')
+       AND A.REQ_STATUS IN ('01', '02')
        AND A.DEL_YN     = 'N'
     </select>
 

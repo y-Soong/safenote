@@ -63,6 +63,17 @@ public interface AppLeaveFlowMapper {
                             @Param("siteCd") String siteCd,
                             @Param("userCds") List<String> userCds);
 
+    /**
+     * PRAFTA-APP-022 룰B: 해당 일자에 출근 기록(TB_USER_ATTD_MGMT)이 존재하는지 카운트.
+     * 같은 (CMPNY_CD, SITE_CD, USER_CD, WORK_YMD) 의 DEL_YN='N' 행 수.
+     * CHECK_IN_* 가 NOT NULL 이므로 행이 존재하면 곧 출근 기록 존재 → 결과 > 0 이면 연차 거부(ATTD_400_108).
+     * 식별값은 서비스에서 토큰값만 전달한다(IDOR).
+     */
+    int countAttendanceByDate(@Param("cmpnyCd") String cmpnyCd,
+                              @Param("siteCd") String siteCd,
+                              @Param("userCd") String userCd,
+                              @Param("workYmd") String workYmd);
+
     /** 요청 ID 채번(YYYYMMDD + 시퀀스). */
     String selectNextReqId(@Param("cmpnyCd") String cmpnyCd);
 

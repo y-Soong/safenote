@@ -162,6 +162,8 @@
 		, A.GPS_VERIFY_RADIUS_M	AS gpsVerifyRadiusM
 		, A.GPS_MANUAL_CONFIRM_YN	AS gpsManualConfirmYn
 		, DATE_FORMAT(A.OPENED_AT, '%Y-%m-%d %H:%i')		AS openedAt
+		/* 교육준비 타이머 기준시각(15분 자동 교육시작 기준). FE 카운트다운용 — 초 단위까지 노출. */
+		, DATE_FORMAT(A.PREP_START_AT, '%Y-%m-%d %H:%i:%s')	AS prepStartAt
 		, DATE_FORMAT(A.STARTED_AT, '%Y-%m-%d %H:%i')		AS startedAt
 		, DATE_FORMAT(A.ENDED_AT, '%Y-%m-%d %H:%i')			AS endedAt
 		, DATE_FORMAT(A.CANCELLED_AT, '%Y-%m-%d %H:%i')		AS cancelledAt
@@ -473,18 +475,100 @@
 	  AND STATUS_CD IN ('DRAFT', 'OPENED')
 	</update>
 
-	<update id="updateSessionPwd" parameterType="com.prafta.app.tbm.admin.application.command.AdminSessionPwdCommand">
-	/* AppAdminTbmMapper.updateSessionPwd */
+	<!-- ============================ prafta-051 R-A 상태머신 재정렬 ============================ -->
+	<!--
+		E2 교육준비(OPENED) 전이: DRAFT→OPENED + 입실비번/관리자좌표/PREP_START_AT 확정.
+		OPENED_AT 은 IFNULL(OPENED_AT, NOW()) 로 감사 보존(덮어쓰기 금지). 종료비번은 발급 안 함.
+		WHERE STATUS_CD='DRAFT' 경합 가드(0건=이미 전이/충돌).
+	-->
+	<update id="prepareSession" parameterType="com.prafta.app.tbm.admin.application.command.AdminSessionPrepareCommand">
+	/* AppAdminTbmMapper.prepareSession */
 	UPDATE TB_TBM_SESSION
 	SET
-		ENTRY_PWD		= #{entryPwd}
-		, EXIT_PWD		= #{exitPwd}
+		STATUS_CD			= 'OPENED'
+		, ENTRY_PWD			= #{entryPwd}
+		, MANAGER_GPS_LAT	= #{managerGpsLat}
+		, MANAGER_GPS_LON	= #{managerGpsLon}
+		, OPENED_AT			= IFNULL(OPENED_AT, NOW())
+		, PREP_START_AT		= NOW()
+		, UPDATE_NO			= #{gvUserCd}
+		, UPDATE_DATE		= NOW()
+	WHERE CMPNY_CD = #{gvCmpnyCd}
+	  AND SESSION_CD = #{sessionCd}
+	  AND DEL_YN = 'N'
+	  AND STATUS_CD = 'DRAFT'
+	</update>
+
+	<!--
+		E3 교육준비 연장: PREP_START_AT 을 NOW() 로 리셋해 15분 타이머 재시작.
+		WHERE STATUS_CD='OPENED' 가드(0건=OPENED 아님 → 서비스 409). 자동전이 선평가 후 호출.
+	-->
+	<update id="extendPrep" parameterType="com.prafta.app.tbm.admin.application.command.AdminSessionTransitionCommand">
+	/* AppAdminTbmMapper.extendPrep */
+	UPDATE TB_TBM_SESSION
+	SET
+		PREP_START_AT	= NOW()
 		, UPDATE_NO		= #{gvUserCd}
 		, UPDATE_DATE	= NOW()
 	WHERE CMPNY_CD = #{gvCmpnyCd}
 	  AND SESSION_CD = #{sessionCd}
 	  AND DEL_YN = 'N'
 	  AND STATUS_CD = 'OPENED'
+	</update>
+
+	<!--
+		E6 입실비번 전용 재발급(OPENED 만). EXIT_PWD 미변경(종료비번 보존). 기입실자 무영향
+		(비번은 enter 시점에만 검증, 결과는 TB_TBM_ATTENDANCE 에 확정).
+	-->
+	<update id="updateEntryPwd" parameterType="com.prafta.app.tbm.admin.application.command.AdminSessionSinglePwdCommand">
+	/* AppAdminTbmMapper.updateEntryPwd */
+	UPDATE TB_TBM_SESSION
+	SET
+		ENTRY_PWD		= #{pwd}
+		, UPDATE_NO		= #{gvUserCd}
+		, UPDATE_DATE	= NOW()
+	WHERE CMPNY_CD = #{gvCmpnyCd}
+	  AND SESSION_CD = #{sessionCd}
+	  AND DEL_YN = 'N'
+	  AND STATUS_CD = 'OPENED'
+	</update>
+
+	<!--
+		E7 종료비번 전용 재발급(COMPLETED 만). ENTRY_PWD 미변경. 기종료자 무영향.
+	-->
+	<update id="updateExitPwd" parameterType="com.prafta.app.tbm.admin.application.command.AdminSessionSinglePwdCommand">
+	/* AppAdminTbmMapper.updateExitPwd */
+	UPDATE TB_TBM_SESSION
+	SET
+		EXIT_PWD		= #{pwd}
+		, UPDATE_NO		= #{gvUserCd}
+		, UPDATE_DATE	= NOW()
+	WHERE CMPNY_CD = #{gvCmpnyCd}
+	  AND SESSION_CD = #{sessionCd}
+	  AND DEL_YN = 'N'
+	  AND STATUS_CD = 'COMPLETED'
+	</update>
+
+	<!--
+		15분 자동 교육시작 지연평가(prafta-051 §2): OPENED 이면서 PREP_START_AT 이 #{minutes}분 이상
+		경과한 세션을 IN_PROGRESS 로 멱등 전이. WHERE 에 상태+시각 조건을 동시 포함하므로 수동 시작
+		(startSession)/연장(extendPrep)과 원자적. UPDATE_NO='SYSTEM'(평가 트리거). 0건=no-op.
+		TIMESTAMPADD 으로 분(分)을 일반 함수인자 바인딩(#{} 안전 — INTERVAL 플레이스홀더 회피).
+	-->
+	<update id="evaluateAutoStart" parameterType="java.util.HashMap">
+	/* AppAdminTbmMapper.evaluateAutoStart */
+	UPDATE TB_TBM_SESSION
+	SET
+		STATUS_CD		= 'IN_PROGRESS'
+		, STARTED_AT	= NOW()
+		, UPDATE_NO		= 'SYSTEM'
+		, UPDATE_DATE	= NOW()
+	WHERE CMPNY_CD = #{gvCmpnyCd}
+	  AND SESSION_CD = #{sessionCd}
+	  AND DEL_YN = 'N'
+	  AND STATUS_CD = 'OPENED'
+	  AND PREP_START_AT IS NOT NULL
+	  AND TIMESTAMPADD(MINUTE, #{minutes}, PREP_START_AT) &lt;= NOW()
 	</update>
 
 	<!-- ============================ T6 개설 사업장 검증 ============================ -->
@@ -650,12 +734,14 @@
 	  AND STATUS_CD = 'OPENED'
 	</update>
 
-	<update id="endSession" parameterType="com.prafta.app.tbm.admin.application.command.AdminSessionTransitionCommand">
+	<!-- prafta-051 E5: 종료비번(EXIT_PWD) 을 이 전이에서 최초 발급(개설/준비 시 동시발급 제거). -->
+	<update id="endSession" parameterType="com.prafta.app.tbm.admin.application.command.AdminSessionSinglePwdCommand">
 	/* AppAdminTbmMapper.endSession */
 	UPDATE TB_TBM_SESSION
 	SET
 		STATUS_CD		= 'COMPLETED'
 		, ENDED_AT		= NOW()
+		, EXIT_PWD		= #{pwd}
 		, UPDATE_NO		= #{gvUserCd}
 		, UPDATE_DATE	= NOW()
 	WHERE CMPNY_CD = #{gvCmpnyCd}
@@ -727,6 +813,9 @@
 		, (AT.EXIT_AT IS NOT NULL)						AS exited
 		, DATE_FORMAT(AT.EXIT_AT, '%Y-%m-%d %H:%i')		AS exitAt
 		, AT.COMPLETION_STATUS_CD	AS completionStatusCd
+		/* prafta-051 R-C(E12): 교육준비 GPS 이탈자 판단용 입실 거리(대리입실은 NULL).
+		   보안 검토(최소노출): 정밀 입실좌표(ENTRY_GPS_LAT/LON)는 프론트 무참조라 SELECT 제외 */
+		, AT.ENTRY_DISTANCE_M		AS distanceM
 	FROM TB_TBM_ATTENDANCE AT
 		 LEFT OUTER JOIN TB_USER RU
 		 	ON (
@@ -844,6 +933,198 @@
 		  )
 	ORDER BY SC.DISPLAY_ORDER, I.SORT_IDX
 	</select>
+
+	<!-- ============================ prafta-051 R-B 입실경로(정규직 대리입실) ============================ -->
+	<!--
+		E9 정규직 대리입실 후보(세션 사업장 활성 정규직 + 노드 스코프). web Tbm02.selectRegularCandidates 포팅.
+		- 스코프: U.SITE_CD = 세션 사업장(서버 확정). 노드관리자(!companyWide)는 U.NODE_CD ∈ scopedNodeCds.
+		- alreadyEntered: 해당 세션 DEL_YN='N' 출결 존재(REGULAR). 미입실 우선 정렬 후 이름순.
+		- PII 최소: userCd/userNm/deptNm(노드명)만. 평문 휴대폰/이메일 SELECT 금지.
+	-->
+	<select id="selectEligibleRegulars" parameterType="com.prafta.app.tbm.admin.application.query.AdminEligibleRegularQuery" resultType="com.prafta.app.tbm.admin.result.AdminEligibleRegularResult">
+	/* AppAdminTbmMapper.selectEligibleRegulars */
+	SELECT
+		U.USER_CD		AS userCd
+		, U.USER_NM		AS userNm
+		, N.NODE_NM		AS deptNm
+		, CASE WHEN EXISTS (
+			SELECT 1
+			FROM TB_TBM_ATTENDANCE AT
+			WHERE AT.CMPNY_CD = #{gvCmpnyCd}
+			  AND AT.SESSION_CD = #{sessionCd}
+			  AND AT.USER_TYPE_CD = 'REGULAR'
+			  AND AT.USER_CD = U.USER_CD
+			  AND AT.DEL_YN = 'N'
+		  ) THEN 1 ELSE 0 END	AS alreadyEntered
+	FROM TB_USER U
+		 LEFT OUTER JOIN TB_SITE_NODE N
+		 	ON (
+		 		U.CMPNY_CD = N.CMPNY_CD
+		 	AND U.SITE_CD = N.SITE_CD
+		 	AND U.NODE_CD = N.NODE_CD
+		 	)
+	WHERE U.CMPNY_CD = #{gvCmpnyCd}
+	  AND U.SITE_CD = #{siteCd}
+	  AND U.USE_YN = 'Y'
+	  AND U.ACCOUNT_STATUS = '01'
+	  <if test="!companyWide">
+	    <choose>
+	      <when test="scopedNodeCds != null and scopedNodeCds.size() > 0">
+	        AND U.NODE_CD IN
+	        <foreach collection="scopedNodeCds" item="nc" open="(" separator="," close=")">
+	          #{nc}
+	        </foreach>
+	      </when>
+	      <otherwise>
+	        AND 1 = 0
+	      </otherwise>
+	    </choose>
+	  </if>
+	  <if test="keyword != null and keyword != ''">
+	    <!-- LIKE 와일드카드(%,_,\) 리터럴 검색 — Attd08Mapper 관례(bind+ESCAPE '\') 따름. -->
+	    <bind name="safeKeyword"
+	          value="keyword.replace('\\', '\\\\').replace('%', '\\%').replace('_', '\\_')" />
+	    AND (
+	         U.USER_NM LIKE CONCAT('%', #{safeKeyword}, '%') ESCAPE '\'
+	      OR U.USER_ID LIKE CONCAT('%', #{safeKeyword}, '%') ESCAPE '\'
+	    )
+	  </if>
+	ORDER BY alreadyEntered ASC, U.USER_NM, U.USER_CD
+	LIMIT #{pageSize} OFFSET #{offset}
+	</select>
+
+	<!-- E10/E11 대리입실 대상 유효성. web Tbm02.countEntryTarget 포팅(userTypeCd 분기). 1=유효, 0=무효.
+	     REGULAR(E10): 세션 사업장 소속 활성 정규직 + 노드 스코프(scopedNodeCds). E9 selectEligibleRegulars 와
+	       동일 노드 스코프 — 노드관리자가 자기 서브트리 밖 정규직을 대리입실시키는 읽기/쓰기 권한 비대칭 차단
+	       (빈 집합이면 1=0 으로 거부).
+	     DAILY(E11): 세션 사업장 소속 활성 일용직(USE_YN/ACCOUNT_STATUS/WITHDRAWAL_DATE/WORK_EXPIRE_DATE).
+	       TB_DAILY_USER 에는 NODE_CD 가 없으므로(PK=CMPNY_CD,USER_CD) 사업장 단위 검증이며 노드 스코프를 적용하지
+	       않는다([developer 확정] 스키마 확인). companyWide/scopedNodeCds 는 DAILY 분기에서 사용하지 않는다. -->
+	<select id="countEntryTarget" parameterType="com.prafta.app.tbm.admin.application.query.AdminEntryTargetQuery" resultType="int">
+	/* AppAdminTbmMapper.countEntryTarget */
+	<choose>
+	  <when test="userTypeCd == 'DAILY'">
+	    SELECT COUNT(1)
+	    FROM TB_DAILY_USER DU
+	    WHERE DU.CMPNY_CD = #{gvCmpnyCd}
+	      AND DU.SITE_CD = #{siteCd}
+	      AND DU.USER_CD = #{userCd}
+	      AND DU.USE_YN = 'Y'
+	      AND DU.ACCOUNT_STATUS = '01'
+	      AND DU.WITHDRAWAL_DATE IS NULL
+	      AND DU.WORK_EXPIRE_DATE &gt;= DATE_FORMAT(NOW(), '%Y%m%d')
+	  </when>
+	  <otherwise>
+	    SELECT COUNT(1)
+	    FROM TB_USER U
+	    WHERE U.CMPNY_CD = #{gvCmpnyCd}
+	      AND U.SITE_CD = #{siteCd}
+	      AND U.USER_CD = #{userCd}
+	      AND U.USE_YN = 'Y'
+	      AND U.ACCOUNT_STATUS = '01'
+	      <if test="!companyWide">
+	        <choose>
+	          <when test="scopedNodeCds != null and scopedNodeCds.size() > 0">
+	            AND U.NODE_CD IN
+	            <foreach collection="scopedNodeCds" item="nc" open="(" separator="," close=")">
+	              #{nc}
+	            </foreach>
+	          </when>
+	          <otherwise>
+	            AND 1 = 0
+	          </otherwise>
+	        </choose>
+	      </if>
+	  </otherwise>
+	</choose>
+	</select>
+
+	<!--
+		관리자 직접 입실 INSERT. ENTRY_TYPE_CD 는 호출부 분기(R-B 정규직=MANAGER_DIRECT / R-D 일용직 QR=MANAGER_QR_SCAN, SYS051).
+		ENTRY_GPS_LAT/LON 은 세션의 MANAGER_GPS_LAT/LON 을 감사용으로 복사(INSERT...SELECT) — body 에 좌표 없음, D-4.
+		ENTRY_DISTANCE_M=NULL(거리검증 안 함). UK(CMPNY,SESSION,USER_TYPE,USER) 충돌 시 DuplicateKeyException(멱등 안내).
+		SELECT 가드 STATUS_CD='OPENED' — loadGuard~INSERT 사이 자동/동시 전이로 OPENED 이탈 시 0건(TOCTOU 차단, D-2 우회 방지).
+	-->
+	<insert id="insertManagerDirectEntry" parameterType="com.prafta.app.tbm.admin.application.command.AdminManagerEnterCommand">
+	/* AppAdminTbmMapper.insertManagerDirectEntry */
+	INSERT INTO TB_TBM_ATTENDANCE (
+		  ATTENDANCE_CD
+		, CMPNY_CD
+		, SESSION_CD
+		, USER_TYPE_CD
+		, USER_CD
+		, ENTRY_TYPE_CD
+		, ENTRY_BY_MANAGER_USER_CD
+		, ENTRY_AT
+		, ENTRY_GPS_LAT
+		, ENTRY_GPS_LON
+		, ENTRY_DISTANCE_M
+		, DEL_YN
+		, INSERT_NO
+		, INSERT_DATE
+		, UPDATE_NO
+		, UPDATE_DATE
+	)
+	SELECT
+		  CONCAT('A', DATE_FORMAT(NOW(), '%Y%m%d'), FNC_CMM_SEQ_NEXTVAL(#{gvCmpnyCd}, 'TBM_ATTENDANCE_CD'))
+		, #{gvCmpnyCd}
+		, #{sessionCd}
+		, #{userTypeCd}
+		, #{userCd}
+		, #{entryTypeCd}
+		, #{managerUserCd}
+		, NOW()
+		, S.MANAGER_GPS_LAT
+		, S.MANAGER_GPS_LON
+		, NULL
+		, 'N'
+		, #{managerUserCd}
+		, NOW()
+		, #{managerUserCd}
+		, NOW()
+	FROM TB_TBM_SESSION S
+	WHERE S.CMPNY_CD = #{gvCmpnyCd}
+	  AND S.SESSION_CD = #{sessionCd}
+	  AND S.DEL_YN = 'N'
+	  AND S.STATUS_CD = 'OPENED'
+	</insert>
+
+	<!-- ============================ prafta-051 R-C 이탈자 내보내기(입실취소) ============================ -->
+	<!-- E13 입실취소 = 물리 DELETE(#D-RE2, 사용자 leaveBefore deleteAttendance 동형).
+	     멱등 가드: 본 세션+attendanceCd+토큰 CMPNY + 미종료(EXIT_AT IS NULL) + DEL_YN='N'.
+	     세션 OPENED 서브쿼리(TB_TBM_SESSION, 자기참조 아님)로 교육 미시작 단계만 취소 허용(TOCTOU 자동전이 차단).
+	     물리삭제이므로 UK 잔여행 없음 → 재입실(본인/대리) 시 신규 INSERT 충돌 없음. -->
+	<!-- E13 입실취소 물리삭제 직전 감사 스냅샷(USER_CD/USER_TYPE_CD 코드값만). DELETE 와 동일 트랜잭션 내 조회. -->
+	<select id="selectCancelEntrySnapshot" parameterType="com.prafta.app.tbm.admin.application.command.AdminCancelEntryCommand" resultType="com.prafta.app.tbm.admin.result.AdminCancelEntrySnapshotResult">
+	/* AppAdminTbmMapper.selectCancelEntrySnapshot */
+	SELECT
+		USER_CD			AS userCd
+		, USER_TYPE_CD	AS userTypeCd
+	FROM TB_TBM_ATTENDANCE
+	WHERE CMPNY_CD = #{gvCmpnyCd}
+	  AND SESSION_CD = #{sessionCd}
+	  AND ATTENDANCE_CD = #{attendanceCd}
+	  AND DEL_YN = 'N'
+	LIMIT 1
+	</select>
+
+	<delete id="deleteCancelEntry" parameterType="com.prafta.app.tbm.admin.application.command.AdminCancelEntryCommand">
+	/* AppAdminTbmMapper.deleteCancelEntry */
+	DELETE FROM TB_TBM_ATTENDANCE
+	WHERE CMPNY_CD = #{gvCmpnyCd}
+	  AND SESSION_CD = #{sessionCd}
+	  AND ATTENDANCE_CD = #{attendanceCd}
+	  AND EXIT_AT IS NULL
+	  AND DEL_YN = 'N'
+	  AND EXISTS (
+	      SELECT 1
+	      FROM TB_TBM_SESSION S
+	      WHERE S.CMPNY_CD = #{gvCmpnyCd}
+	        AND S.SESSION_CD = #{sessionCd}
+	        AND S.DEL_YN = 'N'
+	        AND S.STATUS_CD = 'OPENED'
+	  )
+	</delete>
 
 	<!-- ============================ R5 교육자료 관리 ============================ -->
 	<!-- web Tbm01Mapper SQL 포팅 + 토큰/사업장 스코프(공통 OR 접근사업장).

@@ -76,6 +76,14 @@
               <use href="#i-mp-chev-right" />
             </svg>
           </button>
+          <!-- 사용자연차결재-04: 연차 결재 관리(내가 결재자인 연차 대기/처리 내역) -->
+          <button type="button" class="mp-menu__row" @click="onLeaveApproval">
+            <span class="mp-menu__text">연차 결재 관리</span>
+            <span v-if="pendingApprovalCount > 0" class="mp-menu__meta">{{ pendingApprovalCount }}건 대기</span>
+            <svg class="icon mp-menu__chev" width="20" height="20" aria-hidden="true">
+              <use href="#i-mp-chev-right" />
+            </svg>
+          </button>
         </nav>
 
         <!-- 로그아웃 (풀폭 secondary 버튼) -->
@@ -180,6 +188,9 @@ const siteNm = ref('')
 const nodeNm = ref('')
 const presetCount = ref(0)
 
+// 사용자연차결재-04: "연차 결재 관리" 대기 건수 배지(경량 조회, 비치명적). 실패 시 0(미노출).
+const pendingApprovalCount = ref(0)
+
 // 001-Phase1-F4: 관리자 모드 진입점 노출 판정(서버 access-context.canEnterAdmin).
 //   판정 출처를 별도 경량 엔드포인트로 분리하지 않고 진입판정 단일 출처(access-context)를 재사용한다
 //   — 판정 일관성 유지 + 엔드포인트 중복 방지. 프로필 조회와 병렬 호출(아래 onMounted)로 추가 지연 최소화.
@@ -210,6 +221,10 @@ const onPasswordChange = () => {
 }
 const onPresetManage = () => {
   router.push('/ApprovalPresetList')
+}
+// 사용자연차결재-04: 연차 결재 관리 진입(결재자 본인 스코프).
+const onLeaveApproval = () => {
+  router.push('/LeaveApproval')
 }
 // 001-Phase1-F4: 관리자 모드 진입(보호 라우트). 서버가 최종 진입 판정.
 const onAdminMode = () => {
@@ -286,9 +301,22 @@ const loadAdminEntryFlag = async () => {
   }
 }
 
+// 사용자연차결재-04: 연차 결재 대기 건수 배지(경량 조회). 비치명적 → 실패는 0 폴백(미노출).
+const loadPendingApprovalCount = async () => {
+  try {
+    const { data } = await api.get('/appApi/leaveflow/approval/pending')
+    pendingApprovalCount.value = data?.totalCount ?? 0
+  } catch (e) {
+    pendingApprovalCount.value = 0
+    console.warn('[MyPage] 연차 결재 대기 건수 조회 실패:', e?.message)
+  }
+}
+
 onMounted(async () => {
   // 관리자 진입점 판정은 프로필 조회와 병렬(추가 지연 최소화). 비치명적이므로 await 로 본문 로딩을 막지 않는다.
   const adminEntryPromise = loadAdminEntryFlag()
+  // 연차 결재 대기 건수 배지도 병렬(비치명적).
+  const pendingPromise = loadPendingApprovalCount()
 
   // GET /appApi/mypage/profile (마스킹 응답 D1). 메인 화면은 마스킹 PII를 사용하지 않고
   //   이름/사업장/부서/프리셋개수만 표시한다.
@@ -311,6 +339,8 @@ onMounted(async () => {
 
   // 진입점 판정 완료 대기(이미 내부에서 예외를 흡수하므로 reject 없음).
   await adminEntryPromise
+  // 연차 결재 대기 건수 배지 조회 완료 대기(내부에서 예외 흡수).
+  await pendingPromise
 })
 </script>
 

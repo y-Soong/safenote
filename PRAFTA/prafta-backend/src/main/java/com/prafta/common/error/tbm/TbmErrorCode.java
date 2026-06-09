@@ -122,6 +122,8 @@ public enum TbmErrorCode implements ApiErrorCode {
     , TBM_409_040(HttpStatus.CONFLICT, "교육준비 상태에서만 입실 처리할 수 있습니다.")
     // 이미 입실 처리된 대상(UNIQUE 충돌) - 비즈니스 룰(멱등 안내)
     , TBM_409_041(HttpStatus.CONFLICT, "이미 입실 처리된 대상입니다.")
+    // prafta-051 R-D E11: QR 페이로드 파싱 실패/형식오류 또는 일용직 식별키(userCd) 누락 - 사용자 안내
+    , TBM_400_044(HttpStatus.BAD_REQUEST, "QR 코드 정보를 확인할 수 없습니다.")
 
     // ===== PRAFTA-051-12 입실자 내보내기(eject) =====
     // 내보내기 사유 누락 - 사용자 안내

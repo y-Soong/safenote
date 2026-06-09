@@ -41,8 +41,10 @@ public record AdminSessionCommand(
             , entryPwd
             , exitPwd
             , param.gvUserCd()
-            , normalize(param.managerGpsLat())
-            , normalize(param.managerGpsLon())
+            // [QA Low] 개설(DRAFT)은 관리자 GPS 좌표 미발급. 조작된 요청이 개설 시점에 좌표를 심지 못하도록
+            // 강제 null. 좌표는 교육준비(prepare) 전이에서만 수집·저장한다(검증유형·반경은 개설 설정값으로 유지).
+            , null
+            , null
             , param.gpsVerifyTypeCd()
             , param.gpsVerifyRadiusM()
             , normalizeYn(param.gpsManualConfirmYn())

@@ -1,0 +1,175 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+
+<mapper namespace="com.prafta.app.leave.approval.mapper.AppLeaveApprovalMapper">
+
+    <!--
+      사용자연차결재-01 — 사용자 모드 연차 결재 관리(결재자 본인 스코프).
+      식별자(cmpny/user)는 서비스에서 토큰값만 전달한다(IDOR 차단). SELECT/명시컬럼, leading 콤마, #{} 바인딩, 목록 LIMIT.
+      상세 읽기(meta/body/balance)는 AppAdminApprovalMapper 연차 쿼리 포팅(F-DETAIL). 이력은 내 단계 행동 기준 신규(F-H1).
+    -->
+
+    <!-- ============================ 3-B 상세 ============================ -->
+
+    <!-- 요청 메타 1행(게이트 산출용 최소 필드). -->
+    <select id="selectLeaveReqMeta" resultType="com.prafta.app.leave.approval.result.LeaveReqMetaRow">
+    /* AppLeaveApprovalMapper.selectLeaveReqMeta */
+    SELECT
+          R.REQ_ID                                                       AS reqId
+        , R.REQ_TYPE                                                     AS reqType
+        , R.REQ_STATUS                                                   AS reqStatus
+        , R.USER_CD                                                      AS userCd
+        , FNC_CMM_INFO_SRCH(R.CMPNY_CD, 'USER_NM', R.USER_CD, null)      AS requesterUserNm
+        , R.SITE_CD                                                      AS siteCd
+        , FNC_CMM_INFO_SRCH(R.CMPNY_CD, 'NODE', R.SITE_CD, COALESCE(R.NODE_CD, U.NODE_CD)) AS nodeNm
+        , R.WORK_YMD                                                     AS workYmd
+        , R.TARGET_ID                                                    AS targetId
+        , R.REQ_REASON                                                   AS reqReason
+        , DATE_FORMAT(R.INSERT_DATE, '%Y-%m-%dT%H:%i:%s')               AS reqDate
+      FROM TB_USER_ATTD_REQ R
+      LEFT JOIN TB_USER U
+        ON U.CMPNY_CD = R.CMPNY_CD
+       AND U.USER_CD  = R.USER_CD
+     WHERE R.CMPNY_CD = #{cmpnyCd}
+       AND R.REQ_ID   = #{reqId}
+       AND R.DEL_YN   = 'N'
+     LIMIT 1
+    </select>
+
+    <!--
+      연차 본문: 05=요청연결 사용기록(CONFIRMED) / 06=수정대상 사용기록(LEAVE_ID=TARGET_ID).
+      paidYn: PAID_TYPE(SYS023) 디코드명에 '유급' 포함 시 'Y', 그 외 'N'(유급/무급 정규화 — F-PAID).
+    -->
+    <select id="selectLeaveBody" resultType="com.prafta.app.leave.approval.result.LeaveDetailBodyRow">
+    /* AppLeaveApprovalMapper.selectLeaveBody */
+    SELECT
+          U.LEAVE_CD                                                     AS leaveCd
+        , LT.LEAVE_NM                                                    AS leaveNm
+        , CASE
+              WHEN FNC_CMM_INFO_SRCH(U.CMPNY_CD, 'SYST_VAL', LT.PAID_TYPE, 'SYS023') LIKE '%유급%'
+              THEN 'Y' ELSE 'N'
+          END                                                            AS paidYn
+        , U.USE_UNIT_TYPE                                                AS useUnitType
+        , FNC_CMM_INFO_SRCH(U.CMPNY_CD, 'SYST_VAL', U.USE_UNIT_TYPE, 'SYS025') AS unitNm
+        , U.LEAVE_DAYS                                                   AS leaveDays
+        , U.LEAVE_MINUTES                                                AS leaveMinutes
+        , U.START_DATE                                                   AS startDate
+        , U.START_TIME                                                   AS startTime
+        , U.END_DATE                                                     AS endDate
+        , U.END_TIME                                                     AS endTime
+      FROM TB_USER_LEAVE_USE U
+      LEFT JOIN TB_LEAVE_TYPE_MGMT LT
+        ON LT.CMPNY_CD = U.CMPNY_CD
+       AND LT.LEAVE_CD = U.LEAVE_CD
+     WHERE U.CMPNY_CD = #{cmpnyCd}
+       AND U.DEL_YN   = 'N'
+       AND (
+             (U.REQ_ID = #{reqId} AND U.LEAVE_STATUS = 'CONFIRMED')
+          OR (#{targetId} IS NOT NULL AND U.LEAVE_ID = #{targetId})
+       )
+     ORDER BY U.INSERT_DATE DESC
+     LIMIT 1
+    </select>
+
+    <!-- 연차 잔여: 활성 부여 합계(부여/사용/잔여). -->
+    <select id="selectLeaveBalance" resultType="com.prafta.app.leave.approval.result.LeaveBalanceRow">
+    /* AppLeaveApprovalMapper.selectLeaveBalance */
+    SELECT
+          IFNULL(SUM(G.GRANT_DAYS), 0)                      AS granted
+        , IFNULL(SUM(G.USED_DAYS), 0)                       AS used
+        , IFNULL(SUM(G.GRANT_DAYS) - SUM(G.USED_DAYS), 0)   AS remain
+      FROM TB_USER_LEAVE_GRANT G
+     WHERE G.CMPNY_CD  = #{cmpnyCd}
+       AND G.USER_CD   = #{userCd}
+       AND G.LEAVE_CD  = #{leaveCd}
+       AND G.STATUS    = 'ACTIVE'
+       AND G.EXPIRE_YN = 'N'
+       AND G.DEL_YN    = 'N'
+    </select>
+
+    <!-- ============================ 3-C 이력 (내 단계 행동 기준) ============================ -->
+
+    <!--
+      내가 처리(승인 '02'/반려 '03')한 연차 요청. 결재선 "참여"가 아니라 "내가 행동한 단계" 기준(F-H1).
+      기간 필터는 내 단계 처리일시(AP.APPROVAL_DATE) 기준 YYYYMMDD 비교. 정렬 AP.APPROVAL_DATE DESC.
+    -->
+    <select id="selectMyProcessedLeaveHistory"
+            resultType="com.prafta.app.leave.approval.result.LeaveProcessedHistoryRow">
+    /* AppLeaveApprovalMapper.selectMyProcessedLeaveHistory */
+    SELECT
+          R.REQ_ID                                                       AS reqId
+        , AP.APPROVAL_STEP                                               AS approvalStep
+        , R.REQ_TYPE                                                     AS reqType
+        , FNC_CMM_INFO_SRCH(R.CMPNY_CD, 'USER_NM', R.USER_CD, null)      AS requesterUserNm
+        , FNC_CMM_INFO_SRCH(R.CMPNY_CD, 'NODE', R.SITE_CD, R.NODE_CD)    AS nodeNm
+        , R.WORK_YMD                                                     AS workYmd
+        , LT.LEAVE_NM                                                    AS leaveNm
+        , FNC_CMM_INFO_SRCH(R.CMPNY_CD, 'SYST_VAL', U.USE_UNIT_TYPE, 'SYS025') AS unitNm
+        , R.LEAVE_DAYS                                                   AS leaveDays
+        , DATE_FORMAT(R.INSERT_DATE, '%Y-%m-%dT%H:%i:%s')               AS reqDate
+        , AP.APPROVAL_STATUS                                            AS myDecision
+        , DATE_FORMAT(AP.APPROVAL_DATE, '%Y-%m-%dT%H:%i:%s')            AS myProcessDate
+        , AP.APPROVAL_COMMENT                                           AS myComment
+        , R.REQ_STATUS                                                   AS reqStatus
+      FROM TB_USER_ATTD_REQ_APPROVAL AP
+      JOIN TB_USER_ATTD_REQ R
+        ON R.CMPNY_CD = AP.CMPNY_CD
+       AND R.REQ_ID   = AP.REQ_ID
+      LEFT JOIN TB_USER_LEAVE_USE U
+        ON U.CMPNY_CD = R.CMPNY_CD
+       AND U.DEL_YN   = 'N'
+       AND (
+             (R.REQ_TYPE = '05' AND U.REQ_ID   = R.REQ_ID AND U.LEAVE_STATUS = 'CONFIRMED')
+          OR (R.REQ_TYPE = '06' AND U.LEAVE_ID = R.TARGET_ID)
+       )
+      LEFT JOIN TB_LEAVE_TYPE_MGMT LT
+        ON LT.CMPNY_CD = U.CMPNY_CD
+       AND LT.LEAVE_CD = U.LEAVE_CD
+     WHERE AP.CMPNY_CD         = #{cmpnyCd}
+       AND AP.APPROVER_USER_CD = #{approverUserCd}
+       AND AP.APPROVAL_STATUS IN ('02', '03')
+       AND R.REQ_TYPE IN ('05', '06')
+       AND R.DEL_YN            = 'N'
+       <if test="startYmd != null">
+       AND DATE_FORMAT(AP.APPROVAL_DATE, '%Y%m%d') &gt;= #{startYmd}
+       </if>
+       <if test="endYmd != null">
+       AND DATE_FORMAT(AP.APPROVAL_DATE, '%Y%m%d') &lt;= #{endYmd}
+       </if>
+       <if test="keyword != null">
+       AND (
+             R.USER_CD LIKE CONCAT('%', #{keyword}, '%')
+          OR FNC_CMM_INFO_SRCH(R.CMPNY_CD, 'USER_NM', R.USER_CD, null) LIKE CONCAT('%', #{keyword}, '%')
+       )
+       </if>
+     ORDER BY AP.APPROVAL_DATE DESC
+     LIMIT #{limit} OFFSET #{offset}
+    </select>
+
+    <select id="countMyProcessedLeaveHistory" resultType="int">
+    /* AppLeaveApprovalMapper.countMyProcessedLeaveHistory */
+    SELECT COUNT(1)
+      FROM TB_USER_ATTD_REQ_APPROVAL AP
+      JOIN TB_USER_ATTD_REQ R
+        ON R.CMPNY_CD = AP.CMPNY_CD
+       AND R.REQ_ID   = AP.REQ_ID
+     WHERE AP.CMPNY_CD         = #{cmpnyCd}
+       AND AP.APPROVER_USER_CD = #{approverUserCd}
+       AND AP.APPROVAL_STATUS IN ('02', '03')
+       AND R.REQ_TYPE IN ('05', '06')
+       AND R.DEL_YN            = 'N'
+       <if test="startYmd != null">
+       AND DATE_FORMAT(AP.APPROVAL_DATE, '%Y%m%d') &gt;= #{startYmd}
+       </if>
+       <if test="endYmd != null">
+       AND DATE_FORMAT(AP.APPROVAL_DATE, '%Y%m%d') &lt;= #{endYmd}
+       </if>
+       <if test="keyword != null">
+       AND (
+             R.USER_CD LIKE CONCAT('%', #{keyword}, '%')
+          OR FNC_CMM_INFO_SRCH(R.CMPNY_CD, 'USER_NM', R.USER_CD, null) LIKE CONCAT('%', #{keyword}, '%')
+       )
+       </if>
+    </select>
+
+</mapper>
