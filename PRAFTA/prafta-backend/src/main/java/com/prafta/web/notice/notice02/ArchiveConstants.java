@@ -9,9 +9,11 @@ package com.prafta.web.notice.notice02;
  */
 public final class ArchiveConstants {
 
-    // TODO(developer): 자료타입 BAIM_VAL_CD 주입(YJ 확정). 확정 전까지 빈 문자열 유지.
-    /** 자료타입 코드그룹(tb_baim_val_m.BAIM_VAL_CD). 미주입 시 빈 드롭다운/저장 차단. */
-    public static final String ARCHIVE_BAIM_VAL_CD = "";
+    /**
+     * 자료타입 코드그룹(tb_baim_val_m.BAIM_VAL_CD). 사용자 확정값 COM008 주입(prafta-app-025 J1-8, 2026-06-14).
+     * ⚠️ 본 상수는 웹·앱 자료실 공용이다. 주입으로 웹 자료실 등록도 함께 활성화된다(의도된 것).
+     */
+    public static final String ARCHIVE_BAIM_VAL_CD = "COM008";
 
     /** tb_notice.NOTICE_TYPE 자료실 분기값. 전 쿼리/저장에 강제. */
     public static final String NOTICE_TYPE_ARCHIVE = "ARCHIVE";

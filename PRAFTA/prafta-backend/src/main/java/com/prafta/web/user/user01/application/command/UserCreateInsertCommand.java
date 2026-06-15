@@ -35,6 +35,8 @@ public record UserCreateInsertCommand(
     , String employmentType
     , String contractEndDate
     , String gender
+    // PRAFTA-COM-008-E-5 — 기본 근무타입(SCH_CD). null 무방(교대팀/미입력).
+    , String defaultSchCd
     , String gvUserCd
 ) {
 }

@@ -1,7 +1,6 @@
 package com.prafta.web.nearmiss.nearmiss01.service.impl;
 
 import java.util.List;
-import java.util.Map;
 
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -11,21 +10,16 @@ import com.prafta.common.error.common.CommonErrorCode;
 import com.prafta.common.error.nearmiss.NearMissErrorCode;
 import com.prafta.common.exception.ApiException;
 import com.prafta.common.util.AuthRoleUtils;
-import com.prafta.web.nearmiss.nearmiss01.application.command.AssessmentTransferCommand;
 import com.prafta.web.nearmiss.nearmiss01.application.command.ChangeStatusCommand;
-import com.prafta.web.nearmiss.nearmiss01.application.command.InsertIncidentCommand;
 import com.prafta.web.nearmiss.nearmiss01.application.command.SaveIncidentCommand;
 import com.prafta.web.nearmiss.nearmiss01.application.param.ChangeStatusParam;
 import com.prafta.web.nearmiss.nearmiss01.application.param.IncidentInfoParam;
 import com.prafta.web.nearmiss.nearmiss01.application.param.IncidentListParam;
-import com.prafta.web.nearmiss.nearmiss01.application.param.ReclassifyParam;
 import com.prafta.web.nearmiss.nearmiss01.application.param.SaveIncidentParam;
 import com.prafta.web.nearmiss.nearmiss01.application.query.IncidentInfoQuery;
 import com.prafta.web.nearmiss.nearmiss01.application.query.IncidentListQuery;
-import com.prafta.web.nearmiss.nearmiss01.application.query.NearMissIdSeqQuery;
 import com.prafta.web.nearmiss.nearmiss01.dto.response.IncidentInfoResponse;
 import com.prafta.web.nearmiss.nearmiss01.dto.response.IncidentListResponse;
-import com.prafta.web.nearmiss.nearmiss01.dto.response.ReclassifyResponse;
 import com.prafta.web.nearmiss.nearmiss01.dto.response.StatusCountResponse;
 import com.prafta.web.nearmiss.nearmiss01.mapper.NearMiss01Mapper;
 import com.prafta.web.nearmiss.nearmiss01.result.IncidentResult;
@@ -46,11 +40,11 @@ public class NearMiss01ServiceImpl implements NearMiss01Service {
     private static final String STATUS_COMPLETED = "400"; // 완료
     private static final String STATUS_REJECTED  = "900"; // 반려
 
-    // 허용 전이: 100->200->300->400, 어디서든 900(반려). 그 외 전이는 422.
-    private static final Map<String, String> FORWARD_TRANSITION = Map.of(
-        STATUS_RECEIVED, STATUS_REVIEWING
-        , STATUS_REVIEWING, STATUS_ACTING
-        , STATUS_ACTING, STATUS_COMPLETED
+    // 처리상태 단계 순서(앞→뒤). 단계는 관리상 분리 의미로 유지하되, 전이는 '전진 점프'를 허용한다.
+    //   (정책 A) 활성단계(접수/검토중/조치중)에서 더 뒤 단계로 자유롭게 전진 가능(접수→완료 직접 등).
+    //   뒤로 가기/같은 단계 전이는 불가, 종결 상태(완료/반려)는 더 이상 전이 불가, 반려(900)는 활성단계 어디서든 가능.
+    private static final List<String> STAGE_ORDER = List.of(
+        STATUS_RECEIVED, STATUS_REVIEWING, STATUS_ACTING, STATUS_COMPLETED
     );
 
     private final NearMiss01Mapper nearMiss01Mapper;
@@ -145,15 +139,21 @@ public class NearMiss01ServiceImpl implements NearMiss01Service {
             throw new ApiException(NearMissErrorCode.NEARMISS_404_001);
         }
 
-        // 반려(900): 어느 단계든 가능. 단 사유 필수.
+        // 종결 상태(완료400/반려900)는 더 이상 전이 불가.
+        if (STATUS_COMPLETED.equals(current) || STATUS_REJECTED.equals(current)) {
+            throw new ApiException(NearMissErrorCode.NEARMISS_422_001);
+        }
+
         if (STATUS_REJECTED.equals(target)) {
+            // 반려(900): 활성 단계 어디서든 가능. 단 사유 필수.
             if (!StringUtils.hasText(param.rejectReason())) {
                 throw new ApiException(NearMissErrorCode.NEARMISS_400_001);
             }
         } else {
-            // 정방향 전이만 허용: 100->200->300->400
-            String allowedNext = FORWARD_TRANSITION.get(current);
-            if (allowedNext == null || !allowedNext.equals(target)) {
+            // 전진 점프만 허용: target 이 current 보다 뒤 단계여야 한다(같거나 앞 단계면 거부).
+            int curIdx = STAGE_ORDER.indexOf(current);
+            int tgtIdx = STAGE_ORDER.indexOf(target);
+            if (curIdx < 0 || tgtIdx < 0 || tgtIdx <= curIdx) {
                 throw new ApiException(NearMissErrorCode.NEARMISS_422_001);
             }
         }
@@ -164,64 +164,6 @@ public class NearMiss01ServiceImpl implements NearMiss01Service {
         }
         log.info("아차사고 상태전환 완료 - nearMissId={}, {} -> {}",
             param.nearMissId(), current, target);
-    }
-
-    @Override
-    @Transactional
-    public ReclassifyResponse reclassifyFromAssessment(ReclassifyParam param) {
-        log.info("위험성평가 재분류 진입 - cmpnyCd={}, siteCd={}, srcProcessCd={}, srcAssessmentCd={}",
-            param.gvCmpnyCd(), param.siteCd(), param.srcProcessCd(), param.srcAssessmentCd());
-
-        // 사업장 권한 검증 (cross-site IDOR 차단) — srcAssessmentCd 도 동일 siteCd 스코프로 검증됨
-        assertSiteAccess(param.gvAuthCd(), param.gvUserCd(), param.gvCmpnyCd(), param.siteCd());
-
-        if (!StringUtils.hasText(param.srcProcessCd()) || !StringUtils.hasText(param.srcAssessmentCd())) {
-            throw new ApiException(CommonErrorCode.COMMON_400_001);
-        }
-
-        AssessmentTransferCommand transferCommand = AssessmentTransferCommand.from(param);
-
-        // 원 위험성평가 건 전환 가능 여부 확인(사업장 스코프 + 전환 허용 상태).
-        //   전환 가능 건이 없으면, 단순 존재 여부로 404(미존재) vs 422(이미 처리/이관됨) 를 구분한다.
-        if (nearMiss01Mapper.countAssessment(transferCommand) == 0) {
-            if (nearMiss01Mapper.countAssessmentAny(transferCommand) > 0) {
-                throw new ApiException(NearMissErrorCode.NEARMISS_422_002);
-            }
-            throw new ApiException(NearMissErrorCode.NEARMISS_404_002);
-        }
-
-        // 원 위험성평가 건의 현장 사진 관리코드 조회 (없으면 null → 사진 없는 케이스로 정상 처리)
-        String srcFileMgmtCd = nearMiss01Mapper.selectAssessmentFileMgmtCd(transferCommand);
-
-        // 채번: NM + YYYYMMDD + 3자리 SEQ (사업장+당일 기준)
-        String nearMissId = nearMiss01Mapper.selectNextNearMissId(NearMissIdSeqQuery.from(param));
-
-        // (1) tb_near_miss INSERT (REPORT_STATUS_CD='100', SRC_* 기록).
-        //   DESCRIPTION 은 NOT NULL — 원 평가건에서 넘어온 사건 경위가 비어있으면 출처 식별 기본 문구로 대체한다.
-        InsertIncidentCommand insertCommand = InsertIncidentCommand.from(param, nearMissId);
-        if (!StringUtils.hasText(insertCommand.description())) {
-            String fallbackDesc = String.format(
-                "위험성평가 요청에서 이관된 사건 (공정 %s / 평가 %s)",
-                param.srcProcessCd(), param.srcAssessmentCd());
-            insertCommand = InsertIncidentCommand.withDescription(insertCommand, fallbackDesc);
-        }
-        // 원 평가건 현장 사진 관리코드 주입 (null/공백이면 그대로 null 로 INSERT)
-        insertCommand = InsertIncidentCommand.withFileMgmtCd(insertCommand, srcFileMgmtCd);
-        nearMiss01Mapper.insertIncident(insertCommand);
-
-        // (2) 원 tb_risk_assessment 상태 -> '005' 이관 (D2: 상태값 신설, 추적 보존)
-        int transferred = nearMiss01Mapper.transferAssessmentStatus(transferCommand);
-        if (transferred == 0) {
-            // 동시성 등으로 갱신 실패 시 트랜잭션 롤백 유도
-            throw new ApiException(NearMissErrorCode.NEARMISS_404_002);
-        }
-
-        log.info("위험성평가 재분류 완료 - 신규 nearMissId={}, src={}/{}",
-            nearMissId, param.srcProcessCd(), param.srcAssessmentCd());
-
-        return ReclassifyResponse.builder()
-            .nearMissId(nearMissId)
-            .build();
     }
 
     // ── 내부 헬퍼 ──────────────────────────────────────────────

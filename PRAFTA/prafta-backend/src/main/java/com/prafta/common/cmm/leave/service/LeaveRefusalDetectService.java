@@ -1,32 +1,34 @@
 package com.prafta.common.cmm.leave.service;
 
 /**
- * 노무수령거부 대상일 출근 감지 + 관리자 PUSH (PRAFTA-COM-001 기능2/3).
+ * 노무수령거부 원천 차단 가드 (PRAFTA-COM-008-B, com-001 detect→block 전환).
  *
- * <p>출근 체크인 성공 직후 hook 에서 호출되는 내부 서비스다(API 아님). 호출부(체크인)는
- * 본 메서드 호출을 try-catch 로 전체 격리하여, 감지/알림 실패가 체크인 트랜잭션을
- * 롤백하거나 실패시키지 않도록 한다. 본 서비스 내부도 방어적으로 예외를 흡수한다.
+ * <p>출퇴근·근태 등록 진입부에서 레코드 생성 <b>이전</b>에 호출되는 내부 서비스다(API 아님).
+ * 대상이면 차단 증빙(BLOCKED 이력 + 관리자 PUSH)을 독립 트랜잭션으로 선커밋한 뒤 차단 예외를
+ * throw 하여 출근/근태 트랜잭션을 롤백시킨다("막되 반드시 기록").
  *
- * <p>web 기능1(통지)과 공용 매퍼({@code LeaveRefusalMapper})를 공유하며, app→web 호출
- * 금지 원칙에 따라 공용 영역({@code com.prafta.common.cmm.leave})에 둔다.
+ * <p>판정 소스는 {@code tb_user_leave_use} 촉진단계다(NOTICED 로그 의존 폐지). web 기능1(통지)과
+ * 공용 매퍼({@code LeaveRefusalMapper})를 공유하며, app→web 호출 금지 원칙에 따라 공용 영역
+ * ({@code com.prafta.common.cmm.leave})에 둔다.
  */
 public interface LeaveRefusalDetectService {
 
     /**
-     * 방금 체크인한 근무일이 노무수령거부 대상일(=통지된 사용지정일, 비휴일)인지 감지하고,
-     * 대상이면 CHECKIN_DETECTED 사실 기록 후 관리자 PUSH(기능3)를 발송한다.
+     * 시도일이 노무수령거부 차단 대상(촉진 1·2차 확정 법정 연차일 · 비휴일)인지 판정하고,
+     * 대상이면 BLOCKED 이력 + 관리자 PUSH 를 독립 트랜잭션(REQUIRES_NEW)으로 선커밋한 뒤
+     * 차단 예외(ATTD_400_150)를 throw 한다.
      *
-     * <p>대상이 아니면(미통지/휴일) 아무 일도 하지 않는다. 관리자 0명이어도 감지 기록은 남는다.
+     * <p>대상이 아니면(자발/비법정/휴일/연차 없음) 아무 일도 하지 않고 정상 반환한다 → 호출부 정상 진행.
      * 출근 원본(tb_user_attd_mgmt)은 읽지도 쓰지도 않으며 전달받은 식별자만 사용한다.
      *
-     * @param cmpnyCd  회사 코드 (JWT 출처)
-     * @param siteCd   사업장 코드 (JWT 출처)
-     * @param userCd   대상 근로자 코드 (JWT 출처)
-     * @param nodeCd   소속 노드 코드 (현재 사용 안 함, 추후 페이로드용으로 보존)
-     * @param workYmd  출근 근무일 = 대상일 후보 (YYYYMMDD)
-     * @param attdId   방금 INSERT 된 근태 ID (RELATED_ATTD_ID)
-     * @param insertNo 등록자 (=USER_CD)
+     * @param cmpnyCd        회사 코드 (JWT 출처)
+     * @param siteCd         사업장 코드 (JWT 출처)
+     * @param userCd         대상 근로자 코드
+     * @param nodeCd         소속 노드 코드 (현재 미사용, 추후 페이로드용으로 보존)
+     * @param workYmd        시도 근무일 = 대상일 후보 (YYYYMMDD)
+     * @param attemptType    시도 유형 (CHECK_IN/CHECK_OUT/ATTD_CREATE/ADMIN_ENTRY)
+     * @param operatorUserCd 시도 주체 (근로자 본인 또는 관리자 USER_CD)
      */
-    void detectAndAlert(String cmpnyCd, String siteCd, String userCd, String nodeCd,
-                        String workYmd, String attdId, String insertNo);
+    void guardAndRecord(String cmpnyCd, String siteCd, String userCd, String nodeCd,
+                        String workYmd, String attemptType, String operatorUserCd);
 }

@@ -33,8 +33,11 @@ import com.prafta.app.mypage.mypage01.result.PresetMasterResult;
 import com.prafta.app.mypage.mypage01.result.PresetStepResult;
 import com.prafta.common.cmm.approval.mapper.ApprovalLineMapper;
 import com.prafta.common.cmm.approval.vo.ApprovalStepVO;
+import com.prafta.common.cmm.leave.mapper.LeavePolicyMapper;
 import com.prafta.common.cmm.leave.service.LeaveApprovalNotiService;
 import com.prafta.common.cmm.leave.service.LeaveDeductionService;
+import com.prafta.common.cmm.leave.util.FiscalYearUtils;
+import com.prafta.common.cmm.leave.vo.LeavePolicyVO;
 import com.prafta.common.error.attd.AttdErrorCode;
 import com.prafta.common.error.common.CommonErrorCode;
 import com.prafta.common.exception.ApiException;
@@ -65,9 +68,16 @@ public class AppLeaveFlowServiceImpl implements AppLeaveFlowService {
     private final AttdCloseService attdCloseService;
     /** PRAFTA-COM-004: 연차 결재 PUSH 생산자(outbox 적재, 예외 격리). 앱엔 승인 경로 없으므로 신청 hook 만. */
     private final LeaveApprovalNotiService leaveApprovalNotiService;
+    /** 연차개편: 활성정책 AXIS2_FISCAL_START_MM/_DD 조회(회계연도 경계 산출 입력). 락 없는 조회 메서드 재사용. */
+    private final LeavePolicyMapper leavePolicyMapper;
 
     // 법정정책 미존재 시 폴백 단위(종일만).
     private static final String FALLBACK_UNIT_CODE = "00";
+
+    /** 연차개편: 사용자 신청 타입 [SYS021] '01'. 한도=MAX_APLY_DAYS, 잔여=회계연도 사용분 차감. */
+    private static final String LEAVE_TYPE_USER_APPLY = "01";
+    /** 연차개편 동시성: '01' 신청 직렬화 advisory lock 타임아웃(초). */
+    private static final int LEAVE01_LOCK_TIMEOUT_SEC = 5;
 
     // ===== 018-B 상수(웹 LeaveFlowServiceImpl 미러) =====
     // 요청 상태 [SYS033]
@@ -92,8 +102,12 @@ public class AppLeaveFlowServiceImpl implements AppLeaveFlowService {
 
         log.info("[leaveflow] 연차 신청 메타 조회 시작 userCd={}", param.userCd());
 
+        // 연차개편: 사용자 신청('01') 잔여 = MAX_APLY_DAYS - 당해 회계연도 사용분. 회계연도 경계를 단일출처(FiscalYearUtils)로 산출.
+        FiscalYearUtils.FiscalWindow fiscal = resolveFiscalWindow(param.cmpnyCd());
+
         List<LeaveTypeMetaRow> rows =
-                appLeaveFlowMapper.selectApplicableLeaveTypes(param.cmpnyCd(), param.userCd());
+                appLeaveFlowMapper.selectApplicableLeaveTypes(param.cmpnyCd(), param.userCd(),
+                        fiscal.fiscalStartYmd(), fiscal.fiscalEndYmdExclusive());
 
         // 법정 종류 공통 출처(회사 단일 USAGE_UNIT + 법정 결재여부). 미존재면 폴백.
         LeaveUsagePolicyRow companyPolicy = appLeaveFlowMapper.selectCompanyUsageUnit(param.cmpnyCd());
@@ -327,11 +341,64 @@ public class AppLeaveFlowServiceImpl implements AppLeaveFlowService {
             }
         }
 
-        // 5) 차감 대상 부여(잔여 충분, 만료 임박 우선, FOR UPDATE)
-        DeductibleGrantRow grant = appLeaveFlowMapper.selectDeductibleGrant(cmpny, user, leaveCd, workYmd, leaveDays);
-        if (grant == null) {
-            throw new ApiException(AttdErrorCode.ATTD_400_051);
+        // 5) 잔여 확보(타입 분기).
+        //    '02'(또는 SYSTEM_YN='Y'): 기존 차감 GRANT 경로(만료 임박 우선, FOR UPDATE) 유지 — 회귀 0.
+        //    '01'(사용자 신청): GRANT 가 없으므로 회계연도 한도(MAX_APLY_DAYS) 대비 사용분 검증.
+        //      차감 GRANT 가 없어 FOR UPDATE 를 못 쓰니 (USER_CD,LEAVE_CD) advisory lock 으로 직렬화
+        //      → 사용분 재집계 → 한도검증 → (8)INSERT 순서로 중복신청 레이스를 방지한다.
+        boolean userApplyType = LEAVE_TYPE_USER_APPLY.equals(type.leaveType()) && !statutory;
+        String grantId; // '01'은 null(차감 GRANT 없음), 그 외는 선택된 부여 ID
+        String lockKey = null;
+        try {
+            if (userApplyType) {
+                lockKey = leave01LockKey(cmpny, user, leaveCd);
+                acquireLeave01Lock(lockKey);
+
+                Integer maxAplyDays = type.maxAplyDays();
+                if (maxAplyDays == null) {
+                    // '01'인데 한도 미설정 → fail-closed(신청불가).
+                    log.info("[leaveflow] 연차 신청 거부: 사용자 신청 한도(MAX_APLY_DAYS) 미설정 (userCd={}, leaveCd={})", user, leaveCd);
+                    throw new ApiException(AttdErrorCode.ATTD_400_051);
+                }
+                FiscalYearUtils.FiscalWindow fiscal = resolveFiscalWindow(cmpny);
+                BigDecimal used = appLeaveFlowMapper.selectFiscalUsedDays(
+                        cmpny, user, leaveCd, fiscal.fiscalStartYmd(), fiscal.fiscalEndYmdExclusive());
+                if (used == null) {
+                    used = BigDecimal.ZERO;
+                }
+                if (used.add(leaveDays).compareTo(BigDecimal.valueOf(maxAplyDays)) > 0) {
+                    log.info("[leaveflow] 연차 신청 거부: 회계연도 한도 초과 (userCd={}, leaveCd={}, used={}, req={}, max={})",
+                            user, leaveCd, used, leaveDays, maxAplyDays);
+                    throw new ApiException(AttdErrorCode.ATTD_400_051);
+                }
+                grantId = null;
+            } else {
+                DeductibleGrantRow grant = appLeaveFlowMapper.selectDeductibleGrant(cmpny, user, leaveCd, workYmd, leaveDays);
+                if (grant == null) {
+                    throw new ApiException(AttdErrorCode.ATTD_400_051);
+                }
+                grantId = grant.grantId();
+            }
+
+            submitLeaveCore(p, cmpny, site, user, workYmd, leaveCd, unit, aprvRequired,
+                    leaveDays, leaveMinutes, startTime, endTime, grantId);
+        } finally {
+            if (lockKey != null) {
+                releaseLeave01Lock(lockKey);
+            }
         }
+    }
+
+    /**
+     * 연차 신청 본 흐름(요청 INSERT → 결재라인 → 사용기록 INSERT → 즉시확정 → PUSH).
+     *
+     * <p>잔여 확보(타입 분기)는 호출부에서 끝낸 뒤 진입한다. {@code grantId} 가 null 이면 '01'(차감 GRANT 없음)이라
+     *   {@code recomputeGrantUsedDays} 를 생략한다.
+     */
+    private void submitLeaveCore(LeaveApplyParam p, String cmpny, String site, String user, String workYmd,
+                                 String leaveCd, String unit, boolean aprvRequired,
+                                 BigDecimal leaveDays, Integer leaveMinutes, String startTime, String endTime,
+                                 String grantId) {
 
         // 6) 요청 INSERT(REQ_TYPE='05'). 결재 Y면 신청('01'), N이면 즉시 승인('02').
         //    nodeCd 는 본문 비신뢰 → null 저장(자기승인 판정은 서버 USER→NODE 조인으로 독립 수행).
@@ -400,24 +467,26 @@ public class AppLeaveFlowServiceImpl implements AppLeaveFlowService {
         }
 
         // 8) 차감 예약(CONFIRMED) + 부여 USED_DAYS 동기화(웹 202~212)
+        //    '01'(사용자 신청)은 grantId=null → GRANT 가 없으므로 recomputeGrantUsedDays 생략(잔여=회계연도 사용분 파생).
         String leaveId = appLeaveFlowMapper.selectNextLeaveId(cmpny);
         LeaveUseCommand use = LeaveUseCommand.builder()
                 .leaveId(leaveId).cmpnyCd(cmpny).siteCd(site).userCd(user).leaveCd(leaveCd)
-                .reqId(reqId).grantId(grant.grantId())
+                .reqId(reqId).grantId(grantId)
                 .startDate(workYmd).startTime(startTime).endDate(workYmd).endTime(endTime)
                 .useUnitType(unit).leaveDays(leaveDays).leaveMinutes(leaveMinutes)
                 .leaveReason(p.reason()).leaveStatus(USE_CONFIRMED).insertNo(user)
                 .build();
         appLeaveFlowMapper.insertLeaveUse(use);
-        appLeaveFlowMapper.recomputeGrantUsedDays(cmpny, grant.grantId(), user);
+        if (grantId != null) {
+            appLeaveFlowMapper.recomputeGrantUsedDays(cmpny, grantId, user);
+        }
 
-        // 9) 즉시확정 + 출근차단(웹 214~223)
+        // 9) 즉시확정
+        //   prafta-com-008-E-2: 연차-스케줄 모델 전환 — work_plan 에 LEAVE_CD 를 더 이상 쓰지 않는다.
+        //   출근 차단(§8.3)은 leave_use(CONFIRMED 종일) 존재로 판정하므로 위 insertLeaveUse 가 곧 차단 근거다.
+        //   (work_plan 은 SCH_CD 유지 → 연차 취소 시 자동 근무일 복귀).
         if (aprvRequired && fullyAutoApproved) {
             appLeaveFlowMapper.updateReqStatus(cmpny, reqId, REQ_APPROVED, user, SELF_APPROVE_COMMENT);
-        }
-        boolean confirmedNow = !aprvRequired || fullyAutoApproved;
-        if (confirmedNow && UNIT_FULL.equals(unit)) {
-            appLeaveFlowMapper.upsertWorkPlanLeave(cmpny, site, user, workYmd, leaveCd, user);
         }
 
         // PRAFTA-COM-004 PUSH 적재 hook (예외 격리 — @Transactional 본 흐름에 예외 전파 금지).
@@ -438,6 +507,41 @@ public class AppLeaveFlowServiceImpl implements AppLeaveFlowService {
 
         log.info("[leaveflow] 연차 신청 완료 reqId={}, userCd={}, leaveCd={}, unit={}, days={}, aprv={}",
                 reqId, user, leaveCd, unit, leaveDays, aprvRequired);
+    }
+
+    /**
+     * 연차개편: 당해 회계연도 윈도우 산출(단일출처 {@link FiscalYearUtils}).
+     * 활성정책 AXIS2_FISCAL_START_MM/_DD 로 산출하며, 정책 미존재/NULL 이면 1월 1일 폴백.
+     * (AXIS1_GRANT_BASE 가 HIRE_DATE 여도 본 폴백/정책 MM/DD 를 그대로 적용 — 사용자 신청 한도는 회사 회계연도 기준.)
+     */
+    private FiscalYearUtils.FiscalWindow resolveFiscalWindow(String cmpnyCd) {
+        LeavePolicyVO policy = leavePolicyMapper.selectActivePolicy(cmpnyCd);
+        String mm = (policy == null) ? null : policy.getAxis2FiscalStartMm();
+        String dd = (policy == null) ? null : policy.getAxis2FiscalStartDd();
+        return FiscalYearUtils.fiscalWindow(LocalDate.now(), mm, dd);
+    }
+
+    /** 연차개편 동시성: '01' 신청 직렬화 키(회사+사용자+연차코드). */
+    private String leave01LockKey(String cmpnyCd, String userCd, String leaveCd) {
+        return "leave01:" + cmpnyCd + ":" + userCd + ":" + leaveCd;
+    }
+
+    /** advisory lock 획득. 타임아웃/오류면 동시 처리로 보고 ATTD_400_051 로 변환(중복신청 차단). */
+    private void acquireLeave01Lock(String lockKey) {
+        Integer got = appLeaveFlowMapper.getAdvisoryLock(lockKey, LEAVE01_LOCK_TIMEOUT_SEC);
+        if (got == null || got != 1) {
+            log.info("[leaveflow] '01' 신청 advisory lock 미획득 — lockKey={}, got={}", lockKey, got);
+            throw new ApiException(AttdErrorCode.ATTD_400_051);
+        }
+    }
+
+    /** advisory lock 해제(예외 무시 — 세션 종료 시 자동 해제됨). */
+    private void releaseLeave01Lock(String lockKey) {
+        try {
+            appLeaveFlowMapper.releaseAdvisoryLock(lockKey);
+        } catch (Exception e) {
+            log.warn("[leaveflow] '01' 신청 advisory lock 해제 실패(무시) — lockKey={}", lockKey, e);
+        }
     }
 
     /**

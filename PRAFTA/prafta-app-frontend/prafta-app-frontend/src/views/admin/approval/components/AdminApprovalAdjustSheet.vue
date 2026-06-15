@@ -6,7 +6,7 @@
       · OVERTIME: adjusted = { startDate, startTime, endDate, endTime } (시스템 계산값 기본채움 §5.8.3)
       · CORRECTION: adjusted = { checkInDate, checkInTime, checkOutDate, checkOutTime } (보정 시각·구간 §5.8.2)
       · LEAVE: 조정 불가(§5.8.4) → 본 시트 미노출. SCHEDULE: A5 확정 전 미노출.
-  - ⚠️ 인라인 검증(attd §5 1일2구간·2회출근 / §6.6 겹침 / §10.2 표준화)은 서버 최종 + developer 보조(본 골격은 형식 입력만).
+  - ⚠️ 인라인 검증(attd §5 1일2구간·2회출근 / §6.6 겹침)은 서버 최종 + developer 보조(본 골격은 형식 입력만).
   - 참조 패턴: views/admin/tbm/components/AdminTbmForceExitSheet.vue (바텀시트 + 토큰 자급).
   - planner 라운드 스코프: template + style 완성. script 는 props/emits + v-model + 기본채움(prefill) 토글만.
 -->
@@ -91,7 +91,7 @@
           </template>
 
           <p class="ap-adj__notice">
-            조정 값은 표준화 단위·구간 규칙에 따라 서버에서 최종 검증됩니다.
+            조정 값은 서버에서 최종 검증됩니다.
           </p>
         </div>
 

@@ -10,6 +10,8 @@ import com.prafta.common.cmm.file.application.query.FileInfoQuery;
 import com.prafta.common.cmm.file.dto.param.FileInfoParam;
 import com.prafta.common.cmm.file.mapper.FileMapper;
 import com.prafta.common.cmm.file.service.FileService;
+import com.prafta.common.cmm.push.RiskAssessNotiConst;
+import com.prafta.common.cmm.push.RiskAssessNotiService;
 import com.prafta.common.error.common.CommonErrorCode;
 import com.prafta.common.exception.ApiException;
 import com.prafta.web.risk.risk03.application.command.AssessmentCommand;
@@ -36,6 +38,8 @@ public class Risk03ServiceImpl implements Risk03Service{
 	private final Risk03Mapper risk03Mapper;
 	private final FileService fileService;
     private final FileMapper fileMapper;
+    /** PRAFTA-APP-021-3d(M5): 위험성평가 검토요청 통보 PUSH 생산자(safe/노드 관리자, afterCommit 격리). */
+    private final RiskAssessNotiService riskAssessNotiService;
 	
 	public RiskTypeListResponse selectRiskTypeInfoList(RiskTypeInfoListParam param) {
 		
@@ -86,9 +90,20 @@ public class Risk03ServiceImpl implements Risk03Service{
     		}
 
     		risk03Mapper.updateAssessment(AssessmentCommand.from(param, fileMgmtCd));
-    		
+
 		} catch (Exception e) {
 			throw new ApiException(CommonErrorCode.COMMON_500_001);
+		}
+
+		// PRAFTA-APP-021-3d(M5): "검토 요청"(001) 전이 시 safe/노드 관리자에게 통보 PUSH 적재(afterCommit 격리).
+		//   저장 본 흐름이 커밋된 뒤에만 적재되며, 적재 실패는 저장에 영향을 주지 않는다.
+		if (RiskAssessNotiConst.STATUS_REVIEW_REQUESTED.equals(param.assessmentStatus())) {
+			try {
+				riskAssessNotiService.notifyReviewRequested(
+						param.gvCmpnyCd(), param.siteCd(), param.assessmentCd(), param.gvUserCd(), param.gvUserCd());
+			} catch (Exception e) {
+				log.error("위험성평가 검토요청 통보 PUSH 적재 hook 실패(저장 영향 없음). assessmentCd={}", param.assessmentCd(), e);
+			}
 		}
 	}
 

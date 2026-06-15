@@ -6,6 +6,9 @@ import java.util.List;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import com.prafta.common.cmm.leave.service.LeaveRefusalConst;
+import com.prafta.common.cmm.leave.service.LeaveRefusalDetectService;
+import com.prafta.common.cmm.push.ApprovalResultNotiService;
 import com.prafta.common.error.attd.AttdErrorCode;
 import com.prafta.common.exception.ApiException;
 import com.prafta.common.util.AuthRoleUtils;
@@ -62,6 +65,12 @@ public class Attd07ServiceImpl implements Attd07Service {
 
     private final Attd07Mapper attd07Mapper;
     private final AttdCloseService attdCloseService;
+    /** PRAFTA-APP-021-3a(W2): 근태/초과근무 보정 결재 결과(승인/반려) 통보 PUSH 생산자(신청자 1인, afterCommit 격리). */
+    private final ApprovalResultNotiService approvalResultNotiService;
+    /** PRAFTA-COM-008-B: 노무수령거부 차단 가드(공용 빈 재사용 — 관리자 직접 근태등록 ADMIN_ENTRY 진입 차단). */
+    private final LeaveRefusalDetectService leaveRefusalDetectService;
+    /** PRAFTA-COM-008-D: 교대 잠금 가드(공용 cmm 빈 — 스케줄수정 승인 시 교대 소속 구간 차단). */
+    private final com.prafta.common.cmm.shift.service.ShiftMembershipService shiftMembershipService;
 
     /**
      * PRAFTA-028 - 마감 가드. 대상 부서(nodeCd)+근무월이 마감 커버리지(전체/자기/상위 하위포함)에 들면
@@ -96,6 +105,14 @@ public class Attd07ServiceImpl implements Attd07Service {
         for (UpdateUserAttdInfosModel model : param.updateUserAttdInfosModelList()) {
         	// PRAFTA-028 - 마감된 기간(부서)의 근태 직접 수정 차단
         	ensureNotClosed(model.gvCmpnyCd(), model.siteCd(), model.nodeCd(), model.workYmd());
+
+        	// PRAFTA-COM-008-B(B-3 1단계): 관리자 직접 근태등록 차단 가드(ADMIN_ENTRY).
+        	//   촉진 확정 연차일에 관리자가 해당 근로자 근태(출근)를 직접 입력/생성하는 경로를 레코드 생성 이전에 차단한다.
+        	//   대상이면 guard 내부에서 ATTD_400_150 차단 throw(BLOCKED 이력+PUSH 선커밋), 비대상이면 정상 진행.
+        	//   userCd=대상 근로자, operatorUserCd=관리자(gvUserCd). 차단 대상은 근태기록 생성만(연차 관리는 문서 C 흐름).
+        	leaveRefusalDetectService.guardAndRecord(
+        			model.gvCmpnyCd(), model.siteCd(), model.userCd(), model.nodeCd(), model.workYmd(),
+        			LeaveRefusalConst.ATTEMPT_ADMIN_ENTRY, model.gvUserCd());
 
         	String attdId = "";
 
@@ -381,6 +398,14 @@ public class Attd07ServiceImpl implements Attd07Service {
             log.warn("approve rejected - REQ status changed concurrently. reqId={}", reqRow.reqId());
             throw new ApiException(AttdErrorCode.ATTD_409_001);
         }
+
+        // PRAFTA-APP-021-3a(W2): 근태 보정 승인 결과를 신청자 본인에게 통보(afterCommit 격리, 승인 영향 없음).
+        try {
+            approvalResultNotiService.notifyAttdResult(
+                    param.gvCmpnyCd(), reqRow.siteCd(), reqRow.userCd(), reqRow.reqId(), true, param.gvUserCd());
+        } catch (Exception e) {
+            log.error("근태 승인 결과 통보 PUSH 적재 hook 실패(승인 영향 없음). reqId={}", reqRow.reqId(), e);
+        }
     }
 
     // ============================================================
@@ -479,6 +504,14 @@ public class Attd07ServiceImpl implements Attd07Service {
 
         log.info("근태 요청 반려 완료. reqId={}, reqType={}, attdId={}",
                 reqRow.reqId(), reqRow.reqType(), histAttdId);
+
+        // PRAFTA-APP-021-3a(W2): 근태 보정 반려 결과를 신청자 본인에게 통보(afterCommit 격리, 반려 영향 없음).
+        try {
+            approvalResultNotiService.notifyAttdResult(
+                    param.gvCmpnyCd(), reqRow.siteCd(), reqRow.userCd(), reqRow.reqId(), false, param.gvUserCd());
+        } catch (Exception e) {
+            log.error("근태 반려 결과 통보 PUSH 적재 hook 실패(반려 영향 없음). reqId={}", reqRow.reqId(), e);
+        }
     }
 
     // ============================================================
@@ -569,6 +602,12 @@ public class Attd07ServiceImpl implements Attd07Service {
         //      이 값을 PROCESS_COMMENT 마커에 직렬화하여, 처리 이력에서 변경 전→후 스케줄을 복원한다(무마이그).
         //      해당 일자에 근무계획이 없으면 null → 마커는 OLD= 빈값(변경 전 "없음")으로 남는다.
         String oldWorkPlanCd = attd07Mapper.selectUserWorkPlanCd(
+                param.gvCmpnyCd(), reqRow.siteCd(), reqRow.userCd(), reqRow.workYmd());
+
+        // 5-2. prafta-com-008-D: 교대 잠금 가드 — 해당 근무일이 교대팀 소속 구간이면 스케줄수정 승인(반영)을 차단한다.
+        //      관리자 예외 없음(요구 1-2: 관리자·사용자 모두 변경 불가). REQ 의 권위값(site/user/workYmd) 사용.
+        //      upsert(work_plan 갱신) 이전에 차단하여 레코드 변경을 막는다.
+        shiftMembershipService.assertNotShiftLocked(
                 param.gvCmpnyCd(), reqRow.siteCd(), reqRow.userCd(), reqRow.workYmd());
 
         // 6. tb_user_work_plan 의 (cmpny, site, user, ymd) 한 칸 WORK_PLAN_CD 를 SCH_CD 로 upsert (D1/D2).
@@ -749,6 +788,14 @@ public class Attd07ServiceImpl implements Attd07Service {
         }
 
         log.info("초과근무 요청 반려 완료. reqId={}", reqRow.reqId());
+
+        // PRAFTA-APP-021-3a(W2): 초과근무 보정 반려 결과를 신청자 본인에게 통보(afterCommit 격리, 반려 영향 없음).
+        try {
+            approvalResultNotiService.notifyAttdResult(
+                    param.gvCmpnyCd(), reqRow.siteCd(), reqRow.userCd(), reqRow.reqId(), false, param.gvUserCd());
+        } catch (Exception e) {
+            log.error("초과근무 반려 결과 통보 PUSH 적재 hook 실패(반려 영향 없음). reqId={}", reqRow.reqId(), e);
+        }
     }
 
     // ============================================================
@@ -843,6 +890,16 @@ public class Attd07ServiceImpl implements Attd07Service {
             throw new ApiException(AttdErrorCode.ATTD_400_010);
         }
 
+        // PRAFTA-COM-008-B-3: 연차일 초과근무 차단.
+        //   그날 종일('00') 확정 연차가 있으면(촉진/자발 무관 일괄 차단) OT 등록을 거부한다(INSERT 이전).
+        //   "연차일자 조정"은 문서 C(연차 이동/삭제 동의·거부) 흐름으로 연결한다(BE 는 차단만, 안내 문구).
+        if (attd07Mapper.countFullDayLeaveOn(
+                param.gvCmpnyCd(), param.siteCd(), param.userCd(), param.workYmd()) > 0) {
+            log.info("[prafta-com-008-B-3] 웹 OT 등록 거부: 연차일 — userCd={}, workYmd={}",
+                    param.userCd(), param.workYmd());
+            throw new ApiException(AttdErrorCode.ATTD_400_151);
+        }
+
         // 2. 요청된 OT 구간을 분 stamp로 정규화한다.
         //    [QA 재작업 D1] stamp origin 은 workYmd-1 00:00 = 0 기준으로 통일되어 있으며,
         //    오버나이트 OT 가 workYmd+1 23:59(stamp 4319)까지 늘어날 수 있다.
@@ -868,7 +925,7 @@ public class Attd07ServiceImpl implements Attd07Service {
         }
 
         // 4. 스케줄과 raw 실근태 구간을 로드한다.
-        //    초과근무 등록 가능 범위는 "실근태 − 스케줄" 로 계산한다(표준화 미반영).
+        //    초과근무 등록 가능 범위는 "실근태 − 스케줄" 로 계산한다.
         AllowedWindowResult windows = attd07Mapper.selectAllowedWindow(
                 OvertimeAllowedWindowQuery.from(param));
         if (windows == null) {
@@ -1030,6 +1087,17 @@ public class Attd07ServiceImpl implements Attd07Service {
             // 운영 규칙상 도달 불가(OT 는 근태기록 없이 등록 불가). 핵심 동작(OT 등록)은 유지하고 이력만 생략한다.
             log.warn("OT approve - 처리 이력 생략: 그날 근태기록(ATTD_ID) 미존재. userCd={}, workYmd={}",
                     param.userCd(), param.workYmd());
+        }
+
+        // PRAFTA-APP-021-3a(W2): 요청 승인(인박스 경유 = reqId 보유)일 때만 신청자 본인에게 결과 통보.
+        //   Attd_07 직접 등록(reqId=null)은 신청자 통보 대상이 아니므로 건너뛴다. afterCommit 격리.
+        if (reqRow != null) {
+            try {
+                approvalResultNotiService.notifyAttdResult(
+                        param.gvCmpnyCd(), reqRow.siteCd(), reqRow.userCd(), reqRow.reqId(), true, param.gvUserCd());
+            } catch (Exception e) {
+                log.error("초과근무 승인 결과 통보 PUSH 적재 hook 실패(승인 영향 없음). reqId={}", reqRow.reqId(), e);
+            }
         }
     }
 }

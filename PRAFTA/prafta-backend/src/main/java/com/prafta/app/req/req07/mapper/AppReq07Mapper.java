@@ -64,6 +64,14 @@ public interface AppReq07Mapper {
                                                , @Param("siteCd") String siteCd);
 
     /**
+     * prafta-com-008-E-9a: 사용자 본인 기본 근무타입(tb_user.DEFAULT_SCH_CD) 조회.
+     * 스케줄 선택 UI 의 "기본" 칩/상단 정렬 기준(사업장 BASE_YN 폐기 대체). 미설정이면 null.
+     * 식별값(cmpnyCd/userCd)은 JWT 도출값만 사용(IDOR).
+     */
+    String selectUserDefaultSchCd(@Param("cmpnyCd") String cmpnyCd
+                                  , @Param("userCd") String userCd);
+
+    /**
      * prafta-app-017(이슈①): OT 겹침 검증용 — 해당 근무일의 근무계획 스케줄 1건(1·2구간 시각) 조회.
      * TB_USER_WORK_PLAN(하루 1행).WORK_PLAN_CD 가 SCH_CD 일 때만 TB_SCH_MGMT 조인이 성립한다.
      * 연차코드(LEAVE_CD)/미배정(NULL)/매칭 스케줄 없음 → 결과 0행 → null 반환(정규구간 부재 → 겹침검사 면제).

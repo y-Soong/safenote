@@ -1,0 +1,391 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+
+<!--
+  PRAFTA-COM-008-A-1/A-2: 연차 사용촉진 판정·잔여·진행 마스터 Mapper.
+  SQL 규칙: leading comma, #{...} 바인딩, SELECT * 금지(명시 컬럼). MySQL 8.
+  도래 시점(1차=만료6개월전/2차=만료3개월전) 비교는 결정성을 위해 서비스에서 today 와 비교한다.
+  outbox INSERT/채번·평문 USER_NM 은 본 매퍼 미보유(LeaveDashboardMapper/LeaveApprovalNotiMapper 재사용).
+-->
+<mapper namespace="com.prafta.common.cmm.leave.promotion.mapper.LeavePromotionMapper">
+
+    <!--
+      촉진 도래 판정 후보(전 회사 1패스).
+      - 회사 게이트: 활성 정책(USE_YN='Y') AXIS7_USE_PROMOTION='Y'.
+      - 사용자 게이트: 활성 계정(USE_YN='Y', ACCOUNT_STATUS='01').
+      - 1년차 이상 게이트: ACTIVE STATUTORY_ANNUAL grant 존재(월차만 보유한 1년차 미만 자연 제외).
+      - 역산 기준(BASE): 본연차(STATUTORY_ANNUAL) ACTIVE grant 중 가장 임박한 AVAIL_TO_DATE 1건.
+      - 잔여(remainingDays): 본연차+근속가산 ACTIVE (GRANT_DAYS-USED_DAYS) 합(월차/약정 제외).
+      r_i <= 0 제외 / 도래 시점 판정은 서비스가 today 로 수행.
+    -->
+    <select id="selectPromotionCandidates" resultType="com.prafta.common.cmm.leave.promotion.vo.PromotionCandidateVO">
+    /* LeavePromotionMapper.selectPromotionCandidates */
+    SELECT
+          U.CMPNY_CD                        AS cmpnyCd
+        , U.SITE_CD                         AS siteCd
+        , U.USER_CD                         AS userCd
+        , BASE.GRANT_ID                     AS baseGrantId
+        , BASE.AVAIL_TO_DATE                AS baseAvailToDate
+        , IFNULL(REM.REMAINING_DAYS, 0)     AS remainingDays
+      FROM TB_USER U
+      JOIN TB_LEAVE_POLICY P
+        ON P.CMPNY_CD             = U.CMPNY_CD
+       AND P.USE_YN               = 'Y'
+       AND P.AXIS7_USE_PROMOTION  = 'Y'
+      JOIN (
+            /* 사용자별 가장 임박한 본연차(STATUTORY_ANNUAL) ACTIVE grant 1건 (역산 기준) */
+            SELECT
+                  G1.CMPNY_CD
+                , G1.USER_CD
+                , G1.GRANT_ID
+                , G1.AVAIL_TO_DATE
+              FROM TB_USER_LEAVE_GRANT G1
+             WHERE G1.GRANT_TYPE = 'STATUTORY_ANNUAL'
+               AND G1.STATUS     = 'ACTIVE'
+               AND G1.DEL_YN     = 'N'
+               AND NOT EXISTS (
+                     SELECT 1
+                       FROM TB_USER_LEAVE_GRANT G2
+                      WHERE G2.CMPNY_CD   = G1.CMPNY_CD
+                        AND G2.USER_CD    = G1.USER_CD
+                        AND G2.GRANT_TYPE = 'STATUTORY_ANNUAL'
+                        AND G2.STATUS     = 'ACTIVE'
+                        AND G2.DEL_YN     = 'N'
+                        AND (
+                              G2.AVAIL_TO_DATE <![CDATA[ < ]]> G1.AVAIL_TO_DATE
+                           OR (G2.AVAIL_TO_DATE = G1.AVAIL_TO_DATE AND G2.GRANT_ID <![CDATA[ < ]]> G1.GRANT_ID)
+                            )
+                   )
+           ) BASE
+        ON BASE.CMPNY_CD = U.CMPNY_CD
+       AND BASE.USER_CD  = U.USER_CD
+      LEFT JOIN (
+            /* 본연차+근속가산 ACTIVE 잔여 합(월차/약정 제외) */
+            SELECT
+                  R.CMPNY_CD
+                , R.USER_CD
+                , SUM(R.GRANT_DAYS - R.USED_DAYS) AS REMAINING_DAYS
+              FROM TB_USER_LEAVE_GRANT R
+             WHERE R.GRANT_TYPE IN ('STATUTORY_ANNUAL', 'STATUTORY_TENURE_BONUS')
+               AND R.STATUS     = 'ACTIVE'
+               AND R.DEL_YN     = 'N'
+             GROUP BY R.CMPNY_CD, R.USER_CD
+           ) REM
+        ON REM.CMPNY_CD = U.CMPNY_CD
+       AND REM.USER_CD  = U.USER_CD
+     WHERE U.USE_YN         = 'Y'
+       AND U.ACCOUNT_STATUS = '01'
+       AND IFNULL(REM.REMAINING_DAYS, 0) <![CDATA[ > ]]> 0
+     ORDER BY U.CMPNY_CD, U.USER_CD
+    </select>
+
+    <!-- 단건 사용자 재산정(도래 직전 교차체크). 동일 산식, 사용자 1명 한정. 미해당 시 0행→null. -->
+    <select id="selectPromotionCandidate" resultType="com.prafta.common.cmm.leave.promotion.vo.PromotionCandidateVO">
+    /* LeavePromotionMapper.selectPromotionCandidate */
+    SELECT
+          U.CMPNY_CD                        AS cmpnyCd
+        , U.SITE_CD                         AS siteCd
+        , U.USER_CD                         AS userCd
+        , BASE.GRANT_ID                     AS baseGrantId
+        , BASE.AVAIL_TO_DATE                AS baseAvailToDate
+        , IFNULL(REM.REMAINING_DAYS, 0)     AS remainingDays
+      FROM TB_USER U
+      JOIN TB_LEAVE_POLICY P
+        ON P.CMPNY_CD             = U.CMPNY_CD
+       AND P.USE_YN               = 'Y'
+       AND P.AXIS7_USE_PROMOTION  = 'Y'
+      JOIN (
+            SELECT
+                  G1.GRANT_ID
+                , G1.AVAIL_TO_DATE
+              FROM TB_USER_LEAVE_GRANT G1
+             WHERE G1.CMPNY_CD   = #{cmpnyCd}
+               AND G1.USER_CD    = #{userCd}
+               AND G1.GRANT_TYPE = 'STATUTORY_ANNUAL'
+               AND G1.STATUS     = 'ACTIVE'
+               AND G1.DEL_YN     = 'N'
+             ORDER BY G1.AVAIL_TO_DATE ASC, G1.GRANT_ID ASC
+             LIMIT 1
+           ) BASE
+      LEFT JOIN (
+            SELECT
+                  SUM(R.GRANT_DAYS - R.USED_DAYS) AS REMAINING_DAYS
+              FROM TB_USER_LEAVE_GRANT R
+             WHERE R.CMPNY_CD   = #{cmpnyCd}
+               AND R.USER_CD    = #{userCd}
+               AND R.GRANT_TYPE IN ('STATUTORY_ANNUAL', 'STATUTORY_TENURE_BONUS')
+               AND R.STATUS     = 'ACTIVE'
+               AND R.DEL_YN     = 'N'
+           ) REM
+        ON 1 = 1
+     WHERE U.CMPNY_CD       = #{cmpnyCd}
+       AND U.USER_CD        = #{userCd}
+       AND U.USE_YN         = 'Y'
+       AND U.ACCOUNT_STATUS = '01'
+       AND IFNULL(REM.REMAINING_DAYS, 0) <![CDATA[ > ]]> 0
+     LIMIT 1
+    </select>
+
+    <!--
+      촉진 진행 ID 채번. 'LP' + YYYYMMDD + 시퀀스. LeaveDashboardMapper.selectNextNotiId 패턴 동일.
+      SEQ_KEY 는 회사별 자동 INSERT(FNC_CMM_SEQ_NEXTVAL).
+    -->
+    <select id="selectNextPromoId" resultType="string">
+    /* LeavePromotionMapper.selectNextPromoId */
+    SELECT CONCAT('LP', DATE_FORMAT(NOW(), '%Y%m%d'), FNC_CMM_SEQ_NEXTVAL(#{cmpnyCd}, 'LEAVE_PROMOTION_ID'))
+      FROM DUAL
+    </select>
+
+    <!-- 촉진 진행 마스터 INSERT(멱등: UNIQUE(CMPNY_CD, DEDUP_KEY)). 중복 시 DuplicateKeyException 전파. -->
+    <insert id="insertPromotionLog" parameterType="com.prafta.common.cmm.leave.promotion.vo.PromotionLogInsertVO">
+    /* LeavePromotionMapper.insertPromotionLog */
+    INSERT INTO TB_LEAVE_PROMOTION_LOG (
+          PROMO_ID
+        , CMPNY_CD
+        , SITE_CD
+        , USER_CD
+        , BASE_GRANT_ID
+        , BASE_AVAIL_TO_DATE
+        , PROMO_STAGE
+        , NOTICED_DATE
+        , STAGE1_DESIGNATED_DAYS
+        , STAGE2_TARGET_DAYS
+        , STAGE2_DESIGNATED_DATE
+        , STATUS
+        , LOGIN_NOTIFIED_YN
+        , DEDUP_KEY
+        , DEL_YN
+        , INSERT_NO
+        , INSERT_DATE
+    )
+    VALUES (
+          #{promoId}
+        , #{cmpnyCd}
+        , #{siteCd}
+        , #{userCd}
+        , #{baseGrantId}
+        , #{baseAvailToDate}
+        , #{promoStage}
+        , #{noticedDate}
+        , IFNULL(#{stage1DesignatedDays}, 0.0)
+        , IFNULL(#{stage2TargetDays}, 0.0)
+        , #{stage2DesignatedDate}
+        , #{status}
+        , 'N'
+        , #{dedupKey}
+        , 'N'
+        , #{insertNo}
+        , NOW()
+    )
+    </insert>
+
+    <!-- 회차 멱등 사전 점검(DEDUP_KEY 기준). 1=이미 통지/지정됨. -->
+    <select id="countByDedupKey" resultType="int">
+    /* LeavePromotionMapper.countByDedupKey */
+    SELECT COUNT(1)
+      FROM TB_LEAVE_PROMOTION_LOG
+     WHERE CMPNY_CD  = #{cmpnyCd}
+       AND DEDUP_KEY = #{dedupKey}
+       AND DEL_YN    = 'N'
+    </select>
+
+    <!--
+      A-3/A-4 공용 — 촉진 연차 사용 1행 INSERT.
+      LeaveFlowMapper.insertLeaveUse 컬럼 미러 + 촉진 마커(PROMOTION_STAGE/DESIGNATOR_TYPE/ORIG_DESIGNATED_DATE).
+      REQ_ID 는 항상 NULL(직접 차감) → DIRECT_USE_KEY(USER|START_DATE|SYS_ANNUAL) 자동 생성 → UK 멱등.
+      시각/분(START_TIME/END_TIME/LEAVE_MINUTES)·증빙은 종일 촉진이라 미사용(컬럼 NULL).
+    -->
+    <insert id="insertPromotionLeaveUse" parameterType="com.prafta.common.cmm.leave.promotion.vo.PromotionLeaveUseInsertVO">
+    /* LeavePromotionMapper.insertPromotionLeaveUse */
+    INSERT INTO TB_USER_LEAVE_USE (
+          LEAVE_ID
+        , CMPNY_CD
+        , SITE_CD
+        , USER_CD
+        , LEAVE_CD
+        , REQ_ID
+        , GRANT_ID
+        , START_DATE
+        , END_DATE
+        , USE_UNIT_TYPE
+        , LEAVE_DAYS
+        , LEAVE_REASON
+        , LEAVE_STATUS
+        , PROMOTION_STAGE
+        , DESIGNATOR_TYPE
+        , ORIG_DESIGNATED_DATE
+        , DEL_YN
+        , INSERT_NO
+        , INSERT_DATE
+    )
+    VALUES (
+          #{leaveId}
+        , #{cmpnyCd}
+        , #{siteCd}
+        , #{userCd}
+        , #{leaveCd}
+        , NULL
+        , #{grantId}
+        , #{startDate}
+        , #{endDate}
+        , #{useUnitType}
+        , #{leaveDays}
+        , #{leaveReason}
+        , #{leaveStatus}
+        , #{promotionStage}
+        , #{designatorType}
+        , #{origDesignatedDate}
+        , 'N'
+        , #{insertNo}
+        , NOW()
+    )
+    </insert>
+
+    <!-- 1차 자발 지정 일수 스냅샷 누적(앱 계획서 제출분). FIRST 회차 마스터 행에 가산. -->
+    <update id="addStage1DesignatedDays">
+    /* LeavePromotionMapper.addStage1DesignatedDays */
+    UPDATE TB_LEAVE_PROMOTION_LOG
+       SET STAGE1_DESIGNATED_DAYS = STAGE1_DESIGNATED_DAYS + #{addDays}
+         , UPDATE_NO   = #{operatorNo}
+         , UPDATE_DATE = NOW()
+     WHERE CMPNY_CD    = #{cmpnyCd}
+       AND DEDUP_KEY   = #{dedupKey}
+       AND PROMO_STAGE = 'FIRST'
+       AND DEL_YN      = 'N'
+    </update>
+
+    <!--
+      2차 직권지정 회차 마스터 갱신(STATUS=DESIGNATED, 지정일 기록). 없으면 0행(서비스가 INSERT).
+      STAGE2_TARGET_DAYS 는 스케줄러가 도래 시 기록한 불변 스냅샷(2차 대상 잔여)이라 갱신하지 않는다
+      (직권지정 누적 가산 시 잔여보다 부풀려져 cap/표시 오염 → H1 수정).
+    -->
+    <update id="markStage2Designated">
+    /* LeavePromotionMapper.markStage2Designated */
+    UPDATE TB_LEAVE_PROMOTION_LOG
+       SET STATUS                 = 'DESIGNATED'
+         , STAGE2_DESIGNATED_DATE = #{designatedDate}
+         , UPDATE_NO   = #{operatorNo}
+         , UPDATE_DATE = NOW()
+     WHERE CMPNY_CD    = #{cmpnyCd}
+       AND DEDUP_KEY   = #{dedupKey}
+       AND PROMO_STAGE = 'SECOND'
+       AND DEL_YN      = 'N'
+    </update>
+
+    <!--
+      앱 1차 계획서 진행 컨텍스트(진행 중 1차 촉진 1건). 미해당 시 0행→null.
+      게이트: AXIS7='Y' 회사 + 활성 계정 + ACTIVE STATUTORY_ANNUAL 보유 + 잔여>0
+              + FIRST 마스터(STATUS IN ('NOTICED','COMPLETED')) 존재(=1차 통지됨).
+      BASE = 본연차 ACTIVE 중 가장 임박한 AVAIL_TO_DATE 1건. grantedDays/remainingDays = 본연차+근속가산 합.
+    -->
+    <select id="selectActiveFirstContext" resultType="com.prafta.common.cmm.leave.promotion.vo.PromotionActiveContextVO">
+    /* LeavePromotionMapper.selectActiveFirstContext */
+    SELECT
+          U.CMPNY_CD                        AS cmpnyCd
+        , U.SITE_CD                         AS siteCd
+        , U.USER_CD                         AS userCd
+        , BASE.GRANT_ID                     AS baseGrantId
+        , BASE.AVAIL_TO_DATE                AS baseAvailToDate
+        , IFNULL(REM.GRANTED_DAYS, 0)       AS grantedDays
+        , IFNULL(REM.REMAINING_DAYS, 0)     AS remainingDays
+        , M.LOGIN_NOTIFIED_YN               AS loginNotifiedYn
+      FROM TB_USER U
+      JOIN TB_LEAVE_POLICY P
+        ON P.CMPNY_CD             = U.CMPNY_CD
+       AND P.USE_YN               = 'Y'
+       AND P.AXIS7_USE_PROMOTION  = 'Y'
+      JOIN (
+            SELECT
+                  G1.GRANT_ID
+                , G1.AVAIL_TO_DATE
+              FROM TB_USER_LEAVE_GRANT G1
+             WHERE G1.CMPNY_CD   = #{cmpnyCd}
+               AND G1.USER_CD    = #{userCd}
+               AND G1.GRANT_TYPE = 'STATUTORY_ANNUAL'
+               AND G1.STATUS     = 'ACTIVE'
+               AND G1.DEL_YN     = 'N'
+             ORDER BY G1.AVAIL_TO_DATE ASC, G1.GRANT_ID ASC
+             LIMIT 1
+           ) BASE
+      LEFT JOIN (
+            SELECT
+                  SUM(R.GRANT_DAYS)                AS GRANTED_DAYS
+                , SUM(R.GRANT_DAYS - R.USED_DAYS)  AS REMAINING_DAYS
+              FROM TB_USER_LEAVE_GRANT R
+             WHERE R.CMPNY_CD   = #{cmpnyCd}
+               AND R.USER_CD    = #{userCd}
+               AND R.GRANT_TYPE IN ('STATUTORY_ANNUAL', 'STATUTORY_TENURE_BONUS')
+               AND R.STATUS     = 'ACTIVE'
+               AND R.DEL_YN     = 'N'
+           ) REM
+        ON 1 = 1
+      JOIN TB_LEAVE_PROMOTION_LOG M
+        ON M.CMPNY_CD          = U.CMPNY_CD
+       AND M.USER_CD           = U.USER_CD
+       AND M.PROMO_STAGE       = 'FIRST'
+       AND M.BASE_AVAIL_TO_DATE = BASE.AVAIL_TO_DATE
+       AND M.STATUS IN ('NOTICED', 'COMPLETED')
+       AND M.DEL_YN            = 'N'
+     WHERE U.CMPNY_CD       = #{cmpnyCd}
+       AND U.USER_CD        = #{userCd}
+       AND U.USE_YN         = 'Y'
+       AND U.ACCOUNT_STATUS = '01'
+       AND IFNULL(REM.REMAINING_DAYS, 0) <![CDATA[ > ]]> 0
+     LIMIT 1
+    </select>
+
+    <!--
+      사용자의 촉진 등록 연차일(FIRST/SECOND, CONFIRMED). 기준 회차(본연차 ACTIVE 만료일) 안 등록분만.
+      앱 active 응답의 "이미 등록된 연차일" + 웹 designate 중복 표시. START_DATE 오름차순.
+    -->
+    <select id="selectMyPromotionLeaveDates" resultType="string">
+    /* LeavePromotionMapper.selectMyPromotionLeaveDates */
+    SELECT LU.START_DATE
+      FROM TB_USER_LEAVE_USE LU
+     WHERE LU.CMPNY_CD        = #{cmpnyCd}
+       AND LU.USER_CD         = #{userCd}
+       AND LU.LEAVE_CD        = 'SYS_ANNUAL'
+       AND LU.LEAVE_STATUS    = 'CONFIRMED'
+       AND LU.DEL_YN          = 'N'
+       AND LU.PROMOTION_STAGE IN ('FIRST', 'SECOND')
+     ORDER BY LU.START_DATE ASC
+    </select>
+
+    <!-- 앱 로그인 안내 1회 노출 완료 플래그 갱신(진행 중 FIRST 마스터, 확정-3). -->
+    <update id="markLoginNotified">
+    /* LeavePromotionMapper.markLoginNotified */
+    UPDATE TB_LEAVE_PROMOTION_LOG
+       SET LOGIN_NOTIFIED_YN = 'Y'
+         , UPDATE_NO   = #{operatorNo}
+         , UPDATE_DATE = NOW()
+     WHERE CMPNY_CD    = #{cmpnyCd}
+       AND USER_CD     = #{userCd}
+       AND PROMO_STAGE = 'FIRST'
+       AND STATUS IN ('NOTICED', 'COMPLETED')
+       AND DEL_YN      = 'N'
+    </update>
+
+    <!-- 해당 일자 근무 스케줄(work_plan) 존재 카운트(교대자 등록 허용 판정). 1=근무일 존재. -->
+    <select id="countWorkPlanDay" resultType="int">
+    /* LeavePromotionMapper.countWorkPlanDay */
+    SELECT COUNT(1)
+      FROM TB_USER_WORK_PLAN WP
+     WHERE WP.CMPNY_CD = #{cmpnyCd}
+       AND WP.SITE_CD  = #{siteCd}
+       AND WP.USER_CD  = #{userCd}
+       AND WP.WORK_YMD = #{workYmd}
+    </select>
+
+    <!-- AppLeaveFlowMapper.countAttendanceByDate 미러(§9.4 상호배제 게이트, B-M1) -->
+    <select id="countAttendanceOn" resultType="int">
+    /* LeavePromotionMapper.countAttendanceOn */
+    SELECT COUNT(1)
+      FROM TB_USER_ATTD_MGMT A
+     WHERE A.CMPNY_CD = #{cmpnyCd}
+       AND A.SITE_CD  = #{siteCd}
+       AND A.USER_CD  = #{userCd}
+       AND A.WORK_YMD = #{workYmd}
+       AND A.DEL_YN   = 'N'
+    </select>
+
+</mapper>

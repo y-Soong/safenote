@@ -174,6 +174,130 @@
 	  </if>
     </select>
     
+    <select id="selectLeaveOverlayList" parameterType="com.prafta.web.attd.attd05.application.query.UserWorkPlansQuery" resultType="com.prafta.web.attd.attd05.result.LeaveOverlayResult">
+    /* Attd05Mapper.selectLeaveOverlayList */
+    /* prafta-com-008-E-6: 그리드 연차 오버레이.
+       조회월의 각 일자에 대해, 조회 스코프(노드트리/사업장/사용자명) 사용자의
+       종일 확정 연차(leave_use START_DATE~END_DATE 구간 포함)를 (userCd, workYmd, leaveCd) 로 펼쳐 반환한다.
+       work_plan 의 코드(SCH_CD)와 무관하게 셀의 "연차" 표시 단일 출처(E-2). */
+    WITH RECURSIVE
+        date_range AS (
+            SELECT STR_TO_DATE(CONCAT(REPLACE(#{workYm}, '-', ''), '01'), '%Y%m%d') AS dt
+            UNION ALL
+            SELECT DATE_ADD(dt, INTERVAL 1 DAY)
+            FROM date_range
+            WHERE DATE_ADD(dt, INTERVAL 1 DAY) <![CDATA[ <= ]]> LAST_DAY(STR_TO_DATE(CONCAT(REPLACE(#{workYm}, '-', ''), '01'), '%Y%m%d'))
+        ),
+        node_tree AS (
+            SELECT N.CMPNY_CD, N.SITE_CD, N.NODE_CD
+            FROM TB_SITE_NODE N
+            WHERE N.CMPNY_CD = #{gvCmpnyCd}
+              AND N.SITE_CD  = #{siteCd}
+              AND N.NODE_CD  = #{nodeCd}
+
+            UNION ALL
+
+            SELECT C.CMPNY_CD, C.SITE_CD, C.NODE_CD
+            FROM TB_SITE_NODE C
+            INNER JOIN node_tree P
+                ON C.CMPNY_CD = P.CMPNY_CD
+               AND C.SITE_CD  = P.SITE_CD
+               AND C.PARENT_NODE_CD = P.NODE_CD
+        )
+    SELECT
+          U.USER_CD                          AS userCd
+        , DATE_FORMAT(d.dt, '%Y%m%d')        AS workYmd
+        , L.LEAVE_CD                         AS leaveCd
+        , L.LEAVE_ID                         AS leaveId
+    FROM date_range d
+    INNER JOIN TB_USER_LEAVE_USE L
+        ON L.CMPNY_CD      = #{gvCmpnyCd}
+       AND L.LEAVE_STATUS  = 'CONFIRMED'
+       AND L.DEL_YN        = 'N'
+       AND L.USE_UNIT_TYPE = '00'
+       AND DATE_FORMAT(d.dt, '%Y%m%d') <![CDATA[ >= ]]> L.START_DATE
+       AND DATE_FORMAT(d.dt, '%Y%m%d') <![CDATA[ <= ]]> L.END_DATE
+    INNER JOIN TB_USER U
+        ON U.CMPNY_CD = L.CMPNY_CD
+       AND U.USER_CD  = L.USER_CD
+    INNER JOIN node_tree B
+        ON U.CMPNY_CD = B.CMPNY_CD
+       AND U.SITE_CD  = B.SITE_CD
+       AND U.NODE_CD  = B.NODE_CD
+    WHERE U.SITE_CD = #{siteCd}
+      AND U.ACCOUNT_STATUS != '03'
+      <if test="userNm != null and userNm != ''">
+        AND U.USER_NM LIKE CONCAT('%', #{userNm}, '%')
+      </if>
+      <if test='"N".equals(incSubNodeYn)'>
+        AND U.NODE_CD = #{nodeCd}
+      </if>
+    </select>
+
+    <select id="selectShiftLockOverlayList" parameterType="com.prafta.web.attd.attd05.application.query.UserWorkPlansQuery" resultType="com.prafta.web.attd.attd05.result.ShiftLockOverlayResult">
+    /* Attd05Mapper.selectShiftLockOverlayList */
+    /* prafta-com-008-D-5: 그리드 교대 잠금 오버레이.
+       조회월의 각 일자에 대해, 조회 스코프(노드트리/사업장/사용자명) 사용자가
+       교대팀 소속 구간(잠금)에 드는 (userCd, workYmd) 를 펼쳐 반환한다.
+       ★ 판정 술어는 ShiftMembershipMapper.countShiftMembershipOn(D-1) 과 동일:
+         - 팀 마스터(TM) STR_DATE inclusive ~ END_DATE inclusive(NULL=개방경계).
+         - 멤버십 행(TU) 존재 ∩ 탈퇴일 미포함(LEAVE_TEAM_YMD IS NULL OR LEAVE_TEAM_YMD > 그 날).
+       (단일출처 표류 방지를 위해 동일 경계 규칙을 그리드 월 범위로 펼친 형태만 사용한다.) */
+    WITH RECURSIVE
+        date_range AS (
+            SELECT STR_TO_DATE(CONCAT(REPLACE(#{workYm}, '-', ''), '01'), '%Y%m%d') AS dt
+            UNION ALL
+            SELECT DATE_ADD(dt, INTERVAL 1 DAY)
+            FROM date_range
+            WHERE DATE_ADD(dt, INTERVAL 1 DAY) <![CDATA[ <= ]]> LAST_DAY(STR_TO_DATE(CONCAT(REPLACE(#{workYm}, '-', ''), '01'), '%Y%m%d'))
+        ),
+        node_tree AS (
+            SELECT N.CMPNY_CD, N.SITE_CD, N.NODE_CD
+            FROM TB_SITE_NODE N
+            WHERE N.CMPNY_CD = #{gvCmpnyCd}
+              AND N.SITE_CD  = #{siteCd}
+              AND N.NODE_CD  = #{nodeCd}
+
+            UNION ALL
+
+            SELECT C.CMPNY_CD, C.SITE_CD, C.NODE_CD
+            FROM TB_SITE_NODE C
+            INNER JOIN node_tree P
+                ON C.CMPNY_CD = P.CMPNY_CD
+               AND C.SITE_CD  = P.SITE_CD
+               AND C.PARENT_NODE_CD = P.NODE_CD
+        )
+    SELECT DISTINCT
+          U.USER_CD                          AS userCd
+        , DATE_FORMAT(d.dt, '%Y%m%d')        AS workYmd
+    FROM date_range d
+    INNER JOIN TB_USER U
+        ON U.CMPNY_CD = #{gvCmpnyCd}
+       AND U.SITE_CD  = #{siteCd}
+    INNER JOIN node_tree B
+        ON U.CMPNY_CD = B.CMPNY_CD
+       AND U.SITE_CD  = B.SITE_CD
+       AND U.NODE_CD  = B.NODE_CD
+    INNER JOIN TB_SHIFT_SCH_TEAM_USER TU
+        ON TU.CMPNY_CD = U.CMPNY_CD
+       AND TU.USER_CD  = U.USER_CD
+    INNER JOIN TB_SHIFT_SCH_TEAM_MGMT TM
+        ON TM.CMPNY_CD      = TU.CMPNY_CD
+       AND TM.SITE_CD       = TU.SITE_CD
+       AND TM.SHIFT_CD      = TU.SHIFT_CD
+       AND TM.SHIFT_TEAM_ID = TU.SHIFT_TEAM_ID
+    WHERE U.ACCOUNT_STATUS != '03'
+      AND (TM.STR_DATE IS NULL OR TM.STR_DATE <![CDATA[ <= ]]> DATE_FORMAT(d.dt, '%Y%m%d'))
+      AND (TM.END_DATE IS NULL OR TM.END_DATE <![CDATA[ >= ]]> DATE_FORMAT(d.dt, '%Y%m%d'))
+      AND (TU.LEAVE_TEAM_YMD IS NULL OR TU.LEAVE_TEAM_YMD <![CDATA[ > ]]> DATE_FORMAT(d.dt, '%Y%m%d'))
+      <if test="userNm != null and userNm != ''">
+        AND U.USER_NM LIKE CONCAT('%', #{userNm}, '%')
+      </if>
+      <if test='"N".equals(incSubNodeYn)'>
+        AND U.NODE_CD = #{nodeCd}
+      </if>
+    </select>
+
     <select id="selectSchTypeList" parameterType="com.prafta.web.attd.attd05.application.query.SchListQuery" resultType="com.prafta.web.attd.attd05.result.SchTypeResult">
     /* Attd05Mapper.selectSchList */
     SELECT
@@ -349,4 +473,170 @@
       AND USER_CD  = #{userCd}
       AND WORK_YMD = #{workYmd}
     </delete>
+
+    <!-- prafta-com-008-E-6: 대상 사용자 기본 근무타입(DEFAULT_SCH_CD). 미설정이면 null. -->
+    <select id="selectUserDefaultSchCd" resultType="string">
+    /* Attd05Mapper.selectUserDefaultSchCd */
+    SELECT U.DEFAULT_SCH_CD
+      FROM TB_USER U
+     WHERE U.CMPNY_CD = #{cmpnyCd}
+       AND U.USER_CD  = #{userCd}
+     LIMIT 1
+    </select>
+
+    <!-- prafta-com-008-E-6: 해당 셀(사용자+근무일)에 종일 확정 연차(leave_use) 존재 카운트(셀 비우기 판정). -->
+    <select id="countFullDayLeaveUseOnCell" resultType="int">
+    /* Attd05Mapper.countFullDayLeaveUseOnCell */
+    SELECT COUNT(*)
+      FROM TB_USER_LEAVE_USE U
+     WHERE U.CMPNY_CD      = #{cmpnyCd}
+       AND U.USER_CD       = #{userCd}
+       AND U.LEAVE_STATUS  = 'CONFIRMED'
+       AND U.DEL_YN        = 'N'
+       AND U.USE_UNIT_TYPE = '00'
+       AND U.START_DATE   &lt;= #{workYmd}
+       AND U.END_DATE     &gt;= #{workYmd}
+    </select>
+
+    <!-- prafta-com-008-E-6: 셀 비우기 취소 대상 직접(REQ_ID NULL) 종일 연차의 LEAVE_CD 1건. 없으면 null. -->
+    <select id="selectDirectFullDayLeaveCdOnCell" resultType="string">
+    /* Attd05Mapper.selectDirectFullDayLeaveCdOnCell */
+    SELECT U.LEAVE_CD
+      FROM TB_USER_LEAVE_USE U
+     WHERE U.CMPNY_CD      = #{cmpnyCd}
+       AND U.USER_CD       = #{userCd}
+       AND U.START_DATE    = #{workYmd}
+       AND U.REQ_ID IS NULL
+       AND U.LEAVE_STATUS  = 'CONFIRMED'
+       AND U.DEL_YN        = 'N'
+       AND U.USE_UNIT_TYPE = '00'
+     LIMIT 1
+    </select>
+
+    <!--
+      prafta-com-008-E (M2): 해당 셀(사용자+근무일)에 승인기반(REQ_ID NOT NULL) 종일(USE_UNIT_TYPE='00')
+        확정 연차가 존재하는지 LEAVE_CD 1건 조회. 존재하면 셀 비우기로 직접 삭제할 수 없고
+        연차 변경/삭제 요청(C attd13 동의흐름)을 이용해야 하므로 비우기에서 skip 대상이다.
+        직접 연차(REQ_ID IS NULL)는 selectDirectFullDayLeaveCdOnCell 로 별도 즉시 취소된다.
+    -->
+    <select id="selectApprovedFullDayLeaveCdOnCell" resultType="string">
+    /* Attd05Mapper.selectApprovedFullDayLeaveCdOnCell */
+    SELECT U.LEAVE_CD
+      FROM TB_USER_LEAVE_USE U
+     WHERE U.CMPNY_CD      = #{cmpnyCd}
+       AND U.USER_CD       = #{userCd}
+       AND U.START_DATE    = #{workYmd}
+       AND U.REQ_ID IS NOT NULL
+       AND U.LEAVE_STATUS  = 'CONFIRMED'
+       AND U.DEL_YN        = 'N'
+       AND U.USE_UNIT_TYPE = '00'
+     LIMIT 1
+    </select>
+
+    <!--
+      prafta-com-008-B-5(D-E8): 해당 셀(사용자+근무일)에 종일(USE_UNIT_TYPE='00') 확정 연차가 존재하면
+        LEAVE_CD 1건 반환(REQ_ID 무관 — 직접/승인 모두). 전면 동의 원칙에 따라 연차 등록일 셀은
+        일괄 비우기로 삭제할 수 없으므로 skip 판정에 사용한다. 그리드 오버레이(selectLeaveOverlayList)와
+        동일하게 START_DATE~END_DATE 구간 포함으로 판정한다(다일 연차의 중간 일자 셀도 보호).
+    -->
+    <select id="selectFullDayLeaveCdOnCell" resultType="string">
+    /* Attd05Mapper.selectFullDayLeaveCdOnCell */
+    SELECT U.LEAVE_CD
+      FROM TB_USER_LEAVE_USE U
+     WHERE U.CMPNY_CD      = #{cmpnyCd}
+       AND U.USER_CD       = #{userCd}
+       AND U.LEAVE_STATUS  = 'CONFIRMED'
+       AND U.DEL_YN        = 'N'
+       AND U.USE_UNIT_TYPE = '00'
+       AND U.START_DATE   &lt;= #{workYmd}
+       AND U.END_DATE     &gt;= #{workYmd}
+     LIMIT 1
+    </select>
+
+    <!--
+      해당 셀(사용자+근무일)에 근무 스케줄(SCH 배정)이 존재하는지 카운트 — 연차 적용 가드.
+      "스케줄 있음" = TB_USER_WORK_PLAN 행이 있고 그 WORK_PLAN_CD 가 TB_SCH_MGMT 의 실제
+      근무타입(SCH_CD)인 경우. WORK_PLAN_CD 가 연차코드(LEAVE_CD)이거나 행 자체가 없으면 0.
+      빈 셀(근무 스케줄 미배정)에는 연차를 적용할 수 없으므로 0 이면 연차 적용을 거부(스킵)한다.
+      (E-6 모델: 이미 연차가 적용된 셀도 DEFAULT_SCH_CD 가 work_plan 에 들어가 SCH 로 잡히므로
+       연차 멱등 재적용은 자연 허용된다.)
+    -->
+    <select id="countUserWorkPlanSchedule" resultType="int">
+    /* Attd05Mapper.countUserWorkPlanSchedule */
+    SELECT COUNT(1)
+      FROM TB_USER_WORK_PLAN WP
+     INNER JOIN TB_SCH_MGMT SM
+        ON SM.CMPNY_CD = WP.CMPNY_CD
+       AND SM.SITE_CD  = WP.SITE_CD
+       AND SM.SCH_CD   = WP.WORK_PLAN_CD
+     WHERE WP.CMPNY_CD = #{cmpnyCd}
+       AND WP.SITE_CD  = #{siteCd}
+       AND WP.USER_CD  = #{userCd}
+       AND WP.WORK_YMD = #{workYmd}
+    </select>
+
+    <!--
+      해당 셀(사용자+근무일) 초과근무 보유 카운트 — 스케줄 변경 차단 판정.
+      등록 초과근무(tb_user_overtime_mgmt, 취소 제외) + 초과근무 신청(tb_user_attd_req 03/04, 상태 신청/승인).
+      합산 카운트(>0 이면 차단). #{} 바인딩.
+    -->
+    <select id="countDayOvertime" resultType="int">
+    /* Attd05Mapper.countDayOvertime */
+    SELECT (
+             (
+               SELECT COUNT(1)
+                 FROM TB_USER_OVERTIME_MGMT OM
+                WHERE OM.CMPNY_CD = #{cmpnyCd}
+                  AND OM.SITE_CD  = #{siteCd}
+                  AND OM.USER_CD  = #{userCd}
+                  AND OM.WORK_YMD = #{workYmd}
+                  AND OM.DEL_YN   = 'N'
+                  AND OM.OT_STATUS &lt;&gt; 'CANCELLED'
+             )
+             +
+             (
+               SELECT COUNT(1)
+                 FROM TB_USER_ATTD_REQ RQ
+                WHERE RQ.CMPNY_CD = #{cmpnyCd}
+                  AND RQ.SITE_CD  = #{siteCd}
+                  AND RQ.USER_CD  = #{userCd}
+                  AND RQ.WORK_YMD = #{workYmd}
+                  AND RQ.DEL_YN   = 'N'
+                  AND RQ.REQ_TYPE IN ('03', '04')
+                  AND RQ.REQ_STATUS IN ('01', '02')
+             )
+           ) AS OT_CNT
+    </select>
+
+    <!--
+      해당 월(YYYYMM) 초과근무 보유 카운트 — 월 단위 근무계획 삭제 차단 판정.
+      등록 초과근무(취소 제외) + 초과근무 신청(03/04, 상태 신청/승인). WORK_YMD 앞 6자리(LEFT)로 월 매칭.
+    -->
+    <select id="countMonthOvertime" resultType="int">
+    /* Attd05Mapper.countMonthOvertime */
+    SELECT (
+             (
+               SELECT COUNT(1)
+                 FROM TB_USER_OVERTIME_MGMT OM
+                WHERE OM.CMPNY_CD = #{cmpnyCd}
+                  AND OM.SITE_CD  = #{siteCd}
+                  AND OM.USER_CD  = #{userCd}
+                  AND LEFT(OM.WORK_YMD, 6) = #{workYm}
+                  AND OM.DEL_YN   = 'N'
+                  AND OM.OT_STATUS &lt;&gt; 'CANCELLED'
+             )
+             +
+             (
+               SELECT COUNT(1)
+                 FROM TB_USER_ATTD_REQ RQ
+                WHERE RQ.CMPNY_CD = #{cmpnyCd}
+                  AND RQ.SITE_CD  = #{siteCd}
+                  AND RQ.USER_CD  = #{userCd}
+                  AND LEFT(RQ.WORK_YMD, 6) = #{workYm}
+                  AND RQ.DEL_YN   = 'N'
+                  AND RQ.REQ_TYPE IN ('03', '04')
+                  AND RQ.REQ_STATUS IN ('01', '02')
+             )
+           ) AS OT_CNT
+    </select>
 </mapper>

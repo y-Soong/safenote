@@ -98,6 +98,7 @@ import { useRouter } from 'vue-router'
 
 import api from '@/api/axios'
 import { resolveApiErrorMessage } from '@/utils/apiError'
+import { isDailyWorker } from '@/utils/employment'
 
 import RequestFilterBar from './components/RequestFilterBar.vue'
 import RequestCard from './components/RequestCard.vue'
@@ -337,6 +338,13 @@ const onCardClick = () => {
 // 라이프사이클
 // ───────────────────────────────────────────────────────────
 onMounted(async () => {
+  // prafta-app-025 J1-4: 일용직(DAILY)은 근태 요청/승인요청 대상이 아님 → 직접 진입 방어.
+  //   정상 동선(메인 근태조회 카드 onApprovalClick)은 이미 숨겨졌으나 딥링크/직접 URL 진입을 차단한다.
+  if (isDailyWorker()) {
+    showAlert('일용직 사용자는 근태 조회 대상이 아닙니다.')
+    router.replace('/MainView')
+    return
+  }
   await loadPage(false)
   await nextTick()
   setupInfiniteScroll()

@@ -31,16 +31,17 @@
           <!-- 자료타입 (필수) -->
           <div class="form-row">
             <label>자료타입 <span class="req">*</span></label>
-            <!-- TODO(developer): /webApi/notice02/archive-types 결과를 archiveTypeList 에 바인딩.
-                 코드그룹(BAIM_VAL_CD) 미주입 시 빈 목록 → 선택 불가(서버도 필수 재검증). -->
+            <!-- 자료타입 = 공통코드 COM008 (tb_baim_val_d) 재사용. 서버도 필수 재검증. -->
             <select v-model="formData.archiveTypeCd" name="combo" class="type-select">
-              <option value="">자료타입을 선택해 주세요</option>
+              <!-- 등록 폼에는 "전체"(빈값) 옵션을 두지 않는다. 안내 placeholder 만 두되
+                   disabled+hidden 으로 빈값 재선택을 막는다(미선택 저장은 fnSave + 서버가 이중 차단). -->
+              <option value="" disabled hidden>자료타입을 선택해 주세요</option>
               <option
                 v-for="t in archiveTypeList"
-                :key="t.archiveTypeCd"
-                :value="t.archiveTypeCd"
+                :key="t.baimValDCd"
+                :value="t.baimValDCd"
               >
-                {{ t.archiveTypeNm }}
+                {{ t.baimValDNm }}
               </option>
             </select>
           </div>
@@ -187,7 +188,7 @@ const fileInputRef = ref(null);
 // 저장/업로드 진행 중 플래그(중복 제출 방지)
 const saving = ref(false);
 
-// 자료타입 드롭다운 목록 (archive-types API 로 채움)
+// 자료타입 드롭다운 목록 (공통코드 COM008 로 채움 — baimValDCd/baimValDNm)
 const archiveTypeList = ref([]);
 
 // 비밀번호/비밀번호 확인 일치 여부 (오타 방지 즉시 피드백)
@@ -199,12 +200,19 @@ onMounted(async () => {
   await fnLoadArchiveTypes();
 });
 
-// 자료타입 드롭다운 조회 (코드그룹 BAIM_VAL_CD 미주입 시 빈 목록)
+// 자료타입 드롭다운 조회 — 공통코드 COM008(tb_baim_val_d) 재사용
 const fnLoadArchiveTypes = async () => {
   try {
-    const response = await axios.get("/webApi/notice02/archive-types");
+    const response = await axios.get("/comApi/baseinfo/base-info-lists", {
+      params: {
+        cmpnyCd: sessionStorage.getItem("gv_cmpnyCd"),
+        baseCodeList: ["COM008"],
+      },
+    });
     if (response.status === 200) {
-      archiveTypeList.value = response.data?.typeList || [];
+      // base-info-lists 는 여러 코드그룹을 평면 배열로 반환 → COM008 만 필터링
+      const list = response.data?.baseInfoList || [];
+      archiveTypeList.value = list.filter((item) => item.baimValCd === "COM008");
     }
   } catch (err) {
     const msg = resolveApiErrorMessage(

@@ -251,11 +251,21 @@
                     ? 'td-holiday'
                     : '',
                   isCellSelected(rowIdx, d.workYmd) ? 'td-selected' : '',
+                  isLeaveCell(user.userCd, d.workYmd) ? 'td-leave' : '',
+                  isShiftLockedCell(user.userCd, d.workYmd) ? 'is-shift-locked' : '',
                   ...getSelEdgeClasses(rowIdx, d.workYmd),
                 ]"
+                :title="
+                  isShiftLockedCell(user.userCd, d.workYmd)
+                    ? '교대근무팀 소속 기간입니다. 교대패턴 자동 생성으로만 설정되며, 연차는 사용할 수 있습니다.'
+                    : isLeaveCell(user.userCd, d.workYmd)
+                    ? '연차 등록일입니다. 더블클릭하면 연차 변경/삭제 요청을 할 수 있습니다.'
+                    : null
+                "
                 @mousedown.prevent="onCellDown(rowIdx, d.workYmd)"
                 @mousemove="onCellMove(rowIdx, d.workYmd)"
                 @mouseup="onCellUp"
+                @dblclick="fnOpenLeaveChangeRequest(rowIdx, d.workYmd)"
               >
                 <span
                   class="td-val"
@@ -299,6 +309,7 @@ import SiteSearchPop from "@/components/popup/SiteSearchPop.vue";
 import SiteNodeSearchPop from "@/components/popup/SiteNodeSearchPop.vue";
 import CalendarSrchMonth from "@/components/common/CalendarSrchMonth.vue";
 import ExcelUploadPop from "@/views/attd/popup/ExcelUploadPop.vue";
+import LeaveChangeRequestPop from "@/views/attd/popup/LeaveChangeRequestPop.vue";
 import ThSortable from "@/components/common/ThSortable.vue";
 import {
   useTableSort,
@@ -312,7 +323,7 @@ const props = defineProps({
 });
 
 const { proxy } = getCurrentInstance();
-const { open: openPop } = useModal();
+const { open: openPop, close: closePop } = useModal();
 
 const localButtons = ref({ ...props.buttons });
 
@@ -361,6 +372,16 @@ const { colWidths, onResize } = useColumnResize({ userInfo: 210 });
 
 // ── 셀 데이터: key = `${userCd}_${day}`, value = 표시문자열 ─
 const scheduleData = ref({});
+
+// prafta-com-008-E-6: 연차 오버레이. key = `${userCd}_${workYmd}`, value = { leaveCd, leaveId }(종일 CONFIRMED).
+//   work_plan(SCH_CD) 위에 "연차" 표시를 덮는 단일 출처(모델 전환). 조회 응답으로만 갱신(저장 미관여).
+//   prafta-com-008-B-7(D-E8): 연차 셀 개별 동의요청(attd13 DELETE) 진입을 위해 leaveId 를 함께 보관한다.
+const leaveOverlay = ref({});
+
+// prafta-com-008-D-5: 교대 잠금 오버레이. key = `${userCd}_${workYmd}` 가 true 면 교대팀 소속 구간(SCH 잠금).
+//   교대 소속 구간의 일반 근무(SCH) 셀은 비활성/자물쇠 표시하고, 적용/비우기 대상에서 제외한다.
+//   연차 셀은 잠금 무관 활성(D-3 — 연차만 허용). 저장 차단의 최종 강제는 BE 가드(D-3, ATTD_400_160).
+const shiftLockOverlay = ref({});
 
 // ── baseline 스냅샷 (조회 직후 깊은 복사 — dirty 비교 기준) (PRAFTA-041) ──
 // 저장 시 scheduleData 와 비교해 실제 변경된 셀만 업서트/삭제로 분리 전송한다.
@@ -417,7 +438,18 @@ const getRowLabel = (idx) => {
 };
 
 // ── 셀 값 조회 (표시명 변환) ──────────────────────────
+// prafta-com-008-E-6: 연차-스케줄 모델 전환 — work_plan 에는 SCH_CD 가 유지되므로,
+//   "연차" 표시는 leave_use 오버레이(leaveOverlay)를 work_plan 표시보다 우선한다(단일 출처).
 const getCellNmValue = (userCd, workYmd) => {
+  // 1) 연차 오버레이 우선(종일 CONFIRMED). work_plan 의 SCH_CD 와 무관하게 "연차"로 렌더.
+  const overlay = leaveOverlay.value[`${userCd}_${workYmd}`];
+  const leaveCd = overlay?.leaveCd;
+  if (leaveCd) {
+    const leave = leaveTypeList.value.find((l) => l.leaveCd === leaveCd);
+    return leave ? leave.leaveNm : leaveCd;
+  }
+
+  // 2) 오버레이 없으면 work_plan 코드(SCH_CD, 레거시 LEAVE_CD 모두 대응).
   const code = scheduleData.value[`${userCd}_${workYmd}`];
   if (!code) return "";
 
@@ -434,6 +466,57 @@ const getCellNmValue = (userCd, workYmd) => {
 const getSchTypeNm = (schCd) => {
   const sch = schTypeList.value.find((s) => s.schCd === schCd);
   return sch ? sch.schNm : schCd;
+};
+
+// ── 연차 셀 여부(오버레이 보유) ────────────────────────────
+// prafta-com-008-B-7(D-E8): 셀에 종일 연차(leave_use CONFIRMED)가 덮여 있는지.
+//   true 인 셀은 "비우기" 대상이 아니라 동의요청(이동/삭제) 진입 대상이다.
+const isLeaveCell = (userCd, workYmd) =>
+  !!leaveOverlay.value[`${userCd}_${workYmd}`]?.leaveId;
+
+// ── 교대 잠금 셀 여부 (prafta-com-008-D-5) ────────────────────
+//   교대팀 소속 구간(BE shiftLockOverlay)인 셀. true 면 SCH 변경/비우기 비활성(자물쇠).
+//   단 연차 셀(isLeaveCell)은 잠금과 무관하게 활성 — 연차만 허용(D-3). 따라서 "연차가 아닌데 교대 잠금"일 때만 잠금 표시.
+const isShiftLockedCell = (userCd, workYmd) =>
+  !!shiftLockOverlay.value[`${userCd}_${workYmd}`] && !isLeaveCell(userCd, workYmd);
+
+// ── 연차 셀 더블클릭 → 연차 변경/삭제 동의요청 팝업(기존 LeaveChangeRequestPop 재사용) ──
+// prafta-com-008-B-7(D-E8): 연차 등록일은 "비우기"로 삭제할 수 없고, 셀 개별 진입으로
+//   attd13 동의요청(POST /webApi/attd13/change-requests)을 발의한다(이동/삭제는 팝업 내 선택).
+//   - 신규 팝업/동의 로직 작성 금지: 기존 LeaveChangeRequestPop(DELETE 지원) 을 그대로 연다.
+//   - TARGET_LEAVE_ID = 해당 셀 오버레이의 leaveId(B-5 응답으로 동반된 LEAVE_ID).
+//   - 드래그 선택(mousedown/up)과 충돌하지 않도록 더블클릭으로 진입한다.
+const fnOpenLeaveChangeRequest = (rowIdx, workYmd) => {
+  const user = sortedUserList.value[rowIdx];
+  if (!user) return;
+  const overlay = leaveOverlay.value[`${user.userCd}_${workYmd}`];
+  // 연차 오버레이(leaveId) 없는 셀은 동의요청 대상이 아님(일반 스케줄 셀).
+  if (!overlay?.leaveId) return;
+
+  const leave = leaveTypeList.value.find((l) => l.leaveCd === overlay.leaveCd);
+  // YYYYMMDD → YYYY-MM-DD (팝업 표시용).
+  const startDateDisplay =
+    workYmd && workYmd.length === 8
+      ? `${workYmd.slice(0, 4)}-${workYmd.slice(4, 6)}-${workYmd.slice(6, 8)}`
+      : workYmd;
+
+  openPop(LeaveChangeRequestPop, {
+    target: {
+      leaveId: overlay.leaveId,
+      userCd: user.userCd,
+      userNm: user.userNm,
+      startDate: startDateDisplay,
+      leaveNm: leave ? leave.leaveNm : overlay.leaveCd,
+      // 촉진단계명은 오버레이에 없음 → 팝업이 null 을 "비촉진"으로 표기(서버가 단계/권한 재검증).
+      promotionStageNm: null,
+    },
+    // 동의요청 등록 성공 시 팝업을 닫고 그리드 재조회(오버레이/스케줄 최신화).
+    //   LeaveChangeRequestPop 은 submitted 만 emit(자체 close 없음) → 부모가 close 후 재조회.
+    onSubmitted: () => {
+      closePop();
+      fnSearch();
+    },
+  });
 };
 
 // ── 근무타입(SCH_CD)×날짜 지정 가능 여부 검증 ───────────────
@@ -567,6 +650,8 @@ const fnApplySchType = async () => {
   const updatedUserCds = new Set();
   // 위반으로 스킵된 날짜를 사유별로 수집 (고지 문구용, 중복 제거)
   const skippedReasons = new Map();
+  // prafta-com-008-D-5: 교대 잠금으로 스킵된 셀 수(별도 안내).
+  let shiftLockedSkipCount = 0;
   for (let r = minRow; r <= maxRow; r++) {
     const user = userList.value[r];
     if (!user) continue;
@@ -578,6 +663,11 @@ const fnApplySchType = async () => {
         schHolidayMode.value === "exclude" &&
         (d.weekendYn === "Y" || d.holidayYn === "Y")
       ) {
+        continue;
+      }
+      // prafta-com-008-D-5: 교대팀 소속 구간 셀은 SCH 적용 불가(연차만 허용 — D-3). 스킵.
+      if (isShiftLockedCell(user.userCd, d.workYmd)) {
+        shiftLockedSkipCount++;
         continue;
       }
       // 근무타입 생성일·미사용 기간 검증 — 위반 시 해당 셀 스킵
@@ -597,11 +687,16 @@ const fnApplySchType = async () => {
     checkedRows.value = [...merged];
   }
   // 스킵된 셀이 있으면 사용자에게 고지
-  if (skippedReasons.size > 0) {
+  if (skippedReasons.size > 0 || shiftLockedSkipCount > 0) {
     const schNm = getSchTypeNm(selectedSchType.value);
-    const reasonText = [...skippedReasons.values()].join("\n");
+    const lines = [...skippedReasons.values()];
+    if (shiftLockedSkipCount > 0) {
+      lines.push(
+        `교대근무팀 소속 기간 ${shiftLockedSkipCount}건은 근무계획을 변경할 수 없습니다(연차만 사용 가능).`
+      );
+    }
     await proxy.$alert(
-      `'${schNm}' 근무타입을 지정할 수 없는 날짜가 있어 일부 셀은 제외되었습니다.\n${reasonText}`
+      `'${schNm}' 근무타입을 지정할 수 없는 날짜가 있어 일부 셀은 제외되었습니다.\n${lines.join("\n")}`
     );
   }
 };
@@ -623,6 +718,8 @@ const fnApplyLeaveType = async () => {
 
   const { minRow, maxRow, minDay, maxDay } = selectionRange.value;
   const updatedUserCds = new Set();
+  // 근무 스케줄(SCH)이 배정되지 않은 빈 셀로 인해 연차 적용에서 제외된 셀 수(안내용).
+  let noScheduleSkipCount = 0;
   for (let r = minRow; r <= maxRow; r++) {
     const user = userList.value[r];
     if (!user) continue;
@@ -636,7 +733,16 @@ const fnApplyLeaveType = async () => {
       ) {
         continue;
       }
-      scheduleData.value[`${user.userCd}_${d.workYmd}`] = leaveCd;
+      const cellKey = `${user.userCd}_${d.workYmd}`;
+      // 근무 스케줄(SCH 배정)이 없는 빈 셀에는 연차를 적용할 수 없다(사용자 요청).
+      //   "스케줄 있음" = 셀에 이미 연차가 적용되어 있거나(멱등 재적용 허용),
+      //   셀 값이 근무타입 코드(schTypeList 의 schCd)인 경우.
+      //   빈 값이거나 schCd/연차코드가 아닌 셀은 "스케줄 없음" → 스킵.
+      if (!hasWorkScheduleForLeave(user.userCd, d.workYmd)) {
+        noScheduleSkipCount++;
+        continue;
+      }
+      scheduleData.value[cellKey] = leaveCd;
       updatedUserCds.add(user.userCd);
     }
   }
@@ -644,6 +750,30 @@ const fnApplyLeaveType = async () => {
     const merged = new Set([...checkedRows.value, ...updatedUserCds]);
     checkedRows.value = [...merged];
   }
+  // 스케줄 없는 셀이 있어 일부(또는 전부) 제외된 경우 안내.
+  if (noScheduleSkipCount > 0) {
+    if (updatedUserCds.size === 0) {
+      await proxy.$alert(
+        "연차를 적용할 수 있는(근무 스케줄이 있는) 셀이 없습니다."
+      );
+    } else {
+      await proxy.$alert(
+        `근무 스케줄이 없는 ${noScheduleSkipCount}개 셀은 연차 적용에서 제외되었습니다.`
+      );
+    }
+  }
+};
+
+// ── 연차 적용 가능 여부(근무 스케줄 배정 셀) 판정 ─────────────
+// 빈 셀(근무 스케줄 미배정)에는 연차를 적용할 수 없다. true 이면 적용 허용.
+//   - 이미 연차 셀(leaveOverlay 보유): 멱등 재적용 무해 → 허용.
+//   - 현재 셀 값이 근무타입 코드(schTypeList 의 schCd): 근무 스케줄 있음 → 허용.
+//   - 빈 값 / schCd 도 연차코드도 아님: 근무 스케줄 없음 → 불허.
+const hasWorkScheduleForLeave = (userCd, workYmd) => {
+  if (isLeaveCell(userCd, workYmd)) return true;
+  const code = scheduleData.value[`${userCd}_${workYmd}`];
+  if (!code) return false;
+  return schTypeList.value.some((s) => s.schCd === code);
 };
 
 // ── 셀 비우기 (지우기) (PRAFTA-041) ──────────────────────────
@@ -661,6 +791,8 @@ const fnClearCells = async () => {
 
   const { minRow, maxRow, minDay, maxDay } = selectionRange.value;
   const updatedUserCds = new Set();
+  // prafta-com-008-D-5: 교대 잠금으로 비우기 스킵된 셀 수(별도 안내).
+  let shiftLockedSkipCount = 0;
   for (let r = minRow; r <= maxRow; r++) {
     const user = userList.value[r];
     if (!user) continue;
@@ -668,6 +800,12 @@ const fnClearCells = async () => {
       (d) => d.workYmd >= minDay && d.workYmd <= maxDay
     );
     for (const d of daysInRange) {
+      // prafta-com-008-D-5: 교대팀 소속 구간 셀은 비우기 불가(연차만 허용 — D-3). 스킵.
+      //   (연차 셀은 BE B-5 가 동의요청 경유로 보호하므로 여기선 교대 잠금만 사전 차단.)
+      if (isShiftLockedCell(user.userCd, d.workYmd)) {
+        shiftLockedSkipCount++;
+        continue;
+      }
       // 셀을 빈값으로 만든다(키는 유지 — baseline 대비 "값있던→빈값" 삭제 판정용).
       scheduleData.value[`${user.userCd}_${d.workYmd}`] = "";
       updatedUserCds.add(user.userCd);
@@ -676,6 +814,11 @@ const fnClearCells = async () => {
   if (updatedUserCds.size > 0) {
     const merged = new Set([...checkedRows.value, ...updatedUserCds]);
     checkedRows.value = [...merged];
+  }
+  if (shiftLockedSkipCount > 0) {
+    await proxy.$alert(
+      `교대근무팀 소속 기간 ${shiftLockedSkipCount}건은 비우기할 수 없습니다(연차만 사용 가능).`
+    );
   }
 };
 
@@ -891,6 +1034,20 @@ const fnSearch = async () => {
       response.data.schedResultList.forEach((item) => {
         scheduleData.value[`${item.userCd}_${item.workYmd}`] = item.workPlanCd;
       });
+      // prafta-com-008-E-6: 연차 오버레이 적재(셀 "연차" 표시는 work_plan 코드가 아닌 leave_use 기준).
+      //   prafta-com-008-B-7: leaveId 동반 적재(셀 개별 동의요청 진입 시 TARGET_LEAVE_ID 로 사용).
+      leaveOverlay.value = {};
+      (response.data.leaveOverlayResultList ?? []).forEach((item) => {
+        leaveOverlay.value[`${item.userCd}_${item.workYmd}`] = {
+          leaveCd: item.leaveCd,
+          leaveId: item.leaveId,
+        };
+      });
+      // prafta-com-008-D-5: 교대 잠금 오버레이 적재(교대팀 소속 구간 SCH 셀 비활성/자물쇠 표시 단일출처).
+      shiftLockOverlay.value = {};
+      (response.data.shiftLockOverlayResultList ?? []).forEach((item) => {
+        shiftLockOverlay.value[`${item.userCd}_${item.workYmd}`] = true;
+      });
       // PRAFTA-041 - 조회 직후 baseline 깊은 복사(plain object). 저장 시 dirty 비교 기준이며,
       //   저장 성공 후 재조회로 자연 갱신되어 직후 재저장 시 0건이 된다.
       scheduleBaseline.value = { ...scheduleData.value };
@@ -1021,14 +1178,19 @@ const fnSave = async () => {
     let deletedCount = 0;
     let skippedList = [];
 
-    // 1) 삭제(셀 비우기) 먼저 — 연차 셀이면 서버가 차감 복원까지 수행.
+    // 1) 삭제(셀 비우기) 먼저 — 직접 연차 셀이면 서버가 차감 복원까지 수행.
+    //    prafta-com-008-E (M2): 승인기반 연차 셀은 서버가 skip 하고 skippedList 로 사유를 내려준다.
     if (deleteList.length > 0) {
       const delRes = await axios.post(
         "/webApi/attd05/delete-user-work-plan-cells",
         deleteList
       );
       if (delRes.status === 200) {
-        deletedCount = deleteList.length;
+        // 실제 삭제 건수는 서버 응답 기준(승인기반 연차 skip 분 제외). 구버전 응답(본문 없음) 폴백.
+        deletedCount = delRes.data?.deletedCount ?? deleteList.length;
+        if (Array.isArray(delRes.data?.skippedList)) {
+          skippedList = [...skippedList, ...delRes.data.skippedList];
+        }
       }
     }
 
@@ -1050,14 +1212,32 @@ const fnSave = async () => {
       resultMsg += `, ${deletedCount}건 비우기(삭제)`;
     }
     resultMsg += "되었습니다.";
-    if (skippedList.length > 0) {
-      const detail = skippedList
+
+    // prafta-com-008-B-7(D-E8): skip 사유를 "연차 셀 비우기 불가(동의요청 유도)"와
+    //   기존 "근무타입 지정 불가"로 분리 안내. 연차 셀은 비우기로 삭제되지 않고 보호된다.
+    const leaveConsentSkips = skippedList.filter(
+      (s) => s.reasonCode === "LEAVE_CELL_CONSENT_REQUIRED"
+    );
+    const otherSkips = skippedList.filter(
+      (s) => s.reasonCode !== "LEAVE_CELL_CONSENT_REQUIRED"
+    );
+
+    if (leaveConsentSkips.length > 0) {
+      const detail = leaveConsentSkips
+        .map((s) => `· ${s.workYmd} : ${getCellNmValue(s.userCd, s.workYmd) || "연차"}`)
+        .join("\n");
+      resultMsg +=
+        `\n\n아래 ${leaveConsentSkips.length}건은 연차 등록일이라 비우기로 삭제할 수 없습니다.` +
+        `\n해당 셀을 더블클릭하여 연차 변경/삭제 요청(동의요청)을 이용해 주세요.\n${detail}`;
+    }
+    if (otherSkips.length > 0) {
+      const detail = otherSkips
         .map((s) => {
           const schNm = getSchTypeNm(s.workPlanCd);
           return `· ${s.workYmd} / ${schNm} : ${s.reason}`;
         })
         .join("\n");
-      resultMsg += `\n아래 ${skippedList.length}건은 근무타입 지정이 불가하여 제외되었습니다.\n${detail}`;
+      resultMsg += `\n\n아래 ${otherSkips.length}건은 근무타입 지정이 불가하여 제외되었습니다.\n${detail}`;
     }
     await proxy.$alert(resultMsg);
 
@@ -1642,6 +1822,36 @@ onUnmounted(() => {
 }
 .val-muted {
   color: var(--color-text-muted, #9ca3af);
+}
+
+/* prafta-com-008-B-7(D-E8): 연차 등록 셀 — 더블클릭 시 연차 변경/삭제 동의요청 진입 가능 표시.
+   비우기로 삭제 불가(서버 skip). 점선 밑줄로 클릭 가능 affordance 만 부여(색상/간격은 디자인 토큰). */
+.td-leave .td-val {
+  text-decoration: underline dotted;
+  text-underline-offset: 2px;
+  color: var(--color-primary, #16a34a);
+  font-weight: 600;
+}
+
+/* prafta-com-008-D-5: 교대팀 소속 구간 SCH 셀 — 비활성(자물쇠) 표시.
+   교대패턴 자동생성으로만 설정 가능하며 직접 변경/비우기 불가(연차 셀은 활성 — D-3).
+   색상은 디자인 토큰(muted) 사용. 셀 우상단 자물쇠 표시는 ::after 유니코드(별도 아이콘 의존 없음). */
+.td-day.is-shift-locked {
+  position: relative;
+  background: var(--color-bg, #f3f4f6);
+  cursor: not-allowed;
+}
+.td-day.is-shift-locked .td-val {
+  color: var(--color-text-muted, #9ca3af);
+}
+.td-day.is-shift-locked::after {
+  content: "\1F512"; /* 🔒 자물쇠 */
+  position: absolute;
+  top: 1px;
+  right: 2px;
+  font-size: 0.62rem;
+  line-height: 1;
+  opacity: 0.55;
 }
 
 /* ── 드래그 선택 스타일 ──────────────────────────────────── */

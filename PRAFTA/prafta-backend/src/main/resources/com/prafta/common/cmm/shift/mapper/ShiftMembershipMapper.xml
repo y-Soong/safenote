@@ -1,0 +1,64 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+
+<!--
+  PRAFTA-COM-008-E-7: 교대팀 소속 일자 판정 공용 Mapper.
+  SQL 규칙: leading comma, #{...} 바인딩, SELECT * 금지(명시 컬럼). MySQL 8.
+-->
+<mapper namespace="com.prafta.common.cmm.shift.mapper.ShiftMembershipMapper">
+
+    <!--
+      교대팀 소속 일자 판정 (D-1 정밀화: 팀 마스터 적용기간 ∩ 멤버십 행 존재 ∩ per-user 탈퇴일 미포함).
+        - TU(tb_shift_sch_team_user): 가입 행(USER_CD 멤버십). LEAVE_TEAM_YMD = 탈퇴일(NULL=현 소속/무기한).
+        - TM(tb_shift_sch_team_mgmt): 팀 단위 적용기간(STR_DATE~END_DATE). NULL 은 개방경계로 본다.
+      STR_DATE/END_DATE/LEAVE_TEAM_YMD 는 varchar(8) YYYYMMDD → workYmd(varchar8) 와 문자열 비교(동일 포맷).
+      경계 규칙(D-2):
+        - STR_DATE 는 inclusive(소속 시작), END_DATE 는 inclusive(기존 동작 불변, E-3 자동생성 교차범위 정합).
+        - LEAVE_TEAM_YMD 만 exclusive(탈퇴일 당일부터 변경 허용) → LEAVE_TEAM_YMD &gt; #{workYmd}.
+      ★ 시그니처 불변(isInShiftTeamOn): 매퍼 술어만 정밀화한다.
+    -->
+    <select id="countShiftMembershipOn" resultType="int">
+    /* ShiftMembershipMapper.countShiftMembershipOn */
+    SELECT COUNT(*)
+      FROM TB_SHIFT_SCH_TEAM_USER TU
+      JOIN TB_SHIFT_SCH_TEAM_MGMT TM
+        ON  TM.CMPNY_CD      = TU.CMPNY_CD
+        AND TM.SITE_CD       = TU.SITE_CD
+        AND TM.SHIFT_CD      = TU.SHIFT_CD
+        AND TM.SHIFT_TEAM_ID = TU.SHIFT_TEAM_ID
+     WHERE TU.CMPNY_CD = #{cmpnyCd}
+       AND TU.USER_CD  = #{userCd}
+       AND (TM.STR_DATE IS NULL OR TM.STR_DATE &lt;= #{workYmd})
+       AND (TM.END_DATE IS NULL OR TM.END_DATE &gt;= #{workYmd})
+       AND (TU.LEAVE_TEAM_YMD IS NULL OR TU.LEAVE_TEAM_YMD &gt; #{workYmd})
+    </select>
+
+    <!--
+      교대 잠금 구간 월 단위 존재 판정 (D-1: 월 단위 삭제 가드용).
+      해당 (CMPNY_CD, SITE_CD, USER_CD) 가 workYm(YYYYMM) 안의 어느 하루라도 교대 소속 구간(잠금)에 들면 &gt; 0.
+        - 월 범위 = [workYm||'01', workYm||'31'] 과 팀 적용기간이 겹치는지(반개 교차) 로 판정한다.
+          · 팀 적용 시작(STR_DATE) 이 월말('31') 보다 크지 않음(STR_DATE &lt;= 월말).
+          · 팀 적용 종료(END_DATE, inclusive) 가 월초('01') 보다 작지 않음(END_DATE &gt;= 월초).
+          · 탈퇴일(LEAVE_TEAM_YMD, exclusive) 이 월초('01') 보다 큼 → 월 안에 잠금일이 최소 1일 존재.
+            (탈퇴일이 월초 이하면 그 달 전체가 탈퇴 후 = 잠금 없음.)
+      문자열 비교는 STR_DATE/END_DATE/LEAVE_TEAM_YMD(varchar8 YYYYMMDD)와 동일 포맷.
+      ※ '31' 상한은 실제 존재일 무관(문자열 상한 경계 — 30/28일 달도 안전). 일 단위 정밀 판정은 countShiftMembershipOn 사용.
+    -->
+    <select id="existsShiftLockInMonth" resultType="int">
+    /* ShiftMembershipMapper.existsShiftLockInMonth */
+    SELECT COUNT(*)
+      FROM TB_SHIFT_SCH_TEAM_USER TU
+      JOIN TB_SHIFT_SCH_TEAM_MGMT TM
+        ON  TM.CMPNY_CD      = TU.CMPNY_CD
+        AND TM.SITE_CD       = TU.SITE_CD
+        AND TM.SHIFT_CD      = TU.SHIFT_CD
+        AND TM.SHIFT_TEAM_ID = TU.SHIFT_TEAM_ID
+     WHERE TU.CMPNY_CD = #{cmpnyCd}
+       AND TU.SITE_CD  = #{siteCd}
+       AND TU.USER_CD  = #{userCd}
+       AND (TM.STR_DATE IS NULL OR TM.STR_DATE &lt;= CONCAT(#{workYm}, '31'))
+       AND (TM.END_DATE IS NULL OR TM.END_DATE &gt;= CONCAT(#{workYm}, '01'))
+       AND (TU.LEAVE_TEAM_YMD IS NULL OR TU.LEAVE_TEAM_YMD &gt; CONCAT(#{workYm}, '01'))
+    </select>
+
+</mapper>

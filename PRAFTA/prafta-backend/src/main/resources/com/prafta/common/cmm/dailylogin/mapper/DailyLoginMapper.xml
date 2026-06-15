@@ -1,0 +1,147 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.prafta.common.cmm.dailylogin.mapper.DailyLoginMapper">
+
+    <!-- PRAFTA-app-027-2: 일용직 로그인 대상 조회.
+         USE_YN='Y' 가드 내장 → 비활성/만료 계정은 행 미반환(통합 차단 메시지로 귀결).
+         cmpnyCd 입력 시 AND CMPNY_CD 제약 추가. TB_SITE 조인으로 siteNm 확보.
+         PII(휴대폰)는 로그인에 불필요하여 미조회(§11.1). -->
+    <select id="selectDailyUserForLogin" parameterType="com.prafta.common.cmm.dailylogin.application.query.DailyLoginQuery" resultType="com.prafta.common.cmm.dailylogin.result.DailyUserResult">
+    /* DailyLoginMapper.selectDailyUserForLogin */
+    SELECT
+        A.CMPNY_CD                  AS cmpnyCd
+        , A.USER_CD                 AS userCd
+        , A.USER_ID                 AS userId
+        , A.USER_NM                 AS userNm
+        , A.USER_PW                 AS userPw
+        , A.SITE_CD                 AS siteCd
+        , B.SITE_NM                 AS siteNm
+        , A.USE_YN                  AS useYn
+        , A.ACCOUNT_STATUS          AS accountStatus
+        , A.WORK_EXPIRE_DATE        AS workExpireDate
+        , A.WITHDRAWAL_DATE         AS withdrawalDate
+        , A.PWD_LOCK_YN             AS pwdLockYn
+        , A.PWD_FAIL_CNT            AS pwdFailCnt
+        , A.PWD_LOCK_EXPIRE_DTIME   AS pwdLockExpireDtime
+    FROM TB_DAILY_USER A
+         INNER JOIN TB_SITE B
+            ON (
+                A.CMPNY_CD = B.CMPNY_CD
+            AND A.SITE_CD  = B.SITE_CD
+            )
+    WHERE A.USER_ID = #{userId}
+      AND A.USE_YN  = 'Y'
+      <if test="cmpnyCd != null and cmpnyCd != ''">
+      AND A.CMPNY_CD = #{cmpnyCd}
+      </if>
+    </select>
+
+    <!-- 잠금 만료 해제(정규 미러, 단 조건 보강).
+         실제 잠금이 걸려 있고 만료 시각이 지난 경우에만 리셋한다.
+         그래야 미잠금 구간에서 PWD_FAIL_CNT 가 누적되어 임계에서 정상 잠금된다. -->
+    <update id="updateDailyUserPwdUnlock" parameterType="com.prafta.common.cmm.dailylogin.application.command.DailyUserPwdUnlockCommand">
+    /* DailyLoginMapper.updateDailyUserPwdUnlock */
+    UPDATE TB_DAILY_USER
+    SET PWD_LOCK_YN            = 'N'
+        , PWD_FAIL_CNT          = 0
+        , PWD_LOCK_EXPIRE_DTIME = NULL
+        , UPDATE_NO             = 'SYSTEM'
+        , UPDATE_DATE           = NOW()
+    WHERE CMPNY_CD = #{cmpnyCd}
+      AND USER_CD  = #{userCd}
+      AND PWD_LOCK_YN = 'Y'
+      AND PWD_LOCK_EXPIRE_DTIME IS NOT NULL
+      AND PWD_LOCK_EXPIRE_DTIME &lt;= NOW()
+    </update>
+
+    <!-- 비밀번호 인증 성공 시 실패 카운트/잠금 무조건 초기화. -->
+    <update id="updateDailyUserPwdReset" parameterType="com.prafta.common.cmm.dailylogin.application.command.DailyUserPwdUnlockCommand">
+    /* DailyLoginMapper.updateDailyUserPwdReset */
+    UPDATE TB_DAILY_USER
+    SET PWD_LOCK_YN            = 'N'
+        , PWD_FAIL_CNT          = 0
+        , PWD_LOCK_EXPIRE_DTIME = NULL
+        , UPDATE_NO             = 'SYSTEM'
+        , UPDATE_DATE           = NOW()
+    WHERE CMPNY_CD = #{cmpnyCd}
+      AND USER_CD  = #{userCd}
+    </update>
+
+    <!-- 비밀번호 실패 누적 + 임계 도달 시 잠금(정규 미러). -->
+    <update id="updateDailyUserPwdFail" parameterType="com.prafta.common.cmm.dailylogin.application.command.DailyUserPwdFailCommand">
+    /* DailyLoginMapper.updateDailyUserPwdFail */
+    UPDATE TB_DAILY_USER
+    SET
+        PWD_FAIL_CNT = PWD_FAIL_CNT + 1,
+        PWD_LOCK_YN = CASE
+                        WHEN PWD_FAIL_CNT + 1 >= #{pwdFailMaxCnt} THEN 'Y'
+                        ELSE 'N'
+                      END,
+        PWD_LOCK_EXPIRE_DTIME = CASE
+                        WHEN PWD_FAIL_CNT + 1 >= #{pwdFailMaxCnt}
+                        THEN DATE_ADD(NOW(), INTERVAL #{lockDurationMinutes} MINUTE)
+                        ELSE NULL
+                      END,
+        UPDATE_NO   = 'SYSTEM',
+        UPDATE_DATE = NOW()
+    WHERE CMPNY_CD = #{cmpnyCd}
+      AND USER_CD  = #{userCd}
+    </update>
+
+    <!-- 마지막 로그인 일시 갱신. -->
+    <update id="updateDailyUserLastLoginDtime">
+    /* DailyLoginMapper.updateDailyUserLastLoginDtime */
+    UPDATE TB_DAILY_USER
+    SET LAST_LOGIN_DTIME = NOW()
+        , UPDATE_NO      = 'SYSTEM'
+        , UPDATE_DATE    = NOW()
+    WHERE CMPNY_CD = #{cmpnyCd}
+      AND USER_CD  = #{userCd}
+    </update>
+
+    <!-- 동일 (회사/사용자/클라이언트) 기존 세션 revoke(정규 미러). -->
+    <update id="revokeDailyActiveToken" parameterType="com.prafta.common.cmm.dailylogin.application.command.DailyActiveTokenCommand">
+    /* DailyLoginMapper.revokeDailyActiveToken */
+    UPDATE TB_AUTH_TOKEN
+    SET REVOKED_YN    = 'Y',
+        REVOKED_DTIME = NOW(),
+        UPDATE_NO     = #{userCd},
+        UPDATE_DATE   = NOW()
+    WHERE CMPNY_CD    = #{cmpnyCd}
+      AND USER_CD     = #{userCd}
+      AND CLIENT_TYPE = #{clientType}
+      AND REVOKED_YN  = 'N'
+      AND EXPIRE_DTIME > NOW()
+    </update>
+
+    <!-- 신규 리프레시 토큰 세션 INSERT(정규 미러). -->
+    <insert id="insertDailyAuthToken" parameterType="com.prafta.common.cmm.dailylogin.application.command.DailyActiveTokenCommand">
+    /* DailyLoginMapper.insertDailyAuthToken */
+    INSERT INTO TB_AUTH_TOKEN (
+        CMPNY_CD
+        , USER_CD
+        , TOKEN_ID
+        , CLIENT_TYPE
+        , REFRESH_TOKEN_HASH
+        , ISSUED_DTIME
+        , EXPIRE_DTIME
+        , REVOKED_YN
+        , REVOKED_DTIME
+        , INSERT_NO
+        , INSERT_DATE
+    ) VALUES (
+        #{cmpnyCd}
+        , #{userCd}
+        , #{tokenId}
+        , #{clientType}
+        , #{refreshTokenHash}
+        , NOW()
+        , DATE_ADD(NOW(), INTERVAL #{expireDtime} DAY)
+        , 'N'
+        , NULL
+        , #{userCd}
+        , NOW()
+    )
+    </insert>
+
+</mapper>

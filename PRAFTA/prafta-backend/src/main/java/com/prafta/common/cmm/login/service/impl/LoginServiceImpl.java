@@ -60,9 +60,22 @@ public class LoginServiceImpl implements LoginService{
 	private final PasswordHasher passwordHasher;
 	private final JwtUtil jwtUtil;
 	private final BaseinfoService baseinfoService; // PRAFTA-036 — SMS 인증번호 검증 재사용
+	// PRAFTA-COM-008-E-8 — 기본 근무타입 로그인 게이트(교대 비소속 판정 + 설정 저장 + 즉시 생성).
+	private final com.prafta.common.cmm.shift.service.ShiftMembershipService shiftMembershipService;
+	private final com.prafta.common.cmm.sch.service.DefaultSchOptionService defaultSchOptionService;
+	private final com.prafta.common.cmm.sch.service.DefaultSchGenService defaultSchGenService;
+	private final com.prafta.common.cmm.sch.mapper.DefaultSchGenMapper defaultSchGenMapper;
 
 	// PRAFTA-036 — 인증대기 분기에서 발급하는 임시 토큰 만료(분).
 	private static final int PHONE_AUTH_TOKEN_TTL_MINUTES = 10;
+	// PRAFTA-COM-008-E-8 — 기본 근무타입 게이트 임시 토큰 만료(분, PhoneAuth 미러).
+	private static final int DEFAULT_SCH_TOKEN_TTL_MINUTES = 10;
+	// 자동생성 트리거 운영 게이트(기본 false). 미충족이면 설정만 저장하고 생성은 스킵.
+	@Value("${prafta.default-sch.gen.enabled:false}")
+	private boolean defaultSchGenEnabled;
+	// 게이트 평가 시점 운영 토글(기본 true). 운영 검증 전 빠른 비활성화 경로.
+	@Value("${prafta.default-sch.gate.enabled:true}")
+	private boolean defaultSchGateEnabled;
 	
 	@Value("${login.lock.duration-minutes}")
 	private int lockDurationMinutes;
@@ -104,6 +117,11 @@ public class LoginServiceImpl implements LoginService{
 			throw new ApiException(LoginErrorCode.LOGIN_400_001);
 		}
 
+		// PRAFTA-app-027-7: 비밀번호 인증 성공 — 실패 카운트/잠금 무조건 초기화(성공 시 0 복귀).
+		//   진입 시 userPwdUnLock 은 만료 잠금에만 적용하므로 성공 경로에서 명시적으로 리셋한다.
+		//   Login 은 @Transactional 아님 → auto-commit 으로 즉시 영속(실패 누적도 동일 정책).
+		loginMapper.updateUserPwdReset(UserPwdUnlockCommand.from(userResult));
+
 		// PRAFTA-036: ACCOUNT_STATUS 분기 — 탈퇴('03') 차단, 인증대기('04')는 정식 토큰 대신 임시 scope 토큰만 발급.
 		String accountStatus = userResult.accountStatus();
 		if ("03".equals(accountStatus)) {
@@ -114,6 +132,17 @@ public class LoginServiceImpl implements LoginService{
 					userResult.cmpnyCd(), userResult.userCd(), PHONE_AUTH_TOKEN_TTL_MINUTES);
 			log.info("인증대기 계정 로그인 — 임시 토큰 발급(scope=PHONE_AUTH). userCd={}", userResult.userCd());
 			return LoginResponse.phoneAuthPending(userResult, phoneAuthToken);
+		}
+
+		// PRAFTA-COM-008-E-8: 기본 근무타입 로그인 게이트(D-E2: PHONE_AUTH 통과 후 평가).
+		//   DEFAULT_SCH_CD 미설정 AND 교대팀 비소속이면 정식 토큰 대신 임시 scope=DEFAULT_SCH 토큰만 발급.
+		//   서버 강제 — 클라 신뢰 금지. 기설정자/교대팀 소속자는 게이트 미발동(정상 로그인).
+		if (requiresDefaultSchGate(userResult)) {
+			String defaultSchToken = jwtUtil.generateScopeToken(
+					userResult.cmpnyCd(), userResult.userCd(),
+					com.prafta.common.security.JwtScope.DEFAULT_SCH, DEFAULT_SCH_TOKEN_TTL_MINUTES);
+			log.info("기본 근무타입 미설정 로그인 — 게이트 임시 토큰 발급(scope=DEFAULT_SCH). userCd={}", userResult.userCd());
+			return LoginResponse.defaultSchPending(userResult, defaultSchToken);
 		}
 
 		// 사용자 정보 LOCK 잡기
@@ -183,6 +212,123 @@ public class LoginServiceImpl implements LoginService{
 		}
 	}
 	
+	/**
+	 * PRAFTA-COM-008-E-8 — 기본 근무타입 게이트 발동 여부.
+	 *
+	 * <p>오늘 기준 교대팀 비소속이면서 DEFAULT_SCH_CD 가 비어 있으면 게이트 발동(true).
+	 * 운영 토글(prafta.default-sch.gate.enabled=false)이면 항상 비발동.
+	 * 조회 실패 등 어떤 예외도 게이트를 발동시키지 않는다(fail-open) — 로그인 자체를 막지 않기 위함.
+	 */
+	private boolean requiresDefaultSchGate(UserResult userResult) {
+		if (!defaultSchGateEnabled) {
+			return false;
+		}
+		try {
+			String cmpnyCd = userResult.cmpnyCd();
+			String userCd = userResult.userCd();
+			String siteCd = userResult.siteCd();
+			if (siteCd == null || siteCd.isBlank()) {
+				siteCd = defaultSchGenMapper.selectUserSiteCd(cmpnyCd, userCd);
+			}
+			if (siteCd == null || siteCd.isBlank()) {
+				return false; // 사업장 미상 — 게이트 평가 불가, 정상 로그인 진행.
+			}
+			// 이미 설정됨 → 게이트 미발동. selectDefaultSchUser 는 DEFAULT_SCH_CD NOT NULL 일 때만 행 반환.
+			if (defaultSchGenMapper.selectDefaultSchUser(cmpnyCd, userCd) != null) {
+				return false;
+			}
+			// 교대팀 소속(오늘) → 교대패턴이 스케줄 보장 → 게이트 미발동.
+			String today = java.time.LocalDate.now()
+					.format(java.time.format.DateTimeFormatter.ofPattern("yyyyMMdd"));
+			if (shiftMembershipService.isInShiftTeamOn(cmpnyCd, siteCd, userCd, today)) {
+				return false;
+			}
+			return true; // 미설정 + 교대 비소속 → 게이트 발동.
+		} catch (Exception e) {
+			log.error("기본 근무타입 게이트 판정 실패(로그인 영향 없음 — 게이트 미발동) — userCd={}",
+					userResult.userCd(), e);
+			return false;
+		}
+	}
+
+	/**
+	 * PRAFTA-COM-008-E-8 — 기본 근무타입 게이트 통과 처리.
+	 *
+	 * <p>scope=DEFAULT_SCH 임시 토큰의 claim(cmpnyCd/userCd)으로만 대상 식별(IDOR 방지).
+	 * 화이트리스트 검증(대상 사용자 SITE_CD ∩ USE_YN='Y') → DEFAULT_SCH_CD 저장 + 설정시점 기록
+	 * → 즉시 자동생성(게이트 enabled 시) → 정식 토큰/리프레시 발급(일반 로그인 동일).
+	 */
+	@Override
+	@Transactional(rollbackFor = Exception.class)
+	public LoginResponse setDefaultSch(String gvCmpnyCd, String gvUserCd, String defaultSchCd, String clientType) {
+
+		if (defaultSchCd == null || defaultSchCd.isBlank()) {
+			throw new ApiException(com.prafta.common.error.attd.AttdErrorCode.ATTD_400_141);
+		}
+
+		// 1) 대상 사용자 조회 + 상태 검증(탈퇴/인증대기 차단).
+		UserResult userResult = loginMapper.selectUserByUserCd(gvCmpnyCd, gvUserCd);
+		if (userResult == null) {
+			throw new ApiException(LoginErrorCode.LOGIN_400_002);
+		}
+		if ("03".equals(userResult.accountStatus())) {
+			throw new ApiException(LoginErrorCode.LOGIN_400_014);
+		}
+		if ("04".equals(userResult.accountStatus())) {
+			throw new ApiException(LoginErrorCode.LOGIN_400_013);
+		}
+
+		// 2) 검증 스코프 SITE_CD 도출(토큰 식별 사용자의 실제 소속).
+		String siteCd = userResult.siteCd();
+		if (siteCd == null || siteCd.isBlank()) {
+			siteCd = defaultSchGenMapper.selectUserSiteCd(gvCmpnyCd, gvUserCd);
+		}
+		if (siteCd == null || siteCd.isBlank()) {
+			throw new ApiException(com.prafta.common.error.attd.AttdErrorCode.ATTD_400_140);
+		}
+
+		// 3) 화이트리스트 검증(클라 제출값 신뢰 금지).
+		if (!defaultSchOptionService.isValidDefaultSch(gvCmpnyCd, siteCd, defaultSchCd)) {
+			throw new ApiException(com.prafta.common.error.attd.AttdErrorCode.ATTD_400_140);
+		}
+
+		// 4) DEFAULT_SCH_CD + 설정시점 저장.
+		int updated = defaultSchGenMapper.updateUserDefaultSch(gvCmpnyCd, gvUserCd, defaultSchCd, gvUserCd);
+		if (updated == 0) {
+			throw new ApiException(LoginErrorCode.LOGIN_400_002);
+		}
+
+		// 5) 즉시 자동생성(E-3 트리거2) — 운영 게이트 on 일 때만. 실패는 격리(로그인 차단 금지).
+		if (defaultSchGenEnabled) {
+			try {
+				defaultSchGenService.applyDefaultSchChange(gvCmpnyCd, siteCd, gvUserCd, defaultSchCd);
+			} catch (Exception e) {
+				log.error("기본 근무타입 게이트 — 자동생성 실패(설정은 저장됨) — userCd={}", gvUserCd, e);
+			}
+		}
+
+		log.info("기본 근무타입 게이트 통과 — userCd={}, siteCd={}, defaultSchCd={}", gvUserCd, siteCd, defaultSchCd);
+
+		// 6) 정식 토큰/리프레시 발급(일반 로그인 흐름 동일).
+		loginMapper.lockUserRow(UserRowLockQuery.from(userResult));
+
+		String tokenId = UUID.randomUUID().toString().replace("-", "");
+		SecureRandom random = new SecureRandom();
+		byte[] bytes = new byte[64];
+		random.nextBytes(bytes);
+		String refreshToken = Base64.getUrlEncoder().withoutPadding().encodeToString(bytes);
+		String refreshTokenHash = hmacSigner.hmacSha256Base64Url(refreshToken);
+
+		ActiveTokenCommand activeTokenCommand = ActiveTokenCommand.from(userResult, tokenId, clientType, refreshTokenHash, "2");
+		loginMapper.revokeActiveToken(activeTokenCommand);
+		loginMapper.insertAuthToken(activeTokenCommand);
+
+		String token = jwtUtil.generateToken(userResult);
+		loginMapper.updateUserLastLoginDtime(userResult.userCd());
+
+		return LoginResponse.from(userResult, refreshToken, token);
+	}
+
 	@Override
     @Transactional
     public void logout(LogoutParam param) {

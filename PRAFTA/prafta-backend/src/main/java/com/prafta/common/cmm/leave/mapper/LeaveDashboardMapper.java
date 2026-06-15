@@ -5,6 +5,7 @@ import java.util.List;
 import org.apache.ibatis.annotations.Mapper;
 import org.apache.ibatis.annotations.Param;
 
+import com.prafta.common.cmm.leave.vo.AppliedLeaveTypeVO;
 import com.prafta.common.cmm.leave.vo.LeaveDashboardMetricsVO;
 import com.prafta.common.cmm.leave.vo.LeaveDashboardRowVO;
 import com.prafta.common.cmm.leave.vo.LeaveDetailUserVO;
@@ -81,6 +82,34 @@ public interface LeaveDashboardMapper {
      */
     List<LeaveGrantHistoryRowVO> selectGrantHistory(@Param("cmpnyCd") String cmpnyCd,
                                                     @Param("userCd") String userCd);
+
+    /**
+     * 신청형 휴가(사용자 신청 LEAVE_TYPE='01') 타입별 잔여 현황 조회 (연차 대시보드 상세 — 신청형 휴가 섹션).
+     *
+     * <p>대상 타입: {@code tb_leave_type_mgmt} WHERE CMPNY_CD AND LEAVE_TYPE='01' AND USE_YN='Y'.
+     * 법정/관리자부여(02) 그룹과 합산하지 않고 타입별 별도 항목으로 반환한다.
+     *
+     * <p>타입별:
+     * <ul>
+     *   <li>한도(maxAplyDays) = MAX_APLY_DAYS (NULL 허용 — 서비스에서 0 fail-closed).</li>
+     *   <li>사용(usedDays) = Σ TB_USER_LEAVE_USE.LEAVE_DAYS WHERE 동일 CMPNY_CD/USER_CD/LEAVE_CD
+     *       AND LEAVE_STATUS='CONFIRMED' AND DEL_YN='N'
+     *       AND START_DATE &gt;= fiscalStartYmd AND START_DATE &lt; fiscalEndYmdExclusive (당해 회계연도).</li>
+     * </ul>
+     * 잔여(remainDays)는 서비스 계층에서 한도−사용으로 산출한다(SQL은 한도/사용만 반환).
+     *
+     * <p>회계연도 경계({@code fiscalStartYmd}/{@code fiscalEndYmdExclusive})는 서비스에서
+     * {@code FiscalYearUtils}로 산출해 {@code #{}}로 주입한다. CMPNY_CD/USER_CD 스코프 격리.
+     *
+     * @param cmpnyCd              회사 코드 (CMPNY_CD 스코프)
+     * @param userCd               대상 직원 코드
+     * @param fiscalStartYmd       당해 회계연도 시작일 (YYYYMMDD, inclusive)
+     * @param fiscalEndYmdExclusive 당해 회계연도 종료 경계 (YYYYMMDD, exclusive)
+     */
+    List<AppliedLeaveTypeVO> selectAppliedLeaveTypes(@Param("cmpnyCd") String cmpnyCd,
+                                                     @Param("userCd") String userCd,
+                                                     @Param("fiscalStartYmd") String fiscalStartYmd,
+                                                     @Param("fiscalEndYmdExclusive") String fiscalEndYmdExclusive);
 
     // ============================================================
     // 수동 부여

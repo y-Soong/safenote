@@ -1,0 +1,300 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.prafta.app.notice.notice02.mapper.AppArchive02Mapper">
+
+    <!-- ================================================================
+         prafta-app-025 J1-8 앱 자료실(Archive). tb_notice 공유 + NOTICE_TYPE='ARCHIVE'
+         스코프를 전 쿼리에 예외 없이 박는다(공지 누수 차단). 웹 Archive02Mapper.xml 의
+         조회/등록 SQL 을 복제(앱 자기 매퍼만 — 웹 매퍼 런타임 호출 금지). 수정/삭제/비번
+         검증 쿼리는 복제하지 않는다(웹 위임).
+         CMPNY_CD 스코프 필수, SELECT * 금지, leading comma, #{} 바인딩.
+         ⚠️ MyBatis record 매핑(feedback_mybatis_record_column_order): SELECT 컬럼 순서
+            = result record 생성자 인자 순서(위치 기반). EDIT_PWD 는 절대 SELECT 안 함.
+         ================================================================ -->
+
+    <!-- ── 자료타입 드롭다운 ──────────────────────────────────── -->
+
+    <!-- tb_baim_val_d (CMPNY_CD, BAIM_VAL_CD=<상수>, USE_YN='Y') ORDER BY SORT_IDX.
+         AppArchiveTypeResult: archiveTypeCd, archiveTypeNm, sortIdx -->
+    <select id="selectArchiveTypeList"
+            parameterType="com.prafta.app.notice.notice02.application.query.AppArchiveTypeQuery"
+            resultType="com.prafta.app.notice.notice02.result.AppArchiveTypeResult">
+    /* AppArchive02Mapper.selectArchiveTypeList */
+    SELECT
+        D.BAIM_VAL_D_CD     AS archiveTypeCd
+      , D.BAIM_VAL_D_NM     AS archiveTypeNm
+      , D.SORT_IDX          AS sortIdx
+    FROM TB_BAIM_VAL_D D
+    WHERE D.CMPNY_CD = #{gvCmpnyCd}
+      AND D.BAIM_VAL_CD = #{baimValCd}
+      AND D.USE_YN = 'Y'
+    ORDER BY D.SORT_IDX ASC, D.BAIM_VAL_D_CD ASC
+    </select>
+
+    <!-- 자료타입 코드 유효성 카운트. forCreate=true(신규): 존재 + USE_YN='Y'. -->
+    <select id="countArchiveTypeValid" resultType="int">
+    /* AppArchive02Mapper.countArchiveTypeValid */
+    SELECT
+        COUNT(1)
+    FROM TB_BAIM_VAL_D D
+    WHERE D.CMPNY_CD = #{cmpnyCd}
+      AND D.BAIM_VAL_CD = #{baimValCd}
+      AND D.BAIM_VAL_D_CD = #{archiveTypeCd}
+      <if test="forCreate">
+        AND D.USE_YN = 'Y'
+      </if>
+    </select>
+
+    <!-- ── 조회(목록/상세/첨부) ──────────────────────────────── -->
+
+    <!-- 공통 마스터 컬럼 (AppArchiveResult record 위치 매핑).
+         A=tb_notice, BD=자료타입(tb_baim_val_d), U=등록자 tb_user.
+         EDIT_PWD 는 절대 SELECT 하지 않는다(보안). -->
+    <sql id="archiveBaseColumns">
+        A.CMPNY_CD                                                   AS cmpnyCd
+      , A.NOTICE_ID                                                  AS noticeId
+      , A.ARCHIVE_TYPE_CD                                            AS archiveTypeCd
+      , BD.BAIM_VAL_D_NM                                             AS archiveTypeNm
+      , A.TITLE                                                      AS title
+      , A.CONTENT                                                    AS content
+      , A.INSERT_NO                                                  AS insertNo
+      , DATE_FORMAT(A.INSERT_DATE, '%Y-%m-%d %H:%i')                 AS insertDate
+      , U.USER_NM                                                    AS insertUserNm
+      , DATE_FORMAT(A.UPDATE_DATE, '%Y-%m-%d %H:%i')                 AS updateDate
+    </sql>
+
+    <!-- 목록 (자료타입/등록월→기간/키워드 검색). NOTICE_TYPE='ARCHIVE'. 최신순.
+         archiveTypeNm 은 baim_val_d LEFT JOIN(USE_YN 무관, 저장된 타입명 보존). -->
+    <select id="selectArchiveList"
+            parameterType="com.prafta.app.notice.notice02.application.query.AppArchiveListQuery"
+            resultType="com.prafta.app.notice.notice02.result.AppArchiveResult">
+    /* AppArchive02Mapper.selectArchiveList */
+    SELECT
+        <include refid="archiveBaseColumns" />
+      , (
+            SELECT COUNT(1) FROM TB_NOTICE_FILE NF
+            WHERE NF.CMPNY_CD = A.CMPNY_CD AND NF.NOTICE_ID = A.NOTICE_ID
+        )                                                           AS fileCnt
+    FROM TB_NOTICE A
+    LEFT OUTER JOIN TB_BAIM_VAL_D BD
+        ON BD.CMPNY_CD = A.CMPNY_CD
+       AND BD.BAIM_VAL_CD = #{baimValCdForJoin, jdbcType=VARCHAR}
+       AND BD.BAIM_VAL_D_CD = A.ARCHIVE_TYPE_CD
+    LEFT OUTER JOIN TB_USER U
+        ON U.CMPNY_CD = A.CMPNY_CD AND U.USER_CD = A.INSERT_NO
+    WHERE A.CMPNY_CD = #{gvCmpnyCd}
+      AND A.NOTICE_TYPE = 'ARCHIVE'
+      AND A.DEL_YN = 'N'
+      <if test="archiveTypeCd != null and archiveTypeCd != ''">
+        AND A.ARCHIVE_TYPE_CD = #{archiveTypeCd}
+      </if>
+      <if test="titleKeyword != null and titleKeyword != ''">
+        AND (
+              A.TITLE   LIKE CONCAT('%', #{titleKeyword}, '%')
+           OR A.CONTENT LIKE CONCAT('%', #{titleKeyword}, '%')
+        )
+      </if>
+      <if test="startDate != null and startDate != ''">
+        AND A.INSERT_DATE &gt;= STR_TO_DATE(CONCAT(#{startDate}, ' 00:00:00'), '%Y-%m-%d %H:%i:%s')
+      </if>
+      <if test="endDate != null and endDate != ''">
+        AND A.INSERT_DATE &lt;= STR_TO_DATE(CONCAT(#{endDate}, ' 23:59:59'), '%Y-%m-%d %H:%i:%s')
+      </if>
+    ORDER BY A.INSERT_DATE DESC, A.NOTICE_ID DESC
+    </select>
+
+    <!-- 단건 마스터 (NOTICE_TYPE='ARCHIVE') -->
+    <select id="selectArchiveOne"
+            parameterType="com.prafta.app.notice.notice02.application.query.AppArchiveInfoQuery"
+            resultType="com.prafta.app.notice.notice02.result.AppArchiveResult">
+    /* AppArchive02Mapper.selectArchiveOne */
+    SELECT
+        <include refid="archiveBaseColumns" />
+      , (
+            SELECT COUNT(1) FROM TB_NOTICE_FILE NF
+            WHERE NF.CMPNY_CD = A.CMPNY_CD AND NF.NOTICE_ID = A.NOTICE_ID
+        )                                                           AS fileCnt
+    FROM TB_NOTICE A
+    LEFT OUTER JOIN TB_BAIM_VAL_D BD
+        ON BD.CMPNY_CD = A.CMPNY_CD
+       AND BD.BAIM_VAL_CD = #{baimValCdForJoin, jdbcType=VARCHAR}
+       AND BD.BAIM_VAL_D_CD = A.ARCHIVE_TYPE_CD
+    LEFT OUTER JOIN TB_USER U
+        ON U.CMPNY_CD = A.CMPNY_CD AND U.USER_CD = A.INSERT_NO
+    WHERE A.CMPNY_CD = #{gvCmpnyCd}
+      AND A.NOTICE_ID = #{noticeId}
+      AND A.NOTICE_TYPE = 'ARCHIVE'
+      AND A.DEL_YN = 'N'
+    </select>
+
+    <!-- 단건 첨부 list (tb_notice_file + tb_file_info, ARCHIVE 스코프 조인).
+         AppArchiveFileResult: fileMgmtCd, fileNm, fileExt, filePath, sortIdx -->
+    <select id="selectArchiveFileList"
+            parameterType="com.prafta.app.notice.notice02.application.query.AppArchiveInfoQuery"
+            resultType="com.prafta.app.notice.notice02.result.AppArchiveFileResult">
+    /* AppArchive02Mapper.selectArchiveFileList */
+    SELECT
+        NF.FILE_MGMT_CD     AS fileMgmtCd
+      , FI.FILE_NM          AS fileNm
+      , FI.FILE_EXT         AS fileExt
+      , FI.FILE_PATH        AS filePath
+      , NF.SORT_IDX         AS sortIdx
+    FROM TB_NOTICE_FILE NF
+    INNER JOIN TB_FILE_INFO FI
+        ON FI.CMPNY_CD = NF.CMPNY_CD AND FI.FILE_MGMT_CD = NF.FILE_MGMT_CD
+    INNER JOIN TB_NOTICE N
+        ON N.CMPNY_CD = NF.CMPNY_CD AND N.NOTICE_ID = NF.NOTICE_ID
+       AND N.NOTICE_TYPE = 'ARCHIVE'
+       AND N.DEL_YN = 'N'
+    WHERE NF.CMPNY_CD = #{gvCmpnyCd}
+      AND NF.NOTICE_ID = #{noticeId}
+    ORDER BY NF.SORT_IDX ASC, NF.FILE_MGMT_CD ASC
+    </select>
+
+    <!-- 첨부 단건 조회 (토큰 발급/스트림용, ARCHIVE 스코프 조인) -->
+    <select id="selectArchiveFileOne"
+            parameterType="com.prafta.app.notice.notice02.application.query.AppArchiveFileQuery"
+            resultType="com.prafta.app.notice.notice02.result.AppArchiveFileResult">
+    /* AppArchive02Mapper.selectArchiveFileOne */
+    SELECT
+        NF.FILE_MGMT_CD     AS fileMgmtCd
+      , FI.FILE_NM          AS fileNm
+      , FI.FILE_EXT         AS fileExt
+      , FI.FILE_PATH        AS filePath
+      , NF.SORT_IDX         AS sortIdx
+    FROM TB_NOTICE_FILE NF
+    INNER JOIN TB_FILE_INFO FI
+        ON FI.CMPNY_CD = NF.CMPNY_CD AND FI.FILE_MGMT_CD = NF.FILE_MGMT_CD
+    INNER JOIN TB_NOTICE N
+        ON N.CMPNY_CD = NF.CMPNY_CD AND N.NOTICE_ID = NF.NOTICE_ID
+       AND N.NOTICE_TYPE = 'ARCHIVE'
+       AND N.DEL_YN = 'N'
+    WHERE NF.CMPNY_CD = #{gvCmpnyCd}
+      AND NF.NOTICE_ID = #{noticeId}
+      AND NF.FILE_MGMT_CD = #{fileMgmtCd}
+    </select>
+
+    <!-- 다운로드 존재검증 (자료실=회사 전체 공통 → 대상 재귀 불필요).
+         존재 + CMPNY + ARCHIVE + DEL_YN='N' 만 확인. 1 이상이면 접근 가능. -->
+    <select id="countArchiveVisible"
+            parameterType="com.prafta.app.notice.notice02.application.query.AppArchiveFileQuery"
+            resultType="int">
+    /* AppArchive02Mapper.countArchiveVisible */
+    SELECT
+        COUNT(1)
+    FROM TB_NOTICE N
+    WHERE N.CMPNY_CD = #{gvCmpnyCd}
+      AND N.NOTICE_ID = #{noticeId}
+      AND N.NOTICE_TYPE = 'ARCHIVE'
+      AND N.DEL_YN = 'N'
+    </select>
+
+    <!-- ── 등록(채번/마스터/첨부) ─────────────────────────────── -->
+
+    <!-- 채번: 'A' + YYYYMMDD + 3자리 SEQ (회사+당일 MAX+1, NOTICE_TYPE='ARCHIVE').
+         공지('N' prefix)와 ID 공간 분리. 웹 자료실과 동일 채번(같은 tb_notice 공유). -->
+    <select id="selectNextArchiveId"
+            parameterType="com.prafta.app.notice.notice02.application.query.AppArchiveIdSeqQuery"
+            resultType="java.lang.String">
+    /* AppArchive02Mapper.selectNextArchiveId */
+    SELECT
+        CONCAT(
+            'A'
+          , DATE_FORMAT(NOW(), '%Y%m%d')
+          , LPAD(
+                IFNULL(MAX(CAST(SUBSTR(A.NOTICE_ID, 10, 3) AS UNSIGNED)), 0) + 1
+              , 3, '0'
+            )
+        )
+    FROM TB_NOTICE A
+    WHERE A.CMPNY_CD = #{gvCmpnyCd}
+      AND A.NOTICE_TYPE = 'ARCHIVE'
+      AND A.NOTICE_ID LIKE CONCAT('A', DATE_FORMAT(NOW(), '%Y%m%d'), '%')
+    </select>
+
+    <!-- 마스터 INSERT. 서버 강제값(NOTICE_TYPE/POPUP_YN/PIN_YN/PIN_ORDER/POPUP_FROM/TO_YMD/
+         TARGET_SCOPE/INCLUDE_DAILY_YN)을 리터럴 고정(클라 입력 무시). -->
+    <insert id="insertArchive"
+            parameterType="com.prafta.app.notice.notice02.application.command.AppArchiveSaveCommand">
+    /* AppArchive02Mapper.insertArchive */
+    INSERT INTO TB_NOTICE
+    (
+        CMPNY_CD
+      , NOTICE_ID
+      , NOTICE_TYPE
+      , ARCHIVE_TYPE_CD
+      , TITLE
+      , CONTENT
+      , EDIT_PWD
+      , TARGET_SCOPE
+      , INCLUDE_DAILY_YN
+      , POPUP_YN
+      , POPUP_FROM_YMD
+      , POPUP_TO_YMD
+      , PIN_YN
+      , PIN_ORDER
+      , DEL_YN
+      , INSERT_NO
+      , INSERT_DATE
+    )
+    VALUES
+    (
+        #{gvCmpnyCd}
+      , #{noticeId}
+      , 'ARCHIVE'
+      , #{archiveTypeCd}
+      , #{title}
+      , #{content}
+      , #{editPwdHash}
+      , 'ALL'        <!-- TARGET_SCOPE NOT NULL 충족용 고정(자료실은 대상 개념 없음) -->
+      , 'N'          <!-- INCLUDE_DAILY_YN -->
+      , 'N'          <!-- POPUP_YN -->
+      , NULL         <!-- POPUP_FROM_YMD -->
+      , NULL         <!-- POPUP_TO_YMD -->
+      , 'N'          <!-- PIN_YN -->
+      , NULL         <!-- PIN_ORDER -->
+      , 'N'          <!-- DEL_YN -->
+      , #{gvUserCd}
+      , NOW()
+    )
+    </insert>
+
+    <!-- 첨부 다건 INSERT (foreach). tb_notice_file 공용 매핑 재사용. -->
+    <insert id="insertArchiveFiles"
+            parameterType="com.prafta.app.notice.notice02.application.command.AppArchiveFileSaveCommand">
+    /* AppArchive02Mapper.insertArchiveFiles */
+    INSERT INTO TB_NOTICE_FILE
+    (
+        CMPNY_CD
+      , NOTICE_ID
+      , FILE_MGMT_CD
+      , SORT_IDX
+      , INSERT_NO
+      , INSERT_DATE
+    )
+    VALUES
+    <foreach collection="fileList" item="f" index="idx" separator=",">
+    (
+        #{gvCmpnyCd}
+      , #{noticeId}
+      , #{f.fileMgmtCd}
+      , IFNULL(#{f.sortIdx}, #{idx} + 1)
+      , #{gvUserCd}
+      , NOW()
+    )
+    </foreach>
+    </insert>
+
+    <!-- 전사(사업장 무관) 노드 정/부 관리자 존재 카운트(등록 게이트용).
+         access-context AppAdminAccessMapper.existsNodeAdminAnySite 와 동일 의미.
+         자료실=회사 전체 공통이라 전사 기준. CMPNY_CD 스코프, #{} 바인딩. -->
+    <select id="countNodeAdminAnySite" resultType="int">
+    /* AppArchive02Mapper.countNodeAdminAnySite */
+    SELECT
+        COUNT(1)
+    FROM TB_SITE_NODE
+    WHERE CMPNY_CD = #{cmpnyCd}
+      AND ( MAIN_ADMIN_CD = #{userCd} OR SUB_ADMIN_CD = #{userCd} )
+    </select>
+
+</mapper>

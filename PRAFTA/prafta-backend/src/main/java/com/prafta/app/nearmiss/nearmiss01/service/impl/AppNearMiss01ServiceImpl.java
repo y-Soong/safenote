@@ -30,6 +30,7 @@ import com.prafta.app.nearmiss.nearmiss01.dto.response.ReportResponse;
 import com.prafta.app.nearmiss.nearmiss01.dto.response.StatusCountResponse;
 import com.prafta.app.nearmiss.nearmiss01.mapper.AppNearMiss01Mapper;
 import com.prafta.app.nearmiss.nearmiss01.result.IncidentResult;
+import com.prafta.app.nearmiss.nearmiss01.result.ReportMetaResult;
 import com.prafta.app.nearmiss.nearmiss01.result.StatusCountResult;
 import com.prafta.app.nearmiss.nearmiss01.service.AppNearMiss01Service;
 import com.prafta.common.cmm.file.application.query.FileInfoQuery;
@@ -116,7 +117,7 @@ public class AppNearMiss01ServiceImpl implements AppNearMiss01Service {
             // 2) 채번 (NM + YYYYMMDD + 3자리 SEQ, 사업장+당일 기준).
             String nearMissId = appNearMiss01Mapper.selectNextNearMissId(NearMissIdSeqQuery.from(param));
 
-            // 3) tb_near_miss INSERT (REPORT_STATUS_CD='100', REPORTER_ID/SITE_CD=JWT, SRC_*=NULL).
+            // 3) tb_near_miss INSERT (REPORT_STATUS_CD='100', REPORTER_ID/SITE_CD=JWT).
             appNearMiss01Mapper.insertReport(InsertReportCommand.from(param, nearMissId, fileMgmtCd));
 
             // 4) 잠재중대성 ≥ 중대 신규 보고 시 사업장 안전관리자 푸시 outbox 적재(대상 0명이어도 보고는 성공).
@@ -186,7 +187,7 @@ public class AppNearMiss01ServiceImpl implements AppNearMiss01Service {
             new IncidentDetailQuery(param.siteCd(), param.nearMissId(), param.gvCmpnyCd());
 
         // 존재 + 보고자 메타 조회(사업장 스코프). 없으면 404.
-        IncidentResult meta = appNearMiss01Mapper.selectReportMeta(query);
+        ReportMetaResult meta = appNearMiss01Mapper.selectReportMeta(query);
         if (meta == null) {
             throw new ApiException(NearMissErrorCode.NEARMISS_404_001);
         }
@@ -224,7 +225,7 @@ public class AppNearMiss01ServiceImpl implements AppNearMiss01Service {
         }
 
         // 현재 상태 조회(사업장 스코프). 없으면 404.
-        IncidentResult meta = appNearMiss01Mapper.selectReportMeta(
+        ReportMetaResult meta = appNearMiss01Mapper.selectReportMeta(
             new IncidentDetailQuery(param.siteCd(), param.nearMissId(), param.gvCmpnyCd()));
         if (meta == null) {
             throw new ApiException(NearMissErrorCode.NEARMISS_404_001);

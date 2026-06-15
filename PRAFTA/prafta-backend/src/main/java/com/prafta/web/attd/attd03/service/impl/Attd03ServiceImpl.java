@@ -82,7 +82,9 @@ public class Attd03ServiceImpl implements Attd03Service{
 			leaveCd = attd03Mapper.selectLeaveCd(param.gvCmpnyCd());
 		}
 
-		LeaveNoDupChk leaveNoDupChk = attd03Mapper.selectLeaveNoDupChkResult(LeaveNoDupCheckQuery.from(param));
+		// prafta-app-026 검수정정(attd03/F-02): 번호 중복검사에 자기 자신(resolved leaveCd) 제외 전달.
+		//   기존엔 수정 시 자기 행과 충돌해 "중복"으로 거부되던 결함을 해소한다.
+		LeaveNoDupChk leaveNoDupChk = attd03Mapper.selectLeaveNoDupChkResult(LeaveNoDupCheckQuery.from(param, leaveCd));
 
 		if(leaveNoDupChk != null) {
 			throw new ApiException(AttdErrorCode.ATTD_400_003);

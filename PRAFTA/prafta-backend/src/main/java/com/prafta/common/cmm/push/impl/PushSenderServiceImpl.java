@@ -97,6 +97,15 @@ public class PushSenderServiceImpl implements PushSenderService {
             return false;
         }
 
+        // 1-1) PRAFTA-APP-021-2 enforce: 사용자 푸시 설정(마스터/타입 OFF)이면 발송 생략(SUPPRESSED).
+        //      claim 직후·토큰 조회 전에 판정한다. opt-out(행 없음=발송) + 테이블 부재 graceful 폴백.
+        if (isSuppressedSafe(row)) {
+            int affected = pushOutboxMapper.markSuppressed(notiId, PushWorkerConst.SUPPRESS_REASON, actor);
+            log.info("[push] 사용자 설정에 의한 발송 생략(SUPPRESSED) notiId={}, targetUserCd={}, notiType={}, affected={}.",
+                    notiId, row.getTargetUserCd(), row.getNotiType(), affected);
+            return false;
+        }
+
         // 2) DATA_PAYLOAD 파싱(실패는 재시도 무의미 → FAILED).
         Map<String, String> dataMap;
         try {
@@ -156,6 +165,27 @@ public class PushSenderServiceImpl implements PushSenderService {
         pushOutboxMapper.markFailed(notiId, row.getRetryCnt(),
                 PushWorkerConst.ERR_ALL_TOKENS_INVALID, actor);
         return false;
+    }
+
+    /**
+     * PRAFTA-APP-021-2: 발송 억제 여부를 안전하게 판정한다(테이블 부재/조회 예외 graceful 폴백).
+     *
+     * <p>tb_user_push_setting 미생성 환경(마이그 선적용 누락)에서 enforce 쿼리가 SQL 예외를 던지면
+     * 발송을 전면 중단하지 않고 false(발송 유지) 로 폴백한다 — opt-out 안전 원칙(설정 미도입 시 정상 수신).
+     * 판정 자체가 본 흐름을 막지 않도록 예외를 격리한다.
+     *
+     * @return true 면 발송 억제(SUPPRESSED), false 면 정상 발송(미설정/예외 폴백 포함).
+     */
+    private boolean isSuppressedSafe(PushOutboxRowVO row) {
+        try {
+            return pushOutboxMapper.isSuppressed(
+                    row.getCmpnyCd(), row.getTargetUserCd(), row.getNotiType()) == 1;
+        } catch (Exception e) {
+            // 설정 테이블 부재 등 조회 실패 → 발송 유지(미억제). 배포순서: 021-1 DDL 선적용 권장.
+            log.warn("[push] 발송 억제 판정 실패(설정 테이블 부재 추정) notiId={} — 발송 유지: {}",
+                    row.getNotiId(), e.getMessage());
+            return false;
+        }
     }
 
     /** json 원문 → Map&lt;String,String&gt;. null/빈값이면 빈 맵(notification 만 전송). */

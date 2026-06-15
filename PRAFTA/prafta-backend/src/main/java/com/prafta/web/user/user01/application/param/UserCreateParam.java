@@ -32,6 +32,8 @@ public record UserCreateParam(
     , String creditReasonDetail
     // PRAFTA-037-F7 — 추가 권한 사이트 코드 목록 (기본 siteCd 외). 엑셀 업로드는 null/빈 리스트.
     , List<String> additionalSiteCdList
+    // PRAFTA-COM-008-E-5 — 기본 근무타입(SCH_CD, 선택). 엑셀 업로드는 null.
+    , String defaultSchCd
     , String gvCmpnyCd
     , String gvUserCd
     , String gvAuthCd
@@ -69,6 +71,7 @@ public record UserCreateParam(
             , request.getCreditReasonType()
             , request.getCreditReasonDetail()
             , request.getAdditionalSiteCdList()
+            , request.getDefaultSchCd()
             , tokenInfo.gv_cmpnyCd()
             , tokenInfo.gv_userCd()
             , tokenInfo.gv_authCd()

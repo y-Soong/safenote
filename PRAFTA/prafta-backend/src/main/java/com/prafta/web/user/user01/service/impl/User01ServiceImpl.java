@@ -100,6 +100,9 @@ public class User01ServiceImpl implements User01Service{
 	private final LeaveGrantEngineService leaveGrantEngineService;
 	// PRAFTA-037-F5: 감사 로그 적재 (양식 다운로드부터 1차 적용)
 	private final AuditLogService auditLogService;
+	// PRAFTA-COM-008-E-5: 기본 근무타입 검증/자동생성 공용 서비스(common.cmm.sch).
+	private final com.prafta.common.cmm.sch.service.DefaultSchOptionService defaultSchOptionService;
+	private final com.prafta.common.cmm.sch.service.DefaultSchGenService defaultSchGenService;
 
 	private static final int PW_MIN_LEN = 6;
 	private static final int PW_MAX_LEN = 15;
@@ -107,7 +110,16 @@ public class User01ServiceImpl implements User01Service{
 	// REASON_DETAIL varchar(500) - 경력 인정 상세 설명 서버측 길이 상한
 	private static final int REASON_DETAIL_MAX_LEN = 500;
 
-		
+	// PRAFTA-COM-008-E-5: 자동생성 트리거 운영 게이트(기본 false). 미충족이면 설정만 저장하고 생성은 스킵.
+	@org.springframework.beans.factory.annotation.Value("${prafta.default-sch.gen.enabled:false}")
+	private boolean defaultSchGenEnabled;
+
+	@Override
+	public java.util.List<com.prafta.common.cmm.sch.vo.SchOptionVO> getSchTypeOptions(String cmpnyCd, String siteCd) {
+		// PRAFTA-COM-008-E-5: UserInfoPop 기본 근무타입 select 채움(사업장 활성 근무타입).
+		return defaultSchOptionService.getActiveSchOptions(cmpnyCd, siteCd);
+	}
+
 	public UserInfoListResponse selectUserInfoList(UserInfoListParam param) {
 		
 		UserInfoListResponse response = null;
@@ -256,7 +268,27 @@ public class User01ServiceImpl implements User01Service{
             user01Mapper.insertUserSiteAuth(UserSiteAuthCommand.from(model));
         }
 
+        // PRAFTA-COM-008-E-5: 기본 근무타입 입력 시 화이트리스트 검증(클라 신뢰 금지).
+        //   대상 사업장 = 변경 후 SITE_CD(model.siteCd()). blank 면 미변경(mergeUserInfo 에서 미세팅).
+        String editDefaultSchCd = (model.defaultSchCd() == null || model.defaultSchCd().isBlank())
+                ? null : model.defaultSchCd().trim();
+        if (editDefaultSchCd != null
+                && !defaultSchOptionService.isValidDefaultSch(model.cmpnyCd(), model.siteCd(), editDefaultSchCd)) {
+            throw new ApiException(com.prafta.common.error.attd.AttdErrorCode.ATTD_400_140);
+        }
+
         user01Mapper.mergeUserInfo(UserInfoCommand.from(model, phoneEnc, phoneHmac, emailEnc, emailHmac, birthEnc));
+
+        // PRAFTA-COM-008-E-5: 기본 근무타입 설정/변경 시 즉시 미래 자동생성분 갱신 + 신규 생성(E-3 트리거2).
+        //   교대 비소속·미마감월만 반영(서비스 내부 가드). 실패는 격리(사용자 저장 영향 없음).
+        if (editDefaultSchCd != null && defaultSchGenEnabled) {
+            try {
+                defaultSchGenService.applyDefaultSchChange(model.cmpnyCd(), model.siteCd(), model.userCd(), editDefaultSchCd);
+            } catch (Exception e) {
+                log.error("기본근무 변경 자동생성 실패(사용자 저장 영향 없음) - userCd={}, defaultSchCd={}",
+                        model.userCd(), editDefaultSchCd, e);
+            }
+        }
 
         // PRAFTA-042-5 (D3-②/D7): 역할 변경에 따른 전사 사업장권한 자동부여/회수.
         //   변경 전 AUTH_CD(prevAuthCd) vs 신규 AUTH_CD(model.authCd()) 비교로 진입/이탈 판정한다.
@@ -627,6 +659,14 @@ public class User01ServiceImpl implements User01Service{
 			throw new ApiException(UserErrorCode.USER_400_044);
 		}
 
+		// 8-2) PRAFTA-COM-008-E-5: 기본 근무타입 화이트리스트 검증(입력 시만, 클라 신뢰 금지).
+		//   대상 사업장(siteCd) 활성(USE_YN='Y') 근무타입이 아니면 거부.
+		String defaultSchCd = isBlank(param.defaultSchCd()) ? null : param.defaultSchCd().trim();
+		if (defaultSchCd != null
+				&& !defaultSchOptionService.isValidDefaultSch(param.gvCmpnyCd(), siteCd, defaultSchCd)) {
+			throw new ApiException(com.prafta.common.error.attd.AttdErrorCode.ATTD_400_140);
+		}
+
 		// 8-1) PRAFTA-046: 노드-관리자 정합성 가드.
 		//   정/부 관리자가 없는 노드에는 근로자를 배정하지 않는다 (관리·승인 주체 부재 방지).
 		int nodeHasAdmin = user01Mapper.selectNodeHasAdmin(param.gvCmpnyCd(), siteCd, param.nodeCd());
@@ -697,6 +737,7 @@ public class User01ServiceImpl implements User01Service{
 				, isBlank(param.employmentType()) ? null : param.employmentType()
 				, isBlank(param.contractEndDate()) ? null : param.contractEndDate()
 				, isBlank(param.gender()) ? null : param.gender()
+				, defaultSchCd
 				, param.gvUserCd()
 		);
 		user01Mapper.insertOneUser(command);
@@ -746,8 +787,20 @@ public class User01ServiceImpl implements User01Service{
 			));
 		}
 
-		log.info("신규 계정 생성 완료 - 요청자={}, 신규userCd={}, userId={}, authCd={}, siteCd={}, nodeCd={}, accountStatus=04",
-				param.gvUserCd(), userCd, param.userId(), param.authCd(), siteCd, param.nodeCd());
+		// 20) PRAFTA-COM-008-E-5: 기본 근무타입 설정 시 즉시 자동생성(E-3 트리거2) — 교대 비소속·운영 게이트 on.
+		//   실패는 격리(생성 실패가 사용자 생성 트랜잭션을 롤백하지 않게). 신규 사용자는 보통 인증대기('04')라
+		//   당장은 비대상일 수 있으나, applyDefaultSchChange 가 멱등이라 무해하다.
+		if (defaultSchCd != null && defaultSchGenEnabled) {
+			try {
+				defaultSchGenService.applyDefaultSchChange(param.gvCmpnyCd(), siteCd, userCd, defaultSchCd);
+			} catch (Exception e) {
+				log.error("신규 계정 기본근무 자동생성 실패(계정 생성 영향 없음) - userCd={}, defaultSchCd={}",
+						userCd, defaultSchCd, e);
+			}
+		}
+
+		log.info("신규 계정 생성 완료 - 요청자={}, 신규userCd={}, userId={}, authCd={}, siteCd={}, nodeCd={}, defaultSchCd={}, accountStatus=04",
+				param.gvUserCd(), userCd, param.userId(), param.authCd(), siteCd, param.nodeCd(), defaultSchCd);
 	}
 
 	private static boolean isBlank(String s) {

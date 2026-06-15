@@ -77,22 +77,9 @@
       <p v-if="showEmptyState" class="attd-empty">표시할 근태가 없어요</p>
     </main>
 
-    <!-- 하단 탭바 (근태 활성) -->
-    <nav class="attd-tabbar" aria-label="하단 탭바">
-      <button
-        v-for="tab in bottomTabs"
-        :key="tab.key"
-        type="button"
-        class="attd-tabbar__tab"
-        :class="{ 'attd-tabbar__tab--on': tab.key === 'attd' }"
-        @click="onBottomTab(tab.key)"
-      >
-        <svg class="icon" width="22" height="22" aria-hidden="true">
-          <use :href="`#${tab.iconId}`" />
-        </svg>
-        <span class="attd-tabbar__lbl">{{ tab.label }}</span>
-      </button>
-    </nav>
+    <!-- 하단 탭바 (근태 활성) — prafta-app-025 J1-2: 자체 4탭 nav 를 공통 AppBottomTabBar(5탭)로 교체.
+         '마이' 탭 누락 + 안전/TBM '준비중' 문제가 동시 해소됨(라우팅은 컴포넌트가 중앙화 처리). -->
+    <AppBottomTabBar :active-tab="'attd'" />
 
     <!-- 이번주 카드 탭 시 바텀시트 -->
     <AttendanceActionSheet
@@ -140,58 +127,6 @@
           />
           <path d="M9 17v1a3 3 0 0 0 6 0v-1" />
         </symbol>
-        <symbol
-          id="i-attd-home"
-          viewBox="0 0 24 24"
-          fill="none"
-          stroke="currentColor"
-          stroke-width="2"
-          stroke-linecap="round"
-          stroke-linejoin="round"
-        >
-          <path d="M5 12l-2 0l9-9l9 9l-2 0" />
-          <path d="M5 12v7a2 2 0 0 0 2 2h10a2 2 0 0 0 2 -2v-7" />
-          <path d="M10 21v-6a2 2 0 0 1 2-2h0a2 2 0 0 1 2 2v6" />
-        </symbol>
-        <symbol
-          id="i-attd-cal"
-          viewBox="0 0 24 24"
-          fill="none"
-          stroke="currentColor"
-          stroke-width="2"
-          stroke-linecap="round"
-          stroke-linejoin="round"
-        >
-          <rect x="4" y="5" width="16" height="16" rx="2" />
-          <line x1="16" y1="3" x2="16" y2="7" />
-          <line x1="8" y1="3" x2="8" y2="7" />
-          <line x1="4" y1="11" x2="20" y2="11" />
-        </symbol>
-        <symbol
-          id="i-attd-shield"
-          viewBox="0 0 24 24"
-          fill="none"
-          stroke="currentColor"
-          stroke-width="2"
-          stroke-linecap="round"
-          stroke-linejoin="round"
-        >
-          <path d="M12 3l8 4v6c0 4.4-3.6 8-8 8s-8-3.6-8-8V7l8-4z" />
-        </symbol>
-        <symbol
-          id="i-attd-monitor"
-          viewBox="0 0 24 24"
-          fill="none"
-          stroke="currentColor"
-          stroke-width="2"
-          stroke-linecap="round"
-          stroke-linejoin="round"
-        >
-          <rect x="3" y="4" width="18" height="12" rx="1" />
-          <line x1="7" y1="20" x2="17" y2="20" />
-          <line x1="9" y1="16" x2="9" y2="20" />
-          <line x1="15" y1="16" x2="15" y2="20" />
-        </symbol>
       </defs>
     </svg>
   </div>
@@ -204,6 +139,7 @@ import { useRouter } from 'vue-router'
 import api from '@/api/axios'
 import { requestGps } from '@/utils/gpsBridge'
 import { loadKakaoMapScript } from '@/utils/kakaoMap'
+import { isDailyWorker } from '@/utils/employment'
 import { dateToYmd, ymdToDate } from './attdFormat'
 
 import AttendanceTodayCard from './components/AttendanceTodayCard.vue'
@@ -212,6 +148,7 @@ import AttendanceMonthCalendar from './components/AttendanceMonthCalendar.vue'
 import AttendanceDayDetailCard from './components/AttendanceDayDetailCard.vue'
 import AttendanceActionSheet from './components/AttendanceActionSheet.vue'
 import OffsiteReasonSheet from './components/OffsiteReasonSheet.vue'
+import AppBottomTabBar from '@/components/common/AppBottomTabBar.vue'
 
 const router = useRouter()
 const { proxy } = getCurrentInstance() || { proxy: null }
@@ -236,12 +173,6 @@ const segments = [
   { key: 'today', label: '오늘' },
   { key: 'week', label: '이번주' },
   { key: 'month', label: '이번달' },
-]
-const bottomTabs = [
-  { key: 'home', label: '홈', iconId: 'i-attd-home' },
-  { key: 'attd', label: '근태', iconId: 'i-attd-cal' },
-  { key: 'safety', label: '안전', iconId: 'i-attd-shield' },
-  { key: 'tbm', label: 'TBM', iconId: 'i-attd-monitor' },
 ]
 
 const activeTab = ref('today')
@@ -426,15 +357,7 @@ const onBell = () => {
   // TODO(developer): 알림 센터 진입(별도 라우트). 대상 화면 미구현.
   showAlert('준비 중입니다')
 }
-const onBottomTab = (key) => {
-  if (key === 'attd') return
-  if (key === 'home') {
-    router.push('/MainView')
-    return
-  }
-  // TODO(developer): 'safety'/'tbm' 탭 진입 화면 미구현.
-  showAlert('준비 중입니다')
-}
+// prafta-app-025 J1-2: 하단 탭 라우팅은 공통 AppBottomTabBar 가 중앙화 처리한다(자체 onBottomTab 제거).
 
 // ───────────────────────────────────────────────────────────
 // 이번주 네비
@@ -764,6 +687,13 @@ const onSheetAction = (payload) => {
 // 진입 시 기본 탭('오늘') 데이터 로드
 // ───────────────────────────────────────────────────────────
 onMounted(() => {
+  // prafta-app-025 J1-4: 일용직(DAILY)은 근태 조회 대상이 아님 → 직접 URL/딥링크 진입 방어.
+  //   탭/카드 숨김은 UX 차단일 뿐이라 직접 진입을 막기 위해 안내 후 메인으로 복귀.
+  if (isDailyWorker()) {
+    showAlert('일용직 사용자는 근태 조회 대상이 아닙니다.')
+    router.replace('/MainView')
+    return
+  }
   loadToday()
   // prafta-app-008: 외근 사유 시트(OffsiteReasonSheet)의 카카오 지도 SDK 프리로드.
   // 시트 오픈 시 SDK 네트워크 로드로 표시가 지연되는 문제 방지. 중복 가드로 idempotent, 실패는 폴백 동작.
@@ -785,6 +715,7 @@ onMounted(() => {
   --color-primary-text-deep: #15803d;
   --color-primary-text-darkest: #14532d;
   --color-danger: #ef4444;
+  --color-on-danger: #ffffff;
   --color-danger-tint: #fef2f2;
   --color-danger-border: #fecaca;
   --color-danger-text: #b91c1c;
@@ -818,7 +749,10 @@ onMounted(() => {
   --space-lg: 16px;
 
   position: relative;
-  min-height: 100vh;
+  /* 1뎁스 화면 공통 패턴(MainView/SafetyHub 등)과 동일하게 뷰포트 높이 고정 —
+     콘텐츠가 짧아도 하단 탭바(AppBottomTabBar)가 뷰포트 바닥에 고정되도록. dvh 미지원은 위 vh 폴백. */
+  height: 100vh;
+  height: 100dvh;
   display: flex;
   flex-direction: column;
   background: var(--color-bg);
@@ -930,38 +864,6 @@ onMounted(() => {
   text-align: center;
   font-size: 13px;
   color: var(--color-text-tertiary);
-}
-
-/* 하단 탭바 */
-.attd-tabbar {
-  height: 72px;
-  flex-shrink: 0;
-  background: var(--color-surface);
-  border-top: 1px solid var(--color-border);
-  display: grid;
-  grid-template-columns: repeat(4, 1fr);
-  align-items: center;
-  padding-bottom: var(--space-sm);
-}
-.attd-tabbar__tab {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 2px;
-  min-height: 56px;
-  background: transparent;
-  border: 0;
-  cursor: pointer;
-  color: var(--color-text-secondary);
-  font-family: inherit;
-}
-.attd-tabbar__tab--on {
-  color: var(--color-primary);
-  font-weight: 700;
-}
-.attd-tabbar__lbl {
-  font-size: 11px;
-  font-weight: 500;
 }
 
 .attd-sprite {

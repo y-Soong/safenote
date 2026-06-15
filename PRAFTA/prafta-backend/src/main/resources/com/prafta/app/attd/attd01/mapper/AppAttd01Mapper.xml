@@ -20,11 +20,11 @@
     </select>
 
     <!--
-      근무계획 + 스케줄정의(SCH) + 연차명(LEAVE) 조인.
-      WORK_PLAN_CD 는 SCH_CD 또는 LEAVE_CD 를 가리킨다.
-        - SCH 조인: TB_SCH_MGMT (CMPNY_CD,SITE_CD,SCH_CD)
-        - LEAVE 조인: TB_LEAVE_TYPE_MGMT (CMPNY_CD,LEAVE_CD)
-      둘 중 매칭되는 쪽만 채워진다.
+      근무계획 + 스케줄정의(SCH) 조인.
+      prafta-com-008-E-2: 연차-스케줄 모델 전환 — WORK_PLAN_CD 는 항상 SCH_CD 만 가리킨다.
+        연차일 판정은 work_plan 이 아니라 TB_USER_LEAVE_USE(CONFIRMED) 기준으로 단일화한다.
+        따라서 TB_LEAVE_TYPE_MGMT LEAVE 조인을 제거하고, leaveCd/leaveNm 은 항상 NULL 로 둔다
+        (record 위치매핑 유지를 위해 컬럼 자체는 NULL 리터럴로 남긴다).
     -->
     <select id="selectScheduleByRange" resultType="com.prafta.app.attd.attd01.result.ScheduleResult">
     /* AppAttd01Mapper.selectScheduleByRange */
@@ -40,21 +40,37 @@
         , SC.SEC_SCH_STR_TIME  AS secSchStrTime
         , SC.SEC_SCH_END_TIME  AS secSchEndTime
         , SC.SEC_SCH_BRK_MIN   AS secSchBrkMin
-        , LT.LEAVE_CD          AS leaveCd
-        , LT.LEAVE_NM          AS leaveNm
+        , NULL                 AS leaveCd
+        , NULL                 AS leaveNm
       FROM TB_USER_WORK_PLAN WP
       LEFT JOIN TB_SCH_MGMT SC
         ON  SC.CMPNY_CD = WP.CMPNY_CD
         AND SC.SITE_CD  = WP.SITE_CD
         AND SC.SCH_CD   = WP.WORK_PLAN_CD
-      LEFT JOIN TB_LEAVE_TYPE_MGMT LT
-        ON  LT.CMPNY_CD = WP.CMPNY_CD
-        AND LT.LEAVE_CD = WP.WORK_PLAN_CD
      WHERE WP.CMPNY_CD = #{q.cmpnyCd}
        AND WP.SITE_CD  = #{q.siteCd}
        AND WP.USER_CD  = #{q.userCd}
        AND WP.WORK_YMD BETWEEN #{q.fromYmd} AND #{q.toYmd}
      ORDER BY WP.WORK_YMD
+    </select>
+
+    <!--
+      prafta-com-008-E-2: 그날 연차일(출근 차단 §8.3) 판정 — 일 단위(USE_UNIT_TYPE='00') 확정 연차 존재 여부.
+        부분연차(반차/시간차)는 근무일을 유지하므로 차단 대상이 아니다(전 단위가 아닌 '00'만 카운트).
+        CONFIRMED + DEL_YN='N' + START_DATE <= workYmd <= END_DATE.
+    -->
+    <select id="countFullDayLeaveOn" resultType="int">
+    /* AppAttd01Mapper.countFullDayLeaveOn */
+    SELECT COUNT(*)
+      FROM TB_USER_LEAVE_USE U
+     WHERE U.CMPNY_CD      = #{cmpnyCd}
+       AND U.SITE_CD       = #{siteCd}
+       AND U.USER_CD       = #{userCd}
+       AND U.LEAVE_STATUS  = 'CONFIRMED'
+       AND U.DEL_YN        = 'N'
+       AND U.USE_UNIT_TYPE = '00'
+       AND U.START_DATE   &lt;= #{workYmd}
+       AND U.END_DATE     &gt;= #{workYmd}
     </select>
 
     <!--
@@ -113,23 +129,6 @@
     </select>
 
     <!--
-      회사 단위 출퇴근 표준화 룰 + SYS029 단위(분).
-      SYS029.VAL_D_INFO_1 이 분(minutes). 설정안함(01)이면 VAL_D_INFO_1 가 '0' 또는 null.
-    -->
-    <select id="selectStdTimeRules" resultType="com.prafta.app.attd.attd01.result.StdTimeRuleResult">
-    /* AppAttd01Mapper.selectStdTimeRules */
-    SELECT
-          R.STD_TIME_RULE_TYPE  AS stdTimeRuleType
-        , R.STD_TIME_TYPE       AS stdTimeType
-        , CAST(D.VAL_D_INFO_1 AS SIGNED) AS unitMinutes
-      FROM TB_ATTD_STD_TIME_RULE R
-      LEFT JOIN TB_SYST_VAL_D D
-        ON  D.SYST_VAL_CD   = 'SYS029'
-        AND D.SYST_VAL_D_CD = R.STD_TIME_TYPE
-     WHERE R.CMPNY_CD = #{cmpnyCd}
-    </select>
-
-    <!--
       휴일 — 일자범위. HOLIDAY_YMD 는 date 타입 → YYYYMMDD 문자열 변환. USE_YN='Y'.
       fromYmd/toYmd 는 YYYYMMDD 문자열 → DATE 비교를 위해 STR_TO_DATE 사용.
     -->
@@ -172,6 +171,36 @@
        AND U.DEL_YN       = 'N'
        AND U.START_DATE  &lt;= #{q.toYmd}
        AND U.END_DATE    &gt;= #{q.fromYmd}
+    </select>
+
+    <!--
+      본인 초과근무 보유 일자(YYYYMMDD) — 스케줄 수정 요청 게이팅용.
+      등록 초과근무(tb_user_overtime_mgmt, 취소 제외) ∪ 초과근무 신청(tb_user_attd_req 03/04, 상태 신청/승인).
+      둘 중 하나라도 있으면 그 일자 포함(DISTINCT). SELECT * 금지, #{} 바인딩.
+    -->
+    <select id="selectOvertimeYmds" resultType="string">
+    /* AppAttd01Mapper.selectOvertimeYmds */
+    SELECT DISTINCT T.WORK_YMD
+      FROM (
+            SELECT OM.WORK_YMD
+              FROM TB_USER_OVERTIME_MGMT OM
+             WHERE OM.CMPNY_CD = #{q.cmpnyCd}
+               AND OM.SITE_CD  = #{q.siteCd}
+               AND OM.USER_CD  = #{q.userCd}
+               AND OM.DEL_YN   = 'N'
+               AND OM.OT_STATUS &lt;&gt; 'CANCELLED'
+               AND OM.WORK_YMD BETWEEN #{q.fromYmd} AND #{q.toYmd}
+            UNION
+            SELECT RQ.WORK_YMD
+              FROM TB_USER_ATTD_REQ RQ
+             WHERE RQ.CMPNY_CD = #{q.cmpnyCd}
+               AND RQ.SITE_CD  = #{q.siteCd}
+               AND RQ.USER_CD  = #{q.userCd}
+               AND RQ.DEL_YN   = 'N'
+               AND RQ.REQ_TYPE IN ('03', '04')
+               AND RQ.REQ_STATUS IN ('01', '02')
+               AND RQ.WORK_YMD BETWEEN #{q.fromYmd} AND #{q.toYmd}
+           ) T
     </select>
 
     <!-- 본인 소속부서 NODE_CD (마감 커버리지 판정용) -->
@@ -242,11 +271,12 @@
     <select id="selectOpenAttd" resultType="com.prafta.app.attd.attd01.result.OpenAttdResult">
     /* AppAttd01Mapper.selectOpenAttd */
     SELECT
-          A.ATTD_ID    AS attdId
-        , A.WORK_YMD   AS workYmd
-        , A.WORK_SEQ   AS workSeq
-        , A.SITE_CD    AS siteCd
-        , A.NODE_CD    AS nodeCd
+          A.ATTD_ID        AS attdId
+        , A.WORK_YMD       AS workYmd
+        , A.WORK_SEQ       AS workSeq
+        , A.SITE_CD        AS siteCd
+        , A.NODE_CD        AS nodeCd
+        , A.CHECK_OUT_TIME AS checkOutTime
       FROM TB_USER_ATTD_MGMT A
      WHERE A.CMPNY_CD = #{cmpnyCd}
        AND A.SITE_CD  = #{siteCd}
@@ -254,6 +284,35 @@
        AND A.DEL_YN   = 'N'
        AND A.CHECK_IN_TIME IS NOT NULL
        AND A.CHECK_OUT_TIME IS NULL
+       AND A.WORK_YMD &gt;= #{fromYmd}
+       <if test="workYmd != null">
+       AND A.WORK_YMD = #{workYmd}
+       </if>
+     ORDER BY A.WORK_YMD DESC, A.WORK_SEQ DESC
+     LIMIT 1
+    </select>
+
+    <!--
+      prafta-app-026: 재퇴근 대상(D+1 윈도우 내 최신 출근행) 1건.
+      대상 = DEL_YN='N' && CHECK_IN_TIME 有 && WORK_YMD >= fromYmd, CHECK_OUT_TIME 유무 무관.
+      workYmd(Low-1) 가 주어지면 그 일자로 한정. 정렬 WORK_YMD DESC, WORK_SEQ DESC LIMIT 1 → tail 슬롯만.
+      반환 checkOutTime 이 null=최초 퇴근, 非null=재퇴근(시각 덮어쓰기) 분기 키.
+    -->
+    <select id="selectReCheckOutTarget" resultType="com.prafta.app.attd.attd01.result.OpenAttdResult">
+    /* AppAttd01Mapper.selectReCheckOutTarget */
+    SELECT
+          A.ATTD_ID        AS attdId
+        , A.WORK_YMD       AS workYmd
+        , A.WORK_SEQ       AS workSeq
+        , A.SITE_CD        AS siteCd
+        , A.NODE_CD        AS nodeCd
+        , A.CHECK_OUT_TIME AS checkOutTime
+      FROM TB_USER_ATTD_MGMT A
+     WHERE A.CMPNY_CD = #{cmpnyCd}
+       AND A.SITE_CD  = #{siteCd}
+       AND A.USER_CD  = #{userCd}
+       AND A.DEL_YN   = 'N'
+       AND A.CHECK_IN_TIME IS NOT NULL
        AND A.WORK_YMD &gt;= #{fromYmd}
        <if test="workYmd != null">
        AND A.WORK_YMD = #{workYmd}
@@ -287,7 +346,7 @@
     <!--
       출근 레코드의 퇴근 채움 UPDATE.
       동시성 가드: CHECK_OUT_TIME IS NULL (이미 퇴근됐으면 0건). CMPNY_CD/USER_CD 도 가드.
-      퇴근 시각은 서버 NOW() 기준 raw 실제 시각(표준화 미적용). CHECK_OUT_METHOD='01'(SYS031).
+      퇴근 시각은 서버 NOW() 기준 raw 실제 시각. CHECK_OUT_METHOD='01'(SYS031).
     -->
     <update id="updateCheckOut">
     /* AppAttd01Mapper.updateCheckOut */
@@ -305,6 +364,39 @@
        AND DEL_YN   = 'N'
        AND CHECK_OUT_TIME IS NULL
     </update>
+
+    <!--
+      prafta-app-026: 재퇴근(이미 퇴근된 슬롯) 퇴근시각 덮어쓰기 UPDATE.
+      NULL 가드 없음(last-write-wins). WHERE = ATTD_ID + CMPNY_CD + USER_CD + DEL_YN='N'(스코프 가드).
+    -->
+    <update id="updateReCheckOut">
+    /* AppAttd01Mapper.updateReCheckOut */
+    UPDATE TB_USER_ATTD_MGMT
+       SET
+             CHECK_OUT_DATE   = #{c.checkOutDate}
+           , CHECK_OUT_TIME   = #{c.checkOutTime}
+           , CHECK_OUT_METHOD = #{c.checkOutMethod}
+           , CHECK_OUT_DEVICE_UUID = #{c.deviceUuid}
+           , UPDATE_NO        = #{c.userCd}
+           , UPDATE_DATE      = NOW()
+     WHERE ATTD_ID  = #{c.attdId}
+       AND CMPNY_CD = #{c.cmpnyCd}
+       AND USER_CD  = #{c.userCd}
+       AND DEL_YN   = 'N'
+    </update>
+
+    <!--
+      prafta-app-026: 해당 ATTD_ID 의 퇴근 GPS 행(GPS_INFO_TYPE='02') 물리 삭제(hard DELETE).
+      TB_USER_ATTD_GPS 에 DEL_YN 컬럼이 없고, 외근 판정 EXISTS 가 DEL_YN 미참조 → 재퇴근 delete-then-insert 로
+      외근↔온사이트 전환을 정확히 반영하려면 hard DELETE 여야 한다. PK(CMPNY_CD, GPS_ID), idx_gps_attd(CMPNY_CD, ATTD_ID).
+    -->
+    <delete id="deleteCheckOutGps">
+    /* AppAttd01Mapper.deleteCheckOutGps */
+    DELETE FROM TB_USER_ATTD_GPS
+     WHERE CMPNY_CD      = #{cmpnyCd}
+       AND ATTD_ID       = #{attdId}
+       AND GPS_INFO_TYPE = '02'
+    </delete>
 
     <!-- 퇴근 GPS 기록 INSERT (GPS_INFO_TYPE='02' 퇴근, SYS028). OFFSITE_REASON=외근 사유(prafta-app-008). -->
     <insert id="insertCheckOutGps">

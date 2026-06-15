@@ -54,6 +54,9 @@
       />
     </main>
 
+    <!-- 하단 탭바 (TBM 활성) — prafta-app-025 J1-2: 1뎁스 허브이므로 공통 탭바 장착(라우팅 중앙화). -->
+    <AppBottomTabBar :active-tab="'tbm'" />
+
     <!-- 입실 비번 시트 (참석가능/교육중 카드 선택 시 오픈 → enter API) -->
     <TbmEntryPwdSheet
       v-model="entrySheetOpen"
@@ -93,6 +96,7 @@ import TbmAvailableList from './components/TbmAvailableList.vue'
 import TbmInProgressList from './components/TbmInProgressList.vue'
 import TbmCompletedList from './components/TbmCompletedList.vue'
 import TbmEntryPwdSheet from './components/TbmEntryPwdSheet.vue'
+import AppBottomTabBar from '@/components/common/AppBottomTabBar.vue'
 
 const router = useRouter()
 const { proxy } = getCurrentInstance() || { proxy: null }
@@ -234,6 +238,7 @@ const onEntrySubmit = async ({ entryPwd }) => {
   --color-primary: #16a34a;
   --color-primary-tint: #f0fdf4;
   --color-danger: #ef4444;
+  --color-on-danger: #ffffff;
   --color-danger-tint: #fef2f2;
   --color-danger-text: #b91c1c;
   --color-warning-tint: #fffbeb;
@@ -254,7 +259,10 @@ const onEntrySubmit = async ({ entryPwd }) => {
   --space-md: 12px;
   --space-lg: 16px;
 
-  min-height: 100%;
+  /* prafta-app-025 J1-2: 하단 공통 탭바를 뷰포트 바닥에 고정하기 위해 화면 높이를 뷰포트로 고정
+     (기존 min-height:100% → 1뎁스 화면 패턴(MainView 등)과 동일하게 100dvh). */
+  height: 100vh;
+  height: 100dvh;
   background: var(--color-bg);
   color: var(--color-text-primary);
   display: flex;
@@ -318,10 +326,12 @@ const onEntrySubmit = async ({ entryPwd }) => {
   font-weight: 700;
 }
 
-/* 본문 */
+/* 본문 — 하단 공통 탭바(72px)에 가려지지 않도록 스크롤 + 하단 패딩(88px) */
 .tbm-hub-body {
   flex: 1;
-  padding: var(--space-md) var(--space-lg) calc(var(--space-lg) + env(safe-area-inset-bottom, 0px));
+  min-height: 0;
+  overflow-y: auto;
+  padding: var(--space-md) var(--space-lg) 88px;
 }
 
 /* 스프라이트 */

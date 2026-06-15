@@ -65,9 +65,9 @@ public class AppAdminApprovalServiceImpl implements AppAdminApprovalService {
     private final AdminScopeMapper adminScopeMapper;       // 노드 자손 전개(재귀 CTE) — Phase 1 재사용
     private final ApprovalLineMapper approvalLineMapper;   // 연차 결재선(공통) — steps/IDOR 보조
 
-    // A-3 처리(B4): web 처리 자산 재사용(SQL/표준화 엔진 복제 금지). comApi/webApi HTTP 호출이 아니라
+    // A-3 처리(B4): web 처리 자산 재사용(SQL 엔진 복제 금지). comApi/webApi HTTP 호출이 아니라
     //   동일 JVM 의 @Service 빈을 같은 트랜잭션으로 호출한다(앱 leaveflow/근태 모듈이 이미 쓰는 패턴).
-    private final Attd07Service attd07Service;             // 근태보정/초과 승인·반려(MGMT 반영+HIST+표준화)
+    private final Attd07Service attd07Service;             // 근태보정/초과 승인·반려(MGMT 반영+HIST)
     private final LeaveFlowService leaveFlowService;       // 연차 다단 결재 승인·반려(단계 진행+차감)
 
     // SYS032 요청유형
@@ -368,7 +368,7 @@ public class AppAdminApprovalServiceImpl implements AppAdminApprovalService {
             claimed.put("endAt", joinDt(meta.endDate(), meta.endTime()));
             body.put("claimMode", null);           // 사후/사전 구분은 마감/일자 기준(A1) — 후속
             body.put("claimed", claimed);
-            body.put("systemCalc", null);          // 시스템 계산값은 표준화 윈도우 엔진(A-3/R3) 포팅 후 제공
+            body.put("systemCalc", null);          // 시스템 계산값은 OT 윈도우 엔진(A-3/R3) 포팅 후 제공
             body.put("approved", null);
         } else if (G_LEAVE.equals(group)) {
             LeaveBodyRow lb = mapper.selectLeaveBody(cmpnyCd, meta.reqId(), meta.targetId());
@@ -659,7 +659,7 @@ public class AppAdminApprovalServiceImpl implements AppAdminApprovalService {
 
     /**
      * 요청대로 승인(APPROVE_ASIS). 근태보정/초과는 REQ 의 신청값(START/END)을 그대로 반영,
-     * 연차는 다단 결재 단계 승인. 표준화/MGMT/HIST/차감은 위임 web 서비스가 수행한다.
+     * 연차는 다단 결재 단계 승인. MGMT/HIST/차감은 위임 web 서비스가 수행한다.
      */
     private void doApproveAsis(String group, ReqMetaRow meta, String nodeCd, ApprovalProcessParam p) {
         switch (group) {
@@ -676,7 +676,7 @@ public class AppAdminApprovalServiceImpl implements AppAdminApprovalService {
                         p.gvCmpnyCd(), p.gvUserCd(), p.gvAuthCd()));
                 break;
             case G_OVERTIME:
-                // 초과근무 승인: 신청 구간 1건(START~END)을 표준화 엔진(web)에 투입해 등록. attdId 는 일자 기준 서버 도출 위임(null).
+                // 초과근무 승인: 신청 구간 1건(START~END)을 OT 등록 엔진(web)에 투입해 등록. attdId 는 일자 기준 서버 도출 위임(null).
                 //   nodeCd = 유효 노드(Fix3): web canManageNode(param.nodeCd) 통과(OT 승인은 nodeCd 변조검증 없음).
                 List<OvertimeItemModel> overtimes = new ArrayList<>(1);
                 overtimes.add(new OvertimeItemModel(

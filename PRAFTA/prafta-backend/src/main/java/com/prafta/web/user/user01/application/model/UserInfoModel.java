@@ -16,8 +16,10 @@ public record UserInfoModel(
     , String authCd
     , String rankCd
     , String useYn
+    // PRAFTA-COM-008-E-5 — 기본 근무타입(SCH_CD, 선택). blank 면 미변경.
+    , String defaultSchCd
 
     , String gvUserCd
 ) {
-	    
+
 }

@@ -396,6 +396,8 @@
 		    LEADER_YN   = NEW.LEADER_YN
 		    , UPDATE_NO   = NEW.INSERT_NO
 		    , UPDATE_DATE = NOW()
+		    <!-- prafta-com-008-D-4: 재가입(기존 탈퇴 행 잔존) 시 탈퇴일 리셋(=현 소속 복귀). -->
+		    , LEAVE_TEAM_YMD = NULL
 	</update>
 
     <update id="updateShiftTeamNm" parameterType="com.prafta.web.attd.attd06.application.command.UpdateShiftTeamNmCommand">
@@ -410,15 +412,32 @@
       AND SHIFT_TEAM_ID = #{shiftTeamId}
     </update>
 
+    <!--
+      prafta-com-008-D-4: 교대팀에서 사용자 제거 = 행 보존 + 탈퇴일 마킹(DELETE → UPDATE 전환).
+        - 기존 자동생성 근무계획(tb_user_work_plan, GEN_SOURCE='SHIFT')은 건드리지 않는다(요구 2-1).
+        - 탈퇴일(LEAVE_TEAM_YMD) = 서버 산출 오늘(YYYYMMDD, 클라 미신뢰). 이 날짜부터 근무계획 변경 허용(미포함).
+        - ★ WHERE 키는 기존 DELETE 와 동일하게 유지한다(SHIFT_CD/TEAM_IDX 미포함 — 같은 팀 내 같은 USER 1행 가정).
+          키를 추가하면 0행 매칭 회귀가 발생하므로 추가 금지.
+        - 이미 탈퇴 마킹된 행(LEAVE_TEAM_YMD NOT NULL)도 멱등하게 재마킹(오늘로 갱신)되며 문제 없다.
+    -->
     <update id="deleteShiftTeamUser" parameterType="com.prafta.web.attd.attd06.application.command.DeleteShiftTeamUserCommand">
     /* Attd06Mapper.deleteShiftTeamUser */
-    DELETE FROM TB_SHIFT_SCH_TEAM_USER
+    UPDATE TB_SHIFT_SCH_TEAM_USER
+    SET LEAVE_TEAM_YMD = DATE_FORMAT(NOW(), '%Y%m%d')
+        , UPDATE_NO = #{gvUserCd}
+        , UPDATE_DATE = NOW()
     WHERE CMPNY_CD = #{gvCmpnyCd}
       AND SITE_CD = #{siteCd}
       AND SHIFT_TEAM_ID = #{shiftTeamId}
       AND USER_CD = #{userCd}
     </update>
 
+    <!--
+      prafta-com-008-D-4: 교대팀에 사용자 추가(재가입 흡수).
+        - 신규 가입(행 없음)은 기존과 동일하게 INSERT.
+        - ★ 재가입(PK 충돌 = 기존 탈퇴 행 LEAVE_TEAM_YMD NOT NULL 잔존) 시 ON DUPLICATE KEY UPDATE 로
+          LEAVE_TEAM_YMD 를 NULL 로 리셋(=현 소속 복귀). 단일행 모델이라 탈퇴~재가입 공백기는 부정확(MVP 수용).
+    -->
     <update id="insertShiftTeamUsers" parameterType="com.prafta.web.attd.attd06.application.command.InsertShiftTeamUsersCommand">
     /* Attd06Mapper.insertShiftTeamUsers */
     INSERT INTO TB_SHIFT_SCH_TEAM_USER
@@ -449,6 +468,12 @@
 		, #{gvUserCd}
 		, NOW()
 	)
+	AS NEW
+	ON DUPLICATE KEY UPDATE
+	    TEAM_IDX = NEW.TEAM_IDX
+	    , UPDATE_NO = NEW.INSERT_NO
+	    , UPDATE_DATE = NOW()
+	    , LEAVE_TEAM_YMD = NULL
     </update>
 
     <update id="updateShiftTeamLeaders" parameterType="com.prafta.web.attd.attd06.application.command.UpdateShiftTeamLeadersCommand">
@@ -484,14 +509,24 @@
       AND SHIFT_TEAM_ID = #{shiftTeamId}
     </delete>
     
-    <delete id="deleteShiftTeamAllUser" parameterType="com.prafta.web.attd.attd06.application.command.DeleteShiftTeamCommand">
+    <!--
+      prafta-com-008-D-4: 팀 전체 사용자 제거 = 멤버 행 보존 + 일괄 탈퇴일 마킹(DELETE → UPDATE 전환, 메인 확인 #5).
+        - 팀 자체 삭제(deleteShiftTeam 의 마스터 행 DELETE)와 동반 호출되나, 멤버 행은 보존하여
+          기존 자동생성 근무계획의 "교대였음" 추적을 유지한다(요구 2-1 "기존 스케줄 유지" 일관).
+        - 이미 탈퇴 마킹된 행은 멱등하게 오늘로 재마킹(WHERE 추가 필터 없음 — 팀 전체 일괄).
+        - 자동생성 work_plan(GEN_SOURCE='SHIFT')은 손대지 않는다.
+    -->
+    <update id="deleteShiftTeamAllUser" parameterType="com.prafta.web.attd.attd06.application.command.DeleteShiftTeamCommand">
     /* Attd06Mapper.deleteShiftTeamAllUser */
-    DELETE FROM TB_SHIFT_SCH_TEAM_USER
+    UPDATE TB_SHIFT_SCH_TEAM_USER
+    SET LEAVE_TEAM_YMD = DATE_FORMAT(NOW(), '%Y%m%d')
+        , UPDATE_NO = #{gvUserCd}
+        , UPDATE_DATE = NOW()
     WHERE CMPNY_CD = #{gvCmpnyCd}
       AND SITE_CD = #{siteCd}
       AND SHIFT_CD = #{shiftCd}
-      AND SHIFT_TEAM_ID = #{shiftTeamId}    
-    </delete>
+      AND SHIFT_TEAM_ID = #{shiftTeamId}
+    </update>
     
     <select id="selectShiftPtrnSchList" parameterType="com.prafta.web.attd.attd06.application.query.SchCdListQuery" resultType="string">
     /* Attd06Mapper.selectShiftPtrnSchList */

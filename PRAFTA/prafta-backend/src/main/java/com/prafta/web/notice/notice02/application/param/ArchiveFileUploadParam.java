@@ -15,6 +15,7 @@ import com.prafta.common.exception.ApiException;
 public record ArchiveFileUploadParam(
     String gvCmpnyCd
     , String gvUserCd
+    , String gvAuthCd
     , String gvSiteCd
     , MultipartFile file
 ){
@@ -28,6 +29,7 @@ public record ArchiveFileUploadParam(
         return new ArchiveFileUploadParam(
             tokenInfo.gv_cmpnyCd()
             , tokenInfo.gv_userCd()
+            , tokenInfo.gv_authCd()
             , tokenInfo.gv_siteCd()
             , file
         );

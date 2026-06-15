@@ -197,6 +197,32 @@ public class AttdCloseServiceImpl implements AttdCloseService {
         return canManageNode(authCd, requesterUserCd, cmpnyCd, siteCd, targetNodeCd);
     }
 
+    @Override
+    public boolean canManageNodeExcludeSafe(String authCd, String userCd, String cmpnyCd, String siteCd, String nodeCd) {
+        // PRAFTA-COM-008-C 작업1: 전사 통과는 master/hr 만(safe 제외). isManager = master/hr.
+        if (AuthRoleUtils.isManager(authCd)) {
+            return true;
+        }
+        // 그 외(노드 관리자 후보)는 전체('*')/부서 미지정 불가, 본인이 해당/상위 부서 관리자인 경우만 허용
+        if (nodeCd == null || nodeCd.isBlank() || WHOLE_SITE.equals(nodeCd)) {
+            return false;
+        }
+        return attdCloseMapper.countNodeAdmin(cmpnyCd, siteCd, nodeCd, userCd) > 0;
+    }
+
+    @Override
+    public boolean canManageUserExcludeSafe(String authCd, String requesterUserCd, String cmpnyCd, String siteCd, String targetUserCd) {
+        // PRAFTA-COM-008-C 작업1: 전사 통과는 master/hr 만(safe 제외)
+        if (AuthRoleUtils.isManager(authCd)) {
+            return true;
+        }
+        String targetNodeCd = attdCloseMapper.selectUserNodeCd(cmpnyCd, siteCd, targetUserCd);
+        if (targetNodeCd == null || targetNodeCd.isBlank()) {
+            return false;
+        }
+        return canManageNodeExcludeSafe(authCd, requesterUserCd, cmpnyCd, siteCd, targetNodeCd);
+    }
+
     // ===== 내부 헬퍼 =====
 
     /** 빈 부서 = 전체('*') 스코프. */

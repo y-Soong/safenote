@@ -42,7 +42,7 @@
           @keydown.enter="onRow(row.noticeId)"
           @keydown.space.prevent="onRow(row.noticeId)"
         >
-          <span v-if="row.isImportant" class="nl-row__imp">중요</span>
+          <span v-if="row.isImportant" class="nl-row__imp">고정</span>
           <span class="nl-row__title" :class="{ 'nl-row__title--read': !row.isUnread }">
             {{ row.title }}
           </span>

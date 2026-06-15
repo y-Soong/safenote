@@ -76,4 +76,12 @@ public interface Archive02Mapper {
 
     // 다운로드 존재검증 (자료실=회사 전체 공통이라 대상 재귀 불필요). 1 이상이면 접근 가능
     int countArchiveVisible(ArchiveFileQuery query);
+
+    // ── 등록 권한(전사 노드관리자 판정) ───────────────────────
+    // 전사(사업장 무관) 노드 정/부 관리자 존재 카운트(등록/첨부업로드 게이트용).
+    // access-context AppAdminAccessMapper.existsNodeAdminAnySite 와 동일 의미(TB_SITE_NODE, CMPNY_CD 스코프).
+    int countNodeAdminAnySite(
+        @Param("cmpnyCd") String cmpnyCd
+        , @Param("userCd") String userCd
+    );
 }

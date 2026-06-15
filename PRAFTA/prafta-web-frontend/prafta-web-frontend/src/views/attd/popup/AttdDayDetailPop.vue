@@ -118,30 +118,6 @@
                   :loading="gpsPanel.loading"
                 />
               </div>
-              <!-- 표준화 적용 -->
-              <div class="time-row">
-                <div class="time-lbl">표준화 적용</div>
-                <div class="time-val">
-                  <template v-if="cfg.timeCard.std.segments">
-                    <div class="seg-multi">
-                      <div
-                        v-for="(s, i) in cfg.timeCard.std.segments"
-                        :key="i"
-                        class="seg-line"
-                      >
-                        <span class="seg-tag">{{ s.tag }}</span>
-                        <span v-html="s.range"></span>
-                      </div>
-                    </div>
-                  </template>
-                  <template v-else>
-                    <span
-                      v-html="cfg.timeCard.std.value"
-                      :class="{ 'val-empty': cfg.timeCard.std.empty }"
-                    ></span>
-                  </template>
-                </div>
-              </div>
               <!-- 비고 -->
               <div class="time-row">
                 <div class="time-lbl">비고</div>
@@ -1276,7 +1252,7 @@ const actualRange = (inDate, inTime, outDate, outTime) => {
   const right = outTime
     ? dtBlock(outDate, outTime)
     : '<span class="val-missing">(미등록)</span>';
-  // 실제 출퇴근/표준화 적용은 구간 분리기호로 '~' 를 사용한다 (스케줄 계획은 '→' 유지)
+  // 실제 출퇴근은 구간 분리기호로 '~' 를 사용한다 (스케줄 계획은 '→' 유지)
   return `${left}<span class="dt-arrow">~</span>${right}`;
 };
 
@@ -1284,34 +1260,6 @@ const planRange = (s, e) => {
   if (!s && !e) return "−";
   return `${fmtTime(s)} → ${fmtTime(e)}`;
 };
-
-// ── 표준화 규칙 위반 판정 (출근 올림 / 퇴근 내림) ─────────────
-//   표준화는 출근 올림(CEIL)·퇴근 내림(FLOOR)으로 산출된다(회사 유리, 백엔드 PRAFTA-015).
-//   출퇴근 시각이 같거나 매우 짧아 표준 출근시각이 표준 퇴근시각 이상이 되면(시간 규칙 위반)
-//   표준화를 적용하지 않고 원본 근태값을 그대로 보여준다(앱 attd01 과 동일 규칙).
-//   표준 출/퇴근 시각이 모두 있을 때만 판정한다(한쪽이라도 없으면 미등록/미산출 → 위반 아님).
-const stdYmdToDate = (ymd) => {
-  if (!ymd || ymd.length !== 8) return null;
-  return new Date(+ymd.slice(0, 4), +ymd.slice(4, 6) - 1, +ymd.slice(6, 8));
-};
-const stdRuleViolated = (inDate, inStdTime, outDate, outStdTime) => {
-  if (!inStdTime || !outStdTime) return false;
-  const sMin = hhmmToMin(inStdTime);
-  const eMin = hhmmToMin(outStdTime);
-  if (sMin == null || eMin == null) return false;
-  const dIn = stdYmdToDate(inDate);
-  const dOut = stdYmdToDate(outDate);
-  const dayGap =
-    dIn && dOut ? Math.round((dOut.getTime() - dIn.getTime()) / 86400000) : 0;
-  return eMin + dayGap * 1440 <= sMin;
-};
-const STD_UNMET_HTML =
-  '<span class="std-unmet">조건 미충족으로 표준화 규칙 미적용</span>';
-// 표준화 표시값: 규칙 위반이면 미적용 안내, 아니면 표준 시각 구간.
-const stdRange = (inDate, inStdTime, outDate, outStdTime) =>
-  stdRuleViolated(inDate, inStdTime, outDate, outStdTime)
-    ? STD_UNMET_HTML
-    : actualRange(inDate, inStdTime, outDate, outStdTime);
 
 const buildTimeCard = () => {
   const r = record.value;
@@ -1322,13 +1270,12 @@ const buildTimeCard = () => {
     return {
       plan: { value: "휴무", meta: "정기 휴일", cls: "value-off" },
       actual: { value: "−", cls: "val-empty" },
-      std: { value: "−", cls: "val-empty" },
       note: { value: "휴무", cls: "value-off" },
     };
   }
 
   // 계획 — 휴무(계획 없음)면 "휴무", plan2가 의미 있는 시간일 때만 2구간 표시
-  // 정책 §7.5: 휴무일에도 출퇴근 등록은 허용되며 실적/표준화/비고는 그대로 표시한다
+  // 정책 §7.5: 휴무일에도 출퇴근 등록은 허용되며 실적/비고는 그대로 표시한다
   // (해당 근무는 전량 추가근무로 취급).
   let plan;
   if (isOff) {
@@ -1344,12 +1291,10 @@ const buildTimeCard = () => {
     plan = { value: planRange(r.plan1Start, r.plan1End), meta: "1구간" };
   }
 
-  // 실적 / 표준화
+  // 실적
   let actual;
-  let std;
   if (isLeave) {
     actual = { value: "출근 차단됨", cls: "val-empty" };
-    std = { value: "−", cls: "val-empty" };
   } else if (hasSeg2) {
     actual = {
       segments: [
@@ -1380,28 +1325,6 @@ const buildTimeCard = () => {
         },
       ],
     };
-    std = {
-      segments: [
-        {
-          tag: "1구간",
-          range: stdRange(
-            r.act1InDate,
-            r.act1InStdTime,
-            r.act1OutDate,
-            r.act1OutStdTime
-          ),
-        },
-        {
-          tag: "2구간",
-          range: stdRange(
-            r.act2InDate,
-            r.act2InStdTime,
-            r.act2OutDate,
-            r.act2OutStdTime
-          ),
-        },
-      ],
-    };
   } else {
     actual = {
       value: actualRange(
@@ -1414,19 +1337,10 @@ const buildTimeCard = () => {
       outside: r.attd1OutsideYn === "Y",
       attdId: r.attd1Id || "",
     };
-    std = {
-      value: stdRange(
-        r.act1InDate,
-        r.act1InStdTime,
-        r.act1OutDate,
-        r.act1OutStdTime
-      ),
-    };
   }
 
   // 초과근무 집계 — 우측 패널의 form.segments[].otList 기반.
   //   비고 영역의 "초과근무 N건 인정 (Xh Ym)" 표시에만 사용한다.
-  //   (표준화 적용 카드의 초과 합계 요약 라인은 prafta-009 요청으로 제거됨)
   const segs = form.value.segments || [];
   const otCount = segs.reduce(
     (sum, seg) =>
@@ -1468,7 +1382,7 @@ const buildTimeCard = () => {
     note = { value: "−", cls: "val-empty" };
   }
 
-  return { plan, actual, std, note };
+  return { plan, actual, note };
 };
 
 // "20260503" → "2026-05-03" (CalendarSrch 입력 포맷)
@@ -1957,7 +1871,7 @@ const segSummary = (seg) => {
 };
 
 // ── 추가근무(OT) 신규 API 연동 (PRAFTA-003) ────────────────
-// 정책서 2,3번 — 등록 가능 OT 범위 = (표준화 적용 근무시간) - (스케줄 시간).
+// 정책서 2,3번 — 등록 가능 OT 범위 = (실근태 근무시간) - (스케줄 시간).
 // 백엔드 /attd07/update-user-overtime-requests 에서도 동일 검증을 수행한다.
 // 여기서는 사용자 가이드 + 사전 차단을 위해 클라이언트 측에서도 한 번 계산한다.
 
@@ -2063,8 +1977,7 @@ const buildSchSegments = () => {
 //   (dayDiff + 1) * 1440 + hhmm 으로 산출해 workYmd 00:00 = 1440 이 되도록 한다.
 // [QA 재작업 D3] 구간 인덱스(idx0=1구간, idx1=2구간)를 보존한다.
 //   값이 null/invalid 여도 push 를 건너뛰지 않고 null 을 채워 자리를 유지한다(compaction 금지).
-// 초과근무 등록 가능 범위는 "실근태 − 스케줄" 로 계산한다(표준화 미반영).
-//   표준화 시각은 화면 보조 표시용일 뿐 OT 등록에 영향을 주지 않으므로 raw 시각을 쓴다.
+// 초과근무 등록 가능 범위는 "실근태 − 스케줄" 로 계산한다(raw 실근태 시각 기준).
 //   (백엔드 AttdScheduleUtils.buildActualSegmentsBySeq 와 동일 규칙.)
 const buildActualSegments = () => {
   const r = record.value ?? {};
@@ -2136,7 +2049,7 @@ const subtractIntervals = (a, b) => {
 //   PRAFTA-011 백엔드 규칙과 동일하게 1구간/2구간 각각 따로 계산한다.
 //   - 매칭 스케줄이 있는 구간: (해당 구간 실근태) - (해당 구간 스케줄)
 //   - 매칭 스케줄이 없는 구간: 해당 구간 실근태 전체가 등록 가능
-//   초과근무 등록 가능 범위는 "실근태 − 스케줄" 로 계산한다(표준화 미반영).
+//   초과근무 등록 가능 범위는 "실근태 − 스케줄" 로 계산한다(raw 실근태 시각 기준).
 //   [QA 재작업 D3] buildActualSegments / buildSchSegments 는 구간 인덱스를 보존하며
 //   해당 구간 값이 없으면 null 을 둔다. idx0=1구간, idx1=2구간 1:1 매핑이 정상 동작한다.
 //   - act 가 null 인 구간: 등록 가능 OT 없음 → 빈 배열.
@@ -3186,18 +3099,6 @@ onMounted(() => {
 .val-missing {
   color: #9ca3af;
   font-weight: 600;
-}
-/* 표준화 규칙 미적용(조건 미충족) — 연한 붉은색 계통 영역 */
-.std-unmet {
-  display: inline-block;
-  padding: 3px 10px;
-  border-radius: 6px;
-  background: #fef2f2;
-  border: 1px solid #fecaca;
-  color: #b91c1c;
-  font-size: 12px;
-  font-weight: 600;
-  line-height: 1.4;
 }
 .value-leave {
   color: #374151;

@@ -5,13 +5,10 @@ import java.util.List;
 import org.apache.ibatis.annotations.Mapper;
 import org.apache.ibatis.annotations.Param;
 
-import com.prafta.web.nearmiss.nearmiss01.application.command.AssessmentTransferCommand;
 import com.prafta.web.nearmiss.nearmiss01.application.command.ChangeStatusCommand;
-import com.prafta.web.nearmiss.nearmiss01.application.command.InsertIncidentCommand;
 import com.prafta.web.nearmiss.nearmiss01.application.command.SaveIncidentCommand;
 import com.prafta.web.nearmiss.nearmiss01.application.query.IncidentInfoQuery;
 import com.prafta.web.nearmiss.nearmiss01.application.query.IncidentListQuery;
-import com.prafta.web.nearmiss.nearmiss01.application.query.NearMissIdSeqQuery;
 import com.prafta.web.nearmiss.nearmiss01.result.IncidentResult;
 import com.prafta.web.nearmiss.nearmiss01.result.StatusCountResult;
 
@@ -42,22 +39,4 @@ public interface NearMiss01Mapper {
 
     // E5 상태 전환
     int updateStatus(ChangeStatusCommand command);
-
-    // E6 채번: 사업장+당일 기준 시퀀스 다음값 (NM + YYYYMMDD + 3자리)
-    String selectNextNearMissId(NearMissIdSeqQuery query);
-
-    // E6 사건 INSERT
-    int insertIncident(InsertIncidentCommand command);
-
-    // E6 원 위험성평가 전환 가능 건 확인 (사업장 스코프 + 전환 허용 상태만). 1 이상이면 전환 가능
-    int countAssessment(AssessmentTransferCommand command);
-
-    // E6 원 위험성평가 단순 존재 확인 (상태 무관). 404 vs 422 구분용
-    int countAssessmentAny(AssessmentTransferCommand command);
-
-    // E6 원 위험성평가 건의 현장 사진 관리코드(INIT_FILE_MGMT_CD) 조회. 전환 시 아차사고로 사진 복사용
-    String selectAssessmentFileMgmtCd(AssessmentTransferCommand command);
-
-    // E6 원 위험성평가 상태 -> '005' 이관
-    int transferAssessmentStatus(AssessmentTransferCommand command);
 }

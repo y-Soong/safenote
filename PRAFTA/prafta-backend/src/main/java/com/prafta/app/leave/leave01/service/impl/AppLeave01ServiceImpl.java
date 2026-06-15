@@ -6,6 +6,8 @@ import java.time.LocalDate;
 import java.time.format.DateTimeFormatter;
 import java.time.format.DateTimeParseException;
 import java.time.temporal.ChronoUnit;
+import java.util.ArrayList;
+import java.util.List;
 
 import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
@@ -14,10 +16,14 @@ import com.prafta.app.leave.leave01.application.param.MyLeaveSummaryParam;
 import com.prafta.app.leave.leave01.application.query.MyLeaveSummaryQuery;
 import com.prafta.app.leave.leave01.dto.response.MyLeaveSummaryResponse;
 import com.prafta.app.leave.leave01.mapper.AppLeave01Mapper;
+import com.prafta.app.leave.leave01.result.AppliedLeaveTypeRow;
 import com.prafta.app.leave.leave01.result.LeaveExpiringResult;
 import com.prafta.app.leave.leave01.result.LeaveGroupAggResult;
 import com.prafta.app.leave.leave01.result.LeaveUserResult;
 import com.prafta.app.leave.leave01.service.AppLeave01Service;
+import com.prafta.common.cmm.leave.mapper.LeavePolicyMapper;
+import com.prafta.common.cmm.leave.util.FiscalYearUtils;
+import com.prafta.common.cmm.leave.vo.LeavePolicyVO;
 
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -45,6 +51,8 @@ public class AppLeave01ServiceImpl implements AppLeave01Service {
     private static final DateTimeFormatter YMD = DateTimeFormatter.ofPattern("yyyyMMdd");
 
     private final AppLeave01Mapper appLeave01Mapper;
+    /** 연차 개편(표시): 활성정책 AXIS2_FISCAL_START_MM/_DD 조회(회계연도 경계 산출 입력). 락 없는 조회 메서드 재사용. */
+    private final LeavePolicyMapper leavePolicyMapper;
 
     @Override
     public MyLeaveSummaryResponse selectMyLeaveSummary(MyLeaveSummaryParam param) {
@@ -59,6 +67,7 @@ public class AppLeave01ServiceImpl implements AppLeave01Service {
                 .user(buildUser(baseQuery))
                 .groups(buildGroups(baseQuery))
                 .expiringSoon(buildExpiringSoon(baseQuery))
+                .appliedLeaveTypes(buildAppliedLeaveTypes(param))
                 .build();
 
         log.info("[leave01] 연차 현황 조회 완료 userCd={}", param.userCd());
@@ -153,6 +162,52 @@ public class AppLeave01ServiceImpl implements AppLeave01Service {
                 .serviceMonths(serviceMonths)
                 .serviceCreditMonths(serviceCreditMonths)
                 .build();
+    }
+
+    /**
+     * 연차 개편(표시): 신청형 휴가('01') 타입별 항목 산출.
+     * <p>법정/관리자부여(groups)와 분리된 별도 섹션. 회계연도 경계는 단일출처 {@link FiscalYearUtils} 로 산출하여
+     *   사용분 술어(CONFIRMED·DEL_YN='N'·당해 회계연도)와 함께 주입한다(leaveflow.selectFiscalUsedDays 동일 술어).
+     *   각 타입: 한도(MAX_APLY_DAYS, NULL→0 fail-closed) - 사용분 = 잔여. '01' 타입 0개면 빈 리스트.
+     */
+    private List<MyLeaveSummaryResponse.AppliedLeaveType> buildAppliedLeaveTypes(MyLeaveSummaryParam param) {
+
+        FiscalYearUtils.FiscalWindow fiscal = resolveFiscalWindow(param.cmpnyCd());
+
+        List<AppliedLeaveTypeRow> rows = appLeave01Mapper.selectAppliedLeaveTypes(
+                param.cmpnyCd(), param.userCd(),
+                fiscal.fiscalStartYmd(), fiscal.fiscalEndYmdExclusive());
+
+        List<MyLeaveSummaryResponse.AppliedLeaveType> items = new ArrayList<>(rows.size());
+        for (AppliedLeaveTypeRow row : rows) {
+            // 한도 NULL → 0(신청불가 = 잔여 0, fail-closed). 사용분 NULL → 0(IFNULL 로 SQL 에서 0 이지만 방어).
+            BigDecimal max = (row.maxAplyDays() == null) ? BigDecimal.ZERO : BigDecimal.valueOf(row.maxAplyDays());
+            BigDecimal used = nz(row.usedDays());
+            BigDecimal remain = max.subtract(used);
+
+            items.add(MyLeaveSummaryResponse.AppliedLeaveType.builder()
+                    .leaveCd(row.leaveCd())
+                    .leaveNm(row.leaveNm())
+                    .maxAplyDays(toScaledDouble(max))
+                    .usedDays(toScaledDouble(used))
+                    .remainDays(toScaledDouble(remain))
+                    .build());
+        }
+
+        log.info("[leave01] 신청형 휴가('01') 항목 산출 완료 userCd={}, 타입수={}", param.userCd(), items.size());
+        return items;
+    }
+
+    /**
+     * 연차 개편(표시): 당해 회계연도 윈도우 산출(단일출처 {@link FiscalYearUtils}).
+     * 활성정책 AXIS2_FISCAL_START_MM/_DD 로 산출하며, 정책 미존재/NULL 이면 1월 1일 폴백(유틸이 처리).
+     * (leaveflow.AppLeaveFlowServiceImpl.resolveFiscalWindow 와 동일 — 신청 화면 잔여와 동일 경계 보장.)
+     */
+    private FiscalYearUtils.FiscalWindow resolveFiscalWindow(String cmpnyCd) {
+        LeavePolicyVO policy = leavePolicyMapper.selectActivePolicy(cmpnyCd);
+        String mm = (policy == null) ? null : policy.getAxis2FiscalStartMm();
+        String dd = (policy == null) ? null : policy.getAxis2FiscalStartDd();
+        return FiscalYearUtils.fiscalWindow(LocalDate.now(), mm, dd);
     }
 
     /**

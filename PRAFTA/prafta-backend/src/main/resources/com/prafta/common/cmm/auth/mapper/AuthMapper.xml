@@ -128,6 +128,9 @@
 		, A.PWD_CHG_DTIME			AS pwdChgDtime
 		, A.WITHDRAWAL_DATE			AS withdrawalDate
 		, A.LAST_LOGIN_DTIME		AS lastLoginDtime
+		, A.ACCOUNT_STATUS			AS accountStatus	<!-- PRAFTA-app-027-2': UserResult 레코드 정합(누락 보강) -->
+		, A.USE_YN					AS useYn			<!-- PRAFTA-app-027-2': UserResult 레코드 정합(누락 보강) -->
+		, A.EMPLOYMENT_TYPE			AS employmentType	<!-- PRAFTA-app-027-2': UserResult 레코드 정합(누락 보강) -->
 		, A.INSERT_NO				AS insertNo
 		, A.INSERT_DATE		AS insertDate
 		, A.UPDATE_NO		AS updateNo

@@ -86,4 +86,30 @@ public interface PushOutboxMapper {
      */
     int softDeleteDeviceToken(@Param("deviceUuid") String deviceUuid,
                               @Param("actor") String actor);
+
+    /**
+     * 발송 억제(suppress) 여부 판정 (PRAFTA-APP-021-2, enforce).
+     *
+     * <p>대상 사용자의 tb_user_push_setting 에 마스터 OFF('__MASTER__' USE_YN='N')
+     * 또는 해당 NOTI_TYPE OFF(USE_YN='N') 행이 존재하면 1(suppress). opt-out 정합:
+     * 행이 없으면 0(발송). EXISTS 단일 쿼리.
+     *
+     * <p>cmpnyCd 동반(스코프 일관). 설정 테이블 부재 시 SQL 예외 → 서비스에서 graceful 폴백(발송 유지).
+     *
+     * @return 1이면 발송 억제, 0이면 정상 발송.
+     */
+    int isSuppressed(@Param("cmpnyCd") String cmpnyCd,
+                     @Param("targetUserCd") String targetUserCd,
+                     @Param("notiType") String notiType);
+
+    /**
+     * 발송 억제 전이. SEND_STATUS='SUPPRESSED' + SENT_DATE(미발송 종료 시각).
+     * 멱등: {@code WHERE SEND_STATUS='SENDING'}(claim 후만). RETRY_CNT 미증가.
+     *
+     * @param errorMsg suppress 사유 라벨(PushWorkerConst.SUPPRESS_REASON)
+     * @return 갱신된 행 수(0이면 이미 종료 상태/다른 전이).
+     */
+    int markSuppressed(@Param("notiId") String notiId,
+                       @Param("errorMsg") String errorMsg,
+                       @Param("actor") String actor);
 }

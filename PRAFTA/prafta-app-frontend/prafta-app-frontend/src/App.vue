@@ -9,6 +9,7 @@ import { jwtDecode } from 'jwt-decode'
 import router from '@/router/index.js'
 import api from '@/api/axios'
 import { refreshAccessToken, forceLogout, getRefreshToken } from '@/composables/useAuth'
+import { installPushTokenRefreshHandler } from '@/utils/pushTokenBridge'
 
 const userStore = useUserStore()
 
@@ -156,6 +157,10 @@ const handleVisibilityChange = async () => {
 }
 
 onMounted(async () => {
+  // prafta-com-008-F (F03/N2): 푸시 토큰 refresh 콜백을 전역 1회 등록한다.
+  //   콜백 내부에서 로그인 토큰(sessionStorage 'token')을 가드 → 로그인 상태일 때만 등록 API 호출.
+  installPushTokenRefreshHandler()
+
   await syncTokenIfNeeded()
   document.addEventListener('visibilitychange', handleVisibilityChange)
 })

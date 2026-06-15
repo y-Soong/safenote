@@ -125,27 +125,69 @@ public class DailyJoinServiceImpl implements DailyJoinService {
             throw new ApiException(DailyJoinErrorCode.DAILYJOIN_400_002);
         }
 
+        // b-2. PRAFTA-app-027-3'(통합형) — TB_USER 중복도 사전 차단(UX_TB_USER_ID/UX_TB_USER_MBL_NO).
+        //      통합 후 같은 USER_ID/휴대폰이 정규 사용자와 겹치면 INSERT 가 UNIQUE 충돌하므로 사전 검증한다.
+        int tbUserIdCnt = dailyJoinMapper.selectTbUserIdDupleCnt(param.cmpnyCd(), param.userId());
+        if (tbUserIdCnt > 0) {
+            throw new ApiException(DailyJoinErrorCode.DAILYJOIN_400_001);
+        }
+        int tbUserMblCnt = dailyJoinMapper.selectTbUserMblHmacDupleCnt(param.cmpnyCd(), phoneHmac);
+        if (tbUserMblCnt > 0) {
+            throw new ApiException(DailyJoinErrorCode.DAILYJOIN_400_002);
+        }
+
         // g-2. 사업장 첫 빈 슬롯 확보 (없으면 가입 차단)
         String slotNo = dailyJoinMapper.selectFirstEmptySlotNo(EmptySlotQuery.of(param.cmpnyCd(), param.siteCd()));
         if (slotNo == null || slotNo.isBlank()) {
             throw new ApiException(DailyJoinErrorCode.DAILYJOIN_400_005);
         }
 
-        // c. USER_CD 채번
-        String userCd = dailyJoinMapper.selectDailyUserCd(EmptySlotQuery.of(param.cmpnyCd(), param.siteCd()));
-
-        // d. 휴대폰 암호화/HMAC/마지막4자리 파생
+        // d. 휴대폰 암호화/HMAC/마지막4자리 파생 (신규/재활성 공통)
         String phoneEnc = aesGcmCrypto.encrypt(phoneNorm);
         String phoneLast4 = Normalizers.last4(phoneNorm);
 
-        // e. 비밀번호 - 사용자 입력 없음 → 난수 해시 생성
-        String userPw = passwordHasher.generateRandomHash();
+        // e. 비밀번호 - 사용자 입력 비밀번호 해시(평문 로깅 금지, 난수 아님)
+        String userPw = passwordHasher.hash(param.userPw());
 
-        // f. TB_DAILY_USER insert
-        InsertDailyUserCommand command = InsertDailyUserCommand.from(param, userCd, userPw, phoneEnc, phoneHmac, phoneLast4);
-        dailyJoinMapper.insertDailyUser(command);
+        // 옵션2 — 같은 휴대폰의 비활성(만료) 일용직 행이 있으면 새 USER_CD 채번 대신 재활성한다.
+        //         (활성 중복은 위 b/b-2 에서 이미 차단되었으므로 여기 도달 시 활성 충돌은 없음)
+        String reuseUserCd = dailyJoinMapper.selectReactivatableDailyUserCd(param.cmpnyCd(), phoneHmac);
 
-        // g-3. 빈 슬롯 점유 (조건부 UPDATE 로 동시성 충돌 방어)
+        final String userCd;
+        if (reuseUserCd != null && !reuseUserCd.isBlank()) {
+            // (가) 재활성 경로 — 기존 USER_CD 재사용. 워커당 1행을 유지하고 재가입 차단을 해소한다.
+            //      같은 휴대폰 비활성 행이 여러 개(레거시)면 최신 1건만 재활성, 나머지는 비활성 유지.
+            userCd = reuseUserCd;
+            InsertDailyUserCommand command =
+                    InsertDailyUserCommand.from(param, userCd, userPw, phoneEnc, phoneHmac, phoneLast4);
+
+            // TB_DAILY_USER 기존 행 재활성(만료일/잠금 초기화 포함)
+            dailyJoinMapper.reactivateDailyUser(command);
+
+            // 통합형 TB_USER 재활성. 영향행 0이면 통합형 이전 레거시(TB_USER 없음) → 신규 INSERT 폴백.
+            int tbUserUpd = dailyJoinMapper.reactivateTbUser(command);
+            if (tbUserUpd <= 0) {
+                dailyJoinMapper.insertDailyUserToTbUser(command);
+            }
+
+            // SITE_AUTH 는 사업장 변경 가능성을 고려해 upsert(기존 권한 행 회복 또는 신규 부여)
+            dailyJoinMapper.upsertTbUserSiteAuth(param.cmpnyCd(), userCd, param.siteCd());
+        } else {
+            // (나) 신규 가입 경로 — USER_CD 채번 후 TB_DAILY_USER + 통합형 TB_USER/SITE_AUTH INSERT.
+            userCd = dailyJoinMapper.selectDailyUserCd(EmptySlotQuery.of(param.cmpnyCd(), param.siteCd()));
+            InsertDailyUserCommand command =
+                    InsertDailyUserCommand.from(param, userCd, userPw, phoneEnc, phoneHmac, phoneLast4);
+
+            // f. TB_DAILY_USER insert
+            dailyJoinMapper.insertDailyUser(command);
+
+            // f-2. PRAFTA-app-027-3'(통합형) — 같은 트랜잭션에서 TB_USER + TB_USER_SITE_AUTH 동시 INSERT.
+            //      EMPLOYMENT_TYPE='DAILY'/AUTH_CD='99999'/NODE_CD=NULL/ACCOUNT_STATUS='01'/USER_PW=동일 hash.
+            dailyJoinMapper.insertDailyUserToTbUser(command);
+            dailyJoinMapper.insertTbUserSiteAuth(param.cmpnyCd(), userCd, param.siteCd());
+        }
+
+        // g-3. 빈 슬롯 점유 (조건부 UPDATE 로 동시성 충돌 방어) — 신규/재활성 공통.
         int slotUpd = dailyJoinMapper.updateDailyUserSlotCurrUserCd(
                 DailyUserSlotUpdCommand.of(param.cmpnyCd(), param.siteCd(), slotNo, userCd));
         if (slotUpd <= 0) {
@@ -156,7 +198,8 @@ public class DailyJoinServiceImpl implements DailyJoinService {
         // h. 약관 동의 이력 insert (필수약관 검증 후 요청 항목 저장)
         insertTermsAgreement(userCd, param);
 
-        log.info("일일사용자 회원가입 완료 userCd={}, slotNo={}", userCd, slotNo);
+        log.info("일일사용자 회원가입 완료 userCd={}, slotNo={}, 재활성여부={}",
+                userCd, slotNo, (reuseUserCd != null && !reuseUserCd.isBlank()) ? "Y" : "N");
 
         // i. 응답으로 userId 반환
         return InsertDailyUserResponse.builder()

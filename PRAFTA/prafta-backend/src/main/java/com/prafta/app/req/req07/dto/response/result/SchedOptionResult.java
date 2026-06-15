@@ -12,7 +12,6 @@ package com.prafta.app.req.req07.dto.response.result;
 public record SchedOptionResult(
         String schCd
         , String schNo
-        , String baseYn
         , String fstStrTime
         , String fstEndTime
         , String secStrTime

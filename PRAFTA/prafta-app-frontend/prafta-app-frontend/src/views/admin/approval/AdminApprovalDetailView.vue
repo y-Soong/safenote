@@ -101,7 +101,7 @@
               <dt v-if="detail.body.approvedDisplay">승인값</dt>
               <dd v-if="detail.body.approvedDisplay">{{ detail.body.approvedDisplay }}</dd>
             </dl>
-            <p class="ap-ot__note">표준화 단위·면제 30분이 반영된 값입니다.</p>
+            <p class="ap-ot__note">휴게 면제 30분이 반영된 값입니다.</p>
           </div>
 
           <!-- 연차: 타입 + 구간 + 잔여 + (단계) -->
@@ -280,7 +280,7 @@ const rejectSheetOpen = ref(false)
 const adjustSheetOpen = ref(false)
 
 // ① 조정 후 승인 가능 유형: 근태보정/초과(스케줄은 A5 전 제외). 연차 제외(§5.8.4).
-// TODO(developer): v1 보류 — 백엔드 APPROVE_ADJUST(표준화 엔진 조정값 반영)는 R3 라운드에서 구현 예정.
+// TODO(developer): v1 보류 — 백엔드 APPROVE_ADJUST 조정값 입력은 R3 라운드에서 구현 예정.
 //   백엔드 미지원 상태에서 라디오를 노출하면 ATTD_400_006 이 발생하므로 노출 자체를 차단한다.
 //   R3 구현 후 원복: ['CORRECTION', 'OVERTIME'].includes(detail.value?.group)
 const adjustable = computed(() => false)

@@ -17,7 +17,7 @@
     <!-- 헤더 -->
     <HomeHeader
       :site-name="siteName"
-      :notification-count="notificationCount"
+      :notification-count="noticeUnreadCount"
       :user-initial="userInitial"
       @click:bell="onBellClick"
       @click:avatar="onAvatarClick"
@@ -74,8 +74,9 @@
           @click:checkout="onCheckOut"
         />
 
-        <!-- 근태 조회 -->
+        <!-- 근태 조회 — prafta-app-025 J1-4: 일용직(DAILY)은 스케줄/연차/승인요청 해당없음 → 카드 전체 숨김 -->
         <AttendanceSummaryCard
+          v-if="!isDailyWorker"
           :remaining-days="remainingLeaveDays"
           :granted-days="grantedLeaveDays"
           :pending-count="approvalPendingCount"
@@ -84,15 +85,22 @@
           @click:approval="onApprovalClick"
         />
 
-        <!-- 안전 활동 (안전점검 시작 + 위험성 발굴 + 아차사고 보고/사건 관리) -->
+        <!-- 신청형 휴가 요약 (LEAVE_TYPE='01') — 잔여연차(법정/관리자부여)와 분리된 별도 카드. -->
+        <!--   일용직(DAILY)은 연차 해당없음(잔여연차 카드와 동일 게이트), 보유 타입 0이면 미노출. -->
+        <AppliedLeaveSummaryCard
+          v-if="!isDailyWorker && appliedLeaveTypeCount > 0"
+          :type-count="appliedLeaveTypeCount"
+          :remaining-days="appliedLeaveRemainingDays"
+          @click:detail="onLeaveClick"
+        />
+
+        <!-- 안전 활동 (안전점검 시작 + 위험성 발굴 + 아차사고 보고) — prafta-app-025 J1-1: 사건 관리 row 제거 -->
         <SafetyActivityCard
           :blocked="safetyBlocked"
-          :is-safety-manager="isSafetyManager"
           @click:detail="onSafetyDetail"
           @click:safety-check="onSafetyCheck"
           @click:risk-discovery="onRiskDiscovery"
           @click:near-miss-report="onNearMissReport"
-          @click:near-miss-manage="onNearMissManage"
         />
 
         <!-- TBM 참석 -->
@@ -115,8 +123,8 @@
       </template>
     </main>
 
-    <!-- 하단 탭바 -->
-    <HomeTabBar :active-tab="'home'" :tbm-badge-count="tbmBadgeCount" @click:tab="onTabClick" />
+    <!-- 하단 탭바 (prafta-app-025 J1-2: 공통 AppBottomTabBar 로 교체. 라우팅은 컴포넌트가 중앙화 처리) -->
+    <AppBottomTabBar :active-tab="'home'" :tbm-badge-count="tbmBadgeCount" />
 
     <!-- 외근(지오펜스 밖) 사유 시트 — 서버 ATTD_400_086 수신 시 오픈 (prafta-app-008) -->
     <OffsiteReasonSheet
@@ -138,6 +146,24 @@
       @read="onNoticePopupRead"
       @closed="onNoticePopupClosed"
     />
+
+    <!-- 연차 사용촉진 1차 로그인 안내 팝업 — active(inProgress) + loginNotified=false 시 1회 노출 (prafta-com-008-A-7) -->
+    <LeavePromotionLoginPopup
+      v-model:open="promoPopupOpen"
+      :promotion="promoPopup"
+      @register="onPromoRegister"
+      @later="onPromoLater"
+    />
+
+    <!-- 자발 연차일 출근 확인 팝업 — 종일 연차일(isLeaveDay)에 출근 시도 시 노출 (prafta-com-008-B-6) -->
+    <!--   확인 시에만 check-in 호출. 촉진 확정 연차면 서버가 ATTD_400_150 으로 차단(노무수령거부) → 별도 안내. -->
+    <LeaveDayCheckInConfirmPopup
+      v-model:open="leaveDayConfirmOpen"
+      :work-ymd="leaveDayConfirmYmd"
+      :submitting="leaveDayConfirmSubmitting"
+      @confirm="onLeaveDayConfirm"
+      @cancel="onLeaveDayCancel"
+    />
   </div>
 </template>
 
@@ -148,17 +174,21 @@ import { useRouter } from 'vue-router'
 import api from '@/api/axios'
 import { requestGps } from '@/utils/gpsBridge'
 import { loadKakaoMapScript } from '@/utils/kakaoMap'
+import { isDailyWorker as isDailyWorkerFn } from '@/utils/employment'
 
 import HomeIcons from './components/HomeIcons.vue'
 import HomeHeader from './components/HomeHeader.vue'
 import AttendanceCard from './components/AttendanceCard.vue'
 import AttendanceSummaryCard from './components/AttendanceSummaryCard.vue'
+import AppliedLeaveSummaryCard from './components/AppliedLeaveSummaryCard.vue'
 import SafetyActivityCard from './components/SafetyActivityCard.vue'
 import TbmAttendCard from './components/TbmAttendCard.vue'
 import NoticeListCard from './components/NoticeListCard.vue'
 import NoticeLoginPopup from './components/NoticeLoginPopup.vue'
-import HomeTabBar from './components/HomeTabBar.vue'
+import LeavePromotionLoginPopup from './components/LeavePromotionLoginPopup.vue'
+import AppBottomTabBar from '@/components/common/AppBottomTabBar.vue'
 import OffsiteReasonSheet from '@/views/attd/components/OffsiteReasonSheet.vue'
+import LeaveDayCheckInConfirmPopup from '@/views/attd/components/LeaveDayCheckInConfirmPopup.vue'
 
 const router = useRouter()
 const { proxy } = getCurrentInstance() || { proxy: null }
@@ -174,8 +204,12 @@ const isLoading = ref(true)
 const siteName = ref('') // gv_siteNm
 const userInitial = ref('?') // gv_userNm 앞 2자
 
-// prafta-app-001: 공지 도메인 미구축으로 보류 → 알림벨 카운트는 0 고정
-const notificationCount = ref(0)
+// prafta-app-025 J1-4: 일용직(EMPLOYMENT_TYPE='DAILY') 여부 — 근태조회 카드 숨김 판정.
+//   세션값(gv_employmentType, 로그인 시 저장)을 그대로 사용(라운드트립 없음).
+const isDailyWorker = computed(() => isDailyWorkerFn())
+
+// prafta-app-023: 헤더 벨 배지는 미열람 공지 수(noticeUnreadCount)를 그대로 사용한다.
+//   (별도 stub notificationCount 제거 — 공지 도메인 구축 완료로 실데이터 연결.)
 
 // 세션값 주입: 사업장명 + 아바타 이니셜(이름 앞 2자, 빈값이면 '?')
 const applySessionHeader = () => {
@@ -211,6 +245,9 @@ const attdSlots = ref([]) // [{ workSeq, canCheckInThisSlot, alreadyCheckedIn }]
 // prafta-app-021: 전날 미퇴근 마감 대기 신호(home-summary attendance 확장).
 const prevDayCheckoutPending = ref(false)
 const prevDayCheckInTime = ref('') // HHMM
+// prafta-com-008-B-6: 기준일 종일 연차일 여부(home-summary attendance.isLeaveDay).
+//   true 면 출근 시도 시 자발 연차일 출근 확인 팝업을 먼저 노출한다(확인 시에만 check-in 호출).
+const attdIsLeaveDay = ref(false)
 
 // ───────────────────────────────────────────────────────────
 // 근태 조회 카드 — home-summary leave / approval 매핑
@@ -218,6 +255,9 @@ const prevDayCheckInTime = ref('') // HHMM
 const remainingLeaveDays = ref(0)
 const grantedLeaveDays = ref(0)
 const approvalPendingCount = ref(0)
+// 연차 개편(표시): 신청형 휴가(LEAVE_TYPE='01') 요약 — 잔여연차(GRANT 그룹)와 분리. 서버 권위값 그대로.
+const appliedLeaveTypeCount = ref(0)
+const appliedLeaveRemainingDays = ref(0)
 
 // ───────────────────────────────────────────────────────────
 // 안전 활동 카드
@@ -228,15 +268,10 @@ const safetyBlocked = computed(() => attdStatus.value !== 'WORKING')
 
 // ───────────────────────────────────────────────────────────
 // 아차사고 (prafta-app-012)
-//   - "사건 관리" 진입점은 안전직군(gv_authCd) 에게만 노출. 사업장 권한 최종 판정은 서버(assertSiteAccess).
-//   - 안전직군 AUTH_CD 집합은 서버 푸시 대상(AppNearMiss01ServiceImpl.SAFETY_AUTH_CDS)과 정합 — '99999'(접근차단 권한) 제외.
 //   - "아차사고 보고"(근로자) 는 출근 게이트 미적용(즉시성) — 항상 노출.
+//   - prafta-app-025 J1-1: "사건 관리"(관리자 목록) 진입점은 앱에서 제거(웹 전용). 관리자 모드는 J1-6.
+//     이에 따라 isSafetyManager/SAFETY_MANAGER_AUTH_CODES 게이팅도 함께 제거.
 // ───────────────────────────────────────────────────────────
-const SAFETY_MANAGER_AUTH_CODES = ['00001', '00004', '00006', '00008', 'master', 'safe', 'system']
-const isSafetyManager = computed(() => {
-  const authCd = sessionStorage.getItem('gv_authCd') || ''
-  return SAFETY_MANAGER_AUTH_CODES.includes(authCd)
-})
 
 // ───────────────────────────────────────────────────────────
 // TBM 카드 — home-summary tbm 매핑
@@ -260,6 +295,12 @@ const noticeUnreadCount = ref(0)
 // 로그인(앱 진입) 공지 팝업 상태 — /appApi/notice01/popup 결과를 NoticeLoginPopup 으로 전달
 const noticePopupOpen = ref(false)
 const noticePopupItems = ref([])
+
+// 연차 사용촉진 1차 로그인 안내 팝업 상태 (prafta-com-008-A-7)
+//   GET /appApi/leavepromo01/active 결과(inProgress + loginNotifiedYn='N')일 때만 1회 노출.
+//   promoPopup 은 LoginPopup 계약({ remainingDays, availTo }) 에 맞춘 가공값.
+const promoPopupOpen = ref(false)
+const promoPopup = ref(null)
 
 // ───────────────────────────────────────────────────────────
 // 하단 탭바 — TBM 미참석 카운트 (참석 가능 상태면 1)
@@ -306,11 +347,16 @@ const applyAttendance = (attd) => {
   // prafta-app-021: 전날 미퇴근 마감 대기 신호(021-2 백엔드 필드명 그대로 사용).
   prevDayCheckoutPending.value = !!attd.prevDayCheckoutPending
   prevDayCheckInTime.value = attd.prevDayCheckInTime || ''
+  // prafta-com-008-B-6: 종일 연차일 여부(출근 시 자발 연차일 확인 팝업 분기 근거).
+  attdIsLeaveDay.value = !!attd.isLeaveDay
 }
 
 const applyLeave = (leave) => {
   remainingLeaveDays.value = leave?.remainingDays ?? 0
   grantedLeaveDays.value = leave?.grantedDays ?? 0
+  // 연차 개편(표시): 신청형 휴가 요약(타입 수 + 총잔여) — GRANT 합산과 별개 필드.
+  appliedLeaveTypeCount.value = leave?.appliedTypeCount ?? 0
+  appliedLeaveRemainingDays.value = leave?.appliedRemainingDays ?? 0
 }
 
 const applyApproval = (approval) => {
@@ -465,6 +511,62 @@ const onNoticePopupClosed = () => {
 }
 
 // ───────────────────────────────────────────────────────────
+// prafta-com-008-A-7: 연차 사용촉진 1차 로그인 안내
+//   GET /appApi/leavepromo01/active → 진행 중(inProgress) + 미안내(loginNotifiedYn='N')면
+//   팝업 1회 노출 후 POST /appApi/leavepromo01/notified 로 플래그 갱신(다음 로그인부터 미노출).
+// ───────────────────────────────────────────────────────────
+const loadPromotionActive = async () => {
+  try {
+    const { data } = await api.get('/appApi/leavepromo01/active')
+    // 진행 중 1차 촉진 없으면 미노출.
+    if (!data || data.inProgress !== true) {
+      promoPopup.value = null
+      promoPopupOpen.value = false
+      return
+    }
+    // 이미 안내(Y)했으면 다시 띄우지 않음(확정-3).
+    if (data.loginNotifiedYn === 'Y') {
+      promoPopup.value = null
+      promoPopupOpen.value = false
+      return
+    }
+    // LoginPopup 계약에 맞춰 가공(remainingDays + availTo=baseAvailToDate).
+    promoPopup.value = {
+      remainingDays: data.remainingDays,
+      availTo: data.baseAvailToDate || '',
+    }
+    promoPopupOpen.value = true
+    // 1회 노출 즉시 플래그 갱신(노출 자체로 안내 완료 처리 — 실패해도 진입 막지 않음).
+    try {
+      await api.post('/appApi/leavepromo01/notified')
+    } catch (e) {
+      console.warn('[MainView] leavepromo notified 갱신 실패(무시):', e?.message)
+    }
+  } catch (e) {
+    // 촉진 조회 실패는 조용히 무시(진입 차단 금지).
+    console.warn('[MainView] leavepromo active 조회 실패(무시):', e?.message)
+    promoPopup.value = null
+    promoPopupOpen.value = false
+  }
+}
+
+// "계획 등록" → 계획서 화면으로 이동(팝업은 자체 close).
+const onPromoRegister = () => {
+  router.push('/LeavePromotionPlan')
+}
+
+// "나중에"/닫기 → 계획 미제출 이탈 1회 경고(확정-3). 취소면 팝업 재노출.
+const onPromoLater = async () => {
+  const ok = await askConfirm(
+    '1차 촉진 기간에 계획서를 제출하지 않으면 2차 촉진 때 남은 모든 연차 날짜를 회사가 직접 지정합니다. 그대로 종료하시겠습니까?',
+  )
+  if (!ok) {
+    // 머무름 — 팝업 다시 노출.
+    promoPopupOpen.value = true
+  }
+}
+
+// ───────────────────────────────────────────────────────────
 // 당겨서 새로고침 — 스크롤 최상단에서 아래로 더 당기면(overscroll) home-summary 재조회.
 //   1) touchstart 시점에 스크롤이 최상단이면 추적 시작
 //   2) touchmove 에서 아래로 당긴 거리(저항감 0.5배)를 인디케이터 높이로 환산
@@ -481,7 +583,11 @@ const pullReady = computed(() => pullDistance.value >= PULL_THRESHOLD)
 const pullIndicatorHeight = computed(() => (isRefreshing.value ? 48 : pullDistance.value))
 
 let touchStartY = 0
-let tracking = false
+let tracking = false // 이 제스처를 추적 중인가(스크롤 컨테이너 최상단에서 시작했을 때만)
+let pullArmed = false // 당겨서 새로고침 모드로 확정됐는가(확정 후에만 preventDefault)
+// 방향 확정 데드존(px). 손가락을 댈 때 흔히 생기는 미세한 초기 떨림으로
+// preventDefault 가 걸려 네이티브 스크롤 제스처 전체가 취소되는 버그를 막는다.
+const PULL_ENGAGE_SLOP = 6
 
 // 스크롤이 최상단에 닿았는지 판정(1px 오차 허용)
 const isScrolledToTop = () => {
@@ -492,7 +598,8 @@ const isScrolledToTop = () => {
 
 const onPullStart = (e) => {
   if (isRefreshing.value) return
-  // 최상단에 있을 때만 당김 추적 시작
+  // 매 제스처 상태 초기화. 추적은 스크롤 컨테이너 최상단에서만 시작.
+  pullArmed = false
   tracking = isScrolledToTop()
   if (tracking) touchStartY = e.touches[0].clientY
 }
@@ -500,22 +607,34 @@ const onPullStart = (e) => {
 const onPullMove = (e) => {
   if (!tracking || isRefreshing.value) return
   const delta = e.touches[0].clientY - touchStartY // 아래로 당기면 양수
-  if (delta > 0 && isScrolledToTop()) {
-    isDragging.value = true
-    pullDistance.value = Math.min(MAX_PULL, delta * 0.5) // 저항감
-    // iOS 고무줄/추가 스크롤 억제(가능한 경우)
-    if (e.cancelable) e.preventDefault()
-  } else {
-    isDragging.value = false
-    pullDistance.value = 0
+
+  // 아직 당김 모드로 확정되지 않았다면: 데드존을 넘는 '첫 의미있는 이동'에서 방향을 확정한다.
+  //   - 최상단에서 아래로 당긴 경우에만 새로고침 모드(pullArmed)로 진입.
+  //   - 그 외(위로 스크롤 등)는 추적을 끊어 이후 preventDefault 가 절대 호출되지 않게 한다
+  //     → 네이티브 스크롤 제스처가 보존된다(상단 붙음/스크롤 먹힘 버그 방지).
+  if (!pullArmed) {
+    if (Math.abs(delta) < PULL_ENGAGE_SLOP) return // 판단 보류(네이티브 스크롤 그대로 둠)
+    if (delta > 0 && isScrolledToTop()) {
+      pullArmed = true
+    } else {
+      tracking = false
+      return
+    }
   }
+
+  isDragging.value = true
+  pullDistance.value = Math.min(MAX_PULL, delta * 0.5) // 저항감
+  // iOS 고무줄/추가 스크롤 억제(당김 모드로 확정된 경우에만)
+  if (e.cancelable) e.preventDefault()
 }
 
 const onPullEnd = async () => {
   isDragging.value = false
+  const wasArmed = pullArmed
+  pullArmed = false
   if (!tracking) return
   tracking = false
-  const shouldRefresh = pullDistance.value >= PULL_THRESHOLD
+  const shouldRefresh = wasArmed && pullDistance.value >= PULL_THRESHOLD
   pullDistance.value = 0
   if (!shouldRefresh || isRefreshing.value) return
   isRefreshing.value = true
@@ -534,6 +653,8 @@ onMounted(() => {
   // prafta-app-023-2: 공지 카드/배지 + 로그인 팝업을 home-summary 와 병행 로드(독립 실패 격리).
   loadMyNotices()
   loadNoticePopup()
+  // prafta-com-008-A-7: 연차 사용촉진 1차 안내 팝업도 병행 로드(독립 실패 격리).
+  loadPromotionActive()
   // prafta-app-008: 외근 사유 시트(OffsiteReasonSheet)의 카카오 지도 SDK 를 미리 1회 로드해 둔다.
   // 시트를 열 때 네트워크로 SDK 를 받느라 시트 표시가 지연되는 문제 방지(프리로드).
   // 로드 함수는 중복 가드가 있어 idempotent 하며, 실패해도 시트의 좌표 텍스트 폴백이 동작하므로 조용히 무시.
@@ -551,13 +672,14 @@ onMounted(() => {
 
 // 헤더
 const onBellClick = () => {
-  // prafta-app-023: 본 라운드 범위는 공지 카드/배지까지. 헤더 벨(알림센터)은 별도 도메인으로 보류.
-  showAlert('준비 중입니다')
+  // prafta-app-023: 헤더 벨은 미열람 공지 배지. 클릭 시 공지 전체목록으로 이동.
+  router.push('/NoticeList')
 }
 
 const onAvatarClick = () => {
-  // prafta-app-010: 마이페이지로 진입. 로그아웃은 마이페이지 메인의 로그아웃 버튼으로 이전.
-  router.push('/MyPage')
+  // prafta-app-021: 우상단 아바타 → 푸시 알림 설정 화면으로 진입(라우팅 스왑).
+  //   마이페이지(/MyPage) 진입은 하단 탭 '마이'(onTabClick)로 이전.
+  router.push('/PushSetting')
 }
 
 // ───────────────────────────────────────────────────────────
@@ -577,6 +699,28 @@ const offsiteCtx = ref({ lat: null, lon: null, accuracy: null })
 
 // 재시도 컨텍스트(좌표·플래그·사유 유지). 시트 제출 시 이 ctx 로 재호출한다.
 let pendingCtx = null
+
+// ───────────────────────────────────────────────────────────
+// prafta-com-008-B-6: 자발 연차일 출근 확인 팝업 상태
+//   종일 연차일(attdIsLeaveDay)에 출근 시도 시 본 팝업으로 1차 확인한 뒤에만 check-in 을 진행한다.
+//   - 확인 시: startCheckInOut('checkIn', targetWorkSeq) 호출 → 서버가 자발은 허용, 촉진 확정 연차면
+//     ATTD_400_150(노무수령거부)로 차단(callCheckInOut 의 catch 에서 §7 안내).
+//   - 취소 시: 출근 중단(팝업 닫기).
+// ───────────────────────────────────────────────────────────
+const leaveDayConfirmOpen = ref(false)
+const leaveDayConfirmYmd = ref('') // 팝업 표시용 대상일(YYYYMMDD). 없으면 오늘로 폴백.
+const leaveDayConfirmSubmitting = ref(false)
+// 확인 시 재개할 출근 컨텍스트(구간 선택값 보존).
+let leaveDayPendingWorkSeq = null
+
+// 오늘(YYYYMMDD) — 홈 화면은 기준일 미보유라 팝업 표시는 클라이언트 오늘로 폴백.
+const todayYmd = () => {
+  const d = new Date()
+  const y = d.getFullYear()
+  const m = String(d.getMonth() + 1).padStart(2, '0')
+  const day = String(d.getDate()).padStart(2, '0')
+  return `${y}${m}${day}`
+}
 
 // 출퇴근 API 단일 호출기 — 서버 errorCode 로 2-pass 분기(086 외근 사유만).
 //   mode: 'checkIn'|'checkOut', ctx: { lat, lon, accuracy, isMocked, offsiteReason, targetWorkSeq }
@@ -605,6 +749,10 @@ const callCheckInOut = async (mode, ctx) => {
     }
     pendingCtx = null
     offsiteSheetOpen.value = false
+    // prafta-com-008-B-6: 자발 연차일 확인 팝업이 열려 있었다면(출근 성공) 닫는다.
+    leaveDayConfirmSubmitting.value = false
+    leaveDayConfirmOpen.value = false
+    leaveDayPendingWorkSeq = null
   } catch (e) {
     const errorCode = e?.response?.data?.errorCode
     const message = e?.response?.data?.message
@@ -618,9 +766,27 @@ const callCheckInOut = async (mode, ctx) => {
       return
     }
 
+    // prafta-com-008-B-6: 노무수령거부 차단(촉진 확정 연차일 출근/퇴근). 재시도 불가 — §7 안내만.
+    //   서버 message 에 §7 차단 문구(대상일 포함)가 담겨 있으므로 우선 노출, 없으면 폴백 문구.
+    if (errorCode === 'ATTD_400_150') {
+      console.warn(`[MainView] ${mode} 노무수령거부 차단(ATTD_400_150)`)
+      pendingCtx = null
+      // 자발 연차일 확인 팝업이 열려 있었다면 닫는다(차단이므로 재시도 없음).
+      leaveDayConfirmSubmitting.value = false
+      leaveDayConfirmOpen.value = false
+      leaveDayPendingWorkSeq = null
+      showAlert(
+        message ||
+          '오늘은 연차사용촉진으로 확정된 연차 사용일입니다. 회사는 금일 노무 제공을 수령하지 않으며, 출근(근무) 등록이 차단됩니다. 연차 변경이 필요하면 관리자에게 문의해 주세요.',
+      )
+      return
+    }
+
     // 그 외 거부/실패(087 구간 미선택·088 구간 중복 포함) — 서버 message 우선 노출.
     console.error(`[MainView] ${mode} 실패:`, e?.message)
     pendingCtx = null
+    // 확인 팝업이 열려 있었다면 진행 표시만 해제(팝업은 유지 — 재시도 가능).
+    leaveDayConfirmSubmitting.value = false
     showAlert(
       message ||
         (mode === 'checkOut'
@@ -648,14 +814,17 @@ const onOffsiteCancel = () => {
 
 // 출퇴근 진입 — 확인 → GPS 브리지(위치 권한은 앱 기동 시 하드게이트로 보장) → 2-pass 호출.
 //   prafta-app-015: targetWorkSeq(1|2|null) — 2구간 스케줄 출근 구간 선택. 그 외(퇴근/단일출근)는 null.
-const startCheckInOut = async (mode, targetWorkSeq = null) => {
-  let confirmMsg
-  if (mode === 'checkOut') confirmMsg = '퇴근하시겠어요?'
-  else if (targetWorkSeq === 1) confirmMsg = '1구간 출근하시겠어요?'
-  else if (targetWorkSeq === 2) confirmMsg = '2구간 출근하시겠어요?'
-  else confirmMsg = '출근하시겠어요?'
-  const ok = await askConfirm(confirmMsg)
-  if (!ok) return
+//   prafta-com-008-B-6: skipConfirm=true 면 기본 출근 확인을 생략(자발 연차일 확인 팝업이 이미 확인을 받음).
+const startCheckInOut = async (mode, targetWorkSeq = null, { skipConfirm = false } = {}) => {
+  if (!skipConfirm) {
+    let confirmMsg
+    if (mode === 'checkOut') confirmMsg = '퇴근하시겠어요?'
+    else if (targetWorkSeq === 1) confirmMsg = '1구간 출근하시겠어요?'
+    else if (targetWorkSeq === 2) confirmMsg = '2구간 출근하시겠어요?'
+    else confirmMsg = '출근하시겠어요?'
+    const ok = await askConfirm(confirmMsg)
+    if (!ok) return
+  }
   const gps = await requestGps()
   if (gps.status === 'OK') {
     // Mock 위치는 서버가 거부하나, 사용자 경험상 먼저 안내 후 중단.
@@ -687,10 +856,40 @@ const startCheckInOut = async (mode, targetWorkSeq = null) => {
 
 // 출근 — 2-pass 진입.
 //   prafta-app-015: 2구간 스케줄 구간 선택 시 payload.targetWorkSeq(1|2) 전달. 단일 출근은 null.
+//   prafta-com-008-B-6: 종일 연차일(attdIsLeaveDay)이면 즉시 출근하지 않고 자발 연차일 확인 팝업을
+//     먼저 띄운다(확인 시에만 check-in). 촉진 확정 연차면 서버가 ATTD_400_150 으로 차단한다.
 const onCheckIn = async (payload) => {
   const targetWorkSeq =
     payload?.targetWorkSeq === 1 || payload?.targetWorkSeq === 2 ? payload.targetWorkSeq : null
+  if (attdIsLeaveDay.value) {
+    // 자발 연차일 출근 확인 팝업 오픈(확인 콜백에서 실제 출근 진행).
+    leaveDayPendingWorkSeq = targetWorkSeq
+    leaveDayConfirmYmd.value = todayYmd()
+    leaveDayConfirmSubmitting.value = false
+    leaveDayConfirmOpen.value = true
+    return
+  }
   await startCheckInOut('checkIn', targetWorkSeq)
+}
+
+// prafta-com-008-B-6: 자발 연차일 확인 → "출근하기" 클릭.
+//   팝업을 낙관적으로 닫지 않고 진행 표시(submitting)만 켠 뒤 check-in 호출.
+//   - 성공/ATTD_400_150(차단): callCheckInOut 가 팝업을 닫는다.
+//   - 그 외 실패: submitting 만 해제(팝업 유지 → 재시도 가능).
+const onLeaveDayConfirm = async () => {
+  if (leaveDayConfirmSubmitting.value) return
+  leaveDayConfirmSubmitting.value = true
+  // skipConfirm: 팝업이 이미 사용자 확인을 받았으므로 기본 출근 확인은 생략.
+  await startCheckInOut('checkIn', leaveDayPendingWorkSeq, { skipConfirm: true })
+  // GPS 거부/측위 실패 등 callCheckInOut 미도달 경로에서도 버튼이 잠기지 않도록 진행 표시 해제.
+  //   (성공/ATTD_400_150 경로는 callCheckInOut 가 팝업까지 닫으므로 이 해제는 무해한 멱등 처리.)
+  leaveDayConfirmSubmitting.value = false
+}
+
+// prafta-com-008-B-6: 자발 연차일 확인 취소 → 출근 중단(팝업 자체 close 는 컴포넌트가 update:open 으로 처리).
+const onLeaveDayCancel = () => {
+  leaveDayConfirmSubmitting.value = false
+  leaveDayPendingWorkSeq = null
 }
 
 // 퇴근 — 2-pass 진입.
@@ -716,10 +915,11 @@ const onApprovalClick = () => {
   router.push('/MyRequests')
 }
 
-// 안전 활동
+// 안전 활동 — prafta-app-025 J1-10 B-6: 본인 안전활동 이력 화면(/MySafetyHistory)으로 진입.
+//   진입점 역할 분리: 하단 '안전' 탭(AppBottomTabBar) = /SafetyHub(허브, 불변),
+//   본 카드 헤더 ">"(onSafetyDetail) = 본인 이력 조회(순회점검 + 위험성평가, 시간순).
 const onSafetyDetail = () => {
-  // TODO(developer): 본인 안전점검/위험성 발굴 통합 이력 화면 진입 (별도 작업)
-  showAlert('준비 중입니다')
+  router.push('/MySafetyHistory')
 }
 
 // "안전점검 시작" → 기존 fnDayChkLst() → router.push('/QrScanner')
@@ -735,11 +935,6 @@ const onRiskDiscovery = () => {
 // 아차사고 보고(근로자) → prafta-app-012 보고 화면. 출근 게이트 미적용.
 const onNearMissReport = () => {
   router.push('/NearMissReport')
-}
-
-// 사건 관리(관리자/안전직군) → prafta-app-012 목록 화면. 사업장 권한은 서버가 최종 판정.
-const onNearMissManage = () => {
-  router.push('/NearMissManageList')
 }
 
 // TBM — 카드 `>` 진입: 사용자 TBM 허브(3탭) 화면으로 이동.
@@ -764,16 +959,8 @@ const onNoticeRow = (noticeId) => {
   router.push({ path: '/NoticeDetail', query: { noticeId } })
 }
 
-// 하단 탭
-const onTabClick = (tabKey) => {
-  // TODO(developer): 신규 라우트 신설 후 매핑
-  if (tabKey === 'home') return
-  if (tabKey === 'attd') {
-    router.push('/MyAttendance')
-    return
-  }
-  showAlert('준비 중입니다')
-}
+// prafta-app-025 J1-2: 하단 탭 라우팅은 공통 AppBottomTabBar 가 중앙화 처리한다.
+//   (home/attd/safety/tbm/my 목적지 매핑 + 현재 탭 재클릭 무동작). MainView 의 onTabClick 분기는 제거.
 </script>
 
 <style scoped>
@@ -786,6 +973,7 @@ const onTabClick = (tabKey) => {
   --color-primary-tint: #f0fdf4;
   --color-primary-tint-border: #dcfce7;
   --color-danger: #ef4444;
+  --color-on-danger: #ffffff;
   --color-warning: #f59e0b;
   --color-warning-tint: #fffbeb;
   --color-warning-text: #b45309;
@@ -809,7 +997,11 @@ const onTabClick = (tabKey) => {
   --radius-full: 9999px;
   --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.04);
 
-  min-height: 100vh;
+  /* 앱 셸은 뷰포트 높이로 '고정'한다(min-height 가 아님). 그래야 내부 .main 이
+     실제 스크롤 컨테이너가 되고, 내용이 길어도 문서(body)로 스크롤이 새지 않는다.
+     dvh 미지원 환경은 위의 vh 값으로 폴백. */
+  height: 100vh;
+  height: 100dvh;
   background: var(--color-bg);
   color: var(--color-text-primary);
   display: flex;
@@ -822,6 +1014,10 @@ const onTabClick = (tabKey) => {
 /* 본문 — 헤더(56) 와 탭바(72) 사이 영역, 탭바에 가려지지 않도록 하단 패딩 */
 .main {
   flex: 1;
+  /* flex 자식의 기본 min-height:auto 는 내용이 길면 축소를 막아 overflow-y 스크롤이
+     컨테이너 대신 문서로 새는 원인이 된다(스크롤 위치 오판 → 당겨서 새로고침 오작동).
+     min-height:0 으로 .main 을 실제 스크롤 컨테이너로 고정한다. */
+  min-height: 0;
   padding: 8px 16px 88px;
   overflow-y: auto;
 }

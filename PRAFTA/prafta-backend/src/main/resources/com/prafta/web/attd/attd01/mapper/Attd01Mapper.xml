@@ -14,17 +14,8 @@
 	    	A.CMPNY_CD
 	    	, 'SYST_VAL'
 	    	, A.SCH_TYPE
-	    	, 'SYS019' 
+	    	, 'SYS019'
     	) 							AS schTypeNm
-    	, IFNULL(A.BASE_YN, 'N')	AS baseYn
-    	, FNC_CMM_INFO_SRCH(
-	    	A.CMPNY_CD
-	    	, 'SYST_VAL'
-	    	, IFNULL(A.BASE_YN, 'N')
-	    	, 'SYS003'
-    	) 							AS baseYnNm
-    	
-    	
 	    , A.APPLY_DATE				AS applyDate
 
 	    , A.FST_SCH_STR_TIME  		AS fstSchStrTime
@@ -453,7 +444,7 @@
 	  	AND A.SHIFT_CYCLE_DAYS = #{shiftCycleDays}
 	  </if>
 	  <if test="useYn != null and useYn != ''">
-	  	AND A.USE_YN = #{USE_YN}
+	  	AND A.USE_YN = #{useYn}
 	  </if>
 	GROUP BY
 		A.CMPNY_CD

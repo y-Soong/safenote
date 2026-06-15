@@ -9,6 +9,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
 
+import com.prafta.common.cmm.push.TbmEventNotiService;
 import com.prafta.common.error.common.CommonErrorCode;
 import com.prafta.common.error.tbm.TbmErrorCode;
 import com.prafta.common.exception.ApiException;
@@ -77,6 +78,8 @@ import lombok.extern.slf4j.Slf4j;
 public class Tbm02ServiceImpl implements Tbm02Service {
 
 	private final Tbm02Mapper tbm02Mapper;
+	/** PRAFTA-APP-021-3b(W3): 웹 admin 라이브 경로 TBM 시작/종료 통보 PUSH 생산자(입실 참석자 대상, afterCommit 격리). */
+	private final TbmEventNotiService tbmEventNotiService;
 
 	/** 비밀번호 자리수(랜덤 6자리). */
 	private static final int PWD_LENGTH = 6;
@@ -359,6 +362,15 @@ public class Tbm02ServiceImpl implements Tbm02Service {
 		}
 
 		log.info("TBM 교육시작 전이 완료(IN_PROGRESS) - sessionCd={}", param.sessionCd());
+
+		// PRAFTA-APP-021-3b(W3): 웹 라이브 경로도 교육 시작 시 입실 참석자에게 PUSH 적재
+		// (앱 admin AppAdminTbmServiceImpl.startSession 과 동일 시그니처/패턴, afterCommit 격리·전이 영향 없음).
+		try {
+			tbmEventNotiService.notifyTbmStarted(
+					param.gvCmpnyCd(), guard.siteCd(), param.sessionCd(), param.gvUserCd());
+		} catch (Exception e) {
+			log.error("TBM 교육 시작 통보 PUSH 적재 hook 실패(전이 영향 없음). sessionCd={}", param.sessionCd(), e);
+		}
 	}
 
 	/**
@@ -417,6 +429,15 @@ public class Tbm02ServiceImpl implements Tbm02Service {
 		}
 
 		log.info("TBM 교육종료 전이 완료(COMPLETED) - sessionCd={}", param.sessionCd());
+
+		// PRAFTA-APP-021-3b(W3): 웹 라이브 경로도 교육 종료 시 입실 참석자에게 PUSH 적재
+		// (앱 admin AppAdminTbmServiceImpl.endSession 과 동일 시그니처/패턴, afterCommit 격리·전이 영향 없음).
+		try {
+			tbmEventNotiService.notifyTbmCompleted(
+					param.gvCmpnyCd(), guard.siteCd(), param.sessionCd(), param.gvUserCd());
+		} catch (Exception e) {
+			log.error("TBM 교육 종료 통보 PUSH 적재 hook 실패(전이 영향 없음). sessionCd={}", param.sessionCd(), e);
+		}
 
 		return SessionCompleteResponse.builder()
 				.sessionCd(param.sessionCd())

@@ -104,7 +104,7 @@ export function minutesToHhMm(min) {
 
 /**
  * 분(int) → "N시간" 또는 "N시간 N분" (예: 420 → "7시간", 450 → "7시간 30분").
- * 스케줄/표준화 본문 한글 표기용.
+ * 스케줄 본문 한글 표기용.
  */
 export function minutesToKorean(min) {
   const total = Number.isFinite(min) ? Math.max(0, Math.round(min)) : 0

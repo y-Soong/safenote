@@ -21,6 +21,8 @@ public record UserInfoCommand(
     , String authCd
     , String rankCd
     , String useYn
+    // PRAFTA-COM-008-E-5 — 기본 근무타입(SCH_CD). blank 면 mergeUserInfo 에서 미변경.
+    , String defaultSchCd
     , String gvUserCd
 ){
 	public static UserInfoCommand from(UserInfoModel model, String mblNoEnc, String mblNoHmac, String emailEnc, String emailHmac, String birthDtEnc) {
@@ -45,6 +47,7 @@ public record UserInfoCommand(
 			, model.authCd()
 			, model.rankCd()
 			, model.useYn()
+			, model.defaultSchCd()
 			, model.gvUserCd()
 		);
 	}

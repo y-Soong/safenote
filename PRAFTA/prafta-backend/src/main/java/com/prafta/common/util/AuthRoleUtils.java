@@ -26,6 +26,9 @@ public final class AuthRoleUtils {
     /** 권한 미부여(접근 차단) 계정. */
     public static final String AUTH_NONE = "999999";
 
+    /** 고용형태[SYS041] — 일용직. 통합형 일용직 사용자 식별값(JWT {@code gv_employmentType}). */
+    public static final String EMPLOYMENT_DAILY = "DAILY";
+
     private AuthRoleUtils() {
         // 유틸리티 클래스 - 인스턴스 생성 금지
     }
@@ -109,5 +112,16 @@ public final class AuthRoleUtils {
             || AUTH_HR_MANAGER.equals(authCd)
             || AUTH_SAFETY_MANAGER.equals(authCd)
             || AUTH_SYSTEM.equals(authCd);
+    }
+
+    /**
+     * 고용형태가 일용직(SYS041 'DAILY')인지 판정한다. JWT 클레임 {@code gv_employmentType}
+     * 에서 도출한 값만 신뢰한다(클라 바디 신뢰 금지).
+     *
+     * <p>prafta-app-027 follow-up: 일용직은 스케줄/근무수정요청/초과근무/연차 신청이 해당없으므로
+     * 해당 쓰기 endpoint 를 서버에서 차단할 때 사용한다. 표시 숨김(J1-4)의 서버측 보강.
+     */
+    public static boolean isDailyWorker(String employmentType) {
+        return EMPLOYMENT_DAILY.equals(employmentType);
     }
 }

@@ -166,6 +166,14 @@ public interface AppAdminTbmMapper {
      */
     int insertManagerDirectEntry(AdminManagerEnterCommand command);
 
+    /* ===== prafta-app-025 J1-7 작업 D: 출근 선행 가드 ===== */
+    /**
+     * 일용직 QR 입실 "출근 선행" 가드용 — 당일 해당 일용직의 출근 기록(TB_USER_ATTD_MGMT) 존재 여부.
+     * CHECK_IN_TIME IS NOT NULL AND DEL_YN='N' 인 당일(WORK_YMD=오늘) 행 수. 0이면 입실 차단(TBM_409_044).
+     */
+    int countTodayCheckIn(@Param("gvCmpnyCd") String gvCmpnyCd, @Param("siteCd") String siteCd,
+            @Param("userCd") String userCd, @Param("todayYmd") String todayYmd);
+
     /* ===== prafta-051 R-C 이탈자 내보내기(입실취소) ===== */
     /**
      * E13 입실취소 물리삭제 직전 감사 스냅샷 조회. 대상 출결의 USER_CD/USER_TYPE_CD 코드값만 반환한다

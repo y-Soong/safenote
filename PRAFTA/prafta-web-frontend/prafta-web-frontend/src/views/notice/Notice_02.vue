@@ -5,7 +5,7 @@
       :title="props.title"
       :buttons="localButtons"
       @search="fnSearch"
-      @create="fnOpenCreatePop"
+      @create="fnCreate"
     />
 
     <!-- 검색바: 자료타입 / 등록월 / 제목·내용 (회사 전체 공통 — 사업장/소속부서 없음) -->
@@ -272,7 +272,7 @@ const fnSearch = async () => {
 };
 
 // 신규 자료 생성 팝업
-const fnOpenCreatePop = () => {
+const fnCreate = () => {
   openPop(ArchiveCreatePop, {
     onSave: () => {
       fnSearch();

@@ -11,14 +11,18 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
 import com.prafta.common.security.JwtUtil;
+import com.prafta.web.baim.baim05.application.param.ClearDailyUserSlotsParam;
 import com.prafta.web.baim.baim05.application.param.DailyUserLinkPoliciesParam;
 import com.prafta.web.baim.baim05.application.param.DailyUserSlotListParam;
 import com.prafta.web.baim.baim05.application.param.InsertDailyQrUserParam;
 import com.prafta.web.baim.baim05.application.param.LinkPoliciesParam;
+import com.prafta.web.baim.baim05.application.param.SetSlotFixedParam;
+import com.prafta.web.baim.baim05.dto.request.ClearDailyUserSlotsRequest;
 import com.prafta.web.baim.baim05.dto.request.DailyUserLinkPoliciesRequest;
 import com.prafta.web.baim.baim05.dto.request.DailyUserSlotListRequest;
 import com.prafta.web.baim.baim05.dto.request.InsertDailyQrUserRequest;
 import com.prafta.web.baim.baim05.dto.request.LinkPoliciesRequest;
+import com.prafta.web.baim.baim05.dto.request.SetSlotFixedRequest;
 import com.prafta.web.baim.baim05.dto.response.DailyUserLinkPoliciesResponse;
 import com.prafta.web.baim.baim05.dto.response.DailyUserSlotListResponse;
 import com.prafta.web.baim.baim05.dto.response.InsertDailyQrUserResponse;
@@ -69,5 +73,25 @@ public class Baim05Controller {
 		InsertDailyQrUserResponse response = baim05Service.insertDailyQrUser(InsertDailyQrUserParam.from(request, jwtUtil.getAllClaimsAsMap(authorization)));
 
 		return ResponseEntity.status(HttpStatus.OK).body(response);
+	}
+
+	@PostMapping("/clear-daily-user-slots")
+	public ResponseEntity<?> clearDailyUserSlots(
+			@RequestBody ClearDailyUserSlotsRequest request,
+			@RequestHeader(value = "Authorization", required = false) String authorization) {
+
+		baim05Service.clearDailyUserSlots(ClearDailyUserSlotsParam.from(request, jwtUtil.getAllClaimsAsMap(authorization)));
+
+		return ResponseEntity.status(HttpStatus.OK).build();
+	}
+
+	@PostMapping("/set-daily-user-slot-fixed")
+	public ResponseEntity<?> setDailyUserSlotFixed(
+			@RequestBody SetSlotFixedRequest request,
+			@RequestHeader(value = "Authorization", required = false) String authorization) {
+
+		baim05Service.setDailyUserSlotFixed(SetSlotFixedParam.from(request, jwtUtil.getAllClaimsAsMap(authorization)));
+
+		return ResponseEntity.status(HttpStatus.OK).build();
 	}
 }

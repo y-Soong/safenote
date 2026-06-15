@@ -90,10 +90,6 @@
                   rows="2"
                 ></textarea>
               </div>
-              <div class="form-row">
-                <label>출처</label>
-                <input v-model="sourceLabel" readonly />
-              </div>
             </div>
           </div>
 
@@ -160,14 +156,6 @@
                   placeholder="반려 사유를 입력해 주세요"
                   rows="3"
                 ></textarea>
-              </div>
-
-              <div class="link-block">
-                <div class="link-block__title">수시 위험성평가 생성·연계</div>
-                <button class="btn btn-report" @click="fnCreateRiskAssessment">
-                  위험성평가 생성
-                </button>
-                <!-- TODO(developer): 생성된 ASSESS_CD 표시/연계(설계 §4-A 5단계) -->
               </div>
             </div>
           </div>
@@ -261,6 +249,7 @@ const formData = ref({
   causeDesc: "",
   preventionDesc: "",
   fileMgmtCd: "",
+  fileName: "",
   filePath: "",
   reportStatusCd: "",
   reportStatusNm: "",
@@ -268,8 +257,6 @@ const formData = ref({
   reporterId: "",
   reporterNm: "",
   reportDtime: "",
-  srcProcessCd: "",
-  srcAssessmentCd: "",
 });
 
 // 완료(400)·반려(900) 건은 읽기전용 (전이 기준은 진입 시점 원본 상태)
@@ -277,10 +264,11 @@ const isReadOnly = computed(
   () => currentStatusCd.value === "400" || currentStatusCd.value === "900"
 );
 
-// 상태 전이 규칙(설계 §4): 현재 상태에서 선택 가능한 다음 상태(자기 자신 포함, 어느 단계든 900 반려)
+// 상태 전이 규칙(정책 A): 단계는 유지하되 활성단계(접수/검토중/조치중)에서 더 뒤 단계로
+//   전진 점프 허용(접수→완료 직접 등). 자기 자신 포함, 어느 활성단계든 900 반려. 뒤로 가기 불가.
 const STATUS_TRANSITIONS = {
-  "100": ["100", "200", "900"],
-  "200": ["200", "300", "900"],
+  "100": ["100", "200", "300", "400", "900"],
+  "200": ["200", "300", "400", "900"],
   "300": ["300", "400", "900"],
   "400": ["400"],
   "900": ["900"],
@@ -299,31 +287,27 @@ const statusOptions = computed(() => {
 // 저장된 반려 사유(상세 응답의 rejectReason 분리 필드. 없을 수 있어 옵셔널 처리)
 const storedRejectReason = computed(() => formData.value.rejectReason || "");
 
-// 출처 라벨 (재분류 출처가 있으면 원 평가건 ID, 없으면 앱 직접보고)
-const sourceLabel = computed(() => {
-  if (proxy.$util.isNotEmpty(formData.value.srcAssessmentCd)) {
-    return "위험성평가요청 전환: " + formData.value.srcAssessmentCd;
-  }
-  return "앱 직접보고";
-});
-
-// 현장 사진 URL (RiskAssessInfo beforePhotoUrl 패턴)
+// 현장 사진 URL
+// - 서빙 파일명은 확장자 포함명(fileName = FILE_MGMT_CD + FILE_EXT)을 사용한다.
+//   fileMgmtCd(확장자 없음)로 URL 을 만들면 정적 서빙 핸들러가 파일을 찾지 못해(404) 사진이 안 보인다.
+// - Windows 저장 시 FILE_PATH 에 백슬래시(\)가 섞이므로 URL 안전 형태(슬래시)로 정규화한다.
 const photoUrl = computed(() => {
-  if (formData.value.filePath && formData.value.fileMgmtCd) {
+  if (formData.value.filePath && formData.value.fileName) {
     const apiBaseUrl = import.meta.env.VITE_API_BASE_URL || "";
-    let fullPath = `${formData.value.filePath}/${formData.value.fileMgmtCd}`;
+    const normalizedPath = formData.value.filePath.replace(/\\/g, "/");
+    let fullPath = `${normalizedPath}/${formData.value.fileName}`;
     if (
       apiBaseUrl &&
-      !formData.value.filePath.startsWith("http://") &&
-      !formData.value.filePath.startsWith("https://")
+      !normalizedPath.startsWith("http://") &&
+      !normalizedPath.startsWith("https://")
     ) {
       const baseUrl = apiBaseUrl.endsWith("/")
         ? apiBaseUrl.slice(0, -1)
         : apiBaseUrl;
-      const cleanFilePath = formData.value.filePath.startsWith("/")
-        ? formData.value.filePath.slice(1)
-        : formData.value.filePath;
-      fullPath = `${baseUrl}/${cleanFilePath}/${formData.value.fileMgmtCd}`;
+      const cleanFilePath = normalizedPath.startsWith("/")
+        ? normalizedPath.slice(1)
+        : normalizedPath;
+      fullPath = `${baseUrl}/${cleanFilePath}/${formData.value.fileName}`;
     }
     return fullPath;
   }
@@ -372,7 +356,7 @@ const fnGetSystinfoList = async () => {
   }
 };
 
-// 사건 단건 상세 조회 → formData 매핑(코드명/파일경로/출처 포함)
+// 사건 단건 상세 조회 → formData 매핑(코드명/파일경로 포함)
 const fnGetIncidentInfo = async () => {
   if (proxy.$util.isEmpty(formData.value.nearMissId)) {
     return;
@@ -521,13 +505,6 @@ const fnReject = async () => {
     const msg = resolveApiErrorMessage(err, "반려 처리 중 오류가 발생했습니다.");
     await proxy.$alert(msg);
   }
-};
-
-// 수시 위험성평가 생성·연계(설계 §4-A 5단계) — 후속 작업. 연계 API 확정 후 구현
-const fnCreateRiskAssessment = async () => {
-  // TODO(developer): 위험성평가 생성·연계 API(설계 §4-A) 확정 후 구현.
-  //   현 시점 백엔드 계약(prafta-040-2)에 생성 엔드포인트 미포함 → 안내만 노출.
-  await proxy.$alert("수시 위험성평가 생성·연계는 준비 중입니다.");
 };
 
 // props → formData 매핑 (목록에서 전달된 키만 우선 세팅, 상세는 fnGetIncidentInfo로 보강)
@@ -699,20 +676,6 @@ watch(
 .severity-badge--critical {
   background: var(--color-severity-critical-bg, #fef2f2);
   color: var(--color-severity-critical-fg, #b91c1c);
-}
-
-/* 위험성평가 연계 블록 */
-.link-block {
-  margin-top: var(--space-md, 0.75rem);
-  padding-top: var(--space-md, 0.75rem);
-  border-top: 1px dashed var(--color-border, #ddd);
-}
-
-.link-block__title {
-  font-weight: 500;
-  font-size: var(--font-size-sm, 0.9rem);
-  margin-bottom: var(--space-sm, 0.5rem);
-  color: var(--color-text, #333);
 }
 
 .modal-footer {

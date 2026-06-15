@@ -113,7 +113,7 @@
             </ul>
 
             <div class="new-user">
-              <p class="new-user-text">SafetyNote가 처음이신가요?</p>
+              <p class="new-user-text">Safenote가 처음이신가요?</p>
               <button
                 type="button"
                 class="btn-secondary"
@@ -133,7 +133,7 @@
               >고객센터 1800-1152 (평일 09:00~18:00)</span
             >
           </div>
-          <small>© SAFETYNOTE INC. ALL RIGHTS RESERVED.</small>
+          <small>© SAFENOTE INC. ALL RIGHTS RESERVED.</small>
         </footer>
       </section>
     </main>
@@ -156,6 +156,7 @@ import axios from "@/api/axios";
 import { resolveApiErrorMessage } from "@/utils/apiError";
 import TermsPop from "./popup/TermsPop.vue";
 import PhoneAuthPop from "./popup/PhoneAuthPop.vue";
+import DefaultSchGatePop from "./popup/DefaultSchGatePop.vue";
 import ActInfoSrch from "@/components/popup/ActInfoSrchPop.vue";
 import NoticePopupCarousel from "@/components/popup/NoticePopupCarousel.vue";
 
@@ -243,6 +244,17 @@ const fnSubmitLogin = async () => {
       if (response.data?.nextStep === "PHONE_AUTH") {
         openPop(PhoneAuthPop, {
           phoneAuthToken_p: response.data.token,
+          cmpnyCd_p: response.data.cmpnyCd,
+          onSuccess: fnApplyLoginResponse,
+        });
+        return;
+      }
+
+      // PRAFTA-COM-008-E-8: 기본 근무타입 미설정(교대 비소속) 게이트 — 강제 팝업(BE 강제).
+      //   설정 저장 → 정식 토큰 발급 → onSuccess(fnApplyLoginResponse) 로 메인 진입.
+      if (response.data?.nextStep === "DEFAULT_SCH") {
+        openPop(DefaultSchGatePop, {
+          defaultSchToken_p: response.data.token,
           cmpnyCd_p: response.data.cmpnyCd,
           onSuccess: fnApplyLoginResponse,
         });

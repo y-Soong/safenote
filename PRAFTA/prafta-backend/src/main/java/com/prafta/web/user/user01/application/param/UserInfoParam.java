@@ -46,6 +46,7 @@ public record UserInfoParam(
                     req.getAuthCd(),
                     req.getRankCd(),
                     req.getUseYn(),
+                    req.getDefaultSchCd(),
                     tokenInfo.gv_userCd()
                 );
             })

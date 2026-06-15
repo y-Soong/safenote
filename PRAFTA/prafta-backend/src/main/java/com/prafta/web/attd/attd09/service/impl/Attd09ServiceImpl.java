@@ -89,6 +89,7 @@ public class Attd09ServiceImpl implements Attd09Service {
                 .user(result.getUser())
                 .legalSummary(result.getLegalSummary())
                 .nonLegalSummary(result.getNonLegalSummary())
+                .appliedLeaveTypes(result.getAppliedLeaveTypes())
                 .grantHistory(result.getGrantHistory())
                 .build();
     }

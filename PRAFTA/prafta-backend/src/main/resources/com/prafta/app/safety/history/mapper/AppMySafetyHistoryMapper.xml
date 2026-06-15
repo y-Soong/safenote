@@ -1,0 +1,104 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.prafta.app.safety.history.mapper.AppMySafetyHistoryMapper">
+
+    <!-- 내 순회점검 이력(항목 평면): 본인 점검(INSERT_NO=userCd)만, 사업장 스코프 동봉.
+         웹/앱 chkLst03 selectInspectAnswerList 를 본인 필터로 한정 포팅.
+         답변행 단위(체크포인트 x 항목 x 일자). occurredDate(YYYY-MM-DD)는 위험성과 병합 정렬 키.
+         사진 경로는 FNC_CMM_INFO_SRCH('FILE_PATH') 로 해석(평문 FILE_PATH 직노출 비상속).
+         INSPECT_ANSWER_TYPE 은 SQL CASE 로 'O'/'X' 변환(OGNL Character 함정 회피). -->
+    <select id="selectMyInspectionHistory"
+            parameterType="com.prafta.app.safety.history.application.query.MyHistoryQuery"
+            resultType="com.prafta.app.safety.history.result.InspectionHistoryResult">
+    /* AppMySafetyHistoryMapper.selectMyInspectionHistory */
+    SELECT
+        D.CHKPT_CD                                                       AS chkptCd
+      , T.CHKPT_NM                                                       AS chkptNm
+      , D.INSPECT_ITEM_CD                                                AS inspectItemCd
+      , I.INSPECT_ITEM_SUBJ                                              AS inspectItemSubj
+      , D.WORK_DATE                                                      AS workDate
+      , DATE_FORMAT(STR_TO_DATE(D.WORK_DATE, '%Y%m%d'), '%Y-%m-%d')      AS occurredDate
+      , CASE WHEN D.INSPECT_ANSWER_TYPE = 'Y' THEN 'O' ELSE 'X' END      AS inspectAnswerType
+      , D.ANSWER_DESC                                                    AS answerDesc
+      , D.FILE_MGMT_CD                                                   AS fileMgmtCd
+      , FNC_CMM_INFO_SRCH(D.CMPNY_CD, 'FILE_PATH', D.FILE_MGMT_CD, NULL) AS filePath
+    FROM TB_CHKPT_INSPECT_ANSWER D
+         INNER JOIN TB_CHKPT_TYPE_MGMT T
+            ON (
+                T.CMPNY_CD = D.CMPNY_CD
+            AND T.SITE_CD = D.SITE_CD
+            AND T.CHKPT_CD = D.CHKPT_CD
+            )
+         INNER JOIN TB_CHKPT_INSPECT_ITEM I
+            ON (
+                I.CMPNY_CD = D.CMPNY_CD
+            AND I.CHKLST_TYPE = T.CHKLST_TYPE
+            AND I.INSPECT_ITEM_CD = D.INSPECT_ITEM_CD
+            )
+    WHERE D.CMPNY_CD = #{cmpnyCd}
+      AND D.SITE_CD = #{siteCd}
+      AND D.INSERT_NO = #{userCd}
+    ORDER BY D.WORK_DATE DESC, D.CHKPT_CD, I.SORT_IDX, D.INSPECT_ITEM_CD
+    </select>
+
+    <!-- 내 위험성평가 이력: 본인 등록(INIT_ASSESSOR_ID=userCd)만, 사업장 스코프 동봉.
+         J1-6 riskColumns/riskJoins 동형(상태명 SYS011 / 공정명 COM002 / 위험요인구분 / 유해요인명).
+         occurredDate(YYYY-MM-DD)는 점검과 병합 정렬 키. 사진 경로는 FNC_CMM_INFO_SRCH('FILE_PATH'). -->
+    <select id="selectMyRiskHistory"
+            parameterType="com.prafta.app.safety.history.application.query.MyHistoryQuery"
+            resultType="com.prafta.app.safety.history.result.RiskHistoryResult">
+    /* AppMySafetyHistoryMapper.selectMyRiskHistory */
+    SELECT
+        A.PROCESS_CD                                                            AS processCd
+      , C.BAIM_VAL_D_NM                                                         AS processNm
+      , A.RISK_TYPE_CD                                                          AS riskTypeCd
+      , D.RISK_TYPE_NM                                                          AS riskTypeNm
+      , A.HAZARD_CD                                                             AS hazardCd
+      , CASE WHEN A.HAZARD_CD = 'self' THEN A.ASSESSMENT_DESC ELSE E.HAZARD_NM END AS hazardNm
+      , A.ASSESSMENT_CD                                                         AS assessmentCd
+      , A.ASSESSMENT_STATUS                                                     AS assessmentStatus
+      , B.SYST_VAL_D_NM                                                         AS assessmentStatusNm
+      , A.INIT_RISK_LV                                                          AS initRiskLv
+      , A.INIT_DESC                                                             AS initDesc
+      , DATE_FORMAT(A.INIT_ASSESS_DATE, '%Y-%m-%d %H:%i')                       AS initAssessDate
+      , DATE_FORMAT(A.INIT_ASSESS_DATE, '%Y-%m-%d')                            AS occurredDate
+      , A.INIT_FILE_MGMT_CD                                                     AS initFileMgmtCd
+      , FNC_CMM_INFO_SRCH(A.CMPNY_CD, 'FILE_PATH', A.INIT_FILE_MGMT_CD, NULL)   AS initFilePath
+    FROM TB_RISK_ASSESSMENT A
+         INNER JOIN (
+            SELECT
+                SV.SYST_VAL_D_CD
+              , SV.SYST_VAL_D_NM
+            FROM TB_SYST_VAL_D SV
+            WHERE SV.SYST_VAL_CD = 'SYS011'
+              AND SV.USE_YN = 'Y'
+         ) B
+            ON (A.ASSESSMENT_STATUS = B.SYST_VAL_D_CD)
+         INNER JOIN (
+            SELECT
+                BV.BAIM_VAL_D_CD
+              , BV.BAIM_VAL_D_NM
+            FROM TB_BAIM_VAL_D BV
+            WHERE BV.CMPNY_CD = #{cmpnyCd}
+              AND BV.BAIM_VAL_CD = 'COM002'
+              AND BV.USE_YN = 'Y'
+         ) C
+            ON (A.PROCESS_CD = C.BAIM_VAL_D_CD)
+         INNER JOIN TB_RISK_TYPE D
+            ON (
+                A.CMPNY_CD = D.CMPNY_CD
+            AND A.RISK_TYPE_CD = D.RISK_TYPE_CD
+            )
+         LEFT OUTER JOIN TB_RISK_SITE_HAZARD E
+            ON (
+                A.CMPNY_CD = E.CMPNY_CD
+            AND A.RISK_TYPE_CD = E.RISK_TYPE_CD
+            AND A.HAZARD_CD = E.HAZARD_CD
+            )
+    WHERE A.CMPNY_CD = #{cmpnyCd}
+      AND A.SITE_CD = #{siteCd}
+      AND A.INIT_ASSESSOR_ID = #{userCd}
+    ORDER BY A.INIT_ASSESS_DATE DESC
+    </select>
+
+</mapper>

@@ -2,97 +2,25 @@
 <!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
 <mapper namespace="com.prafta.web.attd.attd07.mapper.Attd07Mapper">
 
-    <!-- ================================================================
-         PRAFTA-015 - 표준화 시간 계산 SQL 프래그먼트.
-
-         배경: 기존 FNC_STD_TIME 은 표준화 결과가 1440분(24:00) 이상이면
-         23:59 로 캡하여 자정 넘김을 표현하지 못한다. 또한 표준화 단위 코드
-         조회를 FNC_CMM_INFO_SRCH('ATTD_STD_CHKIN'/'ATTD_STD_CHKOUT', ...) 로
-         하던 경로는 TB_ATTD_STD_TIME_RULE_HIS 의 시행일(INSERT_DATE) 기반
-         최신 룰을 반영하지 못한다. FNC_STD_TIME 은 ALTER 불가이므로 mapper
-         SQL 재작성으로 해결한다.
-
-         규칙:
-           - 표준화 단위(분)는 근무일자 기준 TB_ATTD_STD_TIME_RULE_HIS 에서
-             STD_TIME_RULE_TYPE(SYS028: 01=출근, 02=퇴근) 별로
-             DATE(INSERT_DATE) &lt;= 근무일자 인 행 중 INSERT_DATE 가 가장
-             최신인 1행의 STD_TIME_TYPE(SYS029) 을 CASE 로 분 변환한다
-             (01=0, 02=5, 03=10, 04=15, 05=30). 단위 0(설정안함)이면 표준화 없음.
-           - 자정 넘김: 근무일자(00:00)를 origin 으로 한 통합 분 stamp
-             (DATEDIFF(체크일자, 근무일자)*1440 + 시*60 + 분) 으로 환산 후
-             출근=올림(CEIL)/퇴근=내림(FLOOR) 한 다음, 결과 stamp 를
-             다시 일자/시각으로 분리한다.
-           - frag_std_unit       : 표준화 단위(분) 스칼라.
-           - frag_std_stamp      : 표준화 후 통합 분 stamp.
-           - frag_std_date       : 표준화 후 일자(YYYYMMDD).
-           - frag_std_time       : 표준화 후 시각(HHMM).
-
-         호출부 ${} 바인딩 파라미터:
-           cmpny  - 회사코드 컬럼/표현식 (예: U.CMPNY_CD, #{gvCmpnyCd})
-           ymd    - 근무일자 컬럼/표현식 (예: D.WORK_YMD, #{workYmd})
-           dtCol  - 체크 일자 컬럼 (YYYYMMDD, 예: A1.CHECK_IN_DATE)
-           tmCol  - 체크 시각 컬럼 (HHMM, 예: A1.CHECK_IN_TIME)
-           rule   - STD_TIME_RULE_TYPE ('01'=출근 / '02'=퇴근)
-           round  - 'CEIL'(출근) / 'FLOOR'(퇴근)
-         ================================================================ -->
-    <sql id="frag_std_unit">
-        IFNULL((
-            SELECT CASE H.STD_TIME_TYPE
-                       WHEN '01' THEN 0
-                       WHEN '02' THEN 5
-                       WHEN '03' THEN 10
-                       WHEN '04' THEN 15
-                       WHEN '05' THEN 30
-                       ELSE 0
-                   END
-            FROM TB_ATTD_STD_TIME_RULE_HIS H
-            WHERE H.CMPNY_CD           = ${cmpny}
-              AND H.STD_TIME_RULE_TYPE = ${rule}
-              AND DATE(H.INSERT_DATE) <![CDATA[ <= ]]> STR_TO_DATE(${ymd}, '%Y%m%d')
-            ORDER BY H.INSERT_DATE DESC
-            LIMIT 1
-        ), 0)
-    </sql>
-
-    <sql id="frag_std_stamp">
-        /* 표준화 후 통합 분 stamp (근무일자 00:00 = 0 origin). 단위 0 이면 원본 stamp 그대로. */
-        CASE
-            WHEN ${dtCol} IS NULL OR ${tmCol} IS NULL OR ${tmCol} = '' THEN NULL
-            WHEN (<include refid="frag_std_unit"/>) = 0 THEN
-                ( DATEDIFF(STR_TO_DATE(${dtCol}, '%Y%m%d'), STR_TO_DATE(${ymd}, '%Y%m%d')) * 1440
-                + CAST(SUBSTRING(${tmCol}, 1, 2) AS SIGNED) * 60
-                + CAST(SUBSTRING(${tmCol}, 3, 2) AS SIGNED) )
-            ELSE
-                ${round}(
-                    ( DATEDIFF(STR_TO_DATE(${dtCol}, '%Y%m%d'), STR_TO_DATE(${ymd}, '%Y%m%d')) * 1440
-                    + CAST(SUBSTRING(${tmCol}, 1, 2) AS SIGNED) * 60
-                    + CAST(SUBSTRING(${tmCol}, 3, 2) AS SIGNED) )
-                    / (<include refid="frag_std_unit"/>)
-                ) * (<include refid="frag_std_unit"/>)
-        END
-    </sql>
-
-    <sql id="frag_std_date">
-        /* 표준화 후 일자: 근무일자 + FLOOR(stamp/1440) 일. */
-        CASE
-            WHEN (<include refid="frag_std_stamp"/>) IS NULL THEN NULL
-            ELSE DATE_FORMAT(
-                     DATE_ADD(STR_TO_DATE(${ymd}, '%Y%m%d'),
-                              INTERVAL FLOOR((<include refid="frag_std_stamp"/>) / 1440) DAY),
-                     '%Y%m%d')
-        END
-    </sql>
-
-    <sql id="frag_std_time">
-        /* 표준화 후 시각(HHMM): MOD(stamp,1440) 을 음수 보정 후 HHMM 으로. */
-        CASE
-            WHEN (<include refid="frag_std_stamp"/>) IS NULL THEN NULL
-            ELSE LPAD(CONCAT(
-                     LPAD(FLOOR(MOD(MOD((<include refid="frag_std_stamp"/>), 1440) + 1440, 1440) / 60), 2, '0'),
-                     LPAD(MOD(MOD(MOD((<include refid="frag_std_stamp"/>), 1440) + 1440, 1440), 60), 2, '0')
-                 ), 4, '0')
-        END
-    </sql>
+    <!--
+      PRAFTA-COM-008-B-3: 그날 종일 확정 연차 존재 카운트(웹 OT 등록 차단 판정).
+      app 단일출처 AppAttd01Mapper.countFullDayLeaveOn(=AppHome01Mapper 미러)과 동일 술어를
+      웹에서 재사용(app↔web 매퍼 직접 의존 회피). 종일('00') CONFIRMED + DEL_YN='N' + 기간 포함.
+      부분연차(반차/시간차)는 근무일 유지이므로 미카운트. > 0 이면 종일 연차일.
+    -->
+    <select id="countFullDayLeaveOn" resultType="int">
+    /* Attd07Mapper.countFullDayLeaveOn */
+    SELECT COUNT(*)
+      FROM TB_USER_LEAVE_USE U
+     WHERE U.CMPNY_CD      = #{cmpnyCd}
+       AND U.SITE_CD       = #{siteCd}
+       AND U.USER_CD       = #{userCd}
+       AND U.LEAVE_STATUS  = 'CONFIRMED'
+       AND U.DEL_YN        = 'N'
+       AND U.USE_UNIT_TYPE = '00'
+       AND U.START_DATE   <![CDATA[ <= ]]> #{workYmd}
+       AND U.END_DATE     <![CDATA[ >= ]]> #{workYmd}
+    </select>
 
     <select id="selectMonthlyAttdList" parameterType="com.prafta.web.attd.attd07.application.query.MonthlyAttdListQuery" resultType="com.prafta.web.attd.attd07.result.MonthlyAttdListResult">
     /* Attd07Mapper.selectMonthlyAttdList */
@@ -194,8 +122,8 @@
 	        /* 근무계획 (스케줄 / 휴가 양쪽 LEFT JOIN) */
 	        , WP.WORK_PLAN_CD                                                  AS workPlanCd
 	        , CASE
+	            WHEN LU.LEAVE_CD  IS NOT NULL THEN 'LEAVE'
 	            WHEN SCH.SCH_CD   IS NOT NULL THEN 'SCH'
-	            WHEN LV.LEAVE_CD  IS NOT NULL THEN 'LEAVE'
 	            ELSE NULL
 	          END                                                              AS planType
 	
@@ -215,27 +143,18 @@
 	        , A1.ATTD_ID                                                       AS attd1Id
 	        , A1.CHECK_IN_DATE                                                 AS act1InDate
 	        , A1.CHECK_IN_TIME                                                 AS act1InTime
-	        /* PRAFTA-015 - 표준화 출근 일자/시각 (TB_ATTD_STD_TIME_RULE_HIS 룰 + 자정 넘김 보정) */
-	        , <include refid="frag_std_date"><property name="cmpny" value="U.CMPNY_CD"/><property name="ymd" value="D.WORK_YMD"/><property name="dtCol" value="A1.CHECK_IN_DATE"/><property name="tmCol" value="A1.CHECK_IN_TIME"/><property name="rule" value="'01'"/><property name="round" value="CEIL"/></include> AS act1InStdDate
-	        , <include refid="frag_std_time"><property name="cmpny" value="U.CMPNY_CD"/><property name="ymd" value="D.WORK_YMD"/><property name="dtCol" value="A1.CHECK_IN_DATE"/><property name="tmCol" value="A1.CHECK_IN_TIME"/><property name="rule" value="'01'"/><property name="round" value="CEIL"/></include> AS act1InStdTime
 	        , A1.CHECK_IN_METHOD                                               AS act1InMethod
 	        , A1.CHECK_OUT_DATE                                                AS act1OutDate
 	        , A1.CHECK_OUT_TIME                                                AS act1OutTime
-	        , <include refid="frag_std_date"><property name="cmpny" value="U.CMPNY_CD"/><property name="ymd" value="D.WORK_YMD"/><property name="dtCol" value="A1.CHECK_OUT_DATE"/><property name="tmCol" value="A1.CHECK_OUT_TIME"/><property name="rule" value="'02'"/><property name="round" value="FLOOR"/></include> AS act1OutStdDate
-	        , <include refid="frag_std_time"><property name="cmpny" value="U.CMPNY_CD"/><property name="ymd" value="D.WORK_YMD"/><property name="dtCol" value="A1.CHECK_OUT_DATE"/><property name="tmCol" value="A1.CHECK_OUT_TIME"/><property name="rule" value="'02'"/><property name="round" value="FLOOR"/></include> AS act1OutStdTime
 	        , A1.CHECK_OUT_METHOD                                              AS act1OutMethod
 	
 	        /* 근태 2차 */
 	        , A2.ATTD_ID                                                       AS attd2Id
 	        , A2.CHECK_IN_DATE                                                 AS act2InDate
 	        , A2.CHECK_IN_TIME                                                 AS act2InTime
-	        , <include refid="frag_std_date"><property name="cmpny" value="U.CMPNY_CD"/><property name="ymd" value="D.WORK_YMD"/><property name="dtCol" value="A2.CHECK_IN_DATE"/><property name="tmCol" value="A2.CHECK_IN_TIME"/><property name="rule" value="'01'"/><property name="round" value="CEIL"/></include> AS act2InStdDate
-	        , <include refid="frag_std_time"><property name="cmpny" value="U.CMPNY_CD"/><property name="ymd" value="D.WORK_YMD"/><property name="dtCol" value="A2.CHECK_IN_DATE"/><property name="tmCol" value="A2.CHECK_IN_TIME"/><property name="rule" value="'01'"/><property name="round" value="CEIL"/></include> AS act2InStdTime
 	        , A2.CHECK_IN_METHOD                                               AS act2InMethod
 	        , A2.CHECK_OUT_DATE                                                AS act2OutDate
 	        , A2.CHECK_OUT_TIME                                                AS act2OutTime
-	        , <include refid="frag_std_date"><property name="cmpny" value="U.CMPNY_CD"/><property name="ymd" value="D.WORK_YMD"/><property name="dtCol" value="A2.CHECK_OUT_DATE"/><property name="tmCol" value="A2.CHECK_OUT_TIME"/><property name="rule" value="'02'"/><property name="round" value="FLOOR"/></include> AS act2OutStdDate
-	        , <include refid="frag_std_time"><property name="cmpny" value="U.CMPNY_CD"/><property name="ymd" value="D.WORK_YMD"/><property name="dtCol" value="A2.CHECK_OUT_DATE"/><property name="tmCol" value="A2.CHECK_OUT_TIME"/><property name="rule" value="'02'"/><property name="round" value="FLOOR"/></include> AS act2OutStdTime
 	        , A2.CHECK_OUT_METHOD                                              AS act2OutMethod
 
 	        /* PRAFTA-017 - 구간별 외근 플래그. 구간 ATTD_ID 가 TB_USER_ATTD_GPS 에 존재하면 'Y'. */
@@ -365,11 +284,18 @@
 	        AND SCHT.SCH_CD   = WP.WORK_PLAN_CD
 	        AND SCHT.USE_YN   = 'Y'
 
-	    /* 근무계획코드가 휴가코드인 경우 */
+	    /* prafta-com-008-E-2: 연차일/연차명을 work_plan(LEAVE_CD) 이 아니라 leave_use(LU) 오버레이로 산출.
+	       그날 종일 확정 연차(USE_UNIT_TYPE='00') 1건을 매칭하고, 그 LEAVE_CD 로 종류명(LV)을 조인한다. */
+	    LEFT JOIN TB_USER_LEAVE_USE LU
+	        ON  LU.CMPNY_CD      = U.CMPNY_CD
+	        AND LU.USER_CD       = U.USER_CD
+	        AND LU.START_DATE    = D.WORK_YMD
+	        AND LU.LEAVE_STATUS  = 'CONFIRMED'
+	        AND LU.DEL_YN        = 'N'
+	        AND LU.USE_UNIT_TYPE = '00'
 	    LEFT JOIN TB_LEAVE_TYPE_MGMT LV
-	        ON  LV.CMPNY_CD = WP.CMPNY_CD
-	        AND LV.LEAVE_CD = WP.WORK_PLAN_CD
-	        AND LV.USE_YN   = 'Y'
+	        ON  LV.CMPNY_CD = LU.CMPNY_CD
+	        AND LV.LEAVE_CD = LU.LEAVE_CD
 
 	    /* 근태 1차 */
 	    LEFT JOIN TB_USER_ATTD_MGMT A1
@@ -668,14 +594,9 @@
 	    , A1.ATTD_ID                                                       AS attd1Id
 	    , A1.CHECK_IN_DATE                                                 AS act1InDate
 	    , A1.CHECK_IN_TIME                                                 AS act1InTime
-	    /* PRAFTA-015 - 표준화 출근 일자/시각 (TB_ATTD_STD_TIME_RULE_HIS 룰 + 자정 넘김 보정) */
-	    , <include refid="frag_std_date"><property name="cmpny" value="A.CMPNY_CD"/><property name="ymd" value="A.WORK_YMD"/><property name="dtCol" value="A1.CHECK_IN_DATE"/><property name="tmCol" value="A1.CHECK_IN_TIME"/><property name="rule" value="'01'"/><property name="round" value="CEIL"/></include> AS act1InStdDate
-	    , <include refid="frag_std_time"><property name="cmpny" value="A.CMPNY_CD"/><property name="ymd" value="A.WORK_YMD"/><property name="dtCol" value="A1.CHECK_IN_DATE"/><property name="tmCol" value="A1.CHECK_IN_TIME"/><property name="rule" value="'01'"/><property name="round" value="CEIL"/></include> AS act1InStdTime
 	    , A1.CHECK_IN_METHOD                                               AS act1InMethod
 	    , A1.CHECK_OUT_DATE                                                AS act1OutDate
 	    , A1.CHECK_OUT_TIME                                                AS act1OutTime
-	    , <include refid="frag_std_date"><property name="cmpny" value="A.CMPNY_CD"/><property name="ymd" value="A.WORK_YMD"/><property name="dtCol" value="A1.CHECK_OUT_DATE"/><property name="tmCol" value="A1.CHECK_OUT_TIME"/><property name="rule" value="'02'"/><property name="round" value="FLOOR"/></include> AS act1OutStdDate
-	    , <include refid="frag_std_time"><property name="cmpny" value="A.CMPNY_CD"/><property name="ymd" value="A.WORK_YMD"/><property name="dtCol" value="A1.CHECK_OUT_DATE"/><property name="tmCol" value="A1.CHECK_OUT_TIME"/><property name="rule" value="'02'"/><property name="round" value="FLOOR"/></include> AS act1OutStdTime
 	    , A1.CHECK_OUT_METHOD                                              AS act1OutMethod
 	    
 	    , A1.CHECK_IN_DATE                                                 AS oriAct1InDate
@@ -687,13 +608,9 @@
 	    , A2.ATTD_ID                                                       AS attd2Id
 	    , A2.CHECK_IN_DATE                                                 AS act2InDate
 	    , A2.CHECK_IN_TIME                                                 AS act2InTime
-	    , <include refid="frag_std_date"><property name="cmpny" value="A.CMPNY_CD"/><property name="ymd" value="A.WORK_YMD"/><property name="dtCol" value="A2.CHECK_IN_DATE"/><property name="tmCol" value="A2.CHECK_IN_TIME"/><property name="rule" value="'01'"/><property name="round" value="CEIL"/></include> AS act2InStdDate
-	    , <include refid="frag_std_time"><property name="cmpny" value="A.CMPNY_CD"/><property name="ymd" value="A.WORK_YMD"/><property name="dtCol" value="A2.CHECK_IN_DATE"/><property name="tmCol" value="A2.CHECK_IN_TIME"/><property name="rule" value="'01'"/><property name="round" value="CEIL"/></include> AS act2InStdTime
 	    , A2.CHECK_IN_METHOD                                               AS act2InMethod
 	    , A2.CHECK_OUT_DATE                                                AS act2OutDate
 	    , A2.CHECK_OUT_TIME                                                AS act2OutTime
-	    , <include refid="frag_std_date"><property name="cmpny" value="A.CMPNY_CD"/><property name="ymd" value="A.WORK_YMD"/><property name="dtCol" value="A2.CHECK_OUT_DATE"/><property name="tmCol" value="A2.CHECK_OUT_TIME"/><property name="rule" value="'02'"/><property name="round" value="FLOOR"/></include> AS act2OutStdDate
-	    , <include refid="frag_std_time"><property name="cmpny" value="A.CMPNY_CD"/><property name="ymd" value="A.WORK_YMD"/><property name="dtCol" value="A2.CHECK_OUT_DATE"/><property name="tmCol" value="A2.CHECK_OUT_TIME"/><property name="rule" value="'02'"/><property name="round" value="FLOOR"/></include> AS act2OutStdTime
 	    , A2.CHECK_OUT_METHOD                                              AS act2OutMethod
 	    
 	    , A2.CHECK_IN_DATE                                                 AS oriAct2InDate
@@ -833,12 +750,9 @@
 			AND SCHT.SCH_CD   = WP.WORK_PLAN_CD
 			AND SCHT.USE_YN   = 'Y'
 
-		/* 근무계획코드가 휴가코드인 경우 */
-		LEFT JOIN TB_LEAVE_TYPE_MGMT LV
-			ON  LV.CMPNY_CD = WP.CMPNY_CD
-			AND LV.LEAVE_CD = WP.WORK_PLAN_CD
-			AND LV.USE_YN   = 'Y'
-	        
+		/* prafta-com-008-E-2: 연차-스케줄 모델 전환 — work_plan 은 항상 SCH_CD 이므로 LEAVE 조인(미사용) 제거.
+		   일자상세의 확정 연차는 selectDailyConfirmedLeave(leave_use 기준)가 별도로 제공한다. */
+
 		/* 근태 1차 */
 		LEFT JOIN TB_USER_ATTD_MGMT A1
 			ON  A.CMPNY_CD = A1.CMPNY_CD
@@ -1536,8 +1450,7 @@
         , SCH.SEC_SCH_END_TIME                                             AS plan2End
 
         /* 1st attd row - raw 출퇴근 일자/시각.
-           초과근무 등록 가능 범위는 "실근태 − 스케줄" 로 계산하므로 표준화 미반영
-           (표준화 시각은 화면 보조 표시용으로 selectDailyAttdDetails 에서만 사용). */
+           초과근무 등록 가능 범위는 "실근태 − 스케줄" 로 계산한다. */
         , A1.CHECK_IN_DATE                                                 AS act1InDate
         , A1.CHECK_IN_TIME                                                 AS act1InTime
         , A1.CHECK_OUT_DATE                                                AS act1OutDate

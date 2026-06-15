@@ -17,6 +17,7 @@ public class InsertDailyUserRequest {
     private String cmpnyCd;
     private String siteCd;
     private String userId;
+    private String userPw;
     private String userNm;
     private String mblNo;
     private String certNo;

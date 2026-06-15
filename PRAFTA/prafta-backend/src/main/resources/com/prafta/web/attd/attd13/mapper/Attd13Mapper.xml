@@ -1,0 +1,400 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<!--
+  연차 변경/삭제 동의·거부 Mapper (PRAFTA-COM-008-C).
+  - 모든 쿼리는 CMPNY_CD 스코프 격리. SELECT * 금지·명시 컬럼·leading comma·#{} 바인딩.
+  - 부여 재계산(recomputeGrantUsedDays)·알림 적재(NOTI_OUTBOX)는 본 매퍼가 아닌 기존 공통 매퍼 재사용.
+-->
+<mapper namespace="com.prafta.web.attd.attd13.mapper.Attd13Mapper">
+
+    <!-- ============ 채번 ============
+      'LC' + YYYYMMDD + 시퀀스(FNC_CMM_SEQ_NEXTVAL, SEQ_KEY='LEAVE_CHANGE_REQ_ID'). -->
+    <select id="selectNextChangeReqId" resultType="string">
+    /* Attd13Mapper.selectNextChangeReqId */
+    SELECT CONCAT('LC', DATE_FORMAT(NOW(), '%Y%m%d'), FNC_CMM_SEQ_NEXTVAL(#{cmpnyCd}, 'LEAVE_CHANGE_REQ_ID'))
+      FROM DUAL
+    </select>
+
+    <!-- ============ 대상 연차 검증용 단건 ============ -->
+    <select id="selectLeaveUseTarget" resultType="com.prafta.web.attd.attd13.result.LeaveUseTargetResult">
+    /* Attd13Mapper.selectLeaveUseTarget */
+    SELECT
+          U.LEAVE_ID      AS leaveId
+        , U.CMPNY_CD      AS cmpnyCd
+        , U.SITE_CD       AS siteCd
+        , U.USER_CD       AS userCd
+        , U.LEAVE_CD      AS leaveCd
+        , U.GRANT_ID      AS grantId
+        , U.START_DATE    AS startDate
+        , U.USE_UNIT_TYPE AS useUnitType
+        , U.LEAVE_STATUS  AS leaveStatus
+      FROM TB_USER_LEAVE_USE U
+     WHERE U.CMPNY_CD = #{cmpnyCd}
+       AND U.LEAVE_ID = #{leaveId}
+       AND U.DEL_YN   = 'N'
+     LIMIT 1
+    </select>
+
+    <!-- 이동 대상일 동일 연차 기존재(DIRECT_USE_KEY 충돌) 카운트. 자기자신 제외. -->
+    <select id="countLeaveUseOnDate" resultType="int">
+    /* Attd13Mapper.countLeaveUseOnDate */
+    SELECT COUNT(*)
+      FROM TB_USER_LEAVE_USE U
+     WHERE U.CMPNY_CD     = #{cmpnyCd}
+       AND U.USER_CD      = #{userCd}
+       AND U.LEAVE_CD     = #{leaveCd}
+       AND U.START_DATE   = #{targetDate}
+       AND U.LEAVE_ID    != #{excludeLeaveId}
+       AND U.LEAVE_STATUS = 'CONFIRMED'
+       AND U.DEL_YN       = 'N'
+    </select>
+
+    <!-- 대상 부여 만료일(AVAIL_TO_DATE) 단건 (이동 만료 검증) -->
+    <select id="selectGrantAvailToDate" resultType="string">
+    /* Attd13Mapper.selectGrantAvailToDate */
+    SELECT G.AVAIL_TO_DATE
+      FROM TB_USER_LEAVE_GRANT G
+     WHERE G.CMPNY_CD = #{cmpnyCd}
+       AND G.GRANT_ID = #{grantId}
+     LIMIT 1
+    </select>
+
+    <!-- 근로자 본인 이동 가능 연차일(미래 확정 연차, 만료 미경과) -->
+    <select id="selectMovableLeaves" resultType="com.prafta.web.attd.attd13.result.MovableLeaveResult">
+    /* Attd13Mapper.selectMovableLeaves */
+    SELECT
+          U.LEAVE_ID         AS leaveId
+        , U.LEAVE_CD         AS leaveCd
+        , U.START_DATE       AS startDate
+        , U.LEAVE_DAYS       AS leaveDays
+        , U.USE_UNIT_TYPE    AS useUnitType
+        , U.PROMOTION_STAGE  AS promotionStage
+        , U.DESIGNATOR_TYPE  AS designatorType
+        , G.AVAIL_TO_DATE    AS availToDate
+      FROM TB_USER_LEAVE_USE U
+      LEFT JOIN TB_USER_LEAVE_GRANT G
+        ON G.CMPNY_CD = U.CMPNY_CD
+       AND G.GRANT_ID = U.GRANT_ID
+     WHERE U.CMPNY_CD     = #{cmpnyCd}
+       AND U.USER_CD      = #{userCd}
+       AND U.LEAVE_STATUS = 'CONFIRMED'
+       AND U.DEL_YN       = 'N'
+       AND U.START_DATE  >= #{todayYmd}
+     ORDER BY U.START_DATE ASC, U.LEAVE_ID ASC
+    </select>
+
+    <!-- ============ 변경 요청 INSERT ============ -->
+    <insert id="insertChangeRequest" parameterType="com.prafta.web.attd.attd13.application.command.LeaveChangeRequestInsertCommand">
+    /* Attd13Mapper.insertChangeRequest */
+    INSERT INTO TB_LEAVE_CHANGE_REQUEST (
+          CHANGE_REQ_ID
+        , CMPNY_CD
+        , SITE_CD
+        , TARGET_USER_CD
+        , TARGET_LEAVE_ID
+        , INITIATOR_TYPE
+        , REQ_TYPE
+        , MOVE_TARGET_DATE
+        , REQ_REASON
+        , WORKER_RESPONSE
+        , REQ_STATUS
+        , INITIATOR_USER_CD
+        , DEL_YN
+        , INSERT_NO
+        , INSERT_DATE
+    )
+    VALUES (
+          #{changeReqId}
+        , #{cmpnyCd}
+        , #{siteCd}
+        , #{targetUserCd}
+        , #{targetLeaveId}
+        , #{initiatorType}
+        , #{reqType}
+        , #{moveTargetDate}
+        , #{reqReason}
+        , 'PENDING'
+        , 'REQUESTED'
+        , #{initiatorUserCd}
+        , 'N'
+        , #{insertNo}
+        , NOW()
+    )
+    </insert>
+
+    <!-- ============ 변경 요청 목록 ============ (작업1 D1+D3)
+      역할 기반 스코프:
+        - siteWide='Y'(master/hr): 회사 전사. siteCd 지정 시 해당 사업장만, 미지정 시 전체 사업장.
+        - siteWide='N'(노드 관리자): siteCd + nodeCd(+하위) 강제(호출부가 권한검증 통과 nodeCd 만 전달).
+      + 사용자명·상태 필터. -->
+    <select id="selectChangeRequests" resultType="com.prafta.web.attd.attd13.result.LeaveChangeRequestRowResult">
+    /* Attd13Mapper.selectChangeRequests */
+    SELECT
+          R.CHANGE_REQ_ID                            AS changeReqId
+        , R.CMPNY_CD                                 AS cmpnyCd
+        , R.SITE_CD                                  AS siteCd
+        , R.TARGET_USER_CD                           AS targetUserCd
+        , TU.USER_NM                                 AS targetUserNm
+        , R.TARGET_LEAVE_ID                          AS targetLeaveId
+        , LU.START_DATE                              AS targetStartDate
+        , R.INITIATOR_TYPE                           AS initiatorType
+        , R.REQ_TYPE                                 AS reqType
+        , R.MOVE_TARGET_DATE                         AS moveTargetDate
+        , R.REQ_REASON                               AS reqReason
+        , R.WORKER_RESPONSE                          AS workerResponse
+        , R.RESPONSE_REASON                          AS responseReason
+        , R.REJECT_REASON                            AS rejectReason
+        , R.REQ_STATUS                               AS reqStatus
+        , R.INITIATOR_USER_CD                        AS initiatorUserCd
+        , R.CONFIRM_USER_CD                          AS confirmUserCd
+        , DATE_FORMAT(R.CONFIRM_DATE, '%Y%m%d%H%i%s') AS confirmDate
+        , DATE_FORMAT(R.INSERT_DATE,  '%Y%m%d%H%i%s') AS insertDate
+      FROM TB_LEAVE_CHANGE_REQUEST R
+      LEFT JOIN TB_USER TU
+        ON TU.CMPNY_CD = R.CMPNY_CD
+       AND TU.USER_CD  = R.TARGET_USER_CD
+      LEFT JOIN TB_USER_LEAVE_USE LU
+        ON LU.CMPNY_CD = R.CMPNY_CD
+       AND LU.LEAVE_ID = R.TARGET_LEAVE_ID
+     WHERE R.CMPNY_CD = #{cmpnyCd}
+       AND R.DEL_YN   = 'N'
+    <!-- 사업장 스코프: 노드 관리자(siteWide='N')는 항상 자기 사업장 강제. master/hr 는 선택 사업장 지정 시에만 필터. -->
+    <if test="!&quot;Y&quot;.equals(siteWide) or (siteCd != null and siteCd != '')">
+       AND R.SITE_CD  = #{siteCd}
+    </if>
+    <if test="reqStatus != null and reqStatus != ''">
+       AND R.REQ_STATUS = #{reqStatus}
+    </if>
+    <if test="userNm != null and userNm != ''">
+       AND TU.USER_NM LIKE CONCAT('%', #{userNm}, '%')
+    </if>
+    <!-- 부서 필터: 지정 시 해당 노드(+ 하위포함 옵션) 소속 대상자만. 노드 관리자는 호출부에서 nodeCd 강제 주입. -->
+    <if test="nodeCd != null and nodeCd != '' and nodeCd != '*'">
+       AND R.TARGET_USER_CD IN (
+           SELECT NU.USER_CD
+             FROM TB_USER NU
+            WHERE NU.CMPNY_CD = #{cmpnyCd}
+              AND NU.SITE_CD  = #{siteCd}
+        <choose>
+            <when test="incSubNodeYn == 'Y'">
+              AND NU.NODE_CD IN (
+                  WITH RECURSIVE sub AS (
+                      SELECT N.NODE_CD
+                        FROM TB_SITE_NODE N
+                       WHERE N.CMPNY_CD = #{cmpnyCd} AND N.SITE_CD = #{siteCd} AND N.NODE_CD = #{nodeCd}
+                      UNION ALL
+                      SELECT C.NODE_CD
+                        FROM TB_SITE_NODE C
+                        JOIN sub S2
+                          ON C.CMPNY_CD = #{cmpnyCd} AND C.SITE_CD = #{siteCd} AND C.PARENT_NODE_CD = S2.NODE_CD
+                  )
+                  SELECT NODE_CD FROM sub
+              )
+            </when>
+            <otherwise>
+              AND NU.NODE_CD = #{nodeCd}
+            </otherwise>
+        </choose>
+       )
+    </if>
+     ORDER BY R.INSERT_DATE DESC, R.CHANGE_REQ_ID DESC
+    </select>
+
+    <!-- ============ 변경 요청 단건 ============ -->
+    <select id="selectChangeRequest" resultType="com.prafta.web.attd.attd13.result.LeaveChangeRequestRowResult">
+    /* Attd13Mapper.selectChangeRequest */
+    SELECT
+          R.CHANGE_REQ_ID                            AS changeReqId
+        , R.CMPNY_CD                                 AS cmpnyCd
+        , R.SITE_CD                                  AS siteCd
+        , R.TARGET_USER_CD                           AS targetUserCd
+        , TU.USER_NM                                 AS targetUserNm
+        , R.TARGET_LEAVE_ID                          AS targetLeaveId
+        , LU.START_DATE                              AS targetStartDate
+        , R.INITIATOR_TYPE                           AS initiatorType
+        , R.REQ_TYPE                                 AS reqType
+        , R.MOVE_TARGET_DATE                         AS moveTargetDate
+        , R.REQ_REASON                               AS reqReason
+        , R.WORKER_RESPONSE                          AS workerResponse
+        , R.RESPONSE_REASON                          AS responseReason
+        , R.REJECT_REASON                            AS rejectReason
+        , R.REQ_STATUS                               AS reqStatus
+        , R.INITIATOR_USER_CD                        AS initiatorUserCd
+        , R.CONFIRM_USER_CD                          AS confirmUserCd
+        , DATE_FORMAT(R.CONFIRM_DATE, '%Y%m%d%H%i%s') AS confirmDate
+        , DATE_FORMAT(R.INSERT_DATE,  '%Y%m%d%H%i%s') AS insertDate
+      FROM TB_LEAVE_CHANGE_REQUEST R
+      LEFT JOIN TB_USER TU
+        ON TU.CMPNY_CD = R.CMPNY_CD
+       AND TU.USER_CD  = R.TARGET_USER_CD
+      LEFT JOIN TB_USER_LEAVE_USE LU
+        ON LU.CMPNY_CD = R.CMPNY_CD
+       AND LU.LEAVE_ID = R.TARGET_LEAVE_ID
+     WHERE R.CMPNY_CD      = #{cmpnyCd}
+       AND R.CHANGE_REQ_ID = #{changeReqId}
+       AND R.DEL_YN        = 'N'
+     LIMIT 1
+    </select>
+
+    <!-- ============ 근로자 본인 대기(REQUESTED) 응답 대상 목록 ============
+      스코프 = 회사 + 본인 TARGET_USER_CD (사업장 무관). targetUserCd 는 JWT 도출값. -->
+    <select id="selectPendingConsents" resultType="com.prafta.web.attd.attd13.result.LeaveChangeRequestRowResult">
+    /* Attd13Mapper.selectPendingConsents */
+    SELECT
+          R.CHANGE_REQ_ID                            AS changeReqId
+        , R.CMPNY_CD                                 AS cmpnyCd
+        , R.SITE_CD                                  AS siteCd
+        , R.TARGET_USER_CD                           AS targetUserCd
+        , TU.USER_NM                                 AS targetUserNm
+        , R.TARGET_LEAVE_ID                          AS targetLeaveId
+        , LU.START_DATE                              AS targetStartDate
+        , R.INITIATOR_TYPE                           AS initiatorType
+        , R.REQ_TYPE                                 AS reqType
+        , R.MOVE_TARGET_DATE                         AS moveTargetDate
+        , R.REQ_REASON                               AS reqReason
+        , R.WORKER_RESPONSE                          AS workerResponse
+        , R.RESPONSE_REASON                          AS responseReason
+        , R.REJECT_REASON                            AS rejectReason
+        , R.REQ_STATUS                               AS reqStatus
+        , R.INITIATOR_USER_CD                        AS initiatorUserCd
+        , R.CONFIRM_USER_CD                          AS confirmUserCd
+        , DATE_FORMAT(R.CONFIRM_DATE, '%Y%m%d%H%i%s') AS confirmDate
+        , DATE_FORMAT(R.INSERT_DATE,  '%Y%m%d%H%i%s') AS insertDate
+      FROM TB_LEAVE_CHANGE_REQUEST R
+      LEFT JOIN TB_USER TU
+        ON TU.CMPNY_CD = R.CMPNY_CD
+       AND TU.USER_CD  = R.TARGET_USER_CD
+      LEFT JOIN TB_USER_LEAVE_USE LU
+        ON LU.CMPNY_CD = R.CMPNY_CD
+       AND LU.LEAVE_ID = R.TARGET_LEAVE_ID
+     WHERE R.CMPNY_CD       = #{cmpnyCd}
+       AND R.TARGET_USER_CD = #{targetUserCd}
+       AND R.REQ_STATUS     = 'REQUESTED'
+       AND R.INITIATOR_TYPE = 'ADMIN'
+       AND R.DEL_YN         = 'N'
+     ORDER BY R.INSERT_DATE DESC, R.CHANGE_REQ_ID DESC
+    </select>
+
+    <!-- ============ 근로자 응답 반영 ============
+      REQUESTED + 대상자 본인 + 미삭제 일 때만 갱신(멱등/동시성 방어). -->
+    <update id="applyWorkerResponse">
+    /* Attd13Mapper.applyWorkerResponse */
+    UPDATE TB_LEAVE_CHANGE_REQUEST
+       SET WORKER_RESPONSE = #{workerResponse}
+         , RESPONSE_REASON = #{responseReason}
+         , REQ_STATUS      = #{reqStatus}
+         , UPDATE_NO       = #{updateNo}
+         , UPDATE_DATE     = NOW()
+     WHERE CMPNY_CD       = #{cmpnyCd}
+       AND CHANGE_REQ_ID  = #{changeReqId}
+       AND TARGET_USER_CD = #{targetUserCd}
+       AND REQ_STATUS     = 'REQUESTED'
+       AND DEL_YN         = 'N'
+    </update>
+
+    <!-- ============ 관리자 확인 반영 ============
+      AGREED + 미삭제 일 때만 CONFIRMED 전이. -->
+    <update id="confirmChangeRequest">
+    /* Attd13Mapper.confirmChangeRequest */
+    UPDATE TB_LEAVE_CHANGE_REQUEST
+       SET REQ_STATUS      = 'CONFIRMED'
+         , CONFIRM_USER_CD = #{confirmUserCd}
+         , CONFIRM_DATE    = NOW()
+         , UPDATE_NO       = #{confirmUserCd}
+         , UPDATE_DATE     = NOW()
+     WHERE CMPNY_CD      = #{cmpnyCd}
+       AND CHANGE_REQ_ID = #{changeReqId}
+       AND REQ_STATUS    = 'AGREED'
+       AND DEL_YN        = 'N'
+    </update>
+
+    <!-- ============ 관리자 반려 반영(작업2) ============
+      AGREED + 미삭제 일 때만 REJECTED 전이. 원 연차 불변(상태/사유만 기록). -->
+    <update id="rejectChangeRequest">
+    /* Attd13Mapper.rejectChangeRequest */
+    UPDATE TB_LEAVE_CHANGE_REQUEST
+       SET REQ_STATUS      = 'REJECTED'
+         , REJECT_REASON   = #{rejectReason}
+         , CONFIRM_USER_CD = #{confirmUserCd}
+         , CONFIRM_DATE    = NOW()
+         , UPDATE_NO       = #{confirmUserCd}
+         , UPDATE_DATE     = NOW()
+     WHERE CMPNY_CD      = #{cmpnyCd}
+       AND CHANGE_REQ_ID = #{changeReqId}
+       AND REQ_STATUS    = 'AGREED'
+       AND DEL_YN        = 'N'
+    </update>
+
+    <!-- ============ MOVE 반영: START_DATE/END_DATE 갱신(최초지정일 보존) ============ -->
+    <update id="moveLeaveUseDate">
+    /* Attd13Mapper.moveLeaveUseDate */
+    UPDATE TB_USER_LEAVE_USE
+       SET ORIG_DESIGNATED_DATE = IFNULL(ORIG_DESIGNATED_DATE, START_DATE)
+         , START_DATE           = #{newDate}
+         , END_DATE             = #{newDate}
+         , UPDATE_NO            = #{updateNo}
+         , UPDATE_DATE          = NOW()
+     WHERE CMPNY_CD     = #{cmpnyCd}
+       AND LEAVE_ID     = #{leaveId}
+       AND LEAVE_STATUS = 'CONFIRMED'
+       AND DEL_YN       = 'N'
+    </update>
+
+    <!-- ============ DELETE 반영: soft cancel ============ -->
+    <update id="cancelLeaveUse">
+    /* Attd13Mapper.cancelLeaveUse */
+    UPDATE TB_USER_LEAVE_USE
+       SET LEAVE_STATUS  = 'CANCELLED'
+         , CANCEL_REASON = #{cancelReason}
+         , CANCEL_DATE   = NOW()
+         , UPDATE_NO     = #{updateNo}
+         , UPDATE_DATE   = NOW()
+     WHERE CMPNY_CD     = #{cmpnyCd}
+       AND LEAVE_ID     = #{leaveId}
+       AND LEAVE_STATUS = 'CONFIRMED'
+       AND DEL_YN       = 'N'
+    </update>
+
+    <!-- ============ 출근 차단 블록(일 단위) ============ -->
+    <delete id="deleteWorkPlanLeave">
+    /* Attd13Mapper.deleteWorkPlanLeave */
+    DELETE FROM TB_USER_WORK_PLAN
+     WHERE CMPNY_CD     = #{cmpnyCd}
+       AND SITE_CD      = #{siteCd}
+       AND USER_CD      = #{userCd}
+       AND WORK_YMD     = #{workYmd}
+       AND WORK_PLAN_CD = #{leaveCd}
+    </delete>
+
+    <insert id="upsertWorkPlanLeave">
+    /* Attd13Mapper.upsertWorkPlanLeave */
+    INSERT INTO TB_USER_WORK_PLAN (
+          CMPNY_CD
+        , SITE_CD
+        , USER_CD
+        , WORK_YMD
+        , WORK_PLAN_CD
+        , INSERT_NO
+        , INSERT_DATE
+        , UPDATE_NO
+        , UPDATE_DATE
+    )
+    VALUES (
+          #{cmpnyCd}
+        , #{siteCd}
+        , #{userCd}
+        , #{workYmd}
+        , #{leaveCd}
+        , #{updateNo}
+        , NOW()
+        , #{updateNo}
+        , NOW()
+    )
+    ON DUPLICATE KEY UPDATE
+          WORK_PLAN_CD = #{leaveCd}
+        , UPDATE_NO    = #{updateNo}
+        , UPDATE_DATE  = NOW()
+    </insert>
+
+</mapper>

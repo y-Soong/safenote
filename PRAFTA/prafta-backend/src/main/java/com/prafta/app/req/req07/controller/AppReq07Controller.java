@@ -8,6 +8,7 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 import com.prafta.app.req.req07.application.param.AttdCorrectionParam;
@@ -23,6 +24,7 @@ import com.prafta.common.dto.TokenInfo;
 import com.prafta.common.error.common.CommonErrorCode;
 import com.prafta.common.exception.ApiException;
 import com.prafta.common.security.JwtUtil;
+import com.prafta.common.util.EmploymentTypeGuard;
 
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -57,16 +59,21 @@ public class AppReq07Controller {
      */
     @GetMapping("/schedules")
     public ResponseEntity<SchedOptionResponse> getSchedules(
+            @RequestParam(value = "workYmd", required = false) String workYmd,
             @RequestHeader(value = "Authorization", required = false) String authorization
     ) {
         TokenInfo tokenInfo = jwtUtil.getAllClaimsAsMap(authorization);
         if (tokenInfo == null
                 || !StringUtils.hasText(tokenInfo.gv_cmpnyCd())
-                || !StringUtils.hasText(tokenInfo.gv_siteCd())) {
+                || !StringUtils.hasText(tokenInfo.gv_siteCd())
+                || !StringUtils.hasText(tokenInfo.gv_userCd())) {
             throw new ApiException(CommonErrorCode.COMMON_400_003);
         }
+        // prafta-com-008-E-9a: userDefaultSchCd 동반 위해 userCd(JWT) 전달(IDOR — 본인만).
+        // prafta-com-008-D-5: workYmd(대상 일자, optional) 전달 — 교대 소속 구간이면 응답 shiftLocked=true.
+        //   식별값(cmpnyCd/siteCd/userCd)은 JWT 도출만 사용(본인 한정 IDOR). workYmd 만 쿼리로 수신(본인 일자 판정용).
         SchedOptionResponse response = appReq07Service.getSchedOptions(
-                tokenInfo.gv_cmpnyCd(), tokenInfo.gv_siteCd());
+                tokenInfo.gv_cmpnyCd(), tokenInfo.gv_siteCd(), tokenInfo.gv_userCd(), workYmd);
         return ResponseEntity.ok(response);
     }
 
@@ -79,6 +86,8 @@ public class AppReq07Controller {
             @RequestHeader(value = "Authorization", required = false) String authorization
     ) {
         TokenInfo tokenInfo = jwtUtil.getAllClaimsAsMap(authorization);
+        // prafta-app-027 follow-up: 일용직은 스케줄 수정 요청 비해당 → 서버 차단(J1-4 서버측 보강).
+        EmploymentTypeGuard.assertNotDailyWorker(tokenInfo);
         RegisterReqResponse response = appReq07Service.registerSchedModify(
                 SchedModifyParam.from(request, tokenInfo)
         );
@@ -94,6 +103,8 @@ public class AppReq07Controller {
             @RequestHeader(value = "Authorization", required = false) String authorization
     ) {
         TokenInfo tokenInfo = jwtUtil.getAllClaimsAsMap(authorization);
+        // prafta-app-027 follow-up: 일용직은 근태 보정 요청 비해당 → 서버 차단(J1-4 서버측 보강).
+        EmploymentTypeGuard.assertNotDailyWorker(tokenInfo);
         RegisterReqResponse response = appReq07Service.registerAttdCorrection(
                 AttdCorrectionParam.from(request, tokenInfo)
         );
@@ -109,6 +120,8 @@ public class AppReq07Controller {
             @RequestHeader(value = "Authorization", required = false) String authorization
     ) {
         TokenInfo tokenInfo = jwtUtil.getAllClaimsAsMap(authorization);
+        // prafta-app-027 follow-up: 일용직은 초과근무 신청 비해당 → 서버 차단(J1-4 서버측 보강).
+        EmploymentTypeGuard.assertNotDailyWorker(tokenInfo);
         RegisterReqResponse response = appReq07Service.registerOvertime(
                 OvertimeParam.from(request, tokenInfo)
         );

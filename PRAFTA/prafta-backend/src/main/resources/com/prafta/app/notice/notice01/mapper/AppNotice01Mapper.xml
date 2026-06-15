@@ -145,7 +145,17 @@
             SELECT COUNT(1) FROM TB_NOTICE_FILE NF
             WHERE NF.CMPNY_CD = N.CMPNY_CD AND NF.NOTICE_ID = N.NOTICE_ID
         )                                               AS fileCnt
-      , CASE WHEN K.LAST_READ_DATE IS NULL THEN 1 ELSE 0 END      AS isUnread
+      <!-- prafta-app-025: countMyUnreadNotice 와 1:1 동일 판정(배지=카드 강조 정합).
+           컬럼 위치(6번째) 불변, 반환 int(0/1). -->
+      , CASE
+          WHEN ( N.POPUP_YN = 'Y'
+                 AND DATE_FORMAT(NOW(),'%Y%m%d') BETWEEN N.POPUP_FROM_YMD AND N.POPUP_TO_YMD )
+            THEN CASE WHEN NOT EXISTS ( SELECT 1 FROM TB_NOTICE_USER_ACK A2
+                                        WHERE A2.CMPNY_CD = N.CMPNY_CD AND A2.NOTICE_ID = N.NOTICE_ID
+                                          AND A2.USER_CD = #{gvUserCd} AND A2.ACK_TYPE = 'CONFIRMED' )
+                      THEN 1 ELSE 0 END
+          ELSE CASE WHEN K.LAST_READ_DATE IS NULL THEN 1 ELSE 0 END
+        END                                                       AS isUnread
       , CASE WHEN N.PIN_YN = 'Y' THEN 1 ELSE 0 END                AS isImportant
     FROM TB_NOTICE N
     LEFT OUTER JOIN TB_NOTICE_USER_ACK K
@@ -172,7 +182,20 @@
     WHERE N.CMPNY_CD = #{gvCmpnyCd}
       AND N.NOTICE_TYPE = 'NOTICE'
       AND N.DEL_YN = 'N'
-      AND K.LAST_READ_DATE IS NULL
+      <!-- prafta-app-025: 미확인 하이브리드 판정.
+           팝업 활성(POPUP_YN='Y' AND today BETWEEN POPUP_FROM~TO) → 본인 CONFIRMED 이력 없으면 미확인,
+           그 외(비팝업/팝업기간 외/POPUP_YMD NULL 폴백) → 본인 LAST_READ_DATE 없으면 미확인. -->
+      AND (
+            ( N.POPUP_YN = 'Y'
+              AND DATE_FORMAT(NOW(),'%Y%m%d') BETWEEN N.POPUP_FROM_YMD AND N.POPUP_TO_YMD
+              AND NOT EXISTS ( SELECT 1 FROM TB_NOTICE_USER_ACK A2
+                               WHERE A2.CMPNY_CD = N.CMPNY_CD AND A2.NOTICE_ID = N.NOTICE_ID
+                                 AND A2.USER_CD = #{gvUserCd} AND A2.ACK_TYPE = 'CONFIRMED' ) )
+            OR
+            ( NOT ( N.POPUP_YN = 'Y'
+                    AND DATE_FORMAT(NOW(),'%Y%m%d') BETWEEN N.POPUP_FROM_YMD AND N.POPUP_TO_YMD )
+              AND K.LAST_READ_DATE IS NULL )
+          )
       <!-- (A) 대상 매칭 §6-1 -->
       <include refid="targetMatchBlock" />
     </select>

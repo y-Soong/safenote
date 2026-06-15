@@ -90,7 +90,7 @@
     WHERE CMPNY_CD    = #{cmpnyCd}
       AND SITE_CD     = #{siteCd}
       AND USE_YN      = 'Y'
-      AND SLOT_STATUS = '00'
+      AND SLOT_STATUS = '01'                    <!-- '01'=비점유(Baim_05 가 생성하는 초기 상태). 과거 '00' 오타 정합 -->
       AND (CURR_USER_CD IS NULL OR CURR_USER_CD = '')
     ORDER BY CAST(SLOT_NO AS UNSIGNED)
     LIMIT 1
@@ -152,6 +152,118 @@
     )
     </insert>
 
+    <!-- ============================================================
+         PRAFTA-app-027-3'(통합형) — TB_USER 통합 INSERT + 중복검증 확장
+         ============================================================ -->
+
+    <!-- TB_USER 사용자ID 중복 카운트(활성 USE_YN='Y' 만 검사).
+         옵션2: 비활성(만료) 행은 재활성 대상이므로 중복으로 보지 않는다. -->
+    <select id="selectTbUserIdDupleCnt" resultType="int">
+    /* DailyJoinMapper.selectTbUserIdDupleCnt */
+    SELECT COUNT(*)
+    FROM (
+        SELECT 1
+          FROM TB_USER
+         WHERE CMPNY_CD = #{cmpnyCd}
+           AND USER_ID  = #{userId}
+           AND USE_YN   = 'Y'
+         LIMIT 1
+    ) T
+    </select>
+
+    <!-- TB_USER 휴대폰 HMAC 중복 카운트(활성 USE_YN='Y' 만 검사).
+         옵션2: 비활성(만료) 행은 재활성 대상이므로 중복으로 보지 않는다. -->
+    <select id="selectTbUserMblHmacDupleCnt" resultType="int">
+    /* DailyJoinMapper.selectTbUserMblHmacDupleCnt */
+    SELECT COUNT(*)
+    FROM (
+        SELECT 1
+          FROM TB_USER
+         WHERE CMPNY_CD    = #{cmpnyCd}
+           AND MBL_NO_HMAC = #{mblNoHmac}
+           AND USE_YN      = 'Y'
+         LIMIT 1
+    ) T
+    </select>
+
+    <!-- 통합형 — TB_USER INSERT.
+         EMPLOYMENT_TYPE='DAILY'/AUTH_CD='99999'(5자리 일반근로자)/NODE_CD=NULL/ACCOUNT_STATUS='01'.
+         정규 LoginMapper.insertUserInfo 미사용(EMPLOYMENT_TYPE/ACCOUNT_STATUS 미주입) → 전용 INSERT 신설. -->
+    <insert id="insertDailyUserToTbUser" parameterType="com.prafta.common.cmm.dailyjoin.application.command.InsertDailyUserCommand">
+    /* DailyJoinMapper.insertDailyUserToTbUser */
+    INSERT INTO TB_USER (
+        CMPNY_CD
+        , USER_CD
+        , USER_ID
+        , USER_NM
+        , USER_PW
+        , SITE_CD
+        , NODE_CD
+        , AUTH_CD
+
+        , MBL_NO_ENC
+        , MBL_NO_HMAC
+        , MBL_NO_LAST4
+
+        , EMPLOYMENT_TYPE
+        , USE_YN
+        , ACCOUNT_STATUS
+
+        , INSERT_NO
+        , INSERT_DATE
+        , UPDATE_NO
+        , UPDATE_DATE
+    )
+    VALUES (
+        #{cmpnyCd}
+        , #{userCd}
+        , #{userId}
+        , #{userNm}
+        , #{userPw}
+        , #{siteCd}
+        , NULL
+        , '99999'
+
+        , #{mblNoEnc}
+        , #{mblNoHmac}
+        , #{mblNoLast4}
+
+        , 'DAILY'
+        , #{useYn}
+        , #{accountStatus}
+
+        , #{userCd}
+        , NOW()
+        , #{userCd}
+        , NOW()
+    )
+    </insert>
+
+    <!-- 통합형 — TB_USER_SITE_AUTH INSERT(해당 사업장 1행). -->
+    <insert id="insertTbUserSiteAuth">
+    /* DailyJoinMapper.insertTbUserSiteAuth */
+    INSERT INTO TB_USER_SITE_AUTH (
+        CMPNY_CD
+        , USER_CD
+        , SITE_CD
+        , USE_YN
+        , INSERT_NO
+        , INSERT_DATE
+        , UPDATE_NO
+        , UPDATE_DATE
+    )
+    VALUES (
+        #{cmpnyCd}
+        , #{userCd}
+        , #{siteCd}
+        , 'Y'
+        , #{userCd}
+        , NOW()
+        , #{userCd}
+        , NOW()
+    )
+    </insert>
+
     <!-- 빈 슬롯 점유(CURR_USER_CD 매핑) -->
     <update id="updateDailyUserSlotCurrUserCd" parameterType="com.prafta.common.cmm.dailyjoin.application.command.DailyUserSlotUpdCommand">
     /* DailyJoinMapper.updateDailyUserSlotCurrUserCd */
@@ -165,7 +277,7 @@
       AND SITE_CD     = #{siteCd}
       AND SLOT_NO     = #{slotNo}
       AND USE_YN      = 'Y'
-      AND SLOT_STATUS = '00'
+      AND SLOT_STATUS = '01'                    <!-- '01'=비점유에서만 점유('02')로 전이. 과거 '00' 오타 정합 -->
       AND (CURR_USER_CD IS NULL OR CURR_USER_CD = '')
     </update>
 
@@ -198,7 +310,107 @@
         , #{agrYn}
         , #{userCd}
         , NOW()
+    ) AS NEW
+    /* PK=(USER_CD,TERMS_ID,TERMS_VERSION). 옵션2 재활성은 USER_CD 를 재사용하므로,
+       동일 약관 버전 재동의 시 PK 충돌로 트랜잭션이 롤백되는 것을 방지한다.
+       버전이 바뀌면 새 행(이력 보존), 같은 버전 재동의면 동의값/시각만 갱신(멱등). */
+    ON DUPLICATE KEY UPDATE
+        AGR_YN      = NEW.AGR_YN
+        , INSERT_NO   = NEW.INSERT_NO
+        , INSERT_DATE = NOW()
+    </insert>
+
+    <!-- ============================================================
+         옵션2 — 재활성 재가입(만료 일용직이 같은 휴대폰으로 재가입 시
+         새 USER_CD 채번 대신 기존 비활성 행을 재활성).
+         ============================================================ -->
+
+    <!-- 재활성 대상 USER_CD 조회(비활성 USE_YN='N' 중 최신 1건).
+         같은 휴대폰의 비활성 행이 여러 개(레거시)면 가장 최근 가입 1건만 재활성, 나머지는 비활성 유지. -->
+    <select id="selectReactivatableDailyUserCd" resultType="string">
+    /* DailyJoinMapper.selectReactivatableDailyUserCd */
+    SELECT USER_CD
+    FROM TB_DAILY_USER
+    WHERE CMPNY_CD    = #{cmpnyCd}
+      AND MBL_NO_HMAC = #{mblNoHmac}
+      AND USE_YN      = 'N'
+    ORDER BY INSERT_DATE DESC
+    LIMIT 1
+    </select>
+
+    <!-- 재활성 — TB_DAILY_USER 기존 행 재사용.
+         사업장/ID/이름/비번/휴대폰파생 갱신 + 만료일 오늘로 연장 + 잠금/실패카운트 초기화. -->
+    <update id="reactivateDailyUser" parameterType="com.prafta.common.cmm.dailyjoin.application.command.InsertDailyUserCommand">
+    /* DailyJoinMapper.reactivateDailyUser */
+    UPDATE TB_DAILY_USER
+    SET USE_YN                 = 'Y'
+        , ACCOUNT_STATUS        = '01'
+        , SITE_CD               = #{siteCd}
+        , USER_ID               = #{userId}
+        , USER_NM               = #{userNm}
+        , USER_PW               = #{userPw}
+        , MBL_NO_ENC            = #{mblNoEnc}
+        , MBL_NO_HMAC           = #{mblNoHmac}
+        , MBL_NO_LAST4          = #{mblNoLast4}
+        , WORK_EXPIRE_DATE      = DATE_FORMAT(NOW(), '%Y%m%d')
+        , WITHDRAWAL_DATE       = NULL
+        , PWD_FAIL_CNT          = 0
+        , PWD_LOCK_YN           = 'N'
+        , PWD_LOCK_EXPIRE_DTIME = NULL
+        , UPDATE_NO             = #{userCd}
+        , UPDATE_DATE           = NOW()
+    WHERE CMPNY_CD = #{cmpnyCd}
+      AND USER_CD  = #{userCd}
+    </update>
+
+    <!-- 재활성 — TB_USER 기존 통합행 재사용(EMPLOYMENT_TYPE='DAILY' 가드).
+         영향행 0이면 = 통합형 이전 레거시 일용직(TB_USER 없음) → 서비스에서 신규 INSERT 폴백. -->
+    <update id="reactivateTbUser" parameterType="com.prafta.common.cmm.dailyjoin.application.command.InsertDailyUserCommand">
+    /* DailyJoinMapper.reactivateTbUser */
+    UPDATE TB_USER
+    SET USE_YN          = 'Y'
+        , ACCOUNT_STATUS = '01'
+        , SITE_CD        = #{siteCd}
+        , USER_ID        = #{userId}
+        , USER_NM        = #{userNm}
+        , USER_PW        = #{userPw}
+        , MBL_NO_ENC     = #{mblNoEnc}
+        , MBL_NO_HMAC    = #{mblNoHmac}
+        , MBL_NO_LAST4   = #{mblNoLast4}
+        , UPDATE_NO      = #{userCd}
+        , UPDATE_DATE    = NOW()
+    WHERE CMPNY_CD        = #{cmpnyCd}
+      AND USER_CD         = #{userCd}
+      AND EMPLOYMENT_TYPE = 'DAILY'
+    </update>
+
+    <!-- 재활성 — TB_USER_SITE_AUTH upsert(사업장 권한 행 활성). 기존 행 있으면 USE_YN 회복. -->
+    <insert id="upsertTbUserSiteAuth">
+    /* DailyJoinMapper.upsertTbUserSiteAuth */
+    INSERT INTO TB_USER_SITE_AUTH (
+        CMPNY_CD
+        , USER_CD
+        , SITE_CD
+        , USE_YN
+        , INSERT_NO
+        , INSERT_DATE
+        , UPDATE_NO
+        , UPDATE_DATE
     )
+    VALUES (
+        #{cmpnyCd}
+        , #{userCd}
+        , #{siteCd}
+        , 'Y'
+        , #{userCd}
+        , NOW()
+        , #{userCd}
+        , NOW()
+    )
+    ON DUPLICATE KEY UPDATE
+        USE_YN      = 'Y'
+        , UPDATE_NO   = #{userCd}
+        , UPDATE_DATE = NOW()
     </insert>
 
 </mapper>

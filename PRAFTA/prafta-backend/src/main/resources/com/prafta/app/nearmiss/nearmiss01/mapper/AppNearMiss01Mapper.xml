@@ -159,7 +159,7 @@
     <!-- 전이/접근 검증용: 현재 처리상태 + 보고자 단건 조회 (사업장 스코프, 없으면 null) -->
     <select id="selectReportMeta"
             parameterType="com.prafta.app.nearmiss.nearmiss01.application.query.IncidentDetailQuery"
-            resultType="com.prafta.app.nearmiss.nearmiss01.result.IncidentResult">
+            resultType="com.prafta.app.nearmiss.nearmiss01.result.ReportMetaResult">
     /* AppNearMiss01Mapper.selectReportMeta */
     SELECT
         A.CMPNY_CD          AS cmpnyCd
@@ -197,7 +197,7 @@
       AND A.NEAR_MISS_ID LIKE CONCAT('NM', DATE_FORMAT(NOW(), '%Y%m%d'), '%')
     </select>
 
-    <!-- A1 보고 INSERT (REPORT_STATUS_CD='100' 접수, SRC_*=NULL 앱 직접보고) -->
+    <!-- A1 보고 INSERT (REPORT_STATUS_CD='100' 접수, 앱 직접보고) -->
     <insert id="insertReport"
             parameterType="com.prafta.app.nearmiss.nearmiss01.application.command.InsertReportCommand">
     /* AppNearMiss01Mapper.insertReport */

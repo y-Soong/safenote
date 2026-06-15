@@ -131,4 +131,39 @@
       AND U.USER_CD = #{ param.userCd }
     </select>
 
+    <!--
+      연차 개편(표시): 신청형 휴가('01') 타입별 한도/사용.
+      - 대상 = TB_LEAVE_TYPE_MGMT WHERE CMPNY_CD AND LEAVE_TYPE='01' AND USE_YN='Y' (법정/관리자부여 GRANT 그룹과 분리).
+      - usedDays = 당해 회계연도 CONFIRMED 사용 합계(Σ LEAVE_DAYS). 술어는 AppLeaveFlowMapper.selectFiscalUsedDays 와 동일:
+          LEAVE_STATUS='CONFIRMED' AND DEL_YN='N' AND START_DATE >= fiscalStartYmd AND START_DATE < fiscalEndYmdExclusive.
+          반려/취소(LEAVE_STATUS='CANCELLED')는 합산 제외. 결재대기 포함(CONFIRMED 예약모델).
+        회계연도 경계 [fiscalStartYmd, fiscalEndYmdExclusive) 는 서비스가 FiscalYearUtils 로 산출해 주입.
+      - maxAplyDays(MAX_APLY_DAYS, NULL 가능)는 Integer 로 그대로 반환 → 서비스에서 한도 NULL=0(잔여 0, fail-closed) 처리.
+      - 결과 record AppliedLeaveTypeRow(leaveCd, leaveNm, maxAplyDays, usedDays) 생성자 인자 순서 = SELECT 컬럼 순서(위치매핑).
+      - 식별값은 토큰 도출값만 사용(IDOR). 정렬은 leaveflow.selectApplicableLeaveTypes 와 동일 키(LEAVE_NO, LEAVE_CD).
+    -->
+    <select id="selectAppliedLeaveTypes" resultType="com.prafta.app.leave.leave01.result.AppliedLeaveTypeRow">
+    /* AppLeave01Mapper.selectAppliedLeaveTypes */
+    SELECT
+          T.LEAVE_CD        AS leaveCd
+        , T.LEAVE_NM        AS leaveNm
+        , T.MAX_APLY_DAYS   AS maxAplyDays
+        , IFNULL((
+              SELECT SUM(U.LEAVE_DAYS)
+                FROM TB_USER_LEAVE_USE U
+               WHERE U.CMPNY_CD     = T.CMPNY_CD
+                 AND U.USER_CD      = #{userCd}
+                 AND U.LEAVE_CD     = T.LEAVE_CD
+                 AND U.LEAVE_STATUS = 'CONFIRMED'
+                 AND U.DEL_YN       = 'N'
+                 AND U.START_DATE  <![CDATA[ >= ]]> #{fiscalStartYmd}
+                 AND U.START_DATE  <![CDATA[ <  ]]> #{fiscalEndYmdExclusive}
+          ), 0)             AS usedDays
+      FROM TB_LEAVE_TYPE_MGMT T
+     WHERE T.CMPNY_CD   = #{cmpnyCd}
+       AND T.LEAVE_TYPE = '01'
+       AND T.USE_YN     = 'Y'
+     ORDER BY T.LEAVE_NO ASC, T.LEAVE_CD ASC
+    </select>
+
 </mapper>

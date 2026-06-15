@@ -17,14 +17,13 @@ import com.prafta.app.attd.attd01.result.LeaveUseResult;
 import com.prafta.app.attd.attd01.result.OpenAttdResult;
 import com.prafta.app.attd.attd01.result.ScheduleResult;
 import com.prafta.app.attd.attd01.result.SiteGeofenceResult;
-import com.prafta.app.attd.attd01.result.StdTimeRuleResult;
 
 /**
  * prafta-app-002: 앱 본인 근태조회(attd01) Mapper.
  *
  * <p>모든 조회는 본인 스코프(cmpnyCd/siteCd/userCd) + 일자범위로 한정된다(IDOR 가드).
- *   산출(workStatus/표준화/액션/dayType/합계)은 전부 ServiceImpl 에서 처리하고,
- *   여기서는 원천 데이터(스케줄/근태/GPS/표준화룰/휴일/연차/마감)만 로딩한다.
+ *   산출(workStatus/액션/dayType/합계)은 전부 ServiceImpl 에서 처리하고,
+ *   여기서는 원천 데이터(스케줄/근태/GPS/휴일/연차/마감)만 로딩한다.
  */
 @Mapper
 public interface AppAttd01Mapper {
@@ -44,14 +43,28 @@ public interface AppAttd01Mapper {
             , @Param("attdIds") List<String> attdIds
     );
 
-    /** 회사 단위 출퇴근 표준화 룰 + SYS029 단위(분) 조회. */
-    List<StdTimeRuleResult> selectStdTimeRules(@Param("cmpnyCd") String cmpnyCd);
-
     /** 휴일 일자범위 조회 (USE_YN='Y', YYYYMMDD 문자열 변환). */
     List<HolidayResult> selectHolidaysByRange(@Param("q") AttdRangeQuery query);
 
     /** 본인 연차 사용 실적 조회 (CONFIRMED, 범위 겹침). */
     List<LeaveUseResult> selectLeaveUseByRange(@Param("q") AttdRangeQuery query);
+
+    /**
+     * 본인 초과근무 보유 일자(YYYYMMDD) 목록 일자범위 조회 — 스케줄 수정 요청 게이팅용.
+     * <p>"초과근무 보유" = 등록 초과근무(tb_user_overtime_mgmt, 취소 제외) OR
+     *   초과근무 신청(tb_user_attd_req REQ_TYPE 03/04, 상태 신청/승인). 둘 중 하나라도 있으면 그 일자 포함.
+     *   초과근무는 스케줄 기준으로 정산되므로 보유일은 스케줄 변경(수정 요청)을 막는다.
+     */
+    List<String> selectOvertimeYmds(@Param("q") AttdRangeQuery query);
+
+    /**
+     * prafta-com-008-E-2: 그날 일 단위(USE_UNIT_TYPE='00') 확정 연차 존재 카운트(출근 차단 §8.3 판정).
+     * 부분연차(반차/시간차)는 근무일 유지 → 차단 비대상(미카운트). &gt; 0 이면 연차일.
+     */
+    int countFullDayLeaveOn(@Param("cmpnyCd") String cmpnyCd,
+                            @Param("siteCd") String siteCd,
+                            @Param("userCd") String userCd,
+                            @Param("workYmd") String workYmd);
 
     /**
      * 본인 소속부서 NODE_CD 조회 (마감 커버리지 판정용).
@@ -95,6 +108,22 @@ public interface AppAttd01Mapper {
     );
 
     /**
+     * prafta-app-026: 재퇴근 대상(D+1 윈도우 내 최신 출근행) 1건 조회.
+     * <p>대상 = DEL_YN='N' && CHECK_IN_TIME 有 && WORK_YMD &gt;= fromYmd(D+1 윈도우 하한),
+     *   <b>CHECK_OUT_TIME 유무 무관</b>(이미 퇴근한 슬롯도 재퇴근 대상). workYmd 가 주어지면 그 일자로 한정.
+     *   정렬: WORK_YMD DESC, WORK_SEQ DESC LIMIT 1 → tail 슬롯만 선정(새 출근 발생 시 이전 슬롯은 제외).
+     *   반환 {@code checkOutTime} 이 null 이면 최초 퇴근, 非null 이면 재퇴근(시각 덮어쓰기).
+     *   사업장/마감/윈도우 상한 재검증은 ServiceImpl 에서 수행한다(여기서는 후보만 좁힌다).
+     */
+    OpenAttdResult selectReCheckOutTarget(
+            @Param("cmpnyCd") String cmpnyCd
+            , @Param("siteCd") String siteCd
+            , @Param("userCd") String userCd
+            , @Param("fromYmd") String fromYmd
+            , @Param("workYmd") String workYmd
+    );
+
+    /**
      * 사업장 지오펜스 기준값(중심좌표 LAT/LON + 허용반경 GPS_RANGE) 단건 조회.
      * <p>지오펜스 판정용. LAT/LON/GPS_RANGE 중 결측이면 서비스가 온사이트 폴백(A안).
      */
@@ -112,8 +141,27 @@ public interface AppAttd01Mapper {
      */
     int updateCheckOut(@Param("c") CheckOutCommand command);
 
+    /**
+     * prafta-app-026: 재퇴근(이미 퇴근된 슬롯)용 퇴근시각 덮어쓰기 UPDATE.
+     * <p>NULL 가드 없음(last-write-wins). WHERE = ATTD_ID + CMPNY_CD + USER_CD + DEL_YN='N'(스코프 가드).
+     *   CHECK_OUT_DATE/TIME/METHOD/DEVICE + UPDATE_NO/UPDATE_DATE 를 갱신한다.
+     * @return 영향 행 수(0이면 대상 없음 → 서비스에서 거부).
+     */
+    int updateReCheckOut(@Param("c") CheckOutCommand command);
+
     /** 퇴근 GPS 기록 INSERT (TB_USER_ATTD_GPS, GPS_INFO_TYPE='02'). */
     int insertCheckOutGps(@Param("g") CheckOutGpsCommand command);
+
+    /**
+     * prafta-app-026: 해당 ATTD_ID 의 퇴근 GPS 행(GPS_INFO_TYPE='02') 물리 삭제(hard DELETE).
+     * <p>TB_USER_ATTD_GPS 에는 DEL_YN 컬럼이 없고, 외근 판정 EXISTS 가 DEL_YN 을 보지 않으므로
+     *   재퇴근 시 delete-then-insert 로 외근↔온사이트 전환을 정확히 반영하려면 hard DELETE 여야 한다.
+     * @return 삭제 행 수(0=기존 외근 GPS 없었음).
+     */
+    int deleteCheckOutGps(
+            @Param("cmpnyCd") String cmpnyCd
+            , @Param("attdId") String attdId
+    );
 
     // ====================================================================
     // prafta-app-003 A1: 셀프 출근 (check-in, 쓰기)

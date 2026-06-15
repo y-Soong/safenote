@@ -57,6 +57,9 @@ public class JwtUtil {
                 .claim("gv_siteNm", userResult.siteNm())
                 .claim("gv_nodeCd", userResult.nodeCd())
                 .claim("gv_nodeNm", userResult.nodeNm())
+                // PRAFTA-app-027-2': 고용형태 클레임. 일용직(DAILY) 화면 숨김(J1-4) 신호.
+                //   정규 사용자에도 동일 키가 추가될 뿐이라 회귀 없음(FE 미사용 키 무시).
+                .claim("gv_employmentType", userResult.employmentType())
                 .setIssuedAt(new Date())
                 .setExpiration(new Date(System.currentTimeMillis() + expiration))
                 .signWith(key, SignatureAlgorithm.HS256)
@@ -113,6 +116,35 @@ public class JwtUtil {
      */
     public String generatePhoneAuthScopeToken(String cmpnyCd, String userCd, int ttlMinutes) {
         return generateScopeToken(cmpnyCd, userCd, JwtScope.PHONE_AUTH, ttlMinutes);
+    }
+
+    /**
+     * PRAFTA-app-027-2 — 일용직 전용 정식 토큰 발급(분리형).
+     *
+     * <p>정규 {@link #generateToken(UserResult)} 와 분리한다. TB_DAILY_USER 에는 NODE_CD/AUTH_CD 가
+     * 없으므로 해당 클레임을 담지 않으며, 트랙 식별용 {@code gv_userTrack='DAILY'} 를 추가한다.
+     * 휴대폰 등 PII 는 절대 클레임에 포함하지 않는다(§11.1).
+     *
+     * @deprecated PRAFTA-app-027-2'(통합형 전환) 이후 일용직도 TB_USER 정식 사용자가 되어
+     *             {@link #generateToken(UserResult)} 로 정규 동일 클레임 토큰을 발급한다.
+     *             호출처 없음(통합형). 하위호환을 위해 남겨둔다.
+     */
+    @Deprecated
+    public String generateDailyUserToken(String cmpnyCd, String userCd, String userId, String userNm,
+                                         String siteCd, String siteNm) {
+
+        return Jwts.builder()
+                .claim("gv_cmpnyCd", cmpnyCd)
+                .claim("gv_userCd", userCd)
+                .claim("gv_userId", userId)
+                .claim("gv_userNm", userNm)
+                .claim("gv_siteCd", siteCd)
+                .claim("gv_siteNm", siteNm)
+                .claim("gv_userTrack", "DAILY")
+                .setIssuedAt(new Date())
+                .setExpiration(new Date(System.currentTimeMillis() + expiration))
+                .signWith(key, SignatureAlgorithm.HS256)
+                .compact();
     }
 
     public Claims parseToken(String token) throws JwtException {

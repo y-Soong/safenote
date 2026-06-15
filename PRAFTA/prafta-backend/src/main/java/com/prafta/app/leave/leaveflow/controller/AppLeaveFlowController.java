@@ -20,6 +20,7 @@ import com.prafta.app.leave.leaveflow.dto.response.LeaveApplyMetaResponse;
 import com.prafta.app.leave.leaveflow.service.AppLeaveFlowService;
 import com.prafta.common.dto.TokenInfo;
 import com.prafta.common.security.JwtUtil;
+import com.prafta.common.util.EmploymentTypeGuard;
 
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
@@ -108,6 +109,9 @@ public class AppLeaveFlowController {
     ) {
 
         TokenInfo tokenInfo = jwtUtil.getAllClaimsAsMap(authorization);
+
+        // prafta-app-027 follow-up: 일용직은 연차 신청 비해당 → 서버 차단(표시숨김 J1-4의 서버측 보강).
+        EmploymentTypeGuard.assertNotDailyWorker(tokenInfo);
 
         appLeaveFlowService.submitLeave(LeaveApplyParam.from(request, tokenInfo));
 

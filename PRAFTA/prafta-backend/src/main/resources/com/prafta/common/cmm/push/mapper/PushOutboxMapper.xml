@@ -124,4 +124,38 @@
        AND DEL_YN      = 'N'
     </update>
 
+    <!--
+      PRAFTA-APP-021-2: 발송 억제 여부 판정(enforce).
+      대상 사용자 설정에 마스터 OFF('__MASTER__' USE_YN='N') 또는 해당 NOTI_TYPE OFF 행이
+      존재하면 1(suppress). opt-out: 행 없음 = 0(발송). 설정 테이블 부재 시 SQL 예외 →
+      서비스에서 graceful 폴백(발송 유지). cmpnyCd 동반(스코프 일관).
+    -->
+    <select id="isSuppressed" resultType="int">
+    /* PushOutboxMapper.isSuppressed */
+    SELECT EXISTS(
+        SELECT 1
+          FROM TB_USER_PUSH_SETTING
+         WHERE CMPNY_CD  = #{cmpnyCd}
+           AND USER_CD   = #{targetUserCd}
+           AND NOTI_TYPE IN (#{notiType}, '__MASTER__')
+           AND USE_YN    = 'N'
+    )
+    </select>
+
+    <!--
+      PRAFTA-APP-021-2: 발송 억제 전이(사용자 설정에 의한 정상 미발송).
+      claim(SENDING) 직후만 전이(멱등). RETRY_CNT 미증가. FAILED 와 분리(재시도/모니터링 비대상).
+    -->
+    <update id="markSuppressed">
+    /* PushOutboxMapper.markSuppressed */
+    UPDATE TB_NOTI_OUTBOX
+       SET SEND_STATUS = 'SUPPRESSED'
+         , SENT_DATE   = NOW()
+         , ERROR_MSG   = #{errorMsg}
+         , UPDATE_NO   = #{actor}
+         , UPDATE_DATE = NOW()
+     WHERE NOTI_ID     = #{notiId}
+       AND SEND_STATUS = 'SENDING'
+    </update>
+
 </mapper>

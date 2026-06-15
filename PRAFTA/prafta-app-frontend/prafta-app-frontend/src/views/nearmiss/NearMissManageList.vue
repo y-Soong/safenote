@@ -10,7 +10,7 @@
 -->
 <template>
   <div class="near-miss-list">
-    <!-- 헤더 -->
+    <!-- 헤더 (J1-6 .asr-hd 패턴: 뒤로가기 + 타이틀 + spacer flex) -->
     <header class="nml-hd">
       <button type="button" class="nml-hd__back" aria-label="뒤로" @click="onBack">
         <svg class="icon" width="22" height="22" aria-hidden="true">
@@ -18,58 +18,57 @@
         </svg>
       </button>
       <h1 class="nml-hd__title">사건 관리</h1>
-      <span class="nml-hd__site">{{ siteName }}</span>
+      <span class="nml-hd__spacer" aria-hidden="true" />
     </header>
 
-    <!-- 상태 탭 (카운트 배지) -->
-    <nav class="nml-tabs" aria-label="처리상태 필터">
+    <!-- 상태 탭 (J1-6 .asr-filter 칩 패턴 + 카운트 배지 유지) -->
+    <nav class="nml-filter" aria-label="처리상태 필터">
       <button
         v-for="tab in statusTabs"
         :key="tab.code"
         type="button"
-        class="nml-tab"
-        :class="{ 'nml-tab--on': activeStatus === tab.code }"
+        class="nml-chip-tab"
+        :class="{ 'is-active': activeStatus === tab.code }"
         @click="onSelectStatus(tab.code)"
       >
-        <span class="nml-tab__label">{{ tab.label }}</span>
-        <span class="nml-tab__count">{{ tab.count }}</span>
+        <span class="nml-chip-tab__label">{{ tab.label }}</span>
+        <span class="nml-chip-tab__count">{{ tab.count }}</span>
       </button>
     </nav>
 
     <!-- 본문(스크롤) -->
     <main class="nml-body">
       <!-- 로딩 -->
-      <div v-if="isLoading" class="nml-loading" aria-live="polite">불러오는 중...</div>
+      <div v-if="isLoading" class="nml-state" aria-live="polite">불러오는 중...</div>
 
       <!-- 빈 상태 -->
-      <div v-else-if="items.length === 0" class="nml-empty">표시할 사건이 없어요</div>
+      <div v-else-if="items.length === 0" class="nml-state">표시할 사건이 없어요</div>
 
-      <!-- 카드 리스트 -->
-      <template v-else>
-        <button
-          v-for="item in items"
-          :key="item.nearMissId"
-          type="button"
-          class="nml-card"
-          @click="onCardClick(item)"
-        >
-          <div class="nml-card__top">
-            <span class="nml-badge" :class="severityClass(item.potentialSeverityCd)">
-              {{ item.potentialSeverityNm || '미분류' }}
+      <!-- 카드 리스트 (J1-6 .asr-item__btn 패턴: main(title+sub) + 배지 + chevron flex) -->
+      <ul v-else class="nml-list">
+        <li v-for="item in items" :key="item.nearMissId" class="nml-item">
+          <button type="button" class="nml-item__btn" @click="onCardClick(item)">
+            <span class="nml-item__main">
+              <span class="nml-item__title">{{ item.description }}</span>
+              <span class="nml-item__sub">
+                <template v-if="item.processNm">{{ item.processNm }} · </template>{{ item.reporterNm }} · {{ item.occurDtime }}
+              </span>
+              <span class="nml-item__meta">
+                <span class="nml-badge" :class="severityClass(item.potentialSeverityCd)">
+                  {{ item.potentialSeverityNm || '미분류' }}
+                </span>
+                <span class="nml-badge" :class="statusClass(item.reportStatusCd)">
+                  {{ item.reportStatusNm }}
+                </span>
+                <span class="nml-item__id">{{ item.nearMissId }}</span>
+              </span>
             </span>
-            <span class="nml-card__id">{{ item.nearMissId }}</span>
-          </div>
-          <p class="nml-card__desc">{{ item.description }}</p>
-          <div class="nml-card__meta">
-            <span v-if="item.processNm">{{ item.processNm }}</span>
-            <span>{{ item.reporterNm }}</span>
-            <span>{{ item.occurDtime }}</span>
-          </div>
-          <span class="nml-chip" :class="statusClass(item.reportStatusCd)">
-            {{ item.reportStatusNm }}
-          </span>
-        </button>
-      </template>
+            <svg class="icon nml-item__chev" width="18" height="18" aria-hidden="true">
+              <use href="#i-nml-chev-right" />
+            </svg>
+          </button>
+        </li>
+      </ul>
     </main>
 
     <!-- 인라인 SVG 스프라이트 -->
@@ -85,6 +84,17 @@
           stroke-linejoin="round"
         >
           <polyline points="15 18 9 12 15 6" />
+        </symbol>
+        <symbol
+          id="i-nml-chev-right"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="2"
+          stroke-linecap="round"
+          stroke-linejoin="round"
+        >
+          <polyline points="9 18 15 12 9 6" />
         </symbol>
       </defs>
     </svg>
@@ -234,6 +244,7 @@ onMounted(() => {
   --color-primary-tint: #f0fdf4;
   --color-danger: #ef4444;
   --color-danger-tint: #fef2f2;
+  --color-danger-text: #b91c1c;
   --color-warning: #f59e0b;
   --color-warning-tint: #fffbeb;
   --color-warning-text: #b45309;
@@ -249,7 +260,8 @@ onMounted(() => {
   --radius-lg: 14px;
   --radius-full: 9999px;
 
-  min-height: 100vh;
+  height: 100vh;
+  height: 100dvh;
   display: flex;
   flex-direction: column;
   background: var(--color-bg);
@@ -259,148 +271,163 @@ onMounted(() => {
     sans-serif;
 }
 
-/* 헤더 */
+/* 헤더 (J1-6 .asr-hd 패턴 — flex 뒤로가기/타이틀/spacer, safe-area 최소 보존) */
 .nml-hd {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
   height: 56px;
   flex-shrink: 0;
+  padding: 0 8px;
+  padding-top: env(safe-area-inset-top);
   background: var(--color-surface);
   border-bottom: 0.5px solid var(--color-border);
-  display: grid;
-  grid-template-columns: 44px 1fr auto;
-  align-items: center;
-  padding-right: 16px;
   position: sticky;
   top: 0;
   z-index: 10;
-  padding-top: env(safe-area-inset-top);
 }
 .nml-hd__back {
-  width: 44px;
-  height: 44px;
-  background: transparent;
-  border: 0;
-  color: var(--color-text-primary);
   display: inline-flex;
   align-items: center;
   justify-content: center;
+  min-width: 44px;
+  min-height: 44px;
+  background: transparent;
+  border: 0;
   cursor: pointer;
+  color: var(--color-text-primary);
   font-family: inherit;
 }
 .nml-hd__title {
   margin: 0;
-  font-size: 18px;
+  font-size: 17px;
   font-weight: 600;
 }
-.nml-hd__site {
-  font-size: 12px;
-  color: var(--color-text-secondary);
+.nml-hd__spacer {
+  min-width: 44px;
 }
 
-/* 상태 탭 */
-.nml-tabs {
-  flex-shrink: 0;
+/* 상태 필터 칩 (J1-6 .asr-filter / .asr-chip 패턴 + 카운트 배지 유지) */
+.nml-filter {
   display: flex;
   gap: 6px;
-  padding: 10px 16px;
+  padding: 10px 12px;
   background: var(--color-surface);
   border-bottom: 0.5px solid var(--color-border);
   overflow-x: auto;
+  flex-shrink: 0;
 }
-.nml-tab {
+.nml-chip-tab {
+  flex: 0 0 auto;
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  padding: 8px 12px;
-  border: 1px solid var(--color-border);
+  padding: 6px 12px;
+  background: var(--color-bg);
+  border: 0.5px solid var(--color-border);
   border-radius: var(--radius-full);
-  background: var(--color-surface);
   font-size: 13px;
   color: var(--color-text-secondary);
   cursor: pointer;
   white-space: nowrap;
   font-family: inherit;
 }
-.nml-tab--on {
+.nml-chip-tab.is-active {
+  background: var(--color-primary-tint);
   border-color: var(--color-primary);
   color: var(--color-primary);
-  background: var(--color-primary-tint);
   font-weight: 600;
 }
-.nml-tab__count {
+.nml-chip-tab__count {
   font-variant-numeric: tabular-nums;
   font-weight: 600;
 }
 
-/* 본문 */
+/* 본문 (J1-6 .asr-body) */
 .nml-body {
   flex: 1;
-  padding: 12px 16px 24px;
+  min-height: 0;
+  padding: 12px 16px;
   overflow-y: auto;
+}
+.nml-state {
+  padding: 40px 16px;
+  text-align: center;
+  font-size: 13px;
+  color: var(--color-text-secondary);
+}
+
+/* 목록 (J1-6 .asr-list / .asr-item__btn 패턴) */
+.nml-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
   display: flex;
   flex-direction: column;
   gap: 10px;
 }
-.nml-loading,
-.nml-empty {
-  padding: 40px 16px;
-  text-align: center;
-  font-size: 14px;
-  color: var(--color-text-secondary);
-}
-
-/* 카드 */
-.nml-card {
-  display: block;
+.nml-item__btn {
+  display: flex;
+  align-items: center;
+  gap: 10px;
   width: 100%;
-  text-align: left;
+  padding: 14px;
   background: var(--color-surface);
   border: 0.5px solid var(--color-border);
   border-radius: var(--radius-lg);
-  padding: 14px;
   cursor: pointer;
   font-family: inherit;
+  text-align: left;
 }
-.nml-card__top {
+.nml-item__main {
+  flex: 1;
   display: flex;
-  align-items: center;
-  justify-content: space-between;
-  margin-bottom: 8px;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
 }
-.nml-card__id {
-  font-size: 12px;
-  color: var(--color-text-tertiary);
-  font-variant-numeric: tabular-nums;
-}
-.nml-card__desc {
-  margin: 0 0 8px;
-  font-size: 15px;
-  font-weight: 500;
+.nml-item__title {
+  font-size: 14px;
+  font-weight: 600;
   color: var(--color-text-primary);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.nml-card__meta {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
+.nml-item__sub {
   font-size: 12px;
   color: var(--color-text-secondary);
-  margin-bottom: 8px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
-.nml-card__meta span:not(:last-child)::after {
-  content: ' ·';
+.nml-item__meta {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 2px;
+}
+.nml-item__id {
+  font-size: 11px;
+  color: var(--color-text-tertiary);
+  font-variant-numeric: tabular-nums;
+}
+.nml-item__chev {
+  color: var(--color-text-tertiary);
 }
 
-/* 잠재중대성 배지 */
+/* 배지 (J1-6 .asr-badge 패턴: 11px/700, padding 3px 8px) — 심각도/처리상태 공통 칩 룩 */
 .nml-badge {
-  display: inline-flex;
-  align-items: center;
-  padding: 2px 10px;
+  flex: 0 0 auto;
+  font-size: 11px;
+  font-weight: 700;
+  padding: 3px 8px;
   border-radius: var(--radius-full);
-  font-size: 12px;
-  font-weight: 600;
+  color: var(--color-text-secondary);
+  background: var(--color-border-light);
 }
+/* 잠재중대성 — J1-6 동일 토큰 매핑(primary/warning/danger tint) */
 .nml-badge--minor {
   background: var(--color-primary-tint);
   color: var(--color-primary);
@@ -411,22 +438,13 @@ onMounted(() => {
 }
 .nml-badge--critical {
   background: var(--color-danger-tint);
-  color: var(--color-danger);
+  color: var(--color-danger-text);
 }
 .nml-badge--none {
   background: var(--color-border-light);
   color: var(--color-text-tertiary);
 }
-
-/* 처리상태 칩 */
-.nml-chip {
-  display: inline-flex;
-  align-items: center;
-  padding: 2px 10px;
-  border-radius: var(--radius-sm);
-  font-size: 12px;
-  font-weight: 500;
-}
+/* 처리상태 — J1-6 배지 토큰 매핑 */
 .nml-chip--progress {
   background: var(--color-border-light);
   color: var(--color-text-secondary);
@@ -437,7 +455,7 @@ onMounted(() => {
 }
 .nml-chip--rejected {
   background: var(--color-danger-tint);
-  color: var(--color-danger);
+  color: var(--color-danger-text);
 }
 
 .nml-sprite {

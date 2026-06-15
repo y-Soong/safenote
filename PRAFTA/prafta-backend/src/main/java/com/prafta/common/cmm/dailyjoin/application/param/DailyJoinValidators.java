@@ -34,6 +34,32 @@ final class DailyJoinValidators {
         }
     }
 
+    /**
+     * 비밀번호 : 6~15자 + 영문/숫자/특수문자 중 2종 이상(정규 사용자 규칙 미러, 공통 정책 §3.1).
+     */
+    static void validatePassword(String userPw) {
+        if (userPw == null) {
+            throw new ApiException(DailyJoinErrorCode.DAILYJOIN_400_006);
+        }
+        int len = userPw.length();
+        if (len < 6 || len > 15) {
+            throw new ApiException(DailyJoinErrorCode.DAILYJOIN_400_006);
+        }
+        int typeCount = 0;
+        if (userPw.matches(".*[0-9].*")) {
+            typeCount++;
+        }
+        if (userPw.matches(".*[a-zA-Z].*")) {
+            typeCount++;
+        }
+        if (userPw.matches(".*[^a-zA-Z0-9].*")) {
+            typeCount++;
+        }
+        if (typeCount < 2) {
+            throw new ApiException(DailyJoinErrorCode.DAILYJOIN_400_006);
+        }
+    }
+
     /** 사용자명 : blank 아님 + 최대 15자. */
     static void validateUserNm(String userNm) {
         if (userNm == null || userNm.isBlank() || userNm.length() > 15) {

@@ -2,6 +2,7 @@ package com.prafta.web.attd.attd09.dto.response;
 
 import java.util.List;
 
+import com.prafta.common.cmm.leave.vo.AppliedLeaveTypeVO;
 import com.prafta.common.cmm.leave.vo.LeaveDetailUserHeaderVO;
 import com.prafta.common.cmm.leave.vo.LeaveGrantHistoryRowVO;
 import com.prafta.common.cmm.leave.vo.LeaveSummaryVO;
@@ -25,6 +26,9 @@ public class LeaveDetailResponse {
 
     /** 법정외 휴가 요약 */
     LeaveSummaryVO nonLegalSummary;
+
+    /** 신청형 휴가(LEAVE_TYPE='01') 타입별 잔여 현황 (법정/법정외와 합산하지 않는 별도 섹션) */
+    List<AppliedLeaveTypeVO> appliedLeaveTypes;
 
     /** 부여 이력 (GRANT_DATE 내림차순) */
     List<LeaveGrantHistoryRowVO> grantHistory;

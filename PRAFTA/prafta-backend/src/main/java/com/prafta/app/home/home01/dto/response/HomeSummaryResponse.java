@@ -49,6 +49,16 @@ public class HomeSummaryResponse {
          */
         @JsonProperty("isOffsite")
         private final boolean isOffsite;
+        /**
+         * prafta-com-008-E (H1): 기준일(baseYmd)이 종일 연차일인지 여부(USE_UNIT_TYPE='00' 확정 연차).
+         * 카드는 연차일이면 근무 스케줄을 노출하지 않는다(E-2 전환으로 연차일에도 work_plan 에 SCH_CD 가 남아
+         * 발생하던 스케줄 오노출 보정). prafta-com-008-B: 자발 연차일 출근 허용 정책 전환으로 true 여도
+         * canCheckIn 을 끄지 않으며(촉진 확정일 차단은 서버 guardAndRecord/ATTD_400_150 가 단일출처),
+         * 프론트는 이 값으로 출근 확인 팝업을 띄운다.
+         * Jackson 이 boolean is* getter 에서 "is" 를 떼는 것을 방지(계약 키 고정).
+         */
+        @JsonProperty("isLeaveDay")
+        private final boolean isLeaveDay;
         /** 출근 가능 여부 (서버 산출) */
         private final boolean canCheckIn;
         /** 퇴근 가능 여부 (서버 산출) */
@@ -87,12 +97,20 @@ public class HomeSummaryResponse {
         private final boolean alreadyCheckedIn;
     }
 
-    /** 연차 요약 영역(법정+약정 합산). */
+    /**
+     * 연차 요약 영역(법정+약정 합산).
+     * <p>연차 개편(표시): {@code appliedTypeCount}/{@code appliedRemainingDays} 는 신청형 휴가(LEAVE_TYPE='01')
+     *   요약으로, 기존 grantedDays/remainingDays(GRANT 그룹 합산)에 섞지 않는 별도 산출이다(기존 2필드 불변).
+     */
     @Getter
     @Builder
     public static class Leave {
         private final double grantedDays;
         private final double remainingDays;
+        /** 연차 개편(표시): 신청형 휴가('01') 보유 타입 수(0이면 카드 미노출 판정용). */
+        private final int appliedTypeCount;
+        /** 연차 개편(표시): 신청형 휴가('01') 총잔여 합(타입별 음수는 0 클램프 후 합산). */
+        private final double appliedRemainingDays;
     }
 
     /** 결재 대기 영역. */

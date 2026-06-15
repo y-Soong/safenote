@@ -1,0 +1,123 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.prafta.common.schedule.attdreminder.mapper.AttdReminderMapper">
+
+    <!--
+      PRAFTA-APP-021-4(W4): 출근 5분 전 리마인더 대상.
+      - 오늘(workYmd) work_plan → sch_mgmt 조인. 구간 시작시각 = targetHhmm(현재+5분).
+      - 2구간 스케줄이면 1구간/2구간 시작을 UNION 으로 각각 매칭(구간별 1행, workSeq 1/2).
+      - 제외: 종일 확정 연차일 / 해당 구간(workSeq) 출근 기록이 이미 존재.
+      - 시각은 서버 LocalTime 기준 HHMM 단일 타임존. SELECT * 금지, leading 콤마, #{} 바인딩.
+    -->
+    <select id="selectCheckInTargets" resultType="com.prafta.common.schedule.attdreminder.AttdReminderTargetResult">
+    /* AttdReminderMapper.selectCheckInTargets */
+    SELECT
+          T.CMPNY_CD   AS cmpnyCd
+        , T.SITE_CD    AS siteCd
+        , T.USER_CD    AS userCd
+        , T.NODE_CD    AS nodeCd
+        , T.WORK_SEQ   AS workSeq
+      FROM (
+            <!-- 1구간 시작 매칭(workSeq=1) -->
+            SELECT WP.CMPNY_CD, WP.SITE_CD, WP.USER_CD, U.NODE_CD, 1 AS WORK_SEQ
+              FROM TB_USER_WORK_PLAN WP
+                   INNER JOIN TB_SCH_MGMT SC
+                      ON  SC.CMPNY_CD = WP.CMPNY_CD
+                      AND SC.SITE_CD  = WP.SITE_CD
+                      AND SC.SCH_CD   = WP.WORK_PLAN_CD
+                   INNER JOIN TB_USER U
+                      ON  U.CMPNY_CD = WP.CMPNY_CD
+                      AND U.SITE_CD  = WP.SITE_CD
+                      AND U.USER_CD  = WP.USER_CD
+             WHERE WP.WORK_YMD = #{workYmd}
+               AND SC.USE_YN = 'Y'
+               AND SC.FST_SCH_STR_TIME = #{targetHhmm}
+               AND U.USE_YN = 'Y'
+               AND U.ACCOUNT_STATUS = '01'
+            UNION ALL
+            <!-- 2구간 시작 매칭(workSeq=2, 2구간 스케줄만) -->
+            SELECT WP.CMPNY_CD, WP.SITE_CD, WP.USER_CD, U.NODE_CD, 2 AS WORK_SEQ
+              FROM TB_USER_WORK_PLAN WP
+                   INNER JOIN TB_SCH_MGMT SC
+                      ON  SC.CMPNY_CD = WP.CMPNY_CD
+                      AND SC.SITE_CD  = WP.SITE_CD
+                      AND SC.SCH_CD   = WP.WORK_PLAN_CD
+                   INNER JOIN TB_USER U
+                      ON  U.CMPNY_CD = WP.CMPNY_CD
+                      AND U.SITE_CD  = WP.SITE_CD
+                      AND U.USER_CD  = WP.USER_CD
+             WHERE WP.WORK_YMD = #{workYmd}
+               AND SC.USE_YN = 'Y'
+               AND NULLIF(TRIM(SC.SEC_SCH_STR_TIME), '') IS NOT NULL
+               AND SC.SEC_SCH_STR_TIME = #{targetHhmm}
+               AND U.USE_YN = 'Y'
+               AND U.ACCOUNT_STATUS = '01'
+           ) T
+     WHERE NOT EXISTS (
+               <!-- 종일 확정 연차일 제외 -->
+               SELECT 1
+                 FROM TB_USER_LEAVE_USE L
+                WHERE L.CMPNY_CD      = T.CMPNY_CD
+                  AND L.SITE_CD       = T.SITE_CD
+                  AND L.USER_CD       = T.USER_CD
+                  AND L.LEAVE_STATUS  = 'CONFIRMED'
+                  AND L.DEL_YN        = 'N'
+                  AND L.USE_UNIT_TYPE = '00'
+                  AND L.START_DATE   &lt;= #{workYmd}
+                  AND L.END_DATE     &gt;= #{workYmd}
+           )
+       AND NOT EXISTS (
+               <!-- 해당 구간(workSeq) 출근 기록이 이미 존재하면 제외 -->
+               SELECT 1
+                 FROM TB_USER_ATTD_MGMT A
+                WHERE A.CMPNY_CD = T.CMPNY_CD
+                  AND A.SITE_CD  = T.SITE_CD
+                  AND A.USER_CD  = T.USER_CD
+                  AND A.WORK_YMD = #{workYmd}
+                  AND A.WORK_SEQ = T.WORK_SEQ
+                  AND A.DEL_YN   = 'N'
+           )
+    </select>
+
+    <!--
+      PRAFTA-APP-021-4(W5): 퇴근 5분 전 리마인더 대상.
+      - 오늘(workYmd) 스케줄의 마지막 구간 종료시각(2구간=SEC_END, 그 외=FST_END)=targetHhmm.
+      - 그 마지막 구간(workSeq=2/1)에 출근 기록 존재(CHECK_IN_TIME 有) AND 미퇴근(CHECK_OUT_TIME NULL)만.
+        출근하지 않았으면 제외(§8-R 3). 종일 연차일은 출근 기록이 없어 자연 제외.
+    -->
+    <select id="selectCheckOutTargets" resultType="com.prafta.common.schedule.attdreminder.AttdReminderTargetResult">
+    /* AttdReminderMapper.selectCheckOutTargets */
+    SELECT
+          WP.CMPNY_CD  AS cmpnyCd
+        , WP.SITE_CD   AS siteCd
+        , WP.USER_CD   AS userCd
+        , U.NODE_CD    AS nodeCd
+        , CASE WHEN NULLIF(TRIM(SC.SEC_SCH_END_TIME), '') IS NOT NULL THEN 2 ELSE 1 END AS workSeq
+      FROM TB_USER_WORK_PLAN WP
+           INNER JOIN TB_SCH_MGMT SC
+              ON  SC.CMPNY_CD = WP.CMPNY_CD
+              AND SC.SITE_CD  = WP.SITE_CD
+              AND SC.SCH_CD   = WP.WORK_PLAN_CD
+           INNER JOIN TB_USER U
+              ON  U.CMPNY_CD = WP.CMPNY_CD
+              AND U.SITE_CD  = WP.SITE_CD
+              AND U.USER_CD  = WP.USER_CD
+           INNER JOIN TB_USER_ATTD_MGMT A
+              ON  A.CMPNY_CD = WP.CMPNY_CD
+              AND A.SITE_CD  = WP.SITE_CD
+              AND A.USER_CD  = WP.USER_CD
+              AND A.WORK_YMD = #{workYmd}
+              AND A.WORK_SEQ = CASE WHEN NULLIF(TRIM(SC.SEC_SCH_END_TIME), '') IS NOT NULL THEN 2 ELSE 1 END
+              AND A.DEL_YN   = 'N'
+     WHERE WP.WORK_YMD = #{workYmd}
+       AND SC.USE_YN = 'Y'
+       AND U.USE_YN = 'Y'
+       AND U.ACCOUNT_STATUS = '01'
+       AND ( CASE WHEN NULLIF(TRIM(SC.SEC_SCH_END_TIME), '') IS NOT NULL
+                  THEN SC.SEC_SCH_END_TIME ELSE SC.FST_SCH_END_TIME END ) = #{targetHhmm}
+       AND NULLIF(TRIM(A.CHECK_IN_TIME), '') IS NOT NULL
+       AND NULLIF(TRIM(A.CHECK_OUT_TIME), '') IS NULL
+    </select>
+
+</mapper>

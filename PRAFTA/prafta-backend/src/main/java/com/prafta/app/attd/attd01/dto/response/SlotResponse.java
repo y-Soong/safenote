@@ -5,7 +5,7 @@ import lombok.Getter;
 
 /**
  * prafta-app-002: 구간(슬롯) 단위 응답 (계약 §3.1 slots[]).
- * <p>workSeq 1=1구간, 2=2구간. schedule 은 항상, attendance/standardized 는 데이터 유무에 따라.
+ * <p>workSeq 1=1구간, 2=2구간. schedule 은 항상, attendance 는 데이터 유무에 따라.
  *
  * <p>prafta-app-015: 2구간 스케줄 구간 선택 게이팅용 플래그(서버 산출, 프론트 표시 전용).
  *   <ul>
@@ -21,7 +21,6 @@ public class SlotResponse {
     private final int workSeq;
     private final ScheduleResponse schedule;
     private final AttendanceResponse attendance;       // 미출근 시 null
-    private final StandardizedResponse standardized;   // 미산정 시 null
     // prafta-app-015: 2구간 스케줄 구간 선택 버튼 게이팅(서버 산출).
     private final boolean canCheckInThisSlot;
     private final boolean alreadyCheckedIn;

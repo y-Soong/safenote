@@ -63,9 +63,32 @@
         ) THEN 1 ELSE 0 END AS isOffsite
     </select>
 
+    <!--
+      prafta-com-008-E (H1): 기준일(baseYmd) 종일 연차일 판정 — 일 단위(USE_UNIT_TYPE='00') 확정 연차 존재 카운트.
+        attd01 checkIn(083) 의 AppAttd01Mapper.countFullDayLeaveOn 과 동일 단일출처 기준(같은 술어)으로,
+        E-2 전환 후 연차일에도 work_plan 에 SCH_CD 가 남아 selectTodaySchedule 이 스케줄을 반환하는 문제를 보정한다.
+        부분연차(반차/시간차)는 근무일을 유지하므로 차단 대상이 아니다('00'만 카운트).
+        CONFIRMED + DEL_YN='N' + START_DATE <= baseYmd <= END_DATE. &gt; 0 이면 종일 연차일.
+    -->
+    <select id="countFullDayLeaveOn" resultType="int">
+    /* AppHome01Mapper.countFullDayLeaveOn */
+    SELECT COUNT(*)
+      FROM TB_USER_LEAVE_USE U
+     WHERE U.CMPNY_CD      = #{cmpnyCd}
+       AND U.SITE_CD       = #{siteCd}
+       AND U.USER_CD       = #{userCd}
+       AND U.LEAVE_STATUS  = 'CONFIRMED'
+       AND U.DEL_YN        = 'N'
+       AND U.USE_UNIT_TYPE = '00'
+       AND U.START_DATE   &lt;= #{baseYmd}
+       AND U.END_DATE     &gt;= #{baseYmd}
+    </select>
+
     <!-- 오늘 예정 스케줄: work_plan(WORK_PLAN_CD=SCH_CD) → sch_mgmt.
          1·2구간 시각을 모두 조회한다(SEC_*가 채워져 있으면 2구간 스케줄).
-         LEAVE_CD(연차/휴무) 거나 매칭 스케줄 없으면 결과 없음. -->
+         매칭 스케줄(USE_YN='Y', APPLY_DATE 적용)이 없으면 결과 없음.
+         ※ prafta-com-008-E-2 전환 후 work_plan 에는 SCH_CD 만 남으므로(연차일에도 스케줄 반환 가능),
+           종일 연차일 여부는 countFullDayLeaveOn(leave_use 단일출처)으로 별도 판정한다. -->
     <select id="selectTodaySchedule"
             parameterType="com.prafta.app.home.home01.application.query.HomeSummaryQuery"
             resultType="com.prafta.app.home.home01.result.ScheduleResult">
@@ -186,6 +209,43 @@
       AND G.STATUS = 'ACTIVE'
       AND G.EXPIRE_YN = 'N'
       AND G.DEL_YN = 'N'
+    </select>
+
+    <!--
+      연차 개편(표시): 홈 요약용 신청형 휴가('01') 집계(간결 — 보유 타입 수 + 총잔여).
+      - 대상 = TB_LEAVE_TYPE_MGMT WHERE CMPNY_CD AND LEAVE_TYPE='01' AND USE_YN='Y' (법정/관리자부여 GRANT 그룹과 분리).
+      - 타입별 잔여 = MAX(IFNULL(MAX_APLY_DAYS,0) - 당해 회계연도 사용분, 0). 사용분 술어는
+          AppLeaveFlowMapper.selectFiscalUsedDays 와 동일(LEAVE_STATUS='CONFIRMED' AND DEL_YN='N'
+          AND START_DATE >= fiscalStartYmd AND START_DATE < fiscalEndYmdExclusive). 한도 NULL→0(fail-closed).
+        홈 총잔여는 음수 누적을 막기 위해 타입별로 GREATEST(.,0) 클램프 후 SUM(요약 표시 안전). 타입별 음수 상세는
+        연차 현황(leave01)에서 그대로 노출. 회계연도 경계는 서비스가 FiscalYearUtils 로 산출해 주입.
+      - 결과 record AppliedLeaveSummaryResult(typeCount, totalRemainDays) 위치매핑. '01' 0개면 typeCount=0, SUM=null.
+      - 식별값은 토큰 도출값(IDOR).
+    -->
+    <select id="selectAppliedLeaveSummary" resultType="com.prafta.app.home.home01.result.AppliedLeaveSummaryResult">
+    /* AppHome01Mapper.selectAppliedLeaveSummary */
+    SELECT
+          COUNT(*) AS typeCount
+        , SUM(
+              GREATEST(
+                  IFNULL(T.MAX_APLY_DAYS, 0) - IFNULL((
+                      SELECT SUM(U.LEAVE_DAYS)
+                        FROM TB_USER_LEAVE_USE U
+                       WHERE U.CMPNY_CD     = T.CMPNY_CD
+                         AND U.USER_CD      = #{userCd}
+                         AND U.LEAVE_CD     = T.LEAVE_CD
+                         AND U.LEAVE_STATUS = 'CONFIRMED'
+                         AND U.DEL_YN       = 'N'
+                         AND U.START_DATE  <![CDATA[ >= ]]> #{fiscalStartYmd}
+                         AND U.START_DATE  <![CDATA[ <  ]]> #{fiscalEndYmdExclusive}
+                  ), 0)
+                , 0
+              )
+          ) AS totalRemainDays
+      FROM TB_LEAVE_TYPE_MGMT T
+     WHERE T.CMPNY_CD   = #{cmpnyCd}
+       AND T.LEAVE_TYPE = '01'
+       AND T.USE_YN     = 'Y'
     </select>
 
     <!-- 결재 대기(REQ_STATUS='01') 본인 건수. -->

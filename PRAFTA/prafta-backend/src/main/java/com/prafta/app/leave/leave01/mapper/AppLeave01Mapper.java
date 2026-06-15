@@ -3,7 +3,10 @@ package com.prafta.app.leave.leave01.mapper;
 import org.apache.ibatis.annotations.Mapper;
 import org.apache.ibatis.annotations.Param;
 
+import java.util.List;
+
 import com.prafta.app.leave.leave01.application.query.MyLeaveSummaryQuery;
+import com.prafta.app.leave.leave01.result.AppliedLeaveTypeRow;
 import com.prafta.app.leave.leave01.result.LeaveExpiringResult;
 import com.prafta.app.leave.leave01.result.LeaveGroupAggResult;
 import com.prafta.app.leave.leave01.result.LeaveUserResult;
@@ -31,4 +34,24 @@ public interface AppLeave01Mapper {
 
     /** 사용자 메타(userNm/hireDate/serviceCreditMonths). 스코프 밖/미존재면 null. */
     LeaveUserResult selectUser(@Param("param") MyLeaveSummaryQuery query);
+
+    /**
+     * 연차 개편(표시): 신청형 휴가('01') 타입별 한도/사용 1행씩 조회.
+     * <p>대상 = TB_LEAVE_TYPE_MGMT WHERE CMPNY_CD AND LEAVE_TYPE='01' AND USE_YN='Y'.
+     *   사용분 Σ 술어는 {@code AppLeaveFlowMapper.selectFiscalUsedDays} 와 동일(LEAVE_STATUS='CONFIRMED'
+     *   AND DEL_YN='N' AND START_DATE [fiscalStartYmd, fiscalEndYmdExclusive)). 회계연도 경계는
+     *   서비스가 {@code FiscalYearUtils} 로 산출해 주입한다. 법정/관리자부여(GRANT 그룹)와 합산하지 않는
+     *   별도 항목. 잔여(한도-사용)는 서비스에서 파생(한도 NULL → 한도 0 = 잔여 0 fail-closed).
+     *
+     * @param cmpnyCd             회사 코드(토큰 도출)
+     * @param userCd              사용자 코드(토큰 도출, IDOR 방지)
+     * @param fiscalStartYmd      당해 회계연도 시작일(YYYYMMDD, inclusive)
+     * @param fiscalEndYmdExclusive 당해 회계연도 종료 경계(YYYYMMDD, exclusive)
+     */
+    List<AppliedLeaveTypeRow> selectAppliedLeaveTypes(
+            @Param("cmpnyCd") String cmpnyCd
+            , @Param("userCd") String userCd
+            , @Param("fiscalStartYmd") String fiscalStartYmd
+            , @Param("fiscalEndYmdExclusive") String fiscalEndYmdExclusive
+    );
 }

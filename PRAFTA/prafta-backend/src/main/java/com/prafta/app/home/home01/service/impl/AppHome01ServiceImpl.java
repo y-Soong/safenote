@@ -13,6 +13,7 @@ import com.prafta.app.home.home01.application.param.HomeSummaryParam;
 import com.prafta.app.home.home01.application.query.HomeSummaryQuery;
 import com.prafta.app.home.home01.dto.response.HomeSummaryResponse;
 import com.prafta.app.home.home01.mapper.AppHome01Mapper;
+import com.prafta.app.home.home01.result.AppliedLeaveSummaryResult;
 import com.prafta.app.home.home01.result.AttdMgmtResult;
 import com.prafta.app.home.home01.result.LeaveSummaryResult;
 import com.prafta.app.home.home01.result.OvernightScheduleResult;
@@ -20,6 +21,9 @@ import com.prafta.app.home.home01.result.PrevDayOpenAttdResult;
 import com.prafta.app.home.home01.result.ScheduleResult;
 import com.prafta.app.home.home01.result.TbmStatusResult;
 import com.prafta.app.home.home01.service.AppHome01Service;
+import com.prafta.common.cmm.leave.mapper.LeavePolicyMapper;
+import com.prafta.common.cmm.leave.util.FiscalYearUtils;
+import com.prafta.common.cmm.leave.vo.LeavePolicyVO;
 
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -47,6 +51,8 @@ public class AppHome01ServiceImpl implements AppHome01Service {
     private static final String TBM_COMPLETION_COMPLETED = "COMPLETED";
 
     private final AppHome01Mapper appHome01Mapper;
+    /** 연차 개편(표시): 활성정책 AXIS2_FISCAL_START_MM/_DD 조회(회계연도 경계 산출 입력). 락 없는 조회 메서드 재사용. */
+    private final LeavePolicyMapper leavePolicyMapper;
 
     @Override
     public HomeSummaryResponse selectHomeSummary(HomeSummaryParam param) {
@@ -97,6 +103,18 @@ public class AppHome01ServiceImpl implements AppHome01Service {
         List<AttdMgmtResult> attds = appHome01Mapper.selectTodayAttdList(query);
         // prafta-app-013-1: sch 는 attendance 전용 기준일(baseYmd) 로 조회된다(query 가 attdQuery).
         ScheduleResult sch = appHome01Mapper.selectTodaySchedule(query);
+
+        // prafta-com-008-E (H1): 기준일(baseYmd) 종일 연차일 판정.
+        //   E-2 전환으로 연차일에도 work_plan 에 SCH_CD 가 남아 selectTodaySchedule 이 스케줄을 반환 →
+        //   카드가 BEFORE_WORK·canCheckIn=true 로 오표시되던 문제 보정.
+        //   판정 단일출처는 attd01 checkIn(083) 과 동일(USE_UNIT_TYPE='00' 확정 연차 존재). query.todayYmd()=baseYmd.
+        //   종일 연차일이면 근무 스케줄을 노출하지 않고 출근 버튼을 비활성화한다(부분연차는 근무일 유지 → 비대상).
+        boolean isLeaveDay = appHome01Mapper.countFullDayLeaveOn(
+                query.cmpnyCd(), query.siteCd(), query.userCd(), query.todayYmd()) > 0;
+        if (isLeaveDay) {
+            // 연차일은 근무 스케줄을 카드에 노출하지 않는다(연차 차단 정합). 실 출퇴근 레코드 표시/퇴근 가능 여부는 유지.
+            sch = null;
+        }
         // 외근 여부: 오늘 최근 출근 레코드의 출근 GPS 행(01) 존재 여부(존재=외근). 오늘 출근 없으면 0.
         boolean isOffsite = appHome01Mapper.selectTodayCheckInOffsite(query) > 0;
 
@@ -215,6 +233,10 @@ public class AppHome01ServiceImpl implements AppHome01Service {
         //   canCheckOut = 오늘 진행 중(hasOpen) 우선, 없으면 전날 미퇴근(prevDayCheckoutPending).
         boolean canCheckOut = hasOpen || prevDayCheckoutPending;
         // canCheckIn 은 기존 유지(전날 미퇴근만으로 끄지 않음 — 서버 게이트 021-1 이 출근 차단). 프론트가 prevDayCheckoutPending 로 출근 버튼 비활성 표시.
+        //   prafta-com-008-B: 자발 연차일 출근 "허용"으로 정책 전환(B-1) → 종일 연차일이어도 canCheckIn 을 끄지 않는다.
+        //   (E 시절 '모든 연차일 출근 차단' 게이트를 lockstep 으로 완화) 촉진 확정 연차일의 차단은 서버 진입부
+        //   guardAndRecord(checkIn) 가 ATTD_400_150 으로 강제(노무수령거부) — 버튼 게이트가 아니라 서버 가드가 단일출처.
+        //   자발/촉진+휴일 연차일은 프론트가 isLeaveDay 로 출근 확인 팝업을 띄운 뒤 출근 진행. 퇴근(canCheckOut)은 기존 유지.
         boolean canCheckIn = !hasOpen && existing < maxSlots;
 
         // prafta-app-015: 2구간 스케줄 구간 선택 게이팅 플래그(attd01 SlotResponse 와 동일 의미).
@@ -245,6 +267,7 @@ public class AppHome01ServiceImpl implements AppHome01Service {
                 .checkInTime(checkInTime)
                 .checkOutTime(checkOutTime)
                 .isOffsite(isOffsite) // 오늘 최근 출근 GPS 행(01) 존재=외근 (prafta-app-003 B-1).
+                .isLeaveDay(isLeaveDay) // prafta-com-008-E (H1): 기준일 종일 연차일 여부(출근 버튼 비활성/연차 표시 근거).
                 .canCheckIn(canCheckIn)
                 .canCheckOut(canCheckOut)
                 .prevDayCheckoutPending(prevDayCheckoutPending) // prafta-app-021 §7.6: 전날 미퇴근 마감 대기 신호.
@@ -279,10 +302,34 @@ public class AppHome01ServiceImpl implements AppHome01Service {
         double granted = toScaledDouble(leave != null ? leave.grantedDays() : null);
         double remaining = toScaledDouble(leave != null ? leave.remainingDays() : null);
 
+        // 연차 개편(표시): 신청형 휴가('01') 요약(보유 타입 수 + 총잔여) — GRANT 그룹(granted/remaining)과 분리.
+        //   회계연도 경계는 단일출처 FiscalYearUtils 로 산출(연차 현황 화면 leave01 과 동일 경계 보장).
+        FiscalYearUtils.FiscalWindow fiscal = resolveFiscalWindow(query.cmpnyCd());
+        AppliedLeaveSummaryResult applied = appHome01Mapper.selectAppliedLeaveSummary(
+                query.cmpnyCd(), query.userCd(),
+                fiscal.fiscalStartYmd(), fiscal.fiscalEndYmdExclusive());
+
+        int appliedTypeCount = (applied != null) ? applied.typeCount() : 0;
+        double appliedRemaining = toScaledDouble(applied != null ? applied.totalRemainDays() : null);
+
         return HomeSummaryResponse.Leave.builder()
                 .grantedDays(granted)
                 .remainingDays(remaining)
+                .appliedTypeCount(appliedTypeCount)
+                .appliedRemainingDays(appliedRemaining)
                 .build();
+    }
+
+    /**
+     * 연차 개편(표시): 당해 회계연도 윈도우 산출(단일출처 {@link FiscalYearUtils}).
+     * 활성정책 AXIS2_FISCAL_START_MM/_DD 로 산출하며, 정책 미존재/NULL 이면 1월 1일 폴백(유틸이 처리).
+     * (leaveflow/leave01 의 resolveFiscalWindow 와 동일 — 신청 화면/연차 현황 잔여와 동일 경계 보장.)
+     */
+    private FiscalYearUtils.FiscalWindow resolveFiscalWindow(String cmpnyCd) {
+        LeavePolicyVO policy = leavePolicyMapper.selectActivePolicy(cmpnyCd);
+        String mm = (policy == null) ? null : policy.getAxis2FiscalStartMm();
+        String dd = (policy == null) ? null : policy.getAxis2FiscalStartDd();
+        return FiscalYearUtils.fiscalWindow(LocalDate.now(), mm, dd);
     }
 
     /**

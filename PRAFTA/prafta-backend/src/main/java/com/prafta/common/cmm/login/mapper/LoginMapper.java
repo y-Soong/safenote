@@ -25,7 +25,10 @@ public interface LoginMapper {
 	UserResult Login(LoginQuery loginQuery);
 	
 	void userPwdUnLock(UserPwdUnlockCommand command);
-	
+
+	// PRAFTA-app-027-7: 비밀번호 인증 성공 시 실패 카운트/잠금 무조건 초기화.
+	void updateUserPwdReset(UserPwdUnlockCommand command);
+
 	void updateUserPwdFail(UserPwdFailCommand command);
 	
 	int lockUserRow(UserRowLockQuery userRowLockQuery);

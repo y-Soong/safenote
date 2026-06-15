@@ -60,4 +60,7 @@ public interface User01Service {
 
 	// ===== PRAFTA-036 - 엑셀 양식 다운로드 (PRAFTA-037-F5 감사 컨텍스트 추가) =====
 	byte[] buildUserCreateTemplate(TokenInfo tokenInfo, AuditContext auditContext);
+
+	// ===== PRAFTA-COM-008-E-5 - 기본 근무타입 select 옵션(대상 사업장 활성 근무타입) =====
+	java.util.List<com.prafta.common.cmm.sch.vo.SchOptionVO> getSchTypeOptions(String cmpnyCd, String siteCd);
 }

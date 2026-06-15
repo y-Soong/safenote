@@ -1,0 +1,188 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+
+<mapper namespace="com.prafta.app.attd.admin.mapper.AppAdminAttdMapper">
+
+    <!--
+      J1-5 앱 관리자 근태 상세 — web attd08(일자)/attd11(월별) 조회 SQL 포팅 + 토큰·노드 스코프.
+      식별자(cmpny/site)는 서비스에서 토큰값만 전달(IDOR 차단). 노드 스코프는 Phase 1 재귀 CTE 결과 List.
+
+      스코프 WHERE 규칙(앱 승인관리 scopeWhere 패턴 동형):
+        - companyWide(master): 사업장 내 노드 무필터.
+        - useNodeScope(노드관리자): A.NODE_CD ∈ scopedNodeCds(서비스가 비어있지 않음 보장; safe 단독/비노드관리자는 진입 차단).
+        - hr(둘 다 false): 사업장 전부서(노드 무필터) — siteCd 만으로 제한.
+      ⚠ useNodeScope=true 일 때 scopedNodeCds 는 서비스가 비어있지 않음을 보장한다.
+
+      지각/조퇴/근무시간 판정은 SQL 에서 하지 않는다(자정 넘김 야간 오판 방지). 서비스가 raw 일시 stamp 로 판정한다.
+    -->
+
+    <!-- 노드 스코프 WHERE 조각(별칭 A = 근태/사용자 기준 테이블). 회사·사업장은 항상 필터. -->
+    <sql id="scopeWhere">
+        AND A.CMPNY_CD = #{cmpnyCd}
+        AND A.SITE_CD  = #{siteCd}
+        <if test="useNodeScope">
+            AND A.NODE_CD IN
+            <foreach collection="scopedNodeCds" item="nc" open="(" separator="," close=")">
+                #{nc}
+            </foreach>
+        </if>
+    </sql>
+
+    <!-- 유효(effective-dating) 스케줄 서브쿼리(web attd11 SCH 서브쿼리 그대로 재사용).
+         TB_SCH_MGMT(현재본) + TB_SCH_MGMT_HIST(전 버전) UNION 후 APPLY_DATE <= WORK_YMD 인 최신 버전. -->
+    <sql id="effectiveSchJoin">
+        LEFT JOIN TB_USER_WORK_PLAN WP
+            ON  WP.CMPNY_CD = A.CMPNY_CD
+            AND WP.SITE_CD  = A.SITE_CD
+            AND WP.USER_CD  = A.USER_CD
+            AND WP.WORK_YMD = A.WORK_YMD
+
+        LEFT JOIN (
+            SELECT
+                  E.CMPNY_CD
+                , E.SITE_CD
+                , E.SCH_CD
+                , E.APPLY_DATE
+                , E.FST_SCH_STR_TIME
+                , E.FST_SCH_END_TIME
+                , E.FST_SCH_BRK_MIN
+                , E.SEC_SCH_STR_TIME
+                , E.SEC_SCH_END_TIME
+                , E.SEC_SCH_BRK_MIN
+            FROM (
+                SELECT
+                      M.CMPNY_CD, M.SITE_CD, M.SCH_CD, M.APPLY_DATE
+                    , M.FST_SCH_STR_TIME, M.FST_SCH_END_TIME, M.FST_SCH_BRK_MIN
+                    , M.SEC_SCH_STR_TIME, M.SEC_SCH_END_TIME, M.SEC_SCH_BRK_MIN
+                    , 2147483647 AS HIST_IDX
+                FROM TB_SCH_MGMT M
+                WHERE M.USE_YN = 'Y'
+                UNION ALL
+                SELECT
+                      H.CMPNY_CD, H.SITE_CD, H.SCH_CD, H.APPLY_DATE
+                    , H.FST_SCH_STR_TIME, H.FST_SCH_END_TIME, H.FST_SCH_BRK_MIN
+                    , H.SEC_SCH_STR_TIME, H.SEC_SCH_END_TIME, H.SEC_SCH_BRK_MIN
+                    , H.HIST_IDX
+                FROM TB_SCH_MGMT_HIST H
+                WHERE H.USE_YN = 'Y'
+            ) E
+            WHERE E.HIST_IDX = (
+                SELECT MAX(E2.HIST_IDX)
+                FROM (
+                    SELECT M2.CMPNY_CD, M2.SITE_CD, M2.SCH_CD, M2.APPLY_DATE, 2147483647 AS HIST_IDX
+                    FROM TB_SCH_MGMT M2 WHERE M2.USE_YN = 'Y'
+                    UNION ALL
+                    SELECT H2.CMPNY_CD, H2.SITE_CD, H2.SCH_CD, H2.APPLY_DATE, H2.HIST_IDX
+                    FROM TB_SCH_MGMT_HIST H2 WHERE H2.USE_YN = 'Y'
+                ) E2
+                WHERE E2.CMPNY_CD   = E.CMPNY_CD
+                  AND E2.SITE_CD    = E.SITE_CD
+                  AND E2.SCH_CD     = E.SCH_CD
+                  AND E2.APPLY_DATE = E.APPLY_DATE
+            )
+        ) SCH
+            ON  SCH.CMPNY_CD = WP.CMPNY_CD
+            AND SCH.SITE_CD  = WP.SITE_CD
+            AND SCH.SCH_CD   = WP.WORK_PLAN_CD
+            AND SCH.APPLY_DATE = (
+                SELECT MAX(SE.APPLY_DATE)
+                FROM (
+                    SELECT M3.CMPNY_CD, M3.SITE_CD, M3.SCH_CD, M3.APPLY_DATE
+                    FROM TB_SCH_MGMT M3 WHERE M3.USE_YN = 'Y'
+                    UNION ALL
+                    SELECT H3.CMPNY_CD, H3.SITE_CD, H3.SCH_CD, H3.APPLY_DATE
+                    FROM TB_SCH_MGMT_HIST H3 WHERE H3.USE_YN = 'Y'
+                ) SE
+                WHERE SE.CMPNY_CD    = WP.CMPNY_CD
+                  AND SE.SITE_CD     = WP.SITE_CD
+                  AND SE.SCH_CD      = WP.WORK_PLAN_CD
+                  AND SE.APPLY_DATE <![CDATA[ <= ]]> WP.WORK_YMD
+            )
+    </sql>
+
+    <!-- ============================ 일자 근태 현황 ============================ -->
+    <select id="selectDailyAttdRows"
+            parameterType="com.prafta.app.attd.admin.application.query.AdminAttdScopeQuery"
+            resultType="com.prafta.app.attd.admin.result.DailyAttdRow">
+    /* AppAdminAttdMapper.selectDailyAttdRows */
+        SELECT
+              A.USER_CD                                                          AS userCd
+            , U.USER_NM                                                          AS userNm
+            , FNC_CMM_INFO_SRCH(A.CMPNY_CD, 'NODE', A.SITE_CD, A.NODE_CD)        AS nodeNm
+            , A.WORK_YMD                                                         AS workYmd
+            , A.WORK_SEQ                                                         AS workSeq
+
+            /* 차수에 맞춰 정규화한 스케줄 계획시각 (1구간/2구간) */
+            , CASE WHEN A.WORK_SEQ = 2 THEN SCH.SEC_SCH_STR_TIME ELSE SCH.FST_SCH_STR_TIME END  AS planStart
+            , CASE WHEN A.WORK_SEQ = 2 THEN SCH.SEC_SCH_END_TIME ELSE SCH.FST_SCH_END_TIME END  AS planEnd
+
+            /* 실제(원본) 출퇴근 일시 — 판정/정산 기준 */
+            , A.CHECK_IN_DATE                                                    AS checkInDate
+            , A.CHECK_IN_TIME                                                    AS checkInTime
+            , A.CHECK_OUT_DATE                                                   AS checkOutDate
+            , A.CHECK_OUT_TIME                                                   AS checkOutTime
+
+            /* 외근: 해당 ATTD 의 GPS 행 존재 여부(web attd08 동일 규칙) */
+            , CASE
+                WHEN EXISTS (
+                    SELECT 1 FROM TB_USER_ATTD_GPS G
+                    WHERE G.CMPNY_CD = A.CMPNY_CD AND G.ATTD_ID = A.ATTD_ID
+                ) THEN 'Y' ELSE 'N'
+              END                                                                AS isOutsideYn
+
+        FROM TB_USER_ATTD_MGMT A
+        INNER JOIN TB_USER U
+            ON  U.CMPNY_CD = A.CMPNY_CD
+            AND U.USER_CD  = A.USER_CD
+        <include refid="effectiveSchJoin"/>
+        WHERE A.DEL_YN   = 'N'
+          AND A.WORK_YMD = #{workYmd}
+          AND A.WORK_SEQ IN (1, 2)
+          <include refid="scopeWhere"/>
+        <if test="keyword != null">
+          <bind name="safeKeyword"
+                value="keyword.replace('\\', '\\\\').replace('%', '\\%').replace('_', '\\_')" />
+          AND U.USER_NM LIKE CONCAT('%', #{safeKeyword}, '%') ESCAPE '\'
+        </if>
+        ORDER BY A.USER_CD, A.WORK_SEQ
+    </select>
+
+    <!-- ============================ 월별 집계 ============================ -->
+    <select id="selectMonthlyAttdRows"
+            parameterType="com.prafta.app.attd.admin.application.query.AdminAttdScopeQuery"
+            resultType="com.prafta.app.attd.admin.result.MonthlyAttdRow">
+    /* AppAdminAttdMapper.selectMonthlyAttdRows */
+        SELECT
+              A.USER_CD                                                          AS userCd
+            , U.USER_NM                                                          AS userNm
+            , FNC_CMM_INFO_SRCH(A.CMPNY_CD, 'NODE', A.SITE_CD, A.NODE_CD)        AS nodeNm
+            , A.WORK_YMD                                                         AS workYmd
+            , A.WORK_SEQ                                                         AS workSeq
+
+            , CASE WHEN A.WORK_SEQ = 2 THEN SCH.SEC_SCH_STR_TIME ELSE SCH.FST_SCH_STR_TIME END  AS planStart
+            , CASE WHEN A.WORK_SEQ = 2 THEN SCH.SEC_SCH_END_TIME ELSE SCH.FST_SCH_END_TIME END  AS planEnd
+            , CASE WHEN A.WORK_SEQ = 2 THEN SCH.SEC_SCH_BRK_MIN  ELSE SCH.FST_SCH_BRK_MIN  END  AS planBreakMin
+
+            , A.CHECK_IN_DATE                                                    AS actInDate
+            , A.CHECK_IN_TIME                                                    AS actInTime
+            , A.CHECK_OUT_DATE                                                   AS actOutDate
+            , A.CHECK_OUT_TIME                                                   AS actOutTime
+
+        FROM TB_USER_ATTD_MGMT A
+        INNER JOIN TB_USER U
+            ON  U.CMPNY_CD = A.CMPNY_CD
+            AND U.USER_CD  = A.USER_CD
+        <include refid="effectiveSchJoin"/>
+        WHERE A.DEL_YN   = 'N'
+          AND A.WORK_YMD LIKE CONCAT(#{workYm}, '%')
+          AND A.WORK_SEQ IN (1, 2)
+          <include refid="scopeWhere"/>
+        <if test="keyword != null">
+          <bind name="safeKeyword"
+                value="keyword.replace('\\', '\\\\').replace('%', '\\%').replace('_', '\\_')" />
+          AND U.USER_NM LIKE CONCAT('%', #{safeKeyword}, '%') ESCAPE '\'
+        </if>
+        ORDER BY A.USER_CD, A.WORK_YMD, A.WORK_SEQ
+    </select>
+
+</mapper>

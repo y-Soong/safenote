@@ -24,4 +24,7 @@ public interface LoginService {
 
 	// ===== PRAFTA-036 - 휴대폰 인증대기 계정 활성화 =====
 	LoginResponse verifyPhoneAuth(VerifyPhoneAuthParam param);
+
+	// ===== PRAFTA-COM-008-E-8 - 기본 근무타입 로그인 게이트 통과(설정 저장 + 즉시 생성 + 정식 토큰) =====
+	LoginResponse setDefaultSch(String gvCmpnyCd, String gvUserCd, String defaultSchCd, String clientType);
 }

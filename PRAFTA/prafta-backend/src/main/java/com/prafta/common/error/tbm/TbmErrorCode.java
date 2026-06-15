@@ -132,6 +132,8 @@ public enum TbmErrorCode implements ApiErrorCode {
     , TBM_409_042(HttpStatus.CONFLICT, "교육준비 상태에서만 입실자를 내보낼 수 있습니다.")
     // 내보내기 대상 출결 없음/세션 불일치/이미 제거됨 - 비즈니스 룰
     , TBM_409_043(HttpStatus.CONFLICT, "내보낼 수 있는 입실 기록을 찾을 수 없습니다.")
+    // prafta-app-025 J1-7 작업 D: 당일 출근 기록 없는 일용직의 QR 입실 차단 - 사용자 안내(409 — 앱 인터셉터 토큰오류 오인 회피).
+    , TBM_409_044(HttpStatus.CONFLICT, "출근 기록이 없어 입실할 수 없습니다. 현장 처리에서 출근을 먼저 등록해 주세요.")
 
     // ===== 001-P5 R5 교육자료 관리(앱 관리자 admin) =====
     // [머지 com-007] prafta-051 과 400_040/400_041/403_040 번호 충돌하여 05x 블록으로 재배정.

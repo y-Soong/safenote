@@ -1,0 +1,64 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+
+<!--
+  푸시 알림 수신 설정 Mapper (PRAFTA-APP-021-1, 앱).
+  식별자(cmpnyCd/userCd)는 JWT 클레임 출처(IDOR). leading 콤마, #{} 바인딩, SELECT * 금지.
+  opt-out 모델: 행 없음 = 수신 ON. USE_YN='N' 행만 발송 생략(enforce 는 PushOutboxMapper 보유).
+-->
+<mapper namespace="com.prafta.app.notiset.notiset01.mapper.Notiset01Mapper">
+
+    <!-- 본인 설정 전 행 조회(마스터 '__MASTER__' 행 포함). 응답 단계에서 미존재 NOTI_TYPE 은 ON 보정. -->
+    <select id="selectMySettings"
+            resultType="com.prafta.app.notiset.notiset01.mapper.result.PushSettingRowResult">
+    /* Notiset01Mapper.selectMySettings */
+    SELECT
+          NOTI_TYPE  AS notiType
+        , USE_YN     AS useYn
+      FROM TB_USER_PUSH_SETTING
+     WHERE CMPNY_CD = #{cmpnyCd}
+       AND USER_CD  = #{userCd}
+    </select>
+
+    <!--
+      설정 1행 upsert. PK(CMPNY_CD, USER_CD, NOTI_TYPE) 충돌 시 USE_YN/수정 감사컬럼 갱신.
+      INSERT_NO 는 신규 INSERT 시에만 기록(ON DUPLICATE 에서 미갱신 — 최초 등록자 보존).
+    -->
+    <insert id="upsertSetting" parameterType="com.prafta.app.notiset.notiset01.application.command.PushSettingUpsertCommand">
+    /* Notiset01Mapper.upsertSetting */
+    INSERT INTO TB_USER_PUSH_SETTING (
+          CMPNY_CD
+        , USER_CD
+        , NOTI_TYPE
+        , USE_YN
+        , INSERT_NO
+        , INSERT_DATE
+    ) VALUES (
+          #{cmpnyCd}
+        , #{userCd}
+        , #{notiType}
+        , #{useYn}
+        , #{actor}
+        , NOW()
+    )
+    ON DUPLICATE KEY UPDATE
+          USE_YN      = #{useYn}
+        , UPDATE_NO   = #{actor}
+        , UPDATE_DATE = NOW()
+    </insert>
+
+    <!--
+      isAdmin 판정 — 전사(사업장 무관) 노드 정/부 관리자 존재 여부. EXISTS 0/1.
+      (AppAdminAccessMapper.existsNodeAdminAnySite 와 동일 판정의 도메인 자체 보유본.)
+    -->
+    <select id="existsNodeAdminAnySite" resultType="int">
+    /* Notiset01Mapper.existsNodeAdminAnySite */
+    SELECT EXISTS(
+        SELECT 1
+          FROM TB_SITE_NODE
+         WHERE CMPNY_CD = #{cmpnyCd}
+           AND ( MAIN_ADMIN_CD = #{userCd} OR SUB_ADMIN_CD = #{userCd} )
+    )
+    </select>
+
+</mapper>

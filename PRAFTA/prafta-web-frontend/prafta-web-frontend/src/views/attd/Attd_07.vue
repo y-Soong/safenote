@@ -296,10 +296,6 @@
                 <col class="c-act-time" />
                 <col class="c-day" />
                 <col class="c-act-time" />
-                <col class="c-day" />
-                <col class="c-norm" />
-                <col class="c-day" />
-                <col class="c-norm" />
                 <!-- 2구간 -->
                 <col class="c-plan" />
                 <col class="c-plan" />
@@ -307,23 +303,17 @@
                 <col class="c-act-time" />
                 <col class="c-day" />
                 <col class="c-act-time" />
-                <col class="c-day" />
-                <col class="c-norm" />
-                <col class="c-day" />
-                <col class="c-norm" />
                 <col class="c-total" />
               </colgroup>
               <thead>
-                <!-- Level 1: 비고 / 날짜 / 계획·실적·표준화(1·2구간) / 근무시간 -->
+                <!-- Level 1: 비고 / 날짜 / 계획·실적(1·2구간) / 근무시간 -->
                 <tr class="lvl1">
                   <th class="l1-rs col-note" rowspan="2">비고</th>
                   <th class="date-h bdr-section" rowspan="2">날짜</th>
                   <th class="l2-plan bdr-section" colspan="2">계획 1</th>
                   <th class="l2-actual bdr-sub" colspan="4">실적 1</th>
-                  <th class="l2-norm bdr-sub" colspan="4">표준화 1</th>
                   <th class="l2-plan bdr-section" colspan="2">계획 2</th>
                   <th class="l2-actual bdr-sub" colspan="4">실적 2</th>
-                  <th class="l2-norm bdr-sub" colspan="4">표준화 2</th>
                   <th class="l1-rs bdr-section" rowspan="2">근무시간</th>
                 </tr>
                 <!-- Level 2: 컬럼명 -->
@@ -334,20 +324,12 @@
                   <th class="l3-actual">출근</th>
                   <th class="l3-actual">퇴근일자</th>
                   <th class="l3-actual">퇴근</th>
-                  <th class="l3-norm bdr-sub">출근일자</th>
-                  <th class="l3-norm">출근</th>
-                  <th class="l3-norm">퇴근일자</th>
-                  <th class="l3-norm">퇴근</th>
                   <th class="l3-plan bdr-section">시작</th>
                   <th class="l3-plan">종료</th>
                   <th class="l3-actual bdr-sub">출근일자</th>
                   <th class="l3-actual">출근</th>
                   <th class="l3-actual">퇴근일자</th>
                   <th class="l3-actual">퇴근</th>
-                  <th class="l3-norm bdr-sub">출근일자</th>
-                  <th class="l3-norm">출근</th>
-                  <th class="l3-norm">퇴근일자</th>
-                  <th class="l3-norm">퇴근</th>
                 </tr>
               </thead>
               <tbody>
@@ -368,10 +350,6 @@
                     <td class="col-actual">{{ valOrDash(r.otIn) }}</td>
                     <td class="col-actual">{{ valOrDash(r.otOutDate) }}</td>
                     <td class="col-actual">{{ valOrDash(r.otOut) }}</td>
-                    <td class="col-norm bdr-sub">−</td>
-                    <td class="col-norm">−</td>
-                    <td class="col-norm">−</td>
-                    <td class="col-norm">−</td>
                     <!-- 2구간: OT 행은 공란 -->
                     <td class="col-plan bdr-section">−</td>
                     <td class="col-plan">−</td>
@@ -379,10 +357,6 @@
                     <td class="col-actual">−</td>
                     <td class="col-actual">−</td>
                     <td class="col-actual">−</td>
-                    <td class="col-norm bdr-sub">−</td>
-                    <td class="col-norm">−</td>
-                    <td class="col-norm">−</td>
-                    <td class="col-norm">−</td>
                     <td class="bdr-section right">{{ valOrDash(r.total) }}</td>
                   </tr>
                   <!-- 정규근무 행 (kind === 'work') -->
@@ -430,13 +404,6 @@
                     <td class="col-actual">{{ valOrDash(r.a1In) }}</td>
                     <td class="col-actual">{{ valOrDash(r.a1OutDate) }}</td>
                     <td class="col-actual">{{ valOrDash(r.a1Out) }}</td>
-                    <!-- 1구간 표준화 -->
-                    <td class="col-norm bdr-sub">
-                      {{ valOrDash(r.n1InDate) }}
-                    </td>
-                    <td class="col-norm">{{ valOrDash(r.n1In) }}</td>
-                    <td class="col-norm">{{ valOrDash(r.n1OutDate) }}</td>
-                    <td class="col-norm">{{ valOrDash(r.n1Out) }}</td>
                     <!-- 2구간 계획 -->
                     <td class="col-plan bdr-section">
                       {{ valOrDash(r.p2Start) }}
@@ -449,13 +416,6 @@
                     <td class="col-actual">{{ valOrDash(r.a2In) }}</td>
                     <td class="col-actual">{{ valOrDash(r.a2OutDate) }}</td>
                     <td class="col-actual">{{ valOrDash(r.a2Out) }}</td>
-                    <!-- 2구간 표준화 -->
-                    <td class="col-norm bdr-sub">
-                      {{ valOrDash(r.n2InDate) }}
-                    </td>
-                    <td class="col-norm">{{ valOrDash(r.n2In) }}</td>
-                    <td class="col-norm">{{ valOrDash(r.n2OutDate) }}</td>
-                    <td class="col-norm">{{ valOrDash(r.n2Out) }}</td>
                     <!-- 근무시간 -->
                     <td class="bdr-section right">
                       {{ valOrDash(r.total) }}
@@ -851,29 +811,6 @@ const calcTotal = (r) => {
   return `${Math.floor(t / 60)}시간 ${String(t % 60).padStart(2, "0")}분`;
 };
 
-// 표준화 규칙 위반 판정 — 출근 올림(CEIL)/퇴근 내림(FLOOR) 결과 표준 출근시각이 표준
-//   퇴근시각 이상이면(출퇴근 시각이 같거나 매우 짧음) 표준화를 적용하지 않은 것으로 보고
-//   해당 구간 표준화 셀을 공백 처리한다(원본 실적은 옆 실적 컬럼에 그대로 표시됨).
-//   표준 출/퇴근 시각이 모두 있을 때만 판정(미등록/미산출이면 위반 아님). 표준 일자로 자정넘김 보정.
-const stdYmdToDate = (ymd) => {
-  const s = String(ymd ?? "");
-  if (s.length !== 8) return null;
-  return new Date(+s.slice(0, 4), +s.slice(4, 6) - 1, +s.slice(6, 8));
-};
-const isStdRuleViolated = (inDate, inTime, outDate, outTime) => {
-  if (!inTime || !outTime) return false;
-  const i = String(inTime);
-  const o = String(outTime);
-  if (i.length < 4 || o.length < 4) return false;
-  const sMin = parseInt(i.slice(0, 2), 10) * 60 + parseInt(i.slice(2, 4), 10);
-  const eMin = parseInt(o.slice(0, 2), 10) * 60 + parseInt(o.slice(2, 4), 10);
-  const dIn = stdYmdToDate(inDate);
-  const dOut = stdYmdToDate(outDate);
-  const gap =
-    dIn && dOut ? Math.round((dOut.getTime() - dIn.getTime()) / 86400000) : 0;
-  return eMin + gap * 1440 <= sMin;
-};
-
 // 캘린더 셀 데이터
 const getCell = (user, dayInfo) => {
   const r = recordMap.value[`${user.userId}_${dayInfo.day}`];
@@ -1017,20 +954,6 @@ function buildDetailRow(user, d) {
     `${workYm.value.replace("-", "")}${String(d.day).padStart(2, "0")}`;
   const { status, note } = detectAttdState(r, ymd);
 
-  // 표준화 규칙 위반 구간은 표준화 셀을 공백 처리(표준화 미적용 → 원본은 실적 컬럼에 그대로 표시).
-  const n1Violated = isStdRuleViolated(
-    r.act1InStdDate,
-    r.act1InStdTime,
-    r.act1OutStdDate,
-    r.act1OutStdTime
-  );
-  const n2Violated = isStdRuleViolated(
-    r.act2InStdDate,
-    r.act2InStdTime,
-    r.act2OutStdDate,
-    r.act2OutStdTime
-  );
-
   return {
     kind: "work",
     rowKey: `work_${d.day}`,
@@ -1042,20 +965,12 @@ function buildDetailRow(user, d) {
     a1In: fmtTimeSec(r.act1InTime),
     a1OutDate: fmtMmdd(r.act1OutDate),
     a1Out: fmtTimeSec(r.act1OutTime),
-    n1InDate: n1Violated ? "" : fmtMmdd(r.act1InStdDate),
-    n1In: n1Violated ? "" : fmtTime(r.act1InStdTime),
-    n1OutDate: n1Violated ? "" : fmtMmdd(r.act1OutStdDate),
-    n1Out: n1Violated ? "" : fmtTime(r.act1OutStdTime),
     p2Start: fmtTime(r.plan2Start),
     p2End: fmtTime(r.plan2End),
     a2InDate: fmtMmdd(r.act2InDate),
     a2In: fmtTimeSec(r.act2InTime),
     a2OutDate: fmtMmdd(r.act2OutDate),
     a2Out: fmtTimeSec(r.act2OutTime),
-    n2InDate: n2Violated ? "" : fmtMmdd(r.act2InStdDate),
-    n2In: n2Violated ? "" : fmtTime(r.act2InStdTime),
-    n2OutDate: n2Violated ? "" : fmtMmdd(r.act2OutStdDate),
-    n2Out: n2Violated ? "" : fmtTime(r.act2OutStdTime),
     total: calcTotal(r),
     note,
     status,
@@ -1127,20 +1042,12 @@ function emptyRow(d, status) {
     a1In: "",
     a1OutDate: "",
     a1Out: "",
-    n1InDate: "",
-    n1In: "",
-    n1OutDate: "",
-    n1Out: "",
     p2Start: "",
     p2End: "",
     a2InDate: "",
     a2In: "",
     a2OutDate: "",
     a2Out: "",
-    n2InDate: "",
-    n2In: "",
-    n2OutDate: "",
-    n2Out: "",
     total: "",
     note: "",
     status,
@@ -2027,8 +1934,8 @@ table.a07-detail-table {
   border-collapse: separate;
   border-spacing: 0;
   table-layout: fixed;
-  /* col 너비 합계와 일치해야 한다. c-total 을 110px 로 넓힌 만큼(+20px) 함께 증가 */
-  width: 1558px;
+  /* col 너비 합계와 일치해야 한다(표준화 컬럼 제거: 비고120+날짜80+구간1 392+구간2 392+근무시간110). */
+  width: 1094px;
   font-size: 0.75rem;
   font-family: "Pretendard", sans-serif;
 }
@@ -2043,9 +1950,6 @@ table.a07-detail-table col.c-act-time {
 }
 table.a07-detail-table col.c-day {
   width: 56px;
-}
-table.a07-detail-table col.c-norm {
-  width: 60px;
 }
 table.a07-detail-table col.c-total {
   /* 근무시간 값(예: "12시간 00분")이 잘리지 않도록 90px → 110px 로 확대 */
@@ -2114,11 +2018,6 @@ table.a07-detail-table th.l2-actual,
 table.a07-detail-table th.l3-actual {
   background: #f7f7f2;
 }
-table.a07-detail-table th.l2-norm,
-table.a07-detail-table th.l3-norm {
-  background: #ecf7ee;
-  color: #15803d;
-}
 
 /* 셀 */
 table.a07-detail-table td {
@@ -2151,9 +2050,6 @@ table.a07-detail-table td.col-plan {
 }
 table.a07-detail-table td.col-actual {
   background: #fbfbf7;
-}
-table.a07-detail-table td.col-norm {
-  background: #f4fbf6;
 }
 
 /* 그룹 경계선 */
@@ -2207,7 +2103,6 @@ table.a07-detail-table tr.off td {
   color: var(--color-text-muted, #9a9a95);
 }
 table.a07-detail-table tr.off td.col-plan,
-table.a07-detail-table tr.off td.col-norm,
 table.a07-detail-table tr.off td.col-actual {
   background: #f4f4f0;
 }
@@ -2216,7 +2111,6 @@ table.a07-detail-table tr.alert td {
   cursor: pointer;
 }
 table.a07-detail-table tr.alert td.col-plan,
-table.a07-detail-table tr.alert td.col-norm,
 table.a07-detail-table tr.alert td.col-actual {
   background: #fbf7e5;
 }
@@ -2311,9 +2205,6 @@ table.a07-detail-table tr.ot-row td.col-plan {
   background: #f6f2fb;
 }
 table.a07-detail-table tr.ot-row td.col-actual {
-  background: #f6f2fb;
-}
-table.a07-detail-table tr.ot-row td.col-norm {
   background: #f6f2fb;
 }
 table.a07-detail-table tr.ot-row td.date {

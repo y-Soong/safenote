@@ -39,17 +39,6 @@
         </div>
       </section>
 
-      <!-- 공정 (COM002, 선택) -->
-      <section class="nmr-field">
-        <p class="nmr-label">공정 <span class="nmr-optional">(선택)</span></p>
-        <select v-model="processCd" class="nmr-select">
-          <option value="">선택 안 함</option>
-          <option v-for="p in processOptions" :key="p.code" :value="p.code">
-            {{ p.label }}
-          </option>
-        </select>
-      </section>
-
       <!-- 발생일시 (필수) -->
       <section class="nmr-field">
         <p class="nmr-label">발생일시 <span class="nmr-req" aria-hidden="true">*</span></p>
@@ -202,20 +191,18 @@ const showAlert = (message) => {
 // 코드 옵션 (SYS061 사건유형 / SYS062 잠재중대성).
 //   - 진입 시 /comApi/baseinfo/syst-info-lists 로 SYS061/SYS062 를 동적 조회한다(JoinUser 패턴).
 //   - 조회 실패 시 아래 정적 fallback(코드 시드와 동일) 으로 폼이 동작하도록 유지한다.
-//   - 공정(COM002)은 앱 측 조회 엔드포인트가 없고 선택 항목이라 빈 목록으로 둔다("선택 안 함"만 노출).
+//   - 공통 엔드포인트가 그룹마다 '전체'(상세코드 null) 행을 UNION 으로 끼워넣으므로,
+//     보고 폼에서는 의미 없는 '전체' 항목을 toOptions 에서 제외한다.
 // ───────────────────────────────────────────────────────────
 const incidentTypeOptions = ref([
   { code: '100', label: '아차사고' },
   { code: '200', label: '경미사고' },
-  { code: '300', label: '유해·위험요인 발견' },
 ])
 const severityOptions = ref([
   { code: '100', label: '경미' },
   { code: '200', label: '중대' },
   { code: '300', label: '치명' },
 ])
-// COM002 공정: 앱 전용 조회 엔드포인트 부재 + 선택 항목 → 빈 목록 유지(셀렉트는 "선택 안 함"만 표시).
-const processOptions = ref([])
 
 // SYS061/SYS062 코드 동적 로딩. 실패해도 정적 fallback 으로 폼은 동작.
 const loadCodeOptions = async () => {
@@ -226,7 +213,8 @@ const loadCodeOptions = async () => {
     const list = res?.data?.systInfoList || []
     const toOptions = (groupCd) =>
       list
-        .filter((it) => it.systValCd === groupCd)
+        // 상세코드(systValDCd) 가 null 인 행은 공통 '전체' sentinel → 보고 폼에서는 제외.
+        .filter((it) => it.systValCd === groupCd && it.systValDCd != null)
         .sort((a, b) => (a.sortIdx ?? 0) - (b.sortIdx ?? 0))
         .map((it) => ({ code: it.systValDCd, label: it.systValDNm }))
 
@@ -244,7 +232,6 @@ const loadCodeOptions = async () => {
 // 입력 상태
 // ───────────────────────────────────────────────────────────
 const incidentTypeCd = ref('100') // 기본 아차사고
-const processCd = ref('')
 const occurDate = ref('') // 'YYYY-MM-DD' (DateStepperField) — 진입 시 오늘 기본값(onMounted)
 const occurTime = ref('') // 'HH:MM' 24h (TimeStepperField) — 진입 시 현재시각 기본값(onMounted)
 const locationDesc = ref('')
@@ -317,7 +304,6 @@ const onSubmit = async () => {
   try {
     const formData = new FormData()
     formData.append('incidentTypeCd', incidentTypeCd.value)
-    if (processCd.value) formData.append('processCd', processCd.value)
     // 일자('YYYY-MM-DD') + 시각('HH:MM') → 서버 포맷('YYYY-MM-DD HH:mm')
     formData.append('occurDtime', `${occurDate.value} ${occurTime.value}`)
     if (locationDesc.value.trim()) formData.append('locationDesc', locationDesc.value.trim())

@@ -19,6 +19,8 @@ import com.prafta.common.cmm.leave.mapper.LeaveDashboardMapper;
 import com.prafta.common.cmm.leave.service.LeaveDashboardService;
 import com.prafta.common.cmm.leave.service.LeaveGrantEngineService;
 import com.prafta.common.cmm.leave.service.LeavePolicyService;
+import com.prafta.common.cmm.leave.util.FiscalYearUtils;
+import com.prafta.common.cmm.leave.vo.AppliedLeaveTypeVO;
 import com.prafta.common.cmm.leave.vo.HireDateGrantResultVO;
 import com.prafta.common.cmm.leave.vo.LeaveBalanceVO;
 import com.prafta.common.cmm.leave.vo.LeaveDashboardItemVO;
@@ -291,14 +293,50 @@ public class LeaveDashboardServiceImpl implements LeaveDashboardService {
 
         List<LeaveGrantHistoryRowVO> history = leaveDashboardMapper.selectGrantHistory(cmpnyCd, userCd);
 
-        log.info("연차 상세 조회. cmpnyCd={}, userCd={}, history건수={}", cmpnyCd, userCd, history.size());
+        // 신청형 휴가(LEAVE_TYPE='01') 타입별 잔여 — 법정/법정외와 합산하지 않는 별도 섹션.
+        // 당해 회계연도 경계는 활성 정책 AXIS2(시작 월/일)로 산출(NULL이면 01/01 폴백 — 유틸 처리).
+        List<AppliedLeaveTypeVO> appliedLeaveTypes = buildAppliedLeaveTypes(cmpnyCd, userCd, activePolicy);
+
+        log.info("연차 상세 조회. cmpnyCd={}, userCd={}, history건수={}, 신청형타입건수={}",
+                cmpnyCd, userCd, history.size(), appliedLeaveTypes.size());
 
         return LeaveDetailResultVO.builder()
                 .user(header)
                 .legalSummary(legalSummary)
                 .nonLegalSummary(nonLegalSummary)
+                .appliedLeaveTypes(appliedLeaveTypes)
                 .grantHistory(history)
                 .build();
+    }
+
+    /**
+     * 신청형 휴가(사용자 신청 LEAVE_TYPE='01') 타입별 잔여 현황 산출.
+     *
+     * <p>법정연차(STATUTORY_*)/관리자부여(02) 그룹과 절대 합산하지 않고 타입별 별도 항목으로 반환한다.
+     * 각 타입:
+     * <ul>
+     *   <li>한도 = MAX_APLY_DAYS (NULL이면 한도 0 = 잔여 0, fail-closed).</li>
+     *   <li>사용 = 당해 회계연도 CONFIRMED 사용 합계(SQL 산출).</li>
+     *   <li>잔여 = 한도 − 사용 (음수면 0 클램프 — 표시 안정성).</li>
+     * </ul>
+     * 당해 회계연도 경계는 활성 정책 AXIS2 시작 월/일로 {@link FiscalYearUtils}가 산출한다(NULL/공백 → 01/01).
+     */
+    private List<AppliedLeaveTypeVO> buildAppliedLeaveTypes(String cmpnyCd, String userCd, LeavePolicyVO activePolicy) {
+        String startMm = (activePolicy == null) ? null : activePolicy.getAxis2FiscalStartMm();
+        String startDd = (activePolicy == null) ? null : activePolicy.getAxis2FiscalStartDd();
+        FiscalYearUtils.FiscalWindow window = FiscalYearUtils.fiscalWindow(LocalDate.now(), startMm, startDd);
+
+        List<AppliedLeaveTypeVO> types = leaveDashboardMapper.selectAppliedLeaveTypes(
+                cmpnyCd, userCd, window.fiscalStartYmd(), window.fiscalEndYmdExclusive());
+
+        for (AppliedLeaveTypeVO t : types) {
+            // 한도 NULL → 0 (fail-closed). 사용은 SQL IFNULL로 0 보장이나 방어적으로 0 처리.
+            int limit = (t.getMaxAplyDays() == null) ? 0 : t.getMaxAplyDays();
+            int used = (t.getUsedDays() == null) ? 0 : t.getUsedDays();
+            int remain = limit - used;
+            t.setRemainDays(Math.max(remain, 0));
+        }
+        return types;
     }
 
     // ============================================================

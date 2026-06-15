@@ -196,6 +196,21 @@ public class User01Controller {
     	return ResponseEntity.status(HttpStatus.OK).body(response);
     }
 
+    // ===== PRAFTA-COM-008-E-5 - 기본 근무타입 select 옵션(대상 사업장 활성 근무타입) =====
+
+    @GetMapping("/sch-type-options")
+    public ResponseEntity<?> getSchTypeOptions(
+            @RequestParam("siteCd") String siteCd,
+            @RequestHeader(value = "Authorization", required = false) String authorization) {
+
+        // 회사 스코프는 토큰에서만 도출(cross-tenant 방지). siteCd 는 화면 선택값.
+        com.prafta.common.dto.TokenInfo tokenInfo = jwtUtil.getAllClaimsAsMap(authorization);
+        String cmpnyCd = (tokenInfo == null) ? null : tokenInfo.gv_cmpnyCd();
+
+        return ResponseEntity.status(HttpStatus.OK)
+                .body(user01Service.getSchTypeOptions(cmpnyCd, siteCd));
+    }
+
     // ===== PRAFTA-036 - 관리자 단건 사용자 생성 (UserInfoPop callmethod_p='C' 모드) =====
 
     @PostMapping("/insert-user-info")

@@ -83,6 +83,12 @@
       </label>
     </section>
 
+    <!-- prafta-com-008-D-5: 교대팀 소속 기간 안내 배너 (제출 차단). 연차는 사용 가능 안내. -->
+    <p v-if="shiftLocked" class="shift-lock-notice">
+      <span class="shift-lock-notice__dot" aria-hidden="true">·</span>
+      교대근무팀 소속 기간은 근무계획을 변경할 수 없어요. 연차는 사용할 수 있어요.
+    </p>
+
     <!-- 결재선 (prafta-app-009) -->
     <!-- selfApprvYn='N'(또는 미상=폴백) → 결재선 섹션 노출. 'Y' → 안내문만(서버 분기 위임). -->
     <ApprovalLineSection
@@ -116,6 +122,7 @@
       v-model="sheetOpen"
       :options="schedOptions"
       :selected="schCd"
+      :user-default-sch-cd="userDefaultSchCd"
       :loading="optLoading"
       :error="optError"
       @apply="onPickSched"
@@ -158,9 +165,17 @@ const reqReason = ref('')
 
 // 스케줄 옵션 조회 상태
 const schedOptions = ref([])
+// prafta-com-008-E-9b: 사용자 본인 기본 근무타입(DEFAULT_SCH_CD). 사업장 BASE_YN 폐기 대체.
+//   "기본" 칩 표시·상단 정렬 기준(미설정 시 null/'').
+const userDefaultSchCd = ref('')
 const optLoading = ref(false)
 const optError = ref(false)
 const sheetOpen = ref(false)
+
+// prafta-com-008-D-5: 대상 일자가 교대팀 소속 구간이면 true(BE shiftLocked). 제출 차단 + 안내 배너.
+//   판정 근거는 서버(/appApi/req07/schedules?workYmd=...) — D-1 술어 재사용(신규 쿼리 없음).
+//   최종 차단은 BE registerSchedModify 의 D-3 가드(ATTD_400_160)가 강제한다(프론트는 사전 안내).
+const shiftLocked = ref(false)
 
 // ── 결재선 상태 (prafta-app-009) ─────────────────────────────────────────
 // approverList: [{ approverUserCd, userNm, userId, rankNm, nodeNm }] (순서 = 결재 단계)
@@ -208,9 +223,14 @@ const buildLabel = (s) => {
 // 트리거 버튼 표시 라벨
 const triggerLabel = computed(() => (schCd.value ? selectedSchNm.value : '스케줄을 선택해 주세요'))
 
-// 옵션 0건 또는 조회 실패 시 트리거 비활성 (제출 차단)
+// 옵션 0건 또는 조회 실패 시 트리거 비활성 (제출 차단).
+// prafta-com-008-D-5: 교대 잠금 기간이면 스케줄 선택 자체를 비활성(제출 차단).
 const optDisabled = computed(
-  () => optLoading.value || optError.value || schedOptions.value.length === 0,
+  () =>
+    optLoading.value ||
+    optError.value ||
+    schedOptions.value.length === 0 ||
+    shiftLocked.value,
 )
 
 // 컨텍스트 표시 (workYmd → "YYYY년 M월 D일")
@@ -225,6 +245,8 @@ const ctxSiteDisplay = computed(() => props.context.siteName || '')
 // 사유 미입력은 버튼 비활성 사유에서 제외(제출 시 사유 전용 alert 로 안내).
 //   결재 필수('N') 케이스는 결재자 1명 이상이어야 제출 활성.
 const isValid = computed(() => {
+  // prafta-com-008-D-5: 교대팀 소속 기간이면 제출 불가.
+  if (shiftLocked.value) return false
   if (!schCd.value) return false
   if (approverRequired.value && approverList.value.length === 0) return false
   return true
@@ -271,17 +293,30 @@ const fetchSchedOptions = async () => {
   optLoading.value = true
   optError.value = false
   try {
-    const { data } = await api.get('/appApi/req07/schedules')
+    // prafta-com-008-D-5: 대상 일자(workYmd) 동반 전송 → 교대 잠금 여부(shiftLocked) 수신.
+    //   식별값(회사/사업장/사용자)은 서버가 JWT 로 도출(본인 한정). workYmd 만 쿼리로 보낸다.
+    const { data } = await api.get('/appApi/req07/schedules', {
+      params: { workYmd: props.context.workYmd },
+    })
     const list = Array.isArray(data?.schedules) ? data.schedules : []
-    schedOptions.value = list.map((s) => ({
+    shiftLocked.value = !!data?.shiftLocked
+    // prafta-com-008-E-9b: 본인 기본 근무타입(DEFAULT_SCH_CD)으로 "기본" 칩/정렬 기준 전환.
+    userDefaultSchCd.value = data?.userDefaultSchCd || ''
+    const mapped = list.map((s) => ({
       schCd: s.schCd,
       schNo: s.schNo,
-      baseYn: s.baseYn,
       label: buildLabel(s),
     }))
+    // 본인 기본 근무타입을 상단으로 정렬(나머지 순서 보존 — 안정 정렬).
+    const def = userDefaultSchCd.value
+    schedOptions.value = def
+      ? [...mapped].sort((a, b) => (a.schCd === def ? -1 : 0) - (b.schCd === def ? -1 : 0))
+      : mapped
   } catch (e) {
     optError.value = true
     schedOptions.value = []
+    userDefaultSchCd.value = ''
+    shiftLocked.value = false
   } finally {
     optLoading.value = false
   }
@@ -290,6 +325,11 @@ const fetchSchedOptions = async () => {
 onMounted(fetchSchedOptions)
 
 const onSubmit = () => {
+  // prafta-com-008-D-5: 교대팀 소속 기간이면 제출 차단(서버 D-3 가드가 최종 강제하나 사전 안내).
+  if (shiftLocked.value) {
+    showAlert('교대근무팀 소속 기간은 근무계획을 변경할 수 없어요. 연차는 사용할 수 있어요.')
+    return
+  }
   // 사유 전용 가드(버튼은 기본 활성 → 빈값 제출 시 사유 안내).
   if (!reqReason.value.trim()) {
     showAlert('사유를 입력해 주세요.')
@@ -483,6 +523,22 @@ const onSubmit = () => {
 }
 .aprv-notice__dot {
   color: var(--color-primary);
+}
+
+/* prafta-com-008-D-5: 교대 잠금 안내 배너(제출 차단). danger 톤으로 강조. */
+.shift-lock-notice {
+  margin: 0;
+  padding: var(--space-sm) var(--space-md);
+  background: var(--color-danger-tint);
+  border: 0.5px solid var(--color-danger);
+  border-radius: var(--radius-md);
+  font-size: 12px;
+  color: var(--color-danger);
+  display: flex;
+  gap: var(--space-xs);
+}
+.shift-lock-notice__dot {
+  color: var(--color-danger);
 }
 
 /* 헬퍼 */

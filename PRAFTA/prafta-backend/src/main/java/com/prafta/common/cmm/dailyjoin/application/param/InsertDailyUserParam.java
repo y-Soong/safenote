@@ -17,6 +17,7 @@ public record InsertDailyUserParam(
     String cmpnyCd
     , String siteCd
     , String userId
+    , String userPw
     , String userNm
     , String mblNo
     , String certNo
@@ -35,6 +36,7 @@ public record InsertDailyUserParam(
                 || request.getCmpnyCd() == null || request.getCmpnyCd().isBlank()
                 || request.getSiteCd() == null || request.getSiteCd().isBlank()
                 || request.getUserId() == null || request.getUserId().isBlank()
+                || request.getUserPw() == null || request.getUserPw().isBlank()
                 || request.getUserNm() == null || request.getUserNm().isBlank()
                 || request.getMblNo() == null || request.getMblNo().isBlank()
                 || request.getCertNo() == null || request.getCertNo().isBlank()) {
@@ -45,6 +47,7 @@ public record InsertDailyUserParam(
         DailyJoinValidators.validateCmpnyCd(request.getCmpnyCd());
         DailyJoinValidators.validateSiteCd(request.getSiteCd());
         DailyJoinValidators.validateUserId(request.getUserId());
+        DailyJoinValidators.validatePassword(request.getUserPw());
         DailyJoinValidators.validateUserNm(request.getUserNm());
         DailyJoinValidators.validateCertNo(request.getCertNo());
         DailyJoinValidators.validateMblNo(request.getMblNo());
@@ -64,6 +67,7 @@ public record InsertDailyUserParam(
             request.getCmpnyCd()
             , request.getSiteCd()
             , request.getUserId()
+            , request.getUserPw()
             , request.getUserNm()
             , request.getMblNo()
             , request.getCertNo()

@@ -1,0 +1,95 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.prafta.common.cmm.dailyuser.mapper.DailyUserMapper">
+
+    <!-- PRAFTA-app-027-1: 만료 일용직 일괄 비활성.
+         WORK_EXPIRE_DATE(YYYYMMDD) < 오늘 AND USE_YN='Y' 대상 →
+         USE_YN='N' + ACCOUNT_STATUS='05'(비활성화). 이미 'N'이면 조건 제외(멱등).
+         단, 고정 슬롯(FIXED_YN='Y')을 점유 중인 일용직은 만료 비활성에서 제외(점유 유지 의미 보장). -->
+    <update id="updateExpireDailyUsers">
+    /* DailyUserMapper.updateExpireDailyUsers */
+    UPDATE TB_DAILY_USER d
+    SET d.USE_YN          = 'N'
+        , d.ACCOUNT_STATUS = '05'
+        , d.UPDATE_NO      = #{updateNo}
+        , d.UPDATE_DATE    = NOW()
+    WHERE d.WORK_EXPIRE_DATE &lt; #{todayYmd}
+      AND d.USE_YN = 'Y'
+      AND NOT EXISTS (
+            SELECT 1
+            FROM TB_DAILY_USER_SLOT s
+            WHERE s.CMPNY_CD = d.CMPNY_CD
+              AND s.CURR_USER_CD = d.USER_CD
+              AND s.FIXED_YN = 'Y'
+          )
+    </update>
+
+    <!-- ============================================================
+         만료 시 자원 반납(슬롯/TB_USER/SITE_AUTH) — 멱등.
+         만료 대상 = TB_DAILY_USER.WORK_EXPIRE_DATE < 오늘.
+         아래 1~3 은 updateExpireDailyUsers 보다 먼저 실행한다(만료 대상은 D 의
+         WORK_EXPIRE_DATE 만으로 판정하므로 D 의 USE_YN 전이 순서와 무관, 멱등).
+         ============================================================ -->
+
+    <!-- 1) 만료 일용직이 점유 중이던 슬롯 반납.
+         고정슬롯(FIXED_YN='Y')은 반납하지 않고 점유 유지. 이미 비점유면 제외(멱등). -->
+    <update id="releaseExpiredDailyUserSlots">
+    /* DailyUserMapper.releaseExpiredDailyUserSlots */
+    UPDATE TB_DAILY_USER_SLOT s
+        JOIN TB_DAILY_USER d
+          ON s.CMPNY_CD = d.CMPNY_CD
+         AND s.SITE_CD  = d.SITE_CD
+         AND s.CURR_USER_CD = d.USER_CD
+    SET s.SLOT_STATUS   = '01'
+        , s.CURR_USER_CD = NULL
+        , s.UPDATE_NO    = #{updateNo}
+        , s.UPDATE_DATE  = NOW()
+    WHERE d.WORK_EXPIRE_DATE &lt; #{todayYmd}
+      AND s.FIXED_YN &lt;&gt; 'Y'
+      AND s.SLOT_STATUS = '02'
+    </update>
+
+    <!-- 2) 통합형 — 만료 일용직의 TB_USER 행 비활성.
+         EMPLOYMENT_TYPE='DAILY' 가드로 정규 사용자 오전이 절대 차단. 이미 'N'이면 영향 0(멱등). -->
+    <update id="deactivateExpiredTbUser">
+    /* DailyUserMapper.deactivateExpiredTbUser */
+    UPDATE TB_USER u
+        JOIN TB_DAILY_USER d
+          ON u.CMPNY_CD = d.CMPNY_CD
+         AND u.USER_CD  = d.USER_CD
+    SET u.USE_YN          = 'N'
+        , u.ACCOUNT_STATUS = '05'
+        , u.UPDATE_NO      = #{updateNo}
+        , u.UPDATE_DATE    = NOW()
+    WHERE d.WORK_EXPIRE_DATE &lt; #{todayYmd}
+      AND u.EMPLOYMENT_TYPE = 'DAILY'
+      AND u.USE_YN = 'Y'
+      AND NOT EXISTS (
+            SELECT 1
+            FROM TB_DAILY_USER_SLOT s
+            WHERE s.CMPNY_CD = d.CMPNY_CD
+              AND s.CURR_USER_CD = d.USER_CD
+              AND s.FIXED_YN = 'Y'
+          )
+    </update>
+
+    <!-- 3) 통합형 — 만료 일용직의 TB_USER_SITE_AUTH 행 비활성.
+         EMPLOYMENT_TYPE='DAILY' 가드로 정규 사용자 권한 오전이 차단. 이미 'N'이면 영향 0(멱등). -->
+    <update id="deactivateExpiredTbUserSiteAuth">
+    /* DailyUserMapper.deactivateExpiredTbUserSiteAuth */
+    UPDATE TB_USER_SITE_AUTH sa
+        JOIN TB_USER u
+          ON sa.CMPNY_CD = u.CMPNY_CD
+         AND sa.USER_CD  = u.USER_CD
+        JOIN TB_DAILY_USER d
+          ON u.CMPNY_CD = d.CMPNY_CD
+         AND u.USER_CD  = d.USER_CD
+    SET sa.USE_YN       = 'N'
+        , sa.UPDATE_NO   = #{updateNo}
+        , sa.UPDATE_DATE = NOW()
+    WHERE d.WORK_EXPIRE_DATE &lt; #{todayYmd}
+      AND u.EMPLOYMENT_TYPE = 'DAILY'
+      AND sa.USE_YN = 'Y'
+    </update>
+
+</mapper>

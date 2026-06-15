@@ -362,4 +362,16 @@
       AND N.DEL_YN = 'N'
     </select>
 
+    <!-- 전사(사업장 무관) 노드 정/부 관리자 존재 카운트(등록/첨부업로드 게이트용).
+         access-context AppAdminAccessMapper.existsNodeAdminAnySite 와 동일 의미.
+         자료실=회사 전체 공통이라 전사 기준. CMPNY_CD 스코프, #{} 바인딩. -->
+    <select id="countNodeAdminAnySite" resultType="int">
+    /* Archive02Mapper.countNodeAdminAnySite */
+    SELECT
+        COUNT(1)
+    FROM TB_SITE_NODE
+    WHERE CMPNY_CD = #{cmpnyCd}
+      AND ( MAIN_ADMIN_CD = #{userCd} OR SUB_ADMIN_CD = #{userCd} )
+    </select>
+
 </mapper>

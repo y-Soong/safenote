@@ -90,8 +90,8 @@ public class Attd05Controller {
     @PostMapping("/delete-user-work-plan-cells")
     public ResponseEntity<?> deleteUserWorkPlanCells(@RequestBody List<WorkPlanCellDeleRequst> request, @RequestHeader(value = "Authorization", required = false) String authorization) {
 
-    	attd05Service.deleteUserWorkPlanCells(WorkPlanCellDeleParam.from(request, jwtUtil.getAllClaimsAsMap(authorization)));
-
-        return ResponseEntity.status(HttpStatus.OK).build();
+    	// prafta-com-008-E (M2): 승인기반 연차 셀 skip 사유/카운트를 본문으로 반환(프론트 사용자 안내용).
+    	return ResponseEntity.status(HttpStatus.OK).body(
+    			attd05Service.deleteUserWorkPlanCells(WorkPlanCellDeleParam.from(request, jwtUtil.getAllClaimsAsMap(authorization))));
     }
 }

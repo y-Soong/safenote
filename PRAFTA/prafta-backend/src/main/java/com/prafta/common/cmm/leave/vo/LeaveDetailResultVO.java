@@ -8,7 +8,7 @@ import lombok.Getter;
 /**
  * 직원별 연차 상세(attd09) 조회 결과 집합(서비스 산출).
  *
- * <p>프론트 계약: {@code { user, legalSummary, nonLegalSummary, grantHistory }}.
+ * <p>프론트 계약: {@code { user, legalSummary, nonLegalSummary, appliedLeaveTypes, grantHistory }}.
  */
 @Getter
 @Builder
@@ -22,6 +22,12 @@ public class LeaveDetailResultVO {
 
     /** 법정외 휴가 요약 (부여/사용/잔여) */
     private final LeaveSummaryVO nonLegalSummary;
+
+    /**
+     * 신청형 휴가(사용자 신청 LEAVE_TYPE='01') 타입별 잔여 현황.
+     * 법정/법정외 그룹과 합산하지 않고 별도 섹션으로 노출(타입별 한도/사용/잔여).
+     */
+    private final List<AppliedLeaveTypeVO> appliedLeaveTypes;
 
     /** 부여 이력 (GRANT_DATE 내림차순) */
     private final List<LeaveGrantHistoryRowVO> grantHistory;

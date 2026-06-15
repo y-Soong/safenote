@@ -42,6 +42,9 @@
         <!-- 메타 카드 (입사일 / 근속 / 사용률) -->
         <LeaveMetaCard :user="user" :usage-rate="currentUsageRate" />
 
+        <!-- 신청형 휴가 (LEAVE_TYPE='01') — 법정/관리자부여 그룹과 분리된 별도 섹션. 항목 1개 이상일 때만 노출. -->
+        <LeaveAppliedCard v-if="hasAppliedLeave" :types="appliedLeaveTypes" />
+
         <!-- 빈 상태 (로드 완료했으나 데이터 없음) -->
         <p v-if="showEmptyState" class="lv-empty">표시할 연차 정보가 없어요</p>
       </template>
@@ -105,6 +108,7 @@ import LeaveExpiryCallout from './components/LeaveExpiryCallout.vue'
 import LeaveBalanceCard from './components/LeaveBalanceCard.vue'
 import LeaveSplitKpi from './components/LeaveSplitKpi.vue'
 import LeaveMetaCard from './components/LeaveMetaCard.vue'
+import LeaveAppliedCard from './components/LeaveAppliedCard.vue'
 
 const router = useRouter()
 const { proxy } = getCurrentInstance() || { proxy: null }
@@ -128,6 +132,8 @@ const isLoading = ref(true)
 const user = ref(null)
 const groups = ref(null)
 const expiringSoon = ref(null)
+// 신청형 휴가(LEAVE_TYPE='01') 타입별 항목 — 법정/관리자부여(groups)와 분리. [{leaveCd,leaveNm,maxAplyDays,usedDays,remainDays}]
+const appliedLeaveTypes = ref([])
 
 // 그룹 토글 (UI 상태 — 허용 범위). 진입 기본값: 전체
 const activeGroup = ref('TOTAL')
@@ -157,6 +163,11 @@ const showCallout = computed(
 // 푸터 활성: 현재 토글 그룹 잔여 > 0 (§3.5)
 //   ⚠️ Q7: 진입/신청 라우팅 미확정. 활성 판정은 잔여 기준만.
 const canApply = computed(() => (currentGroup.value?.remaining ?? 0) > 0)
+
+// 신청형 휴가 섹션 노출: 항목 1개 이상(서버 권위값 그대로 표시, 재계산 없음).
+const hasAppliedLeave = computed(
+  () => Array.isArray(appliedLeaveTypes.value) && appliedLeaveTypes.value.length > 0,
+)
 
 // 빈 상태: 로드 완료 + 부여 데이터 전무
 const showEmptyState = computed(() => !isLoading.value && !groups.value)
@@ -189,6 +200,9 @@ onMounted(async () => {
     user.value = res?.data?.user ?? null
     groups.value = res?.data?.groups ?? null
     expiringSoon.value = res?.data?.expiringSoon ?? null
+    appliedLeaveTypes.value = Array.isArray(res?.data?.appliedLeaveTypes)
+      ? res.data.appliedLeaveTypes
+      : []
   } catch (e) {
     console.error('[MyLeaveSummary] 연차 현황 조회 실패:', e?.message)
     showAlert('연차 정보를 불러오지 못했어요. 잠시 후 다시 시도해 주세요.')

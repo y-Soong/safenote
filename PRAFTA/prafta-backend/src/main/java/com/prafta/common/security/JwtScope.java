@@ -40,6 +40,15 @@ public final class JwtScope {
      */
     public static final String ARCHIVE_FILE_DL = "ARCHIVE_FILE_DL";
 
+    /**
+     * 기본 근무타입 설정 게이트 전용 단기 토큰 (PRAFTA-COM-008-E-8).
+     *
+     * <p>로그인 직후 DEFAULT_SCH_CD 미설정 + 교대팀 비소속이면 정식 토큰 대신 발급되어
+     * /login/set-default-sch 만 통과한다. 설정 저장 + 즉시 생성 후 정식 LoginResponse 로 교체한다.
+     * PHONE_AUTH(인증대기) 통과 후에만 평가되는 후순위 게이트(D-E2). claim: gv_cmpnyCd / gv_userCd / gv_scope.
+     */
+    public static final String DEFAULT_SCH = "DEFAULT_SCH";
+
     private JwtScope() {
         // 상수 카탈로그 — 인스턴스화 방지
     }

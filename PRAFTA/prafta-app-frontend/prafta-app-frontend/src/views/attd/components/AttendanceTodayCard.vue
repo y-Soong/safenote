@@ -2,13 +2,13 @@
   AttendanceTodayCard.vue — 오늘 근태 카드 (5 변형 통합)
   - 작업 ID: APP002-06 (UI 명세: UI-A002) / 보완: prafta-app-014-C (UI-A014-1)
   - 시안 화면 1~5: 근무중 / 퇴근완료 / 사업장다름 / 2구간 / 퇴근미등록
-  - 정책: attd §7.1~7.3, §10.1~10.2, §11.1 / 시안 §3.1·§3.5·§3.6·§4.2
-  - 3행(스케줄/근태/표준화) 구조는 구간(slot)마다 반복. slotCount>=2 면 구분선으로 분리.
+  - 정책: attd §7.1~7.3, §11.1 / 시안 §3.1·§3.5·§3.6·§4.2
+  - 2행(스케줄/근태) 구조는 구간(slot)마다 반복. slotCount>=2 면 구분선으로 분리.
   - 활성/비활성은 detail.actions(서버 산출) 표시만. 비즈니스 판정 금지.
   - 참조 패턴: views/main/components/AttendanceCard.vue (badge/btn/HHMM 포맷)
   - prafta-app-013: "수정 요청"은 항상 활성(4액션 시트를 연다). 개별 게이팅은 시트가 담당.
   - prafta-app-014: 슬롯/버튼 판정을 isTwoSlot → slotCount(서버) 로 이관.
-      스케줄 미대응 슬롯(slot.schedule==null)은 표준화 행 숨김 + "스케줄 없음(추가근무)" 표기(D2).
+      스케줄 미대응 슬롯(slot.schedule==null)은 "스케줄 없음(추가근무)" 표기(D2).
       primary "출근" 버튼은 actions.canCheckIn(서버 effective 산출) 단독 기준(D4).
 -->
 <template>
@@ -77,32 +77,6 @@
             <div v-if="attendanceMetaHtml(slot)" class="tm" v-html="attendanceMetaHtml(slot)"></div>
           </div>
         </div>
-
-        <!--
-          표준화 — 스케줄 대응 슬롯에만 노출(D2).
-          스케줄 미대응(추가 출근) 슬롯은 표준화 자체가 비대상 → 행 숨김.
-        -->
-        <div
-          v-if="slotHasSchedule(slot)"
-          class="tw st"
-          :class="{ x: !stdApplied(slot) && !stdUnmet(slot), unmet: stdUnmet(slot) }"
-        >
-          <div class="tl">
-            <svg class="icon" width="13" height="13" aria-hidden="true">
-              <use href="#i-attd-adjust" />
-            </svg>
-            표준화
-          </div>
-          <div class="tb" :class="{ x: !stdApplied(slot) && !stdUnmet(slot) }">
-            <template v-if="stdUnmet(slot)">
-              <div class="tt2 um">조건 미충족으로 표준화 규칙 미적용</div>
-            </template>
-            <template v-else>
-              <div class="tt2">{{ standardizedText(slot) }}</div>
-              <div v-if="stdApplied(slot)" class="tm">{{ standardizedMetaText(slot) }}</div>
-            </template>
-          </div>
-        </div>
       </div>
     </template>
 
@@ -162,6 +136,19 @@
       </button>
     </div>
 
+    <!--
+      prafta-app-026: 보조 2회차 출근 버튼(별도 줄). 퇴근 재등록(주 버튼)과 동시에 추가 출근도
+      가능할 때만 노출. 오탭이 허깨비 출근을 만들지 않도록 주 액션과 분리한다.
+    -->
+    <div v-if="showSecondaryCheckIn" class="ft ft-sub">
+      <button type="button" class="bt bt-s" @click="onSecondaryCheckIn">
+        <svg class="icon" width="16" height="16" aria-hidden="true">
+          <use href="#i-attd-login" />
+        </svg>
+        출근하기 (2회차)
+      </button>
+    </div>
+
     <!-- 본 카드 전용 sprite -->
     <svg width="0" height="0" class="card-sprite" aria-hidden="true" focusable="false">
       <defs>
@@ -194,20 +181,6 @@
           <path d="M12 11v2a14 14 0 0 0 2.5 8" />
           <path d="M8 15a18 18 0 0 0 1.8 6" />
           <path d="M4.9 19a22 22 0 0 1-.9-7a8 8 0 0 1 12-7" />
-        </symbol>
-        <symbol
-          id="i-attd-adjust"
-          viewBox="0 0 24 24"
-          fill="none"
-          stroke="currentColor"
-          stroke-width="2"
-          stroke-linecap="round"
-          stroke-linejoin="round"
-        >
-          <line x1="4" y1="8" x2="14" y2="8" />
-          <line x1="4" y1="16" x2="10" y2="16" />
-          <circle cx="17" cy="8" r="3" />
-          <circle cx="13" cy="16" r="3" />
         </symbol>
         <symbol
           id="i-attd-alert-c"
@@ -334,7 +307,7 @@ const slotCount = computed(() => {
 })
 const hasMultiSlot = computed(() => slotCount.value >= 2)
 
-// 슬롯이 스케줄 대응(표준화/지각·조퇴 적용 대상)인지: schedule 객체+시작시각 존재.
+// 슬롯이 스케줄 대응(지각·조퇴 적용 대상)인지: schedule 객체+시작시각 존재.
 //   서버는 미대응 슬롯의 schedule 을 null 로 내려준다(D2).
 const slotHasSchedule = (slot) => !!(slot && slot.schedule && slot.schedule.startTime)
 
@@ -446,28 +419,6 @@ const attendanceMetaHtml = (slot) => {
   return parts.join(' · ')
 }
 
-// 표준화 — 3상태:
-//   applied : 표준화 적용(시각 + 근무시간 표시)
-//   unmet   : 출퇴근은 등록됐으나 회사유리(출근올림/퇴근내림) 적용 시 시간규칙 위반 → 미적용 안내
-//   na      : 표준화 비대상(출퇴근 미완료 등 standardized=null)
-//   ※ 스케줄 미대응 슬롯은 표준화 행 자체를 렌더하지 않음(template v-if).
-const stdApplied = (slot) =>
-  !!(
-    slot.standardized &&
-    slot.standardized.applied === true &&
-    slot.standardized.settledMinutes != null
-  )
-const stdUnmet = (slot) => !!(slot.standardized && slot.standardized.applied === false)
-const standardizedText = (slot) => {
-  if (!stdApplied(slot)) return '-'
-  return formatRange(slot.standardized.startTime, slot.standardized.endTime)
-}
-const standardizedMetaText = (slot) => {
-  if (!stdApplied(slot)) return ''
-  // 표기 변경(사용자 요청): "정산" → "근무시간"
-  return `근무시간 ${minutesToKorean(slot.standardized.settledMinutes)}`
-}
-
 // ───────────────────────────────────────────────────────────
 // 인라인 알림 (상태별 워딩 — 시안 §3.1 고정 문구)
 // ───────────────────────────────────────────────────────────
@@ -525,14 +476,31 @@ const showSlotCheckInButtons = computed(
     checkInSlots.value.some((s) => s.canCheckInThisSlot === true),
 )
 
-// Primary 버튼(단일): 추가 출근 가능(canCheckIn)이면 "출근", 그 외 "퇴근하기"(canCheckOut)
-const isCheckInAction = computed(() => !!actions.value.canCheckIn)
+// prafta-app-026: 주 버튼 우선순위 역전 — canCheckOut 우선 > canCheckIn.
+//   - 진행 중 슬롯(WORKING/TWO_SLOT_WORKING/CHECK_OUT_MISSING) → "퇴근하기".
+//   - 퇴근완료(CHECKED_OUT) && canCheckOut → "퇴근 시간 재등록"(오탭 보정·last-write-wins).
+//   - canCheckOut=false && canCheckIn → "출근하기"(최초 출근).
+//   재량 2회차 출근(canCheckOut && canCheckIn)은 보조 버튼으로 분리(아래 secondaryCheckIn*).
+const canCheckOut = computed(() => !!actions.value.canCheckOut)
+const canCheckIn = computed(() => !!actions.value.canCheckIn)
+// 주 액션이 퇴근인지(출근인지) 판정: 퇴근 가능하면 퇴근 우선, 아니면 출근.
+const isPrimaryCheckOut = computed(() => canCheckOut.value)
 const primaryActionEnabled = computed(() =>
-  isCheckInAction.value ? !!actions.value.canCheckIn : !!actions.value.canCheckOut,
+  isPrimaryCheckOut.value ? canCheckOut.value : canCheckIn.value,
 )
-const primaryActionLabel = computed(() => (isCheckInAction.value ? '출근하기' : '퇴근하기'))
+const primaryActionLabel = computed(() => {
+  if (!isPrimaryCheckOut.value) return '출근하기'
+  // 퇴근완료 상태에서의 퇴근 가능 = 재등록(오탭 보정), 그 외(진행 중)는 일반 퇴근.
+  return (props.detail && props.detail.workStatus) === 'CHECKED_OUT' ? '퇴근 시간 재등록' : '퇴근하기'
+})
 const primaryActionIcon = computed(() =>
-  isCheckInAction.value ? '#i-attd-login' : '#i-attd-logout',
+  isPrimaryCheckOut.value ? '#i-attd-logout' : '#i-attd-login',
+)
+
+// prafta-app-026: 보조 2회차 출근 버튼 노출 조건 — 퇴근 재등록(주 버튼)과 동시에 추가 출근도 가능할 때.
+//   showSlotCheckInButtons(진짜 2구간 명시 출근)와 배타: 그쪽이 노출되면 보조 버튼은 숨긴다.
+const showSecondaryCheckIn = computed(
+  () => canCheckOut.value && canCheckIn.value && !showSlotCheckInButtons.value,
 )
 
 const onModify = () => {
@@ -540,9 +508,16 @@ const onModify = () => {
   emit('action', { type: 'requestModify', detail: props.detail })
 }
 const onPrimaryAction = () => {
-  // 단일 버튼 경로: 1구간/스케줄없음의 출근 또는 퇴근. targetWorkSeq 미동봉(서버 existing+1 채번).
+  // prafta-app-026: 주 버튼 경로 — 퇴근 우선. targetWorkSeq 미동봉(서버 채번/재퇴근 tail 슬롯 선정).
   emit('action', {
-    type: isCheckInAction.value ? 'checkIn' : 'checkOut',
+    type: isPrimaryCheckOut.value ? 'checkOut' : 'checkIn',
+    detail: props.detail,
+  })
+}
+// prafta-app-026: 보조 2회차 출근 — 단일 출근(구간 미지정). targetWorkSeq 미동봉(서버 existing+1 채번).
+const onSecondaryCheckIn = () => {
+  emit('action', {
+    type: 'checkIn',
     detail: props.detail,
   })
 }
@@ -704,28 +679,6 @@ const onSlotCheckIn = (workSeq) => {
   border-color: var(--color-warning-border);
   background: var(--color-warning-tint);
 }
-.tw.st {
-  border-color: var(--color-info-border);
-  background: var(--color-info-tint);
-}
-.tw.st.x {
-  border-color: var(--color-border);
-  background: var(--color-border-light);
-}
-/* 표준화 조건 미충족(회사유리 적용 시 시간규칙 위반) — 연한 붉은색 계통 */
-.tw.st.unmet {
-  border-color: var(--color-danger-border);
-  background: var(--color-danger-tint);
-}
-.tw.st.unmet .tl {
-  color: var(--color-danger);
-}
-.tt2.um {
-  font-size: 12px;
-  font-weight: 600;
-  line-height: 1.3;
-  color: var(--color-danger-text);
-}
 
 .tl {
   display: flex;
@@ -743,12 +696,6 @@ const onSlotCheckIn = (workSeq) => {
 }
 .tw.a.wr .tl {
   color: var(--color-warning-text);
-}
-.tw.st .tl {
-  color: var(--color-info-strong);
-}
-.tw.st.x .tl {
-  color: var(--color-text-tertiary);
 }
 
 .tb {
@@ -817,6 +764,10 @@ const onSlotCheckIn = (workSeq) => {
   display: flex;
   gap: var(--space-sm);
   margin-top: var(--space-md);
+}
+/* prafta-app-026: 보조 2회차 출근 줄 — 주 버튼 바로 아래 좁은 간격으로 분리. */
+.ft-sub {
+  margin-top: var(--space-sm);
 }
 .bt {
   flex: 1;

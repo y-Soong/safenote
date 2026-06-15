@@ -25,7 +25,10 @@ public interface AppReq07Service {
 
     /**
      * 스케줄 선택 옵션 목록 조회 (prafta-app-007 F2).
-     * 식별값(cmpnyCd/siteCd)은 JWT 도출값을 사용한다 (IDOR). 빈 결과는 빈 배열.
+     * 식별값(cmpnyCd/siteCd/userCd)은 JWT 도출값을 사용한다 (IDOR). 빈 결과는 빈 배열.
+     * prafta-com-008-E-9a: 응답에 사용자 본인 기본 근무타입(userDefaultSchCd) 동반.
+     * prafta-com-008-D-5: workYmd(대상 일자, optional)가 교대팀 소속 구간이면 응답 shiftLocked=true.
+     *   판정은 공용 cmm ShiftMembershipService(D-1 술어) 재사용 — 신규 쿼리 신설 금지. workYmd null 이면 false.
      */
-    SchedOptionResponse getSchedOptions(String cmpnyCd, String siteCd);
+    SchedOptionResponse getSchedOptions(String cmpnyCd, String siteCd, String userCd, String workYmd);
 }

@@ -21,15 +21,22 @@ import com.prafta.common.cmm.login.application.param.UserTermsAgreementCheckPara
 import com.prafta.common.cmm.login.application.param.VerifyPhoneAuthParam;
 import com.prafta.common.cmm.login.dto.request.AuthMenuInfoRequest;
 import com.prafta.common.cmm.login.dto.request.LoginRequest;
+import com.prafta.common.cmm.login.dto.request.SetDefaultSchRequest;
 import com.prafta.common.cmm.login.dto.request.UserJoinRequest;
 import com.prafta.common.cmm.login.dto.request.VerifyPhoneAuthRequest;
 import com.prafta.common.dto.TokenInfo;
 import com.prafta.common.error.login.LoginErrorCode;
 import com.prafta.common.exception.ApiException;
 import com.prafta.common.cmm.login.dto.response.AuthLogoutResponse;
+import com.prafta.common.cmm.login.dto.response.DefaultSchOptionsResponse;
 import com.prafta.common.cmm.login.dto.response.LoginResponse;
 import com.prafta.common.cmm.login.dto.response.UserTermsAgreementCheckResponse;
+import com.prafta.common.cmm.login.mapper.LoginMapper;
+import com.prafta.common.cmm.login.result.UserResult;
+import com.prafta.common.cmm.sch.mapper.DefaultSchGenMapper;
+import com.prafta.common.cmm.sch.service.DefaultSchOptionService;
 import com.prafta.common.cmm.login.service.LoginService;
+import com.prafta.common.security.JwtScope;
 import com.prafta.common.security.JwtUtil;
 import com.prafta.common.util.ClientIpExtractor;
 
@@ -48,6 +55,10 @@ public class LoginController {
 	
 	private final JwtUtil jwtUtil;
 	private final LoginService loginService;
+	// PRAFTA-COM-008-E-8 — 게이트 옵션 목록 조회(토큰 식별 사용자 → 사업장 활성 근무타입).
+	private final DefaultSchOptionService defaultSchOptionService;
+	private final DefaultSchGenMapper defaultSchGenMapper;
+	private final LoginMapper loginMapper;
 	
     // 보안 수정(PRAFTA-006-001): 자격증명이 URL 쿼리스트링/서버 로그/Referer에 노출되지 않도록 POST + JSON 본문으로 전환
     @PostMapping("/login")
@@ -123,5 +134,79 @@ public class LoginController {
                 VerifyPhoneAuthParam.from(request, tokenInfo, scope, clientType));
 
         return ResponseEntity.status(HttpStatus.OK).body(response);
+    }
+
+    /**
+     * PRAFTA-COM-008-E-8 — 게이트 화면용 사업장 활성 근무타입 목록.
+     *
+     * <p>{@code Authorization: Bearer <scope=DEFAULT_SCH 임시 토큰>} 필수.
+     * 토큰 claim 의 cmpnyCd/userCd 로만 대상 식별(IDOR 방지) → 사용자 SITE_CD → USE_YN='Y' 옵션.
+     */
+    @GetMapping("/default-sch-options")
+    public ResponseEntity<?> getDefaultSchOptions(
+            @RequestHeader(value = "Authorization", required = true) String authorization) {
+
+        TokenInfo tokenInfo = requireDefaultSchScope(authorization);
+
+        String siteCd = resolveUserSiteCd(tokenInfo.gv_cmpnyCd(), tokenInfo.gv_userCd());
+        var schedules = (siteCd == null)
+                ? java.util.List.<com.prafta.common.cmm.sch.vo.SchOptionVO>of()
+                : defaultSchOptionService.getActiveSchOptions(tokenInfo.gv_cmpnyCd(), siteCd);
+
+        return ResponseEntity.status(HttpStatus.OK).body(new DefaultSchOptionsResponse(schedules));
+    }
+
+    /**
+     * PRAFTA-COM-008-E-8 — 기본 근무타입 게이트 통과(설정 저장 + 즉시 생성 + 정식 LoginResponse).
+     *
+     * <p>{@code Authorization: Bearer <scope=DEFAULT_SCH 임시 토큰>} 필수. 일반 로그인과 동일 형식 응답.
+     */
+    @PostMapping("/set-default-sch")
+    public ResponseEntity<?> setDefaultSch(
+            @RequestBody SetDefaultSchRequest request,
+            @RequestHeader(value = "Authorization", required = true) String authorization,
+            @RequestHeader(value = "X-Client-Type", required = false, defaultValue = "WEB") String clientType) {
+
+        TokenInfo tokenInfo = requireDefaultSchScope(authorization);
+
+        LoginResponse response = loginService.setDefaultSch(
+                tokenInfo.gv_cmpnyCd(), tokenInfo.gv_userCd(), request.getDefaultSchCd(), clientType);
+
+        return ResponseEntity.status(HttpStatus.OK).body(response);
+    }
+
+    /**
+     * scope=DEFAULT_SCH 임시 토큰 검증(만료/서명/scope). 통과 시 claim 을 TokenInfo 로 반환.
+     * verify-phone-auth 검증 패턴 미러.
+     */
+    private TokenInfo requireDefaultSchScope(String authorization) {
+        if (authorization == null || !authorization.startsWith("Bearer ")) {
+            throw new ApiException(LoginErrorCode.LOGIN_400_012);
+        }
+        String pureToken = authorization.substring(7);
+        if (!jwtUtil.validateToken(pureToken)) {
+            throw new ApiException(LoginErrorCode.LOGIN_400_012);
+        }
+        String scope = jwtUtil.parseToken(pureToken).get("gv_scope", String.class);
+        if (!JwtScope.DEFAULT_SCH.equals(scope)) {
+            throw new ApiException(LoginErrorCode.LOGIN_400_012);
+        }
+        TokenInfo tokenInfo = jwtUtil.getAllClaimsAsMap(authorization);
+        if (tokenInfo == null
+                || tokenInfo.gv_cmpnyCd() == null || tokenInfo.gv_cmpnyCd().isBlank()
+                || tokenInfo.gv_userCd() == null || tokenInfo.gv_userCd().isBlank()) {
+            throw new ApiException(LoginErrorCode.LOGIN_400_012);
+        }
+        return tokenInfo;
+    }
+
+    /** 토큰 식별 사용자의 SITE_CD 도출(게이트 옵션 스코프). 없으면 null. */
+    private String resolveUserSiteCd(String cmpnyCd, String userCd) {
+        UserResult user = loginMapper.selectUserByUserCd(cmpnyCd, userCd);
+        String siteCd = (user == null) ? null : user.siteCd();
+        if (siteCd == null || siteCd.isBlank()) {
+            siteCd = defaultSchGenMapper.selectUserSiteCd(cmpnyCd, userCd);
+        }
+        return (siteCd == null || siteCd.isBlank()) ? null : siteCd;
     }
 }

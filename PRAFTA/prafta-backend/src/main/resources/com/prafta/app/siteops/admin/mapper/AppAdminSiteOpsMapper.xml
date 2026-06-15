@@ -1,0 +1,196 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<!--
+  J1-7(prafta-app-025) 관리자 현장 일용직 QR 출퇴근 등록 Mapper.
+  식별자(cmpnyCd/siteCd/userCd)는 token/서버 확정 출처(IDOR 차단). leading 콤마, #{} 바인딩, SELECT * 금지.
+-->
+<mapper namespace="com.prafta.app.siteops.admin.mapper.AppAdminSiteOpsMapper">
+
+    <!-- 현장전환 사업장이 토큰 사용자의 접근가능 사업장(USE_YN='Y')인지 검증. AppAdminTbmMapper.existsAccessibleSite 동형. -->
+    <select id="existsAccessibleSite" resultType="int">
+    /* AppAdminSiteOpsMapper.existsAccessibleSite */
+    SELECT EXISTS(
+        SELECT 1
+          FROM TB_USER_SITE_AUTH USA
+          INNER JOIN TB_SITE S
+            ON S.CMPNY_CD = USA.CMPNY_CD
+           AND S.SITE_CD  = USA.SITE_CD
+         WHERE USA.CMPNY_CD = #{cmpnyCd}
+           AND USA.USER_CD  = #{userCd}
+           AND USA.SITE_CD  = #{siteCd}
+           AND USA.USE_YN   = 'Y'
+           AND S.USE_YN     = 'Y'
+    )
+    </select>
+
+    <!--
+      대상 일용직 유효성(TBM countEntryTarget DAILY 분기 동일식). 1=유효, 0=무효.
+      TB_DAILY_USER 는 NODE_CD 없음(PK=CMPNY_CD,USER_CD + SITE_CD 귀속) → 사업장 단위 검증.
+    -->
+    <select id="countValidDailyUser" resultType="int">
+    /* AppAdminSiteOpsMapper.countValidDailyUser */
+    SELECT COUNT(1)
+      FROM TB_DAILY_USER DU
+     WHERE DU.CMPNY_CD = #{cmpnyCd}
+       AND DU.SITE_CD  = #{siteCd}
+       AND DU.USER_CD  = #{userCd}
+       AND DU.USE_YN   = 'Y'
+       AND DU.ACCOUNT_STATUS = '01'
+       AND DU.WITHDRAWAL_DATE IS NULL
+       AND DU.WORK_EXPIRE_DATE &gt;= DATE_FORMAT(NOW(), '%Y%m%d')
+    </select>
+
+    <!--
+      슬롯 점유 보강 검증(옵션B). 일용직 계정이 해당 사업장에 활성 바인딩(SLOT_STATUS='02' 점유)되어 있는지.
+      SLOT_STATUS '02'=점유(DailyUserSlotUpdCommand 주석 확정). 1건 이상이면 1.
+    -->
+    <select id="countOccupiedSlot" resultType="int">
+    /* AppAdminSiteOpsMapper.countOccupiedSlot */
+    SELECT EXISTS(
+        SELECT 1
+          FROM TB_DAILY_USER_SLOT DS
+         WHERE DS.CMPNY_CD     = #{cmpnyCd}
+           AND DS.SITE_CD      = #{siteCd}
+           AND DS.CURR_USER_CD = #{userCd}
+           AND DS.SLOT_STATUS  = '02'
+           AND DS.USE_YN       = 'Y'
+    )
+    </select>
+
+    <!-- 토스트용 일용직 이름(평문). 마스킹은 서비스에서. -->
+    <select id="selectDailyUserNm" resultType="string">
+    /* AppAdminSiteOpsMapper.selectDailyUserNm */
+    SELECT DU.USER_NM AS userNm
+      FROM TB_DAILY_USER DU
+     WHERE DU.CMPNY_CD = #{cmpnyCd}
+       AND DU.SITE_CD  = #{siteCd}
+       AND DU.USER_CD  = #{userCd}
+     LIMIT 1
+    </select>
+
+    <!-- ATTD_ID 선채번(회사별 시퀀스 'ATTD_ID'). AppAttd01Mapper.selectAttdId 동형. -->
+    <select id="selectAttdId" resultType="string">
+    /* AppAdminSiteOpsMapper.selectAttdId */
+    SELECT CONCAT(DATE_FORMAT(NOW(), '%Y%m%d'), FNC_CMM_SEQ_NEXTVAL(#{cmpnyCd}, 'ATTD_ID')) AS attdId
+    </select>
+
+    <!--
+      동시 출퇴근(TOCTOU) 직렬화용 일용직 행 비관적 잠금(FOR UPDATE).
+      TB_USER_ATTD_MGMT 자연키 UNIQUE 부재 보완 — count→insert 경쟁을 트랜잭션 단위로 직렬화.
+      잠금은 @Transactional 커밋/롤백 시 자동 해제(named lock 과 달리 커넥션 풀 누수 없음).
+    -->
+    <select id="lockDailyUserForCheckIn" resultType="string">
+    /* AppAdminSiteOpsMapper.lockDailyUserForCheckIn */
+    SELECT DU.USER_CD
+      FROM TB_DAILY_USER DU
+     WHERE DU.CMPNY_CD = #{cmpnyCd}
+       AND DU.SITE_CD  = #{siteCd}
+       AND DU.USER_CD  = #{userCd}
+     FOR UPDATE
+    </select>
+
+    <!-- 당일 출근행 수(DEL_YN='N', CHECK_IN_TIME IS NOT NULL). WORK_SEQ 산정/멱등 판정. -->
+    <select id="countAttdToday" resultType="int">
+    /* AppAdminSiteOpsMapper.countAttdToday */
+    SELECT COUNT(*)
+      FROM TB_USER_ATTD_MGMT A
+     WHERE A.CMPNY_CD = #{cmpnyCd}
+       AND A.SITE_CD  = #{siteCd}
+       AND A.USER_CD  = #{userCd}
+       AND A.WORK_YMD = #{todayYmd}
+       AND A.DEL_YN   = 'N'
+       AND A.CHECK_IN_TIME IS NOT NULL
+    </select>
+
+    <!-- 당일 열린(미퇴근) 출근행 수. S1 멱등(2중 열림 방지) 판정. -->
+    <select id="countOpenAttdToday" resultType="int">
+    /* AppAdminSiteOpsMapper.countOpenAttdToday */
+    SELECT COUNT(*)
+      FROM TB_USER_ATTD_MGMT A
+     WHERE A.CMPNY_CD = #{cmpnyCd}
+       AND A.SITE_CD  = #{siteCd}
+       AND A.USER_CD  = #{userCd}
+       AND A.WORK_YMD = #{todayYmd}
+       AND A.DEL_YN   = 'N'
+       AND A.CHECK_IN_TIME IS NOT NULL
+       AND A.CHECK_OUT_TIME IS NULL
+    </select>
+
+    <!-- 당일 열린(미퇴근) 출근행 1건(ATTD_ID, 최신). 퇴근 대상. -->
+    <select id="selectOpenAttdToday"
+            resultType="com.prafta.app.siteops.admin.result.SiteOpsOpenAttdResult">
+    /* AppAdminSiteOpsMapper.selectOpenAttdToday */
+    SELECT A.ATTD_ID  AS attdId
+         , A.WORK_YMD AS workYmd
+      FROM TB_USER_ATTD_MGMT A
+     WHERE A.CMPNY_CD = #{cmpnyCd}
+       AND A.SITE_CD  = #{siteCd}
+       AND A.USER_CD  = #{userCd}
+       AND A.WORK_YMD = #{todayYmd}
+       AND A.DEL_YN   = 'N'
+       AND A.CHECK_IN_TIME IS NOT NULL
+       AND A.CHECK_OUT_TIME IS NULL
+     ORDER BY A.WORK_SEQ DESC, A.ATTD_ID DESC
+     LIMIT 1
+    </select>
+
+    <!--
+      일용직 출근 INSERT. AppAttd01Mapper.insertCheckIn 포팅.
+      일용직 단순화: NODE_CD=NULL, CHECK_IN_DEVICE_UUID 미지정(스키마 DEFAULT NULL), GPS 미저장.
+      CHECK_IN_DATE/TIME/METHOD/WORK_SEQ/DEL_YN NOT NULL → 명시. INSERT_DATE DEFAULT NOW().
+    -->
+    <insert id="insertDailyCheckIn">
+    /* AppAdminSiteOpsMapper.insertDailyCheckIn */
+    INSERT INTO TB_USER_ATTD_MGMT (
+          ATTD_ID
+        , CMPNY_CD
+        , SITE_CD
+        , USER_CD
+        , WORK_YMD
+        , NODE_CD
+        , WORK_SEQ
+        , CHECK_IN_DATE
+        , CHECK_IN_TIME
+        , CHECK_IN_METHOD
+        , DEL_YN
+        , INSERT_NO
+        , INSERT_DATE
+    )
+    VALUES (
+          #{c.attdId}
+        , #{c.cmpnyCd}
+        , #{c.siteCd}
+        , #{c.userCd}
+        , #{c.workYmd}
+        , NULL
+        , #{c.workSeq}
+        , #{c.checkInDate}
+        , #{c.checkInTime}
+        , #{c.checkInMethod}
+        , 'N'
+        , #{c.insertNo}
+        , NOW()
+    )
+    </insert>
+
+    <!--
+      일용직 퇴근 UPDATE. AppAttd01Mapper.updateCheckOut 포팅.
+      동시성 가드: CHECK_OUT_TIME IS NULL(이미 퇴근이면 0건). CMPNY_CD/USER_CD/DEL_YN 가드.
+    -->
+    <update id="updateDailyCheckOut">
+    /* AppAdminSiteOpsMapper.updateDailyCheckOut */
+    UPDATE TB_USER_ATTD_MGMT
+       SET
+             CHECK_OUT_DATE   = #{c.checkOutDate}
+           , CHECK_OUT_TIME   = #{c.checkOutTime}
+           , CHECK_OUT_METHOD = #{c.checkOutMethod}
+           , UPDATE_NO        = #{c.userCd}
+           , UPDATE_DATE      = NOW()
+     WHERE ATTD_ID  = #{c.attdId}
+       AND CMPNY_CD = #{c.cmpnyCd}
+       AND DEL_YN   = 'N'
+       AND CHECK_OUT_TIME IS NULL
+    </update>
+
+</mapper>

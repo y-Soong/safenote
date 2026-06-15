@@ -129,6 +129,9 @@ public class Archive02ServiceImpl implements Archive02Service {
     public ArchiveSaveResponse saveArchive(ArchiveSaveParam param) {
         log.info("자료실 생성 진입 - cmpnyCd={}, userCd={}", param.gvCmpnyCd(), param.gvUserCd());
 
+        // ★등록 권한 게이트(master∥hr∥safe∥전사노드관리자). 서버 강제(앱 동일 권한식).
+        assertCanRegister(param.gvAuthCd(), param.gvCmpnyCd(), param.gvUserCd());
+
         validateSaveRequired(param, true);
         // 자료타입 유효성: 신규 생성은 USE_YN='Y' 만 허용(사용중지 코드 거부)
         validateArchiveType(param.gvCmpnyCd(), param.archiveTypeCd(), true);
@@ -245,9 +248,10 @@ public class Archive02ServiceImpl implements Archive02Service {
     @Override
     @Transactional
     public ArchiveFileUploadResponse uploadFile(ArchiveFileUploadParam param) {
-        log.info("자료실 첨부 업로드 진입 - cmpnyCd={}, userCd={}, 원본명={}",
-            param.gvCmpnyCd(), param.gvUserCd(),
-            param.file() == null ? null : param.file().getOriginalFilename());
+        log.info("자료실 첨부 업로드 진입 - cmpnyCd={}, userCd={}", param.gvCmpnyCd(), param.gvUserCd());
+
+        // ★등록 권한 게이트(master∥hr∥safe∥전사노드관리자). 첨부 업로드도 동일 게이트(앱 동일 권한식).
+        assertCanRegister(param.gvAuthCd(), param.gvCmpnyCd(), param.gvUserCd());
 
         // FILE_MGMT_CD 채번(SYS010 005=공지첨부 재사용). 회사+파일타입 단위 시퀀스.
         String fileMgmtCd = fileMapper.selectFileMgmtCd(
@@ -325,6 +329,29 @@ public class Archive02ServiceImpl implements Archive02Service {
 
     private boolean isMaster(String authCd) {
         return AuthRoleUtils.AUTH_MASTER.equals(authCd);
+    }
+
+    /**
+     * 등록(쓰기)/첨부업로드 권한 게이트. 권한식 = master ∥ hr ∥ safe ∥ 전사 노드관리자.
+     *
+     * <p>접근차단(999999)이면 선차단. 역할(master/hr/safe)이면 통과, 아니면 전사 노드관리자
+     * (TB_SITE_NODE MAIN/SUB_ADMIN_CD, CMPNY_CD 스코프) count&gt;0 이면 통과, 둘 다 아니면 403.
+     * 자료실=회사 전체 공통이므로 "노드관리자"는 특정 사업장이 아닌 전사 기준(access-context canEnterAdmin 과 동형).
+     * 앱 AppArchive02ServiceImpl.assertCanRegister 와 동일 권한식(비대칭 제거).
+     */
+    private void assertCanRegister(String authCd, String cmpnyCd, String userCd) {
+        if (AuthRoleUtils.isAccessDenied(authCd)) {
+            log.warn("자료실 등록 권한 거부(접근차단) - authCd={}", authCd);
+            throw new ApiException(ArchiveErrorCode.ARCHIVE_403_002);
+        }
+        if (AuthRoleUtils.canManageAllNodes(authCd)) {
+            return;
+        }
+        if (archive02Mapper.countNodeAdminAnySite(cmpnyCd, userCd) > 0) {
+            return;
+        }
+        log.warn("자료실 등록 권한 거부 - authCd={}, userCd={}", authCd, userCd);
+        throw new ApiException(ArchiveErrorCode.ARCHIVE_403_002);
     }
 
     /** 생성/수정 공통 필수값 검증. isCreate=true 면 editPwd 도 필수. */

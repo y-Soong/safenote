@@ -196,6 +196,10 @@
     FROM TB_LEAVE_TYPE_MGMT A
     WHERE A.CMPNY_CD = #{gvCmpnyCd}
       AND A.LEAVE_NO = #{leaveNo}
+      <!-- prafta-app-026 검수정정(attd03/F-02): 자기 자신 제외(수정 시 자기 행과 중복 충돌 방지). -->
+      <if test="leaveCd != null and leaveCd != ''">
+      AND A.LEAVE_CD != #{leaveCd}
+      </if>
     LIMIT 1
     </select>
 

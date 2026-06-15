@@ -1,0 +1,223 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+
+<!--
+  PRAFTA-COM-008-A-5: 자동배치 계산용 조회 Mapper.
+  - 스코프: CMPNY_CD + SITE_CD(세션 고정 검증값) + 노드 cascade(RECURSIVE node_tree, Attd12 패턴).
+  - 대상: AXIS7='Y' + 활성 사용자 + SECOND 마스터(STATUS NOTICED/DESIGNATED) + 미사용 연차>0.
+  - 휴일 컬럼(LeaveRefusalMapper 동일): TB_HOLIDAY.HOLIDAY_YMD(date) / TB_HOLIDAY_RULE.HOLIDAY_MM,HOLIDAY_DD.
+  SQL 규칙: leading comma, #{...} 바인딩, SELECT * 금지.
+-->
+<mapper namespace="com.prafta.common.cmm.leave.promotion.autobatch.mapper.LeaveAutoBatchMapper">
+
+    <select id="selectAutoBatchTargets" resultType="com.prafta.common.cmm.leave.promotion.autobatch.AutoBatchTargetVO">
+    /* LeaveAutoBatchMapper.selectAutoBatchTargets */
+        WITH RECURSIVE
+        node_tree AS (
+            SELECT
+                  N.CMPNY_CD
+                , N.SITE_CD
+                , N.NODE_CD
+            FROM TB_SITE_NODE N
+            WHERE N.CMPNY_CD = #{gvCmpnyCd}
+              AND N.SITE_CD  = #{siteCd}
+            <if test="nodeCd != null and nodeCd != ''">
+              AND N.NODE_CD  = #{nodeCd}
+            </if>
+            <if test="nodeCd == null or nodeCd == ''">
+              AND N.PARENT_NODE_CD IS NULL
+            </if>
+
+            <if test='"Y".equals(incSubNodeYn) or nodeCd == null or nodeCd == ""'>
+            UNION ALL
+
+            SELECT
+                  C.CMPNY_CD
+                , C.SITE_CD
+                , C.NODE_CD
+            FROM TB_SITE_NODE C
+            INNER JOIN node_tree P
+                ON  C.CMPNY_CD       = P.CMPNY_CD
+                AND C.SITE_CD        = P.SITE_CD
+                AND C.PARENT_NODE_CD = P.NODE_CD
+            </if>
+        )
+
+        SELECT
+              U.USER_CD                         AS userCd
+            , U.SITE_CD                         AS siteCd
+            , IFNULL(REM.REMAINING_DAYS, 0)     AS remainingDays
+            , BASE.AVAIL_FROM_DATE              AS availFromDate
+            , BASE.AVAIL_TO_DATE                AS availToDate
+          FROM TB_USER U
+          INNER JOIN node_tree NT
+            ON  U.CMPNY_CD = NT.CMPNY_CD
+            AND U.SITE_CD  = NT.SITE_CD
+            AND U.NODE_CD  = NT.NODE_CD
+          INNER JOIN TB_LEAVE_POLICY P
+            ON  P.CMPNY_CD            = U.CMPNY_CD
+            AND P.USE_YN              = 'Y'
+            AND P.AXIS7_USE_PROMOTION = 'Y'
+          INNER JOIN (
+                /* SECOND 회차 마스터(스코프 내 2차 도래자) — 가장 임박 만료일 1건 */
+                SELECT
+                      M1.CMPNY_CD
+                    , M1.USER_CD
+                  FROM TB_LEAVE_PROMOTION_LOG M1
+                 WHERE M1.CMPNY_CD    = #{gvCmpnyCd}
+                   AND M1.PROMO_STAGE = 'SECOND'
+                   AND M1.STATUS IN ('NOTICED', 'DESIGNATED')
+                   AND M1.DEL_YN      = 'N'
+               ) M
+            ON  M.CMPNY_CD = U.CMPNY_CD
+            AND M.USER_CD  = U.USER_CD
+          INNER JOIN (
+                /* 사용자별 가장 임박한 본연차(STATUTORY_ANNUAL) ACTIVE grant 1건 (역산 기준) */
+                SELECT
+                      G1.CMPNY_CD
+                    , G1.USER_CD
+                    , G1.AVAIL_FROM_DATE
+                    , G1.AVAIL_TO_DATE
+                  FROM TB_USER_LEAVE_GRANT G1
+                 WHERE G1.GRANT_TYPE = 'STATUTORY_ANNUAL'
+                   AND G1.STATUS     = 'ACTIVE'
+                   AND G1.DEL_YN     = 'N'
+                   AND NOT EXISTS (
+                         SELECT 1
+                           FROM TB_USER_LEAVE_GRANT G2
+                          WHERE G2.CMPNY_CD   = G1.CMPNY_CD
+                            AND G2.USER_CD    = G1.USER_CD
+                            AND G2.GRANT_TYPE = 'STATUTORY_ANNUAL'
+                            AND G2.STATUS     = 'ACTIVE'
+                            AND G2.DEL_YN     = 'N'
+                            AND (
+                                  G2.AVAIL_TO_DATE <![CDATA[ < ]]> G1.AVAIL_TO_DATE
+                               OR (G2.AVAIL_TO_DATE = G1.AVAIL_TO_DATE AND G2.GRANT_ID <![CDATA[ < ]]> G1.GRANT_ID)
+                                )
+                       )
+               ) BASE
+            ON  BASE.CMPNY_CD = U.CMPNY_CD
+            AND BASE.USER_CD  = U.USER_CD
+          LEFT JOIN (
+                /* 본연차+근속가산 ACTIVE 미사용 잔여 합(미래 등록분=USED 반영) */
+                SELECT
+                      R.CMPNY_CD
+                    , R.USER_CD
+                    , SUM(R.GRANT_DAYS - R.USED_DAYS) AS REMAINING_DAYS
+                  FROM TB_USER_LEAVE_GRANT R
+                 WHERE R.GRANT_TYPE IN ('STATUTORY_ANNUAL', 'STATUTORY_TENURE_BONUS')
+                   AND R.STATUS     = 'ACTIVE'
+                   AND R.DEL_YN     = 'N'
+                 GROUP BY R.CMPNY_CD, R.USER_CD
+               ) REM
+            ON  REM.CMPNY_CD = U.CMPNY_CD
+            AND REM.USER_CD  = U.USER_CD
+         WHERE U.CMPNY_CD       = #{gvCmpnyCd}
+           AND U.SITE_CD        = #{siteCd}
+           AND U.USE_YN         = 'Y'
+           AND U.ACCOUNT_STATUS = '01'
+           AND IFNULL(REM.REMAINING_DAYS, 0) <![CDATA[ > ]]> 0
+        <if test="userNm != null and userNm != ''">
+           AND U.USER_NM LIKE CONCAT('%', #{userNm}, '%')
+        </if>
+        <if test='"OVER1".equals(tenureFilter)'>
+           AND U.HIRE_DATE IS NOT NULL
+           AND U.HIRE_DATE <![CDATA[ <= ]]> #{oneYearAgoYmd}
+        </if>
+        <if test='"UNDER1".equals(tenureFilter)'>
+           AND (U.HIRE_DATE IS NULL OR U.HIRE_DATE <![CDATA[ > ]]> #{oneYearAgoYmd})
+        </if>
+         ORDER BY U.USER_CD ASC
+    </select>
+
+    <!-- 사용자의 윈도 내 기존 CONFIRMED 연차일(중복 회피). 종일/시간차 불문 START_DATE. -->
+    <select id="selectUserConfirmedLeaveYmds" resultType="string">
+    /* LeaveAutoBatchMapper.selectUserConfirmedLeaveYmds */
+    SELECT DISTINCT LU.START_DATE
+      FROM TB_USER_LEAVE_USE LU
+     WHERE LU.CMPNY_CD     = #{cmpnyCd}
+       AND LU.USER_CD      = #{userCd}
+       AND LU.LEAVE_CD     = 'SYS_ANNUAL'
+       AND LU.LEAVE_STATUS = 'CONFIRMED'
+       AND LU.DEL_YN       = 'N'
+       AND LU.START_DATE <![CDATA[ >= ]]> #{windowFrom}
+       AND LU.START_DATE <![CDATA[ <= ]]> #{windowTo}
+    </select>
+
+    <!-- 스코프 내 윈도 일자별 기존 CONFIRMED 연차 인원(초기부하 시드). -->
+    <select id="selectScopeDailyLeaveLoad" resultType="com.prafta.common.cmm.leave.promotion.autobatch.mapper.LeaveAutoBatchMapper$DateCountRow">
+    /* LeaveAutoBatchMapper.selectScopeDailyLeaveLoad */
+        WITH RECURSIVE
+        node_tree AS (
+            SELECT
+                  N.CMPNY_CD
+                , N.SITE_CD
+                , N.NODE_CD
+            FROM TB_SITE_NODE N
+            WHERE N.CMPNY_CD = #{gvCmpnyCd}
+              AND N.SITE_CD  = #{siteCd}
+            <if test="nodeCd != null and nodeCd != ''">
+              AND N.NODE_CD  = #{nodeCd}
+            </if>
+            <if test="nodeCd == null or nodeCd == ''">
+              AND N.PARENT_NODE_CD IS NULL
+            </if>
+
+            <if test='"Y".equals(incSubNodeYn) or nodeCd == null or nodeCd == ""'>
+            UNION ALL
+
+            SELECT
+                  C.CMPNY_CD
+                , C.SITE_CD
+                , C.NODE_CD
+            FROM TB_SITE_NODE C
+            INNER JOIN node_tree P
+                ON  C.CMPNY_CD       = P.CMPNY_CD
+                AND C.SITE_CD        = P.SITE_CD
+                AND C.PARENT_NODE_CD = P.NODE_CD
+            </if>
+        )
+
+        SELECT
+              LU.START_DATE                AS ymd
+            , COUNT(DISTINCT LU.USER_CD)   AS cnt
+          FROM TB_USER_LEAVE_USE LU
+          INNER JOIN TB_USER U
+            ON  U.CMPNY_CD = LU.CMPNY_CD
+            AND U.USER_CD  = LU.USER_CD
+          INNER JOIN node_tree NT
+            ON  U.CMPNY_CD = NT.CMPNY_CD
+            AND U.SITE_CD  = NT.SITE_CD
+            AND U.NODE_CD  = NT.NODE_CD
+         WHERE LU.CMPNY_CD     = #{gvCmpnyCd}
+           AND LU.LEAVE_CD     = 'SYS_ANNUAL'
+           AND LU.LEAVE_STATUS = 'CONFIRMED'
+           AND LU.DEL_YN       = 'N'
+           AND U.USE_YN         = 'Y'
+           AND U.ACCOUNT_STATUS = '01'
+           AND LU.START_DATE <![CDATA[ >= ]]> #{windowFrom}
+           AND LU.START_DATE <![CDATA[ <= ]]> #{windowTo}
+         GROUP BY LU.START_DATE
+    </select>
+
+    <!-- 회사 일자휴일(윈도 기간만). -->
+    <select id="selectHolidayYmds" resultType="string">
+    /* LeaveAutoBatchMapper.selectHolidayYmds */
+    SELECT DATE_FORMAT(H.HOLIDAY_YMD, '%Y%m%d')
+      FROM TB_HOLIDAY H
+     WHERE H.CMPNY_CD = #{cmpnyCd}
+       AND H.USE_YN   = 'Y'
+       AND H.HOLIDAY_YMD <![CDATA[ >= ]]> STR_TO_DATE(#{windowFrom}, '%Y%m%d')
+       AND H.HOLIDAY_YMD <![CDATA[ <= ]]> STR_TO_DATE(#{windowTo}, '%Y%m%d')
+    </select>
+
+    <!-- 회사 매년 반복 휴일 'MMDD'. -->
+    <select id="selectHolidayRuleMmdds" resultType="string">
+    /* LeaveAutoBatchMapper.selectHolidayRuleMmdds */
+    SELECT CONCAT(R.HOLIDAY_MM, R.HOLIDAY_DD)
+      FROM TB_HOLIDAY_RULE R
+     WHERE R.CMPNY_CD = #{cmpnyCd}
+       AND R.USE_YN   = 'Y'
+    </select>
+
+</mapper>

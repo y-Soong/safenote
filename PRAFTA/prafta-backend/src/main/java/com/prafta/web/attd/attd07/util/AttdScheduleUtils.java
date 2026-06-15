@@ -8,7 +8,7 @@ import com.prafta.web.attd.attd07.result.AllowedWindowResult;
 
 /**
  * attd07 도메인 전용 헬퍼. {@link AllowedWindowResult}
- * (TB_SCH_MGMT의 raw HH:mm 컬럼 + FNC_STD_TIME으로 표준화된 actual)를
+ * (TB_SCH_MGMT의 raw HH:mm 컬럼 + 실근태 actual)를
  * workYmd 기준 분 stamp 구간으로 변환하여
  * {@code com.prafta.common.util.IntervalUtils}가 사용할 수 있게 만든다.
  *
@@ -113,8 +113,7 @@ public final class AttdScheduleUtils {
      * raw 실제 출퇴근 구간(act1, act2)을 workYmd 기준 분 stamp 리스트로 반환한다.
      * 각 row는 (in/out) date/time 컬럼 쌍을 사용하므로 자정을 넘는 actual도 정확하게 stamp된다.
      *
-     * <p>초과근무 등록 가능 범위는 "실근태 − 스케줄" 로 계산한다. 표준화 시각은
-     * 화면 보조 표시용일 뿐 OT 등록에 영향을 주지 않으므로 여기서는 raw 시각을 사용한다.
+     * <p>초과근무 등록 가능 범위는 "실근태 − 스케줄" 로 계산하므로 raw 시각을 사용한다.
      */
     public static List<int[]> buildActualSegments(String workYmd, AllowedWindowResult w) {
         List<int[]> out = new ArrayList<>(2);
@@ -169,8 +168,7 @@ public final class AttdScheduleUtils {
      * {@link #buildActualSegment(String, String, String, String, String)}와 동일하며,
      * (in/out) date/time 컬럼 쌍을 사용하므로 자정을 넘는 actual 도 정확히 stamp 된다.
      *
-     * <p>초과근무 등록 가능 범위는 "실근태 − 스케줄" 로 계산하므로 표준화 시각이 아닌
-     * raw 출퇴근 시각을 사용한다(표준화는 화면 보조 표시용).
+     * <p>초과근무 등록 가능 범위는 "실근태 − 스케줄" 로 계산하므로 raw 출퇴근 시각을 사용한다.
      */
     public static int[][] buildActualSegmentsBySeq(String workYmd, AllowedWindowResult w) {
         int[][] bySeq = new int[3][];

@@ -108,6 +108,7 @@ import com.prafta.common.cmm.file.application.query.FileInfoQuery;
 import com.prafta.common.cmm.file.dto.param.FileInfoParam;
 import com.prafta.common.cmm.file.mapper.FileMapper;
 import com.prafta.common.cmm.file.service.FileService;
+import com.prafta.common.cmm.push.TbmEventNotiService;
 import com.prafta.common.dto.TokenInfo;
 import com.prafta.common.error.common.CommonErrorCode;
 import com.prafta.common.error.tbm.TbmErrorCode;
@@ -140,6 +141,8 @@ public class AppAdminTbmServiceImpl implements AppAdminTbmService {
     private final FileMapper fileMapper;                       // R5 자료 파일코드 채번/메타
     private final FileUrlSigner fileUrlSigner;                 // 파일 서빙 서명 URL 발급(공통 인프라)
     private final ObjectMapper objectMapper;                   // E11 QR 페이로드(JSON) 파싱
+    /** PRAFTA-APP-021-3b(W3): TBM 교육 시작/종료 통보 PUSH 생산자(입실 참석자 대상, afterCommit 격리). */
+    private final TbmEventNotiService tbmEventNotiService;
 
     private static final int PWD_LENGTH = 6;
     /** prafta-051 §2: 교육준비→교육시작 자동전이 기본 경과시간(분). properties 로 오버라이드 가능(#DF-3). */
@@ -674,6 +677,14 @@ public class AppAdminTbmServiceImpl implements AppAdminTbmService {
 
         log.info("앱 관리자 TBM 교육 시작 완료 - sessionCd={}, manager={}", param.sessionCd(), param.gvUserCd());
 
+        // PRAFTA-APP-021-3b(W3): 교육 시작 시 입실 참석자에게 PUSH 적재(afterCommit 격리, 전이 영향 없음).
+        try {
+            tbmEventNotiService.notifyTbmStarted(
+                    param.gvCmpnyCd(), guard.siteCd(), param.sessionCd(), param.gvUserCd());
+        } catch (Exception e) {
+            log.error("TBM 교육 시작 통보 PUSH 적재 hook 실패(전이 영향 없음). sessionCd={}", param.sessionCd(), e);
+        }
+
         return AdminLiveTransitionResponse.builder()
                 .sessionCd(param.sessionCd())
                 .statusCd("IN_PROGRESS")
@@ -809,6 +820,14 @@ public class AppAdminTbmServiceImpl implements AppAdminTbmService {
 
         log.info("앱 관리자 TBM 교육 종료 완료 - sessionCd={}, autoCompletedCount={}",
                 param.sessionCd(), autoCompletedCount);
+
+        // PRAFTA-APP-021-3b(W3): 교육 종료 시 입실 참석자에게 PUSH 적재(afterCommit 격리, 전이 영향 없음).
+        try {
+            tbmEventNotiService.notifyTbmCompleted(
+                    param.gvCmpnyCd(), guard.siteCd(), param.sessionCd(), param.gvUserCd());
+        } catch (Exception e) {
+            log.error("TBM 교육 종료 통보 PUSH 적재 hook 실패(전이 영향 없음). sessionCd={}", param.sessionCd(), e);
+        }
 
         return AdminLiveTransitionResponse.builder()
                 .sessionCd(param.sessionCd())
@@ -1225,6 +1244,17 @@ public class AppAdminTbmServiceImpl implements AppAdminTbmService {
             log.warn("TBM 일용직 QR 입실 대상 부적합(사업장 밖/만료/탈퇴) - sessionCd={}, userCd={}, site={}",
                     param.sessionCd(), qrUserCd, guard.siteCd());
             throw new ApiException(TbmErrorCode.TBM_403_040);
+        }
+
+        // prafta-app-025 J1-7 작업 D: 출근 선행 가드. 당일 해당 일용직의 출근 기록이 없으면 입실 차단.
+        //   현장 처리(AdminSiteOpsView)에서 출근을 먼저 등록해야 TBM 입실 가능. 사업장 권위는 세션 SITE(서버 확정).
+        String todayYmd = java.time.LocalDate.now().format(java.time.format.DateTimeFormatter.ofPattern("yyyyMMdd"));
+        int todayCheckIn = appAdminTbmMapper.countTodayCheckIn(
+                param.gvCmpnyCd(), guard.siteCd(), qrUserCd, todayYmd);
+        if (todayCheckIn <= 0) {
+            log.warn("TBM 일용직 QR 입실 거부(당일 출근 기록 없음) - sessionCd={}, userCd={}, site={}",
+                    param.sessionCd(), qrUserCd, guard.siteCd());
+            throw new ApiException(TbmErrorCode.TBM_409_044);
         }
 
         // UK 멱등: 이미 입실 행이 있으면 UNIQUE 충돌 → 멱등 안내. INSERT...SELECT 가드(OPENED)로 TOCTOU 차단.
@@ -1691,7 +1721,23 @@ public class AppAdminTbmServiceImpl implements AppAdminTbmService {
     private void evaluateAutoStart(String cmpnyCd, String sessionCd) {
         int n = appAdminTbmMapper.evaluateAutoStart(cmpnyCd, sessionCd, prepAutoStartMinutes);
         if (n > 0) {
+            // 실제 0→1 전이가 일어난 경우에만(멱등 UPDATE affected==1) 교육 시작 통보 적재.
+            // WHERE STATUS_CD='OPENED' 가드로 n>0 은 본 호출에서 단 한 번만 성립(수동 start/동시 진입과 경합 안전).
             log.info("TBM 교육준비 {}분 경과 자동 교육시작 전이 - sessionCd={}", prepAutoStartMinutes, sessionCd);
+
+            // PRAFTA-APP-021-3b(W3 자동시작): 자동전이 세션도 입실 참석자에게 시작 PUSH 적재.
+            // dedupKey(TBM_STARTED_{sessionCd}_{userCd}) 멱등 → 수동/자동 동시 발생해도 입실자당 1회만 발송.
+            // actor(INSERT_NO)=개설자(MANAGER_USER_CD). 전이 영향 없도록 try-catch 격리.
+            try {
+                AdminSessionGuardResult guard = appAdminTbmMapper.selectSessionGuard(
+                        AdminSessionDetailQuery.of(sessionCd, cmpnyCd));
+                if (guard != null) {
+                    tbmEventNotiService.notifyTbmStarted(
+                            cmpnyCd, guard.siteCd(), sessionCd, guard.managerUserCd());
+                }
+            } catch (Exception e) {
+                log.error("TBM 자동 교육시작 통보 PUSH 적재 hook 실패(전이 영향 없음). sessionCd={}", sessionCd, e);
+            }
         }
     }
 

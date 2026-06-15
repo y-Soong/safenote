@@ -23,9 +23,28 @@ public interface LeaveFlowMapper {
     /** 연차 사용 ID 채번. */
     String selectNextLeaveId(@Param("cmpnyCd") String cmpnyCd);
 
-    /** 연차 타입 메타(결재여부/시스템시드/사용단위) 조회. 없으면 null. */
+    /** 연차 타입 메타(결재여부/시스템시드/사용단위/타입/최대신청일수) 조회. 없으면 null. */
     LeaveTypeInfoVO selectLeaveTypeInfo(@Param("cmpnyCd") String cmpnyCd,
                                         @Param("leaveCd") String leaveCd);
+
+    /**
+     * 연차개편(사용자 신청 '01' 한도검증): 당해 회계연도 CONFIRMED 사용 합계(Σ LEAVE_DAYS).
+     * 술어 LEAVE_STATUS='CONFIRMED' AND DEL_YN='N' (반려/취소 제외). 합계 없으면 0. (앱 미러)
+     */
+    BigDecimal selectFiscalUsedDays(@Param("cmpnyCd") String cmpnyCd,
+                                    @Param("userCd") String userCd,
+                                    @Param("leaveCd") String leaveCd,
+                                    @Param("fiscalStartYmd") String fiscalStartYmd,
+                                    @Param("fiscalEndYmdExclusive") String fiscalEndYmdExclusive);
+
+    /**
+     * 연차개편 동시성: 사용자 신청('01') 직렬화용 advisory lock 획득(GET_LOCK).
+     * 1=획득, 0=타임아웃, null=오류. 세션 단위 → 호출부 finally 에서 releaseAdvisoryLock. (앱 미러)
+     */
+    Integer getAdvisoryLock(@Param("lockKey") String lockKey, @Param("timeoutSec") int timeoutSec);
+
+    /** 연차개편 동시성: advisory lock 해제(RELEASE_LOCK). */
+    Integer releaseAdvisoryLock(@Param("lockKey") String lockKey);
 
     /** 활성 법정 정책의 결재 여부 (tb_leave_policy.APRV_USE_YN). 없으면 null. */
     String selectPolicyAprvUseYn(@Param("cmpnyCd") String cmpnyCd);
@@ -116,20 +135,8 @@ public interface LeaveFlowMapper {
     com.prafta.web.attd.leaveflow.vo.LeaveUseDetailVO selectLeaveUseDetailByReqId(
             @Param("cmpnyCd") String cmpnyCd, @Param("reqId") String reqId);
 
-    /** 출근 차단: 해당 일자 근무계획 WORK_PLAN_CD를 연차코드로 upsert(일 단위 휴가 시 출근 차단). */
-    int upsertWorkPlanLeave(@Param("cmpnyCd") String cmpnyCd,
-                            @Param("siteCd") String siteCd,
-                            @Param("userCd") String userCd,
-                            @Param("workYmd") String workYmd,
-                            @Param("leaveCd") String leaveCd,
-                            @Param("insertNo") String insertNo);
-
-    /** 출근 차단 해제: 우리가 설정한 연차 블록(WORK_PLAN_CD=leaveCd)만 삭제(반려/취소 시). */
-    int deleteWorkPlanLeave(@Param("cmpnyCd") String cmpnyCd,
-                            @Param("siteCd") String siteCd,
-                            @Param("userCd") String userCd,
-                            @Param("workYmd") String workYmd,
-                            @Param("leaveCd") String leaveCd);
+    // prafta-com-008-E (L1): upsertWorkPlanLeave / deleteWorkPlanLeave 제거.
+    //   E-2 모델 전환으로 work_plan 에 LEAVE_CD 를 쓰지 않으므로(연차일 판정 단일출처=leave_use) 사장됨. 호출처 0건.
 
     /** 내 결재함: 내가 현재 단계('01' 신청) 결재자인 연차 요청 목록(상세 포함). */
     java.util.List<com.prafta.web.attd.leaveflow.vo.MyLeaveApprovalVO> selectMyPendingLeaveApprovals(

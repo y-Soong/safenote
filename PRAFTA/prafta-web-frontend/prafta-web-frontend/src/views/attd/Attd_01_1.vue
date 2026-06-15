@@ -169,22 +169,13 @@
                   @sort="onSort"
                   @update:width="onResize"
                 />
-                <ThSortable
-                  label="기본근무여부"
-                  col-key="baseYnNm"
-                  :sort-key="sortKey"
-                  :sort-order="sortOrder"
-                  :width="colWidths.baseYnNm"
-                  @sort="onSort"
-                  @update:width="onResize"
-                />
                 <th class="editableCell" style="width: 8%">변경이력</th>
               </tr>
             </thead>
             <tbody>
               <template v-if="!schList || schList.length === 0">
                 <tr>
-                  <td colspan="11" class="edu-grid-empty">
+                  <td colspan="10" class="edu-grid-empty">
                     등록된 세부 항목이 없습니다.
                   </td>
                 </tr>
@@ -205,7 +196,6 @@
                   <td>{{ sch.secSchBrkMin }}</td>
                   <td>{{ sch.regUserCnt }}</td>
                   <td>{{ sch.useYnNm }}</td>
-                  <td>{{ sch.baseYnNm }}</td>
                   <td style="text-align: center" @click.stop>
                     <button
                       type="button"
@@ -287,7 +277,6 @@ const { colWidths, onResize } = useColumnResize({
   secSchBrkMin: 110,
   regUserCnt: 110,
   useYnNm: 80,
-  baseYnNm: 90,
 });
 const systCodeArr = ref([]);
 

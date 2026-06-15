@@ -3,8 +3,9 @@
         "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
 
 <!--
-  노무수령거부 통지/감지/알림 공용 Mapper (PRAFTA-COM-001).
-  web 기능1(통지) + app 기능2/3(감지·관리자 PUSH) 공용.
+  노무수령거부 차단 판정/이력/알림 공용 Mapper (PRAFTA-COM-001 → -008-B 차단 전환).
+  진입부 차단 가드(guardAndRecord) 공용. com-008-B-4 에서 web 기능1(통지) 및 구 detect 자산
+  (selectRefusalTarget/countValidTarget)은 제거됨.
   outbox INSERT / NOTI_ID 채번은 LeaveDashboardMapper 재사용(여기 미보유).
 -->
 <mapper namespace="com.prafta.common.cmm.leave.mapper.LeaveRefusalMapper">
@@ -17,41 +18,33 @@
     </select>
 
     <!--
-      기능1 통지 대상 정합성 검증(IDOR 가드).
-      대상 userCd 가 호출자 회사(CMPNY_CD) 소속의 실재·활성 사용자이고, 요청 siteCd 와
-      TB_USER.SITE_CD 가 정합인지 확인. 활성 = USE_YN='Y', ACCOUNT_STATUS='01'.
-      회사 내 임의/미존재/부정합 (siteCd,userCd) 통지 주입 차단.
+      com-008-B 노무수령거부 차단 대상일 판정.
+      판정 소스를 NOTICED 로그 → tb_user_leave_use 촉진단계로 전환(detect→block).
+      3게이트 모두 통과 시 종일 CONFIRMED 연차 1건 반환(없으면 대상 아님):
+      (1) [촉진] 그날(START_DATE=targetYmd) 종일('00') CONFIRMED 연차 + PROMOTION_STAGE ∈ {FIRST,SECOND}.
+      (2) [게이트2 법정] 연결 grant GRANT_TYPE LIKE 'STATUTORY_%' AND <> 'STATUTORY_MONTHLY'(월차 배제).
+      (3) [게이트1 휴일] 시도 당일 휴일 아님 — tb_holiday(일자) / tb_holiday_rule(MM/DD) NOT EXISTS(구 로직 이식).
     -->
-    <select id="countValidTarget" resultType="int">
-    /* LeaveRefusalMapper.countValidTarget */
-    SELECT COUNT(1)
-      FROM TB_USER U
-     WHERE U.CMPNY_CD       = #{cmpnyCd}
-       AND U.USER_CD        = #{userCd}
-       AND U.SITE_CD        = #{siteCd}
-       AND U.USE_YN         = 'Y'
-       AND U.ACCOUNT_STATUS = '01'
-    </select>
-
-    <!--
-      기능2 대상일 판정.
-      (1) tb_leave_refusal_log 의 NOTICED 행이 (회사+사업장+사용자+대상일=출근근무일)로 존재.
-      (2) 그 대상일이 휴일이 아님 — tb_holiday(일자 휴일) NOT EXISTS 및
-          tb_holiday_rule(매년 MM/DD 고정 휴일) NOT EXISTS 둘 다 통과.
-      위 두 게이트를 모두 통과해야 1행 반환(=노무수령거부 대상). 그 외 결과 없음(대상 아님).
-    -->
-    <select id="selectRefusalTarget" resultType="com.prafta.common.cmm.leave.vo.RefusalTargetVO">
-    /* LeaveRefusalMapper.selectRefusalTarget */
+    <select id="selectLaborRefusalTarget" resultType="com.prafta.common.cmm.leave.vo.RefusalTargetVO">
+    /* LeaveRefusalMapper.selectLaborRefusalTarget */
     SELECT
-          L.REFUSAL_ID   AS refusalId
-        , L.TARGET_YMD   AS targetYmd
-      FROM TB_LEAVE_REFUSAL_LOG L
-     WHERE L.CMPNY_CD   = #{cmpnyCd}
-       AND L.SITE_CD    = #{siteCd}
-       AND L.USER_CD    = #{userCd}
-       AND L.TARGET_YMD = #{targetYmd}
-       AND L.EVENT_TYPE = 'NOTICED'
-       AND L.DEL_YN     = 'N'
+          U.LEAVE_ID    AS leaveId
+        , U.START_DATE  AS targetYmd
+      FROM TB_USER_LEAVE_USE U
+           INNER JOIN TB_USER_LEAVE_GRANT G
+              ON  G.CMPNY_CD = U.CMPNY_CD
+              AND G.USER_CD  = U.USER_CD
+              AND G.GRANT_ID = U.GRANT_ID
+     WHERE U.CMPNY_CD       = #{cmpnyCd}
+       AND U.SITE_CD        = #{siteCd}
+       AND U.USER_CD        = #{userCd}
+       AND U.START_DATE     = #{targetYmd}
+       AND U.LEAVE_STATUS   = 'CONFIRMED'
+       AND U.DEL_YN         = 'N'
+       AND U.USE_UNIT_TYPE  = '00'
+       AND U.PROMOTION_STAGE IN ('FIRST', 'SECOND')
+       AND G.GRANT_TYPE     LIKE 'STATUTORY_%'
+       AND G.GRANT_TYPE     <![CDATA[ <> ]]> 'STATUTORY_MONTHLY'
        AND NOT EXISTS (
              SELECT 1
                FROM TB_HOLIDAY H
@@ -73,7 +66,8 @@
     <!--
       사실 로그 append(공용). dedup UNIQUE(CMPNY_CD, DEDUP_KEY) 충돌 시 UPDATE_DATE 만 갱신(멱등).
       row alias(NEW) 문법 사용 — VALUES() 미사용(MySQL 8.0.20+ 권장).
-      DETECT_DTIME 은 CHECKIN_DETECTED(detectNow=true) 일 때만 NOW().
+      DETECT_DTIME 은 CHECKIN_DETECTED/BLOCKED(detectNow=true) 일 때만 NOW().
+      ATTEMPT_TYPE / RELATED_LEAVE_ID 는 BLOCKED(com-008-B) 시에만 세팅(그 외 NULL).
     -->
     <insert id="insertRefusalLog" parameterType="com.prafta.common.cmm.leave.vo.RefusalLogInsertVO">
     /* LeaveRefusalMapper.insertRefusalLog */
@@ -84,8 +78,10 @@
         , USER_CD
         , TARGET_YMD
         , EVENT_TYPE
+        , ATTEMPT_TYPE
         , RELATED_NOTI_ID
         , RELATED_ATTD_ID
+        , RELATED_LEAVE_ID
         , DETECT_DTIME
         , DEL_YN
         , INSERT_NO
@@ -99,8 +95,10 @@
         , #{userCd}
         , #{targetYmd}
         , #{eventType}
+        , #{attemptType}
         , #{relatedNotiId}
         , #{relatedAttdId}
+        , #{relatedLeaveId}
         , <choose><when test="detectNow">NOW()</when><otherwise>NULL</otherwise></choose>
         , 'N'
         , #{insertNo}

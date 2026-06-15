@@ -1,11 +1,15 @@
 package com.prafta.common.schedule.tbm;
 
+import java.util.List;
+
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
 
+import com.prafta.common.cmm.push.TbmEventNotiService;
 import com.prafta.web.tbm.tbm02.mapper.Tbm02Mapper;
+import com.prafta.web.tbm.tbm02.result.AutoStartTargetResult;
 
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -29,6 +33,8 @@ import lombok.extern.slf4j.Slf4j;
 public class TbmAutoStartScheduler {
 
     private final Tbm02Mapper tbm02Mapper;
+    /** PRAFTA-APP-021-3b(W3 자동시작): 배치 자동전이 세션의 입실 참석자 시작 PUSH 생산자(afterCommit 격리). */
+    private final TbmEventNotiService tbmEventNotiService;
 
     /** 게이트: 기본 false(비활성). 마이그 선적용 + 운영 검증 후 true 로 켠다. */
     @Value("${prafta.tbm.autostart.enabled:false}")
@@ -46,9 +52,27 @@ public class TbmAutoStartScheduler {
             return;
         }
         try {
+            // PRAFTA-APP-021-3b(W3 자동시작): 일괄 전이 직전 대상 세션 키 포착(동일 WHERE, 동일 트랜잭션).
+            List<AutoStartTargetResult> targets = tbm02Mapper.selectExpiredPrepForStart();
+
             int started = tbm02Mapper.bulkStartExpiredPrep();
             if (started > 0) {
                 log.info("TBM 자동 교육시작 배치 1주기 완료. IN_PROGRESS 전이 {}건", started);
+            }
+
+            // 실제 전이가 발생한 세션의 입실 참석자에게 시작 PUSH 적재(afterCommit 격리, 배치 흐름 영향 없음).
+            // dedupKey(TBM_STARTED_{sessionCd}_{userCd}) 멱등 → lazy-eval 경로/동시 발생과 입실자당 1회 보장.
+            // actor(INSERT_NO)=개설자(MANAGER_USER_CD)로 기록(배치는 'SYSTEM' 으로 전이하나 통보 감사주체는 개설자).
+            if (started > 0 && targets != null && !targets.isEmpty()) {
+                for (AutoStartTargetResult t : targets) {
+                    try {
+                        tbmEventNotiService.notifyTbmStarted(
+                                t.cmpnyCd(), t.siteCd(), t.sessionCd(), t.managerUserCd());
+                    } catch (Exception e) {
+                        log.error("TBM 자동 교육시작 통보 PUSH 적재 hook 실패(배치 흐름 영향 없음). sessionCd={}",
+                                t.sessionCd(), e);
+                    }
+                }
             }
         } catch (Exception e) {
             log.error("TBM 자동 교육시작 배치 실행 중 예외 발생", e);

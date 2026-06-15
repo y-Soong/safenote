@@ -25,6 +25,9 @@ public record TokenInfo (
 	, String gv_nodeCd
 	, String gv_nodeNm
 	, String gv_deviceId
+	// PRAFTA-app-027 follow-up: 고용형태[SYS041] (REGULAR/CONTRACT/DAILY/EXECUTIVE).
+	//   통합형 일용직 차단(assertNotDailyWorker)의 단일 신뢰 출처. 정규 사용자엔 NULL/비-DAILY.
+	, String gv_employmentType
 	, Date issuedAt
 	, Date getExpiration
 ) {
@@ -46,6 +49,7 @@ public record TokenInfo (
         		, claims.get("gv_nodeCd", String.class)
         		, claims.get("gv_nodeNm", String.class)
         		, claims.get("gv_deviceId", String.class)
+        		, claims.get("gv_employmentType", String.class)
         		, claims.getIssuedAt()
         		, claims.getExpiration()
         );

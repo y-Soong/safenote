@@ -81,6 +81,13 @@
       </div>
     </div>
 
+    <!-- 휴게시간 자동 차감 안내 -->
+    <p class="a08-note">
+      ※ <b>실근로시간</b>과 <b>인정시간(정상근무)</b>은 스케줄에 등록된
+      휴게시간을 자동 차감하여 표시합니다. 초과근무 인정시간은 정해진 휴게시간이
+      없어 관리자가 승인한 근로시간 전체를 표시합니다.
+    </p>
+
     <!-- 본문: 좌측 결과 테이블 / 우측 상세 패널 -->
     <div class="viewBody a08-body" :class="{ 'detail-open': !!selected }">
       <div class="a08-table-wrap">
@@ -93,10 +100,10 @@
               <th rowspan="2">근무일</th>
               <th rowspan="2">요일</th>
               <th rowspan="2">차수</th>
-              <th rowspan="2">스케줄(1구간)</th>
-              <th rowspan="2">스케줄(2구간)</th>
+              <th rowspan="2">스케줄</th>
               <th colspan="4">실제근무</th>
-              <th colspan="4">정규화근무</th>
+              <th rowspan="2">실근로시간</th>
+              <th rowspan="2">인정시간</th>
               <th rowspan="2">상태</th>
               <th rowspan="2">상세</th>
             </tr>
@@ -105,15 +112,11 @@
               <th>출근시각</th>
               <th>퇴근일</th>
               <th>퇴근시각</th>
-              <th>출근일</th>
-              <th>출근시각</th>
-              <th>퇴근일</th>
-              <th>퇴근시각</th>
             </tr>
           </thead>
           <tbody>
             <tr v-if="displayRows.length === 0">
-              <td colspan="18" class="a08-empty">조회 결과가 없습니다.</td>
+              <td colspan="15" class="a08-empty">조회 결과가 없습니다.</td>
             </tr>
             <tr
               v-for="r in displayRows"
@@ -135,24 +138,17 @@
               <td>{{ fmtDow(r.workYmd) }}</td>
               <!-- 차수: 초과근무 행은 '-' -->
               <td>{{ r._isOt ? "-" : r.workSeq }}</td>
-              <!-- 스케줄: 초과근무 행은 '-' -->
-              <td>{{ r._isOt ? "-" : planRange(r.plan1Start, r.plan1End) }}</td>
-              <td>{{ r._isOt ? "-" : planRange(r.plan2Start, r.plan2End) }}</td>
+              <!-- 스케줄(통합): 차수에 해당하는 구간. 초과근무 행은 '-' -->
+              <td>{{ scheduleCell(r) }}</td>
               <!-- 실제근무 (차수에 해당하는 구간 / 초과근무 실제 출퇴근) -->
               <td>{{ dCell(r._inDate) }}</td>
               <td>{{ tCell(r._inTime) }}</td>
               <td>{{ dCell(r._outDate) }}</td>
               <td>{{ tCell(r._outTime) }}</td>
-              <!-- 정규화근무: 초과근무 행은 정규화 개념이 없어 '-'.
-                   표준화 규칙 위반(_stdViolated) 구간은 미적용 → 공백('-'). 원본은 실제근무 컬럼 참조. -->
-              <td>{{ r._isOt || r._stdViolated ? "-" : dCell(r._inDate) }}</td>
-              <td>
-                {{ r._isOt || r._stdViolated ? "-" : tCell(r._inStdTime) }}
-              </td>
-              <td>{{ r._isOt || r._stdViolated ? "-" : dCell(r._outDate) }}</td>
-              <td>
-                {{ r._isOt || r._stdViolated ? "-" : tCell(r._outStdTime) }}
-              </td>
+              <!-- 실근로시간: 실제 구간 − 휴게 -->
+              <td>{{ fmtDuration(workedNetMin(r)) }}</td>
+              <!-- 인정시간: 정상=(실제∩스케줄)−휴게 / 초과=관리자 승인 시간 -->
+              <td>{{ fmtDuration(recognizedMin(r)) }}</td>
               <!-- 상태: 초과근무 행은 배지 없이 '-' 텍스트만 -->
               <td>
                 <template v-if="r._isOt">-</template>
@@ -164,9 +160,15 @@
                 </span>
               </td>
               <td>
-                <button class="a08-btn-detail" @click.stop="fnSelectRow(r)">
+                <!-- 상세(GPS 동선)는 GPS 기록이 있는 외근 행만 노출 -->
+                <button
+                  v-if="r.isOutsideYn === 'Y'"
+                  class="a08-btn-detail"
+                  @click.stop="fnSelectRow(r)"
+                >
                   상세
                 </button>
+                <span v-else class="a08-no-detail">-</span>
               </td>
             </tr>
           </tbody>
@@ -206,20 +208,8 @@
             </span>
           </div>
           <div class="meta-row">
-            <span class="meta-label">스케줄(1구간)</span>
-            <span class="meta-value">{{
-              selected._isOt
-                ? "-"
-                : planRange(selected.plan1Start, selected.plan1End)
-            }}</span>
-          </div>
-          <div class="meta-row">
-            <span class="meta-label">스케줄(2구간)</span>
-            <span class="meta-value">{{
-              selected._isOt
-                ? "-"
-                : planRange(selected.plan2Start, selected.plan2End)
-            }}</span>
+            <span class="meta-label">스케줄</span>
+            <span class="meta-value">{{ scheduleCell(selected) }}</span>
           </div>
           <div class="meta-row">
             <span class="meta-label">실제근무</span>
@@ -233,22 +223,16 @@
             }}</span>
           </div>
           <div class="meta-row">
-            <span class="meta-label">정규화근무</span>
-            <span class="meta-value">
-              <span v-if="selected._stdViolated" class="std-unmet"
-                >조건 미충족으로 표준화 규칙 미적용</span
-              >
-              <template v-else>{{
-                selected._isOt
-                  ? "-"
-                  : dtRange(
-                      selected._inDate,
-                      selected._inStdTime,
-                      selected._outDate,
-                      selected._outStdTime
-                    )
-              }}</template>
-            </span>
+            <span class="meta-label">실근로시간</span>
+            <span class="meta-value">{{
+              fmtDuration(workedNetMin(selected))
+            }}</span>
+          </div>
+          <div class="meta-row">
+            <span class="meta-label">인정시간</span>
+            <span class="meta-value">{{
+              fmtDuration(recognizedMin(selected))
+            }}</span>
           </div>
           <div class="meta-row">
             <span class="meta-label">상태</span>
@@ -643,16 +627,13 @@ const fnExcel = async () => {
     { header: "근무일", fixed: false, width: 12 },
     { header: "요일", fixed: false, width: 6 },
     { header: "차수", fixed: false, width: 6 },
-    { header: "스케줄(1구간)", fixed: false, width: 18 },
-    { header: "스케줄(2구간)", fixed: false, width: 18 },
+    { header: "스케줄", fixed: false, width: 18 },
     { header: "실제 출근일", fixed: false, width: 10 },
     { header: "실제 출근시각", fixed: false, width: 10 },
     { header: "실제 퇴근일", fixed: false, width: 10 },
     { header: "실제 퇴근시각", fixed: false, width: 10 },
-    { header: "정규화 출근일", fixed: false, width: 10 },
-    { header: "정규화 출근시각", fixed: false, width: 10 },
-    { header: "정규화 퇴근일", fixed: false, width: 10 },
-    { header: "정규화 퇴근시각", fixed: false, width: 10 },
+    { header: "실근로시간", fixed: false, width: 12 },
+    { header: "인정시간", fixed: false, width: 12 },
     { header: "상태", fixed: false, width: 10 },
     { header: "외근여부", fixed: false, width: 8 },
   ];
@@ -663,16 +644,13 @@ const fnExcel = async () => {
     fmtYmd(r.workYmd),
     fmtDow(r.workYmd),
     r._isOt ? "-" : (r.workSeq ?? ""),
-    r._isOt ? "-" : planRange(r.plan1Start, r.plan1End),
-    r._isOt ? "-" : planRange(r.plan2Start, r.plan2End),
+    scheduleCell(r),
     dCell(r._inDate),
     tCell(r._inTime),
     dCell(r._outDate),
     tCell(r._outTime),
-    r._isOt || r._stdViolated ? "-" : dCell(r._inDate),
-    r._isOt || r._stdViolated ? "-" : tCell(r._inStdTime),
-    r._isOt || r._stdViolated ? "-" : dCell(r._outDate),
-    r._isOt || r._stdViolated ? "-" : tCell(r._outStdTime),
+    fmtDuration(workedNetMin(r)),
+    fmtDuration(recognizedMin(r)),
     r._isOt ? "-" : statusLabel(r._status),
     r.isOutsideYn === "Y" ? "외근" : "내근",
   ]);
@@ -739,27 +717,95 @@ const dCell = (ymd) => fmtMd(ymd) || "-";
 // 테이블 시각 셀 (HH:mm)
 const tCell = (hhmm) => fmtTime(hhmm) || "-";
 
-// 표준화 규칙 위반 판정 — 출근 올림(CEIL)/퇴근 내림(FLOOR) 결과 표준 출근시각이 표준
-//   퇴근시각 이상이면(출퇴근 시각이 같거나 매우 짧음) 표준화 미적용으로 본다(앱 attd01 과 동일 규칙).
-//   표준 출/퇴근 시각이 모두 있을 때만 판정(미등록/미산출이면 위반 아님). 일자 차이로 자정 넘김 보정.
-const ymdToDate = (ymd) => {
-  const s = String(ymd ?? "");
+// ───────────────────────────────────────────────────────────
+// 근로시간 산정 (실근로시간 / 인정시간).
+//   - 실근로시간   : 실제 출근~퇴근 구간 길이 − 스케줄 휴게시간(차수별).
+//   - 인정시간(정상): (실제근무 ∩ 스케줄) 교집합 길이 − 스케줄 휴게시간(차수별).
+//   - 인정시간(초과): 관리자 승인 실근무 분(otWorkMinutes, 휴게 제외)을 전체 표시.
+//   휴게 차감 결과가 음수면 0 으로 클램프한다. 자정 넘김은 일자(yyyyMMdd) 기준으로 보정.
+// ───────────────────────────────────────────────────────────
+// 'yyyyMMdd' + 'HHmm' → 분 단위 절대값. 일자 미기재 시 baseYmd 로 보정.
+const dtMinutes = (ymd, hhmm, baseYmd) => {
+  if (!hhmm) return null;
+  const t = String(hhmm).padStart(4, "0");
+  const h = parseInt(t.slice(0, 2), 10);
+  const mi = parseInt(t.slice(2, 4), 10);
+  if (isNaN(h) || isNaN(mi)) return null;
+  let s = String(ymd ?? "");
+  if (s.length !== 8) s = String(baseYmd ?? "");
   if (s.length !== 8) return null;
-  return new Date(+s.slice(0, 4), +s.slice(4, 6) - 1, +s.slice(6, 8));
+  const base = Date.UTC(+s.slice(0, 4), +s.slice(4, 6) - 1, +s.slice(6, 8));
+  return Math.round(base / 60000) + h * 60 + mi;
 };
-const isStdRuleViolated = (inDate, inStdTime, outDate, outStdTime) => {
-  if (!inStdTime || !outStdTime) return false;
-  const i = String(inStdTime);
-  const o = String(outStdTime);
-  if (i.length < 4 || o.length < 4) return false;
-  const sMin = parseInt(i.slice(0, 2), 10) * 60 + parseInt(i.slice(2, 4), 10);
-  const eMin = parseInt(o.slice(0, 2), 10) * 60 + parseInt(o.slice(2, 4), 10);
-  const dIn = ymdToDate(inDate);
-  const dOut = ymdToDate(outDate);
-  const gap =
-    dIn && dOut ? Math.round((dOut.getTime() - dIn.getTime()) / 86400000) : 0;
-  return eMin + gap * 1440 <= sMin;
+// 차수별 스케줄 휴게시간(분). 초과근무는 정해진 휴게 없음(0).
+const schedBreakMin = (r) => {
+  if (r._isOt) return 0;
+  const isSeq2 = String(r.workSeq) === "2";
+  const n = parseInt(isSeq2 ? r.plan2BreakMin : r.plan1BreakMin, 10);
+  return isNaN(n) ? 0 : n;
 };
+// 실제 출근~퇴근 총 구간(분, 휴게 차감 전).
+const actualGrossMin = (r) => {
+  const inM = dtMinutes(r._inDate, r._inTime, r.workYmd);
+  let outM = dtMinutes(r._outDate, r._outTime, r.workYmd);
+  if (inM == null || outM == null) return null;
+  // 퇴근 일자 미기재로 퇴근<출근이면 자정 넘김으로 보고 +1일
+  if (outM < inM) outM += 1440;
+  if (outM < inM) return null;
+  return outM - inM;
+};
+// 실근로시간(분) = 실제 구간 − 휴게.
+const workedNetMin = (r) => {
+  const gross = actualGrossMin(r);
+  if (gross == null) return null;
+  return Math.max(0, gross - schedBreakMin(r));
+};
+// 인정시간(분).
+const recognizedMin = (r) => {
+  // 초과근무: 관리자 승인 실근무 분(휴게 제외) 전체.
+  if (r._isOt) {
+    const n = parseInt(r.otWorkMinutes, 10);
+    return isNaN(n) ? null : Math.max(0, n);
+  }
+  // 정상근무: (실제근무 ∩ 스케줄) − 휴게.
+  const isSeq2 = String(r.workSeq) === "2";
+  const schStart = isSeq2 ? r.plan2Start : r.plan1Start;
+  const schEnd = isSeq2 ? r.plan2End : r.plan1End;
+  if (!schStart || !schEnd) return null;
+  const inM = dtMinutes(r._inDate, r._inTime, r.workYmd);
+  let outM = dtMinutes(r._outDate, r._outTime, r.workYmd);
+  if (inM == null || outM == null) return null;
+  if (outM < inM) outM += 1440;
+  const schStartM = dtMinutes(r.workYmd, schStart, r.workYmd);
+  let schEndM = dtMinutes(r.workYmd, schEnd, r.workYmd);
+  if (schStartM == null || schEndM == null) return null;
+  // 종료<시작이면 익일 종료(야간 스케줄)
+  if (schEndM < schStartM) schEndM += 1440;
+  const overlap = Math.max(
+    0,
+    Math.min(outM, schEndM) - Math.max(inM, schStartM)
+  );
+  return Math.max(0, overlap - schedBreakMin(r));
+};
+// 분 → "N시간 M분" 표기. null/0 처리.
+const fmtDuration = (min) => {
+  if (min == null) return "-";
+  const m = Math.max(0, Math.round(min));
+  const h = Math.floor(m / 60);
+  const mm = m % 60;
+  if (h > 0 && mm > 0) return `${h}시간 ${mm}분`;
+  if (h > 0) return `${h}시간`;
+  return `${mm}분`;
+};
+// 통합 스케줄 셀: 차수에 해당하는 구간(1/2). 초과근무는 '-'.
+const scheduleCell = (r) => {
+  if (r._isOt) return "-";
+  const isSeq2 = String(r.workSeq) === "2";
+  return isSeq2
+    ? planRange(r.plan2Start, r.plan2End)
+    : planRange(r.plan1Start, r.plan1End);
+};
+
 // 행 클래스: 주말 배경 + 선택 행 강조
 const rowClass = (r) => {
   const cls = [];
@@ -775,6 +821,10 @@ const rowClass = (r) => {
   }
   if (selected.value && selected.value._rowKey === r._rowKey) {
     cls.push("row-active");
+  }
+  // 외근(GPS 존재)이 아니면 상세를 열 수 없으므로 클릭 가능 표시를 끈다.
+  if (r.isOutsideYn !== "Y") {
+    cls.push("row-no-detail");
   }
   return cls;
 };
@@ -886,9 +936,6 @@ const displayRows = computed(() =>
         _inTime: r.act1InTime,
         _outDate: r.act1OutDate,
         _outTime: r.act1OutTime,
-        _inStdTime: null,
-        _outStdTime: null,
-        _stdViolated: false,
         _rowKey: "ot-" + r.otId,
       };
     }
@@ -896,8 +943,6 @@ const displayRows = computed(() =>
     const isSeq2 = String(r.workSeq) === "2";
     const inDate = isSeq2 ? r.act2InDate : r.act1InDate;
     const outDate = isSeq2 ? r.act2OutDate : r.act1OutDate;
-    const inStdTime = isSeq2 ? r.act2InStdTime : r.act1InStdTime;
-    const outStdTime = isSeq2 ? r.act2OutStdTime : r.act1OutStdTime;
     return {
       ...r,
       _isOt: false,
@@ -906,10 +951,6 @@ const displayRows = computed(() =>
       _inTime: isSeq2 ? r.act2InTime : r.act1InTime,
       _outDate: outDate,
       _outTime: isSeq2 ? r.act2OutTime : r.act1OutTime,
-      _inStdTime: inStdTime,
-      _outStdTime: outStdTime,
-      // 표준화 규칙 위반 시 정규화근무는 미적용으로 표시(원본은 실제근무 컬럼에 그대로).
-      _stdViolated: isStdRuleViolated(inDate, inStdTime, outDate, outStdTime),
       _rowKey: "a-" + r.attdId,
     };
   })
@@ -945,13 +986,14 @@ let kakaoMarkers = [];
 let kakaoPolyline = null;
 
 const fnSelectRow = async (r) => {
+  // GPS 동선을 표시할 수 있는 외근 행(GPS 기록 존재)만 상세 패널을 연다.
+  if (r.isOutsideYn !== "Y") return;
+
   selected.value = r;
   // 지도/GPS 초기화
   cleanupMap();
   gpsList.value = [];
   gpsViewMode.value = "all";
-
-  if (r.isOutsideYn !== "Y") return;
 
   gpsLoading.value = true;
   try {
@@ -1204,6 +1246,19 @@ onBeforeUnmount(() => {
   border-radius: 6px;
   background: #fff;
 }
+
+/* 휴게 자동차감 안내 문구 */
+.a08-note {
+  margin: 0;
+  padding: 0.4rem 0.75rem;
+  font-size: 0.8rem;
+  line-height: 1.4;
+  color: var(--color-text-muted, #6b7280);
+}
+.a08-note b {
+  color: var(--color-text, #374151);
+  font-weight: 600;
+}
 .a08-body.detail-open .a08-table-wrap {
   flex: 1 1 60%;
 }
@@ -1244,6 +1299,14 @@ onBeforeUnmount(() => {
 }
 .a08-table tbody tr {
   cursor: pointer;
+}
+/* 외근이 아니어서 상세를 열 수 없는 행 — 클릭 커서 제거 */
+.a08-table tbody tr.row-no-detail {
+  cursor: default;
+}
+/* 상세 버튼이 없는 행의 자리 표시 */
+.a08-no-detail {
+  color: #9ca3af;
 }
 /* 주말 행 배경 (요일 컬럼 대체) */
 .a08-table tbody tr.row-sun {
@@ -1367,18 +1430,6 @@ onBeforeUnmount(() => {
 }
 .meta-value {
   flex: 1;
-}
-/* 표준화 규칙 미적용(조건 미충족) — 연한 붉은색 계통 영역 */
-.std-unmet {
-  display: inline-block;
-  padding: 0.15rem 0.6rem;
-  border-radius: 0.375rem;
-  background: #fef2f2;
-  border: 1px solid #fecaca;
-  color: #b91c1c;
-  font-size: 0.8125rem;
-  font-weight: 600;
-  line-height: 1.4;
 }
 
 .a08-map-section {

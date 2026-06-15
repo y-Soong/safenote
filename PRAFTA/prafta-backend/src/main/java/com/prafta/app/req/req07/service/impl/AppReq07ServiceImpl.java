@@ -19,9 +19,12 @@ import com.prafta.app.req.req07.dto.response.SchedOptionResponse;
 import com.prafta.app.req.req07.dto.response.result.ActualAttdWindowResult;
 import com.prafta.app.req.req07.dto.response.result.ScheduleWindowResult;
 import com.prafta.app.req.req07.dto.response.result.SchedOptionResult;
+import com.prafta.app.attd.attd01.mapper.AppAttd01Mapper;
 import com.prafta.app.req.req07.mapper.AppReq07Mapper;
 import com.prafta.app.req.req07.service.AppReq07Service;
 import com.prafta.app.req.req09.service.AttdApprovalLineService;
+import com.prafta.common.cmm.leave.service.LeaveRefusalConst;
+import com.prafta.common.cmm.leave.service.LeaveRefusalDetectService;
 import com.prafta.common.error.attd.AttdErrorCode;
 import com.prafta.common.exception.ApiException;
 import com.prafta.web.attd.attd07.service.AttdCloseService;
@@ -60,6 +63,12 @@ public class AppReq07ServiceImpl implements AppReq07Service {
     private final AttdApprovalLineService attdApprovalLineService;
     /** prafta-app-009 F12: 근태/스케줄 마감 가드(web 빈 재사용 — 로직 미복제). */
     private final AttdCloseService attdCloseService;
+    /** prafta-com-008-B: 노무수령거부 차단 가드(공용 빈 재사용 — ATTD_CREATE 진입 방어). */
+    private final LeaveRefusalDetectService leaveRefusalDetectService;
+    /** prafta-com-008-D: 교대 잠금 가드(공용 cmm 빈 — 앱 스케줄수정 요청 시 교대 소속 구간 차단. app→web 직접호출 아님). */
+    private final com.prafta.common.cmm.shift.service.ShiftMembershipService shiftMembershipService;
+    /** prafta-com-008-B-3: 연차일 OT 차단 판정용 종일연차 카운트(단일출처 술어 재사용 — 신규쿼리 금지). */
+    private final AppAttd01Mapper appAttd01Mapper;
 
     /** REQ_STATUS = '01' 신청 (등록 직후 고정 — P3). */
     private static final String REQ_STATUS_REQUESTED = AttdReqTypeUtils.REQ_STATUS_REQUESTED;
@@ -91,6 +100,12 @@ public class AppReq07ServiceImpl implements AppReq07Service {
         assertNotClosed(param.cmpnyCd(), param.siteCd(), param.userCd(), param.workYmd());
         //   F13 스케줄 존재: 배정된 근무일(근무계획 행)이 아니면 거부(ATTD_400_098).
         assertWorkPlanExists(param.cmpnyCd(), param.siteCd(), param.userCd(), param.workYmd());
+
+        // ----- prafta-com-008-D: 교대 잠금 가드(INSERT 시작 전 fail-closed) -----
+        //   해당 근무일이 교대팀 소속 구간이면 스케줄 수정 요청 자체를 차단한다(관리자·사용자 모두, 권한 무관).
+        //   대상이면 ATTD_400_160 throw(신규 400대 — 003/600 회피로 앱 인터셉터 강제 로그아웃 방지). 중복락/INSERT 이전.
+        shiftMembershipService.assertNotShiftLocked(
+                param.cmpnyCd(), param.siteCd(), param.userCd(), param.workYmd());
 
         // ----- prafta-app-009 F15: 중복 차단 SELECT→INSERT race window 직렬화(advisory lock) -----
         //   PRAFTA-APP-022 TOCTOU: 룰A 상호배제(OT↔스케줄수정 cross-type)는 타입별 dupLock 만으론 직렬화되지
@@ -192,6 +207,14 @@ public class AppReq07ServiceImpl implements AppReq07Service {
         //   F12 마감 / F13 본인 근무계획 존재. (근태 보정도 배정된 근무일 대상으로 한정.)
         assertNotClosed(param.cmpnyCd(), param.siteCd(), param.userCd(), param.workYmd());
         assertWorkPlanExists(param.cmpnyCd(), param.siteCd(), param.userCd(), param.workYmd());
+
+        // ----- prafta-com-008-B: 노무수령거부 차단 가드(ATTD_CREATE, 방어) -----
+        //   촉진 확정 연차일은 출근 자체가 차단되어 정상 경로엔 보정 대상 근태가 없으나(이상상태 방어),
+        //   보정 요청 경로로 그날 근태 생성을 우회하는 것을 BE 에서 차단한다. 레코드 생성(INSERT) 이전 호출.
+        //   대상이면 guard 내부에서 ATTD_400_150 차단 throw, 비대상이면 정상 진행.
+        leaveRefusalDetectService.guardAndRecord(
+                param.cmpnyCd(), param.siteCd(), param.userCd(), param.nodeCd(), param.workYmd(),
+                LeaveRefusalConst.ATTEMPT_ATTD_CREATE, param.userCd());
 
         // ----- prafta-app-009 F15: 보정 제출 직렬화(advisory lock — 01/02 혼합 포함 그날 단위) -----
         String lockKey = dupLockKey(param.cmpnyCd(), param.siteCd(), param.userCd(),
@@ -326,6 +349,17 @@ public class AppReq07ServiceImpl implements AppReq07Service {
                 throw new ApiException(AttdErrorCode.ATTD_400_090);
             }
 
+            // ----- prafta-com-008-B-3: 연차일 초과근무 차단 -----
+            //   그날 종일('00') 확정 연차가 있으면(촉진/자발 무관 일괄 차단) OT 등록을 거부한다(INSERT 이전).
+            //   판정은 단일출처 술어(AppAttd01Mapper.countFullDayLeaveOn) 재사용 — 신규 쿼리 신설 금지.
+            //   "연차일자 조정"은 문서 C(연차 이동/삭제 동의·거부) 흐름으로 연결한다(BE 는 차단만, 안내 문구).
+            if (appAttd01Mapper.countFullDayLeaveOn(
+                    param.cmpnyCd(), param.siteCd(), param.userCd(), param.workYmd()) > 0) {
+                log.info("[prafta-com-008-B-3] 앱 OT 등록 거부: 연차일 — userCd={}, workYmd={}",
+                        param.userCd(), param.workYmd());
+                throw new ApiException(AttdErrorCode.ATTD_400_151);
+            }
+
             // ===== prafta-app-017 등록 가드 — 모든 거부 게이트를 INSERT 시작 전에 모아 fail-closed =====
             //   순서: (이슈②) 스케줄수정 미처리(전일 차단) → (이슈②) 슬롯별 근태보정 미처리(구간 차단)
             //         → (이슈①) 슬롯별 스케줄 겹침(구간 차단). 위반 시 즉시 throw(부분 INSERT 방지).
@@ -410,14 +444,20 @@ public class AppReq07ServiceImpl implements AppReq07Service {
     // ============================================================
     @Override
     @Transactional(readOnly = true)
-    public SchedOptionResponse getSchedOptions(String cmpnyCd, String siteCd) {
+    public SchedOptionResponse getSchedOptions(String cmpnyCd, String siteCd, String userCd, String workYmd) {
         List<SchedOptionResult> schedules = mapper.selectSchedOptions(cmpnyCd, siteCd);
         if (schedules == null) {
             schedules = new ArrayList<>();
         }
-        log.info("[prafta-app-007] 스케줄 옵션 조회 — cmpnyCd={}, siteCd={}, count={}",
-                cmpnyCd, siteCd, schedules.size());
-        return new SchedOptionResponse(schedules);
+        // prafta-com-008-E-9a: 사용자 본인 기본 근무타입(미설정 시 null). 프론트 "기본" 칩/정렬 기준.
+        String userDefaultSchCd = mapper.selectUserDefaultSchCd(cmpnyCd, userCd);
+        // prafta-com-008-D-5: 대상 일자가 교대팀 소속 구간이면 잠금 플래그(D-1 술어 재사용 — 신규 쿼리 신설 금지).
+        //   workYmd 미전달이면 false(목록 단독 조회 호환). 제출 차단의 최종 강제는 registerSchedModify 의 D-3 가드.
+        boolean shiftLocked = StringUtils.hasText(workYmd)
+                && shiftMembershipService.isInShiftTeamOn(cmpnyCd, siteCd, userCd, workYmd);
+        log.info("[prafta-app-007] 스케줄 옵션 조회 — cmpnyCd={}, siteCd={}, count={}, userDefaultSchCd={}, shiftLocked={}",
+                cmpnyCd, siteCd, schedules.size(), userDefaultSchCd, shiftLocked);
+        return new SchedOptionResponse(schedules, userDefaultSchCd, shiftLocked);
     }
 
     // ============================================================

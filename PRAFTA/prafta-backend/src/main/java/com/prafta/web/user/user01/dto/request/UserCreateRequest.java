@@ -73,4 +73,12 @@ public class UserCreateRequest {
      * - 엑셀 업로드는 본 필드를 사용하지 않는다(1행=1사용자=1사이트 단순화 유지).
      */
     private List<String> additionalSiteCdList;
+
+    /**
+     * PRAFTA-COM-008-E-5 — 기본 근무타입(tb_sch_mgmt.SCH_CD, 선택).
+     * 입력 시 대상 사업장(siteNo→SITE_CD) 활성 근무타입 화이트리스트 검증 후 저장하고,
+     * 교대팀 비소속이면 저장 직후 당해 연말까지 평일 근무계획을 자동 생성한다.
+     * 엑셀 업로드 행은 본 필드를 사용하지 않는다(null).
+     */
+    private String defaultSchCd;
 }

@@ -4,6 +4,7 @@ import org.apache.ibatis.annotations.Mapper;
 import org.apache.ibatis.annotations.Param;
 
 import com.prafta.app.home.home01.application.query.HomeSummaryQuery;
+import com.prafta.app.home.home01.result.AppliedLeaveSummaryResult;
 import com.prafta.app.home.home01.result.AttdMgmtResult;
 import com.prafta.app.home.home01.result.LeaveSummaryResult;
 import com.prafta.app.home.home01.result.OvernightScheduleResult;
@@ -34,8 +35,22 @@ public interface AppHome01Mapper {
      */
     int selectTodayCheckInOffsite(@Param("param") HomeSummaryQuery query);
 
-    /** 오늘 예정 스케줄(work_plan → sch_mgmt 1구간). 연차/휴무 또는 미존재 시 null. */
+    /** 오늘 예정 스케줄(work_plan → sch_mgmt 1구간). 매칭 스케줄 미존재 시 null. */
     ScheduleResult selectTodaySchedule(@Param("param") HomeSummaryQuery query);
+
+    /**
+     * prafta-com-008-E (H1): 기준일(baseYmd) 종일 연차일 여부(USE_UNIT_TYPE='00' 확정 연차 존재 카운트).
+     * <p>attd01 checkIn(083) 의 AppAttd01Mapper.countFullDayLeaveOn 과 동일 술어(단일출처 기준).
+     *   E-2 전환으로 연차일에도 work_plan 에 SCH_CD 가 남아 스케줄이 조회되는 문제를 보정하기 위해
+     *   출퇴근 카드에서 종일 연차일이면 출근 버튼을 비활성화한다. &gt; 0 이면 종일 연차일.
+     *   부분연차(반차/시간차)는 근무일 유지 → 미카운트.
+     */
+    int countFullDayLeaveOn(
+            @Param("cmpnyCd") String cmpnyCd
+            , @Param("siteCd") String siteCd
+            , @Param("userCd") String userCd
+            , @Param("baseYmd") String baseYmd
+    );
 
     /**
      * prafta-app-013-1: 전일 스케줄 1건(FST/SEC 시작·종료시각 4개). 오버나이트 기준일 판정용.
@@ -61,6 +76,18 @@ public interface AppHome01Mapper {
 
     /** 연차 요약 합산(ACTIVE & 미소멸 전체). 부여 이력 없으면 SUM null 가능. */
     LeaveSummaryResult selectLeaveSummary(@Param("param") HomeSummaryQuery query);
+
+    /**
+     * 연차 개편(표시): 홈 요약용 신청형 휴가('01') 집계(보유 타입 수 + 총잔여).
+     * <p>법정/관리자부여(selectLeaveSummary)와 분리. 사용분 술어는 AppLeaveFlowMapper.selectFiscalUsedDays 동일.
+     *   회계연도 경계는 서비스가 {@code FiscalYearUtils} 로 산출해 주입. '01' 0개면 typeCount=0, SUM null.
+     */
+    AppliedLeaveSummaryResult selectAppliedLeaveSummary(
+            @Param("cmpnyCd") String cmpnyCd
+            , @Param("userCd") String userCd
+            , @Param("fiscalStartYmd") String fiscalStartYmd
+            , @Param("fiscalEndYmdExclusive") String fiscalEndYmdExclusive
+    );
 
     /** 결재 대기(REQ_STATUS='01') 본인 건수. */
     int selectPendingApprovalCount(@Param("param") HomeSummaryQuery query);

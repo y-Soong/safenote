@@ -98,9 +98,12 @@
         <button type="button" class="mp-withdraw" @click="onWithdrawClick">회원 탈퇴</button>
 
         <!-- 앱 버전 -->
-        <p class="mp-version">PRAFTA SAFETY NOTE v1.0.0</p>
+        <p class="mp-version">PRAFTA SAFENOTE v1.0.0</p>
       </template>
     </main>
+
+    <!-- 하단 탭바 (마이 활성) — prafta-app-025 J1-2: 마이 탭의 목적지 화면이므로 공통 탭바 장착. -->
+    <AppBottomTabBar :active-tab="'my'" />
 
     <!-- 로그아웃 확인 모달 -->
     <LogoutConfirmDialog v-model="logoutDialogOpen" @confirm="onLogoutConfirm" />
@@ -165,6 +168,7 @@ import { forceLogout } from '@/composables/useAuth'
 
 import LogoutConfirmDialog from './components/LogoutConfirmDialog.vue'
 import WithdrawalConfirmDialog from './components/WithdrawalConfirmDialog.vue'
+import AppBottomTabBar from '@/components/common/AppBottomTabBar.vue'
 
 const router = useRouter()
 const userStore = useUserStore()
@@ -269,7 +273,7 @@ const onWithdrawConfirm = async () => {
   try {
     await api.post('/appApi/auth/withdraw', { confirmed: true })
     // 인사말 후 로컬 세션/토큰 초기화 + 로그인 화면 이동.
-    await showAlert('그동안 PRAFTA SAFETY NOTE를 이용해 주셔서 감사합니다.')
+    await showAlert('그동안 PRAFTA SAFENOTE를 이용해 주셔서 감사합니다.')
     await forceLogout()
     delete api.defaults.headers.common.Authorization
     try {
@@ -354,6 +358,7 @@ onMounted(async () => {
   --color-primary-tint: #f0fdf4;
   --color-primary-tint-border: #dcfce7;
   --color-danger: #ef4444;
+  --color-on-danger: #ffffff;
   --color-text-primary: #111827;
   --color-text-secondary: #6b7280;
   --color-text-tertiary: #9ca3af;
@@ -372,7 +377,9 @@ onMounted(async () => {
   --space-lg: 16px;
 
   position: relative;
-  min-height: 100vh;
+  /* prafta-app-025 J1-2: 하단 공통 탭바를 뷰포트 바닥에 고정하기 위해 화면 높이를 뷰포트로 고정. */
+  height: 100vh;
+  height: 100dvh;
   display: flex;
   flex-direction: column;
   background: var(--color-bg);
@@ -415,11 +422,12 @@ onMounted(async () => {
   width: 44px;
 }
 
-/* 본문 */
+/* 본문 — 하단 공통 탭바(72px)에 가려지지 않도록 하단 패딩(88px) */
 .mp-body {
   flex: 1;
+  min-height: 0;
   overflow-y: auto;
-  padding: var(--space-sm) var(--space-lg) 40px;
+  padding: var(--space-sm) var(--space-lg) 88px;
 }
 .mp-loading {
   padding: 48px var(--space-lg);

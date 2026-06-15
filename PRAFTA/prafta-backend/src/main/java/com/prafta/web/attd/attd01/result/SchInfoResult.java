@@ -7,8 +7,6 @@ public record SchInfoResult(
 	, String schNo
 	, String schType
 	, String schTypeNm
-	, String baseYn
-	, String baseYnNm
 	, String applyDate
 	, String fstSchStrTime
 	, String fstSchEndTime

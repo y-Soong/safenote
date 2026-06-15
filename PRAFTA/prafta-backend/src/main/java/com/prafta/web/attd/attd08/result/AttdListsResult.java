@@ -38,12 +38,6 @@ public record AttdListsResult(
     , String act2OutTime
     , String act2OutMethod
 
-    /* normalized times */
-    , String act1InStdTime
-    , String act1OutStdTime
-    , String act2InStdTime
-    , String act2OutStdTime
-
     /* outside / status */
     , String isOutsideYn
     , String attdStatusCd
@@ -51,5 +45,8 @@ public record AttdListsResult(
     /* row type discriminator (PRAFTA-015) */
     , String rowType   /* 'NORMAL' | 'OT' */
     , String otId      /* 초과근무 ID — OT 행만, NORMAL 은 NULL */
+
+    /* 초과근무 인정시간(관리자 승인 실근무 분, 휴게 제외) — OT 행만, NORMAL 은 NULL */
+    , Integer otWorkMinutes
 ) {
 }

@@ -216,6 +216,24 @@
             </button>
           </div>
 
+          <!-- PRAFTA-COM-008-E-5: 기본 근무타입(사업장 활성 근무타입). 설정 시 당해 연말까지 평일 자동생성. -->
+          <div class="form-row-max">
+            <label>기본 근무타입</label>
+            <BaseSelect id="defaultSchCd" v-model="defaultSchCd" :disabled="schTypeLoading || !siteCd">
+              <option :value="''">-</option>
+              <option
+                v-for="opt in schTypeOptions"
+                :key="opt.schCd"
+                :value="opt.schCd"
+              >
+                {{ opt.schNo }} ({{ fnFmtSchTime(opt.fstSchStrTime) }}~{{ fnFmtSchTime(opt.fstSchEndTime) }})
+              </option>
+            </BaseSelect>
+          </div>
+          <p class="default-sch-hint" v-if="defaultSchCd">
+            ⓘ 기본 근무타입 설정 시 오늘부터 당해 연말까지 평일 근무계획이 자동 생성됩니다(빈 날만, 교대팀 소속 구간 제외).
+          </p>
+
           <!-- PRAFTA-037-F7: 생성 모드 전용 - 추가 사이트 권한. 기본 사이트 외에 다중 사이트 권한을 함께 부여. -->
           <div class="form-row-max" v-if="isCreate">
             <label>추가 사이트 권한</label>
@@ -465,6 +483,7 @@
 import {
   ref,
   computed,
+  watch,
   defineProps,
   defineEmits,
   onMounted,
@@ -513,6 +532,10 @@ const siteCd = ref("");
 const siteNo = ref("");
 const siteNm = ref("");
 const useYn = ref("");
+// PRAFTA-COM-008-E-5: 기본 근무타입 select 상태.
+const defaultSchCd = ref("");
+const schTypeOptions = ref([]);
+const schTypeLoading = ref(false);
 const birthDt = ref("");
 const birthDtFcs = ref("");
 const authCd = ref("");
@@ -566,6 +589,45 @@ const isHrOrMaster = computed(() =>
 
 // PRAFTA-036 생성 모드 여부 (callmethod_p='C')
 const isCreate = computed(() => props.callmethod_p === "C");
+
+// ── PRAFTA-COM-008-E-5: 기본 근무타입 ────────────────────────
+// 'HHmm' → 'HH:mm' 라벨 포맷(4자리 미만이면 원본 반환).
+const fnFmtSchTime = (t) => {
+  if (!t || t.length < 4) return t || "";
+  return `${t.substring(0, 2)}:${t.substring(2, 4)}`;
+};
+
+// 사업장 활성 근무타입 옵션 조회(siteCd 기준). 회사 스코프는 서버가 토큰에서 강제.
+const fnLoadSchTypeOptions = async (targetSiteCd) => {
+  if (!targetSiteCd) {
+    schTypeOptions.value = [];
+    return;
+  }
+  schTypeLoading.value = true;
+  try {
+    const response = await axios.get("/webApi/user01/sch-type-options", {
+      params: { siteCd: targetSiteCd },
+    });
+    schTypeOptions.value = response.data ?? [];
+    // 현재 선택값이 목록에 없으면(사업장 변경 등) 선택 해제.
+    if (
+      defaultSchCd.value &&
+      !schTypeOptions.value.some((o) => o.schCd === defaultSchCd.value)
+    ) {
+      defaultSchCd.value = "";
+    }
+  } catch (err) {
+    schTypeOptions.value = [];
+    fnAlertMsg(resolveApiErrorMessage(err, "근무타입 목록 조회 중 오류가 발생했습니다."));
+  } finally {
+    schTypeLoading.value = false;
+  }
+};
+
+// 사업장 선택/변경 시 근무타입 옵션 재조회.
+watch(siteCd, (newSiteCd) => {
+  fnLoadSchTypeOptions(newSiteCd);
+});
 
 // 경력 인정 총 개월/년 (프론트 계산, 요약 표시용)
 const creditTotalMonths = computed(() =>
@@ -700,6 +762,9 @@ const fnGetUserInfo = async (userId) => {
         authLevel.value = response.data.userInfoList[0].authLevel;
         accountStatus.value = response.data.userInfoList[0].accountStatus;
         withdrawalDate.value = response.data.userInfoList[0].withdrawalDate;
+        // PRAFTA-COM-008-E-5: 기본 근무타입 prefill. siteCd 세팅으로 옵션이 비동기 로드되며,
+        //   동일 사업장이라 선택값이 목록에 포함되어 watch 의 reset 가드에 걸리지 않는다.
+        defaultSchCd.value = response.data.userInfoList[0].defaultSchCd || "";
 
         if (
           sessionStorage.getItem("gv_authCd") == "system" ||
@@ -823,6 +888,8 @@ const fnUserInfoSave = async () => {
         creditReasonDetail: credit ? credit.reasonDetail : null,
         // PRAFTA-037-F7: 추가 사이트 권한 (선택). 빈 배열도 무방 — 백엔드 null/empty 처리.
         additionalSiteCdList: additionalSites.value.map((s) => s.siteCd),
+        // PRAFTA-COM-008-E-5: 기본 근무타입(선택). 빈값이면 미설정.
+        defaultSchCd: defaultSchCd.value || null,
       };
 
       const response = await axios.post("/webApi/user01/insert-user-info", payload);
@@ -854,6 +921,8 @@ const fnUserInfoSave = async () => {
         email: email.value,
         gender: gender.value,
         birthDt: birthDt.value,
+        // PRAFTA-COM-008-E-5: 기본 근무타입(선택). 빈값이면 미변경(서버 mergeUserInfo if 가드).
+        defaultSchCd: defaultSchCd.value || null,
       },
     ]);
     if (response.status === 200) {
@@ -1194,6 +1263,14 @@ const fnConfirmMsg = async (message, afterConfirmCallback) => {
   padding: 1.2rem;
   max-width: 500px;
   margin: 0 auto;
+}
+
+/* PRAFTA-COM-008-E-5: 기본 근무타입 안내 문구 */
+.default-sch-hint {
+  margin: 0;
+  font-size: 0.75rem;
+  color: var(--color-text-muted, #6b7280);
+  line-height: 1.5;
 }
 
 .withdrawal-date-row {

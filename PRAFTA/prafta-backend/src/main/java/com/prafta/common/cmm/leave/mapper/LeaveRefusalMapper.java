@@ -9,9 +9,10 @@ import com.prafta.common.cmm.leave.vo.RefusalLogInsertVO;
 import com.prafta.common.cmm.leave.vo.RefusalTargetVO;
 
 /**
- * 노무수령거부 통지/감지/알림 공용 Mapper (PRAFTA-COM-001).
+ * 노무수령거부 차단 판정/이력/알림 공용 Mapper (PRAFTA-COM-001 → -008-B 차단 전환).
  *
- * <p>web 기능1(통지 발송)과 app 기능2/3(출근 감지·관리자 PUSH)이 공용으로 사용한다.
+ * <p>출퇴근·근태 등록 진입부 차단 가드({@code LeaveRefusalDetectService.guardAndRecord})가 공용으로 사용한다.
+ * com-008-B-4 에서 web 기능1(통지) 및 구 detect 자산({@code selectRefusalTarget}/{@code countValidTarget})은 제거되었다.
  * app 이 web 을 호출하지 않는 원칙(앱/웹 분리)에 따라 공용 영역인
  * {@code com.prafta.common.cmm.leave} 에 둔다.
  *
@@ -28,31 +29,28 @@ public interface LeaveRefusalMapper {
     String selectNextRefusalId(@Param("cmpnyCd") String cmpnyCd);
 
     /**
-     * 통지 대상 정합성 검증 (기능1 IDOR 가드).
-     * 대상(userCd)이 호출자 회사(cmpnyCd) 소속의 실재·활성 사용자이며 siteCd 와 정합인지 확인.
-     * 활성 조건은 {@link #selectSiteRefusalAdmins} 와 동일하게 USE_YN='Y', ACCOUNT_STATUS='01'.
-     * SITE_CD 는 TB_USER 의 직접 컬럼으로 대조한다.
+     * 노무수령거부 차단 대상일 판정 (com-008-B §3, detect→block 전환).
      *
-     * @return 정합·실재·활성이면 1, 아니면 0
-     */
-    int countValidTarget(@Param("cmpnyCd") String cmpnyCd,
-                         @Param("siteCd") String siteCd,
-                         @Param("userCd") String userCd);
-
-    /**
-     * 노무수령거부 대상일 판정 (기능2). tb_leave_refusal_log 의 NOTICED 행이 존재하고
-     * 그 대상일이 휴일(tb_holiday 일자휴일 / tb_holiday_rule 매년 MMDD)이 아닐 때만 1건 반환.
-     * 대상이 아니면(미통지 또는 휴일) null.
+     * <p>판정 소스를 NOTICED 로그 → {@code tb_user_leave_use} 촉진단계로 전환했다. 다음 3게이트를
+     * 모두 통과하는 종일 CONFIRMED 연차 1건을 반환(없으면 null = 차단 대상 아님):
+     * <ol>
+     *   <li>[촉진] (USER_CD, START_DATE=targetYmd, LEAVE_STATUS='CONFIRMED', DEL_YN='N',
+     *       USE_UNIT_TYPE='00') + PROMOTION_STAGE ∈ {FIRST,SECOND} (자발 NONE 제외).</li>
+     *   <li>[게이트2 법정] 연결 grant {@code GRANT_TYPE LIKE 'STATUTORY_%' AND <> 'STATUTORY_MONTHLY'}
+     *       (본연차 + 근속가산만, 월차 배제).</li>
+     *   <li>[게이트1 휴일] 시도 당일이 휴일이 아님(tb_holiday 일자 ∪ tb_holiday_rule MM/DD NOT EXISTS).</li>
+     * </ol>
+     * 반환 VO 의 leaveId 는 BLOCKED 이력의 RELATED_LEAVE_ID 로 사용된다.
      *
      * @param cmpnyCd   회사 코드 (CMPNY_CD 스코프)
      * @param siteCd    사업장 코드
      * @param userCd    대상 근로자 코드
-     * @param targetYmd 출근 근무일(YYYYMMDD) = 판정 대상일
+     * @param targetYmd 시도 근무일(YYYYMMDD) = 판정 대상일 = leave_use.START_DATE
      */
-    RefusalTargetVO selectRefusalTarget(@Param("cmpnyCd") String cmpnyCd,
-                                        @Param("siteCd") String siteCd,
-                                        @Param("userCd") String userCd,
-                                        @Param("targetYmd") String targetYmd);
+    RefusalTargetVO selectLaborRefusalTarget(@Param("cmpnyCd") String cmpnyCd,
+                                             @Param("siteCd") String siteCd,
+                                             @Param("userCd") String userCd,
+                                             @Param("targetYmd") String targetYmd);
 
     /**
      * 사실 로그 1건 append (NOTICED / CHECKIN_DETECTED / ADMIN_ALERTED 공용).

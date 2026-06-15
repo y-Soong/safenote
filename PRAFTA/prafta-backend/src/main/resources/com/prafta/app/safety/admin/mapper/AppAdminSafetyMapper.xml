@@ -1,0 +1,261 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.prafta.app.safety.admin.mapper.AppAdminSafetyMapper">
+
+    <!-- 사업장 접근 권한 확인 (tb_user_site_auth 매핑, USE_YN='Y'). 1 이상이면 접근 가능 -->
+    <select id="countUserSiteAuth" resultType="int">
+    /* AppAdminSafetyMapper.countUserSiteAuth */
+    SELECT
+        COUNT(1)
+    FROM TB_USER_SITE_AUTH A
+    WHERE A.CMPNY_CD = #{cmpnyCd}
+      AND A.USER_CD = #{userCd}
+      AND A.SITE_CD = #{siteCd}
+      AND A.USE_YN = 'Y'
+    </select>
+
+    <!-- H1 순회점검 결과 리스트: 체크포인트별 점검일수(distinct WORK_DATE) + 불량수(INSPECT_ANSWER_TYPE='N').
+         단일 사업장(SITE_CD) 스코프 + 월(workMonth=YYYYMM) 필터(없으면 당월).
+         웹 chkLst03 selectChkptInspectItemList 를 앱 단일사업장으로 단순화 포팅(SITE_LIST CTE 미사용). -->
+    <select id="selectInspectionList"
+            parameterType="com.prafta.app.safety.admin.application.query.InspectionListQuery"
+            resultType="com.prafta.app.safety.admin.result.InspectionPointResult">
+    /* AppAdminSafetyMapper.selectInspectionList */
+    SELECT
+        A.CMPNY_CD                                      AS cmpnyCd
+      , A.SITE_CD                                       AS siteCd
+      , S.SITE_NM                                       AS siteNm
+      , A.CHKPT_CD                                      AS chkptCd
+      , A.CHKPT_NM                                      AS chkptNm
+      , C.CHKLST_TYPE                                   AS chkLstType
+      , COUNT(DISTINCT D.WORK_DATE)                     AS inspectDayCnt
+      , COALESCE(SUM(CASE WHEN D.INSPECT_ANSWER_TYPE = 'N' THEN 1 ELSE 0 END), 0) AS defectiveResultCnt
+    FROM TB_CHKPT_TYPE_MGMT A
+         INNER JOIN TB_SITE S
+            ON (
+                A.CMPNY_CD = S.CMPNY_CD
+            AND A.SITE_CD = S.SITE_CD
+            )
+         INNER JOIN TB_CHKPT_INSPECT_ITEM C
+            ON (
+                A.CMPNY_CD = C.CMPNY_CD
+            AND A.CHKLST_TYPE = C.CHKLST_TYPE
+            )
+         LEFT JOIN TB_CHKPT_INSPECT_ANSWER D
+            ON (
+                A.CMPNY_CD = D.CMPNY_CD
+            AND A.SITE_CD = D.SITE_CD
+            AND A.CHKPT_CD = D.CHKPT_CD
+            AND C.INSPECT_ITEM_CD = D.INSPECT_ITEM_CD
+            AND SUBSTR(D.WORK_DATE, 1, 6) = #{workMonth}
+            )
+    WHERE A.CMPNY_CD = #{gvCmpnyCd}
+      AND A.SITE_CD = #{siteCd}
+      AND A.USE_YN = 'Y'
+    GROUP BY
+        A.CMPNY_CD
+      , A.SITE_CD
+      , S.SITE_NM
+      , A.CHKPT_CD
+      , A.CHKPT_NM
+      , C.CHKLST_TYPE
+    HAVING COUNT(DISTINCT D.WORK_DATE) &gt; 0
+    ORDER BY A.CHKLST_TYPE, A.CHKPT_CD
+    </select>
+
+    <!-- H2 순회점검 상세: 항목 x 일자 답변(O/X) + 불량 비고(ANSWER_DESC) + 사진(FILE_PATH).
+         사진 경로는 평문 FILE_PATH 직조인이 아니라 FNC_CMM_INFO_SRCH('FILE_PATH') 로 해석(IDOR 비상속).
+         FILE_NAME 으로 첨부 존재 여부/이름 확인. INSPECT_ANSWER_TYPE 은 SQL CASE 로 'O'/'X' 변환(OGNL 함정 회피).
+         CMPNY+SITE+CHKLST_TYPE+CHKPT_CD 스코프 강제(스코프 밖이면 빈 결과 — IDOR 차단). -->
+    <select id="selectInspectionDetailAnswers"
+            parameterType="com.prafta.app.safety.admin.application.query.InspectionDetailQuery"
+            resultType="com.prafta.app.safety.admin.result.InspectionAnswerResult">
+    /* AppAdminSafetyMapper.selectInspectionDetailAnswers */
+    SELECT
+        A.CMPNY_CD                                                      AS cmpnyCd
+      , A.CHKPT_CD                                                      AS chkptCd
+      , B.INSPECT_ITEM_CD                                              AS inspectItemCd
+      , B.INSPECT_ITEM_SUBJ                                            AS inspectItemSubj
+      , C.WORK_DATE                                                     AS workDate
+      , CASE WHEN C.INSPECT_ANSWER_TYPE = 'Y' THEN 'O' ELSE 'X' END     AS inspectAnswerType
+      , C.ANSWER_DESC                                                   AS answerDesc
+      , C.FILE_MGMT_CD                                                  AS fileMgmtCd
+      , FNC_CMM_INFO_SRCH(A.CMPNY_CD, 'FILE_NAME', C.FILE_MGMT_CD, NULL) AS fileName
+      , FNC_CMM_INFO_SRCH(A.CMPNY_CD, 'FILE_PATH', C.FILE_MGMT_CD, NULL) AS filePath
+    FROM TB_CHKPT_TYPE_MGMT A
+         INNER JOIN TB_CHKPT_INSPECT_ITEM B
+            ON (
+                A.CMPNY_CD = B.CMPNY_CD
+            AND A.CHKLST_TYPE = B.CHKLST_TYPE
+            )
+         INNER JOIN TB_CHKPT_INSPECT_ANSWER C
+            ON (
+                A.CMPNY_CD = C.CMPNY_CD
+            AND A.SITE_CD = C.SITE_CD
+            AND A.CHKPT_CD = C.CHKPT_CD
+            AND B.INSPECT_ITEM_CD = C.INSPECT_ITEM_CD
+            AND C.WORK_DATE LIKE CONCAT(#{workMonth}, '%')
+            )
+    WHERE A.CMPNY_CD = #{gvCmpnyCd}
+      AND A.SITE_CD = #{siteCd}
+      AND A.CHKLST_TYPE = #{chkLstType}
+      AND A.CHKPT_CD = #{chkptCd}
+      AND A.USE_YN = 'Y'
+    ORDER BY
+        CASE WHEN C.INSPECT_ANSWER_TYPE = 'N' THEN 0 ELSE 1 END
+      , C.WORK_DATE DESC
+      , B.SORT_IDX
+      , B.INSPECT_ITEM_CD
+    </select>
+
+    <!-- 위험성평가 공통 SELECT 컬럼(목록/상세 공용) — RiskAssessmentResult 위치(camelCase) 순서와 1:1.
+         사진 경로(initFilePath/revalFilePath)는 FNC_CMM_INFO_SRCH('FILE_PATH') 로 해석. -->
+    <sql id="riskColumns">
+        A.CMPNY_CD                                                              AS cmpnyCd
+      , A.SITE_CD                                                               AS siteCd
+      , A.PROCESS_CD                                                            AS processCd
+      , C.BAIM_VAL_D_NM                                                         AS processNm
+      , A.RISK_TYPE_CD                                                          AS riskTypeCd
+      , D.RISK_TYPE_NM                                                          AS riskTypeNm
+      , A.HAZARD_CD                                                             AS hazardCd
+      , CASE WHEN A.HAZARD_CD = 'self' THEN A.ASSESSMENT_DESC ELSE E.HAZARD_NM END AS hazardNm
+      , A.ASSESSMENT_CD                                                         AS assessmentCd
+      , A.ASSESSMENT_STATUS                                                     AS assessmentStatus
+      , B.SYST_VAL_D_NM                                                         AS assessmentStatusNm
+      , A.INIT_LIKELIHOOD_SCORE                                                 AS initLikelihoodScore
+      , A.INIT_SEVERITY_SCORE                                                   AS initSeverityScore
+      , A.INIT_RISK_LV                                                          AS initRiskLv
+      , A.INIT_DESC                                                             AS initDesc
+      , A.INIT_ASSESSOR_ID                                                      AS initAssessorId
+      , FNC_CMM_INFO_SRCH(A.CMPNY_CD, 'USER_NM', A.INIT_ASSESSOR_ID, NULL)      AS initAssessorNm
+      , DATE_FORMAT(A.INIT_ASSESS_DATE, '%Y-%m-%d %H:%i')                       AS initAssessDate
+      , A.INIT_FILE_MGMT_CD                                                     AS initFileMgmtCd
+      , FNC_CMM_INFO_SRCH(A.CMPNY_CD, 'FILE_PATH', A.INIT_FILE_MGMT_CD, NULL)   AS initFilePath
+      , FNC_CMM_INFO_SRCH(A.CMPNY_CD, 'FILE_NAME', A.INIT_FILE_MGMT_CD, NULL)   AS initFileName
+      , A.REVAL_DATE                                                            AS revalDate
+      , A.REVAL_BEFORE_DESC                                                     AS revalBeforeDesc
+      , A.REVAL_LIKELIHOOD_SCORE                                                AS revalLikelihoodScore
+      , A.REVAL_SEVERITY_SCORE                                                  AS revalSeverityScore
+      , A.REVAL_RISK_LV                                                         AS revalRiskLv
+      , A.REVAL_DESC                                                            AS revalDesc
+      , A.REVAL_ASSESSOR_ID                                                     AS revalAssessorId
+      , FNC_CMM_INFO_SRCH(A.CMPNY_CD, 'USER_NM', A.REVAL_ASSESSOR_ID, NULL)     AS revalAssessorNm
+      , DATE_FORMAT(A.REVAL_ASSESS_DATE, '%Y-%m-%d %H:%i')                      AS revalAssessDate
+    </sql>
+
+    <!-- 위험성평가 공통 FROM/JOIN(SYS011 상태명 + 공정명 + 위험요인구분명 + 유해요인명) -->
+    <sql id="riskJoins">
+    FROM TB_RISK_ASSESSMENT A
+         INNER JOIN (
+            SELECT
+                SV.SYST_VAL_D_CD
+              , SV.SYST_VAL_D_NM
+            FROM TB_SYST_VAL_D SV
+            WHERE SV.SYST_VAL_CD = 'SYS011'
+              AND SV.USE_YN = 'Y'
+         ) B
+            ON (A.ASSESSMENT_STATUS = B.SYST_VAL_D_CD)
+         INNER JOIN (
+            SELECT
+                BV.BAIM_VAL_D_CD
+              , BV.BAIM_VAL_D_NM
+            FROM TB_BAIM_VAL_D BV
+            WHERE BV.CMPNY_CD = #{gvCmpnyCd}
+              AND BV.BAIM_VAL_CD = 'COM002'
+              AND BV.USE_YN = 'Y'
+         ) C
+            ON (A.PROCESS_CD = C.BAIM_VAL_D_CD)
+         INNER JOIN TB_RISK_TYPE D
+            ON (
+                A.CMPNY_CD = D.CMPNY_CD
+            AND A.RISK_TYPE_CD = D.RISK_TYPE_CD
+            )
+         LEFT OUTER JOIN TB_RISK_SITE_HAZARD E
+            ON (
+                A.CMPNY_CD = E.CMPNY_CD
+            AND A.RISK_TYPE_CD = E.RISK_TYPE_CD
+            AND A.HAZARD_CD = E.HAZARD_CD
+            )
+    </sql>
+
+    <!-- H3 위험성평가 목록: 사업장(SITE_CD) 스코프 강제 + 상태/공정/위험요인 필터.
+         웹 risk03 selectRiskAssessmentsLists 포팅(웹은 siteCd 선택필터지만 앱은 사업장 단위 강제). -->
+    <select id="selectRiskFindingList"
+            parameterType="com.prafta.app.safety.admin.application.query.RiskFindingListQuery"
+            resultType="com.prafta.app.safety.admin.result.RiskAssessmentResult">
+    /* AppAdminSafetyMapper.selectRiskFindingList */
+    SELECT
+        <include refid="riskColumns" />
+    <include refid="riskJoins" />
+    WHERE A.CMPNY_CD = #{gvCmpnyCd}
+      AND A.SITE_CD = #{siteCd}
+      <if test="assessmentStatus != null and assessmentStatus != ''">
+        AND A.ASSESSMENT_STATUS = #{assessmentStatus}
+      </if>
+      <if test="processCd != null and processCd != ''">
+        AND A.PROCESS_CD = #{processCd}
+      </if>
+      <if test="riskTypeCd != null and riskTypeCd != ''">
+        AND A.RISK_TYPE_CD = #{riskTypeCd}
+      </if>
+    ORDER BY A.ASSESSMENT_STATUS, A.PROCESS_CD, A.RISK_TYPE_CD, A.HAZARD_CD
+    </select>
+
+    <!-- H4 위험성평가 상세 단건: PK 4키 + 사업장 스코프(없으면 null → 404 IDOR 차단) -->
+    <select id="selectRiskFindingDetail"
+            parameterType="com.prafta.app.safety.admin.application.query.RiskDetailQuery"
+            resultType="com.prafta.app.safety.admin.result.RiskAssessmentResult">
+    /* AppAdminSafetyMapper.selectRiskFindingDetail */
+    SELECT
+        <include refid="riskColumns" />
+    <include refid="riskJoins" />
+    WHERE A.CMPNY_CD = #{gvCmpnyCd}
+      AND A.SITE_CD = #{siteCd}
+      AND A.PROCESS_CD = #{processCd}
+      AND A.ASSESSMENT_CD = #{assessmentCd}
+    </select>
+
+    <!-- 상태전환 가드용 현재 상태 단건: PK 4키 + 사업장 스코프(없으면 null → 404) -->
+    <select id="selectRiskFindingMeta"
+            parameterType="com.prafta.app.safety.admin.application.query.RiskDetailQuery"
+            resultType="com.prafta.app.safety.admin.result.RiskStatusMetaResult">
+    /* AppAdminSafetyMapper.selectRiskFindingMeta */
+    SELECT
+        A.CMPNY_CD          AS cmpnyCd
+      , A.SITE_CD           AS siteCd
+      , A.PROCESS_CD        AS processCd
+      , A.ASSESSMENT_CD     AS assessmentCd
+      , A.ASSESSMENT_STATUS AS assessmentStatus
+    FROM TB_RISK_ASSESSMENT A
+    WHERE A.CMPNY_CD = #{gvCmpnyCd}
+      AND A.SITE_CD = #{siteCd}
+      AND A.PROCESS_CD = #{processCd}
+      AND A.ASSESSMENT_CD = #{assessmentCd}
+    </select>
+
+    <!-- H5 위험성평가 상태전환 UPDATE: WHERE 에 현재 상태 가드(expectedCurrent) → 동시 전환 직렬화.
+         002 전환만 REVAL_DATE/REVAL_BEFORE_DESC/REVAL_ASSESSOR_ID/REVAL_ASSESS_DATE 갱신(임시조치 기록).
+         003/004 전환은 상태 + UPDATE_NO/DATE 만 갱신(풀 재평가 REVAL_* 는 웹 위임 — 건드리지 않음).
+         REVAL_DATE 는 '-' 제거 후 YYYYMMDD 저장(웹 updateAssessment 동형). 영향 0건이면 서비스가 409. -->
+    <update id="updateRiskStatus"
+            parameterType="com.prafta.app.safety.admin.application.command.RiskStatusCommand">
+    /* AppAdminSafetyMapper.updateRiskStatus */
+    UPDATE TB_RISK_ASSESSMENT
+    SET
+        ASSESSMENT_STATUS = #{targetStatus}
+      <if test="targetStatus == '002'">
+      , REVAL_DATE        = REPLACE(#{revalDate}, '-', '')
+      , REVAL_BEFORE_DESC = #{revalBeforeDesc}
+      , REVAL_ASSESSOR_ID = #{gvUserCd}
+      , REVAL_ASSESS_DATE = NOW()
+      </if>
+      , UPDATE_NO         = #{gvUserCd}
+      , UPDATE_DATE       = NOW()
+    WHERE CMPNY_CD = #{gvCmpnyCd}
+      AND SITE_CD = #{siteCd}
+      AND PROCESS_CD = #{processCd}
+      AND ASSESSMENT_CD = #{assessmentCd}
+      AND ASSESSMENT_STATUS = #{expectedCurrent}
+    </update>
+
+</mapper>

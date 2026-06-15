@@ -307,6 +307,79 @@
 	WHERE CMPNY_CD = #{gvCmpnyCd}
 	  AND SITE_CD = #{siteCd}
 	  AND SLOT_NO = #{slotNo}
-	
+
 	</insert>
+
+	<!-- 사업장 접근 권한 확인(TB_USER_SITE_AUTH 매핑, USE_YN='Y'). 1 이상이면 접근 가능. -->
+	<select id="countUserSiteAuth" resultType="int">
+	/* Baim05Mapper.countUserSiteAuth */
+	SELECT COUNT(1)
+	FROM TB_USER_SITE_AUTH A
+	WHERE A.CMPNY_CD = #{cmpnyCd}
+	  AND A.USER_CD = #{userCd}
+	  AND A.SITE_CD = #{siteCd}
+	  AND A.USE_YN = 'Y'
+	</select>
+
+	<!-- 슬롯 점유자(CURR_USER_CD) 재조회. 비점유 슬롯/미존재면 NULL(클라 userCd 미신뢰, IDOR 방지). -->
+	<select id="selectSlotCurrUserCd" resultType="string">
+	/* Baim05Mapper.selectSlotCurrUserCd */
+	SELECT CURR_USER_CD
+	FROM TB_DAILY_USER_SLOT
+	WHERE CMPNY_CD = #{cmpnyCd}
+	  AND SITE_CD = #{siteCd}
+	  AND SLOT_NO = #{slotNo}
+	</select>
+
+	<!-- 슬롯 비우기: 점유 해제 + 비점유 + 고정 해제(멱등). -->
+	<update id="updateClearSlot" parameterType="com.prafta.web.baim.baim05.application.command.ClearSlotCommand">
+	/* Baim05Mapper.updateClearSlot */
+	UPDATE TB_DAILY_USER_SLOT
+	SET CURR_USER_CD = NULL
+		, SLOT_STATUS = '01'
+		, FIXED_YN = 'N'
+		, UPDATE_NO = #{gvUserCd}
+		, UPDATE_DATE = NOW()
+	WHERE CMPNY_CD = #{gvCmpnyCd}
+	  AND SITE_CD = #{siteCd}
+	  AND SLOT_NO = #{slotNo}
+	</update>
+
+	<!-- 비우기 - 점유자 TB_DAILY_USER 비활성(USE_YN='N', ACCOUNT_STATUS='05'). 이미 'N'이면 영향 0(멱등). -->
+	<update id="deactivateDailyUser" parameterType="com.prafta.web.baim.baim05.application.command.ClearSlotCommand">
+	/* Baim05Mapper.deactivateDailyUser */
+	UPDATE TB_DAILY_USER
+	SET USE_YN = 'N'
+		, ACCOUNT_STATUS = '05'
+		, UPDATE_NO = #{gvUserCd}
+		, UPDATE_DATE = NOW()
+	WHERE CMPNY_CD = #{gvCmpnyCd}
+	  AND USER_CD = #{userCd}
+	</update>
+
+	<!-- 비우기 - 통합형 TB_USER 비활성. EMPLOYMENT_TYPE='DAILY' 가드로 정규 사용자 오전이 차단(없으면 0행 안전). -->
+	<update id="deactivateTbUser" parameterType="com.prafta.web.baim.baim05.application.command.ClearSlotCommand">
+	/* Baim05Mapper.deactivateTbUser */
+	UPDATE TB_USER
+	SET USE_YN = 'N'
+		, ACCOUNT_STATUS = '05'
+		, UPDATE_NO = #{gvUserCd}
+		, UPDATE_DATE = NOW()
+	WHERE CMPNY_CD = #{gvCmpnyCd}
+	  AND USER_CD = #{userCd}
+	  AND EMPLOYMENT_TYPE = 'DAILY'
+	</update>
+
+	<!-- 점유 유지/해지: 점유 슬롯(SLOT_STATUS='02')의 FIXED_YN 토글. 계정 무변경. 비점유 슬롯은 영향 0. -->
+	<update id="updateSlotFixed" parameterType="com.prafta.web.baim.baim05.application.command.SetSlotFixedCommand">
+	/* Baim05Mapper.updateSlotFixed */
+	UPDATE TB_DAILY_USER_SLOT
+	SET FIXED_YN = #{fixedYn}
+		, UPDATE_NO = #{gvUserCd}
+		, UPDATE_DATE = NOW()
+	WHERE CMPNY_CD = #{gvCmpnyCd}
+	  AND SITE_CD = #{siteCd}
+	  AND SLOT_NO = #{slotNo}
+	  AND SLOT_STATUS = '02'
+	</update>
 </mapper>

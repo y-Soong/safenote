@@ -1,0 +1,169 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.prafta.app.admin.dashboard.mapper.AppAdminDashboardMapper">
+
+    <!--
+      J1-10 (B-5) 관리자 대시보드 요약 카운트 — 조회 전용.
+      식별자(cmpny/site)는 서비스에서 토큰/멤버십 재검증 후 전달(IDOR 차단). 노드 스코프는
+      서비스가 AdminScopeMapper.selectScopedNodeCds 로 산출한 List 를 IN 필터로 임베드한다
+      (J1-5 scopeWhere 동형 — 신규 CTE 작성 금지). useNodeScope=false 면 사업장 무필터(master/hr 전사).
+    -->
+
+    <!-- DB 기준 오늘(YYYYMMDD). home01.selectTodayYmd 동형. -->
+    <select id="selectTodayYmd" resultType="java.lang.String">
+    /* AppAdminDashboardMapper.selectTodayYmd */
+    SELECT
+        DATE_FORMAT(NOW(), '%Y%m%d') AS todayYmd
+    </select>
+
+    <!-- 사업장 접근 권한 확인(tb_user_site_auth, USE_YN='Y'). AppAdminSafetyMapper.countUserSiteAuth 동형. -->
+    <select id="countUserSiteAuth" resultType="int">
+    /* AppAdminDashboardMapper.countUserSiteAuth */
+    SELECT
+        COUNT(1)
+    FROM TB_USER_SITE_AUTH A
+    WHERE A.CMPNY_CD = #{cmpnyCd}
+      AND A.USER_CD  = #{userCd}
+      AND A.SITE_CD  = #{siteCd}
+      AND A.USE_YN   = 'Y'
+    </select>
+
+    <!-- 노드 IN 목록 조각(useNodeScope=true 인 호출부의 <if> 안에서만 include 한다). -->
+    <sql id="attdNodeIn">
+        IN
+        <foreach collection="scopedNodeCds" item="nc" open="(" separator="," close=")">
+            #{nc}
+        </foreach>
+    </sql>
+
+    <!--
+      근태 3종 카운트(출근 실제/예정/연차) — 노드 스코프.
+        - checkedInCnt: 당일 체크인 존재 distinct USER_CD (TB_USER_ATTD_MGMT.NODE_CD 직접 필터).
+        - scheduledCnt: 당일 work_plan→sch_mgmt 매칭(USE_YN='Y', APPLY_DATE<=오늘) distinct USER_CD.
+            work_plan 에 NODE_CD 없음 → TB_USER 조인하여 U.NODE_CD 로 노드 필터.
+            LEAVE_CD 행은 sch_mgmt INNER JOIN 에서 자연 탈락(출근 예정만 집계).
+        - leaveCnt: 당일 종일 연차(USE_UNIT_TYPE='00', CONFIRMED, DEL_YN='N', 기간 포함) distinct USER_CD.
+            leave_use 에 NODE_CD 없음 → TB_USER 조인하여 U.NODE_CD 로 노드 필터.
+      세 카운트 모두 동일 스코프(useNodeScope 시 노드 IN, 아니면 사업장 무필터)를 적용한다.
+    -->
+    <select id="selectAttdCounts"
+            parameterType="com.prafta.app.admin.dashboard.application.query.AttdCountQuery"
+            resultType="com.prafta.app.admin.dashboard.result.AttdCountResult">
+    /* AppAdminDashboardMapper.selectAttdCounts */
+    SELECT
+        (
+            SELECT COUNT(DISTINCT A.USER_CD)
+            FROM TB_USER_ATTD_MGMT A
+            WHERE A.CMPNY_CD = #{cmpnyCd}
+              AND A.SITE_CD  = #{siteCd}
+              AND A.WORK_YMD = #{todayYmd}
+              AND A.DEL_YN   = 'N'
+              AND A.CHECK_IN_TIME IS NOT NULL
+              <if test="useNodeScope">
+                AND A.NODE_CD <include refid="attdNodeIn"/>
+              </if>
+        )                                                                       AS checkedInCnt
+      , (
+            SELECT COUNT(DISTINCT P.USER_CD)
+            FROM TB_USER_WORK_PLAN P
+                 INNER JOIN TB_USER U
+                    ON  U.CMPNY_CD = P.CMPNY_CD
+                    AND U.SITE_CD  = P.SITE_CD
+                    AND U.USER_CD  = P.USER_CD
+                    AND U.USE_YN   = 'Y'
+                 INNER JOIN TB_SCH_MGMT S
+                    ON  S.CMPNY_CD = P.CMPNY_CD
+                    AND S.SITE_CD  = P.SITE_CD
+                    AND S.SCH_CD   = P.WORK_PLAN_CD
+                    AND S.USE_YN   = 'Y'
+                    AND S.APPLY_DATE <![CDATA[ <= ]]> #{todayYmd}
+            WHERE P.CMPNY_CD = #{cmpnyCd}
+              AND P.SITE_CD  = #{siteCd}
+              AND P.WORK_YMD = #{todayYmd}
+              <if test="useNodeScope">
+                AND U.NODE_CD <include refid="attdNodeIn"/>
+              </if>
+        )                                                                       AS scheduledCnt
+      , (
+            SELECT COUNT(DISTINCT L.USER_CD)
+            FROM TB_USER_LEAVE_USE L
+                 INNER JOIN TB_USER U
+                    ON  U.CMPNY_CD = L.CMPNY_CD
+                    AND U.SITE_CD  = L.SITE_CD
+                    AND U.USER_CD  = L.USER_CD
+                    AND U.USE_YN   = 'Y'
+            WHERE L.CMPNY_CD      = #{cmpnyCd}
+              AND L.SITE_CD       = #{siteCd}
+              AND L.LEAVE_STATUS  = 'CONFIRMED'
+              AND L.DEL_YN        = 'N'
+              AND L.USE_UNIT_TYPE = '00'
+              AND L.START_DATE <![CDATA[ <= ]]> #{todayYmd}
+              AND L.END_DATE   <![CDATA[ >= ]]> #{todayYmd}
+              <if test="useNodeScope">
+                AND U.NODE_CD <include refid="attdNodeIn"/>
+              </if>
+        )                                                                       AS leaveCnt
+    </select>
+
+    <!--
+      순회 점검 카운트(사업장 스코프, 금일 기준).
+        - targetCnt: 사업장 활성 체크포인트(TB_CHKPT_TYPE_MGMT, USE_YN='Y')의 distinct CHKPT_CD 수 — 분모(개소 단위).
+            PK 가 CMPNY+SITE+CHKLST_TYPE+CHKPT_CD 라 동일 CHKPT_CD 가 복수 CHKLST_TYPE 에 있으면 행이 중복되므로
+            DISTINCT CHKPT_CD 로 개소 단위 통일(분자와 단위 일치, 분자<=분모 보장).
+        - completedCnt: 금일(WORK_DATE=오늘) 답변이 존재하는 distinct CHKPT_CD 수 — 분자.
+            활성 체크포인트 집합에 속하는 것만 INNER JOIN 으로 한정(스코프 밖 노출 0).
+    -->
+    <select id="selectPatrolCount"
+            parameterType="com.prafta.app.admin.dashboard.application.query.SafetyCountQuery"
+            resultType="com.prafta.app.admin.dashboard.result.PatrolCountResult">
+    /* AppAdminDashboardMapper.selectPatrolCount */
+    SELECT
+        (
+            SELECT COUNT(DISTINCT T.CHKPT_CD)
+            FROM TB_CHKPT_TYPE_MGMT T
+            WHERE T.CMPNY_CD = #{cmpnyCd}
+              AND T.SITE_CD  = #{siteCd}
+              AND T.USE_YN   = 'Y'
+        )                                                                       AS targetCnt
+      , (
+            SELECT COUNT(DISTINCT D.CHKPT_CD)
+            FROM TB_CHKPT_INSPECT_ANSWER D
+                 INNER JOIN TB_CHKPT_TYPE_MGMT T
+                    ON  T.CMPNY_CD = D.CMPNY_CD
+                    AND T.SITE_CD  = D.SITE_CD
+                    AND T.CHKPT_CD = D.CHKPT_CD
+                    AND T.USE_YN   = 'Y'
+            WHERE D.CMPNY_CD  = #{cmpnyCd}
+              AND D.SITE_CD   = #{siteCd}
+              AND D.WORK_DATE = #{todayYmd}
+        )                                                                       AS completedCnt
+    </select>
+
+    <!-- 위험성 평가 미처리 검토요청(SYS011='001') 건수 — 사업장 스코프. -->
+    <select id="selectRiskPendingCount"
+            parameterType="com.prafta.app.admin.dashboard.application.query.SafetyCountQuery"
+            resultType="int">
+    /* AppAdminDashboardMapper.selectRiskPendingCount */
+    SELECT
+        COUNT(1)
+    FROM TB_RISK_ASSESSMENT A
+    WHERE A.CMPNY_CD = #{cmpnyCd}
+      AND A.SITE_CD  = #{siteCd}
+      AND A.ASSESSMENT_STATUS = '001'
+    </select>
+
+    <!-- 아차사고 신규 접수(REPORT_STATUS_CD='100') 건수 — 사업장 스코프. USE_YN='Y'(삭제 제외, 라이브 정합). -->
+    <select id="selectNearMissNewCount"
+            parameterType="com.prafta.app.admin.dashboard.application.query.SafetyCountQuery"
+            resultType="int">
+    /* AppAdminDashboardMapper.selectNearMissNewCount */
+    SELECT
+        COUNT(1)
+    FROM TB_NEAR_MISS A
+    WHERE A.CMPNY_CD = #{cmpnyCd}
+      AND A.SITE_CD  = #{siteCd}
+      AND A.USE_YN   = 'Y'
+      AND A.REPORT_STATUS_CD = '100'
+    </select>
+
+</mapper>

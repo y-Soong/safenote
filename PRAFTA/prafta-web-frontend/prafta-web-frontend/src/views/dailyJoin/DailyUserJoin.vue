@@ -67,6 +67,36 @@
       </div>
 
       <div class="daily-join__row">
+        <label class="daily-join__label">비밀번호</label>
+        <input
+          class="daily-join__input"
+          type="password"
+          v-model="password"
+          ref="passwordRef"
+          minlength="6"
+          maxlength="15"
+          placeholder="6 ~ 15자, 영문/숫자/특수문자 중 2종 이상"
+          autocomplete="new-password"
+        />
+        <span class="daily-join__msg">{{ passwordMsg }}</span>
+      </div>
+
+      <div class="daily-join__row">
+        <label class="daily-join__label">비밀번호 확인</label>
+        <input
+          class="daily-join__input"
+          type="password"
+          v-model="passwordConfirm"
+          ref="passwordConfirmRef"
+          minlength="6"
+          maxlength="15"
+          placeholder="비밀번호를 한 번 더 입력하세요"
+          autocomplete="new-password"
+        />
+        <span class="daily-join__msg">{{ passwordConfirmMsg }}</span>
+      </div>
+
+      <div class="daily-join__row">
         <label class="daily-join__label">이름</label>
         <input
           class="daily-join__input"
@@ -183,6 +213,8 @@ const siteNm = ref("");
 
 /* 입력값 */
 const userId = ref("");
+const password = ref("");
+const passwordConfirm = ref("");
 const userNm = ref("");
 const mblNo = ref("");
 const certNo = ref("");
@@ -191,6 +223,8 @@ const certNo = ref("");
 const userIdChecked = ref(false);
 const userIdMsg = ref("");
 const checkedUserId = ref(""); // 중복확인을 통과한 아이디 값
+const passwordMsg = ref("");
+const passwordConfirmMsg = ref("");
 const smsVerified = ref(false);
 const smsAuthMsg = ref("");
 const mblNoLocked = ref(false);
@@ -205,6 +239,8 @@ let timerInterval = null;
 
 /* focus 용 ref */
 const userIdRef = ref(null);
+const passwordRef = ref(null);
+const passwordConfirmRef = ref(null);
 const mblNoRef = ref(null);
 
 /* ============ Life Cycle ============ */
@@ -444,6 +480,7 @@ const handleSubmit = async () => {
       cmpnyCd: cmpnyCd.value,
       siteCd: siteCd.value,
       userId: userId.value,
+      userPw: password.value,
       userNm: userNm.value,
       mblNo: mblNo.value,
       certNo: certNo.value,
@@ -460,9 +497,45 @@ const handleSubmit = async () => {
 };
 
 /* ============ 입력 검증 ============ */
+/** 비밀번호 규칙: 6~15자 + 영문/숫자/특수문자 중 2종 이상 (정규 사용자 규칙 미러). */
+function fnIsValidPassword(pw) {
+  if (pw == null) {
+    return false;
+  }
+  if (pw.length < 6 || pw.length > 15) {
+    return false;
+  }
+  let typeCount = 0;
+  if (/[0-9]/.test(pw)) typeCount++;
+  if (/[a-zA-Z]/.test(pw)) typeCount++;
+  if (/[^a-zA-Z0-9]/.test(pw)) typeCount++;
+  return typeCount >= 2;
+}
+
 function fnValidateInput() {
   if (!userIdChecked.value) {
     proxy.$alert("아이디 중복확인을 완료해주세요.");
+    return false;
+  }
+  if (proxy.$util.isEmpty(password.value)) {
+    proxy.$alert("비밀번호를 입력해주세요.");
+    if (passwordRef.value) passwordRef.value.focus();
+    return false;
+  }
+  // 6~15자 + 영문/숫자/특수문자 중 2종 이상 (정규 사용자 규칙, 공통 정책 §3.1)
+  if (!fnIsValidPassword(password.value)) {
+    proxy.$alert("비밀번호는 6 ~ 15자, 영문/숫자/특수문자 중 2종 이상이어야 합니다.");
+    if (passwordRef.value) passwordRef.value.focus();
+    return false;
+  }
+  if (proxy.$util.isEmpty(passwordConfirm.value)) {
+    proxy.$alert("비밀번호 확인을 입력해주세요.");
+    if (passwordConfirmRef.value) passwordConfirmRef.value.focus();
+    return false;
+  }
+  if (password.value !== passwordConfirm.value) {
+    proxy.$alert("비밀번호가 일치하지 않습니다.");
+    if (passwordConfirmRef.value) passwordConfirmRef.value.focus();
     return false;
   }
   if (proxy.$util.isEmpty(userNm.value)) {

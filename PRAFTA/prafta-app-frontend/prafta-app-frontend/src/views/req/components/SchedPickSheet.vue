@@ -4,8 +4,9 @@
   - RequestSortSheet.vue / BaseBottomSheet.vue 패턴 미러링
   - props:
       modelValue (v-model 열림 상태)
-      options    스케줄 옵션 배열 [{ schCd, schNo, baseYn, label }]
+      options    스케줄 옵션 배열 [{ schCd, schNo, label }]
       selected   현재 선택된 schCd
+      userDefaultSchCd  사용자 본인 기본 근무타입 SCH_CD (prafta-com-008-E-9b, "기본" 칩 기준)
       loading / error  조회 상태
   - emits:
       update:modelValue  열림 토글
@@ -37,7 +38,11 @@
         <span class="sched-pick__main">
           <span class="sched-pick__top">
             <span class="sched-pick__no">{{ opt.schNo }}</span>
-            <span v-if="opt.baseYn === 'Y'" class="sched-pick__chip">기본</span>
+            <span
+              v-if="userDefaultSchCd && opt.schCd === userDefaultSchCd"
+              class="sched-pick__chip"
+              >기본</span
+            >
           </span>
           <span class="sched-pick__label">{{ opt.label }}</span>
         </span>
@@ -59,6 +64,8 @@ defineProps({
   modelValue: { type: Boolean, default: false },
   options: { type: Array, default: () => [] },
   selected: { type: String, default: '' },
+  // prafta-com-008-E-9b: 본인 기본 근무타입 SCH_CD. opt.schCd 가 이 값과 같으면 "기본" 칩 표시.
+  userDefaultSchCd: { type: String, default: '' },
   loading: { type: Boolean, default: false },
   error: { type: Boolean, default: false },
 })

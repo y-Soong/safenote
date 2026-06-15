@@ -30,7 +30,7 @@
       @keydown.enter="$emit('click:row', row.noticeId)"
       @keydown.space.prevent="$emit('click:row', row.noticeId)"
     >
-      <span v-if="row.isImportant" class="notice-row__imp">중요</span>
+      <span v-if="row.isImportant" class="notice-row__imp">고정</span>
       <span class="notice-row__title" :class="{ 'notice-row__title--read': row.isRead }">
         {{ row.title }}
       </span>

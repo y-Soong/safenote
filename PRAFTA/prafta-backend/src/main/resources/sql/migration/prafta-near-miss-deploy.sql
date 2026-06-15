@@ -41,7 +41,7 @@ CREATE TABLE `tb_near_miss` (
     `CMPNY_CD`               varchar(50)  NOT NULL COMMENT '회사코드',
     `SITE_CD`                varchar(50)  NOT NULL COMMENT '사업장코드',
     `NEAR_MISS_ID`           varchar(20)  NOT NULL COMMENT '사건 ID (사업장별 채번: NM + YYYYMMDD + SEQ)',
-    `INCIDENT_TYPE_CD`       varchar(10)  NOT NULL COMMENT '사건유형[SYS061] 100:아차사고 200:경미사고 300:유해·위험요인발견',
+    `INCIDENT_TYPE_CD`       varchar(10)  NOT NULL COMMENT '사건유형[SYS061] 100:아차사고 200:경미사고',
     `PROCESS_CD`             varchar(10)           DEFAULT NULL COMMENT '공정코드[COM002]',
     `OCCUR_DTIME`            datetime     NOT NULL COMMENT '발생일시',
     `LOCATION_DESC`          varchar(200)          DEFAULT NULL COMMENT '발생장소(직접입력)',
@@ -83,11 +83,11 @@ INSERT INTO `tb_syst_val_m` (`SYST_VAL_CD`, `SYST_VAL_NM`, `USE_YN`, `VAL_DESC`,
 -- (3) 코드그룹 상세 (tb_syst_val_d)
 -- ----------------------------------------------------------------------------
 -- SYS061 사건유형
+--   '300' 유해·위험요인발견은 위험성평가와 중복되어 제거됨(prafta-near-miss-remove-type-300.sql 참조).
 INSERT INTO `tb_syst_val_d`
     (`SYST_VAL_CD`, `SYST_VAL_D_CD`, `SYST_VAL_D_NM`, `SORT_IDX`, `USE_YN`, `INSERT_NO`) VALUES
-    ('SYS061', '100', '아차사고',           1, 'Y', 'SYSTEM')
-  , ('SYS061', '200', '경미사고',           2, 'Y', 'SYSTEM')
-  , ('SYS061', '300', '유해·위험요인발견',  3, 'Y', 'SYSTEM');
+    ('SYS061', '100', '아차사고', 1, 'Y', 'SYSTEM')
+  , ('SYS061', '200', '경미사고', 2, 'Y', 'SYSTEM');
 
 -- SYS062 잠재적 중대성
 INSERT INTO `tb_syst_val_d`

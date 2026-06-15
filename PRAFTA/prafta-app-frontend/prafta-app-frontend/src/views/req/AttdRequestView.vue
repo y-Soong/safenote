@@ -78,6 +78,7 @@ import { useRoute, useRouter } from 'vue-router'
 
 import api from '@/api/axios'
 import { resolveApiErrorMessage } from '@/utils/apiError'
+import { isDailyWorker } from '@/utils/employment'
 
 import SchedModifyForm from './components/SchedModifyForm.vue'
 import AttdCorrectionForm from './components/AttdCorrectionForm.vue'
@@ -195,6 +196,12 @@ const onSubmit = async (payload) => {
 const CONTEXT_KEY = 'attd_req_ctx_v1'
 
 onMounted(() => {
+  // prafta-app-025 J1-4: 일용직(DAILY)은 근무 수정/초과근무 요청 대상이 아님 → 직접 진입 방어.
+  if (isDailyWorker()) {
+    showAlert('일용직 사용자는 근태 조회 대상이 아닙니다.')
+    router.replace('/MainView')
+    return
+  }
   // 1) type / workYmd 유효성
   if (!formType.value) {
     showAlert('잘못된 요청 화면입니다.')

@@ -1,0 +1,167 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+
+<!--
+  PRAFTA-COM-008-E-3: 기본근무 자동 스케줄 생성 공용 Mapper.
+  SQL 규칙: leading comma, #{...} 바인딩, SELECT * 금지(명시 컬럼). MySQL 8.
+  평일/교대비소속/미마감월 필터는 서비스(DefaultSchGenServiceImpl)가 결정한다(결정성·난수 금지).
+-->
+<mapper namespace="com.prafta.common.cmm.sch.mapper.DefaultSchGenMapper">
+
+    <!-- 기본 근무타입 설정 사용자가 1명 이상 존재하는 회사 목록(배치 트리거1 대상) -->
+    <select id="selectDefaultSchCompanyCds" resultType="string">
+    /* DefaultSchGenMapper.selectDefaultSchCompanyCds */
+    SELECT DISTINCT U.CMPNY_CD
+      FROM TB_USER U
+     WHERE U.DEFAULT_SCH_CD IS NOT NULL
+       AND U.USE_YN         = 'Y'
+       AND U.ACCOUNT_STATUS = '01'
+    </select>
+
+    <!-- 해당 회사에서 기본 근무타입이 설정된 활성 사용자 목록 -->
+    <select id="selectDefaultSchUsers" resultType="com.prafta.common.cmm.sch.vo.DefaultSchUserVO">
+    /* DefaultSchGenMapper.selectDefaultSchUsers */
+    SELECT
+          U.CMPNY_CD        AS cmpnyCd
+        , U.SITE_CD         AS siteCd
+        , U.USER_CD         AS userCd
+        , U.DEFAULT_SCH_CD  AS defaultSchCd
+      FROM TB_USER U
+     WHERE U.CMPNY_CD       = #{cmpnyCd}
+       AND U.DEFAULT_SCH_CD IS NOT NULL
+       AND U.SITE_CD        IS NOT NULL
+       AND U.USE_YN         = 'Y'
+       AND U.ACCOUNT_STATUS = '01'
+    </select>
+
+    <!-- 단건 사용자 기본 근무타입 메타 -->
+    <select id="selectDefaultSchUser" resultType="com.prafta.common.cmm.sch.vo.DefaultSchUserVO">
+    /* DefaultSchGenMapper.selectDefaultSchUser */
+    SELECT
+          U.CMPNY_CD        AS cmpnyCd
+        , U.SITE_CD         AS siteCd
+        , U.USER_CD         AS userCd
+        , U.DEFAULT_SCH_CD  AS defaultSchCd
+      FROM TB_USER U
+     WHERE U.CMPNY_CD       = #{cmpnyCd}
+       AND U.USER_CD        = #{userCd}
+       AND U.DEFAULT_SCH_CD IS NOT NULL
+       AND U.SITE_CD        IS NOT NULL
+     LIMIT 1
+    </select>
+
+    <!--
+      빈 날에만 기본근무 1일 INSERT. PK(CMPNY_CD,SITE_CD,USER_CD,WORK_YMD) 충돌 시 무동작.
+      INSERT ... SELECT ... WHERE NOT EXISTS 로 "빈 날만" 보장(덮어쓰기 금지·멱등).
+      GEN_SOURCE='DEFAULT_SCH', WORK_PLAN_CD=기본 근무타입(SCH_CD).
+    -->
+    <insert id="insertDefaultSchDayIfAbsent">
+    /* DefaultSchGenMapper.insertDefaultSchDayIfAbsent */
+    INSERT INTO TB_USER_WORK_PLAN (
+          CMPNY_CD
+        , SITE_CD
+        , USER_CD
+        , WORK_YMD
+        , WORK_PLAN_CD
+        , GEN_SOURCE
+        , INSERT_NO
+        , INSERT_DATE
+        , UPDATE_NO
+        , UPDATE_DATE
+    )
+    SELECT
+          #{cmpnyCd}
+        , #{siteCd}
+        , #{userCd}
+        , #{workYmd}
+        , #{schCd}
+        , 'DEFAULT_SCH'
+        , #{operatorNo}
+        , NOW()
+        , #{operatorNo}
+        , NOW()
+      FROM DUAL
+     WHERE NOT EXISTS (
+            SELECT 1
+              FROM TB_USER_WORK_PLAN WP
+             WHERE WP.CMPNY_CD = #{cmpnyCd}
+               AND WP.SITE_CD  = #{siteCd}
+               AND WP.USER_CD  = #{userCd}
+               AND WP.WORK_YMD = #{workYmd}
+           )
+    </insert>
+
+    <!--
+      기본근무 변경 시 미래 자동생성분만 갱신. 대상 = WORK_YMD > fromYmd AND GEN_SOURCE='DEFAULT_SCH'.
+      수동(MANUAL)/연차(LEAVE)/교대(SHIFT)/촉진 행은 GEN_SOURCE 가 달라 자동 보존된다.
+    -->
+    <update id="updateFutureDefaultSch">
+    /* DefaultSchGenMapper.updateFutureDefaultSch */
+    UPDATE TB_USER_WORK_PLAN
+       SET WORK_PLAN_CD = #{newSchCd}
+         , UPDATE_NO    = #{operatorNo}
+         , UPDATE_DATE  = NOW()
+     WHERE CMPNY_CD   = #{cmpnyCd}
+       AND SITE_CD    = #{siteCd}
+       AND USER_CD    = #{userCd}
+       AND WORK_YMD   &gt; #{fromYmd}
+       AND GEN_SOURCE = 'DEFAULT_SCH'
+    </update>
+
+    <!--
+      prafta-com-008-E-5/E-8: 사업장 활성(USE_YN='Y') 근무타입 옵션 목록.
+      User_01 기본 근무타입 select / 로그인 게이트 팝업 선택지. 시각은 raw('HHmm') 그대로 내려준다.
+    -->
+    <select id="selectActiveSchOptions" resultType="com.prafta.common.cmm.sch.vo.SchOptionVO">
+    /* DefaultSchGenMapper.selectActiveSchOptions */
+    SELECT
+          M.SCH_CD            AS schCd
+        , M.SCH_NO            AS schNo
+        , M.FST_SCH_STR_TIME  AS fstSchStrTime
+        , M.FST_SCH_END_TIME  AS fstSchEndTime
+        , M.SEC_SCH_STR_TIME  AS secSchStrTime
+        , M.SEC_SCH_END_TIME  AS secSchEndTime
+      FROM TB_SCH_MGMT M
+     WHERE M.CMPNY_CD = #{cmpnyCd}
+       AND M.SITE_CD  = #{siteCd}
+       AND M.USE_YN   = 'Y'
+     ORDER BY M.SCH_NO ASC
+    </select>
+
+    <!--
+      prafta-com-008-E-5/E-8: 기본 근무타입 화이트리스트 검증.
+      대상 사업장에 USE_YN='Y' 로 존재하는 SCH_CD 면 1. (클라 제출값 신뢰 금지)
+    -->
+    <select id="countActiveSchOnSite" resultType="int">
+    /* DefaultSchGenMapper.countActiveSchOnSite */
+    SELECT COUNT(*)
+      FROM TB_SCH_MGMT M
+     WHERE M.CMPNY_CD = #{cmpnyCd}
+       AND M.SITE_CD  = #{siteCd}
+       AND M.SCH_CD   = #{schCd}
+       AND M.USE_YN   = 'Y'
+    </select>
+
+    <!-- prafta-com-008-E-8: 단건 사용자 SITE_CD(게이트 검증 스코프). -->
+    <select id="selectUserSiteCd" resultType="string">
+    /* DefaultSchGenMapper.selectUserSiteCd */
+    SELECT U.SITE_CD
+      FROM TB_USER U
+     WHERE U.CMPNY_CD = #{cmpnyCd}
+       AND U.USER_CD  = #{userCd}
+     LIMIT 1
+    </select>
+
+    <!-- prafta-com-008-E-8: 기본 근무타입 + 설정시점 갱신(로그인 게이트 저장 경로). -->
+    <update id="updateUserDefaultSch">
+    /* DefaultSchGenMapper.updateUserDefaultSch */
+    UPDATE TB_USER
+       SET DEFAULT_SCH_CD       = #{defaultSchCd}
+         , DEFAULT_SCH_SET_DATE = NOW()
+         , UPDATE_NO            = #{operatorNo}
+         , UPDATE_DATE          = NOW()
+     WHERE CMPNY_CD = #{cmpnyCd}
+       AND USER_CD  = #{userCd}
+    </update>
+
+</mapper>

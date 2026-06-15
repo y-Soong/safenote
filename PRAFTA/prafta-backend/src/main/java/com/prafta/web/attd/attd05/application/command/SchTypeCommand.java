@@ -27,4 +27,23 @@ public record SchTypeCommand(
     		, model.gvUserCd()
 		);
     }
+
+	/**
+	 * prafta-com-008-E-6: 근무계획코드를 override 하여 생성.
+	 * 연차 셀이어도 work_plan 에는 LEAVE_CD 대신 사용자 기본 근무타입(SCH_CD)을 기록하기 위함.
+	 */
+	public static SchTypeCommand from(SchTypeModel model, String overrideWorkPlanCd) {
+
+        if (model == null)
+        	throw new ApiException(CommonErrorCode.COMMON_400_001);
+
+        return new SchTypeCommand(
+    		model.siteCd()
+    		, model.userCd()
+    		, model.workYmd()
+    		, overrideWorkPlanCd
+    		, model.gvCmpnyCd()
+    		, model.gvUserCd()
+		);
+    }
 }

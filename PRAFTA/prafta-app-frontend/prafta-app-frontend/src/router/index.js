@@ -47,6 +47,25 @@ const routes = [
     component: () => import('@/views/tbm/TbmCompletedDetailView.vue'),
   },
 
+  // prafta-app-025 J1-3: 안전 허브 (보호 — publicPaths 미포함, beforeEach 토큰 게이트).
+  //   진입: MainView › SafetyActivityCard › 헤더 ">"(onSafetyDetail), 바텀 탭바 '안전' 탭.
+  //   안전 활동 3종(안전점검/위험성 발굴/아차사고 보고) 진입 허브. 근무중 게이트는 화면 자체 산출.
+  {
+    path: '/SafetyHub',
+    name: 'SafetyHub',
+    component: () => import('@/views/safety/SafetyHubView.vue'),
+  },
+
+  // prafta-app-025 J1-10 B-6: 내 안전활동 이력 (보호 — publicPaths 미포함, beforeEach 토큰 게이트).
+  //   진입: MainView › SafetyActivityCard › 헤더 ">"(onSafetyDetail) → /MySafetyHistory.
+  //   본인이 처리한 순회점검 + 본인이 등록한 위험성평가 이력(시간순 합본). 본인 필터는 서버가 JWT 로 강제.
+  //   하단 "안전" 탭(/SafetyHub)은 허브로 유지 — 역할 분리(허브 vs 본인 이력 조회).
+  {
+    path: '/MySafetyHistory',
+    name: 'MySafetyHistory',
+    component: () => import('@/views/safety/MySafetyHistoryView.vue'),
+  },
+
   // prafta-app-005: 연차 현황 (본인 잔여연차 상세)
   {
     path: '/MyLeaveSummaryView',
@@ -60,6 +79,29 @@ const routes = [
     path: '/LeaveApply',
     name: 'LeaveApply',
     component: () => import('@/views/leave/LeaveApplyView.vue'),
+  },
+
+  // PRAFTA-COM-008-C: 연차 변경 동의/거부 (관리자 발의 본인 연차 변경/삭제 응답)
+  //   진입: 연차현황 메뉴 또는 PUSH 딥링크(LEAVE_CHANGE_REQUEST 등). 보호 라우트.
+  {
+    path: '/LeaveChangeConsent',
+    name: 'LeaveChangeConsent',
+    component: () => import('@/views/leave/LeaveChangeConsentView.vue'),
+  },
+
+  // PRAFTA-COM-008-C: 근로자 발의 연차 이동 요청 (취소 불가, 관리자 승인 대상)
+  {
+    path: '/LeaveMoveRequest',
+    name: 'LeaveMoveRequest',
+    component: () => import('@/views/leave/LeaveMoveRequestView.vue'),
+  },
+
+  // PRAFTA-COM-008-A-7: 연차 사용촉진 1차 계획서 화면 (보호 — beforeEach 토큰 게이트, publicPaths 미포함)
+  //   진입: 메인 로그인 안내 팝업 "계획 등록" → /LeavePromotionPlan.
+  {
+    path: '/LeavePromotionPlan',
+    name: 'LeavePromotionPlan',
+    component: () => import('@/views/leave/LeavePromotionPlanView.vue'),
   },
 
   // PRAFTA-APP-006: 내 승인 요청 목록 화면
@@ -162,11 +204,79 @@ const routes = [
     component: () => import('@/views/admin/approval/AdminApprovalDetailView.vue'),
   },
 
+  // prafta-app-025 J1-5: 관리자 모드 근태 상세 (보호 — publicPaths 미포함, beforeEach 토큰 게이트).
+  //   진입: AdminLauncherView/AdminTabBar 의 ATTD_DETAIL → /AdminAttdDetail. 서버 access-context 가 진입 최종 판정.
+  //   화면 진입 후 조회 EP(/appApi/admin/attd-detail/*)가 노드 스코프를 서버에서 재강제(C1).
+  {
+    path: '/AdminAttdDetail',
+    name: 'AdminAttdDetail',
+    component: () => import('@/views/admin/attd/AdminAttdDetailView.vue'),
+  },
+
+  // prafta-app-025 J1-7: 관리자 모드 현장 처리(일용직 QR 출퇴근 등록) (보호 — publicPaths 미포함, beforeEach 토큰 게이트).
+  //   진입: AdminLauncherView 본문 SITE_OPS 섹션(moduleActiveMap.SITE_OPS===true) → /AdminSiteOps.
+  //   진입 게이트/사업장 스코프/대상 유효성/멱등은 서버 EP(/appApi/admin/site-ops/*)가 최종 판정(C1).
+  {
+    path: '/AdminSiteOps',
+    name: 'AdminSiteOps',
+    component: () => import('@/views/admin/siteops/AdminSiteOpsView.vue'),
+  },
+
+  // prafta-app-025 J1-6: 관리자 모드 안전 관리 (보호 — publicPaths 미포함, beforeEach 토큰 게이트).
+  //   진입: AdminLauncherView 본문 SAFETY 섹션/하단 탭바 '안전' 탭(moduleActiveMap.SAFETY===true) → /AdminSafety.
+  //   안전 허브(순회점검 결과 / 위험성평가 / 아차사고). 사업장 스코프/상태 전이는 서버 EP(/appApi/admin/safety/*)가 최종 판정(C1).
+  {
+    path: '/AdminSafety',
+    name: 'AdminSafety',
+    component: () => import('@/views/admin/safety/AdminSafetyView.vue'),
+  },
+  // 순회점검 결과(조회 전용): 월 선택 → 포인트 리스트 → 상세 시트(일자별 답변 + 불량 사진/비고).
+  {
+    path: '/AdminSafetyInspection',
+    name: 'AdminSafetyInspection',
+    component: () => import('@/views/admin/safety/AdminSafetyInspectionView.vue'),
+  },
+  // 위험성평가(조회 + 상태전환): 상태 필터 → 목록 → 상세/상태전환 시트.
+  {
+    path: '/AdminSafetyRisk',
+    name: 'AdminSafetyRisk',
+    component: () => import('@/views/admin/safety/AdminSafetyRiskView.vue'),
+  },
+
+  // prafta-app-025 J1-8: 관리자 모드 게시판 = 안전자료실(Archive, notice02) — 조회 + 등록(작성+첨부).
+  //   진입: AdminLauncherView 본문 BOARD 섹션(moduleActiveMap.BOARD===true) → /AdminBoard.
+  //   보호 라우트(publicPaths 미포함, beforeEach 토큰 게이트). 등록 권한(master/hr/safe)은 서버 EP 가 최종 강제(C1).
+  {
+    path: '/AdminBoard',
+    name: 'AdminBoard',
+    component: () => import('@/views/admin/board/AdminBoardView.vue'),
+  },
+  // 자료 상세(목록 행 선택 후 진입, 읽기 전용 + 첨부 다운로드): /AdminBoardDetail?noticeId=...
+  {
+    path: '/AdminBoardDetail',
+    name: 'AdminBoardDetail',
+    component: () => import('@/views/admin/board/AdminBoardDetailView.vue'),
+  },
+  // 자료 등록 폼(헤더 "등록" 진입): /AdminBoardForm. 수정/삭제는 웹 위임(앱 미신설).
+  {
+    path: '/AdminBoardForm',
+    name: 'AdminBoardForm',
+    component: () => import('@/views/admin/board/AdminBoardFormView.vue'),
+  },
+
   // PRAFTA-APP-010: 마이페이지 (인증 필수 — publicPaths 미포함)
   {
     path: '/MyPage',
     name: 'MyPage',
     component: () => import('@/views/mypage/MyPageView.vue'),
+  },
+
+  // PRAFTA-APP-021: 푸시 알림 설정 (인증 필수 — publicPaths 미포함, beforeEach 토큰 게이트).
+  //   진입: MainView 우상단 아바타(onAvatarClick → /PushSetting). 본인(USER_CD=JWT) 설정만 조회/저장.
+  {
+    path: '/PushSetting',
+    name: 'PushSetting',
+    component: () => import('@/views/mypage/PushSettingView.vue'),
   },
   {
     path: '/ProfileEdit',
@@ -273,6 +383,14 @@ const routes = [
     component: () => import('@/views/login/PhoneAuthView.vue'),
   },
 
+  // PRAFTA-COM-008-E-8c: 기본 근무타입 미설정(교대 비소속) 로그인 게이트.
+  // 임시 scope=DEFAULT_SCH 토큰만으로 옵션조회/저장 호출. 정식 토큰 부재 → public.
+  {
+    path: '/DefaultSchGate',
+    name: 'DefaultSchGate',
+    component: () => import('@/views/login/DefaultSchGateView.vue'),
+  },
+
   {
     path: '/:pathMatch(.*)*',
     name: 'NotFound',
@@ -297,6 +415,7 @@ const publicPaths = [
   '/QrScanner',
   '/JoinUser',
   '/PhoneAuth', // PRAFTA-037-F3: 인증대기 단계는 정식 토큰 미발급 → public 라우트로 취급
+  '/DefaultSchGate', // PRAFTA-COM-008-E-8c: 기본 근무타입 게이트 — 임시 토큰만, 정식 토큰 미발급 → public
 ]
 
 // ✅ refresh 동시 호출 방지

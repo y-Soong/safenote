@@ -53,9 +53,10 @@
       <div>
         <label>제목</label>
         <input
+          class="title-search-input"
           v-model.trim="searchKeyword"
           type="text"
-          placeholder="세션 제목"
+          placeholder="제목"
           @keyup.enter="fnSearch"
         />
       </div>
@@ -482,6 +483,11 @@ const statusClass = (code) => {
 </script>
 
 <style scoped>
+/* 제목 검색 input 너비 2배(.viewSearch input 기본 120px → 240px) */
+.title-search-input {
+  width: 240px;
+}
+
 /* prafta-033-D: 기간 통계 요약 */
 .stat-strip {
   display: flex;

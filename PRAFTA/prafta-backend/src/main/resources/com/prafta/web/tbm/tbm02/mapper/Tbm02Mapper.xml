@@ -582,6 +582,26 @@
 		WHERE 에 상태+시각 조건을 동시 포함하므로 수동 시작(startSession)/연장(extendPrep)과 원자적.
 		파라미터 없음(전수 스캔, 상태+시각 조건만으로 안전).
 	-->
+	<!--
+		PRAFTA-APP-021-3b(W3 자동시작): 자동전이 대상 세션 키 포착.
+		bulkStartExpiredPrep 와 동일 WHERE(OPENED + 15분 경과)로, 일괄 전이 직전 시작 PUSH 대상을 조회한다.
+		배치 @Transactional 내 select→update 원자 실행이므로, 여기 잡힌 세션이 곧 IN_PROGRESS 전이 대상이다
+		(dedupKey 멱등으로 lazy-eval(evaluateAutoStart) 경로와 중복 안전).
+	-->
+	<select id="selectExpiredPrepForStart" resultType="com.prafta.web.tbm.tbm02.result.AutoStartTargetResult">
+	/* Tbm02Mapper.selectExpiredPrepForStart */
+	SELECT
+		CMPNY_CD			AS cmpnyCd
+		, SESSION_CD		AS sessionCd
+		, SITE_CD			AS siteCd
+		, MANAGER_USER_CD	AS managerUserCd
+	FROM TB_TBM_SESSION
+	WHERE STATUS_CD = 'OPENED'
+	  AND DEL_YN = 'N'
+	  AND PREP_START_AT IS NOT NULL
+	  AND PREP_START_AT &lt;= (NOW() - INTERVAL 15 MINUTE)
+	</select>
+
 	<update id="bulkStartExpiredPrep">
 	/* Tbm02Mapper.bulkStartExpiredPrep */
 	UPDATE TB_TBM_SESSION

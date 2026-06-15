@@ -3,7 +3,7 @@
     <!-- LNB 브랜드 바: 로고 + 서비스명 (고정) -->
     <a class="lnb-brand" href="#" @click.prevent="goHome">
       <img class="lnb-logo" :src="praftaLogo" alt="PRAFTA" />
-      <span class="lnb-service-name">SAFETY NOTE</span>
+      <span class="lnb-service-name">SAFENOTE</span>
     </a>
 
     <!-- 메뉴 리스트 (스크롤) -->

@@ -15,16 +15,13 @@ import com.prafta.common.security.JwtUtil;
 import com.prafta.web.nearmiss.nearmiss01.application.param.ChangeStatusParam;
 import com.prafta.web.nearmiss.nearmiss01.application.param.IncidentInfoParam;
 import com.prafta.web.nearmiss.nearmiss01.application.param.IncidentListParam;
-import com.prafta.web.nearmiss.nearmiss01.application.param.ReclassifyParam;
 import com.prafta.web.nearmiss.nearmiss01.application.param.SaveIncidentParam;
 import com.prafta.web.nearmiss.nearmiss01.dto.request.ChangeStatusRequest;
 import com.prafta.web.nearmiss.nearmiss01.dto.request.IncidentInfoRequest;
 import com.prafta.web.nearmiss.nearmiss01.dto.request.IncidentListRequest;
-import com.prafta.web.nearmiss.nearmiss01.dto.request.ReclassifyRequest;
 import com.prafta.web.nearmiss.nearmiss01.dto.request.SaveIncidentRequest;
 import com.prafta.web.nearmiss.nearmiss01.dto.response.IncidentInfoResponse;
 import com.prafta.web.nearmiss.nearmiss01.dto.response.IncidentListResponse;
-import com.prafta.web.nearmiss.nearmiss01.dto.response.ReclassifyResponse;
 import com.prafta.web.nearmiss.nearmiss01.dto.response.StatusCountResponse;
 import com.prafta.web.nearmiss.nearmiss01.service.NearMiss01Service;
 
@@ -103,17 +100,5 @@ public class NearMiss01Controller {
             ChangeStatusParam.from(request, jwtUtil.getAllClaimsAsMap(authorization)));
 
         return ResponseEntity.status(HttpStatus.OK).build();
-    }
-
-    // E6 위험성평가요청 -> 아차사고 재분류 (단일 트랜잭션)
-    @PostMapping(value = "/reclassify-from-assessment", consumes = MediaType.APPLICATION_JSON_VALUE)
-    public ResponseEntity<?> reclassifyFromAssessment(
-            @RequestBody ReclassifyRequest request,
-            @RequestHeader(value = "Authorization", required = false) String authorization) {
-
-        ReclassifyResponse response = nearMiss01Service.reclassifyFromAssessment(
-            ReclassifyParam.from(request, jwtUtil.getAllClaimsAsMap(authorization)));
-
-        return ResponseEntity.status(HttpStatus.OK).body(response);
     }
 }

@@ -147,7 +147,7 @@
 	      AND N.SITE_CD = A.SITE_CD
 	      AND N.NODE_CD = A.NODE_CD
 	      AND N.NODE_CD = 'n1'
-	      AND (N.MAIN_ADMIN_CD = A.USER_ID OR N.SUB_ADMIN_CD = A.USER_CD)
+	      AND (N.MAIN_ADMIN_CD = A.USER_CD OR N.SUB_ADMIN_CD = A.USER_CD)
 	  )
     </delete>
     

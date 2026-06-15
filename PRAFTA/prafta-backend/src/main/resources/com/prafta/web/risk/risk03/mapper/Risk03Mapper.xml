@@ -95,7 +95,6 @@
 	        AND A.HAZARD_CD = E.HAZARD_CD
 	        )
 	WHERE 1=1
-	  AND A.ASSESSMENT_STATUS != '005'   /* 아차사고로 이관된 건은 위험성평가관리 목록에서 제외(추적은 DB에 보존) */
 	  <if test="siteCd != null and siteCd != ''">
 	  	AND A.SITE_CD = #{siteCd}
 	  </if>

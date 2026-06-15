@@ -11,6 +11,10 @@ public enum CommonErrorCode implements ApiErrorCode {
     , COMMON_400_003(HttpStatus.BAD_REQUEST, "토큰정보가 존재하지 않습니다.")
     , COMMON_400_004(HttpStatus.BAD_REQUEST, "계정정보가 존재하지 않습니다.")
     , COMMON_400_401(HttpStatus.NOT_FOUND, "조회결과가 없습니다.\n관리자에게 문의해주세요.")
+    , COMMON_403_001(HttpStatus.FORBIDDEN, "접근 권한이 없습니다.")
+    // prafta-app-027 follow-up: 일용직(EMPLOYMENT_TYPE='DAILY')은 이용할 수 없는 기능(연차/근태요청/초과근무) 차단.
+    //   내부 구조 비노출 친화 메시지.
+    , COMMON_403_002(HttpStatus.FORBIDDEN, "일용직 회원은 이용할 수 없는 기능입니다.")
     , COMMON_400_600(HttpStatus.UNAUTHORIZED, "인증되지 않은 토큰입니다.\n관리자에게 문의해주세요.")
     , COMMON_500_001(HttpStatus.INTERNAL_SERVER_ERROR, "처리 중 오류가 발생하였습니다.\\n관리자에게 문의해주십시오.")
     

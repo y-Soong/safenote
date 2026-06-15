@@ -11,7 +11,7 @@
 -->
 <template>
   <div class="near-miss-detail">
-    <!-- 헤더 -->
+    <!-- 헤더 (J1-6 .asr-hd 패턴: 뒤로가기 + 타이틀 + 우측 슬롯(심각도 배지)) -->
     <header class="nmd-hd">
       <button type="button" class="nmd-hd__back" aria-label="뒤로" @click="onBack">
         <svg class="icon" width="22" height="22" aria-hidden="true">
@@ -19,7 +19,7 @@
         </svg>
       </button>
       <h1 class="nmd-hd__title">사건 상세</h1>
-      <span v-if="incident" class="nmd-badge" :class="severityClass(incident.potentialSeverityCd)">
+      <span v-if="incident" class="nmd-badge nmd-badge--lg" :class="severityClass(incident.potentialSeverityCd)">
         {{ incident.potentialSeverityNm || '미분류' }}
       </span>
       <span v-else class="nmd-hd__spacer" aria-hidden="true"></span>
@@ -28,81 +28,88 @@
     <!-- 본문(스크롤) -->
     <main class="nmd-body">
       <!-- 로딩 -->
-      <div v-if="isLoading" class="nmd-loading" aria-live="polite">불러오는 중...</div>
+      <div v-if="isLoading" class="nmd-state" aria-live="polite">불러오는 중...</div>
 
       <template v-else-if="incident">
-        <!-- 읽기 블록 -->
-        <dl class="nmd-read">
-          <div class="nmd-row">
-            <dt>유형</dt>
-            <dd>{{ incident.incidentTypeNm }}</dd>
-          </div>
-          <div class="nmd-row">
-            <dt>발생</dt>
-            <dd>{{ incident.occurDtime }}</dd>
-          </div>
-          <div v-if="incident.locationDesc" class="nmd-row">
-            <dt>장소</dt>
-            <dd>{{ incident.locationDesc }}</dd>
-          </div>
-          <div v-if="incident.processNm" class="nmd-row">
-            <dt>공정</dt>
-            <dd>{{ incident.processNm }}</dd>
-          </div>
-          <div class="nmd-row">
-            <dt>경위</dt>
-            <dd class="nmd-row__multiline">{{ incident.description }}</dd>
-          </div>
-          <div class="nmd-row">
-            <dt>보고자</dt>
-            <dd>{{ incident.reporterNm }} / {{ incident.reportDtime }}</dd>
-          </div>
-          <div v-if="incident.immediateActionDesc" class="nmd-row">
-            <dt>즉시조치</dt>
-            <dd class="nmd-row__multiline">{{ incident.immediateActionDesc }}</dd>
-          </div>
-          <div class="nmd-row">
-            <dt>상태</dt>
-            <dd>{{ incident.reportStatusNm }}</dd>
-          </div>
-        </dl>
+        <!-- 사건 정보 (J1-6 .asr-section / .asr-read / .asr-row dt-dd 패턴) -->
+        <section class="nmd-section">
+          <h3 class="nmd-section__title">사건 정보</h3>
+          <dl class="nmd-read">
+            <div class="nmd-row">
+              <dt>유형</dt>
+              <dd>{{ incident.incidentTypeNm }}</dd>
+            </div>
+            <div class="nmd-row">
+              <dt>발생</dt>
+              <dd>{{ incident.occurDtime }}</dd>
+            </div>
+            <div v-if="incident.locationDesc" class="nmd-row">
+              <dt>장소</dt>
+              <dd>{{ incident.locationDesc }}</dd>
+            </div>
+            <div v-if="incident.processNm" class="nmd-row">
+              <dt>공정</dt>
+              <dd>{{ incident.processNm }}</dd>
+            </div>
+            <div class="nmd-row">
+              <dt>경위</dt>
+              <dd class="nmd-row__multiline">{{ incident.description }}</dd>
+            </div>
+            <div class="nmd-row">
+              <dt>보고자</dt>
+              <dd>{{ incident.reporterNm }} / {{ incident.reportDtime }}</dd>
+            </div>
+            <div v-if="incident.immediateActionDesc" class="nmd-row">
+              <dt>즉시조치</dt>
+              <dd class="nmd-row__multiline">{{ incident.immediateActionDesc }}</dd>
+            </div>
+            <div class="nmd-row">
+              <dt>상태</dt>
+              <dd>{{ incident.reportStatusNm }}</dd>
+            </div>
+          </dl>
 
-        <!-- 사진(단일) -->
-        <div v-if="incident.filePath" class="nmd-photo">
-          <img :src="incident.filePath" :alt="incident.fileName || '현장 사진'" />
-        </div>
+          <!-- 사진(단일) — 서버 서빙 URL: host + filePath + '/' + fileName -->
+          <div v-if="incident.filePath && incident.fileName" class="nmd-photo">
+            <img :src="buildFileUrl(incident.filePath, incident.fileName)" :alt="incident.fileName || '현장 사진'" />
+          </div>
+        </section>
 
-        <!-- 임시조치 메모 (관리자, ADMIN_TEMP_ACTION_DESC) -->
-        <section class="nmd-action">
-          <p class="nmd-label">임시조치 (관리자)</p>
-          <textarea
-            v-model="adminTempActionDesc"
-            class="nmd-textarea"
-            rows="3"
-            placeholder="예) 경보 점검 지시"
-            maxlength="500"
-            :disabled="!canFirstReview"
-          ></textarea>
+        <!-- 임시조치 메모 (관리자, ADMIN_TEMP_ACTION_DESC) — J1-6 .asr-section/.asr-field -->
+        <section class="nmd-section">
+          <h3 class="nmd-section__title">임시조치 (관리자)</h3>
+          <div class="nmd-field">
+            <textarea
+              v-model="adminTempActionDesc"
+              class="nmd-field__textarea"
+              rows="3"
+              placeholder="예) 경보 점검 지시"
+              maxlength="500"
+              :disabled="!canFirstReview"
+            ></textarea>
+          </div>
           <p v-if="!canFirstReview" class="nmd-hint">
             접수 단계에서만 1차 확인을 할 수 있어요. 이후 처리는 웹에서 진행합니다.
           </p>
         </section>
       </template>
 
-      <div v-else class="nmd-empty">사건을 찾을 수 없어요</div>
+      <div v-else class="nmd-state">사건을 찾을 수 없어요</div>
     </main>
 
-    <!-- 푸터: 반려 / 접수→검토중 전환 -->
+    <!-- 푸터: 반려 / 접수→검토중 전환 (J1-6 .asr-actions / .asr-btn primary·ghost) -->
     <footer v-if="incident && canFirstReview" class="nmd-footer">
-      <button type="button" class="nmd-btn nmd-btn--secondary" @click="onReject">반려</button>
-      <button
-        type="button"
-        class="nmd-btn nmd-btn--primary"
-        :disabled="isSubmitting"
-        @click="onAdvance"
-      >
-        {{ isSubmitting ? '처리 중...' : '접수 → 검토중' }}
-      </button>
+      <div class="nmd-actions">
+        <button type="button" class="nmd-btn nmd-btn--ghost" @click="onReject">반려</button>
+        <button
+          type="button"
+          class="nmd-btn nmd-btn--primary"
+          :disabled="isSubmitting"
+          @click="onAdvance"
+        >
+          {{ isSubmitting ? '처리 중...' : '접수 → 검토중' }}
+        </button>
+      </div>
     </footer>
   </div>
 
@@ -129,6 +136,7 @@ import { ref, computed, onMounted, getCurrentInstance } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 
 import api from '@/api/axios'
+import { buildFileUrl } from '@/utils/fileUrl'
 
 const router = useRouter()
 const route = useRoute()
@@ -283,6 +291,7 @@ onMounted(() => {
   --color-primary-tint: #f0fdf4;
   --color-danger: #ef4444;
   --color-danger-tint: #fef2f2;
+  --color-danger-text: #b91c1c;
   --color-warning: #f59e0b;
   --color-warning-tint: #fffbeb;
   --color-warning-text: #b45309;
@@ -299,7 +308,8 @@ onMounted(() => {
   --radius-full: 9999px;
 
   position: relative;
-  min-height: 100vh;
+  height: 100vh;
+  height: 100dvh;
   display: flex;
   flex-direction: column;
   background: var(--color-bg);
@@ -309,184 +319,186 @@ onMounted(() => {
     sans-serif;
 }
 
-/* 헤더 */
+/* 헤더 (J1-6 .asr-hd 패턴 — flex 뒤로가기/타이틀/우측슬롯, safe-area 최소 보존) */
 .nmd-hd {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
   height: 56px;
   flex-shrink: 0;
+  padding: 0 8px;
+  padding-top: env(safe-area-inset-top);
   background: var(--color-surface);
   border-bottom: 0.5px solid var(--color-border);
-  display: grid;
-  grid-template-columns: 44px 1fr auto;
-  align-items: center;
-  padding-right: 16px;
   position: sticky;
   top: 0;
   z-index: 10;
-  padding-top: env(safe-area-inset-top);
 }
 .nmd-hd__back {
-  width: 44px;
-  height: 44px;
-  background: transparent;
-  border: 0;
-  color: var(--color-text-primary);
   display: inline-flex;
   align-items: center;
   justify-content: center;
+  min-width: 44px;
+  min-height: 44px;
+  background: transparent;
+  border: 0;
   cursor: pointer;
+  color: var(--color-text-primary);
   font-family: inherit;
 }
 .nmd-hd__title {
   margin: 0;
-  font-size: 18px;
+  font-size: 17px;
   font-weight: 600;
 }
 .nmd-hd__spacer {
-  width: 44px;
-  height: 44px;
+  min-width: 44px;
 }
 
-/* 본문 */
+/* 본문 (J1-6 .asr-body) */
 .nmd-body {
   flex: 1;
-  padding: 14px 16px 24px;
+  min-height: 0;
+  padding: 12px 16px;
   overflow-y: auto;
 }
-.nmd-loading,
-.nmd-empty {
+.nmd-state {
   padding: 40px 16px;
   text-align: center;
-  font-size: 14px;
-  color: var(--color-text-secondary);
-}
-
-/* 읽기 블록 */
-.nmd-read {
-  margin: 0 0 16px;
-  background: var(--color-surface);
-  border: 0.5px solid var(--color-border);
-  border-radius: var(--radius-lg);
-  padding: 6px 14px;
-}
-.nmd-row {
-  display: grid;
-  grid-template-columns: 72px 1fr;
-  gap: 10px;
-  padding: 10px 0;
-  border-bottom: 0.5px solid var(--color-border-light);
-}
-.nmd-row:last-child {
-  border-bottom: 0;
-}
-.nmd-row dt {
   font-size: 13px;
   color: var(--color-text-secondary);
 }
-.nmd-row dd {
+
+/* 상세 섹션 (J1-6 .asr-section) */
+.nmd-section {
+  margin-bottom: 18px;
+}
+.nmd-section__title {
+  margin: 0 0 8px;
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--color-text-secondary);
+}
+
+/* 읽기 블록 (J1-6 .asr-read / .asr-row dt-dd flex) */
+.nmd-read {
   margin: 0;
-  font-size: 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.nmd-row {
+  display: flex;
+  gap: 10px;
+}
+.nmd-row dt {
+  flex: 0 0 84px;
+  font-size: 13px;
+  color: var(--color-text-tertiary);
+}
+.nmd-row dd {
+  flex: 1;
+  margin: 0;
+  font-size: 13px;
   color: var(--color-text-primary);
 }
 .nmd-row__multiline {
   white-space: pre-wrap;
-  line-height: 1.5;
+  word-break: break-word;
 }
 
-/* 사진 */
+/* 사진 (J1-6 .asr-photo) */
 .nmd-photo {
-  margin-bottom: 16px;
-  border-radius: var(--radius-md);
-  overflow: hidden;
-  border: 0.5px solid var(--color-border);
+  margin-top: 10px;
 }
 .nmd-photo img {
   width: 100%;
-  display: block;
+  max-height: 240px;
   object-fit: cover;
+  border-radius: var(--radius-md);
 }
 
-/* 임시조치 */
-.nmd-action {
-  margin-bottom: 8px;
+/* 입력 필드 (J1-6 .asr-field / .asr-field__textarea) */
+.nmd-field {
+  margin-bottom: 0;
 }
-.nmd-label {
-  margin: 0 0 8px;
-  font-size: 14px;
-  font-weight: 600;
-}
-.nmd-textarea {
+.nmd-field__textarea {
   width: 100%;
-  padding: 12px 14px;
-  border: 1px solid var(--color-border);
+  padding: 10px 12px;
+  background: var(--color-surface);
+  border: 0.5px solid var(--color-border);
   border-radius: var(--radius-md);
   font-size: 14px;
-  color: var(--color-text-primary);
-  background: var(--color-surface);
   font-family: inherit;
+  color: var(--color-text-primary);
   box-sizing: border-box;
   resize: vertical;
-  line-height: 1.5;
 }
-.nmd-textarea:focus {
+.nmd-field__textarea:focus {
   outline: none;
   border-color: var(--color-primary);
 }
-.nmd-textarea:disabled {
+.nmd-field__textarea:disabled {
   background: var(--color-bg);
   color: var(--color-text-tertiary);
 }
 .nmd-hint {
   margin: 8px 0 0;
-  font-size: 12px;
-  color: var(--color-text-tertiary);
+  font-size: 13px;
+  color: var(--color-text-secondary);
   line-height: 1.5;
 }
 
-/* 푸터 */
+/* 푸터 (J1-6 .asr-actions / .asr-btn primary·ghost) */
 .nmd-footer {
   flex-shrink: 0;
   background: var(--color-surface);
-  border-top: 1px solid var(--color-border);
+  border-top: 0.5px solid var(--color-border);
   padding: 10px 16px calc(10px + env(safe-area-inset-bottom));
+}
+.nmd-actions {
   display: flex;
   gap: 8px;
 }
 .nmd-btn {
   flex: 1;
-  height: 48px;
+  padding: 12px;
   border-radius: var(--radius-md);
-  display: flex;
-  align-items: center;
-  justify-content: center;
   font-size: 14px;
   font-weight: 600;
   cursor: pointer;
-  border: none;
   font-family: inherit;
+  border: 0.5px solid var(--color-border);
 }
 .nmd-btn--primary {
   flex: 2;
   background: var(--color-primary);
-  color: #ffffff;
+  color: var(--color-surface);
+  border-color: var(--color-primary);
 }
 .nmd-btn--primary:disabled {
   opacity: 0.6;
   cursor: not-allowed;
 }
-.nmd-btn--secondary {
+.nmd-btn--ghost {
   background: var(--color-surface);
-  color: var(--color-danger);
-  border: 1.5px solid var(--color-danger);
+  color: var(--color-danger-text);
+  border-color: var(--color-border);
 }
 
-/* 잠재중대성 배지 */
+/* 잠재중대성 배지 (J1-6 .asr-badge: 11px/700 + --lg 변형) */
 .nmd-badge {
-  display: inline-flex;
-  align-items: center;
-  padding: 2px 10px;
+  flex: 0 0 auto;
+  font-size: 11px;
+  font-weight: 700;
+  padding: 3px 8px;
   border-radius: var(--radius-full);
-  font-size: 12px;
-  font-weight: 600;
+  color: var(--color-text-secondary);
+  background: var(--color-border-light);
+}
+.nmd-badge--lg {
+  font-size: 13px;
+  padding: 5px 12px;
 }
 .nmd-badge--minor {
   background: var(--color-primary-tint);
@@ -498,7 +510,7 @@ onMounted(() => {
 }
 .nmd-badge--critical {
   background: var(--color-danger-tint);
-  color: var(--color-danger);
+  color: var(--color-danger-text);
 }
 .nmd-badge--none {
   background: var(--color-border-light);

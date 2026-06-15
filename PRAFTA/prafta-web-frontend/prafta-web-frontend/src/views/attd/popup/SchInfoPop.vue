@@ -52,14 +52,6 @@
             </div>
           </div>
 
-          <div class="form-row-max editable-form">
-            <label>기본근무</label>
-            <select v-model="baseYn" :style="calendarInputStyle">
-              <option value="Y">예</option>
-              <option value="N">아니오</option>
-            </select>
-          </div>
-
           <div class="form-row-max">
             <label>구간수 *</label>
             <div class="section-toggle">
@@ -108,18 +100,20 @@
               </div>
             </div>
             <div class="form-row-max form-row-spaced">
-              <label>휴게 시간대 (선택)</label>
-              <div class="work-time-inputs">
+              <label>휴게시간 시작</label>
+              <div class="work-time-inputs break-start-inputs">
                 <span class="work-time-sub">시작</span>
-                <TimeInput v-model="fstBrkStrTime" :minute-step="10" />
-                <span class="time-sep-label">~</span>
-                <span class="work-time-sub">종료</span>
-                <TimeInput v-model="fstBrkEndTime" :minute-step="10" allow24 />
+                <TimeInput
+                  v-model="fstBrkStrTime"
+                  :minute-step="10"
+                  :disabled="!fstBrkEnabled"
+                />
               </div>
             </div>
             <p class="form-hint">
-              휴게시간은 근무시간 산정 시 자동으로 적용됩니다. 휴게 시간대를
-              입력하면 시간단위 연차 신청 시 휴게 가로지름을 차단합니다.
+              휴게시간은 근무시간 산정 시 자동으로 적용됩니다. 휴게 시작시각을
+              입력하면 종료시각은 휴게시간(분)만큼 자동 계산되며, 시간단위 연차
+              신청 시 휴게 가로지름을 차단합니다.
             </p>
           </div>
 
@@ -149,13 +143,14 @@
               </div>
             </div>
             <div class="form-row-max form-row-spaced">
-              <label>휴게 시간대 (선택)</label>
-              <div class="work-time-inputs">
+              <label>휴게시간 시작</label>
+              <div class="work-time-inputs break-start-inputs">
                 <span class="work-time-sub">시작</span>
-                <TimeInput v-model="secBrkStrTime" :minute-step="10" />
-                <span class="time-sep-label">~</span>
-                <span class="work-time-sub">종료</span>
-                <TimeInput v-model="secBrkEndTime" :minute-step="10" allow24 />
+                <TimeInput
+                  v-model="secBrkStrTime"
+                  :minute-step="10"
+                  :disabled="!secBrkEnabled"
+                />
               </div>
             </div>
           </div>
@@ -257,7 +252,6 @@ const schCd = ref("");
 const schNo = ref("");
 const schType = ref("01");
 const applyDate = ref("");
-const baseYn = ref(props.schData_p?.baseYn ?? "N");
 /** 적용일: 프로그래밍 방식 설정 시 검증 스킵 (무한루프 방지) */
 const isProgrammaticApplyDate = ref(false);
 
@@ -267,7 +261,6 @@ const fstSchBrkMin = ref(
   sanitizeBreakMin(props.schData_p?.fstSchBrkMin) ?? "0"
 );
 const fstBrkStrTime = ref(props.schData_p?.fstBrkStrTime ?? "");
-const fstBrkEndTime = ref(props.schData_p?.fstBrkEndTime ?? "");
 
 const secSchStrTime = ref(props.schData_p?.secSchStrTime ?? "00:00");
 const secSchEndTime = ref(props.schData_p?.secSchEndTime ?? "18:00");
@@ -275,9 +268,42 @@ const secSchBrkMin = ref(
   sanitizeBreakMin(props.schData_p?.secSchBrkMin) ?? "0"
 );
 const secBrkStrTime = ref(props.schData_p?.secBrkStrTime ?? "");
-const secBrkEndTime = ref(props.schData_p?.secBrkEndTime ?? "");
 const useYn = ref(
   props.schData_p?.useYn ?? props.systCodeArr_p?.SYS003?.[0]?.systValDCd ?? "Y"
+);
+
+/**
+ * 휴게 종료시각 자동 계산: 시작시각 + 휴게시간(분).
+ * 시작 미입력 시 빈 문자열. 24:00(1440분) 상한.
+ */
+const addMinutesToHHmm = (hhmm, addMin) => {
+  const s = String(hhmm ?? "").replace(/\D/g, "");
+  if (s.length < 4) return "";
+  const h = parseInt(s.slice(0, 2), 10);
+  const m = parseInt(s.slice(2, 4), 10);
+  if (isNaN(h) || isNaN(m)) return "";
+  let total = h * 60 + m + (parseInt(String(addMin ?? "0"), 10) || 0);
+  if (total > 1440) total = 1440;
+  if (total < 0) total = 0;
+  const hh = String(Math.floor(total / 60)).padStart(2, "0");
+  const mm = String(total % 60).padStart(2, "0");
+  return `${hh}:${mm}`;
+};
+/** 구간1 휴게 종료시각(시작+분 자동계산). 시작 미입력이면 빈값. */
+const fstBrkEndDerived = computed(() =>
+  fstBrkStrTime.value ? addMinutesToHHmm(fstBrkStrTime.value, fstSchBrkMin.value) : ""
+);
+/** 구간2 휴게 종료시각(시작+분 자동계산). 시작 미입력이면 빈값. */
+const secBrkEndDerived = computed(() =>
+  secBrkStrTime.value ? addMinutesToHHmm(secBrkStrTime.value, secSchBrkMin.value) : ""
+);
+
+/** 휴게시간(분)이 1 이상일 때만 휴게시간 시작 입력 활성화 */
+const fstBrkEnabled = computed(
+  () => (parseInt(String(fstSchBrkMin.value || "0"), 10) || 0) >= 1
+);
+const secBrkEnabled = computed(
+  () => (parseInt(String(secSchBrkMin.value || "0"), 10) || 0) >= 1
 );
 
 // ================ Life Cycle Functions ================
@@ -296,7 +322,6 @@ onMounted(() => {
     schCd.value = props.schData_p.schCd;
     schNo.value = props.schData_p.schNo ?? "";
     schType.value = props.schData_p.schType ?? "01";
-    baseYn.value = props.schData_p.baseYn ?? "Y";
     useYn.value = props.schData_p.useYn ?? "Y";
     isProgrammaticApplyDate.value = true;
     applyDate.value =
@@ -369,15 +394,14 @@ const fnSave = async () => {
     fstSchEndTime: fstSchEndTime.value,
     fstSchBrkMin: fstSchBrkMin.value,
     fstBrkStrTime: fstBrkStrTime.value,
-    fstBrkEndTime: fstBrkEndTime.value,
+    fstBrkEndTime: fstBrkEndDerived.value,
 
     secSchStrTime: secSchStrTime.value,
     secSchEndTime: secSchEndTime.value,
     secSchBrkMin: schType.value === "02" ? secSchBrkMin.value : "",
     secBrkStrTime: schType.value === "02" ? secBrkStrTime.value : "",
-    secBrkEndTime: schType.value === "02" ? secBrkEndTime.value : "",
+    secBrkEndTime: schType.value === "02" ? secBrkEndDerived.value : "",
 
-    baseYn: baseYn.value,
     useYn: useYn.value,
   };
 
@@ -493,6 +517,22 @@ const validateWorkTime = () => {
         "구간1 휴게시간은 근무시간(" + fstWorkMin + "분)보다 많을 수 없습니다.",
     };
   }
+  // 휴게시간(분)이 입력되면 휴게시간 시작은 필수이며 근무시간 범위 안이어야 한다.
+  if (fstBrk > 0) {
+    const fstBrkStart = toMinutes(fstBrkStrTime.value);
+    if (fstBrkStart == null) {
+      return {
+        valid: false,
+        message: "구간1 휴게시간 시작 시각을 입력해주세요.",
+      };
+    }
+    if (fstBrkStart < fstStart || fstBrkStart >= fstEnd) {
+      return {
+        valid: false,
+        message: "구간1 휴게시간 시작 시각은 근무시간 범위 안이어야 합니다.",
+      };
+    }
+  }
 
   if (schType.value === "02") {
     const secStart2 = toMinutes(secSchStrTime.value);
@@ -508,6 +548,22 @@ const validateWorkTime = () => {
           secWorkMin +
           "분)보다 많을 수 없습니다.",
       };
+    }
+    // 휴게시간(분)이 입력되면 휴게시간 시작은 필수이며 근무시간 범위 안이어야 한다.
+    if (secBrk > 0) {
+      const secBrkStart = toMinutes(secBrkStrTime.value);
+      if (secBrkStart == null) {
+        return {
+          valid: false,
+          message: "구간2 휴게시간 시작 시각을 입력해주세요.",
+        };
+      }
+      if (secBrkStart < secStart2 || secBrkStart >= secEnd2) {
+        return {
+          valid: false,
+          message: "구간2 휴게시간 시작 시각은 근무시간 범위 안이어야 합니다.",
+        };
+      }
     }
   }
 
@@ -543,8 +599,14 @@ const formatYyyyMmDd = (d) => {
 const onBreakMinInput = (e, which) => {
   const raw = (e.target?.value ?? "").replace(/\D/g, "").slice(0, 3);
   if (e.target) e.target.value = raw;
-  if (which === "fst") fstSchBrkMin.value = raw;
-  else secSchBrkMin.value = raw;
+  const minVal = parseInt(raw || "0", 10) || 0;
+  if (which === "fst") {
+    fstSchBrkMin.value = raw;
+    if (minVal < 1) fstBrkStrTime.value = "";
+  } else {
+    secSchBrkMin.value = raw;
+    if (minVal < 1) secBrkStrTime.value = "";
+  }
 };
 </script>
 
@@ -646,6 +708,15 @@ const onBreakMinInput = (e, which) => {
 .work-time-inputs :deep(.time-input-wrap) {
   min-width: 5rem;
 }
+/* 휴게시간 시작: 분 select 를 ":" 우측에 바짝 붙여 정렬 */
+.break-start-inputs :deep(.time-input-wrap) {
+  min-width: 0;
+  gap: 0;
+}
+/* ":" 좌측(시 select 와의 사이)만 약간 띄우고, 우측(분 select)은 밀착 */
+.break-start-inputs :deep(.time-sep) {
+  margin-left: 0.2rem;
+}
 .time-row-inline {
   display: flex;
   align-items: center;
@@ -669,6 +740,19 @@ const onBreakMinInput = (e, which) => {
   flex-shrink: 0;
   font-weight: 500;
   color: var(--color-text, #374151);
+}
+.break-end-derived {
+  display: inline-flex;
+  align-items: center;
+  min-width: 5rem;
+  height: 2rem;
+  padding: 0 0.6rem;
+  box-sizing: border-box;
+  font-size: 0.875rem;
+  color: var(--color-text-muted, #6b7280);
+  background: var(--color-bg, #f9fafb);
+  border: 1px solid var(--color-border, #e5e7eb);
+  border-radius: var(--input-radius, 6px);
 }
 .form-row-max.form-row-spaced > label {
   flex: 0 0 120px;

@@ -1039,6 +1039,19 @@
 	</choose>
 	</select>
 
+	<!-- prafta-app-025 J1-7 작업 D: 당일 해당 일용직의 출근 기록(TB_USER_ATTD_MGMT) 존재 여부(0이면 입실 차단). -->
+	<select id="countTodayCheckIn" resultType="int">
+	/* AppAdminTbmMapper.countTodayCheckIn */
+	SELECT COUNT(1)
+	  FROM TB_USER_ATTD_MGMT A
+	 WHERE A.CMPNY_CD = #{gvCmpnyCd}
+	   AND A.SITE_CD  = #{siteCd}
+	   AND A.USER_CD  = #{userCd}
+	   AND A.WORK_YMD = #{todayYmd}
+	   AND A.DEL_YN   = 'N'
+	   AND A.CHECK_IN_TIME IS NOT NULL
+	</select>
+
 	<!--
 		관리자 직접 입실 INSERT. ENTRY_TYPE_CD 는 호출부 분기(R-B 정규직=MANAGER_DIRECT / R-D 일용직 QR=MANAGER_QR_SCAN, SYS051).
 		ENTRY_GPS_LAT/LON 은 세션의 MANAGER_GPS_LAT/LON 을 감사용으로 복사(INSERT...SELECT) — body 에 좌표 없음, D-4.

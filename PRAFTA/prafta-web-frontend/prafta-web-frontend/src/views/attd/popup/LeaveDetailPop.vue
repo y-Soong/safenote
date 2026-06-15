@@ -148,6 +148,27 @@
             </div>
           </div>
 
+          <!-- ===== 통계 카드: 신청형 휴가 (LEAVE_TYPE='01', 법정/법정외와 합산하지 않는 별도 섹션) ===== -->
+          <div
+            v-if="appliedLeaveTypes.length > 0"
+            class="ldp-stat-section ldp-stat-section--applied"
+          >
+            <p class="ldp-stat-title">신청형 휴가</p>
+            <div class="ldp-applied-grid">
+              <div
+                v-for="(t, idx) in appliedLeaveTypes"
+                :key="idx"
+                class="ldp-stat-card"
+              >
+                <p class="ldp-stat-label">{{ t.leaveNm }}</p>
+                <p class="ldp-stat-value is-accent">
+                  {{ t.remainDays }}<span class="ldp-stat-unit">일</span>
+                </p>
+                <p class="ldp-stat-sub">한도 {{ t.maxAplyDays }}일</p>
+              </div>
+            </div>
+          </div>
+
           <!-- ===== 부여 이력 ===== -->
           <p class="ldp-section-title">부여 이력</p>
           <div class="ldp-table-wrap">
@@ -276,6 +297,10 @@ const user = ref({
 const legalSummary = ref({ granted: 0, used: 0, remaining: 0, expiresAt: "" });
 const nonLegalSummary = ref({ granted: 0, used: 0, remaining: 0 });
 
+// 신청형 휴가(LEAVE_TYPE='01') 타입별 잔여 현황 — 법정/법정외와 합산하지 않는 별도 섹션.
+//   각 항목: { leaveCd, leaveNm, maxAplyDays(한도), usedDays(사용), remainDays(잔여) } — 모두 서버 권위값.
+const appliedLeaveTypes = ref([]);
+
 // 부여 이력 (GRANT_DATE 내림차순; 백엔드 정렬)
 //   각 행: { grantDate, natureBadge('LEGAL'|'NON_LEGAL'), reason, granted, used, remaining, expiresAt, status }
 const grantHistory = ref([]);
@@ -330,6 +355,17 @@ const fnLoadDetail = async () => {
       used: data.nonLegalSummary?.used ?? 0,
       remaining: data.nonLegalSummary?.remaining ?? 0,
     };
+    // 신청형 휴가: 서버 산출값(한도/사용/잔여)을 그대로 렌더(프론트 재계산 금지).
+    //   한도(maxAplyDays)가 null로 내려오면 표기 안정성을 위해 0으로만 폴백(잔여는 서버값 유지).
+    appliedLeaveTypes.value = Array.isArray(data.appliedLeaveTypes)
+      ? data.appliedLeaveTypes.map((t) => ({
+          leaveCd: t.leaveCd ?? "",
+          leaveNm: t.leaveNm ?? "",
+          maxAplyDays: t.maxAplyDays ?? 0,
+          usedDays: t.usedDays ?? 0,
+          remainDays: t.remainDays ?? 0,
+        }))
+      : [];
     grantHistory.value = Array.isArray(data.grantHistory)
       ? data.grantHistory
       : [];
@@ -560,6 +596,17 @@ const fnFormatDate = (yyyymmdd) => {
 
 .ldp-stat-section--alt .ldp-stat-title {
   border-left-color: var(--color-primary-pressed);
+}
+
+.ldp-stat-section--applied .ldp-stat-title {
+  border-left-color: var(--color-primary);
+}
+
+/* 신청형 휴가: 타입 개수가 가변이라 auto-fill 그리드(법정/법정외 3분할 카드와 동일 스타일 재사용) */
+.ldp-applied-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(11rem, 1fr));
+  gap: 0.625rem;
 }
 
 .ldp-stat-grid {

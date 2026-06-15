@@ -13,6 +13,7 @@ import com.prafta.app.nearmiss.nearmiss01.application.query.MyReportListQuery;
 import com.prafta.app.nearmiss.nearmiss01.application.query.NearMissIdSeqQuery;
 import com.prafta.app.nearmiss.nearmiss01.application.query.SiteIncidentListQuery;
 import com.prafta.app.nearmiss.nearmiss01.result.IncidentResult;
+import com.prafta.app.nearmiss.nearmiss01.result.ReportMetaResult;
 import com.prafta.app.nearmiss.nearmiss01.result.StatusCountResult;
 
 /**
@@ -45,13 +46,13 @@ public interface AppNearMiss01Mapper {
     // A5 단건 상세 (사업장 스코프 강제)
     IncidentResult selectIncidentInfo(IncidentDetailQuery query);
 
-    // 전이/접근 검증용: 현재 처리상태 + 보고자 단건 조회 (없으면 null)
-    IncidentResult selectReportMeta(IncidentDetailQuery query);
+    // 전이/접근 검증용: 현재 처리상태 + 보고자 단건 조회 (없으면 null, 경량 메타 5필드)
+    ReportMetaResult selectReportMeta(IncidentDetailQuery query);
 
     // A1 채번: 사업장+당일 기준 다음값 (NM + YYYYMMDD + 3자리)
     String selectNextNearMissId(NearMissIdSeqQuery query);
 
-    // A1 보고 INSERT (REPORT_STATUS_CD='100', SRC_*=NULL)
+    // A1 보고 INSERT (REPORT_STATUS_CD='100')
     int insertReport(InsertReportCommand command);
 
     // A6 1차 확인 100->200 (검토중 + 임시조치 + 검토자)

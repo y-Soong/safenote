@@ -6,8 +6,8 @@
       "안전점검 시작" → 기존 fnDayChkLst() 라우팅 (/QrScanner) 보존 — 근무중에만 허용
       "위험성 발굴"   → 기존 fnRisk_01()    라우팅 (/Risk_01)  보존 — 근무중에만 허용
       "아차사고 보고" → prafta-app-012 보고 화면 (/NearMissReport) — 즉시성 예외(게이트 미적용, 항상 활성)
-      "사건 관리"     → prafta-app-012 목록 화면 (/NearMissManageList) — 안전직군에게만 노출
     실제 router.push 는 부모(MainView)에서 emit 받아 처리한다.
+  - prafta-app-025 J1-1: "사건 관리" row 는 앱에서 제거(웹 전용 기능). 관리자 모드 사건 관리는 J1-6 범위.
   - 레이아웃: 네모난 버튼 그리드 대신 한 줄(row) 리스트로 표현.
 -->
 <template>
@@ -84,17 +84,6 @@
           <use href="#i-chev" />
         </svg>
       </button>
-
-      <!-- 사건 관리 (관리자/안전직군) — 사업장 권한 최종 판정은 서버 -->
-      <button v-if="isSafetyManager" type="button" class="action-row" @click="onNearMissManage">
-        <svg class="icon row-icon" width="20" height="20" aria-hidden="true">
-          <use href="#i-clipboard" />
-        </svg>
-        <span class="row-label">사건 관리</span>
-        <svg class="icon row-chev" width="18" height="18" aria-hidden="true">
-          <use href="#i-chev" />
-        </svg>
-      </button>
     </div>
   </div>
 </template>
@@ -107,11 +96,6 @@ const props = defineProps({
     type: Boolean,
     default: false,
   },
-  // 안전직군 여부 — "사건 관리" row 노출 게이팅 (서버가 최종 판정)
-  isSafetyManager: {
-    type: Boolean,
-    default: false,
-  },
 })
 
 // kebab-case 로 통일 — Vue 3 자동 정규화 의존 금지 (부모 @click:safety-check 매칭)
@@ -120,7 +104,6 @@ const emit = defineEmits([
   'click:safety-check',
   'click:risk-discovery',
   'click:near-miss-report',
-  'click:near-miss-manage',
 ])
 
 // "안전점검 시작" → 기존 fnDayChkLst() → router.push('/QrScanner')
@@ -139,11 +122,6 @@ const onRiskDiscovery = () => {
 // "아차사고 보고" → /NearMissReport (즉시성 예외: 근무중 게이트 미적용 — 항상 보고 가능)
 const onNearMissReport = () => {
   emit('click:near-miss-report')
-}
-
-// "사건 관리" → /NearMissManageList (안전직군 노출)
-const onNearMissManage = () => {
-  emit('click:near-miss-manage')
 }
 </script>
 

@@ -1,5 +1,7 @@
 package com.prafta.app.leave.leave01.dto.response;
 
+import java.util.List;
+
 import lombok.Builder;
 import lombok.Getter;
 
@@ -8,6 +10,8 @@ import lombok.Getter;
  * <p>plan §1-2 JSON 스키마와 1:1 (camelCase). 일수는 소수 1자리 반올림 double,
  * usageRate 는 정수(%), hireDate 는 YYYYMMDD 원본 문자열.
  * <p>groups 는 TOTAL/STATUTORY/NON_STATUTORY 3종을 항상 포함(부여 없으면 0 채움).
+ * <p>연차 개편(표시): {@code appliedLeaveTypes} 는 신청형 휴가(LEAVE_TYPE='01') 타입별 한도/잔여 목록으로,
+ *   법정/관리자부여(groups) 와 절대 합산하지 않는 별도 섹션이다(기존 groups/expiringSoon/user 필드는 불변).
  */
 @Getter
 @Builder
@@ -16,6 +20,11 @@ public class MyLeaveSummaryResponse {
     private final User user;
     private final Groups groups;
     private final ExpiringSoon expiringSoon;
+    /**
+     * 연차 개편(표시): 신청형 휴가(LEAVE_TYPE='01') 타입별 항목(법정/관리자부여와 분리, 합산 금지).
+     * '01' 타입이 0개면 빈 리스트. 각 타입은 한도(MAX_APLY_DAYS) - 당해 회계연도 사용분으로 잔여를 산출한다.
+     */
+    private final List<AppliedLeaveType> appliedLeaveTypes;
 
     /** 사용자 메타 영역. */
     @Getter
@@ -57,6 +66,26 @@ public class MyLeaveSummaryResponse {
         private final double remaining;
         /** 사용률(%) = (granted==0)?0:round(usedTotal/granted*100). 그룹별. */
         private final int usageRate;
+    }
+
+    /**
+     * 연차 개편(표시): 신청형 휴가('01') 타입 1건.
+     * <p>한도(maxAplyDays) - 당해 회계연도 사용분(usedDays) = 잔여(remainDays). 한도 NULL → 0(잔여 0, fail-closed).
+     *   법정/관리자부여(Group)와 합산 금지. 잔여/한도는 서버 권위값 — FE 는 재계산 없이 그대로 렌더.
+     */
+    @Getter
+    @Builder
+    public static class AppliedLeaveType {
+        /** 연차코드(TB_LEAVE_TYPE_MGMT.LEAVE_CD). */
+        private final String leaveCd;
+        /** 연차명(TB_LEAVE_TYPE_MGMT.LEAVE_NM). */
+        private final String leaveNm;
+        /** 한도(MAX_APLY_DAYS). NULL 이면 0(신청불가 = 잔여 0). */
+        private final double maxAplyDays;
+        /** 당해 회계연도 CONFIRMED 사용분 합계. */
+        private final double usedDays;
+        /** 잔여 = 한도 - 사용분(0 미만 방지 없이 그대로 — 음수는 한도 변경 등 비정상, 서버 정의 그대로). */
+        private final double remainDays;
     }
 
     /** 소멸 임박(D-30) 영역. 그룹 무관 전체 1회. */

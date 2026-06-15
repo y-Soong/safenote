@@ -323,6 +323,73 @@
                   </div>
                 </div>
               </div>
+
+              <!-- ▼ prafta-054-5: 참조 아차사고 (개선완료 003 시 개선 후 영역에 표시) -->
+              <div
+                class="form-row ref-nm-form-row"
+                v-if="formData.assessmentStatus == '003'"
+              >
+                <label>참조 아차사고</label>
+                <div class="ref-nm-block">
+                  <!-- 검색/연결 버튼 (개선완료 확정 전만) → 조회 팝업 -->
+                  <div class="ref-nm-toolbar" v-if="canEditReference">
+                    <button class="btn btn-report" @click="fnOpenRefSearch">
+                      아차사고 검색/연결
+                    </button>
+                  </div>
+
+                  <!-- 연결된 아차사고 테이블 -->
+                  <div class="ref-nm-table-wrap">
+                    <table class="ref-nm-table">
+                      <thead>
+                        <tr>
+                          <th>사고번호</th>
+                          <th>유형</th>
+                          <th>위험도</th>
+                          <th>발생일시</th>
+                          <th>장소</th>
+                          <th class="ref-nm-table__act">관리</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        <tr v-if="linkedNearMissList.length === 0">
+                          <td colspan="6" class="ref-nm-empty">
+                            연결된 아차사고가 없습니다.
+                          </td>
+                        </tr>
+                        <tr
+                          v-for="nm in linkedNearMissList"
+                          :key="nm.nearMissId"
+                        >
+                          <td>{{ nm.nearMissId }}</td>
+                          <td>{{ nm.incidentTypeNm }}</td>
+                          <td>{{ nm.potentialSeverityNm }}</td>
+                          <td>{{ nm.occurDtime }}</td>
+                          <td class="ref-nm-table__loc" :title="nm.locationDesc">
+                            {{ nm.locationDesc }}
+                          </td>
+                          <td class="ref-nm-table__act">
+                            <button
+                              class="btn btn-cancel"
+                              @click="fnOpenNearMissDetail(nm)"
+                            >
+                              상세
+                            </button>
+                            <button
+                              v-if="canEditReference"
+                              class="btn btn-cancel"
+                              @click="fnUnlinkNearMiss(nm)"
+                            >
+                              해제
+                            </button>
+                          </td>
+                        </tr>
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              </div>
+              <!-- ▲ prafta-054-5 -->
             </div>
           </div>
         </div>
@@ -343,14 +410,6 @@
               @click="fnOpenImprovementReport()"
             >
               개선완료보고서
-            </button>
-            <!-- PRAFTA-040-5: 아차사고로 전환 (설계 §4-B). 검토요청(001) 단계에서만 노출. -->
-            <button
-              class="btn btn-report"
-              v-if="props.riskAssessmentData.assessmentStatus == '001'"
-              @click="fnConvertToNearMiss()"
-            >
-              아차사고로 전환
             </button>
           </div>
           <div class="footer-buttons-right">
@@ -390,6 +449,9 @@ import axios from "@/api/axios";
 import { getMessage, MSG } from "@/messages";
 import { resolveApiErrorMessage } from "@/utils/apiError";
 import { readFileAsBase64 } from "@/utils/fileUtil";
+import { useModal } from "@/utils/useModal";
+import NearMissInfo from "@/views/nearMiss/popup/NearMissInfo.vue";
+import RefNearMissSearchPop from "@/views/risk/popup/RefNearMissSearchPop.vue";
 
 const systCodeArr = ref([]);
 const fileInput = ref(null);
@@ -400,6 +462,8 @@ const { proxy } = getCurrentInstance();
 onMounted(async () => {
   init();
   await fnGetSystinfoList();
+  // prafta-054-5: 연결된 참조 아차사고 목록 초기 로드
+  await fnLoadLinkedNearMiss();
 });
 
 const init = () => {
@@ -455,6 +519,83 @@ const props = defineProps({
 });
 
 const emit = defineEmits(["close", "save"]);
+
+const { open: openPop } = useModal();
+
+// prafta-054-5: 참조 아차사고 상태 (후보 검색/연결은 조회 팝업으로 분리)
+const linkedNearMissList = ref([]);
+
+// 개선완료(003)/미처리(004) 이상이면 읽기전용(검색·연결·해제 숨김)
+const canEditReference = computed(() => {
+  const st = props.riskAssessmentData.assessmentStatus;
+  return st !== "003" && st !== "004";
+});
+
+// 연계 API 호출 공통 키 (평가건 PK 3축 + 사업장)
+const refLinkKeys = () => ({
+  siteCd: props.riskAssessmentData.siteCd,
+  processCd: props.riskAssessmentData.processCd,
+  assessmentCd: props.riskAssessmentData.assessmentCd,
+});
+
+// 아차사고 검색/연결 조회 팝업 열기 (연결 성공 시 연결된 목록 갱신)
+const fnOpenRefSearch = () => {
+  openPop(RefNearMissSearchPop, {
+    ...refLinkKeys(),
+    onLinked: fnLoadLinkedNearMiss,
+  });
+};
+
+// 연결된 아차사고 목록 조회 (USE_YN='Y'). onMounted 에서도 1회 호출
+const fnLoadLinkedNearMiss = async () => {
+  try {
+    const response = await axios.get("/webApi/risklink01/linked-near-miss", {
+      params: refLinkKeys(),
+    });
+
+    if (response.status === 200) {
+      linkedNearMissList.value = response.data?.nearMissList || [];
+    }
+  } catch (err) {
+    const msg = resolveApiErrorMessage(err, "조회 중 오류가 발생했습니다.");
+    await proxy.$alert(msg);
+  }
+};
+
+// 연결 해제(soft delete) → 확인 후 호출, 성공 시 연결된 목록 재조회
+const fnUnlinkNearMiss = async (nm) => {
+  const ok = await proxy.$confirm("이 아차사고 연결을 해제할까요?");
+  if (!ok) return;
+
+  try {
+    const response = await axios.post(
+      "/webApi/risklink01/unlink",
+      {
+        ...refLinkKeys(),
+        nearMissId: nm.nearMissId,
+      },
+      { headers: { "Content-Type": "application/json" } }
+    );
+
+    if (response.status === 200) {
+      await fnLoadLinkedNearMiss();
+    }
+  } catch (err) {
+    const msg = resolveApiErrorMessage(err, "해제 중 오류가 발생했습니다.");
+    await proxy.$alert(msg);
+  }
+};
+
+// 연결 아차사고 상세 열람(읽기전용). 기존 NearMissInfo 팝업 재사용(자체 incident-info 조회)
+const fnOpenNearMissDetail = (nm) => {
+  openPop(NearMissInfo, {
+    nearMissData: {
+      cmpnyCd: props.riskAssessmentData.cmpnyCd || "",
+      siteCd: props.riskAssessmentData.siteCd || "",
+      nearMissId: nm.nearMissId || "",
+    },
+  });
+};
 
 const modalRef = ref(null);
 const { position, startDrag } = useCenteredDraggable(modalRef, {
@@ -1453,60 +1594,6 @@ const fnOpenImprovementReport = () => {
   }
 };
 
-// PRAFTA-040-5: 위험성평가요청 → 아차사고 재분류 (설계 §4-B)
-//   현재 평가건 정보를 모아 E6 호출. 원 평가건 이관(ASSESSMENT_STATUS='005') 처리는 서버 담당.
-const fnConvertToNearMiss = async () => {
-  const ok = await proxy.$confirm(
-    "이 위험성평가요청을 아차사고로 전환합니다. 계속할까요?"
-  );
-  if (!ok) return;
-
-  // 발생일시(YYYY-MM-DD HH:mm) 생성 — 평가요청일이 있으면 그 날짜 기준, 없으면 현재 시각
-  const now = new Date();
-  const pad = (n) => String(n).padStart(2, "0");
-  const datePart = proxy.$util.isNotEmpty(formData.value.initAssessDate)
-    ? String(formData.value.initAssessDate).slice(0, 10)
-    : `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`;
-  const occurDtime = `${datePart} ${pad(now.getHours())}:${pad(
-    now.getMinutes()
-  )}`;
-
-  try {
-    const response = await axios.post(
-      "/webApi/nearmiss01/reclassify-from-assessment",
-      {
-        // 사업장 코드(명시 전송 — 인터셉터는 gv_siteCd 만 주입하므로 보완 안 됨)
-        siteCd: props.riskAssessmentData.siteCd,
-        // 출처(원 평가건 키)
-        srcProcessCd: formData.value.processCd,
-        srcAssessmentCd: formData.value.assessmentCd,
-        // 아차사고 기본 분류(100=아차사고). 잠재중대성/즉시조치는 정밀조사에서 보강
-        incidentTypeCd: "100",
-        processCd: formData.value.processCd,
-        occurDtime,
-        locationDesc: formData.value.processNm,
-        description: formData.value.initDesc,
-        potentialSeverityCd: "",
-        immediateActionDesc: "",
-      },
-      { headers: { "Content-Type": "application/json" } }
-    );
-
-    if (response.status === 200) {
-      await proxy.$alert("아차사고로 이관되었습니다.");
-      if (props.onSave && typeof props.onSave === "function") {
-        props.onSave(response.data);
-      }
-      emit("close");
-    } else {
-      await proxy.$alert("전환 중 오류가 발생했습니다.");
-    }
-  } catch (err) {
-    const msg = resolveApiErrorMessage(err, "전환 중 오류가 발생했습니다.");
-    await proxy.$alert(msg);
-  }
-};
-
 // 정리
 onBeforeUnmount(() => {
   if (previewImage.value?.url) {
@@ -1966,5 +2053,70 @@ onBeforeUnmount(() => {
 .fade-enter-from,
 .fade-leave-to {
   opacity: 0;
+}
+
+/* prafta-054-5: 참조 아차사고 (개선 후 영역 내 form-row 형태) */
+.ref-nm-form-row {
+  align-items: flex-start !important;
+}
+.ref-nm-form-row > label {
+  padding-top: 0.4rem;
+}
+.ref-nm-block {
+  flex: 1 1 0%;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+.ref-nm-toolbar {
+  display: flex;
+  justify-content: flex-end;
+}
+.ref-nm-table-wrap {
+  max-height: 180px;
+  overflow-y: auto;
+  border: 1px solid #e5e7eb;
+  border-radius: 4px;
+}
+.ref-nm-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.8rem;
+  table-layout: fixed;
+}
+.ref-nm-table th,
+.ref-nm-table td {
+  border: 1px solid var(--color-border, #e5e7eb);
+  padding: 0.4rem 0.5rem;
+  text-align: left;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.ref-nm-table thead th {
+  position: sticky;
+  top: 0;
+  background: #f3f4f6;
+  font-weight: 600;
+  z-index: 1;
+}
+.ref-nm-table__loc {
+  white-space: normal;
+}
+.ref-nm-table__act {
+  width: 96px;
+  text-align: center;
+  white-space: nowrap;
+}
+.ref-nm-table__act .btn {
+  padding: 0.2rem 0.45rem;
+  font-size: 0.75rem;
+}
+.ref-nm-empty {
+  color: #888;
+  font-size: 0.8125rem;
+  text-align: center;
+  padding: 0.75rem 0;
 }
 </style>

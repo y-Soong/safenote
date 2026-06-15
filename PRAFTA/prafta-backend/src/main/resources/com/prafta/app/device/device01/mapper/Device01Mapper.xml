@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.prafta.app.device.device01.mapper.Device01Mapper">
+
+    <!-- F01 푸시 토큰 UPDATE.
+         WHERE DEVICE_UUID(PK) + USER_CD(JWT) 강제 → 본인 단말만 갱신(IDOR 차단).
+         com-002 soft-delete 회복을 위해 DEL_YN='N' 동반(잔존 무효표시 단말의 토큰 갱신 시 되살림).
+         UPDATE_NO 는 갱신 수행자(USER_CD), UPDATE_DATE 는 NOW() 로 메타 갱신. -->
+    <update id="updatePushToken" parameterType="com.prafta.app.device.device01.application.command.UpsertPushTokenCommand">
+    /* Device01Mapper.updatePushToken */
+    UPDATE TB_USER_DEVICE
+       SET PUSH_TOKEN  = #{pushToken}
+         , DEL_YN      = 'N'
+         , UPDATE_NO   = #{userCd}
+         , UPDATE_DATE = NOW()
+     WHERE DEVICE_UUID = #{deviceUuid}
+       AND USER_CD     = #{userCd}
+    </update>
+
+</mapper>

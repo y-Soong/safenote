@@ -52,4 +52,21 @@ public interface AttdCloseService {
      * master/hr 은 부서 조회 없이 즉시 true.
      */
     boolean canManageUser(String authCd, String requesterUserCd, String cmpnyCd, String siteCd, String targetUserCd);
+
+    /**
+     * 노드(부서) 관리 권한 여부 — safe 제외 변형 (PRAFTA-COM-008-C 작업1).
+     *
+     * <p>{@link #canManageNode}와 동일하되, 전사 통과 역할에서 <b>safe(안전관리자)를 제외</b>한다
+     * (master/hr 만 전사). 그 외 노드 정·부 관리자 cascade 판정은 동일하다(역할 무관·관리자 지정 기반).
+     * 연차 변경 동의 관리(attd13)는 safe 권한을 부여하지 않는다는 확정 결정에 사용한다.
+     */
+    boolean canManageNodeExcludeSafe(String authCd, String userCd, String cmpnyCd, String siteCd, String nodeCd);
+
+    /**
+     * 대상 사용자 관리 권한 여부 — safe 제외 변형 (PRAFTA-COM-008-C 작업1).
+     *
+     * <p>{@link #canManageUser}와 동일하되, 전사 통과 역할에서 <b>safe 를 제외</b>한다(master/hr 만 전사).
+     * 대상 사용자 소속 부서를 서버 조회 후 {@link #canManageNodeExcludeSafe}로 위임한다.
+     */
+    boolean canManageUserExcludeSafe(String authCd, String requesterUserCd, String cmpnyCd, String siteCd, String targetUserCd);
 }

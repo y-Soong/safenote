@@ -24,11 +24,17 @@ import com.prafta.app.leave.leaveflow.result.LeaveUsagePolicyRow;
 public interface AppLeaveFlowMapper {
 
     /**
-     * 회사 활성 연차종류 + 종류별 현재 잔여(활성집합 SUM(GRANT_DAYS)-SUM(USED_DAYS)).
-     * USE_YN='N' 종류는 제외. balanceDays 는 부여 없으면 0.
+     * 회사 활성 연차종류 + 종류별 현재 잔여. USE_YN='N' 종류는 제외.
+     *
+     * <p>연차개편: balanceDays 가 LEAVE_TYPE 별로 분기한다.
+     *   '01'(사용자 신청)은 {@code IFNULL(MAX_APLY_DAYS,0) - Σ(당해 회계연도 CONFIRMED 사용)},
+     *   그 외는 기존 활성 부여집합 {@code SUM(GRANT_DAYS)-SUM(USED_DAYS)}.
+     *   회계연도 경계 {@code [fiscalStartYmd, fiscalEndYmdExclusive)} 는 호출부가 FiscalYearUtils 로 산출해 전달한다.
      */
     List<LeaveTypeMetaRow> selectApplicableLeaveTypes(@Param("cmpnyCd") String cmpnyCd,
-                                                      @Param("userCd") String userCd);
+                                                      @Param("userCd") String userCd,
+                                                      @Param("fiscalStartYmd") String fiscalStartYmd,
+                                                      @Param("fiscalEndYmdExclusive") String fiscalEndYmdExclusive);
 
     /**
      * 회사 활성 연차정책의 단일 허용단위(USAGE_UNIT) + 법정 결재여부(APRV_USE_YN).
@@ -80,9 +86,29 @@ public interface AppLeaveFlowMapper {
     /** 연차 사용기록 ID 채번(LV + YYYYMMDD + 시퀀스). */
     String selectNextLeaveId(@Param("cmpnyCd") String cmpnyCd);
 
-    /** 연차 종류 메타(systemYn/aprvUseYn/useUnitType). 없으면 null. */
+    /** 연차 종류 메타(systemYn/aprvUseYn/useUnitType/leaveType/maxAplyDays). 없으면 null. */
     LeaveTypeInfoRow selectLeaveTypeInfo(@Param("cmpnyCd") String cmpnyCd,
                                          @Param("leaveCd") String leaveCd);
+
+    /**
+     * 연차개편(사용자 신청 '01' 한도검증): 당해 회계연도 CONFIRMED 사용 합계(Σ LEAVE_DAYS).
+     * 술어 LEAVE_STATUS='CONFIRMED' AND DEL_YN='N' (반려/취소 제외). 합계 없으면 0.
+     */
+    BigDecimal selectFiscalUsedDays(@Param("cmpnyCd") String cmpnyCd,
+                                    @Param("userCd") String userCd,
+                                    @Param("leaveCd") String leaveCd,
+                                    @Param("fiscalStartYmd") String fiscalStartYmd,
+                                    @Param("fiscalEndYmdExclusive") String fiscalEndYmdExclusive);
+
+    /**
+     * 연차개편 동시성: 사용자 신청('01') 직렬화용 advisory lock 획득(GET_LOCK).
+     * '01'은 차감 GRANT 가 없어 FOR UPDATE 를 못 쓰므로 (USER_CD,LEAVE_CD) 키로 세션 단위 직렬화한다.
+     * 1=획득, 0=타임아웃, null=오류. 트랜잭션 무관(세션 단위) → 호출부 finally 에서 releaseAdvisoryLock.
+     */
+    Integer getAdvisoryLock(@Param("lockKey") String lockKey, @Param("timeoutSec") int timeoutSec);
+
+    /** 연차개편 동시성: advisory lock 해제(RELEASE_LOCK). */
+    Integer releaseAdvisoryLock(@Param("lockKey") String lockKey);
 
     /** 법정 연차정책 결재여부(APRV_USE_YN). 활성정책 없으면 null. */
     String selectPolicyAprvUseYn(@Param("cmpnyCd") String cmpnyCd);
@@ -115,13 +141,8 @@ public interface AppLeaveFlowMapper {
                         @Param("processUserCd") String processUserCd,
                         @Param("processComment") String processComment);
 
-    /** 출근 차단: 일 단위 휴가 확정 시 근무계획을 연차코드로 덮어 출근 차단(upsert). */
-    int upsertWorkPlanLeave(@Param("cmpnyCd") String cmpnyCd,
-                            @Param("siteCd") String siteCd,
-                            @Param("userCd") String userCd,
-                            @Param("workYmd") String workYmd,
-                            @Param("leaveCd") String leaveCd,
-                            @Param("insertNo") String insertNo);
+    // prafta-com-008-E (L1): upsertWorkPlanLeave 제거.
+    //   E-2 모델 전환으로 work_plan 에 LEAVE_CD 를 쓰지 않으므로(연차일 판정 단일출처=leave_use) 사장됨. 호출처 0건.
 
     /**
      * 신청자의 자체근태승인 자격('Y'/null). 소속노드 SELF_ATTD_APPRV_YN='Y' 이면서

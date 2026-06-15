@@ -43,6 +43,18 @@ public interface Attd07Mapper {
      */
     List<MonthlyOvertimeResult> selectMonthlyOvertimeList(MonthlyAttdListQuery query);
 
+    /**
+     * PRAFTA-COM-008-B-3: 그날 종일(USE_UNIT_TYPE='00') 확정 연차 존재 카운트(웹 OT 등록 차단 판정).
+     *
+     * <p>app 측 단일출처 {@code AppAttd01Mapper.countFullDayLeaveOn}(=AppHome01Mapper 미러) 와 동일 술어를
+     * 웹 영역에서 재사용하기 위한 미러다(app↔web 매퍼 직접 의존 회피). 부분연차(반차/시간차)는 근무일을
+     * 유지하므로 미카운트. &gt; 0 이면 종일 연차일 → 초과근무 신청 차단(ATTD_400_151). 촉진/자발 무관 일괄 차단.
+     */
+    int countFullDayLeaveOn(@Param("cmpnyCd") String cmpnyCd,
+                            @Param("siteCd") String siteCd,
+                            @Param("userCd") String userCd,
+                            @Param("workYmd") String workYmd);
+
     String selectAttdId(@Param("gvCmpnyCd")	String gvCmpnyCd);
 
     String selectHistId(@Param("gvCmpnyCd") String gvCmpnyCd);

@@ -1,0 +1,186 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.prafta.web.risk.risklink01.mapper.RiskLink01Mapper">
+
+    <!-- 연결 후보/연결됨 아차사고 공통 SELECT 컬럼 (코드명 해석 포함, 상세 열람 재사용 키 보유) -->
+    <sql id="nearMissColumns">
+        A.SITE_CD                                                               AS siteCd
+      , A.NEAR_MISS_ID                                                          AS nearMissId
+      , A.INCIDENT_TYPE_CD                                                      AS incidentTypeCd
+      , FNC_CMM_INFO_SRCH(A.CMPNY_CD, 'SYST_VAL', A.INCIDENT_TYPE_CD, 'SYS061') AS incidentTypeNm
+      , DATE_FORMAT(A.OCCUR_DTIME, '%Y-%m-%d %H:%i')                            AS occurDtime
+      , A.LOCATION_DESC                                                         AS locationDesc
+      , A.DESCRIPTION                                                           AS description
+      , A.POTENTIAL_SEVERITY_CD                                                 AS potentialSeverityCd
+      , FNC_CMM_INFO_SRCH(A.CMPNY_CD, 'SYST_VAL', A.POTENTIAL_SEVERITY_CD, 'SYS062') AS potentialSeverityNm
+      , A.REPORT_STATUS_CD                                                      AS reportStatusCd
+      , FNC_CMM_INFO_SRCH(A.CMPNY_CD, 'SYST_VAL', A.REPORT_STATUS_CD, 'SYS063') AS reportStatusNm
+    </sql>
+
+    <!-- 사업장 접근 권한 확인 (tb_user_site_auth 매핑, USE_YN='Y'). 1 이상이면 접근 가능 -->
+    <select id="countUserSiteAuth" resultType="int">
+    /* RiskLink01Mapper.countUserSiteAuth */
+    SELECT
+        COUNT(1)
+    FROM TB_USER_SITE_AUTH A
+    WHERE A.CMPNY_CD = #{cmpnyCd}
+      AND A.USER_CD = #{userCd}
+      AND A.SITE_CD = #{siteCd}
+      AND A.USE_YN = 'Y'
+    </select>
+
+    <!-- L1 연결 후보: 같은 사업장 + 완료(400) + 해당 평가건에 아직 미연결 + (검색어 옵션) -->
+    <select id="selectAvailableNearMiss"
+            parameterType="com.prafta.web.risk.risklink01.application.query.AvailableNearMissQuery"
+            resultType="com.prafta.web.risk.risklink01.result.LinkNearMissResult">
+    /* RiskLink01Mapper.selectAvailableNearMiss */
+    SELECT
+        <include refid="nearMissColumns" />
+    FROM TB_NEAR_MISS A
+    WHERE A.CMPNY_CD = #{gvCmpnyCd}
+      AND A.SITE_CD = #{siteCd}
+      AND A.USE_YN = 'Y'
+      AND A.REPORT_STATUS_CD = '400'
+      AND NOT EXISTS (
+            SELECT 1
+            FROM TB_RISK_NEAR_MISS_LINK L
+            WHERE L.CMPNY_CD = A.CMPNY_CD
+              AND L.SITE_CD = A.SITE_CD
+              AND L.NEAR_MISS_ID = A.NEAR_MISS_ID
+              AND L.PROCESS_CD = #{processCd}
+              AND L.ASSESSMENT_CD = #{assessmentCd}
+              AND L.USE_YN = 'Y'
+          )
+      <if test="keyword != null and keyword != ''">
+        AND (
+                A.DESCRIPTION LIKE CONCAT('%', #{keyword}, '%')
+             OR A.LOCATION_DESC LIKE CONCAT('%', #{keyword}, '%')
+            )
+      </if>
+    ORDER BY A.OCCUR_DTIME DESC, A.NEAR_MISS_ID DESC
+    </select>
+
+    <!-- L2 연결됨 목록: 해당 평가건에 USE_YN='Y' 로 연결된 아차사고 -->
+    <select id="selectLinkedNearMiss"
+            parameterType="com.prafta.web.risk.risklink01.application.query.LinkedNearMissQuery"
+            resultType="com.prafta.web.risk.risklink01.result.LinkNearMissResult">
+    /* RiskLink01Mapper.selectLinkedNearMiss */
+    SELECT
+        <include refid="nearMissColumns" />
+    FROM TB_RISK_NEAR_MISS_LINK L
+         INNER JOIN TB_NEAR_MISS A
+            ON (
+                L.CMPNY_CD = A.CMPNY_CD
+            AND L.SITE_CD = A.SITE_CD
+            AND L.NEAR_MISS_ID = A.NEAR_MISS_ID
+            AND A.USE_YN = 'Y'
+            )
+    WHERE L.CMPNY_CD = #{gvCmpnyCd}
+      AND L.SITE_CD = #{siteCd}
+      AND L.PROCESS_CD = #{processCd}
+      AND L.ASSESSMENT_CD = #{assessmentCd}
+      AND L.USE_YN = 'Y'
+    ORDER BY A.OCCUR_DTIME DESC, A.NEAR_MISS_ID DESC
+    </select>
+
+    <!-- L3/L4 대상 위험성평가 건의 진행상태 조회 (사업장 스코프, 없으면 null) -->
+    <select id="selectAssessmentStatus" resultType="java.lang.String">
+    /* RiskLink01Mapper.selectAssessmentStatus */
+    SELECT
+        A.ASSESSMENT_STATUS
+    FROM TB_RISK_ASSESSMENT A
+    WHERE A.CMPNY_CD = #{cmpnyCd}
+      AND A.SITE_CD = #{siteCd}
+      AND A.PROCESS_CD = #{processCd}
+      AND A.ASSESSMENT_CD = #{assessmentCd}
+    </select>
+
+    <!-- L3 대상 아차사고의 처리상태 조회 (사업장 스코프, USE_YN='Y', 없으면 null) -->
+    <select id="selectNearMissReportStatus" resultType="java.lang.String">
+    /* RiskLink01Mapper.selectNearMissReportStatus */
+    SELECT
+        A.REPORT_STATUS_CD
+    FROM TB_NEAR_MISS A
+    WHERE A.CMPNY_CD = #{cmpnyCd}
+      AND A.SITE_CD = #{siteCd}
+      AND A.NEAR_MISS_ID = #{nearMissId}
+      AND A.USE_YN = 'Y'
+    </select>
+
+    <!-- L3 연결 행 존재 여부 (USE_YN 무관). upsert 분기용 -->
+    <select id="countLink"
+            parameterType="com.prafta.web.risk.risklink01.application.command.NearMissLinkCommand"
+            resultType="int">
+    /* RiskLink01Mapper.countLink */
+    SELECT
+        COUNT(1)
+    FROM TB_RISK_NEAR_MISS_LINK L
+    WHERE L.CMPNY_CD = #{gvCmpnyCd}
+      AND L.SITE_CD = #{siteCd}
+      AND L.PROCESS_CD = #{processCd}
+      AND L.ASSESSMENT_CD = #{assessmentCd}
+      AND L.NEAR_MISS_ID = #{nearMissId}
+    </select>
+
+    <!-- L3 연결 INSERT (USE_YN='Y') -->
+    <insert id="insertLink"
+            parameterType="com.prafta.web.risk.risklink01.application.command.NearMissLinkCommand">
+    /* RiskLink01Mapper.insertLink */
+    INSERT INTO TB_RISK_NEAR_MISS_LINK
+    (
+        CMPNY_CD
+      , SITE_CD
+      , PROCESS_CD
+      , ASSESSMENT_CD
+      , NEAR_MISS_ID
+      , USE_YN
+      , INSERT_NO
+      , INSERT_DATE
+    )
+    VALUES
+    (
+        #{gvCmpnyCd}
+      , #{siteCd}
+      , #{processCd}
+      , #{assessmentCd}
+      , #{nearMissId}
+      , 'Y'
+      , #{gvUserCd}
+      , NOW()
+    )
+    </insert>
+
+    <!-- L3 연결 복원 (기존 행 USE_YN='Y') -->
+    <update id="restoreLink"
+            parameterType="com.prafta.web.risk.risklink01.application.command.NearMissLinkCommand">
+    /* RiskLink01Mapper.restoreLink */
+    UPDATE TB_RISK_NEAR_MISS_LINK
+    SET
+        USE_YN      = 'Y'
+      , UPDATE_NO   = #{gvUserCd}
+      , UPDATE_DATE = NOW()
+    WHERE CMPNY_CD = #{gvCmpnyCd}
+      AND SITE_CD = #{siteCd}
+      AND PROCESS_CD = #{processCd}
+      AND ASSESSMENT_CD = #{assessmentCd}
+      AND NEAR_MISS_ID = #{nearMissId}
+    </update>
+
+    <!-- L4 연결 해제 (soft delete, USE_YN='N') -->
+    <update id="updateLinkUseYn"
+            parameterType="com.prafta.web.risk.risklink01.application.command.NearMissLinkCommand">
+    /* RiskLink01Mapper.updateLinkUseYn */
+    UPDATE TB_RISK_NEAR_MISS_LINK
+    SET
+        USE_YN      = 'N'
+      , UPDATE_NO   = #{gvUserCd}
+      , UPDATE_DATE = NOW()
+    WHERE CMPNY_CD = #{gvCmpnyCd}
+      AND SITE_CD = #{siteCd}
+      AND PROCESS_CD = #{processCd}
+      AND ASSESSMENT_CD = #{assessmentCd}
+      AND NEAR_MISS_ID = #{nearMissId}
+      AND USE_YN = 'Y'
+    </update>
+
+</mapper>

@@ -4,7 +4,12 @@
 
     <!-- ============================================================
          apply-meta: 회사 활성 연차종류 + 종류별 현재 잔여
-         - USE_YN='Y' 만. balanceDays = 활성집합 SUM(GRANT_DAYS)-SUM(USED_DAYS).
+         - USE_YN='Y' 만.
+         - 연차개편: balanceDays 산출이 타입별로 분기한다(LEAVE_TYPE [SYS021]).
+           · '01'(사용자 신청): IFNULL(MAX_APLY_DAYS,0) - Σ(당해 회계연도 CONFIRMED 사용 LEAVE_DAYS).
+             회계연도 경계 [fiscalStartYmd, fiscalEndYmdExclusive) 는 서비스가 FiscalYearUtils 로 산출해 주입.
+             MAX_APLY_DAYS NULL 이면 한도 0 = 신청불가(fail-closed). 반려/취소(LEAVE_STATUS='CANCELLED')는 합산 제외.
+           · 그 외('02' 등): 기존 활성 부여집합 SUM(GRANT_DAYS)-SUM(USED_DAYS) 유지(회귀 0).
          - 결과 record LeaveTypeMetaRow 의 생성자 인자 순서와 SELECT 컬럼 순서가 동일해야 함(위치매핑).
          ============================================================ -->
     <select id="selectApplicableLeaveTypes" resultType="com.prafta.app.leave.leaveflow.result.LeaveTypeMetaRow">
@@ -15,16 +20,30 @@
         , T.SYSTEM_YN       AS systemYn
         , T.APRV_USE_YN     AS typeAprvUseYn
         , T.USE_UNIT_TYPE   AS useUnitType
-        , IFNULL((
-              SELECT SUM(G.GRANT_DAYS) - SUM(G.USED_DAYS)
-                FROM TB_USER_LEAVE_GRANT G
-               WHERE G.CMPNY_CD  = T.CMPNY_CD
-                 AND G.USER_CD   = #{userCd}
-                 AND G.LEAVE_CD  = T.LEAVE_CD
-                 AND G.STATUS    = 'ACTIVE'
-                 AND G.EXPIRE_YN = 'N'
-                 AND G.DEL_YN    = 'N'
-          ), 0)             AS balanceDays
+        , CASE WHEN T.LEAVE_TYPE = '01' THEN
+              IFNULL(T.MAX_APLY_DAYS, 0) - IFNULL((
+                  SELECT SUM(U.LEAVE_DAYS)
+                    FROM TB_USER_LEAVE_USE U
+                   WHERE U.CMPNY_CD     = T.CMPNY_CD
+                     AND U.USER_CD      = #{userCd}
+                     AND U.LEAVE_CD     = T.LEAVE_CD
+                     AND U.LEAVE_STATUS = 'CONFIRMED'
+                     AND U.DEL_YN       = 'N'
+                     AND U.START_DATE  &gt;= #{fiscalStartYmd}
+                     AND U.START_DATE  &lt;  #{fiscalEndYmdExclusive}
+              ), 0)
+          ELSE
+              IFNULL((
+                  SELECT SUM(G.GRANT_DAYS) - SUM(G.USED_DAYS)
+                    FROM TB_USER_LEAVE_GRANT G
+                   WHERE G.CMPNY_CD  = T.CMPNY_CD
+                     AND G.USER_CD   = #{userCd}
+                     AND G.LEAVE_CD  = T.LEAVE_CD
+                     AND G.STATUS    = 'ACTIVE'
+                     AND G.EXPIRE_YN = 'N'
+                     AND G.DEL_YN    = 'N'
+              ), 0)
+          END               AS balanceDays
       FROM TB_LEAVE_TYPE_MGMT T
      WHERE T.CMPNY_CD = #{cmpnyCd}
        AND T.USE_YN   = 'Y'
@@ -135,17 +154,54 @@
     SELECT CONCAT('LV', DATE_FORMAT(NOW(), '%Y%m%d'), FNC_CMM_SEQ_NEXTVAL(#{cmpnyCd}, 'LEAVE_USE_ID')) FROM DUAL
     </select>
 
-    <!-- 결과 record LeaveTypeInfoRow(systemYn, aprvUseYn, useUnitType) 순서 일치(위치매핑) -->
+    <!-- 결과 record LeaveTypeInfoRow(systemYn, aprvUseYn, useUnitType, leaveType, maxAplyDays) 순서 일치(위치매핑) -->
     <select id="selectLeaveTypeInfo" resultType="com.prafta.app.leave.leaveflow.result.LeaveTypeInfoRow">
     /* AppLeaveFlowMapper.selectLeaveTypeInfo */
     SELECT
           A.SYSTEM_YN     AS systemYn
         , A.APRV_USE_YN   AS aprvUseYn
         , A.USE_UNIT_TYPE AS useUnitType
+        , A.LEAVE_TYPE    AS leaveType
+        , A.MAX_APLY_DAYS AS maxAplyDays
       FROM TB_LEAVE_TYPE_MGMT A
      WHERE A.CMPNY_CD = #{cmpnyCd}
        AND A.LEAVE_CD = #{leaveCd}
      LIMIT 1
+    </select>
+
+    <!-- ============================================================
+         연차개편(사용자 신청 '01' 한도검증): 당해 회계연도 CONFIRMED 사용 합계(Σ LEAVE_DAYS).
+         - 술어 LEAVE_STATUS='CONFIRMED' AND DEL_YN='N' (반려/취소 CANCELLED 는 제외 → 반려 복원 성립).
+         - 회계연도 경계 [fiscalStartYmd, fiscalEndYmdExclusive) 는 서비스가 FiscalYearUtils 로 산출해 주입.
+         - 식별값은 토큰 도출값만 전달(IDOR). NULL 합계는 0 으로 폴백.
+         ============================================================ -->
+    <select id="selectFiscalUsedDays" resultType="java.math.BigDecimal">
+    /* AppLeaveFlowMapper.selectFiscalUsedDays */
+    SELECT IFNULL(SUM(U.LEAVE_DAYS), 0)
+      FROM TB_USER_LEAVE_USE U
+     WHERE U.CMPNY_CD     = #{cmpnyCd}
+       AND U.USER_CD      = #{userCd}
+       AND U.LEAVE_CD     = #{leaveCd}
+       AND U.LEAVE_STATUS = 'CONFIRMED'
+       AND U.DEL_YN       = 'N'
+       AND U.START_DATE  &gt;= #{fiscalStartYmd}
+       AND U.START_DATE  &lt;  #{fiscalEndYmdExclusive}
+    </select>
+
+    <!-- ============================================================
+         연차개편 동시성: 사용자 신청('01')은 차감 GRANT 가 없어 FOR UPDATE 행잠금을 못 쓴다.
+         동일 (USER_CD,LEAVE_CD) 신청을 세션 단위 advisory lock 으로 직렬화한다(마이그 없음).
+         1=획득, 0=타임아웃, null=오류. 트랜잭션 무관(세션 단위) → 호출부 finally 에서 RELEASE_LOCK.
+         (prafta-app-009 F15 AppReq07Mapper 패턴 재사용)
+         ============================================================ -->
+    <select id="getAdvisoryLock" resultType="java.lang.Integer">
+    /* AppLeaveFlowMapper.getAdvisoryLock */
+    SELECT GET_LOCK(#{lockKey}, #{timeoutSec})
+    </select>
+
+    <select id="releaseAdvisoryLock" resultType="java.lang.Integer">
+    /* AppLeaveFlowMapper.releaseAdvisoryLock */
+    SELECT RELEASE_LOCK(#{lockKey})
     </select>
 
     <select id="selectPolicyAprvUseYn" resultType="string">
@@ -304,36 +360,8 @@
        AND REQ_ID   = #{reqId}
     </update>
 
-    <!-- 출근 차단: 일 단위 휴가 확정 시 해당 일자 근무계획을 연차코드로 덮어 출근을 차단 -->
-    <insert id="upsertWorkPlanLeave">
-    /* AppLeaveFlowMapper.upsertWorkPlanLeave */
-    INSERT INTO TB_USER_WORK_PLAN (
-          CMPNY_CD
-        , SITE_CD
-        , USER_CD
-        , WORK_YMD
-        , WORK_PLAN_CD
-        , INSERT_NO
-        , INSERT_DATE
-        , UPDATE_NO
-        , UPDATE_DATE
-    )
-    VALUES (
-          #{cmpnyCd}
-        , #{siteCd}
-        , #{userCd}
-        , #{workYmd}
-        , #{leaveCd}
-        , #{insertNo}
-        , NOW()
-        , #{insertNo}
-        , NOW()
-    ) AS NEW
-    ON DUPLICATE KEY UPDATE
-          WORK_PLAN_CD = NEW.WORK_PLAN_CD
-        , UPDATE_NO    = NEW.UPDATE_NO
-        , UPDATE_DATE  = NOW()
-    </insert>
+    <!-- prafta-com-008-E (L1): upsertWorkPlanLeave 제거.
+         E-2 모델 전환으로 work_plan 에 LEAVE_CD 를 쓰지 않으므로(연차일 판정 단일출처=leave_use) 사장됨. Java 호출처 0건. -->
 
     <!--
       신청자의 자체근태승인 자격 (자기 승인 원칙 §9.5).

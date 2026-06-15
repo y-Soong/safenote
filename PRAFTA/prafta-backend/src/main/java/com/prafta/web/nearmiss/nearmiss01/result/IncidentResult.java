@@ -31,8 +31,6 @@ public record IncidentResult(
     , String reviewerId
     , String reviewerNm
     , String reviewDtime
-    , String srcProcessCd
-    , String srcAssessmentCd
     , String rejectReason
     , String useYn
 ){

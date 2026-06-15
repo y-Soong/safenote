@@ -24,4 +24,16 @@ public final class PushWorkerConst {
 
     /** DATA_PAYLOAD json 파싱 실패 → 재시도 무의미, FAILED. */
     public static final String ERR_INVALID_PAYLOAD = "INVALID_PAYLOAD";
+
+    /**
+     * 사용자 푸시 설정에 의한 의도적 미발송(suppress) 종료 상태 (PRAFTA-APP-021-2).
+     *
+     * <p>FAILED 와 분리한다: FAILED 는 "발송 시도했으나 실패"(재시도/모니터링 대상),
+     * SUPPRESSED 는 "사용자 설정(마스터 OFF 또는 해당 NOTI_TYPE OFF)에 의한 정상 미발송"이다.
+     * RETRY_CNT 미증가, 재시도 없음. tb_user_push_setting.USE_YN='N' 행이 근거.
+     */
+    public static final String SEND_STATUS_SUPPRESSED = "SUPPRESSED";
+
+    /** suppress 사유 로그용 라벨. */
+    public static final String SUPPRESS_REASON = "USER_PUSH_SETTING_OFF";
 }

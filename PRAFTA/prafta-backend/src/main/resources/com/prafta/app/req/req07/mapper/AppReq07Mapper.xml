@@ -94,12 +94,12 @@
     <!-- ============ 스케줄 선택 옵션 목록 (prafta-app-007 F2) ============
          사용중(USE_YN='Y') 스케줄을 회사/사업장 범위로 조회.
          식별값은 JWT 도출값만 사용 (IDOR). 라벨은 프론트 포맷 → 원시 시각 컬럼만 내려준다.
-         정렬: 기본 스케줄(BASE_YN='Y') 우선, 그 다음 SCH_NO 오름차순. -->
+         정렬: SCH_NO 오름차순. "기본" 표시/우선은 사용자별 DEFAULT_SCH_CD(응답 userDefaultSchCd) 기준
+              으로 프론트가 처리한다(prafta-com-008-E-9a: 사업장 BASE_YN 폐기). -->
     <select id="selectSchedOptions" resultType="com.prafta.app.req.req07.dto.response.result.SchedOptionResult">
     /* AppReq07Mapper.selectSchedOptions */
     SELECT S.SCH_CD            AS schCd
          , S.SCH_NO            AS schNo
-         , S.BASE_YN           AS baseYn
          , S.FST_SCH_STR_TIME  AS fstStrTime
          , S.FST_SCH_END_TIME  AS fstEndTime
          , S.SEC_SCH_STR_TIME  AS secStrTime
@@ -108,7 +108,17 @@
      WHERE S.CMPNY_CD = #{cmpnyCd}
        AND S.SITE_CD  = #{siteCd}
        AND S.USE_YN   = 'Y'
-     ORDER BY S.BASE_YN DESC, S.SCH_NO ASC
+     ORDER BY S.SCH_NO ASC
+    </select>
+
+    <!-- prafta-com-008-E-9a: 사용자 본인 기본 근무타입(DEFAULT_SCH_CD). "기본" 칩/상단 정렬용(미설정 시 null). -->
+    <select id="selectUserDefaultSchCd" resultType="string">
+    /* AppReq07Mapper.selectUserDefaultSchCd */
+    SELECT U.DEFAULT_SCH_CD
+      FROM TB_USER U
+     WHERE U.CMPNY_CD = #{cmpnyCd}
+       AND U.USER_CD  = #{userCd}
+     LIMIT 1
     </select>
 
     <!-- ============ prafta-app-017(이슈①): 근무계획 스케줄 1건 (OT 겹침 검증용) ============

@@ -72,48 +72,6 @@
             , A2.CHECK_OUT_TIME                                                  AS act2OutTime
             , A2.CHECK_OUT_METHOD                                                AS act2OutMethod
 
-            /* normalized times */
-            , FNC_STD_TIME(
-                  A1.CHECK_IN_TIME
-                , IFNULL(
-                      CASE WHEN CHAR_LENGTH(FNC_CMM_INFO_SRCH(A.CMPNY_CD, 'ATTD_STD_CHKIN', A1.CHECK_IN_DATE, NULL)) = 0
-                           THEN NULL
-                           ELSE FNC_CMM_INFO_SRCH(A.CMPNY_CD, 'ATTD_STD_CHKIN', A1.CHECK_IN_DATE, NULL)
-                      END
-                  , 0)
-                , 'IN'
-              )                                                                  AS act1InStdTime
-            , FNC_STD_TIME(
-                  A1.CHECK_OUT_TIME
-                , IFNULL(
-                      CASE WHEN CHAR_LENGTH(FNC_CMM_INFO_SRCH(A.CMPNY_CD, 'ATTD_STD_CHKOUT', A1.CHECK_OUT_DATE, NULL)) = 0
-                           THEN NULL
-                           ELSE FNC_CMM_INFO_SRCH(A.CMPNY_CD, 'ATTD_STD_CHKOUT', A1.CHECK_OUT_DATE, NULL)
-                      END
-                  , 0)
-                , 'OUT'
-              )                                                                  AS act1OutStdTime
-            , FNC_STD_TIME(
-                  A2.CHECK_IN_TIME
-                , IFNULL(
-                      CASE WHEN CHAR_LENGTH(FNC_CMM_INFO_SRCH(A.CMPNY_CD, 'ATTD_STD_CHKIN', A2.CHECK_IN_DATE, NULL)) = 0
-                           THEN NULL
-                           ELSE FNC_CMM_INFO_SRCH(A.CMPNY_CD, 'ATTD_STD_CHKIN', A2.CHECK_IN_DATE, NULL)
-                      END
-                  , 0)
-                , 'IN'
-              )                                                                  AS act2InStdTime
-            , FNC_STD_TIME(
-                  A2.CHECK_OUT_TIME
-                , IFNULL(
-                      CASE WHEN CHAR_LENGTH(FNC_CMM_INFO_SRCH(A.CMPNY_CD, 'ATTD_STD_CHKOUT', A2.CHECK_OUT_DATE, NULL)) = 0
-                           THEN NULL
-                           ELSE FNC_CMM_INFO_SRCH(A.CMPNY_CD, 'ATTD_STD_CHKOUT', A2.CHECK_OUT_DATE, NULL)
-                      END
-                  , 0)
-                , 'OUT'
-              )                                                                  AS act2OutStdTime
-
             /* outside detection - any GPS row exists for this ATTD */
             , CASE
                 WHEN EXISTS (
@@ -143,6 +101,9 @@
             /* row type discriminator (PRAFTA-015) - 정규근태 분기 */
             , 'NORMAL'                                                           AS rowType
             , NULL                                                               AS otId
+
+            /* 초과근무 인정시간 - 정규근태는 개념 없음 */
+            , NULL                                                               AS otWorkMinutes
 
         FROM TB_USER_ATTD_MGMT A
         INNER JOIN node_tree NT
@@ -234,12 +195,6 @@
             , NULL                                                               AS act2OutTime
             , NULL                                                               AS act2OutMethod
 
-            /* normalized times - 초과근무는 정규화 개념 없음 */
-            , NULL                                                               AS act1InStdTime
-            , NULL                                                               AS act1OutStdTime
-            , NULL                                                               AS act2InStdTime
-            , NULL                                                               AS act2OutStdTime
-
             /* outside detection - 정규근태 분기와 동일하게 GPS 행 존재 여부로 판정 */
             , CASE
                 WHEN EXISTS (
@@ -257,6 +212,9 @@
             /* row type discriminator (PRAFTA-015) - 초과근무 분기 */
             , 'OT'                                                               AS rowType
             , O.OT_ID                                                            AS otId
+
+            /* 초과근무 인정시간 - 관리자 승인 실근무 분(휴게 제외) */
+            , O.WORK_MINUTES                                                     AS otWorkMinutes
 
         /* 초과근무의 NODE_CD 는 nullable 이다. node_tree 와 INNER JOIN 하므로
            NODE_CD 가 NULL 인 초과근무 행은 결과에서 제외된다. 이는 정규근태 분기와

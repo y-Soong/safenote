@@ -446,14 +446,14 @@
                       <button
                         class="btn btn-custom"
                         :disabled="dailyUserSlot.useYn === 'N'"
-                        @click="fnQrCodePopOpen(linkPolicy)"
+                        @click="fnFixSlot(dailyUserSlot)"
                       >
                         점유 유지
                       </button>
                       <button
                         class="btn btn-custom-danger"
                         :disabled="dailyUserSlot.useYn === 'N'"
-                        @click="fnQrCodePopOpen(linkPolicy)"
+                        @click="fnClearSlot(dailyUserSlot)"
                       >
                         비우기
                       </button>
@@ -682,14 +682,109 @@ const fnSave = async () => {
     await proxy.$alert(msg);
   }
 };
-const fnBulkOccupy = () => {
-  proxy.$alert("준비중입니다.");
+// 슬롯 식별자 추출(서버는 siteCd/slotNo 만 신뢰, 점유자 식별은 서버 재조회)
+const toSlotItem = (slot) => ({ siteCd: slot.siteCd, slotNo: slot.slotNo });
+
+// 체크된(chk=true) 행 수집
+const collectCheckedSlots = () =>
+  (DailyUserSlotList.value || []).filter((s) => s.chk === true);
+
+// 슬롯 고정여부 토글 공통 호출 (fixedYn: 'Y'=점유 유지, 'N'=점유 해지)
+const requestSetFixed = async (slots, fixedYn) => {
+  try {
+    const response = await axios.post(
+      "/webApi/baim05/set-daily-user-slot-fixed",
+      {
+        slots: slots.map(toSlotItem),
+        fixedYn,
+      }
+    );
+
+    if (response.status === 200) {
+      await proxy.$alert(getMessage(MSG.SAVE_SUCCESS));
+      await fnSearch();
+    }
+  } catch (err) {
+    const msg = resolveApiErrorMessage(err, "처리 중 오류가 발생했습니다.");
+    await proxy.$alert(msg);
+  }
 };
-const fnBulkUnoccupy = () => {
-  proxy.$alert("준비중입니다.");
+
+// 슬롯 비우기 공통 호출 (점유 계정 비활성 + 슬롯 초기화, 위험 동작)
+const requestClear = async (slots) => {
+  try {
+    const response = await axios.post("/webApi/baim05/clear-daily-user-slots", {
+      slots: slots.map(toSlotItem),
+    });
+
+    if (response.status === 200) {
+      await proxy.$alert(getMessage(MSG.SAVE_SUCCESS));
+      await fnSearch();
+    }
+  } catch (err) {
+    const msg = resolveApiErrorMessage(err, "처리 중 오류가 발생했습니다.");
+    await proxy.$alert(msg);
+  }
 };
-const fnBulkClear = () => {
-  proxy.$alert("준비중입니다.");
+
+// 행 단위 - 점유 유지
+const fnFixSlot = async (slot) => {
+  const ok = await proxy.$confirm(
+    "해당 슬롯의 점유를 유지하시겠습니까?\n자정 만료 배치에서 점유자가 만료되지 않습니다."
+  );
+  if (!ok) return;
+  await requestSetFixed([slot], "Y");
+};
+
+// 행 단위 - 비우기 (위험 동작)
+const fnClearSlot = async (slot) => {
+  const ok = await proxy.$confirm(
+    "해당 슬롯을 비우시겠습니까?\n점유 중인 계정이 비활성화되며 되돌릴 수 없습니다."
+  );
+  if (!ok) return;
+  await requestClear([slot]);
+};
+
+// 일괄 - 점유 유지
+const fnBulkOccupy = async () => {
+  const slots = collectCheckedSlots();
+  if (slots.length === 0) {
+    await proxy.$alert("선택된 항목이 없습니다.");
+    return;
+  }
+  const ok = await proxy.$confirm(
+    `선택한 ${slots.length}건의 슬롯 점유를 유지하시겠습니까?`
+  );
+  if (!ok) return;
+  await requestSetFixed(slots, "Y");
+};
+
+// 일괄 - 점유 해지
+const fnBulkUnoccupy = async () => {
+  const slots = collectCheckedSlots();
+  if (slots.length === 0) {
+    await proxy.$alert("선택된 항목이 없습니다.");
+    return;
+  }
+  const ok = await proxy.$confirm(
+    `선택한 ${slots.length}건의 슬롯 점유를 해지하시겠습니까?`
+  );
+  if (!ok) return;
+  await requestSetFixed(slots, "N");
+};
+
+// 일괄 - 비우기 (위험 동작)
+const fnBulkClear = async () => {
+  const slots = collectCheckedSlots();
+  if (slots.length === 0) {
+    await proxy.$alert("선택된 항목이 없습니다.");
+    return;
+  }
+  const ok = await proxy.$confirm(
+    `선택한 ${slots.length}건의 슬롯을 비우시겠습니까?\n점유 중인 계정이 비활성화되며 되돌릴 수 없습니다.`
+  );
+  if (!ok) return;
+  await requestClear(slots);
 };
 
 // ================ Watchers ================

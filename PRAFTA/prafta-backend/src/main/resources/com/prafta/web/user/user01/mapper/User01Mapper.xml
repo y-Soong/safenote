@@ -87,6 +87,8 @@
 	    <arg name="withdrawalDate" column="withdrawalDate" javaType="java.lang.String"/>
 	    <arg name="rankCd"    column="rankCd"    javaType="java.lang.String"/>
 	    <arg name="rankNm"    column="rankNm"    javaType="java.lang.String"/>
+	    <!-- PRAFTA-COM-008-E-5: 기본 근무타입(prefill). 이 resultMap 을 쓰는 모든 쿼리가 defaultSchCd 컬럼을 SELECT 해야 함. -->
+	    <arg name="defaultSchCd" column="defaultSchCd" javaType="java.lang.String"/>
 	  </constructor>
 	</resultMap>
 
@@ -148,6 +150,7 @@
         , DATE_FORMAT(STR_TO_DATE(A.WITHDRAWAL_DATE, '%Y%m%d'), '%Y-%m-%d') AS withdrawalDate
 	    , A.RANK_CD														AS rankCd
 	    , FNC_CMM_INFO_SRCH(A.CMPNY_CD, 'BAIM_VAL', A.RANK_CD, 'COM007')	AS rankNm
+	    , A.DEFAULT_SCH_CD												AS defaultSchCd
 	FROM TB_USER A
 		LEFT JOIN (
 		    SELECT
@@ -367,6 +370,11 @@
 		, GENDER = #{gender}
 		, BIRTH_DT_ENC = #{birthDtEnc}
 		, USE_YN = IFNULL(#{useYn}, 'Y')
+		<!-- PRAFTA-COM-008-E-5: 기본 근무타입은 입력 시에만 변경(blank=미변경). 변경 시 설정시점도 갱신. -->
+		<if test="defaultSchCd != null and defaultSchCd != ''">
+		, DEFAULT_SCH_CD = #{defaultSchCd}
+		, DEFAULT_SCH_SET_DATE = NOW()
+		</if>
 		, UPDATE_NO = #{gvUserCd}
 		, UPDATE_DATE = NOW()
 	WHERE 1=1
@@ -399,6 +407,7 @@
 		    , A.WITHDRAWAL_DATE													AS withdrawalDate
 		    , A.RANK_CD															AS rankCd
 		    , FNC_CMM_INFO_SRCH(A.CMPNY_CD, 'BAIM_VAL', A.RANK_CD, 'COM007')	AS rankNm
+		    , A.DEFAULT_SCH_CD													AS defaultSchCd
 		FROM TB_USER A
 			 LEFT JOIN (
 				SELECT 
@@ -742,6 +751,8 @@
 		, EMPLOYMENT_TYPE
 		, CONTRACT_END_DATE
 		, GENDER
+		, DEFAULT_SCH_CD
+		, DEFAULT_SCH_SET_DATE
 		, USE_YN
 		, ACCOUNT_STATUS
 		, INSERT_NO
@@ -770,6 +781,8 @@
 		, #{employmentType}
 		, #{contractEndDate}
 		, #{gender}
+		, #{defaultSchCd}
+		, CASE WHEN #{defaultSchCd} IS NULL THEN NULL ELSE NOW() END
 		, 'Y'
 		, '04'
 		, #{gvUserCd}
@@ -777,7 +790,7 @@
 		, #{gvUserCd}
 		, NOW()
 	)
-	</insert>
+</insert>
 
 	<!-- 단건용 TB_USER_SITE_AUTH INSERT. 신규 사용자라 UPSERT 불필요(단순 INSERT). -->
 	<insert id="insertOneUserSiteAuth">

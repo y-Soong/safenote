@@ -77,7 +77,26 @@
     />
 
     <!-- 본문 (세로 섹션 스크롤) -->
-    <main class="admin-body">
+    <main
+      class="admin-body"
+      ref="bodyEl"
+      @touchstart.passive="onPullStart"
+      @touchmove="onPullMove"
+      @touchend="onPullEnd"
+      @touchcancel="onPullEnd"
+    >
+      <!-- 당겨서 새로고침 인디케이터 — 스크롤 최상단에서 아래로 당기면 노출(MainView 패턴 이식) -->
+      <div
+        class="pull-refresh"
+        :class="{ 'pull-refresh--animating': !isDragging }"
+        :style="{ height: pullIndicatorHeight + 'px' }"
+        aria-live="polite"
+      >
+        <span v-if="isRefreshing" class="pull-refresh__text">새로고침 중...</span>
+        <span v-else-if="pullReady" class="pull-refresh__text">놓으면 새로고침</span>
+        <span v-else-if="pullDistance > 0" class="pull-refresh__text">당겨서 새로고침</span>
+      </div>
+
       <!-- 로딩 -->
       <div v-if="isLoading" class="admin-loading" aria-live="polite">불러오는 중...</div>
 
@@ -88,14 +107,9 @@
       </div>
 
       <template v-else>
-        <!-- 1) 대시보드 (최상단, Phase 1=placeholder 영역만) -->
-        <section class="dashboard">
-          <h2 class="dashboard__title">대시보드</h2>
-          <div class="dashboard__placeholder" aria-live="polite">
-            <p class="dashboard__ph-text">실시간 근태 / 안전점검 / 위험성 발굴</p>
-            <p class="dashboard__ph-sub">준비 중입니다</p>
-          </div>
-        </section>
+        <!-- 1) 대시보드 (최상단) — prafta-app-025 J1-10 B-5: 요약 위젯 4종(자체 조회).
+             currentSiteCd 를 prop 으로 전달해 현장 전환 시 재조회되게 한다(C1: 서버 산출만 신뢰). -->
+        <AdminDashboard ref="dashboardRef" :site-cd="currentSiteCd" />
 
         <!-- 2~7) 모듈 세로 섹션 — enabled/scoped/note 는 서버 맵에서만(C1) -->
         <div class="module-list">
@@ -131,7 +145,7 @@
 </template>
 
 <script setup>
-import { ref, getCurrentInstance, onMounted } from 'vue'
+import { ref, computed, getCurrentInstance, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 
 import api from '@/api/axios'
@@ -140,6 +154,7 @@ import AdminHeader from './components/AdminHeader.vue'
 import AdminTabBar from './components/AdminTabBar.vue'
 import AdminModuleSection from './components/AdminModuleSection.vue'
 import AdminSiteSwitchSheet from './components/AdminSiteSwitchSheet.vue'
+import AdminDashboard from './components/AdminDashboard.vue'
 
 const router = useRouter()
 const { proxy } = getCurrentInstance() || { proxy: null }
@@ -171,21 +186,112 @@ const moduleScopedMap = ref({}) // { APPROVAL:true, ... } → 🔵 배지
 //   route 는 Phase 1 빈 골격(ComingSoon) → Phase 2~8 실화면으로 developer 가 교체.
 const modules = [
   { key: 'APPROVAL', title: '승인 관리', iconId: 'i-admin-approval', route: '/AdminApproval', note: '' },
-  { key: 'ATTD_DETAIL', title: '근태 상세', iconId: 'i-admin-attd', route: '/ComingSoon', note: '' },
-  { key: 'SAFETY', title: '안전 관리', iconId: 'i-admin-safety', route: '/ComingSoon', note: '' },
+  { key: 'ATTD_DETAIL', title: '근태 상세', iconId: 'i-admin-attd', route: '/AdminAttdDetail', note: '' },
+  { key: 'SAFETY', title: '안전 관리', iconId: 'i-admin-safety', route: '/AdminSafety', note: '' },
   { key: 'TBM', title: 'TBM 관리', iconId: 'i-admin-tbm', route: '/AdminTbm', note: '' },
-  { key: 'SITE_OPS', title: '현장 처리', iconId: 'i-admin-siteops', route: '/ComingSoon', note: '' },
-  { key: 'BOARD', title: '게시판', iconId: 'i-admin-board', route: '/ComingSoon', note: '준비중' },
+  { key: 'SITE_OPS', title: '현장 처리', iconId: 'i-admin-siteops', route: '/AdminSiteOps', note: '' },
+  { key: 'BOARD', title: '게시판', iconId: 'i-admin-board', route: '/AdminBoard', note: '' },
 ]
 
 // 현장 전환 시트 토글 (UI 토글 — 허용 범위)
 const siteSheetOpen = ref(false)
 
+// 대시보드 컴포넌트 ref — 당겨서 새로고침 시 대시보드 재조회를 명시 호출하기 위함.
+//   (현장 전환은 props.siteCd watch 로 자동 재조회되지만, 당겨서 새로고침은 siteCd 가
+//    바뀌지 않으므로 expose 된 refresh() 를 직접 호출한다.)
+const dashboardRef = ref(null)
+
+// ── 당겨서 새로고침 (MainView 패턴 이식) ───────────────────────────────────────
+//   1) touchstart 시점에 본문 스크롤이 최상단이면 추적 시작
+//   2) touchmove 에서 아래로 당긴 거리(저항감 0.5배)를 인디케이터 높이로 환산
+//   3) touchend 시 임계값 이상이면 새로고침 실행(access-context + 대시보드 재조회)
+const bodyEl = ref(null)
+const pullDistance = ref(0) // 현재 당김 거리(px, 인디케이터 높이)
+const isRefreshing = ref(false) // 새로고침 진행 중
+const isDragging = ref(false) // 손가락으로 당기는 중(애니메이션 토글용)
+const PULL_THRESHOLD = 70 // 이 거리 이상 당기고 놓으면 새로고침
+const MAX_PULL = 120 // 인디케이터 최대 높이
+
+const pullReady = computed(() => pullDistance.value >= PULL_THRESHOLD)
+const pullIndicatorHeight = computed(() => (isRefreshing.value ? 48 : pullDistance.value))
+
+let touchStartY = 0
+let tracking = false // 이 제스처를 추적 중인가(스크롤 컨테이너 최상단에서 시작했을 때만)
+let pullArmed = false // 당겨서 새로고침 모드로 확정됐는가(확정 후에만 preventDefault)
+// 방향 확정 데드존(px). 손가락을 댈 때 흔히 생기는 미세한 초기 떨림으로
+// preventDefault 가 걸려 네이티브 스크롤 제스처 전체가 취소되는 버그를 막는다.
+const PULL_ENGAGE_SLOP = 6
+
+// 본문 스크롤(.admin-body)이 최상단에 닿았는지 판정. 문서 스크롤 오판을 막기 위해
+//   반드시 스크롤 컨테이너 ref 의 scrollTop 으로 본다(MainView 동일).
+const isScrolledToTop = () => {
+  const el = bodyEl.value
+  if (!el) return false
+  return el.scrollTop <= 0
+}
+
+const onPullStart = (e) => {
+  if (isRefreshing.value) return
+  // 매 제스처 상태 초기화. 추적은 스크롤 컨테이너 최상단에서만 시작.
+  pullArmed = false
+  tracking = isScrolledToTop()
+  if (tracking) touchStartY = e.touches[0].clientY
+}
+
+const onPullMove = (e) => {
+  if (!tracking || isRefreshing.value) return
+  const delta = e.touches[0].clientY - touchStartY // 아래로 당기면 양수
+
+  // 아직 당김 모드로 확정되지 않았다면: 데드존을 넘는 '첫 의미있는 이동'에서 방향을 확정한다.
+  //   - 최상단에서 아래로 당긴 경우에만 새로고침 모드(pullArmed)로 진입.
+  //   - 그 외(위로 스크롤 등)는 추적을 끊어 이후 preventDefault 가 절대 호출되지 않게 한다
+  //     → 네이티브 스크롤 제스처가 보존된다(상단 붙음/스크롤 먹힘 버그 방지).
+  if (!pullArmed) {
+    if (Math.abs(delta) < PULL_ENGAGE_SLOP) return // 판단 보류(네이티브 스크롤 그대로 둠)
+    if (delta > 0 && isScrolledToTop()) {
+      pullArmed = true
+    } else {
+      tracking = false
+      return
+    }
+  }
+
+  isDragging.value = true
+  pullDistance.value = Math.min(MAX_PULL, delta * 0.5) // 저항감
+  // iOS 고무줄/추가 스크롤 억제(당김 모드로 확정된 경우에만)
+  if (e.cancelable) e.preventDefault()
+}
+
+const onPullEnd = async () => {
+  isDragging.value = false
+  const wasArmed = pullArmed
+  pullArmed = false
+  if (!tracking) return
+  tracking = false
+  const shouldRefresh = wasArmed && pullDistance.value >= PULL_THRESHOLD
+  pullDistance.value = 0
+  if (!shouldRefresh || isRefreshing.value) return
+  isRefreshing.value = true
+  try {
+    // access-context 재조회(현장/모듈맵 갱신) + 대시보드 재조회를 함께 수행.
+    //   access-context 는 진입 로딩(isLoading)을 켜지 않고 인디케이터만 쓰도록 silent 호출.
+    //   대시보드는 currentSiteCd 가 그대로라 watch 가 발화하지 않으므로 expose refresh 를 직접 호출.
+    await Promise.all([
+      loadAccessContext(undefined, { silent: true }),
+      dashboardRef.value?.refresh?.(),
+    ])
+  } finally {
+    isRefreshing.value = false
+  }
+}
+
 // ── 진입판정 조회 ─────────────────────────────────────────────────────────────
 // access-context 조회. siteCd 지정 시 현장전환 재조회(D5 — 서버가 USE_YN='Y' 검증).
 //   401/403 토큰 에러는 axios 인터셉터가 처리. 그 외 실패는 진입 차단 + 안내.
-const loadAccessContext = async (siteCd) => {
-  isLoading.value = true
+//   silent=true(당겨서 새로고침): 전체 로딩(isLoading)을 켜지 않아 본문 카드를 유지하고
+//     자체 인디케이터만 노출한다(MainView showLoading=false 패턴).
+const loadAccessContext = async (siteCd, { silent = false } = {}) => {
+  if (!silent) isLoading.value = true
   try {
     const params = siteCd ? { siteCd } : {}
     const { data } = await api.get('/appApi/admin/access-context', { params })
@@ -207,7 +313,7 @@ const loadAccessContext = async (siteCd) => {
     canEnterAdmin.value = false
     await showAlert('관리자 정보를 불러오지 못했습니다. 잠시 후 다시 시도해 주세요.')
   } finally {
-    isLoading.value = false
+    if (!silent) isLoading.value = false
   }
 }
 
@@ -257,13 +363,27 @@ const onTabClick = (tabKey) => {
     return
   }
 
+  // prafta-app-025 J1-5: 근태 탭은 실화면(/AdminAttdDetail)으로 라우팅.
+  if (moduleKey === 'ATTD_DETAIL') {
+    router.push({ path: '/AdminAttdDetail' })
+    return
+  }
+
+  // prafta-app-025 J1-6: 안전 탭은 실화면(/AdminSafety 안전 허브)으로 라우팅.
+  if (moduleKey === 'SAFETY') {
+    router.push({ path: '/AdminSafety' })
+    return
+  }
+
   // Phase 1 = ComingSoon 으로 라우팅(query.module 로 모듈 키 전달, Phase 2~8 실화면 교체).
   router.push({ path: '/ComingSoon', query: { module: moduleKey } })
 }
 
-// 우상단 설정 진입. Phase 1 = ComingSoon(개인 알림/푸시 on/off 등 추후).
+// 우상단 설정 진입 — prafta-app-025 J1-9(MVP): 관리자 "설정"=관리자 개인 환경설정(푸시 on/off 등)으로 정의.
+//   기존 본인 푸시 알림 설정 화면(/PushSetting, prafta-app-021)을 재사용한다(USER_CD=JWT 본인 설정).
+//   푸시 외 추가 설정 항목(기본 진입 사업장 등)이 필요하면 후속에서 AdminSettingsView 신설.
 const onSettings = () => {
-  router.push({ path: '/ComingSoon', query: { module: 'SETTINGS' } })
+  router.push('/PushSetting')
 }
 
 // 현장 전환 트리거 → 시트 오픈
@@ -313,7 +433,11 @@ onMounted(() => {
   --space-md: 12px;
   --space-lg: 16px;
 
-  min-height: 100%;
+  /* 앱 셸은 뷰포트 높이로 '고정'한다(min-height 가 아님). 그래야 내부 .admin-body 가
+     실제 스크롤 컨테이너가 되고, 내용이 길어도 문서(body)로 스크롤이 새지 않는다
+     (당겨서 새로고침의 scrollTop 판정 정확도 보장). dvh 미지원 환경은 vh 로 폴백. */
+  height: 100vh;
+  height: 100dvh;
   background: var(--color-bg);
   color: var(--color-text-primary);
   display: flex;
@@ -326,8 +450,30 @@ onMounted(() => {
 /* 본문 — 헤더(56)와 탭바(72) 사이, 탭바에 가려지지 않도록 하단 패딩(MainView .main 패턴) */
 .admin-body {
   flex: 1;
+  /* flex 자식의 기본 min-height:auto 는 내용이 길면 축소를 막아 overflow-y 스크롤이
+     컨테이너 대신 문서로 새는 원인이 된다(스크롤 위치 오판 → 당겨서 새로고침 오작동).
+     min-height:0 으로 .admin-body 를 실제 스크롤 컨테이너로 고정한다(MainView .main 동일). */
+  min-height: 0;
   padding: var(--space-sm) var(--space-lg) 88px;
   overflow-y: auto;
+}
+
+/* 당겨서 새로고침 인디케이터 — 당김 거리에 따라 높이가 늘어났다 줄어든다(MainView 이식) */
+.pull-refresh {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  height: 0;
+  color: var(--color-text-secondary);
+  font-size: 13px;
+}
+/* 손가락을 뗀 뒤(또는 새로고침 중)에는 부드럽게 높이 전환, 당기는 중에는 즉시 반응 */
+.pull-refresh--animating {
+  transition: height 0.2s ease;
+}
+.pull-refresh__text {
+  padding: 8px 0;
 }
 
 .admin-loading,
@@ -357,29 +503,6 @@ onMounted(() => {
   font-size: 18px;
   font-weight: 700;
   color: var(--color-text-primary);
-}
-.dashboard__placeholder {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: var(--space-xs);
-  min-height: 120px;
-  padding: var(--space-lg);
-  background: var(--color-surface);
-  border: 1px dashed var(--color-border);
-  border-radius: var(--radius-lg);
-}
-.dashboard__ph-text {
-  margin: 0;
-  font-size: 14px;
-  font-weight: 500;
-  color: var(--color-text-secondary);
-}
-.dashboard__ph-sub {
-  margin: 0;
-  font-size: 12px;
-  color: var(--color-text-tertiary);
 }
 
 /* 모듈 세로 섹션 리스트 */

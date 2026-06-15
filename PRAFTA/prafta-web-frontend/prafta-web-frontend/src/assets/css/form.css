@@ -17,6 +17,11 @@
   flex-wrap: wrap;
 }
 
+/* 첫 번째 조회조건 항목이 좌측 끝에 붙지 않도록 약간의 여백 부여 */
+.viewSearch > div:first-child {
+  margin-left: var(--space-md, 0.75rem);
+}
+
 .viewSearch label {
   min-width: 100px;
   font-weight: 500;

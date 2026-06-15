@@ -3,11 +3,35 @@
     <!-- 로고 / 브랜드 -->
     <div class="brand">
       <img :src="safenote_logo" class="brand-logo" alt="logo" />
-      <h1 class="brand-title">SAFETY NOTE</h1>
+      <h1 class="brand-title">SAFENOTE</h1>
     </div>
 
     <!-- 로그인 박스 -->
     <div class="login-box">
+      <!-- 사용자 유형 토글 (PRAFTA-app-027-5) -->
+      <div class="user-type-toggle" role="tablist" aria-label="사용자 유형">
+        <button
+          type="button"
+          class="user-type-btn"
+          :class="{ 'user-type-btn--active': userType === 'REGULAR' }"
+          role="tab"
+          :aria-selected="userType === 'REGULAR'"
+          @click="userType = 'REGULAR'"
+        >
+          정규 사용자
+        </button>
+        <button
+          type="button"
+          class="user-type-btn"
+          :class="{ 'user-type-btn--active': userType === 'DAILY' }"
+          role="tab"
+          :aria-selected="userType === 'DAILY'"
+          @click="userType = 'DAILY'"
+        >
+          일용직
+        </button>
+      </div>
+
       <!-- 아이디 입력 -->
       <div class="field">
         <input
@@ -108,10 +132,13 @@ import { useRouter, useRoute } from 'vue-router'
 import safenote_logo from '@/assets/img/safenote_sign.png'
 import axios from '@/api/axios'
 import { requestDeviceInfo, getCachedDeviceMeta } from '@/utils/deviceBridge'
+import { registerPushToken } from '@/utils/pushTokenBridge'
 
 const userId = ref('')
 const password = ref('')
 const rememberId = ref(false)
+/* 사용자 유형 (PRAFTA-app-027-5): 'REGULAR' | 'DAILY'. 기본 정규. */
+const userType = ref('REGULAR')
 const showPassword = ref(false)
 const router = useRouter()
 const route = useRoute()
@@ -148,6 +175,12 @@ const fnSubmitLogin = async () => {
     return
   }
 
+  // PRAFTA-app-027-5: 일용직 토글 선택 시 별도 EP 로 분기(정규 흐름과 완전 분리).
+  if (userType.value === 'DAILY') {
+    await fnSubmitDailyLogin()
+    return
+  }
+
   try {
     // prafta-com-003 C4: 네이티브 디바이스 정보 취득(브리지 부재/실패 시 폴백, 로그인 차단 안 함).
     //   deviceId 는 axios 인터셉터가 gv_deviceId 로 동봉하므로 여기서는 메타(type/model/os/app)만 body 에 추가한다.
@@ -179,6 +212,19 @@ const fnSubmitLogin = async () => {
         return
       }
 
+      // PRAFTA-COM-008-E-8c: 기본 근무타입 미설정(교대 비소속) 게이트.
+      // 임시 scope=DEFAULT_SCH 토큰을 history state 로만 전달(URL 노출 금지).
+      if (response.data?.nextStep === 'DEFAULT_SCH') {
+        router.push({
+          path: '/DefaultSchGate',
+          state: {
+            defaultSchToken: response.data.token,
+            cmpnyCd: response.data.cmpnyCd,
+          },
+        })
+        return
+      }
+
       // 정책 §11.1에 따라 휴대폰(mblNo)/이메일(email)은 응답에 없으며 sessionStorage/store에 보관하지 않는다.
       const {
         token,
@@ -194,6 +240,7 @@ const fnSubmitLogin = async () => {
         authCd,
         authLevel,
         refreshToken,
+        employmentType,
       } = response.data
 
       // ✅ 로그인 토큰 세팅
@@ -211,7 +258,13 @@ const fnSubmitLogin = async () => {
       sessionStorage.setItem('gv_nodeNm', nodeNm)
       sessionStorage.setItem('gv_authCd', authCd)
       sessionStorage.setItem('gv_authLevel', authLevel)
+      // prafta-app-025 J1-4: 고용형태(일용직=DAILY) 저장. 각 화면이 라운드트립 없이 근태조회 숨김 판정에 사용.
+      sessionStorage.setItem('gv_employmentType', employmentType || '')
       localStorage.setItem('refreshToken', refreshToken)
+
+      // prafta-com-008-F (F03): 로그인 성공(토큰 저장) 직후 푸시 토큰 등록.
+      //   fire-and-forget — 실패해도 로그인/라우팅을 막지 않는다(권한 거부 사용자도 정상 진행).
+      registerPushToken()
 
       // ✅ 아이디 저장 처리
       if (rememberId.value) {
@@ -228,6 +281,86 @@ const fnSubmitLogin = async () => {
 
       // router.push('/MainView');
       // router.replace('/MainView')
+    }
+  } catch (err) {
+    await proxy.$alert(err.response?.data?.message || '로그인에 실패했습니다.')
+  }
+}
+
+/**
+ * PRAFTA-app-027-5: 일용직 직접 로그인.
+ *   - POST /comApi/dailyLogin/login (userId/userPw + 디바이스 메타)
+ *   - 응답에 nextStep(PHONE_AUTH/DEFAULT_SCH) 게이트 없음. 토큰/세션 저장 후 곧바로 MainView 라우팅.
+ *   - 일용직은 NODE/AUTH 미발급 → 해당 세션 키는 빈값으로 저장(다운스트림 호환).
+ *   - gv_userTrack='DAILY' + gv_employmentType='DAILY' 저장(MainView/J1-4 화면 숨김 신호 재사용).
+ *   - 차단(비활성/만료/오ID/오비번/탈퇴)은 백엔드 통합 메시지를 그대로 노출(계정 존재 비노출).
+ */
+const fnSubmitDailyLogin = async () => {
+  try {
+    try {
+      await requestDeviceInfo()
+    } catch (e) {
+      console.warn('[DailyLogin] 디바이스 정보 취득 실패(로그인 영향 없음):', e?.message)
+    }
+    const deviceMeta = getCachedDeviceMeta()
+
+    const response = await axios.post('/comApi/dailyLogin/login', {
+      userId: userId.value,
+      userPw: password.value,
+      ...deviceMeta,
+    })
+
+    if (response.status === 200) {
+      const {
+        token,
+        userCd,
+        userId: id,
+        userNm,
+        cmpnyCd,
+        siteCd,
+        siteNo,
+        siteNm,
+        authCd,
+        authLevel,
+        employmentType,
+        userTrack,
+        refreshToken,
+      } = response.data
+
+      // ✅ 로그인 토큰 세팅
+      sessionStorage.setItem('token', token)
+      axios.defaults.headers.common.Authorization = `Bearer ${token}`
+
+      sessionStorage.setItem('gv_cmpnyCd', cmpnyCd)
+      sessionStorage.setItem('gv_userCd', userCd)
+      sessionStorage.setItem('gv_userId', id)
+      sessionStorage.setItem('gv_userNm', userNm)
+      sessionStorage.setItem('gv_siteCd', siteCd)
+      // PRAFTA-app-027-5'(통합형): 일용직도 TB_USER 정식 사용자 → 정규 동일 세션 값 저장.
+      sessionStorage.setItem('gv_siteNo', siteNo || '')
+      sessionStorage.setItem('gv_authCd', authCd || '')
+      sessionStorage.setItem('gv_authLevel', authLevel || '')
+      sessionStorage.setItem('gv_siteNm', siteNm)
+      // NODE_CD=NULL(일용직 무소속) — 노드 세션 키는 빈값 유지.
+      sessionStorage.setItem('gv_nodeCd', '')
+      sessionStorage.setItem('gv_nodeNm', '')
+      // 일용직 식별: 트랙 + 고용형태(J1-4 근태조회 숨김 신호 재사용, 응답값 사용·폴백 'DAILY').
+      sessionStorage.setItem('gv_userTrack', userTrack || 'DAILY')
+      sessionStorage.setItem('gv_employmentType', employmentType || 'DAILY')
+      localStorage.setItem('refreshToken', refreshToken)
+
+      // 로그인 성공 직후 푸시 토큰 등록(fire-and-forget).
+      registerPushToken()
+
+      // ✅ 아이디 저장 처리
+      if (rememberId.value) {
+        localStorage.setItem('savedUserId', userId.value)
+      } else {
+        localStorage.removeItem('savedUserId')
+      }
+
+      const redirect = route.query.redirect
+      router.replace(redirect || '/MainView')
     }
   } catch (err) {
     await proxy.$alert(err.response?.data?.message || '로그인에 실패했습니다.')
@@ -313,6 +446,33 @@ function acountInfoSrch() {
   border-radius: 16px;
   padding: 1.5rem;
   box-sizing: border-box;
+}
+
+/* 사용자 유형 토글 (PRAFTA-app-027-5) */
+.user-type-toggle {
+  display: flex;
+  width: 100%;
+  margin-bottom: 1rem;
+  border: 1px solid #e5e7eb;
+  border-radius: 10px;
+  overflow: hidden;
+}
+
+.user-type-btn {
+  flex: 1;
+  padding: 0.6rem 0;
+  background: #fff;
+  color: #6b7280;
+  font-size: 0.9rem;
+  font-weight: 600;
+  border: none;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+}
+
+.user-type-btn--active {
+  background: #16a34a;
+  color: #fff;
 }
 
 .field {

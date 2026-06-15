@@ -20,6 +20,7 @@ import com.prafta.web.tbm.tbm02.application.query.SessionDetailQuery;
 import com.prafta.web.tbm.tbm02.application.query.SessionListQuery;
 import com.prafta.web.tbm.tbm02.application.query.EntryCandidateQuery;
 import com.prafta.web.tbm.tbm02.application.query.EntryTargetQuery;
+import com.prafta.web.tbm.tbm02.result.AutoStartTargetResult;
 import com.prafta.web.tbm.tbm02.result.ContentOptionResult;
 import com.prafta.web.tbm.tbm02.result.RiskOptionResult;
 import com.prafta.web.tbm.tbm02.result.SessionContentResult;
@@ -93,6 +94,12 @@ public interface Tbm02Mapper {
 
 	/** 15분 자동 교육시작 배치(prafta-051-06): OPENED AND PREP_START_AT+15분 경과 → IN_PROGRESS 일괄 전이. */
 	int bulkStartExpiredPrep();
+
+	/**
+	 * PRAFTA-APP-021-3b(W3 자동시작): 자동전이 대상(OPENED + PREP_START_AT 15분 경과) 세션 키 목록.
+	 * bulkStartExpiredPrep 와 동일 WHERE 로, 일괄 전이 직전 시작 PUSH 대상(cmpnyCd/siteCd/managerUserCd)을 포착한다.
+	 */
+	List<AutoStartTargetResult> selectExpiredPrepForStart();
 
 	/* ===== PRAFTA-051-11 관리자 대리/검색 입실 ===== */
 

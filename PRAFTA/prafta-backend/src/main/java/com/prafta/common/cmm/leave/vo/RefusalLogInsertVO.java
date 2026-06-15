@@ -31,14 +31,20 @@ public class RefusalLogInsertVO {
     /** 노무수령거부 대상일 (YYYYMMDD, =연차촉진 사용지정일) */
     private String targetYmd;
 
-    /** 이벤트 유형 [SYS064] NOTICED / CHECKIN_DETECTED / ADMIN_ALERTED */
+    /** 이벤트 유형 [SYS064] NOTICED / CHECKIN_DETECTED / ADMIN_ALERTED / BLOCKED */
     private String eventType;
+
+    /** 차단 시도 유형 [SYS064 BLOCKED 부가] CHECK_IN / CHECK_OUT / ATTD_CREATE / ADMIN_ENTRY (BLOCKED 시) */
+    private String attemptType;
 
     /** 연관 알림 ID (tb_noti_outbox.NOTI_ID, NOTICED/ADMIN_ALERTED 시) */
     private String relatedNotiId;
 
     /** 연관 근태 ID (tb_user_attd_mgmt.ATTD_ID, CHECKIN_DETECTED 시) */
     private String relatedAttdId;
+
+    /** 연계 연차사용 ID (tb_user_leave_use.LEAVE_ID, BLOCKED 시 차단 대상 연차) */
+    private String relatedLeaveId;
 
     /** 출근 감지 일시 세팅 여부 (CHECKIN_DETECTED 시 true → NOW() 기록) */
     private boolean detectNow;
