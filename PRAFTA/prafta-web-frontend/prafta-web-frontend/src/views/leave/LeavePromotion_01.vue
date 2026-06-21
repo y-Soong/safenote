@@ -80,7 +80,7 @@
       </div>
       <div>
         <label>1년차 구분</label>
-        <select v-model="tenureType" class="lp-tenure-select">
+        <select v-model="tenureType" class="lp-type-select">
           <option value="ALL">전체</option>
           <option value="UNDER1">1년차 미만</option>
           <option value="OVER1">1년차 이상</option>
@@ -101,7 +101,18 @@
     </div>
 
     <!-- 본문: 2차 대상자 테이블 -->
-    <div class="viewBody lp-body">
+    <div class="viewBody lp-body subtitle-pane">
+      <!-- 소제목 바 (User_01 패턴 차용) -->
+      <div class="subtitle-row">
+        <div class="subtitle">
+          <span class="subtitle-icon" aria-hidden="true">
+            <svg viewBox="0 0 24 24" width="18" height="18">
+              <path d="M4 4h16v4H4zM4 10h10v10H4z" />
+            </svg>
+          </span>
+          <span class="subtitle-text">사용자 리스트</span>
+        </div>
+      </div>
       <div class="lp-table-wrap">
         <table class="lp-table">
           <thead>
@@ -498,87 +509,138 @@ onMounted(() => {
 </script>
 
 <style scoped>
-.lp-body {
-  padding: 0;
-}
-.lp-table-wrap {
-  width: 100%;
-  overflow-x: auto;
-}
-.lp-table {
-  width: 100%;
-  border-collapse: collapse;
-  font-size: var(--btn-font, 11px);
-}
-.lp-table th,
-.lp-table td {
-  border-bottom: 1px solid var(--color-border);
-  padding: 8px 10px;
-  text-align: center;
-  color: var(--color-text);
+/* ── 조회 영역 (Attd_12 패턴 차용) ── */
+.checkbox-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  font-size: 0.85rem;
+  color: var(--color-text-muted);
+  cursor: pointer;
+  user-select: none;
+  margin-left: -1rem;
+  margin-right: 0.4rem;
   white-space: nowrap;
 }
-.lp-table th {
-  background: var(--color-bg);
+.checkbox-label input[type="checkbox"] {
+  width: 13px;
+  height: 13px;
+  cursor: pointer;
+  accent-color: var(--color-primary);
+  flex-shrink: 0;
+}
+.lp-type-select {
+  height: 28px;
+  padding: 0 0.5rem;
+  border: 1px solid var(--color-border-strong);
+  border-radius: 4px;
+  font-size: 0.875rem;
   color: var(--color-text-strong);
-  font-weight: 600;
-}
-.lp-cell-left {
-  text-align: left;
-}
-.lp-cell-num {
-  text-align: right;
-}
-.lp-empty {
-  padding: 32px 0;
-  color: var(--color-text-muted);
+  background: var(--color-surface);
 }
 
+/* ── 조회 영역 액션 버튼 (자동배치 / 엑셀 업로드) ── */
 .lp-actions {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 0.4rem;
 }
 .lp-excel-input {
   display: none;
 }
 .lp-batch-btn,
 .lp-excel-up-btn {
-  height: var(--btn-height, 29px);
-  padding: 0 var(--btn-padding, 11px);
-  border-radius: var(--btn-radius, 8px);
+  height: 28px;
+  padding: 0 0.6rem;
+  border-radius: 4px;
   border: 1px solid var(--color-border-strong);
   background: var(--color-surface);
-  color: var(--color-text);
-  font-size: var(--btn-font, 11px);
+  color: var(--color-text-strong);
+  font-size: 0.875rem;
   cursor: pointer;
+}
+.lp-batch-btn:hover,
+.lp-excel-up-btn:hover {
+  border-color: var(--color-primary);
+  color: var(--color-primary);
 }
 .lp-batch-btn {
   border-color: var(--color-primary);
   color: var(--color-primary);
 }
 
+/* ── 본문 / 테이블 (Attd_12 패턴 차용) ── */
+.lp-body {
+  display: flex;
+  flex-direction: column;
+  padding: 0.75rem;
+  overflow: hidden;
+  min-height: 0;
+}
+.lp-table-wrap {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: auto;
+  border: 1px solid var(--color-border);
+  border-radius: 6px;
+  background: var(--color-surface);
+}
+.lp-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.85rem;
+}
+.lp-table thead th {
+  background: var(--thead-bg, #f3f4f6);
+  border: 1px solid var(--color-border);
+  padding: 0.5rem 0.4rem;
+  line-height: 1.2;
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  text-align: center;
+  white-space: nowrap;
+  color: var(--color-text);
+  font-weight: 600;
+}
+.lp-table tbody td {
+  border: 1px solid var(--color-border);
+  padding: 0.4rem;
+  text-align: center;
+  white-space: nowrap;
+  color: var(--color-text);
+  vertical-align: middle;
+}
+.lp-table tbody tr:hover {
+  background: var(--color-bg);
+}
+.lp-cell-left {
+  text-align: left;
+}
+.lp-cell-num {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+.lp-empty {
+  padding: 2rem;
+  color: var(--color-text-muted);
+  text-align: center;
+}
+
+/* ── 행 액션 버튼 (2차촉진 지정) ── */
 .lp-designate-btn {
-  height: var(--btn-height-sm, 26px);
-  padding: 0 var(--btn-padding-sm, 10px);
-  border-radius: var(--btn-radius, 8px);
+  height: 26px;
+  padding: 0 0.6rem;
+  border-radius: 4px;
   border: 0;
   background: var(--color-primary);
   color: var(--color-surface);
-  font-size: var(--btn-font-sm, 11px);
+  font-size: 0.8rem;
   cursor: pointer;
 }
 .lp-designate-btn:disabled {
   background: var(--color-border);
   color: var(--color-text-muted);
   cursor: default;
-}
-
-.lp-tenure-select {
-  height: var(--btn-height, 29px);
-  border: 1px solid var(--color-border-strong);
-  border-radius: var(--input-radius, 10px);
-  padding: 0 8px;
-  font-size: var(--btn-font, 11px);
 }
 </style>

@@ -4,7 +4,7 @@
   - 정책 출처: 작업지시서 §2-2(캘린더 하단 행 추가 + 날짜 키인), §2-2(1일 단위만)
   - 참조 패턴: views/leave/components/LeaveApplyForm.vue (행/입력 + 디자인 토큰)
   - 동작: 캘린더로 고른 날짜를 행으로 보여주고, 직접 키인(추가)·행 삭제. 캘린더와 동일 모델 공유.
-  - 공통 날짜입력 컴포넌트가 앱 디자인시스템에 없어 native <input type="date"> 허용(예외 표기).
+  - 날짜 키인은 공통 DateStepperField(휠 바텀시트) 사용. modelValue 'YYYY-MM-DD' 계약 유지.
   - planner 라운드: template + scoped style 완성, script 는 props/emits/ref 선언 + TODO.
   - developer 라운드: 키인 추가 시 중복/선택가능 검증(부모 selectableYmds 기준) 후 emit.
 -->
@@ -28,15 +28,14 @@
     </ul>
     <p v-else class="lpd__empty">캘린더에서 날짜를 선택하거나 아래에서 직접 추가하세요.</p>
 
-    <!-- 행 추가 (날짜 키인) -->
+    <!-- 행 추가 (날짜 키인) — 공통 날짜 휠 필드(modelValue 'YYYY-MM-DD'). 최종 가용성은 onAdd 검증. -->
     <div class="lpd__add">
-      <!-- 앱 공통 날짜입력 컴포넌트 부재 → native date 허용(예외). -->
-      <input
+      <DateStepperField
         v-model="keyinYmd"
-        type="date"
         class="lpd__add-input"
-        :min="minDate"
-        :max="maxDate"
+        placeholder="날짜 선택"
+        :min-year="minYear"
+        :max-year="maxYear"
       />
       <button
         type="button"
@@ -52,6 +51,9 @@
 
 <script setup>
 import { ref, computed, getCurrentInstance } from 'vue'
+
+import { formatYmdDisplay } from '@/utils/approvalFormat'
+import DateStepperField from '@/components/common/DateStepperField.vue'
 
 const { proxy } = getCurrentInstance() || { proxy: null }
 const showAlert = (message) => {
@@ -71,7 +73,7 @@ const props = defineProps({
     type: Array,
     default: () => [],
   },
-  // 키인 가능 최소/최대일 (YYYY-MM-DD, native input 용) — 부모가 촉진 기간으로 전달
+  // 키인 가능 최소/최대일 (YYYY-MM-DD) — 부모가 촉진 기간으로 전달(휠 연도 범위 도출)
   minDate: {
     type: String,
     default: '',
@@ -84,16 +86,24 @@ const props = defineProps({
 
 const emit = defineEmits(['update:modelValue'])
 
-// native input(YYYY-MM-DD) 바인딩 임시값
+// 날짜 휠 필드(YYYY-MM-DD) 바인딩 임시값
 const keyinYmd = ref('')
+
+// minDate/maxDate(YYYY-MM-DD)에서 연도 범위 도출 — 휠 연도 클램프용(최종 가용성은 onAdd 검증).
+const yearOf = (dash, fallback) => {
+  const y = Number(String(dash || '').slice(0, 4))
+  return Number.isFinite(y) && y > 0 ? y : fallback
+}
+const minYear = computed(() => yearOf(props.minDate, 1900))
+const maxYear = computed(() => yearOf(props.maxDate, 2100))
 
 // 표시용 오름차순 정렬
 const sortedYmds = computed(() => [...props.modelValue].sort())
 
-// YYYYMMDD → "YYYY-MM-DD (요일)" 표시는 developer 가 요일 계산 보완.
+// YYYYMMDD → "YYYY.MM.DD" 표시 (D1 점 통일, 표시 단일 출처 위임).
 const formatYmd = (ymd) => {
   if (!ymd || ymd.length !== 8) return ymd || ''
-  return `${ymd.slice(0, 4)}-${ymd.slice(4, 6)}-${ymd.slice(6, 8)}`
+  return formatYmdDisplay(ymd)
 }
 
 // 행 삭제
@@ -104,7 +114,7 @@ const onRemove = (ymd) => {
 // 날짜 키인 추가 — 중복/선택가능 검증 후 추가.
 const onAdd = () => {
   if (!keyinYmd.value) return
-  // native 'YYYY-MM-DD' → 'YYYYMMDD'
+  // 'YYYY-MM-DD' → 'YYYYMMDD'
   const ymd = keyinYmd.value.replace(/-/g, '')
   // 단순 UI 검증(중복·선택가능). 상세 사유 메시지는 developer 가 보완.
   if (props.modelValue.includes(ymd)) {

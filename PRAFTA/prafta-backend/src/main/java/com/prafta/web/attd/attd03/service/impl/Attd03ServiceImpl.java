@@ -1,9 +1,5 @@
 package com.prafta.web.attd.attd03.service.impl;
 
-import java.time.LocalDate;
-import java.time.format.DateTimeFormatter;
-import java.time.format.DateTimeParseException;
-import java.time.format.ResolverStyle;
 import java.util.List;
 
 import org.springframework.stereotype.Service;
@@ -37,14 +33,10 @@ public class Attd03ServiceImpl implements Attd03Service{
 	private static final java.util.Set<String> ALLOWED_AVAIL_TERM_TYPES =
 			java.util.Set.of("01", "02", "03");
 
-	// SYS026='03'(기간설정) 코드값. 이 값일 때만 from/to 날짜를 영속한다.
+	// SYS026='03'(기간설정) 코드값.
+	//  - 사용자 신청('01'): 이 값일 때만 from/to(MMDD) 영속.
+	//  - 관리자 부여('02'): 이 값일 때만 adminAvailMonths(N개월) 영속(prafta-com-016-B).
 	private static final String AVAIL_TERM_PERIOD = "03";
-
-	// 관리자 부여 사용기간(ADMIN_AVAIL_FROM_DT/TO_DT) YYYYMMDD 8자 절대 날짜 검증용 포맷터.
-	// (prafta-044-FU2: 컬럼 varchar(6)→varchar(8) 확장. 화면은 YYYY-MM-DD → YYYYMMDD 8자로 전송.)
-	// STRICT: 02/30 같은 존재하지 않는 날짜를 거부한다.
-	private static final DateTimeFormatter ADMIN_AVAIL_YMD8 =
-			DateTimeFormatter.ofPattern("uuuuMMdd").withResolverStyle(ResolverStyle.STRICT);
 
 	private final Attd03Mapper attd03Mapper;
 		
@@ -68,15 +60,18 @@ public class Attd03ServiceImpl implements Attd03Service{
 
 		// prafta-044-FU(검토 후속): 사용가능기간 타입(SYS026) 화이트리스트 검증 + 날짜 null 강제/형식 검증 (서버 권위)
 		//  - availTermType    : 사용자 신청(leaveType='01') → availFromDt/availToDt(MMDD)
-		//  - adminAvailTermType: 관리자 부여(leaveType='02', 자동/수동 모두) → adminAvailFromDt/adminAvailToDt
+		//  - adminAvailTermType: 관리자 부여(leaveType='02', 자동/수동 모두) → adminAvailMonths(부여일+N개월, prafta-com-016-B)
 		validateAvailTermType(param);
 
 		String[] normalizedAvail = normalizeUserAvailDates(param);          // [availFromDt, availToDt]
-		String[] normalizedAdminAvail = normalizeAdminAvailDates(param);    // [adminAvailFromDt, adminAvailToDt]
+		Integer normalizedAdminMonths = normalizeAdminAvailMonths(param);   // 관리자 '03' N개월(그 외 null)
 
+		// com-013-03(03-1): 신규 등록(leaveCd 미전송/빈값)이면 서버 채번, 수정이면 전달된 코드 유지.
+		//   기존 `!= ""` 참조 비교는 항상 true 라 빈 문자열도 그대로 INSERT 키로 쓰여
+		//   채번 분기를 타지 못하던 결함이 있었다. isBlank() 로 교정한다.
 		String leaveCd = null;
 
-		if(param.leaveCd() != null && param.leaveCd() != "") {
+		if (param.leaveCd() != null && !param.leaveCd().isBlank()) {
 			leaveCd = param.leaveCd();
 		} else {
 			leaveCd = attd03Mapper.selectLeaveCd(param.gvCmpnyCd());
@@ -90,13 +85,15 @@ public class Attd03ServiceImpl implements Attd03Service{
 			throw new ApiException(AttdErrorCode.ATTD_400_003);
 		}
 
+		// com-013-03(03-1): 채번/전달된 leaveCd 를 INSERT 키로 명시 전달.
+		//   기존엔 param.leaveCd()(신규=null)를 그대로 영속해 PK 가 null 로 들어가던 결함을 해소한다.
 		attd03Mapper.updateLeaveType(LeaveTypeCommand.from(
 				param
 				, normalizedUseUnitType
 				, normalizedAvail[0]
 				, normalizedAvail[1]
-				, normalizedAdminAvail[0]
-				, normalizedAdminAvail[1]));
+				, normalizedAdminMonths
+				, leaveCd));
 
 	}
 
@@ -184,74 +181,41 @@ public class Attd03ServiceImpl implements Attd03Service{
 	}
 
 	/**
-	 * 관리자 부여(leaveType='02') 사용기간 from/to 정규화 (prafta-044-FU).
+	 * 관리자 부여(leaveType='02') 사용가능 개월수 정규화 (prafta-com-016-B 3-2).
 	 *
-	 * <p>adminAvailTermType != '03' 이면 from/to 를 null 로 강제. '03'(기간설정)이면
-	 * from/to 가 필수이고 from<=to 여야 한다.
+	 * <p>관리자 부여 '03'(기간설정)의 의미를 절대 날짜 범위에서 "부여일로부터 N개월"(상대기간)으로
+	 * 변경한다. 만료는 부여 시점에 {@code LeaveDashboardServiceImpl.resolveManualAvailToDate} 가
+	 * {@code 부여일 + N개월}로 산출한다.
 	 *
-	 * <p><b>형식(prafta-044-FU2, schema 권위):</b> ADMIN_AVAIL_FROM_DT/TO_DT 는 varchar(8)
-	 * 이며 YYYYMMDD 8자리 <b>절대 날짜</b>(예 20260101~20261231)를 저장한다. 화면은
-	 * CalendarSrch(YYYY-MM-DD)에서 입력받아 전송 시 YYYYMMDD 8자로 변환한다. 본 검증은
-	 * (1) 8자리 숫자 + 실제 존재하는 날짜(STRICT, LocalDate.parse) (2) from<=to(동일 포맷
-	 * 사전식 비교) 를 강제한다. 직전 FU 의 "길이<=6 임시검증"을 본 검증으로 대체.
-	 *
-	 * <p>※ 사용자 신청('01')의 AVAIL_FROM_DT/TO_DT(varchar(4) MMDD)는 별개 설계 — 본 메서드
-	 * 범위 밖({@link #normalizeUserAvailDates}).
+	 * <ul>
+	 *   <li>관리자 부여 타입('02')이 아니면 입력값 그대로(다른 분기).</li>
+	 *   <li>adminAvailTermType != '03' 이면 개월수 null 강제(설정안함/해당연도내는 개월 미사용).</li>
+	 *   <li>'03'(기간설정)이면 개월수 필수 + 1~99 정수.</li>
+	 * </ul>
 	 *
 	 * <p>위반 시 {@link AttdErrorCode#ATTD_400_032}.
 	 *
-	 * @return {@code [adminAvailFromDt, adminAvailToDt]} (영속할 정규화 값)
+	 * @return 영속할 정규화된 adminAvailMonths(그 외 null)
 	 */
-	private String[] normalizeAdminAvailDates(LeaveTypeParam param) {
+	private Integer normalizeAdminAvailMonths(LeaveTypeParam param) {
 		// 관리자 부여 타입이 아니면 입력값 그대로
 		if (!"02".equals(param.leaveType())) {
-			return new String[] { param.adminAvailFromDt(), param.adminAvailToDt() };
+			return param.adminAvailMonths();
 		}
 
 		if (!AVAIL_TERM_PERIOD.equals(param.adminAvailTermType())) {
-			// 기간설정이 아니면 from/to null 강제
-			return new String[] { null, null };
+			// 기간설정이 아니면 개월수 null 강제
+			return null;
 		}
 
-		String from = param.adminAvailFromDt();
-		String to = param.adminAvailToDt();
-
-		if (from == null || from.isBlank() || to == null || to.isBlank()) {
-			log.warn("관리자 부여 사용기간 누락 - leaveNo={}, from={}, to={}",
-					param.leaveNo(), from, to);
+		Integer months = param.adminAvailMonths();
+		// '03'(기간설정): 1~99 정수 필수
+		if (months == null || months < 1 || months > 99) {
+			log.warn("관리자 부여 사용가능 개월수 검증 실패(1~99 아님) - leaveNo={}, months={}",
+					param.leaveNo(), months);
 			throw new ApiException(AttdErrorCode.ATTD_400_032);
 		}
-		// YYYYMMDD 8자리 + 실제 존재하는 날짜 검증(STRICT) — 화면 전송 포맷과 정합
-		if (!isValidYmd8(from) || !isValidYmd8(to)) {
-			log.warn("관리자 부여 사용기간(YYYYMMDD) 형식 검증 실패 - leaveNo={}, from={}, to={}",
-					param.leaveNo(), from, to);
-			throw new ApiException(AttdErrorCode.ATTD_400_032);
-		}
-		// 동일 형식(zero-padded YYYYMMDD)이므로 사전식 비교로 from<=to 판정 가능
-		if (from.compareTo(to) > 0) {
-			log.warn("관리자 부여 사용기간 순서 검증 실패(from>to) - leaveNo={}, from={}, to={}",
-					param.leaveNo(), from, to);
-			throw new ApiException(AttdErrorCode.ATTD_400_032);
-		}
-		return new String[] { from, to };
-	}
-
-	/**
-	 * YYYYMMDD 8자리 절대 날짜 형식 + 실제 존재하는 날짜 여부 검증 (prafta-044-FU2).
-	 *
-	 * @param ymd 검증 대상 (예: "20260101")
-	 * @return 8자리 숫자 + STRICT 파싱 성공 시 true, 그 외 false
-	 */
-	private boolean isValidYmd8(String ymd) {
-		if (ymd == null || ymd.length() != 8) {
-			return false;
-		}
-		try {
-			LocalDate.parse(ymd, ADMIN_AVAIL_YMD8);
-			return true;
-		} catch (DateTimeParseException e) {
-			return false;
-		}
+		return months;
 	}
 
 	/**

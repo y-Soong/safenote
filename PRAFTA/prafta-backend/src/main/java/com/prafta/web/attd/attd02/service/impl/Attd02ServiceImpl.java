@@ -43,17 +43,18 @@ public class Attd02ServiceImpl implements Attd02Service{
 		
 		String holidayId = null;
 		String holidayType = null;
-		
-		if(!param.holidayId().isEmpty()) {
+
+		/* 휴일ID가 존재하면 수정/삭제(기존 ID·타입 유지), 비어 있으면 신규 등록으로 보고 채번한다. */
+		if(param.holidayId() != null && !param.holidayId().isBlank()) {
 			holidayId = param.holidayId();
 			holidayType = param.holidayType();
 		} else {
 			if(param.repeatYearly()) {
 				holidayId = attd02Mapper.selectHolidayRuleId(param.gvCmpnyCd());
-				holidayType = "03";			/* 반복 */
+				holidayType = "03";			/* 반복휴무 */
 			} else {
 				holidayId = attd02Mapper.selectHolidayId(param.gvCmpnyCd());
-				holidayType = "02";			/* 반복 */
+				holidayType = "02";			/* 지정휴무 */
 			}
 		}
 		

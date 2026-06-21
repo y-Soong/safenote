@@ -136,7 +136,13 @@ public class PushSenderServiceImpl implements PushSenderService {
                     fcmClient.send(d.getPushToken(), row.getTitle(), row.getBody(), dataMap);
             switch (result) {
                 case SUCCESS -> anySuccess = true;
-                case INVALID_TOKEN -> pushOutboxMapper.softDeleteDeviceToken(d.getDeviceUuid(), actor);
+                case INVALID_TOKEN -> {
+                    // prafta-com-015 015-3: 무효 토큰 디바이스 비활성화 관측성(어떤 기기가 왜 빠졌는지 1줄 감사).
+                    //   deviceUuid 는 마스킹(앞 8자+***). 토큰값은 로그에 남기지 않는다(S2).
+                    int affected = pushOutboxMapper.softDeleteDeviceToken(d.getDeviceUuid(), actor);
+                    log.info("[push] 무효 토큰 디바이스 비활성화 notiId={}, deviceUuid={}, 사유=FCM_INVALID_TOKEN, affected={}.",
+                            notiId, maskHead(d.getDeviceUuid()), affected);
+                }
                 case TRANSIENT_FAILURE -> {
                     anyTransient = true;
                     lastTransientCode = "TRANSIENT_FAILURE";
@@ -196,6 +202,15 @@ public class PushSenderServiceImpl implements PushSenderService {
         Map<String, String> parsed =
                 objectMapper.readValue(dataPayload, new TypeReference<Map<String, String>>() {});
         return parsed == null ? Map.of() : parsed;
+    }
+
+    /** 식별자 마스킹: 앞 8자 + ***(짧으면 길이만큼). 평문 로그 금지(S2 패턴 미러). */
+    private String maskHead(String value) {
+        if (value == null || value.isBlank()) {
+            return "(none)";
+        }
+        int head = Math.min(8, value.length());
+        return value.substring(0, head) + "***";
     }
 
     /** ERROR_MSG 컬럼(varchar500) 초과분 가드. */

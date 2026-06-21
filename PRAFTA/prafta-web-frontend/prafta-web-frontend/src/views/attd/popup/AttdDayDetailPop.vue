@@ -182,8 +182,13 @@
                   </div>
                   <div class="req-card-sub">{{ card.insertDate }} 신청</div>
 
-                  <div class="req-diff">
-                    <!-- 스케줄 수정(10): 근무시간(스케줄) 기준 BEFORE/AFTER (PRAFTA-APP-007-WEB-7) -->
+                  <div
+                    class="req-diff"
+                    :class="{ 'req-diff--sched': card.mode === 'sched' }"
+                  >
+                    <!-- 스케줄 수정(10): 근무시간(스케줄) 기준 BEFORE/AFTER (PRAFTA-APP-007-WEB-7)
+                         com-013 #2: 2구간 스케줄 값이 좁은 칼럼에서 줄바꿈되지 않도록
+                         req-diff--sched 에서 BEFORE→화살표→AFTER 를 세로 풀폭 스택으로 전환(CSS). -->
                     <template v-if="card.mode === 'sched'">
                       <div class="req-diff-col">
                         <div class="req-diff-head">BEFORE</div>
@@ -514,9 +519,15 @@
                               <li
                                 v-for="(w, wi) in otAllowedWindowsForSeg(i)"
                                 :key="wi"
-                                class="ot-allowed-item"
                               >
-                                {{ w.startLabel }} ~ {{ w.endLabel }}
+                                <button
+                                  type="button"
+                                  class="ot-allowed-item"
+                                  :title="`클릭하면 ${w.startLabel} ~ ${w.endLabel} 범위로 초과근무가 추가됩니다`"
+                                  @click="addOtFromWindow(i, w)"
+                                >
+                                  {{ w.startLabel }} ~ {{ w.endLabel }}
+                                </button>
                               </li>
                             </ul>
                           </div>
@@ -540,6 +551,12 @@
                           :key="oi"
                           class="ot-row"
                         >
+                          <label class="ot-check" aria-label="선택">
+                            <input
+                              type="checkbox"
+                              v-model="ot.checked"
+                            />
+                          </label>
                           <div class="time-input-group">
                             <span class="lab">시작</span>
                             <CalendarSrch
@@ -584,33 +601,6 @@
                               @input="onTimeInput($event, ot, 'endTime')"
                             />
                           </div>
-                          <button
-                            class="ot-delete"
-                            type="button"
-                            aria-label="삭제"
-                            @click="removeOt(i, oi)"
-                          >
-                            <svg
-                              width="14"
-                              height="14"
-                              viewBox="0 0 24 24"
-                              fill="none"
-                              stroke="currentColor"
-                              stroke-width="2"
-                              stroke-linecap="round"
-                              stroke-linejoin="round"
-                            >
-                              <polyline points="3 6 5 6 21 6" />
-                              <path
-                                d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"
-                              />
-                              <path d="M10 11v6" />
-                              <path d="M14 11v6" />
-                              <path
-                                d="M9 6V4a2 2 0 0 1 2-2h2a2 2 0 0 1 2 2v2"
-                              />
-                            </svg>
-                          </button>
                         </li>
                       </ul>
                       <button
@@ -628,21 +618,25 @@
                         <button
                           type="button"
                           class="ot-save-btn"
-                          :disabled="!canSaveOt || otSaving"
+                          :disabled="!isSegOtValid(i) || otSaving"
                           @click="fnApproveOvertime(i)"
                         >
                           <span v-if="!otSaving">초과근무 저장</span>
                           <span v-else>저장 중…</span>
                         </button>
+                        <!-- com-016-E: "초과근무 삭제" — 체크된 행 삭제(기저장행=서버 soft-delete, 신규행=로컬 제거). -->
                         <button
-                          v-if="otHasReqId(i)"
                           type="button"
-                          class="ot-reject-btn"
-                          :disabled="otSaving"
-                          @click="fnRejectOvertime(i)"
+                          class="ot-delete-btn"
+                          :disabled="
+                            !hasCheckedDeletable(i) || otSaving || isMonthClosed
+                          "
+                          @click="fnDeleteOvertime(i)"
                         >
-                          반려
+                          초과근무 삭제
                         </button>
+                        <!-- com-013 #6b: OT '반려' 버튼 제거(관리자 직접수정 블록엔 결재 대상 요청이 흘러오지 않음).
+                             요청 반려 인프라(onRejectConfirm overtime 분기 / reject-user-overtime EP)는 Attd_10 인박스 공용이라 보존. -->
                       </div>
                     </div>
                   </div>
@@ -899,6 +893,7 @@
                   <col style="width: 130px" />
                   <col style="width: 130px" />
                   <col style="width: 130px" />
+                  <col style="width: 90px" />
                   <col style="width: 70px" />
                   <col style="width: 90px" />
                   <col style="width: 160px" />
@@ -909,6 +904,8 @@
                     <th rowspan="2">구간</th>
                     <th colspan="2">변경 전</th>
                     <th colspan="2">변경 후</th>
+                    <!-- com-013 #4: 근로자 요청사유(관리자 사유와 별개). -->
+                    <th rowspan="2">근로자 사유</th>
                     <th rowspan="2">사유</th>
                     <th rowspan="2">수정자</th>
                     <th rowspan="2">수정일시</th>
@@ -940,6 +937,18 @@
                       <td class="cell-time">{{ h.aftCheckIn }}</td>
                       <td class="cell-time">{{ h.aftCheckOut }}</td>
                     </template>
+                    <!-- com-013 #4: 근로자 요청사유 — 값 있으면 보기 버튼, 없으면 "-". -->
+                    <td>
+                      <button
+                        v-if="h.reqReason"
+                        class="hist-reason-btn"
+                        type="button"
+                        @click="openReasonPopup(h.reqReason)"
+                      >
+                        보기
+                      </button>
+                      <span v-else>-</span>
+                    </td>
                     <td>
                       <button
                         v-if="h.reason"
@@ -1001,6 +1010,14 @@ import AttdGpsCoordPanel from "@/views/attd/popup/AttdGpsCoordPanel.vue";
 import axios from "@/api/axios";
 import { getMessage, MSG } from "@/messages";
 import { resolveApiErrorMessage } from "@/utils/apiError";
+import {
+  formatYmdDot,
+  formatMdDot,
+  formatHm,
+  formatHms,
+  formatDateTimeDot,
+  formatDateTimeDotWithSec,
+} from "@/utils/dateFormat";
 
 defineOptions({ name: "AttdDayDetailPop" });
 
@@ -1230,12 +1247,12 @@ const recordState = computed(() => {
 });
 
 // ── 시간 카드 빌더 ────────────────────────────────────────
-// "20260502" → "05/02"
+// "20260502" → "05.02" (월-일 표시). dateFormat 단일 출처에 위임.
 const fmtMd = (ymd) => {
   if (!ymd) return "";
   const s = String(ymd);
   if (s.length < 8) return "";
-  return `${s.slice(4, 6)}/${s.slice(6, 8)}`;
+  return formatMdDot(s);
 };
 
 // 실제 출퇴근 — 날짜(상단 보조) / 시간(하단 강조)으로 분리 표시
@@ -1276,7 +1293,7 @@ const buildTimeCard = () => {
 
   // 계획 — 휴무(계획 없음)면 "휴무", plan2가 의미 있는 시간일 때만 2구간 표시
   // 정책 §7.5: 휴무일에도 출퇴근 등록은 허용되며 실적/비고는 그대로 표시한다
-  // (해당 근무는 전량 추가근무로 취급).
+  // (해당 근무는 전량 초과근무로 취급).
   let plan;
   if (isOff) {
     plan = { value: "휴무", meta: "정기 휴일", cls: "value-off" };
@@ -1465,48 +1482,37 @@ const buildEmptyHint = () => {
 // { histTypeNm, befCheckInDate, befCheckInTime, befCheckOutDate, befCheckOutTime,
 //   aftCheckInDate, aftCheckInTime, aftCheckOutDate, aftCheckOutTime,
 //   insertNm, insertDate }
-const fmtYmdToDot = (ymd) => {
-  const v = String(ymd || "");
-  if (v.length < 8) return "";
-  return `${v.slice(0, 4)}.${v.slice(4, 6)}.${v.slice(6, 8)}`;
-};
-const fmtHmsToColon = (hms) => {
-  const v = String(hms || "");
-  if (v.length < 4) return "";
-  const hh = v.slice(0, 2);
-  const mm = v.slice(2, 4);
-  return v.length >= 6 ? `${hh}:${mm}:${v.slice(4, 6)}` : `${hh}:${mm}`;
-};
 // 날짜+시간 합쳐서 한 셀로 표시. 둘 다 없으면 "-"
+//   표시 포맷은 dateFormat 단일 출처에 위임(점/콜론). 초가 실재하면 함께 노출.
 const fmtDateTime = (ymd, hms) => {
-  const d = fmtYmdToDot(ymd);
-  const t = fmtHmsToColon(hms);
+  const d = formatYmdDot(ymd);
+  // 출퇴근 시각 컬럼(CHECK_IN_TIME 등)은 varchar(4)=HHMM(초 미존재) → 분까지만 표기.
+  const t = formatHm(hms);
   if (!d && !t) return "-";
   return `${d} ${t}`.trim();
 };
-// INSERT_DATE: "YYYYMMDDHHMMSS" 또는 이미 포맷된 문자열 둘 다 대응
+// INSERT_DATE: "YYYYMMDDHHMMSS"(초 실재) 또는 이미 포맷된 문자열 둘 다 대응
 const fmtInsertDate = (v) => {
   const s = String(v || "");
   if (!s) return "-";
-  if (/^\d{14}$/.test(s)) {
-    return `${s.slice(0, 4)}.${s.slice(4, 6)}.${s.slice(6, 8)} ${s.slice(8, 10)}:${s.slice(10, 12)}:${s.slice(12, 14)}`;
-  }
-  if (/^\d{12}$/.test(s)) {
-    return `${s.slice(0, 4)}.${s.slice(4, 6)}.${s.slice(6, 8)} ${s.slice(8, 10)}:${s.slice(10, 12)}`;
-  }
+  // 14자리(초 실재)는 초까지, 그 외(12자리 등)는 분까지 표시
+  if (/^\d{14}$/.test(s)) return formatDateTimeDotWithSec(s);
+  if (/^\d{12}$/.test(s)) return formatDateTimeDot(s);
   return s;
 };
 const historyView = computed(() =>
   (historyList.value || []).map((h) => {
-    // PRAFTA-APP-007-WEB-7 + D15: 스케줄 수정 승인 이력은 출퇴근 시각 대신 "변경 전→후 스케줄 라벨"을 표시한다.
-    //   백엔드(selectDailySchedModifyHistory)는 승인 행에만 befSched*/aftSched* 원시 시각을 채운다(반려는 NULL).
-    //   따라서 aftSched 1구간 시각 유무로 스케줄 승인 이력을 식별한다. (반려/근태/OT/연차 이력은 기존 시각 렌더링.)
-    const isSchedApprove = !!(h.aftSchedFstStrTime || h.aftSchedFstEndTime);
+    // PRAFTA-APP-007-WEB-7 + D15 + com-013 #3: 스케줄 수정(10) 이력은 출퇴근 시각 대신
+    //   "변경 전→후 스케줄 라벨"을 표시한다. 식별 기준을 reqType==='10' 으로 일반화해
+    //   승인('02')뿐 아니라 반려('03')도 스케줄 라벨 분기를 타게 한다(백엔드가 반려에도 bef/aft 채움).
+    //   (근태/OT/연차 이력은 reqType NULL → 기존 출퇴근 시각 렌더링.)
+    const isSchedApprove = h.reqType === "10";
     const hasBefSched = !!(h.befSchedFstStrTime || h.befSchedFstEndTime);
+    const hasAftSched = !!(h.aftSchedFstStrTime || h.aftSchedFstEndTime);
     return {
       histTypeNm: h.histTypeNm || "-",
       workSeq: h.workSeq != null && h.workSeq !== "" ? `${h.workSeq}구간` : "-",
-      // 스케줄 승인 행: 변경 전 라벨(없으면 "없음"), 변경 후 라벨을 단일 라벨로 노출.
+      // 스케줄 이력 행: 변경 전/후 라벨(각각 도출 불가 시 "없음")을 단일 라벨로 노출.
       isSchedApprove,
       befSchedLabel: isSchedApprove
         ? hasBefSched
@@ -1519,18 +1525,22 @@ const historyView = computed(() =>
           : "없음"
         : "",
       aftSchedLabel: isSchedApprove
-        ? schedLabel(
-            h.aftSchedFstStrTime,
-            h.aftSchedFstEndTime,
-            h.aftSchedSecStrTime,
-            h.aftSchedSecEndTime
-          )
+        ? hasAftSched
+          ? schedLabel(
+              h.aftSchedFstStrTime,
+              h.aftSchedFstEndTime,
+              h.aftSchedSecStrTime,
+              h.aftSchedSecEndTime
+            )
+          : "없음"
         : "",
       befCheckIn: fmtDateTime(h.befCheckInDate, h.befCheckInTime),
       befCheckOut: fmtDateTime(h.befCheckOutDate, h.befCheckOutTime),
       aftCheckIn: fmtDateTime(h.aftCheckInDate, h.aftCheckInTime),
       aftCheckOut: fmtDateTime(h.aftCheckOutDate, h.aftCheckOutTime),
       reason: h.processReason ?? "",
+      // com-013 #4: 근로자 요청사유(processReason 관리자사유와 별개 컬럼).
+      reqReason: h.reqReason ?? "",
       insertNm: h.insertNm || "-",
       insertDate: fmtInsertDate(h.insertDate),
     };
@@ -1743,13 +1753,26 @@ function initForm() {
     for (const ot of otRows) {
       const idx = assignOtToSegment(ot, actSegs, segments.length);
       if (idx < 0 || !segments[idx]) continue;
+      const otStartDate = ymdNumToDash(ot.actualStartDate) || props.date_p;
+      const otStartTime = ot.actualStartTime || "";
+      const otEndDate = ymdNumToDash(ot.actualEndDate) || props.date_p;
+      const otEndTime = ot.actualEndTime || "";
       segments[idx].otList.push({
         otId: ot.otId,
         reqId: ot.reqId || null,
-        startDate: ymdNumToDash(ot.actualStartDate) || props.date_p,
-        startTime: ot.actualStartTime || "",
-        endDate: ymdNumToDash(ot.actualEndDate) || props.date_p,
-        endTime: ot.actualEndTime || "",
+        // com-016-E: 기저장(otId 보유) 행은 기본 미체크. 삭제는 체크된 기저장행을,
+        //   저장은 체크된 "신규행 또는 편집된 기저장행(in-place 수정)"을 대상으로 한다(좌측 체크박스 모델).
+        checked: false,
+        startDate: otStartDate,
+        startTime: otStartTime,
+        endDate: otEndDate,
+        endTime: otEndTime,
+        // com-013-06 A: in-place 수정 dirty 판정용 원본 스냅샷(기저장행 한정).
+        //   네 값 중 하나라도 바뀌면 저장 대상이 되어 서버로 UPDATE 전송된다.
+        _origStartDate: otStartDate,
+        _origStartTime: otStartTime,
+        _origEndDate: otEndDate,
+        _origEndTime: otEndTime,
       });
     }
 
@@ -1814,7 +1837,9 @@ const addOt = (segIdx) => {
   if (!Array.isArray(seg.otList)) seg.otList = [];
   // 기본값: 해당 구간 퇴근 직후 시작, 동일 일자
   // prafta-043: 초과근무 유형(type) 전면 파기 — 기본 타입 미부여.
+  // com-016-E: 새로 추가한 신규행은 저장 의도가 명확하므로 기본 체크.
   seg.otList.push({
+    checked: true,
     startDate: seg.endDate || seg.startDate || props.date_p,
     startTime: "",
     endDate: seg.endDate || seg.startDate || props.date_p,
@@ -1822,10 +1847,121 @@ const addOt = (segIdx) => {
   });
 };
 
-const removeOt = (segIdx, otIdx) => {
+// 분 stamp → CalendarSrch 입력용 일자 "YYYY-MM-DD".
+//   stampToDateTime 과 동일하게 stamp origin 은 workYmd-1 00:00 기준이다(dayOffset = floor/1440 - 1).
+const stampToDateDash = (mins) => {
+  if (!props.date_p) return props.date_p || "";
+  const dayOffset = Math.floor(mins / 1440) - 1;
+  const [y, mo, d] = props.date_p.split("-").map(Number);
+  const dt = new Date(y, mo - 1, d + dayOffset);
+  const yy = dt.getFullYear();
+  const mm = String(dt.getMonth() + 1).padStart(2, "0");
+  const dd = String(dt.getDate()).padStart(2, "0");
+  return `${yy}-${mm}-${dd}`;
+};
+
+// 분 stamp → 시각 입력용 "HHMM"(콜론 없는 4자리). stampToHHmm 의 콜론 제거 버전.
+const stampToHHMMRaw = (mins) => {
+  const m = ((mins % 1440) + 1440) % 1440;
+  const h = Math.floor(m / 60);
+  const mm = m % 60;
+  return `${String(h).padStart(2, "0")}${String(mm).padStart(2, "0")}`;
+};
+
+// "등록 가능" 칩 클릭 → 해당 범위(w)에 맞춰 초과근무 row 를 자동 추가한다.
+//   w.startMin/endMin(분 stamp)을 OT row 필드(startDate/startTime/endDate/endTime)로 변환한다.
+//   동일 범위가 이미 등록돼 있으면 중복 추가하지 않는다.
+const addOtFromWindow = (segIdx, w) => {
+  const seg = form.value.segments[segIdx];
+  if (!seg) return;
+  // DB 적재 구간이 아니면 초과근무 등록 차단 (addOt 와 동일 규칙).
+  if (!isSegmentFromDb(segIdx)) return;
+  if (w == null || w.startMin == null || w.endMin == null) return;
+  if (!Array.isArray(seg.otList)) seg.otList = [];
+
+  const row = {
+    // com-016-E: 칩 클릭으로 추가한 신규행도 저장 의도가 명확하므로 기본 체크.
+    checked: true,
+    startDate: stampToDateDash(w.startMin),
+    startTime: stampToHHMMRaw(w.startMin),
+    endDate: stampToDateDash(w.endMin),
+    endTime: stampToHHMMRaw(w.endMin),
+  };
+  // 동일 범위 중복 추가 방지.
+  const dup = seg.otList.some(
+    (o) =>
+      o.startDate === row.startDate &&
+      o.startTime === row.startTime &&
+      o.endDate === row.endDate &&
+      o.endTime === row.endTime
+  );
+  if (dup) return;
+  seg.otList.push(row);
+};
+
+// com-016-E: 휴지통 제거 → 좌측 체크박스 + "초과근무 삭제" 버튼 모델로 전환.
+//   해당 구간에 "삭제 가능한 체크 행"(체크된 기저장행 otId 보유) 또는 "체크된 신규행"이 있는지.
+//   버튼 활성 조건: 서버 삭제 대상(기저장) 또는 로컬 제거 대상(신규)이 1건이라도 있으면 활성.
+const hasCheckedDeletable = (segIdx) => {
+  const seg = form.value.segments?.[segIdx];
+  if (!seg || !Array.isArray(seg.otList)) return false;
+  return seg.otList.some((o) => o.checked);
+};
+
+// com-016-E: "초과근무 삭제" — 체크된 행을 삭제한다.
+//   기저장행(otId 보유) → 다건 삭제 API 1회 호출(서버 soft-delete).
+//   신규행(otId 없음) → 화면에서만 splice(서버 무관).
+const fnDeleteOvertime = async (segIdx) => {
+  if (await guardClosed()) return;
+  if (otSaving.value) return;
   const seg = form.value.segments[segIdx];
   if (!seg || !Array.isArray(seg.otList)) return;
-  seg.otList.splice(otIdx, 1);
+
+  const checkedSaved = seg.otList.filter((o) => o.checked && o.otId);
+  const checkedNew = seg.otList.filter((o) => o.checked && !o.otId);
+  if (!checkedSaved.length && !checkedNew.length) return;
+
+  const ok = await proxy.$confirm(getMessage(MSG.OT_DELETE_CONFIRM));
+  if (!ok) return;
+
+  // 1) 기저장행이 없으면 서버 호출 없이 신규 체크행만 로컬 제거.
+  if (!checkedSaved.length) {
+    seg.otList = seg.otList.filter((o) => !(o.checked && !o.otId));
+    return;
+  }
+
+  // 2) 기저장행이 있으면 다건 삭제 API 1회 호출.
+  const r = record.value ?? {};
+  const u = userInfo.value ?? {};
+  const payload = {
+    otIds: checkedSaved.map((o) => o.otId),
+    siteCd: props.siteCd_p || r.siteCd || "",
+    userCd: props.userCd_p || u.userCd || r.userCd || "",
+    workYmd: ymdToYmdNum(props.date_p),
+    nodeCd: props.nodeCd_p || r.nodeCd || "",
+    reqReason: form.value.reason || "",
+  };
+
+  otSaving.value = true;
+  try {
+    const response = await axios.post(
+      "/webApi/attd07/delete-user-overtime",
+      payload
+    );
+    if (response.status === 200) {
+      await proxy.$alert(getMessage(MSG.DELETE_SUCCESS));
+      // 삭제 후 팝업을 닫지 않고 상세 조회 API를 다시 호출해 데이터를 reload 한다.
+      //   (reload 시 신규 체크행은 어차피 폼이 재구성되며 사라진다.)
+      await fnSearch();
+    }
+  } catch (err) {
+    console.error("[AttdDayDetailPop] overtime delete failed", err);
+    await proxy.$alert(
+      resolveApiErrorMessage(err, getMessage(MSG.OT_DELETE_ERROR))
+    );
+  } finally {
+    otSaving.value = false;
+  }
 };
 
 // 구간 헤더의 요약 표시 (정규/초과 합계). 데이터가 없거나 계산 불가 시 빈 문자열.
@@ -1870,7 +2006,7 @@ const segSummary = (seg) => {
   return parts.join('<span class="dot">·</span>');
 };
 
-// ── 추가근무(OT) 신규 API 연동 (PRAFTA-003) ────────────────
+// ── 초과근무(OT) 신규 API 연동 (PRAFTA-003) ────────────────
 // 정책서 2,3번 — 등록 가능 OT 범위 = (실근태 근무시간) - (스케줄 시간).
 // 백엔드 /attd07/update-user-overtime-requests 에서도 동일 검증을 수행한다.
 // 여기서는 사용자 가이드 + 사전 차단을 위해 클라이언트 측에서도 한 번 계산한다.
@@ -1935,8 +2071,8 @@ const stampToDateTime = (mins) => {
   const dayOffset = Math.floor(mins / 1440) - 1;
   const [y, mo, d] = props.date_p.split("-").map(Number);
   const dt = new Date(y, mo - 1, d + dayOffset);
-  const ymd = `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, "0")}-${String(dt.getDate()).padStart(2, "0")}`;
-  return `${ymd} ${hhmm}`;
+  // 표시용 날짜는 점(YYYY.MM.DD). 시각은 HH:mm 그대로 결합.
+  return `${formatYmdDot(dt)} ${hhmm}`;
 };
 
 // "HHmm" → 분 (00:00 기준). 잘못된 값이면 null.
@@ -2105,6 +2241,20 @@ const otRowToStamp = (ot) => {
   return [sStamp, eStamp];
 };
 
+// com-013-06 A: 저장(전송) 대상 OT row 판정.
+//   - 신규행(otId 없음): 항상 저장 대상(INSERT).
+//   - 기저장행(otId 보유): 원본 스냅샷 대비 시간이 바뀐 경우(in-place 수정)만 저장 대상(UPDATE).
+//     변경되지 않은 기저장행은 (삭제 의도로) 체크돼 있어도 저장 payload 에서 제외해 불필요한 UPDATE 를 막는다.
+const isOtRowDirty = (o) =>
+  !o.otId ||
+  o.startDate !== o._origStartDate ||
+  o.startTime !== o._origStartTime ||
+  o.endDate !== o._origEndDate ||
+  o.endTime !== o._origEndTime;
+
+// 저장 전송 대상 = 체크되었고(선택) 또한 신규/편집됨(dirty)인 행.
+const isOtSaveTarget = (o) => o.checked && isOtRowDirty(o);
+
 // 특정 구간의 OT row 들이 (1) 완전 입력 (2) 그 구간의 허용 범위 포함
 // (3) 서로 겹치지 않을 때 true. 그 외 false.
 //   PRAFTA-009 part4: 등록 가능 범위가 구간별로 분리되었으므로, OT 검증도
@@ -2112,6 +2262,11 @@ const otRowToStamp = (ot) => {
 const isSegOtValid = (segIdx) => {
   const seg = form.value.segments?.[segIdx];
   if (!seg || !Array.isArray(seg.otList) || !seg.otList.length) return false;
+  // com-013-06 A: 저장 검증 대상은 "저장 전송 대상"(체크된 신규행 + 체크·편집된 기저장행)이다.
+  //   미체크/미편집 기저장행은 저장 payload 에서 제외되므로 유효성 판정에서도 제외한다
+  //   (그 행이 범위 밖이어도 신규/편집 1건 저장이 막히지 않게).
+  const targets = seg.otList.filter(isOtSaveTarget);
+  if (!targets.length) return false;
   const allowed = otAllowedWindowsForSeg(segIdx).map((w) => [
     w.startMin,
     w.endMin,
@@ -2119,7 +2274,7 @@ const isSegOtValid = (segIdx) => {
   if (!allowed.length) return false;
 
   const stamps = [];
-  for (const ot of seg.otList) {
+  for (const ot of targets) {
     if (!ot.startDate || !ot.startTime || !ot.endDate || !ot.endTime) {
       return false;
     }
@@ -2137,15 +2292,11 @@ const isSegOtValid = (segIdx) => {
   return true;
 };
 
-// OT 행이 있는 모든 구간이 각자 유효할 때 true (저장 버튼 활성 조건).
-const canSaveOt = computed(() => {
-  const segs = form.value.segments || [];
-  const withOt = segs
-    .map((s, i) => i)
-    .filter((i) => (segs[i].otList || []).length);
-  if (!withOt.length) return false;
-  return withOt.every((i) => isSegOtValid(i));
-});
+// PRAFTA-COM-013-06-3(r34-2): 초과근무 저장 버튼 활성/비활성 판정을 구간별로 분리한다.
+//   기존 canSaveOt 는 "OT 행이 있는 모든 구간이 각자 유효" 라는 전역 조건이라,
+//   2구간 OT 가 유효하지 않으면 1구간 저장 버튼까지 비활성화되는 버그가 있었다.
+//   템플릿의 구간별 저장 버튼은 이제 isSegOtValid(i)(해당 구간 자신만 검증)로 판정한다.
+//   (전역 canSaveOt 는 제거 — 더 이상 사용처가 없다.)
 
 // 해당 segment 에 OT 행이 하나라도 있는지
 const hasAnyOt = (segIdx) => {
@@ -2153,23 +2304,22 @@ const hasAnyOt = (segIdx) => {
   return !!(seg && Array.isArray(seg.otList) && seg.otList.length);
 };
 
-// OT 가 reqId 경유로 들어왔는지 (반려 버튼 노출 조건).
-// 현재 화면에서는 사용자 요청 카드에서 OT 가 흘러오는 경로가 없어 항상 false.
-const otHasReqId = (segIdx) => {
-  const seg = form.value.segments?.[segIdx];
-  if (!seg || !Array.isArray(seg.otList) || !seg.otList.length) return false;
-  return seg.otList.some((o) => !!o.reqId);
-};
+// com-013 #6b: OT '반려' 버튼/핸들러(otHasReqId, fnRejectOvertime) 제거.
+//   관리자 직접수정 OT 블록엔 결재 대상 요청이 흘러오지 않아 반려 개념이 무의미했다.
+//   요청 반려 인프라(onRejectConfirm 의 kind==="overtime" 분기 + reject-user-overtime-requests EP)는
+//   Attd_10 인박스 공용이므로 그대로 보존한다.
 
 // 클라이언트 측 검증 — 통과하면 true, 실패 시 alert 노출.
 const validateOtBeforeSave = async (segIdx) => {
   const seg = form.value.segments?.[segIdx];
-  if (!seg || !Array.isArray(seg.otList) || !seg.otList.length) {
+  // com-013-06 A: 저장 검증 대상은 저장 전송 대상(체크된 신규행 + 체크·편집된 기저장행).
+  const targets = (seg?.otList || []).filter(isOtSaveTarget);
+  if (!seg || !Array.isArray(seg.otList) || !targets.length) {
     await proxy.$alert(getMessage(MSG.OT_LIST_EMPTY));
     return false;
   }
   // isSegOtValid 가 false 인 정확한 원인을 사용자에게 알린다.
-  for (const ot of seg.otList) {
+  for (const ot of targets) {
     if (!ot.startDate || !ot.startTime || !ot.endDate || !ot.endTime) {
       await proxy.$alert(getMessage(MSG.OT_RANGE_INVALID));
       return false;
@@ -2206,8 +2356,19 @@ const fnApproveOvertime = async (segIdx) => {
   const segNo = segIdx + 1;
   const workYmd = ymdToYmdNum(props.date_p);
 
-  const overtimes = (seg.otList || []).map((o) => ({
+  // com-013-06 A: 저장 대상 = 저장 전송 대상(체크된 신규행 + 체크·편집된 기저장행).
+  //   - 신규행(otId 없음) → 서버 INSERT.
+  //   - 편집된 기저장행(otId 보유) → 서버 in-place UPDATE(otId 동반 전송).
+  //   미편집 기저장행은 (삭제 의도 등으로) 체크돼 있어도 제외한다. 삭제는 "초과근무 삭제" 버튼이 별도 EP 로 처리.
+  const saveRows = (seg.otList || []).filter(isOtSaveTarget);
+  if (!saveRows.length) {
+    await proxy.$alert(getMessage(MSG.OT_LIST_EMPTY));
+    return;
+  }
+  const overtimes = saveRows.map((o) => ({
     // prafta-043: 초과근무 유형(otType) 전면 파기 — payload 에서 제거.
+    // com-013-06 A: 기저장행은 otId 를 함께 보내 서버가 in-place UPDATE 하도록 한다(신규행은 null/미전달).
+    otId: o.otId || null,
     startDate: ymdToYmdNum(o.startDate),
     startTime: o.startTime,
     endDate: ymdToYmdNum(o.endDate),
@@ -2248,30 +2409,8 @@ const fnApproveOvertime = async (segIdx) => {
   }
 };
 
-// 초과근무 요청 반려 — 반려 사유 입력 모달을 띄운다.
-//   확인 시 onRejectConfirm 에서 POST /attd07/reject-user-overtime-requests 호출.
-const fnRejectOvertime = (segIdx) => {
-  const seg = form.value.segments?.[segIdx];
-  if (!seg) return;
-  // 해당 구간 OT 행 중 reqId 를 가진 첫 항목이 반려 대상.
-  const target = (seg.otList || []).find((o) => !!o.reqId);
-  if (!target) {
-    proxy.$alert(getMessage(MSG.OT_LIST_EMPTY));
-    return;
-  }
-  const r = record.value ?? {};
-  const u = userInfo.value ?? {};
-  rejectModal.value = {
-    open: true,
-    kind: "overtime",
-    busy: false,
-    context: {
-      reqId: target.reqId,
-      siteCd: props.siteCd_p || r.siteCd || "",
-      userCd: props.userCd_p || u.userCd || r.userCd || "",
-    },
-  };
-};
+// com-013 #6b: fnRejectOvertime(관리자 직접수정 OT 블록 '반려') 제거.
+//   onRejectConfirm 의 kind==="overtime" 분기(Attd_10 인박스 요청 반려)는 보존한다.
 
 // ── 시간 입력 (포커스에 따라 raw "1230" / 표시 "12:30" 전환) ───
 const focusedTime = ref(null); // 예: "0-in", "1-out"
@@ -2416,6 +2555,9 @@ const fnSave = async () => {
     );
     if (response.status === 200) {
       await proxy.$alert(getMessage(MSG.SAVE_COMPLETED));
+      // PRAFTA-COM-013-06-2(r34-1): 저장 후 팝업을 닫지 않고 상세 조회 API를 다시 호출해
+      //   신규 데이터를 재조회한다(승인/반려/OT 저장/삭제 핸들러와 동일 패턴 정합).
+      await fnSearch();
     }
   } catch (err) {
     console.log("[AttdDayDetailPop] save failed", err);
@@ -3369,6 +3511,32 @@ onMounted(() => {
   color: #9ca3af;
   font-size: 14px;
 }
+/* com-013 #2: 스케줄 수정(10) 카드 전용 — BEFORE→화살표→AFTER 세로 풀폭 스택.
+   2구간 스케줄 문자열("09:00~18:00 / 19:00~22:00 (2구간)")이 좁은 칼럼에서
+   줄바꿈/말줄임되지 않도록 단일 컬럼 풀폭으로 전환한다(정보 손실 금지). */
+.req-diff--sched {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 6px;
+}
+.req-diff--sched .req-diff-col {
+  width: 100%;
+}
+.req-diff--sched .req-diff-row {
+  /* 라벨(스케줄)과 값을 양끝 배치하되, 값이 길면 전체 폭을 쓰며 한 줄 유지. */
+  gap: 10px;
+}
+.req-diff--sched .req-diff-val {
+  /* 스케줄 한 줄 문자열은 개행시키지 않는다(말줄임 없이 전체 표시). */
+  white-space: nowrap;
+  text-align: right;
+}
+/* 세로 스택에서는 화살표를 아래 방향으로 회전해 흐름을 명확히 한다. */
+.req-diff--sched .req-diff-arrow {
+  align-self: center;
+  transform: rotate(90deg);
+}
 /* PRAFTA-APP-018-D: 연차(05/06) 전용 1줄 표시 (사용단위·범위·차감일수, 가운데점 구분) */
 .req-leave-line {
   display: flex;
@@ -4291,23 +4459,18 @@ textarea.input {
   font-size: 13px;
   padding: 0 10px;
 }
-.ot-row .ot-delete {
-  width: 28px;
-  height: 28px;
-  border-radius: 4px;
-  border: 1px solid transparent;
-  background: transparent;
-  color: #9ca3af;
-  cursor: pointer;
+/* com-016-E: 행 좌측 선택 체크박스(우측 휴지통 ot-delete 대체). */
+.ot-row .ot-check {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  flex-shrink: 0;
-  margin-left: auto;
+  flex: 0 0 auto;
+  cursor: pointer;
 }
-.ot-row .ot-delete:hover {
-  color: #ef4444;
-  background: #fef2f2;
+.ot-row .ot-check input[type="checkbox"] {
+  width: 16px;
+  height: 16px;
+  cursor: pointer;
 }
 
 .add-ot-btn {
@@ -4724,9 +4887,22 @@ textarea.input {
   color: var(--color-text);
   line-height: var(--btn-height-sm);
   font-size: var(--btn-font-sm);
+  font-family: inherit;
+  cursor: pointer;
+  transition: background 0.15s, border-color 0.15s;
 }
 
-/* PRAFTA-003 F1 — 초과근무 저장/반려 액션 영역 */
+.ot-allowed-item:hover {
+  background: var(--color-surface);
+  border-color: var(--color-primary);
+  color: var(--color-primary);
+}
+
+.ot-allowed-item:active {
+  transform: translateY(1px);
+}
+
+/* PRAFTA-003 F1 — 초과근무 저장 액션 영역 (com-013 #6b: 반려 버튼/스타일 제거) */
 .ot-actions {
   display: flex;
   gap: var(--header-right-gap);
@@ -4734,8 +4910,7 @@ textarea.input {
   margin-top: var(--header-right-gap);
 }
 
-.ot-save-btn,
-.ot-reject-btn {
+.ot-save-btn {
   height: var(--btn-height);
   padding: 0 var(--btn-padding);
   border-radius: var(--btn-radius);
@@ -4767,19 +4942,27 @@ textarea.input {
   cursor: not-allowed;
 }
 
-.ot-reject-btn {
+/* com-016-E: "초과근무 삭제" — outline danger 보조 버튼. */
+.ot-delete-btn {
+  height: var(--btn-height);
+  padding: 0 var(--btn-padding);
+  border-radius: var(--btn-radius);
+  border: 1px solid var(--color-danger);
   background: var(--color-surface);
   color: var(--color-danger);
-  border-color: var(--color-danger);
+  font-size: var(--btn-font);
+  cursor: pointer;
 }
 
-.ot-reject-btn:hover:not(:disabled) {
-  background: var(--color-bg);
+.ot-delete-btn:hover:not(:disabled) {
+  background: var(--color-danger);
+  color: var(--color-surface);
 }
 
-.ot-reject-btn:disabled {
-  color: var(--color-text-muted);
+.ot-delete-btn:disabled {
   border-color: var(--color-border-strong);
+  background: var(--color-surface);
+  color: var(--color-text-muted);
   cursor: not-allowed;
 }
 </style>

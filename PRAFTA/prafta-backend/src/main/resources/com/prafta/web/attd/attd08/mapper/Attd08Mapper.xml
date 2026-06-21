@@ -83,17 +83,42 @@
                 ELSE 'N'
               END                                                                AS isOutsideYn
 
-            /* status: schedule vs actual (HHmm string compare) */
+            /* status: 스케줄 vs 실제 — 날짜+시각(YYYYMMDDHHmm) 일시 기준 비교.
+               시각(HHmm) 문자열만 비교하면 자정 넘김 야간 근무가 지각/조퇴로 오판정되므로
+               (예: 전일 23:20 출근이 당일 00:00 스케줄에 지각으로 잘못 판정) 날짜를 함께 본다.
+               야간 스케줄(종료시각 &lt; 시작시각)은 종료를 근무일 익일로 보정한다.
+               attd11 Attd11ServiceImpl / Attd_08.vue computeStatus 와 동일 규칙. */
             , CASE
                 WHEN A.CHECK_IN_TIME IS NULL OR A.CHECK_IN_TIME = ''
                     THEN 'ABSENT'
-                WHEN A.WORK_SEQ = 1 AND SCH.FST_SCH_STR_TIME IS NOT NULL AND A.CHECK_IN_TIME &gt; SCH.FST_SCH_STR_TIME
+                /* 지각: 실제 출근 일시 &gt; 스케줄 시작 일시(시작은 근무일 당일) */
+                WHEN A.WORK_SEQ = 1 AND SCH.FST_SCH_STR_TIME IS NOT NULL
+                     AND CONCAT(IFNULL(A.CHECK_IN_DATE, A.WORK_YMD), A.CHECK_IN_TIME)
+                         &gt; CONCAT(A.WORK_YMD, SCH.FST_SCH_STR_TIME)
                     THEN 'LATE'
-                WHEN A.WORK_SEQ = 2 AND SCH.SEC_SCH_STR_TIME IS NOT NULL AND A.CHECK_IN_TIME &gt; SCH.SEC_SCH_STR_TIME
+                WHEN A.WORK_SEQ = 2 AND SCH.SEC_SCH_STR_TIME IS NOT NULL
+                     AND CONCAT(IFNULL(A.CHECK_IN_DATE, A.WORK_YMD), A.CHECK_IN_TIME)
+                         &gt; CONCAT(A.WORK_YMD, SCH.SEC_SCH_STR_TIME)
                     THEN 'LATE'
-                WHEN A.WORK_SEQ = 1 AND SCH.FST_SCH_END_TIME IS NOT NULL AND A.CHECK_OUT_TIME IS NOT NULL AND A.CHECK_OUT_TIME != '' AND A.CHECK_OUT_TIME &lt; SCH.FST_SCH_END_TIME
+                /* 조퇴: 실제 퇴근 일시 &lt; 스케줄 종료 일시.
+                   종료시각 &lt; 시작시각이면 야간으로 보고 종료는 근무일 익일. */
+                WHEN A.WORK_SEQ = 1 AND SCH.FST_SCH_END_TIME IS NOT NULL
+                     AND A.CHECK_OUT_TIME IS NOT NULL AND A.CHECK_OUT_TIME != ''
+                     AND CONCAT(IFNULL(A.CHECK_OUT_DATE, A.WORK_YMD), A.CHECK_OUT_TIME)
+                         &lt; CONCAT(
+                               CASE WHEN SCH.FST_SCH_STR_TIME IS NOT NULL AND SCH.FST_SCH_END_TIME &lt; SCH.FST_SCH_STR_TIME
+                                    THEN DATE_FORMAT(DATE_ADD(STR_TO_DATE(A.WORK_YMD, '%Y%m%d'), INTERVAL 1 DAY), '%Y%m%d')
+                                    ELSE A.WORK_YMD END
+                             , SCH.FST_SCH_END_TIME)
                     THEN 'EARLY_LEAVE'
-                WHEN A.WORK_SEQ = 2 AND SCH.SEC_SCH_END_TIME IS NOT NULL AND A.CHECK_OUT_TIME IS NOT NULL AND A.CHECK_OUT_TIME != '' AND A.CHECK_OUT_TIME &lt; SCH.SEC_SCH_END_TIME
+                WHEN A.WORK_SEQ = 2 AND SCH.SEC_SCH_END_TIME IS NOT NULL
+                     AND A.CHECK_OUT_TIME IS NOT NULL AND A.CHECK_OUT_TIME != ''
+                     AND CONCAT(IFNULL(A.CHECK_OUT_DATE, A.WORK_YMD), A.CHECK_OUT_TIME)
+                         &lt; CONCAT(
+                               CASE WHEN SCH.SEC_SCH_STR_TIME IS NOT NULL AND SCH.SEC_SCH_END_TIME &lt; SCH.SEC_SCH_STR_TIME
+                                    THEN DATE_FORMAT(DATE_ADD(STR_TO_DATE(A.WORK_YMD, '%Y%m%d'), INTERVAL 1 DAY), '%Y%m%d')
+                                    ELSE A.WORK_YMD END
+                             , SCH.SEC_SCH_END_TIME)
                     THEN 'EARLY_LEAVE'
                 ELSE 'NORMAL'
               END                                                                AS attdStatusCd
@@ -120,11 +145,74 @@
             AND WP.USER_CD  = A.USER_CD
             AND WP.WORK_YMD = A.WORK_YMD
 
-        LEFT JOIN TB_SCH_MGMT SCH
+        <!-- 근무일(WP.WORK_YMD) 기준 유효 스케줄(effective-dating).
+             TB_SCH_MGMT(현재본) + TB_SCH_MGMT_HIST(전 버전) UNION 후 APPLY_DATE <![CDATA[ <= ]]> WORK_YMD 인 최신 버전을 결합한다.
+             과거 근무일을 (미래 적용분 포함) 현재본 시각으로 오판정하던 문제 수정. attd07/attd11 동일 패턴.
+             SCH_TYPE 은 이력본에 없는 비-versioned 컬럼이라 현재본(MT)에서 가져온다. -->
+        LEFT JOIN (
+            SELECT
+                  E.CMPNY_CD
+                , E.SITE_CD
+                , E.SCH_CD
+                , E.APPLY_DATE
+                , MT.SCH_TYPE
+                , E.FST_SCH_STR_TIME
+                , E.FST_SCH_END_TIME
+                , E.FST_SCH_BRK_MIN
+                , E.SEC_SCH_STR_TIME
+                , E.SEC_SCH_END_TIME
+                , E.SEC_SCH_BRK_MIN
+            FROM (
+                SELECT
+                      M.CMPNY_CD, M.SITE_CD, M.SCH_CD, M.APPLY_DATE
+                    , M.FST_SCH_STR_TIME, M.FST_SCH_END_TIME, M.FST_SCH_BRK_MIN
+                    , M.SEC_SCH_STR_TIME, M.SEC_SCH_END_TIME, M.SEC_SCH_BRK_MIN
+                    , 2147483647 AS HIST_IDX
+                FROM TB_SCH_MGMT M WHERE M.USE_YN = 'Y'
+                UNION ALL
+                SELECT
+                      H.CMPNY_CD, H.SITE_CD, H.SCH_CD, H.APPLY_DATE
+                    , H.FST_SCH_STR_TIME, H.FST_SCH_END_TIME, H.FST_SCH_BRK_MIN
+                    , H.SEC_SCH_STR_TIME, H.SEC_SCH_END_TIME, H.SEC_SCH_BRK_MIN
+                    , H.HIST_IDX
+                FROM TB_SCH_MGMT_HIST H WHERE H.USE_YN = 'Y'
+            ) E
+            LEFT JOIN TB_SCH_MGMT MT
+                ON  MT.CMPNY_CD = E.CMPNY_CD
+                AND MT.SITE_CD  = E.SITE_CD
+                AND MT.SCH_CD   = E.SCH_CD
+            WHERE E.HIST_IDX = (
+                SELECT MAX(E2.HIST_IDX)
+                FROM (
+                    SELECT M2.CMPNY_CD, M2.SITE_CD, M2.SCH_CD, M2.APPLY_DATE, 2147483647 AS HIST_IDX
+                    FROM TB_SCH_MGMT M2 WHERE M2.USE_YN = 'Y'
+                    UNION ALL
+                    SELECT H2.CMPNY_CD, H2.SITE_CD, H2.SCH_CD, H2.APPLY_DATE, H2.HIST_IDX
+                    FROM TB_SCH_MGMT_HIST H2 WHERE H2.USE_YN = 'Y'
+                ) E2
+                WHERE E2.CMPNY_CD   = E.CMPNY_CD
+                  AND E2.SITE_CD    = E.SITE_CD
+                  AND E2.SCH_CD     = E.SCH_CD
+                  AND E2.APPLY_DATE = E.APPLY_DATE
+            )
+        ) SCH
             ON  SCH.CMPNY_CD = WP.CMPNY_CD
             AND SCH.SITE_CD  = WP.SITE_CD
             AND SCH.SCH_CD   = WP.WORK_PLAN_CD
-            AND SCH.USE_YN   = 'Y'
+            AND SCH.APPLY_DATE = (
+                SELECT MAX(SE.APPLY_DATE)
+                FROM (
+                    SELECT M3.CMPNY_CD, M3.SITE_CD, M3.SCH_CD, M3.APPLY_DATE
+                    FROM TB_SCH_MGMT M3 WHERE M3.USE_YN = 'Y'
+                    UNION ALL
+                    SELECT H3.CMPNY_CD, H3.SITE_CD, H3.SCH_CD, H3.APPLY_DATE
+                    FROM TB_SCH_MGMT_HIST H3 WHERE H3.USE_YN = 'Y'
+                ) SE
+                WHERE SE.CMPNY_CD    = WP.CMPNY_CD
+                  AND SE.SITE_CD     = WP.SITE_CD
+                  AND SE.SCH_CD      = WP.WORK_PLAN_CD
+                  AND SE.APPLY_DATE <![CDATA[ <= ]]> WP.WORK_YMD
+            )
 
         LEFT JOIN TB_USER_ATTD_MGMT A1
             ON  A1.CMPNY_CD = A.CMPNY_CD
@@ -148,9 +236,7 @@
           AND A.WORK_YMD <![CDATA[ >= ]]> #{fromYmd}
           AND A.WORK_YMD <![CDATA[ <= ]]> #{toYmd}
         <if test="userNm != null and userNm != ''">
-          <bind name="safeUserNm"
-                value="userNm.replace('\\', '\\\\').replace('%', '\\%').replace('_', '\\_')" />
-          AND U.USER_NM LIKE CONCAT('%', #{safeUserNm}, '%') ESCAPE '\'
+          AND U.USER_NM LIKE CONCAT('%', #{userNm}, '%')
         </if>
 
         UNION ALL
@@ -235,9 +321,7 @@
           AND O.WORK_YMD <![CDATA[ >= ]]> #{fromYmd}
           AND O.WORK_YMD <![CDATA[ <= ]]> #{toYmd}
         <if test="userNm != null and userNm != ''">
-          <bind name="safeUserNmOt"
-                value="userNm.replace('\\', '\\\\').replace('%', '\\%').replace('_', '\\_')" />
-          AND U.USER_NM LIKE CONCAT('%', #{safeUserNmOt}, '%') ESCAPE '\'
+          AND U.USER_NM LIKE CONCAT('%', #{userNm}, '%')
         </if>
 
         /* UNION 전체 정렬은 SELECT-list alias 로 작성한다(테이블 한정명 사용 불가).

@@ -21,6 +21,11 @@
       - usedTotal = SUM(G.USED_DAYS)   (활성·그룹) — 과거사용+미래예정 포함(내부값)
       - planned   = SUM(LU.LEAVE_DAYS) (CONFIRMED, START_DATE>오늘, 동일 활성·그룹 부여에 GRANT_ID 조인)
       used/remaining/usageRate 는 서비스에서 파생. prefix null 이면 LIKE 필터 생략(TOTAL).
+
+      ※ prafta-com-011 QA D2 통일 모델(§6-2): 발생일 미도래(AVAIL_FROM_DATE > today)인 가불 GRANT 는 전량 생성·
+        가불분만 USED 차감이라, 그 GRANT 의 잔여(미사용분)가 "사용 가능 잔여"로, USED 분이 일반 used 로 새면 안 된다
+        (가불 USED 는 borrowedDays 로 별도 표시). 따라서 granted/usedTotal 에서 "미발생 가불 GRANT" 행을 통째로 제외한다.
+        (가불 마커 + AVAIL_FROM > today 동시 만족 행만 제외 — 비가불/발생도래 가불은 종전과 동일, 회귀 0.)
     -->
     <select id="selectGroupAgg"
             parameterType="com.prafta.app.leave.leave01.application.query.MyLeaveSummaryQuery"
@@ -35,6 +40,7 @@
                AND G.STATUS = 'ACTIVE'
                AND G.EXPIRE_YN = 'N'
                AND G.DEL_YN = 'N'
+               AND NOT (G.GRANT_REASON LIKE '[가불]%' AND G.AVAIL_FROM_DATE <![CDATA[ > ]]> #{ param.todayYmd })
             <if test="param.grantTypePrefix != null">
                AND G.GRANT_TYPE LIKE #{ param.grantTypePrefix }
             </if>
@@ -47,6 +53,7 @@
                AND G.STATUS = 'ACTIVE'
                AND G.EXPIRE_YN = 'N'
                AND G.DEL_YN = 'N'
+               AND NOT (G.GRANT_REASON LIKE '[가불]%' AND G.AVAIL_FROM_DATE <![CDATA[ > ]]> #{ param.todayYmd })
             <if test="param.grantTypePrefix != null">
                AND G.GRANT_TYPE LIKE #{ param.grantTypePrefix }
             </if>
@@ -60,6 +67,7 @@
                AND G.STATUS = 'ACTIVE'
                AND G.EXPIRE_YN = 'N'
                AND G.DEL_YN = 'N'
+               AND NOT (G.GRANT_REASON LIKE '[가불]%' AND G.AVAIL_FROM_DATE <![CDATA[ > ]]> #{ param.todayYmd })
             <if test="param.grantTypePrefix != null">
                AND G.GRANT_TYPE LIKE #{ param.grantTypePrefix }
             </if>
@@ -100,6 +108,9 @@
       AND G.EXPIRE_YN = 'N'
       AND G.DEL_YN = 'N'
       AND (G.GRANT_DAYS - G.USED_DAYS) <![CDATA[ > ]]> 0
+      <!-- prafta-com-011 QA D2 통일 모델(§6-2): 발생일 미도래(AVAIL_FROM>today) 가불 GRANT 의 잔여는 아직 사용 불가
+           → 소멸 임박 대상에서 제외(비가불/발생도래 가불은 종전과 동일, 회귀 0). -->
+      AND NOT (G.GRANT_REASON LIKE '[가불]%' AND G.AVAIL_FROM_DATE <![CDATA[ > ]]> #{ param.todayYmd })
       AND G.AVAIL_TO_DATE BETWEEN #{ param.todayYmd }
                               AND DATE_FORMAT(
                                       DATE_ADD(STR_TO_DATE(#{ param.todayYmd }, '%Y%m%d'), INTERVAL 30 DAY)
@@ -164,6 +175,27 @@
        AND T.LEAVE_TYPE = '01'
        AND T.USE_YN     = 'Y'
      ORDER BY T.LEAVE_NO ASC, T.LEAVE_CD ASC
+    </select>
+
+    <!--
+      prafta-com-011-5 (QA D1/D2 통일 모델 §6-2): 미상계 가불 사용 합계(표시 전용, MVP 결정 §5).
+      가불 마커 = GRANT_REASON LIKE '[가불]%' (멱등키 밖, plan §0-1, 웹 LeaveDashboardMapper.selectBorrowedDaysTotal 정합).
+        '[가불]%' 는 대괄호가 MySQL LIKE 에서 리터럴이고 '%' 만 와일드카드라 별도 이스케이프 불필요.
+      통일 모델(§6-2): 가불 GRANT 는 전량 생성·가불 사용분만 USED 차감 → "진짜 당겨쓴 분"은 GRANT_DAYS 가 아니라
+        미발생(AVAIL_FROM_DATE > today) 가불 GRANT 의 USED_DAYS 합이다. 발생일 도래분은 정식 부여 전환으로 제외.
+      live = STATUS!='CANCELED' AND DEL_YN='N'. 종류(월차/본연차) 무관 전체합.
+      식별값은 토큰 도출값만 사용(IDOR). 대상 0건이면 SUM null → IFNULL 0.
+    -->
+    <select id="selectBorrowedDaysTotal" resultType="java.math.BigDecimal">
+    /* AppLeave01Mapper.selectBorrowedDaysTotal */
+    SELECT IFNULL(SUM(G.USED_DAYS), 0)
+      FROM TB_USER_LEAVE_GRANT G
+     WHERE G.CMPNY_CD       = #{cmpnyCd}
+       AND G.USER_CD        = #{userCd}
+       AND G.GRANT_REASON   LIKE '[가불]%'
+       AND G.STATUS        != 'CANCELED'
+       AND G.DEL_YN         = 'N'
+       AND G.AVAIL_FROM_DATE <![CDATA[ > ]]> #{today}
     </select>
 
 </mapper>

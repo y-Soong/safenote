@@ -29,6 +29,25 @@
       </div>
     </section>
 
+    <!-- prafta-app-030: 이미 등록된 초과근무 (읽기전용). 적용분 + 대기중(미승인) 신청 모두 노출.
+         대기중은 "대기중" 배지로 구분(표시 전용 — 겹침 사전차단 비대상). -->
+    <section
+      v-if="existingOvertimeDisplays.length || pendingOvertimeDisplays.length"
+      class="existing-ot"
+    >
+      <p class="existing-ot__title">이미 등록된 초과근무</p>
+      <ul class="existing-ot__list">
+        <li v-for="item in existingOvertimeDisplays" :key="item.key" class="existing-ot__item">
+          <span class="existing-ot__range">{{ item.rangeText }}</span>
+        </li>
+        <li v-for="item in pendingOvertimeDisplays" :key="item.key" class="existing-ot__item">
+          <span class="existing-ot__range">{{ item.rangeText }}</span>
+          <span class="ot-badge-pending">대기중</span>
+        </li>
+      </ul>
+      <p class="existing-ot__hint">위 시간대와 겹치지 않도록 입력해 주세요.</p>
+    </section>
+
     <!-- 초과근무 시간 -->
     <section class="fs">
       <p class="fs__title">초과근무 시간</p>
@@ -52,6 +71,11 @@
         <!-- prafta-app-017(이슈①) 정규 스케줄 겹침 경고 (구간별, 사전차단) -->
         <p v-if="slotOverlap(slot.workSeq)" class="warn-msg">
           스케줄 시간 내에는 초과근무를 등록할 수 없어요.
+        </p>
+
+        <!-- prafta-app-030 기존 적용 OT 겹침 경고 (구간별, 사전차단) -->
+        <p v-if="slotExistingOverlap(slot.workSeq)" class="warn-msg">
+          이미 등록된 초과근무와 시간이 겹쳐요.
         </p>
 
         <label class="field">
@@ -129,7 +153,7 @@
 
     <p class="helper">
       <span class="helper__dot" aria-hidden="true">·</span>
-      관리자 승인 후 추가근무로 반영돼요.
+      관리자 승인 후 초과근무로 반영돼요.
     </p>
 
     <footer class="form-ft">
@@ -156,6 +180,7 @@ import DateStepperField from '@/components/common/DateStepperField.vue'
 import TimeStepperField from '@/components/common/TimeStepperField.vue'
 import ApprovalLineSection from './ApprovalLineSection.vue'
 import AttdApproverPickerSheet from './AttdApproverPickerSheet.vue'
+import { formatYmdDisplay } from '@/utils/approvalFormat'
 
 const props = defineProps({
   context: { type: Object, required: true },
@@ -164,6 +189,12 @@ const props = defineProps({
   presets: { type: Array, default: () => [] },
   // prafta-app-009: 결재선 분기 컨텍스트 { selfApprvYn:'Y'|'N', isNodeAdmin:bool } | null(미상).
   approvalContext: { type: Object, default: null },
+  // prafta-app-030: 이미 등록(적용)된 초과근무 목록([{ startDate, startTime, endDate, endTime, otStatus, workMinutes }]).
+  //   표시(읽기전용) + 신규 슬롯 겹침 경고/제출 차단(오버나이트 인지). 빈 배열이면 표시/경고 모두 없음.
+  existingOvertimes: { type: Array, default: () => [] },
+  // prafta-app-030 후속: 대기중(미승인) OT 신청([{ startDate, startTime, endDate, endTime }]).
+  //   표시 전용 — 겹침 사전차단 비대상(같은 날 대기 OT 등록은 서버 countDuplicateReq 가 ATTD_400_090 으로 신규 제출 자체를 차단).
+  pendingOvertimes: { type: Array, default: () => [] },
 })
 const emit = defineEmits(['submit', 'cancel'])
 
@@ -357,14 +388,86 @@ function stampOf(ymd, hhmm) {
   return days * 1440 + m
 }
 
-// ── 겹침 경고 ───────────────────────────────────────────────────────────
+// ── 겹침 경고 (2슬롯) ────────────────────────────────────────────────────
+//   prafta-app-030: 기존 시각 문자열 단순비교(s2Start < s1End)는 오버나이트(날짜 넘김)를 무시하는 버그였다.
+//   stampOf(YYYYMMDD, HHMM)(일자+시각 결합)로 1구간 종료 > 2구간 시작 인지를 정확히 판정한다(자정 넘김 안전).
+//   slots.value 의 startDate/startTime 은 input 포맷 → inputToYmd()/timeToHhmm() 로 변환 후 stamp 화.
+//   ⚠️ workSeq 식별자로 1·2 구간을 매칭(위치 index 금지).
 const overlapWarning = computed(() => {
   if (slots.value.length < 2) return false
-  const s1End = slots.value[0].endTime
-  const s2Start = slots.value[1].startTime
-  if (!s1End || !s2Start) return false
+  const s1 = slots.value.find((s) => s.workSeq === 1)
+  const s2 = slots.value.find((s) => s.workSeq === 2)
+  if (!s1 || !s2) return false
+  const s1End = stampOf(inputToYmd(s1.endDate), timeToHhmm(s1.endTime))
+  const s2Start = stampOf(inputToYmd(s2.startDate), timeToHhmm(s2.startTime))
+  // 어느 값이라도 NaN(미입력/형식위반) → 경고 안 함(입력 완료 후 판정).
+  if (Number.isNaN(s1End) || Number.isNaN(s2Start)) return false
   return s2Start < s1End
 })
+
+// ── prafta-app-030: 기존 적용 OT 표시/겹침 ───────────────────────────────
+// 기존 OT 1건을 stamp 구간 [start,end] 으로 환산(오버나이트는 startDate/endDate 가 일자를 각각 보유).
+//   파싱 불가(형식 이상) 시 null(겹침 판정에서 건너뜀).
+function existingOtStamps(ot) {
+  if (!ot) return null
+  const exStart = stampOf(ot.startDate, ot.startTime)
+  const exEnd = stampOf(ot.endDate, ot.endTime)
+  if (Number.isNaN(exStart) || Number.isNaN(exEnd)) return null
+  return { exStart, exEnd }
+}
+
+// 표시용 목록(읽기전용 섹션). 시각 표기는 규약(점 YYYY.MM.DD / 콜론 HH:mm).
+//   오버나이트면 종료에 날짜를 동반 표기, 같은 날이면 시각만.
+const existingOvertimeDisplays = computed(() =>
+  (props.existingOvertimes || []).map((ot, i) => {
+    const sameDay = ot.startDate && ot.endDate && ot.startDate === ot.endDate
+    const startTxt = `${formatYmdDisplay(ot.startDate)} ${hhmmDisplay(ot.startTime)}`
+    const endTxt = sameDay
+      ? hhmmDisplay(ot.endTime)
+      : `${formatYmdDisplay(ot.endDate)} ${hhmmDisplay(ot.endTime)}`
+    return {
+      key: `${ot.startDate || ''}-${ot.startTime || ''}-${ot.endDate || ''}-${ot.endTime || ''}-${i}`,
+      rangeText: `${startTxt} ~ ${endTxt}`,
+    }
+  }),
+)
+
+// prafta-app-030 후속: 대기중(미승인) OT 표시 목록. existingOvertimeDisplays 와 동일 패턴(점/콜론 규약).
+//   각 item 에 pending:true 플래그 부여(템플릿 "대기중" 배지용). 표시 전용 — 겹침 계산에 미사용.
+const pendingOvertimeDisplays = computed(() =>
+  (props.pendingOvertimes || []).map((ot, i) => {
+    const sameDay = ot.startDate && ot.endDate && ot.startDate === ot.endDate
+    const startTxt = `${formatYmdDisplay(ot.startDate)} ${hhmmDisplay(ot.startTime)}`
+    const endTxt = sameDay
+      ? hhmmDisplay(ot.endTime)
+      : `${formatYmdDisplay(ot.endDate)} ${hhmmDisplay(ot.endTime)}`
+    return {
+      key: `p-${ot.startDate || ''}-${ot.startTime || ''}-${ot.endDate || ''}-${ot.endTime || ''}-${i}`,
+      rangeText: `${startTxt} ~ ${endTxt}`,
+      pending: true,
+    }
+  }),
+)
+
+// 신규 슬롯 1건이 기존 적용 OT 와 겹치는지(오버나이트 인지). 겹침: otStart < exEnd && exStart < otEnd(접함 허용).
+//   slots.value 는 input 포맷 → 변환 후 stamp 화. 계산 불가(NaN) 슬롯은 false(BE 가 최종 차단).
+const slotExistingOverlap = (workSeq) => {
+  const list = props.existingOvertimes || []
+  if (list.length === 0) return false
+  const slot = slots.value.find((s) => s.workSeq === workSeq)
+  if (!slot) return false
+  const otStart = stampOf(inputToYmd(slot.startDate), timeToHhmm(slot.startTime))
+  const otEnd = stampOf(inputToYmd(slot.endDate), timeToHhmm(slot.endTime))
+  if (Number.isNaN(otStart) || Number.isNaN(otEnd)) return false
+  return list.some((ex) => {
+    const st = existingOtStamps(ex)
+    if (!st) return false
+    return otStart < st.exEnd && st.exStart < otEnd
+  })
+}
+
+// 어느 한 구간이라도 기존 적용 OT 와 겹치면 true(제출 차단/경고).
+const hasExistingOverlap = computed(() => slots.value.some((s) => slotExistingOverlap(s.workSeq)))
 
 // ── #프라프타-app-017(이슈①) 정규 스케줄 겹침 사전차단 ───────────────────────
 //   OT [start,end] ∩ 정규스케줄[schStart,schEnd] ≠ ∅ 이면 제출 비활성 + 경고.
@@ -451,6 +554,9 @@ const totalDisplay = computed(() => {
 const isValid = computed(() => {
   // 사유 미입력은 버튼 비활성 사유에서 제외(제출 시 사유 전용 alert 로 안내).
   if (hasOverlap.value) return false
+  // prafta-app-030: 신규 슬롯이 기존 적용 OT 또는 2구간 상호 간 겹치면 제출 차단.
+  if (hasExistingOverlap.value) return false
+  if (overlapWarning.value) return false
   if (!slots.value.every((s) => s.startDate && s.startTime && s.endDate && s.endTime)) return false
   // 결재 필수('N') 케이스는 결재자 1명 이상이어야 제출 활성.
   if (approverRequired.value && approverList.value.length === 0) return false
@@ -480,6 +586,16 @@ const onSubmit = () => {
   // prafta-app-017(이슈①): 정규 스케줄 겹침은 우선 안내(서버도 ATTD_400_100 으로 최종 차단).
   if (hasOverlap.value) {
     showAlert('스케줄 시간 내에는 초과근무를 등록할 수 없어요.')
+    return
+  }
+  // prafta-app-030: 2구간 상호 겹침(오버나이트 인지) 안내.
+  if (overlapWarning.value) {
+    showAlert('2구간 시작 시각은 1구간 종료 시각 이후여야 합니다.')
+    return
+  }
+  // prafta-app-030: 기존 적용 초과근무와 시간 겹침 안내(서버도 ATTD_409_002 로 최종 차단).
+  if (hasExistingOverlap.value) {
+    showAlert('이미 등록된 초과근무와 시간이 겹칩니다. 시간이 겹치지 않도록 입력해 주세요.')
     return
   }
   // 사유 전용 가드(버튼은 기본 활성 → 빈값 제출 시 사유 안내).
@@ -555,6 +671,62 @@ const onSubmit = () => {
   font-size: 13px;
   color: var(--color-text-primary);
   font-variant-numeric: tabular-nums;
+}
+
+/* prafta-app-030: 이미 등록된 초과근무(읽기전용) */
+.existing-ot {
+  background: var(--color-surface);
+  border: 0.5px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  padding: var(--space-md);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-sm);
+}
+.existing-ot__title {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--color-text-primary);
+}
+.existing-ot__list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-xs);
+}
+.existing-ot__item {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+  padding: var(--space-sm) var(--space-md);
+  background: var(--color-bg);
+  border: 0.5px solid var(--color-border-light);
+  border-radius: var(--radius-md);
+}
+.existing-ot__range {
+  font-size: 13px;
+  color: var(--color-text-primary);
+  font-variant-numeric: tabular-nums;
+}
+/* prafta-app-030 후속: 대기중(미승인) OT 구분 배지 — neutral/secondary 톤(CSS 변수만). */
+.ot-badge-pending {
+  margin-left: auto;
+  flex-shrink: 0;
+  padding: 2px var(--space-sm);
+  background: var(--color-warning-tint);
+  color: var(--color-warning-text);
+  border-radius: var(--radius-full);
+  font-size: 11px;
+  font-weight: 500;
+  white-space: nowrap;
+}
+.existing-ot__hint {
+  margin: 0;
+  font-size: 12px;
+  color: var(--color-text-secondary);
 }
 
 .fs {

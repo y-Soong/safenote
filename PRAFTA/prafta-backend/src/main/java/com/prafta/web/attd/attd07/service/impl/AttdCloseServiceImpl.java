@@ -15,6 +15,7 @@ import com.prafta.web.attd.attd07.dto.response.AttdCloseStatusResponse;
 import com.prafta.web.attd.attd07.mapper.AttdCloseMapper;
 import com.prafta.web.attd.attd07.result.AttdCloseHistResult;
 import com.prafta.web.attd.attd07.result.AttdCloseRowResult;
+import com.prafta.web.attd.attd07.result.NodeApprovalInfoResult;
 import com.prafta.web.attd.attd07.service.AttdCloseService;
 
 import lombok.RequiredArgsConstructor;
@@ -221,6 +222,64 @@ public class AttdCloseServiceImpl implements AttdCloseService {
             return false;
         }
         return canManageNodeExcludeSafe(authCd, requesterUserCd, cmpnyCd, siteCd, targetNodeCd);
+    }
+
+    @Override
+    public String resolveUserNodeCd(String cmpnyCd, String siteCd, String userCd) {
+        // com-013-06-FU 보안 재작업: 대상 사용자 소속 부서를 서버 권위값으로 해석(클라 nodeCd 불신뢰).
+        //   canManageUser 가 사용하는 것과 동일한 TB_USER 기반 출처를 재사용한다.
+        if (cmpnyCd == null || siteCd == null || userCd == null) {
+            return null;
+        }
+        return attdCloseMapper.selectUserNodeCd(cmpnyCd, siteCd, userCd);
+    }
+
+    @Override
+    public boolean canProcessAttdSelfPolicy(String authCd, String approverUserCd, String applicantUserCd,
+                                            String cmpnyCd, String siteCd, String nodeCd) {
+        // 1. 전사 역할(master/hr/safe)은 노드 정책과 무관하게 즉시 통과(기존 동작 보존).
+        if (AuthRoleUtils.canManageAllNodes(authCd)) {
+            return true;
+        }
+        // 2. 노드 미지정/전체('*')는 노드 단위 정책을 적용할 수 없으므로 차단(전사 역할만 가능).
+        if (nodeCd == null || nodeCd.isBlank() || WHOLE_SITE.equals(nodeCd)) {
+            return false;
+        }
+        // 3. 해당 노드의 승인 정책 + 정·부 관리자 조회.
+        NodeApprovalInfoResult node = attdCloseMapper.selectNodeApprovalInfo(cmpnyCd, siteCd, nodeCd);
+        if (node == null) {
+            // 노드가 존재하지 않으면 fail-closed(전사 역할만 처리).
+            return false;
+        }
+        boolean applicantIsNodeAdmin = isNodeAdminOf(node, applicantUserCd);
+        boolean approverIsNodeAdmin = isNodeAdminOf(node, approverUserCd);
+        boolean selfApprvN = !"Y".equals(node.selfAttdApprvYn());
+
+        // 4-a. 신청자가 그 노드 관리자이고 자체승인 불가('N'): 부모 1단계 노드 관리자만 허용.
+        //      동일 노드 관리자(본인 포함)는 차단, 부모 노드 없으면 차단(조상 2단계 이상 확장 없음).
+        if (applicantIsNodeAdmin && selfApprvN) {
+            if (approverIsNodeAdmin) {
+                return false;
+            }
+            String parentNodeCd = node.parentNodeCd();
+            if (parentNodeCd == null || parentNodeCd.isBlank()) {
+                return false;
+            }
+            NodeApprovalInfoResult parent = attdCloseMapper.selectNodeApprovalInfo(cmpnyCd, siteCd, parentNodeCd);
+            return parent != null && isNodeAdminOf(parent, approverUserCd);
+        }
+
+        // 4-b. 그 외(노드 관리자 & 'Y' OR 일반 사용자 신청): 처리자가 해당 노드 관리자일 때만 허용.
+        //      (조상 노드 관리자 허용 폐지 — 이 경로 한정.)
+        return approverIsNodeAdmin;
+    }
+
+    /** 주어진 노드 정보의 정/부 관리자(MAIN/SUB)에 userCd 가 포함되는지. */
+    private boolean isNodeAdminOf(NodeApprovalInfoResult node, String userCd) {
+        if (node == null || userCd == null) {
+            return false;
+        }
+        return userCd.equals(node.mainAdminCd()) || userCd.equals(node.subAdminCd());
     }
 
     // ===== 내부 헬퍼 =====

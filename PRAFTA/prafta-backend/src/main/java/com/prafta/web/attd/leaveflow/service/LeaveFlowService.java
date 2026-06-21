@@ -37,6 +37,23 @@ public interface LeaveFlowService {
             String cmpnyCd, String siteCd, String userCd, String workYmd, String leaveCd, String operatorUserCd);
 
     /**
+     * prafta-com-016-C-4: 종류 미지정 자동 차감 — 후보 법정휴가(연차/월차) 중 <b>소멸 임박 통합순</b>으로
+     * 1일을 차감한다(종류 무관, AVAIL_TO_DATE→GRANT_DATE 우선). 근무계획 관리(Attd_05)에서 관리자가
+     * "법정 휴가"를 종류 선택 없이 적용할 때 호출한다.
+     *
+     * <p>{@link #recordDirectLeaveUsage} 와 동일하게 결재 없이 차감 기록(REQ_ID 없음, CONFIRMED, 종일 1일)
+     * + 부여 USED_DAYS 동기화를 수행한다. 차이는 차감할 연차코드를 호출자가 지정하지 않고, 후보 집합에서
+     * 만료가 가장 임박한 부여를 시스템이 자동 선택한다는 점이다. 해당 셀에 이미 종일 CONFIRMED 연차가
+     * 있으면 멱등 skip(SKIPPED_DUP), 후보 전체에 차감 가능 부여가 없으면 INSUFFICIENT.
+     *
+     * @param candidateLeaveCds 차감 후보 휴가코드(예: [SYS_ANNUAL, SYS_MONTHLY]). 모두 부여 기반(법정) 종류여야 한다.
+     * @return {@link com.prafta.web.attd.leaveflow.vo.DirectLeaveResult}
+     */
+    com.prafta.web.attd.leaveflow.vo.DirectLeaveResult recordDirectLeaveUsageAuto(
+            String cmpnyCd, String siteCd, String userCd, String workYmd,
+            java.util.List<String> candidateLeaveCds, String operatorUserCd);
+
+    /**
      * 결재 없이 기록된 직접 연차 사용(근무계획 직접 적용, {@link #recordDirectLeaveUsage})을 셀 단위로 취소하고
      * 부여 잔여를 복원한다 — 근무계획 관리(Attd_05)에서 연차 셀을 비울 때 호출한다(prafta-041).
      *

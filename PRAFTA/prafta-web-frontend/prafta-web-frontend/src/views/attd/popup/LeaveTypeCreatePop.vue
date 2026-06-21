@@ -227,36 +227,24 @@
                     </option>
                   </select>
                 </div>
-                <div
-                  class="form-item"
-                  :class="{ 'full-width': availTermType !== '03' }"
-                >
+                <div class="form-item">
                   <label>사용 가능기간 <span class="required">*</span></label>
                   <select v-model="availTermType" :disabled="isEditMode">
                     <option
-                      v-for="opt in (systCodeArr['SYS026'] || []).filter(
-                        (o) => o.systValDCd != null
-                      )"
+                      v-for="opt in userAvailTermOptions"
                       :key="opt.systValDCd"
                       :value="opt.systValDCd"
                     >
                       {{ opt.systValDNm }}
                     </option>
                   </select>
-                </div>
-                <div v-if="availTermType === '03'" class="form-item full-width">
-                  <label>기간 설정</label>
-                  <div class="period-date-range">
-                    <MonthDayPickerInput
-                      v-model="availFromDt"
-                      :readonly="isEditMode"
-                    />
-                    <span class="period-date-sep">~</span>
-                    <MonthDayPickerInput
-                      v-model="availToDt"
-                      :readonly="isEditMode"
-                    />
-                  </div>
+                  <p class="field-desc">
+                    {{
+                      availTermType === "01"
+                        ? "전체 기간 동안 최대 신청일수까지 누적 사용 (연도 리셋 없음)"
+                        : "매년(회계연도) 최대 신청일수까지 사용 가능"
+                    }}
+                  </p>
                 </div>
               </div>
               <!-- 관리자 부여 타입 - 자동 부여 -->
@@ -339,21 +327,16 @@
                     v-if="adminAvailTermType === '03'"
                     class="form-item full-width"
                   >
-                    <label>기간 설정</label>
-                    <div class="period-date-range">
-                      <div class="period-date-calendar">
-                        <CalendarSrch
-                          v-model="adminAvailFromDt"
-                          :readonly="isEditMode"
-                        />
-                      </div>
-                      <span class="period-date-sep">~</span>
-                      <div class="period-date-calendar">
-                        <CalendarSrch
-                          v-model="adminAvailToDt"
-                          :readonly="isEditMode"
-                        />
-                      </div>
+                    <label>사용 가능 기간</label>
+                    <div class="period-days-row">
+                      <input
+                        v-model.number="adminAvailMonths"
+                        type="number"
+                        min="1"
+                        max="99"
+                        :readonly="isEditMode"
+                      />
+                      <span class="period-unit">개월 (부여일로부터)</span>
                     </div>
                   </div>
                 </div>
@@ -392,21 +375,16 @@
                   v-if="adminAvailTermType === '03'"
                   class="form-item full-width"
                 >
-                  <label>기간 설정</label>
-                  <div class="period-date-range">
-                    <div class="period-date-calendar">
-                      <CalendarSrch
-                        v-model="adminAvailFromDt"
-                        :readonly="isEditMode"
-                      />
-                    </div>
-                    <span class="period-date-sep">~</span>
-                    <div class="period-date-calendar">
-                      <CalendarSrch
-                        v-model="adminAvailToDt"
-                        :readonly="isEditMode"
-                      />
-                    </div>
+                  <label>사용 가능 개월수</label>
+                  <div class="period-days-row">
+                    <input
+                      v-model.number="adminAvailMonths"
+                      type="number"
+                      min="1"
+                      max="99"
+                      :readonly="isEditMode"
+                    />
+                    <span class="period-unit">개월 (부여일로부터)</span>
                   </div>
                 </div>
               </div>
@@ -502,7 +480,6 @@ import axios from "@/api/axios";
 import { getMessage, MSG } from "@/messages";
 import { resolveApiErrorMessage } from "@/utils/apiError";
 import MonthDayPickerInput from "@/components/common/MonthDayPickerInput.vue";
-import CalendarSrch from "@/components/common/CalendarSrch.vue";
 
 // ================ Props & Emits ================
 const props = defineProps({
@@ -535,16 +512,13 @@ const leaveDesc = ref("");
 // 사용자 신청 타입용
 const maxAplyDays = ref(1);
 const useUnitType = ref("00"); // SYS025: 00=1일 / 01=반차 / 02=시간차(2시간) / 03=시간차(1시간) / 04=시간차(30분)
-const availTermType = ref("02"); // SYS026: '01'=설정안함, '02'=해당년도 내, '03'=기간설정
-const currentYear = new Date().getFullYear();
-// 사용자 신청 기간설정: MMDD 형식 (예: 0101, 1231)
-const availFromDt = ref("0101");
-const availToDt = ref("1231");
+// prafta-com-016-B(3-1): 사용자 신청 사용가능기간 = '01'(설정안함=전체누적) / '02'(해당연도내). '03' 폐지.
+const availTermType = ref("02"); // SYS026
 
 // 관리자 부여 타입용
 const adminAvailTermType = ref("02"); // SYS026
-const adminAvailFromDt = ref(`${currentYear}-01-01`);
-const adminAvailToDt = ref(`${currentYear}-12-31`);
+// prafta-com-016-B(3-2): 기간설정('03') = 부여일로부터 N개월(1~99 정수)
+const adminAvailMonths = ref(12);
 // 자동 부여용
 const grantBaseType = ref("01"); // SYS027: '01'=입사일, '02'=생일, '03'=부여일지정
 const grantOffsetMonth = ref(1);
@@ -585,54 +559,48 @@ const autoGrantInfoMsg = computed(() => {
   return `(${std}, ${months}개월 전 1일) ${std}이 9월 16일이면 8월 1일 00시에 해당 연차가 사용자에게 부여됩니다.`;
 });
 
+// SYS026 옵션(유효 코드만)
+const sys026Options = computed(() =>
+  (systCodeArr.value["SYS026"] || []).filter((o) => o.systValDCd != null)
+);
+// prafta-com-016-B(3-1): 사용자 신청 타입은 '03'(기간설정) 제외 → '01'(설정안함)/'02'(해당연도내)만
+const userAvailTermOptions = computed(() =>
+  sys026Options.value.filter((o) => o.systValDCd !== "03")
+);
+
 // leaveCd 기준 수정 모드: 사용여부, 비고(설명)만 편집 가능
 const isEditMode = computed(() => !!props.editRow && !!props.editRow.leaveCd);
 
-// MMDD <-> MM-DD 변환 (사용자 신청 기간설정용)
+// MMDD 추출 (자동부여 부여일지정 grantAssignMmdd 용)
 const toMMDD = (val) => {
   if (!val) return "";
   return String(val).replace(/\D/g, "").slice(0, 4);
 };
 
-// prafta-044-FU2: 관리자 부여 사용기간(절대 날짜) 변환
-// CalendarSrch 네이티브(YYYY-MM-DD) -> 저장 payload(YYYYMMDD 8자)
-const toYmd8 = (val) => {
-  if (!val) return "";
-  return String(val).replace(/\D/g, "").slice(0, 8);
-};
-// DB 저장값(YYYYMMDD 8자) -> CalendarSrch 채우기(YYYY-MM-DD)
-const fromYmd8 = (val) => {
-  if (!val) return null;
-  const s = String(val).replace(/\D/g, "");
-  if (s.length !== 8) return null;
-  return `${s.slice(0, 4)}-${s.slice(4, 6)}-${s.slice(6, 8)}`;
+// prafta-com-016-B(3-2): 관리자 부여 '03' 기간설정 = 부여일로부터 N개월(1~99 정수) 검증
+const isValidAvailMonths = (v) => {
+  const m = Number(v);
+  return Number.isInteger(m) && m >= 1 && m <= 99;
 };
 
 const canSave = computed(() => {
   if (!leaveNo.value.trim() || !leaveNm.value.trim()) return false;
   if (leaveType.value === "01") {
     if (maxAplyDays.value <= 0 || !useUnitType.value) return false;
-    if (availTermType.value === "03") {
-      const from = toMMDD(availFromDt.value);
-      const to = toMMDD(availToDt.value);
-      if (from.length !== 4 || to.length !== 4) return false;
-      if (from > to) return false;
-    }
+    // 사용가능기간은 '01'/'02'만 선택 가능(기간설정 폐지) — 추가 검증 불필요
   }
   if (leaveType.value === "02" && grantType.value === "02") {
     // 관리자 수동부여: 사용단위 필수 (소비 단위 결정 출처)
     if (!useUnitType.value) return false;
     if (adminAvailTermType.value === "03") {
-      if (!adminAvailFromDt.value || !adminAvailToDt.value) return false;
-      if (adminAvailFromDt.value > adminAvailToDt.value) return false;
+      if (!isValidAvailMonths(adminAvailMonths.value)) return false;
     }
   }
   if (leaveType.value === "02" && grantType.value === "01") {
     // 관리자 부여 + 자동 부여: 사용단위 필수 (수동부여와 동일, 소비 단위 출처)
     if (!useUnitType.value) return false;
     if (adminAvailTermType.value === "03") {
-      if (!adminAvailFromDt.value || !adminAvailToDt.value) return false;
-      if (adminAvailFromDt.value > adminAvailToDt.value) return false;
+      if (!isValidAvailMonths(adminAvailMonths.value)) return false;
     }
     // 정책서 §8.1.2에 따라 기준일별 cross-field 검증
     if (grantBaseType.value === "01" || grantBaseType.value === "02") {
@@ -710,26 +678,19 @@ const fnGetSystinfoList = async () => {
         }
         useUnitType.value =
           r.useUnitType ?? firstValid("SYS025") ?? useUnitType.value;
-        availTermType.value =
+        // prafta-com-016-B(3-1): 사용자 신청은 '03' 폐지. 잔존 '03' 데이터는 '02'로 표시 보정.
+        const restoredAvailTerm =
           r.availTermType ?? firstValid("SYS026") ?? availTermType.value;
-        // availFromDt, availToDt: MMDD 형식 (API가 YYYY-MM-DD면 추출)
-        const normMMDD = (v) => {
-          if (!v) return null;
-          const s = String(v);
-          if (s.length >= 4 && /^\d{4}/.test(s)) return s.slice(0, 4);
-          if (/^\d{4}-\d{2}-\d{2}/.test(s))
-            return s.slice(5, 7) + s.slice(8, 10);
-          return s.replace(/\D/g, "").slice(0, 4).padStart(4, "0") || null;
-        };
-        availFromDt.value = normMMDD(r.availFromDt) ?? availFromDt.value;
-        availToDt.value = normMMDD(r.availToDt) ?? availToDt.value;
+        availTermType.value =
+          restoredAvailTerm === "03" ? "02" : restoredAvailTerm;
         adminAvailTermType.value =
           r.adminAvailTermType ??
           firstValid("SYS026") ??
           adminAvailTermType.value;
-        // prafta-044-FU2: DB는 YYYYMMDD 8자 → CalendarSrch가 받는 YYYY-MM-DD로 변환
-        adminAvailFromDt.value = fromYmd8(r.adminAvailFromDt) ?? adminAvailFromDt.value;
-        adminAvailToDt.value = fromYmd8(r.adminAvailToDt) ?? adminAvailToDt.value;
+        // prafta-com-016-B(3-2): 관리자 부여 '03' 기간설정 = 부여일로부터 N개월(1~99 정수)
+        if (r.adminAvailMonths != null && String(r.adminAvailMonths) !== "") {
+          adminAvailMonths.value = Number(r.adminAvailMonths);
+        }
         // 자동 부여 기준일, 실행시점
         grantBaseType.value =
           r.grantBaseType ?? firstValid("SYS027") ?? grantBaseType.value;
@@ -809,32 +770,17 @@ const fnSave = async () => {
         leaveType.value === "01" || leaveType.value === "02"
           ? useUnitType.value
           : null,
-      // 사용가능기간
+      // 사용가능기간 (prafta-com-016-B 3-1: '01' 설정안함=전체누적 / '02' 해당연도내. '03' 폐지)
       availTermType: leaveType.value === "01" ? availTermType.value : null,
-      // 기간설정 시작일 (사용자 신청) MMDD 4자리
-      availFromDt:
-        leaveType.value === "01" && availTermType.value === "03"
-          ? toMMDD(availFromDt.value)
-          : null,
-      // 기간설정 종료일 (사용자 신청) MMDD 4자리
-      availToDt:
-        leaveType.value === "01" && availTermType.value === "03"
-          ? toMMDD(availToDt.value)
-          : null,
 
       // 관리자 부여 타입 (자동/수동 공통)
       // 사용가능기간
       adminAvailTermType:
         leaveType.value === "02" ? adminAvailTermType.value : null,
-      // 기간설정 시작일 (절대 날짜 YYYYMMDD 8자, prafta-044-FU2)
-      adminAvailFromDt:
+      // 기간설정('03') 시 부여일로부터 N개월 (prafta-com-016-B 3-2)
+      adminAvailMonths:
         leaveType.value === "02" && adminAvailTermType.value === "03"
-          ? toYmd8(adminAvailFromDt.value)
-          : null,
-      // 기간설정 종료일 (절대 날짜 YYYYMMDD 8자, prafta-044-FU2)
-      adminAvailToDt:
-        leaveType.value === "02" && adminAvailTermType.value === "03"
-          ? toYmd8(adminAvailToDt.value)
+          ? adminAvailMonths.value
           : null,
 
       // 관리자 부여 타입 (자동부여)
@@ -1281,7 +1227,9 @@ onMounted(async () => {
 }
 
 .period-days-row input {
-  flex: 1;
+  /* 위 '사용단위' select와 동일한 한 컬럼 폭으로 고정 (form-grid 2열, 컬럼 간격 1.5rem) */
+  flex: 0 0 calc((100% - 1.5rem) / 2);
+  width: calc((100% - 1.5rem) / 2);
   min-width: 0;
 }
 

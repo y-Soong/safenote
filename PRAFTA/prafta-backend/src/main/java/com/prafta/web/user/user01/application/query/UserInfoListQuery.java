@@ -10,6 +10,7 @@ public record UserInfoListQuery (
 	, String useYn
 	, String siteCd
 	, String nodeCd
+	, String incSubNodeYn
 	, String gvCmpnyCd
 	, String gvUserCd
 	, String gvNodeCd
@@ -25,6 +26,7 @@ public static UserInfoListQuery from(UserInfoListParam param) {
 			, param.useYn()
 			, param.siteCd()
 			, param.nodeCd()
+			, param.incSubNodeYn()
 			, param.gvCmpnyCd()
 			, param.gvUserCd()
 			, param.gvNodeCd()

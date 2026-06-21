@@ -92,4 +92,27 @@
       AND sa.USE_YN = 'Y'
     </update>
 
+    <!-- PRAFTA-055-1: 자정 만료 배치 — 만료 대상 슬롯의 열린 이력 행 일괄 닫기(set-based, 멱등).
+         이력 행의 USER_ID = TB_DAILY_USER.USER_ID 로 매칭 + 슬롯 PK 로 고정여부 확인.
+         슬롯의 현재 점유자(CURR_USER_CD, 반납 후 NULL)에 의존하지 않으므로 슬롯 반납 순서와 무관(견고).
+         대상조건은 releaseExpiredDailyUserSlots 와 정합(만료 + 고정 제외). -->
+    <update id="closeExpiredSlotHis">
+    /* DailyUserMapper.closeExpiredSlotHis */
+    UPDATE TB_DAILY_USER_SLOT_HIS h
+        JOIN TB_DAILY_USER d
+          ON h.CMPNY_CD = d.CMPNY_CD
+         AND h.USER_ID  = d.USER_ID
+        JOIN TB_DAILY_USER_SLOT s
+          ON h.CMPNY_CD = s.CMPNY_CD
+         AND h.SITE_CD  = s.SITE_CD
+         AND h.SLOT_NO  = s.SLOT_NO
+    SET h.RELEASE_DTIME   = NOW()
+        , h.RELEASE_USER   = #{releaseUser}
+        , h.RELEASE_TYPE   = '02'
+        , h.RELEASE_REASON = '자정 만료 배치'
+    WHERE h.RELEASE_DTIME IS NULL
+      AND d.WORK_EXPIRE_DATE &lt; #{todayYmd}
+      AND s.FIXED_YN &lt;&gt; 'Y'
+    </update>
+
 </mapper>

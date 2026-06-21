@@ -270,6 +270,7 @@ import {
 import axios from "@/api/axios";
 import ViewHeader from "@/components/common/ViewHeader.vue";
 import { resolveApiErrorMessage } from "@/utils/apiError";
+import { formatYmdDot } from "@/utils/dateFormat";
 
 defineOptions({ name: "Attd_10" });
 const props = defineProps({
@@ -325,9 +326,10 @@ const approveScreenNm = (tab) =>
 const reqTypeGroupOf = (tab) =>
   tab === "overtime" ? "overtime" : "correction";
 
+// 표시용 날짜 포맷은 dateFormat 단일 출처에 위임(점). 빈값/형식불충분은 "-".
 const fmtDate = (ymd) => {
   if (!ymd || ymd.length < 8) return ymd || "-";
-  return `${ymd.slice(0, 4)}-${ymd.slice(4, 6)}-${ymd.slice(6, 8)}`;
+  return formatYmdDot(ymd);
 };
 const fmtTime = (hhmm) => {
   if (!hhmm || hhmm.length < 4) return hhmm || "";

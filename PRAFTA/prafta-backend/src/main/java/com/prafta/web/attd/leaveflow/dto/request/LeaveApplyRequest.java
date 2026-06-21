@@ -58,4 +58,12 @@ public class LeaveApplyRequest {
 
     /** 결재 필요 시 사용자가 구성한 결재자 순서(1단계부터). 결재 불요면 비워둠. */
     private List<String> approverUserCds;
+
+    /**
+     * prafta-com-011-2: 가불(미래 연차 당겨쓰기) 신청 여부. 기본 false(미전송 시 false 취급).
+     *
+     * <p>true 면 시스템 법정 연차(월차/본연차)에 한해 잔여 부족분을 미래 발생 연차에서 당겨 차감한다.
+     *   가불은 결재를 강제하며(결정 §4), 식별값은 토큰에서 강제하고 본 플래그만 본문 신뢰한다(IDOR 무관).
+     */
+    private Boolean isBorrow;
 }

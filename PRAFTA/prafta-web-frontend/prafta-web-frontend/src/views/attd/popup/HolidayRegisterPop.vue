@@ -90,6 +90,9 @@ const props = defineProps({
   siteCd_p: { type: String, default: "" },
   onSearch: { type: Function, default: null },
   editData_p: { type: Object, default: null },
+  // 신규 등록 시 초기 일자(YYYY-MM-DD). 캘린더에서 선택한 날짜가 있으면 전달된다.
+  // editData_p 와 별도 prop 이라 수정 모드로 오인되지 않는다.
+  initialYmd_p: { type: String, default: "" },
 });
 const emit = defineEmits(["close"]);
 
@@ -138,7 +141,11 @@ onMounted(() => {
       : getTodayYmd();
     repeatYearly.value = props.editData_p.repeatYearly ?? false;
   } else {
-    holidayYmd.value = getTodayYmd();
+    // 신규 등록: 선택 날짜(initialYmd_p)가 유효하면 그 값, 없으면 오늘.
+    const initialYmd = props.initialYmd_p
+      ? String(props.initialYmd_p).slice(0, 10)
+      : "";
+    holidayYmd.value = initialYmd || getTodayYmd();
   }
 });
 
@@ -157,13 +164,17 @@ const fnRegister = async () => {
   if (!ok) return;
 
   try {
-    // TODO: API 연동 시 주석 해제
+    // 수정 시에는 원본 타입을 유지하고, 신규 등록은 지정휴무(02)로 보낸다.
+    // (신규 매년반복은 서버가 빈 휴일ID + 매년반복 플래그로 03을 채번한다.)
+    const holidayType = isEditMode.value
+      ? (props.editData_p?.holidayType ?? "02")
+      : "02";
     const response = await axios.post("/webApi/attd02/update-holiday-infos", {
       siteCd: props.siteCd_p,
       holidayId: holidayId.value,
       holidayNm: holidayNm.value.trim(),
       holidayYmd: holidayYmd.value,
-      holidayType: "02",
+      holidayType,
       repeatYearly: repeatYearly.value,
       useYn: "Y",
     });

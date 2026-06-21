@@ -24,7 +24,7 @@
 
           <div class="la-field">
             <label>근무일 <span class="req">*</span></label>
-            <input type="date" v-model="workYmd" />
+            <CalendarSrch v-model="workYmd" />
           </div>
 
           <div class="la-field">
@@ -50,6 +50,32 @@
             <p class="la-hint">
               {{ unitGuide }} 단위로 신청하며, 휴게시간을 가로지를 수 없습니다.
             </p>
+          </div>
+
+          <!-- prafta-com-011-6 가불(미래 연차 당겨쓰기) 동의 — 시스템 법정 연차 + 가불 가능 + 잔여 부족 시에만 노출 -->
+          <div v-if="showBorrowToggle" class="la-field">
+            <label class="la-borrow-toggle">
+              <input type="checkbox" v-model="borrowAgreed" class="la-borrow-cb" />
+              <span class="la-borrow-txt">미래 연차를 당겨 사용(가불)</span>
+            </label>
+
+            <!-- 토글 ON 시: 가불 한도/만료/부족분 안내 -->
+            <div v-if="borrowAgreed" class="la-borrow-info">
+              <div class="la-borrow-row">
+                <span class="la-borrow-lbl">가불 가능 한도</span>
+                <span class="la-borrow-val">{{ formatDays(borrowQuota) }}일</span>
+              </div>
+              <div v-if="borrowExpiryDisplay" class="la-borrow-row">
+                <span class="la-borrow-lbl">만료(소멸)</span>
+                <span class="la-borrow-val">{{ borrowExpiryDisplay }}</span>
+              </div>
+              <p v-if="borrowDeficitText" class="la-borrow-deficit">
+                {{ borrowDeficitText }}
+              </p>
+              <p class="la-borrow-guide">
+                · 결재 승인 후 확정돼요. 미래에 발생할 연차에서 자동 차감됩니다.
+              </p>
+            </div>
           </div>
 
           <div class="la-field">
@@ -140,6 +166,7 @@
 import {
   ref,
   computed,
+  watch,
   onMounted,
   getCurrentInstance,
   defineProps,
@@ -149,6 +176,8 @@ import {
 import axios from "@/api/axios";
 import BaseSelect from "@/components/common/BaseSelect.vue";
 import TimeInput from "@/components/common/TimeInput.vue";
+import CalendarSrch from "@/components/common/CalendarSrch.vue";
+import { formatYmdDot } from "@/utils/dateFormat";
 import { resolveApiErrorMessage } from "@/utils/apiError";
 
 defineOptions({ name: "LeaveApplyPop" });
@@ -175,14 +204,23 @@ const endTime = ref("11:00");
 const reason = ref("");
 const line = ref([]); // [{ userCd, userNm }]
 
-// 사용자 신청 타입(leaveType='01')만 신청 대상
+// prafta-com-011-6 가불(미래 연차 당겨쓰기) 동의 상태. 종류/단위/날짜 변경 시 리셋.
+const borrowAgreed = ref(false);
+
+// 신청 대상: 사용자 신청 타입(leaveType='01') + 시스템 법정 시드(systemYn='Y', 가불 대상 월차/본연차 포함).
+//   기존 비가불 UX 회귀 0 — '01' 노출은 유지하고, 가불용 시스템 법정 종류를 함께 노출한다(앱 메타 미러).
 const applicableTypes = computed(() =>
-  leaveTypeList.value.filter((t) => t.leaveType === "01")
+  leaveTypeList.value.filter(
+    (t) => t.leaveType === "01" || t.systemYn === "Y"
+  )
 );
 const selectedType = computed(() =>
   leaveTypeList.value.find((t) => t.leaveCd === leaveCd.value)
 );
-const needApproval = computed(() => selectedType.value?.aprvUseYn === "Y");
+// 결재 필요 여부(타입 플래그). 가불(borrowAgreed) ON 이면 체크박스 무관 결재 강제(결정 §4).
+const needApproval = computed(
+  () => selectedType.value?.aprvUseYn === "Y" || borrowAgreed.value
+);
 const isHourUnit = computed(() =>
   ["02", "03", "04"].includes(useUnitType.value)
 );
@@ -192,6 +230,90 @@ const unitGuide = computed(
 );
 
 const inLine = (userCd) => line.value.some((s) => s.userCd === userCd);
+
+// ===== 가불(미래 연차 당겨쓰기) 파생값 (prafta-com-011-6, 앱 LeaveApplyForm 미러) =====
+// 가불 한도(서버 권위, 메타 borrowQuota). 비대상이면 0.
+const borrowQuota = computed(() => Number(selectedType.value?.borrowQuota) || 0);
+
+// 가불분 만료(소멸)일 YYYYMMDD(서버 산출). 없으면 ''.
+const borrowExpiryYmd = computed(() =>
+  String(selectedType.value?.borrowExpiryYmd || "")
+);
+
+// 만료일 표시("YYYY.MM.DD"). 미산정이면 ''. dateFormat 단일 출처에 위임.
+const borrowExpiryDisplay = computed(() => {
+  const ymd = borrowExpiryYmd.value;
+  if (!ymd || ymd.length !== 8 || !/^\d{8}$/.test(ymd)) return "";
+  return formatYmdDot(ymd);
+});
+
+// 신청 일수 추정(표시 전용 근사). 종일(00)=1.0 / 반차(01)=0.5.
+//   시간차(02·03·04)는 웹 신청 폼에 소정근로 컨텍스트가 없어 추정 보류(null) → 가불 토글 미노출(앱 동일 정책).
+const estimatedDays = computed(() => {
+  if (!selectedType.value) return null;
+  if (useUnitType.value === "00") return 1.0;
+  if (useUnitType.value === "01") return 0.5;
+  return null;
+});
+
+// 가불 토글 노출: 시스템 법정 연차(systemYn='Y') + 가불 가능(borrowable) + 추정 신청일수 > 잔여(부족).
+//   잔여 충분/추정 불가/비대상이면 미노출(결정 §6-1: 부족할 때만).
+const showBorrowToggle = computed(() => {
+  const type = selectedType.value;
+  if (!type) return false;
+  if (String(type.systemYn) !== "Y") return false;
+  if (!type.borrowable) return false;
+  const bal = Number(type.balanceDays);
+  const est = estimatedDays.value;
+  if (Number.isNaN(bal) || est === null) return false;
+  return est > bal;
+});
+
+// 가불 충당(부족) 안내 텍스트 — 예: "남은 0일 + 가불 1일". 추정 불가/충분이면 ''.
+const borrowDeficitText = computed(() => {
+  const type = selectedType.value;
+  if (!type) return "";
+  const bal = Number(type.balanceDays);
+  const est = estimatedDays.value;
+  if (Number.isNaN(bal) || est === null) return "";
+  const deficit = est - Math.max(0, bal);
+  if (deficit <= 0) return "";
+  return `남은 ${formatDays(Math.max(0, bal))}일 + 가불 ${formatDays(deficit)}일`;
+});
+
+// 선택 일자가 가불 만료(소멸)일을 지났는지(가불 토글 ON 한정 가드). 만료 미산정이면 false.
+const borrowDateExpired = computed(() => {
+  if (!borrowAgreed.value) return false;
+  const exp = borrowExpiryYmd.value;
+  const ymd = (workYmd.value || "").replace(/-/g, "");
+  if (!exp || !ymd || ymd.length !== 8) return false;
+  return ymd > exp;
+});
+
+// 표시 헬퍼 — 정수면 정수, 소수면 1자리(앱 formatDays 정합).
+const formatDays = (d) => {
+  const n = Number(d);
+  if (Number.isNaN(n)) return "0";
+  return Number.isInteger(n) ? String(n) : n.toFixed(1);
+};
+
+// 연차 종류 변경 시 가불 동의 해제(가불 동의는 종류별 — 앱 onSelectType 정합).
+watch(leaveCd, () => {
+  borrowAgreed.value = false;
+});
+
+// 가불 토글 노출 조건이 깨지면(잔여 충분/비대상/단위 변경 등) 동의 자동 해제 — 잔존 동의 누수 방지.
+watch(showBorrowToggle, (visible) => {
+  if (!visible && borrowAgreed.value) borrowAgreed.value = false;
+});
+
+// 가불 토글 ON + 만료 경과 일자 선택 → alert 안내 후 차단(결정 §3, 서버도 fail-closed). 날짜 초기화.
+watch(borrowDateExpired, (expired) => {
+  if (expired) {
+    proxy.$alert("가불 만료일이 지난 날짜에는 사용할 수 없어요.");
+    workYmd.value = "";
+  }
+});
 
 // ===== 로딩 =====
 const fnLoadTypes = async () => {
@@ -282,6 +404,10 @@ const fnSubmit = async () => {
   if (needApproval.value && line.value.length === 0) {
     return proxy.$alert("결재라인을 구성해주세요.");
   }
+  // prafta-com-011-6 가불 토글 ON + 만료 경과 일자면 제출 차단(결정 §3, 서버 fail-closed 사전 방어).
+  if (borrowDateExpired.value) {
+    return proxy.$alert("가불 만료일이 지난 날짜에는 사용할 수 없어요.");
+  }
 
   const payload = {
     leaveCd: leaveCd.value,
@@ -294,6 +420,8 @@ const fnSubmit = async () => {
     approverUserCds: needApproval.value
       ? line.value.map((s) => s.userCd)
       : [],
+    // 가불 동의(prafta-com-011-6): 토글 ON 시 true(서버가 결재 강제·잔여 부족분 가불). 미선택이면 false.
+    isBorrow: borrowAgreed.value,
   };
 
   submitting.value = true;
@@ -340,7 +468,8 @@ onMounted(() => {
 .req {
   color: var(--color-danger, #dc2626);
 }
-.la-field input[type="date"],
+/* 네이티브 date input → CalendarSrch 교체. 내부 input 셀렉터로 스타일 유지 */
+.la-field :deep(.calendar-input),
 .la-field textarea {
   border: 1px solid var(--color-border, #d1d5db);
   border-radius: 0.35rem;
@@ -360,6 +489,60 @@ onMounted(() => {
   color: var(--color-text-muted, #6b7280);
   margin: 0;
 }
+/* prafta-com-011-6 가불 동의 토글 + 안내 — 기존 토큰만 사용(하드코딩 금지) */
+.la-borrow-toggle {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  cursor: pointer;
+  font-size: 0.85rem;
+  color: var(--color-text, #374151);
+}
+.la-borrow-cb {
+  width: 1rem;
+  height: 1rem;
+  accent-color: var(--color-primary, #16a34a);
+  cursor: pointer;
+}
+.la-borrow-txt {
+  font-weight: 500;
+}
+.la-borrow-info {
+  margin-top: 0.4rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  padding: 0.5rem 0.6rem;
+  background: var(--color-warning-bg, #fef3c7);
+  border: 1px solid var(--color-warning-text, #b45309);
+  border-radius: 0.35rem;
+}
+.la-borrow-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+.la-borrow-lbl {
+  font-size: 0.8rem;
+  color: var(--color-warning-text, #b45309);
+}
+.la-borrow-val {
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--color-warning-text, #b45309);
+}
+.la-borrow-deficit {
+  margin: 0;
+  font-size: 0.78rem;
+  font-weight: 500;
+  color: var(--color-warning-text, #b45309);
+}
+.la-borrow-guide {
+  margin: 0;
+  font-size: 0.76rem;
+  color: var(--color-warning-text, #b45309);
+}
+
 .la-approval {
   border-top: 1px solid var(--color-border, #e5e7eb);
   padding-top: 0.6rem;

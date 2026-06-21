@@ -13,6 +13,7 @@ import com.prafta.app.approval.admin.result.LeaveBodyRow;
 import com.prafta.app.approval.admin.result.PendingCorrOtRow;
 import com.prafta.app.approval.admin.result.PendingLeaveRow;
 import com.prafta.app.approval.admin.result.ReqMetaRow;
+import com.prafta.app.approval.admin.result.SchedBodyRow;
 
 /**
  * 001-P2: 앱 관리자 승인 관리 Mapper(web reqinbox/leaveflow/attd07 조회 SQL 포팅 + 토큰·노드 스코프).
@@ -62,6 +63,16 @@ public interface AppAdminApprovalMapper {
     LeaveBalanceRow selectLeaveBalance(@Param("cmpnyCd") String cmpnyCd,
                                        @Param("userCd") String userCd,
                                        @Param("leaveCd") String leaveCd);
+
+    /**
+     * PRAFTA-APP-029-2(D6): 스케줄 수정(10) 상세 본문 — 현재 스케줄(WORK_PLAN_CD) + 요청 스케줄(REQ.SCH_CD)
+     * 을 TB_SCH_MGMT 조인해 시각 range 로 산출(1행). 현재 근무계획 없거나 LEAVE_CD 면 cur* NULL.
+     */
+    SchedBodyRow selectSchedBody(@Param("cmpnyCd") String cmpnyCd,
+                                 @Param("siteCd") String siteCd,
+                                 @Param("userCd") String userCd,
+                                 @Param("workYmd") String workYmd,
+                                 @Param("reqSchCd") String reqSchCd);
 
     /**
      * 마감 차단 판정(web AttdCloseMapper.countCovering 포팅): 대상 NODE_CD 의 자기/상위(INC_SUB)/전체('*')

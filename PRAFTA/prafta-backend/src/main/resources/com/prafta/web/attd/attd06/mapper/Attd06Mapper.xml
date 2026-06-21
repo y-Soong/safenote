@@ -132,6 +132,14 @@
 						)
 					WHERE A.CMPNY_CD = #{gvCmpnyCd}
 					  AND A.SITE_CD = #{siteCd}
+					  <!--
+					    prafta-com-016-D-1: 배정 현황(관리 탭)은 현 소속 조원만 표시한다.
+					      - 조원 제거 = 행 보존 + LEAVE_TEAM_YMD 마킹(deleteShiftTeamUser UPDATE)이므로,
+					        마킹 행을 거르지 않으면 탈퇴 조원이 계속 조인되어 화면에 잔존했다(결함).
+					      - 생성 탭 후보 복귀(selectUserLists 의 NOT EXISTS ... LEAVE_TEAM_YMD IS NULL)와
+					        "현 소속 = LEAVE_TEAM_YMD IS NULL" 정의를 동일하게 맞춘다.
+					  -->
+					  AND A.LEAVE_TEAM_YMD IS NULL
 		     ) B
 				ON (
 					A.CMPNY_CD = B.CMPNY_CD
@@ -255,12 +263,20 @@
 		</if>
 	  </if>
 	  
+	  <!--
+	    prafta-com-013-05-3: 교대팀 배치 후보에서 제외할 대상은 "현재 소속(탈퇴 미마킹) 행이 있는 사용자"만이다.
+	      - 기존: 탈퇴일(LEAVE_TEAM_YMD) 무시 + deleteShiftTeamUser 가 행 보존(UPDATE 마킹)이라
+	        탈퇴 직원도 NOT EXISTS 에 걸려 다른 교대팀 배치 후보에 영영 안 떴다.
+	      - 정정: LEAVE_TEAM_YMD IS NULL(현 소속) 인 행이 있을 때만 후보에서 제외.
+	        탈퇴 마킹(LEAVE_TEAM_YMD NOT NULL)된 사용자는 즉시 다른 교대팀 배치 후보 목록에 복귀한다.
+	  -->
 	  AND NOT EXISTS (
 	      SELECT 1
 	      FROM TB_SHIFT_SCH_TEAM_USER STU
 	      WHERE STU.CMPNY_CD = A.CMPNY_CD
 	        AND STU.SITE_CD  = A.SITE_CD
 	        AND STU.USER_CD  = A.USER_CD
+	        AND STU.LEAVE_TEAM_YMD IS NULL
 	  )
     </select>
 
@@ -485,6 +501,16 @@
 	WHERE CMPNY_CD = #{gvCmpnyCd}
 	  AND SITE_CD = #{siteCd}
 	  AND USER_CD = #{userCd}
+	<!-- prafta-com-016-D 보안 재작업: 같은 사업장 동일 사용자가 여러 교대팀에 속할 수 있어 팀 단위로 WHERE 를 좁힌다(키 정합). -->
+	<if test="shiftCd != null and shiftCd != ''">
+	  AND SHIFT_CD = #{shiftCd}
+	</if>
+	<if test="shiftTeamId != null and shiftTeamId != ''">
+	  AND SHIFT_TEAM_ID = #{shiftTeamId}
+	</if>
+	<if test="teamIdx != null and teamIdx != ''">
+	  AND TEAM_IDX = #{teamIdx}
+	</if>
     </update>
 
     <update id="updateShiftTeamPeriod" parameterType="com.prafta.web.attd.attd06.application.command.UpdateShiftTeamPeriodCommand">
@@ -528,14 +554,35 @@
       AND SHIFT_TEAM_ID = #{shiftTeamId}
     </update>
     
+    <!--
+      prafta-com-013-05(재작업) 교대 패턴의 일자별 SCH_CD 목록(순환 위상 순서대로).
+        - 결함③: 순환 위상 계산이 패턴 순서(PTRN_IDX)에 의존하므로 ORDER BY PTRN_IDX 필수.
+          (PK = CMPNY_CD/SITE_CD/SHIFT_CD/PTRN_IDX, PTRN_IDX = 교대패턴 순번 tinyint.)
+        - 결함①: "휴무 슬롯" 표현을 데이터에 의존하지 않고 코드베이스 공통 규칙으로 정규화한다.
+          * 프로젝트 전역 OFF 판정 규칙(Attd01Mapper.selectShiftSchInfoList /
+            Attd06Mapper.selectShiftTypeLists 의 IFNULL(...,'OFF'))과 동일:
+            패턴의 SCH_CD 가 TB_SCH_MGMT(근무타입)에 실재하지 않으면 휴무로 본다.
+          * FE(ShiftTypeCreatePop)는 휴무 슬롯을 SCH_CD='OFF' 리터럴로 저장한다(varchar NOT NULL).
+            이 'OFF' 리터럴은 TB_SCH_MGMT 에 SCH_CD 로 존재하지 않으므로 LEFT JOIN 이 NULL → 'OFF' 정규화에 그대로 포섭된다.
+          * 실재하지 않는(조인 실패) 다른 코드값/오타 케이스도 동일하게 'OFF'(휴무)로 정규화하여 견고화한다.
+        - 반환값은 실 근무 슬롯이면 실제 SCH_CD, 휴무 슬롯이면 'OFF' 센티넬.
+          서비스단(UserWorkPlanCommand)에서 'OFF' → null(휴무)로 정규화하여 work_plan 미배정 처리한다.
+    -->
     <select id="selectShiftPtrnSchList" parameterType="com.prafta.web.attd.attd06.application.query.SchCdListQuery" resultType="string">
     /* Attd06Mapper.selectShiftPtrnSchList */
     SELECT
-        SCH_CD
-    FROM TB_SHIFT_SCH_PTRN_MGMT
-    WHERE CMPNY_CD 	= #{cmpnyCd}
-      AND SITE_CD 	= #{siteCd}
-      AND SHIFT_CD	= #{shiftCd}
+        IFNULL(M.SCH_CD, 'OFF') AS schCd
+    FROM TB_SHIFT_SCH_PTRN_MGMT P
+         LEFT OUTER JOIN TB_SCH_MGMT M
+            ON (
+                P.CMPNY_CD = M.CMPNY_CD
+            AND P.SITE_CD  = M.SITE_CD
+            AND P.SCH_CD   = M.SCH_CD
+            )
+    WHERE P.CMPNY_CD = #{cmpnyCd}
+      AND P.SITE_CD  = #{siteCd}
+      AND P.SHIFT_CD = #{shiftCd}
+    ORDER BY P.PTRN_IDX
     </select>
     
     <insert id="upsertUserWorkPlanList" parameterType="com.prafta.web.attd.attd06.application.command.UserWorkPlanCommand">
@@ -566,4 +613,94 @@
         , UPDATE_NO = NEW.INSERT_NO
         , UPDATE_DATE = NOW()
 	</insert>
+
+    <!--
+      prafta-com-013-05-1: 특정 사용자의 [startYmd, endYmd] 구간과 겹치는 종일 확정 연차 구간(START/END) 목록.
+        - "연차 등록" 판정 술어는 Attd05Mapper.countFullDayLeaveUseOnCell 와 동일:
+          LEAVE_STATUS='CONFIRMED' AND DEL_YN='N' AND USE_UNIT_TYPE='00'(종일).
+        - 반일/시간단위 연차는 휴무 덮어쓰기 차단 대상이 아니다(종일만).
+        - 일자 펼침(휴무일과 교집합 판정)은 서비스단에서 수행한다(긴 기간의 재귀 CTE 깊이 한계 회피).
+        - 겹침 조건: leave.START_DATE <= 조회.endYmd AND leave.END_DATE >= 조회.startYmd.
+    -->
+    <select id="selectFullDayLeaveRanges" parameterType="map" resultType="com.prafta.web.attd.attd06.result.LeaveRangeResult">
+    /* Attd06Mapper.selectFullDayLeaveRanges */
+    SELECT
+        L.START_DATE AS startDate
+        , L.END_DATE AS endDate
+      FROM TB_USER_LEAVE_USE L
+     WHERE L.CMPNY_CD      = #{cmpnyCd}
+       AND L.USER_CD       = #{userCd}
+       AND L.LEAVE_STATUS  = 'CONFIRMED'
+       AND L.DEL_YN        = 'N'
+       AND L.USE_UNIT_TYPE = '00'
+       AND L.START_DATE <![CDATA[ <= ]]> #{endYmd}
+       AND L.END_DATE   <![CDATA[ >= ]]> #{startYmd}
+    </select>
+
+    <!--
+      prafta-com-013-05-2: 교대팀의 현재 적용기간(STR_DATE/END_DATE) 1건. 기간 연장 판정의 기준값.
+    -->
+    <select id="selectShiftTeamPeriod" parameterType="com.prafta.web.attd.attd06.application.command.UpdateShiftTeamPeriodCommand" resultType="com.prafta.web.attd.attd06.result.ShiftTeamPeriodResult">
+    /* Attd06Mapper.selectShiftTeamPeriod */
+    SELECT
+        STR_DATE AS strDate
+        , END_DATE AS endDate
+    FROM TB_SHIFT_SCH_TEAM_MGMT
+    WHERE CMPNY_CD = #{gvCmpnyCd}
+      AND SITE_CD = #{siteCd}
+      AND SHIFT_CD = #{shiftCd}
+      AND SHIFT_TEAM_ID = #{shiftTeamId}
+    LIMIT 1
+    </select>
+
+    <!--
+      prafta-com-013-05-2: 교대팀 소속 멤버(현 소속, 탈퇴 미마킹) 목록 — 기간 연장 시 연장구간 근무계획 재생성 대상.
+        - TEAM_IDX 별 USER_CD. LEAVE_TEAM_YMD IS NULL(현 소속)만.
+    -->
+    <select id="selectShiftTeamActiveMembers" parameterType="com.prafta.web.attd.attd06.application.command.UpdateShiftTeamPeriodCommand" resultType="com.prafta.web.attd.attd06.result.ShiftTeamMemberResult">
+    /* Attd06Mapper.selectShiftTeamActiveMembers */
+    SELECT
+        TEAM_IDX AS teamIdx
+        , USER_CD AS userCd
+    FROM TB_SHIFT_SCH_TEAM_USER
+    WHERE CMPNY_CD = #{gvCmpnyCd}
+      AND SITE_CD = #{siteCd}
+      AND SHIFT_CD = #{shiftCd}
+      AND SHIFT_TEAM_ID = #{shiftTeamId}
+      AND LEAVE_TEAM_YMD IS NULL
+    </select>
+
+    <!--
+      prafta-com-016-D-2/D-3: 교대팀 1건의 적용기간(STR/END) + 팀명.
+        - 조원 추가(D-3) 덮어쓰기 범위(합류일+1 ~ END_DATE) 산출 + PUSH(D-2) 본문 팀명 치환에 사용.
+    -->
+    <select id="selectShiftTeamInfo" parameterType="map" resultType="com.prafta.web.attd.attd06.result.ShiftTeamInfoResult">
+    /* Attd06Mapper.selectShiftTeamInfo */
+    SELECT
+        STR_DATE AS strDate
+        , END_DATE AS endDate
+        , SHIFT_TEAM_NM AS shiftTeamNm
+    FROM TB_SHIFT_SCH_TEAM_MGMT
+    WHERE CMPNY_CD = #{cmpnyCd}
+      AND SITE_CD = #{siteCd}
+      AND SHIFT_CD = #{shiftCd}
+      AND SHIFT_TEAM_ID = #{shiftTeamId}
+    LIMIT 1
+    </select>
+
+    <!--
+      prafta-com-016-D 보안 재작업: 팀 단위 쓰기 권한 가드용 — 해당 교대팀 현 소속(탈퇴 미마킹) 멤버 USER_CD 목록.
+        - 팀명/기간/팀삭제 경로는 대상이 팀 전체이므로, 영향 멤버 각각에 canManageUser 를 강제하기 위해 사용.
+    -->
+    <select id="selectShiftTeamMemberUserCds" parameterType="map" resultType="java.lang.String">
+    /* Attd06Mapper.selectShiftTeamMemberUserCds */
+    SELECT
+        USER_CD
+    FROM TB_SHIFT_SCH_TEAM_USER
+    WHERE CMPNY_CD = #{cmpnyCd}
+      AND SITE_CD = #{siteCd}
+      AND SHIFT_CD = #{shiftCd}
+      AND SHIFT_TEAM_ID = #{shiftTeamId}
+      AND LEAVE_TEAM_YMD IS NULL
+    </select>
 </mapper>

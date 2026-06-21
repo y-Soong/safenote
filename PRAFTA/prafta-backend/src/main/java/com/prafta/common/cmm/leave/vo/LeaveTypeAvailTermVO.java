@@ -22,9 +22,15 @@ public class LeaveTypeAvailTermVO {
     /** 사용가능기간 타입 [SYS026] 01:설정안함(무기한) / 02:해당연도내 / 03:기간설정. null=미설정. */
     private String adminAvailTermType;
 
-    /** 기간설정('03') 시 사용기간 FROM (YYYYMMDD 8자, prafta-044-FU2). 그 외 null. */
+    /** 기간설정('03') 시 사용기간 FROM (YYYYMMDD 8자, prafta-044-FU2). prafta-com-016-B 이후 미사용. 그 외 null. */
     private String adminAvailFromDt;
 
-    /** 기간설정('03') 시 사용기간 TO (YYYYMMDD 8자, prafta-044-FU2). 그 외 null. */
+    /** 기간설정('03') 시 사용기간 TO (YYYYMMDD 8자, prafta-044-FU2). prafta-com-016-B 이후 미사용. 그 외 null. */
     private String adminAvailToDt;
+
+    /**
+     * prafta-com-016-B(3-2): 기간설정('03') 시 "부여일로부터 N개월"(1~99 정수). 그 외 null.
+     * 만료(AVAIL_TO_DATE) = 부여일 + N개월의 해당일(존재 안 하는 날은 말일 보정).
+     */
+    private Integer adminAvailMonths;
 }

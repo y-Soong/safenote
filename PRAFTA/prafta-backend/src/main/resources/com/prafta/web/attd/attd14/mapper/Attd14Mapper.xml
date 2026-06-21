@@ -1,0 +1,168 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<!--
+  관리자 발신 연차 변경 요청 이력(attd14) 읽기 전용 Mapper (prafta-com-016-H).
+  - 출처 = TB_LEAVE_CHANGE_REQUEST(INITIATOR_TYPE='ADMIN' 서버 고정). attd13 selectChangeRequests 복제.
+  - 모든 쿼리는 CMPNY_CD 스코프 격리. SELECT * 금지·명시 컬럼·leading comma·#{} 바인딩.
+  - attd13 Mapper 무수정(회귀 0). 발의자/확인자 이름 LEFT JOIN + 기간/유형 필터 + 페이징 추가.
+-->
+<mapper namespace="com.prafta.web.attd.attd14.mapper.Attd14Mapper">
+
+    <!-- ============ 공통 WHERE(스코프/필터) ============
+      목록·카운트가 동일 조건을 공유한다(필터 누락 방지). INITIATOR_TYPE='ADMIN' 고정.
+      사업장 스코프: 노드 관리자(siteWide='N')는 항상 자기 사업장 강제. master/hr 는 선택 사업장 지정 시에만 필터. -->
+    <sql id="adminHistoryWhere">
+       WHERE R.CMPNY_CD       = #{cmpnyCd}
+         AND R.INITIATOR_TYPE = 'ADMIN'
+         AND R.DEL_YN         = 'N'
+    <if test="!&quot;Y&quot;.equals(siteWide) or (siteCd != null and siteCd != '')">
+         AND R.SITE_CD        = #{siteCd}
+    </if>
+    <if test="reqType != null and reqType != ''">
+         AND R.REQ_TYPE       = #{reqType}
+    </if>
+    <if test="reqStatus != null and reqStatus != ''">
+         AND R.REQ_STATUS     = #{reqStatus}
+    </if>
+    <if test="fromDate != null and fromDate != ''">
+         AND R.INSERT_DATE   >= STR_TO_DATE(CONCAT(#{fromDate}, '000000'), '%Y%m%d%H%i%s')
+    </if>
+    <if test="toDate != null and toDate != ''">
+         AND R.INSERT_DATE   <![CDATA[<=]]> STR_TO_DATE(CONCAT(#{toDate}, '235959'), '%Y%m%d%H%i%s')
+    </if>
+    <if test="userNm != null and userNm != ''">
+         AND TU.USER_NM LIKE CONCAT('%', #{userNm}, '%')
+    </if>
+    <!-- 부서 필터: 지정 시 해당 노드(+ 하위포함 옵션) 소속 대상자만. 노드 관리자는 호출부에서 nodeCd 강제 주입. -->
+    <if test="nodeCd != null and nodeCd != '' and nodeCd != '*'">
+         AND R.TARGET_USER_CD IN (
+             SELECT NU.USER_CD
+               FROM TB_USER NU
+              WHERE NU.CMPNY_CD = #{cmpnyCd}
+                AND NU.SITE_CD  = #{siteCd}
+        <choose>
+            <when test="incSubNodeYn == 'Y'">
+                AND NU.NODE_CD IN (
+                    WITH RECURSIVE sub AS (
+                        SELECT N.NODE_CD
+                          FROM TB_SITE_NODE N
+                         WHERE N.CMPNY_CD = #{cmpnyCd} AND N.SITE_CD = #{siteCd} AND N.NODE_CD = #{nodeCd}
+                        UNION ALL
+                        SELECT C.NODE_CD
+                          FROM TB_SITE_NODE C
+                          JOIN sub S2
+                            ON C.CMPNY_CD = #{cmpnyCd} AND C.SITE_CD = #{siteCd} AND C.PARENT_NODE_CD = S2.NODE_CD
+                    )
+                    SELECT NODE_CD FROM sub
+                )
+            </when>
+            <otherwise>
+                AND NU.NODE_CD = #{nodeCd}
+            </otherwise>
+        </choose>
+         )
+    </if>
+    </sql>
+
+    <!-- ============ 관리자 발신 요청 이력 목록(페이징) ============ -->
+    <select id="selectAdminRequestHistory" resultType="com.prafta.web.attd.attd14.result.AdminRequestHistoryRowResult">
+    /* Attd14Mapper.selectAdminRequestHistory */
+    SELECT
+          R.CHANGE_REQ_ID                            AS changeReqId
+        , R.CMPNY_CD                                 AS cmpnyCd
+        , R.SITE_CD                                  AS siteCd
+        , R.TARGET_USER_CD                           AS targetUserCd
+        , TU.USER_NM                                 AS targetUserNm
+        , R.TARGET_LEAVE_ID                          AS targetLeaveId
+        , LU.START_DATE                              AS targetStartDate
+        , R.INITIATOR_TYPE                           AS initiatorType
+        , R.REQ_TYPE                                 AS reqType
+        , R.MOVE_TARGET_DATE                         AS moveTargetDate
+        , R.REQ_REASON                               AS reqReason
+        , R.WORKER_RESPONSE                          AS workerResponse
+        , R.RESPONSE_REASON                          AS responseReason
+        , R.REJECT_REASON                            AS rejectReason
+        , R.REQ_STATUS                               AS reqStatus
+        , R.INITIATOR_USER_CD                        AS initiatorUserCd
+        , IU.USER_NM                                 AS initiatorUserNm
+        , R.CONFIRM_USER_CD                          AS confirmUserCd
+        , CU.USER_NM                                 AS confirmUserNm
+        , DATE_FORMAT(R.CONFIRM_DATE, '%Y%m%d%H%i%s') AS confirmDate
+        , DATE_FORMAT(R.INSERT_DATE,  '%Y%m%d%H%i%s') AS insertDate
+      FROM TB_LEAVE_CHANGE_REQUEST R
+      LEFT JOIN TB_USER TU
+        ON TU.CMPNY_CD = R.CMPNY_CD
+       AND TU.USER_CD  = R.TARGET_USER_CD
+      LEFT JOIN TB_USER IU
+        ON IU.CMPNY_CD = R.CMPNY_CD
+       AND IU.USER_CD  = R.INITIATOR_USER_CD
+      LEFT JOIN TB_USER CU
+        ON CU.CMPNY_CD = R.CMPNY_CD
+       AND CU.USER_CD  = R.CONFIRM_USER_CD
+      LEFT JOIN TB_USER_LEAVE_USE LU
+        ON LU.CMPNY_CD = R.CMPNY_CD
+       AND LU.LEAVE_ID = R.TARGET_LEAVE_ID
+    <include refid="adminHistoryWhere" />
+     ORDER BY R.INSERT_DATE DESC, R.CHANGE_REQ_ID DESC
+     LIMIT #{size} OFFSET #{offset}
+    </select>
+
+    <!-- ============ 관리자 발신 요청 이력 총 건수(페이징) ============ -->
+    <select id="selectAdminRequestHistoryCount" resultType="int">
+    /* Attd14Mapper.selectAdminRequestHistoryCount */
+    SELECT COUNT(*)
+      FROM TB_LEAVE_CHANGE_REQUEST R
+      LEFT JOIN TB_USER TU
+        ON TU.CMPNY_CD = R.CMPNY_CD
+       AND TU.USER_CD  = R.TARGET_USER_CD
+    <include refid="adminHistoryWhere" />
+    </select>
+
+    <!-- ============ 관리자 발신 요청 이력 단건 상세 ============
+      INITIATOR_TYPE='ADMIN' 고정. 역할 스코프 재검증은 호출부(서비스)가 siteCd/targetUserCd 로 수행. -->
+    <select id="selectAdminRequestHistoryDetail" resultType="com.prafta.web.attd.attd14.result.AdminRequestHistoryRowResult">
+    /* Attd14Mapper.selectAdminRequestHistoryDetail */
+    SELECT
+          R.CHANGE_REQ_ID                            AS changeReqId
+        , R.CMPNY_CD                                 AS cmpnyCd
+        , R.SITE_CD                                  AS siteCd
+        , R.TARGET_USER_CD                           AS targetUserCd
+        , TU.USER_NM                                 AS targetUserNm
+        , R.TARGET_LEAVE_ID                          AS targetLeaveId
+        , LU.START_DATE                              AS targetStartDate
+        , R.INITIATOR_TYPE                           AS initiatorType
+        , R.REQ_TYPE                                 AS reqType
+        , R.MOVE_TARGET_DATE                         AS moveTargetDate
+        , R.REQ_REASON                               AS reqReason
+        , R.WORKER_RESPONSE                          AS workerResponse
+        , R.RESPONSE_REASON                          AS responseReason
+        , R.REJECT_REASON                            AS rejectReason
+        , R.REQ_STATUS                               AS reqStatus
+        , R.INITIATOR_USER_CD                        AS initiatorUserCd
+        , IU.USER_NM                                 AS initiatorUserNm
+        , R.CONFIRM_USER_CD                          AS confirmUserCd
+        , CU.USER_NM                                 AS confirmUserNm
+        , DATE_FORMAT(R.CONFIRM_DATE, '%Y%m%d%H%i%s') AS confirmDate
+        , DATE_FORMAT(R.INSERT_DATE,  '%Y%m%d%H%i%s') AS insertDate
+      FROM TB_LEAVE_CHANGE_REQUEST R
+      LEFT JOIN TB_USER TU
+        ON TU.CMPNY_CD = R.CMPNY_CD
+       AND TU.USER_CD  = R.TARGET_USER_CD
+      LEFT JOIN TB_USER IU
+        ON IU.CMPNY_CD = R.CMPNY_CD
+       AND IU.USER_CD  = R.INITIATOR_USER_CD
+      LEFT JOIN TB_USER CU
+        ON CU.CMPNY_CD = R.CMPNY_CD
+       AND CU.USER_CD  = R.CONFIRM_USER_CD
+      LEFT JOIN TB_USER_LEAVE_USE LU
+        ON LU.CMPNY_CD = R.CMPNY_CD
+       AND LU.LEAVE_ID = R.TARGET_LEAVE_ID
+     WHERE R.CMPNY_CD       = #{cmpnyCd}
+       AND R.CHANGE_REQ_ID  = #{changeReqId}
+       AND R.INITIATOR_TYPE = 'ADMIN'
+       AND R.DEL_YN         = 'N'
+     LIMIT 1
+    </select>
+
+</mapper>

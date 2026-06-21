@@ -6,6 +6,7 @@ public record AuthTokenResult (
 	String cmpnyCd
 	, String userCd
     , String tokenId
+    , String loginId          // prafta-057: 로그인 세션 패밀리 식별자(회전 시 승계)
 
     , String clientType
     , String deviceId

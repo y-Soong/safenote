@@ -72,12 +72,33 @@
         , R.START_TIME                                                   AS startTime
         , R.END_DATE                                                     AS endDate
         , R.END_TIME                                                     AS endTime
+        , R.SCH_CD                                                       AS schCd
+        <!-- PRAFTA-APP-029 후속: 스케줄 수정(10) 카드 요약을 SCH_CD 코드가 아닌 실제 시각 range 로 표기.
+             요청 스케줄(R.SCH_CD)을 근무일(R.WORK_YMD) 기준 유효버전(effective-dating)으로 해석한다
+             (상세 selectSchedBody 와 동일 소스). 비스케줄 행은 R.SCH_CD 가 null 이라 미매치 → 시각 전부 null. -->
+        , RSE.FST_SCH_STR_TIME                                           AS schFstStrTime
+        , RSE.FST_SCH_END_TIME                                           AS schFstEndTime
+        , RSE.SEC_SCH_STR_TIME                                           AS schSecStrTime
+        , RSE.SEC_SCH_END_TIME                                           AS schSecEndTime
         , R.REQ_REASON                                                   AS reqReason
         , DATE_FORMAT(R.INSERT_DATE, '%Y-%m-%dT%H:%i:%s')               AS reqDate
       FROM TB_USER_ATTD_REQ R
       LEFT JOIN TB_USER U
         ON U.CMPNY_CD = R.CMPNY_CD
        AND U.USER_CD  = R.USER_CD
+      <!-- 요청 스케줄 유효버전 시각(회사/사업장 스코프로 한정해 타 사업장 스케줄 유출 차단). -->
+      LEFT JOIN ( <include refid="effectiveSchVersion"/> ) RSE
+        ON RSE.CMPNY_CD = R.CMPNY_CD
+       AND RSE.SITE_CD  = R.SITE_CD
+       AND RSE.SCH_CD   = R.SCH_CD
+       AND RSE.APPLY_DATE = (
+                SELECT MAX(SE.APPLY_DATE)
+                FROM ( <include refid="effectiveSchApplyKeys"/> ) SE
+                WHERE SE.CMPNY_CD    = R.CMPNY_CD
+                  AND SE.SITE_CD     = R.SITE_CD
+                  AND SE.SCH_CD      = R.SCH_CD
+                  AND SE.APPLY_DATE <![CDATA[ <= ]]> R.WORK_YMD
+           )
      WHERE 1 = 1
      <include refid="scopeWhere"/>
      ORDER BY R.INSERT_DATE DESC
@@ -199,6 +220,7 @@
         , R.END_TIME                                                     AS endTime
         , R.LEAVE_TYPE                                                   AS leaveType
         , R.LEAVE_DAYS                                                   AS leaveDays
+        , R.SCH_CD                                                       AS schCd
         , R.REQ_REASON                                                   AS reqReason
         , DATE_FORMAT(R.INSERT_DATE, '%Y-%m-%dT%H:%i:%s')               AS reqDate
       FROM TB_USER_ATTD_REQ R
@@ -269,6 +291,114 @@
        AND G.STATUS    = 'ACTIVE'
        AND G.EXPIRE_YN = 'N'
        AND G.DEL_YN    = 'N'
+    </select>
+
+    <!-- 근무일 기준 유효 스케줄(effective-dating) 버전 1건(현재본+이력본 UNION, APPLY_DATE 동일 시 MAX(HIST_IDX)).
+         시각 컬럼만 반환. 외부에서 APPLY_DATE <![CDATA[ <= ]]> 근무일 MAX 로 상관(effectiveSchApplyKeys 사용). -->
+    <sql id="effectiveSchVersion">
+        SELECT
+              E.CMPNY_CD, E.SITE_CD, E.SCH_CD, E.APPLY_DATE
+            , E.FST_SCH_STR_TIME, E.FST_SCH_END_TIME
+            , E.SEC_SCH_STR_TIME, E.SEC_SCH_END_TIME
+        FROM (
+            SELECT M.CMPNY_CD, M.SITE_CD, M.SCH_CD, M.APPLY_DATE
+                 , M.FST_SCH_STR_TIME, M.FST_SCH_END_TIME, M.SEC_SCH_STR_TIME, M.SEC_SCH_END_TIME
+                 , 2147483647 AS HIST_IDX
+            FROM TB_SCH_MGMT M WHERE M.USE_YN = 'Y'
+            UNION ALL
+            SELECT H.CMPNY_CD, H.SITE_CD, H.SCH_CD, H.APPLY_DATE
+                 , H.FST_SCH_STR_TIME, H.FST_SCH_END_TIME, H.SEC_SCH_STR_TIME, H.SEC_SCH_END_TIME
+                 , H.HIST_IDX
+            FROM TB_SCH_MGMT_HIST H WHERE H.USE_YN = 'Y'
+        ) E
+        WHERE E.HIST_IDX = (
+            SELECT MAX(E2.HIST_IDX)
+            FROM (
+                SELECT M2.CMPNY_CD, M2.SITE_CD, M2.SCH_CD, M2.APPLY_DATE, 2147483647 AS HIST_IDX
+                FROM TB_SCH_MGMT M2 WHERE M2.USE_YN = 'Y'
+                UNION ALL
+                SELECT H2.CMPNY_CD, H2.SITE_CD, H2.SCH_CD, H2.APPLY_DATE, H2.HIST_IDX
+                FROM TB_SCH_MGMT_HIST H2 WHERE H2.USE_YN = 'Y'
+            ) E2
+            WHERE E2.CMPNY_CD   = E.CMPNY_CD
+              AND E2.SITE_CD    = E.SITE_CD
+              AND E2.SCH_CD     = E.SCH_CD
+              AND E2.APPLY_DATE = E.APPLY_DATE
+        )
+    </sql>
+
+    <!-- 유효버전 APPLY_DATE MAX 산출용 키 전용 UNION(현재본+이력본). -->
+    <sql id="effectiveSchApplyKeys">
+        SELECT M3.CMPNY_CD, M3.SITE_CD, M3.SCH_CD, M3.APPLY_DATE
+        FROM TB_SCH_MGMT M3 WHERE M3.USE_YN = 'Y'
+        UNION ALL
+        SELECT H3.CMPNY_CD, H3.SITE_CD, H3.SCH_CD, H3.APPLY_DATE
+        FROM TB_SCH_MGMT_HIST H3 WHERE H3.USE_YN = 'Y'
+    </sql>
+
+    <!--
+      PRAFTA-APP-029-2(D6): 스케줄 수정(10) 상세 본문 — 현재 → 요청 스케줄.
+      - 요청 스케줄(req*): REQ.SCH_CD 를 회사/사업장 스코프로 TB_SCH_MGMT(TS) 조인(타 사업장 스케줄 유출 차단).
+      - 현재 스케줄(cur*): 해당 사용자-일자 근무계획(WORK_PLAN_CD) → TB_SCH_MGMT(CS) 조인. 미래 신규/연차일이면 NULL.
+      web Attd07Mapper(목표 TS / 현재 CS) 조인 패턴과 동형. SELECT * 금지, #{} 바인딩.
+      쿼리 루트를 TS(요청 스케줄)로 두어 요청 SCH_CD 가 유효하면 항상 1행 반환(현재본은 LEFT JOIN 으로 NULL 허용).
+      - 표시 시각(req*/cur*)은 근무일(#{workYmd}) 기준 유효 버전(effective-dating)으로 해석한다.
+        SCH_NO 는 이력본에 없는 비-versioned 컬럼이라 현재본(TS/CS)에서 가져오고, 시각은 유효버전(TSE/CSE)에서 가져온다.
+        과거/미래 적용분 변경분을 현재본 시각으로 비교 표시하던 문제 수정.
+    -->
+    <select id="selectSchedBody" resultType="com.prafta.app.approval.admin.result.SchedBodyRow">
+    /* AppAdminApprovalMapper.selectSchedBody */
+    SELECT
+          CS.SCH_CD             AS curSchCd
+        , CS.SCH_NO             AS curSchNo
+        , CSE.FST_SCH_STR_TIME  AS curFstStrTime
+        , CSE.FST_SCH_END_TIME  AS curFstEndTime
+        , CSE.SEC_SCH_STR_TIME  AS curSecStrTime
+        , CSE.SEC_SCH_END_TIME  AS curSecEndTime
+        , TS.SCH_CD             AS reqSchCd
+        , TS.SCH_NO             AS reqSchNo
+        , TSE.FST_SCH_STR_TIME  AS reqFstStrTime
+        , TSE.FST_SCH_END_TIME  AS reqFstEndTime
+        , TSE.SEC_SCH_STR_TIME  AS reqSecStrTime
+        , TSE.SEC_SCH_END_TIME  AS reqSecEndTime
+      FROM TB_SCH_MGMT TS
+      LEFT JOIN ( <include refid="effectiveSchVersion"/> ) TSE
+        ON TSE.CMPNY_CD = TS.CMPNY_CD
+       AND TSE.SITE_CD  = TS.SITE_CD
+       AND TSE.SCH_CD   = TS.SCH_CD
+       AND TSE.APPLY_DATE = (
+                SELECT MAX(SE.APPLY_DATE)
+                FROM ( <include refid="effectiveSchApplyKeys"/> ) SE
+                WHERE SE.CMPNY_CD    = TS.CMPNY_CD
+                  AND SE.SITE_CD     = TS.SITE_CD
+                  AND SE.SCH_CD      = TS.SCH_CD
+                  AND SE.APPLY_DATE <![CDATA[ <= ]]> #{workYmd}
+           )
+      LEFT JOIN TB_USER_WORK_PLAN WP
+        ON WP.CMPNY_CD = #{cmpnyCd}
+       AND WP.SITE_CD  = #{siteCd}
+       AND WP.USER_CD  = #{userCd}
+       AND WP.WORK_YMD = #{workYmd}
+      LEFT JOIN TB_SCH_MGMT CS
+        ON CS.CMPNY_CD = #{cmpnyCd}
+       AND CS.SITE_CD  = #{siteCd}
+       AND CS.SCH_CD   = WP.WORK_PLAN_CD
+      LEFT JOIN ( <include refid="effectiveSchVersion"/> ) CSE
+        ON CSE.CMPNY_CD = WP.CMPNY_CD
+       AND CSE.SITE_CD  = WP.SITE_CD
+       AND CSE.SCH_CD   = WP.WORK_PLAN_CD
+       AND CSE.APPLY_DATE = (
+                SELECT MAX(SE.APPLY_DATE)
+                FROM ( <include refid="effectiveSchApplyKeys"/> ) SE
+                WHERE SE.CMPNY_CD    = WP.CMPNY_CD
+                  AND SE.SITE_CD     = WP.SITE_CD
+                  AND SE.SCH_CD      = WP.WORK_PLAN_CD
+                  AND SE.APPLY_DATE <![CDATA[ <= ]]> WP.WORK_YMD
+           )
+     WHERE TS.CMPNY_CD = #{cmpnyCd}
+       AND TS.SITE_CD  = #{siteCd}
+       AND TS.SCH_CD   = #{reqSchCd}
+     LIMIT 1
     </select>
 
     <!-- ④ 마감 차단 판정 — web AttdCloseMapper.countCovering 포팅(자기/상위(INC_SUB)/전체 '*'). -->

@@ -152,7 +152,7 @@
 
             <!-- 우: 조 영역 -->
             <div class="a06-teams-area">
-              <!-- 교대근무 팀명 -->
+              <!-- 교대근무 팀명 + 적용기간 + 미리보기 (prafta-com-013-05-4: 한 행 통합) -->
               <div class="a06-team-nm-bar">
                 <label class="team-nm-label">교대근무 팀명</label>
                 <input
@@ -161,6 +161,56 @@
                   class="team-nm-input"
                   placeholder="팀명을 입력하세요"
                 />
+                <!-- 적용기간을 팀명 우측으로 이동 -->
+                <div class="team-nm-period">
+                  <svg
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                    width="14"
+                    height="14"
+                    style="color: var(--color-primary); flex-shrink: 0"
+                  >
+                    <rect x="3" y="4" width="18" height="18" rx="2" />
+                    <line x1="16" y1="2" x2="16" y2="6" />
+                    <line x1="8" y1="2" x2="8" y2="6" />
+                    <line x1="3" y1="10" x2="21" y2="10" />
+                  </svg>
+                  <span class="period-label">적용 기간</span>
+                  <CalendarSrch
+                    v-model="strDate"
+                    @update:modelValue="validatePeriod"
+                  />
+                  <span class="period-sep">~</span>
+                  <CalendarSrch
+                    v-model="endDate"
+                    @update:modelValue="validatePeriod"
+                  />
+                </div>
+                <!-- 미리보기 버튼을 같은 행 우측 끝에 배치 -->
+                <button
+                  class="btn btn-sm btn-primary team-nm-preview-btn"
+                  :disabled="!allTeamsFilled"
+                  @click="
+                    showPreview = true;
+                    showCrewWrap = false;
+                  "
+                >
+                  미리보기
+                  <svg
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                    width="12"
+                    height="12"
+                  >
+                    <polyline points="9 18 15 12 9 6" />
+                  </svg>
+                </button>
               </div>
               <div class="teams-area-header">
                 <span class="teams-summary">
@@ -256,58 +306,7 @@
             </div>
           </div>
 
-          <!-- 하단 바: 적용 기간 + 미리보기 버튼 -->
-          <div v-if="users.length > 0" class="a06-bottom-bar">
-            <div class="bottom-period">
-              <svg
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                stroke-linecap="round"
-                stroke-linejoin="round"
-                width="14"
-                height="14"
-                style="color: var(--color-primary); flex-shrink: 0"
-              >
-                <rect x="3" y="4" width="18" height="18" rx="2" />
-                <line x1="16" y1="2" x2="16" y2="6" />
-                <line x1="8" y1="2" x2="8" y2="6" />
-                <line x1="3" y1="10" x2="21" y2="10" />
-              </svg>
-              <span class="period-label">적용 기간</span>
-              <input type="date" v-model="strDate" @change="validatePeriod" />
-              <span class="period-sep">~</span>
-              <input type="date" v-model="endDate" @change="validatePeriod" />
-            </div>
-            <div class="bottom-summary">
-              <strong
-                >{{ assignedCount }}명이 {{ filledTeamCount }}/{{
-                  teams.length
-                }}개 조</strong
-              >에 배정됨
-            </div>
-            <button
-              class="btn btn-sm btn-primary"
-              :disabled="!allTeamsFilled"
-              @click="
-                showPreview = true;
-                showCrewWrap = false;
-              "
-            >
-              미리보기
-              <svg
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                stroke-linecap="round"
-                stroke-linejoin="round"
-                width="12"
-                height="12"
-              >
-                <polyline points="9 18 15 12 9 6" />
-              </svg>
-            </button>
-          </div>
+          <!-- prafta-com-013-05-4: 적용기간/미리보기는 교대근무 팀명 행으로 이동, "X명이 Y/Z개 조에 배정됨" 표기 삭제. -->
         </div>
       </Transition>
 
@@ -324,7 +323,7 @@
           <div class="pm-sep"></div>
           <div class="pm-item">
             <div class="pm-label">적용 기간</div>
-            <div class="pm-value">{{ strDate }} ~ {{ endDate }}</div>
+            <div class="pm-value">{{ formatYmdDot(strDate) }} ~ {{ formatYmdDot(endDate) }}</div>
           </div>
           <div class="pm-sep"></div>
           <div class="pm-item">
@@ -615,6 +614,8 @@ import {
   defineOptions,
 } from "vue";
 import ViewHeader from "@/components/common/ViewHeader.vue";
+import CalendarSrch from "@/components/common/CalendarSrch.vue";
+import { formatYmdDot } from "@/utils/dateFormat";
 import { useModal } from "@/utils/useModal";
 import axios from "@/api/axios";
 import { getMessage, MSG } from "@/messages";
@@ -622,6 +623,7 @@ import { resolveApiErrorMessage } from "@/utils/apiError";
 import search_icon from "@/assets/img/search_icon.png";
 import SiteSearchPop from "@/components/popup/SiteSearchPop.vue";
 import SiteNodeSearchPop from "@/components/popup/SiteNodeSearchPop.vue";
+import ShiftLeaveNoticePop from "@/components/popup/ShiftLeaveNoticePop.vue";
 
 defineOptions({ name: "Attd_06_1" });
 
@@ -884,9 +886,6 @@ const dragOverTeam = ref(null);
 
 const assignedCount = computed(() =>
   teams.value.reduce((s, t) => s + t.members.length, 0)
-);
-const filledTeamCount = computed(
-  () => teams.value.filter((t) => t.members.length > 0).length
 );
 const allTeamsFilled = computed(
   () => teams.value.length > 0 && teams.value.every((t) => t.members.length > 0)
@@ -1208,6 +1207,24 @@ const fnShiftSchDetail = async (shiftCd) => {
   }
 };
 
+// ── 보존(연차/OT) 안내 (prafta-com-016-D-4) ───────────────
+// 연차(종일/반차/시간차) 또는 OT 가 있어 근무계획 덮어쓰기에서 제외(보존)된 (사용자, 날짜) 목록을
+//   alert 가 아닌 ShiftLeaveNoticePop 팝업으로 안내한다(필터/사용단위 표시).
+const buildBlockedRows = (blockedList) => {
+  const userNmMap = {};
+  users.value.forEach((u) => {
+    userNmMap[u.userCd] = u.userNm;
+  });
+  return blockedList.map((b) => ({
+    userCd: b.userCd,
+    userNm: userNmMap[b.userCd] ?? b.userCd,
+    workYmd: b.workYmd,
+    reason: b.reason,
+    dayType: b.dayType,
+    leaveUseUnitType: b.leaveUseUnitType,
+  }));
+};
+
 // ── 저장 ─────────────────────────────────────────────────
 const fnSave = async () => {
   const ok = await proxy.$confirm(getMessage(MSG.SAVE_CONFIRM));
@@ -1232,15 +1249,23 @@ const fnSave = async () => {
   };
 
   try {
-    // TODO: API 연동
-    await axios.post("/webApi/attd06/insert-shift-sch-infos", saveData);
+    const res = await axios.post(
+      "/webApi/attd06/insert-shift-sch-infos",
+      saveData
+    );
 
-    await proxy.$alert(getMessage(MSG.SAVE_SUCCESS));
+    // prafta-com-016-D-4: 연차(any unit)/OT 가 있어 덮어쓰기에서 제외(보존)된 날짜가 있으면 팝업 안내.
+    const blockedList = res.data?.blockedList ?? [];
     selectedType.value = null;
     teams.value = [];
     shiftTeamNm.value = "";
     showPreview.value = false;
     emit("save-complete");
+    if (blockedList.length > 0) {
+      openPop(ShiftLeaveNoticePop, { rows: buildBlockedRows(blockedList) });
+    } else {
+      await proxy.$alert(getMessage(MSG.SAVE_SUCCESS));
+    }
   } catch (err) {
     await proxy.$alert(
       resolveApiErrorMessage(err, "저장 중 오류가 발생했습니다.")
@@ -1296,11 +1321,10 @@ const fnInit = () => {
     nodeDisabled.value = false;
   }
 
+  // prafta-com-013-05-4(3): 적용기간 기본값 = 당일 ~ 해당년도 말일(12/31).
   const now = new Date();
-  const start = new Date(now.getFullYear(), now.getMonth(), 1);
-  const end = new Date(start);
-  end.setMonth(end.getMonth() + 6);
-  end.setDate(end.getDate() - 1);
+  const start = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  const end = new Date(now.getFullYear(), 11, 31);
   strDate.value = fmtDate(start);
   endDate.value = fmtDate(end);
 };
@@ -1465,19 +1489,41 @@ onMounted(() => {
   color: var(--color-text-strong);
 }
 
-/* ── 교대근무 팀명 ────────────────────────────────────────── */
+/* ── 교대근무 팀명 + 적용기간 + 미리보기 (prafta-com-013-05-4) ── */
 .a06-team-nm-bar {
   display: flex;
   align-items: center;
   gap: 10px;
   padding: 2px 2px 8px;
   flex-shrink: 0;
+  flex-wrap: wrap;
 }
 .team-nm-label {
   font-size: 0.8125rem;
   font-weight: 600;
   color: var(--color-text-strong);
   white-space: nowrap;
+}
+.team-nm-period {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  margin-left: 12px;
+  padding-left: 12px;
+  border-left: 1px solid var(--color-border);
+}
+.team-nm-period :deep(.calendar-input) {
+  height: 28px;
+  padding: 0 8px;
+  border: 1px solid var(--color-border);
+  border-radius: 7px;
+  font-size: 12px;
+  background: #fff;
+  color: var(--color-text-strong);
+  font-family: "Pretendard", sans-serif;
+}
+.team-nm-preview-btn {
+  margin-left: auto;
 }
 .team-nm-input {
   width: 260px;
@@ -1883,7 +1929,8 @@ onMounted(() => {
   color: var(--color-text-strong);
   white-space: nowrap;
 }
-.bottom-period input[type="date"] {
+/* 네이티브 date input → CalendarSrch 교체에 따라 내부 input 셀렉터로 폭/높이 유지 */
+.bottom-period :deep(.calendar-input) {
   height: 28px;
   padding: 0 8px;
   border: 1px solid var(--color-border);

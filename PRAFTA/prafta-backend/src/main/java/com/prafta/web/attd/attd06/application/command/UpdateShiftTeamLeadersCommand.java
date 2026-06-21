@@ -8,6 +8,9 @@ public record UpdateShiftTeamLeadersCommand(
     String siteCd
     , String userCd
     , String leaderYn
+    , String shiftCd
+    , String shiftTeamId
+    , String teamIdx
     , String gvCmpnyCd
     , String gvUserCd
 ) {
@@ -20,6 +23,9 @@ public record UpdateShiftTeamLeadersCommand(
             param.siteCd()
             , param.userCd()
             , param.leaderYn()
+            , param.shiftCd()
+            , param.shiftTeamId()
+            , param.teamIdx()
             , param.gvCmpnyCd()
             , param.gvUserCd()
         );

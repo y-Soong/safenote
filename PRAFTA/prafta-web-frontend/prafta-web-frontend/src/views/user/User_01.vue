@@ -88,6 +88,13 @@
           @blur="focusKill"
         />
       </div>
+
+      <div>
+        <label class="checkbox-label">
+          <input type="checkbox" v-model="incSubNodeYn" :disabled="nodeDisabled" />
+          하위부서 조회
+        </label>
+      </div>
     </div>
 
     <div class="viewBody">
@@ -437,6 +444,8 @@ const siteNm = ref("");
 const nodeCd = ref("");
 const nodeNm = ref("");
 const nodeDisabled = ref(true);
+// 소속부서 하위부서 포함 조회 여부(근무계획관리 Attd_05 동일 패턴)
+const incSubNodeYn = ref(false);
 const p_userId = ref("");
 const headchk = ref(false);
 const siteDisabled = ref(false);
@@ -554,6 +563,7 @@ const fnSearch = async () => {
         useYn: useYn.value,
         siteCd: siteCd.value,
         nodeCd: nodeCd.value,
+        incSubNodeYn: incSubNodeYn.value ? "Y" : "N",
       },
     });
 
@@ -1043,6 +1053,25 @@ const isRowLocked = (user) => Number(user.authLevel) < Number(authLevel.value);
 .row-locked {
   opacity: 0.5;
   pointer-events: none;
+}
+
+/* 하위부서 조회 체크박스(근무계획관리 Attd_05 동일 스타일) */
+.checkbox-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  font-size: 0.85rem;
+  color: var(--color-text-muted, #6b7280);
+  cursor: pointer;
+  user-select: none;
+}
+
+.checkbox-label input[type="checkbox"] {
+  width: 13px;
+  height: 13px;
+  cursor: pointer;
+  accent-color: var(--color-primary, #16a34a);
+  flex-shrink: 0;
 }
 
 /* PRAFTA-037-F6: 비동기 업로드 진행률 모달 */

@@ -38,32 +38,66 @@ function isTokenError(errorCode) {
   );
 }
 
-/** 강제 로그아웃 + 로그인 페이지 이동 (인터셉터 내부에서 일관 사용). */
-async function forceLogoutAndRedirect(userStore) {
-  await forceLogout();
-  try {
-    userStore?.logout();
-  } catch (e) {
-    // store 미초기화 등은 무시
-  }
-  // 로그인 화면 = SafeNote 서비스 진입('/safenote'). 루트('/')는 회사소개 랜딩이다.
-  // router.push 가 (동일 라우트/네비게이션 취소 등으로) 무시되어 화면이 그대로 남는
-  // 케이스가 있어, 라우팅이 적용되지 않으면 하드 리다이렉트로 확실히 로그인 화면으로 보낸다.
-  try {
-    const r = await getRouter();
-    if (r?.currentRoute?.value?.path !== "/safenote") {
-      await r.push("/safenote");
+// 세션 만료/토큰 무효로 강제 로그아웃할 때 사용자에게 보여줄 기본 안내 메시지.
+const SESSION_EXPIRED_MESSAGE = "세션이 만료되었습니다.\n다시 로그인해 주세요.";
+
+// 동시에 여러 요청이 401 을 받아 forceLogoutAndRedirect 가 다발 호출될 때
+// 안내 알림/서버 로그아웃/네비게이션이 중복 실행되지 않도록 하는 단일 플라이트 가드.
+// 로그아웃 흐름이 끝나면 다시 null 로 풀어 다음 세션 만료에도 정상 동작하게 한다.
+let loggingOut = null;
+
+/**
+ * 강제 로그아웃 + 로그인 페이지 이동 (인터셉터 내부에서 일관 사용).
+ * @param userStore Pinia user store (null 가능)
+ * @param message   강제 로그아웃 사유 안내 메시지. null/빈값이면 알림을 띄우지 않는다.
+ */
+function forceLogoutAndRedirect(userStore, message = SESSION_EXPIRED_MESSAGE) {
+  // 이미 로그아웃 진행 중이면(동시 401 다발 등) 진행 중인 흐름을 그대로 공유한다.
+  if (loggingOut) return loggingOut;
+
+  loggingOut = (async () => {
+    try {
+      // 강제 로그아웃 사유를 사용자에게 1회 안내(메시지가 있을 때만).
+      // 안내 후 사용자가 확인을 누르면 정리/이동을 진행한다.
+      if (message) {
+        try {
+          await $alert(message);
+        } catch (e) {
+          // 알림 모달 미초기화 등은 무시하고 로그아웃은 계속 진행한다.
+        }
+      }
+
+      await forceLogout();
+      try {
+        userStore?.logout();
+      } catch (e) {
+        // store 미초기화 등은 무시
+      }
+      // 로그인 화면 = SafeNote 서비스 진입('/safenote'). 루트('/')는 회사소개 랜딩이다.
+      // router.push 가 (동일 라우트/네비게이션 취소 등으로) 무시되어 화면이 그대로 남는
+      // 케이스가 있어, 라우팅이 적용되지 않으면 하드 리다이렉트로 확실히 로그인 화면으로 보낸다.
+      try {
+        const r = await getRouter();
+        if (r?.currentRoute?.value?.path !== "/safenote") {
+          await r.push("/safenote");
+        }
+      } catch (e) {
+        // 네비게이션 실패는 아래 하드 폴백에서 처리
+      }
+      if (
+        typeof window !== "undefined" &&
+        window.location?.pathname !== "/safenote"
+      ) {
+        // SPA 라우팅이 적용되지 않은 경우 최종 폴백(전체 새로고침으로 세션 초기화)
+        window.location.assign("/safenote");
+      }
+    } finally {
+      // 하드 리다이렉트가 없을 때(SPA push 성공) 다음 세션 만료에도 동작하도록 가드 해제.
+      loggingOut = null;
     }
-  } catch (e) {
-    // 네비게이션 실패는 아래 하드 폴백에서 처리
-  }
-  if (
-    typeof window !== "undefined" &&
-    window.location?.pathname !== "/safenote"
-  ) {
-    // SPA 라우팅이 적용되지 않은 경우 최종 폴백(전체 새로고침으로 세션 초기화)
-    window.location.assign("/safenote");
-  }
+  })();
+
+  return loggingOut;
 }
 
 // 요청 인터셉터
@@ -180,12 +214,18 @@ api.interceptors.response.use(
     const originalRequest = error?.config;
 
     const errorCode = error?.response?.data?.errorCode;
-    console.log("errorCode :: " + errorCode);
 
     // COMMON_400_003 → 세션 만료 등 서버가 명시적으로 로그아웃 요구
     if (errorCode === "COMMON_400_003") {
       await forceLogoutAndRedirect(userStore);
       // 로그아웃/리다이렉트 중이므로 호출자 catch(예: "조회 중 오류") 가 뜨지 않도록 보류.
+      return new Promise(() => {});
+    }
+
+    // prafta-057: AUTH_409_001 → 다른 환경(다른 브라우저/PC)에서 신규 로그인되어 현재 세션이 폐기됨.
+    //   refresh 를 시도하지 않고(어차피 패밀리가 폐기되어 무효) 전용 안내 후 즉시 로그아웃한다.
+    if (errorCode === "AUTH_409_001") {
+      await forceLogoutAndRedirect(userStore, "다른 환경에서 로그인을 감지했습니다.");
       return new Promise(() => {});
     }
 
@@ -238,8 +278,8 @@ api.interceptors.response.use(
       status === 404 &&
       error?.response?.data?.message === "유효하지 않은 토큰입니다."
     ) {
-      $alert(error.response.data.message);
-      await forceLogoutAndRedirect(userStore);
+      // 안내는 forceLogoutAndRedirect 가 단일 진입점에서 1회만 처리(중복 알림 방지).
+      await forceLogoutAndRedirect(userStore, error.response.data.message);
       return new Promise(() => {});
     }
 

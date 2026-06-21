@@ -292,4 +292,145 @@
         GROUP BY O.USER_CD, U.CMPNY_CD, U.USER_ID, U.USER_NM, U.NODE_NM, U.AUTH_CD
     </select>
 
+
+    <!-- ================================================================
+         COM-016-F (8-3) - 사용자별 미출근일 수.
+
+         미출근 = "스케줄(WORK_PLAN_CD 가 SCH_CD)이 있으나 출근하지 않은 날".
+         모수 = TB_USER_WORK_PLAN 의 해당 월 근무일 중 WORK_PLAN_CD 가 스케줄코드인 날.
+           (WORK_PLAN_CD 는 [SCH_CD, LEAVE_CD] 이므로 TB_SCH_MGMT/HIST 에 존재하는
+            SCH_CD 인 날만 스케줄 근무일로 본다.)
+
+         제외 술어(모두 AND NOT EXISTS):
+           - 연차일: TB_USER_LEAVE_USE 종일(USE_UNIT_TYPE='00') 확정(LEAVE_STATUS='CONFIRMED')
+                    DEL_YN='N', START_DATE &lt;= WORK_YMD &lt;= END_DATE
+                    (Attd05Mapper selectFullDayLeaveCdOnCell / selectLeaveOverlayList 단일출처 미러)
+           - 휴일: TB_HOLIDAY USE_YN='Y', HOLIDAY_YMD(date) = WORK_YMD (HOLIDAY_TYPE 전체 제외)
+           - 출근기록: TB_USER_ATTD_MGMT DEL_YN='N' CHECK_IN_TIME 존재(차수 무관 1일 기준)
+           - 미래일: WORK_YMD &gt; 오늘(서버일자 CURDATE)
+
+         스코프(node_tree + target_user)·권한 모수는 selectAttdSummaryRows 와 동일.
+         결과 행 모수는 변경 없음 — 서비스에서 기존 결과 행에만 매핑(보수적/무회귀).
+         ================================================================ -->
+    <select id="selectAbsentDayCount" parameterType="com.prafta.web.attd.attd11.application.query.MonthlyAttdSummaryQuery" resultType="com.prafta.web.attd.attd11.result.AbsentDayCountResult">
+    /* Attd11Mapper.selectAbsentDayCount */
+        WITH RECURSIVE
+        node_tree AS (
+            SELECT
+                  N.CMPNY_CD
+                , N.SITE_CD
+                , N.NODE_CD
+                , N.NODE_NM
+            FROM TB_SITE_NODE N
+            WHERE N.CMPNY_CD = #{gvCmpnyCd}
+              AND N.SITE_CD  = #{siteCd}
+            <if test="nodeCd != null and nodeCd != ''">
+              AND N.NODE_CD  = #{nodeCd}
+            </if>
+            <if test="nodeCd == null or nodeCd == ''">
+              AND N.PARENT_NODE_CD IS NULL
+            </if>
+
+            <if test='"Y".equals(incSubNodeYn) or nodeCd == null or nodeCd == ""'>
+            UNION ALL
+
+            SELECT
+                  C.CMPNY_CD
+                , C.SITE_CD
+                , C.NODE_CD
+                , C.NODE_NM
+            FROM TB_SITE_NODE C
+            INNER JOIN node_tree P
+                ON  C.CMPNY_CD       = P.CMPNY_CD
+                AND C.SITE_CD        = P.SITE_CD
+                AND C.PARENT_NODE_CD = P.NODE_CD
+            </if>
+        ),
+
+        target_user AS (
+            SELECT
+                  U.CMPNY_CD
+                , U.SITE_CD
+                , U.USER_CD
+            FROM TB_USER U
+            INNER JOIN node_tree NT
+                ON  U.CMPNY_CD = NT.CMPNY_CD
+                AND U.SITE_CD  = NT.SITE_CD
+                AND U.NODE_CD  = NT.NODE_CD
+            WHERE U.CMPNY_CD        = #{gvCmpnyCd}
+              AND U.SITE_CD         = #{siteCd}
+              AND U.USE_YN          = 'Y'
+              AND U.WITHDRAWAL_DATE IS NULL
+            <if test="userNm != null and userNm != ''">
+              AND U.USER_NM LIKE CONCAT('%', #{userNm}, '%')
+            </if>
+        )
+
+        SELECT
+              WP.USER_CD                  AS userCd
+            , COUNT(DISTINCT WP.WORK_YMD) AS absentDayCnt
+        FROM target_user U
+        INNER JOIN TB_USER_WORK_PLAN WP
+            ON  WP.CMPNY_CD = U.CMPNY_CD
+            AND WP.SITE_CD  = U.SITE_CD
+            AND WP.USER_CD  = U.USER_CD
+            AND WP.WORK_YMD LIKE CONCAT(REPLACE(#{workYm}, '-', ''), '%')
+
+        /* 모수: WORK_PLAN_CD 가 스케줄코드(SCH_CD)인 근무일만 (연차셀 LEAVE_CD 분리) */
+        WHERE WP.WORK_PLAN_CD IS NOT NULL
+          AND EXISTS (
+                SELECT 1
+                FROM TB_SCH_MGMT M
+                WHERE M.CMPNY_CD = WP.CMPNY_CD
+                  AND M.SITE_CD  = WP.SITE_CD
+                  AND M.SCH_CD   = WP.WORK_PLAN_CD
+                UNION ALL
+                SELECT 1
+                FROM TB_SCH_MGMT_HIST H
+                WHERE H.CMPNY_CD = WP.CMPNY_CD
+                  AND H.SITE_CD  = WP.SITE_CD
+                  AND H.SCH_CD   = WP.WORK_PLAN_CD
+              )
+
+        /* 미래일 제외 (오늘 이후는 아직 출근 기회 미도래) */
+          AND WP.WORK_YMD <![CDATA[ <= ]]> DATE_FORMAT(CURDATE(), '%Y%m%d')
+
+        /* 연차일 제외 (TB_USER_LEAVE_USE 종일 확정 — Attd05 단일출처 술어 미러) */
+          AND NOT EXISTS (
+                SELECT 1
+                FROM TB_USER_LEAVE_USE L
+                WHERE L.CMPNY_CD      = WP.CMPNY_CD
+                  AND L.USER_CD       = WP.USER_CD
+                  AND L.LEAVE_STATUS  = 'CONFIRMED'
+                  AND L.DEL_YN        = 'N'
+                  AND L.USE_UNIT_TYPE = '00'
+                  AND L.START_DATE <![CDATA[ <= ]]> WP.WORK_YMD
+                  AND L.END_DATE   <![CDATA[ >= ]]> WP.WORK_YMD
+              )
+
+        /* 휴일 제외 (HOLIDAY_TYPE 전체 — 법정/약정 구분 없이) */
+          AND NOT EXISTS (
+                SELECT 1
+                FROM TB_HOLIDAY HD
+                WHERE HD.CMPNY_CD = WP.CMPNY_CD
+                  AND HD.USE_YN   = 'Y'
+                  AND DATE_FORMAT(HD.HOLIDAY_YMD, '%Y%m%d') = WP.WORK_YMD
+              )
+
+        /* 출근기록 존재일 제외 (차수 무관 — 어느 차수든 CHECK_IN 존재 시 출근일) */
+          AND NOT EXISTS (
+                SELECT 1
+                FROM TB_USER_ATTD_MGMT A
+                WHERE A.CMPNY_CD = WP.CMPNY_CD
+                  AND A.SITE_CD  = WP.SITE_CD
+                  AND A.USER_CD  = WP.USER_CD
+                  AND A.WORK_YMD = WP.WORK_YMD
+                  AND A.DEL_YN   = 'N'
+                  AND A.CHECK_IN_TIME IS NOT NULL
+                  AND A.CHECK_IN_TIME <![CDATA[ <> ]]> ''
+              )
+
+        GROUP BY WP.USER_CD
+    </select>
+
 </mapper>

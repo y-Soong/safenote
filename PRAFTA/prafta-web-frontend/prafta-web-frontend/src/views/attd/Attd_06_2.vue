@@ -109,7 +109,9 @@
             @click="toggleGroupExpand(group.shiftTeamId)"
           >
             <span class="group-chevron">▼</span>
-            <span class="group-code-badge">{{ group.shiftCd }}</span>
+            <!-- prafta-com-013-05-5(2): 코드값(식별자)은 교대근무팀ID(shiftTeamId)를 읽기전용으로 표시.
+                 편집은 명칭(shiftTeamNm)만 한다(아래 group-title-text). -->
+            <span class="group-code-badge">{{ group.shiftTeamId }}</span>
             <template v-if="editingTeamNmId === group.shiftTeamId">
               <input
                 ref="editTeamNmInputRef"
@@ -201,8 +203,8 @@
                 <line x1="8" y1="2" x2="8" y2="6" />
                 <line x1="3" y1="10" x2="21" y2="10" />
               </svg>
-              {{ fmtDisplayDate(group.strDate) }} ~
-              {{ fmtDisplayDate(group.endDate) }}
+              {{ formatYmdDot(group.strDate) }} ~
+              {{ formatYmdDot(group.endDate) }}
               <button
                 class="period-edit-btn"
                 title="기간 수정"
@@ -374,17 +376,17 @@
           <div class="a06-modal-body">
             <div class="a06-modal-field">
               <label>시작일</label>
-              <input type="date" v-model="editStart" class="a06-date-input" />
+              <CalendarSrch v-model="editStart" class="a06-date-input" />
             </div>
             <div class="a06-modal-field">
               <label>종료일</label>
-              <input type="date" v-model="editEnd" class="a06-date-input" />
+              <CalendarSrch v-model="editEnd" class="a06-date-input" />
             </div>
             <p class="a06-modal-notice">
               ※ 마감된 기간의 변경은 적용되지 않습니다.
             </p>
             <p class="a06-modal-notice">
-              ※ 적용 기간의 기존 스케줄이 일괄 변경됩니다.
+              ※ 연장된 기간에만 교대 근무계획이 추가 생성되며, 기존 스케줄은 유지됩니다.
             </p>
           </div>
           <div class="a06-modal-footer">
@@ -414,6 +416,8 @@ import {
   defineOptions,
 } from "vue";
 import ViewHeader from "@/components/common/ViewHeader.vue";
+import CalendarSrch from "@/components/common/CalendarSrch.vue";
+import { formatYmdDot } from "@/utils/dateFormat";
 import { useModal } from "@/utils/useModal";
 import axios from "@/api/axios";
 import { getMessage, MSG } from "@/messages";
@@ -422,6 +426,7 @@ import search_icon from "@/assets/img/search_icon.png";
 import SiteSearchPop from "@/components/popup/SiteSearchPop.vue";
 import SiteNodeSearchPop from "@/components/popup/SiteNodeSearchPop.vue";
 import UsersMultiSearchPop from "@/components/popup/UsersMultiSearchPop.vue";
+import ShiftLeaveNoticePop from "@/components/popup/ShiftLeaveNoticePop.vue";
 
 defineOptions({ name: "Attd_06_2" });
 
@@ -728,6 +733,10 @@ const fnSearch = async () => {
         nodeNm: row.nodeNm,
         leaderYn: row.leaderYn,
         editableYn: row.editableYn,
+        // prafta-com-016-D 보안 재작업: 조장 토글 WHERE 를 교대팀 단위로 좁히기 위한 키(서버 가드 1차 + 키 정합).
+        shiftCd: row.shiftCd,
+        shiftTeamId: row.shiftTeamId,
+        teamIdx: row.teamIdx,
       });
     });
     shiftTeamUserInfosResultList.value = [...groupMap.values()].map((g) => ({
@@ -763,9 +772,10 @@ const getLeaderName = (team) => {
 };
 
 const deleteAssignment = async (group) => {
-  const typeName = getShiftTypeName(group.shiftCd);
+  // prafta-com-016-D-6: 교대타입명이 아닌 교대근무 팀명(shiftTeamNm) 표시. 빈값이면 팀ID 폴백.
+  const teamNm = group.shiftTeamNm || group.shiftTeamId;
   const ok = await proxy.$confirm(
-    `[${typeName}]를 삭제하시겠습니까?\n교대근무 팀이 삭제되어도 설정된 스케줄은\n유지됩니다.`
+    getMessage(MSG.SHIFT_TEAM_DELETE_CONFIRM, { teamNm })
   );
   if (!ok) return;
   try {
@@ -852,7 +862,13 @@ const fnAddUsersToTeam = (group, team) => {
     cmpnyCd_p: sessionStorage.getItem("gv_cmpnyCd"),
     onSelect: async (selectedUsers) => {
       if (!selectedUsers?.length) return;
-      const ok = await proxy.$confirm(getMessage(MSG.SAVE_CONFIRM));
+      // prafta-com-016-D-3: 덮어쓰기 범위(합류일 다음날 ~ 교대근무 종료일) 안내 confirm.
+      //   실제 기준일은 서버 산출(클라 today 신뢰 금지) — 종료일만 안내용으로 표기.
+      const ok = await proxy.$confirm(
+        getMessage(MSG.SHIFT_USER_ADD_CONFIRM, {
+          endDate: fmtDisplayDate(group.endDate),
+        })
+      );
       if (!ok) return;
       fnInsertShiftTeamUsers(group, team, selectedUsers);
     },
@@ -860,7 +876,10 @@ const fnAddUsersToTeam = (group, team) => {
 };
 
 const fnRemoveUserFromTeam = async (group, team, member) => {
-  const ok = await proxy.$confirm(getMessage(MSG.SAVE_CONFIRM));
+  // prafta-com-013-05-5(3): 조원 제거 버튼 동작 + Confirm 문구를 제거 의미로 교정(기존 "저장하시겠습니까?" -> 제외 안내).
+  const ok = await proxy.$confirm(
+    `[${member.userNm}] 님을 교대팀에서 제외하시겠습니까?`
+  );
   if (!ok) return;
   fnDeleteShiftTeamUser(group, team, member);
 };
@@ -882,8 +901,16 @@ const fnInsertShiftTeamUsers = async (group, team, users) => {
       payload
     );
     if (res.status === 200) {
-      await proxy.$alert(getMessage(MSG.SAVE_SUCCESS));
+      // prafta-com-016-D-3/D-4: 연차(any unit)/OT 가 있어 덮어쓰기에서 제외(보존)된 날짜가 있으면 팝업 안내.
+      const blockedList = res.data?.blockedList ?? [];
       fnSearch();
+      if (blockedList.length > 0) {
+        openPop(ShiftLeaveNoticePop, {
+          rows: buildBlockedRows(blockedList, group, users),
+        });
+      } else {
+        await proxy.$alert(getMessage(MSG.SAVE_SUCCESS));
+      }
     }
   } catch (err) {
     await proxy.$alert(
@@ -906,6 +933,10 @@ const fnToggleLeader = async (member) => {
       siteCd: siteCd.value,
       userCd: member.userCd,
       leaderYn: newLeaderYn,
+      // prafta-com-016-D 보안 재작업: 팀 단위 키 동봉(서버 WHERE 범위 축소).
+      shiftCd: member.shiftCd,
+      shiftTeamId: member.shiftTeamId,
+      teamIdx: member.teamIdx,
     });
     if (res.status === 200) {
       fnSearch();
@@ -932,7 +963,8 @@ const fnDeleteShiftTeamUser = async (group, team, member) => {
       payload
     );
     if (res.status === 200) {
-      await proxy.$alert(getMessage(MSG.SAVE_SUCCESS));
+      // prafta-com-013-05(재작업) 결함④: 멤버 제외는 "저장"이 아니라 "제외" 의미의 문구로 안내.
+      await proxy.$alert(getMessage(MSG.SHIFT_TEAM_USER_EXCLUDED));
       fnSearch();
     }
   } catch (err) {
@@ -965,42 +997,68 @@ const fnSave = async () => {
     return;
   }
 
-  const ok = await proxy.$confirm(getMessage(MSG.SAVE_CONFIRM));
+  // prafta-com-016-D-5: 연장만 반영·단축 미변경 안내 confirm.
+  const ok = await proxy.$confirm(getMessage(MSG.SHIFT_PERIOD_CHANGE_CONFIRM));
   if (!ok) return;
 
+  // prafta-com-013-05-2(재작업): 기간 수정은 전 구간 재생성(update-shift-user-sch-infos)이 아니라
+  //   update-shift-team-periods 로 일원화한다.
+  //   - STR_DATE/END_DATE 갱신 + 연장 구간만 계획 생성(순환 위상은 원래 시작일 기준 보존)
+  //     + 단축분/기존 수기 편집분 보존을 한 경로에서 일관 처리.
+  //   - 응답 blockedList = 연장 구간 중 (연차+교대 휴무) 겹쳐 덮어쓰기 제외된 날짜.
   const saveData = {
-    shiftMeta: {
-      shiftTeamId: editTarget.value?.shiftTeamId,
-      siteCd: siteCd.value,
-      shiftCd: editTarget.value?.shiftCd,
-      shiftTeamNm: editTarget.value?.shiftTeamNm,
-      startDate: editStart.value.replaceAll("-", ""),
-      endDate: editEnd.value.replaceAll("-", ""),
-    },
-    teamList: (editTarget.value?.teams ?? []).map((t) => ({
-      teamIdx: t.teamIdx,
-      teamNm: t.teamNm,
-      members: (t.members ?? []).map((m) => ({
-        userCd: m.userCd,
-      })),
-    })),
+    siteCd: siteCd.value,
+    shiftCd: editTarget.value?.shiftCd,
+    shiftTeamId: editTarget.value?.shiftTeamId,
+    strDate: editStart.value.replaceAll("-", ""),
+    endDate: editEnd.value.replaceAll("-", ""),
   };
 
   try {
     const res = await axios.post(
-      "/webApi/attd06/update-shift-user-sch-infos",
+      "/webApi/attd06/update-shift-team-periods",
       saveData
     );
     if (res.status === 200) {
       showPeriodModal.value = false;
-      await proxy.$alert(getMessage(MSG.SAVE_SUCCESS));
+      // prafta-com-016-D-4/D-5: 연장 구간 중 연차(any unit)/OT 로 덮어쓰기 제외(보존)된 날짜가 있으면 팝업 안내.
+      const blockedList = res.data?.blockedList ?? [];
+      const group = editTarget.value;
       fnSearch();
+      if (blockedList.length > 0) {
+        openPop(ShiftLeaveNoticePop, { rows: buildBlockedRows(blockedList, group) });
+      } else {
+        await proxy.$alert(getMessage(MSG.SAVE_SUCCESS));
+      }
     }
   } catch (err) {
     await proxy.$alert(
       resolveApiErrorMessage(err, "처리 중 오류가 발생했습니다.")
     );
   }
+};
+
+// ── 보존(연차/OT) 안내 행 빌더 (prafta-com-016-D-4) ───────
+// blockedList(BE) 각 항목에 사용자명(userNm)을 붙여 ShiftLeaveNoticePop 에 넘긴다.
+//   userNm 출처: 그룹의 현 소속 멤버 + (조원 추가 경로) 추가 대상 사용자 목록.
+const buildBlockedRows = (blockedList, group, extraUsers) => {
+  const userNmMap = {};
+  (group?.teams ?? []).forEach((t) => {
+    (t.members ?? []).forEach((m) => {
+      userNmMap[m.userCd] = m.userNm;
+    });
+  });
+  (extraUsers ?? []).forEach((u) => {
+    if (u?.userCd) userNmMap[u.userCd] = u.userNm;
+  });
+  return (blockedList ?? []).map((b) => ({
+    userCd: b.userCd,
+    userNm: userNmMap[b.userCd] ?? b.userCd,
+    workYmd: b.workYmd,
+    reason: b.reason,
+    dayType: b.dayType,
+    leaveUseUnitType: b.leaveUseUnitType,
+  }));
 };
 
 // ── 팀 컬러 ──────────────────────────────────────────────
@@ -1494,7 +1552,8 @@ defineExpose({ refresh: fnSearch });
   font-weight: 600;
   color: var(--color-text-muted);
 }
-.a06-date-input {
+/* 네이티브 date input → CalendarSrch 교체. 내부 input 셀렉터로 기존 사이즈 유지 */
+.a06-date-input :deep(.calendar-input) {
   height: 32px;
   padding: 0 10px;
   border: 1px solid var(--color-border);

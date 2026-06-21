@@ -43,6 +43,8 @@
         :submitting="isSubmitting"
         :presets="presets"
         :approval-context="approvalContext"
+        :existing-overtimes="existingOvertimes"
+        :pending-overtimes="pendingOvertimes"
         @submit="onSubmit"
         @cancel="onCancel"
       />
@@ -125,6 +127,12 @@ const presets = ref([])
 //   approvalContext: { selfApprvYn:'Y'|'N', isNodeAdmin:bool } | null(로드 전/실패 → 폼이 결재선 노출 폴백).
 const approvalContext = ref(null)
 
+// prafta-app-030: 이미 등록(적용)된 초과근무 목록(overtime 타입일 때만 로드). 표시 + 신규 슬롯 겹침 경고용.
+//   실패는 비차단 → 빈 배열(표시/겹침경고만 누락, 제출 자체는 가능 — BE 가 최종 차단).
+const existingOvertimes = ref([])
+// prafta-app-030 후속: 대기중(미승인) OT 신청 목록 — 표시 전용(겹침 사전차단 비대상). 실패 시 빈 배열.
+const pendingOvertimes = ref([])
+
 const onCancel = () => {
   router.back()
 }
@@ -150,6 +158,21 @@ const loadApprovalContext = async (workYmd) => {
   } catch (e) {
     console.error('[AttdRequest] 결재선 컨텍스트 로드 실패:', e?.message)
     approvalContext.value = null
+  }
+}
+
+// prafta-app-030: 이미 등록(적용)된 초과근무 로드(loadApprovalContext 패턴 미러). 실패 비차단 → 빈 배열.
+const loadExistingOvertimes = async (workYmd) => {
+  try {
+    const { data } = await api.get('/appApi/req07/applied-overtimes', {
+      params: { workYmd },
+    })
+    existingOvertimes.value = Array.isArray(data?.overtimes) ? data.overtimes : []
+    pendingOvertimes.value = Array.isArray(data?.pendingOvertimes) ? data.pendingOvertimes : []
+  } catch (e) {
+    console.error('[AttdRequest] 기존 초과근무 로드 실패:', e?.message)
+    existingOvertimes.value = []
+    pendingOvertimes.value = []
   }
 }
 
@@ -235,6 +258,10 @@ onMounted(() => {
     // prafta-app-009: 컨텍스트 확정 후 결재선 메타(프리셋 + 분기) 로드(비동기, 폼 표시 비차단).
     loadPresets()
     loadApprovalContext(workYmd)
+    // prafta-app-030: 초과근무 신청 타입일 때만 기존 적용 OT 로드(표시 + 겹침 경고). 실패 비차단.
+    if (formType.value === 'overtime') {
+      loadExistingOvertimes(workYmd)
+    }
   } catch (e) {
     console.error('[AttdRequest] 컨텍스트 파싱 실패:', e?.message)
     showAlert('컨텍스트를 불러오지 못했습니다.')

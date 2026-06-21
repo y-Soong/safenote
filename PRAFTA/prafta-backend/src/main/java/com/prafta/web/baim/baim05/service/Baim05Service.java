@@ -6,9 +6,11 @@ import com.prafta.web.baim.baim05.application.param.DailyUserSlotListParam;
 import com.prafta.web.baim.baim05.application.param.InsertDailyQrUserParam;
 import com.prafta.web.baim.baim05.application.param.LinkPoliciesParam;
 import com.prafta.web.baim.baim05.application.param.SetSlotFixedParam;
+import com.prafta.web.baim.baim05.application.param.SlotHisParam;
 import com.prafta.web.baim.baim05.dto.response.DailyUserLinkPoliciesResponse;
 import com.prafta.web.baim.baim05.dto.response.DailyUserSlotListResponse;
 import com.prafta.web.baim.baim05.dto.response.InsertDailyQrUserResponse;
+import com.prafta.web.baim.baim05.dto.response.SlotHisListResponse;
 
 public interface Baim05Service {
 	DailyUserLinkPoliciesResponse selectDailyUserLinkPolicyList(DailyUserLinkPoliciesParam param);
@@ -22,4 +24,6 @@ public interface Baim05Service {
 	void clearDailyUserSlots(ClearDailyUserSlotsParam param);
 
 	void setDailyUserSlotFixed(SetSlotFixedParam param);
+
+	SlotHisListResponse selectDailyUserSlotHisList(SlotHisParam param);
 }

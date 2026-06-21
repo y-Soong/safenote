@@ -12,6 +12,7 @@ import com.prafta.web.attd.attd06.application.param.UpdateShiftTeamLeadersParam;
 import com.prafta.web.attd.attd06.application.param.UpdateShiftTeamNmParam;
 import com.prafta.web.attd.attd06.application.param.UpdateShiftTeamPeriodParam;
 import com.prafta.web.attd.attd06.application.param.UserListsParam;
+import com.prafta.web.attd.attd06.dto.response.ShiftSchSaveResponse;
 import com.prafta.web.attd.attd06.dto.response.ShiftTeamUserInfosResponse;
 import com.prafta.web.attd.attd06.dto.response.ShiftTypeDetailListsResponse;
 import com.prafta.web.attd.attd06.dto.response.ShiftTypeListsResponse;
@@ -27,19 +28,22 @@ public interface Attd06Service {
 
     ShiftTeamUserInfosResponse getShiftTeamUserInfos(ShiftTeamUserInfosParam param);
 
-    void insertShiftSchInfos(ShiftSchInfosParam param);
-    
-    void updateShiftUserSchInfos(ShiftUserSchInfosParam param);
+    // prafta-com-013-05-1: 차단(연차+휴무 중복)된 날짜 목록을 응답으로 반환.
+    ShiftSchSaveResponse insertShiftSchInfos(ShiftSchInfosParam param);
+
+    ShiftSchSaveResponse updateShiftUserSchInfos(ShiftUserSchInfosParam param);
 
     void updateShiftTeamNm(UpdateShiftTeamNmParam param);
 
     void deleteShiftTeamUser(DeleteShiftTeamUserParam param);
 
-    void insertShiftTeamUsers(InsertShiftTeamUsersParam param);
+    // prafta-com-016-D-3: 조원 추가 시 work_plan 덮어쓰기(합류일+1 ~ 종료일) + 보존(연차/OT) 날짜 목록 반환.
+    ShiftSchSaveResponse insertShiftTeamUsers(InsertShiftTeamUsersParam param);
 
     void updateShiftTeamLeaders(UpdateShiftTeamLeadersParam param);
 
-    void updateShiftTeamPeriod(UpdateShiftTeamPeriodParam param);
+    // prafta-com-013-05-2(재작업): 기간 연장 구간 work_plan 생성 시 차단(연차+휴무) 날짜 목록을 응답으로 반환.
+    ShiftSchSaveResponse updateShiftTeamPeriod(UpdateShiftTeamPeriodParam param);
 
     void deleteShiftTeam(DeleteShiftTeamParam param);
 

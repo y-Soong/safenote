@@ -13,7 +13,7 @@
       <!-- 조회월: 단일 월 (PRAFTA-034 §3-5 단일 월 조회) -->
       <div>
         <label>조회월</label>
-        <CalendarSrchMonth v-model="workYm" class="a11-nav-month-picker" />
+        <CalendarSrchMonth :range="false" style="width: 100px" v-model="workYm" />
       </div>
       <div>
         <label>사업장</label>
@@ -82,6 +82,18 @@
 
     <!-- 본문: 사용자 1명 = 1행 (월별 근태 판정 요약) -->
     <div class="viewBody a11-body">
+      <div class="table-wrapper subtitle-pane a11-subtitle-pane">
+        <!-- 소제목 바 (User_01 패턴 차용) -->
+        <div class="subtitle-row">
+          <div class="subtitle">
+            <span class="subtitle-icon" aria-hidden="true">
+              <svg viewBox="0 0 24 24" width="18" height="18">
+                <path d="M4 4h16v4H4zM4 10h10v10H4z" />
+              </svg>
+            </span>
+            <span class="subtitle-text">사용자 리스트</span>
+          </div>
+        </div>
       <div class="a11-table-wrap">
         <table class="a11-table">
           <thead>
@@ -95,6 +107,7 @@
               <th rowspan="2">초과근무시간</th>
               <th colspan="2">지각</th>
               <th colspan="2">조퇴</th>
+              <th rowspan="2">미출근</th>
             </tr>
             <tr>
               <th>횟수</th>
@@ -106,7 +119,7 @@
           <tbody>
             <!-- 조회 결과 0건 -->
             <tr v-if="rows.length === 0">
-              <td colspan="11" class="a11-empty">조회 결과가 없습니다.</td>
+              <td colspan="12" class="a11-empty">조회 결과가 없습니다.</td>
             </tr>
             <tr v-for="r in rows" :key="r.userCd">
               <td>{{ r.userId }}</td>
@@ -124,9 +137,11 @@
               <td class="a11-cell-num">
                 {{ fmtMinutes(r.earlyLeaveMinutes) }}
               </td>
+              <td class="a11-cell-num">{{ fmtCount(r.absentDayCnt) }}</td>
             </tr>
           </tbody>
         </table>
+      </div>
       </div>
     </div>
   </div>
@@ -189,7 +204,7 @@ const workYm = ref(currentYm());
 // 각 행 형태(PRAFTA-034 §9 응답):
 //   { userCd, userId, userNm, deptNm, authCd, authNm,
 //     workDayCnt, workMinutes, otMinutes,
-//     lateCnt, lateMinutes, earlyLeaveCnt, earlyLeaveMinutes }
+//     lateCnt, lateMinutes, earlyLeaveCnt, earlyLeaveMinutes, absentDayCnt }
 const rows = ref([]);
 
 // PRAFTA-028 - master/hr 여부 (그 외 권한은 사업장+소속부서 필수)
@@ -425,6 +440,7 @@ const fnExcel = async () => {
     { header: "지각 시간 누계", fixed: false, width: 14 },
     { header: "조퇴 횟수", fixed: false, width: 10 },
     { header: "조퇴 시간 누계", fixed: false, width: 14 },
+    { header: "미출근", fixed: false, width: 10 },
   ];
   const data = rows.value.map((r) => [
     r.userId ?? "",
@@ -438,6 +454,7 @@ const fnExcel = async () => {
     fmtMinutes(r.lateMinutes),
     fmtCount(r.earlyLeaveCnt),
     fmtMinutes(r.earlyLeaveMinutes),
+    fmtCount(r.absentDayCnt),
   ]);
   try {
     await exportStyledExcel({
@@ -490,35 +507,19 @@ onMounted(() => {
   flex-shrink: 0;
 }
 
-/* 조회월 선택기 (Attd_07 a07-nav 패턴 차용) */
-.a11-nav-month-picker {
-  display: inline-flex;
-  align-items: center;
-}
-.a11-nav-month-picker :deep(.calendar-input) {
-  height: 28px;
-  padding: 0 0.5rem;
-  border: 1px solid var(--color-border-strong, #d1d5db);
-  border-radius: 4px;
-  font-size: 0.875rem;
-  font-weight: 600;
-  color: var(--color-text-strong, #111827);
-  background: var(--color-surface, #fff);
-  cursor: pointer;
-  text-align: center;
-  min-width: 110px;
-}
-.a11-nav-month-picker :deep(.calendar-input:hover) {
-  border-color: var(--color-primary, #16a34a);
-  color: var(--color-primary, #16a34a);
-}
-
 /* ── 본문 / 테이블 (Attd_08 a08-table 패턴 차용) ───────────── */
 .a11-body {
   display: flex;
   flex-direction: column;
   padding: 0.75rem;
   overflow: hidden;
+  min-height: 0;
+}
+/* 소제목 + 테이블을 감싸는 subtitle-pane 래퍼: flex 컬럼 레이아웃에서 스크롤 보존 */
+.a11-subtitle-pane {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
   min-height: 0;
 }
 .a11-table-wrap {

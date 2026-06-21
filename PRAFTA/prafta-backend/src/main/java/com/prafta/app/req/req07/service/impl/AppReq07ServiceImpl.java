@@ -14,9 +14,12 @@ import com.prafta.app.req.req07.application.param.AttdCorrectionParam;
 import com.prafta.app.req.req07.application.param.OvertimeParam;
 import com.prafta.app.req.req07.application.param.SchedModifyParam;
 import com.prafta.app.req.req07.dto.request.SlotRequest;
+import com.prafta.app.req.req07.dto.response.AppliedOvertimeResponse;
 import com.prafta.app.req.req07.dto.response.RegisterReqResponse;
 import com.prafta.app.req.req07.dto.response.SchedOptionResponse;
 import com.prafta.app.req.req07.dto.response.result.ActualAttdWindowResult;
+import com.prafta.app.req.req07.dto.response.result.AppliedOvertimeResult;
+import com.prafta.app.req.req07.dto.response.result.PendingOvertimeResult;
 import com.prafta.app.req.req07.dto.response.result.ScheduleWindowResult;
 import com.prafta.app.req.req07.dto.response.result.SchedOptionResult;
 import com.prafta.app.attd.attd01.mapper.AppAttd01Mapper;
@@ -98,8 +101,12 @@ public class AppReq07ServiceImpl implements AppReq07Service {
         // ----- prafta-app-009 가드(INSERT 시작 전 fail-closed) -----
         //   F12 마감: 해당 월이 사용자 부서 마감 커버리지에 포함되면 거부(ATTD_400_099).
         assertNotClosed(param.cmpnyCd(), param.siteCd(), param.userCd(), param.workYmd());
-        //   F13 스케줄 존재: 배정된 근무일(근무계획 행)이 아니면 거부(ATTD_400_098).
-        assertWorkPlanExists(param.cmpnyCd(), param.siteCd(), param.userCd(), param.workYmd());
+        //   F13(본인 근무계획 존재) 가드는 스케줄 수정에서 제외한다.
+        //   근거: 근무계획이 없는 날(주말 등 비근무일)도 "그날 근무할 스케줄을 배정해 달라"는
+        //         정당한 수정 요청 대상이다. 승인 측(web Attd07.approveSchedModifyRequest)은 이미
+        //         근무계획 행이 없으면 OLD=빈값으로 보고 upsert 로 신규 배정하도록 설계돼 있으므로
+        //         end-to-end 로 정합한다. 근무계획 존재를 강제하면 주말 스케줄 수정요청이
+        //         ATTD_400_098 로 막히던 결함이 발생한다. 마감/교대잠금/중복/상호배제 가드는 유지.
 
         // ----- prafta-com-008-D: 교대 잠금 가드(INSERT 시작 전 fail-closed) -----
         //   해당 근무일이 교대팀 소속 구간이면 스케줄 수정 요청 자체를 차단한다(관리자·사용자 모두, 권한 무관).
@@ -204,9 +211,15 @@ public class AppReq07ServiceImpl implements AppReq07Service {
         }
 
         // ----- prafta-app-009 가드(INSERT 시작 전 fail-closed) -----
-        //   F12 마감 / F13 본인 근무계획 존재. (근태 보정도 배정된 근무일 대상으로 한정.)
+        //   F12 마감: 해당 월이 사용자 부서 마감 커버리지에 포함되면 거부(ATTD_400_099). 유지.
         assertNotClosed(param.cmpnyCd(), param.siteCd(), param.userCd(), param.workYmd());
-        assertWorkPlanExists(param.cmpnyCd(), param.siteCd(), param.userCd(), param.workYmd());
+        //   F13(본인 근무계획 존재)는 근태 보정에서 제외한다.
+        //   근거: 정책 §11.2 근태 보정 게이팅은 "과거·현재만(미래 차단) + 미마감 + 오늘 근무중 아님"만 요구하며
+        //         스케줄(근무계획) 존재 요건이 없다. 또한 §7.5 에 따라 스케줄 없는 날(주말 등)의 근무도
+        //         출퇴근 등록이 허용되고 전량 초과근무로 처리되므로, 그날의 누락/중복/순서오류/GPS미확인 등
+        //         보정 대상(§11.1)이 실제로 발생할 수 있다. 따라서 근무계획 존재를 강제하던
+        //         근무계획 존재 가드를 제거하여 FE 게이팅(canRequestAttendanceCorrection)·정책과 정합시킨다.
+        //   ※ 근무계획 존재 가드는 스케줄 수정(registerSchedModify)에서도 제외한다(주말 스케줄 수정 허용).
 
         // ----- prafta-com-008-B: 노무수령거부 차단 가드(ATTD_CREATE, 방어) -----
         //   촉진 확정 연차일은 출근 자체가 차단되어 정상 경로엔 보정 대상 근태가 없으나(이상상태 방어),
@@ -397,6 +410,12 @@ public class AppReq07ServiceImpl implements AppReq07Service {
                 assertNoScheduleOverlap(param.workYmd(), schedule, s, param.userCd());
             }
 
+            // ----- prafta-app-030: 기존 적용 OT(TB_USER_OVERTIME_MGMT)와 시간 겹침 차단(오버나이트 포함) -----
+            //   dup락(공통 mutex + 타입별) 안에서 조회·검사(TOCTOU 방어). INSERT 시작 전 fail-closed.
+            //   웹 OT 겹침(selectOverlappingOvertimeCount)과 동일 코드 ATTD_409_002 재사용(신규 코드 추가 금지).
+            assertNoAppliedOvertimeOverlap(param.cmpnyCd(), param.siteCd(), param.userCd(),
+                    param.workYmd(), param.slots());
+
             // ----- INSERT × slots.length (REQ_ID 는 PK 단일 컬럼이므로 slot 마다 새로 채번) -----
             for (SlotRequest s : param.slots()) {
                 String slotReqId = mapper.selectNextReqId(param.cmpnyCd());
@@ -461,6 +480,26 @@ public class AppReq07ServiceImpl implements AppReq07Service {
     }
 
     // ============================================================
+    // 5) 이미 등록된 초과근무 목록 (GET /appApi/req07/applied-overtimes)
+    // ============================================================
+    @Override
+    @Transactional(readOnly = true)
+    public AppliedOvertimeResponse getAppliedOvertimes(String cmpnyCd, String siteCd, String userCd, String workYmd) {
+        List<AppliedOvertimeResult> overtimes = mapper.selectAppliedOvertimes(cmpnyCd, siteCd, userCd, workYmd);
+        if (overtimes == null) {
+            overtimes = new ArrayList<>();
+        }
+        // prafta-app-030 후속: 대기중(미승인) OT 신청도 함께 조회 — 표시 전용(겹침 사전차단 비대상).
+        List<PendingOvertimeResult> pending = mapper.selectPendingOvertimeReqs(cmpnyCd, siteCd, userCd, workYmd);
+        if (pending == null) {
+            pending = new ArrayList<>();
+        }
+        log.info("[prafta-app-030] 적용/대기 초과근무 조회 — userCd={}, workYmd={}, applied={}, pending={}",
+                userCd, workYmd, overtimes.size(), pending.size());
+        return new AppliedOvertimeResponse(overtimes, pending);
+    }
+
+    // ============================================================
     // prafta-app-009 가드/락 헬퍼 (private — 모듈 내부 한정)
     // ============================================================
 
@@ -477,18 +516,6 @@ public class AppReq07ServiceImpl implements AppReq07Service {
         if (attdCloseService.isClosedForUser(cmpnyCd, siteCd, userCd, closeYm)) {
             log.info("[prafta-app-009] 마감 가드 거부 — userCd={}, closeYm={}", userCd, closeYm);
             throw new ApiException(AttdErrorCode.ATTD_400_099);
-        }
-    }
-
-    /**
-     * F13 스케줄 존재 가드: 본인 근무계획 행이 없는 일자(미배정)면 거부(ATTD_400_098).
-     * 스케줄 수정/근태 보정은 배정된 근무일 대상으로만 요청 가능.
-     */
-    private void assertWorkPlanExists(String cmpnyCd, String siteCd, String userCd, String workYmd) {
-        int cnt = mapper.countUserWorkPlan(cmpnyCd, siteCd, userCd, workYmd);
-        if (cnt <= 0) {
-            log.info("[prafta-app-009] 스케줄 존재 가드 거부 — userCd={}, workYmd={}", userCd, workYmd);
-            throw new ApiException(AttdErrorCode.ATTD_400_098);
         }
     }
 
@@ -715,6 +742,56 @@ public class AppReq07ServiceImpl implements AppReq07Service {
                     userCd, workYmd, slot.getWorkSeq(),
                     slot.getStartTime(), slot.getEndTime(), schStrTime, schEndTime);
             throw new ApiException(AttdErrorCode.ATTD_400_100);
+        }
+    }
+
+    /**
+     * prafta-app-030: 신규 OT 슬롯이 이미 등록(적용)된 초과근무(TB_USER_OVERTIME_MGMT)와 시간 겹치면 거부(ATTD_409_002).
+     *
+     * <ul>
+     *   <li>대조 원천: {@link AppReq07Mapper#selectAppliedOvertimes}(DEL_YN='N' AND OT_STATUS&lt;&gt;'CANCELLED'
+     *       AND ACTUAL_END_DATE/TIME IS NOT NULL). 대기 OT 요청은 countDuplicateReq 가 별도 차단(원천 아님).</li>
+     *   <li>인스턴트 환산: ymdToDays(date)*1440 + parseHHmm(time)(기존 헬퍼 재사용). (일자+시각) 결합이라
+     *       오버나이트(ACTUAL_*_DATE 가 시작/종료 일자를 각각 보유)는 자동 처리(웹 CONCAT 의미 동일).</li>
+     *   <li>겹침 조건: otStart &lt; exEnd && exStart &lt; otEnd (접함 허용 = 경계 일치는 겹침 아님).</li>
+     *   <li>기존 OT 행의 시각/일자 파싱 실패(데이터 이상)는 그 행만 건너뛰고 WARN(정상요청을 막지 않음).</li>
+     * </ul>
+     *
+     * <p>신규 슬롯(otStart/otEnd)은 validateSlotsTimes 통과분이므로 형식·순서 안전.
+     * dup락(공통 mutex + 타입별) 안에서 호출되어 TOCTOU 방어된다.
+     */
+    private void assertNoAppliedOvertimeOverlap(String cmpnyCd, String siteCd, String userCd,
+                                                String workYmd, List<SlotRequest> slots) {
+        List<AppliedOvertimeResult> existing =
+                mapper.selectAppliedOvertimes(cmpnyCd, siteCd, userCd, workYmd);
+        if (existing == null || existing.isEmpty()) {
+            return; // 기존 적용 OT 없음 → 겹침 불가.
+        }
+        for (SlotRequest s : slots) {
+            long otStart = ymdToDays(s.getStartDate()) * 1440L + parseHHmm(s.getStartTime());
+            long otEnd = ymdToDays(s.getEndDate()) * 1440L + parseHHmm(s.getEndTime());
+            for (AppliedOvertimeResult ex : existing) {
+                int exStrMin = parseHHmm(ex.startTime());
+                int exEndMin = parseHHmm(ex.endTime());
+                // 데이터 이상(시각/일자 파싱 실패)인 기존 OT 행은 건너뛴다(정상요청 차단 방지).
+                if (exStrMin < 0 || exEndMin < 0
+                        || ex.startDate() == null || ex.startDate().length() != 8
+                        || ex.endDate() == null || ex.endDate().length() != 8) {
+                    log.warn("[prafta-app-030] 기존 OT 시각/일자 파싱 실패(건너뜀) — userCd={}, workYmd={}, ex=[{} {}~{} {}]",
+                            userCd, workYmd, ex.startDate(), ex.startTime(), ex.endDate(), ex.endTime());
+                    continue;
+                }
+                long exStart = ymdToDays(ex.startDate()) * 1440L + exStrMin;
+                long exEnd = ymdToDays(ex.endDate()) * 1440L + exEndMin;
+                // 겹침: otStart < exEnd && exStart < otEnd (접함 허용).
+                if (otStart < exEnd && exStart < otEnd) {
+                    log.info("[prafta-app-030] OT 기존 적용 겹침 거부 — userCd={}, workYmd={}, workSeq={}, ot=[{} {}~{} {}], ex=[{} {}~{} {}]",
+                            userCd, workYmd, s.getWorkSeq(),
+                            s.getStartDate(), s.getStartTime(), s.getEndDate(), s.getEndTime(),
+                            ex.startDate(), ex.startTime(), ex.endDate(), ex.endTime());
+                    throw new ApiException(AttdErrorCode.ATTD_409_002);
+                }
+            }
         }
     }
 

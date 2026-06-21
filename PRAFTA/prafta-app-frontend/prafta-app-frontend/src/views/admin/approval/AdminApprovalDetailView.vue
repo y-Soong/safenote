@@ -51,7 +51,7 @@
             <dd>{{ detail.meta.requesterUserNm }} ({{ detail.meta.requesterUserCd }})</dd>
             <dt>소속</dt>
             <dd>{{ detail.meta.nodeNm || '-' }}</dd>
-            <dt>대상일자</dt>
+            <dt>근무일자</dt>
             <dd>{{ detail.meta.targetYmdDisplay || '-' }}</dd>
             <dt>요청일시</dt>
             <dd>{{ detail.meta.reqDateDisplay || '-' }}</dd>
@@ -123,9 +123,18 @@
             </dl>
           </div>
 
-          <!-- 스케줄수정(A5 확정 전 비활성 안내) -->
-          <div v-else-if="detail.group === 'SCHEDULE'" class="ap-banner ap-banner--neutral">
-            <p class="ap-banner__text">스케줄 수정 승인은 준비 중입니다.</p>
+          <!-- 스케줄수정: 현재 → 요청 스케줄 비교(근태보정 ap-compare 패턴 재사용) -->
+          <div v-else-if="detail.group === 'SCHEDULE'" class="ap-compare">
+            <div class="ap-compare__row">
+              <div class="ap-compare__col ap-compare__col--before">
+                <span class="ap-compare__label">현재 스케줄</span>
+                <p class="ap-compare__val">{{ detail.body.beforeDisplay || '없음' }}</p>
+              </div>
+              <div class="ap-compare__col ap-compare__col--after">
+                <span class="ap-compare__label">요청 스케줄</span>
+                <p class="ap-compare__val">{{ detail.body.afterDisplay || '-' }}</p>
+              </div>
+            </div>
           </div>
         </section>
 
@@ -228,7 +237,7 @@ import { useRouter, useRoute } from 'vue-router'
 
 import api from '@/api/axios'
 import { resolveApiErrorMessage } from '@/utils/apiError'
-import { formatYmdDisplay, formatDateTimeDisplay } from '@/utils/approvalFormat'
+import { formatYmdDisplay, formatDateTimeDisplay, formatTimeWithDateIfDiff } from '@/utils/approvalFormat'
 
 import AdminApprovalRejectSheet from './components/AdminApprovalRejectSheet.vue'
 import AdminApprovalAdjustSheet from './components/AdminApprovalAdjustSheet.vue'
@@ -314,13 +323,16 @@ const gateBanner = computed(() => {
 //   비즈니스 판정(gate)은 서버 산출값을 그대로 전달(C1, 가공 금지).
 const SYS033_STATUS_NM = { '01': '대기', '02': '승인', '03': '반려', '04': '취소' }
 
-// "출근 .. · 퇴근 .." 비교행 문자열(근태보정 before/after)
-const buildCheckDisplay = (o) => {
+// "출근 .. · 퇴근 .." 비교행 문자열(근태보정 before/after).
+//   근무일자(targetYmd)와 같은 날이면 시각만(HH:mm), 다른 날(오버나이트)이면 "MM.DD HH:mm"으로 날짜를 덧붙인다.
+//   상단 메타에 근무일자가 이미 표시되므로 기본은 시각만으로 간결하게 노출한다.
+const buildCheckDisplay = (o, targetYmd) => {
   if (!o || typeof o !== 'object') return ''
   const parts = []
-  if (o.checkIn) parts.push(`출근 ${o.checkIn}`)
-  if (o.checkOut) parts.push(`퇴근 ${o.checkOut}`)
-  return parts.join(' · ')
+  if (o.checkIn) parts.push(`출근 ${formatTimeWithDateIfDiff(o.checkIn, targetYmd)}`)
+  if (o.checkOut) parts.push(`퇴근 ${formatTimeWithDateIfDiff(o.checkOut, targetYmd)}`)
+  // 출근/퇴근을 각 줄로 분리(개행). 표시 영역(.ap-compare__val)에 white-space: pre-line 적용.
+  return parts.join('\n')
 }
 
 // "{start} ~ {end} ({minutes}분)" 구간 문자열(초과근무 systemCalc/claimed/approved)
@@ -343,6 +355,13 @@ const buildAppliedRange = (v) => {
   return ''
 }
 
+// 스케줄 표시 결합(현재/요청): { schNm, rangeText } → "{schNm} · {rangeText}".
+//   rangeText 는 서버가 HH:MM 콜론 포맷으로 내려줌(D10) — 프론트는 결합만, 신규 포맷 없음.
+const buildSchedDisplay = (s) => {
+  if (!s || typeof s !== 'object') return ''
+  return [s.schNm, s.rangeText].filter(Boolean).join(' · ')
+}
+
 const deadlineTextOf = (meta) => {
   const d = meta?.deadlineDday
   if (d === null || d === undefined) return ''
@@ -357,8 +376,8 @@ const normalizeDetail = (data) => {
 
   let body = { ...rawBody }
   if (group === 'CORRECTION') {
-    body.beforeDisplay = rawBody.beforeDisplay || buildCheckDisplay(rawBody.before)
-    body.afterDisplay = rawBody.afterDisplay || buildCheckDisplay(rawBody.after)
+    body.beforeDisplay = rawBody.beforeDisplay || buildCheckDisplay(rawBody.before, meta.targetYmd)
+    body.afterDisplay = rawBody.afterDisplay || buildCheckDisplay(rawBody.after, meta.targetYmd)
   } else if (group === 'OVERTIME') {
     body.claimModeNm =
       rawBody.claimModeNm ||
@@ -381,6 +400,10 @@ const normalizeDetail = (data) => {
         body.stepDisplay = 'HR 최종 승인 단계'
       else if (meta.approvalStep != null) body.stepDisplay = `결재 ${meta.approvalStep}단계`
     }
+  } else if (group === 'SCHEDULE') {
+    // 현재(승인 전 work_plan) → 요청(REQ.SCH_CD) 스케줄. 서버 before/after = { schCd, schNm, rangeText }.
+    body.beforeDisplay = rawBody.beforeDisplay || buildSchedDisplay(rawBody.before)
+    body.afterDisplay = rawBody.afterDisplay || buildSchedDisplay(rawBody.after)
   }
 
   return {
@@ -714,6 +737,8 @@ onMounted(loadDetail)
   font-weight: 600;
   color: var(--color-text-primary);
   font-variant-numeric: tabular-nums;
+  /* 근태보정 출근/퇴근을 개행(\n)으로 줄바꿈 표시. 스케줄(개행 없음)엔 영향 없음. */
+  white-space: pre-line;
 }
 
 /* 초과근무 */

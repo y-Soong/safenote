@@ -464,6 +464,7 @@
                       type="button"
                       class="btn-history-icon"
                       title="변경이력"
+                      @click="fnSlotHistory(dailyUserSlot)"
                     >
                       <svg
                         xmlns="http://www.w3.org/2000/svg"
@@ -515,6 +516,7 @@ import search_icon from "@/assets/img/search_icon.png";
 import SiteSearchPop from "@/components/popup/SiteSearchPop.vue";
 import QrCodePop from "@/components/popup/QrCodePop.vue";
 import AdminQrCreatePop from "./popup/AdminQrCreatePop.vue";
+import SlotHistoryPop from "./popup/SlotHistoryPop.vue";
 import ThSortable from "@/components/common/ThSortable.vue";
 import {
   useTableSort,
@@ -656,6 +658,13 @@ const fnGenerateAdminQr = () => {
       });
       fnSearch();
     },
+  });
+};
+const fnSlotHistory = (slot) => {
+  openPop(SlotHistoryPop, {
+    siteCd: slot.siteCd,
+    siteNm: slot.siteNm,
+    slotNo: slot.slotNo,
   });
 };
 

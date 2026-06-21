@@ -201,6 +201,11 @@ const evTypeClass = (code) => {
 </script>
 
 <style scoped>
+/* 기본 .modal-content 의 20px 패딩 제거 → 헤더/본문/푸터가 박스 끝에 밀착. */
+.modal-content {
+  padding: 0;
+}
+
 .timeline-embedded {
   padding: 0.25rem 0;
 }

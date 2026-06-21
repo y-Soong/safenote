@@ -77,9 +77,18 @@ export async function performServerLogout(refreshToken) {
   const rt = refreshToken || getRefreshToken()
   if (!rt) return
   try {
+    // prafta-com-015 015-3: 현재 기기 푸시 토큰 정리를 위해 gv_deviceId 동봉.
+    //   plain 인스턴스는 gv_deviceId 자동 주입 인터셉터가 없으므로 본문에 직접 싣는다(웹 미전송 → 백엔드 skip).
+    let deviceId = null
+    try {
+      deviceId = localStorage.getItem('gv_deviceId')
+    } catch (e) {
+      deviceId = null
+    }
+    const body = deviceId ? { refreshToken: rt, gv_deviceId: deviceId } : { refreshToken: rt }
     await plain.post(
       '/comApi/login/logout',
-      { refreshToken: rt },
+      body,
       { headers: { 'X-Client-Type': 'APP' } },
     )
   } catch (e) {

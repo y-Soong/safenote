@@ -165,7 +165,7 @@
                 </td>
                 <td>{{ defect.inspectorNm }}</td>
                 <td style="text-align: center">
-                  {{ $util.formatDateString(defect.workDate) }}
+                  {{ formatYmdDot(defect.workDate) }}
                 </td>
                 <td style="text-align: center">
                   <button
@@ -198,6 +198,7 @@ import { useModal } from "@/utils/useModal";
 import axios from "@/api/axios";
 import ViewHeader from "@/components/common/ViewHeader.vue";
 import { resolveApiErrorMessage } from "@/utils/apiError";
+import { formatYmdDot } from "@/utils/dateFormat";
 import search_icon from "@/assets/img/search_icon.png";
 import SiteSearchPop from "@/components/popup/SiteSearchPop.vue";
 import ChkptTargetSearchPop from "@/views/chkLst/popup/ChkptTargetSearchPop.vue";

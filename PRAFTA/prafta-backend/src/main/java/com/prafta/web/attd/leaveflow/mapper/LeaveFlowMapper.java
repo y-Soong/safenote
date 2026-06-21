@@ -6,6 +6,7 @@ import org.apache.ibatis.annotations.Mapper;
 import org.apache.ibatis.annotations.Param;
 
 import com.prafta.web.attd.leaveflow.application.command.LeaveReqInsertCommand;
+import com.prafta.web.attd.leaveflow.vo.AutoDeductibleGrantVO;
 import com.prafta.web.attd.leaveflow.vo.DeductibleGrantVO;
 import com.prafta.web.attd.leaveflow.vo.LeaveReqRowVO;
 import com.prafta.web.attd.leaveflow.vo.LeaveTypeInfoVO;
@@ -16,6 +17,25 @@ import com.prafta.web.attd.leaveflow.vo.LeaveUseVO;
  */
 @Mapper
 public interface LeaveFlowMapper {
+
+    /**
+     * 같은 날 이미 점유된 연차 일수(중복 등록 가드, 앱 AppLeaveFlowMapper 미러).
+     * 해당 일자(START_DATE~END_DATE 포함)의 CONFIRMED·미삭제 연차를 합산하되 종일(USE_UNIT_TYPE='00')은 1.0,
+     * 그 외(반차/시간차)는 LEAVE_DAYS 로 본다. 호출부는 (점유 + 신규) &gt; 1.0 이면 ATTD_400_111 로 거부.
+     */
+    BigDecimal selectOccupiedLeaveDaysOnDate(@Param("cmpnyCd") String cmpnyCd,
+                                             @Param("userCd") String userCd,
+                                             @Param("workYmd") String workYmd);
+
+    /**
+     * 같은 날 시간대가 겹치는 시간차 연차(USE_UNIT_TYPE in '02','03','04') 개수(앱 미러).
+     * 좌폐우개 겹침: 기존시작 &lt; 신규종료 AND 기존종료 &gt; 신규시작. &gt; 0 이면 ATTD_400_112 로 거부.
+     */
+    int countOverlappingTimeLeaveOnDate(@Param("cmpnyCd") String cmpnyCd,
+                                        @Param("userCd") String userCd,
+                                        @Param("workYmd") String workYmd,
+                                        @Param("startTime") String startTime,
+                                        @Param("endTime") String endTime);
 
     /** 요청 ID 채번 (CONCAT(YYYYMMDD, seq)). */
     String selectNextReqId(@Param("cmpnyCd") String cmpnyCd);
@@ -36,6 +56,14 @@ public interface LeaveFlowMapper {
                                     @Param("leaveCd") String leaveCd,
                                     @Param("fiscalStartYmd") String fiscalStartYmd,
                                     @Param("fiscalEndYmdExclusive") String fiscalEndYmdExclusive);
+
+    /**
+     * prafta-com-016-B(3-1): 사용자 신청 '01' + 사용가능기간 '01'(설정안함=전체 누적) 한도검증용.
+     * 회계연도 경계 없이 전체 CONFIRMED 사용 합계(Σ LEAVE_DAYS). 술어는 selectFiscalUsedDays 와 동일. 합계 없으면 0. (앱 미러)
+     */
+    BigDecimal selectTotalUsedDays(@Param("cmpnyCd") String cmpnyCd,
+                                   @Param("userCd") String userCd,
+                                   @Param("leaveCd") String leaveCd);
 
     /**
      * 연차개편 동시성: 사용자 신청('01') 직렬화용 advisory lock 획득(GET_LOCK).
@@ -67,6 +95,24 @@ public interface LeaveFlowMapper {
                                             @Param("leaveCd") String leaveCd,
                                             @Param("workYmd") String workYmd,
                                             @Param("neededDays") BigDecimal neededDays);
+
+    /**
+     * prafta-com-016-C-4: 소멸 임박 통합순 자동 차감 대상 부여 1건 — 후보 휴가코드(연차/월차) 전체에서
+     * 만료 임박(AVAIL_TO_DATE) 우선. 차감할 LEAVE_CD 를 함께 반환한다. 없으면 null.
+     */
+    AutoDeductibleGrantVO selectAutoDeductibleGrant(@Param("cmpnyCd") String cmpnyCd,
+                                                    @Param("userCd") String userCd,
+                                                    @Param("leaveCds") java.util.List<String> leaveCds,
+                                                    @Param("workYmd") String workYmd,
+                                                    @Param("neededDays") BigDecimal neededDays);
+
+    /**
+     * prafta-com-016-C-4: 해당 셀(직원+일자)에 이미 종일(USE_UNIT_TYPE='00') CONFIRMED 연차가 있는지 카운트.
+     * 자동 차감 멱등(중복 차감 방지)용 — 직접/승인 무관 전부 센다.
+     */
+    int countAnyFullDayLeaveOnCell(@Param("cmpnyCd") String cmpnyCd,
+                                   @Param("userCd") String userCd,
+                                   @Param("workYmd") String workYmd);
 
     /** 연차 요청(tb_user_attd_req REQ_TYPE='05') INSERT. */
     int insertLeaveReq(LeaveReqInsertCommand command);
@@ -127,9 +173,35 @@ public interface LeaveFlowMapper {
                                @Param("grantId") String grantId,
                                @Param("updateNo") String updateNo);
 
+    /**
+     * prafta-com-011-2 가불: 대상 직원의 입사일(HIRE_DATE, YYYYMMDD). 활성 사용자만, 스코프 밖/미존재면 null.
+     * 가불 한도 projection/만료 검증의 입력으로만 쓴다(식별값은 토큰 도출).
+     */
+    String selectUserHireDate(@Param("cmpnyCd") String cmpnyCd,
+                              @Param("userCd") String userCd);
+
+    /**
+     * prafta-com-011-2 가불(Q1=b 잔여 우선 차감): 차감 가능한 활성 부여 목록(만료 임박순, 잔여>0, FOR UPDATE).
+     *
+     * <p>{@code selectDeductibleGrant} 는 단일 부여로 전량(neededDays) 충당 가능한 1건만 반환하므로, 잔여를
+     *   여러 부여에 걸쳐 분할 차감하려면 본 목록이 필요하다. 술어는 selectDeductibleGrant 와 동일하되
+     *   잔여 충분 조건 대신 잔여>0 만 요구한다(부분 차감 허용). 비가불 경로는 호출하지 않는다(회귀 0).
+     */
+    java.util.List<DeductibleGrantVO> selectBorrowDeductibleGrants(@Param("cmpnyCd") String cmpnyCd,
+                                                                   @Param("userCd") String userCd,
+                                                                   @Param("leaveCd") String leaveCd,
+                                                                   @Param("workYmd") String workYmd);
+
     /** 요청에 연결된 사용 행의 GRANT_ID 조회(반려 시 부여 재계산 대상). 없으면 null. */
     String selectGrantIdByReqId(@Param("cmpnyCd") String cmpnyCd,
                                 @Param("reqId") String reqId);
+
+    /**
+     * prafta-com-011-2 가불: 요청에 연결된 사용 행의 GRANT_ID 전체(중복 제거). 반려 시 분할 차감(가불+잔여)된
+     *   여러 부여를 모두 재계산하기 위함. 비가불(단일 부여)이면 1건 반환 → 기존 동작과 동일.
+     */
+    java.util.List<String> selectGrantIdsByReqId(@Param("cmpnyCd") String cmpnyCd,
+                                                 @Param("reqId") String reqId);
 
     /** 요청에 연결된 확정 사용의 핵심 정보(출근차단/finalize용). 없으면 null. */
     com.prafta.web.attd.leaveflow.vo.LeaveUseDetailVO selectLeaveUseDetailByReqId(

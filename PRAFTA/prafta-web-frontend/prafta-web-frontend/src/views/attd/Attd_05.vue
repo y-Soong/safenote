@@ -123,35 +123,22 @@
       <!-- ── 구분선 ─────────────────────────────────────── -->
       <div class="toolbar-divider"></div>
 
-      <!-- ── 법정 연차 적용 섹션 — 타입 선택 없이 본연차(SYS_ANNUAL) 고정 ── -->
-      <span class="toolbar-label toolbar-label-leave">법정 연차</span>
-      <div
-        class="toolbar-fixed-leave"
-        :class="{ 'is-missing': !annualLeaveType }"
-        :title="
-          annualLeaveType
-            ? '법정 본연차로 고정 적용됩니다.'
-            : '법정 연차(SYS_ANNUAL)가 설정되어 있지 않습니다.'
-        "
-      >
-        {{ annualLeaveType ? annualLeaveType.leaveNm : "연차 미설정" }}
-      </div>
+      <!-- ── 법정 휴가 적용 섹션 — prafta-com-016-C-4: 종류 직접 선택(연차/월차) 제거,
+           남은 법정휴가를 소멸 임박 통합순으로 자동 차감(종류 구분 없음). ── -->
+      <span class="toolbar-label toolbar-label-leave">법정 휴가</span>
       <div
         class="toolbar-selection-box toolbar-selection-box-leave"
         :class="{ 'has-value': !!selectionLabel }"
       >
         {{ selectionLabel || "" }}
       </div>
-      <div class="toolbar-radio-wrap">
-        <label class="radio-item radio-item-leave">
-          <input type="radio" v-model="leaveHolidayMode" value="exclude" />
-          <span>휴일 제외</span>
-        </label>
-        <label class="radio-item radio-item-leave">
-          <input type="radio" v-model="leaveHolidayMode" value="include" />
-          <span>휴일 포함</span>
-        </label>
-      </div>
+      <!-- prafta-com-013-04-2: 법정 연차는 휴일제외/휴일포함 선택지를 제거한다.
+           교대팀 미소속자는 무조건 휴일 제외로 동작하며, 교대팀 소속 셀은
+           스케줄이 있으면 휴일이어도 연차를 등록할 수 있다(04-5).
+           prafta-com-016-C-4: 종류는 소멸 임박순 자동 차감(연차/월차 무관). -->
+      <span class="toolbar-leave-hint"
+        >소멸 임박순 자동 · 교대팀 외 휴일 제외</span
+      >
       <button
         class="btn-toolbar-apply btn-toolbar-apply-leave"
         @click="fnApplyLeaveType"
@@ -216,7 +203,13 @@
           </thead>
           <tbody>
             <tr v-for="(user, rowIdx) in sortedUserList" :key="user.userCd">
-              <td class="td-seq sticky-col-seq">{{ rowIdx + 1 }}</td>
+              <td
+                class="td-seq sticky-col-seq td-seq-clickable"
+                title="클릭: 행 전체월 선택(다시 클릭하면 해제) / Shift+클릭: 행 범위 선택"
+                @click="onRowNoClick(rowIdx, $event)"
+              >
+                {{ rowIdx + 1 }}
+              </td>
               <td class="td-chk sticky-col-chk">
                 <input
                   type="checkbox"
@@ -252,17 +245,24 @@
                     : '',
                   isCellSelected(rowIdx, d.workYmd) ? 'td-selected' : '',
                   isLeaveCell(user.userCd, d.workYmd) ? 'td-leave' : '',
-                  isShiftLockedCell(user.userCd, d.workYmd) ? 'is-shift-locked' : '',
+                  isShiftLockedCell(user.userCd, d.workYmd)
+                    ? 'is-shift-locked'
+                    : '',
+                  isShiftTeamCell(user.userCd, d.workYmd)
+                    ? 'is-shift-team'
+                    : '',
                   ...getSelEdgeClasses(rowIdx, d.workYmd),
                 ]"
                 :title="
                   isShiftLockedCell(user.userCd, d.workYmd)
                     ? '교대근무팀 소속 기간입니다. 교대패턴 자동 생성으로만 설정되며, 연차는 사용할 수 있습니다.'
                     : isLeaveCell(user.userCd, d.workYmd)
-                    ? '연차 등록일입니다. 더블클릭하면 연차 변경/삭제 요청을 할 수 있습니다.'
-                    : null
+                      ? '연차 등록일입니다. 더블클릭하면 연차 변경/삭제 요청을 할 수 있습니다.'
+                      : isShiftTeamCell(user.userCd, d.workYmd)
+                        ? '교대근무팀 소속 기간입니다.'
+                        : null
                 "
-                @mousedown.prevent="onCellDown(rowIdx, d.workYmd)"
+                @mousedown.prevent="onCellDown(rowIdx, d.workYmd, $event)"
                 @mousemove="onCellMove(rowIdx, d.workYmd)"
                 @mouseup="onCellUp"
                 @dblclick="fnOpenLeaveChangeRequest(rowIdx, d.workYmd)"
@@ -304,12 +304,14 @@ import { useModal } from "@/utils/useModal";
 import axios from "@/api/axios";
 import { getMessage, MSG } from "@/messages";
 import { resolveApiErrorMessage } from "@/utils/apiError";
+import { formatYmdDot } from "@/utils/dateFormat";
 import search_icon from "@/assets/img/search_icon.png";
 import SiteSearchPop from "@/components/popup/SiteSearchPop.vue";
 import SiteNodeSearchPop from "@/components/popup/SiteNodeSearchPop.vue";
 import CalendarSrchMonth from "@/components/common/CalendarSrchMonth.vue";
 import ExcelUploadPop from "@/views/attd/popup/ExcelUploadPop.vue";
 import LeaveChangeRequestPop from "@/views/attd/popup/LeaveChangeRequestPop.vue";
+import BatchResultPop from "@/components/popup/BatchResultPop.vue";
 import ThSortable from "@/components/common/ThSortable.vue";
 import {
   useTableSort,
@@ -391,14 +393,19 @@ const scheduleBaseline = ref({});
 const selectedSchType = ref("");
 const schHolidayMode = ref("exclude");
 
-// ── 적용 옵션 (법정 연차) ──────────────────────────────────
-// 연차 타입 선택 없이 법정 본연차(SYS_ANNUAL)만 고정 적용한다.
-// 그 외 연차(월차/근속가산/약정 등)는 사용자 직접 신청·사후 요청 경로로 처리하며 이 화면 대상이 아니다.
+// ── 적용 옵션 (법정 휴가 — 소멸 임박 통합순 자동) ──────────────────────────
+// prafta-com-016-C-4: 종류 직접 선택(연차/월차)을 제거하고, 적용 셀마다 남은 법정휴가를
+//   소멸 임박 통합순(연차/월차 무관)으로 백엔드가 자동 1일 차감한다.
+//   그 외 휴가(근속가산/약정 등)는 사용자 직접 신청·사후 요청 경로로 처리하며 이 화면 대상이 아니다.
 const ANNUAL_LEAVE_CD = "SYS_ANNUAL";
-const annualLeaveType = computed(
-  () => leaveTypeList.value.find((t) => t.leaveCd === ANNUAL_LEAVE_CD) ?? null
-);
-const leaveHolidayMode = ref("exclude");
+const MONTHLY_LEAVE_CD = "SYS_MONTHLY";
+// 직접 지정 휴가 종류(코드 화이트리스트) — 레거시/엑셀 셀 값 판별용(저장 시 leaveCd 동반 전송 back-compat).
+const DIRECT_LEAVE_CDS = [ANNUAL_LEAVE_CD, MONTHLY_LEAVE_CD];
+// 자동 법정휴가 셀 마커(프론트 전용 sentinel — 실제 휴가코드가 아니며 저장 시 autoLegalLeave=true 로 전송).
+//   저장 후 재조회하면 leaveOverlay(실제 차감된 연차/월차)가 표시를 덮는다.
+const AUTO_LEGAL_LEAVE_CD = "__AUTO_LEGAL__";
+// prafta-com-013-04-2: 법정 연차 휴일제외/휴일포함 선택지 제거 — leaveHolidayMode 폐기.
+//   교대팀 미소속자는 항상 휴일 제외, 교대팀 소속자는 휴일 허용(04-5)로 코드가 단일 분기한다.
 
 // ── 행 체크박스 ───────────────────────────────────────────
 const checkedRows = ref([]);
@@ -411,10 +418,17 @@ const allChecked = computed({
   },
 });
 
-// ── 드래그 선택 상태 ──────────────────────────────────────
+// ── 셀 선택 상태 (Excel 식 다중 선택 / 가감) ──────────────────────
+//   prafta-com-016-C-FU: 단일 사각형(dragStart/dragEnd) 모델에서 셀 집합 모델로 확장.
+//   - selectedCells: 커밋된 선택 셀 키 집합(`${userCd}_${workYmd}`). 정렬 변경에도 사용자에 고정.
+//   - anchorCell: Shift 확장 기준점(표시행 인덱스/일자).
+//   - 드래그 중에는 dragAnchor~dragCur 사각형을 dragMode(교체/추가/제거)로 미리보기 후 mouseup 에 커밋.
 const isDragging = ref(false);
-const dragStart = ref(null); // { rowIdx, workYmd }
-const dragEnd = ref(null);
+const selectedCells = ref(new Set());
+const anchorCell = ref(null); // { rowIdx, workYmd }
+const dragAnchor = ref(null); // { rowIdx, workYmd }
+const dragCur = ref(null); // { rowIdx, workYmd }
+const dragMode = ref("replace"); // 'replace' | 'add' | 'remove'
 
 // ── 버튼 컨트롤 ────────────────────────────────────────────
 const fnButtonControll = () => {
@@ -453,6 +467,9 @@ const getCellNmValue = (userCd, workYmd) => {
   const code = scheduleData.value[`${userCd}_${workYmd}`];
   if (!code) return "";
 
+  // prafta-com-016-C-4: 자동 법정휴가 마커(저장 전 대기 상태) — 저장/재조회 시 실제 연차/월차로 표시 전환.
+  if (code === AUTO_LEGAL_LEAVE_CD) return "법정휴가";
+
   const sch = schTypeList.value.find((s) => s.schCd === code);
   if (sch) return sch.schNm;
 
@@ -468,6 +485,13 @@ const getSchTypeNm = (schCd) => {
   return sch ? sch.schNm : schCd;
 };
 
+// ── 사용자명 조회 (prafta-com-016-C-1 팝업 식별자용) ─────────
+//   userList 에서 userCd 로 표시명을 찾는다. 못 찾으면 userCd 폴백.
+const getUserNm = (userCd) => {
+  const u = userList.value.find((x) => x.userCd === userCd);
+  return u ? u.userNm : userCd;
+};
+
 // ── 연차 셀 여부(오버레이 보유) ────────────────────────────
 // prafta-com-008-B-7(D-E8): 셀에 종일 연차(leave_use CONFIRMED)가 덮여 있는지.
 //   true 인 셀은 "비우기" 대상이 아니라 동의요청(이동/삭제) 진입 대상이다.
@@ -478,7 +502,15 @@ const isLeaveCell = (userCd, workYmd) =>
 //   교대팀 소속 구간(BE shiftLockOverlay)인 셀. true 면 SCH 변경/비우기 비활성(자물쇠).
 //   단 연차 셀(isLeaveCell)은 잠금과 무관하게 활성 — 연차만 허용(D-3). 따라서 "연차가 아닌데 교대 잠금"일 때만 잠금 표시.
 const isShiftLockedCell = (userCd, workYmd) =>
-  !!shiftLockOverlay.value[`${userCd}_${workYmd}`] && !isLeaveCell(userCd, workYmd);
+  !!shiftLockOverlay.value[`${userCd}_${workYmd}`] &&
+  !isLeaveCell(userCd, workYmd);
+
+// ── 교대팀 소속 셀 여부 (prafta-com-013-04-2) ────────────────
+//   shiftLockOverlay 는 조회월 전 일자에 대해 교대팀 소속 구간(연차 셀 포함)을 펼쳐 내려준다.
+//   "교대근무 팀인 셀"을 배경색으로 시각 구분하기 위한 단일 판정(연차/잠금 여부와 무관하게 true).
+//   교대팀 미소속자는 항상 false → 04-2(휴일 제외 강제)·04-5(휴일 휴가 허용) 분기의 단일 출처.
+const isShiftTeamCell = (userCd, workYmd) =>
+  !!shiftLockOverlay.value[`${userCd}_${workYmd}`];
 
 // ── 연차 셀 더블클릭 → 연차 변경/삭제 동의요청 팝업(기존 LeaveChangeRequestPop 재사용) ──
 // prafta-com-008-B-7(D-E8): 연차 등록일은 "비우기"로 삭제할 수 없고, 셀 개별 진입으로
@@ -494,11 +526,9 @@ const fnOpenLeaveChangeRequest = (rowIdx, workYmd) => {
   if (!overlay?.leaveId) return;
 
   const leave = leaveTypeList.value.find((l) => l.leaveCd === overlay.leaveCd);
-  // YYYYMMDD → YYYY-MM-DD (팝업 표시용).
+  // YYYYMMDD → "YYYY.MM.DD" (팝업 표시용). dateFormat 단일 출처에 위임.
   const startDateDisplay =
-    workYmd && workYmd.length === 8
-      ? `${workYmd.slice(0, 4)}-${workYmd.slice(4, 6)}-${workYmd.slice(6, 8)}`
-      : workYmd;
+    workYmd && workYmd.length === 8 ? formatYmdDot(workYmd) : workYmd;
 
   openPop(LeaveChangeRequestPop, {
     target: {
@@ -556,71 +586,212 @@ const validateSchCell = (schCd, workYmd) => {
   return null;
 };
 
-// ── 선택 범위 ──────────────────────────────────────────────
-const selectionRange = computed(() => {
-  if (!dragStart.value || !dragEnd.value) return null;
-  const ymds = [dragStart.value.workYmd, dragEnd.value.workYmd].sort();
-  return {
-    minRow: Math.min(dragStart.value.rowIdx, dragEnd.value.rowIdx),
-    maxRow: Math.max(dragStart.value.rowIdx, dragEnd.value.rowIdx),
-    minDay: ymds[0],
-    maxDay: ymds[1],
-  };
+// ── 선택 키/사각형 헬퍼 ────────────────────────────────────
+//   선택 키는 표시행 인덱스가 아니라 userCd 로 고정한다(정렬 변경에도 선택이 사용자에 따라붙음).
+const cellKeyAt = (rowIdx, workYmd) => {
+  const user = sortedUserList.value[rowIdx];
+  return user ? `${user.userCd}_${workYmd}` : null;
+};
+
+// 표시행 [r1..r2] × 일자 [ymd1..ymd2] 사각형에 해당하는 선택 키 집합.
+const rectKeys = (r1, r2, ymd1, ymd2) => {
+  const minRow = Math.min(r1, r2);
+  const maxRow = Math.max(r1, r2);
+  const [minDay, maxDay] = [ymd1, ymd2].sort();
+  const set = new Set();
+  for (let row = minRow; row <= maxRow; row++) {
+    const user = sortedUserList.value[row];
+    if (!user) continue;
+    for (const d of daysInMonth.value) {
+      if (d.workYmd >= minDay && d.workYmd <= maxDay) {
+        set.add(`${user.userCd}_${d.workYmd}`);
+      }
+    }
+  }
+  return set;
+};
+
+// 특정 표시행의 전체월(1일~말일) 선택 키 집합.
+const rowFullMonthKeys = (rowIdx) => {
+  const set = new Set();
+  const user = sortedUserList.value[rowIdx];
+  if (!user) return set;
+  for (const d of daysInMonth.value) set.add(`${user.userCd}_${d.workYmd}`);
+  return set;
+};
+
+// ── 유효 선택 집합 (커밋된 선택 + 진행 중 드래그 미리보기) ──────────
+//   드래그 중에는 dragMode 에 따라 사각형을 교체/추가/제거로 합성해 미리보기한다.
+const effectiveSelectedKeys = computed(() => {
+  if (!isDragging.value || !dragAnchor.value || !dragCur.value) {
+    return selectedCells.value;
+  }
+  const rect = rectKeys(
+    dragAnchor.value.rowIdx,
+    dragCur.value.rowIdx,
+    dragAnchor.value.workYmd,
+    dragCur.value.workYmd
+  );
+  if (dragMode.value === "replace") return rect;
+  const result = new Set(selectedCells.value);
+  if (dragMode.value === "remove") rect.forEach((k) => result.delete(k));
+  else rect.forEach((k) => result.add(k));
+  return result;
 });
 
 const isCellSelected = (rowIdx, workYmd) => {
-  if (!selectionRange.value) return false;
-  const { minRow, maxRow, minDay, maxDay } = selectionRange.value;
-  return (
-    rowIdx >= minRow &&
-    rowIdx <= maxRow &&
-    workYmd >= minDay &&
-    workYmd <= maxDay
-  );
+  const key = cellKeyAt(rowIdx, workYmd);
+  return key ? effectiveSelectedKeys.value.has(key) : false;
 };
 
+// Excel 식 테두리: 상하좌우 인접 셀의 선택 여부로 경계선을 그린다(비사각형 선택 대응).
 const getSelEdgeClasses = (rowIdx, workYmd) => {
   if (!isCellSelected(rowIdx, workYmd)) return [];
-  const { minRow, maxRow, minDay, maxDay } = selectionRange.value;
+  const days = daysInMonth.value;
+  const dayIdx = days.findIndex((d) => d.workYmd === workYmd);
+  const prevDay = dayIdx > 0 ? days[dayIdx - 1].workYmd : null;
+  const nextDay =
+    dayIdx >= 0 && dayIdx < days.length - 1 ? days[dayIdx + 1].workYmd : null;
   const cls = [];
-  if (rowIdx === minRow) cls.push("sel-top");
-  if (rowIdx === maxRow) cls.push("sel-bottom");
-  if (workYmd === minDay) cls.push("sel-left");
-  if (workYmd === maxDay) cls.push("sel-right");
+  if (rowIdx === 0 || !isCellSelected(rowIdx - 1, workYmd)) cls.push("sel-top");
+  if (
+    rowIdx >= sortedUserList.value.length - 1 ||
+    !isCellSelected(rowIdx + 1, workYmd)
+  )
+    cls.push("sel-bottom");
+  if (!prevDay || !isCellSelected(rowIdx, prevDay)) cls.push("sel-left");
+  if (!nextDay || !isCellSelected(rowIdx, nextDay)) cls.push("sel-right");
   return cls;
 };
 
+const selectionCount = computed(() => effectiveSelectedKeys.value.size);
+
+// 비사각형 선택이어도 경계 박스(표시행/일자 min~max)로 요약 표시한다.
 const selectionLabel = computed(() => {
-  if (!selectionRange.value) return "";
-  const { minRow, maxRow, minDay, maxDay } = selectionRange.value;
+  const keys = effectiveSelectedKeys.value;
+  if (!keys.size) return "";
+  let minRow = Infinity;
+  let maxRow = -Infinity;
+  let minDay = null;
+  let maxDay = null;
+  sortedUserList.value.forEach((user, rowIdx) => {
+    for (const d of daysInMonth.value) {
+      if (keys.has(`${user.userCd}_${d.workYmd}`)) {
+        if (rowIdx < minRow) minRow = rowIdx;
+        if (rowIdx > maxRow) maxRow = rowIdx;
+        if (minDay === null || d.workYmd < minDay) minDay = d.workYmd;
+        if (maxDay === null || d.workYmd > maxDay) maxDay = d.workYmd;
+      }
+    }
+  });
+  if (minRow === Infinity || minDay === null) return "";
   const minDayNum = parseInt(minDay.slice(6));
   const maxDayNum = parseInt(maxDay.slice(6));
   return `${getRowLabel(minRow)}${minDayNum}:${getRowLabel(maxRow)}${maxDayNum}`;
 });
 
-const selectionCount = computed(() => {
-  if (!selectionRange.value) return 0;
-  const { minRow, maxRow, minDay, maxDay } = selectionRange.value;
-  const dayCount = daysInMonth.value.filter(
-    (d) => d.workYmd >= minDay && d.workYmd <= maxDay
-  ).length;
-  return (maxRow - minRow + 1) * dayCount;
-});
+// 적용/비우기 소비용 — 선택된 (사용자, 일자) 쌍을 표시순서/일자순으로 반환.
+const getSelectedCellTargets = () => {
+  const keys = effectiveSelectedKeys.value;
+  const targets = [];
+  sortedUserList.value.forEach((user) => {
+    for (const d of daysInMonth.value) {
+      if (keys.has(`${user.userCd}_${d.workYmd}`)) {
+        targets.push({ user, d });
+      }
+    }
+  });
+  return targets;
+};
 
-// ── 드래그 이벤트 ──────────────────────────────────────────
-const onCellDown = (rowIdx, workYmd) => {
+// ── 드래그/클릭 선택 이벤트 ──────────────────────────────────
+//   일반: 교체 드래그 · Ctrl: 토글(추가/제거) 드래그 · Shift: 기준점→클릭셀 사각형 교체(클릭).
+const onCellDown = (rowIdx, workYmd, event) => {
+  const e = event || {};
+  if (e.shiftKey && anchorCell.value) {
+    // Shift+클릭: 기준점에서 클릭 셀까지 사각형으로 교체(드래그 아님).
+    selectedCells.value = rectKeys(
+      anchorCell.value.rowIdx,
+      rowIdx,
+      anchorCell.value.workYmd,
+      workYmd
+    );
+    return;
+  }
+  if (e.ctrlKey || e.metaKey) {
+    // Ctrl: 시작 셀이 선택돼 있으면 제거, 아니면 추가 모드로 드래그.
+    const key = `${sortedUserList.value[rowIdx]?.userCd}_${workYmd}`;
+    dragMode.value = selectedCells.value.has(key) ? "remove" : "add";
+  } else {
+    dragMode.value = "replace";
+  }
+  anchorCell.value = { rowIdx, workYmd };
+  dragAnchor.value = { rowIdx, workYmd };
+  dragCur.value = { rowIdx, workYmd };
   isDragging.value = true;
-  dragStart.value = { rowIdx, workYmd };
-  dragEnd.value = { rowIdx, workYmd };
 };
 
 const onCellMove = (rowIdx, workYmd) => {
   if (!isDragging.value) return;
-  dragEnd.value = { rowIdx, workYmd };
+  dragCur.value = { rowIdx, workYmd };
+};
+
+// 드래그 종료 → 미리보기(effectiveSelectedKeys)를 커밋 집합으로 고정.
+const commitDrag = () => {
+  if (!isDragging.value) return;
+  const frozen = new Set(effectiveSelectedKeys.value);
+  isDragging.value = false;
+  dragAnchor.value = null;
+  dragCur.value = null;
+  dragMode.value = "replace";
+  selectedCells.value = frozen;
 };
 
 const onCellUp = () => {
-  isDragging.value = false;
+  commitDrag();
+};
+
+// ── No(행 번호) 클릭 → 해당 행 전체(1일~말일) 선택 ──────────────────
+//   일반: 해당 행 전체월만 선택(교체). 같은 행을 다시 누르면 해제.
+//   Shift: 기준 행~클릭 행 전체월 사각형으로 교체(#1).
+//   Ctrl: 해당 행 전체월 토글(다른 행 선택 유지 — 누적/부분 빼기, #3).
+const onRowNoClick = (rowIdx, event) => {
+  if (!daysInMonth.value.length) return;
+  const firstDay = daysInMonth.value[0].workYmd;
+  const lastDay = daysInMonth.value[daysInMonth.value.length - 1].workYmd;
+  const e = event || {};
+  if (e.shiftKey && anchorCell.value) {
+    // (#1) Shift+No: 기준 행~클릭 행 전체월 사각형으로 교체.
+    selectedCells.value = rectKeys(
+      anchorCell.value.rowIdx,
+      rowIdx,
+      firstDay,
+      lastDay
+    );
+    return;
+  }
+  const rowKeys = rowFullMonthKeys(rowIdx);
+  const allSelected =
+    rowKeys.size > 0 && [...rowKeys].every((k) => selectedCells.value.has(k));
+  if (e.ctrlKey || e.metaKey) {
+    // (#3) Ctrl+No: 다른 행 선택은 유지한 채 해당 행 전체월만 토글(누적 추가/부분 제거).
+    const next = new Set(selectedCells.value);
+    if (allSelected) rowKeys.forEach((k) => next.delete(k));
+    else rowKeys.forEach((k) => next.add(k));
+    selectedCells.value = next;
+    anchorCell.value = { rowIdx, workYmd: firstDay };
+    return;
+  }
+  // 일반 No: 해당 행 전체월만 선택(교체). 이미 그 행만 선택돼 있으면 다시 클릭 시 전체 해제.
+  const isOnlyThisRow =
+    allSelected && selectedCells.value.size === rowKeys.size;
+  if (isOnlyThisRow) {
+    selectedCells.value = new Set();
+    anchorCell.value = null;
+  } else {
+    selectedCells.value = rowKeys;
+    anchorCell.value = { rowIdx, workYmd: firstDay };
+  }
 };
 
 const onTableMouseLeave = () => {
@@ -628,7 +799,7 @@ const onTableMouseLeave = () => {
 };
 
 const onDocMouseUp = () => {
-  isDragging.value = false;
+  commitDrag();
 };
 
 // ── 근무 타입 적용 ─────────────────────────────────────────
@@ -641,46 +812,40 @@ const fnApplySchType = async () => {
     await proxy.$alert("스케줄 타입을 선택해주세요.");
     return;
   }
-  if (!selectionRange.value) {
+  // 선택된 셀(사용자, 일자) 집합을 순회한다(Excel 식 다중/비사각형 선택 대응).
+  const selectedTargets = getSelectedCellTargets();
+  if (selectedTargets.length === 0) {
     await proxy.$alert("적용할 영역을 선택해주세요.");
     return;
   }
 
-  const { minRow, maxRow, minDay, maxDay } = selectionRange.value;
   const updatedUserCds = new Set();
   // 위반으로 스킵된 날짜를 사유별로 수집 (고지 문구용, 중복 제거)
   const skippedReasons = new Map();
   // prafta-com-008-D-5: 교대 잠금으로 스킵된 셀 수(별도 안내).
   let shiftLockedSkipCount = 0;
-  for (let r = minRow; r <= maxRow; r++) {
-    const user = userList.value[r];
-    if (!user) continue;
-    const daysInRange = daysInMonth.value.filter(
-      (d) => d.workYmd >= minDay && d.workYmd <= maxDay
-    );
-    for (const d of daysInRange) {
-      if (
-        schHolidayMode.value === "exclude" &&
-        (d.weekendYn === "Y" || d.holidayYn === "Y")
-      ) {
-        continue;
-      }
-      // prafta-com-008-D-5: 교대팀 소속 구간 셀은 SCH 적용 불가(연차만 허용 — D-3). 스킵.
-      if (isShiftLockedCell(user.userCd, d.workYmd)) {
-        shiftLockedSkipCount++;
-        continue;
-      }
-      // 근무타입 생성일·미사용 기간 검증 — 위반 시 해당 셀 스킵
-      const violation = validateSchCell(selectedSchType.value, d.workYmd);
-      if (violation) {
-        if (!skippedReasons.has(violation.reasonCode)) {
-          skippedReasons.set(violation.reasonCode, violation.reason);
-        }
-        continue;
-      }
-      scheduleData.value[`${user.userCd}_${d.workYmd}`] = selectedSchType.value;
-      updatedUserCds.add(user.userCd);
+  for (const { user, d } of selectedTargets) {
+    if (
+      schHolidayMode.value === "exclude" &&
+      (d.weekendYn === "Y" || d.holidayYn === "Y")
+    ) {
+      continue;
     }
+    // prafta-com-008-D-5: 교대팀 소속 구간 셀은 SCH 적용 불가(연차만 허용 — D-3). 스킵.
+    if (isShiftLockedCell(user.userCd, d.workYmd)) {
+      shiftLockedSkipCount++;
+      continue;
+    }
+    // 근무타입 생성일·미사용 기간 검증 — 위반 시 해당 셀 스킵
+    const violation = validateSchCell(selectedSchType.value, d.workYmd);
+    if (violation) {
+      if (!skippedReasons.has(violation.reasonCode)) {
+        skippedReasons.set(violation.reasonCode, violation.reason);
+      }
+      continue;
+    }
+    scheduleData.value[`${user.userCd}_${d.workYmd}`] = selectedSchType.value;
+    updatedUserCds.add(user.userCd);
   }
   if (updatedUserCds.size > 0) {
     const merged = new Set([...checkedRows.value, ...updatedUserCds]);
@@ -701,66 +866,63 @@ const fnApplySchType = async () => {
   }
 };
 
-// ── 법정 연차 적용 ─────────────────────────────────────────
-// 타입 선택 없이 법정 본연차(SYS_ANNUAL)만 적용한다. 저장 시 백엔드가 잔여 차감/유효성 검증을 수행한다.
+// ── 법정 휴가 적용 (소멸 임박 통합순 자동) ─────────────────────────────────
+// prafta-com-016-C-4: 종류 선택 없이 자동 법정휴가 마커를 셀에 적용한다.
+//   저장 시 백엔드가 후보(연차/월차) 중 소멸 임박 통합순으로 잔여 차감하고, 부족분은 사유로 제외 안내한다.
 const fnApplyLeaveType = async () => {
-  const leaveCd = annualLeaveType.value?.leaveCd;
-  if (!leaveCd) {
-    await proxy.$alert(
-      "적용 가능한 법정 연차(SYS_ANNUAL)가 없습니다. 연차 정책 설정을 확인해주세요."
-    );
-    return;
-  }
-  if (!selectionRange.value) {
+  // 선택된 셀(사용자, 일자) 집합을 순회한다(Excel 식 다중/비사각형 선택 대응).
+  const selectedTargets = getSelectedCellTargets();
+  if (selectedTargets.length === 0) {
     await proxy.$alert("적용할 영역을 선택해주세요.");
     return;
   }
 
-  const { minRow, maxRow, minDay, maxDay } = selectionRange.value;
   const updatedUserCds = new Set();
-  // 근무 스케줄(SCH)이 배정되지 않은 빈 셀로 인해 연차 적용에서 제외된 셀 수(안내용).
-  let noScheduleSkipCount = 0;
-  for (let r = minRow; r <= maxRow; r++) {
-    const user = userList.value[r];
-    if (!user) continue;
-    const daysInRange = daysInMonth.value.filter(
-      (d) => d.workYmd >= minDay && d.workYmd <= maxDay
-    );
-    for (const d of daysInRange) {
-      if (
-        leaveHolidayMode.value === "exclude" &&
-        (d.weekendYn === "Y" || d.holidayYn === "Y")
-      ) {
-        continue;
-      }
-      const cellKey = `${user.userCd}_${d.workYmd}`;
-      // 근무 스케줄(SCH 배정)이 없는 빈 셀에는 연차를 적용할 수 없다(사용자 요청).
-      //   "스케줄 있음" = 셀에 이미 연차가 적용되어 있거나(멱등 재적용 허용),
-      //   셀 값이 근무타입 코드(schTypeList 의 schCd)인 경우.
-      //   빈 값이거나 schCd/연차코드가 아닌 셀은 "스케줄 없음" → 스킵.
-      if (!hasWorkScheduleForLeave(user.userCd, d.workYmd)) {
-        noScheduleSkipCount++;
-        continue;
-      }
-      scheduleData.value[cellKey] = leaveCd;
-      updatedUserCds.add(user.userCd);
+  // 근무 스케줄(SCH)이 배정되지 않은 빈 셀로 인해 적용에서 제외된 (사용자, 일자) 목록(BatchResultPop 안내용).
+  const noScheduleSkips = [];
+  for (const { user, d } of selectedTargets) {
+    const isHolidayCell = d.weekendYn === "Y" || d.holidayYn === "Y";
+    // prafta-com-013-04-2/04-5: 법정 휴가는 휴일제외/휴일포함 선택지 없이 동작한다.
+    //   - 교대팀 미소속 셀: 무조건 휴일 제외(주말/휴일 셀 스킵).
+    //   - 교대팀 소속 셀: 휴일이어도 등록 허용(스케줄 존재 시. 아래 hasWorkScheduleForLeave 로 재검증).
+    if (isHolidayCell && !isShiftTeamCell(user.userCd, d.workYmd)) {
+      continue;
     }
+    const cellKey = `${user.userCd}_${d.workYmd}`;
+    // B안(교대만 제한): 빈 셀(스케줄 없음 + 연차 없음)이라도 비교대 사용자는 종일 연차/월차 적용을 허용한다.
+    //   "스케줄 있음" = 셀에 이미 휴가가 적용되어 있거나(멱등 재적용 허용),
+    //   셀 값이 근무타입 코드(schTypeList 의 schCd)인 경우.
+    //   교대팀 소속 셀(휴무일 포함)만 빈 셀을 차단 — 교대패턴이 근무/휴무를 결정하므로 그리드에서 휴무일 임의 적용 금지.
+    //   (최종 강제는 BE 가드 — FE 우회 시에도 동일 정책. 비교대 빈 셀은 종일 1일 차감으로 적용된다.)
+    if (
+      !hasWorkScheduleForLeave(user.userCd, d.workYmd) &&
+      isShiftTeamCell(user.userCd, d.workYmd)
+    ) {
+      noScheduleSkips.push({
+        errorItem: `${formatYmdDot(d.workYmd)} (${user.userNm})`,
+        message: "교대근무팀 소속 기간의 휴무일에는 휴가를 적용할 수 없습니다.",
+      });
+      continue;
+    }
+    scheduleData.value[cellKey] = AUTO_LEGAL_LEAVE_CD;
+    updatedUserCds.add(user.userCd);
   }
   if (updatedUserCds.size > 0) {
     const merged = new Set([...checkedRows.value, ...updatedUserCds]);
     checkedRows.value = [...merged];
   }
-  // 스케줄 없는 셀이 있어 일부(또는 전부) 제외된 경우 안내.
-  if (noScheduleSkipCount > 0) {
-    if (updatedUserCds.size === 0) {
-      await proxy.$alert(
-        "연차를 적용할 수 있는(근무 스케줄이 있는) 셀이 없습니다."
-      );
-    } else {
-      await proxy.$alert(
-        `근무 스케줄이 없는 ${noScheduleSkipCount}개 셀은 연차 적용에서 제외되었습니다.`
-      );
-    }
+  // prafta-com-016-C-1: 스케줄 없는 셀로 제외된 항목은 BatchResultPop 로 안내(건수 많아도 버튼 밀림 없음).
+  if (noScheduleSkips.length > 0) {
+    const appliedCount =
+      updatedUserCds.size > 0 ? "일부 셀에 적용" : "적용 가능한 셀 없음";
+    openPop(BatchResultPop, {
+      totalCount: noScheduleSkips.length,
+      successCount: 0,
+      failCount: noScheduleSkips.length,
+      identifierLabel: "근무일",
+      dataList: noScheduleSkips,
+    });
+    void appliedCount;
   }
 };
 
@@ -773,6 +935,13 @@ const hasWorkScheduleForLeave = (userCd, workYmd) => {
   if (isLeaveCell(userCd, workYmd)) return true;
   const code = scheduleData.value[`${userCd}_${workYmd}`];
   if (!code) return false;
+  // prafta-com-016-C-4: 이미 법정휴가가 적용(저장 전)된 셀은 멱등 재적용 허용.
+  //   적용 버튼은 셀을 자동 법정휴가 마커(AUTO_LEGAL_LEAVE_CD)로 채운다(종류 직접지정 경로는 DIRECT_LEAVE_CDS).
+  //   이 셀들은 1차 적용 때 이미 스케줄 검증을 통과해 마커로 바뀐 셀이다(빈 셀은 코드가 채워지지 않음).
+  //   이를 인정하지 않으면 적용 버튼을 두 번째 누를 때 leaveOverlay(저장 후에만 채워짐)가 없어
+  //   "근무 스케줄 없음"으로 오분류되어 처리 결과 팝업의 제외 목록이 매 클릭 누적·증가한다.
+  if (code === AUTO_LEGAL_LEAVE_CD || DIRECT_LEAVE_CDS.includes(code))
+    return true;
   return schTypeList.value.some((s) => s.schCd === code);
 };
 
@@ -784,32 +953,26 @@ const fnClearCells = async () => {
     await proxy.$alert("마감된 월입니다. 셀을 비울 수 없습니다.");
     return;
   }
-  if (!selectionRange.value) {
+  // 선택된 셀(사용자, 일자) 집합을 순회한다(Excel 식 다중/비사각형 선택 대응).
+  const selectedTargets = getSelectedCellTargets();
+  if (selectedTargets.length === 0) {
     await proxy.$alert(getMessage(MSG.SCHEDULE_CLEAR_SELECT_REQUIRED));
     return;
   }
 
-  const { minRow, maxRow, minDay, maxDay } = selectionRange.value;
   const updatedUserCds = new Set();
   // prafta-com-008-D-5: 교대 잠금으로 비우기 스킵된 셀 수(별도 안내).
   let shiftLockedSkipCount = 0;
-  for (let r = minRow; r <= maxRow; r++) {
-    const user = userList.value[r];
-    if (!user) continue;
-    const daysInRange = daysInMonth.value.filter(
-      (d) => d.workYmd >= minDay && d.workYmd <= maxDay
-    );
-    for (const d of daysInRange) {
-      // prafta-com-008-D-5: 교대팀 소속 구간 셀은 비우기 불가(연차만 허용 — D-3). 스킵.
-      //   (연차 셀은 BE B-5 가 동의요청 경유로 보호하므로 여기선 교대 잠금만 사전 차단.)
-      if (isShiftLockedCell(user.userCd, d.workYmd)) {
-        shiftLockedSkipCount++;
-        continue;
-      }
-      // 셀을 빈값으로 만든다(키는 유지 — baseline 대비 "값있던→빈값" 삭제 판정용).
-      scheduleData.value[`${user.userCd}_${d.workYmd}`] = "";
-      updatedUserCds.add(user.userCd);
+  for (const { user, d } of selectedTargets) {
+    // prafta-com-008-D-5: 교대팀 소속 구간 셀은 비우기 불가(연차만 허용 — D-3). 스킵.
+    //   (연차 셀은 BE B-5 가 동의요청 경유로 보호하므로 여기선 교대 잠금만 사전 차단.)
+    if (isShiftLockedCell(user.userCd, d.workYmd)) {
+      shiftLockedSkipCount++;
+      continue;
     }
+    // 셀을 빈값으로 만든다(키는 유지 — baseline 대비 "값있던→빈값" 삭제 판정용).
+    scheduleData.value[`${user.userCd}_${d.workYmd}`] = "";
+    updatedUserCds.add(user.userCd);
   }
   if (updatedUserCds.size > 0) {
     const merged = new Set([...checkedRows.value, ...updatedUserCds]);
@@ -1051,9 +1214,13 @@ const fnSearch = async () => {
       // PRAFTA-041 - 조회 직후 baseline 깊은 복사(plain object). 저장 시 dirty 비교 기준이며,
       //   저장 성공 후 재조회로 자연 갱신되어 직후 재저장 시 0건이 된다.
       scheduleBaseline.value = { ...scheduleData.value };
-      dragStart.value = null;
+      // 조회 시 선택 초기화(셀 집합 모델).
+      selectedCells.value = new Set();
+      anchorCell.value = null;
+      dragAnchor.value = null;
+      dragCur.value = null;
+      isDragging.value = false;
       await fnLoadCloseStatus(); // PRAFTA-028 - 조회 후 마감 여부 갱신
-      dragEnd.value = null;
 
       await fnGetLeaveTypeList();
       await fnGetSchTypeList();
@@ -1090,10 +1257,9 @@ const fnGetSchTypeList = async () => {
   }
 };
 
-// ── 연차 타입 목록 조회 (법정 본연차 식별 + 셀 표시명 변환용) ──────────
-// 관리자가 직접 적용하는 화면이며 법정 본연차(SYS_ANNUAL)만 고정 적용한다.
-// 법정 휴가(LEAVE_NATURE_TYPE='01') 목록을 받아 SYS_ANNUAL 식별(annualLeaveType) 및
-// 기존 셀의 표시명 변환(getCellNmValue)에 사용한다. (prafta-021 → 타입 선택 제거 후속)
+// ── 법정 휴가 목록 조회 (셀 표시명 변환용) ──────────
+// prafta-com-016-C-4: 종류 직접 선택(드롭다운)은 제거됐고, 이 목록은 leaveOverlay/셀 코드의
+//   표시명 변환(getCellNmValue)에만 사용한다. 법정 휴가(LEAVE_NATURE_TYPE='01') 목록을 받는다.
 const fnGetLeaveTypeList = async () => {
   try {
     const response = await axios.get("/webApi/attd05/leave-type-lists", {});
@@ -1145,13 +1311,19 @@ const fnSave = async () => {
     if (current === baseline) continue; // 동일값 = no-op
 
     if (current) {
-      // 신규 또는 값 변경 → 업서트
+      // 신규 또는 값 변경 → 업서트.
+      //   prafta-com-016-C-4: 자동 법정휴가 마커면 autoLegalLeave=true 로 전송(종류 미지정 → 백엔드 소멸임박순 자동 차감).
+      //   prafta-com-016-C-2(back-compat): 셀 값이 직접 지정 휴가 코드(연차/월차)면 leaveCd 를 함께 실어 보낸다.
+      const isAutoLegal = current === AUTO_LEGAL_LEAVE_CD;
+      const isDirectLeave = DIRECT_LEAVE_CDS.includes(current);
       upsertList.push({
         cmpnyCd,
         siteCd: siteCd.value,
         userCd,
         workYmd,
         workPlanCd: current,
+        leaveCd: isDirectLeave ? current : null,
+        autoLegalLeave: isAutoLegal,
       });
     } else if (baseline) {
       // 값있던 셀 → 빈값 = 비우기(삭제). 빈값 신규(baseline 도 없음)는 전송 대상 아님.
@@ -1213,33 +1385,36 @@ const fnSave = async () => {
     }
     resultMsg += "되었습니다.";
 
-    // prafta-com-008-B-7(D-E8): skip 사유를 "연차 셀 비우기 불가(동의요청 유도)"와
-    //   기존 "근무타입 지정 불가"로 분리 안내. 연차 셀은 비우기로 삭제되지 않고 보호된다.
-    const leaveConsentSkips = skippedList.filter(
-      (s) => s.reasonCode === "LEAVE_CELL_CONSENT_REQUIRED"
-    );
-    const otherSkips = skippedList.filter(
-      (s) => s.reasonCode !== "LEAVE_CELL_CONSENT_REQUIRED"
-    );
-
-    if (leaveConsentSkips.length > 0) {
-      const detail = leaveConsentSkips
-        .map((s) => `· ${s.workYmd} : ${getCellNmValue(s.userCd, s.workYmd) || "연차"}`)
-        .join("\n");
-      resultMsg +=
-        `\n\n아래 ${leaveConsentSkips.length}건은 연차 등록일이라 비우기로 삭제할 수 없습니다.` +
-        `\n해당 셀을 더블클릭하여 연차 변경/삭제 요청(동의요청)을 이용해 주세요.\n${detail}`;
+    // prafta-com-016-C-1: 제외(skip) 셀이 1건 이상이면 BatchResultPop(목록형 팝업)로 안내한다.
+    //   건수가 많아도 스크롤되며 확인 버튼이 잘리지 않는다(기존 긴 $alert 버튼 밀림 해소).
+    //   사유는 셀별 message 로 구분: 연차 등록일(동의요청 유도) / 근무타입·휴가 지정 불가 등.
+    if (skippedList.length > 0) {
+      const dataList = skippedList.map((s) => {
+        const label = `${formatYmdDot(s.workYmd)} (${getUserNm(s.userCd)})`;
+        let message;
+        if (s.reasonCode === "LEAVE_CELL_CONSENT_REQUIRED") {
+          message =
+            "연차 등록일이라 비우기로 삭제할 수 없습니다. 셀을 더블클릭하여 연차 변경/삭제 요청을 이용하세요.";
+        } else {
+          // 서버가 내려준 사유 문구 우선, 없으면 셀 표시명 기반 보조 문구.
+          message =
+            s.reason ||
+            `${getCellNmValue(s.userCd, s.workYmd) || "해당 셀"} 지정이 불가하여 제외되었습니다.`;
+        }
+        return { errorItem: label, message };
+      });
+      // 먼저 성공 요약을 짧게 안내한 뒤, 제외 목록 팝업을 띄운다.
+      await proxy.$alert(resultMsg);
+      openPop(BatchResultPop, {
+        totalCount: savedCount + deletedCount + skippedList.length,
+        successCount: savedCount + deletedCount,
+        failCount: skippedList.length,
+        identifierLabel: "근무일",
+        dataList,
+      });
+    } else {
+      await proxy.$alert(resultMsg);
     }
-    if (otherSkips.length > 0) {
-      const detail = otherSkips
-        .map((s) => {
-          const schNm = getSchTypeNm(s.workPlanCd);
-          return `· ${s.workYmd} / ${schNm} : ${s.reason}`;
-        })
-        .join("\n");
-      resultMsg += `\n\n아래 ${otherSkips.length}건은 근무타입 지정이 불가하여 제외되었습니다.\n${detail}`;
-    }
-    await proxy.$alert(resultMsg);
 
     // 저장 성공 → 재조회로 baseline 자연 갱신(직후 재저장 0건).
     fnSearch();
@@ -1268,8 +1443,6 @@ const fnDelete = async () => {
     workYm: workYm.value,
   }));
 
-  console.log(deleteList);
-
   const ok = await proxy.$confirm(getMessage(MSG.DELETE_CONFIRM));
   if (!ok) return;
 
@@ -1279,7 +1452,27 @@ const fnDelete = async () => {
       deleteList
     );
     if (response.status === 200) {
-      proxy.$alert(getMessage(MSG.DELETE_SUCCESS));
+      // prafta-com-016-C-3: 월 삭제는 OT 보유일을 부분 제외(삭제 안 함)하고 그 목록을 skippedList 로 내려준다.
+      //   연차 등록일도 서버 SQL 이 보존한다(NOT EXISTS leave_use). 제외 건수가 있으면 BatchResultPop 안내.
+      const skippedList = Array.isArray(response.data?.skippedList)
+        ? response.data.skippedList
+        : [];
+      if (skippedList.length > 0) {
+        await proxy.$alert(getMessage(MSG.DELETE_SUCCESS));
+        const dataList = skippedList.map((s) => ({
+          errorItem: `${formatYmdDot(s.workYmd)} (${getUserNm(s.userCd)})`,
+          message: s.reason || "초과근무가 등록되어 삭제에서 제외되었습니다.",
+        }));
+        openPop(BatchResultPop, {
+          totalCount: skippedList.length,
+          successCount: 0,
+          failCount: skippedList.length,
+          identifierLabel: "근무일",
+          dataList,
+        });
+      } else {
+        await proxy.$alert(getMessage(MSG.DELETE_SUCCESS));
+      }
       fnSearch();
     }
   } catch (err) {
@@ -1500,8 +1693,14 @@ onUnmounted(() => {
   color: #db2777 !important;
 }
 
-.radio-item-leave input[type="radio"] {
-  accent-color: #db2777;
+/* prafta-com-013-04-2: 휴일제외/휴일포함 라디오 제거 후 안내 힌트 칩 */
+.toolbar-leave-hint {
+  display: inline-flex;
+  align-items: center;
+  padding: 0 0.3rem;
+  font-size: 0.8125rem;
+  color: var(--color-text-muted, #6b7280);
+  white-space: nowrap;
 }
 
 .btn-toolbar-apply-leave {
@@ -1852,6 +2051,23 @@ onUnmounted(() => {
   font-size: 0.62rem;
   line-height: 1;
   opacity: 0.55;
+}
+
+/* prafta-com-013-04-2: 교대근무 팀 소속 셀 — 배경색으로 약간의 차이를 주어 시각 구분.
+   교대 잠금(is-shift-locked, SCH 셀)은 더 진한 muted bg 로 우선 표시되고,
+   연차 등록 등으로 잠금이 아닌 교대팀 셀은 옅은 보조색 bg 로 구분한다.
+   (셀렉터 specificity 가 낮아 .td-day.is-shift-locked / .td-selected 가 우선 적용됨.) */
+.td-day.is-shift-team:not(.is-shift-locked) {
+  background: var(--color-info-bg, rgba(99, 102, 241, 0.07));
+}
+
+/* prafta-com-013-04-3: No(행 번호) 셀 — 클릭하면 해당 행 전체 선택(affordance) */
+.td-seq-clickable {
+  cursor: pointer;
+}
+.td-seq-clickable:hover {
+  color: var(--color-primary, #16a34a);
+  font-weight: 700;
 }
 
 /* ── 드래그 선택 스타일 ──────────────────────────────────── */

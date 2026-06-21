@@ -11,6 +11,7 @@ public record UserInfoListParam (
 	, String useYn
 	, String siteCd
 	, String nodeCd
+	, String incSubNodeYn
 	, String searchMode
 	, String gvCmpnyCd
 	, String gvUserCd
@@ -29,6 +30,7 @@ public record UserInfoListParam (
 			, request.getUseYn()
 			, request.getSiteCd()
 			, request.getNodeCd()
+			, request.getIncSubNodeYn()
 			, request.getSearchMode()
 			, tokenInfo.gv_cmpnyCd()
 			, tokenInfo.gv_userCd()

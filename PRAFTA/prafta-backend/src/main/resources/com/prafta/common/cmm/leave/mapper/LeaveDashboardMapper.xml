@@ -3,7 +3,10 @@
 <mapper namespace="com.prafta.common.cmm.leave.mapper.LeaveDashboardMapper">
 
     <!--
-      활성 직원 정의(전 쿼리 공통): USE_YN='Y' AND WITHDRAWAL_DATE IS NULL AND ACCOUNT_STATUS='01'.
+      직원 정의(전 쿼리 공통): USE_YN='Y' AND WITHDRAWAL_DATE IS NULL AND ACCOUNT_STATUS IN ('01','04').
+        - '01' 활성화 + '04' 인증대기 포함. '04' 는 관리자가 User_01 로 미리 생성했으나 본인 휴대폰 인증
+          전인 계정으로, 초기 세팅 시 활성화 전에 연차를 미리 부여/관리할 수 있어야 하므로 연차관리(Attd_09)
+          목록·메트릭·수동/정책/입사일 부여 대상에 포함한다. ('02' 잠김 / '03' 탈퇴 / '05' 비활성화 는 제외)
       법정/법정외 구분: tb_user_leave_grant.GRANT_TYPE prefix (STATUTORY_% / MANUAL_%).
       활성 부여 정의: STATUS='ACTIVE' AND DEL_YN='N'.
     -->
@@ -18,7 +21,7 @@
              WHERE U.CMPNY_CD = #{cmpnyCd}
                AND U.USE_YN = 'Y'
                AND U.WITHDRAWAL_DATE IS NULL
-               AND U.ACCOUNT_STATUS = '01'
+               AND U.ACCOUNT_STATUS IN ('01', '04')
           ) AS totalEmployees
         , IFNULL((
             SELECT SUM(G.GRANT_DAYS)
@@ -28,7 +31,7 @@
                AND U.USER_CD  = G.USER_CD
                AND U.USE_YN = 'Y'
                AND U.WITHDRAWAL_DATE IS NULL
-               AND U.ACCOUNT_STATUS = '01'
+               AND U.ACCOUNT_STATUS IN ('01', '04')
              WHERE G.CMPNY_CD = #{cmpnyCd}
                AND G.DEL_YN = 'N'
                AND G.STATUS = 'ACTIVE'
@@ -41,7 +44,7 @@
                AND U.USER_CD  = G.USER_CD
                AND U.USE_YN = 'Y'
                AND U.WITHDRAWAL_DATE IS NULL
-               AND U.ACCOUNT_STATUS = '01'
+               AND U.ACCOUNT_STATUS IN ('01', '04')
              WHERE G.CMPNY_CD = #{cmpnyCd}
                AND G.DEL_YN = 'N'
                AND G.STATUS = 'ACTIVE'
@@ -54,7 +57,7 @@
                AND U.USER_CD  = G.USER_CD
                AND U.USE_YN = 'Y'
                AND U.WITHDRAWAL_DATE IS NULL
-               AND U.ACCOUNT_STATUS = '01'
+               AND U.ACCOUNT_STATUS IN ('01', '04')
              WHERE G.CMPNY_CD = #{cmpnyCd}
                AND G.DEL_YN = 'N'
                AND G.STATUS = 'ACTIVE'
@@ -71,7 +74,7 @@
                AND U.USER_CD  = G.USER_CD
                AND U.USE_YN = 'Y'
                AND U.WITHDRAWAL_DATE IS NULL
-               AND U.ACCOUNT_STATUS = '01'
+               AND U.ACCOUNT_STATUS IN ('01', '04')
              WHERE G.CMPNY_CD = #{cmpnyCd}
                AND G.DEL_YN = 'N'
                AND G.GRANT_DATE LIKE CONCAT(DATE_FORMAT(NOW(), '%Y%m'), '%')
@@ -119,7 +122,7 @@
         WHERE U.CMPNY_CD = #{cmpnyCd}
           AND U.USE_YN = 'Y'
           AND U.WITHDRAWAL_DATE IS NULL
-          AND U.ACCOUNT_STATUS = '01'
+          AND U.ACCOUNT_STATUS IN ('01', '04')
         <if test="siteCd != null and siteCd != ''">
           AND U.SITE_CD = #{siteCd}
         </if>
@@ -238,6 +241,20 @@
                  AND LU.DEL_YN       = 'N'
                  AND LU.START_DATE   <![CDATA[ > ]]> DATE_FORMAT(NOW(), '%Y%m%d')
           ), 0) AS nonLegalScheduled
+        <!-- 가불 사용분(prafta-com-011-7, 표시 전용 §5): 아직 발생 전(AVAIL_FROM_DATE > 오늘 = 진짜 당겨쓴 분)
+             가불 GRANT(GRANT_REASON LIKE '[가불]%')의 USED_DAYS 합. selectBorrowedDaysTotal(직원별)과 동일 술어
+             (live = STATUS != 'CANCELED' AND DEL_YN='N', AVAIL_FROM_DATE > today). GRANT_DAYS 합산 금지(§6-2).
+             월차/본연차 모두 포함(prefix 제한 없음). today는 타 서브쿼리와 동일하게 DATE_FORMAT(NOW(),'%Y%m%d'). -->
+        , IFNULL((
+              SELECT SUM(G.USED_DAYS)
+                FROM TB_USER_LEAVE_GRANT G
+               WHERE G.CMPNY_CD       = U.CMPNY_CD
+                 AND G.USER_CD        = U.USER_CD
+                 AND G.GRANT_REASON   LIKE '[가불]%'
+                 AND G.STATUS        != 'CANCELED'
+                 AND G.DEL_YN         = 'N'
+                 AND G.AVAIL_FROM_DATE <![CDATA[ > ]]> DATE_FORMAT(NOW(), '%Y%m%d')
+          ), 0) AS borrowedDays
       FROM TB_USER U
       LEFT JOIN TB_SITE_NODE N
         ON N.CMPNY_CD = U.CMPNY_CD
@@ -423,7 +440,7 @@
        AND U.USER_CD  = #{userCd}
        AND U.USE_YN = 'Y'
        AND U.WITHDRAWAL_DATE IS NULL
-       AND U.ACCOUNT_STATUS = '01'
+       AND U.ACCOUNT_STATUS IN ('01', '04')
     </select>
 
     <!-- ============ 수동 부여: 타입 사용가능기간 설정 조회 (prafta-045, §8.1.1) ============
@@ -436,6 +453,7 @@
           T.ADMIN_AVAIL_TERM_TYPE AS adminAvailTermType
         , T.ADMIN_AVAIL_FROM_DT   AS adminAvailFromDt
         , T.ADMIN_AVAIL_TO_DT     AS adminAvailToDt
+        , T.ADMIN_AVAIL_MONTHS    AS adminAvailMonths
       FROM TB_LEAVE_TYPE_MGMT T
      WHERE T.CMPNY_CD = #{cmpnyCd}
        AND T.LEAVE_CD = #{leaveCd}
@@ -636,7 +654,7 @@
        AND U.USER_CD  = #{userCd}
        AND U.USE_YN = 'Y'
        AND U.WITHDRAWAL_DATE IS NULL
-       AND U.ACCOUNT_STATUS = '01'
+       AND U.ACCOUNT_STATUS IN ('01', '04')
     </select>
 
     <!-- ============ 입사일 기준 부여: 멱등성 키 중복 카운트 ============ -->
@@ -750,5 +768,86 @@
        AND G.STATUS    != 'CANCELED'
        AND G.DEL_YN     = 'N'
     </select>
+
+    <!-- ============ prafta-com-011 QA D1/D2 통일 모델: 이미 당겨쓴(미발생) 가불 일수 합계(누적 가불 한도 산정) ============
+      가불 마커 = GRANT_REASON LIKE '[가불]%' (멱등키 밖, plan §0-1). live(STATUS!='CANCELED' AND DEL_YN='N').
+      grantTypePrefix 로 시작하는 GRANT_TYPE(월차 'STATUTORY_MONTHLY' / 본연차 'STATUTORY_ANNUAL')만 합산.
+      통일 모델(§6-2): 가불 GRANT 는 전량으로 생성되고 가불 사용분만 USED 차감되므로 "이미 당겨쓴 일수"는
+        GRANT_DAYS 가 아니라 USED_DAYS 합이다. 발생일 도래(AVAIL_FROM<=today)분은 정식 부여로 전환된 것이라
+        한도에서 제외(AVAIL_FROM_DATE > today 미발생분만 합산 — 발생분은 actualMonths/projection 카운트로 별도 반영).
+      '[가불]%' 는 대괄호가 MySQL LIKE 에서 리터럴이고 '%' 만 와일드카드라 별도 이스케이프 불필요.
+      grantTypePrefix 의 언더스코어는 '\'로 이스케이프(기존 'STATUTORY\_%' 규칙 동일). -->
+    <select id="selectBorrowedDaysTotal" resultType="java.math.BigDecimal">
+    /* LeaveDashboardMapper.selectBorrowedDaysTotal */
+    SELECT IFNULL(SUM(G.USED_DAYS), 0)
+      FROM TB_USER_LEAVE_GRANT G
+     WHERE G.CMPNY_CD       = #{cmpnyCd}
+       AND G.USER_CD        = #{userCd}
+       AND G.GRANT_REASON   LIKE '[가불]%'
+       AND G.GRANT_TYPE     LIKE CONCAT(REPLACE(#{grantTypePrefix}, '_', '\_'), '%')
+       AND G.STATUS        != 'CANCELED'
+       AND G.DEL_YN         = 'N'
+       AND G.AVAIL_FROM_DATE <![CDATA[ > ]]> #{today}
+    </select>
+
+    <!-- ============ prafta-com-011 QA D1/D2 통일 모델: 멱등키로 기존 live 가불 GRANT 잔여 capacity 조회 ============
+      누적 가불(§6-2): 같은 슬롯/회차 멱등키로 이미 생성된 가불 GRANT(가불 마커 + ACTIVE + DEL_YN='N')가 있으면
+        신규 슬롯 INSERT 대신 이 GRANT 의 잔여(GRANT_DAYS−USED_DAYS)에 leave_use 를 추가(USED 증액)로 충당한다.
+      멱등키 UNIQUE(CMPNY_CD, IDEMPOTENCY_KEY)라 단건. 없으면 null. -->
+    <select id="selectBorrowGrantByKey" resultType="com.prafta.common.cmm.leave.vo.BorrowGrantCapacityVO">
+    /* LeaveDashboardMapper.selectBorrowGrantByKey */
+    SELECT G.GRANT_ID    AS grantId
+         , G.GRANT_DAYS  AS grantDays
+         , G.USED_DAYS   AS usedDays
+      FROM TB_USER_LEAVE_GRANT G
+     WHERE G.CMPNY_CD        = #{cmpnyCd}
+       AND G.IDEMPOTENCY_KEY = #{idempotencyKey}
+       AND G.GRANT_REASON    LIKE '[가불]%'
+       AND G.STATUS          = 'ACTIVE'
+       AND G.DEL_YN          = 'N'
+     LIMIT 1
+    </select>
+
+    <!-- ============ prafta-com-011-1: 반려 시 회수 대상 가불 GRANT_ID 목록 ============
+      해당 reqId 의 leave_use(차감 해제 후)가 가리키는 GRANT_ID 중, 가불 마커 + ACTIVE + DEL_YN='N'
+      + USED_DAYS=0(차감 복원됨)인 GRANT 만 회수 후보로 반환. 비가불/사용분 잔존 GRANT 제외(§8.5.8).
+      호출부가 leave_use 차감 해제를 먼저 수행해 USED_DAYS=0 으로 만든 뒤 본 조회를 한다. -->
+    <select id="selectBorrowGrantIdsForCancel" resultType="string">
+    /* LeaveDashboardMapper.selectBorrowGrantIdsForCancel */
+    SELECT DISTINCT G.GRANT_ID
+      FROM TB_USER_LEAVE_GRANT G
+     WHERE G.CMPNY_CD     = #{cmpnyCd}
+       AND G.GRANT_REASON LIKE '[가불]%'
+       AND G.STATUS       = 'ACTIVE'
+       AND G.DEL_YN       = 'N'
+       AND G.USED_DAYS    = 0
+       AND G.GRANT_ID IN (
+             SELECT U.GRANT_ID
+               FROM TB_USER_LEAVE_USE U
+              WHERE U.CMPNY_CD = #{cmpnyCd}
+                AND U.REQ_ID   = #{reqId}
+                AND U.GRANT_ID IS NOT NULL
+           )
+    </select>
+
+    <!-- ============ prafta-com-011-1: 가불 GRANT 1건 회수(soft cancel) UPDATE ============
+      STATUS='CANCELED' + 회수 메타. WHERE 를 가불 마커 + ACTIVE + DEL_YN='N' + USED_DAYS=0 으로 못박아
+      비가불/사용분 잔존/경합 행을 절대 취소하지 않는다. USED_DAYS 는 갱신하지 않는다(§8.5.8). -->
+    <update id="cancelBorrowGrant">
+    /* LeaveDashboardMapper.cancelBorrowGrant */
+    UPDATE TB_USER_LEAVE_GRANT
+       SET STATUS        = 'CANCELED'
+         , CANCEL_REASON = '[가불] 신청 반려/취소 자동 회수'
+         , CANCEL_DATE   = NOW()
+         , CANCEL_BY     = #{operatorUserCd}
+         , UPDATE_NO     = #{operatorUserCd}
+         , UPDATE_DATE   = NOW()
+     WHERE CMPNY_CD     = #{cmpnyCd}
+       AND GRANT_ID     = #{grantId}
+       AND STATUS       = 'ACTIVE'
+       AND DEL_YN       = 'N'
+       AND USED_DAYS    = 0
+       AND GRANT_REASON LIKE '[가불]%'
+    </update>
 
 </mapper>

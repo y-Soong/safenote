@@ -114,6 +114,7 @@
 import { ref, computed, getCurrentInstance } from "vue";
 import axios from "@/api/axios";
 import { resolveApiErrorMessage } from "@/utils/apiError";
+import { formatYmdDot } from "@/utils/dateFormat";
 
 // ================ Props & Emits ================
 const props = defineProps({
@@ -199,11 +200,11 @@ const fnClose = () => {
 };
 
 // ================ 내부 유틸 ================
-// YYYYMMDD → YYYY-MM-DD 표기
+// YYYYMMDD → "YYYY.MM.DD" 표기. 빈값/형식불충분은 "-".
 const fnFormatDate = (yyyymmdd) => {
   const s = String(yyyymmdd || "");
   if (s.length !== 8) return s || "-";
-  return `${s.slice(0, 4)}-${s.slice(4, 6)}-${s.slice(6, 8)}`;
+  return formatYmdDot(s);
 };
 </script>
 

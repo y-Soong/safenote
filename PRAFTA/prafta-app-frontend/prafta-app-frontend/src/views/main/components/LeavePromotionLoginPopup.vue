@@ -74,6 +74,8 @@
 <script setup>
 import { getCurrentInstance } from 'vue'
 
+import { formatYmdDisplay } from '@/utils/approvalFormat'
+
 // 공통 alert 폴백(앱 전역 $alert 우선) — developer 가 에러 안내에 사용
 const { proxy } = getCurrentInstance() || { proxy: null }
 // eslint-disable-next-line no-unused-vars
@@ -101,11 +103,8 @@ const props = defineProps({
 // open(v-model) + 액션 결과를 부모(MainView)로 전달
 const emit = defineEmits(['update:open', 'register', 'later'])
 
-// YYYYMMDD → "YYYY.MM.DD"
-const formatYmd = (ymd) => {
-  if (!ymd || ymd.length !== 8) return ''
-  return `${ymd.slice(0, 4)}.${ymd.slice(4, 6)}.${ymd.slice(6, 8)}`
-}
+// YYYYMMDD → "YYYY.MM.DD" (표시 단일 출처 위임, D1)
+const formatYmd = (ymd) => formatYmdDisplay(ymd)
 
 // 계획 등록 → 부모가 /LeavePromotionPlan 라우팅. (router 이동은 developer/부모 영역)
 const onRegister = () => {

@@ -131,6 +131,7 @@ import { useRouter } from 'vue-router'
 
 import api from '@/api/axios'
 import { buildFileUrl } from '@/utils/fileUrl'
+import { formatMdDot } from '@/utils/approvalFormat'
 
 const router = useRouter()
 const { proxy } = getCurrentInstance() || { proxy: null }
@@ -164,11 +165,11 @@ const isDetailLoading = ref(false)
 const selectedPoint = ref(null)
 const detailRows = ref([]) // [{ workDate, inspectItemSubj, inspectAnswerType('O'|'X'), answerDesc, filePath, fileName }]
 
-// ── 보조: 일자(YYYYMMDD) → MM-DD 표시 ───────────────────────────────────
+// ── 보조: 일자(YYYYMMDD) → MM.DD 표시 (D1 점 통일) ──────────────────────
 const formatDay = (v) => {
   if (v == null) return ''
   const s = String(v)
-  if (s.length === 8) return `${s.slice(4, 6)}-${s.slice(6, 8)}`
+  if (s.length === 8) return formatMdDot(s)
   return s // 일(day) 숫자만 내려오는 경우 그대로
 }
 

@@ -80,6 +80,26 @@ public interface AppLeaveFlowMapper {
                               @Param("userCd") String userCd,
                               @Param("workYmd") String workYmd);
 
+    /**
+     * 같은 날 이미 점유된 연차 일수(중복 등록 가드). 해당 일자(START_DATE~END_DATE 포함)의 CONFIRMED·미삭제
+     * 연차 사용기록을 합산하되, 종일(USE_UNIT_TYPE='00')은 1.0, 그 외(반차/시간차)는 LEAVE_DAYS 로 본다.
+     * 호출부는 (점유 + 신규 신청일수) &gt; 1.0 이면 거부(ATTD_400_111)한다. 식별값은 토큰 도출값(IDOR).
+     */
+    BigDecimal selectOccupiedLeaveDaysOnDate(@Param("cmpnyCd") String cmpnyCd,
+                                             @Param("userCd") String userCd,
+                                             @Param("workYmd") String workYmd);
+
+    /**
+     * 같은 날 시간대가 겹치는 시간차 연차(USE_UNIT_TYPE in '02','03','04') 개수. 신규 [startTime,endTime) 와
+     * 기존 [START_TIME,END_TIME) 가 겹치면(기존시작 &lt; 신규종료 AND 기존종료 &gt; 신규시작) 카운트.
+     * 결과 &gt; 0 이면 거부(ATTD_400_112). 시간차 단위 신청 시에만 호출(HHMM 문자열, 좌폐우개 비교).
+     */
+    int countOverlappingTimeLeaveOnDate(@Param("cmpnyCd") String cmpnyCd,
+                                        @Param("userCd") String userCd,
+                                        @Param("workYmd") String workYmd,
+                                        @Param("startTime") String startTime,
+                                        @Param("endTime") String endTime);
+
     /** 요청 ID 채번(YYYYMMDD + 시퀀스). */
     String selectNextReqId(@Param("cmpnyCd") String cmpnyCd);
 
@@ -99,6 +119,14 @@ public interface AppLeaveFlowMapper {
                                     @Param("leaveCd") String leaveCd,
                                     @Param("fiscalStartYmd") String fiscalStartYmd,
                                     @Param("fiscalEndYmdExclusive") String fiscalEndYmdExclusive);
+
+    /**
+     * prafta-com-016-B(3-1): 사용자 신청 '01' + 사용가능기간 '01'(설정안함=전체 누적) 한도검증용.
+     * 회계연도 경계 없이 전체 CONFIRMED 사용 합계(Σ LEAVE_DAYS). 술어는 selectFiscalUsedDays 와 동일. 합계 없으면 0. (웹 미러)
+     */
+    BigDecimal selectTotalUsedDays(@Param("cmpnyCd") String cmpnyCd,
+                                   @Param("userCd") String userCd,
+                                   @Param("leaveCd") String leaveCd);
 
     /**
      * 연차개편 동시성: 사용자 신청('01') 직렬화용 advisory lock 획득(GET_LOCK).
@@ -133,6 +161,22 @@ public interface AppLeaveFlowMapper {
     int recomputeGrantUsedDays(@Param("cmpnyCd") String cmpnyCd,
                                @Param("grantId") String grantId,
                                @Param("updateNo") String updateNo);
+
+    /**
+     * prafta-com-011-2 가불: 대상 직원의 입사일(HIRE_DATE, YYYYMMDD). 활성 사용자만, 스코프 밖/미존재면 null.
+     * 웹 {@code LeaveFlowMapper.selectUserHireDate} 미러. 가불 projection/만료검증 입력(식별값 토큰 도출).
+     */
+    String selectUserHireDate(@Param("cmpnyCd") String cmpnyCd,
+                              @Param("userCd") String userCd);
+
+    /**
+     * prafta-com-011-2 가불(Q1=b 잔여 우선 차감): 차감 가능한 활성 부여 목록(만료 임박순, 잔여>0, FOR UPDATE).
+     * 웹 {@code LeaveFlowMapper.selectBorrowDeductibleGrants} 미러(SQL 본문 동일). 비가불 경로는 호출하지 않는다.
+     */
+    List<DeductibleGrantRow> selectBorrowDeductibleGrants(@Param("cmpnyCd") String cmpnyCd,
+                                                          @Param("userCd") String userCd,
+                                                          @Param("leaveCd") String leaveCd,
+                                                          @Param("workYmd") String workYmd);
 
     /** 요청 상태 갱신(즉시확정 시 '02'). */
     int updateReqStatus(@Param("cmpnyCd") String cmpnyCd,

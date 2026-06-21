@@ -122,6 +122,7 @@ import { useUserStore } from "@/stores/userStore";
 import axios from "@/api/axios";
 import { getMessage, MSG } from "@/messages";
 import { resolveApiErrorMessage } from "@/utils/apiError";
+import { formatDateTimeDotWithSec } from "@/utils/dateFormat";
 
 const { proxy } = getCurrentInstance();
 const userStore = useUserStore();
@@ -176,9 +177,8 @@ const fnLoadMyInfo = async () => {
         : info.mblNo || "";
       email.value = info.email || "";
       if (info.lastLoginDtime) {
-        lastLoginDtime.value = info.lastLoginDtime
-          .replace("T", " ")
-          .substring(0, 19);
+        // 마지막 로그인 일시(초 실재) → 점/콜론 표시. dateFormat 단일 출처 위임.
+        lastLoginDtime.value = formatDateTimeDotWithSec(info.lastLoginDtime);
       }
     }
   } catch {

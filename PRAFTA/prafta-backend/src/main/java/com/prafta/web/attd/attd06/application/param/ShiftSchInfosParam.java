@@ -11,6 +11,7 @@ public record ShiftSchInfosParam(
     , List<TeamParam> teamList
     , String gvCmpnyCd
     , String gvUserCd
+    , String gvAuthCd
 ) {
     public static ShiftSchInfosParam from(ShiftSchInfosRequest request, TokenInfo tokenInfo) {
 
@@ -24,6 +25,7 @@ public record ShiftSchInfosParam(
             , TeamParam.fromList(request.getTeamList())
             , tokenInfo.gv_cmpnyCd()
             , tokenInfo.gv_userCd()
+            , tokenInfo.gv_authCd()
         );
     }
 

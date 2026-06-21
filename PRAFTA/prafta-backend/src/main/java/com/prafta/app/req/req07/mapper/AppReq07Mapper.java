@@ -7,6 +7,8 @@ import org.apache.ibatis.annotations.Param;
 
 import com.prafta.app.req.req07.application.command.AttdReqInsertCommand;
 import com.prafta.app.req.req07.dto.response.result.ActualAttdWindowResult;
+import com.prafta.app.req.req07.dto.response.result.AppliedOvertimeResult;
+import com.prafta.app.req.req07.dto.response.result.PendingOvertimeResult;
 import com.prafta.app.req.req07.dto.response.result.ScheduleWindowResult;
 import com.prafta.app.req.req07.dto.response.result.SchedOptionResult;
 
@@ -149,4 +151,30 @@ public interface AppReq07Mapper {
 
     /** prafta-app-009 F15: advisory lock 해제(RELEASE_LOCK). */
     Integer releaseAdvisoryLock(@Param("lockKey") String lockKey);
+
+    /**
+     * prafta-app-030: 이미 등록(적용)된 초과근무 목록 조회 — 신규 OT 신청 시 표시/겹침 대조 원천.
+     * TB_USER_OVERTIME_MGMT 에서 DEL_YN='N' AND OT_STATUS&lt;&gt;'CANCELLED'
+     * AND ACTUAL_END_DATE IS NOT NULL AND ACTUAL_END_TIME IS NOT NULL 인 행을
+     * (cmpny/site/user/workYmd) 스코프로 조회한다. 식별값은 JWT 도출 Param 만 사용(IDOR).
+     * 결과 없으면 빈 List. ★TB_USER_OVERTIME_MGMT 에 WORK_SEQ 컬럼 없음 → 미포함.
+     * ⚠️ SELECT 컬럼 순서 = AppliedOvertimeResult 생성자 인자 순서(위치 기반 record 매핑).
+     */
+    List<AppliedOvertimeResult> selectAppliedOvertimes(@Param("cmpnyCd") String cmpnyCd
+                                                       , @Param("siteCd") String siteCd
+                                                       , @Param("userCd") String userCd
+                                                       , @Param("workYmd") String workYmd);
+
+    /**
+     * prafta-app-030 후속: 대기중(미승인) 초과근무 신청 목록 조회 — 신규 OT 신청 시 표시 전용.
+     * TB_USER_ATTD_REQ 에서 REQ_TYPE IN ('03','04') AND REQ_STATUS='01' AND DEL_YN='N'
+     * AND START/END_DATE·TIME IS NOT NULL 인 행을 (cmpny/site/user/workYmd) 스코프로 조회한다.
+     * 식별값은 JWT 도출 Param 만 사용(IDOR). 결과 없으면 빈 List.
+     * 승인분('02')은 TB_USER_OVERTIME_MGMT(selectAppliedOvertimes)로 노출되므로 본 쿼리는 '01'만 → 이중표시 없음.
+     * ⚠️ SELECT 컬럼 순서 = PendingOvertimeResult 생성자 인자 순서(위치 기반 record 매핑).
+     */
+    List<PendingOvertimeResult> selectPendingOvertimeReqs(@Param("cmpnyCd") String cmpnyCd
+                                                          , @Param("siteCd") String siteCd
+                                                          , @Param("userCd") String userCd
+                                                          , @Param("workYmd") String workYmd);
 }

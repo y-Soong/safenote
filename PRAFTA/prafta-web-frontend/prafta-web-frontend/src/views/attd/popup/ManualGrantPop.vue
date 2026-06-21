@@ -110,11 +110,7 @@
               <label class="mg-label">
                 사용 가능일<span class="mg-required">*</span>
               </label>
-              <input
-                v-model="form.availFromDate"
-                class="mg-input"
-                type="date"
-              />
+              <CalendarSrch v-model="form.availFromDate" class="mg-input" />
             </div>
           </div>
 
@@ -178,6 +174,7 @@ import { ref, computed, onMounted, getCurrentInstance } from "vue";
 import axios from "@/api/axios";
 import { resolveApiErrorMessage } from "@/utils/apiError";
 import BaseSelect from "@/components/common/BaseSelect.vue";
+import CalendarSrch from "@/components/common/CalendarSrch.vue";
 
 // ================ Props & Emits ================
 const props = defineProps({
@@ -247,24 +244,34 @@ const fnLoadLeaveTypes = async () => {
 
 // 부여하기 — 단일/일괄 분기
 const fnSubmit = async () => {
-  // 1) 1차 검증 (최종 권위는 백엔드)
-  if (!fnValidate()) return;
-
-  // 2) 사용 가능일이 오늘 이전이면 즉시 사용 가능 안내 (차단 아님)
-  const availFromDate = fnToYyyymmdd(form.value.availFromDate);
-  if (availFromDate < fnTodayYyyymmdd()) {
-    const ok = await proxy.$confirm(
-      "사용 가능일이 오늘 이전입니다. 진행하시겠습니까?"
-    );
-    if (!ok) return;
-  }
-
-  // 3) 요청 body 구성 (단일/일괄 공통 필드)
-  const grantDays = parseFloat(form.value.grantDays);
-  const reason = form.value.reason || "";
-
+  // com-013-08-5(프론트): 더블클릭/연타 1차 방어 — 제출 진행 중이면 즉시 무시.
+  //   isLoading 을 동기적으로 선점해, 1차 검증/확인 다이얼로그 대기 중의 추가 클릭까지 차단한다.
+  //   (서버에서도 결정적 멱등키로 단시간 동일 제출을 차단하므로 2중 방어.)
+  if (isLoading.value) return;
   isLoading.value = true;
   try {
+    // 1) 1차 검증 (최종 권위는 백엔드)
+    if (!fnValidate()) {
+      isLoading.value = false;
+      return;
+    }
+
+    // 2) 사용 가능일이 오늘 이전이면 즉시 사용 가능 안내 (차단 아님)
+    const availFromDate = fnToYyyymmdd(form.value.availFromDate);
+    if (availFromDate < fnTodayYyyymmdd()) {
+      const ok = await proxy.$confirm(
+        "사용 가능일이 오늘 이전입니다. 진행하시겠습니까?"
+      );
+      if (!ok) {
+        isLoading.value = false;
+        return;
+      }
+    }
+
+    // 3) 요청 body 구성 (단일/일괄 공통 필드)
+    const grantDays = parseFloat(form.value.grantDays);
+    const reason = form.value.reason || "";
+
     if (isSingleTarget.value) {
       await axios.post("/webApi/attd09/leave-grant/manual-grant", {
         userCd: targetUsers.value[0].userCd,
@@ -498,6 +505,24 @@ const fnTodayYyyymmdd = () => {
 }
 
 .mg-input:focus {
+  outline: none;
+  border-color: var(--color-primary);
+  box-shadow: 0 0 0 var(--focus-ring-width, 3px) var(--color-focus-ring);
+}
+
+/* 네이티브 date input → CalendarSrch 교체. 내부 input 셀렉터로 사이즈 유지 */
+.mg-input :deep(.calendar-input) {
+  width: 100%;
+  height: 2.125rem;
+  border: 1px solid var(--color-border);
+  border-radius: var(--input-radius);
+  padding: 0 0.625rem;
+  font-size: 0.8125rem;
+  background: var(--color-surface);
+  color: var(--color-text-strong);
+  font-family: "Pretendard", sans-serif;
+}
+.mg-input :deep(.calendar-input):focus {
   outline: none;
   border-color: var(--color-primary);
   box-shadow: 0 0 0 var(--focus-ring-width, 3px) var(--color-focus-ring);

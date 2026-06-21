@@ -179,6 +179,7 @@ import { useRouter } from 'vue-router'
 
 import api from '@/api/axios'
 import { buildFileUrl } from '@/utils/fileUrl'
+import { formatYmdDisplay } from '@/utils/approvalFormat'
 import DateStepperField from '@/components/common/DateStepperField.vue'
 
 const router = useRouter()
@@ -235,12 +236,9 @@ const statusClass = (status) => {
   return ''
 }
 const formatDate = (v) => {
-  if (!v) return ''
   // 'YYYY-MM-DD HH:mm'(서버 DATE_FORMAT) 또는 YYYYMMDD 혼재 대응.
-  const s = String(v)
-  if (s.length >= 10) return s.slice(0, 10)
-  if (s.length === 8) return `${s.slice(0, 4)}-${s.slice(4, 6)}-${s.slice(6, 8)}`
-  return s
+  // formatYmdDisplay 는 숫자만 추출 후 앞 8자리로 'YYYY.MM.DD' 산출(시각 절삭 동작 유지, D1 점).
+  return formatYmdDisplay(v)
 }
 
 // ── 현재 사업장 조회(현장전환 반영). 실패 시 토큰 사업장 폴백(서버가 최종 멤버십 재검증). ──

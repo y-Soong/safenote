@@ -24,23 +24,6 @@
 
         <!-- ============ 바디 ============ -->
         <div class="modal-body leave-detail">
-          <button type="button" class="ldp-back-link" @click="fnClose">
-            <svg
-              viewBox="0 0 24 24"
-              width="14"
-              height="14"
-              fill="none"
-              stroke="currentColor"
-              stroke-width="2"
-              stroke-linecap="round"
-              stroke-linejoin="round"
-              aria-hidden="true"
-            >
-              <polyline points="15 18 9 12 15 6" />
-            </svg>
-            연차 현황으로 돌아가기
-          </button>
-
           <!-- ===== 직원 헤더 ===== -->
           <div class="ldp-header">
             <div class="ldp-header-left">
@@ -198,7 +181,7 @@
                 </tr>
               </thead>
               <tbody>
-                <tr v-for="(g, idx) in grantHistory" :key="idx">
+                <tr v-for="g in pagedHistory" :key="g.grantId">
                   <td>{{ fnFormatDate(g.grantDate) }}</td>
                   <td class="is-center">
                     <span
@@ -245,6 +228,29 @@
               </tbody>
             </table>
           </div>
+
+          <!-- 부여 이력 페이징 (클라이언트 사이드, 상세는 전량 조회 → 프론트 분할, pageSize=5) -->
+          <div v-if="grantHistory.length > 0" class="ldp-pager">
+            <button
+              type="button"
+              class="btn btn-second"
+              :disabled="page <= 1"
+              @click="fnGoPage(page - 1)"
+            >
+              이전
+            </button>
+            <span class="ldp-pager-info">
+              {{ page }} / {{ totalPages }} (총 {{ grantHistory.length }}건)
+            </span>
+            <button
+              type="button"
+              class="btn btn-second"
+              :disabled="page >= totalPages"
+              @click="fnGoPage(page + 1)"
+            >
+              다음
+            </button>
+          </div>
         </div>
 
         <!-- ============ 푸터 ============ -->
@@ -264,6 +270,7 @@ import { ref, computed, onMounted, getCurrentInstance } from "vue";
 import { useModal } from "@/utils/useModal";
 import axios from "@/api/axios";
 import { resolveApiErrorMessage } from "@/utils/apiError";
+import { formatYmdDot } from "@/utils/dateFormat";
 import ManualGrantPop from "./ManualGrantPop.vue";
 import LeaveRecallPop from "./LeaveRecallPop.vue";
 
@@ -305,6 +312,10 @@ const appliedLeaveTypes = ref([]);
 //   각 행: { grantDate, natureBadge('LEGAL'|'NON_LEGAL'), reason, granted, used, remaining, expiresAt, status }
 const grantHistory = ref([]);
 
+// 부여 이력 클라이언트 사이드 페이징 (상세 API가 전량을 내려주므로 프론트에서 분할)
+const page = ref(1);
+const pageSize = ref(5);
+
 const isLoading = ref(false);
 
 // ================ Computed ================
@@ -312,6 +323,17 @@ const isLoading = ref(false);
 const avatarText = computed(() => {
   const nm = user.value.userNm || "";
   return nm.slice(0, 2) || "-";
+});
+
+// 부여 이력 총 페이지 수 (최소 1)
+const totalPages = computed(() =>
+  Math.max(1, Math.ceil(grantHistory.value.length / pageSize.value))
+);
+
+// 현재 페이지에 해당하는 부여 이력 슬라이스
+const pagedHistory = computed(() => {
+  const start = (page.value - 1) * pageSize.value;
+  return grantHistory.value.slice(start, start + pageSize.value);
 });
 
 // ================ Life Cycle Functions ================
@@ -369,6 +391,8 @@ const fnLoadDetail = async () => {
     grantHistory.value = Array.isArray(data.grantHistory)
       ? data.grantHistory
       : [];
+    // 재조회(최초/새로고침/부여/회수 후) 시 항상 1페이지부터 표시
+    page.value = 1;
   } catch (err) {
     const msg = resolveApiErrorMessage(
       err,
@@ -383,6 +407,12 @@ const fnLoadDetail = async () => {
 // [새로고침] — 상세 데이터 재조회 (요청서: 기존 [이력 상세] 명칭/동작 변경)
 const fnReload = () => {
   fnLoadDetail();
+};
+
+// 부여 이력 페이지 이동 (범위 가드)
+const fnGoPage = (target) => {
+  if (target < 1 || target > totalPages.value) return;
+  page.value = target;
 };
 
 // ================ Methods/Functions ================
@@ -465,11 +495,11 @@ const fnStatusClass = (status) => {
 };
 
 // ================ 내부 유틸 ================
-// YYYYMMDD → YYYY-MM-DD 표기
+// YYYYMMDD → "YYYY.MM.DD" 표기. 빈값/형식불충분은 "-".
 const fnFormatDate = (yyyymmdd) => {
   const s = String(yyyymmdd || "");
   if (s.length !== 8) return s || "-";
-  return `${s.slice(0, 4)}-${s.slice(4, 6)}-${s.slice(6, 8)}`;
+  return formatYmdDot(s);
 };
 </script>
 
@@ -485,25 +515,13 @@ const fnFormatDate = (yyyymmdd) => {
   display: flex;
   flex-direction: column;
   gap: 1rem;
-}
-
-/* ===== back-link ===== */
-.ldp-back-link {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.25rem;
-  font-size: 0.75rem;
-  color: var(--color-text-muted);
-  background: none;
-  border: none;
-  padding: 0;
-  cursor: pointer;
-  font-family: "Pretendard", sans-serif;
-  align-self: flex-start;
-}
-
-.ldp-back-link:hover {
-  color: var(--color-text-strong);
+  /* com-013-08-2: 부여 이력 영역 잘림 수정 (popup-layout-containment 규약).
+     .modal-body(flex:1 1 auto; overflow-y:auto; min-height:0)의 자식 flex 컬럼이
+     min-height 기본값(auto)으로 인해 축소되지 않아 마지막 섹션(부여 이력)이 잘리는 것을 방지한다.
+     - min-height:0 : 부모 스크롤 컨테이너가 정상 축소/스크롤되도록 허용.
+     - flex:1 1 auto : 본문 가용 세로 공간을 채움(짧은 내용일 때 레이아웃 안정). */
+  flex: 1 1 auto;
+  min-height: 0;
 }
 
 /* ===== 직원 헤더 ===== */
@@ -663,6 +681,11 @@ const fnFormatDate = (yyyymmdd) => {
 
 .ldp-table-wrap {
   overflow-x: auto;
+  /* com-013-08-2 후속: 부여 이력(마지막 섹션) 세로 잘림 수정.
+     overflow-x:auto 로 이 래퍼가 스크롤 컨테이너가 되면, flex 컬럼(.leave-detail) 안에서
+     flex 아이템의 자동 최소높이(min-height:auto)가 0으로 계산돼(CSS Flexbox 사양) 세로로 찌그러진다.
+     flex-shrink:0 으로 내용(테이블) 높이를 그대로 유지하고, 세로 스크롤은 부모(.leave-detail)가 담당한다. */
+  flex-shrink: 0;
 }
 
 .ldp-table {
@@ -789,6 +812,28 @@ const fnFormatDate = (yyyymmdd) => {
 .ldp-recall-na {
   color: var(--color-text-muted);
   font-size: 0.75rem;
+}
+
+/* ===== 부여 이력 페이저 ===== */
+.ldp-pager {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.75rem;
+  margin-top: 0.75rem;
+  /* flex 컬럼(.leave-detail) 안에서 찌그러지지 않도록 고정 */
+  flex-shrink: 0;
+}
+
+.ldp-pager-info {
+  font-size: var(--btn-font, 0.6875rem);
+  color: var(--color-text-muted);
+}
+
+.ldp-pager .btn {
+  height: var(--btn-height-sm);
+  padding: 0 var(--btn-padding-sm);
+  font-size: var(--btn-font-sm);
 }
 
 /* ===== 반응형 ===== */

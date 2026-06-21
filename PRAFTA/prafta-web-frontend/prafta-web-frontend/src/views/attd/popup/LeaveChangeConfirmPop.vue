@@ -86,6 +86,7 @@ import { ref, computed, getCurrentInstance, onMounted } from 'vue'
 import axios from '@/api/axios'
 import { getMessage, MSG } from '@/messages'
 import { resolveApiErrorMessage } from '@/utils/apiError'
+import { formatYmdDot } from '@/utils/dateFormat'
 
 const props = defineProps({
   changeReqId: { type: String, default: '' },
@@ -112,10 +113,10 @@ const REQ_STATUS_NM = {
 }
 const WORKER_RESPONSE_NM = { PENDING: '대기', AGREE: '동의', REJECT: '거부' }
 
-// YYYYMMDD → "YYYY-MM-DD"
+// YYYYMMDD → "YYYY.MM.DD" 표기. dateFormat 단일 출처에 위임.
 const fmtYmd = (ymd) => {
   if (!ymd || ymd.length !== 8) return ymd ?? ''
-  return `${ymd.slice(0, 4)}-${ymd.slice(4, 6)}-${ymd.slice(6, 8)}`
+  return formatYmdDot(ymd)
 }
 
 // 동의(AGREED) 상태만 최종 확인/승인 가능 (UI 게이트 — 서버도 동일 강제)
@@ -209,6 +210,10 @@ onMounted(() => {
   width: 440px;
   max-width: 92vw;
   max-height: 80vh;
+  /* 기본 modal-content 의 20px 패딩 제거 → 헤더/본문/푸터가 박스 끝에 밀착.
+     overflow:hidden 으로 헤더/푸터 모서리를 16px 라운드에 맞춰 클립. */
+  padding: 0;
+  overflow: hidden;
   display: flex;
   flex-direction: column;
 }

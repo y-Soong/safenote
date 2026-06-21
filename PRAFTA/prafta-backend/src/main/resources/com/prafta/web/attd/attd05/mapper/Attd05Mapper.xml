@@ -391,6 +391,15 @@
 
     <select id="selectLeaveTypeList" parameterType="com.prafta.web.attd.attd05.application.query.LeaveTypeListQuery" resultType="com.prafta.web.attd.attd05.result.LeaveTypeResult">
     /* Attd05Mapper.selectLeaveTypeList */
+    /*
+       prafta-com-011-6 가불 메타: systemYn + balanceDays 를 함께 조회한다(앱 selectApplicableLeaveTypes 미러).
+       - balanceDays 분기(LEAVE_TYPE [SYS021]):
+         · '01'(사용자 신청): IFNULL(MAX_APLY_DAYS,0) − Σ(당해 회계연도 CONFIRMED 사용 LEAVE_DAYS).
+           회계연도 경계 [fiscalStartYmd, fiscalEndYmdExclusive) 는 서비스가 FiscalYearUtils 로 산출해 주입.
+         · 그 외(시스템 법정 월차/본연차 포함, LEAVE_TYPE='02'): IFNULL(Σ(GRANT_DAYS) − Σ(USED_DAYS), 0).
+       - 가불 산정 필드(borrowable/borrowQuota/borrowExpiryYmd)는 엔진 projection 이라 SQL 이 NULL 로 채우고
+         서비스가 시스템 법정 월차/본연차에 한해 재산정한다(record 매핑을 위해 컬럼은 모두 SELECT).
+    */
     SELECT
 		A.CMPNY_CD		AS cmpnyCd
 	    , A.LEAVE_CD	AS leaveCd
@@ -399,10 +408,38 @@
 	    , A.LEAVE_TYPE	AS leaveType
 	    , A.APRV_USE_YN	AS aprvUseYn
 	    , A.LEAVE_NATURE_TYPE	AS leaveNatureType
+	    , A.SYSTEM_YN	AS systemYn
+	    , CASE WHEN A.LEAVE_TYPE = '01' THEN
+	          IFNULL(A.MAX_APLY_DAYS, 0) - IFNULL((
+	              SELECT SUM(U.LEAVE_DAYS)
+	                FROM TB_USER_LEAVE_USE U
+	               WHERE U.CMPNY_CD     = A.CMPNY_CD
+	                 AND U.USER_CD      = #{gvUserCd}
+	                 AND U.LEAVE_CD     = A.LEAVE_CD
+	                 AND U.LEAVE_STATUS = 'CONFIRMED'
+	                 AND U.DEL_YN       = 'N'
+	                 AND U.START_DATE  &gt;= #{fiscalStartYmd}
+	                 AND U.START_DATE  &lt;  #{fiscalEndYmdExclusive}
+	          ), 0)
+	      ELSE
+	          IFNULL((
+	              SELECT SUM(G.GRANT_DAYS) - SUM(G.USED_DAYS)
+	                FROM TB_USER_LEAVE_GRANT G
+	               WHERE G.CMPNY_CD  = A.CMPNY_CD
+	                 AND G.USER_CD   = #{gvUserCd}
+	                 AND G.LEAVE_CD  = A.LEAVE_CD
+	                 AND G.STATUS    = 'ACTIVE'
+	                 AND G.EXPIRE_YN = 'N'
+	                 AND G.DEL_YN    = 'N'
+	          ), 0)
+	      END			AS balanceDays
+	    , NULL			AS borrowable
+	    , NULL			AS borrowQuota
+	    , NULL			AS borrowExpiryYmd
 	FROM TB_LEAVE_TYPE_MGMT A
 	WHERE A.CMPNY_CD = #{gvCmpnyCd}
 	  AND A.USE_YN = 'Y'
-	ORDER BY A.LEAVE_NO ASC
+	ORDER BY A.SYSTEM_YN DESC, A.LEAVE_NO ASC, A.LEAVE_CD ASC
     </select>
 
     <select id="selectLegalLeaveCds" resultType="string">
@@ -445,13 +482,112 @@
     
     <delete id="deleteUserWorkPlans" parameterType="com.prafta.web.attd.attd05.application.command.SchTypeDeleCommand">
     /* Attd05Mapper.deleteUserWorkPlans */
-    DELETE FROM TB_USER_WORK_PLAN
-    WHERE CMPNY_CD = #{gvCmpnyCd}
-      AND SITE_CD = #{siteCd}
-      AND USER_CD = #{userCd}
-      AND WORK_YMD LIKE CONCAT(replace(#{workYm},'-', ''), '%')
+    /* prafta-com-013-04-1: 월 단위 일괄 삭제도 연차 등록일은 건너뛴다(셀 비우기 보호와 대칭).
+       종일 확정 연차(leave_use)가 덮인 날짜의 work_plan 행은 삭제 대상에서 제외한다.
+       판정 술어는 셀 비우기(selectFullDayLeaveCdOnCell)·그리드 오버레이(selectLeaveOverlayList)와 동일:
+       USE_UNIT_TYPE='00', LEAVE_STATUS='CONFIRMED', DEL_YN='N', START_DATE ~ END_DATE 구간에 WORK_YMD 포함.
+       연차 취소는 attd13 동의흐름을 경유하므로(전면 동의 원칙) 여기서는 삭제하지 않는다.
 
+       prafta-com-016-C-3: 초과근무(OT) 등록/신청 보유일도 삭제 대상에서 제외(부분 삭제).
+       OT 는 스케줄 기준으로 정산되므로 보유일의 스케줄 삭제를 막는다. 판정 술어는 countDayOvertime/
+       countMonthOvertime 과 동일(등록 비취소 ∪ 신청 03/04 상태 01/02). WORK_YMD(YYYYMMDD)는 같은 일자로
+       직접 비교하므로 기존 countMonthOvertime 의 LEFT(...,6)=workYm 포맷 버그와 무관하다. */
+    DELETE FROM TB_USER_WORK_PLAN WP
+    WHERE WP.CMPNY_CD = #{gvCmpnyCd}
+      AND WP.SITE_CD = #{siteCd}
+      AND WP.USER_CD = #{userCd}
+      AND WP.WORK_YMD LIKE CONCAT(replace(#{workYm},'-', ''), '%')
+      AND NOT EXISTS (
+            SELECT 1
+              FROM TB_USER_LEAVE_USE U
+             WHERE U.CMPNY_CD      = WP.CMPNY_CD
+               AND U.USER_CD       = WP.USER_CD
+               AND U.LEAVE_STATUS  = 'CONFIRMED'
+               AND U.DEL_YN        = 'N'
+               AND U.USE_UNIT_TYPE = '00'
+               AND U.START_DATE   <![CDATA[ <= ]]> WP.WORK_YMD
+               AND U.END_DATE     <![CDATA[ >= ]]> WP.WORK_YMD
+          )
+      AND NOT EXISTS (
+            SELECT 1
+              FROM TB_USER_OVERTIME_MGMT OM
+             WHERE OM.CMPNY_CD = WP.CMPNY_CD
+               AND OM.SITE_CD  = WP.SITE_CD
+               AND OM.USER_CD  = WP.USER_CD
+               AND OM.WORK_YMD = WP.WORK_YMD
+               AND OM.DEL_YN   = 'N'
+               AND OM.OT_STATUS <![CDATA[ <> ]]> 'CANCELLED'
+          )
+      AND NOT EXISTS (
+            SELECT 1
+              FROM TB_USER_ATTD_REQ RQ
+             WHERE RQ.CMPNY_CD = WP.CMPNY_CD
+               AND RQ.SITE_CD  = WP.SITE_CD
+               AND RQ.USER_CD  = WP.USER_CD
+               AND RQ.WORK_YMD = WP.WORK_YMD
+               AND RQ.DEL_YN   = 'N'
+               AND RQ.REQ_TYPE IN ('03', '04')
+               AND RQ.REQ_STATUS IN ('01', '02')
+          )
 	</delete>
+
+    <!--
+      prafta-com-016-C-3: 해당 월(YYYYMM)에 초과근무(등록 또는 신청) 보유 일자(WORK_YMD) 목록.
+      월 부분 삭제에서 제외된 OT 보유일을 사용자에게 안내하기 위한 조회.
+      판정 술어는 countDayOvertime/countMonthOvertime 과 동일. DISTINCT 로 등록·신청 중복 제거.
+      workYm 은 YYYYMM(하이픈 제거값) — 서비스에서 정규화하여 전달한다.
+    -->
+    <select id="selectMonthOvertimeDays" resultType="string">
+    /* Attd05Mapper.selectMonthOvertimeDays */
+    SELECT DISTINCT T.WORK_YMD FROM (
+        SELECT OM.WORK_YMD AS WORK_YMD
+          FROM TB_USER_OVERTIME_MGMT OM
+         WHERE OM.CMPNY_CD = #{cmpnyCd}
+           AND OM.SITE_CD  = #{siteCd}
+           AND OM.USER_CD  = #{userCd}
+           AND LEFT(OM.WORK_YMD, 6) = #{workYm}
+           AND OM.DEL_YN   = 'N'
+           AND OM.OT_STATUS <![CDATA[ <> ]]> 'CANCELLED'
+        UNION ALL
+        SELECT RQ.WORK_YMD AS WORK_YMD
+          FROM TB_USER_ATTD_REQ RQ
+         WHERE RQ.CMPNY_CD = #{cmpnyCd}
+           AND RQ.SITE_CD  = #{siteCd}
+           AND RQ.USER_CD  = #{userCd}
+           AND LEFT(RQ.WORK_YMD, 6) = #{workYm}
+           AND RQ.DEL_YN   = 'N'
+           AND RQ.REQ_TYPE IN ('03', '04')
+           AND RQ.REQ_STATUS IN ('01', '02')
+    ) T
+    ORDER BY T.WORK_YMD
+    </select>
+
+    <!-- prafta-com-016-C-3 후속: 월 부분 삭제에서 종일 확정 연차로 보존된 일자(WORK_YMD) 목록.
+         판정 술어는 deleteUserWorkPlans 의 연차 NOT EXISTS 와 동일(USE_UNIT_TYPE='00', CONFIRMED,
+         DEL_YN='N', START_DATE ~ END_DATE 구간에 WORK_YMD 포함, SITE_CD 미조인 — DELETE 와 정합).
+         work_plan 행이 있는 날만 반환(삭제 대상이었으나 연차로 보존된 일자) → 사용자 안내(BatchResultPop)용.
+         OT 보존일(selectMonthOvertimeDays)과 함께 "삭제 제외" 사유를 빠짐없이 안내한다. -->
+    <select id="selectMonthLeaveDays" resultType="string">
+    /* Attd05Mapper.selectMonthLeaveDays */
+    SELECT DISTINCT WP.WORK_YMD
+      FROM TB_USER_WORK_PLAN WP
+     WHERE WP.CMPNY_CD = #{cmpnyCd}
+       AND WP.SITE_CD  = #{siteCd}
+       AND WP.USER_CD  = #{userCd}
+       AND LEFT(WP.WORK_YMD, 6) = #{workYm}
+       AND EXISTS (
+             SELECT 1
+               FROM TB_USER_LEAVE_USE U
+              WHERE U.CMPNY_CD      = WP.CMPNY_CD
+                AND U.USER_CD       = WP.USER_CD
+                AND U.LEAVE_STATUS  = 'CONFIRMED'
+                AND U.DEL_YN        = 'N'
+                AND U.USE_UNIT_TYPE = '00'
+                AND U.START_DATE   <![CDATA[ <= ]]> WP.WORK_YMD
+                AND U.END_DATE     <![CDATA[ >= ]]> WP.WORK_YMD
+           )
+     ORDER BY WP.WORK_YMD
+    </select>
 
     <!-- PRAFTA-041: 셀의 현재 WORK_PLAN_CD 조회(비우기 시 법정연차 여부 판별, 서버 권위) -->
     <select id="selectWorkPlanCellCd" parameterType="com.prafta.web.attd.attd05.application.command.WorkPlanCellDeleCommand" resultType="string">

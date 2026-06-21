@@ -54,6 +54,21 @@
       <div v-if="isLoading" class="home-loading" aria-live="polite">불러오는 중...</div>
 
       <template v-else>
+        <!-- 연차 변경/삭제 동의 배너(A) — 관리자 발의 미응답 요청 있을 때만 노출. 탭 시 동의 팝업. -->
+        <button
+          v-if="consentPendingCount > 0"
+          type="button"
+          class="consent-banner"
+          @click="onConsentBannerClick"
+        >
+          <span class="consent-banner__icon" aria-hidden="true">!</span>
+          <span class="consent-banner__text">
+            관리자가 요청한 연차 변경/삭제 동의가
+            <strong>{{ consentPendingCount }}</strong>건 있어요
+          </span>
+          <span class="consent-banner__cta" aria-hidden="true">확인 ▸</span>
+        </button>
+
         <!-- 출퇴근 -->
         <AttendanceCard
           :status="attdStatus"
@@ -155,6 +170,15 @@
       @later="onPromoLater"
     />
 
+    <!-- 관리자 발의 연차 변경/삭제 동의 팝업 — 진입 시 미응답 있으면 자동 오픈(B), 배너(A) 탭으로도 오픈 -->
+    <LeaveChangeConsentPopup
+      v-model:open="consentPopupOpen"
+      :items="consentItems"
+      :submitting="consentSubmitting"
+      @agree="onConsentAgree"
+      @reject="onConsentReject"
+    />
+
     <!-- 자발 연차일 출근 확인 팝업 — 종일 연차일(isLeaveDay)에 출근 시도 시 노출 (prafta-com-008-B-6) -->
     <!--   확인 시에만 check-in 호출. 촉진 확정 연차면 서버가 ATTD_400_150 으로 차단(노무수령거부) → 별도 안내. -->
     <LeaveDayCheckInConfirmPopup
@@ -175,6 +199,8 @@ import api from '@/api/axios'
 import { requestGps } from '@/utils/gpsBridge'
 import { loadKakaoMapScript } from '@/utils/kakaoMap'
 import { isDailyWorker as isDailyWorkerFn } from '@/utils/employment'
+import { formatMdDot } from '@/utils/approvalFormat'
+import { resolveApiErrorMessage } from '@/utils/apiError'
 
 import HomeIcons from './components/HomeIcons.vue'
 import HomeHeader from './components/HomeHeader.vue'
@@ -186,6 +212,7 @@ import TbmAttendCard from './components/TbmAttendCard.vue'
 import NoticeListCard from './components/NoticeListCard.vue'
 import NoticeLoginPopup from './components/NoticeLoginPopup.vue'
 import LeavePromotionLoginPopup from './components/LeavePromotionLoginPopup.vue'
+import LeaveChangeConsentPopup from './components/LeaveChangeConsentPopup.vue'
 import AppBottomTabBar from '@/components/common/AppBottomTabBar.vue'
 import OffsiteReasonSheet from '@/views/attd/components/OffsiteReasonSheet.vue'
 import LeaveDayCheckInConfirmPopup from '@/views/attd/components/LeaveDayCheckInConfirmPopup.vue'
@@ -301,6 +328,13 @@ const noticePopupItems = ref([])
 //   promoPopup 은 LoginPopup 계약({ remainingDays, availTo }) 에 맞춘 가공값.
 const promoPopupOpen = ref(false)
 const promoPopup = ref(null)
+
+// 관리자 발의 연차 변경/삭제 동의 — 앱 진입 시 미응답(REQUESTED) 있으면 자동 팝업(B) + 배너(A).
+//   GET /appApi/leavechange/pending-consents 결과를 LeaveChangeConsentPopup 으로 전달.
+const consentPopupOpen = ref(false)
+const consentItems = ref([])
+const consentSubmitting = ref(false)
+const consentPendingCount = computed(() => consentItems.value.length)
 
 // ───────────────────────────────────────────────────────────
 // 하단 탭바 — TBM 미참석 카운트 (참석 가능 상태면 1)
@@ -420,17 +454,15 @@ const loadHomeSummary = async ({ showLoading = true } = {}) => {
 // prafta-app-023-2: 공지 — 메인 카드 목록 + 미열람 배지
 //   GET /appApi/notice01/my-notices → { noticeList:[{noticeId,title,pinYn,insertDate,fileCnt,isUnread,isImportant}], unreadCount }
 //   카드 계약(NoticeListCard)으로 변환: { noticeId, isImportant, title, displayTime, isRead }
-//   - displayTime: insertDate('YYYY-MM-DD HH:mm')에서 'MM-DD' 만 추출(카드 메타 컬럼은 좁음).
+//   - displayTime: insertDate('YYYY-MM-DD HH:mm')에서 'MM.DD' 만 추출(카드 메타 컬럼은 좁음, D1 점).
 //   - isRead: !isUnread (카드/목록은 읽음 여부로 강조 토글).
 //   - isImportant: 응답 isImportant(=pinYn==='Y') 그대로 신뢰.
 // ───────────────────────────────────────────────────────────
 const toCardDisplayTime = (insertDate) => {
-  // insertDate 형식 'YYYY-MM-DD HH:mm' (서버 가공). 카드 메타는 'MM-DD' 만 표시.
+  // insertDate 형식 'YYYY-MM-DD HH:mm' (서버 가공). 카드 메타는 'MM.DD' 만 표시(D1 점 통일).
   if (!insertDate || typeof insertDate !== 'string') return ''
   const datePart = insertDate.split(' ')[0] // 'YYYY-MM-DD'
-  const seg = datePart.split('-')
-  if (seg.length === 3) return `${seg[1]}-${seg[2]}`
-  return datePart
+  return formatMdDot(datePart)
 }
 
 const toCardRow = (row) => ({
@@ -567,6 +599,70 @@ const onPromoLater = async () => {
 }
 
 // ───────────────────────────────────────────────────────────
+// 관리자 발의 연차 변경/삭제 동의 — 진입 시 미응답 요청 자동 조회.
+//   GET /appApi/leavechange/pending-consents → 미응답(REQUESTED) 목록.
+//   결과 있으면 배너(A) 노출 + 진입 1회 자동 팝업(B). 연차/월차 구분 없이 모두 대상.
+// ───────────────────────────────────────────────────────────
+const loadPendingConsents = async ({ autoOpen = false } = {}) => {
+  try {
+    const { data } = await api.get('/appApi/leavechange/pending-consents')
+    const list = Array.isArray(data?.list) ? data.list : []
+    consentItems.value = list
+    // 진입(onMounted) 시에만 자동 오픈. 응답 후 재조회 시엔 남은 건이 없으면 닫고, 있으면 유지.
+    if (autoOpen) {
+      consentPopupOpen.value = list.length > 0
+    } else if (list.length === 0) {
+      consentPopupOpen.value = false
+    }
+  } catch (e) {
+    // 조회 실패는 조용히 무시(진입 차단 금지).
+    console.warn('[MainView] 연차 변경 동의 목록 조회 실패(무시):', e?.message)
+    consentItems.value = []
+    consentPopupOpen.value = false
+  }
+}
+
+// 배너(A) 탭 → 동의 팝업 오픈.
+const onConsentBannerClick = () => {
+  if (consentPendingCount.value > 0) consentPopupOpen.value = true
+}
+
+// 동의(AGREE) → POST respond. 성공 시 목록 재조회(남은 건 없으면 팝업 자동 닫힘).
+const onConsentAgree = async (changeReqId) => {
+  if (consentSubmitting.value) return
+  consentSubmitting.value = true
+  try {
+    await api.post(`/appApi/leavechange/${changeReqId}/respond`, {
+      WORKER_RESPONSE: 'AGREE',
+    })
+    await showAlert('동의했어요. 관리자 확인 후 반영됩니다.')
+    await loadPendingConsents()
+  } catch (e) {
+    await showAlert(resolveApiErrorMessage(e, '처리에 실패했어요.'))
+  } finally {
+    consentSubmitting.value = false
+  }
+}
+
+// 거부(REJECT, 사유필수) → POST respond. 성공 시 목록 재조회.
+const onConsentReject = async ({ changeReqId, reason }) => {
+  if (consentSubmitting.value) return
+  consentSubmitting.value = true
+  try {
+    await api.post(`/appApi/leavechange/${changeReqId}/respond`, {
+      WORKER_RESPONSE: 'REJECT',
+      RESPONSE_REASON: reason,
+    })
+    await showAlert('거부했어요.')
+    await loadPendingConsents()
+  } catch (e) {
+    await showAlert(resolveApiErrorMessage(e, '처리에 실패했어요.'))
+  } finally {
+    consentSubmitting.value = false
+  }
+}
+
+// ───────────────────────────────────────────────────────────
 // 당겨서 새로고침 — 스크롤 최상단에서 아래로 더 당기면(overscroll) home-summary 재조회.
 //   1) touchstart 시점에 스크롤이 최상단이면 추적 시작
 //   2) touchmove 에서 아래로 당긴 거리(저항감 0.5배)를 인디케이터 높이로 환산
@@ -640,8 +736,13 @@ const onPullEnd = async () => {
   isRefreshing.value = true
   try {
     applySessionHeader()
-    // 홈 요약과 공지 카드를 함께 갱신(공지 실패는 자체 폴백으로 흡수).
-    await Promise.all([loadHomeSummary({ showLoading: false }), loadMyNotices()])
+    // 홈 요약 + 공지 카드 + 연차 변경 동의 배너를 함께 갱신(각 실패는 자체 폴백/격리).
+    //   새로고침에서는 동의 팝업 자동 오픈 안 함(배너 수만 갱신) — autoOpen 생략.
+    await Promise.all([
+      loadHomeSummary({ showLoading: false }),
+      loadMyNotices(),
+      loadPendingConsents(),
+    ])
   } finally {
     isRefreshing.value = false
   }
@@ -655,6 +756,8 @@ onMounted(() => {
   loadNoticePopup()
   // prafta-com-008-A-7: 연차 사용촉진 1차 안내 팝업도 병행 로드(독립 실패 격리).
   loadPromotionActive()
+  // 관리자 발의 연차 변경/삭제 동의 — 미응답 있으면 진입 시 자동 팝업(B)(독립 실패 격리).
+  loadPendingConsents({ autoOpen: true })
   // prafta-app-008: 외근 사유 시트(OffsiteReasonSheet)의 카카오 지도 SDK 를 미리 1회 로드해 둔다.
   // 시트를 열 때 네트워크로 SDK 를 받느라 시트 표시가 지연되는 문제 방지(프리로드).
   // 로드 함수는 중복 가드가 있어 idempotent 하며, 실패해도 시트의 좌표 텍스트 폴백이 동작하므로 조용히 무시.
@@ -1043,6 +1146,50 @@ const onNoticeRow = (noticeId) => {
   text-align: center;
   font-size: 14px;
   color: var(--color-text-secondary);
+}
+
+/* 연차 변경/삭제 동의 배너(A) — 관리자 발의 미응답 요청 알림(경고 톤). 탭하면 동의 팝업. */
+.consent-banner {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 12px 14px;
+  margin-bottom: 12px;
+  background: var(--color-warning-tint);
+  border: 0.5px solid var(--color-warning);
+  border-radius: var(--radius-md);
+  font-family: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.consent-banner__icon {
+  flex-shrink: 0;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: var(--color-warning);
+  color: #fff;
+  font-size: 13px;
+  font-weight: 700;
+  line-height: 20px;
+  text-align: center;
+}
+.consent-banner__text {
+  flex: 1 1 auto;
+  min-width: 0;
+  font-size: 13px;
+  line-height: 1.45;
+  color: var(--color-warning-text-strong);
+}
+.consent-banner__text strong {
+  font-weight: 700;
+}
+.consent-banner__cta {
+  flex-shrink: 0;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--color-warning-text);
 }
 
 /* 당겨서 새로고침 인디케이터 — 당김 거리에 따라 높이가 늘어났다 줄어든다 */

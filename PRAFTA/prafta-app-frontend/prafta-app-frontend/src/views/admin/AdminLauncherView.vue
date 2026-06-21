@@ -107,6 +107,22 @@
       </div>
 
       <template v-else>
+        <!-- 연차 변경 확인 대기 배너 — 근로자가 동의(AGREED)해 관리자 확정만 남은 건이 있을 때 노출.
+             탭하면 확인 화면(/AdminLeaveChangeConfirm)으로 이동. 스코프/권한은 서버가 단일 출처로 판정. -->
+        <button
+          v-if="pendingConfirmCount > 0"
+          type="button"
+          class="confirm-banner"
+          @click="onConfirmBannerClick"
+        >
+          <span class="confirm-banner__icon" aria-hidden="true">!</span>
+          <span class="confirm-banner__text">
+            근로자가 동의한 연차 변경/삭제 확인이
+            <strong>{{ pendingConfirmCount }}</strong>건 있어요
+          </span>
+          <span class="confirm-banner__cta" aria-hidden="true">확인 ▸</span>
+        </button>
+
         <!-- 1) 대시보드 (최상단) — prafta-app-025 J1-10 B-5: 요약 위젯 4종(자체 조회).
              currentSiteCd 를 prop 으로 전달해 현장 전환 시 재조회되게 한다(C1: 서버 산출만 신뢰). -->
         <AdminDashboard ref="dashboardRef" :site-cd="currentSiteCd" />
@@ -195,6 +211,9 @@ const modules = [
 
 // 현장 전환 시트 토글 (UI 토글 — 허용 범위)
 const siteSheetOpen = ref(false)
+
+// 연차 변경 확인 대기(AGREED) 건수 — 진입 배너 노출용. 서버 스코프 판정 결과만 신뢰(빈 목록=0).
+const pendingConfirmCount = ref(0)
 
 // 대시보드 컴포넌트 ref — 당겨서 새로고침 시 대시보드 재조회를 명시 호출하기 위함.
 //   (현장 전환은 props.siteCd watch 로 자동 재조회되지만, 당겨서 새로고침은 siteCd 가
@@ -307,6 +326,13 @@ const loadAccessContext = async (siteCd, { silent = false } = {}) => {
     // 현재 사업장명: accessibleSites 에서 currentSiteCd 매칭 → 폴백 토큰 gv_siteNm.
     const matched = accessibleSites.value.find((s) => s.siteCd === currentSiteCd.value)
     siteName.value = matched?.siteNm || sessionStorage.getItem('gv_siteNm') || ''
+
+    // 진입 가능 관리자면 연차 변경 확인 대기(AGREED) 건수 조회(배너용). 비관리자는 서버가 빈 목록/403 → 0.
+    if (canEnterAdmin.value) {
+      loadPendingConfirms()
+    } else {
+      pendingConfirmCount.value = 0
+    }
   } catch (e) {
     console.warn('[AdminLauncher] access-context 조회 실패:', e?.message)
     // F6/D8: 진입 불가로 처리(템플릿 empty 상태 노출). 서버가 최종 판정이므로 클라 가드는 UX 보조.
@@ -317,7 +343,23 @@ const loadAccessContext = async (siteCd, { silent = false } = {}) => {
   }
 }
 
+// 연차 변경 확인 대기(AGREED) 건수 조회. 실패/비권한은 0(배너 미노출) — 진입 차단 금지.
+const loadPendingConfirms = async () => {
+  try {
+    const { data } = await api.get('/appApi/leavechange/admin/pending-confirms')
+    pendingConfirmCount.value = Array.isArray(data?.list) ? data.list.length : 0
+  } catch (e) {
+    // 비관리자(403)/조회 실패는 배너 미노출(0). 정상 흐름 영향 없음.
+    pendingConfirmCount.value = 0
+  }
+}
+
 // ── 핸들러 ────────────────────────────────────────────────────────────────────
+
+// 연차 변경 확인 배너 → 확인 화면 진입.
+const onConfirmBannerClick = () => {
+  router.push('/AdminLeaveChangeConfirm')
+}
 
 // 사용자 모드 복귀(좌측 상단). 관리자→사용자 모드는 히스토리를 쌓지 않도록 replace 로 전환.
 const onBackToUser = () => {
@@ -503,6 +545,50 @@ onMounted(() => {
   font-size: 18px;
   font-weight: 700;
   color: var(--color-text-primary);
+}
+
+/* 연차 변경 확인 대기 배너 — 근로자 동의 후 관리자 확정만 남은 건 알림(경고 톤). 탭하면 확인 화면. */
+.confirm-banner {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 12px 14px;
+  margin-bottom: var(--space-md);
+  background: var(--color-warning-tint);
+  border: 0.5px solid var(--color-warning-text);
+  border-radius: var(--radius-md);
+  font-family: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.confirm-banner__icon {
+  flex-shrink: 0;
+  width: 20px;
+  height: 20px;
+  border-radius: var(--radius-full);
+  background: var(--color-warning-text);
+  color: var(--color-surface);
+  font-size: 13px;
+  font-weight: 700;
+  line-height: 20px;
+  text-align: center;
+}
+.confirm-banner__text {
+  flex: 1 1 auto;
+  min-width: 0;
+  font-size: 13px;
+  line-height: 1.45;
+  color: var(--color-warning-text);
+}
+.confirm-banner__text strong {
+  font-weight: 700;
+}
+.confirm-banner__cta {
+  flex-shrink: 0;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--color-warning-text);
 }
 
 /* 모듈 세로 섹션 리스트 */

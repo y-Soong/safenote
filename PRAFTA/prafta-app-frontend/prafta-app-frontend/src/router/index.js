@@ -81,14 +81,6 @@ const routes = [
     component: () => import('@/views/leave/LeaveApplyView.vue'),
   },
 
-  // PRAFTA-COM-008-C: 연차 변경 동의/거부 (관리자 발의 본인 연차 변경/삭제 응답)
-  //   진입: 연차현황 메뉴 또는 PUSH 딥링크(LEAVE_CHANGE_REQUEST 등). 보호 라우트.
-  {
-    path: '/LeaveChangeConsent',
-    name: 'LeaveChangeConsent',
-    component: () => import('@/views/leave/LeaveChangeConsentView.vue'),
-  },
-
   // PRAFTA-COM-008-C: 근로자 발의 연차 이동 요청 (취소 불가, 관리자 승인 대상)
   {
     path: '/LeaveMoveRequest',
@@ -202,6 +194,15 @@ const routes = [
     path: '/AdminApprovalDetail',
     name: 'AdminApprovalDetail',
     component: () => import('@/views/admin/approval/AdminApprovalDetailView.vue'),
+  },
+
+  // 관리자 연차 변경/삭제 최종 확인 (보호 — publicPaths 미포함, beforeEach 토큰 게이트).
+  //   진입: AdminLauncherView 상단 "연차 변경 확인 대기 N건" 배너 → /AdminLeaveChangeConfirm.
+  //   스코프/권한은 서버(공유 Attd13Service)가 단일 출처로 재강제(비관리자 fail-closed).
+  {
+    path: '/AdminLeaveChangeConfirm',
+    name: 'AdminLeaveChangeConfirm',
+    component: () => import('@/views/admin/leavechange/AdminLeaveChangeConfirmView.vue'),
   },
 
   // prafta-app-025 J1-5: 관리자 모드 근태 상세 (보호 — publicPaths 미포함, beforeEach 토큰 게이트).

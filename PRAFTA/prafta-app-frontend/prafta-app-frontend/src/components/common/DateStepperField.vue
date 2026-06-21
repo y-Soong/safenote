@@ -186,11 +186,11 @@ const parse = (s) => {
   return { y: Number(m[1]), m: Number(m[2]), d: Number(m[3]) }
 }
 
-// 표시용 텍스트 (트리거 필드)
+// 표시용 텍스트 (트리거 필드) — D1상 점 표기. emit/modelValue 계약(대시)은 불변(D5).
 const displayText = computed(() => {
   const p = parse(props.modelValue)
   if (!p) return ''
-  return `${p.y}-${String(p.m).padStart(2, '0')}-${String(p.d).padStart(2, '0')}`
+  return `${p.y}.${String(p.m).padStart(2, '0')}.${String(p.d).padStart(2, '0')}`
 })
 
 const clampDayToMonth = () => {

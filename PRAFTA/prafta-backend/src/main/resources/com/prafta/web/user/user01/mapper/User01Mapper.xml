@@ -125,8 +125,26 @@
 	        ON C.CMPNY_CD = P.CMPNY_CD
 	       AND C.SITE_CD  = P.SITE_CD
 	       AND C.PARENT_NODE_CD = P.NODE_CD
+	),
+	search_node_tree AS (
+	    /* 검색 조건(소속부서)부터 시작 — 하위부서 조회 옵션 'Y'일 때만 참조 */
+	    SELECT N.CMPNY_CD, N.SITE_CD, N.NODE_CD
+	    FROM TB_SITE_NODE N
+	    WHERE N.CMPNY_CD = #{gvCmpnyCd}
+	      AND N.SITE_CD  = #{siteCd}
+	      AND N.NODE_CD  = #{nodeCd}
+
+	    UNION ALL
+
+	    /* 하위 노드 무한 확장 */
+	    SELECT C.CMPNY_CD, C.SITE_CD, C.NODE_CD
+	    FROM TB_SITE_NODE C
+	    INNER JOIN search_node_tree P
+	        ON C.CMPNY_CD = P.CMPNY_CD
+	       AND C.SITE_CD  = P.SITE_CD
+	       AND C.PARENT_NODE_CD = P.NODE_CD
 	)
-	
+
 	SELECT
 	    null                                                              	AS chk
 	    , A.CMPNY_CD                                                       	AS cmpnyCd
@@ -208,7 +226,14 @@
 		  </if>
 		
 		  <if test="nodeCd != null and nodeCd != ''">
-		    AND A.NODE_CD = #{nodeCd}
+		    <choose>
+		      <when test='"Y".equals(incSubNodeYn)'>
+		        AND A.NODE_CD IN (SELECT T.NODE_CD FROM search_node_tree T)
+		      </when>
+		      <otherwise>
+		        AND A.NODE_CD = #{nodeCd}
+		      </otherwise>
+		    </choose>
 		  </if>
     </select>
     

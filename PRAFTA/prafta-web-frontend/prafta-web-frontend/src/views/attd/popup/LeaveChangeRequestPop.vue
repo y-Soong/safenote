@@ -145,6 +145,10 @@ const onSubmit = async () => {
   width: 480px;
   max-width: 92vw;
   max-height: 84vh;
+  /* 기본 modal-content 의 20px 패딩 제거 → 헤더/본문/푸터가 박스 끝에 밀착.
+     overflow:hidden 으로 헤더/푸터 모서리를 16px 라운드에 맞춰 클립. */
+  padding: 0;
+  overflow: hidden;
   display: flex;
   flex-direction: column;
 }

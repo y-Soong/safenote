@@ -8,6 +8,7 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 import com.prafta.common.security.JwtUtil;
@@ -17,6 +18,7 @@ import com.prafta.web.baim.baim05.application.param.DailyUserSlotListParam;
 import com.prafta.web.baim.baim05.application.param.InsertDailyQrUserParam;
 import com.prafta.web.baim.baim05.application.param.LinkPoliciesParam;
 import com.prafta.web.baim.baim05.application.param.SetSlotFixedParam;
+import com.prafta.web.baim.baim05.application.param.SlotHisParam;
 import com.prafta.web.baim.baim05.dto.request.ClearDailyUserSlotsRequest;
 import com.prafta.web.baim.baim05.dto.request.DailyUserLinkPoliciesRequest;
 import com.prafta.web.baim.baim05.dto.request.DailyUserSlotListRequest;
@@ -26,6 +28,7 @@ import com.prafta.web.baim.baim05.dto.request.SetSlotFixedRequest;
 import com.prafta.web.baim.baim05.dto.response.DailyUserLinkPoliciesResponse;
 import com.prafta.web.baim.baim05.dto.response.DailyUserSlotListResponse;
 import com.prafta.web.baim.baim05.dto.response.InsertDailyQrUserResponse;
+import com.prafta.web.baim.baim05.dto.response.SlotHisListResponse;
 import com.prafta.web.baim.baim05.service.Baim05Service;
 
 import jakarta.validation.Valid;
@@ -93,5 +96,17 @@ public class Baim05Controller {
 		baim05Service.setDailyUserSlotFixed(SetSlotFixedParam.from(request, jwtUtil.getAllClaimsAsMap(authorization)));
 
 		return ResponseEntity.status(HttpStatus.OK).build();
+	}
+
+	@GetMapping("/daily-user-slot-his")
+	public ResponseEntity<?> getDailyUserSlotHisList(
+			@RequestParam(value = "siteCd", required = false) String siteCd,
+			@RequestParam(value = "slotNo", required = false) String slotNo,
+			@RequestHeader(value = "Authorization", required = false) String authorization) {
+
+		SlotHisListResponse response = baim05Service.selectDailyUserSlotHisList(
+				SlotHisParam.from(siteCd, slotNo, jwtUtil.getAllClaimsAsMap(authorization)));
+
+		return ResponseEntity.status(HttpStatus.OK).body(response);
 	}
 }

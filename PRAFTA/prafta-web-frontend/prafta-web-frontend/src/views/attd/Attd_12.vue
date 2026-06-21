@@ -12,7 +12,7 @@
     <div class="viewSearch">
       <div>
         <label>조회월</label>
-        <CalendarSrchMonth v-model="workYm" class="a12-nav-month-picker" />
+        <CalendarSrchMonth :range="false" style="width: 100px" v-model="workYm" />
       </div>
       <div>
         <label>사업장</label>
@@ -77,24 +77,32 @@
         <label>의심유형</label>
         <select v-model="suspectType" class="a12-type-select">
           <option value="">전체</option>
-          <option value="RULE1">한 기기 다계정</option>
-          <option value="RULE2">평소 기기와 다름</option>
-          <option value="RULE3">신규 기기</option>
+          <option value="SHARED_DEVICE">기기 공유 의심</option>
         </select>
       </div>
     </div>
 
     <!-- 본문: 의심 케이스(기기·날짜 그룹) 목록 -->
     <div class="viewBody a12-body">
+      <div class="table-wrapper subtitle-pane a12-subtitle-pane">
+        <!-- 소제목 바 (User_01 패턴 차용) -->
+        <div class="subtitle-row">
+          <div class="subtitle">
+            <span class="subtitle-icon" aria-hidden="true">
+              <svg viewBox="0 0 24 24" width="18" height="18">
+                <path d="M4 4h16v4H4zM4 10h10v10H4z" />
+              </svg>
+            </span>
+            <span class="subtitle-text">사용자 리스트</span>
+          </div>
+        </div>
       <div class="a12-table-wrap">
         <table class="a12-table">
           <thead>
             <tr>
-              <th>날짜</th>
               <th>기기</th>
               <th>관련 계정</th>
-              <th>출근시각</th>
-              <th>퇴근시각</th>
+              <th>로그인 시각</th>
               <th>부서</th>
               <th>사업장</th>
               <th>의심유형</th>
@@ -102,24 +110,18 @@
           </thead>
           <tbody>
             <tr v-if="rows.length === 0">
-              <td colspan="8" class="a12-empty">의심 케이스가 없습니다.</td>
+              <td colspan="6" class="a12-empty">의심 케이스가 없습니다.</td>
             </tr>
             <tr v-for="r in rows" :key="r.suspectKey">
-              <td>{{ fmtYmd(r.workYmd) }}</td>
               <td class="a12-cell-device" :title="r.deviceUuid">{{ shortDevice(r.deviceUuid) }}</td>
               <td class="a12-cell-left">
-                <div v-for="m in r.members" :key="m.userCd">
+                <div v-for="(m, i) in r.members" :key="`${r.suspectKey}-u-${i}`">
                   {{ m.userNm }} ({{ m.userId }})
                 </div>
               </td>
-              <td class="a12-cell-num">
-                <div v-for="m in r.members" :key="m.userCd">
-                  {{ fmtTime(m.checkInTime) }}
-                </div>
-              </td>
-              <td class="a12-cell-num">
-                <div v-for="m in r.members" :key="m.userCd">
-                  {{ fmtTime(m.checkOutTime) }}
+              <td class="a12-cell-left">
+                <div v-for="(m, i) in r.members" :key="`${r.suspectKey}-t-${i}`">
+                  {{ fmtLoginDtime(m.loginDtime) }}
                 </div>
               </td>
               <td class="a12-cell-left">{{ r.nodeNm }}</td>
@@ -132,6 +134,7 @@
             </tr>
           </tbody>
         </table>
+      </div>
       </div>
     </div>
   </div>
@@ -156,6 +159,7 @@ import axios from "@/api/axios";
 import { getMessage, MSG } from "@/messages";
 import { resolveApiErrorMessage } from "@/utils/apiError";
 import { exportStyledExcel } from "@/utils/excelExport";
+import { formatDateTimeDot } from "@/utils/dateFormat";
 
 defineOptions({ name: "Attd_12" });
 
@@ -189,9 +193,9 @@ const suspectType = ref("");
 const workYm = ref(currentYm());
 const siteNoFcs = ref(null);
 
-// ── 조회 결과 (의심 케이스 행) ────────────────────────────
-//   { suspectKey, workYmd, deviceUuid, suspectType, nodeNm, siteNm,
-//     members:[{ userCd, userId, userNm, checkInTime, checkOutTime }] }
+// ── 조회 결과 (의심 케이스 행 — 기기 중심) ────────────────
+//   { suspectKey, deviceUuid, suspectType, nodeNm, siteNm,
+//     members:[{ userCd, userId, userNm, loginDtime, clientType }] }
 const rows = ref([]);
 
 // master/hr 여부 (그 외 권한은 사업장+소속부서 필수 — Attd_11 동일)
@@ -205,15 +209,11 @@ function currentYm() {
   const now = new Date();
   return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
 }
-// YYYYMMDD → "MM-DD"
-const fmtYmd = (ymd) => {
-  if (!ymd || ymd.length !== 8) return ymd ?? "";
-  return `${ymd.slice(4, 6)}-${ymd.slice(6, 8)}`;
-};
-// HHMM → "HH:MM" (빈값은 "-")
-const fmtTime = (hhmm) => {
-  if (!hhmm || hhmm.length !== 4) return "-";
-  return `${hhmm.slice(0, 2)}:${hhmm.slice(2, 4)}`;
+// 로그인 일시(YYYYMMDDHHMMSS) → "YYYY.MM.DD HH:mm" (빈값은 "-").
+//   날짜·시각 표시는 dateFormat 단일 출처에 위임(점/콜론 통일, com-014).
+const fmtLoginDtime = (dtime) => {
+  if (!dtime) return "-";
+  return formatDateTimeDot(dtime);
 };
 // 기기 UUID 축약 (앞 6 + … + 뒤 4). title 에 전체값 노출.
 const shortDevice = (uuid) => {
@@ -224,13 +224,11 @@ const shortDevice = (uuid) => {
 
 // ── 의심유형 배지 ─────────────────────────────────────────
 const badgeLabel = (type) => {
-  if (type === "RULE1") return "한 기기 다계정";
-  if (type === "RULE2") return "평소 기기와 다름";
-  if (type === "RULE3") return "신규 기기";
+  if (type === "SHARED_DEVICE") return "기기 공유 의심";
   return type ?? "";
 };
 const badgeClass = (type) => {
-  if (type === "RULE1") return "a12-badge-strong";
+  if (type === "SHARED_DEVICE") return "a12-badge-strong";
   return "a12-badge-soft";
 };
 
@@ -427,21 +425,17 @@ const fnExcel = async () => {
     return;
   }
   const columns = [
-    { header: "날짜", fixed: false, width: 12 },
     { header: "기기UUID", fixed: false, width: 38 },
     { header: "관련 계정", fixed: false, width: 28 },
-    { header: "출근시각", fixed: false, width: 12 },
-    { header: "퇴근시각", fixed: false, width: 12 },
+    { header: "로그인 시각", fixed: false, width: 22 },
     { header: "부서", fixed: false, width: 18 },
     { header: "사업장", fixed: false, width: 18 },
     { header: "의심유형", fixed: false, width: 16 },
   ];
   const data = rows.value.map((r) => [
-    fmtYmd(r.workYmd),
     r.deviceUuid ?? "",
     (r.members ?? []).map((m) => `${m.userNm}(${m.userId})`).join("\n"),
-    (r.members ?? []).map((m) => fmtTime(m.checkInTime)).join("\n"),
-    (r.members ?? []).map((m) => fmtTime(m.checkOutTime)).join("\n"),
+    (r.members ?? []).map((m) => fmtLoginDtime(m.loginDtime)).join("\n"),
     r.nodeNm ?? "",
     r.siteNm ?? "",
     badgeLabel(r.suspectType),
@@ -505,34 +499,19 @@ onMounted(() => {
   color: var(--color-text-strong);
   background: var(--color-surface);
 }
-.a12-nav-month-picker {
-  display: inline-flex;
-  align-items: center;
-}
-.a12-nav-month-picker :deep(.calendar-input) {
-  height: 28px;
-  padding: 0 0.5rem;
-  border: 1px solid var(--color-border-strong);
-  border-radius: 4px;
-  font-size: 0.875rem;
-  font-weight: 600;
-  color: var(--color-text-strong);
-  background: var(--color-surface);
-  cursor: pointer;
-  text-align: center;
-  min-width: 110px;
-}
-.a12-nav-month-picker :deep(.calendar-input:hover) {
-  border-color: var(--color-primary);
-  color: var(--color-primary);
-}
-
 /* ── 본문 / 테이블 (Attd_11 패턴 차용) ── */
 .a12-body {
   display: flex;
   flex-direction: column;
   padding: 0.75rem;
   overflow: hidden;
+  min-height: 0;
+}
+/* 소제목 + 테이블을 감싸는 subtitle-pane 래퍼: flex 컬럼 레이아웃에서 스크롤 보존 */
+.a12-subtitle-pane {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
   min-height: 0;
 }
 .a12-table-wrap {

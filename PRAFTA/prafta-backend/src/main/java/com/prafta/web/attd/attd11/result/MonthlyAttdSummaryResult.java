@@ -23,5 +23,6 @@ public record MonthlyAttdSummaryResult(
         , long lateMinutes         // 지각 분 합
         , int earlyLeaveCnt        // 조퇴 판정 건수(차수 단위)
         , long earlyLeaveMinutes   // 조퇴 분 합
+        , int absentDayCnt         // 미출근일 수(스케줄 있으나 미출근, 휴일·연차·미래일 제외) — COM-016-F 8-3
 ) {
 }

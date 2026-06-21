@@ -34,6 +34,8 @@
 <script setup>
 import { computed } from 'vue'
 
+import { formatYmdDisplay } from '@/utils/approvalFormat'
+
 const props = defineProps({
   // 체크포인트명 (CHKPT_NM)
   chkptName: { type: String, default: '' },
@@ -45,14 +47,8 @@ const props = defineProps({
   workDate: { type: String, default: '' },
 })
 
-// YYYYMMDD → YYYY-MM-DD
-const formattedDate = computed(() => {
-  const d = props.workDate
-  if (d && /^\d{8}$/.test(d)) {
-    return `${d.slice(0, 4)}-${d.slice(4, 6)}-${d.slice(6, 8)}`
-  }
-  return d || ''
-})
+// YYYYMMDD → YYYY.MM.DD (D1 점 통일, 표시 단일 출처 위임)
+const formattedDate = computed(() => formatYmdDisplay(props.workDate))
 
 // 메타: 존재하는 값만 ' · ' 로 연결 (graceful 폴백)
 const metaText = computed(() => {

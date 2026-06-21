@@ -175,7 +175,11 @@
                   </td>
                   <td>{{ shift.regUserCnt }}명</td>
                   <td>
-                    <select v-model="shift.useYn" class="use-yn-select">
+                    <select
+                      v-model="shift.useYn"
+                      class="use-yn-select"
+                      @change="fnUseYnChange(shift)"
+                    >
                       <option
                         v-for="opt in (systCodeArr['SYS003'] || []).filter(
                           (o) => o.systValDCd != null
@@ -243,7 +247,7 @@ const headChk = ref(false);
 
 const shiftNo = ref("");
 const shiftCycleDays = ref("");
-const useYn = ref("");
+const useYn = ref("Y");
 const siteCd = ref("");
 const siteNo = ref("");
 const siteNm = ref("");
@@ -275,7 +279,6 @@ const fnGetSystinfoList = async () => {
         grouped[key].push(item);
       });
       systCodeArr.value = grouped;
-      useYn.value = systCodeArr.value.SYS003?.[0]?.systValDCd;
     }
   } catch (err) {
     const msg = resolveApiErrorMessage(err, "조회 중 오류가 발생했습니다.");
@@ -309,6 +312,7 @@ const fnSearch = async () => {
 
 const fnButtonControll = () => {
   localButtons.value.create = "Y";
+  localButtons.value.save = "N";
   localButtons.value.delete = "N";
   localButtons.value.excel = "N";
 };
@@ -396,6 +400,12 @@ const fnHeadChk = () => {
 const fnRowChk = () => {
   headChk.value =
     shiftList.value.length > 0 && shiftList.value.every((row) => row.chk);
+};
+
+const fnUseYnChange = (shift) => {
+  // 사용여부 값을 변경하면 해당 행을 자동으로 체크한다.
+  shift.chk = true;
+  fnRowChk();
 };
 
 const fnCreate = () => {

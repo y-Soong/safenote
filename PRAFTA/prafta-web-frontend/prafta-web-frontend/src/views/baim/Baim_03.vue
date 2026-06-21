@@ -191,7 +191,7 @@
                   <td>{{ termsDetail.requiredYn }}</td>
                   <!-- <td>{{ termsDetail.strDate }}</td> -->
                   <td>
-                    {{ proxy.$util.formatDateString(termsDetail.strDate) }}
+                    {{ formatYmdDot(termsDetail.strDate) }}
                   </td>
                   <td>{{ termsDetail.termsDesc }}</td>
                 </tr>
@@ -218,6 +218,7 @@ import axios from "@/api/axios";
 import ViewHeader from "@/components/common/ViewHeader.vue";
 import { getMessage, MSG } from "@/messages";
 import { resolveApiErrorMessage } from "@/utils/apiError";
+import { formatYmdDot } from "@/utils/dateFormat";
 import TermsInfoPop from "@/components/popup/TermsInfoPop.vue";
 import ThSortable from "@/components/common/ThSortable.vue";
 import {

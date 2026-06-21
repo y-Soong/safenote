@@ -19,6 +19,8 @@ import com.prafta.common.cmm.dailylogin.dto.response.DailyLoginResponse;
 import com.prafta.common.cmm.dailylogin.mapper.DailyLoginMapper;
 import com.prafta.common.cmm.dailylogin.result.DailyUserResult;
 import com.prafta.common.cmm.dailylogin.service.DailyLoginService;
+import com.prafta.common.cmm.login.application.command.DeviceLoginCommand;
+import com.prafta.common.cmm.login.application.command.DeviceOccupancyAnomalyCommand;
 import com.prafta.common.cmm.login.mapper.LoginMapper;
 import com.prafta.common.cmm.login.result.UserResult;
 import com.prafta.common.error.dailylogin.DailyLoginErrorCode;
@@ -144,8 +146,89 @@ public class DailyLoginServiceImpl implements DailyLoginService {
         // 8) 마지막 로그인 일시 갱신.
         dailyLoginMapper.updateDailyUserLastLoginDtime(userResult.cmpnyCd(), userResult.userCd());
 
+        // 9) (계정당 활성 디바이스 1대) 디바이스 행 생성/이력 적재 + 다른 기기 비활성화.
+        //    정규 LoginServiceImpl.recordDeviceLogin 미러 — best-effort(실패해도 로그인 영향 없음).
+        recordDeviceLogin(userResult, param);
+
         log.info("일용직 로그인 성공 — userCd={}, clientType={}", userResult.userCd(), param.clientType());
 
         return DailyLoginResponse.from(userResult, tbUser, refreshToken, token);
+    }
+
+    /**
+     * 일용직 로그인 성공 직후 디바이스/로그인 이력 적재 + 단일 활성기기 정리(예외 격리).
+     *
+     * <p>정규 {@link com.prafta.common.cmm.login.service.impl.LoginServiceImpl} 의 동명 훅을 미러한다.
+     * deviceId 가 비어 있으면(웹/구버전 앱) 아무 것도 하지 않는다. 적재 중 어떤 예외가 나도
+     * 로그인 흐름에는 영향을 주지 않으며 log.error 로만 남긴다.
+     *
+     * <p>일용직 로그인은 IP 를 수집하지 않으므로 LOGIN_IP 는 null 로 적재한다(컬럼 nullable).
+     * 디바이스 행 생성(upsertUserDevice)은 이후 푸시 토큰 등록(device01 UPDATE)이 성립하기 위한 선행 행이기도 하다.
+     */
+    private void recordDeviceLogin(DailyUserResult userResult, DailyLoginParam param) {
+        try {
+            if (param == null || param.deviceId() == null || param.deviceId().isBlank()) {
+                return; // 디바이스ID 미전송(웹/구버전 앱) → 적재 대상 아님.
+            }
+            // prafta-com-015 015-1: 점유 재할당 이상탐지(upsert 직전, 정규 LoginServiceImpl 미러).
+            //   직전 점유자가 "다른 계정" 이면 감사행 적재(차단 없음). 동일 계정 재로그인은 미적재.
+            detectOccupancyAnomaly(userResult.cmpnyCd(), param.deviceId(), userResult.userCd(),
+                    param.clientType(), param.ipAddr());
+            DeviceLoginCommand command = new DeviceLoginCommand(
+                    userResult.cmpnyCd()
+                    , param.deviceId()
+                    , userResult.userCd()
+                    , param.deviceType()
+                    , param.deviceModel()
+                    , param.osVersion()
+                    , param.appVersion()
+                    , param.clientType()
+                    , param.ipAddr()  // prafta-com-015 4-1: 일용직 LOGIN_IP 수집(컨트롤러 추출).
+                    , userResult.userCd());
+            loginMapper.upsertUserDevice(command);
+            loginMapper.insertDeviceLoginHist(command);
+            // (계정당 활성 디바이스 1대) 같은 사용자의 다른 기기를 비활성화 → 마지막 로그인 기기만 푸시 수신.
+            int deactivated = loginMapper.deactivateOtherUserDevices(userResult.userCd(), param.deviceId());
+            // PII(기기ID/IP) 평문 로그 금지 — 식별 키만 남긴다.
+            log.info("일용직 디바이스 로그인 이력 적재 완료 — userCd={}, clientType={}, 비활성화기기={}건"
+                    , userResult.userCd(), param.clientType(), deactivated);
+        } catch (Exception e) {
+            log.error("일용직 디바이스 로그인 이력 적재 실패(로그인 영향 없음) — userCd={}", userResult.userCd(), e);
+        }
+    }
+
+    /**
+     * prafta-com-015 015-1 — 디바이스 점유 재할당 이상탐지(감사만, 차단 없음 — 정규 LoginServiceImpl 미러).
+     *
+     * <p>upsert 직전 deviceUuid 의 현재 점유자가 "다른 계정" 이면 이상행 적재 + log.warn.
+     * 신규 기기 또는 동일 계정 재로그인(iOS IDFV 변경/재설치 포함)은 미적재.
+     * recordDeviceLogin 의 try-catch 안에서 호출되어 실패는 격리된다.
+     */
+    private void detectOccupancyAnomaly(String cmpnyCd, String deviceUuid, String newUserCd,
+            String clientType, String loginIp) {
+        // 이상탐지/적재 실패(예: 마이그 미적용 Unknown table)가 디바이스 upsert/이력/단일기기 정리를
+        //   막지 않도록 자체 격리(정규 LoginServiceImpl 미러). 탐지는 부가 기능 — 실패해도 무시.
+        try {
+            String prevOwner = loginMapper.selectDeviceOwner(deviceUuid);
+            if (prevOwner == null || prevOwner.equals(newUserCd)) {
+                return; // 신규 기기 또는 동일 계정 재로그인 → 정상(이상 아님).
+            }
+            loginMapper.insertOccupancyAnomaly(new DeviceOccupancyAnomalyCommand(
+                    cmpnyCd, deviceUuid, prevOwner, newUserCd, clientType, loginIp));
+            log.warn("일용직 디바이스 점유 재할당 감지 — deviceUuid={}, prevUserCd={}, newUserCd={}, clientType={}",
+                    maskHead(deviceUuid), maskHead(prevOwner), maskHead(newUserCd), clientType);
+        } catch (Exception e) {
+            log.warn("일용직 디바이스 점유 이상탐지 실패(무시, 디바이스 적재 계속) — deviceUuid={}: {}",
+                    maskHead(deviceUuid), e.getMessage());
+        }
+    }
+
+    /** 식별자 마스킹: 앞 8자 + ***(짧으면 길이만큼). 평문 로그 금지(S2 패턴 미러). */
+    private String maskHead(String value) {
+        if (value == null || value.isBlank()) {
+            return "(none)";
+        }
+        int head = Math.min(8, value.length());
+        return value.substring(0, head) + "***";
     }
 }

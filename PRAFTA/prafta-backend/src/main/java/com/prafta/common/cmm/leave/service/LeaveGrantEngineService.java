@@ -3,6 +3,8 @@ package com.prafta.common.cmm.leave.service;
 import java.math.BigDecimal;
 import java.util.List;
 
+import com.prafta.common.cmm.leave.vo.BorrowGrantResultVO;
+import com.prafta.common.cmm.leave.vo.BorrowProjectionVO;
 import com.prafta.common.cmm.leave.vo.HireDateAdjustResultVO;
 import com.prafta.common.cmm.leave.vo.HireDateGrantResultVO;
 import com.prafta.common.cmm.leave.vo.PolicyGrantPreviewVO;
@@ -120,4 +122,105 @@ public interface LeaveGrantEngineService {
     HireDateAdjustResultVO adjustStatutoryGrantsByHireDateChange(String cmpnyCd, String userCd, String newHireDate,
                                                                 BigDecimal target, String withdrawReason,
                                                                 String histId, String operatorUserCd);
+
+    // ============================================================
+    // 연차 가불(마이너스/이월) 코어 (prafta-com-011-1, read-only projection + 가불 GRANT 생성/회수)
+    //   출처: prafta-com-011-decisions.md §1·§2·§3·§6 / attd/08-leave.md §8.5.4·§8.5.8.
+    //   호출부(submitLeave/leaveflow 합류)는 prafta-com-011-2. 본 인터페이스는 코어 메서드만 제공한다.
+    // ============================================================
+
+    /** 가불 종류 패밀리(결정 §1 — 자기 종류 안에서만 끌어옴). 월차 또는 본연차 둘 중 하나. */
+    enum BorrowFamily {
+        /** 1년 미만 법정 월차(SYS_MONTHLY / STATUTORY_MONTHLY) — 미래 월차분을 당겨씀. */
+        MONTHLY,
+        /** 본연차(SYS_ANNUAL / STATUTORY_ANNUAL) — 차기 부여 예정 본연차를 당겨씀. */
+        ANNUAL
+    }
+
+    /**
+     * 가불 가능 한도(일수) 산정 (read-only — DB 쓰기 없음). 결정 §2.
+     *
+     * <ul>
+     *   <li>{@link BorrowFamily#MONTHLY}: {@code 11 − min(actualMonths, 11) − 이미 가불한 월차 일수}.
+     *       (입사 4개월차 → 미래 7개월분 = 최대 7일.)</li>
+     *   <li>{@link BorrowFamily#ANNUAL}: {@link #projectNextAnnualGrant} 예정 일수 − 이미 가불한 본연차 일수.</li>
+     * </ul>
+     * 1년 경과(월차 일괄소멸)·경력인정 더블딥·차기 만료 경과 등 가불 불가 상황이면 0 을 반환한다(절대 음수 아님).
+     *
+     * @param cmpnyCd  회사 코드
+     * @param userCd   대상 직원 코드
+     * @param hireDate 입사일(YYYYMMDD)
+     * @param family   가불 종류(월차/본연차)
+     * @return 가불 가능 일수(0 이상)
+     */
+    BigDecimal computeBorrowQuota(String cmpnyCd, String userCd, String hireDate, BorrowFamily family);
+
+    /**
+     * 차기 부여 예정 본연차 projection (read-only — DB 쓰기 없음). 결정 §2·§3 / Q2.
+     *
+     * <p>차기 회차 시점(AXIS1=HIRE_DATE 면 다음 입사 기념일, AXIS1=FISCAL_YEAR 면 다음 회계연도 시작)을
+     * AVAIL_FROM 기준으로 STATUTORY_ANNUAL + STATUTORY_TENURE_BONUS 예정 일수와, 그 발생일 + AXIS6
+     * 유효개월로 산정한 정상 만료일을 함께 반환한다(기존 {@code resolveEntitlement}/{@code tenureBonusDays} 재사용).
+     *
+     * @param cmpnyCd  회사 코드
+     * @param userCd   대상 직원 코드
+     * @param hireDate 입사일(YYYYMMDD)
+     * @return 차기 본연차 예정 일수 + 발생일/만료일. 산정 불가면 days=0, ymd=null.
+     */
+    BorrowProjectionVO projectNextAnnualGrant(String cmpnyCd, String userCd, String hireDate);
+
+    /**
+     * 가불 사용 일자(workYmd)가 만료(소멸)일을 지났는지 fail-closed 검증 (결정 §3). DB 쓰기 없음.
+     *
+     * <p>경과한 경우 {@code ATTD_400_181} 예외를 던진다(프론트 alert 우회 방지).
+     * <ul>
+     *   <li>{@link BorrowFamily#MONTHLY}: 만료일 = 입사일 + 1년 − 1일(첫해 월차 일괄소멸일).</li>
+     *   <li>{@link BorrowFamily#ANNUAL}: 만료일 = {@link #projectNextAnnualGrant} 의 차기 만료일.</li>
+     * </ul>
+     *
+     * @param cmpnyCd  회사 코드
+     * @param userCd   대상 직원 코드
+     * @param hireDate 입사일(YYYYMMDD)
+     * @param workYmd  가불 사용 일자(YYYYMMDD)
+     * @param family   가불 종류
+     */
+    void assertBorrowWorkYmdWithinExpiry(String cmpnyCd, String userCd, String hireDate, String workYmd,
+                                         BorrowFamily family);
+
+    /**
+     * 가불 GRANT 생성 (결정 §6). <b>@Transactional</b> — 호출부(신청 흐름) 트랜잭션에 합류한다(REQUIRED).
+     *
+     * <p>정기 부여 배치와 동일한 멱등키로 미래 GRANT 행을 미리 생성한다(추후 배치가 멱등 skip → 자동 상계).
+     * 가불 마커는 멱등키 밖({@code GRANT_REASON} 프리픽스 {@code [가불] ...})에 둔다. GRANT_BY_TYPE='01'(자동),
+     * AVAIL_FROM=workYmd, AVAIL_TO=만료일(월차=입사+1년−1일, 본연차=차기 만료일), STATUS='ACTIVE', USED_DAYS=0.
+     * 멱등키 UNIQUE 충돌(이미 정기 부여됨)이면 해당 슬롯 생성을 skip 한다(이미 부여 = 가불 불필요).
+     *
+     * <p>월차는 §8.5.4 발생 모델(입사+m개월)의 "다음 미발생 월차 슬롯"부터 순서대로 1일씩 분할 점유한다(Q3).
+     * 멱등키 라벨 = 슬롯 YYYYMM(배치 키 동일). 한도(11−발생분) 내에서만 생성한다.
+     *
+     * @param cmpnyCd        회사 코드
+     * @param userCd         대상 직원 코드
+     * @param hireDate       입사일(YYYYMMDD)
+     * @param family         가불 종류(월차/본연차)
+     * @param days           가불 충당 일수(부족분)
+     * @param workYmd        가불 사용 일자(YYYYMMDD) — AVAIL_FROM 으로 설정
+     * @param operatorUserCd 수행자 USER_CD(INSERT_NO 기록용)
+     * @return 생성된 가불 GRANT 슬롯 목록 + 생성/skip 일수
+     */
+    BorrowGrantResultVO createBorrowGrant(String cmpnyCd, String userCd, String hireDate, BorrowFamily family,
+                                          BigDecimal days, String workYmd, String operatorUserCd);
+
+    /**
+     * 가불 GRANT 회수 (반려/취소 시, 결정 §6). <b>@Transactional</b> — 호출부 트랜잭션에 합류한다(REQUIRED).
+     *
+     * <p>해당 reqId 의 leave_use 가 차감했던 가불 GRANT({@code GRANT_REASON LIKE '[가불]%'}) 중
+     * <b>USED_DAYS=0</b>(차감 해제 후) 인 ACTIVE 행만 STATUS='CANCELED' 로 전환한다(유령 미래 부여 방지).
+     * 비가불 GRANT 와 USED_DAYS&gt;0 가불 GRANT 는 건드리지 않는다(§8.5.8 기부여보호).
+     *
+     * @param cmpnyCd        회사 코드
+     * @param reqId          반려된 연차 요청 ID(tb_user_attd_req.REQ_ID)
+     * @param operatorUserCd 수행자 USER_CD(CANCEL_BY 기록용)
+     * @return 회수(CANCELED)된 가불 GRANT 건수
+     */
+    int cancelBorrowGrantByReqId(String cmpnyCd, String reqId, String operatorUserCd);
 }

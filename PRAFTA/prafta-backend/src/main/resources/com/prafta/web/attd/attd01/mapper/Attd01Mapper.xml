@@ -54,7 +54,11 @@
 	  	AND A.SITE_CD = #{siteCd}
 	  </if>
 	  <if test="schNo != null and schNo != ''">
-	  	AND A.SCH_NO = #{schNo}	
+	  	AND A.SCH_NO = #{schNo}
+	  </if>
+	  <!-- 근무구간(스케줄 구간수 SYS019) 조회조건 반영 -->
+	  <if test="schType != null and schType != ''">
+	  	AND A.SCH_TYPE = #{schType}
 	  </if>
 	  <if test="useYn != null and useYn != ''">
 	  	AND A.USE_YN  = #{useYn}
@@ -63,12 +67,16 @@
 	
 	<select id="selectSchNoCount" parameterType="com.prafta.web.attd.attd01.application.query.SchNoCountQuery" resultType="int">
     /* Attd01Mapper.selectSchNoCount */
-    SELECT 
+    SELECT
     	COUNT(*)
 	FROM TB_SCH_MGMT
 	WHERE CMPNY_CD = #{gvCmpnyCd}
 	  AND SITE_CD = #{siteCd}
 	  AND SCH_NO = #{schNo}
+	  <!-- 수정 모드(schCd 존재)에서는 자기 자신을 제외하여 다른 근무타입과의 코드 충돌만 검사 -->
+	  <if test="schCd != null and schCd != ''">
+	  	AND SCH_CD != #{schCd}
+	  </if>
     </select>
 	
 	<select id="selectSchCd" parameterType="com.prafta.web.attd.attd01.application.query.SchCdQuery" resultType="string">
@@ -217,7 +225,6 @@
 	SELECT 
 		A.CMPNY_CD									AS cmpnyCd
 	    , A.SITE_CD									AS siteCd
-	    , A.HIST_IDX								AS histIdx
 	    , A.SCH_CD									AS schCd
 	    , DATE_FORMAT(A.APPLY_DATE, '%Y-%m-%d')		AS applyDate
 	
@@ -241,19 +248,62 @@
 	
 	    , A.USE_YN									AS useYn
 	    , A.INSERT_NO								AS userId
-	    , B.USER_NM									AS userNm
-	    , DATE_FORMAT(A.INSERT_DATE, '%Y-%m-%d')	AS insertDate
+	    <!-- 변경자명: 저장 키(INSERT_NO=USER_CD) 기준 코드베이스 표준 함수로 해석.
+	         과거 INNER JOIN ... A.INSERT_NO=B.USER_ID 조인은 키 오류로 이력 행이 전량 탈락했다.
+	         매칭 실패해도 빈값이 내려와 이력 행 자체는 노출된다(FNC = LEFT JOIN 동등). -->
+	    , FNC_CMM_INFO_SRCH(
+	    	A.CMPNY_CD
+	    	, 'USER_NM'
+	    	, A.INSERT_NO
+	    	, null
+	    )											AS userNm
+	    , DATE_FORMAT(A.INSERT_DATE, '%Y-%m-%d %H:%i')	AS insertDate
 	FROM TB_SCH_MGMT_HIST A
-		 INNER JOIN TB_USER B
-			ON (
-				A.INSERT_NO = B.USER_ID
-	        )
 	WHERE A.CMPNY_CD = #{gvCmpnyCd}
 	  AND A.SITE_CD = #{siteCd}
 	  AND A.SCH_CD = #{schCd}
 	ORDER BY A.CMPNY_CD, A.SITE_CD, A.HIST_IDX
     </select>
     
+    <select id="selectSchTimeBreakChanged" parameterType="com.prafta.web.attd.attd01.application.command.SchInfoCommand" resultType="int">
+    /* Attd01Mapper.selectSchTimeBreakChanged */
+    <!-- com-016-A 공통 가드 ③: 기존 저장된 근무타입의 시간/휴게가 입력값과 다른지 판정.
+         입력값 정규화는 updateSchInfo upsert 와 동일하게 맞춘다(콜론 제거 / 빈값 NULLIF / 2구간 IFNULL).
+         <=> 는 NULL-safe 비교라 NULL↔NULL 은 동일로 본다(미입력 휴게 비교 안전). 1건이라도 다르면 COUNT>0. -->
+    SELECT COUNT(*)
+    FROM TB_SCH_MGMT A
+    WHERE A.CMPNY_CD = #{gvCmpnyCd}
+      AND A.SITE_CD = #{siteCd}
+      AND A.SCH_CD = #{schCd}
+      AND (
+            NOT (A.FST_SCH_STR_TIME <![CDATA[ <=> ]]> REPLACE(#{fstSchStrTime}, ':', ''))
+         OR NOT (A.FST_SCH_END_TIME <![CDATA[ <=> ]]> REPLACE(#{fstSchEndTime}, ':', ''))
+         OR NOT (A.FST_SCH_BRK_MIN <![CDATA[ <=> ]]> #{fstSchBrkMin})
+         OR NOT (A.FST_BRK_STR_TIME <![CDATA[ <=> ]]> NULLIF(REPLACE(IFNULL(#{fstBrkStrTime}, ''), ':', ''), ''))
+         OR NOT (A.FST_BRK_END_TIME <![CDATA[ <=> ]]> NULLIF(REPLACE(IFNULL(#{fstBrkEndTime}, ''), ':', ''), ''))
+         OR NOT (A.SEC_SCH_STR_TIME <![CDATA[ <=> ]]> REPLACE(IFNULL(#{secSchStrTime}, ''), ':', ''))
+         OR NOT (A.SEC_SCH_END_TIME <![CDATA[ <=> ]]> REPLACE(IFNULL(#{secSchEndTime}, ''), ':', ''))
+         OR NOT (A.SEC_SCH_BRK_MIN <![CDATA[ <=> ]]> IFNULL(#{secSchBrkMin}, '0'))
+         OR NOT (A.SEC_BRK_STR_TIME <![CDATA[ <=> ]]> NULLIF(REPLACE(IFNULL(#{secBrkStrTime}, ''), ':', ''), ''))
+         OR NOT (A.SEC_BRK_END_TIME <![CDATA[ <=> ]]> NULLIF(REPLACE(IFNULL(#{secBrkEndTime}, ''), ':', ''), ''))
+      )
+    </select>
+
+    <select id="selectFutureWorkPlanDaysBySchCd" resultType="com.prafta.web.attd.attd01.result.WorkPlanDayResult">
+    /* Attd01Mapper.selectFutureWorkPlanDaysBySchCd */
+    <!-- com-016-A 공통 가드 ③: 변경 대상 근무타입(SCH_CD)을 쓰는 미래 적용분 근무계획 (userCd, workYmd).
+         WORK_PLAN_CD 에는 SCH_CD 또는 LEAVE_CD 가 저장되므로 SCH_CD 일치 행만 조회. -->
+    SELECT
+        A.USER_CD     AS userCd
+        , A.WORK_YMD  AS workYmd
+    FROM TB_USER_WORK_PLAN A
+    WHERE A.CMPNY_CD = #{cmpnyCd}
+      AND A.SITE_CD = #{siteCd}
+      AND A.WORK_PLAN_CD = #{schCd}
+      AND A.WORK_YMD <![CDATA[ >= ]]> #{fromYmd}
+    ORDER BY A.USER_CD, A.WORK_YMD
+    </select>
+
     <select id="selectShiftSchNoCount" parameterType="com.prafta.web.attd.attd01.application.query.ShiftSchNoCountQuery" resultType="int">
     /* Attd01Mapper.selectShiftSchNoCount */
     SELECT COUNT(*)

@@ -55,4 +55,14 @@ public class LeaveDashboardRowVO {
 
     /** 법정외 사용예정 일수 합계 (CONFIRMED 사용 중 START_DATE > 오늘 = 아직 도래하지 않은 미래분) */
     private BigDecimal nonLegalScheduled;
+
+    /**
+     * 가불 사용분 합계 (prafta-com-011-7, 표시 전용 MVP — 결정 §5).
+     *
+     * <p>아직 발생하지 않은(진짜 당겨쓴) 가불 GRANT 의 USED_DAYS 합.
+     * 산정 술어: {@code GRANT_REASON LIKE '[가불]%' AND STATUS != 'CANCELED' AND DEL_YN='N'
+     * AND AVAIL_FROM_DATE > 오늘}(통일 모델 §6-2, {@code selectBorrowedDaysTotal} 직원별 집계와 동일 정의).
+     * GRANT_DAYS 가 아니라 USED_DAYS 합산이다(보안 Low 정합). null/없으면 0.
+     */
+    private BigDecimal borrowedDays;
 }

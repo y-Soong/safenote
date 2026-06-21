@@ -21,8 +21,7 @@ public record LeaveTypeParam(
 	    , String availFromDt
 	    , String availToDt
 	    , String adminAvailTermType
-	    , String adminAvailFromDt
-	    , String adminAvailToDt
+	    , Integer adminAvailMonths
 	    , String grantBaseType
 	    , Integer grantOffsetMonth
 	    , String grantAssignMmdd
@@ -53,8 +52,7 @@ public record LeaveTypeParam(
 	            , request.getAvailFromDt()
 	            , request.getAvailToDt()
 	            , request.getAdminAvailTermType()
-	            , request.getAdminAvailFromDt()
-	            , request.getAdminAvailToDt()
+	            , request.getAdminAvailMonths()
 	            , request.getGrantBaseType()
 	            , request.getGrantOffsetMonth()
 	            , request.getGrantAssignMmdd()

@@ -12,6 +12,7 @@ public record UpdateShiftTeamNmParam(
     , String shiftTeamNm
     , String gvCmpnyCd
     , String gvUserCd
+    , String gvAuthCd
 ) {
     public static UpdateShiftTeamNmParam from(UpdateShiftTeamNmRequest request, TokenInfo tokenInfo) {
 
@@ -25,6 +26,7 @@ public record UpdateShiftTeamNmParam(
             , request.getShiftTeamNm()
             , tokenInfo.gv_cmpnyCd()
             , tokenInfo.gv_userCd()
+            , tokenInfo.gv_authCd()
         );
     }
 }

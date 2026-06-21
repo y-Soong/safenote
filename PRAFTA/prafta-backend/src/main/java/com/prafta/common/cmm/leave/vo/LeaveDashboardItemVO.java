@@ -1,5 +1,7 @@
 package com.prafta.common.cmm.leave.vo;
 
+import java.math.BigDecimal;
+
 import lombok.Builder;
 import lombok.Getter;
 
@@ -45,4 +47,12 @@ public class LeaveDashboardItemVO {
 
     /** 사용률 (0~100 정수, 법정+법정외 합산 기준) */
     private final int usageRate;
+
+    /**
+     * 가불 사용분 (prafta-com-011-7, 표시 전용 MVP — 결정 §5).
+     *
+     * <p>아직 발생하지 않은(진짜 당겨쓴) 가불 GRANT 의 USED_DAYS 합.
+     * 0이면 가불 사용 없음. 정산/회수 등 액션은 없다(결정 §5).
+     */
+    private final BigDecimal borrowedDays;
 }

@@ -250,7 +250,7 @@ public class AppHome01ServiceImpl implements AppHome01Service {
             slots.add(HomeSummaryResponse.SlotFlag.builder()
                     .workSeq(1)
                     .alreadyCheckedIn(s1In)
-                    .canCheckInThisSlot(!s1In && !closed && existing < maxSlots)
+                    .canCheckInThisSlot(!s1In && !s2In && !closed && existing < maxSlots) // PRAFTA-APP-024 후속: 2구간 등록 시 1구간 역순 출근 불가.
                     .build());
             slots.add(HomeSummaryResponse.SlotFlag.builder()
                     .workSeq(2)

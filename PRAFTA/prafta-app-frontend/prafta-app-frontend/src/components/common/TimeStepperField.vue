@@ -1,7 +1,7 @@
 <!--
   TimeStepperField.vue — 공통 시각 선택 필드 + 휠(드럼) 바텀시트
   - 목적: native <input type="time"> 의 OS 기본 피커를 토스 스타일 휠 바텀시트로 대체.
-  - UI: 트리거 필드 → 하단 시트(오전·오후 토글 + 직접입력 + 오전/오후·시·분 휠 3열) → [확인].
+  - UI: 트리거 필드 → 하단 시트(직접입력 + 시·분 휠 2열) → [확인]. 24시간제(00~23시)로 오전/오후 구분 없음.
   - v-model: 'HH:MM' 24시간 문자열 (기존 native time input 과 동일 포맷 → 부모 로직 무변경).
   - 분은 1분 단위(0~59)로 정밀도 보존(근태/초과근무 시각 입력).
   - 색상: 앱 브랜드 초록 계열 리터럴 고정(시트가 body 로 teleport 되므로).
@@ -61,16 +61,15 @@
           </button>
         </div>
 
-        <!-- 직접 입력 필드 -->
+        <!-- 직접 입력 필드 (24시간제 — 오전/오후 구분 없음) -->
         <div class="wp-keyin">
-          <button type="button" class="wp-ampm" @click="toggleAmpm">{{ ampm }}</button>
           <input
             class="wp-keyin__in"
             type="text"
             inputmode="numeric"
             pattern="[0-9]*"
             maxlength="2"
-            :value="hour12"
+            :value="hourText"
             aria-label="시"
             @focus="onFocusSelect"
             @input="onHourInput"
@@ -83,7 +82,7 @@
             inputmode="numeric"
             pattern="[0-9]*"
             maxlength="2"
-            :value="pad2(minute)"
+            :value="minuteText"
             aria-label="분"
             @focus="onFocusSelect"
             @input="onMinuteInput"
@@ -95,14 +94,9 @@
         <div class="wp-picker">
           <div class="wp-band" aria-hidden="true"></div>
           <div class="wp-wheels wp-wheels--time">
-            <div ref="apEl" class="wp-wheel" aria-label="오전·오후 휠">
-              <div class="wp-pad"></div>
-              <div v-for="v in apArr" :key="'ap' + v" class="wp-item wp-item--txt">{{ v }}</div>
-              <div class="wp-pad"></div>
-            </div>
             <div ref="hEl" class="wp-wheel" aria-label="시 휠">
               <div class="wp-pad"></div>
-              <div v-for="v in hours" :key="'h' + v" class="wp-item">{{ v }}</div>
+              <div v-for="v in hours" :key="'h' + v" class="wp-item">{{ pad2(v) }}</div>
               <div class="wp-pad"></div>
             </div>
             <div ref="mEl" class="wp-wheel" aria-label="분 휠">
@@ -133,24 +127,25 @@ const props = defineProps({
 })
 const emit = defineEmits(['update:modelValue'])
 
-const AM = '오전'
-const PM = '오후'
-
 const isOpen = ref(false)
 const shown = ref(false)
-const ampm = ref(AM)
-const hour12 = ref(9) // 1~12
+const hour24 = ref(9) // 0~23 (24시간제 — 오전/오후 구분 없음)
 const minute = ref(0) // 0~59
 
-const apEl = ref(null)
+// 직접입력 편집 버퍼(문자열). 입력 중에는 pad2 로 강제 패딩하지 않는다.
+//   (입력값을 pad2(hour24) 로 바인딩하면 "1" 입력 즉시 "01" 로 채워져 maxlength=2 가 차서
+//    두 번째 자리(예: 18 의 '8')를 못 넣는 버그가 발생한다.)
+//   확정 시점(blur/휠 정착/시트 열기)에만 pad2 동기화한다.
+const hourText = ref('09')
+const minuteText = ref('00')
+
 const hEl = ref(null)
 const mEl = ref(null)
 let detachers = []
 
-const apArr = [AM, PM]
 const hours = computed(() => {
   const arr = []
-  for (let h = 1; h <= 12; h += 1) arr.push(h)
+  for (let h = 0; h <= 23; h += 1) arr.push(h)
   return arr
 })
 const minutes = computed(() => {
@@ -182,19 +177,6 @@ const parse = (s) => {
   return { h, m: mi }
 }
 
-// 24h → {ampm, h12}
-const to12 = (h24) => {
-  const ap = h24 < 12 ? AM : PM
-  let h12 = h24 % 12
-  if (h12 === 0) h12 = 12
-  return { ap, h12 }
-}
-// {ampm, h12} → 24h
-const to24 = (ap, h12) => {
-  if (ap === AM) return h12 === 12 ? 0 : h12
-  return h12 === 12 ? 12 : h12 + 12
-}
-
 // 표시용 텍스트 (트리거 필드) — 24시간 HH:MM
 const displayText = computed(() => {
   const p = parse(props.modelValue)
@@ -203,24 +185,21 @@ const displayText = computed(() => {
 })
 
 const positionWheels = () => {
-  scrollToIndex(apEl.value, apArr.indexOf(ampm.value))
-  scrollToIndex(hEl.value, hours.value.indexOf(hour12.value))
+  scrollToIndex(hEl.value, hours.value.indexOf(hour24.value))
   scrollToIndex(mEl.value, minutes.value.indexOf(minute.value))
 }
 
-const onApSettle = () => {
-  ampm.value = apArr[centerIndex(apEl.value, apArr.length)]
-}
 const onHourSettle = () => {
-  hour12.value = hours.value[centerIndex(hEl.value, hours.value.length)]
+  hour24.value = hours.value[centerIndex(hEl.value, hours.value.length)]
+  hourText.value = pad2(hour24.value) // 휠 정착 시 직접입력 칸 동기화
 }
 const onMinuteSettle = () => {
   minute.value = minutes.value[centerIndex(mEl.value, minutes.value.length)]
+  minuteText.value = pad2(minute.value) // 휠 정착 시 직접입력 칸 동기화
 }
 
 const attach = () => {
   detachers = [
-    attachWheelScroll(apEl.value, onApSettle),
     attachWheelScroll(hEl.value, onHourSettle),
     attachWheelScroll(mEl.value, onMinuteSettle),
   ]
@@ -238,11 +217,12 @@ const open = () => {
       const t = new Date()
       return { h: t.getHours(), m: t.getMinutes() }
     })()
-  const { ap, h12 } = to12(init.h)
-  ampm.value = ap
-  hour12.value = h12
+  hour24.value = Math.min(23, Math.max(0, init.h))
   // 초기 분을 step 경계로 스냅(휠 인덱스 정합). step=1 이면 그대로.
   minute.value = snapMinute(init.m)
+  // 직접입력 버퍼 초기 동기화(시트 열 때 현재값 표시).
+  hourText.value = pad2(hour24.value)
+  minuteText.value = pad2(minute.value)
   isOpen.value = true
   nextTick(() => {
     requestAnimationFrame(() => {
@@ -263,41 +243,43 @@ const close = () => {
 
 // ── 키보드 직접 입력 ─────────────────────────────────────
 const onFocusSelect = (e) => e.target.select()
-const toggleAmpm = () => {
-  ampm.value = ampm.value === AM ? PM : AM
-  if (apEl.value) scrollToIndex(apEl.value, apArr.indexOf(ampm.value))
-}
 const onHourInput = (e) => {
+  // 입력 중에는 raw 숫자(미패딩)를 그대로 버퍼에 보존 → "1" 입력 후 "8" 추가 입력 가능.
   const digits = e.target.value.replace(/\D/g, '').slice(0, 2)
-  hour12.value = digits === '' ? 0 : Number(digits)
+  hourText.value = digits
+  // 비숫자 입력이 섞이면 DOM 값도 즉시 정리(커서/표시 일관성).
+  if (e.target.value !== digits) e.target.value = digits
+  hour24.value = digits === '' ? 0 : Number(digits)
 }
 const onMinuteInput = (e) => {
   const digits = e.target.value.replace(/\D/g, '').slice(0, 2)
+  minuteText.value = digits
+  if (e.target.value !== digits) e.target.value = digits
   minute.value = digits === '' ? 0 : Number(digits)
 }
 const onHourBlur = () => {
-  hour12.value = Math.min(12, Math.max(1, hour12.value || 12))
+  hour24.value = Math.min(23, Math.max(0, hour24.value || 0))
+  hourText.value = pad2(hour24.value) // 포커스 해제 시 2자리로 정규화.
   nextTick(positionWheels)
 }
 const onMinuteBlur = () => {
   // step 경계로 스냅(가장 가까운 배수). step=1 이면 기존과 동일.
   minute.value = snapMinute(minute.value)
+  minuteText.value = pad2(minute.value) // 포커스 해제 시 2자리로 정규화.
   nextTick(positionWheels)
 }
 
 const normalize = () => {
-  hour12.value = Math.min(12, Math.max(1, hour12.value || 12))
+  hour24.value = Math.min(23, Math.max(0, hour24.value || 0))
   // step 경계로 스냅(가장 가까운 배수). step=1 이면 기존과 동일.
   minute.value = snapMinute(minute.value)
 }
 
 const onConfirm = () => {
-  if (apEl.value) ampm.value = apArr[centerIndex(apEl.value, apArr.length)]
-  if (hEl.value) hour12.value = hours.value[centerIndex(hEl.value, hours.value.length)]
+  if (hEl.value) hour24.value = hours.value[centerIndex(hEl.value, hours.value.length)]
   if (mEl.value) minute.value = minutes.value[centerIndex(mEl.value, minutes.value.length)]
   normalize()
-  const h24 = to24(ampm.value, hour12.value)
-  emit('update:modelValue', `${pad2(h24)}:${pad2(minute.value)}`)
+  emit('update:modelValue', `${pad2(hour24.value)}:${pad2(minute.value)}`)
   close()
 }
 const onCancel = () => close()
@@ -413,22 +395,6 @@ onBeforeUnmount(detachAll)
   padding: 6px 4px 10px;
   margin: 4px 0 8px;
 }
-.wp-ampm {
-  border: 0;
-  background: #f0fdf4;
-  color: #16a34a;
-  font-family: inherit;
-  font-weight: 600;
-  font-size: 15px;
-  padding: 8px 12px;
-  border-radius: 10px;
-  cursor: pointer;
-  margin-bottom: 2px;
-  flex-shrink: 0;
-}
-.wp-ampm:active {
-  opacity: 0.8;
-}
 .wp-keyin__in {
   border: 0;
   background: transparent;
@@ -470,7 +436,7 @@ onBeforeUnmount(detachAll)
   height: 100%;
 }
 .wp-wheels--time {
-  grid-template-columns: 1fr 1fr 1fr;
+  grid-template-columns: 1fr 1fr;
 }
 .wp-wheel {
   overflow-y: scroll;
@@ -495,9 +461,6 @@ onBeforeUnmount(detachAll)
     color 0.12s,
     transform 0.12s,
     opacity 0.12s;
-}
-.wp-item--txt {
-  font-family: inherit;
 }
 .wp-item--on {
   color: #16a34a;

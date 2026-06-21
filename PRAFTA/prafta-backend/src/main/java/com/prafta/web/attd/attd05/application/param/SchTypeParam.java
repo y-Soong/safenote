@@ -25,6 +25,8 @@ public record SchTypeParam(
     				, req.getUserCd()
     				, req.getWorkYmd()
     				, req.getWorkPlanCd()
+    				, req.getLeaveCd()
+    				, req.isAutoLegalLeave()
     				, tokenInfo.gv_cmpnyCd()
     				, tokenInfo.gv_userCd()
 				);

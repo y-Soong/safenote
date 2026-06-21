@@ -38,6 +38,10 @@ public class DailyUserExpireServiceImpl implements DailyUserExpireService {
         // 만료 대상은 모두 TB_DAILY_USER.WORK_EXPIRE_DATE < 오늘 으로 판정하므로(D 의 USE_YN 전이와 무관),
         // 슬롯/TB_USER/SITE_AUTH 반납을 먼저 수행한 뒤 마지막에 TB_DAILY_USER 를 비활성 전이한다.
 
+        // 0) PRAFTA-055-1: 슬롯 사용 이력 닫기(열린 행 일괄, RELEASE_TYPE='02' 만료).
+        //    이력 매칭은 USER_ID 기반(CURR_USER_CD 비의존)이라 슬롯 반납 순서와 무관하나, 명시적으로 반납 전에 둔다.
+        int slotHisClosed = dailyUserMapper.closeExpiredSlotHis(todayYmd, SYSTEM_UPDATE_NO);
+
         // 1) 슬롯 반납(고정슬롯 제외, 멱등).
         int slotReleased = dailyUserMapper.releaseExpiredDailyUserSlots(todayYmd, SYSTEM_UPDATE_NO);
 
@@ -50,8 +54,8 @@ public class DailyUserExpireServiceImpl implements DailyUserExpireService {
         // 4) TB_DAILY_USER 비활성 전이(USE_YN='N' + ACCOUNT_STATUS='05', 멱등).
         int dailyAffected = dailyUserMapper.updateExpireDailyUsers(todayYmd, SYSTEM_UPDATE_NO);
 
-        log.info("일용직 만료 처리 — 기준일={}, 슬롯반납={}, TB_USER 비활성={}, SITE_AUTH 비활성={}, TB_DAILY_USER 비활성={}",
-                todayYmd, slotReleased, tbUserAffected, siteAuthAffected, dailyAffected);
+        log.info("일용직 만료 처리 — 기준일={}, 이력닫기={}, 슬롯반납={}, TB_USER 비활성={}, SITE_AUTH 비활성={}, TB_DAILY_USER 비활성={}",
+                todayYmd, slotHisClosed, slotReleased, tbUserAffected, siteAuthAffected, dailyAffected);
         // 반환은 기존대로 TB_DAILY_USER 처리 건수 유지.
         return dailyAffected;
     }

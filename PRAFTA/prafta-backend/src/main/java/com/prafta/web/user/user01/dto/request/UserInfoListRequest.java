@@ -13,5 +13,6 @@ public class UserInfoListRequest{
 	private String useYn;
 	private String siteCd;
 	private String nodeCd;
+	private String incSubNodeYn;
 	private String searchMode;
 }

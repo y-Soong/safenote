@@ -20,6 +20,7 @@ public record LeaveApplyParam(
     , String reason
     , String nodeCd
     , List<String> approverUserCds
+    , boolean isBorrow
     , String gvCmpnyCd
     , String gvSiteCd
     , String gvUserCd
@@ -48,6 +49,7 @@ public record LeaveApplyParam(
             , request.getReason()
             , request.getNodeCd()
             , request.getApproverUserCds()
+            , Boolean.TRUE.equals(request.getIsBorrow()) // 기본 false(미전송/null → false)
             , tokenInfo.gv_cmpnyCd()
             , tokenInfo.gv_siteCd()
             , tokenInfo.gv_userCd()

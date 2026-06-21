@@ -41,20 +41,18 @@
     <!-- 필터: 기간 + 검색 -->
     <div class="hist-filter">
       <div class="hist-filter__dates">
-        <input
+        <DateStepperField
           v-model="startDate"
           class="hist-filter__date"
-          type="date"
-          aria-label="시작일"
-          @change="onApplyFilter"
+          placeholder="시작일"
+          @update:model-value="onApplyFilter"
         />
         <span class="hist-filter__tilde" aria-hidden="true">~</span>
-        <input
+        <DateStepperField
           v-model="endDate"
           class="hist-filter__date"
-          type="date"
-          aria-label="종료일"
-          @change="onApplyFilter"
+          placeholder="종료일"
+          @update:model-value="onApplyFilter"
         />
       </div>
       <input
@@ -137,6 +135,7 @@
 <script setup>
 import { ref, computed, onMounted } from 'vue'
 import api from '@/api/axios'
+import DateStepperField from '@/components/common/DateStepperField.vue'
 
 // select: 이력 상세로({ sessionCd })
 defineEmits(['select'])
@@ -152,7 +151,7 @@ const statusFilters = [
 const isLoading = ref(false)
 const loadError = ref(false)
 const statusCd = ref('') // 선택 상태 필터
-const startDate = ref('') // YYYY-MM-DD (native input)
+const startDate = ref('') // YYYY-MM-DD (DateStepperField 계약)
 const endDate = ref('')
 const keyword = ref('')
 
@@ -279,22 +278,10 @@ onMounted(loadHistory)
   align-items: center;
   gap: var(--space-sm);
 }
+/* 공통 DateStepperField 가 자체 트리거 스타일을 보유 → 여기선 flex 사이징만 부여. */
 .hist-filter__date {
   flex: 1;
   min-width: 0;
-  box-sizing: border-box;
-  height: 40px;
-  padding: 0 var(--space-md);
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-md);
-  font-size: 14px;
-  font-family: inherit;
-  color: var(--color-text-primary);
-  background: var(--color-surface);
-}
-.hist-filter__date:focus {
-  outline: none;
-  border-color: var(--color-primary);
 }
 .hist-filter__tilde {
   flex-shrink: 0;

@@ -26,6 +26,7 @@ public record ReqMetaRow(
     , String endTime
     , String leaveType
     , BigDecimal leaveDays
+    , String schCd
     , String reqReason
     , String reqDate
 ) {

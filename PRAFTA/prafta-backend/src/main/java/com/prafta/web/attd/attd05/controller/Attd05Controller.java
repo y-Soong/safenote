@@ -77,9 +77,9 @@ public class Attd05Controller {
     @PostMapping("/delete-user-work-plans")
     public ResponseEntity<?> deleteUserWorkPlans(@RequestBody List<SchTypeDeleRequst> request, @RequestHeader(value = "Authorization", required = false) String authorization) {
 
-    	attd05Service.deleteUserWorkPlans(SchTypeDeleParam.from(request, jwtUtil.getAllClaimsAsMap(authorization)));
-
-        return ResponseEntity.status(HttpStatus.OK).build();
+    	// prafta-com-016-C-3: OT 보유일 부분 제외 삭제 — 제외된 일자 목록(skippedList)을 본문으로 반환(프론트 BatchResultPop 안내).
+    	return ResponseEntity.status(HttpStatus.OK).body(
+    			attd05Service.deleteUserWorkPlans(SchTypeDeleParam.from(request, jwtUtil.getAllClaimsAsMap(authorization))));
     }
 
     /**

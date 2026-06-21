@@ -50,19 +50,19 @@
             <div class="ap-adj__grid">
               <label class="ap-adj__field">
                 <span class="ap-adj__label">시작 일자</span>
-                <input v-model="ot.startDate" type="date" class="ap-adj__input" />
+                <DateStepperField v-model="ot.startDate" placeholder="일자 선택" />
               </label>
               <label class="ap-adj__field">
                 <span class="ap-adj__label">시작 시각</span>
-                <input v-model="ot.startTime" type="time" class="ap-adj__input" />
+                <TimeStepperField v-model="ot.startTime" placeholder="시각 선택" />
               </label>
               <label class="ap-adj__field">
                 <span class="ap-adj__label">종료 일자</span>
-                <input v-model="ot.endDate" type="date" class="ap-adj__input" />
+                <DateStepperField v-model="ot.endDate" placeholder="일자 선택" />
               </label>
               <label class="ap-adj__field">
                 <span class="ap-adj__label">종료 시각</span>
-                <input v-model="ot.endTime" type="time" class="ap-adj__input" />
+                <TimeStepperField v-model="ot.endTime" placeholder="시각 선택" />
               </label>
             </div>
           </template>
@@ -73,19 +73,19 @@
             <div class="ap-adj__grid">
               <label class="ap-adj__field">
                 <span class="ap-adj__label">출근 일자</span>
-                <input v-model="corr.checkInDate" type="date" class="ap-adj__input" />
+                <DateStepperField v-model="corr.checkInDate" placeholder="일자 선택" />
               </label>
               <label class="ap-adj__field">
                 <span class="ap-adj__label">출근 시각</span>
-                <input v-model="corr.checkInTime" type="time" class="ap-adj__input" />
+                <TimeStepperField v-model="corr.checkInTime" placeholder="시각 선택" />
               </label>
               <label class="ap-adj__field">
                 <span class="ap-adj__label">퇴근 일자</span>
-                <input v-model="corr.checkOutDate" type="date" class="ap-adj__input" />
+                <DateStepperField v-model="corr.checkOutDate" placeholder="일자 선택" />
               </label>
               <label class="ap-adj__field">
                 <span class="ap-adj__label">퇴근 시각</span>
-                <input v-model="corr.checkOutTime" type="time" class="ap-adj__input" />
+                <TimeStepperField v-model="corr.checkOutTime" placeholder="시각 선택" />
               </label>
             </div>
           </template>
@@ -117,6 +117,8 @@
 import { reactive, watch } from 'vue'
 
 import { splitDateTime } from '@/utils/approvalFormat'
+import DateStepperField from '@/components/common/DateStepperField.vue'
+import TimeStepperField from '@/components/common/TimeStepperField.vue'
 
 const props = defineProps({
   // 시트 열림 여부(부모 제어)

@@ -117,6 +117,7 @@ import { useRoute, useRouter } from 'vue-router'
 
 import api from '@/api/axios'
 import { resolveApiErrorMessage } from '@/utils/apiError'
+import { formatYmdDisplay, formatDateTimeDisplay } from '@/utils/approvalFormat'
 
 import AdminApprovalRejectSheet from '@/views/admin/approval/components/AdminApprovalRejectSheet.vue'
 
@@ -269,16 +270,16 @@ onMounted(() => {
   loadDetail()
 })
 
+// 날짜/일시 표시는 approvalFormat 단일 출처에 위임(점). HHMM → HH:MM 시각 포맷.
 function fmtYmd(v) {
-  if (v && v.length === 8) return `${v.slice(0, 4)}-${v.slice(4, 6)}-${v.slice(6, 8)}`
-  return v || ''
+  return formatYmdDisplay(v)
 }
 function fmtHm(v) {
   if (v && v.length === 4) return `${v.slice(0, 2)}:${v.slice(2, 4)}`
   return v || ''
 }
 function fmtDt(v) {
-  return v ? String(v).slice(0, 16).replace('T', ' ') : ''
+  return formatDateTimeDisplay(v)
 }
 </script>
 

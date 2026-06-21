@@ -45,11 +45,11 @@
       </div>
       <div>
         <label>개설일(시작)</label>
-        <input v-model.trim="startDate" type="date" />
+        <CalendarSrch v-model="startDate" />
       </div>
       <div>
         <label>개설일(종료)</label>
-        <input v-model.trim="endDate" type="date" />
+        <CalendarSrch v-model="endDate" />
       </div>
       <div>
         <label>제목</label>
@@ -223,6 +223,7 @@ import { useModal } from "@/utils/useModal";
 import axios from "@/api/axios";
 import { resolveApiErrorMessage } from "@/utils/apiError";
 import ViewHeader from "@/components/common/ViewHeader.vue";
+import CalendarSrch from "@/components/common/CalendarSrch.vue";
 import ThSortable from "@/components/common/ThSortable.vue";
 import {
   useTableSort,

@@ -28,7 +28,7 @@ public interface WorktimeGateMapper {
      * 오늘(todayYmd) 본인 열린 근태(미퇴근) 건수.
      *
      * <p>열린 근태 = DEL_YN='N' AND CHECK_IN_TIME IS NOT NULL AND CHECK_OUT_TIME IS NULL.
-     * 1건 이상이면 근무중으로 본다(2구간 중 1구간 진행·추가근무 진행 모두 포함).
+     * 1건 이상이면 근무중으로 본다(2구간 중 1구간 진행·초과근무 진행 모두 포함).
      * {@code AppAttd01Mapper.selectOpenAttd} 의 열린 근태 정의를 당일(WORK_YMD) COUNT 로 차용.
      *
      * @param cmpnyCd  회사코드 (TokenInfo.gv_cmpnyCd)

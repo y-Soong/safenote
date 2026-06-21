@@ -43,11 +43,11 @@
           <div class="acc-row two">
             <div class="acc-field">
               <label>사고 발생일<span class="req">*</span></label>
-              <input type="date" v-model="occurDate" />
+              <CalendarSrch v-model="occurDate" />
             </div>
             <div class="acc-field">
               <label>발생 시각<span class="req">*</span></label>
-              <input type="time" v-model="occurTimeInput" />
+              <TimeInput v-model="occurTimeInput" />
             </div>
           </div>
 
@@ -285,6 +285,8 @@ import { useModal } from "@/utils/useModal";
 import axios from "@/api/axios";
 import { resolveApiErrorMessage } from "@/utils/apiError";
 import BaseSelect from "@/components/common/BaseSelect.vue";
+import CalendarSrch from "@/components/common/CalendarSrch.vue";
+import TimeInput from "@/components/common/TimeInput.vue";
 import SiteSearchPop from "@/components/popup/SiteSearchPop.vue";
 import ChkptSearchPop from "@/components/popup/ChkptSearchPop.vue";
 import VictimSearchPop from "./VictimSearchPop.vue";

@@ -12,6 +12,7 @@ public record InsertDailyQrUserParam(
     , String slotNo
     , String gvCmpnyCd
     , String gvUserCd
+    , String gvAuthCd
 ) {
     public static InsertDailyQrUserParam from(InsertDailyQrUserRequest request, TokenInfo tokenInfo) {
 
@@ -25,6 +26,7 @@ public record InsertDailyQrUserParam(
             , request.getSlotNo()
             , tokenInfo.gv_cmpnyCd()
             , tokenInfo.gv_userCd()
+            , tokenInfo.gv_authCd()
         );
     }
 }

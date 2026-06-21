@@ -830,6 +830,10 @@
 	    , NULL						AS aftSchedFstEndTime
 	    , NULL						AS aftSchedSecStrTime
 	    , NULL						AS aftSchedSecEndTime
+	    <!-- com-013 #3+#4: record 끝 2필드(reqType/reqReason). 근태 HIST 행은 REQ 연결을
+	         HIST 테이블 단독으로는 권위 있게 도출할 수 없어 둘 다 NULL(관리자 직접/orphan 포함). -->
+	    , NULL						AS reqType
+	    , NULL						AS reqReason
 	FROM TB_USER_ATTD_HIST B
 	     LEFT JOIN TB_USER_ATTD_MGMT A
 			 ON (
@@ -1041,6 +1045,11 @@
         , NULL                                                                 AS aftSchedFstEndTime
         , NULL                                                                 AS aftSchedSecStrTime
         , NULL                                                                 AS aftSchedSecEndTime
+        <!-- com-013 #3+#4: record 끝 2필드(reqType/reqReason).
+             연차(05/06) 이력은 스케줄(10)이 아니므로 reqType 은 NULL(프론트 시간/연차 분기 유지),
+             reqReason 은 연결된 REQ 의 근로자 요청사유(R.REQ_REASON). -->
+        , NULL                                                                 AS reqType
+        , R.REQ_REASON                                                         AS reqReason
       FROM TB_USER_ATTD_REQ_APPROVAL AP
       JOIN TB_USER_ATTD_REQ R
         ON R.CMPNY_CD = AP.CMPNY_CD
@@ -1066,12 +1075,15 @@
              스케줄 수정은 결재단계가 아닌 REQ 상태이므로 SYS033 사용(코드그룹 혼동 금지).
          insertDate 는 PROCESS_DATE(datetime). 연차 이력 AP.APPROVAL_DATE 와 동일 타입/표시·정렬 정합.
 
-         D15 변경 전→후 스케줄:
-           - 승인('02'): PROCESS_COMMENT 는 마커 'SCHED_MODIFY_APPROVED:OLD=<oldCode>'. SUBSTRING_INDEX 로
-             OLD=뒤(=변경 전 SCH_CD) 추출 → BS(tb_sch_mgmt) 조인으로 변경 전 원시 시각.
-             변경 후는 R.SCH_CD → AS(tb_sch_mgmt) 조인.
-             oldCode 가 빈값(승인 직전 근무계획 없음)이거나 스케줄 마스터에 없으면 befSched* NULL(프론트 "없음").
-           - 반려('03'): 스케줄 무변경 → bef/aft 전부 NULL. processReason = PROCESS_COMMENT(반려 사유).
+         D15 + com-013 #3 변경 전→후 스케줄(승인·반려 모두 채움):
+           - 변경 후(aft = AS_): R.SCH_CD → tb_sch_mgmt. 승인/반려 모두 "요청했던 목표 스케줄"이므로
+             REQ_STATUS 가드 없이 조인한다(요청 카드 tgt* 와 동일 출처).
+           - 변경 전(bef): 두 출처를 COALESCE 한다.
+             · 승인('02'): PROCESS_COMMENT 마커 'SCHED_MODIFY_APPROVED:OLD=<oldCode>' 의 OLD= 뒤 코드 → BS(tb_sch_mgmt).
+             · 반려('03'): 신청 시점 현재 근무계획(tb_user_work_plan.WORK_PLAN_CD) → BWP(tb_sch_mgmt).
+                요청 카드 cur* 와 동일 출처. 근무계획 없음/연차코드면 미매칭 → NULL(프론트 "없음").
+           - oldCode 가 빈값이거나 스케줄 마스터에 없으면 befSched* NULL.
+           - 반려 사유 표시 유지: processReason = 반려 시 PROCESS_COMMENT(반려 사유).
            - 승인 마커는 사용자에게 노출 금지 → processReason 은 승인 시 NULL(fail-safe, 프론트도 마커 숨김). -->
     SELECT
           R.CMPNY_CD                                                       AS cmpnyCd
@@ -1097,26 +1109,28 @@
         , R.PROCESS_USER_CD                                                AS insertNo
         , FNC_CMM_INFO_SRCH(R.CMPNY_CD, 'USER_NM', R.PROCESS_USER_CD, null) AS insertNm
         , R.PROCESS_DATE                                                   AS insertDate
-        <!-- D15: 변경 전(BS)→후(AS) 스케줄 원시 시각 (record 끝 8필드 — 위치 일치) -->
-        , BS.FST_SCH_STR_TIME                                              AS befSchedFstStrTime
-        , BS.FST_SCH_END_TIME                                              AS befSchedFstEndTime
-        , BS.SEC_SCH_STR_TIME                                              AS befSchedSecStrTime
-        , BS.SEC_SCH_END_TIME                                              AS befSchedSecEndTime
+        <!-- D15 + com-013 #3: 변경 전(BS 승인마커 / BWP 반려근무계획)→후(AS_) 스케줄 원시 시각.
+             변경 전은 승인·반려 출처를 COALESCE 한다 (record 끝 8필드 — 위치 일치). -->
+        , COALESCE(BS.FST_SCH_STR_TIME, BWP.FST_SCH_STR_TIME)              AS befSchedFstStrTime
+        , COALESCE(BS.FST_SCH_END_TIME, BWP.FST_SCH_END_TIME)              AS befSchedFstEndTime
+        , COALESCE(BS.SEC_SCH_STR_TIME, BWP.SEC_SCH_STR_TIME)              AS befSchedSecStrTime
+        , COALESCE(BS.SEC_SCH_END_TIME, BWP.SEC_SCH_END_TIME)              AS befSchedSecEndTime
         , AS_.FST_SCH_STR_TIME                                             AS aftSchedFstStrTime
         , AS_.FST_SCH_END_TIME                                             AS aftSchedFstEndTime
         , AS_.SEC_SCH_STR_TIME                                             AS aftSchedSecStrTime
         , AS_.SEC_SCH_END_TIME                                             AS aftSchedSecEndTime
+        <!-- com-013 #3+#4: record 끝 2필드. reqType 은 '10' 고정(이 쿼리는 스케줄 수정 전용) →
+             프론트가 승인·반려 모두 스케줄 라벨 분기를 타게 한다. reqReason = 근로자 요청사유. -->
+        , R.REQ_TYPE                                                       AS reqType
+        , R.REQ_REASON                                                     AS reqReason
       FROM TB_USER_ATTD_REQ R
-        <!-- 변경 후 스케줄: 승인('02')일 때만 조인한다. 반려('03')는 스케줄 무변경이므로
-             AS_ 도 미매칭(NULL) → 프론트 isSchedApprove=false → 시각분기로 빠져 사유만 표시.
-             (BS 와 대칭으로 REQ_STATUS='02' 가드 필수 — 없으면 반려 행도 aftSched 가 채워져
-              "변경 후 스케줄"이 잘못 노출되는 버그 발생.) -->
+        <!-- 변경 후 스케줄: 승인('02')·반려('03') 모두 "요청했던 목표 스케줄"이므로 REQ_STATUS 가드 없이
+             R.SCH_CD 로 조인한다. SCH_CD 가 없으면 미매칭(NULL). -->
         LEFT JOIN TB_SCH_MGMT AS_
                ON AS_.CMPNY_CD = R.CMPNY_CD
               AND AS_.SITE_CD  = R.SITE_CD
-              AND R.REQ_STATUS = '02'
               AND AS_.SCH_CD   = R.SCH_CD
-        <!-- 변경 전 스케줄: 승인 마커 'SCHED_MODIFY_APPROVED:OLD=<oldCode>' 의 OLD= 뒤를 추출해 조인.
+        <!-- 변경 전(승인): 승인 마커 'SCHED_MODIFY_APPROVED:OLD=<oldCode>' 의 OLD= 뒤를 추출해 조인.
              마커가 아니거나(반려) OLD 가 빈값이면 추출 결과가 '' 또는 원문 → 스케줄 마스터 미매칭 → NULL. -->
         LEFT JOIN TB_SCH_MGMT BS
                ON BS.CMPNY_CD = R.CMPNY_CD
@@ -1124,6 +1138,19 @@
               AND R.REQ_STATUS = '02'
               AND R.PROCESS_COMMENT LIKE 'SCHED_MODIFY_APPROVED:OLD=%'
               AND BS.SCH_CD = SUBSTRING_INDEX(R.PROCESS_COMMENT, 'OLD=', -1)
+        <!-- 변경 전(반려): 신청 시점 현재 근무계획 → 스케줄 마스터. 승인 행은 마커(BS) 우선이므로
+             반려('03')에 한해 조인한다(승인은 BS 가 권위, 중복 매칭 방지). WORK_PLAN_CD 가 LEAVE_CD 거나
+             근무계획 없음이면 미매칭 → NULL(프론트 "없음"). -->
+        LEFT JOIN TB_USER_WORK_PLAN WP
+               ON WP.CMPNY_CD = R.CMPNY_CD
+              AND WP.SITE_CD  = R.SITE_CD
+              AND WP.USER_CD  = R.USER_CD
+              AND WP.WORK_YMD = R.WORK_YMD
+              AND R.REQ_STATUS = '03'
+        LEFT JOIN TB_SCH_MGMT BWP
+               ON BWP.CMPNY_CD = R.CMPNY_CD
+              AND BWP.SITE_CD  = R.SITE_CD
+              AND BWP.SCH_CD   = WP.WORK_PLAN_CD
      WHERE R.CMPNY_CD  = #{gvCmpnyCd}
        AND R.SITE_CD   = #{siteCd}
        AND R.USER_CD   = #{userCd}
@@ -1143,6 +1170,29 @@
      WHERE M.CMPNY_CD = #{gvCmpnyCd}
        AND M.ATTD_ID  = #{attdId}
      LIMIT 1
+    </select>
+
+    <!-- 근무 구간 시각 겹침 판정(정책서 attd §7.6)용 — 편집/등록 대상(excludeAttdId)을 제외한
+         같은 (회사/사업장/사용자/근무일) 활성 근태행의 출퇴근 시각만 반환. 퇴근 NULL=open 구간.
+         excludeAttdId 가 null/빈값이면 제외 없이 그날 전체 구간을 반환(신규 생성 경로). -->
+    <select id="selectDayAttdSegmentsExcept" resultType="com.prafta.web.attd.attd07.result.DayAttdSegmentResult">
+    /* Attd07Mapper.selectDayAttdSegmentsExcept */
+    SELECT
+          M.ATTD_ID         AS attdId
+        , M.WORK_SEQ        AS workSeq
+        , M.CHECK_IN_DATE   AS checkInDate
+        , M.CHECK_IN_TIME   AS checkInTime
+        , M.CHECK_OUT_DATE  AS checkOutDate
+        , M.CHECK_OUT_TIME  AS checkOutTime
+      FROM TB_USER_ATTD_MGMT M
+     WHERE M.CMPNY_CD = #{cmpnyCd}
+       AND M.SITE_CD  = #{siteCd}
+       AND M.USER_CD  = #{userCd}
+       AND M.WORK_YMD = #{workYmd}
+       AND M.DEL_YN   = 'N'
+    <if test="excludeAttdId != null and excludeAttdId != ''">
+       AND M.ATTD_ID != #{excludeAttdId}
+    </if>
     </select>
 
     <!-- 승인 직전 근태 현재 출퇴근 스냅샷 — 처리 이력 "변경 전(BEF_*)" 을 서버 권위값으로 채운다.
@@ -1277,6 +1327,60 @@
       AND ATTD_ID  = #{attdId}
       AND ATTD_ID IS NOT NULL
       AND DEL_YN   = 'N'
+    </update>
+
+    <!-- com-013 #6 - 관리자 직접 등록 OT 단건 소프트삭제(OT_ID + scope).
+         selectDailyOvertimeList 술어(DEL_YN='N' AND OT_STATUS != 'CANCELLED')와 정합:
+         취소/삭제된 행은 재삭제하지 않으며, 삭제 즉시 목록에서 사라진다. -->
+    <select id="selectOvertimeRowById" resultType="com.prafta.web.attd.attd07.result.DailyOvertimeResult">
+    /* Attd07Mapper.selectOvertimeRowById */
+    SELECT
+          O.OT_ID                AS otId
+        , O.ATTD_ID              AS attdId
+        , O.REQ_ID               AS reqId
+
+        , O.WORK_YMD             AS workYmd
+        , O.NODE_CD              AS nodeCd
+
+        , O.PLAN_START_DATE      AS planStartDate
+        , O.PLAN_START_TIME      AS planStartTime
+        , O.PLAN_END_DATE        AS planEndDate
+        , O.PLAN_END_TIME        AS planEndTime
+
+        , O.ACTUAL_START_DATE    AS actualStartDate
+        , O.ACTUAL_START_TIME    AS actualStartTime
+        , O.ACTUAL_START_METHOD  AS actualStartMethod
+        , O.ACTUAL_END_DATE      AS actualEndDate
+        , O.ACTUAL_END_TIME      AS actualEndTime
+        , O.ACTUAL_END_METHOD    AS actualEndMethod
+
+        , O.WORK_MINUTES         AS workMinutes
+        , O.BREAK_MINUTES        AS breakMinutes
+
+        , O.OT_STATUS            AS otStatus
+
+        , O.INSERT_DATE          AS insertDate
+    FROM TB_USER_OVERTIME_MGMT O
+    WHERE O.CMPNY_CD  = #{cmpnyCd}
+      AND O.SITE_CD   = #{siteCd}
+      AND O.USER_CD   = #{userCd}
+      AND O.OT_ID     = #{otId}
+      AND O.DEL_YN    = 'N'
+      AND O.OT_STATUS <![CDATA[ <> ]]> 'CANCELLED'
+    </select>
+
+    <update id="deleteUserOvertimeById">
+    /* Attd07Mapper.deleteUserOvertimeById */
+    UPDATE TB_USER_OVERTIME_MGMT
+    SET DEL_YN      = 'Y'
+        , UPDATE_NO   = #{updateNo}
+        , UPDATE_DATE = NOW()
+    WHERE CMPNY_CD = #{cmpnyCd}
+      AND SITE_CD  = #{siteCd}
+      AND USER_CD  = #{userCd}
+      AND OT_ID    = #{otId}
+      AND DEL_YN   = 'N'
+      AND OT_STATUS <![CDATA[ <> ]]> 'CANCELLED'
     </update>
 
     <update id="updateUserAttdReqApprove" parameterType="com.prafta.web.attd.attd07.application.command.UpdateUserAttdRequestCommand">
@@ -1579,6 +1683,55 @@
     LIMIT 1
     </select>
 
+    <!-- 근무계획(TB_USER_WORK_PLAN) 행이 없는 날(주말 등 미배정일) 폴백.
+         스케줄은 비우고(plan* = NULL) 실근태(A1/A2)만 로드한다. dummy anchor 로 WP 없이도
+         항상 정확히 1행을 반환한다. SELECT 절 컬럼 순서는 selectAllowedWindow 및
+         AllowedWindowResult record 의 컴포넌트 순서와 100% 동일해야 한다(위치 기반 매핑). -->
+    <select id="selectActualWindowNoSchedule"
+            parameterType="com.prafta.web.attd.attd07.application.query.OvertimeAllowedWindowQuery"
+            resultType="com.prafta.web.attd.attd07.result.AllowedWindowResult">
+    /* Attd07Mapper.selectActualWindowNoSchedule */
+    SELECT
+          NULL                                                              AS plan1Start
+        , NULL                                                              AS plan1End
+        , NULL                                                              AS plan2Start
+        , NULL                                                              AS plan2End
+
+        /* 1st attd row - raw 출퇴근 일자/시각. */
+        , A1.CHECK_IN_DATE                                                 AS act1InDate
+        , A1.CHECK_IN_TIME                                                 AS act1InTime
+        , A1.CHECK_OUT_DATE                                                AS act1OutDate
+        , A1.CHECK_OUT_TIME                                                AS act1OutTime
+
+        /* 2nd attd row - raw 출퇴근 일자/시각. */
+        , A2.CHECK_IN_DATE                                                 AS act2InDate
+        , A2.CHECK_IN_TIME                                                 AS act2InTime
+        , A2.CHECK_OUT_DATE                                                AS act2OutDate
+        , A2.CHECK_OUT_TIME                                                AS act2OutTime
+
+    /* WP 없이도 항상 1행을 보장하기 위한 dummy anchor.
+       스코프(cmpny/site/user/workYmd) 조건은 각 LEFT JOIN 의 ON 절에 직접 명시한다. */
+    FROM (SELECT 1) D
+
+    LEFT JOIN TB_USER_ATTD_MGMT A1
+        ON  A1.CMPNY_CD = #{gvCmpnyCd}
+        AND A1.SITE_CD  = #{siteCd}
+        AND A1.USER_CD  = #{userCd}
+        AND A1.WORK_YMD = #{workYmd}
+        AND A1.WORK_SEQ = 1
+        AND A1.DEL_YN   = 'N'
+
+    LEFT JOIN TB_USER_ATTD_MGMT A2
+        ON  A2.CMPNY_CD = #{gvCmpnyCd}
+        AND A2.SITE_CD  = #{siteCd}
+        AND A2.USER_CD  = #{userCd}
+        AND A2.WORK_YMD = #{workYmd}
+        AND A2.WORK_SEQ = 2
+        AND A2.DEL_YN   = 'N'
+
+    LIMIT 1
+    </select>
+
     <select id="selectOtId" parameterType="string" resultType="string">
     /* Attd07Mapper.selectOtId */
     SELECT CONCAT(DATE_FORMAT(NOW(), '%Y%m%d'), FNC_CMM_SEQ_NEXTVAL(#{gvCmpnyCd}, 'OT_ID')) AS otId
@@ -1631,6 +1784,11 @@
       AND #{reqStart} <![CDATA[ < ]]> CONCAT(O.ACTUAL_END_DATE, O.ACTUAL_END_TIME)
       AND O.DEL_YN    = 'N'
       AND O.OT_STATUS <![CDATA[ <> ]]> 'CANCELLED'
+      <!-- com-013-06 A: in-place 수정 시, 갱신 대상 OT 행은 자기 자신과의 겹침을 검사하지 않는다. -->
+      <if test="excludeOtIds != null and excludeOtIds.size() > 0">
+      AND O.OT_ID NOT IN
+      <foreach collection="excludeOtIds" item="exId" open="(" separator="," close=")">#{exId}</foreach>
+      </if>
     </select>
 
     <insert id="insertUserOvertime"
@@ -1721,6 +1879,29 @@
        AND SITE_CD    = #{siteCd}
        AND USER_CD    = #{userCd}
        AND OT_ID      = #{otId}
+       AND DEL_YN     = 'N'
+       AND OT_STATUS <![CDATA[ <> ]]> 'CANCELLED'
+    </update>
+
+    <update id="updateUserOvertimeDirect">
+    /* Attd07Mapper.updateUserOvertimeDirect - com-013-06 A 관리자 직접수정 in-place UPDATE */
+    UPDATE TB_USER_OVERTIME_MGMT
+       SET PLAN_START_DATE   = #{startDate}
+         , PLAN_START_TIME   = #{startTime}
+         , PLAN_END_DATE     = #{endDate}
+         , PLAN_END_TIME     = #{endTime}
+         , ACTUAL_START_DATE = #{startDate}
+         , ACTUAL_START_TIME = #{startTime}
+         , ACTUAL_END_DATE   = #{endDate}
+         , ACTUAL_END_TIME   = #{endTime}
+         , WORK_MINUTES      = #{workMinutes}
+         , UPDATE_NO         = #{updateNo}
+         , UPDATE_DATE       = NOW()
+     WHERE CMPNY_CD   = #{cmpnyCd}
+       AND SITE_CD    = #{siteCd}
+       AND USER_CD    = #{userCd}
+       AND OT_ID      = #{otId}
+       AND ATTD_ID    = #{attdId}
        AND DEL_YN     = 'N'
        AND OT_STATUS <![CDATA[ <> ]]> 'CANCELLED'
     </update>

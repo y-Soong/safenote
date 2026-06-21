@@ -33,6 +33,8 @@
 <script setup>
 import { computed } from 'vue'
 
+import { formatYmdDisplay } from '@/utils/approvalFormat'
+
 const props = defineProps({
   // { hireDate(YYYYMMDD), serviceMonths, serviceCreditMonths }
   user: {
@@ -49,11 +51,11 @@ const props = defineProps({
 const creditMonths = computed(() => Number(props.user?.serviceCreditMonths ?? 0))
 const hasCredit = computed(() => creditMonths.value > 0)
 
-// YYYYMMDD → YYYY-MM-DD (단순 포맷)
+// YYYYMMDD → YYYY.MM.DD (D1 점 통일). 형식 미충족 시 원본/대시 폴백 유지.
 const hireDateText = computed(() => {
   const raw = String(props.user?.hireDate ?? '')
   if (raw.length !== 8) return raw || '-'
-  return `${raw.slice(0, 4)}-${raw.slice(4, 6)}-${raw.slice(6, 8)}`
+  return formatYmdDisplay(raw)
 })
 
 // 개월수 → "N년 M개월" (0년이면 "M개월", 0개월이면 "N년")

@@ -12,12 +12,12 @@
 	    , A.HOLIDAY_TYPE						AS holidayType
 	    , A.USE_YN								AS useYn
 	    , A.INSERT_NO							AS insertNo
-	    , FNC_CMM_INFO_SRCH(
+	    , NULLIF(FNC_CMM_INFO_SRCH(
 			A.CMPNY_CD
 	        , 'USER_NM'
 	        , A.INSERT_NO
 	        , null
-		) 										AS insertNm
+		), '') 									AS insertNm
 	    , DATE_FORMAT(INSERT_DATE, '%Y%m%d')	AS insertDate
 	FROM TB_HOLIDAY A
 	WHERE 1=1
@@ -39,15 +39,15 @@
 	        , '-'
 	        , A.HOLIDAY_DD
 		)										AS holidayYmd
-	    , A.HOLIDAY_TYPE						AS holidayYupe
+	    , A.HOLIDAY_TYPE						AS holidayType
 	    , A.USE_YN								AS useYn
 	    , A.INSERT_NO							AS insertNo
-		, FNC_CMM_INFO_SRCH(
+		, NULLIF(FNC_CMM_INFO_SRCH(
 			A.CMPNY_CD
 			, 'USER_NM'
 			, A.INSERT_NO
 			, null
-		) 										AS insertNm
+		), '') 									AS insertNm
 		, DATE_FORMAT(INSERT_DATE, '%Y%m%d')	AS insertDate
 	FROM TB_HOLIDAY_RULE A
 	WHERE 1=1

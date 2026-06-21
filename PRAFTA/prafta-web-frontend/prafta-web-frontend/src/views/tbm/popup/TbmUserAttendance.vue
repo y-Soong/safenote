@@ -100,9 +100,9 @@
           <!-- 기간 필터 -->
           <div class="att-filter no-print">
             <label>종료일(시작)</label>
-            <input v-model.trim="startDate" type="date" />
+            <CalendarSrch v-model="startDate" />
             <label>종료일(종료)</label>
-            <input v-model.trim="endDate" type="date" />
+            <CalendarSrch v-model="endDate" />
             <label>이수</label>
             <select v-model.trim="completionStatusCd">
               <option value="">전체</option>
@@ -216,6 +216,7 @@ import {
 import axios from "@/api/axios";
 import { resolveApiErrorMessage } from "@/utils/apiError";
 import { useCenteredDraggable } from "@/composables/useCenteredDraggable";
+import CalendarSrch from "@/components/common/CalendarSrch.vue";
 
 const { proxy } = getCurrentInstance();
 

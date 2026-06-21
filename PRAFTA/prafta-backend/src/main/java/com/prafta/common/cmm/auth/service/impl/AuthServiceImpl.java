@@ -52,6 +52,18 @@ public class AuthServiceImpl implements AuthService{
 	    if (authTokenResult == null) {
 	        authTokenResult = authMapper.selectRecentlyRevokedByRefreshTokenHash(refreshTokenHash, GRACE_SECONDS);
 	        if (authTokenResult != null) {
+	            // prafta-057: grace 경로 가드 — 같은 사용자/클라이언트에 "다른 로그인 패밀리"의 활성 토큰이
+	            //   존재하면(=다른 환경에서 신규 로그인하여 본 세션을 폐기한 것) 폐기된 RT 를 되살리지 않는다.
+	            //   (되살리면 다른 환경 로그인 감지/강제 로그아웃이 무력화됨.)
+	            int otherLogin = authMapper.countActiveOtherLogin(
+	                    authTokenResult.cmpnyCd()
+	                    , authTokenResult.userCd()
+	                    , authTokenResult.clientType()
+	                    , authTokenResult.loginId());
+	            if (otherLogin > 0) {
+	                log.info("refresh - grace 거부(다른 환경 로그인 존재), userCd={}", authTokenResult.userCd());
+	                throw new ApiException(AuthErrorCode.AUTH_500_002);
+	            }
 	            // 멀티 탭 완충: 직전 회전으로 이미 폐기된 RT 이지만 grace 시간 내라 1회 허용한다.
 	            log.info("refresh - grace window 적용, tokenId={}", authTokenResult.tokenId());
 	        }
@@ -85,6 +97,7 @@ public class AuthServiceImpl implements AuthService{
 	                authTokenResult.cmpnyCd()
 	                , authTokenResult.userCd()
 	                , newTokenId
+	                , authTokenResult.loginId()   // prafta-057: 로그인 세션 패밀리 승계
 	                , authTokenResult.clientType()
 	                , authTokenResult.deviceId()
 	                , newRefreshTokenHash
@@ -97,7 +110,8 @@ public class AuthServiceImpl implements AuthService{
 
 	    // 4) 신규 액세스 토큰(JWT) 발급
 	    //    정책 §11.1 에 따라 휴대폰/이메일은 JWT 에 포함하지 않는다.
-	    String token = jwtUtil.generateToken(userResult);
+	    //    prafta-057: 로그인 세션 패밀리(loginId)·클라이언트타입을 승계하여 클레임에 싣는다(다른 환경 로그인 감지용).
+	    String token = jwtUtil.generateToken(userResult, authTokenResult.loginId(), authTokenResult.clientType());
 
 	    log.info("refresh - 토큰 회전 완료, userCd={}, newTokenId={}", authTokenResult.userCd(), newTokenId);
 

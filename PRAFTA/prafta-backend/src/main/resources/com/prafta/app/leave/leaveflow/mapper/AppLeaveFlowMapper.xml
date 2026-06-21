@@ -144,6 +144,40 @@
        AND A.DEL_YN   = 'N'
     </select>
 
+    <!-- 같은 날 점유 연차 일수(중복 등록 가드). 종일(00)=1.0, 그 외=LEAVE_DAYS 합산.
+         다일 종일 연차도 START_DATE~END_DATE 포함이면 그 날을 1.0 점유로 본다. -->
+    <select id="selectOccupiedLeaveDaysOnDate" resultType="java.math.BigDecimal">
+    /* AppLeaveFlowMapper.selectOccupiedLeaveDaysOnDate */
+    SELECT COALESCE(SUM(
+             CASE WHEN U.USE_UNIT_TYPE = '00' THEN 1.0 ELSE U.LEAVE_DAYS END
+           ), 0)
+      FROM TB_USER_LEAVE_USE U
+     WHERE U.CMPNY_CD     = #{cmpnyCd}
+       AND U.USER_CD      = #{userCd}
+       AND U.LEAVE_STATUS = 'CONFIRMED'
+       AND U.DEL_YN       = 'N'
+       AND U.START_DATE  <![CDATA[ <= ]]> #{workYmd}
+       AND U.END_DATE    <![CDATA[ >= ]]> #{workYmd}
+    </select>
+
+    <!-- 같은 날 시간차(02/03/04) 시간대 겹침 카운트. 좌폐우개 겹침: 기존시작 < 신규종료 AND 기존종료 > 신규시작.
+         HHMM 4자리 문자열은 사전식=시간식 비교라 그대로 부등호 비교 가능. -->
+    <select id="countOverlappingTimeLeaveOnDate" resultType="int">
+    /* AppLeaveFlowMapper.countOverlappingTimeLeaveOnDate */
+    SELECT COUNT(1)
+      FROM TB_USER_LEAVE_USE U
+     WHERE U.CMPNY_CD       = #{cmpnyCd}
+       AND U.USER_CD        = #{userCd}
+       AND U.LEAVE_STATUS   = 'CONFIRMED'
+       AND U.DEL_YN         = 'N'
+       AND U.START_DATE     = #{workYmd}
+       AND U.USE_UNIT_TYPE IN ('02', '03', '04')
+       AND U.START_TIME IS NOT NULL
+       AND U.END_TIME   IS NOT NULL
+       AND U.START_TIME <![CDATA[ < ]]> #{endTime}
+       AND U.END_TIME   <![CDATA[ > ]]> #{startTime}
+    </select>
+
     <select id="selectNextReqId" resultType="string">
     /* AppLeaveFlowMapper.selectNextReqId */
     SELECT CONCAT(DATE_FORMAT(NOW(), '%Y%m%d'), FNC_CMM_SEQ_NEXTVAL(#{cmpnyCd}, 'ATTD_REQ_ID')) FROM DUAL
@@ -154,19 +188,38 @@
     SELECT CONCAT('LV', DATE_FORMAT(NOW(), '%Y%m%d'), FNC_CMM_SEQ_NEXTVAL(#{cmpnyCd}, 'LEAVE_USE_ID')) FROM DUAL
     </select>
 
-    <!-- 결과 record LeaveTypeInfoRow(systemYn, aprvUseYn, useUnitType, leaveType, maxAplyDays) 순서 일치(위치매핑) -->
+    <!-- 결과 record LeaveTypeInfoRow(systemYn, aprvUseYn, useUnitType, leaveType, maxAplyDays, availTermType) 순서 일치(위치매핑) -->
     <select id="selectLeaveTypeInfo" resultType="com.prafta.app.leave.leaveflow.result.LeaveTypeInfoRow">
     /* AppLeaveFlowMapper.selectLeaveTypeInfo */
     SELECT
-          A.SYSTEM_YN     AS systemYn
-        , A.APRV_USE_YN   AS aprvUseYn
-        , A.USE_UNIT_TYPE AS useUnitType
-        , A.LEAVE_TYPE    AS leaveType
-        , A.MAX_APLY_DAYS AS maxAplyDays
+          A.SYSTEM_YN       AS systemYn
+        , A.APRV_USE_YN     AS aprvUseYn
+        , A.USE_UNIT_TYPE   AS useUnitType
+        , A.LEAVE_TYPE      AS leaveType
+        , A.MAX_APLY_DAYS   AS maxAplyDays
+        , A.AVAIL_TERM_TYPE AS availTermType
       FROM TB_LEAVE_TYPE_MGMT A
      WHERE A.CMPNY_CD = #{cmpnyCd}
        AND A.LEAVE_CD = #{leaveCd}
      LIMIT 1
+    </select>
+
+    <!-- ============================================================
+         prafta-com-016-B(3-1): 사용자 신청 '01' + 사용가능기간 '01'(설정안함=전체 누적)
+         한도검증용 — 회계연도 경계 WHERE 없이 전체 CONFIRMED 사용 합계(Σ LEAVE_DAYS).
+         술어는 selectFiscalUsedDays 와 동일(LEAVE_STATUS='CONFIRMED' AND DEL_YN='N')하되
+         START_DATE 날짜 경계만 제거한다. 식별값은 토큰 도출값만 전달(IDOR).
+         (웹 LeaveFlowMapper.selectTotalUsedDays 미러)
+         ============================================================ -->
+    <select id="selectTotalUsedDays" resultType="java.math.BigDecimal">
+    /* AppLeaveFlowMapper.selectTotalUsedDays */
+    SELECT IFNULL(SUM(U.LEAVE_DAYS), 0)
+      FROM TB_USER_LEAVE_USE U
+     WHERE U.CMPNY_CD     = #{cmpnyCd}
+       AND U.USER_CD      = #{userCd}
+       AND U.LEAVE_CD     = #{leaveCd}
+       AND U.LEAVE_STATUS = 'CONFIRMED'
+       AND U.DEL_YN       = 'N'
     </select>
 
     <!-- ============================================================
@@ -346,6 +399,43 @@
      WHERE G.CMPNY_CD = #{cmpnyCd}
        AND G.GRANT_ID = #{grantId}
     </update>
+
+    <!-- ============================================================
+         prafta-com-011-2 가불: 입사일 조회(가불 projection/만료검증 입력). 웹 LeaveFlowMapper.selectUserHireDate 미러.
+         ============================================================ -->
+    <select id="selectUserHireDate" resultType="string">
+    /* AppLeaveFlowMapper.selectUserHireDate */
+    SELECT U.HIRE_DATE
+      FROM TB_USER U
+     WHERE U.CMPNY_CD = #{cmpnyCd}
+       AND U.USER_CD  = #{userCd}
+       AND U.USE_YN   = 'Y'
+       AND U.WITHDRAWAL_DATE IS NULL
+     LIMIT 1
+    </select>
+
+    <!-- ============================================================
+         prafta-com-011-2 가불(Q1=b): 잔여 분할 차감용 활성 부여 목록(만료 임박순, 잔여>0, FOR UPDATE).
+         웹 LeaveFlowMapper.selectBorrowDeductibleGrants 미러(SQL 본문 동일). 비가불 경로는 호출하지 않는다(회귀 0).
+         ============================================================ -->
+    <select id="selectBorrowDeductibleGrants" resultType="com.prafta.app.leave.leaveflow.result.DeductibleGrantRow">
+    /* AppLeaveFlowMapper.selectBorrowDeductibleGrants */
+    SELECT
+          G.GRANT_ID   AS grantId
+        , G.GRANT_DAYS AS grantDays
+        , G.USED_DAYS  AS usedDays
+      FROM TB_USER_LEAVE_GRANT G
+     WHERE G.CMPNY_CD = #{cmpnyCd}
+       AND G.USER_CD  = #{userCd}
+       AND G.LEAVE_CD = #{leaveCd}
+       AND G.DEL_YN   = 'N'
+       AND G.STATUS   = 'ACTIVE'
+       AND G.AVAIL_FROM_DATE &lt;= #{workYmd}
+       AND G.AVAIL_TO_DATE   &gt;= #{workYmd}
+       AND (G.GRANT_DAYS - G.USED_DAYS) &gt; 0
+     ORDER BY G.AVAIL_TO_DATE ASC, G.GRANT_DATE ASC
+     FOR UPDATE
+    </select>
 
     <update id="updateReqStatus">
     /* AppLeaveFlowMapper.updateReqStatus */

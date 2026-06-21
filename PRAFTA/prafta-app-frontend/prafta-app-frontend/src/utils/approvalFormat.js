@@ -47,6 +47,66 @@ export function formatDateTimeDisplay(value) {
 }
 
 /**
+ * 근태 시각 표시(근무일자 기준 오버나이트 인지).
+ *   value(타임스탬프/조인문자열)의 날짜가 targetYmd(근무일자)와 같으면 "HH:mm"만 표시하고,
+ *   다르면(오버나이트 등 근무일자≠실제 출근/퇴근일자) "MM.DD HH:mm"으로 날짜를 덧붙여
+ *   관리자가 다른 날임을 알 수 있게 한다. 날짜+시각(12자리)이 아니면 formatDateTimeDisplay 폴백.
+ */
+export function formatTimeWithDateIfDiff(value, targetYmd) {
+  if (value == null || value === '') return ''
+  const d = digitsOnly(value)
+  if (d.length < 12) return formatDateTimeDisplay(value)
+  const ymd = d.slice(0, 8)
+  const hm = `${d.slice(8, 10)}:${d.slice(10, 12)}`
+  const tgt = digitsOnly(targetYmd || '')
+  if (tgt.length >= 8 && ymd === tgt.slice(0, 8)) return hm
+  return `${ymd.slice(4, 6)}.${ymd.slice(6, 8)} ${hm}`
+}
+
+/**
+ * 월-일(YYYYMMDD 또는 YYYY-MM-DD 등) → "MM.DD".
+ * 파싱 불가하면 원본 문자열을 그대로 반환(표시 깨짐 방지).
+ */
+export function formatMdDot(value) {
+  if (value == null || value === '') return ''
+  const d = digitsOnly(value)
+  if (d.length >= 8) {
+    return `${d.slice(4, 6)}.${d.slice(6, 8)}`
+  }
+  // YYYYMM(6자리) 또는 MMDD(4자리)도 월-일 추출 시도
+  if (d.length === 4) {
+    return `${d.slice(0, 2)}.${d.slice(2, 4)}`
+  }
+  return String(value)
+}
+
+/**
+ * 연-월(YYYYMM 또는 YYYY-MM 등) → "YYYY.MM".
+ * 파싱 불가하면 원본 문자열을 그대로 반환(표시 깨짐 방지).
+ */
+export function formatYmDot(value) {
+  if (value == null || value === '') return ''
+  const d = digitsOnly(value)
+  if (d.length >= 6) {
+    return `${d.slice(0, 4)}.${d.slice(4, 6)}`
+  }
+  return String(value)
+}
+
+/**
+ * 초가 실재하는 타임스탬프 → "YYYY.MM.DD HH:mm:ss".
+ * 초가 없으면 분까지, 날짜만 있으면 날짜만, 파싱 불가하면 원본을 그대로 반환.
+ */
+export function formatHms(value) {
+  if (value == null || value === '') return ''
+  const d = digitsOnly(value)
+  if (d.length >= 14) {
+    return `${d.slice(0, 4)}.${d.slice(4, 6)}.${d.slice(6, 8)} ${d.slice(8, 10)}:${d.slice(10, 12)}:${d.slice(12, 14)}`
+  }
+  return formatDateTimeDisplay(value)
+}
+
+/**
  * 타임스탬프/시각 값을 date/time input 초기값으로 분해.
  *   반환: { date:'YYYY-MM-DD'|'' , time:'HH:mm'|'' }
  * - "YYYYMMDDHHmm[ss]" / "YYYY-MM-DD HH:mm[:ss]" / ISO("...T...") / "HH:mm"(시각만) 지원.

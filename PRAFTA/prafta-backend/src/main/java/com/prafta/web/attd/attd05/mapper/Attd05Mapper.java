@@ -144,8 +144,30 @@ public interface Attd05Mapper {
 	/**
 	 * 해당 월(YYYYMM)에 초과근무 보유 일자 카운트 — 월 단위 근무계획 삭제 차단 판정.
 	 * 등록 초과근무(취소 제외) ∪ 초과근무 신청(03/04, 신청/승인). &gt; 0 이면 월 삭제 차단.
+	 * <p>prafta-com-016-C-3: 월 삭제가 "전체 차단"에서 "OT일 부분 제외 삭제"로 바뀌어 본 카운트는
+	 *   더 이상 차단 판정에 쓰지 않는다(원문 LEFT(...,6)=workYm 포맷 버그 경로 폐기). 호환 위해 시그니처만 보존.
 	 */
 	int countMonthOvertime(@org.apache.ibatis.annotations.Param("cmpnyCd") String cmpnyCd,
+			@org.apache.ibatis.annotations.Param("siteCd") String siteCd,
+			@org.apache.ibatis.annotations.Param("userCd") String userCd,
+			@org.apache.ibatis.annotations.Param("workYm") String workYm);
+
+	/**
+	 * prafta-com-016-C-3: 해당 월(YYYYMM)에 초과근무(등록 또는 신청) 보유 일자(WORK_YMD, YYYYMMDD) 목록.
+	 * 월 부분 삭제에서 제외된 OT 보유일을 사용자에게 안내(BatchResultPop)하기 위한 조회.
+	 * 판정 술어는 countDayOvertime 와 동일(등록 비취소 ∪ 신청 03/04 상태 01/02). workYm 은 YYYYMM(8자리 LEFT 매칭).
+	 */
+	List<String> selectMonthOvertimeDays(@org.apache.ibatis.annotations.Param("cmpnyCd") String cmpnyCd,
+			@org.apache.ibatis.annotations.Param("siteCd") String siteCd,
+			@org.apache.ibatis.annotations.Param("userCd") String userCd,
+			@org.apache.ibatis.annotations.Param("workYm") String workYm);
+
+	/**
+	 * prafta-com-016-C-3 후속: 해당 월(YYYYMM)에 종일 확정 연차로 삭제에서 보존된 일자(WORK_YMD) 목록.
+	 * 월 부분 삭제에서 제외된 연차 보존일을 사용자에게 안내(BatchResultPop)하기 위한 조회.
+	 * 판정 술어는 deleteUserWorkPlans 의 연차 NOT EXISTS 와 동일. workYm 은 YYYYMM(6자리 LEFT 매칭).
+	 */
+	List<String> selectMonthLeaveDays(@org.apache.ibatis.annotations.Param("cmpnyCd") String cmpnyCd,
 			@org.apache.ibatis.annotations.Param("siteCd") String siteCd,
 			@org.apache.ibatis.annotations.Param("userCd") String userCd,
 			@org.apache.ibatis.annotations.Param("workYm") String workYm);

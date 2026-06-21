@@ -161,9 +161,11 @@ import LeaveChangeConfirmPop from './popup/LeaveChangeConfirmPop.vue'
 import axios from '@/api/axios'
 import { getMessage, MSG } from '@/messages'
 import { resolveApiErrorMessage } from '@/utils/apiError'
+import { formatYmdDot } from '@/utils/dateFormat'
 
 const props = defineProps({
   title: { type: String, default: '연차 변경 동의 관리' },
+  buttons: Object,
 })
 
 const { proxy } = getCurrentInstance()
@@ -186,8 +188,8 @@ const showConfirmPop = ref(false)
 const requestTarget = ref(null)
 const selectedChangeReqId = ref('')
 
-// 헤더 버튼
-const localButtons = ref([{ key: 'search', label: '조회' }])
+// 헤더 버튼 — 권한 메뉴(tb_syst_auth_menu BTN_*)에서 주입된 props.buttons 사용(Attd_14 등과 동일 패턴).
+const localButtons = ref({ ...props.buttons })
 
 // 권한 스코프(D1+D3): master/hr 는 회사 전사(사업장/부서 자유), 그 외(노드 관리자)는 담당 부서 강제.
 //   서버도 동일 정책으로 fail-closed 강제(canManageNodeExcludeSafe + 역할 기반 스코프, safe 제외).
@@ -208,11 +210,8 @@ const REQ_STATUS_NM = {
 }
 const WORKER_RESPONSE_NM = { PENDING: '대기', AGREE: '동의', REJECT: '거부' }
 
-// YYYYMMDD → "YYYY-MM-DD"
-const fmtYmd = (ymd) => {
-  if (!ymd || ymd.length !== 8) return ymd ?? ''
-  return `${ymd.slice(0, 4)}-${ymd.slice(4, 6)}-${ymd.slice(6, 8)}`
-}
+// 표시용 날짜 포맷은 dateFormat 단일 출처에 위임(점 구분 YYYY.MM.DD).
+const fmtYmd = (ymd) => formatYmdDot(ymd)
 
 // 서버 row → 그리드 표시 객체로 보강(라벨/포맷)
 const toRow = (r) => ({

@@ -19,6 +19,10 @@ public record LeaveApplyMetaResponse(
      *   <li>{@code allowedUnits} : 허용 사용단위 SYS025 코드 목록(D2-a 계층, 굵→잘게: 00,01,02,03,04 부분집합).</li>
      *   <li>{@code balanceDays} : 현재 잔여(부여-사용 합, 활성집합, 소수1자리).</li>
      *   <li>{@code applicable} : 신청가능(잔여>0). false 면 FE disabled.</li>
+     *   <li>{@code borrowable} : 가불 가능 여부(prafta-com-011-2). 시스템 법정 월차/본연차이고 borrowQuota>0 일 때 true.</li>
+     *   <li>{@code borrowQuota} : 가불 가능 일수(prafta-com-011-2, computeBorrowQuota 결과, 소수1자리). 비대상이면 0.</li>
+     *   <li>{@code borrowExpiryYmd} : 가불분 만료(소멸)일 YYYYMMDD(prafta-com-011-5 FE 표시·만료초과 alert 가드용).
+     *       월차=입사+1년−1일, 본연차=차기 부여 본연차 정상 만료일. 비대상/산정 불가면 null. 서버도 fail-closed 검증(ATTD_400_181).</li>
      * </ul>
      */
     public record LeaveTypeItem(
@@ -29,6 +33,9 @@ public record LeaveApplyMetaResponse(
         , List<String> allowedUnits
         , double balanceDays
         , boolean applicable
+        , boolean borrowable
+        , double borrowQuota
+        , String borrowExpiryYmd
     ) {
     }
 }

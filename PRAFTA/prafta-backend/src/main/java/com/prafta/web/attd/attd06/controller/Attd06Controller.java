@@ -37,6 +37,7 @@ import com.prafta.web.attd.attd06.dto.request.UpdateShiftTeamLeadersRequest;
 import com.prafta.web.attd.attd06.dto.request.UpdateShiftTeamNmRequest;
 import com.prafta.web.attd.attd06.dto.request.UpdateShiftTeamPeriodRequest;
 import com.prafta.web.attd.attd06.dto.request.UserListsRequest;
+import com.prafta.web.attd.attd06.dto.response.ShiftSchSaveResponse;
 import com.prafta.web.attd.attd06.dto.response.ShiftTeamUserInfosResponse;
 import com.prafta.web.attd.attd06.dto.response.ShiftTypeDetailListsResponse;
 import com.prafta.web.attd.attd06.dto.response.ShiftTypeListsResponse;
@@ -105,21 +106,23 @@ public class Attd06Controller {
             @RequestBody ShiftSchInfosRequest request,
             @RequestHeader(value = "Authorization", required = false) String authorization) {
 
-        attd06Service.insertShiftSchInfos(
+        // prafta-com-013-05-1: 차단(연차+휴무 중복)된 날짜 목록을 응답 본문으로 반환 -> FE alert.
+        ShiftSchSaveResponse response = attd06Service.insertShiftSchInfos(
                 ShiftSchInfosParam.from(request, jwtUtil.getAllClaimsAsMap(authorization)));
 
-        return ResponseEntity.status(HttpStatus.OK).build();
+        return ResponseEntity.status(HttpStatus.OK).body(response);
     }
-    
+
     @PostMapping("/update-shift-user-sch-infos")
     public ResponseEntity<?> updateShiftUserSchInfos(
             @RequestBody ShiftUserSchInfosRequest request,
             @RequestHeader(value = "Authorization", required = false) String authorization) {
 
-        attd06Service.updateShiftUserSchInfos(
+        // prafta-com-013-05-1: 차단(연차+휴무 중복)된 날짜 목록을 응답 본문으로 반환 -> FE alert.
+        ShiftSchSaveResponse response = attd06Service.updateShiftUserSchInfos(
         		ShiftUserSchInfosParam.from(request, jwtUtil.getAllClaimsAsMap(authorization)));
 
-        return ResponseEntity.status(HttpStatus.OK).build();
+        return ResponseEntity.status(HttpStatus.OK).body(response);
     }
 
     @PostMapping("/update-shift-team-nms")
@@ -149,10 +152,11 @@ public class Attd06Controller {
             @RequestBody List<InsertShiftTeamUsersRequest> request,
             @RequestHeader(value = "Authorization", required = false) String authorization) {
 
-        attd06Service.insertShiftTeamUsers(
+        // prafta-com-016-D-3: 조원 추가 시 work_plan 덮어쓰기 + 보존(연차/OT) 날짜 목록을 응답 본문으로 반환 -> FE 팝업.
+        ShiftSchSaveResponse response = attd06Service.insertShiftTeamUsers(
                 InsertShiftTeamUsersParam.from(request, jwtUtil.getAllClaimsAsMap(authorization)));
 
-        return ResponseEntity.status(HttpStatus.OK).build();
+        return ResponseEntity.status(HttpStatus.OK).body(response);
     }
 
     @PostMapping("/update-shift-team-leaders")
@@ -171,10 +175,11 @@ public class Attd06Controller {
             @Valid @RequestBody UpdateShiftTeamPeriodRequest request,
             @RequestHeader(value = "Authorization", required = false) String authorization) {
 
-        attd06Service.updateShiftTeamPeriod(
+        // prafta-com-013-05-2(재작업): 기간 연장 구간 생성 시 차단(연차+휴무)된 날짜 목록을 응답 본문으로 반환 -> FE alert.
+        ShiftSchSaveResponse response = attd06Service.updateShiftTeamPeriod(
                 UpdateShiftTeamPeriodParam.from(request, jwtUtil.getAllClaimsAsMap(authorization)));
 
-        return ResponseEntity.status(HttpStatus.OK).build();
+        return ResponseEntity.status(HttpStatus.OK).body(response);
     }
 
     @PostMapping("/delete-shift-teams")

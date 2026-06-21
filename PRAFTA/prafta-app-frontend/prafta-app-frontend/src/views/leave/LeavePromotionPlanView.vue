@@ -97,6 +97,7 @@ import { useRouter } from 'vue-router'
 
 import api from '@/api/axios'
 import { resolveApiErrorMessage } from '@/utils/apiError'
+import { formatYmdDisplay } from '@/utils/approvalFormat'
 
 import LeavePromotionCalendar from './components/LeavePromotionCalendar.vue'
 import LeavePromotionDateRows from './components/LeavePromotionDateRows.vue'
@@ -143,11 +144,8 @@ const viewYm = ref('')
 const minDate = computed(() => toDashYmd(todayYmd()))
 const maxDate = computed(() => toDashYmd(promotion.value?.availTo))
 
-// YYYYMMDD → "YYYY.MM.DD"
-const formatYmd = (ymd) => {
-  if (!ymd || ymd.length !== 8) return ''
-  return `${ymd.slice(0, 4)}.${ymd.slice(4, 6)}.${ymd.slice(6, 8)}`
-}
+// YYYYMMDD → "YYYY.MM.DD" (표시 단일 출처 위임, D1)
+const formatYmd = (ymd) => formatYmdDisplay(ymd)
 // YYYYMMDD → "YYYY-MM-DD"
 const toDashYmd = (ymd) => {
   if (!ymd || ymd.length !== 8) return ''
@@ -301,6 +299,12 @@ onMounted(() => {
 .lpp-view {
   --color-primary: #16a34a;
   --color-primary-text-deep: #15803d;
+  /* com-014-7 F1: 하위 LeavePromotionCalendar 가 소비하는 토큰을 호스트에서 일괄 제공
+     (자식 컴포넌트의 리터럴 재정의 제거 → 토큰 단일 출처화) */
+  --color-primary-tint: #f0fdf4;
+  --color-warning: #f59e0b;
+  --color-warning-tint: #fffbeb;
+  --color-danger: #ef4444;
   --color-text-primary: #111827;
   --color-text-secondary: #6b7280;
   --color-text-tertiary: #9ca3af;

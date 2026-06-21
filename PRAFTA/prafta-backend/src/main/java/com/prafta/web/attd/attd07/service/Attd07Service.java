@@ -2,6 +2,7 @@ package com.prafta.web.attd.attd07.service;
 
 import com.prafta.web.attd.attd07.application.param.DailyAttdDetailDeleteParam;
 import com.prafta.web.attd.attd07.application.param.DailyAttdDetailsParam;
+import com.prafta.web.attd.attd07.application.param.DeleteUserOvertimeParam;
 import com.prafta.web.attd.attd07.application.param.ApproveSchedModifyRequestParam;
 import com.prafta.web.attd.attd07.application.param.MonthlyAttdListParam;
 import com.prafta.web.attd.attd07.application.param.RejectUserAttdRequestParam;
@@ -51,6 +52,16 @@ public interface Attd07Service {
      * specified work day. PRAFTA-003.
      */
     void updateUserOvertimeRequests(UpdateUserOvertimeRequestParam param);
+
+    /**
+     * com-013 #6 - 일자 상세 관리자 직접 등록 OT(OT_ID 보유)를 즉시 소프트삭제(DEL_YN='Y')한다.
+     *
+     * <p>매니저 게이트(canManageNode) + 마감 가드(ensureNotClosed) + 대상 사용자 scope 검증을 거친 뒤
+     * (cmpny, site, user, otId) 일치 + 활성(DEL_YN='N') OT 1행을 삭제한다. 0행이면 스코프 밖이거나
+     * 이미 삭제/취소된 OT 로 보고 {@code ATTD_404_012} 로 거부한다. 처리 이력(HIST)은 남기지 않는다
+     * (기존 OT 연쇄 cascade 삭제와 정합).
+     */
+    void deleteUserOvertime(DeleteUserOvertimeParam param);
 
     /**
      * PRAFTA-APP-007 - 스케줄 수정 요청(REQ_TYPE='10')을 승인한다.

@@ -9,8 +9,12 @@ public record UpdateShiftTeamLeadersParam(
     String siteCd
     , String userCd
     , String leaderYn
+    , String shiftCd
+    , String shiftTeamId
+    , String teamIdx
     , String gvCmpnyCd
     , String gvUserCd
+    , String gvAuthCd
 ) {
     public static UpdateShiftTeamLeadersParam from(UpdateShiftTeamLeadersRequest request, TokenInfo tokenInfo) {
 
@@ -21,8 +25,12 @@ public record UpdateShiftTeamLeadersParam(
             request.getSiteCd()
             , request.getUserCd()
             , request.getLeaderYn()
+            , request.getShiftCd()
+            , request.getShiftTeamId()
+            , request.getTeamIdx()
             , tokenInfo.gv_cmpnyCd()
             , tokenInfo.gv_userCd()
+            , tokenInfo.gv_authCd()
         );
     }
 }

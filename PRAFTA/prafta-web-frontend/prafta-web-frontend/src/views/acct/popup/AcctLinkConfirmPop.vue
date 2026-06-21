@@ -310,6 +310,7 @@ import {
 import { useCenteredDraggable } from "@/composables/useCenteredDraggable";
 import axios from "@/api/axios";
 import { resolveApiErrorMessage } from "@/utils/apiError";
+import { formatYmdDot, formatHm } from "@/utils/dateFormat";
 
 const props = defineProps({
   // 등록 직후 넘어온 조회조건 묶음
@@ -529,16 +530,15 @@ const fnFinish = () => {
 };
 
 // ── 포맷터 ──
+// 시각 표시는 dateFormat 단일 출처에 위임(콜론 HH:mm). 빈값은 "-".
 const fmtHm = (hhmm) => {
   if (!hhmm) return "-";
-  const s = String(hhmm).padStart(4, "0");
-  return `${s.slice(0, 2)}:${s.slice(2, 4)}`;
+  return formatHm(hhmm);
 };
+// 날짜+시각 표시는 dateFormat 단일 출처에 위임(점/콜론). 둘 다 없으면 "-".
 const fmtDateTime = (ymd, hhmm) => {
   if (!ymd && !hhmm) return "-";
-  const d = ymd
-    ? `${ymd.slice(0, 4)}-${ymd.slice(4, 6)}-${ymd.slice(6, 8)}`
-    : "";
+  const d = ymd ? formatYmdDot(ymd) : "";
   return `${d} ${fmtHm(hhmm)}`.trim();
 };
 </script>

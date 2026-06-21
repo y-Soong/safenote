@@ -67,7 +67,7 @@
     </choose>
     </select>
 
-    <!-- 미승인 추가근무 — 초과근무(03/04) 신청 대기. 스코프 한정 -->
+    <!-- 미승인 초과근무 — 초과근무(03/04) 신청 대기. 스코프 한정 -->
     <select id="countUnapprovedOt" resultType="int">
     /* AttdCloseMapper.countUnapprovedOt */
     <choose>
@@ -222,6 +222,21 @@
     SELECT COUNT(*)
       FROM anc
      WHERE MAIN_ADMIN_CD = #{userCd} OR SUB_ADMIN_CD = #{userCd}
+    </select>
+
+    <!-- 노드 1행의 근태 승인 정책 (com-013-06-FU r28) — SELF_ATTD_APPRV_YN/부모/정·부 관리자 -->
+    <select id="selectNodeApprovalInfo" resultType="com.prafta.web.attd.attd07.result.NodeApprovalInfoResult">
+    /* AttdCloseMapper.selectNodeApprovalInfo */
+    SELECT
+          N.SELF_ATTD_APPRV_YN   AS selfAttdApprvYn
+        , N.PARENT_NODE_CD       AS parentNodeCd
+        , N.MAIN_ADMIN_CD        AS mainAdminCd
+        , N.SUB_ADMIN_CD         AS subAdminCd
+      FROM TB_SITE_NODE N
+     WHERE N.CMPNY_CD = #{cmpnyCd}
+       AND N.SITE_CD  = #{siteCd}
+       AND N.NODE_CD  = #{nodeCd}
+     LIMIT 1
     </select>
 
     <!-- 사용자 소속부서 조회 (마감 가드에서 대상 사용자 부서 해석용) -->

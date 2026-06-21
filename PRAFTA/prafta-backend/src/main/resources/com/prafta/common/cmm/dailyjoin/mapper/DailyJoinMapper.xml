@@ -413,4 +413,45 @@
         , UPDATE_DATE = NOW()
     </insert>
 
+    <!-- ============================================================
+         PRAFTA-055-1: 자가가입(직접가입) 슬롯 점유 시작 이력(TB_DAILY_USER_SLOT_HIS) 적재.
+         Baim05Mapper 의 동일 statement 와 별개로 자기 네임스페이스에 복제(모듈 경계 준수).
+         ============================================================ -->
+
+    <!-- 이력ID 채번('H' + YYYYMMDD + 시퀀스). baim05/dailyjoin 동일 시퀀스 'SLOT_HIS_ID' 공유. -->
+    <select id="selectDailySlotHisId" parameterType="string" resultType="string">
+    /* DailyJoinMapper.selectDailySlotHisId */
+    SELECT CONCAT('H', DATE_FORMAT(NOW(), '%Y%m%d'), FNC_CMM_SEQ_NEXTVAL(#{cmpnyCd}, 'SLOT_HIS_ID'))
+    FROM DUAL
+    </select>
+
+    <!-- 점유 시작 INSERT(RELEASE_* = NULL). OCCUPY_DTIME=NOW(). -->
+    <insert id="insertSlotHis" parameterType="com.prafta.common.cmm.dailyjoin.application.command.InsertSlotHisCommand">
+    /* DailyJoinMapper.insertSlotHis */
+    INSERT INTO TB_DAILY_USER_SLOT_HIS (
+        HIS_ID
+        , CMPNY_CD
+        , SITE_CD
+        , SLOT_NO
+        , WORK_DATE
+        , USER_ID
+        , ISSUE_CHANNEL
+        , OCCUPY_DTIME
+        , INSERT_NO
+        , INSERT_DATE
+    )
+    VALUES (
+        #{hisId}
+        , #{cmpnyCd}
+        , #{siteCd}
+        , #{slotNo}
+        , #{workDate}
+        , #{userId}
+        , #{issueChannel}
+        , NOW()
+        , #{insertNo}
+        , NOW()
+    )
+    </insert>
+
 </mapper>

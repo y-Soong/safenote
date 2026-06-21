@@ -19,6 +19,7 @@ public record MyReqItemResult(
         , String endTime
         , String leaveType
         , BigDecimal leaveDays
+        , String schCd
         , String processComment
         , LocalDateTime processDate
         , LocalDateTime insertDate

@@ -313,4 +313,77 @@ public interface LeaveDashboardMapper {
     java.math.BigDecimal selectStatutoryAnnualTenureAccrual(@Param("cmpnyCd") String cmpnyCd,
                                                             @Param("userCd") String userCd,
                                                             @Param("today") String today);
+
+    // ============================================================
+    // 연차 가불(마이너스/이월) 코어 (prafta-com-011-1)
+    //   가불 마커 = GRANT_REASON LIKE '[가불]%' (멱등키 밖, plan §0-1). GRANT_BY_TYPE='01' 재사용.
+    //   live = STATUS != 'CANCELED' AND DEL_YN = 'N'.
+    // ============================================================
+
+    /**
+     * 이미 가불한(아직 미발생) 일수 합계 (prafta-com-011 QA D1/D2 통일 모델, read-only). 누적 가불 한도 산정(결정 §2/§6-2)용.
+     *
+     * <p>{@code GRANT_REASON LIKE '[가불]%'} 인 live(STATUS!='CANCELED' AND DEL_YN='N') GRANT 중,
+     * {@code grantTypePrefix} 로 시작하는 {@code GRANT_TYPE}(예: 월차 'STATUTORY_MONTHLY', 본연차 'STATUTORY_ANNUAL'),
+     * 그리고 <b>아직 발생 전(AVAIL_FROM_DATE &gt; today)</b>인 GRANT 의 <b>USED_DAYS</b> 합을 반환한다(통일 모델 §6-2).
+     * 가불 GRANT 는 전량(1.0/차기 전량)으로 생성되고 가불 사용분만 USED 로 차감되므로, "이미 당겨쓴 일수"는 GRANT_DAYS 가
+     * 아니라 USED_DAYS 합이다. 발생일이 도래(AVAIL_FROM &lt;= today)한 GRANT 는 정식 부여로 전환된 것이라 한도에서 제외한다
+     * (그 개월/회차분은 발생분 카운트로 별도 반영됨 — 이중 차감 방지). 가불 한도 = 전량 − 이 값.
+     *
+     * @param cmpnyCd         회사 코드 (CMPNY_CD 스코프)
+     * @param userCd          대상 직원 코드
+     * @param grantTypePrefix 집계 대상 GRANT_TYPE prefix(LIKE '{prefix}%')
+     * @param today           기준일(YYYYMMDD) — AVAIL_FROM_DATE &gt; today(미발생) 필터
+     * @return live 미발생 가불 USED 일수 합(없으면 0)
+     */
+    java.math.BigDecimal selectBorrowedDaysTotal(@Param("cmpnyCd") String cmpnyCd,
+                                                 @Param("userCd") String userCd,
+                                                 @Param("grantTypePrefix") String grantTypePrefix,
+                                                 @Param("today") String today);
+
+    /**
+     * 멱등키로 기존 live 가불 GRANT 의 잔여 capacity 조회 (prafta-com-011 QA D1/D2 통일 모델, 누적 가불 §6-2).
+     *
+     * <p>같은 슬롯/회차의 가불 멱등키({@code {userCd}_{periodLabel}_{grantType}})로 이미 생성된 가불 GRANT
+     * ({@code GRANT_REASON LIKE '[가불]%'} + STATUS='ACTIVE' + DEL_YN='N')가 있으면 grantId/GRANT_DAYS/USED_DAYS 를
+     * 반환한다. 없으면 null. 누적 가불 시 신규 슬롯 INSERT 대신 이 GRANT 의 잔여(GRANT_DAYS−USED_DAYS)에 leave_use 를
+     * 추가(USED 증액)하여 충당한다.
+     *
+     * @param cmpnyCd        회사 코드 (CMPNY_CD 스코프)
+     * @param idempotencyKey 가불 멱등키
+     * @return 기존 가불 GRANT capacity(없으면 null)
+     */
+    com.prafta.common.cmm.leave.vo.BorrowGrantCapacityVO selectBorrowGrantByKey(
+            @Param("cmpnyCd") String cmpnyCd,
+            @Param("idempotencyKey") String idempotencyKey);
+
+    /**
+     * 반려/취소 시 회수 대상 가불 GRANT_ID 목록 (prafta-com-011-1).
+     *
+     * <p>해당 {@code reqId} 의 leave_use(차감 해제 후)가 가리키는 GRANT_ID 중,
+     * 가불 마커({@code GRANT_REASON LIKE '[가불]%'}) + ACTIVE + DEL_YN='N' + <b>USED_DAYS=0</b>(차감 복원됨) 인
+     * 행만 회수 후보로 반환한다. 비가불 GRANT/사용분 잔존 GRANT 는 제외(§8.5.8 기부여보호).
+     *
+     * <p>호출부는 leave_use 차감 해제(recomputeGrantUsedDays 등)를 <b>먼저</b> 수행해 USED_DAYS=0 으로 만든 뒤
+     * 본 조회를 한다(prafta-com-011-2 흐름).
+     *
+     * @param cmpnyCd 회사 코드 (CMPNY_CD 스코프)
+     * @param reqId   반려된 연차 요청 ID
+     * @return 회수 대상 가불 GRANT_ID 목록(없으면 빈 목록)
+     */
+    List<String> selectBorrowGrantIdsForCancel(@Param("cmpnyCd") String cmpnyCd,
+                                               @Param("reqId") String reqId);
+
+    /**
+     * 가불 GRANT 1건 회수(soft cancel) UPDATE (prafta-com-011-1). STATUS='CANCELED' + 회수 메타.
+     *
+     * <p>WHERE 를 grantId + cmpnyCd + STATUS='ACTIVE' + DEL_YN='N' + USED_DAYS=0 + 가불 마커
+     * ({@code GRANT_REASON LIKE '[가불]%'})로 못박아, 비가불/사용분 잔존/경합 행을 절대 취소하지 않는다.
+     * USED_DAYS 는 갱신하지 않는다(§8.5.8).
+     *
+     * @return 회수된 행 수(정상 1, 조건 불일치/경합 시 0)
+     */
+    int cancelBorrowGrant(@Param("cmpnyCd") String cmpnyCd,
+                          @Param("grantId") String grantId,
+                          @Param("operatorUserCd") String operatorUserCd);
 }

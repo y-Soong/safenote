@@ -41,8 +41,8 @@
         <!-- 이동 대상일 -->
         <section class="lmv-section">
           <h2 class="lmv-section__title">이동 대상일</h2>
-          <!-- TODO(developer): 날짜 선택 컴포넌트 연결. 만료일 이내/마감/충돌은 서버 강제. -->
-          <input type="date" v-model="moveTargetDate" class="lmv-date" />
+          <!-- 공통 날짜 휠 필드(modelValue 'YYYY-MM-DD'). 만료일 이내/마감/충돌은 서버 강제. -->
+          <DateStepperField v-model="moveTargetDate" placeholder="이동 대상일 선택" />
         </section>
 
         <!-- 사유 -->
@@ -85,6 +85,8 @@ import { useRouter } from 'vue-router'
 
 import api from '@/api/axios'
 import { resolveApiErrorMessage } from '@/utils/apiError'
+import { formatYmdDisplay } from '@/utils/approvalFormat'
+import DateStepperField from '@/components/common/DateStepperField.vue'
 
 const router = useRouter()
 const { proxy } = getCurrentInstance() || { proxy: null }
@@ -114,10 +116,10 @@ const onBack = () => router.back()
 // 촉진단계 코드 → 라벨 (서버 row 는 코드값만 반환)
 const PROMOTION_STAGE_NM = { NONE: '', FIRST: '1차 촉진', SECOND: '2차 촉진' }
 
-// YYYYMMDD → "YYYY-MM-DD"
+// YYYYMMDD → "YYYY.MM.DD" (셀렉트 표시, D1 점 통일)
 const fmtYmd = (ymd) => {
   if (!ymd || ymd.length !== 8) return ymd || ''
-  return `${ymd.slice(0, 4)}-${ymd.slice(4, 6)}-${ymd.slice(6, 8)}`
+  return formatYmdDisplay(ymd)
 }
 
 // "YYYY-MM-DD"(input[type=date]) → YYYYMMDD

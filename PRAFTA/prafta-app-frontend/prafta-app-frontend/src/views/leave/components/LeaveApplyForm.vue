@@ -152,6 +152,35 @@
         </p>
       </section>
 
+      <!-- 4-1) 가불(미래 연차 당겨쓰기) 동의 — 시스템 법정 연차 + 가불 가능 + 잔여 부족 시에만 노출 (prafta-com-011-4) -->
+      <section v-if="showBorrowToggle" class="fs">
+        <label class="borrow-toggle">
+          <input
+            v-model="borrowAgreed"
+            type="checkbox"
+            class="borrow-toggle__cb"
+          />
+          <span class="borrow-toggle__txt">미래 연차를 당겨 사용(가불)</span>
+        </label>
+
+        <!-- 토글 ON 시: 가불 한도/만료 안내 -->
+        <div v-if="borrowAgreed" class="borrow-info">
+          <div class="borrow-info__row">
+            <span class="borrow-info__lbl">가불 가능 한도</span>
+            <span class="borrow-info__val">{{ formatDays(borrowQuota) }}일</span>
+          </div>
+          <div v-if="borrowExpiryDisplay" class="borrow-info__row">
+            <span class="borrow-info__lbl">만료(소멸)</span>
+            <span class="borrow-info__val">{{ borrowExpiryDisplay }}</span>
+          </div>
+          <p v-if="borrowDeficitText" class="borrow-info__deficit">{{ borrowDeficitText }}</p>
+          <p class="borrow-info__guide">
+            <span class="borrow-info__dot" aria-hidden="true">·</span>
+            결재 승인 후 확정돼요. 미래에 발생할 연차에서 자동 차감됩니다.
+          </p>
+        </div>
+      </section>
+
       <!-- 5) 사유 -->
       <section class="fs">
         <label class="field">
@@ -270,7 +299,7 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, onMounted, watch, getCurrentInstance } from 'vue'
 import DateStepperField from '@/components/common/DateStepperField.vue'
 import TimeStepperField from '@/components/common/TimeStepperField.vue'
 // developer: 결재자 추가 시트(LeaveApproverPickerSheet)는 본 작업의 후속 골격 또는
@@ -288,6 +317,14 @@ const props = defineProps({
   submitting: { type: Boolean, default: false },
 })
 const emit = defineEmits(['submit', 'cancel'])
+
+const { proxy } = getCurrentInstance() || { proxy: null }
+// 공통: alert 폴백(앱 전역 $alert 우선, 없으면 window.alert) — LeaveApplyView 패턴 동일.
+const showAlert = (message) => {
+  if (proxy?.$alert) return proxy.$alert(message)
+  window.alert(message)
+  return Promise.resolve()
+}
 
 // ── 사용 단위 라벨(SYS025) — 표시 전용 상수 ──────────────────────────────
 // 00 종일 / 01 반차 / 02 2시간 / 03 1시간 / 04 30분
@@ -315,6 +352,9 @@ const startTimeInput = ref('') // 'HH:MM' (TimeStepperField v-model, 30분 단�
 const stepCount = ref(1)
 const reason = ref('')
 
+// 가불(미래 연차 당겨쓰기) 동의 상태 (prafta-com-011-4). 종류/날짜 변경 시 리셋.
+const borrowAgreed = ref(false)
+
 // 결재선 상태
 const selectedPresetId = ref('')
 // approverList: [{ approverUserCd, userNm, userId, rankNm, nodeNm }] (순서 = 결재 단계)
@@ -328,8 +368,8 @@ const selectedType = computed(
   () => leaveTypes.value.find((t) => t.leaveCd === selectedLeaveCd.value) || null,
 )
 
-// 결재 필요 여부(선택 종류의 서버 플래그)
-const aprvRequired = computed(() => Boolean(selectedType.value?.aprvRequired))
+// 결재 필요 여부(선택 종류의 서버 플래그). 가불(borrowAgreed) ON 이면 체크박스 설정 무관하게 결재 강제(결정 §4).
+const aprvRequired = computed(() => Boolean(selectedType.value?.aprvRequired) || borrowAgreed.value)
 
 // 선택 종류 allowedUnits(서버 권위) → 표시용 옵션
 const unitOptions = computed(() => {
@@ -437,36 +477,99 @@ const contextSchedule = computed(() => {
   return { startTime: sch.startTime || '', endTime: sch.endTime || '' }
 })
 
-// 잔여 초과 사전 경고 — 신청 일수 추정(종일 1.0 / 반차 0.5 / 시간차 (종료-시작)분÷소정근로분)
-//   > 선택 종류 balanceDays 면 true. 표시 전용(서버 051 이 최종 판정). 계산 불가 시 false.
+// 신청 일수 추정(종일 1.0 / 반차 0.5 / 시간차 (종료-시작)분÷소정근로분). 계산 불가/미선택 시 null.
+//   표시 전용 근사(서버가 최종 판정). 잔여초과 경고와 가불 토글 노출 판정의 단일출처.
+const estimatedDays = computed(() => {
+  if (!selectedType.value) return null
+  if (useUnitType.value === '00') return 1.0
+  if (useUnitType.value === '01') return 0.5
+  if (isTimeUnit.value) {
+    // 시간차: (종료-시작)분 ÷ 소정근로분. 소정근로 출처는 컨텍스트 스케줄(시작~종료), 휴게 미반영 근사.
+    const startM = toMinutes(startTimeInput.value)
+    const endM = toMinutes(endTimeInput.value)
+    if (startM < 0 || endM < 0) return null
+    const reqMin = endM - startM
+    if (reqMin <= 0) return null
+    const sch = contextSchedule.value
+    const schStart = sch ? toMin4(sch.startTime) : -1
+    const schEnd = sch ? toMin4(sch.endTime) : -1
+    const workMin = schStart >= 0 && schEnd >= 0 ? schEnd - schStart : -1
+    if (workMin <= 0) return null // 소정근로 산출 불가 → 추정 보류
+    return reqMin / workMin
+  }
+  return null
+})
+
+// 잔여 초과 사전 경고 — 신청 일수 추정 > 선택 종류 balanceDays 면 true. 계산 불가 시 false.
 const overBalanceWarning = computed(() => {
   const type = selectedType.value
   if (!type) return false
   const bal = Number(type.balanceDays)
   if (Number.isNaN(bal)) return false
+  const est = estimatedDays.value
+  if (est === null) return false
+  return est > bal
+})
 
-  let estimated = 0
-  if (useUnitType.value === '00') {
-    estimated = 1.0
-  } else if (useUnitType.value === '01') {
-    estimated = 0.5
-  } else if (isTimeUnit.value) {
-    // 시간차: (종료-시작)분 ÷ 소정근로분. 소정근로 출처는 컨텍스트 스케줄(시작~종료), 휴게 미반영 근사.
-    const startM = toMinutes(startTimeInput.value)
-    const endM = toMinutes(endTimeInput.value)
-    if (startM < 0 || endM < 0) return false
-    let reqMin = endM - startM
-    if (reqMin <= 0) return false
-    const sch = contextSchedule.value
-    const schStart = sch ? toMin4(sch.startTime) : -1
-    const schEnd = sch ? toMin4(sch.endTime) : -1
-    let workMin = schStart >= 0 && schEnd >= 0 ? schEnd - schStart : -1
-    if (workMin <= 0) return false // 소정근로 산출 불가 → 추정 보류
-    estimated = reqMin / workMin
-  } else {
-    return false
+// ── 가불(미래 연차 당겨쓰기) 파생값 (prafta-com-011-4) ─────────────────────
+// 가불 한도(서버 권위, apply-meta borrowQuota). 비대상이면 0.
+const borrowQuota = computed(() => Number(selectedType.value?.borrowQuota) || 0)
+
+// 가불분 만료(소멸)일 YYYYMMDD(서버 산출). 없으면 ''.
+const borrowExpiryYmd = computed(() => String(selectedType.value?.borrowExpiryYmd || ''))
+
+// 만료일 표시(YYYY-MM-DD). 미산정이면 ''.
+const borrowExpiryDisplay = computed(() => {
+  const ymd = borrowExpiryYmd.value
+  if (!ymd || ymd.length !== 8 || !/^\d{8}$/.test(ymd)) return ''
+  return `${ymd.slice(0, 4)}-${ymd.slice(4, 6)}-${ymd.slice(6, 8)}`
+})
+
+// 가불 토글 노출: 시스템 법정 연차(systemYn='Y') + 가불 가능(borrowable) + 잔여(balanceDays) 부족(추정 신청일수 초과).
+//   잔여 충분이거나 추정 불가/비대상이면 미노출(결정 §6-1: 부족할 때만).
+const showBorrowToggle = computed(() => {
+  const type = selectedType.value
+  if (!type) return false
+  if (String(type.systemYn) !== 'Y') return false
+  if (!type.borrowable) return false
+  const bal = Number(type.balanceDays)
+  const est = estimatedDays.value
+  if (Number.isNaN(bal) || est === null) return false
+  return est > bal
+})
+
+// 가불 충당(부족) 안내 텍스트 — 예: "남은 0일 + 가불 3일". 추정 불가/충분이면 ''.
+const borrowDeficitText = computed(() => {
+  const type = selectedType.value
+  if (!type) return ''
+  const bal = Number(type.balanceDays)
+  const est = estimatedDays.value
+  if (Number.isNaN(bal) || est === null) return ''
+  const deficit = est - Math.max(0, bal)
+  if (deficit <= 0) return ''
+  return `남은 ${formatDays(Math.max(0, bal))}일 + 가불 ${formatDays(deficit)}일`
+})
+
+// 선택 일자가 가불 만료(소멸)일을 지났는지(가불 토글 ON 한정 가드). 만료 미산정이면 false.
+const borrowDateExpired = computed(() => {
+  if (!borrowAgreed.value) return false
+  const exp = borrowExpiryYmd.value
+  const ymd = toYmd(workDateInput.value)
+  if (!exp || !ymd || ymd.length !== 8) return false
+  return ymd > exp
+})
+
+// 가불 토글 노출 조건이 깨지면(잔여 충분/비대상 전환 등) 동의 자동 해제 — 잔존 동의 누수 방지.
+watch(showBorrowToggle, (visible) => {
+  if (!visible && borrowAgreed.value) borrowAgreed.value = false
+})
+
+// 가불 토글 ON + 만료 경과 일자 선택 → alert 안내 후 차단(결정 §3, 서버도 fail-closed). 날짜 초기화.
+watch(borrowDateExpired, (expired) => {
+  if (expired) {
+    showAlert('가불 만료일이 지난 날짜에는 사용할 수 없어요.')
+    workDateInput.value = ''
   }
-  return estimated > bal
 })
 
 // 'HHMM' → 분. 형식 위반 시 -1. (스케줄 HHMM 용)
@@ -487,6 +590,8 @@ const isValid = computed(() => {
   // 종료가 자정을 넘어가면(익일 wrap) 제출 차단 — BE(eMin<=sMin) 가 ATTD_400_052 로 거부하므로 사전 방어.
   if (isTimeUnit.value && endOverflowsDay.value) return false
   if (aprvRequired.value && approverList.value.length === 0) return false
+  // 가불 토글 ON + 만료 경과 일자면 제출 차단(결정 §3, 서버 fail-closed 사전 방어).
+  if (borrowDateExpired.value) return false
   return true
 })
 
@@ -509,6 +614,7 @@ const onSelectType = (lt) => {
   stepCount.value = 1
   selectedPresetId.value = ''
   approverList.value = []
+  borrowAgreed.value = false // 가불 동의는 종류별 — 종류 변경 시 해제
 }
 
 // 단위 전환. 시간차가 아닌 단위(종일/반차)로 전환 시 잔존 시작값을 비워 누수 방지.
@@ -609,6 +715,8 @@ const onSubmit = () => {
     approverUserCds: aprvRequired.value ? approverUserCds.value : undefined,
     // presetId 는 생략 — 폼이 approverUserCds(전개)를 SSOT 로 보냄(018-B 결정 2 정합).
     presetId: undefined,
+    // 가불 동의(prafta-com-011-4): 토글 ON 시 true. 미선택이면 false(서버 미전송 시 false 취급).
+    isBorrow: borrowAgreed.value,
   })
 }
 
@@ -1021,6 +1129,71 @@ onMounted(() => {
   border-radius: var(--radius-sm);
   font-size: 12px;
   color: var(--color-danger);
+}
+
+/* 가불 동의 토글 + 안내 (prafta-com-011-4) — 기존 토큰/패턴 재사용 */
+.borrow-toggle {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+  min-height: 44px;
+  padding: var(--space-sm) var(--space-md);
+  background: var(--color-surface);
+  border: 0.5px solid var(--color-border);
+  border-radius: var(--radius-md);
+  cursor: pointer;
+}
+.borrow-toggle__cb {
+  width: 18px;
+  height: 18px;
+  flex-shrink: 0;
+  accent-color: var(--color-primary);
+  cursor: pointer;
+}
+.borrow-toggle__txt {
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--color-text-primary);
+}
+.borrow-info {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-xs);
+  padding: var(--space-sm) var(--space-md);
+  background: var(--color-primary-tint);
+  border: 0.5px solid var(--color-primary-tint-border);
+  border-radius: var(--radius-md);
+}
+.borrow-info__row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+.borrow-info__lbl {
+  font-size: 13px;
+  color: var(--color-primary-text-deep);
+}
+.borrow-info__val {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--color-primary-text-darkest);
+  font-variant-numeric: tabular-nums;
+}
+.borrow-info__deficit {
+  margin: 0;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--color-primary-text-deep);
+}
+.borrow-info__guide {
+  margin: 0;
+  display: flex;
+  gap: var(--space-xs);
+  font-size: 12px;
+  color: var(--color-primary-text-deep);
+}
+.borrow-info__dot {
+  color: var(--color-primary-text-deep);
 }
 
 .helper {

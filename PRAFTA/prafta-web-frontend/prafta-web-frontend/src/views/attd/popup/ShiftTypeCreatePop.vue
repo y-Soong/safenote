@@ -47,17 +47,35 @@
           <!-- 교대 패턴 정의 -->
           <div class="form-section">
             <p class="section-desc">교대 근무에 사용할 패턴을 정의합니다.</p>
-            <div class="form-row">
-              <label>패턴 수</label>
-              <select
-                v-model.number="patternCount"
-                class="select-pattern-count"
-                :disabled="isReadOnly"
-              >
-                <option v-for="n in 4" :key="n" :value="n + 1">
-                  {{ n + 1 }}
-                </option>
-              </select>
+            <div class="form-row pattern-count-row">
+              <div class="field">
+                <label>패턴 수</label>
+                <select
+                  v-model.number="patternCount"
+                  class="select-pattern-count"
+                  :disabled="isReadOnly"
+                >
+                  <option v-for="n in 4" :key="n" :value="n + 1">
+                    {{ n + 1 }}
+                  </option>
+                </select>
+              </div>
+              <div class="field">
+                <label>사용여부</label>
+                <div class="use-yn-wrap">
+                  <BaseSelect v-model="useYn">
+                    <option
+                      v-for="opt in (systCodeArr['SYS003'] || []).filter(
+                        (o) => o.systValDCd != null
+                      )"
+                      :key="opt.systValDCd"
+                      :value="opt.systValDCd"
+                    >
+                      {{ opt.systValDNm }}
+                    </option>
+                  </BaseSelect>
+                </div>
+              </div>
             </div>
             <div class="pattern-rows">
               <div v-for="i in patternCount" :key="i" class="pattern-row">
@@ -180,25 +198,6 @@
             </p>
           </div>
 
-          <hr class="section-divider" />
-
-          <!-- 사용여부 -->
-          <div class="form-section">
-            <div class="form-row">
-              <label>사용여부</label>
-              <BaseSelect v-model="useYn" class="select-use-yn">
-                <option
-                  v-for="opt in (systCodeArr['SYS003'] || []).filter(
-                    (o) => o.systValDCd != null
-                  )"
-                  :key="opt.systValDCd"
-                  :value="opt.systValDCd"
-                >
-                  {{ opt.systValDNm }}
-                </option>
-              </BaseSelect>
-            </div>
-          </div>
         </div>
 
         <div class="modal-footer">
@@ -400,13 +399,11 @@ const fnSchInfoList = async () => {
     });
     if (response.status === 200) {
       const list = response.data?.schInfoResultList ?? [];
-      patternOptions.value = [
-        ...list.map((item) => ({
-          value: item.schCd,
-          label: item.schNo + " - " + item.fstSchTime,
-        })),
-        { value: "OFF", label: "휴무" },
-      ];
+      // 휴무(OFF)는 패턴 select 템플릿에 고정 옵션으로 존재하므로 여기서 중복 추가하지 않는다
+      patternOptions.value = list.map((item) => ({
+        value: item.schCd,
+        label: item.schNo + " - " + item.fstSchTime,
+      }));
     }
   } catch (err) {
     const msg = resolveApiErrorMessage(err, "조회 중 오류가 발생했습니다.");
@@ -833,8 +830,32 @@ function bindDetailToForm(data) {
   margin-top: 0.25rem;
 }
 
-.select-use-yn {
-  width: 8rem;
+/* 패턴 수 / 사용여부를 같은 행에 반반 영역으로 배치 */
+.pattern-count-row {
+  gap: 1.5rem;
+}
+
+.pattern-count-row .field {
+  flex: 1 1 0;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+}
+
+.pattern-count-row .field label {
+  min-width: auto;
+  flex-shrink: 0;
+  font-weight: 500;
+  font-size: 0.875rem;
+}
+
+/* 셀렉트는 각자 영역(절반)에서 라벨을 뺀 나머지를 채움 */
+.pattern-count-row .field .select-pattern-count,
+.pattern-count-row .field .use-yn-wrap {
+  flex: 1 1 auto;
+  width: auto;
+  min-width: 0;
 }
 
 .modal-footer {

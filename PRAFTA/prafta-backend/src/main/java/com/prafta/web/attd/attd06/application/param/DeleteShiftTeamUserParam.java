@@ -13,6 +13,7 @@ public record DeleteShiftTeamUserParam(
     , String userCd
     , String gvCmpnyCd
     , String gvUserCd
+    , String gvAuthCd
 ) {
     public static DeleteShiftTeamUserParam from(DeleteShiftTeamUserRequest request, TokenInfo tokenInfo) {
 
@@ -27,6 +28,7 @@ public record DeleteShiftTeamUserParam(
             , request.getUserCd()
             , tokenInfo.gv_cmpnyCd()
             , tokenInfo.gv_userCd()
+            , tokenInfo.gv_authCd()
         );
     }
 }

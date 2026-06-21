@@ -84,15 +84,8 @@
               </div>
 
               <div class="ia-policy-actions">
-                <label class="ia-apply-label" for="ia-apply-date"
-                  >변경 적용일</label
-                >
-                <input
-                  id="ia-apply-date"
-                  class="ia-date-input"
-                  type="date"
-                  v-model="applyDate"
-                />
+                <label class="ia-apply-label">변경 적용일</label>
+                <CalendarSrch class="ia-date-input" v-model="applyDate" />
                 <button
                   class="btn btn-primary"
                   type="button"
@@ -334,6 +327,7 @@ import axios from "@/api/axios";
 import { getMessage, MSG } from "@/messages";
 import { resolveApiErrorMessage } from "@/utils/apiError";
 import ReasonInputModal from "@/components/modal/ReasonInputModal.vue";
+import CalendarSrch from "@/components/common/CalendarSrch.vue";
 
 // ================ Props & Emits ================
 // 메인 세션 결정 D-1: 본 영향분석 모달(LeavePolicyImpactPop)은 풀스크린 모달. 타깃 정책은 props로 직접 전달(store/route/TB_MENU 미사용).
@@ -741,7 +735,8 @@ const fnBuildPolicySummary = (policy) => {
   white-space: nowrap;
 }
 
-.ia-date-input {
+/* 네이티브 date input → CalendarSrch 교체. 내부 input 셀렉터로 스타일 유지 */
+.ia-date-input :deep(.calendar-input) {
   height: 2rem;
   border: 1px solid var(--color-border);
   border-radius: var(--input-radius);
@@ -752,7 +747,7 @@ const fnBuildPolicySummary = (policy) => {
   font-family: "Pretendard", sans-serif;
 }
 
-.ia-date-input:focus {
+.ia-date-input :deep(.calendar-input):focus {
   outline: none;
   border-color: var(--color-primary);
   box-shadow: 0 0 0 var(--focus-ring-width, 3px) var(--color-focus-ring);

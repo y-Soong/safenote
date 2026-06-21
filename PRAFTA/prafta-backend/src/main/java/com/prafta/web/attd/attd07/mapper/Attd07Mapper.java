@@ -18,6 +18,7 @@ import com.prafta.web.attd.attd07.application.query.OvertimeAllowedWindowQuery;
 import com.prafta.web.attd.attd07.result.AllowedWindowResult;
 import com.prafta.web.attd.attd07.result.AttdSnapshotResult;
 import com.prafta.web.attd.attd07.result.ConfirmedLeaveResult;
+import com.prafta.web.attd.attd07.result.DayAttdSegmentResult;
 import com.prafta.web.attd.attd07.result.DailyAttdDetailHistoryResult;
 import com.prafta.web.attd.attd07.result.DailyAttdDetailsResult;
 import com.prafta.web.attd.attd07.result.DailyOvertimeResult;
@@ -108,6 +109,21 @@ public interface Attd07Mapper {
 
     /** ATTD_ID 의 근무일자(WORK_YMD) 조회 — 마감 가드용 (PRAFTA-028). */
     String selectAttdWorkYmd(@Param("gvCmpnyCd") String gvCmpnyCd, @Param("attdId") String attdId);
+
+    /**
+     * 근무 구간 시각 겹침 판정(정책서 attd §7.6)용 — 같은 (회사/사업장/사용자/근무일) 활성 근태행 중
+     * 편집/등록 대상(excludeAttdId)을 제외한 다른 구간들의 출퇴근 시각을 반환한다.
+     *
+     * <p>웹 보정승인(updateUserAttdRequest)/직접수정(updateUserAttdInfos)에서 편집 대상 외 같은 날
+     *   다른 WORK_SEQ 구간과의 시각 겹침을 검사하기 위한 소스다. DEL_YN='N' 만, 퇴근 시각이 NULL 이면
+     *   open 구간으로 본다. excludeAttdId 가 null/빈값이면 제외 없이 그날 전체 구간을 반환한다(신규 생성 경로).
+     */
+    List<DayAttdSegmentResult> selectDayAttdSegmentsExcept(
+            @Param("cmpnyCd") String cmpnyCd,
+            @Param("siteCd") String siteCd,
+            @Param("userCd") String userCd,
+            @Param("workYmd") String workYmd,
+            @Param("excludeAttdId") String excludeAttdId);
 
     /**
      * 승인 처리 직전 근태(MGMT) 현재 출퇴근 스냅샷 조회 — 처리 이력 "변경 전(BEF_*)" 을
@@ -227,6 +243,23 @@ public interface Attd07Mapper {
     AllowedWindowResult selectAllowedWindow(OvertimeAllowedWindowQuery query);
 
     /**
+     * 근무계획(TB_USER_WORK_PLAN) 행이 없는 날(주말 등 미배정일) 폴백 윈도우.
+     *
+     * <p>{@link #selectAllowedWindow}는 TB_USER_WORK_PLAN 을 anchor 로 두므로 WP 행이 없으면
+     * 0행(=null)이 되어 실근태(A1/A2)까지 함께 유실된다. 정책 §7.5(스케줄 없는 날 근무는
+     * 전량 초과근무 대상)를 충족하려면 스케줄을 비우고 실근태만 로드해야 한다.
+     *
+     * <p>본 쿼리는 dummy anchor 를 사용해 WP 없이도 항상 정확히 1행을 반환한다.
+     * plan1/plan2 시각은 전부 NULL(스케줄 비움)이고 act1/act2 는 TB_USER_ATTD_MGMT 의
+     * WORK_SEQ=1/2 행을 LEFT JOIN 으로 로드한다. 하위 구간 차집합 로직은 schSeg=null 을
+     * 자동으로 "전량 허용"으로 처리한다.
+     *
+     * <p>파라미터는 {@link #selectAllowedWindow} 와 동일하게 {@link OvertimeAllowedWindowQuery}
+     * 를 재사용한다.
+     */
+    AllowedWindowResult selectActualWindowNoSchedule(OvertimeAllowedWindowQuery query);
+
+    /**
      * Issues a new OT_ID from the company-scoped sequence (FNC_CMM_SEQ_NEXTVAL).
      */
     String selectOtId(@Param("gvCmpnyCd") String gvCmpnyCd);
@@ -274,6 +307,8 @@ public interface Attd07Mapper {
      *
      * @param reqStart 요청 OT 시작 시각 (yyyyMMddHHmm, 12자리)
      * @param reqEnd   요청 OT 종료 시각 (yyyyMMddHHmm, 12자리)
+     * @param excludeOtIds com-013-06 A - in-place 수정 시 갱신 대상 OT_ID 목록(자기 자신과의 겹침 제외).
+     *                     비거나 null 이면 제외 없이 기존과 동일하게 동작한다.
      */
     int selectOverlappingOvertimeCount(
             @Param("cmpnyCd") String cmpnyCd,
@@ -281,7 +316,28 @@ public interface Attd07Mapper {
             @Param("userCd") String userCd,
             @Param("attdId") String attdId,
             @Param("reqStart") String reqStart,
-            @Param("reqEnd") String reqEnd);
+            @Param("reqEnd") String reqEnd,
+            @Param("excludeOtIds") java.util.List<String> excludeOtIds);
+
+    /**
+     * com-013-06 A - 관리자 직접수정 in-place UPDATE.
+     *
+     * 기존 OT 행(OT_ID=otId)을 요청 구간으로 갱신한다. {@link #updateUserOvertimeModify} 와 달리
+     * ATTD_ID 까지 스코프(WHERE)에 포함해, 다른 일자/근태에 속한 행을 이 일자로 옮기는 변조를 차단한다.
+     * (cmpny/site/user/attdId/otId scope + 활성 조건). 갱신 행이 0 이면 스코프 밖이거나 이미 취소/삭제됨.
+     */
+    int updateUserOvertimeDirect(
+            @Param("otId") String otId,
+            @Param("cmpnyCd") String cmpnyCd,
+            @Param("siteCd") String siteCd,
+            @Param("userCd") String userCd,
+            @Param("attdId") String attdId,
+            @Param("startDate") String startDate,
+            @Param("startTime") String startTime,
+            @Param("endDate") String endDate,
+            @Param("endTime") String endTime,
+            @Param("workMinutes") int workMinutes,
+            @Param("updateNo") String updateNo);
 
     /**
      * PRAFTA-025 - 초과근무 수정('04') 승인: 기존 OT 행(OT_ID=otId)을 요청 구간으로 UPDATE한다.
@@ -294,6 +350,35 @@ public interface Attd07Mapper {
      *
      * @return 영향받은 행 수 (0 또는 1)
      */
+    /**
+     * com-013 #6 - 관리자 직접 등록 OT 단건 소프트삭제.
+     *
+     * (cmpnyCd, siteCd, userCd, otId) 일치 + 활성 행(DEL_YN='N' AND OT_STATUS != 'CANCELLED')만
+     * DEL_YN='Y' 로 전이한다. selectDailyOvertimeList 술어(DEL_YN='N' AND OT_STATUS != 'CANCELLED')와
+     * 정합하여 삭제 즉시 목록에서 사라진다. 0행이면 스코프 밖이거나 이미 삭제/취소된 OT.
+     *
+     * @return 영향받은 행 수 (0 또는 1)
+     */
+    int deleteUserOvertimeById(
+            @Param("cmpnyCd") String cmpnyCd,
+            @Param("siteCd") String siteCd,
+            @Param("userCd") String userCd,
+            @Param("otId") String otId,
+            @Param("updateNo") String updateNo);
+
+    /**
+     * com-016-E - 삭제 직전 OT 1행을 (cmpny, site, user, otId) scope + 활성 조건으로 조회한다.
+     *
+     * 삭제 이력(HIST_TYPE='13')의 AFT_* 에 어떤 OT 구간을 지웠는지 남기기 위해
+     * 실제 시작/종료(ACTUAL_*) 를 읽어온다. 활성 행(DEL_YN='N' AND OT_STATUS != 'CANCELLED')만
+     * 반환하여 selectDailyOvertimeList / deleteUserOvertimeById 술어와 정합한다. 없으면 null.
+     */
+    DailyOvertimeResult selectOvertimeRowById(
+            @Param("cmpnyCd") String cmpnyCd,
+            @Param("siteCd") String siteCd,
+            @Param("userCd") String userCd,
+            @Param("otId") String otId);
+
     int updateUserOvertimeModify(
             @Param("otId") String otId,
             @Param("cmpnyCd") String cmpnyCd,

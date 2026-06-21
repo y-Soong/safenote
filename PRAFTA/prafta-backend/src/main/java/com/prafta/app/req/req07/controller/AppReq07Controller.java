@@ -17,6 +17,7 @@ import com.prafta.app.req.req07.application.param.SchedModifyParam;
 import com.prafta.app.req.req07.dto.request.AttdCorrectionRequest;
 import com.prafta.app.req.req07.dto.request.OvertimeRequest;
 import com.prafta.app.req.req07.dto.request.SchedModifyRequest;
+import com.prafta.app.req.req07.dto.response.AppliedOvertimeResponse;
 import com.prafta.app.req.req07.dto.response.RegisterReqResponse;
 import com.prafta.app.req.req07.dto.response.SchedOptionResponse;
 import com.prafta.app.req.req07.service.AppReq07Service;
@@ -75,6 +76,48 @@ public class AppReq07Controller {
         SchedOptionResponse response = appReq07Service.getSchedOptions(
                 tokenInfo.gv_cmpnyCd(), tokenInfo.gv_siteCd(), tokenInfo.gv_userCd(), workYmd);
         return ResponseEntity.ok(response);
+    }
+
+    /**
+     * 이미 등록(적용)된 초과근무 목록 조회 (prafta-app-030).
+     *
+     * <p>실제 매핑: {@code GET /prafta/appApi/req07/applied-overtimes?workYmd=YYYYMMDD}.
+     * 초과근무 신청 폼에서 중복등록 방지를 위해 기존 적용 OT(TB_USER_OVERTIME_MGMT)를 표시/대조한다.
+     * 식별값(cmpnyCd/siteCd/userCd)은 JWT(TokenInfo)에서만 도출한다 — 바디/쿼리 미수신(IDOR 가드).
+     * workYmd 는 본인 일자 판정용 쿼리 파라미터로만 수신하며 형식(YYYYMMDD 8자리 숫자)을 검증한다.
+     */
+    @GetMapping("/applied-overtimes")
+    public ResponseEntity<AppliedOvertimeResponse> getAppliedOvertimes(
+            @RequestParam(value = "workYmd", required = false) String workYmd,
+            @RequestHeader(value = "Authorization", required = false) String authorization
+    ) {
+        TokenInfo tokenInfo = jwtUtil.getAllClaimsAsMap(authorization);
+        if (tokenInfo == null
+                || !StringUtils.hasText(tokenInfo.gv_cmpnyCd())
+                || !StringUtils.hasText(tokenInfo.gv_siteCd())
+                || !StringUtils.hasText(tokenInfo.gv_userCd())) {
+            throw new ApiException(CommonErrorCode.COMMON_400_003);
+        }
+        if (!isValidYmd(workYmd)) {
+            throw new ApiException(CommonErrorCode.COMMON_400_001);
+        }
+        AppliedOvertimeResponse response = appReq07Service.getAppliedOvertimes(
+                tokenInfo.gv_cmpnyCd(), tokenInfo.gv_siteCd(), tokenInfo.gv_userCd(), workYmd);
+        return ResponseEntity.ok(response);
+    }
+
+    /** workYmd 형식 검증(YYYYMMDD 8자리 숫자). 형식 위반/누락이면 false. */
+    private static boolean isValidYmd(String ymd) {
+        if (ymd == null || ymd.length() != 8) {
+            return false;
+        }
+        for (int i = 0; i < 8; i++) {
+            char c = ymd.charAt(i);
+            if (c < '0' || c > '9') {
+                return false;
+            }
+        }
+        return true;
     }
 
     /**

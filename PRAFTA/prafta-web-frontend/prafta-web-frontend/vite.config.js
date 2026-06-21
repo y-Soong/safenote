@@ -22,6 +22,7 @@ export default defineConfig({
   server: {
     port: 8081,
     host: true, // 0.0.0.0 - 내 IP로 접근 가능하게
+    allowedHosts: ["web.prafta.com", ".prafta.com"],
     proxy: {
       "/prafta": {
         target: "http://localhost:8080",

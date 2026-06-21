@@ -37,7 +37,7 @@
 
           <!-- 날짜 키인 추가 -->
           <div class="lpd-add">
-            <input v-model="keyinYmd" type="date" class="lpd-add-input" />
+            <CalendarSrch v-model="keyinYmd" class="lpd-add-input" />
             <button class="lpd-add-btn" :disabled="!keyinYmd" @click="onAdd">+ 추가</button>
           </div>
 
@@ -66,6 +66,7 @@
 import { ref, computed, getCurrentInstance, defineProps, defineEmits } from "vue";
 import axios from "@/api/axios";
 import { resolveApiErrorMessage } from "@/utils/apiError";
+import CalendarSrch from "@/components/common/CalendarSrch.vue";
 
 const { proxy } = getCurrentInstance();
 
@@ -205,8 +206,12 @@ const onConfirm = async () => {
   display: flex;
   gap: 8px;
 }
+/* 네이티브 date input → CalendarSrch 교체. 레이아웃/사이즈 유지 */
 .lpd-add-input {
   flex: 1;
+}
+.lpd-add-input :deep(.calendar-input) {
+  width: 100%;
   height: var(--btn-height-lg, 32px);
   border: 1px solid var(--color-border-strong);
   border-radius: var(--input-radius, 10px);

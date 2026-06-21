@@ -1,5 +1,7 @@
 package com.prafta.web.baim.baim05.service.impl;
 
+import java.time.LocalDate;
+import java.time.format.DateTimeFormatter;
 import java.util.List;
 
 import org.springframework.stereotype.Service;
@@ -14,9 +16,11 @@ import com.prafta.common.security.normalize.Normalizers;
 import com.prafta.common.util.AuthRoleUtils;
 import com.prafta.common.util.PasswordHasher;
 import com.prafta.web.baim.baim05.application.command.ClearSlotCommand;
+import com.prafta.web.baim.baim05.application.command.CloseSlotHisCommand;
 import com.prafta.web.baim.baim05.application.command.DailyUserSlotCommand;
 import com.prafta.web.baim.baim05.application.command.DailyUserSlotUpdCommand;
 import com.prafta.web.baim.baim05.application.command.InsertDailyQrUserCommand;
+import com.prafta.web.baim.baim05.application.command.InsertSlotHisCommand;
 import com.prafta.web.baim.baim05.application.command.LinkPoliciesCommand;
 import com.prafta.web.baim.baim05.application.command.SetSlotFixedCommand;
 import com.prafta.web.baim.baim05.application.param.ClearDailyUserSlotsParam;
@@ -25,16 +29,20 @@ import com.prafta.web.baim.baim05.application.param.DailyUserSlotListParam;
 import com.prafta.web.baim.baim05.application.param.InsertDailyQrUserParam;
 import com.prafta.web.baim.baim05.application.param.LinkPoliciesParam;
 import com.prafta.web.baim.baim05.application.param.SetSlotFixedParam;
+import com.prafta.web.baim.baim05.application.param.SlotHisParam;
 import com.prafta.web.baim.baim05.application.query.DailyUserLinkPoliciesQuery;
 import com.prafta.web.baim.baim05.application.query.DailyUserSlotListQuery;
+import com.prafta.web.baim.baim05.application.query.SlotHisQuery;
 import com.prafta.web.baim.baim05.application.query.UserSlotCountQuery;
 import com.prafta.web.baim.baim05.dto.response.DailyUserLinkPoliciesResponse;
 import com.prafta.web.baim.baim05.dto.response.DailyUserSlotListResponse;
 import com.prafta.web.baim.baim05.dto.response.InsertDailyQrUserResponse;
+import com.prafta.web.baim.baim05.dto.response.SlotHisListResponse;
 import com.prafta.web.baim.baim05.mapper.Baim05Mapper;
 import com.prafta.web.baim.baim05.result.DailyUserLinkPolicyResult;
 import com.prafta.web.baim.baim05.result.DailyUserQrInfoResult;
 import com.prafta.web.baim.baim05.result.DailyUserSlotListResult;
+import com.prafta.web.baim.baim05.result.SlotHisResult;
 import com.prafta.web.baim.baim05.service.Baim05Service;
 
 import lombok.RequiredArgsConstructor;
@@ -45,12 +53,14 @@ import lombok.extern.slf4j.Slf4j;
 @RequiredArgsConstructor
 public class Baim05ServiceImpl implements Baim05Service{
 	private final Baim05Mapper baim05Mapper;
-	private final HmacSigner hmacSigner; 
+	private final HmacSigner hmacSigner;
 	private final AesGcmCrypto aesGcmCrypto;
 	private final PasswordHasher passwordHasher;
 	private final JwtUtil jwtUtil;
-		
-	
+
+	private static final DateTimeFormatter YMD = DateTimeFormatter.ofPattern("yyyyMMdd");
+
+
 	public DailyUserLinkPoliciesResponse selectDailyUserLinkPolicyList(DailyUserLinkPoliciesParam param) {
 		
 		DailyUserLinkPoliciesResponse response = null;
@@ -82,7 +92,10 @@ public class Baim05ServiceImpl implements Baim05Service{
 	}
 	
 	public void saveDailyUserLinkPolicy(LinkPoliciesParam param) {
-		
+
+		// PRAFTA-055-2: 쓰기 EP 역할 게이트(master/hr 또는 해당 사업장 노드 관리자만 허용)
+		assertSlotWriteRole(param.gvAuthCd(), param.gvUserCd(), param.gvCmpnyCd(), param.siteCd());
+
 		baim05Mapper.saveDailyUserLinkPolicy(LinkPoliciesCommand.from(param));
 		
 		int dayLimitCnt = Integer.parseInt(String.valueOf(param.dayLimitCnt()));
@@ -119,6 +132,10 @@ public class Baim05ServiceImpl implements Baim05Service{
 	@Override
 	@Transactional
 	public InsertDailyQrUserResponse insertDailyQrUser(InsertDailyQrUserParam param) {
+
+		// PRAFTA-055-2: 쓰기 EP 역할 게이트(master/hr 또는 해당 사업장 노드 관리자만 허용)
+		assertSlotWriteRole(param.gvAuthCd(), param.gvUserCd(), param.gvCmpnyCd(), param.siteCd());
+
 		String userCd = baim05Mapper.selectDailyUserCd(param.gvCmpnyCd());
 		// 1) 난수 해시값만 생성
 		String userPw = passwordHasher.generateRandomHash();
@@ -150,7 +167,21 @@ public class Baim05ServiceImpl implements Baim05Service{
 		
 		// 일일사용자 계정 슬롯 할당
 		baim05Mapper.updateDailyUserSlotCurrUserCd(DailyUserSlotUpdCommand.from(param, userCd));
-		
+
+		// PRAFTA-055-1: 슬롯 점유 이력 INSERT(발급채널 '02'=QR발급, RELEASE_* = NULL).
+		//               본 트랜잭션 포함(점유와 이력 정합 보장). USER_ID 는 QR 사용자의 USER_CD 동일값.
+		String hisId = baim05Mapper.selectDailySlotHisId(param.gvCmpnyCd());
+		baim05Mapper.insertSlotHis(new InsertSlotHisCommand(
+			hisId
+			, param.gvCmpnyCd()
+			, param.siteCd()
+			, param.slotNo()
+			, LocalDate.now().format(YMD)	// WORK_DATE = 점유 시작 일자(YYYYMMDD)
+			, userCd						// USER_ID = QR 사용자 USER_CD(USER_ID 동일값)
+			, "02"							// ISSUE_CHANNEL[SYS014] : 02 = QR발급
+			, param.gvUserCd()				// INSERT_NO = 발급한 관리자
+		));
+
 		return InsertDailyQrUserResponse.builder().dailyUserQrInfoResult(new DailyUserQrInfoResult(param.gvCmpnyCd(), param.siteCd(), userCd)).build();
 	}
 
@@ -164,12 +195,12 @@ public class Baim05ServiceImpl implements Baim05Service{
 	public void clearDailyUserSlots(ClearDailyUserSlotsParam param) {
 		log.info("일용직 슬롯 비우기 진입 - cmpnyCd={}, slotCnt={}", param.gvCmpnyCd(), param.slots().size());
 
-		// 역할 게이트(파괴적 EP): 관리자(master/hr)만 허용. 사업장 스코프(assertSiteAccess)는 별도 이중 검증.
-		assertManagerRole(param.gvAuthCd(), param.gvUserCd());
-
 		for (ClearDailyUserSlotsParam.SlotItem slot : param.slots()) {
 			// 사업장 접근 권한 검증(cross-site/cross-company IDOR 차단)
 			assertSiteAccess(param.gvAuthCd(), param.gvUserCd(), param.gvCmpnyCd(), slot.siteCd());
+
+			// PRAFTA-055-2: 쓰기 EP 역할 게이트(master/hr 또는 해당 사업장 노드 관리자만 허용). 슬롯 단위 사업장 기준.
+			assertSlotWriteRole(param.gvAuthCd(), param.gvUserCd(), param.gvCmpnyCd(), slot.siteCd());
 
 			// 점유자 식별은 서버에서 슬롯 PK 로 재조회(클라 userCd 신뢰 금지)
 			String currUserCd = baim05Mapper.selectSlotCurrUserCd(param.gvCmpnyCd(), slot.siteCd(), slot.slotNo());
@@ -186,6 +217,16 @@ public class Baim05ServiceImpl implements Baim05Service{
 			if (currUserCd != null && !currUserCd.isBlank()) {
 				baim05Mapper.deactivateDailyUser(command);
 				baim05Mapper.deactivateTbUser(command);
+
+				// PRAFTA-055-1: 점유 이력 닫기(열린 행 1건 UPDATE). RELEASE_TYPE '01'=관리자 점유해제.
+				baim05Mapper.closeSlotHis(new CloseSlotHisCommand(
+					param.gvCmpnyCd()
+					, slot.siteCd()
+					, slot.slotNo()
+					, param.gvUserCd()		// RELEASE_USER = 비우기 수행 관리자
+					, "01"					// RELEASE_TYPE[SYS016] : 01 = 관리자 점유해제
+					, "관리자 슬롯 비우기"
+				));
 			}
 
 			// 슬롯 초기화(점유자 유무 무관, 멱등)
@@ -202,12 +243,12 @@ public class Baim05ServiceImpl implements Baim05Service{
 	public void setDailyUserSlotFixed(SetSlotFixedParam param) {
 		log.info("일용직 슬롯 고정여부 토글 진입 - cmpnyCd={}, fixedYn={}, slotCnt={}", param.gvCmpnyCd(), param.fixedYn(), param.slots().size());
 
-		// 역할 게이트(파괴적 EP): 관리자(master/hr)만 허용. 사업장 스코프(assertSiteAccess)는 별도 이중 검증.
-		assertManagerRole(param.gvAuthCd(), param.gvUserCd());
-
 		for (SetSlotFixedParam.SlotItem slot : param.slots()) {
 			// 사업장 접근 권한 검증(cross-site/cross-company IDOR 차단)
 			assertSiteAccess(param.gvAuthCd(), param.gvUserCd(), param.gvCmpnyCd(), slot.siteCd());
+
+			// PRAFTA-055-2: 쓰기 EP 역할 게이트(master/hr 또는 해당 사업장 노드 관리자만 허용). 슬롯 단위 사업장 기준.
+			assertSlotWriteRole(param.gvAuthCd(), param.gvUserCd(), param.gvCmpnyCd(), slot.siteCd());
 
 			SetSlotFixedCommand command = new SetSlotFixedCommand(
 				param.gvCmpnyCd()
@@ -222,18 +263,48 @@ public class Baim05ServiceImpl implements Baim05Service{
 	}
 
 	/**
-	 * 관리자 역할 게이트(파괴적 슬롯 관리 EP 전용).
+	 * PRAFTA-055-3 — 슬롯 사용 이력 조회(최근 30일).
 	 *
-	 * <p>슬롯 비우기/고정토글은 타 일용직 계정을 강제 비활성화(비가역)하거나 점유 상태를 바꾸는
-	 * 파괴적 동작이다. 사업장 스코프(assertSiteAccess)만으로는 해당 사업장에 배속된 일반 근로자도
-	 * 호출 가능하므로(서비스 거부 위험), 역할(master/hr)을 토큰(JWT 도출 authCd)으로 선검증한다.
-	 * authCd 는 JWT 도출값만 신뢰한다(클라 바디 신뢰 금지). 통과 후에도 사업장 스코프는 그대로 유지(이중).
+	 * <p>조회 EP 이므로 파괴적 게이트(역할 게이트)는 적용하지 않고 사업장 접근 권한(assertSiteAccess)만 검증한다.
+	 * PII(이름/휴대폰)는 SQL 에서 마스킹된 값만 응답한다(평문 금지).
 	 */
-	private void assertManagerRole(String authCd, String userCd) {
-		if (!AuthRoleUtils.isManager(authCd)) {
-			log.warn("일용직 슬롯 관리자 권한 없음(역할 게이트 차단) - userCd={}, authCd={}", userCd, authCd);
-			throw new ApiException(BaimErrorCode.BAIM_403_002);
+	@Override
+	public SlotHisListResponse selectDailyUserSlotHisList(SlotHisParam param) {
+		// 사업장 접근 권한 검증(cross-site/cross-company IDOR 차단)
+		assertSiteAccess(param.gvAuthCd(), param.gvUserCd(), param.gvCmpnyCd(), param.siteCd());
+
+		// 최근 30일 cutoff(yyyyMMdd) 서버 산출
+		String cutoffYmd = LocalDate.now().minusDays(30).format(YMD);
+
+		List<SlotHisResult> slotHisList = baim05Mapper.selectDailyUserSlotHisList(SlotHisQuery.from(param, cutoffYmd));
+
+		return SlotHisListResponse.builder()
+				.slotHisList(slotHisList)
+				.build();
+	}
+
+	/**
+	 * 슬롯 쓰기 EP 역할 게이트(PRAFTA-055-2 — 노드 관리자 보강).
+	 *
+	 * <p>슬롯 비우기/고정토글/링크정책 변경/QR 발급은 슬롯/계정 상태를 바꾸는 쓰기 동작이다.
+	 * 사업장 스코프(assertSiteAccess)만으로는 해당 사업장에 배속된 일반 근로자도 호출 가능하므로
+	 * (서비스 거부 위험), 역할을 토큰(JWT 도출 authCd)으로 선검증한다.
+	 *
+	 * <p>허용: 전사 권한(master/hr) 또는 해당 사업장의 노드(부서) 정/부 관리자.
+	 * authCd 는 JWT 도출값만 신뢰한다(클라 바디 신뢰 금지). 미충족 시 BAIM_403_002.
+	 */
+	private void assertSlotWriteRole(String authCd, String userCd, String cmpnyCd, String siteCd) {
+		// 전사 권한(master/hr): 즉시 허용
+		if (AuthRoleUtils.isManager(authCd)) {
+			return;
 		}
+		// 해당 사업장 노드(부서) 정/부 관리자: 허용
+		if (siteCd != null && !siteCd.isBlank()
+			&& baim05Mapper.countNodeAdminInSite(cmpnyCd, siteCd, userCd) > 0) {
+			return;
+		}
+		log.warn("일용직 슬롯 쓰기 권한 없음(역할 게이트 차단) - userCd={}, authCd={}, siteCd={}", userCd, authCd, siteCd);
+		throw new ApiException(BaimErrorCode.BAIM_403_002);
 	}
 
 	/**

@@ -63,4 +63,12 @@ public class LeaveApplyRequest {
     @FieldLabel("결재선프리셋")
     @Size(max = 20)
     private String presetId;
+
+    /**
+     * prafta-com-011-2: 가불(미래 연차 당겨쓰기) 신청 여부. 기본 false(미전송 시 false 취급).
+     *
+     * <p>웹 {@code com.prafta.web.attd.leaveflow.dto.request.LeaveApplyRequest} 미러.
+     *   true 면 시스템 법정 연차(월차/본연차)에 한해 잔여 부족분을 미래 발생 연차에서 당겨 차감한다(결재 강제).
+     */
+    private Boolean isBorrow;
 }

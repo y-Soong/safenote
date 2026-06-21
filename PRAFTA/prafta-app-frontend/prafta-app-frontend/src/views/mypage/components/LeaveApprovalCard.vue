@@ -51,6 +51,7 @@
 
 <script setup>
 import { computed } from 'vue'
+import { formatYmdDisplay, formatDateTimeDisplay } from '@/utils/approvalFormat'
 
 const props = defineProps({
   item: { type: Object, required: true },
@@ -66,7 +67,7 @@ const leaveDaysText = computed(() => {
 const targetYmdText = computed(() => fmtYmd(props.item?.targetYmd))
 const reqDateText = computed(() => {
   const s = props.item?.reqDate
-  return s ? `요청 ${String(s).slice(0, 16).replace('T', ' ')}` : ''
+  return s ? `요청 ${formatDateTimeDisplay(s)}` : ''
 })
 const rangeText = computed(() => {
   const s = props.item?.startTime
@@ -78,10 +79,9 @@ const decisionChipClass = computed(() =>
   props.item?.myDecision === '02' ? 'lac__chip--primary' : 'lac__chip--danger',
 )
 
-// YYYYMMDD → YYYY-MM-DD / HHMM → HH:MM (단순 포맷)
+// 날짜 표시는 approvalFormat 단일 출처에 위임(점). HHMM → HH:MM 시각 포맷.
 function fmtYmd(v) {
-  if (v && v.length === 8) return `${v.slice(0, 4)}-${v.slice(4, 6)}-${v.slice(6, 8)}`
-  return v || ''
+  return formatYmdDisplay(v)
 }
 function fmtHm(v) {
   if (v && v.length === 4) return `${v.slice(0, 2)}:${v.slice(2, 4)}`

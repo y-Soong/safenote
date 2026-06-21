@@ -20,6 +20,7 @@ import com.prafta.web.attd.attd11.application.param.MonthlyAttdSummaryParam;
 import com.prafta.web.attd.attd11.application.query.MonthlyAttdSummaryQuery;
 import com.prafta.web.attd.attd11.dto.response.MonthlyAttdSummaryResponse;
 import com.prafta.web.attd.attd11.mapper.Attd11Mapper;
+import com.prafta.web.attd.attd11.result.AbsentDayCountResult;
 import com.prafta.web.attd.attd11.result.AttdSummaryRowResult;
 import com.prafta.web.attd.attd11.result.MonthlyAttdSummaryResult;
 import com.prafta.web.attd.attd11.result.OvertimeSummaryResult;
@@ -71,6 +72,15 @@ public class Attd11ServiceImpl implements Attd11Service {
         Map<String, Long> otMinutesByUser = new HashMap<>();
         for (OvertimeSummaryResult ot : otRows) {
             otMinutesByUser.put(ot.userCd(), ot.otMinutes());
+        }
+
+        // 사용자별 미출근일 수 (COM-016-F 8-3 : 스케줄 있으나 미출근, 휴일·연차·미래일 제외)
+        //   기존 결과 행 집합/모수는 변경하지 않고 매핑만 한다(보수적/무회귀 — 미출근만 있는
+        //   사용자를 새 행으로 노출하지 않음. 출근/초과근무 기록이 있는 기존 행에만 주입).
+        List<AbsentDayCountResult> absentRows = attd11Mapper.selectAbsentDayCount(query);
+        Map<String, Integer> absentByUser = new HashMap<>();
+        for (AbsentDayCountResult ab : absentRows) {
+            absentByUser.put(ab.userCd(), ab.absentDayCnt());
         }
 
         // 사용자별 누적기(등장 순서 유지 — 매퍼가 USER_CD, WORK_YMD, WORK_SEQ 순 정렬)
@@ -147,6 +157,7 @@ public class Attd11ServiceImpl implements Attd11Service {
                     , acc.lateMinutes
                     , acc.earlyLeaveCnt
                     , acc.earlyLeaveMinutes
+                    , absentByUser.getOrDefault(e.getKey(), 0)
             ));
         }
 
@@ -170,6 +181,7 @@ public class Attd11ServiceImpl implements Attd11Service {
                     , 0L
                     , 0
                     , 0L
+                    , absentByUser.getOrDefault(ot.userCd(), 0)
             ));
         }
 

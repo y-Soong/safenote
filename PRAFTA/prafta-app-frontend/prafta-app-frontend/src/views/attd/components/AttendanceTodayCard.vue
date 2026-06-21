@@ -8,7 +8,7 @@
   - 참조 패턴: views/main/components/AttendanceCard.vue (badge/btn/HHMM 포맷)
   - prafta-app-013: "수정 요청"은 항상 활성(4액션 시트를 연다). 개별 게이팅은 시트가 담당.
   - prafta-app-014: 슬롯/버튼 판정을 isTwoSlot → slotCount(서버) 로 이관.
-      스케줄 미대응 슬롯(slot.schedule==null)은 "스케줄 없음(추가근무)" 표기(D2).
+      스케줄 미대응 슬롯(slot.schedule==null)은 "스케줄 없음(초과근무)" 표기(D2).
       primary "출근" 버튼은 actions.canCheckIn(서버 effective 산출) 단독 기준(D4).
 -->
 <template>
@@ -36,7 +36,7 @@
       -->
       <div v-if="hasMultiSlot" class="dv">{{ slotDividerLabel(slot, idx) }}</div>
       <div class="tr">
-        <!-- 스케줄 (미대응 슬롯이면 "스케줄 없음(추가근무)") -->
+        <!-- 스케줄 (미대응 슬롯이면 "스케줄 없음(초과근무)") -->
         <div class="tw" :class="{ x: !slotHasSchedule(slot) }">
           <div class="tl">
             <svg class="icon" width="13" height="13" aria-hidden="true">
@@ -53,7 +53,7 @@
             </template>
             <template v-else>
               <div class="tt2">스케줄 없음</div>
-              <div class="tm">추가근무 (사후 초과근무 상신 대상)</div>
+              <div class="tm">초과근무 (사후 초과근무 상신 대상)</div>
             </template>
           </div>
         </div>
@@ -94,9 +94,6 @@
         종전 canRequestModify(서버) 의존을 끊었다.
       -->
       <button type="button" class="bt bt-s" @click="onModify">
-        <svg class="icon" width="16" height="16" aria-hidden="true">
-          <use href="#i-attd-edit" />
-        </svg>
         수정 요청
       </button>
 
@@ -115,9 +112,6 @@
           :disabled="!slot.canCheckInThisSlot"
           @click="onSlotCheckIn(slot.workSeq)"
         >
-          <svg class="icon" width="16" height="16" aria-hidden="true">
-            <use href="#i-attd-login" />
-          </svg>
           {{ slot.workSeq === 1 ? '1구간 출근' : '2구간 출근' }}
         </button>
       </template>
@@ -129,9 +123,6 @@
         :disabled="!primaryActionEnabled"
         @click="onPrimaryAction"
       >
-        <svg class="icon" width="16" height="16" aria-hidden="true">
-          <use :href="primaryActionIcon" />
-        </svg>
         {{ primaryActionLabel }}
       </button>
     </div>
@@ -142,10 +133,7 @@
     -->
     <div v-if="showSecondaryCheckIn" class="ft ft-sub">
       <button type="button" class="bt bt-s" @click="onSecondaryCheckIn">
-        <svg class="icon" width="16" height="16" aria-hidden="true">
-          <use href="#i-attd-login" />
-        </svg>
-        출근하기 (2회차)
+        {{ secondaryCheckInLabel }}
       </button>
     </div>
 
@@ -493,15 +481,35 @@ const primaryActionLabel = computed(() => {
   // 퇴근완료 상태에서의 퇴근 가능 = 재등록(오탭 보정), 그 외(진행 중)는 일반 퇴근.
   return (props.detail && props.detail.workStatus) === 'CHECKED_OUT' ? '퇴근 시간 재등록' : '퇴근하기'
 })
-const primaryActionIcon = computed(() =>
-  isPrimaryCheckOut.value ? '#i-attd-logout' : '#i-attd-login',
-)
+
+// prafta-app-026 후속: 2구간 스케줄에서 보조 2회차 출근의 대상 구간(남은 미등록 구간).
+//   canCheckOut(재등록 윈도우)로 showSlotCheckInButtons 가 닫혀도, 남은 구간은 서버 게이팅상
+//   canCheckInThisSlot=true 인 단 1개로 명확하다. 정확히 1개일 때만 자동 지정(그 외 null).
+//   1구간/스케줄없음(비 2구간)은 null → 단일 출근(서버 existing+1 채번) 유지.
+const secondaryCheckInTargetSeq = computed(() => {
+  if (!isTwoSlotSchedule.value) return null
+  const avail = checkInSlots.value.filter((s) => s.canCheckInThisSlot === true)
+  return avail.length === 1 ? avail[0].workSeq : null
+})
 
 // prafta-app-026: 보조 2회차 출근 버튼 노출 조건 — 퇴근 재등록(주 버튼)과 동시에 추가 출근도 가능할 때.
 //   showSlotCheckInButtons(진짜 2구간 명시 출근)와 배타: 그쪽이 노출되면 보조 버튼은 숨긴다.
+//   prafta-app-026 후속: 2구간 스케줄이면 대상 구간(targetWorkSeq)이 단일 해결될 때만 노출
+//     (미해결 2구간에서 targetWorkSeq 없이 눌러 087 나는 것을 원천 차단). 비 2구간은 종전대로.
 const showSecondaryCheckIn = computed(
-  () => canCheckOut.value && canCheckIn.value && !showSlotCheckInButtons.value,
+  () =>
+    canCheckOut.value &&
+    canCheckIn.value &&
+    !showSlotCheckInButtons.value &&
+    (!isTwoSlotSchedule.value || secondaryCheckInTargetSeq.value !== null),
 )
+
+// prafta-app-026 후속: 보조 출근 버튼 라벨 — 2구간 스케줄이면 대상 구간 명시, 그 외는 종전 "2회차".
+const secondaryCheckInLabel = computed(() => {
+  if (secondaryCheckInTargetSeq.value === 2) return '2구간 출근'
+  if (secondaryCheckInTargetSeq.value === 1) return '1구간 출근'
+  return '출근하기 (2회차)'
+})
 
 const onModify = () => {
   // prafta-app-013: 4액션 시트를 열도록 컨테이너에 위임.
@@ -515,11 +523,11 @@ const onPrimaryAction = () => {
   })
 }
 // prafta-app-026: 보조 2회차 출근 — 단일 출근(구간 미지정). targetWorkSeq 미동봉(서버 existing+1 채번).
+//   prafta-app-026 후속: 2구간 스케줄이면 남은 구간(targetWorkSeq) 동봉(서버 087 방지). 그 외는 미동봉.
 const onSecondaryCheckIn = () => {
-  emit('action', {
-    type: 'checkIn',
-    detail: props.detail,
-  })
+  const payload = { type: 'checkIn', detail: props.detail }
+  if (secondaryCheckInTargetSeq.value) payload.targetWorkSeq = secondaryCheckInTargetSeq.value
+  emit('action', payload)
 }
 // prafta-app-015: 2구간 구간 선택 출근 — 선택 구간(workSeq)을 targetWorkSeq 로 동봉하여 emit.
 const onSlotCheckIn = (workSeq) => {

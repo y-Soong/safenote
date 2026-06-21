@@ -49,6 +49,15 @@ public record InsertUserAttdHistsCommand(
     /** HIST_TYPE[SYS032] 09: 초과근무 반려 (PRAFTA-027) */
     public static final String HIST_TYPE_OVERTIME_REJECT = "09";
 
+    /** HIST_TYPE[SYS032] 11: 관리자 생성 (com-013 #5 — 관리자 직접 근태 생성) */
+    public static final String HIST_TYPE_ADMIN_CREATE = "11";
+
+    /** HIST_TYPE[SYS032] 12: 관리자 수정 (com-013 #5 — 관리자 직접 근태 수정) */
+    public static final String HIST_TYPE_ADMIN_MODIFY = "12";
+
+    /** HIST_TYPE[SYS032] 13: 초과근무 삭제 (com-016-E — 관리자 직접 OT 삭제) */
+    public static final String HIST_TYPE_OVERTIME_DELETE = "13";
+
     /**
      * 근태 승인(2차 이력) INSERT 용 팩토리. HIST_TYPE='01'.
      *
@@ -72,6 +81,55 @@ public record InsertUserAttdHistsCommand(
         	, attdId
             , model.siteCd()
             , HIST_TYPE_CREATE		// histType[SYS032] 01:생성
+            , model.reason()
+            , model.workYmd()
+
+            , model.oriCheckInDate()
+            , model.oriCheckInTime()
+            , model.oriCheckOutDate()
+            , model.oriCheckOutTime()
+
+            , model.checkInDate()
+            , model.checkInTime()
+            , model.checkOutDate()
+            , model.checkOutTime()
+
+            , model.gvCmpnyCd()
+            , model.gvUserCd()
+        );
+    }
+
+    /**
+     * com-013 #5 - 관리자 직접 근태 생성/수정 이력 INSERT용 팩토리.
+     *
+     * <p>{@code updateUserAttdInfos}(관리자가 화면에서 직접 출퇴근 값을 입력) 경로 전용이다.
+     * 기존 {@link #from(String, String, UpdateUserAttdInfosModel)} 은 HIST_TYPE='01'(근태 생성)을 쓰는데,
+     * 이는 "근태 생성요청 승인" 경로와 의미가 겹쳐 관리자 직접수정 이력이 잘못 표기된다.
+     * 본 팩토리는 신규/기존 분기에 따라 HIST_TYPE 을 11(관리자 생성) / 12(관리자 수정) 로 기록한다.
+     * BEF / AFT 출퇴근 값 매핑은 {@code from()} 과 동일하다(생성 시 BEF 계열은 model 에서 NULL).
+     *
+     * @param histId   채번된 HIST_ID
+     * @param attdId   이력을 귀속시킬 ATTD_ID
+     * @param model    화면 입력 모델
+     * @param isCreate true 면 신규 생성(HIST_TYPE='11'), false 면 기존 수정(HIST_TYPE='12')
+     */
+    public static InsertUserAttdHistsCommand forAdminDirect(
+            String histId, String attdId, UpdateUserAttdInfosModel model, boolean isCreate) {
+
+    	if (histId == null)
+            throw new ApiException(CommonErrorCode.COMMON_400_001);
+
+    	if (attdId == null)
+            throw new ApiException(CommonErrorCode.COMMON_400_001);
+
+        if (model == null)
+            throw new ApiException(CommonErrorCode.COMMON_400_001);
+
+        return new InsertUserAttdHistsCommand(
+    		histId
+        	, attdId
+            , model.siteCd()
+            , isCreate ? HIST_TYPE_ADMIN_CREATE : HIST_TYPE_ADMIN_MODIFY	// 11:관리자 생성 / 12:관리자 수정
             , model.reason()
             , model.workYmd()
 
@@ -232,6 +290,59 @@ public record InsertUserAttdHistsCommand(
             , null
             , null
             , null
+
+            , cmpnyCd
+            , processUserCd
+        );
+    }
+
+    /**
+     * com-016-E - 초과근무 삭제 이력 INSERT용 팩토리. HIST_TYPE='13'.
+     *
+     * 초과근무 승인(forOvertimeApprove)과 동일하게 그날 근태기록의 ATTD_ID 를 HIST 앵커로 사용한다
+     * (HIST.ATTD_ID 는 NOT NULL). 어떤 OT 구간을 지웠는지 이력에서 추적할 수 있도록
+     * 삭제 직전 OT 의 실제 시작/종료(ACTUAL_*) 를 AFT_* 컬럼에 담는다. 삭제이므로 BEF_* 는 NULL 이다.
+     *
+     * @param histId        채번된 HIST_ID
+     * @param attdId        이력을 귀속시킬 ATTD_ID (그날 근태기록)
+     * @param cmpnyCd       회사 코드
+     * @param siteCd        사업장 코드
+     * @param workYmd       근무일자
+     * @param otStartDate   삭제된 OT 시작 일자 (AFT_CHECK_IN_DATE 에 저장)
+     * @param otStartTime   삭제된 OT 시작 시각 (AFT_CHECK_IN_TIME 에 저장)
+     * @param otEndDate     삭제된 OT 종료 일자 (AFT_CHECK_OUT_DATE 에 저장)
+     * @param otEndTime     삭제된 OT 종료 시각 (AFT_CHECK_OUT_TIME 에 저장)
+     * @param reason        처리 사유 (삭제 사유)
+     * @param processUserCd 처리자(삭제자) 사용자 코드
+     */
+    public static InsertUserAttdHistsCommand forOvertimeDelete(
+            String histId, String attdId, String cmpnyCd, String siteCd, String workYmd,
+            String otStartDate, String otStartTime, String otEndDate, String otEndTime,
+            String reason, String processUserCd) {
+
+        if (histId == null)
+            throw new ApiException(CommonErrorCode.COMMON_400_001);
+
+        if (attdId == null)
+            throw new ApiException(CommonErrorCode.COMMON_400_001);
+
+        return new InsertUserAttdHistsCommand(
+            histId
+            , attdId
+            , siteCd
+            , HIST_TYPE_OVERTIME_DELETE		// histType[SYS032] 13:초과근무 삭제
+            , reason
+            , workYmd
+
+            , null					// BEF_* 전부 NULL (삭제: 이전 상태 표기 생략)
+            , null
+            , null
+            , null
+
+            , otStartDate			// AFT_* = 삭제된 OT 시작/종료 구간
+            , otStartTime
+            , otEndDate
+            , otEndTime
 
             , cmpnyCd
             , processUserCd

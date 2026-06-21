@@ -77,9 +77,13 @@ public class LoginController {
     public ResponseEntity<AuthLogoutResponse> logout(
 		@RequestHeader(value = "X-Client-Type", required = false, defaultValue = "WEB") String clientType
 		, @RequestHeader(value = "Authorization", required = false) String authorization
+		// prafta-com-015 015-3: 앱은 본문에 gv_deviceId 를 동봉(현재 기기 푸시 토큰 정리용). 웹은 미전송 → null → skip.
+		, @RequestBody(required = false) java.util.Map<String, Object> body
     ) {
-    	loginService.logout(LogoutParam.from(clientType, jwtUtil.getAllClaimsAsMap(authorization)));
-    	
+    	String bodyDeviceId = (body == null || body.get("gv_deviceId") == null)
+    			? null : String.valueOf(body.get("gv_deviceId"));
+    	loginService.logout(LogoutParam.from(clientType, jwtUtil.getAllClaimsAsMap(authorization), bodyDeviceId));
+
     	return ResponseEntity.status(HttpStatus.OK).build();
     }
     

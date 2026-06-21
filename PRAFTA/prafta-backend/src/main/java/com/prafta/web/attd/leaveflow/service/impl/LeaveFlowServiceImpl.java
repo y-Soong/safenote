@@ -14,7 +14,11 @@ import com.prafta.common.cmm.approval.vo.ApprovalStepVO;
 import com.prafta.common.cmm.leave.mapper.LeavePolicyMapper;
 import com.prafta.common.cmm.leave.service.LeaveApprovalNotiService;
 import com.prafta.common.cmm.leave.service.LeaveDeductionService;
+import com.prafta.common.cmm.leave.service.LeaveGrantEngineService;
+import com.prafta.common.cmm.leave.service.LeaveGrantEngineService.BorrowFamily;
 import com.prafta.common.cmm.leave.util.FiscalYearUtils;
+import com.prafta.common.cmm.leave.vo.BorrowGrantResultVO;
+import com.prafta.common.cmm.leave.vo.BorrowGrantResultVO.BorrowGrantSlotVO;
 import com.prafta.common.cmm.leave.vo.LeavePolicyVO;
 import com.prafta.common.cmm.push.ApprovalResultNotiService;
 import com.prafta.common.error.attd.AttdErrorCode;
@@ -27,6 +31,7 @@ import com.prafta.web.attd.leaveflow.application.param.LeaveApplyParam;
 import com.prafta.web.attd.leaveflow.application.param.LeaveApprovalActionParam;
 import com.prafta.web.attd.leaveflow.mapper.LeaveFlowMapper;
 import com.prafta.web.attd.leaveflow.service.LeaveFlowService;
+import com.prafta.web.attd.leaveflow.vo.AutoDeductibleGrantVO;
 import com.prafta.web.attd.leaveflow.vo.DeductibleGrantVO;
 import com.prafta.web.attd.leaveflow.vo.DirectLeaveResult;
 import com.prafta.web.attd.leaveflow.vo.LeaveModifyTargetVO;
@@ -69,11 +74,19 @@ public class LeaveFlowServiceImpl implements LeaveFlowService {
 
     /** 연차개편: 사용자 신청 타입 [SYS021] '01'. 한도=MAX_APLY_DAYS, 잔여=회계연도 사용분 차감. */
     private static final String LEAVE_TYPE_USER_APPLY = "01";
+    /** prafta-com-016-B(3-1): 사용가능기간 [SYS026] '01' 설정안함 = 전체 누적(lifetime). 그 외는 회계연도 윈도우. */
+    private static final String AVAIL_TERM_NONE = "01";
     /** 연차개편 동시성: '01' 신청 직렬화 advisory lock 타임아웃(초). */
     private static final int LEAVE01_LOCK_TIMEOUT_SEC = 5;
 
     /** 근무계획 연차 셀 비우기 시 직접 사용기록 취소 사유 (prafta-041) */
     private static final String CANCEL_REASON_PLAN_CLEAR = "근무계획 연차 비우기";
+
+    // ===== prafta-com-011-2 가불 시스템 연차 코드(엔진 LEAVE_CD 상수와 동일) =====
+    /** 본연차 시스템 코드 → BorrowFamily.ANNUAL. */
+    private static final String LEAVE_CD_ANNUAL = "SYS_ANNUAL";
+    /** 월차 시스템 코드 → BorrowFamily.MONTHLY. */
+    private static final String LEAVE_CD_MONTHLY = "SYS_MONTHLY";
 
     private final LeaveFlowMapper leaveFlowMapper;
     private final ApprovalLineMapper approvalLineMapper;
@@ -85,6 +98,8 @@ public class LeaveFlowServiceImpl implements LeaveFlowService {
     private final LeaveApprovalNotiService leaveApprovalNotiService;
     /** PRAFTA-APP-021-3a(W2): 연차 결재 결과(승인/반려) 통보 PUSH 생산자(신청자 1인, afterCommit 격리). */
     private final ApprovalResultNotiService approvalResultNotiService;
+    /** prafta-com-011-2 가불: 한도 projection/만료검증/가불 GRANT 생성·회수 코어(com-011-1 산출). */
+    private final LeaveGrantEngineService leaveGrantEngineService;
 
     @Override
     @Transactional
@@ -119,10 +134,13 @@ public class LeaveFlowServiceImpl implements LeaveFlowService {
             leaveDays = new BigDecimal("1.00000");
         } else if (UNIT_HALF.equals(unit)) {
             leaveDays = new BigDecimal("0.50000");
+            // 반차는 소정근로의 절반을 차감하므로 근무 스케줄이 있어야 한다.
+            //   스케줄 없는 날(getDailyStdWorkMinutes==null)은 반차 신청 불가(종일 연차만 가능).
             Integer daily = leaveDeductionService.getDailyStdWorkMinutes(cmpny, site, user, workYmd);
-            if (daily != null) {
-                leaveMinutes = daily / 2;
+            if (daily == null) {
+                throw new ApiException(AttdErrorCode.ATTD_400_110);
             }
+            leaveMinutes = daily / 2;
         } else if (UNIT_HOUR2.equals(unit) || UNIT_HOUR1.equals(unit) || UNIT_MIN30.equals(unit)) {
             startTime = p.startTime();
             endTime = p.endTime();
@@ -136,8 +154,12 @@ public class LeaveFlowServiceImpl implements LeaveFlowService {
             if (minutes % unitMin != 0) {
                 throw new ApiException(AttdErrorCode.ATTD_400_054);
             }
+            // 시간차도 스케줄(소정근로시간) 기준으로 차감하므로 스케줄 필수.
             Integer daily = leaveDeductionService.getDailyStdWorkMinutes(cmpny, site, user, workYmd);
-            if (daily == null || minutes > daily) {
+            if (daily == null) {
+                throw new ApiException(AttdErrorCode.ATTD_400_110);
+            }
+            if (minutes > daily) {
                 throw new ApiException(AttdErrorCode.ATTD_400_052);
             }
             // 휴게 가로지름 거부 (§8.5.9) — 휴게시각 미설정이면 skip
@@ -164,13 +186,55 @@ public class LeaveFlowServiceImpl implements LeaveFlowService {
             }
         }
 
+        // 3-B) 같은 날 중복 등록 가드(앱 AppLeaveFlowServiceImpl 미러).
+        //   - 이미 점유된 연차 일수(종일=1.0 / 반차·시간차=LEAVE_DAYS) + 신규 신청 일수 > 1.0 이면 거부.
+        //     → 종일 등록일에 반차 추가, 종일 중복, 반차 누적 초과 등 "하루 초과" 중복 차단(ATTD_400_111).
+        //   - 시간차(02/03/04)는 합산이 1.0 이하여도 기존 시간차와 시간대가 겹치면 거부(ATTD_400_112).
+        //     겹치지 않는 시간차 병행 신청은 허용(정책).
+        BigDecimal occupied = leaveFlowMapper.selectOccupiedLeaveDaysOnDate(cmpny, user, workYmd);
+        if (occupied == null) {
+            occupied = BigDecimal.ZERO;
+        }
+        if (occupied.add(leaveDays).compareTo(BigDecimal.ONE) > 0) {
+            log.info("[leaveflow] 연차 신청 거부: 같은 날 하루 초과 중복 (userCd={}, workYmd={}, 점유={}, 신규={})",
+                    user, workYmd, occupied.toPlainString(), leaveDays.toPlainString());
+            throw new ApiException(AttdErrorCode.ATTD_400_111);
+        }
+        if (UNIT_HOUR2.equals(unit) || UNIT_HOUR1.equals(unit) || UNIT_MIN30.equals(unit)) {
+            if (leaveFlowMapper.countOverlappingTimeLeaveOnDate(cmpny, user, workYmd, startTime, endTime) > 0) {
+                log.info("[leaveflow] 연차 신청 거부: 같은 날 시간차 시간대 겹침 (userCd={}, workYmd={}, {}~{})",
+                        user, workYmd, startTime, endTime);
+                throw new ApiException(AttdErrorCode.ATTD_400_112);
+            }
+        }
+
         // 4) 잔여 확보(타입 분기 — 앱 AppLeaveFlowServiceImpl 미러).
         //    '02'(또는 SYSTEM_YN='Y'): 기존 차감 GRANT 경로(만료 임박 우선, FOR UPDATE) 유지 — 회귀 0.
         //    '01'(사용자 신청): GRANT 가 없어 회계연도 한도(MAX_APLY_DAYS) 대비 사용분 검증.
         //      FOR UPDATE 를 못 쓰니 (USER_CD,LEAVE_CD) advisory lock 으로 직렬화
         //      → 사용분 재집계 → 한도검증 → INSERT 순서로 중복신청 레이스를 방지한다.
         boolean userApplyType = LEAVE_TYPE_USER_APPLY.equals(type.leaveType()) && !statutory;
-        String grantId; // '01'은 null(차감 GRANT 없음), 그 외는 선택된 부여 ID
+
+        // prafta-com-011-2 가불: isBorrow=true 면 결재 강제(결정 §4) + 시스템 법정 월차/본연차만 허용.
+        //   직접입력/무결재 자동확정 경로로 가불 진입 차단(가불은 항상 결재선 필수). 식별값은 토큰 도출.
+        boolean borrow = p.isBorrow();
+        BorrowFamily borrowFamily = null;
+        String hireDate = null;
+        if (borrow) {
+            if (!statutory || userApplyType) {
+                throw new ApiException(AttdErrorCode.ATTD_400_180); // 가불=법정(시스템) 연차만
+            }
+            borrowFamily = borrowFamilyOf(leaveCd);
+            if (borrowFamily == null) {
+                throw new ApiException(AttdErrorCode.ATTD_400_180); // 월차/본연차 외 법정타입은 가불 비대상
+            }
+            aprvRequired = true; // 결재 강제(체크박스/타입 APRV_USE_YN 무시)
+            hireDate = leaveFlowMapper.selectUserHireDate(cmpny, user);
+            // 만료(소멸) 경과 일자 fail-closed 차단(서버, 프론트 alert 우회 방지).
+            leaveGrantEngineService.assertBorrowWorkYmdWithinExpiry(cmpny, user, hireDate, workYmd, borrowFamily);
+        }
+
+        List<GrantCharge> charges; // 차감 대상(부여 ID + 일수). '01'은 [(null, leaveDays)].
         String lockKey = null;
         try {
             if (userApplyType) {
@@ -182,24 +246,34 @@ public class LeaveFlowServiceImpl implements LeaveFlowService {
                     log.info("[leaveflow] 연차 신청 거부: 사용자 신청 한도(MAX_APLY_DAYS) 미설정 (userCd={}, leaveCd={})", user, leaveCd);
                     throw new ApiException(AttdErrorCode.ATTD_400_051);
                 }
-                FiscalYearUtils.FiscalWindow fiscal = resolveFiscalWindow(cmpny);
-                BigDecimal used = leaveFlowMapper.selectFiscalUsedDays(
-                        cmpny, user, leaveCd, fiscal.fiscalStartYmd(), fiscal.fiscalEndYmdExclusive());
+                // prafta-com-016-B(3-1): 사용가능기간 분기.
+                //   '01' 설정안함 = 전체 누적(윈도우 없음, lifetime), 그 외('02' 해당연도내 포함) = 회계연도 윈도우(현행).
+                BigDecimal used;
+                if (AVAIL_TERM_NONE.equals(type.availTermType())) {
+                    used = leaveFlowMapper.selectTotalUsedDays(cmpny, user, leaveCd);
+                } else {
+                    FiscalYearUtils.FiscalWindow fiscal = resolveFiscalWindow(cmpny);
+                    used = leaveFlowMapper.selectFiscalUsedDays(
+                            cmpny, user, leaveCd, fiscal.fiscalStartYmd(), fiscal.fiscalEndYmdExclusive());
+                }
                 if (used == null) {
                     used = BigDecimal.ZERO;
                 }
                 if (used.add(leaveDays).compareTo(BigDecimal.valueOf(maxAplyDays)) > 0) {
-                    log.info("[leaveflow] 연차 신청 거부: 회계연도 한도 초과 (userCd={}, leaveCd={}, used={}, req={}, max={})",
-                            user, leaveCd, used, leaveDays, maxAplyDays);
+                    log.info("[leaveflow] 연차 신청 거부: 사용가능기간({}) 한도 초과 (userCd={}, leaveCd={}, used={}, req={}, max={})",
+                            type.availTermType(), user, leaveCd, used, leaveDays, maxAplyDays);
                     throw new ApiException(AttdErrorCode.ATTD_400_051);
                 }
-                grantId = null;
+                charges = List.of(new GrantCharge(null, leaveDays));
+            } else if (borrow) {
+                // prafta-com-011-2 (Q1=b): 잔여 우선 차감 + 부족분만 가불.
+                charges = resolveBorrowCharges(cmpny, user, leaveCd, workYmd, leaveDays, borrowFamily, hireDate, user);
             } else {
                 DeductibleGrantVO grant = leaveFlowMapper.selectDeductibleGrant(cmpny, user, leaveCd, workYmd, leaveDays);
                 if (grant == null) {
                     throw new ApiException(AttdErrorCode.ATTD_400_051);
                 }
-                grantId = grant.grantId();
+                charges = List.of(new GrantCharge(grant.grantId(), leaveDays));
             }
 
         // 5) 요청 생성 (REQ_TYPE='05'). 결재 Y면 신청('01'), N이면 즉시 승인('02').
@@ -269,19 +343,27 @@ public class LeaveFlowServiceImpl implements LeaveFlowService {
             }
         }
 
-        // 7) 차감 예약 (CONFIRMED) + 부여 USED_DAYS 동기화
+        // 7) 차감 예약 (CONFIRMED) + 부여 USED_DAYS 동기화.
+        //    비가불/'01'은 charges 가 1건([단일 grantId, leaveDays] 또는 [null, leaveDays])이라 기존과 동일 동작.
+        //    가불(Q1=b)은 잔여+가불 여러 GRANT 로 분할 차감될 수 있어 charge 별로 leave_use 를 분할 INSERT 한다.
         //    '01'(사용자 신청)은 grantId=null → GRANT 가 없으므로 recomputeGrantUsedDays 생략(잔여=회계연도 사용분 파생).
-        String leaveId = leaveFlowMapper.selectNextLeaveId(cmpny);
-        LeaveUseVO use = LeaveUseVO.builder()
-                .leaveId(leaveId).cmpnyCd(cmpny).siteCd(site).userCd(user).leaveCd(leaveCd)
-                .reqId(reqId).grantId(grantId)
-                .startDate(workYmd).startTime(startTime).endDate(workYmd).endTime(endTime)
-                .useUnitType(unit).leaveDays(leaveDays).leaveMinutes(leaveMinutes)
-                .leaveReason(p.reason()).leaveStatus(USE_CONFIRMED).insertNo(user)
-                .build();
-        leaveFlowMapper.insertLeaveUse(use);
-        if (grantId != null) {
-            leaveFlowMapper.recomputeGrantUsedDays(cmpny, grantId, user);
+        //    leaveMinutes 는 분할 시 모호하므로 첫 charge 에만 싣는다(가불은 종일 위주, 표시·집계는 일수 기준).
+        String leaveId = null; // 무결재 즉시확정 통보(notifyLeaveUsedNoAprv)용 — 마지막 INSERT 한 사용기록 ID.
+        boolean firstCharge = true;
+        for (GrantCharge charge : charges) {
+            leaveId = leaveFlowMapper.selectNextLeaveId(cmpny);
+            LeaveUseVO use = LeaveUseVO.builder()
+                    .leaveId(leaveId).cmpnyCd(cmpny).siteCd(site).userCd(user).leaveCd(leaveCd)
+                    .reqId(reqId).grantId(charge.grantId())
+                    .startDate(workYmd).startTime(startTime).endDate(workYmd).endTime(endTime)
+                    .useUnitType(unit).leaveDays(charge.days()).leaveMinutes(firstCharge ? leaveMinutes : null)
+                    .leaveReason(p.reason()).leaveStatus(USE_CONFIRMED).insertNo(user)
+                    .build();
+            leaveFlowMapper.insertLeaveUse(use);
+            if (charge.grantId() != null) {
+                leaveFlowMapper.recomputeGrantUsedDays(cmpny, charge.grantId(), user);
+            }
+            firstCharge = false;
         }
 
         // 결재 Y인데 전 단계가 본인 자동승인이면 요청 즉시 확정(§9.5 자기 승인 원칙)
@@ -445,11 +527,26 @@ public class LeaveFlowServiceImpl implements LeaveFlowService {
         // 출근 차단 해제용 detail은 취소(LEAVE_STATUS 변경) 전에 확보
         LeaveUseDetailVO detail = leaveFlowMapper.selectLeaveUseDetailByReqId(p.gvCmpnyCd(), p.reqId());
 
-        // 차감 해제 + 부여 동기화
+        // prafta-com-011-2: 차감 해제 + 부여 동기화 (분할 차감 대응 — 잔여+가불 여러 GRANT 를 모두 재계산).
+        //   비가불(단일 부여)이면 grantIds 가 1건이라 기존 selectGrantIdByReqId 경로와 동일 결과.
+        List<String> grantIds = leaveFlowMapper.selectGrantIdsByReqId(p.gvCmpnyCd(), p.reqId());
         leaveFlowMapper.cancelLeaveUseByReqId(p.gvCmpnyCd(), p.reqId(), "결재 반려", p.gvUserCd());
-        String grantId = leaveFlowMapper.selectGrantIdByReqId(p.gvCmpnyCd(), p.reqId());
-        if (grantId != null) {
-            leaveFlowMapper.recomputeGrantUsedDays(p.gvCmpnyCd(), grantId, p.gvUserCd());
+        for (String grantId : grantIds) {
+            if (grantId != null && !grantId.isEmpty()) {
+                leaveFlowMapper.recomputeGrantUsedDays(p.gvCmpnyCd(), grantId, p.gvUserCd());
+            }
+        }
+        // prafta-com-011-2 가불 회수: 위 차감 해제(USED_DAYS=0 복원) 후, 이 reqId 가 만든 가불 GRANT 를 회수(CANCELED)한다.
+        //   유령 미래 부여 방지(결정 §6). 가불 reqId 한정(비가불은 0건이라 안전). USED_DAYS>0 가불은 회수 안 함(기부여보호).
+        try {
+            int recalled = leaveGrantEngineService.cancelBorrowGrantByReqId(p.gvCmpnyCd(), p.reqId(), p.gvUserCd());
+            if (recalled > 0) {
+                log.info("연차 반려 — 가불 GRANT 회수 {}건. reqId={}", recalled, p.reqId());
+            }
+        } catch (Exception e) {
+            // 가불 GRANT 회수 실패는 본 트랜잭션 롤백 사유(차감 해제와 일관성 유지). 회귀 방지를 위해 비가불은 0건이라 미진입.
+            log.error("연차 반려 가불 GRANT 회수 실패. reqId={}", p.reqId(), e);
+            throw e;
         }
         // prafta-com-008-E-2: 출근 차단은 leave_use 기준 → 위 cancelLeaveUseByReqId 로 자동 해제된다.
         //   work_plan 은 SCH_CD 를 유지하므로 별도 work_plan 연차블록 삭제 불필요(모델 전환).
@@ -516,6 +613,52 @@ public class LeaveFlowServiceImpl implements LeaveFlowService {
         leaveFlowMapper.recomputeGrantUsedDays(cmpnyCd, grant.grantId(), operatorUserCd);
 
         log.info("근무계획 직접 연차 사용 기록. cmpnyCd={}, userCd={}, workYmd={}, leaveCd={}, grantId={}",
+                cmpnyCd, userCd, workYmd, leaveCd, grant.grantId());
+        return DirectLeaveResult.RECORDED;
+    }
+
+    @Override
+    @Transactional
+    public DirectLeaveResult recordDirectLeaveUsageAuto(String cmpnyCd, String siteCd, String userCd,
+                                                        String workYmd, java.util.List<String> candidateLeaveCds,
+                                                        String operatorUserCd) {
+        // prafta-com-016-C-4: 종류 미지정 자동 차감 — 후보(연차/월차) 중 소멸 임박 통합순으로 1일 차감.
+        if (candidateLeaveCds == null || candidateLeaveCds.isEmpty()) {
+            return DirectLeaveResult.INSUFFICIENT;
+        }
+        // 멱등: 해당 셀에 이미 종일 CONFIRMED 연차(직접/승인 무관)가 있으면 중복 차감 방지.
+        //   재저장 시 동일 셀이 다시 적용돼도, 또 다른 종류로 이중 차감되지 않도록 종류 무관으로 막는다.
+        if (leaveFlowMapper.countAnyFullDayLeaveOnCell(cmpnyCd, userCd, workYmd) > 0) {
+            return DirectLeaveResult.SKIPPED_DUP;
+        }
+        // 차감 대상 부여 1일 (후보 전체, 만료 임박 통합순, FOR UPDATE). 없으면 잔여 부족.
+        BigDecimal oneDay = BigDecimal.ONE;
+        AutoDeductibleGrantVO grant = leaveFlowMapper.selectAutoDeductibleGrant(
+                cmpnyCd, userCd, candidateLeaveCds, workYmd, oneDay);
+        if (grant == null) {
+            return DirectLeaveResult.INSUFFICIENT;
+        }
+        String leaveCd = grant.leaveCd();
+        // 사용 기록(CONFIRMED, REQ_ID 없음 = 결재 없는 직접 차감) + 부여 USED_DAYS 동기화
+        String leaveId = leaveFlowMapper.selectNextLeaveId(cmpnyCd);
+        LeaveUseVO use = LeaveUseVO.builder()
+                .leaveId(leaveId).cmpnyCd(cmpnyCd).siteCd(siteCd).userCd(userCd).leaveCd(leaveCd)
+                .reqId(null).grantId(grant.grantId())
+                .startDate(workYmd).startTime(null).endDate(workYmd).endTime(null)
+                .useUnitType(UNIT_FULL).leaveDays(oneDay).leaveMinutes(null)
+                .leaveReason("근무계획 연차 적용(소멸임박순 자동)").leaveStatus(USE_CONFIRMED).insertNo(operatorUserCd)
+                .build();
+        try {
+            leaveFlowMapper.insertLeaveUse(use);
+        } catch (org.springframework.dao.DuplicateKeyException e) {
+            // 동시 저장 경합(TOCTOU): UK_LEAVE_USE_DIRECT(회사+직원+일자+연차코드) 유니크가 최종 차단.
+            log.info("근무계획 자동 연차 사용 - 멱등키 경합으로 건너뜀. cmpnyCd={}, userCd={}, workYmd={}, leaveCd={}",
+                    cmpnyCd, userCd, workYmd, leaveCd);
+            return DirectLeaveResult.SKIPPED_DUP;
+        }
+        leaveFlowMapper.recomputeGrantUsedDays(cmpnyCd, grant.grantId(), operatorUserCd);
+
+        log.info("근무계획 자동 연차 사용 기록(소멸임박순). cmpnyCd={}, userCd={}, workYmd={}, leaveCd={}, grantId={}",
                 cmpnyCd, userCd, workYmd, leaveCd, grant.grantId());
         return DirectLeaveResult.RECORDED;
     }
@@ -649,5 +792,99 @@ public class LeaveFlowServiceImpl implements LeaveFlowService {
     private String todayYmd() {
         LocalDate d = LocalDate.now();
         return String.format("%04d%02d%02d", d.getYear(), d.getMonthValue(), d.getDayOfMonth());
+    }
+
+    // ============================================================
+    // prafta-com-011-2 연차 가불 합류 헬퍼 (앱 AppLeaveFlowServiceImpl 미러)
+    // ============================================================
+
+    /**
+     * 가불 패밀리 판정. 시스템 법정 월차(SYS_MONTHLY)/본연차(SYS_ANNUAL)만 대상.
+     * 그 외 leaveCd(타 법정/비법정)는 가불 비대상 → null(호출부에서 ATTD_400_180).
+     */
+    private BorrowFamily borrowFamilyOf(String leaveCd) {
+        if (LEAVE_CD_MONTHLY.equals(leaveCd)) {
+            return BorrowFamily.MONTHLY;
+        }
+        if (LEAVE_CD_ANNUAL.equals(leaveCd)) {
+            return BorrowFamily.ANNUAL;
+        }
+        return null;
+    }
+
+    /**
+     * 가불(Q1=b): 신청 일수를 잔여 부여로 만료 임박순 분할 차감하고, 부족분(deficit)만큼 가불 슬롯에 충당하는
+     *   차감 계획을 만든다(앱 미러).
+     *
+     * <ul>
+     *   <li>잔여(현재 사용가능 active GRANT 의 GRANT_DAYS-USED_DAYS, AVAIL_FROM&lt;=workYmd)를 만료 임박순으로
+     *       needed 까지 채운다(FOR UPDATE 직렬화). 미발생 가불 GRANT(AVAIL_FROM&gt;workYmd)는 여기 안 잡힘(D2 잠금).</li>
+     *   <li>남은 deficit 이 0 이면 가불 0건(=일반 신청과 동일 결과, 단 결재 강제).</li>
+     *   <li>deficit>0 이면 computeBorrowQuota 와 비교 — 초과면 ATTD_400_182. 통과면 createBorrowGrant 로 가불 슬롯
+     *       (전량 GRANT, AVAIL_FROM=발생일)을 기존 재사용→신규 생성으로 충당받아(통일 모델 §6-2), 각 슬롯 grantId 로
+     *       deficit 만큼 leave_use 를 분할 차감한다. 슬롯 days 는 슬롯별 충당분(take)이라 합이 deficit 과 같다.</li>
+     * </ul>
+     */
+    private List<GrantCharge> resolveBorrowCharges(String cmpny, String user, String leaveCd, String workYmd,
+                                                   BigDecimal needed, BorrowFamily family, String hireDate,
+                                                   String operatorUserCd) {
+        List<GrantCharge> charges = new ArrayList<>();
+        BigDecimal remaining = needed;
+
+        // 1) 잔여 우선 차감(만료 임박순, FOR UPDATE).
+        List<DeductibleGrantVO> grants =
+                leaveFlowMapper.selectBorrowDeductibleGrants(cmpny, user, leaveCd, workYmd);
+        for (DeductibleGrantVO g : grants) {
+            if (remaining.signum() <= 0) {
+                break;
+            }
+            BigDecimal avail = nz(g.grantDays()).subtract(nz(g.usedDays()));
+            if (avail.signum() <= 0) {
+                continue;
+            }
+            BigDecimal take = avail.min(remaining);
+            charges.add(new GrantCharge(g.grantId(), take));
+            remaining = remaining.subtract(take);
+        }
+
+        // 2) 부족분만 가불.
+        if (remaining.signum() > 0) {
+            BigDecimal quota = leaveGrantEngineService.computeBorrowQuota(cmpny, user, hireDate, family);
+            if (remaining.compareTo(nz(quota)) > 0) {
+                log.info("[leaveflow] 가불 한도 초과 거부 userCd={}, leaveCd={}, deficit={}, quota={}",
+                        user, leaveCd, remaining.toPlainString(), nz(quota).toPlainString());
+                throw new ApiException(AttdErrorCode.ATTD_400_182);
+            }
+            BorrowGrantResultVO result = leaveGrantEngineService.createBorrowGrant(
+                    cmpny, user, hireDate, family, remaining, workYmd, operatorUserCd);
+            BigDecimal borrowRemaining = remaining;
+            for (BorrowGrantSlotVO slot : result.getSlots()) {
+                if (borrowRemaining.signum() <= 0) {
+                    break;
+                }
+                if (slot.getGrantId() == null) {
+                    // 통일 모델(§6-2): 충당 슬롯은 항상 유효 grantId(재사용/신규)를 가진다. 이미 정기 발생 슬롯은
+                    //   createBorrowGrant 가 slots 에서 제외(또는 ATTD_400_182 롤백)하므로 null 도달은 비정상 → 차단.
+                    throw new ApiException(AttdErrorCode.ATTD_400_182);
+                }
+                BigDecimal take = nz(slot.getDays()).min(borrowRemaining);
+                charges.add(new GrantCharge(slot.getGrantId(), take));
+                borrowRemaining = borrowRemaining.subtract(take);
+            }
+            if (borrowRemaining.signum() > 0) {
+                // 가불 GRANT 슬롯 합이 부족분에 못 미침 → 한도 초과로 차단.
+                throw new ApiException(AttdErrorCode.ATTD_400_182);
+            }
+        }
+        return charges;
+    }
+
+    /** null-safe BigDecimal(0 폴백). */
+    private BigDecimal nz(BigDecimal v) {
+        return (v == null) ? BigDecimal.ZERO : v;
+    }
+
+    /** prafta-com-011-2: 차감 대상 1건(부여 ID + 일수). 가불 split 시 한 신청이 여러 GrantCharge 로 분할된다. */
+    private record GrantCharge(String grantId, BigDecimal days) {
     }
 }

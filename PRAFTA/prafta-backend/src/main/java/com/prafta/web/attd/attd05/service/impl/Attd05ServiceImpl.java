@@ -1,5 +1,8 @@
 package com.prafta.web.attd.attd05.service.impl;
 
+import java.math.BigDecimal;
+import java.math.RoundingMode;
+import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.LinkedHashMap;
@@ -42,6 +45,12 @@ import com.prafta.web.attd.attd05.service.Attd05Service;
 import com.prafta.web.attd.leaveflow.vo.DirectLeaveResult;
 import com.prafta.common.error.attd.AttdErrorCode;
 import com.prafta.common.exception.ApiException;
+import com.prafta.common.cmm.leave.service.LeaveGrantEngineService;
+import com.prafta.common.cmm.leave.service.LeaveGrantEngineService.BorrowFamily;
+import com.prafta.common.cmm.leave.mapper.LeavePolicyMapper;
+import com.prafta.common.cmm.leave.util.FiscalYearUtils;
+import com.prafta.common.cmm.leave.vo.LeavePolicyVO;
+import com.prafta.web.attd.leaveflow.mapper.LeaveFlowMapper;
 
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -56,6 +65,37 @@ public class Attd05ServiceImpl implements Attd05Service {
     private final com.prafta.web.attd.attd07.service.AttdCloseService attdCloseService;
     /** PRAFTA-COM-008-D: 교대 잠금 가드(공용 cmm 빈 — 교대팀 소속 구간의 근무계획(SCH) 변경/삭제 차단). */
     private final com.prafta.common.cmm.shift.service.ShiftMembershipService shiftMembershipService;
+    /** prafta-com-011-6 가불 메타: 가불 한도 projection/만료일 산정(공용 엔진, read-only). */
+    private final LeaveGrantEngineService leaveGrantEngineService;
+    /** prafta-com-011-6 가불 메타: 입사일 조회(엔진 입력). 웹 leaveflow 매퍼 재사용(중복 신설 금지, 식별값 토큰 도출). */
+    private final LeaveFlowMapper leaveFlowMapper;
+    /** prafta-com-011-6 가불 메타: 회계연도 윈도우 산출용 활성 정책 조회(락 없음, 조회 메서드 재사용). */
+    private final LeavePolicyMapper leavePolicyMapper;
+    /** prafta-com-016 공통 스케줄 변경 가드: 확정 연차(USE_UNIT_TYPE 무관)·OT 보유일의 스케줄 변경/삭제 거부 판정. */
+    private final com.prafta.common.cmm.schedule.service.ScheduleChangeGuardService scheduleChangeGuardService;
+    /** prafta-com-016-C-2: 관리자 연차/월차 직접 등록 통보 PUSH 생산자(afterCommit + REQUIRES_NEW, 묶음 1건). */
+    private final com.prafta.common.cmm.push.LeaveDirectSetNotiService leaveDirectSetNotiService;
+
+    /** prafta-com-011-6 본연차 시스템 코드 → BorrowFamily.ANNUAL. */
+    private static final String LEAVE_CD_ANNUAL = "SYS_ANNUAL";
+    /** prafta-com-011-6 월차 시스템 코드 → BorrowFamily.MONTHLY. */
+    private static final String LEAVE_CD_MONTHLY = "SYS_MONTHLY";
+
+    /**
+     * prafta-com-016-C-2: 근무계획관리에서 관리자가 직접 지정할 수 있는 휴가 종류 화이트리스트.
+     * 법정 본연차(SYS_ANNUAL) + 법정 월차(SYS_MONTHLY) 2종만 허용. 그 외 종류(약정/근속가산 등)는 거부한다.
+     * (recordDirectLeaveUsage 는 부여 기반 차감만 허용하므로 사용자 신청('01') 타입은 그쪽에서 자연 거부되나,
+     *  지정 UI 가 2종으로 한정되므로 진입부에서 명시적으로 화이트리스트 검증한다.)
+     */
+    private static final java.util.Set<String> DIRECT_LEAVE_CD_WHITELIST =
+            java.util.Set.of(LEAVE_CD_ANNUAL, LEAVE_CD_MONTHLY);
+
+    /**
+     * prafta-com-016-C-4: 종류 미지정 "법정 휴가" 자동 적용 시 소멸 임박 통합순 차감 후보(연차→월차 무관).
+     * 순서는 정렬 기준(만료 임박)이 결정하므로 목록 순서 자체는 차감 우선순위가 아니다.
+     */
+    private static final java.util.List<String> AUTO_LEGAL_LEAVE_CDS =
+            java.util.List.of(LEAVE_CD_ANNUAL, LEAVE_CD_MONTHLY);
 
     /** 검증 스킵 사유 코드 - 근무타입 생성일 이전 */
     private static final String REASON_BEFORE_CREATE = "BEFORE_CREATE";
@@ -63,7 +103,8 @@ public class Attd05ServiceImpl implements Attd05Service {
     private static final String REASON_USE_YN_N = "USE_YN_N";
     /** 검증 스킵 사유 코드 - 연차 잔여 부족(직접 차감 불가, prafta-021) */
     private static final String REASON_INSUFFICIENT_LEAVE = "INSUFFICIENT_LEAVE";
-    /** 검증 스킵 사유 코드 - 근무 스케줄(SCH 배정)이 없는 빈 셀에는 연차를 적용할 수 없음 */
+    /** 검증 스킵 사유 코드 - (B안) 교대팀 소속 구간의 스케줄 없는 빈 셀(휴무일)에는 연차를 적용할 수 없음.
+     *  비교대 사용자의 빈 셀은 종일 연차/월차 적용을 허용한다(스케줄 무관 1일 차감). */
     private static final String REASON_NO_SCHEDULE_FOR_LEAVE = "NO_SCHEDULE_FOR_LEAVE";
     /** 셀 비우기 스킵 사유 코드 - 승인기반 연차(REQ_ID NOT NULL)는 셀에서 직접 삭제 불가 (prafta-com-008-E M2, deprecated by B-5) */
     private static final String REASON_APPROVED_LEAVE = "APPROVED_LEAVE";
@@ -75,9 +116,27 @@ public class Attd05ServiceImpl implements Attd05Service {
     private static final String REASON_LEAVE_CELL_CONSENT_REQUIRED = "LEAVE_CELL_CONSENT_REQUIRED";
     /** 검증 스킵 사유 코드 - 해당일 초과근무 보유(등록 or 신청) → 스케줄 변경 불가(앱 스케줄수정요청 게이트와 정합) */
     private static final String REASON_HAS_OVERTIME = "HAS_OVERTIME";
+    /** prafta-com-016 가드② 스킵 사유 - 해당일 확정 연차(종일/반차/시간차) 보유 → 일반 근무(SCH) 셀로 변경 불가. */
+    private static final String REASON_HAS_LEAVE = "HAS_LEAVE";
+    /** prafta-com-016-C-3 후속 - 월 부분 삭제에서 종일 확정 연차로 보존(삭제 제외)된 일자 안내 사유. */
+    private static final String REASON_LEAVE_PRESERVED = "LEAVE_PRESERVED";
+    /** prafta-com-016-C-2 스킵 사유 - 직접 지정 불가 휴가 종류(SYS_ANNUAL/SYS_MONTHLY 외)는 거부. */
+    private static final String REASON_LEAVE_CD_NOT_ALLOWED = "LEAVE_CD_NOT_ALLOWED";
 
     @Override
     public UserWorkPlansResponse getUserWorkPlan(UserWorkPlansParam param) {
+
+    	// com-013-04-FU-r19 (High/IDOR): 그리드 "조회"에도 저장/삭제와 대칭으로 노드 관리 권한을 강제한다.
+    	//   회사(cmpnyCd)만 토큰 권위였던 기존 경로는 같은 회사 토큰만으로 임의 사업장/부서의 직원 명단·근무계획·
+    	//   연차 오버레이 + 복호화 휴대폰까지 노출됐다. master/hr/safe 는 canManageNode 가 canManageAllNodes 로
+    	//   전사 통과(prafta-042 정합). 노드 관리자는 본문 nodeCd 가 본인 관리(상위 포함) 노드일 때만 통과 →
+    	//   incSubNodeYn=Y 로 상위 노드를 찍어도 countNodeAdmin 의 조상 재귀가 자연 차단(요청 nodeCd 기준 판정).
+    	if (!attdCloseService.canManageNode(
+    			param.gvAuthCd(), param.gvUserCd(), param.gvCmpnyCd(), param.siteCd(), param.nodeCd())) {
+    		log.warn("근무계획 그리드 조회 권한 없음 - 요청자 userCd={}, authCd={}, siteCd={}, nodeCd={}",
+    				param.gvUserCd(), param.gvAuthCd(), param.siteCd(), param.nodeCd());
+    		throw new ApiException(AttdErrorCode.ATTD_403_002);
+    	}
 
     	UserWorkPlansResponse response = null;
 
@@ -128,13 +187,107 @@ public class Attd05ServiceImpl implements Attd05Service {
     @Override
     public LeaveTypeResponse getLeaveTypeList(LeaveTypeListParam param) {
 
-    	LeaveTypeResponse response= null;
+    	// prafta-com-011-6 가불 메타: 당해 회계연도 윈도우(LEAVE_TYPE='01' 잔여 산정 입력) 산출 — 단일출처 FiscalYearUtils.
+    	FiscalYearUtils.FiscalWindow fiscal = resolveFiscalWindow(param.gvCmpnyCd());
 
-    	List<LeaveTypeResult> leaveTypeResultList = attd05Mapper.selectLeaveTypeList(LeaveTypeListQuery.from(param));
+    	List<LeaveTypeResult> rows = attd05Mapper.selectLeaveTypeList(
+    			LeaveTypeListQuery.from(param, fiscal.fiscalStartYmd(), fiscal.fiscalEndYmdExclusive()));
 
-    	response = LeaveTypeResponse.builder().leaveTypeResultList(leaveTypeResultList).build();
+    	// prafta-com-011-6 가불 산정: 시스템 법정 월차(SYS_MONTHLY)/본연차(SYS_ANNUAL) 항목에 한해
+    	//   가불 가능 여부/한도/만료일을 앱 selectApplyMeta 와 동일 산정(LeaveGrantEngineService 재사용)으로 채운다.
+    	//   입사일은 토큰 도출 userCd 로 1회 조회(식별값 본문 비신뢰, IDOR 방지). 비대상/입사일 미존재면 비가불(quota 0).
+    	String hireDate = leaveFlowMapper.selectUserHireDate(param.gvCmpnyCd(), param.gvUserCd());
 
-    	return response;
+    	List<LeaveTypeResult> leaveTypeResultList = new ArrayList<>(rows.size());
+    	for (LeaveTypeResult row : rows) {
+
+    		boolean borrowable = false;
+    		BigDecimal borrowQuota = BigDecimal.ZERO;
+    		String borrowExpiryYmd = null;
+
+    		BorrowFamily family = "Y".equalsIgnoreCase(row.systemYn()) ? borrowFamilyOf(row.leaveCd()) : null;
+    		if (family != null) {
+    			BigDecimal quota = leaveGrantEngineService.computeBorrowQuota(
+    					param.gvCmpnyCd(), param.gvUserCd(), hireDate, family);
+    			borrowQuota = scaled(quota);
+    			borrowable = borrowQuota.signum() > 0;
+    			if (borrowable) {
+    				borrowExpiryYmd = resolveBorrowExpiryYmd(param.gvCmpnyCd(), param.gvUserCd(), hireDate, family);
+    			}
+    		}
+
+    		leaveTypeResultList.add(new LeaveTypeResult(
+    				row.cmpnyCd()
+    				, row.leaveCd()
+    				, row.leaveNo()
+    				, row.leaveNm()
+    				, row.leaveType()
+    				, row.aprvUseYn()
+    				, row.leaveNatureType()
+    				, row.systemYn()
+    				, scaled(row.balanceDays())
+    				, borrowable
+    				, borrowQuota
+    				, borrowExpiryYmd
+    		));
+    	}
+
+    	return LeaveTypeResponse.builder().leaveTypeResultList(leaveTypeResultList).build();
+    }
+
+    /**
+     * prafta-com-011-6: 당해 회계연도 윈도우 산출(단일출처 {@link FiscalYearUtils}).
+     * 활성정책 AXIS2_FISCAL_START_MM/_DD 로 산출하며, 정책 미존재/NULL 이면 1월 1일 폴백(웹 LeaveFlowServiceImpl 동일).
+     */
+    private FiscalYearUtils.FiscalWindow resolveFiscalWindow(String cmpnyCd) {
+    	LeavePolicyVO policy = leavePolicyMapper.selectActivePolicy(cmpnyCd);
+    	String mm = (policy == null) ? null : policy.getAxis2FiscalStartMm();
+    	String dd = (policy == null) ? null : policy.getAxis2FiscalStartDd();
+    	return FiscalYearUtils.fiscalWindow(LocalDate.now(), mm, dd);
+    }
+
+    /**
+     * prafta-com-011-6 가불 패밀리 판정. 시스템 법정 월차(SYS_MONTHLY)/본연차(SYS_ANNUAL)만 대상.
+     * 그 외 leaveCd 는 가불 비대상 → null(가불 미노출). (웹 LeaveFlowServiceImpl.borrowFamilyOf 미러)
+     */
+    private BorrowFamily borrowFamilyOf(String leaveCd) {
+    	if (LEAVE_CD_MONTHLY.equals(leaveCd)) {
+    		return BorrowFamily.MONTHLY;
+    	}
+    	if (LEAVE_CD_ANNUAL.equals(leaveCd)) {
+    		return BorrowFamily.ANNUAL;
+    	}
+    	return null;
+    }
+
+    /**
+     * prafta-com-011-6: 가불분 만료(소멸)일 YYYYMMDD 산정(FE 표시 + 만료초과 alert 가드용, read-only).
+     * 월차 = 입사 + 1년 − 1일(첫해 월차 일괄소멸일). 본연차 = 차기 부여 본연차 정상 만료일(엔진 projection).
+     * 입사일 미존재/파싱 불가/산정 불가면 null. (앱 AppLeaveFlowServiceImpl.resolveBorrowExpiryYmd 미러)
+     */
+    private String resolveBorrowExpiryYmd(String cmpnyCd, String userCd, String hireDate, BorrowFamily family) {
+    	if (family == BorrowFamily.MONTHLY) {
+    		if (hireDate == null || !hireDate.matches("\\d{8}")) {
+    			return null;
+    		}
+    		try {
+    			LocalDate hire = LocalDate.parse(hireDate, java.time.format.DateTimeFormatter.BASIC_ISO_DATE);
+    			return hire.plusYears(1).minusDays(1)
+    					.format(java.time.format.DateTimeFormatter.BASIC_ISO_DATE);
+    		} catch (java.time.format.DateTimeParseException e) {
+    			return null;
+    		}
+    	}
+    	// 본연차: 차기 부여 본연차 정상 만료일(엔진 projection 재사용). 산정 불가면 null.
+    	return leaveGrantEngineService.projectNextAnnualGrant(cmpnyCd, userCd, hireDate).getAvailToYmd();
+    }
+
+    /** prafta-com-011-6: BigDecimal 잔여/한도 소수 1자리 반올림(앱 toScaledDouble 정합). null=0. */
+    private BigDecimal scaled(BigDecimal value) {
+    	if (value == null) {
+    		return BigDecimal.ZERO;
+    	}
+    	return value.setScale(1, RoundingMode.HALF_UP);
     }
 
     @Override
@@ -170,6 +323,12 @@ public class Attd05ServiceImpl implements Attd05Service {
     	List<SkippedCellResult> skippedList = new ArrayList<>();
     	int savedCount = 0;
 
+    	// prafta-com-016-C-2: 이번 저장에서 연차/월차가 "새로 기록(RECORDED)"된 (userCd → 날짜목록).
+    	//   사용자별 묶음 PUSH 1건 발송용. 멱등 중복(SKIPPED_DUP)·스킵은 제외(실제 신규 등록만 통보).
+    	Map<String, List<String>> leaveSetByUser = new LinkedHashMap<>();
+    	// 사용자별 사업장코드(PUSH siteCd 용 — 같은 사용자의 첫 등록 셀 기준).
+    	Map<String, String> siteCdByUser = new java.util.HashMap<>();
+
     	for (SchTypeModel model : modelList) {
 
     		// PRAFTA-041-4 - 대상 사용자 관리 권한 검증 (master/hr 즉시 통과, 그 외 노드 관리자 스코프)
@@ -185,24 +344,40 @@ public class Attd05ServiceImpl implements Attd05Service {
 
     		String workPlanCd = model.workPlanCd();
 
+    		// prafta-com-016-C-2: 연차 셀 여부 판정 — 셀 값(workPlanCd)이 법정 휴가 코드이거나, 명시 leaveCd 가 온 경우.
+    		//   효과적 연차코드(effectiveLeaveCd) = 명시 leaveCd 우선, 없으면 workPlanCd.
+    		// prafta-com-016-C-4: 종류 미지정 자동 적용(autoLegalLeave) 셀도 연차 셀로 취급한다(차감은 자동 통합순).
+    		boolean isAutoLegal = model.autoLegalLeave();
+    		String effectiveLeaveCd = (model.leaveCd() != null && !model.leaveCd().isEmpty())
+    				? model.leaveCd() : workPlanCd;
+    		boolean isLegalLeaveCell = isAutoLegal
+    				|| (effectiveLeaveCd != null && legalLeaveCds.contains(effectiveLeaveCd));
+
     		// prafta-com-008-D: 교대 잠금 가드 — 교대팀 소속 구간의 일반 근무(SCH) 셀 저장 차단.
     		//   ★연차 셀(법정연차 코드)은 D-3 정합으로 잠금 통과(연차만 허용). 가드를 연차 분기 이전에
     		//   "연차 아닌 셀"에만 적용한다. 관리자 예외 없음(권한 무관 — 가드는 authCd 를 보지 않는다).
-    		boolean isLegalLeaveCell = workPlanCd != null && legalLeaveCds.contains(workPlanCd);
     		if (!isLegalLeaveCell) {
     			shiftMembershipService.assertNotShiftLocked(
     					model.gvCmpnyCd(), model.siteCd(), model.userCd(), model.workYmd());
 
-    			// 초과근무(등록 or 신청) 보유일의 스케줄(SCH) 변경 차단 — 앱 스케줄수정요청 게이트와 정합.
-    			//   초과근무는 스케줄 기준으로 정산되므로 보유일의 스케줄 변경을 막는다. 해당 셀만 스킵(부분 저장).
-    			//   (연차 셀은 본 가드 비대상 — 연차는 출근/초과근무와 양립 불가하여 자연 배제.)
-    			if (attd05Mapper.countDayOvertime(
-    					model.gvCmpnyCd(), model.siteCd(), model.userCd(), model.workYmd()) > 0) {
+    			// prafta-com-016 가드② — 일반 근무(SCH) 셀로의 변경은 그 날 "확정 연차(종일/반차/시간차) 또는
+    			//   초과근무(등록/신청)" 보유 시 거부(skip)한다. 공통 ScheduleChangeGuardService 로 단일 판정.
+    			//   (연차 셀 적용은 가드 비대상 — 잠금은 기존 연차/OT 가 있는 날의 "스케줄 변경"을 막는 것.)
+    			//   기존엔 OT(countDayOvertime) 만 막았으나, 시간차/반차 연차가 있는 날의 SCH 변경도 함께 막는다
+    			//   (shared-schedule-guard 원칙: 시간차 연차는 그 날 근무시간 기준 신청 → 사후 스케줄 변경 보호).
+    			List<com.prafta.common.cmm.schedule.vo.ScheduleLockVO> locks =
+    					scheduleChangeGuardService.findLockedDays(
+    							model.gvCmpnyCd(), model.siteCd(), model.userCd(),
+    							java.util.List.of(model.workYmd()));
+    			if (!locks.isEmpty()) {
+    				boolean otLocked = locks.stream()
+    						.anyMatch(l -> l.getReason() == com.prafta.common.cmm.schedule.vo.ScheduleLockVO.Reason.OT);
+    				String reasonCode = otLocked ? REASON_HAS_OVERTIME : REASON_HAS_LEAVE;
     				skippedList.add(new SkippedCellResult(
     						model.userCd(), model.workYmd(), workPlanCd,
-    						REASON_HAS_OVERTIME, reasonText(REASON_HAS_OVERTIME)));
-    				log.info("근무계획 저장 스킵(초과근무 보유일) - userCd={}, workYmd={}, schCd={}"
-    						, model.userCd(), model.workYmd(), workPlanCd);
+    						reasonCode, reasonText(reasonCode)));
+    				log.info("근무계획 저장 스킵(스케줄 변경 가드) - userCd={}, workYmd={}, schCd={}, 사유={}"
+    						, model.userCd(), model.workYmd(), workPlanCd, reasonCode);
     				continue;
     			}
     		}
@@ -242,18 +417,24 @@ public class Attd05ServiceImpl implements Attd05Service {
     		//       정합: countFullDayLeaveUseOnCell 의 술어(USE_UNIT_TYPE='00', LEAVE_STATUS='CONFIRMED',
     		//       DEL_YN='N', START_DATE<=workYmd<=END_DATE)는 recordDirectLeaveUsage 가 기록하는
     		//       종일 직접 연차(UNIT_FULL/USE_CONFIRMED/startDate=endDate=workYmd)와 동일 기준이다.
-    		//     결과: 빈 셀 첫 적용(스케줄 없음 + 연차 없음)은 차단(원 요구사항 유지), 스케줄 있는 셀
-    		//       첫 적용·이미 연차 셀 재적용은 허용. DEFAULT_SCH_CD 설정 여부와 무관.
+    		//     결과(B안 — 교대만 제한): 빈 셀(스케줄 없음 + 연차 없음)이라도
+    		//       · 비교대 사용자: 종일 연차/월차 적용 허용(아래 recordDirectLeaveUsage → 1일 차감).
+    		//         (종일 연차는 스케줄과 무관하게 1일 차감이라 빈 셀에도 적용 가능 — 앱 근로자 self-apply 와 동일 기준)
+    		//       · 교대팀 소속 구간(휴무일 포함): 여전히 차단. 교대패턴이 근무/휴무를 결정하므로
+    		//         그리드에서 휴무일에 연차를 임의 적용하지 않는다(교대 정합 보수 유지).
+    		//       이미 종일 연차가 있는 셀은 (교대 여부 무관) 멱등 통과(hasFullDayLeave) → recordDirectLeaveUsage SKIPPED_DUP.
     		if (isLegalLeaveCell) {
     			boolean hasSchedule = attd05Mapper.countUserWorkPlanSchedule(
     					model.gvCmpnyCd(), model.siteCd(), model.userCd(), model.workYmd()) > 0;
     			boolean hasFullDayLeave = attd05Mapper.countFullDayLeaveUseOnCell(
     					model.gvCmpnyCd(), model.userCd(), model.workYmd()) > 0;
-    			if (!hasSchedule && !hasFullDayLeave) {
+    			boolean shiftMember = shiftMembershipService.isInShiftTeamOn(
+    					model.gvCmpnyCd(), model.siteCd(), model.userCd(), model.workYmd());
+    			if (!hasSchedule && !hasFullDayLeave && shiftMember) {
     				skippedList.add(new SkippedCellResult(
     						model.userCd(), model.workYmd(), workPlanCd,
     						REASON_NO_SCHEDULE_FOR_LEAVE, reasonText(REASON_NO_SCHEDULE_FOR_LEAVE)));
-    				log.info("근무계획 연차 적용 스킵(근무 스케줄 없는 빈 셀) - userCd={}, workYmd={}, leaveCd={}"
+    				log.info("근무계획 연차 적용 스킵(교대팀 소속 빈 셀) - userCd={}, workYmd={}, leaveCd={}"
     						, model.userCd(), model.workYmd(), workPlanCd);
     				continue;
     			}
@@ -263,16 +444,40 @@ public class Attd05ServiceImpl implements Attd05Service {
     		// 잔여 부족이면 해당 셀은 저장하지 않고 스킵. (이미 기록됨/정상 차감은 통과하여 근무계획 저장)
     		// (isLegalLeaveCell 은 위 교대 잠금 가드 분기에서 이미 산출됨 — 재선언하지 않는다.)
     		if (isLegalLeaveCell) {
-    			DirectLeaveResult result = leaveFlowService.recordDirectLeaveUsage(
-    					model.gvCmpnyCd(), model.siteCd(), model.userCd(),
-    					model.workYmd(), workPlanCd, model.gvUserCd());
+    			DirectLeaveResult result;
+    			if (isAutoLegal) {
+    				// prafta-com-016-C-4: 종류 미지정 → 후보(연차/월차) 중 소멸 임박 통합순으로 자동 1일 차감.
+    				result = leaveFlowService.recordDirectLeaveUsageAuto(
+    						model.gvCmpnyCd(), model.siteCd(), model.userCd(),
+    						model.workYmd(), AUTO_LEGAL_LEAVE_CDS, model.gvUserCd());
+    			} else {
+    				// prafta-com-016-C-2(레거시/엑셀 back-compat): 명시 종류 직접 차감.
+    				//   직접 지정 가능 휴가 종류 화이트리스트(연차 SYS_ANNUAL / 월차 SYS_MONTHLY) 검증.
+    				//   화이트리스트 밖(법정성격이지만 약정/근속가산 등)은 이 화면에서 직접 지정 불가 → 거부.
+    				if (!DIRECT_LEAVE_CD_WHITELIST.contains(effectiveLeaveCd)) {
+    					skippedList.add(new SkippedCellResult(
+    							model.userCd(), model.workYmd(), effectiveLeaveCd,
+    							REASON_LEAVE_CD_NOT_ALLOWED, reasonText(REASON_LEAVE_CD_NOT_ALLOWED)));
+    					log.info("근무계획 연차 적용 스킵(허용되지 않은 휴가 종류) - userCd={}, workYmd={}, leaveCd={}"
+    							, model.userCd(), model.workYmd(), effectiveLeaveCd);
+    					continue;
+    				}
+    				result = leaveFlowService.recordDirectLeaveUsage(
+    						model.gvCmpnyCd(), model.siteCd(), model.userCd(),
+    						model.workYmd(), effectiveLeaveCd, model.gvUserCd());
+    			}
     			if (result == DirectLeaveResult.INSUFFICIENT) {
     				skippedList.add(new SkippedCellResult(
-    						model.userCd(), model.workYmd(), workPlanCd,
+    						model.userCd(), model.workYmd(), effectiveLeaveCd,
     						REASON_INSUFFICIENT_LEAVE, reasonText(REASON_INSUFFICIENT_LEAVE)));
-    				log.info("근무계획 연차 적용 스킵(잔여 부족) - userCd={}, workYmd={}, leaveCd={}"
-    						, model.userCd(), model.workYmd(), workPlanCd);
+    				log.info("근무계획 연차 적용 스킵(잔여 부족) - userCd={}, workYmd={}, auto={}, leaveCd={}"
+    						, model.userCd(), model.workYmd(), isAutoLegal, effectiveLeaveCd);
     				continue;
+    			}
+    			// prafta-com-016-C-2: 실제 신규 기록(RECORDED)일 때만 묶음 PUSH 대상에 모은다(멱등 중복 제외).
+    			if (result == DirectLeaveResult.RECORDED) {
+    				leaveSetByUser.computeIfAbsent(model.userCd(), k -> new ArrayList<>()).add(model.workYmd());
+    				siteCdByUser.putIfAbsent(model.userCd(), model.siteCd());
     			}
     		}
 
@@ -297,6 +502,15 @@ public class Attd05ServiceImpl implements Attd05Service {
 
     	log.info("근무계획 저장 완료 - 저장 {}건, 스킵 {}건", savedCount, skippedList.size());
 
+    	// prafta-com-016-C-2: 연차/월차가 새로 등록된 근로자별로 묶음 PUSH 1건 예약(afterCommit + REQUIRES_NEW).
+    	//   본 트랜잭션 커밋 이후에만 적재되므로 저장 흐름 롤백/실패에 영향 없음. PII 미포함(건수/날짜만).
+    	for (Map.Entry<String, List<String>> e : leaveSetByUser.entrySet()) {
+    		String targetUserCd = e.getKey();
+    		leaveDirectSetNotiService.notifyLeaveDirectSet(
+    				firstModel.gvCmpnyCd(), siteCdByUser.get(targetUserCd), targetUserCd,
+    				e.getValue(), firstModel.gvUserCd());
+    	}
+
     	return SaveUserWorkPlansResponse.builder()
     									.savedCount(savedCount)
     									.skippedList(skippedList)
@@ -305,15 +519,17 @@ public class Attd05ServiceImpl implements Attd05Service {
 
     @Override
     @Transactional
-    public void deleteUserWorkPlans(SchTypeDeleParam param) {
+    public com.prafta.web.attd.attd05.dto.response.DeleteUserWorkPlansResponse deleteUserWorkPlans(SchTypeDeleParam param) {
     	// 관리 기능 권한 가드 (prafta-041-4) — master/hr 또는 대상 사용자 소속(및 하위) 부서 관리자.
     	// 대상 사용자별 검증 결과 캐시로 중복 조회 방지. 권한 없는 대상 하나라도 있으면 전체 실패(트랜잭션 롤백).
     	Map<String, Boolean> manageCache = new java.util.HashMap<>();
+    	int deletedUserCount = 0;
+    	List<SkippedCellResult> skippedList = new ArrayList<>();
     	for(SchTypeDeleModel model : param.schTypeDeleModelList()) {
     		// PRAFTA-041-4 - 대상 사용자 관리 권한 검증
     		ensureCanManageTargetUser(param.gvAuthCd(), model.gvUserCd(), model.gvCmpnyCd(),
     				model.siteCd(), model.userCd(), manageCache);
-    		// PRAFTA-028 - 마감된 기간(부서)의 근무계획 삭제 차단
+    		// PRAFTA-028 - 마감된 기간(부서)의 근무계획 삭제 차단 (마감/교대는 기존대로 전체 차단 — 회귀 보존)
     		if (attdCloseService.isClosedForUser(model.gvCmpnyCd(), model.siteCd(), model.userCd(), model.workYm())) {
     			throw new ApiException(AttdErrorCode.ATTD_400_042);
     		}
@@ -322,16 +538,53 @@ public class Attd05ServiceImpl implements Attd05Service {
     		//   관리자 예외 없음. 연차는 종일 leave_use 기준이므로 본 월 단위 work_plan 삭제와 무관.
     		shiftMembershipService.assertNotShiftLockedInMonth(
     				model.gvCmpnyCd(), model.siteCd(), model.userCd(), model.workYm());
-    		// 초과근무(등록 or 신청) 보유일이 포함된 월의 근무계획 일괄 삭제 차단(저장/셀 비우기 가드와 정합).
-    		//   월 단위 삭제는 부분 스킵 불가 → 해당 월에 초과근무 보유일이 1건이라도 있으면 전체 차단(hard-throw).
-    		if (attd05Mapper.countMonthOvertime(
-    				model.gvCmpnyCd(), model.siteCd(), model.userCd(), model.workYm()) > 0) {
-    			log.info("근무계획 월 삭제 차단(초과근무 보유 월) - userCd={}, workYm={}",
-    					model.userCd(), model.workYm());
-    			throw new ApiException(AttdErrorCode.ATTD_400_161);
+
+    		// prafta-com-016-C-3: 초과근무(OT) 등록/신청 보유일은 "전체 차단"이 아니라 "부분 삭제로 제외"한다.
+    		//   DELETE SQL(deleteUserWorkPlans)이 OT 보유일·연차 등록일을 NOT EXISTS 로 보존하므로,
+    		//   여기서는 제외될 OT 보유일 목록을 사용자 안내(skippedList)용으로 조회한다.
+    		//   (원문 countMonthOvertime 의 LEFT(...,6)=workYm 포맷 버그로 인한 전면 차단 무력화 경로를 폐기.)
+    		String workYm6 = model.workYm() == null ? null : model.workYm().replace("-", "");
+    		// OT 보존일 안내. 같은 사용자 내 중복 일자(연차와 OT 동시 보유) 방지를 위해 안내한 일자를 모은다.
+    		java.util.Set<String> reportedDays = new java.util.HashSet<>();
+    		List<String> otDays = attd05Mapper.selectMonthOvertimeDays(
+    				model.gvCmpnyCd(), model.siteCd(), model.userCd(), workYm6);
+    		for (String otYmd : otDays) {
+    			skippedList.add(new SkippedCellResult(
+    					model.userCd(), otYmd, null,
+    					REASON_HAS_OVERTIME, reasonText(REASON_HAS_OVERTIME)));
+    			reportedDays.add(otYmd);
     		}
+    		// prafta-com-016-C-3 후속: 종일 확정 연차로 보존(삭제 제외)된 일자도 함께 안내한다.
+    		//   DELETE 가 연차일 work_plan 을 NOT EXISTS 로 보존하지만, 기존엔 OT 보존일만 안내해
+    		//   연차 보존일이 결과 팝업에서 누락됐다(사용자 제보). OT 와 동일 포맷으로 동반 안내한다.
+    		//   OT 와 같은 일자(중복)는 OT 사유로 이미 안내했으므로 건너뛴다.
+    		List<String> leaveDays = attd05Mapper.selectMonthLeaveDays(
+    				model.gvCmpnyCd(), model.siteCd(), model.userCd(), workYm6);
+    		int leaveReported = 0;
+    		for (String lvYmd : leaveDays) {
+    			if (reportedDays.contains(lvYmd)) {
+    				continue;
+    			}
+    			skippedList.add(new SkippedCellResult(
+    					model.userCd(), lvYmd, null,
+    					REASON_LEAVE_PRESERVED, reasonText(REASON_LEAVE_PRESERVED)));
+    			reportedDays.add(lvYmd);
+    			leaveReported++;
+    		}
+    		if (!otDays.isEmpty() || leaveReported > 0) {
+    			log.info("근무계획 월 삭제 부분 제외 - userCd={}, workYm={}, OT보존 {}건, 연차보존 {}건",
+    					model.userCd(), model.workYm(), otDays.size(), leaveReported);
+    		}
+
     		attd05Mapper.deleteUserWorkPlans(SchTypeDeleCommand.from(model));
+    		deletedUserCount++;
     	}
+    	log.info("근무계획 월 삭제 완료 - 대상 사용자 {}명, OT/연차 보존 제외 {}건",
+    			deletedUserCount, skippedList.size());
+    	return com.prafta.web.attd.attd05.dto.response.DeleteUserWorkPlansResponse.builder()
+    			.deletedUserCount(deletedUserCount)
+    			.skippedList(skippedList)
+    			.build();
     }
 
     @Override
@@ -390,16 +643,23 @@ public class Attd05ServiceImpl implements Attd05Service {
     			continue;
     		}
 
-    		// 초과근무(등록 or 신청) 보유일의 스케줄 셀 비우기 차단 — 저장 가드와 정합. 해당 셀만 스킵.
-    		//   초과근무는 스케줄 기준으로 정산되므로 보유일의 스케줄 삭제(비우기)를 막는다.
-    		//   (위 연차셀 skip 뒤 배치 → 연차 아닌 일반 SCH 셀에만 발동.)
-    		if (attd05Mapper.countDayOvertime(
-    				model.gvCmpnyCd(), model.siteCd(), model.userCd(), model.workYmd()) > 0) {
+    		// prafta-com-016 가드② — 공통 스케줄 변경 가드로 OT(등록/신청) 및 (종일이 아닌) 확정 연차 보유일의
+    		//   셀 비우기를 차단한다. 종일 연차는 위 selectFullDayLeaveCdOnCell(consent 경로)에서 이미 skip 됐으므로,
+    		//   여기서는 OT 및 반차/시간차 연차가 있는 날의 SCH 셀 비우기를 막는다(저장 가드와 동일 단일출처).
+    		//   기존 countDayOvertime 단독 호출을 ScheduleChangeGuardService 로 통합한다(중복 로직 정리).
+    		List<com.prafta.common.cmm.schedule.vo.ScheduleLockVO> cellLocks =
+    				scheduleChangeGuardService.findLockedDays(
+    						model.gvCmpnyCd(), model.siteCd(), model.userCd(),
+    						java.util.List.of(model.workYmd()));
+    		if (!cellLocks.isEmpty()) {
+    			boolean otLocked = cellLocks.stream()
+    					.anyMatch(l -> l.getReason() == com.prafta.common.cmm.schedule.vo.ScheduleLockVO.Reason.OT);
+    			String reasonCode = otLocked ? REASON_HAS_OVERTIME : REASON_HAS_LEAVE;
     			skippedList.add(new SkippedCellResult(
     					model.userCd(), model.workYmd(), null,
-    					REASON_HAS_OVERTIME, reasonText(REASON_HAS_OVERTIME)));
-    			log.info("근무계획 셀 비우기 스킵(초과근무 보유일) - userCd={}, workYmd={}",
-    					model.userCd(), model.workYmd());
+    					reasonCode, reasonText(reasonCode)));
+    			log.info("근무계획 셀 비우기 스킵(스케줄 변경 가드) - userCd={}, workYmd={}, 사유={}",
+    					model.userCd(), model.workYmd(), reasonCode);
     			continue;
     		}
 
@@ -538,7 +798,7 @@ public class Attd05ServiceImpl implements Attd05Service {
     		return "연차 잔여가 부족하여 적용할 수 없습니다.";
     	}
     	if (REASON_NO_SCHEDULE_FOR_LEAVE.equals(reasonCode)) {
-    		return "근무 스케줄이 없는 날짜에는 연차를 적용할 수 없습니다.";
+    		return "교대근무팀 소속 기간의 휴무일(근무 스케줄 없는 날)에는 연차를 적용할 수 없습니다.";
     	}
     	if (REASON_APPROVED_LEAVE.equals(reasonCode)) {
     		return "승인기반 연차는 셀에서 직접 삭제할 수 없습니다. 연차 변경/삭제 요청을 이용하세요.";
@@ -548,6 +808,15 @@ public class Attd05ServiceImpl implements Attd05Service {
     	}
     	if (REASON_HAS_OVERTIME.equals(reasonCode)) {
     		return "초과근무가 등록/신청된 날짜는 스케줄을 변경할 수 없습니다.";
+    	}
+    	if (REASON_HAS_LEAVE.equals(reasonCode)) {
+    		return "연차(종일/반차/시간차)가 등록된 날짜는 근무 스케줄을 변경할 수 없습니다.";
+    	}
+    	if (REASON_LEAVE_PRESERVED.equals(reasonCode)) {
+    		return "연차 등록일이라 삭제에서 제외되었습니다. 연차 취소는 연차 변경/삭제 요청을 이용하세요.";
+    	}
+    	if (REASON_LEAVE_CD_NOT_ALLOWED.equals(reasonCode)) {
+    		return "이 화면에서 직접 지정할 수 있는 휴가는 연차/월차뿐입니다.";
     	}
     	return "근무타입을 지정할 수 없는 날짜입니다.";
     }

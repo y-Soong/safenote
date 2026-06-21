@@ -69,4 +69,45 @@ public interface AttdCloseService {
      * 대상 사용자 소속 부서를 서버 조회 후 {@link #canManageNodeExcludeSafe}로 위임한다.
      */
     boolean canManageUserExcludeSafe(String authCd, String requesterUserCd, String cmpnyCd, String siteCd, String targetUserCd);
+
+    /**
+     * 근태/OT/스케줄 직접 승인·반려의 자기처리 정책 게이트 (com-013-06-FU r28).
+     *
+     * <p>조직 노드 {@code SELF_ATTD_APPRV_YN} 정책에 따라 처리자가 신청자의 근태 요청을
+     * 직접 처리(승인/반려)할 수 있는지 최종 허용 여부를 반환한다. 판정 순서:
+     * <ol>
+     *   <li>처리자가 전사 역할(master/hr/safe = {@code canManageAllNodes})이면 즉시 true.</li>
+     *   <li>nodeCd 가 null/blank/'*'(전체 사업장)면 false.</li>
+     *   <li>해당 노드의 SELF_ATTD_APPRV_YN/부모/정·부 관리자 조회.
+     *     <ul>
+     *       <li>신청자가 그 노드 관리자 &amp;&amp; SELF_ATTD_APPRV_YN='N': 처리자는 부모 1단계 노드
+     *           관리자만 허용(본인·동일 노드 관리자 차단, 부모 없으면 차단). 조상 2단계 이상 확장 없음.</li>
+     *       <li>그 외(노드 관리자 &amp;&amp; 'Y' OR 일반 사용자 신청): 처리자가 해당 노드 관리자일
+     *           때만 허용(조상 노드 관리자 허용 폐지).</li>
+     *     </ul>
+     *   </li>
+     * </ol>
+     *
+     * <p>호출부는 거부 시 {@code applicantUserCd.equals(approverUserCd)} 등으로 자기처리 여부를
+     * 판별해 에러코드(403_001/403_003 vs 403_002)를 분기한다.
+     *
+     * @param authCd         처리자 권한코드(JWT)
+     * @param approverUserCd 처리자(=현재 로그인 사용자, JWT gvUserCd)
+     * @param applicantUserCd 신청자(요청 대상 사용자)
+     * @param cmpnyCd        회사코드
+     * @param siteCd         사업장코드(REQ 권위값)
+     * @param nodeCd         요청 노드코드(REQ 권위값)
+     * @return 처리(승인/반려) 허용 여부
+     */
+    boolean canProcessAttdSelfPolicy(String authCd, String approverUserCd, String applicantUserCd,
+                                     String cmpnyCd, String siteCd, String nodeCd);
+
+    /**
+     * 대상 사용자(userCd)의 현재 소속 부서(NODE_CD)를 서버 권위값으로 해석한다 (com-013-06-FU 보안 재작업).
+     *
+     * <p>클라이언트 body 의 nodeCd 를 신뢰하지 않고 권한 게이트/영속 노드 검증에 쓸 서버 노드를 조회한다.
+     * 소속 미상이면 null(호출부에서 fail-closed 차단). 내부적으로 {@code TB_USER} 기반
+     * {@code AttdCloseMapper.selectUserNodeCd} 를 재사용한다(canManageUser 와 동일 출처).
+     */
+    String resolveUserNodeCd(String cmpnyCd, String siteCd, String userCd);
 }

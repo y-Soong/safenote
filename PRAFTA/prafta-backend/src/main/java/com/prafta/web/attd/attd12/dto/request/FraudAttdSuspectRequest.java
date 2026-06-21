@@ -16,5 +16,5 @@ public class FraudAttdSuspectRequest {
     private String siteCd;        // 사업장코드
     private String nodeCd;        // 부서코드 (소속부서)
     private String incSubNodeYn;  // 하위부서 조회 여부 (Y/N)
-    private String suspectType;   // 의심유형 필터 ("" 전체 / RULE1 / RULE2 / RULE3)
+    private String suspectType;   // 의심유형 필터 ("" 전체 / SHARED_DEVICE)
 }

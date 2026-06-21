@@ -185,6 +185,8 @@ onMounted(() => {
 .modal-content {
   width: 860px;
   max-width: 92vw;
+  /* 기본 .modal-content 의 20px 패딩 제거 → 헤더/본문/푸터가 박스 끝에 밀착. */
+  padding: 0;
 }
 
 .ref-search-bar {

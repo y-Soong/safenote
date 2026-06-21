@@ -88,8 +88,44 @@
       없어 관리자가 승인한 근로시간 전체를 표시합니다.
     </p>
 
-    <!-- 본문: 좌측 결과 테이블 / 우측 상세 패널 -->
-    <div class="viewBody a08-body" :class="{ 'detail-open': !!selected }">
+    <!-- 뷰 전환: 전체 / 요약 (Attd_07 토글 패턴 차용) -->
+    <div class="a08-view-toggle">
+      <button
+        type="button"
+        :class="['a08-view-btn', { active: viewMode === 'full' }]"
+        @click="viewMode = 'full'"
+      >
+        전체
+      </button>
+      <button
+        type="button"
+        :class="['a08-view-btn', { active: viewMode === 'summary' }]"
+        @click="viewMode = 'summary'"
+      >
+        요약
+      </button>
+    </div>
+
+    <!-- 소제목 바 + 본문(전체/요약)을 subtitle-pane 래퍼로 감싼다 (User_01 패턴 정렬) -->
+    <div class="table-wrapper subtitle-pane">
+      <!-- 소제목 바 (User_01 / LeavePromotion_01 패턴 차용) -->
+      <div class="subtitle-row">
+        <div class="subtitle">
+          <span class="subtitle-icon" aria-hidden="true">
+            <svg viewBox="0 0 24 24" width="18" height="18">
+              <path d="M4 4h16v4H4zM4 10h10v10H4z" />
+            </svg>
+          </span>
+          <span class="subtitle-text">사용자 리스트</span>
+        </div>
+      </div>
+
+    <!-- 본문(전체): 좌측 결과 테이블 / 우측 상세 패널 -->
+    <div
+      v-show="viewMode === 'full'"
+      class="viewBody a08-body"
+      :class="{ 'detail-open': !!selected }"
+    >
       <div class="a08-table-wrap">
         <table class="a08-table">
           <thead>
@@ -331,6 +367,56 @@
         </div>
       </div>
     </div>
+
+    <!-- 본문(요약): 날짜 기준 인원별 근태 요약 (차수/초과 합산) -->
+    <div v-show="viewMode === 'summary'" class="viewBody a08-summary-body">
+      <div class="a08-table-wrap">
+        <table class="a08-table a08-summary-table">
+          <thead>
+            <tr>
+              <th>사용자명</th>
+              <th>부서</th>
+              <th>근무일</th>
+              <th>요일</th>
+              <th>실근로시간(분)</th>
+              <th>인정시간(분)</th>
+              <th>지각(분)</th>
+              <th>조기퇴근(분)</th>
+              <th>상태</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr v-if="summaryRows.length === 0">
+              <td colspan="9" class="a08-empty">조회 결과가 없습니다.</td>
+            </tr>
+            <tr
+              v-for="s in summaryRows"
+              :key="s._key"
+              :class="summaryRowClass(s)"
+            >
+              <td>{{ s.userNm }}</td>
+              <td>{{ s.nodeNm }}</td>
+              <td>{{ fmtYmd(s.workYmd) }}</td>
+              <td>{{ fmtDow(s.workYmd) }}</td>
+              <td>{{ fmtMinutes(s.workedMin) }}</td>
+              <td>{{ fmtMinutes(s.recognizedMin) }}</td>
+              <td>{{ fmtMinutes(s.lateMin) }}</td>
+              <td>{{ fmtMinutes(s.earlyMin) }}</td>
+              <td>
+                <span
+                  v-if="s._status"
+                  :class="['a08-badge', statusBadgeClass(s._status)]"
+                >
+                  {{ statusLabel(s._status) }}
+                </span>
+                <template v-else>-</template>
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+    </div>
   </div>
 </template>
 
@@ -355,6 +441,7 @@ import axios from "@/api/axios";
 import { getMessage, MSG } from "@/messages";
 import { resolveApiErrorMessage } from "@/utils/apiError";
 import { exportStyledExcel } from "@/utils/excelExport";
+import { formatYmdDot } from "@/utils/dateFormat";
 
 defineOptions({ name: "Attd_08" });
 
@@ -557,6 +644,9 @@ const fnSiteNodeSearchPopOpen = () => {
 const rows = ref([]);
 const selected = ref(null);
 
+// 뷰 전환 모드 — 'full'(전체) | 'summary'(요약) (Attd_07 토글 패턴 차용)
+const viewMode = ref("full");
+
 // 클라이언트측 기간 검증 (≤3개월)
 function isWithinThreeMonths(fromIso, toIso) {
   if (!fromIso || !toIso) return false;
@@ -616,6 +706,46 @@ const fnSearch = async () => {
 //   - displayRows 의 파생필드(_isOt, _status, _inDate/_inTime/...)를 그대로 사용.
 //   - 초과근무 행은 차수/스케줄/정규화/상태 컬럼이 '-' 로 표시되는 규칙도 동일하게 적용.
 const fnExcel = async () => {
+  // 요약 뷰: 날짜 기준 인원별 요약 시트로 내보낸다.
+  if (viewMode.value === "summary") {
+    if (summaryRows.value.length === 0) {
+      await proxy.$alert("내보낼 데이터가 없습니다.");
+      return;
+    }
+    const columns = [
+      { header: "사용자명", fixed: false, width: 12 },
+      { header: "부서", fixed: false, width: 16 },
+      { header: "근무일", fixed: false, width: 12 },
+      { header: "요일", fixed: false, width: 6 },
+      { header: "실근로시간(분)", fixed: false, width: 14 },
+      { header: "인정시간(분)", fixed: false, width: 14 },
+      { header: "지각(분)", fixed: false, width: 10 },
+      { header: "조기퇴근(분)", fixed: false, width: 12 },
+      { header: "상태", fixed: false, width: 10 },
+    ];
+    const data = summaryRows.value.map((s) => [
+      s.userNm ?? "",
+      s.nodeNm ?? "",
+      fmtYmd(s.workYmd),
+      fmtDow(s.workYmd),
+      fmtMinutes(s.workedMin),
+      fmtMinutes(s.recognizedMin),
+      fmtMinutes(s.lateMin),
+      fmtMinutes(s.earlyMin),
+      s._status ? statusLabel(s._status) : "-",
+    ]);
+    try {
+      await exportStyledExcel({
+        fileName: `근태요약_${(fromDate.value || "").replaceAll("-", "")}_${(toDate.value || "").replaceAll("-", "")}.xlsx`,
+        sheets: [{ name: "근태요약", columns, data }],
+      });
+    } catch (err) {
+      console.error("[Attd_08] excel export failed", err);
+      await proxy.$alert("엑셀 다운로드 중 오류가 발생했습니다.");
+    }
+    return;
+  }
+
   if (displayRows.value.length === 0) {
     await proxy.$alert("내보낼 데이터가 없습니다.");
     return;
@@ -666,11 +796,8 @@ const fnExcel = async () => {
 };
 
 // 표시 헬퍼
-const fmtYmd = (ymd) => {
-  const s = String(ymd ?? "");
-  if (s.length !== 8) return s;
-  return `${s.slice(0, 4)}-${s.slice(4, 6)}-${s.slice(6, 8)}`;
-};
+// 표시용 날짜 포맷은 dateFormat 단일 출처에 위임(점 구분).
+const fmtYmd = (ymd) => formatYmdDot(ymd);
 const fmtTime = (hhmm) => {
   if (!hhmm) return "";
   const v = String(hhmm);
@@ -955,6 +1082,109 @@ const displayRows = computed(() =>
     };
   })
 );
+
+// ───────────────────────────────────────────────────────────
+// 요약 뷰: 날짜 기준 인원별로 차수(1/2)·초과근무를 단일 행으로 합산.
+//   - 실근로시간/인정시간: 정규 구간 + 초과근무 모두 합산(분).
+//   - 지각/조기퇴근: 정규 구간별 분을 합산(결근/초과 행은 0분).
+//   - 상태: 정규 구간 상태 중 우선순위 최상위(결근>지각>조퇴>정상).
+// ───────────────────────────────────────────────────────────
+// 분 → "전체 N분 (a시간 b분)" 표기 (요약 탭 전용 단위). null/음수는 0 처리.
+//   - 60분 이하: 괄호 없이 "전체 N분".
+//   - 60분 초과: "전체 N분 (a시간 b분)". 분이 0이면 "(a시간)"만.
+const fmtMinutes = (min) => {
+  const m = Math.max(0, Math.round(min ?? 0));
+  if (m <= 60) return `전체 ${m}분`;
+  const h = Math.floor(m / 60);
+  const mm = m % 60;
+  return `전체 ${m}분 (${h}시간${mm > 0 ? ` ${mm}분` : ""})`;
+};
+// 지각(분): 실제 출근 − 스케줄 시작 (양수일 때만). 정규근무 행만.
+const lateMin = (r) => {
+  if (r._isOt) return 0;
+  const isSeq2 = String(r.workSeq) === "2";
+  const planStart = isSeq2 ? r.plan2Start : r.plan1Start;
+  if (!planStart || !r._inTime) return 0;
+  const schStartM = dtMinutes(r.workYmd, planStart, r.workYmd);
+  const actInM = dtMinutes(r._inDate, r._inTime, r.workYmd);
+  if (schStartM == null || actInM == null) return 0;
+  return Math.max(0, actInM - schStartM);
+};
+// 조기퇴근(분): 스케줄 종료 − 실제 퇴근 (양수일 때만). 정규근무 행만.
+const earlyLeaveMin = (r) => {
+  if (r._isOt) return 0;
+  const isSeq2 = String(r.workSeq) === "2";
+  const planStart = isSeq2 ? r.plan2Start : r.plan1Start;
+  const planEnd = isSeq2 ? r.plan2End : r.plan1End;
+  if (!planEnd || !r._outTime) return 0;
+  const schStartM = dtMinutes(r.workYmd, planStart, r.workYmd);
+  let schEndM = dtMinutes(r.workYmd, planEnd, r.workYmd);
+  const actOutM = dtMinutes(r._outDate, r._outTime, r.workYmd);
+  if (schEndM == null || actOutM == null) return 0;
+  // 야간 스케줄(종료<시작)은 익일 종료로 보정
+  if (schStartM != null && schEndM < schStartM) schEndM += 1440;
+  return Math.max(0, schEndM - actOutM);
+};
+// 상태 우선순위 — 한 사람 하루에 차수가 여럿이면 단일 상태로 산출.
+const STATUS_PRIORITY = { ABSENT: 3, LATE: 2, EARLY_LEAVE: 1, NORMAL: 0 };
+
+const summaryRows = computed(() => {
+  const map = new Map();
+  for (const r of displayRows.value) {
+    const key = (r.userId ?? r.userCd ?? r.userNm) + "_" + r.workYmd;
+    let g = map.get(key);
+    if (!g) {
+      g = {
+        _key: key,
+        userNm: r.userNm,
+        nodeNm: r.nodeNm,
+        workYmd: r.workYmd,
+        workedMin: 0,
+        recognizedMin: 0,
+        lateMin: 0,
+        earlyMin: 0,
+        _statusPriority: -1,
+        _status: null,
+      };
+      map.set(key, g);
+    }
+    const wn = workedNetMin(r);
+    if (wn != null) g.workedMin += wn;
+    const rn = recognizedMin(r);
+    if (rn != null) g.recognizedMin += rn;
+    g.lateMin += lateMin(r);
+    g.earlyMin += earlyLeaveMin(r);
+    if (!r._isOt && r._status) {
+      const p = STATUS_PRIORITY[r._status] ?? -1;
+      if (p > g._statusPriority) {
+        g._statusPriority = p;
+        g._status = r._status;
+      }
+    }
+  }
+  // 근무일 오름차순 → 사용자명 가나다순
+  return Array.from(map.values()).sort((a, b) => {
+    const d = String(a.workYmd).localeCompare(String(b.workYmd));
+    if (d !== 0) return d;
+    return String(a.userNm).localeCompare(String(b.userNm), "ko");
+  });
+});
+
+// 요약 행 주말 배경 클래스 (전체 뷰 rowClass 의 주말 로직과 동일)
+const summaryRowClass = (s) => {
+  const cls = [];
+  const ss = String(s.workYmd ?? "");
+  if (ss.length === 8) {
+    const day = new Date(
+      Number(ss.slice(0, 4)),
+      Number(ss.slice(4, 6)) - 1,
+      Number(ss.slice(6, 8))
+    ).getDay();
+    if (day === 0) cls.push("row-sun");
+    else if (day === 6) cls.push("row-sat");
+  }
+  return cls;
+};
 
 // 상세 패널 + 지도
 const mapContainer = ref(null);
@@ -1542,5 +1772,43 @@ onBeforeUnmount(() => {
   cursor: pointer;
   accent-color: var(--color-primary, #16a34a);
   flex-shrink: 0;
+}
+
+/* 뷰 전환 토글 (전체/요약) — Attd_07 세그먼트 컨트롤과 동일 형태 */
+.a08-view-toggle {
+  display: inline-flex;
+  /* .viewComm 가 flex-column(align-items: stretch) 이라 행 전체로 늘어남 → 콘텐츠 폭으로 고정 */
+  align-self: flex-start;
+  border: 1px solid var(--color-border, #d1d5db);
+  border-radius: 4px;
+  overflow: hidden;
+  margin: 0 0.75rem 0.4rem;
+}
+.a08-view-btn {
+  background: none;
+  border: none;
+  padding: 0.3rem 0.85rem;
+  font-size: 0.75rem;
+  color: var(--color-text-muted, #6b7280);
+  cursor: pointer;
+  font-family: "Pretendard", sans-serif;
+}
+.a08-view-btn.active {
+  background: var(--color-primary, #16a34a);
+  color: #fff;
+  font-weight: 600;
+}
+
+/* 요약 본문 — 단일 테이블 (상세 패널 없음) */
+.a08-summary-body {
+  display: flex;
+  flex-direction: column;
+  padding: 0.75rem;
+  overflow: hidden;
+  min-height: 0;
+}
+/* 요약 테이블은 단일 헤더 행 → 2단 헤더용 sticky 오프셋(2.1rem)을 0으로 되돌린다 */
+.a08-summary-table thead tr:last-child th {
+  top: 0;
 }
 </style>

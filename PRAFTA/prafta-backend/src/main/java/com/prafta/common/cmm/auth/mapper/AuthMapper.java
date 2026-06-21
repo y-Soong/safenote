@@ -32,8 +32,24 @@ public interface AuthMapper {
 			@Param("cmpnyCd") String cmpnyCd
 			, @Param("userCd") String userCd
 			, @Param("tokenId") String tokenId
+			, @Param("loginId") String loginId
 			, @Param("clientType") String clientType
 			, @Param("deviceId") String deviceId
 			, @Param("refreshTokenHash") String refreshTokenHash
 			, @Param("expireDtime") java.util.Date expireDtime);
+
+	// prafta-057: 현재 토큰의 로그인 세션 패밀리(LOGIN_ID)에 남아있는 활성(미폐기) 토큰 수.
+	//   0 이면 다른 환경 신규 로그인으로 이 패밀리가 폐기됨 → 강제 로그아웃 대상.
+	int countActiveByLoginId(
+			@Param("cmpnyCd") String cmpnyCd
+			, @Param("userCd") String userCd
+			, @Param("loginId") String loginId);
+
+	// prafta-057: 같은 사용자/클라이언트의 "다른 패밀리" 활성 토큰 수(grace 윈도우 가드용).
+	//   refresh grace 경로에서 0 보다 크면 더 최신 로그인이 존재 → 폐기된 세션을 되살리지 않는다.
+	int countActiveOtherLogin(
+			@Param("cmpnyCd") String cmpnyCd
+			, @Param("userCd") String userCd
+			, @Param("clientType") String clientType
+			, @Param("loginId") String loginId);
 }

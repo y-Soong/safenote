@@ -61,7 +61,7 @@
               </tbody>
             </table>
           </div>
-          <div class="btn-group" style="margin-top: 1rem">
+          <div class="btn-group">
             <button class="btn btn-primary" @click="fnExportExcel">
               엑셀 출력
             </button>

@@ -11,6 +11,7 @@ import com.prafta.common.cmm.leave.service.LeaveRefusalDetectService;
 import com.prafta.common.cmm.push.ApprovalResultNotiService;
 import com.prafta.common.error.attd.AttdErrorCode;
 import com.prafta.common.exception.ApiException;
+import com.prafta.common.util.AttdOverlapUtils;
 import com.prafta.common.util.AuthRoleUtils;
 import com.prafta.common.util.DateTimeUtils;
 import com.prafta.common.util.IntervalUtils;
@@ -27,6 +28,7 @@ import com.prafta.web.attd.attd07.application.model.UpdateUserAttdInfosModel;
 import com.prafta.web.attd.attd07.application.param.ApproveSchedModifyRequestParam;
 import com.prafta.web.attd.attd07.application.param.DailyAttdDetailDeleteParam;
 import com.prafta.web.attd.attd07.application.param.DailyAttdDetailsParam;
+import com.prafta.web.attd.attd07.application.param.DeleteUserOvertimeParam;
 import com.prafta.web.attd.attd07.application.param.MonthlyAttdListParam;
 import com.prafta.web.attd.attd07.application.param.RejectUserAttdRequestParam;
 import com.prafta.web.attd.attd07.application.param.RejectUserOvertimeRequestParam;
@@ -43,6 +45,7 @@ import com.prafta.web.attd.attd07.result.AllowedWindowResult;
 import com.prafta.web.attd.attd07.result.AttdSnapshotResult;
 import com.prafta.web.attd.attd07.result.ConfirmedLeaveResult;
 import com.prafta.web.attd.attd07.result.DailyAttdDetailHistoryResult;
+import com.prafta.web.attd.attd07.result.DayAttdSegmentResult;
 import com.prafta.web.attd.attd07.result.DailyAttdDetailsResult;
 import com.prafta.web.attd.attd07.result.DailyOvertimeResult;
 import com.prafta.web.attd.attd07.result.MonthlyAttdListResult;
@@ -73,6 +76,12 @@ public class Attd07ServiceImpl implements Attd07Service {
     private final com.prafta.common.cmm.shift.service.ShiftMembershipService shiftMembershipService;
 
     /**
+     * 출퇴근 방법(METHOD) 기본값. SYS031 '01'(사용자/앱). 근태 보정 승인 시 METHOD 미전달(앱 관리자 경로)일 때
+     * CHECK_IN_METHOD(NOT NULL) 보정용 기본값으로 사용한다.
+     */
+    private static final String ATTD_METHOD_DEFAULT = "01";
+
+    /**
      * PRAFTA-028 - 마감 가드. 대상 부서(nodeCd)+근무월이 마감 커버리지(전체/자기/상위 하위포함)에 들면
      * 데이터 변경을 차단한다(ATTD_400_042). 근무일자(workYmd, yyyyMMdd 또는 yyyyMM)에서 월을 추출한다.
      */
@@ -81,6 +90,38 @@ public class Attd07ServiceImpl implements Attd07Service {
         if (attdCloseService.isClosedForNode(cmpnyCd, siteCd, nodeCd, closeYm)) {
             throw new ApiException(AttdErrorCode.ATTD_400_042);
         }
+    }
+
+    /**
+     * 근태/OT/스케줄 직접 승인·반려 자기처리 정책 게이트 (com-013-06-FU r28).
+     *
+     * <p>노드 {@code SELF_ATTD_APPRV_YN} 정책에 따라 처리자(approver)가 신청자(applicant)의
+     * 요청을 직접 처리할 수 있는지 검증한다. 거부 시:
+     * <ul>
+     *   <li>자기처리(신청자==처리자) 또는 동일 노드 관리자 자기처리로 막힌 경우 →
+     *       OT는 {@code ATTD_403_003}, 그 외(근태/스케줄)는 {@code ATTD_403_001}.</li>
+     *   <li>그 외 권한 미달(타 노드 관리자가 자격 없이 시도 등) → {@code ATTD_403_002}.</li>
+     * </ul>
+     * 전사 역할(master/hr/safe)은 정책 메서드 내부에서 즉시 통과한다.
+     *
+     * @param isOvertime OT 경로면 자기처리 차단 코드를 403_003 으로(아니면 403_001).
+     */
+    private void ensureCanProcessAttdSelfPolicy(String authCd, String approverUserCd, String applicantUserCd,
+                                                String cmpnyCd, String siteCd, String nodeCd, boolean isOvertime) {
+        if (attdCloseService.canProcessAttdSelfPolicy(
+                authCd, approverUserCd, applicantUserCd, cmpnyCd, siteCd, nodeCd)) {
+            return;
+        }
+        // 자기처리(신청자==처리자) 여부로 에러코드를 분기한다.
+        boolean selfProcess = applicantUserCd != null && applicantUserCd.equals(approverUserCd);
+        if (selfProcess) {
+            log.warn("근태 처리 거부 - 자기처리 차단. approverUserCd={}, applicantUserCd={}, nodeCd={}, isOvertime={}",
+                    approverUserCd, applicantUserCd, nodeCd, isOvertime);
+            throw new ApiException(isOvertime ? AttdErrorCode.ATTD_403_003 : AttdErrorCode.ATTD_403_001);
+        }
+        log.warn("근태 처리 거부 - 권한 미달. approverUserCd={}, applicantUserCd={}, authCd={}, nodeCd={}",
+                approverUserCd, applicantUserCd, authCd, nodeCd);
+        throw new ApiException(AttdErrorCode.ATTD_403_002);
     }
 
     @Override
@@ -102,7 +143,28 @@ public class Attd07ServiceImpl implements Attd07Service {
     @Override
     @Transactional
     public void updateUserAttdInfos(UpdateUserAttdInfosParam param) {
-        for (UpdateUserAttdInfosModel model : param.updateUserAttdInfosModelList()) {
+        List<UpdateUserAttdInfosModel> models = param.updateUserAttdInfosModelList();
+
+        // 0. 근무 구간 시각 겹침 판정(정책서 attd §7.6) 준비:
+        //    각 model 의 최종 ATTD_ID 를 먼저 확정(신규=채번)하고, 배치 내 attdId 집합/새 구간을 모은다.
+        //    이렇게 해야 (a) DB 조회에서 배치에 포함된 attdId 를 모두 제외하고, (b) 배치 내 다른 model
+        //    의 새 구간(아직 DB 에 없음)까지 합쳐 겹침을 검사할 수 있다. model.attdId() 가 null(신규)이면
+        //    채번된 attdId 가 곧 제외 기준이 된다.
+        String[] resolvedAttdIds = new String[models.size()];
+        boolean[] isCreateFlags = new boolean[models.size()];
+        for (int i = 0; i < models.size(); i++) {
+            UpdateUserAttdInfosModel m = models.get(i);
+            if (m.attdId() != null) {
+                resolvedAttdIds[i] = m.attdId();
+                isCreateFlags[i] = false;
+            } else {
+                resolvedAttdIds[i] = attd07Mapper.selectAttdId(m.gvCmpnyCd());
+                isCreateFlags[i] = true;
+            }
+        }
+
+        for (int i = 0; i < models.size(); i++) {
+            UpdateUserAttdInfosModel model = models.get(i);
         	// PRAFTA-028 - 마감된 기간(부서)의 근태 직접 수정 차단
         	ensureNotClosed(model.gvCmpnyCd(), model.siteCd(), model.nodeCd(), model.workYmd());
 
@@ -114,20 +176,121 @@ public class Attd07ServiceImpl implements Attd07Service {
         			model.gvCmpnyCd(), model.siteCd(), model.userCd(), model.nodeCd(), model.workYmd(),
         			LeaveRefusalConst.ATTEMPT_ADMIN_ENTRY, model.gvUserCd());
 
-        	String attdId = "";
+        	// com-013 #5: attdId 유무로 관리자 직접 "생성"/"수정"을 구분한다(0단계에서 선확정).
+        	//   - attdId 있음 → 기존 근태 수정(HIST_TYPE='12' 관리자 수정)
+        	//   - attdId 없음 → 신규 채번 후 생성(HIST_TYPE='11' 관리자 생성)
+        	//   ★요청 승인 경로(updateUserAttdRequest 등, HIST_TYPE='01')와 무관 — 본 경로(관리자 직접수정)만 분리.
+        	String attdId = resolvedAttdIds[i];
+        	boolean isCreate = isCreateFlags[i];
 
-        	if(model.attdId() != null) {
-        		attdId = model.attdId();
-        	} else {
-        		attdId = attd07Mapper.selectAttdId(model.gvCmpnyCd());
+        	// 근무 구간 시각 겹침 금지(정책서 attd §7.6). MGMT 변경 이전에서:
+        	//   - 이 model 의 새 구간(model.checkIn/Out, 퇴근 미입력=open 가능)
+        	//   + 같은 일자 다른 구간(배치에 포함된 attdId 전체 제외, DEL_YN='N')
+        	//   + 배치 내 다른 model 의 새 구간(같은 회사/사업장/사용자/근무일 한정)
+        	//   을 합쳐 겹침을 검사한다. 인접 경계는 허용.
+        	{
+        		List<int[]> segs = new ArrayList<>();
+        		int[] selfSeg = buildSegment(model.workYmd(), model.checkInDate(), model.checkInTime(),
+        				model.checkOutDate(), model.checkOutTime());
+        		if (selfSeg != null) {
+        			segs.add(selfSeg);
+
+        			// (a) 같은 일자 다른 구간(배치 attdId 전체 제외) — DB 조회. 단건씩 제외할 수 없어
+        			//     배치 attdId 를 모두 제외한 뒤 (b) 배치 내 새 구간으로 보완한다.
+        			for (DayAttdSegmentResult ex : safe(attd07Mapper.selectDayAttdSegmentsExcept(
+        					model.gvCmpnyCd(), model.siteCd(), model.userCd(), model.workYmd(), null))) {
+        				if (containsAttdId(resolvedAttdIds, ex.attdId())) continue; // 배치 포함분은 (b)에서 새값으로 평가
+        				int[] s = buildSegment(model.workYmd(), ex.checkInDate(), ex.checkInTime(),
+        						ex.checkOutDate(), ex.checkOutTime());
+        				if (s != null) segs.add(s);
+        			}
+
+        			// (b) 배치 내 다른 model 의 새 구간(같은 회사/사업장/사용자/근무일 한정).
+        			for (int j = 0; j < models.size(); j++) {
+        				if (j == i) continue;
+        				UpdateUserAttdInfosModel other = models.get(j);
+        				if (!sameScopeDay(model, other)) continue;
+        				int[] s = buildSegment(other.workYmd(), other.checkInDate(), other.checkInTime(),
+        						other.checkOutDate(), other.checkOutTime());
+        				if (s != null) segs.add(s);
+        			}
+
+        			if (AttdOverlapUtils.hasSegmentOverlap(segs)) {
+        				log.warn("admin-direct attd overlap rejected (§7.6). userCd={}, workYmd={}, attdId={}",
+        						model.userCd(), model.workYmd(), attdId);
+        				throw new ApiException(AttdErrorCode.ATTD_400_113);
+        			}
+        		}
         	}
 
             attd07Mapper.updateUserAttdInfos(UpdateUserAttdInfosCommand.from(attdId, model));
 
             String histId = attd07Mapper.selectHistId(model.gvCmpnyCd());
 
-            attd07Mapper.insertUserAttdInfos(InsertUserAttdHistsCommand.from(histId, attdId, model));
+            attd07Mapper.insertUserAttdInfos(InsertUserAttdHistsCommand.forAdminDirect(histId, attdId, model, isCreate));
         }
+    }
+
+    /** 배치 attdId 배열에 주어진 attdId 가 포함되는지(null-safe). */
+    private static boolean containsAttdId(String[] attdIds, String target) {
+        if (target == null) return false;
+        for (String id : attdIds) {
+            if (target.equals(id)) return true;
+        }
+        return false;
+    }
+
+    /** 두 model 이 같은 (회사/사업장/사용자/근무일) 스코프인지 — 배치 내 겹침 검사 대상 판정. */
+    private static boolean sameScopeDay(UpdateUserAttdInfosModel a, UpdateUserAttdInfosModel b) {
+        return java.util.Objects.equals(a.gvCmpnyCd(), b.gvCmpnyCd())
+                && java.util.Objects.equals(a.siteCd(), b.siteCd())
+                && java.util.Objects.equals(a.userCd(), b.userCd())
+                && java.util.Objects.equals(a.workYmd(), b.workYmd());
+    }
+
+    /**
+     * 근무 구간 시각 겹침 금지(정책서 attd §7.6) 검사 — 편집 구간 새값이 같은 일자 다른 구간
+     * (excludeAttdId 제외, DEL_YN='N')과 겹치면 ATTD_400_113. 출근 stamp 미확정 구간은 검사 제외,
+     * 퇴근 미입력(open) 구간은 종료 +∞(SENTINEL)로 본다. 인접 경계는 허용.
+     */
+    private void ensureNoSegmentOverlap(String siteCd, String userCd, String workYmd, String excludeAttdId,
+                                        String checkInDate, String checkInTime,
+                                        String checkOutDate, String checkOutTime,
+                                        String gvCmpnyCd) {
+        int[] newSeg = buildSegment(workYmd, checkInDate, checkInTime, checkOutDate, checkOutTime);
+        if (newSeg == null) {
+            return; // 출근 stamp 미확정 → 검사 제외
+        }
+        List<int[]> segs = new ArrayList<>();
+        segs.add(newSeg);
+        for (DayAttdSegmentResult ex : safe(attd07Mapper.selectDayAttdSegmentsExcept(
+                gvCmpnyCd, siteCd, userCd, workYmd, excludeAttdId))) {
+            int[] s = buildSegment(workYmd, ex.checkInDate(), ex.checkInTime(),
+                    ex.checkOutDate(), ex.checkOutTime());
+            if (s != null) segs.add(s);
+        }
+        if (AttdOverlapUtils.hasSegmentOverlap(segs)) {
+            log.warn("attd request overlap rejected (§7.6). userCd={}, workYmd={}, excludeAttdId={}",
+                    userCd, workYmd, excludeAttdId);
+            throw new ApiException(AttdErrorCode.ATTD_400_113);
+        }
+    }
+
+    /**
+     * (출근/퇴근 일자·시각)을 workYmd 기준 [start, end] 분 stamp 구간으로 빌드한다.
+     * 출근 stamp 미확정이면 null(검사 제외), 퇴근 미입력(open)이면 종료 SENTINEL.
+     * 출근/퇴근 모두 같은 근무일(workYmd) 기준으로 stamp 화한다(자정 넘김은 일자 차이로 자동 반영).
+     */
+    private static int[] buildSegment(String workYmd, String inDate, String inTime,
+                                      String outDate, String outTime) {
+        Integer inStamp = DateTimeUtils.toMinuteStamp(workYmd, inDate, inTime);
+        Integer outStamp = DateTimeUtils.toMinuteStamp(workYmd, outDate, outTime);
+        return AttdOverlapUtils.buildStamp(inStamp, outStamp);
+    }
+
+    /** null-safe 리스트 보정(빈 리스트 반환). */
+    private static <T> List<T> safe(List<T> list) {
+        return (list == null) ? java.util.Collections.emptyList() : list;
     }
 
     @Override
@@ -271,17 +434,17 @@ public class Attd07ServiceImpl implements Attd07Service {
             throw new ApiException(AttdErrorCode.ATTD_400_006);
         }
 
-        // [보안 재작업] SEC-015 - 매니저 전용 게이트 (prafta-009 범위 외 발견 결함 보완).
-        // 근태 요청 승인은 일반 작업자가 호출해선 안 된다. 게이트가 없으면 동일 회사 내
-        // 권한 없는 사용자가 타인 근태 수정 요청을 승인할 수 있다. 역할 검사는 JWT 기반
-        // gvAuthCd를 사용하므로 body 위조로 권한 escalation을 할 수 없다.
-        if (!attdCloseService.canManageNode(param.gvAuthCd(), param.gvUserCd(), param.gvCmpnyCd(), param.siteCd(), param.nodeCd())) {
-            log.warn("approve rejected - insufficient privilege. userCd={}, authCd={}",
-                    param.gvUserCd(), param.gvAuthCd());
-            throw new ApiException(AttdErrorCode.ATTD_403_002);
-        }
-        // PRAFTA-028 - 마감된 기간(부서)의 근태 요청 승인 차단
-        ensureNotClosed(param.gvCmpnyCd(), param.siteCd(), param.nodeCd(), param.workYmd());
+        // [보안 재작업] SEC-015 + com-013-06-FU(r28) - 매니저 전용 게이트 + 자기처리/상위결재 정책.
+        // 근태 요청 승인은 일반 작업자가 호출해선 안 되고, 노드 SELF_ATTD_APPRV_YN='N' 정책에서
+        // 노드 관리자 본인의 자기 승인을 차단하고 부모 1단계 노드 관리자에게만 승인을 허용한다.
+        // 역할 검사는 JWT 기반 gvAuthCd 를 사용하므로 body 위조로 권한 escalation 을 할 수 없다.
+        //   [보안 재작업 com-013-06-FU] 권한 판정 노드/사업장은 클라 body 가 아닌 REQ 의 권위값(reqRow)을 사용한다
+        //   (스케줄/OT 반려 경로와 일관화 — body↔REQ mismatch 검사 이전이라도 게이트가 권위값으로 판정).
+        //   신청자=reqRow.userCd, 처리자=param.gvUserCd, 노드=reqRow.nodeCd, 사업장=reqRow.siteCd.
+        ensureCanProcessAttdSelfPolicy(param.gvAuthCd(), param.gvUserCd(), reqRow.userCd(),
+                param.gvCmpnyCd(), reqRow.siteCd(), reqRow.nodeCd(), false);
+        // PRAFTA-028 - 마감된 기간(부서)의 근태 요청 승인 차단 (REQ 권위 부서 기준)
+        ensureNotClosed(param.gvCmpnyCd(), reqRow.siteCd(), reqRow.nodeCd(), param.workYmd());
 
         // 2. 대기(pending) 상태의 요청만 승인 가능 (defence-in-depth - UPDATE 측에서도 REQ_STATUS='01'(신청)로 필터함).
         if (!AttdReqTypeUtils.REQ_STATUS_REQUESTED.equals(reqRow.reqStatus())) {
@@ -290,12 +453,7 @@ public class Attd07ServiceImpl implements Attd07Service {
             throw new ApiException(AttdErrorCode.ATTD_409_001);
         }
 
-        // 3. 자기 승인 차단 (REQ.USER_CD == 요청자의 gvUserCd). 
-//        if (reqRow.userCd() != null && reqRow.userCd().equals(param.gvUserCd())) {
-//            log.warn("approve rejected - self approval. reqId={}, userCd={}",
-//                    reqRow.reqId(), reqRow.userCd());
-//            throw new ApiException(AttdErrorCode.ATTD_403_001);
-//        }
+        // 3. 자기 승인 차단은 위 ensureCanProcessAttdSelfPolicy 로 일원화(노드 SELF_ATTD_APPRV_YN 정책).
 
         // 4. 요청 본문이 보안 민감 필드에 한해 저장된 REQ row와 일치하는지 검증한다.
         //    하나라도 불일치하면 변조(tampering)로 간주한다.
@@ -357,6 +515,21 @@ public class Attd07ServiceImpl implements Attd07Service {
         String befCheckOutDate = beforeSnapshot != null ? beforeSnapshot.checkOutDate() : null;
         String befCheckOutTime = beforeSnapshot != null ? beforeSnapshot.checkOutTime() : null;
 
+        // 6-1. 출퇴근 방법(METHOD) 기본값 보정.
+        //   앱 관리자 승인 경로(AppAdminApprovalServiceImpl.doApproveAsis)는 REQ 에 METHOD 가
+        //   보관되지 않아 checkInMethod/checkOutMethod 를 null 로 전달한다. 생성요청('01') 승인은
+        //   신규 INSERT 경로라 CHECK_IN_METHOD(NOT NULL) 에 null 이 들어가 제약 위반이 발생한다.
+        //   (웹 경로는 클라가 METHOD 를 채워 보내 비대칭으로 앱만 깨졌다.)
+        //   → 출근 METHOD 는 항상 기본값(SYS031 '01')으로 보정(NOT NULL), 퇴근 METHOD 는
+        //     퇴근시각이 있을 때만 기본값, 미퇴근(open)이면 null 유지(CHECK_OUT_METHOD 는 nullable).
+        boolean hasCheckInMethod = param.checkInMethod() != null && !param.checkInMethod().isEmpty();
+        boolean hasCheckOutMethod = param.checkOutMethod() != null && !param.checkOutMethod().isEmpty();
+        boolean hasCheckOutTime = param.checkOutTime() != null && !param.checkOutTime().isEmpty();
+        String resolvedCheckInMethod = hasCheckInMethod ? param.checkInMethod() : ATTD_METHOD_DEFAULT;
+        String resolvedCheckOutMethod = hasCheckOutMethod
+                ? param.checkOutMethod()
+                : (hasCheckOutTime ? ATTD_METHOD_DEFAULT : null);
+
         // 7. 서버 권위 키 필드를 사용해 merge/hist 모델을 빌드한다.
         //    body로 전달된 출퇴근 값은 작업자가 기록 요청한 값이므로 그대로 사용한다.
         UpdateUserAttdInfosModel model = new UpdateUserAttdInfosModel(
@@ -375,14 +548,23 @@ public class Attd07ServiceImpl implements Attd07Service {
 
             , param.checkInDate()
             , param.checkInTime()
-            , param.checkInMethod()
+            , resolvedCheckInMethod
             , param.checkOutDate()
             , param.checkOutTime()
-            , param.checkOutMethod()
+            , resolvedCheckOutMethod
             , param.processComment()     // TB_USER_ATTD_HIST.PROCESS_REASON으로 저장됨
             , param.gvCmpnyCd()
             , param.gvUserCd()
         );
+
+        // 7-1. 근무 구간 시각 겹침 금지(정책서 attd §7.6). MGMT MERGE 이전에서 편집 구간 새값
+        //      (param.checkIn/Out Date/Time, 퇴근 미입력=open 가능)이 같은 일자 다른 구간(targetId 제외,
+        //      DEL_YN='N')과 겹치면 차단한다. open 타 구간(2차 출근만 있고 퇴근 미입력)도 SENTINEL 로 +∞ 처리한다
+        //      (2차 출근만 있는 케이스가 핵심 — 보정으로 1차 종료를 2차 출근 이후로 늘리는 겹침 차단).
+        ensureNoSegmentOverlap(
+                reqRow.siteCd(), reqRow.userCd(), reqRow.workYmd(), targetId,
+                param.checkInDate(), param.checkInTime(), param.checkOutDate(), param.checkOutTime(),
+                param.gvCmpnyCd());
 
         // 8. TB_USER_ATTD_MGMT MERGE.
         attd07Mapper.updateUserAttdInfos(UpdateUserAttdInfosCommand.from(targetId, model));
@@ -432,16 +614,14 @@ public class Attd07ServiceImpl implements Attd07Service {
             throw new ApiException(AttdErrorCode.ATTD_400_006);
         }
 
-        // [보안 재작업] SEC-015 - 매니저 전용 게이트. 근태 요청 반려는 일반 작업자가
-        // 호출해선 안 된다. 역할 검사는 JWT 기반 gvAuthCd를 사용하므로 body 위조로
-        // 권한 escalation을 할 수 없다 (rejectUserOvertimeRequest 와 동일 패턴).
-        if (!attdCloseService.canManageNode(param.gvAuthCd(), param.gvUserCd(), param.gvCmpnyCd(), param.siteCd(), param.nodeCd())) {
-            log.warn("reject rejected - insufficient privilege. userCd={}, authCd={}",
-                    param.gvUserCd(), param.gvAuthCd());
-            throw new ApiException(AttdErrorCode.ATTD_403_002);
-        }
-        // PRAFTA-028 - 마감된 기간(부서)의 근태 요청 반려 차단
-        ensureNotClosed(param.gvCmpnyCd(), param.siteCd(), param.nodeCd(), param.workYmd());
+        // [보안 재작업] SEC-015 + com-013-06-FU(r28) - 매니저 전용 게이트 + 자기처리/상위결재 정책.
+        // 근태 요청 반려도 승인과 동일하게 노드 SELF_ATTD_APPRV_YN 정책을 적용한다.
+        //   [보안 재작업] 권한 판정 노드/사업장은 클라 body 가 아닌 REQ 의 권위값(reqRow)을 사용한다
+        //   (스케줄/OT 반려 경로와 일관화). 신청자=reqRow.userCd, 처리자=param.gvUserCd, 노드=reqRow.nodeCd, 사업장=reqRow.siteCd.
+        ensureCanProcessAttdSelfPolicy(param.gvAuthCd(), param.gvUserCd(), reqRow.userCd(),
+                param.gvCmpnyCd(), reqRow.siteCd(), reqRow.nodeCd(), false);
+        // PRAFTA-028 - 마감된 기간(부서)의 근태 요청 반려 차단 (REQ 권위 부서 기준)
+        ensureNotClosed(param.gvCmpnyCd(), reqRow.siteCd(), reqRow.nodeCd(), param.workYmd());
 
         // 2. 대기(pending) 상태의 요청만 반려 가능 (UPDATE 측에서도 REQ_STATUS='01'(신청)로 필터함).
         if (!AttdReqTypeUtils.REQ_STATUS_REQUESTED.equals(reqRow.reqStatus())) {
@@ -550,15 +730,12 @@ public class Attd07ServiceImpl implements Attd07Service {
             throw new ApiException(AttdErrorCode.ATTD_400_006);
         }
 
-        // SEC-015 - 매니저 전용 게이트. 역할 검사는 JWT 기반 gvAuthCd 를 사용하므로
-        // body 위조로 권한 escalation 을 할 수 없다.
-        //   [보안 정렬] 권한 판정 대상 부서/사업장은 클라 body 가 아닌 REQ 의 권위값을 사용한다
-        //   (반려 경로와 동일 불변식). body 값은 이후 body↔REQ mismatch 검사로 별도 차단된다.
-        if (!attdCloseService.canManageNode(param.gvAuthCd(), param.gvUserCd(), param.gvCmpnyCd(), reqRow.siteCd(), reqRow.nodeCd())) {
-            log.warn("sched-modify approve rejected - insufficient privilege. userCd={}, authCd={}",
-                    param.gvUserCd(), param.gvAuthCd());
-            throw new ApiException(AttdErrorCode.ATTD_403_002);
-        }
+        // SEC-015 + com-013-06-FU(r28) - 매니저 전용 게이트 + 자기처리/상위결재 정책.
+        // 스케줄 수정 승인도 노드 SELF_ATTD_APPRV_YN 정책(자기처리는 ATTD_403_001)을 적용한다.
+        //   [보안 정렬] 권한 판정 대상 부서/사업장은 클라 body 가 아닌 REQ 의 권위값(reqRow)을 사용한다.
+        //   신청자=reqRow.userCd, 처리자=param.gvUserCd, 노드=reqRow.nodeCd.
+        ensureCanProcessAttdSelfPolicy(param.gvAuthCd(), param.gvUserCd(), reqRow.userCd(),
+                param.gvCmpnyCd(), reqRow.siteCd(), reqRow.nodeCd(), false);
 
         // PRAFTA-028 - 마감된 기간(부서)의 스케줄 변경 차단 (REQ 의 권위 부서/근무일 기준).
         //   현행 PRAFTA 마감 메커니즘은 근태 월마감(tb_attd_close) 단일이므로 그것으로 매핑한다(D5-a).
@@ -629,6 +806,16 @@ public class Attd07ServiceImpl implements Attd07Service {
 
         log.info("스케줄 수정 요청 승인 완료. reqId={}, userCd={}, workYmd={}, schCd={}",
                 reqRow.reqId(), reqRow.userCd(), reqRow.workYmd(), schCd);
+
+        // PRAFTA-COM-013-06-1(r30): 스케줄 수정 승인 결과를 신청자 본인에게 통보(afterCommit 격리, 승인 영향 없음).
+        //   근태/초과근무 보정 결재와 동일 경로(notifyAttdResult) 재사용 — 본문은 승인/반려 여부만(타입 무관).
+        //   dedupKey 는 reqId 단위로 분리되므로 근태/OT 와 충돌하지 않는다.
+        try {
+            approvalResultNotiService.notifyAttdResult(
+                    param.gvCmpnyCd(), reqRow.siteCd(), reqRow.userCd(), reqRow.reqId(), true, param.gvUserCd());
+        } catch (Exception e) {
+            log.error("스케줄 수정 승인 결과 통보 PUSH 적재 hook 실패(승인 영향 없음). reqId={}", reqRow.reqId(), e);
+        }
     }
 
     @Override
@@ -649,12 +836,10 @@ public class Attd07ServiceImpl implements Attd07Service {
             throw new ApiException(AttdErrorCode.ATTD_400_006);
         }
 
-        // SEC-015 - 매니저 전용 게이트 (REQ 권위 부서 기준).
-        if (!attdCloseService.canManageNode(param.gvAuthCd(), param.gvUserCd(), param.gvCmpnyCd(), reqRow.siteCd(), reqRow.nodeCd())) {
-            log.warn("sched-modify reject rejected - insufficient privilege. userCd={}, authCd={}",
-                    param.gvUserCd(), param.gvAuthCd());
-            throw new ApiException(AttdErrorCode.ATTD_403_002);
-        }
+        // SEC-015 + com-013-06-FU(r28) - 매니저 전용 게이트 + 자기처리/상위결재 정책 (REQ 권위 부서 기준).
+        //   신청자=reqRow.userCd, 처리자=param.gvUserCd, 노드=reqRow.nodeCd. 자기처리는 ATTD_403_001.
+        ensureCanProcessAttdSelfPolicy(param.gvAuthCd(), param.gvUserCd(), reqRow.userCd(),
+                param.gvCmpnyCd(), reqRow.siteCd(), reqRow.nodeCd(), false);
 
         // PRAFTA-028 - 마감된 기간(부서)의 스케줄 요청 반려 차단 (REQ 의 권위 부서/근무일 기준).
         ensureNotClosed(param.gvCmpnyCd(), reqRow.siteCd(), reqRow.nodeCd(), reqRow.workYmd());
@@ -702,6 +887,15 @@ public class Attd07ServiceImpl implements Attd07Service {
 
         log.info("스케줄 수정 요청 반려 완료. reqId={}, userCd={}, workYmd={}",
                 reqRow.reqId(), reqRow.userCd(), reqRow.workYmd());
+
+        // PRAFTA-COM-013-06-1(r30): 스케줄 수정 반려 결과를 신청자 본인에게 통보(afterCommit 격리, 반려 영향 없음).
+        //   근태/초과근무 보정 결재와 동일 경로(notifyAttdResult) 재사용.
+        try {
+            approvalResultNotiService.notifyAttdResult(
+                    param.gvCmpnyCd(), reqRow.siteCd(), reqRow.userCd(), reqRow.reqId(), false, param.gvUserCd());
+        } catch (Exception e) {
+            log.error("스케줄 수정 반려 결과 통보 PUSH 적재 hook 실패(반려 영향 없음). reqId={}", reqRow.reqId(), e);
+        }
     }
 
     // ============================================================
@@ -728,13 +922,10 @@ public class Attd07ServiceImpl implements Attd07Service {
             throw new ApiException(AttdErrorCode.ATTD_400_006);
         }
 
-        // SEC-015 - 매니저 전용 게이트. 역할 검사는 JWT 기반 gvAuthCd를 사용하므로
-        // body 위조로 권한 escalation을 할 수 없다.
-        if (!attdCloseService.canManageNode(param.gvAuthCd(), param.gvUserCd(), param.gvCmpnyCd(), reqRow.siteCd(), reqRow.nodeCd())) {
-            log.warn("OT reject rejected - insufficient privilege. userCd={}, authCd={}",
-                    param.gvUserCd(), param.gvAuthCd());
-            throw new ApiException(AttdErrorCode.ATTD_403_002);
-        }
+        // SEC-015 + com-013-06-FU(r28) - 매니저 전용 게이트 + 자기처리/상위결재 정책 (REQ 권위 부서 기준).
+        //   신청자=reqRow.userCd, 처리자=param.gvUserCd, 노드=reqRow.nodeCd. OT 자기처리는 ATTD_403_003.
+        ensureCanProcessAttdSelfPolicy(param.gvAuthCd(), param.gvUserCd(), reqRow.userCd(),
+                param.gvCmpnyCd(), reqRow.siteCd(), reqRow.nodeCd(), true);
         // PRAFTA-028 - 마감된 기간(부서)의 초과근무 요청 반려 차단 (REQ 의 권위 부서/근무일 기준)
         ensureNotClosed(param.gvCmpnyCd(), reqRow.siteCd(), reqRow.nodeCd(), reqRow.workYmd());
 
@@ -806,24 +997,36 @@ public class Attd07ServiceImpl implements Attd07Service {
     @Transactional
     public void updateUserOvertimeRequests(UpdateUserOvertimeRequestParam param) {
 
-        // SEC-015 - 매니저 전용 게이트. OT 등록은 일반 작업자에 의해 호출되어선 안 된다
-        // (작업자는 요청 흐름을 거친다). 역할 검사는 JWT 기반 gvAuthCd를 사용하므로
-        // body 위조로 권한 escalation을 할 수 없다.
-        if (!attdCloseService.canManageNode(param.gvAuthCd(), param.gvUserCd(), param.gvCmpnyCd(), param.siteCd(), param.nodeCd())) {
-            log.warn("OT register rejected - insufficient privilege. userCd={}, authCd={}",
-                    param.gvUserCd(), param.gvAuthCd());
+        // SEC-015/SEC-016 + com-013-06-FU(r28) - 매니저 전용 게이트 + 자기처리/상위결재 정책.
+        // OT 직접 등록은 일반 작업자가 호출해선 안 되고, 노드 SELF_ATTD_APPRV_YN='N' 정책에서
+        // 노드 관리자 본인의 자기 등록을 차단하고 부모 1단계 노드 관리자에게만 등록을 허용한다.
+        // 역할 검사는 JWT 기반 gvAuthCd 를 사용하므로 body 위조로 권한 escalation 을 할 수 없다.
+        //   신청자(대상)=param.userCd, 처리자=param.gvUserCd, OT 자기처리는 ATTD_403_003.
+        //
+        // [보안 재작업 com-013-06-FU] OT 직접등록 경로는 reqRow(권위 row)가 없어 body↔REQ nodeCd
+        //   mismatch 검사가 전혀 없었다. 그래서 'N' 노드 관리자가 본인 OT 를 등록할 때 body nodeCd 를
+        //   본인이 관리자이면서 'Y'인 다른 노드로 위조하면 게이트가 4-b 로 빠져 자기처리 차단이 무력화되고,
+        //   위조 nodeCd 가 TB_USER_OVERTIME_MGMT.NODE_CD 에까지 영속되었다.
+        //   → 게이트 노드/영속 노드 모두 대상 사용자(param.userCd)의 서버 조회 노드로 강제한다.
+        String authoritativeNodeCd =
+                attdCloseService.resolveUserNodeCd(param.gvCmpnyCd(), param.siteCd(), param.userCd());
+        // 소속 미상(서버노드 null/blank)이면 노드 단위 정책을 적용할 수 없으므로 fail-closed 차단.
+        if (authoritativeNodeCd == null || authoritativeNodeCd.isBlank()) {
+            log.warn("OT register rejected - 대상 사용자 소속 부서 미상(서버 노드 부재). cmpnyCd={}, siteCd={}, userCd={}",
+                    param.gvCmpnyCd(), param.siteCd(), param.userCd());
             throw new ApiException(AttdErrorCode.ATTD_403_002);
         }
-        // PRAFTA-028 - 마감된 기간(부서)의 초과근무 등록/수정 차단
-        ensureNotClosed(param.gvCmpnyCd(), param.siteCd(), param.nodeCd(), param.workYmd());
-
-        // SEC-016 - 자기 등록(self-registration) 차단. 매니저는 본인의 OT를 등록해선 안 된다.
-        // 이는 작업자 요청 감사 추적을 우회하는 행위이다.
-//        if (param.userCd() != null && param.userCd().equals(param.gvUserCd())) {
-//            log.warn("OT register rejected - self registration not allowed. userCd={}",
-//                    param.userCd());
-//            throw new ApiException(AttdErrorCode.ATTD_403_003);
-//        }
+        // body nodeCd 가 서버 권위 노드와 불일치하면 변조로 간주하고 차단(다른 경로의 mismatch 방어와 동일 레벨).
+        if (StringEqualsUtils.isMismatched(param.nodeCd(), authoritativeNodeCd)) {
+            log.warn("OT register rejected - body/서버 nodeCd mismatch(변조). cmpnyCd={}, siteCd={}, userCd={}, paramNode={}, serverNode={}",
+                    param.gvCmpnyCd(), param.siteCd(), param.userCd(), param.nodeCd(), authoritativeNodeCd);
+            throw new ApiException(AttdErrorCode.ATTD_400_005);
+        }
+        // 게이트 인자 = 서버 권위 노드(클라 body 미신뢰).
+        ensureCanProcessAttdSelfPolicy(param.gvAuthCd(), param.gvUserCd(), param.userCd(),
+                param.gvCmpnyCd(), param.siteCd(), authoritativeNodeCd, true);
+        // PRAFTA-028 - 마감된 기간(부서)의 초과근무 등록/수정 차단 (게이트와 동일한 권위 노드 사용).
+        ensureNotClosed(param.gvCmpnyCd(), param.siteCd(), authoritativeNodeCd, param.workYmd());
 
         // SEC-017 (a) - 대상 사용자가 호출자의 회사/사이트 scope 안에 존재해야 한다.
         int userExists = attd07Mapper.selectUserExistInCmpnySite(
@@ -929,9 +1132,19 @@ public class Attd07ServiceImpl implements Attd07Service {
         AllowedWindowResult windows = attd07Mapper.selectAllowedWindow(
                 OvertimeAllowedWindowQuery.from(param));
         if (windows == null) {
-            log.warn("OT register rejected - no schedule row. userCd={}, workYmd={}",
+            // 근무계획(TB_USER_WORK_PLAN) 행이 없는 날(주말 등 미배정일). 정책 §7.5: 스케줄 없는 날
+            // 근무는 전량 초과근무 대상이므로 OT 승인이 가능해야 한다. WP anchor 쿼리는 실근태까지
+            // 함께 유실하므로, 스케줄을 비우고 실근태만 로드하는 폴백으로 윈도우를 구성한다.
+            // 이후 구간 차집합 로직이 schSeg=null 을 자동으로 "전량 허용"으로 처리한다(아래 schSeg==null 분기).
+            windows = attd07Mapper.selectActualWindowNoSchedule(
+                    OvertimeAllowedWindowQuery.from(param));
+        }
+        if (windows == null) {
+            // 폴백은 dummy anchor 라 정상적으론 null 이 아니다(방어). 실근태 부재는 아래
+            // ATTD_400_014(출퇴근 기록 누락) 경로가 처리한다.
+            log.warn("OT approve rejected - actual window load failed. userCd={}, workYmd={}",
                     param.userCd(), param.workYmd());
-            throw new ApiException(AttdErrorCode.ATTD_404_010);
+            throw new ApiException(AttdErrorCode.ATTD_400_014);
         }
 
         // PRAFTA-011 - WORK_SEQ 인덱스를 보존한 구간 배열을 사용한다.
@@ -992,11 +1205,22 @@ public class Attd07ServiceImpl implements Attd07Service {
             }
         }
 
+        // com-013-06 A - 관리자 직접수정에서 in-place 갱신 대상(OT_ID 보유)인 행 목록.
+        //   아래 기존 활성 OT 겹침 검사(6-1)에서 "자기 자신"을 제외하기 위함이다.
+        //   그 외 경로(인박스 04 수정·앱 승인 등)는 요청에 OT_ID 가 없어 빈 목록이 되어 기존 동작과 동일하다.
+        List<String> editingOtIds = new ArrayList<>();
+        for (OvertimeItemModel ot : param.overtimes()) {
+            if (ot.otId() != null && !ot.otId().isBlank()) {
+                editingOtIds.add(ot.otId());
+            }
+        }
+
         // 6-1. PRAFTA-009-001 - 기존 활성 OT 행과의 중복(시간 구간 겹침) 검사.
         //      INSERT 루프 진입 전에 요청된 모든 OT 구간을 DB의 기존 활성 행과 대조한다.
         //      하나라도 겹치면 부분 INSERT 없이 전체 거부한다.
         //      이 화면은 항상 ATTD_ID 를 보유하므로 ATTD_ID 기준으로 검사한다.
         //      겹침 판정/NULL 종료 처리 규칙은 selectOverlappingOvertimeCount 참조.
+        //      com-013-06 A: in-place 수정 대상 OT_ID 는 자기 자신과 겹쳐도 정상이므로 검사에서 제외한다.
         if (param.attdId() != null && !param.attdId().isEmpty()) {
             for (OvertimeItemModel ot : param.overtimes()) {
                 String reqStart = ot.startDate() + ot.startTime();
@@ -1004,7 +1228,7 @@ public class Attd07ServiceImpl implements Attd07Service {
 
                 int overlapCount = attd07Mapper.selectOverlappingOvertimeCount(
                         param.gvCmpnyCd(), param.siteCd(), param.userCd(),
-                        param.attdId(), reqStart, reqEnd);
+                        param.attdId(), reqStart, reqEnd, editingOtIds);
 
                 if (overlapCount > 0) {
                     log.warn("OT register rejected - overlaps existing active OT. userCd={}, attdId={}, reqStart={}, reqEnd={}, overlapCount={}",
@@ -1043,15 +1267,33 @@ public class Attd07ServiceImpl implements Attd07Service {
                 throw new ApiException(AttdErrorCode.ATTD_404_012);
             }
         } else {
-            // 각 OT row를 INSERT. 시퀀스는 row마다 가져와 동시 insert에서도 고유 ID를 보장한다.
+            // Attd_07 직접 등록/수정(reqId=null).
+            //   com-013-06 A: OT_ID 를 보유한 행은 in-place UPDATE, 미보유 행은 신규 INSERT.
+            //   (UPDATE/INSERT 모두 위 2~6 검증(허용구간/겹침)을 그대로 거치므로 동일 규칙으로 재검증된다.)
             for (int i = 0; i < param.overtimes().size(); i++) {
                 OvertimeItemModel ot = param.overtimes().get(i);
                 int[] stamp = reqStamps.get(i);
                 int workMinutes = stamp[1] - stamp[0];
 
-                String otId = attd07Mapper.selectOtId(param.gvCmpnyCd());
-                attd07Mapper.insertUserOvertime(
-                        InsertUserOvertimeCommand.from(otId, param, ot, workMinutes));
+                if (ot.otId() != null && !ot.otId().isBlank()) {
+                    // 기존 OT 행 in-place 수정. ATTD_ID 까지 스코프에 포함해 타 일자/근태 행 이동(변조)을 차단한다.
+                    //   대상이 스코프 밖이거나 이미 취소/삭제면 0행 → 잘못된 OT_ID 또는 변조로 간주하고 거부한다.
+                    int updated = attd07Mapper.updateUserOvertimeDirect(
+                            ot.otId(), param.gvCmpnyCd(), param.siteCd(), param.userCd(),
+                            param.attdId(),
+                            ot.startDate(), ot.startTime(), ot.endDate(), ot.endTime(),
+                            workMinutes, param.gvUserCd());
+                    if (updated == 0) {
+                        log.warn("OT direct edit rejected - target OT not updatable. userCd={}, attdId={}, otId={}",
+                                param.userCd(), param.attdId(), ot.otId());
+                        throw new ApiException(AttdErrorCode.ATTD_404_012);
+                    }
+                } else {
+                    // 신규 INSERT. 시퀀스는 row마다 가져와 동시 insert에서도 고유 ID를 보장한다.
+                    String otId = attd07Mapper.selectOtId(param.gvCmpnyCd());
+                    attd07Mapper.insertUserOvertime(
+                            InsertUserOvertimeCommand.from(otId, param, ot, workMinutes));
+                }
             }
         }
 
@@ -1098,6 +1340,99 @@ public class Attd07ServiceImpl implements Attd07Service {
             } catch (Exception e) {
                 log.error("초과근무 승인 결과 통보 PUSH 적재 hook 실패(승인 영향 없음). reqId={}", reqRow.reqId(), e);
             }
+        }
+    }
+
+    // ============================================================
+    // com-016-E - 초과근무(OT) 다건 소프트삭제 (일자 상세 "초과근무 삭제")
+    // ============================================================
+
+    /** OT 삭제 사유 미입력 시 처리 이력에 남길 기본 문구. */
+    private static final String DEFAULT_OT_DELETE_REASON = "관리자 직접 삭제";
+
+    @Override
+    @Transactional
+    public void deleteUserOvertime(DeleteUserOvertimeParam param) {
+
+        // [보안 com-016-e-001] OT 삭제 경로를 형제 등록 경로(updateUserOvertimeRequests, 약 864~882)와
+        //   대칭으로 하드닝한다. 기존 삭제 경로는 (a) 자기처리 정책 게이트(SELF_ATTD_APPRV_YN) 누락,
+        //   (b) body nodeCd 신뢰로 인한 cross-node/마감 우회 여지가 있었다.
+        //   → 대상 사용자의 서버 권위 노드를 산출해 body nodeCd 변조를 차단하고, 게이트/마감 인자를
+        //     모두 권위 노드로 통일하며, 등록 경로와 동일한 자기처리/상위결재 정책 게이트를 적용한다.
+
+        // 1) 권위 노드 산출 — 대상 사용자(param.userCd)의 서버 조회 노드(클라 body 미신뢰).
+        String authoritativeNodeCd =
+                attdCloseService.resolveUserNodeCd(param.gvCmpnyCd(), param.siteCd(), param.userCd());
+        // 소속 미상(서버노드 null/blank)이면 노드 단위 정책을 적용할 수 없으므로 fail-closed 차단.
+        if (authoritativeNodeCd == null || authoritativeNodeCd.isBlank()) {
+            log.warn("delete-user-overtime rejected - 대상 사용자 소속 부서 미상(서버 노드 부재). cmpnyCd={}, siteCd={}, userCd={}",
+                    param.gvCmpnyCd(), param.siteCd(), param.userCd());
+            throw new ApiException(AttdErrorCode.ATTD_403_002);
+        }
+        // body nodeCd 가 서버 권위 노드와 불일치하면 변조로 간주하고 차단(등록 경로 mismatch 방어와 동일 레벨).
+        if (StringEqualsUtils.isMismatched(param.nodeCd(), authoritativeNodeCd)) {
+            log.warn("delete-user-overtime rejected - body/서버 nodeCd mismatch(변조). cmpnyCd={}, siteCd={}, userCd={}, paramNode={}, serverNode={}",
+                    param.gvCmpnyCd(), param.siteCd(), param.userCd(), param.nodeCd(), authoritativeNodeCd);
+            throw new ApiException(AttdErrorCode.ATTD_400_005);
+        }
+
+        // 2) 매니저 게이트 + 자기처리/상위결재 정책 게이트 — 게이트 인자 = 서버 권위 노드(클라 body 미신뢰).
+        //    master/hr/safe 전사 통과는 ensureCanProcessAttdSelfPolicy 내부에서 유지된다.
+        //    SELF_ATTD_APPRV_YN='N' 노드에서 본인 OT 자기삭제는 ATTD_403_003 으로 차단된다(등록 경로와 대칭).
+        ensureCanProcessAttdSelfPolicy(param.gvAuthCd(), param.gvUserCd(), param.userCd(),
+                param.gvCmpnyCd(), param.siteCd(), authoritativeNodeCd, true);
+
+        // 3) 마감 가드 — 마감된 기간(부서)의 OT 삭제 차단 (게이트와 동일한 권위 노드 사용).
+        ensureNotClosed(param.gvCmpnyCd(), param.siteCd(), authoritativeNodeCd, param.workYmd());
+
+        // 4) 대상 사용자가 호출자의 회사/사이트 scope 안에 실재하는지 DB 로 재확인(IDOR 가드).
+        int userExists = attd07Mapper.selectUserExistInCmpnySite(
+                param.gvCmpnyCd(), param.siteCd(), param.userCd());
+        if (userExists <= 0) {
+            log.warn("delete-user-overtime rejected - target user not in scope. cmpnyCd={}, siteCd={}, userCd={}",
+                    param.gvCmpnyCd(), param.siteCd(), param.userCd());
+            throw new ApiException(AttdErrorCode.ATTD_404_011);
+        }
+
+        // 5) 삭제 이력 앵커 — 그날 근태기록의 ATTD_ID(HIST.ATTD_ID 는 NOT NULL).
+        //    OT 는 출퇴근 기록이 있어야만 등록되므로 정상 경로에서는 항상 존재한다.
+        //    없으면(운영상 도달 불가) 핵심 동작(삭제)은 유지하고 이력만 생략한다.
+        String histAttdId = attd07Mapper.selectAttdIdByDay(
+                param.gvCmpnyCd(), param.siteCd(), param.userCd(), param.workYmd());
+        String reason = (param.reqReason() == null || param.reqReason().isBlank())
+                ? DEFAULT_OT_DELETE_REASON : param.reqReason();
+
+        // 6) otIds 루프 — 각 건을 scope 일치 + 활성 조건으로 소프트삭제한다.
+        //    어느 한 건이라도 0행(스코프 밖/이미 삭제·취소)이면 ATTD_404_012 로 전체 롤백(부분삭제 금지).
+        for (String otId : param.otIds()) {
+            // 삭제 직전 OT 구간(시작/종료)을 이력 기록용으로 확보한다.
+            DailyOvertimeResult target = attd07Mapper.selectOvertimeRowById(
+                    param.gvCmpnyCd(), param.siteCd(), param.userCd(), otId);
+
+            int deleted = attd07Mapper.deleteUserOvertimeById(
+                    param.gvCmpnyCd(), param.siteCd(), param.userCd(), otId, param.gvUserCd());
+            if (deleted == 0) {
+                log.warn("delete-user-overtime rejected - OT not deletable. cmpnyCd={}, siteCd={}, userCd={}, otId={}",
+                        param.gvCmpnyCd(), param.siteCd(), param.userCd(), otId);
+                throw new ApiException(AttdErrorCode.ATTD_404_012);
+            }
+
+            // 7) 삭제 처리 이력(TB_USER_ATTD_HIST) 기록 — HIST_TYPE='13'(초과근무 삭제).
+            //    AFT_* 에 방금 삭제된 OT 구간(실제 시작/종료)을 담아 일자 상세 "처리 이력"에 노출한다.
+            if (histAttdId != null && !histAttdId.isEmpty() && target != null) {
+                String histId = attd07Mapper.selectHistId(param.gvCmpnyCd());
+                attd07Mapper.insertUserAttdInfos(InsertUserAttdHistsCommand.forOvertimeDelete(
+                        histId, histAttdId, param.gvCmpnyCd(), param.siteCd(), param.workYmd(),
+                        target.actualStartDate(), target.actualStartTime(),
+                        target.actualEndDate(), target.actualEndTime(),
+                        reason, param.gvUserCd()));
+            } else {
+                log.warn("OT delete - 처리 이력 생략: ATTD_ID 또는 대상 OT 행 부재. userCd={}, workYmd={}, otId={}",
+                        param.userCd(), param.workYmd(), otId);
+            }
+
+            log.info("초과근무 삭제 완료. otId={}, userCd={}, workYmd={}",
+                    otId, param.userCd(), param.workYmd());
         }
     }
 }

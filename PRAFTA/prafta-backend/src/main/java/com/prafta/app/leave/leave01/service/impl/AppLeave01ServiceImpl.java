@@ -68,6 +68,8 @@ public class AppLeave01ServiceImpl implements AppLeave01Service {
                 .groups(buildGroups(baseQuery))
                 .expiringSoon(buildExpiringSoon(baseQuery))
                 .appliedLeaveTypes(buildAppliedLeaveTypes(param))
+                .borrowedDays(toScaledDouble(nz(
+                        appLeave01Mapper.selectBorrowedDaysTotal(param.cmpnyCd(), param.userCd(), todayYmd))))
                 .build();
 
         log.info("[leave01] 연차 현황 조회 완료 userCd={}", param.userCd());

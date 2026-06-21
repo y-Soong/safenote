@@ -15,6 +15,7 @@ import org.springframework.transaction.annotation.Transactional;
 import com.prafta.common.cmm.login.application.command.ActiveTokenCommand;
 import com.prafta.common.cmm.login.application.command.AuthMenuInfoCommand;
 import com.prafta.common.cmm.login.application.command.DeviceLoginCommand;
+import com.prafta.common.cmm.login.application.command.DeviceOccupancyAnomalyCommand;
 import com.prafta.common.cmm.login.application.command.RequiredTermsInfoCommand;
 import com.prafta.common.cmm.login.application.command.UserJoinCommand;
 import com.prafta.common.cmm.login.application.command.UserLogoutCommand;
@@ -156,9 +157,11 @@ public class LoginServiceImpl implements LoginService{
 		String refreshToken = Base64.getUrlEncoder().withoutPadding().encodeToString(bytes);
 		String refreshTokenHash = hmacSigner.hmacSha256Base64Url(refreshToken);
 		
+		// prafta-057: 로그인 세션 패밀리 식별자(회전 시 승계 · 다른 환경 로그인 감지용)
+		String loginId = UUID.randomUUID().toString().replace("-", "");
 		// 정책 §3.4: Refresh Token 유효기간 48시간(2일)
-		ActiveTokenCommand activeTokenCommand = ActiveTokenCommand.from(userResult, tokenId, param.clientType(), refreshTokenHash, "2");
-		
+		ActiveTokenCommand activeTokenCommand = ActiveTokenCommand.from(userResult, tokenId, loginId, param.clientType(), refreshTokenHash, "2");
+
 		// 기존 세션 revoke
 		loginMapper.revokeActiveToken(activeTokenCommand);
 		// 신규 세션 insert
@@ -166,7 +169,7 @@ public class LoginServiceImpl implements LoginService{
 		
 		// 정책 §11.1에 따라 로그인 응답 페이로드에서 휴대폰/이메일 평문을 제거.
 		// 필요한 화면은 인증된 별도 API(/webApi/user01/user-info-lists)로 조회한다.
-		String token = jwtUtil.generateToken(userResult);
+		String token = jwtUtil.generateToken(userResult, loginId, param.clientType());
 
 		// 사용자 로그인 시간 기록
 		loginMapper.updateUserLastLoginDtime(userResult.userCd());
@@ -192,6 +195,11 @@ public class LoginServiceImpl implements LoginService{
 			if (param == null || param.deviceId() == null || param.deviceId().isBlank()) {
 				return; // 디바이스ID 미전송(웹/구버전 앱) → 적재 대상 아님.
 			}
+			// prafta-com-015 015-1: 점유 재할당 이상탐지(upsert 직전).
+			//   직전 점유자(USER_CD)가 "다른 계정" 이면 감사행 적재(재할당 자체는 막지 않음).
+			//   동일 계정 재로그인(iOS IDFV 변경/재설치 포함)은 미적재.
+			detectOccupancyAnomaly(userResult.cmpnyCd(), param.deviceId(), userResult.userCd(),
+					param.clientType(), param.ipAddr());
 			DeviceLoginCommand command = new DeviceLoginCommand(
 					userResult.cmpnyCd()
 					, param.deviceId()
@@ -205,13 +213,53 @@ public class LoginServiceImpl implements LoginService{
 					, userResult.userCd());
 			loginMapper.upsertUserDevice(command);
 			loginMapper.insertDeviceLoginHist(command);
+			// (계정당 활성 디바이스 1대) 같은 사용자의 다른 기기를 비활성화 → 마지막 로그인 기기만 푸시 수신.
+			//   stale 기기로의 푸시 누수/오발송을 막고, 디바이스 점유를 항상 최신으로 정리한다.
+			int deactivated = loginMapper.deactivateOtherUserDevices(userResult.userCd(), param.deviceId());
 			// PII(기기ID/IP) 평문 로그 금지 — 식별 키만 남긴다.
-			log.info("디바이스 로그인 이력 적재 완료 — userCd={}, clientType={}", userResult.userCd(), param.clientType());
+			log.info("디바이스 로그인 이력 적재 완료 — userCd={}, clientType={}, 비활성화기기={}건"
+					, userResult.userCd(), param.clientType(), deactivated);
 		} catch (Exception e) {
 			log.error("디바이스 로그인 이력 적재 실패(로그인 영향 없음) — userCd={}", userResult.userCd(), e);
 		}
 	}
-	
+
+	/**
+	 * prafta-com-015 015-1 — 디바이스 점유 재할당 이상탐지(감사만, 차단 없음).
+	 *
+	 * <p>로그인 upsert 직전 해당 deviceUuid 의 현재 점유자(USER_CD)를 조회해, 점유자가 "다른 계정"
+	 * 이면 이상행을 적재하고 log.warn 남긴다(R1). 점유자가 없거나(신규 기기) 동일 계정(iOS IDFV
+	 * 변경/재설치 포함)이면 미적재. recordDeviceLogin 의 try-catch 안에서 호출되어 실패는 격리된다.
+	 */
+	private void detectOccupancyAnomaly(String cmpnyCd, String deviceUuid, String newUserCd,
+			String clientType, String loginIp) {
+		// 이상탐지/적재 실패(예: 마이그 미적용으로 Unknown table)가 뒤따르는 디바이스 upsert/이력/
+		//   단일기기 정리(핵심 로직)를 막지 않도록 자체 격리한다. 탐지는 부가 기능이므로 실패해도 무시.
+		try {
+			String prevOwner = loginMapper.selectDeviceOwner(deviceUuid);
+			if (prevOwner == null || prevOwner.equals(newUserCd)) {
+				return; // 신규 기기 또는 동일 계정 재로그인 → 정상(이상 아님).
+			}
+			// 점유자 변경 — 감사행 적재. deviceUuid/userCd 는 마스킹 로그(PII/식별자 평문 금지).
+			loginMapper.insertOccupancyAnomaly(new DeviceOccupancyAnomalyCommand(
+					cmpnyCd, deviceUuid, prevOwner, newUserCd, clientType, loginIp));
+			log.warn("디바이스 점유 재할당 감지 — deviceUuid={}, prevUserCd={}, newUserCd={}, clientType={}",
+					maskHead(deviceUuid), maskHead(prevOwner), maskHead(newUserCd), clientType);
+		} catch (Exception e) {
+			log.warn("디바이스 점유 이상탐지 실패(무시, 디바이스 적재 계속) — deviceUuid={}: {}",
+					maskHead(deviceUuid), e.getMessage());
+		}
+	}
+
+	/** 식별자 마스킹: 앞 8자 + ***(짧으면 길이만큼). 평문 로그 금지(S2 패턴 미러). */
+	private String maskHead(String value) {
+		if (value == null || value.isBlank()) {
+			return "(none)";
+		}
+		int head = Math.min(8, value.length());
+		return value.substring(0, head) + "***";
+	}
+
 	/**
 	 * PRAFTA-COM-008-E-8 — 기본 근무타입 게이트 발동 여부.
 	 *
@@ -319,11 +367,13 @@ public class LoginServiceImpl implements LoginService{
 		String refreshToken = Base64.getUrlEncoder().withoutPadding().encodeToString(bytes);
 		String refreshTokenHash = hmacSigner.hmacSha256Base64Url(refreshToken);
 
-		ActiveTokenCommand activeTokenCommand = ActiveTokenCommand.from(userResult, tokenId, clientType, refreshTokenHash, "2");
+		// prafta-057: 로그인 세션 패밀리 식별자(회전 시 승계 · 다른 환경 로그인 감지용)
+		String loginId = UUID.randomUUID().toString().replace("-", "");
+		ActiveTokenCommand activeTokenCommand = ActiveTokenCommand.from(userResult, tokenId, loginId, clientType, refreshTokenHash, "2");
 		loginMapper.revokeActiveToken(activeTokenCommand);
 		loginMapper.insertAuthToken(activeTokenCommand);
 
-		String token = jwtUtil.generateToken(userResult);
+		String token = jwtUtil.generateToken(userResult, loginId, clientType);
 		loginMapper.updateUserLastLoginDtime(userResult.userCd());
 
 		return LoginResponse.from(userResult, refreshToken, token);
@@ -335,6 +385,31 @@ public class LoginServiceImpl implements LoginService{
 
         loginMapper.revokeAllActiveTokens(UserLogoutCommand.from(param));
         loginMapper.revokeActiveTokenByClient(UserLogoutCommand.from(param));
+
+        // prafta-com-015 015-3: 현재 기기 푸시 토큰 정리(stale 토큰 누수 차단).
+        //   userCd/deviceId 가 모두 있을 때만(앱). 실패는 격리 — 로그아웃(토큰 revoke) 흐름 무영향.
+        clearPushTokenOnLogout(param);
+    }
+
+    /**
+     * prafta-com-015 015-3 — 로그아웃 시 현재 기기 PUSH_TOKEN 정리(best-effort).
+     *
+     * <p>userCd 와 deviceId 가 모두 유효할 때만 정리한다(웹/식별 불가 시 skip).
+     * 어떤 예외가 나도 로그아웃(세션 revoke) 자체를 막지 않으며 log.warn 만 남긴다.
+     */
+    private void clearPushTokenOnLogout(LogoutParam param) {
+        try {
+            String userCd = param.userCd();
+            String deviceId = param.deviceId();
+            if (userCd == null || userCd.isBlank() || "SYSTEM".equals(userCd)
+                    || deviceId == null || deviceId.isBlank()) {
+                return; // 식별 불가(웹/토큰 없음) → 정리 대상 아님.
+            }
+            int cleared = loginMapper.clearPushTokenForDevice(userCd, deviceId);
+            log.info("로그아웃 시 푸시 토큰 정리 — deviceUuid={}, 영향행={}건", maskHead(deviceId), cleared);
+        } catch (Exception e) {
+            log.warn("로그아웃 시 푸시 토큰 정리 실패(로그아웃 영향 없음) — userCd={}", param.userCd(), e);
+        }
     }
 	
 	@Transactional
@@ -493,12 +568,14 @@ public class LoginServiceImpl implements LoginService{
 		String refreshToken = java.util.Base64.getUrlEncoder().withoutPadding().encodeToString(bytes);
 		String refreshTokenHash = hmacSigner.hmacSha256Base64Url(refreshToken);
 
+		// prafta-057: 로그인 세션 패밀리 식별자(회전 시 승계 · 다른 환경 로그인 감지용)
+		String loginId = java.util.UUID.randomUUID().toString().replace("-", "");
 		ActiveTokenCommand activeTokenCommand = ActiveTokenCommand.from(
-				activatedUser, tokenId, param.clientType(), refreshTokenHash, "2");
+				activatedUser, tokenId, loginId, param.clientType(), refreshTokenHash, "2");
 		loginMapper.revokeActiveToken(activeTokenCommand);
 		loginMapper.insertAuthToken(activeTokenCommand);
 
-		String token = jwtUtil.generateToken(activatedUser);
+		String token = jwtUtil.generateToken(activatedUser, loginId, param.clientType());
 		loginMapper.updateUserLastLoginDtime(activatedUser.userCd());
 
 		return LoginResponse.from(activatedUser, refreshToken, token);

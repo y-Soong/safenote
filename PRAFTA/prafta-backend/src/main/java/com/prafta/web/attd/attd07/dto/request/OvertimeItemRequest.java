@@ -16,6 +16,12 @@ import lombok.Setter;
 @NoArgsConstructor
 public class OvertimeItemRequest {
 
+    // com-013-06 A - 기존 OT 행을 in-place 수정할 때만 전달(관리자 직접수정). 신규 등록이면 null/미전달.
+    //   실질 방어는 서버 UPDATE WHERE(cmpny/site/user/attdId/otId) 스코프(0행→거부)가 담당하나,
+    //   방어심층/조기거부 목적으로 채번 형식(yyyyMMdd+시퀀스)에 맞춰 영숫자 화이트리스트를 강제한다.
+    @Pattern(regexp = "^[0-9A-Za-z]{1,50}$")
+    private String otId;
+
     @NotBlank
     @Pattern(regexp = "^[0-9]{8}$")
     private String startDate;

@@ -362,6 +362,19 @@ const fnSave = async () => {
     proxy.$alert(timeValidation.message);
     return;
   }
+  // 오버나이트(시작 > 종료) 후보 구간은 자정 넘김 근무인지 사용자에게 컨펌받는다.
+  if (timeValidation.fstOvernight) {
+    const okOvernight = await proxy.$confirm(
+      getMessage(MSG.OVERNIGHT_CONFIRM, { section: "구간1" })
+    );
+    if (!okOvernight) return;
+  }
+  if (schType.value === "02" && timeValidation.secOvernight) {
+    const okOvernight2 = await proxy.$confirm(
+      getMessage(MSG.OVERNIGHT_CONFIRM, { section: "구간2" })
+    );
+    if (!okOvernight2) return;
+  }
   if (isEditMode.value) {
     const today = new Date();
     today.setHours(0, 0, 0, 0);
@@ -396,8 +409,10 @@ const fnSave = async () => {
     fstBrkStrTime: fstBrkStrTime.value,
     fstBrkEndTime: fstBrkEndDerived.value,
 
-    secSchStrTime: secSchStrTime.value,
-    secSchEndTime: secSchEndTime.value,
+    // 1구간(schType='01')일 때는 2구간 시각을 빈값으로 보낸다.
+    // (ref 기본값 "00:00"/"18:00" 이 그대로 저장돼 앱에서 2구간으로 오표시되는 결함 방지.)
+    secSchStrTime: schType.value === "02" ? secSchStrTime.value : "",
+    secSchEndTime: schType.value === "02" ? secSchEndTime.value : "",
     secSchBrkMin: schType.value === "02" ? secSchBrkMin.value : "",
     secBrkStrTime: schType.value === "02" ? secBrkStrTime.value : "",
     secBrkEndTime: schType.value === "02" ? secBrkEndDerived.value : "",
@@ -460,7 +475,12 @@ const onApplyDateChange = (newVal) => {
   applyDate.value = newVal;
 };
 
-/** 근무시간 검증: 형식, 시작<종료, 구간 겹침 방지. { valid, message } 반환 */
+/**
+ * 근무시간 검증: 형식, 구간 겹침, 휴게시간 범위.
+ * 시작 >= 종료 인 경우는 오류가 아니라 "오버나이트(자정 넘김) 후보"로 분류한다.
+ * 반환: { valid, message, fstOvernight, secOvernight }
+ *  - fstOvernight/secOvernight: 해당 구간이 오버나이트 후보이면 true (저장 전 사용자 컨펌 대상)
+ */
 const validateWorkTime = () => {
   const toMinutes = (v) => {
     if (!v || typeof v !== "string") return null;
@@ -473,42 +493,61 @@ const validateWorkTime = () => {
     return h * 60 + m;
   };
 
+  /** 오버나이트 고려 근무 길이(분): 종료<=시작이면 자정을 넘긴 것으로 보고 1440 더함 */
+  const workSpan = (start, end) => (end > start ? end - start : end + 1440 - start);
+  /** 오버나이트 고려 시각 포함 여부: 휴게시작이 근무 [start, end) 구간(자정 넘김 포함) 안인지 */
+  const withinSpan = (start, end, t) => {
+    if (end > start) return t >= start && t < end;
+    // 오버나이트: [start, 24:00) ∪ [00:00, end)
+    return t >= start || t < end;
+  };
+
   const fstStart = toMinutes(fstSchStrTime.value);
   const fstEnd = toMinutes(fstSchEndTime.value);
   if (fstStart == null || fstEnd == null) {
     return { valid: false, message: "구간1 근무시간을 올바르게 입력해주세요." };
   }
-  if (fstStart >= fstEnd) {
+  if (fstStart === fstEnd) {
     return {
       valid: false,
-      message: "구간1 종료시간은 시작시간보다 뒤여야 합니다.",
+      message: "구간1 시작시간과 종료시간이 같을 수 없습니다.",
     };
   }
+  const fstOvernight = fstStart > fstEnd;
 
+  let secStart = null;
+  let secEnd = null;
+  let secOvernight = false;
   if (schType.value === "02") {
-    const secStart = toMinutes(secSchStrTime.value);
-    const secEnd = toMinutes(secSchEndTime.value);
+    secStart = toMinutes(secSchStrTime.value);
+    secEnd = toMinutes(secSchEndTime.value);
     if (secStart == null || secEnd == null) {
       return {
         valid: false,
         message: "구간2 근무시간을 올바르게 입력해주세요.",
       };
     }
-    if (secStart >= secEnd) {
+    if (secStart === secEnd) {
       return {
         valid: false,
-        message: "구간2 종료시간은 시작시간보다 뒤여야 합니다.",
+        message: "구간2 시작시간과 종료시간이 같을 수 없습니다.",
       };
     }
-    if (fstStart < secEnd && secStart < fstEnd) {
-      return {
-        valid: false,
-        message: "구간1과 구간2의 근무시간이 겹치면 안 됩니다.",
-      };
+    secOvernight = secStart > secEnd;
+
+    // 두 구간 모두 자정을 넘기지 않는 일반 케이스에서만 단순 겹침 검사를 수행한다.
+    // 오버나이트가 끼면 구간 경계가 자정을 가로질러 단순 비교로 겹침을 판정할 수 없으므로 생략한다.
+    if (!fstOvernight && !secOvernight) {
+      if (fstStart < secEnd && secStart < fstEnd) {
+        return {
+          valid: false,
+          message: "구간1과 구간2의 근무시간이 겹치면 안 됩니다.",
+        };
+      }
     }
   }
 
-  const fstWorkMin = fstEnd - fstStart;
+  const fstWorkMin = workSpan(fstStart, fstEnd);
   const fstBrk = parseInt(String(fstSchBrkMin.value || "0"), 10) || 0;
   if (fstBrk > fstWorkMin) {
     return {
@@ -526,7 +565,7 @@ const validateWorkTime = () => {
         message: "구간1 휴게시간 시작 시각을 입력해주세요.",
       };
     }
-    if (fstBrkStart < fstStart || fstBrkStart >= fstEnd) {
+    if (!withinSpan(fstStart, fstEnd, fstBrkStart)) {
       return {
         valid: false,
         message: "구간1 휴게시간 시작 시각은 근무시간 범위 안이어야 합니다.",
@@ -535,10 +574,7 @@ const validateWorkTime = () => {
   }
 
   if (schType.value === "02") {
-    const secStart2 = toMinutes(secSchStrTime.value);
-    const secEnd2 = toMinutes(secSchEndTime.value);
-    const secWorkMin =
-      secStart2 != null && secEnd2 != null ? secEnd2 - secStart2 : 0;
+    const secWorkMin = workSpan(secStart, secEnd);
     const secBrk = parseInt(String(secSchBrkMin.value || "0"), 10) || 0;
     if (secBrk > secWorkMin) {
       return {
@@ -558,7 +594,7 @@ const validateWorkTime = () => {
           message: "구간2 휴게시간 시작 시각을 입력해주세요.",
         };
       }
-      if (secBrkStart < secStart2 || secBrkStart >= secEnd2) {
+      if (!withinSpan(secStart, secEnd, secBrkStart)) {
         return {
           valid: false,
           message: "구간2 휴게시간 시작 시각은 근무시간 범위 안이어야 합니다.",
@@ -567,7 +603,7 @@ const validateWorkTime = () => {
     }
   }
 
-  return { valid: true };
+  return { valid: true, fstOvernight, secOvernight };
 };
 
 /** 날짜를 yyyy-mm-dd 형식으로 변환 (Date, 8자리 문자열 지원) */

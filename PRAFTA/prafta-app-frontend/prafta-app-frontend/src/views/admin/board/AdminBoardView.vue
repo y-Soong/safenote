@@ -44,7 +44,21 @@
           {{ t.archiveTypeNm }}
         </option>
       </select>
-      <input v-model="searchMonth" type="month" class="ab-search__month" aria-label="등록월" />
+      <!-- 등록월: 공통 월 선택 시트 트리거(표시는 점 YYYY.MM). searchMonth 계약 'YYYY-MM' 유지. -->
+      <button
+        type="button"
+        class="ab-search__month ab-search__month--btn"
+        :class="{ 'ab-search__month--placeholder': !searchMonth }"
+        aria-label="등록월"
+        @click="showMonthPicker = true"
+      >
+        {{ monthLabel || '등록월' }}
+      </button>
+      <MonthPickerSheet
+        v-model="showMonthPicker"
+        :year-month="searchMonthCompact"
+        @confirm="onConfirmMonth"
+      />
       <div class="ab-search__kw">
         <input
           v-model="searchKeyword"
@@ -119,10 +133,12 @@
 </template>
 
 <script setup>
-import { ref, onMounted, getCurrentInstance } from 'vue'
+import { ref, computed, onMounted, getCurrentInstance } from 'vue'
 import { useRouter } from 'vue-router'
 
 import api from '@/api/axios'
+import { formatYmDot } from '@/utils/approvalFormat'
+import MonthPickerSheet from '@/components/common/MonthPickerSheet.vue'
 
 const router = useRouter()
 const { proxy } = getCurrentInstance() || { proxy: null }
@@ -139,8 +155,20 @@ const isLoading = ref(true)
 
 // 검색 입력(UI 바인딩 — 허용 범위). 자료타입 ''=전체.
 const searchTypeCd = ref('')
-const searchMonth = ref('') // 'YYYY-MM'
+const searchMonth = ref('') // 'YYYY-MM' (서버 registMonth 계약 — 불변)
 const searchKeyword = ref('')
+
+// 월 선택 시트 표시 + 표시/계약 변환
+const showMonthPicker = ref(false)
+// 트리거 표시(점 'YYYY.MM'). 빈값이면 placeholder.
+const monthLabel = computed(() => formatYmDot(searchMonth.value))
+// 시트 계약은 'YYYYMM' — searchMonth('YYYY-MM')에서 대시 제거하여 전달.
+const searchMonthCompact = computed(() => searchMonth.value.replace('-', ''))
+// 시트 confirm('YYYYMM') → searchMonth('YYYY-MM')로 재조립(계약 유지).
+const onConfirmMonth = (yyyymm) => {
+  const s = String(yyyymm || '')
+  if (s.length >= 6) searchMonth.value = `${s.slice(0, 4)}-${s.slice(4, 6)}`
+}
 
 // 자료타입 드롭다운 옵션 (B1 응답 — [{ archiveTypeCd, archiveTypeNm }])
 const archiveTypeOptions = ref([])
@@ -312,6 +340,16 @@ onMounted(() => {
 }
 .ab-search__month {
   flex: 0 0 auto;
+}
+.ab-search__month--btn {
+  display: inline-flex;
+  align-items: center;
+  min-width: 110px;
+  text-align: left;
+  cursor: pointer;
+}
+.ab-search__month--placeholder {
+  color: var(--color-text-tertiary);
 }
 .ab-search__kw {
   display: flex;

@@ -113,6 +113,7 @@ import {
   minutesToHhMm,
   formatLeaveMarker,
 } from '../attdFormat'
+import { formatYmdDisplay, formatMdDot } from '@/utils/approvalFormat'
 
 const props = defineProps({
   // GET /api/app/attd/my/week 응답. null=로딩/미주입
@@ -132,9 +133,8 @@ const weekRangeText = computed(() => {
   const start = (props.week && props.week.weekStartYmd) || ''
   const end = (props.week && props.week.weekEndYmd) || ''
   if (String(start).length < 8 || String(end).length < 8) return ''
-  const s = String(start)
-  const e = String(end)
-  return `${s.slice(0, 4)}.${s.slice(4, 6)}.${s.slice(6, 8)} ~ ${e.slice(4, 6)}.${e.slice(6, 8)}`
+  // 표시 통일(D1): 시작=YYYY.MM.DD, 종료=MM.DD
+  return `${formatYmdDisplay(start)} ~ ${formatMdDot(end)}`
 })
 
 // 요일 라벨/색

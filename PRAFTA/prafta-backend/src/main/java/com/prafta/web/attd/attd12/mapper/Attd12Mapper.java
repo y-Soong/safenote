@@ -5,26 +5,30 @@ import java.util.List;
 import org.apache.ibatis.annotations.Mapper;
 
 import com.prafta.web.attd.attd12.application.query.FraudAttdSuspectQuery;
-import com.prafta.web.attd.attd12.result.FraudAttdRowResult;
-import com.prafta.web.attd.attd12.result.UserDeviceBaselineResult;
+import com.prafta.web.attd.attd12.result.SharedDeviceLoginResult;
 
 /**
- * prafta-com-003 C6 - 부정 출퇴근 의심 탐지 매퍼(on-view 대조, 읽기 전용).
+ * prafta-com-016-F 9-1 - 부정 출퇴근(기기 공유) 의심 탐지 매퍼(읽기 전용).
  *
- * <p>규칙1(한 기기 → 같은 날 다계정)/규칙2(평소 기기와 다름)/규칙3(신규 기기) 판정은
- *   SQL 그룹핑/baseline 대조가 섞여 복잡하므로(Attd_11 가 화면단 재판정을 택한 것과 동일 이유)
- *   스코프 내 원시 행 + 사용자 baseline 디바이스 집합을 조회한 뒤 service 에서 판정/그룹핑한다.
+ * <p>판정 데이터 출처는 출퇴근 시 도장되는 CHECK_IN_DEVICE_UUID(대부분 NULL)가 아니라
+ *   로그인마다 DEVICE_UUID(NOT NULL)가 적재되는 tb_user_device_login_hist 다.
+ *   "한 사용자가 APP 로그인한 기기를 그 로그인 직전 7일 내에 다른 사용자가 APP 로그인한 적이 있으면
+ *   부정사용(기기 공유/대리) 의심" 으로 본다.
  *
- * <p>스코프(node_tree 하위부서 RECURSIVE + target_user)는 Attd11Mapper 패턴 재사용.
- *   cross-site IDOR: 쿼리 자체가 gvCmpnyCd + siteCd 로 제한되고, siteCd 는 Param 에서
- *   세션 고정 사업장과 일치 검증을 통과한 값이다(서버 강제).
+ * <p>login_hist 에는 SITE_CD/NODE_CD 가 없으므로 스코프/권한은 USER_CD → TB_USER 조인으로 도출한다.
+ *   node_tree(하위부서 RECURSIVE) + target_user(USE_YN='Y', 미퇴사) 스코프는 Attd11Mapper 패턴 재사용.
+ *   cross-site IDOR: gvCmpnyCd + siteCd(세션 고정 검증 통과값)로 제한.
  */
 @Mapper
 public interface Attd12Mapper {
 
-    /** 스코프(사업장/부서) 내 해당 월의 출퇴근 행 + 디바이스UUID(출/퇴근). */
-    List<FraudAttdRowResult> selectScopedAttdRows(FraudAttdSuspectQuery query);
-
-    /** 스코프 내 사용자들의 baseline 디바이스(로그인 이력에서 관측된 distinct (USER_CD, DEVICE_UUID)). */
-    List<UserDeviceBaselineResult> selectUserDeviceBaseline(FraudAttdSuspectQuery query);
+    /**
+     * 공유 기기 의심 로그인 행 조회.
+     *
+     * <p>조회월(LOGIN_DTIME 의 YYYYMM)에 스코프 내 사용자가 APP 로그인한 기기 중,
+     *   같은 기기를 그 로그인 직전 7일 내에 다른 USER_CD 가 APP 로그인한 적이 있는 "공유 의심 기기"를
+     *   먼저 식별하고, 그 기기에 관여한 로그인 이력(사용자·시각·메타)을 평탄 행으로 반환한다.
+     *   서비스에서 DEVICE_UUID 로 그룹핑해 기기 중심(1 기기 → N 사용자) 표시 모델로 조립한다.
+     */
+    List<SharedDeviceLoginResult> selectSharedDeviceLoginSuspects(FraudAttdSuspectQuery query);
 }

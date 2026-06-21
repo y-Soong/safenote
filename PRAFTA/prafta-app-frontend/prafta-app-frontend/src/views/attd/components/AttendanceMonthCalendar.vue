@@ -56,7 +56,8 @@
     </div>
 
     <!-- 캘린더 그리드 -->
-    <div class="cal">
+    <!-- 요일 헤더(시각 표현은 A 고유 유지) -->
+    <div class="cal cal__head">
       <div class="cal__h cal__h--sun">일</div>
       <div class="cal__h">월</div>
       <div class="cal__h">화</div>
@@ -64,21 +65,27 @@
       <div class="cal__h">목</div>
       <div class="cal__h">금</div>
       <div class="cal__h cal__h--sat">토</div>
-
-      <button
-        v-for="(cell, idx) in cells"
-        :key="idx"
-        type="button"
-        class="cal__d"
-        :class="cellClass(cell)"
-        :disabled="cell.isOutside"
-        @click="onSelectCell(cell)"
-      >
-        <span class="cal__n">{{ cell.dayNum }}</span>
-        <span v-if="hasMarker(cell)" class="cal__mk" />
-        <span v-if="cell.dayType === 'ACTION_REQUIRED' && !isSelected(cell)" class="cal__alert" />
-      </button>
     </div>
+
+    <!-- 6주 42칸 그리드 계산은 공통 베이스에 위임. 셀 렌더/색상/선택은 A 고유. -->
+    <MonthCalendarBase :year-month="currentYearMonth" grid-class="cal">
+      <template #cell="{ cell }">
+        <button
+          type="button"
+          class="cal__d"
+          :class="cellClass(decorate(cell))"
+          :disabled="cell.isOutside"
+          @click="onSelectCell(cell)"
+        >
+          <span class="cal__n">{{ cell.dayNum }}</span>
+          <span v-if="hasMarker(decorate(cell))" class="cal__mk" />
+          <span
+            v-if="dayTypeOf(cell) === 'ACTION_REQUIRED' && !isSelected(cell)"
+            class="cal__alert"
+          />
+        </button>
+      </template>
+    </MonthCalendarBase>
 
     <!-- 연월 선택 시트 -->
     <MonthPickerSheet
@@ -119,8 +126,9 @@
 
 <script setup>
 import { computed, ref } from 'vue'
-import { formatYearMonth, minutesToHhMm, dateToYmd, dayNumber as fmtDayNumber } from '../attdFormat'
+import { formatYearMonth, minutesToHhMm, dateToYmd } from '../attdFormat'
 import MonthPickerSheet from '@/components/common/MonthPickerSheet.vue'
+import MonthCalendarBase from '@/components/common/MonthCalendarBase.vue'
 
 const props = defineProps({
   // GET /api/app/attd/my/month 응답. null=로딩/미주입
@@ -157,12 +165,10 @@ const plannedText = computed(() => minutesToHhMm(monthSummary.value.plannedWorkM
 const actualText = computed(() => minutesToHhMm(monthSummary.value.actualWorkMinutes))
 
 // ───────────────────────────────────────────────────────────
-// 캘린더 셀 구성 (6주 × 7일 = 42칸. 인접월은 isOutside)
-//   month.yearMonth + month.days[] → 42칸 cell 배열 생성.
-//   각 cell: { ymd, dayNum, dayType, holidayName, hasIssue, dow, isToday, isOutside }
+// 셀 구성: 42칸 그리드 계산은 MonthCalendarBase 가 담당(베이스 셀 = { ymd, dayNum, isOutside, dow }).
+//   여기서는 베이스 셀에 서버 days[](dayType/holidayName/hasIssue) + isToday 를 decorate 로 보강한다.
 //   주 시작=일요일(시안 캘린더 헤더 일~토 순서).
 // ───────────────────────────────────────────────────────────
-const DOW_KEY = ['SUN', 'MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT']
 const todayYmd = dateToYmd(new Date())
 
 // 서버 days[] 를 ymd → day 매핑으로 인덱싱
@@ -175,60 +181,27 @@ const dayMap = computed(() => {
   return map
 })
 
-// out 셀 1칸 생성 (인접월)
-const makeOutsideCell = (date) => ({
-  ymd: dateToYmd(date),
-  dayNum: String(date.getDate()),
-  isOutside: true,
-})
-
-const cells = computed(() => {
-  const ym = String((props.month && props.month.yearMonth) || '')
-  if (ym.length < 6) return []
-  const year = Number(ym.slice(0, 4))
-  const month = Number(ym.slice(4, 6)) // 1~12
-
-  const first = new Date(year, month - 1, 1)
-  const startOffset = first.getDay() // 0=일 ~ 6=토 (그리드 앞 빈칸 수)
-  const daysInMonth = new Date(year, month, 0).getDate()
-
-  const result = []
-
-  // 1) 앞쪽 인접월(이전 달 말일들)
-  for (let i = startOffset; i > 0; i -= 1) {
-    const d = new Date(year, month - 1, 1 - i)
-    result.push(makeOutsideCell(d))
+// 베이스 셀(공통) → A 도메인 셀로 보강. 색상/마커/오늘 판정에 필요한 필드만 추가.
+const decorate = (cell) => {
+  if (cell.isOutside) return cell
+  const serverDay = dayMap.value.get(cell.ymd) || {}
+  return {
+    ...cell,
+    dayType: serverDay.dayType || 'OFF',
+    holidayName: serverDay.holidayName || '',
+    hasIssue: !!serverDay.hasIssue,
+    isToday: cell.ymd === todayYmd,
   }
+}
 
-  // 2) 당월 일자
-  for (let d = 1; d <= daysInMonth; d += 1) {
-    const date = new Date(year, month - 1, d)
-    const ymd = dateToYmd(date)
-    const serverDay = dayMap.value.get(ymd) || {}
-    result.push({
-      ymd,
-      dayNum: fmtDayNumber(ymd),
-      dayType: serverDay.dayType || 'OFF',
-      holidayName: serverDay.holidayName || '',
-      hasIssue: !!serverDay.hasIssue,
-      dow: DOW_KEY[date.getDay()],
-      isToday: ymd === todayYmd,
-      isOutside: false,
-    })
-  }
+// 셀의 dayType(보강 전 베이스 셀에서도 호출) — alert dot 판정용.
+const dayTypeOf = (cell) => {
+  if (cell.isOutside) return ''
+  const serverDay = dayMap.value.get(cell.ymd) || {}
+  return serverDay.dayType || 'OFF'
+}
 
-  // 3) 뒤쪽 인접월(다음 달 초)을 42칸까지 채움
-  let nextDay = 1
-  while (result.length < 42) {
-    const date = new Date(year, month, nextDay)
-    result.push(makeOutsideCell(date))
-    nextDay += 1
-  }
-
-  return result
-})
-
-// 셀 클래스 — 색상 코딩 (시안 §4.4.2)
+// 셀 클래스 — 색상 코딩 (시안 §4.4.2). 입력은 decorate 된 셀.
 const cellClass = (cell) => {
   const cls = []
   if (cell.isOutside) {
@@ -373,12 +346,19 @@ const onSelectCell = (cell) => {
   border: 1px solid var(--color-danger-border);
 }
 
-/* 캘린더 그리드 */
+/* 캘린더 그리드(헤더 + 베이스 셀 그리드 공용) */
 .cal {
   display: grid;
   grid-template-columns: repeat(7, 1fr);
   gap: 3px;
+}
+/* 요일 헤더 행: 블록 상단 여백 */
+.cal__head {
   margin-top: var(--space-xs);
+}
+/* 셀 그리드(MonthCalendarBase 루트)는 헤더와 그리드 간격(3px)만 띄움 */
+.cal:not(.cal__head) {
+  margin-top: 3px;
 }
 .cal__h {
   text-align: center;

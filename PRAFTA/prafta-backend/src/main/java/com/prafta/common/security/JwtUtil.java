@@ -44,8 +44,28 @@ public class JwtUtil {
      * JWT 페이로드는 base64로 누구나 디코딩 가능하므로 식별·인가에 필요한 비-PII 정보만 담는다.
      */
     public String generateToken(UserResult userResult) {
+        return generateToken(userResult, null, null);
+    }
 
-        return Jwts.builder()
+    public String generateToken(UserResult userResult, String loginId) {
+        return generateToken(userResult, loginId, null);
+    }
+
+    /**
+     * JWT 토큰 생성(로그인 세션 패밀리 식별자 + 클라이언트 타입 포함 오버로드).
+     *
+     * <p>prafta-057: {@code loginId} 는 로그인 단위로 발급되어 회전(refresh) 시 승계되는
+     * "세션 패밀리" 식별자다. AuthAspect 가 매 요청에서 이 값으로 다른 환경 신규 로그인을 감지한다.
+     * {@code clientType} 은 발급 시점의 로그인 클라이언트(WEB/APP)를 서명된 클레임으로 고정하여,
+     * AuthAspect 의 감지 대상 판정이 조작 가능한 X-Client-Type 헤더가 아닌 토큰 자체에 근거하도록 한다.
+     * 정책 §11.1 에 따라 휴대폰/이메일 등 PII 는 클레임에 포함하지 않는다.
+     *
+     * @param loginId    세션 패밀리 식별자. null/빈값이면 클레임을 추가하지 않는다(레거시 호환).
+     * @param clientType 발급 클라이언트(WEB/APP). null/빈값이면 클레임을 추가하지 않는다.
+     */
+    public String generateToken(UserResult userResult, String loginId, String clientType) {
+
+        var builder = Jwts.builder()
         		.claim("gv_cmpnyCd", userResult.cmpnyCd())
         		.claim("gv_userCd", userResult.userCd())
         		.claim("gv_userId", userResult.userId())
@@ -59,7 +79,18 @@ public class JwtUtil {
                 .claim("gv_nodeNm", userResult.nodeNm())
                 // PRAFTA-app-027-2': 고용형태 클레임. 일용직(DAILY) 화면 숨김(J1-4) 신호.
                 //   정규 사용자에도 동일 키가 추가될 뿐이라 회귀 없음(FE 미사용 키 무시).
-                .claim("gv_employmentType", userResult.employmentType())
+                .claim("gv_employmentType", userResult.employmentType());
+
+        // prafta-057: 세션 패밀리 식별자(있을 때만). 다른 환경 로그인 감지에 사용.
+        if (loginId != null && !loginId.isBlank()) {
+            builder.claim("gv_loginId", loginId);
+        }
+        // prafta-057: 발급 클라이언트 타입(있을 때만). AuthAspect 감지 대상 판정의 신뢰원.
+        if (clientType != null && !clientType.isBlank()) {
+            builder.claim("gv_clientType", clientType);
+        }
+
+        return builder
                 .setIssuedAt(new Date())
                 .setExpiration(new Date(System.currentTimeMillis() + expiration))
                 .signWith(key, SignatureAlgorithm.HS256)

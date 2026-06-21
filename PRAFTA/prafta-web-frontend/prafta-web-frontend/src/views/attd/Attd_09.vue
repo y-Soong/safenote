@@ -290,6 +290,14 @@
               </td>
               <td class="is-right ld-grp-total ld-cell-group-end ld-strong">
                 {{ row.total.remaining }}일
+                <!-- 가불 사용분(prafta-com-011-7, 표시 전용) — 미발생 가불 USED 합이 있으면 잔여 아래 강조 표기 -->
+                <span
+                  v-if="fnBorrowedDays(row) > 0"
+                  class="ld-borrowed-badge"
+                  title="아직 발생하지 않은 미래 연차를 미리 당겨 사용한 분(가불)"
+                >
+                  가불 {{ fnBorrowedDays(row) }}일
+                </span>
               </td>
 
               <td class="is-right">{{ row.usageRate }}%</td>
@@ -305,29 +313,6 @@
         </table>
       </div>
 
-      <!-- ============ 페이지네이션 ============ -->
-      <div class="ld-pagination">
-        <p class="ld-pagination-info">{{ pagingInfoText }}</p>
-        <div class="ld-pagination-controls">
-          <button
-            class="btn btn-second btn-sm"
-            type="button"
-            :disabled="paging.page <= 1"
-            @click="fnGoPage(paging.page - 1)"
-          >
-            이전
-          </button>
-          <span class="ld-pagination-current">{{ paging.page }}</span>
-          <button
-            class="btn btn-second btn-sm"
-            type="button"
-            :disabled="paging.page >= totalPages"
-            @click="fnGoPage(paging.page + 1)"
-          >
-            다음
-          </button>
-        </div>
-      </div>
     </div>
   </div>
 </template>
@@ -338,6 +323,7 @@ import { ref, computed, defineProps, onMounted, getCurrentInstance } from "vue";
 import { useModal } from "@/utils/useModal";
 import axios from "@/api/axios";
 import { resolveApiErrorMessage } from "@/utils/apiError";
+import { formatYmdDot } from "@/utils/dateFormat";
 import { getMessage, MSG } from "@/messages";
 import search_icon from "@/assets/img/search_icon.png";
 import ViewHeader from "@/components/common/ViewHeader.vue";
@@ -392,9 +378,6 @@ const metrics = ref({
 //   nonLegal:{granted,used,remaining}, usageRate })
 const list = ref([]);
 
-// 페이징
-const paging = ref({ page: 1, size: 20, totalCount: 0 });
-
 // 선택된 직원 코드 목록
 const selectedUserCds = ref([]);
 
@@ -412,19 +395,6 @@ const prorateFallback = ref(false);
 const policyNoticeText = ref("");
 
 // ================ Computed ================
-const totalPages = computed(() => {
-  const size = paging.value.size || 1;
-  return Math.max(1, Math.ceil((paging.value.totalCount || 0) / size));
-});
-
-const pagingInfoText = computed(() => {
-  const total = paging.value.totalCount || 0;
-  if (total === 0) return "전체 0명";
-  const start = (paging.value.page - 1) * paging.value.size + 1;
-  const end = Math.min(paging.value.page * paging.value.size, total);
-  return `전체 ${total}명 중 ${start}-${end}건`;
-});
-
 // 전체 선택 여부 (현재 페이지 기준)
 const isAllSelected = computed(
   () =>
@@ -441,48 +411,68 @@ onMounted(() => {
 });
 
 // ================ API Functions ================
-// 대시보드 목록 조회 ([조회]/검색/필터 변경 진입점 — 1페이지로 리셋)
+// 대시보드 목록 조회 ([조회]/검색/필터 변경 진입점)
+//   com-013-08-1: 재조회 시 이전 선택 체크박스를 초기화한다(선택 유지 버그 수정).
 const fnSearch = () => {
-  paging.value.page = 1;
+  fnClearSelection();
   fnLoad();
 };
 
-// 실제 목록/메트릭/부서옵션 조회 (현재 paging.page 기준)
+// 실제 목록/메트릭 조회.
+//   com-013-08-4: 페이징 UI 제거에 따라 전체 직원을 한 화면에 표시한다.
+//   백엔드는 1회 요청당 최대 PAGE_SIZE(=100)건으로 상한이 걸려 있으므로,
+//   totalCount 를 모두 채울 때까지 페이지를 순회하며 누적 로드한다(백엔드 계약/스코프/상한 불변).
+const PAGE_SIZE = 100; // 백엔드 MAX_PAGE_SIZE 와 동일(한 번에 받을 최대 건수)
+const MAX_FETCH_PAGES = 200; // 무한 루프 방어(이론상 최대 2만 명)
+
 const fnLoad = async () => {
   isLoading.value = true;
   try {
-    const response = await axios.get("/webApi/attd09/leave-dashboard/list", {
-      params: {
-        siteCd: siteCd.value || "",
-        nodeCd: nodeCd.value || "",
-        incSubNodeYn: incSubNodeYn.value ? "Y" : "N",
-        userNm: filter.value.userNm || "",
-        page: paging.value.page,
-        size: paging.value.size,
-      },
-    });
-    const data = response.data || {};
+    const baseParams = {
+      siteCd: siteCd.value || "",
+      nodeCd: nodeCd.value || "",
+      incSubNodeYn: incSubNodeYn.value ? "Y" : "N",
+      userNm: filter.value.userNm || "",
+      size: PAGE_SIZE,
+    };
+
+    const accumulated = [];
+    let total = 0;
+    let metricsData = null;
+
+    for (let page = 1; page <= MAX_FETCH_PAGES; page++) {
+      const response = await axios.get("/webApi/attd09/leave-dashboard/list", {
+        params: { ...baseParams, page },
+      });
+      const data = response.data || {};
+
+      // 메트릭/총건수는 회사 공통 값이라 첫 페이지 응답만 채택한다.
+      if (page === 1) {
+        metricsData = data.metrics || {};
+        total = data.paging?.totalCount ?? 0;
+      }
+
+      const pageList = Array.isArray(data.list) ? data.list : [];
+      accumulated.push(...pageList);
+
+      // 더 받을 게 없으면 종료(누적 건수가 총건수 도달 or 빈 페이지).
+      if (accumulated.length >= total || pageList.length === 0) {
+        break;
+      }
+    }
 
     metrics.value = {
-      totalEmployees: data.metrics?.totalEmployees ?? 0,
-      avgUsageRate: data.metrics?.avgUsageRate ?? 0,
-      expiringSoon30: data.metrics?.expiringSoon30 ?? 0,
-      newGrantThisMonth: data.metrics?.newGrantThisMonth ?? 0,
+      totalEmployees: metricsData?.totalEmployees ?? 0,
+      avgUsageRate: metricsData?.avgUsageRate ?? 0,
+      expiringSoon30: metricsData?.expiringSoon30 ?? 0,
+      newGrantThisMonth: metricsData?.newGrantThisMonth ?? 0,
     };
-    list.value = Array.isArray(data.list) ? data.list : [];
+    list.value = accumulated;
 
-    // 입사일 사전 검증용 누적 맵 갱신(체크는 본인이 본 행만 가능하므로 전 선택분 커버)
+    // 입사일 사전 검증용 누적 맵 갱신
     list.value.forEach((r) => {
       userInfoMap.value[r.userCd] = { hireDate: r.hireDate, userNm: r.userNm };
     });
-
-    if (data.paging) {
-      paging.value = {
-        page: data.paging.page ?? paging.value.page,
-        size: data.paging.size ?? paging.value.size,
-        totalCount: data.paging.totalCount ?? 0,
-      };
-    }
   } catch (err) {
     const msg = resolveApiErrorMessage(err, "조회 중 오류가 발생했습니다.");
     await proxy.$alert(msg);
@@ -507,14 +497,7 @@ const fnLoadPolicyInfo = async () => {
   }
 };
 
-// 페이지 이동 후 재조회 (페이지 리셋 없이 현재 페이지만 갱신)
-const fnGoPage = (page) => {
-  if (page < 1 || page > totalPages.value) return;
-  paging.value.page = page;
-  fnLoad();
-};
-
-// 엑셀(현 페이지 데이터 CSV) — LeavePolicyImpactPop fnDownloadReport 패턴
+// 엑셀(전체 직원 데이터 CSV) — LeavePolicyImpactPop fnDownloadReport 패턴
 const fnExcel = () => {
   if (list.value.length === 0) {
     proxy.$alert("내보낼 데이터가 없습니다.");
@@ -886,6 +869,16 @@ const fnViewLeavePlan = () => {
   proxy.$alert("준비 중인 기능입니다.");
 };
 
+// --- 가불 사용분(표시 전용, prafta-com-011-7) ---
+//   borrowedDays = 미발생 가불 GRANT 의 USED 합(BE 산정). 숫자로 정규화해 0 이하면 0 반환.
+//   소수(반차 0.5 등) 표기를 위해 불필요한 끝자리 0은 제거한다(예: 1.0 → 1, 0.50 → 0.5).
+const fnBorrowedDays = (row) => {
+  const n = Number(row?.borrowedDays ?? 0);
+  if (!Number.isFinite(n) || n <= 0) return 0;
+  // 정수면 그대로, 소수면 끝자리 0 제거
+  return Number.isInteger(n) ? n : parseFloat(n.toFixed(2));
+};
+
 // --- 고용형태 라벨 ---
 const fnEmploymentLabel = (type) => {
   const map = {
@@ -898,11 +891,11 @@ const fnEmploymentLabel = (type) => {
 };
 
 // ================ 내부 유틸 ================
-// YYYYMMDD → YYYY-MM-DD 표기
+// YYYYMMDD → "YYYY.MM.DD" 표기. 빈값/형식불충분은 "-".
 const fnFormatDate = (yyyymmdd) => {
   const s = String(yyyymmdd || "");
   if (s.length !== 8) return s || "-";
-  return `${s.slice(0, 4)}-${s.slice(4, 6)}-${s.slice(6, 8)}`;
+  return formatYmdDot(s);
 };
 
 // 경력 인정 개월 → "N년 M개월" (0/null이면 "-")
@@ -1122,14 +1115,28 @@ const fnCsvCell = (v) => {
 .ld-grp-total {
   background: rgba(22, 163, 74, 0.06); /* 연한 초록 — 전체 */
 }
+/* 헤더 셀은 sticky 고정되므로 반투명(rgba)이면 스크롤되는 본문이 비쳐 보인다.
+   불투명 thead 배경 위에 그룹 틴트를 겹쳐 같은 색감을 유지하면서 불투명화한다. */
 .ld-table thead th.ld-grp-legal {
-  background: rgba(37, 99, 235, 0.12);
+  background-color: var(--thead-bg, #f3f4f6);
+  background-image: linear-gradient(
+    rgba(37, 99, 235, 0.12),
+    rgba(37, 99, 235, 0.12)
+  );
 }
 .ld-table thead th.ld-grp-nonlegal {
-  background: rgba(217, 119, 6, 0.13);
+  background-color: var(--thead-bg, #f3f4f6);
+  background-image: linear-gradient(
+    rgba(217, 119, 6, 0.13),
+    rgba(217, 119, 6, 0.13)
+  );
 }
 .ld-table thead th.ld-grp-total {
-  background: rgba(22, 163, 74, 0.13);
+  background-color: var(--thead-bg, #f3f4f6);
+  background-image: linear-gradient(
+    rgba(22, 163, 74, 0.13),
+    rgba(22, 163, 74, 0.13)
+  );
 }
 
 /* 사용예정 셀: 보조 정보이므로 약하게(이탤릭 + muted) */
@@ -1178,6 +1185,18 @@ const fnCsvCell = (v) => {
 .ld-strong {
   font-weight: 600;
   color: var(--color-text-strong);
+}
+
+/* ===== 가불 사용분 배지 (prafta-com-011-7, 표시 전용) =====
+   잔여 셀 내부에 줄바꿈하여 노출. 디자인 토큰 경고색(주의 환기)만 사용. */
+.ld-borrowed-badge {
+  display: block;
+  margin-top: 0.125rem;
+  font-size: 0.625rem;
+  font-weight: 600;
+  line-height: 1.2;
+  color: var(--color-warning-text);
+  white-space: nowrap;
 }
 
 .ld-emp-name {
@@ -1264,34 +1283,6 @@ const fnCsvCell = (v) => {
   text-align: center;
   color: var(--color-text-muted);
   padding: 2.5rem 0.75rem;
-}
-
-/* ===== 페이지네이션 ===== */
-.ld-pagination {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-top: 0.25rem;
-}
-
-.ld-pagination-info {
-  font-size: 0.6875rem;
-  color: var(--color-text-muted);
-  margin: 0;
-}
-
-.ld-pagination-controls {
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-}
-
-.ld-pagination-current {
-  font-size: 0.8125rem;
-  font-weight: 600;
-  color: var(--color-text-strong);
-  min-width: 1.5rem;
-  text-align: center;
 }
 
 /* ===== 체크박스 토큰 ===== */

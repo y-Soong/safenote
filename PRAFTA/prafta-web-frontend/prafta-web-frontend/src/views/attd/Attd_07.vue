@@ -304,17 +304,19 @@
                 <col class="c-day" />
                 <col class="c-act-time" />
                 <col class="c-total" />
+                <col class="c-total" />
               </colgroup>
               <thead>
-                <!-- Level 1: 비고 / 날짜 / 계획·실적(1·2구간) / 근무시간 -->
+                <!-- Level 1: 비고 / 날짜 / 스케줄·근태(1·2구간) / 실근로시간 / 인정시간 -->
                 <tr class="lvl1">
                   <th class="l1-rs col-note" rowspan="2">비고</th>
                   <th class="date-h bdr-section" rowspan="2">날짜</th>
-                  <th class="l2-plan bdr-section" colspan="2">계획 1</th>
-                  <th class="l2-actual bdr-sub" colspan="4">실적 1</th>
-                  <th class="l2-plan bdr-section" colspan="2">계획 2</th>
-                  <th class="l2-actual bdr-sub" colspan="4">실적 2</th>
-                  <th class="l1-rs bdr-section" rowspan="2">근무시간</th>
+                  <th class="l2-plan bdr-section" colspan="2">1구간 스케줄</th>
+                  <th class="l2-actual bdr-sub" colspan="4">1구간 근태</th>
+                  <th class="l2-plan bdr-section" colspan="2">2구간 스케줄</th>
+                  <th class="l2-actual bdr-sub" colspan="4">2구간 근태</th>
+                  <th class="l1-rs bdr-section" rowspan="2">실근로시간</th>
+                  <th class="l1-rs bdr-section" rowspan="2">인정시간</th>
                 </tr>
                 <!-- Level 2: 컬럼명 -->
                 <tr class="lvl2">
@@ -341,23 +343,43 @@
                       <span class="badge-ot">초과근무</span>
                     </td>
                     <td class="date bdr-section"></td>
-                    <!-- 1구간: OT 실적은 1구간 실적 칸에 표시 -->
+                    <!-- PRAFTA-COM-013-06-4(r34-3): OT 실적은 매칭 구간(r.seg)에 따라 실적1/실적2 칸에 표시 -->
+                    <!-- 1구간 계획(OT 행은 항상 공란) -->
                     <td class="col-plan bdr-section">−</td>
                     <td class="col-plan">−</td>
+                    <!-- 1구간 실적: seg === 1 일 때만 OT 시각 표시 -->
                     <td class="col-actual bdr-sub">
-                      {{ valOrDash(r.otInDate) }}
+                      {{ r.seg === 1 ? valOrDash(r.otInDate) : "−" }}
                     </td>
-                    <td class="col-actual">{{ valOrDash(r.otIn) }}</td>
-                    <td class="col-actual">{{ valOrDash(r.otOutDate) }}</td>
-                    <td class="col-actual">{{ valOrDash(r.otOut) }}</td>
-                    <!-- 2구간: OT 행은 공란 -->
+                    <td class="col-actual">
+                      {{ r.seg === 1 ? valOrDash(r.otIn) : "−" }}
+                    </td>
+                    <td class="col-actual">
+                      {{ r.seg === 1 ? valOrDash(r.otOutDate) : "−" }}
+                    </td>
+                    <td class="col-actual">
+                      {{ r.seg === 1 ? valOrDash(r.otOut) : "−" }}
+                    </td>
+                    <!-- 2구간 계획(OT 행은 항상 공란) -->
                     <td class="col-plan bdr-section">−</td>
                     <td class="col-plan">−</td>
-                    <td class="col-actual bdr-sub">−</td>
-                    <td class="col-actual">−</td>
-                    <td class="col-actual">−</td>
-                    <td class="col-actual">−</td>
+                    <!-- 2구간 실적: seg === 2 일 때만 OT 시각 표시 -->
+                    <td class="col-actual bdr-sub">
+                      {{ r.seg === 2 ? valOrDash(r.otInDate) : "−" }}
+                    </td>
+                    <td class="col-actual">
+                      {{ r.seg === 2 ? valOrDash(r.otIn) : "−" }}
+                    </td>
+                    <td class="col-actual">
+                      {{ r.seg === 2 ? valOrDash(r.otOutDate) : "−" }}
+                    </td>
+                    <td class="col-actual">
+                      {{ r.seg === 2 ? valOrDash(r.otOut) : "−" }}
+                    </td>
                     <td class="bdr-section right">{{ valOrDash(r.total) }}</td>
+                    <td class="bdr-section right">
+                      {{ valOrDash(r.recognized) }}
+                    </td>
                   </tr>
                   <!-- 정규근무 행 (kind === 'work') -->
                   <tr v-else :class="r.status" @click="fnOpenAttdAdjustPop(r)">
@@ -416,9 +438,13 @@
                     <td class="col-actual">{{ valOrDash(r.a2In) }}</td>
                     <td class="col-actual">{{ valOrDash(r.a2OutDate) }}</td>
                     <td class="col-actual">{{ valOrDash(r.a2Out) }}</td>
-                    <!-- 근무시간 -->
+                    <!-- 실근로시간 -->
                     <td class="bdr-section right">
                       {{ valOrDash(r.total) }}
+                    </td>
+                    <!-- 인정시간 -->
+                    <td class="bdr-section right">
+                      {{ valOrDash(r.recognized) }}
                     </td>
                   </tr>
                 </template>
@@ -793,22 +819,105 @@ const detectAttdState = (r, workYmd) => {
 
 // 출퇴근 누락 등 처리필요 여부 (사용자 issue 카운트용)
 const isIssueRecord = (r) => detectAttdState(r, r?.workYmd).status === "alert";
+// YYYYMMDD 두 일자 간 일수 차(out - in). 잘못된 값이면 0.
+//   PRAFTA-COM-013-06-5(r34-4): 오버나이트(자정 넘김) 보정을 위해 출/퇴근 일자 차이를 분 계산에 반영한다.
+const ymdDayDiff = (inDate, outDate) => {
+  const i = String(inDate || "");
+  const o = String(outDate || "");
+  if (!/^\d{8}$/.test(i) || !/^\d{8}$/.test(o)) return 0;
+  const di = new Date(
+    parseInt(i.slice(0, 4), 10),
+    parseInt(i.slice(4, 6), 10) - 1,
+    parseInt(i.slice(6, 8), 10)
+  );
+  const dout = new Date(
+    parseInt(o.slice(0, 4), 10),
+    parseInt(o.slice(4, 6), 10) - 1,
+    parseInt(o.slice(6, 8), 10)
+  );
+  return Math.round((dout.getTime() - di.getTime()) / (1000 * 60 * 60 * 24));
+};
+
 // 분 단위 근무시간 계산
-const calcMin = (inT, outT, breakMin) => {
+//   PRAFTA-COM-013-06-5(r34-4): 출/퇴근 일자(inDate/outDate)를 함께 받아 자정 넘김(오버나이트)을
+//   보정한다. 일자 정보가 없으면(레거시 호출) 0일 차로 간주해 기존 동작과 동일.
+const calcMin = (inT, outT, breakMin, inDate, outDate) => {
   if (!inT || !outT) return 0;
   const i = String(inT),
     o = String(outT);
   if (i.length < 4 || o.length < 4) return 0;
   const im = parseInt(i.slice(0, 2), 10) * 60 + parseInt(i.slice(2, 4), 10);
   const om = parseInt(o.slice(0, 2), 10) * 60 + parseInt(o.slice(2, 4), 10);
-  return Math.max(0, om - im - (parseInt(breakMin, 10) || 0));
+  // 자정 넘김 보정: 퇴근 일자가 출근 일자보다 뒤이면 일수 차 × 1440분을 더한다.
+  const dayDiff = ymdDayDiff(inDate, outDate);
+  return Math.max(0, om - im + dayDiff * 1440 - (parseInt(breakMin, 10) || 0));
 };
 const calcTotal = (r) => {
   const t =
-    calcMin(r.act1InTime, r.act1OutTime, r.plan1BreakMin) +
-    calcMin(r.act2InTime, r.act2OutTime, r.plan2BreakMin);
+    calcMin(
+      r.act1InTime,
+      r.act1OutTime,
+      r.plan1BreakMin,
+      r.act1InDate,
+      r.act1OutDate
+    ) +
+    calcMin(
+      r.act2InTime,
+      r.act2OutTime,
+      r.plan2BreakMin,
+      r.act2InDate,
+      r.act2OutDate
+    );
   if (t <= 0) return "";
   return `${Math.floor(t / 60)}시간 ${String(t % 60).padStart(2, "0")}분`;
+};
+
+// ── 인정시간(분단위) 산정 — Attd_08 인정시간 로직 포팅 ─────
+// 'yyyyMMdd'+'HHmm' → 분 절대값. 일자 미기재 시 baseYmd 보정. (Attd_08 dtMinutes 포팅)
+const dtAbsMin = (ymd, hhmm, baseYmd) => {
+  if (!hhmm) return null;
+  const t = String(hhmm).padStart(4, "0");
+  const h = parseInt(t.slice(0, 2), 10);
+  const mi = parseInt(t.slice(2, 4), 10);
+  if (isNaN(h) || isNaN(mi)) return null;
+  let s = String(ymd ?? "");
+  if (s.length !== 8) s = String(baseYmd ?? "");
+  if (s.length !== 8) return null;
+  const base = Date.UTC(+s.slice(0, 4), +s.slice(4, 6) - 1, +s.slice(6, 8));
+  return Math.round(base / 60000) + h * 60 + mi;
+};
+// 구간(seg=1|2)의 인정시간(분) = (실제근무 ∩ 스케줄) − 휴게. 산정 불가면 0.
+const recognizedSegMin = (r, seg) => {
+  const inT = seg === 2 ? r.act2InTime : r.act1InTime;
+  const outT = seg === 2 ? r.act2OutTime : r.act1OutTime;
+  const inD = seg === 2 ? r.act2InDate : r.act1InDate;
+  const outD = seg === 2 ? r.act2OutDate : r.act1OutDate;
+  const schStart = seg === 2 ? r.plan2Start : r.plan1Start;
+  const schEnd = seg === 2 ? r.plan2End : r.plan1End;
+  const brk = parseInt(seg === 2 ? r.plan2BreakMin : r.plan1BreakMin, 10) || 0;
+  if (!inT || !outT || !schStart || !schEnd) return 0;
+  const inM = dtAbsMin(inD, inT, r.workYmd);
+  let outM = dtAbsMin(outD, outT, r.workYmd);
+  if (inM == null || outM == null) return 0;
+  if (outM < inM) outM += 1440;
+  const schStartM = dtAbsMin(r.workYmd, schStart, r.workYmd);
+  let schEndM = dtAbsMin(r.workYmd, schEnd, r.workYmd);
+  if (schStartM == null || schEndM == null) return 0;
+  if (schEndM < schStartM) schEndM += 1440;
+  const overlap = Math.max(0, Math.min(outM, schEndM) - Math.max(inM, schStartM));
+  return Math.max(0, overlap - brk);
+};
+// 정규근무 행 인정시간(분) = 1구간 + 2구간.
+const calcRecognized = (r) => recognizedSegMin(r, 1) + recognizedSegMin(r, 2);
+// 분 → 표기. Attd_08 fmtDuration 정합("N시간 M분"/"N시간"/"M분", 0/음수 빈문자).
+const fmtRecognized = (min) => {
+  const m = Math.max(0, Math.round(min || 0));
+  if (m <= 0) return "";
+  const h = Math.floor(m / 60);
+  const mm = m % 60;
+  if (h && mm) return `${h}시간 ${mm}분`;
+  if (h) return `${h}시간`;
+  return `${mm}분`;
 };
 
 // 캘린더 셀 데이터
@@ -927,8 +1036,10 @@ const detailRows = computed(() => {
   daysInMonth.value.forEach((d) => {
     rows.push(buildDetailRow(u, d));
     const otList = overtimeByDay.value[d.day] ?? [];
+    // PRAFTA-COM-013-06-4(r34-3): OT 를 어느 실적(1/2)에 매칭할지 판정하기 위해 그날 근태 record 를 함께 전달한다.
+    const dayRecord = recordMap.value[`${u.userId}_${d.day}`];
     otList.forEach((ot, idx) => {
-      rows.push(buildOvertimeRow(d, ot, idx));
+      rows.push(buildOvertimeRow(d, ot, idx, dayRecord));
     });
   });
   return rows;
@@ -962,16 +1073,17 @@ function buildDetailRow(user, d) {
     p1Start: fmtTime(r.plan1Start),
     p1End: fmtTime(r.plan1End),
     a1InDate: fmtMmdd(r.act1InDate),
-    a1In: fmtTimeSec(r.act1InTime),
+    a1In: fmtTime(r.act1InTime),
     a1OutDate: fmtMmdd(r.act1OutDate),
-    a1Out: fmtTimeSec(r.act1OutTime),
+    a1Out: fmtTime(r.act1OutTime),
     p2Start: fmtTime(r.plan2Start),
     p2End: fmtTime(r.plan2End),
     a2InDate: fmtMmdd(r.act2InDate),
-    a2In: fmtTimeSec(r.act2InTime),
+    a2In: fmtTime(r.act2InTime),
     a2OutDate: fmtMmdd(r.act2OutDate),
-    a2Out: fmtTimeSec(r.act2OutTime),
+    a2Out: fmtTime(r.act2OutTime),
     total: calcTotal(r),
+    recognized: fmtRecognized(calcRecognized(r)),
     note,
     status,
     // 외근 배지 — 구간별 외근 플래그(attd{1,2}OutsideYn)가 'Y'인 구간만 노출
@@ -1003,18 +1115,33 @@ function buildOutsideList(d, r) {
   return list;
 }
 
-// OT 행 빌드 — 비고 칸 "초과근무" 배지, 실적 칸에 OT 시작/종료 표시.
-function buildOvertimeRow(d, ot, idx) {
+// OT 가 어느 실적 구간(1/2)에 속하는지 판정한다.
+//   PRAFTA-COM-013-06-4(r34-3): OT 는 ATTD_ID 로 근태 구간(WORK_SEQ)에 연결된다.
+//   그날 근태 record 의 attd1Id/attd2Id 와 OT 의 attdId 를 대조해 1 또는 2 를 반환한다.
+//   매칭 실패(레거시/데이터 불일치) 시 기존 동작과 동일하게 1구간(실적1)으로 fallback.
+function resolveOvertimeSeg(ot, dayRecord) {
+  const r = dayRecord ?? {};
+  const otAttdId = ot?.attdId ?? "";
+  if (otAttdId && r.attd2Id && otAttdId === r.attd2Id) return 2;
+  if (otAttdId && r.attd1Id && otAttdId === r.attd1Id) return 1;
+  return 1;
+}
+
+// OT 행 빌드 — 비고 칸 "초과근무" 배지, 매칭 실적 구간(1/2) 칸에 OT 시작/종료 표시.
+function buildOvertimeRow(d, ot, idx, dayRecord) {
   return {
     kind: "ot",
     rowKey: `ot_${d.day}_${ot.otId ?? idx}`,
     day: d.day,
     dow: d.dow,
+    // PRAFTA-COM-013-06-4(r34-3): 구간별(실적1/실적2) 매칭 표시용.
+    seg: resolveOvertimeSeg(ot, dayRecord),
     otInDate: fmtMmdd(ot.actualStartDate),
-    otIn: fmtTimeSec(ot.actualStartTime),
+    otIn: fmtTime(ot.actualStartTime),
     otOutDate: fmtMmdd(ot.actualEndDate),
-    otOut: fmtTimeSec(ot.actualEndTime),
+    otOut: fmtTime(ot.actualEndTime),
     total: fmtMinutes(ot.workMinutes),
+    recognized: fmtMinutes(ot.workMinutes),
     status: "",
   };
 }
@@ -1049,6 +1176,7 @@ function emptyRow(d, status) {
     a2OutDate: "",
     a2Out: "",
     total: "",
+    recognized: "",
     note: "",
     status,
     outsideList: [],
@@ -1934,8 +2062,8 @@ table.a07-detail-table {
   border-collapse: separate;
   border-spacing: 0;
   table-layout: fixed;
-  /* col 너비 합계와 일치해야 한다(표준화 컬럼 제거: 비고120+날짜80+구간1 392+구간2 392+근무시간110). */
-  width: 1094px;
+  /* col 너비 합계와 일치해야 한다(표준화 컬럼 제거: 비고120+날짜80+구간1 392+구간2 392+근무시간110+인정시간110). */
+  width: 1204px;
   font-size: 0.75rem;
   font-family: "Pretendard", sans-serif;
 }

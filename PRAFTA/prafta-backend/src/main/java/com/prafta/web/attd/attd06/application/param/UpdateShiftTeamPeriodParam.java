@@ -13,6 +13,7 @@ public record UpdateShiftTeamPeriodParam(
     , String endDate
     , String gvCmpnyCd
     , String gvUserCd
+    , String gvAuthCd
 ) {
     public static UpdateShiftTeamPeriodParam from(UpdateShiftTeamPeriodRequest request, TokenInfo tokenInfo) {
 
@@ -27,6 +28,7 @@ public record UpdateShiftTeamPeriodParam(
             , request.getEndDate()
             , tokenInfo.gv_cmpnyCd()
             , tokenInfo.gv_userCd()
+            , tokenInfo.gv_authCd()
         );
     }
 }

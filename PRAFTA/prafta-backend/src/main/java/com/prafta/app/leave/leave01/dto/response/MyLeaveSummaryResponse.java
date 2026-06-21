@@ -25,6 +25,14 @@ public class MyLeaveSummaryResponse {
      * '01' 타입이 0개면 빈 리스트. 각 타입은 한도(MAX_APLY_DAYS) - 당해 회계연도 사용분으로 잔여를 산출한다.
      */
     private final List<AppliedLeaveType> appliedLeaveTypes;
+    /**
+     * prafta-com-011-5: 미상계 가불 사용 합계(일, 소수1자리). 표시 전용(MVP, 결정 §5).
+     * <p>가불 GRANT(GRANT_REASON LIKE '[가불]%')의 live(STATUS!='CANCELED' AND DEL_YN='N') GRANT_DAYS 합.
+     *   가불 GRANT 는 당겨 쓴(=차감된) 일수만큼 생성되므로 합계 = 사용자가 가불로 끌어다 쓴 일수.
+     *   추후 정기 부여 배치가 동일 멱등키로 skip(자동 상계)되면 별도 차감 없이 표시 유지(MVP).
+     *   0 이면 FE 가 가불 카드를 숨긴다(기존 필드/응답 구조는 불변, additive).
+     */
+    private final double borrowedDays;
 
     /** 사용자 메타 영역. */
     @Getter

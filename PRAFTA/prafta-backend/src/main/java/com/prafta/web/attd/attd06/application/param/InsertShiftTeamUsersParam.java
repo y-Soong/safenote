@@ -24,6 +24,7 @@ public record InsertShiftTeamUsersParam(
                 , req.getUserCd()
                 , tokenInfo.gv_cmpnyCd()
                 , tokenInfo.gv_userCd()
+                , tokenInfo.gv_authCd()
             ))
             .toList();
 

@@ -12,6 +12,7 @@
       role="dialog"
       aria-modal="true"
       @click.self="onClose"
+      @touchmove.self.prevent
     >
       <div class="req-sheet" :aria-label="title">
         <div class="req-sheet__handle" aria-hidden="true"></div>
@@ -66,6 +67,22 @@ const emit = defineEmits(['update:modelValue'])
 
 const closeBtnRef = ref(null)
 
+// 배경(뒤 화면) 스크롤 잠금 — 시트가 열려 있는 동안 document 스크롤을 막아
+//   시트 대신 뒤 화면이 스크롤되던 문제를 차단한다(핸들/헤더/푸터 드래그 포함 전 영역).
+let prevBodyOverflow = ''
+let prevHtmlOverflow = ''
+const lockBackgroundScroll = () => {
+  prevBodyOverflow = document.body.style.overflow
+  // 일부 WebView 는 <html>(documentElement)이 스크롤 컨테이너이므로 둘 다 잠근다.
+  prevHtmlOverflow = document.documentElement.style.overflow
+  document.body.style.overflow = 'hidden'
+  document.documentElement.style.overflow = 'hidden'
+}
+const unlockBackgroundScroll = () => {
+  document.body.style.overflow = prevBodyOverflow
+  document.documentElement.style.overflow = prevHtmlOverflow
+}
+
 const onClose = () => {
   emit('update:modelValue', false)
 }
@@ -78,22 +95,29 @@ const onKeyDown = (e) => {
 
 onMounted(() => {
   window.addEventListener('keydown', onKeyDown)
+  // 마운트 시점에 이미 열려 있으면(초기 open=true) 즉시 잠금.
+  if (props.modelValue) lockBackgroundScroll()
 })
 onBeforeUnmount(() => {
   window.removeEventListener('keydown', onKeyDown)
+  // 열린 채로 언마운트되어도 잠금이 남지 않도록 해제.
+  unlockBackgroundScroll()
 })
 
-// 시트 열림 시 닫기 버튼에 focus 이동 (1차 단순 포커스 트랩)
+// 시트 열림/닫힘에 따라 배경 스크롤 잠금 토글 + 열림 시 닫기 버튼 포커스(1차 단순 포커스 트랩).
 watch(
   () => props.modelValue,
   async (open) => {
     if (open) {
+      lockBackgroundScroll()
       await nextTick()
       try {
         closeBtnRef.value?.focus?.()
       } catch (_e) {
         // 포커스 실패 무시
       }
+    } else {
+      unlockBackgroundScroll()
     }
   },
 )
@@ -159,6 +183,10 @@ watch(
 .req-sheet__body {
   flex: 1;
   overflow-y: auto;
+  /* 시트 내부 스크롤이 끝에 닿아도 뒤 화면으로 스크롤이 전파(chaining)되지 않게 한다.
+     (결재자 추가 등에서 시트 대신 뒤 화면이 스크롤되던 문제 해결) */
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
   padding: 4px 16px 12px;
 }
 

@@ -54,4 +54,23 @@ public interface AppLeave01Mapper {
             , @Param("fiscalStartYmd") String fiscalStartYmd
             , @Param("fiscalEndYmdExclusive") String fiscalEndYmdExclusive
     );
+
+    /**
+     * prafta-com-011-5: 미상계 가불 사용 합계(일). 표시 전용(MVP, 결정 §5 / QA D1/D2 통일 모델 §6-2).
+     * <p>가불 GRANT 마커 = {@code GRANT_REASON LIKE '[가불]%'}(멱등키 밖, plan §0-1).
+     *   live(STATUS!='CANCELED' AND DEL_YN='N') 이며 <b>아직 미발생(AVAIL_FROM_DATE &gt; today)</b>인 가불 GRANT 의
+     *   <b>USED_DAYS</b> 합(종류 무관 전체). 통일 모델(§6-2)에서 가불 GRANT 는 전량으로 생성되고 가불 사용분만 USED
+     *   차감되므로 "진짜 당겨쓴 분" = 미발생 가불 USED 합이다(GRANT_DAYS 합 금지). 발생일 도래분은 정식 부여로
+     *   전환된 것이라 가불 표시에서 제외한다. 대상 0건이면 0(IFNULL). 식별값은 토큰 도출값만(IDOR).
+     *
+     * @param cmpnyCd 회사 코드(토큰 도출)
+     * @param userCd  사용자 코드(토큰 도출, IDOR 방지)
+     * @param today   기준일(YYYYMMDD) — AVAIL_FROM_DATE &gt; today(미발생) 필터
+     * @return 미상계(미발생) 가불 USED 합계(없으면 0)
+     */
+    java.math.BigDecimal selectBorrowedDaysTotal(
+            @Param("cmpnyCd") String cmpnyCd
+            , @Param("userCd") String userCd
+            , @Param("today") String today
+    );
 }

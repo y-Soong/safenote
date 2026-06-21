@@ -18,6 +18,7 @@ import com.prafta.common.security.JwtUtil;
 import com.prafta.web.attd.attd07.application.param.ApproveSchedModifyRequestParam;
 import com.prafta.web.attd.attd07.application.param.DailyAttdDetailDeleteParam;
 import com.prafta.web.attd.attd07.application.param.DailyAttdDetailsParam;
+import com.prafta.web.attd.attd07.application.param.DeleteUserOvertimeParam;
 import com.prafta.web.attd.attd07.application.param.MonthlyAttdListParam;
 import com.prafta.web.attd.attd07.application.param.RejectUserAttdRequestParam;
 import com.prafta.web.attd.attd07.application.param.RejectUserOvertimeRequestParam;
@@ -27,6 +28,7 @@ import com.prafta.web.attd.attd07.application.param.UpdateUserOvertimeRequestPar
 import com.prafta.web.attd.attd07.dto.request.ApproveSchedModifyRequestRequest;
 import com.prafta.web.attd.attd07.dto.request.DailyAttdDetailDeleteRequest;
 import com.prafta.web.attd.attd07.dto.request.DailyAttdDetailsRequest;
+import com.prafta.web.attd.attd07.dto.request.DeleteUserOvertimeRequest;
 import com.prafta.web.attd.attd07.dto.request.MonthlyAttdListRequest;
 import com.prafta.web.attd.attd07.dto.request.RejectUserAttdRequestRequest;
 import com.prafta.web.attd.attd07.dto.request.RejectUserOvertimeRequestRequest;
@@ -119,6 +121,18 @@ public class Attd07Controller {
 
         attd07Service.updateUserOvertimeRequests(
                 UpdateUserOvertimeRequestParam.from(request, jwtUtil.getAllClaimsAsMap(authorization)));
+
+        return ResponseEntity.status(HttpStatus.OK).build();
+    }
+
+    /** com-013 #6 - 일자 상세 관리자 직접 등록 OT 단건 소프트삭제. */
+    @PostMapping("/delete-user-overtime")
+    public ResponseEntity<?> deleteUserOvertime(
+            @RequestBody @Valid DeleteUserOvertimeRequest request,
+            @RequestHeader(value = "Authorization", required = true) String authorization) {
+
+        attd07Service.deleteUserOvertime(
+                DeleteUserOvertimeParam.from(request, jwtUtil.getAllClaimsAsMap(authorization)));
 
         return ResponseEntity.status(HttpStatus.OK).build();
     }

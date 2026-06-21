@@ -60,6 +60,8 @@
 </template>
 
 <script setup>
+import { formatYmdDisplay } from '@/utils/approvalFormat'
+
 const props = defineProps({
   // 팝업 표시 여부 (v-model:open)
   open: {
@@ -81,11 +83,8 @@ const props = defineProps({
 // open(v-model) + 확인/취소 결과를 부모로 전달
 const emit = defineEmits(['update:open', 'confirm', 'cancel'])
 
-// YYYYMMDD → "YYYY.MM.DD"
-const formatYmd = (ymd) => {
-  if (!ymd || ymd.length !== 8) return ''
-  return `${ymd.slice(0, 4)}.${ymd.slice(4, 6)}.${ymd.slice(6, 8)}`
-}
+// YYYYMMDD → "YYYY.MM.DD" (표시 단일 출처 위임, D1)
+const formatYmd = (ymd) => formatYmdDisplay(ymd)
 
 // 출근하기 → 부모가 실제 check-in API 호출.
 //   TODO(developer): @confirm 수신 시 POST /appApi/attd01/check-in 호출 + 성공/실패 분기.

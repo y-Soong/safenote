@@ -57,15 +57,8 @@
         @update:total="onPendingTotal"
       />
 
-      <!-- 탭2 승인 이력 (후속 골격 F7 — 본 라운드 미작성. placeholder) -->
-      <!-- TODO(planner/developer): AdminApprovalHistoryList.vue 작성 후 본 placeholder 를
-           <AdminApprovalHistoryList @select="onSelectHistory" /> 로 교체 -->
-      <div v-else class="admin-approval-placeholder" aria-live="polite">
-        <p class="admin-approval-placeholder__title">승인 이력</p>
-        <p class="admin-approval-placeholder__sub">
-          처리 완료(승인/반려/취소) 건을 처리일시 최신순으로 표시합니다 (준비 중)
-        </p>
-      </div>
+      <!-- 탭2 승인 이력 (016-G-1: 표시 전용 리스트 — 클릭/네비게이션 없음) -->
+      <AdminApprovalHistoryList v-else />
     </main>
 
     <!-- 아이콘 스프라이트 -->
@@ -92,8 +85,7 @@ import { ref, getCurrentInstance } from 'vue'
 import { useRouter } from 'vue-router'
 
 import AdminApprovalPendingList from './components/AdminApprovalPendingList.vue'
-// 후속 골격(F7) — 본 라운드 미작성. 작성 후 import + 템플릿 placeholder 교체.
-// import AdminApprovalHistoryList from './components/AdminApprovalHistoryList.vue'
+import AdminApprovalHistoryList from './components/AdminApprovalHistoryList.vue'
 
 const router = useRouter()
 const { proxy } = getCurrentInstance() || { proxy: null }

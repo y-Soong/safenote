@@ -26,12 +26,13 @@ public class ApiPrefixConfig implements WebMvcRegistrations, WebMvcConfigurer {
     /** ✅ CORS 전역 허용 설정 */
     @Override
     public void addCorsMappings(CorsRegistry registry) {
-        registry.addMapping("/**")
-                .allowedOriginPatterns("*")
-                .allowedMethods("*")
-                .allowedHeaders("*")
-                .allowCredentials(false)
-                .maxAge(3600);
+    	registry.addMapping("/**")
+	        .allowedOriginPatterns("*")
+	        .allowedMethods("GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH", "HEAD")
+	        .allowedHeaders("Authorization", "Content-Type", "X-Requested-With", "Accept", "Origin", "X-Client-Type")
+	        .exposedHeaders("Authorization")
+	        .allowCredentials(true)
+	        .maxAge(3600);
     }
     
     /** ✅ 업로드 파일 정적 리소스 매핑 */

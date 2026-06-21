@@ -134,10 +134,62 @@
          , S.SEC_SCH_STR_TIME  AS secStrTime
          , S.SEC_SCH_END_TIME  AS secEndTime
       FROM TB_USER_WORK_PLAN P
-      INNER JOIN TB_SCH_MGMT S
+      <!-- 근무일(P.WORK_YMD) 기준 유효 스케줄(effective-dating).
+           현재본 + 이력본 UNION 후 APPLY_DATE <![CDATA[ <= ]]> WORK_YMD 인 최신 버전. attd07/attd11 동일 패턴.
+           OT 겹침 검증 기준 시각을 현재본(미래 적용분 포함)으로 잘못 비교하던 문제 수정.
+           유효 버전이 없으면(=근무일이 생성일 이전) 0행 → Service 에서 OT 전량 허용(기존 INNER 면제 시맨틱 유지). -->
+      INNER JOIN (
+            SELECT
+                  E.CMPNY_CD, E.SITE_CD, E.SCH_CD, E.APPLY_DATE
+                , E.FST_SCH_STR_TIME, E.FST_SCH_END_TIME
+                , E.SEC_SCH_STR_TIME, E.SEC_SCH_END_TIME
+            FROM (
+                SELECT
+                      M.CMPNY_CD, M.SITE_CD, M.SCH_CD, M.APPLY_DATE
+                    , M.FST_SCH_STR_TIME, M.FST_SCH_END_TIME
+                    , M.SEC_SCH_STR_TIME, M.SEC_SCH_END_TIME
+                    , 2147483647 AS HIST_IDX
+                FROM TB_SCH_MGMT M WHERE M.USE_YN = 'Y'
+                UNION ALL
+                SELECT
+                      H.CMPNY_CD, H.SITE_CD, H.SCH_CD, H.APPLY_DATE
+                    , H.FST_SCH_STR_TIME, H.FST_SCH_END_TIME
+                    , H.SEC_SCH_STR_TIME, H.SEC_SCH_END_TIME
+                    , H.HIST_IDX
+                FROM TB_SCH_MGMT_HIST H WHERE H.USE_YN = 'Y'
+            ) E
+            WHERE E.HIST_IDX = (
+                SELECT MAX(E2.HIST_IDX)
+                FROM (
+                    SELECT M2.CMPNY_CD, M2.SITE_CD, M2.SCH_CD, M2.APPLY_DATE, 2147483647 AS HIST_IDX
+                    FROM TB_SCH_MGMT M2 WHERE M2.USE_YN = 'Y'
+                    UNION ALL
+                    SELECT H2.CMPNY_CD, H2.SITE_CD, H2.SCH_CD, H2.APPLY_DATE, H2.HIST_IDX
+                    FROM TB_SCH_MGMT_HIST H2 WHERE H2.USE_YN = 'Y'
+                ) E2
+                WHERE E2.CMPNY_CD   = E.CMPNY_CD
+                  AND E2.SITE_CD    = E.SITE_CD
+                  AND E2.SCH_CD     = E.SCH_CD
+                  AND E2.APPLY_DATE = E.APPLY_DATE
+            )
+        ) S
          ON S.CMPNY_CD = P.CMPNY_CD
         AND S.SITE_CD  = P.SITE_CD
         AND S.SCH_CD   = P.WORK_PLAN_CD
+        AND S.APPLY_DATE = (
+                SELECT MAX(SE.APPLY_DATE)
+                FROM (
+                    SELECT M3.CMPNY_CD, M3.SITE_CD, M3.SCH_CD, M3.APPLY_DATE
+                    FROM TB_SCH_MGMT M3 WHERE M3.USE_YN = 'Y'
+                    UNION ALL
+                    SELECT H3.CMPNY_CD, H3.SITE_CD, H3.SCH_CD, H3.APPLY_DATE
+                    FROM TB_SCH_MGMT_HIST H3 WHERE H3.USE_YN = 'Y'
+                ) SE
+                WHERE SE.CMPNY_CD    = P.CMPNY_CD
+                  AND SE.SITE_CD     = P.SITE_CD
+                  AND SE.SCH_CD      = P.WORK_PLAN_CD
+                  AND SE.APPLY_DATE <![CDATA[ <= ]]> P.WORK_YMD
+        )
      WHERE P.CMPNY_CD = #{cmpnyCd}
        AND P.SITE_CD  = #{siteCd}
        AND P.USER_CD  = #{userCd}
@@ -240,6 +292,59 @@
     <select id="releaseAdvisoryLock" resultType="java.lang.Integer">
     /* AppReq07Mapper.releaseAdvisoryLock */
     SELECT RELEASE_LOCK(#{lockKey})
+    </select>
+
+    <!-- ============ prafta-app-030: 이미 등록(적용)된 초과근무 목록 ============
+         TB_USER_OVERTIME_MGMT 의 적용 OT 실적을 (cmpny/site/user/workYmd) 스코프로 조회.
+         DEL_YN='N' AND OT_STATUS<>'CANCELLED' AND ACTUAL_END_DATE/TIME IS NOT NULL(구간 확정분만).
+         신규 OT 신청 화면 표시 + 겹침 대조 원천. 식별값은 JWT 도출값만 사용(IDOR).
+         IDX_OT_USER_YMD(CMPNY/SITE/USER/WORK_YMD) 활용. ★WORK_SEQ 컬럼 없음 → 미선택.
+         ⚠️ SELECT 컬럼 순서 = AppliedOvertimeResult 생성자 인자 순서(위치 기반 record 매핑). -->
+    <select id="selectAppliedOvertimes" resultType="com.prafta.app.req.req07.dto.response.result.AppliedOvertimeResult">
+    /* AppReq07Mapper.selectAppliedOvertimes */
+    SELECT O.ACTUAL_START_DATE  AS startDate
+         , O.ACTUAL_START_TIME  AS startTime
+         , O.ACTUAL_END_DATE    AS endDate
+         , O.ACTUAL_END_TIME    AS endTime
+         , O.WORK_MINUTES       AS workMinutes
+         , O.OT_STATUS          AS otStatus
+      FROM TB_USER_OVERTIME_MGMT O
+     WHERE O.CMPNY_CD = #{cmpnyCd}
+       AND O.SITE_CD  = #{siteCd}
+       AND O.USER_CD  = #{userCd}
+       AND O.WORK_YMD = #{workYmd}
+       AND O.DEL_YN   = 'N'
+       AND O.OT_STATUS <![CDATA[ <> ]]> 'CANCELLED'
+       AND O.ACTUAL_END_DATE IS NOT NULL
+       AND O.ACTUAL_END_TIME IS NOT NULL
+     ORDER BY O.ACTUAL_START_DATE ASC, O.ACTUAL_START_TIME ASC
+    </select>
+
+    <!-- ============ prafta-app-030 후속: 대기중(미승인) 초과근무 신청 목록 ============
+         TB_USER_ATTD_REQ 의 OT 신청(REQ_TYPE 03·04) 중 미처리(REQ_STATUS='01') 행을
+         (cmpny/site/user/workYmd) 스코프로 조회. DEL_YN='N' AND START/END_DATE·TIME IS NOT NULL.
+         신규 OT 신청 화면 표시 전용(겹침 사전차단 비대상). 식별값은 JWT 도출값만 사용(IDOR).
+         IDX_ATTD_REQ_WORK_YMD(CMPNY/SITE/WORK_YMD) 활용. 승인분('02')은 selectAppliedOvertimes 가 노출 → 이중표시 없음.
+         ⚠️ SELECT 컬럼 순서 = PendingOvertimeResult 생성자 인자 순서(위치 기반 record 매핑). -->
+    <select id="selectPendingOvertimeReqs" resultType="com.prafta.app.req.req07.dto.response.result.PendingOvertimeResult">
+    /* AppReq07Mapper.selectPendingOvertimeReqs */
+    SELECT A.START_DATE  AS startDate
+         , A.START_TIME  AS startTime
+         , A.END_DATE    AS endDate
+         , A.END_TIME    AS endTime
+      FROM TB_USER_ATTD_REQ A
+     WHERE A.CMPNY_CD   = #{cmpnyCd}
+       AND A.SITE_CD    = #{siteCd}
+       AND A.USER_CD    = #{userCd}
+       AND A.WORK_YMD   = #{workYmd}
+       AND A.REQ_TYPE   IN ('03', '04')
+       AND A.REQ_STATUS = '01'
+       AND A.DEL_YN     = 'N'
+       AND A.START_DATE IS NOT NULL
+       AND A.START_TIME IS NOT NULL
+       AND A.END_DATE   IS NOT NULL
+       AND A.END_TIME   IS NOT NULL
+     ORDER BY A.START_DATE ASC, A.START_TIME ASC
     </select>
 
 </mapper>

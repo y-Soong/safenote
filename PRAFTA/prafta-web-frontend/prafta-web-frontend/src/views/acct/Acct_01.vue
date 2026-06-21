@@ -295,6 +295,7 @@ import {
 import { useModal } from "@/utils/useModal";
 import axios from "@/api/axios";
 import { resolveApiErrorMessage } from "@/utils/apiError";
+import { formatYmdDot, formatHm } from "@/utils/dateFormat";
 import ViewHeader from "@/components/common/ViewHeader.vue";
 import CalendarSrch from "@/components/common/CalendarSrch.vue";
 import search_icon from "@/assets/img/search_icon.png";
@@ -662,8 +663,8 @@ const parseYmd = (ymd) => {
   );
 };
 
-const fmtDl = (d) =>
-  `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+// 제출기한 표시는 dateFormat 단일 출처에 위임(점 구분 YYYY.MM.DD).
+const fmtDl = (d) => formatYmdDot(d);
 
 const daysBtw = (a, b) => Math.round((b - a) / 864e5);
 
@@ -746,15 +747,9 @@ const statusClass = (code) => {
   if (code === "300") return "done";
   return "";
 };
-const fmtYmd = (ymd) =>
-  ymd && ymd.length >= 8
-    ? `${ymd.slice(0, 4)}-${ymd.slice(4, 6)}-${ymd.slice(6, 8)}`
-    : ymd || "";
-const fmtHm = (hhmm) => {
-  if (!hhmm) return "";
-  const s = String(hhmm).padStart(4, "0");
-  return `${s.slice(0, 2)}:${s.slice(2, 4)}`;
-};
+// 표시 포맷은 dateFormat 단일 출처에 위임(점/콜론).
+const fmtYmd = (ymd) => formatYmdDot(ymd);
+const fmtHm = (hhmm) => formatHm(hhmm);
 </script>
 
 <style scoped>

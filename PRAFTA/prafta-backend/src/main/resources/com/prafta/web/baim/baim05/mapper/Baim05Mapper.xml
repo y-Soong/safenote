@@ -382,4 +382,105 @@
 	  AND SLOT_NO = #{slotNo}
 	  AND SLOT_STATUS = '02'
 	</update>
+
+	<!-- PRAFTA-055-2: 해당 사업장의 노드(부서) 정/부 관리자인지 확인.
+	     master/hr(전사 권한)이 아니어도 자기 사업장 노드 관리자면 슬롯 쓰기 EP 허용(역할 게이트). 1 이상이면 관리자. -->
+	<select id="countNodeAdminInSite" resultType="int">
+	/* Baim05Mapper.countNodeAdminInSite */
+	SELECT COUNT(1)
+	FROM TB_SITE_NODE A
+	WHERE A.CMPNY_CD = #{cmpnyCd}
+	  AND A.SITE_CD = #{siteCd}
+	  AND (A.MAIN_ADMIN_CD = #{userCd} OR A.SUB_ADMIN_CD = #{userCd})
+	</select>
+
+	<!-- ============================================================
+	     PRAFTA-055-1: 일일계정 슬롯 사용 이력(TB_DAILY_USER_SLOT_HIS) 적재.
+	     점유 시 1행 INSERT(RELEASE_* = NULL) → 해제 시 그 "열린 행"을 UPDATE 하는 1행 생애주기.
+	     ============================================================ -->
+
+	<!-- 이력ID 채번('H' + YYYYMMDD + 시퀀스). 기존 self-numbering 관례 동형. -->
+	<select id="selectDailySlotHisId" parameterType="string" resultType="string">
+	/* Baim05Mapper.selectDailySlotHisId */
+	SELECT CONCAT('H', DATE_FORMAT(NOW(), '%Y%m%d'), FNC_CMM_SEQ_NEXTVAL(#{cmpnyCd}, 'SLOT_HIS_ID'))
+	FROM DUAL
+	</select>
+
+	<!-- 점유 시작 INSERT(RELEASE_* = NULL). OCCUPY_DTIME=NOW(). -->
+	<insert id="insertSlotHis" parameterType="com.prafta.web.baim.baim05.application.command.InsertSlotHisCommand">
+	/* Baim05Mapper.insertSlotHis */
+	INSERT INTO TB_DAILY_USER_SLOT_HIS (
+		HIS_ID
+		, CMPNY_CD
+		, SITE_CD
+		, SLOT_NO
+		, WORK_DATE
+		, USER_ID
+		, ISSUE_CHANNEL
+		, OCCUPY_DTIME
+		, INSERT_NO
+		, INSERT_DATE
+	)
+	VALUES (
+		#{hisId}
+		, #{cmpnyCd}
+		, #{siteCd}
+		, #{slotNo}
+		, #{workDate}
+		, #{userId}
+		, #{issueChannel}
+		, NOW()
+		, #{insertNo}
+		, NOW()
+	)
+	</insert>
+
+	<!-- 점유 해제 UPDATE(슬롯 PK 3키의 "열린 행" = RELEASE_DTIME IS NULL 1건). 단건 수동 비우기용. -->
+	<update id="closeSlotHis" parameterType="com.prafta.web.baim.baim05.application.command.CloseSlotHisCommand">
+	/* Baim05Mapper.closeSlotHis */
+	UPDATE TB_DAILY_USER_SLOT_HIS
+	SET RELEASE_DTIME = NOW()
+		, RELEASE_USER = #{releaseUser}
+		, RELEASE_TYPE = #{releaseType}
+		, RELEASE_REASON = #{releaseReason}
+	WHERE CMPNY_CD = #{cmpnyCd}
+	  AND SITE_CD = #{siteCd}
+	  AND SLOT_NO = #{slotNo}
+	  AND RELEASE_DTIME IS NULL
+	</update>
+
+	<!-- ============================================================
+	     PRAFTA-055-3: 슬롯 사용 이력 조회(최근 30일, PII 마스킹은 서버 SQL 처리).
+	     ============================================================ -->
+	<select id="selectDailyUserSlotHisList" parameterType="com.prafta.web.baim.baim05.application.query.SlotHisQuery" resultType="com.prafta.web.baim.baim05.result.SlotHisResult">
+	/* Baim05Mapper.selectDailyUserSlotHisList */
+	SELECT
+		H.HIS_ID																AS hisId
+		, FNC_CMM_INFO_SRCH(H.CMPNY_CD, 'SYST_VAL', H.ISSUE_CHANNEL, 'SYS014')	AS issueChannelNm
+		, DATE_FORMAT(H.OCCUPY_DTIME, '%Y-%m-%d %H:%i:%s')						AS occupyDtime
+		, DATE_FORMAT(H.RELEASE_DTIME, '%Y-%m-%d %H:%i:%s')						AS releaseDtime
+		, CASE
+			WHEN CHAR_LENGTH(D.USER_NM) &lt;= 1 THEN D.USER_NM
+			WHEN CHAR_LENGTH(D.USER_NM) = 2 THEN CONCAT(LEFT(D.USER_NM, 1), '*')
+			ELSE CONCAT(LEFT(D.USER_NM, 2), REPEAT('*', CHAR_LENGTH(D.USER_NM) - 2))
+		  END																	AS userNmMasked
+		, CASE
+			WHEN D.MBL_NO_LAST4 IS NULL OR D.MBL_NO_LAST4 = '' THEN '-'
+			ELSE CONCAT('010-****-', D.MBL_NO_LAST4)
+		  END																	AS mblNoMasked
+		, H.RELEASE_USER														AS releaseUser
+		, FNC_CMM_INFO_SRCH(H.CMPNY_CD, 'SYST_VAL', H.RELEASE_TYPE, 'SYS016')	AS releaseTypeNm
+		, H.RELEASE_REASON														AS releaseReason
+	FROM TB_DAILY_USER_SLOT_HIS H
+		 LEFT OUTER JOIN TB_DAILY_USER D
+			ON (
+				H.CMPNY_CD = D.CMPNY_CD
+			AND H.USER_ID = D.USER_ID
+			)
+	WHERE H.CMPNY_CD = #{gvCmpnyCd}
+	  AND H.SITE_CD = #{siteCd}
+	  AND H.SLOT_NO = #{slotNo}
+	  AND H.OCCUPY_DTIME &gt;= STR_TO_DATE(#{cutoffYmd}, '%Y%m%d')
+	ORDER BY H.OCCUPY_DTIME DESC
+	</select>
 </mapper>

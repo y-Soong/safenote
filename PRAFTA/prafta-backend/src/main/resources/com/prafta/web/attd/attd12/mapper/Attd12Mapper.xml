@@ -3,20 +3,24 @@
 <mapper namespace="com.prafta.web.attd.attd12.mapper.Attd12Mapper">
 
     <!-- ================================================================
-         prafta-com-003 C6 - 부정 출퇴근 의심 탐지(on-view 대조, 읽기 전용).
+         prafta-com-016-F 9-1 - 부정 출퇴근(기기 공유) 의심 탐지(읽기 전용).
 
+         데이터 출처: tb_user_device_login_hist (로그인마다 DEVICE_UUID NOT NULL 적재).
+         판정 룰: 한 사용자가 APP 로그인한 기기를 그 로그인 직전 7일 내에 다른 사용자가
+                  APP 로그인한 적이 있으면 기기 공유/대리 의심.
+
+         login_hist 엔 SITE_CD/NODE_CD 가 없으므로 스코프/권한은 USER_CD → TB_USER 조인으로 도출.
          node_tree(하위부서 RECURSIVE) + target_user(USE_YN='Y', 미퇴사) 스코프는
-         Attd11Mapper.selectAttdSummaryRows 패턴 재사용. 판정/그룹핑은 service 에서.
-         cross-site IDOR: gvCmpnyCd + siteCd(세션 고정 검증 통과값) 로 제한.
+         Attd11Mapper/Attd12 기존 패턴 재사용. cross-site IDOR: gvCmpnyCd + siteCd(세션 고정 검증 통과값).
 
          ⚠️ MyBatis record 매핑 — SELECT 컬럼 순서 = result record 생성자 인자 순서(위치 기반).
          ================================================================ -->
 
-    <!-- 스코프 내 해당 월 출퇴근 행 + 디바이스UUID(출/퇴근).
-         FraudAttdRowResult 순서: workYmd, userCd, userId, userNm, nodeNm, siteNm,
-                                  checkInTime, checkOutTime, checkInDeviceUuid, checkOutDeviceUuid -->
-    <select id="selectScopedAttdRows" parameterType="com.prafta.web.attd.attd12.application.query.FraudAttdSuspectQuery" resultType="com.prafta.web.attd.attd12.result.FraudAttdRowResult">
-    /* Attd12Mapper.selectScopedAttdRows */
+    <!-- 공유 기기 의심 로그인 행.
+         SharedDeviceLoginResult 순서: deviceUuid, userCd, userId, userNm, nodeNm, siteNm,
+                                       loginDtime, clientType, deviceModel, osVersion -->
+    <select id="selectSharedDeviceLoginSuspects" parameterType="com.prafta.web.attd.attd12.application.query.FraudAttdSuspectQuery" resultType="com.prafta.web.attd.attd12.result.SharedDeviceLoginResult">
+    /* Attd12Mapper.selectSharedDeviceLoginSuspects */
         WITH RECURSIVE
         node_tree AS (
             SELECT
@@ -50,6 +54,7 @@
             </if>
         ),
 
+        /* 스코프(사업장/부서) 내 대상 사용자 + 부서명 */
         target_user AS (
             SELECT
                   U.CMPNY_CD
@@ -67,91 +72,72 @@
               AND U.SITE_CD         = #{siteCd}
               AND U.USE_YN          = 'Y'
               AND U.WITHDRAWAL_DATE IS NULL
-        )
-
-        SELECT
-              A.WORK_YMD                AS workYmd
-            , U.USER_CD                 AS userCd
-            , U.USER_ID                 AS userId
-            , U.USER_NM                 AS userNm
-            , U.NODE_NM                 AS nodeNm
-            , S.SITE_NM                 AS siteNm
-            , A.CHECK_IN_TIME           AS checkInTime
-            , A.CHECK_OUT_TIME          AS checkOutTime
-            , A.CHECK_IN_DEVICE_UUID    AS checkInDeviceUuid
-            , A.CHECK_OUT_DEVICE_UUID   AS checkOutDeviceUuid
-        FROM target_user U
-        INNER JOIN TB_USER_ATTD_MGMT A
-            ON  A.CMPNY_CD = U.CMPNY_CD
-            AND A.SITE_CD  = U.SITE_CD
-            AND A.USER_CD  = U.USER_CD
-            AND A.DEL_YN   = 'N'
-            AND A.WORK_YMD LIKE CONCAT(REPLACE(#{workYm}, '-', ''), '%')
-        INNER JOIN TB_SITE S
-            ON  S.CMPNY_CD = A.CMPNY_CD
-            AND S.SITE_CD  = A.SITE_CD
-        ORDER BY A.WORK_YMD, A.CHECK_IN_DEVICE_UUID, U.USER_CD, A.CHECK_IN_TIME
-    </select>
-
-
-    <!-- 스코프 내 사용자들의 baseline 디바이스(로그인 이력 distinct (USER_CD, DEVICE_UUID)).
-         규칙2/3 판정 기준. UserDeviceBaselineResult 순서: userCd, deviceUuid -->
-    <select id="selectUserDeviceBaseline" parameterType="com.prafta.web.attd.attd12.application.query.FraudAttdSuspectQuery" resultType="com.prafta.web.attd.attd12.result.UserDeviceBaselineResult">
-    /* Attd12Mapper.selectUserDeviceBaseline */
-        WITH RECURSIVE
-        node_tree AS (
-            SELECT
-                  N.CMPNY_CD
-                , N.SITE_CD
-                , N.NODE_CD
-            FROM TB_SITE_NODE N
-            WHERE N.CMPNY_CD = #{gvCmpnyCd}
-              AND N.SITE_CD  = #{siteCd}
-            <if test="nodeCd != null and nodeCd != ''">
-              AND N.NODE_CD  = #{nodeCd}
-            </if>
-            <if test="nodeCd == null or nodeCd == ''">
-              AND N.PARENT_NODE_CD IS NULL
-            </if>
-
-            <if test='"Y".equals(incSubNodeYn) or nodeCd == null or nodeCd == ""'>
-            UNION ALL
-
-            SELECT
-                  C.CMPNY_CD
-                , C.SITE_CD
-                , C.NODE_CD
-            FROM TB_SITE_NODE C
-            INNER JOIN node_tree P
-                ON  C.CMPNY_CD       = P.CMPNY_CD
-                AND C.SITE_CD        = P.SITE_CD
-                AND C.PARENT_NODE_CD = P.NODE_CD
-            </if>
         ),
 
-        target_user AS (
+        /* 스코프 내 APP 로그인 이력(판정/표시 모수). login_hist 를 target_user 로 제한 */
+        scoped_app_login AS (
             SELECT
-                  U.CMPNY_CD
-                , U.USER_CD
-            FROM TB_USER U
-            INNER JOIN node_tree NT
-                ON  U.CMPNY_CD = NT.CMPNY_CD
-                AND U.SITE_CD  = NT.SITE_CD
-                AND U.NODE_CD  = NT.NODE_CD
-            WHERE U.CMPNY_CD        = #{gvCmpnyCd}
-              AND U.SITE_CD         = #{siteCd}
-              AND U.USE_YN          = 'Y'
-              AND U.WITHDRAWAL_DATE IS NULL
+                  H.DEVICE_UUID
+                , H.USER_CD
+                , H.LOGIN_DTIME
+                , H.CLIENT_TYPE
+                , H.DEVICE_MODEL
+                , H.OS_VERSION
+            FROM TB_USER_DEVICE_LOGIN_HIST H
+            INNER JOIN target_user TU
+                ON  H.CMPNY_CD = TU.CMPNY_CD
+                AND H.USER_CD  = TU.USER_CD
+            WHERE H.CMPNY_CD    = #{gvCmpnyCd}
+              AND H.CLIENT_TYPE = 'APP'
+              AND H.DEVICE_UUID IS NOT NULL
+        ),
+
+        /* 공유 의심 기기: 조회월 APP 로그인(후보 L) 중, 같은 기기를 직전 7일 내에
+           다른 USER_CD 가 APP 로그인(L2)한 적이 있는 기기의 distinct DEVICE_UUID.
+           후보·상대 모두 스코프 내 사용자(scoped_app_login)로 제한. */
+        suspect_device AS (
+            SELECT DISTINCT L.DEVICE_UUID
+            FROM scoped_app_login L
+            WHERE DATE_FORMAT(L.LOGIN_DTIME, '%Y%m') = REPLACE(#{workYm}, '-', '')
+              AND EXISTS (
+                  SELECT 1
+                  FROM scoped_app_login L2
+                  WHERE L2.DEVICE_UUID = L.DEVICE_UUID
+                    AND L2.USER_CD    &lt;&gt; L.USER_CD
+                    AND L2.LOGIN_DTIME &gt;= L.LOGIN_DTIME - INTERVAL 7 DAY
+                    AND L2.LOGIN_DTIME &lt;  L.LOGIN_DTIME
+              )
         )
 
-        SELECT DISTINCT
-              H.USER_CD      AS userCd
-            , H.DEVICE_UUID  AS deviceUuid
+        /* 의심 기기에 관여한 스코프 내 APP 로그인 이력 전체(기기 중심 표시 모수).
+           조회월 후보 로그인의 직전 7일 윈도우에 들어오는 로그인까지 함께 노출하기 위해
+           조회월 시작 7일 전부터의 로그인을 포함한다. */
+        SELECT
+              H.DEVICE_UUID                                       AS deviceUuid
+            , TU.USER_CD                                          AS userCd
+            , TU.USER_ID                                          AS userId
+            , TU.USER_NM                                          AS userNm
+            , TU.NODE_NM                                          AS nodeNm
+            , S.SITE_NM                                           AS siteNm
+            , DATE_FORMAT(H.LOGIN_DTIME, '%Y%m%d%H%i%s')          AS loginDtime
+            , H.CLIENT_TYPE                                       AS clientType
+            , H.DEVICE_MODEL                                      AS deviceModel
+            , H.OS_VERSION                                        AS osVersion
         FROM TB_USER_DEVICE_LOGIN_HIST H
-        INNER JOIN target_user U
-            ON  H.CMPNY_CD = U.CMPNY_CD
-            AND H.USER_CD  = U.USER_CD
-        WHERE H.CMPNY_CD = #{gvCmpnyCd}
+        INNER JOIN suspect_device SD
+            ON  SD.DEVICE_UUID = H.DEVICE_UUID
+        INNER JOIN target_user TU
+            ON  TU.CMPNY_CD = H.CMPNY_CD
+            AND TU.USER_CD  = H.USER_CD
+        INNER JOIN TB_SITE S
+            ON  S.CMPNY_CD = TU.CMPNY_CD
+            AND S.SITE_CD  = TU.SITE_CD
+        WHERE H.CMPNY_CD    = #{gvCmpnyCd}
+          AND H.CLIENT_TYPE = 'APP'
+          AND H.DEVICE_UUID IS NOT NULL
+          AND H.LOGIN_DTIME &gt;= DATE_SUB(STR_TO_DATE(CONCAT(REPLACE(#{workYm}, '-', ''), '01'), '%Y%m%d'), INTERVAL 7 DAY)
+          AND H.LOGIN_DTIME &lt;  DATE_ADD(STR_TO_DATE(CONCAT(REPLACE(#{workYm}, '-', ''), '01'), '%Y%m%d'), INTERVAL 1 MONTH)
+        ORDER BY H.DEVICE_UUID, H.LOGIN_DTIME, TU.USER_CD
     </select>
 
 </mapper>

@@ -21,8 +21,7 @@
 		, AVAIL_FROM_DT
 		, AVAIL_TO_DT
 		, ADMIN_AVAIL_TERM_TYPE
-		, ADMIN_AVAIL_FROM_DT
-		, ADMIN_AVAIL_TO_DT
+		, ADMIN_AVAIL_MONTHS
 		, GRANT_BASE_TYPE
 		, GRANT_OFFSET_MONTH
 		, GRANT_ASSIGN_MMDD
@@ -52,9 +51,8 @@
 		, #{availFromDt}       -- AVAIL_FROM_DT
 		, #{availToDt}         -- AVAIL_TO_DT
 
-		, #{adminAvailTermType}-- ADMIN_AVAIL_TERM_TYP
-		, #{adminAvailFromDt}  -- ADMIN_AVAIL_FROM_DT
-		, #{adminAvailToDt}    -- ADMIN_AVAIL_TO_DT
+		, #{adminAvailTermType}-- ADMIN_AVAIL_TERM_TYPE
+		, #{adminAvailMonths}  -- ADMIN_AVAIL_MONTHS (prafta-com-016-B: 부여일+N개월)
 
 		, #{grantBaseType}     -- GRANT_BASE_TYPE
 		, #{grantOffsetMonth}  -- GRANT_OFFSET_MONTH
@@ -71,8 +69,12 @@
 		, NOW()                      -- UPDATE_DATE
 	) AS NEW
 	ON DUPLICATE KEY UPDATE
-		LEAVE_DESC		  = NEW.LEAVE_DESC
+	    /* com-013-03(03-2): 수정 반영 대상 = 연차명·사용여부·비고·증빙 안내 문구.
+	       급구분/사용단위/사용가능기간/자동부여 등 나머지는 화면 편집 차단(현행 유지)이므로 UPDATE 절에서 제외. */
+		LEAVE_NM          = NEW.LEAVE_NM
 		, USE_YN          = NEW.USE_YN
+		, LEAVE_DESC      = NEW.LEAVE_DESC
+		, EVIDENCE_GUIDE_MSG = NEW.EVIDENCE_GUIDE_MSG
 		, UPDATE_NO       = NEW.UPDATE_NO
 		, UPDATE_DATE     = NOW()
     </update>
@@ -115,11 +117,10 @@
 		, A.EVIDENCE_YN AS evidenceYn
 		, A.EVIDENCE_GUIDE_MSG AS evidenceGuideMsg
 
-		/* prafta-044-FU: 관리자 부여 사용가능기간 편집 복원용 원본 컬럼 직접 노출
-		   (record LeaveTypeResult 끝 3필드와 위치 1:1 정합 — 끝에 추가) */
+		/* prafta-044-FU / prafta-com-016-B: 관리자 부여 사용가능기간 편집 복원용 원본 컬럼 직접 노출
+		   (record LeaveTypeResult 끝 2필드와 위치 1:1 정합 — 끝에 추가) */
 		, A.ADMIN_AVAIL_TERM_TYPE AS adminAvailTermType
-		, A.ADMIN_AVAIL_FROM_DT   AS adminAvailFromDt
-		, A.ADMIN_AVAIL_TO_DT     AS adminAvailToDt
+		, A.ADMIN_AVAIL_MONTHS    AS adminAvailMonths
 	FROM
 	(
 	    SELECT 
@@ -143,11 +144,12 @@
 				WHEN A.LEAVE_TYPE = '02'
 					THEN A.ADMIN_AVAIL_TERM_TYPE
 			END AVAIL_TERM_TYPE
-			, CASE 
+			, CASE
 				WHEN A.LEAVE_TYPE = '01'
 					THEN CONCAT(A.AVAIL_FROM_DT, '~', A.AVAIL_TO_DT)
 				WHEN A.LEAVE_TYPE = '02'
-					THEN CONCAT(A.ADMIN_AVAIL_FROM_DT, '~', A.ADMIN_AVAIL_TO_DT)
+					/* prafta-com-016-B: 관리자 부여 '03' 기간설정 = 부여일로부터 N개월 표시 */
+					THEN CONCAT(A.ADMIN_AVAIL_MONTHS, '개월')
 			END AVAIL_PERIOD
 			, A.USE_YN
 			, A.LEAVE_DESC
@@ -160,10 +162,9 @@
             , A.EVIDENCE_YN
             , A.EVIDENCE_GUIDE_MSG
 
-            /* prafta-044-FU: 편집 복원용 관리자 부여 사용가능기간 원본 컬럼 (목록 표시용 CASE/CONCAT 과 병존) */
+            /* prafta-044-FU / prafta-com-016-B: 편집 복원용 관리자 부여 사용가능기간 원본 컬럼 (목록 표시용 CASE/CONCAT 과 병존) */
             , A.ADMIN_AVAIL_TERM_TYPE
-            , A.ADMIN_AVAIL_FROM_DT
-            , A.ADMIN_AVAIL_TO_DT
+            , A.ADMIN_AVAIL_MONTHS
 		FROM TB_LEAVE_TYPE_MGMT A
 		WHERE A.CMPNY_CD = #{gvCmpnyCd}
 		  <if test="leaveNo != null and leaveNo != ''">

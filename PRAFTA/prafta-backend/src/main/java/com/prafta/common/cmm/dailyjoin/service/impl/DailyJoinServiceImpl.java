@@ -1,5 +1,7 @@
 package com.prafta.common.cmm.dailyjoin.service.impl;
 
+import java.time.LocalDate;
+import java.time.format.DateTimeFormatter;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -10,6 +12,7 @@ import org.springframework.transaction.annotation.Transactional;
 import com.prafta.common.cmm.baseinfo.application.command.SmsAuthConsumeCommand;
 import com.prafta.common.cmm.dailyjoin.application.command.DailyUserSlotUpdCommand;
 import com.prafta.common.cmm.dailyjoin.application.command.InsertDailyUserCommand;
+import com.prafta.common.cmm.dailyjoin.application.command.InsertSlotHisCommand;
 import com.prafta.common.cmm.dailyjoin.application.command.TermsUserAgrCommand;
 import com.prafta.common.cmm.dailyjoin.application.param.InsertDailyUserParam;
 import com.prafta.common.cmm.dailyjoin.application.param.SiteInfoParam;
@@ -46,6 +49,8 @@ public class DailyJoinServiceImpl implements DailyJoinService {
     private final HmacSigner hmacSigner;
     private final AesGcmCrypto aesGcmCrypto;
     private final PasswordHasher passwordHasher;
+
+    private static final DateTimeFormatter YMD = DateTimeFormatter.ofPattern("yyyyMMdd");
 
     @Override
     public SiteInfoResponse selectSiteInfo(SiteInfoParam param) {
@@ -194,6 +199,18 @@ public class DailyJoinServiceImpl implements DailyJoinService {
             // 조회와 점유 사이에 다른 가입자가 슬롯을 선점한 경우 → 트랜잭션 롤백
             throw new ApiException(DailyJoinErrorCode.DAILYJOIN_400_005);
         }
+
+        // g-4. PRAFTA-055-1: 슬롯 점유 이력 INSERT(ISSUE_CHANNEL='01' 직접가입, RELEASE_* = NULL).
+        //      신규/재활성 공통. USER_ID 는 TB_DAILY_USER.USER_ID 와 동일하게 param.userId() 적재
+        //      (만료 배치/조회의 h.USER_ID = d.USER_ID 조인 정합). 본 트랜잭션 포함(점유와 이력 정합).
+        String hisId = dailyJoinMapper.selectDailySlotHisId(param.cmpnyCd());
+        dailyJoinMapper.insertSlotHis(InsertSlotHisCommand.of(
+                hisId
+                , param.cmpnyCd()
+                , param.siteCd()
+                , slotNo
+                , LocalDate.now().format(YMD)
+                , param.userId()));
 
         // h. 약관 동의 이력 insert (필수약관 검증 후 요청 항목 저장)
         insertTermsAgreement(userCd, param);

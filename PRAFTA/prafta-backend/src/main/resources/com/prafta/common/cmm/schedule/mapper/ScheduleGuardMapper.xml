@@ -1,0 +1,69 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+    "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.prafta.common.cmm.schedule.mapper.ScheduleGuardMapper">
+
+    <!--
+      prafta-com-016 공통 스케줄 변경 가드 — 입력 날짜목록 중 확정 연차가 덮인 날짜.
+      판정 술어는 그리드 오버레이(selectLeaveOverlayList)·셀 비우기(selectFullDayLeaveCdOnCell)와
+      동일하나 USE_UNIT_TYPE 무관(종일·반차·시간차 전부). 다일 연차의 중간 일자도 START~END 로 포함.
+      동일 일자에 여러 사용단위가 있으면 종일('00') 우선, 그 외 MIN(USE_UNIT_TYPE) 1건으로 묶는다.
+    -->
+    <select id="selectLeaveLockedDays" resultType="com.prafta.common.cmm.schedule.mapper.result.LeaveLockDayResult">
+    /* ScheduleGuardMapper.selectLeaveLockedDays */
+    SELECT D.WORK_YMD                                            AS WORK_YMD
+         , MIN(CASE WHEN U.USE_UNIT_TYPE = '00' THEN '00'
+                    ELSE U.USE_UNIT_TYPE END)                    AS USE_UNIT_TYPE
+      FROM (
+            <foreach collection="workYmds" item="ymd" separator="UNION ALL">
+                SELECT #{ymd} AS WORK_YMD
+            </foreach>
+           ) D
+     INNER JOIN TB_USER_LEAVE_USE U
+        ON U.CMPNY_CD      = #{cmpnyCd}
+       AND U.USER_CD       = #{userCd}
+       AND U.LEAVE_STATUS  = 'CONFIRMED'
+       AND U.DEL_YN        = 'N'
+       AND U.START_DATE   <![CDATA[ <= ]]> D.WORK_YMD
+       AND U.END_DATE     <![CDATA[ >= ]]> D.WORK_YMD
+     GROUP BY D.WORK_YMD
+    </select>
+
+    <!--
+      prafta-com-016 공통 스케줄 변경 가드 — 입력 날짜목록 중 초과근무(등록 또는 신청) 보유 날짜.
+      판정 술어는 attd05 countDayOvertime 와 동일:
+        등록 tb_user_overtime_mgmt(DEL_YN='N', OT_STATUS<>'CANCELLED')
+        ∪ 신청 tb_user_attd_req(REQ_TYPE 03/04, REQ_STATUS 01/02, DEL_YN='N').
+    -->
+    <select id="selectOvertimeLockedDays" resultType="string">
+    /* ScheduleGuardMapper.selectOvertimeLockedDays */
+    SELECT D.WORK_YMD
+      FROM (
+            <foreach collection="workYmds" item="ymd" separator="UNION ALL">
+                SELECT #{ymd} AS WORK_YMD
+            </foreach>
+           ) D
+     WHERE EXISTS (
+            SELECT 1
+              FROM TB_USER_OVERTIME_MGMT OM
+             WHERE OM.CMPNY_CD = #{cmpnyCd}
+               AND OM.SITE_CD  = #{siteCd}
+               AND OM.USER_CD  = #{userCd}
+               AND OM.WORK_YMD = D.WORK_YMD
+               AND OM.DEL_YN   = 'N'
+               AND OM.OT_STATUS <![CDATA[ <> ]]> 'CANCELLED'
+           )
+        OR EXISTS (
+            SELECT 1
+              FROM TB_USER_ATTD_REQ RQ
+             WHERE RQ.CMPNY_CD = #{cmpnyCd}
+               AND RQ.SITE_CD  = #{siteCd}
+               AND RQ.USER_CD  = #{userCd}
+               AND RQ.WORK_YMD = D.WORK_YMD
+               AND RQ.DEL_YN   = 'N'
+               AND RQ.REQ_TYPE IN ('03', '04')
+               AND RQ.REQ_STATUS IN ('01', '02')
+           )
+    </select>
+
+</mapper>

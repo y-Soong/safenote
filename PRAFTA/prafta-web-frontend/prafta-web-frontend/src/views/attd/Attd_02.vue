@@ -221,7 +221,7 @@
                   <div class="list-right">
                     <span class="list-type">{{ item.typeNm }}</span>
                     <button
-                      v-if="item.type === '02'"
+                      v-if="item.type === '02' || item.type === '03'"
                       type="button"
                       class="btn-del"
                       @click="fnDeleteHoliday(item)"
@@ -265,7 +265,10 @@
                         }}
                       </span>
                       <button
-                        v-if="(ev.type ?? ev.holidayType) === '02'"
+                        v-if="
+                          (ev.type ?? ev.holidayType) === '02' ||
+                          (ev.type ?? ev.holidayType) === '03'
+                        "
                         type="button"
                         class="btn-del-card"
                         @click="fnDeleteHoliday(ev)"
@@ -290,7 +293,7 @@
                     </h3>
                     <ul class="card-info">
                       <li>
-                        등록 주체: {{ ev.insertNm ?? ev.regBy ?? "시스템" }}
+                        등록 주체: {{ regByLabel(ev) }}
                       </li>
                       <li>등록일시: {{ ev.insertDate ?? ev.regDt ?? "-" }}</li>
                     </ul>
@@ -331,6 +334,7 @@ import axios from "@/api/axios";
 import ViewHeader from "@/components/common/ViewHeader.vue";
 import { getMessage, MSG } from "@/messages";
 import { resolveApiErrorMessage } from "@/utils/apiError";
+import { formatMdDot, formatYmdDot } from "@/utils/dateFormat";
 import HolidayRegisterPop from "@/views/attd/popup/HolidayRegisterPop.vue";
 import CalendarMonthPickerPop from "@/views/attd/popup/CalendarMonthPickerPop.vue";
 
@@ -448,15 +452,16 @@ const selectedDateLabel = computed(() => {
   if (parts.length < 3) return d;
   const [y, m, day] = parts;
   const dt = new Date(parseInt(y), parseInt(m) - 1, parseInt(day));
+  // 날짜 텍스트는 점(YYYY.MM.DD), 요일 라벨은 유지(D3).
   return isNaN(dt.getTime())
     ? d
-    : `${y}-${m}-${day} (${dayLabels[dt.getDay()]})`;
+    : `${formatYmdDot(d)} (${dayLabels[dt.getDay()]})`;
 });
 
+// 월-일 표시는 dateFormat 단일 출처에 위임(점 구분 MM.DD). 빈값은 "-".
 const formatDateShort = (d) => {
   if (!d) return "-";
-  const s = String(d).slice(0, 10);
-  return s.length < 10 ? s : s.slice(5, 7) + "/" + s.slice(8, 10);
+  return formatMdDot(d);
 };
 
 const getDayOfWeek = (d) => {
@@ -486,6 +491,8 @@ const fnSelectDate = (cell) => {
 const fnHolidayRegisterOpen = () => {
   openPop(HolidayRegisterPop, {
     siteCd_p: "",
+    // 캘린더에서 선택한 날짜가 있으면 신규 등록 팝업의 초기 일자로 전달.
+    initialYmd_p: selectedDate.value || "",
     onSearch: fnSearch,
   });
 };
@@ -505,6 +512,7 @@ const fnOpenMonthPicker = () => {
 const fnOpenHolidayEdit = (ev) => {
   const date = ev.date ?? ev.holidayYmd ?? ev.holidayDate ?? "";
   const dateStr = String(date).slice(0, 10);
+  const type = ev.type ?? ev.holidayType ?? "02";
 
   openPop(HolidayRegisterPop, {
     siteCd_p: "",
@@ -513,7 +521,9 @@ const fnOpenHolidayEdit = (ev) => {
       holidayId: ev.holidayId ?? "",
       holidayNm: ev.name ?? ev.holidayNm ?? "",
       holidayYmd: dateStr,
-      holidayType: ev.type ?? ev.holidayType ?? "02",
+      holidayType: type,
+      // 반복휴무(03)는 매년 반복 항목이므로 수정 팝업 진입 시 체크 상태를 복원한다.
+      repeatYearly: type === "03",
       dateKey: ev.dateKey,
     },
   });
@@ -545,6 +555,17 @@ const getTypeNm = (type) =>
         ? "반복휴무"
         : type || "";
 
+/**
+ * 등록 주체 표시 라벨.
+ * - 해석된 등록자명이 있으면 그대로 노출
+ * - 미해석(공휴일 시드 등) 시 공휴일(01)은 "국가공휴일(기본 제공)", 그 외는 "시스템"
+ */
+const regByLabel = (ev) => {
+  const nm = ev.insertNm ?? ev.regBy;
+  if (nm) return nm;
+  return (ev.type ?? ev.holidayType) === "01" ? "국가공휴일(기본 제공)" : "시스템";
+};
+
 /** insertDate "20260223" → "2026-02-23" 포맷 */
 const formatInsertDate = (v) => {
   if (!v) return "-";
@@ -568,7 +589,8 @@ const normalizeHolidayItem = (item) => {
     name,
     type,
     typeNm: item.typeNm ?? getTypeNm(type),
-    insertNm: item.insertNm ?? "시스템",
+    // 등록자명 미해석(공휴일 시드/레거시 등)은 raw null 보존 → 표시 라벨은 regByLabel에 위임
+    insertNm: item.insertNm ?? null,
     insertDate: formatInsertDate(item.insertDate ?? item.regDt),
     dateKey: dateStr ? `${dateStr}-${name}` : `${Date.now()}-${Math.random()}`,
   };
@@ -602,12 +624,18 @@ const fnDeleteHoliday = async (item) => {
   if (!ok) return;
 
   try {
+    const type = item.type ?? item.holidayType ?? "02";
+    const ymd = String(item.date ?? item.holidayYmd ?? "").slice(0, 10);
     const payload = {
-      ...item,
+      siteCd: "",
+      holidayId: item.holidayId ?? "",
+      holidayNm: item.name ?? item.holidayNm ?? "-",
+      holidayYmd: ymd,
+      holidayType: type,
+      // 반복휴무(03)는 휴일규칙 테이블 대상이므로 매년반복 플래그로 분기시킨다.
+      repeatYearly: type === "03",
       useYn: "N",
     };
-
-    console.log("payload :: " + JSON.stringify(payload));
 
     const response = await axios.post(
       "/webApi/attd02/update-holiday-infos",

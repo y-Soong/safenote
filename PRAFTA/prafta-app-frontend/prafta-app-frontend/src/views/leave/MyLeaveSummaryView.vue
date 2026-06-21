@@ -45,6 +45,15 @@
         <!-- 신청형 휴가 (LEAVE_TYPE='01') — 법정/관리자부여 그룹과 분리된 별도 섹션. 항목 1개 이상일 때만 노출. -->
         <LeaveAppliedCard v-if="hasAppliedLeave" :types="appliedLeaveTypes" />
 
+        <!-- 가불 사용분 (prafta-com-011-5) — 미상계 가불(borrowedDays>0)일 때만 노출. MVP 표시 전용(액션 없음). -->
+        <section v-if="hasBorrowed" class="lv-borrow">
+          <div class="lv-borrow__row">
+            <span class="lv-borrow__lbl">가불 사용</span>
+            <span class="lv-borrow__val">{{ formatDays(borrowedDays) }}일</span>
+          </div>
+          <p class="lv-borrow__note">미래 연차에서 상계 예정입니다.</p>
+        </section>
+
         <!-- 빈 상태 (로드 완료했으나 데이터 없음) -->
         <p v-if="showEmptyState" class="lv-empty">표시할 연차 정보가 없어요</p>
       </template>
@@ -134,6 +143,8 @@ const groups = ref(null)
 const expiringSoon = ref(null)
 // 신청형 휴가(LEAVE_TYPE='01') 타입별 항목 — 법정/관리자부여(groups)와 분리. [{leaveCd,leaveNm,maxAplyDays,usedDays,remainDays}]
 const appliedLeaveTypes = ref([])
+// 미상계 가불 사용 합계(일) — prafta-com-011-5. 0이면 카드 숨김(MVP 표시 전용).
+const borrowedDays = ref(0)
 
 // 그룹 토글 (UI 상태 — 허용 범위). 진입 기본값: 전체
 const activeGroup = ref('TOTAL')
@@ -172,6 +183,16 @@ const hasAppliedLeave = computed(
 // 빈 상태: 로드 완료 + 부여 데이터 전무
 const showEmptyState = computed(() => !isLoading.value && !groups.value)
 
+// 가불 사용분 카드 노출: 미상계 가불 > 0 (prafta-com-011-5).
+const hasBorrowed = computed(() => Number(borrowedDays.value) > 0)
+
+// 표시 헬퍼 — 정수면 정수, 소수면 1자리(서버 권위값 그대로 표시).
+const formatDays = (d) => {
+  const n = Number(d)
+  if (Number.isNaN(n)) return '0'
+  return Number.isInteger(n) ? String(n) : n.toFixed(1)
+}
+
 // ───────────────────────────────────────────────────────────
 // 이벤트 핸들러
 // ───────────────────────────────────────────────────────────
@@ -203,6 +224,7 @@ onMounted(async () => {
     appliedLeaveTypes.value = Array.isArray(res?.data?.appliedLeaveTypes)
       ? res.data.appliedLeaveTypes
       : []
+    borrowedDays.value = Number(res?.data?.borrowedDays) || 0
   } catch (e) {
     console.error('[MyLeaveSummary] 연차 현황 조회 실패:', e?.message)
     showAlert('연차 정보를 불러오지 못했어요. 잠시 후 다시 시도해 주세요.')
@@ -312,6 +334,39 @@ onMounted(async () => {
   text-align: center;
   font-size: 13px;
   color: var(--color-text-tertiary);
+}
+
+/* 가불 사용분 카드 (prafta-com-011-5) — 표시 전용. 메타카드/경고 톤 재사용(CSS 변수만). */
+.lv-borrow {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-xs);
+  padding: var(--space-md);
+  background: var(--color-warning-tint);
+  border: 1px solid var(--color-warning-border);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-sm);
+}
+.lv-borrow__row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+.lv-borrow__lbl {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--color-warning-text);
+}
+.lv-borrow__val {
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--color-warning-text);
+  font-variant-numeric: tabular-nums;
+}
+.lv-borrow__note {
+  margin: 0;
+  font-size: 12px;
+  color: var(--color-text-secondary);
 }
 
 /* 푸터 */

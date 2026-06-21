@@ -29,11 +29,11 @@
             </div>
             <div class="lpb-field">
               <label>기간 시작</label>
-              <input v-model="windowFrom" type="date" class="lpb-date" />
+              <CalendarSrch v-model="windowFrom" class="lpb-date" />
             </div>
             <div class="lpb-field">
               <label>기간 종료</label>
-              <input v-model="windowTo" type="date" class="lpb-date" />
+              <CalendarSrch v-model="windowTo" class="lpb-date" />
             </div>
             <button class="lpb-preview-btn" :disabled="isPreviewing" @click="onPreview">
               {{ isPreviewing ? '계산 중...' : '미리보기' }}
@@ -102,6 +102,7 @@
 import { ref, getCurrentInstance, defineProps, defineEmits } from "vue";
 import axios from "@/api/axios";
 import { resolveApiErrorMessage } from "@/utils/apiError";
+import CalendarSrch from "@/components/common/CalendarSrch.vue";
 
 const { proxy } = getCurrentInstance();
 
@@ -191,6 +192,8 @@ const onCommit = async () => {
 .lpb-modal {
   width: 640px;
   max-width: 94vw;
+  /* 기본 .modal-content 의 20px 패딩 제거 → 헤더/본문/푸터가 박스 끝에 밀착. */
+  padding: 0;
 }
 .lpb-body {
   display: flex;
@@ -214,7 +217,8 @@ const onCommit = async () => {
   color: var(--color-text-muted);
 }
 .lpb-select,
-.lpb-date {
+/* 네이티브 date input → CalendarSrch 교체. 내부 input 셀렉터로 사이즈 유지 */
+.lpb-date :deep(.calendar-input) {
   height: var(--btn-height-lg, 32px);
   border: 1px solid var(--color-border-strong);
   border-radius: var(--input-radius, 10px);

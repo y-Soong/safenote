@@ -2,12 +2,16 @@ package com.prafta.common.cmm.leave.service.impl;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
 import java.time.LocalDate;
 import java.time.format.DateTimeFormatter;
 import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
 import java.util.List;
 
+import org.springframework.dao.DuplicateKeyException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -95,6 +99,12 @@ public class LeaveDashboardServiceImpl implements LeaveDashboardService {
     private static final int MAX_REASON_LENGTH = 500;
     /** 1회 부여 일수 상한(일). 정책 명시값 없어 합리적 기본값 365 적용(보고서 플래그). */
     private static final BigDecimal MAX_GRANT_DAYS = BigDecimal.valueOf(365);
+    /**
+     * 수동 부여 더블클릭/재전송 중복 차단 시간창(초) — com-013-08-5.
+     * 같은 페이로드의 재요청이 이 창 안이면 같은 멱등키가 되어 중복 차단,
+     * 창을 넘기면 새 키라 의도적 재부여가 통과한다. 30초는 더블클릭/네트워크 재시도를 충분히 덮는 보수값.
+     */
+    private static final long MANUAL_DEDUP_WINDOW_SEC = 30L;
 
     private static final String AXIS1_HIRE_DATE = "HIRE_DATE";
     private static final String AXIS1_FISCAL_YEAR = "FISCAL_YEAR";
@@ -210,6 +220,8 @@ public class LeaveDashboardServiceImpl implements LeaveDashboardService {
                 .nonLegal(nonLegal)
                 .total(total)
                 .usageRate(usageRate(totalGranted, totalUsedTotal))
+                // 가불 사용분(prafta-com-011-7, 표시 전용 §5). 매퍼 IFNULL로 0 보장이나 방어적 nz.
+                .borrowedDays(nz(row.getBorrowedDays()))
                 .build();
     }
 
@@ -407,6 +419,11 @@ public class LeaveDashboardServiceImpl implements LeaveDashboardService {
         String today = LocalDate.now().format(DateTimeFormatter.BASIC_ISO_DATE);
         BigDecimal grantDaysScaled = grantDays.setScale(1, RoundingMode.HALF_UP);
 
+        // com-013-08-5: 더블클릭/재전송 중복 부여 방어용 결정적 시간창 산출.
+        //   같은 제출(동일 페이로드)이 같은 시간창(MANUAL_DEDUP_WINDOW_SEC) 안에 다시 들어오면 멱등키가 동일해진다.
+        //   윈도우가 지나거나 페이로드가 다르면 키가 달라져 정상적인 별개 부여는 그대로 통과한다.
+        long dedupWindow = System.currentTimeMillis() / 1000L / MANUAL_DEDUP_WINDOW_SEC;
+
         // 5. 직원당 1건 INSERT (전건 성공 or 전건 롤백 — @Transactional)
         List<String> grantedUserCds = new ArrayList<>(userCds.size());
         for (String targetUserCd : userCds) {
@@ -418,6 +435,19 @@ public class LeaveDashboardServiceImpl implements LeaveDashboardService {
             if (leaveDashboardMapper.countActiveUser(cmpnyCd, tu) < 1) {
                 log.warn("연차 수동 부여 - 대상 직원 스코프 밖/미존재. cmpnyCd={}, userCd={}", cmpnyCd, tu);
                 throw new ApiException(AttdErrorCode.ATTD_404_020);
+            }
+
+            // com-013-08-5: 결정적 멱등키 = {userCd}_{payloadHash}_{window}_MANUAL.
+            //   - payloadHash : 부여 페이로드(유형/일수/사용가능일/사유) 해시 → 다른 부여는 다른 키.
+            //   - window      : 단기 시간창 버킷 → 동일 페이로드 재전송은 같은 키(중복 차단), 윈도우 경과 후 재부여는 통과.
+            String idempotencyKey = buildIdempotencyKey(tu, leaveCd, grantDaysScaled, availFromDate,
+                    command.reason(), dedupWindow);
+
+            // 동일 키 live 부여가 이미 있으면 더블클릭/재전송으로 판단하고 차단(별개 부여는 키가 달라 영향 없음).
+            if (leaveDashboardMapper.countLiveByIdempotencyKey(cmpnyCd, idempotencyKey) > 0) {
+                log.warn("연차 수동 부여 - 동일 제출 단시간 중복 감지(차단). cmpnyCd={}, userCd={}, key={}",
+                        cmpnyCd, tu, idempotencyKey);
+                throw new ApiException(AttdErrorCode.ATTD_409_030);
             }
 
             LeaveGrantInsertVO vo = new LeaveGrantInsertVO();
@@ -434,11 +464,19 @@ public class LeaveDashboardServiceImpl implements LeaveDashboardService {
             vo.setGrantDate(today);
             vo.setAvailFromDate(availFromDate);
             vo.setAvailToDate(availToDate);
-            vo.setIdempotencyKey(buildIdempotencyKey(tu));
+            vo.setIdempotencyKey(idempotencyKey);
             vo.setStatus(STATUS_ACTIVE);
             vo.setInsertNo(userCd);
 
-            leaveDashboardMapper.insertManualGrant(vo);
+            try {
+                leaveDashboardMapper.insertManualGrant(vo);
+            } catch (DuplicateKeyException e) {
+                // 동시 더블클릭 경합: 위 카운트 검사를 통과한 두 트랜잭션이 같은 키로 동시에 INSERT한 경우.
+                //   UNIQUE(CMPNY_CD, IDEMPOTENCY_KEY)가 최종 방어선 → 한쪽만 성공하고 본 트랜잭션은 중복으로 차단.
+                log.warn("연차 수동 부여 - 동일 제출 동시 INSERT 경합(차단). cmpnyCd={}, userCd={}, key={}",
+                        cmpnyCd, tu, idempotencyKey);
+                throw new ApiException(AttdErrorCode.ATTD_409_030);
+            }
             grantedUserCds.add(tu);
         }
 
@@ -682,7 +720,8 @@ public class LeaveDashboardServiceImpl implements LeaveDashboardService {
      * <ul>
      *   <li>{@code 01} 설정안함(무기한) → sentinel {@code 99991231}(소비창/만료/대시보드 SQL 무변경).</li>
      *   <li>{@code 02} 해당 연도 내 → 폼 사용가능일(availFromDate) 연도의 {@code YYYY1231}.</li>
-     *   <li>{@code 03} 기간 설정 → 타입 {@code ADMIN_AVAIL_TO_DT}(YYYYMMDD 절대일, prafta-044-FU2).</li>
+     *   <li>{@code 03} 기간 설정 → 부여일(availFromDate) + 타입 {@code ADMIN_AVAIL_MONTHS} 개월(prafta-com-016-B).
+     *       존재 안 하는 날은 말일 보정. 개월수 미설정/범위밖이면 AXIS6 폴백.</li>
      *   <li>미설정(null)/조회 불가 → 안전 폴백 = 기존 회사 공통 AXIS6(폼 from + validityMonths).</li>
      * </ul>
      * AVAIL_FROM_DATE 는 폼 입력(availFromDate)을 그대로 유지하며, {@code from > to} 모순이면 거부한다.
@@ -707,14 +746,17 @@ public class LeaveDashboardServiceImpl implements LeaveDashboardService {
             // 해당 연도 내: 폼 사용가능일 연도의 1231 (availFromDate 는 검증 완료 8자).
             availToDate = availFromDate.substring(0, 4) + "1231";
         } else if (AVAIL_TERM_PERIOD.equals(termType)) {
-            // 기간 설정: 타입 ADMIN_AVAIL_TO_DT(YYYYMMDD). 미설정/형식오류면 폴백.
-            String adminTo = (term == null) ? null : blankToNull(term.getAdminAvailToDt());
-            if (!isValidYyyymmdd(adminTo)) {
-                log.warn("수동 부여 사용가능기간 - '03' 기간설정인데 ADMIN_AVAIL_TO_DT 부적합, AXIS6 폴백. "
-                        + "cmpnyCd={}, leaveCd={}, adminTo={}", cmpnyCd, leaveCd, adminTo);
+            // prafta-com-016-B(3-2): 기간 설정 = "부여일로부터 N개월"(상대기간).
+            //   만료 = availFromDate(부여일) + ADMIN_AVAIL_MONTHS 개월의 해당일.
+            //   존재 안 하는 날(예: 1/31 + 1개월)은 LocalDate.plusMonths 기본 동작(말일 보정)으로 처리.
+            //   개월수가 없거나 1~99 범위 밖이면 기존 AXIS6 폴백 유지(하위호환).
+            Integer months = (term == null) ? null : term.getAdminAvailMonths();
+            if (months == null || months < 1 || months > 99) {
+                log.warn("수동 부여 사용가능기간 - '03' 기간설정인데 ADMIN_AVAIL_MONTHS 부적합(1~99 아님), AXIS6 폴백. "
+                        + "cmpnyCd={}, leaveCd={}, months={}", cmpnyCd, leaveCd, months);
                 return fallbackAxis6AvailToDate(cmpnyCd, availFromDate);
             }
-            availToDate = adminTo;
+            availToDate = addMonthsYyyymmdd(availFromDate, months);
         } else {
             // 미설정(null)/알 수 없는 코드: 하위호환 폴백 = 기존 AXIS6 산출.
             log.info("수동 부여 사용가능기간 - 미설정/미인식 코드, AXIS6 폴백. cmpnyCd={}, leaveCd={}, termType={}",
@@ -750,11 +792,40 @@ public class LeaveDashboardServiceImpl implements LeaveDashboardService {
         return DEFAULT_VALIDITY_MONTHS;
     }
 
-    /** IDEMPOTENCY_KEY = "{USER_CD}_{TIMESTAMP}_MANUAL" (정책서 §8.5.8). */
-    private String buildIdempotencyKey(String userCd) {
-        String ts = LocalDate.now().format(DateTimeFormatter.BASIC_ISO_DATE)
-                + String.format("%09d", System.nanoTime() % 1_000_000_000L);
-        return userCd + "_" + ts + "_MANUAL";
+    /**
+     * 수동 부여 멱등키 (정책서 §8.5.8, com-013-08-5 결정적 키).
+     *
+     * <p>형식: {@code {USER_CD}_{PAYLOAD_HASH8}_{WINDOW}_MANUAL}
+     * <ul>
+     *   <li>PAYLOAD_HASH8 : (leaveCd|grantDays|availFromDate|reason) SHA-256 의 앞 8 hex.
+     *       부여 내용이 다르면 키가 달라져 같은 날 서로 다른 부여는 정상 통과한다.</li>
+     *   <li>WINDOW : {@link #MANUAL_DEDUP_WINDOW_SEC} 단위 시간 버킷. 동일 페이로드가 같은 윈도우 안에 재전송되면
+     *       같은 키가 되어 중복으로 차단되고, 윈도우 경과 후 의도적 재부여는 새 키라 통과한다.</li>
+     * </ul>
+     * IDEMPOTENCY_KEY varchar(100) 안에 안전히 들어간다(userCd≤20 + hash 8 + window ≤ 약20 + 구분자/접미사).
+     */
+    private String buildIdempotencyKey(String userCd, String leaveCd, BigDecimal grantDays,
+                                       String availFromDate, String reason, long window) {
+        String payload = leaveCd + "|" + grantDays.toPlainString() + "|" + availFromDate
+                + "|" + (reason == null ? "" : reason);
+        String hash8 = sha256Hex8(payload);
+        return userCd + "_" + hash8 + "_" + window + "_MANUAL";
+    }
+
+    /** 페이로드 문자열의 SHA-256 앞 8 hex (멱등키 식별자용 — 충돌 가능성 무시 가능 수준의 짧은 지문). */
+    private String sha256Hex8(String input) {
+        try {
+            byte[] digest = MessageDigest.getInstance("SHA-256")
+                    .digest(input.getBytes(StandardCharsets.UTF_8));
+            StringBuilder sb = new StringBuilder(8);
+            for (int i = 0; i < 4; i++) {
+                sb.append(String.format("%02x", digest[i] & 0xff));
+            }
+            return sb.toString();
+        } catch (NoSuchAlgorithmException e) {
+            // SHA-256은 JDK 표준 — 사실상 발생 불가. 발생 시 멱등 보장 불가하므로 처리 중단.
+            throw new IllegalStateException("SHA-256 미지원", e);
+        }
     }
 
     private boolean isValidGrantDays(BigDecimal days) {

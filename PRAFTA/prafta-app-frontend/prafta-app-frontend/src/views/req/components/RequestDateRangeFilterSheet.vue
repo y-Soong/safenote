@@ -1,7 +1,7 @@
 <!--
   RequestDateRangeFilterSheet.vue — 기간 from-to (WORK_YMD 기준)
   - 작업 ID: PRAFTA-APP-006-4
-  - 1차는 native <input type="date"> 사용. 일자 셀렉터 도입은 §7 follow-up F8.
+  - 날짜 입력은 공통 DateStepperField(휠 바텀시트). modelValue 'YYYY-MM-DD' 계약 유지.
 -->
 <template>
   <BaseBottomSheet
@@ -75,7 +75,7 @@ const PRESETS = [
   { key: 'thisYear', label: '올해' },
 ]
 
-const localFromInput = ref('') // YYYY-MM-DD (native input)
+const localFromInput = ref('') // YYYY-MM-DD (DateStepperField 계약)
 const localToInput = ref('')
 const activePreset = ref('')
 

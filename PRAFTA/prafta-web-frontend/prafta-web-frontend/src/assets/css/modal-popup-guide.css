@@ -286,11 +286,16 @@ body.prafta-modal-open .prafta-nested-modal-overlay {
 .prafta-modal-popup .modal-body > .btn-group:last-child,
 .prafta-modal-popup .viewBody > .btn-group:last-child {
   position: relative;
+  /* 위 여백/구분선은 유지하고, 아래·좌·우는 바디 패딩(20px)을 음수 마진으로 상쇄해
+     밴드 배경을 모달 가장자리까지 확장(버튼 위치는 동일, 모달 overflow:hidden 으로 둥근 모서리 클립). */
   margin-top: 16px;
+  margin-bottom: -20px;
+  margin-left: -20px;
+  margin-right: -20px;
   padding-top: 16px;
   padding-bottom: 12px;
-  padding-left: 0;
-  padding-right: 0;
+  padding-left: 20px;
+  padding-right: 20px;
   background: var(--modal-footer-bg);
   display: flex;
   justify-content: flex-end;

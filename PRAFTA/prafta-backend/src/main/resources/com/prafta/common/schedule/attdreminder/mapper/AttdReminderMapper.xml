@@ -4,11 +4,73 @@
 <mapper namespace="com.prafta.common.schedule.attdreminder.mapper.AttdReminderMapper">
 
     <!--
+      근무일(WP.WORK_YMD) 기준 유효 스케줄(effective-dating) INNER 조인 조각.
+      TB_SCH_MGMT(현재본) + TB_SCH_MGMT_HIST(전 버전) UNION 후 APPLY_DATE <![CDATA[ <= ]]> WORK_YMD 인 최신 버전(SC)만 매칭.
+      과거/미래 적용분 변경분을 현재본 시각으로 잘못 매칭하던 문제 수정. attd07/attd11/AppAdminAttd 동일 패턴.
+      ⚠ 호출 쿼리는 직전에 'FROM TB_USER_WORK_PLAN WP' 가 와야 한다(WP 별칭 의존). USE_YN='Y' 는 UNION 내부에서 필터.
+    -->
+    <sql id="effectiveSchJoin">
+        INNER JOIN (
+            SELECT
+                  E.CMPNY_CD, E.SITE_CD, E.SCH_CD, E.APPLY_DATE
+                , E.FST_SCH_STR_TIME, E.FST_SCH_END_TIME, E.FST_SCH_BRK_MIN
+                , E.SEC_SCH_STR_TIME, E.SEC_SCH_END_TIME, E.SEC_SCH_BRK_MIN
+            FROM (
+                SELECT
+                      M.CMPNY_CD, M.SITE_CD, M.SCH_CD, M.APPLY_DATE
+                    , M.FST_SCH_STR_TIME, M.FST_SCH_END_TIME, M.FST_SCH_BRK_MIN
+                    , M.SEC_SCH_STR_TIME, M.SEC_SCH_END_TIME, M.SEC_SCH_BRK_MIN
+                    , 2147483647 AS HIST_IDX
+                FROM TB_SCH_MGMT M WHERE M.USE_YN = 'Y'
+                UNION ALL
+                SELECT
+                      H.CMPNY_CD, H.SITE_CD, H.SCH_CD, H.APPLY_DATE
+                    , H.FST_SCH_STR_TIME, H.FST_SCH_END_TIME, H.FST_SCH_BRK_MIN
+                    , H.SEC_SCH_STR_TIME, H.SEC_SCH_END_TIME, H.SEC_SCH_BRK_MIN
+                    , H.HIST_IDX
+                FROM TB_SCH_MGMT_HIST H WHERE H.USE_YN = 'Y'
+            ) E
+            WHERE E.HIST_IDX = (
+                SELECT MAX(E2.HIST_IDX)
+                FROM (
+                    SELECT M2.CMPNY_CD, M2.SITE_CD, M2.SCH_CD, M2.APPLY_DATE, 2147483647 AS HIST_IDX
+                    FROM TB_SCH_MGMT M2 WHERE M2.USE_YN = 'Y'
+                    UNION ALL
+                    SELECT H2.CMPNY_CD, H2.SITE_CD, H2.SCH_CD, H2.APPLY_DATE, H2.HIST_IDX
+                    FROM TB_SCH_MGMT_HIST H2 WHERE H2.USE_YN = 'Y'
+                ) E2
+                WHERE E2.CMPNY_CD   = E.CMPNY_CD
+                  AND E2.SITE_CD    = E.SITE_CD
+                  AND E2.SCH_CD     = E.SCH_CD
+                  AND E2.APPLY_DATE = E.APPLY_DATE
+            )
+        ) SC
+            ON  SC.CMPNY_CD = WP.CMPNY_CD
+            AND SC.SITE_CD  = WP.SITE_CD
+            AND SC.SCH_CD   = WP.WORK_PLAN_CD
+            AND SC.APPLY_DATE = (
+                SELECT MAX(SE.APPLY_DATE)
+                FROM (
+                    SELECT M3.CMPNY_CD, M3.SITE_CD, M3.SCH_CD, M3.APPLY_DATE
+                    FROM TB_SCH_MGMT M3 WHERE M3.USE_YN = 'Y'
+                    UNION ALL
+                    SELECT H3.CMPNY_CD, H3.SITE_CD, H3.SCH_CD, H3.APPLY_DATE
+                    FROM TB_SCH_MGMT_HIST H3 WHERE H3.USE_YN = 'Y'
+                ) SE
+                WHERE SE.CMPNY_CD    = WP.CMPNY_CD
+                  AND SE.SITE_CD     = WP.SITE_CD
+                  AND SE.SCH_CD      = WP.WORK_PLAN_CD
+                  AND SE.APPLY_DATE <![CDATA[ <= ]]> WP.WORK_YMD
+            )
+    </sql>
+
+    <!--
       PRAFTA-APP-021-4(W4): 출근 5분 전 리마인더 대상.
       - 오늘(workYmd) work_plan → sch_mgmt 조인. 구간 시작시각 = targetHhmm(현재+5분).
       - 2구간 스케줄이면 1구간/2구간 시작을 UNION 으로 각각 매칭(구간별 1행, workSeq 1/2).
       - 제외: 종일 확정 연차일 / 해당 구간(workSeq) 출근 기록이 이미 존재.
       - 시각은 서버 LocalTime 기준 HHMM 단일 타임존. SELECT * 금지, leading 콤마, #{} 바인딩.
+      - 스케줄 시각은 근무일(WP.WORK_YMD=workYmd) 기준 유효 버전(effectiveSchJoin)으로 해석.
     -->
     <select id="selectCheckInTargets" resultType="com.prafta.common.schedule.attdreminder.AttdReminderTargetResult">
     /* AttdReminderMapper.selectCheckInTargets */
@@ -22,16 +84,12 @@
             <!-- 1구간 시작 매칭(workSeq=1) -->
             SELECT WP.CMPNY_CD, WP.SITE_CD, WP.USER_CD, U.NODE_CD, 1 AS WORK_SEQ
               FROM TB_USER_WORK_PLAN WP
-                   INNER JOIN TB_SCH_MGMT SC
-                      ON  SC.CMPNY_CD = WP.CMPNY_CD
-                      AND SC.SITE_CD  = WP.SITE_CD
-                      AND SC.SCH_CD   = WP.WORK_PLAN_CD
+                   <include refid="effectiveSchJoin"/>
                    INNER JOIN TB_USER U
                       ON  U.CMPNY_CD = WP.CMPNY_CD
                       AND U.SITE_CD  = WP.SITE_CD
                       AND U.USER_CD  = WP.USER_CD
              WHERE WP.WORK_YMD = #{workYmd}
-               AND SC.USE_YN = 'Y'
                AND SC.FST_SCH_STR_TIME = #{targetHhmm}
                AND U.USE_YN = 'Y'
                AND U.ACCOUNT_STATUS = '01'
@@ -39,16 +97,12 @@
             <!-- 2구간 시작 매칭(workSeq=2, 2구간 스케줄만) -->
             SELECT WP.CMPNY_CD, WP.SITE_CD, WP.USER_CD, U.NODE_CD, 2 AS WORK_SEQ
               FROM TB_USER_WORK_PLAN WP
-                   INNER JOIN TB_SCH_MGMT SC
-                      ON  SC.CMPNY_CD = WP.CMPNY_CD
-                      AND SC.SITE_CD  = WP.SITE_CD
-                      AND SC.SCH_CD   = WP.WORK_PLAN_CD
+                   <include refid="effectiveSchJoin"/>
                    INNER JOIN TB_USER U
                       ON  U.CMPNY_CD = WP.CMPNY_CD
                       AND U.SITE_CD  = WP.SITE_CD
                       AND U.USER_CD  = WP.USER_CD
              WHERE WP.WORK_YMD = #{workYmd}
-               AND SC.USE_YN = 'Y'
                AND NULLIF(TRIM(SC.SEC_SCH_STR_TIME), '') IS NOT NULL
                AND SC.SEC_SCH_STR_TIME = #{targetHhmm}
                AND U.USE_YN = 'Y'
@@ -85,6 +139,7 @@
       - 오늘(workYmd) 스케줄의 마지막 구간 종료시각(2구간=SEC_END, 그 외=FST_END)=targetHhmm.
       - 그 마지막 구간(workSeq=2/1)에 출근 기록 존재(CHECK_IN_TIME 有) AND 미퇴근(CHECK_OUT_TIME NULL)만.
         출근하지 않았으면 제외(§8-R 3). 종일 연차일은 출근 기록이 없어 자연 제외.
+      - 스케줄 시각은 근무일(WP.WORK_YMD=workYmd) 기준 유효 버전(effectiveSchJoin)으로 해석.
     -->
     <select id="selectCheckOutTargets" resultType="com.prafta.common.schedule.attdreminder.AttdReminderTargetResult">
     /* AttdReminderMapper.selectCheckOutTargets */
@@ -95,10 +150,7 @@
         , U.NODE_CD    AS nodeCd
         , CASE WHEN NULLIF(TRIM(SC.SEC_SCH_END_TIME), '') IS NOT NULL THEN 2 ELSE 1 END AS workSeq
       FROM TB_USER_WORK_PLAN WP
-           INNER JOIN TB_SCH_MGMT SC
-              ON  SC.CMPNY_CD = WP.CMPNY_CD
-              AND SC.SITE_CD  = WP.SITE_CD
-              AND SC.SCH_CD   = WP.WORK_PLAN_CD
+           <include refid="effectiveSchJoin"/>
            INNER JOIN TB_USER U
               ON  U.CMPNY_CD = WP.CMPNY_CD
               AND U.SITE_CD  = WP.SITE_CD
@@ -111,7 +163,6 @@
               AND A.WORK_SEQ = CASE WHEN NULLIF(TRIM(SC.SEC_SCH_END_TIME), '') IS NOT NULL THEN 2 ELSE 1 END
               AND A.DEL_YN   = 'N'
      WHERE WP.WORK_YMD = #{workYmd}
-       AND SC.USE_YN = 'Y'
        AND U.USE_YN = 'Y'
        AND U.ACCOUNT_STATUS = '01'
        AND ( CASE WHEN NULLIF(TRIM(SC.SEC_SCH_END_TIME), '') IS NOT NULL

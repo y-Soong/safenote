@@ -94,19 +94,19 @@
                   />
                   <ThSortable
                     label="변경자"
-                    col-key="chgUserNm"
+                    col-key="userNm"
                     :sort-key="sortKey"
                     :sort-order="sortOrder"
-                    :width="colWidths.chgUserNm"
+                    :width="colWidths.userNm"
                     @sort="onSort"
                     @update:width="onResize"
                   />
                   <ThSortable
                     label="변경일시"
-                    col-key="chgDt"
+                    col-key="insertDate"
                     :sort-key="sortKey"
                     :sort-order="sortOrder"
-                    :width="colWidths.chgDt"
+                    :width="colWidths.insertDate"
                     @sort="onSort"
                     @update:width="onResize"
                   />
@@ -130,8 +130,8 @@
                     <td>{{ item.secSchTime ?? "-" }}</td>
                     <td>{{ item.secSchBrkMin ?? "-" }}</td>
                     <td>{{ item.useYn ?? "-" }}</td>
-                    <td>{{ item.chgUserNm ?? item.userNm ?? "-" }}</td>
-                    <td>{{ item.chgDt ?? item.insertDate ?? "-" }}</td>
+                    <td>{{ item.userNm || "-" }}</td>
+                    <td>{{ item.insertDate ?? "-" }}</td>
                   </tr>
                 </template>
               </tbody>
@@ -197,8 +197,8 @@ const { colWidths, onResize } = useColumnResize({
   secSchTime: 110,
   secSchBrkMin: 100,
   useYn: 80,
-  chgUserNm: 100,
-  chgDt: 130,
+  userNm: 100,
+  insertDate: 130,
 });
 
 // ================ Life Cycle Functions ================

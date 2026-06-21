@@ -105,6 +105,8 @@ onMounted(() => {
   background: var(--color-surface);
   border-radius: var(--card-radius);
   width: 90%;
+  /* 기본 .modal-content 의 20px 패딩 제거 → 헤더바(border-bottom)/본문/푸터가 박스 끝에 밀착. */
+  padding: 0;
 }
 
 .reason-modal {

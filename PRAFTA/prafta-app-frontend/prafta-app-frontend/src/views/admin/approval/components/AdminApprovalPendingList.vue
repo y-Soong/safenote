@@ -122,10 +122,11 @@ const showAlert = (message) => {
 // 페이지 크기(MyRequestsView 동일 — 서버도 동일 기본값 가정, A7)
 const PAGE_SIZE = 20
 
-// 유형 칩(요청서). 스케줄수정은 A5 확정 전 비활성(web/SYS032 단일 출처 부재).
+// 유형 칩(요청서). 스케줄수정은 029(SCHEDULE 처리경로 완성)으로 활성화.
+//   유형 카드 라벨/요약은 서버(reqTypeNm/summaryLines)가 단일출처. 칩 label 은 필터 세그먼트 표기 전용.
 const chips = [
   { key: 'ALL', label: '전체', disabled: false },
-  { key: 'SCHEDULE', label: '스케줄수정', disabled: true },
+  { key: 'SCHEDULE', label: '스케줄수정', disabled: false },
   { key: 'CORRECTION', label: '근태보정', disabled: false },
   { key: 'OVERTIME', label: '초과근무', disabled: false },
   { key: 'LEAVE', label: '연차', disabled: false },

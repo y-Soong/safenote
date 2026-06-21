@@ -6,16 +6,20 @@ import org.apache.ibatis.annotations.Mapper;
 import org.apache.ibatis.annotations.Param;
 
 import com.prafta.web.baim.baim05.application.command.ClearSlotCommand;
+import com.prafta.web.baim.baim05.application.command.CloseSlotHisCommand;
 import com.prafta.web.baim.baim05.application.command.DailyUserSlotCommand;
 import com.prafta.web.baim.baim05.application.command.DailyUserSlotUpdCommand;
 import com.prafta.web.baim.baim05.application.command.InsertDailyQrUserCommand;
+import com.prafta.web.baim.baim05.application.command.InsertSlotHisCommand;
 import com.prafta.web.baim.baim05.application.command.LinkPoliciesCommand;
 import com.prafta.web.baim.baim05.application.command.SetSlotFixedCommand;
 import com.prafta.web.baim.baim05.application.query.DailyUserLinkPoliciesQuery;
 import com.prafta.web.baim.baim05.application.query.DailyUserSlotListQuery;
+import com.prafta.web.baim.baim05.application.query.SlotHisQuery;
 import com.prafta.web.baim.baim05.application.query.UserSlotCountQuery;
 import com.prafta.web.baim.baim05.result.DailyUserLinkPolicyResult;
 import com.prafta.web.baim.baim05.result.DailyUserSlotListResult;
+import com.prafta.web.baim.baim05.result.SlotHisResult;
 
 @Mapper
 public interface Baim05Mapper {
@@ -54,4 +58,25 @@ public interface Baim05Mapper {
 
 	/** 점유 유지/해지: 점유 슬롯(SLOT_STATUS='02')의 FIXED_YN 토글. */
 	void updateSlotFixed(SetSlotFixedCommand command);
+
+	// ===== PRAFTA-055-2: 역할 게이트(노드 관리자 보강) =====
+
+	/** 해당 사업장의 노드(부서) 정/부 관리자 여부. 1 이상이면 관리자. */
+	int countNodeAdminInSite(@Param("cmpnyCd") String cmpnyCd, @Param("siteCd") String siteCd, @Param("userCd") String userCd);
+
+	// ===== PRAFTA-055-1: 슬롯 사용 이력(TB_DAILY_USER_SLOT_HIS) 적재 =====
+
+	/** 이력ID 채번('H' + YYYYMMDD + 시퀀스). */
+	String selectDailySlotHisId(@Param("cmpnyCd") String cmpnyCd);
+
+	/** 점유 시작 INSERT(RELEASE_* = NULL). */
+	void insertSlotHis(InsertSlotHisCommand command);
+
+	/** 점유 해제 — 슬롯 PK 3키의 열린 행(RELEASE_DTIME IS NULL) 1건 UPDATE. */
+	void closeSlotHis(CloseSlotHisCommand command);
+
+	// ===== PRAFTA-055-3: 슬롯 사용 이력 조회(최근 30일) =====
+
+	/** 슬롯 사용 이력 목록 조회(PII 마스킹은 SQL 처리). */
+	List<SlotHisResult> selectDailyUserSlotHisList(SlotHisQuery query);
 }

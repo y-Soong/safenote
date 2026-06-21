@@ -5,7 +5,7 @@
     <!-- ============ 공통 WHERE 조각 ============
       - CMPNY_CD/SITE_CD/USER_CD 스코프 강제(IDOR)
       - DEL_YN='N'
-      - REQ_TYPE IN ('01'~'06') 고정 (SYS032 시스템 코드 07/08/09 응답 차단)
+      - REQ_TYPE IN ('01'~'06','10') 고정 (SYS032 시스템 코드 07/08/09 응답 차단, '10'=스케줄 수정 요청)
       - reqTypes/reqStatuses 가 있을 때만 추가 IN
       - targetYmd 범위가 있을 때만 BETWEEN -->
     <sql id="myReqWhere">
@@ -13,7 +13,7 @@
           AND A.SITE_CD  = #{siteCd}
           AND A.USER_CD  = #{userCd}
           AND A.DEL_YN   = 'N'
-          AND A.REQ_TYPE IN ('01','02','03','04','05','06')
+          AND A.REQ_TYPE IN ('01','02','03','04','05','06','10')
         <if test="reqTypes != null and !reqTypes.isEmpty()">
           AND A.REQ_TYPE IN
           <foreach collection="reqTypes" item="t" open="(" separator="," close=")">
@@ -43,7 +43,7 @@
        AND A.SITE_CD  = #{siteCd}
        AND A.USER_CD  = #{userCd}
        AND A.DEL_YN   = 'N'
-       AND A.REQ_TYPE IN ('01','02','03','04','05','06')
+       AND A.REQ_TYPE IN ('01','02','03','04','05','06','10')
     </select>
 
     <!-- ============ 필터 적용 후 총합 ============ -->
@@ -69,6 +69,7 @@
         , A.END_TIME        AS endTime
         , A.LEAVE_TYPE      AS leaveType
         , A.LEAVE_DAYS      AS leaveDays
+        , A.SCH_CD          AS schCd
         , A.PROCESS_COMMENT AS processComment
         , A.PROCESS_DATE    AS processDate
         , A.INSERT_DATE     AS insertDate

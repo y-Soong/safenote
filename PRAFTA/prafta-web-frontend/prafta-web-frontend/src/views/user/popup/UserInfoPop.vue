@@ -160,11 +160,7 @@
           <!-- 생성 모드 전용: 입사일 / 고용형태 / 계약종료일. 본 폼은 leave-info 가 없으므로 직접 입력. -->
           <div class="form-row-max" v-if="isCreate">
             <label>입사일</label>
-            <input
-              v-model="hireDateInput"
-              type="date"
-              class="dialog-date-input"
-            />
+            <CalendarSrch v-model="hireDateInput" class="dialog-date-input" />
           </div>
 
           <div class="form-row-max" v-if="isCreate">
@@ -183,9 +179,8 @@
             v-if="isCreate && employmentType === 'CONTRACT'"
           >
             <label>계약종료일</label>
-            <input
+            <CalendarSrch
               v-model="contractEndDateInput"
-              type="date"
               class="dialog-date-input"
             />
           </div>
@@ -432,11 +427,12 @@
               <div class="withdrawal-dialog-body">
                 <div class="form-row-max">
                   <label>탈퇴예정일</label>
-                  <input
+                  <!-- com-014-2: CalendarSrch minDate(내일) 가드로 네이티브 input 교체.
+                       modelValue 계약은 YYYY-MM-DD 동일(서버 페이로드 무변경). -->
+                  <CalendarSrch
                     class="dialog-date-input"
-                    type="date"
                     v-model="newWithdrawalDate"
-                    :min="tomorrowDate"
+                    :minDate="tomorrowDate"
                   />
                 </div>
               </div>
@@ -1345,8 +1341,12 @@ const fnConfirmMsg = async (message, afterConfirmCallback) => {
   opacity: 0;
 }
 
+/* 네이티브 date input(탈퇴예정일 유지분) + CalendarSrch(입사일/계약종료일 교체분) 공용 사이즈 */
 .dialog-date-input {
   flex: 1;
+}
+.dialog-date-input,
+.dialog-date-input :deep(.calendar-input) {
   padding: 0.4rem 0.6rem;
   background: var(--color-bg, #f9fafb);
   border: 1px solid var(--color-border, #e5e7eb);
@@ -1355,7 +1355,11 @@ const fnConfirmMsg = async (message, afterConfirmCallback) => {
   font-size: 0.875rem;
   font-family: "Pretendard", sans-serif;
 }
-.dialog-date-input:focus {
+.dialog-date-input :deep(.calendar-input) {
+  width: 100%;
+}
+.dialog-date-input:focus,
+.dialog-date-input :deep(.calendar-input):focus {
   border-color: var(--color-border-strong, #d1d5db);
   outline: none;
   box-shadow: 0 0 0 var(--focus-ring-width, 3px) var(--color-focus-ring);

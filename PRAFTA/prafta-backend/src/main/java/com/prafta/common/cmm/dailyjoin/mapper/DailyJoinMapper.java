@@ -8,6 +8,7 @@ import org.apache.ibatis.annotations.Param;
 import com.prafta.common.cmm.baseinfo.application.command.SmsAuthConsumeCommand;
 import com.prafta.common.cmm.dailyjoin.application.command.DailyUserSlotUpdCommand;
 import com.prafta.common.cmm.dailyjoin.application.command.InsertDailyUserCommand;
+import com.prafta.common.cmm.dailyjoin.application.command.InsertSlotHisCommand;
 import com.prafta.common.cmm.dailyjoin.application.command.TermsUserAgrCommand;
 import com.prafta.common.cmm.dailyjoin.application.query.EmptySlotQuery;
 import com.prafta.common.cmm.dailyjoin.application.query.LinkPolicyQuery;
@@ -84,4 +85,12 @@ public interface DailyJoinMapper {
 
     /** 재활성 — TB_USER_SITE_AUTH upsert(사업장 권한 행 활성). */
     int upsertTbUserSiteAuth(@Param("cmpnyCd") String cmpnyCd, @Param("userCd") String userCd, @Param("siteCd") String siteCd);
+
+    // ===== PRAFTA-055-1: 슬롯 사용 이력(TB_DAILY_USER_SLOT_HIS) 적재(자가가입 점유) =====
+
+    /** 이력ID 채번('H' + YYYYMMDD + 시퀀스). */
+    String selectDailySlotHisId(@Param("cmpnyCd") String cmpnyCd);
+
+    /** 점유 시작 INSERT(RELEASE_* = NULL, ISSUE_CHANNEL='01' 직접가입). */
+    void insertSlotHis(InsertSlotHisCommand command);
 }

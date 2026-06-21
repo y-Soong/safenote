@@ -99,6 +99,8 @@ import { ref, computed, onMounted, onBeforeUnmount, nextTick, getCurrentInstance
 
 import api from '@/api/axios'
 import { resolveApiErrorMessage } from '@/utils/apiError'
+import { formatYmdDisplay } from '@/utils/approvalFormat'
+import { dowShort } from '@/views/attd/attdFormat'
 
 const { proxy } = getCurrentInstance() || { proxy: null }
 
@@ -120,9 +122,8 @@ const isToday = computed(() => workYmd.value === todayYmd)
 const dateLabel = computed(() => {
   const y = workYmd.value
   if (!y || y.length !== 8) return ''
-  const week = ['일', '월', '화', '수', '목', '금', '토']
-  const dt = new Date(Number(y.slice(0, 4)), Number(y.slice(4, 6)) - 1, Number(y.slice(6, 8)))
-  return `${y.slice(0, 4)}.${y.slice(4, 6)}.${y.slice(6, 8)} (${week[dt.getDay()]})`
+  // 표시 통일(D1): 점 일자 + 요일은 attdFormat.dowShort 로 산출
+  return `${formatYmdDisplay(y)} (${dowShort(null, y)})`
 })
 
 const keyword = ref('')

@@ -3,6 +3,7 @@ package com.prafta.app.req.req07.service;
 import com.prafta.app.req.req07.application.param.AttdCorrectionParam;
 import com.prafta.app.req.req07.application.param.OvertimeParam;
 import com.prafta.app.req.req07.application.param.SchedModifyParam;
+import com.prafta.app.req.req07.dto.response.AppliedOvertimeResponse;
 import com.prafta.app.req.req07.dto.response.RegisterReqResponse;
 import com.prafta.app.req.req07.dto.response.SchedOptionResponse;
 
@@ -31,4 +32,11 @@ public interface AppReq07Service {
      *   판정은 공용 cmm ShiftMembershipService(D-1 술어) 재사용 — 신규 쿼리 신설 금지. workYmd null 이면 false.
      */
     SchedOptionResponse getSchedOptions(String cmpnyCd, String siteCd, String userCd, String workYmd);
+
+    /**
+     * prafta-app-030: 이미 등록(적용)된 초과근무 목록 조회.
+     * 초과근무 신청 폼에서 중복등록 방지를 위해 기존 적용 OT(TB_USER_OVERTIME_MGMT)를 표시/대조한다.
+     * 식별값(cmpnyCd/siteCd/userCd)은 JWT 도출값을 사용한다(IDOR). 빈 결과는 빈 배열.
+     */
+    AppliedOvertimeResponse getAppliedOvertimes(String cmpnyCd, String siteCd, String userCd, String workYmd);
 }

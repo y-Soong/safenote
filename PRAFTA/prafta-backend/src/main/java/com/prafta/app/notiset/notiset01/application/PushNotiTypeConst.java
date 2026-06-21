@@ -39,6 +39,7 @@ public final class PushNotiTypeConst {
     public static final String W3_TBM = "W3_TBM";
     public static final String W4_CHECKIN_REMIND = "W4_CHECKIN_REMIND";
     public static final String W5_CHECKOUT_REMIND = "W5_CHECKOUT_REMIND";
+    public static final String W6_SHIFT_SCH_CHANGE = "W6_SHIFT_SCH_CHANGE";
 
     // ── 관리자 토글키(M*) — isAdmin 만 노출/저장 ──
     public static final String M1_LATE_EARLY = "M1_LATE_EARLY";
@@ -87,13 +88,17 @@ public final class PushNotiTypeConst {
 
     static {
         // 근로자 토글
-        put(W1_LEAVE_RECALL, ToggleGroup.WORKER, "LEAVE_GRANT_RECALLED");
+        //   prafta-com-016-C-2: 관리자 연차/월차 직접 등록 통보(LEAVE_DIRECT_SET)도 연차 관련 근로자 알림이므로
+        //   W1(연차) 토글 하위에 매핑한다(기본 ON, opt-out). 토글 OFF 시 회수·직접등록 통보가 함께 꺼진다.
+        put(W1_LEAVE_RECALL, ToggleGroup.WORKER, "LEAVE_GRANT_RECALLED", "LEAVE_DIRECT_SET");
         put(W2_REQUEST_RESULT, ToggleGroup.WORKER,
                 "LEAVE_RESULT_APPROVED", "LEAVE_RESULT_REJECTED",
                 "ATTD_RESULT_APPROVED", "ATTD_RESULT_REJECTED");
         put(W3_TBM, ToggleGroup.WORKER, "TBM_STARTED", "TBM_COMPLETED");
         put(W4_CHECKIN_REMIND, ToggleGroup.WORKER, "ATTD_CHECKIN_REMINDER");
         put(W5_CHECKOUT_REMIND, ToggleGroup.WORKER, "ATTD_CHECKOUT_REMINDER");
+        // prafta-com-016-D-2: 교대근무 팀 스케줄 변경 통보(근로자 대상). 기본 ON(opt-out).
+        put(W6_SHIFT_SCH_CHANGE, ToggleGroup.WORKER, "SHIFT_SCH_CHANGED");
 
         // 관리자 토글
         put(M1_LATE_EARLY, ToggleGroup.ADMIN, "ATTD_LATE_EARLY_DETECTED");

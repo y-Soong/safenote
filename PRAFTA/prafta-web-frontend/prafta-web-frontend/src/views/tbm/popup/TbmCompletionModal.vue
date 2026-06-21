@@ -165,6 +165,8 @@ const fnSubmit = async () => {
 <style scoped>
 .comp-modal {
   max-width: 460px;
+  /* 기본 .modal-content 의 20px 패딩 제거 → 헤더/본문/푸터가 박스 끝에 밀착. */
+  padding: 0;
   display: flex;
   flex-direction: column;
 }

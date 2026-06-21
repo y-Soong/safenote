@@ -11,18 +11,20 @@ public record LinkPoliciesParam(
 	, String dayLimitCnt
 	, String gvCmpnyCd
 	, String gvUserCd
+	, String gvAuthCd
 ){
 	public static LinkPoliciesParam from(LinkPoliciesRequest request, TokenInfo tokenInfo) {
 
         if (request == null)
         	throw new ApiException(CommonErrorCode.COMMON_400_001);
-        
+
         return new LinkPoliciesParam(
     		request.getSiteCd()
     		, request.getUseYn()
     		, request.getDayLimitCnt()
     		, tokenInfo.gv_cmpnyCd()
     		, tokenInfo.gv_userCd()
+    		, tokenInfo.gv_authCd()
 		);
     }
 }

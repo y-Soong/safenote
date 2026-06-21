@@ -21,6 +21,10 @@ import com.prafta.common.cmm.leave.mapper.LeaveGrantEngineMapper;
 import com.prafta.common.cmm.leave.service.LeaveGrantEngineService;
 import com.prafta.common.cmm.leave.service.LeaveGrantStatusService;
 import com.prafta.common.cmm.leave.service.LeavePolicyService;
+import com.prafta.common.cmm.leave.vo.BorrowGrantCapacityVO;
+import com.prafta.common.cmm.leave.vo.BorrowGrantResultVO;
+import com.prafta.common.cmm.leave.vo.BorrowGrantResultVO.BorrowGrantSlotVO;
+import com.prafta.common.cmm.leave.vo.BorrowProjectionVO;
 import com.prafta.common.cmm.leave.vo.HireDateAdjustResultVO;
 import com.prafta.common.cmm.leave.vo.HireDateGrantResultVO;
 import com.prafta.common.cmm.leave.vo.LeaveGrantInsertVO;
@@ -111,6 +115,14 @@ public class LeaveGrantEngineServiceImpl implements LeaveGrantEngineService {
     private static final String HIRE_BACKFILL_GRANT_REASON = "입사일 변경 소급(INSADAY_CHANGE_BACKFILL)";
     /** 오늘 폴백 추가 부여 사유(D4). */
     private static final String HIRE_OVERAGE_GRANT_REASON = "입사일 변경 초과 부여(MANUAL_OVERAGE)";
+
+    // ===== prafta-com-011 연차 가불(마이너스/이월) =====
+    /** 가불 GRANT 식별 마커(GRANT_REASON 프리픽스, 멱등키 밖 — plan §0-1). LIKE '[가불]%' 로 집계/회수 매칭. */
+    private static final String BORROW_GRANT_REASON_PREFIX = "[가불] ";
+    /** 본연차 가불 사유(차기 부여 예정 본연차를 당겨씀, 결정 §1). */
+    private static final String BORROW_ANNUAL_GRANT_REASON = BORROW_GRANT_REASON_PREFIX + "차기 부여 예정 본연차 가불";
+    /** 월차 가불 사유(미래 월차분을 당겨씀, 결정 §1). */
+    private static final String BORROW_MONTHLY_GRANT_REASON = BORROW_GRANT_REASON_PREFIX + "미래 월차 가불";
 
     /**
      * 입사일 변경 조정 스냅샷 직렬화 전용 ObjectMapper (prafta-032).
@@ -440,6 +452,415 @@ public class LeaveGrantEngineServiceImpl implements LeaveGrantEngineService {
         BigDecimal recallAmount = diff.abs(); // (현재 − 목표)
         return applyHireChangeRecall(cmpnyCd, userCd, currentTotal, newTotal, diff, recallAmount, recallable,
                 withdrawReason, histId, operatorUserCd);
+    }
+
+    // ============================================================
+    // 연차 가불(마이너스/이월) 코어 (prafta-com-011-1)
+    //   출처: prafta-com-011-decisions.md §1·§2·§3·§6 / attd/08-leave.md §8.5.4·§8.5.8.
+    //   read-only projection(한도/차기예정/만료검증) + 가불 GRANT 생성/회수. 기존 산식/채번/CANCEL 패턴 재사용.
+    // ============================================================
+
+    @Override
+    public BigDecimal computeBorrowQuota(String cmpnyCd, String userCd, String hireDate, BorrowFamily family) {
+        // read-only. 입력/입사일 유효성 방어 — 산정 불가면 가불 한도 0.
+        if (cmpnyCd == null || userCd == null || family == null || !isValidYyyymmdd(hireDate)) {
+            return BigDecimal.ZERO;
+        }
+        LocalDate hire = parseYyyymmdd(hireDate);
+        LocalDate todayDate = LocalDate.now();
+        if (hire == null || hire.isAfter(todayDate)) {
+            return BigDecimal.ZERO;
+        }
+
+        if (family == BorrowFamily.MONTHLY) {
+            // 월차 가불 한도 = 11 − min(actualMonths, 11) − 이미 가불한 월차 일수 (결정 §2).
+            //   1년(만1년 도래일) 경과 → 월차 일괄소멸이라 한도 0. 경력인정 더블딥(월차 게이트)도 0.
+            //   만료(만1년 도래일) 경과 판정: 입사+1년−1일 < 오늘 → 0.
+            String monthlyExpiry = hire.plusYears(1).minusDays(1).format(DateTimeFormatter.BASIC_ISO_DATE);
+            String today = todayDate.format(DateTimeFormatter.BASIC_ISO_DATE);
+            if (monthlyExpiry.compareTo(today) < 0) {
+                return BigDecimal.ZERO; // 만1년 경과(소멸)
+            }
+            LeavePolicyVO policy = leavePolicyService.findActivePolicy(cmpnyCd);
+            int creditMonths = leaveDashboardMapper.selectCreditMonths(cmpnyCd, userCd);
+            if (isCreditDoubleDip(policy, hire, todayDate, creditMonths, cmpnyCd, userCd)) {
+                return BigDecimal.ZERO; // 더블딥(월차 비대상)
+            }
+            int actualMonths = (int) Math.max(0, ChronoUnit.MONTHS.between(hire, todayDate));
+            int accrued = Math.min(actualMonths, MONTHLY_MAX);
+            // 통일 모델(§6-2): 이미 당겨쓴 일수 = 미발생(AVAIL_FROM>today) 가불 GRANT 의 USED 합.
+            BigDecimal alreadyBorrowed = nvlZero(
+                    leaveDashboardMapper.selectBorrowedDaysTotal(cmpnyCd, userCd, GRANT_TYPE_MONTHLY, today));
+            BigDecimal quota = BigDecimal.valueOf(MONTHLY_MAX - accrued).subtract(alreadyBorrowed);
+            return (quota.signum() > 0) ? quota.setScale(1, RoundingMode.HALF_UP) : BigDecimal.ZERO;
+        }
+
+        // 본연차 가불 한도 = 차기 부여 예정 본연차(+근속가산) − 이미 가불한 본연차 일수 (결정 §2).
+        BorrowProjectionVO proj = projectNextAnnualGrant(cmpnyCd, userCd, hireDate);
+        BigDecimal projected = nvlZero(proj.getDays());
+        if (projected.signum() <= 0) {
+            return BigDecimal.ZERO;
+        }
+        // 차기 만료일이 이미 경과(소멸)면 가불 의미 없음 → 0.
+        String today = todayDate.format(DateTimeFormatter.BASIC_ISO_DATE);
+        if (proj.getAvailToYmd() != null && proj.getAvailToYmd().compareTo(today) < 0) {
+            return BigDecimal.ZERO;
+        }
+        // 통일 모델(§6-2): 이미 당겨쓴 일수 = 미발생(AVAIL_FROM>today) 가불 본연차 GRANT 의 USED 합.
+        BigDecimal alreadyBorrowed = nvlZero(
+                leaveDashboardMapper.selectBorrowedDaysTotal(cmpnyCd, userCd, GRANT_TYPE_ANNUAL, today));
+        BigDecimal quota = projected.subtract(alreadyBorrowed);
+        return (quota.signum() > 0) ? quota.setScale(1, RoundingMode.HALF_UP) : BigDecimal.ZERO;
+    }
+
+    @Override
+    public BorrowProjectionVO projectNextAnnualGrant(String cmpnyCd, String userCd, String hireDate) {
+        // read-only. 차기 회차 시점(AXIS1=HIRE_DATE → 다음 입사 기념일 / FISCAL_YEAR → 다음 회계연도 시작)을
+        //   AVAIL_FROM 기준으로, resolveEntitlement 를 "차기 시점 가상 오늘"로 호출해 STATUTORY_ANNUAL +
+        //   STATUTORY_TENURE_BONUS 예정 일수를 합산하고, 발생일 + AXIS6 유효개월로 만료일을 산정한다(Q2).
+        BorrowProjectionVO empty = BorrowProjectionVO.builder()
+                .days(BigDecimal.ZERO).availFromYmd(null).availToYmd(null).build();
+        if (cmpnyCd == null || userCd == null || !isValidYyyymmdd(hireDate)) {
+            return empty;
+        }
+        LocalDate hire = parseYyyymmdd(hireDate);
+        LocalDate todayDate = LocalDate.now();
+        if (hire == null || hire.isAfter(todayDate)) {
+            return empty;
+        }
+        LeavePolicyVO policy = leavePolicyService.findActivePolicy(cmpnyCd);
+        String axis1 = (policy == null) ? AXIS1_HIRE_DATE : nvl(policy.getAxis1GrantBase(), AXIS1_HIRE_DATE);
+        int validityMonths = resolveValidityMonths(cmpnyCd);
+
+        // 차기 부여 발생일 산정.
+        LocalDate nextAccrual;
+        if (AXIS1_FISCAL_YEAR.equals(axis1)) {
+            int startMm = parseMm(policy == null ? null : policy.getAxis2FiscalStartMm(), 1);
+            int startDd = parseDd(policy == null ? null : policy.getAxis2FiscalStartDd(), 1);
+            LocalDate currentFiscalStart = currentFiscalStart(todayDate, startMm, startDd);
+            nextAccrual = safeMonthDay(currentFiscalStart.getYear() + 1, startMm, startDd);
+        } else {
+            // HIRE_DATE: 다음 입사 기념일(가장 가까운 미래 anniversary).
+            int actualMonths = (int) Math.max(0, ChronoUnit.MONTHS.between(hire, todayDate));
+            int completedYears = actualMonths / 12;
+            nextAccrual = hire.plusMonths(12L * (completedYears + 1));
+        }
+
+        // 차기 발생일 시점의 entitlement(본연차+근속가산) 산정 — 기존 resolveEntitlement/tenureBonusDays 재사용.
+        //   "그 시점의 오늘"을 차기 발생일로 본 산정근속으로 본연차/가산 예정 일수를 얻는다.
+        BigDecimal days = projectAnnualEntitlementAt(policy, hire, nextAccrual, cmpnyCd, userCd);
+        String availFrom = nextAccrual.format(DateTimeFormatter.BASIC_ISO_DATE);
+        String availTo = addMonthsYyyymmdd(availFrom, validityMonths);
+
+        return BorrowProjectionVO.builder()
+                .days(days.setScale(1, RoundingMode.HALF_UP))
+                .availFromYmd(availFrom)
+                .availToYmd(availTo)
+                .build();
+    }
+
+    /**
+     * 차기 발생일(atAccrual) 시점의 본연차(STATUTORY_ANNUAL) + 근속가산(STATUTORY_TENURE_BONUS) 예정 일수 합 (read-only).
+     *
+     * <p>{@link #resolveEntitlement}/{@link #tenureBonusDays} 를 재사용한다. AXIS1 분기/경력인정 가산은 엔진
+     * 산식을 그대로 따른다(중복 산식 금지). 차기 발생일 시점에 본연차가 발생하지 않으면(예: FISCAL crossed==0
+     * 직후 등) 0 을 반환할 수 있다. 월차(STATUTORY_MONTHLY)는 본연차 가불 대상이 아니므로 합산에서 제외한다.
+     */
+    private BigDecimal projectAnnualEntitlementAt(LeavePolicyVO policy, LocalDate hire, LocalDate atAccrual,
+                                                  String cmpnyCd, String userCd) {
+        // resolveEntitlement 는 내부적으로 LocalDate.now() 를 "오늘"로 쓴다. 차기 시점 산정을 위해 동일 산식을
+        //   재현하되 "오늘"을 atAccrual 로 본다(엔진 산식 재사용: actualMonths/creditedMonths → 본연차/가산).
+        int creditMonths = Math.max(0, leaveDashboardMapper.selectCreditMonths(cmpnyCd, userCd));
+        int actualMonths = (int) Math.max(0, ChronoUnit.MONTHS.between(hire, atAccrual));
+        int creditedMonths = actualMonths + creditMonths;
+        int creditedYears = creditedMonths / 12;
+
+        BigDecimal sum = BigDecimal.ZERO;
+        if (creditedMonths >= 12) {
+            // 본연차 15일 + 근속가산(차기 시점 근속연차 기준). HIRE_DATE/FISCAL 공통으로 12개월 이상이면 본연차 발생.
+            sum = sum.add(BigDecimal.valueOf(BASE_ANNUAL_DAYS));
+            int bonus = tenureBonusDays(policy, Math.max(1, creditedYears));
+            if (bonus > 0) {
+                sum = sum.add(BigDecimal.valueOf(bonus));
+            }
+        }
+        return sum;
+    }
+
+    @Override
+    public void assertBorrowWorkYmdWithinExpiry(String cmpnyCd, String userCd, String hireDate, String workYmd,
+                                                BorrowFamily family) {
+        // fail-closed. 만료(소멸)일을 지난 workYmd 면 ATTD_400_181 (결정 §3). 입력 불량도 차단.
+        if (family == null || !isValidYyyymmdd(hireDate) || !isValidYyyymmdd(workYmd)) {
+            throw new ApiException(AttdErrorCode.ATTD_400_181);
+        }
+        LocalDate hire = parseYyyymmdd(hireDate);
+        if (hire == null) {
+            throw new ApiException(AttdErrorCode.ATTD_400_181);
+        }
+        String expiry;
+        if (family == BorrowFamily.MONTHLY) {
+            // 월차 만료 = 입사 + 1년 − 1일(첫해 월차 일괄소멸일, §8.5.4 / D2-B).
+            expiry = hire.plusYears(1).minusDays(1).format(DateTimeFormatter.BASIC_ISO_DATE);
+        } else {
+            BorrowProjectionVO proj = projectNextAnnualGrant(cmpnyCd, userCd, hireDate);
+            expiry = proj.getAvailToYmd();
+            if (expiry == null) {
+                // 차기 만료 산정 불가 → fail-closed 차단.
+                throw new ApiException(AttdErrorCode.ATTD_400_181);
+            }
+        }
+        if (workYmd.compareTo(expiry) > 0) {
+            log.warn("가불 만료 경과 차단 — cmpnyCd={}, userCd={}, family={}, workYmd={}, expiry={}",
+                    cmpnyCd, userCd, family, workYmd, expiry);
+            throw new ApiException(AttdErrorCode.ATTD_400_181);
+        }
+    }
+
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public BorrowGrantResultVO createBorrowGrant(String cmpnyCd, String userCd, String hireDate, BorrowFamily family,
+                                                 BigDecimal days, String workYmd, String operatorUserCd) {
+        requireCmpnyCd(cmpnyCd);
+        if (userCd == null || family == null || !isValidYyyymmdd(hireDate) || !isValidYyyymmdd(workYmd)) {
+            throw new ApiException(AttdErrorCode.ATTD_400_180);
+        }
+        BigDecimal need = (days == null) ? BigDecimal.ZERO : days.setScale(1, RoundingMode.HALF_UP);
+        if (need.signum() <= 0) {
+            // 충당할 부족분이 없으면 생성 0건(잔여 충분 — 결정 §6-1 Q1=b).
+            return BorrowGrantResultVO.builder()
+                    .slots(new ArrayList<>())
+                    .createdDays(BigDecimal.ZERO.setScale(1))
+                    .skippedDays(BigDecimal.ZERO.setScale(1))
+                    .build();
+        }
+
+        LeavePolicyVO policy = leavePolicyService.findActivePolicy(cmpnyCd);
+        Long policySeq = (policy == null) ? null : policy.getPolicySeq();
+        String today = LocalDate.now().format(DateTimeFormatter.BASIC_ISO_DATE);
+
+        if (family == BorrowFamily.MONTHLY) {
+            return createMonthlyBorrowGrant(cmpnyCd, userCd, hireDate, need, workYmd, policySeq, today, operatorUserCd);
+        }
+        return createAnnualBorrowGrant(cmpnyCd, userCd, hireDate, need, workYmd, policySeq, today, operatorUserCd);
+    }
+
+    /**
+     * 월차 가불 GRANT 생성 (결정 §6-2 통일 모델, Q3). "다음 미발생 월차 슬롯(입사+m개월, m=actualMonths+1..11)"부터
+     * 순서대로 점유한다. 슬롯(미발생 월)당 GRANT 는 <b>전량 1.0</b>으로 생성하고(AVAIL_FROM=그 슬롯 발생일=입사+m개월,
+     * AVAIL_TO=입사+1년−1일), 가불 사용분만큼만 leave_use 로 차감한다. 슬롯은 부분 사용 가능(반차면 USED=0.5, 잔여
+     * 0.5 는 발생일까지 잠금). 누적 가불(§6-2): 같은 슬롯 멱등키로 이미 생성된 가불 GRANT 에 잔여 capacity 가
+     * 있으면 신규 INSERT 대신 그 GRANT 를 재사용해 충당한다. 멱등키 라벨 = 슬롯 YYYYMM(정기 부여 배치 키 동일).
+     * 정기 부여로 이미 발생(non-borrow live)한 슬롯은 skip(가불 불필요). 한도(11−발생분) 내에서만 생성한다.
+     */
+    private BorrowGrantResultVO createMonthlyBorrowGrant(String cmpnyCd, String userCd, String hireDate,
+                                                         BigDecimal need, String workYmd, Long policySeq,
+                                                         String today, String operatorUserCd) {
+        LocalDate hire = parseYyyymmdd(hireDate);
+        LocalDate todayDate = LocalDate.now();
+        int actualMonths = (int) Math.max(0, ChronoUnit.MONTHS.between(hire, todayDate));
+        // 월차 만료 = 입사+1년−1일(첫해 월차 일괄소멸일) — AVAIL_TO 로 설정(결정 §3 / §8.5.4).
+        String monthlyAvailTo = hire.plusYears(1).minusDays(1).format(DateTimeFormatter.BASIC_ISO_DATE);
+
+        List<BorrowGrantSlotVO> slots = new ArrayList<>();
+        BigDecimal created = BigDecimal.ZERO; // 이번 호출로 충당(차감 예정)한 일수 합
+        BigDecimal skipped = BigDecimal.ZERO; // 이미 정기 발생되어 가불 불필요로 건너뛴 슬롯 일수 합
+        BigDecimal remaining = need;
+
+        // 다음 미발생 월차 슬롯 = m = actualMonths+1 .. MONTHLY_MAX(11). 슬롯당 전량 1.0, 부분 차감 가능.
+        for (int m = actualMonths + 1; m <= MONTHLY_MAX && remaining.signum() > 0; m++) {
+            LocalDate accrual = hire.plusMonths(m); // m번째 월차 발생일(미래)
+            String yyyymm = accrual.format(DateTimeFormatter.ofPattern("yyyyMM"));
+            String availFrom = accrual.format(DateTimeFormatter.BASIC_ISO_DATE); // 발생일(미래) — 통일 모델 §6-2
+            BorrowGrantSlotVO slot = resolveBorrowSlot(cmpnyCd, userCd, LEAVE_CD_MONTHLY, GRANT_TYPE_MONTHLY,
+                    BigDecimal.ONE, yyyymm, policySeq, today, availFrom, monthlyAvailTo,
+                    BORROW_MONTHLY_GRANT_REASON, operatorUserCd, remaining);
+            if (slot == null) {
+                // 이미 정기 발생(non-borrow live)된 슬롯 → 가불 대상 아님(skip). 다음 슬롯으로.
+                skipped = skipped.add(BigDecimal.ONE);
+                continue;
+            }
+            slots.add(slot);
+            BigDecimal take = slot.getDays();
+            created = created.add(take);
+            remaining = remaining.subtract(take);
+        }
+
+        if (remaining.signum() > 0) {
+            // 미래 월차 슬롯이 부족분을 못 채움 → 한도 초과(결정 §2). 트랜잭션 롤백.
+            log.warn("월차 가불 한도 초과 — cmpnyCd={}, userCd={}, need={}, 잔여미충당={}",
+                    cmpnyCd, userCd, need.toPlainString(), remaining.toPlainString());
+            throw new ApiException(AttdErrorCode.ATTD_400_182);
+        }
+
+        log.info("월차 가불 생성 — cmpnyCd={}, userCd={}, 충당={}일, skip(이미발생)={}일",
+                cmpnyCd, userCd, created.toPlainString(), skipped.toPlainString());
+        return BorrowGrantResultVO.builder()
+                .slots(slots)
+                .createdDays(created.setScale(1, RoundingMode.HALF_UP))
+                .skippedDays(skipped.setScale(1, RoundingMode.HALF_UP))
+                .build();
+    }
+
+    /**
+     * 본연차 가불 GRANT 생성 (결정 §6-2 통일 모델). 차기 부여 예정 본연차 1슬롯(STATUTORY_ANNUAL)을 <b>전량</b>
+     * (projectNextAnnualGrant().days)으로 생성하고(AVAIL_FROM=차기 부여일, AVAIL_TO=차기 만료일), 가불 사용분만
+     * leave_use 로 차감한다. 누적 가불(§6-2): 같은 차기연도 멱등키로 이미 생성된 가불 GRANT 에 잔여 capacity 가
+     * 있으면 재사용. 멱등키 라벨 = 차기 발생연도 YYYY(정기 부여 배치 키 동일). 정기 부여로 이미 발생(non-borrow live)
+     * 한 경우 skip(이미 부여 = 가불 불필요).
+     */
+    private BorrowGrantResultVO createAnnualBorrowGrant(String cmpnyCd, String userCd, String hireDate,
+                                                        BigDecimal need, String workYmd, Long policySeq,
+                                                        String today, String operatorUserCd) {
+        BorrowProjectionVO proj = projectNextAnnualGrant(cmpnyCd, userCd, hireDate);
+        BigDecimal fullDays = nvlZero(proj.getDays());
+        if (proj.getAvailFromYmd() == null || fullDays.signum() <= 0) {
+            // 차기 본연차 발생 자체가 없음 → 가불 불가(한도 0인데 호출됨). 한도 초과로 차단.
+            log.warn("본연차 가불 불가(차기 발생 없음) — cmpnyCd={}, userCd={}", cmpnyCd, userCd);
+            throw new ApiException(AttdErrorCode.ATTD_400_182);
+        }
+        String yearLabel = String.valueOf(parseYyyymmdd(proj.getAvailFromYmd()).getYear());
+
+        // 차기 부여일이 미래라면 AVAIL_FROM=차기 부여일(미발생 잠금), 본연차 GRANT_DAYS=차기 전량.
+        BorrowGrantSlotVO slot = resolveBorrowSlot(cmpnyCd, userCd, LEAVE_CD_ANNUAL, GRANT_TYPE_ANNUAL,
+                fullDays, yearLabel, policySeq, today, proj.getAvailFromYmd(), proj.getAvailToYmd(),
+                BORROW_ANNUAL_GRANT_REASON, operatorUserCd, need);
+
+        List<BorrowGrantSlotVO> slots = new ArrayList<>();
+        BigDecimal created;
+        BigDecimal skipped;
+        if (slot == null) {
+            // 이미 차기 본연차가 정기 부여됨(non-borrow live) → 가불 불필요인데 잔여 부족 경로로 진입한 것.
+            //   이 GRANT 로 충당할 grantId 가 없어 신청흐름이 충당 불가 → 한도 초과로 차단(롤백).
+            log.warn("본연차 가불 불가(이미 정기 부여됨) — cmpnyCd={}, userCd={}", cmpnyCd, userCd);
+            throw new ApiException(AttdErrorCode.ATTD_400_182);
+        } else {
+            slots.add(slot);
+            created = slot.getDays();
+            skipped = BigDecimal.ZERO;
+        }
+
+        log.info("본연차 가불 생성 — cmpnyCd={}, userCd={}, 차기전량={}, 충당={}",
+                cmpnyCd, userCd, fullDays.toPlainString(), created.toPlainString());
+        return BorrowGrantResultVO.builder()
+                .slots(slots)
+                .createdDays(created.setScale(1, RoundingMode.HALF_UP))
+                .skippedDays(skipped.setScale(1, RoundingMode.HALF_UP))
+                .build();
+    }
+
+    /**
+     * 가불 슬롯 1건 충당 (결정 §6-2 통일 모델). 멱등키 = 정기 부여 배치와 동일({@code {userCd}_{periodLabel}_{grantType}}).
+     *
+     * <ol>
+     *   <li><b>이미 정기 발생(non-borrow live)</b> 슬롯: 가불 마커가 아닌 live GRANT 가 멱등키를 점유 → 가불 불필요로
+     *       {@code null} 반환(호출부가 skip/차단 판단).</li>
+     *   <li><b>기존 가불 GRANT 재사용</b>(누적 가불 §6-2): 같은 멱등키로 가불 GRANT 가 있으면 잔여 capacity
+     *       (GRANT_DAYS−USED_DAYS) 내에서 {@code remaining} 만큼 충당 slot(grantId=기존, days=take, created=false) 반환.
+     *       capacity 0 이면 충당 불가(null) — 한도 초과로 이어짐.</li>
+     *   <li><b>신규 생성</b>: 멱등키 미점유면 전량({@code fullDays})으로 INSERT(AVAIL_FROM=발생일(미래)) 후
+     *       {@code remaining} 만큼(≤fullDays) 충당 slot(grantId=신규, days=take, created=true) 반환.</li>
+     * </ol>
+     *
+     * <p>가불 GRANT 는 정기 부여와 같은 멱등키를 점유하므로, 추후 정기 부여 배치가 같은 키로 돌면 멱등 skip 되어
+     * 이중 부여가 자동 회피된다(자동 상계, 결정 §6). 마커가 멱등키 밖(GRANT_REASON)에 있어 키는 배치와 동일하다.
+     * AVAIL_FROM 을 발생일(미래)로 두어 가불 안 한 잔여분이 발생일 전까지 일반 신청으로 새지 않게 잠근다(§6-2).
+     *
+     * @param fullDays  슬롯 전량(월차 1.0 / 본연차 차기 전량) — 신규 GRANT_DAYS
+     * @param remaining 아직 충당해야 할 부족분 — 이 슬롯에서 take = min(capacity, remaining)
+     * @return 충당 slot(grantId/days=take). 이미 정기 발생이면 null.
+     */
+    private BorrowGrantSlotVO resolveBorrowSlot(String cmpnyCd, String userCd, String leaveCd, String grantType,
+                                                BigDecimal fullDays, String periodLabel, Long policySeq, String today,
+                                                String availFrom, String availTo, String grantReason,
+                                                String operatorUserCd, BigDecimal remaining) {
+        String idempotencyKey = buildIdempotencyKey(userCd, periodLabel, grantType, "");
+
+        // (2) 누적 가불: 같은 멱등키로 기존 live 가불 GRANT 가 있으면 그 잔여 capacity 로 충당(신규 INSERT 안 함).
+        BorrowGrantCapacityVO existing = leaveDashboardMapper.selectBorrowGrantByKey(cmpnyCd, idempotencyKey);
+        if (existing != null) {
+            BigDecimal capacity = nvlZero(existing.getGrantDays()).subtract(nvlZero(existing.getUsedDays()));
+            if (capacity.signum() <= 0) {
+                // 기존 가불 GRANT 가 이미 전량 소진 → 이 슬롯으로는 더 충당 불가(null). 한도 초과로 이어짐.
+                log.info("가불 슬롯 capacity 소진 — cmpnyCd={}, key={}", cmpnyCd, idempotencyKey);
+                return null;
+            }
+            BigDecimal take = capacity.min(remaining).setScale(1, RoundingMode.HALF_UP);
+            return BorrowGrantSlotVO.builder()
+                    .grantId(existing.getGrantId()).days(take).periodLabel(periodLabel)
+                    .grantType(grantType).created(false).build();
+        }
+
+        // (1) 이미 정기 발생(non-borrow live)된 슬롯이면 가불 불필요 → null(호출부 skip/차단).
+        //     existing(가불 GRANT)이 없는데 멱등키가 live 점유돼 있으면 그건 정기 부여분이다.
+        if (alreadyGranted(cmpnyCd, userCd, periodLabel, grantType, "")) {
+            log.info("가불 슬롯 이미 정기 발생 — cmpnyCd={}, key={}", cmpnyCd, idempotencyKey);
+            return null;
+        }
+
+        // (3) 신규 생성: 전량(fullDays)으로 INSERT, AVAIL_FROM=발생일(미래). 그 뒤 remaining 만큼 충당.
+        LeaveGrantInsertVO vo = new LeaveGrantInsertVO();
+        String grantId = leaveDashboardMapper.selectNextGrantId(cmpnyCd);
+        vo.setGrantId(grantId);
+        vo.setCmpnyCd(cmpnyCd);
+        vo.setUserCd(userCd);
+        vo.setLeaveCd(leaveCd);
+        vo.setGrantType(grantType);
+        vo.setGrantDays(fullDays.setScale(1, RoundingMode.HALF_UP)); // 통일 모델 §6-2: 전량 부여
+        vo.setUsedDays(BigDecimal.ZERO.setScale(1, RoundingMode.HALF_UP)); // 차감은 호출부 leave_use 가 USED 증액
+        vo.setGrantReason(grantReason);
+        vo.setGrantByType(GRANT_BY_TYPE_AUTO); // '01' — prafta-031 회수 대상(MANUAL_%/'02')에 미해당
+        vo.setPolicySeq(policySeq);
+        vo.setGrantDate(today);
+        vo.setAvailFromDate(availFrom); // 통일 모델 §6-2: 발생일(미래) — 미발생 잔여 잠금
+        vo.setAvailToDate(availTo);
+        vo.setIdempotencyKey(idempotencyKey);
+        vo.setStatus(STATUS_ACTIVE);
+        vo.setInsertNo(operatorUserCd);
+
+        try {
+            leaveDashboardMapper.insertManualGrant(vo);
+        } catch (DuplicateKeyException e) {
+            // 동시 호출 경합(TOCTOU): UNIQUE(CMPNY_CD, IDEMPOTENCY_KEY)가 최종 차단.
+            //   경합 상대가 가불이면 그 GRANT 재사용, 정기면 발생분이라 skip 으로 본다(재조회).
+            BorrowGrantCapacityVO raced = leaveDashboardMapper.selectBorrowGrantByKey(cmpnyCd, idempotencyKey);
+            if (raced != null) {
+                BigDecimal capacity = nvlZero(raced.getGrantDays()).subtract(nvlZero(raced.getUsedDays()));
+                if (capacity.signum() > 0) {
+                    BigDecimal take = capacity.min(remaining).setScale(1, RoundingMode.HALF_UP);
+                    return BorrowGrantSlotVO.builder()
+                            .grantId(raced.getGrantId()).days(take).periodLabel(periodLabel)
+                            .grantType(grantType).created(false).build();
+                }
+            }
+            log.info("가불 멱등키 경합으로 충당 불가 — cmpnyCd={}, key={}", cmpnyCd, idempotencyKey);
+            return null;
+        }
+        BigDecimal take = fullDays.min(remaining).setScale(1, RoundingMode.HALF_UP);
+        return BorrowGrantSlotVO.builder()
+                .grantId(grantId).days(take).periodLabel(periodLabel).grantType(grantType).created(true).build();
+    }
+
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public int cancelBorrowGrantByReqId(String cmpnyCd, String reqId, String operatorUserCd) {
+        requireCmpnyCd(cmpnyCd);
+        if (reqId == null || reqId.isBlank()) {
+            return 0;
+        }
+        // 호출부가 leave_use 차감 해제(recompute → USED_DAYS=0)를 먼저 수행한 뒤 호출한다(결정 §6, plan §0-4).
+        List<String> grantIds = leaveDashboardMapper.selectBorrowGrantIdsForCancel(cmpnyCd, reqId);
+        int canceled = 0;
+        for (String grantId : grantIds) {
+            int updated = leaveDashboardMapper.cancelBorrowGrant(cmpnyCd, grantId, operatorUserCd);
+            if (updated == 1) {
+                canceled++;
+            }
+        }
+        if (canceled > 0) {
+            log.info("가불 GRANT 회수 — cmpnyCd={}, reqId={}, 회수={}건", cmpnyCd, reqId, canceled);
+        }
+        return canceled;
     }
 
     /**

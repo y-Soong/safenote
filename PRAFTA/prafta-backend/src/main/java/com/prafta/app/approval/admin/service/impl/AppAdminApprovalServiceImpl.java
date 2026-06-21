@@ -31,6 +31,7 @@ import com.prafta.app.approval.admin.result.LeaveBodyRow;
 import com.prafta.app.approval.admin.result.PendingCorrOtRow;
 import com.prafta.app.approval.admin.result.PendingLeaveRow;
 import com.prafta.app.approval.admin.result.ReqMetaRow;
+import com.prafta.app.approval.admin.result.SchedBodyRow;
 import com.prafta.app.approval.admin.service.AppAdminApprovalService;
 import com.prafta.common.cmm.approval.mapper.ApprovalLineMapper;
 import com.prafta.common.cmm.approval.vo.ApprovalStepVO;
@@ -39,6 +40,7 @@ import com.prafta.common.error.common.CommonErrorCode;
 import com.prafta.common.exception.ApiException;
 import com.prafta.common.util.AuthRoleUtils;
 import com.prafta.web.attd.attd07.application.model.OvertimeItemModel;
+import com.prafta.web.attd.attd07.application.param.ApproveSchedModifyRequestParam;
 import com.prafta.web.attd.attd07.application.param.RejectUserAttdRequestParam;
 import com.prafta.web.attd.attd07.application.param.RejectUserOvertimeRequestParam;
 import com.prafta.web.attd.attd07.application.param.UpdateUserAttdRequestParam;
@@ -73,6 +75,7 @@ public class AppAdminApprovalServiceImpl implements AppAdminApprovalService {
     // SYS032 요청유형
     private static final List<String> CORRECTION_TYPES = List.of("01", "02");
     private static final List<String> OVERTIME_TYPES = List.of("03", "04");
+    private static final List<String> SCHEDULE_TYPES = List.of("10");   // PRAFTA-APP-029: 스케줄 수정 요청
     private static final List<String> HISTORY_STATUSES = List.of("02", "03", "04");
 
     private static final String WHOLE_SITE = "*";
@@ -86,6 +89,7 @@ public class AppAdminApprovalServiceImpl implements AppAdminApprovalService {
     private static final String G_CORRECTION = "CORRECTION";
     private static final String G_OVERTIME = "OVERTIME";
     private static final String G_LEAVE = "LEAVE";
+    private static final String G_SCHEDULE = "SCHEDULE";   // PRAFTA-APP-029: 스케줄 수정(10) 그룹
 
     // ============================ 스코프 산출 ============================
 
@@ -144,13 +148,16 @@ public class AppAdminApprovalServiceImpl implements AppAdminApprovalService {
         int otCount = mapper.countPendingCorrOt(scopeQuery(scope, param.gvCmpnyCd(),
                 OVERTIME_TYPES, List.of("01"), param.keyword(), null, null, 0, 0));
         int leaveCount = mapper.countPendingLeave(param.gvCmpnyCd(), param.gvUserCd(), param.keyword());
-        int allCount = corrCount + otCount + leaveCount;
+        int schedCount = mapper.countPendingCorrOt(scopeQuery(scope, param.gvCmpnyCd(),
+                SCHEDULE_TYPES, List.of("01"), param.keyword(), null, null, 0, 0));
+        int allCount = corrCount + otCount + leaveCount + schedCount;
 
         Map<String, Integer> counts = new LinkedHashMap<>();
         counts.put(G_ALL, allCount);
         counts.put(G_CORRECTION, corrCount);
         counts.put(G_OVERTIME, otCount);
         counts.put(G_LEAVE, leaveCount);
+        counts.put(G_SCHEDULE, schedCount);
 
         // Fix1: offset 상한 초과 시 빈 페이지(counts/총건수는 유지) — ALL 메모리 병합 폭주/OOM 차단.
         if (offset > MAX_OFFSET) {
@@ -186,6 +193,13 @@ public class AppAdminApprovalServiceImpl implements AppAdminApprovalService {
             items = mapLeave(rows);
             totalCount = leaveCount;
             hasMore = offset + items.size() < totalCount;
+        } else if (G_SCHEDULE.equals(param.group())) {
+            // PRAFTA-APP-029: 스케줄 수정(10) 대기 — corrOt 스코프/매핑 재사용(groupOf 가 SCHEDULE 산출).
+            List<PendingCorrOtRow> rows = mapper.selectPendingCorrOt(scopeQuery(scope, param.gvCmpnyCd(),
+                    SCHEDULE_TYPES, List.of("01"), param.keyword(), null, null, offset, pageSize));
+            items = mapCorrOt(rows, param.gvUserCd());
+            totalCount = schedCount;
+            hasMore = offset + items.size() < totalCount;
         } else {
             // ALL: 3개 소스를 offset+pageSize+1 까지 모아 reqDate DESC 병합 후 슬라이스.
             //   Fix1: fetch 를 절대 상한으로 캡(소스당 최대 ~MAX_OFFSET+pageSize 행) → 메모리 적재 폭주 차단.
@@ -195,6 +209,8 @@ public class AppAdminApprovalServiceImpl implements AppAdminApprovalService {
                     CORRECTION_TYPES, List.of("01"), param.keyword(), null, null, 0, fetch)), param.gvUserCd()));
             merged.addAll(mapCorrOt(mapper.selectPendingCorrOt(scopeQuery(scope, param.gvCmpnyCd(),
                     OVERTIME_TYPES, List.of("01"), param.keyword(), null, null, 0, fetch)), param.gvUserCd()));
+            merged.addAll(mapCorrOt(mapper.selectPendingCorrOt(scopeQuery(scope, param.gvCmpnyCd(),
+                    SCHEDULE_TYPES, List.of("01"), param.keyword(), null, null, 0, fetch)), param.gvUserCd()));
             merged.addAll(mapLeave(mapper.selectPendingLeave(
                     param.gvCmpnyCd(), param.gvUserCd(), param.keyword(), 0, fetch)));
             merged.sort(Comparator.comparing(
@@ -223,6 +239,14 @@ public class AppAdminApprovalServiceImpl implements AppAdminApprovalService {
         }
         for (PendingCorrOtRow r : rows) {
             String group = groupOf(r.reqType());
+            // PRAFTA-APP-029 후속: 스케줄 수정 카드 요약을 SCH_CD 코드(예: 00011)가 아닌 실제 시각 range 로 표기한다.
+            //   요청 스케줄 시각은 대기 쿼리(selectPendingCorrOt)가 근무일 기준 유효버전으로 미리 조인해 내려준다(N+1 제거).
+            //   비스케줄(근태보정/초과) 행은 sch*Time 이 전부 null → schedRange=null 로 기존 표기 그대로.
+            String schedRange = null;
+            if (G_SCHEDULE.equals(group)) {
+                schedRange = schedRangeText(
+                        r.schFstStrTime(), r.schFstEndTime(), r.schSecStrTime(), r.schSecEndTime());
+            }
             list.add(ApprovalPendingResponse.PendingItem.builder()
                     .reqId(r.reqId())
                     .group(group)
@@ -232,7 +256,7 @@ public class AppAdminApprovalServiceImpl implements AppAdminApprovalService {
                     .requesterUserCd(r.userCd())
                     .nodeNm(r.nodeNm())
                     .targetYmd(r.workYmd())
-                    .summaryLines(summaryCorrOt(group, r))
+                    .summaryLines(summaryCorrOt(group, r, schedRange))
                     .reqDate(r.reqDate())
                     .deadlineDday(null)         // A1(마감 기준일) 미확정 → 보류
                     .deadlineLevel(null)
@@ -285,7 +309,7 @@ public class AppAdminApprovalServiceImpl implements AppAdminApprovalService {
         }
         String group = groupOf(meta.reqType());
         if (group == null) {
-            // SCHEDULE(10) 등 본 라운드 미지원 유형은 상세를 열지 않는다.
+            // 07/08/09/임의 등 미지원 유형은 상세를 열지 않는다(SCHEDULE='10' 은 PRAFTA-APP-029 로 지원).
             throw new ApiException(AttdErrorCode.ATTD_400_006);
         }
 
@@ -393,8 +417,57 @@ public class AppAdminApprovalServiceImpl implements AppAdminApprovalService {
             }
             body.put("steps", buildSteps(steps));
             body.put("hrFinalYn", null);
+        } else if (G_SCHEDULE.equals(group)) {
+            // PRAFTA-APP-029(D6): 현재(WORK_PLAN_CD) → 요청(REQ.SCH_CD) 스케줄 비교. CORRECTION before/after 패턴과 동형.
+            //   미처리 대기 건이므로 before=현재(승인 전), after=요청(승인 시 반영). 현재 work_plan 없으면 before=null.
+            SchedBodyRow sb = mapper.selectSchedBody(
+                    cmpnyCd, meta.siteCd(), meta.userCd(), meta.workYmd(), meta.schCd());
+            Map<String, Object> before = null;
+            Map<String, Object> after = null;
+            if (sb != null) {
+                if (StringUtils.hasText(sb.curSchCd())) {
+                    before = new LinkedHashMap<>();
+                    before.put("schCd", sb.curSchCd());
+                    before.put("schNm", sb.curSchNo());
+                    before.put("rangeText",
+                            schedRangeText(sb.curFstStrTime(), sb.curFstEndTime(), sb.curSecStrTime(), sb.curSecEndTime()));
+                }
+                after = new LinkedHashMap<>();
+                after.put("schCd", sb.reqSchCd());
+                after.put("schNm", sb.reqSchNo());
+                after.put("rangeText",
+                        schedRangeText(sb.reqFstStrTime(), sb.reqFstEndTime(), sb.reqSecStrTime(), sb.reqSecEndTime()));
+            } else if (StringUtils.hasText(meta.schCd())) {
+                // 요청 SCH_CD 가 마스터에 미존재(데이터 이상) — 코드만 노출(시각 미상).
+                after = new LinkedHashMap<>();
+                after.put("schCd", meta.schCd());
+                after.put("schNm", null);
+                after.put("rangeText", null);
+            }
+            body.put("before", before);
+            body.put("after", after);
         }
         return body;
+    }
+
+    /**
+     * PRAFTA-APP-029(D6): 스케줄 시각 range 표기. 1구간 "07:00~15:00", 2구간 있으면 " / 16:00~20:00" 부착.
+     * fmtHm(HHMM→HH:MM) 재사용. 1구간 시각이 모두 비면 null.
+     */
+    private String schedRangeText(String fstStr, String fstEnd, String secStr, String secEnd) {
+        String fs = fmtHm(fstStr);
+        String fe = fmtHm(fstEnd);
+        if (fs.isEmpty() && fe.isEmpty()) {
+            return null;
+        }
+        StringBuilder sb = new StringBuilder();
+        sb.append(fs).append("~").append(fe);
+        String ss = fmtHm(secStr);
+        String se = fmtHm(secEnd);
+        if (!ss.isEmpty() || !se.isEmpty()) {
+            sb.append(" / ").append(ss).append("~").append(se);
+        }
+        return sb.toString();
     }
 
     private List<Map<String, Object>> buildSteps(List<ApprovalStepVO> steps) {
@@ -451,6 +524,13 @@ public class AppAdminApprovalServiceImpl implements AppAdminApprovalService {
             items = mapHistory(mapper.selectHistoryCorrOt(q));
             totalCount = mapper.countHistoryCorrOt(q);
             hasMore = offset + items.size() < totalCount;
+        } else if (G_SCHEDULE.equals(param.group())) {
+            // PRAFTA-APP-029: 스케줄 수정(10) 이력 — corrOt 스코프/매핑 재사용(groupOf 가 SCHEDULE 산출).
+            ApprovalScopeQuery q = scopeQuery(scope, param.gvCmpnyCd(), SCHEDULE_TYPES, HISTORY_STATUSES,
+                    param.keyword(), param.startDate(), param.endDate(), offset, pageSize);
+            items = mapHistory(mapper.selectHistoryCorrOt(q));
+            totalCount = mapper.countHistoryCorrOt(q);
+            hasMore = offset + items.size() < totalCount;
         } else if (G_LEAVE.equals(param.group())) {
             items = mapHistory(mapper.selectHistoryLeave(param.gvCmpnyCd(), param.gvUserCd(),
                     param.keyword(), param.startDate(), param.endDate(), offset, pageSize));
@@ -460,8 +540,9 @@ public class AppAdminApprovalServiceImpl implements AppAdminApprovalService {
         } else {
             // Fix1: ALL 이력도 fetch 를 절대 상한으로 캡 → 2소스 메모리 병합 적재 폭주 차단.
             int fetch = Math.min(offset + pageSize + 1, MAX_OFFSET + pageSize + 1);
+            // PRAFTA-APP-029: corrOt 합집합에 SCHEDULE_TYPES('10') 포함(근태보정/초과/스케줄 단일 SQL 소스).
             ApprovalScopeQuery corrOtQ = scopeQuery(scope, param.gvCmpnyCd(),
-                    concat(CORRECTION_TYPES, OVERTIME_TYPES), HISTORY_STATUSES,
+                    concat(concat(CORRECTION_TYPES, OVERTIME_TYPES), SCHEDULE_TYPES), HISTORY_STATUSES,
                     param.keyword(), param.startDate(), param.endDate(), 0, fetch);
             int corrOtCount = mapper.countHistoryCorrOt(corrOtQ);
             int leaveCount = mapper.countHistoryLeave(param.gvCmpnyCd(), param.gvUserCd(),
@@ -498,12 +579,16 @@ public class AppAdminApprovalServiceImpl implements AppAdminApprovalService {
             return mapper.countHistoryCorrOt(scopeQuery(scope, param.gvCmpnyCd(), OVERTIME_TYPES,
                     HISTORY_STATUSES, param.keyword(), param.startDate(), param.endDate(), 0, 0));
         }
+        if (G_SCHEDULE.equals(param.group())) {
+            return mapper.countHistoryCorrOt(scopeQuery(scope, param.gvCmpnyCd(), SCHEDULE_TYPES,
+                    HISTORY_STATUSES, param.keyword(), param.startDate(), param.endDate(), 0, 0));
+        }
         if (G_LEAVE.equals(param.group())) {
             return mapper.countHistoryLeave(param.gvCmpnyCd(), param.gvUserCd(),
                     param.keyword(), param.startDate(), param.endDate());
         }
         int corrOtCount = mapper.countHistoryCorrOt(scopeQuery(scope, param.gvCmpnyCd(),
-                concat(CORRECTION_TYPES, OVERTIME_TYPES), HISTORY_STATUSES,
+                concat(concat(CORRECTION_TYPES, OVERTIME_TYPES), SCHEDULE_TYPES), HISTORY_STATUSES,
                 param.keyword(), param.startDate(), param.endDate(), 0, 0));
         int leaveCount = mapper.countHistoryLeave(param.gvCmpnyCd(), param.gvUserCd(),
                 param.keyword(), param.startDate(), param.endDate());
@@ -555,7 +640,7 @@ public class AppAdminApprovalServiceImpl implements AppAdminApprovalService {
         }
         String group = groupOf(meta.reqType());
         if (group == null) {
-            // SCHEDULE(10) 등 본 라운드 미지원 유형은 처리하지 않는다.
+            // 07/08/09/임의 등 미지원 유형은 처리하지 않는다(SCHEDULE='10' 은 PRAFTA-APP-029 로 지원).
             throw new ApiException(AttdErrorCode.ATTD_400_006);
         }
         if (p.group() != null && !p.group().equals(group)) {
@@ -566,10 +651,11 @@ public class AppAdminApprovalServiceImpl implements AppAdminApprovalService {
         // ②④ + IDOR + 멱등 재검증(서버 단일 출처). 위반 시 적절한 코드로 거부.
         revalidateGate(scope, meta, group, p);
 
-        // Fix3(F1): 근태보정/초과 위임 시 web canManageNode/변조검증이 app 과 동일 결론을 내도록
+        // Fix3(F1): 근태보정/초과/스케줄 위임 시 web canManageNode/변조검증이 app 과 동일 결론을 내도록
         //   유효 NODE_CD 를 확정한다(노드관리자 + REQ.NODE_CD NULL 인 경우 요청자 노드로 백필).
+        //   PRAFTA-APP-029(D3): SCHEDULE 도 web approveSchedModifyRequest 가 canManageNode + nodeCd 변조검증을 하므로 포함.
         //   연차(LEAVE)는 nodeCd 게이트를 쓰지 않으므로 대상이 아니다(meta.nodeCd() 그대로).
-        String effectiveNodeCd = (G_CORRECTION.equals(group) || G_OVERTIME.equals(group))
+        String effectiveNodeCd = (G_CORRECTION.equals(group) || G_OVERTIME.equals(group) || G_SCHEDULE.equals(group))
                 ? resolveDelegationNodeCd(scope, meta, p)
                 : meta.nodeCd();
 
@@ -647,6 +733,15 @@ public class AppAdminApprovalServiceImpl implements AppAdminApprovalService {
                         meta.reqId(), meta.siteCd(), meta.userCd(), p.comment(),
                         p.gvCmpnyCd(), p.gvUserCd(), p.gvAuthCd(), p.gvSiteCd()));
                 break;
+            case G_SCHEDULE:
+                // PRAFTA-APP-029(D1/D2): 스케줄 수정 반려는 근태 반려와 공유하는 web rejectSchedModifyRequest 위임.
+                //   web from() 의 site==token 검증을 우회하기 위해 canonical 생성자로 직접 구성(hr/master 정상 처리).
+                //   SCH_CD 는 운반하지 않음(web 이 REQ 행 권위 조회). nodeCd = effectiveNodeCd(백필 정합).
+                attd07Service.rejectSchedModifyRequest(new RejectUserAttdRequestParam(
+                        meta.reqId(), meta.siteCd(), meta.userCd(), meta.workYmd(), workSeqStr(meta), nodeCd,
+                        p.comment(),
+                        p.gvCmpnyCd(), p.gvUserCd(), p.gvAuthCd(), p.gvSiteCd()));
+                break;
             case G_LEAVE:
                 requireApprovalStep(p);
                 leaveFlowService.rejectStep(new LeaveApprovalActionParam(
@@ -680,10 +775,22 @@ public class AppAdminApprovalServiceImpl implements AppAdminApprovalService {
                 //   nodeCd = 유효 노드(Fix3): web canManageNode(param.nodeCd) 통과(OT 승인은 nodeCd 변조검증 없음).
                 List<OvertimeItemModel> overtimes = new ArrayList<>(1);
                 overtimes.add(new OvertimeItemModel(
-                        meta.startDate(), meta.startTime(), meta.endDate(), meta.endTime()));
+                        // 앱 승인은 신청 구간을 신규 등록(INSERT)하는 경로이므로 in-place 수정 식별자(otId)는 없다.
+                        null, meta.startDate(), meta.startTime(), meta.endDate(), meta.endTime()));
                 attd07Service.updateUserOvertimeRequests(new UpdateUserOvertimeRequestParam(
                         meta.userCd(), meta.siteCd(), nodeCd, meta.workYmd(),
                         null, meta.reqId(), meta.reqReason(), overtimes,
+                        p.gvCmpnyCd(), p.gvUserCd(), p.gvAuthCd(), p.gvSiteCd()));
+                break;
+            case G_SCHEDULE:
+                // PRAFTA-APP-029(D1/D2/D8): 스케줄 수정 승인은 web approveSchedModifyRequest 위임.
+                //   web 이 tb_user_work_plan.WORK_PLAN_CD ← REQ.SCH_CD upsert + REQ_STATUS='02' + 승인마커 +
+                //   교대잠금(ATTD_400_160)/마감/변조검증을 모두 수행한다(앱은 처리 로직 미작성).
+                //   canonical 생성자로 직접 구성(web from() 의 site==token 검증 우회 — hr/master 정상 처리, D2-a).
+                //   SCH_CD 미운반(web 이 REQ 행 권위 조회 — IDOR/변조 방지). nodeCd = effectiveNodeCd(백필 정합).
+                attd07Service.approveSchedModifyRequest(new ApproveSchedModifyRequestParam(
+                        meta.reqId(), meta.siteCd(), meta.userCd(), meta.workYmd(),
+                        workSeqStr(meta), nodeCd,
                         p.gvCmpnyCd(), p.gvUserCd(), p.gvAuthCd(), p.gvSiteCd()));
                 break;
             case G_LEAVE:
@@ -815,8 +922,10 @@ public class AppAdminApprovalServiceImpl implements AppAdminApprovalService {
             case "05":
             case "06":
                 return G_LEAVE;
+            case "10":
+                return G_SCHEDULE;   // PRAFTA-APP-029: 스케줄 수정 요청
             default:
-                return null;   // 10(스케줄) 등 미지원
+                return null;   // 07/08/09/임의 미지원(ATTD_400_006)
         }
     }
 
@@ -831,6 +940,7 @@ public class AppAdminApprovalServiceImpl implements AppAdminApprovalService {
             case "04": return "초과수정";
             case "05": return "연차사용";
             case "06": return "연차수정";
+            case "10": return "스케줄수정";
             default: return null;
         }
     }
@@ -848,9 +958,20 @@ public class AppAdminApprovalServiceImpl implements AppAdminApprovalService {
         }
     }
 
-    private List<String> summaryCorrOt(String group, PendingCorrOtRow r) {
+    private List<String> summaryCorrOt(String group, PendingCorrOtRow r, String schedRange) {
         List<String> lines = new ArrayList<>();
         lines.add("대상일자 " + nz(r.workYmd()));
+        if (G_SCHEDULE.equals(group)) {
+            // PRAFTA-APP-029 후속: 요청 스케줄(REQ.SCH_CD)의 실제 시각 range 로 표기한다(예: "스케줄 변경 → 09:00~18:00").
+            if (StringUtils.hasText(schedRange)) {
+                lines.add("스케줄 변경 → " + schedRange);
+            } else {
+                // 폴백: 요청 SCH_CD 가 마스터에 미존재(데이터 이상)하거나 시각 미상 — 코드만/문구만 노출.
+                String sch = (r.schCd() == null || r.schCd().isBlank()) ? "" : r.schCd();
+                lines.add(sch.isEmpty() ? "스케줄 변경 요청" : "스케줄 변경 → " + sch);
+            }
+            return lines;
+        }
         String from = joinDt(r.startDate(), r.startTime());
         String to = joinDt(r.endDate(), r.endTime());
         if (G_OVERTIME.equals(group)) {

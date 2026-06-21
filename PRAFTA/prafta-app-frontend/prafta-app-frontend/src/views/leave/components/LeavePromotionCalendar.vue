@@ -30,7 +30,8 @@
     </div>
 
     <!-- 캘린더 그리드 -->
-    <div class="lpc__grid">
+    <!-- 요일 헤더(시각 표현은 B 고유 유지) -->
+    <div class="lpc__grid lpc__head">
       <div class="lpc__h lpc__h--sun">일</div>
       <div class="lpc__h">월</div>
       <div class="lpc__h">화</div>
@@ -38,26 +39,32 @@
       <div class="lpc__h">목</div>
       <div class="lpc__h">금</div>
       <div class="lpc__h lpc__h--sat">토</div>
-
-      <button
-        v-for="(cell, idx) in cells"
-        :key="idx"
-        type="button"
-        class="lpc__cell"
-        :class="cellClass(cell)"
-        :disabled="cell.isOutside || !isSelectable(cell)"
-        @click="onToggle(cell)"
-      >
-        <span class="lpc__day">{{ cell.dayNum }}</span>
-        <span v-if="isExisting(cell)" class="lpc__mk lpc__mk--exist" />
-        <span v-else-if="isSelected(cell)" class="lpc__mk lpc__mk--sel" />
-      </button>
     </div>
+
+    <!-- 6주 42칸 그리드 계산은 공통 베이스에 위임. 토글 선택/마커는 B 고유. -->
+    <MonthCalendarBase :year-month="ym" grid-class="lpc__grid">
+      <template #cell="{ cell }">
+        <button
+          type="button"
+          class="lpc__cell"
+          :class="cellClass(cell)"
+          :disabled="cell.isOutside || !isSelectable(cell)"
+          @click="onToggle(cell)"
+        >
+          <span class="lpc__day">{{ cell.dayNum }}</span>
+          <span v-if="isExisting(cell)" class="lpc__mk lpc__mk--exist" />
+          <span v-else-if="isSelected(cell)" class="lpc__mk lpc__mk--sel" />
+        </button>
+      </template>
+    </MonthCalendarBase>
   </div>
 </template>
 
 <script setup>
 import { computed } from 'vue'
+
+import { formatYmDot } from '@/utils/approvalFormat'
+import MonthCalendarBase from '@/components/common/MonthCalendarBase.vue'
 
 const props = defineProps({
   // 표시 중인 연/월 (YYYYMM)
@@ -84,42 +91,11 @@ const props = defineProps({
 
 const emit = defineEmits(['update:modelValue', 'prev-month', 'next-month'])
 
-// YYYYMM → "YYYY.MM"
-const monthLabel = computed(() => {
-  const v = props.ym
-  if (!v || v.length !== 6) return ''
-  return `${v.slice(0, 4)}.${v.slice(4, 6)}`
-})
+// YYYYMM → "YYYY.MM" (표시 단일 출처 위임, D1)
+const monthLabel = computed(() => formatYmDot(props.ym))
 
-// 달력 셀 6주 그리드(7×6=42칸). props.ym(YYYYMM) 기준 1일 요일~말일까지 채우고,
-//   앞뒤 빈칸은 isOutside=true(렌더는 숨김). 각 cell = { ymd, dayNum, isOutside, dow }.
-const cells = computed(() => {
-  const ym = props.ym
-  if (!ym || ym.length !== 6) return []
-  const year = Number(ym.slice(0, 4))
-  const month = Number(ym.slice(4, 6)) // 1~12
-  const first = new Date(year, month - 1, 1)
-  const firstDow = first.getDay() // 0=일 ~ 6=토
-  const daysInMonth = new Date(year, month, 0).getDate() // 말일
-
-  const list = []
-  // 1일 앞쪽 빈칸(이전 달 자리)
-  for (let i = 0; i < firstDow; i += 1) {
-    list.push({ ymd: '', dayNum: 0, isOutside: true, dow: i })
-  }
-  // 당월 일자
-  for (let d = 1; d <= daysInMonth; d += 1) {
-    const dt = new Date(year, month - 1, d)
-    const ymd = `${year}${String(month).padStart(2, '0')}${String(d).padStart(2, '0')}`
-    list.push({ ymd, dayNum: d, isOutside: false, dow: dt.getDay() })
-  }
-  // 6주(42칸) 채우기 — 뒤쪽 빈칸(다음 달 자리)
-  while (list.length % 7 !== 0 || list.length < 42) {
-    list.push({ ymd: '', dayNum: 0, isOutside: true, dow: list.length % 7 })
-    if (list.length >= 42) break
-  }
-  return list
-})
+// 6주 42칸 그리드 계산은 MonthCalendarBase 에 위임(베이스 셀 = { ymd, dayNum, isOutside, dow }).
+//   outside 셀은 베이스가 실제 인접월 일자를 채우지만, B 는 lpc__cell--out(visibility:hidden)로 숨긴다.
 
 const isSelectable = (cell) => props.selectableYmds.includes(cell?.ymd)
 const isExisting = (cell) => props.existingLeaveYmds.includes(cell?.ymd)
@@ -144,22 +120,9 @@ const onToggle = (cell) => {
 </script>
 
 <style scoped>
+/* com-014-7 F1: 색상/간격 토큰 리터럴 재정의 제거 → 호스트(LeavePromotionPlanView)가 제공하는
+   전역 토큰을 그대로 소비(A 패턴과 동일). 폴백 리터럴은 단독 렌더 대비 최소만 유지. */
 .lpc {
-  --color-primary: #16a34a;
-  --color-primary-tint: #f0fdf4;
-  --color-warning: #f59e0b;
-  --color-warning-tint: #fffbeb;
-  --color-text-primary: #111827;
-  --color-text-secondary: #6b7280;
-  --color-text-tertiary: #9ca3af;
-  --color-danger: #ef4444;
-  --color-border: #e5e7eb;
-  --color-border-light: #f3f4f6;
-  --color-surface: #ffffff;
-  --radius-md: 10px;
-  --space-sm: 8px;
-  --space-md: 12px;
-
   background: var(--color-surface);
   border: 0.5px solid var(--color-border);
   border-radius: var(--radius-md);
@@ -221,6 +184,10 @@ const onToggle = (cell) => {
   display: grid;
   grid-template-columns: repeat(7, 1fr);
   gap: 2px;
+}
+/* 셀 그리드(MonthCalendarBase 루트)는 헤더와 그리드 간격(2px)만 띄움 */
+.lpc__grid:not(.lpc__head) {
+  margin-top: 2px;
 }
 .lpc__h {
   text-align: center;

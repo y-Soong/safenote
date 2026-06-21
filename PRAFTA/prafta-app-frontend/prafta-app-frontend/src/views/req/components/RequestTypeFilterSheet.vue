@@ -1,6 +1,6 @@
 <!--
-  RequestTypeFilterSheet.vue — 요청 유형 다중 선택 (SYS032 6종)
-  - 작업 ID: PRAFTA-APP-006-5
+  RequestTypeFilterSheet.vue — 요청 유형 다중 선택 (SYS032 7종)
+  - 작업 ID: PRAFTA-APP-006-5 / PRAFTA-APP-029-5 (스케줄수정 '10' 추가)
 -->
 <template>
   <BaseBottomSheet
@@ -63,6 +63,8 @@ const props = defineProps({
 })
 const emit = defineEmits(['update:modelValue', 'apply'])
 
+// TODO(developer): 라벨 단일출처(SYS032) FU — 현재 01~06 이 하드코딩 라벨이므로 일관성 위해 '10' 도 동일 방식 1줄 추가.
+//   추후 SYS032 서버 조회로 OPTIONS 전체를 치환하면 '10' 도 자동 포함된다(목록/카드 라벨은 이미 서버 reqTypeDisplay 사용).
 const OPTIONS = [
   { code: '01', label: '근태 생성' },
   { code: '02', label: '근태 수정' },
@@ -70,6 +72,7 @@ const OPTIONS = [
   { code: '04', label: '초과근무 수정' },
   { code: '05', label: '연차 사용' },
   { code: '06', label: '연차 수정' },
+  { code: '10', label: '스케줄수정' },
 ]
 
 const localSelected = ref([...props.selected])

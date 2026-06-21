@@ -6,14 +6,14 @@
         :class="['a06-tab-btn', { active: activeTab === 'setup' }]"
         @click="activeTab = 'setup'"
       >
-        교대근무 스케줄 설정
+        교대근무 팀 생성
       </button>
       <button
         type="button"
         :class="['a06-tab-btn', { active: activeTab === 'view' }]"
         @click="onSwitchToView"
       >
-        교대근무 스케줄 관리
+        교대근무 팀 관리
       </button>
     </div>
     <div class="a06-tab-content">

@@ -182,6 +182,7 @@ import {
 import { useCenteredDraggable } from "@/composables/useCenteredDraggable";
 import axios from "@/api/axios";
 import { resolveApiErrorMessage } from "@/utils/apiError";
+import { formatYmdDot } from "@/utils/dateFormat";
 
 // =========================== Define ===========================
 const emit = defineEmits(["close"]);
@@ -233,11 +234,11 @@ const HANDLING_LABELS = {
 // =========================== Methods ===========================
 const fnHandlingLabel = (code) => HANDLING_LABELS[code] || code || "-";
 
-// YYYYMMDD(또는 YYYY-MM-DD) -> YYYY-MM-DD 표기
+// YYYYMMDD(또는 YYYY-MM-DD) -> "YYYY.MM.DD" 표기. 빈값/형식불충분은 "-".
 const fnFormatDate = (val) => {
   const s = String(val || "").replace(/-/g, "");
   if (s.length !== 8) return s || "-";
-  return `${s.slice(0, 4)}-${s.slice(4, 6)}-${s.slice(6, 8)}`;
+  return formatYmdDot(s);
 };
 
 const fnLoad = async () => {

@@ -30,6 +30,9 @@ const props = defineProps({
   style: { type: [String, Object], default: () => ({}) },
   readonly: { type: Boolean, default: false },
   disabled: { type: Boolean, default: false },
+  // 선택 가능 하한/상한(YYYY-MM-DD 또는 YYYY-MM). flatpickr minDate/maxDate 로 전달.
+  minDate: { type: String, default: null },
+  maxDate: { type: String, default: null },
 });
 
 const emit = defineEmits(["update:modelValue"]);
@@ -73,6 +76,9 @@ const pickerConfig = {
   dateFormat: props.month ? "Y-m" : "Y-m-d",
   locale: Korean,
   clickOpens: !props.readonly, // 🔹 여기에 제어 옵션 추가
+  // 선택 하한/상한 가드(있을 때만 전달)
+  ...(props.minDate ? { minDate: props.minDate } : {}),
+  ...(props.maxDate ? { maxDate: props.maxDate } : {}),
   // 월 모드: monthSelect 플러그인으로 월 단위 선택(YYYY-MM)
   ...(props.month
     ? {

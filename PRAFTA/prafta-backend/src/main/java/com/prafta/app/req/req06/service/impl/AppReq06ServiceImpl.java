@@ -147,6 +147,11 @@ public class AppReq06ServiceImpl implements AppReq06Service {
             if (r.startDate() != null && r.endDate() != null && !r.startDate().equals(r.endDate())) {
                 lines.add(formatYmdSlash(r.startDate()) + " ~ " + formatYmdSlash(r.endDate()));
             }
+        } else if ("10".equals(reqType)) {
+            // 스케줄 수정 요청: 변경 대상 스케줄 코드(SCH_CD) 1줄. START/END_TIME 은 '10' 에서 null 이므로 시각 줄 미생성.
+            //   스케줄명 라벨(SCH_NO) 조인은 후속(§7-3) — 1차는 코드 표시.
+            String sch = (r.schCd() == null || r.schCd().isBlank()) ? "미지정" : r.schCd();
+            lines.add("스케줄 변경 · " + sch);
         }
         return lines;
     }

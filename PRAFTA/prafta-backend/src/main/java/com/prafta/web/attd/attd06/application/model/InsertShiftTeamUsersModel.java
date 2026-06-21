@@ -8,5 +8,6 @@ public record InsertShiftTeamUsersModel(
     , String userCd
     , String gvCmpnyCd
     , String gvUserCd
+    , String gvAuthCd
 ) {
 }

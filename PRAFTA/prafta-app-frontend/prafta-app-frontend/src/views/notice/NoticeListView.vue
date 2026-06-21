@@ -79,6 +79,7 @@ import { ref, onMounted, getCurrentInstance } from 'vue'
 import { useRouter } from 'vue-router'
 
 import api from '@/api/axios'
+import { formatMdDot } from '@/utils/approvalFormat'
 
 const router = useRouter()
 const { proxy } = getCurrentInstance() || { proxy: null }
@@ -99,13 +100,11 @@ const isLoading = ref(true)
 //   (displayTime = insertDate 가공, isImportant = pinYn==='Y')
 const notices = ref([])
 
-// insertDate('YYYY-MM-DD HH:mm') → 목록 메타 'MM-DD' (메인 카드와 동일 포맷).
+// insertDate('YYYY-MM-DD HH:mm') → 목록 메타 'MM.DD' (D1 점 통일, 메인 카드와 동일 포맷).
 const toDisplayTime = (insertDate) => {
   if (!insertDate || typeof insertDate !== 'string') return ''
   const datePart = insertDate.split(' ')[0]
-  const seg = datePart.split('-')
-  if (seg.length === 3) return `${seg[1]}-${seg[2]}`
-  return datePart
+  return formatMdDot(datePart)
 }
 
 const toRow = (row) => ({

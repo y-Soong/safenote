@@ -14,7 +14,9 @@ import com.prafta.common.cmm.dailylogin.application.param.DailyLoginParam;
 import com.prafta.common.cmm.dailylogin.dto.request.DailyLoginRequest;
 import com.prafta.common.cmm.dailylogin.dto.response.DailyLoginResponse;
 import com.prafta.common.cmm.dailylogin.service.DailyLoginService;
+import com.prafta.common.util.ClientIpExtractor;
 
+import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -39,9 +41,13 @@ public class DailyLoginController {
     @PostMapping("/login")
     public ResponseEntity<?> login(
             @Valid @RequestBody DailyLoginRequest request,
-            @RequestHeader(value = "X-Client-Type", required = false, defaultValue = "WEB") String clientType) {
+            @RequestHeader(value = "X-Client-Type", required = false, defaultValue = "WEB") String clientType,
+            HttpServletRequest httpRequest) {
 
-        DailyLoginResponse response = dailyLoginService.login(DailyLoginParam.from(request, clientType));
+        // prafta-com-015 4-1: 로그인 IP 는 서버가 추출(디바이스 로그인 이력 LOGIN_IP). 정규 LoginController 패턴 동일.
+        String ipAddr = ClientIpExtractor.extract(httpRequest);
+
+        DailyLoginResponse response = dailyLoginService.login(DailyLoginParam.from(request, clientType, ipAddr));
 
         return ResponseEntity.status(HttpStatus.OK).body(response);
     }

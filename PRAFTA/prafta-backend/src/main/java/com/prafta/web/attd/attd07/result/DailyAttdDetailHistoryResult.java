@@ -50,5 +50,18 @@ public record DailyAttdDetailHistoryResult(
 	, String aftSchedSecStrTime
 	/** 변경 후 스케줄 2구간 종료 시각 (HHmm) */
 	, String aftSchedSecEndTime
+
+	// ────────────────────────────────────────────────────────────────
+	// com-013 #3+#4: 처리 이력 컬럼 확장. 위 8필드와 동일하게 record 의 "맨 끝"에 둔다
+	//   (MyBatis 위치 기반 매핑 — 세 쿼리 SELECT 모두 동일 순서·위치). 미해당 쿼리는 NULL alias.
+	// ────────────────────────────────────────────────────────────────
+
+	/** 요청 유형(SYS032 코드). 스케줄 수정 이력은 '10', 그 외(근태/OT/연차)는 NULL.
+	 *  프론트가 스케줄 이력(승인+반려)을 일반화 식별하는 데 사용한다(com-013 #3). */
+	, String reqType
+
+	/** 근로자가 요청 시 입력한 사유(TB_USER_ATTD_REQ.REQ_REASON). REQ 연결이 없는
+	 *  관리자 직접수정/orphan 이력은 NULL. 관리자 처리사유(processReason)와는 별개 컬럼(com-013 #4). */
+	, String reqReason
 ) {
 }
