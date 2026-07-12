@@ -56,7 +56,9 @@
                   <td>{{ item.issueChannelNm || "-" }}</td>
                   <td>{{ item.occupyDtime || "-" }}</td>
                   <td>
-                    <span v-if="item.releaseDtime">{{ item.releaseDtime }}</span>
+                    <span v-if="item.releaseDtime">{{
+                      item.releaseDtime
+                    }}</span>
                     <span v-else class="badge-active">점유 중</span>
                   </td>
                   <td>{{ item.userNmMasked || "-" }}</td>
@@ -107,7 +109,7 @@ const isLoading = ref(false);
 
 const positionStyle = computed(() => {
   const padding = 16;
-  const modalWidth = 880;
+  const modalWidth = 1040;
   const modalHeight = 560;
   const maxX = window.innerWidth - (modalWidth + padding);
   const maxY = window.innerHeight - (modalHeight + padding);
@@ -149,7 +151,7 @@ onMounted(fnLoadHistory);
 @import "@/assets/css/modal-popup-guide.css";
 
 .modal-content-slot-history {
-  width: 880px;
+  width: 1040px;
   max-width: 95vw;
   max-height: 85vh;
 }
@@ -209,7 +211,7 @@ onMounted(fnLoadHistory);
 
 .reason-cell {
   white-space: normal;
-  max-width: 200px;
+  max-width: 360px;
   text-align: left;
 }
 

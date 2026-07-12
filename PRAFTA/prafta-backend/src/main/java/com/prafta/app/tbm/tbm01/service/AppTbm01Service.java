@@ -12,6 +12,7 @@ import com.prafta.app.tbm.tbm01.dto.response.TbmContentResponse;
 import com.prafta.app.tbm.tbm01.dto.response.TbmEnterResponse;
 import com.prafta.app.tbm.tbm01.dto.response.TbmEntryContextResponse;
 import com.prafta.app.tbm.tbm01.dto.response.TbmExitResponse;
+import com.prafta.app.tbm.tbm01.dto.response.TbmMyAttendanceResponse;
 import com.prafta.app.tbm.tbm01.dto.response.TbmRiskListResponse;
 import com.prafta.app.tbm.tbm01.dto.response.TbmSessionListResponse;
 import com.prafta.app.tbm.tbm01.dto.response.TbmSessionStateResponse;
@@ -59,6 +60,13 @@ public interface AppTbm01Service {
 
     /** A10: 완료 상세(교육내용/자료명/위험성제목/서명파일코드). */
     TbmCompletionResponse selectMyCompletion(TbmSessionDetailParam param);
+
+    /**
+     * [정합성 수정] 본인 출결 상태 조회(대기/진행 화면 이탈 감지용).
+     * <p>JWT(userCd) 스코프만 신뢰. 관리자 내보내기(present=false) / 강제퇴실(MANAGER_FORCED) /
+     * 본인 완료 여부를 반환한다.
+     */
+    TbmMyAttendanceResponse selectMyAttendanceStatus(TbmSessionDetailParam param);
 
     /**
      * prafta-app-022-6: 본인 진행중(입실O·미종료) TBM 세션을 모두 중도퇴실(withdraw) 처리한다.

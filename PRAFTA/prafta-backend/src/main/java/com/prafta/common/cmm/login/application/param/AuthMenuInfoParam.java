@@ -10,6 +10,7 @@ import com.prafta.common.exception.ApiException;
 
 public record AuthMenuInfoParam(
         List<String> systValDCdList
+        , String cmpnyCd
         , String userId
 ) {
     public static AuthMenuInfoParam from(List<AuthMenuInfoRequest> requests, TokenInfo tokenInfo) {
@@ -38,8 +39,10 @@ public record AuthMenuInfoParam(
             throw new IllegalArgumentException("systValDCd is required");
         }
 
+        // cmpnyCd/userId 모두 JWT 클레임에서만 도출(회사 스코프 약관 동의 적재, IDOR 차단).
         return new AuthMenuInfoParam(
     		codes
+    		, tokenInfo.gv_cmpnyCd()
     		, tokenInfo.gv_userCd()
 		);
     }

@@ -63,7 +63,17 @@
     </div>
 
     <!-- 본문 (스크롤 영역) -->
-    <main class="hist-body" ref="bodyRef">
+    <main
+      class="hist-body"
+      ref="bodyRef"
+      @touchstart.passive="onPullStart"
+      @touchmove="onPullMove"
+      @touchend="onPullEnd"
+      @touchcancel="onPullEnd"
+    >
+      <!-- 당겨서 새로고침 인디케이터 — 스크롤 최상단에서 아래로 당기면 노출 -->
+      <PullRefreshIndicator v-bind="indicatorProps" />
+
       <!-- 로딩 -->
       <div v-if="isLoading" class="hist-state" aria-live="polite">불러오는 중...</div>
 
@@ -131,6 +141,8 @@ import { ref, onMounted, onBeforeUnmount, nextTick, getCurrentInstance } from 'v
 import { useRouter } from 'vue-router'
 
 import api from '@/api/axios'
+import { usePullToRefresh } from '@/composables/usePullToRefresh'
+import PullRefreshIndicator from '@/components/common/PullRefreshIndicator.vue'
 
 const router = useRouter()
 const { proxy } = getCurrentInstance() || { proxy: null }
@@ -265,6 +277,15 @@ const onRetry = async () => {
   await nextTick()
   if (observer && sentinelRef.value) observer.observe(sentinelRef.value)
 }
+
+// 당겨서 새로고침 — 스크롤 최상단에서 아래로 더 당기면 현재 필터(kind)로 첫 페이지 재조회(MainView 패턴).
+//   목록이 다시 그려지면 sentinel 도 재생성되므로 무한 스크롤 관찰 대상을 갱신한다(onRetry 동형).
+//   스크롤 컨테이너는 기존 bodyRef(.hist-body) 재사용.
+const { onPullStart, onPullMove, onPullEnd, indicatorProps } = usePullToRefresh(bodyRef, async () => {
+  await loadHistory()
+  await nextTick()
+  if (observer && sentinelRef.value) observer.observe(sentinelRef.value)
+})
 
 onMounted(async () => {
   await loadHistory()

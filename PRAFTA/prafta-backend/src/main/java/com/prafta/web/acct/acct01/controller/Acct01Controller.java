@@ -17,12 +17,14 @@ import com.prafta.web.acct.acct01.application.param.AcctDeleteParam;
 import com.prafta.web.acct.acct01.application.param.AcctInfoParam;
 import com.prafta.web.acct.acct01.application.param.AcctListParam;
 import com.prafta.web.acct.acct01.application.param.AcctUpdateParam;
+import com.prafta.web.acct.acct01.application.param.AttdTbmPrintParam;
 import com.prafta.web.acct.acct01.application.param.ChkptOptionParam;
 import com.prafta.web.acct.acct01.application.param.LegalStepListParam;
 import com.prafta.web.acct.acct01.application.param.LegalStepSaveParam;
 import com.prafta.web.acct.acct01.application.param.LinkConfirmParam;
 import com.prafta.web.acct.acct01.application.param.LinkQueryParam;
 import com.prafta.web.acct.acct01.application.param.LinkSnapshotParam;
+import com.prafta.web.acct.acct01.application.param.RiskAssessmentPrintParam;
 import com.prafta.web.acct.acct01.application.param.RiskCategoryOptionParam;
 import com.prafta.web.acct.acct01.application.param.VictimSearchParam;
 import com.prafta.web.acct.acct01.dto.request.AcctCreateRequest;
@@ -30,12 +32,14 @@ import com.prafta.web.acct.acct01.dto.request.AcctDeleteRequest;
 import com.prafta.web.acct.acct01.dto.request.AcctInfoRequest;
 import com.prafta.web.acct.acct01.dto.request.AcctListRequest;
 import com.prafta.web.acct.acct01.dto.request.AcctUpdateRequest;
+import com.prafta.web.acct.acct01.dto.request.AttdTbmPrintRequest;
 import com.prafta.web.acct.acct01.dto.request.ChkptOptionRequest;
 import com.prafta.web.acct.acct01.dto.request.LegalStepListRequest;
 import com.prafta.web.acct.acct01.dto.request.LegalStepSaveRequest;
 import com.prafta.web.acct.acct01.dto.request.LinkConfirmRequest;
 import com.prafta.web.acct.acct01.dto.request.LinkQueryRequest;
 import com.prafta.web.acct.acct01.dto.request.LinkSnapshotRequest;
+import com.prafta.web.acct.acct01.dto.request.RiskAssessmentPrintRequest;
 import com.prafta.web.acct.acct01.dto.request.RiskCategoryOptionRequest;
 import com.prafta.web.acct.acct01.dto.request.VictimSearchRequest;
 import com.prafta.web.acct.acct01.service.Acct01Service;
@@ -171,15 +175,28 @@ public class Acct01Controller {
                 LinkQueryParam.from(request, jwtUtil.getAllClaimsAsMap(authorization))));
     }
 
-    // 아차사고 (3개월)
-    @GetMapping("/link/near-miss")
-    public ResponseEntity<?> linkNearMiss(
-            @ModelAttribute LinkQueryRequest request,
+    // ── T8 안전관리 현황 일괄 출력 ───────────────────────────────
+
+    // ③ 근태(스케줄+실근태) + TBM 합본 집계 (siteCd/acctId 만 받고 victim/occurYmd 는 서버 도출)
+    @GetMapping("/print/attd-tbm")
+    public ResponseEntity<?> printAttdTbm(
+            @ModelAttribute AttdTbmPrintRequest request,
             @RequestHeader(value = "Authorization", required = false) String authorization) {
 
         return ResponseEntity.status(HttpStatus.OK).body(
-            acct01Service.selectLinkNearMiss(
-                LinkQueryParam.from(request, jwtUtil.getAllClaimsAsMap(authorization))));
+            acct01Service.selectAttdTbmPrint(
+                AttdTbmPrintParam.from(request, jwtUtil.getAllClaimsAsMap(authorization))));
+    }
+
+    // ② 위험성평가 출력 상세 보강 (assessmentCd 연계 검증 후 라이브 재조회)
+    @GetMapping("/print/risk-assessment")
+    public ResponseEntity<?> printRiskAssessment(
+            @ModelAttribute RiskAssessmentPrintRequest request,
+            @RequestHeader(value = "Authorization", required = false) String authorization) {
+
+        return ResponseEntity.status(HttpStatus.OK).body(
+            acct01Service.selectRiskAssessmentForPrint(
+                RiskAssessmentPrintParam.from(request, jwtUtil.getAllClaimsAsMap(authorization))));
     }
 
     // 점검대상 검색 옵션 (ChkptSearchPop)

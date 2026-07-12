@@ -45,6 +45,8 @@ public enum TbmErrorCode implements ApiErrorCode {
     , TBM_400_013(HttpStatus.BAD_REQUEST, "GPS 검증 반경은 50~1000m 사이로 입력해 주세요.")
     // 취소 사유 누락 - 사용자 안내
     , TBM_400_014(HttpStatus.BAD_REQUEST, "취소 사유를 입력해 주세요.")
+    // PRAFTA_COM_001 T7-17: 교육 인정시간 미입력/범위밖(1~60분) - 사용자 안내(웹/앱 공용)
+    , TBM_400_015(HttpStatus.BAD_REQUEST, "교육 시간은 1분 이상 60분 이하로 입력해 주세요.")
     // 수정 불가 상태(DRAFT/OPENED 외) - 비즈니스 룰
     , TBM_409_010(HttpStatus.CONFLICT, "현재 상태에서는 수정할 수 없습니다.")
     // 취소 불가 상태(DRAFT/OPENED 외) - 비즈니스 룰
@@ -149,6 +151,15 @@ public enum TbmErrorCode implements ApiErrorCode {
     , TBM_400_043(HttpStatus.BAD_REQUEST, "업로드할 수 없는 파일입니다. 형식과 크기를 확인해 주세요.")
     // 회사공통 자료 등록/수정/삭제 권한 부족(master/safe 전용) - 사용자 안내. (구 TBM_403_040)
     , TBM_403_050(HttpStatus.FORBIDDEN, "회사 공통 자료는 안전관리자만 관리할 수 있습니다.")
+
+    // ===== T5-2 사용 중 교육자료 수정/삭제 차단 =====
+    // 이미 TBM 세션에서 사용(취소 외)된 교육자료는 수정/삭제 불가 - 비즈니스 룰
+    , TBM_409_055(HttpStatus.CONFLICT, "이미 사용된 교육자료는 수정할 수 없습니다.")
+
+    // ===== AI 교육안 생성 사전 차단 =====
+    // 세션에 묶인 AI 분석 지정 항목 중 미확정(NONE/ANALYZING/DRAFT/FAILED/NULL 등)이 하나라도 있음 - 비즈니스 룰
+    // (실제 응답은 어떤 항목이 미확정인지 상세 메시지로 대체해 내려간다)
+    , TBM_409_060(HttpStatus.CONFLICT, "AI 분석이 확정되지 않은 자료가 있습니다.")
 
     ;
 

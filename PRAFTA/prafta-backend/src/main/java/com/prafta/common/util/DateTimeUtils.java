@@ -43,6 +43,23 @@ public final class DateTimeUtils {
     }
 
     /**
+     * 스케줄 "종료(end)" 시각 전용 HHmm → 분 변환.
+     *
+     * <p>근무계획의 자정 경계 근무(정책 attd/03 §3.3, 예: 1500-2400, 0000-2400)를 지원하기 위해
+     * "2400"(= 24:00, 당일 끝/자정 경계)을 1440분으로 인정한다. 그 외 값은 {@link #hhmmToMinutes(String)}
+     * (strict: hh 0..23)에 그대로 위임한다.
+     *
+     * <p><b>주의:</b> 시작(start)/실근태(actual)/휴게(break)/연차 신청 시각에는 사용하지 말 것 —
+     * 그쪽은 "2400" 을 거부(null)하는 기존 규약을 유지해야 한다. 본 헬퍼는 SCH 종료 인자에만 쓴다.
+     */
+    public static Integer schEndToMinutes(String hhmm) {
+        if ("2400".equals(hhmm)) {
+            return Integer.valueOf(1440);
+        }
+        return hhmmToMinutes(hhmm);
+    }
+
+    /**
      * (date - base)의 부호 있는 일수 차이를 반환한다. 두 입력 모두 길이 8의 yyyyMMdd
      * 문자열이어야 한다. 논리적으로 유효한 입력에는 예외를 던지지 않으며, 실제 일수
      * 차이를 반환한다 ({@code yyyymmdd}가 {@code baseYyyymmdd}보다 이전이면 음수).
@@ -114,6 +131,19 @@ public final class DateTimeUtils {
             return null;
         }
         return new int[] { sStamp.intValue(), eStamp.intValue() };
+    }
+
+    /**
+     * 길이 8의 yyyyMMdd 문자열에 {@code days} 일을 더한 yyyyMMdd 문자열을 반환한다(음수면 뺀다).
+     * 입력이 null이거나 형식이 잘못된 경우 null을 반환한다.
+     *
+     * <p>근태 겹침 검사(QT-2-6)처럼 "근무일 ±1 윈도우"를 만들 때 쓴다.
+     */
+    public static String plusDays(String yyyymmdd, int days) {
+        LocalDate d = parseYyyymmdd(yyyymmdd);
+        if (d == null) return null;
+        LocalDate r = d.plusDays(days);
+        return String.format("%04d%02d%02d", r.getYear(), r.getMonthValue(), r.getDayOfMonth());
     }
 
     /**

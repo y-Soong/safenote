@@ -11,7 +11,14 @@
     <div class="modal-content lcc-pop">
       <header class="modal-header">
         <h2 class="modal-title">변경 요청 확인</h2>
-        <button type="button" class="modal-close" aria-label="닫기" @click="onClose">×</button>
+        <button
+          type="button"
+          class="modal-close"
+          aria-label="닫기"
+          @click="onClose"
+        >
+          ×
+        </button>
       </header>
 
       <div class="modal-body lcc-body">
@@ -20,23 +27,49 @@
         <template v-else-if="detail">
           <!-- 요청 요약 -->
           <dl class="lcc-detail">
-            <div><dt>사용자</dt><dd>{{ detail.userNm }}</dd></div>
-            <div><dt>대상 연차일</dt><dd>{{ detail.targetStartDate }}</dd></div>
-            <div><dt>요청유형</dt><dd>{{ detail.reqTypeNm }}</dd></div>
+            <div>
+              <dt>사용자</dt>
+              <dd>{{ detail.userNm }}</dd>
+            </div>
+            <div>
+              <dt>대상 연차일</dt>
+              <dd>{{ detail.targetStartDate }}</dd>
+            </div>
+            <div>
+              <dt>요청유형</dt>
+              <dd>{{ detail.reqTypeNm }}</dd>
+            </div>
             <div v-if="detail.reqType === 'MOVE'">
-              <dt>이동대상일</dt><dd>{{ detail.moveTargetDate }}</dd>
+              <dt>이동대상일</dt>
+              <dd>{{ detail.moveTargetDate }}</dd>
             </div>
-            <div><dt>발의주체</dt><dd>{{ detail.initiatorTypeNm }}</dd></div>
-            <div><dt>요청사유</dt><dd>{{ detail.reqReason }}</dd></div>
-            <div><dt>근로자응답</dt><dd>{{ detail.workerResponseNm }}</dd></div>
+            <div>
+              <dt>발의주체</dt>
+              <dd>{{ detail.initiatorTypeNm }}</dd>
+            </div>
+            <div>
+              <dt>요청사유</dt>
+              <dd>{{ detail.reqReason }}</dd>
+            </div>
+            <div>
+              <dt>근로자응답</dt>
+              <dd>{{ detail.workerResponseNm }}</dd>
+            </div>
             <div v-if="detail.responseReason">
-              <dt>응답사유</dt><dd>{{ detail.responseReason }}</dd>
+              <dt>응답사유</dt>
+              <dd>{{ detail.responseReason }}</dd>
             </div>
-            <div><dt>상태</dt><dd>{{ detail.reqStatusNm }}</dd></div>
+            <div>
+              <dt>상태</dt>
+              <dd>{{ detail.reqStatusNm }}</dd>
+            </div>
           </dl>
 
           <!-- 동의 건만 확인 가능, 거부/대기 건은 안내만 -->
-          <p v-if="detail.reqStatus === 'REJECTED'" class="lcc-notice lcc-notice--danger">
+          <p
+            v-if="detail.reqStatus === 'REJECTED'"
+            class="lcc-notice lcc-notice--danger"
+          >
             거부된 요청입니다. 원 연차는 변경되지 않았습니다.
           </p>
           <p v-else-if="detail.reqStatus === 'REQUESTED'" class="lcc-notice">
@@ -45,7 +78,9 @@
 
           <!-- 근로자 발의(WORKER) 건은 관리자가 승인 또는 반려. 반려 시 사유 필수. -->
           <div v-if="canReject" class="lcc-reject">
-            <label class="lcc-reject__label">반려 사유 <span class="lcc-req">*</span></label>
+            <label class="lcc-reject__label"
+              >반려 사유 <span class="lcc-req">*</span></label
+            >
             <textarea
               v-model="rejectReason"
               class="lcc-textarea"
@@ -58,7 +93,9 @@
       </div>
 
       <footer class="modal-footer lcc-footer">
-        <button type="button" class="btn btn-ghost" @click="onClose">닫기</button>
+        <button type="button" class="btn btn-ghost" @click="onClose">
+          닫기
+        </button>
         <button
           v-if="canReject"
           type="button"
@@ -74,7 +111,7 @@
           :disabled="!canConfirm || submitting"
           @click="onConfirm"
         >
-          {{ canReject ? '승인(반영)' : '최종 확인(반영)' }}
+          {{ canReject ? "승인(반영)" : "최종 확인(반영)" }}
         </button>
       </footer>
     </div>
@@ -82,59 +119,63 @@
 </template>
 
 <script setup>
-import { ref, computed, getCurrentInstance, onMounted } from 'vue'
-import axios from '@/api/axios'
-import { getMessage, MSG } from '@/messages'
-import { resolveApiErrorMessage } from '@/utils/apiError'
-import { formatYmdDot } from '@/utils/dateFormat'
+import { ref, computed, getCurrentInstance, onMounted } from "vue";
+import axios from "@/api/axios";
+import { getMessage, MSG } from "@/messages";
+import { resolveApiErrorMessage } from "@/utils/apiError";
+import { formatYmdDot } from "@/utils/dateFormat";
 
 const props = defineProps({
-  changeReqId: { type: String, default: '' },
-})
-const emit = defineEmits(['close', 'confirmed'])
+  changeReqId: { type: String, default: "" },
+});
+const emit = defineEmits(["close", "confirmed"]);
 
-const { proxy } = getCurrentInstance()
+const { proxy } = getCurrentInstance();
 
 // ── 상태 ─────────────────────────────────────────────────────────────────
-const loading = ref(true)
-const submitting = ref(false)
-const detail = ref(null)
-const rejectReason = ref('')
+const loading = ref(true);
+const submitting = ref(false);
+const detail = ref(null);
+const rejectReason = ref("");
 
 // 코드 → 라벨 매핑 (서버 row 는 코드값만 반환)
-const REQ_TYPE_NM = { MOVE: '이동', DELETE: '삭제' }
-const INITIATOR_TYPE_NM = { ADMIN: '관리자', WORKER: '근로자' }
+const REQ_TYPE_NM = { MOVE: "이동", DELETE: "삭제" };
+const INITIATOR_TYPE_NM = { ADMIN: "관리자", WORKER: "근로자" };
 const REQ_STATUS_NM = {
-  REQUESTED: '요청(응답대기)',
-  AGREED: '동의(확인대기)',
-  REJECTED: '거부',
-  CONFIRMED: '확정',
-  CLOSED: '종료',
-}
-const WORKER_RESPONSE_NM = { PENDING: '대기', AGREE: '동의', REJECT: '거부' }
+  REQUESTED: "요청(응답대기)",
+  AGREED: "동의(확인대기)",
+  REJECTED: "거부",
+  CONFIRMED: "확정",
+  CLOSED: "종료",
+};
+const WORKER_RESPONSE_NM = { PENDING: "대기", AGREE: "동의", REJECT: "거부" };
 
 // YYYYMMDD → "YYYY.MM.DD" 표기. dateFormat 단일 출처에 위임.
 const fmtYmd = (ymd) => {
-  if (!ymd || ymd.length !== 8) return ymd ?? ''
-  return formatYmdDot(ymd)
-}
+  if (!ymd || ymd.length !== 8) return ymd ?? "";
+  return formatYmdDot(ymd);
+};
 
 // 동의(AGREED) 상태만 최종 확인/승인 가능 (UI 게이트 — 서버도 동일 강제)
-const canConfirm = computed(() => detail.value?.reqStatus === 'AGREED')
+const canConfirm = computed(() => detail.value?.reqStatus === "AGREED");
 // 근로자 발의(WORKER) + AGREED 건만 관리자 반려 가능
 const canReject = computed(
-  () => detail.value?.reqStatus === 'AGREED' && detail.value?.initiatorType === 'WORKER'
-)
+  () =>
+    detail.value?.reqStatus === "AGREED" &&
+    detail.value?.initiatorType === "WORKER"
+);
 
-const onClose = () => emit('close')
+const onClose = () => emit("close");
 
 // 상세 조회: GET /webApi/attd13/change-requests/{changeReqId}
 const fnLoadDetail = async () => {
-  loading.value = true
+  loading.value = true;
   try {
-    const res = await axios.get(`/webApi/attd13/change-requests/${props.changeReqId}`)
+    const res = await axios.get(
+      `/webApi/attd13/change-requests/${props.changeReqId}`
+    );
     if (res.status === 200) {
-      const d = res.data?.detail
+      const d = res.data?.detail;
       if (d) {
         detail.value = {
           changeReqId: d.changeReqId,
@@ -148,61 +189,70 @@ const fnLoadDetail = async () => {
           responseReason: d.responseReason,
           rejectReason: d.rejectReason,
           reqTypeNm: REQ_TYPE_NM[d.reqType] || d.reqType,
-          initiatorTypeNm: INITIATOR_TYPE_NM[d.initiatorType] || d.initiatorType,
+          initiatorTypeNm:
+            INITIATOR_TYPE_NM[d.initiatorType] || d.initiatorType,
           reqStatusNm: REQ_STATUS_NM[d.reqStatus] || d.reqStatus,
-          workerResponseNm: WORKER_RESPONSE_NM[d.workerResponse] || d.workerResponse,
-        }
+          workerResponseNm:
+            WORKER_RESPONSE_NM[d.workerResponse] || d.workerResponse,
+        };
       }
     }
   } catch (err) {
-    await proxy.$alert(resolveApiErrorMessage(err, getMessage(MSG.SEARCH_ERROR)))
-    emit('close')
+    await proxy.$alert(
+      resolveApiErrorMessage(err, getMessage(MSG.SEARCH_ERROR))
+    );
+    emit("close");
   } finally {
-    loading.value = false
+    loading.value = false;
   }
-}
+};
 
 // 승인/확인: POST /webApi/attd13/change-requests/{id}/confirm
 //   서버: AGREED 검증 + 마감(대상일·이동출발일) 재검증 + DIRECT_USE_KEY 충돌 재검증 + 실제 반영 + CONFIRMED + PUSH.
 const onConfirm = async () => {
-  if (!canConfirm.value || submitting.value) return
-  submitting.value = true
+  if (!canConfirm.value || submitting.value) return;
+  submitting.value = true;
   try {
-    await axios.post(`/webApi/attd13/change-requests/${props.changeReqId}/confirm`)
-    await proxy.$alert('요청을 확인(반영)했습니다.')
-    emit('confirmed')
+    await axios.post(
+      `/webApi/attd13/change-requests/${props.changeReqId}/confirm`
+    );
+    await proxy.$alert("요청을 확인(반영)했습니다.");
+    emit("confirmed");
   } catch (err) {
-    await proxy.$alert(resolveApiErrorMessage(err, getMessage(MSG.SAVE_ERROR)))
+    await proxy.$alert(resolveApiErrorMessage(err, getMessage(MSG.SAVE_ERROR)));
   } finally {
-    submitting.value = false
+    submitting.value = false;
   }
-}
+};
 
 // 반려: POST /webApi/attd13/change-requests/{id}/reject (WORKER 발의건). 원 연차 불변.
 const onReject = async () => {
-  if (!canReject.value || submitting.value) return
+  if (!canReject.value || submitting.value) return;
   if (!rejectReason.value.trim()) {
-    await proxy.$alert('반려 사유를 입력해 주세요.')
-    return
+    await proxy.$alert("반려 사유를 입력해 주세요.");
+    return;
   }
-  submitting.value = true
+  submitting.value = true;
   try {
-    await axios.post(`/webApi/attd13/change-requests/${props.changeReqId}/reject`, {
-      REJECT_REASON: rejectReason.value.trim(),
-    })
-    await proxy.$alert('요청을 반려했습니다.')
-    emit('confirmed')
+    await axios.post(
+      `/webApi/attd13/change-requests/${props.changeReqId}/reject`,
+      {
+        REJECT_REASON: rejectReason.value.trim(),
+      }
+    );
+    await proxy.$alert("요청을 반려했습니다.");
+    emit("confirmed");
   } catch (err) {
-    await proxy.$alert(resolveApiErrorMessage(err, getMessage(MSG.SAVE_ERROR)))
+    await proxy.$alert(resolveApiErrorMessage(err, getMessage(MSG.SAVE_ERROR)));
   } finally {
-    submitting.value = false
+    submitting.value = false;
   }
-}
+};
 
 onMounted(() => {
-  if (props.changeReqId) fnLoadDetail()
-  else loading.value = false
-})
+  if (props.changeReqId) fnLoadDetail();
+  else loading.value = false;
+});
 </script>
 
 <style scoped>

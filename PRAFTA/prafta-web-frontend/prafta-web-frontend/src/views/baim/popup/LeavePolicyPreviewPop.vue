@@ -1,9 +1,13 @@
 <template>
   <Transition name="fade">
     <div v-show="true" class="modal-overlay prafta-modal-popup">
-      <div class="modal-content-wide leave-preview-modal">
+      <div
+        class="modal-content-wide leave-preview-modal"
+        :style="positionStyle"
+        ref="modalRef"
+      >
         <!-- 헤더 -->
-        <div class="modal-header leave-preview-header">
+        <div class="modal-header leave-preview-header" @mousedown="startDrag">
           <span>부여 시점 미리보기</span>
           <button class="icon-button" @click="$emit('close')">
             <svg
@@ -39,18 +43,21 @@
                 <tr>
                   <th rowspan="2">정책</th>
                   <th
-                    v-for="col in headerCols"
-                    :key="col.key"
-                    :rowspan="col.rowspan || 1"
-                    :colspan="col.colspan || 1"
-                    :class="{ empty: col.empty }"
+                    v-for="grp in headerGroups"
+                    :key="grp.key"
+                    :colspan="grp.colspan"
+                    :class="{ empty: grp.empty }"
                   >
-                    {{ col.label }}
+                    {{ grp.label }}
                   </th>
                 </tr>
                 <tr>
-                  <th v-for="sub in subHeaderCols" :key="sub.key">
-                    {{ sub.label }}
+                  <th
+                    v-for="col in timeAxis"
+                    :key="col.key"
+                    :class="{ event: col.isEvent }"
+                  >
+                    {{ col.subLabel }}
                   </th>
                 </tr>
               </thead>
@@ -89,7 +96,8 @@
 
 <script setup>
 // ================ Imports ================
-import { computed } from "vue";
+import { computed, ref } from "vue";
+import { useCenteredDraggable } from "@/composables/useCenteredDraggable";
 
 // ================ Options ================
 // (defineOptions 미사용 - 단일 팝업)
@@ -110,6 +118,24 @@ const props = defineProps({
   hireDate: { type: String, default: "2025-07-15" },
 });
 defineEmits(["close"]);
+
+// ================ 드래그 (SlotHistoryPop.vue 표준 이식) ================
+const modalRef = ref(null);
+const { position, startDrag } = useCenteredDraggable(modalRef, {
+  horizontalRatio: 2,
+  verticalRatio: 2,
+});
+
+const positionStyle = computed(() => {
+  const padding = 16;
+  const modalWidth = 1100;
+  const modalHeight = 600;
+  const maxX = window.innerWidth - (modalWidth + padding);
+  const maxY = window.innerHeight - (modalHeight + padding);
+  const x = Math.max(padding, Math.min(maxX, position.value.x));
+  const y = Math.max(padding, Math.min(maxY, position.value.y));
+  return { top: y + "px", left: x + "px" };
+});
 
 // ================ 상수 ================
 const BASE_DAYS = 15; // 본연차 기본 일수
@@ -160,93 +186,203 @@ const prorateDays = computed(() => {
   }
 });
 
-// 표 헤더(상단/하단 2단). 시안 §4.8.2 기준 시간축(회계연도 1/1 가정) 정적 정의.
-// 회계연도 시작월/일이 1/1이 아닐 경우 시간축 동적 재계산은 향후 보강 대상
-// (시안 자체가 회계연도 1/1 고정 기준으로 정의됨).
-const headerCols = computed(() => {
-  const hy = hireParts.value.y;
-  return [
-    { key: "hire", label: "입사일", rowspan: 2 },
-    { key: "y1", label: `${hy}년 (입사 첫해)`, colspan: 6 },
-    { key: "fy1", label: `${hy + 1}.01.01`, rowspan: 2, empty: true },
-    { key: "y2", label: `${hy + 1}년 (~1년 도래)`, colspan: 6 },
-    { key: "anniv1", label: `${hy + 1}.07.15`, rowspan: 2, empty: true },
-    { key: "fy2", label: `${hy + 2}.01.01`, rowspan: 2, empty: true },
-    { key: "anniv2", label: `${hy + 2}.07.15`, rowspan: 2, empty: true },
-    { key: "fy3", label: `${hy + 3}.01.01`, rowspan: 2, empty: true },
-  ];
-});
+// ================ 단일 시간축 모델 (idx 0~16) ================
+// 헤더(그룹)·서브헤더(시점)·셀 배열을 하나의 시간축 정의에서 파생시켜
+// 컬럼 수 불일치(과거 headerCols 8 / subHeaderCols 12 / cells 17)를 제거한다.
+// 회계연도 시작월/일(props.fiscalStartMm/Dd)·입사월(hireParts.mo)을 모두 반영.
 
-const subHeaderCols = computed(() => {
-  const hy = hireParts.value.y;
-  return [
-    { key: "s0", label: `${String(hy).slice(2)}.07.15` },
-    { key: "s1", label: "08.15" },
-    { key: "s2", label: "09.15" },
-    { key: "s3", label: "10.15" },
-    { key: "s4", label: "11.15" },
-    { key: "s5", label: "12.15" },
-    { key: "s6", label: "01.15" },
-    { key: "s7", label: "02.15" },
-    { key: "s8", label: "03.15" },
-    { key: "s9", label: "04.15" },
-    { key: "s10", label: "05.15" },
-    { key: "s11", label: "06.15" },
-  ];
-});
+// 0 패딩 헬퍼.
+const pad2 = (n) => String(n).padStart(2, "0");
 
-// 시간축 셀 구성 헬퍼. 컬럼 순서:
-//   [0]입사일, [1~5]첫해 8~12월(월차), [6]차년 1/1 회계, [7~12]차년 1~6월(월차),
-//   [13]차년 7/15(입사기념), [14]차차년 1/1, [15]차차년 7/15, [16]3년차 1/1
-const buildCells = (opts) => {
-  const { fiscalFirstGrant, fiscalRecur, hireGrant, hireRecur } = opts;
-  const hireYmd = `${hireParts.value.y}.07.15`;
-  const cells = [];
-  // [0] 입사일
-  cells.push({ text: hireYmd, cls: "hire" });
-  // [1~5] 첫해 5개월 월차 (8~12월)
-  for (let i = 0; i < 5; i++) {
-    cells.push(
-      i < firstYearMonthlyCount.value
-        ? { text: "월차 1", cls: "monthly" }
-        : { text: "", cls: "" }
-    );
-  }
-  // [6] 차년 회계연도 시작(1/1) — 비례/차년일괄 본연차 발생 시점
-  cells.push(
-    fiscalFirstGrant
-      ? { text: fiscalFirstGrant, cls: "event" }
-      : { text: "", cls: "" }
-  );
-  // [7~12] 차년 1~6월 월차 (잔여분, 최대 11일까지)
-  const remainMonthly = MONTHLY_MAX - firstYearMonthlyCount.value;
-  for (let i = 0; i < 6; i++) {
-    cells.push(
-      i < remainMonthly
-        ? { text: "월차 1", cls: "monthly" }
-        : { text: "", cls: "" }
-    );
-  }
-  // [13] 차년 입사기념일(7/15) — 입사일 기준 본연차
-  cells.push(
-    hireGrant ? { text: hireGrant, cls: "event" } : { text: "", cls: "" }
-  );
-  // [14] 차차년 회계연도 시작(1/1) — 회계연도 기준 본연차 반복
-  cells.push(
-    fiscalRecur ? { text: fiscalRecur, cls: "event" } : { text: "", cls: "" }
-  );
-  // [15] 차차년 입사기념일(7/15) — 입사일 기준 본연차 반복
-  cells.push(
-    hireRecur ? { text: hireRecur, cls: "event" } : { text: "", cls: "" }
-  );
-  // [16] 3년차 회계연도 시작(1/1)
-  cells.push(
-    fiscalRecur ? { text: fiscalRecur, cls: "event" } : { text: "", cls: "" }
-  );
-  return cells;
+// 입사일 기준 N개월 후의 (연,월,일)을 계산한다(말일 보정 포함).
+const addMonthsToHire = (n) => {
+  const { y, mo, d } = hireParts.value;
+  // mo는 1~12. 0-base 월로 변환 후 가산.
+  const base = new Date(y, mo - 1, 1);
+  base.setMonth(base.getMonth() + n);
+  const ty = base.getFullYear();
+  const tm = base.getMonth() + 1; // 1~12
+  // 입사일(d)을 적용하되 해당 월 말일을 넘지 않도록 보정.
+  const lastDay = new Date(ty, tm, 0).getDate();
+  const td = Math.min(d, lastDay);
+  return { y: ty, mo: tm, d: td };
 };
 
-// 4가지 정책의 시간순 부여 행 (시안 §4.8.2 표 이식).
+// 시점 라벨: "YY.MM.DD" (연도 구분 가독). 회계 시점은 연도 전체 노출.
+const fmtYmd = (p) => `${String(p.y).slice(2)}.${pad2(p.mo)}.${pad2(p.d)}`;
+
+// 회계연도 시작일(특정 연도) (연,월,일).
+const fiscalStartOf = (year) => ({
+  y: year,
+  mo: Number(props.fiscalStartMm) || 1,
+  d: Number(props.fiscalStartDd) || 1,
+});
+
+// 단일 시간축: idx 0~16. 각 컬럼이 kind/날짜라벨/그룹귀속을 모두 보유.
+//   kind: 'hire'(입사일) | 'monthly'(월차 발생) | 'fiscal'(회계 본연차 시점) | 'anniv'(입사기념=입사기준 본연차)
+//   monthOffset: 입사일로부터 경과 개월(월차/기념일 판정용)
+const timeAxis = computed(() => {
+  const hy = hireParts.value.y;
+  const list = [];
+  // idx 0 — 입사일 (월차 없음)
+  list.push({
+    key: "t0",
+    kind: "hire",
+    monthOffset: 0,
+    isEvent: false,
+    subLabel: fmtYmd(hireParts.value),
+    group: "hire",
+  });
+  // idx 1~5 — 입사 +1~5개월 월차
+  for (let n = 1; n <= 5; n++) {
+    list.push({
+      key: `t${n}`,
+      kind: "monthly",
+      monthOffset: n,
+      isEvent: false,
+      subLabel: fmtYmd(addMonthsToHire(n)),
+      group: "y1",
+    });
+  }
+  // idx 6 — 차년 회계연도 시작 (회계 본연차 시점)
+  list.push({
+    key: "t6",
+    kind: "fiscal",
+    monthOffset: null,
+    isEvent: true,
+    subLabel: fmtYmd(fiscalStartOf(hy + 1)),
+    group: "fy1",
+  });
+  // idx 7~12 — 입사 +6~11개월 월차
+  for (let n = 6; n <= 11; n++) {
+    list.push({
+      key: `t${n + 1}`,
+      kind: "monthly",
+      monthOffset: n,
+      isEvent: false,
+      subLabel: fmtYmd(addMonthsToHire(n)),
+      group: "y2",
+    });
+  }
+  // idx 13 — 입사 1주년 (입사일 기준 본연차)
+  list.push({
+    key: "t13",
+    kind: "anniv",
+    monthOffset: 12,
+    isEvent: true,
+    subLabel: fmtYmd(addMonthsToHire(12)),
+    group: "anniv1",
+  });
+  // idx 14 — 차차년 회계연도 시작 (회계 본연차 반복)
+  list.push({
+    key: "t14",
+    kind: "fiscal",
+    monthOffset: null,
+    isEvent: true,
+    subLabel: fmtYmd(fiscalStartOf(hy + 2)),
+    group: "fy2",
+  });
+  // idx 15 — 입사 2주년 (입사일 기준 본연차 반복)
+  list.push({
+    key: "t15",
+    kind: "anniv",
+    monthOffset: 24,
+    isEvent: true,
+    subLabel: fmtYmd(addMonthsToHire(24)),
+    group: "anniv2",
+  });
+  // idx 16 — 3년차 회계연도 시작 (회계 본연차 반복)
+  list.push({
+    key: "t16",
+    kind: "fiscal",
+    monthOffset: null,
+    isEvent: true,
+    subLabel: fmtYmd(fiscalStartOf(hy + 3)),
+    group: "fy3",
+  });
+  return list;
+});
+
+// 상단 그룹 헤더: 시간축의 group 키를 연속 구간으로 묶어 colspan 산출.
+// 셀 개수(17)와 합계가 정확히 일치한다.
+const headerGroups = computed(() => {
+  const hy = hireParts.value.y;
+  const labels = {
+    hire: { label: "입사일", empty: false },
+    y1: { label: `${hy}년 (입사 첫해)`, empty: false },
+    fy1: { label: `${hy + 1} 회계시작`, empty: true },
+    y2: { label: `${hy + 1}년 (~1년 도래)`, empty: false },
+    anniv1: { label: `${hy + 1} 입사1주년`, empty: true },
+    fy2: { label: `${hy + 2} 회계시작`, empty: true },
+    anniv2: { label: `${hy + 2} 입사2주년`, empty: true },
+    fy3: { label: `${hy + 3} 회계시작`, empty: true },
+  };
+  const groups = [];
+  for (const col of timeAxis.value) {
+    const last = groups[groups.length - 1];
+    if (last && last.key === col.group) {
+      last.colspan += 1;
+    } else {
+      const meta = labels[col.group] || { label: col.group, empty: false };
+      groups.push({
+        key: col.group,
+        label: meta.label,
+        empty: meta.empty,
+        colspan: 1,
+      });
+    }
+  }
+  return groups;
+});
+
+// 시간축 셀 구성 헬퍼. timeAxis(17)와 1:1 대응하는 셀 배열을 생성한다.
+//   fiscalFirstGrant — idx 6 (차년 회계 본연차) 셀 텍스트
+//   fiscalRecur      — idx 14·16 (회계 본연차 반복) 셀 텍스트
+//   hireGrant        — idx 13 (입사 1주년 본연차) 셀 텍스트
+//   hireRecur        — idx 15 (입사 2주년 본연차) 셀 텍스트
+const FISCAL_RECUR_IDX = [14, 16];
+const buildCells = (opts) => {
+  const { fiscalFirstGrant, fiscalRecur, hireGrant, hireRecur } = opts;
+  return timeAxis.value.map((col, idx) => {
+    if (col.kind === "hire") {
+      // idx 0 — 입사일: 월차 표기 금지(3.2.4.1).
+      return { text: col.subLabel, cls: "hire" };
+    }
+    if (col.kind === "monthly") {
+      // 입사 +1~11개월 월차(법정 최대 11일). monthOffset 1~11 모두 발생.
+      return col.monthOffset <= MONTHLY_MAX
+        ? { text: "월차 1", cls: "monthly" }
+        : { text: "", cls: "" };
+    }
+    if (idx === 6) {
+      // 차년 회계 본연차(3.2.4.2).
+      return fiscalFirstGrant
+        ? { text: fiscalFirstGrant, cls: "event" }
+        : { text: "", cls: "" };
+    }
+    if (idx === 13) {
+      // 입사 1주년 본연차(3.2.4.3).
+      return hireGrant
+        ? { text: hireGrant, cls: "event" }
+        : { text: "", cls: "" };
+    }
+    if (idx === 15) {
+      // 입사 2주년 본연차 반복(3.2.4.4).
+      return hireRecur
+        ? { text: hireRecur, cls: "event" }
+        : { text: "", cls: "" };
+    }
+    if (FISCAL_RECUR_IDX.includes(idx)) {
+      // 차차년·3년차 회계 본연차 반복(3.2.4.4).
+      return fiscalRecur
+        ? { text: fiscalRecur, cls: "event" }
+        : { text: "", cls: "" };
+    }
+    return { text: "", cls: "" };
+  });
+};
+
+// 3개 정책의 시간순 부여 행. "회계연도 기준 - 월차만 부여" 행은 정책상 폐기(3.2.3).
 const previewRows = computed(() => {
   const annual = `본연차 ${BASE_DAYS}`;
   return [
@@ -257,15 +393,6 @@ const previewRows = computed(() => {
         fiscalRecur: "",
         hireGrant: annual,
         hireRecur: annual,
-      }),
-    },
-    {
-      name: "회계연도 기준 - 월차만 부여",
-      cells: buildCells({
-        fiscalFirstGrant: "",
-        fiscalRecur: annual,
-        hireGrant: "",
-        hireRecur: "",
       }),
     },
     {
@@ -290,22 +417,26 @@ const previewRows = computed(() => {
 });
 
 // 하단 요약 — 1년차(첫해 ~ 입사 1주년 직후) 누적 부여량 비교.
-//   - 회계연도 월차만: 월차 누적(최대 11)만
 //   - 회계연도 비례: 월차 누적 + 비례 본연차
 //   - 입사일 기준: 월차 누적(11) + 입사 1주년 본연차 15
 //   - 회계연도 차년 일괄: 월차 누적(11) + 차년 회계 본연차 15
+//   ("회계연도 월차만" 정책은 폐기되어 요약에서도 제외 — 3.2.3)
 const burdenSummary = computed(() => {
   const monthlyTotal = MONTHLY_MAX; // 1년 경과 시 월차 최대 누적
-  const monthlyOnly = monthlyTotal;
   const prorate = monthlyTotal + prorateDays.value;
   const hireBase = monthlyTotal + BASE_DAYS;
   const bulk = monthlyTotal + BASE_DAYS;
-  return `회계연도 (월차누적) ${monthlyOnly}일 < 회계연도 (비례부여) 약 ${prorate}일 < 입사일 기준 ${hireBase}일 = 회계연도 (차년도 일괄) ${bulk}일`;
+  return `회계연도 (비례부여) 약 ${prorate}일 < 입사일 기준 ${hireBase}일 = 회계연도 (차년도 일괄) ${bulk}일`;
 });
 
 const firstGrantSummary = computed(() => {
-  const fy = hireParts.value.y + 1;
-  return `회계연도 (비례부여) · (차년도 일괄) — ${fy}.01.01 / 입사일 기준 — ${fy}.07.15 / 회계연도 (월차누적) — ${hireParts.value.y + 2}.01.01`;
+  const fiscalP = fiscalStartOf(hireParts.value.y + 1);
+  const annivP = addMonthsToHire(12);
+  return `회계연도 (비례부여) · (차년도 일괄) — ${fiscalP.y}.${pad2(
+    fiscalP.mo
+  )}.${pad2(fiscalP.d)} / 입사일 기준 — ${annivP.y}.${pad2(annivP.mo)}.${pad2(
+    annivP.d
+  )}`;
 });
 </script>
 
@@ -313,12 +444,13 @@ const firstGrantSummary = computed(() => {
 @import "@/assets/css/modal-popup-guide.css";
 
 .leave-preview-modal {
-  width: 100%;
-  max-width: 1100px;
+  width: 1100px;
+  max-width: 95vw;
 }
 
 .leave-preview-header {
   background: rgba(22, 163, 74, 0.08);
+  cursor: move;
 }
 
 .leave-preview-body {
@@ -374,6 +506,12 @@ const firstGrantSummary = computed(() => {
 .preview-table th.empty {
   background: var(--color-bg);
   color: var(--color-text-muted);
+}
+
+/* 본연차/비례 발생 시점 컬럼(서브헤더) 강조 */
+.preview-table th.event {
+  background: var(--color-warning-bg);
+  color: var(--color-warning-text);
 }
 
 /* 정책명 셀 */
@@ -432,5 +570,11 @@ const firstGrantSummary = computed(() => {
 
 .btn-secondary:hover {
   background: var(--color-bg);
+}
+
+/* 푸터 [닫기] 버튼: 텍스트 너비만큼만 차지하고 우측 정렬(.modal-footer 가 flex-end) */
+.modal-footer .btn-secondary {
+  width: fit-content;
+  margin-left: auto;
 }
 </style>

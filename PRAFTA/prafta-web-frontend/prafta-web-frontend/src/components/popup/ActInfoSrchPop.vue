@@ -99,6 +99,7 @@
               type="password"
               @blur="focusKill"
               placeholder="6 ~ 15자"
+              autocomplete="new-password"
             />
             <span class="form-msg">{{ pwMsg }}</span>
           </div>
@@ -112,6 +113,7 @@
               type="password"
               @blur="focusKill"
               placeholder="6 ~ 15자"
+              autocomplete="new-password"
             />
             <span class="form-msg">{{ pwConfirmMsg }}</span>
           </div>

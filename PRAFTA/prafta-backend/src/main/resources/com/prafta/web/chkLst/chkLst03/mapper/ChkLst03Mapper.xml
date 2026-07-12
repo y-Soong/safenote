@@ -102,9 +102,14 @@
 
 	<select id="selectInspectItemSubjList" parameterType="com.prafta.web.chkLst.chkLst03.application.query.InspectItemSubjQuery" resultType="com.prafta.web.chkLst.chkLst03.result.InspectItemSubjResult">
     /* ChkLst03Mapper.selectInspectItemSubjList */
-    SELECT 
+    SELECT
 		B.INSPECT_ITEM_CD				AS inspectItemCd
 	    , B.INSPECT_ITEM_SUBJ			AS inspectItemSubj
+	    <!-- PRAFTA_COM_001-T5-11.1.1: 확인서 셀 회색 처리용 게이팅 기준값 -->
+	    , B.STR_DATE					AS strDate			<!-- 시행일(YYYYMMDD) -->
+	    , B.USE_YN						AS useYn			<!-- 사용여부 -->
+	    , DATE_FORMAT(B.INSERT_DATE, '%Y%m%d')	AS insertYmd	<!-- 등록일(YYYYMMDD) -->
+	    , DATE_FORMAT(B.UPDATE_DATE, '%Y%m%d')	AS updateYmd	<!-- 최종수정일(YYYYMMDD): 이력 부재 시 비활성 시점 폴백 -->
 	FROM TB_CHKPT_TYPE_MGMT A
 		INNER JOIN TB_CHKPT_INSPECT_ITEM B
 			ON (
@@ -115,6 +120,29 @@
 	  AND A.SITE_CD = #{siteCd}
 	  AND A.CHKLST_TYPE = #{chkLstType}
 	  AND A.CHKPT_CD = #{chkptCd}
+    </select>
+
+	<!-- 문항 변경이력 조회: 확인서 셀 회색 게이팅(사용중지/재사용 구간 재구성)용.
+	     같은 문항의 이력을 변경 시각 순으로 반환하며, 각 행은 변경 후 상태 스냅샷이다. -->
+	<select id="selectInspectItemHistList" parameterType="com.prafta.web.chkLst.chkLst03.application.query.InspectItemSubjQuery" resultType="com.prafta.web.chkLst.chkLst03.result.InspectItemHistResult">
+    /* ChkLst03Mapper.selectInspectItemHistList */
+    SELECT
+		H.INSPECT_ITEM_CD				AS inspectItemCd
+	    , H.CHG_TYPE					AS chgType
+	    , H.USE_YN						AS useYn
+	    , H.STR_DATE					AS strDate
+	    , DATE_FORMAT(H.INSERT_DATE, '%Y%m%d')	AS chgYmd
+	FROM TB_CHKPT_TYPE_MGMT A
+		INNER JOIN TB_CHKPT_INSPECT_ITEM_HIST H
+			ON (
+				A.CMPNY_CD = H.CMPNY_CD
+			AND A.CHKLST_TYPE = H.CHKLST_TYPE
+	        )
+	WHERE A.CMPNY_CD = #{gvCmpnyCd}
+	  AND A.SITE_CD = #{siteCd}
+	  AND A.CHKLST_TYPE = #{chkLstType}
+	  AND A.CHKPT_CD = #{chkptCd}
+	ORDER BY H.INSPECT_ITEM_CD, H.INSERT_DATE, H.HIST_ID
     </select>
     
     <select id="selectInspectAnswerList" parameterType="com.prafta.web.chkLst.chkLst03.application.query.InspectAnswerQuery" resultType="com.prafta.web.chkLst.chkLst03.result.InspectAnswerResult">

@@ -13,7 +13,9 @@ public record AssessmentCommand(
 	, String initLikelihoodScore
 	, String initSeverityScore
 	, String initRiskLv
-	
+	// WEB_003 저장 액션: AI 반영 블록이 덧붙은 유해요인설명(INIT_DESC). null 이면 미갱신(동적 SET).
+	, String initDesc
+
 	, String revalDate
 	, String revalBeforeDesc
 	, String revalLikelihoodScore
@@ -27,6 +29,11 @@ public record AssessmentCommand(
 	, String gvUserCd
 ){
 	public static AssessmentCommand from(AssessmentParam param, String fileMgmtCd) {
+        // PRAFTA_COM_001_T6 Low-1A: 위험도(INIT/REVAL_RISK_LV)는 서버에서 빈도 x 강도로 재계산한 값을 사용한다(클라 전송값 불신뢰).
+        return from(param, fileMgmtCd, param != null ? param.initRiskLv() : null, param != null ? param.revalRiskLv() : null);
+    }
+
+	public static AssessmentCommand from(AssessmentParam param, String fileMgmtCd, String initRiskLv, String revalRiskLv) {
 
         if (param == null)
         	throw new ApiException(CommonErrorCode.COMMON_400_001);
@@ -38,20 +45,21 @@ public record AssessmentCommand(
         	, param.assessmentCd()
         	, param.assessmentStatus()
         	, param.processCd()
-        	
+
         	, param.initLikelihoodScore()
         	, param.initSeverityScore()
-        	, param.initRiskLv()
-        	
+        	, initRiskLv
+        	, param.initDesc()
+
         	, param.revalDate()
         	, param.revalBeforeDesc()
         	, param.revalLikelihoodScore()
         	, param.revalSeverityScore()
-        	, param.revalRiskLv()
-        	
+        	, revalRiskLv
+
         	, param.revalDesc()
         	, fileMgmtCd
-        	
+
         	, param.gvCmpnyCd()
         	, param.gvUserCd()
         );

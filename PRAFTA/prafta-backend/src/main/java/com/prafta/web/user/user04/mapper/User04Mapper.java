@@ -42,6 +42,10 @@ public interface User04Mapper {
     String selectPresetOwner(@Param("cmpnyCd") String cmpnyCd,
                              @Param("presetId") String presetId);
 
+    /** 프리셋 기본여부 DEFAULT_YN ('Y'/'N'). 미존재 시 null (8.4 삭제 가드용). */
+    String selectPresetDefaultYn(@Param("cmpnyCd") String cmpnyCd,
+                                 @Param("presetId") String presetId);
+
     /** 프리셋 ID 채번 ('P' + YYYYMMDD + 시퀀스). */
     String selectNextPresetId(@Param("cmpnyCd") String cmpnyCd);
 

@@ -59,6 +59,8 @@
 		, NODE_CD
 		, NODE_NM
 		, NODE_TYPE
+		<!-- PRAFTA-001-1: 신규 사업장 루트 노드(NODE_CD='n1')는 자체근태승인 여부를 항상 'Y'로 생성. -->
+		, SELF_ATTD_APPRV_YN
 		, INSERT_NO
 		, INSERT_DATE
 		, UPDATE_NO
@@ -70,13 +72,18 @@
 		, #{nodeCd}
 		, #{nodeNm}
 		, #{nodeType}
+		, CASE WHEN #{nodeCd} = 'n1' THEN 'Y' ELSE 'N' END
 		, #{gvUserCd}
 		, NOW()
 		, #{gvUserCd}
-		, NOW() 
+		, NOW()
 	) AS NEW
 	ON DUPLICATE KEY UPDATE
 		NODE_NM 		= NEW.NODE_NM
+		<!-- PRAFTA-001-1: 기존 루트 노드가 있으면 'Y'로 보정.
+		     ★기존 값 참조는 테이블명으로 한정한다. 행 별칭 NEW 에 동명 컬럼이 있어
+		     한정자 없는 NODE_CD/SELF_ATTD_APPRV_YN 은 모호(MySQL Error 1052). -->
+		, SELF_ATTD_APPRV_YN = CASE WHEN TB_SITE_NODE.NODE_CD = 'n1' THEN 'Y' ELSE TB_SITE_NODE.SELF_ATTD_APPRV_YN END
 		, UPDATE_NO		= NEW.UPDATE_NO
 		, UPDATE_DATE 	= NEW.UPDATE_DATE
 	</insert>
@@ -107,19 +114,19 @@
     )
     VALUES (
         #{siteCd}
-        , COALESCE(NULLIF(#{siteNo}, ''), #{siteCd}) 
+        , #{siteNo}                                  <!-- PRAFTA-COM-001-T2-1: 사업장번호 기본값(siteCd) 세팅 제거. 클라 입력 그대로 저장(siteNo 필수) -->
 		, #{siteNm}
 		, #{gvCmpnyCd}
 		, #{addr1}
 		, #{addr2}
 		, #{zipCode}
 		, REPLACE(#{strDate}, '-', '')
-        , CASE 
-        	WHEN #{useYn} = 'Y' 
-        		THEN NULL 
-    		ELSE 
-				DATE_FORMAT(NOW(), '%Y%m%d') 
-		END
+        <!-- PRAFTA-COM-001-T2-2: END_DATE 하드코딩(useYn 분기) 제거. 서비스에서 A안 경계로 보정한 endDate 를 그대로 저장.
+             endDate 가 빈 값/NULL 이면 종료일 미설정(NULL) 처리. -->
+        , <choose>
+            <when test="endDate != null and endDate != ''">REPLACE(#{endDate}, '-', '')</when>
+            <otherwise>NULL</otherwise>
+          </choose>
 		, #{useYn}
 		, #{siteAdminCd}
 		, REPLACE(#{telNo}, '-', '')
@@ -175,6 +182,40 @@
 	FROM TB_USER A
 	WHERE A.CMPNY_CD = #{cmpnyCd} /* PRAFTA-042 H-2: 테넌트 격리 - 동일 회사 사용자로 한정 */
 	  AND AUTH_CD IN ('master', 'hr', 'safe', 'system') /* PRAFTA-042-4: 전사 접근 역할 + 시스템 관리자 계정 */
+	ON DUPLICATE KEY UPDATE
+		USE_YN 			= VALUES(USE_YN)
+		, UPDATE_NO 	= VALUES(UPDATE_NO)
+		, UPDATE_DATE 	= VALUES(UPDATE_DATE)
+	</insert>
+
+	<insert id="mergeSiteAdminSiteAuth" parameterType="com.prafta.web.baim.baim01.application.command.SiteAdminSiteAuthCommand">
+	/* Baim01Mapper.mergeSiteAdminSiteAuth */
+	<!-- 신규 사업장의 지정 관리자(SITE_ADMIN_CD)에게 해당 사업장 권한 자동 부여.
+	     전사 역할(master/hr/safe)이 아닌 일반 관리자를 지정한 경우 mergeMasterSiteAuthSet 로는
+	     부여되지 않으므로 별도로 1행 부여한다. 동일 회사 사용자만 부여(테넌트 격리)하며,
+	     존재하지 않거나 타 회사인 USER_CD 가 들어오면 SELECT 가 0행이라 안전하게 무시된다. -->
+	INSERT INTO TB_USER_SITE_AUTH (
+		CMPNY_CD
+		, USER_CD
+		, SITE_CD
+		, USE_YN
+		, INSERT_NO
+		, INSERT_DATE
+		, UPDATE_NO
+		, UPDATE_DATE
+	)
+	SELECT
+		A.CMPNY_CD
+	    , A.USER_CD
+	    , #{siteCd} AS SITE_CD
+	    , 'Y' AS USE_YN
+	    , #{gvUserCd}
+	    , NOW()
+	    , #{gvUserCd}
+	    , NOW()
+	FROM TB_USER A
+	WHERE A.CMPNY_CD = #{cmpnyCd} /* 테넌트 격리 - 동일 회사 사용자로 한정 */
+	  AND A.USER_CD = #{siteAdminCd}
 	ON DUPLICATE KEY UPDATE
 		USE_YN 			= VALUES(USE_YN)
 		, UPDATE_NO 	= VALUES(UPDATE_NO)

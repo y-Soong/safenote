@@ -47,7 +47,11 @@
           <div class="form-row">
             <label>자료타입</label>
             <!-- 조회모드: 명칭 표시 / 수정모드: 드롭다운 -->
-            <input v-if="!isEditMode" v-model="formData.archiveTypeNm" readonly />
+            <input
+              v-if="!isEditMode"
+              v-model="formData.archiveTypeNm"
+              readonly
+            />
             <select
               v-else
               v-model="formData.archiveTypeCd"
@@ -74,6 +78,7 @@
               v-model="formData.title"
               maxlength="200"
               :readonly="!isEditMode"
+              autocomplete="off"
             />
           </div>
           <div class="form-row">
@@ -91,7 +96,11 @@
 
             <!-- 조회모드: 기존 다운로드 리스트 -->
             <ul class="file-list" v-if="!isEditMode">
-              <li v-for="(f, i) in formData.fileList" :key="i" class="file-item">
+              <li
+                v-for="(f, i) in formData.fileList"
+                :key="i"
+                class="file-item"
+              >
                 <div
                   class="file-item__link"
                   role="button"
@@ -139,7 +148,12 @@
                   class="file-item file-item--chip"
                 >
                   <span class="file-item__name">{{ f.fileNm }}</span>
-                  <button class="file-item__del" @click="fnRemoveExistingFile(i)">×</button>
+                  <button
+                    class="file-item__del"
+                    @click="fnRemoveExistingFile(i)"
+                  >
+                    ×
+                  </button>
                 </li>
                 <li
                   v-for="(nf, i) in newFiles"
@@ -147,11 +161,14 @@
                   class="file-item file-item--chip file-item--new"
                 >
                   <span class="file-item__name">{{ nf.name }}</span>
-                  <button class="file-item__del" @click="fnRemoveNewFile(i)">×</button>
+                  <button class="file-item__del" @click="fnRemoveNewFile(i)">
+                    ×
+                  </button>
                 </li>
               </ul>
               <p class="hint">
-                텍스트/이미지/동영상/음성 파일만 첨부할 수 있습니다(실행/스크립트 형식 제외). 저장 시 함께 업로드됩니다.
+                텍스트/이미지/동영상/음성 파일만 첨부할 수
+                있습니다(실행/스크립트 형식 제외). 저장 시 함께 업로드됩니다.
               </p>
             </div>
           </div>
@@ -166,6 +183,7 @@
                 maxlength="50"
                 :disabled="isMaster"
                 placeholder="비밀번호"
+                autocomplete="new-password"
               />
               <button class="btn-secondary" @click="fnEnterEditMode">
                 {{ isMaster ? "수정 모드" : "확인" }}

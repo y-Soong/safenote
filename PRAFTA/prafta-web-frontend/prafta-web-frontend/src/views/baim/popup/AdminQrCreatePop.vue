@@ -43,11 +43,19 @@
                   v-for="s in availableSlots"
                   :key="s.slotNo"
                   :value="s.slotNo"
+                  :disabled="!hasNode(s)"
                 >
-                  {{ s.slotNo }}번 슬롯 (빈 자리)
+                  {{ s.slotNo }}번 슬롯
+                  {{
+                    hasNode(s)
+                      ? "· " + s.nodeNm
+                      : "(소속부서 미지정 - 매칭 불가)"
+                  }}
                 </option>
               </select>
-              <p class="field-desc">현재 빈 슬롯만 선택 가능합니다.</p>
+              <p class="field-desc">
+                소속부서가 지정된 빈 슬롯만 선택할 수 있습니다.
+              </p>
             </div>
 
             <div class="form-item full-width">
@@ -79,10 +87,10 @@
             </button>
             <button
               class="btn btn-primary"
-              :disabled="!canSave"
+              :disabled="!canSave || isSaving"
               @click="fnSave"
             >
-              QR 생성 · 슬롯 점유
+              {{ isSaving ? "처리 중..." : "QR 생성 · 슬롯 점유" }}
             </button>
           </div>
         </div>
@@ -115,10 +123,15 @@ const { position, startDrag } = useCenteredDraggable(modalRef, {
 const selectedSlotNo = ref("");
 const userNm = ref("");
 const userPhone = ref("");
+// T1-04b: 연속/중복 클릭 가드. 처리 중에는 저장 버튼 비활성 + 재요청 차단.
+const isSaving = ref(false);
 
 const availableSlots = computed(() =>
   (props.slotList || []).filter((s) => s.slotStatus === "01" && s.useYn === "Y")
 );
+
+// 요건1: 슬롯에 소속부서(nodeCd)가 지정돼야 계정 매칭 가능. 미지정 슬롯은 선택 불가.
+const hasNode = (s) => !!(s && s.nodeCd != null && String(s.nodeCd).trim());
 
 const positionStyle = computed(() => {
   const padding = 16;
@@ -137,14 +150,28 @@ const canSave = computed(
 
 const fnSave = async () => {
   if (!canSave.value) return;
+  // T1-04b: 이미 처리 중이면 중복 요청 차단(성공/실패 alert 중첩 방지).
+  if (isSaving.value) return;
 
   if (!proxy.$util.validatePhoneNumber(userPhone.value)) {
     await proxy.$alert("휴대폰 번호를 확인해주세요.");
     return;
   }
 
+  // 요건1 방어 가드: 소속부서 미지정 슬롯은 매칭 불가(서버도 BAIM_400_007 로 차단). 비활성 옵션과 이중 방어.
+  const targetSlot = availableSlots.value.find(
+    (s) => s.slotNo === selectedSlotNo.value
+  );
+  if (!hasNode(targetSlot)) {
+    await proxy.$alert(
+      "소속부서가 지정되지 않은 슬롯입니다.\n계정슬롯 목록에서 소속부서를 먼저 지정해 주세요."
+    );
+    return;
+  }
+
   const mblNo = userPhone.value.replace(/\D+/g, "");
 
+  isSaving.value = true;
   try {
     const response = await axios.post("/webApi/baim05/insert-daily-qr-user", {
       siteCd: props.siteCd,
@@ -157,7 +184,8 @@ const fnSave = async () => {
       const { cmpnyCd, siteCd, userCd } =
         response.data.dailyUserQrInfoResult ?? {};
       if (cmpnyCd && siteCd && userCd) {
-        proxy.$alert(getMessage(MSG.SAVE_SUCCESS));
+        // T1-04b: 성공 시 메시지 1건만 노출 후 즉시 닫는다(메시지 단일화).
+        await proxy.$alert(getMessage(MSG.SAVE_SUCCESS));
 
         emit("close");
         props.onSaved?.({
@@ -173,6 +201,8 @@ const fnSave = async () => {
   } catch (err) {
     const msg = resolveApiErrorMessage(err, "저장 중 오류가 발생했습니다.");
     await proxy.$alert(msg);
+  } finally {
+    isSaving.value = false;
   }
 };
 </script>

@@ -10,6 +10,8 @@ public record RiskAssessmentsListQuery(
 	, String processCd
 	, String riskTypeCd
 	, String gvCmpnyCd
+	, String initAssessorNm
+	, String initAssessDate
 ){
 	public static RiskAssessmentsListQuery from(RiskAssessmentsListParam param) {
 
@@ -22,6 +24,8 @@ public record RiskAssessmentsListQuery(
         	, param.processCd()
         	, param.riskTypeCd()
         	, param.gvCmpnyCd()
+        	, param.initAssessorNm()
+        	, param.initAssessDate()
         );
     }
 }

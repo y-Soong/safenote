@@ -26,7 +26,17 @@
       <span class="admin-tbm-hd__spacer" aria-hidden="true" />
     </header>
 
-    <main class="admin-tbm-history-detail-body">
+    <main
+      class="admin-tbm-history-detail-body"
+      ref="scrollRef"
+      @touchstart.passive="onPullStart"
+      @touchmove="onPullMove"
+      @touchend="onPullEnd"
+      @touchcancel="onPullEnd"
+    >
+      <!-- 당겨서 새로고침 인디케이터 — 스크롤 최상단에서 아래로 당기면 노출 -->
+      <PullRefreshIndicator v-bind="indicatorProps" />
+
       <!-- loading -->
       <p v-if="isLoading" class="admin-tbm-state">불러오는 중…</p>
 
@@ -139,6 +149,8 @@ import { ref, computed, getCurrentInstance, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 
 import api from '@/api/axios'
+import { usePullToRefresh } from '@/composables/usePullToRefresh'
+import PullRefreshIndicator from '@/components/common/PullRefreshIndicator.vue'
 import AdminTbmAttendeeRow from './components/AdminTbmAttendeeRow.vue'
 
 const route = useRoute()
@@ -222,6 +234,15 @@ const onBack = () => {
   router.back()
 }
 
+// 당겨서 새로고침 — 스크롤 최상단에서 더 당기면 상세/출결을 함께 재조회(각 함수 자체 try/catch 격리).
+const scrollRef = ref(null)
+const { onPullStart, onPullMove, onPullEnd, indicatorProps } = usePullToRefresh(
+  scrollRef,
+  async () => {
+    await Promise.all([loadDetail(), loadAttendees()])
+  },
+)
+
 onMounted(() => {
   loadDetail()
   loadAttendees()
@@ -255,7 +276,8 @@ onMounted(() => {
   --space-md: 12px;
   --space-lg: 16px;
 
-  min-height: 100%;
+  height: 100vh;
+  height: 100dvh;
   background: var(--color-bg);
   color: var(--color-text-primary);
   display: flex;
@@ -301,6 +323,7 @@ onMounted(() => {
 /* 본문 */
 .admin-tbm-history-detail-body {
   flex: 1;
+  min-height: 0;
   padding: var(--space-md) var(--space-lg) calc(var(--space-lg) + env(safe-area-inset-bottom, 0px));
   overflow-y: auto;
   display: flex;

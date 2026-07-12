@@ -41,6 +41,11 @@ public class MyAttendanceDayResponse {
     // WORK/LEAVE/OFF/ACTION_REQUIRED. hasIssue = ACTION_REQUIRED 동치.
     private final String dayType;
     private final boolean hasIssue;
+    // 휴일(웹 휴일관리 TB_HOLIDAY) 반영 — 주/월 응답과 동일 계약. isHoliday 는 is 탈락 방지(@JsonProperty).
+    //   holidayName 은 휴일명(공휴일/회사휴일), 휴일 아니면 null.
+    @JsonProperty("isHoliday")
+    private final boolean isHoliday;
+    private final String holidayName;
     // prafta-app-003 A0-2: 직전 퇴근이 지오펜스 범위 밖(외근)으로 처리됐는지.
     // check-out 응답에서만 의미를 가진다(조회 경로는 false 로 빌드 — read 의미 재해석은 B에서).
     @JsonProperty("isOffsite")
@@ -55,4 +60,13 @@ public class MyAttendanceDayResponse {
     private final String leaveUnitType;
     private final String leaveTimeRange;
     private final BigDecimal leaveDays;
+    // PRAFTA_COM_002-B-1: 단건 스칼라(첫 1건) 연차가 승인 대기(요청중)인지. is 탈락 방지(@JsonProperty).
+    //   판정=REQ_ID NOT NULL AND REQ_STATUS='01'. 다건은 leaves[].pendingApproval 로 건별 표기.
+    @JsonProperty("isLeavePending")
+    private final boolean leavePending;
+    // 같은 날 부분연차(시간차/반차) 다건 표시용 마커 목록(표시 전용, 시각 오름차순). 사용내역 없으면 빈 리스트.
+    //   위 단건 스칼라(leaveTypeName 등)는 첫 1건 하위호환으로 유지하고, FE 는 이 목록을 우선 렌더한다.
+    private final List<LeaveMarkerItem> leaves;
+    // prafta-app-030 후속: 그날 적용(승인) 초과근무 목록(없으면 빈 리스트). 표시 전용 — 상태/슬롯/액션 무영향.
+    private final List<AppliedOvertimeItem> appliedOvertimes;
 }

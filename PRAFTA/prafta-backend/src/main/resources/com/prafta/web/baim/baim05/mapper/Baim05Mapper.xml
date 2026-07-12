@@ -18,15 +18,24 @@
 	    	, '-'
 	    	, A.SITE_CD
     	) 						AS joinCd
-   	FROM 
+	    <!-- PRAFTA_COM_001 T1-06: 활성화 계정 = 현재 점유 중(SLOT_STATUS='02') 슬롯 수 -->
+	    , A.ACTIVE_ACCOUNT_CNT	AS activeAccountCount
+   	FROM
    	(
-		SELECT 
+		SELECT
 			A.CMPNY_CD
 		    , A.SITE_CD
 		    , A.SITE_NO
 		    , A.SITE_NM
 		    , IFNULL(B.USE_YN, 'N') AS USE_YN
 		    , B.DAY_LIMIT_CNT
+		    , (
+		    	SELECT COUNT(*)
+		    	FROM TB_DAILY_USER_SLOT S
+		    	WHERE S.CMPNY_CD    = A.CMPNY_CD
+		    	  AND S.SITE_CD     = A.SITE_CD
+		    	  AND S.SLOT_STATUS = '02'
+		      ) AS ACTIVE_ACCOUNT_CNT
 		FROM TB_SITE A
 			 LEFT OUTER JOIN TB_DAILY_USER_LINK_POLICY B
 				ON (
@@ -62,6 +71,10 @@
 	
 	    <arg name="slotStatus"  	column="slotStatus"    	javaType="java.lang.String"/>
 	    <arg name="slotStatusNm"    column="slotStatusNm"   javaType="java.lang.String"/>
+
+	    <!-- PRAFTA-daily-user-dept: 슬롯 지정 소속부서(현재값) -->
+	    <arg name="nodeCd"      	column="nodeCd"        	javaType="java.lang.String"/>
+	    <arg name="nodeNm"      	column="nodeNm"        	javaType="java.lang.String"/>
 	  </constructor>
 	</resultMap>
 
@@ -86,6 +99,8 @@
 	    , A.MBL_NO_ENC													AS mblNo
 	    , A.SLOT_STATUS													AS slotStatus
 	    , A.SLOT_STATUS_NM												AS slotStatusNm
+	    , A.NODE_CD														AS nodeCd
+	    , A.NODE_NM														AS nodeNm
     FROM (
 		SELECT 
 			A.CMPNY_CD
@@ -121,6 +136,11 @@
 	            , A.SLOT_TYPE
 	            , 'SYS015'
 			)																AS SLOT_STATUS_NM
+		    , A.NODE_CD
+		    , CASE
+				WHEN A.NODE_CD IS NULL OR A.NODE_CD = '' THEN ''
+				ELSE FNC_CMM_INFO_SRCH(A.CMPNY_CD, 'NODE', A.SITE_CD, A.NODE_CD)
+			  END															AS NODE_NM
 		FROM TB_DAILY_USER_SLOT A
 			 LEFT OUTER JOIN TB_DAILY_USER B
 				ON (
@@ -186,7 +206,31 @@
 	WHERE CMPNY_CD = #{gvCmpnyCd}
 	  AND SITE_CD = #{siteCd}
     </select>
-    
+
+	<!-- 사업장 최상단(루트) 노드 NODE_CD 조회. 신규 슬롯 기본 소속부서값. 루트 미존재면 결과 없음(null). -->
+	<select id="selectSiteTopNodeCd" resultType="string">
+	/* Baim05Mapper.selectSiteTopNodeCd */
+	SELECT NODE_CD
+	FROM TB_SITE_NODE
+	WHERE CMPNY_CD = #{cmpnyCd}
+	  AND SITE_CD = #{siteCd}
+	  AND PARENT_NODE_CD IS NULL
+	ORDER BY NODE_CD
+	LIMIT 1
+	</select>
+
+	<!-- 활성 계정 수 축소 가드: 점유 슬롯(CURR_USER_CD 존재) 중 SLOT_NO 가 새 한도 이상(끌 대상)인 슬롯 수.
+	     >0 이면 점유자가 고아가 되므로 축소를 차단한다(BAIM_400_008). -->
+	<select id="selectOccupiedSlotCntOverLimit" resultType="int">
+	/* Baim05Mapper.selectOccupiedSlotCntOverLimit */
+	SELECT COUNT(1)
+	FROM TB_DAILY_USER_SLOT
+	WHERE CMPNY_CD = #{cmpnyCd}
+	  AND SITE_CD = #{siteCd}
+	  AND CURR_USER_CD IS NOT NULL
+	  AND CAST(SLOT_NO AS UNSIGNED) &gt;= #{dayLimitCnt}
+	</select>
+
     <update id="saveDailyUserSlot" parameterType="com.prafta.web.baim.baim05.application.command.DailyUserSlotCommand">
 	/* Baim05Mapper.saveDailyUserSlot */
 	INSERT INTO TB_DAILY_USER_SLOT (
@@ -198,6 +242,7 @@
     	, USE_YN
     	, CURR_USER_CD
     	, SLOT_STATUS
+    	, NODE_CD
     	, INSERT_NO
     	, INSERT_DATE
     	, UPDATE_NO
@@ -212,16 +257,18 @@
 		, #{useYn}
 		, ''
 		, #{slotStatus}
+		, #{nodeCd}		<!-- 신규 슬롯 기본 소속부서(사업장 최상단 노드). 기존 슬롯은 아래 ON DUPLICATE 에서 미변경. -->
 		, #{gvUserCd}
 		, now()
 		, #{gvUserCd}
-		, now() 
+		, now()
    	) AS NEW
    	ON DUPLICATE KEY UPDATE
    		USE_YN		= IFNULL(NEW.USE_YN, 'Y')
    		, SLOT_TYPE     = IF(NEW.USE_YN = 'N', '01', TB_DAILY_USER_SLOT.SLOT_TYPE)
 	    , CURR_USER_CD  = IF(NEW.USE_YN = 'N', NULL, TB_DAILY_USER_SLOT.CURR_USER_CD)
 	    , SLOT_STATUS   = IF(NEW.USE_YN = 'N', '01', TB_DAILY_USER_SLOT.SLOT_STATUS)
+	    <!-- NODE_CD 는 갱신하지 않는다(기존 슬롯의 지정 소속부서 보존). 신규 슬롯에만 위 INSERT 값이 적용된다. -->
 	    , UPDATE_NO   	= NEW.UPDATE_NO
 	    , UPDATE_DATE 	= NOW()
 	</update>
@@ -244,6 +291,49 @@
     ) T
 	</select>
 	
+	<!-- ============================================================
+	     PRAFTA_COM_001 T1-07: 계정 등록 토글(USE_YN) 서버 게이트 조회.
+	     OFF(USE_YN!='Y' 또는 미존재)면 QR 발급 차단(서버 강제, fail-closed).
+	     ============================================================ -->
+	<select id="selectLinkPolicyUseYn" resultType="string">
+	/* Baim05Mapper.selectLinkPolicyUseYn */
+	SELECT USE_YN
+	FROM TB_DAILY_USER_LINK_POLICY
+	WHERE CMPNY_CD = #{cmpnyCd}
+	  AND SITE_CD  = #{siteCd}
+	</select>
+
+	<!-- ============================================================
+	     PRAFTA_COM_001 T1-04a: QR 발급 통합형(TB_USER) 중복 사전검증.
+	     dailyjoin 경로(selectTbUserIdDupleCnt/MblHmac)와 동일 패턴 미러.
+	     통합형 INSERT 의 UNIQUE(UX_TB_USER_ID / UX_TB_USER_MBL_NO) 충돌을 사전 차단.
+	     ============================================================ -->
+	<select id="selectTbUserIdDupleCnt" resultType="int">
+	/* Baim05Mapper.selectTbUserIdDupleCnt */
+	SELECT COUNT(*)
+	FROM (
+	    SELECT 1
+	      FROM TB_USER
+	     WHERE CMPNY_CD = #{cmpnyCd}
+	       AND USER_ID  = #{userId}
+	       AND USE_YN   = 'Y'
+	     LIMIT 1
+	) T
+	</select>
+
+	<select id="selectTbUserMblHmacDupleCnt" resultType="int">
+	/* Baim05Mapper.selectTbUserMblHmacDupleCnt */
+	SELECT COUNT(*)
+	FROM (
+	    SELECT 1
+	      FROM TB_USER
+	     WHERE CMPNY_CD    = #{cmpnyCd}
+	       AND MBL_NO_HMAC = #{mblNoHmac}
+	       AND USE_YN      = 'Y'
+	     LIMIT 1
+	) T
+	</select>
+
 	<insert id="insertDailyQrUser" parameterType="com.prafta.web.baim.baim05.application.command.InsertDailyQrUserCommand">
 	/* Baim05Mapper.insertDailyQrUser */
 	INSERT INTO TB_DAILY_USER
@@ -295,7 +385,181 @@
 		, NOW()
 	)
 	</insert>
-	
+
+	<!-- ============================================================
+	     PRAFTA_COM_001 T1-04a: QR 발급 통합형 TB_USER INSERT.
+	     EMPLOYMENT_TYPE='DAILY'/AUTH_CD='99999'(일반근로자)/NODE_CD=NULL/ACCOUNT_STATUS='01'.
+	     QR 사용자는 USER_ID = USER_CD 동일값(insertDailyQrUser 동형). dailyjoin insertDailyUserToTbUser 미러.
+	     ============================================================ -->
+	<insert id="insertDailyQrUserToTbUser" parameterType="com.prafta.web.baim.baim05.application.command.InsertDailyQrUserCommand">
+	/* Baim05Mapper.insertDailyQrUserToTbUser */
+	INSERT INTO TB_USER (
+		CMPNY_CD
+		, USER_CD
+		, USER_ID
+		, USER_NM
+		, USER_PW
+		, SITE_CD
+		, NODE_CD
+		, AUTH_CD
+
+		, MBL_NO_ENC
+		, MBL_NO_HMAC
+		, MBL_NO_LAST4
+
+		, EMPLOYMENT_TYPE
+		, USE_YN
+		, ACCOUNT_STATUS
+
+		, INSERT_NO
+		, INSERT_DATE
+		, UPDATE_NO
+		, UPDATE_DATE
+	)
+	VALUES (
+		#{gvCmpnyCd}
+		, #{userCd}
+		, #{userCd}					<!-- QR 사용자는 USER_ID = USER_CD 동일값 -->
+		, #{userNm}
+		, #{userPw}
+		, #{siteCd}
+		, NULL
+		, '99999'
+
+		, #{mblNoEnc}
+		, #{mblNoHmac}
+		, #{mblNoLast4}
+
+		, 'DAILY'
+		, #{useYn}
+		, #{accountStatus}
+
+		, #{gvUserCd}
+		, NOW()
+		, #{gvUserCd}
+		, NOW()
+	)
+	</insert>
+
+	<!-- PRAFTA_COM_001 T1-04a: QR 발급 통합형 TB_USER_SITE_AUTH INSERT(해당 사업장 1행). -->
+	<insert id="insertDailyQrUserTbUserSiteAuth" parameterType="com.prafta.web.baim.baim05.application.command.InsertDailyQrUserCommand">
+	/* Baim05Mapper.insertDailyQrUserTbUserSiteAuth */
+	INSERT INTO TB_USER_SITE_AUTH (
+		CMPNY_CD
+		, USER_CD
+		, SITE_CD
+		, USE_YN
+		, INSERT_NO
+		, INSERT_DATE
+		, UPDATE_NO
+		, UPDATE_DATE
+	)
+	VALUES (
+		#{gvCmpnyCd}
+		, #{userCd}
+		, #{siteCd}
+		, 'Y'
+		, #{gvUserCd}
+		, NOW()
+		, #{gvUserCd}
+		, NOW()
+	)
+	</insert>
+
+	<!-- ============================================================
+	     PRAFTA_COM_001 T1-04a(재작업) — QR 재발급 시 비활성 일용직 재활성(dailyjoin 옵션2 미러).
+	     비활성(USE_YN='N') TB_USER/TB_DAILY_USER 행이 DB 절대 유니크(UX_TB_USER_ID/UX_TB_USER_MBL_NO)와
+	     충돌해 트랜잭션이 롤백되던 결함을 해소한다. 신규 INSERT 대신 기존 USER_CD 를 재활성한다.
+	     ============================================================ -->
+
+	<!-- 재활성 대상 USER_CD 조회(같은 회사+휴대폰의 비활성 TB_DAILY_USER 중 최신 1건).
+	     활성 중복은 selectDailyUserDuplicateCnt/selectTbUserMblHmacDupleCnt 에서 이미 차단됨. -->
+	<select id="selectReactivatableDailyUserCd" resultType="string">
+	/* Baim05Mapper.selectReactivatableDailyUserCd */
+	SELECT USER_CD
+	FROM TB_DAILY_USER
+	WHERE CMPNY_CD    = #{cmpnyCd}
+	  AND MBL_NO_HMAC = #{mblNoHmac}
+	  AND USE_YN      = 'N'
+	ORDER BY INSERT_DATE DESC
+	LIMIT 1
+	</select>
+
+	<!-- 재활성 — TB_DAILY_USER 기존 행 재사용.
+	     사업장/이름/비번(난수 재설정)/휴대폰파생 갱신 + 만료일 오늘로 연장 + 잠금/실패카운트 초기화.
+	     QR 사용자는 USER_ID = USER_CD 동일값이라 USER_ID 는 재설정하지 않는다(키 불변). -->
+	<update id="reactivateDailyQrUser" parameterType="com.prafta.web.baim.baim05.application.command.InsertDailyQrUserCommand">
+	/* Baim05Mapper.reactivateDailyQrUser */
+	UPDATE TB_DAILY_USER
+	SET USE_YN                 = 'Y'
+		, ACCOUNT_STATUS        = #{accountStatus}
+		, SITE_CD               = #{siteCd}
+		, USER_NM               = #{userNm}
+		, USER_PW               = #{userPw}
+		, MBL_NO_ENC            = #{mblNoEnc}
+		, MBL_NO_HMAC           = #{mblNoHmac}
+		, MBL_NO_LAST4          = #{mblNoLast4}
+		, REG_TYPE              = #{regType}
+		, WORK_EXPIRE_DATE      = DATE_FORMAT(NOW(), '%Y%m%d')
+		, WITHDRAWAL_DATE       = NULL
+		, PWD_FAIL_CNT          = 0
+		, PWD_LOCK_YN           = 'N'
+		, PWD_LOCK_EXPIRE_DTIME = NULL
+		, UPDATE_NO             = #{gvUserCd}
+		, UPDATE_DATE           = NOW()
+	WHERE CMPNY_CD = #{gvCmpnyCd}
+	  AND USER_CD  = #{userCd}
+	</update>
+
+	<!-- 재활성 — TB_USER 기존 통합행 재사용(EMPLOYMENT_TYPE='DAILY' 가드).
+	     영향행 0이면 = 통합형 이전 레거시 일용직(TB_USER 없음) → 서비스에서 신규 INSERT 폴백. -->
+	<update id="reactivateDailyQrUserTbUser" parameterType="com.prafta.web.baim.baim05.application.command.InsertDailyQrUserCommand">
+	/* Baim05Mapper.reactivateDailyQrUserTbUser */
+	UPDATE TB_USER
+	SET USE_YN          = 'Y'
+		, ACCOUNT_STATUS = #{accountStatus}
+		, SITE_CD        = #{siteCd}
+		, USER_NM        = #{userNm}
+		, USER_PW        = #{userPw}
+		, MBL_NO_ENC     = #{mblNoEnc}
+		, MBL_NO_HMAC    = #{mblNoHmac}
+		, MBL_NO_LAST4   = #{mblNoLast4}
+		, UPDATE_NO      = #{gvUserCd}
+		, UPDATE_DATE    = NOW()
+	WHERE CMPNY_CD        = #{gvCmpnyCd}
+	  AND USER_CD         = #{userCd}
+	  AND EMPLOYMENT_TYPE = 'DAILY'
+	</update>
+
+	<!-- 재활성 — TB_USER_SITE_AUTH upsert(사업장 권한 행 활성). 기존 행 있으면 USE_YN 회복. -->
+	<insert id="upsertDailyQrUserTbUserSiteAuth" parameterType="com.prafta.web.baim.baim05.application.command.InsertDailyQrUserCommand">
+	/* Baim05Mapper.upsertDailyQrUserTbUserSiteAuth */
+	INSERT INTO TB_USER_SITE_AUTH (
+		CMPNY_CD
+		, USER_CD
+		, SITE_CD
+		, USE_YN
+		, INSERT_NO
+		, INSERT_DATE
+		, UPDATE_NO
+		, UPDATE_DATE
+	)
+	VALUES (
+		#{gvCmpnyCd}
+		, #{userCd}
+		, #{siteCd}
+		, 'Y'
+		, #{gvUserCd}
+		, NOW()
+		, #{gvUserCd}
+		, NOW()
+	)
+	ON DUPLICATE KEY UPDATE
+		USE_YN      = 'Y'
+		, UPDATE_NO   = #{gvUserCd}
+		, UPDATE_DATE = NOW()
+	</insert>
+
 	<insert id="updateDailyUserSlotCurrUserCd" parameterType="com.prafta.web.baim.baim05.application.command.DailyUserSlotUpdCommand">
 	/* Baim05Mapper.updateDailyUserSlotCurrUserCd */
 	UPDATE TB_DAILY_USER_SLOT
@@ -383,6 +647,22 @@
 	  AND SLOT_STATUS = '02'
 	</update>
 
+	<!-- 슬롯 구분(SLOT_TYPE, SYS014) 변경: 비점유 슬롯만 대상.
+	     점유 가드(CURR_USER_CD IS NULL AND SLOT_STATUS != '02')를 WHERE 절에 둬 점유중 슬롯은 영향 0(fail-closed). -->
+	<update id="updateSlotType" parameterType="com.prafta.web.baim.baim05.application.command.SetSlotTypeCommand">
+	/* Baim05Mapper.updateSlotType */
+	UPDATE TB_DAILY_USER_SLOT
+	SET SLOT_TYPE = #{slotType}
+		, UPDATE_NO = #{gvUserCd}
+		, UPDATE_DATE = NOW()
+	WHERE CMPNY_CD = #{cmpnyCd}
+	  AND SITE_CD = #{siteCd}
+	  AND SLOT_NO = #{slotNo}
+	  AND CURR_USER_CD IS NULL
+	  AND SLOT_STATUS != '02'
+	  AND USE_YN = 'Y'
+	</update>
+
 	<!-- PRAFTA-055-2: 해당 사업장의 노드(부서) 정/부 관리자인지 확인.
 	     master/hr(전사 권한)이 아니어도 자기 사업장 노드 관리자면 슬롯 쓰기 EP 허용(역할 게이트). 1 이상이면 관리자. -->
 	<select id="countNodeAdminInSite" resultType="int">
@@ -406,7 +686,9 @@
 	FROM DUAL
 	</select>
 
-	<!-- 점유 시작 INSERT(RELEASE_* = NULL). OCCUPY_DTIME=NOW(). -->
+	<!-- 점유 시작 INSERT(RELEASE_* = NULL). OCCUPY_DTIME=NOW().
+	     PRAFTA_COM_001 T1-05: RELEASE_USER 를 명시적으로 NULL 로 INSERT.
+	     컬럼 DEFAULT 'SYSTEM' 이라 컬럼을 생략하면 신규 점유인데도 해제자에 'SYSTEM' 이 들어간다. -->
 	<insert id="insertSlotHis" parameterType="com.prafta.web.baim.baim05.application.command.InsertSlotHisCommand">
 	/* Baim05Mapper.insertSlotHis */
 	INSERT INTO TB_DAILY_USER_SLOT_HIS (
@@ -418,6 +700,7 @@
 		, USER_ID
 		, ISSUE_CHANNEL
 		, OCCUPY_DTIME
+		, RELEASE_USER
 		, INSERT_NO
 		, INSERT_DATE
 	)
@@ -430,6 +713,7 @@
 		, #{userId}
 		, #{issueChannel}
 		, NOW()
+		, NULL						<!-- 점유 시작 시점엔 해제자 없음(DEFAULT 'SYSTEM' 회피) -->
 		, #{insertNo}
 		, NOW()
 	)
@@ -468,14 +752,29 @@
 			WHEN D.MBL_NO_LAST4 IS NULL OR D.MBL_NO_LAST4 = '' THEN '-'
 			ELSE CONCAT('010-****-', D.MBL_NO_LAST4)
 		  END																	AS mblNoMasked
-		, H.RELEASE_USER														AS releaseUser
-		, FNC_CMM_INFO_SRCH(H.CMPNY_CD, 'SYST_VAL', H.RELEASE_TYPE, 'SYS016')	AS releaseTypeNm
-		, H.RELEASE_REASON														AS releaseReason
+		<!-- PRAFTA_COM_001 T1-05: 미해제(점유 중, RELEASE_DTIME IS NULL) 행은 해제정보를 비운다.
+		     컬럼 DEFAULT 'SYSTEM' 으로 적재된 레거시 열린 행도 화면상 '점유 중'으로 정정(마이그 없이 fail-safe). -->
+		<!-- PRAFTA_COM_003 3.3.3-1: 해제자(RELEASE_USER=관리자 USER_CD)를 TB_USER 와 조인해
+		     'USER_NM(USER_ID)' 형태로 가공. 사용자 매칭 실패(예: 'SYSTEM' 자동해제)는 원본 코드값을 그대로 노출. -->
+		, CASE
+			WHEN H.RELEASE_DTIME IS NULL THEN NULL
+			WHEN RU.USER_CD IS NOT NULL THEN CONCAT(RU.USER_NM, '(', RU.USER_ID, ')')
+			ELSE H.RELEASE_USER
+		  END																	AS releaseUser
+		, CASE WHEN H.RELEASE_DTIME IS NULL THEN NULL
+		       ELSE FNC_CMM_INFO_SRCH(H.CMPNY_CD, 'SYST_VAL', H.RELEASE_TYPE, 'SYS016') END	AS releaseTypeNm
+		, CASE WHEN H.RELEASE_DTIME IS NULL THEN NULL ELSE H.RELEASE_REASON END	AS releaseReason
 	FROM TB_DAILY_USER_SLOT_HIS H
 		 LEFT OUTER JOIN TB_DAILY_USER D
 			ON (
 				H.CMPNY_CD = D.CMPNY_CD
 			AND H.USER_ID = D.USER_ID
+			)
+		 <!-- 해제자 표시용 조인(읽기 전용, 권한/점유 가드 영향 없음). 조인 키: CMPNY_CD + RELEASE_USER(=USER_CD). -->
+		 LEFT OUTER JOIN TB_USER RU
+			ON (
+				H.CMPNY_CD = RU.CMPNY_CD
+			AND H.RELEASE_USER = RU.USER_CD
 			)
 	WHERE H.CMPNY_CD = #{gvCmpnyCd}
 	  AND H.SITE_CD = #{siteCd}
@@ -483,4 +782,57 @@
 	  AND H.OCCUPY_DTIME &gt;= STR_TO_DATE(#{cutoffYmd}, '%Y%m%d')
 	ORDER BY H.OCCUPY_DTIME DESC
 	</select>
+
+	<!-- ============================================================
+	     PRAFTA-daily-user-dept-2: 슬롯 소속부서(NODE_CD) 지정/해제.
+	     ============================================================ -->
+
+	<!-- 해당 사업장에 속한 유효 노드(부서) 카운트(cross-site 노드 변조 차단). 1 이상이면 유효. -->
+	<select id="countSiteNode" resultType="int">
+	/* Baim05Mapper.countSiteNode */
+	SELECT COUNT(1)
+	FROM TB_SITE_NODE
+	WHERE CMPNY_CD = #{cmpnyCd}
+	  AND SITE_CD  = #{siteCd}
+	  AND NODE_CD  = #{nodeCd}
+	</select>
+
+	<!-- 슬롯 소속부서(NODE_CD) UPDATE. nodeCd 가 null 이면 부서 해제. 점유중 슬롯도 대상(잠금 없음). -->
+	<update id="updateSlotNode" parameterType="com.prafta.web.baim.baim05.application.command.SetSlotNodeCommand">
+	/* Baim05Mapper.updateSlotNode */
+	UPDATE TB_DAILY_USER_SLOT
+	SET NODE_CD = #{nodeCd}
+		, UPDATE_NO = #{gvUserCd}
+		, UPDATE_DATE = NOW()
+	WHERE CMPNY_CD = #{cmpnyCd}
+	  AND SITE_CD = #{siteCd}
+	  AND SLOT_NO = #{slotNo}
+	</update>
+
+	<!-- ============================================================
+	     PRAFTA-daily-user-dept-3: QR 발급 점유 시 슬롯 지정부서 → TB_USER.NODE_CD 매칭.
+	     ============================================================ -->
+
+	<!-- 점유한 슬롯의 지정 부서(NODE_CD) 조회. 미존재/미지정이면 null. -->
+	<select id="selectSlotNodeCd" resultType="string">
+	/* Baim05Mapper.selectSlotNodeCd */
+	SELECT NODE_CD
+	FROM TB_DAILY_USER_SLOT
+	WHERE CMPNY_CD = #{cmpnyCd}
+	  AND SITE_CD = #{siteCd}
+	  AND SLOT_NO = #{slotNo}
+	</select>
+
+	<!-- 슬롯 지정부서를 점유 일용직(EMPLOYMENT_TYPE='DAILY')의 TB_USER.NODE_CD 로 무조건 세팅.
+	     EMPLOYMENT_TYPE 가드로 정규 사용자 오염 차단. nodeCd 가 NULL 이면 호출하지 않음(서비스에서 분기). -->
+	<update id="updateTbUserNodeCdFromSlot">
+	/* Baim05Mapper.updateTbUserNodeCdFromSlot */
+	UPDATE TB_USER
+	SET NODE_CD = #{nodeCd}
+		, UPDATE_NO = #{gvUserCd}
+		, UPDATE_DATE = NOW()
+	WHERE CMPNY_CD = #{cmpnyCd}
+	  AND USER_CD = #{userCd}
+	  AND EMPLOYMENT_TYPE = 'DAILY'
+	</update>
 </mapper>

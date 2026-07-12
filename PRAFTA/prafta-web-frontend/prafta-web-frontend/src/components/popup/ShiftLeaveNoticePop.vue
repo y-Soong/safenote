@@ -31,8 +31,8 @@
         <div class="viewBody">
           <!-- 필수 안내 문구 -->
           <p class="shift-notice-guide">
-            교대근무에 소속된 사용자들의 기존 연차는 변경되지 않으니 수정이 필요한지
-            확인해주세요.
+            교대근무에 소속된 사용자들의 기존 연차는 변경되지 않으니 수정이
+            필요한지 확인해주세요.
           </p>
           <p v-if="hasOt" class="shift-notice-guide shift-notice-guide-sub">
             초과근무가 등록된 날도 기존 스케줄을 유지하니 함께 확인해주세요.
@@ -139,9 +139,7 @@ const classifyKey = (row) => {
   return row.dayType === "OFF" ? "LEAVE_OFF" : "LEAVE_WORK";
 };
 
-const hasOt = computed(() =>
-  (props.rows ?? []).some((r) => r.reason === "OT")
-);
+const hasOt = computed(() => (props.rows ?? []).some((r) => r.reason === "OT"));
 
 const countOf = (key) =>
   (props.rows ?? []).filter((r) => classifyKey(r) === key).length;

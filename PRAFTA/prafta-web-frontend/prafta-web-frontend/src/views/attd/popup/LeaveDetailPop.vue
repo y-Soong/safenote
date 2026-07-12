@@ -74,27 +74,30 @@
           </div>
 
           <!-- ===== 통계 카드: 법정 휴가 ===== -->
+          <!-- LC-09(§5-B): 소수점 노출 금지 — "N일 H시간 M분" 표기(단위 포함 조립) -->
           <div class="ldp-stat-section">
             <p class="ldp-stat-title">법정 휴가</p>
             <div class="ldp-stat-grid">
               <div class="ldp-stat-card">
                 <p class="ldp-stat-label">부여</p>
                 <p class="ldp-stat-value">
-                  {{ legalSummary.granted
-                  }}<span class="ldp-stat-unit">일</span>
+                  {{ fnDays(legalSummary.granted) }}
                 </p>
               </div>
               <div class="ldp-stat-card">
                 <p class="ldp-stat-label">사용</p>
                 <p class="ldp-stat-value">
-                  {{ legalSummary.used }}<span class="ldp-stat-unit">일</span>
+                  {{ fnDays(legalSummary.used) }}
+                </p>
+                <!-- 시간차 사용 원본 분 병기(LEAVE_MINUTES 합계, §5-B) -->
+                <p v-if="hourlyUsedMinutes > 0" class="ldp-stat-sub">
+                  시간차 사용 {{ fnMinutes(hourlyUsedMinutes) }} 포함
                 </p>
               </div>
               <div class="ldp-stat-card">
                 <p class="ldp-stat-label">잔여</p>
                 <p class="ldp-stat-value is-accent">
-                  {{ legalSummary.remaining
-                  }}<span class="ldp-stat-unit">일</span>
+                  {{ fnDays(legalSummary.remaining) }}
                 </p>
                 <p v-if="legalSummary.expiresAt" class="ldp-stat-sub">
                   {{ fnFormatDate(legalSummary.expiresAt) }} 만료
@@ -110,22 +113,19 @@
               <div class="ldp-stat-card">
                 <p class="ldp-stat-label">부여</p>
                 <p class="ldp-stat-value">
-                  {{ nonLegalSummary.granted
-                  }}<span class="ldp-stat-unit">일</span>
+                  {{ fnDays(nonLegalSummary.granted) }}
                 </p>
               </div>
               <div class="ldp-stat-card">
                 <p class="ldp-stat-label">사용</p>
                 <p class="ldp-stat-value">
-                  {{ nonLegalSummary.used
-                  }}<span class="ldp-stat-unit">일</span>
+                  {{ fnDays(nonLegalSummary.used) }}
                 </p>
               </div>
               <div class="ldp-stat-card">
                 <p class="ldp-stat-label">잔여</p>
                 <p class="ldp-stat-value">
-                  {{ nonLegalSummary.remaining
-                  }}<span class="ldp-stat-unit">일</span>
+                  {{ fnDays(nonLegalSummary.remaining) }}
                 </p>
               </div>
             </div>
@@ -145,9 +145,9 @@
               >
                 <p class="ldp-stat-label">{{ t.leaveNm }}</p>
                 <p class="ldp-stat-value is-accent">
-                  {{ t.remainDays }}<span class="ldp-stat-unit">일</span>
+                  {{ fnDays(t.remainDays) }}
                 </p>
-                <p class="ldp-stat-sub">한도 {{ t.maxAplyDays }}일</p>
+                <p class="ldp-stat-sub">한도 {{ fnDays(t.maxAplyDays) }}</p>
               </div>
             </div>
           </div>
@@ -194,9 +194,9 @@
                     </span>
                   </td>
                   <td>{{ g.reason || "-" }}</td>
-                  <td class="is-right">{{ g.granted }}일</td>
-                  <td class="is-right">{{ g.used }}일</td>
-                  <td class="is-right ldp-strong">{{ g.remaining }}일</td>
+                  <td class="is-right">{{ fnDays(g.granted) }}</td>
+                  <td class="is-right">{{ fnDays(g.used) }}</td>
+                  <td class="is-right ldp-strong">{{ fnDays(g.remaining) }}</td>
                   <td class="is-secondary">{{ fnFormatDate(g.expiresAt) }}</td>
                   <td class="is-center">
                     <span
@@ -271,6 +271,7 @@ import { useModal } from "@/utils/useModal";
 import axios from "@/api/axios";
 import { resolveApiErrorMessage } from "@/utils/apiError";
 import { formatYmdDot } from "@/utils/dateFormat";
+import { formatLeaveDays, formatLeaveMinutes } from "@/utils/leaveFormat";
 import ManualGrantPop from "./ManualGrantPop.vue";
 import LeaveRecallPop from "./LeaveRecallPop.vue";
 
@@ -303,6 +304,10 @@ const user = ref({
 
 const legalSummary = ref({ granted: 0, used: 0, remaining: 0, expiresAt: "" });
 const nonLegalSummary = ref({ granted: 0, used: 0, remaining: 0 });
+
+// LC-09(§5-B): 1일 환산시간(분, 서버 폴백 480) + 시간차 CONFIRMED 사용 분 합계(원본 병기용)
+const convMinutes = ref(480);
+const hourlyUsedMinutes = ref(0);
 
 // 신청형 휴가(LEAVE_TYPE='01') 타입별 잔여 현황 — 법정/법정외와 합산하지 않는 별도 섹션.
 //   각 항목: { leaveCd, leaveNm, maxAplyDays(한도), usedDays(사용), remainDays(잔여) } — 모두 서버 권위값.
@@ -377,6 +382,9 @@ const fnLoadDetail = async () => {
       used: data.nonLegalSummary?.used ?? 0,
       remaining: data.nonLegalSummary?.remaining ?? 0,
     };
+    // LC-09: 표기 조립용 환산시간 + 시간차 원본 분 합계
+    convMinutes.value = data.convMinutes ?? 480;
+    hourlyUsedMinutes.value = data.hourlyUsedMinutes ?? 0;
     // 신청형 휴가: 서버 산출값(한도/사용/잔여)을 그대로 렌더(프론트 재계산 금지).
     //   한도(maxAplyDays)가 null로 내려오면 표기 안정성을 위해 0으로만 폴백(잔여는 서버값 유지).
     appliedLeaveTypes.value = Array.isArray(data.appliedLeaveTypes)
@@ -501,6 +509,12 @@ const fnFormatDate = (yyyymmdd) => {
   if (s.length !== 8) return s || "-";
   return formatYmdDot(s);
 };
+
+// LC-09(§5-B): 일수 표기 — 소수점 노출 금지, "N일 H시간 M분"(leaveFormat 단일 출처)
+const fnDays = (v) => formatLeaveDays(v, convMinutes.value);
+
+// LC-09(§5-B): 분 → "H시간 M분" (시간차 LEAVE_MINUTES 원본 병기)
+const fnMinutes = (v) => formatLeaveMinutes(v);
 </script>
 
 <style scoped>

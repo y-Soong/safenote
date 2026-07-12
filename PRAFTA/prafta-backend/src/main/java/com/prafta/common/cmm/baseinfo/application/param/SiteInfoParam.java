@@ -10,9 +10,10 @@ public record SiteInfoParam(
 	, String userCd
 	, String siteNo
 	, String siteNm
+	, String useYn   // 사용여부 필터('Y'/'N', 빈 값=전체). 일반(로그인 후) 조회 전용.
 ) {
 	public static SiteInfoParam from(SiteInfoRequest request, TokenInfo tokenInfo) {
-		
+
 		if(request == null)
 			throw new ApiException(CommonErrorCode.COMMON_400_001);
 		if(tokenInfo == null)
@@ -23,6 +24,7 @@ public record SiteInfoParam(
     		, tokenInfo.gv_userCd()
     		, request.getSiteNo()
     		, request.getSiteNm()
+    		, request.getUseYn()
         );
     }
 }

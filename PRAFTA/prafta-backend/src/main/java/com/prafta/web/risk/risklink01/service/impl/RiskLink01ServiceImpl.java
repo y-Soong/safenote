@@ -27,7 +27,7 @@ import lombok.extern.slf4j.Slf4j;
 /**
  * 위험성평가-아차사고 참조 연계(prafta-054-3) 서비스.
  *
- * <p>위험성평가에서 같은 사업장의 완료(SYS063='400') 아차사고를 검색·연결·해제·조회한다.
+ * <p>위험성평가에서 같은 사업장의 완료(SYS063='300') 아차사고를 검색·연결·해제·조회한다.
  * 아차사고 데이터를 평가로 복사하지 않는 순수 "참조" 연계이며, 모든 진입부에서 사업장 권한을
  * 검증해 cross-site IDOR 을 차단한다(nearmiss01 의 assertSiteAccess 패턴 복제).
  * 편집(연결/해제)은 위험성평가 개선완료(ASSESSMENT_STATUS='003') 전에만 허용한다(사용자 확정 §3).
@@ -39,8 +39,8 @@ public class RiskLink01ServiceImpl implements RiskLink01Service {
 
     // 위험성평가 진행상태 SYS011: 개선완료(003) 이상은 참조 아차사고 편집 불가
     private static final String ASSESSMENT_STATUS_DONE = "003";
-    // 아차사고 처리상태 SYS063: 완료(400) 건만 참조로 연결 가능
-    private static final String NEAR_MISS_STATUS_COMPLETED = "400";
+    // 아차사고 처리상태 SYS063: 완료(300) 건만 참조로 연결 가능 (T6-14B-5/D4: 완료 400→300 재번호)
+    private static final String NEAR_MISS_STATUS_COMPLETED = "300";
 
     private final RiskLink01Mapper riskLink01Mapper;
 

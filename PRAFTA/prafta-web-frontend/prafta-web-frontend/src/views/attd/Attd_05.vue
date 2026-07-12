@@ -280,6 +280,20 @@
                     (d.weekendYn || d.holidayYn ? "-" : "")
                   }}
                 </span>
+                <!-- 부분 휴가(반차/시간차) 칩 — 근무 스케줄명 아래에 "시간차" 라벨을 얹는다(셀 값 미변경).
+                     클릭 시 등록된 건들을 팝업으로 표시. 드래그 선택/셀 핸들러와 충돌하지 않도록 전파 차단. -->
+                <button
+                  v-if="getPartialLeaves(user.userCd, d.workYmd).length"
+                  type="button"
+                  class="td-partial-leave"
+                  title="클릭하면 등록된 시간차/반차 정보를 볼 수 있습니다."
+                  @mousedown.stop.prevent
+                  @mouseup.stop
+                  @dblclick.stop.prevent
+                  @click.stop="fnOpenPartialLeaveInfo(rowIdx, d.workYmd)"
+                >
+                  {{ partialLeaveLabel(user.userCd, d.workYmd) }}
+                </button>
               </td>
             </tr>
           </tbody>
@@ -295,12 +309,14 @@ import {
   computed,
   onMounted,
   onUnmounted,
+  onActivated,
   defineProps,
   getCurrentInstance,
   defineOptions,
 } from "vue";
 import ViewHeader from "@/components/common/ViewHeader.vue";
 import { useModal } from "@/utils/useModal";
+import { useDashboardNavStore } from "@/stores/dashboardNavStore";
 import axios from "@/api/axios";
 import { getMessage, MSG } from "@/messages";
 import { resolveApiErrorMessage } from "@/utils/apiError";
@@ -311,6 +327,7 @@ import SiteNodeSearchPop from "@/components/popup/SiteNodeSearchPop.vue";
 import CalendarSrchMonth from "@/components/common/CalendarSrchMonth.vue";
 import ExcelUploadPop from "@/views/attd/popup/ExcelUploadPop.vue";
 import LeaveChangeRequestPop from "@/views/attd/popup/LeaveChangeRequestPop.vue";
+import PartialLeaveInfoPop from "@/views/attd/popup/PartialLeaveInfoPop.vue";
 import BatchResultPop from "@/components/popup/BatchResultPop.vue";
 import ThSortable from "@/components/common/ThSortable.vue";
 import {
@@ -326,6 +343,7 @@ const props = defineProps({
 
 const { proxy } = getCurrentInstance();
 const { open: openPop, close: closePop } = useModal();
+const dashNav = useDashboardNavStore();
 
 const localButtons = ref({ ...props.buttons });
 
@@ -379,6 +397,14 @@ const scheduleData = ref({});
 //   work_plan(SCH_CD) 위에 "연차" 표시를 덮는 단일 출처(모델 전환). 조회 응답으로만 갱신(저장 미관여).
 //   prafta-com-008-B-7(D-E8): 연차 셀 개별 동의요청(attd13 DELETE) 진입을 위해 leaveId 를 함께 보관한다.
 const leaveOverlay = ref({});
+
+// 부분 휴가(반차/시간차) 오버레이. key = `${userCd}_${workYmd}`,
+//   value = [{ useUnitType, useUnitNm, startTime, endTime, leaveMinutes, leaveCd }, ...] (셀당 다건 배열).
+//   종일 연차(leaveOverlay)는 셀 값을 "연차"로 대체하지만, 반차/시간차는 그날 근무 스케줄이 살아있으므로
+//   셀 값을 덮지 않고 근무 스케줄명 아래 "시간차" 칩으로 표시하고, 칩 클릭 시 등록된 건들을 팝업으로 보여준다.
+//   ★ 같은 날 시간차 다건(예: 14:30~16:30 + 17:00~17:30) 대응 — 키 1개가 덮어쓰지 않도록 배열로 누적한다.
+//   조회 응답으로만 갱신(저장 미관여).
+const partialLeaveOverlay = ref({});
 
 // prafta-com-008-D-5: 교대 잠금 오버레이. key = `${userCd}_${workYmd}` 가 true 면 교대팀 소속 구간(SCH 잠금).
 //   교대 소속 구간의 일반 근무(SCH) 셀은 비활성/자물쇠 표시하고, 적용/비우기 대상에서 제외한다.
@@ -497,6 +523,48 @@ const getUserNm = (userCd) => {
 //   true 인 셀은 "비우기" 대상이 아니라 동의요청(이동/삭제) 진입 대상이다.
 const isLeaveCell = (userCd, workYmd) =>
   !!leaveOverlay.value[`${userCd}_${workYmd}`]?.leaveId;
+
+// ── 부분 휴가(반차/시간차) 셀 정보 조회 ───────────────────────
+//   해당 셀에 종일이 아닌 확정 휴가 목록(배열)을 반환한다. 없으면 빈 배열.
+const getPartialLeaves = (userCd, workYmd) =>
+  partialLeaveOverlay.value[`${userCd}_${workYmd}`] || [];
+
+// 부분 휴가 칩 라벨 — 시간차(02~04)가 하나라도 있으면 "시간차", 그 외(반차만)면 "반차".
+//   다건이면 건수를 덧붙여 "시간차 2" 로 표시(클릭 시 팝업에서 각 건 확인).
+const partialLeaveLabel = (userCd, workYmd) => {
+  const list = getPartialLeaves(userCd, workYmd);
+  if (!list.length) return "";
+  const hasTimeUnit = list.some((p) =>
+    ["02", "03", "04"].includes(p.useUnitType)
+  );
+  const base = hasTimeUnit ? "시간차" : "반차";
+  return list.length > 1 ? `${base} ${list.length}` : base;
+};
+
+// 부분 휴가 칩 클릭 → 해당 셀의 등록 건들을 팝업으로 표시(읽기전용).
+//   휴가 종류명(leaveNm)은 leaveTypeList(법정 휴가 목록)에서 leaveCd 로 해석해 동반 전달한다.
+const fnOpenPartialLeaveInfo = (rowIdx, workYmd) => {
+  const user = sortedUserList.value[rowIdx];
+  if (!user) return;
+  const list = getPartialLeaves(user.userCd, workYmd);
+  if (!list.length) return;
+  const leaves = list.map((p) => {
+    const leave = leaveTypeList.value.find((l) => l.leaveCd === p.leaveCd);
+    return {
+      leaveNm: leave ? leave.leaveNm : p.leaveCd,
+      useUnitNm: p.useUnitNm,
+      useUnitType: p.useUnitType,
+      startTime: p.startTime,
+      endTime: p.endTime,
+      leaveMinutes: p.leaveMinutes,
+    };
+  });
+  openPop(PartialLeaveInfoPop, {
+    userNm: user.userNm,
+    workYmd,
+    leaves,
+  });
+};
 
 // ── 교대 잠금 셀 여부 (prafta-com-008-D-5) ────────────────────
 //   교대팀 소속 구간(BE shiftLockOverlay)인 셀. true 면 SCH 변경/비우기 비활성(자물쇠).
@@ -1206,6 +1274,21 @@ const fnSearch = async () => {
           leaveId: item.leaveId,
         };
       });
+      // 부분 휴가(반차/시간차) 오버레이 적재 — 근무 스케줄 위 칩 표시용(셀 값 미변경).
+      //   같은 날 다건(시간차 2건 등)을 키 1개가 덮어쓰지 않도록 (userCd_workYmd) 별 배열로 누적한다.
+      partialLeaveOverlay.value = {};
+      (response.data.partialLeaveOverlayResultList ?? []).forEach((item) => {
+        const key = `${item.userCd}_${item.workYmd}`;
+        (partialLeaveOverlay.value[key] =
+          partialLeaveOverlay.value[key] || []).push({
+          useUnitType: item.useUnitType,
+          useUnitNm: item.useUnitNm,
+          startTime: item.startTime,
+          endTime: item.endTime,
+          leaveMinutes: item.leaveMinutes,
+          leaveCd: item.leaveCd,
+        });
+      });
       // prafta-com-008-D-5: 교대 잠금 오버레이 적재(교대팀 소속 구간 SCH 셀 비활성/자물쇠 표시 단일출처).
       shiftLockOverlay.value = {};
       (response.data.shiftLockOverlayResultList ?? []).forEach((item) => {
@@ -1514,10 +1597,39 @@ const fnInit = () => {
   }
 };
 
+// ── 대시보드 조회조건 주입 (PRAFTA-DASHBOARD-T1) ──────────────
+// 대시보드(Dashboard_01)에서 넘어온 조회조건이 있으면 반영한다 (없으면 no-op).
+// consume-once 이므로 일반 진입/탭 재활성화에는 영향 없음. 반영 여부를 반환한다.
+const applyDashboardParams = () => {
+  const p = dashNav.consumeParams("Attd_05");
+  if (!p) return false;
+  siteCd.value = p.siteCd ?? "";
+  siteNo.value = p.siteNo ?? "";
+  siteNm.value = p.siteNm ?? "";
+  nodeDisabled.value = proxy.$util.isEmpty(siteCd.value);
+  nodeCd.value = p.nodeCd ?? "";
+  nodeNm.value = p.nodeNm ?? "";
+  incSubNodeYn.value = !!p.incSubNodeYn;
+  if (p.ym) workYm.value = p.ym;
+  return true;
+};
+
+// 본 화면 fnSearch 는 사업장+소속부서 필수 — 둘 다 있을 때만 자동 재조회한다.
+const fnSearchByDashboard = () => {
+  if (applyDashboardParams() && siteCd.value && nodeCd.value) fnSearch();
+};
+
 onMounted(async () => {
   fnInit();
+  // 대시보드 경유 진입 시 조회조건 덮어쓰기 + 재조회 (fnInit 자동조회를 덮는 재조회 1회 허용)
+  fnSearchByDashboard();
   fnButtonControll();
   document.addEventListener("mouseup", onDocMouseUp);
+});
+
+// keep-alive 로 이미 열린 탭에 재진입하는 경우 대응
+onActivated(() => {
+  fnSearchByDashboard();
 });
 
 onUnmounted(() => {
@@ -2030,6 +2142,29 @@ onUnmounted(() => {
   text-underline-offset: 2px;
   color: var(--color-primary, #16a34a);
   font-weight: 600;
+}
+
+/* 부분 휴가(반차/시간차) 칩 — 근무 스케줄명 아래에 "시간차" 라벨을 얹는다(종일 연차와 구분).
+   종일 연차는 셀 값 자체를 "연차"로 대체하지만 이 칩은 근무 스케줄을 유지한 채 부가 표시한다.
+   클릭하면 등록 건 팝업이 열리므로 버튼(클릭 affordance)으로 렌더한다.
+   색상은 보조(주황) 토큰을 사용해 종일 연차(초록 밑줄)와 시각적으로 구분한다. */
+.td-partial-leave {
+  display: inline-block;
+  margin-top: 0.12rem;
+  padding: 0.02rem 0.32rem;
+  border-radius: 0.5rem;
+  font-size: 0.66rem;
+  line-height: 1.5;
+  font-weight: 600;
+  white-space: nowrap;
+  cursor: pointer;
+  font-family: inherit;
+  color: var(--color-warning-text, #b45309);
+  background: var(--color-warning-bg, rgba(245, 158, 11, 0.14));
+  border: 1px solid var(--color-warning-border, rgba(245, 158, 11, 0.35));
+}
+.td-partial-leave:hover {
+  background: var(--color-warning-bg-strong, rgba(245, 158, 11, 0.24));
 }
 
 /* prafta-com-008-D-5: 교대팀 소속 구간 SCH 셀 — 비활성(자물쇠) 표시.

@@ -13,6 +13,11 @@ public enum AuthErrorCode implements ApiErrorCode {
 	// prafta-057: 다른 환경(다른 브라우저/PC)에서의 신규 로그인으로 현재 세션이 폐기됨.
 	//   HTTP 409(CONFLICT) — 토큰 만료(401)와 구분하여 프론트가 refresh 시도 없이 즉시 안내 후 로그아웃한다.
 	, AUTH_409_001(HttpStatus.CONFLICT, "다른 환경에서 로그인을 감지했습니다.")
+	// prafta-app-033: 이용약관 동의 / 강제 비밀번호 변경 미완료 상태에서의 일반 API 접근.
+	//   HTTP 403(FORBIDDEN) — 토큰 만료(401)와 구분하여 프론트가 refresh 시도 없이 즉시 로그아웃 후 재로그인을 유도한다.
+	//   ★사용자에게 노출되는 메시지이므로 내부 용어("게이트") 없이 정확한 사유를 안내한다. 사유별 구체 메시지는
+	//    throw 지점(AuthAspect)에서 detailMessage 로 덮어쓰며, 아래는 사유 미상 시의 폴백이다.
+	, AUTH_403_001(HttpStatus.FORBIDDEN, "이용약관 동의 또는 비밀번호 변경이 필요합니다.\n다시 로그인해 주세요.")
     ;
 
     private final HttpStatus httpStatus;

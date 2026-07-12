@@ -58,6 +58,17 @@ export default defineConfig({
         changeOrigin: true,
         secure: false,
         configure: (proxy) => {
+          proxy.on("proxyReq", (proxyReq, req) => {
+            // 파일 서명 URL(FileUrlSigner)이 '폰이 접속한 https 출처'로 생성되도록
+            // 원래 접속 호스트/프로토콜을 백엔드에 전달한다.
+            // → 이미지가 페이지(https://<host>:8082)와 same-origin 이 되어 앱 웹뷰 mixed-content
+            //   차단을 피하고 인라인 렌더된다. IP 를 박지 않으므로 DHCP 로 PC IP 가 바뀌어도 무수정.
+            //   (백엔드 file.public-base-url 은 비어 있어야 이 헤더가 사용된다.)
+            proxyReq.setHeader("X-Forwarded-Proto", "https");
+            if (req.headers.host) {
+              proxyReq.setHeader("X-Forwarded-Host", req.headers.host);
+            }
+          });
           proxy.on("proxyRes", (proxyRes, req) => {
             // IP 접근 시 CORS: 요청 Origin으로 응답 헤더 덮어쓰기
             const origin = req.headers.origin;
@@ -66,6 +77,14 @@ export default defineConfig({
             }
           });
         },
+      },
+      "/uploads": {
+        // 업로드 파일 서빙(이미지/서명)을 dev 서버 같은 https 출처로 받아 백엔드(/uploads/** 루트 매핑)로 전달.
+        // 파일 URL 이 https://<host>:8082/uploads/... = 페이지와 same-origin 이 되어 앱 웹뷰에서
+        // 인라인 이미지가 정상 렌더된다(http://...:8080 직결 시 발생하던 mixed-content 회피).
+        target: "http://localhost:8080",
+        changeOrigin: true,
+        secure: false,
       },
     },
   },

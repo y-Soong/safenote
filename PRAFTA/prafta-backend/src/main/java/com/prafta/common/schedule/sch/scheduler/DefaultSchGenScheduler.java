@@ -37,8 +37,8 @@ public class DefaultSchGenScheduler {
     private final DefaultSchGenMapper defaultSchGenMapper;
     private final DefaultSchGenService defaultSchGenService;
 
-    /** 게이트: 기본 false(비활성). 운영 검증 후 true. 연차부여 게이트와 독립. */
-    @Value("${prafta.default-sch.gen.enabled:false}")
+    /** 게이트: 코드 기본값 true 로 통일(User_01/로그인 게이트와 정합). properties 명시값 우선. 연차부여 게이트와 독립. */
+    @Value("${prafta.default-sch.gen.enabled:true}")
     private boolean genEnabled;
 
     /**

@@ -39,6 +39,7 @@
         , ENTRY_AT               AS entryAt
         , ENTRY_DISTANCE_M       AS entryDistanceM
         , EXIT_AT                AS exitAt
+        , EXIT_TYPE_CD           AS exitTypeCd
         , COMPLETION_STATUS_CD   AS completionStatusCd
     FROM TB_TBM_ATTENDANCE
     WHERE CMPNY_CD = #{cmpnyCd}
@@ -425,11 +426,19 @@
         , AT.EXIT_SIGN_FILE_MGMT_CD                                       AS mySignFileMgmtCd
         , AT.COMPLETION_STATUS_CD                                         AS completionStatusCd
         , DATE_FORMAT(IFNULL(S.ENDED_AT, AT.EXIT_AT), '%Y-%m-%d %H:%i')   AS endedAt
+        <!-- 서명 이미지 URL 전환: 서명 파일 원시 경로/확장자(서비스에서 FileUrlSigner 로 서명). 파일 없으면 NULL. -->
+        , F.FILE_PATH                                                     AS signFilePath
+        , F.FILE_EXT                                                      AS signFileExt
     FROM TB_TBM_ATTENDANCE AT
          INNER JOIN TB_TBM_SESSION S
             ON (
                 AT.CMPNY_CD = S.CMPNY_CD
             AND AT.SESSION_CD = S.SESSION_CD
+            )
+         LEFT OUTER JOIN TB_FILE_INFO F
+            ON (
+                F.CMPNY_CD = AT.CMPNY_CD
+            AND F.FILE_MGMT_CD = AT.EXIT_SIGN_FILE_MGMT_CD
             )
     WHERE AT.CMPNY_CD = #{cmpnyCd}
       AND S.SITE_CD = #{siteCd}

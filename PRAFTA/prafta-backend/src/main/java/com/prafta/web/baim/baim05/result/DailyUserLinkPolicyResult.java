@@ -10,6 +10,8 @@ public record DailyUserLinkPolicyResult (
 	, String oriUseYn
 	, String dayLimitCnt
 	, String joinCd
+	// PRAFTA_COM_001 T1-06: 활성화 계정 수(현재 점유 중 슬롯 SLOT_STATUS='02' COUNT).
+	, Integer activeAccountCount
 ){
-	
+
 }

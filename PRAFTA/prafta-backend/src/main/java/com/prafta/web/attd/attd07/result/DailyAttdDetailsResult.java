@@ -6,6 +6,7 @@ public record DailyAttdDetailsResult(
     , String userCd
     , String userId
     , String userNm
+    , String employmentType   // 고용형태: DAILY(일용직) / REGULAR(정규직) / null(미지정=정규직 취급)
     , String siteCd
     , String nodeCd
     , String workYmd

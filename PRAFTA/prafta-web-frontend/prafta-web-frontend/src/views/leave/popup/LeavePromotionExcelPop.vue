@@ -22,7 +22,10 @@
           <div v-if="isProcessing" class="lpe-progress">
             <p class="lpe-progress__title">엑셀 업로드 처리 중...</p>
             <div class="lpe-progress__bar">
-              <span class="lpe-progress__fill" :style="{ width: progressPct + '%' }" />
+              <span
+                class="lpe-progress__fill"
+                :style="{ width: progressPct + '%' }"
+              />
             </div>
             <p class="lpe-progress__pct">{{ progressPct }}%</p>
           </div>
@@ -30,20 +33,30 @@
           <!-- 결과 요약 -->
           <template v-else-if="result">
             <div class="lpe-summary">
-              <span class="lpe-summary__ok">성공 <strong>{{ result.successCount }}건</strong></span>
-              <span class="lpe-summary__fail">실패 <strong>{{ failCount }}건</strong></span>
+              <span class="lpe-summary__ok"
+                >성공 <strong>{{ result.successCount }}건</strong></span
+              >
+              <span class="lpe-summary__fail"
+                >실패 <strong>{{ failCount }}건</strong></span
+              >
             </div>
 
-            <p v-if="failCount === 0" class="lpe-done">모든 행이 정상 처리되었습니다.</p>
+            <p v-if="failCount === 0" class="lpe-done">
+              모든 행이 정상 처리되었습니다.
+            </p>
 
             <!-- 실패행 안내 + 다운로드 (prafta-052 2시트) -->
             <div v-else class="lpe-fails">
               <p class="lpe-fails__note">
-                실패한 행은 양식(시트1)과 사유(시트2)를 담은 엑셀로 내려받아 수정 후 다시
-                업로드하세요.
+                실패한 행은 양식(시트1)과 사유(시트2)를 담은 엑셀로 내려받아
+                수정 후 다시 업로드하세요.
               </p>
-              <button class="lpe-fails__dl" :disabled="isDownloading" @click="onDownloadFails">
-                {{ isDownloading ? '준비 중...' : '실패행 엑셀 다운로드' }}
+              <button
+                class="lpe-fails__dl"
+                :disabled="isDownloading"
+                @click="onDownloadFails"
+              >
+                {{ isDownloading ? "준비 중..." : "실패행 엑셀 다운로드" }}
               </button>
             </div>
           </template>
@@ -60,7 +73,13 @@
 </template>
 
 <script setup>
-import { ref, computed, getCurrentInstance, defineProps, defineEmits } from "vue";
+import {
+  ref,
+  computed,
+  getCurrentInstance,
+  defineProps,
+  defineEmits,
+} from "vue";
 import axios from "@/api/axios";
 import { resolveApiErrorMessage } from "@/utils/apiError";
 
@@ -114,7 +133,9 @@ const onDownloadFails = async () => {
       window.URL.revokeObjectURL(url);
     }
   } catch (err) {
-    await proxy.$alert(resolveApiErrorMessage(err, "실패행 다운로드 중 오류가 발생했습니다."));
+    await proxy.$alert(
+      resolveApiErrorMessage(err, "실패행 다운로드 중 오류가 발생했습니다.")
+    );
   } finally {
     isDownloading.value = false;
   }

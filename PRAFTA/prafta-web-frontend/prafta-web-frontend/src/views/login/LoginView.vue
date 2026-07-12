@@ -157,8 +157,11 @@ import { resolveApiErrorMessage } from "@/utils/apiError";
 import TermsPop from "./popup/TermsPop.vue";
 import PhoneAuthPop from "./popup/PhoneAuthPop.vue";
 import DefaultSchGatePop from "./popup/DefaultSchGatePop.vue";
+import ForcedPasswordChangePop from "./popup/ForcedPasswordChangePop.vue";
 import ActInfoSrch from "@/components/popup/ActInfoSrchPop.vue";
 import NoticePopupCarousel from "@/components/popup/NoticePopupCarousel.vue";
+import TransferNoticePopup from "@/components/popup/TransferNoticePopup.vue";
+import { forceLogout } from "@/composables/useAuth";
 
 // ================ Instance & Composables ================
 const { proxy } = getCurrentInstance();
@@ -274,6 +277,19 @@ const fnSubmitLogin = async () => {
  * 일반 로그인(fnSubmitLogin) 과 인증대기 통과 후(PhoneAuthPop.onSuccess) 양쪽에서 재사용한다.
  */
 const fnApplyLoginResponse = (data) => {
+  // PRAFTA-COM-008-E-8: 기본 근무타입 게이트가 인증대기(PHONE_AUTH) 통과 후 평가되는 경우 대비.
+  //   이 응답은 scope 토큰(refreshToken/권한 클레임 없음)이므로 정식 세션으로 저장하지 않고
+  //   곧바로 게이트 팝업으로 분기한다. 설정 완료 시 set-default-sch 가 정식 토큰을 내려
+  //   onSuccess(fnApplyLoginResponse) 로 다시 들어와 이어서 비번/약관/메인 흐름을 탄다.
+  if (data?.nextStep === "DEFAULT_SCH") {
+    openPop(DefaultSchGatePop, {
+      defaultSchToken_p: data.token,
+      cmpnyCd_p: data.cmpnyCd,
+      onSuccess: fnApplyLoginResponse,
+    });
+    return;
+  }
+
   const {
     token,
     userCd,
@@ -323,7 +339,40 @@ const fnApplyLoginResponse = (data) => {
 
   // userId 는 ref, response 의 userId 변수 충돌을 피하기 위해 respUserId 로 받음.
   userId.value = respUserId;
+
+  // prafta-app-033-4: 강제 비밀번호 변경 게이트(PWD_CHG_DTIME IS NULL → nextStep='PASSWORD_CHANGE').
+  //   PHONE_AUTH/DEFAULT_SCH 와 달리 이 시점은 이미 정식 토큰을 적용한 뒤이므로 비번변경 EP 호출이 가능하다.
+  //   게이트 체인 순서: 비번변경 팝업 → (성공) 약관 체크 → 메인. 두 게이트가 모두 걸린 신규 계정도 순차 해소.
+  //   비번변경 EP(POST /webApi/user01/update-my-passwd)는 AuthAspect 게이트 화이트리스트라 미해소 상태에서도 호출 가능.
+  if (data?.nextStep === "PASSWORD_CHANGE" || data?.mustChangePassword) {
+    openPop(ForcedPasswordChangePop, {
+      // 성공(PWD_CHG_DTIME 설정 → 비번 게이트 해소) → 이어서 약관 체크로 진행.
+      onSuccess: fnUserTermsAgrChk,
+      // 거부 → 토큰/세션 정리 + 로그인 화면 복귀(미해소 상태로 진입 불가).
+      onCancel: fnForcedPwChangeCancel,
+    });
+    return;
+  }
+
   fnUserTermsAgrChk();
+};
+
+// prafta-app-033-4: 강제 비밀번호 변경 거부 시 — 서버 로그아웃 + 세션/토큰 일괄 정리 후 로그인 화면 복귀.
+const fnForcedPwChangeCancel = async () => {
+  try {
+    await forceLogout();
+  } catch (e) {
+    // 서버 로그아웃 실패는 무시하고 클라이언트 정리는 계속 진행.
+  }
+  try {
+    userStore.logout();
+  } catch (e) {
+    // store 미초기화 등은 무시.
+  }
+  // 로그인 화면(/safenote)으로 복귀. 이미 로그인 화면이면 중복 네비게이션을 피한다.
+  if (router.currentRoute.value.path !== "/safenote") {
+    router.push("/safenote");
+  }
 };
 
 const fnUserTermsAgrChk = async () => {
@@ -365,8 +414,27 @@ const focusKill = () => {
 
 const fnMoveMainPath = async () => {
   await router.push("/safenote/main");
-  // PRAFTA-047: 로그인 후 메인 진입 1회 — 노출 대상 공지가 있으면 로그인 팝업(캐러셀) 표시.
-  // 라우팅 흐름을 막지 않도록 팝업 조회 실패/0건이면 조용히 넘어간다.
+  // PRAFTA-WEB_001-4: 미확인 소속이동 안내를 먼저 노출(확인/닫기) 후 로그인 공지 캐러셀로 이어진다.
+  //   안내가 없으면 곧바로 공지 캐러셀 흐름으로 진행한다(흐름 비차단).
+  fnShowTransferNotice();
+};
+
+// PRAFTA-WEB_001-4: 로그인 사용자 본인의 미확인 소속이동 예약 조회 → 있으면 안내 팝업.
+//   안내 확인/닫기(또는 안내 없음/오류) 후 기존 로그인 공지 캐러셀(fnShowLoginNoticePopup)로 이어준다.
+const fnShowTransferNotice = async () => {
+  try {
+    const response = await axios.get("/webApi/user01/my-transfer-notice");
+    const data = response?.data || {};
+    if (data.hasNotice && data.reservation) {
+      openPop(TransferNoticePopup, {
+        notice_p: data.reservation,
+        onClosed: fnShowLoginNoticePopup,
+      });
+      return;
+    }
+  } catch (err) {
+    // 안내 조회 실패는 로그인 흐름을 막지 않는다(조용히 다음 단계로).
+  }
   fnShowLoginNoticePopup();
 };
 

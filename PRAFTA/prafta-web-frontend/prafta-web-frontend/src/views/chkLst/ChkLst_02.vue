@@ -114,7 +114,8 @@
                 <th style="width: 15%">정렬순서</th>
                 <th class="editableCell">점검항목명</th>
                 <th style="width: 8%">사용여부</th>
-                <th class="editableCell" style="width: 8%">시행월</th>
+                <th class="editableCell" style="width: 8%">시행일</th>
+                <th style="width: 5%">이력</th>
               </tr>
             </thead>
             <tbody>
@@ -154,11 +155,24 @@
                   </BaseSelect>
                 </td>
                 <td>
-                  <CalendarSrchMonth
+                  <!-- 시행월→시행일 전환: 일 단위 캘린더 (YYYYMMDD 압축값도 CalendarSrch 가 정규화) -->
+                  <CalendarSrch
                     :range="false"
                     style="width: 150px"
                     v-model="item.strDate"
                   />
+                </td>
+                <td style="text-align: center">
+                  <!-- 저장된 문항만 변경이력 조회 가능(신규 미저장 행은 코드 없음) -->
+                  <button
+                    v-if="item.inspectItemCd"
+                    class="btn btn-custom"
+                    style="padding: 2px 10px"
+                    @click="fnHistPopOpen(item)"
+                  >
+                    이력
+                  </button>
+                  <span v-else>-</span>
                 </td>
               </tr>
             </tbody>
@@ -167,6 +181,15 @@
       </div>
     </div>
   </div>
+
+  <!-- 문항 변경이력 팝업 -->
+  <InspectItemHistPop
+    v-if="showHistPop"
+    :chkLstType_p="histTarget.chkLstType"
+    :inspectItemCd_p="histTarget.inspectItemCd"
+    :inspectItemSubj_p="histTarget.inspectItemSubj"
+    @close="showHistPop = false"
+  />
 </template>
 
 <script setup>
@@ -184,7 +207,8 @@ import ViewHeader from "@/components/common/ViewHeader.vue";
 import { getMessage, MSG } from "@/messages";
 import { resolveApiErrorMessage } from "@/utils/apiError";
 import BaseSelect from "@/components/common/BaseSelect.vue";
-import CalendarSrchMonth from "@/components/common/CalendarSrchMonth.vue";
+import CalendarSrch from "@/components/common/CalendarSrch.vue";
+import InspectItemHistPop from "@/views/chkLst/popup/InspectItemHistPop.vue";
 
 defineOptions({ name: "ChkLst_02" });
 
@@ -196,6 +220,19 @@ const props = defineProps({
 const { proxy } = getCurrentInstance();
 const chkptInspectItemList = ref([]);
 const systCodeArr = ref({});
+
+// 문항 변경이력 팝업
+const showHistPop = ref(false);
+const histTarget = ref({});
+
+const fnHistPopOpen = (item) => {
+  histTarget.value = {
+    chkLstType: item.chkLstType,
+    inspectItemCd: item.inspectItemCd,
+    inspectItemSubj: item.inspectItemSubj,
+  };
+  showHistPop.value = true;
+};
 const baseCodeArr = ref({});
 const localButtons = ref({ ...props.buttons });
 

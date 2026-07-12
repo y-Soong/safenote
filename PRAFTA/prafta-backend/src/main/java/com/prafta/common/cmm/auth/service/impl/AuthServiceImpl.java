@@ -18,6 +18,7 @@ import com.prafta.common.error.auth.AuthErrorCode;
 import com.prafta.common.exception.ApiException;
 import com.prafta.common.security.JwtUtil;
 import com.prafta.common.security.crypto.HmacSigner;
+import com.prafta.common.util.AuthRoleUtils;
 
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -75,6 +76,15 @@ public class AuthServiceImpl implements AuthService{
 	    UserResult userResult = authMapper.selectUserForJwt(authTokenResult.userCd());
 	    if (userResult == null) {
 	        throw new ApiException(AuthErrorCode.AUTH_500_003);
+	    }
+
+	    // 비활성 일용직 계정은 refresh 거부 → 토큰 재발급으로 세션 연장 차단(관리자 슬롯 비우기 즉시 차단 보강).
+	    //   비활성 게이트 인터셉터는 Authorization 액세스 토큰 기반이라, refreshToken(본문)만 보내는 refresh 경로는
+	    //   가로채지 못한다. 따라서 여기서 닫는다. 정규 사용자는 영향 없음(isDailyWorker=false → 통과).
+	    if (AuthRoleUtils.isDailyWorker(userResult.employmentType())
+	            && (!"Y".equals(userResult.useYn()) || "05".equals(userResult.accountStatus()))) {
+	        log.info("refresh 거부(비활성 일용직 계정), userCd={}", authTokenResult.userCd());
+	        throw new ApiException(AuthErrorCode.AUTH_500_002);
 	    }
 
 	    // 3) Refresh Token 회전(rotation)

@@ -70,14 +70,30 @@
         </section>
 
         <!-- 내 서명 -->
-        <!-- mySignFileMgmtCd 는 파일관리 코드(이미지 URL 아님)이고 파일 서빙 endpoint 가 아직 없다.
-             따라서 이미지를 직접 렌더하지 않고, 코드 존재 시 '서명 완료(이미지 준비 중)' 플레이스홀더로 graceful 처리. -->
-        <!-- TODO(developer): 서명 이미지 다운로드 endpoint 확정 후 연결 -->
+        <!-- mySignUrl: 서명 이미지 서명 절대 URL(FileUrlSigner). 자료 미리보기와 동일 인프라.
+             URL 이 있으면 인라인 렌더(릴리즈 APK·브라우저). dev 서버 모드(https 페이지 + http 파일 =
+             mixed content)에서는 앱 웹뷰가 인라인 이미지를 막으므로, TbmMaterialSlider 와 동일하게
+             onSignError → '서명 이미지 열기' 외부 열기 링크로 폴백한다. -->
         <section class="card">
           <p class="card__label">내 서명</p>
           <div class="sign-view">
-            <p v-if="detail.mySignFileMgmtCd" class="tbm-state tbm-state--sm">
-              서명 완료 (이미지 준비 중)
+            <img
+              v-if="detail.mySignUrl && !signImgError"
+              class="sign-view__img"
+              :src="detail.mySignUrl"
+              alt="내 서명"
+              @error="onSignError"
+            />
+            <!-- 인라인 렌더 실패(앱 웹뷰 mixed-content 등) 시 외부 열기 링크 폴백(자료 슬라이더와 동일 패턴) -->
+            <a
+              v-else-if="detail.mySignUrl"
+              class="sign-view__link"
+              :href="detail.mySignUrl"
+              target="_blank"
+              rel="noopener noreferrer"
+            >서명 이미지 열기</a>
+            <p v-else-if="detail.mySignFileMgmtCd" class="tbm-state tbm-state--sm">
+              서명 완료 (이미지를 불러올 수 없어요)
             </p>
             <p v-else class="tbm-state tbm-state--sm">서명 정보가 없어요</p>
           </div>
@@ -124,16 +140,19 @@ const showAlert = (message) => {
 // ── 반응형 상태(developer: 조회 결과로 채움) ──────────────────────
 const isLoading = ref(false)
 const loadError = ref(false)
+// 서명 이미지 로드 실패(서명 URL 만료/네트워크) 시 플레이스홀더 폴백 플래그
+const signImgError = ref(false)
 
 // 완료 상세(A10):
-//  { title, contentBody, materialTitles:[], riskTitles:[], mySignFileMgmtCd, completionStatusCd, endedAt }
-//  ⚠️ mySignFileMgmtCd 는 파일관리 코드(이미지 URL 아님). 서명 이미지는 graceful 플레이스홀더 처리.
+//  { title, contentBody, materialTitles:[], riskTitles:[], mySignFileMgmtCd, mySignUrl, completionStatusCd, endedAt }
+//  mySignUrl: 서명 이미지 서명 절대 URL(FileUrlSigner). 없으면 '서명 정보가 없어요'.
 const detail = ref({
   title: '',
   contentBody: '',
   materialTitles: [],
   riskTitles: [],
   mySignFileMgmtCd: '',
+  mySignUrl: '',
   completionStatusCd: '',
   endedAt: '',
 })
@@ -158,6 +177,7 @@ const loadDetail = async () => {
   if (!sessionCd) return
   isLoading.value = true
   loadError.value = false
+  signImgError.value = false
   try {
     const { data } = await api.get(`/appApi/tbm/sessions/${sessionCd}/my-completion`)
     detail.value = {
@@ -165,8 +185,9 @@ const loadDetail = async () => {
       contentBody: data?.contentBody || '',
       materialTitles: Array.isArray(data?.materialTitles) ? data.materialTitles : [],
       riskTitles: Array.isArray(data?.riskTitles) ? data.riskTitles : [],
-      // 파일관리 코드(원본). 이미지 URL 아님 — 존재 여부만 사용.
       mySignFileMgmtCd: data?.mySignFileMgmtCd || '',
+      // 서명 이미지 절대 URL(FileUrlSigner). 없으면 빈 문자열.
+      mySignUrl: data?.mySignUrl || '',
       completionStatusCd: data?.completionStatusCd || '',
       endedAt: data?.endedAt || '',
     }
@@ -184,6 +205,10 @@ const onBack = () => {
 }
 const onRetry = () => {
   loadDetail()
+}
+// 서명 이미지 로드 실패 → 플레이스홀더 폴백
+const onSignError = () => {
+  signImgError.value = true
 }
 
 // ── 진입 ────────────────────────────────────────────────────────
@@ -391,6 +416,20 @@ onMounted(() => {
   max-width: 100%;
   height: auto;
   display: block;
+}
+/* 인라인 렌더 실패 시 외부 열기 링크(자료 슬라이더 .mtrl-slide__link 와 동일 톤) */
+.sign-view__link {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  margin: var(--space-md);
+  padding: var(--space-sm) var(--space-md);
+  border: 1px solid var(--color-primary);
+  border-radius: var(--radius-md);
+  color: var(--color-primary);
+  font-size: 13px;
+  font-weight: 600;
+  text-decoration: none;
 }
 
 /* 스프라이트 */

@@ -73,4 +73,14 @@ public interface AppLeave01Mapper {
             , @Param("userCd") String userCd
             , @Param("today") String today
     );
+
+    /**
+     * LC-07(표기): 사용자의 시간차(SYS025 02/03/04) CONFIRMED 사용 분 합계(전 기간, DEL_YN='N').
+     * 웹 {@code LeaveDashboardMapper.selectHourlyUsedMinutes} 미러 — FE "시간차 사용 N시간 M분"
+     * 원본 표기 전용(잔여/부여 수치 무관). 대상 0건이면 0(IFNULL). 식별값은 토큰 도출값(IDOR).
+     */
+    Integer selectHourlyUsedMinutes(
+            @Param("cmpnyCd") String cmpnyCd
+            , @Param("userCd") String userCd
+    );
 }

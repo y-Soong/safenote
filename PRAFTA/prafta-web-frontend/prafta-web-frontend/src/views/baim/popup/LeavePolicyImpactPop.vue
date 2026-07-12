@@ -234,8 +234,36 @@
             </div>
           </div>
 
+          <!-- ============ 분석 결과 없음 사유 안내 (noResultReason) ============ -->
+          <div
+            v-if="hasTarget && analyzed && noResultMessage"
+            class="ia-no-result"
+          >
+            <svg
+              viewBox="0 0 24 24"
+              width="14"
+              height="14"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              aria-hidden="true"
+            >
+              <circle cx="12" cy="12" r="10" />
+              <line x1="12" y1="16" x2="12" y2="12" />
+              <line x1="12" y1="8" x2="12.01" y2="8" />
+            </svg>
+            <span>{{ noResultMessage }}</span>
+          </div>
+
           <!-- ============ 영향받는 직원 테이블 ============ -->
-          <section v-if="hasTarget && analyzed" class="ia-table-section">
+          <section
+            v-if="
+              hasTarget && analyzed && summary.noResultReason !== 'NO_TARGET'
+            "
+            class="ia-table-section"
+          >
             <p class="ia-section-title">{{ affectedCountLabel }}</p>
 
             <div class="ia-table-wrap">
@@ -364,11 +392,14 @@ const diffOpen = ref(true);
 const diffList = ref([]);
 
 // 요약 카드 4개
+//   noResultReason: 백엔드 신규 필드.
+//   "NO_TARGET"(대상 직원 없음=입사일 미입력/비활성) / "NO_ADDITIONAL"(추가 부여 0건) / null(정상)
 const summary = ref({
   totalEmployees: 0,
   normalCount: 0,
   affectedCount: 0,
   additionalDaysTotal: 0,
+  noResultReason: null,
 });
 
 // 영향받는 직원 목록
@@ -388,6 +419,18 @@ const hasTarget = computed(() => targetPolicy.value != null);
 const affectedCountLabel = computed(
   () => `영향받는 직원 (주의 필요 ${summary.value.affectedCount}명)`
 );
+
+// 분석 완료 후 "결과 없음" 사유 안내 문구. null이면 정상(표/요약 그대로).
+const noResultMessage = computed(() => {
+  switch (summary.value.noResultReason) {
+    case "NO_TARGET":
+      return "분석 대상 직원이 없습니다. (입사일 미입력 또는 비활성 직원 제외)";
+    case "NO_ADDITIONAL":
+      return "이 정책 변경으로 추가 부여가 발생하는 직원이 없습니다.";
+    default:
+      return "";
+  }
+});
 
 // [정책 변경 진행] 활성 조건: 분석 완료 + 변경사항 존재(UNCHANGED 외 diff 1건 이상)
 const canProceed = computed(() => {
@@ -409,6 +452,10 @@ const fnInitFromProps = () => {
   }
   // 타깃 한 줄 요약은 클라이언트에서 즉시 구성(분석 전에도 표시). 분석 후 서버 요약으로 갱신.
   targetPolicySummary.value = fnBuildPolicySummary(targetPolicy.value);
+  // 변경 적용일 기본값 = 오늘(YYYY-MM-DD). 과거 소급 금지(§8.5.8)와 정합하며, 사용자가 바로 분석 실행할 수 있게 한다.
+  if (!applyDate.value) {
+    applyDate.value = fnTodayYmdDash();
+  }
 };
 
 // 영향 분석 실행: POST /webApi/baim07/policy/analyze-impact
@@ -575,6 +622,11 @@ const fnTodayYyyymmdd = () => {
   const m = String(d.getMonth() + 1).padStart(2, "0");
   const day = String(d.getDate()).padStart(2, "0");
   return `${y}${m}${day}`;
+};
+// 오늘 YYYY-MM-DD (CalendarSrch v-model 기본값용)
+const fnTodayYmdDash = () => {
+  const s = fnTodayYyyymmdd();
+  return `${s.slice(0, 4)}-${s.slice(4, 6)}-${s.slice(6, 8)}`;
 };
 // YYYYMMDD → YYYY-MM-DD 표기 (입사일 표시)
 const fnFormatDate = (yyyymmdd) => {
@@ -1048,6 +1100,26 @@ const fnBuildPolicySummary = (policy) => {
   text-align: center;
   color: var(--color-text-muted);
   padding: 2rem 0.75rem;
+}
+
+/* ===== 분석 결과 없음 사유 안내 ===== */
+.ia-no-result {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.5rem;
+  background: var(--card-bg);
+  border: var(--card-border);
+  border-radius: var(--input-radius);
+  padding: 0.875rem 1rem;
+  font-size: 0.8125rem;
+  line-height: 1.5;
+  color: var(--color-text);
+}
+
+.ia-no-result svg {
+  flex-shrink: 0;
+  margin-top: 0.125rem;
+  color: var(--color-text-muted);
 }
 
 /* ===== 푸터 버튼 ===== */

@@ -235,13 +235,41 @@ const onWithdraw = async () => {
   }
 }
 
-// 교육완료: GET /appApi/tbm/sessions/{sessionCd}/state (A5) → statusCd 분기
-//   COMPLETED → exitSheetOpen=true (퇴실 비번+서명)
-//   그 외     → '아직 관리자가 교육을 종료하지 않았습니다' 안내($alert, 잔류)
+// 교육완료: 본인 출결(my-attendance) 선확인 → 세션 상태(state, A5) 분기
+//   - 본인 출결이 없으면(present=false) 관리자 내보내기 → 허브 복귀
+//   - 강제퇴실(MANAGER_FORCED) / 이미 종료(이수·중도퇴실) → 서명시트 재오픈 방지, 안내 후 허브
+//   - 미종료 상태에서만 세션 종료 여부 확인: COMPLETED → exitSheetOpen, 그 외 '아직 종료 안됨' 안내
+//   ※ 종료 후에도 사용자가 직접 완료(서명)해야 이수된다(자동이수 폐지).
 const onComplete = async () => {
   if (checkingState.value) return
   checkingState.value = true
   try {
+    // 본인 출결 상태 선확인(이미 완료/퇴실/내보내기 시 서명시트 재오픈 방지)
+    const { data: my } = await api.get(
+      `/appApi/tbm/sessions/${session.value.sessionCd}/my-attendance`,
+    )
+    if (!my?.present) {
+      await showAlert('참석 정보가 없어요. 관리자가 내보냈을 수 있어요.')
+      router.replace('/TbmHub')
+      return
+    }
+    if (my.exitTypeCd === 'MANAGER_FORCED') {
+      await showAlert('관리자에 의해 퇴실 처리되었습니다.')
+      router.replace('/TbmHub')
+      return
+    }
+    if (my.exitAt) {
+      // 이미 종료된 상태(이수 또는 중도퇴실)
+      await showAlert(
+        my.completionStatusCd === 'COMPLETED'
+          ? '이미 교육을 이수했습니다.'
+          : '이미 퇴실 처리되었습니다.',
+      )
+      router.replace('/TbmHub')
+      return
+    }
+
+    // 미종료 상태: 세션 종료 여부 확인 후 서명 시트 오픈
     const { data } = await api.get(`/appApi/tbm/sessions/${session.value.sessionCd}/state`)
     if (data?.statusCd === 'COMPLETED') {
       exitError.value = ''
@@ -250,7 +278,7 @@ const onComplete = async () => {
       showAlert('아직 관리자가 교육을 종료하지 않았습니다.')
     }
   } catch (e) {
-    console.error('[TbmInProgress] state 조회 실패:', e?.message)
+    console.error('[TbmInProgress] 교육완료 확인 실패:', e?.message)
     showAlert('상태를 확인하지 못했어요. 잠시 후 다시 시도해 주세요.')
   } finally {
     checkingState.value = false

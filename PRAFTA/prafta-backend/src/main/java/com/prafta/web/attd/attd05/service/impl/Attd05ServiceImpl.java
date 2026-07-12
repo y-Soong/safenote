@@ -73,6 +73,8 @@ public class Attd05ServiceImpl implements Attd05Service {
     private final LeavePolicyMapper leavePolicyMapper;
     /** prafta-com-016 공통 스케줄 변경 가드: 확정 연차(USE_UNIT_TYPE 무관)·OT 보유일의 스케줄 변경/삭제 거부 판정. */
     private final com.prafta.common.cmm.schedule.service.ScheduleChangeGuardService scheduleChangeGuardService;
+    /** 교차일(앞뒤 근무일) 근무 스케줄 시각 겹침 가드(공용 cmm 빈 — 야간 오버나이트 포함). */
+    private final com.prafta.common.cmm.schedule.service.ScheduleOverlapGuardService scheduleOverlapGuardService;
     /** prafta-com-016-C-2: 관리자 연차/월차 직접 등록 통보 PUSH 생산자(afterCommit + REQUIRES_NEW, 묶음 1건). */
     private final com.prafta.common.cmm.push.LeaveDirectSetNotiService leaveDirectSetNotiService;
 
@@ -116,6 +118,8 @@ public class Attd05ServiceImpl implements Attd05Service {
     private static final String REASON_LEAVE_CELL_CONSENT_REQUIRED = "LEAVE_CELL_CONSENT_REQUIRED";
     /** 검증 스킵 사유 코드 - 해당일 초과근무 보유(등록 or 신청) → 스케줄 변경 불가(앱 스케줄수정요청 게이트와 정합) */
     private static final String REASON_HAS_OVERTIME = "HAS_OVERTIME";
+    /** 검증 스킵 사유 코드 - 앞뒤 근무일의 근무 스케줄과 시각이 겹침(야간 오버나이트 포함) → 저장 불가. */
+    private static final String REASON_SCHEDULE_OVERLAP = "SCHEDULE_OVERLAP";
     /** prafta-com-016 가드② 스킵 사유 - 해당일 확정 연차(종일/반차/시간차) 보유 → 일반 근무(SCH) 셀로 변경 불가. */
     private static final String REASON_HAS_LEAVE = "HAS_LEAVE";
     /** prafta-com-016-C-3 후속 - 월 부분 삭제에서 종일 확정 연차로 보존(삭제 제외)된 일자 안내 사유. */
@@ -151,6 +155,11 @@ public class Attd05ServiceImpl implements Attd05Service {
     	List<com.prafta.web.attd.attd05.result.LeaveOverlayResult> leaveOverlayList =
     			attd05Mapper.selectLeaveOverlayList(UserWorkPlansQuery.from(param));
 
+    	// 부분 휴가(반차/시간차) 오버레이 동반 — 종일과 달리 근무 스케줄이 살아있으므로 셀 값을 덮지 않고
+    	//   (userCd, workYmd) 칩으로 사용단위/시간대만 표시한다(종일 오버레이와 분리된 단일 출처).
+    	List<com.prafta.web.attd.attd05.result.PartialLeaveOverlayResult> partialLeaveOverlayList =
+    			attd05Mapper.selectPartialLeaveOverlayList(UserWorkPlansQuery.from(param));
+
     	// prafta-com-008-D-5: 교대 잠금 오버레이 동반(D-1 경계 술어 단일출처). 교대팀 소속 구간 SCH 셀은
     	//   프론트가 비활성/자물쇠 표시한다(연차 셀은 활성 — D-3). 저장 차단의 최종 강제는 BE 가드(D-3)가 수행.
     	List<com.prafta.web.attd.attd05.result.ShiftLockOverlayResult> shiftLockOverlayList =
@@ -161,6 +170,7 @@ public class Attd05ServiceImpl implements Attd05Service {
     									.dayResultList(dayResultList)
     									.schedResultList(schedResultList)
     									.leaveOverlayResultList(leaveOverlayList)
+    									.partialLeaveOverlayResultList(partialLeaveOverlayList)
     									.shiftLockOverlayResultList(shiftLockOverlayList)
     									.build();
 
@@ -329,6 +339,18 @@ public class Attd05ServiceImpl implements Attd05Service {
     	// 사용자별 사업장코드(PUSH siteCd 용 — 같은 사용자의 첫 등록 셀 기준).
     	Map<String, String> siteCdByUser = new java.util.HashMap<>();
 
+    	// 교차일 겹침 가드용 pending 맵 — 같은 저장 배치에서 함께 바뀌는 이웃 날짜의 적용 코드를 DB 보다 우선 반영.
+    	//   userCd → (workYmd → 적용 SCH_CD). 휴가 셀/빈값은 "" 로 두어 "그 날 스케줄 없음" 으로 취급한다.
+    	//   (배치 내에서 인접 두 날을 동시에 오버나이트로 바꾸는 경우의 겹침도 정확히 잡기 위함.)
+    	Map<String, Map<String, String>> pendingSchByUser = new java.util.HashMap<>();
+    	for (SchTypeModel m : modelList) {
+    		boolean leaveCell = m.autoLegalLeave()
+    				|| (m.leaveCd() != null && !m.leaveCd().isEmpty() && legalLeaveCds.contains(m.leaveCd()));
+    		String schForNeighbor = (leaveCell || m.workPlanCd() == null) ? "" : m.workPlanCd();
+    		pendingSchByUser.computeIfAbsent(m.userCd(), k -> new java.util.HashMap<>())
+    				.put(m.workYmd(), schForNeighbor);
+    	}
+
     	for (SchTypeModel model : modelList) {
 
     		// PRAFTA-041-4 - 대상 사용자 관리 권한 검증 (master/hr 즉시 통과, 그 외 노드 관리자 스코프)
@@ -348,10 +370,15 @@ public class Attd05ServiceImpl implements Attd05Service {
     		//   효과적 연차코드(effectiveLeaveCd) = 명시 leaveCd 우선, 없으면 workPlanCd.
     		// prafta-com-016-C-4: 종류 미지정 자동 적용(autoLegalLeave) 셀도 연차 셀로 취급한다(차감은 자동 통합순).
     		boolean isAutoLegal = model.autoLegalLeave();
-    		String effectiveLeaveCd = (model.leaveCd() != null && !model.leaveCd().isEmpty())
-    				? model.leaveCd() : workPlanCd;
+    		// ★ WORK_PLAN_CD 는 SCH_CD/LEAVE_CD 를 한 컬럼에 공유하므로 코드값이 우연히 겹칠 수 있다
+    		//   (예: 근무타입 SCH_CD '00013' vs 하계휴가 LEAVE_CD '00013'). 따라서 휴가 셀 판정은
+    		//   "FE 가 명시한 leaveCd(또는 autoLegalLeave)" 신호로만 한다. 과거의 workPlanCd 폴백은
+    		//   근무타입을 휴가로 오인시켜 정상 SCH 지정을 차단했으므로 제거한다(com-008-E 이후 work_plan 은
+    		//   LEAVE_CD 를 저장하지 않아 폴백 자체가 불필요).
+    		boolean hasExplicitLeaveCd = model.leaveCd() != null && !model.leaveCd().isEmpty();
+    		String effectiveLeaveCd = hasExplicitLeaveCd ? model.leaveCd() : workPlanCd;
     		boolean isLegalLeaveCell = isAutoLegal
-    				|| (effectiveLeaveCd != null && legalLeaveCds.contains(effectiveLeaveCd));
+    				|| (hasExplicitLeaveCd && legalLeaveCds.contains(model.leaveCd()));
 
     		// prafta-com-008-D: 교대 잠금 가드 — 교대팀 소속 구간의 일반 근무(SCH) 셀 저장 차단.
     		//   ★연차 셀(법정연차 코드)은 D-3 정합으로 잠금 통과(연차만 허용). 가드를 연차 분기 이전에
@@ -399,6 +426,19 @@ public class Attd05ServiceImpl implements Attd05Service {
     				));
     				log.info("근무계획 저장 스킵 - userCd={}, workYmd={}, schCd={}, 사유={}"
     						, model.userCd(), model.workYmd(), workPlanCd, reasonCode);
+    				continue;
+    			}
+
+    			// 교차일 겹침 가드(SCH 셀 한정) — 앞뒤 근무일의 스케줄과 시각이 겹치면(야간 오버나이트 포함)
+    			//   저장하지 않고 스킵한다(차단). 같은 배치의 이웃 변경은 pendingSchByUser 로 반영(DB 우선).
+    			if (!isLegalLeaveCell && scheduleOverlapGuardService.hasCrossDayOverlap(
+    					model.gvCmpnyCd(), model.siteCd(), model.userCd(), model.workYmd(), workPlanCd,
+    					pendingSchByUser.get(model.userCd()))) {
+    				skippedList.add(new SkippedCellResult(
+    						model.userCd(), model.workYmd(), workPlanCd,
+    						REASON_SCHEDULE_OVERLAP, reasonText(REASON_SCHEDULE_OVERLAP)));
+    				log.info("근무계획 저장 스킵(교차일 겹침) - userCd={}, workYmd={}, schCd={}"
+    						, model.userCd(), model.workYmd(), workPlanCd);
     				continue;
     			}
     		}
@@ -811,6 +851,9 @@ public class Attd05ServiceImpl implements Attd05Service {
     	}
     	if (REASON_HAS_LEAVE.equals(reasonCode)) {
     		return "연차(종일/반차/시간차)가 등록된 날짜는 근무 스케줄을 변경할 수 없습니다.";
+    	}
+    	if (REASON_SCHEDULE_OVERLAP.equals(reasonCode)) {
+    		return "앞뒤 날짜의 근무 스케줄과 시간이 겹쳐 저장할 수 없습니다. 야간(오버나이트) 근무가 다음날 근무와 겹치지 않도록 조정해 주세요.";
     	}
     	if (REASON_LEAVE_PRESERVED.equals(reasonCode)) {
     		return "연차 등록일이라 삭제에서 제외되었습니다. 연차 취소는 연차 변경/삭제 요청을 이용하세요.";

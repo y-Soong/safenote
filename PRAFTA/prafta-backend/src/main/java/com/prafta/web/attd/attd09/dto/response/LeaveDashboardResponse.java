@@ -25,4 +25,7 @@ public class LeaveDashboardResponse {
 
     /** 페이징 메타 */
     PagingMetaVO paging;
+
+    /** LC-07(표기): 현재(오늘) 기준 1일 환산시간(분, 기본 480) — FE "N일 H시간 M분" 조립용(additive). */
+    int convMinutes;
 }

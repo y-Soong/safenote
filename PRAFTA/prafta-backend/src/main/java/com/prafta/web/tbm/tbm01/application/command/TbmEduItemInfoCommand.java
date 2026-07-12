@@ -18,6 +18,7 @@ public record TbmEduItemInfoCommand(
 		, String durationSec		// prafta-033-A: 미디어 길이(초)
 		, String gvCmpnyCd
 		, String gvUserCd
+		, String aiAnalyzeYn		// TBM_AI v4: 항목별 AI 분석 지정 토글(Y/N). 매퍼에서 IFNULL 신규='N'
 ){
 	public static TbmEduItemInfoCommand from(TbmEduItemInfoModel model, TbmEduInfoParam param, String mtrlItemCd, String mtrlCd, String fileMgmtCd) {
 
@@ -43,6 +44,7 @@ public record TbmEduItemInfoCommand(
 			, model.durationSec()
 			, param.gvCmpnyCd()
 			, param.gvUserCd()
+			, model.aiAnalyzeYn()
 		);
 	}
 }

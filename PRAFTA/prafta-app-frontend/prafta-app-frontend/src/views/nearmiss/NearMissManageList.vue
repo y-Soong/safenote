@@ -120,22 +120,26 @@ const showAlert = (message) => {
 const siteName = ref('')
 
 // ───────────────────────────────────────────────────────────
-// 상태 탭 + 카운트 (A4 status-counts). 앱 관리자 조치범위는 100→200 까지라
-// 탭은 접수/검토중/조치중 중심(완료는 웹). '' = 전체.
+// 상태 탭 + 카운트 (A4 status-counts). SYS063 재번호(D4):
+//   100 접수 / 200 조치중 / 300 완료 / 400 미처리대상. 앱 관리자 조치범위는 100→200(조치중) 까지.
+//   탭은 접수/조치중/완료/미처리대상 노출. '' = 전체.
 // ───────────────────────────────────────────────────────────
-const activeStatus = ref('') // '' | '100' | '200' | '300'
-const counts = ref({ receivedCnt: 0, reviewingCnt: 0, actingCnt: 0, completedCnt: 0 })
+const activeStatus = ref('') // '' | '100' | '200' | '300' | '400'
+const counts = ref({ receivedCnt: 0, actingCnt: 0, completedCnt: 0, unaddressedCnt: 0 })
 
 const statusTabs = computed(() => [
   { code: '', label: '전체', count: totalCount.value },
   { code: '100', label: '접수', count: counts.value.receivedCnt },
-  { code: '200', label: '검토중', count: counts.value.reviewingCnt },
-  { code: '300', label: '조치중', count: counts.value.actingCnt },
+  { code: '200', label: '조치중', count: counts.value.actingCnt },
+  { code: '300', label: '완료', count: counts.value.completedCnt },
+  { code: '400', label: '미처리대상', count: counts.value.unaddressedCnt },
 ])
 
 const totalCount = computed(() => {
   const c = counts.value
-  return (c.receivedCnt || 0) + (c.reviewingCnt || 0) + (c.actingCnt || 0) + (c.completedCnt || 0)
+  return (
+    (c.receivedCnt || 0) + (c.actingCnt || 0) + (c.completedCnt || 0) + (c.unaddressedCnt || 0)
+  )
 })
 
 // ───────────────────────────────────────────────────────────
@@ -152,10 +156,10 @@ const severityClass = (code) => {
   return 'nml-badge--none'
 }
 
-// 처리상태 칩 클래스
+// 처리상태 칩 클래스 (SYS063 재번호: 300 완료 / 400 미처리대상)
 const statusClass = (code) => {
-  if (code === '900') return 'nml-chip--rejected'
-  if (code === '400') return 'nml-chip--done'
+  if (code === '400') return 'nml-chip--rejected'
+  if (code === '300') return 'nml-chip--done'
   return 'nml-chip--progress'
 }
 
@@ -204,9 +208,9 @@ const loadCounts = async () => {
     const res = await api.get('/appApi/nearmiss/status-counts')
     counts.value = res?.data?.statusCount || {
       receivedCnt: 0,
-      reviewingCnt: 0,
       actingCnt: 0,
       completedCnt: 0,
+      unaddressedCnt: 0,
     }
   } catch (err) {
     // 카운트 실패는 목록 에러 처리에 위임(403 등은 목록에서 안내). 배지는 0 유지.

@@ -1,0 +1,299 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.prafta.web.tbm.tbm03.mapper.Tbm03Mapper">
+
+	<!-- ============================ T7 사용자별 진행 집계 목록 ============================ -->
+	<!--
+		집계 정준정의(메모리 app-031, tbm04 동일):
+		  세션 = DEL_YN='N' AND STATUS_CD != 'CANCELLED' / 출결 = DEL_YN='N'
+		  모수 = 입실 출결(ENTRY_AT IS NOT NULL)
+		  이수 = COMPLETION_STATUS_CD='COMPLETED' / 미이수 = 입실&(NULL or NOT_COMPLETED) / 미입실 = 제외
+		집계 사업장 기준(D-1) = 세션(S.SITE_CD). 표시용 사업장/부서는 사용자 마스터 기준.
+		기간 필터(D-3) = 이수일(AT.STATUS_UPDATED_AT) 기준. STATUS_UPDATED_AT IS NULL 은 기간 지정 시 제외(정상).
+	-->
+	<sql id="progressWhere">
+		WHERE AT.CMPNY_CD = #{gvCmpnyCd}
+		  AND AT.DEL_YN = 'N'
+		  /* 집계 모수: 입실한 출결만(미입실 제외) */
+		  AND AT.ENTRY_AT IS NOT NULL
+		  /* 스코프 필터: master/safe(companyWide=true)는 회사 전체, 그 외는 자기 사업장(세션 기준)만 */
+		  <if test="!companyWide">
+		    AND S.SITE_CD = #{scopeSiteCd}
+		  </if>
+		  /* 검색 사업장은 추가 필터일 뿐(companyWide 아니면 위 강제와 AND 되어 스코프 우회 불가) */
+		  <if test="siteCd != null and siteCd != ''">
+		    AND S.SITE_CD = #{siteCd}
+		  </if>
+		  /* 기간 = 이수일(STATUS_UPDATED_AT). NULL 상태시각은 기간 지정 시 제외 */
+		  <if test="startDate != null and startDate != ''">
+		    AND DATE(AT.STATUS_UPDATED_AT) &gt;= #{startDate}
+		  </if>
+		  <if test="endDate != null and endDate != ''">
+		    AND DATE(AT.STATUS_UPDATED_AT) &lt;= #{endDate}
+		  </if>
+		  /* 이름/사번 검색(정규/일용 유형별 컬럼 선택) */
+		  <if test="searchKeyword != null and searchKeyword != ''">
+		    AND (
+		         (CASE WHEN AT.USER_TYPE_CD = 'REGULAR' THEN RU.USER_NM ELSE DU.USER_NM END) LIKE CONCAT('%', #{searchKeyword}, '%')
+		      OR (CASE WHEN AT.USER_TYPE_CD = 'REGULAR' THEN RU.USER_ID ELSE DU.USER_ID END) LIKE CONCAT('%', #{searchKeyword}, '%')
+		    )
+		  </if>
+	</sql>
+
+	<!-- 목록 = 단일 GROUP BY 쿼리(행당 추가 쿼리 없음 — N+1 회피) -->
+	<select id="selectUserProgressList" parameterType="com.prafta.web.tbm.tbm03.application.query.UserProgressListQuery" resultType="com.prafta.web.tbm.tbm03.result.UserProgressListResult">
+	/* Tbm03Mapper.selectUserProgressList */
+	SELECT
+		AT.USER_TYPE_CD		AS userTypeCd
+		, TP.SYST_VAL_D_NM	AS userTypeNm
+		, AT.USER_CD		AS userCd
+		, CASE WHEN AT.USER_TYPE_CD = 'REGULAR' THEN RU.USER_ID ELSE DU.USER_ID END		AS userId
+		, CASE WHEN AT.USER_TYPE_CD = 'REGULAR' THEN RU.USER_NM ELSE DU.USER_NM END		AS userNm
+		/* 고용형태: 정규직 EMPLOYMENT_TYPE(SYS041), 일용직은 'DAILY'/'일용직' 고정(D-8) */
+		, CASE WHEN AT.USER_TYPE_CD = 'REGULAR' THEN RU.EMPLOYMENT_TYPE ELSE 'DAILY' END	AS employmentTypeCd
+		, CASE WHEN AT.USER_TYPE_CD = 'REGULAR' THEN ET.SYST_VAL_D_NM ELSE '일용직' END	AS employmentTypeNm
+		/* 부서: 정규직만(일용직은 NODE_CD 없어 NULL → FE '-') */
+		, ND.NODE_NM		AS deptNm
+		/* 누적 교육시간(D-4): 이수 세션 EDU_MINUTES 합, NULL 0 처리 */
+		, IFNULL(SUM(CASE WHEN AT.COMPLETION_STATUS_CD = 'COMPLETED' THEN IFNULL(S.EDU_MINUTES, 0) ELSE 0 END), 0)	AS totalEduMinutes
+		/* 수료 세션수 */
+		, IFNULL(SUM(CASE WHEN AT.COMPLETION_STATUS_CD = 'COMPLETED' THEN 1 ELSE 0 END), 0)	AS completedSessionCount
+		/* 미이수 세션수: 입실했으나 미완료(NULL or NOT_COMPLETED) */
+		, IFNULL(SUM(CASE WHEN AT.ENTRY_AT IS NOT NULL AND (AT.COMPLETION_STATUS_CD IS NULL OR AT.COMPLETION_STATUS_CD = 'NOT_COMPLETED') THEN 1 ELSE 0 END), 0)	AS notCompletedSessionCount
+		/* 최근 이수일(D-5): 이수 출결의 STATUS_UPDATED_AT MAX(없으면 NULL) */
+		, DATE_FORMAT(MAX(CASE WHEN AT.COMPLETION_STATUS_CD = 'COMPLETED' THEN AT.STATUS_UPDATED_AT END), '%Y-%m-%d')	AS lastCompletedAt
+	FROM TB_TBM_ATTENDANCE AT
+		 INNER JOIN TB_TBM_SESSION S
+		 	ON (
+		 		AT.CMPNY_CD = S.CMPNY_CD
+		 	AND AT.SESSION_CD = S.SESSION_CD
+		 	AND S.DEL_YN = 'N'
+		 	AND S.STATUS_CD != 'CANCELLED'
+		 	)
+		 LEFT OUTER JOIN TB_USER RU
+		 	ON (
+		 		AT.USER_TYPE_CD = 'REGULAR'
+		 	AND AT.CMPNY_CD = RU.CMPNY_CD
+		 	AND AT.USER_CD = RU.USER_CD
+		 	)
+		 LEFT OUTER JOIN TB_DAILY_USER DU
+		 	ON (
+		 		AT.USER_TYPE_CD = 'DAILY'
+		 	AND AT.CMPNY_CD = DU.CMPNY_CD
+		 	AND AT.USER_CD = DU.USER_CD
+		 	)
+		 LEFT OUTER JOIN TB_SITE_NODE ND
+		 	ON (
+		 		AT.USER_TYPE_CD = 'REGULAR'
+		 	AND RU.CMPNY_CD = ND.CMPNY_CD
+		 	AND RU.SITE_CD = ND.SITE_CD
+		 	AND RU.NODE_CD = ND.NODE_CD
+		 	)
+		 LEFT OUTER JOIN (
+			SELECT D.SYST_VAL_D_CD, D.SYST_VAL_D_NM
+			FROM TB_SYST_VAL_D D
+			WHERE D.SYST_VAL_CD = 'SYS050'
+			  AND D.USE_YN = 'Y'
+		 ) TP
+		 	ON (
+		 		AT.USER_TYPE_CD = TP.SYST_VAL_D_CD
+		 	)
+		 LEFT OUTER JOIN (
+			SELECT D.SYST_VAL_D_CD, D.SYST_VAL_D_NM
+			FROM TB_SYST_VAL_D D
+			WHERE D.SYST_VAL_CD = 'SYS041'
+			  AND D.USE_YN = 'Y'
+		 ) ET
+		 	ON (
+		 		RU.EMPLOYMENT_TYPE = ET.SYST_VAL_D_CD
+		 	)
+	<include refid="progressWhere" />
+	/* 사용자 1명 = 1행(D-2) */
+	GROUP BY AT.USER_TYPE_CD, AT.USER_CD
+	/* 기본 정렬(D-6): 최근 이수일 DESC(NULL 마지막), 동률 시 이름 ASC */
+	ORDER BY lastCompletedAt IS NULL, lastCompletedAt DESC, userNm ASC
+	LIMIT #{pageSize} OFFSET #{offset}
+	</select>
+
+	<!-- count = 동일 WHERE GROUP BY 서브쿼리 COUNT(검색 키워드 위해 RU/DU 조인 유지) -->
+	<select id="selectUserProgressListCount" parameterType="com.prafta.web.tbm.tbm03.application.query.UserProgressListQuery" resultType="int">
+	/* Tbm03Mapper.selectUserProgressListCount */
+	SELECT COUNT(1)
+	FROM (
+		SELECT 1
+		FROM TB_TBM_ATTENDANCE AT
+			 INNER JOIN TB_TBM_SESSION S
+			 	ON (
+			 		AT.CMPNY_CD = S.CMPNY_CD
+			 	AND AT.SESSION_CD = S.SESSION_CD
+			 	AND S.DEL_YN = 'N'
+			 	AND S.STATUS_CD != 'CANCELLED'
+			 	)
+			 LEFT OUTER JOIN TB_USER RU
+			 	ON (
+			 		AT.USER_TYPE_CD = 'REGULAR'
+			 	AND AT.CMPNY_CD = RU.CMPNY_CD
+			 	AND AT.USER_CD = RU.USER_CD
+			 	)
+			 LEFT OUTER JOIN TB_DAILY_USER DU
+			 	ON (
+			 		AT.USER_TYPE_CD = 'DAILY'
+			 	AND AT.CMPNY_CD = DU.CMPNY_CD
+			 	AND AT.USER_CD = DU.USER_CD
+			 	)
+		<include refid="progressWhere" />
+		GROUP BY AT.USER_TYPE_CD, AT.USER_CD
+	) T
+	</select>
+
+	<!-- ============================ T7 드릴다운 ============================ -->
+	<!-- 대상 사용자 헤더(정규직 TB_USER + 부서명 / 일용직 TB_DAILY_USER). 스코프 검증용 siteCd 포함. -->
+	<select id="selectUserProgressUser" parameterType="com.prafta.web.tbm.tbm03.application.query.UserProgressDetailQuery" resultType="com.prafta.web.tbm.tbm03.result.UserProgressUserResult">
+	/* Tbm03Mapper.selectUserProgressUser */
+	<choose>
+		<when test="userTypeCd == 'DAILY'">
+			SELECT
+				DU.USER_CD		AS userCd
+				, 'DAILY'		AS userTypeCd
+				, DU.USER_NM	AS userNm
+				, '일용직'		AS employmentTypeNm
+				, DU.SITE_CD	AS siteCd
+				, ST.SITE_NM	AS siteNm
+				, NULL			AS deptNm
+			FROM TB_DAILY_USER DU
+				 LEFT OUTER JOIN TB_SITE ST
+				 	ON (
+				 		DU.CMPNY_CD = ST.CMPNY_CD
+				 	AND DU.SITE_CD = ST.SITE_CD
+				 	)
+			WHERE DU.CMPNY_CD = #{gvCmpnyCd}
+			  AND DU.USER_CD = #{userCd}
+		</when>
+		<otherwise>
+			SELECT
+				RU.USER_CD		AS userCd
+				, 'REGULAR'		AS userTypeCd
+				, RU.USER_NM	AS userNm
+				, ET.SYST_VAL_D_NM	AS employmentTypeNm
+				, RU.SITE_CD	AS siteCd
+				, ST.SITE_NM	AS siteNm
+				, ND.NODE_NM	AS deptNm
+			FROM TB_USER RU
+				 LEFT OUTER JOIN TB_SITE ST
+				 	ON (
+				 		RU.CMPNY_CD = ST.CMPNY_CD
+				 	AND RU.SITE_CD = ST.SITE_CD
+				 	)
+				 LEFT OUTER JOIN TB_SITE_NODE ND
+				 	ON (
+				 		RU.CMPNY_CD = ND.CMPNY_CD
+				 	AND RU.SITE_CD = ND.SITE_CD
+				 	AND RU.NODE_CD = ND.NODE_CD
+				 	)
+				 LEFT OUTER JOIN (
+					SELECT D.SYST_VAL_D_CD, D.SYST_VAL_D_NM
+					FROM TB_SYST_VAL_D D
+					WHERE D.SYST_VAL_CD = 'SYS041'
+					  AND D.USE_YN = 'Y'
+				 ) ET
+				 	ON (
+				 		RU.EMPLOYMENT_TYPE = ET.SYST_VAL_D_CD
+				 	)
+			WHERE RU.CMPNY_CD = #{gvCmpnyCd}
+			  AND RU.USER_CD = #{userCd}
+		</otherwise>
+	</choose>
+	</select>
+
+	<sql id="userProgressDetailWhere">
+		WHERE AT.CMPNY_CD = #{gvCmpnyCd}
+		  AND AT.USER_TYPE_CD = #{userTypeCd}
+		  AND AT.USER_CD = #{userCd}
+		  AND AT.DEL_YN = 'N'
+		  /* 집계 모수: 입실한 출결만 */
+		  AND AT.ENTRY_AT IS NOT NULL
+		  /* 이수상태 필터: 미이수는 입실 미완료(NULL or NOT_COMPLETED) 포함 */
+		  <if test="completionStatusCd == 'COMPLETED'">
+		    AND AT.COMPLETION_STATUS_CD = 'COMPLETED'
+		  </if>
+		  <if test="completionStatusCd == 'NOT_COMPLETED'">
+		    AND (AT.COMPLETION_STATUS_CD IS NULL OR AT.COMPLETION_STATUS_CD = 'NOT_COMPLETED')
+		  </if>
+		  /* 기간 = 이수일(STATUS_UPDATED_AT). NULL 상태시각은 기간 지정 시 제외 */
+		  <if test="startDate != null and startDate != ''">
+		    AND DATE(AT.STATUS_UPDATED_AT) &gt;= #{startDate}
+		  </if>
+		  <if test="endDate != null and endDate != ''">
+		    AND DATE(AT.STATUS_UPDATED_AT) &lt;= #{endDate}
+		  </if>
+	</sql>
+
+	<select id="selectUserProgressDetail" parameterType="com.prafta.web.tbm.tbm03.application.query.UserProgressDetailQuery" resultType="com.prafta.web.tbm.tbm03.result.UserProgressDetailResult">
+	/* Tbm03Mapper.selectUserProgressDetail */
+	SELECT
+		AT.ATTENDANCE_CD	AS attendanceCd
+		, AT.SESSION_CD		AS sessionCd
+		, S.TITLE			AS sessionTitle
+		, DATE_FORMAT(IFNULL(S.ENDED_AT, S.INSERT_DATE), '%Y-%m-%d')	AS sessionDate
+		, S.EDU_MINUTES		AS eduMinutes
+		, DATE_FORMAT(AT.ENTRY_AT, '%Y-%m-%d %H:%i')	AS entryAt
+		, DATE_FORMAT(AT.EXIT_AT, '%Y-%m-%d %H:%i')		AS exitAt
+		, AT.COMPLETION_STATUS_CD	AS completionStatusCd
+		, CS.SYST_VAL_D_NM	AS completionStatusNm
+	FROM TB_TBM_ATTENDANCE AT
+		 INNER JOIN TB_TBM_SESSION S
+		 	ON (
+		 		AT.CMPNY_CD = S.CMPNY_CD
+		 	AND AT.SESSION_CD = S.SESSION_CD
+		 	AND S.DEL_YN = 'N'
+		 	AND S.STATUS_CD != 'CANCELLED'
+		 	)
+		 LEFT OUTER JOIN (
+			SELECT D.SYST_VAL_D_CD, D.SYST_VAL_D_NM
+			FROM TB_SYST_VAL_D D
+			WHERE D.SYST_VAL_CD = 'SYS053'
+			  AND D.USE_YN = 'Y'
+		 ) CS
+		 	ON (
+		 		AT.COMPLETION_STATUS_CD = CS.SYST_VAL_D_CD
+		 	)
+	<include refid="userProgressDetailWhere" />
+	/* 이수일(STATUS_UPDATED_AT) 최신순, NULL 마지막 */
+	ORDER BY AT.STATUS_UPDATED_AT IS NULL, AT.STATUS_UPDATED_AT DESC, AT.ATTENDANCE_CD DESC
+	LIMIT #{pageSize} OFFSET #{offset}
+	</select>
+
+	<select id="selectUserProgressDetailCount" parameterType="com.prafta.web.tbm.tbm03.application.query.UserProgressDetailQuery" resultType="int">
+	/* Tbm03Mapper.selectUserProgressDetailCount */
+	SELECT COUNT(1)
+	FROM TB_TBM_ATTENDANCE AT
+		 INNER JOIN TB_TBM_SESSION S
+		 	ON (
+		 		AT.CMPNY_CD = S.CMPNY_CD
+		 	AND AT.SESSION_CD = S.SESSION_CD
+		 	AND S.DEL_YN = 'N'
+		 	AND S.STATUS_CD != 'CANCELLED'
+		 	)
+	<include refid="userProgressDetailWhere" />
+	</select>
+
+	<select id="selectUserProgressSummary" parameterType="com.prafta.web.tbm.tbm03.application.query.UserProgressDetailQuery" resultType="com.prafta.web.tbm.tbm03.result.UserProgressSummaryResult">
+	/* Tbm03Mapper.selectUserProgressSummary */
+	/* SUM은 행이 0건이면 NULL을 반환하므로 IFNULL로 0 보정(결과 record가 primitive int) */
+	SELECT
+		/* 누적 교육시간(D-4): 이수 세션 EDU_MINUTES 합 */
+		IFNULL(SUM(CASE WHEN AT.COMPLETION_STATUS_CD = 'COMPLETED' THEN IFNULL(S.EDU_MINUTES, 0) ELSE 0 END), 0)	AS totalEduMinutes
+		, IFNULL(SUM(CASE WHEN AT.COMPLETION_STATUS_CD = 'COMPLETED' THEN 1 ELSE 0 END), 0)	AS completedCount
+		, IFNULL(SUM(CASE WHEN AT.ENTRY_AT IS NOT NULL AND (AT.COMPLETION_STATUS_CD IS NULL OR AT.COMPLETION_STATUS_CD = 'NOT_COMPLETED') THEN 1 ELSE 0 END), 0)	AS notCompletedCount
+	FROM TB_TBM_ATTENDANCE AT
+		 INNER JOIN TB_TBM_SESSION S
+		 	ON (
+		 		AT.CMPNY_CD = S.CMPNY_CD
+		 	AND AT.SESSION_CD = S.SESSION_CD
+		 	AND S.DEL_YN = 'N'
+		 	AND S.STATUS_CD != 'CANCELLED'
+		 	)
+	<include refid="userProgressDetailWhere" />
+	</select>
+
+</mapper>

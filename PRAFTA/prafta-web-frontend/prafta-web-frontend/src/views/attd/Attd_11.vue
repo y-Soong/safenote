@@ -13,7 +13,11 @@
       <!-- 조회월: 단일 월 (PRAFTA-034 §3-5 단일 월 조회) -->
       <div>
         <label>조회월</label>
-        <CalendarSrchMonth :range="false" style="width: 100px" v-model="workYm" />
+        <CalendarSrchMonth
+          :range="false"
+          style="width: 100px"
+          v-model="workYm"
+        />
       </div>
       <div>
         <label>사업장</label>
@@ -94,54 +98,54 @@
             <span class="subtitle-text">사용자 리스트</span>
           </div>
         </div>
-      <div class="a11-table-wrap">
-        <table class="a11-table">
-          <thead>
-            <tr>
-              <th rowspan="2">사번</th>
-              <th rowspan="2">이름</th>
-              <th rowspan="2">부서</th>
-              <th rowspan="2">직책</th>
-              <th rowspan="2">근무일수</th>
-              <th rowspan="2">총 근무시간</th>
-              <th rowspan="2">초과근무시간</th>
-              <th colspan="2">지각</th>
-              <th colspan="2">조퇴</th>
-              <th rowspan="2">미출근</th>
-            </tr>
-            <tr>
-              <th>횟수</th>
-              <th>시간 누계</th>
-              <th>횟수</th>
-              <th>시간 누계</th>
-            </tr>
-          </thead>
-          <tbody>
-            <!-- 조회 결과 0건 -->
-            <tr v-if="rows.length === 0">
-              <td colspan="12" class="a11-empty">조회 결과가 없습니다.</td>
-            </tr>
-            <tr v-for="r in rows" :key="r.userCd">
-              <td>{{ r.userId }}</td>
-              <td class="a11-cell-left">{{ r.userNm }}</td>
-              <td class="a11-cell-left">{{ r.deptNm }}</td>
-              <td>{{ r.authNm }}</td>
-              <!-- 근무일수 / 횟수: 숫자 -->
-              <td class="a11-cell-num">{{ fmtCount(r.workDayCnt) }}</td>
-              <!-- 시간 컬럼: "N시간 M분" -->
-              <td class="a11-cell-num">{{ fmtMinutes(r.workMinutes) }}</td>
-              <td class="a11-cell-num">{{ fmtMinutes(r.otMinutes) }}</td>
-              <td class="a11-cell-num">{{ fmtCount(r.lateCnt) }}</td>
-              <td class="a11-cell-num">{{ fmtMinutes(r.lateMinutes) }}</td>
-              <td class="a11-cell-num">{{ fmtCount(r.earlyLeaveCnt) }}</td>
-              <td class="a11-cell-num">
-                {{ fmtMinutes(r.earlyLeaveMinutes) }}
-              </td>
-              <td class="a11-cell-num">{{ fmtCount(r.absentDayCnt) }}</td>
-            </tr>
-          </tbody>
-        </table>
-      </div>
+        <div class="a11-table-wrap">
+          <table class="a11-table">
+            <thead>
+              <tr>
+                <th rowspan="2">사번</th>
+                <th rowspan="2">이름</th>
+                <th rowspan="2">부서</th>
+                <th rowspan="2">직책</th>
+                <th rowspan="2">근무일수</th>
+                <th rowspan="2">총 근무시간</th>
+                <th rowspan="2">초과근무시간</th>
+                <th colspan="2">지각</th>
+                <th colspan="2">조퇴</th>
+                <th rowspan="2">미출근</th>
+              </tr>
+              <tr>
+                <th>횟수</th>
+                <th>시간 누계</th>
+                <th>횟수</th>
+                <th>시간 누계</th>
+              </tr>
+            </thead>
+            <tbody>
+              <!-- 조회 결과 0건 -->
+              <tr v-if="rows.length === 0">
+                <td colspan="12" class="a11-empty">조회 결과가 없습니다.</td>
+              </tr>
+              <tr v-for="r in rows" :key="r.userCd">
+                <td>{{ r.userId }}</td>
+                <td class="a11-cell-left">{{ r.userNm }}</td>
+                <td class="a11-cell-left">{{ r.deptNm }}</td>
+                <td>{{ r.authNm }}</td>
+                <!-- 근무일수 / 횟수: 숫자 -->
+                <td class="a11-cell-num">{{ fmtCount(r.workDayCnt) }}</td>
+                <!-- 시간 컬럼: "N시간 M분" -->
+                <td class="a11-cell-num">{{ fmtMinutes(r.workMinutes) }}</td>
+                <td class="a11-cell-num">{{ fmtMinutes(r.otMinutes) }}</td>
+                <td class="a11-cell-num">{{ fmtCount(r.lateCnt) }}</td>
+                <td class="a11-cell-num">{{ fmtMinutes(r.lateMinutes) }}</td>
+                <td class="a11-cell-num">{{ fmtCount(r.earlyLeaveCnt) }}</td>
+                <td class="a11-cell-num">
+                  {{ fmtMinutes(r.earlyLeaveMinutes) }}
+                </td>
+                <td class="a11-cell-num">{{ fmtCount(r.absentDayCnt) }}</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
       </div>
     </div>
   </div>

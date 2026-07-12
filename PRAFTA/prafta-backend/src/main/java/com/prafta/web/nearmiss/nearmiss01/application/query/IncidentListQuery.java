@@ -7,7 +7,6 @@ import com.prafta.web.nearmiss.nearmiss01.application.param.IncidentListParam;
 public record IncidentListQuery(
     String siteCd
     , String reportStatusCd
-    , String incidentTypeCd
     , String potentialSeverityCd
     , String startDate
     , String endDate
@@ -21,7 +20,6 @@ public record IncidentListQuery(
         return new IncidentListQuery(
             param.siteCd()
             , param.reportStatusCd()
-            , param.incidentTypeCd()
             , param.potentialSeverityCd()
             , param.startDate()
             , param.endDate()

@@ -9,10 +9,15 @@
       presets     : 018-A approval-presets 응답의 presets 배열
       context     : 진입 컨텍스트 ({ workYmd?, nodeCd?, siteName?, scheduleSummary?, slots? }) — 없을 수 있음
       submitting  : 제출 진행 플래그(부모 소유)
+      preview        : LC-10 예상 차감 preview 응답({ chargeDays, floorApplied, capApplied,
+                       insufficientBalance, convMinutes, floorDays }) — 부모 소유. 실패/비대상이면 null(표시 생략)
+      previewLoading : preview 호출 진행 플래그(부모 소유)
   - emits:
       submit({ leaveCd, leaveType, workYmd, useUnitType, startTime, endTime, reason,
                approverUserCds, presetId })   ← 018-B POST /appApi/leaveflow/apply 요청 본문 키와 1:1
       cancel
+      preview-request(payload|null)          ← LC-10: 시간차/반반차 입력 완성 시 디바운스 후 emit.
+                                                null 이면 preview 표시 해제(입력 미완성/비대상 단위)
   - ⚠️ allowedUnits/balanceDays/aprvRequired 는 전부 서버(meta) 권위. 클라 추측 금지.
   - ⚠️ 종일(00)/반차(01)/시간차(02·03·04) 분기는 선택된 종류의 allowedUnits 안에서만.
        종일/반차 편의버튼은 시작/종료 시각을 자동입력(표시·BE 차감용)하되 제출 useUnitType 은 단위코드 그대로.
@@ -49,7 +54,7 @@
           @click="onSelectType(lt)"
         >
           <span class="type-item__name">{{ lt.leaveNm }}</span>
-          <span class="type-item__bal">잔여 {{ formatDays(lt.balanceDays) }}일</span>
+          <span class="type-item__bal">잔여 {{ formatLeaveDays(lt.balanceDays, metaConvMinutes) }}</span>
         </button>
 
         <p v-if="leaveTypes.length === 0" class="fs__empty">신청 가능한 연차 종류가 없어요</p>
@@ -61,7 +66,7 @@
       <!-- 잔여 요약 -->
       <div class="balance-box">
         <span class="balance-box__lbl">선택한 연차 잔여</span>
-        <span class="balance-box__val">{{ formatDays(selectedType.balanceDays) }}일</span>
+        <span class="balance-box__val">{{ formatLeaveDays(selectedType.balanceDays, metaConvMinutes) }}</span>
       </div>
 
       <!-- 2) 사용 단위 (allowedUnits 게이팅) -->
@@ -273,6 +278,24 @@
       <p v-if="overBalanceWarning" class="warn-msg">
         신청 일수가 남은 연차보다 많아요. 신청이 거절될 수 있어요.
       </p>
+
+      <!-- LC-10: 예상 차감 요약 카드 (시간차/반반차 preview — 신청 버튼 위, plan §5-D).
+           preview 실패 시 카드 미노출(신청은 가능 — 서버가 최종 판정). -->
+      <section v-if="showPreviewCard" class="preview-card" aria-live="polite">
+        <p v-if="previewLoading" class="preview-card__loading">예상 차감 계산 중...</p>
+        <template v-else-if="preview">
+          <div class="preview-card__row">
+            <span class="preview-card__lbl">예상 차감</span>
+            <span class="preview-card__val">{{ previewChargeText }}</span>
+          </div>
+          <p v-if="preview.floorApplied" class="preview-card__floor">
+            {{ floorNoticeText }}
+          </p>
+          <p v-if="preview.insufficientBalance" class="preview-card__warn">
+            예상 차감이 남은 연차를 초과해요. 이대로 신청하면 거절될 수 있어요.
+          </p>
+        </template>
+      </section>
     </template>
 
     <p class="helper">
@@ -299,7 +322,8 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted, watch, getCurrentInstance } from 'vue'
+import { ref, computed, onMounted, onUnmounted, watch, getCurrentInstance } from 'vue'
+import { formatLeaveDays, trimRawDays } from '@/utils/leaveFormat'
 import DateStepperField from '@/components/common/DateStepperField.vue'
 import TimeStepperField from '@/components/common/TimeStepperField.vue'
 // developer: 결재자 추가 시트(LeaveApproverPickerSheet)는 본 작업의 후속 골격 또는
@@ -308,15 +332,22 @@ import TimeStepperField from '@/components/common/TimeStepperField.vue'
 import LeaveApproverPickerSheet from './LeaveApproverPickerSheet.vue'
 
 const props = defineProps({
-  // 018-A apply-meta 응답: { leaveTypes: [{ leaveCd, leaveNm, systemYn, aprvRequired, allowedUnits[], balanceDays, applicable }] }
+  // 018-A apply-meta 응답: { leaveTypes: [{ leaveCd, leaveNm, systemYn, aprvRequired, allowedUnits[], balanceDays, applicable }],
+  //   convMinutes(오늘 기준 1일 환산시간(분) — 잔여 표기용 근사치, 구응답이면 부재 → 480 폴백) }
   meta: { type: Object, default: () => ({ leaveTypes: [] }) },
   // 018-A approval-presets 응답의 presets 배열: [{ presetId, presetNm, defaultYn, steps:[{ stepNo, approverUserCd, userNm, userId, rankNm, nodeNm }] }]
   presets: { type: Array, default: () => [] },
   // 진입 컨텍스트(특정 일자 진입 시): { workYmd?, nodeCd?, siteName?, scheduleSummary?, slots? }
   context: { type: Object, default: () => ({}) },
   submitting: { type: Boolean, default: false },
+  // LC-10: 예상 차감 preview 응답(부모 소유). { chargeDays, floorApplied, capApplied, insufficientBalance,
+  //   convMinutes, floorDays(발동 마일스톤 요금 0.25/0.5/1 — 구응답이면 부재) }
+  //   preview 실패/비대상이면 null — 표시 생략하고 신청은 가능(서버가 최종 판정).
+  preview: { type: Object, default: null },
+  // LC-10: preview 호출 진행 플래그(부모 소유) — 요약 카드 로딩 표시용.
+  previewLoading: { type: Boolean, default: false },
 })
-const emit = defineEmits(['submit', 'cancel'])
+const emit = defineEmits(['submit', 'cancel', 'preview-request'])
 
 const { proxy } = getCurrentInstance() || { proxy: null }
 // 공통: alert 폴백(앱 전역 $alert 우선, 없으면 window.alert) — LeaveApplyView 패턴 동일.
@@ -327,13 +358,15 @@ const showAlert = (message) => {
 }
 
 // ── 사용 단위 라벨(SYS025) — 표시 전용 상수 ──────────────────────────────
-// 00 종일 / 01 반차 / 02 2시간 / 03 1시간 / 04 30분
+// 00 종일 / 01 반차 / 02 2시간 / 03 1시간 / 04 30분 / 05 반반차(LC-06 — ALLOW_QUARTER='Y' 회사만
+//   서버가 allowedUnits 에 '05' 를 포함하므로, 노출 게이트는 기존 allowedUnits 패턴 그대로)
 const UNIT_LABELS = {
   '00': '종일',
   '01': '반차',
   '02': '2시간',
   '03': '1시간',
   '04': '30분',
+  '05': '반반차(0.25일)',
 }
 
 // 시간차 단위(02·03·04)별 1스텝 분량(분). 종료 = 시작 + N×단위분 계산에 사용.
@@ -363,6 +396,10 @@ const approverPickerOpen = ref(false)
 
 // ── 파생값 (단순 표시/필터 — 비즈니스 로직 아님) ─────────────────────────
 const leaveTypes = computed(() => props.meta?.leaveTypes || [])
+
+// 잔여 "N일 H시간 M분" 표기용 환산시간(분) — apply-meta convMinutes(오늘 기준 근사치, 서버 산출).
+//   구응답(필드 부재)/무효면 undefined → formatLeaveDays 내부 480 폴백.
+const metaConvMinutes = computed(() => props.meta?.convMinutes)
 
 const selectedType = computed(
   () => leaveTypes.value.find((t) => t.leaveCd === selectedLeaveCd.value) || null,
@@ -477,12 +514,13 @@ const contextSchedule = computed(() => {
   return { startTime: sch.startTime || '', endTime: sch.endTime || '' }
 })
 
-// 신청 일수 추정(종일 1.0 / 반차 0.5 / 시간차 (종료-시작)분÷소정근로분). 계산 불가/미선택 시 null.
+// 신청 일수 추정(종일 1.0 / 반차 0.5 / 반반차 0.25 / 시간차 (종료-시작)분÷소정근로분). 계산 불가/미선택 시 null.
 //   표시 전용 근사(서버가 최종 판정). 잔여초과 경고와 가불 토글 노출 판정의 단일출처.
 const estimatedDays = computed(() => {
   if (!selectedType.value) return null
   if (useUnitType.value === '00') return 1.0
   if (useUnitType.value === '01') return 0.5
+  if (useUnitType.value === '05') return 0.25 // 반반차(LC-06): 0.25일 고정단위
   if (isTimeUnit.value) {
     // 시간차: (종료-시작)분 ÷ 소정근로분. 소정근로 출처는 컨텍스트 스케줄(시작~종료), 휴게 미반영 근사.
     const startM = toMinutes(startTimeInput.value)
@@ -572,6 +610,90 @@ watch(borrowDateExpired, (expired) => {
   }
 })
 
+// ── LC-10: 예상 차감 preview 요청 (시간차/반반차 — POST /appApi/leaveflow/preview-deduction) ──
+// 입력 완성 시 디바운스 후 부모에 emit(API 호출은 부모 소유 — 컨테이너/폼 역할 분담 유지).
+const PREVIEW_DEBOUNCE_MS = 400
+let previewTimer = null
+
+// preview 대상 payload(요청 본문 키 1:1). 비대상(종일/반차)·입력 미완성이면 null.
+//   시간차(02/03/04) = 날짜 + 시작/종료 완성 + 자정 미초과일 때. 반반차(05) = 날짜만(시간대 미기록).
+const previewPayload = computed(() => {
+  if (!selectedType.value) return null
+  const ymd = toYmd(workDateInput.value)
+  if (!ymd || ymd.length !== 8) return null
+  const unit = useUnitType.value
+  if (unit === '05') {
+    return {
+      leaveCd: selectedLeaveCd.value,
+      workYmd: ymd,
+      useUnitType: unit,
+      startTime: null,
+      endTime: null,
+    }
+  }
+  if (['02', '03', '04'].includes(unit)) {
+    if (!startTimeInput.value || !endTimeInput.value || endOverflowsDay.value) return null
+    return {
+      leaveCd: selectedLeaveCd.value,
+      workYmd: ymd,
+      useUnitType: unit,
+      startTime: toHHMM(startTimeInput.value),
+      endTime: toHHMM(endTimeInput.value),
+    }
+  }
+  return null
+})
+
+// payload 변경 → 디바운스 후 preview 요청 emit. null 전환은 즉시(잔존 카드 누수 방지).
+watch(previewPayload, (payload) => {
+  if (previewTimer) {
+    clearTimeout(previewTimer)
+    previewTimer = null
+  }
+  if (!payload) {
+    emit('preview-request', null)
+    return
+  }
+  previewTimer = setTimeout(() => {
+    previewTimer = null
+    emit('preview-request', payload)
+  }, PREVIEW_DEBOUNCE_MS)
+})
+
+// 폼 해제 시 잔여 타이머 정리(unmount 후 emit 방지).
+onUnmounted(() => {
+  if (previewTimer) clearTimeout(previewTimer)
+})
+
+// 예상 차감 카드 노출: preview 대상 단위(시간차/반반차) + (로딩 중 또는 응답 보유).
+//   preview 실패(null)면 미노출 — 신청은 가능(서버 최종 판정).
+const showPreviewCard = computed(() => {
+  const eligible = isTimeUnit.value || useUnitType.value === '05'
+  return eligible && (props.previewLoading || !!props.preview)
+})
+
+// "예상 차감: 0일 4시간 (0.5일)" — 일·시간 표기(convMinutes 분모) + 원시 차감액 병기(plan §5-D).
+const previewChargeText = computed(() => {
+  const p = props.preview
+  if (!p) return ''
+  return `${formatLeaveDays(p.chargeDays, p.convMinutes)} (${trimRawDays(p.chargeDays)}일)`
+})
+
+// 하한 발동 마일스톤 요금(floorDays) → 단위 라벨. 0.25=반반차 / 0.5=반차 / 1=종일.
+const FLOOR_UNIT_LABELS = { 0.25: '반반차', 0.5: '반차', 1: '종일' }
+
+// 하한 발동 안내 문구 — floorDays 기반 단위 분기. floorDays 없으면(구응답) 일반 문구 폴백.
+const floorNoticeText = computed(() => {
+  const p = props.preview
+  if (!p || !p.floorApplied) return ''
+  const label = FLOOR_UNIT_LABELS[Number(p.floorDays)]
+  if (!label) {
+    // 구응답(floorDays 부재)/미지 값 폴백 — 일반화 문구.
+    return '같은 날 누적 신청이 고정 단위(반반차·반차·종일) 기준 시간에 도달하여 고정 단위 요금이 적용됩니다.'
+  }
+  return `같은 날 누적 신청이 ${label} 시간에 도달하여 ${label} 요금(${trimRawDays(p.floorDays)}일)이 적용됩니다.`
+})
+
 // 'HHMM' → 분. 형식 위반 시 -1. (스케줄 HHMM 용)
 function toMin4(hhmm) {
   if (!hhmm || hhmm.length !== 4 || !/^\d{4}$/.test(hhmm)) return -1
@@ -605,11 +727,19 @@ const formatDays = (d) => {
 const approverMetaOf = (ap) => [ap?.nodeNm, ap?.rankNm].filter(Boolean).join(' · ')
 
 // ── UI 토글/선택 (developer: 종류 변경 시 단위/시각/결재선 재구성 로직 보완) ─
-// 종류 변경 시 단위/시각/결재선 재초기화. 단위는 사용자가 명시 선택(자동선택 안 함 — 종류별 게이팅 인지 유도).
+// 선택 종류의 허용 단위(allowedUnits, 서버 권위) 안에서 기본 사용 단위 결정.
+//   종일('00') 우선, 없으면 첫 허용 단위, 허용 단위가 없으면 빈 값 유지.
+const resolveDefaultUnit = (type) => {
+  const allowed = type?.allowedUnits || []
+  if (allowed.includes('00')) return '00'
+  return allowed[0] || ''
+}
+
+// 종류 변경 시 단위/시각/결재선 재초기화. 단위는 종류별 허용 단위 안에서 종일을 기본 선택한다.
 const onSelectType = (lt) => {
   if (!lt?.applicable) return
   selectedLeaveCd.value = lt.leaveCd
-  useUnitType.value = ''
+  useUnitType.value = resolveDefaultUnit(lt)
   startTimeInput.value = ''
   stepCount.value = 1
   selectedPresetId.value = ''
@@ -1127,6 +1257,50 @@ onMounted(() => {
   background: var(--color-danger-tint);
   border: 0.5px solid var(--color-danger);
   border-radius: var(--radius-sm);
+  font-size: 12px;
+  color: var(--color-danger);
+}
+
+/* LC-10: 예상 차감 요약 카드 — balance-box 톤 재사용(CSS 변수만) */
+.preview-card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-xs);
+  padding: var(--space-sm) var(--space-md);
+  background: var(--color-primary-tint);
+  border: 0.5px solid var(--color-primary-tint-border);
+  border-radius: var(--radius-md);
+}
+.preview-card__loading {
+  margin: 0;
+  font-size: 12px;
+  color: var(--color-text-tertiary);
+}
+.preview-card__row {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: var(--space-sm);
+}
+.preview-card__lbl {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--color-primary-text-deep);
+}
+.preview-card__val {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--color-primary-text-darkest);
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+.preview-card__floor {
+  margin: 0;
+  font-size: 12px;
+  color: var(--color-warning-text);
+}
+.preview-card__warn {
+  margin: 0;
   font-size: 12px;
   color: var(--color-danger);
 }

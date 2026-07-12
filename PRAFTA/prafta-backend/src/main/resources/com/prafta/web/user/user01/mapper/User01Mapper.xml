@@ -172,6 +172,7 @@
 	FROM TB_USER A
 		LEFT JOIN (
 		    SELECT
+		        X.CMPNY_CD,                                   <!-- 회사 스코프 누락 시 USER_CD 동일한 타 회사 사업장이 섞임(테넌트 누수) -->
 		        X.USER_CD,
 		        GROUP_CONCAT(S.SITE_NM ORDER BY S.SITE_CD SEPARATOR ',') AS SITE_NM_LIST
 		    FROM TB_USER_SITE_AUTH X
@@ -179,10 +180,11 @@
 		        ON X.CMPNY_CD = S.CMPNY_CD
 		       AND X.SITE_CD  = S.SITE_CD
 		    WHERE X.USE_YN = 'Y'
-		    GROUP BY X.USER_CD
-		) B 
+		    GROUP BY X.CMPNY_CD, X.USER_CD
+		) B
 			ON (
-				B.USER_CD = A.USER_CD
+				B.CMPNY_CD = A.CMPNY_CD
+			AND B.USER_CD = A.USER_CD
 			)
 		INNER JOIN TB_SITE C
 		    ON (
@@ -207,18 +209,32 @@
 		        )
 		  )
 		
-		  <if test="userNm != null and userNm != ''">
+		  <!-- 사용자정보 통합 검색: 사용자ID·사용자명 동시 부분일치(둘 중 하나라도 매칭). -->
+		  <if test="userKeyword != null and userKeyword != ''">
+		    AND (
+		         A.USER_ID LIKE CONCAT('%', #{userKeyword}, '%')
+		      OR A.USER_NM LIKE CONCAT('%', #{userKeyword}, '%')
+		    )
+		  </if>
+
+		  <!-- 하위호환: 분리 조건(userId/userNm)이 직접 전달될 경우에도 동작(통합검색 우선). -->
+		  <if test="(userKeyword == null or userKeyword == '') and userNm != null and userNm != ''">
 		    AND A.USER_NM LIKE CONCAT('%', #{userNm}, '%')
 		  </if>
-		
-		  <if test="userId != null and userId != ''">
+
+		  <if test="(userKeyword == null or userKeyword == '') and userId != null and userId != ''">
 		    AND A.USER_ID = #{userId}
 		  </if>
-		
+
 		  <if test="useYn != null and useYn != ''">
 		    AND A.USE_YN = #{useYn}
 		  </if>
-		
+
+		  <!-- 고용형태 필터: 호출처가 employmentType 을 전달한 경우에만 적용(미전달이면 무필터, 타 호출처 무영향). -->
+		  <if test="employmentType != null and employmentType != ''">
+		    AND A.EMPLOYMENT_TYPE = #{employmentType}
+		  </if>
+
 		  <!-- 권한자(system/master/hr/safe)만 site 필터가 의미있게 동작.
 		       비권한자는 위에서 viewer site로 이미 고정됨 -->
 		  <if test="siteCd != null and siteCd != ''">
@@ -435,8 +451,9 @@
 		    , A.DEFAULT_SCH_CD													AS defaultSchCd
 		FROM TB_USER A
 			 LEFT JOIN (
-				SELECT 
-					A.USER_CD
+				SELECT
+					A.CMPNY_CD                                   <!-- 회사 스코프 누락 시 USER_CD 동일한 타 회사 사업장이 섞임(테넌트 누수) -->
+					, A.USER_CD
 					, GROUP_CONCAT(B.SITE_NM ORDER BY B.SITE_CD SEPARATOR ',') AS SITE_NM_LIST
 				FROM TB_USER_SITE_AUTH A
 				     INNER JOIN TB_SITE B
@@ -445,9 +462,9 @@
 						AND A.SITE_CD = B.SITE_CD
 						)
 				WHERE A.USE_YN = 'Y'
-				GROUP BY A.USER_CD
+				GROUP BY A.CMPNY_CD, A.USER_CD
 			) B
-			ON B.USER_CD = A.USER_CD
+			ON B.CMPNY_CD = A.CMPNY_CD AND B.USER_CD = A.USER_CD
 			INNER JOIN TB_SITE C
 			ON (
 				A.CMPNY_CD = C.CMPNY_CD

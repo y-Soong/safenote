@@ -214,6 +214,18 @@ public class AppHome01ServiceImpl implements AppHome01Service {
             }
         }
 
+        // PRAFTA_COM_003-A: 전일 미퇴근(열린 슬롯)을 status 의 WORKING 판정에 반영.
+        //   기준일이 오늘(baseIsToday)이고, 당일 근태만으로 산출한 status 가 BEFORE_WORK(=당일 출근 없음)인데
+        //   직전일(today-1) 미퇴근 열린 슬롯(prevDayOpen, CHECK_OUT NULL)이 남아 있으면 실제로는 "근무 중"이다.
+        //   이 경우 status 를 WORKING 으로 보강해 안전점검/위험성 발굴 등 근무중 전용 기능 게이트가 열리도록 한다.
+        //   - 오버나이트 경로(baseIsToday=false)는 prevDayOpen 이 null 이라 영향 없음(기존 hasOpen 경로 유지).
+        //   - 당일 출퇴근 완료(OFF_WORK)/당일 근무중(WORKING)은 status 가 BEFORE_WORK 가 아니므로 무회귀.
+        //   - 월마감 여부(prevDayClosedMonth)는 퇴근 가능 여부(canCheckOut)에만 관여하며, 실제 근무 상태(WORKING)와 무관하므로 여기서는 보지 않는다.
+        //   - checkInTime/checkOutTime 등 표시 시각은 손대지 않는다(전날 출근시각은 기존 prevDayCheckInTime 으로 별도 안내).
+        if (STATUS_BEFORE_WORK.equals(status) && prevDayOpen != null) {
+            status = STATUS_WORKING;
+        }
+
         // prafta-app-021 (§7.6): 전날 미퇴근 마감 대기 신호.
         //   오늘 진행 중(hasOpen) 케이스가 우선이므로, hasOpen 이 아닐 때만 전날 신호를 켠다(이중 표시 방지).
         //   예외(prafta-app-021-6): 직전일 미퇴근의 WORK_YMD 월이 이미 마감이면 퇴근이 월마감으로 막히므로

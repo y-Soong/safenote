@@ -27,6 +27,7 @@ package com.prafta.common.cmm.leave.command;
  * @param aprvUseYn              법정연차 신청 결재 여부 (Y/N)
  * @param applyFromDate          정책 적용 시작일 (YYYYMMDD, 오늘 이상)
  * @param usageUnit              회사 허용 사용 단위 (단일): FULL_DAY/HALF_DAY/HOUR_2/HOUR_1/MIN_30 (prafta-024)
+ * @param allowQuarter           반반차(0.25일, SYS025 '05') 허용 토글 Y/N — USAGE_UNIT 계층과 독립 (LC-06)
  * @param changeReason           변경 사유 (HISTORY 기록용, NULL 허용)
  */
 public record LeavePolicyCommand(
@@ -46,6 +47,7 @@ public record LeavePolicyCommand(
     , String aprvUseYn
     , String applyFromDate
     , String usageUnit
+    , String allowQuarter
     , String changeReason
 ) {
 }

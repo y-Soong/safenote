@@ -5,7 +5,7 @@ import lombok.NoArgsConstructor;
 import lombok.Setter;
 
 /**
- * 5개 연계 도메인 사고일 기준 조회 공통 요청.
+ * 연계 도메인(근태/순회점검/위험성평가/TBM) 사고일 기준 조회 공통 요청.
  * acctId 로 사고 헤더(발생일/시각/재해자/사업장)를 서버에서 도출하므로
  * 조회 범위/매칭키는 body siteCd 가 아니라 사고 헤더에서 가져온다(IDOR 차단).
  *
@@ -26,8 +26,4 @@ public class LinkQueryRequest {
     private String processCd;
     private String riskTypeCd;
     private String hazardCd;
-
-    // 아차사고 선택 필터
-    private String incidentTypeCd;      // SYS061
-    private String potentialSeverityCd; // SYS062
 }

@@ -7,8 +7,6 @@
         A.CMPNY_CD                                                              AS cmpnyCd
       , A.SITE_CD                                                               AS siteCd
       , A.NEAR_MISS_ID                                                          AS nearMissId
-      , A.INCIDENT_TYPE_CD                                                      AS incidentTypeCd
-      , FNC_CMM_INFO_SRCH(A.CMPNY_CD, 'SYST_VAL', A.INCIDENT_TYPE_CD, 'SYS061') AS incidentTypeNm
       , A.PROCESS_CD                                                            AS processCd
       , C.BAIM_VAL_D_NM                                                         AS processNm
       , DATE_FORMAT(A.OCCUR_DTIME, '%Y-%m-%d %H:%i')                            AS occurDtime
@@ -92,9 +90,6 @@
       <if test="reportStatusCd != null and reportStatusCd != ''">
         AND A.REPORT_STATUS_CD = #{reportStatusCd}
       </if>
-      <if test="incidentTypeCd != null and incidentTypeCd != ''">
-        AND A.INCIDENT_TYPE_CD = #{incidentTypeCd}
-      </if>
       <if test="potentialSeverityCd != null and potentialSeverityCd != ''">
         AND A.POTENTIAL_SEVERITY_CD = #{potentialSeverityCd}
       </if>
@@ -107,23 +102,21 @@
     ORDER BY A.REPORT_STATUS_CD, A.OCCUR_DTIME DESC, A.NEAR_MISS_ID DESC
     </select>
 
-    <!-- A4 상태별 카운트 (필터 동반, 탭 배지: 접수/검토중/조치중/완료). 사업장 스코프 강제 -->
+    <!-- A4 상태별 카운트 (필터 동반, 탭 배지: 접수/조치중/완료/미처리대상). 사업장 스코프 강제.
+         SYS063 재번호(D4): 100 접수 / 200 조치중 / 300 완료 / 400 미처리대상. -->
     <select id="selectStatusCounts"
             parameterType="com.prafta.app.nearmiss.nearmiss01.application.query.SiteIncidentListQuery"
             resultType="com.prafta.app.nearmiss.nearmiss01.result.StatusCountResult">
     /* AppNearMiss01Mapper.selectStatusCounts */
     SELECT
         COALESCE(SUM(CASE WHEN A.REPORT_STATUS_CD = '100' THEN 1 ELSE 0 END), 0) AS receivedCnt
-      , COALESCE(SUM(CASE WHEN A.REPORT_STATUS_CD = '200' THEN 1 ELSE 0 END), 0) AS reviewingCnt
-      , COALESCE(SUM(CASE WHEN A.REPORT_STATUS_CD = '300' THEN 1 ELSE 0 END), 0) AS actingCnt
-      , COALESCE(SUM(CASE WHEN A.REPORT_STATUS_CD = '400' THEN 1 ELSE 0 END), 0) AS completedCnt
+      , COALESCE(SUM(CASE WHEN A.REPORT_STATUS_CD = '200' THEN 1 ELSE 0 END), 0) AS actingCnt
+      , COALESCE(SUM(CASE WHEN A.REPORT_STATUS_CD = '300' THEN 1 ELSE 0 END), 0) AS completedCnt
+      , COALESCE(SUM(CASE WHEN A.REPORT_STATUS_CD = '400' THEN 1 ELSE 0 END), 0) AS unaddressedCnt
     FROM TB_NEAR_MISS A
     WHERE A.CMPNY_CD = #{gvCmpnyCd}
       AND A.SITE_CD = #{siteCd}
       AND A.USE_YN = 'Y'
-      <if test="incidentTypeCd != null and incidentTypeCd != ''">
-        AND A.INCIDENT_TYPE_CD = #{incidentTypeCd}
-      </if>
       <if test="potentialSeverityCd != null and potentialSeverityCd != ''">
         AND A.POTENTIAL_SEVERITY_CD = #{potentialSeverityCd}
       </if>
@@ -206,7 +199,6 @@
         CMPNY_CD
       , SITE_CD
       , NEAR_MISS_ID
-      , INCIDENT_TYPE_CD
       , PROCESS_CD
       , OCCUR_DTIME
       , LOCATION_DESC
@@ -226,7 +218,6 @@
         #{gvCmpnyCd}
       , #{siteCd}
       , #{nearMissId}
-      , #{incidentTypeCd}
       , #{processCd}
       , STR_TO_DATE(#{occurDtime}, '%Y-%m-%d %H:%i')
       , #{locationDesc}
@@ -243,7 +234,7 @@
     )
     </insert>
 
-    <!-- A6 1차 확인 100->200 (검토중). 임시조치(ADMIN_TEMP_ACTION_DESC) + 검토자 기록.
+    <!-- A6 1차 확인 100->200 (조치중, SYS063 재번호 D4). 임시조치(ADMIN_TEMP_ACTION_DESC) + 검토자 기록.
          보고자 IMMEDIATE_ACTION_DESC 는 건드리지 않는다(데이터 오염 방지).
          현재 상태가 '100'(접수) 인 행만 갱신(앱 한정 전이 보장 + 동시성 가드). -->
     <update id="updateFirstReview"
@@ -264,13 +255,14 @@
       AND USE_YN = 'Y'
     </update>
 
-    <!-- A6 반려 900. 사유(REJECT_REASON) + 임시조치(있으면) + 검토자 기록. -->
+    <!-- A6 미처리대상 400 (SYS063 재번호 D4, 기존 반려 자리).
+         사유(REJECT_REASON 컬럼=미처리 사유로 재활용) + 임시조치(있으면) + 검토자 기록. -->
     <update id="updateReject"
             parameterType="com.prafta.app.nearmiss.nearmiss01.application.command.ChangeStatusCommand">
     /* AppNearMiss01Mapper.updateReject */
     UPDATE TB_NEAR_MISS
     SET
-        REPORT_STATUS_CD = '900'
+        REPORT_STATUS_CD = '400'
       , REJECT_REASON    = #{rejectReason}
       <if test="adminTempActionDesc != null and adminTempActionDesc != ''">
       , ADMIN_TEMP_ACTION_DESC = #{adminTempActionDesc}

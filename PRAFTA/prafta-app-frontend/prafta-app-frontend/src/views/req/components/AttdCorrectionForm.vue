@@ -14,13 +14,13 @@
       <div class="ctx__row">
         <span class="ctx__lbl">스케줄</span>
         <span class="ctx__val"
-          >{{ context.workPlanName }} · {{ context.scheduleSummary || '-' }}</span
+          >{{ context.workPlanName }} · {{ scheduleSummaryDisplay || '-' }}</span
         >
       </div>
       <div v-if="context.attendanceSummary" class="ctx__row">
         <span class="ctx__lbl">현재 근태</span>
         <span class="ctx__val" :class="{ 'ctx__val--warn': hasIssue }">
-          {{ context.attendanceSummary }}{{ hasIssue ? ' (확인 필요)' : '' }}
+          {{ attendanceSummaryDisplay }}{{ hasIssue ? ' (확인 필요)' : '' }}
         </span>
       </div>
     </section>
@@ -133,6 +133,7 @@ import DateStepperField from '@/components/common/DateStepperField.vue'
 import TimeStepperField from '@/components/common/TimeStepperField.vue'
 import ApprovalLineSection from './ApprovalLineSection.vue'
 import AttdApproverPickerSheet from './AttdApproverPickerSheet.vue'
+import { formatTimeSummary } from '@/views/attd/attdFormat'
 
 const props = defineProps({
   context: { type: Object, required: true },
@@ -239,6 +240,9 @@ const ctxDateDisplay = computed(() => {
   return y && m && d ? `${y}년 ${Number(m)}월 ${Number(d)}일` : '-'
 })
 const ctxSiteDisplay = computed(() => props.context.siteName || '')
+// BE raw HHMM 요약("0716~1811" / "0700~1300 / 1700~2100")을 "HH:MM ~ HH:MM" 표시형으로 변환.
+const scheduleSummaryDisplay = computed(() => formatTimeSummary(props.context.scheduleSummary))
+const attendanceSummaryDisplay = computed(() => formatTimeSummary(props.context.attendanceSummary))
 const hasIssue = computed(() => Boolean(props.context.hasIssue))
 
 const overlapWarning = computed(() => {

@@ -32,6 +32,12 @@
           <div class="form-left">
             <label>점검대상명칭</label>
             <input v-model.trim="chkptNm" @keyup.enter="fnSearch" />
+            <label>사용여부</label>
+            <select v-model="useYn" name="combo" @change="fnSearch">
+              <option value="">전체</option>
+              <option value="Y">사용</option>
+              <option value="N">미사용</option>
+            </select>
           </div>
           <div class="btn-group">
             <button class="btn btn-primary" @click="fnSearch">조회</button>
@@ -46,13 +52,14 @@
                 <tr>
                   <th style="width: 35%">점검대상명칭</th>
                   <th style="width: 25%">관리자</th>
+                  <th style="width: 12%">사용여부</th>
                   <th>비고</th>
                 </tr>
               </thead>
               <tbody>
                 <template v-if="!chkptList || chkptList.length === 0">
                   <tr>
-                    <td colspan="3" class="edu-grid-empty">
+                    <td colspan="4" class="edu-grid-empty">
                       조회된 점검대상이 없습니다.
                     </td>
                   </tr>
@@ -65,6 +72,7 @@
                   >
                     <td>{{ chkpt.chkptNm }}</td>
                     <td>{{ chkpt.mgmtUserNm }}</td>
+                    <td>{{ chkpt.useYn === "N" ? "미사용" : "사용" }}</td>
                     <td>{{ chkpt.chkptDesc }}</td>
                   </tr>
                 </template>
@@ -108,6 +116,7 @@ const { position, startDrag } = useCenteredDraggable(modalRef, {
 
 const chkptList = ref([]);
 const chkptNm = ref("");
+const useYn = ref(""); // 사용여부 필터(전체='' 기본) - PRAFTA_COM_001-T5-12.2.1
 
 onMounted(async () => {
   await fnSearch();
@@ -123,6 +132,7 @@ const fnSearch = async () => {
         siteCd: props.siteCd_p,
         chkLstType: props.chkLstType_p,
         chkptNm: chkptNm.value,
+        useYn: useYn.value,
       },
     });
 

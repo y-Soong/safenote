@@ -1,7 +1,9 @@
 <!--
   AdminSiteOpsView.vue — 관리자 현장 처리(일용직 QR 출퇴근 등록) [prafta-app-025 J1-7]
   - 진입: AdminLauncherView 본문 "현장 처리"(moduleActiveMap.SITE_OPS===true) → router.push('/AdminSiteOps').
-  - 동작: 상단 [출근][퇴근] 모드 토글 + 연속 QR 스캔(스캔→서버 처리→비차단 토스트→다음 스캔 대기).
+  - 동작: 상단 [출근][퇴근] 모드 토글 + 단건 QR 스캔(스캔 1회→스캐너 정지→서버 처리→결과 토스트→관리자 홈 복귀).
+      ※ 과거 연속 스캔 방식은 동일 QR 이 매 프레임 재인식되어 출근행 반복 생성을 시도(멱등 409 로 거부)하던 혼란이 있어
+        1회 처리 후 자동 종료로 변경. 여러 명을 연속 처리하려면 종료 후 다시 진입한다.
   - 백엔드:
       POST /appApi/admin/site-ops/attendance/check-in   { qrPayload, siteCd }   (S1 출근, 멱등)
       POST /appApi/admin/site-ops/attendance/check-out  { qrPayload, siteCd }   (S2 퇴근, 멱등)
@@ -145,10 +147,11 @@ const toast = ref({ visible: false, message: '', tone: 'success' })
 // 현장 권위(★미결 3=b): access-context 가 확정한 현재 사업장. 출퇴근 EP 바디로 전달 → 서버가 멤버십 재검증.
 const currentSiteCd = ref('')
 
-// html5-qrcode 인스턴스(연속 스캔 — 화면 종료까지 stop 하지 않음)
+// html5-qrcode 인스턴스(단건 스캔 — 1회 인식 후 stop)
 let html5QrCode = null
 let isStarting = false
 let toastTimer = null
+let closeTimer = null
 
 // ── 모드 토글(UI) ────────────────────────────────────────────────────
 const setMode = (next) => {
@@ -186,8 +189,12 @@ const isIdempotentCode = (code) => code === 'ATTD_409_080' || code === 'ATTD_409
 // busy 가드 → mode 별 EP POST(qrPayload 가공 없이 전달) → 응답/에러코드 분기 → 토스트 → busy 해제.
 //   파싱/식별/유효성/멱등은 백엔드(S1/S2). 멱등(409_080/082)은 정상 안내로 처리하고 스캔 계속.
 const onScanSuccess = async (decodedText) => {
-  if (busy.value) return // 처리 중에는 다음 프레임 무시(연속 스캔 직렬화)
+  if (busy.value) return // 처리 중/종료 중에는 다음 프레임 무시
   busy.value = true
+
+  // 단건 처리: 한 번 인식되면 즉시 스캐너를 정지한다.
+  //   동일 QR 이 매 프레임 재인식되어 출근행을 반복 생성 시도(멱등 409 로 거부되지만 혼란)하던 문제를 차단.
+  stopScanner()
 
   const url =
     mode.value === 'IN'
@@ -207,14 +214,24 @@ const onScanSuccess = async (decodedText) => {
     const code = e?.response?.data?.errorCode
     const message = e?.response?.data?.message
     if (isIdempotentCode(code)) {
-      // 멱등(이미 출근/퇴근) — 정상 흐름, 회색 안내 후 계속 스캔.
+      // 멱등(이미 출근/퇴근) — 정상 흐름, 회색 안내.
       showToast(message || '이미 처리됐어요', 'info')
     } else {
       showToast(message || 'QR 처리에 실패했어요. 다시 스캔해 주세요.', 'error')
     }
   } finally {
     busy.value = false
+    // 결과 토스트를 잠깐 보여준 뒤 원래(관리자 홈) 화면으로 복귀(단건 스캔 종료).
+    scheduleClose()
   }
+}
+
+// 결과 안내 토스트를 잠깐 노출한 뒤 자동 종료(관리자 홈 복귀). 단건 스캔 UX.
+const scheduleClose = () => {
+  if (closeTimer) clearTimeout(closeTimer)
+  closeTimer = setTimeout(() => {
+    router.replace('/AdminHome')
+  }, 1400)
 }
 
 // HHMM(4자리) → HH:MM 표시. 형식이 아니면 원문 반환.
@@ -285,6 +302,7 @@ onMounted(async () => {
 
 onBeforeUnmount(() => {
   if (toastTimer) clearTimeout(toastTimer)
+  if (closeTimer) clearTimeout(closeTimer)
   stopScanner()
 })
 </script>

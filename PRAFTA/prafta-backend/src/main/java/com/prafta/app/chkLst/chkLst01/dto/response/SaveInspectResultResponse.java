@@ -23,6 +23,6 @@ public class SaveInspectResultResponse {
     /** 실제 저장 항목 수 */
     private final int savedCount;
 
-    /** 작업일자 (요청 workDate 그대로) */
+    /** 작업일자 (서버 기준 오늘, Asia/Seoul). 요청 workDate 는 무시된다. */
     private final String workDate;
 }

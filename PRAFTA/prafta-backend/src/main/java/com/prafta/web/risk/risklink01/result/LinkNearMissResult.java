@@ -7,8 +7,6 @@ package com.prafta.web.risk.risklink01.result;
 public record LinkNearMissResult(
     String siteCd
     , String nearMissId
-    , String incidentTypeCd
-    , String incidentTypeNm
     , String occurDtime
     , String locationDesc
     , String description

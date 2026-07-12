@@ -386,4 +386,15 @@ public interface LeaveDashboardMapper {
     int cancelBorrowGrant(@Param("cmpnyCd") String cmpnyCd,
                           @Param("grantId") String grantId,
                           @Param("operatorUserCd") String operatorUserCd);
+
+    /**
+     * LC-07(표기): 사용자의 시간차(SYS025 02/03/04) CONFIRMED 사용 분 합계(전 기간, DEL_YN='N').
+     *
+     * <p>FE 가 "시간차 사용 N시간 M분" 원본 표기를 조립할 수 있게 하는 표기 전용 값이다
+     * (차감 일수 합계와 별개 — 잔여/부여 수치엔 영향 없음). 대상 0건이면 0(IFNULL).
+     *
+     * @return 시간차 사용 분 합계(분)
+     */
+    Integer selectHourlyUsedMinutes(@Param("cmpnyCd") String cmpnyCd,
+                                    @Param("userCd") String userCd);
 }

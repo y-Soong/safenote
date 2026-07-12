@@ -1,13 +1,6 @@
 <template>
   <div class="viewComm">
-    <ViewHeader
-      class="commViewHeader"
-      :title="props.title || '요청 승인 관리'"
-      :buttons="localButtons"
-      @search="fnSearch"
-    />
-
-    <!-- 탭 (재기획서 §5.3) -->
+    <!-- 탭 (재기획서 §5.3) — Attd_01 형태: 탭바를 화면명(ViewHeader) 위에 둔다. -->
     <div class="ra-tabs">
       <button
         v-for="t in tabs"
@@ -22,6 +15,13 @@
         </span>
       </button>
     </div>
+
+    <ViewHeader
+      class="commViewHeader"
+      :title="props.title || '요청 승인 관리'"
+      :buttons="localButtons"
+      @search="fnSearch"
+    />
 
     <div class="viewBody ra-body">
       <!-- 연차 탭: 2분할 (접수함 / 상세) -->
@@ -592,25 +592,31 @@ onMounted(() => {
 </script>
 
 <style scoped>
+/* 탭바 표준(Attd_01 .attd01-tab-bar/.attd01-tab-btn 스펙 준수 — 밑줄형 14px) */
 .ra-tabs {
   display: flex;
   gap: 0.25rem;
+  padding: 0.5rem 0 0;
+  margin-bottom: 0.5rem;
   border-bottom: 1px solid var(--color-border, #e5e7eb);
-  padding: 0 0.5rem;
 }
 .ra-tab {
+  padding: 0.5rem 1rem;
   border: none;
-  background: transparent;
-  padding: 0.6rem 0.9rem;
-  font-size: 0.9rem;
+  border-bottom: 2px solid transparent;
+  margin-bottom: -1px;
+  background: none;
+  font-size: 0.875rem;
   color: var(--color-text-muted, #6b7280);
   cursor: pointer;
-  border-bottom: 2px solid transparent;
+}
+.ra-tab:hover {
+  color: var(--color-text, #374151);
 }
 .ra-tab.active {
-  color: var(--color-primary, #30796a);
-  border-bottom-color: var(--color-primary, #30796a);
   font-weight: 600;
+  color: var(--color-primary, #16a34a);
+  border-bottom-color: var(--color-primary);
 }
 .ra-tab-badge {
   display: inline-block;

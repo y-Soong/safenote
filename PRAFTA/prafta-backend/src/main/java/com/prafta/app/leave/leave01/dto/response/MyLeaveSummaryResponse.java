@@ -34,6 +34,18 @@ public class MyLeaveSummaryResponse {
      */
     private final double borrowedDays;
 
+    /**
+     * LC-07(표기): 현재(오늘) 기준 1일 환산시간(분, 기본 480). FE(연차현황·마이페이지 요약)가
+     * 잔여/사용/부여 일수를 "N일 H시간 M분"으로 조립하는 분모(기존 필드 불변 — additive).
+     */
+    private final int convMinutes;
+
+    /**
+     * LC-07(표기): 시간차(SYS025 02/03/04) CONFIRMED 사용 분 합계(전 기간). FE "시간차 사용
+     * N시간 M분" 원본 표기용 — 차감 일수 합계와 별개(잔여/부여 수치 무관, additive).
+     */
+    private final int hourlyUsedMinutes;
+
     /** 사용자 메타 영역. */
     @Getter
     @Builder

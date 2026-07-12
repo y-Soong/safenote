@@ -70,7 +70,11 @@
        AND S.SITE_CD  = WP.SITE_CD
        AND S.SCH_CD   = WP.WORK_PLAN_CD
        AND S.APPLY_DATE = (
-                SELECT MAX(SE.APPLY_DATE)
+                <!-- 근무일 기준 유효버전이 없으면 최이른 적용버전으로 폴백(COALESCE) -->
+                SELECT COALESCE(
+                         MAX(CASE WHEN SE.APPLY_DATE <![CDATA[ <= ]]> WP.WORK_YMD THEN SE.APPLY_DATE END)
+                       , MIN(SE.APPLY_DATE)
+                       )
                 FROM (
                     SELECT M3.CMPNY_CD, M3.SITE_CD, M3.SCH_CD, M3.APPLY_DATE
                     FROM TB_SCH_MGMT M3 WHERE M3.USE_YN = 'Y'
@@ -81,13 +85,32 @@
                 WHERE SE.CMPNY_CD    = WP.CMPNY_CD
                   AND SE.SITE_CD     = WP.SITE_CD
                   AND SE.SCH_CD      = WP.WORK_PLAN_CD
-                  AND SE.APPLY_DATE <![CDATA[ <= ]]> WP.WORK_YMD
        )
      WHERE WP.CMPNY_CD = #{cmpnyCd}
        AND WP.SITE_CD  = #{siteCd}
        AND WP.USER_CD  = #{userCd}
        AND WP.WORK_YMD = #{workYmd}
      LIMIT 1
+    </select>
+
+    <!--
+      LC-03(F3): 그날 기존 시간차(02/03/04) CONFIRMED 누적 분·누적 차감 합.
+      전 연차타입 합산(LEAVE_CD 불문 - 타입 쪼개기 우회 차단, F3).
+      고정단위(종일 00/반차 01/반반차 05)는 하한 마일스톤 누적에서 제외(plan §8-⑤).
+      결과 record HourlyLeaveAggVO(cumMinutes, cumChargedDays) 순서 일치(위치매핑).
+    -->
+    <select id="selectHourlyLeaveAggOnDate" resultType="com.prafta.common.cmm.leave.vo.HourlyLeaveAggVO">
+    /* LeaveDeductionMapper.selectHourlyLeaveAggOnDate */
+    SELECT
+          IFNULL(SUM(U.LEAVE_MINUTES), 0) AS cumMinutes
+        , IFNULL(SUM(U.LEAVE_DAYS), 0)    AS cumChargedDays
+      FROM TB_USER_LEAVE_USE U
+     WHERE U.CMPNY_CD      = #{cmpnyCd}
+       AND U.USER_CD       = #{userCd}
+       AND U.START_DATE    = #{workYmd}
+       AND U.USE_UNIT_TYPE IN ('02', '03', '04')
+       AND U.LEAVE_STATUS  = 'CONFIRMED'
+       AND U.DEL_YN        = 'N'
     </select>
 
 </mapper>

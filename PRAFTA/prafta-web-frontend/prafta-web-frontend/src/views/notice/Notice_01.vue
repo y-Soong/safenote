@@ -45,7 +45,11 @@
           readonly
           @click="fnOpenNodeSearch"
         />
-        <button class="search-btn" :disabled="!siteCd" @click="fnOpenNodeSearch">
+        <button
+          class="search-btn"
+          :disabled="!siteCd"
+          @click="fnOpenNodeSearch"
+        >
           <img class="search_icon" :src="search_icon" alt="부서 조회" />
         </button>
         <input
@@ -169,7 +173,9 @@
               </tr>
             </thead>
             <tbody>
-              <template v-if="!noticeResultList || noticeResultList.length === 0">
+              <template
+                v-if="!noticeResultList || noticeResultList.length === 0"
+              >
                 <tr>
                   <td colspan="10" class="edu-grid-empty">
                     등록된 공지가 없습니다.
@@ -205,7 +211,9 @@
                     {{ item.pinYn === "Y" ? "고정" : "일반" }}
                   </td>
                   <td class="notice-title">{{ item.title }}</td>
-                  <td class="notice-content-ellipsis">{{ fnContentPreview(item.content) }}</td>
+                  <td class="notice-content-ellipsis">
+                    {{ fnContentPreview(item.content) }}
+                  </td>
                   <td style="text-align: center">
                     <!-- 049-02: 첨부 아이콘 → 개수 표시(0건은 -) -->
                     <span

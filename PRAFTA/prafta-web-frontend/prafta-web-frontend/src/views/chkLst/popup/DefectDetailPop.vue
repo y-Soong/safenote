@@ -73,7 +73,9 @@
         <!-- Footer -->
         <div class="modal-footer">
           <div class="btn-group">
-            <button class="btn btn-primary" @click="$emit('close')">닫기</button>
+            <button class="btn btn-primary" @click="$emit('close')">
+              닫기
+            </button>
           </div>
         </div>
       </div>
@@ -85,6 +87,7 @@
 /* eslint-disable */
 import { defineProps, defineEmits, ref, computed } from "vue";
 import { useCenteredDraggable } from "@/composables/useCenteredDraggable";
+import { buildFileServingUrl } from "@/utils/fileUrl";
 
 const props = defineProps({
   inspectItemSubj_p: String,
@@ -102,27 +105,10 @@ const { position, startDrag } = useCenteredDraggable(modalRef, {
   verticalRatio: 3.5,
 });
 
-// 이미지 서빙 URL: VITE_API_BASE_URL + filePath + '/' + fileMgmtCd
-// (ChkLstRstPop.openImagePopup 패턴 차용)
-const imageUrl = computed(() => {
-  if (!props.filePath_p || !props.fileMgmtCd_p) return "";
-  const apiBaseUrl = import.meta.env.VITE_API_BASE_URL || "";
-  const filePath = props.filePath_p;
-  if (
-    apiBaseUrl &&
-    !filePath.startsWith("http://") &&
-    !filePath.startsWith("https://")
-  ) {
-    const baseUrl = apiBaseUrl.endsWith("/")
-      ? apiBaseUrl.slice(0, -1)
-      : apiBaseUrl;
-    const cleanFilePath = filePath.startsWith("/")
-      ? filePath.slice(1)
-      : filePath;
-    return `${baseUrl}/${cleanFilePath}/${props.fileMgmtCd_p}`;
-  }
-  return `${filePath}/${props.fileMgmtCd_p}`;
-});
+// 이미지 서빙 URL: 공통 유틸로 조립 (백슬래시 정규화 + 동일 출처 상대경로)
+const imageUrl = computed(() =>
+  buildFileServingUrl(props.filePath_p, props.fileMgmtCd_p)
+);
 </script>
 
 <style scoped>

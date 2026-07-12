@@ -74,6 +74,8 @@ public class Attd07ServiceImpl implements Attd07Service {
     private final LeaveRefusalDetectService leaveRefusalDetectService;
     /** PRAFTA-COM-008-D: 교대 잠금 가드(공용 cmm 빈 — 스케줄수정 승인 시 교대 소속 구간 차단). */
     private final com.prafta.common.cmm.shift.service.ShiftMembershipService shiftMembershipService;
+    /** 교차일(앞뒤 근무일) 근무 스케줄 시각 겹침 가드(공용 cmm 빈 — 야간 오버나이트 포함). */
+    private final com.prafta.common.cmm.schedule.service.ScheduleOverlapGuardService scheduleOverlapGuardService;
 
     /**
      * 출퇴근 방법(METHOD) 기본값. SYS031 '01'(사용자/앱). 근태 보정 승인 시 METHOD 미전달(앱 관리자 경로)일 때
@@ -165,15 +167,55 @@ public class Attd07ServiceImpl implements Attd07Service {
 
         for (int i = 0; i < models.size(); i++) {
             UpdateUserAttdInfosModel model = models.get(i);
-        	// PRAFTA-028 - 마감된 기간(부서)의 근태 직접 수정 차단
-        	ensureNotClosed(model.gvCmpnyCd(), model.siteCd(), model.nodeCd(), model.workYmd());
+
+        	// ============================================================================
+        	// [보안 하드닝] 관리자 직접 근태 생성/수정 인가 게이트 (형제 경로 updateUserOvertimeRequests 미러링).
+        	//   기존엔 siteCd/userCd/nodeCd/attdId 를 전부 body 에서 받으면서 사업장/노드 관리 권한 게이트가
+        	//   전무했다(IDOR). OT 직접등록과 동일한 5단 게이트를 per-model 로 적용한다.
+        	//   역할 판정은 JWT 기반 gvAuthCd 를 쓰므로 body 위조로 권한 escalation 을 할 수 없다.
+        	//   신규 에러코드 없음(전부 기존 재사용: 403_002/400_005/403_001/404_011).
+        	//   기존 §7.6 겹침/OT 범위(400_114) 가드·METHOD 기본값 보정 등은 그대로 유지하고 순서만 게이트 뒤로 둔다.
+        	// ============================================================================
+
+        	// (1) 대상 사용자의 서버 권위 노드 확정. null/blank 면 소속 미상 → fail-closed 차단.
+        	String authoritativeNodeCd =
+        			attdCloseService.resolveUserNodeCd(model.gvCmpnyCd(), model.siteCd(), model.userCd());
+        	if (authoritativeNodeCd == null || authoritativeNodeCd.isBlank()) {
+        		log.warn("admin-direct attd rejected - 대상 사용자 소속 부서 미상(서버 노드 부재). cmpnyCd={}, siteCd={}, userCd={}",
+        				model.gvCmpnyCd(), model.siteCd(), model.userCd());
+        		throw new ApiException(AttdErrorCode.ATTD_403_002);
+        	}
+
+        	// (2) body nodeCd 가 서버 권위 노드와 불일치하면 변조로 간주하고 차단.
+        	if (StringEqualsUtils.isMismatched(model.nodeCd(), authoritativeNodeCd)) {
+        		log.warn("admin-direct attd rejected - body/서버 nodeCd mismatch(변조). cmpnyCd={}, siteCd={}, userCd={}, bodyNode={}, serverNode={}",
+        				model.gvCmpnyCd(), model.siteCd(), model.userCd(), model.nodeCd(), authoritativeNodeCd);
+        		throw new ApiException(AttdErrorCode.ATTD_400_005);
+        	}
+
+        	// (3) 자기처리/매니저 정책 게이트(isOvertime=false → 근태이므로 자기처리 차단 시 403_001).
+        	//     전사 역할(master/hr/safe)은 게이트 내부에서 즉시 통과한다.
+        	ensureCanProcessAttdSelfPolicy(model.gvAuthCd(), model.gvUserCd(), model.userCd(),
+        			model.gvCmpnyCd(), model.siteCd(), authoritativeNodeCd, false);
+
+        	// (5) 대상 사용자가 호출자의 회사/사이트 scope 안에 존재해야 한다.
+        	int userExists = attd07Mapper.selectUserExistInCmpnySite(
+        			model.gvCmpnyCd(), model.siteCd(), model.userCd());
+        	if (userExists <= 0) {
+        		log.warn("admin-direct attd rejected - target user not in scope. cmpnyCd={}, siteCd={}, userCd={}",
+        				model.gvCmpnyCd(), model.siteCd(), model.userCd());
+        		throw new ApiException(AttdErrorCode.ATTD_404_011);
+        	}
+
+        	// (4) PRAFTA-028 - 마감된 기간(부서)의 근태 직접 수정 차단. 게이트와 동일한 서버 권위 노드 사용.
+        	ensureNotClosed(model.gvCmpnyCd(), model.siteCd(), authoritativeNodeCd, model.workYmd());
 
         	// PRAFTA-COM-008-B(B-3 1단계): 관리자 직접 근태등록 차단 가드(ADMIN_ENTRY).
         	//   촉진 확정 연차일에 관리자가 해당 근로자 근태(출근)를 직접 입력/생성하는 경로를 레코드 생성 이전에 차단한다.
         	//   대상이면 guard 내부에서 ATTD_400_150 차단 throw(BLOCKED 이력+PUSH 선커밋), 비대상이면 정상 진행.
         	//   userCd=대상 근로자, operatorUserCd=관리자(gvUserCd). 차단 대상은 근태기록 생성만(연차 관리는 문서 C 흐름).
         	leaveRefusalDetectService.guardAndRecord(
-        			model.gvCmpnyCd(), model.siteCd(), model.userCd(), model.nodeCd(), model.workYmd(),
+        			model.gvCmpnyCd(), model.siteCd(), model.userCd(), authoritativeNodeCd, model.workYmd(),
         			LeaveRefusalConst.ATTEMPT_ADMIN_ENTRY, model.gvUserCd());
 
         	// com-013 #5: attdId 유무로 관리자 직접 "생성"/"수정"을 구분한다(0단계에서 선확정).
@@ -185,7 +227,7 @@ public class Attd07ServiceImpl implements Attd07Service {
 
         	// 근무 구간 시각 겹침 금지(정책서 attd §7.6). MGMT 변경 이전에서:
         	//   - 이 model 의 새 구간(model.checkIn/Out, 퇴근 미입력=open 가능)
-        	//   + 같은 일자 다른 구간(배치에 포함된 attdId 전체 제외, DEL_YN='N')
+        	//   + 근무일 ±1 윈도우의 다른 구간(배치에 포함된 attdId 전체 제외, DEL_YN='N')  ← QT-2-6: 교차일 포함
         	//   + 배치 내 다른 model 의 새 구간(같은 회사/사업장/사용자/근무일 한정)
         	//   을 합쳐 겹침을 검사한다. 인접 경계는 허용.
         	{
@@ -195,10 +237,13 @@ public class Attd07ServiceImpl implements Attd07Service {
         		if (selfSeg != null) {
         			segs.add(selfSeg);
 
-        			// (a) 같은 일자 다른 구간(배치 attdId 전체 제외) — DB 조회. 단건씩 제외할 수 없어
+        			// (a) 근무일 ±1 윈도우의 다른 구간(배치 attdId 전체 제외) — DB 조회. 단건씩 제외할 수 없어
         			//     배치 attdId 를 모두 제외한 뒤 (b) 배치 내 새 구간으로 보완한다.
-        			for (DayAttdSegmentResult ex : safe(attd07Mapper.selectDayAttdSegmentsExcept(
-        					model.gvCmpnyCd(), model.siteCd(), model.userCd(), model.workYmd(), null))) {
+        			//     QT-2-6: 오버나이트(D 근무일, 퇴근 D+1) 와 이웃 근무일 근태의 실시각 겹침을 잡기 위해
+        			//     조회 범위를 D-1 ~ D+1 로 넓힌다. 모든 구간은 model.workYmd() 기준 stamp 로 환산되어 비교된다.
+        			for (DayAttdSegmentResult ex : safe(attd07Mapper.selectAttdSegmentsAroundDayExcept(
+        					model.gvCmpnyCd(), model.siteCd(), model.userCd(),
+        					shiftYmd(model.workYmd(), -1), shiftYmd(model.workYmd(), 1), null))) {
         				if (containsAttdId(resolvedAttdIds, ex.attdId())) continue; // 배치 포함분은 (b)에서 새값으로 평가
         				int[] s = buildSegment(model.workYmd(), ex.checkInDate(), ex.checkInTime(),
         						ex.checkOutDate(), ex.checkOutTime());
@@ -221,6 +266,15 @@ public class Attd07ServiceImpl implements Attd07Service {
         				throw new ApiException(AttdErrorCode.ATTD_400_113);
         			}
         		}
+        	}
+
+        	// OT 범위 가드: 관리자 직접 "수정"(model.attdId() 존재)일 때, 새 실근무 구간이 그 근태에
+        	//   연결된 모든 활성 OT 를 완전히 포함해야 한다. 줄여서 OT 가 범위 밖으로 삐져나오면 ATTD_400_114.
+        	//   신규생성(model.attdId()==null, attdId=채번본)은 연결 OT 가 없어 스킵(동일 정합성 리스크 없음).
+        	if (model.attdId() != null) {
+        		ensureOvertimeWithinNewWindow(
+        				model.gvCmpnyCd(), model.siteCd(), model.userCd(), attdId,
+        				model.checkInDate(), model.checkInTime(), model.checkOutDate(), model.checkOutTime());
         	}
 
             attd07Mapper.updateUserAttdInfos(UpdateUserAttdInfosCommand.from(attdId, model));
@@ -249,9 +303,12 @@ public class Attd07ServiceImpl implements Attd07Service {
     }
 
     /**
-     * 근무 구간 시각 겹침 금지(정책서 attd §7.6) 검사 — 편집 구간 새값이 같은 일자 다른 구간
+     * 근무 구간 시각 겹침 금지(정책서 attd §7.6) 검사 — 편집 구간 새값이 근무일 ±1 윈도우의 다른 구간
      * (excludeAttdId 제외, DEL_YN='N')과 겹치면 ATTD_400_113. 출근 stamp 미확정 구간은 검사 제외,
      * 퇴근 미입력(open) 구간은 종료 +∞(SENTINEL)로 본다. 인접 경계는 허용.
+     *
+     * <p>QT-2-6: 종전에는 같은 근무일만 검사해 오버나이트 근태(WORK_YMD=D, 퇴근 D+1)와 이웃 근무일
+     *   근태가 실시각으로 겹쳐도 통과했다(원장 이중 산입). 비교 기준선은 대상 근무일(workYmd)로 통일한다.
      */
     private void ensureNoSegmentOverlap(String siteCd, String userCd, String workYmd, String excludeAttdId,
                                         String checkInDate, String checkInTime,
@@ -263,8 +320,8 @@ public class Attd07ServiceImpl implements Attd07Service {
         }
         List<int[]> segs = new ArrayList<>();
         segs.add(newSeg);
-        for (DayAttdSegmentResult ex : safe(attd07Mapper.selectDayAttdSegmentsExcept(
-                gvCmpnyCd, siteCd, userCd, workYmd, excludeAttdId))) {
+        for (DayAttdSegmentResult ex : safe(attd07Mapper.selectAttdSegmentsAroundDayExcept(
+                gvCmpnyCd, siteCd, userCd, shiftYmd(workYmd, -1), shiftYmd(workYmd, 1), excludeAttdId))) {
             int[] s = buildSegment(workYmd, ex.checkInDate(), ex.checkInTime(),
                     ex.checkOutDate(), ex.checkOutTime());
             if (s != null) segs.add(s);
@@ -277,9 +334,21 @@ public class Attd07ServiceImpl implements Attd07Service {
     }
 
     /**
+     * 겹침 검사 윈도우 경계 산출 — workYmd 에서 {@code days} 일 이동한 yyyyMMdd.
+     * 형식 오류 등으로 산출 불가하면 원본을 그대로 돌려준다(윈도우가 그날로 축소 = 종전 동작, fail-safe).
+     */
+    private static String shiftYmd(String workYmd, int days) {
+        String shifted = DateTimeUtils.plusDays(workYmd, days);
+        return (shifted == null) ? workYmd : shifted;
+    }
+
+    /**
      * (출근/퇴근 일자·시각)을 workYmd 기준 [start, end] 분 stamp 구간으로 빌드한다.
      * 출근 stamp 미확정이면 null(검사 제외), 퇴근 미입력(open)이면 종료 SENTINEL.
      * 출근/퇴근 모두 같은 근무일(workYmd) 기준으로 stamp 화한다(자정 넘김은 일자 차이로 자동 반영).
+     *
+     * <p>QT-2-6: 이웃 근무일(D±1) 행도 "대상 근무일(workYmd)" 을 기준선으로 stamp 화하므로
+     *   (dayOffset 이 -1/+1 로 반영되어) 같은 축에서 비교된다.
      */
     private static int[] buildSegment(String workYmd, String inDate, String inTime,
                                       String outDate, String outTime) {
@@ -291,6 +360,40 @@ public class Attd07ServiceImpl implements Attd07Service {
     /** null-safe 리스트 보정(빈 리스트 반환). */
     private static <T> List<T> safe(List<T> list) {
         return (list == null) ? java.util.Collections.emptyList() : list;
+    }
+
+    /**
+     * OT 범위 가드 — 근태 보정/직접수정으로 정해질 새 실근무 구간 [새 출근, 새 퇴근] 이 그 근태(attdId)에
+     * 연결된 모든 활성 OT 를 완전히 포함하지 못하면(하나라도 범위 밖) ATTD_400_114 로 차단한다.
+     * 시각 비교는 DB 쿼리에서 CONCAT 12자리(yyyyMMddHHmm) 문자열로 수행한다(OT 테이블 기존 비교 방식과 일치, 오버나이트 정확).
+     * 새 퇴근 시각이 결측이면 open 으로 보아(쿼리 newEnd null 분기) 활성 OT 존재 자체가 위반이 된다.
+     * 새 출근 시각은 스키마상 NOT NULL + 슬롯 검증으로 항상 존재하므로 결측 분기는 실무상 도달하지 않는다(도달 시 concatStamp 가 null → 시작측 비교만 생략, 퇴근측·미완료 검사는 유효).
+     */
+    private void ensureOvertimeWithinNewWindow(String cmpnyCd, String siteCd, String userCd, String attdId,
+                                               String checkInDate, String checkInTime,
+                                               String checkOutDate, String checkOutTime) {
+        if (attdId == null || attdId.isEmpty()) {
+            return; // 대상 근태 미확정 → 검사 불가(이론상 발생 안 함)
+        }
+        String newStart = concatStamp(checkInDate, checkInTime);   // 새 출근(yyyyMMddHHmm), 결측이면 null
+        String newEnd = concatStamp(checkOutDate, checkOutTime);   // 새 퇴근, 결측이면 null(open)
+        int otOutside = attd07Mapper.countActiveOvertimeOutsideAttdWindow(
+                cmpnyCd, siteCd, userCd, attdId, newStart, newEnd);
+        if (otOutside > 0) {
+            log.warn("[OT-범위가드] 근태 수정 거부: 등록된 초과근무가 새 실근무 범위를 벗어남. userCd={}, attdId={}, newStart={}, newEnd={}",
+                    userCd, attdId, newStart, newEnd);
+            throw new ApiException(AttdErrorCode.ATTD_400_114);
+        }
+    }
+
+    /**
+     * 날짜(YYYYMMDD, 8) + 시각(HHmm, 4) → 12자리 시계열 비교 문자열(yyyyMMddHHmm).
+     * 둘 중 하나라도 결측/형식 미달이면 null(=결정 불가 → 퇴근의 경우 open 취급).
+     */
+    private static String concatStamp(String date, String time) {
+        if (date == null || date.length() != 8) return null;
+        if (time == null || time.length() != 4) return null;
+        return date + time;
     }
 
     @Override
@@ -555,6 +658,11 @@ public class Attd07ServiceImpl implements Attd07Service {
             , param.processComment()     // TB_USER_ATTD_HIST.PROCESS_REASON으로 저장됨
             , param.gvCmpnyCd()
             , param.gvUserCd()
+            // [보안 하드닝 ripple] 모델 record 확장에 따른 값 보존만 수행한다.
+            //   본 경로(요청 승인)는 진입부에서 이미 ensureCanProcessAttdSelfPolicy/ensureNotClosed/
+            //   selectUserExistInCmpnySite 게이트를 통과하므로 이 두 필드는 게이트에 사용하지 않는다(동작 불변).
+            , param.gvAuthCd()
+            , reqRow.siteCd()
         );
 
         // 7-1. 근무 구간 시각 겹침 금지(정책서 attd §7.6). MGMT MERGE 이전에서 편집 구간 새값
@@ -565,6 +673,14 @@ public class Attd07ServiceImpl implements Attd07Service {
                 reqRow.siteCd(), reqRow.userCd(), reqRow.workYmd(), targetId,
                 param.checkInDate(), param.checkInTime(), param.checkOutDate(), param.checkOutTime(),
                 param.gvCmpnyCd());
+
+        // 7-2. OT 범위 가드(권위 가드): 보정 승인으로 정해질 새 실근무 구간이 그 근태(targetId)에 연결된
+        //      모든 활성 OT 를 완전히 포함해야 한다. 줄여서 OT 가 범위 밖으로 삐져나오면 ATTD_400_114.
+        //      요청~승인 사이 OT 가 변동될 수 있으므로 승인 시점에 재검사한다(앱 요청측 가드와 이중 방어).
+        //      생성요청('01')이라도 targetId 는 채번된 신규 ATTD_ID 이므로 그에 연결된 OT 는 없어 자연히 0 → 무영향.
+        ensureOvertimeWithinNewWindow(
+                param.gvCmpnyCd(), reqRow.siteCd(), reqRow.userCd(), targetId,
+                param.checkInDate(), param.checkInTime(), param.checkOutDate(), param.checkOutTime());
 
         // 8. TB_USER_ATTD_MGMT MERGE.
         attd07Mapper.updateUserAttdInfos(UpdateUserAttdInfosCommand.from(targetId, model));
@@ -786,6 +902,15 @@ public class Attd07ServiceImpl implements Attd07Service {
         //      upsert(work_plan 갱신) 이전에 차단하여 레코드 변경을 막는다.
         shiftMembershipService.assertNotShiftLocked(
                 param.gvCmpnyCd(), reqRow.siteCd(), reqRow.userCd(), reqRow.workYmd());
+
+        // 5-3. 교차일 겹침 가드 — 승인(반영) 시 앞뒤 근무일의 스케줄과 시각이 겹치면(야간 오버나이트 포함)
+        //      차단한다. work_plan upsert 이전에 검사하여 레코드 변경을 막는다. 단건 처리이므로 pending 없음(null).
+        if (scheduleOverlapGuardService.hasCrossDayOverlap(
+                param.gvCmpnyCd(), reqRow.siteCd(), reqRow.userCd(), reqRow.workYmd(), schCd, null)) {
+            log.warn("sched-modify approve rejected - 교차일 스케줄 겹침. reqId={}, workYmd={}, schCd={}",
+                    reqRow.reqId(), reqRow.workYmd(), schCd);
+            throw new ApiException(AttdErrorCode.ATTD_400_115);
+        }
 
         // 6. tb_user_work_plan 의 (cmpny, site, user, ymd) 한 칸 WORK_PLAN_CD 를 SCH_CD 로 upsert (D1/D2).
         attd07Mapper.upsertUserWorkPlan(UpsertUserWorkPlanCommand.of(
@@ -1035,6 +1160,16 @@ public class Attd07ServiceImpl implements Attd07Service {
             log.warn("OT register rejected - target user not in scope. cmpnyCd={}, siteCd={}, userCd={}",
                     param.gvCmpnyCd(), param.siteCd(), param.userCd());
             throw new ApiException(AttdErrorCode.ATTD_404_011);
+        }
+
+        // 일용직(EMPLOYMENT_TYPE='DAILY') 근로자는 초과근무를 등록할 수 없다(fail-closed).
+        //   프론트(AttdDayDetailPop)는 일용직 셀에 OT 등록 UI 를 노출하지 않으나,
+        //   body 위조/우회 호출을 막기 위해 서버에서도 강제 차단한다. (관리자 직접등록·요청 승인 공용 경로)
+        if (attd07Mapper.selectDailyWorkerInScope(
+                param.gvCmpnyCd(), param.siteCd(), param.userCd()) > 0) {
+            log.info("OT register rejected - 일용직 OT 등록 불가. cmpnyCd={}, siteCd={}, userCd={}",
+                    param.gvCmpnyCd(), param.siteCd(), param.userCd());
+            throw new ApiException(AttdErrorCode.ATTD_400_152);
         }
 
         // SEC-017 (b) - attdId가 전달된 경우, scope 안의 대상 사용자에 속한 ATTD여야 한다.

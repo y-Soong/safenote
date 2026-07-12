@@ -29,6 +29,16 @@ public interface DailyLoginMapper {
     List<DailyUserResult> selectDailyUserForLogin(DailyLoginQuery query);
 
     /**
+     * 비활성 사유 노출용 보조 조회(USE_YN 가드 없음 — 비활성/만료/종료사업장 계정도 반환).
+     *
+     * <p>로그인 본 조회({@link #selectDailyUserForLogin})가 0건일 때만 호출한다. 서비스는 여기서
+     * 반환된 행의 비밀번호가 일치하고 계정이 비활성(USE_YN!='Y' 또는 ACCOUNT_STATUS='05' 또는 탈퇴)인
+     * 경우에만 {@code DAILYLOGIN_400_003}(명시 안내)을 노출한다. 그 외(비번 불일치/사업장 종료 등)는
+     * 통합 메시지(001)로 귀결시켜 계정 존재를 노출하지 않는다.
+     */
+    List<DailyUserResult> selectDailyUserForInactiveCheck(DailyLoginQuery query);
+
+    /**
      * 잠금 만료 해제(PWD_LOCK_YN='N', 실패횟수 0). 정규 미러.
      *
      * <p>로그인 진입 시 호출 — 실제 잠금 만료 시각이 지난 행에만 적용(미잠금 구간 실패 누적 보존).

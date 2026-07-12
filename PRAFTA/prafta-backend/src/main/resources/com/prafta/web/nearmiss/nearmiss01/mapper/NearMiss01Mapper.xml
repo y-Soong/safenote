@@ -7,8 +7,6 @@
         A.CMPNY_CD                                                              AS cmpnyCd
       , A.SITE_CD                                                               AS siteCd
       , A.NEAR_MISS_ID                                                          AS nearMissId
-      , A.INCIDENT_TYPE_CD                                                      AS incidentTypeCd
-      , FNC_CMM_INFO_SRCH(A.CMPNY_CD, 'SYST_VAL', A.INCIDENT_TYPE_CD, 'SYS061') AS incidentTypeNm
       , A.PROCESS_CD                                                            AS processCd
       , C.BAIM_VAL_D_NM                                                         AS processNm
       , DATE_FORMAT(A.OCCUR_DTIME, '%Y-%m-%d %H:%i')                            AS occurDtime
@@ -69,9 +67,6 @@
       <if test="reportStatusCd != null and reportStatusCd != ''">
         AND A.REPORT_STATUS_CD = #{reportStatusCd}
       </if>
-      <if test="incidentTypeCd != null and incidentTypeCd != ''">
-        AND A.INCIDENT_TYPE_CD = #{incidentTypeCd}
-      </if>
       <if test="potentialSeverityCd != null and potentialSeverityCd != ''">
         AND A.POTENTIAL_SEVERITY_CD = #{potentialSeverityCd}
       </if>
@@ -105,24 +100,22 @@
       AND A.USE_YN = 'Y'
     </select>
 
-    <!-- E3 상태별 카운트 (필터 동반, 탭 배지: 접수/검토중/조치중/완료) -->
+    <!-- E3 상태별 카운트 (필터 동반, 탭 배지: 접수/조치중/완료/미처리대상).
+         SYS063 재번호(D4): 100 접수 / 200 조치중 / 300 완료 / 400 미처리대상. -->
     <select id="selectStatusCounts"
             parameterType="com.prafta.web.nearmiss.nearmiss01.application.query.IncidentListQuery"
             resultType="com.prafta.web.nearmiss.nearmiss01.result.StatusCountResult">
     /* NearMiss01Mapper.selectStatusCounts */
     SELECT
         SUM(CASE WHEN A.REPORT_STATUS_CD = '100' THEN 1 ELSE 0 END) AS receivedCnt
-      , SUM(CASE WHEN A.REPORT_STATUS_CD = '200' THEN 1 ELSE 0 END) AS reviewingCnt
-      , SUM(CASE WHEN A.REPORT_STATUS_CD = '300' THEN 1 ELSE 0 END) AS actingCnt
-      , SUM(CASE WHEN A.REPORT_STATUS_CD = '400' THEN 1 ELSE 0 END) AS completedCnt
+      , SUM(CASE WHEN A.REPORT_STATUS_CD = '200' THEN 1 ELSE 0 END) AS actingCnt
+      , SUM(CASE WHEN A.REPORT_STATUS_CD = '300' THEN 1 ELSE 0 END) AS completedCnt
+      , SUM(CASE WHEN A.REPORT_STATUS_CD = '400' THEN 1 ELSE 0 END) AS unaddressedCnt
     FROM TB_NEAR_MISS A
     WHERE A.CMPNY_CD = #{gvCmpnyCd}
       AND A.USE_YN = 'Y'
       <if test="siteCd != null and siteCd != ''">
         AND A.SITE_CD = #{siteCd}
-      </if>
-      <if test="incidentTypeCd != null and incidentTypeCd != ''">
-        AND A.INCIDENT_TYPE_CD = #{incidentTypeCd}
       </if>
       <if test="potentialSeverityCd != null and potentialSeverityCd != ''">
         AND A.POTENTIAL_SEVERITY_CD = #{potentialSeverityCd}
@@ -168,7 +161,8 @@
       AND USE_YN = 'Y'
     </update>
 
-    <!-- E5 상태 전환. 반려(900) 시 사유를 전용 컬럼 REJECT_REASON 에 기록(CAUSE_DESC 추정원인 데이터 보존) -->
+    <!-- E5 상태 전환. 미처리대상(400, SYS063 재번호 D4) 시 사유를 전용 컬럼 REJECT_REASON 에 기록
+         (CAUSE_DESC 추정원인 데이터 보존). REJECT_REASON 컬럼=미처리 사유로 재활용. -->
     <update id="updateStatus"
             parameterType="com.prafta.web.nearmiss.nearmiss01.application.command.ChangeStatusCommand">
     /* NearMiss01Mapper.updateStatus */
@@ -177,7 +171,7 @@
         REPORT_STATUS_CD = #{reportStatusCd}
       , REVIEWER_ID      = #{gvUserCd}
       , REVIEW_DTIME     = NOW()
-      <if test='reportStatusCd != null and reportStatusCd.equals("900") and rejectReason != null and rejectReason != ""'>
+      <if test='reportStatusCd != null and reportStatusCd.equals("400") and rejectReason != null and rejectReason != ""'>
       , REJECT_REASON    = #{rejectReason}
       </if>
       , UPDATE_NO        = #{gvUserCd}

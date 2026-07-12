@@ -33,6 +33,7 @@ import com.prafta.app.tbm.tbm01.dto.response.TbmContentResponse;
 import com.prafta.app.tbm.tbm01.dto.response.TbmEnterResponse;
 import com.prafta.app.tbm.tbm01.dto.response.TbmEntryContextResponse;
 import com.prafta.app.tbm.tbm01.dto.response.TbmExitResponse;
+import com.prafta.app.tbm.tbm01.dto.response.TbmMyAttendanceResponse;
 import com.prafta.app.tbm.tbm01.dto.response.TbmRiskListResponse;
 import com.prafta.app.tbm.tbm01.dto.response.TbmSessionListResponse;
 import com.prafta.app.tbm.tbm01.dto.response.TbmSessionStateResponse;
@@ -523,10 +524,47 @@ public class AppTbm01ServiceImpl implements AppTbm01Service {
                 .contentBody(sanitizeContentBody(head.getContentBody()))
                 .materialTitles(materialTitles)
                 .riskTitles(riskTitles)
-                // Q6 플래그: 파일코드→이미지 URL 변환 컨트롤러 부재 → 파일코드 원본만 응답(web tbm04 동일).
                 .mySignFileMgmtCd(head.getMySignFileMgmtCd())
+                // 서명 이미지: 파일코드+경로/확장자로 서명 절대 URL 발급(자료 미리보기와 동일 인프라). 파일 없으면 NULL.
+                .mySignUrl(signPreview(
+                        head.getSignFilePath(), head.getMySignFileMgmtCd(), head.getSignFileExt(), query.cmpnyCd()))
                 .completionStatusCd(head.getCompletionStatusCd())
                 .endedAt(head.getEndedAt())
+                .build();
+    }
+
+    // [정합성 수정] 본인 출결 상태 조회(대기/진행 화면 이탈 감지용).
+    //   present=false → 관리자 내보내기(cancel-entry)로 삭제됨. exitTypeCd='MANAGER_FORCED' → 강제퇴실.
+    //   스코프는 JWT(userCd)만 신뢰하며, 세션 사업장 스코프(selectSession)로 타 사업장 접근을 차단한다.
+    @Override
+    public TbmMyAttendanceResponse selectMyAttendanceStatus(TbmSessionDetailParam param) {
+
+        TokenInfo token = param.tokenInfo();
+        String cmpnyCd = token.gv_cmpnyCd();
+        String siteCd = token.gv_siteCd();
+        String userCd = token.gv_userCd();
+        String sessionCd = param.sessionCd();
+
+        // 세션 사업장 스코프 검증(타 사업장 세션 출결 열람 차단). 없으면 404.
+        TbmSessionResult session = appTbm01Mapper.selectSession(
+                TbmSessionQuery.from(cmpnyCd, siteCd, sessionCd, userCd));
+        if (session == null) {
+            throw new ApiException(TbmErrorCode.TBM_404_030);
+        }
+
+        TbmAttendanceResult attendance = appTbm01Mapper.selectMyAttendance(
+                TbmSessionQuery.from(cmpnyCd, siteCd, sessionCd, userCd));
+
+        boolean present = attendance != null;
+        boolean entered = present && attendance.getEntryAt() != null;
+
+        log.info("[tbm01] 본인 출결 상태 조회: sessionCd={}, present={}, entered={}", sessionCd, present, entered);
+        return TbmMyAttendanceResponse.builder()
+                .present(present)
+                .entered(entered)
+                .exitAt(present ? formatDate(attendance.getExitAt()) : null)
+                .exitTypeCd(present ? attendance.getExitTypeCd() : null)
+                .completionStatusCd(present ? attendance.getCompletionStatusCd() : null)
                 .build();
     }
 

@@ -128,8 +128,7 @@ public interface AppAdminTbmMapper {
      */
     int endSession(AdminSessionSinglePwdCommand command);
 
-    /** T2 종료 자동이수 일괄(EXIT_AT IS NULL 출결 → COMPLETED). 처리 인원 수 반환. */
-    int autoCompleteOnEnd(AdminSessionTransitionCommand command);
+    // [정합성 수정] T2 종료 자동이수(autoCompleteOnEnd) 제거 — 사용자 직접 완료 정책으로 폐지.
 
     /** T1 시작 시 동기화 상태 PLAYING UPSERT(AdminSessionStateCommand 재사용). */
     void upsertSessionStatePlaying(AdminSessionStateCommand command);

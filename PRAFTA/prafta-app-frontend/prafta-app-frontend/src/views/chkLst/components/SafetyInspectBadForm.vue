@@ -87,7 +87,7 @@
 </template>
 
 <script setup>
-import { ref } from 'vue'
+import { ref, onMounted, onBeforeUnmount } from 'vue'
 import { selectImage, revokePreview } from '@/utils/imagePicker'
 
 const MAX_LEN = 500
@@ -147,6 +147,45 @@ const onRemovePhoto = () => {
   if (props.photo?.previewUrl) revokePreview(props.photo.previewUrl)
   emit('update:photo', null)
 }
+
+// 자가복구(C-3b): C-3a 가 어떤 엣지에서 또 결말을 못 내더라도, 화면이 다시
+// 포커스/가시화되면 grace 후 picking 을 강제 해제하여 "여는 중..." 고착 방지.
+// (정상 케이스에서는 selectImage 가 먼저 종결해 picking 이 이미 false 이므로 무해.)
+let recoverTimer = null
+
+const scheduleRecover = () => {
+  if (!picking.value) return
+  if (recoverTimer) clearTimeout(recoverTimer)
+  // 정상 촬영 복귀 직후 change 처리 중인 케이스를 취소로 오판하지 않도록 grace 부여.
+  recoverTimer = setTimeout(() => {
+    recoverTimer = null
+    if (picking.value) {
+      picking.value = false
+    }
+  }, 700)
+}
+
+const onWindowFocus = () => {
+  scheduleRecover()
+}
+
+const onVisibilityChange = () => {
+  if (document.visibilityState === 'visible') scheduleRecover()
+}
+
+onMounted(() => {
+  window.addEventListener('focus', onWindowFocus)
+  document.addEventListener('visibilitychange', onVisibilityChange)
+})
+
+onBeforeUnmount(() => {
+  window.removeEventListener('focus', onWindowFocus)
+  document.removeEventListener('visibilitychange', onVisibilityChange)
+  if (recoverTimer) {
+    clearTimeout(recoverTimer)
+    recoverTimer = null
+  }
+})
 </script>
 
 <style scoped>

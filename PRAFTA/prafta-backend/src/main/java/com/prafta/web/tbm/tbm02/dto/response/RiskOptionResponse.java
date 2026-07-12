@@ -29,5 +29,7 @@ public class RiskOptionResponse {
 		private String assessmentStatus;
 		private String assessmentStatusNm;
 		private String displayName;
+		private String initAssessDate;		// 평가요청일(6.3 컬럼)
+		private String initAssessorNm;		// 평가요청자(6.3 컬럼)
 	}
 }

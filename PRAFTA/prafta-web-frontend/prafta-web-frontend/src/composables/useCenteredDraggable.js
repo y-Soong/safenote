@@ -16,11 +16,7 @@ export function useCenteredDraggable(modalRef, options = {}) {
   const { horizontalRatio = 2, verticalRatio = 2 } = options;
 
   // 실제 드래그 처리는 기존 useDraggable 로 위임
-  const {
-    position,
-    startDrag: rawStartDrag,
-    stopDrag,
-  } = useDraggable(0, 0);
+  const { position, startDrag: rawStartDrag, stopDrag } = useDraggable(0, 0);
 
   // 사용자가 한 번이라도 직접 드래그하면 자동 재중앙정렬을 멈춘다(수동 위치 존중)
   let userMoved = false;

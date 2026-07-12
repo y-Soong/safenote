@@ -41,7 +41,17 @@
       </button>
     </header>
 
-    <main class="admin-tbm-prep-body">
+    <main
+      class="admin-tbm-prep-body"
+      ref="scrollRef"
+      @touchstart.passive="onPullStart"
+      @touchmove="onPullMove"
+      @touchend="onPullEnd"
+      @touchcancel="onPullEnd"
+    >
+      <!-- 당겨서 새로고침 인디케이터 — 스크롤 최상단에서 아래로 당기면 노출 -->
+      <PullRefreshIndicator v-bind="indicatorProps" />
+
       <p v-if="isLoading" class="admin-tbm-state">불러오는 중…</p>
 
       <div v-else-if="loadError" class="admin-tbm-state">
@@ -168,6 +178,8 @@ import { ref, computed, getCurrentInstance, onMounted, onUnmounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 
 import api from '@/api/axios'
+import { usePullToRefresh } from '@/composables/usePullToRefresh'
+import PullRefreshIndicator from '@/components/common/PullRefreshIndicator.vue'
 import AdminTbmPwdCard from './components/AdminTbmPwdCard.vue'
 import AdminTbmAttendeeRow from './components/AdminTbmAttendeeRow.vue'
 import AdminTbmDirectEntrySheet from './components/AdminTbmDirectEntrySheet.vue'
@@ -467,6 +479,16 @@ const onScanQr = async () => {
   }
 }
 
+// 당겨서 새로고침 — 즉시 1회 재조회(상세+입실자). loadDetail 이 카운트다운을 재기동(idempotent)하므로
+//   별도 타이머 조작 없이 기존 onRefresh 와 동일한 조회 쌍만 호출한다.
+const scrollRef = ref(null)
+const { onPullStart, onPullMove, onPullEnd, indicatorProps } = usePullToRefresh(
+  scrollRef,
+  async () => {
+    await Promise.all([loadDetail(), loadAttendees()])
+  },
+)
+
 onMounted(() => {
   loadDetail()
   loadAttendees()
@@ -501,7 +523,8 @@ onUnmounted(stopCountdown)
   --space-md: 12px;
   --space-lg: 16px;
 
-  min-height: 100%;
+  height: 100vh;
+  height: 100dvh;
   background: var(--color-bg);
   color: var(--color-text-primary);
   display: flex;
@@ -551,6 +574,7 @@ onUnmounted(stopCountdown)
 /* 본문 */
 .admin-tbm-prep-body {
   flex: 1;
+  min-height: 0;
   padding: var(--space-md) var(--space-lg) calc(var(--space-lg) + env(safe-area-inset-bottom, 0px));
   overflow-y: auto;
   display: flex;

@@ -16,13 +16,19 @@
         <RouterLink to="/service" @click="closeMenu">서비스 소개</RouterLink>
         <RouterLink to="/pricing" @click="closeMenu">요금</RouterLink>
         <RouterLink to="/contact" @click="closeMenu">도입 문의</RouterLink>
-        <button type="button" class="introh__login introh__login--mobile" @click="goService">
+        <button
+          type="button"
+          class="introh__login introh__login--mobile"
+          @click="goService"
+        >
           로그인
         </button>
       </nav>
 
       <div class="introh__right">
-        <button type="button" class="introh__login" @click="goService">로그인</button>
+        <button type="button" class="introh__login" @click="goService">
+          로그인
+        </button>
         <button
           type="button"
           class="introh__hamburger"
@@ -128,7 +134,9 @@ const goService = () => {
   font-weight: 700;
   font-size: 15px;
   cursor: pointer;
-  transition: background 0.15s, color 0.15s;
+  transition:
+    background 0.15s,
+    color 0.15s;
   white-space: nowrap;
 }
 .introh__login:hover {

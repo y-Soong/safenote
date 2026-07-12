@@ -2,6 +2,20 @@
   <div class="default-sch-gate">
     <header class="gate-header">
       <h1 class="gate-title">기본 근무타입 설정</h1>
+      <!-- 닫기: 미설정 상태로 로그인 화면 복귀. 임시 토큰은 정리(웹 DefaultSchGatePop 패턴). -->
+      <button type="button" class="gate-close" aria-label="닫기" @click="fnCancel">
+        <svg
+          xmlns="http://www.w3.org/2000/svg"
+          width="24"
+          height="24"
+          fill="none"
+          viewBox="0 0 24 24"
+          stroke-width="1.5"
+          stroke="currentColor"
+        >
+          <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" />
+        </svg>
+      </button>
     </header>
 
     <section class="gate-body">
@@ -49,6 +63,7 @@ import { useRouter } from 'vue-router'
 import axios from '@/api/axios'
 import { useUserStore } from '@/stores/userStore'
 import { resolveApiErrorMessage } from '@/utils/apiError'
+import { routeAfterLogin } from '@/utils/termsGate'
 
 const { proxy } = getCurrentInstance()
 const router = useRouter()
@@ -86,6 +101,25 @@ onMounted(async () => {
   await fnLoadOptions()
 })
 
+// 공통: confirm 폴백 (앱 전역 $confirm 우선, 없으면 window.confirm)
+const askConfirm = async (message) => {
+  if (proxy?.$confirm) {
+    return await proxy.$confirm(message)
+  }
+  return window.confirm(message)
+}
+
+const fnCancel = async () => {
+  const ok = await askConfirm(
+    '기본 근무타입을 설정하지 않으면 로그인 화면으로 돌아갑니다.\n계속하시겠습니까?'
+  )
+  if (!ok) return
+  // 미설정 취소 — 임시 토큰은 정식 토큰이 아니므로 잔존 금지.
+  sessionStorage.removeItem('token')
+  delete axios.defaults.headers.common.Authorization
+  router.replace('/')
+}
+
 const fnLoadOptions = async () => {
   isLoading.value = true
   try {
@@ -113,7 +147,7 @@ const fnSave = async () => {
       defaultSchCd: defaultSchCd.value,
     })
     if (response.status === 200) {
-      fnApplyLoginResponse(response.data)
+      await fnApplyLoginResponse(response.data)
     }
   } catch (err) {
     errorMsg.value = resolveApiErrorMessage(err, '기본 근무타입 설정 중 오류가 발생했습니다.')
@@ -122,7 +156,7 @@ const fnSave = async () => {
   }
 }
 
-const fnApplyLoginResponse = (data) => {
+const fnApplyLoginResponse = async (data) => {
   // 앱 LoginView 정상 로그인 분기와 동일 구조(§11.1: 휴대폰/이메일 미보관).
   const {
     token,
@@ -172,7 +206,20 @@ const fnApplyLoginResponse = (data) => {
     authLevel,
   })
 
-  router.replace('/MainView')
+  // APP-PRAFTA-001: 근무타입 설정 후 곧바로 MainView 로 직행하면 뒤따르는 게이트(강제 비번변경/필수약관)를
+  //   건너뛰어, MainView 첫 API 에서 서버 게이트(AUTH_403_001)로 튕기거나 약관 동의가 우회된다.
+  //   LoginView 정상 로그인과 동일하게, 정식 토큰 세팅 직후 남은 게이트 체인을 그대로 이어서 태운다.
+  //   set-default-sch 응답은 login 과 동일한 LoginResponse.from 이라 nextStep/mustChangePassword 를 함께 내려준다.
+  if (data?.nextStep === 'PASSWORD_CHANGE' || data?.mustChangePassword) {
+    router.replace({
+      path: '/ForcedPasswordChange',
+      state: { redirect: '/MainView' },
+    })
+    return
+  }
+
+  // 필수약관 미동의 게이트 → 동의 화면, 없으면 /MainView.
+  await routeAfterLogin(router)
 }
 </script>
 
@@ -184,12 +231,27 @@ const fnApplyLoginResponse = (data) => {
   background: var(--color-bg, #f9fafb);
 }
 .gate-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
   padding: 20px 16px;
 }
 .gate-title {
   margin: 0;
   font-size: 18px;
   color: var(--color-text-strong, #111827);
+}
+.gate-close {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  border: none;
+  background: transparent;
+  color: var(--color-text-muted, #4b5563);
+  cursor: pointer;
 }
 .gate-body {
   flex: 1 1 auto;

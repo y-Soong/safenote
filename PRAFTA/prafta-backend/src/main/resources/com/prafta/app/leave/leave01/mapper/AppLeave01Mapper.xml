@@ -198,4 +198,18 @@
        AND G.AVAIL_FROM_DATE <![CDATA[ > ]]> #{today}
     </select>
 
+    <!-- ============ LC-07(표기): 시간차 CONFIRMED 사용 분 합계 ============
+      술어는 웹 LeaveDashboardMapper.selectHourlyUsedMinutes 미러(시간차 02/03/04, CONFIRMED, DEL_YN='N',
+      전 기간). FE "시간차 사용 N시간 M분" 원본 표기 전용(잔여/부여 수치 무관). 식별값은 토큰 도출값(IDOR). -->
+    <select id="selectHourlyUsedMinutes" resultType="java.lang.Integer">
+    /* AppLeave01Mapper.selectHourlyUsedMinutes */
+    SELECT IFNULL(SUM(U.LEAVE_MINUTES), 0)
+      FROM TB_USER_LEAVE_USE U
+     WHERE U.CMPNY_CD      = #{cmpnyCd}
+       AND U.USER_CD       = #{userCd}
+       AND U.USE_UNIT_TYPE IN ('02', '03', '04')
+       AND U.LEAVE_STATUS  = 'CONFIRMED'
+       AND U.DEL_YN        = 'N'
+    </select>
+
 </mapper>

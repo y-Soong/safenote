@@ -12,7 +12,9 @@ public record SiteNodeListParam(
 	, String nodeCd
 	, String nodeType
 	, String nodeNm
-	, String parentNodeNm	
+	, String parentNodeNm
+	// PRAFTA-WEB_002-T1-02(1.3-3/1.4-1): 담당 미지정 노드 포함 여부(true=포함). 미전달은 false(현행).
+	, boolean includeNoAdmin
 ) {
 	public static SiteNodeListParam from(SiteNodeListRequest request, TokenInfo token) {
 		
@@ -29,6 +31,7 @@ public record SiteNodeListParam(
 			, request.getNodeType()
 			, request.getNodeNm()
 			, request.getParentNodeNm()
-		); 
+			, Boolean.TRUE.equals(request.getIncludeNoAdmin())
+		);
 	}
 }

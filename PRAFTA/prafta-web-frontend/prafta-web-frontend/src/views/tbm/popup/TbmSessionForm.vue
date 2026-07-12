@@ -46,7 +46,11 @@
                   :disabled="isEditMode"
                   @click="onSiteSearchClick"
                 >
-                  <img class="search_icon" :src="search_icon" alt="사업장 조회" />
+                  <img
+                    class="search_icon"
+                    :src="search_icon"
+                    alt="사업장 조회"
+                  />
                 </button>
               </div>
               <span v-if="isEditMode" class="hint">
@@ -69,14 +73,70 @@
             <!-- 교육 내용 (리치 HTML) -->
             <div class="form-row-max editor-row">
               <label>교육 내용</label>
-              <div class="editor-wrap">
-                <QuillEditor
-                  v-model:content="formData.contentBody"
-                  contentType="html"
-                  theme="snow"
-                  style="height: 14rem"
-                  ref="editorRef"
-                />
+              <div class="editor-col">
+                <!-- RC-3: AI 교육안 생성 툴바 -->
+                <div class="ai-toolbar">
+                  <button
+                    v-if="isEditMode"
+                    type="button"
+                    class="btn btn-second btn-sm"
+                    :disabled="isGenerating"
+                    @click="fnGenerateAiContent"
+                  >
+                    {{ isGenerating ? "생성 중…" : "🪄 AI 교육안 생성" }}
+                  </button>
+                  <button
+                    v-if="isEditMode"
+                    type="button"
+                    class="btn btn-second btn-sm"
+                    :disabled="isCheckingUnconfirmed || isGenerating"
+                    @click="fnLoadUnconfirmed"
+                  >
+                    {{ isCheckingUnconfirmed ? "확인 중…" : "새로고침" }}
+                  </button>
+                  <span v-if="isEditMode" class="ai-hint">
+                    ⓘ AI 분석이 확정된 자료만 교육안 생성에 반영됩니다.
+                  </span>
+                  <span v-else class="ai-hint">
+                    ⓘ 임시저장 후 AI 교육안을 생성할 수 있습니다.
+                  </span>
+                </div>
+
+                <!-- 미확정 AI 분석 항목 안내 블록(있을 때만) — 생성은 차단하지 않고 해당 항목만 제외됨 -->
+                <div
+                  v-if="isEditMode && unconfirmedItems.length > 0"
+                  class="ai-unconfirmed"
+                >
+                  <p class="ai-unconfirmed-msg">
+                    AI 분석이 확정되지 않은 아래 자료는 교육안 생성에서 제외됩니다.
+                    포함하려면 [AI 분석 관리] 탭에서 확정한 뒤 [새로고침]을 눌러 주세요.
+                  </p>
+                  <ul class="ai-unconfirmed-list">
+                    <li
+                      v-for="item in unconfirmedItems"
+                      :key="item.mtrlItemCd"
+                    >
+                      {{ item.mtrlTitle }} /
+                      {{ item.mtrlDesc || "(설명 없음)" }} ({{ item.statusLabel }})
+                    </li>
+                  </ul>
+                </div>
+
+                <div class="editor-wrap">
+                  <QuillEditor
+                    v-model:content="formData.contentBody"
+                    contentType="html"
+                    theme="snow"
+                    style="height: 14rem"
+                    ref="editorRef"
+                  />
+                </div>
+
+                <!-- RC-3: 생성 결과 안내(제외항목/품질저하) -->
+                <p v-if="aiNotice" class="ai-notice">{{ aiNotice }}</p>
+                <p v-if="aiQualityWarn" class="ai-notice-warn">
+                  ⚠ 관리자 교육내용 미입력 — 확정 자료만으로 추정 생성되었습니다.
+                </p>
               </div>
             </div>
 
@@ -163,6 +223,21 @@
                 />
               </div>
               <span class="hint">50 ~ 1000m</span>
+            </div>
+
+            <!-- 교육 시간(인정 분): 1~60, 개설 단계 선택(빈값 허용) -->
+            <div class="form-row-max">
+              <label>교육 시간(분)</label>
+              <div style="width: 30%">
+                <input
+                  type="number"
+                  v-model.number="formData.eduMinutes"
+                  min="1"
+                  max="60"
+                  style="width: 100%"
+                />
+              </div>
+              <span class="hint">1분 이상 60분 이하</span>
             </div>
 
             <!-- 콘텐츠 매핑 -->
@@ -349,6 +424,16 @@ const riskRows = ref([]);
 const manualConfirm = ref(false);
 const gpsStatus = ref("idle"); // idle | loading | ok | fail
 
+// RC-3: AI 교육안 생성 상태
+const isGenerating = ref(false);
+const aiNotice = ref(""); // 통합/제외 안내 문구
+const aiQualityWarn = ref(false); // qualityDegraded 안내
+
+// 미확정 AI 분석 항목(제외 예정 목록 안내용 — 생성은 차단하지 않음, 2026-07-11 기획 변경).
+// 확정 자료 0건이면 서버 generate 가 "분석할 자료가 없습니다"(TBM_409_060)로 거부한다.
+const unconfirmedItems = ref([]);
+const isCheckingUnconfirmed = ref(false);
+
 const isEditMode = computed(() => !proxy.$util.isEmpty(props.sessionCd_p));
 
 const formData = reactive({
@@ -359,6 +444,7 @@ const formData = reactive({
   managerGpsLat: "",
   managerGpsLon: "",
   gpsVerifyRadiusM: 100,
+  eduMinutes: null,
 });
 
 const { position, startDrag } = useCenteredDraggable(modalRef, {
@@ -372,8 +458,12 @@ const riskKey = (row) =>
 onMounted(async () => {
   await fnGetSiteList();
 
-  if (isEditMode.value && props.detail_p) {
-    fnLoadFromDetail(props.detail_p);
+  if (isEditMode.value) {
+    if (props.detail_p) {
+      fnLoadFromDetail(props.detail_p);
+    }
+    // 수정 모드: 미확정 AI 분석 항목 선조회(제외 예정 목록 안내용)
+    fnLoadUnconfirmed();
   } else {
     // 신규: 기본 사업장 = 본인 사업장
     formData.siteCd = sessionStorage.getItem("gv_siteCd") || "";
@@ -436,6 +526,8 @@ const fnLoadFromDetail = (detail) => {
   formData.managerGpsLat = s.managerGpsLat || "";
   formData.managerGpsLon = s.managerGpsLon || "";
   formData.gpsVerifyRadiusM = s.gpsVerifyRadiusM || 100;
+  formData.eduMinutes =
+    s.eduMinutes !== undefined && s.eduMinutes !== null ? s.eduMinutes : null;
   manualConfirm.value = s.gpsManualConfirmYn === "Y";
 
   contentRows.value = (detail.contents || []).map((c) => ({
@@ -542,6 +634,18 @@ const fnValidate = (mode) => {
     proxy.$alert("교육 제목을 입력해 주세요.");
     return false;
   }
+  // 교육 시간: 입력 시에만 1~60 범위 검증(개설 단계는 빈값 허용, 서버가 최종 권위)
+  if (
+    formData.eduMinutes !== null &&
+    formData.eduMinutes !== "" &&
+    formData.eduMinutes !== undefined
+  ) {
+    const m = Number(formData.eduMinutes);
+    if (!Number.isInteger(m) || m < 1 || m > 60) {
+      proxy.$alert("교육 시간은 1분 이상 60분 이하로 입력해 주세요.");
+      return false;
+    }
+  }
   // 개설 시에만 교육 내용/ GPS 강제
   if (mode === "OPENED") {
     const text = stripHtml(formData.contentBody);
@@ -589,6 +693,10 @@ const buildPayload = () => ({
     formData.gpsVerifyTypeCd === "DISABLED" ? null : formData.gpsVerifyRadiusM,
   gpsManualConfirmYn:
     formData.gpsVerifyTypeCd === "MANUAL" && manualConfirm.value ? "Y" : "N",
+  eduMinutes:
+    formData.eduMinutes === "" || formData.eduMinutes === undefined
+      ? null
+      : formData.eduMinutes,
   contents: contentRows.value.map((r, idx) => ({
     mtrlCd: r.mtrlCd,
     displayOrder: idx,
@@ -670,6 +778,73 @@ const fnUpdate = async () => {
     );
   }
 };
+
+// 에디터 HTML → 공백 보존 plain text(관리자 방향 시드용). stripHtml 은 공백을 제거하므로 분리 사용
+const extractPlainText = (html) => {
+  if (!html) return "";
+  const tmp = document.createElement("div");
+  tmp.innerHTML = html;
+  return (tmp.textContent || tmp.innerText || "").trim();
+};
+
+// 미확정 AI 분석 항목 조회 — GET /webApi/tbmai02/unconfirmed-items {sessionCd}
+//   제외 예정 목록 안내 전용(생성 차단 없음). 조회 실패해도 기능을 막지 않는다.
+const fnLoadUnconfirmed = async () => {
+  if (!isEditMode.value) return;
+  isCheckingUnconfirmed.value = true;
+  try {
+    const response = await axios.get("/webApi/tbmai02/unconfirmed-items", {
+      params: { sessionCd: props.sessionCd_p },
+    });
+    unconfirmedItems.value = response.data?.items || [];
+  } catch (err) {
+    console.warn("미확정 AI 분석 항목 조회 실패", err);
+    unconfirmedItems.value = [];
+  } finally {
+    isCheckingUnconfirmed.value = false;
+  }
+};
+
+// RC-3: [AI 교육안 생성] — POST /webApi/tbmai02/generate {sessionCd, adminContentText}
+//        성공 시 formData.contentBody 를 응답 genContent(HTML)로 덮어쓰고 안내 갱신.
+//        영속은 기존 [저장] 버튼(update-session)으로 처리(generate 는 DB 미기록 초안 반환).
+const fnGenerateAiContent = async () => {
+  if (!isEditMode.value) return; // 신규 폼은 버튼 미노출 — 방어
+
+  // 기존 교육 내용이 있으면 덮어쓰기 확인
+  const hasExisting = stripHtml(formData.contentBody).length > 0;
+  if (hasExisting) {
+    const ok = await proxy.$confirm(
+      "기존 교육 내용을 AI 초안으로 덮어씁니다. 진행할까요?"
+    );
+    if (!ok) return;
+  }
+
+  // 현재 에디터 텍스트를 관리자 방향 시드로 전달(없으면 서버가 qualityDegraded=true)
+  const adminContentText = extractPlainText(formData.contentBody);
+
+  isGenerating.value = true;
+  try {
+    const response = await axios.post(
+      "/webApi/tbmai02/generate",
+      { sessionCd: props.sessionCd_p, adminContentText },
+      { headers: { "Content-Type": "application/json" } }
+    );
+
+    const data = response.data || {};
+    formData.contentBody = data.genContent || "";
+    aiNotice.value = `AI 분석·확정된 ${
+      data.includedItemCount ?? 0
+    }개 항목을 통합했습니다. 미분석/미확정 항목은 제외됩니다.`;
+    aiQualityWarn.value = !!data.qualityDegraded;
+  } catch (err) {
+    await proxy.$alert(
+      resolveApiErrorMessage(err, "AI 교육안 생성 중 오류가 발생했습니다.")
+    );
+  } finally {
+    isGenerating.value = false;
+  }
+};
 </script>
 
 <style scoped>
@@ -692,9 +867,16 @@ const fnUpdate = async () => {
   flex-direction: column;
   gap: 0.75rem;
   overflow-y: auto;
-  padding-right: 0.5rem;
   height: 100%;
   min-height: 0;
+}
+
+/* 헤더~첫 행 과다 여백 수정:
+   전역 .prafta-modal-popup .form-container(padding:20px)와 .content-wrapper(padding:1.2rem)가 겹쳐
+   상단에만 여백이 쌓인다. 자손 선택자로 명시도를 올려 전역 20px 를 확실히 덮고,
+   좌우/상하 여백은 .content-wrapper 의 1.2rem 만 남기되 스크롤바 여백(우측 0.5rem)은 유지한다. */
+.content-wrapper .form-container {
+  padding: 0 0.5rem 0 0;
 }
 
 .hint {
@@ -811,5 +993,65 @@ const fnUpdate = async () => {
   height: var(--btn-height-sm);
   padding: 0 var(--btn-padding-sm);
   font-size: var(--btn-font-sm);
+}
+
+/* RC-3: AI 교육안 생성 툴바/안내 */
+.editor-col {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-xs, 0.375rem);
+  width: 100%;
+}
+
+.ai-toolbar {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm, 0.5rem);
+}
+
+.ai-hint {
+  font-size: var(--btn-font-sm);
+  color: var(--color-text-muted);
+  /* 안내 문구는 개행 없이 한 줄로 표시 */
+  white-space: nowrap;
+}
+
+.ai-notice {
+  margin: 0;
+  font-size: var(--btn-font-sm);
+  color: var(--color-text);
+}
+
+.ai-notice-warn {
+  margin: 0;
+  font-size: var(--btn-font-sm);
+  color: var(--color-danger);
+}
+
+/* 미확정 AI 분석 항목 경고 블록 */
+.ai-unconfirmed {
+  border: 1px solid var(--color-danger);
+  background: var(--color-warning-bg);
+  border-radius: var(--radius-sm, 0.375rem);
+  padding: var(--space-sm, 0.5rem);
+}
+
+.ai-unconfirmed-msg {
+  margin: 0 0 var(--space-xs, 0.375rem);
+  font-size: var(--btn-font-sm);
+  color: var(--color-danger);
+}
+
+.ai-unconfirmed-list {
+  margin: 0;
+  padding-left: 1.2rem;
+  max-height: 8rem;
+  overflow-y: auto;
+  font-size: var(--btn-font-sm);
+  color: var(--color-text);
+}
+
+.ai-unconfirmed-list li {
+  margin: 0.125rem 0;
 }
 </style>

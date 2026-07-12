@@ -32,7 +32,11 @@
           <div class="form-row">
             <label>자료타입 <span class="req">*</span></label>
             <!-- 자료타입 = 공통코드 COM008 (tb_baim_val_d) 재사용. 서버도 필수 재검증. -->
-            <select v-model="formData.archiveTypeCd" name="combo" class="type-select">
+            <select
+              v-model="formData.archiveTypeCd"
+              name="combo"
+              class="type-select"
+            >
               <!-- 등록 폼에는 "전체"(빈값) 옵션을 두지 않는다. 안내 placeholder 만 두되
                    disabled+hidden 으로 빈값 재선택을 막는다(미선택 저장은 fnSave + 서버가 이중 차단). -->
               <option value="" disabled hidden>자료타입을 선택해 주세요</option>
@@ -53,6 +57,7 @@
               v-model="formData.title"
               maxlength="200"
               placeholder="제목을 입력해 주세요"
+              autocomplete="off"
             />
           </div>
           <div class="form-row">
@@ -75,6 +80,7 @@
               type="password"
               maxlength="50"
               placeholder="수정 비밀번호 (저장 시 암호화)"
+              autocomplete="new-password"
             />
           </div>
           <div class="form-row">
@@ -85,6 +91,7 @@
                 type="password"
                 maxlength="50"
                 placeholder="비밀번호를 다시 입력해 주세요"
+                autocomplete="new-password"
               />
               <!-- 오타 방지: 입력값이 있을 때 일치 여부 즉시 표시 -->
               <p
@@ -126,11 +133,14 @@
               <ul class="file-list" v-if="fileList.length > 0">
                 <li v-for="(f, i) in fileList" :key="i" class="file-item">
                   <span>{{ f.name }}</span>
-                  <button class="file-item__del" @click="fnRemoveFile(i)">×</button>
+                  <button class="file-item__del" @click="fnRemoveFile(i)">
+                    ×
+                  </button>
                 </li>
               </ul>
               <p class="hint">
-                텍스트/이미지/동영상/음성 파일만 첨부할 수 있습니다(실행/스크립트 형식 제외). 저장 시 함께 업로드됩니다.
+                텍스트/이미지/동영상/음성 파일만 첨부할 수
+                있습니다(실행/스크립트 형식 제외). 저장 시 함께 업로드됩니다.
               </p>
             </div>
           </div>

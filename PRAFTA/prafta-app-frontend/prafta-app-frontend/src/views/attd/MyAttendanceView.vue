@@ -43,7 +43,17 @@
     </div>
 
     <!-- 본문 (스크롤 영역) -->
-    <main class="attd-body">
+    <main
+      class="attd-body"
+      ref="scrollRef"
+      @touchstart.passive="onPullStart"
+      @touchmove="onPullMove"
+      @touchend="onPullEnd"
+      @touchcancel="onPullEnd"
+    >
+      <!-- 당겨서 새로고침 인디케이터 — 스크롤 최상단에서 아래로 당기면 노출 -->
+      <PullRefreshIndicator v-bind="indicatorProps" />
+
       <!-- 오늘 탭 -->
       <AttendanceTodayCard
         v-if="activeTab === 'today'"
@@ -137,6 +147,8 @@ import { ref, computed, getCurrentInstance, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 
 import api from '@/api/axios'
+import { usePullToRefresh } from '@/composables/usePullToRefresh'
+import PullRefreshIndicator from '@/components/common/PullRefreshIndicator.vue'
 import { requestGps } from '@/utils/gpsBridge'
 import { loadKakaoMapScript } from '@/utils/kakaoMap'
 import { isDailyWorker } from '@/utils/employment'
@@ -684,6 +696,33 @@ const onSheetAction = (payload) => {
 }
 
 // ───────────────────────────────────────────────────────────
+// 당겨서 새로고침 — 활성 탭의 현재 보고 있는 기간 데이터를 강제 재조회(캐시 가드 우회).
+//   부작용 없는 조회만. 탭별로 today/week/month(+선택 일자 상세)를 갱신한다.
+// ───────────────────────────────────────────────────────────
+const scrollRef = ref(null)
+const { onPullStart, onPullMove, onPullEnd, indicatorProps } = usePullToRefresh(
+  scrollRef,
+  async () => {
+    if (activeTab.value === 'today') {
+      await reloadToday()
+    } else if (activeTab.value === 'week') {
+      const ymd = currentWeekStartYmd.value || weekStartOf(new Date())
+      weekCache.delete(ymd)
+      await loadWeek(ymd)
+    } else if (activeTab.value === 'month') {
+      const ym = currentYearMonth.value || yearMonthOf(new Date())
+      monthCache.delete(ym)
+      await loadMonth(ym)
+      // 선택된 일자 상세도 함께 갱신(있을 때만).
+      if (selectedYmd.value) {
+        dayDetailCache.delete(selectedYmd.value)
+        await loadDayDetail(selectedYmd.value)
+      }
+    }
+  },
+)
+
+// ───────────────────────────────────────────────────────────
 // 진입 시 기본 탭('오늘') 데이터 로드
 // ───────────────────────────────────────────────────────────
 onMounted(() => {
@@ -850,6 +889,7 @@ onMounted(() => {
 /* 본문 */
 .attd-body {
   flex: 1;
+  min-height: 0;
   overflow-y: auto;
   padding: var(--space-md) var(--space-lg) 88px;
   display: flex;

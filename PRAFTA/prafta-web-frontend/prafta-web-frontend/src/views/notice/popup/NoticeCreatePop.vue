@@ -31,7 +31,12 @@
           <!-- 기본 정보 -->
           <div class="form-row">
             <label>제목 <span class="req">*</span></label>
-            <input v-model="formData.title" maxlength="200" placeholder="제목을 입력해 주세요" />
+            <input
+              v-model="formData.title"
+              maxlength="200"
+              placeholder="제목을 입력해 주세요"
+              autocomplete="off"
+            />
           </div>
           <div class="form-row">
             <label>내용 <span class="req">*</span></label>
@@ -48,6 +53,7 @@
               type="password"
               maxlength="50"
               placeholder="수정 비밀번호 (저장 시 암호화)"
+              autocomplete="new-password"
             />
           </div>
           <div class="form-row">
@@ -58,6 +64,7 @@
                 type="password"
                 maxlength="50"
                 placeholder="비밀번호를 다시 입력해 주세요"
+                autocomplete="new-password"
               />
               <!-- 오타 방지: 입력값이 있을 때 일치 여부 즉시 표시 -->
               <p
@@ -82,15 +89,27 @@
             <label>스코프</label>
             <div class="radio-group">
               <label class="radio-item" v-if="canSelectAll">
-                <input type="radio" value="ALL" v-model="formData.targetScope" />
+                <input
+                  type="radio"
+                  value="ALL"
+                  v-model="formData.targetScope"
+                />
                 전사
               </label>
               <label class="radio-item">
-                <input type="radio" value="SITE" v-model="formData.targetScope" />
+                <input
+                  type="radio"
+                  value="SITE"
+                  v-model="formData.targetScope"
+                />
                 사업장
               </label>
               <label class="radio-item">
-                <input type="radio" value="NODE" v-model="formData.targetScope" />
+                <input
+                  type="radio"
+                  value="NODE"
+                  v-model="formData.targetScope"
+                />
                 사업장+노드
               </label>
             </div>
@@ -111,12 +130,23 @@
                     readonly
                     @click="fnOpenSiteSearch"
                   />
-                  <button class="search-btn" title="사업장 조회" @click="fnOpenSiteSearch">
-                    <img class="search_icon" :src="search_icon" alt="사업장 조회" />
+                  <button
+                    class="search-btn"
+                    title="사업장 조회"
+                    @click="fnOpenSiteSearch"
+                  >
+                    <img
+                      class="search_icon"
+                      :src="search_icon"
+                      alt="사업장 조회"
+                    />
                   </button>
                 </div>
                 <!-- 노드: NODE 스코프일 때만. 사업장 선택 후 활성화 -->
-                <div class="search-field" v-if="formData.targetScope === 'NODE'">
+                <div
+                  class="search-field"
+                  v-if="formData.targetScope === 'NODE'"
+                >
                   <input
                     type="text"
                     class="search-input"
@@ -132,10 +162,17 @@
                     :disabled="!pickSiteCd"
                     @click="fnOpenNodeSearch"
                   >
-                    <img class="search_icon" :src="search_icon" alt="노드 조회" />
+                    <img
+                      class="search_icon"
+                      :src="search_icon"
+                      alt="노드 조회"
+                    />
                   </button>
                 </div>
-                <button class="btn-secondary add-target-btn" @click="fnAddTarget">
+                <button
+                  class="btn-secondary add-target-btn"
+                  @click="fnAddTarget"
+                >
                   + 대상 추가
                 </button>
               </div>
@@ -147,13 +184,28 @@
                   class="target-chip"
                 >
                   <span class="target-chip__label">
-                    {{ t.siteNm }}<template v-if="t.nodeNm"> / {{ t.nodeNm }}</template>
+                    {{ t.siteNm
+                    }}<template v-if="t.nodeNm"> / {{ t.nodeNm }}</template>
                   </span>
-                  <label v-if="formData.targetScope === 'NODE' && t.nodeCd" class="target-chip__desc">
-                    <input type="checkbox" v-model="t.includeDescendantsYn" true-value="Y" false-value="N" />
+                  <label
+                    v-if="formData.targetScope === 'NODE' && t.nodeCd"
+                    class="target-chip__desc"
+                  >
+                    <input
+                      type="checkbox"
+                      v-model="t.includeDescendantsYn"
+                      true-value="Y"
+                      false-value="N"
+                    />
                     하위 포함
                   </label>
-                  <button class="target-chip__del" title="삭제" @click="fnRemoveTarget(i)">×</button>
+                  <button
+                    class="target-chip__del"
+                    title="삭제"
+                    @click="fnRemoveTarget(i)"
+                  >
+                    ×
+                  </button>
                 </li>
               </ul>
             </div>
@@ -162,7 +214,12 @@
           <div class="form-row">
             <label>일용직</label>
             <label class="checkbox-item">
-              <input type="checkbox" v-model="formData.includeDailyYn" true-value="Y" false-value="N" />
+              <input
+                type="checkbox"
+                v-model="formData.includeDailyYn"
+                true-value="Y"
+                false-value="N"
+              />
               일용직 포함 (사업장 단위로만 노출)
             </label>
           </div>
@@ -173,7 +230,12 @@
           <div class="form-row">
             <label>로그인 팝업</label>
             <label class="checkbox-item">
-              <input type="checkbox" v-model="formData.popupYn" true-value="Y" false-value="N" />
+              <input
+                type="checkbox"
+                v-model="formData.popupYn"
+                true-value="Y"
+                false-value="N"
+              />
               로그인 시 팝업으로 노출
             </label>
           </div>
@@ -189,15 +251,27 @@
           <div class="form-row">
             <label>상단 고정</label>
             <label class="checkbox-item">
-              <input type="checkbox" v-model="formData.pinYn" true-value="Y" false-value="N" />
+              <input
+                type="checkbox"
+                v-model="formData.pinYn"
+                true-value="Y"
+                false-value="N"
+              />
               목록 상단에 고정
             </label>
           </div>
           <div class="form-row" v-if="formData.pinYn === 'Y'">
             <label>고정 순번</label>
             <div>
-              <input v-model.number="formData.pinOrder" type="number" min="1" class="pin-order-input" />
-              <p class="hint">순번은 저장 시 서버에서 1..N 연속으로 보정됩니다.</p>
+              <input
+                v-model.number="formData.pinOrder"
+                type="number"
+                min="1"
+                class="pin-order-input"
+              />
+              <p class="hint">
+                순번은 저장 시 서버에서 1..N 연속으로 보정됩니다.
+              </p>
             </div>
           </div>
 
@@ -226,11 +300,14 @@
               <ul class="file-list" v-if="fileList.length > 0">
                 <li v-for="(f, i) in fileList" :key="i" class="file-item">
                   <span>{{ f.name }}</span>
-                  <button class="file-item__del" @click="fnRemoveFile(i)">×</button>
+                  <button class="file-item__del" @click="fnRemoveFile(i)">
+                    ×
+                  </button>
                 </li>
               </ul>
               <p class="hint">
-                텍스트/이미지/동영상/음성 파일만 첨부할 수 있습니다(실행/스크립트 형식 제외). 저장 시 함께 업로드됩니다.
+                텍스트/이미지/동영상/음성 파일만 첨부할 수
+                있습니다(실행/스크립트 형식 제외). 저장 시 함께 업로드됩니다.
               </p>
             </div>
           </div>

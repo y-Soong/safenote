@@ -5,6 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "vite --port 8081",
+    "dev:domain": "vite --port 8081 --mode production",
     "build": "vite build",
     "preview": "vite preview",
     "lint": "eslint src --ext .vue,.js,.jsx,.cjs,.mjs --fix"

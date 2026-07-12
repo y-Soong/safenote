@@ -41,6 +41,7 @@ public class AdminSessionDetailResponse {
         private String managerGpsLon;
         private String gpsVerifyTypeCd;
         private Integer gpsVerifyRadiusM;
+        private Integer eduMinutes;     // 교육 인정시간(분, 1~60). 미설정 시 null
         private String gpsManualConfirmYn;
         private String openedAt;
         private String prepStartAt;       // 교육준비 타이머 기준시각(OPENED, 초 단위)

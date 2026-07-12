@@ -13,6 +13,7 @@ import com.prafta.common.cmm.file.service.FileService;
 import com.prafta.common.cmm.push.RiskAssessNotiConst;
 import com.prafta.common.cmm.push.RiskAssessNotiService;
 import com.prafta.common.error.common.CommonErrorCode;
+import com.prafta.common.error.risk.RiskErrorCode;
 import com.prafta.common.exception.ApiException;
 import com.prafta.web.risk.risk03.application.command.AssessmentCommand;
 import com.prafta.web.risk.risk03.application.param.AssessmentParam;
@@ -73,12 +74,29 @@ public class Risk03ServiceImpl implements Risk03Service{
 	
 	@Transactional
 	public void saveAssessment(AssessmentParam param, MultipartFile file) {
+		// PRAFTA_COM_001_T6 Low-1A: 위험도는 클라 전송값(revalRiskLv 등)을 신뢰하지 않고 서버에서 빈도 x 강도로 재계산한다(단일 출처).
+		//   재계산 결과를 003 가드와 저장(INIT/REVAL_RISK_LV) 양쪽에 동일하게 사용하여 위조에 의한 게이트 우회를 차단한다.
+		int initRiskLvCalc = calcRiskLv(param.initLikelihoodScore(), param.initSeverityScore());		// 0 = 계산 불가
+		int revalRiskLvCalc = calcRiskLv(param.revalLikelihoodScore(), param.revalSeverityScore());	// 0 = 계산 불가
+
+		// T6-14B-1: 개선완료(003) 저장은 "개선 후" 위험도가 "매우낮음"(1~3)일 때만 허용 (fail-closed).
+		//   점수 누락/비정상으로 재계산 불가(0)이면 차단한다. 001/검토요청 등 003 외 전이는 본 가드를 거치지 않으므로 무회귀.
+		if ("003".equals(param.assessmentStatus())) {
+			if (revalRiskLvCalc < 1 || revalRiskLvCalc > 3) {
+				throw new ApiException(RiskErrorCode.RISK_400_002);
+			}
+		}
+
+		// 저장용 위험도 문자열(재계산값). 계산 불가(0)이면 기존 동작과 동일하게 "0"으로 저장한다.
+		String initRiskLvToSave = String.valueOf(initRiskLvCalc);
+		String revalRiskLvToSave = String.valueOf(revalRiskLvCalc);
+
 		try {
 			String fileMgmtCd = "";
     		if (file != null && !file.isEmpty()) {
-    			
+
     			fileMgmtCd = fileMapper.selectFileMgmtCd(FileInfoQuery.from(param.gvCmpnyCd(), "002"));			// 002 : 위험성평가
-    			
+
     			fileService.fileSave(FileInfoParam.from(
     					param.gvCmpnyCd()
     					, param.gvUserCd()
@@ -89,9 +107,13 @@ public class Risk03ServiceImpl implements Risk03Service{
 				));
     		}
 
-    		risk03Mapper.updateAssessment(AssessmentCommand.from(param, fileMgmtCd));
+    		risk03Mapper.updateAssessment(AssessmentCommand.from(param, fileMgmtCd, initRiskLvToSave, revalRiskLvToSave));
 
+		} catch (ApiException e) {
+			// 가드/비즈니스 예외는 원본 코드/메시지를 보존하기 위해 그대로 재전파(500 둔갑 방지)
+			throw e;
 		} catch (Exception e) {
+			log.error("위험성평가 저장 실패. assessmentCd={}", param.assessmentCd(), e);
 			throw new ApiException(CommonErrorCode.COMMON_500_001);
 		}
 
@@ -104,6 +126,33 @@ public class Risk03ServiceImpl implements Risk03Service{
 			} catch (Exception e) {
 				log.error("위험성평가 검토요청 통보 PUSH 적재 hook 실패(저장 영향 없음). assessmentCd={}", param.assessmentCd(), e);
 			}
+		}
+	}
+
+	/**
+	 * 위험도 서버 재계산: 빈도 x 강도. 빈도(1~5)·강도(1~4)가 모두 정상 범위일 때만 곱을 반환하고,
+	 * 어느 한쪽이라도 null/공백/비숫자/범위 밖이면 계산 불가로 보아 0을 반환한다(가드는 fail-closed).
+	 */
+	private int calcRiskLv(String likelihoodScore, String severityScore) {
+		int likelihood = parseScore(likelihoodScore);
+		int severity = parseScore(severityScore);
+		// Low-A: 빈도 1~5, 강도 1~4 범위 밖이면 비정상 곱 저장 방지(계산 불가=0)
+		if (likelihood < 1 || likelihood > 5 || severity < 1 || severity > 4) {
+			return 0;
+		}
+		return likelihood * severity;
+	}
+
+	/** 점수 문자열 안전 파싱. null/공백/비숫자/음수는 0(=계산 불가). */
+	private int parseScore(String score) {
+		if (score == null) {
+			return 0;
+		}
+		try {
+			int v = Integer.parseInt(score.trim());
+			return v < 0 ? 0 : v;
+		} catch (NumberFormatException e) {
+			return 0;
 		}
 	}
 

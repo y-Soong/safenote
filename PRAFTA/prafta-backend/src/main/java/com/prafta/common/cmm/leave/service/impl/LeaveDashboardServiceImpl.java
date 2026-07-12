@@ -20,6 +20,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.prafta.common.cmm.leave.command.ManualGrantCommand;
 import com.prafta.common.cmm.leave.mapper.LeaveDashboardMapper;
+import com.prafta.common.cmm.leave.service.LeaveConversionPolicyService;
 import com.prafta.common.cmm.leave.service.LeaveDashboardService;
 import com.prafta.common.cmm.leave.service.LeaveGrantEngineService;
 import com.prafta.common.cmm.leave.service.LeavePolicyService;
@@ -124,6 +125,8 @@ public class LeaveDashboardServiceImpl implements LeaveDashboardService {
     private final LeavePolicyService leavePolicyService;
     private final LeaveGrantEngineService leaveGrantEngineService;
     private final ObjectMapper objectMapper;
+    /** LC-07(표기): 현재 기준 1일 환산시간(분) 조회 — FE "N일 H시간 M분" 조립 분모 단일 출처. */
+    private final LeaveConversionPolicyService leaveConversionPolicyService;
 
     // ============================================================
     // 대시보드 목록
@@ -167,6 +170,9 @@ public class LeaveDashboardServiceImpl implements LeaveDashboardService {
                 .metrics(metrics)
                 .list(items)
                 .paging(PagingMetaVO.builder().page(safePage).size(safeSize).totalCount(total).build())
+                // LC-07(표기): 오늘 기준 환산시간 — FE 가 일수 수치를 "N일 H시간 M분"으로 조립하는 분모.
+                .convMinutes(leaveConversionPolicyService.selectConversionMinutes(
+                        cmpnyCd, LocalDate.now().format(DateTimeFormatter.BASIC_ISO_DATE)))
                 .build();
     }
 
@@ -312,12 +318,19 @@ public class LeaveDashboardServiceImpl implements LeaveDashboardService {
         log.info("연차 상세 조회. cmpnyCd={}, userCd={}, history건수={}, 신청형타입건수={}",
                 cmpnyCd, userCd, history.size(), appliedLeaveTypes.size());
 
+        // LC-07(표기): 오늘 기준 환산시간 + 시간차 사용 분 합계(전 기간) — FE 원본 분 표기용(additive).
+        int convMinutes = leaveConversionPolicyService.selectConversionMinutes(
+                cmpnyCd, LocalDate.now().format(DateTimeFormatter.BASIC_ISO_DATE));
+        Integer hourlyUsedMinutes = leaveDashboardMapper.selectHourlyUsedMinutes(cmpnyCd, userCd);
+
         return LeaveDetailResultVO.builder()
                 .user(header)
                 .legalSummary(legalSummary)
                 .nonLegalSummary(nonLegalSummary)
                 .appliedLeaveTypes(appliedLeaveTypes)
                 .grantHistory(history)
+                .convMinutes(convMinutes)
+                .hourlyUsedMinutes(hourlyUsedMinutes == null ? 0 : hourlyUsedMinutes)
                 .build();
     }
 

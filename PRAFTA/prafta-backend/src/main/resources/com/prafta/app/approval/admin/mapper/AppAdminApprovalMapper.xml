@@ -86,18 +86,22 @@
       LEFT JOIN TB_USER U
         ON U.CMPNY_CD = R.CMPNY_CD
        AND U.USER_CD  = R.USER_CD
-      <!-- 요청 스케줄 유효버전 시각(회사/사업장 스코프로 한정해 타 사업장 스케줄 유출 차단). -->
+      <!-- 요청 스케줄 유효버전 시각(회사/사업장 스코프로 한정해 타 사업장 스케줄 유출 차단).
+           근무일 기준 유효버전(APPLY_DATE<=근무일)을 우선하되, 없으면(근무일보다 늦게 적용 시작된 스케줄을
+           과거일에 적용하는 요청 등) 최이른 적용버전(MIN APPLY_DATE)으로 폴백 — 코드(00011) 대신 항상 시각 표시. -->
       LEFT JOIN ( <include refid="effectiveSchVersion"/> ) RSE
         ON RSE.CMPNY_CD = R.CMPNY_CD
        AND RSE.SITE_CD  = R.SITE_CD
        AND RSE.SCH_CD   = R.SCH_CD
        AND RSE.APPLY_DATE = (
-                SELECT MAX(SE.APPLY_DATE)
+                SELECT COALESCE(
+                         MAX(CASE WHEN SE.APPLY_DATE <![CDATA[ <= ]]> R.WORK_YMD THEN SE.APPLY_DATE END)
+                       , MIN(SE.APPLY_DATE)
+                       )
                 FROM ( <include refid="effectiveSchApplyKeys"/> ) SE
                 WHERE SE.CMPNY_CD    = R.CMPNY_CD
                   AND SE.SITE_CD     = R.SITE_CD
                   AND SE.SCH_CD      = R.SCH_CD
-                  AND SE.APPLY_DATE <![CDATA[ <= ]]> R.WORK_YMD
            )
      WHERE 1 = 1
      <include refid="scopeWhere"/>
@@ -366,13 +370,17 @@
         ON TSE.CMPNY_CD = TS.CMPNY_CD
        AND TSE.SITE_CD  = TS.SITE_CD
        AND TSE.SCH_CD   = TS.SCH_CD
+       <!-- 요청 스케줄: 근무일 기준 유효버전 우선, 없으면 최이른 적용버전(MIN)으로 폴백(카드 selectPendingCorrOt 와 동일 규칙).
+            근무일보다 늦게 적용 시작된 스케줄을 과거일에 적용하는 요청도 시각이 표시되게 한다. -->
        AND TSE.APPLY_DATE = (
-                SELECT MAX(SE.APPLY_DATE)
+                SELECT COALESCE(
+                         MAX(CASE WHEN SE.APPLY_DATE <![CDATA[ <= ]]> #{workYmd} THEN SE.APPLY_DATE END)
+                       , MIN(SE.APPLY_DATE)
+                       )
                 FROM ( <include refid="effectiveSchApplyKeys"/> ) SE
                 WHERE SE.CMPNY_CD    = TS.CMPNY_CD
                   AND SE.SITE_CD     = TS.SITE_CD
                   AND SE.SCH_CD      = TS.SCH_CD
-                  AND SE.APPLY_DATE <![CDATA[ <= ]]> #{workYmd}
            )
       LEFT JOIN TB_USER_WORK_PLAN WP
         ON WP.CMPNY_CD = #{cmpnyCd}
@@ -387,13 +395,16 @@
         ON CSE.CMPNY_CD = WP.CMPNY_CD
        AND CSE.SITE_CD  = WP.SITE_CD
        AND CSE.SCH_CD   = WP.WORK_PLAN_CD
+       <!-- 현재 스케줄도 요청 스케줄(TSE)과 동일 규칙: 근무일 기준 유효버전 우선, 없으면 최이른 적용버전으로 폴백. -->
        AND CSE.APPLY_DATE = (
-                SELECT MAX(SE.APPLY_DATE)
+                SELECT COALESCE(
+                         MAX(CASE WHEN SE.APPLY_DATE <![CDATA[ <= ]]> WP.WORK_YMD THEN SE.APPLY_DATE END)
+                       , MIN(SE.APPLY_DATE)
+                       )
                 FROM ( <include refid="effectiveSchApplyKeys"/> ) SE
                 WHERE SE.CMPNY_CD    = WP.CMPNY_CD
                   AND SE.SITE_CD     = WP.SITE_CD
                   AND SE.SCH_CD      = WP.WORK_PLAN_CD
-                  AND SE.APPLY_DATE <![CDATA[ <= ]]> WP.WORK_YMD
            )
      WHERE TS.CMPNY_CD = #{cmpnyCd}
        AND TS.SITE_CD  = #{siteCd}

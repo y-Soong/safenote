@@ -10,7 +10,6 @@ import com.prafta.common.exception.ApiException;
 public record SiteIncidentListQuery(
     String siteCd
     , String reportStatusCd
-    , String incidentTypeCd
     , String potentialSeverityCd
     , String startDate
     , String endDate
@@ -24,7 +23,6 @@ public record SiteIncidentListQuery(
         return new SiteIncidentListQuery(
             param.siteCd()
             , param.reportStatusCd()
-            , param.incidentTypeCd()
             , param.potentialSeverityCd()
             , param.startDate()
             , param.endDate()

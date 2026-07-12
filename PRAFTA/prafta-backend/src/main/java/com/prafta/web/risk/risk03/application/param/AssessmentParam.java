@@ -14,7 +14,9 @@ public record AssessmentParam(
 	, String initLikelihoodScore
 	, String initSeverityScore
 	, String initRiskLv
-	
+	// WEB_003 저장 액션: AI 반영 블록이 덧붙은 유해요인설명(INIT_DESC). null 이면 미갱신.
+	, String initDesc
+
 	, String revalDate
 	, String revalBeforeDesc
 	, String revalLikelihoodScore
@@ -40,7 +42,8 @@ public record AssessmentParam(
         	, request.getInitLikelihoodScore()
         	, request.getInitSeverityScore()
         	, request.getInitRiskLv()
-        	
+        	, request.getInitDesc()
+
         	, request.getRevalDate()
         	, request.getRevalBeforeDesc()
         	, request.getRevalLikelihoodScore()

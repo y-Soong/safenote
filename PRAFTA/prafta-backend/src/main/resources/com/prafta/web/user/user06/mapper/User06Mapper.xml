@@ -1,0 +1,131 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.prafta.web.user.user06.mapper.User06Mapper">
+
+    <!-- ============================================================
+         메뉴 버튼 권한 보유 카운트(서버측 역할 게이트, User_06).
+         CMPNY_CD + AUTH_CD + MENU_D_ID + USE_YN='Y' 이고 지정 버튼플래그가 'Y'인 행 존재 여부.
+         btnType 은 서비스 상수('SRCH'/'NEW'/'DELT')만 전달되며, 고정 컬럼으로만 분기(동적 ${} 미사용).
+         시드의 노드직책(00001/00004/00006/00008) AUTH_CD 까지 자연 포함된다.
+         ============================================================ -->
+    <select id="selectMenuButtonAuthCnt" resultType="int">
+    /* User06Mapper.selectMenuButtonAuthCnt */
+    SELECT COUNT(*)
+    FROM (
+        SELECT 1
+          FROM TB_SYST_AUTH_MENU
+         WHERE CMPNY_CD  = #{cmpnyCd}
+           AND AUTH_CD   = #{authCd}
+           AND MENU_D_ID = #{menuDId}
+           AND USE_YN    = 'Y'
+           <choose>
+               <when test="btnType == 'SRCH'">AND BTN_SRCH = 'Y'</when>
+               <when test="btnType == 'NEW'">AND BTN_NEW = 'Y'</when>
+               <when test="btnType == 'DELT'">AND BTN_DELT = 'Y'</when>
+               <otherwise>AND 1 = 0</otherwise>
+           </choose>
+         LIMIT 1
+    ) T
+    </select>
+
+    <!-- ============================================================
+         블랙리스트 목록 — 회사 스코프(CMPNY_CD) 강제.
+         휴대폰은 암호문(MBL_NO_ENC)/LAST4 원시 반환 → 서비스단에서 마스킹.
+         등록자명(insertNm)은 INSERT_NO(USER_CD)로 TB_USER LEFT JOIN(같은 회사) USER_NM.
+         전화 검색: HMAC 정확매칭 우선, 없으면 LAST4 부분(평문 비교 금지).
+         ============================================================ -->
+    <select id="selectBlacklistList" parameterType="com.prafta.web.user.user06.application.query.BlacklistListQuery" resultType="com.prafta.web.user.user06.result.BlacklistRaw">
+    /* User06Mapper.selectBlacklistList */
+    SELECT
+        B.BLACKLIST_ID                                          AS blacklistId
+        , B.MBL_NO_ENC                                          AS mblNoEnc
+        , B.MBL_NO_LAST4                                        AS mblNoLast4
+        , B.REASON                                              AS reason
+        , B.USE_YN                                              AS useYn
+        , CASE
+            WHEN U.USER_NM IS NULL OR U.USER_NM = '' THEN B.INSERT_NO
+            ELSE U.USER_NM
+          END                                                   AS insertNm
+        , DATE_FORMAT(B.INSERT_DATE, '%Y-%m-%d %H:%i:%s')       AS insertDate
+    FROM TB_DAILY_BLACKLIST B
+        LEFT OUTER JOIN TB_USER U
+            ON (
+                B.CMPNY_CD  = U.CMPNY_CD
+            AND B.INSERT_NO = U.USER_CD
+            )
+    WHERE B.CMPNY_CD = #{gvCmpnyCd}
+
+        <if test="useYn != null and useYn != ''">
+            AND B.USE_YN = #{useYn}
+        </if>
+
+        <!-- 전화 검색: HMAC 정확매칭 우선, 없으면 LAST4 부분(평문 비교 금지). -->
+        <if test="mblNoHmac != null and mblNoHmac != ''">
+            AND B.MBL_NO_HMAC = #{mblNoHmac}
+        </if>
+        <if test="(mblNoHmac == null or mblNoHmac == '') and mblNoLast4 != null and mblNoLast4 != ''">
+            AND B.MBL_NO_LAST4 = #{mblNoLast4}
+        </if>
+    ORDER BY B.USE_YN ASC, B.INSERT_DATE DESC, B.BLACKLIST_ID DESC
+    LIMIT #{limit} OFFSET #{offset}
+    </select>
+
+    <!-- 활성 블랙리스트 등록 여부(중복 사전검사). 1 이상이면 중복. -->
+    <select id="selectActiveBlacklistCnt" resultType="int">
+    /* User06Mapper.selectActiveBlacklistCnt */
+    SELECT COUNT(*)
+    FROM (
+        SELECT 1
+          FROM TB_DAILY_BLACKLIST
+         WHERE CMPNY_CD    = #{cmpnyCd}
+           AND MBL_NO_HMAC = #{mblNoHmac}
+           AND USE_YN      = 'Y'
+         LIMIT 1
+    ) T
+    </select>
+
+    <!-- 블랙리스트ID 채번('B' + YYYYMMDD + 시퀀스). -->
+    <select id="selectBlacklistId" resultType="string">
+    /* User06Mapper.selectBlacklistId */
+    SELECT CONCAT('B', DATE_FORMAT(NOW(), '%Y%m%d'), FNC_CMM_SEQ_NEXTVAL(#{cmpnyCd}, 'DAILY_BLACKLIST'))
+    FROM DUAL
+    </select>
+
+    <!-- 블랙리스트 INSERT(USE_YN='Y' 고정, 휴대폰은 ENC/HMAC/LAST4 만 적재). -->
+    <insert id="insertBlacklist" parameterType="com.prafta.web.user.user06.application.command.BlacklistInsertCommand">
+    /* User06Mapper.insertBlacklist */
+    INSERT INTO TB_DAILY_BLACKLIST (
+          CMPNY_CD
+        , BLACKLIST_ID
+        , MBL_NO_ENC
+        , MBL_NO_HMAC
+        , MBL_NO_LAST4
+        , REASON
+        , USE_YN
+        , INSERT_NO
+        , INSERT_DATE
+    ) VALUES (
+          #{cmpnyCd}
+        , #{blacklistId}
+        , #{mblNoEnc}
+        , #{mblNoHmac}
+        , #{mblNoLast4}
+        , #{reason}
+        , 'Y'
+        , #{insertNo}
+        , NOW()
+    )
+    </insert>
+
+    <!-- 블랙리스트 해제(USE_YN 'Y'→'N'). 회사 스코프 + 활성행 한정 조건부 UPDATE. -->
+    <update id="releaseBlacklist" parameterType="com.prafta.web.user.user06.application.command.BlacklistReleaseCommand">
+    /* User06Mapper.releaseBlacklist */
+    UPDATE TB_DAILY_BLACKLIST
+       SET USE_YN      = 'N'
+         , UPDATE_NO   = #{updateNo}
+         , UPDATE_DATE = NOW()
+     WHERE CMPNY_CD     = #{cmpnyCd}
+       AND BLACKLIST_ID = #{blacklistId}
+       AND USE_YN       = 'Y'
+    </update>
+</mapper>

@@ -28,4 +28,17 @@ public class AnalyzeImpactSummaryVO {
 
     /** 추가 부담 합계 일수 (Σ expectedAdditional, 근사) */
     private final BigDecimal additionalDaysTotal;
+
+    /**
+     * "분석 결과 없음" 사유 구분 (T4-06 / 3.4). FE가 사유별 안내 문구를 띄울 수 있게 백엔드가 명시.
+     *
+     * <ul>
+     *   <li>{@code null}            — 영향받는 직원이 있음(정상, affectedCount &gt; 0). 별도 안내 불필요</li>
+     *   <li>{@code NO_TARGET}       — 대상 직원 없음 (입사일 미입력/비활성으로 전원 제외, totalEmployees=0)</li>
+     *   <li>{@code NO_ADDITIONAL}   — 대상은 있으나 추가 부여 없음 (정책 변경이 일수를 늘리지 않음)</li>
+     * </ul>
+     *
+     * <p>① "변경 사항 없음"은 본 분석 진입 전 {@code ATTD_400_021}(400) 으로 차단되므로 여기에는 오지 않는다.
+     */
+    private final String noResultReason;
 }

@@ -13,8 +13,6 @@ public record LinkQueryParam(
     , String processCd
     , String riskTypeCd
     , String hazardCd
-    , String incidentTypeCd
-    , String potentialSeverityCd
     , String gvCmpnyCd
     , String gvUserCd
     , String gvAuthCd
@@ -34,8 +32,6 @@ public record LinkQueryParam(
             , request.getProcessCd()
             , request.getRiskTypeCd()
             , request.getHazardCd()
-            , request.getIncidentTypeCd()
-            , request.getPotentialSeverityCd()
             , tokenInfo.gv_cmpnyCd()
             , tokenInfo.gv_userCd()
             , tokenInfo.gv_authCd()

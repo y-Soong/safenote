@@ -41,4 +41,22 @@ public interface WorktimeGateMapper {
                            @Param("siteCd") String siteCd,
                            @Param("userCd") String userCd,
                            @Param("todayYmd") String todayYmd);
+
+    /**
+     * 전일(todayYmd-1) 본인 열린 근태(미퇴근) 건수.
+     *
+     * <p>prafta-app-031 1.1: 전일 미퇴근(open slot)도 근무중으로 인정(com-003-A 선례).
+     * 열린 근태 정의/테이블/컬럼은 {@link #countOpenAttdToday} 와 동일하되 WORK_YMD 만
+     * 전일 일자로 본다. 전일 일자는 SQL 에서 todayYmd 기준으로 1일 차감해 산출한다.
+     *
+     * @param cmpnyCd  회사코드 (TokenInfo.gv_cmpnyCd)
+     * @param siteCd   사업장코드 (TokenInfo.gv_siteCd)
+     * @param userCd   사용자코드 (TokenInfo.gv_userCd)
+     * @param todayYmd 오늘 일자(YYYYMMDD, DB NOW 기준) — 쿼리 내부에서 전일로 환산
+     * @return 전일 본인 열린 근태 건수(0 이면 전일 미퇴근 없음)
+     */
+    int countOpenAttdPrevDay(@Param("cmpnyCd") String cmpnyCd,
+                             @Param("siteCd") String siteCd,
+                             @Param("userCd") String userCd,
+                             @Param("todayYmd") String todayYmd);
 }

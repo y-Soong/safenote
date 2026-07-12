@@ -154,6 +154,13 @@ public class User04ServiceImpl implements User04Service {
     @Transactional
     public void deletePreset(PresetActionParam param) {
         requireOwnership(param.gvCmpnyCd(), param.presetId(), param.gvUserCd());
+        // 8.4 기본 프리셋 삭제 차단 (서버 강제, FE 우회 방지). 트랜잭션 내 fail-closed.
+        String defaultYn = user04Mapper.selectPresetDefaultYn(param.gvCmpnyCd(), param.presetId());
+        if ("Y".equals(defaultYn)) {
+            log.warn("기본 프리셋 삭제 차단. cmpnyCd={}, userCd={}, presetId={}",
+                    param.gvCmpnyCd(), param.gvUserCd(), param.presetId());
+            throw new ApiException(UserErrorCode.USER_400_057);
+        }
         user04Mapper.deletePresetSteps(param.gvCmpnyCd(), param.presetId());
         user04Mapper.deletePresetMaster(param.gvCmpnyCd(), param.presetId());
         log.info("결재라인 프리셋 삭제. cmpnyCd={}, userCd={}, presetId={}",

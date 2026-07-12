@@ -1,6 +1,10 @@
 <template>
   <Transition name="fade">
-    <div v-show="true" class="modal-overlay prafta-modal-popup" @click.self="$emit('close')">
+    <div
+      v-show="true"
+      class="modal-overlay prafta-modal-popup"
+      @click.self="$emit('close')"
+    >
       <div
         class="modal-content-wide"
         :style="{ top: position.y + 'px', left: position.x + 'px' }"
@@ -17,7 +21,11 @@
               stroke="currentColor"
               class="w-6 h-6"
             >
-              <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" />
+              <path
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                d="M6 18L18 6M6 6l12 12"
+              />
             </svg>
           </button>
         </div>
@@ -46,18 +54,30 @@
                 <tr v-else-if="entries.length === 0">
                   <td colspan="5" class="grid-msg">입실자가 없습니다.</td>
                 </tr>
-                <tr v-for="row in entries" :key="row.attendanceCd" :class="{ 'row-over': isOver(row) }">
+                <tr
+                  v-for="row in entries"
+                  :key="row.attendanceCd"
+                  :class="{ 'row-over': isOver(row) }"
+                >
                   <td>{{ row.userNm }}</td>
                   <td>{{ row.entryAt }}</td>
                   <td>
                     <span :class="isOver(row) ? 'dist-over' : 'dist-ok'">
-                      {{ row.entryDistanceM == null ? "-" : row.entryDistanceM }}
-                      <span v-if="isOver(row)" class="over-badge">반경 초과</span>
+                      {{
+                        row.entryDistanceM == null ? "-" : row.entryDistanceM
+                      }}
+                      <span v-if="isOver(row)" class="over-badge"
+                        >반경 초과</span
+                      >
                     </span>
                   </td>
                   <td>{{ entryTypeNm(row.entryTypeCd) }}</td>
                   <td>
-                    <button class="btn btn-second btn-sm" :disabled="isBusy" @click="fnEject(row)">
+                    <button
+                      class="btn btn-second btn-sm"
+                      :disabled="isBusy"
+                      @click="fnEject(row)"
+                    >
                       내보내기
                     </button>
                   </td>
@@ -93,7 +113,7 @@ const props = defineProps({
   radiusM_p: Number,
   onSearch: Function,
 });
-const emit = defineEmits(["close"]);
+defineEmits(["close"]);
 
 const modalRef = ref(null);
 const entries = ref([]);

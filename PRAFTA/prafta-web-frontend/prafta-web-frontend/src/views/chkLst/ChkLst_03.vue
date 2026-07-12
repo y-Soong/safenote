@@ -242,12 +242,14 @@ import {
   reactive,
   defineProps,
   onMounted,
+  onActivated,
   getCurrentInstance,
   defineOptions,
   nextTick,
   watch,
 } from "vue";
 import { useModal } from "@/utils/useModal";
+import { useDashboardNavStore } from "@/stores/dashboardNavStore";
 import { useFieldWatcher } from "@/utils/useFieldWatcher";
 import axios from "@/api/axios";
 import ViewHeader from "@/components/common/ViewHeader.vue";
@@ -298,6 +300,7 @@ const siteDisabled = ref(false);
 // =========================== Data ===========================
 const { open: openPop } = useModal();
 const { proxy } = getCurrentInstance();
+const dashNav = useDashboardNavStore();
 const localButtons = ref({ ...props.buttons });
 // 날짜 자동 조정 플래그 (무한 루프 방지)
 let isAdjustingDate = false;
@@ -309,11 +312,34 @@ const fnInit = () => {
   formData.siteNm = sessionStorage.getItem("gv_siteNm") ?? "";
 };
 
+// ── 대시보드 조회조건 주입 (PRAFTA-DASHBOARD-T1) ──────────────
+// 대시보드(Dashboard_01)에서 넘어온 조회조건이 있으면 반영한다 (없으면 no-op).
+// 본 화면의 조회기간은 월 단위(YYYY-MM) — 기준월(ym) 단월로 설정한다. 반영 여부를 반환한다.
+const applyDashboardParams = () => {
+  const p = dashNav.consumeParams("ChkLst_03");
+  if (!p) return false;
+  formData.siteCd = p.siteCd ?? "";
+  formData.siteNo = p.siteNo ?? "";
+  formData.siteNm = p.siteNm ?? "";
+  if (p.ym) {
+    formData.fromDate = p.ym;
+    formData.toDate = p.ym;
+  }
+  return true;
+};
+
 onMounted(async () => {
   fnInit();
   initializeFormData();
   fnButtonControll();
   await fnGetBaseinfoList();
+  // 대시보드 경유 진입 시 기본값(당월/소속 사업장)을 덮어쓰고 재조회
+  if (applyDashboardParams()) await fnSearch();
+});
+
+// keep-alive 로 이미 열린 탭에 재진입하는 경우 대응
+onActivated(() => {
+  if (applyDashboardParams()) fnSearch();
 });
 
 // =========================== Watch, Watcher ===========================
@@ -454,14 +480,9 @@ const initializeFormData = () => {
     now.getMonth() + 1
   ).padStart(2, "0")}`;
 
-  // 1개월 뒤 계산
-  const nextMonth = new Date(now.getFullYear(), now.getMonth() - 1, 1);
-  const nextMonthStr = `${nextMonth.getFullYear()}-${String(
-    nextMonth.getMonth() + 1
-  ).padStart(2, "0")}`;
-
+  // PRAFTA_COM_001-T5-11.2.1: 기본값은 현재월만 선택 (fromDate = toDate = 당월)
   formData.toDate = currentMonth;
-  formData.fromDate = nextMonthStr;
+  formData.fromDate = currentMonth;
 };
 
 const fnGetBaseinfoList = async () => {

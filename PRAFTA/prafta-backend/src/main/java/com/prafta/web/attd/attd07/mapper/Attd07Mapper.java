@@ -111,18 +111,24 @@ public interface Attd07Mapper {
     String selectAttdWorkYmd(@Param("gvCmpnyCd") String gvCmpnyCd, @Param("attdId") String attdId);
 
     /**
-     * 근무 구간 시각 겹침 판정(정책서 attd §7.6)용 — 같은 (회사/사업장/사용자/근무일) 활성 근태행 중
-     * 편집/등록 대상(excludeAttdId)을 제외한 다른 구간들의 출퇴근 시각을 반환한다.
+     * 근무 구간 시각 겹침 판정(정책서 attd §7.6)용 — (회사/사업장/사용자) 활성 근태행 중
+     * 근무일 윈도우 [fromYmd, toYmd] 에 속하고 편집/등록 대상(excludeAttdId)이 아닌 구간들의 출퇴근 시각을 반환한다.
      *
-     * <p>웹 보정승인(updateUserAttdRequest)/직접수정(updateUserAttdInfos)에서 편집 대상 외 같은 날
-     *   다른 WORK_SEQ 구간과의 시각 겹침을 검사하기 위한 소스다. DEL_YN='N' 만, 퇴근 시각이 NULL 이면
-     *   open 구간으로 본다. excludeAttdId 가 null/빈값이면 제외 없이 그날 전체 구간을 반환한다(신규 생성 경로).
+     * <p>웹 보정승인(updateUserAttdRequest)/직접수정(updateUserAttdInfos)에서 편집 대상 외 구간과의
+     *   시각 겹침을 검사하기 위한 소스다. DEL_YN='N' 만, 퇴근 시각이 NULL 이면 open 구간으로 본다.
+     *   excludeAttdId 가 null/빈값이면 제외 없이 윈도우 내 전체 구간을 반환한다(신규 생성 경로).
+     *
+     * <p><b>QT-2-6 수정</b>: 종전에는 근무일 동치(WORK_YMD = workYmd)로만 조회해, 오버나이트 근태
+     *   (WORK_YMD=D, 퇴근 D+1)와 이웃 근무일(D±1) 근태의 실제 시각이 겹치는 경우를 검사 대상에서
+     *   통째로 누락했다(겹치는 근태 2건이 원장에 공존 → 근무시간 이중 산입). 호출자가 근무일 ±1 을
+     *   넘기고, 모든 구간을 대상 근무일 기준 분 stamp 로 환산해 비교한다.
      */
-    List<DayAttdSegmentResult> selectDayAttdSegmentsExcept(
+    List<DayAttdSegmentResult> selectAttdSegmentsAroundDayExcept(
             @Param("cmpnyCd") String cmpnyCd,
             @Param("siteCd") String siteCd,
             @Param("userCd") String userCd,
-            @Param("workYmd") String workYmd,
+            @Param("fromYmd") String fromYmd,
+            @Param("toYmd") String toYmd,
             @Param("excludeAttdId") String excludeAttdId);
 
     /**
@@ -281,6 +287,15 @@ public interface Attd07Mapper {
             @Param("userCd") String userCd);
 
     /**
+     * 대상 사용자가 일용직(EMPLOYMENT_TYPE='DAILY')인지 여부 — 일치 시 1 이상 반환.
+     * 초과근무 등록 경로(updateUserOvertimeRequests)에서 일용직 OT 등록을 fail-closed 로 차단하는 데 사용한다.
+     */
+    int selectDailyWorkerInScope(
+            @Param("cmpnyCd") String cmpnyCd,
+            @Param("siteCd") String siteCd,
+            @Param("userCd") String userCd);
+
+    /**
      * SEC-017 - returns the count of TB_USER_ATTD_MGMT rows matching
      * (cmpnyCd, siteCd, userCd, attdId) that are not deleted. Used to confirm
      * the supplied ATTD_ID actually belongs to the target user inside the
@@ -318,6 +333,33 @@ public interface Attd07Mapper {
             @Param("reqStart") String reqStart,
             @Param("reqEnd") String reqEnd,
             @Param("excludeOtIds") java.util.List<String> excludeOtIds);
+
+    /**
+     * 근태 보정/직접수정으로 정해질 새 실근무 구간 [newStart, newEnd] 을 벗어나는 활성 OT 행 수 조회.
+     *
+     * <p>그 근태(attdId)에 연결된 활성 OT(DEL_YN='N' AND OT_STATUS &lt;&gt; 'CANCELLED') 중 하나라도
+     * 새 실근무 범위를 초과하면 결과가 1 이상이 되어 보정을 차단한다(ATTD_400_114).
+     * <ul>
+     *   <li>OT 시작 &lt; newStart (앞으로 삐져나감)</li>
+     *   <li>OT 종료 &gt; newEnd (뒤로 삐져나감)</li>
+     *   <li>OT 종료가 NULL(미완료) — 유한 종료 없음 → 범위 보장 불가</li>
+     *   <li>newEnd 가 null/blank(open, 새 퇴근 미정)인데 활성 OT 가 존재 — 범위 상한 불확정</li>
+     * </ul>
+     * 경계 동일(OT시작==newStart, OT종료==newEnd)은 포함으로 보아 허용한다.
+     *
+     * <p>시각은 ACTUAL_START_DATE(8)+ACTUAL_START_TIME(4) / ACTUAL_END_DATE(8)+ACTUAL_END_TIME(4) 을
+     * CONCAT 한 12자리(yyyyMMddHHmm) 문자열로 비교한다(시계열 정렬, 오버나이트 정확).
+     *
+     * @param newStart 새 출근 시각 (yyyyMMddHHmm, 12자리)
+     * @param newEnd   새 퇴근 시각 (yyyyMMddHHmm, 12자리). null/blank 이면 open(미정).
+     */
+    int countActiveOvertimeOutsideAttdWindow(
+            @Param("cmpnyCd") String cmpnyCd,
+            @Param("siteCd") String siteCd,
+            @Param("userCd") String userCd,
+            @Param("attdId") String attdId,
+            @Param("newStart") String newStart,
+            @Param("newEnd") String newEnd);
 
     /**
      * com-013-06 A - 관리자 직접수정 in-place UPDATE.

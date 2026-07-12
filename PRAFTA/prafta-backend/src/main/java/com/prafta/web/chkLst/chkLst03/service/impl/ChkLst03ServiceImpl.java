@@ -15,6 +15,7 @@ import com.prafta.web.chkLst.chkLst03.dto.response.InspectResultDetailResponse;
 import com.prafta.web.chkLst.chkLst03.dto.response.InspectResultResponse;
 import com.prafta.web.chkLst.chkLst03.mapper.ChkLst03Mapper;
 import com.prafta.web.chkLst.chkLst03.result.InspectAnswerResult;
+import com.prafta.web.chkLst.chkLst03.result.InspectItemHistResult;
 import com.prafta.web.chkLst.chkLst03.result.InspectItemSubjResult;
 import com.prafta.web.chkLst.chkLst03.result.InspectResult;
 import com.prafta.web.chkLst.chkLst03.service.ChkLst03Service;
@@ -46,18 +47,22 @@ public class ChkLst03ServiceImpl implements ChkLst03Service{
 	}
 	
 	public InspectResultDetailResponse getChkptInspectAnswerList(InspectResultDetailParam param) {
-		
+
 		InspectResultDetailResponse response = null;
-		
+
 		List<InspectItemSubjResult> inspectItemSubjResultList = chkLst03Mapper.selectInspectItemSubjList(InspectItemSubjQuery.from(param));
-				
+
 		List<InspectAnswerResult> inspectAnswerResultList = chkLst03Mapper.selectInspectAnswerList(InspectAnswerQuery.from(param));
-		
+
+		// 문항 변경이력: 확인서 셀 회색 게이팅(사용중지/재사용 구간)을 이력 기반으로 판정
+		List<InspectItemHistResult> inspectItemHistResultList = chkLst03Mapper.selectInspectItemHistList(InspectItemSubjQuery.from(param));
+
 		response = InspectResultDetailResponse.builder()
 												.inspectItemSubjResultList(inspectItemSubjResultList)
 												.inspectAnswerResultList(inspectAnswerResultList)
+												.inspectItemHistResultList(inspectItemHistResultList)
 												.build();
-		
+
 		return response;
 	}
 }

@@ -39,7 +39,10 @@
             {{ n.nodeNm }}
           </option>
         </select>
-        <label class="inc-sub-label">
+      </div>
+
+      <div>
+        <label class="checkbox-label">
           <input type="checkbox" v-model="includeSubNode" />
           하위부서 포함
         </label>
@@ -112,10 +115,14 @@
                   <td>{{ item.userNm }}</td>
                   <td style="text-align: center">{{ item.targetStartDate }}</td>
                   <td style="text-align: center">{{ item.reqTypeNm }}</td>
-                  <td style="text-align: center">{{ item.moveTargetDate || '-' }}</td>
+                  <td style="text-align: center">
+                    {{ item.moveTargetDate || "-" }}
+                  </td>
                   <td style="text-align: center">{{ item.initiatorTypeNm }}</td>
                   <td style="text-align: center">{{ item.reqStatusNm }}</td>
-                  <td style="text-align: center">{{ item.workerResponseNm || '-' }}</td>
+                  <td style="text-align: center">
+                    {{ item.workerResponseNm || "-" }}
+                  </td>
                   <td style="text-align: center">
                     <!-- AGREED(동의·확인대기) 상태에서만 확인 버튼 활성 -->
                     <button
@@ -154,64 +161,64 @@
 </template>
 
 <script setup>
-import { ref, computed, watch, getCurrentInstance, onMounted } from 'vue'
-import ViewHeader from '@/components/common/ViewHeader.vue'
-import LeaveChangeRequestPop from './popup/LeaveChangeRequestPop.vue'
-import LeaveChangeConfirmPop from './popup/LeaveChangeConfirmPop.vue'
-import axios from '@/api/axios'
-import { getMessage, MSG } from '@/messages'
-import { resolveApiErrorMessage } from '@/utils/apiError'
-import { formatYmdDot } from '@/utils/dateFormat'
+import { ref, computed, watch, getCurrentInstance, onMounted } from "vue";
+import ViewHeader from "@/components/common/ViewHeader.vue";
+import LeaveChangeRequestPop from "./popup/LeaveChangeRequestPop.vue";
+import LeaveChangeConfirmPop from "./popup/LeaveChangeConfirmPop.vue";
+import axios from "@/api/axios";
+import { getMessage, MSG } from "@/messages";
+import { resolveApiErrorMessage } from "@/utils/apiError";
+import { formatYmdDot } from "@/utils/dateFormat";
 
 const props = defineProps({
-  title: { type: String, default: '연차 변경 동의 관리' },
+  title: { type: String, default: "연차 변경 동의 관리" },
   buttons: Object,
-})
+});
 
-const { proxy } = getCurrentInstance()
+const { proxy } = getCurrentInstance();
 
 // ── 검색 조건 ────────────────────────────────────────────────────────────
-const siteCd = ref('')
-const nodeCd = ref('')
-const includeSubNode = ref(true)
-const userKeyword = ref('')
-const reqStatus = ref('')
+const siteCd = ref("");
+const nodeCd = ref("");
+const includeSubNode = ref(true);
+const userKeyword = ref("");
+const reqStatus = ref("");
 
 // ── 코드/목록 ────────────────────────────────────────────────────────────
-const siteList = ref([])
-const nodeList = ref([])
-const changeReqList = ref([])
+const siteList = ref([]);
+const nodeList = ref([]);
+const changeReqList = ref([]);
 
 // ── 팝업 토글 ────────────────────────────────────────────────────────────
-const showRequestPop = ref(false)
-const showConfirmPop = ref(false)
-const requestTarget = ref(null)
-const selectedChangeReqId = ref('')
+const showRequestPop = ref(false);
+const showConfirmPop = ref(false);
+const requestTarget = ref(null);
+const selectedChangeReqId = ref("");
 
 // 헤더 버튼 — 권한 메뉴(tb_syst_auth_menu BTN_*)에서 주입된 props.buttons 사용(Attd_14 등과 동일 패턴).
-const localButtons = ref({ ...props.buttons })
+const localButtons = ref({ ...props.buttons });
 
 // 권한 스코프(D1+D3): master/hr 는 회사 전사(사업장/부서 자유), 그 외(노드 관리자)는 담당 부서 강제.
 //   서버도 동일 정책으로 fail-closed 강제(canManageNodeExcludeSafe + 역할 기반 스코프, safe 제외).
 const isMasterOrHr = computed(() => {
-  const a = sessionStorage.getItem('gv_authCd')
-  return a === 'master' || a === 'hr'
-})
+  const a = sessionStorage.getItem("gv_authCd");
+  return a === "master" || a === "hr";
+});
 
 // 코드값 → 라벨 매핑 (그리드 표시용). 서버 row 는 코드값만 반환.
-const REQ_TYPE_NM = { MOVE: '이동', DELETE: '삭제' }
-const INITIATOR_TYPE_NM = { ADMIN: '관리자', WORKER: '근로자' }
+const REQ_TYPE_NM = { MOVE: "이동", DELETE: "삭제" };
+const INITIATOR_TYPE_NM = { ADMIN: "관리자", WORKER: "근로자" };
 const REQ_STATUS_NM = {
-  REQUESTED: '요청(응답대기)',
-  AGREED: '동의(확인대기)',
-  REJECTED: '거부',
-  CONFIRMED: '확정',
-  CLOSED: '종료',
-}
-const WORKER_RESPONSE_NM = { PENDING: '대기', AGREE: '동의', REJECT: '거부' }
+  REQUESTED: "요청(응답대기)",
+  AGREED: "동의(확인대기)",
+  REJECTED: "거부",
+  CONFIRMED: "확정",
+  CLOSED: "종료",
+};
+const WORKER_RESPONSE_NM = { PENDING: "대기", AGREE: "동의", REJECT: "거부" };
 
 // 표시용 날짜 포맷은 dateFormat 단일 출처에 위임(점 구분 YYYY.MM.DD).
-const fmtYmd = (ymd) => formatYmdDot(ymd)
+const fmtYmd = (ymd) => formatYmdDot(ymd);
 
 // 서버 row → 그리드 표시 객체로 보강(라벨/포맷)
 const toRow = (r) => ({
@@ -225,45 +232,55 @@ const toRow = (r) => ({
   initiatorTypeNm: INITIATOR_TYPE_NM[r.initiatorType] || r.initiatorType,
   reqStatusNm: REQ_STATUS_NM[r.reqStatus] || r.reqStatus,
   workerResponseNm: WORKER_RESPONSE_NM[r.workerResponse] || r.workerResponse,
-})
+});
 
 // 사업장 목록 (세션 회사 스코프). 서버는 토큰 사업장과 일치 강제.
 const fnLoadSiteList = async () => {
   try {
-    const res = await axios.get('/comApi/baseinfo/site-lists', {
-      params: { cmpnyCd: sessionStorage.getItem('gv_cmpnyCd') },
-    })
+    const res = await axios.get("/comApi/baseinfo/site-lists", {
+      params: { cmpnyCd: sessionStorage.getItem("gv_cmpnyCd") },
+    });
     if (res.status === 200) {
-      const list = res.data?.siteInfoResultList ?? []
-      siteList.value = list.map((s) => ({ siteCd: s.siteCd, siteNm: s.siteNm }))
+      const list = res.data?.siteInfoResultList ?? [];
+      siteList.value = list.map((s) => ({
+        siteCd: s.siteCd,
+        siteNm: s.siteNm,
+      }));
     }
   } catch (err) {
-    await proxy.$alert(resolveApiErrorMessage(err, getMessage(MSG.SEARCH_ERROR_DEFAULT)))
+    await proxy.$alert(
+      resolveApiErrorMessage(err, getMessage(MSG.SEARCH_ERROR_DEFAULT))
+    );
   }
-}
+};
 
 // 선택 사업장의 부서 목록
 const fnLoadNodeList = async () => {
   if (!siteCd.value) {
-    nodeList.value = []
-    nodeCd.value = ''
-    return
+    nodeList.value = [];
+    nodeCd.value = "";
+    return;
   }
   try {
-    const res = await axios.get('/comApi/baseinfo/site-node-lists', {
+    const res = await axios.get("/comApi/baseinfo/site-node-lists", {
       params: {
-        cmpnyCd: sessionStorage.getItem('gv_cmpnyCd'),
+        cmpnyCd: sessionStorage.getItem("gv_cmpnyCd"),
         siteCd: siteCd.value,
       },
-    })
+    });
     if (res.status === 200) {
-      const list = res.data?.siteNodeInfoList ?? []
-      nodeList.value = list.map((n) => ({ nodeCd: n.nodeCd, nodeNm: n.nodeNm }))
+      const list = res.data?.siteNodeInfoList ?? [];
+      nodeList.value = list.map((n) => ({
+        nodeCd: n.nodeCd,
+        nodeNm: n.nodeNm,
+      }));
     }
   } catch (err) {
-    await proxy.$alert(resolveApiErrorMessage(err, getMessage(MSG.SEARCH_ERROR_DEFAULT)))
+    await proxy.$alert(
+      resolveApiErrorMessage(err, getMessage(MSG.SEARCH_ERROR_DEFAULT))
+    );
   }
-}
+};
 
 // ── 조회 ─────────────────────────────────────────────────────────────────
 //   GET /webApi/attd13/change-requests
@@ -271,84 +288,98 @@ const fnLoadNodeList = async () => {
 const fnSearch = async () => {
   // 노드 관리자(비 master/hr)는 담당 부서 선택 필수. 미선택 시 서버 호출(BadRequest) 대신 안내.
   if (!isMasterOrHr.value && !nodeCd.value) {
-    changeReqList.value = []
-    await proxy.$alert('조회할 부서를 선택해 주세요.')
-    return
+    changeReqList.value = [];
+    await proxy.$alert("조회할 부서를 선택해 주세요.");
+    return;
   }
   try {
-    const res = await axios.get('/webApi/attd13/change-requests', {
+    const res = await axios.get("/webApi/attd13/change-requests", {
       params: {
         SITE_CD: siteCd.value,
         NODE_CD: nodeCd.value,
-        INC_SUB_NODE_YN: includeSubNode.value ? 'Y' : 'N',
+        INC_SUB_NODE_YN: includeSubNode.value ? "Y" : "N",
         USER_NM: userKeyword.value,
         REQ_STATUS: reqStatus.value,
       },
-    })
+    });
     if (res.status === 200) {
-      const list = res.data?.list ?? []
-      changeReqList.value = list.map(toRow)
+      const list = res.data?.list ?? [];
+      changeReqList.value = list.map(toRow);
     }
   } catch (err) {
-    await proxy.$alert(resolveApiErrorMessage(err, getMessage(MSG.SEARCH_ERROR)))
+    await proxy.$alert(
+      resolveApiErrorMessage(err, getMessage(MSG.SEARCH_ERROR))
+    );
   }
-}
+};
 
 const fnOpenConfirmPop = (item) => {
   // 모든 상태 상세 열람 가능. 확인/반려 활성 여부는 팝업이 상태로 게이팅.
-  selectedChangeReqId.value = item.changeReqId
-  showConfirmPop.value = true
-}
+  selectedChangeReqId.value = item.changeReqId;
+  showConfirmPop.value = true;
+};
 
 const fnAfterRequest = () => {
-  showRequestPop.value = false
-  fnSearch()
-}
+  showRequestPop.value = false;
+  fnSearch();
+};
 
 const fnAfterConfirm = () => {
-  showConfirmPop.value = false
-  fnSearch()
-}
+  showConfirmPop.value = false;
+  fnSearch();
+};
 
 // 초기화 동안 siteCd watch 의 부서 초기화/재조회를 억제(프리셋 nodeCd 클로버 방지).
-const initializing = ref(true)
+const initializing = ref(true);
 
 onMounted(async () => {
-  await fnLoadSiteList()
+  await fnLoadSiteList();
   if (isMasterOrHr.value) {
     // master/hr: 회사 전사 기본(사업장 '전체'). 부서 자유. 진입 즉시 전사 자동조회.
-    siteCd.value = ''
-    nodeCd.value = ''
-    await fnSearch()
+    siteCd.value = "";
+    nodeCd.value = "";
+    await fnSearch();
   } else {
     // 노드 관리자: 세션 사업장 고정 + 본인 담당 부서 프리셋. 부서 프리셋이 있으면 자동조회,
     //   없으면 자동조회를 건너뛰고 부서 선택을 안내(403 즉시 발생 방지).
-    siteCd.value = sessionStorage.getItem('gv_siteCd') ?? ''
-    await fnLoadNodeList()
-    nodeCd.value = sessionStorage.getItem('gv_nodeCd') ?? ''
+    siteCd.value = sessionStorage.getItem("gv_siteCd") ?? "";
+    await fnLoadNodeList();
+    nodeCd.value = sessionStorage.getItem("gv_nodeCd") ?? "";
     if (nodeCd.value) {
-      await fnSearch()
+      await fnSearch();
     }
   }
-  initializing.value = false
-})
+  initializing.value = false;
+});
 
 // 사업장 변경 시 부서 목록 갱신(초기화 중에는 프리셋 보존 위해 스킵)
 watch(siteCd, async () => {
-  if (initializing.value) return
-  nodeCd.value = ''
-  await fnLoadNodeList()
-})
+  if (initializing.value) return;
+  nodeCd.value = "";
+  await fnLoadNodeList();
+});
 </script>
 
 <style scoped>
-.inc-sub-label {
+/* 하위부서 포함 체크박스 (User_01/Attd_14 checkbox-label 패턴 차용) */
+.checkbox-label {
   display: inline-flex;
   align-items: center;
-  gap: var(--space-xs, 4px);
-  margin-left: var(--header-right-gap, 8px);
-  font-size: var(--btn-font, 11px);
-  color: var(--color-text-muted);
+  gap: 0.25rem;
+  font-size: 0.85rem;
+  color: var(--color-text-muted, #6b7280);
+  cursor: pointer;
+  user-select: none;
+  margin-left: -1rem;
+  margin-right: 0.4rem;
+  white-space: nowrap;
+}
+.checkbox-label input[type="checkbox"] {
+  width: 13px;
+  height: 13px;
+  cursor: pointer;
+  accent-color: var(--color-primary, #16a34a);
+  flex-shrink: 0;
 }
 
 .btn-confirm {

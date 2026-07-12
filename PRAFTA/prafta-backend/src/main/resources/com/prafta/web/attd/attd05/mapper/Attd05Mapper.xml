@@ -70,6 +70,8 @@
 	        AND A.NODE_CD = B.NODE_CD
 	        )
 	WHERE A.ACCOUNT_STATUS != '03'
+	  /* 일용직(EMPLOYMENT_TYPE='DAILY')은 근무계획 그리드 대상이 아니므로 목록에서 제외한다. */
+	  AND IFNULL(A.EMPLOYMENT_TYPE, '') != 'DAILY'
 	  <if test="userNm != null and userNm != ''">
 	  	AND A.USER_NM LIKE CONCAT('%', #{userNm}, '%')
 	  </if>
@@ -224,6 +226,74 @@
         ON U.CMPNY_CD = B.CMPNY_CD
        AND U.SITE_CD  = B.SITE_CD
        AND U.NODE_CD  = B.NODE_CD
+    WHERE U.SITE_CD = #{siteCd}
+      AND U.ACCOUNT_STATUS != '03'
+      <if test="userNm != null and userNm != ''">
+        AND U.USER_NM LIKE CONCAT('%', #{userNm}, '%')
+      </if>
+      <if test='"N".equals(incSubNodeYn)'>
+        AND U.NODE_CD = #{nodeCd}
+      </if>
+    </select>
+
+    <select id="selectPartialLeaveOverlayList" parameterType="com.prafta.web.attd.attd05.application.query.UserWorkPlansQuery" resultType="com.prafta.web.attd.attd05.result.PartialLeaveOverlayResult">
+    /* Attd05Mapper.selectPartialLeaveOverlayList */
+    /* 그리드 부분 휴가(반차/시간차) 오버레이.
+       종일(USE_UNIT_TYPE='00')은 selectLeaveOverlayList 가 셀 값을 "연차"로 대체하지만,
+       반차/시간차(USE_UNIT_TYPE != '00')는 근무 스케줄(SCH_CD)이 살아있으므로 셀 값을 덮지 않고
+       (userCd, workYmd) 키에 사용단위/시간대/사용분을 동반해 셀 위에 칩으로만 표시한다.
+       스코프 술어/조인은 selectLeaveOverlayList 와 동일(노드트리/사업장/사용자명/계정상태). */
+    WITH RECURSIVE
+        date_range AS (
+            SELECT STR_TO_DATE(CONCAT(REPLACE(#{workYm}, '-', ''), '01'), '%Y%m%d') AS dt
+            UNION ALL
+            SELECT DATE_ADD(dt, INTERVAL 1 DAY)
+            FROM date_range
+            WHERE DATE_ADD(dt, INTERVAL 1 DAY) <![CDATA[ <= ]]> LAST_DAY(STR_TO_DATE(CONCAT(REPLACE(#{workYm}, '-', ''), '01'), '%Y%m%d'))
+        ),
+        node_tree AS (
+            SELECT N.CMPNY_CD, N.SITE_CD, N.NODE_CD
+            FROM TB_SITE_NODE N
+            WHERE N.CMPNY_CD = #{gvCmpnyCd}
+              AND N.SITE_CD  = #{siteCd}
+              AND N.NODE_CD  = #{nodeCd}
+
+            UNION ALL
+
+            SELECT C.CMPNY_CD, C.SITE_CD, C.NODE_CD
+            FROM TB_SITE_NODE C
+            INNER JOIN node_tree P
+                ON C.CMPNY_CD = P.CMPNY_CD
+               AND C.SITE_CD  = P.SITE_CD
+               AND C.PARENT_NODE_CD = P.NODE_CD
+        )
+    SELECT
+          U.USER_CD                          AS userCd
+        , DATE_FORMAT(d.dt, '%Y%m%d')        AS workYmd
+        , L.USE_UNIT_TYPE                    AS useUnitType
+        , V.SYST_VAL_D_NM                    AS useUnitNm
+        , L.LEAVE_CD                         AS leaveCd
+        , L.START_TIME                       AS startTime
+        , L.END_TIME                         AS endTime
+        , L.LEAVE_MINUTES                    AS leaveMinutes
+    FROM date_range d
+    INNER JOIN TB_USER_LEAVE_USE L
+        ON L.CMPNY_CD      = #{gvCmpnyCd}
+       AND L.LEAVE_STATUS  = 'CONFIRMED'
+       AND L.DEL_YN        = 'N'
+       AND L.USE_UNIT_TYPE != '00'
+       AND DATE_FORMAT(d.dt, '%Y%m%d') <![CDATA[ >= ]]> L.START_DATE
+       AND DATE_FORMAT(d.dt, '%Y%m%d') <![CDATA[ <= ]]> L.END_DATE
+    INNER JOIN TB_USER U
+        ON U.CMPNY_CD = L.CMPNY_CD
+       AND U.USER_CD  = L.USER_CD
+    INNER JOIN node_tree B
+        ON U.CMPNY_CD = B.CMPNY_CD
+       AND U.SITE_CD  = B.SITE_CD
+       AND U.NODE_CD  = B.NODE_CD
+    LEFT JOIN TB_SYST_VAL_D V
+        ON V.SYST_VAL_CD   = 'SYS025'
+       AND V.SYST_VAL_D_CD = L.USE_UNIT_TYPE
     WHERE U.SITE_CD = #{siteCd}
       AND U.ACCOUNT_STATUS != '03'
       <if test="userNm != null and userNm != ''">

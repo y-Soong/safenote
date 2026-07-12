@@ -52,6 +52,10 @@ dependencies {
 
     runtimeOnly 'com.mysql:mysql-connector-j'
 
+    // PRAFTA RAG(AI 검색) — pgvector 코퍼스 2차 데이터소스(Postgres) JDBC 드라이버.
+    // 읽기전용 벡터 검색 전용. 기존 MySQL/MyBatis 배선과 독립(별도 DataSource + JdbcTemplate).
+    runtimeOnly 'org.postgresql:postgresql'
+
     implementation 'org.mybatis.spring.boot:mybatis-spring-boot-starter:3.0.4'
 
     implementation 'p6spy:p6spy:3.9.1'
@@ -70,4 +74,13 @@ dependencies {
     // 저장형 XSS 방어 — 앱 TBM 교육내용(리치 HTML) 서버측 sanitize(Jsoup Safelist).
     // 기존 의존성과 동일하게 명시 버전 고정.
     implementation 'org.jsoup:jsoup:1.18.3'
+
+    // TBM_AI T0 — PDF 첨부(SYS018 04)를 페이지 이미지로 렌더링(VLM 입력). PDFBox 3.x PDFRenderer.
+    // fontbox 를 transitive 로 가져온다. 렌더는 FileServiceImpl.loadPdfPageImages 에만 격리.
+    implementation 'org.apache.pdfbox:pdfbox:3.0.4'
+
+    // PRAFTA RAG Phase 2(ai01/answer) + 위험성평가 AI 도출 — LLM 공급자 = 네이버 HyperCLOVA X(HCX-005).
+    // 별도 SDK 없이 Spring RestClient(spring-boot-starter-web 포함)로 REST 호출한다.
+    // 비밀(CLOVA_STUDIO_API_KEY)은 AiLlmConfig 가 OS 환경변수에서 로드(properties/코드 평문 금지).
+    // 게이트(prafta.ai.llm.enabled=false) OFF 시 HCX 클라이언트 빈 미생성.
 }

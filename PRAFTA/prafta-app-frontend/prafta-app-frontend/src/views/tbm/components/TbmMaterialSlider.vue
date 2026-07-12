@@ -25,30 +25,23 @@
           :key="item.sortIdx ?? iIdx"
           class="mtrl-slide"
         >
-          <!-- 이미지형 항목(SYS018 01). 앱은 파일 서빙 endpoint 가 없어 외부 url 이 있을 때만 렌더. -->
+          <!-- 이미지형 항목(SYS018 01). url 있으면 인라인 렌더, 로드 실패 시 '이미지 열기' 링크로 폴백. -->
           <img
-            v-if="isImage(item) && item.url"
+            v-if="isImage(item) && item.url && !isImgFailed(mIdx, iIdx)"
             class="mtrl-slide__img"
             :src="item.url"
             :alt="item.desc || m.title"
+            @error="onImgError(mIdx, iIdx)"
           />
-          <!-- 동영상 항목(SYS018 02). webview 제약 고려: url 있으면 '동영상 보기' 링크. -->
+          <!-- url 보유 항목 폴백(이미지 로드실패/동영상/외부링크/PDF/미지원): webview 제약 고려 외부 열기 링크. -->
           <a
-            v-else-if="isVideo(item) && item.url"
+            v-else-if="item.url"
             class="mtrl-slide__link"
             :href="item.url"
             target="_blank"
             rel="noopener noreferrer"
-          >동영상 보기</a>
-          <!-- 외부링크 항목(SYS018 03, 유튜브 등). url 텍스트/버튼으로 표시. -->
-          <a
-            v-else-if="isLink(item) && item.url"
-            class="mtrl-slide__link"
-            :href="item.url"
-            target="_blank"
-            rel="noopener noreferrer"
-          >링크 열기</a>
-          <!-- url 없는 파일형(이미지/동영상/PDF) 또는 미지원 타입: 안내 문구로 graceful 처리. -->
+          >{{ openLabel(item) }}</a>
+          <!-- url 자체가 없는 항목(서버 서명 URL 미발급 = 원본 파일/경로 누락): 안내 문구로 graceful 처리. -->
           <p v-else class="mtrl-slide__placeholder">자료를 앱에서 표시할 수 없어요</p>
 
           <!-- 설명만 있는 항목 -->
@@ -117,6 +110,22 @@ const ITEM_TYPE_LINK = '03'
 const isImage = (item) => item.type === ITEM_TYPE_IMAGE
 const isVideo = (item) => item.type === ITEM_TYPE_VIDEO
 const isLink = (item) => item.type === ITEM_TYPE_LINK
+
+// 이미지 로드 실패 추적(서명 URL/CSP 등으로 인라인 렌더 실패 시 외부 열기 링크로 폴백).
+const imgFailed = ref({})
+const keyOf = (mIdx, iIdx) => `${mIdx}-${iIdx}`
+const isImgFailed = (mIdx, iIdx) => !!imgFailed.value[keyOf(mIdx, iIdx)]
+const onImgError = (mIdx, iIdx) => {
+  imgFailed.value = { ...imgFailed.value, [keyOf(mIdx, iIdx)]: true }
+}
+
+// url 보유 항목의 외부 열기 링크 라벨(타입별 문구).
+const openLabel = (item) => {
+  if (isImage(item)) return '이미지 열기'
+  if (isVideo(item)) return '동영상 보기'
+  if (isLink(item)) return '링크 열기'
+  return '자료 열기'
+}
 
 // 자료(묶음)별 현재 슬라이드 인덱스 맵. UI 토글 전용(데이터 가공 아님).
 const indexMap = ref({})

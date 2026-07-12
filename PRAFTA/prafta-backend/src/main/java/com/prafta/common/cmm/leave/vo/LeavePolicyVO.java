@@ -93,4 +93,10 @@ public class LeavePolicyVO {
      * AXIS4=HALF_DAY(0.5일 단위 절사) 시 HALF_DAY 강제.
      */
     private String usageUnit;
+
+    /**
+     * 반반차(0.25일, SYS025 '05') 허용 토글 Y/N (연차 시간차 환산 개편 LC-06).
+     * USAGE_UNIT 계층과 독립인 회사 단위 토글 — 'Y'일 때만 법정 연차의 반반차 신청 허용.
+     */
+    private String allowQuarter;
 }

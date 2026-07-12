@@ -27,6 +27,7 @@ import org.mockito.Mockito;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.prafta.common.cmm.leave.command.ManualGrantCommand;
 import com.prafta.common.cmm.leave.mapper.LeaveDashboardMapper;
+import com.prafta.common.cmm.leave.service.LeaveConversionPolicyService;
 import com.prafta.common.cmm.leave.service.LeaveGrantEngineService;
 import com.prafta.common.cmm.leave.service.LeavePolicyService;
 import com.prafta.common.cmm.leave.vo.LeaveGrantInsertVO;
@@ -65,7 +66,9 @@ class LeaveDashboardManualAvailTermTest {
         dash = mock(LeaveDashboardMapper.class);
         policy = mock(LeavePolicyService.class);
         engine = mock(LeaveGrantEngineService.class);
-        svc = new LeaveDashboardServiceImpl(dash, policy, engine, new ObjectMapper());
+        // LC-07: 표기용 환산시간 의존성 추가(본 테스트 경로(수동부여)와 무관 — mock 주입만)
+        svc = new LeaveDashboardServiceImpl(dash, policy, engine, new ObjectMapper(),
+                mock(LeaveConversionPolicyService.class));
 
         // "오늘" 고정 (idempotency key / GRANT_DATE 산출 결정화)
         localDateMock = mockStatic(LocalDate.class, Mockito.CALLS_REAL_METHODS);

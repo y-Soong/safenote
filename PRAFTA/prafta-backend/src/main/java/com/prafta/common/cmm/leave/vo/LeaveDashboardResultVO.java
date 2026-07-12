@@ -22,4 +22,10 @@ public class LeaveDashboardResultVO {
 
     /** 페이징 메타 */
     private final PagingMetaVO paging;
+
+    /**
+     * LC-07(표기): 현재(오늘) 기준 1일 환산시간(분, 기본 480). FE 가 잔여/사용/부여 일수를
+     * "N일 H시간 M분"으로 조립하는 분모(기존 필드 불변 — additive).
+     */
+    private final int convMinutes;
 }

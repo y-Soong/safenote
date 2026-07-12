@@ -25,6 +25,7 @@ public class AdminRiskOptionResponse {
         private String riskTypeNm;
         private String hazardCd;
         private String hazardNm;
+        private String hazardDesc;
         private String assessmentCd;
         private String assessmentStatus;
         private String assessmentStatusNm;

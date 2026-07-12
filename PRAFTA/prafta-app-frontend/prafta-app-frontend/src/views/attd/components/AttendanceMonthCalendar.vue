@@ -52,7 +52,10 @@
       <span class="lgd__item"><span class="lgd__dot lgd__dot--wk" />근무</span>
       <span class="lgd__item"><span class="lgd__dot lgd__dot--lv" />연차</span>
       <span class="lgd__item"><span class="lgd__dot lgd__dot--of" />휴무</span>
-      <span class="lgd__item"><span class="lgd__dot lgd__dot--ac" />처리 필요</span>
+      <!-- PRAFTA_COM_002-B-2-2: 셀 우상단 빨간점(cal__alert)과 붉은 셀(cal__d--ac)은 같은 데이터(ACTION_REQUIRED).
+           파란점("초과")과 동일한 점-형태 범례로 통합 안내(중복 사각 범례 제거). -->
+      <span class="lgd__item"><span class="lgd__alert" />처리 필요(미보정)</span>
+      <span class="lgd__item"><span class="lgd__ot" />초과</span>
     </div>
 
     <!-- 캘린더 그리드 -->
@@ -83,6 +86,8 @@
             v-if="dayTypeOf(cell) === 'ACTION_REQUIRED' && !isSelected(cell)"
             class="cal__alert"
           />
+          <!-- 초과근무 마커 — overtimeMinutes>0 셀 좌상단 작은 점(처리필요 우상단과 구분). -->
+          <span v-if="hasOvertime(cell)" class="cal__ot" />
         </button>
       </template>
     </MonthCalendarBase>
@@ -201,6 +206,13 @@ const dayTypeOf = (cell) => {
   return serverDay.dayType || 'OFF'
 }
 
+// 셀의 승인된 초과근무 유무 — overtimeMinutes>0(0/null 이면 마커 없음). 베이스 셀에서 직접 조회.
+const hasOvertime = (cell) => {
+  if (cell.isOutside) return false
+  const serverDay = dayMap.value.get(cell.ymd) || {}
+  return Number(serverDay.overtimeMinutes) > 0
+}
+
 // 셀 클래스 — 색상 코딩 (시안 §4.4.2). 입력은 decorate 된 셀.
 const cellClass = (cell) => {
   const cls = []
@@ -227,6 +239,8 @@ const cellClass = (cell) => {
   }
   if (cell.dow === 'SAT') cls.push('cal__d--sat')
   if (cell.dow === 'SUN') cls.push('cal__d--sun')
+  // 웹 휴일관리(TB_HOLIDAY) 등록 휴일 — 날짜를 빨간색으로(일요일과 동일 컨벤션) 강조.
+  if (cell.holidayName) cls.push('cal__d--hol')
   if (cell.isToday) cls.push('cal__d--td')
   if (isSelected(cell)) cls.push('cal__d--sel')
   return cls
@@ -341,9 +355,22 @@ const onSelectCell = (cell) => {
   background: var(--color-attd-cell-off);
   border: 1px solid var(--color-border-light);
 }
-.lgd__dot--ac {
-  background: var(--color-danger-tint);
-  border: 1px solid var(--color-danger-border);
+/* PRAFTA_COM_002-B-2-2: 범례 — 처리 필요(셀 우상단 .cal__alert 빨간점과 동일한 원형 danger 마커).
+   파란점(.lgd__ot)과 동일 크기/마진으로 점 형태 통일. 붉은 셀(cal__d--ac)도 같은 ACTION_REQUIRED 를 가리키므로 이 한 항목으로 안내. */
+.lgd__alert {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  margin-right: var(--space-xs);
+  background: var(--color-danger);
+}
+/* 범례 — 초과근무(셀 좌상단 점과 동일한 원형 info 마커). */
+.lgd__ot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  margin-right: var(--space-xs);
+  background: var(--color-info);
 }
 
 /* 캘린더 그리드(헤더 + 베이스 셀 그리드 공용) */
@@ -438,6 +465,12 @@ const onSelectCell = (cell) => {
   color: var(--color-text-secondary);
 }
 
+/* 휴일(웹 휴일관리 등록) — 날짜를 빨간색으로(일/공휴일 컨벤션). dayType 색상 위에 덮어쓴다.
+   선택 셀(.cal__d--sel .cal__n, 흰색)은 소스 순서상 뒤라 그대로 흰색 유지. */
+.cal__d--hol .cal__n {
+  color: var(--color-danger);
+}
+
 .cal__d--ac {
   background: var(--color-danger-tint);
   border-color: var(--color-danger-border);
@@ -456,6 +489,21 @@ const onSelectCell = (cell) => {
   height: 6px;
   border-radius: 50%;
   background: var(--color-danger);
+}
+
+/* 초과근무 마커 — 좌상단 작은 info 점(처리필요 우상단 .cal__alert 와 위치/색 구분). */
+.cal__ot {
+  position: absolute;
+  top: 3px;
+  left: 3px;
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: var(--color-info);
+}
+/* 선택 셀(진한 배경) 위에서는 흰 점으로 대비 유지. */
+.cal__d--sel .cal__ot {
+  background: rgba(255, 255, 255, 0.85);
 }
 
 .cal__d--out {

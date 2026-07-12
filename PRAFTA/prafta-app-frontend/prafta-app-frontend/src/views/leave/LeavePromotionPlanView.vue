@@ -22,7 +22,17 @@
     </header>
 
     <!-- 본문 -->
-    <main class="lpp-body">
+    <main
+      class="lpp-body"
+      ref="scrollRef"
+      @touchstart.passive="onPullStart"
+      @touchmove="onPullMove"
+      @touchend="onPullEnd"
+      @touchcancel="onPullEnd"
+    >
+      <!-- 당겨서 새로고침 인디케이터 — 스크롤 최상단에서 아래로 당기면 노출 -->
+      <PullRefreshIndicator v-bind="indicatorProps" />
+
       <!-- 로딩 -->
       <p v-if="isLoading" class="lpp-state">불러오는 중...</p>
 
@@ -96,6 +106,8 @@ import { ref, computed, onMounted, getCurrentInstance } from 'vue'
 import { useRouter } from 'vue-router'
 
 import api from '@/api/axios'
+import { usePullToRefresh } from '@/composables/usePullToRefresh'
+import PullRefreshIndicator from '@/components/common/PullRefreshIndicator.vue'
 import { resolveApiErrorMessage } from '@/utils/apiError'
 import { formatYmdDisplay } from '@/utils/approvalFormat'
 
@@ -290,6 +302,13 @@ const onSubmit = async () => {
   }
 }
 
+// 당겨서 새로고침 — 진행 중 촉진 정보(보유/잔여/지정일/선택가능일)만 재조회(부작용 없는 조회).
+//   loadActive 는 selectedYmds 를 초기화하므로, 사용자가 의도적으로 당겼을 때만 갱신된다.
+const scrollRef = ref(null)
+const { onPullStart, onPullMove, onPullEnd, indicatorProps } = usePullToRefresh(scrollRef, async () => {
+  await loadActive()
+})
+
 onMounted(() => {
   loadActive()
 })
@@ -318,7 +337,8 @@ onMounted(() => {
   --space-md: 12px;
   --space-lg: 16px;
 
-  min-height: 100vh;
+  height: 100vh;
+  height: 100dvh;
   background: var(--color-bg);
   color: var(--color-text-primary);
   display: flex;
@@ -363,6 +383,7 @@ onMounted(() => {
 /* 본문 */
 .lpp-body {
   flex: 1;
+  min-height: 0;
   padding: var(--space-md) var(--space-lg) calc(var(--space-lg) + 72px);
   overflow-y: auto;
   display: flex;

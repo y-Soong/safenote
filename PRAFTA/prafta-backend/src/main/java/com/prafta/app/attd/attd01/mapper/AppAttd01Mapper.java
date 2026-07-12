@@ -15,6 +15,7 @@ import com.prafta.app.attd.attd01.result.GpsResult;
 import com.prafta.app.attd.attd01.result.HolidayResult;
 import com.prafta.app.attd.attd01.result.LeaveUseResult;
 import com.prafta.app.attd.attd01.result.OpenAttdResult;
+import com.prafta.app.attd.attd01.result.RangeOvertimeResult;
 import com.prafta.app.attd.attd01.result.ScheduleResult;
 import com.prafta.app.attd.attd01.result.SiteGeofenceResult;
 
@@ -56,6 +57,15 @@ public interface AppAttd01Mapper {
      *   초과근무는 스케줄 기준으로 정산되므로 보유일은 스케줄 변경(수정 요청)을 막는다.
      */
     List<String> selectOvertimeYmds(@Param("q") AttdRangeQuery query);
+
+    /**
+     * prafta-app-030 후속: 적용(승인) 초과근무 실적 일자범위 조회 — 본인 근태 조회 응답 표시용.
+     * <p>출처 TB_USER_OVERTIME_MGMT. 술어 = AppReq07Mapper.selectAppliedOvertimes(단일일)와 동일하되
+     *   WORK_YMD BETWEEN(fromYmd~toYmd) 범위로 일반화: DEL_YN='N' AND OT_STATUS&lt;&gt;'CANCELLED'
+     *   AND ACTUAL_END_DATE/TIME IS NOT NULL(구간 확정분만). 식별값은 JWT 도출값(query)만 사용(IDOR).
+     *   서비스가 workYmd 별로 그룹/합계한다(N+1 회피 = 범위 1회 호출).
+     */
+    List<RangeOvertimeResult> selectAppliedOvertimesByRange(@Param("q") AttdRangeQuery query);
 
     /**
      * prafta-com-008-E-2: 그날 일 단위(USE_UNIT_TYPE='00') 확정 연차 존재 카운트(출근 차단 §8.3 판정).

@@ -14,10 +14,13 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
 import com.prafta.common.security.JwtUtil;
+import com.prafta.web.chkLst.chkLst02.application.param.ChkptInspectItemHistListParam;
 import com.prafta.web.chkLst.chkLst02.application.param.ChkptInspectItemListParam;
 import com.prafta.web.chkLst.chkLst02.application.param.ChkptInspectItemParam;
+import com.prafta.web.chkLst.chkLst02.dto.request.ChkptInspectItemHistListRequest;
 import com.prafta.web.chkLst.chkLst02.dto.request.ChkptInspectItemListRequest;
 import com.prafta.web.chkLst.chkLst02.dto.request.ChkptInspectItemRequest;
+import com.prafta.web.chkLst.chkLst02.dto.response.ChkptInspectItemHistListResponse;
 import com.prafta.web.chkLst.chkLst02.dto.response.ChkptInspectItemListResponse;
 import com.prafta.web.chkLst.chkLst02.service.ChkLst02Service;
 
@@ -53,9 +56,18 @@ public class ChkLst02Controller {
 	
 	@PostMapping("/delete-chkpt-inspect-items")
     public ResponseEntity<?> deleteChkptInspectItemList(@RequestBody List<ChkptInspectItemRequest> request, @RequestHeader(value = "Authorization", required = false) String authorization ) {
-    	
+
     	chkLst02Service.deleteChkptInspectItemList(ChkptInspectItemParam.from(request, jwtUtil.getAllClaimsAsMap(authorization)));
-    	
+
     	return ResponseEntity.status(HttpStatus.OK).build();
+    }
+
+	/** 문항 변경이력 조회(문항관리 이력 팝업) */
+	@GetMapping("/chkpt-inspect-item-hists")
+    public ResponseEntity<?> getChkptInspectItemHistList(@ModelAttribute ChkptInspectItemHistListRequest request, @RequestHeader(value = "Authorization", required = false) String authorization) {
+
+		ChkptInspectItemHistListResponse response = chkLst02Service.selectChkptInspectItemHistList(ChkptInspectItemHistListParam.from(request, jwtUtil.getAllClaimsAsMap(authorization)));
+
+    	return ResponseEntity.status(HttpStatus.OK).body(response);
     }
 }

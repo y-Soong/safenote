@@ -120,7 +120,7 @@
               <thead>
                 <tr>
                   <th style="width: 4%; text-align: center">No</th>
-                  <th style="width: 28%">세션 제목</th>
+                  <th style="width: 28%">교육 제목</th>
                   <th style="width: 14%">사업장</th>
                   <th style="width: 12%">일자</th>
                   <th style="width: 12%">입실</th>

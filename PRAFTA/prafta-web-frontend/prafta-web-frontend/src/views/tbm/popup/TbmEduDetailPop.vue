@@ -13,16 +13,8 @@
       >
         <!-- 🔹 Title -->
         <div class="modal-header" @mousedown="startDrag">
-          <span>{{ master.title || "TBM 교육자료 상세" }}</span>
+          <span>교육자료명 : {{ master.title }}</span>
           <div class="header-actions">
-            <button
-              v-if="props.onEdit"
-              type="button"
-              class="btn btn-second btn-sm"
-              @click="fnEdit"
-            >
-              수정
-            </button>
             <button class="icon-button" @click="$emit('close')">
               <svg
                 xmlns="http://www.w3.org/2000/svg"
@@ -66,6 +58,12 @@
           <p v-if="master.contents" class="detail-desc">
             {{ master.contents }}
           </p>
+
+          <!-- TBM_AI T3-7: AI 교육안(읽기 전용, 라인프로토콜 그대로 pre-wrap) -->
+          <div v-if="master.genContent" class="detail-section">
+            <div class="detail-section-title">AI 교육안</div>
+            <pre class="gen-content">{{ master.genContent }}</pre>
+          </div>
 
           <!-- 세부항목(미디어) -->
           <div class="detail-section">
@@ -138,6 +136,11 @@
                 <div v-if="item.mtrlDesc" class="media-desc">
                   {{ item.mtrlDesc }}
                 </div>
+                <!-- TBM_AI T3-7: AI 확정 요지(항목 확정 서술, 있을 때만) -->
+                <div v-if="item.aiConfirmDesc" class="ai-confirm-line">
+                  <span class="ai-confirm-label">AI 확정 요지</span>
+                  <span class="ai-confirm-value">{{ item.aiConfirmDesc }}</span>
+                </div>
               </div>
             </template>
           </div>
@@ -171,6 +174,14 @@
         <div class="modal-footer">
           <div class="btn-group">
             <button class="btn btn-second" @click="$emit('close')">닫기</button>
+            <button
+              v-if="props.onEdit && master.lockedYn !== 'Y'"
+              type="button"
+              class="btn btn-second"
+              @click="fnEdit"
+            >
+              수정
+            </button>
           </div>
         </div>
       </div>
@@ -205,7 +216,6 @@ const emit = defineEmits(["close"]);
 
 // ================ Refs ================
 const modalRef = ref(null);
-const apiBaseUrl = import.meta.env.VITE_API_BASE_URL || "";
 
 const master = reactive({
   mtrlCd: "",
@@ -216,6 +226,8 @@ const master = reactive({
   isCommonContent: "",
   insertNm: "",
   insertDate: "",
+  lockedYn: "", // T5-2: 사용 중(취소 외 세션 참조) 여부. 'Y'면 수정 차단
+  genContent: "", // TBM_AI T3-7: AI 교육안(GEN_CONTENT). 조회 응답에 포함될 때만 노출
 });
 const itemList = ref([]);
 const usedSessionList = ref([]);
@@ -282,6 +294,8 @@ const fnSearch = async () => {
       master.isCommonContent = info.isCommonContent || "";
       master.insertNm = info.insertNm || "";
       master.insertDate = info.insertDate || "";
+      master.lockedYn = info.lockedYn || "";
+      master.genContent = info.genContent || ""; // TBM_AI T3-7: 응답에 있을 때만 값 채움
 
       itemList.value = data.tbmEduItemInfoList || [];
       usedSessionList.value = data.usedSessionList || [];
@@ -304,16 +318,20 @@ const fnEdit = () => {
  *  (기존 baseUrl + filePath + fileMgmtCd 수동 조립 제거.) 파일 없으면 빈 문자열. */
 const fileUrl = (item) => item?.fileUrl || "";
 
-/** 유튜브 URL -> embed URL 변환 (watch?v= / youtu.be/) */
+/** 유튜브 URL -> embed URL 변환
+ *  지원 형식: watch?v= / youtu.be/ / /shorts/ / /embed/ (www·m 도메인, 11자 ID, 추가 파라미터 허용)
+ *  유효하지 않은 URL이면 빈 문자열 유지(미리보기 미제공으로 폴백). */
 const youtubeEmbed = (url) => {
   if (!url) return "";
-  let videoId = "";
-  const watchMatch = url.match(/[?&]v=([^&]+)/);
-  const shortMatch = url.match(/youtu\.be\/([^?&]+)/);
-  if (watchMatch) videoId = watchMatch[1];
-  else if (shortMatch) videoId = shortMatch[1];
-  if (!videoId) return "";
-  return "https://www.youtube.com/embed/" + videoId;
+  const u = String(url).trim();
+  let m,
+    id = "";
+  if ((m = u.match(/[?&]v=([A-Za-z0-9_-]{11})/))) id = m[1];
+  else if ((m = u.match(/youtu\.be\/([A-Za-z0-9_-]{11})/))) id = m[1];
+  else if ((m = u.match(/\/shorts\/([A-Za-z0-9_-]{11})/))) id = m[1];
+  else if ((m = u.match(/\/embed\/([A-Za-z0-9_-]{11})/))) id = m[1];
+  if (!id) return "";
+  return "https://www.youtube.com/embed/" + id;
 };
 
 const mediaTypeNm = (type) => {
@@ -374,7 +392,8 @@ const statusNm = (statusCd) => {
 }
 
 .meta-item {
-  font-size: var(--btn-font);
+  font-size: var(--btn-font-lg);
+  font-weight: 600;
 }
 
 .detail-desc {
@@ -471,6 +490,42 @@ const statusNm = (statusCd) => {
 .media-desc {
   color: var(--color-text);
   font-size: var(--btn-font);
+}
+
+/* TBM_AI T3-7: AI 확정 요지 라인 */
+.ai-confirm-line {
+  margin-top: 0.4rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+}
+
+.ai-confirm-label {
+  color: var(--color-primary);
+  font-size: var(--btn-font-sm);
+  font-weight: 600;
+}
+
+.ai-confirm-value {
+  color: var(--color-text);
+  font-size: var(--btn-font);
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+/* TBM_AI T3-7: AI 교육안(라인프로토콜 그대로 표시) */
+.gen-content {
+  margin: 0;
+  padding: 0.75rem;
+  background: var(--color-bg);
+  border: 1px solid var(--color-border);
+  border-radius: var(--btn-radius);
+  color: var(--color-text);
+  font-family: inherit;
+  font-size: var(--btn-font);
+  line-height: 1.5;
+  white-space: pre-wrap;
+  word-break: break-word;
 }
 
 .usage-list {

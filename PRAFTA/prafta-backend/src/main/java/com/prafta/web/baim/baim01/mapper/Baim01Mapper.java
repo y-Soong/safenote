@@ -6,6 +6,7 @@ import org.apache.ibatis.annotations.Mapper;
 import org.apache.ibatis.annotations.Param;
 
 import com.prafta.web.baim.baim01.application.command.MasterSiteAuthSetCommand;
+import com.prafta.web.baim.baim01.application.command.SiteAdminSiteAuthCommand;
 import com.prafta.web.baim.baim01.application.command.SiteInfoCommand;
 import com.prafta.web.baim.baim01.application.command.SiteNodeInfoCommand;
 import com.prafta.web.baim.baim01.application.query.SiteInfoListQuery;
@@ -22,4 +23,6 @@ public interface Baim01Mapper {
 	void mergeSiteInfo(SiteInfoCommand command);
 	
 	void mergeMasterSiteAuthSet(MasterSiteAuthSetCommand command);
+
+	void mergeSiteAdminSiteAuth(SiteAdminSiteAuthCommand command);
 }

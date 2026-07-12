@@ -35,8 +35,12 @@
               <label>기간 종료</label>
               <CalendarSrch v-model="windowTo" class="lpb-date" />
             </div>
-            <button class="lpb-preview-btn" :disabled="isPreviewing" @click="onPreview">
-              {{ isPreviewing ? '계산 중...' : '미리보기' }}
+            <button
+              class="lpb-preview-btn"
+              :disabled="isPreviewing"
+              @click="onPreview"
+            >
+              {{ isPreviewing ? "계산 중..." : "미리보기" }}
             </button>
           </div>
 
@@ -44,11 +48,18 @@
           <template v-if="proposal">
             <!-- 검수 지표 -->
             <div class="lpb-metrics">
-              <span>대상자 <strong>{{ proposal.assignments?.length || 0 }}명</strong></span>
+              <span
+                >대상자
+                <strong>{{ proposal.assignments?.length || 0 }}명</strong></span
+              >
               <span v-if="strategy === 'MIN_OVERLAP'">
-                피크(동시휴가 최대) <strong>{{ proposal.peakLoad ?? '-' }}명</strong>
+                피크(동시휴가 최대)
+                <strong>{{ proposal.peakLoad ?? "-" }}명</strong>
               </span>
-              <span class="lpb-shortage" v-if="(proposal.shortages?.length || 0) > 0">
+              <span
+                class="lpb-shortage"
+                v-if="(proposal.shortages?.length || 0) > 0"
+              >
                 미달 <strong>{{ proposal.shortages.length }}건</strong>
               </span>
             </div>
@@ -69,18 +80,23 @@
             </div>
 
             <!-- 미달 목록 (prafta-052 패턴: 사유 표시 + 다운로드 위임) -->
-            <div v-if="(proposal.shortages?.length || 0) > 0" class="lpb-shortages">
+            <div
+              v-if="(proposal.shortages?.length || 0) > 0"
+              class="lpb-shortages"
+            >
               <p class="lpb-sub">미달 사용자 (가용일 부족)</p>
               <ul class="lpb-short-list">
                 <li v-for="s in proposal.shortages" :key="s.userCd">
-                  {{ s.userCd }} — 필요 {{ s.requiredDays }}일 / 배정 {{ s.assignedDays }}일 /
-                  부족 {{ s.shortageDays }}일
+                  {{ s.userCd }} — 필요 {{ s.requiredDays }}일 / 배정
+                  {{ s.assignedDays }}일 / 부족 {{ s.shortageDays }}일
                 </li>
               </ul>
             </div>
           </template>
 
-          <p v-else class="lpb-empty">전략·기간을 정하고 미리보기를 실행하세요.</p>
+          <p v-else class="lpb-empty">
+            전략·기간을 정하고 미리보기를 실행하세요.
+          </p>
         </div>
 
         <div class="modal-footer lpb-footer">
@@ -90,7 +106,7 @@
             :disabled="!proposal || isCommitting"
             @click="onCommit"
           >
-            {{ isCommitting ? '커밋 중...' : '이 배치로 직권 지정' }}
+            {{ isCommitting ? "커밋 중..." : "이 배치로 직권 지정" }}
           </button>
         </div>
       </div>
@@ -140,15 +156,20 @@ const onPreview = async () => {
   isPreviewing.value = true;
   try {
     // AutoBatchPreviewRequest: { strategy, windowFrom, windowTo, ...조회조건 }. siteCd 세션 IDOR 는 서버 강제.
-    const { data } = await axios.post("/webApi/leavepromo01/autobatch/preview", {
-      strategy: strategy.value,
-      windowFrom: (windowFrom.value || "").replace(/-/g, ""),
-      windowTo: (windowTo.value || "").replace(/-/g, ""),
-      ...props.filter,
-    });
+    const { data } = await axios.post(
+      "/webApi/leavepromo01/autobatch/preview",
+      {
+        strategy: strategy.value,
+        windowFrom: (windowFrom.value || "").replace(/-/g, ""),
+        windowTo: (windowTo.value || "").replace(/-/g, ""),
+        ...props.filter,
+      }
+    );
     proposal.value = data || null;
   } catch (err) {
-    await proxy.$alert(resolveApiErrorMessage(err, "자동배치 미리보기 중 오류가 발생했습니다."));
+    await proxy.$alert(
+      resolveApiErrorMessage(err, "자동배치 미리보기 중 오류가 발생했습니다.")
+    );
   } finally {
     isPreviewing.value = false;
   }
@@ -181,7 +202,9 @@ const onCommit = async () => {
     emit("done");
     emit("close");
   } catch (err) {
-    await proxy.$alert(resolveApiErrorMessage(err, "자동배치 커밋 중 오류가 발생했습니다."));
+    await proxy.$alert(
+      resolveApiErrorMessage(err, "자동배치 커밋 중 오류가 발생했습니다.")
+    );
   } finally {
     isCommitting.value = false;
   }

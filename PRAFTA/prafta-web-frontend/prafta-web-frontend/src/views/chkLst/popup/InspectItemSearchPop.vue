@@ -32,26 +32,33 @@
           <div class="form-left">
             <label>점검항목명</label>
             <input v-model.trim="inspectItemSubj" @keyup.enter="fnSearch" />
+            <label>사용여부</label>
+            <select v-model="useYn" name="combo" @change="fnSearch">
+              <option value="">전체</option>
+              <option value="Y">사용</option>
+              <option value="N">미사용</option>
+            </select>
           </div>
           <div class="btn-group">
             <button class="btn btn-primary" @click="fnSearch">조회</button>
           </div>
         </div>
 
-        <!-- 3. 그리드 (점검항목명 / 시행월) — 더블클릭 선택 -->
+        <!-- 3. 그리드 (점검항목명 / 시행일) — 더블클릭 선택 -->
         <div class="viewBody">
           <div class="table-wrapper">
             <table class="data-grid">
               <thead>
                 <tr>
                   <th>점검항목명</th>
-                  <th style="width: 25%">시행월</th>
+                  <th style="width: 25%">시행일</th>
+                  <th style="width: 15%">사용여부</th>
                 </tr>
               </thead>
               <tbody>
                 <template v-if="!itemList || itemList.length === 0">
                   <tr>
-                    <td colspan="2" class="edu-grid-empty">
+                    <td colspan="3" class="edu-grid-empty">
                       조회된 점검문항이 없습니다.
                     </td>
                   </tr>
@@ -63,7 +70,8 @@
                     @dblclick="fnSelectRow(item)"
                   >
                     <td>{{ item.inspectItemSubj }}</td>
-                    <td>{{ item.strDate }}</td>
+                    <td>{{ formatStrDate(item.strDate) }}</td>
+                    <td>{{ item.useYn === "N" ? "미사용" : "사용" }}</td>
                   </tr>
                 </template>
               </tbody>
@@ -105,10 +113,20 @@ const { position, startDrag } = useCenteredDraggable(modalRef, {
 
 const itemList = ref([]);
 const inspectItemSubj = ref("");
+const useYn = ref(""); // 사용여부 필터(전체='' 기본) - PRAFTA_COM_001-T5-12.3.1
 
 onMounted(async () => {
   await fnSearch();
 });
+
+// PRAFTA_COM_001-T5-12.3.3: 시행일 표기 YYYYMMDD -> YYYY-MM-DD (구값 YYYYMM 은 YYYY-MM)
+const formatStrDate = (strDate) => {
+  const s = String(strDate ?? "");
+  if (s.length === 8)
+    return `${s.slice(0, 4)}-${s.slice(4, 6)}-${s.slice(6, 8)}`;
+  if (s.length === 6) return `${s.slice(0, 4)}-${s.slice(4, 6)}`;
+  return s;
+};
 
 // 점검문항 조회 (chkLstType 필수, chkLst04 전용 EP)
 const fnSearch = async () => {
@@ -119,6 +137,7 @@ const fnSearch = async () => {
       params: {
         chkLstType: props.chkLstType_p,
         inspectItemSubj: inspectItemSubj.value,
+        useYn: useYn.value,
       },
     });
 

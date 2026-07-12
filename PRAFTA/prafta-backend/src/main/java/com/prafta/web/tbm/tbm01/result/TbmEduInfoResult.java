@@ -19,6 +19,10 @@ public record TbmEduInfoResult(
 
 	, String insertNm
 	, String insertDate
+
+	, String lockedYn			// T5-2: 사용 중(취소 외 세션 참조) 여부(Y/N). 'Y'면 수정/삭제 잠금
+	, String genContent			// TBM_AI F1: GEN_CONTENT(생성 교육안, text)
+	, String genAt				// TBM_AI F1: GEN_AT(교육안 생성일시, DATE_FORMAT 문자열)
 ){
 
 }

@@ -120,302 +120,302 @@
         </div>
       </div>
 
-    <!-- 본문(전체): 좌측 결과 테이블 / 우측 상세 패널 -->
-    <div
-      v-show="viewMode === 'full'"
-      class="viewBody a08-body"
-      :class="{ 'detail-open': !!selected }"
-    >
-      <div class="a08-table-wrap">
-        <table class="a08-table">
-          <thead>
-            <tr>
-              <th rowspan="2">사용자명</th>
-              <th rowspan="2">부서</th>
-              <th rowspan="2">근무구분</th>
-              <th rowspan="2">근무일</th>
-              <th rowspan="2">요일</th>
-              <th rowspan="2">차수</th>
-              <th rowspan="2">스케줄</th>
-              <th colspan="4">실제근무</th>
-              <th rowspan="2">실근로시간</th>
-              <th rowspan="2">인정시간</th>
-              <th rowspan="2">상태</th>
-              <th rowspan="2">상세</th>
-            </tr>
-            <tr>
-              <th>출근일</th>
-              <th>출근시각</th>
-              <th>퇴근일</th>
-              <th>퇴근시각</th>
-            </tr>
-          </thead>
-          <tbody>
-            <tr v-if="displayRows.length === 0">
-              <td colspan="15" class="a08-empty">조회 결과가 없습니다.</td>
-            </tr>
-            <tr
-              v-for="r in displayRows"
-              :key="r._rowKey"
-              :class="rowClass(r)"
-              @click="fnSelectRow(r)"
-            >
-              <td>{{ r.userNm }}</td>
-              <td>{{ r.nodeNm }}</td>
-              <!-- 근무구분: 정상근무 / 초과근무 (prafta-043: 유형 파기) -->
-              <td>
+      <!-- 본문(전체): 좌측 결과 테이블 / 우측 상세 패널 -->
+      <div
+        v-show="viewMode === 'full'"
+        class="viewBody a08-body"
+        :class="{ 'detail-open': !!selected }"
+      >
+        <div class="a08-table-wrap">
+          <table class="a08-table">
+            <thead>
+              <tr>
+                <th rowspan="2">사용자명</th>
+                <th rowspan="2">부서</th>
+                <th rowspan="2">근무구분</th>
+                <th rowspan="2">근무일</th>
+                <th rowspan="2">요일</th>
+                <th rowspan="2">차수</th>
+                <th rowspan="2">스케줄</th>
+                <th colspan="4">실제근무</th>
+                <th rowspan="2">실근로시간</th>
+                <th rowspan="2">인정시간</th>
+                <th rowspan="2">상태</th>
+                <th rowspan="2">상세</th>
+              </tr>
+              <tr>
+                <th>출근일</th>
+                <th>출근시각</th>
+                <th>퇴근일</th>
+                <th>퇴근시각</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr v-if="displayRows.length === 0">
+                <td colspan="15" class="a08-empty">조회 결과가 없습니다.</td>
+              </tr>
+              <tr
+                v-for="r in displayRows"
+                :key="r._rowKey"
+                :class="rowClass(r)"
+                @click="fnSelectRow(r)"
+              >
+                <td>{{ r.userNm }}</td>
+                <td>{{ r.nodeNm }}</td>
+                <!-- 근무구분: 정상근무 / 초과근무 (prafta-043: 유형 파기) -->
+                <td>
+                  <span
+                    :class="['a08-badge', r._isOt ? 'b-ot' : 'b-work-normal']"
+                  >
+                    {{ workTypeLabel(r) }}
+                  </span>
+                </td>
+                <td>{{ fmtYmd(r.workYmd) }}</td>
+                <td>{{ fmtDow(r.workYmd) }}</td>
+                <!-- 차수: 초과근무 행은 '-' -->
+                <td>{{ r._isOt ? "-" : r.workSeq }}</td>
+                <!-- 스케줄(통합): 차수에 해당하는 구간. 초과근무 행은 '-' -->
+                <td>{{ scheduleCell(r) }}</td>
+                <!-- 실제근무 (차수에 해당하는 구간 / 초과근무 실제 출퇴근) -->
+                <td>{{ dCell(r._inDate) }}</td>
+                <td>{{ tCell(r._inTime) }}</td>
+                <td>{{ dCell(r._outDate) }}</td>
+                <td>{{ tCell(r._outTime) }}</td>
+                <!-- 실근로시간: 실제 구간 − 휴게 -->
+                <td>{{ fmtDuration(workedNetMin(r)) }}</td>
+                <!-- 인정시간: 정상=(실제∩스케줄)−휴게 / 초과=관리자 승인 시간 -->
+                <td>{{ fmtDuration(recognizedMin(r)) }}</td>
+                <!-- 상태: 초과근무 행은 배지 없이 '-' 텍스트만 -->
+                <td>
+                  <template v-if="r._isOt">-</template>
+                  <span
+                    v-else
+                    :class="['a08-badge', statusBadgeClass(r._status)]"
+                  >
+                    {{ statusLabel(r._status) }}
+                  </span>
+                </td>
+                <td>
+                  <!-- 상세(GPS 동선)는 GPS 기록이 있는 외근 행만 노출 -->
+                  <button
+                    v-if="r.isOutsideYn === 'Y'"
+                    class="a08-btn-detail"
+                    @click.stop="fnSelectRow(r)"
+                  >
+                    상세
+                  </button>
+                  <span v-else class="a08-no-detail">-</span>
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+        <!-- 상세 패널 (행 클릭 시 표시) -->
+        <div v-if="selected" class="a08-detail-panel">
+          <div class="a08-detail-head">
+            <div>
+              <div class="a08-detail-title">
+                {{ selected.userNm }} ({{ selected.userId }})
+              </div>
+              <div class="a08-detail-sub">
+                {{ selected.nodeNm }} · {{ fmtYmd(selected.workYmd) }}
+                <template v-if="!selected._isOt">
+                  · 차수 {{ selected.workSeq }}
+                </template>
+              </div>
+            </div>
+            <button class="a08-detail-close" @click="fnCloseDetail">×</button>
+          </div>
+
+          <div class="a08-detail-meta">
+            <!-- 근무구분 (PRAFTA-015): 정상근무 / 초과근무 (prafta-043: 유형 파기) -->
+            <div class="meta-row">
+              <span class="meta-label">근무구분</span>
+              <span class="meta-value">
                 <span
-                  :class="['a08-badge', r._isOt ? 'b-ot' : 'b-work-normal']"
+                  :class="[
+                    'a08-badge',
+                    selected._isOt ? 'b-ot' : 'b-work-normal',
+                  ]"
                 >
-                  {{ workTypeLabel(r) }}
+                  {{ workTypeLabel(selected) }}
                 </span>
-              </td>
-              <td>{{ fmtYmd(r.workYmd) }}</td>
-              <td>{{ fmtDow(r.workYmd) }}</td>
-              <!-- 차수: 초과근무 행은 '-' -->
-              <td>{{ r._isOt ? "-" : r.workSeq }}</td>
-              <!-- 스케줄(통합): 차수에 해당하는 구간. 초과근무 행은 '-' -->
-              <td>{{ scheduleCell(r) }}</td>
-              <!-- 실제근무 (차수에 해당하는 구간 / 초과근무 실제 출퇴근) -->
-              <td>{{ dCell(r._inDate) }}</td>
-              <td>{{ tCell(r._inTime) }}</td>
-              <td>{{ dCell(r._outDate) }}</td>
-              <td>{{ tCell(r._outTime) }}</td>
-              <!-- 실근로시간: 실제 구간 − 휴게 -->
-              <td>{{ fmtDuration(workedNetMin(r)) }}</td>
-              <!-- 인정시간: 정상=(실제∩스케줄)−휴게 / 초과=관리자 승인 시간 -->
-              <td>{{ fmtDuration(recognizedMin(r)) }}</td>
-              <!-- 상태: 초과근무 행은 배지 없이 '-' 텍스트만 -->
-              <td>
-                <template v-if="r._isOt">-</template>
+              </span>
+            </div>
+            <div class="meta-row">
+              <span class="meta-label">스케줄</span>
+              <span class="meta-value">{{ scheduleCell(selected) }}</span>
+            </div>
+            <div class="meta-row">
+              <span class="meta-label">실제근무</span>
+              <span class="meta-value">{{
+                dtRange(
+                  selected._inDate,
+                  selected._inTime,
+                  selected._outDate,
+                  selected._outTime
+                )
+              }}</span>
+            </div>
+            <div class="meta-row">
+              <span class="meta-label">실근로시간</span>
+              <span class="meta-value">{{
+                fmtDuration(workedNetMin(selected))
+              }}</span>
+            </div>
+            <div class="meta-row">
+              <span class="meta-label">인정시간</span>
+              <span class="meta-value">{{
+                fmtDuration(recognizedMin(selected))
+              }}</span>
+            </div>
+            <div class="meta-row">
+              <span class="meta-label">상태</span>
+              <!-- meta-value 는 flex 셀 역할만, 배지는 안쪽 inline span 으로 분리해
+                 텍스트 크기만큼만 배경이 채워지도록 한다(PRAFTA-015) -->
+              <span class="meta-value">
+                <template v-if="selected._isOt">-</template>
                 <span
                   v-else
-                  :class="['a08-badge', statusBadgeClass(r._status)]"
+                  :class="['a08-badge', statusBadgeClass(selected._status)]"
                 >
-                  {{ statusLabel(r._status) }}
+                  {{ statusLabel(selected._status) }}
                 </span>
-              </td>
-              <td>
-                <!-- 상세(GPS 동선)는 GPS 기록이 있는 외근 행만 노출 -->
-                <button
-                  v-if="r.isOutsideYn === 'Y'"
-                  class="a08-btn-detail"
-                  @click.stop="fnSelectRow(r)"
-                >
-                  상세
-                </button>
-                <span v-else class="a08-no-detail">-</span>
-              </td>
-            </tr>
-          </tbody>
-        </table>
-      </div>
-
-      <!-- 상세 패널 (행 클릭 시 표시) -->
-      <div v-if="selected" class="a08-detail-panel">
-        <div class="a08-detail-head">
-          <div>
-            <div class="a08-detail-title">
-              {{ selected.userNm }} ({{ selected.userId }})
+              </span>
             </div>
-            <div class="a08-detail-sub">
-              {{ selected.nodeNm }} · {{ fmtYmd(selected.workYmd) }}
-              <template v-if="!selected._isOt">
-                · 차수 {{ selected.workSeq }}
-              </template>
-            </div>
-          </div>
-          <button class="a08-detail-close" @click="fnCloseDetail">×</button>
-        </div>
-
-        <div class="a08-detail-meta">
-          <!-- 근무구분 (PRAFTA-015): 정상근무 / 초과근무 (prafta-043: 유형 파기) -->
-          <div class="meta-row">
-            <span class="meta-label">근무구분</span>
-            <span class="meta-value">
-              <span
-                :class="[
-                  'a08-badge',
-                  selected._isOt ? 'b-ot' : 'b-work-normal',
-                ]"
-              >
-                {{ workTypeLabel(selected) }}
-              </span>
-            </span>
-          </div>
-          <div class="meta-row">
-            <span class="meta-label">스케줄</span>
-            <span class="meta-value">{{ scheduleCell(selected) }}</span>
-          </div>
-          <div class="meta-row">
-            <span class="meta-label">실제근무</span>
-            <span class="meta-value">{{
-              dtRange(
-                selected._inDate,
-                selected._inTime,
-                selected._outDate,
-                selected._outTime
-              )
-            }}</span>
-          </div>
-          <div class="meta-row">
-            <span class="meta-label">실근로시간</span>
-            <span class="meta-value">{{
-              fmtDuration(workedNetMin(selected))
-            }}</span>
-          </div>
-          <div class="meta-row">
-            <span class="meta-label">인정시간</span>
-            <span class="meta-value">{{
-              fmtDuration(recognizedMin(selected))
-            }}</span>
-          </div>
-          <div class="meta-row">
-            <span class="meta-label">상태</span>
-            <!-- meta-value 는 flex 셀 역할만, 배지는 안쪽 inline span 으로 분리해
-                 텍스트 크기만큼만 배경이 채워지도록 한다(PRAFTA-015) -->
-            <span class="meta-value">
-              <template v-if="selected._isOt">-</template>
-              <span
-                v-else
-                :class="['a08-badge', statusBadgeClass(selected._status)]"
-              >
-                {{ statusLabel(selected._status) }}
-              </span>
-            </span>
-          </div>
-          <div class="meta-row">
-            <span class="meta-label">외근여부</span>
-            <!-- 배지를 안쪽 inline span 으로 분리 (PRAFTA-015) -->
-            <span class="meta-value">
-              <span
-                :class="[
-                  'a08-badge',
-                  selected.isOutsideYn === 'Y' ? 'b-out' : 'b-in',
-                ]"
-              >
-                {{ selected.isOutsideYn === "Y" ? "외근" : "내근" }}
-              </span>
-            </span>
-          </div>
-        </div>
-
-        <!-- 지도 영역: 외근일 때만 GPS 호출 -->
-        <div class="a08-map-section">
-          <div class="a08-map-title">GPS 동선</div>
-
-          <!-- 출근/퇴근/전체 필터 — 출근·퇴근 좌표가 겹쳐 가려질 때 개별 확인용 -->
-          <div
-            v-if="
-              selected.isOutsideYn === 'Y' &&
-              !gpsLoading &&
-              validGpsList.length > 0
-            "
-            class="a08-gps-filter"
-          >
-            <button
-              type="button"
-              class="a08-gps-filter-btn"
-              :class="{ 'is-active': gpsViewMode === 'all' }"
-              @click="setGpsViewMode('all')"
-            >
-              전체
-            </button>
-            <button
-              type="button"
-              class="a08-gps-filter-btn"
-              :class="{ 'is-active': gpsViewMode === '01' }"
-              :disabled="gpsStartCount === 0"
-              @click="setGpsViewMode('01')"
-            >
-              출근
-            </button>
-            <button
-              type="button"
-              class="a08-gps-filter-btn"
-              :class="{ 'is-active': gpsViewMode === '02' }"
-              :disabled="gpsEndCount === 0"
-              @click="setGpsViewMode('02')"
-            >
-              퇴근
-            </button>
-          </div>
-
-          <div v-if="selected.isOutsideYn !== 'Y'" class="a08-map-empty">
-            내근 근태로 GPS 기록이 없습니다.
-          </div>
-          <div v-else-if="gpsLoading" class="a08-map-empty">
-            GPS 정보를 불러오는 중...
-          </div>
-          <div v-else-if="validGpsList.length === 0" class="a08-map-empty">
-            수집된 GPS 좌표가 없습니다.
-          </div>
-          <div
-            v-else
-            id="a08-kakao-map"
-            ref="mapContainer"
-            class="a08-map-canvas"
-          ></div>
-
-          <div v-if="validGpsList.length > 0" class="a08-gps-summary">
-            총 <b>{{ validGpsList.length }}</b
-            >건
-            <span v-if="mockedCount > 0" class="mocked-warn">
-              (Mock 좌표 {{ mockedCount }}건 포함)
-            </span>
-          </div>
-        </div>
-      </div>
-    </div>
-
-    <!-- 본문(요약): 날짜 기준 인원별 근태 요약 (차수/초과 합산) -->
-    <div v-show="viewMode === 'summary'" class="viewBody a08-summary-body">
-      <div class="a08-table-wrap">
-        <table class="a08-table a08-summary-table">
-          <thead>
-            <tr>
-              <th>사용자명</th>
-              <th>부서</th>
-              <th>근무일</th>
-              <th>요일</th>
-              <th>실근로시간(분)</th>
-              <th>인정시간(분)</th>
-              <th>지각(분)</th>
-              <th>조기퇴근(분)</th>
-              <th>상태</th>
-            </tr>
-          </thead>
-          <tbody>
-            <tr v-if="summaryRows.length === 0">
-              <td colspan="9" class="a08-empty">조회 결과가 없습니다.</td>
-            </tr>
-            <tr
-              v-for="s in summaryRows"
-              :key="s._key"
-              :class="summaryRowClass(s)"
-            >
-              <td>{{ s.userNm }}</td>
-              <td>{{ s.nodeNm }}</td>
-              <td>{{ fmtYmd(s.workYmd) }}</td>
-              <td>{{ fmtDow(s.workYmd) }}</td>
-              <td>{{ fmtMinutes(s.workedMin) }}</td>
-              <td>{{ fmtMinutes(s.recognizedMin) }}</td>
-              <td>{{ fmtMinutes(s.lateMin) }}</td>
-              <td>{{ fmtMinutes(s.earlyMin) }}</td>
-              <td>
+            <div class="meta-row">
+              <span class="meta-label">외근여부</span>
+              <!-- 배지를 안쪽 inline span 으로 분리 (PRAFTA-015) -->
+              <span class="meta-value">
                 <span
-                  v-if="s._status"
-                  :class="['a08-badge', statusBadgeClass(s._status)]"
+                  :class="[
+                    'a08-badge',
+                    selected.isOutsideYn === 'Y' ? 'b-out' : 'b-in',
+                  ]"
                 >
-                  {{ statusLabel(s._status) }}
+                  {{ selected.isOutsideYn === "Y" ? "외근" : "내근" }}
                 </span>
-                <template v-else>-</template>
-              </td>
-            </tr>
-          </tbody>
-        </table>
+              </span>
+            </div>
+          </div>
+
+          <!-- 지도 영역: 외근일 때만 GPS 호출 -->
+          <div class="a08-map-section">
+            <div class="a08-map-title">GPS 동선</div>
+
+            <!-- 출근/퇴근/전체 필터 — 출근·퇴근 좌표가 겹쳐 가려질 때 개별 확인용 -->
+            <div
+              v-if="
+                selected.isOutsideYn === 'Y' &&
+                !gpsLoading &&
+                validGpsList.length > 0
+              "
+              class="a08-gps-filter"
+            >
+              <button
+                type="button"
+                class="a08-gps-filter-btn"
+                :class="{ 'is-active': gpsViewMode === 'all' }"
+                @click="setGpsViewMode('all')"
+              >
+                전체
+              </button>
+              <button
+                type="button"
+                class="a08-gps-filter-btn"
+                :class="{ 'is-active': gpsViewMode === '01' }"
+                :disabled="gpsStartCount === 0"
+                @click="setGpsViewMode('01')"
+              >
+                출근
+              </button>
+              <button
+                type="button"
+                class="a08-gps-filter-btn"
+                :class="{ 'is-active': gpsViewMode === '02' }"
+                :disabled="gpsEndCount === 0"
+                @click="setGpsViewMode('02')"
+              >
+                퇴근
+              </button>
+            </div>
+
+            <div v-if="selected.isOutsideYn !== 'Y'" class="a08-map-empty">
+              내근 근태로 GPS 기록이 없습니다.
+            </div>
+            <div v-else-if="gpsLoading" class="a08-map-empty">
+              GPS 정보를 불러오는 중...
+            </div>
+            <div v-else-if="validGpsList.length === 0" class="a08-map-empty">
+              수집된 GPS 좌표가 없습니다.
+            </div>
+            <div
+              v-else
+              id="a08-kakao-map"
+              ref="mapContainer"
+              class="a08-map-canvas"
+            ></div>
+
+            <div v-if="validGpsList.length > 0" class="a08-gps-summary">
+              총 <b>{{ validGpsList.length }}</b
+              >건
+              <span v-if="mockedCount > 0" class="mocked-warn">
+                (Mock 좌표 {{ mockedCount }}건 포함)
+              </span>
+            </div>
+          </div>
+        </div>
       </div>
-    </div>
+
+      <!-- 본문(요약): 날짜 기준 인원별 근태 요약 (차수/초과 합산) -->
+      <div v-show="viewMode === 'summary'" class="viewBody a08-summary-body">
+        <div class="a08-table-wrap">
+          <table class="a08-table a08-summary-table">
+            <thead>
+              <tr>
+                <th>사용자명</th>
+                <th>부서</th>
+                <th>근무일</th>
+                <th>요일</th>
+                <th>실근로시간(분)</th>
+                <th>인정시간(분)</th>
+                <th>지각(분)</th>
+                <th>조기퇴근(분)</th>
+                <th>상태</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr v-if="summaryRows.length === 0">
+                <td colspan="9" class="a08-empty">조회 결과가 없습니다.</td>
+              </tr>
+              <tr
+                v-for="s in summaryRows"
+                :key="s._key"
+                :class="summaryRowClass(s)"
+              >
+                <td>{{ s.userNm }}</td>
+                <td>{{ s.nodeNm }}</td>
+                <td>{{ fmtYmd(s.workYmd) }}</td>
+                <td>{{ fmtDow(s.workYmd) }}</td>
+                <td>{{ fmtMinutes(s.workedMin) }}</td>
+                <td>{{ fmtMinutes(s.recognizedMin) }}</td>
+                <td>{{ fmtMinutes(s.lateMin) }}</td>
+                <td>{{ fmtMinutes(s.earlyMin) }}</td>
+                <td>
+                  <span
+                    v-if="s._status"
+                    :class="['a08-badge', statusBadgeClass(s._status)]"
+                  >
+                    {{ statusLabel(s._status) }}
+                  </span>
+                  <template v-else>-</template>
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
     </div>
   </div>
 </template>
@@ -429,10 +429,13 @@ import {
   defineOptions,
   onBeforeUnmount,
   onMounted,
+  onActivated,
   nextTick,
 } from "vue";
 import ViewHeader from "@/components/common/ViewHeader.vue";
 import { useModal } from "@/utils/useModal";
+import { useDashboardNavStore } from "@/stores/dashboardNavStore";
+import { ymToDateRange } from "@/utils/common";
 import search_icon from "@/assets/img/search_icon.png";
 import SiteSearchPop from "@/components/popup/SiteSearchPop.vue";
 import SiteNodeSearchPop from "@/components/popup/SiteNodeSearchPop.vue";
@@ -452,6 +455,7 @@ const props = defineProps({
 
 const { proxy } = getCurrentInstance();
 const { open: openPop } = useModal();
+const dashNav = useDashboardNavStore();
 
 const localButtons = ref({ ...props.buttons });
 
@@ -1447,8 +1451,40 @@ const fnInit = () => {
   }
 };
 
+// ── 대시보드 조회조건 주입 (PRAFTA-DASHBOARD-T1) ──────────────
+// 대시보드(Dashboard_01)에서 넘어온 조회조건이 있으면 반영한다 (없으면 no-op).
+// 기준월(ym)은 본 화면의 일자 기간(fromDate/toDate)으로 변환한다. 반영 여부를 반환한다.
+const applyDashboardParams = () => {
+  const p = dashNav.consumeParams("Attd_08");
+  if (!p) return false;
+  siteCd.value = p.siteCd ?? "";
+  siteNo.value = p.siteNo ?? "";
+  siteNm.value = p.siteNm ?? "";
+  nodeDisabled.value = proxy.$util.isEmpty(siteCd.value);
+  nodeCd.value = p.nodeCd ?? "";
+  nodeNm.value = p.nodeNm ?? "";
+  incSubNodeYn.value = !!p.incSubNodeYn;
+  const range = ymToDateRange(p.ym);
+  if (range) {
+    fromDate.value = range.fromDate;
+    toDate.value = range.toDate;
+  }
+  return true;
+};
+
+// 본 화면 fnSearch 는 사업장 필수 — 사업장이 있을 때만 자동 재조회한다.
+const fnSearchByDashboard = () => {
+  if (applyDashboardParams() && siteCd.value) fnSearch();
+};
+
 onMounted(() => {
   fnInit();
+  fnSearchByDashboard();
+});
+
+// keep-alive 로 이미 열린 탭에 재진입하는 경우 대응
+onActivated(() => {
+  fnSearchByDashboard();
 });
 
 onBeforeUnmount(() => {
@@ -1479,6 +1515,8 @@ onBeforeUnmount(() => {
 
 /* 휴게 자동차감 안내 문구 */
 .a08-note {
+  /* flex-column 에서 압축되지 않도록 자연 높이 고정 */
+  flex: 0 0 auto;
   margin: 0;
   padding: 0.4rem 0.75rem;
   font-size: 0.8rem;
@@ -1491,6 +1529,30 @@ onBeforeUnmount(() => {
 }
 .a08-body.detail-open .a08-table-wrap {
   flex: 1 1 60%;
+}
+
+/* 소제목 + 본문(전체/요약)을 감싸는 subtitle-pane 래퍼: flex 컬럼 레이아웃에서
+   남은 높이만 차지하고 내부 테이블만 스크롤되도록 한다. 이 제약이 없으면 조회 후
+   행이 늘어날 때 래퍼가 테이블 전체 높이로 커져 viewComm 을 밀어내고,
+   전체/요약 토글·소제목이 위로 밀려 잘린다 (Attd_11 패턴 차용). */
+.table-wrapper.subtitle-pane {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  min-height: 0;
+  overflow: hidden;
+}
+
+/* 소제목 바: 높이는 내용만큼만 차지하고(축소 금지), 본문(전체/요약)의 테이블과
+   동일한 좌측 여백(0.75rem)으로 정렬한다. 본문은 .a08-body / .a08-summary-body 의
+   padding 0.75rem 으로 테이블이 들여써지므로 소제목도 같은 들여쓰기를 주고,
+   소제목 자체의 기본 padding-inline 은 제거한다. */
+.subtitle-pane > .subtitle-row {
+  flex: 0 0 auto;
+  padding-inline-start: 0.75rem;
+}
+.subtitle-pane > .subtitle-row .subtitle {
+  padding-inline-start: 0;
 }
 
 .a08-table {
@@ -1777,6 +1839,8 @@ onBeforeUnmount(() => {
 /* 뷰 전환 토글 (전체/요약) — Attd_07 세그먼트 컨트롤과 동일 형태 */
 .a08-view-toggle {
   display: inline-flex;
+  /* .viewComm flex-column 에서 압축되어 버튼이 세로로 잘리지 않도록 자연 높이 고정 */
+  flex: 0 0 auto;
   /* .viewComm 가 flex-column(align-items: stretch) 이라 행 전체로 늘어남 → 콘텐츠 폭으로 고정 */
   align-self: flex-start;
   border: 1px solid var(--color-border, #d1d5db);

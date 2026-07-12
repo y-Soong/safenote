@@ -27,7 +27,17 @@
       <span class="admin-tbm-hd__spacer" aria-hidden="true" />
     </header>
 
-    <main class="admin-tbm-live-body">
+    <main
+      class="admin-tbm-live-body"
+      ref="scrollRef"
+      @touchstart.passive="onPullStart"
+      @touchmove="onPullMove"
+      @touchend="onPullEnd"
+      @touchcancel="onPullEnd"
+    >
+      <!-- 당겨서 새로고침 인디케이터 — 스크롤 최상단에서 아래로 당기면 노출 -->
+      <PullRefreshIndicator v-bind="indicatorProps" />
+
       <!-- loading -->
       <p v-if="isLoading" class="admin-tbm-state">불러오는 중…</p>
 
@@ -124,6 +134,8 @@ import { ref, computed, getCurrentInstance, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 
 import api from '@/api/axios'
+import { usePullToRefresh } from '@/composables/usePullToRefresh'
+import PullRefreshIndicator from '@/components/common/PullRefreshIndicator.vue'
 import AdminTbmAttendeeRow from './components/AdminTbmAttendeeRow.vue'
 import AdminTbmForceExitSheet from './components/AdminTbmForceExitSheet.vue'
 import TbmMaterialSlider from '@/views/tbm/components/TbmMaterialSlider.vue'
@@ -278,11 +290,12 @@ const onConfirmForceExit = async (reason) => {
   }
 }
 
-// 교육 종료(→ COMPLETED, T1 개설자만 / T2 미퇴실 자동이수).
+// 교육 종료(→ COMPLETED, T1 개설자만). [정합성 수정] 자동이수 폐지:
+//   종료는 세션 상태만 전이하며, 근로자는 종료 후에도 직접 완료(서명)해야 이수된다.
 // confirm 후 POST .../{sessionCd}/end → 성공 시 종료화면(/AdminTbmCompleted) 으로 replace.
 const onEnd = async () => {
   if (ending.value) return
-  const ok = await askConfirm('교육을 종료할까요? 종료 시 미퇴실 인원은 자동 이수 처리돼요.')
+  const ok = await askConfirm('교육을 종료할까요? 종료 후에도 근로자가 직접 완료(서명)해야 이수 처리돼요.')
   if (!ok) return
   ending.value = true
   try {
@@ -295,6 +308,15 @@ const onEnd = async () => {
     ending.value = false
   }
 }
+
+// 당겨서 새로고침 — 즉시 1회 재조회(상세+입실자). 진행 화면이지만 폴링 타이머는 없어 재조회만 수행.
+const scrollRef = ref(null)
+const { onPullStart, onPullMove, onPullEnd, indicatorProps } = usePullToRefresh(
+  scrollRef,
+  async () => {
+    await Promise.all([loadDetail(), loadAttendees()])
+  },
+)
 
 onMounted(() => {
   loadDetail()
@@ -329,7 +351,8 @@ onMounted(() => {
   --space-md: 12px;
   --space-lg: 16px;
 
-  min-height: 100%;
+  height: 100vh;
+  height: 100dvh;
   background: var(--color-bg);
   color: var(--color-text-primary);
   display: flex;
@@ -375,6 +398,7 @@ onMounted(() => {
 /* 본문 */
 .admin-tbm-live-body {
   flex: 1;
+  min-height: 0;
   padding: var(--space-md) var(--space-lg) var(--space-lg);
   overflow-y: auto;
   display: flex;

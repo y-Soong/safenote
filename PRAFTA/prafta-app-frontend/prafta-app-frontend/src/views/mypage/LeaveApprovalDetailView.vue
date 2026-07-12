@@ -17,7 +17,17 @@
       <span class="lad-hd__spacer" aria-hidden="true"></span>
     </header>
 
-    <main class="lad-body">
+    <main
+      class="lad-body"
+      ref="scrollRef"
+      @touchstart.passive="onPullStart"
+      @touchmove="onPullMove"
+      @touchend="onPullEnd"
+      @touchcancel="onPullEnd"
+    >
+      <!-- 당겨서 새로고침 인디케이터 — 스크롤 최상단에서 아래로 당기면 노출 -->
+      <PullRefreshIndicator v-bind="indicatorProps" />
+
       <div v-if="isLoading" class="lad-loading" aria-live="polite">불러오는 중...</div>
 
       <template v-else-if="meta">
@@ -118,6 +128,8 @@ import { useRoute, useRouter } from 'vue-router'
 import api from '@/api/axios'
 import { resolveApiErrorMessage } from '@/utils/apiError'
 import { formatYmdDisplay, formatDateTimeDisplay } from '@/utils/approvalFormat'
+import { usePullToRefresh } from '@/composables/usePullToRefresh'
+import PullRefreshIndicator from '@/components/common/PullRefreshIndicator.vue'
 
 import AdminApprovalRejectSheet from '@/views/admin/approval/components/AdminApprovalRejectSheet.vue'
 
@@ -270,6 +282,15 @@ onMounted(() => {
   loadDetail()
 })
 
+// 당겨서 새로고침 — 상세(loadDetail) 재조회. 부작용 없는 조회만.
+const scrollRef = ref(null)
+const { onPullStart, onPullMove, onPullEnd, indicatorProps } = usePullToRefresh(
+  scrollRef,
+  async () => {
+    await loadDetail()
+  },
+)
+
 // 날짜/일시 표시는 approvalFormat 단일 출처에 위임(점). HHMM → HH:MM 시각 포맷.
 function fmtYmd(v) {
   return formatYmdDisplay(v)
@@ -308,7 +329,8 @@ function fmtDt(v) {
   --space-lg: 16px;
 
   position: relative;
-  min-height: 100vh;
+  height: 100vh;
+  height: 100dvh;
   display: flex;
   flex-direction: column;
   background: var(--color-bg);
@@ -354,6 +376,7 @@ function fmtDt(v) {
 /* 본문 */
 .lad-body {
   flex: 1;
+  min-height: 0;
   overflow-y: auto;
   padding: var(--space-md) var(--space-lg) 24px;
   display: flex;

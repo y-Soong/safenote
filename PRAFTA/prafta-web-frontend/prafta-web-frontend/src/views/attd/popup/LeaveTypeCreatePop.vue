@@ -344,6 +344,9 @@
               <!-- 관리자 부여 타입 - 수동 부여 -->
               <div v-else class="form-grid">
                 <div class="form-item">
+                  <!-- PRAFTA-WEB_002/T2: 라벨 오기 교정. 이 셀렉트는 SYS025 사용단위(useUnitType)이며
+                       부여 일수(숫자)가 아니다. 부여 일수는 이 화면이 정하지 않고(타입 규칙만 정의),
+                       관리자가 사용자에게 실제 부여하는 시점에 입력한다. 자동부여 블록과 동일하게 '사용단위'로 표기. -->
                   <label>사용단위 <span class="required">*</span></label>
                   <select v-model="useUnitType" :disabled="isEditMode">
                     <option

@@ -7,7 +7,7 @@
         ref="modalRef"
       >
         <div class="modal-header" @mousedown="startDrag">
-          <span>{{ isEditMode ? "스케줄 정보" : "스케줄 타입 생성" }}</span>
+          <span>{{ isEditMode ? "근무타입 정보" : "근무타입 생성" }}</span>
           <button class="icon-button" @click="$emit('close')">
             <svg
               xmlns="http://www.w3.org/2000/svg"

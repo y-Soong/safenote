@@ -1,0 +1,730 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.prafta.web.dashboard.dashboard01.mapper.Dashboard01Mapper">
+
+    <!-- ============================ 권한 ============================ -->
+    <!-- 사업장 접근 권한 확인 (tb_user_site_auth, USE_YN='Y'). 1 이상이면 접근 가능 -->
+    <select id="countUserSiteAuth" resultType="int">
+    /* Dashboard01Mapper.countUserSiteAuth */
+    SELECT
+        COUNT(1)
+    FROM TB_USER_SITE_AUTH A
+    WHERE A.CMPNY_CD = #{cmpnyCd}
+      AND A.USER_CD = #{userCd}
+      AND A.SITE_CD = #{siteCd}
+      AND A.USE_YN = 'Y'
+    </select>
+
+    <!-- ============ T4: 안전 탭 무사고 배너(S1) + 사고 summary(S5) ============ -->
+
+    <!-- 사업장 최근 사고 발생일 (무사고 배너 기산일). 인덱스 IX_TB_ACCT_OCCUR 활용 -->
+    <select id="selectDashLatestAcctYmd" resultType="string">
+    /* Dashboard01Mapper.selectDashLatestAcctYmd */
+    SELECT
+        MAX(A.OCCUR_YMD)
+    FROM TB_ACCT A
+    WHERE A.CMPNY_CD = #{gvCmpnyCd}
+      AND A.SITE_CD = #{siteCd}
+      AND A.DEL_YN = 'N'
+      AND A.USE_YN = 'Y'
+    </select>
+
+    <!-- 사고 이력 없는 사업장 기산점: 사업개시일(STR_DATE) / 등록일(INSERT_DATE). PK 단건 -->
+    <select id="selectDashSiteBaseline"
+            resultType="com.prafta.web.dashboard.dashboard01.result.DashSiteBaselineResult">
+    /* Dashboard01Mapper.selectDashSiteBaseline */
+    SELECT
+        S.STR_DATE                              AS strDate
+      , DATE_FORMAT(S.INSERT_DATE, '%Y%m%d')    AS insertYmd
+    FROM TB_SITE S
+    WHERE S.CMPNY_CD = #{gvCmpnyCd}
+      AND S.SITE_CD = #{siteCd}
+    </select>
+
+    <!-- 조회월 사고 등급별 카운트 (조건부 집계 1행 — 0건 등급도 항상 0 반환) -->
+    <select id="selectDashAcctGradeCounts"
+            resultType="com.prafta.web.dashboard.dashboard01.result.DashAcctGradeCountResult">
+    /* Dashboard01Mapper.selectDashAcctGradeCounts */
+    SELECT
+        COUNT(1)                                                                          AS monthTotalCnt
+      , CAST(IFNULL(SUM(CASE WHEN A.ACCT_GRADE_CD = '100' THEN 1 ELSE 0 END), 0) AS SIGNED) AS grade100Cnt
+      , CAST(IFNULL(SUM(CASE WHEN A.ACCT_GRADE_CD = '200' THEN 1 ELSE 0 END), 0) AS SIGNED) AS grade200Cnt
+      , CAST(IFNULL(SUM(CASE WHEN A.ACCT_GRADE_CD = '300' THEN 1 ELSE 0 END), 0) AS SIGNED) AS grade300Cnt
+    FROM TB_ACCT A
+    WHERE A.CMPNY_CD = #{gvCmpnyCd}
+      AND A.SITE_CD = #{siteCd}
+      AND A.DEL_YN = 'N'
+      AND A.USE_YN = 'Y'
+      AND A.OCCUR_YMD BETWEEN #{fromYmd} AND #{toYmd}
+    </select>
+
+    <!-- 전체 기간 최근 사고 3건. PII 미포함(재해자/경위 컬럼 제외).
+         ⚠ SELECT 컬럼 순서 = DashRecentAcctResult 생성자 순서와 1:1 (record 매핑) -->
+    <select id="selectDashRecentAcctList"
+            resultType="com.prafta.web.dashboard.dashboard01.result.DashRecentAcctResult">
+    /* Dashboard01Mapper.selectDashRecentAcctList */
+    SELECT
+        A.ACCT_ID                                                                   AS acctId
+      , A.OCCUR_YMD                                                                 AS occurYmd
+      , A.OCCUR_TIME                                                                AS occurTime
+      , A.OCCUR_PLACE                                                               AS occurPlace
+      , A.ACCT_GRADE_CD                                                             AS acctGradeCd
+      , FNC_CMM_INFO_SRCH(A.CMPNY_CD, 'SYST_VAL', A.ACCT_GRADE_CD, 'SYS065')        AS acctGradeNm
+      , A.PROCESS_STATUS_CD                                                         AS processStatusCd
+      , FNC_CMM_INFO_SRCH(A.CMPNY_CD, 'SYST_VAL', A.PROCESS_STATUS_CD, 'SYS066')    AS processStatusNm
+    FROM TB_ACCT A
+    WHERE A.CMPNY_CD = #{gvCmpnyCd}
+      AND A.SITE_CD = #{siteCd}
+      AND A.DEL_YN = 'N'
+      AND A.USE_YN = 'Y'
+    ORDER BY A.OCCUR_YMD DESC, A.OCCUR_TIME DESC, A.ACCT_ID DESC
+    LIMIT 3
+    </select>
+
+    <!-- ============ T5: 안전 탭 순회점검(S2) + 위험성평가(S3) + TBM 추이(S4) ============ -->
+
+    <!-- 당일 순회점검 이행 현황 (조건부 집계 1행 — 개소 0건이어도 0/0 반환).
+         y = 오늘 시점 사용중(USE_YN='Y') 개소, x = 그중 오늘 WORK_DATE 기록 보유 개소 (x ≤ y 자동 보장).
+         ⚠ SELECT 컬럼 순서 = PatrolTodayResult 생성자 순서와 1:1 (record 매핑) -->
+    <select id="selectPatrolToday"
+            resultType="com.prafta.web.dashboard.dashboard01.result.PatrolTodayResult">
+    /* Dashboard01Mapper.selectPatrolToday */
+    SELECT
+        CAST(IFNULL(SUM(CASE WHEN B.CHKPT_CD IS NOT NULL THEN 1 ELSE 0 END), 0) AS SIGNED) AS todayInspectCnt
+      , COUNT(1)                                                                           AS todayTotalCnt
+    FROM TB_CHKPT_TYPE_MGMT A
+         LEFT OUTER JOIN (
+            SELECT DISTINCT
+                R.CMPNY_CD
+              , R.SITE_CD
+              , R.CHKPT_CD
+            FROM TB_CHKPT_INSPECT_ANSWER R
+            WHERE R.CMPNY_CD = #{gvCmpnyCd}
+              AND R.SITE_CD = #{siteCd}
+              AND R.WORK_DATE = #{todayYmd}
+         ) B
+            ON (
+                A.CMPNY_CD = B.CMPNY_CD
+            AND A.SITE_CD = B.SITE_CD
+            AND A.CHKPT_CD = B.CHKPT_CD
+            )
+    WHERE A.CMPNY_CD = #{gvCmpnyCd}
+      AND A.SITE_CD = #{siteCd}
+      AND A.USE_YN = 'Y'
+    </select>
+
+    <!-- 조회월 순회점검 미이행 총 횟수 (재귀 CTE 날짜 시리즈 × 개소 중 기록 없는 날 카운트).
+         의무일 정의(사용자 확정 2026-07-07): 매일 의무, 등록일(INSERT_DATE) 이후만,
+         비활성(USE_YN='N') 개소는 UPDATE_DATE(비활성 시점 근사 — ChkLst03 선례)까지만.
+         기간 경계(당월=어제까지/과거월=월말/미래월·당월1일=스킵)는 service 선판정 후 fromYmd/toYmd 로 전달 -->
+    <select id="selectPatrolMonthMiss" resultType="int">
+    /* Dashboard01Mapper.selectPatrolMonthMiss */
+    WITH RECURSIVE DAYS AS (
+        SELECT STR_TO_DATE(#{fromYmd}, '%Y%m%d') AS D
+        UNION ALL
+        SELECT D + INTERVAL 1 DAY FROM DAYS WHERE D &lt; STR_TO_DATE(#{toYmd}, '%Y%m%d')
+    )
+    SELECT
+        COUNT(1)
+    FROM TB_CHKPT_TYPE_MGMT A
+         INNER JOIN DAYS
+            ON (
+                DAYS.D &gt;= DATE(A.INSERT_DATE)                       -- 등록일 이후만 의무
+            AND (A.USE_YN = 'Y' OR DAYS.D &lt;= DATE(A.UPDATE_DATE))   -- 비활성 개소는 UPDATE_DATE(근사)까지만 의무
+            )
+    WHERE A.CMPNY_CD = #{gvCmpnyCd}
+      AND A.SITE_CD = #{siteCd}
+      AND NOT EXISTS (
+            SELECT 1
+            FROM TB_CHKPT_INSPECT_ANSWER R
+            WHERE R.CMPNY_CD = A.CMPNY_CD
+              AND R.SITE_CD = A.SITE_CD
+              AND R.CHKPT_CD = A.CHKPT_CD
+              AND R.WORK_DATE = DATE_FORMAT(DAYS.D, '%Y%m%d')
+      )
+    </select>
+
+    <!-- 위험성평가 상태별 카운트 (SYS011: 001=검토요청, 002=개선예정 — 월 조건 없음).
+         Risk_03 목록(selectRiskAssessmentsLists)과 건수 일치를 위해 INNER JOIN 3종(상태코드/공정/위험분류)을 복제.
+         ⚠ SELECT 컬럼 순서 = RiskStatusCountResult 생성자 순서와 1:1 (record 매핑) -->
+    <select id="selectRiskStatusCounts"
+            resultType="com.prafta.web.dashboard.dashboard01.result.RiskStatusCountResult">
+    /* Dashboard01Mapper.selectRiskStatusCounts */
+    SELECT
+        CAST(IFNULL(SUM(CASE WHEN A.ASSESSMENT_STATUS = '001' THEN 1 ELSE 0 END), 0) AS SIGNED) AS reviewRequestCnt
+      , CAST(IFNULL(SUM(CASE WHEN A.ASSESSMENT_STATUS = '002' THEN 1 ELSE 0 END), 0) AS SIGNED) AS improvePlanCnt
+    FROM TB_RISK_ASSESSMENT A
+         INNER JOIN (
+            SELECT
+                B.SYST_VAL_D_CD
+            FROM TB_SYST_VAL_D B
+            WHERE B.SYST_VAL_CD = 'SYS011'
+              AND B.USE_YN = 'Y'
+         ) B
+            ON (
+                A.ASSESSMENT_STATUS = B.SYST_VAL_D_CD
+            )
+         INNER JOIN (
+            SELECT
+                C.BAIM_VAL_D_CD
+            FROM TB_BAIM_VAL_D C
+            WHERE C.CMPNY_CD = #{gvCmpnyCd}
+              AND C.BAIM_VAL_CD = 'COM002'
+              AND C.USE_YN = 'Y'
+         ) C
+            ON (
+                A.PROCESS_CD = C.BAIM_VAL_D_CD
+            )
+         INNER JOIN TB_RISK_TYPE D
+            ON (
+                A.CMPNY_CD = D.CMPNY_CD
+            AND A.RISK_TYPE_CD = D.RISK_TYPE_CD
+            )
+    WHERE A.CMPNY_CD = #{gvCmpnyCd}
+      AND A.SITE_CD = #{siteCd}
+      AND A.ASSESSMENT_STATUS IN ('001', '002')
+    </select>
+
+    <!-- 조회월 아차사고 등록 건수 (NearMiss_01 목록 기간필터 축 그대로: USE_YN='Y' + OCCUR_DTIME 범위) -->
+    <select id="selectNearMissMonthCount" resultType="int">
+    /* Dashboard01Mapper.selectNearMissMonthCount */
+    SELECT
+        COUNT(1)
+    FROM TB_NEAR_MISS A
+    WHERE A.CMPNY_CD = #{gvCmpnyCd}
+      AND A.SITE_CD = #{siteCd}
+      AND A.USE_YN = 'Y'
+      AND A.OCCUR_DTIME &gt;= STR_TO_DATE(CONCAT(#{fromDate}, ' 00:00:00'), '%Y-%m-%d %H:%i:%s')
+      AND A.OCCUR_DTIME &lt;= STR_TO_DATE(CONCAT(#{toDate}, ' 23:59:59'), '%Y-%m-%d %H:%i:%s')
+    </select>
+
+    <!-- 기간 내 TBM 완료 세션 월별 건수 (완료=COMPLETED, 종료일 ENDED_AT strict — 사용자 승인 축).
+         희소 결과(건수 있는 월만) — 12포인트 0채움은 service 가 수행.
+         ⚠ SELECT 컬럼 순서 = TbmMonthCntResult 생성자 순서와 1:1 (record 매핑) -->
+    <select id="selectTbmMonthlyCounts"
+            resultType="com.prafta.web.dashboard.dashboard01.result.TbmMonthCntResult">
+    /* Dashboard01Mapper.selectTbmMonthlyCounts */
+    SELECT
+        DATE_FORMAT(A.ENDED_AT, '%Y-%m')  AS ym
+      , COUNT(1)                          AS cnt
+    FROM TB_TBM_SESSION A
+    WHERE A.CMPNY_CD = #{gvCmpnyCd}
+      AND A.SITE_CD = #{siteCd}
+      AND A.DEL_YN = 'N'
+      AND A.STATUS_CD = 'COMPLETED'
+      AND A.ENDED_AT &gt;= STR_TO_DATE(CONCAT(#{fromDate}, ' 00:00:00'), '%Y-%m-%d %H:%i:%s')
+      AND A.ENDED_AT &lt;= STR_TO_DATE(CONCAT(#{toDate}, ' 23:59:59'), '%Y-%m-%d %H:%i:%s')
+    GROUP BY DATE_FORMAT(A.ENDED_AT, '%Y-%m')
+    ORDER BY ym
+    </select>
+
+    <!-- ============ T2: 근태 탭 A1 근무계획 등록율 + A2 정상/비정상 근무율 ============ -->
+
+    <!-- A1. 부서별 근무계획 등록율 (부서당 1행, 전체 합계/rate 는 service 합산).
+         사용자 모수 = Attd05Mapper selectUserList 술어 미러(ACCOUNT_STATUS!='03' + 일용직 제외).
+         부서 트리(node_tree) = Attd11 변형(nodeCd 공란 → 루트 PARENT_NODE_CD IS NULL 부터 전체 확장).
+         등록 = 해당 월 TB_USER_WORK_PLAN 에 WORK_PLAN_CD 있는 행이 하루라도 존재(연차코드 셀 포함).
+         ⚠ SELECT 컬럼 순서 = DashAttdPlanRegRateRowResult 생성자 순서와 1:1 (record 매핑) -->
+    <select id="selectDashAttdPlanRegRate"
+            resultType="com.prafta.web.dashboard.dashboard01.result.DashAttdPlanRegRateRowResult">
+    /* Dashboard01Mapper.selectDashAttdPlanRegRate */
+        WITH RECURSIVE
+        node_tree AS (
+            SELECT
+                  N.CMPNY_CD
+                , N.SITE_CD
+                , N.NODE_CD
+                , N.NODE_NM
+            FROM TB_SITE_NODE N
+            WHERE N.CMPNY_CD = #{gvCmpnyCd}
+              AND N.SITE_CD  = #{siteCd}
+            <if test="nodeCd != null and nodeCd != ''">
+              AND N.NODE_CD  = #{nodeCd}
+            </if>
+            <if test="nodeCd == null or nodeCd == ''">
+              AND N.PARENT_NODE_CD IS NULL
+            </if>
+
+            <if test='"Y".equals(incSubNodeYn) or nodeCd == null or nodeCd == ""'>
+            UNION ALL
+
+            SELECT
+                  C.CMPNY_CD
+                , C.SITE_CD
+                , C.NODE_CD
+                , C.NODE_NM
+            FROM TB_SITE_NODE C
+            INNER JOIN node_tree P
+                ON  C.CMPNY_CD       = P.CMPNY_CD
+                AND C.SITE_CD        = P.SITE_CD
+                AND C.PARENT_NODE_CD = P.NODE_CD
+            </if>
+        )
+
+        SELECT
+              U.NODE_CD                                                     AS nodeCd
+            , NT.NODE_NM                                                    AS nodeNm
+            , CAST(COUNT(1) AS SIGNED)                                      AS totalUserCnt
+            , CAST(IFNULL(SUM(CASE WHEN EXISTS (
+                    SELECT 1
+                    FROM TB_USER_WORK_PLAN WP
+                    WHERE WP.CMPNY_CD = U.CMPNY_CD
+                      AND WP.SITE_CD  = U.SITE_CD
+                      AND WP.USER_CD  = U.USER_CD
+                      AND WP.WORK_YMD LIKE CONCAT(REPLACE(#{workYm}, '-', ''), '%')
+                      AND WP.WORK_PLAN_CD IS NOT NULL
+                ) THEN 1 ELSE 0 END), 0) AS SIGNED)                         AS regUserCnt
+        FROM TB_USER U
+        INNER JOIN node_tree NT
+            ON  U.CMPNY_CD = NT.CMPNY_CD
+            AND U.SITE_CD  = NT.SITE_CD
+            AND U.NODE_CD  = NT.NODE_CD
+        WHERE U.CMPNY_CD = #{gvCmpnyCd}
+          AND U.SITE_CD  = #{siteCd}
+          AND U.ACCOUNT_STATUS != '03'
+          AND IFNULL(U.EMPLOYMENT_TYPE, '') != 'DAILY'
+        GROUP BY U.NODE_CD, NT.NODE_NM
+        ORDER BY U.NODE_CD
+    </select>
+
+    <!-- A2. 정상/지각/조퇴/미출근 일수 카운트 (조건부 집계 단건).
+         모수(plan_day) = Attd11 selectAbsentDayCount 술어 미러 — 스케줄 근무일 중 오늘 이하,
+           연차(종일 확정)·휴일 제외. (단 출근기록일은 제외하지 않는다 — NORMAL/LATE/EARLY 로 분류)
+         지각/조퇴 = Attd08Mapper selectAttdLists CASE 그대로 이식(일시 CONCAT 비교 + 야간 익일 보정).
+         effective-dating 스케줄 시각 = Attd11 selectAttdSummaryRows SCH 서브쿼리 복제(APPLY_DATE<=근무일 MAX).
+         일 단위 롤업 우선순위: 미출근 &gt; 지각 &gt; 조퇴 &gt; 정상 (상호배타 → 합=targetDayCnt).
+         ⚠ SELECT 컬럼 순서 = DashAttdStatusCountResult 생성자 순서와 1:1 (record 매핑) -->
+    <select id="selectDashAttdStatusCount"
+            resultType="com.prafta.web.dashboard.dashboard01.result.DashAttdStatusCountResult">
+    /* Dashboard01Mapper.selectDashAttdStatusCount */
+        WITH RECURSIVE
+        node_tree AS (
+            SELECT
+                  N.CMPNY_CD
+                , N.SITE_CD
+                , N.NODE_CD
+                , N.NODE_NM
+            FROM TB_SITE_NODE N
+            WHERE N.CMPNY_CD = #{gvCmpnyCd}
+              AND N.SITE_CD  = #{siteCd}
+            <if test="nodeCd != null and nodeCd != ''">
+              AND N.NODE_CD  = #{nodeCd}
+            </if>
+            <if test="nodeCd == null or nodeCd == ''">
+              AND N.PARENT_NODE_CD IS NULL
+            </if>
+
+            <if test='"Y".equals(incSubNodeYn) or nodeCd == null or nodeCd == ""'>
+            UNION ALL
+
+            SELECT
+                  C.CMPNY_CD
+                , C.SITE_CD
+                , C.NODE_CD
+                , C.NODE_NM
+            FROM TB_SITE_NODE C
+            INNER JOIN node_tree P
+                ON  C.CMPNY_CD       = P.CMPNY_CD
+                AND C.SITE_CD        = P.SITE_CD
+                AND C.PARENT_NODE_CD = P.NODE_CD
+            </if>
+        ),
+
+        /* 대상 사용자 (Attd11 target_user 미러 — USE_YN='Y', 미퇴사) */
+        target_user AS (
+            SELECT
+                  U.CMPNY_CD
+                , U.SITE_CD
+                , U.USER_CD
+            FROM TB_USER U
+            INNER JOIN node_tree NT
+                ON  U.CMPNY_CD = NT.CMPNY_CD
+                AND U.SITE_CD  = NT.SITE_CD
+                AND U.NODE_CD  = NT.NODE_CD
+            WHERE U.CMPNY_CD        = #{gvCmpnyCd}
+              AND U.SITE_CD         = #{siteCd}
+              AND U.USE_YN          = 'Y'
+              AND U.WITHDRAWAL_DATE IS NULL
+        ),
+
+        /* 판정 대상 계획일 (Attd11 selectAbsentDayCount 모수/제외 술어 미러 — 단 출근기록일은 유지) */
+        plan_day AS (
+            SELECT
+                  WP.CMPNY_CD
+                , WP.SITE_CD
+                , WP.USER_CD
+                , WP.WORK_YMD
+                , WP.WORK_PLAN_CD
+            FROM target_user U
+            INNER JOIN TB_USER_WORK_PLAN WP
+                ON  WP.CMPNY_CD = U.CMPNY_CD
+                AND WP.SITE_CD  = U.SITE_CD
+                AND WP.USER_CD  = U.USER_CD
+                AND WP.WORK_YMD LIKE CONCAT(REPLACE(#{workYm}, '-', ''), '%')
+            /* 스케줄 근무일만 (WORK_PLAN_CD 가 SCH_CD — 연차셀 LEAVE_CD 분리) */
+            WHERE WP.WORK_PLAN_CD IS NOT NULL
+              AND EXISTS (
+                    SELECT 1
+                    FROM TB_SCH_MGMT M
+                    WHERE M.CMPNY_CD = WP.CMPNY_CD
+                      AND M.SITE_CD  = WP.SITE_CD
+                      AND M.SCH_CD   = WP.WORK_PLAN_CD
+                    UNION ALL
+                    SELECT 1
+                    FROM TB_SCH_MGMT_HIST H
+                    WHERE H.CMPNY_CD = WP.CMPNY_CD
+                      AND H.SITE_CD  = WP.SITE_CD
+                      AND H.SCH_CD   = WP.WORK_PLAN_CD
+                  )
+            /* 미래일 제외 (오늘 이후는 아직 출근 기회 미도래 — 오늘 포함) */
+              AND WP.WORK_YMD <![CDATA[ <= ]]> DATE_FORMAT(CURDATE(), '%Y%m%d')
+            /* 연차일 제외 (TB_USER_LEAVE_USE 종일 확정 — Attd05 단일출처 술어 미러) */
+              AND NOT EXISTS (
+                    SELECT 1
+                    FROM TB_USER_LEAVE_USE L
+                    WHERE L.CMPNY_CD      = WP.CMPNY_CD
+                      AND L.USER_CD       = WP.USER_CD
+                      AND L.LEAVE_STATUS  = 'CONFIRMED'
+                      AND L.DEL_YN        = 'N'
+                      AND L.USE_UNIT_TYPE = '00'
+                      AND L.START_DATE <![CDATA[ <= ]]> WP.WORK_YMD
+                      AND L.END_DATE   <![CDATA[ >= ]]> WP.WORK_YMD
+                  )
+            /* 휴일 제외 (HOLIDAY_TYPE 전체) */
+              AND NOT EXISTS (
+                    SELECT 1
+                    FROM TB_HOLIDAY HD
+                    WHERE HD.CMPNY_CD = WP.CMPNY_CD
+                      AND HD.USE_YN   = 'Y'
+                      AND DATE_FORMAT(HD.HOLIDAY_YMD, '%Y%m%d') = WP.WORK_YMD
+                  )
+        ),
+
+        /* 계획일 1일 = 1상태 롤업 (차수 지각/조퇴는 MAX 로 접기) */
+        day_status AS (
+            SELECT
+                  P.USER_CD
+                , P.WORK_YMD
+                /* 그날 어느 차수든 출근기록(CHECK_IN) 있으면 1 — 0 이면 미출근 */
+                , MAX(CASE WHEN A.CHECK_IN_TIME IS NOT NULL AND A.CHECK_IN_TIME <![CDATA[ <> ]]> '' THEN 1 ELSE 0 END) AS hasCheckIn
+                /* 지각 플래그 (Attd08 CASE 이식 — 실제 출근 일시 &gt; 스케줄 시작 일시) */
+                , MAX(CASE
+                        WHEN A.WORK_SEQ = 1 AND SCH.FST_SCH_STR_TIME IS NOT NULL
+                             AND A.CHECK_IN_TIME IS NOT NULL AND A.CHECK_IN_TIME <![CDATA[ <> ]]> ''
+                             AND CONCAT(IFNULL(A.CHECK_IN_DATE, A.WORK_YMD), A.CHECK_IN_TIME)
+                                 <![CDATA[ > ]]> CONCAT(A.WORK_YMD, SCH.FST_SCH_STR_TIME)
+                            THEN 1
+                        WHEN A.WORK_SEQ = 2 AND SCH.SEC_SCH_STR_TIME IS NOT NULL
+                             AND A.CHECK_IN_TIME IS NOT NULL AND A.CHECK_IN_TIME <![CDATA[ <> ]]> ''
+                             AND CONCAT(IFNULL(A.CHECK_IN_DATE, A.WORK_YMD), A.CHECK_IN_TIME)
+                                 <![CDATA[ > ]]> CONCAT(A.WORK_YMD, SCH.SEC_SCH_STR_TIME)
+                            THEN 1
+                        ELSE 0 END) AS lateFlag
+                /* 조퇴 플래그 (Attd08 CASE 이식 — 실제 퇴근 일시 &lt; 스케줄 종료 일시, 야간 익일 보정) */
+                , MAX(CASE
+                        WHEN A.WORK_SEQ = 1 AND SCH.FST_SCH_END_TIME IS NOT NULL
+                             AND A.CHECK_OUT_TIME IS NOT NULL AND A.CHECK_OUT_TIME <![CDATA[ <> ]]> ''
+                             AND CONCAT(IFNULL(A.CHECK_OUT_DATE, A.WORK_YMD), A.CHECK_OUT_TIME)
+                                 <![CDATA[ < ]]> CONCAT(
+                                       CASE WHEN SCH.FST_SCH_STR_TIME IS NOT NULL AND SCH.FST_SCH_END_TIME <![CDATA[ < ]]> SCH.FST_SCH_STR_TIME
+                                            THEN DATE_FORMAT(DATE_ADD(STR_TO_DATE(A.WORK_YMD, '%Y%m%d'), INTERVAL 1 DAY), '%Y%m%d')
+                                            ELSE A.WORK_YMD END
+                                     , SCH.FST_SCH_END_TIME)
+                            THEN 1
+                        WHEN A.WORK_SEQ = 2 AND SCH.SEC_SCH_END_TIME IS NOT NULL
+                             AND A.CHECK_OUT_TIME IS NOT NULL AND A.CHECK_OUT_TIME <![CDATA[ <> ]]> ''
+                             AND CONCAT(IFNULL(A.CHECK_OUT_DATE, A.WORK_YMD), A.CHECK_OUT_TIME)
+                                 <![CDATA[ < ]]> CONCAT(
+                                       CASE WHEN SCH.SEC_SCH_STR_TIME IS NOT NULL AND SCH.SEC_SCH_END_TIME <![CDATA[ < ]]> SCH.SEC_SCH_STR_TIME
+                                            THEN DATE_FORMAT(DATE_ADD(STR_TO_DATE(A.WORK_YMD, '%Y%m%d'), INTERVAL 1 DAY), '%Y%m%d')
+                                            ELSE A.WORK_YMD END
+                                     , SCH.SEC_SCH_END_TIME)
+                            THEN 1
+                        ELSE 0 END) AS earlyFlag
+            FROM plan_day P
+            LEFT JOIN TB_USER_ATTD_MGMT A
+                ON  A.CMPNY_CD = P.CMPNY_CD
+                AND A.SITE_CD  = P.SITE_CD
+                AND A.USER_CD  = P.USER_CD
+                AND A.WORK_YMD = P.WORK_YMD
+                AND A.WORK_SEQ IN (1, 2)
+                AND A.DEL_YN   = 'N'
+            /* 근무일 기준 유효 스케줄 (effective-dating — Attd11 SCH 서브쿼리 복제) */
+            LEFT JOIN (
+                SELECT
+                      E.CMPNY_CD
+                    , E.SITE_CD
+                    , E.SCH_CD
+                    , E.APPLY_DATE
+                    , E.FST_SCH_STR_TIME
+                    , E.FST_SCH_END_TIME
+                    , E.SEC_SCH_STR_TIME
+                    , E.SEC_SCH_END_TIME
+                FROM (
+                    SELECT
+                          M.CMPNY_CD
+                        , M.SITE_CD
+                        , M.SCH_CD
+                        , M.APPLY_DATE
+                        , M.FST_SCH_STR_TIME
+                        , M.FST_SCH_END_TIME
+                        , M.SEC_SCH_STR_TIME
+                        , M.SEC_SCH_END_TIME
+                        , 2147483647 AS HIST_IDX
+                    FROM TB_SCH_MGMT M
+                    WHERE M.USE_YN = 'Y'
+
+                    UNION ALL
+
+                    SELECT
+                          H.CMPNY_CD
+                        , H.SITE_CD
+                        , H.SCH_CD
+                        , H.APPLY_DATE
+                        , H.FST_SCH_STR_TIME
+                        , H.FST_SCH_END_TIME
+                        , H.SEC_SCH_STR_TIME
+                        , H.SEC_SCH_END_TIME
+                        , H.HIST_IDX
+                    FROM TB_SCH_MGMT_HIST H
+                    WHERE H.USE_YN = 'Y'
+                ) E
+                WHERE E.HIST_IDX = (
+                    SELECT MAX(E2.HIST_IDX)
+                    FROM (
+                        SELECT M2.CMPNY_CD, M2.SITE_CD, M2.SCH_CD, M2.APPLY_DATE, 2147483647 AS HIST_IDX
+                        FROM TB_SCH_MGMT M2
+                        WHERE M2.USE_YN = 'Y'
+                        UNION ALL
+                        SELECT H2.CMPNY_CD, H2.SITE_CD, H2.SCH_CD, H2.APPLY_DATE, H2.HIST_IDX
+                        FROM TB_SCH_MGMT_HIST H2
+                        WHERE H2.USE_YN = 'Y'
+                    ) E2
+                    WHERE E2.CMPNY_CD   = E.CMPNY_CD
+                      AND E2.SITE_CD    = E.SITE_CD
+                      AND E2.SCH_CD     = E.SCH_CD
+                      AND E2.APPLY_DATE = E.APPLY_DATE
+                )
+            ) SCH
+                ON  SCH.CMPNY_CD = P.CMPNY_CD
+                AND SCH.SITE_CD  = P.SITE_CD
+                AND SCH.SCH_CD   = P.WORK_PLAN_CD
+                AND SCH.APPLY_DATE = (
+                    SELECT COALESCE(
+                             MAX(CASE WHEN SE.APPLY_DATE <![CDATA[ <= ]]> P.WORK_YMD THEN SE.APPLY_DATE END)
+                           , MIN(SE.APPLY_DATE)
+                           )
+                    FROM (
+                        SELECT M3.CMPNY_CD, M3.SITE_CD, M3.SCH_CD, M3.APPLY_DATE
+                        FROM TB_SCH_MGMT M3
+                        WHERE M3.USE_YN = 'Y'
+                        UNION ALL
+                        SELECT H3.CMPNY_CD, H3.SITE_CD, H3.SCH_CD, H3.APPLY_DATE
+                        FROM TB_SCH_MGMT_HIST H3
+                        WHERE H3.USE_YN = 'Y'
+                    ) SE
+                    WHERE SE.CMPNY_CD    = P.CMPNY_CD
+                      AND SE.SITE_CD     = P.SITE_CD
+                      AND SE.SCH_CD      = P.WORK_PLAN_CD
+                )
+            GROUP BY P.USER_CD, P.WORK_YMD
+        )
+
+        SELECT
+              CAST(COUNT(1) AS SIGNED)                                                                 AS targetDayCnt
+            , CAST(IFNULL(SUM(CASE WHEN hasCheckIn = 1 AND lateFlag = 0 AND earlyFlag = 0 THEN 1 ELSE 0 END), 0) AS SIGNED) AS normalCnt
+            , CAST(IFNULL(SUM(CASE WHEN hasCheckIn = 1 AND lateFlag = 1 THEN 1 ELSE 0 END), 0) AS SIGNED)                    AS lateCnt
+            , CAST(IFNULL(SUM(CASE WHEN hasCheckIn = 1 AND lateFlag = 0 AND earlyFlag = 1 THEN 1 ELSE 0 END), 0) AS SIGNED)  AS earlyLeaveCnt
+            , CAST(IFNULL(SUM(CASE WHEN hasCheckIn = 0 THEN 1 ELSE 0 END), 0) AS SIGNED)                                     AS absentCnt
+        FROM day_status
+    </select>
+
+    <!-- ============ T3: 근태 탭 A3 초과근무 6개월 추이(overtime-trend) ============
+      술어는 Attd_07/08(selectMonthlyOvertimeList / selectAttdLists OT 분기)과 자구 동일:
+        DEL_YN='N' AND OT_STATUS <> 'CANCELLED' + node_tree INNER JOIN(NODE_CD NULL 행 제외).
+      기간은 service 가 산출한 fromYmd~toYmd(YYYYMMDD). 값 = 월별 SUM(WORK_MINUTES, 분·휴게제외).
+      희소(존재 월만) 반환 — 6포인트 0채움/'YYYYMM'→'YYYY-MM' 변환은 service.
+      node_tree 는 Attd_08 옵셔널 형태(nodeCd 없으면 사업장 전체, incSubNodeYn='Y'+nodeCd 일 때만 하위 전개). -->
+    <select id="selectOvertimeMonthlyTotals"
+            resultType="com.prafta.web.dashboard.dashboard01.result.OvertimeMonthlyResult">
+    /* Dashboard01Mapper.selectOvertimeMonthlyTotals */
+        WITH RECURSIVE node_tree AS (
+            SELECT
+                  N.CMPNY_CD
+                , N.SITE_CD
+                , N.NODE_CD
+            FROM TB_SITE_NODE N
+            WHERE N.CMPNY_CD = #{gvCmpnyCd}
+              AND N.SITE_CD  = #{siteCd}
+            <if test="nodeCd != null and nodeCd != ''">
+              AND N.NODE_CD  = #{nodeCd}
+            </if>
+
+            <if test='"Y".equals(incSubNodeYn) and nodeCd != null and nodeCd != ""'>
+            UNION ALL
+
+            SELECT
+                  C.CMPNY_CD
+                , C.SITE_CD
+                , C.NODE_CD
+            FROM TB_SITE_NODE C
+            INNER JOIN node_tree P
+                ON  C.CMPNY_CD       = P.CMPNY_CD
+                AND C.SITE_CD        = P.SITE_CD
+                AND C.PARENT_NODE_CD = P.NODE_CD
+            </if>
+        )
+        SELECT
+              SUBSTRING(O.WORK_YMD, 1, 6)  AS ym          /* 'YYYYMM' — service 에서 'YYYY-MM' 변환 */
+            , SUM(O.WORK_MINUTES)          AS totalMinutes
+        FROM TB_USER_OVERTIME_MGMT O
+        INNER JOIN node_tree NT
+            ON  O.CMPNY_CD = NT.CMPNY_CD
+            AND O.SITE_CD  = NT.SITE_CD
+            AND O.NODE_CD  = NT.NODE_CD    /* Attd_07/08과 동일: NODE_CD NULL 행 제외 */
+        WHERE O.CMPNY_CD  = #{gvCmpnyCd}
+          AND O.SITE_CD   = #{siteCd}
+          AND O.DEL_YN    = 'N'
+          AND O.OT_STATUS <![CDATA[ <> ]]> 'CANCELLED'   /* Attd_07/08과 동일 술어 */
+          AND O.WORK_YMD  <![CDATA[ >= ]]> #{fromYmd}
+          AND O.WORK_YMD  <![CDATA[ <= ]]> #{toYmd}
+        GROUP BY SUBSTRING(O.WORK_YMD, 1, 6)
+    </select>
+
+    <!-- ============ T3: 근태 탭 A4 법정연차 3분할 — 부여 분모(leave-usage) ============
+      STATUTORY_% AND STATUS IN ('ACTIVE','EXHAUSTED') 합계.
+      STATUS 술어는 User01Mapper.selectUserStatutoryLeaveSummary(L870-881)와 동일(EXHAUSTED 포함,
+      AVAIL_FROM/TO 술어 미적용 — 기간 만료는 EXPIRED 전이가 대변).
+      인원 모집단은 Attd_09 dashboardWhere(LeaveDashboardMapper L121-148)와 자구 동일.
+      사용기록 없는 부여도 분모에 포함해야 하므로 use 조인 없이 별도 집계한다. -->
+    <select id="selectLeaveGrantTotal" resultType="java.math.BigDecimal">
+    /* Dashboard01Mapper.selectLeaveGrantTotal */
+    <if test='nodeCd != null and nodeCd != "" and "Y".equals(incSubNodeYn)'>
+        WITH RECURSIVE node_tree AS (
+            SELECT
+                  N.CMPNY_CD
+                , N.SITE_CD
+                , N.NODE_CD
+            FROM TB_SITE_NODE N
+            WHERE N.CMPNY_CD = #{gvCmpnyCd}
+              AND N.SITE_CD  = #{siteCd}
+              AND N.NODE_CD  = #{nodeCd}
+
+            UNION ALL
+
+            SELECT
+                  C.CMPNY_CD
+                , C.SITE_CD
+                , C.NODE_CD
+            FROM TB_SITE_NODE C
+            INNER JOIN node_tree P
+                ON  C.CMPNY_CD       = P.CMPNY_CD
+                AND C.SITE_CD        = P.SITE_CD
+                AND C.PARENT_NODE_CD = P.NODE_CD
+        )
+    </if>
+        SELECT
+              IFNULL(SUM(G.GRANT_DAYS), 0) AS grantDays
+        FROM TB_USER U
+        JOIN TB_USER_LEAVE_GRANT G
+            ON  G.CMPNY_CD   = U.CMPNY_CD
+            AND G.USER_CD    = U.USER_CD
+            AND G.DEL_YN     = 'N'
+            AND G.STATUS     IN ('ACTIVE', 'EXHAUSTED')   /* User01Mapper L879와 동일. AVAIL 술어 미적용(§0-17) */
+            AND G.GRANT_TYPE LIKE 'STATUTORY\_%'
+        WHERE U.CMPNY_CD = #{gvCmpnyCd}
+          AND U.USE_YN = 'Y'
+          AND U.WITHDRAWAL_DATE IS NULL
+          AND U.ACCOUNT_STATUS IN ('01', '04')             /* Attd_09 직원 모집단과 동일 */
+          AND U.SITE_CD = #{siteCd}
+        <if test="nodeCd != null and nodeCd != ''">
+          <choose>
+            <when test='"Y".equals(incSubNodeYn)'>
+          AND EXISTS (
+                SELECT 1
+                  FROM node_tree NT
+                 WHERE NT.CMPNY_CD = U.CMPNY_CD
+                   AND NT.SITE_CD  = U.SITE_CD
+                   AND NT.NODE_CD  = U.NODE_CD
+              )
+            </when>
+            <otherwise>
+          AND U.NODE_CD = #{nodeCd}
+            </otherwise>
+          </choose>
+        </if>
+    </select>
+
+    <!-- ============ T3: 근태 탭 A4 법정연차 3분할 — 사용/사용예정(leave-usage) ============
+      GRANT_ID 경유로 부여 분모(위 selectLeaveGrantTotal)와 자구 동일한 부여 집합(STATUTORY_%·
+      ACTIVE/EXHAUSTED·DEL_YN='N')에 연결된 CONFIRMED 사용분만 집계 → 미사용 음수 불가.
+      오늘(DATE_FORMAT(NOW(),'%Y%m%d')) 기준 START_DATE 로 사용/사용예정 CASE 분리
+      (LeaveDashboardMapper legalScheduled L192-209 관례). 인원 모집단은 부여 쿼리와 동일. -->
+    <select id="selectLeaveUseSplit"
+            resultType="com.prafta.web.dashboard.dashboard01.result.LeaveUseSplitResult">
+    /* Dashboard01Mapper.selectLeaveUseSplit */
+    <if test='nodeCd != null and nodeCd != "" and "Y".equals(incSubNodeYn)'>
+        WITH RECURSIVE node_tree AS (
+            SELECT
+                  N.CMPNY_CD
+                , N.SITE_CD
+                , N.NODE_CD
+            FROM TB_SITE_NODE N
+            WHERE N.CMPNY_CD = #{gvCmpnyCd}
+              AND N.SITE_CD  = #{siteCd}
+              AND N.NODE_CD  = #{nodeCd}
+
+            UNION ALL
+
+            SELECT
+                  C.CMPNY_CD
+                , C.SITE_CD
+                , C.NODE_CD
+            FROM TB_SITE_NODE C
+            INNER JOIN node_tree P
+                ON  C.CMPNY_CD       = P.CMPNY_CD
+                AND C.SITE_CD        = P.SITE_CD
+                AND C.PARENT_NODE_CD = P.NODE_CD
+        )
+    </if>
+        SELECT
+              IFNULL(SUM(CASE WHEN LU.START_DATE <![CDATA[ <= ]]> DATE_FORMAT(NOW(), '%Y%m%d')
+                              THEN LU.LEAVE_DAYS ELSE 0 END), 0) AS usedDays
+            , IFNULL(SUM(CASE WHEN LU.START_DATE <![CDATA[ > ]]> DATE_FORMAT(NOW(), '%Y%m%d')
+                              THEN LU.LEAVE_DAYS ELSE 0 END), 0) AS plannedDays
+        FROM TB_USER U
+        JOIN TB_USER_LEAVE_USE LU
+            ON  LU.CMPNY_CD     = U.CMPNY_CD
+            AND LU.USER_CD      = U.USER_CD
+            AND LU.LEAVE_STATUS = 'CONFIRMED'            /* 취소분(CANCELLED) 제외 */
+            AND LU.DEL_YN       = 'N'
+        JOIN TB_USER_LEAVE_GRANT G
+            ON  G.CMPNY_CD   = LU.CMPNY_CD
+            AND G.GRANT_ID   = LU.GRANT_ID                /* 법정 판별 = GRANT_ID 경유(§0-16) */
+            AND G.DEL_YN     = 'N'
+            AND G.STATUS     IN ('ACTIVE', 'EXHAUSTED')   /* 부여 분모 쿼리와 자구 동일 */
+            AND G.GRANT_TYPE LIKE 'STATUTORY\_%'
+        WHERE U.CMPNY_CD = #{gvCmpnyCd}
+          AND U.USE_YN = 'Y'
+          AND U.WITHDRAWAL_DATE IS NULL
+          AND U.ACCOUNT_STATUS IN ('01', '04')
+          AND U.SITE_CD = #{siteCd}
+        <if test="nodeCd != null and nodeCd != ''">
+          <choose>
+            <when test='"Y".equals(incSubNodeYn)'>
+          AND EXISTS (
+                SELECT 1
+                  FROM node_tree NT
+                 WHERE NT.CMPNY_CD = U.CMPNY_CD
+                   AND NT.SITE_CD  = U.SITE_CD
+                   AND NT.NODE_CD  = U.NODE_CD
+              )
+            </when>
+            <otherwise>
+          AND U.NODE_CD = #{nodeCd}
+            </otherwise>
+          </choose>
+        </if>
+    </select>
+
+</mapper>

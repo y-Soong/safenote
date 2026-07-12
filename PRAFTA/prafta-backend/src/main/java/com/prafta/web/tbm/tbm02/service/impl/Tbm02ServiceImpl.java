@@ -91,6 +91,10 @@ public class Tbm02ServiceImpl implements Tbm02Service {
 	/** 교육 내용 최소 텍스트 길이(빈 HTML 거부). */
 	private static final int CONTENT_TEXT_MIN = 10;
 
+	/** 교육 인정시간(분) 범위(요청서 17.3.1 / 공유계약: 1~60 정수). */
+	private static final int EDU_MINUTES_MIN = 1;
+	private static final int EDU_MINUTES_MAX = 60;
+
 	/** 위험성평가 미연동 경고 메시지(05_02 §1.4 / §3.4). */
 	private static final String RISK_WARNING_MESSAGE =
 		"위험성평가 연동되지 않은 TBM입니다. 사고 발생 시 설득력이 떨어질 수 있습니다.";
@@ -143,8 +147,17 @@ public class Tbm02ServiceImpl implements Tbm02Service {
 		List<SessionContentResult> contents = tbm02Mapper.selectSessionContents(query);
 		List<SessionRiskResult> risks = tbm02Mapper.selectSessionRisks(query);
 
-		// 비밀번호 노출 게이트: OPENED/IN_PROGRESS 상태 + 관리자(safe/master/hr)만
-		boolean pwdVisible = isPwdVisible(session.statusCd(), param.gvAuthCd());
+		// 비밀번호 노출 게이트(T6-03 필드별 분리):
+		//  - 입실비번: 교육준비(OPENED)/교육시작(IN_PROGRESS) + 관리자
+		//  - 종료비번: 교육종료(COMPLETED) + 관리자 (재발급 후 fnSearch 덮어쓰기로 사라지던 결함 해소)
+		boolean entryPwdVisible = isEntryPwdVisible(session.statusCd(), param.gvAuthCd());
+		boolean exitPwdVisible = isExitPwdVisible(session.statusCd(), param.gvAuthCd());
+		boolean pwdVisible = entryPwdVisible || exitPwdVisible;
+
+		// [Medium 보강/T6] 위험성평가 상세 민감필드 노출 게이트(비번 게이트와 동일 출처: 서버 권위 authCd).
+		// 비관리자(일반 근로자)가 sessionCd 를 열거해 직접 호출해도 평가자 실명/파일경로/점수·설명 상세는
+		// redaction 한다. 콘솔은 관리자 전용 화면이라 관리자(master/safe/hr)는 기존과 동일하게 전부 노출.
+		boolean riskDetailVisible = isManagerRole(param.gvAuthCd());
 
 		SessionDetailResponse.SessionDetailItem item = SessionDetailResponse.SessionDetailItem.builder()
 				.sessionCd(session.sessionCd())
@@ -156,8 +169,8 @@ public class Tbm02ServiceImpl implements Tbm02Service {
 				.contentFormatCd(session.contentFormatCd())
 				.statusCd(session.statusCd())
 				.statusNm(session.statusNm())
-				.entryPwd(pwdVisible ? session.entryPwd() : null)
-				.exitPwd(pwdVisible ? session.exitPwd() : null)
+				.entryPwd(entryPwdVisible ? session.entryPwd() : null)
+				.exitPwd(exitPwdVisible ? session.exitPwd() : null)
 				.pwdVisible(pwdVisible)
 				.managerUserCd(session.managerUserCd())
 				.managerUserNm(session.managerUserNm())
@@ -165,6 +178,7 @@ public class Tbm02ServiceImpl implements Tbm02Service {
 				.managerGpsLon(session.managerGpsLon())
 				.gpsVerifyTypeCd(session.gpsVerifyTypeCd())
 				.gpsVerifyRadiusM(session.gpsVerifyRadiusM())
+				.eduMinutes(session.eduMinutes())
 				.gpsManualConfirmYn(session.gpsManualConfirmYn())
 				.openedAt(session.openedAt())
 				.prepStartAt(session.prepStartAt())
@@ -179,25 +193,12 @@ public class Tbm02ServiceImpl implements Tbm02Service {
 		List<SessionDetailResponse.SessionRiskItem> riskItems = new ArrayList<>();
 		if (risks != null) {
 			for (SessionRiskResult r : risks) {
-				riskItems.add(SessionDetailResponse.SessionRiskItem.builder()
-						.siteCd(r.siteCd())
-						.processCd(r.processCd())
-						.processNm(r.processNm())
-						.riskTypeCd(r.riskTypeCd())
-						.riskTypeNm(r.riskTypeNm())
-						.hazardCd(r.hazardCd())
-						.hazardNm(r.hazardNm())
-						.assessmentCd(r.assessmentCd())
-						.assessmentStatus(r.assessmentStatus())
-						.assessmentStatusNm(r.assessmentStatusNm())
-						.displayName(buildRiskDisplayName(r.processNm(), r.riskTypeNm(), r.hazardNm()))
-						.displayOrder(r.displayOrder())
-						.build());
+				riskItems.add(buildSessionRiskItem(r, riskDetailVisible));
 			}
 		}
 
-		log.info("TBM 세션 상세 조회 완료 - sessionCd={}, status={}, pwdVisible={}",
-				session.sessionCd(), session.statusCd(), pwdVisible);
+		log.info("TBM 세션 상세 조회 완료 - sessionCd={}, status={}, pwdVisible={}, riskDetailVisible={}",
+				session.sessionCd(), session.statusCd(), pwdVisible, riskDetailVisible);
 
 		return SessionDetailResponse.builder()
 				.session(item)
@@ -232,6 +233,9 @@ public class Tbm02ServiceImpl implements Tbm02Service {
 		if (!StringUtils.hasText(title) || title.length() > 200) {
 			throw new ApiException(TbmErrorCode.TBM_400_011);
 		}
+
+		// 교육시간 검증(개설은 NULL 허용, 있으면 1~60)
+		validateEduMinutes(param.eduMinutes(), false);
 
 		String sessionCd = tbm02Mapper.selectSessionCd(param.gvCmpnyCd());
 		if (!StringUtils.hasText(sessionCd)) {
@@ -290,23 +294,26 @@ public class Tbm02ServiceImpl implements Tbm02Service {
 			throw new ApiException(TbmErrorCode.TBM_409_013);
 		}
 
-		// 제목 검증
-		String title = param.title() != null ? param.title().trim() : "";
+		// §X-2(Q5-A): 교육준비는 경량 전이(GPS 좌표 확정 + 상태전이 + 입실비번 발급 + 교육시간 필수검증)만 수행한다.
+		// 제목/교육내용 검증은 FE 가 보내지 않는 param.title()/contentBody() 가 아니라 DB 의 DRAFT 값 기준으로 한다.
+		// 콘텐츠/위험성 매핑은 개설/수정 단계에서 이미 확정되므로 prepare 에서 delete-reinsert 하지 않는다(데이터 손실 방지).
+
+		// 제목 검증(DB 의 DRAFT 값 기준)
+		String title = guard.title() != null ? guard.title().trim() : "";
 		if (!StringUtils.hasText(title) || title.length() > 200) {
+			log.warn("TBM 교육준비 제목 부적합(DB 기준) - sessionCd={}", param.sessionCd());
 			throw new ApiException(TbmErrorCode.TBM_400_011);
 		}
 
-		// 교육 내용/GPS 검증(개설 수준): 교육준비 시점에 최종 강제
-		validateContentBody(param.contentBody());
+		// 교육 내용 검증(DB 의 DRAFT 값 기준)
+		validateContentBody(guard.contentBody());
+
+		// 교육시간 필수 검증(DB 의 DRAFT 값 기준, 미입력이면 TBM_400_015)
+		validateEduMinutes(guard.eduMinutes(), true);
+
+		// GPS 검증(개설 수준): 좌표는 교육준비 시점에 param 으로 받아 확정(현행 유지)
 		validateGps(param.gpsVerifyTypeCd(), param.managerGpsLat(), param.managerGpsLon(),
 				param.gpsVerifyRadiusM(), param.gpsManualConfirmYn());
-
-		// 콘텐츠/위험성 매핑 최종 반영(기존 delete 후 재insert)
-		tbm02Mapper.deleteSessionContents(param.gvCmpnyCd(), param.sessionCd());
-		insertContents(param.contents(), param.sessionCd(), param.gvCmpnyCd(), param.gvUserCd());
-
-		tbm02Mapper.deleteSessionRisks(param.gvCmpnyCd(), param.sessionCd());
-		insertRisks(param.risks(), param.sessionCd(), param.gvCmpnyCd(), param.gvUserCd());
 
 		// 입실비번 발급(6자리). 종료비번은 발급하지 않음(null 유지).
 		String entryPwd = NumericPwdGenerator.generate(PWD_LENGTH);
@@ -503,6 +510,9 @@ public class Tbm02ServiceImpl implements Tbm02Service {
 		if (!StringUtils.hasText(title) || title.length() > 200) {
 			throw new ApiException(TbmErrorCode.TBM_400_011);
 		}
+
+		// 교육시간 검증(수정은 NULL 허용, 있으면 1~60)
+		validateEduMinutes(param.eduMinutes(), false);
 
 		// OPENED 상태 수정 시 교육 내용/ GPS 는 개설 수준으로 재검증
 		if ("OPENED".equals(guard.statusCd())) {
@@ -803,6 +813,12 @@ public class Tbm02ServiceImpl implements Tbm02Service {
 		OptionQuery query = OptionQuery.from(param);
 		List<RiskOptionResult> list = tbm02Mapper.selectRiskOptions(query);
 
+		// [Medium 보강/T6] risk-options 는 엔드포인트에 관리자 게이트가 없고 999999 만 차단하므로,
+		// 비관리자(일반 근로자) 호출 시 평가자 실명(FNC 복호화)이 노출된다. session-detail 과 동일 출처
+		// (서버 권위 authCd) 게이트로 비관리자에게는 평가요청자 실명을 redaction 한다. 개설은 관리자 행위라
+		// 관리자(master/safe/hr)는 그대로 노출되어 개설 흐름 무영향.
+		boolean assessorVisible = isManagerRole(param.gvAuthCd());
+
 		List<RiskOptionResponse.RiskOptionItem> items = new ArrayList<>();
 		if (list != null) {
 			for (RiskOptionResult r : list) {
@@ -818,6 +834,9 @@ public class Tbm02ServiceImpl implements Tbm02Service {
 						.assessmentStatus(r.assessmentStatus())
 						.assessmentStatusNm(r.assessmentStatusNm())
 						.displayName(buildRiskDisplayName(r.processNm(), r.riskTypeNm(), r.hazardNm()))
+						// 6.3(T6-13): 위험성평가 선택 팝업 컬럼 — 평가요청일(비민감)/평가요청자(관리자만)
+						.initAssessDate(r.initAssessDate())
+						.initAssessorNm(assessorVisible ? r.initAssessorNm() : null)
 						.build());
 			}
 		}
@@ -933,11 +952,48 @@ public class Tbm02ServiceImpl implements Tbm02Service {
 		}
 	}
 
-	/** 비밀번호 노출 게이트: OPENED/IN_PROGRESS 상태 + 관리자(safe/master/hr). */
-	private boolean isPwdVisible(String statusCd, String authCd) {
+	/**
+	 * 입실비밀번호 노출 게이트(T6-03): 교육준비(OPENED)/교육시작(IN_PROGRESS) + 관리자.
+	 * 입실비번은 입실 마감 전(OPENED/IN_PROGRESS)에만 의미가 있으므로 종료 후에는 숨긴다.
+	 */
+	private boolean isEntryPwdVisible(String statusCd, String authCd) {
 		boolean openStatus = "OPENED".equals(statusCd) || "IN_PROGRESS".equals(statusCd);
-		boolean isManager = AuthRoleUtils.canManageCommon(authCd) || AuthRoleUtils.isManager(authCd);
-		return openStatus && isManager;
+		return openStatus && isManagerRole(authCd);
+	}
+
+	/**
+	 * 종료비밀번호 노출 게이트(T6-03): 교육종료(COMPLETED) + 관리자.
+	 * 종료비번은 교육종료 전이 시 발급되므로 COMPLETED 에서 관리자에게 상시 노출한다
+	 * (재발급 후 fnSearch 가 null 로 덮어쓰던 6.2-(1)-3 결함 해소).
+	 */
+	private boolean isExitPwdVisible(String statusCd, String authCd) {
+		return "COMPLETED".equals(statusCd) && isManagerRole(authCd);
+	}
+
+	/** 비밀번호 열람 가능 관리자 역할(safe/master/hr). */
+	private boolean isManagerRole(String authCd) {
+		return AuthRoleUtils.canManageCommon(authCd) || AuthRoleUtils.isManager(authCd);
+	}
+
+	/**
+	 * 교육 인정시간(분) 검증(공유계약: 1~60 정수).
+	 *
+	 * <p>{@code required=false}: null 허용(개설/수정/임시저장). 값이 있으면 1~60 검증.
+	 * {@code required=true}: null도 거부(교육준비 시작 — 미입력이면 TBM_400_015).
+	 * 웹/앱 공용 단일 규칙(이원화 금지). 범위밖/미입력 모두 TBM_400_015 로 안내.
+	 */
+	private void validateEduMinutes(Integer eduMinutes, boolean required) {
+		if (eduMinutes == null) {
+			if (required) {
+				log.warn("TBM 교육시간 미입력(교육준비 필수)");
+				throw new ApiException(TbmErrorCode.TBM_400_015);
+			}
+			return;
+		}
+		if (eduMinutes < EDU_MINUTES_MIN || eduMinutes > EDU_MINUTES_MAX) {
+			log.warn("TBM 교육시간 범위 벗어남 - eduMinutes={}", eduMinutes);
+			throw new ApiException(TbmErrorCode.TBM_400_015);
+		}
 	}
 
 	/** 교육 내용(리치 HTML) 텍스트 길이 검증(빈 HTML 거부). */
@@ -987,6 +1043,60 @@ public class Tbm02ServiceImpl implements Tbm02Service {
 		if (radiusM != null && (radiusM < GPS_RADIUS_MIN || radiusM > GPS_RADIUS_MAX)) {
 			throw new ApiException(TbmErrorCode.TBM_400_013);
 		}
+	}
+
+	/**
+	 * 세션 상세 위험성평가 항목 빌드(T6 + Medium 보강). 비민감 요약(분류 코드/표시명/상태/평가요청일)은
+	 * 상시 노출하고, 평가자 실명·파일경로·점수·설명 등 민감 상세 블록은 {@code detailVisible}
+	 * (서버 권위 authCd 기반 관리자 판정)일 때만 채운다. 비관리자는 해당 필드가 null 로 redaction 된다.
+	 *
+	 * <p>관리자(master/safe/hr)는 기존과 동일 응답(콘솔/RiskAssessInfo 읽기전용 열람 무영향).
+	 */
+	private SessionDetailResponse.SessionRiskItem buildSessionRiskItem(SessionRiskResult r, boolean detailVisible) {
+		SessionDetailResponse.SessionRiskItem.SessionRiskItemBuilder builder =
+				SessionDetailResponse.SessionRiskItem.builder()
+						// 비민감 요약(상시 노출): 분류 코드/명 + 표시명 + 상태 + 평가요청일
+						.cmpnyCd(r.cmpnyCd())
+						.siteCd(r.siteCd())
+						.processCd(r.processCd())
+						.processNm(r.processNm())
+						.riskTypeCd(r.riskTypeCd())
+						.riskTypeNm(r.riskTypeNm())
+						.hazardCd(r.hazardCd())
+						.hazardNm(r.hazardNm())
+						.assessmentCd(r.assessmentCd())
+						.assessmentStatus(r.assessmentStatus())
+						.assessmentStatusNm(r.assessmentStatusNm())
+						.displayName(buildRiskDisplayName(r.processNm(), r.riskTypeNm(), r.hazardNm()))
+						.displayOrder(r.displayOrder())
+						// 6.2-(1)-2: 평가요청일(비민감 요약, 상시 노출)
+						.initAssessDate(r.initAssessDate());
+
+		if (detailVisible) {
+			// 관리자 전용: 평가자 실명/파일경로/점수·설명 상세(RiskAssessInfo 읽기전용 팝업 채움용)
+			builder.initAssessorNm(r.initAssessorNm())
+					.initLikelihoodScore(r.initLikelihoodScore())
+					.initSeverityScore(r.initSeverityScore())
+					.initRiskLv(r.initRiskLv())
+					.initDesc(r.initDesc())
+					.initAssessorId(r.initAssessorId())
+					.initFileMgmtCd(r.initFileMgmtCd())
+					.initFilePath(r.initFilePath())
+					.revalDate(r.revalDate())
+					.revalBeforeDesc(r.revalBeforeDesc())
+					.revalLikelihoodScore(r.revalLikelihoodScore())
+					.revalSeverityScore(r.revalSeverityScore())
+					.revalRiskLv(r.revalRiskLv())
+					.revalDesc(r.revalDesc())
+					.revalAssessorId(r.revalAssessorId())
+					.revalAssessorNm(r.revalAssessorNm())
+					.revalAssessDate(r.revalAssessDate())
+					.revalFileMgmtCd(r.revalFileMgmtCd())
+					.revalFilePath(r.revalFilePath());
+		}
+		// 비관리자: 위 민감 필드는 builder 미설정(=null) 으로 redaction.
+
+		return builder.build();
 	}
 
 	/**

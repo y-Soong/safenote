@@ -22,9 +22,9 @@ import com.prafta.web.acct.acct01.result.ChkptOptionResult;
 import com.prafta.web.acct.acct01.result.LegalStepHistoryResult;
 import com.prafta.web.acct.acct01.result.LegalStepResult;
 import com.prafta.web.acct.acct01.result.LinkSnapshotResult;
-import com.prafta.web.acct.acct01.result.NearMissLinkResult;
 import com.prafta.web.acct.acct01.result.PatrolItemResult;
 import com.prafta.web.acct.acct01.result.PatrolLinkResult;
+import com.prafta.web.acct.acct01.result.RiskAssessmentDetailResult;
 import com.prafta.web.acct.acct01.result.RiskCategoryOptionResult;
 import com.prafta.web.acct.acct01.result.RiskLinkResult;
 import com.prafta.web.acct.acct01.result.ScheduleLinkResult;
@@ -104,11 +104,23 @@ public interface Acct01Mapper {
     // 위험성평가: 3계층 매칭 + 사고일-3M ~ 사고일 유효 평가
     List<RiskLinkResult> selectRiskList(LinkQueryContext ctx);
 
+    // T8: 위험성평가 출력 보강 — 요청 assessmentCd 가 해당 사고의 RISK 연계에 실제 등록됐는지 정확 매칭 COUNT(IDOR 가드)
+    int selectAcctLinkAssessmentCnt(
+        @Param("gvCmpnyCd") String gvCmpnyCd
+        , @Param("siteCd") String siteCd
+        , @Param("acctId") String acctId
+        , @Param("assessmentCd") String assessmentCd
+    );
+
+    // T8: 위험성평가 출력 상세(개선실행계획서/개선완료보고서용). 사업장 스코프 강제
+    RiskAssessmentDetailResult selectRiskAssessmentDetailForPrint(
+        @Param("gvCmpnyCd") String gvCmpnyCd
+        , @Param("siteCd") String siteCd
+        , @Param("assessmentCd") String assessmentCd
+    );
+
     // TBM: 당일 세션 + 재해자 이수여부
     List<TbmLinkResult> selectTbmList(LinkQueryContext ctx);
-
-    // 아차사고: 사고일-3M ~ 사고일, USE_YN='Y'
-    List<NearMissLinkResult> selectNearMissList(LinkQueryContext ctx);
 
     // 점검대상 검색 옵션 (ChkptSearchPop)
     List<ChkptOptionResult> selectChkptOptions(ChkptOptionParam param);

@@ -12,7 +12,14 @@
     <div class="modal-content lcr-pop">
       <header class="modal-header">
         <h2 class="modal-title">연차 변경/삭제 요청</h2>
-        <button type="button" class="modal-close" aria-label="닫기" @click="onClose">×</button>
+        <button
+          type="button"
+          class="modal-close"
+          aria-label="닫기"
+          @click="onClose"
+        >
+          ×
+        </button>
       </header>
 
       <div class="modal-body lcr-body">
@@ -20,10 +27,22 @@
         <section class="lcr-section">
           <h3 class="lcr-section__title">대상 연차</h3>
           <dl class="lcr-target">
-            <div><dt>사용자</dt><dd>{{ target?.userNm }}</dd></div>
-            <div><dt>연차일</dt><dd>{{ target?.startDate }}</dd></div>
-            <div><dt>연차종류</dt><dd>{{ target?.leaveNm }}</dd></div>
-            <div><dt>촉진단계</dt><dd>{{ target?.promotionStageNm || '비촉진' }}</dd></div>
+            <div>
+              <dt>사용자</dt>
+              <dd>{{ target?.userNm }}</dd>
+            </div>
+            <div>
+              <dt>연차일</dt>
+              <dd>{{ target?.startDate }}</dd>
+            </div>
+            <div>
+              <dt>연차종류</dt>
+              <dd>{{ target?.leaveNm }}</dd>
+            </div>
+            <div>
+              <dt>촉진단계</dt>
+              <dd>{{ target?.promotionStageNm || "비촉진" }}</dd>
+            </div>
           </dl>
         </section>
 
@@ -48,13 +67,16 @@
           <!-- TODO(developer): 캘린더 컴포넌트 바인딩. 만료일(AVAIL_TO_DATE) 이내 + 마감월 제외는 서버 강제. -->
           <CalendarSrch v-model="moveTargetDate" />
           <p class="lcr-hint">
-            연차 만료일 이내로만 이동할 수 있습니다. 대상일에 같은 법정연차가 있으면 거부됩니다.
+            연차 만료일 이내로만 이동할 수 있습니다. 대상일에 같은 법정연차가
+            있으면 거부됩니다.
           </p>
         </section>
 
         <!-- 요청 사유 (필수) -->
         <section class="lcr-section">
-          <h3 class="lcr-section__title">요청 사유 <span class="lcr-req">*</span></h3>
+          <h3 class="lcr-section__title">
+            요청 사유 <span class="lcr-req">*</span>
+          </h3>
           <textarea
             v-model="reason"
             class="lcr-textarea"
@@ -66,7 +88,9 @@
       </div>
 
       <footer class="modal-footer lcr-footer">
-        <button type="button" class="btn btn-ghost" @click="onClose">취소</button>
+        <button type="button" class="btn btn-ghost" @click="onClose">
+          취소
+        </button>
         <button
           type="button"
           class="btn btn-primary"
@@ -81,63 +105,69 @@
 </template>
 
 <script setup>
-import { ref, computed, getCurrentInstance } from 'vue'
-import CalendarSrch from '@/components/common/CalendarSrch.vue'
-import axios from '@/api/axios'
-import { getMessage, MSG } from '@/messages'
-import { resolveApiErrorMessage } from '@/utils/apiError'
+import { ref, computed, getCurrentInstance } from "vue";
+import CalendarSrch from "@/components/common/CalendarSrch.vue";
+import axios from "@/api/axios";
+import { getMessage, MSG } from "@/messages";
+import { resolveApiErrorMessage } from "@/utils/apiError";
 
 const props = defineProps({
   // { leaveId, userCd, userNm, startDate, leaveNm, promotionStageNm }
   target: { type: Object, default: null },
-})
-const emit = defineEmits(['close', 'submitted'])
+});
+const emit = defineEmits(["close", "submitted"]);
 
-const { proxy } = getCurrentInstance()
+const { proxy } = getCurrentInstance();
 
 // ── 입력 상태 ────────────────────────────────────────────────────────────
-const reqType = ref('MOVE')
-const moveTargetDate = ref('')
-const reason = ref('')
-const submitting = ref(false)
+const reqType = ref("MOVE");
+const moveTargetDate = ref("");
+const reason = ref("");
+const submitting = ref(false);
 
 // 단순 입력 검증(필수값)만 화면에서 처리. 만료일/마감/충돌은 서버 강제.
 const canSubmit = computed(() => {
-  if (!reason.value.trim()) return false
-  if (reqType.value === 'MOVE' && !moveTargetDate.value) return false
-  return true
-})
+  if (!reason.value.trim()) return false;
+  if (reqType.value === "MOVE" && !moveTargetDate.value) return false;
+  return true;
+});
 
 // CalendarSrch v-model 값(YYYY-MM-DD 등) → YYYYMMDD 정규화
-const toYmd8 = (v) => (v ? String(v).replace(/[^0-9]/g, '').slice(0, 8) : '')
+const toYmd8 = (v) =>
+  v
+    ? String(v)
+        .replace(/[^0-9]/g, "")
+        .slice(0, 8)
+    : "";
 
-const onClose = () => emit('close')
+const onClose = () => emit("close");
 
 // POST /webApi/attd13/change-requests
 //   body(대문자 키) = { TARGET_LEAVE_ID, REQ_TYPE, MOVE_TARGET_DATE(MOVE만), REQ_REASON }
 //   식별/스코프/만료/충돌/마감/중복요청은 서버 JWT + 재검증(body 비신뢰).
 const onSubmit = async () => {
-  if (!canSubmit.value || submitting.value) return
+  if (!canSubmit.value || submitting.value) return;
   if (!props.target?.leaveId) {
-    await proxy.$alert('대상 연차 정보가 없습니다.')
-    return
+    await proxy.$alert("대상 연차 정보가 없습니다.");
+    return;
   }
-  submitting.value = true
+  submitting.value = true;
   try {
-    await axios.post('/webApi/attd13/change-requests', {
+    await axios.post("/webApi/attd13/change-requests", {
       TARGET_LEAVE_ID: props.target.leaveId,
       REQ_TYPE: reqType.value,
-      MOVE_TARGET_DATE: reqType.value === 'MOVE' ? toYmd8(moveTargetDate.value) : null,
+      MOVE_TARGET_DATE:
+        reqType.value === "MOVE" ? toYmd8(moveTargetDate.value) : null,
       REQ_REASON: reason.value.trim(),
-    })
-    await proxy.$alert('변경 요청이 등록되었습니다.')
-    emit('submitted')
+    });
+    await proxy.$alert("변경 요청이 등록되었습니다.");
+    emit("submitted");
   } catch (err) {
-    await proxy.$alert(resolveApiErrorMessage(err, getMessage(MSG.SAVE_ERROR)))
+    await proxy.$alert(resolveApiErrorMessage(err, getMessage(MSG.SAVE_ERROR)));
   } finally {
-    submitting.value = false
+    submitting.value = false;
   }
-}
+};
 </script>
 
 <style scoped>

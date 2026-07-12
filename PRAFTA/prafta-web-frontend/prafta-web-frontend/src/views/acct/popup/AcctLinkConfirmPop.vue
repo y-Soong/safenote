@@ -31,7 +31,7 @@
           </button>
         </div>
 
-        <!-- 2. 수평선 (원 4개 + 아차사고) -->
+        <!-- 2. 수평선 (도메인 노드) -->
         <div class="lc-timeline">
           <div class="lc-line"></div>
           <button
@@ -74,14 +74,22 @@
               <div class="lc-card-h">정규 당일 스케줄</div>
               <div class="lc-kv">
                 <span>1구간</span>
-                <span>{{ fmtHm(attd.schedule.fstSchStrTime) }} ~ {{ fmtHm(attd.schedule.fstSchEndTime) }}</span>
+                <span
+                  >{{ fmtHm(attd.schedule.fstSchStrTime) }} ~
+                  {{ fmtHm(attd.schedule.fstSchEndTime) }}</span
+                >
               </div>
               <div
                 class="lc-kv"
-                v-if="attd.schedule.secSchStrTime || attd.schedule.secSchEndTime"
+                v-if="
+                  attd.schedule.secSchStrTime || attd.schedule.secSchEndTime
+                "
               >
                 <span>2구간</span>
-                <span>{{ fmtHm(attd.schedule.secSchStrTime) }} ~ {{ fmtHm(attd.schedule.secSchEndTime) }}</span>
+                <span
+                  >{{ fmtHm(attd.schedule.secSchStrTime) }} ~
+                  {{ fmtHm(attd.schedule.secSchEndTime) }}</span
+                >
               </div>
             </div>
             <table class="data-grid lc-grid">
@@ -124,7 +132,9 @@
                 </tr>
               </thead>
               <tbody>
-                <tr v-if="!patrol.summaryList || patrol.summaryList.length === 0">
+                <tr
+                  v-if="!patrol.summaryList || patrol.summaryList.length === 0"
+                >
                   <td colspan="5" class="edu-grid-empty">
                     1주일 이내 순회점검 기록이 없습니다.
                   </td>
@@ -137,12 +147,17 @@
                   <td>{{ r.totalCnt }}</td>
                   <td>{{ r.goodCnt }}</td>
                   <td>
-                    <span :class="{ 'lc-bad': r.badCnt > 0 }">{{ r.badCnt }}</span>
+                    <span :class="{ 'lc-bad': r.badCnt > 0 }">{{
+                      r.badCnt
+                    }}</span>
                   </td>
                 </tr>
               </tbody>
             </table>
-            <div v-if="patrol.badItemList && patrol.badItemList.length" class="lc-bad-list">
+            <div
+              v-if="patrol.badItemList && patrol.badItemList.length"
+              class="lc-bad-list"
+            >
               <div class="lc-card-h">불량 항목</div>
               <div
                 v-for="(b, i) in patrol.badItemList"
@@ -181,9 +196,15 @@
                   </td>
                   <td>{{ r.assessmentCd }}</td>
                   <td>
-                    {{ [r.processNm, r.riskTypeNm, r.hazardNm].filter(Boolean).join(" / ") }}
+                    {{
+                      [r.processNm, r.riskTypeNm, r.hazardNm]
+                        .filter(Boolean)
+                        .join(" / ")
+                    }}
                   </td>
-                  <td>{{ r.initRiskLv || "-" }} / {{ r.revalRiskLv || "-" }}</td>
+                  <td>
+                    {{ r.initRiskLv || "-" }} / {{ r.revalRiskLv || "-" }}
+                  </td>
                   <td>{{ r.assessmentStatusNm || r.assessmentStatus }}</td>
                   <td>{{ r.initAssessDate }}</td>
                 </tr>
@@ -220,49 +241,21 @@
                   <td>
                     <span
                       class="lc-pill"
-                      :class="r.victimCompletionStatusCd === 'COMPLETED' ? 'yes' : 'no'"
+                      :class="
+                        r.victimCompletionStatusCd === 'COMPLETED'
+                          ? 'yes'
+                          : 'no'
+                      "
                     >
                       {{
                         r.victimCompletionStatusCd
-                          ? r.victimCompletionStatusNm || r.victimCompletionStatusCd
+                          ? r.victimCompletionStatusNm ||
+                            r.victimCompletionStatusCd
                           : "시스템 기록 없음"
                       }}
                     </span>
                   </td>
                   <td>{{ r.openedAt }}</td>
-                </tr>
-              </tbody>
-            </table>
-          </template>
-
-          <!-- 아차사고 (NEAR_MISS) -->
-          <template v-else-if="activeDomain === 'NEAR_MISS'">
-            <table class="data-grid lc-grid">
-              <thead>
-                <tr>
-                  <th class="check-col"></th>
-                  <th>사건ID</th>
-                  <th>유형</th>
-                  <th>잠재중대성</th>
-                  <th>발생일시</th>
-                  <th>상태</th>
-                </tr>
-              </thead>
-              <tbody>
-                <tr v-if="!nearMiss.nearMissList || nearMiss.nearMissList.length === 0">
-                  <td colspan="6" class="edu-grid-empty">
-                    3개월 이내 아차사고 기록이 없습니다.
-                  </td>
-                </tr>
-                <tr v-for="(r, i) in nearMiss.nearMissList" :key="r.nearMissId">
-                  <td class="check-col">
-                    <input type="checkbox" v-model="nearMissChecked[i]" />
-                  </td>
-                  <td>{{ r.nearMissId }}</td>
-                  <td>{{ r.incidentTypeNm || r.incidentTypeCd }}</td>
-                  <td>{{ r.potentialSeverityNm || r.potentialSeverityCd }}</td>
-                  <td>{{ r.occurDtime }}</td>
-                  <td>{{ r.reportStatusNm || r.reportStatusCd }}</td>
                 </tr>
               </tbody>
             </table>
@@ -320,9 +313,7 @@ const props = defineProps({
   chkptCds: { type: Array, default: () => [] },
   processCd: { type: String, default: "" },
   riskTypeCd: { type: String, default: "" },
-  hazardCd: { type: String, default: "" },
-  incidentTypeCd: { type: String, default: "" },
-  potentialSeverityCd: { type: String, default: "" },
+  hazardCds: { type: Array, default: () => [] }, // 유해요인 다건(위험성평가)
   onConfirmed: Function,
 });
 const emit = defineEmits(["close"]);
@@ -339,25 +330,29 @@ const domains = [
   { code: "CHKPT", label: "순회점검" },
   { code: "RISK", label: "위험성평가" },
   { code: "TBM", label: "TBM" },
-  { code: "NEAR_MISS", label: "아차사고" },
 ];
 
 const activeDomain = ref("");
 const loading = ref(false);
 
 // 도메인별 조회 응답
-const attd = ref({ hasSchedule: false, scheduleNote: "", schedule: null, records: [], occurTime: "", notice: "" });
+const attd = ref({
+  hasSchedule: false,
+  scheduleNote: "",
+  schedule: null,
+  records: [],
+  occurTime: "",
+  notice: "",
+});
 const patrol = ref({ summaryList: [], badItemList: [], notice: "" });
 const risk = ref({ riskList: [], notice: "" });
 const tbm = ref({ tbmList: [], notice: "" });
-const nearMiss = ref({ nearMissList: [], notice: "" });
 
 // 체크 상태 (인덱스 기반)
 const attdChecked = ref([]);
 const patrolChecked = ref([]);
 const riskChecked = ref([]);
 const tbmChecked = ref([]);
-const nearMissChecked = ref([]);
 
 // 도메인별 확정 건수
 const confirmedCount = reactive({
@@ -365,7 +360,6 @@ const confirmedCount = reactive({
   CHKPT: 0,
   RISK: 0,
   TBM: 0,
-  NEAR_MISS: 0,
 });
 let anyConfirmed = false;
 
@@ -379,8 +373,6 @@ const currentNotice = computed(() => {
       return risk.value.notice;
     case "TBM":
       return tbm.value.notice;
-    case "NEAR_MISS":
-      return nearMiss.value.notice;
     default:
       return "";
   }
@@ -408,13 +400,18 @@ const fnSelectDomain = async (code) => {
       attdChecked.value = (attd.value.records || []).map(() => true);
     } else if (code === "CHKPT") {
       // 점검대상 다건 선택 시 chkptCd 별 반복 호출 후 병합
-      const cds = props.chkptCds && props.chkptCds.length ? props.chkptCds : [""];
+      const cds =
+        props.chkptCds && props.chkptCds.length ? props.chkptCds : [""];
       const summary = [];
       const bad = [];
       let notice = "";
       for (const cd of cds) {
         const res = await axios.get("/webApi/acct01/link/patrol", {
-          params: { ...baseParams(), chklstType: props.chklstType, chkptCd: cd },
+          params: {
+            ...baseParams(),
+            chklstType: props.chklstType,
+            chkptCd: cd,
+          },
         });
         const d = res.data || {};
         notice = d.notice || notice;
@@ -424,15 +421,26 @@ const fnSelectDomain = async (code) => {
       patrol.value = { summaryList: summary, badItemList: bad, notice };
       patrolChecked.value = summary.map(() => true);
     } else if (code === "RISK") {
-      const res = await axios.get("/webApi/acct01/link/risk", {
-        params: {
-          ...baseParams(),
-          processCd: props.processCd,
-          riskTypeCd: props.riskTypeCd,
-          hazardCd: props.hazardCd,
-        },
-      });
-      risk.value = res.data || risk.value;
+      // 유해요인 다건: 점검대상(patrol)과 동일하게 건별 조회 후 병합.
+      //   각 위험성평가(assessmentCd)는 단일 HAZARD_CD 라 유해요인별 결과는 서로 겹치지 않는다.
+      const hcds = (props.hazardCds || []).filter(Boolean);
+      const calls = hcds.length > 0 ? hcds : [""]; // 미선택 시 1회 전체 조회(hazardCd="")
+      const riskList = [];
+      let riskNotice = "";
+      for (const hcd of calls) {
+        const res = await axios.get("/webApi/acct01/link/risk", {
+          params: {
+            ...baseParams(),
+            processCd: props.processCd,
+            riskTypeCd: props.riskTypeCd,
+            hazardCd: hcd,
+          },
+        });
+        const d = res.data || {};
+        riskNotice = d.notice || riskNotice;
+        (d.riskList || []).forEach((r) => riskList.push(r));
+      }
+      risk.value = { riskList, notice: riskNotice };
       riskChecked.value = (risk.value.riskList || []).map(() => true);
     } else if (code === "TBM") {
       const res = await axios.get("/webApi/acct01/link/tbm", {
@@ -440,16 +448,6 @@ const fnSelectDomain = async (code) => {
       });
       tbm.value = res.data || tbm.value;
       tbmChecked.value = (tbm.value.tbmList || []).map(() => true);
-    } else if (code === "NEAR_MISS") {
-      const res = await axios.get("/webApi/acct01/link/near-miss", {
-        params: {
-          ...baseParams(),
-          incidentTypeCd: props.incidentTypeCd,
-          potentialSeverityCd: props.potentialSeverityCd,
-        },
-      });
-      nearMiss.value = res.data || nearMiss.value;
-      nearMissChecked.value = (nearMiss.value.nearMissList || []).map(() => true);
     }
   } catch (err) {
     await proxy.$alert(
@@ -478,7 +476,9 @@ const fnConfirmDomain = async () => {
     if (response.status === 200) {
       confirmedCount[code] = items.length;
       anyConfirmed = true;
-      await proxy.$alert(`${labelOf(code)} ${items.length}건이 확정되었습니다.`);
+      await proxy.$alert(
+        `${labelOf(code)} ${items.length}건이 확정되었습니다.`
+      );
     }
   } catch (err) {
     await proxy.$alert(
@@ -511,10 +511,6 @@ const buildConfirmItems = (code) => {
   } else if (code === "TBM") {
     (tbm.value.tbmList || []).forEach((r, i) => {
       if (tbmChecked.value[i]) push({ sessionCd: r.sessionCd }, r);
-    });
-  } else if (code === "NEAR_MISS") {
-    (nearMiss.value.nearMissList || []).forEach((r, i) => {
-      if (nearMissChecked.value[i]) push({ nearMissId: r.nearMissId }, r);
     });
   }
   return items;

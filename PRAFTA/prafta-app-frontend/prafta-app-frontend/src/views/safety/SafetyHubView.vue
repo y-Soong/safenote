@@ -49,7 +49,17 @@
     </header>
 
     <!-- 본문 -->
-    <main class="safety-body">
+    <main
+      class="safety-body"
+      ref="scrollRef"
+      @touchstart.passive="onPullStart"
+      @touchmove="onPullMove"
+      @touchend="onPullEnd"
+      @touchcancel="onPullEnd"
+    >
+      <!-- 당겨서 새로고침 인디케이터 — 스크롤 최상단에서 아래로 당기면 노출 -->
+      <PullRefreshIndicator v-bind="indicatorProps" />
+
       <!-- 근무중 아님 차단 배너(안전점검·위험성 발굴만 차단) -->
       <div v-if="blocked" class="blocked-banner">
         <svg class="icon" width="14" height="14" aria-hidden="true">
@@ -112,6 +122,8 @@ import { ref, onMounted, getCurrentInstance } from 'vue'
 import { useRouter } from 'vue-router'
 
 import api from '@/api/axios'
+import { usePullToRefresh } from '@/composables/usePullToRefresh'
+import PullRefreshIndicator from '@/components/common/PullRefreshIndicator.vue'
 import AppBottomTabBar from '@/components/common/AppBottomTabBar.vue'
 
 const router = useRouter()
@@ -142,6 +154,12 @@ const loadAttendanceState = async () => {
     blocked.value = true
   }
 }
+
+// 당겨서 새로고침 — 스크롤 최상단에서 아래로 더 당기면 근무상태(blocked) 재조회(MainView 패턴).
+const scrollRef = ref(null)
+const { onPullStart, onPullMove, onPullEnd, indicatorProps } = usePullToRefresh(scrollRef, async () => {
+  await loadAttendanceState()
+})
 
 onMounted(() => {
   loadAttendanceState()

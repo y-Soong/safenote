@@ -56,6 +56,7 @@
 
 <script setup>
 import { computed } from 'vue'
+import { formatLeaveDays } from '@/utils/leaveFormat'
 
 const props = defineProps({
   // expiringSoon: { exists, daysUntilExpiry, totalRemainingDays, expiryDate }
@@ -63,22 +64,20 @@ const props = defineProps({
     type: Object,
     default: null,
   },
+  // LC-11: 1일 환산시간(분) — "N일 H시간 M분" 표기 분모(서버 권위). 미제공 시 480 폴백.
+  convMinutes: {
+    type: Number,
+    default: 480,
+  },
 })
 
 defineEmits(['close'])
 
-// 0.5 단위 표기 (정수면 정수, 소수면 1자리) — AttendanceSummaryCard.trimDays 패턴
-const trimDays = (v) => {
-  if (v == null) return '0'
-  const n = Number(v)
-  return Number.isInteger(n) ? String(n) : n.toFixed(1)
-}
-
-// "N일 후 소멸되는 연차 X일" (시안 §4.3 고정 문구)
+// "N일 후 소멸되는 연차 X일" (시안 §4.3 고정 문구, LC-11: 소수점 금지 — "N일 H시간 M분" 표기)
 const titleText = computed(() => {
   const days = props.info?.daysUntilExpiry ?? 0
-  const remain = trimDays(props.info?.totalRemainingDays)
-  return `${days}일 후 소멸되는 연차 ${remain}일`
+  const remain = formatLeaveDays(props.info?.totalRemainingDays ?? 0, props.convMinutes)
+  return `${days}일 후 소멸되는 연차 ${remain}`
 })
 </script>
 

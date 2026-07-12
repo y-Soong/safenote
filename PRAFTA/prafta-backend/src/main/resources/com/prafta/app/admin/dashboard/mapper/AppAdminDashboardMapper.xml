@@ -76,7 +76,9 @@
                     AND S.SITE_CD  = P.SITE_CD
                     AND S.SCH_CD   = P.WORK_PLAN_CD
                     AND S.USE_YN   = 'Y'
-                    AND S.APPLY_DATE <![CDATA[ <= ]]> #{todayYmd}
+                    <!-- 스케줄 보유 여부 카운트라 적용일 상한필터를 제거 — 근무일보다 늦게 적용 시작된 스케줄을
+                         배정한 경우도 "스케줄 있음"으로 집계(타 쿼리 effective-dating 폴백과 일관). -->
+
             WHERE P.CMPNY_CD = #{cmpnyCd}
               AND P.SITE_CD  = #{siteCd}
               AND P.WORK_YMD = #{todayYmd}

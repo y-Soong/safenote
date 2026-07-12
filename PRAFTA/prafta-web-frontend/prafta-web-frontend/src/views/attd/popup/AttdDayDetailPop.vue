@@ -40,7 +40,7 @@
             <div class="time-card">
               <!-- 스케줄 (계획) -->
               <div class="time-row">
-                <div class="time-lbl">스케줄 (계획)</div>
+                <div class="time-lbl">근무계획</div>
                 <div class="time-val">
                   <template v-if="cfg.timeCard.plan.segments">
                     <div class="seg-multi">
@@ -508,7 +508,14 @@
                     <div class="ot-block">
                       <div class="ot-block-head">
                         <span class="ot-block-title">초과근무</span>
-                        <template v-if="isSegmentFromDb(i)">
+                        <!-- 일용직은 초과근무를 등록할 수 없다(서버도 fail-closed 차단). -->
+                        <div
+                          v-if="isDailyWorker"
+                          class="ot-allowed-hint is-empty"
+                        >
+                          일용직 근로자는 초과근무를 등록할 수 없습니다.
+                        </div>
+                        <template v-else-if="isSegmentFromDb(i)">
                           <div
                             v-if="otAllowedWindowsForSeg(i).length"
                             class="ot-allowed-hint"
@@ -542,7 +549,10 @@
                       </div>
                       <ul
                         v-if="
-                          isSegmentFromDb(i) && seg.otList && seg.otList.length
+                          !isDailyWorker &&
+                          isSegmentFromDb(i) &&
+                          seg.otList &&
+                          seg.otList.length
                         "
                         class="ot-list"
                       >
@@ -552,10 +562,7 @@
                           class="ot-row"
                         >
                           <label class="ot-check" aria-label="선택">
-                            <input
-                              type="checkbox"
-                              v-model="ot.checked"
-                            />
+                            <input type="checkbox" v-model="ot.checked" />
                           </label>
                           <div class="time-input-group">
                             <span class="lab">시작</span>
@@ -604,7 +611,7 @@
                         </li>
                       </ul>
                       <button
-                        v-if="isSegmentFromDb(i)"
+                        v-if="!isDailyWorker && isSegmentFromDb(i)"
                         class="add-ot-btn"
                         type="button"
                         @click="addOt(i)"
@@ -612,7 +619,7 @@
                         + {{ i + 1 }}구간 초과근무 추가
                       </button>
                       <div
-                        v-if="isSegmentFromDb(i) && hasAnyOt(i)"
+                        v-if="!isDailyWorker && isSegmentFromDb(i) && hasAnyOt(i)"
                         class="ot-actions"
                       >
                         <button
@@ -1010,11 +1017,11 @@ import AttdGpsCoordPanel from "@/views/attd/popup/AttdGpsCoordPanel.vue";
 import axios from "@/api/axios";
 import { getMessage, MSG } from "@/messages";
 import { resolveApiErrorMessage } from "@/utils/apiError";
+import { formatLeaveDays, formatLeaveMinutes } from "@/utils/leaveFormat";
 import {
   formatYmdDot,
   formatMdDot,
   formatHm,
-  formatHms,
   formatDateTimeDot,
   formatDateTimeDotWithSec,
 } from "@/utils/dateFormat";
@@ -1143,14 +1150,25 @@ const schedLabel = (fstStr, fstEnd, secStr, secEnd) => {
   return `${fst} (1구간)`;
 };
 
-// PRAFTA-APP-018-D: 연차 차감일수 표시 정규화 (순수 표시 함수 — 비즈니스 로직 아님).
-//   '1.0'/'0.5'/'0.12500'/null → '1'/'0.5'/'0.125'/''.
-//   숫자 변환 후 toFixed(5) 로 trailing 0 제거. NaN/null → '' (카드에서 라벨 숨김).
-const normalizeDays = (v) => {
+// LC-09(§5-B): 연차 차감일수 표기 — 소수점 노출 금지, "N일 H시간 M분 차감" 조립.
+//   attd07 상세 응답에는 convMinutes 가 없어 480분 폴백(formatLeaveDays 기본값).
+//   NaN/null → '' (카드에서 라벨 숨김 — 기존 normalizeDays 동작 유지).
+const chargeDaysLabel = (v) => {
   if (v === null || v === undefined || v === "") return "";
   const n = Number(v);
   if (Number.isNaN(n)) return "";
-  return String(parseFloat(n.toFixed(5)));
+  return `${formatLeaveDays(n)} 차감`;
+};
+
+// LC-09(§5-B): 시간차 행의 LEAVE_MINUTES 원본 병기 — "10:00~11:30 (1시간 30분)".
+//   HHmm 범위에서 분을 산출(시간차 use 행은 항상 시각 보유. 기존 hhmmToMin 헬퍼 재사용 —
+//   computed 내부에서 호출되므로 선언 순서 무관). 산출 불가 시 범위만 표시.
+const hourlyRangeLabel = (startTime, endTime) => {
+  const range = `${fmtTime(startTime)}~${fmtTime(endTime)}`;
+  const s = hhmmToMin(startTime);
+  const e = hhmmToMin(endTime);
+  if (s == null || e == null || e <= s) return range;
+  return `${range} (${formatLeaveMinutes(e - s)})`;
 };
 
 // "1230" → "12:30" (포커스 잃을 때 표시)
@@ -1193,14 +1211,20 @@ const dateInfo = computed(() => {
   };
 });
 
+// 대상 근로자가 일용직(EMPLOYMENT_TYPE='DAILY')인지 여부.
+//   일용직은 초과근무를 등록할 수 없으므로 OT 등록 UI 를 노출하지 않는다(서버도 fail-closed 차단).
+const isDailyWorker = computed(
+  () => (userInfo.value?.employmentType || "") === "DAILY"
+);
+
 // ── 헤더 ──────────────────────────────────────────────────
-// 본 팝업은 정규직 전용이라 트랙 라벨은 고정값("정규") 사용
+// 트랙 라벨은 고용형태에 따라 "일용"/"정규" 로 표시한다.
 const headerUser = computed(() => {
   const u = userInfo.value || {};
   const role = u.authNm || u.authCd || u.role || "";
   return {
     name: u.userNm || u.name || "—",
-    track: "정규",
+    track: isDailyWorker.value ? "일용" : "정규",
     deptRole: role ? `· ${role}` : "",
   };
 });
@@ -1606,16 +1630,16 @@ const reqCards = computed(() => {
           ? `시간차 ${req.unitNm}`
           : req.unitNm
         : "연차";
-      const days = normalizeDays(req.leaveDays);
+      // LC-09(§5-B): 차감액은 "N일 H시간 M분 차감", 시간차는 원본 사용 분 병기
       return {
         ...base,
         mode: "leave",
         unitCode,
         leaveTypeLabel,
         timeRange: isTimed
-          ? `${fmtTime(req.startTime)}~${fmtTime(req.endTime)}`
+          ? hourlyRangeLabel(req.startTime, req.endTime)
           : null,
-        leaveDaysLabel: days ? `${days}일 차감` : "",
+        leaveDaysLabel: chargeDaysLabel(req.leaveDays),
       };
     }
     // 그 외(01~04): 출퇴근 시각 BEFORE/AFTER 모델.
@@ -1639,7 +1663,7 @@ const reqCards = computed(() => {
 // PRAFTA-APP-018-F: 그날 확정 연차(자동확정/직접 포함) 표시 카드.
 //   D 의 요청 카드(미처리 결재대기)와 상호배타(백엔드가 미처리01 제외) → 이중표시 없음.
 //   포맷: {leaveNm} · {단위(시간차면 '시간차 ' 접두)} · (시간차면 시각) · {정규화}일 차감.
-//   normalizeDays/fmtTime 기존 헬퍼 재사용(신규 헬퍼 불필요).
+//   chargeDaysLabel/hourlyRangeLabel 헬퍼 재사용(LC-09 표기 규칙 §5-B).
 const confirmedLeaveCards = computed(() =>
   (confirmedLeaves.value || []).map((lv, i) => {
     const unitCode = lv.useUnitType ?? null; // '00'~'04' 또는 null
@@ -1649,15 +1673,15 @@ const confirmedLeaveCards = computed(() =>
         ? `시간차 ${lv.unitNm}`
         : lv.unitNm
       : "연차";
-    const days = normalizeDays(lv.leaveDays);
+    // LC-09(§5-B): 차감액 표기 + 시간차 원본 사용 분 병기 (요청 카드와 동일 규칙)
     return {
       key: `cl-${i}`,
       leaveNm: lv.leaveNm || "연차사용",
       unitLabel,
       timeRange: isTimed
-        ? `${fmtTime(lv.startTime)}~${fmtTime(lv.endTime)}`
+        ? hourlyRangeLabel(lv.startTime, lv.endTime)
         : null,
-      leaveDaysLabel: days ? `${days}일 차감` : "",
+      leaveDaysLabel: chargeDaysLabel(lv.leaveDays),
     };
   })
 );
@@ -1830,6 +1854,8 @@ const isSegmentFromDb = (segIdx) => {
 };
 
 const addOt = (segIdx) => {
+  // 일용직은 초과근무 등록 불가(UI 가드와 동일 규칙·서버도 차단).
+  if (isDailyWorker.value) return;
   const seg = form.value.segments[segIdx];
   if (!seg) return;
   // DB 적재 구간이 아니면 초과근무 등록 차단 (UI 가드와 동일 규칙).
@@ -1872,6 +1898,8 @@ const stampToHHMMRaw = (mins) => {
 //   w.startMin/endMin(분 stamp)을 OT row 필드(startDate/startTime/endDate/endTime)로 변환한다.
 //   동일 범위가 이미 등록돼 있으면 중복 추가하지 않는다.
 const addOtFromWindow = (segIdx, w) => {
+  // 일용직은 초과근무 등록 불가(UI 가드와 동일 규칙·서버도 차단).
+  if (isDailyWorker.value) return;
   const seg = form.value.segments[segIdx];
   if (!seg) return;
   // DB 적재 구간이 아니면 초과근무 등록 차단 (addOt 와 동일 규칙).
@@ -2343,6 +2371,11 @@ const validateOtBeforeSave = async (segIdx) => {
 
 // 저장: POST /attd07/update-user-overtime-requests
 const fnApproveOvertime = async (segIdx) => {
+  // 일용직은 초과근무를 등록할 수 없다(UI 미노출이나 우회 방어·서버도 fail-closed 차단).
+  if (isDailyWorker.value) {
+    await proxy.$alert("일용직 근로자는 초과근무를 등록할 수 없습니다.");
+    return;
+  }
   if (await guardClosed()) return;
   if (otSaving.value) return;
   if (!(await validateOtBeforeSave(segIdx))) return;
@@ -2943,6 +2976,7 @@ const fnSearch = async () => {
     userNm: f.userNm ?? "",
     authCd: f.authCd ?? "",
     authNm: f.authNm ?? "",
+    employmentType: f.employmentType ?? "",
   };
   record.value = {
     plan1Start: f.plan1Start ?? "",
@@ -2980,6 +3014,8 @@ const fnSearch = async () => {
             userNm: d.userNm ?? userInfo.value.userNm,
             authCd: d.authCd ?? userInfo.value.authCd,
             authNm: d.authNm ?? userInfo.value.authNm,
+            employmentType:
+              d.employmentType ?? userInfo.value.employmentType ?? "",
           };
         }
         record.value = {
@@ -4889,7 +4925,9 @@ textarea.input {
   font-size: var(--btn-font-sm);
   font-family: inherit;
   cursor: pointer;
-  transition: background 0.15s, border-color 0.15s;
+  transition:
+    background 0.15s,
+    border-color 0.15s;
 }
 
 .ot-allowed-item:hover {

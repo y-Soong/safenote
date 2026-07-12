@@ -89,7 +89,7 @@
 </template>
 
 <script setup>
-import { ref, watch } from 'vue'
+import { getCurrentInstance, ref, watch } from 'vue'
 
 import api from '@/api/axios'
 
@@ -104,6 +104,15 @@ const props = defineProps({
 // close: 닫기 / confirm: 대리입실 확정(userCd) — 부모가 E10 호출
 const emit = defineEmits(['close', 'confirm'])
 
+const { proxy } = getCurrentInstance() || { proxy: null }
+
+// 공통: alert 폴백(앱 전역 $alert 우선) — TBM 화면 전반과 동일 패턴.
+const showAlert = (message) => {
+  if (proxy?.$alert) return proxy.$alert(message)
+  window.alert(message)
+  return Promise.resolve()
+}
+
 const keyword = ref('')
 const searching = ref(false)
 const searched = ref(false)
@@ -112,20 +121,25 @@ const results = ref([]) // [{ userCd, userNm, deptNm, alreadyEntered }]
 const onClose = () => emit('close')
 
 // 검색(E9) — 본 시트가 직접 호출. 세션 사업장/노드 스코프 내 정규직(이름/사번) 검색.
+// 키워드 미입력 시에도 전체 후보를 조회한다(서버가 빈 키워드를 전체검색으로 처리).
 const onSearch = async () => {
   if (searching.value || !props.sessionCd) return
+  const kw = keyword.value.trim()
   searching.value = true
   try {
     const { data } = await api.get(
       `/appApi/admin/tbm/sessions/${encodeURIComponent(props.sessionCd)}/eligible-regulars`,
-      { params: { keyword: keyword.value || undefined } },
+      { params: { keyword: kw || undefined } },
     )
     results.value = Array.isArray(data?.users) ? data.users : []
-  } catch (e) {
-    console.error('[AdminTbmDirectEntrySheet] 후보 검색 실패:', e?.message)
-    results.value = []
-  } finally {
     searched.value = true
+  } catch (e) {
+    // 에러를 빈 결과로 삼키지 않는다. 사유를 사용자에게 노출(409 교육준비 이탈 등 서버 message 우선).
+    console.error('[AdminTbmDirectEntrySheet] 후보 검색 실패:', e?.message)
+    const msg =
+      e?.response?.data?.message || '후보 검색에 실패했어요. 잠시 후 다시 시도해 주세요.'
+    showAlert(msg)
+  } finally {
     searching.value = false
   }
 }
@@ -224,11 +238,13 @@ watch(
 }
 .de-sheet__search {
   display: flex;
+  min-width: 0; /* flex 자식 오버플로우 방지(좁은 폭에서 검색버튼 화면 이탈 차단) */
   gap: var(--space-sm);
   padding: 0 var(--space-lg) var(--space-sm);
 }
 .de-sheet__input {
   flex: 1;
+  min-width: 0; /* 입력칸이 내재 너비 이하로 축소되도록 허용(버튼과 한 줄 유지) */
   height: 44px;
   box-sizing: border-box;
   padding: 0 var(--space-md);

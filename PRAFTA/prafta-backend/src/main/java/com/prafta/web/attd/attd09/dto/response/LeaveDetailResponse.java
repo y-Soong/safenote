@@ -32,4 +32,10 @@ public class LeaveDetailResponse {
 
     /** 부여 이력 (GRANT_DATE 내림차순) */
     List<LeaveGrantHistoryRowVO> grantHistory;
+
+    /** LC-07(표기): 현재(오늘) 기준 1일 환산시간(분, 기본 480) — FE "N일 H시간 M분" 조립용(additive). */
+    int convMinutes;
+
+    /** LC-07(표기): 시간차(02/03/04) CONFIRMED 사용 분 합계(전 기간) — 원본 분 표기용(additive). */
+    int hourlyUsedMinutes;
 }

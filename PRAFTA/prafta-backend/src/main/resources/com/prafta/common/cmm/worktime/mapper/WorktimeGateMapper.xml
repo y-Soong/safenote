@@ -34,4 +34,23 @@
        AND A.CHECK_OUT_TIME IS NULL
     </select>
 
+    <!--
+      prafta-app-031 1.1: 전일 미퇴근(open slot)도 근무중으로 인정(com-003-A 선례).
+      countOpenAttdToday 와 열린 근태 정의/테이블/컬럼 동일, WORK_YMD 만 전일(todayYmd-1).
+      전일 일자는 todayYmd 를 STR_TO_DATE 후 1일 차감해 산출.
+    -->
+    <select id="countOpenAttdPrevDay" resultType="int">
+    /* WorktimeGateMapper.countOpenAttdPrevDay */
+    SELECT
+          COUNT(*)
+      FROM TB_USER_ATTD_MGMT A
+     WHERE A.CMPNY_CD = #{cmpnyCd}
+       AND A.SITE_CD  = #{siteCd}
+       AND A.USER_CD  = #{userCd}
+       AND A.WORK_YMD = DATE_FORMAT(DATE_SUB(STR_TO_DATE(#{todayYmd}, '%Y%m%d'), INTERVAL 1 DAY), '%Y%m%d')
+       AND A.DEL_YN   = 'N'
+       AND A.CHECK_IN_TIME IS NOT NULL
+       AND A.CHECK_OUT_TIME IS NULL
+    </select>
+
 </mapper>

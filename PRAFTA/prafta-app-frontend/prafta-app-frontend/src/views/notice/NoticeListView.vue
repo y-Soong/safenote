@@ -26,7 +26,17 @@
     </header>
 
     <!-- 본문 (스크롤) -->
-    <main class="nl-body">
+    <main
+      class="nl-body"
+      ref="scrollRef"
+      @touchstart.passive="onPullStart"
+      @touchmove="onPullMove"
+      @touchend="onPullEnd"
+      @touchcancel="onPullEnd"
+    >
+      <!-- 당겨서 새로고침 인디케이터 — 스크롤 최상단에서 아래로 당기면 노출 -->
+      <PullRefreshIndicator v-bind="indicatorProps" />
+
       <!-- 로딩 -->
       <div v-if="isLoading" class="nl-loading" aria-live="polite">불러오는 중...</div>
 
@@ -79,6 +89,8 @@ import { ref, onMounted, getCurrentInstance } from 'vue'
 import { useRouter } from 'vue-router'
 
 import api from '@/api/axios'
+import { usePullToRefresh } from '@/composables/usePullToRefresh'
+import PullRefreshIndicator from '@/components/common/PullRefreshIndicator.vue'
 import { formatMdDot } from '@/utils/approvalFormat'
 
 const router = useRouter()
@@ -148,6 +160,12 @@ const loadNotices = async () => {
   }
 }
 
+// 당겨서 새로고침 — 스크롤 최상단에서 아래로 더 당기면 공지 목록 재조회(MainView 패턴).
+const scrollRef = ref(null)
+const { onPullStart, onPullMove, onPullEnd, indicatorProps } = usePullToRefresh(scrollRef, async () => {
+  await loadNotices()
+})
+
 // onMounted: 최초 진입 로드. 상세 다녀온 뒤 재진입 시 읽음 상태 갱신을 위해
 //   라우트 컴포넌트는 매 진입마다 새로 마운트되므로 onMounted 만으로 재호출이 보장된다.
 onMounted(() => {
@@ -170,7 +188,8 @@ onMounted(() => {
   --color-bg: #f9fafb;
   --radius-full: 9999px;
 
-  min-height: 100vh;
+  height: 100vh;
+  height: 100dvh;
   display: flex;
   flex-direction: column;
   background: var(--color-bg);
@@ -216,6 +235,7 @@ onMounted(() => {
 /* 본문 */
 .nl-body {
   flex: 1;
+  min-height: 0;
   overflow-y: auto;
 }
 .nl-loading,

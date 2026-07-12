@@ -14,12 +14,11 @@ import com.prafta.common.exception.ApiException;
  * <p>multipart 요청 + 단일 파일 + tokenInfo 를 service 단일 인자로 정리한다.
  * <p>식별자(cmpnyCd/siteCd/userCd)는 본문값을 무시하고 JWT 클레임에서만 도출(IDOR 차단).
  *    siteCd 는 tokenInfo.gv_siteCd() 로 강제 캐노니컬라이즈.
- * <p>필수 검증: incidentTypeCd, occurDtime, description (UI 명세 validation 과 동일).
+ * <p>필수 검증: occurDtime, description (UI 명세 validation 과 동일).
  *    file 은 null 허용(사진 미첨부 케이스).
  */
 public record ReportParam(
-    String incidentTypeCd
-    , String processCd
+    String processCd
     , String occurDtime
     , String locationDesc
     , String description
@@ -41,16 +40,13 @@ public record ReportParam(
         }
 
         // 필수값 검증(서버측 1차 방어)
-        if (!StringUtils.hasText(request.getIncidentTypeCd()))
-            throw new ApiException(CommonErrorCode.COMMON_400_001);
         if (!StringUtils.hasText(request.getOccurDtime()))
             throw new ApiException(CommonErrorCode.COMMON_400_001);
         if (!StringUtils.hasText(request.getDescription()))
             throw new ApiException(CommonErrorCode.COMMON_400_001);
 
         return new ReportParam(
-            request.getIncidentTypeCd()
-            , request.getProcessCd()
+            request.getProcessCd()
             , request.getOccurDtime()
             , request.getLocationDesc()
             , request.getDescription()

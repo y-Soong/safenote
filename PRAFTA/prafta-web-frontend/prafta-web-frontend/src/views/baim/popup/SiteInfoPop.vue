@@ -93,7 +93,8 @@
               <CalendarSrch
                 style="width: 10rem; height: 2rem"
                 v-model="endDate"
-                :readonly="readonly"
+                :min-date="endDateMinDate"
+                :readonly="false"
               />
             </div>
 
@@ -144,7 +145,7 @@
                 />
               </div>
               <label>GPS 반경</label>
-              <div>
+              <div class="gps-range-field">
                 <input
                   id="gpsRange"
                   style="width: 5rem"
@@ -153,6 +154,7 @@
                   @input="handleGpsRangeInput"
                   @blur="focusKill"
                 />
+                <span class="gps-range-unit">(m)</span>
               </div>
             </div>
 
@@ -189,6 +191,7 @@
 /* eslint-disable */
 import {
   ref,
+  computed,
   defineProps,
   defineEmits,
   onMounted,
@@ -422,6 +425,30 @@ const updateMapLocation = (address) => {
   });
 };
 
+// PRAFTA-COM-001-T2-5: 날짜를 YYYY-MM-DD 로 정규화(DB값 YYYYMMDD / 신규 YYYY-MM-DD 혼재 대응).
+//   CalendarSrch(flatpickr) 의 minDate 는 YYYY-MM-DD 형식을 기대한다.
+function toYmdDash(val) {
+  if (proxy.$util.isEmpty(val)) return "";
+  const compact = String(val).replace(/-/g, "");
+  if (compact.length !== 8 || /[^0-9]/.test(compact)) return "";
+  return `${compact.slice(0, 4)}-${compact.slice(4, 6)}-${compact.slice(6, 8)}`;
+}
+
+// 사업종료일 선택 하한 = 사업개시일 당일(5.2.1: 개시일 이후 모든 날짜, 개시일 당일 허용).
+const endDateMinDate = computed(() => toYmdDash(strDate.value));
+
+// PRAFTA-COM-001-T2-5: 사업개시일 변경 시 종료일이 그보다 앞서면 종료일 초기화(UI 정합).
+watch(
+  () => strDate.value,
+  () => {
+    const startYmd = toYmdDash(strDate.value).replace(/-/g, "");
+    const endYmd = toYmdDash(endDate.value).replace(/-/g, "");
+    if (startYmd && endYmd && endYmd < startYmd) {
+      endDate.value = "";
+    }
+  }
+);
+
 // 주소 변경 감시
 watch(
   () => addr1.value,
@@ -541,8 +568,10 @@ const fnGetSiteInfo = async (siteCd) => {
         zipCode.value = response.data?.siteInfoList[0]?.zipCode;
         addr1.value = response.data?.siteInfoList[0]?.addr1;
         addr2.value = response.data?.siteInfoList[0]?.addr2;
-        strDate.value = response.data?.siteInfoList[0].strDate;
-        endDate.value = response.data?.siteInfoList[0].endDate;
+        // PRAFTA-COM-001-T2: DB 는 YYYYMMDD(대시 없음) 저장. flatpickr(dateFormat Y-m-d)
+        //   는 대시 구분자로 파싱하므로 무대시 값은 오파싱된다 → 로드 즉시 YYYY-MM-DD 로 정규화.
+        strDate.value = toYmdDash(response.data?.siteInfoList[0].strDate);
+        endDate.value = toYmdDash(response.data?.siteInfoList[0].endDate);
         useYn.value = response.data?.siteInfoList[0].useYn;
         telNo.value = response.data?.siteInfoList[0].telNo;
         gpsRange.value = response.data?.siteInfoList[0].gpsRange;
@@ -567,6 +596,26 @@ const fnSiteSave = async () => {
   fnConfirmMsg("저장하시겠습니까 ?", async () => {
     if (!fnSiteInfoValidationChk()) {
       return;
+    }
+
+    // PRAFTA-COM-001-T2-5: 과거 종료일 + 사용여부 'Y' 자동 제안.
+    //   BE resolveEndDateBoundary(5.2.4 재개방): 종료일이 과거인데 사용여부가 'Y' 이면
+    //   "종료 취소(재개방)"로 간주해 종료일을 NULL 처리한다 → 사용자는 "저장됐는데 종료일이
+    //   안 들어간다"고 느낀다. 종료를 의도했을 수 있으므로 '미사용' 전환을 제안한다.
+    //   (당일은 BE 가 useYn 무관하게 종료 처리하므로 제외 — 엄격 과거만 대상)
+    const todayYmd = proxy.$util.getToday().replace(/-/g, "");
+    const endYmd = toYmdDash(endDate.value).replace(/-/g, "");
+    if (endYmd && endYmd < todayYmd && useYn.value === "Y") {
+      const ok = await proxy.$confirm(
+        "사업종료일이 오늘보다 과거입니다.\n" +
+          "사용여부를 '미사용'으로 변경하여 사업장을 종료 처리하시겠습니까?\n\n" +
+          "[확인] 종료(미사용)로 저장 · [취소] 저장 취소"
+      );
+      if (!ok) {
+        // 취소: 사용여부 'Y' 유지 시 종료일이 저장되지 않으므로 저장을 중단한다(잘못된 성공 표시 방지).
+        return;
+      }
+      useYn.value = "N";
     }
 
     // 좌표 실패 경고(D4): 주소는 정상인데 좌표 산출 실패/미완료 시 경고 후 저장 진행(NULL 좌표 허용)
@@ -605,7 +654,11 @@ const fnSiteSave = async () => {
         });
       }
     } catch (err) {
-      const alertMsg = "요청처리에 실패했습니다.\n관리자에게 문의해주세요.";
+      // 백엔드 메시지(예: 권한 없음 BAIM_403_002) 우선 노출, 없으면 기본 문구
+      const alertMsg = resolveApiErrorMessage(
+        err,
+        "요청처리에 실패했습니다.\n관리자에게 문의해주세요."
+      );
       fnAlertMsg(alertMsg);
     }
   });
@@ -646,7 +699,16 @@ function fnSiteInfoValidationChk() {
   let alertMsg = "";
   let retVal = true;
 
-  if (proxy.$util.isEmpty(siteNm.value)) {
+  // PRAFTA-COM-001-T2-1: 사업장번호 기본값 세팅 제거 → 필수 입력 검증(미입력 시 NOT NULL 위반 차단).
+  if (proxy.$util.isEmpty(siteNo.value)) {
+    alertMsg = "사업장번호를 입력해주세요.";
+
+    fnAlertMsg(alertMsg, () => {
+      const el = document.getElementById("siteNo");
+      if (el) el.focus();
+    });
+    retVal = false;
+  } else if (proxy.$util.isEmpty(siteNm.value)) {
     alertMsg = "사업장명을 입력해주세요.";
 
     fnAlertMsg(alertMsg, () => {
@@ -670,6 +732,16 @@ function fnSiteInfoValidationChk() {
       siteAdminSrchBtnFcs.value.focus();
     });
     retVal = false;
+  } else {
+    // PRAFTA-COM-001-T2-5: 종료일이 개시일보다 과거이면 차단(FE 1차 검증, BE T2-2 가 최종 검증).
+    //   개시일 당일(strDate == endDate)은 허용(5.2.1).
+    const startYmd = toYmdDash(strDate.value).replace(/-/g, "");
+    const endYmd = toYmdDash(endDate.value).replace(/-/g, "");
+    if (startYmd && endYmd && endYmd < startYmd) {
+      alertMsg = "사업종료일은 사업개시일 이후로 지정해주세요.";
+      fnAlertMsg(alertMsg);
+      retVal = false;
+    }
   }
 
   return retVal;
@@ -691,6 +763,16 @@ async function fnConfirmMsg(message, afterConfirmCallback) {
 </script>
 
 <style scoped>
+/* GPS 반경 입력 우측 단위 표기 */
+.gps-range-field {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+}
+.gps-range-unit {
+  color: var(--color-text-muted, #6b7280);
+}
+
 /* 폼·지도 같은 행 높이 → 지도 하단이 저장 버튼(폼 하단)과 맞음 */
 .content-wrapper {
   display: grid;

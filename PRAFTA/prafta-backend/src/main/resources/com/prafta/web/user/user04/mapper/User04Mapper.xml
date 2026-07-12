@@ -15,6 +15,9 @@
         , U.RANK_CD                                                          AS rankCd
         , FNC_CMM_INFO_SRCH(U.CMPNY_CD, 'BAIM_VAL', U.RANK_CD, 'COM007')      AS rankNm
         , D.SORT_IDX                                                         AS rankSortIdx
+        , U.AUTH_CD                                                          AS authCd
+        , FNC_CMM_INFO_SRCH(U.CMPNY_CD, 'BAIM_VAL', U.AUTH_CD, 'COM005')      AS authNm
+        , AD.SORT_IDX                                                        AS authSortIdx
         , FNC_CMM_INFO_SRCH(U.CMPNY_CD, 'NODE', U.SITE_CD, U.NODE_CD)         AS nodeNm
       FROM TB_USER U
       LEFT JOIN TB_BAIM_VAL_D D
@@ -22,6 +25,11 @@
        AND D.BAIM_VAL_CD  = 'COM007'
        AND D.BAIM_VAL_D_CD = U.RANK_CD
        AND D.USE_YN       = 'Y'
+      LEFT JOIN TB_BAIM_VAL_D AD
+        ON AD.CMPNY_CD     = U.CMPNY_CD
+       AND AD.BAIM_VAL_CD  = 'COM005'
+       AND AD.BAIM_VAL_D_CD = U.AUTH_CD
+       AND AD.USE_YN       = 'Y'
      WHERE U.CMPNY_CD = #{cmpnyCd}
        AND U.SITE_CD  = #{siteCd}
        AND U.USE_YN   = 'Y'
@@ -35,7 +43,7 @@
        <if test="userNm != null and userNm != ''">
          AND U.USER_NM LIKE CONCAT('%', #{userNm}, '%')
        </if>
-     ORDER BY (D.SORT_IDX IS NULL), D.SORT_IDX ASC, U.USER_NM ASC
+     ORDER BY (AD.SORT_IDX IS NULL), AD.SORT_IDX ASC, (D.SORT_IDX IS NULL), D.SORT_IDX ASC, U.USER_ID ASC
     </select>
 
     <select id="selectUserRankSortIdx" resultType="java.lang.Integer">
@@ -95,6 +103,16 @@
      WHERE P.CMPNY_CD = #{cmpnyCd}
        AND P.PRESET_ID = #{presetId}
        AND P.USE_YN = 'Y'
+     LIMIT 1
+    </select>
+
+    <select id="selectPresetDefaultYn" resultType="string">
+    /* User04Mapper.selectPresetDefaultYn */
+    SELECT P.DEFAULT_YN
+      FROM TB_APRV_LINE_PRESET P
+     WHERE P.CMPNY_CD  = #{cmpnyCd}
+       AND P.PRESET_ID = #{presetId}
+       AND P.USE_YN    = 'Y'
      LIMIT 1
     </select>
 

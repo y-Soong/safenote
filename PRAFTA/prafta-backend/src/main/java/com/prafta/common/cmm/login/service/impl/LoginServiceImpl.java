@@ -71,8 +71,8 @@ public class LoginServiceImpl implements LoginService{
 	private static final int PHONE_AUTH_TOKEN_TTL_MINUTES = 10;
 	// PRAFTA-COM-008-E-8 — 기본 근무타입 게이트 임시 토큰 만료(분, PhoneAuth 미러).
 	private static final int DEFAULT_SCH_TOKEN_TTL_MINUTES = 10;
-	// 자동생성 트리거 운영 게이트(기본 false). 미충족이면 설정만 저장하고 생성은 스킵.
-	@Value("${prafta.default-sch.gen.enabled:false}")
+	// 자동생성 트리거 운영 게이트. 코드 기본값 true 로 통일(User_01/배치와 정합). properties 명시값 우선.
+	@Value("${prafta.default-sch.gen.enabled:true}")
 	private boolean defaultSchGenEnabled;
 	// 게이트 평가 시점 운영 토글(기본 true). 운영 검증 전 빠른 비활성화 경로.
 	@Value("${prafta.default-sch.gate.enabled:true}")
@@ -486,9 +486,24 @@ public class LoginServiceImpl implements LoginService{
 
 		if(Param != null && Param.systValDCdList().size() > 0) {
 			for(String systValDCd : Param.systValDCdList()) {
-				loginMapper.mergeAuthMenuInfo(AuthMenuInfoCommand.from(systValDCd, Param.userId()));
+				loginMapper.mergeAuthMenuInfo(AuthMenuInfoCommand.from(Param.cmpnyCd(), systValDCd, Param.userId()));
 			}
 		}
+	}
+
+	/**
+	 * 휴대폰 본인인증 팝업 자동기입용 — PHONE_AUTH 토큰 식별 사용자(인증대기 '04')의
+	 * 관리자 등록 휴대폰을 복호화하여 반환한다. 클라가 임의 번호로 바꿔 계정 휴대폰을 탈취하는 것을 막기 위함.
+	 * 대상이 '04' 가 아니거나 미존재면 거부, 미등록(enc 없음)이면 빈 문자열(수동 입력 폴백).
+	 */
+	@Override
+	public String getPhoneAuthTargetPhone(String cmpnyCd, String userCd) {
+		UserResult userResult = loginMapper.selectUserByUserCd(cmpnyCd, userCd);
+		if (userResult == null || !"04".equals(userResult.accountStatus())) {
+			throw new ApiException(LoginErrorCode.LOGIN_400_013);
+		}
+		String enc = userResult.mblNoEnc();
+		return (enc == null || enc.isBlank()) ? "" : aesGcmCrypto.decrypt(enc);
 	}
 
 	/**
@@ -559,6 +574,20 @@ public class LoginServiceImpl implements LoginService{
 		UserResult activatedUser = loginMapper.selectUserByUserCd(param.gvCmpnyCd(), param.gvUserCd());
 		if (activatedUser == null) {
 			throw new ApiException(LoginErrorCode.LOGIN_400_002);
+		}
+
+		// PRAFTA-COM-008-E-8: 인증대기('04') 활성화 직후에도 기본 근무타입 게이트를 재평가한다.
+		//   인증대기 계정은 main login() 에서 PHONE_AUTH 로 early-return 하여 DEFAULT_SCH 게이트를 거치지 못한다.
+		//   여기서 재평가하지 않으면 신규 고객사(프로비저닝) 계정의 최초 로그인에서 게이트가 영구 우회되어
+		//   DEFAULT_SCH_CD 미설정 상태로 메인에 진입한다. main login() 과 동일 규칙으로 정식 토큰 대신
+		//   scope=DEFAULT_SCH 임시 토큰을 발급하고, 클라이언트는 게이트 팝업으로 분기한다.
+		if (requiresDefaultSchGate(activatedUser)) {
+			String defaultSchToken = jwtUtil.generateScopeToken(
+					activatedUser.cmpnyCd(), activatedUser.userCd(),
+					com.prafta.common.security.JwtScope.DEFAULT_SCH, DEFAULT_SCH_TOKEN_TTL_MINUTES);
+			log.info("인증대기 활성화 후 기본 근무타입 미설정 — 게이트 임시 토큰 발급(scope=DEFAULT_SCH). userCd={}",
+					activatedUser.userCd());
+			return LoginResponse.defaultSchPending(activatedUser, defaultSchToken);
 		}
 
 		String tokenId = java.util.UUID.randomUUID().toString().replace("-", "");

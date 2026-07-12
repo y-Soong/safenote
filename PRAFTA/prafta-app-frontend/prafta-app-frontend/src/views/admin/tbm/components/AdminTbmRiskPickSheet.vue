@@ -83,6 +83,9 @@
                   <span v-if="opt.processNm || opt.assessmentStatusNm" class="pick-item__meta">
                     {{ [opt.processNm, opt.assessmentStatusNm].filter(Boolean).join(' · ') }}
                   </span>
+                  <span v-if="opt.hazardDesc" class="pick-item__desc">
+                    유해요인설명 · {{ opt.hazardDesc }}
+                  </span>
                 </span>
               </label>
             </li>
@@ -359,6 +362,17 @@ watch(
 .pick-item__meta {
   font-size: 12px;
   color: var(--color-text-tertiary);
+}
+.pick-item__desc {
+  /* 유해요인설명 일부 노출(최대 2줄) — 정확한 위험성평가 식별을 돕는다. */
+  font-size: 12px;
+  line-height: 1.45;
+  color: var(--color-text-secondary);
+  word-break: break-all;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
 }
 .pick-sheet__footer {
   display: flex;

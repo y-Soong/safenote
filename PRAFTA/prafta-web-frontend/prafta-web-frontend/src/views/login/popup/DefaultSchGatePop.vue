@@ -4,25 +4,47 @@
       <div class="modal-content-narrow" ref="modalRef">
         <div class="modal-header">
           <span>기본 근무타입 설정</span>
-          <!-- 게이트: 닫기 버튼 없음(강제). 미설정 시 진입 불가. -->
+          <!-- 닫기: 미설정 상태로 로그인 화면 복귀(PhoneAuthPop 패턴). 임시 토큰은 정리. -->
+          <button class="icon-button" @click="fnCancel">
+            <svg
+              xmlns="http://www.w3.org/2000/svg"
+              fill="none"
+              viewBox="0 0 24 24"
+              stroke-width="1.5"
+              stroke="currentColor"
+              class="w-6 h-6"
+            >
+              <path
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                d="M6 18L18 6M6 6l12 12"
+              />
+            </svg>
+          </button>
         </div>
 
         <div class="form-container">
           <p class="leave-section-hint">
-            ⓘ 서비스 이용을 위해 기본 근무타입을 먼저 설정해야 합니다.
-            설정한 근무타입으로 당해 연말까지 평일 근무계획이 자동 생성됩니다.
+            ⓘ 서비스 이용을 위해 기본 근무타입을 먼저 설정해야 합니다. 설정한
+            근무타입으로 당해 연말까지 평일 근무계획이 자동 생성됩니다.
           </p>
 
           <div class="form-row-max">
             <label>기본 근무타입</label>
-            <BaseSelect id="gateDefaultSchCd" v-model="defaultSchCd" :disabled="isLoading || isSaving">
+            <BaseSelect
+              id="gateDefaultSchCd"
+              v-model="defaultSchCd"
+              :disabled="isLoading || isSaving"
+            >
               <option :value="''">-</option>
               <option
                 v-for="opt in schTypeOptions"
                 :key="opt.schCd"
                 :value="opt.schCd"
               >
-                {{ opt.schNo }} ({{ fnFmtSchTime(opt.fstSchStrTime) }}~{{ fnFmtSchTime(opt.fstSchEndTime) }})
+                {{ opt.schNo }} ({{ fnFmtSchTime(opt.fstSchStrTime) }}~{{
+                  fnFmtSchTime(opt.fstSchEndTime)
+                }})
               </option>
             </BaseSelect>
           </div>
@@ -82,6 +104,20 @@ onMounted(async () => {
   }
   await fnLoadOptions();
 });
+
+const fnCleanupToken = () => {
+  // 미설정 취소 시 임시 토큰을 sessionStorage 에서 제거(정식 토큰이 아니므로 잔존 금지).
+  sessionStorage.removeItem("token");
+};
+
+const fnCancel = async () => {
+  const ok = await proxy.$confirm(
+    "기본 근무타입을 설정하지 않으면 로그인 화면으로 돌아갑니다. 계속하시겠습니까?"
+  );
+  if (!ok) return;
+  fnCleanupToken();
+  emit("close");
+};
 
 const fnLoadOptions = async () => {
   isLoading.value = true;

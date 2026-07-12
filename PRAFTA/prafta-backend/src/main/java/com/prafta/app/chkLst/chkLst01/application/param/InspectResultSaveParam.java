@@ -1,8 +1,8 @@
 package com.prafta.app.chkLst.chkLst01.application.param;
 
 import java.time.LocalDate;
+import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
-import java.time.format.DateTimeParseException;
 import java.util.Map;
 
 import org.springframework.util.StringUtils;
@@ -24,6 +24,7 @@ import com.prafta.common.exception.ApiException;
  * <p>prafta-app-011: userCd 클라이언트 입력 필드 제거 -- DB 기록은 tokenInfo.gv_userCd() 사용.
  * <p>prafta-036-C(H-3): cmpnyCd 도 tokenInfo.gv_cmpnyCd() 로 강제 캐노니컬라이즈
  *   (파일 디렉토리 경로 첫 세그먼트 공격자 통제 차단). request.cmpnyCd 는 수신은 하되 무시.
+ * <p>workDate 도 서버 기준 오늘(Asia/Seoul)로 강제. request.workDate 는 수신은 하되 무시.
  */
 public record InspectResultSaveParam(
     String cmpnyCd
@@ -38,6 +39,10 @@ public record InspectResultSaveParam(
 ) {
     private static final org.slf4j.Logger log =
             org.slf4j.LoggerFactory.getLogger(InspectResultSaveParam.class);
+
+    /** 점검일자 산출 기준 시간대. JVM 기본 TZ 설정과 무관하게 KST 를 명시 고정한다. */
+    private static final ZoneId KST = ZoneId.of("Asia/Seoul");
+    private static final DateTimeFormatter YMD = DateTimeFormatter.ofPattern("yyyyMMdd");
 
     public static InspectResultSaveParam from(
             SaveInspectResultRequest request
@@ -62,16 +67,16 @@ public record InspectResultSaveParam(
                     reqSiteCd, tokenSiteCd, tokenInfo.gv_userCd());
         }
 
-        // workDate: YYYYMMDD 형식 + 유효 날짜 검증
-        String workDate = request.getWorkDate();
-        if (!StringUtils.hasText(workDate))
-            throw new ApiException(CommonErrorCode.COMMON_400_001);
-        if (!workDate.matches("\\d{8}"))
-            throw new ApiException(CommonErrorCode.COMMON_400_001);
-        try {
-            LocalDate.parse(workDate, DateTimeFormatter.ofPattern("yyyyMMdd"));
-        } catch (DateTimeParseException e) {
-            throw new ApiException(CommonErrorCode.COMMON_400_001);
+        // workDate: 서버 기준 오늘(KST)로 강제.
+        //   순회점검은 QR 스캔 직후 현장에서 수행하는 행위라 과거 일자 지정이 필요 없다.
+        //   클라이언트 값을 그대로 저장하면 (1) 기기 시계 오류/조작, (2) 화면 진입 시각 고정으로
+        //   자정을 넘겨 저장할 때 전날 기록, (3) UTC 기준 날짜 계산 버그가 그대로 실적에 반영된다.
+        //   request.workDate 는 수신은 하되 무시하고, 불일치 시 로그만 남긴다.
+        String workDate = LocalDate.now(KST).format(YMD);
+        String reqWorkDate = request.getWorkDate();
+        if (StringUtils.hasText(reqWorkDate) && !workDate.equals(reqWorkDate)) {
+            log.warn("[chkLst01] workDate 불일치 — 서버 기준으로 저장: 요청={}, 서버={} (userCd={})",
+                    reqWorkDate, workDate, tokenInfo.gv_userCd());
         }
 
         // prafta-036-C(H-3): cmpnyCd 토큰 캐노니컬라이즈

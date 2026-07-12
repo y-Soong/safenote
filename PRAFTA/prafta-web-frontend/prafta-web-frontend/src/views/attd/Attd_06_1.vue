@@ -323,7 +323,9 @@
           <div class="pm-sep"></div>
           <div class="pm-item">
             <div class="pm-label">적용 기간</div>
-            <div class="pm-value">{{ formatYmdDot(strDate) }} ~ {{ formatYmdDot(endDate) }}</div>
+            <div class="pm-value">
+              {{ formatYmdDot(strDate) }} ~ {{ formatYmdDot(endDate) }}
+            </div>
           </div>
           <div class="pm-sep"></div>
           <div class="pm-item">

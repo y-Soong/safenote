@@ -16,6 +16,8 @@ public record RiskOptionResult(
 	, String assessmentCd
 	, String assessmentStatus
 	, String assessmentStatusNm
+	, String initAssessDate			// 평가요청일(TB_RISK_ASSESSMENT.INIT_ASSESS_DATE)
+	, String initAssessorNm			// 평가요청자(INIT_ASSESSOR_ID → USER_NM)
 ){
 
 }

@@ -51,15 +51,16 @@
     </select>
 
     <!-- ============================================================
-         apply-meta: 회사 활성 법정정책의 단일 허용단위 + 법정 결재여부
+         apply-meta: 회사 활성 법정정책의 단일 허용단위 + 법정 결재여부 + 반반차 토글(LC-06)
          - tb_leave_policy(활성 1건) JOIN tb_leave_usage_policy(POLICY_SEQ 1:1).
-         - 결과 record LeaveUsagePolicyRow(usageUnit, policyAprvUseYn) 순서 일치.
+         - 결과 record LeaveUsagePolicyRow(usageUnit, policyAprvUseYn, allowQuarter) 순서 일치.
          ============================================================ -->
     <select id="selectCompanyUsageUnit" resultType="com.prafta.app.leave.leaveflow.result.LeaveUsagePolicyRow">
     /* AppLeaveFlowMapper.selectCompanyUsageUnit */
     SELECT
           UP.USAGE_UNIT    AS usageUnit
         , P.APRV_USE_YN    AS policyAprvUseYn
+        , UP.ALLOW_QUARTER AS allowQuarter
       FROM TB_LEAVE_POLICY P
       JOIN TB_LEAVE_USAGE_POLICY UP
         ON UP.POLICY_SEQ = P.POLICY_SEQ
@@ -244,7 +245,8 @@
     <!-- ============================================================
          연차개편 동시성: 사용자 신청('01')은 차감 GRANT 가 없어 FOR UPDATE 행잠금을 못 쓴다.
          동일 (USER_CD,LEAVE_CD) 신청을 세션 단위 advisory lock 으로 직렬화한다(마이그 없음).
-         1=획득, 0=타임아웃, null=오류. 트랜잭션 무관(세션 단위) → 호출부 finally 에서 RELEASE_LOCK.
+         1=획득, 0=타임아웃, null=오류. 트랜잭션 무관(세션 단위) → 호출부가 트랜잭션 완료
+         (afterCompletion) 시점에 RELEASE_LOCK (등록 불가 시 finally 폴백 — 보안리뷰 Medium).
          (prafta-app-009 F15 AppReq07Mapper 패턴 재사용)
          ============================================================ -->
     <select id="getAdvisoryLock" resultType="java.lang.Integer">

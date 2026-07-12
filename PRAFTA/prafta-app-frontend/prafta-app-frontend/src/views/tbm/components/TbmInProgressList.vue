@@ -63,6 +63,12 @@ const onRetry = () => {
   loadSessions()
 }
 
+// 당겨서 새로고침(부모 허브가 호출) — 교육중 세션 목록 재조회.
+const refresh = async () => {
+  await loadSessions()
+}
+defineExpose({ refresh })
+
 onMounted(loadSessions)
 </script>
 

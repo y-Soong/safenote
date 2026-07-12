@@ -1,0 +1,68 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.prafta.common.cmm.menu.mapper.MenuFavoriteMapper">
+
+    <select id="selectFavoriteMenuDIds" resultType="string">
+    /* MenuFavoriteMapper."selectFavoriteMenuDIds" */
+    SELECT
+    	MENU_D_ID
+    FROM TB_USER_MENU_FAVORITE
+    WHERE 1=1
+      AND CMPNY_CD = #{cmpnyCd}
+      AND USER_CD = #{userCd}
+    ORDER BY INSERT_DATE, MENU_D_ID
+    </select>
+
+    <select id="countFavorite" resultType="int">
+    /* MenuFavoriteMapper."countFavorite" */
+    SELECT COUNT(*)
+    FROM TB_USER_MENU_FAVORITE
+    WHERE 1=1
+      AND CMPNY_CD = #{cmpnyCd}
+      AND USER_CD = #{userCd}
+      AND MENU_D_ID = #{menuDId}
+    </select>
+
+    <select id="countMenuDExists" resultType="int">
+    /* MenuFavoriteMapper."countMenuDExists" */
+    SELECT COUNT(*)
+    FROM TB_SYST_MENU_D A
+         INNER JOIN TB_SYST_MENU_M B
+            ON (
+                A.MENU_M_ID = B.MENU_M_ID
+            AND A.USE_YN = B.USE_YN
+            )
+    WHERE 1=1
+      AND A.MENU_D_ID = #{menuDId}
+      AND A.USE_YN = 'Y'
+      AND B.MENU_SRC = '001'		/* 웹 메뉴만 */
+    </select>
+
+    <insert id="insertFavorite">
+    /* MenuFavoriteMapper."insertFavorite" */
+    INSERT INTO TB_USER_MENU_FAVORITE (
+    	CMPNY_CD
+    	, USER_CD
+    	, MENU_D_ID
+    	, INSERT_NO
+    	, INSERT_DATE
+    )
+    VALUES (
+    	#{cmpnyCd}
+    	, #{userCd}
+    	, #{menuDId}
+    	, #{userCd}
+    	, NOW()
+    )
+    </insert>
+
+    <delete id="deleteFavorite">
+    /* MenuFavoriteMapper."deleteFavorite" */
+    DELETE FROM TB_USER_MENU_FAVORITE
+    WHERE 1=1
+      AND CMPNY_CD = #{cmpnyCd}
+      AND USER_CD = #{userCd}
+      AND MENU_D_ID = #{menuDId}
+    </delete>
+
+</mapper>

@@ -15,6 +15,7 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
 import com.prafta.common.security.JwtUtil;
+import com.prafta.web.tbm.tbm01.application.param.TbmEduAiAnalyzeParam;
 import com.prafta.web.tbm.tbm01.application.param.TbmEduDetailParam;
 import com.prafta.web.tbm.tbm01.application.param.TbmEduInfoListParam;
 import com.prafta.web.tbm.tbm01.application.param.TbmEduInfoParam;
@@ -22,6 +23,7 @@ import com.prafta.web.tbm.tbm01.application.param.TbmEduItemInfoListParam;
 import com.prafta.web.tbm.tbm01.application.param.TbmEduItemParam;
 import com.prafta.web.tbm.tbm01.application.param.TbmEduMtrlInfoParam;
 //import com.prafta.web.tbm.tbm01.dto.TbmEduItemInfoReq;
+import com.prafta.web.tbm.tbm01.dto.request.TbmEduAiAnalyzeRequest;
 import com.prafta.web.tbm.tbm01.dto.request.TbmEduDetailRequest;
 import com.prafta.web.tbm.tbm01.dto.request.TbmEduInfoListRequest;
 import com.prafta.web.tbm.tbm01.dto.request.TbmEduInfoRequest;
@@ -83,9 +85,21 @@ public class Tbm01Controller {
 	
 	@PostMapping("/delete-tbm-edu-item-infos")
 	public ResponseEntity<?> deleteTbmEduItemInfo(@RequestBody List<TbmEduItemRequest> request, @RequestHeader(value = "Authorization", required = false) String authorization) {
-		
+
 		tbm01Service.deleteTbmEduItemInfo(TbmEduItemParam.from(request, jwtUtil.getAllClaimsAsMap(authorization)));
-		
+
+		return ResponseEntity.ok().build();
+	}
+
+	// 사용 중(잠긴) 교육자료의 세부항목 AI 분석 지정(AI_ANALYZE_YN)만 갱신하는 전용 경로.
+	@PostMapping(value = "/update-tbm-edu-ai-analyze", consumes = MediaType.APPLICATION_JSON_VALUE)
+	public ResponseEntity<?> updateTbmEduAiAnalyze(
+			@RequestBody TbmEduAiAnalyzeRequest request,
+			@RequestHeader(value = "Authorization", required = false) String authorization
+	) {
+
+		tbm01Service.updateTbmEduItemAiAnalyze(TbmEduAiAnalyzeParam.from(request, jwtUtil.getAllClaimsAsMap(authorization)));
+
 		return ResponseEntity.ok().build();
 	}
 	

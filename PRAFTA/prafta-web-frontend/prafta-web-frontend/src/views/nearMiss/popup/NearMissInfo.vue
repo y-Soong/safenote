@@ -8,7 +8,7 @@
       >
         <!-- 헤더 (드래그) -->
         <div class="modal-header" @mousedown="startDrag">
-          <span>사건 정밀조사</span>
+          <span>아차사고 상세</span>
           <button class="icon-button" @click="$emit('close')">
             <svg
               xmlns="http://www.w3.org/2000/svg"
@@ -36,10 +36,6 @@
               <div class="form-row">
                 <label>사건ID</label>
                 <input v-model="formData.nearMissId" readonly />
-              </div>
-              <div class="form-row">
-                <label>유형</label>
-                <input v-model="formData.incidentTypeNm" readonly />
               </div>
               <div class="form-row">
                 <label>발생일시</label>
@@ -131,29 +127,29 @@
                   </option>
                 </select>
               </div>
-              <!-- 이미 반려된 건: 저장된 반려 사유 표시(읽기) -->
+              <!-- 이미 미처리대상 처리된 건: 저장된 미처리 사유 표시(읽기) -->
               <div
                 class="form-row"
                 v-if="
-                  isReadOnly && currentStatusCd === '900' && storedRejectReason
+                  isReadOnly && currentStatusCd === '400' && storedRejectReason
                 "
               >
-                <label>반려 사유</label>
+                <label>미처리 사유</label>
                 <textarea
                   :value="storedRejectReason"
                   readonly
                   rows="3"
                 ></textarea>
               </div>
-              <!-- 반려 선택 시 사유 필수(편집 가능 건만) -->
+              <!-- 미처리대상 선택 시 사유 필수(편집 가능 건만) -->
               <div
                 class="form-row"
-                v-if="!isReadOnly && formData.reportStatusCd === '900'"
+                v-if="!isReadOnly && formData.reportStatusCd === '400'"
               >
-                <label>반려 사유</label>
+                <label>미처리 사유</label>
                 <textarea
                   v-model="rejectReason"
-                  placeholder="반려 사유를 입력해 주세요"
+                  placeholder="미처리 사유를 입력해 주세요"
                   rows="3"
                 ></textarea>
               </div>
@@ -163,25 +159,11 @@
 
         <!-- 푸터 -->
         <div class="modal-footer">
-          <div class="footer-buttons-left">
-            <!-- 경미사고(SYS061 200) 산재 보고 안내 게이트 (결정필요 D4) -->
-            <span
-              v-if="formData.incidentTypeCd === '200'"
-              class="industrial-notice"
-            >
-              산업재해 보고 대상 여부를 확인하세요(별도 절차).
-            </span>
-          </div>
+          <div class="footer-buttons-left"></div>
           <div class="footer-buttons-right">
-            <button class="btn btn-cancel" @click="$emit('close')">취소</button>
+            <button class="btn btn-cancel" @click="$emit('close')">닫기</button>
             <button v-if="!isReadOnly" class="btn btn-save" @click="fnSave">
               저장
-            </button>
-            <button v-if="!isReadOnly" class="btn btn-save" @click="fnComplete">
-              완료 처리
-            </button>
-            <button v-if="!isReadOnly" class="btn btn-reject" @click="fnReject">
-              반려
             </button>
           </div>
         </div>
@@ -204,6 +186,7 @@ import {
 import { useCenteredDraggable } from "@/composables/useCenteredDraggable";
 import axios from "@/api/axios";
 import { resolveApiErrorMessage } from "@/utils/apiError";
+import { buildFileServingUrl } from "@/utils/fileUrl";
 
 const { proxy } = getCurrentInstance();
 
@@ -236,8 +219,6 @@ const formData = ref({
   cmpnyCd: "",
   siteCd: "",
   nearMissId: "",
-  incidentTypeCd: "",
-  incidentTypeNm: "",
   processCd: "",
   processNm: "",
   occurDtime: "",
@@ -259,19 +240,20 @@ const formData = ref({
   reportDtime: "",
 });
 
-// 완료(400)·반려(900) 건은 읽기전용 (전이 기준은 진입 시점 원본 상태)
+// 완료(300)·미처리대상(400) 건은 읽기전용 (전이 기준은 진입 시점 원본 상태)
+// SYS063 재번호(D4): 100 접수 / 200 조치중 / 300 완료 / 400 미처리대상.
 const isReadOnly = computed(
-  () => currentStatusCd.value === "400" || currentStatusCd.value === "900"
+  () => currentStatusCd.value === "300" || currentStatusCd.value === "400"
 );
 
-// 상태 전이 규칙(정책 A): 단계는 유지하되 활성단계(접수/검토중/조치중)에서 더 뒤 단계로
-//   전진 점프 허용(접수→완료 직접 등). 자기 자신 포함, 어느 활성단계든 900 반려. 뒤로 가기 불가.
+// 상태 전이 규칙(정책 A): 선형 활성단계(접수→조치중→완료)에서 더 뒤 단계로 전진 점프 허용
+//   (접수→완료 직접 등). 자기 자신 포함, 어느 활성단계든 400 미처리대상. 뒤로 가기 불가.
+//   종결(완료300/미처리대상400)은 자기 자신만.
 const STATUS_TRANSITIONS = {
-  "100": ["100", "200", "300", "400", "900"],
-  "200": ["200", "300", "400", "900"],
-  "300": ["300", "400", "900"],
+  "100": ["100", "200", "300", "400"],
+  "200": ["200", "300", "400"],
+  "300": ["300"],
   "400": ["400"],
-  "900": ["900"],
 };
 
 // 처리상태 select 옵션 — 현재 상태 기준 전이 가능한 코드만 노출
@@ -284,35 +266,18 @@ const statusOptions = computed(() => {
   return all.filter((opt) => allowed.includes(opt.systValDCd));
 });
 
-// 저장된 반려 사유(상세 응답의 rejectReason 분리 필드. 없을 수 있어 옵셔널 처리)
+// 저장된 미처리 사유(상세 응답의 rejectReason 분리 필드, 컬럼 재활용. 없을 수 있어 옵셔널 처리)
 const storedRejectReason = computed(() => formData.value.rejectReason || "");
 
 // 현장 사진 URL
 // - 서빙 파일명은 확장자 포함명(fileName = FILE_MGMT_CD + FILE_EXT)을 사용한다.
 //   fileMgmtCd(확장자 없음)로 URL 을 만들면 정적 서빙 핸들러가 파일을 찾지 못해(404) 사진이 안 보인다.
 // - Windows 저장 시 FILE_PATH 에 백슬래시(\)가 섞이므로 URL 안전 형태(슬래시)로 정규화한다.
-const photoUrl = computed(() => {
-  if (formData.value.filePath && formData.value.fileName) {
-    const apiBaseUrl = import.meta.env.VITE_API_BASE_URL || "";
-    const normalizedPath = formData.value.filePath.replace(/\\/g, "/");
-    let fullPath = `${normalizedPath}/${formData.value.fileName}`;
-    if (
-      apiBaseUrl &&
-      !normalizedPath.startsWith("http://") &&
-      !normalizedPath.startsWith("https://")
-    ) {
-      const baseUrl = apiBaseUrl.endsWith("/")
-        ? apiBaseUrl.slice(0, -1)
-        : apiBaseUrl;
-      const cleanFilePath = normalizedPath.startsWith("/")
-        ? normalizedPath.slice(1)
-        : normalizedPath;
-      fullPath = `${baseUrl}/${cleanFilePath}/${formData.value.fileName}`;
-    }
-    return fullPath;
-  }
-  return null;
-});
+const photoUrl = computed(
+  () =>
+    buildFileServingUrl(formData.value.filePath, formData.value.fileName) ||
+    null
+);
 
 // 잠재중대성 배지 클래스 (UI 표현만)
 const fnSeverityClass = (code) => {
@@ -327,12 +292,12 @@ onMounted(async () => {
   await fnGetIncidentInfo();
 });
 
-// 코드(SYS061/062/063) 조회 + systValCd 기준 그룹핑
+// 코드(SYS062/063) 조회 + systValCd 기준 그룹핑
 const fnGetSystinfoList = async () => {
   try {
     const response = await axios.get("/comApi/baseinfo/syst-info-lists", {
       params: {
-        systCodeList: ["SYS061", "SYS062", "SYS063"],
+        systCodeList: ["SYS062", "SYS063"],
       },
     });
 
@@ -443,16 +408,16 @@ const fnSave = async () => {
       proxy.$util.isNotEmpty(formData.value.reportStatusCd) &&
       formData.value.reportStatusCd !== currentStatusCd.value
     ) {
-      // 반려(900) 선택 시 사유 필수
-      if (formData.value.reportStatusCd === "900") {
+      // 미처리대상(400) 선택 시 사유 필수
+      if (formData.value.reportStatusCd === "400") {
         if (proxy.$util.isEmpty(rejectReason.value)) {
-          await proxy.$alert("반려 사유를 입력해 주세요.");
+          await proxy.$alert("미처리 사유를 입력해 주세요.");
           return;
         }
       }
       await fnChangeStatus(
         formData.value.reportStatusCd,
-        formData.value.reportStatusCd === "900" ? rejectReason.value : null
+        formData.value.reportStatusCd === "400" ? rejectReason.value : null
       );
     }
 
@@ -460,49 +425,6 @@ const fnSave = async () => {
     fnAfterSuccess();
   } catch (err) {
     const msg = resolveApiErrorMessage(err, "저장 중 오류가 발생했습니다.");
-    await proxy.$alert(msg);
-  }
-};
-
-// 완료 처리 = change-status(400). 전이 가능 여부는 서버 검증(422)에 위임
-const fnComplete = async () => {
-  const ok = await proxy.$confirm("이 사건을 완료 처리하시겠습니까?");
-  if (!ok) return;
-
-  try {
-    const response = await fnChangeStatus("400", null);
-    if (response.status === 200) {
-      await proxy.$alert("완료 처리되었습니다.");
-      fnAfterSuccess();
-    } else {
-      await proxy.$alert("완료 처리 중 오류가 발생했습니다.");
-    }
-  } catch (err) {
-    const msg = resolveApiErrorMessage(err, "완료 처리 중 오류가 발생했습니다.");
-    await proxy.$alert(msg);
-  }
-};
-
-// 반려 = change-status(900) + rejectReason. 사유 빈값 차단
-const fnReject = async () => {
-  if (proxy.$util.isEmpty(rejectReason.value)) {
-    await proxy.$alert("반려 사유를 입력해 주세요.");
-    return;
-  }
-
-  const ok = await proxy.$confirm("이 사건을 반려하시겠습니까?");
-  if (!ok) return;
-
-  try {
-    const response = await fnChangeStatus("900", rejectReason.value);
-    if (response.status === 200) {
-      await proxy.$alert("반려되었습니다.");
-      fnAfterSuccess();
-    } else {
-      await proxy.$alert("반려 처리 중 오류가 발생했습니다.");
-    }
-  } catch (err) {
-    const msg = resolveApiErrorMessage(err, "반려 처리 중 오류가 발생했습니다.");
     await proxy.$alert(msg);
   }
 };

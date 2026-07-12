@@ -5,24 +5,27 @@ import com.prafta.web.acct.acct01.application.param.AcctDeleteParam;
 import com.prafta.web.acct.acct01.application.param.AcctInfoParam;
 import com.prafta.web.acct.acct01.application.param.AcctListParam;
 import com.prafta.web.acct.acct01.application.param.AcctUpdateParam;
+import com.prafta.web.acct.acct01.application.param.AttdTbmPrintParam;
 import com.prafta.web.acct.acct01.application.param.ChkptOptionParam;
 import com.prafta.web.acct.acct01.application.param.LegalStepListParam;
 import com.prafta.web.acct.acct01.application.param.LegalStepSaveParam;
 import com.prafta.web.acct.acct01.application.param.LinkConfirmParam;
 import com.prafta.web.acct.acct01.application.param.LinkQueryParam;
 import com.prafta.web.acct.acct01.application.param.LinkSnapshotParam;
+import com.prafta.web.acct.acct01.application.param.RiskAssessmentPrintParam;
 import com.prafta.web.acct.acct01.application.param.RiskCategoryOptionParam;
 import com.prafta.web.acct.acct01.application.param.VictimSearchParam;
 import com.prafta.web.acct.acct01.dto.response.AcctCreateResponse;
 import com.prafta.web.acct.acct01.dto.response.AcctInfoResponse;
 import com.prafta.web.acct.acct01.dto.response.AcctListResponse;
+import com.prafta.web.acct.acct01.dto.response.AttdTbmPrintResponse;
 import com.prafta.web.acct.acct01.dto.response.AttendanceLinkResponse;
 import com.prafta.web.acct.acct01.dto.response.ChkptOptionResponse;
 import com.prafta.web.acct.acct01.dto.response.LegalStepHistoryResponse;
 import com.prafta.web.acct.acct01.dto.response.LegalStepListResponse;
 import com.prafta.web.acct.acct01.dto.response.LinkSnapshotResponse;
-import com.prafta.web.acct.acct01.dto.response.NearMissLinkResponse;
 import com.prafta.web.acct.acct01.dto.response.PatrolLinkResponse;
+import com.prafta.web.acct.acct01.result.RiskAssessmentDetailResult;
 import com.prafta.web.acct.acct01.dto.response.RiskCategoryOptionResponse;
 import com.prafta.web.acct.acct01.dto.response.RiskLinkResponse;
 import com.prafta.web.acct.acct01.dto.response.TbmLinkResponse;
@@ -52,7 +55,12 @@ public interface Acct01Service {
 
     TbmLinkResponse selectLinkTbm(LinkQueryParam param);
 
-    NearMissLinkResponse selectLinkNearMiss(LinkQueryParam param);
+    // ── T8 안전관리 현황 일괄 출력 ──
+    // ③ 근태(스케줄+실근태) + TBM 합본 집계 (사고 피해자 본인 한정, 라이브 재조회)
+    AttdTbmPrintResponse selectAttdTbmPrint(AttdTbmPrintParam param);
+
+    // ② 위험성평가 출력 상세 보강 (개선실행계획서/개선완료보고서, assessmentCd 연계 검증 후 라이브 재조회)
+    RiskAssessmentDetailResult selectRiskAssessmentForPrint(RiskAssessmentPrintParam param);
 
     ChkptOptionResponse selectChkptOptions(ChkptOptionParam param);
 

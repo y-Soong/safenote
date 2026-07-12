@@ -118,7 +118,8 @@
     <!-- ============================================================
          연차개편 동시성: 사용자 신청('01')은 차감 GRANT 가 없어 FOR UPDATE 를 못 쓴다.
          동일 (USER_CD,LEAVE_CD) 신청을 세션 단위 advisory lock 으로 직렬화한다(마이그 없음).
-         1=획득, 0=타임아웃, null=오류. 트랜잭션 무관(세션 단위) → 호출부 finally 에서 RELEASE_LOCK.
+         1=획득, 0=타임아웃, null=오류. 트랜잭션 무관(세션 단위) → 호출부가 트랜잭션 완료
+         (afterCompletion) 시점에 RELEASE_LOCK (등록 불가 시 finally 폴백 — 보안리뷰 Medium).
          (prafta-app-009 F15 패턴 / 앱 AppLeaveFlowMapper 미러)
          ============================================================ -->
     <select id="getAdvisoryLock" resultType="java.lang.Integer">
@@ -135,6 +136,19 @@
     /* LeaveFlowMapper.selectPolicyAprvUseYn */
     SELECT P.APRV_USE_YN
       FROM TB_LEAVE_POLICY P
+     WHERE P.CMPNY_CD = #{cmpnyCd}
+       AND P.USE_YN = 'Y'
+     ORDER BY P.POLICY_SEQ DESC
+     LIMIT 1
+    </select>
+
+    <!-- LC-06: 활성 법정정책의 반반차(0.25일) 허용 토글. 사용정책 행 미존재 시 null → 호출부 'N' 취급(fail-closed). -->
+    <select id="selectPolicyAllowQuarter" resultType="string">
+    /* LeaveFlowMapper.selectPolicyAllowQuarter */
+    SELECT UP.ALLOW_QUARTER
+      FROM TB_LEAVE_POLICY P
+      JOIN TB_LEAVE_USAGE_POLICY UP
+        ON UP.POLICY_SEQ = P.POLICY_SEQ
      WHERE P.CMPNY_CD = #{cmpnyCd}
        AND P.USE_YN = 'Y'
      ORDER BY P.POLICY_SEQ DESC

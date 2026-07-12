@@ -9,6 +9,8 @@ public record SessionContentResult(
 	, int itemCnt				// 묶음 내 세부항목 수
 	, int displayOrder
 	, String overrideDesc		// 세션별 override 설명
+	, String siteCd				// 교육자료 스코프(NULL=회사공통)
+	, String isCommonContent	// 'Y'=회사공통, 'N'=특정 사업장(6.2-(1)-2 스코프 표시)
 ){
 
 }

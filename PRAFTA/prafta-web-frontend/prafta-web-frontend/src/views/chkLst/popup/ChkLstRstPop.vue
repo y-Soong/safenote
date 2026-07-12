@@ -39,7 +39,8 @@
                       ◀
                     </button>
                     <h1 class="form-title">
-                      {{ formData.workMonth }} 점검결과 확인서
+                      {{ formatWorkMonthTitle(formData.workMonth) }} 점검결과
+                      확인서
                     </h1>
                     <button
                       class="month-nav-button next-button"
@@ -113,7 +114,12 @@
                         >
                           <td class="col-no">{{ idx + 1 }}</td>
                           <td class="col-item">{{ item.itemNm || "-" }}</td>
-                          <td v-for="day in 31" :key="day" class="day-cell">
+                          <td
+                            v-for="day in 31"
+                            :key="day"
+                            class="day-cell"
+                            :class="{ 'cell-disabled': isCellGrayed(idx, day) }"
+                          >
                             {{ getInspectionResult(idx, day) }}
                           </td>
                         </tr>
@@ -272,6 +278,7 @@ import {
 import { useCenteredDraggable } from "@/composables/useCenteredDraggable";
 import axios from "@/api/axios";
 import { resolveApiErrorMessage } from "@/utils/apiError";
+import { buildFileServingUrl } from "@/utils/fileUrl";
 
 const props = defineProps({
   cmpnyCd: { type: String, required: true },
@@ -367,13 +374,61 @@ const fnGetInspectionInfo = async () => {
 
     if (response.status === 200) {
       const resData = response.data;
-      const inspectItemSubjResultList =
-        resData.inspectItemSubjResultList ?? [];
+      const rawSubjList = resData.inspectItemSubjResultList ?? [];
       const inspectAnswerResultList = resData.inspectAnswerResultList ?? [];
+      const inspectItemHistResultList = resData.inspectItemHistResultList ?? [];
+
+      // 문항 변경이력을 항목별 상태 스냅샷 목록으로 재구성한다(변경일 오름차순, 서버 정렬 유지).
+      //   각 이력 행은 변경 '후' USE_YN 을 담고 있어, 임의 일자의 사용/중지 상태를
+      //   "해당 일자 이전 마지막 이력의 USE_YN" 으로 복원할 수 있다 (사용중지↔재사용 반복 대응).
+      const histMap = {};
+      inspectItemHistResultList.forEach((h) => {
+        const cd = h?.inspectItemCd ?? h?.InspectItemCd;
+        if (!cd) return;
+        if (!histMap[cd]) histMap[cd] = [];
+        histMap[cd].push({
+          useYn: h?.useYn ?? h?.UseYn ?? "Y",
+          chgYmd: String(h?.chgYmd ?? h?.ChgYmd ?? ""),
+        });
+      });
+
+      // 확인서에서 점검항목 행을 노출 월(workMonth) 기준으로 필터링한다.
+      //   분기한 배열을 표시·dailyResults 인덱스 계산에 공통 사용해 getInspectionResult 의
+      //   itemIdx 매핑이 어긋나지 않도록 한다.
+      const displayYm = String(chkptInfo.workMonth ?? "");
+      const monthOf = (v) => {
+        const s = String(v ?? "");
+        return s.length >= 6 ? s.slice(0, 6) : s;
+      };
+      const inspectItemSubjResultList = rawSubjList.filter((row) => {
+        if (displayYm.length !== 6) return true;
+        // (1) 시행일(STR_DATE, YYYYMMDD)의 월이 표시월보다 미래인 항목은 행 자체를 제외.
+        const sm = monthOf(row?.strDate ?? row?.StrDate);
+        if (sm && displayYm < sm) return false;
+        // (2) 미사용(USE_YN='N') 항목: 사용중지된 '월'의 다음 월부터 행 제외.
+        //     중지 시점은 변경이력의 마지막 상태(USE_YN='N') 변경일을 우선 사용하고,
+        //     이력이 없으면 UPDATE_DATE(updateYmd) 로 폴백한다.
+        const useYn = row?.useYn ?? row?.UseYn ?? "Y";
+        if (useYn === "N") {
+          const cd = subjRowItemCd(row);
+          const events = histMap[cd] ?? [];
+          const lastOff = [...events].reverse().find((e) => e.useYn === "N");
+          const offMonth = monthOf(
+            lastOff?.chgYmd || (row?.updateYmd ?? row?.UpdateYmd)
+          );
+          if (offMonth && displayYm > offMonth) return false;
+        }
+        return true;
+      });
 
       inspectionInfo.inspectItemSubjResultList =
         inspectItemSubjResultList.map((item) => ({
           itemNm: subjRowItemSubj(item) || "-",
+          // PRAFTA_COM_001-T5-11.1.1: 셀 회색 처리용 게이팅 기준값 (이력 기반으로 전환)
+          strDate: item.strDate ?? item.StrDate ?? "",
+          useYn: item.useYn ?? item.UseYn ?? "Y",
+          updateYmd: item.updateYmd ?? item.UpdateYmd ?? "",
+          histEvents: histMap[subjRowItemCd(item)] ?? [],
         }));
 
       if (
@@ -441,6 +496,52 @@ watch(
   { deep: true }
 );
 
+// PRAFTA_COM_001-T5-11.1.2: 제목 시행월 표기 YYYYMM -> "YYYY년 MM월"
+const formatWorkMonthTitle = (workMonth) => {
+  const ym = String(workMonth ?? "");
+  if (ym.length !== 6) return ym;
+  return `${ym.slice(0, 4)}년 ${ym.slice(4, 6)}월`;
+};
+
+// PRAFTA_COM_001-T5-11.1.1: 셀 회색 처리 판정 (시행일 + 변경이력 기반)
+//  - 셀 일자 < 항목 시행일(STR_DATE, YYYYMMDD)      -> 시행 이전(일 단위) 회색
+//  - 변경이력상 해당 일자에 사용중지(N) 상태          -> 미사용 구간(일 단위) 회색
+//    상태 판정: 셀 일자 '이전'의 마지막 이력 스냅샷 USE_YN (변경 당일 셀은 회색 아님,
+//    기존 UPDATE_DATE 기준 동작과 동일 경계). 사용중지↔재사용 반복 이력도 구간별로 복원.
+//  - 이력이 없는 항목은 기존 규칙(USE_YN='N' 이고 셀 일자 > UPDATE_DATE)으로 폴백.
+const isCellGrayed = (idx, day) => {
+  const item = inspectionInfo.inspectItemSubjResultList[idx];
+  if (!item) return false;
+
+  const ym = String(formData.workMonth ?? "");
+  if (ym.length !== 6) return false;
+
+  const ymd = ym + String(day).padStart(2, "0"); // YYYYMMDD (해당 셀 일자)
+
+  // 1) 시행일 이전 (일 단위; 구값 YYYYMM 이 남아있으면 월 단위 비교)
+  const strDate = String(item.strDate ?? "");
+  if (strDate.length === 8 && ymd < strDate) return true;
+  if (strDate.length === 6 && ym < strDate) return true;
+
+  // 2) 변경이력 기반 미사용 구간
+  const events = item.histEvents ?? [];
+  if (events.length > 0) {
+    let state = "Y"; // 이력상 첫 변경 이전은 사용중으로 간주(시행일 규칙이 앞 구간을 커버)
+    for (const e of events) {
+      if (e.chgYmd && e.chgYmd < ymd) state = e.useYn;
+      else break;
+    }
+    return state === "N";
+  }
+
+  // 3) 이력 부재 폴백: 비활성(USE_YN='N') 이후 (UPDATE_DATE 기준)
+  if (item.useYn === "N" && item.updateYmd && ymd > String(item.updateYmd)) {
+    return true;
+  }
+
+  return false;
+};
+
 // 점검 결과 가져오기
 const getInspectionResult = (idx, day) => {
   return (
@@ -456,31 +557,11 @@ const getInspectionResult = (idx, day) => {
 // 사진 팝업 열기
 const openImagePopup = (filePath, fileMgmtCd) => {
   if (filePath && fileMgmtCd) {
-    // API_BASE_URL 환경 변수 (Vite: VITE_ 접두사)
-    const apiBaseUrl = import.meta.env.VITE_API_BASE_URL || "";
-
-    // 파일 경로 구성: API_BASE_URL + filePath + "/" + fileMgmtCd
-    let fullPath = `${filePath}/${fileMgmtCd}`;
-
-    // API_BASE_URL이 있고 상대 경로인 경우에만 추가
-    if (
-      apiBaseUrl &&
-      !filePath.startsWith("http://") &&
-      !filePath.startsWith("https://")
-    ) {
-      // API_BASE_URL 끝에 슬래시가 있으면 제거
-      const baseUrl = apiBaseUrl.endsWith("/")
-        ? apiBaseUrl.slice(0, -1)
-        : apiBaseUrl;
-      // filePath 시작에 슬래시가 있으면 제거
-      const cleanFilePath = filePath.startsWith("/")
-        ? filePath.slice(1)
-        : filePath;
-      fullPath = `${baseUrl}/${cleanFilePath}/${fileMgmtCd}`;
-    }
+    // 첨부 서빙 URL 은 공통 유틸로 조립 (백슬래시 정규화 + 동일 출처 상대경로)
+    const url = buildFileServingUrl(filePath, fileMgmtCd);
 
     stopDrag();
-    imageUrl.value = fullPath;
+    imageUrl.value = url;
     showImagePopup.value = true;
     nextTick(() => {
       imagePopupOverlayRef.value?.focus({ preventScroll: true });
@@ -611,6 +692,11 @@ const fnPrint = () => {
           .day-cell {
             width: 28px;
             min-width: 28px;
+          }
+          .cell-disabled {
+            background-color: #e5e7eb !important;
+            -webkit-print-color-adjust: exact;
+            print-color-adjust: exact;
           }
           .button-area {
             display: flex;
@@ -911,6 +997,11 @@ const fnPrint = () => {
   width: 28px;
   min-width: 28px;
   font-size: 10px;
+}
+
+/* PRAFTA_COM_001-T5-11.1.1: 시행일 이전/미사용 구간(변경이력 기반) 셀 회색 처리 */
+.cell-disabled {
+  background-color: #e5e7eb;
 }
 
 .button-area {

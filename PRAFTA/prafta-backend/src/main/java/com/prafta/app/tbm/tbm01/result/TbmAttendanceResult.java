@@ -17,5 +17,6 @@ public class TbmAttendanceResult {
     private Date entryAt;
     private Integer entryDistanceM;
     private Date exitAt;
+    private String exitTypeCd;           // SYS052: SELF/MANAGER_FORCED 등(내보내기 감지용)
     private String completionStatusCd;  // SYS053
 }

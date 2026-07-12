@@ -19,6 +19,29 @@ public record SessionRiskResult(
 	, String assessmentStatus
 	, String assessmentStatusNm
 	, int displayOrder
+	// ===== 6.2-(1)-2: 평가요청일/평가요청자(콘솔 요약 표시) =====
+	, String cmpnyCd
+	, String initAssessDate		// 평가요청일(INIT_ASSESS_DATE)
+	, String initAssessorNm		// 평가요청자(INIT_ASSESSOR_ID → USER_NM)
+	// ===== 결정#5: 읽기전용 상세 팝업(RiskAssessInfo) 채움용 평가 상세(Risk03 규약 재사용) =====
+	, String initLikelihoodScore
+	, String initSeverityScore
+	, String initRiskLv
+	, String initDesc
+	, String initAssessorId
+	, String initFileMgmtCd		// FNC_CMM_INFO_SRCH FILE_NAME
+	, String initFilePath		// FNC_CMM_INFO_SRCH FILE_PATH
+	, String revalDate
+	, String revalBeforeDesc
+	, String revalLikelihoodScore
+	, String revalSeverityScore
+	, String revalRiskLv
+	, String revalDesc
+	, String revalAssessorId
+	, String revalAssessorNm
+	, String revalAssessDate
+	, String revalFileMgmtCd
+	, String revalFilePath
 ){
 
 }

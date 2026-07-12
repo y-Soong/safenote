@@ -100,12 +100,72 @@ function forceLogoutAndRedirect(userStore, message = SESSION_EXPIRED_MESSAGE) {
   return loggingOut;
 }
 
+// ── 중복 변경요청(저장 연타) 차단용 in-flight 가드 ──────────────────────────
+//   같은 변경요청(POST/PUT/PATCH/DELETE)이 "응답이 오기 전에" 다시 전송되면
+//   동일 INSERT/UPDATE 가 서버에서 여러 번 실행되어 데이터가 중복된다(저장 버튼 연타).
+//   전역 로딩 오버레이는 요청이 떠 있는 동안만 클릭을 막아, 이미 큐에 쌓인 빠른 더블클릭이나
+//   요청 직전 구간(검증/confirm)을 못 막으므로, 화면/핸들러를 수정하지 않고 여기서 일괄 방어한다.
+//   - 시그니처(method+url+body)가 동일한 요청이 진행 중이면 두 번째 요청은 전송하지 않는다.
+//   - 응답(성공/실패) 시 시그니처를 해제하므로, 의도적인 동일 재저장은 직전 요청 완료 후 정상 동작한다.
+//   - 조회(GET)는 중복돼도 무해하므로 대상에서 제외한다.
+//   - FormData(첨부파일 동반 저장)도 보호한다. JSON 직렬화는 불가하므로 엔트리(필드값 + 파일 메타:
+//     이름/크기/수정시각/타입)로 시그니처를 만든다. (앱쪽에서 FormData 경로가 미보호여서 첨부 저장
+//     연타가 중복되던 것과 동일한 사각지대를 웹에서도 닫는다.)
+const inFlightRequests = new Set();
+
+// FormData → 결정적 시그니처 문자열. 동일 클릭은 같은 필드/같은 File(이름·크기·lastModified·type)이라
+//   엔트리가 동일하므로 시그니처도 동일하다. 파일 본문은 읽지 않고 메타데이터만 사용(비용 無).
+function serializeFormData(fd) {
+  const parts = [];
+  for (const [k, v] of fd.entries()) {
+    if (typeof File !== "undefined" && v instanceof File) {
+      parts.push(`${k}=@file:${v.name}:${v.size}:${v.lastModified}:${v.type}`);
+    } else if (typeof Blob !== "undefined" && v instanceof Blob) {
+      parts.push(`${k}=@blob:${v.size}:${v.type}`);
+    } else {
+      parts.push(`${k}=${String(v)}`);
+    }
+  }
+  return parts.join("&");
+}
+
+function buildRequestSignature(config) {
+  const method = (config.method || "get").toLowerCase();
+  if (!["post", "put", "patch", "delete"].includes(method)) return null;
+  const data = config.data;
+  try {
+    if (typeof FormData !== "undefined" && data instanceof FormData) {
+      return `${method}::${config.url}::FD::${serializeFormData(data)}`;
+    }
+    const body = data == null ? "" : JSON.stringify(data);
+    return `${method}::${config.url}::${body}`;
+  } catch (e) {
+    // 순환참조/엔트리 순회 실패 등 직렬화 불가 → 가드 제외(기존 동작 유지).
+    return null;
+  }
+}
+
 // 요청 인터셉터
 // - 정책 §11.1에 따라 휴대폰(gv_mblNo) / 이메일(gv_email)은 요청 파라미터에 포함하지 않는다.
 // - 외부 IP 조회(ipify.org) 호출은 제거되었다 (PRAFTA-012).
 //   클라이언트 IP가 필요한 경우 백엔드가 HttpServletRequest에서 추출한다.
 api.interceptors.request.use(
   async (config) => {
+    // 중복 변경요청 차단 — startLoading 이전에 검사해 로딩 카운터 균형을 유지한다.
+    //   (시그니처는 userInfo 병합 전 원본 body 기준이지만, 동일 클릭은 같은 payload·같은 세션값이라
+    //    병합 후에도 동일하므로 더블클릭 식별에 충분하다.)
+    const reqSignature = buildRequestSignature(config);
+    if (reqSignature) {
+      if (inFlightRequests.has(reqSignature)) {
+        // 동일 변경요청이 진행 중 → 이 요청은 보내지 않고 조용히 무시(중복 클릭 no-op).
+        const dupErr = new Error("DUPLICATE_REQUEST");
+        dupErr.__duplicate = true;
+        return Promise.reject(dupErr);
+      }
+      inFlightRequests.add(reqSignature);
+      config.__reqSignature = reqSignature;
+    }
+
     const loadingStore = useLoadingStore();
     loadingStore.startLoading();
 
@@ -193,13 +253,28 @@ api.interceptors.response.use(
     } catch {
       console.log(response);
     }
+    // 완료된 변경요청의 in-flight 시그니처 해제(이후 동일 재저장 허용).
+    if (response?.config?.__reqSignature) {
+      inFlightRequests.delete(response.config.__reqSignature);
+    }
     return response;
   },
   async (error) => {
+    // 중복으로 차단된 요청: 실제로 전송/로딩되지 않았으므로 stopLoading·시그니처 해제를 건드리지 않고
+    //   영원히 보류되는 promise 를 반환해 호출자 then/catch 가 동작하지 않게 한다(중복 클릭 no-op).
+    //   (기존 강제 로그아웃 흐름과 동일한 'new Promise(() => {})' 보류 패턴.)
+    if (error?.__duplicate) {
+      return new Promise(() => {});
+    }
+
     try {
       useLoadingStore().stopLoading();
     } catch {
       console.log(error);
+    }
+    // 실패한 변경요청의 in-flight 시그니처 해제(재시도 허용).
+    if (error?.config?.__reqSignature) {
+      inFlightRequests.delete(error.config.__reqSignature);
     }
 
     // Pinia 미초기화 등으로 useUserStore() 가 throw 하면 이후 로그아웃 분기가 통째로
@@ -225,7 +300,19 @@ api.interceptors.response.use(
     // prafta-057: AUTH_409_001 → 다른 환경(다른 브라우저/PC)에서 신규 로그인되어 현재 세션이 폐기됨.
     //   refresh 를 시도하지 않고(어차피 패밀리가 폐기되어 무효) 전용 안내 후 즉시 로그아웃한다.
     if (errorCode === "AUTH_409_001") {
-      await forceLogoutAndRedirect(userStore, "다른 환경에서 로그인을 감지했습니다.");
+      await forceLogoutAndRedirect(
+        userStore,
+        "다른 환경에서 로그인을 감지했습니다."
+      );
+      return new Promise(() => {});
+    }
+
+    // prafta-app-033: AUTH_403_001 → 로그인 게이트(이용약관 동의 / 강제 비밀번호 변경) 미해소.
+    //   403 이므로 401 refresh 경로와 분리한다(refresh 미시도). 즉시 로그아웃 후 로그인 화면 복귀 →
+    //   재로그인 시 기존 게이트 플로우(TermsPop / ForcedPasswordChangePop)가 다시 떠서 해소한다.
+    //   서버 메시지를 그대로 안내하되, 없으면 forceLogoutAndRedirect 기본 안내로 폴백한다.
+    if (errorCode === "AUTH_403_001") {
+      await forceLogoutAndRedirect(userStore, error?.response?.data?.message);
       return new Promise(() => {});
     }
 

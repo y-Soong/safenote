@@ -10,11 +10,12 @@
   <div class="card">
     <p class="card__label">{{ label }}</p>
 
-    <!-- 큰 숫자 행 -->
+    <!-- 큰 숫자 행 (LC-11: 소수점 금지 — 일은 대형 숫자, 시간·분은 보조 텍스트) -->
     <div class="num-row">
-      <span class="num" :class="{ 'num--zero': isZeroRemaining }">{{ remainingText }}</span>
+      <span class="num" :class="{ 'num--zero': isZeroRemaining }">{{ remainingParts.dayText }}</span>
       <span class="num__unit">일</span>
-      <span class="num__total">/ {{ grantedText }}일</span>
+      <span v-if="remainingParts.subText" class="num__sub">{{ remainingParts.subText }}</span>
+      <span class="num__total">/ {{ grantedText }}</span>
     </div>
 
     <!-- 진행 바 -->
@@ -29,15 +30,16 @@
     <!-- 부여 없음 안내 / 범례 -->
     <p v-if="!hasGrant" class="no-grant">부여된 연차가 없습니다</p>
     <div v-else class="legend">
-      <span class="lg"><i class="lg__dot lg__dot--used"></i>사용 {{ usedText }}일</span>
-      <span class="lg"><i class="lg__dot lg__dot--plan"></i>사용예정 {{ plannedText }}일</span>
-      <span class="lg"><i class="lg__dot lg__dot--rest"></i>잔여 {{ remainingText }}일</span>
+      <span class="lg"><i class="lg__dot lg__dot--used"></i>사용 {{ usedText }}</span>
+      <span class="lg"><i class="lg__dot lg__dot--plan"></i>사용예정 {{ plannedText }}</span>
+      <span class="lg"><i class="lg__dot lg__dot--rest"></i>잔여 {{ remainingText }}</span>
     </div>
   </div>
 </template>
 
 <script setup>
 import { computed } from 'vue'
+import { formatLeaveDays, splitLeaveDays } from '@/utils/leaveFormat'
 
 const props = defineProps({
   // 메인 카드 라벨 ("잔여 일수" / "법정 잔여 일수" / "법정 외 잔여 일수")
@@ -50,14 +52,13 @@ const props = defineProps({
     type: Object,
     default: null,
   },
+  // LC-11: 1일 환산시간(분) — "N일 H시간 M분" 표기 분모(서버 권위). 미제공 시 480 폴백.
+  convMinutes: {
+    type: Number,
+    default: 480,
+  },
 })
 
-// 0.5 단위 표기 (정수면 정수, 소수면 1자리)
-const trimDays = (v) => {
-  if (v == null) return '0'
-  const n = Number(v)
-  return Number.isInteger(n) ? String(n) : n.toFixed(1)
-}
 const numOr0 = (v) => Number(v ?? 0)
 
 const granted = computed(() => numOr0(props.group?.granted))
@@ -68,10 +69,13 @@ const remaining = computed(() => numOr0(props.group?.remaining))
 const hasGrant = computed(() => granted.value > 0)
 const isZeroRemaining = computed(() => remaining.value === 0)
 
-const grantedText = computed(() => trimDays(granted.value))
-const usedText = computed(() => trimDays(used.value))
-const plannedText = computed(() => trimDays(planned.value))
-const remainingText = computed(() => trimDays(remaining.value))
+// LC-11: 소수점 노출 금지 — "N일 H시간 M분" 표기(내부 계산값은 그대로, 표시만 교체).
+const grantedText = computed(() => formatLeaveDays(granted.value, props.convMinutes))
+const usedText = computed(() => formatLeaveDays(used.value, props.convMinutes))
+const plannedText = computed(() => formatLeaveDays(planned.value, props.convMinutes))
+const remainingText = computed(() => formatLeaveDays(remaining.value, props.convMinutes))
+// 대형 숫자 레이아웃용 분리 표기: dayText(큰 숫자) + subText("H시간 M분", 없으면 '').
+const remainingParts = computed(() => splitLeaveDays(remaining.value, props.convMinutes))
 
 // 진행바 분할 (부여 100% 기준) — 단순 비율 산출(표시용)
 const pct = (v) => (granted.value > 0 ? `${(v / granted.value) * 100}%` : '0%')
@@ -113,6 +117,13 @@ const plannedPercent = computed(() => pct(planned.value))
   font-size: 15px;
   font-weight: 500;
   color: var(--color-text-secondary);
+}
+/* LC-11: 시간·분 보조 텍스트 ("3시간 30분") — 일 단위 옆 축소 표기 */
+.num__sub {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--color-text-secondary);
+  font-variant-numeric: tabular-nums;
 }
 .num__total {
   margin-left: 6px;

@@ -30,6 +30,7 @@ import com.prafta.app.tbm.tbm01.dto.response.TbmContentResponse;
 import com.prafta.app.tbm.tbm01.dto.response.TbmEnterResponse;
 import com.prafta.app.tbm.tbm01.dto.response.TbmEntryContextResponse;
 import com.prafta.app.tbm.tbm01.dto.response.TbmExitResponse;
+import com.prafta.app.tbm.tbm01.dto.response.TbmMyAttendanceResponse;
 import com.prafta.app.tbm.tbm01.dto.response.TbmRiskListResponse;
 import com.prafta.app.tbm.tbm01.dto.response.TbmSessionListResponse;
 import com.prafta.app.tbm.tbm01.dto.response.TbmSessionStateResponse;
@@ -218,6 +219,24 @@ public class AppTbm01Controller {
         TokenInfo tokenInfo = jwtUtil.getAllClaimsAsMap(authorization);
 
         TbmCompletionResponse response = appTbm01Service.selectMyCompletion(
+                TbmSessionDetailParam.from(sessionCd, tokenInfo));
+
+        return ResponseEntity.status(HttpStatus.OK).body(response);
+    }
+
+    /**
+     * [정합성 수정] 본인 출결 상태 조회(대기/진행 화면 이탈 감지용).
+     * <p>GET /prafta/appApi/tbm/sessions/{sessionCd}/my-attendance.
+     * 스코프는 JWT(userCd)만 신뢰(IDOR 안전). present/entered/exitAt/exitTypeCd/completionStatusCd 반환.
+     */
+    @GetMapping("/sessions/{sessionCd}/my-attendance")
+    public ResponseEntity<?> getMyAttendance(
+            @PathVariable("sessionCd") String sessionCd
+            , @RequestHeader(value = "Authorization", required = false) String authorization
+    ) {
+        TokenInfo tokenInfo = jwtUtil.getAllClaimsAsMap(authorization);
+
+        TbmMyAttendanceResponse response = appTbm01Service.selectMyAttendanceStatus(
                 TbmSessionDetailParam.from(sessionCd, tokenInfo));
 
         return ResponseEntity.status(HttpStatus.OK).body(response);

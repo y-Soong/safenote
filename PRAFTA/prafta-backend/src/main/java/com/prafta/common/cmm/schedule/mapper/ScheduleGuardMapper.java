@@ -6,6 +6,7 @@ import org.apache.ibatis.annotations.Mapper;
 import org.apache.ibatis.annotations.Param;
 
 import com.prafta.common.cmm.schedule.mapper.result.LeaveLockDayResult;
+import com.prafta.common.cmm.schedule.mapper.result.SchWindowResult;
 
 /**
  * 공통 스케줄 변경 가드 매퍼(prafta-com-016 shared-schedule-guard).
@@ -39,4 +40,24 @@ public interface ScheduleGuardMapper {
                                           @Param("siteCd") String siteCd,
                                           @Param("userCd") String userCd,
                                           @Param("workYmds") List<String> workYmds);
+
+    /**
+     * 교차일 겹침 가드용 — (SCH_CD, asOfYmd) 기준 effective(APPLY_DATE &lt;= asOfYmd 중 최신) 근무타입
+     * 버전 1건의 1·2구간 시각을 반환한다. 현재본(TB_SCH_MGMT)+이력본(TB_SCH_MGMT_HIST) 합집합에서
+     * 동일 APPLY_DATE 중복 시 HIST_IDX 최댓값 1건을 채택한다. 해당 SCH_CD 가 없거나(예: 값이 휴가코드)
+     * asOfYmd 이전 버전이 없으면 null.
+     */
+    SchWindowResult selectEffectiveSchWindow(@Param("cmpnyCd") String cmpnyCd,
+                                             @Param("siteCd") String siteCd,
+                                             @Param("schCd") String schCd,
+                                             @Param("asOfYmd") String asOfYmd);
+
+    /**
+     * 교차일 겹침 가드용 — (cmpny, site, user, ymd) 한 칸의 WORK_PLAN_CD 를 반환한다(없으면 null).
+     * 이웃 날짜의 적용 스케줄 코드 조회에 사용한다.
+     */
+    String selectUserWorkPlanCd(@Param("cmpnyCd") String cmpnyCd,
+                                @Param("siteCd") String siteCd,
+                                @Param("userCd") String userCd,
+                                @Param("workYmd") String workYmd);
 }

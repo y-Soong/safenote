@@ -51,10 +51,8 @@
             <label>권한</label>
             <BaseSelect id="authCd" v-model="authCd">
               <option
-                v-for="opt in (baseInfoArr['COM005'] || []).filter(
-                  (o) => o.baimValDCd != null && o.sortIdx >= authLevel
-                )"
-                :key="opt.baimValCd"
+                v-for="opt in authOptions"
+                :key="opt.baimValDCd"
                 :value="opt.baimValDCd"
               >
                 {{ opt.baimValDNm }}
@@ -160,110 +158,116 @@
           <!-- 생성 모드 전용: 입사일 / 고용형태 / 계약종료일. 본 폼은 leave-info 가 없으므로 직접 입력. -->
           <div class="form-row-max" v-if="isCreate">
             <label>입사일</label>
-            <CalendarSrch v-model="hireDateInput" class="dialog-date-input" />
+            <!-- PRAFTA-WEB_002-T1-07(1.2): 생성 모드 입사일은 '테두리 안에 캘린더가 든 박스'로 보이던
+                 이중 테두리(외곽 래퍼 + 내부 input)를 제거하고, 다른 입력과 동일한 단일 캘린더 입력으로 표시.
+                 (공용 CalendarSrch 미변경 — 본 화면 한정 .hire-date-field 로 외곽 래퍼 장식만 제거) -->
+            <CalendarSrch v-model="hireDateInput" class="hire-date-field" />
           </div>
 
+          <!-- PRAFTA_COM_003-B: 생성 팝업은 정규직(REGULAR) 고정. select 제거하고 읽기전용 표시.
+               일용직은 QR 슬롯 발급 등 별도 경로로 생성된다. 계약직/임원 옵션 및 계약종료일 분기 제거. -->
           <div class="form-row-max" v-if="isCreate">
             <label>고용형태</label>
-            <BaseSelect v-model="employmentType">
-              <option :value="''">-</option>
-              <option value="REGULAR">정규직</option>
-              <option value="CONTRACT">계약직</option>
-              <option value="DAILY">일용직</option>
-              <option value="EXECUTIVE">임원</option>
-            </BaseSelect>
+            <input class="row-readonly" value="정규직" readonly />
           </div>
 
-          <div
-            class="form-row-max"
-            v-if="isCreate && employmentType === 'CONTRACT'"
-          >
-            <label>계약종료일</label>
-            <CalendarSrch
-              v-model="contractEndDateInput"
-              class="dialog-date-input"
-            />
-          </div>
-
-          <div class="form-row-max">
-            <label>사업장</label>
-            <input v-model="siteNm" placeholder="사업장" />
-            <button
-              id="siteSrchBtn"
-              ref="siteSrchBtnFcs"
-              class="btn btn-primary"
-              @click="fnSiteSearchPopOpen"
-            >
-              찾기
-            </button>
-          </div>
-
-          <div class="form-row-max">
-            <label>소속부서</label>
-            <input v-model="nodeNm" placeholder="소속부서" />
-            <button
-              id="nodeSrchBtn"
-              ref="nodeSrchBtnFcs"
-              class="btn btn-primary"
-              @click="fnSiteNodeSearchPopOpen"
-            >
-              찾기
-            </button>
-          </div>
-
-          <!-- PRAFTA-COM-008-E-5: 기본 근무타입(사업장 활성 근무타입). 설정 시 당해 연말까지 평일 자동생성. -->
-          <div class="form-row-max">
-            <label>기본 근무타입</label>
-            <BaseSelect id="defaultSchCd" v-model="defaultSchCd" :disabled="schTypeLoading || !siteCd">
-              <option :value="''">-</option>
-              <option
-                v-for="opt in schTypeOptions"
-                :key="opt.schCd"
-                :value="opt.schCd"
-              >
-                {{ opt.schNo }} ({{ fnFmtSchTime(opt.fstSchStrTime) }}~{{ fnFmtSchTime(opt.fstSchEndTime) }})
-              </option>
-            </BaseSelect>
-          </div>
-          <p class="default-sch-hint" v-if="defaultSchCd">
-            ⓘ 기본 근무타입 설정 시 오늘부터 당해 연말까지 평일 근무계획이 자동 생성됩니다(빈 날만, 교대팀 소속 구간 제외).
-          </p>
-
-          <!-- PRAFTA-037-F7: 생성 모드 전용 - 추가 사이트 권한. 기본 사이트 외에 다중 사이트 권한을 함께 부여. -->
-          <div class="form-row-max" v-if="isCreate">
-            <label>추가 사이트 권한</label>
-            <div class="additional-sites-area">
-              <div class="additional-site-chips">
-                <span
-                  v-for="(s, idx) in additionalSites"
-                  :key="s.siteCd"
-                  class="site-chip"
-                >
-                  {{ s.siteNm }}
-                  <button
-                    type="button"
-                    class="site-chip-remove"
-                    @click="fnRemoveAdditionalSite(idx)"
-                    aria-label="삭제"
-                  >
-                    ×
-                  </button>
-                </span>
-                <span
-                  v-if="additionalSites.length === 0"
-                  class="site-chip-empty"
-                  >없음</span
-                >
-              </div>
+          <!-- 생성 모드: 사업장/부서/기본 근무타입 직접 입력. -->
+          <template v-if="isCreate">
+            <div class="form-row-max">
+              <label>사업장</label>
+              <input v-model="siteNm" placeholder="사업장" />
               <button
-                type="button"
+                id="siteSrchBtn"
+                ref="siteSrchBtnFcs"
                 class="btn btn-primary"
-                @click="fnAddAdditionalSite"
+                @click="fnSiteSearchPopOpen"
               >
-                추가
+                찾기
               </button>
             </div>
-          </div>
+
+            <div class="form-row-max">
+              <label>소속부서</label>
+              <input v-model="nodeNm" placeholder="소속부서" />
+              <button
+                id="nodeSrchBtn"
+                ref="nodeSrchBtnFcs"
+                class="btn btn-primary"
+                @click="fnSiteNodeSearchPopOpen"
+              >
+                찾기
+              </button>
+            </div>
+
+            <!-- PRAFTA-COM-008-E-5: 기본 근무타입(사업장 활성 근무타입). 설정 시 당해 연말까지 평일 자동생성. -->
+            <div class="form-row-max">
+              <label>기본 근무타입</label>
+              <BaseSelect
+                id="defaultSchCd"
+                v-model="defaultSchCd"
+                :disabled="schTypeLoading || !siteCd"
+              >
+                <option :value="''">-</option>
+                <option
+                  v-for="opt in schTypeOptions"
+                  :key="opt.schCd"
+                  :value="opt.schCd"
+                >
+                  {{ opt.schNo }} ({{ fnFmtSchTime(opt.fstSchStrTime) }}~{{
+                    fnFmtSchTime(opt.fstSchEndTime)
+                  }})
+                </option>
+              </BaseSelect>
+            </div>
+            <p class="default-sch-hint" v-if="defaultSchCd">
+              ⓘ 기본 근무타입 설정 시 내일(명일)부터 당해 연말까지 평일
+              근무계획이 자동 생성·갱신됩니다(빈 날·자동생성분만,
+              휴일·연차·교대팀 구간 제외).
+            </p>
+          </template>
+
+          <!-- 수정 모드: 사업장/부서/기본 근무타입은 읽기전용. 변경은 '소속이동'으로 일원화(PRAFTA-WEB_001-4). -->
+          <template v-else>
+            <div class="form-row-max">
+              <label>사업장</label>
+              <input
+                class="row-readonly"
+                :value="siteNm"
+                readonly
+                placeholder="미설정"
+              />
+            </div>
+            <div class="form-row-max">
+              <label>소속부서</label>
+              <input
+                class="row-readonly"
+                :value="nodeNm"
+                readonly
+                placeholder="미설정"
+              />
+            </div>
+            <div class="form-row-max">
+              <label>기본 근무타입</label>
+              <input
+                class="row-readonly"
+                :value="defaultSchLabel"
+                readonly
+                placeholder="미설정"
+              />
+            </div>
+            <div class="form-row-max" v-if="canTransfer">
+              <label>소속이동</label>
+              <button class="btn btn-primary" @click="fnTransferOpen">
+                소속이동
+              </button>
+            </div>
+            <p class="default-sch-hint" v-if="canTransfer">
+              ⓘ 사업장/부서/기본 근무타입 변경은 '소속이동'으로 처리됩니다(지정한
+              이동일에 발효).
+            </p>
+          </template>
+
+          <!-- PRAFTA_COM_003-B: "추가 사이트 권한"(PRAFTA-037-F7) 영역 제거(생성 팝업 한정). -->
 
           <div class="form-row-max">
             <label>생년월일</label>
@@ -496,6 +500,7 @@ import SiteNodeSearchPop from "@/components/popup/SiteNodeSearchPop.vue";
 import BaseSelect from "@/components/common/BaseSelect.vue";
 import CalendarSrch from "@/components/common/CalendarSrch.vue";
 import HireDateEditPop from "./HireDateEditPop.vue";
+import UserTransferPop from "./UserTransferPop.vue";
 
 // =========================== Define ===========================
 const emit = defineEmits(["close"]);
@@ -539,9 +544,6 @@ const nodeCd = ref("");
 const nodeNm = ref("");
 const accountStatus = ref("");
 const withdrawalDate = ref("");
-// PRAFTA-037-F7: 생성 모드 전용. 추가 사이트 권한 목록 (기본 siteCd 외).
-// 각 요소: { siteCd, siteNo, siteNm }. 백엔드 전송 시 siteCd 만 추출.
-const additionalSites = ref([]);
 const mblNoDisabled = ref(false);
 const btnAuthChkDisabledVisible = ref(true);
 const smsCertNoChk = ref(false);
@@ -557,17 +559,28 @@ const tomorrowDate = (() => {
 })();
 const timer = ref(0);
 let timerInterval = null;
+// 대상 사용자 등급(표시/타 분기용). 수정 모드 진입 시 fnGetUserInfo 가 조회값으로 덮어쓴다.
 const authLevel = ref(sessionStorage.getItem('gv_authLevel'));
+// PRAFTA-WEB_002-T1-05(1.4-2): 권한 옵션 필터 임계 = "요청자(viewer) 세션 등급" 고정값.
+//   authLevel(대상 사용자 등급)로 덮어쓰지 않는 별도 ref 로 분리한다(master 가 일반사용자 수정 시
+//   옵션이 "일반사용자만" 으로 좁혀지던 버그 방지).
+//   gv_authLevel 부재/비정상(NaN)이면 가장 제한적인 등급(999)으로 폴백한다 — 옵션이 과도하게
+//   열리는 것을 막는 fail-safe(저장 가드는 서버 JWT 기준 fail-closed 라 권한 상승은 별도 차단됨).
+const viewerAuthLevel = ref(
+  Number.isFinite(Number(sessionStorage.getItem('gv_authLevel')))
+    ? Number(sessionStorage.getItem('gv_authLevel'))
+    : 999
+);
 
 // PRAFTA-017-4 근태/연차 정보 (master/hr 전용)
 const hireDate = ref("");          // 입사일 (YYYY-MM-DD)
-const employmentType = ref("");    // 고용형태 [SYS041]
+// PRAFTA_COM_003-B: 생성 팝업은 정규직(REGULAR) 고정. 수정 모드에서는 fnGetLeaveInfo 가 조회값으로 덮어쓴다.
+const employmentType = ref("REGULAR"); // 고용형태 [SYS041]
 const creditList = ref([]);        // 경력 인정 항목 [{ creditMonths, reasonDetail }]
 const legalTenureBaseDate = ref(""); // 법적 근속 기준일 (YYYY-MM-DD)
 
 // PRAFTA-036 생성 모드 전용 입력값
-const hireDateInput = ref("");          // type="date" — YYYY-MM-DD
-const contractEndDateInput = ref("");   // type="date" — YYYY-MM-DD
+const hireDateInput = ref("");          // CalendarSrch — YYYY-MM-DD
 
 // =========================== Data ===========================
 const { open: openPop } = useModal();
@@ -585,6 +598,19 @@ const isHrOrMaster = computed(() =>
 
 // PRAFTA-036 생성 모드 여부 (callmethod_p='C')
 const isCreate = computed(() => props.callmethod_p === "C");
+
+// PRAFTA-WEB_001-4: 소속이동 가능 게이트(master/hr & 수정 모드). 생성 모드는 직접 입력 사용.
+const canTransfer = computed(() => isHrOrMaster.value && !isCreate.value);
+
+// 수정 모드 읽기전용 표시용 기본 근무타입 라벨(옵션 목록에서 매칭, 미발견 시 코드 폴백).
+const defaultSchLabel = computed(() => {
+  if (!defaultSchCd.value) return "";
+  const opt = schTypeOptions.value.find((o) => o.schCd === defaultSchCd.value);
+  if (!opt) return defaultSchCd.value;
+  return `${opt.schNo} (${fnFmtSchTime(opt.fstSchStrTime)}~${fnFmtSchTime(
+    opt.fstSchEndTime
+  )})`;
+});
 
 // ── PRAFTA-COM-008-E-5: 기본 근무타입 ────────────────────────
 // 'HHmm' → 'HH:mm' 라벨 포맷(4자리 미만이면 원본 반환).
@@ -636,6 +662,20 @@ const creditTotalYears = computed(() =>
   Math.floor(creditTotalMonths.value / 12)
 );
 
+// PRAFTA-WEB_002-T1-05(1.4-2): 권한 select 옵션.
+//   = COM005 중 "옵션 등급(sortIdx) > viewer 세션 등급" 인 항목(strict >). 본인과 동일/상위 등급은 부여 불가.
+//   단, 현재 부여된 권한(authCd)이 필터에서 빠져도 select 가 빈값이 되지 않도록 현재값 옵션은 항상 포함한다.
+//   옵션 등급(sortIdx)은 base-info-lists(=AUTH_LEVEL 동일값)에서 내려온다(서버 escalation 가드와 동일 기준).
+const authOptions = computed(() => {
+  const all = (baseInfoArr.value["COM005"] || []).filter(
+    (o) => o.baimValDCd != null
+  );
+  const threshold = Number(viewerAuthLevel.value);
+  return all.filter(
+    (o) => Number(o.sortIdx) > threshold || o.baimValDCd === authCd.value
+  );
+});
+
 // =========================== Life Cycle ===========================
 onMounted(async () => {
   await fnGetSystinfoList();
@@ -643,12 +683,40 @@ onMounted(async () => {
   cmpnyCd.value = props.cmpnyCd_p;
 
   if (isCreate.value) {
-    // 생성 모드 초기값. 권한은 사용자가 직접 선택(빈 값). SMS 인증 UI 게이트 무력화.
-    authCd.value = "";
+    // 생성 모드 초기값. SMS 인증 UI 게이트 무력화.
     useYn.value = "Y";
     mblNoDisabled.value = false;
     btnAuthChkDisabledVisible.value = false;
     smsCertNoChk.value = true; // 검증 우회용(저장 시 사용 안 함)
+
+    // PRAFTA_COM_003-B 3.1.1: 권한 기본값 = "일반사용자"(COM005). 명칭 매칭으로 코드값 도출.
+    //   PRAFTA-WEB_002-T1-05(1.4-2): 옵션 필터와 동일 기준(viewer 등급 strict >)으로 가용 여부 판정.
+    //   옵션에서 빠지면 세팅 생략(빈 값).
+    const com005 = baseInfoArr.value["COM005"] || [];
+    const generalAuth = com005.find(
+      (o) =>
+        o.baimValDCd != null &&
+        Number(o.sortIdx) > Number(viewerAuthLevel.value) &&
+        (o.baimValDNm || "").trim() === "일반사용자"
+    );
+    authCd.value = generalAuth ? generalAuth.baimValDCd : "";
+
+    // PRAFTA_COM_003-B 3.1.2: 성별 기본값 = "남성"(SYS004). 명칭 매칭으로 코드값 도출.
+    const sys004 = systCodeArr.value["SYS004"] || [];
+    const maleGender = sys004.find(
+      (o) => o.systValDCd != null && (o.systValDNm || "").trim() === "남성"
+    );
+    if (maleGender) gender.value = maleGender.systValDCd;
+
+    // PRAFTA_COM_003-B 3.1.3: 입사일 기본값 = 당일(YYYY-MM-DD, 로컬 기준).
+    const today = new Date();
+    const yyyy = today.getFullYear();
+    const mm = String(today.getMonth() + 1).padStart(2, "0");
+    const dd = String(today.getDate()).padStart(2, "0");
+    hireDateInput.value = `${yyyy}-${mm}-${dd}`;
+
+    // PRAFTA_COM_003-B 3.1.4: 고용형태는 정규직(REGULAR) 고정.
+    employmentType.value = "REGULAR";
     return;
   }
 
@@ -877,13 +945,14 @@ const fnUserInfoSave = async () => {
         birthDt: (birthDt.value || "").replace(/-/g, ""),
         rankCd: null,
         hireDate: (hireDateInput.value || "").replace(/-/g, ""),
-        employmentType: employmentType.value || null,
-        contractEndDate: (contractEndDateInput.value || "").replace(/-/g, ""),
+        // PRAFTA_COM_003-B 3.1.4: 고용형태 정규직 고정. 계약종료일은 정규직이라 미전송(null).
+        employmentType: "REGULAR",
+        contractEndDate: null,
         creditMonths: credit ? Number(credit.creditMonths) || 0 : 0,
         creditReasonType: null,
         creditReasonDetail: credit ? credit.reasonDetail : null,
-        // PRAFTA-037-F7: 추가 사이트 권한 (선택). 빈 배열도 무방 — 백엔드 null/empty 처리.
-        additionalSiteCdList: additionalSites.value.map((s) => s.siteCd),
+        // PRAFTA_COM_003-B: 추가 사이트 권한 제거(생성 팝업 한정). 백엔드는 빈 목록 정상 처리.
+        additionalSiteCdList: [],
         // PRAFTA-COM-008-E-5: 기본 근무타입(선택). 빈값이면 미설정.
         defaultSchCd: defaultSchCd.value || null,
       };
@@ -903,21 +972,25 @@ const fnUserInfoSave = async () => {
 
   // 조회/수정 모드(기존 로직)
   try {
+    // PRAFTA-WEB_001-4: 사업장/부서/기본 근무타입은 직접 수정 UI 제거 → '소속이동'으로만 변경.
+    //   단 update-user-infos 매퍼가 SITE_CD/NODE_CD 를 무조건 SET 하므로(조건절 없음),
+    //   전송을 누락하면 NULL 로 덮여 소속이 지워진다. 따라서 읽기전용으로 표시 중인 '현재값'을
+    //   그대로 패스스루하여 동일값 재기록(무변경)되게 한다. (직접 변경 UI 부재로 값은 바뀌지 않음)
     const response = await axios.post("/webApi/user01/update-user-infos", [
       {
         cmpnyCd: cmpnyCd.value,
         userCd: userCd.value,
         userId: userId.value,
         userNm: userNm.value,
-        siteCd: siteCd.value,
-        nodeCd: nodeCd.value,
         useYn: useYn.value,
         authCd: authCd.value,
         mblNo: mblNo.value,
         email: email.value,
         gender: gender.value,
         birthDt: birthDt.value,
-        // PRAFTA-COM-008-E-5: 기본 근무타입(선택). 빈값이면 미변경(서버 mergeUserInfo if 가드).
+        // 소속/기본근무 = 현재값 패스스루(변경 아님, NULL 덮어쓰기 방지).
+        siteCd: siteCd.value,
+        nodeCd: nodeCd.value,
         defaultSchCd: defaultSchCd.value || null,
       },
     ]);
@@ -999,6 +1072,24 @@ const fnSaveCredit = async () => {
     );
     return false;
   }
+};
+
+// PRAFTA-WEB_001-4: 소속이동 팝업 오픈 (중첩 openPop — HireDateEditPop 패턴).
+//   예약 성공(onSaved) 시 본 팝업 닫기 + 부모 목록 갱신(발효일 적용이라 현재 표시값은 불변).
+const fnTransferOpen = () => {
+  openPop(UserTransferPop, {
+    cmpnyCd_p: cmpnyCd.value,
+    userCd_p: userCd.value,
+    userId_p: userId.value,
+    userNm_p: userNm.value,
+    employmentType_p: employmentType.value,
+    // PRAFTA-WEB_002-T1-04(1.3-2): 대상자 현재 사업장 — 이동 사업장 검색에서 현재 사업장 제외에 사용.
+    siteCd_p: siteCd.value,
+    onSaved: () => {
+      emit("close");
+      if (props.onSearch) props.onSearch();
+    },
+  });
 };
 
 // 입사일 수정 모달 오픈 (중첩 openPop). 성공 시 onSaved 콜백으로 leave-info 재조회.
@@ -1190,6 +1281,8 @@ const fnSiteNodeSearchPopOpen = () => {
   openPop(SiteNodeSearchPop, {
     cmpnyCd_p: sessionStorage.getItem("gv_cmpnyCd"),
     siteCd_p: siteCd.value,
+    // PRAFTA-WEB_002-T1-02(1.4-1): 생성 폼은 정규직 고정 → 담당 미지정 부서도 노출(자동 담당 정 지정 대상).
+    includeNoAdmin_p: true,
     onSelect: onSiteNodeSelected,
   });
 };
@@ -1205,36 +1298,7 @@ const onSiteSelected = (siteCdVal, siteNoVal, siteNmVal) => {
   siteNm.value = siteNmVal;
 };
 
-// PRAFTA-037-F7: 추가 사이트 권한 — 검색 팝업으로 선택 후 칩 추가.
-const fnAddAdditionalSite = () => {
-  openPop(SiteSearchPop, {
-    cmpnyCd_p: cmpnyCd.value,
-    onSelect: onAdditionalSiteSelected,
-  });
-};
-
-const onAdditionalSiteSelected = (siteCdVal, siteNoVal, siteNmVal) => {
-  if (!siteCdVal) return;
-  // 기본 사이트 중복 차단
-  if (siteCd.value && siteCdVal === siteCd.value) {
-    proxy.$alert("이미 기본 사이트로 선택된 사업장입니다.");
-    return;
-  }
-  // 추가 목록 내 중복 차단
-  if (additionalSites.value.some((s) => s.siteCd === siteCdVal)) {
-    proxy.$alert("이미 추가된 사업장입니다.");
-    return;
-  }
-  additionalSites.value.push({
-    siteCd: siteCdVal,
-    siteNo: siteNoVal,
-    siteNm: siteNmVal,
-  });
-};
-
-const fnRemoveAdditionalSite = (idx) => {
-  additionalSites.value.splice(idx, 1);
-};
+// PRAFTA_COM_003-B: 추가 사이트 권한 관련 함수(fnAddAdditionalSite/onAdditionalSiteSelected/fnRemoveAdditionalSite) 제거.
 
 const fnAlertMsg = async (message, afterConfirmCallback) => {
   await proxy.$alert(message);
@@ -1360,6 +1424,31 @@ const fnConfirmMsg = async (message, afterConfirmCallback) => {
 }
 .dialog-date-input:focus,
 .dialog-date-input :deep(.calendar-input):focus {
+  border-color: var(--color-border-strong, #d1d5db);
+  outline: none;
+  box-shadow: 0 0 0 var(--focus-ring-width, 3px) var(--color-focus-ring);
+}
+
+/* PRAFTA-WEB_002-T1-07(1.2): 생성 모드 입사일 — 외곽 래퍼(.calendar-search) 장식 제거하고
+   내부 input(.calendar-input)에만 다른 입력과 동일한 스타일을 적용해 단일 깔끔한 캘린더 입력으로 표시.
+   (이중 테두리/박스 제거. 본 화면 한정 — 공용 CalendarSrch·타 화면 무영향) */
+.hire-date-field {
+  flex: 1;
+  padding: 0;
+  background: transparent;
+  border: none;
+}
+.hire-date-field :deep(.calendar-input) {
+  width: 100%;
+  padding: 0.4rem 0.6rem;
+  background: var(--color-bg, #f9fafb);
+  border: 1px solid var(--color-border, #e5e7eb);
+  border-radius: var(--input-radius, 10px);
+  color: var(--color-text-strong, #111827);
+  font-size: 0.875rem;
+  font-family: "Pretendard", sans-serif;
+}
+.hire-date-field :deep(.calendar-input):focus {
   border-color: var(--color-border-strong, #d1d5db);
   outline: none;
   box-shadow: 0 0 0 var(--focus-ring-width, 3px) var(--color-focus-ring);
@@ -1492,51 +1581,5 @@ const fnConfirmMsg = async (message, afterConfirmCallback) => {
   background: var(--color-surface, #ffffff);
   color: var(--color-text-muted, #4b5563);
   font-size: 0.625rem;
-}
-
-/* PRAFTA-037-F7: 추가 사이트 권한 영역 */
-.additional-sites-area {
-  display: flex;
-  align-items: flex-start;
-  gap: 0.5rem;
-  flex: 1;
-}
-.additional-site-chips {
-  flex: 1;
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.375rem;
-  padding: 0.375rem;
-  min-height: 2.25rem;
-  border: 1px solid var(--color-border, #e5e7eb);
-  border-radius: var(--input-radius, 10px);
-  background: var(--color-bg, #f9fafb);
-}
-.site-chip {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.25rem;
-  padding: 0.125rem 0.5rem;
-  background: var(--color-info-bg, #eff6ff);
-  color: var(--color-info-text, #1d4ed8);
-  border-radius: 999px;
-  font-size: 0.8rem;
-}
-.site-chip-remove {
-  background: transparent;
-  border: none;
-  color: var(--color-info-text, #1d4ed8);
-  font-size: 1rem;
-  line-height: 1;
-  cursor: pointer;
-  padding: 0;
-}
-.site-chip-remove:hover {
-  color: var(--color-danger, #dc2626);
-}
-.site-chip-empty {
-  color: var(--color-text-muted, #9ca3af);
-  font-size: 0.8rem;
-  padding: 0 0.375rem;
 }
 </style>

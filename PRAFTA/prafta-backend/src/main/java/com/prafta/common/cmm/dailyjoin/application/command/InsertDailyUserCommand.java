@@ -48,4 +48,39 @@ public record InsertDailyUserCommand(
             , "01"      // ACCOUNT_STATUS : 01 = 활성화
         );
     }
+
+    /**
+     * prafta-app-032 B — 로그인 자동 재활성 전용 팩토리.
+     * 비활성 일용직 로그인 시 기존 행 값(ID/이름/비번 해시/휴대폰 파생)을 그대로 재활성 커맨드로 싣는다.
+     * 비번/휴대폰을 변경하지 않으므로 호출자는 기존 행에서 읽은 값을 그대로 전달한다.
+     * REG_TYPE='01'/USE_YN='Y'/ACCOUNT_STATUS='01' 고정(재활성 = 활성 상태로 복귀).
+     */
+    public static InsertDailyUserCommand ofReactivate(
+        String cmpnyCd
+        , String siteCd
+        , String userCd
+        , String userId
+        , String userNm
+        , String userPw
+        , String mblNoEnc
+        , String mblNoHmac
+        , String mblNoLast4
+    ) {
+        return new InsertDailyUserCommand(
+            cmpnyCd
+            , siteCd
+            , userCd
+            , userId
+            , userNm
+            , userPw
+
+            , mblNoEnc
+            , mblNoHmac
+            , mblNoLast4
+
+            , "01"      // REG_TYPE : 01 = 직접가입
+            , "Y"       // USE_YN
+            , "01"      // ACCOUNT_STATUS : 01 = 활성화
+        );
+    }
 }

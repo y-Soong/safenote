@@ -77,7 +77,8 @@ public class DailyJoinServiceImpl implements DailyJoinService {
     public UserIdDupleCheckResponse checkUserIdDuple(UserIdDupleCheckParam param) {
         log.info("일일사용자 회원가입 - 사용자ID 중복체크 진입 cmpnyCd={}", param.cmpnyCd());
 
-        int cnt = dailyJoinMapper.selectUserIdDupleCnt(UserIdDupleCheckQuery.from(param));
+        // prafta-app-032 §2: 프리체크는 활성-only 유지(휴대폰 컨텍스트 없음). 제출 단계에서 전상태로 정직 차단.
+        int cnt = dailyJoinMapper.selectActiveUserIdDupleCnt(UserIdDupleCheckQuery.from(param));
         String uniqueYn = (cnt > 0) ? "N" : "Y";
 
         log.info("일일사용자 회원가입 - 사용자ID 중복체크 종료 uniqueYn={}", uniqueYn);
@@ -99,6 +100,12 @@ public class DailyJoinServiceImpl implements DailyJoinService {
         }
         String phoneHmac = hmacSigner.hmacSha256Base64Url(phoneNorm);
 
+        // prafta-daily-blacklist: 블랙리스트 게이트 — 차단 휴대폰이면 SMS 소진/슬롯 점유 등 부수효과 발생 전에 즉시 차단.
+        if (dailyJoinMapper.selectActiveBlacklistCnt(param.cmpnyCd(), phoneHmac) > 0) {
+            log.info("일일사용자 회원가입 차단 - 블랙리스트 휴대폰 cmpnyCd={}", param.cmpnyCd());
+            throw new ApiException(DailyJoinErrorCode.DAILYJOIN_400_007);
+        }
+
         // 인증완료 레코드의 SMS_ID 확보 (소진 처리 대상)
         String smsId = dailyJoinMapper.selectSmsVerifiedSmsId(SmsConsumeQuery.of(phoneHmac, param.certNo()));
         if (smsId == null || smsId.isBlank()) {
@@ -118,8 +125,15 @@ public class DailyJoinServiceImpl implements DailyJoinService {
             throw new ApiException(DailyJoinErrorCode.DAILYJOIN_400_004);
         }
 
-        // b. ID 중복(USE_YN='Y') 재확인
-        int userIdCnt = dailyJoinMapper.selectUserIdDupleCnt(UserIdDupleCheckQuery.of(param.cmpnyCd(), param.userId()));
+        // prafta-app-032 A — 휴대폰 기반 재활성 대상 USER_CD 를 ID 중복검사보다 먼저 확정한다.
+        //   ID 중복검사를 전상태(active+inactive)로 정직화하되, 같은 휴대폰 복귀자가 자기 옛 비활성 행을
+        //   재활성하는 케이스(reuseUserCd)는 제외해 false-positive 차단을 방지한다.
+        //   (활성 충돌은 아래 ID/휴대폰 중복검사에서 별도로 차단된다.)
+        String reuseUserCd = dailyJoinMapper.selectReactivatableDailyUserCd(param.cmpnyCd(), phoneHmac);
+
+        // b. ID 중복 재확인(전상태, reuseUserCd 제외) — TB_DAILY_USER.
+        int userIdCnt = dailyJoinMapper.selectUserIdDupleCnt(
+                UserIdDupleCheckQuery.of(param.cmpnyCd(), param.userId(), reuseUserCd));
         if (userIdCnt > 0) {
             throw new ApiException(DailyJoinErrorCode.DAILYJOIN_400_001);
         }
@@ -131,8 +145,9 @@ public class DailyJoinServiceImpl implements DailyJoinService {
         }
 
         // b-2. PRAFTA-app-027-3'(통합형) — TB_USER 중복도 사전 차단(UX_TB_USER_ID/UX_TB_USER_MBL_NO).
-        //      통합 후 같은 USER_ID/휴대폰이 정규 사용자와 겹치면 INSERT 가 UNIQUE 충돌하므로 사전 검증한다.
-        int tbUserIdCnt = dailyJoinMapper.selectTbUserIdDupleCnt(param.cmpnyCd(), param.userId());
+        //      UX_TB_USER_ID 는 활성/비활성 무관 절대 유니크 → 전상태로 검사(reuseUserCd 제외)해 비활성 잔존
+        //      행과의 INSERT 충돌(500)을 사전 차단한다. (prafta-app-032 A 의 핵심 — Duplicate entry 500 제거)
+        int tbUserIdCnt = dailyJoinMapper.selectTbUserIdDupleCnt(param.cmpnyCd(), param.userId(), reuseUserCd);
         if (tbUserIdCnt > 0) {
             throw new ApiException(DailyJoinErrorCode.DAILYJOIN_400_001);
         }
@@ -156,8 +171,7 @@ public class DailyJoinServiceImpl implements DailyJoinService {
 
         // 옵션2 — 같은 휴대폰의 비활성(만료) 일용직 행이 있으면 새 USER_CD 채번 대신 재활성한다.
         //         (활성 중복은 위 b/b-2 에서 이미 차단되었으므로 여기 도달 시 활성 충돌은 없음)
-        String reuseUserCd = dailyJoinMapper.selectReactivatableDailyUserCd(param.cmpnyCd(), phoneHmac);
-
+        //         reuseUserCd 는 위 ID 중복검사 직전에 이미 확정했다(prafta-app-032 A).
         final String userCd;
         if (reuseUserCd != null && !reuseUserCd.isBlank()) {
             // (가) 재활성 경로 — 기존 USER_CD 재사용. 워커당 1행을 유지하고 재가입 차단을 해소한다.
@@ -198,6 +212,14 @@ public class DailyJoinServiceImpl implements DailyJoinService {
         if (slotUpd <= 0) {
             // 조회와 점유 사이에 다른 가입자가 슬롯을 선점한 경우 → 트랜잭션 롤백
             throw new ApiException(DailyJoinErrorCode.DAILYJOIN_400_005);
+        }
+
+        // g-3b. PRAFTA-daily-user-dept-3: 점유 슬롯의 지정 부서(NODE_CD)를 점유 일용직 TB_USER.NODE_CD 로 매칭.
+        //       slot.NODE_CD 가 NULL(미지정)이면 미변경. 값이 있으면 무조건 세팅(신규/재활성 공통).
+        //       EMPLOYMENT_TYPE='DAILY' 가드로 정규 사용자 오염 차단.
+        String slotNodeCd = dailyJoinMapper.selectSlotNodeCd(param.cmpnyCd(), param.siteCd(), slotNo);
+        if (slotNodeCd != null && !slotNodeCd.isBlank()) {
+            dailyJoinMapper.updateTbUserNodeCdFromSlot(param.cmpnyCd(), userCd, slotNodeCd);
         }
 
         // g-4. PRAFTA-055-1: 슬롯 점유 이력 INSERT(ISSUE_CHANNEL='01' 직접가입, RELEASE_* = NULL).
@@ -249,11 +271,12 @@ public class DailyJoinServiceImpl implements DailyJoinService {
             }
         }
 
-        // 필수약관 동의 이력 저장 (서버 조회 버전으로 저장)
+        // 필수약관 동의 이력 저장 (서버 조회 버전으로 저장).
+        // CMPNY_CD 는 가입 흐름의 회사(param.cmpnyCd(), joinCd 도출)로 적재 — 생성되는 TB_USER 와 동일 회사 스코프.
         for (RequiredTermsResult required : requiredTermsList) {
             String termsVersion = termsVersionMap.get(required.termsId());
             dailyJoinMapper.insertTermsUserAgrMgmt(
-                    TermsUserAgrCommand.of(userCd, required.termsId(), termsVersion));
+                    TermsUserAgrCommand.of(param.cmpnyCd(), userCd, required.termsId(), termsVersion));
         }
     }
 }

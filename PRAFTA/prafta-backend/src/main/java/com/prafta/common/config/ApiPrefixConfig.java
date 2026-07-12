@@ -9,6 +9,7 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.autoconfigure.web.servlet.WebMvcRegistrations;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.web.servlet.config.annotation.CorsRegistry;
+import org.springframework.web.servlet.config.annotation.InterceptorRegistry;
 import org.springframework.web.servlet.config.annotation.ResourceHandlerRegistry;
 import org.springframework.web.servlet.config.annotation.WebMvcConfigurer;
 import org.springframework.web.servlet.mvc.method.RequestMappingInfo;
@@ -16,12 +17,41 @@ import org.springframework.web.servlet.mvc.method.annotation.RequestMappingHandl
 
 import org.springframework.web.bind.annotation.RequestMethod;
 
+import com.prafta.common.security.DailyUserActiveGateInterceptor;
+import com.prafta.platform.common.PlatformOperatorGateInterceptor;
+
 @Configuration
 public class ApiPrefixConfig implements WebMvcRegistrations, WebMvcConfigurer {
 
     /** 업로드 파일 루트 디렉토리(환경변수 FILE_UPLOAD_BASE_DIR, 기본 ${user.dir}/uploads). */
     @Value("${file.upload.base-dir}")
     private String uploadBaseDir;
+
+    /** 일용직 비활성 계정 즉시 차단 게이트(/appApi/**, 일용직 토큰만 대상). */
+    private final DailyUserActiveGateInterceptor dailyUserActiveGateInterceptor;
+    /** 플랫폼 운영자 전용 게이트(/platformApi/**, 운영자 토큰 + IP 허용목록). */
+    private final PlatformOperatorGateInterceptor platformOperatorGateInterceptor;
+
+    public ApiPrefixConfig(DailyUserActiveGateInterceptor dailyUserActiveGateInterceptor,
+            PlatformOperatorGateInterceptor platformOperatorGateInterceptor) {
+        this.dailyUserActiveGateInterceptor = dailyUserActiveGateInterceptor;
+        this.platformOperatorGateInterceptor = platformOperatorGateInterceptor;
+    }
+
+    /**
+     * 게이트 등록.
+     * <ul>
+     *   <li>일용직 비활성 계정 게이트: /prafta/appApi/** (정규 사용자는 인터셉터 내부에서 즉시 통과)</li>
+     *   <li>플랫폼 운영자 게이트: /prafta/platformApi/** (운영자 토큰 + IP 허용목록)</li>
+     * </ul>
+     */
+    @Override
+    public void addInterceptors(InterceptorRegistry registry) {
+        registry.addInterceptor(dailyUserActiveGateInterceptor)
+                .addPathPatterns("/prafta/appApi/**");
+        registry.addInterceptor(platformOperatorGateInterceptor)
+                .addPathPatterns("/prafta/platformApi/**");
+    }
 
     /** ✅ CORS 전역 허용 설정 */
     @Override
@@ -63,10 +93,12 @@ public class ApiPrefixConfig implements WebMvcRegistrations, WebMvcConfigurer {
         private static final String WEB_PACKAGE = "com.prafta.web";
         private static final String APP_PACKAGE = "com.prafta.app";
         private static final String COM_PACKAGE = "com.prafta.common";
+        private static final String PLATFORM_PACKAGE = "com.prafta.platform";
 
         private static final String WEB_API_PREFIX = "/prafta/webApi";
         private static final String APP_API_PREFIX = "/prafta/appApi";
         private static final String COM_API_PREFIX = "/prafta/comApi";
+        private static final String PLATFORM_API_PREFIX = "/prafta/platformApi";
 
         @Override
         protected void registerHandlerMethod(Object handler, Method method, RequestMappingInfo mapping) {
@@ -74,7 +106,9 @@ public class ApiPrefixConfig implements WebMvcRegistrations, WebMvcConfigurer {
             String packageName = beanType.getPackageName();
 
             String prefix = null;
-            if (packageName.startsWith(WEB_PACKAGE)) {
+            if (packageName.startsWith(PLATFORM_PACKAGE)) {
+                prefix = PLATFORM_API_PREFIX;
+            } else if (packageName.startsWith(WEB_PACKAGE)) {
                 prefix = WEB_API_PREFIX;
             } else if (packageName.startsWith(APP_PACKAGE)) {
                 prefix = APP_API_PREFIX;

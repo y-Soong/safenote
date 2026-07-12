@@ -20,7 +20,11 @@
           <a href="#how">도입 흐름</a>
           <a href="#contact">문의</a>
         </nav>
-        <button type="button" class="intro-btn intro-btn--primary intro-btn--sm" @click="goService">
+        <button
+          type="button"
+          class="intro-btn intro-btn--primary intro-btn--sm"
+          @click="goService"
+        >
           서비스 로그인
         </button>
       </div>
@@ -39,10 +43,16 @@
           현장에서 일어나는 모든 안전·근태 기록을 하나의 흐름으로 연결합니다.
         </p>
         <div class="intro-hero__actions">
-          <button type="button" class="intro-btn intro-btn--primary intro-btn--lg" @click="goService">
+          <button
+            type="button"
+            class="intro-btn intro-btn--primary intro-btn--lg"
+            @click="goService"
+          >
             SafeNote 시작하기
           </button>
-          <a class="intro-btn intro-btn--ghost intro-btn--lg" href="#features">기능 둘러보기</a>
+          <a class="intro-btn intro-btn--ghost intro-btn--lg" href="#features"
+            >기능 둘러보기</a
+          >
         </div>
       </div>
     </section>
@@ -54,7 +64,9 @@
         <p class="intro-section__lead">현장 관리에 필요한 기능을 한 곳에서.</p>
         <ul class="intro-features">
           <li v-for="f in features" :key="f.title" class="intro-feature">
-            <div class="intro-feature__icon" aria-hidden="true">{{ f.icon }}</div>
+            <div class="intro-feature__icon" aria-hidden="true">
+              {{ f.icon }}
+            </div>
             <h3 class="intro-feature__title">{{ f.title }}</h3>
             <p class="intro-feature__desc">{{ f.desc }}</p>
           </li>
@@ -84,10 +96,17 @@
         <h2 class="intro-cta__title">현장 안전관리, 지금 시작하세요</h2>
         <p class="intro-cta__desc">도입 문의 및 데모는 아래로 연락 주세요.</p>
         <div class="intro-cta__actions">
-          <button type="button" class="intro-btn intro-btn--primary intro-btn--lg" @click="goService">
+          <button
+            type="button"
+            class="intro-btn intro-btn--primary intro-btn--lg"
+            @click="goService"
+          >
             서비스 바로가기
           </button>
-          <a class="intro-btn intro-btn--ghost intro-btn--lg" href="mailto:contact@prafta.com">
+          <a
+            class="intro-btn intro-btn--ghost intro-btn--lg"
+            href="mailto:contact@prafta.com"
+          >
             contact@prafta.com
           </a>
         </div>
@@ -120,18 +139,51 @@ const year = computed(() => new Date().getFullYear());
 
 // 초안 콘텐츠 — 실제 카피는 마케팅 확정 후 교체.
 const features = [
-  { icon: "🕒", title: "출퇴근·근태", desc: "GPS 기반 출퇴근 기록과 근무계획, 월마감까지 한 번에 관리합니다." },
-  { icon: "🦺", title: "TBM·안전점검", desc: "현장 TBM과 안전점검을 모바일에서 즉시 기록하고 공유합니다." },
-  { icon: "⚠️", title: "위험성평가", desc: "위험요인 발굴부터 개선 조치까지 평가 이력을 체계적으로 남깁니다." },
-  { icon: "🔔", title: "아차사고·사건", desc: "아차사고를 신속히 접수하고 임시조치·후속 처리를 추적합니다." },
-  { icon: "📝", title: "연차·결재", desc: "연차 신청과 결재 라인을 자동화해 관리 부담을 줄입니다." },
-  { icon: "📊", title: "통합 현황", desc: "현장별 안전·근태 데이터를 한 화면에서 확인합니다." },
+  {
+    icon: "🕒",
+    title: "출퇴근·근태",
+    desc: "GPS 기반 출퇴근 기록과 근무계획, 월마감까지 한 번에 관리합니다.",
+  },
+  {
+    icon: "🦺",
+    title: "TBM·안전점검",
+    desc: "현장 TBM과 안전점검을 모바일에서 즉시 기록하고 공유합니다.",
+  },
+  {
+    icon: "⚠️",
+    title: "위험성평가",
+    desc: "위험요인 발굴부터 개선 조치까지 평가 이력을 체계적으로 남깁니다.",
+  },
+  {
+    icon: "🔔",
+    title: "아차사고·사건",
+    desc: "아차사고를 신속히 접수하고 임시조치·후속 처리를 추적합니다.",
+  },
+  {
+    icon: "📝",
+    title: "연차·결재",
+    desc: "연차 신청과 결재 라인을 자동화해 관리 부담을 줄입니다.",
+  },
+  {
+    icon: "📊",
+    title: "통합 현황",
+    desc: "현장별 안전·근태 데이터를 한 화면에서 확인합니다.",
+  },
 ];
 
 const steps = [
-  { title: "문의 및 상담", desc: "현장 규모와 운영 방식을 알려주시면 맞춤 구성을 제안합니다." },
-  { title: "사업장·사용자 등록", desc: "관리자 웹에서 사업장과 사용자를 등록하고 권한을 설정합니다." },
-  { title: "현장 운영 시작", desc: "모바일 앱으로 출퇴근·안전관리를 바로 시작합니다." },
+  {
+    title: "문의 및 상담",
+    desc: "현장 규모와 운영 방식을 알려주시면 맞춤 구성을 제안합니다.",
+  },
+  {
+    title: "사업장·사용자 등록",
+    desc: "관리자 웹에서 사업장과 사용자를 등록하고 권한을 설정합니다.",
+  },
+  {
+    title: "현장 운영 시작",
+    desc: "모바일 앱으로 출퇴근·안전관리를 바로 시작합니다.",
+  },
 ];
 </script>
 
@@ -202,7 +254,10 @@ const steps = [
   font-weight: 700;
   cursor: pointer;
   text-decoration: none;
-  transition: background 0.15s, color 0.15s, border-color 0.15s;
+  transition:
+    background 0.15s,
+    color 0.15s,
+    border-color 0.15s;
   white-space: nowrap;
 }
 .intro-btn--sm {

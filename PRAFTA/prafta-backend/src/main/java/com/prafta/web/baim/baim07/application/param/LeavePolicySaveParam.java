@@ -62,6 +62,7 @@ public record LeavePolicySaveParam(
             , request.getAprvUseYn()
             , request.getApplyFromDate()
             , request.getUsageUnit()
+            , request.getAllowQuarter() // LC-06: 반반차 허용 토글(Y/N 외 값은 서비스에서 'N' 정규화)
             , request.getChangeReason()
         );
 

@@ -25,6 +25,7 @@ public record AdminSessionSaveParam(
     , String managerGpsLat
     , String managerGpsLon
     , Integer gpsVerifyRadiusM
+    , Integer eduMinutes
     , String gpsManualConfirmYn
     , List<AdminSessionContentModel> contents
     , List<AdminSessionRiskModel> risks
@@ -49,6 +50,7 @@ public record AdminSessionSaveParam(
             , request.getManagerGpsLat()
             , request.getManagerGpsLon()
             , request.getGpsVerifyRadiusM()
+            , request.getEduMinutes()
             , request.getGpsManualConfirmYn()
             , request.getContents() != null ? request.getContents() : Collections.emptyList()
             , request.getRisks() != null ? request.getRisks() : Collections.emptyList()

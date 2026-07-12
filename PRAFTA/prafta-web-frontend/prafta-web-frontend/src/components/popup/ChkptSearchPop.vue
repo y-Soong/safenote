@@ -34,9 +34,10 @@
         <!-- 2. 조회 Form 영역 -->
         <div class="viewSearch">
           <div class="form-left">
+            <!-- 점검구분은 부모(등록팝업) 선택값에 종속(세트로 동작) → 팝업 내 변경 불가 -->
             <label>점검구분</label>
-            <BaseSelect v-model="chklstType">
-              <option value="">— 전체 —</option>
+            <BaseSelect v-model="chklstType" disabled>
+              <option value="">전체</option>
               <option
                 v-for="opt in baseCodeArr['COM001'] || []"
                 :key="opt.baimValDCd"
@@ -45,14 +46,12 @@
                 {{ opt.baimValDNm }}
               </option>
             </BaseSelect>
-            <label>점검대상명</label>
+            <label class="label-gap">점검대상명</label>
             <input v-model.trim="chkptNm" @keyup.enter="fnSearch" />
           </div>
           <div class="btn-group">
             <button class="btn btn-primary" @click="fnSearch">조회</button>
-            <button class="btn btn-primary" @click="fnSelect">
-              선택 완료
-            </button>
+            <button class="btn btn-primary" @click="fnSelect">선택 완료</button>
           </div>
         </div>
 
@@ -129,6 +128,7 @@ import BaseSelect from "@/components/common/BaseSelect.vue";
 
 const props = defineProps({
   siteCd: { type: String, default: "" }, // 부모(등록팝업)에서 선택된 사업장
+  chklstType: { type: String, default: "" }, // 부모의 점검구분(순회점검) — 점검대상과 세트로 동작
   onSelect: Function, // 다건 선택 결과 콜백 (useModal 환경)
 });
 const emit = defineEmits(["close", "select"]);
@@ -136,7 +136,8 @@ const emit = defineEmits(["close", "select"]);
 const { proxy } = getCurrentInstance();
 
 // 반응형 상태
-const chklstType = ref("");
+// 점검구분은 부모(등록팝업)의 선택값을 그대로 따른다(세트로 동작, 팝업 내 변경 불가)
+const chklstType = ref(props.chklstType || "");
 const chkptNm = ref("");
 const rows = ref([]); // 조회 결과 (ChkptOptionResult[])
 const selectedMap = reactive({}); // { [chkptCd]: true }
@@ -197,16 +198,13 @@ const fnSearch = async () => {
   Object.keys(selectedMap).forEach((k) => delete selectedMap[k]);
 
   try {
-    const response = await axios.get(
-      "/webApi/acct01/patrol/chkpt-options",
-      {
-        params: {
-          siteCd: props.siteCd,
-          chklstType: chklstType.value,
-          chkptNm: chkptNm.value,
-        },
-      }
-    );
+    const response = await axios.get("/webApi/acct01/patrol/chkpt-options", {
+      params: {
+        siteCd: props.siteCd,
+        chklstType: chklstType.value,
+        chkptNm: chkptNm.value,
+      },
+    });
 
     if (response.status === 200) {
       rows.value = response.data?.chkptOptionList || [];
@@ -250,6 +248,22 @@ const fnSelect = async () => {
 </script>
 
 <style scoped>
+/* 점검구분 셀렉트가 BaseSelect 인라인 width:100% 때문에
+   라벨 아래로 떨어지는 것 방지(라벨과 같은 행 정렬) */
+.viewSearch .form-left {
+  align-items: center;
+}
+.viewSearch .form-left :deep(select) {
+  width: 130px !important;
+}
+/* "점검대상명" 라벨을 앞 셀렉트와 조건 단위로 띄움(gap 1rem + margin 1rem = 2rem) */
+.viewSearch .form-left .label-gap {
+  margin-left: 1rem;
+}
+/* 점검대상명 입력칸을 기본(120px)보다 길게 */
+.viewSearch .form-left input {
+  width: 200px;
+}
 .check-col {
   width: 36px;
   text-align: center;

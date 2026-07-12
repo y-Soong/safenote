@@ -32,7 +32,17 @@
     />
 
     <!-- 본문 (스크롤 영역) -->
-    <main class="req-body" ref="bodyRef">
+    <main
+      class="req-body"
+      ref="bodyRef"
+      @touchstart.passive="onPullStart"
+      @touchmove="onPullMove"
+      @touchend="onPullEnd"
+      @touchcancel="onPullEnd"
+    >
+      <!-- 당겨서 새로고침 인디케이터 — 스크롤 최상단에서 아래로 당기면 노출 -->
+      <PullRefreshIndicator v-bind="indicatorProps" />
+
       <!-- 빈 상태 -->
       <RequestEmptyState v-if="items.length === 0 && !isLoading && totalCount === 0" kind="total" />
       <RequestEmptyState
@@ -97,6 +107,8 @@ import { ref, computed, onMounted, onBeforeUnmount, nextTick, getCurrentInstance
 import { useRouter } from 'vue-router'
 
 import api from '@/api/axios'
+import { usePullToRefresh } from '@/composables/usePullToRefresh'
+import PullRefreshIndicator from '@/components/common/PullRefreshIndicator.vue'
 import { resolveApiErrorMessage } from '@/utils/apiError'
 import { isDailyWorker } from '@/utils/employment'
 
@@ -288,6 +300,15 @@ const reobserveAfterRender = async () => {
 }
 
 // ───────────────────────────────────────────────────────────
+// 당겨서 새로고침 — 현재 필터/정렬 유지한 채 첫 페이지 재조회(부작용 없는 조회).
+//   스크롤 컨테이너는 무한 스크롤 root 와 동일한 bodyRef 를 재사용한다(제스처는 touch 핸들러로 별개).
+// ───────────────────────────────────────────────────────────
+const { onPullStart, onPullMove, onPullEnd, indicatorProps } = usePullToRefresh(bodyRef, async () => {
+  await loadPage(false)
+  await reobserveAfterRender()
+})
+
+// ───────────────────────────────────────────────────────────
 // 이벤트 핸들러
 // ───────────────────────────────────────────────────────────
 const onBack = () => {
@@ -388,7 +409,8 @@ onBeforeUnmount(() => {
   --radius-full: 9999px;
   --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.04);
 
-  min-height: 100vh;
+  height: 100vh;
+  height: 100dvh;
   background: var(--color-bg);
   color: var(--color-text-primary);
   display: flex;
@@ -436,6 +458,7 @@ onBeforeUnmount(() => {
 /* 본문 */
 .req-body {
   flex: 1;
+  min-height: 0;
   padding: 8px 16px 24px;
   overflow-y: auto;
   display: flex;

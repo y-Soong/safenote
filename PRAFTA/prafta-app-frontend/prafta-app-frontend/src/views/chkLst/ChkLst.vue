@@ -192,9 +192,11 @@ const parseQr = (raw) => {
   return {}
 }
 
-// 오늘(YYYYMMDD)
+// 오늘(YYYYMMDD) — 반드시 기기 로컬시간 기준.
+//   $util.getToday() 는 toISOString() 기반이라 UTC 날짜를 돌려준다(KST 00~09시엔 전날).
+//   여기서는 화면 표시용 일자이므로 로컬 기준으로 직접 계산한다.
+//   실제 저장되는 WORK_DATE 는 서버가 KST 기준으로 재결정한다(InspectResultSaveParam).
 const getTodayYmd = () => {
-  if (proxy?.$util?.getToday) return proxy.$util.getToday().replaceAll('-', '')
   const d = new Date()
   const p = (n) => String(n).padStart(2, '0')
   return `${d.getFullYear()}${p(d.getMonth() + 1)}${p(d.getDate())}`
@@ -490,22 +492,24 @@ onBeforeUnmount(() => {
     sans-serif;
 }
 
-/* 헤더 */
+/* 헤더 — 앱 전역 표준(risk-hd / nmr-hd)과 동형. 클래스 prefix는 chk-hd 유지. */
 .chk-hd {
-  height: 56px;
+  min-height: 56px;
   flex-shrink: 0;
   background: var(--color-surface);
-  display: flex;
+  display: grid;
+  grid-template-columns: 44px 1fr 44px;
   align-items: center;
-  justify-content: space-between;
   padding: 0 16px;
-  padding-top: env(safe-area-inset-top);
-  border-bottom: 1px solid var(--color-border-light);
+  padding-top: max(env(safe-area-inset-top), 12px);
+  border-bottom: 0.5px solid var(--color-border);
+  position: sticky;
+  top: 0;
+  z-index: 10;
 }
 .chk-hd__back {
   width: 44px;
   height: 44px;
-  margin-left: -10px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -517,11 +521,13 @@ onBeforeUnmount(() => {
 }
 .chk-hd__title {
   margin: 0;
-  font-size: 17px;
-  font-weight: 700;
+  font-size: 18px;
+  font-weight: 600;
+  text-align: center;
 }
 .chk-hd__spacer {
   width: 44px;
+  height: 44px;
 }
 
 /* 본문 */

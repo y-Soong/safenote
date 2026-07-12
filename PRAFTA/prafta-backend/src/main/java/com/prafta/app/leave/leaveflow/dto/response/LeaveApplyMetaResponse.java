@@ -6,9 +6,14 @@ import java.util.List;
  * prafta-app-018-A: 연차 신청 폼 메타 응답 (GET /appApi/leaveflow/apply-meta).
  *
  * <p>키명은 018-C(FE)가 그대로 소비하므로 임의 변경 금지. record 사용으로 boolean is- 접두 탈락 이슈 없음.
+ *
+ * <p>{@code convMinutes} : 1일 환산시간(분) — <b>오늘 기준</b> 유효값(additive, 연차 시간차 환산 개편).
+ * 신청 폼의 잔여(balanceDays) "N일 H시간 M분" 표기용 근사치다(신청 대상일 기준이 아님 — 정확한 분모는
+ * preview 응답의 convMinutes 가 권위). 미설정 시 480.
  */
 public record LeaveApplyMetaResponse(
       List<LeaveTypeItem> leaveTypes
+    , int convMinutes
 ) {
     /**
      * 신청 가능 연차종류 1건.
@@ -16,7 +21,8 @@ public record LeaveApplyMetaResponse(
      * <ul>
      *   <li>{@code systemYn} : 법정여부 'Y'/'N'(원본 문자열).</li>
      *   <li>{@code aprvRequired} : 결재필요(법정=policy.APRV_USE_YN / 비법정=type.APRV_USE_YN, 'Y'→true).</li>
-     *   <li>{@code allowedUnits} : 허용 사용단위 SYS025 코드 목록(D2-a 계층, 굵→잘게: 00,01,02,03,04 부분집합).</li>
+     *   <li>{@code allowedUnits} : 허용 사용단위 SYS025 코드 목록(D2-a 계층, 굵→잘게: 00,01,02,03,04 부분집합.
+     *       LC-06: 반반차 '05'는 계층 밖 독립 토글 — 법정=ALLOW_QUARTER / 비법정=타입 USE_UNIT_TYPE='05' 시 포함).</li>
      *   <li>{@code balanceDays} : 현재 잔여(부여-사용 합, 활성집합, 소수1자리).</li>
      *   <li>{@code applicable} : 신청가능(잔여>0). false 면 FE disabled.</li>
      *   <li>{@code borrowable} : 가불 가능 여부(prafta-com-011-2). 시스템 법정 월차/본연차이고 borrowQuota>0 일 때 true.</li>

@@ -9,7 +9,7 @@
     <div v-for="cell in cells" :key="cell.key" class="cell">
       <span class="cell__lbl">{{ cell.label }}</span>
       <span class="cell__val" :class="{ 'cell__val--muted': cell.value === 0 }">
-        {{ cell.text }}일
+        {{ cell.text }}
       </span>
     </div>
   </div>
@@ -17,6 +17,7 @@
 
 <script setup>
 import { computed } from 'vue'
+import { formatLeaveDays } from '@/utils/leaveFormat'
 
 const props = defineProps({
   // { granted, used, planned }
@@ -24,22 +25,23 @@ const props = defineProps({
     type: Object,
     default: null,
   },
+  // LC-11: 1일 환산시간(분) — "N일 H시간 M분" 표기 분모(서버 권위). 미제공 시 480 폴백.
+  convMinutes: {
+    type: Number,
+    default: 480,
+  },
 })
 
-// 0.5 단위 표기 (정수면 정수, 소수면 1자리)
-const trimDays = (v) => {
-  if (v == null) return '0'
-  const n = Number(v)
-  return Number.isInteger(n) ? String(n) : n.toFixed(1)
-}
 const numOr0 = (v) => Number(v ?? 0)
 
+// LC-11: 소수점 노출 금지 — "N일 H시간 M분" 표기(내부 계산값은 그대로, 표시만 교체).
 const cells = computed(() => {
   const g = props.group || {}
+  const fmt = (v) => formatLeaveDays(numOr0(v), props.convMinutes)
   return [
-    { key: 'granted', label: '부여', value: numOr0(g.granted), text: trimDays(g.granted) },
-    { key: 'used', label: '사용', value: numOr0(g.used), text: trimDays(g.used) },
-    { key: 'planned', label: '사용예정', value: numOr0(g.planned), text: trimDays(g.planned) },
+    { key: 'granted', label: '부여', value: numOr0(g.granted), text: fmt(g.granted) },
+    { key: 'used', label: '사용', value: numOr0(g.used), text: fmt(g.used) },
+    { key: 'planned', label: '사용예정', value: numOr0(g.planned), text: fmt(g.planned) },
   ]
 })
 </script>

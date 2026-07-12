@@ -41,7 +41,9 @@
 		, A.UPDATE_NO     			AS updateNo
 		, A.UPDATE_DATE   			AS updateDate
 	FROM TB_USER A
-         INNER JOIN TB_SITE B
+         <!-- PRAFTA-platform: 사업장 비소속 운영자(master, SITE_CD=NULL) 로그인 허용 위해 LEFT JOIN.
+              일반 사용자는 SITE_CD 보유 → 매칭 행 동일, 동작 무변경. 만료 사업장 차단은 아래 WHERE(B.USE_YN) 유지. -->
+         LEFT OUTER JOIN TB_SITE B
 			ON (
 				A.CMPNY_CD = B.CMPNY_CD
 			AND A.SITE_CD = B.SITE_CD
@@ -56,6 +58,7 @@
 	  AND A.USER_ID = #{userId}
 	  AND A.USE_YN = 'Y'
 	  AND (A.EMPLOYMENT_TYPE IS NULL OR A.EMPLOYMENT_TYPE <![CDATA[<>]]> 'DAILY')	<!-- 일용직(DAILY)은 정규 로그인 차단(일용직 전용 로그인만). 정규직(NULL) 무영향 -->
+	  AND (B.USE_YN = 'Y' OR A.AUTH_CD = 'master')	<!-- PRAFTA-COM-001-T2-4: 종료(비활성) 사업장 소속 사용자 로그인 차단. 단 master 는 예외(행 미반환→기존 userResult==null 차단 재사용) -->
     </select>
 
 	<!-- ====================================================================
@@ -296,6 +299,10 @@
         , GENDER
         , BIRTH_DT_ENC
         , USE_YN
+        <!-- APP-PRAFTA-001: 셀프 회원가입은 사용자가 직접 비번을 정하므로 강제 비번변경 게이트 대상이 아니다.
+             강제 비번변경 게이트(AuthMapper.selectGateUserInfo)는 PWD_CHG_DTIME IS NULL 로 판정하며
+             엑셀/관리자 일괄등록(임시비번) 계정 전용이다. 셀프가입은 가입 시각을 변경완료로 세팅해 게이트를 면제한다. -->
+        , PWD_CHG_DTIME
         , INSERT_NO
         , INSERT_DATE
         , UPDATE_NO
@@ -319,6 +326,7 @@
         , #{gender}
         , #{birthDtEnc}
         , 'Y'
+        , NOW()				<!-- APP-PRAFTA-001: 셀프가입 = 비번 변경완료 처리(강제 비번변경 게이트 면제) -->
         , 'SYSTEM'
         , NOW()
         , 'SYSTEM'
@@ -398,7 +406,8 @@
     <insert id="insertTermsUserAgrMgmt" parameterType="com.prafta.common.cmm.login.application.command.RequiredTermsInfoCommand">
     /* LoginMapper.insertTermsUserAgrMgmt */
     INSERT INTO TB_TERMS_USER_AGR_MGMT (
-    	USER_CD
+    	CMPNY_CD
+    	, USER_CD
     	, TERMS_ID
     	, TERMS_VERSION
     	, AGR_YN
@@ -406,7 +415,8 @@
     	, INSERT_DATE
     )
     VALUES (
-    	#{userCd}
+    	#{cmpnyCd}
+    	, #{userCd}
     	, #{termsId}
     	, #{termsVersion}
     	, #{agrYn}
@@ -434,6 +444,7 @@
 				ON (
 					A.TERMS_ID = B.TERMS_ID
 				AND A.TERMS_VERSION = B.TERMS_VERSION
+		        AND B.CMPNY_CD = #{cmpnyCd}
 		        AND B.USER_CD = #{userCd}
 		        )
 		WHERE 1=1
@@ -445,15 +456,17 @@
     <update id="mergeAuthMenuInfo" parameterType="com.prafta.common.cmm.login.application.command.AuthMenuInfoCommand">
 	/* LoginMapper.mergeAuthMenuInfo */
 	INSERT INTO TB_TERMS_USER_AGR_MGMT (
-		USER_ID
+		CMPNY_CD
+		, USER_CD
 		, TERMS_ID
 		, TERMS_VERSION
 		, AGR_YN
 		, INSERT_NO
 		, INSERT_DATE
-	) 
-	SELECT 
-		#{userId} AS USER_ID
+	)
+	SELECT
+		#{cmpnyCd} AS CMPNY_CD
+	    , #{userId} AS USER_CD
 	    , TERMS_ID
 	    , TERMS_VERSION
 	    , 'Y'
@@ -462,6 +475,12 @@
 	FROM TB_TERMS
 	WHERE 1=1
 	  AND TERMS_ID = #{systValDCd}
+	/* PK=(CMPNY_CD,USER_CD,TERMS_ID,TERMS_VERSION). 동일 약관 버전 재동의 시 PK 충돌로
+	   트랜잭션이 롤백되는 것을 방지(멱등). 같은 버전 재동의면 동의값/시각만 갱신. */
+	ON DUPLICATE KEY UPDATE
+		AGR_YN      = VALUES(AGR_YN)
+		, INSERT_NO   = VALUES(INSERT_NO)
+		, INSERT_DATE = NOW()
     </update>
 
     <!-- ====================================================================

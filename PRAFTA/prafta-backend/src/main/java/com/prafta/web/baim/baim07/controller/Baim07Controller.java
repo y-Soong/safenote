@@ -14,12 +14,17 @@ import org.springframework.web.bind.annotation.RestController;
 
 import com.prafta.common.security.JwtUtil;
 import com.prafta.web.baim.baim07.application.param.ActivePolicyParam;
+import com.prafta.web.baim.baim07.application.param.LeaveConversionParam;
+import com.prafta.web.baim.baim07.application.param.LeaveConversionSaveParam;
 import com.prafta.web.baim.baim07.application.param.LeavePolicyHistoryListParam;
 import com.prafta.web.baim.baim07.application.param.LeavePolicySaveParam;
+import com.prafta.web.baim.baim07.dto.request.LeaveConversionSaveRequest;
 import com.prafta.web.baim.baim07.dto.request.LeavePolicyHistoryListRequest;
 import com.prafta.web.baim.baim07.dto.request.LeavePolicySaveRequest;
 import com.prafta.web.baim.baim07.dto.response.AnalyzeImpactResponse;
 import com.prafta.web.baim.baim07.dto.response.ImpactPreviewResponse;
+import com.prafta.web.baim.baim07.dto.response.LeaveConversionResponse;
+import com.prafta.web.baim.baim07.dto.response.LeaveConversionSaveResponse;
 import com.prafta.web.baim.baim07.dto.response.LeavePolicyHistoryListResponse;
 import com.prafta.web.baim.baim07.dto.response.LeavePolicyResponse;
 import com.prafta.web.baim.baim07.dto.response.LeavePolicySaveResponse;
@@ -39,6 +44,8 @@ import lombok.extern.slf4j.Slf4j;
  *   <li>PUT  /baim07/policy/{policySeq}      — 정책 변경</li>
  *   <li>GET  /baim07/policy/history          — 정책 변경 이력 페이징 조회</li>
  *   <li>POST /baim07/policy/impact-preview   — 영향 분석 미리보기 (저장 없음)</li>
+ *   <li>GET  /baim07/conversion              — 시간차 1일 환산시간 조회 (LC-02)</li>
+ *   <li>POST /baim07/conversion              — 시간차 1일 환산시간 저장 (LC-02)</li>
  * </ul>
  *
  * <p>권한 가드는 서비스 계층 진입부에서 {@code AuthRoleUtils.isManager(authCd)}로 강제 (§8.5.7).
@@ -104,7 +111,8 @@ public class Baim07Controller {
 
     /**
      * 정책 변경 이력 페이징 조회.
-     * 정책서 §8.5.7: 인증 사용자 + 사업장 스코프.
+     * 정책서 §8.5.7: AUTH_MASTER OR AUTH_HR_MANAGER 필요 (서비스 진입부에서 강제).
+     * 이력에 변경자 실명(평문) 등 민감정보가 포함되므로 변경/분석 경로와 동일한 권한 가드를 적용한다.
      */
     @GetMapping("/policy/history")
     public ResponseEntity<?> getHistory(
@@ -146,6 +154,36 @@ public class Baim07Controller {
 
         AnalyzeImpactResponse response = baim07Service.analyzeImpact(
                 LeavePolicySaveParam.from(request, jwtUtil.getAllClaimsAsMap(authorization)));
+
+        return ResponseEntity.status(HttpStatus.OK).body(response);
+    }
+
+    /**
+     * 시간차 1일 환산시간 조회 — 현재 적용값 + 변경 이력 (연차 시간차 환산 개편 LC-02).
+     * 권한: AUTH_MASTER OR AUTH_HR_MANAGER (이력 가드 — 서비스 진입부에서 강제).
+     */
+    @GetMapping("/conversion")
+    public ResponseEntity<?> getConversion(
+            @RequestHeader(value = "Authorization", required = false) String authorization) {
+
+        LeaveConversionResponse response = baim07Service.getConversion(
+                LeaveConversionParam.from(jwtUtil.getAllClaimsAsMap(authorization)));
+
+        return ResponseEntity.status(HttpStatus.OK).body(response);
+    }
+
+    /**
+     * 시간차 1일 환산시간 저장 (연차 시간차 환산 개편 LC-02).
+     * 신규 적용일 INSERT, 같은 적용일 재저장은 UPDATE. 적용일은 오늘 이후만(F4 — 소급 재계산 없음).
+     * 권한: AUTH_MASTER OR AUTH_HR_MANAGER (서비스 진입부에서 강제).
+     */
+    @PostMapping("/conversion")
+    public ResponseEntity<?> saveConversion(
+            @RequestBody @Valid LeaveConversionSaveRequest request,
+            @RequestHeader(value = "Authorization", required = false) String authorization) {
+
+        LeaveConversionSaveResponse response = baim07Service.saveConversion(
+                LeaveConversionSaveParam.from(request, jwtUtil.getAllClaimsAsMap(authorization)));
 
         return ResponseEntity.status(HttpStatus.OK).body(response);
     }

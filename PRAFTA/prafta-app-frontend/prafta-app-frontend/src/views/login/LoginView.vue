@@ -133,6 +133,7 @@ import safenote_logo from '@/assets/img/safenote_sign.png'
 import axios from '@/api/axios'
 import { requestDeviceInfo, getCachedDeviceMeta } from '@/utils/deviceBridge'
 import { registerPushToken } from '@/utils/pushTokenBridge'
+import { routeAfterLogin } from '@/utils/termsGate'
 
 const userId = ref('')
 const password = ref('')
@@ -274,13 +275,21 @@ const fnSubmitLogin = async () => {
       }
 
       const redirect = route.query.redirect
-      router.replace(redirect || '/MainView') // ✅ 권장
 
-      /* 약관동의 체크 */
-      //fnUserTermsAgrChk()
+      // prafta-app-033: 강제 비밀번호 변경 게이트(PWD_CHG_DTIME IS NULL → nextStep='PASSWORD_CHANGE').
+      //   PHONE_AUTH/DEFAULT_SCH 와 달리 정식 토큰이 발급되므로(위에서 세션 저장 완료) 비번변경 EP 호출이 가능하다.
+      //   약관 게이트보다 먼저 처리한다(routeAfterLogin 호출 전). 성공 시 화면이 routeAfterLogin 으로 후속 진행.
+      if (response.data?.nextStep === 'PASSWORD_CHANGE' || response.data?.mustChangePassword) {
+        router.replace({
+          path: '/ForcedPasswordChange',
+          state: { redirect: redirect || '/MainView' },
+        })
+        return
+      }
 
-      // router.push('/MainView');
-      // router.replace('/MainView')
+      // 필수약관 미동의 게이트: 미동의 약관이 있으면 /TermsAgree, 없으면 redirect||/MainView 로 라우팅.
+      //   게이트 조회 실패는 가용성 우선으로 통과(termsGate 내부 처리).
+      await routeAfterLogin(router, redirect)
     }
   } catch (err) {
     await proxy.$alert(err.response?.data?.message || '로그인에 실패했습니다.')
@@ -359,8 +368,9 @@ const fnSubmitDailyLogin = async () => {
         localStorage.removeItem('savedUserId')
       }
 
+      // 필수약관 미동의 게이트(일용직도 동일 적용).
       const redirect = route.query.redirect
-      router.replace(redirect || '/MainView')
+      await routeAfterLogin(router, redirect)
     }
   } catch (err) {
     await proxy.$alert(err.response?.data?.message || '로그인에 실패했습니다.')

@@ -45,12 +45,18 @@
             <table class="ref-table">
               <thead>
                 <tr>
-                  <th>사고번호</th>
-                  <th>유형</th>
-                  <th>위험도</th>
-                  <th>발생일시</th>
-                  <th>장소</th>
-                  <th class="ref-table__act">연결</th>
+                  <th class="ref-table__no">No</th>
+                  <th class="ref-table__chk">
+                    <input
+                      type="checkbox"
+                      :checked="isAllChecked"
+                      @change="fnToggleAll($event)"
+                    />
+                  </th>
+                  <th class="ref-table__id">사고번호</th>
+                  <th class="ref-table__desc">경위</th>
+                  <th class="ref-table__dt">발생일시</th>
+                  <th class="ref-table__loc-th">장소</th>
                 </tr>
               </thead>
               <tbody>
@@ -59,18 +65,22 @@
                     조건에 맞는 완료 아차사고가 없습니다.
                   </td>
                 </tr>
-                <tr v-for="nm in list" :key="nm.nearMissId">
-                  <td>{{ nm.nearMissId }}</td>
-                  <td>{{ nm.incidentTypeNm }}</td>
-                  <td>{{ nm.potentialSeverityNm }}</td>
-                  <td>{{ nm.occurDtime }}</td>
+                <tr v-for="(nm, idx) in list" :key="nm.nearMissId">
+                  <td class="ref-table__no">{{ idx + 1 }}</td>
+                  <td class="ref-table__chk">
+                    <input
+                      type="checkbox"
+                      :value="nm.nearMissId"
+                      v-model="checkedIds"
+                    />
+                  </td>
+                  <td class="ref-table__id">{{ nm.nearMissId }}</td>
+                  <td class="ref-table__desc" :title="nm.description">
+                    {{ nm.description }}
+                  </td>
+                  <td class="ref-table__dt">{{ nm.occurDtime }}</td>
                   <td class="ref-table__loc" :title="nm.locationDesc">
                     {{ nm.locationDesc }}
-                  </td>
-                  <td class="ref-table__act">
-                    <button class="btn btn-report" @click="fnLink(nm)">
-                      연결
-                    </button>
                   </td>
                 </tr>
               </tbody>
@@ -81,6 +91,7 @@
         <!-- 푸터 -->
         <div class="modal-footer">
           <button class="btn btn-cancel" @click="$emit('close')">닫기</button>
+          <button class="btn btn-save" @click="fnApplySelection">저장</button>
         </div>
       </div>
     </div>
@@ -89,10 +100,9 @@
 
 <script setup>
 /* eslint-disable */
-import { ref, onMounted, getCurrentInstance } from "vue";
+import { ref, computed, onMounted, getCurrentInstance } from "vue";
 import { useCenteredDraggable } from "@/composables/useCenteredDraggable";
 import axios from "@/api/axios";
-import { getMessage, MSG } from "@/messages";
 import { resolveApiErrorMessage } from "@/utils/apiError";
 
 const props = defineProps({
@@ -100,8 +110,10 @@ const props = defineProps({
   siteCd: { type: String, default: "" },
   processCd: { type: String, default: "" },
   assessmentCd: { type: String, default: "" },
-  // 연결 성공 시 부모(연결된 목록) 갱신 콜백
-  onLinked: { type: Function, default: null },
+  // 이미 연결/보류중이라 중복 선택을 막을 nearMissId 목록(후보에서 회색/제외용 — 현재는 미사용 안전값)
+  preselectedIds: { type: Array, default: () => [] },
+  // 체크 항목 일괄 전달 콜백(즉시 INSERT 폐기, 보류-저장 모델)
+  onApply: { type: Function, default: null },
 });
 
 const emit = defineEmits(["close"]);
@@ -116,6 +128,22 @@ const { position, startDrag } = useCenteredDraggable(modalRef, {
 
 const keyword = ref("");
 const list = ref([]);
+// 체크된 nearMissId 목록(보류 상태). 저장 클릭 시 부모로 일괄 emit.
+const checkedIds = ref([]);
+
+// 전체 선택 여부(현재 목록 기준)
+const isAllChecked = computed(
+  () => list.value.length > 0 && checkedIds.value.length === list.value.length
+);
+
+// 전체 체크 토글
+const fnToggleAll = (evt) => {
+  if (evt.target.checked) {
+    checkedIds.value = list.value.map((nm) => nm.nearMissId);
+  } else {
+    checkedIds.value = [];
+  }
+};
 
 // 공통 키 파라미터
 const linkKeys = () => ({
@@ -124,7 +152,7 @@ const linkKeys = () => ({
   assessmentCd: props.assessmentCd,
 });
 
-// 완료(SYS063='400') 아차사고 후보 검색 (같은 사업장 + 미연결 + 검색어)
+// 완료(SYS063='300') 아차사고 후보 검색 (같은 사업장 + 미연결 + 검색어)
 const fnSearch = async () => {
   try {
     const response = await axios.get("/webApi/risklink01/available-near-miss", {
@@ -136,6 +164,10 @@ const fnSearch = async () => {
 
     if (response.status === 200) {
       list.value = response.data?.nearMissList || [];
+      // 검색 시 현재 목록에 없는 체크 항목 정리
+      checkedIds.value = checkedIds.value.filter((id) =>
+        list.value.some((nm) => nm.nearMissId === id)
+      );
     }
   } catch (err) {
     const msg = resolveApiErrorMessage(err, "조회 중 오류가 발생했습니다.");
@@ -143,28 +175,15 @@ const fnSearch = async () => {
   }
 };
 
-// 연결 → 성공 시 부모 갱신 콜백 + 후보 재검색(연결된 건은 후보에서 제외됨)
-const fnLink = async (nm) => {
-  try {
-    const response = await axios.post(
-      "/webApi/risklink01/link",
-      {
-        ...linkKeys(),
-        nearMissId: nm.nearMissId,
-      },
-      { headers: { "Content-Type": "application/json" } }
-    );
-
-    if (response.status === 200) {
-      if (typeof props.onLinked === "function") {
-        props.onLinked();
-      }
-      await fnSearch();
-    }
-  } catch (err) {
-    const msg = resolveApiErrorMessage(err, "연결 중 오류가 발생했습니다.");
-    await proxy.$alert(msg);
+// 체크된 아차사고 객체 배열을 부모로 일괄 전달 후 닫기(DB 반영은 부모 저장 시)
+const fnApplySelection = () => {
+  const selected = list.value.filter((nm) =>
+    checkedIds.value.includes(nm.nearMissId)
+  );
+  if (typeof props.onApply === "function") {
+    props.onApply(selected);
   }
+  emit("close");
 };
 
 onMounted(() => {
@@ -183,7 +202,9 @@ onMounted(() => {
 }
 
 .modal-content {
-  width: 860px;
+  /* 경위·장소 가독을 위해 50vw 폭(기존 860px 대비 확대). */
+  width: 50vw;
+  min-width: 720px;
   max-width: 92vw;
   /* 기본 .modal-content 의 20px 패딩 제거 → 헤더/본문/푸터가 박스 끝에 밀착. */
   padding: 0;
@@ -191,6 +212,7 @@ onMounted(() => {
 
 .ref-search-bar {
   display: flex;
+  align-items: center;
   gap: 0.5rem;
   margin-bottom: 1rem;
 }
@@ -240,9 +262,27 @@ onMounted(() => {
   white-space: normal;
 }
 
-.ref-table__act {
-  width: 84px;
+/* 컬럼 폭 배분: 장소·경위를 넓게. No/체크박스는 좁게. */
+.ref-table__no {
+  width: 5%;
   text-align: center;
+}
+.ref-table__chk {
+  width: 6%;
+  text-align: center;
+}
+.ref-table__id {
+  width: 16%;
+}
+.ref-table__desc {
+  width: 26%;
+  white-space: normal;
+}
+.ref-table__dt {
+  width: 15%;
+}
+.ref-table__loc-th {
+  width: 32%;
 }
 
 .ref-empty {
@@ -277,6 +317,16 @@ onMounted(() => {
 
 .btn-cancel:hover {
   background: #f9fafb;
+}
+
+.btn-save {
+  background: #16a34a;
+  color: #ffffff;
+  border: none;
+}
+
+.btn-save:hover {
+  background: #15803d;
 }
 
 .btn-report {

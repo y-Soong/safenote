@@ -126,18 +126,23 @@ public class DefaultSchGenServiceImpl implements DefaultSchGenService {
                 || !StringUtils.hasText(userCd) || !StringUtils.hasText(newSchCd)) {
             return 0;
         }
-        String today = LocalDate.now().format(YMD);
+        // D3: 당일은 건드리지 않는다. 명일(today+1)부터 당해 12/31 까지만 반영.
+        LocalDate today = LocalDate.now();
+        LocalDate tomorrow = today.plusDays(1);
+        String todayYmd = today.format(YMD);        // updateFutureDefaultSch 의 fromYmd (배타 경계 = 오늘) → WORK_YMD > 오늘 = 명일부터
+        String tomorrowYmd = tomorrow.format(YMD);  // generateForUser 의 생성 시작(포함) = 명일
 
-        // 1) 미래(오늘 이후) 자동생성분만 새 SCH_CD 로 갱신(수동/연차/교대/촉진 보존).
+        // 1) 명일 이후 자동생성분만 새 SCH_CD 로 갱신(수동/연차/교대/촉진 보존).
+        //    WHERE WORK_YMD > fromYmd(=오늘) 이므로 명일부터 갱신되어 generateForUser 시작과 정합한다.
         int updated = defaultSchGenMapper.updateFutureDefaultSch(
-                cmpnyCd, siteCd, userCd, today, newSchCd, SYSTEM_OPERATOR);
+                cmpnyCd, siteCd, userCd, todayYmd, newSchCd, SYSTEM_OPERATOR);
 
-        // 2) 미래 빈 평일에 신규 생성(설정/변경 즉시 트리거 — 오늘~당해 12/31).
-        String toYmd = LocalDate.now().withMonth(12).withDayOfMonth(31).format(YMD);
-        int created = generateForUser(cmpnyCd, siteCd, userCd, newSchCd, today, toYmd);
+        // 2) 명일 빈 평일에 신규 생성(설정/변경 즉시 트리거 — 명일~당해 12/31).
+        String toYmd = today.withMonth(12).withDayOfMonth(31).format(YMD);
+        int created = generateForUser(cmpnyCd, siteCd, userCd, newSchCd, tomorrowYmd, toYmd);
 
-        log.info("기본근무 변경 반영 — cmpnyCd={}, userCd={}, newSchCd={}, 미래갱신 {}일, 신규 {}일",
-                cmpnyCd, userCd, newSchCd, updated, created);
+        log.info("기본근무 변경 반영 — cmpnyCd={}, userCd={}, newSchCd={}, 범위=명일({})~{}, 미래갱신 {}일, 신규 {}일",
+                cmpnyCd, userCd, newSchCd, tomorrowYmd, toYmd, updated, created);
         return updated + created;
     }
 }

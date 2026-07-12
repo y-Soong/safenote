@@ -17,7 +17,17 @@
       <span class="alc-hd__spacer" aria-hidden="true"></span>
     </header>
 
-    <main class="alc-body">
+    <main
+      class="alc-body"
+      ref="scrollRef"
+      @touchstart.passive="onPullStart"
+      @touchmove="onPullMove"
+      @touchend="onPullEnd"
+      @touchcancel="onPullEnd"
+    >
+      <!-- 당겨서 새로고침 인디케이터 — 스크롤 최상단에서 아래로 당기면 노출(공통 컴포저블) -->
+      <PullRefreshIndicator v-bind="indicatorProps" />
+
       <p v-if="isLoading" class="alc-state">불러오는 중...</p>
 
       <div v-else-if="loadError" class="alc-state alc-state--err">
@@ -107,6 +117,8 @@ import { ref, onMounted, getCurrentInstance } from 'vue'
 import { useRouter } from 'vue-router'
 
 import api from '@/api/axios'
+import { usePullToRefresh } from '@/composables/usePullToRefresh'
+import PullRefreshIndicator from '@/components/common/PullRefreshIndicator.vue'
 import { resolveApiErrorMessage } from '@/utils/apiError'
 import { formatYmdDisplay } from '@/utils/approvalFormat'
 
@@ -206,6 +218,12 @@ const onReject = async (req) => {
   }
 }
 
+// ── 당겨서 새로고침 (공통 컴포저블) — 확인 대기 목록을 재조회. 부작용 없는 조회만. ──
+const scrollRef = ref(null)
+const { onPullStart, onPullMove, onPullEnd, indicatorProps } = usePullToRefresh(scrollRef, async () => {
+  await loadRequests()
+})
+
 onMounted(loadRequests)
 </script>
 
@@ -224,7 +242,8 @@ onMounted(loadRequests)
   --space-md: 12px;
   --space-lg: 16px;
 
-  min-height: 100vh;
+  height: 100vh;
+  height: 100dvh;
   background: var(--color-bg);
   color: var(--color-text-primary);
   display: flex;
@@ -267,6 +286,7 @@ onMounted(loadRequests)
 
 .alc-body {
   flex: 1;
+  min-height: 0;
   padding: var(--space-md) var(--space-lg) calc(var(--space-lg) + env(safe-area-inset-bottom));
   overflow-y: auto;
   display: flex;

@@ -1,0 +1,74 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.prafta.common.cmm.leave.mapper.LeaveHourlyResettleMapper">
+
+    <!-- LC-05(F1): 그날 잔존 시간차(02/03/04, CONFIRMED) 사용행 - 시간순 재적용 대상.
+         반차/반반차/종일은 고정요금이라 재정산 비대상(제외).
+         결과 record HourlyLeaveUseRowVO(leaveId, grantId, leaveMinutes, leaveDays, startTime)
+         순서 일치(위치매핑). -->
+    <select id="selectHourlyLeaveRowsOnDate" resultType="com.prafta.common.cmm.leave.vo.HourlyLeaveUseRowVO">
+    /* LeaveHourlyResettleMapper.selectHourlyLeaveRowsOnDate */
+    SELECT
+          U.LEAVE_ID      AS leaveId
+        , U.GRANT_ID      AS grantId
+        , U.LEAVE_MINUTES AS leaveMinutes
+        , U.LEAVE_DAYS    AS leaveDays
+        , U.START_TIME    AS startTime
+      FROM TB_USER_LEAVE_USE U
+     WHERE U.CMPNY_CD      = #{cmpnyCd}
+       AND U.USER_CD       = #{userCd}
+       AND U.START_DATE    = #{workYmd}
+       AND U.USE_UNIT_TYPE IN ('02', '03', '04')
+       AND U.LEAVE_STATUS  = 'CONFIRMED'
+       AND U.DEL_YN        = 'N'
+     ORDER BY U.START_TIME ASC, U.LEAVE_ID ASC
+    </select>
+
+    <!-- LC-05: 재정산 차감 일수 반영. LEAVE_DAYS 만 변경(soft cancel 이력 보존 §8.5.8,
+         생성컬럼 DIRECT_USE_KEY 불변 - plan §8 추가 확정). -->
+    <update id="updateLeaveUseDays">
+    /* LeaveHourlyResettleMapper.updateLeaveUseDays */
+    UPDATE TB_USER_LEAVE_USE
+       SET LEAVE_DAYS  = #{leaveDays}
+         , UPDATE_NO   = #{updateNo}
+         , UPDATE_DATE = NOW()
+     WHERE CMPNY_CD     = #{cmpnyCd}
+       AND LEAVE_ID     = #{leaveId}
+       AND LEAVE_STATUS = 'CONFIRMED'
+       AND DEL_YN       = 'N'
+    </update>
+
+    <!-- USED_DAYS = 해당 부여에 연결된 CONFIRMED 사용 합계
+         (LeaveFlowMapper.recomputeGrantUsedDays 와 동일 SQL - 모듈 관례상 매퍼별 보유) -->
+    <update id="recomputeGrantUsedDays">
+    /* LeaveHourlyResettleMapper.recomputeGrantUsedDays */
+    UPDATE TB_USER_LEAVE_GRANT G
+       SET G.USED_DAYS = IFNULL((
+               SELECT SUM(U.LEAVE_DAYS)
+                 FROM TB_USER_LEAVE_USE U
+                WHERE U.CMPNY_CD     = G.CMPNY_CD
+                  AND U.GRANT_ID     = G.GRANT_ID
+                  AND U.LEAVE_STATUS = 'CONFIRMED'
+                  AND U.DEL_YN       = 'N'
+           ), 0)
+         , G.UPDATE_NO   = #{updateNo}
+         , G.UPDATE_DATE = NOW()
+     WHERE G.CMPNY_CD = #{cmpnyCd}
+       AND G.GRANT_ID = #{grantId}
+    </update>
+
+    <!-- F5 직렬화: 시간차 신청(LC-04)과 같은 leaveDay 키로 상호 배타.
+         세션 단위 → 호출부가 트랜잭션 완료(afterCompletion) 시점에 RELEASE_LOCK
+         (등록 불가 시 finally 폴백 — 보안리뷰 Medium). (LeaveFlowMapper 미러) -->
+
+    <select id="getAdvisoryLock" resultType="java.lang.Integer">
+    /* LeaveHourlyResettleMapper.getAdvisoryLock */
+    SELECT GET_LOCK(#{lockKey}, #{timeoutSec})
+    </select>
+
+    <select id="releaseAdvisoryLock" resultType="java.lang.Integer">
+    /* LeaveHourlyResettleMapper.releaseAdvisoryLock */
+    SELECT RELEASE_LOCK(#{lockKey})
+    </select>
+
+</mapper>

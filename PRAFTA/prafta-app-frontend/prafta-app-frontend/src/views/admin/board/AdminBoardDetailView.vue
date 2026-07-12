@@ -29,7 +29,17 @@
     </header>
 
     <!-- 본문 (스크롤) -->
-    <main class="bd-body">
+    <main
+      class="bd-body"
+      ref="scrollRef"
+      @touchstart.passive="onPullStart"
+      @touchmove="onPullMove"
+      @touchend="onPullEnd"
+      @touchcancel="onPullEnd"
+    >
+      <!-- 당겨서 새로고침 인디케이터 — 스크롤 최상단에서 아래로 당기면 노출(공통 컴포저블) -->
+      <PullRefreshIndicator v-bind="indicatorProps" />
+
       <!-- 로딩 -->
       <div v-if="isLoading" class="bd-loading" aria-live="polite">불러오는 중...</div>
 
@@ -100,6 +110,8 @@ import { ref, computed, onMounted, getCurrentInstance } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 
 import api from '@/api/axios'
+import { usePullToRefresh } from '@/composables/usePullToRefresh'
+import PullRefreshIndicator from '@/components/common/PullRefreshIndicator.vue'
 import { resolveBaseURL } from '@/api/baseUrl'
 
 const router = useRouter()
@@ -184,6 +196,12 @@ const loadDetail = async () => {
   }
 }
 
+// ── 당겨서 새로고침 (공통 컴포저블) — 상세 + 첨부 목록을 재조회. 부작용 없는 조회만. ──
+const scrollRef = ref(null)
+const { onPullStart, onPullMove, onPullEnd, indicatorProps } = usePullToRefresh(scrollRef, async () => {
+  await loadDetail()
+})
+
 onMounted(() => {
   loadDetail()
 })
@@ -203,7 +221,8 @@ onMounted(() => {
   --radius-sm: 6px;
   --radius-md: 10px;
 
-  min-height: 100vh;
+  height: 100vh;
+  height: 100dvh;
   display: flex;
   flex-direction: column;
   background: var(--color-bg);
@@ -249,6 +268,7 @@ onMounted(() => {
 /* 본문 */
 .bd-body {
   flex: 1;
+  min-height: 0;
   overflow-y: auto;
   padding: 16px;
 }

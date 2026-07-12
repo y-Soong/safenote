@@ -115,6 +115,25 @@ public final class AuthRoleUtils {
     }
 
     /**
+     * 사업장(회사 단위 영업장) 생성/수정/종료를 관리할 수 있는 역할인지 판정한다.
+     * (master / hr / safe / system).
+     *
+     * <p>출처: PRAFTA-COM-001-T2(사업장 종료=소속 전원 로그인 차단) 권한 게이트. system 은 운영사
+     * 전역 계정, master/hr/safe 는 개별 고객사 관리자. 사원권한(00001 등)·미부여(99999)는 제외.
+     * 사업장 권한 자동부여 {@code mergeMasterSiteAuthSet}의 관리자 집합(master/hr/safe/system)과 정합.
+     *
+     * <p>⚠️ {@link #isManager(String)}(master/hr)와 의미가 다르다 — isManager 는 OT 대리등록 등
+     * 다른 관리 동작 전용이므로 변경하지 않는다.
+     */
+    public static boolean canManageSite(String authCd) {
+        if (authCd == null || authCd.isEmpty()) return false;
+        return AUTH_MASTER.equals(authCd)
+            || AUTH_HR_MANAGER.equals(authCd)
+            || AUTH_SAFETY_MANAGER.equals(authCd)
+            || AUTH_SYSTEM.equals(authCd);
+    }
+
+    /**
      * 고용형태가 일용직(SYS041 'DAILY')인지 판정한다. JWT 클레임 {@code gv_employmentType}
      * 에서 도출한 값만 신뢰한다(클라 바디 신뢰 금지).
      *

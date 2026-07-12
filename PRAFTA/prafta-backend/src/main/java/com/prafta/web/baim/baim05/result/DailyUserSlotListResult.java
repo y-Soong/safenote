@@ -16,6 +16,8 @@ public record DailyUserSlotListResult(
 	, String mblNo
 	, String slotStatus
 	, String slotStatusNm
+	, String nodeCd
+	, String nodeNm
 ){
-	
+
 }

@@ -261,42 +261,46 @@
                 {{ fnCreditText(row.creditMonths) }}
               </td>
 
-              <td class="is-right ld-grp-legal">{{ row.legal.granted }}일</td>
-              <td class="is-right ld-grp-legal">{{ row.legal.used }}일</td>
+              <td class="is-right ld-grp-legal">
+                {{ fnDays(row.legal.granted) }}
+              </td>
+              <td class="is-right ld-grp-legal">{{ fnDays(row.legal.used) }}</td>
               <td class="is-right ld-grp-legal ld-scheduled">
-                {{ row.legal.scheduled }}일
+                {{ fnDays(row.legal.scheduled) }}
               </td>
               <td class="is-right ld-grp-legal ld-cell-group-end ld-strong">
-                {{ row.legal.remaining }}일
+                {{ fnDays(row.legal.remaining) }}
               </td>
 
               <td class="is-right ld-grp-nonlegal">
-                {{ row.nonLegal.granted }}일
+                {{ fnDays(row.nonLegal.granted) }}
               </td>
               <td class="is-right ld-grp-nonlegal">
-                {{ row.nonLegal.used }}일
+                {{ fnDays(row.nonLegal.used) }}
               </td>
               <td class="is-right ld-grp-nonlegal ld-scheduled">
-                {{ row.nonLegal.scheduled }}일
+                {{ fnDays(row.nonLegal.scheduled) }}
               </td>
               <td class="is-right ld-grp-nonlegal ld-cell-group-end">
-                {{ row.nonLegal.remaining }}일
+                {{ fnDays(row.nonLegal.remaining) }}
               </td>
 
-              <td class="is-right ld-grp-total">{{ row.total.granted }}일</td>
-              <td class="is-right ld-grp-total">{{ row.total.used }}일</td>
+              <td class="is-right ld-grp-total">
+                {{ fnDays(row.total.granted) }}
+              </td>
+              <td class="is-right ld-grp-total">{{ fnDays(row.total.used) }}</td>
               <td class="is-right ld-grp-total ld-scheduled">
-                {{ row.total.scheduled }}일
+                {{ fnDays(row.total.scheduled) }}
               </td>
               <td class="is-right ld-grp-total ld-cell-group-end ld-strong">
-                {{ row.total.remaining }}일
+                {{ fnDays(row.total.remaining) }}
                 <!-- 가불 사용분(prafta-com-011-7, 표시 전용) — 미발생 가불 USED 합이 있으면 잔여 아래 강조 표기 -->
                 <span
                   v-if="fnBorrowedDays(row) > 0"
                   class="ld-borrowed-badge"
                   title="아직 발생하지 않은 미래 연차를 미리 당겨 사용한 분(가불)"
                 >
-                  가불 {{ fnBorrowedDays(row) }}일
+                  가불 {{ fnDays(row.borrowedDays) }}
                 </span>
               </td>
 
@@ -312,7 +316,6 @@
           </tbody>
         </table>
       </div>
-
     </div>
   </div>
 </template>
@@ -324,6 +327,7 @@ import { useModal } from "@/utils/useModal";
 import axios from "@/api/axios";
 import { resolveApiErrorMessage } from "@/utils/apiError";
 import { formatYmdDot } from "@/utils/dateFormat";
+import { formatLeaveDays } from "@/utils/leaveFormat";
 import { getMessage, MSG } from "@/messages";
 import search_icon from "@/assets/img/search_icon.png";
 import ViewHeader from "@/components/common/ViewHeader.vue";
@@ -380,6 +384,10 @@ const list = ref([]);
 
 // 선택된 직원 코드 목록
 const selectedUserCds = ref([]);
+
+// LC-09(§5-B): 1일 환산시간(분) — 목록 응답(convMinutes)에서 채움. 미수신 시 480 폴백.
+//   "N일 H시간 M분" 표기 조립에만 사용(정렬/내부 계산은 원 수치 유지).
+const convMinutes = ref(480);
 
 // 페이지를 넘나들며 로드된 직원 정보 누적(userCd → {hireDate, userNm}).
 // 입사일 기준 부여 시 선택 직원의 입사일 사전 검증에 사용(현재 페이지 밖 선택분도 커버).
@@ -450,6 +458,8 @@ const fnLoad = async () => {
       if (page === 1) {
         metricsData = data.metrics || {};
         total = data.paging?.totalCount ?? 0;
+        // LC-09: 환산시간(회사 공통) — 표기 조립용
+        convMinutes.value = data.convMinutes ?? 480;
       }
 
       const pageList = Array.isArray(data.list) ? data.list : [];
@@ -521,6 +531,7 @@ const fnExcel = () => {
     "법정외잔여",
     "사용률(%)",
   ];
+  // LC-09(§5-B): 일수 컬럼은 화면과 동일하게 "N일 H시간 M분" 표기(소수점 노출 금지)
   const rows = list.value.map((r) => [
     r.userCd,
     r.userNm,
@@ -529,14 +540,14 @@ const fnExcel = () => {
     r.tenureText,
     fnEmploymentLabel(r.employmentType),
     r.creditMonths,
-    r.legal?.granted,
-    r.legal?.used,
-    r.legal?.scheduled,
-    r.legal?.remaining,
-    r.nonLegal?.granted,
-    r.nonLegal?.used,
-    r.nonLegal?.scheduled,
-    r.nonLegal?.remaining,
+    fnDays(r.legal?.granted),
+    fnDays(r.legal?.used),
+    fnDays(r.legal?.scheduled),
+    fnDays(r.legal?.remaining),
+    fnDays(r.nonLegal?.granted),
+    fnDays(r.nonLegal?.used),
+    fnDays(r.nonLegal?.scheduled),
+    fnDays(r.nonLegal?.remaining),
     r.usageRate,
   ]);
   const csvBody = [header, ...rows]
@@ -871,12 +882,11 @@ const fnViewLeavePlan = () => {
 
 // --- 가불 사용분(표시 전용, prafta-com-011-7) ---
 //   borrowedDays = 미발생 가불 GRANT 의 USED 합(BE 산정). 숫자로 정규화해 0 이하면 0 반환.
-//   소수(반차 0.5 등) 표기를 위해 불필요한 끝자리 0은 제거한다(예: 1.0 → 1, 0.50 → 0.5).
+//   LC-09(§5-B): 표기는 fnDays(소수점 노출 금지)로 조립하므로 본 함수는 배지 노출 판정에만 쓴다.
 const fnBorrowedDays = (row) => {
   const n = Number(row?.borrowedDays ?? 0);
   if (!Number.isFinite(n) || n <= 0) return 0;
-  // 정수면 그대로, 소수면 끝자리 0 제거
-  return Number.isInteger(n) ? n : parseFloat(n.toFixed(2));
+  return n;
 };
 
 // --- 고용형태 라벨 ---
@@ -891,6 +901,9 @@ const fnEmploymentLabel = (type) => {
 };
 
 // ================ 내부 유틸 ================
+// LC-09(§5-B): 일수 표기 — 소수점 노출 금지, "N일 H시간 M분"(leaveFormat 단일 출처)
+const fnDays = (v) => formatLeaveDays(v, convMinutes.value);
+
 // YYYYMMDD → "YYYY.MM.DD" 표기. 빈값/형식불충분은 "-".
 const fnFormatDate = (yyyymmdd) => {
   const s = String(yyyymmdd || "");

@@ -185,8 +185,14 @@
             ON  SCH.CMPNY_CD = WP.CMPNY_CD
             AND SCH.SITE_CD  = WP.SITE_CD
             AND SCH.SCH_CD   = WP.WORK_PLAN_CD
+            <!-- 근무일 기준 유효버전(APPLY_DATE<=근무일) 우선, 없으면(근무일보다 늦게 적용 시작된 스케줄을
+                 과거일에 배정한 경우 등) 최이른 적용버전(MIN)으로 폴백 — 배정된 스케줄이 "스케줄 없음"으로
+                 빠지지 않게 한다. -->
             AND SCH.APPLY_DATE = (
-                SELECT MAX(SE.APPLY_DATE)
+                SELECT COALESCE(
+                         MAX(CASE WHEN SE.APPLY_DATE <![CDATA[ <= ]]> WP.WORK_YMD THEN SE.APPLY_DATE END)
+                       , MIN(SE.APPLY_DATE)
+                       )
                 FROM (
                     SELECT M3.CMPNY_CD, M3.SITE_CD, M3.SCH_CD, M3.APPLY_DATE
                     FROM TB_SCH_MGMT M3
@@ -199,7 +205,6 @@
                 WHERE SE.CMPNY_CD    = WP.CMPNY_CD
                   AND SE.SITE_CD     = WP.SITE_CD
                   AND SE.SCH_CD      = WP.WORK_PLAN_CD
-                  AND SE.APPLY_DATE <![CDATA[ <= ]]> WP.WORK_YMD
             )
 
         ORDER BY U.USER_CD, A.WORK_YMD, A.WORK_SEQ

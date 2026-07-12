@@ -22,7 +22,17 @@
     </header>
 
     <!-- 본문 (스크롤 영역) -->
-    <main class="lv-body">
+    <main
+      class="lv-body"
+      ref="scrollRef"
+      @touchstart.passive="onPullStart"
+      @touchmove="onPullMove"
+      @touchend="onPullEnd"
+      @touchcancel="onPullEnd"
+    >
+      <!-- 당겨서 새로고침 인디케이터 — 스크롤 최상단에서 아래로 당기면 노출 -->
+      <PullRefreshIndicator v-bind="indicatorProps" />
+
       <!-- 로딩 -->
       <div v-if="isLoading" class="lv-loading" aria-live="polite">불러오는 중...</div>
 
@@ -31,25 +41,39 @@
         <LeaveGroupToggle v-model="activeGroup" />
 
         <!-- 소멸 임박 콜아웃 (전체 토글 + 노출 조건 충족 + 미닫힘) -->
-        <LeaveExpiryCallout v-if="showCallout" :info="expiringSoon" @close="onCalloutClose" />
+        <LeaveExpiryCallout
+          v-if="showCallout"
+          :info="expiringSoon"
+          :conv-minutes="convMinutes"
+          @close="onCalloutClose"
+        />
 
         <!-- 메인 잔여 카드 -->
-        <LeaveBalanceCard :label="balanceLabel" :group="currentGroup" />
+        <LeaveBalanceCard :label="balanceLabel" :group="currentGroup" :conv-minutes="convMinutes" />
 
         <!-- 3분할 KPI (부여 / 사용 / 사용예정) -->
-        <LeaveSplitKpi :group="currentGroup" />
+        <LeaveSplitKpi :group="currentGroup" :conv-minutes="convMinutes" />
+
+        <!-- LC-11: 시간차 사용분 원본(분) 병기 — 차감 일수 합계와 별개인 서버 합계값 그대로 표시. -->
+        <p v-if="hourlyUsedMinutes > 0" class="lv-hourly-note">
+          시간차 사용 {{ hourlyUsedText }} 포함
+        </p>
 
         <!-- 메타 카드 (입사일 / 근속 / 사용률) -->
         <LeaveMetaCard :user="user" :usage-rate="currentUsageRate" />
 
         <!-- 신청형 휴가 (LEAVE_TYPE='01') — 법정/관리자부여 그룹과 분리된 별도 섹션. 항목 1개 이상일 때만 노출. -->
-        <LeaveAppliedCard v-if="hasAppliedLeave" :types="appliedLeaveTypes" />
+        <LeaveAppliedCard
+          v-if="hasAppliedLeave"
+          :types="appliedLeaveTypes"
+          :conv-minutes="convMinutes"
+        />
 
         <!-- 가불 사용분 (prafta-com-011-5) — 미상계 가불(borrowedDays>0)일 때만 노출. MVP 표시 전용(액션 없음). -->
         <section v-if="hasBorrowed" class="lv-borrow">
           <div class="lv-borrow__row">
             <span class="lv-borrow__lbl">가불 사용</span>
-            <span class="lv-borrow__val">{{ formatDays(borrowedDays) }}일</span>
+            <span class="lv-borrow__val">{{ formatLeaveDays(borrowedDays, convMinutes) }}</span>
           </div>
           <p class="lv-borrow__note">미래 연차에서 상계 예정입니다.</p>
         </section>
@@ -111,6 +135,9 @@ import { ref, computed, onMounted, getCurrentInstance } from 'vue'
 import { useRouter } from 'vue-router'
 
 import api from '@/api/axios'
+import { formatLeaveDays, formatMinutesToHm } from '@/utils/leaveFormat'
+import { usePullToRefresh } from '@/composables/usePullToRefresh'
+import PullRefreshIndicator from '@/components/common/PullRefreshIndicator.vue'
 
 import LeaveGroupToggle from './components/LeaveGroupToggle.vue'
 import LeaveExpiryCallout from './components/LeaveExpiryCallout.vue'
@@ -145,6 +172,10 @@ const expiringSoon = ref(null)
 const appliedLeaveTypes = ref([])
 // 미상계 가불 사용 합계(일) — prafta-com-011-5. 0이면 카드 숨김(MVP 표시 전용).
 const borrowedDays = ref(0)
+// LC-11: 1일 환산시간(분, 서버 권위 — 오늘 기준). "N일 H시간 M분" 조립 분모. 미제공 시 480 폴백.
+const convMinutes = ref(480)
+// LC-11: 시간차(02/03/04) CONFIRMED 사용 분 합계(전 기간) — 원본(분) 병기용. 0이면 미노출.
+const hourlyUsedMinutes = ref(0)
 
 // 그룹 토글 (UI 상태 — 허용 범위). 진입 기본값: 전체
 const activeGroup = ref('TOTAL')
@@ -186,12 +217,8 @@ const showEmptyState = computed(() => !isLoading.value && !groups.value)
 // 가불 사용분 카드 노출: 미상계 가불 > 0 (prafta-com-011-5).
 const hasBorrowed = computed(() => Number(borrowedDays.value) > 0)
 
-// 표시 헬퍼 — 정수면 정수, 소수면 1자리(서버 권위값 그대로 표시).
-const formatDays = (d) => {
-  const n = Number(d)
-  if (Number.isNaN(n)) return '0'
-  return Number.isInteger(n) ? String(n) : n.toFixed(1)
-}
+// LC-11: 시간차 사용분 원본 표기("1시간 30분") — 서버 합계값 그대로, 재계산 없음.
+const hourlyUsedText = computed(() => formatMinutesToHm(hourlyUsedMinutes.value))
 
 // ───────────────────────────────────────────────────────────
 // 이벤트 핸들러
@@ -213,9 +240,11 @@ const onApply = () => {
 }
 
 // ───────────────────────────────────────────────────────────
-// 진입 시 1회 조회 (캐시 없음 — §3.6). 401/403/500 은 axios 인터셉터가 처리, 그 외만 안내.
+// 조회 (캐시 없음 — §3.6). 401/403/500 은 axios 인터셉터가 처리, 그 외만 안내.
+//   showLoading=true: 최초 진입(전체 로딩 표시). false: 당겨서 새로고침(본문 유지).
 // ───────────────────────────────────────────────────────────
-onMounted(async () => {
+const loadSummary = async ({ showLoading = true } = {}) => {
+  if (showLoading) isLoading.value = true
   try {
     const res = await api.get('/appApi/leave01/my-leave-summary')
     user.value = res?.data?.user ?? null
@@ -225,12 +254,25 @@ onMounted(async () => {
       ? res.data.appliedLeaveTypes
       : []
     borrowedDays.value = Number(res?.data?.borrowedDays) || 0
+    // LC-11: 표기 분모/시간차 사용분 — 서버 미제공(구버전 응답) 시 480/0 폴백.
+    convMinutes.value = Number(res?.data?.convMinutes) > 0 ? Number(res.data.convMinutes) : 480
+    hourlyUsedMinutes.value = Number(res?.data?.hourlyUsedMinutes) || 0
   } catch (e) {
     console.error('[MyLeaveSummary] 연차 현황 조회 실패:', e?.message)
     showAlert('연차 정보를 불러오지 못했어요. 잠시 후 다시 시도해 주세요.')
   } finally {
-    isLoading.value = false
+    if (showLoading) isLoading.value = false
   }
+}
+
+// 당겨서 새로고침 — 본문 유지하고 연차 현황만 재조회(부작용 없는 조회).
+const scrollRef = ref(null)
+const { onPullStart, onPullMove, onPullEnd, indicatorProps } = usePullToRefresh(scrollRef, async () => {
+  await loadSummary({ showLoading: false })
+})
+
+onMounted(() => {
+  loadSummary()
 })
 </script>
 
@@ -267,7 +309,8 @@ onMounted(async () => {
   --space-lg: 16px;
 
   position: relative;
-  min-height: 100vh;
+  height: 100vh;
+  height: 100dvh;
   display: flex;
   flex-direction: column;
   background: var(--color-bg);
@@ -315,6 +358,7 @@ onMounted(async () => {
 /* 본문 */
 .lv-body {
   flex: 1;
+  min-height: 0;
   overflow-y: auto;
   padding: var(--space-lg) var(--space-lg) 88px;
   display: flex;
@@ -334,6 +378,15 @@ onMounted(async () => {
   text-align: center;
   font-size: 13px;
   color: var(--color-text-tertiary);
+}
+
+/* LC-11: 시간차 사용분 원본(분) 병기 — KPI 아래 보조 안내(표시 전용). */
+.lv-hourly-note {
+  margin: calc(-1 * var(--space-sm)) 0 0;
+  padding: 0 var(--space-xs);
+  font-size: 12px;
+  color: var(--color-text-tertiary);
+  font-variant-numeric: tabular-nums;
 }
 
 /* 가불 사용분 카드 (prafta-com-011-5) — 표시 전용. 메타카드/경고 톤 재사용(CSS 변수만). */

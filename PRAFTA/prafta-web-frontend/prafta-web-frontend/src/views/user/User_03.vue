@@ -63,15 +63,12 @@
                   @sort="userOnSort"
                   @update:width="userOnResize"
                 />
-                <ThSortable
-                  label="전화번호"
-                  col-key="mblNo"
-                  :sort-key="userSortKey"
-                  :sort-order="userSortOrder"
-                  :width="userColWidths.mblNo"
-                  @sort="userOnSort"
-                  @update:width="userOnResize"
-                />
+                <th
+                  class="editableCell"
+                  style="text-align: center; width: 120px"
+                >
+                  사용자 권한
+                </th>
               </tr>
             </thead>
             <tbody>
@@ -80,7 +77,7 @@
                 <td @dblclick="fnSiteInfoSearch(user)">{{ user.userId }}</td>
                 <td @dblclick="fnSiteInfoSearch(user)">{{ user.userNm }}</td>
                 <td @dblclick="fnSiteInfoSearch(user)">
-                  {{ proxy.$util.formatPhoneNumber(user.mblNo) }}
+                  {{ fnAuthLabel(user.authCd) }}
                 </td>
               </tr>
             </tbody>
@@ -342,6 +339,7 @@ const { colWidths: unallocColWidths, onResize: unallocOnResize } = useColumnResi
 const { sortKey: allocSortKey, sortOrder: allocSortOrder, sortedData: allocSortedData, onSort: allocOnSort } = useTableSort(siteAllocList);
 const { colWidths: allocColWidths, onResize: allocOnResize } = useColumnResize({ siteNo: 110, siteNm: 120, addr: 200, telNo: 130 });
 const systCodeArr = ref({});
+const baseInfoArr = ref({});
 const localButtons = ref({ ...props.buttons });
 const userId = ref('');
 const userNm = ref('');
@@ -359,6 +357,7 @@ const { proxy } = getCurrentInstance();
 onMounted(async () => {
   fnButtonControll();
   await fnGetSystinfoList();
+  await fnGetBaseinfoList();
   await fnSearch();
 });
 
@@ -392,6 +391,44 @@ const fnGetSystinfoList = async () => {
   }
 };
 
+// 사용자 권한 코드(COM005) 로드 - 사용자 리스트의 "사용자 권한" 컬럼 라벨 매핑용
+const fnGetBaseinfoList = async () => {
+  try {
+    const response = await axios.get("/comApi/baseinfo/base-info-lists", {
+      params: {
+        cmpnyCd: sessionStorage.getItem("gv_cmpnyCd"),
+        baseCodeList: ["COM005"],
+      },
+    });
+
+    if (response.status === 200) {
+      const resData = response.data?.baseInfoList || [];
+
+      const grouped = {};
+      resData.forEach((item) => {
+        const key = item.baimValCd;
+        if (item.baimValDCd == null) return;
+        if (!grouped[key]) {
+          grouped[key] = [];
+        }
+        grouped[key].push(item);
+      });
+      baseInfoArr.value = grouped;
+    }
+  } catch (err) {
+    const msg = resolveApiErrorMessage(err, "조회 중 오류가 발생했습니다.");
+
+    await proxy.$alert(msg);
+  }
+};
+
+// authCd 값을 권한명으로 변환 (미매칭 시 원본 코드 반환)
+const fnAuthLabel = (authCd) => {
+  const list = baseInfoArr.value["COM005"] || [];
+  const found = list.find((o) => o.baimValDCd === authCd);
+  return found ? found.baimValDNm : authCd || "";
+};
+
 const fnSearch = async () => {
   try {
     const response = await axios.get("/webApi/user01/user-info-lists", {
@@ -402,7 +439,33 @@ const fnSearch = async () => {
     });
 
     if (response.status === 200) {
-      userActList.value = response.data.userInfoList;
+      const list = response.data.userInfoList || [];
+      // 기본 정렬: 사용자 권한(authCd) → 사용자 ID(userId).
+      //   권한 우선순위 = master > hr > safe > 이후엔 번호(숫자 코드) 낮은 순.
+      //   숫자가 아닌 미지정 권한(예: system)은 맨 뒤로 보낸다.
+      //   헤더 클릭 정렬(useTableSort) 전 기본 노출 순서를 결정한다.
+      const authRank = (authCd) => {
+        const c = String(authCd ?? "").trim();
+        if (c === "master") return [0, 0];
+        if (c === "hr") return [1, 0];
+        if (c === "safe") return [2, 0];
+        const n = Number(c);
+        if (c !== "" && !Number.isNaN(n)) return [3, n]; // 숫자 코드: 낮은 번호 우선
+        return [4, 0]; // 비숫자 미지정 권한은 마지막
+      };
+      const cmp = (x, y) =>
+        String(x ?? "").localeCompare(String(y ?? ""), "ko", {
+          numeric: true,
+          sensitivity: "base",
+        });
+      list.sort((a, b) => {
+        const ra = authRank(a.authCd);
+        const rb = authRank(b.authCd);
+        if (ra[0] !== rb[0]) return ra[0] - rb[0];
+        if (ra[1] !== rb[1]) return ra[1] - rb[1];
+        return cmp(a.userId, b.userId);
+      });
+      userActList.value = list;
     }
   } catch (err) {
     const msg = resolveApiErrorMessage(err, "조회 중 오류가 발생했습니다.");

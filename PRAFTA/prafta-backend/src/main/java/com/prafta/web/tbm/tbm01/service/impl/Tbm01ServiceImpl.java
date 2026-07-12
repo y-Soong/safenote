@@ -1,10 +1,14 @@
 package com.prafta.web.tbm.tbm01.service.impl;
 
 import java.util.Base64;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
 
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 import org.springframework.util.StringUtils;
 import org.springframework.web.multipart.MultipartFile;
 
@@ -18,12 +22,15 @@ import com.prafta.common.error.tbm.TbmErrorCode;
 import com.prafta.common.exception.ApiException;
 import com.prafta.common.security.FileUrlSigner;
 import com.prafta.common.util.AuthRoleUtils;
+import com.prafta.web.tbm.tbm01.application.command.TbmEduAiAnalyzeCommand;
 import com.prafta.web.tbm.tbm01.application.command.TbmEduInfoCommand;
 import com.prafta.web.tbm.tbm01.application.command.TbmEduItemCommand;
 import com.prafta.web.tbm.tbm01.application.command.TbmEduItemInfoCommand;
+import com.prafta.web.tbm.tbm01.application.model.TbmEduAiAnalyzeItemModel;
 import com.prafta.web.tbm.tbm01.application.model.TbmEduItemInfoModel;
 import com.prafta.web.tbm.tbm01.application.model.TbmEduItemModel;
 import com.prafta.web.tbm.tbm01.application.model.TbmEduMtrlModel;
+import com.prafta.web.tbm.tbm01.application.param.TbmEduAiAnalyzeParam;
 import com.prafta.web.tbm.tbm01.application.param.TbmEduDetailParam;
 import com.prafta.web.tbm.tbm01.application.param.TbmEduInfoListParam;
 import com.prafta.web.tbm.tbm01.application.param.TbmEduInfoParam;
@@ -42,6 +49,7 @@ import com.prafta.web.tbm.tbm01.result.TbmEduInfoResult;
 import com.prafta.web.tbm.tbm01.result.TbmEduItemInfoResult;
 import com.prafta.web.tbm.tbm01.result.TbmEduUsedSessionResult;
 import com.prafta.web.tbm.tbm01.service.Tbm01Service;
+import com.prafta.web.tbm.tbmai01.service.TbmAi01Service;
 
 import java.util.Collections;
 
@@ -56,6 +64,7 @@ public class Tbm01ServiceImpl implements Tbm01Service{
 	private final FileService fileService;
     private final FileMapper fileMapper;
     private final FileUrlSigner fileUrlSigner;   // 파일 서빙 서명 URL 발급(공통 인프라)
+    private final TbmAi01Service tbmAi01Service;  // 저장 후 AI 자동 큐잉(best-effort, 커밋 이후 트리거)
 
 	public TbmEduInfoListResponse selectTbmEduInfo(TbmEduInfoListParam param) {
 		// prafta-033-A: 999999(권한 미부여)는 콘텐츠 화면 진입 차단(서버에서도 거부)
@@ -163,13 +172,25 @@ public class Tbm01ServiceImpl implements Tbm01Service{
 			}
 		}
 
+		// AI 자동 큐잉을 위해 확정 mtrlCd 를 try 밖으로 보존(신규는 채번값, 수정은 param 값).
+		String mtrlCd = "";
 		try {
-			String mtrlCd = "";
 			String fileMgmtCd = "";
 
 			if(param.mtrlCd().isEmpty()) {
 				mtrlCd = tbm01Mapper.selectMtrlCd(param.gvCmpnyCd());
 			} else {
+				// 회사 스코프(IDOR 방어): 수정 모드에 공급된 mtrlCd 가 자기 회사 소유인지 검증.
+				// 미검증 시 타 회사 MTRL_CD 로 마스터(제목/내용) 및 세부항목을 UPSERT(덮어쓰기/추가) 가능.
+				if (tbm01Mapper.countOwnedMtrl(param.mtrlCd(), param.gvCmpnyCd()) == 0) {
+					log.warn("TBM 콘텐츠 저장 - 타 회사/미존재 mtrlCd 차단 - mtrlCd={}", param.mtrlCd());
+					throw new ApiException(TbmErrorCode.TBM_404_040);
+				}
+				// T5-2: 이미 TBM 세션에서 사용(취소 외)된 교육자료는 수정 불가
+				if (tbm01Mapper.selectTbmEduLockingSessionCnt(param.mtrlCd(), param.gvCmpnyCd()) > 0) {
+					log.warn("TBM 콘텐츠 저장 - 사용 중 교육자료 수정 차단 - mtrlCd={}", param.mtrlCd());
+					throw new ApiException(TbmErrorCode.TBM_409_055);
+				}
 				mtrlCd = param.mtrlCd();
 			}
 
@@ -207,11 +228,24 @@ public class Tbm01ServiceImpl implements Tbm01Service{
 				}
 				
 				String mtrlItemCd;
-				
+
 				if(model.mtrlItemCd() == null) {
 					mtrlItemCd = tbm01Mapper.selectMtrlItemCd(param.gvCmpnyCd());
 				} else {
 					mtrlItemCd = model.mtrlItemCd();
+				}
+
+				// [High] 항목 소유 검증(IDOR 방어): 기존 항목 수정(mtrlItemCd 제공) 시,
+				// 서버에서 해당 항목의 부모 교육자료(MTRL_CD)를 도출해 현재 저장 중인 mtrlCd 와 일치하는지 확인.
+				// null(타 회사/미존재)이거나 불일치면 거부. 미검증 시 타 회사 항목 행을 mergeTbmEduItemInfo(UPSERT)로 덮어쓸 수 있음.
+				// 신규 항목(mtrlItemCd 빈값)은 스킵(정상 INSERT). 성능: 항목당 1회.
+				if (StringUtils.hasText(model.mtrlItemCd())) {
+					String ownerMtrlCd = tbm01Mapper.selectMtrlCdByItemCd(model.mtrlItemCd(), param.gvCmpnyCd());
+					if (ownerMtrlCd == null || ownerMtrlCd.isEmpty() || !ownerMtrlCd.equals(mtrlCd)) {
+						log.warn("TBM 세부항목 저장 - 타 회사/미존재/부모불일치 항목 차단 - mtrlItemCd={}, ownerMtrlCd={}, mtrlCd={}",
+								model.mtrlItemCd(), ownerMtrlCd, mtrlCd);
+						throw new ApiException(TbmErrorCode.TBM_404_040);
+					}
 				}
 
 				TbmEduItemInfoCommand command = TbmEduItemInfoCommand.from(model, param, mtrlItemCd, mtrlCd, fileMgmtCd);
@@ -224,6 +258,32 @@ public class Tbm01ServiceImpl implements Tbm01Service{
 		} catch (Exception e) {
 			log.error("TBM 콘텐츠 저장 중 오류", e);
 			throw new ApiException(CommonErrorCode.COMMON_500_001);
+		}
+
+		// 저장 성공 → 커밋 이후 AI 자동 큐잉(best-effort). 커밋 전 트리거 시 러너가 방금 저장한
+		// 항목/AI_ANALYZE_YN 을 못 보므로 반드시 afterCommit 에서 실행한다.
+		registerAiEnqueueAfterCommit(mtrlCd, param.gvCmpnyCd(), param.gvUserCd(), param.gvAuthCd());
+	}
+
+	/**
+	 * 트랜잭션 커밋 이후에 AI 자동 큐잉을 트리거한다(best-effort).
+	 * <p>동기화가 활성이면 {@link TransactionSynchronization#afterCommit()} 로 등록하고,
+	 *    비활성(트랜잭션 없음)이면 즉시 호출로 폴백한다. enqueueOnSave 자체가 예외를 삼키므로
+	 *    저장 흐름에는 영향이 없다.
+	 */
+	private void registerAiEnqueueAfterCommit(String mtrlCd, String cmpnyCd, String userCd, String authCd) {
+		if (!StringUtils.hasText(mtrlCd) || !StringUtils.hasText(cmpnyCd)) {
+			return;
+		}
+		if (TransactionSynchronizationManager.isSynchronizationActive()) {
+			TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+				@Override
+				public void afterCommit() {
+					tbmAi01Service.enqueueOnSave(mtrlCd, cmpnyCd, userCd, authCd);
+				}
+			});
+		} else {
+			tbmAi01Service.enqueueOnSave(mtrlCd, cmpnyCd, userCd, authCd);
 		}
 	}
 
@@ -253,11 +313,29 @@ public class Tbm01ServiceImpl implements Tbm01Service{
 	}
 	
 	public void deleteTbmEduItemInfo(TbmEduItemParam param) {
-		
+
 		if(param != null && param.tbmEduItemModelList().size() > 0) {
+			// T5-2: 삭제 대상 항목별로 소속 교육자료(MTRL_CD)를 서버 도출해 IDOR/사용 중 잠금 검증.
+			// 동일 교육자료의 중복 카운트 조회를 줄이기 위해 distinct(Set)로 1회만 검사.
+			Set<String> checkedMtrlCds = new HashSet<>();
 			for(TbmEduItemModel model : param.tbmEduItemModelList()) {
-				
-				tbm01Mapper.deleteTbmEduItemInfo(TbmEduItemCommand.from(model));
+				String parentMtrlCd = tbm01Mapper.selectMtrlCdByItemCd(model.mtrlItemCd(), param.gvCmpnyCd());
+				// IDOR 방어: 타 회사/미존재 항목이면 도출 결과 없음
+				if (parentMtrlCd == null || parentMtrlCd.isEmpty()) {
+					log.warn("TBM 세부항목 삭제 - 타 회사/미존재 항목 차단 - mtrlItemCd={}", model.mtrlItemCd());
+					throw new ApiException(TbmErrorCode.TBM_404_040);
+				}
+				// 사용 중(취소 외 세션 참조) 교육자료의 항목은 삭제 불가
+				if (checkedMtrlCds.add(parentMtrlCd)
+						&& tbm01Mapper.selectTbmEduLockingSessionCnt(parentMtrlCd, param.gvCmpnyCd()) > 0) {
+					log.warn("TBM 세부항목 삭제 - 사용 중 교육자료 삭제 차단 - mtrlCd={}", parentMtrlCd);
+					throw new ApiException(TbmErrorCode.TBM_409_055);
+				}
+			}
+
+			for(TbmEduItemModel model : param.tbmEduItemModelList()) {
+
+				tbm01Mapper.deleteTbmEduItemInfo(TbmEduItemCommand.from(model, param.gvCmpnyCd()));
 			}
 		}
 	}
@@ -266,19 +344,111 @@ public class Tbm01ServiceImpl implements Tbm01Service{
 
 		if(param != null && param.tbmEduMtrlModelList().size() > 0) {
 			for(TbmEduMtrlModel model : param.tbmEduMtrlModelList()) {
-				
+
+				// 회사 스코프(IDOR 방어): 수정 모드(mtrlCd 보유)에 공급된 mtrlCd 가 자기 회사 소유인지 검증.
+				// 미검증 시 타 회사 MTRL_CD 로 마스터(제목/내용/사용여부)를 UPSERT(덮어쓰기) 가능.
+				if (model.mtrlCd() != null && !model.mtrlCd().isEmpty()) {
+					if (tbm01Mapper.countOwnedMtrl(model.mtrlCd(), model.gvCmpnyCd()) == 0) {
+						log.warn("TBM 교육자료 그리드 저장 - 타 회사/미존재 mtrlCd 차단 - mtrlCd={}", model.mtrlCd());
+						throw new ApiException(TbmErrorCode.TBM_404_040);
+					}
+					// T5-2: 그리드 인라인 저장(기존 자료 수정)도 사용 중(취소 외 세션 참조)이면 차단
+					if (tbm01Mapper.selectTbmEduLockingSessionCnt(model.mtrlCd(), model.gvCmpnyCd()) > 0) {
+						log.warn("TBM 교육자료 그리드 저장 - 사용 중 교육자료 수정 차단 - mtrlCd={}", model.mtrlCd());
+						throw new ApiException(TbmErrorCode.TBM_409_055);
+					}
+				}
+
 				tbm01Mapper.mergeTbmEduInfo(TbmEduInfoCommand.from(model));
 			}
 		}
 	}
-	
+
 	public void deleteTbmEdu(TbmEduMtrlInfoParam param) {
-		
+
 		if(param != null && param.tbmEduMtrlModelList().size() > 0) {
+			// T5-2: 그리드 인라인 삭제 경로에도 IDOR/사용 중 잠금 가드 적용(기존엔 둘 다 부재).
+			// 동일 자료 중복 카운트 조회를 줄이기 위해 distinct(Set)로 1회만 검사.
+			Set<String> checkedMtrlCds = new HashSet<>();
 			for(TbmEduMtrlModel model : param.tbmEduMtrlModelList()) {
-				
+				if (model.mtrlCd() != null && !model.mtrlCd().isEmpty()
+						&& checkedMtrlCds.add(model.mtrlCd())) {
+					// 회사 스코프(IDOR 방어): 공급된 mtrlCd 가 자기 회사 소유인지 검증
+					if (tbm01Mapper.countOwnedMtrl(model.mtrlCd(), model.gvCmpnyCd()) == 0) {
+						log.warn("TBM 교육자료 그리드 삭제 - 타 회사/미존재 mtrlCd 차단 - mtrlCd={}", model.mtrlCd());
+						throw new ApiException(TbmErrorCode.TBM_404_040);
+					}
+					// 사용 중(취소 외 세션 참조) 자료 삭제 차단(FK 위반/세션콘텐츠 고아 방지)
+					if (tbm01Mapper.selectTbmEduLockingSessionCnt(model.mtrlCd(), model.gvCmpnyCd()) > 0) {
+						log.warn("TBM 교육자료 그리드 삭제 - 사용 중 교육자료 삭제 차단 - mtrlCd={}", model.mtrlCd());
+						throw new ApiException(TbmErrorCode.TBM_409_055);
+					}
+				}
+			}
+
+			for(TbmEduMtrlModel model : param.tbmEduMtrlModelList()) {
+
 				tbm01Mapper.deleteTbmEduInfo(TbmEduInfoCommand.from(model));
 			}
 		}
+	}
+
+	/**
+	 * 사용 중(잠긴) 교육자료의 세부항목 AI 분석 지정(AI_ANALYZE_YN)만 갱신.
+	 * <p>교육자료는 두고두고 재사용되므로, TBM 세션에 사용되어 내용 수정이 잠긴 경우에도
+	 * 나중에 AI 분석 대상으로 지정/해제할 수 있어야 한다. 따라서 이 경로만은 잠금(TBM_409_055)
+	 * 검증을 생략한다. 대신 권한/회사 스코프(IDOR) 검증은 저장 경로와 동일하게 유지한다.
+	 */
+	@Transactional
+	public void updateTbmEduItemAiAnalyze(TbmEduAiAnalyzeParam param) {
+		// 권한 미부여(999999)는 차단
+		if (AuthRoleUtils.isAccessDenied(param.gvAuthCd())) {
+			log.warn("TBM AI 분석 지정 저장 접근 차단 - authCd={}", param.gvAuthCd());
+			throw new ApiException(TbmErrorCode.TBM_403_001);
+		}
+
+		// 소속 교육자료 필수
+		if (param.mtrlCd() == null || param.mtrlCd().isEmpty()) {
+			throw new ApiException(CommonErrorCode.COMMON_400_001);
+		}
+
+		// 회사 스코프(IDOR 방어): 공급된 mtrlCd 가 자기 회사 소유인지 검증
+		if (tbm01Mapper.countOwnedMtrl(param.mtrlCd(), param.gvCmpnyCd()) == 0) {
+			log.warn("TBM AI 분석 지정 저장 - 타 회사/미존재 mtrlCd 차단 - mtrlCd={}", param.mtrlCd());
+			throw new ApiException(TbmErrorCode.TBM_404_040);
+		}
+
+		if (param.itemList() == null || param.itemList().isEmpty()) {
+			return;
+		}
+
+		for (TbmEduAiAnalyzeItemModel model : param.itemList()) {
+			// 항목 코드 필수(신규 미저장 행은 이 경로 대상 아님)
+			if (model.mtrlItemCd() == null || model.mtrlItemCd().isEmpty()) {
+				log.warn("TBM AI 분석 지정 저장 - 항목 코드 누락 행 스킵");
+				continue;
+			}
+
+			// AI_ANALYZE_YN allow-list('Y'/'N')만 허용
+			String aiYn = model.aiAnalyzeYn();
+			if (!"Y".equals(aiYn) && !"N".equals(aiYn)) {
+				log.warn("TBM AI 분석 지정 값 부적합 - aiAnalyzeYn={}", aiYn);
+				throw new ApiException(CommonErrorCode.COMMON_400_002);
+			}
+
+			// 항목 소유/부모 매칭 검증(IDOR 방어): 항목의 부모 교육자료가 요청 mtrlCd 와 일치해야 함
+			String ownerMtrlCd = tbm01Mapper.selectMtrlCdByItemCd(model.mtrlItemCd(), param.gvCmpnyCd());
+			if (ownerMtrlCd == null || ownerMtrlCd.isEmpty() || !ownerMtrlCd.equals(param.mtrlCd())) {
+				log.warn("TBM AI 분석 지정 저장 - 타 회사/미존재/부모불일치 항목 차단 - mtrlItemCd={}, ownerMtrlCd={}, mtrlCd={}",
+						model.mtrlItemCd(), ownerMtrlCd, param.mtrlCd());
+				throw new ApiException(TbmErrorCode.TBM_404_040);
+			}
+
+			tbm01Mapper.updateTbmEduItemAiAnalyze(
+					TbmEduAiAnalyzeCommand.from(model, param.gvUserCd(), param.gvCmpnyCd()));
+		}
+
+		// AI 분석 지정(Y/N) 변경 반영 후 커밋 이후 자동 큐잉(신규 Y 지정 항목 재큐잉).
+		registerAiEnqueueAfterCommit(param.mtrlCd(), param.gvCmpnyCd(), param.gvUserCd(), param.gvAuthCd());
 	}
 }

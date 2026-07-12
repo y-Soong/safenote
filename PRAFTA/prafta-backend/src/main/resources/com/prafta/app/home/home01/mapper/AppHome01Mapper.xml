@@ -111,8 +111,11 @@
       AND P.USER_CD = #{ param.userCd }
       AND P.WORK_YMD = #{ param.todayYmd }
       AND S.USE_YN = 'Y'
-      AND S.APPLY_DATE &lt;= #{ param.todayYmd }
-    ORDER BY S.APPLY_DATE DESC
+    <!-- 근무일 기준 유효버전(APPLY_DATE<=근무일) 우선, 없으면(근무일보다 늦게 적용 시작된 스케줄을
+         배정한 경우) 최이른 적용버전으로 폴백 — 배정된 스케줄이 "스케줄 없음"으로 빠지지 않게 한다. -->
+    ORDER BY (S.APPLY_DATE &lt;= #{ param.todayYmd }) DESC
+           , CASE WHEN S.APPLY_DATE &lt;= #{ param.todayYmd } THEN S.APPLY_DATE END DESC
+           , S.APPLY_DATE ASC
     LIMIT 1
     </select>
 
@@ -163,8 +166,10 @@
       AND P.USER_CD = #{ param.userCd }
       AND P.WORK_YMD = #{ prevYmd }
       AND S.USE_YN = 'Y'
-      AND S.APPLY_DATE &lt;= #{ prevYmd }
-    ORDER BY S.APPLY_DATE DESC
+    <!-- 근무일 기준 유효버전 우선, 없으면 최이른 적용버전으로 폴백(selectTodaySchedule 와 동일 규칙). -->
+    ORDER BY (S.APPLY_DATE &lt;= #{ prevYmd }) DESC
+           , CASE WHEN S.APPLY_DATE &lt;= #{ prevYmd } THEN S.APPLY_DATE END DESC
+           , S.APPLY_DATE ASC
     LIMIT 1
     </select>
 

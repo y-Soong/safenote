@@ -36,12 +36,16 @@
           <div class="form-left">
             <label>사용자유형</label>
             <BaseSelect v-model="userTypeCd">
-              <option value="">— 전체 —</option>
+              <option value="">전체</option>
               <option value="REGULAR">정규</option>
               <option value="DAILY">일용</option>
             </BaseSelect>
-            <label>이름</label>
-            <input v-model.trim="userNm" @keyup.enter="fnSearch" />
+            <label class="label-gap">사용자정보</label>
+            <input
+              v-model.trim="userNm"
+              placeholder="이름 또는 ID"
+              @keyup.enter="fnSearch"
+            />
           </div>
           <div class="btn-group">
             <button class="btn btn-primary" @click="fnSearch">조회</button>
@@ -55,16 +59,17 @@
               <thead>
                 <tr>
                   <th>유형</th>
+                  <th>아이디</th>
                   <th>이름</th>
                   <th>휴대폰</th>
-                  <th>소속</th>
                   <th>사업장</th>
+                  <th>소속</th>
                 </tr>
               </thead>
               <tbody>
                 <template v-if="!rows || rows.length === 0">
                   <tr>
-                    <td colspan="5" class="edu-grid-empty">
+                    <td colspan="6" class="edu-grid-empty">
                       조회된 재해자가 없습니다.
                     </td>
                   </tr>
@@ -77,10 +82,13 @@
                     style="cursor: pointer"
                   >
                     <td>{{ item.userTypeNm || item.userTypeCd }}</td>
+                    <td>{{ item.userId }}</td>
                     <td>{{ item.userNm }}</td>
-                    <td>{{ item.mblNoLast4 ? "****" + item.mblNoLast4 : "-" }}</td>
-                    <td>{{ item.nodeNm || "-" }}</td>
+                    <td>
+                      {{ item.mblNoLast4 ? "****" + item.mblNoLast4 : "-" }}
+                    </td>
                     <td>{{ item.siteNm || "-" }}</td>
+                    <td>{{ item.nodeNm || "-" }}</td>
                   </tr>
                 </template>
               </tbody>
@@ -155,3 +163,23 @@ const fnSelectRow = (item) => {
   emit("close");
 };
 </script>
+
+<style scoped>
+/* 사용자유형 셀렉트가 BaseSelect 인라인 width:100% 때문에
+   한 줄을 차지해 라벨 아래로 떨어지는 것을 방지(라벨과 같은 행 정렬) */
+.viewSearch .form-left {
+  align-items: center;
+}
+.viewSearch .form-left :deep(select) {
+  width: 130px !important;
+}
+/* "사용자정보" 라벨을 앞 셀렉트와 조건 단위로 띄움(Acct_01 조건 간격 2rem 수준).
+   .form-left gap 1rem + margin-left 1rem = 2rem */
+.viewSearch .form-left .label-gap {
+  margin-left: 1rem;
+}
+/* 사용자정보 입력칸을 기본(120px)보다 길게 */
+.viewSearch .form-left input {
+  width: 200px;
+}
+</style>

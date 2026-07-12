@@ -137,7 +137,8 @@
       <!-- 근무일(P.WORK_YMD) 기준 유효 스케줄(effective-dating).
            현재본 + 이력본 UNION 후 APPLY_DATE <![CDATA[ <= ]]> WORK_YMD 인 최신 버전. attd07/attd11 동일 패턴.
            OT 겹침 검증 기준 시각을 현재본(미래 적용분 포함)으로 잘못 비교하던 문제 수정.
-           유효 버전이 없으면(=근무일이 생성일 이전) 0행 → Service 에서 OT 전량 허용(기존 INNER 면제 시맨틱 유지). -->
+           근무일 기준 유효버전이 없으면(=근무일이 최이른 적용일 이전) 최이른 적용버전으로 폴백(COALESCE).
+           SCH_CD 자체가 없으면(LEAVE_CD/NULL/미존재) 여전히 0행 → Service 에서 OT 전량 허용(INNER 면제 시맨틱 유지). -->
       INNER JOIN (
             SELECT
                   E.CMPNY_CD, E.SITE_CD, E.SCH_CD, E.APPLY_DATE
@@ -177,7 +178,11 @@
         AND S.SITE_CD  = P.SITE_CD
         AND S.SCH_CD   = P.WORK_PLAN_CD
         AND S.APPLY_DATE = (
-                SELECT MAX(SE.APPLY_DATE)
+                <!-- 근무일 기준 유효버전이 없으면 최이른 적용버전으로 폴백(COALESCE) -->
+                SELECT COALESCE(
+                         MAX(CASE WHEN SE.APPLY_DATE <![CDATA[ <= ]]> P.WORK_YMD THEN SE.APPLY_DATE END)
+                       , MIN(SE.APPLY_DATE)
+                       )
                 FROM (
                     SELECT M3.CMPNY_CD, M3.SITE_CD, M3.SCH_CD, M3.APPLY_DATE
                     FROM TB_SCH_MGMT M3 WHERE M3.USE_YN = 'Y'
@@ -188,7 +193,6 @@
                 WHERE SE.CMPNY_CD    = P.CMPNY_CD
                   AND SE.SITE_CD     = P.SITE_CD
                   AND SE.SCH_CD      = P.WORK_PLAN_CD
-                  AND SE.APPLY_DATE <![CDATA[ <= ]]> P.WORK_YMD
         )
      WHERE P.CMPNY_CD = #{cmpnyCd}
        AND P.SITE_CD  = #{siteCd}
@@ -214,9 +218,11 @@
        AND A.DEL_YN     = 'N'
     </select>
 
-    <!-- ============ PRAFTA-APP-022 룰A1(prafta-app-017 이슈② 확장): 활성 스케줄수정 요청 카운트(그날 전체) ============
-         REQ_TYPE='10' AND REQ_STATUS IN ('01','02')(대기+승인) AND DEL_YN='N'.
-         (확정 결정 1: 승인분도 충돌 범위에 포함.) 결과 > 0 이면 그날 모든 구간 OT 거부(ATTD_400_106). -->
+    <!-- ============ PRAFTA-APP-022 룰A1(prafta-app-017 이슈② 확장): 미처리 스케줄수정 요청 카운트(그날 전체) ============
+         REQ_TYPE='10' AND REQ_STATUS='01'(대기) AND DEL_YN='N'.
+         (2026-06-21 정책정정: 기존 IN('01','02')에서 승인분 제외 → 대기만 충돌로 본다.
+          상호배제는 "둘 다 미처리로 떠 있는 동안"만 의미가 있다. 스케줄수정이 승인(02)/반려(03)/취소(04)로
+          처리 완료되면 더는 OT 신청을 막지 않는다.) 결과 > 0 이면 그날 모든 구간 OT 거부(ATTD_400_106). -->
     <select id="countActiveSchedModify" resultType="int">
     /* AppReq07Mapper.countActiveSchedModify */
     SELECT COUNT(1)
@@ -226,12 +232,14 @@
        AND A.USER_CD    = #{userCd}
        AND A.WORK_YMD   = #{workYmd}
        AND A.REQ_TYPE   = '10'
-       AND A.REQ_STATUS IN ('01', '02')
+       AND A.REQ_STATUS = '01'
        AND A.DEL_YN     = 'N'
     </select>
 
-    <!-- ============ PRAFTA-APP-022 룰A2/A3: 활성 초과근무 요청 카운트(그날 전체, WORK_SEQ 무관) ============
-         REQ_TYPE IN ('03','04')(생성/수정) AND REQ_STATUS IN ('01','02')(대기+승인) AND DEL_YN='N'.
+    <!-- ============ PRAFTA-APP-022 룰A2/A3: 미처리 초과근무 요청 카운트(그날 전체, WORK_SEQ 무관) ============
+         REQ_TYPE IN ('03','04')(생성/수정) AND REQ_STATUS='01'(대기) AND DEL_YN='N'.
+         (2026-06-21 정책정정: 기존 IN('01','02')에서 승인분 제외 → 대기만 충돌로 본다.
+          OT가 승인(02)/반려(03)/취소(04)로 처리 완료되면 더는 스케줄수정을 막지 않는다.)
          결과 > 0 이면 스케줄수정 거부(ATTD_400_107). 식별값은 JWT 도출값만 사용(IDOR). -->
     <select id="countActiveOvertimeReq" resultType="int">
     /* AppReq07Mapper.countActiveOvertimeReq */
@@ -242,7 +250,7 @@
        AND A.USER_CD    = #{userCd}
        AND A.WORK_YMD   = #{workYmd}
        AND A.REQ_TYPE   IN ('03', '04')
-       AND A.REQ_STATUS IN ('01', '02')
+       AND A.REQ_STATUS = '01'
        AND A.DEL_YN     = 'N'
     </select>
 
@@ -345,6 +353,42 @@
        AND A.END_DATE   IS NOT NULL
        AND A.END_TIME   IS NOT NULL
      ORDER BY A.START_DATE ASC, A.START_TIME ASC
+    </select>
+
+    <!-- 근태 보정으로 정해질 새 실근무 구간 [newStart, newEnd] 을 벗어나는 활성 OT 행 수.
+         그 근태(ATTD_ID)에 연결된 활성 OT(DEL_YN='N' AND OT_STATUS != 'CANCELLED') 중
+         하나라도 다음이면 카운트(>0 이면 보정 차단, ATTD_400_114):
+           - OT 시작 < newStart (앞으로 삐져나감)
+           - OT 종료(ACTUAL_END_*)가 NULL(미완료) → 유한 종료 없음, 범위 보장 불가
+           - newEnd 가 null/blank(open) 인데 활성 OT 존재 → 범위 상한 불확정(아래 choose 에서 항상참)
+           - newEnd 확정 시: OT 종료 > newEnd (뒤로 삐져나감)
+         경계 동일(OT시작==newStart, OT종료==newEnd)은 포함으로 보아 허용(엄격 부등호 사용).
+         시각은 ACTUAL_START_DATE(8)+ACTUAL_START_TIME(4) / ACTUAL_END_DATE(8)+ACTUAL_END_TIME(4) 을
+         CONCAT 한 12자리(yyyyMMddHHmm) 문자열로 비교(시계열 정렬, 오버나이트 정확). -->
+    <select id="countActiveOvertimeOutsideAttdWindow" resultType="int">
+    /* AppReq07Mapper.countActiveOvertimeOutsideAttdWindow - OT must stay within new attd window */
+    SELECT COUNT(*)
+    FROM TB_USER_OVERTIME_MGMT O
+    WHERE O.CMPNY_CD = #{cmpnyCd}
+      AND O.SITE_CD  = #{siteCd}
+      AND O.USER_CD  = #{userCd}
+      AND O.ATTD_ID  = #{attdId}
+      AND O.DEL_YN   = 'N'
+      AND O.OT_STATUS <![CDATA[ <> ]]> 'CANCELLED'
+      AND (
+        CONCAT(O.ACTUAL_START_DATE, O.ACTUAL_START_TIME) <![CDATA[ < ]]> #{newStart}
+        OR O.ACTUAL_END_DATE IS NULL
+        OR O.ACTUAL_END_TIME IS NULL
+        <choose>
+          <when test="newEnd == null or newEnd == ''">
+            <!-- 새 퇴근 미정(open): 활성 OT 가 있으면 상한 보장 불가 → 항상 위반 -->
+            OR 1 = 1
+          </when>
+          <otherwise>
+            OR CONCAT(O.ACTUAL_END_DATE, O.ACTUAL_END_TIME) <![CDATA[ > ]]> #{newEnd}
+          </otherwise>
+        </choose>
+      )
     </select>
 
 </mapper>

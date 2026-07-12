@@ -25,8 +25,18 @@
       <strong>{{ detail.workPlanName }}</strong>
     </div>
 
-    <!-- prafta-app-018-E: 연차 사용 마커 1줄(부분연차 상세). 근무 행은 그대로 유지. -->
-    <p v-if="isLeaveUsed" class="lv-marker">{{ leaveMarkerText }}</p>
+    <!-- 휴일(웹 휴일관리 TB_HOLIDAY) 1줄 표시 — 휴일명 있을 때만. -->
+    <p v-if="holidayName" class="hol-marker">휴일 · {{ holidayName }}</p>
+
+    <!-- prafta-app-018-E: 연차 사용 마커(부분연차 상세). 근무 행은 그대로 유지.
+         같은 날 시간차/반차 다건이면 각 건을 1줄씩 표시.
+         PRAFTA_COM_002-B-1: 승인 대기(요청중) 연차는 마커 옆에 "요청중" 배지 부가(표시/색은 유지). -->
+    <p v-for="(marker, idx) in leaveMarkers" :key="idx" class="lv-marker">
+      {{ marker.text }}
+      <span v-if="marker.pending" class="bd bd-w lv-pending-bd">
+        <span class="bd__dot"></span>요청중
+      </span>
+    </p>
 
     <!-- 구간별 3행 정보 -->
     <template v-for="(slot, idx) in slots" :key="slot.workSeq">
@@ -78,7 +88,52 @@
           </div>
         </div>
       </div>
+
+      <!--
+        해당 구간에서 발생한 승인 초과근무 — 그 구간의 근태 행 바로 아래에 붙인다(시간 근접도로 매칭).
+        각 항목 "HH:MM~HH:MM (N시간 M분)" 한 줄. 오버나이트는 종료에 날짜/익일 부착.
+        구간에 매칭되지 않은 초과근무(근태 없음 등)는 카드 하단 fallback 섹션에 표시한다.
+      -->
+      <div v-if="overtimesForSlot(slot).length" class="tr ot-section">
+        <div class="tw ot">
+          <div class="tl">
+            <svg class="icon" width="13" height="13" aria-hidden="true">
+              <use href="#i-attd-info" />
+            </svg>
+            초과근무
+          </div>
+          <div class="tb">
+            <div
+              v-for="(ot, i) in overtimesForSlot(slot)"
+              :key="`ot-${slot.workSeq}-${i}`"
+              class="ot-row"
+            >
+              {{ formatOvertimeLine(ot) }}
+            </div>
+          </div>
+        </div>
+      </div>
     </template>
+
+    <!--
+      구간 매칭이 안 된 초과근무 fallback — 구간(근태)이 없는데 초과근무만 있는 예외 상황만 여기 노출.
+      정상적으로 구간에 매칭된 초과근무는 위 구간별 블록에서 이미 표시된다(여기선 미렌더).
+    -->
+    <div v-if="unmatchedOvertimes.length" class="tr ot-section">
+      <div class="tw ot">
+        <div class="tl">
+          <svg class="icon" width="13" height="13" aria-hidden="true">
+            <use href="#i-attd-info" />
+          </svg>
+          초과근무
+        </div>
+        <div class="tb">
+          <div v-for="(ot, i) in unmatchedOvertimes" :key="`ot-x-${i}`" class="ot-row">
+            {{ formatOvertimeLine(ot) }}
+          </div>
+        </div>
+      </div>
+    </div>
 
     <!-- 인라인 알림 -->
     <div v-if="alertText" class="al" :class="alertToneClass">
@@ -93,9 +148,7 @@
         개별 게이팅은 시트 내부 4행(sheetActions)이 담당하므로 버튼 자체는 항상 활성.
         종전 canRequestModify(서버) 의존을 끊었다.
       -->
-      <button type="button" class="bt bt-s" @click="onModify">
-        수정 요청
-      </button>
+      <button type="button" class="bt bt-s" @click="onModify">수정 요청</button>
 
       <!--
         prafta-app-015: 2구간 스케줄이고 출근 가능 구간이 있으면 "1구간 출근"/"2구간 출근" 2버튼.
@@ -263,7 +316,9 @@ import {
   formatYmdLong,
   formatDowLong,
   minutesToKorean,
-  formatLeaveMarker,
+  formatLeaveMarkers,
+  formatOvertimeLine,
+  ymdToDate,
 } from '../attdFormat'
 
 const props = defineProps({
@@ -281,10 +336,89 @@ const emit = defineEmits(['action'])
 // ───────────────────────────────────────────────────────────
 const slots = computed(() => (props.detail && props.detail.slots) || [])
 
+// 승인된 초과근무 목록(빈 배열 가능). 0건이면 섹션 미렌더(빈 상태 강요 금지).
+const appliedOvertimes = computed(() => (props.detail && props.detail.appliedOvertimes) || [])
+
+// ───────────────────────────────────────────────────────────
+// 초과근무 → 구간(슬롯) 매칭 (표시 위치 전용 — 비즈니스 판정 아님)
+//   서버 appliedOvertimes 에는 WORK_SEQ 가 없으므로, 각 초과근무를 실제 시각이 가장 가까운
+//   슬롯(출근/퇴근 시각 기준)에 귀속시켜 그 구간의 근태 행 아래에 표시한다.
+//   - 1구간(단일 근무)일 때는 모든 초과근무가 자명하게 그 구간으로 귀속된다.
+//   - 출근기록이 있는 슬롯이 하나도 없으면 매칭 불가 → unmatchedOvertimes(하단 fallback).
+// ───────────────────────────────────────────────────────────
+
+// (YYYYMMDD, HHmm) → epoch ms. 자정 넘김(오버나이트) 비교를 위해 실제 타임스탬프로 환산.
+const tsOf = (date, time) => {
+  const d = ymdToDate(date)
+  if (!d) return null
+  const t = String(time == null ? '' : time).padStart(4, '0')
+  const hh = Number(t.slice(0, 2))
+  const mm = Number(t.slice(2, 4))
+  if (Number.isFinite(hh) && Number.isFinite(mm)) d.setHours(hh, mm, 0, 0)
+  return d.getTime()
+}
+
+// 슬롯의 시간 앵커(출근·퇴근 타임스탬프) 목록. 출근기록 없으면 빈 배열.
+const slotAnchors = (slot) => {
+  const a = slot && slot.attendance
+  if (!a) return []
+  const out = []
+  const inTs = tsOf(a.checkInDate, a.checkInTime)
+  if (inTs != null) out.push(inTs)
+  const outTs = tsOf(a.checkOutDate, a.checkOutTime)
+  if (outTs != null) out.push(outTs)
+  return out
+}
+
+// 초과근무와 슬롯의 시간 근접도(최소 |Δ|). 매칭 불가 시 Infinity.
+const overtimeSlotGap = (ot, slot) => {
+  const anchors = slotAnchors(slot)
+  if (!anchors.length) return Infinity
+  const pts = [tsOf(ot.startDate, ot.startTime), tsOf(ot.endDate, ot.endTime)].filter(
+    (v) => v != null,
+  )
+  if (!pts.length) return Infinity
+  let best = Infinity
+  for (const a of anchors) {
+    for (const p of pts) best = Math.min(best, Math.abs(p - a))
+  }
+  return best
+}
+
+// 초과근무를 가장 가까운 슬롯에 배정 → { map: {workSeq: [ot...]}, unmatched: [ot...] }.
+const overtimeAssignment = computed(() => {
+  const map = {}
+  const unmatched = []
+  const candidateSlots = slots.value.filter((s) => s && s.attendance)
+  for (const ot of appliedOvertimes.value) {
+    let bestSlot = null
+    let bestGap = Infinity
+    for (const s of candidateSlots) {
+      const g = overtimeSlotGap(ot, s)
+      if (g < bestGap) {
+        bestGap = g
+        bestSlot = s
+      }
+    }
+    if (bestSlot && bestGap !== Infinity) {
+      ;(map[bestSlot.workSeq] = map[bestSlot.workSeq] || []).push(ot)
+    } else {
+      unmatched.push(ot)
+    }
+  }
+  return { map, unmatched }
+})
+
+const overtimesForSlot = (slot) => (slot && overtimeAssignment.value.map[slot.workSeq]) || []
+const unmatchedOvertimes = computed(() => overtimeAssignment.value.unmatched)
+
 // prafta-app-018-E: 부분연차(시간차/반차) 마커 — 근무 행은 그대로 두고 1줄만 부가 표시(근무일 유지).
 //   종일연차일도 동일 마커. 연차 미사용일은 isLeaveUsed=false → 미렌더.
-const isLeaveUsed = computed(() => !!(props.detail && props.detail.isLeaveUsed))
-const leaveMarkerText = computed(() => formatLeaveMarker(props.detail || {}))
+// 같은 날 부분연차(시간차/반차) 다건 마커 줄 배열(없으면 빈 배열 → 미렌더).
+const leaveMarkers = computed(() => formatLeaveMarkers(props.detail || {}))
+
+// 휴일명(웹 휴일관리 등록). 휴일 아니면 빈 문자열 → 미렌더.
+const holidayName = computed(() => (props.detail && props.detail.holidayName) || '')
 
 // prafta-app-014: 슬롯 개수 판정 단일 출처를 서버 slotCount 로 이관.
 //   서버 미제공(구버전 응답) 폴백: slots.length, 그래도 없으면 isTwoSlot.
@@ -323,6 +457,9 @@ const statusBadgeClass = computed(() => {
       return 'bd-i'
     case 'CHECK_OUT_MISSING':
       return 'bd-w'
+    // prafta-app-032: 과거 2구간 근태 누락 — 주의 환기 위해 warning 톤.
+    case 'ATTD_MISSING':
+      return 'bd-w'
     case 'CHECKED_OUT':
     default:
       return 'bd-n'
@@ -337,6 +474,9 @@ const statusText = computed(() => {
       return '근무중'
     case 'CHECK_OUT_MISSING':
       return '퇴근 미등록'
+    // prafta-app-032: 과거 2구간 스케줄에서 일부 구간만 근태가 있는 경우(예: 1구간만 출퇴근).
+    case 'ATTD_MISSING':
+      return '근태누락'
     case 'CHECKED_OUT':
       return '퇴근'
     case 'BEFORE_WORK':
@@ -419,6 +559,9 @@ const alertText = computed(() => {
       return '오늘 근무가 모두 끝난 뒤에 수정 요청을 등록할 수 있어요.'
     case 'CHECK_OUT_MISSING':
       return '퇴근은 다음 날까지 등록할 수 있어요.'
+    // prafta-app-032: 과거 2구간 일부 구간 근태 누락 — 보정 안내.
+    case 'ATTD_MISSING':
+      return '일부 구간의 근태가 누락됐어요. 수정 요청으로 보정해 주세요.'
     case 'CHECKED_OUT':
       // 사업장다름(.wr)이면 안내 문구 없음(시안 §3.1)
       return hasDifferentSite.value ? '' : '출퇴근 기록과 근태가 다르면 수정 요청해 주세요.'
@@ -429,14 +572,17 @@ const alertText = computed(() => {
 const hasDifferentSite = computed(() =>
   slots.value.some((s) => s.attendance && s.attendance.isDifferentSite),
 )
-const alertToneClass = computed(() =>
-  (props.detail && props.detail.workStatus) === 'CHECK_OUT_MISSING' ? 'dg' : 'in',
-)
-const alertIconId = computed(() =>
-  (props.detail && props.detail.workStatus) === 'CHECK_OUT_MISSING'
-    ? '#i-attd-alert-t'
-    : '#i-attd-info',
-)
+const alertToneClass = computed(() => {
+  const s = props.detail && props.detail.workStatus
+  if (s === 'CHECK_OUT_MISSING') return 'dg'
+  // prafta-app-032: 근태 누락은 기본 warning 톤(.al 기본 배경).
+  if (s === 'ATTD_MISSING') return ''
+  return 'in'
+})
+const alertIconId = computed(() => {
+  const s = props.detail && props.detail.workStatus
+  return s === 'CHECK_OUT_MISSING' || s === 'ATTD_MISSING' ? '#i-attd-alert-t' : '#i-attd-info'
+})
 
 // ───────────────────────────────────────────────────────────
 // 푸터 액션 (서버 산출 actions 표시만)
@@ -479,7 +625,9 @@ const primaryActionEnabled = computed(() =>
 const primaryActionLabel = computed(() => {
   if (!isPrimaryCheckOut.value) return '출근하기'
   // 퇴근완료 상태에서의 퇴근 가능 = 재등록(오탭 보정), 그 외(진행 중)는 일반 퇴근.
-  return (props.detail && props.detail.workStatus) === 'CHECKED_OUT' ? '퇴근 시간 재등록' : '퇴근하기'
+  return (props.detail && props.detail.workStatus) === 'CHECKED_OUT'
+    ? '퇴근 시간 재등록'
+    : '퇴근하기'
 })
 
 // prafta-app-026 후속: 2구간 스케줄에서 보조 2회차 출근의 대상 구간(남은 미등록 구간).
@@ -585,6 +733,19 @@ const onSlotCheckIn = (workSeq) => {
   font-size: 12px;
   font-weight: 600;
   color: var(--color-warning-text);
+}
+/* PRAFTA_COM_002-B-1: 연차 마커 옆 "요청중" 배지(기존 .bd .bd-w 톤 재사용). 마커 텍스트와 수직 정렬. */
+.lv-pending-bd {
+  margin-left: var(--space-xs);
+  vertical-align: middle;
+}
+
+/* 휴일 마커 라인(danger 톤 — 월 캘린더 휴일 빨간 날짜와 톤 일관). */
+.hol-marker {
+  margin: 2px 0 6px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--color-danger);
 }
 
 /* 상태 배지 */
@@ -724,6 +885,28 @@ const onSlotCheckIn = (workSeq) => {
   margin-top: 1px;
   font-size: 11px;
   color: var(--color-text-secondary);
+}
+
+/* 승인된 초과근무 섹션 — info 톤(.tw 패턴 재사용, 근태/스케줄 행과 톤 구분). */
+.ot-section {
+  margin-top: 6px;
+}
+.tw.ot {
+  border-color: var(--color-info-border);
+  background: var(--color-info-tint);
+}
+.tw.ot .tl {
+  color: var(--color-info);
+}
+.ot-row {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--color-text-primary);
+  line-height: 1.4;
+  font-variant-numeric: tabular-nums;
+}
+.ot-row + .ot-row {
+  margin-top: 2px;
 }
 
 /* deep selector — v-html 내부 span 색상 (서버/포맷 문자열의 .dg/.pw/.mu) */

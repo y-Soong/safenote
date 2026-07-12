@@ -66,4 +66,68 @@
            )
     </select>
 
+    <!--
+      교차일 겹침 가드 — (SCH_CD, asOfYmd) effective 근무타입 버전 1건의 1·2구간 시각.
+      attd05 selectSchTypeUseYnList 와 동일한 effective-dating 패턴(현재본 + 이력본 UNION,
+      동일 APPLY_DATE 중복 시 HIST_IDX 최댓값 채택)을 단일 SCH_CD + APPLY_DATE<=asOfYmd 로 좁혀
+      최신 1건만 반환한다. HIST 에도 시각 컬럼이 있어 과거일 시각도 정확히 해석한다.
+    -->
+    <select id="selectEffectiveSchWindow" resultType="com.prafta.common.cmm.schedule.mapper.result.SchWindowResult">
+    /* ScheduleGuardMapper.selectEffectiveSchWindow */
+    SELECT E.FST_SCH_STR_TIME AS fstStart
+         , E.FST_SCH_END_TIME AS fstEnd
+         , E.SEC_SCH_STR_TIME AS secStart
+         , E.SEC_SCH_END_TIME AS secEnd
+      FROM (
+            /* 현재본 (HIST_IDX 최댓값으로 두어 동일 APPLY_DATE 중복 시 현재본 우선) */
+            SELECT M.SCH_CD, M.APPLY_DATE
+                 , M.FST_SCH_STR_TIME, M.FST_SCH_END_TIME, M.SEC_SCH_STR_TIME, M.SEC_SCH_END_TIME
+                 , 2147483647 AS HIST_IDX
+              FROM TB_SCH_MGMT M
+             WHERE M.CMPNY_CD = #{cmpnyCd}
+               AND M.SITE_CD  = #{siteCd}
+               AND M.SCH_CD   = #{schCd}
+            UNION ALL
+            /* 이력본 */
+            SELECT H.SCH_CD, H.APPLY_DATE
+                 , H.FST_SCH_STR_TIME, H.FST_SCH_END_TIME, H.SEC_SCH_STR_TIME, H.SEC_SCH_END_TIME
+                 , H.HIST_IDX
+              FROM TB_SCH_MGMT_HIST H
+             WHERE H.CMPNY_CD = #{cmpnyCd}
+               AND H.SITE_CD  = #{siteCd}
+               AND H.SCH_CD   = #{schCd}
+           ) E
+     WHERE E.APPLY_DATE <![CDATA[ <= ]]> #{asOfYmd}
+       AND E.HIST_IDX = (
+            SELECT MAX(E2.HIST_IDX)
+              FROM (
+                    SELECT M2.SCH_CD, M2.APPLY_DATE, 2147483647 AS HIST_IDX
+                      FROM TB_SCH_MGMT M2
+                     WHERE M2.CMPNY_CD = #{cmpnyCd} AND M2.SITE_CD = #{siteCd} AND M2.SCH_CD = #{schCd}
+                    UNION ALL
+                    SELECT H2.SCH_CD, H2.APPLY_DATE, H2.HIST_IDX
+                      FROM TB_SCH_MGMT_HIST H2
+                     WHERE H2.CMPNY_CD = #{cmpnyCd} AND H2.SITE_CD = #{siteCd} AND H2.SCH_CD = #{schCd}
+                   ) E2
+             WHERE E2.SCH_CD     = E.SCH_CD
+               AND E2.APPLY_DATE = E.APPLY_DATE
+           )
+     ORDER BY E.APPLY_DATE DESC
+     LIMIT 1
+    </select>
+
+    <!--
+      교차일 겹침 가드 — 이웃 날짜의 적용 근무계획 코드(work_plan 한 칸).
+    -->
+    <select id="selectUserWorkPlanCd" resultType="string">
+    /* ScheduleGuardMapper.selectUserWorkPlanCd */
+    SELECT WP.WORK_PLAN_CD
+      FROM TB_USER_WORK_PLAN WP
+     WHERE WP.CMPNY_CD = #{cmpnyCd}
+       AND WP.SITE_CD  = #{siteCd}
+       AND WP.USER_CD  = #{userCd}
+       AND WP.WORK_YMD = #{workYmd}
+     LIMIT 1
+    </select>
+
 </mapper>

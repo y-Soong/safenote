@@ -959,8 +959,9 @@ public class AppAdminApprovalServiceImpl implements AppAdminApprovalService {
     }
 
     private List<String> summaryCorrOt(String group, PendingCorrOtRow r, String schedRange) {
+        // 대상일자(WORK_YMD)는 카드의 targetYmdDisplay(포맷된 별도 표시)와 동일 데이터이므로
+        // summary 라인에서는 중복 표기하지 않는다(요약은 변경 내용만).
         List<String> lines = new ArrayList<>();
-        lines.add("대상일자 " + nz(r.workYmd()));
         if (G_SCHEDULE.equals(group)) {
             // PRAFTA-APP-029 후속: 요청 스케줄(REQ.SCH_CD)의 실제 시각 range 로 표기한다(예: "스케줄 변경 → 09:00~18:00").
             if (StringUtils.hasText(schedRange)) {
@@ -994,7 +995,8 @@ public class AppAdminApprovalServiceImpl implements AppAdminApprovalService {
         if (l1.length() > 0) {
             lines.add(l1.toString());
         }
-        lines.add("대상일자 " + nz(r.workYmd()));
+        // 대상일자(WORK_YMD)는 카드의 targetYmdDisplay(포맷된 별도 표시)와 동일 데이터이므로
+        // summary 라인에서는 중복 표기하지 않는다.
         return lines;
     }
 

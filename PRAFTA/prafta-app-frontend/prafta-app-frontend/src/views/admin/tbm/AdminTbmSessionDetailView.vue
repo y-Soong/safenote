@@ -24,7 +24,17 @@
       <span class="admin-tbm-hd__spacer" aria-hidden="true" />
     </header>
 
-    <main class="admin-tbm-detail-body">
+    <main
+      class="admin-tbm-detail-body"
+      ref="scrollRef"
+      @touchstart.passive="onPullStart"
+      @touchmove="onPullMove"
+      @touchend="onPullEnd"
+      @touchcancel="onPullEnd"
+    >
+      <!-- 당겨서 새로고침 인디케이터 — 스크롤 최상단에서 아래로 당기면 노출 -->
+      <PullRefreshIndicator v-bind="indicatorProps" />
+
       <!-- loading -->
       <p v-if="isLoading" class="admin-tbm-state">불러오는 중…</p>
 
@@ -67,6 +77,10 @@
             <div class="meta__row">
               <dt>등록일</dt>
               <dd>{{ session.insertDate || '-' }}</dd>
+            </div>
+            <div v-if="session.eduMinutes != null" class="meta__row">
+              <dt>교육 시간</dt>
+              <dd>{{ session.eduMinutes }}분</dd>
             </div>
             <div v-if="session.openedAt" class="meta__row">
               <dt>개설일시</dt>
@@ -221,6 +235,8 @@ import { useRouter, useRoute } from 'vue-router'
 
 import api from '@/api/axios'
 import { requestGps } from '@/utils/gpsBridge'
+import { usePullToRefresh } from '@/composables/usePullToRefresh'
+import PullRefreshIndicator from '@/components/common/PullRefreshIndicator.vue'
 import AdminTbmPwdCard from './components/AdminTbmPwdCard.vue'
 
 const router = useRouter()
@@ -330,9 +346,9 @@ const onBack = () => {
   router.back()
 }
 
-// 수정: 후속 라운드(수정 폼 골격) 소관. 현재 라운드는 진입 안내만.
+// 수정: 세션 수정 화면으로 이동(교육내용 등 편집). DRAFT/OPENED 만 버튼 노출(canEdit).
 const onEdit = () => {
-  showAlert('수정 화면은 다음 업데이트에서 제공됩니다.')
+  router.push({ path: '/AdminTbmSessionEdit', query: { sessionCd: sessionCd.value } })
 }
 
 // 취소(사유 필수) — POST .../{sessionCd}/cancel
@@ -430,6 +446,15 @@ const onRegenerate = async () => {
   }
 }
 
+// 당겨서 새로고침 — 세션 상세(메타/콘텐츠/위험성평가)를 재조회.
+const scrollRef = ref(null)
+const { onPullStart, onPullMove, onPullEnd, indicatorProps } = usePullToRefresh(
+  scrollRef,
+  async () => {
+    await loadDetail()
+  },
+)
+
 onMounted(loadDetail)
 </script>
 
@@ -460,7 +485,8 @@ onMounted(loadDetail)
   --space-md: 12px;
   --space-lg: 16px;
 
-  min-height: 100%;
+  height: 100vh;
+  height: 100dvh;
   background: var(--color-bg);
   color: var(--color-text-primary);
   display: flex;
@@ -506,6 +532,7 @@ onMounted(loadDetail)
 /* 본문 */
 .admin-tbm-detail-body {
   flex: 1;
+  min-height: 0;
   padding: var(--space-md) var(--space-lg) calc(var(--space-lg) + env(safe-area-inset-bottom, 0px));
   overflow-y: auto;
   display: flex;

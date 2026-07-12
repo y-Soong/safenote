@@ -36,10 +36,6 @@
           <h3 class="nmd-section__title">사건 정보</h3>
           <dl class="nmd-read">
             <div class="nmd-row">
-              <dt>유형</dt>
-              <dd>{{ incident.incidentTypeNm }}</dd>
-            </div>
-            <div class="nmd-row">
               <dt>발생</dt>
               <dd>{{ incident.occurDtime }}</dd>
             </div>
@@ -100,14 +96,14 @@
     <!-- 푸터: 반려 / 접수→검토중 전환 (J1-6 .asr-actions / .asr-btn primary·ghost) -->
     <footer v-if="incident && canFirstReview" class="nmd-footer">
       <div class="nmd-actions">
-        <button type="button" class="nmd-btn nmd-btn--ghost" @click="onReject">반려</button>
+        <button type="button" class="nmd-btn nmd-btn--ghost" @click="onReject">미처리대상</button>
         <button
           type="button"
           class="nmd-btn nmd-btn--primary"
           :disabled="isSubmitting"
           @click="onAdvance"
         >
-          {{ isSubmitting ? '처리 중...' : '접수 → 검토중' }}
+          {{ isSubmitting ? '처리 중...' : '접수 → 조치중' }}
         </button>
       </div>
     </footer>
@@ -176,7 +172,7 @@ const onBack = () => {
   router.back()
 }
 
-// 접수 → 검토중(200) 전환 (임시조치 메모 동반)
+// 접수 → 조치중(200, SYS063 재번호) 전환 (임시조치 메모 동반)
 const onAdvance = async () => {
   if (isSubmitting.value) return
   if (!nearMissId.value) return
@@ -188,7 +184,7 @@ const onAdvance = async () => {
       reportStatusCd: '200',
       adminTempActionDesc: adminTempActionDesc.value.trim() || null,
     })
-    await showAlert('검토중으로 변경했어요')
+    await showAlert('조치중으로 변경했어요')
     // 목록은 router.back 진입 시 onMounted 재조회로 동기화된다.
     router.back()
   } catch (err) {
@@ -198,16 +194,16 @@ const onAdvance = async () => {
   }
 }
 
-// 반려(900) — 사유 필수
+// 미처리대상(400, SYS063 재번호) — 사유 필수
 const onReject = async () => {
   if (isSubmitting.value) return
   if (!nearMissId.value) return
 
-  // 반려 사유 입력(간이 prompt). $confirm 폴백 패턴과 동일하게 전역 prompt 가 없으면 window.prompt 사용.
-  const reason = await askReason('반려 사유를 입력해주세요.')
+  // 미처리 사유 입력(간이 prompt). $confirm 폴백 패턴과 동일하게 전역 prompt 가 없으면 window.prompt 사용.
+  const reason = await askReason('미처리 사유를 입력해주세요.')
   if (reason === null) return // 취소
   if (!reason.trim()) {
-    showAlert('반려 사유를 입력해주세요.')
+    showAlert('미처리 사유를 입력해주세요.')
     return
   }
 
@@ -215,19 +211,19 @@ const onReject = async () => {
   try {
     await api.post('/appApi/nearmiss/change-status', {
       nearMissId: nearMissId.value,
-      reportStatusCd: '900',
+      reportStatusCd: '400',
       rejectReason: reason.trim(),
     })
-    await showAlert('반려 처리했어요')
+    await showAlert('미처리대상으로 처리했어요')
     router.back()
   } catch (err) {
-    handleChangeError(err, '반려 처리에 실패했어요. 잠시 후 다시 시도해 주세요.')
+    handleChangeError(err, '미처리대상 처리에 실패했어요. 잠시 후 다시 시도해 주세요.')
   } finally {
     isSubmitting.value = false
   }
 }
 
-// 반려 사유 입력 — 전역 prompt 컴포넌트 부재 환경이라 window.prompt 사용(취소 시 null).
+// 미처리 사유 입력 — 전역 prompt 컴포넌트 부재 환경이라 window.prompt 사용(취소 시 null).
 const askReason = (message) => {
   const input = window.prompt(message, '')
   return Promise.resolve(input)

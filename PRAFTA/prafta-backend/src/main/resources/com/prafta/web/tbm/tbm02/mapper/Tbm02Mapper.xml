@@ -47,6 +47,7 @@
 		, A.STATUS_CD		AS statusCd
 		, SC.SYST_VAL_D_NM	AS statusNm
 		, A.EDU_TYPE_CD		AS eduTypeCd
+		, A.EDU_MINUTES		AS eduMinutes
 		, A.MANAGER_USER_CD	AS managerUserCd
 		, FNC_CMM_INFO_SRCH(A.CMPNY_CD, 'USER_NM', A.MANAGER_USER_CD, NULL)	AS managerUserNm
 		, DATE_FORMAT(A.OPENED_AT, '%Y-%m-%d %H:%i')	AS openedAt
@@ -60,13 +61,14 @@
 			WHERE R.CMPNY_CD = A.CMPNY_CD
 			  AND R.SESSION_CD = A.SESSION_CD
 		  )				AS riskCount
-		/* 출결 집계(출결 테이블 미사용 단계에서는 0). DEL_YN='N' 기준 */
+		/* 출결 집계. DEL_YN='N' 기준. [정합성 수정] 앱과 동일 정의 — 참석=실입실(ENTRY_AT IS NOT NULL). */
 		, (
 			SELECT COUNT(1)
 			FROM TB_TBM_ATTENDANCE AT
 			WHERE AT.CMPNY_CD = A.CMPNY_CD
 			  AND AT.SESSION_CD = A.SESSION_CD
 			  AND AT.DEL_YN = 'N'
+			  AND AT.ENTRY_AT IS NOT NULL
 		  )				AS attendanceCount
 		, (
 			SELECT COUNT(1)
@@ -74,15 +76,18 @@
 			WHERE AT.CMPNY_CD = A.CMPNY_CD
 			  AND AT.SESSION_CD = A.SESSION_CD
 			  AND AT.DEL_YN = 'N'
+			  AND AT.ENTRY_AT IS NOT NULL
 			  AND AT.COMPLETION_STATUS_CD = 'COMPLETED'
 		  )				AS completedCount
+		/* 미이수 = 실입실 + 미완료(상태 NULL=미완료 또는 NOT_COMPLETED). 자동이수 폐지로 NULL 포함. */
 		, (
 			SELECT COUNT(1)
 			FROM TB_TBM_ATTENDANCE AT
 			WHERE AT.CMPNY_CD = A.CMPNY_CD
 			  AND AT.SESSION_CD = A.SESSION_CD
 			  AND AT.DEL_YN = 'N'
-			  AND AT.COMPLETION_STATUS_CD = 'NOT_COMPLETED'
+			  AND AT.ENTRY_AT IS NOT NULL
+			  AND (AT.COMPLETION_STATUS_CD IS NULL OR AT.COMPLETION_STATUS_CD = 'NOT_COMPLETED')
 		  )				AS notCompletedCount
 	FROM TB_TBM_SESSION A
 		 LEFT OUTER JOIN TB_SITE ST
@@ -143,6 +148,7 @@
 		, A.MANAGER_GPS_LON		AS managerGpsLon
 		, A.GPS_VERIFY_TYPE_CD	AS gpsVerifyTypeCd
 		, A.GPS_VERIFY_RADIUS_M	AS gpsVerifyRadiusM
+		, A.EDU_MINUTES			AS eduMinutes
 		, A.GPS_MANUAL_CONFIRM_YN	AS gpsManualConfirmYn
 		, DATE_FORMAT(A.OPENED_AT, '%Y-%m-%d %H:%i')		AS openedAt
 		/* 교육준비 타이머 기준시각(15분 자동 교육시작 기준). FE 카운트다운용. 초 단위까지 노출 */
@@ -180,6 +186,10 @@
 		, A.SITE_CD			AS siteCd
 		, A.STATUS_CD		AS statusCd
 		, A.MANAGER_USER_CD	AS managerUserCd
+		/* 교육준비(prepare) DB값 기준 검증용: 제목/교육내용/교육시간 */
+		, A.TITLE			AS title
+		, A.CONTENT_BODY	AS contentBody
+		, A.EDU_MINUTES		AS eduMinutes
 	FROM TB_TBM_SESSION A
 	WHERE A.CMPNY_CD = #{gvCmpnyCd}
 	  AND A.SESSION_CD = #{sessionCd}
@@ -201,6 +211,9 @@
 		  )					AS itemCnt
 		, SC.DISPLAY_ORDER	AS displayOrder
 		, SC.OVERRIDE_DESC	AS overrideDesc
+		/* 6.2-(1)-2: 교육자료 스코프(사업장/공통) 표시 */
+		, M.SITE_CD			AS siteCd
+		, CASE WHEN M.SITE_CD IS NULL THEN 'Y' ELSE 'N' END	AS isCommonContent
 	FROM TB_TBM_SESSION_CONTENT SC
 		 LEFT OUTER JOIN TB_TBM_EDU_MTRL M
 		 	ON (
@@ -237,6 +250,29 @@
 		, RA.ASSESSMENT_STATUS	AS assessmentStatus
 		, B.SYST_VAL_D_NM	AS assessmentStatusNm
 		, SR.DISPLAY_ORDER	AS displayOrder
+		/* 6.2-(1)-2: 평가요청일/평가요청자(콘솔 요약 표시) */
+		, RA.CMPNY_CD		AS cmpnyCd
+		, DATE_FORMAT(RA.INIT_ASSESS_DATE, '%Y-%m-%d')	AS initAssessDate
+		, FNC_CMM_INFO_SRCH(RA.CMPNY_CD, 'USER_NM', RA.INIT_ASSESSOR_ID, NULL)	AS initAssessorNm
+		/* 결정#5: 읽기전용 상세 팝업(RiskAssessInfo) 채움용 평가 상세(Risk03 selectRiskAssessmentsLists 규약 재사용) */
+		, RA.INIT_LIKELIHOOD_SCORE	AS initLikelihoodScore
+		, RA.INIT_SEVERITY_SCORE	AS initSeverityScore
+		, RA.INIT_RISK_LV			AS initRiskLv
+		, RA.INIT_DESC				AS initDesc
+		, RA.INIT_ASSESSOR_ID		AS initAssessorId
+		, FNC_CMM_INFO_SRCH(RA.CMPNY_CD, 'FILE_NAME', RA.INIT_FILE_MGMT_CD, NULL)	AS initFileMgmtCd
+		, FNC_CMM_INFO_SRCH(RA.CMPNY_CD, 'FILE_PATH', RA.INIT_FILE_MGMT_CD, NULL)	AS initFilePath
+		, RA.REVAL_DATE				AS revalDate
+		, RA.REVAL_BEFORE_DESC		AS revalBeforeDesc
+		, RA.REVAL_LIKELIHOOD_SCORE	AS revalLikelihoodScore
+		, RA.REVAL_SEVERITY_SCORE	AS revalSeverityScore
+		, RA.REVAL_RISK_LV			AS revalRiskLv
+		, RA.REVAL_DESC				AS revalDesc
+		, RA.REVAL_ASSESSOR_ID		AS revalAssessorId
+		, FNC_CMM_INFO_SRCH(RA.CMPNY_CD, 'USER_NM', RA.REVAL_ASSESSOR_ID, NULL)	AS revalAssessorNm
+		, RA.REVAL_ASSESS_DATE		AS revalAssessDate
+		, FNC_CMM_INFO_SRCH(RA.CMPNY_CD, 'FILE_NAME', RA.REVAL_FILE_MGMT_CD, NULL)	AS revalFileMgmtCd
+		, FNC_CMM_INFO_SRCH(RA.CMPNY_CD, 'FILE_PATH', RA.REVAL_FILE_MGMT_CD, NULL)	AS revalFilePath
 	FROM TB_TBM_SESSION_RISK SR
 		 INNER JOIN TB_RISK_ASSESSMENT RA
 		 	ON (
@@ -296,6 +332,7 @@
 		, MANAGER_GPS_LON
 		, GPS_VERIFY_TYPE_CD
 		, GPS_VERIFY_RADIUS_M
+		, EDU_MINUTES
 		, GPS_MANUAL_CONFIRM_YN
 		, OPENED_AT
 		, DEL_YN
@@ -319,6 +356,7 @@
 		, #{managerGpsLon}
 		, IFNULL(#{gpsVerifyTypeCd}, 'AUTO')
 		, IFNULL(#{gpsVerifyRadiusM}, 100)
+		, #{eduMinutes}
 		, #{gpsManualConfirmYn}
 		<choose>
 			<when test="opened">, NOW()</when>
@@ -340,6 +378,8 @@
 		, CONTENT_BODY			= #{contentBody}
 		, GPS_VERIFY_TYPE_CD	= IFNULL(#{gpsVerifyTypeCd}, GPS_VERIFY_TYPE_CD)
 		, GPS_VERIFY_RADIUS_M	= IFNULL(#{gpsVerifyRadiusM}, GPS_VERIFY_RADIUS_M)
+		/* 교육 인정시간(분). 미전송(NULL) 시 기존값 보존 */
+		, EDU_MINUTES			= IFNULL(#{eduMinutes}, EDU_MINUTES)
 		, MANAGER_GPS_LAT		= #{managerGpsLat}
 		, MANAGER_GPS_LON		= #{managerGpsLon}
 		, GPS_MANUAL_CONFIRM_YN	= #{gpsManualConfirmYn}
@@ -465,8 +505,8 @@
 	UPDATE TB_TBM_SESSION
 	SET
 		STATUS_CD				= 'OPENED'
-		, TITLE					= #{title}
-		, CONTENT_BODY			= #{contentBody}
+		/* §X-2(Q5-A): 교육준비는 경량 전이. TITLE/CONTENT_BODY 는 개설/수정에서 확정된 DB값을
+		   유지하며 prepare 에서 덮어쓰지 않는다(FE 미전송 값으로 인한 손실 방지). */
 		, ENTRY_PWD				= #{entryPwd}
 		, MANAGER_GPS_LAT		= #{managerGpsLat}
 		, MANAGER_GPS_LON		= #{managerGpsLon}
@@ -680,6 +720,9 @@
 		, A.ASSESSMENT_CD	AS assessmentCd
 		, A.ASSESSMENT_STATUS	AS assessmentStatus
 		, B.SYST_VAL_D_NM	AS assessmentStatusNm
+		/* 6.3(T6-13): 위험성평가 선택 팝업 컬럼 — 평가요청일/평가요청자 */
+		, DATE_FORMAT(A.INIT_ASSESS_DATE, '%Y-%m-%d')	AS initAssessDate
+		, FNC_CMM_INFO_SRCH(A.CMPNY_CD, 'USER_NM', A.INIT_ASSESSOR_ID, NULL)	AS initAssessorNm
 	FROM TB_RISK_ASSESSMENT A
 		 LEFT OUTER JOIN (
 			SELECT G.SYST_VAL_D_CD, G.SYST_VAL_D_NM
@@ -719,6 +762,27 @@
 	  <if test="processCd != null and processCd != ''">
 	    AND A.PROCESS_CD = #{processCd}
 	  </if>
+	  <if test="riskTypeCd != null and riskTypeCd != ''">
+	    AND A.RISK_TYPE_CD = #{riskTypeCd}
+	  </if>
+	  <!-- 유해요인 설명 like(17.3.2). 유해요인명 표현식(self=ASSESSMENT_DESC, else HAZARD_NM)을
+	       WHERE 에서는 SELECT 별칭(hazardNm) 을 쓸 수 없으므로 CASE 를 재기술한다. -->
+	  <if test="hazardDesc != null and hazardDesc != ''">
+	    AND (
+	      CASE
+	        WHEN A.HAZARD_CD = 'self'
+	          THEN A.ASSESSMENT_DESC
+	        ELSE E.HAZARD_NM
+	      END
+	    ) LIKE CONCAT('%', #{hazardDesc}, '%')
+	  </if>
+	  <!-- 6.3(T6-13): 평가요청자 like / 평가요청일(YYYY-MM-DD) 일치 검색(Risk03 규약 재사용) -->
+	  <if test="initAssessorNm != null and initAssessorNm != ''">
+	    AND FNC_CMM_INFO_SRCH(A.CMPNY_CD, 'USER_NM', A.INIT_ASSESSOR_ID, NULL) LIKE CONCAT('%', #{initAssessorNm}, '%')
+	  </if>
+	  <if test="initAssessDate != null and initAssessDate != ''">
+	    AND DATE(A.INIT_ASSESS_DATE) = #{initAssessDate}
+	  </if>
 	ORDER BY A.SITE_CD, A.PROCESS_CD, A.RISK_TYPE_CD, A.HAZARD_CD
 	</select>
 
@@ -735,7 +799,8 @@
 
 	<!-- ============================ PRAFTA-051-11 관리자 대리/검색 입실 ============================ -->
 
-	<!-- 정규직 입실 후보(세션 사업장 활성 사용자). alreadyEntered = DEL_YN='N' 출결 존재.
+	<!-- 정규직 입실 후보(세션 사업장 + 당일 출근자만, T6-06 6.2-(2)-1). alreadyEntered = DEL_YN='N' 출결 존재.
+	     당일 출근 판정: TB_USER_ATTD_MGMT 에 오늘(WORK_YMD=YYYYMMDD) CHECK_IN_TIME 有 + DEL_YN='N' 행 존재.
 	     resultType record(EntryCandidateResult): SELECT 컬럼 순서 = 필드 순서 고정. -->
 	<select id="selectRegularCandidates" parameterType="com.prafta.web.tbm.tbm02.application.query.EntryCandidateQuery" resultType="com.prafta.web.tbm.tbm02.result.EntryCandidateResult">
 	/* Tbm02Mapper.selectRegularCandidates */
@@ -765,6 +830,17 @@
 	  AND U.SITE_CD = #{siteCd}
 	  AND U.USE_YN = 'Y'
 	  AND U.ACCOUNT_STATUS = '01'
+	  /* T6-06: 당일 출근자만 노출(세션 사업장 기준 오늘 출근 체크인 존재) */
+	  AND EXISTS (
+	    SELECT 1
+	    FROM TB_USER_ATTD_MGMT WA
+	    WHERE WA.CMPNY_CD = U.CMPNY_CD
+	      AND WA.SITE_CD = #{siteCd}
+	      AND WA.USER_CD = U.USER_CD
+	      AND WA.DEL_YN = 'N'
+	      AND WA.CHECK_IN_TIME IS NOT NULL
+	      AND WA.WORK_YMD = DATE_FORMAT(NOW(), '%Y%m%d')
+	  )
 	  <if test="keyword != null and keyword != ''">
 	    AND (
 	         U.USER_NM LIKE CONCAT('%', #{keyword}, '%')
@@ -776,7 +852,11 @@
 	</select>
 
 	<!-- 일용직 입실 후보(C7: 만료/탈퇴 제외). 평문 휴대폰 SELECT 금지 - MBL_NO_LAST4 만.
-	     WORK_EXPIRE_DATE 는 varchar8 이라 문자열 비교=시간순, 경계 '오늘' 포함(>=). -->
+	     WORK_EXPIRE_DATE 는 varchar8 이라 문자열 비교=시간순, 경계 '오늘' 포함(>=).
+	     [T6-07 진단 결론 / 6.2-(2)-1] "살아있는 User_02 일용직이 안 뜸"은 버그 아님 — 정상 동작.
+	       MCP 실측: 해당 일용직은 ACCOUNT_STATUS='01'·USE_YN='Y'여도 WORK_EXPIRE_DATE(근무만료일)가
+	       오늘 이전(예: 20260628 < 20260630)이라 'WORK_EXPIRE_DATE >= 오늘' 필터에서 만료로 정상 제외된다.
+	       => 필터 변경 금지(만료 일용직을 입실 후보로 노출하면 정책 위반). 코드 변경 없음. -->
 	<select id="selectDailyCandidates" parameterType="com.prafta.web.tbm.tbm02.application.query.EntryCandidateQuery" resultType="com.prafta.web.tbm.tbm02.result.EntryCandidateResult">
 	/* Tbm02Mapper.selectDailyCandidates */
 	SELECT

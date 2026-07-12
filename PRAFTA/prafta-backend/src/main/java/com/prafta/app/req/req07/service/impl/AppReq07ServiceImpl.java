@@ -134,8 +134,9 @@ public class AppReq07ServiceImpl implements AppReq07Service {
                 throw new ApiException(AttdErrorCode.ATTD_400_090);
             }
 
-            // ----- PRAFTA-APP-022 룰A2/A3: 활성 초과근무 요청(생성03·수정04, 대기01+승인02) 존재 시
+            // ----- PRAFTA-APP-022 룰A2/A3: 미처리 초과근무 요청(생성03·수정04, 대기01만) 존재 시
             //   스케줄수정 거부(상호배제). 그날 전체(WORK_SEQ 무관). lock 후·INSERT 전 fail-closed. -----
+            //   2026-06-21 정책정정: 승인분(02) 제외 → 대기(01)만 충돌(처리 완료분은 비차단).
             int activeOt = mapper.countActiveOvertimeReq(
                     param.cmpnyCd(), param.siteCd(), param.userCd(), param.workYmd());
             if (activeOt > 0) {
@@ -272,6 +273,29 @@ public class AppReq07ServiceImpl implements AppReq07Service {
                 if (dup > 0) throw new ApiException(AttdErrorCode.ATTD_400_090);
             }
 
+            // ----- OT 범위 가드: 근태 수정('02') 슬롯에서 새 실근무 구간이 그 근태의 활성 OT 를 벗어나면 차단 -----
+            //   실근무 시각을 줄이면(특히 퇴근 단축) 그 슬롯에 등록·승인된 OT 가 새 범위 밖으로 삐져나와
+            //   "실제로 일하지 않은 시간의 초과근무" 가 되어 정합성이 깨진다. 새 구간 [newStart, newEnd] 이
+            //   연결된 모든 활성 OT 를 완전히 포함해야 한다. 하나라도 벗어나면 ATTD_400_114.
+            //   생성('01', existingAttdId=null) 슬롯은 기존 OT 가 없어 검사 스킵. (advisory lock 내)
+            for (int i = 0; i < param.slots().size(); i++) {
+                String modifyAttdId = targetIds.get(i);
+                if (modifyAttdId == null) {
+                    continue; // 생성('01') 슬롯 — 연결 OT 없음
+                }
+                SlotRequest s = param.slots().get(i);
+                String newStart = concatStamp(s.getStartDate(), s.getStartTime()); // 새 출근(yyyyMMddHHmm), 결측이면 null
+                String newEnd = concatStamp(s.getEndDate(), s.getEndTime());       // 새 퇴근, 결측이면 null(open)
+                int otOutside = mapper.countActiveOvertimeOutsideAttdWindow(
+                        param.cmpnyCd(), param.siteCd(), param.userCd(),
+                        modifyAttdId, newStart, newEnd);
+                if (otOutside > 0) {
+                    log.info("[OT-범위가드] 근태 보정 거부: 등록된 초과근무가 새 실근무 범위를 벗어남 — userCd={}, attdId={}, workSeq={}, newStart={}, newEnd={}",
+                            param.userCd(), modifyAttdId, s.getWorkSeq(), newStart, newEnd);
+                    throw new ApiException(AttdErrorCode.ATTD_400_114);
+                }
+            }
+
             // ----- INSERT × slots.length (REQ_ID 는 PK 단일 컬럼이므로 slot 마다 새로 채번) -----
             for (int i = 0; i < param.slots().size(); i++) {
                 SlotRequest s = param.slots().get(i);
@@ -377,8 +401,8 @@ public class AppReq07ServiceImpl implements AppReq07Service {
             //   순서: (이슈②) 스케줄수정 미처리(전일 차단) → (이슈②) 슬롯별 근태보정 미처리(구간 차단)
             //         → (이슈①) 슬롯별 스케줄 겹침(구간 차단). 위반 시 즉시 throw(부분 INSERT 방지).
 
-            // ----- PRAFTA-APP-022 룰A1(이슈② 확장): 활성 스케줄수정(대기01+승인02) 존재 시 그날 OT 거부 -----
-            //   확정 결정 1: 승인분도 충돌 범위 → IN('01','02'). 거부 코드는 신규 106(승인 포함 정확 문구).
+            // ----- PRAFTA-APP-022 룰A1(이슈② 확장): 미처리 스케줄수정(대기01) 존재 시 그날 OT 거부 -----
+            //   2026-06-21 정책정정: 승인분(02) 제외 → 대기(01)만 충돌로 본다(처리 완료분은 비차단). 거부 코드 106.
             int activeSched = mapper.countActiveSchedModify(
                     param.cmpnyCd(), param.siteCd(), param.userCd(), param.workYmd());
             if (activeSched > 0) {
@@ -802,6 +826,17 @@ public class AppReq07ServiceImpl implements AppReq07Service {
     private String todayYmd() {
         java.time.LocalDate d = java.time.LocalDate.now();
         return String.format("%04d%02d%02d", d.getYear(), d.getMonthValue(), d.getDayOfMonth());
+    }
+
+    /**
+     * 날짜(YYYYMMDD, 8) + 시각(HHmm, 4) → 12자리 시계열 비교 문자열(yyyyMMddHHmm).
+     * 둘 중 하나라도 결측/형식 미달이면 null(=결정 불가 → 퇴근의 경우 open 취급).
+     * (OT 범위 가드: DB 쿼리의 CONCAT 비교와 동일한 12자리 형식으로 맞춘다.)
+     */
+    private String concatStamp(String date, String time) {
+        if (!StringUtils.hasText(date) || date.length() != 8) return null;
+        if (!StringUtils.hasText(time) || time.length() != 4) return null;
+        return date + time;
     }
 
     /** HHmm 문자열 → 분 단위 정수. 형식 위반 시 -1. */

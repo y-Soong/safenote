@@ -25,6 +25,7 @@ public class SessionUpdateRequest {
 	private String managerGpsLat;
 	private String managerGpsLon;
 	private Integer gpsVerifyRadiusM;
+	private Integer eduMinutes;				// 교육 인정시간(분, 1~60). 수정은 NULL 허용
 	private String gpsManualConfirmYn;
 	private List<SessionContentModel> contents;
 	private List<SessionRiskModel> risks;

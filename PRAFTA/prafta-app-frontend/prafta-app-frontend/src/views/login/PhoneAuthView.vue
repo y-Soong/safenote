@@ -94,6 +94,7 @@ import { useRouter, onBeforeRouteLeave } from 'vue-router'
 import axios from '@/api/axios'
 import { useUserStore } from '@/stores/userStore'
 import { resolveApiErrorMessage } from '@/utils/apiError'
+import { routeAfterLogin } from '@/utils/termsGate'
 
 const { proxy } = getCurrentInstance()
 const router = useRouter()
@@ -290,7 +291,7 @@ const fnVerify = async () => {
   }
 }
 
-const fnApplyLoginResponse = (data) => {
+const fnApplyLoginResponse = async (data) => {
   // 웹 LoginView.fnSubmitLogin 정상 분기와 동일 구조.
   // 정책 §11.1: 휴대폰/이메일은 응답에 없으며 sessionStorage/store 에 보관하지 않는다.
   const {
@@ -342,7 +343,7 @@ const fnApplyLoginResponse = (data) => {
     authLevel,
   })
 
-  // 라우트 이탈 가드가 차단하지 않도록.
+  // 라우트 이탈 가드가 차단하지 않도록(타이머 정리 후 게이트 라우팅).
   cleanedUp = true
   if (resendInterval) {
     clearInterval(resendInterval)
@@ -353,7 +354,9 @@ const fnApplyLoginResponse = (data) => {
     ttlInterval = null
   }
 
-  router.replace('/MainView')
+  // 필수약관 미동의 게이트: 미동의 약관이 있으면 /TermsAgree, 없으면 /MainView 로 라우팅.
+  //   본인인증 경로엔 redirect 가 없으므로 기본 목적지(/MainView)를 사용.
+  await routeAfterLogin(router, '/MainView')
 }
 
 const fnCancel = async () => {
@@ -389,6 +392,10 @@ function focusKill(e) {
   flex-direction: column;
   background: #fff;
   box-sizing: border-box;
+  /* 안전장치: 어떤 자식도 페이지 가로폭을 넘기지 않도록(가로 스크롤바 차단). */
+  width: 100%;
+  max-width: 100%;
+  overflow-x: hidden;
 }
 
 .header {
@@ -460,8 +467,15 @@ function focusKill(e) {
   gap: 0.5rem;
 }
 
+/* 액션 버튼(인증요청/확인)은 폭을 유지하고, 입력칸이 줄어들어 가로 오버플로우(가로 스크롤)를 막는다. */
+.input-with-action .btn {
+  flex-shrink: 0;
+}
+
 .form-input {
   flex: 1;
+  /* flex 자식 기본 min-width:auto 때문에 입력칸이 콘텐츠 이하로 안 줄어들어 버튼과 합쳐 가로 스크롤이 생기던 문제 해소. */
+  min-width: 0;
   padding: 0.75rem 1rem;
   border: 1px solid #d1d5db;
   border-radius: 10px;

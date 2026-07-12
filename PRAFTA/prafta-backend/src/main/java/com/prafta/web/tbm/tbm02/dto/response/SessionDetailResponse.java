@@ -42,6 +42,7 @@ public class SessionDetailResponse {
 		private String managerGpsLon;
 		private String gpsVerifyTypeCd;
 		private Integer gpsVerifyRadiusM;
+		private Integer eduMinutes;		// 교육 인정시간(분, 1~60). 미설정 시 null
 		private String gpsManualConfirmYn;
 		private String openedAt;
 		private String prepStartAt;		// 교육준비 타이머 기준시각(15분 자동 교육시작 기준, FE 카운트다운용)
@@ -53,10 +54,11 @@ public class SessionDetailResponse {
 		private String insertDate;
 	}
 
-	/** 위험성평가 매핑 항목(표시명 합성 포함). */
+	/** 위험성평가 매핑 항목(표시명 합성 + 평가요청일/자 + 읽기전용 상세 필드 포함). */
 	@Getter
 	@Builder
 	public static class SessionRiskItem {
+		private String cmpnyCd;
 		private String siteCd;
 		private String processCd;
 		private String processNm;
@@ -69,5 +71,27 @@ public class SessionDetailResponse {
 		private String assessmentStatusNm;
 		private String displayName;		// 공정명/위험요인/유해요인 합성(Risk03 규약 재사용)
 		private int displayOrder;
+		// 6.2-(1)-2: 평가요청일/평가요청자(콘솔 요약 표시)
+		private String initAssessDate;
+		private String initAssessorNm;
+		// 결정#5: 읽기전용 상세 팝업(RiskAssessInfo) 채움용 평가 상세
+		private String initLikelihoodScore;
+		private String initSeverityScore;
+		private String initRiskLv;
+		private String initDesc;
+		private String initAssessorId;
+		private String initFileMgmtCd;
+		private String initFilePath;
+		private String revalDate;
+		private String revalBeforeDesc;
+		private String revalLikelihoodScore;
+		private String revalSeverityScore;
+		private String revalRiskLv;
+		private String revalDesc;
+		private String revalAssessorId;
+		private String revalAssessorNm;
+		private String revalAssessDate;
+		private String revalFileMgmtCd;
+		private String revalFilePath;
 	}
 }

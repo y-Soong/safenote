@@ -3,6 +3,7 @@ package com.prafta.common.cmm.auth.mapper;
 import org.apache.ibatis.annotations.Mapper;
 import org.apache.ibatis.annotations.Param;
 
+import com.prafta.common.cmm.auth.result.AuthGateUserResult;
 import com.prafta.common.cmm.auth.result.AuthTokenResult;
 import com.prafta.common.cmm.login.result.UserResult;
 
@@ -52,4 +53,17 @@ public interface AuthMapper {
 			, @Param("userCd") String userCd
 			, @Param("clientType") String clientType
 			, @Param("loginId") String loginId);
+
+	// prafta-app-033: 로그인 게이트(강제 비번변경) 판정용 1행 조회 — PWD_CHG_DTIME IS NULL 여부 + 고용형태.
+	AuthGateUserResult selectGateUserInfo(
+			@Param("cmpnyCd") String cmpnyCd
+			, @Param("userCd") String userCd);
+
+	// prafta-app-033: 웹 약관 게이트 — LoginMapper.selectUserTermsAgreementCheck(USE_YN='Y' 전체 미동의) 동치 count.
+	//   약관 동의기록은 회사 스코프(USER_CD 는 회사별 채번이라 전역 유일이 아님)이므로 cmpnyCd 동반 판정.
+	int countWebPendingTerms(@Param("cmpnyCd") String cmpnyCd, @Param("userCd") String userCd);
+
+	// prafta-app-033: 앱 약관 게이트 — Terms01Mapper.selectPendingRequiredTerms(REQUIRED_YN='Y' 미동의) 동치 count.
+	//   약관 동의기록은 회사 스코프이므로 cmpnyCd 동반 판정.
+	int countAppPendingRequiredTerms(@Param("cmpnyCd") String cmpnyCd, @Param("userCd") String userCd);
 }

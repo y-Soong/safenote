@@ -76,7 +76,8 @@
 	    , #{nodeNm}
 	    , #{nodeType}
 	    , #{parentNodeCd}
-	    , #{selfAttdApprvYn}
+	    <!-- PRAFTA-001-1: 사업장 루트 노드(NODE_CD='n1')는 자체근태승인 여부를 항상 'Y'로 강제. 하위 노드는 입력값 유지. -->
+	    , CASE WHEN #{nodeCd} = 'n1' THEN 'Y' ELSE #{selfAttdApprvYn} END
 	    , #{gvUserCd}
 	    , CURRENT_TIMESTAMP
 	    , #{gvUserCd}
@@ -86,7 +87,10 @@
 		NODE_NM 		   	 = NEW.NODE_NM
 		, NODE_TYPE			 = NEW.NODE_TYPE
 		, PARENT_NODE_CD	 = NEW.PARENT_NODE_CD
-	    , SELF_ATTD_APPRV_YN = NEW.SELF_ATTD_APPRV_YN
+	    <!-- PRAFTA-001-1: 갱신 시에도 루트 노드는 'Y' 강제(프론트가 'N'을 보내도 무시).
+	         ★기존 값 참조는 테이블명으로 한정한다. 행 별칭 NEW 에 NODE_CD 가 있어
+	         한정자 없는 NODE_CD 는 모호(MySQL Error 1052). -->
+	    , SELF_ATTD_APPRV_YN = CASE WHEN TB_SITE_NODE.NODE_CD = 'n1' THEN 'Y' ELSE NEW.SELF_ATTD_APPRV_YN END
 	    , UPDATE_NO          = NEW.UPDATE_NO
 	    , UPDATE_DATE        = CURRENT_TIMESTAMP
     </update>

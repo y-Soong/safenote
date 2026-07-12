@@ -35,7 +35,7 @@
       <span class="mp-hd__spacer" aria-hidden="true"></span>
     </header>
 
-    <!-- 본문 (스크롤 영역) — prafta-app-028: 당겨서 새로고침 제스처 바인딩(MainView .main 동형) -->
+    <!-- 본문 (스크롤 영역) — prafta-app-028: 당겨서 새로고침 제스처 바인딩(공통 컴포저블 usePullToRefresh) -->
     <main
       class="mp-body"
       ref="mpBodyEl"
@@ -45,16 +45,7 @@
       @touchcancel="onPullEnd"
     >
       <!-- prafta-app-028: 당겨서 새로고침 인디케이터 — 스크롤 최상단(프로필 카드 위)에서 아래로 당기면 노출 -->
-      <div
-        class="pull-refresh"
-        :class="{ 'pull-refresh--animating': !isDragging }"
-        :style="{ height: pullIndicatorHeight + 'px' }"
-        aria-live="polite"
-      >
-        <span v-if="isRefreshing" class="pull-refresh__text">새로고침 중...</span>
-        <span v-else-if="pullReady" class="pull-refresh__text">놓으면 새로고침</span>
-        <span v-else-if="pullDistance > 0" class="pull-refresh__text">당겨서 새로고침</span>
-      </div>
+      <PullRefreshIndicator v-bind="indicatorProps" />
 
       <!-- 로딩 -->
       <div v-if="isLoading" class="mp-loading" aria-live="polite">불러오는 중...</div>
@@ -88,6 +79,7 @@
               <use href="#i-mp-chev-right" />
             </svg>
           </div>
+          <!-- LC-11: 소수점 노출 금지 — 일은 큰 숫자, 시간·분은 보조 텍스트("N일 H시간 M분"). -->
           <div class="mp-leave__kpis">
             <div class="mp-leave__cell">
               <span class="mp-leave__lbl">남은 연차</span>
@@ -95,19 +87,28 @@
                 class="mp-leave__val mp-leave__val--accent"
                 :class="{ 'mp-leave__val--muted': leaveRemaining === 0 }"
               >
-                {{ leaveRemainingText }}<span class="mp-leave__unit">일</span>
+                {{ leaveRemainingParts.dayText }}<span class="mp-leave__unit">일</span>
+                <span v-if="leaveRemainingParts.subText" class="mp-leave__sub">{{
+                  leaveRemainingParts.subText
+                }}</span>
               </span>
             </div>
             <div class="mp-leave__cell">
               <span class="mp-leave__lbl">사용예정</span>
               <span class="mp-leave__val" :class="{ 'mp-leave__val--muted': leavePlanned === 0 }">
-                {{ leavePlannedText }}<span class="mp-leave__unit">일</span>
+                {{ leavePlannedParts.dayText }}<span class="mp-leave__unit">일</span>
+                <span v-if="leavePlannedParts.subText" class="mp-leave__sub">{{
+                  leavePlannedParts.subText
+                }}</span>
               </span>
             </div>
             <div class="mp-leave__cell">
               <span class="mp-leave__lbl">사용</span>
               <span class="mp-leave__val" :class="{ 'mp-leave__val--muted': leaveUsed === 0 }">
-                {{ leaveUsedText }}<span class="mp-leave__unit">일</span>
+                {{ leaveUsedParts.dayText }}<span class="mp-leave__unit">일</span>
+                <span v-if="leaveUsedParts.subText" class="mp-leave__sub">{{
+                  leaveUsedParts.subText
+                }}</span>
               </span>
             </div>
           </div>
@@ -129,7 +130,8 @@
         <!-- 계정 그룹 -->
         <p class="mp-group-label">계정</p>
         <nav class="mp-menu">
-          <button type="button" class="mp-menu__row" @click="onProfileEdit">
+          <!-- 일용직(DAILY)은 개인정보 수정 미노출(필요 없는 기능). 비밀번호 변경은 유지. -->
+          <button v-if="!isDailyWorker" type="button" class="mp-menu__row" @click="onProfileEdit">
             <span class="mp-menu__text">개인정보 수정</span>
             <svg class="icon mp-menu__chev" width="20" height="20" aria-hidden="true">
               <use href="#i-mp-chev-right" />
@@ -143,27 +145,56 @@
           </button>
         </nav>
 
-        <!-- 결재 그룹 -->
-        <p class="mp-group-label">결재</p>
-        <nav class="mp-menu">
-          <button type="button" class="mp-menu__row" @click="onPresetManage">
-            <span class="mp-menu__text">연차 결재선 관리</span>
-            <span class="mp-menu__meta">{{ presetCount }}개</span>
-            <svg class="icon mp-menu__chev" width="20" height="20" aria-hidden="true">
-              <use href="#i-mp-chev-right" />
-            </svg>
-          </button>
-          <!-- 사용자연차결재-04: 연차 결재 관리(내가 결재자인 연차 대기/처리 내역) -->
-          <button type="button" class="mp-menu__row" @click="onLeaveApproval">
-            <span class="mp-menu__text">연차 결재 관리</span>
-            <span v-if="pendingApprovalCount > 0" class="mp-menu__meta"
-              >{{ pendingApprovalCount }}건 대기</span
-            >
-            <svg class="icon mp-menu__chev" width="20" height="20" aria-hidden="true">
-              <use href="#i-mp-chev-right" />
-            </svg>
-          </button>
-        </nav>
+        <!-- 결재 그룹 — 일용직(DAILY)은 연차 결재선/결재 관리 모두 미노출(필요 없는 기능). -->
+        <template v-if="!isDailyWorker">
+          <p class="mp-group-label">결재</p>
+          <nav class="mp-menu">
+            <button type="button" class="mp-menu__row" @click="onPresetManage">
+              <span class="mp-menu__text">연차 결재선 관리</span>
+              <span class="mp-menu__meta">{{ presetCount }}개</span>
+              <svg class="icon mp-menu__chev" width="20" height="20" aria-hidden="true">
+                <use href="#i-mp-chev-right" />
+              </svg>
+            </button>
+            <!-- 사용자연차결재-04: 연차 결재 관리(내가 결재자인 연차 대기/처리 내역) -->
+            <button type="button" class="mp-menu__row" @click="onLeaveApproval">
+              <span class="mp-menu__text">연차 결재 관리</span>
+              <span v-if="pendingApprovalCount > 0" class="mp-menu__meta"
+                >{{ pendingApprovalCount }}건 대기</span
+              >
+              <svg class="icon mp-menu__chev" width="20" height="20" aria-hidden="true">
+                <use href="#i-mp-chev-right" />
+              </svg>
+            </button>
+          </nav>
+        </template>
+
+        <!-- 약관 동의 설정 (선택약관 on/off) — 선택약관이 1개 이상일 때만 노출. -->
+        <template v-if="optionalTerms.length > 0">
+          <p class="mp-group-label">약관 동의 설정</p>
+          <nav class="mp-menu">
+            <div v-for="terms in optionalTerms" :key="terms.termsId" class="mp-terms-row">
+              <div class="mp-terms-row__text">
+                <span class="mp-terms-row__label">{{ '(선택) ' + terms.termsNm }}</span>
+                <button type="button" class="mp-terms-row__view" @click="onViewTerms(terms)">
+                  보기
+                </button>
+              </div>
+              <button
+                type="button"
+                role="switch"
+                class="mp-switch"
+                :class="{ 'mp-switch--on': terms.agrYn === 'Y' }"
+                :aria-checked="terms.agrYn === 'Y' ? 'true' : 'false'"
+                :aria-label="terms.termsNm + ' 동의'"
+                :disabled="isTermsSaving"
+                @click="onToggleOptionalTerms(terms)"
+              >
+                <span class="mp-switch__knob" aria-hidden="true"></span>
+              </button>
+            </div>
+          </nav>
+        </template>
 
         <!-- 로그아웃 (풀폭 secondary 버튼) -->
         <button type="button" class="mp-logout" @click="onLogoutClick">
@@ -244,8 +275,12 @@ import { useRouter } from 'vue-router'
 import api from '@/api/axios'
 import { useUserStore } from '@/stores/userStore'
 import { forceLogout } from '@/composables/useAuth'
+import { usePullToRefresh } from '@/composables/usePullToRefresh'
+import PullRefreshIndicator from '@/components/common/PullRefreshIndicator.vue'
 // prafta-app-028: 일용직(DAILY) 게이트 — 연차 요약 섹션 노출 판정(MainView 잔여연차 카드와 동일 게이트).
 import { isDailyWorker as isDailyWorkerFn } from '@/utils/employment'
+// LC-11: 연차 일수 표기 공용 유틸 — 소수점 노출 금지, "N일 H시간 M분" 분리 표기.
+import { splitLeaveDays } from '@/utils/leaveFormat'
 
 import LogoutConfirmDialog from './components/LogoutConfirmDialog.vue'
 import WithdrawalConfirmDialog from './components/WithdrawalConfirmDialog.vue'
@@ -294,19 +329,23 @@ const leaveRemaining = ref(0)
 const leavePlanned = ref(0)
 const leaveUsed = ref(0)
 const leaveSummaryFailed = ref(false)
+// LC-11: 1일 환산시간(분, 서버 권위 — my-leave-summary.convMinutes). "N일 H시간 M분" 분모. 미제공 시 480.
+const leaveConvMinutes = ref(480)
+
+// 선택약관 동의 설정 — GET /appApi/terms01/optional-terms 응답(현재버전 + agrYn).
+//   비치명적: 실패 시 빈 목록(섹션 미노출). 토글은 POST /appApi/terms01/optional-terms-agree.
+const optionalTerms = ref([])
+// 토글 저장 직렬화 가드(동시 PUT 경합 방지).
+const isTermsSaving = ref(false)
 
 // 일용직(DAILY) 여부 — 연차 요약 섹션 노출 게이트(라운드트립 없이 세션값으로 판정).
 const isDailyWorker = computed(() => isDailyWorkerFn())
 
-// 0.5 단위 표기 (정수면 정수, 소수면 1자리) — LeaveSplitKpi.trimDays 와 동일 규칙.
-const trimDays = (v) => {
-  if (v == null) return '0'
-  const n = Number(v)
-  return Number.isInteger(n) ? String(n) : n.toFixed(1)
-}
-const leaveRemainingText = computed(() => trimDays(leaveRemaining.value))
-const leavePlannedText = computed(() => trimDays(leavePlanned.value))
-const leaveUsedText = computed(() => trimDays(leaveUsed.value))
+// LC-11: 소수점 노출 금지 — 일(dayText)은 큰 숫자, 시간·분(subText)은 보조 텍스트로 분리 표기.
+//   내부 계산값(leaveRemaining 등 숫자 ref)은 그대로 두고 표시만 교체(muted 판정 회귀 없음).
+const leaveRemainingParts = computed(() => splitLeaveDays(leaveRemaining.value, leaveConvMinutes.value))
+const leavePlannedParts = computed(() => splitLeaveDays(leavePlanned.value, leaveConvMinutes.value))
+const leaveUsedParts = computed(() => splitLeaveDays(leaveUsed.value, leaveConvMinutes.value))
 
 // 모달 토글 (UI 상태 — 허용 범위)
 const logoutDialogOpen = ref(false)
@@ -345,6 +384,16 @@ const onLeaveApproval = () => {
 // 001-Phase1-F4: 관리자 모드 진입(보호 라우트). 서버가 최종 진입 판정.
 const onAdminMode = () => {
   router.push('/AdminHome')
+}
+// 선택약관 (보기) — 기존 TermsDetail 재사용(query termsId_p/termsNm_p).
+const onViewTerms = (terms) => {
+  router.push({
+    path: '/TermsDetail',
+    query: {
+      termsId_p: terms.termsId,
+      termsNm_p: terms.termsNm,
+    },
+  })
 }
 
 // ───────────────────────────────────────────────────────────
@@ -448,12 +497,58 @@ const loadLeaveSummary = async () => {
     leaveRemaining.value = total.remaining ?? 0 // 남은 연차(부여 − 총사용)
     leavePlanned.value = total.planned ?? 0 // 사용예정 연차(미래 확정 연차)
     leaveUsed.value = total.used ?? 0 // 사용 연차(실제 소진분)
+    // LC-11: 표기 분모 — 서버 미제공(구버전 응답) 시 480 폴백.
+    leaveConvMinutes.value = Number(data?.convMinutes) > 0 ? Number(data.convMinutes) : 480
     // 새로고침 재호출 대비: 성공 경로에서 실패 플래그를 명시적으로 리셋(이전 실패 상태 박제 방지).
     leaveSummaryFailed.value = false
   } catch (e) {
     // 비치명적: 섹션만 미노출. showAlert 금지(전체 화면 에러로 키우지 않음).
     leaveSummaryFailed.value = true
     console.warn('[MyPage] 연차 요약 조회 실패:', e?.message)
+  }
+}
+
+// ───────────────────────────────────────────────────────────
+// 선택약관 동의 설정 로드 (GET /appApi/terms01/optional-terms).
+//   비치명적: 실패하면 빈 목록(섹션 미노출). 전체 화면 에러로 키우지 않음.
+// ───────────────────────────────────────────────────────────
+const loadOptionalTerms = async () => {
+  try {
+    const { data } = await api.get('/appApi/terms01/optional-terms')
+    const list = Array.isArray(data?.terms) ? data.terms : []
+    optionalTerms.value = list.map((t) => ({
+      termsId: t.termsId,
+      termsNm: t.termsNm,
+      termsVersion: t.termsVersion,
+      agrYn: t.agrYn === 'Y' ? 'Y' : 'N',
+    }))
+  } catch (e) {
+    // 비치명적: 섹션 미노출. showAlert 금지.
+    optionalTerms.value = []
+    console.warn('[MyPage] 선택약관 조회 실패:', e?.message)
+  }
+}
+
+// 선택약관 토글(낙관적 토글 + POST 저장, 실패 시 원복).
+const onToggleOptionalTerms = async (terms) => {
+  if (isTermsSaving.value) return
+  const prev = terms.agrYn
+  const next = prev === 'Y' ? 'N' : 'Y'
+  // 낙관적 토글.
+  terms.agrYn = next
+  isTermsSaving.value = true
+  try {
+    await api.post('/appApi/terms01/optional-terms-agree', {
+      termsId: terms.termsId,
+      agrYn: next,
+    })
+  } catch (e) {
+    // 실패 시 원복 + 안내.
+    terms.agrYn = prev
+    console.warn('[MyPage] 선택약관 토글 실패:', e?.message)
+    showAlert(e?.response?.data?.message || '설정을 저장하지 못했어요. 잠시 후 다시 시도해 주세요.')
+  } finally {
+    isTermsSaving.value = false
   }
 }
 
@@ -471,6 +566,7 @@ const loadAll = async ({ showLoading = true } = {}) => {
   const adminP = loadAdminEntryFlag()
   const pendingP = loadPendingApprovalCount()
   const leaveP = loadLeaveSummary()
+  const termsP = loadOptionalTerms()
 
   // 프로필(주 데이터)은 try/catch 로 직접 처리.
   //   GET /appApi/mypage/profile (마스킹 응답 D1). 메인 화면은 마스킹 PII를 사용하지 않고
@@ -493,8 +589,8 @@ const loadAll = async ({ showLoading = true } = {}) => {
     if (showLoading) isLoading.value = false
   }
 
-  // 비치명적 3종 완료 대기(내부에서 예외 흡수되어 reject 없음).
-  await Promise.all([adminP, pendingP, leaveP])
+  // 비치명적 4종 완료 대기(내부에서 예외 흡수되어 reject 없음).
+  await Promise.all([adminP, pendingP, leaveP, termsP])
 }
 
 onMounted(() => {
@@ -503,84 +599,19 @@ onMounted(() => {
 })
 
 // ───────────────────────────────────────────────────────────
-// prafta-app-028: 당겨서 새로고침 — MainView .main 패턴 그대로 이식.
+// prafta-app-028: 당겨서 새로고침 — 공통 컴포저블(usePullToRefresh)로 추출.
 //   .mp-body 가 실제 스크롤 컨테이너(overflow-y:auto, flex:1, min-height:0)이며
 //   스크롤 최상단(프로필 카드 위)에서 아래로 더 당기면 loadAll({showLoading:false}) 재조회.
-//   상수/제스처 로직은 MainView 와 동일(PULL_THRESHOLD/MAX_PULL/PULL_ENGAGE_SLOP 등).
+//   기존 새로고침 콜백(프로필/관리자판정/대기건수/연차요약 일괄 갱신)은 그대로 유지.
 // ───────────────────────────────────────────────────────────
 const mpBodyEl = ref(null)
-const pullDistance = ref(0) // 현재 당김 거리(px, 인디케이터 높이)
-const isRefreshing = ref(false) // 새로고침 진행 중
-const isDragging = ref(false) // 손가락으로 당기는 중(애니메이션 토글용)
-const PULL_THRESHOLD = 70 // 이 거리 이상 당기고 놓으면 새로고침
-const MAX_PULL = 120 // 인디케이터 최대 높이
-
-const pullReady = computed(() => pullDistance.value >= PULL_THRESHOLD)
-const pullIndicatorHeight = computed(() => (isRefreshing.value ? 48 : pullDistance.value))
-
-let touchStartY = 0
-let tracking = false // 이 제스처를 추적 중인가(스크롤 컨테이너 최상단에서 시작했을 때만)
-let pullArmed = false // 당겨서 새로고침 모드로 확정됐는가(확정 후에만 preventDefault)
-// 방향 확정 데드존(px). 손가락을 댈 때 흔히 생기는 미세한 초기 떨림으로
-// preventDefault 가 걸려 네이티브 스크롤 제스처 전체가 취소되는 버그를 막는다.
-const PULL_ENGAGE_SLOP = 6
-
-// 스크롤이 최상단에 닿았는지 판정(1px 오차 허용)
-const isScrolledToTop = () => {
-  const el = mpBodyEl.value
-  if (!el) return false
-  return el.scrollTop <= 0
-}
-
-const onPullStart = (e) => {
-  if (isRefreshing.value) return
-  // 매 제스처 상태 초기화. 추적은 스크롤 컨테이너 최상단에서만 시작.
-  pullArmed = false
-  tracking = isScrolledToTop()
-  if (tracking) touchStartY = e.touches[0].clientY
-}
-
-const onPullMove = (e) => {
-  if (!tracking || isRefreshing.value) return
-  const delta = e.touches[0].clientY - touchStartY // 아래로 당기면 양수
-
-  // 아직 당김 모드로 확정되지 않았다면: 데드존을 넘는 '첫 의미있는 이동'에서 방향을 확정한다.
-  //   - 최상단에서 아래로 당긴 경우에만 새로고침 모드(pullArmed)로 진입.
-  //   - 그 외(위로 스크롤 등)는 추적을 끊어 이후 preventDefault 가 절대 호출되지 않게 한다
-  //     → 네이티브 스크롤 제스처가 보존된다(상단 붙음/스크롤 먹힘 버그 방지).
-  if (!pullArmed) {
-    if (Math.abs(delta) < PULL_ENGAGE_SLOP) return // 판단 보류(네이티브 스크롤 그대로 둠)
-    if (delta > 0 && isScrolledToTop()) {
-      pullArmed = true
-    } else {
-      tracking = false
-      return
-    }
-  }
-
-  isDragging.value = true
-  pullDistance.value = Math.min(MAX_PULL, delta * 0.5) // 저항감
-  // iOS 고무줄/추가 스크롤 억제(당김 모드로 확정된 경우에만)
-  if (e.cancelable) e.preventDefault()
-}
-
-const onPullEnd = async () => {
-  isDragging.value = false
-  const wasArmed = pullArmed
-  pullArmed = false
-  if (!tracking) return
-  tracking = false
-  const shouldRefresh = wasArmed && pullDistance.value >= PULL_THRESHOLD
-  pullDistance.value = 0
-  if (!shouldRefresh || isRefreshing.value) return
-  isRefreshing.value = true
-  try {
-    // prafta-app-028: 새로고침 시 프로필/관리자판정/대기건수/연차요약을 함께 갱신(비치명적 항목은 자체 폴백).
+const { onPullStart, onPullMove, onPullEnd, indicatorProps } = usePullToRefresh(
+  mpBodyEl,
+  async () => {
+    // 새로고침 시 프로필/관리자판정/대기건수/연차요약을 함께 갱신(비치명적 항목은 자체 폴백).
     await loadAll({ showLoading: false })
-  } finally {
-    isRefreshing.value = false
-  }
-}
+  },
+)
 </script>
 
 <style scoped>
@@ -601,6 +632,7 @@ const onPullEnd = async () => {
   --color-border-light: #f3f4f6;
   --color-surface: #ffffff;
   --color-bg: #f9fafb;
+  --color-switch-off: #d1d5db;
   --radius-sm: 6px;
   --radius-md: 10px;
   --radius-lg: 14px;
@@ -670,24 +702,6 @@ const onPullEnd = async () => {
   text-align: center;
   font-size: 13px;
   color: var(--color-text-tertiary);
-}
-
-/* prafta-app-028: 당겨서 새로고침 인디케이터 — MainView .pull-refresh 와 동형. 당김 거리에 따라 높이 증감. */
-.pull-refresh {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  overflow: hidden;
-  height: 0;
-  color: var(--color-text-secondary);
-  font-size: 13px;
-}
-/* 손가락을 뗀 뒤(또는 새로고침 중)에는 부드럽게 높이 전환, 당기는 중에는 즉시 반응 */
-.pull-refresh--animating {
-  transition: height 0.2s ease;
-}
-.pull-refresh__text {
-  padding: var(--space-sm) 0;
 }
 
 /* 프로필 카드 */
@@ -797,6 +811,14 @@ const onPullEnd = async () => {
   font-weight: 500;
   color: var(--color-text-tertiary);
 }
+/* LC-11: 시간·분 보조 텍스트 ("3시간 30분") — 일 단위 옆 축소 표기(줄바꿈 허용). */
+.mp-leave__sub {
+  display: block;
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--color-text-secondary);
+  font-variant-numeric: tabular-nums;
+}
 
 /* 그룹 라벨 */
 .mp-group-label {
@@ -883,6 +905,75 @@ const onPullEnd = async () => {
   text-align: center;
   font-size: 11px;
   color: var(--color-text-tertiary);
+}
+
+/* 약관 동의 설정 — 선택약관 토글 행(PushSettingView 스위치 패턴 차용). */
+.mp-terms-row {
+  min-height: 56px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-sm);
+  padding: var(--space-sm) var(--space-lg);
+  border-bottom: 1px solid var(--color-border-light);
+}
+.mp-terms-row:last-child {
+  border-bottom: 0;
+}
+.mp-terms-row__text {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+  min-width: 0;
+}
+.mp-terms-row__label {
+  font-size: 15px;
+  color: var(--color-text-primary);
+}
+.mp-terms-row__view {
+  flex-shrink: 0;
+  background: transparent;
+  border: 0;
+  padding: 0;
+  font-size: 13px;
+  color: var(--color-primary);
+  text-decoration: underline;
+  cursor: pointer;
+  font-family: inherit;
+}
+
+/* 스위치 (role=switch 버튼) — PushSettingView .ps-switch 와 동일 규격. */
+.mp-switch {
+  position: relative;
+  flex-shrink: 0;
+  width: 48px;
+  height: 28px;
+  padding: 0;
+  border: 0;
+  border-radius: var(--radius-full);
+  background: var(--color-switch-off);
+  cursor: pointer;
+  transition: background 0.18s ease;
+}
+.mp-switch--on {
+  background: var(--color-primary);
+}
+.mp-switch:disabled {
+  cursor: default;
+}
+.mp-switch__knob {
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 24px;
+  height: 24px;
+  border-radius: var(--radius-full);
+  background: var(--color-surface);
+  box-shadow: var(--shadow-sm);
+  transition: transform 0.18s ease;
+}
+.mp-switch--on .mp-switch__knob {
+  transform: translateX(20px);
 }
 
 .mp-sprite {

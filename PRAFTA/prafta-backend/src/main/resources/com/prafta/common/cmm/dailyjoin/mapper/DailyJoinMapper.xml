@@ -21,9 +21,30 @@
       AND IFNULL(S.USE_YN, 'Y') = 'Y'
     </select>
 
-    <!-- 사용자ID 중복 카운트 (TB_DAILY_USER, USE_YN='Y') -->
+    <!-- 사용자ID 중복 카운트 (TB_DAILY_USER, 제출 단계용).
+         prafta-app-032 A: 활성/비활성 무관(전상태) + 재활성 대상 행(reuseUserCd) 제외.
+         같은 휴대폰 복귀자가 자기 옛 아이디를 그대로 재활성하는 케이스를 false-positive 로 막지 않기 위함. -->
     <select id="selectUserIdDupleCnt" parameterType="com.prafta.common.cmm.dailyjoin.application.query.UserIdDupleCheckQuery" resultType="int">
     /* DailyJoinMapper.selectUserIdDupleCnt */
+    SELECT COUNT(*)
+    FROM (
+        SELECT 1
+          FROM TB_DAILY_USER
+         WHERE CMPNY_CD = #{cmpnyCd}
+           AND USER_ID  = #{userId}
+           <if test="reuseUserCd != null and reuseUserCd != ''">
+           AND USER_CD <![CDATA[ <> ]]> #{reuseUserCd}
+           </if>
+         LIMIT 1
+    ) T
+    </select>
+
+    <!-- 사용자ID 중복 카운트 (TB_DAILY_USER, 프리체크 전용 — 활성 USE_YN='Y' 만).
+         prafta-app-032 §2: 프리체크(checkUserIdDuple)는 활성-only 유지. 휴대폰 컨텍스트가 없어 reuseUserCd 미적용.
+         프리체크가 "사용가능"이라 했다가 제출에서 DAILYJOIN_400_001 이 날 수 있는 한계가 있으나(다른 휴대폰 + 옛 아이디),
+         이는 제출 단계 전상태 검사로 정직하게 차단된다. -->
+    <select id="selectActiveUserIdDupleCnt" parameterType="com.prafta.common.cmm.dailyjoin.application.query.UserIdDupleCheckQuery" resultType="int">
+    /* DailyJoinMapper.selectActiveUserIdDupleCnt */
     SELECT COUNT(*)
     FROM (
         SELECT 1
@@ -42,6 +63,20 @@
     FROM (
         SELECT 1
           FROM TB_DAILY_USER
+         WHERE CMPNY_CD    = #{cmpnyCd}
+           AND MBL_NO_HMAC = #{mblNoHmac}
+           AND USE_YN      = 'Y'
+         LIMIT 1
+    ) T
+    </select>
+
+    <!-- prafta-daily-blacklist: 활성 블랙리스트 등록 여부(가입/재활성 게이트 공용). 1 이상이면 차단. -->
+    <select id="selectActiveBlacklistCnt" resultType="int">
+    /* DailyJoinMapper.selectActiveBlacklistCnt */
+    SELECT COUNT(*)
+    FROM (
+        SELECT 1
+          FROM TB_DAILY_BLACKLIST
          WHERE CMPNY_CD    = #{cmpnyCd}
            AND MBL_NO_HMAC = #{mblNoHmac}
            AND USE_YN      = 'Y'
@@ -94,6 +129,38 @@
       AND (CURR_USER_CD IS NULL OR CURR_USER_CD = '')
     ORDER BY CAST(SLOT_NO AS UNSIGNED)
     LIMIT 1
+    </select>
+
+    <!-- prafta-app-032 보강1(a): 해당 사용자가 이미 점유 중인 슬롯 조회(멱등 재사용 대상).
+         FOR UPDATE 잠금 읽기 → 직전 트랜잭션이 커밋한 점유를 반드시 관측(REPEATABLE READ 스냅샷 우회).
+         사용자 행 락(reactivateDailyUser 선행)으로 직렬화된 뒤 이 조회가 최신 커밋을 보아 1인 2슬롯을 차단한다. -->
+    <select id="selectSlotNoOccupiedByUser" resultType="string">
+    /* DailyJoinMapper.selectSlotNoOccupiedByUser */
+    SELECT SLOT_NO
+    FROM TB_DAILY_USER_SLOT
+    WHERE CMPNY_CD     = #{cmpnyCd}
+      AND SITE_CD      = #{siteCd}
+      AND CURR_USER_CD = #{userCd}
+      AND SLOT_STATUS  = '02'                    <!-- '02'=점유 -->
+    ORDER BY CAST(SLOT_NO AS UNSIGNED)
+    LIMIT 1
+    FOR UPDATE
+    </select>
+
+    <!-- prafta-app-032 보강2: 같은 회사·같은 휴대폰 HMAC 의 다른 활성 일용직 수(대상 USER_CD 제외).
+         재활성(USE_YN N→Y) 직전 검사로 UX_TB_DAILY_USER_MBL(활성 한정 유니크) 위반 500 을 사전 차단한다. -->
+    <select id="selectActiveDailyUserMblDupleCntExcept" resultType="int">
+    /* DailyJoinMapper.selectActiveDailyUserMblDupleCntExcept */
+    SELECT COUNT(*)
+    FROM (
+        SELECT 1
+          FROM TB_DAILY_USER
+         WHERE CMPNY_CD    = #{cmpnyCd}
+           AND MBL_NO_HMAC = #{mblNoHmac}
+           AND USE_YN      = 'Y'
+           AND USER_CD <![CDATA[ <> ]]> #{userCd}
+         LIMIT 1
+    ) T
     </select>
 
     <!-- USER_CD 채번 -->
@@ -156,8 +223,10 @@
          PRAFTA-app-027-3'(통합형) — TB_USER 통합 INSERT + 중복검증 확장
          ============================================================ -->
 
-    <!-- TB_USER 사용자ID 중복 카운트(활성 USE_YN='Y' 만 검사).
-         옵션2: 비활성(만료) 행은 재활성 대상이므로 중복으로 보지 않는다. -->
+    <!-- TB_USER 사용자ID 중복 카운트(UX_TB_USER_ID 사전 차단).
+         prafta-app-032 A: UX_TB_USER_ID(CMPNY_CD,USER_ID)는 활성/비활성 무관 절대 유니크 →
+         전상태(USE_YN 무관)로 검사해 비활성 잔존 행과의 INSERT 충돌(500)을 사전 차단한다.
+         단, 휴대폰 기반 재활성 대상 행(reuseUserCd)은 제외(같은 휴대폰 복귀자가 자기 옛 USER_CD 재활성). -->
     <select id="selectTbUserIdDupleCnt" resultType="int">
     /* DailyJoinMapper.selectTbUserIdDupleCnt */
     SELECT COUNT(*)
@@ -166,7 +235,9 @@
           FROM TB_USER
          WHERE CMPNY_CD = #{cmpnyCd}
            AND USER_ID  = #{userId}
-           AND USE_YN   = 'Y'
+           <if test="reuseUserCd != null and reuseUserCd != ''">
+           AND USER_CD <![CDATA[ <> ]]> #{reuseUserCd}
+           </if>
          LIMIT 1
     ) T
     </select>
@@ -296,7 +367,8 @@
     <insert id="insertTermsUserAgrMgmt" parameterType="com.prafta.common.cmm.dailyjoin.application.command.TermsUserAgrCommand">
     /* DailyJoinMapper.insertTermsUserAgrMgmt */
     INSERT INTO TB_TERMS_USER_AGR_MGMT (
-        USER_CD
+        CMPNY_CD
+        , USER_CD
         , TERMS_ID
         , TERMS_VERSION
         , AGR_YN
@@ -304,14 +376,15 @@
         , INSERT_DATE
     )
     VALUES (
-        #{userCd}
+        #{cmpnyCd}
+        , #{userCd}
         , #{termsId}
         , #{termsVersion}
         , #{agrYn}
         , #{userCd}
         , NOW()
     ) AS NEW
-    /* PK=(USER_CD,TERMS_ID,TERMS_VERSION). 옵션2 재활성은 USER_CD 를 재사용하므로,
+    /* PK=(CMPNY_CD,USER_CD,TERMS_ID,TERMS_VERSION). 옵션2 재활성은 USER_CD 를 재사용하므로,
        동일 약관 버전 재동의 시 PK 충돌로 트랜잭션이 롤백되는 것을 방지한다.
        버전이 바뀌면 새 행(이력 보존), 같은 버전 재동의면 동의값/시각만 갱신(멱등). */
     ON DUPLICATE KEY UPDATE
@@ -425,7 +498,9 @@
     FROM DUAL
     </select>
 
-    <!-- 점유 시작 INSERT(RELEASE_* = NULL). OCCUPY_DTIME=NOW(). -->
+    <!-- 점유 시작 INSERT(RELEASE_* = NULL). OCCUPY_DTIME=NOW().
+         PRAFTA_COM_001 T1-05: RELEASE_USER 를 명시적으로 NULL 로 INSERT.
+         컬럼 DEFAULT 'SYSTEM' 이라 컬럼을 생략하면 신규 점유인데도 해제자에 'SYSTEM' 이 들어간다. -->
     <insert id="insertSlotHis" parameterType="com.prafta.common.cmm.dailyjoin.application.command.InsertSlotHisCommand">
     /* DailyJoinMapper.insertSlotHis */
     INSERT INTO TB_DAILY_USER_SLOT_HIS (
@@ -437,6 +512,7 @@
         , USER_ID
         , ISSUE_CHANNEL
         , OCCUPY_DTIME
+        , RELEASE_USER
         , INSERT_NO
         , INSERT_DATE
     )
@@ -449,9 +525,37 @@
         , #{userId}
         , #{issueChannel}
         , NOW()
+        , NULL						<!-- 점유 시작 시점엔 해제자 없음(DEFAULT 'SYSTEM' 회피) -->
         , #{insertNo}
         , NOW()
     )
     </insert>
+
+    <!-- ============================================================
+         PRAFTA-daily-user-dept-3: 가입 점유 시 슬롯 지정부서 → TB_USER.NODE_CD 매칭.
+         ============================================================ -->
+
+    <!-- 점유한 슬롯의 지정 부서(NODE_CD) 조회. 미존재/미지정이면 null. -->
+    <select id="selectSlotNodeCd" resultType="string">
+    /* DailyJoinMapper.selectSlotNodeCd */
+    SELECT NODE_CD
+    FROM TB_DAILY_USER_SLOT
+    WHERE CMPNY_CD = #{cmpnyCd}
+      AND SITE_CD = #{siteCd}
+      AND SLOT_NO = #{slotNo}
+    </select>
+
+    <!-- 슬롯 지정부서를 점유 일용직(EMPLOYMENT_TYPE='DAILY')의 TB_USER.NODE_CD 로 무조건 세팅.
+         EMPLOYMENT_TYPE 가드로 정규 사용자 오염 차단. 자가가입 흐름이라 UPDATE_NO = 본인 USER_CD. -->
+    <update id="updateTbUserNodeCdFromSlot">
+    /* DailyJoinMapper.updateTbUserNodeCdFromSlot */
+    UPDATE TB_USER
+    SET NODE_CD = #{nodeCd}
+        , UPDATE_NO = #{userCd}
+        , UPDATE_DATE = NOW()
+    WHERE CMPNY_CD = #{cmpnyCd}
+      AND USER_CD = #{userCd}
+      AND EMPLOYMENT_TYPE = 'DAILY'
+    </update>
 
 </mapper>

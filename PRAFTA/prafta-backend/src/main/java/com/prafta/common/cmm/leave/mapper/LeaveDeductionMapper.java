@@ -4,6 +4,7 @@ import org.apache.ibatis.annotations.Mapper;
 import org.apache.ibatis.annotations.Param;
 
 import com.prafta.common.cmm.leave.vo.DailyScheduleVO;
+import com.prafta.common.cmm.leave.vo.HourlyLeaveAggVO;
 
 /**
  * 시간차 연차 동적 차감 전용 조회 Mapper (prafta-019-A §2.4).
@@ -24,4 +25,15 @@ public interface LeaveDeductionMapper {
                                         @Param("siteCd") String siteCd,
                                         @Param("userCd") String userCd,
                                         @Param("workYmd") String workYmd);
+
+    /**
+     * 그날 기존 시간차(02/03/04) CONFIRMED 누적 분·누적 차감 합 (LC-03, F3).
+     *
+     * <p><b>전 연차타입 합산</b>(LEAVE_CD 불문 — 타입을 나눠 쪼개는 우회 차단, F3).
+     * 고정단위(종일 00/반차 01/반반차 05)는 하한 마일스톤 누적에서 제외(plan §8-⑤).
+     * 항상 1행 반환(대상 없으면 0/0).
+     */
+    HourlyLeaveAggVO selectHourlyLeaveAggOnDate(@Param("cmpnyCd") String cmpnyCd,
+                                                @Param("userCd") String userCd,
+                                                @Param("workYmd") String workYmd);
 }

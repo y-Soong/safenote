@@ -100,7 +100,9 @@
           placeholder="6 ~ 15자"
           class="w-full px-4 py-3 pr-12 border rounded-md focus:outline-none focus:ring-2 focus:ring-green-600 text-sm sm:text-base"
         />
-        <span class="form-msg absolute right-3 top-1/2 -translate-y-1/2">{{ pwMsg }}</span>
+        <!-- APP-PRAFTA-001: top-1/2 -translate-y-1/2 는 이모지 베이스라인 때문에 약간 아래로 쳐진다.
+             인증번호 확인(flex items-center)과 동일하게 입력 높이를 채워 세로 중앙 정렬한다. -->
+        <span class="form-msg absolute right-3 top-0 bottom-0 flex items-center">{{ pwMsg }}</span>
       </div>
 
       <div class="mt-5 relative" v-if="!cmpnyCdDisabled">
@@ -122,7 +124,10 @@
           placeholder="6 ~ 15자"
           class="w-full px-4 py-3 pr-12 border rounded-md focus:outline-none focus:ring-2 focus:ring-green-600 text-sm sm:text-base"
         />
-        <span class="form-msg absolute right-3 top-1/2 -translate-y-1/2">{{ pwConfirmMsg }}</span>
+        <!-- APP-PRAFTA-001: 비밀번호 확인 체크 아이콘도 동일하게 세로 중앙 정렬. -->
+        <span class="form-msg absolute right-3 top-0 bottom-0 flex items-center">
+          {{ pwConfirmMsg }}
+        </span>
       </div>
 
       <div class="mt-5 mb-4 relative" v-if="!cmpnyCdDisabled">
@@ -183,8 +188,15 @@
         </label>
       </div>
 
-      <div class="flex items-center gap-2" v-if="!cmpnyCdDisabled">
-        <div class="flex-1 flex items-center gap-2">
+      <!-- APP-PRAFTA-001: 다른 버튼 행(회사코드/휴대폰)과 동일한 반응형 래퍼를 사용해
+           모바일 웹뷰(<640px)에서 입력↔"확인" 버튼이 동일하게 세로 스택되고 우측 끝단이 정렬되도록 한다.
+           인증 성공 체크 아이콘은 비밀번호 입력과 동일하게 input 안쪽 우측에 얹는다
+           (absolute 기준점이 되도록 input 을 relative 래퍼로 감쌌다). -->
+      <div
+        class="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 sm:gap-2"
+        v-if="!cmpnyCdDisabled"
+      >
+        <div class="relative flex-1">
           <input
             id="certNo"
             ref="certNoFcs"
@@ -192,18 +204,23 @@
             placeholder="인증번호6자리"
             maxlength="6"
             :disabled="mblNoDisabled"
-            class="flex-1 px-4 py-3 border rounded-md focus:outline-none focus:ring-2 focus:ring-green-600 text-sm sm:text-base"
+            class="w-full px-4 py-3 pr-12 border rounded-md focus:outline-none focus:ring-2 focus:ring-green-600 text-sm sm:text-base"
           />
-
-          <button
-            class="px-4 py-3 border border-green-600 text-green-600 rounded-md hover:bg-green-50 transition whitespace-nowrap text-sm sm:text-base flex-shrink-0"
-            @click="fnSmsAuthChk"
-            v-show="btnAuthChkDisabled"
+          <span
+            class="form-msg absolute right-3 top-0 bottom-0 flex items-center"
+            v-show="smsCertNoChk"
           >
-            확인
-          </button>
+            ✅
+          </span>
         </div>
-        <span class="form-msg flex-shrink-0" v-show="!btnAuthChkDisabled">{{ smsAuthChkMsg }}</span>
+
+        <button
+          class="px-4 py-3 border border-green-600 text-green-600 rounded-md hover:bg-green-50 transition whitespace-nowrap text-sm sm:text-base"
+          @click="fnSmsAuthChk"
+          v-show="btnAuthChkDisabled"
+        >
+          확인
+        </button>
       </div>
 
       <div class="mt-5 mb-4 relative" v-if="!cmpnyCdDisabled">
@@ -402,7 +419,6 @@ const birthDt = ref('')
 const pwMsg = ref('')
 const pwConfirmMsg = ref('')
 const userIdMsg = ref('')
-const smsAuthChkMsg = ref('')
 const smsCertNoChk = ref(false)
 
 /* focus 변수 */
@@ -722,7 +738,6 @@ const fnSmsAuthChk = async () => {
     if (response.status === 200) {
       btnAuthChkDisabled.value = false
       mblNoDisabled.value = true
-      smsAuthChkMsg.value = '✅'
       smsCertNoChk.value = true
 
       const alertMsg = '인증번호가 확인되었습니다.'
@@ -823,6 +838,13 @@ const fnUserInfoValidationChk = () => {
 
     fnAlertMsg(alertMsg, () => {
       siteSrchBtnFcs.value.focus()
+    })
+    retVal = false
+  } else if (proxy.$util.isEmpty(nodeCd.value)) {
+    alertMsg = '소속부서를 선택해주세요.'
+
+    fnAlertMsg(alertMsg, () => {
+      nodeSrchBtnFcs.value.focus()
     })
     retVal = false
   } else if (proxy.$util.isEmpty(birthDt.value)) {

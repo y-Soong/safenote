@@ -1,0 +1,215 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.prafta.web.risk.riskai01.mapper.RiskAi01Mapper">
+
+    <!-- 사업장 접근 권한 확인 (tb_user_site_auth 매핑, USE_YN='Y'). 1 이상이면 접근 가능 -->
+    <select id="countUserSiteAuth" resultType="int">
+    /* RiskAi01Mapper.countUserSiteAuth */
+    SELECT
+        COUNT(1)
+    FROM TB_USER_SITE_AUTH A
+    WHERE A.CMPNY_CD = #{cmpnyCd}
+      AND A.USER_CD = #{userCd}
+      AND A.SITE_CD = #{siteCd}
+      AND A.USE_YN = 'Y'
+    </select>
+
+    <!-- AI 도출 입력 원천(구조화 값 포함). 위치매핑
+         (INIT_DESC, ASSESSMENT_DESC, INIT_FILE_MGMT_CD, PROCESS_NM, RISK_TYPE_NM, HAZARD_NM). 없으면 null.
+         ★조인은 Risk03Mapper.selectRiskAssessmentsLists(:74-96) verbatim 복제, 회사 스코프 유지:
+           C=COM002 공정명(INNER), D=위험성분류명(INNER), E=유해요인명(LEFT, self→직접입력) -->
+    <select id="selectAssessmentForAi"
+            resultType="com.prafta.web.risk.riskai01.application.model.RiskAssessmentAiSource">
+    /* RiskAi01Mapper.selectAssessmentForAi */
+    SELECT
+        A.INIT_DESC
+      , A.ASSESSMENT_DESC
+      , A.INIT_FILE_MGMT_CD
+      , C.BAIM_VAL_D_NM AS PROCESS_NM
+      , D.RISK_TYPE_NM  AS RISK_TYPE_NM
+      , CASE
+          WHEN A.HAZARD_CD = 'self'
+            THEN A.ASSESSMENT_DESC
+          ELSE E.HAZARD_NM
+        END AS HAZARD_NM
+    FROM TB_RISK_ASSESSMENT A
+         INNER JOIN (
+            SELECT
+                A.BAIM_VAL_D_CD
+              , A.BAIM_VAL_D_NM
+            FROM TB_BAIM_VAL_D A
+            WHERE A.CMPNY_CD = #{cmpnyCd}
+              AND A.BAIM_VAL_CD = 'COM002'
+              AND A.USE_YN = 'Y'
+         ) C
+            ON (
+                A.PROCESS_CD = C.BAIM_VAL_D_CD
+            )
+         INNER JOIN TB_RISK_TYPE D
+            ON (
+                A.CMPNY_CD = D.CMPNY_CD
+            AND A.RISK_TYPE_CD = D.RISK_TYPE_CD
+            )
+         LEFT OUTER JOIN TB_RISK_SITE_HAZARD E
+            ON (
+                A.CMPNY_CD = E.CMPNY_CD
+            AND A.RISK_TYPE_CD = E.RISK_TYPE_CD
+            AND A.HAZARD_CD = E.HAZARD_CD
+            )
+    WHERE A.CMPNY_CD = #{cmpnyCd}
+      AND A.SITE_CD = #{siteCd}
+      AND A.PROCESS_CD = #{processCd}
+      AND A.ASSESSMENT_CD = #{assessmentCd}
+    </select>
+
+    <!-- 도출 결과/대화이력 1행.
+         위치매핑(IMG_CHAT_JSON, SUPP_DESC, IMG_CONFIRMED, HAZARD_JSON, MEASURE_JSON, CITATION_JSON,
+                  VERBATIM_JSON, ABSTAINED) — RiskAiDerivationRow 생성자 인자 순서와 반드시 일치 -->
+    <select id="selectDerivation"
+            resultType="com.prafta.web.risk.riskai01.application.model.RiskAiDerivationRow">
+    /* RiskAi01Mapper.selectDerivation */
+    SELECT
+        A.IMG_CHAT_JSON
+      , A.SUPP_DESC
+      , A.IMG_CONFIRMED
+      , A.HAZARD_JSON
+      , A.MEASURE_JSON
+      , A.CITATION_JSON
+      , A.VERBATIM_JSON
+      , A.ABSTAINED
+    FROM TB_RISK_AI_DERIVATION A
+    WHERE A.CMPNY_CD = #{cmpnyCd}
+      AND A.SITE_CD = #{siteCd}
+      AND A.PROCESS_CD = #{processCd}
+      AND A.ASSESSMENT_CD = #{assessmentCd}
+    </select>
+
+    <!-- 도출 행 멱등 생성(이미 있으면 무시). PK 충돌 시 INSERT IGNORE -->
+    <insert id="insertDerivationIfAbsent">
+    /* RiskAi01Mapper.insertDerivationIfAbsent */
+    INSERT IGNORE INTO TB_RISK_AI_DERIVATION
+    (
+        CMPNY_CD
+      , SITE_CD
+      , PROCESS_CD
+      , ASSESSMENT_CD
+      , IMG_ANALYZE_CNT
+      , DERIVE_CNT
+      , INSERT_NO
+      , INSERT_DATE
+    )
+    VALUES
+    (
+        #{cmpnyCd}
+      , #{siteCd}
+      , #{processCd}
+      , #{assessmentCd}
+      , 0
+      , 0
+      , #{userCd}
+      , NOW()
+    )
+    </insert>
+
+    <!-- 도출 행 삭제(초기화 — 처음부터 다시). 대화이력/도출결과/보완설명 전체 삭제(4축 키 단건) -->
+    <delete id="deleteDerivation">
+    /* RiskAi01Mapper.deleteDerivation */
+    DELETE FROM TB_RISK_AI_DERIVATION
+    WHERE CMPNY_CD = #{cmpnyCd}
+      AND SITE_CD = #{siteCd}
+      AND PROCESS_CD = #{processCd}
+      AND ASSESSMENT_CD = #{assessmentCd}
+    </delete>
+
+    <!-- 미저장(SAVED_YN='N') 도출 행 삭제(commit-on-save 정리). 확정(Y) 행은 보존. 행 없으면 0건 -->
+    <delete id="deleteUnsavedDerivation">
+    /* RiskAi01Mapper.deleteUnsavedDerivation */
+    DELETE FROM TB_RISK_AI_DERIVATION
+    WHERE CMPNY_CD = #{cmpnyCd}
+      AND SITE_CD = #{siteCd}
+      AND PROCESS_CD = #{processCd}
+      AND ASSESSMENT_CD = #{assessmentCd}
+      AND SAVED_YN = 'N'
+    </delete>
+
+    <!-- 저장 확정 여부(SAVED_YN) 갱신(commit-on-save — 평가 저장 성공 시 'Y'). 행 없으면 0건 -->
+    <update id="updateSavedYn">
+    /* RiskAi01Mapper.updateSavedYn */
+    UPDATE TB_RISK_AI_DERIVATION
+    SET
+        SAVED_YN = #{savedYn}
+      , UPDATE_NO = #{userCd}
+      , UPDATE_DATE = NOW()
+    WHERE CMPNY_CD = #{cmpnyCd}
+      AND SITE_CD = #{siteCd}
+      AND PROCESS_CD = #{processCd}
+      AND ASSESSMENT_CD = #{assessmentCd}
+    </update>
+
+    <!-- 이미지분석 대화이력(IMG_CHAT_JSON) 저장(v2 멀티턴 채팅). 텍스트만 저장(이미지 미저장) -->
+    <update id="updateImgChatJson">
+    /* RiskAi01Mapper.updateImgChatJson */
+    UPDATE TB_RISK_AI_DERIVATION
+    SET
+        IMG_CHAT_JSON = #{imgChatJson}
+      , SAVED_YN = 'N'
+      , UPDATE_NO = #{userCd}
+      , UPDATE_DATE = NOW()
+    WHERE CMPNY_CD = #{cmpnyCd}
+      AND SITE_CD = #{siteCd}
+      AND PROCESS_CD = #{processCd}
+      AND ASSESSMENT_CD = #{assessmentCd}
+    </update>
+
+    <!-- 관리자 보완 설명(SUPP_DESC) 저장(v2.1). blur 자동저장 + AI 실행 시 동반저장 -->
+    <update id="updateSuppDesc">
+    /* RiskAi01Mapper.updateSuppDesc */
+    UPDATE TB_RISK_AI_DERIVATION
+    SET
+        SUPP_DESC = #{suppDesc}
+      , SAVED_YN = 'N'
+      , UPDATE_NO = #{userCd}
+      , UPDATE_DATE = NOW()
+    WHERE CMPNY_CD = #{cmpnyCd}
+      AND SITE_CD = #{siteCd}
+      AND PROCESS_CD = #{processCd}
+      AND ASSESSMENT_CD = #{assessmentCd}
+    </update>
+
+    <!-- 이미지 이해 확정 여부(IMG_CONFIRMED) 저장(v3 confirm-image) -->
+    <update id="updateImgConfirmed">
+    /* RiskAi01Mapper.updateImgConfirmed */
+    UPDATE TB_RISK_AI_DERIVATION
+    SET
+        IMG_CONFIRMED = #{imgConfirmed}
+      , UPDATE_NO = #{userCd}
+      , UPDATE_DATE = NOW()
+    WHERE CMPNY_CD = #{cmpnyCd}
+      AND SITE_CD = #{siteCd}
+      AND PROCESS_CD = #{processCd}
+      AND ASSESSMENT_CD = #{assessmentCd}
+    </update>
+
+    <!-- 도출 결과 저장(v3: HAZARD_JSON 그룹 구조. MEASURE_JSON 은 구 데이터 혼동 방지 위해 NULL 고정 클리어.
+         VERBATIM_JSON = verbatim 참고 원문(LLM 미경유 패스스루) — 재열람 복원용, 그라운딩 개선 C) -->
+    <update id="updateDeriveResult">
+    /* RiskAi01Mapper.updateDeriveResult */
+    UPDATE TB_RISK_AI_DERIVATION
+    SET
+        HAZARD_JSON = #{hazardJson}
+      , MEASURE_JSON = NULL
+      , CITATION_JSON = #{citationJson}
+      , VERBATIM_JSON = #{verbatimJson}
+      , ABSTAINED = #{abstained}
+      , SAVED_YN = 'N'
+      , LAST_DERIVE_BY = #{userCd}
+      , LAST_DERIVE_DATE = NOW()
+      , UPDATE_NO = #{userCd}
+      , UPDATE_DATE = NOW()
+    WHERE CMPNY_CD = #{cmpnyCd}
+      AND SITE_CD = #{siteCd}
+      AND PROCESS_CD = #{processCd}
+      AND ASSESSMENT_CD = #{assessmentCd}
+    </update>
+
+</mapper>

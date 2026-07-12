@@ -33,6 +33,7 @@
       AND A.CHKPT_CD = #{ param.chkptCd }
       AND A.USE_YN   = 'Y'
       AND B.USE_YN   = 'Y'
+      AND B.STR_DATE &lt;= DATE_FORMAT(NOW(), '%Y%m%d')   <!-- prafta-com-002-C-2: 시행일(YYYYMMDD) 도래 항목만 노출 (시행월→시행일 전환) -->
     ORDER BY B.SORT_IDX
     </select>
 

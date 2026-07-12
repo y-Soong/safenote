@@ -8,6 +8,7 @@ public record SessionListResult(
 	, String statusCd
 	, String statusNm
 	, String eduTypeCd
+	, Integer eduMinutes		// 교육 인정시간(분, 1~60). 미설정 시 null
 	, String managerUserCd
 	, String managerUserNm
 	, String openedAt

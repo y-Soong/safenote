@@ -129,7 +129,11 @@ public class LeavePolicyServiceImpl implements LeavePolicyService {
     }
 
     @Override
-    public PagedResult<LeavePolicyHistoryVO> findHistory(String cmpnyCd, int page, int size) {
+    public PagedResult<LeavePolicyHistoryVO> findHistory(String cmpnyCd, String authCd, int page, int size) {
+        // 정책서 §8.5.7 - 정책 변경 권한자(AUTH_MASTER OR AUTH_HR_MANAGER)만 이력 조회 허용.
+        // 이력에 변경자 실명(USER_NM 평문)이 포함되므로 변경/분석 경로와 동일하게 진입부에서 강제(T4-02 보강).
+        ensureManager(authCd, cmpnyCd, "history");
+
         if (cmpnyCd == null || cmpnyCd.isBlank()) {
             throw new ApiException(CommonErrorCode.COMMON_400_001);
         }
@@ -220,15 +224,26 @@ public class LeavePolicyServiceImpl implements LeavePolicyService {
         }
 
         int affectedCount = affected.size();
+
+        // T4-06 (3.4): "분석 결과 없음" 사유 구분. ① 변경 없음은 위에서 ATTD_400_021 로 이미 차단됨.
+        //   ② 대상 직원 없음(입사일 미입력/비활성 → 전원 제외) ③ 대상은 있으나 추가 부여 없음.
+        String noResultReason = null;
+        if (totalEmployees == 0) {
+            noResultReason = "NO_TARGET";
+        } else if (affectedCount == 0) {
+            noResultReason = "NO_ADDITIONAL";
+        }
+
         AnalyzeImpactSummaryVO summary = AnalyzeImpactSummaryVO.builder()
                 .totalEmployees(totalEmployees)
                 .affectedCount(affectedCount)
                 .normalCount(Math.max(totalEmployees - affectedCount, 0))
                 .additionalDaysTotal(scale1(additionalTotal))
+                .noResultReason(noResultReason)
                 .build();
 
-        log.info("영향 분석 완료(근사). cmpnyCd={}, 전체={}, 영향={}, 추가합계={}",
-                cmpnyCd, totalEmployees, affectedCount, additionalTotal);
+        log.info("영향 분석 완료(근사). cmpnyCd={}, 전체={}, 영향={}, 추가합계={}, 사유={}",
+                cmpnyCd, totalEmployees, affectedCount, additionalTotal, noResultReason);
 
         return AnalyzeImpactVO.builder()
                 .summary(summary)
@@ -534,6 +549,9 @@ public class LeavePolicyServiceImpl implements LeavePolicyService {
         //   그 외에는 화이트리스트 정규화(미지정/비정상 값은 FULL_DAY).
         vo.setUsageUnit(normalizeUsageUnit(cmd.usageUnit(), vo.getAxis4ProrateRounding()));
 
+        // LC-06: 반반차(0.25일) 허용 토글 — USAGE_UNIT 계층과 독립. 미전송/비정상 값은 'N'(fail-closed).
+        vo.setAllowQuarter(normalizeYn(cmd.allowQuarter(), YN_N));
+
         // 법정연차 결재 여부 (prafta-019-E 결정 #2) — 기본 N(즉시 확정)
         vo.setAprvUseYn(normalizeYn(cmd.aprvUseYn(), YN_N));
 
@@ -672,6 +690,7 @@ public class LeavePolicyServiceImpl implements LeavePolicyService {
         snap.put("useYn", vo.getUseYn());
         snap.put("applyFromDate", vo.getApplyFromDate());
         snap.put("usageUnit", vo.getUsageUnit());
+        snap.put("allowQuarter", vo.getAllowQuarter()); // LC-06: 반반차 토글(이력 스냅샷 보존, additive)
         try {
             return objectMapper.writeValueAsString(snap);
         } catch (JsonProcessingException e) {
@@ -829,10 +848,15 @@ public class LeavePolicyServiceImpl implements LeavePolicyService {
     }
 
     /**
-     * 직원 1명의 1년치 부여량 근사 시뮬레이션(§9.8-5).
+     * 직원 1명의 1년치 부여량 근사 시뮬레이션(§9.8-5, prafta-baim07-impact-001).
      *
-     * <p>본연차(15) + 1년 미만 월차(경과월수 근사, 최대 11) + 근속 가산을 합산한 근사값을 반환한다.
-     * 정밀 부여엔진(§10) 미구현이므로 만근/결근/회계연도 시점 비례부여 정밀 분기는 반영하지 않는다(근사 한계).
+     * <p><b>월차(min(monthsSinceHire, 11))는 두 AXIS 정책 공통(법정, AXIS 무관)</b>이라 항상 더하고,
+     * <b>본연차 + 근속가산만 AXIS1/AXIS3 매트릭스로 분기</b>한다. 정밀 부여엔진
+     * ({@link LeaveGrantEngineServiceImpl#resolveFiscalEntitlement})의 공식을 미러링 복제하여 회계연도
+     * 비례/일괄/도래횟수 분기를 반영한다(이전 근사: 회계연도 정책이면 무조건 +15 → 모순 제거).
+     *
+     * <p>AXIS1=HIRE_DATE는 회계연도 분기에 진입하지 않으므로 AXIS2 NULL이 정상이다. AXIS1=FISCAL_YEAR인데
+     * AXIS2 mm/dd가 NULL/파싱실패면 본연차 0 폴백 + WARN(시뮬은 fail-soft — 엔진처럼 throw하지 않는다).
      *
      * @param policy null이면(현재 정책 없음/신규) 0 기준
      */
@@ -842,24 +866,190 @@ public class LeavePolicyServiceImpl implements LeavePolicyService {
         }
         int monthsSinceHire = monthsSinceHire(emp.getHireDate(), applyDate);
 
-        int days = 0;
-        if (monthsSinceHire < 12) {
-            // 1년 미만: 법정 월차(경과 개월수 근사, 최대 11) + 첫해 본연차(3번 axis에 따라)
-            int monthly = Math.max(0, Math.min(monthsSinceHire, MONTHLY_MAX));
-            days += monthly;
-            if (AXIS3_PRORATE.equals(policy.getAxis3FirstYearMethod())
-                    || AXIS3_NEXT_YEAR_BULK.equals(policy.getAxis3FirstYearMethod())) {
-                // 회계연도 의존 첫해 본연차(비례/차년 일괄) 근사 → 본연차 1회 발생 가정
-                days += BASE_ANNUAL_DAYS;
+        // 월차: 두 정책 공통(법정, AXIS 무관). 1년 미만 경과개월수 근사, 최대 11.
+        int monthly = Math.max(0, Math.min(monthsSinceHire, MONTHLY_MAX));
+        BigDecimal days = BigDecimal.valueOf(monthly);
+
+        String axis1 = policy.getAxis1GrantBase();
+        if (AXIS1_HIRE_DATE.equals(axis1)) {
+            // HIRE_DATE: 1년 미만이면 본연차 0(월차만), 1년 이상이면 본연차 15 + 근속가산(floor(months/12)).
+            if (monthsSinceHire >= 12) {
+                int tenureYears = monthsSinceHire / 12;
+                days = days.add(BigDecimal.valueOf(BASE_ANNUAL_DAYS))
+                        .add(BigDecimal.valueOf(tenureBonus(policy, tenureYears)));
             }
-            // MONTHLY_ONLY는 첫해 본연차 추가 없음(월차로만)
-        } else {
-            // 1년 이상: 본연차 15 + 근속 가산
-            days += BASE_ANNUAL_DAYS;
-            int tenureYears = monthsSinceHire / 12;
-            days += tenureBonus(policy, tenureYears);
+            return days;
         }
-        return BigDecimal.valueOf(days);
+
+        if (AXIS1_FISCAL_YEAR.equals(axis1)) {
+            // FISCAL_YEAR: AXIS2 mm/dd 파싱. NULL/파싱실패면 본연차 0 폴백 + WARN(fail-soft).
+            LocalDate hire = parseHireDateOrNull(emp.getHireDate());
+            Integer mm = simParseMmOrNull(policy.getAxis2FiscalStartMm());
+            Integer dd = simParseDdOrNull(policy.getAxis2FiscalStartDd());
+            if (hire == null || mm == null || dd == null) {
+                log.warn("영향 분석 시뮬 - FISCAL_YEAR인데 AXIS2(mm/dd) 또는 입사일이 유효하지 않아 본연차 0 폴백. userCd={}, axis2Mm={}, axis2Dd={}",
+                        emp.getUserCd(), policy.getAxis2FiscalStartMm(), policy.getAxis2FiscalStartDd());
+                return days;
+            }
+
+            int crossed = simCountFiscalStartsCrossed(hire, applyDate, mm, dd);
+            String axis3 = policy.getAxis3FirstYearMethod();
+            BigDecimal annual = simResolveFiscalAnnual(policy, hire, applyDate, mm, dd, crossed, axis3, monthsSinceHire);
+            return days.add(annual);
+        }
+
+        // AXIS1 미인식(방어): 월차만.
+        return days;
+    }
+
+    /**
+     * FISCAL_YEAR 본연차 + 근속가산 산정(crossed/AXIS3 분기). prafta-baim07-impact-001 D 매트릭스.
+     *
+     * <p><b>⚠️ {@link LeaveGrantEngineServiceImpl#resolveFiscalEntitlement}(1430~1498행)와 동일 공식의
+     * 미러링 복제. 엔진 변경 시 동기화 필요(드리프트 주의).</b> 단, 시뮬은 본연차+근속가산 합을 BigDecimal로
+     * 반환할 뿐 컴포넌트 분리/멱등키는 다루지 않는다.
+     */
+    private BigDecimal simResolveFiscalAnnual(LeavePolicyVO policy, LocalDate hire, LocalDate applyDate,
+                                              int mm, int dd, int crossed, String axis3, int monthsSinceHire) {
+        if (crossed >= 2) {
+            // 회계연도 시작 2회 이상 도래: 본연차 15 + 근속가산(max(crossed, floor(months/12))).
+            int tenureYear = Math.max(crossed, monthsSinceHire / 12);
+            return BigDecimal.valueOf(BASE_ANNUAL_DAYS)
+                    .add(BigDecimal.valueOf(tenureBonus(policy, tenureYear)));
+        }
+        if (crossed == 1) {
+            if (AXIS3_PRORATE.equals(axis3)) {
+                // crossed==1 + PRORATE: 전년 부분기 비례 본연차(AXIS4 반올림). 근속가산은 첫 회계연도엔 없음.
+                LocalDate currentFiscalStart = simCurrentFiscalStart(applyDate, mm, dd);
+                return simComputeProratedAnnualDays(hire, currentFiscalStart, policy.getAxis4ProrateRounding());
+            }
+            // crossed==1 + NEXT_YEAR_BULK / MONTHLY_ONLY(비표준 잔존, 엔진 1463행과 동일 폴백) / null: 본연차 15 일괄.
+            return BigDecimal.valueOf(BASE_ANNUAL_DAYS);
+        }
+        // crossed==0: 본연차 미부여(월차만).
+        return BigDecimal.ZERO;
+    }
+
+    /**
+     * AXIS3=PRORATE 첫 회계연도 비례 본연차 일수.
+     *
+     * <p><b>⚠️ {@link LeaveGrantEngineServiceImpl#computeProratedAnnualDays}(1488행)와 동일 공식의
+     * 미러링 복제. 엔진 변경 시 동기화 필요(드리프트 주의).</b>
+     * 비례 = (입사~currentFiscalStart 일수 ÷ 365) × 15, AXIS4 반올림. 0 이하/365 초과는 방어.
+     */
+    private BigDecimal simComputeProratedAnnualDays(LocalDate hire, LocalDate currentFiscalStart, String axis4) {
+        long partialDays = java.time.temporal.ChronoUnit.DAYS.between(hire, currentFiscalStart);
+        if (partialDays <= 0) {
+            return BigDecimal.ZERO;
+        }
+        if (partialDays > 365) {
+            partialDays = 365; // 입사~회계연도 시작이 1년 초과인 비정상치 방어(상한 1년분)
+        }
+        double raw = (partialDays / 365.0) * BASE_ANNUAL_DAYS;
+        return simApplyAxis4Rounding(raw, axis4);
+    }
+
+    /**
+     * AXIS4 반올림(SYS038).
+     *
+     * <p><b>⚠️ {@link LeaveGrantEngineServiceImpl#applyAxis4Rounding}(1506행)와 동일 공식의 미러링 복제.
+     * 엔진 변경 시 동기화 필요(드리프트 주의).</b> CEIL/ROUND/FLOOR/HALF_DAY, 그 외/널은 올림.
+     */
+    private BigDecimal simApplyAxis4Rounding(double raw, String axis4) {
+        if (AXIS4_FLOOR.equals(axis4)) {
+            return BigDecimal.valueOf(Math.floor(raw));
+        }
+        if (AXIS4_ROUND.equals(axis4)) {
+            return BigDecimal.valueOf(Math.round(raw));
+        }
+        if (AXIS4_HALF_DAY.equals(axis4)) {
+            // 0.5일 단위 절사(내림): raw 를 0.5 배수로 내림.
+            return BigDecimal.valueOf(Math.floor(raw * 2.0) / 2.0);
+        }
+        // CEIL 및 그 외/널 = 올림
+        return BigDecimal.valueOf(Math.ceil(raw));
+    }
+
+    /**
+     * 입사일 이후 applyDate까지 회계연도 시작일을 넘긴 횟수.
+     *
+     * <p><b>⚠️ {@link LeaveGrantEngineServiceImpl#countFiscalStartsCrossed}(1861행)와 동일 공식의
+     * 미러링 복제. 엔진 변경 시 동기화 필요(드리프트 주의).</b>
+     * 입사일이 회계연도 시작일과 같은 날이면 그날을 1회로 센다(이미 도래).
+     */
+    private int simCountFiscalStartsCrossed(LocalDate hire, LocalDate today, int startMm, int startDd) {
+        int count = 0;
+        for (int y = hire.getYear(); y <= today.getYear(); y++) {
+            LocalDate fs = simSafeMonthDay(y, startMm, startDd);
+            if (!fs.isBefore(hire) && !fs.isAfter(today)) {
+                count++;
+            }
+        }
+        return count;
+    }
+
+    /** applyDate 시점 직전 도래한 회계연도 시작일(같은 날 포함). 엔진 currentFiscalStart(1848행) 미러링. */
+    private LocalDate simCurrentFiscalStart(LocalDate today, int startMm, int startDd) {
+        LocalDate thisYearStart = simSafeMonthDay(today.getYear(), startMm, startDd);
+        if (!thisYearStart.isAfter(today)) {
+            return thisYearStart;
+        }
+        return simSafeMonthDay(today.getYear() - 1, startMm, startDd);
+    }
+
+    /**
+     * 윤년/말일 보정(02/29 등): 해당 연·월의 마지막 일을 넘으면 말일로 클램프.
+     *
+     * <p><b>⚠️ {@link LeaveGrantEngineServiceImpl#safeMonthDay}(1875행)와 동일 공식의 미러링 복제.
+     * 엔진 변경 시 동기화 필요(드리프트 주의).</b>
+     */
+    private LocalDate simSafeMonthDay(int year, int mm, int dd) {
+        int m = Math.min(Math.max(mm, 1), 12);
+        LocalDate first = LocalDate.of(year, m, 1);
+        int last = first.lengthOfMonth();
+        int d = Math.min(Math.max(dd, 1), last);
+        return LocalDate.of(year, m, d);
+    }
+
+    /** yyyyMMdd 입사일 문자열 → LocalDate(유효하지 않으면 null, fail-soft). */
+    private LocalDate parseHireDateOrNull(String hireDate) {
+        if (hireDate == null || hireDate.length() != 8) {
+            return null;
+        }
+        try {
+            return LocalDate.parse(hireDate, DateTimeFormatter.BASIC_ISO_DATE);
+        } catch (Exception e) {
+            return null;
+        }
+    }
+
+    /** AXIS2 MM(01~12) 파싱. 엔진과 달리 NULL/범위초과는 null 반환(E 폴백 트리거). */
+    private Integer simParseMmOrNull(String mm) {
+        Integer v = parseIntOrNull(mm);
+        if (v == null || v < 1 || v > 12) {
+            return null;
+        }
+        return v;
+    }
+
+    /** AXIS2 DD(01~31) 파싱. 엔진과 달리 NULL/범위초과는 null 반환(E 폴백 트리거). 말일 보정은 simSafeMonthDay. */
+    private Integer simParseDdOrNull(String dd) {
+        Integer v = parseIntOrNull(dd);
+        if (v == null || v < 1 || v > 31) {
+            return null;
+        }
+        return v;
+    }
+
+    private Integer parseIntOrNull(String s) {
+        if (s == null || s.isBlank()) {
+            return null;
+        }
+        try {
+            return Integer.valueOf(s.trim());
+        } catch (NumberFormatException e) {
+            return null;
+        }
     }
 
     /**
@@ -888,10 +1078,14 @@ public class LeavePolicyServiceImpl implements LeavePolicyService {
         boolean isUnder1Year = monthsSinceHire < 12;
         String curAxis1 = current == null ? null : current.getAxis1GrantBase();
 
-        // 우선순위 1: 1년 미만 + 회계연도 → 입사일 전환
+        // 우선순위 1: 1년 미만 + 회계연도 → 입사일 전환.
+        // prafta-baim07-impact-001 F: expectedAdditional이 0이면 "1년차 15일 추가" 문구는 숫자와 모순이므로
+        //   추가 부여(>0)일 때만 이 메시지를 낸다(0이면 아래 우선순위/기존 부여 유지로 떨어짐).
         if (isUnder1Year
                 && AXIS1_FISCAL_YEAR.equals(curAxis1)
-                && AXIS1_HIRE_DATE.equals(target.axis1GrantBase())) {
+                && AXIS1_HIRE_DATE.equals(target.axis1GrantBase())
+                && expectedAdditional != null
+                && expectedAdditional.compareTo(BigDecimal.ZERO) > 0) {
             int additionalMonthly = Math.max(0, MONTHLY_MAX - Math.max(0, Math.min(monthsSinceHire, MONTHLY_MAX)));
             return String.format("1년 미만 월차 %d일 + 1년차 %d일 추가 발생", additionalMonthly, BASE_ANNUAL_DAYS);
         }

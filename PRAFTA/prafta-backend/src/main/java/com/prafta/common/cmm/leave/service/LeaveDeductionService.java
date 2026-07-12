@@ -2,13 +2,18 @@ package com.prafta.common.cmm.leave.service;
 
 import java.math.BigDecimal;
 
+import com.prafta.common.cmm.leave.vo.HourlyChargeVO;
+
 /**
- * 시간차 연차 동적 차감 계산 서비스 (prafta-019-A §2.4).
+ * 시간차 연차 동적 차감 계산 서비스 (prafta-019-A §2.4 → 연차 시간차 환산 개편 LC-03).
  *
- * <p>prafta-017의 고정분수(1/0.5/0.25/0.125) 전제를 폐기하고, "그날 스케줄 기준
- * 1일 소정근로분"에 대한 신청분 비율로 차감 일수를 동적 환산한다.
+ * <p>연차 시간차 환산 개편(LC-03)으로 분모가 "그날 소정근로분"에서 회사 설정
+ * "1일 환산시간"(기본 480분, {@link LeaveConversionPolicyService})으로 고정되었다(R1).
+ * 그날 시간차 누적 분 기준의 하한 가드(R3, 3단 마일스톤)와 상한 캡(R4, 1.0일)을 적용해
+ * 이번 건 부과 차액을 산출한다 — {@link #calcHourlyCharge}.
  *
  * <p>정책서: {@code .claude/context/policies/attd/08-leave.md} §8.1.1, §8.5.9
+ * / 작업지시서_연차-시간차-환산-개편 §2(R1~R4)·F3 / 설계 문서 §1·§2
  *
  * <p>본 서비스는 작업 A에서 제공되며, 신청/검증/차감 흐름(작업 E)에서 소비된다.
  */
@@ -29,15 +34,40 @@ public interface LeaveDeductionService {
     Integer getDailyStdWorkMinutes(String cmpnyCd, String siteCd, String userCd, String workYmd);
 
     /**
-     * 시간차 차감 일수 = {@code 신청분 ÷ 1일 소정근로분} (decimal(8,5), 반올림 HALF_UP).
-     *
-     * <p>반차(0.5 고정)·1일(1.0)은 본 메서드 대상이 아니다(호출 측에서 별도 처리 — 작업 E).
+     * (구) 시간차 차감 일수 = {@code 신청분 ÷ 1일 소정근로분} (decimal(8,5), 반올림 HALF_UP).
      *
      * @param requestMinutes      신청 분 (양수)
      * @param dailyStdWorkMinutes 1일 소정근로분 (양수)
      * @return 차감 일수 (scale=5). 입력이 유효하지 않으면 {@code null}.
+     * @deprecated 연차 시간차 환산 개편(LC-03)으로 {@link #calcHourlyCharge}가 대체.
+     *             그날 소정근로 분모는 순환소수(7h=0.07143)·반올림 오차(30분×14회=1.00002)를
+     *             유발한다. 호출처 0건(웹/앱 LC-04 전환 완료) — 회귀 대비 한시 유지 후 제거 예정.
      */
+    @Deprecated
     BigDecimal calcDeductionDays(int requestMinutes, int dailyStdWorkMinutes);
+
+    /**
+     * 시간차 연차 이번 건 부과 차액 산출 (LC-03 — R1~R4 + F3 그날 누적 판정).
+     *
+     * <p>내부 처리:
+     * <ol>
+     *   <li>분모 = {@code LeaveConversionPolicyService.selectConversionMinutes(cmpnyCd, workYmd)}
+     *       (신청 대상일 기준, F4. 미설정 시 480).</li>
+     *   <li>그날 기존 시간차(02/03/04) CONFIRMED 누적 분·누적 차감 합 조회 — <b>전 연차타입 합산</b>
+     *       (F3, 타입을 나눠 쪼개는 우회 차단). 고정단위(종일/반차/반반차)는 누적에서 제외(plan §8-⑤).</li>
+     *   <li>코어 산식({@code HourlyLeaveChargeUtils} — LC-05 재정산과 단일 출처):
+     *       {@code dayTotal = min( max(누적분÷conv, 마일스톤 하한), 1.0 )},
+     *       {@code charge = dayTotal − 기존 누적 차감 합} (차액 부과, 설계 문서 §2).</li>
+     * </ol>
+     *
+     * <p>⚠ 동시성(F5): 같은 사용자·같은 날 누적 판정 레이스가 있으므로 호출부가
+     * {@code HourlyLeaveChargeUtils.leaveDayLockKey} advisory lock 을 선획득해야 한다.
+     *
+     * @param requestMinutes 이번 신청 분 (양수)
+     * @return 산출 결과(차액·판정 부가정보). 입력이 유효하지 않으면 {@code null}.
+     */
+    HourlyChargeVO calcHourlyCharge(String cmpnyCd, String siteCd, String userCd, String workYmd,
+                                    int requestMinutes);
 
     /**
      * 신청 시간대 {@code [startMin, endMin)}가 그날 스케줄의 휴게 구간을 가로지르는지 판정한다

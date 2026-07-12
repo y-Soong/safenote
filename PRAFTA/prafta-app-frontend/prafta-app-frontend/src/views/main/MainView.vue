@@ -33,16 +33,7 @@
       @touchcancel="onPullEnd"
     >
       <!-- 당겨서 새로고침 인디케이터 — 스크롤 최상단에서 아래로 당기면 노출 -->
-      <div
-        class="pull-refresh"
-        :class="{ 'pull-refresh--animating': !isDragging }"
-        :style="{ height: pullIndicatorHeight + 'px' }"
-        aria-live="polite"
-      >
-        <span v-if="isRefreshing" class="pull-refresh__text">새로고침 중...</span>
-        <span v-else-if="pullReady" class="pull-refresh__text">놓으면 새로고침</span>
-        <span v-else-if="pullDistance > 0" class="pull-refresh__text">당겨서 새로고침</span>
-      </div>
+      <PullRefreshIndicator v-bind="indicatorProps" />
 
       <!-- 인사말 -->
       <div class="greeting">
@@ -188,19 +179,31 @@
       @confirm="onLeaveDayConfirm"
       @cancel="onLeaveDayCancel"
     />
+
+    <!-- 소속이동 안내 시트 — 로그인 후 미확인 예약 있으면 노출(PRAFTA-WEB_001-5). 푸시 탭으로도 재오픈. -->
+    <!--   z-index 가 공지/촉진 팝업(1000)보다 높아(1001) 안내가 우선 노출된다(소속이동 안내 → 공지 순서). -->
+    <TransferNoticeSheet
+      v-model:open="transferNoticeOpen"
+      :notice="transferNotice"
+      :acking="transferAcking"
+      @ack="onTransferAck"
+    />
   </div>
 </template>
 
 <script setup>
-import { ref, computed, onMounted, getCurrentInstance } from 'vue'
+import { ref, computed, onMounted, onUnmounted, getCurrentInstance } from 'vue'
 import { useRouter } from 'vue-router'
 
 import api from '@/api/axios'
+import { usePullToRefresh } from '@/composables/usePullToRefresh'
+import PullRefreshIndicator from '@/components/common/PullRefreshIndicator.vue'
 import { requestGps } from '@/utils/gpsBridge'
 import { loadKakaoMapScript } from '@/utils/kakaoMap'
 import { isDailyWorker as isDailyWorkerFn } from '@/utils/employment'
 import { formatMdDot } from '@/utils/approvalFormat'
 import { resolveApiErrorMessage } from '@/utils/apiError'
+import { TRANSFER_NOTICE_OPEN_EVENT } from '@/utils/pushRouteBridge'
 
 import HomeIcons from './components/HomeIcons.vue'
 import HomeHeader from './components/HomeHeader.vue'
@@ -213,6 +216,7 @@ import NoticeListCard from './components/NoticeListCard.vue'
 import NoticeLoginPopup from './components/NoticeLoginPopup.vue'
 import LeavePromotionLoginPopup from './components/LeavePromotionLoginPopup.vue'
 import LeaveChangeConsentPopup from './components/LeaveChangeConsentPopup.vue'
+import TransferNoticeSheet from './components/TransferNoticeSheet.vue'
 import AppBottomTabBar from '@/components/common/AppBottomTabBar.vue'
 import OffsiteReasonSheet from '@/views/attd/components/OffsiteReasonSheet.vue'
 import LeaveDayCheckInConfirmPopup from '@/views/attd/components/LeaveDayCheckInConfirmPopup.vue'
@@ -337,6 +341,16 @@ const consentSubmitting = ref(false)
 const consentPendingCount = computed(() => consentItems.value.length)
 
 // ───────────────────────────────────────────────────────────
+// 소속이동 안내 시트 — 로그인 후 미확인 예약 자동 노출(PRAFTA-WEB_001-5).
+//   GET /appApi/user01/my-transfer-notice → { hasNotice, reservation:{...} }.
+//   확인 시 POST /appApi/user01/transfer-notice/ack { reservationId }.
+//   advisory: ack 실패해도 시트는 닫는다(기능 차단 아님).
+// ───────────────────────────────────────────────────────────
+const transferNoticeOpen = ref(false)
+const transferNotice = ref(null)
+const transferAcking = ref(false)
+
+// ───────────────────────────────────────────────────────────
 // 하단 탭바 — TBM 미참석 카운트 (참석 가능 상태면 1)
 // ───────────────────────────────────────────────────────────
 const tbmBadgeCount = computed(() => (tbmStatus.value === 'AVAILABLE' ? 1 : 0))
@@ -417,8 +431,15 @@ const applyTbm = (tbm) => {
   // - 내가 참석 완료 → ATTENDED
   // - 미참석 + 근무중 → AVAILABLE
   // - 미참석 + 근무중 아님(출근 전·퇴근 후) → BEFORE_CHECK_IN (의미="근무중 아님", 근무 중에만 참석 가능)
+  // 종료(COMPLETED) 세션 가드: 교육이 끝난 세션은 더 이상 참석할 수 없으므로 미참석이라도 AVAILABLE 로 두지 않는다.
+  //   (관리자 입실취소(물리삭제)로 출결행이 사라진 사용자는 미참석(NOT_ENTERED)으로 잡혀, 종료 세션에서도
+  //    AVAILABLE 로 새어나가 바텀탭 배지가 잘못 뜨는 결함 방지 — home-summary 는 COMPLETED 세션까지 포함한다.)
+  //   참석한 사람은 ATTENDED(참석 완료) 유지, 미참석자는 할 수 있는 액션이 없으므로 NONE(일정 없음 톤)으로 둔다.
+  const sessionEnded = tbm.sessionStatus === 'COMPLETED'
   if (tbm.myAttendanceStatus === 'COMPLETED') {
     tbmStatus.value = 'ATTENDED'
+  } else if (sessionEnded) {
+    tbmStatus.value = 'NONE'
   } else if (attdStatus.value === 'WORKING') {
     tbmStatus.value = 'AVAILABLE'
   } else {
@@ -663,90 +684,65 @@ const onConsentReject = async ({ changeReqId, reason }) => {
 }
 
 // ───────────────────────────────────────────────────────────
-// 당겨서 새로고침 — 스크롤 최상단에서 아래로 더 당기면(overscroll) home-summary 재조회.
-//   1) touchstart 시점에 스크롤이 최상단이면 추적 시작
-//   2) touchmove 에서 아래로 당긴 거리(저항감 0.5배)를 인디케이터 높이로 환산
-//   3) touchend 시 임계값 이상이면 새로고침 실행
+// 소속이동 안내 시트 — 미확인 예약 조회/확인(PRAFTA-WEB_001-5).
+//   본인(USER_CD=JWT) 미확인 예약만 서버가 도출(IDOR 방지). 실패는 조용히 무시(진입 차단 금지).
+// ───────────────────────────────────────────────────────────
+const loadTransferNotice = async () => {
+  try {
+    const { data } = await api.get('/appApi/user01/my-transfer-notice')
+    if (data?.hasNotice && data?.reservation) {
+      transferNotice.value = data.reservation
+      transferNoticeOpen.value = true
+    } else {
+      transferNotice.value = null
+      transferNoticeOpen.value = false
+    }
+  } catch (e) {
+    // 안내 조회 실패는 진입을 막지 않는다(advisory).
+    console.warn('[MainView] 소속이동 안내 조회 실패(무시):', e?.message)
+    transferNotice.value = null
+    transferNoticeOpen.value = false
+  }
+}
+
+// 확인 → ack POST 후 시트 닫기. ack 실패해도 닫는다(advisory — 기능 차단 아님).
+const onTransferAck = async (reservationId) => {
+  if (transferAcking.value) return
+  transferAcking.value = true
+  try {
+    if (reservationId) {
+      await api.post('/appApi/user01/transfer-notice/ack', { reservationId })
+    }
+  } catch (e) {
+    // ack 실패는 사용자 흐름을 막지 않는다(다음 로그인 시 재안내).
+    console.warn('[MainView] 소속이동 안내 확인(ack) 실패(무시):', e?.message)
+  } finally {
+    transferAcking.value = false
+    transferNoticeOpen.value = false
+    transferNotice.value = null
+  }
+}
+
+// 푸시 탭(open) 라우팅 신호 수신 → 안내 시트 재조회/재오픈(pushRouteBridge → window 이벤트).
+const onTransferNoticeOpenEvent = () => {
+  loadTransferNotice()
+}
+
+// ───────────────────────────────────────────────────────────
+// 당겨서 새로고침 — 스크롤 최상단에서 아래로 더 당기면(overscroll) home-summary 등 재조회.
+//   공통 컴포저블(usePullToRefresh)로 추출. 제스처/인디케이터 동작은 동일.
 // ───────────────────────────────────────────────────────────
 const mainEl = ref(null)
-const pullDistance = ref(0) // 현재 당김 거리(px, 인디케이터 높이)
-const isRefreshing = ref(false) // 새로고침 진행 중
-const isDragging = ref(false) // 손가락으로 당기는 중(애니메이션 토글용)
-const PULL_THRESHOLD = 70 // 이 거리 이상 당기고 놓으면 새로고침
-const MAX_PULL = 120 // 인디케이터 최대 높이
-
-const pullReady = computed(() => pullDistance.value >= PULL_THRESHOLD)
-const pullIndicatorHeight = computed(() => (isRefreshing.value ? 48 : pullDistance.value))
-
-let touchStartY = 0
-let tracking = false // 이 제스처를 추적 중인가(스크롤 컨테이너 최상단에서 시작했을 때만)
-let pullArmed = false // 당겨서 새로고침 모드로 확정됐는가(확정 후에만 preventDefault)
-// 방향 확정 데드존(px). 손가락을 댈 때 흔히 생기는 미세한 초기 떨림으로
-// preventDefault 가 걸려 네이티브 스크롤 제스처 전체가 취소되는 버그를 막는다.
-const PULL_ENGAGE_SLOP = 6
-
-// 스크롤이 최상단에 닿았는지 판정(1px 오차 허용)
-const isScrolledToTop = () => {
-  const el = mainEl.value
-  if (!el) return false
-  return el.scrollTop <= 0
-}
-
-const onPullStart = (e) => {
-  if (isRefreshing.value) return
-  // 매 제스처 상태 초기화. 추적은 스크롤 컨테이너 최상단에서만 시작.
-  pullArmed = false
-  tracking = isScrolledToTop()
-  if (tracking) touchStartY = e.touches[0].clientY
-}
-
-const onPullMove = (e) => {
-  if (!tracking || isRefreshing.value) return
-  const delta = e.touches[0].clientY - touchStartY // 아래로 당기면 양수
-
-  // 아직 당김 모드로 확정되지 않았다면: 데드존을 넘는 '첫 의미있는 이동'에서 방향을 확정한다.
-  //   - 최상단에서 아래로 당긴 경우에만 새로고침 모드(pullArmed)로 진입.
-  //   - 그 외(위로 스크롤 등)는 추적을 끊어 이후 preventDefault 가 절대 호출되지 않게 한다
-  //     → 네이티브 스크롤 제스처가 보존된다(상단 붙음/스크롤 먹힘 버그 방지).
-  if (!pullArmed) {
-    if (Math.abs(delta) < PULL_ENGAGE_SLOP) return // 판단 보류(네이티브 스크롤 그대로 둠)
-    if (delta > 0 && isScrolledToTop()) {
-      pullArmed = true
-    } else {
-      tracking = false
-      return
-    }
-  }
-
-  isDragging.value = true
-  pullDistance.value = Math.min(MAX_PULL, delta * 0.5) // 저항감
-  // iOS 고무줄/추가 스크롤 억제(당김 모드로 확정된 경우에만)
-  if (e.cancelable) e.preventDefault()
-}
-
-const onPullEnd = async () => {
-  isDragging.value = false
-  const wasArmed = pullArmed
-  pullArmed = false
-  if (!tracking) return
-  tracking = false
-  const shouldRefresh = wasArmed && pullDistance.value >= PULL_THRESHOLD
-  pullDistance.value = 0
-  if (!shouldRefresh || isRefreshing.value) return
-  isRefreshing.value = true
-  try {
-    applySessionHeader()
-    // 홈 요약 + 공지 카드 + 연차 변경 동의 배너를 함께 갱신(각 실패는 자체 폴백/격리).
-    //   새로고침에서는 동의 팝업 자동 오픈 안 함(배너 수만 갱신) — autoOpen 생략.
-    await Promise.all([
-      loadHomeSummary({ showLoading: false }),
-      loadMyNotices(),
-      loadPendingConsents(),
-    ])
-  } finally {
-    isRefreshing.value = false
-  }
-}
+const { onPullStart, onPullMove, onPullEnd, indicatorProps } = usePullToRefresh(mainEl, async () => {
+  applySessionHeader()
+  // 홈 요약 + 공지 카드 + 연차 변경 동의 배너를 함께 갱신(각 실패는 자체 폴백/격리).
+  //   새로고침에서는 동의 팝업 자동 오픈 안 함(배너 수만 갱신) — autoOpen 생략.
+  await Promise.all([
+    loadHomeSummary({ showLoading: false }),
+    loadMyNotices(),
+    loadPendingConsents(),
+  ])
+})
 
 onMounted(() => {
   applySessionHeader()
@@ -758,12 +754,21 @@ onMounted(() => {
   loadPromotionActive()
   // 관리자 발의 연차 변경/삭제 동의 — 미응답 있으면 진입 시 자동 팝업(B)(독립 실패 격리).
   loadPendingConsents({ autoOpen: true })
+  // PRAFTA-WEB_001-5: 소속이동 안내 — 미확인 예약 있으면 진입 시 자동 시트(독립 실패 격리).
+  loadTransferNotice()
+  // 푸시 탭(open) 라우팅 신호(window 이벤트) 수신 → 안내 시트 재오픈.
+  window.addEventListener(TRANSFER_NOTICE_OPEN_EVENT, onTransferNoticeOpenEvent)
   // prafta-app-008: 외근 사유 시트(OffsiteReasonSheet)의 카카오 지도 SDK 를 미리 1회 로드해 둔다.
   // 시트를 열 때 네트워크로 SDK 를 받느라 시트 표시가 지연되는 문제 방지(프리로드).
   // 로드 함수는 중복 가드가 있어 idempotent 하며, 실패해도 시트의 좌표 텍스트 폴백이 동작하므로 조용히 무시.
   loadKakaoMapScript().catch((e) => {
     console.warn('[MainView] 카카오 지도 SDK 프리로드 실패(무시):', e?.message)
   })
+})
+
+onUnmounted(() => {
+  // PRAFTA-WEB_001-5: 푸시 탭 라우팅 신호 리스너 해제(누수 방지).
+  window.removeEventListener(TRANSFER_NOTICE_OPEN_EVENT, onTransferNoticeOpenEvent)
 })
 
 // prafta-app-010: 로그아웃은 마이페이지(/MyPage) 의 로그아웃 버튼으로 이전되었다.
@@ -1192,21 +1197,4 @@ const onNoticeRow = (noticeId) => {
   color: var(--color-warning-text);
 }
 
-/* 당겨서 새로고침 인디케이터 — 당김 거리에 따라 높이가 늘어났다 줄어든다 */
-.pull-refresh {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  overflow: hidden;
-  height: 0;
-  color: var(--color-text-secondary);
-  font-size: 13px;
-}
-/* 손가락을 뗀 뒤(또는 새로고침 중)에는 부드럽게 높이 전환, 당기는 중에는 즉시 반응 */
-.pull-refresh--animating {
-  transition: height 0.2s ease;
-}
-.pull-refresh__text {
-  padding: 8px 0;
-}
 </style>

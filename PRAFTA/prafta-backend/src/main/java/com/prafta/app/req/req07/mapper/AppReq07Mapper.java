@@ -96,9 +96,9 @@ public interface AppReq07Mapper {
                                          , @Param("workSeq") Integer workSeq);
 
     /**
-     * PRAFTA-APP-022 룰A1(prafta-app-017 이슈② 확장): 활성 스케줄수정 요청(10) 카운트 — 그날 전체(구간 무관).
-     * REQ_TYPE='10' AND REQ_STATUS IN ('01','02') AND DEL_YN='N'.
-     * (확정 결정 1: 대기01 + 승인02 모두 충돌 범위에 포함 → 승인분도 차단.)
+     * PRAFTA-APP-022 룰A1(prafta-app-017 이슈② 확장): 미처리 스케줄수정 요청(10) 카운트 — 그날 전체(구간 무관).
+     * REQ_TYPE='10' AND REQ_STATUS='01' AND DEL_YN='N'.
+     * (2026-06-21 정책정정: 대기01만 충돌. 승인02/반려03/취소04 등 처리 완료분은 비차단.)
      * 결과 > 0 이면 그날 모든 구간 OT 거부(ATTD_400_106).
      */
     int countActiveSchedModify(@Param("cmpnyCd") String cmpnyCd
@@ -107,9 +107,9 @@ public interface AppReq07Mapper {
                                , @Param("workYmd") String workYmd);
 
     /**
-     * PRAFTA-APP-022 룰A2/A3: 활성 초과근무 요청(생성03·수정04) 카운트 — 그날 전체(WORK_SEQ 무관).
-     * REQ_TYPE IN ('03','04') AND REQ_STATUS IN ('01','02') AND DEL_YN='N'.
-     * (확정 결정 1: 대기01 + 승인02 모두 충돌 범위.)
+     * PRAFTA-APP-022 룰A2/A3: 미처리 초과근무 요청(생성03·수정04) 카운트 — 그날 전체(WORK_SEQ 무관).
+     * REQ_TYPE IN ('03','04') AND REQ_STATUS='01' AND DEL_YN='N'.
+     * (2026-06-21 정책정정: 대기01만 충돌. 승인02/반려03/취소04 등 처리 완료분은 비차단.)
      * 결과 > 0 이면 스케줄수정 거부(ATTD_400_107). 식별값은 JWT 도출 Param 만 사용(IDOR).
      */
     int countActiveOvertimeReq(@Param("cmpnyCd") String cmpnyCd
@@ -177,4 +177,30 @@ public interface AppReq07Mapper {
                                                           , @Param("siteCd") String siteCd
                                                           , @Param("userCd") String userCd
                                                           , @Param("workYmd") String workYmd);
+
+    /**
+     * 근태 보정으로 정해질 새 실근무 구간 [newStart, newEnd] 을 벗어나는 활성 OT 행 수 조회.
+     *
+     * <p>그 근태(attdId)에 연결된 활성 OT(DEL_YN='N' AND OT_STATUS&lt;&gt;'CANCELLED') 중 하나라도
+     * 새 실근무 범위를 초과하면 결과가 1 이상이 되어 보정을 차단한다(ATTD_400_114).
+     * <ul>
+     *   <li>OT 시작 &lt; newStart (앞으로 삐져나감)</li>
+     *   <li>OT 종료 &gt; newEnd (뒤로 삐져나감)</li>
+     *   <li>OT 종료가 NULL(미완료) — 유한 종료 없음 → 범위 보장 불가</li>
+     *   <li>newEnd 가 null/blank(open, 새 퇴근 미정)인데 활성 OT 가 존재 — 범위 상한 불확정</li>
+     * </ul>
+     * 경계 동일(OT시작==newStart, OT종료==newEnd)은 포함으로 보아 허용한다.
+     *
+     * <p>시각은 ACTUAL_START_DATE(8)+ACTUAL_START_TIME(4) / ACTUAL_END_DATE(8)+ACTUAL_END_TIME(4) 을
+     * CONCAT 한 12자리(yyyyMMddHHmm) 문자열로 비교한다(시계열 정렬, 오버나이트 정확). 식별값은 JWT 도출 Param 만 사용(IDOR).
+     *
+     * @param newStart 새 출근 시각 (yyyyMMddHHmm, 12자리)
+     * @param newEnd   새 퇴근 시각 (yyyyMMddHHmm, 12자리). null/blank 이면 open(미정).
+     */
+    int countActiveOvertimeOutsideAttdWindow(@Param("cmpnyCd") String cmpnyCd
+                                             , @Param("siteCd") String siteCd
+                                             , @Param("userCd") String userCd
+                                             , @Param("attdId") String attdId
+                                             , @Param("newStart") String newStart
+                                             , @Param("newEnd") String newEnd);
 }

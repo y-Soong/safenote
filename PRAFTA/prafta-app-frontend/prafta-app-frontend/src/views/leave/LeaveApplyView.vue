@@ -38,8 +38,11 @@
         :presets="presets"
         :context="context"
         :submitting="isSubmitting"
+        :preview="preview"
+        :preview-loading="isPreviewLoading"
         @submit="onSubmit"
         @cancel="onCancel"
+        @preview-request="onPreviewRequest"
       />
     </main>
 
@@ -119,6 +122,37 @@ const loadMeta = async () => {
     metaError.value = resolveApiErrorMessage(err, '연차 정보를 불러오지 못했어요.')
   } finally {
     isLoadingMeta.value = false
+  }
+}
+
+// ── LC-10: 예상 차감 preview (POST /appApi/leaveflow/preview-deduction) ──
+// 폼(LeaveApplyForm)이 디바운스 후 emit 한 payload 를 받아 조회 전용 preview 를 호출한다.
+//   실패는 비치명적: 카드 표시만 생략하고 신청은 가능(서버가 최종 판정 — plan §5-D).
+const preview = ref(null) // { chargeDays, floorApplied, capApplied, insufficientBalance, convMinutes, floorDays } | null
+const isPreviewLoading = ref(false)
+// 응답 역전 방지 시퀀스 — 마지막 요청의 응답만 채택(빠른 입력 변경 시 stale 응답 무시).
+let previewSeq = 0
+
+const onPreviewRequest = async (payload) => {
+  // null = 입력 미완성/비대상 단위 → 표시 해제(잔존 카드 누수 방지).
+  if (!payload) {
+    previewSeq += 1
+    preview.value = null
+    isPreviewLoading.value = false
+    return
+  }
+  const seq = ++previewSeq
+  isPreviewLoading.value = true
+  try {
+    const res = await api.post('/appApi/leaveflow/preview-deduction', payload)
+    if (seq !== previewSeq) return // stale 응답 폐기
+    preview.value = res?.data ?? null
+  } catch (err) {
+    // preview 실패는 표시 생략(에러 알림 없음 — 신청 자체는 서버가 최종 판정).
+    console.warn('[LeaveApply] 예상 차감 preview 실패(표시 생략):', err?.message)
+    if (seq === previewSeq) preview.value = null
+  } finally {
+    if (seq === previewSeq) isPreviewLoading.value = false
   }
 }
 

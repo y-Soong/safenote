@@ -67,7 +67,8 @@ public interface LeaveFlowMapper {
 
     /**
      * 연차개편 동시성: 사용자 신청('01') 직렬화용 advisory lock 획득(GET_LOCK).
-     * 1=획득, 0=타임아웃, null=오류. 세션 단위 → 호출부 finally 에서 releaseAdvisoryLock. (앱 미러)
+     * 1=획득, 0=타임아웃, null=오류. 세션 단위 → 호출부가 트랜잭션 완료(afterCompletion)
+     * 시점에 releaseAdvisoryLock (등록 불가 시 finally 폴백 — 보안리뷰 Medium). (앱 미러)
      */
     Integer getAdvisoryLock(@Param("lockKey") String lockKey, @Param("timeoutSec") int timeoutSec);
 
@@ -76,6 +77,12 @@ public interface LeaveFlowMapper {
 
     /** 활성 법정 정책의 결재 여부 (tb_leave_policy.APRV_USE_YN). 없으면 null. */
     String selectPolicyAprvUseYn(@Param("cmpnyCd") String cmpnyCd);
+
+    /**
+     * LC-06: 활성 법정정책의 반반차(0.25일) 허용 토글(tb_leave_usage_policy.ALLOW_QUARTER).
+     * 사용정책 행 미존재/활성정책 없음이면 null → 호출부는 'N'(비허용) 취급(fail-closed).
+     */
+    String selectPolicyAllowQuarter(@Param("cmpnyCd") String cmpnyCd);
 
     /**
      * PRAFTA-COM-004 보안: 주어진 USER_CD 목록 중 동일 회사 + 동일 사업장 + 재직(활성) 상태인

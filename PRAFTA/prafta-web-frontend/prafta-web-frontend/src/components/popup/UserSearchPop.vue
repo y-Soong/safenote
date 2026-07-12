@@ -104,7 +104,7 @@
                 >
                   <td>{{ user.userId }}</td>
                   <td>{{ user.userNm }}</td>
-                  <td>{{ user.mblNo }}</td>
+                  <td>{{ proxy.$util.formatPhoneNumber(user.mblNo) }}</td>
                   <td>{{ user.email }}</td>
                 </tr>
               </tbody>
@@ -153,6 +153,8 @@ const props = defineProps({
   siteCd_p: String,
   nodeCd_p: String,
   searchMode_p: String,
+  // 고용형태 필터(예: 'REGULAR'). 전달 시에만 적용되며 미전달이면 기존 동작 유지(타 호출처 무영향).
+  employmentType_p: String,
   onSelect: Function,
 });
 
@@ -177,6 +179,11 @@ const fnGetUserInfoList = async () => {
     userId: userId.value,
     userNm: userNm.value,
   };
+
+  // 고용형태 필터는 prop 전달 시에만 추가 (기본 호출처 무영향)
+  if (props.employmentType_p) {
+    params.employmentType = props.employmentType_p;
+  }
 
   if (props.searchMode_p === "siteNodeAdmin") {
     apiUrl = "/webApi/user01/site-node-admin-candidate-lists";

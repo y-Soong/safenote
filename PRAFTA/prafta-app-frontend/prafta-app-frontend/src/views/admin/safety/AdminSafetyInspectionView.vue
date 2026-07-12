@@ -51,7 +51,17 @@
     </nav>
 
     <!-- 본문: 포인트 리스트 -->
-    <main class="asi-body">
+    <main
+      class="asi-body"
+      ref="scrollRef"
+      @touchstart.passive="onPullStart"
+      @touchmove="onPullMove"
+      @touchend="onPullEnd"
+      @touchcancel="onPullEnd"
+    >
+      <!-- 당겨서 새로고침 인디케이터 — 스크롤 최상단에서 아래로 당기면 노출 -->
+      <PullRefreshIndicator v-bind="indicatorProps" />
+
       <div v-if="isLoading" class="asi-state" aria-live="polite">불러오는 중...</div>
 
       <div v-else-if="points.length === 0" class="asi-state" aria-live="polite">
@@ -130,6 +140,8 @@ import { ref, computed, getCurrentInstance, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 
 import api from '@/api/axios'
+import { usePullToRefresh } from '@/composables/usePullToRefresh'
+import PullRefreshIndicator from '@/components/common/PullRefreshIndicator.vue'
 import { buildFileUrl } from '@/utils/fileUrl'
 import { formatMdDot } from '@/utils/approvalFormat'
 
@@ -261,6 +273,16 @@ const onCloseDetail = () => {
   selectedPoint.value = null
   detailRows.value = []
 }
+
+// ── 당겨서 새로고침 — 스크롤 최상단에서 아래로 당기면 현재 월의 포인트 리스트를 재조회. ──
+//   부작용 없는 조회(loadInspections)만 수행. 현재 월(workMonth)/사업장(currentSiteCd)은 유지.
+const scrollRef = ref(null)
+const { onPullStart, onPullMove, onPullEnd, indicatorProps } = usePullToRefresh(
+  scrollRef,
+  async () => {
+    await loadInspections()
+  },
+)
 
 // 진입 시: 당월 세팅 → 현재 사업장 확정 → 리스트 조회.
 onMounted(async () => {

@@ -22,7 +22,17 @@
     </header>
 
     <!-- 본문 -->
-    <main class="pl-body">
+    <main
+      class="pl-body"
+      ref="scrollRef"
+      @touchstart.passive="onPullStart"
+      @touchmove="onPullMove"
+      @touchend="onPullEnd"
+      @touchcancel="onPullEnd"
+    >
+      <!-- 당겨서 새로고침 인디케이터 — 스크롤 최상단에서 아래로 당기면 노출 -->
+      <PullRefreshIndicator v-bind="indicatorProps" />
+
       <!-- 안내 노트 -->
       <div class="pl-notice">
         연차 신청 시 기본 프리셋이 자동 적용됩니다.<br />
@@ -117,6 +127,8 @@ import { ref, computed, onMounted, getCurrentInstance } from 'vue'
 import { useRouter } from 'vue-router'
 
 import api from '@/api/axios'
+import { usePullToRefresh } from '@/composables/usePullToRefresh'
+import PullRefreshIndicator from '@/components/common/PullRefreshIndicator.vue'
 
 const router = useRouter()
 const { proxy } = getCurrentInstance() || { proxy: null }
@@ -172,10 +184,10 @@ const onBack = () => {
 }
 
 // ───────────────────────────────────────────────────────────
-// 진입 시 1회 조회 (010-05)
+// 프리셋 목록 조회 (010-05) — GET /appApi/mypage/approval-presets (앱 전용 D2)
+//   진입(onMounted)과 당겨서 새로고침이 공통 호출하는 부작용 없는 조회.
 // ───────────────────────────────────────────────────────────
-onMounted(async () => {
-  // GET /appApi/mypage/approval-presets (앱 전용 D2)
+const loadPresets = async () => {
   try {
     const { data } = await api.get('/appApi/mypage/approval-presets')
     presets.value = data?.presets || []
@@ -185,7 +197,20 @@ onMounted(async () => {
   } finally {
     isLoading.value = false
   }
+}
+
+onMounted(() => {
+  loadPresets()
 })
+
+// 당겨서 새로고침 — 프리셋 목록(loadPresets) 재조회.
+const scrollRef = ref(null)
+const { onPullStart, onPullMove, onPullEnd, indicatorProps } = usePullToRefresh(
+  scrollRef,
+  async () => {
+    await loadPresets()
+  },
+)
 </script>
 
 <style scoped>
@@ -211,7 +236,8 @@ onMounted(async () => {
   --space-lg: 16px;
 
   position: relative;
-  min-height: 100vh;
+  height: 100vh;
+  height: 100dvh;
   display: flex;
   flex-direction: column;
   background: var(--color-bg);
@@ -257,6 +283,7 @@ onMounted(async () => {
 /* 본문 */
 .pl-body {
   flex: 1;
+  min-height: 0;
   overflow-y: auto;
   padding: var(--space-lg) var(--space-lg) 40px;
   display: flex;

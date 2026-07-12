@@ -12,6 +12,7 @@ public record LegalStepResult(
     , String actionGuide
     , String legalBasis
     , String deadlineRuleCd
+    , String stepType      // PROCESS:처리단계 / REFERENCE:참고항목(상태없음)
     , String stepNote
     , String isDoneYn      // 미저장 시 'N'
     , String doneDtime

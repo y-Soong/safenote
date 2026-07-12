@@ -72,6 +72,14 @@
         <label>사용자명</label>
         <input v-model.trim="searchUserNm" type="text" />
       </div>
+      <div>
+        <label>고용형태</label>
+        <select v-model="employmentType">
+          <option value="">전체</option>
+          <option value="REGULAR">정규직</option>
+          <option value="DAILY">일일사용자</option>
+        </select>
+      </div>
     </div>
 
     <!-- 캘린더 툴바 (월 네비 / 뷰 토글 / 페이지 액션) -->
@@ -145,7 +153,10 @@
             <tbody>
               <tr v-for="u in userList" :key="u.userId">
                 <td class="m-user-cell sticky-left">
-                  <div class="m-user-name">{{ u.name }}</div>
+                  <div class="m-user-name">
+                    {{ u.name }}
+                    <span v-if="u.isDaily" class="badge-daily">일일사용자</span>
+                  </div>
                   <div class="m-user-meta">
                     {{ u.userId }} · {{ u.dept }} · {{ u.role }}
                   </div>
@@ -248,6 +259,7 @@
             >
               <div class="ui-top">
                 <span class="ui-name">{{ u.name }}</span>
+                <span v-if="u.isDaily" class="badge-daily">일일사용자</span>
                 <span v-if="u.issues > 0" class="ui-badge-issue">{{
                   u.issues
                 }}</span>
@@ -265,7 +277,12 @@
             <div class="a07-uinfo">
               <div class="a07-avatar">{{ selectedUser.name.charAt(0) }}</div>
               <div>
-                <div class="a07-uname">{{ selectedUser.name }}</div>
+                <div class="a07-uname">
+                  {{ selectedUser.name }}
+                  <span v-if="selectedUser.isDaily" class="badge-daily"
+                    >일일사용자</span
+                  >
+                </div>
                 <div class="a07-umeta">
                   {{ selectedUser.userId }} · {{ selectedUser.dept }} ·
                   {{ selectedUser.role }}
@@ -508,6 +525,8 @@ const nodeNm = ref("");
 const nodeDisabled = ref(true);
 const incSubNodeYn = ref(false);
 const searchUserNm = ref("");
+// 고용형태 필터: "" 전체 / "REGULAR" 정규직 / "DAILY" 일일사용자
+const employmentType = ref("");
 const siteNoFcs = ref(null);
 
 // ── 화면 상태 ─────────────────────────────────────────────
@@ -736,15 +755,6 @@ const fmtTime = (hhmm) => {
   if (v.length < 4) return v;
   return `${v.slice(0, 2)}:${v.slice(2, 4)}`;
 };
-// "093015" → "09:30:15", "0930" → "09:30:00"
-const fmtTimeSec = (v) => {
-  if (!v) return "";
-  const s = String(v);
-  if (s.length === 4) return `${s.slice(0, 2)}:${s.slice(2, 4)}:00`;
-  if (s.length >= 6)
-    return `${s.slice(0, 2)}:${s.slice(2, 4)}:${s.slice(4, 6)}`;
-  return s;
-};
 // "20260502" → "05.02" (일자 컬럼 표시용)
 const fmtMmdd = (ymd) => {
   if (!ymd) return "";
@@ -904,7 +914,10 @@ const recognizedSegMin = (r, seg) => {
   let schEndM = dtAbsMin(r.workYmd, schEnd, r.workYmd);
   if (schStartM == null || schEndM == null) return 0;
   if (schEndM < schStartM) schEndM += 1440;
-  const overlap = Math.max(0, Math.min(outM, schEndM) - Math.max(inM, schStartM));
+  const overlap = Math.max(
+    0,
+    Math.min(outM, schEndM) - Math.max(inM, schStartM)
+  );
   return Math.max(0, overlap - brk);
 };
 // 정규근무 행 인정시간(분) = 1구간 + 2구간.
@@ -1401,6 +1414,8 @@ const fnBindResponse = (data) => {
         dept: r.deptNm,
         role: r.authNm ?? "",
         shift: r.plan2Start ? 2 : 1,
+        // 고용형태가 DAILY 인 경우 일일사용자(일용직)로 표시 구분
+        isDaily: r.employmentType === "DAILY",
         issues: 0,
       });
     }
@@ -1449,6 +1464,7 @@ const fnSearch = async () => {
         nodeCd: nodeCd.value,
         incSubNodeYn: incSubNodeYn.value ? "Y" : "N",
         userNm: searchUserNm.value,
+        employmentType: employmentType.value,
       },
     });
 
@@ -1732,6 +1748,22 @@ table.a07-matrix th.sticky-left.sticky-top {
   color: var(--color-text-muted, #9ca3af);
   margin-top: 2px;
   line-height: 1.3;
+}
+
+/* 일일사용자(일용직) 구분 배지 — 사용자명 옆 텍스트 + 배경색 구분 */
+.badge-daily {
+  display: inline-block;
+  margin-left: 4px;
+  padding: 1px 5px;
+  font-size: 0.625rem;
+  font-weight: 600;
+  line-height: 1.4;
+  white-space: nowrap;
+  color: var(--color-text-muted, #6b7280);
+  background: var(--color-bg-muted, #f3f4f6);
+  border: 1px solid var(--color-border, #e5e7eb);
+  border-radius: 4px;
+  vertical-align: middle;
 }
 
 table.a07-matrix td.m-day-cell {

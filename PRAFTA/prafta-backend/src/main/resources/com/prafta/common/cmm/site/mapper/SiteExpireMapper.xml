@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.prafta.common.cmm.site.mapper.SiteExpireMapper">
+
+    <!-- PRAFTA-COM-001-T2-3: 종료일 도래(END_DATE <= 오늘) AND 활성(USE_YN='Y') 사업장을 USE_YN='N' 으로 일괄 비활성.
+         END_DATE 는 varchar(8) YYYYMMDD 문자열이라 todayYmd(YYYYMMDD) 와 문자열 비교.
+         종료일 미설정(NULL)/이미 'N' 인 행은 조건에서 제외(멱등). -->
+    <update id="updateExpireOverdueSites">
+    /* SiteExpireMapper.updateExpireOverdueSites */
+    UPDATE TB_SITE
+       SET USE_YN      = 'N'
+         , UPDATE_NO   = #{updateNo}
+         , UPDATE_DATE = NOW()
+     WHERE USE_YN      = 'Y'
+       AND END_DATE IS NOT NULL
+       AND END_DATE <![CDATA[<=]]> #{todayYmd}
+    </update>
+</mapper>

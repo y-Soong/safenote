@@ -7,7 +7,8 @@ package com.prafta.web.acct.acct01.result;
 public record VictimResult(
     String userTypeCd   // REGULAR/DAILY
     , String userTypeNm
-    , String userCd
+    , String userCd     // 내부 사용자코드(선택 페이로드 식별자)
+    , String userId     // 표시용 사용자ID
     , String userNm     // 마스킹된 이름
     , String mblNoLast4
     , String siteCd

@@ -3,7 +3,7 @@ import { createRouter, createWebHistory } from "vue-router";
 import { buildDynamicChildren } from "./dynamicRoutes";
 import LoginView from "@/views/login/LoginView.vue";
 import MainLayout from "@/components/layout/MainLayout.vue";
-import DashboardView from "@/views/DashboardView.vue";
+import Dashboard01 from "@/views/dashboard/Dashboard_01.vue";
 import api from "@/api/axios";
 import { resolveApiErrorMessage } from "@/utils/apiError";
 import {
@@ -43,7 +43,8 @@ const routes = [
       {
         path: "",
         name: "Dashboard",
-        component: DashboardView,
+        // PRAFTA-DASHBOARD-T1: 홈 = 관리자 대시보드 (구 DashboardView 더미 교체)
+        component: Dashboard01,
         meta: { requiresAuth: true },
         props: true,
       },
@@ -72,6 +73,38 @@ const router = createRouter({
 
 // --- 동적 라우트 주입 로직 ---
 let dynamicInjected = false;
+// 동적 라우트를 주입한 세션 식별자(회사코드/사용자코드). USER_CD 는 회사별 채번이라 전역 유일이 아니므로
+//   반드시 CMPNY_CD 와 함께 키로 사용한다. 같은 탭에서 다른 계정으로 재로그인(새로고침 없음) 시
+//   이전 계정의 동적 라우트가 남아 메뉴가 어긋나는 것을 막기 위해 키가 바뀌면 재주입한다.
+let injectedForKey = null;
+
+/**
+ * JWT 페이로드 디코드(서명 검증이 아니라 gv_scope 판별용). 실패 시 null.
+ */
+function decodeJwtPayload(token) {
+  try {
+    const part = token.split(".")[1];
+    if (!part) return null;
+    const json = decodeURIComponent(
+      atob(part.replace(/-/g, "+").replace(/_/g, "/"))
+        .split("")
+        .map((c) => "%" + ("00" + c.charCodeAt(0).toString(16)).slice(-2))
+        .join("")
+    );
+    return JSON.parse(json);
+  } catch (e) {
+    return null;
+  }
+}
+
+/**
+ * 임시 scope 토큰(gv_scope 보유) 여부. 휴대폰 본인인증/약관 동의/기본 근무타입 등 게이트 전용 토큰으로,
+ * 정식 세션이 아니다. 게이트 미완료 상태에서 새로고침해도 메인 진입을 막기 위함.
+ */
+function isScopeToken(token) {
+  const payload = decodeJwtPayload(token);
+  return !!(payload && payload.gv_scope);
+}
 
 /**
  * sessionStorage.token이 없으면 refreshToken으로 한 번 복구를 시도한다.
@@ -80,7 +113,14 @@ let dynamicInjected = false;
  */
 async function ensureAccessToken() {
   const token = sessionStorage.getItem("token");
-  if (token) return token;
+  if (token) {
+    // 게이트 전용 임시 토큰이면 정식 세션으로 인정하지 않는다(서버도 gv_scope 토큰을 일반 API에서 거부).
+    if (isScopeToken(token)) {
+      sessionStorage.removeItem("token");
+      return null;
+    }
+    return token;
+  }
 
   const rt = getRefreshToken();
   if (!rt) return null;
@@ -122,13 +162,28 @@ async function fetchRoutesFromServer() {
  * - 이미 주입되어 있으면 즉시 반환 (한 세션 내 1회 실행).
  * - 외부(MainLayout 등)에서도 호출 가능하도록 export.
  */
-export async function injectDynamicRoutes() {
-  if (dynamicInjected) return;
+export async function injectDynamicRoutes(force = false) {
+  const currentKey = `${sessionStorage.getItem("gv_cmpnyCd")}/${sessionStorage.getItem("gv_userCd")}`;
+
+  // 다른 계정으로 재로그인(같은 탭, 새로고침 없음)했으면 이전 계정의 동적 라우트를 비우고 재주입한다.
+  if (injectedForKey && injectedForKey !== currentKey) {
+    resetDynamicRoutes();
+  }
+
+  if (dynamicInjected && !force) return;
 
   const token = sessionStorage.getItem("token");
   if (!token) return;
 
   const dbRoutes = await fetchRoutesFromServer();
+
+  // 메뉴 조회가 실패하거나 빈 응답이면 latch 하지 않는다(다음 진입에서 재시도).
+  //   최초 로그인 직후 일시적 실패가 dynamicInjected=true 로 고착되어, 새로고침(모듈 재초기화)
+  //   전까지 동적 라우트가 비어 메뉴 클릭이 동작하지 않던 현상을 방지한다.
+  if (!Array.isArray(dbRoutes) || dbRoutes.length === 0) {
+    return;
+  }
+
   sessionStorage.setItem("dynamicRoutes", JSON.stringify(dbRoutes));
 
   const children = buildDynamicChildren(dbRoutes);
@@ -139,6 +194,29 @@ export async function injectDynamicRoutes() {
   });
 
   dynamicInjected = true;
+  injectedForKey = currentKey;
+}
+
+/**
+ * 주입된 동적 라우트를 제거하고 주입 상태를 초기화한다.
+ * - 로그아웃/계정 전환 시 호출하여 다음 로그인에서 새 메뉴로 재주입되게 한다.
+ */
+export function resetDynamicRoutes() {
+  const raw = sessionStorage.getItem("dynamicRoutes");
+  if (raw) {
+    try {
+      buildDynamicChildren(JSON.parse(raw)).forEach((child) => {
+        if (child.name && router.hasRoute(child.name)) {
+          router.removeRoute(child.name);
+        }
+      });
+    } catch (e) {
+      // 파싱 실패는 무시 — 상태 플래그만 초기화한다.
+    }
+  }
+  sessionStorage.removeItem("dynamicRoutes");
+  dynamicInjected = false;
+  injectedForKey = null;
 }
 
 /** 동적 라우트가 주입되었는지 외부에 노출 (MainLayout이 탭 자동 추가에 사용). */
@@ -171,12 +249,22 @@ router.beforeEach(async (to, from, next) => {
     if (!dynamicInjected) {
       await injectDynamicRoutes();
     }
-    // 재해석 후에도 동적 라우트에 매칭되지 않으면 대시보드로 보낸다.
-    const resolved = router.resolve(to.fullPath);
-    const stillNotFound =
+    // 재해석 후에도 동적 라우트에 매칭되지 않으면, 주입이 누락/지연되었을 수 있으므로
+    //   한 번 더 강제 재주입(force)하여 재해석한다. 최초 로그인 직후 메뉴 클릭이 빈 화면으로
+    //   떨어지고 새로고침해야 풀리던 현상을 보강(메뉴 라우트가 실제 존재하면 여기서 살아난다).
+    let resolved = router.resolve(to.fullPath);
+    let stillNotFound =
       resolved.name === "NotFound" ||
       resolved.matched.length === 0 ||
       resolved.matched[0]?.path === "/:pathMatch(.*)*";
+    if (stillNotFound) {
+      await injectDynamicRoutes(true);
+      resolved = router.resolve(to.fullPath);
+      stillNotFound =
+        resolved.name === "NotFound" ||
+        resolved.matched.length === 0 ||
+        resolved.matched[0]?.path === "/:pathMatch(.*)*";
+    }
     if (stillNotFound) {
       return next({ path: `${SERVICE_BASE}/main`, replace: true });
     }
@@ -194,9 +282,16 @@ router.beforeEach(async (to, from, next) => {
     }
   }
 
-  // 로그인 페이지인데 이미 세션이 있으면 메인으로 이동
+  // 로그인 페이지인데 이미 세션이 있으면 메인으로 이동.
+  //   단, 게이트 미완료 임시 scope 토큰은 세션이 아니므로 제거만 하고 로그인 페이지에 머문다(새로고침 우회 차단).
   const token = sessionStorage.getItem("token");
-  if (token && isLoginPage) return next(`${SERVICE_BASE}/main`);
+  if (token && isLoginPage) {
+    if (isScopeToken(token)) {
+      sessionStorage.removeItem("token");
+    } else {
+      return next(`${SERVICE_BASE}/main`);
+    }
+  }
 
   return next();
 });

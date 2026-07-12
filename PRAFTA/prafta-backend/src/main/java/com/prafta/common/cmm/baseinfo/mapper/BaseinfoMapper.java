@@ -69,11 +69,22 @@ public interface BaseinfoMapper {
 	
 	List<MenuInfoResult> selectMenuList(MenuListQuery query);
 
+	/**
+	 * 메뉴 조회 시 isFavorite 세팅용 — 사용자별 즐겨찾기 MENU_D_ID 목록.
+	 * USER_CD/CMPNY_CD 는 JWT 도출값만 전달(IDOR 방지).
+	 */
+	List<String> selectMyFavoriteMenuDIds(
+			@org.apache.ibatis.annotations.Param("cmpnyCd") String cmpnyCd
+			, @org.apache.ibatis.annotations.Param("userCd") String userCd);
+
 	List<UserInfoResult> selectUserInfoList(UserInfoListQuery query);
 
 	UserIdInfoResult selectUserIdInfo(UserIdInfoQuery query);
 	
 	void updateUserPw(UserPasswordCommand command);
+
+	/* prafta-app-032 D: 비밀번호 재설정 시 일용직 로그인 테이블(TB_DAILY_USER.USER_PW) 동기 갱신. 정규 사용자엔 0행 no-op. */
+	int updateDailyUserPw(UserPasswordCommand command);
 
 	/* 비밀번호 재설정 진입 시 대상 사용자의 최근 SMS 인증 성공(미만료/미소비) 레코드 SMS_ID 조회 */
 	String selectSmsVerifiedSmsId(SmsVerifiedCheckQuery query);

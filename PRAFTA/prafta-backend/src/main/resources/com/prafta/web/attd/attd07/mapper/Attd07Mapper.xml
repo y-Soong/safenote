@@ -63,6 +63,7 @@
 	            , U.USER_NM
 	            , U.NODE_CD
 	            , U.AUTH_CD
+	            , U.EMPLOYMENT_TYPE
 	            , NT.NODE_NM
 	        FROM TB_USER U
 	        INNER JOIN node_tree NT
@@ -75,6 +76,13 @@
 	          AND U.WITHDRAWAL_DATE IS NULL
 	        <if test="userNm != null and userNm != ''">
 	          AND U.USER_NM LIKE CONCAT('%', #{userNm}, '%')
+	        </if>
+	        <!-- 고용형태 필터: 일용직(DAILY) / 정규직(REGULAR, 미지정 null 포함) 분리 조회 -->
+	        <if test='"DAILY".equals(employmentType)'>
+	          AND U.EMPLOYMENT_TYPE = 'DAILY'
+	        </if>
+	        <if test='"REGULAR".equals(employmentType)'>
+	          AND (U.EMPLOYMENT_TYPE IS NULL OR U.EMPLOYMENT_TYPE <![CDATA[ <> ]]> 'DAILY')
 	        </if>
 	    ),
 	
@@ -110,6 +118,7 @@
 	        , U.NODE_NM                                                        AS deptNm
 	        , U.AUTH_CD                                                        AS authCd
 	        , FNC_CMM_INFO_SRCH(U.CMPNY_CD, 'BAIM_VAL', U.AUTH_CD, 'COM005')   AS authNm
+        , U.EMPLOYMENT_TYPE                                               AS employmentType
 	        
 	        /* INSERT 시 프론트가 들고있어야 할 키 */
 	        , U.CMPNY_CD                                                       AS cmpnyCd
@@ -259,9 +268,14 @@
 	        ON  SCH.CMPNY_CD = WP.CMPNY_CD
 	        AND SCH.SITE_CD  = WP.SITE_CD
 	        AND SCH.SCH_CD   = WP.WORK_PLAN_CD
-	        /* 근무일 기준 APPLY_DATE <![CDATA[ <= ]]> WORK_YMD 인 가장 최근(MAX APPLY_DATE) 버전만 적용 */
+	        /* 근무일 기준 APPLY_DATE <![CDATA[ <= ]]> WORK_YMD 인 가장 최근(MAX APPLY_DATE) 버전만 적용.
+	           단, 근무일보다 늦게 적용 시작된 스케줄을 그 이전 날에 배정한 경우(상한 충족 버전 없음)엔
+	           "스케줄 없음" 대신 최이른 적용버전(MIN APPLY_DATE)으로 폴백한다. */
 	        AND SCH.APPLY_DATE = (
-	            SELECT MAX(SE.APPLY_DATE)
+	            SELECT COALESCE(
+	                     MAX(CASE WHEN SE.APPLY_DATE <![CDATA[ <= ]]> WP.WORK_YMD THEN SE.APPLY_DATE END)
+	                   , MIN(SE.APPLY_DATE)
+	                   )
 	            FROM (
 	                SELECT M3.CMPNY_CD, M3.SITE_CD, M3.SCH_CD, M3.APPLY_DATE
 	                FROM TB_SCH_MGMT M3
@@ -274,7 +288,6 @@
 	            WHERE SE.CMPNY_CD    = WP.CMPNY_CD
 	              AND SE.SITE_CD     = WP.SITE_CD
 	              AND SE.SCH_CD      = WP.WORK_PLAN_CD
-	              AND SE.APPLY_DATE <![CDATA[ <= ]]> WP.WORK_YMD
 	        )
 
 	    /* SCH_TYPE 은 이력본에 컬럼이 없으므로 항상 현재본(TB_SCH_MGMT)에서 가져온다 */
@@ -577,6 +590,7 @@
 	    , A.USER_CD                                                        AS userCd
 	    , B.USER_ID                                                        AS userId
 	    , B.USER_NM                                                        AS userNm
+	    , B.EMPLOYMENT_TYPE                                                AS employmentType
 	    , A.SITE_CD                                                        AS siteCd
 	    , B.NODE_CD                                                        AS nodeCd
 	    , A.WORK_YMD                                                       AS workYmd
@@ -725,9 +739,14 @@
 			ON  SCH.CMPNY_CD = WP.CMPNY_CD
 			AND SCH.SITE_CD  = WP.SITE_CD
 			AND SCH.SCH_CD   = WP.WORK_PLAN_CD
-			/* 근무일 기준 APPLY_DATE <![CDATA[ <= ]]> WORK_YMD 인 가장 최근(MAX APPLY_DATE) 버전만 적용 */
+			/* 근무일 기준 APPLY_DATE <![CDATA[ <= ]]> WORK_YMD 인 가장 최근(MAX APPLY_DATE) 버전만 적용.
+			   단, 근무일보다 늦게 적용 시작된 스케줄을 그 이전 날에 배정한 경우(상한 충족 버전 없음)엔
+			   "스케줄 없음" 대신 최이른 적용버전(MIN APPLY_DATE)으로 폴백한다. */
 			AND SCH.APPLY_DATE = (
-				SELECT MAX(SE.APPLY_DATE)
+				SELECT COALESCE(
+				         MAX(CASE WHEN SE.APPLY_DATE <![CDATA[ <= ]]> WP.WORK_YMD THEN SE.APPLY_DATE END)
+				       , MIN(SE.APPLY_DATE)
+				       )
 				FROM (
 					SELECT M3.CMPNY_CD, M3.SITE_CD, M3.SCH_CD, M3.APPLY_DATE
 					FROM TB_SCH_MGMT M3
@@ -740,7 +759,6 @@
 				WHERE SE.CMPNY_CD    = WP.CMPNY_CD
 				  AND SE.SITE_CD     = WP.SITE_CD
 				  AND SE.SCH_CD      = WP.WORK_PLAN_CD
-				  AND SE.APPLY_DATE <![CDATA[ <= ]]> WP.WORK_YMD
 			)
 
 		/* SCH_TYPE 은 이력본에 컬럼이 없으므로 항상 현재본(TB_SCH_MGMT)에서 가져온다 */
@@ -772,8 +790,28 @@
 			AND A2.DEL_YN   = 'N'
 	WHERE A.CMPNY_CD = #{gvCmpnyCd}
 	  AND A.SITE_CD = #{siteCd}
-	  AND A.ATTD_ID = #{attdId}
 	  AND A.WORK_YMD = #{workYmd}
+	<!-- com-013-06: 신규 근태 생성 직후 재조회는 attdId 가 아직 없으므로(프론트 prop 미갱신),
+	     attdId 가 비어 있으면 userCd+근무일 기준 그날의 대표 구간(MIN WORK_SEQ, 미삭제)을 앵커로 잡는다.
+	     attdId 가 있으면 기존과 동일하게 해당 구간 행을 앵커로 사용한다. -->
+	<choose>
+	  <when test="attdId != null and attdId != ''">
+	  AND A.ATTD_ID = #{attdId}
+	  </when>
+	  <otherwise>
+	  AND A.USER_CD = #{userCd}
+	  AND A.DEL_YN  = 'N'
+	  AND A.WORK_SEQ = (
+	      SELECT MIN(SUB.WORK_SEQ)
+	        FROM TB_USER_ATTD_MGMT SUB
+	       WHERE SUB.CMPNY_CD = A.CMPNY_CD
+	         AND SUB.SITE_CD  = A.SITE_CD
+	         AND SUB.USER_CD  = A.USER_CD
+	         AND SUB.WORK_YMD = A.WORK_YMD
+	         AND SUB.DEL_YN   = 'N'
+	  )
+	  </otherwise>
+	</choose>
     </select>
     
 	<select id="selectDailyAttdDetailHistory" parameterType="com.prafta.web.attd.attd07.application.query.DailyAttdDetailsQuery" resultType="com.prafta.web.attd.attd07.result.DailyAttdDetailHistoryResult">
@@ -1175,8 +1213,13 @@
     <!-- 근무 구간 시각 겹침 판정(정책서 attd §7.6)용 — 편집/등록 대상(excludeAttdId)을 제외한
          같은 (회사/사업장/사용자/근무일) 활성 근태행의 출퇴근 시각만 반환. 퇴근 NULL=open 구간.
          excludeAttdId 가 null/빈값이면 제외 없이 그날 전체 구간을 반환(신규 생성 경로). -->
-    <select id="selectDayAttdSegmentsExcept" resultType="com.prafta.web.attd.attd07.result.DayAttdSegmentResult">
-    /* Attd07Mapper.selectDayAttdSegmentsExcept */
+    <!-- QT-2-6 수정: 겹침 검사 대상을 "같은 근무일"에서 "근무일 ±1일 윈도우"로 넓힌다.
+         오버나이트 근태(WORK_YMD=D, 퇴근 D+1)는 이웃 근무일(D+1)의 근태와 실제 시각이 겹칠 수 있는데,
+         WORK_YMD 동치 조건만으로는 그 행이 조회되지 않아 겹침 검사에서 통째로 누락됐다(원장 이중 산입).
+         호출자는 모든 구간을 "대상 근무일(workYmd) 기준" 분 stamp 로 환산하므로(DateTimeUtils.toMinuteStamp),
+         이웃 근무일 행도 같은 기준선에서 비교된다. -->
+    <select id="selectAttdSegmentsAroundDayExcept" resultType="com.prafta.web.attd.attd07.result.DayAttdSegmentResult">
+    /* Attd07Mapper.selectAttdSegmentsAroundDayExcept */
     SELECT
           M.ATTD_ID         AS attdId
         , M.WORK_SEQ        AS workSeq
@@ -1188,7 +1231,7 @@
      WHERE M.CMPNY_CD = #{cmpnyCd}
        AND M.SITE_CD  = #{siteCd}
        AND M.USER_CD  = #{userCd}
-       AND M.WORK_YMD = #{workYmd}
+       AND M.WORK_YMD BETWEEN #{fromYmd} AND #{toYmd}
        AND M.DEL_YN   = 'N'
     <if test="excludeAttdId != null and excludeAttdId != ''">
        AND M.ATTD_ID != #{excludeAttdId}
@@ -1642,9 +1685,14 @@
         ON  SCH.CMPNY_CD = WP.CMPNY_CD
         AND SCH.SITE_CD  = WP.SITE_CD
         AND SCH.SCH_CD   = WP.WORK_PLAN_CD
-        /* 근무일 기준 APPLY_DATE <![CDATA[ <= ]]> WORK_YMD 인 가장 최근(MAX APPLY_DATE) 버전만 적용 */
+        /* 근무일 기준 APPLY_DATE <![CDATA[ <= ]]> WORK_YMD 인 가장 최근(MAX APPLY_DATE) 버전만 적용.
+           단, 근무일보다 늦게 적용 시작된 스케줄을 그 이전 날에 배정한 경우(상한 충족 버전 없음)엔
+           "스케줄 없음" 대신 최이른 적용버전(MIN APPLY_DATE)으로 폴백한다. */
         AND SCH.APPLY_DATE = (
-            SELECT MAX(SE.APPLY_DATE)
+            SELECT COALESCE(
+                     MAX(CASE WHEN SE.APPLY_DATE <![CDATA[ <= ]]> WP.WORK_YMD THEN SE.APPLY_DATE END)
+                   , MIN(SE.APPLY_DATE)
+                   )
             FROM (
                 SELECT M3.CMPNY_CD, M3.SITE_CD, M3.SCH_CD, M3.APPLY_DATE
                 FROM TB_SCH_MGMT M3
@@ -1657,7 +1705,6 @@
             WHERE SE.CMPNY_CD    = WP.CMPNY_CD
               AND SE.SITE_CD     = WP.SITE_CD
               AND SE.SCH_CD      = WP.WORK_PLAN_CD
-              AND SE.APPLY_DATE <![CDATA[ <= ]]> WP.WORK_YMD
         )
 
     LEFT JOIN TB_USER_ATTD_MGMT A1
@@ -1749,6 +1796,17 @@
       AND U.WITHDRAWAL_DATE IS NULL
     </select>
 
+    <!-- 대상 사용자가 일용직(EMPLOYMENT_TYPE='DAILY')인지 — 일용직 초과근무 등록 차단용. -->
+    <select id="selectDailyWorkerInScope" resultType="int">
+    /* Attd07Mapper.selectDailyWorkerInScope - 일용직 OT 등록 차단 */
+    SELECT COUNT(*)
+    FROM TB_USER U
+    WHERE U.CMPNY_CD        = #{cmpnyCd}
+      AND U.SITE_CD         = #{siteCd}
+      AND U.USER_CD         = #{userCd}
+      AND U.EMPLOYMENT_TYPE = 'DAILY'
+    </select>
+
     <select id="selectAttdExistInScope" resultType="int">
     /* Attd07Mapper.selectAttdExistInScope - SEC-017 scope check */
     SELECT COUNT(*)
@@ -1789,6 +1847,42 @@
       AND O.OT_ID NOT IN
       <foreach collection="excludeOtIds" item="exId" open="(" separator="," close=")">#{exId}</foreach>
       </if>
+    </select>
+
+    <!-- 근태 보정/직접수정으로 정해질 새 실근무 구간 [newStart, newEnd] 을 벗어나는 활성 OT 행 수.
+         그 근태(ATTD_ID)에 연결된 활성 OT(DEL_YN='N' AND OT_STATUS != 'CANCELLED') 중
+         하나라도 다음이면 카운트(>0 이면 보정 차단, ATTD_400_114):
+           - OT 시작 < newStart (앞으로 삐져나감)
+           - OT 종료(ACTUAL_END_*)가 NULL(미완료) → 유한 종료 없음, 범위 보장 불가
+           - newEnd 가 null/blank(open) 인데 활성 OT 존재 → 범위 상한 불확정(아래 choose 에서 항상참)
+           - newEnd 확정 시: OT 종료 > newEnd (뒤로 삐져나감)
+         경계 동일(OT시작==newStart, OT종료==newEnd)은 포함으로 보아 허용(엄격 부등호 사용).
+         시각은 ACTUAL_START_DATE(8)+ACTUAL_START_TIME(4) / ACTUAL_END_DATE(8)+ACTUAL_END_TIME(4) 을
+         CONCAT 한 12자리(yyyyMMddHHmm) 문자열로 비교(시계열 정렬, 오버나이트 정확). -->
+    <select id="countActiveOvertimeOutsideAttdWindow" resultType="int">
+    /* Attd07Mapper.countActiveOvertimeOutsideAttdWindow - OT must stay within new attd window */
+    SELECT COUNT(*)
+    FROM TB_USER_OVERTIME_MGMT O
+    WHERE O.CMPNY_CD = #{cmpnyCd}
+      AND O.SITE_CD  = #{siteCd}
+      AND O.USER_CD  = #{userCd}
+      AND O.ATTD_ID  = #{attdId}
+      AND O.DEL_YN   = 'N'
+      AND O.OT_STATUS <![CDATA[ <> ]]> 'CANCELLED'
+      AND (
+        CONCAT(O.ACTUAL_START_DATE, O.ACTUAL_START_TIME) <![CDATA[ < ]]> #{newStart}
+        OR O.ACTUAL_END_DATE IS NULL
+        OR O.ACTUAL_END_TIME IS NULL
+        <choose>
+          <when test="newEnd == null or newEnd == ''">
+            <!-- 새 퇴근 미정(open): 활성 OT 가 있으면 상한 보장 불가 → 항상 위반 -->
+            OR 1 = 1
+          </when>
+          <otherwise>
+            OR CONCAT(O.ACTUAL_END_DATE, O.ACTUAL_END_TIME) <![CDATA[ > ]]> #{newEnd}
+          </otherwise>
+        </choose>
+      )
     </select>
 
     <insert id="insertUserOvertime"

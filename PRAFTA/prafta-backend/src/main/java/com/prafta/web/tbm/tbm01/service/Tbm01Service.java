@@ -1,5 +1,6 @@
 package com.prafta.web.tbm.tbm01.service;
 
+import com.prafta.web.tbm.tbm01.application.param.TbmEduAiAnalyzeParam;
 import com.prafta.web.tbm.tbm01.application.param.TbmEduDetailParam;
 import com.prafta.web.tbm.tbm01.application.param.TbmEduInfoListParam;
 import com.prafta.web.tbm.tbm01.application.param.TbmEduInfoParam;
@@ -26,4 +27,7 @@ public interface Tbm01Service {
 	void saveTbmEdu(TbmEduMtrlInfoParam param);
 
 	void deleteTbmEdu(TbmEduMtrlInfoParam param);
+
+	/** 사용 중(잠긴) 교육자료의 세부항목 AI 분석 지정(AI_ANALYZE_YN)만 갱신. */
+	void updateTbmEduItemAiAnalyze(TbmEduAiAnalyzeParam param);
 }

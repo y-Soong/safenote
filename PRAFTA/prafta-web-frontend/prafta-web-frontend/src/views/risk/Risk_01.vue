@@ -405,7 +405,10 @@ const targetValNm = ref("");
 const siteCd = ref("");
 const siteNo = ref("");
 const siteNm = ref("");
-const commonChk = ref(true);
+const commonChk = ref(false);
+// 초기 1회 자동조회 여부(onMounted → fnCategoryClick → fnSearch_fst 최초 진입 판별).
+//   무사업장 계정 초기 진입 시 불필요한 사업장 선택 alert 억제 용도.
+const isFirstSearch = ref(true);
 
 /* 체크박스 */
 const headChk_fst = ref(false);
@@ -598,9 +601,16 @@ const fnGetSystinfoList = async () => {
 
 // 조회
 const fnSearch_fst = async () => {
+  // 최초 호출 여부 캡처(초기 1회 자동조회 alert 억제용). 이후 호출은 일반 동작.
+  const firstLoad = isFirstSearch.value;
+  isFirstSearch.value = false;
+
   if (!commonChk.value) {
     if (proxy.$util.isEmpty(siteCd.value)) {
-      proxy.$alert(getMessage(MSG.SITE_REQUIRED));
+      // 초기 1회 자동조회(무사업장 계정)에서는 불필요한 사업장 선택 alert 를 억제하고 조회만 건너뛴다.
+      if (!firstLoad) {
+        proxy.$alert(getMessage(MSG.SITE_REQUIRED));
+      }
       return;
     }
   }
@@ -809,7 +819,10 @@ const fnAddRow_fst = () => {
   riskTypeResultList.value.push({
     chk: true,
     cmpnyCd: sessionStorage.getItem("gv_cmpnyCd"),
-    siteCd: siteCd.value,
+    // 공통관리 모드에서는 사업장코드를 비워 공통(전사) 항목으로 등록한다.
+    // (초기 진입 시 commonChk=true 이지만 siteCd.value 에 세션 사업장이 남아있어
+    //  공통 항목이 특정 사업장 항목으로 잘못 저장되던 결함 방지)
+    siteCd: commonChk.value ? "" : siteCd.value,
     processCd: selectedCategoryId.value,
     useYn: "Y",
   });
@@ -839,8 +852,10 @@ const fnAddRow_sec = () => {
     return;
   }
 
-  const hazardSiteCd =
-    !commonChk.value && parentRisk && proxy.$util.isNotEmpty(parentRisk.siteCd)
+  // 공통관리 모드에서는 사업장코드를 비워 공통(전사) 항목으로 등록한다.
+  const hazardSiteCd = commonChk.value
+    ? ""
+    : parentRisk && proxy.$util.isNotEmpty(parentRisk.siteCd)
       ? parentRisk.siteCd
       : siteCd.value;
 

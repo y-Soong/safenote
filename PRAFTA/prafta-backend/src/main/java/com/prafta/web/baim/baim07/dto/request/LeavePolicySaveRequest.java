@@ -107,6 +107,12 @@ public class LeavePolicySaveRequest {
     @Size(max = 20)
     private String usageUnit;
 
+    // LC-06: 반반차(0.25일, SYS025 '05') 허용 토글. USAGE_UNIT 계층과 독립인 회사 단위 토글.
+    // Y/N 외 값·미전송은 서비스에서 'N' 정규화(fail-closed).
+    @FieldLabel("반반차 허용")
+    @Size(max = 1)
+    private String allowQuarter;
+
     // ===== 메타 =====
     @FieldLabel("변경 사유")
     @Size(max = 500)

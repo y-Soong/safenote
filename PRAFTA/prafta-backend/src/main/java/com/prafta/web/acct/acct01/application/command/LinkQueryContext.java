@@ -24,8 +24,6 @@ public record LinkQueryContext(
     , String processCd
     , String riskTypeCd
     , String hazardCd
-    , String incidentTypeCd
-    , String potentialSeverityCd
 ){
     public static LinkQueryContext of(LinkQueryParam param, AcctResult header) {
 
@@ -44,8 +42,6 @@ public record LinkQueryContext(
             , param.processCd()
             , param.riskTypeCd()
             , param.hazardCd()
-            , param.incidentTypeCd()
-            , param.potentialSeverityCd()
         );
     }
 }

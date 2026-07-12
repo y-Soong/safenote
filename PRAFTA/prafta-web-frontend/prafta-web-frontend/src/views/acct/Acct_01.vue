@@ -68,7 +68,11 @@
 
       <div>
         <label>재해자명</label>
-        <input v-model.trim="searchKeyword" type="text" @keyup.enter="fnSearch" />
+        <input
+          v-model.trim="searchKeyword"
+          type="text"
+          @keyup.enter="fnSearch"
+        />
       </div>
     </div>
 
@@ -78,10 +82,7 @@
       <div class="acc-list-pane">
         <div class="acc-list-head">사고 목록 ({{ acctList.length }})</div>
         <div class="acc-list-scroll">
-          <div
-            v-if="acctList.length === 0"
-            class="acc-empty"
-          >
+          <div v-if="acctList.length === 0" class="acc-empty">
             등록된 사고가 없습니다.
           </div>
           <div
@@ -133,8 +134,22 @@
           <div class="acc-det-sub">
             {{ current.acctId }} · 사고일시
             <b>{{ fmtYmd(current.occurYmd) }} {{ fmtHm(current.occurTime) }}</b>
-            <template v-if="current.occurPlace"> · {{ current.occurPlace }}</template>
+            <template v-if="current.occurPlace">
+              · {{ current.occurPlace }}</template
+            >
             · {{ current.siteNm }}
+          </div>
+
+          <!-- 사고 경위: 생성 시 입력값을 탭과 무관하게 상시 노출. 길면 2줄 말줄임 + 클릭 펼침 -->
+          <div
+            v-if="current.acctDesc"
+            class="acc-det-desc"
+            :class="{ expanded: descExpanded }"
+            :title="descExpanded ? '' : '클릭하여 전체 보기'"
+            @click="descExpanded = !descExpanded"
+          >
+            <span class="acc-desc-label">경위</span>
+            <span class="acc-desc-text">{{ current.acctDesc }}</span>
           </div>
 
           <!-- 탭 -->
@@ -152,8 +167,19 @@
 
           <!-- ① 안전관리 현황 -->
           <section v-show="activeTab === 'context'">
+            <div class="acc-context-head">
+              <button
+                type="button"
+                class="btn btn-primary acc-print-btn"
+                :disabled="snapshotList.length === 0"
+                @click="fnOpenSafetyPrint"
+              >
+                일괄 출력
+              </button>
+            </div>
             <div v-if="snapshotList.length === 0" class="acc-empty">
-              확정된 연계 데이터가 없습니다. 사고 등록 후 연계 데이터를 확정하세요.
+              확정된 연계 데이터가 없습니다. 사고 등록 후 연계 데이터를
+              확정하세요.
             </div>
             <div v-else class="acc-snap-grid">
               <div
@@ -165,13 +191,11 @@
                   <span class="dot"></span>{{ domainLabel(domain) }}
                   <span class="acc-card-sub">· {{ group.length }}건 확정</span>
                 </h3>
-                <div
-                  v-for="(s, i) in group"
-                  :key="i"
-                  class="acc-snap-row"
-                >
+                <div v-for="(s, i) in group" :key="i" class="acc-snap-row">
                   <span class="acc-snap-lead">{{ s.linkSeq }}</span>
-                  <span class="acc-snap-body">{{ snapshotSummary(domain, s) }}</span>
+                  <span class="acc-snap-body">{{
+                    snapshotSummary(domain, s)
+                  }}</span>
                 </div>
               </div>
             </div>
@@ -185,8 +209,8 @@
           <!-- ② 법정 처리 / 기한 -->
           <section v-show="activeTab === 'actions'">
             <div class="acc-banner" v-if="isCriticalOpen">
-              ⚠ <b>중대재해</b> — 발생보고는 "지체없이" 이행해야 합니다. 시스템은
-              기한을 계산하지 않으니 즉시 보고 후 완료 처리하세요.
+              ⚠ <b>중대재해</b> — 발생보고는 "지체없이" 이행해야 합니다.
+              시스템은 기한을 계산하지 않으니 즉시 보고 후 완료 처리하세요.
             </div>
             <div class="acc-notice" v-if="legalNotice">ⓘ {{ legalNotice }}</div>
 
@@ -195,13 +219,21 @@
             </div>
             <div v-else class="acc-action-grid">
               <div
-                v-for="(step, i) in legalStepList"
+                v-for="step in legalStepList"
                 :key="step.stepCd"
                 class="acc-action"
-                :class="actionClass(step)"
+                :class="[actionClass(step), { reference: isRef(step) }]"
               >
-                <div class="acc-action-num" :class="{ done: step.isDoneYn === 'Y' }">
-                  {{ step.isDoneYn === "Y" ? "✓" : i + 1 }}
+                <!-- 처리 단계: 단계번호(stepIdx) / 참고 항목(4·6): '참고' 뱃지 -->
+                <div
+                  v-if="!isRef(step)"
+                  class="acc-action-num"
+                  :class="{ done: step.isDoneYn === 'Y' }"
+                >
+                  {{ step.isDoneYn === "Y" ? "✓" : step.stepIdx }}
+                </div>
+                <div v-else class="acc-action-num acc-action-ref-badge">
+                  참고
                 </div>
                 <div class="acc-action-info">
                   <div class="acc-action-t">{{ step.stepNm }}</div>
@@ -212,7 +244,27 @@
                   <div class="acc-action-note" v-if="step.stepNote">
                     {{ step.stepNote }}
                   </div>
-                  <div class="acc-action-remark">
+                  <!-- 산업재해조사표 서식 다운로드(제출기한 규칙 단계). 원본은 외부 링크로만 연결(내장 금지). -->
+                  <div class="acc-action-form" v-if="isInvstStep(step)">
+                    <a
+                      :href="ACCT_INVST_FORM_URL"
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      class="acc-form-link"
+                    >
+                      📄 산업재해조사표 서식 다운로드
+                    </a>
+                    <div class="acc-form-sub">
+                      링크가 열리지 않으면: 국가법령정보센터(law.go.kr) →
+                      '산업안전보건법 시행규칙' 검색 → 별표/서식 → [별지
+                      제30호서식] 산업재해조사표
+                    </div>
+                    <div class="acc-form-sub">
+                      ※ 서식의 현행 여부는 관할 노동관서 확인 권장.
+                    </div>
+                  </div>
+                  <!-- 비고: 처리 단계만(참고 항목은 상태 없음) -->
+                  <div class="acc-action-remark" v-if="!isRef(step)">
                     <input
                       type="text"
                       v-model.trim="step._remark"
@@ -220,7 +272,8 @@
                     />
                   </div>
                 </div>
-                <div class="acc-action-deadline">
+                <!-- 기한/조치완료: 처리 단계만 노출(참고 항목은 상태·체크박스 없음) -->
+                <div class="acc-action-deadline" v-if="!isRef(step)">
                   <div class="dl-label">{{ deadlineInfo(step).label }}</div>
                   <div class="dl-val" :class="deadlineInfo(step).cls">
                     {{ deadlineInfo(step).text }}
@@ -256,11 +309,7 @@
               완료 처리된 절차 이력이 없습니다.
             </div>
             <div v-else class="acc-timeline">
-              <div
-                v-for="(h, i) in historyList"
-                :key="i"
-                class="acc-tl-item"
-              >
+              <div v-for="(h, i) in historyList" :key="i" class="acc-tl-item">
                 <div class="acc-tl-head">
                   <span class="acc-tl-cat">{{ h.stepNm }}</span>
                   <span class="acc-tl-date">{{ h.doneDtime }}</span>
@@ -289,10 +338,13 @@ import {
   computed,
   defineProps,
   onMounted,
+  onActivated,
   getCurrentInstance,
   defineOptions,
 } from "vue";
 import { useModal } from "@/utils/useModal";
+import { useDashboardNavStore } from "@/stores/dashboardNavStore";
+import { ymToDateRange } from "@/utils/common";
 import axios from "@/api/axios";
 import { resolveApiErrorMessage } from "@/utils/apiError";
 import { formatYmdDot, formatHm } from "@/utils/dateFormat";
@@ -302,6 +354,7 @@ import search_icon from "@/assets/img/search_icon.png";
 import SiteSearchPop from "@/components/popup/SiteSearchPop.vue";
 import AcctCreatePop from "./popup/AcctCreatePop.vue";
 import AcctLinkConfirmPop from "./popup/AcctLinkConfirmPop.vue";
+import AcctSafetyPrintPop from "./popup/AcctSafetyPrintPop.vue";
 
 defineOptions({ name: "Acct_01" });
 const props = defineProps({
@@ -312,6 +365,7 @@ const props = defineProps({
 const localButtons = ref({ ...props.buttons });
 const { open: openPop } = useModal();
 const { proxy } = getCurrentInstance();
+const dashNav = useDashboardNavStore();
 
 // 목록/조회조건
 const acctList = ref([]);
@@ -319,8 +373,10 @@ const current = ref(null);
 const systCodeArr = ref({});
 const acctGradeCd = ref("");
 const processStatusCd = ref("");
-const startDate = ref();
-const endDate = ref();
+// 발생기간 기본값: 현재 연도 1월 1일 ~ 12월 31일
+const nowYear = new Date().getFullYear();
+const startDate = ref(`${nowYear}-01-01`);
+const endDate = ref(`${nowYear}-12-31`);
 const searchKeyword = ref("");
 
 // 사업장
@@ -343,17 +399,44 @@ const legalOccurYmd = ref("");
 const legalNotice = ref("");
 const historyList = ref([]);
 
+// 사고 경위 펼침 상태 (헤더 경위 블록: 접힘=2줄 말줄임)
+const descExpanded = ref(false);
+
 onMounted(async () => {
   fnInit();
+  // 대시보드 경유 진입 시 조회조건 덮어쓰기 — 아래 fnSearch 가 반영하므로 이중 조회 없음
+  applyDashboardParams();
   fnButtonControll();
   await fnGetSystinfoList();
   await fnSearch();
+});
+
+// keep-alive 로 이미 열린 탭에 재진입하는 경우 대응
+onActivated(() => {
+  if (applyDashboardParams()) fnSearch();
 });
 
 const fnInit = () => {
   siteCd.value = sessionStorage.getItem("gv_siteCd") ?? "";
   siteNo.value = sessionStorage.getItem("gv_siteNo") ?? "";
   siteNm.value = sessionStorage.getItem("gv_siteNm") ?? "";
+};
+
+// ── 대시보드 조회조건 주입 (PRAFTA-DASHBOARD-T1) ──────────────
+// 대시보드(Dashboard_01)에서 넘어온 조회조건이 있으면 반영한다 (없으면 no-op).
+// 기준월(ym)은 본 화면의 발생기간(startDate/endDate, 기본 연간)으로 변환해 덮는다. 반영 여부를 반환한다.
+const applyDashboardParams = () => {
+  const p = dashNav.consumeParams("Acct_01");
+  if (!p) return false;
+  siteCd.value = p.siteCd ?? "";
+  siteNo.value = p.siteNo ?? "";
+  siteNm.value = p.siteNm ?? "";
+  const range = ymToDateRange(p.ym);
+  if (range) {
+    startDate.value = range.fromDate;
+    endDate.value = range.toDate;
+  }
+  return true;
 };
 
 // 조회 + 생성만 노출 (저장/삭제/엑셀은 상세 탭/별도)
@@ -428,6 +511,7 @@ const fnSearch = async () => {
 // 사고 선택 → 활성 탭 데이터 로드
 const fnSelect = async (a) => {
   current.value = a;
+  descExpanded.value = false; // 경위 펼침 상태는 사고 전환 시 초기화
   await fnLoadTab(activeTab.value);
 };
 
@@ -590,12 +674,27 @@ const fnOpenLinkConfirm = (cond) => {
     chkptCds: cond.chkptCds,
     processCd: cond.processCd,
     riskTypeCd: cond.riskTypeCd,
-    hazardCd: cond.hazardCd,
-    incidentTypeCd: cond.incidentTypeCd,
-    potentialSeverityCd: cond.potentialSeverityCd,
+    hazardCds: cond.hazardCds,
     onConfirmed: async () => {
       await fnSearch();
     },
+  });
+};
+
+// 안전관리 현황 일괄 출력 팝업(통합 인쇄). 식별자(siteCd/acctId)는 신뢰 원천,
+//   상세 본문은 BE 가 acctId 로 victim/occurYmd 를 서버 도출해 라이브 조회한다.
+const fnOpenSafetyPrint = () => {
+  if (!current.value) return;
+  openPop(AcctSafetyPrintPop, {
+    siteCd: current.value.siteCd,
+    acctId: current.value.acctId,
+    victimUserNm: current.value.victimUserNm,
+    victimUserTypeCd: current.value.victimUserTypeCd,
+    occurYmd: current.value.occurYmd,
+    occurTime: current.value.occurTime,
+    occurPlace: current.value.occurPlace,
+    siteNm: current.value.siteNm,
+    acctGradeNm: current.value.acctGradeNm,
   });
 };
 
@@ -619,7 +718,6 @@ const domainLabel = (code) => {
     CHKPT: "순회점검",
     RISK: "위험성평가",
     TBM: "TBM",
-    NEAR_MISS: "아차사고",
   };
   return fb[code] || code;
 };
@@ -644,11 +742,16 @@ const snapshotSummary = (domain, s) => {
   if (domain === "TBM") {
     return `${snap.title || "-"} · 재해자 이수 ${snap.victimCompletionStatusNm || (snap.victimCompletionStatusCd ? snap.victimCompletionStatusCd : "기록없음")}`;
   }
-  if (domain === "NEAR_MISS") {
-    return `${snap.nearMissId || "-"} · ${snap.incidentTypeNm || ""} · ${snap.occurDtime || ""}`;
-  }
   return s.linkKeyJson || "";
 };
+
+// 참고 항목(4·6단계: 요양급여 신청 / 보상·합의) 여부 — 상태·번호·체크박스 없음
+const isRef = (step) => step.stepType === "REFERENCE";
+// 산업재해조사표 제출 단계(제출기한 규칙 MONTH_PLUS_1) — 서식 다운로드 노출 대상
+const isInvstStep = (step) => step.deadlineRuleCd === "MONTH_PLUS_1";
+// 산업안전보건법 시행규칙 [별지 제30호서식] 산업재해조사표 (외부 원본 링크; flSeq 변동 가능)
+const ACCT_INVST_FORM_URL =
+  "https://www.law.go.kr/LSW//flDownload.do?flSeq=113162993";
 
 // ── 법정 기한/D-day 계산 (목업 renderActions 로직) ──
 const today = new Date();
@@ -912,30 +1015,72 @@ const fmtHm = (hhmm) => formatHm(hhmm);
 .acc-det-sub b {
   color: var(--color-text-strong, #111827);
 }
+/* 사고 경위 블록: 헤더 하단 상시 노출, 접힘 시 2줄 말줄임 */
+.acc-det-desc {
+  display: flex;
+  gap: var(--space-sm, 0.5rem);
+  margin-bottom: 1rem;
+  padding: var(--space-sm, 0.5rem) var(--space-md, 0.75rem);
+  background: var(--color-surface-muted, #f9fafb);
+  border: 1px solid var(--color-border, #e5e7eb);
+  border-radius: var(--radius-md, 6px);
+  font-size: 0.82rem;
+  color: var(--color-text, #374151);
+  cursor: pointer;
+}
+.acc-desc-label {
+  flex-shrink: 0;
+  font-weight: 600;
+  color: var(--color-text-muted, #5b6472);
+}
+.acc-desc-text {
+  white-space: pre-line;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.acc-det-desc.expanded .acc-desc-text {
+  display: block;
+  -webkit-line-clamp: unset;
+  overflow: visible;
+}
 /* 탭 */
+/* 탭바 표준(Attd_01 .attd01-tab-bar/.attd01-tab-btn 스펙 준수 — 밑줄형 14px) */
 .acc-tabs {
   display: flex;
   gap: 0.25rem;
+  padding: 0.5rem 0 0;
+  margin-bottom: 0.5rem;
   border-bottom: 1px solid var(--color-border, #e5e7eb);
-  margin-bottom: 1.1rem;
 }
 .acc-tab {
-  padding: 0.55rem 0.9rem;
-  font-size: 0.8rem;
-  font-weight: 600;
-  color: var(--color-text-muted, #8b94a3);
-  cursor: pointer;
+  padding: 0.5rem 1rem;
   border: none;
-  background: transparent;
   border-bottom: 2px solid transparent;
   margin-bottom: -1px;
+  background: none;
+  font-size: 0.875rem;
+  color: var(--color-text-muted, #6b7280);
+  cursor: pointer;
 }
 .acc-tab:hover {
   color: var(--color-text, #374151);
 }
 .acc-tab.active {
-  color: var(--color-primary-hover, #15803d);
-  border-bottom-color: var(--color-primary, #16a34a);
+  font-weight: 600;
+  color: var(--color-primary, #16a34a);
+  border-bottom-color: var(--color-primary);
+}
+/* ① 안전관리 현황 헤더(일괄 출력 버튼) */
+.acc-context-head {
+  display: flex;
+  justify-content: flex-end;
+  margin-bottom: 0.9rem;
+}
+.acc-print-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
 }
 /* ① 스냅샷 카드 */
 .acc-snap-grid {
@@ -1043,6 +1188,38 @@ const fmtHm = (hhmm) => formatHm(hhmm);
 }
 .acc-action.complete {
   border-color: var(--color-primary-soft, #dcfce7);
+}
+/* 참고 항목(4·6단계): 처리 단계와 시각 구분(회색/저채도) */
+.acc-action.reference {
+  background: var(--color-bg, #f8fafc);
+  border-color: var(--color-border, #e5e7eb);
+  border-style: dashed;
+}
+.acc-action-ref-badge {
+  width: auto !important;
+  height: auto !important;
+  border-radius: 999px !important;
+  padding: 0.1rem 0.5rem;
+  font-size: 0.68rem !important;
+  background: var(--color-border, #e5e7eb) !important;
+  color: var(--color-text-muted, #6b7280) !important;
+}
+/* 산업재해조사표 서식 다운로드 */
+.acc-action-form {
+  margin-top: 0.5rem;
+}
+.acc-form-link {
+  display: inline-block;
+  font-size: 0.76rem;
+  font-weight: 600;
+  color: var(--color-primary, #16a34a);
+  text-decoration: underline;
+}
+.acc-form-sub {
+  font-size: 0.68rem;
+  color: var(--color-text-muted, #8b94a3);
+  margin-top: 0.25rem;
+  line-height: 1.45;
 }
 .acc-action-num {
   width: 28px;

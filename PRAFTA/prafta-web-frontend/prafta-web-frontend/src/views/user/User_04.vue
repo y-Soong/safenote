@@ -67,7 +67,8 @@
                 {{ c.userNm }}<span class="al-cand__id">({{ c.userId }})</span>
               </span>
               <span class="al-cand__meta">
-                {{ c.rankNm || "직급없음" }}
+                <template v-if="c.authNm">{{ c.authNm }} · </template
+                >{{ c.rankNm || "직급없음" }}
                 <template v-if="c.nodeNm"> · {{ c.nodeNm }}</template>
               </span>
             </div>
@@ -290,11 +291,60 @@ const fnLoadPresets = async (keepSelectedId = null) => {
 };
 
 // ===== 소속부서 검색 (사업장은 세션 고정) =====
+// 소속부서 코드/명 동기화 (User_01 표준 focusKill 패턴).
+//   - 한쪽(코드 또는 명)을 비우면 나머지 한쪽도 비운다.
+//   - 직접 입력한 값은 노드조회(site-node-lists)로 보정한다:
+//     0건=둘 다 비움 / 1건=확정 세팅 / 여러건=검색 팝업으로 선택.
 const focusKill = (e) => {
-  if (e.target.id === "nodeCd" && proxy.$util.isEmpty(nodeCd.value)) {
+  if (e.target.id === "nodeCd") {
+    if (proxy.$util.isEmpty(nodeCd.value)) {
+      nodeCd.value = "";
+      nodeNm.value = "";
+      return;
+    }
+    // 코드 직접 입력 → 명은 비우고 조회로 짝을 보정
     nodeNm.value = "";
-  } else if (e.target.id === "nodeNm" && proxy.$util.isEmpty(nodeNm.value)) {
+    nodeFocusKill();
+  } else if (e.target.id === "nodeNm") {
+    if (proxy.$util.isEmpty(nodeNm.value)) {
+      nodeCd.value = "";
+      nodeNm.value = "";
+      return;
+    }
+    // 명 직접 입력 → 코드는 비우고 조회로 짝을 보정
     nodeCd.value = "";
+    nodeFocusKill();
+  }
+};
+
+// 직접 입력한 부서코드/명을 site-node-lists 로 조회해 보정한다.
+const nodeFocusKill = async () => {
+  if (proxy.$util.isEmpty(siteCd.value)) return;
+  try {
+    const response = await axios.get("/comApi/baseinfo/site-node-lists", {
+      params: {
+        cmpnyCd: sessionStorage.getItem("gv_cmpnyCd"),
+        siteCd: siteCd.value,
+        nodeCd: nodeCd.value,
+        nodeNm: nodeNm.value,
+      },
+    });
+    if (response.status === 200) {
+      const list = response.data?.siteNodeInfoList || [];
+      if (list.length === 0) {
+        nodeCd.value = "";
+        nodeNm.value = "";
+      } else if (list.length === 1) {
+        nodeCd.value = list[0].nodeCd ?? "";
+        nodeNm.value = list[0].nodeNm ?? "";
+      } else {
+        fnSiteNodeSearchPopOpen();
+      }
+    }
+  } catch (err) {
+    await proxy.$alert(
+      resolveApiErrorMessage(err, "조회 중 오류가 발생했습니다.")
+    );
   }
 };
 
@@ -303,8 +353,8 @@ const fnSiteNodeSearchPopOpen = () => {
   openPop(SiteNodeSearchPop, {
     cmpnyCd_p: sessionStorage.getItem("gv_cmpnyCd"),
     siteCd_p: siteCd.value,
-    nodeCd_p: "",
-    userCd_p: "",
+    nodeCd_p: nodeCd.value,
+    nodeNm_p: nodeNm.value,
     onSelect: (nodeCdVal, nodeNmVal) => {
       nodeCd.value = nodeCdVal ?? "";
       nodeNm.value = nodeNmVal ?? "";
@@ -379,6 +429,15 @@ const fnSavePreset = async () => {
 
 const fnDeletePreset = async () => {
   if (!selectedPresetId.value) return;
+  // (8.4) FE 1차 가드: 기본 프리셋은 삭제 불가.
+  //   서버도 USER_400_057로 차단하지만, 불필요한 호출/혼란을 줄이기 위해 즉시 차단한다.
+  const selected = presets.value.find(
+    (p) => p.presetId === selectedPresetId.value
+  );
+  if (selected && selected.defaultYn === "Y") {
+    await proxy.$alert("기본 프리셋은 삭제할 수 없습니다.");
+    return;
+  }
   const ok = await proxy.$confirm("이 프리셋을 삭제하시겠습니까?");
   if (!ok) return;
   saving.value = true;

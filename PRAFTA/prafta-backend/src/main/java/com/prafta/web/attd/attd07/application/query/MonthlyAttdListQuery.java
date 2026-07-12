@@ -10,6 +10,7 @@ public record MonthlyAttdListQuery(
       , String nodeCd
       , String incSubNodeYn
       , String userNm
+      , String employmentType
       , String gvCmpnyCd
       , String gvAuthCd
       , String gvUserCd
@@ -25,6 +26,7 @@ public record MonthlyAttdListQuery(
               , param.nodeCd()
               , param.incSubNodeYn()
               , param.userNm()
+              , param.employmentType()
               , param.gvCmpnyCd()
               , param.gvAuthCd()
               , param.gvUserCd()

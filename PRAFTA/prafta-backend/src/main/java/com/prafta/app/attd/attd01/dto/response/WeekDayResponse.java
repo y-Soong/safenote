@@ -1,6 +1,7 @@
 package com.prafta.app.attd.attd01.dto.response;
 
 import java.math.BigDecimal;
+import java.util.List;
 
 import com.fasterxml.jackson.annotation.JsonProperty;
 
@@ -34,6 +35,13 @@ public class WeekDayResponse {
     private final String leaveUnitType;
     private final String leaveTimeRange;
     private final BigDecimal leaveDays;
+    // PRAFTA_COM_002-B-1: 단건 스칼라(첫 1건) 연차가 승인 대기(요청중)인지. is 탈락 방지(@JsonProperty).
+    //   판정=REQ_ID NOT NULL AND REQ_STATUS='01'. 다건은 leaves[].pendingApproval 로 건별 표기.
+    @JsonProperty("isLeavePending")
+    private final boolean leavePending;
+    // 같은 날 부분연차(시간차/반차) 다건 표시용 마커 목록(표시 전용, 시각 오름차순). 사용내역 없으면 빈 리스트.
+    //   위 단건 스칼라는 첫 1건 하위호환으로 유지하고, FE 는 이 목록을 우선 렌더한다.
+    private final List<LeaveMarkerItem> leaves;
     private final String workPlanCode;
     private final String workPlanName;
     @JsonProperty("isTwoSlot")
@@ -42,4 +50,7 @@ public class WeekDayResponse {
     private final String attendanceSummary;
     private final String attendanceStatus;
     private final WeekDayActionsResponse actions;
+    // prafta-app-030 후속: 그날 적용(승인) 초과근무 합계 분(없으면 0) + 항목 목록(없으면 빈 리스트). 표시 전용.
+    private final int overtimeMinutes;
+    private final List<AppliedOvertimeItem> overtimes;
 }

@@ -1,0 +1,125 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.prafta.web.user.user05.mapper.User05Mapper">
+
+    <!-- 사업장 접근 권한 확인(TB_USER_SITE_AUTH 매핑, USE_YN='Y'). 1 이상이면 접근 가능. -->
+    <select id="countUserSiteAuth" resultType="int">
+    /* User05Mapper.countUserSiteAuth */
+    SELECT COUNT(1)
+    FROM TB_USER_SITE_AUTH A
+    WHERE A.CMPNY_CD = #{cmpnyCd}
+      AND A.USER_CD = #{userCd}
+      AND A.SITE_CD = #{siteCd}
+      AND A.USE_YN = 'Y'
+    </select>
+
+    <!-- ============================================================
+         일일사용자 관리(조회) — 슬롯 점유 이력 1건 = 1행(Q2).
+         his ⨝(LEFT) tb_daily_user(USER_ID) ⨝(LEFT) tb_user(현재 NODE_CD).
+         부서명/사업장명은 FNC_CMM_INFO_SRCH 로 해석(현재값, D4).
+         만료 일일계정도 노출(USE_YN 필터 없음, 요구 #1).
+         이름은 평문(USER_NM), 휴대폰은 암호문(MBL_NO_ENC) 원시로 반환 → 서비스단에서 복호화/포맷(관리자 운영 화면 평문 노출 요구).
+         사업장 스코프: managerYn='Y'(master/hr) 전체, 그 외 TB_USER_SITE_AUTH 보유 사업장만.
+         ============================================================ -->
+    <select id="selectDailyUserList" parameterType="com.prafta.web.user.user05.application.query.DailyUserListQuery" resultType="com.prafta.web.user.user05.result.DailyUserListRaw">
+    /* User05Mapper.selectDailyUserList */
+    <!-- 소속부서 하위부서 포함 조회용 재귀 노드 트리(검색 nodeCd 기준, incSubNodeYn='Y' 일 때만 참조). -->
+    <if test='nodeCd != null and nodeCd != "" and "Y".equals(incSubNodeYn)'>
+        WITH RECURSIVE search_node_tree AS (
+            SELECT N.CMPNY_CD, N.SITE_CD, N.NODE_CD
+            FROM TB_SITE_NODE N
+            WHERE N.CMPNY_CD = #{gvCmpnyCd}
+              AND N.NODE_CD  = #{nodeCd}
+              <if test="siteCd != null and siteCd != ''">
+                AND N.SITE_CD = #{siteCd}
+              </if>
+
+            UNION ALL
+
+            SELECT C.CMPNY_CD, C.SITE_CD, C.NODE_CD
+            FROM TB_SITE_NODE C
+            INNER JOIN search_node_tree P
+                ON C.CMPNY_CD = P.CMPNY_CD
+               AND C.SITE_CD  = P.SITE_CD
+               AND C.PARENT_NODE_CD = P.NODE_CD
+        )
+    </if>
+    SELECT
+        H.HIS_ID                                                                AS hisId
+        , CASE
+            WHEN D.USER_NM IS NULL OR D.USER_NM = '' THEN '-'
+            ELSE D.USER_NM
+          END                                                                   AS userNm
+        , D.MBL_NO_ENC                                                          AS mblNoEnc
+        , FNC_CMM_INFO_SRCH(H.CMPNY_CD, 'SITE', H.SITE_CD, NULL)                 AS siteNm
+        , CASE
+            WHEN U.NODE_CD IS NULL OR U.NODE_CD = '' THEN '-'
+            ELSE FNC_CMM_INFO_SRCH(U.CMPNY_CD, 'NODE', U.SITE_CD, U.NODE_CD)
+          END                                                                   AS nodeNm
+        , H.SLOT_NO                                                             AS slotNo
+        , DATE_FORMAT(H.OCCUPY_DTIME, '%Y-%m-%d %H:%i:%s')                       AS occupyDtime
+        , DATE_FORMAT(H.RELEASE_DTIME, '%Y-%m-%d %H:%i:%s')                      AS releaseDtime
+    FROM TB_DAILY_USER_SLOT_HIS H
+        LEFT OUTER JOIN TB_DAILY_USER D
+            ON (
+                H.CMPNY_CD = D.CMPNY_CD
+            AND H.USER_ID = D.USER_ID
+            )
+        LEFT OUTER JOIN TB_USER U
+            ON (
+                D.CMPNY_CD = U.CMPNY_CD
+            AND D.USER_CD = U.USER_CD
+            )
+    WHERE H.CMPNY_CD = #{gvCmpnyCd}
+
+        <!-- 사업장 스코프: 비권한자는 TB_USER_SITE_AUTH 보유 사업장(USE_YN='Y')으로 제한(IDOR 차단). -->
+        <if test='!"Y".equals(managerYn)'>
+            AND H.SITE_CD IN (
+                SELECT SA.SITE_CD
+                FROM TB_USER_SITE_AUTH SA
+                WHERE SA.CMPNY_CD = #{gvCmpnyCd}
+                  AND SA.USER_CD = #{gvUserCd}
+                  AND SA.USE_YN = 'Y'
+            )
+        </if>
+
+        <if test="siteCd != null and siteCd != ''">
+            AND H.SITE_CD = #{siteCd}
+        </if>
+
+        <!-- 소속부서: 현재값(TB_USER.NODE_CD) 기준. 하위부서 포함이면 재귀 트리 IN, 아니면 정확매칭. -->
+        <if test="nodeCd != null and nodeCd != ''">
+            <choose>
+                <when test='"Y".equals(incSubNodeYn)'>
+                    AND U.NODE_CD IN (SELECT T.NODE_CD FROM search_node_tree T)
+                </when>
+                <otherwise>
+                    AND U.NODE_CD = #{nodeCd}
+                </otherwise>
+            </choose>
+        </if>
+
+        <!-- 사용자명 부분일치(현존 일일사용자 한정). his-only 행은 이름이 없어 자연 제외. -->
+        <if test="userNm != null and userNm != ''">
+            AND D.USER_NM LIKE CONCAT('%', #{userNm}, '%')
+        </if>
+
+        <!-- 전화 검색: HMAC 정확매칭 우선, 없으면 LAST4 부분(평문 비교 금지). -->
+        <if test="mblNoHmac != null and mblNoHmac != ''">
+            AND D.MBL_NO_HMAC = #{mblNoHmac}
+        </if>
+        <if test="(mblNoHmac == null or mblNoHmac == '') and mblNoLast4 != null and mblNoLast4 != ''">
+            AND D.MBL_NO_LAST4 = #{mblNoLast4}
+        </if>
+
+        <!-- 슬롯 점유일시 기간(yyyy-MM-dd, 포함). to 는 해당일 종료까지 포함. -->
+        <if test="occupyFrom != null and occupyFrom != ''">
+            AND H.OCCUPY_DTIME &gt;= STR_TO_DATE(CONCAT(#{occupyFrom}, ' 00:00:00'), '%Y-%m-%d %H:%i:%s')
+        </if>
+        <if test="occupyTo != null and occupyTo != ''">
+            AND H.OCCUPY_DTIME &lt;= STR_TO_DATE(CONCAT(#{occupyTo}, ' 23:59:59'), '%Y-%m-%d %H:%i:%s')
+        </if>
+    ORDER BY H.OCCUPY_DTIME DESC, H.HIS_ID DESC
+    LIMIT #{limit} OFFSET #{offset}
+    </select>
+</mapper>

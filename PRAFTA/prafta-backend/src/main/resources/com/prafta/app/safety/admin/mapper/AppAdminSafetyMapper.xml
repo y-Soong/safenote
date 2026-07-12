@@ -198,7 +198,8 @@
       <if test="riskTypeCd != null and riskTypeCd != ''">
         AND A.RISK_TYPE_CD = #{riskTypeCd}
       </if>
-    ORDER BY A.ASSESSMENT_STATUS, A.PROCESS_CD, A.RISK_TYPE_CD, A.HAZARD_CD
+    /* 최신순(입력일시 내림차순) — 동일 시각은 평가코드(채번 역순)로 안정 정렬, 최신이 위로 */
+    ORDER BY A.INSERT_DATE DESC, A.ASSESSMENT_CD DESC
     </select>
 
     <!-- H4 위험성평가 상세 단건: PK 4키 + 사업장 스코프(없으면 null → 404 IDOR 차단) -->

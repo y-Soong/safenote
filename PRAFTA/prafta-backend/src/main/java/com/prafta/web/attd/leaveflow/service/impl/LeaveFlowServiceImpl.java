@@ -13,22 +13,29 @@ import com.prafta.common.cmm.approval.mapper.ApprovalLineMapper;
 import com.prafta.common.cmm.approval.vo.ApprovalStepVO;
 import com.prafta.common.cmm.leave.mapper.LeavePolicyMapper;
 import com.prafta.common.cmm.leave.service.LeaveApprovalNotiService;
+import com.prafta.common.cmm.leave.service.LeaveConversionPolicyService;
 import com.prafta.common.cmm.leave.service.LeaveDeductionService;
 import com.prafta.common.cmm.leave.service.LeaveGrantEngineService;
 import com.prafta.common.cmm.leave.service.LeaveGrantEngineService.BorrowFamily;
+import com.prafta.common.cmm.leave.service.LeaveHourlyResettleService;
 import com.prafta.common.cmm.leave.util.FiscalYearUtils;
+import com.prafta.common.cmm.leave.util.HourlyLeaveChargeUtils;
 import com.prafta.common.cmm.leave.vo.BorrowGrantResultVO;
 import com.prafta.common.cmm.leave.vo.BorrowGrantResultVO.BorrowGrantSlotVO;
+import com.prafta.common.cmm.leave.vo.HourlyChargeVO;
 import com.prafta.common.cmm.leave.vo.LeavePolicyVO;
 import com.prafta.common.cmm.push.ApprovalResultNotiService;
 import com.prafta.common.error.attd.AttdErrorCode;
 import com.prafta.common.error.common.CommonErrorCode;
 import com.prafta.common.exception.ApiException;
+import com.prafta.common.util.AdvisoryLockTxUtils;
 import com.prafta.common.util.DateTimeUtils;
 import com.prafta.web.attd.attd07.service.AttdCloseService;
 import com.prafta.web.attd.leaveflow.application.command.LeaveReqInsertCommand;
 import com.prafta.web.attd.leaveflow.application.param.LeaveApplyParam;
 import com.prafta.web.attd.leaveflow.application.param.LeaveApprovalActionParam;
+import com.prafta.web.attd.leaveflow.application.param.LeaveDeductionPreviewParam;
+import com.prafta.web.attd.leaveflow.dto.response.LeaveDeductionPreviewResponse;
 import com.prafta.web.attd.leaveflow.mapper.LeaveFlowMapper;
 import com.prafta.web.attd.leaveflow.service.LeaveFlowService;
 import com.prafta.web.attd.leaveflow.vo.AutoDeductibleGrantVO;
@@ -69,6 +76,8 @@ public class LeaveFlowServiceImpl implements LeaveFlowService {
     private static final String UNIT_HOUR2 = "02";
     private static final String UNIT_HOUR1 = "03";
     private static final String UNIT_MIN30 = "04";
+    /** LC-06: 반반차(0.25일 고정단위). 처리 = 반차 패턴 미러(시간대 미기록, 시간차 누적 미포함). */
+    private static final String UNIT_QUARTER = "05";
 
     private static final String USE_CONFIRMED = "CONFIRMED";
 
@@ -100,6 +109,10 @@ public class LeaveFlowServiceImpl implements LeaveFlowService {
     private final ApprovalResultNotiService approvalResultNotiService;
     /** prafta-com-011-2 가불: 한도 projection/만료검증/가불 GRANT 생성·회수 코어(com-011-1 산출). */
     private final LeaveGrantEngineService leaveGrantEngineService;
+    /** LC-05(F1·F2): 시간차 취소·반려·최종승인 시 그날 잔존 건 시간순 재정산(코어 산식 LC-03 공유). */
+    private final LeaveHourlyResettleService leaveHourlyResettleService;
+    /** LC-07: preview 응답의 convMinutes(고정단위 케이스) — 신청 대상일 기준 환산시간(F4) 단일 출처. */
+    private final LeaveConversionPolicyService leaveConversionPolicyService;
 
     @Override
     @Transactional
@@ -124,8 +137,11 @@ public class LeaveFlowServiceImpl implements LeaveFlowService {
             aprvRequired = "Y".equals(type.aprvUseYn());
         }
 
-        // 2) 사용 단위 검증 + 차감 계산
-        BigDecimal leaveDays;
+        // 2) 사용 단위 검증 + 차감 계산.
+        //    연차개편(LC-03/LC-04): 시간차(02/03/04)는 여기서 구조 검증만 하고, 차감액(그날 누적
+        //    기준 차액)은 아래 try 블록에서 사용자·일 advisory lock 획득 후 산출한다(F5 직렬화).
+        boolean hourlyUnit = UNIT_HOUR2.equals(unit) || UNIT_HOUR1.equals(unit) || UNIT_MIN30.equals(unit);
+        BigDecimal leaveDays = null;
         Integer leaveMinutes = null;
         String startTime = null;
         String endTime = null;
@@ -141,7 +157,28 @@ public class LeaveFlowServiceImpl implements LeaveFlowService {
                 throw new ApiException(AttdErrorCode.ATTD_400_110);
             }
             leaveMinutes = daily / 2;
-        } else if (UNIT_HOUR2.equals(unit) || UNIT_HOUR1.equals(unit) || UNIT_MIN30.equals(unit)) {
+        } else if (UNIT_QUARTER.equals(unit)) {
+            // LC-06(T5): 반반차 = 반차 패턴 미러. leaveDays 0.25 고정, 분 = daily/4(정수 나눗셈),
+            //   시간대(START/END_TIME) 미기록(plan §8-④). 시간차 누적(하한 마일스톤)엔 미포함(§8-⑤),
+            //   1.0 점유 가드에는 아래 selectOccupiedLeaveDaysOnDate 합산으로 자동 포함.
+            // 허용 게이트: 법정 = 회사 사용정책 ALLOW_QUARTER='Y'(null=미허용 fail-closed),
+            //   비법정 = 타입 USE_UNIT_TYPE='05' 명시 설정(계층 삽입 없음 — 하위호환).
+            boolean quarterAllowed = statutory
+                    ? "Y".equals(leaveFlowMapper.selectPolicyAllowQuarter(cmpny))
+                    : UNIT_QUARTER.equals(type.useUnitType());
+            if (!quarterAllowed) {
+                log.info("[leaveflow] 반반차 신청 거부: 미허용 (userCd={}, leaveCd={}, statutory={})",
+                        user, leaveCd, statutory);
+                throw new ApiException(AttdErrorCode.ATTD_400_054);
+            }
+            leaveDays = new BigDecimal("0.25000");
+            // 반반차도 소정근로 기준 분(daily/4)을 병기하므로 스케줄 필수(반차와 동일 거부).
+            Integer daily = leaveDeductionService.getDailyStdWorkMinutes(cmpny, site, user, workYmd);
+            if (daily == null) {
+                throw new ApiException(AttdErrorCode.ATTD_400_110);
+            }
+            leaveMinutes = daily / 4;
+        } else if (hourlyUnit) {
             startTime = p.startTime();
             endTime = p.endTime();
             Integer sMin = DateTimeUtils.hhmmToMinutes(startTime);
@@ -154,7 +191,7 @@ public class LeaveFlowServiceImpl implements LeaveFlowService {
             if (minutes % unitMin != 0) {
                 throw new ApiException(AttdErrorCode.ATTD_400_054);
             }
-            // 시간차도 스케줄(소정근로시간) 기준으로 차감하므로 스케줄 필수.
+            // 시간차 마일스톤(하한 가드) 기준 D = 그날 소정근로분 — 스케줄 필수(기존 가드 유지).
             Integer daily = leaveDeductionService.getDailyStdWorkMinutes(cmpny, site, user, workYmd);
             if (daily == null) {
                 throw new ApiException(AttdErrorCode.ATTD_400_110);
@@ -166,11 +203,8 @@ public class LeaveFlowServiceImpl implements LeaveFlowService {
             if (leaveDeductionService.crossesBreak(cmpny, site, user, workYmd, sMin, eMin)) {
                 throw new ApiException(AttdErrorCode.ATTD_400_055);
             }
-            leaveDays = leaveDeductionService.calcDeductionDays(minutes, daily);
-            if (leaveDays == null) {
-                throw new ApiException(AttdErrorCode.ATTD_400_052);
-            }
             leaveMinutes = minutes;
+            // 차감액(leaveDays)은 lock 획득 후 calcHourlyCharge 로 산출(아래 try 블록).
         } else {
             throw new ApiException(AttdErrorCode.ATTD_400_054);
         }
@@ -183,28 +217,6 @@ public class LeaveFlowServiceImpl implements LeaveFlowService {
             String closeYm = workYmd.substring(0, 6);
             if (attdCloseService.isClosedForUser(cmpny, site, user, closeYm)) {
                 throw new ApiException(AttdErrorCode.ATTD_400_050);
-            }
-        }
-
-        // 3-B) 같은 날 중복 등록 가드(앱 AppLeaveFlowServiceImpl 미러).
-        //   - 이미 점유된 연차 일수(종일=1.0 / 반차·시간차=LEAVE_DAYS) + 신규 신청 일수 > 1.0 이면 거부.
-        //     → 종일 등록일에 반차 추가, 종일 중복, 반차 누적 초과 등 "하루 초과" 중복 차단(ATTD_400_111).
-        //   - 시간차(02/03/04)는 합산이 1.0 이하여도 기존 시간차와 시간대가 겹치면 거부(ATTD_400_112).
-        //     겹치지 않는 시간차 병행 신청은 허용(정책).
-        BigDecimal occupied = leaveFlowMapper.selectOccupiedLeaveDaysOnDate(cmpny, user, workYmd);
-        if (occupied == null) {
-            occupied = BigDecimal.ZERO;
-        }
-        if (occupied.add(leaveDays).compareTo(BigDecimal.ONE) > 0) {
-            log.info("[leaveflow] 연차 신청 거부: 같은 날 하루 초과 중복 (userCd={}, workYmd={}, 점유={}, 신규={})",
-                    user, workYmd, occupied.toPlainString(), leaveDays.toPlainString());
-            throw new ApiException(AttdErrorCode.ATTD_400_111);
-        }
-        if (UNIT_HOUR2.equals(unit) || UNIT_HOUR1.equals(unit) || UNIT_MIN30.equals(unit)) {
-            if (leaveFlowMapper.countOverlappingTimeLeaveOnDate(cmpny, user, workYmd, startTime, endTime) > 0) {
-                log.info("[leaveflow] 연차 신청 거부: 같은 날 시간차 시간대 겹침 (userCd={}, workYmd={}, {}~{})",
-                        user, workYmd, startTime, endTime);
-                throw new ApiException(AttdErrorCode.ATTD_400_112);
             }
         }
 
@@ -221,6 +233,11 @@ public class LeaveFlowServiceImpl implements LeaveFlowService {
         BorrowFamily borrowFamily = null;
         String hireDate = null;
         if (borrow) {
+            if (hourlyUnit || UNIT_QUARTER.equals(unit)) {
+                // LC-04/LC-06(plan §8-③): 시간차·반반차 + 가불 조합 서버 거부 — 가불은 종일/반차만.
+                //   (가불 분할 INSERT 는 LEAVE_MINUTES 를 첫 행에만 실어 그날 누적 판정을 오염시킴.)
+                throw new ApiException(AttdErrorCode.ATTD_400_183);
+            }
             if (!statutory || userApplyType) {
                 throw new ApiException(AttdErrorCode.ATTD_400_180); // 가불=법정(시스템) 연차만
             }
@@ -236,10 +253,64 @@ public class LeaveFlowServiceImpl implements LeaveFlowService {
 
         List<GrantCharge> charges; // 차감 대상(부여 ID + 일수). '01'은 [(null, leaveDays)].
         String lockKey = null;
+        String dayLockKey = null;
+        boolean lockDeferred = false;    // '01' lock 해제가 afterCompletion 에 등록됐는지
+        boolean dayLockDeferred = false; // leaveDay lock 해제가 afterCompletion 에 등록됐는지
         try {
+            if (hourlyUnit) {
+                // F5: 같은 사용자·같은 날 시간차 누적 판정 직렬화 — leave01 advisory lock 패턴 재사용.
+                //   재정산(LC-05)과 같은 키로 상호 배타(재정산 중 신청 차단).
+                dayLockKey = HourlyLeaveChargeUtils.leaveDayLockKey(cmpny, user, workYmd);
+                acquireLeaveDayLock(dayLockKey);
+                // 보안리뷰(Medium): finally 해제는 커밋 이전이라 "해제~커밋" 창에서 후속 신청이
+                //   미커밋 스냅샷으로 그날 누적(하한 마일스톤/점유 가드)을 판정할 수 있다
+                //   → 해제를 트랜잭션 완료(afterCompletion, 커밋/롤백 불문) 시점으로 미룬다.
+                //   같은 커넥션 보장 근거는 AdvisoryLockTxUtils javadoc 참조. 등록 실패 시 finally 폴백.
+                dayLockDeferred = AdvisoryLockTxUtils.deferReleaseToAfterCompletion(dayLockKey, this::releaseLeaveDayLock);
+
+                // LC-03: 분모 = 회사 환산시간(신청 대상일 기준, F4). 그날 시간차 누적(전 타입 합산, F3)
+                //   기준 하한(3단 마일스톤)/캡(1.0) 가드를 거친 이번 건 차액을 부과한다.
+                HourlyChargeVO hc = leaveDeductionService.calcHourlyCharge(cmpny, site, user, workYmd, leaveMinutes);
+                if (hc == null) {
+                    throw new ApiException(AttdErrorCode.ATTD_400_052);
+                }
+                leaveDays = hc.chargeDays();
+                log.info("[leaveflow] 시간차 차감 산출: userCd={}, workYmd={}, {}분(누적 {}분), conv={}, "
+                                + "charge={}, dayTotal={}, 하한={}, 캡={}",
+                        user, workYmd, leaveMinutes, hc.cumMinutesAfter(), hc.convMinutes(),
+                        hc.chargeDays().toPlainString(), hc.dayTotalDays().toPlainString(),
+                        hc.floorApplied(), hc.capApplied());
+            }
+
+            // 3-B) 같은 날 중복 등록 가드(앱 AppLeaveFlowServiceImpl 미러).
+            //   - 이미 점유된 연차 일수(종일=1.0 / 반차·시간차=LEAVE_DAYS) + 신규 신청 일수 > 1.0 이면 거부.
+            //     → 종일 등록일에 반차 추가, 종일 중복, 반차 누적 초과 등 "하루 초과" 중복 차단(ATTD_400_111).
+            //   - 시간차(02/03/04)는 합산이 1.0 이하여도 기존 시간차와 시간대가 겹치면 거부(ATTD_400_112).
+            //     겹치지 않는 시간차 병행 신청은 허용(정책).
+            //   (LC-04: 시간차 leaveDays 산출이 lock 하에 이뤄지므로 본 가드도 try 내부로 이동 — 판정 동일.)
+            BigDecimal occupied = leaveFlowMapper.selectOccupiedLeaveDaysOnDate(cmpny, user, workYmd);
+            if (occupied == null) {
+                occupied = BigDecimal.ZERO;
+            }
+            if (occupied.add(leaveDays).compareTo(BigDecimal.ONE) > 0) {
+                log.info("[leaveflow] 연차 신청 거부: 같은 날 하루 초과 중복 (userCd={}, workYmd={}, 점유={}, 신규={})",
+                        user, workYmd, occupied.toPlainString(), leaveDays.toPlainString());
+                throw new ApiException(AttdErrorCode.ATTD_400_111);
+            }
+            if (hourlyUnit) {
+                if (leaveFlowMapper.countOverlappingTimeLeaveOnDate(cmpny, user, workYmd, startTime, endTime) > 0) {
+                    log.info("[leaveflow] 연차 신청 거부: 같은 날 시간차 시간대 겹침 (userCd={}, workYmd={}, {}~{})",
+                            user, workYmd, startTime, endTime);
+                    throw new ApiException(AttdErrorCode.ATTD_400_112);
+                }
+            }
+
             if (userApplyType) {
                 lockKey = leave01LockKey(cmpny, user, leaveCd);
                 acquireLeave01Lock(lockKey);
+                // 보안리뷰(Medium): leaveDay lock 과 동일 사유 — 회계연도 사용분 합산 판정도
+                //   커밋 이전 해제 시 같은 창이 생기므로 afterCompletion 해제로 통일.
+                lockDeferred = AdvisoryLockTxUtils.deferReleaseToAfterCompletion(lockKey, this::releaseLeave01Lock);
 
                 Integer maxAplyDays = type.maxAplyDays();
                 if (maxAplyDays == null) {
@@ -393,10 +464,164 @@ public class LeaveFlowServiceImpl implements LeaveFlowService {
         log.info("연차 신청 완료. reqId={}, user={}, leaveCd={}, unit={}, days={}, aprv={}",
                 reqId, user, leaveCd, unit, leaveDays, aprvRequired);
         } finally {
-            if (lockKey != null) {
+            // afterCompletion 등록 성공분은 여기서 해제하지 않는다(이중 해제 방지) —
+            //   커밋/롤백 직후 같은 커넥션에서 해제된다. 등록 실패(동기화 비활성) 시에만 폴백.
+            if (lockKey != null && !lockDeferred) {
                 releaseLeave01Lock(lockKey);
             }
+            if (dayLockKey != null && !dayLockDeferred) {
+                releaseLeaveDayLock(dayLockKey);
+            }
         }
+    }
+
+    @Override
+    public LeaveDeductionPreviewResponse previewDeduction(LeaveDeductionPreviewParam p) {
+        final String cmpny = p.gvCmpnyCd();
+        final String site = p.gvSiteCd();
+        final String user = p.gvUserCd();
+        final String workYmd = p.workYmd();
+        final String leaveCd = p.leaveCd();
+        final String unit = p.useUnitType();
+
+        // 1) 타입 메타 (submitLeave 미러)
+        LeaveTypeInfoVO type = leaveFlowMapper.selectLeaveTypeInfo(cmpny, leaveCd);
+        if (type == null) {
+            throw new ApiException(AttdErrorCode.ATTD_404_030);
+        }
+        boolean statutory = "Y".equals(type.systemYn());
+        boolean hourlyUnit = isHourlyUnit(unit);
+
+        // 2) 단위 구조검증 + 예상 차감 산출 (submitLeave 단위 분기 미러 — INSERT 없음, 조회 전용)
+        BigDecimal charge;
+        boolean floorApplied = false;
+        boolean capApplied = false;
+        Integer convFromCharge = null; // 시간차는 calcHourlyCharge 가 이미 분모를 조회하므로 재사용
+        BigDecimal floorDays = null; // 발동 마일스톤 요금(0.25/0.5/1.0) — FE 하한 안내 단위 분기용(미발동 null)
+
+        if (UNIT_FULL.equals(unit)) {
+            charge = new BigDecimal("1.00000");
+        } else if (UNIT_HALF.equals(unit)) {
+            // 반차는 스케줄 필수(submitLeave 동일 거부).
+            if (leaveDeductionService.getDailyStdWorkMinutes(cmpny, site, user, workYmd) == null) {
+                throw new ApiException(AttdErrorCode.ATTD_400_110);
+            }
+            charge = new BigDecimal("0.50000");
+        } else if (UNIT_QUARTER.equals(unit)) {
+            // LC-06 허용 게이트 미러: 법정=ALLOW_QUARTER / 비법정=타입 '05' 설정.
+            boolean quarterAllowed = statutory
+                    ? "Y".equals(leaveFlowMapper.selectPolicyAllowQuarter(cmpny))
+                    : UNIT_QUARTER.equals(type.useUnitType());
+            if (!quarterAllowed) {
+                throw new ApiException(AttdErrorCode.ATTD_400_054);
+            }
+            if (leaveDeductionService.getDailyStdWorkMinutes(cmpny, site, user, workYmd) == null) {
+                throw new ApiException(AttdErrorCode.ATTD_400_110);
+            }
+            charge = new BigDecimal("0.25000");
+        } else if (hourlyUnit) {
+            Integer sMin = DateTimeUtils.hhmmToMinutes(p.startTime());
+            Integer eMin = DateTimeUtils.hhmmToMinutes(p.endTime());
+            if (sMin == null || eMin == null || eMin <= sMin) {
+                throw new ApiException(AttdErrorCode.ATTD_400_052);
+            }
+            int minutes = eMin - sMin;
+            if (minutes % unitMinutes(unit) != 0) {
+                throw new ApiException(AttdErrorCode.ATTD_400_054);
+            }
+            Integer daily = leaveDeductionService.getDailyStdWorkMinutes(cmpny, site, user, workYmd);
+            if (daily == null) {
+                throw new ApiException(AttdErrorCode.ATTD_400_110);
+            }
+            if (minutes > daily) {
+                throw new ApiException(AttdErrorCode.ATTD_400_052);
+            }
+            if (leaveDeductionService.crossesBreak(cmpny, site, user, workYmd, sMin, eMin)) {
+                throw new ApiException(AttdErrorCode.ATTD_400_055);
+            }
+            // advisory lock 없이 산출(조회 전용 추정치). 제출 시 lock 하에 재계산되며 코어 산식이
+            //   단일 출처(HourlyLeaveChargeUtils)라 동시 신청이 없는 한 preview == 확정값.
+            HourlyChargeVO hc = leaveDeductionService.calcHourlyCharge(cmpny, site, user, workYmd, minutes);
+            if (hc == null) {
+                throw new ApiException(AttdErrorCode.ATTD_400_052);
+            }
+            charge = hc.chargeDays();
+            floorApplied = hc.floorApplied();
+            capApplied = hc.capApplied();
+            convFromCharge = hc.convMinutes();
+            floorDays = hc.floorDays();
+        } else {
+            throw new ApiException(AttdErrorCode.ATTD_400_054);
+        }
+
+        // 3) 사후 신청 마감 가드 (submitLeave 미러 — 신청 시 거부될 값 사전 차단)
+        if (workYmd.compareTo(todayYmd()) < 0) {
+            String closeYm = workYmd.substring(0, 6);
+            if (attdCloseService.isClosedForUser(cmpny, site, user, closeYm)) {
+                throw new ApiException(AttdErrorCode.ATTD_400_050);
+            }
+        }
+
+        // 4) 같은 날 중복 등록 가드 (submitLeave 3-B 미러)
+        BigDecimal occupied = leaveFlowMapper.selectOccupiedLeaveDaysOnDate(cmpny, user, workYmd);
+        if (occupied == null) {
+            occupied = BigDecimal.ZERO;
+        }
+        if (occupied.add(charge).compareTo(BigDecimal.ONE) > 0) {
+            throw new ApiException(AttdErrorCode.ATTD_400_111);
+        }
+        if (hourlyUnit
+                && leaveFlowMapper.countOverlappingTimeLeaveOnDate(
+                        cmpny, user, workYmd, p.startTime(), p.endTime()) > 0) {
+            throw new ApiException(AttdErrorCode.ATTD_400_112);
+        }
+
+        // 5) 잔여 부족 판정 — 에러가 아니라 플래그(FE 사전 경고, §3-3 잔여 부족 반려 해소).
+        //    가불(isBorrow)은 preview 비대상(가불은 종일/반차 전용 + 결재 강제 — 잔여 기준만 판정).
+        boolean insufficient = false;
+        if (charge.signum() > 0) {
+            boolean userApplyType = LEAVE_TYPE_USER_APPLY.equals(type.leaveType()) && !statutory;
+            if (userApplyType) {
+                Integer maxAplyDays = type.maxAplyDays();
+                if (maxAplyDays == null) {
+                    insufficient = true; // 한도 미설정 = 신청불가(fail-closed, submitLeave 동일 기준)
+                } else {
+                    BigDecimal used;
+                    if (AVAIL_TERM_NONE.equals(type.availTermType())) {
+                        used = leaveFlowMapper.selectTotalUsedDays(cmpny, user, leaveCd);
+                    } else {
+                        FiscalYearUtils.FiscalWindow fiscal = resolveFiscalWindow(cmpny);
+                        used = leaveFlowMapper.selectFiscalUsedDays(
+                                cmpny, user, leaveCd, fiscal.fiscalStartYmd(), fiscal.fiscalEndYmdExclusive());
+                    }
+                    if (used == null) {
+                        used = BigDecimal.ZERO;
+                    }
+                    insufficient = used.add(charge).compareTo(BigDecimal.valueOf(maxAplyDays)) > 0;
+                }
+            } else {
+                // 부여 기반: 차감 가능 GRANT 유무. (FOR UPDATE SQL 재사용 — 비트랜잭션 preview 라
+                //   autocommit 으로 행 잠금이 즉시 해제되어 실질 잠금 부작용 없음.)
+                insufficient = (leaveFlowMapper.selectDeductibleGrant(cmpny, user, leaveCd, workYmd, charge) == null);
+            }
+        }
+
+        int conv = (convFromCharge != null)
+                ? convFromCharge
+                : leaveConversionPolicyService.selectConversionMinutes(cmpny, workYmd);
+
+        log.debug("[leaveflow] 예상 차감 preview: userCd={}, workYmd={}, unit={}, charge={}, 하한={}, 캡={}, "
+                        + "잔여부족={}, conv={}",
+                user, workYmd, unit, charge.toPlainString(), floorApplied, capApplied, insufficient, conv);
+
+        return LeaveDeductionPreviewResponse.builder()
+                .chargeDays(charge)
+                .floorApplied(floorApplied)
+                .capApplied(capApplied)
+                .insufficientBalance(insufficient)
+                .convMinutes(conv)
+                .floorDays(floorDays)
+                .build();
     }
 
     /**
@@ -431,6 +656,32 @@ public class LeaveFlowServiceImpl implements LeaveFlowService {
         } catch (Exception e) {
             log.warn("[leaveflow] '01' 신청 advisory lock 해제 실패(무시) — lockKey={}", lockKey, e);
         }
+    }
+
+    /**
+     * LC-04(F5): 시간차 사용자·일 단위 직렬화 lock 획득(앱 미러). 타임아웃/오류면 같은 날 동시
+     * 처리로 보고 중복신청 계열(ATTD_400_111)로 변환 — leave01 lock 실패→400_051 변환 관례 미러.
+     */
+    private void acquireLeaveDayLock(String lockKey) {
+        Integer got = leaveFlowMapper.getAdvisoryLock(lockKey, LEAVE01_LOCK_TIMEOUT_SEC);
+        if (got == null || got != 1) {
+            log.info("[leaveflow] 시간차 leaveDay advisory lock 미획득 — lockKey={}, got={}", lockKey, got);
+            throw new ApiException(AttdErrorCode.ATTD_400_111);
+        }
+    }
+
+    /** LC-04: 시간차 leaveDay advisory lock 해제(예외 무시 — 세션 종료 시 자동 해제됨). */
+    private void releaseLeaveDayLock(String lockKey) {
+        try {
+            leaveFlowMapper.releaseAdvisoryLock(lockKey);
+        } catch (Exception e) {
+            log.warn("[leaveflow] 시간차 leaveDay advisory lock 해제 실패(무시) — lockKey={}", lockKey, e);
+        }
+    }
+
+    /** 시간차(02/03/04) 단위 여부 — LC-05 재정산 훅 대상 판정. */
+    private boolean isHourlyUnit(String unit) {
+        return UNIT_HOUR2.equals(unit) || UNIT_HOUR1.equals(unit) || UNIT_MIN30.equals(unit);
     }
 
     /** PRAFTA-028 - 마감된 기간(신청자 부서)의 연차 결재(승인/반려)를 차단한다. */
@@ -479,6 +730,14 @@ public class LeaveFlowServiceImpl implements LeaveFlowService {
                 log.info("연차 수정 최종 승인. reqId={}, leaveId={}", p.reqId(), req.targetId());
             } else {
                 applyFullDayAttendanceBlock(p.gvCmpnyCd(), p.reqId(), p.gvUserCd());
+                // LC-05(F2): 시간차 최종 승인 시점 재판정 — 결재 대기 중 같은 날 다른 시간차가
+                //   취소·반려로 빠졌으면 하한 차액 배치가 어긋나므로, 그날 잔존 시간차를 시간순
+                //   재적용해 확정값을 보정한다(코어 산식 LC-03 공유 — 신청 계산과 항상 동치).
+                LeaveUseDetailVO aprvDetail = leaveFlowMapper.selectLeaveUseDetailByReqId(p.gvCmpnyCd(), p.reqId());
+                if (aprvDetail != null && isHourlyUnit(aprvDetail.useUnitType())) {
+                    leaveHourlyResettleService.resettleHourlyLeaveOnDate(p.gvCmpnyCd(),
+                            aprvDetail.siteCd(), aprvDetail.userCd(), aprvDetail.startDate(), p.gvUserCd());
+                }
                 log.info("연차 최종 승인. reqId={}, approver={}", p.reqId(), p.gvUserCd());
             }
             // PRAFTA-APP-021-3a(W2): 최종 승인 시점에 신청자 본인에게 결과 통보 PUSH 적재(afterCommit 격리).
@@ -524,32 +783,11 @@ public class LeaveFlowServiceImpl implements LeaveFlowService {
             return;
         }
 
-        // 출근 차단 해제용 detail은 취소(LEAVE_STATUS 변경) 전에 확보
-        LeaveUseDetailVO detail = leaveFlowMapper.selectLeaveUseDetailByReqId(p.gvCmpnyCd(), p.reqId());
+        // 차감 해제 + 부여 동기화 + 가불 회수 + 시간차 재정산(F1).
+        //   QT-11-7: 동일 시퀀스를 소속이동 발효 등 "결재 흐름 밖 강제 종료" 경로도 재사용해야 하므로
+        //   restoreLeaveLedger 로 추출했다(단일 출처). 여기서 변경 시 그 경로에도 함께 반영된다.
+        restoreLeaveLedger(p.gvCmpnyCd(), p.reqId(), "결재 반려", p.gvUserCd());
 
-        // prafta-com-011-2: 차감 해제 + 부여 동기화 (분할 차감 대응 — 잔여+가불 여러 GRANT 를 모두 재계산).
-        //   비가불(단일 부여)이면 grantIds 가 1건이라 기존 selectGrantIdByReqId 경로와 동일 결과.
-        List<String> grantIds = leaveFlowMapper.selectGrantIdsByReqId(p.gvCmpnyCd(), p.reqId());
-        leaveFlowMapper.cancelLeaveUseByReqId(p.gvCmpnyCd(), p.reqId(), "결재 반려", p.gvUserCd());
-        for (String grantId : grantIds) {
-            if (grantId != null && !grantId.isEmpty()) {
-                leaveFlowMapper.recomputeGrantUsedDays(p.gvCmpnyCd(), grantId, p.gvUserCd());
-            }
-        }
-        // prafta-com-011-2 가불 회수: 위 차감 해제(USED_DAYS=0 복원) 후, 이 reqId 가 만든 가불 GRANT 를 회수(CANCELED)한다.
-        //   유령 미래 부여 방지(결정 §6). 가불 reqId 한정(비가불은 0건이라 안전). USED_DAYS>0 가불은 회수 안 함(기부여보호).
-        try {
-            int recalled = leaveGrantEngineService.cancelBorrowGrantByReqId(p.gvCmpnyCd(), p.reqId(), p.gvUserCd());
-            if (recalled > 0) {
-                log.info("연차 반려 — 가불 GRANT 회수 {}건. reqId={}", recalled, p.reqId());
-            }
-        } catch (Exception e) {
-            // 가불 GRANT 회수 실패는 본 트랜잭션 롤백 사유(차감 해제와 일관성 유지). 회귀 방지를 위해 비가불은 0건이라 미진입.
-            log.error("연차 반려 가불 GRANT 회수 실패. reqId={}", p.reqId(), e);
-            throw e;
-        }
-        // prafta-com-008-E-2: 출근 차단은 leave_use 기준 → 위 cancelLeaveUseByReqId 로 자동 해제된다.
-        //   work_plan 은 SCH_CD 를 유지하므로 별도 work_plan 연차블록 삭제 불필요(모델 전환).
         log.info("연차 반려. reqId={}, approver={}", p.reqId(), p.gvUserCd());
 
         // PRAFTA-APP-021-3a(W2): 연차 사용 반려 결과를 신청자 본인에게 통보(afterCommit 격리).
@@ -558,6 +796,72 @@ public class LeaveFlowServiceImpl implements LeaveFlowService {
                     p.gvCmpnyCd(), req.siteCd(), req.userCd(), p.reqId(), false, p.gvUserCd());
         } catch (Exception e) {
             log.error("연차 반려 결과 통보 PUSH 적재 hook 실패(반려 영향 없음). reqId={}", p.reqId(), e);
+        }
+    }
+
+    /**
+     * QT-11-7 — 결재 흐름 밖 강제 종료(소속이동 발효 등) 시 연차 원장 원복 진입점.
+     *
+     * <p>호출자가 이미 TB_USER_ATTD_REQ 상태를 종료로 UPDATE 한 뒤 호출한다(상태는 여기서 건드리지 않는다).
+     *   REQ_TYPE 을 서버에서 재확인해 연차 사용('05')만 원복하며, 연차 수정('06')·근태 요청 등은 no-op 이다.
+     *   호출자 트랜잭션에 참여한다(REQUIRED) — 원복 실패 시 발효 전체가 롤백되어야 한다(부분 처리 금지).
+     */
+    @Override
+    @Transactional
+    public void restoreLeaveLedgerOnTerminate(String cmpnyCd, String reqId, String reason, String actor) {
+        if (cmpnyCd == null || cmpnyCd.isBlank() || reqId == null || reqId.isBlank()) {
+            return;
+        }
+        LeaveReqRowVO req = leaveFlowMapper.selectLeaveReq(cmpnyCd, reqId);
+        if (req == null) {
+            return; // 대상 없음 → 멱등 no-op
+        }
+        if (!REQ_TYPE_LEAVE_USE.equals(req.reqType())) {
+            // 연차 수정('06')은 승인 시에만 반영되므로 되돌릴 차감이 없다(rejectStep 과 동일 규칙).
+            // 근태/OT 요청은 애초에 연차 원장과 무관.
+            return;
+        }
+        restoreLeaveLedger(cmpnyCd, reqId, reason, actor);
+        log.info("연차 원장 원복(결재 흐름 밖 종료). reqId={}, 사유={}, actor={}", reqId, reason, actor);
+    }
+
+    /**
+     * 연차 사용 요청('05')의 차감을 원복하는 단일 시퀀스 —
+     * ① use 행 취소(CANCELLED) ② 관련 GRANT USED_DAYS 재집계 ③ 가불 GRANT 회수 ④ 시간차 재정산(F1).
+     *
+     * <p>{@link #rejectStep} 과 {@link #restoreLeaveLedgerOnTerminate} 가 공유한다(단일 출처).
+     *   호출 전 대상이 REQ_TYPE='05' 임이 보장되어야 한다.
+     */
+    private void restoreLeaveLedger(String cmpnyCd, String reqId, String reason, String actor) {
+        // 출근 차단 해제용 detail 은 취소(LEAVE_STATUS 변경) 전에 확보.
+        LeaveUseDetailVO detail = leaveFlowMapper.selectLeaveUseDetailByReqId(cmpnyCd, reqId);
+
+        // prafta-com-011-2: 차감 해제 + 부여 동기화 (분할 차감 대응 — 잔여+가불 여러 GRANT 를 모두 재계산).
+        List<String> grantIds = leaveFlowMapper.selectGrantIdsByReqId(cmpnyCd, reqId);
+        leaveFlowMapper.cancelLeaveUseByReqId(cmpnyCd, reqId, reason, actor);
+        for (String grantId : grantIds) {
+            if (grantId != null && !grantId.isEmpty()) {
+                leaveFlowMapper.recomputeGrantUsedDays(cmpnyCd, grantId, actor);
+            }
+        }
+        // prafta-com-011-2 가불 회수: 차감 해제 후 이 reqId 가 만든 가불 GRANT 를 회수(CANCELED).
+        //   유령 미래 부여 방지(결정 §6). 가불 reqId 한정(비가불은 0건이라 안전). USED_DAYS>0 가불은 회수 안 함.
+        try {
+            int recalled = leaveGrantEngineService.cancelBorrowGrantByReqId(cmpnyCd, reqId, actor);
+            if (recalled > 0) {
+                log.info("연차 원복 — 가불 GRANT 회수 {}건. reqId={}", recalled, reqId);
+            }
+        } catch (Exception e) {
+            // 가불 회수 실패는 트랜잭션 롤백 사유(차감 해제와 일관성 유지).
+            log.error("연차 원복 가불 GRANT 회수 실패. reqId={}", reqId, e);
+            throw e;
+        }
+        // prafta-com-008-E-2: 출근 차단은 leave_use 기준 → cancelLeaveUseByReqId 로 자동 해제된다.
+
+        // LC-05(F1): 그날 시간차 구성이 바뀌면 잔존 시간차 건을 시간순 재적용(하한 차액 재배치).
+        if (detail != null && isHourlyUnit(detail.useUnitType())) {
+            leaveHourlyResettleService.resettleHourlyLeaveOnDate(cmpnyCd,
+                    detail.siteCd(), detail.userCd(), detail.startDate(), actor);
         }
     }
 

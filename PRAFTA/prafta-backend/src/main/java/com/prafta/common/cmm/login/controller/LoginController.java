@@ -141,6 +141,20 @@ public class LoginController {
     }
 
     /**
+     * 휴대폰 본인인증 팝업 자동기입 — PHONE_AUTH 임시 토큰 식별 사용자의 등록 휴대폰 반환.
+     * 토큰 claim(cmpnyCd/userCd)으로만 대상 식별(IDOR 방지). 클라가 임의 번호로 바꾸지 못하게 잠금 표시용.
+     */
+    @GetMapping("/phone-auth-phone")
+    public ResponseEntity<?> getPhoneAuthPhone(
+            @RequestHeader(value = "Authorization", required = true) String authorization) {
+
+        TokenInfo tokenInfo = requirePhoneAuthScope(authorization);
+        String mblNo = loginService.getPhoneAuthTargetPhone(tokenInfo.gv_cmpnyCd(), tokenInfo.gv_userCd());
+
+        return ResponseEntity.status(HttpStatus.OK).body(java.util.Map.of("mblNo", mblNo == null ? "" : mblNo));
+    }
+
+    /**
      * PRAFTA-COM-008-E-8 — 게이트 화면용 사업장 활성 근무타입 목록.
      *
      * <p>{@code Authorization: Bearer <scope=DEFAULT_SCH 임시 토큰>} 필수.
@@ -193,6 +207,31 @@ public class LoginController {
         }
         String scope = jwtUtil.parseToken(pureToken).get("gv_scope", String.class);
         if (!JwtScope.DEFAULT_SCH.equals(scope)) {
+            throw new ApiException(LoginErrorCode.LOGIN_400_012);
+        }
+        TokenInfo tokenInfo = jwtUtil.getAllClaimsAsMap(authorization);
+        if (tokenInfo == null
+                || tokenInfo.gv_cmpnyCd() == null || tokenInfo.gv_cmpnyCd().isBlank()
+                || tokenInfo.gv_userCd() == null || tokenInfo.gv_userCd().isBlank()) {
+            throw new ApiException(LoginErrorCode.LOGIN_400_012);
+        }
+        return tokenInfo;
+    }
+
+    /**
+     * scope=PHONE_AUTH 임시 토큰 검증(만료/서명/scope). 통과 시 claim 을 TokenInfo 로 반환.
+     * requireDefaultSchScope 미러.
+     */
+    private TokenInfo requirePhoneAuthScope(String authorization) {
+        if (authorization == null || !authorization.startsWith("Bearer ")) {
+            throw new ApiException(LoginErrorCode.LOGIN_400_012);
+        }
+        String pureToken = authorization.substring(7);
+        if (!jwtUtil.validateToken(pureToken)) {
+            throw new ApiException(LoginErrorCode.LOGIN_400_012);
+        }
+        String scope = jwtUtil.parseToken(pureToken).get("gv_scope", String.class);
+        if (!JwtScope.PHONE_AUTH.equals(scope)) {
             throw new ApiException(LoginErrorCode.LOGIN_400_012);
         }
         TokenInfo tokenInfo = jwtUtil.getAllClaimsAsMap(authorization);

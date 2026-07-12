@@ -62,11 +62,15 @@ public interface LeavePolicyService {
     /**
      * 정책 변경 이력 페이징 조회.
      *
-     * @param cmpnyCd 회사 코드 (CMPNY_CD 격리)
+     * <p>정책서 §8.5.7: 정책 변경 권한자(AUTH_MASTER OR AUTH_HR_MANAGER)만 허용한다.
+     * 이력에는 변경자 실명(평문) 등 민감정보가 포함되므로 진입부에서 권한을 강제한다.
+     *
+     * @param cmpnyCd 회사 코드 (CMPNY_CD 격리, JWT 도출)
+     * @param authCd  요청자 권한 코드 (JWT 도출, ensureManager 판정)
      * @param page    1-based 페이지 번호
      * @param size    페이지 크기 (1~100)
      */
-    PagedResult<LeavePolicyHistoryVO> findHistory(String cmpnyCd, int page, int size);
+    PagedResult<LeavePolicyHistoryVO> findHistory(String cmpnyCd, String authCd, int page, int size);
 
     /**
      * 영향 분석만 수행 (저장 X, 화면 미리보기용).

@@ -35,8 +35,7 @@ const ICONS = {
   clipboard:
     '<rect x="5" y="4.8" width="14" height="15.7" rx="2"/><path d="M9 4.8V3.6h6v1.2"/><path d="M9 12.6l2.1 2.1 4-4.2"/>',
   // AI — 칩
-  cpu:
-    '<rect x="6.5" y="6.5" width="11" height="11" rx="2"/><rect x="10" y="10" width="4" height="4" rx="0.6"/><path d="M10 6.5V3.6M14 6.5V3.6M10 20.4v-2.9M14 20.4v-2.9M6.5 10H3.6M6.5 14H3.6M20.4 10h-2.9M20.4 14h-2.9"/>',
+  cpu: '<rect x="6.5" y="6.5" width="11" height="11" rx="2"/><rect x="10" y="10" width="4" height="4" rx="0.6"/><path d="M10 6.5V3.6M14 6.5V3.6M10 20.4v-2.9M14 20.4v-2.9M6.5 10H3.6M6.5 14H3.6M20.4 10h-2.9M20.4 14h-2.9"/>',
   // 제조 — 공장
   factory:
     '<path d="M3.5 20.5V10l5.5 3.6V10l5.5 3.6V6.2h5.5v14.3z"/><path d="M3.5 20.5h17"/><path d="M7 17h2M12 17h2M17 17h1.6"/>',
@@ -55,5 +54,7 @@ const inner = computed(() => ICONS[props.name] || "");
 </script>
 
 <style scoped>
-.iicon { display: block; }
+.iicon {
+  display: block;
+}
 </style>

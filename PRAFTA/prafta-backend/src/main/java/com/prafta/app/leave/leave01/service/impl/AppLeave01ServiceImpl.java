@@ -22,6 +22,7 @@ import com.prafta.app.leave.leave01.result.LeaveGroupAggResult;
 import com.prafta.app.leave.leave01.result.LeaveUserResult;
 import com.prafta.app.leave.leave01.service.AppLeave01Service;
 import com.prafta.common.cmm.leave.mapper.LeavePolicyMapper;
+import com.prafta.common.cmm.leave.service.LeaveConversionPolicyService;
 import com.prafta.common.cmm.leave.util.FiscalYearUtils;
 import com.prafta.common.cmm.leave.vo.LeavePolicyVO;
 
@@ -53,6 +54,8 @@ public class AppLeave01ServiceImpl implements AppLeave01Service {
     private final AppLeave01Mapper appLeave01Mapper;
     /** 연차 개편(표시): 활성정책 AXIS2_FISCAL_START_MM/_DD 조회(회계연도 경계 산출 입력). 락 없는 조회 메서드 재사용. */
     private final LeavePolicyMapper leavePolicyMapper;
+    /** LC-07(표기): 현재 기준 1일 환산시간(분) 조회 — FE "N일 H시간 M분" 조립 분모 단일 출처. */
+    private final LeaveConversionPolicyService leaveConversionPolicyService;
 
     @Override
     public MyLeaveSummaryResponse selectMyLeaveSummary(MyLeaveSummaryParam param) {
@@ -63,6 +66,9 @@ public class AppLeave01ServiceImpl implements AppLeave01Service {
 
         log.info("[leave01] 연차 현황 조회 시작 userCd={}, today={}", param.userCd(), todayYmd);
 
+        // LC-07(표기): 오늘 기준 환산시간 + 시간차 사용 분 합계(전 기간) — 기존 필드 불변, additive.
+        Integer hourlyUsedMinutes = appLeave01Mapper.selectHourlyUsedMinutes(param.cmpnyCd(), param.userCd());
+
         MyLeaveSummaryResponse response = MyLeaveSummaryResponse.builder()
                 .user(buildUser(baseQuery))
                 .groups(buildGroups(baseQuery))
@@ -70,6 +76,8 @@ public class AppLeave01ServiceImpl implements AppLeave01Service {
                 .appliedLeaveTypes(buildAppliedLeaveTypes(param))
                 .borrowedDays(toScaledDouble(nz(
                         appLeave01Mapper.selectBorrowedDaysTotal(param.cmpnyCd(), param.userCd(), todayYmd))))
+                .convMinutes(leaveConversionPolicyService.selectConversionMinutes(param.cmpnyCd(), todayYmd))
+                .hourlyUsedMinutes(hourlyUsedMinutes == null ? 0 : hourlyUsedMinutes)
                 .build();
 
         log.info("[leave01] 연차 현황 조회 완료 userCd={}", param.userCd());

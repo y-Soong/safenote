@@ -50,9 +50,9 @@
    		#{gvCmpnyCd}
    		, IFNULL(#{riskTypeCd}, FNC_CMM_SEQ_NEXTVAL(#{gvCmpnyCd}, 'RISK_TYPE_CD'))
    		, #{riskTypeNm}
-   		, #{siteCd}
+   		, NULLIF(#{siteCd}, '')
    		, #{processCd}
-		, #{useYn}
+		, IFNULL(#{useYn}, 'Y')
 		, #{riskTypeDesc}
 		, #{gvUserCd}
 		, now()
@@ -62,14 +62,14 @@
    	ON DUPLICATE KEY UPDATE
 	    RISK_TYPE_NM	= NEW.RISK_TYPE_NM
 	    , USE_YN		= IFNULL(NEW.USE_YN, 'Y')
-	    , UPDATE_NO   	= NEW.UPDATGE_NO
+	    , UPDATE_NO   	= NEW.UPDATE_NO
 	    , UPDATE_DATE 	= NOW()
 	</update>
-	
+
 	<select id="selectRiskHazardCnt" parameterType="com.prafta.web.risk.risk01.application.query.RiskHazardCountQuery" resultType="java.lang.Integer">
     /* Risk01Mapper.selectRiskHazardCnt */
     SELECT COUNT(*)
-   	FROM TB_RISK_HAZARD
+   	FROM TB_RISK_SITE_HAZARD
    	WHERE 1=1
    	  AND CMPNY_CD = #{gvCmpnyCd}
    	  AND RISK_TYPE_CD = #{riskTypeCd}
@@ -127,7 +127,7 @@
    		, #{riskTypeCd}
    		, IFNULL(#{hazardCd}, FNC_CMM_SEQ_NEXTVAL(#{gvCmpnyCd}, 'HAZARD_CD'))
    		, #{hazardNm}
-   		, #{siteCd}
+   		, NULLIF(#{siteCd}, '')
 		, #{hazardDesc}
 		, #{gvUserCd}
 		, now()

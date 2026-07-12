@@ -68,22 +68,20 @@
         </div>
 
         <div class="modal-footer">
-          <div class="btn-group">
-            <button
-              class="btn btn-primary"
-              :disabled="loading"
-              @click="fnChangePassword"
-            >
-              변경
-            </button>
-            <button
-              class="btn btn-secondary"
-              :disabled="loading"
-              @click="fnCancel"
-            >
-              취소
-            </button>
-          </div>
+          <button
+            class="btn btn-secondary"
+            :disabled="loading"
+            @click="fnCancel"
+          >
+            취소
+          </button>
+          <button
+            class="btn btn-primary"
+            :disabled="loading"
+            @click="fnChangePassword"
+          >
+            변경
+          </button>
         </div>
       </div>
     </div>
@@ -212,20 +210,17 @@ const fnCancel = async () => {
   display: flex;
   align-items: center;
   justify-content: flex-end;
+  flex-wrap: nowrap;
   padding: 0.75rem 1.2rem;
   border-top: 1px solid var(--color-border, #e5e7eb);
   background: var(--color-bg, #f9fafb);
   gap: 0.5rem;
 }
 
-.btn-group {
-  display: flex;
-  align-items: center;
-  justify-content: flex-end;
-  gap: 0.5rem;
-}
-
 .btn {
+  flex: 0 0 auto;
+  width: auto;
+  align-self: center;
   min-height: 36px;
   height: 36px;
   padding: 0 1rem;

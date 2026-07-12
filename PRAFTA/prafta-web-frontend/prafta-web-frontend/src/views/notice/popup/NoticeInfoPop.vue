@@ -51,7 +51,12 @@
           <!-- [PRAFTA-049 D1] 게시기간 중 잠금(isContentLocked) 제거 → 수정모드면 항상 편집 가능 -->
           <div class="form-row">
             <label>제목</label>
-            <input v-model="formData.title" maxlength="200" :readonly="!isEditMode" />
+            <input
+              v-model="formData.title"
+              maxlength="200"
+              :readonly="!isEditMode"
+              autocomplete="off"
+            />
           </div>
           <div class="form-row">
             <label>내용</label>
@@ -68,7 +73,11 @@
 
             <!-- 조회모드: 기존 다운로드 리스트 -->
             <ul class="file-list" v-if="!isEditMode">
-              <li v-for="(f, i) in formData.fileList" :key="i" class="file-item">
+              <li
+                v-for="(f, i) in formData.fileList"
+                :key="i"
+                class="file-item"
+              >
                 <!-- 파일명+다운로드 아이콘을 한 영역으로 묶어 클릭 시 다운로드 -->
                 <div
                   class="file-item__link"
@@ -81,7 +90,10 @@
                   <span class="file-item__dl" aria-hidden="true">⬇</span>
                 </div>
               </li>
-              <li v-if="!formData.fileList || formData.fileList.length === 0" class="file-empty">
+              <li
+                v-if="!formData.fileList || formData.fileList.length === 0"
+                class="file-empty"
+              >
                 첨부 없음
               </li>
             </ul>
@@ -115,7 +127,12 @@
                   class="file-item file-item--chip"
                 >
                   <span class="file-item__name">{{ f.fileNm }}</span>
-                  <button class="file-item__del" @click="fnRemoveExistingFile(i)">×</button>
+                  <button
+                    class="file-item__del"
+                    @click="fnRemoveExistingFile(i)"
+                  >
+                    ×
+                  </button>
                 </li>
                 <li
                   v-for="(nf, i) in newFiles"
@@ -123,11 +140,14 @@
                   class="file-item file-item--chip file-item--new"
                 >
                   <span class="file-item__name">{{ nf.name }}</span>
-                  <button class="file-item__del" @click="fnRemoveNewFile(i)">×</button>
+                  <button class="file-item__del" @click="fnRemoveNewFile(i)">
+                    ×
+                  </button>
                 </li>
               </ul>
               <p class="hint">
-                텍스트/이미지/동영상/음성 파일만 첨부할 수 있습니다(실행/스크립트 형식 제외). 저장 시 함께 업로드됩니다.
+                텍스트/이미지/동영상/음성 파일만 첨부할 수
+                있습니다(실행/스크립트 형식 제외). 저장 시 함께 업로드됩니다.
               </p>
             </div>
           </div>
@@ -142,6 +162,7 @@
                 maxlength="50"
                 :disabled="isMaster"
                 :placeholder="'비밀번호'"
+                autocomplete="new-password"
               />
               <button class="btn-secondary" @click="fnEnterEditMode">
                 {{ isMaster ? "수정 모드" : "확인" }}
@@ -157,15 +178,27 @@
               <label>스코프</label>
               <div class="radio-group">
                 <label class="radio-item" v-if="canSelectAll">
-                  <input type="radio" value="ALL" v-model="formData.targetScope" />
+                  <input
+                    type="radio"
+                    value="ALL"
+                    v-model="formData.targetScope"
+                  />
                   전사
                 </label>
                 <label class="radio-item">
-                  <input type="radio" value="SITE" v-model="formData.targetScope" />
+                  <input
+                    type="radio"
+                    value="SITE"
+                    v-model="formData.targetScope"
+                  />
                   사업장
                 </label>
                 <label class="radio-item">
-                  <input type="radio" value="NODE" v-model="formData.targetScope" />
+                  <input
+                    type="radio"
+                    value="NODE"
+                    v-model="formData.targetScope"
+                  />
                   사업장+노드
                 </label>
               </div>
@@ -185,12 +218,23 @@
                       readonly
                       @click="fnOpenSiteSearch"
                     />
-                    <button class="search-btn" title="사업장 조회" @click="fnOpenSiteSearch">
-                      <img class="search_icon" :src="search_icon" alt="사업장 조회" />
+                    <button
+                      class="search-btn"
+                      title="사업장 조회"
+                      @click="fnOpenSiteSearch"
+                    >
+                      <img
+                        class="search_icon"
+                        :src="search_icon"
+                        alt="사업장 조회"
+                      />
                     </button>
                   </div>
                   <!-- 노드: NODE 스코프일 때만. 사업장 선택 후 활성화 -->
-                  <div class="search-field" v-if="formData.targetScope === 'NODE'">
+                  <div
+                    class="search-field"
+                    v-if="formData.targetScope === 'NODE'"
+                  >
                     <input
                       type="text"
                       class="search-input"
@@ -206,10 +250,17 @@
                       :disabled="!pickSiteCd"
                       @click="fnOpenNodeSearch"
                     >
-                      <img class="search_icon" :src="search_icon" alt="노드 조회" />
+                      <img
+                        class="search_icon"
+                        :src="search_icon"
+                        alt="노드 조회"
+                      />
                     </button>
                   </div>
-                  <button class="btn-secondary add-target-btn" @click="fnAddTarget">
+                  <button
+                    class="btn-secondary add-target-btn"
+                    @click="fnAddTarget"
+                  >
                     + 대상 추가
                   </button>
                 </div>
@@ -220,7 +271,8 @@
                     class="target-chip"
                   >
                     <span class="target-chip__label">
-                      {{ t.siteNm }}<template v-if="t.nodeNm"> / {{ t.nodeNm }}</template>
+                      {{ t.siteNm
+                      }}<template v-if="t.nodeNm"> / {{ t.nodeNm }}</template>
                     </span>
                     <label
                       v-if="formData.targetScope === 'NODE' && t.nodeCd"
@@ -234,7 +286,9 @@
                       />
                       하위 포함
                     </label>
-                    <button class="target-chip__del" @click="fnRemoveTarget(i)">×</button>
+                    <button class="target-chip__del" @click="fnRemoveTarget(i)">
+                      ×
+                    </button>
                   </li>
                 </ul>
               </div>
@@ -259,7 +313,12 @@
             <div class="form-row">
               <label>로그인 팝업</label>
               <label class="checkbox-item">
-                <input type="checkbox" v-model="formData.popupYn" true-value="Y" false-value="N" />
+                <input
+                  type="checkbox"
+                  v-model="formData.popupYn"
+                  true-value="Y"
+                  false-value="N"
+                />
                 로그인 시 팝업으로 노출
               </label>
             </div>
@@ -276,18 +335,30 @@
               <label>상단 고정</label>
               <div class="pin-row">
                 <label class="checkbox-item">
-                  <input type="checkbox" v-model="formData.pinYn" true-value="Y" false-value="N" />
+                  <input
+                    type="checkbox"
+                    v-model="formData.pinYn"
+                    true-value="Y"
+                    false-value="N"
+                  />
                   목록 상단에 고정
                 </label>
                 <div class="pin-order-inline" v-if="formData.pinYn === 'Y'">
                   <span class="pin-order-label">고정 순번</span>
-                  <input v-model.number="formData.pinOrder" type="number" min="1" class="pin-order-input" />
+                  <input
+                    v-model.number="formData.pinOrder"
+                    type="number"
+                    min="1"
+                    class="pin-order-input"
+                  />
                 </div>
               </div>
             </div>
             <div class="form-row" v-if="formData.pinYn === 'Y'">
               <span></span>
-              <p class="hint">순번은 저장 시 서버에서 1..N 연속으로 보정됩니다.</p>
+              <p class="hint">
+                순번은 저장 시 서버에서 1..N 연속으로 보정됩니다.
+              </p>
             </div>
           </template>
         </div>

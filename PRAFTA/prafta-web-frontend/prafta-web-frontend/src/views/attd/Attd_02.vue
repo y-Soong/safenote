@@ -292,9 +292,7 @@
                       {{ ev.name ?? ev.holidayNm ?? "-" }}
                     </h3>
                     <ul class="card-info">
-                      <li>
-                        등록 주체: {{ regByLabel(ev) }}
-                      </li>
+                      <li>등록 주체: {{ regByLabel(ev) }}</li>
                       <li>등록일시: {{ ev.insertDate ?? ev.regDt ?? "-" }}</li>
                     </ul>
                     <p
@@ -563,7 +561,9 @@ const getTypeNm = (type) =>
 const regByLabel = (ev) => {
   const nm = ev.insertNm ?? ev.regBy;
   if (nm) return nm;
-  return (ev.type ?? ev.holidayType) === "01" ? "국가공휴일(기본 제공)" : "시스템";
+  return (ev.type ?? ev.holidayType) === "01"
+    ? "국가공휴일(기본 제공)"
+    : "시스템";
 };
 
 /** insertDate "20260223" → "2026-02-23" 포맷 */
@@ -926,21 +926,27 @@ onMounted(() => {
   border-bottom: 1px solid var(--color-border, #e5e7eb);
   flex-shrink: 0;
 }
+/* 목록/상세 패널 토글: 전폭(flex:1) 레이아웃은 유지하되, 타이포/상태는 탭 표준(Attd_01)과 일치.
+   비활성에도 투명 하단 보더를 두어 활성 전환 시 2px 레이아웃 시프트를 방지한다. */
 .panel-tab {
   flex: 1;
-  padding: 0.6rem 1rem;
+  padding: 0.5rem 1rem;
   border: none;
+  border-bottom: 2px solid transparent;
+  margin-bottom: -1px;
   background: none;
   cursor: pointer;
   font-size: 0.875rem;
   color: var(--color-text-muted, #6b7280);
   text-align: center;
 }
+.panel-tab:hover {
+  color: var(--color-text, #374151);
+}
 .panel-tab.active {
   font-weight: 600;
   color: var(--color-primary, #16a34a);
-  border-bottom: 2px solid var(--color-primary);
-  margin-bottom: -1px;
+  border-bottom-color: var(--color-primary);
 }
 .panel-body {
   flex: 1;

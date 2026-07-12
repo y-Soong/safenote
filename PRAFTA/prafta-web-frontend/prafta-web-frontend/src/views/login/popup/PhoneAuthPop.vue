@@ -44,9 +44,9 @@
               maxlength="13"
             />
             <button
-              class="btn btn-primary"
+              class="btn btn-primary auth-req-btn"
               @click="fnSmsAuthReq"
-              :disabled="timer > 0 || mblNoDisabled"
+              :disabled="timer > 0 || !phoneLoaded"
               v-show="!verified"
             >
               {{ timer > 0 ? `${timer}초 후 재요청` : "인증요청" }}
@@ -119,6 +119,8 @@ const certNo = ref("");
 const certNoFcs = ref(null);
 const authReqSent = ref(false);
 const verified = ref(false);
+// 등록 휴대폰 로드 완료 플래그(자동기입). 로드 전에는 인증요청 버튼 비활성.
+const phoneLoaded = ref(false);
 const timer = ref(0);
 let timerInterval = null;
 
@@ -130,11 +132,27 @@ const { position, startDrag } = useCenteredDraggable(modalRef, {
 });
 
 // =========================== Life Cycle ===========================
-onMounted(() => {
+onMounted(async () => {
   // 인터셉터가 임시 토큰을 자동 부착하도록 sessionStorage 에 일시적으로 보관.
   // 인증 성공 시 정식 token 으로 교체되고, 취소/실패 시 fnCleanupToken 에서 제거된다.
   if (props.phoneAuthToken_p) {
     sessionStorage.setItem("token", props.phoneAuthToken_p);
+  }
+
+  // 관리자가 등록한 휴대폰을 불러와 자동기입 + 잠금(수정 불가).
+  //   사용자가 임의 번호로 바꿔 SMS 인증 후 계정 휴대폰을 탈취하는 것을 방지한다.
+  //   조회 실패/미등록 시에는 잠그지 않고 수동 입력 폴백(사용자가 진행 가능하도록).
+  try {
+    const res = await axios.get("/comApi/login/phone-auth-phone");
+    const raw = res.data?.mblNo || "";
+    if (raw) {
+      mblNo.value = proxy.$util.formatPhoneNumber(raw) ?? raw;
+      mblNoDisabled.value = true; // 입력 잠금(읽기 전용)
+    }
+  } catch (err) {
+    // 폴백: 잠그지 않음(수동 입력 허용).
+  } finally {
+    phoneLoaded.value = true;
   }
 });
 
@@ -261,5 +279,17 @@ const focusKill = (e) => {
 }
 .btn-secondary:hover {
   background: var(--color-bg, #f9fafb);
+}
+
+/* 인증요청/확인 버튼 폭 고정 — "인증요청"↔"60초 후 재요청" 텍스트 길이가 바뀌어도
+   버튼이 커지지 않아 행이 모달 폭을 넘치지 않는다(타이머 전환 시 가로 스크롤/우측 끝선 어긋남 방지). */
+.form-row-max .btn {
+  flex: 0 0 7.5rem;
+  white-space: nowrap;
+  text-align: center;
+}
+/* 입력은 남는 공간에서 줄어들 수 있어야 한다(min-width:auto 기본값이 축소를 막아 행 넘침 유발). */
+.form-row-max input {
+  min-width: 0;
 }
 </style>

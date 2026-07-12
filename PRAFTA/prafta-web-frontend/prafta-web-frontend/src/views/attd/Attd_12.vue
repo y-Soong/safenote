@@ -12,7 +12,11 @@
     <div class="viewSearch">
       <div>
         <label>조회월</label>
-        <CalendarSrchMonth :range="false" style="width: 100px" v-model="workYm" />
+        <CalendarSrchMonth
+          :range="false"
+          style="width: 100px"
+          v-model="workYm"
+        />
       </div>
       <div>
         <label>사업장</label>
@@ -96,45 +100,53 @@
             <span class="subtitle-text">사용자 리스트</span>
           </div>
         </div>
-      <div class="a12-table-wrap">
-        <table class="a12-table">
-          <thead>
-            <tr>
-              <th>기기</th>
-              <th>관련 계정</th>
-              <th>로그인 시각</th>
-              <th>부서</th>
-              <th>사업장</th>
-              <th>의심유형</th>
-            </tr>
-          </thead>
-          <tbody>
-            <tr v-if="rows.length === 0">
-              <td colspan="6" class="a12-empty">의심 케이스가 없습니다.</td>
-            </tr>
-            <tr v-for="r in rows" :key="r.suspectKey">
-              <td class="a12-cell-device" :title="r.deviceUuid">{{ shortDevice(r.deviceUuid) }}</td>
-              <td class="a12-cell-left">
-                <div v-for="(m, i) in r.members" :key="`${r.suspectKey}-u-${i}`">
-                  {{ m.userNm }} ({{ m.userId }})
-                </div>
-              </td>
-              <td class="a12-cell-left">
-                <div v-for="(m, i) in r.members" :key="`${r.suspectKey}-t-${i}`">
-                  {{ fmtLoginDtime(m.loginDtime) }}
-                </div>
-              </td>
-              <td class="a12-cell-left">{{ r.nodeNm }}</td>
-              <td class="a12-cell-left">{{ r.siteNm }}</td>
-              <td>
-                <span class="a12-badge" :class="badgeClass(r.suspectType)">
-                  {{ badgeLabel(r.suspectType) }}
-                </span>
-              </td>
-            </tr>
-          </tbody>
-        </table>
-      </div>
+        <div class="a12-table-wrap">
+          <table class="a12-table">
+            <thead>
+              <tr>
+                <th>기기</th>
+                <th>관련 계정</th>
+                <th>로그인 시각</th>
+                <th>부서</th>
+                <th>사업장</th>
+                <th>의심유형</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr v-if="rows.length === 0">
+                <td colspan="6" class="a12-empty">의심 케이스가 없습니다.</td>
+              </tr>
+              <tr v-for="r in rows" :key="r.suspectKey">
+                <td class="a12-cell-device" :title="r.deviceUuid">
+                  {{ shortDevice(r.deviceUuid) }}
+                </td>
+                <td class="a12-cell-left">
+                  <div
+                    v-for="(m, i) in r.members"
+                    :key="`${r.suspectKey}-u-${i}`"
+                  >
+                    {{ m.userNm }} ({{ m.userId }})
+                  </div>
+                </td>
+                <td class="a12-cell-left">
+                  <div
+                    v-for="(m, i) in r.members"
+                    :key="`${r.suspectKey}-t-${i}`"
+                  >
+                    {{ fmtLoginDtime(m.loginDtime) }}
+                  </div>
+                </td>
+                <td class="a12-cell-left">{{ r.nodeNm }}</td>
+                <td class="a12-cell-left">{{ r.siteNm }}</td>
+                <td>
+                  <span class="a12-badge" :class="badgeClass(r.suspectType)">
+                    {{ badgeLabel(r.suspectType) }}
+                  </span>
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
       </div>
     </div>
   </div>

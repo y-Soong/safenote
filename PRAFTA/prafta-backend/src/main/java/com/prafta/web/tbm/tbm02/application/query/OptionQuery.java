@@ -9,6 +9,10 @@ public record OptionQuery(
 	String siteCd
 	, String searchKeyword
 	, String processCd
+	, String riskTypeCd
+	, String hazardDesc
+	, String initAssessorNm
+	, String initAssessDate
 	, boolean companyWide		// master/safe: 회사 전체, 그 외: 자기 사업장 + 회사공통만
 	, String scopeSiteCd		// companyWide=false 일 때 노출 허용 사업장(자기 사업장)
 	, String gvCmpnyCd
@@ -24,6 +28,10 @@ public record OptionQuery(
 			param.siteCd()
 			, param.searchKeyword()
 			, param.processCd()
+			, param.riskTypeCd()
+			, param.hazardDesc()
+			, param.initAssessorNm()
+			, param.initAssessDate()
 			, companyWide
 			, param.gvSiteCd()
 			, param.gvCmpnyCd()

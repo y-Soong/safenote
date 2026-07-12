@@ -25,7 +25,17 @@
     </header>
 
     <!-- 본문 (스크롤) -->
-    <main class="nd-body">
+    <main
+      class="nd-body"
+      ref="scrollRef"
+      @touchstart.passive="onPullStart"
+      @touchmove="onPullMove"
+      @touchend="onPullEnd"
+      @touchcancel="onPullEnd"
+    >
+      <!-- 당겨서 새로고침 인디케이터 — 스크롤 최상단에서 아래로 당기면 노출 -->
+      <PullRefreshIndicator v-bind="indicatorProps" />
+
       <!-- 로딩 -->
       <div v-if="isLoading" class="nd-loading" aria-live="polite">불러오는 중...</div>
 
@@ -124,6 +134,8 @@ import { useRouter, useRoute } from 'vue-router'
 
 import api from '@/api/axios'
 import { resolveBaseURL } from '@/api/baseUrl'
+import { usePullToRefresh } from '@/composables/usePullToRefresh'
+import PullRefreshIndicator from '@/components/common/PullRefreshIndicator.vue'
 
 const router = useRouter()
 const route = useRoute()
@@ -229,6 +241,13 @@ const loadDetail = async () => {
   }
 }
 
+// 당겨서 새로고침 — 스크롤 최상단에서 아래로 더 당기면 상세를 재조회(MainView 패턴).
+//   loadDetail 은 notice-info 조회(읽음 갱신은 onMounted 와 동일한 멱등 처리)만 수행 — 쓰기/액션 없음.
+const scrollRef = ref(null)
+const { onPullStart, onPullMove, onPullEnd, indicatorProps } = usePullToRefresh(scrollRef, async () => {
+  await loadDetail()
+})
+
 onMounted(() => {
   loadDetail()
 })
@@ -248,7 +267,8 @@ onMounted(() => {
   --color-bg: #f9fafb;
   --radius-md: 10px;
 
-  min-height: 100vh;
+  height: 100vh;
+  height: 100dvh;
   display: flex;
   flex-direction: column;
   background: var(--color-bg);
@@ -294,6 +314,7 @@ onMounted(() => {
 /* 본문 */
 .nd-body {
   flex: 1;
+  min-height: 0;
   overflow-y: auto;
   padding: 16px;
 }

@@ -34,7 +34,11 @@
           :disabled="siteDisabled"
           @blur="focusKill"
         />
-        <button class="search-btn" :disabled="siteDisabled" @click="fnSiteSearchPopOpen()">
+        <button
+          class="search-btn"
+          :disabled="siteDisabled"
+          @click="fnSiteSearchPopOpen()"
+        >
           <img class="search_icon" :src="search_icon" alt="검색" />
         </button>
         <input
@@ -56,7 +60,11 @@
           :disabled="nodeDisabled"
           @blur="focusKill"
         />
-        <button class="search-btn" :disabled="nodeDisabled" @click="fnSiteNodeSearchPopOpen()">
+        <button
+          class="search-btn"
+          :disabled="nodeDisabled"
+          @click="fnSiteNodeSearchPopOpen()"
+        >
           <img class="search_icon" :src="search_icon" alt="검색" />
         </button>
         <input
@@ -88,8 +96,12 @@
       </div>
       <!-- 자동배치 버튼 (헤더 excel 과 별도 액션) -->
       <div class="lp-actions">
-        <button class="lp-batch-btn" @click="fnAutoBatchPopOpen">자동배치</button>
-        <button class="lp-excel-up-btn" @click="fnUploadExcelClick">엑셀 업로드</button>
+        <button class="lp-batch-btn" @click="fnAutoBatchPopOpen">
+          자동배치
+        </button>
+        <button class="lp-excel-up-btn" @click="fnUploadExcelClick">
+          엑셀 업로드
+        </button>
         <input
           ref="excelFileRef"
           type="file"
@@ -275,7 +287,9 @@ const fnSrchSiteInfo = async () => {
     });
     if (response.status === 200) fnCallback(response);
   } catch (err) {
-    await proxy.$alert(resolveApiErrorMessage(err, getMessage(MSG.SEARCH_ERROR_DEFAULT)));
+    await proxy.$alert(
+      resolveApiErrorMessage(err, getMessage(MSG.SEARCH_ERROR_DEFAULT))
+    );
   }
 };
 
@@ -295,7 +309,9 @@ const fnSrchNodeInfo = async () => {
       fnCallback({ ...response, config: { url: "/dummy/site-node-lists" } });
     }
   } catch (err) {
-    await proxy.$alert(resolveApiErrorMessage(err, getMessage(MSG.SEARCH_ERROR_DEFAULT)));
+    await proxy.$alert(
+      resolveApiErrorMessage(err, getMessage(MSG.SEARCH_ERROR_DEFAULT))
+    );
   }
 };
 
@@ -398,7 +414,9 @@ const fnSearch = async () => {
     });
     rows.value = data?.targetList || [];
   } catch (err) {
-    await proxy.$alert(resolveApiErrorMessage(err, getMessage(MSG.SEARCH_ERROR_DEFAULT)));
+    await proxy.$alert(
+      resolveApiErrorMessage(err, getMessage(MSG.SEARCH_ERROR_DEFAULT))
+    );
   }
 };
 
@@ -456,7 +474,9 @@ const fnExcelDownload = async () => {
       window.URL.revokeObjectURL(url);
     }
   } catch (err) {
-    await proxy.$alert(resolveApiErrorMessage(err, "양식 다운로드 중 오류가 발생했습니다."));
+    await proxy.$alert(
+      resolveApiErrorMessage(err, "양식 다운로드 중 오류가 발생했습니다.")
+    );
   }
 };
 
@@ -483,7 +503,9 @@ const fnExcelFileChange = async (e) => {
     // 일부라도 등록됐을 수 있으므로 재조회.
     fnSearch();
   } catch (err) {
-    await proxy.$alert(resolveApiErrorMessage(err, "엑셀 업로드 중 오류가 발생했습니다."));
+    await proxy.$alert(
+      resolveApiErrorMessage(err, "엑셀 업로드 중 오류가 발생했습니다.")
+    );
   } finally {
     // 같은 파일 재선택 허용.
     if (e?.target) e.target.value = "";

@@ -22,9 +22,13 @@
             직권 지정 대상 잔여
             <strong>{{ props.targetDays }}일</strong>
             · 선택
-            <strong :class="{ 'lpd-over': isOver }">{{ selectedYmds.length }}일</strong>
+            <strong :class="{ 'lpd-over': isOver }"
+              >{{ selectedYmds.length }}일</strong
+            >
           </p>
-          <p v-if="isOver" class="lpd-warn">대상 잔여({{ props.targetDays }}일)를 초과했습니다.</p>
+          <p v-if="isOver" class="lpd-warn">
+            대상 잔여({{ props.targetDays }}일)를 초과했습니다.
+          </p>
 
           <!-- 날짜 행 목록 -->
           <ul v-if="selectedYmds.length > 0" class="lpd-list">
@@ -33,17 +37,21 @@
               <button class="lpd-del" @click="onRemove(ymd)">삭제</button>
             </li>
           </ul>
-          <p v-else class="lpd-empty">아래에서 지정할 날짜를 추가하세요. (1일 단위)</p>
+          <p v-else class="lpd-empty">
+            아래에서 지정할 날짜를 추가하세요. (1일 단위)
+          </p>
 
           <!-- 날짜 키인 추가 -->
           <div class="lpd-add">
             <CalendarSrch v-model="keyinYmd" class="lpd-add-input" />
-            <button class="lpd-add-btn" :disabled="!keyinYmd" @click="onAdd">+ 추가</button>
+            <button class="lpd-add-btn" :disabled="!keyinYmd" @click="onAdd">
+              + 추가
+            </button>
           </div>
 
           <p class="lpd-note">
-            지정된 날짜는 회사 직권(2차) 연차로 등록되며 근로자에게 통보됩니다. 근로자는 만료
-            이내 다른 날로 이동만 가능합니다(취소 불가).
+            지정된 날짜는 회사 직권(2차) 연차로 등록되며 근로자에게 통보됩니다.
+            근로자는 만료 이내 다른 날로 이동만 가능합니다(취소 불가).
           </p>
         </div>
 
@@ -54,7 +62,7 @@
             :disabled="isSaving || selectedYmds.length === 0 || isOver"
             @click="onConfirm"
           >
-            {{ isSaving ? '지정 중...' : '직권 지정' }}
+            {{ isSaving ? "지정 중..." : "직권 지정" }}
           </button>
         </div>
       </div>
@@ -63,7 +71,13 @@
 </template>
 
 <script setup>
-import { ref, computed, getCurrentInstance, defineProps, defineEmits } from "vue";
+import {
+  ref,
+  computed,
+  getCurrentInstance,
+  defineProps,
+  defineEmits,
+} from "vue";
 import axios from "@/api/axios";
 import { resolveApiErrorMessage } from "@/utils/apiError";
 import CalendarSrch from "@/components/common/CalendarSrch.vue";
@@ -121,7 +135,9 @@ const onConfirm = async () => {
       dates: selectedYmds.value,
     });
     // PromotionDesignateResultResponse: { designatedDates, skippedDates, failedDates }
-    const designated = Array.isArray(data?.designatedDates) ? data.designatedDates : [];
+    const designated = Array.isArray(data?.designatedDates)
+      ? data.designatedDates
+      : [];
     const skipped = Array.isArray(data?.skippedDates) ? data.skippedDates : [];
     const failed = Array.isArray(data?.failedDates) ? data.failedDates : [];
     let msg = `2차 촉진 직권 지정이 완료되었습니다. (지정 ${designated.length}건`;
@@ -129,13 +145,16 @@ const onConfirm = async () => {
     if (failed.length > 0) msg += `, 실패 ${failed.length}건`;
     msg += ") 근로자에게 통보됩니다.";
     if (failed.length > 0) {
-      msg += "\n실패한 날짜는 휴일/마감/근무일 아님 등으로 등록되지 않았습니다.";
+      msg +=
+        "\n실패한 날짜는 휴일/마감/근무일 아님 등으로 등록되지 않았습니다.";
     }
     await proxy.$alert(msg);
     emit("done");
     emit("close");
   } catch (err) {
-    await proxy.$alert(resolveApiErrorMessage(err, "직권 지정 중 오류가 발생했습니다."));
+    await proxy.$alert(
+      resolveApiErrorMessage(err, "직권 지정 중 오류가 발생했습니다.")
+    );
   } finally {
     isSaving.value = false;
   }

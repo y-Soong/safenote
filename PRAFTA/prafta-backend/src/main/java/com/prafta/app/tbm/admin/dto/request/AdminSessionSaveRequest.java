@@ -27,6 +27,7 @@ public class AdminSessionSaveRequest {
     private String managerGpsLat;
     private String managerGpsLon;
     private Integer gpsVerifyRadiusM;       // 50~1000(기본 100)
+    private Integer eduMinutes;             // 교육 인정시간(분, 1~60). 개설은 NULL 허용
     private String gpsManualConfirmYn;      // MANUAL 시 'Y' 필수
     private List<AdminSessionContentModel> contents;    // 콘텐츠 묶음 매핑
     private List<AdminSessionRiskModel> risks;          // 위험성평가 매핑(옵션)

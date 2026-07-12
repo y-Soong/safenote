@@ -31,6 +31,11 @@ public class TbmEduItemInfoResult {
     private String thumbFileMgmtCd;   // prafta-033-A: 썸네일 파일코드
     private String durationSec;        // prafta-033-A: 미디어 길이(초, 동영상)
 
+    // TBM_AI F1: 항목 AI 재열람 컬럼(analysis-status 별도병합과 별개로 조회 1차 소스)
+    private String aiAnalyzeYn;   // AI_ANALYZE_YN (Y/N)
+    private String aiStatus;      // AI_STATUS (SYS056 D_CD: NONE/ANALYZING/DRAFT/FAILED/CONFIRMED)
+    private String aiConfirmDesc; // AI_CONFIRM_DESC (확정 서술)
+
     /* 데이터 초기화용 값 */
     private String oriSortIdx;
     private String oriMtrlItemType;

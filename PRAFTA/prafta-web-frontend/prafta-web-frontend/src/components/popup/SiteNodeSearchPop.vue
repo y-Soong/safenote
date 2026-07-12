@@ -62,7 +62,11 @@
         <!-- 🔹 3. 그리드 영역 -->
         <div class="viewBody">
           <div class="table-wrapper">
-            <p class="site-node-notice">담당자가 정해진 부서만 조회됩니다.</p>
+            <!-- PRAFTA-WEB_002-T1-04(1.3-3): 무담당 부서 포함 조회(includeNoAdmin_p=true) 시에는
+                 "담당자가 정해진 부서만 조회됩니다" 안내를 숨긴다(담당 미지정 부서도 노출되므로). -->
+            <p class="site-node-notice" v-if="!includeNoAdmin_p">
+              담당자가 정해진 부서만 조회됩니다.
+            </p>
             <table class="data-grid">
               <thead>
                 <tr>
@@ -185,6 +189,13 @@ const props = defineProps({
   nodeNm_p: String,
   userId_p: String,
   onSelect: Function,
+  // PRAFTA-WEB_002-T1-04(1.3-3)/T1-02(1.4-1): true 면 담당(정/부) 미지정 부서도 조회 결과에 포함한다.
+  //   소속이동/생성의 정규직 컨텍스트에서 true. 미지정(false) 시 기존 동작(담당 지정 부서만).
+  includeNoAdmin_p: { type: Boolean, default: false },
+  // PRAFTA-001-3: 회원가입(비로그인) 모드. true 면 토큰이 없어도 동작하도록 NoAuth 전용 부서조회
+  //   엔드포인트(/join-site-node-lists)를 사용하고, 인증이 필요한 부서타입 코드(COM004) 로드는 생략한다.
+  //   (SiteSearchPop.joinMode 패턴과 동일). 미지정(false) 시 기존 인증 경로 그대로.
+  joinMode: { type: Boolean, default: false },
 });
 
 const emit = defineEmits(["select", "close"]);
@@ -212,7 +223,9 @@ const { position, startDrag } = useCenteredDraggable(modalRef, {
 });
 
 onMounted(async () => {
-  await fnGetBaseinfoList();
+  // 부서타입 코드(COM004)는 인증 필요 엔드포인트라 회원가입(비로그인) 모드에선 로드를 생략한다.
+  //   (미로드 시 nodeType 필터 미적용 → 부서 전체 조회. SiteSearchPop.joinMode 선례와 동일)
+  if (!props.joinMode) await fnGetBaseinfoList();
   await fnSearch();
 });
 
@@ -250,7 +263,12 @@ const fnGetBaseinfoList = async () => {
 const fnSearch = async () => {
   nodeList.value = [];
   try {
-    const response = await axios.get("/comApi/baseinfo/site-node-lists", {
+    // PRAFTA-001-3: 회원가입(비로그인) 모드는 NoAuth 전용 엔드포인트(/join-site-node-lists) 사용,
+    //   그 외에는 기존 인증 엔드포인트(/site-node-lists). 응답 스키마는 동일(siteNodeInfoList).
+    const endpoint = props.joinMode
+      ? "/comApi/baseinfo/join-site-node-lists"
+      : "/comApi/baseinfo/site-node-lists";
+    const response = await axios.get(endpoint, {
       params: {
         cmpnyCd: props.cmpnyCd_p,
         siteCd: props.siteCd_p,
@@ -258,6 +276,8 @@ const fnSearch = async () => {
         nodeNm: nodeNm.value,
         nodeType: nodeType.value,
         parentNodeNm: parentNodeNm.value,
+        // PRAFTA-WEB_002-T1-04(1.3-3)/T1-02(1.4-1): 담당 미지정 부서 포함 여부(정규직 컨텍스트면 true).
+        includeNoAdmin: props.includeNoAdmin_p,
       },
     });
 

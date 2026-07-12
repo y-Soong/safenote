@@ -127,12 +127,7 @@
                   <div class="flex items-center gap-2 w-full">
                     <span class="truncate min-w-0">{{ chkpt.siteNm }}</span>
                     <button
-                      class="ml-auto border rounded"
-                      style="
-                        background-color: #30796a;
-                        border: none;
-                        padding: 0.2rem 0.2rem;
-                      "
+                      class="ml-auto border rounded node-assign-btn"
                       @click="fnSiteSearchPopOpen(idx)"
                     >
                       <img class="search_icon" :src="search_icon" alt="검색" />
@@ -163,12 +158,7 @@
                   <div class="flex items-center gap-2 w-full">
                     <span class="truncate min-w-0">{{ chkpt.mgmtUserNm }}</span>
                     <button
-                      class="ml-auto border rounded"
-                      style="
-                        background-color: #30796a;
-                        border: none;
-                        padding: 0.2rem 0.2rem;
-                      "
+                      class="ml-auto border rounded node-assign-btn"
                       @click="fnUserSearchPopOpen(idx)"
                     >
                       <img class="search_icon" :src="search_icon" alt="검색" />
@@ -587,6 +577,8 @@ const fnSiteSearchPopOpen = (callPoint) => {
       onSelect: (siteCdVal, siteNoVal, siteNmVal) => {
         chkptList.value[callPoint].siteCd = siteCdVal;
         chkptList.value[callPoint].siteNm = siteNmVal;
+        // 팝업 콜백으로 인한 변경은 watcher가 미감지할 수 있어 직접 체크 보강
+        chkptList.value[callPoint].chk = true;
       },
     });
   }
@@ -595,9 +587,13 @@ const fnSiteSearchPopOpen = (callPoint) => {
 const fnUserSearchPopOpen = (callPoint) => {
   openPop(UserSearchPop, {
     cmpnyCd_p: sessionStorage.getItem("gv_cmpnyCd"),
+    // 관리자 지정은 정규직(REGULAR)만 조회 (공용 팝업이므로 prop 전달 시에만 필터 적용)
+    employmentType_p: "REGULAR",
     onSelect: (userIdVal, userNmVal) => {
       chkptList.value[callPoint].mgmtUserCd = userIdVal;
       chkptList.value[callPoint].mgmtUserNm = userNmVal;
+      // 팝업 콜백으로 인한 변경은 watcher가 미감지할 수 있어 직접 체크 보강
+      chkptList.value[callPoint].chk = true;
     },
   });
 };
@@ -625,5 +621,21 @@ const fnAlertMsg = async (message, afterConfirmCallback) => {
    테이블 내부에서도 동일한 border 가 유지되도록 specificity 보강 */
 .data-grid .btn.btn-custom {
   border-color: var(--color-primary, #16a34a);
+}
+
+/* 테이블 내 검색(아이콘) 버튼 — Baim_05 기준 통일(CSS 변수 색·라운드·disabled 처리) */
+.node-assign-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0.2rem;
+  border: none;
+  border-radius: 4px;
+  background-color: var(--color-primary, #16a34a);
+  cursor: pointer;
+}
+.node-assign-btn:disabled {
+  background-color: var(--color-border, #d1d5db);
+  cursor: not-allowed;
 }
 </style>

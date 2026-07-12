@@ -7,6 +7,7 @@ import com.prafta.web.chkLst.chkLst04.application.param.InspectItemListParam;
 public record InspectItemListQuery(
 	String chkLstType
 	, String inspectItemSubj
+	, String useYn
 	, String gvCmpnyCd
 	, String gvUserCd
 ){
@@ -18,6 +19,7 @@ public record InspectItemListQuery(
 		return new InspectItemListQuery(
 			param.chkLstType()
 			, param.inspectItemSubj()
+			, param.useYn()
 			, param.gvCmpnyCd()
 			, param.gvUserCd()
 		);

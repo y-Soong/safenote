@@ -11,6 +11,7 @@ import org.springframework.transaction.annotation.Transactional;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
 import com.prafta.common.cmm.leave.mapper.LeaveDashboardMapper;
+import com.prafta.common.cmm.leave.service.LeaveHourlyResettleService;
 import com.prafta.common.cmm.leave.vo.NotiOutboxInsertVO;
 import com.prafta.common.error.attd.AttdErrorCode;
 import com.prafta.common.exception.ApiException;
@@ -73,6 +74,8 @@ public class Attd13ServiceImpl implements Attd13Service {
     private final LeaveFlowMapper leaveFlowMapper;
     private final LeaveDashboardMapper leaveDashboardMapper;
     private final ObjectMapper objectMapper;
+    /** LC-05(F1): 시간차 행 삭제 시 그날 잔존 시간차 건 시간순 재정산(코어 산식 LC-03 공유). */
+    private final LeaveHourlyResettleService leaveHourlyResettleService;
 
     // ============================================================
     // 관리자(웹)
@@ -370,7 +373,18 @@ public class Attd13ServiceImpl implements Attd13Service {
         if (target.grantId() != null && !target.grantId().isBlank()) {
             leaveFlowMapper.recomputeGrantUsedDays(cmpnyCd, target.grantId(), operatorUserCd);
         }
+        // LC-05(F1): 삭제 대상이 시간차(02/03/04)면 그날 잔존 시간차 건을 시간순 재적용해
+        //   하한 차액 배치를 보정한다(잔존 건 LEAVE_DAYS 재산출 + 영향 GRANT 재집계).
+        if (isHourlyUnit(target.useUnitType())) {
+            leaveHourlyResettleService.resettleHourlyLeaveOnDate(
+                    cmpnyCd, target.siteCd(), target.userCd(), target.startDate(), operatorUserCd);
+        }
         // prafta-com-008-E-2: 출근 차단은 leave_use 기준 → cancelLeaveUse 로 자동 해제(work_plan SCH_CD 유지).
+    }
+
+    /** 시간차(SYS025 02/03/04) 단위 여부 — LC-05 재정산 훅 대상 판정. */
+    private boolean isHourlyUnit(String useUnitType) {
+        return "02".equals(useUnitType) || "03".equals(useUnitType) || "04".equals(useUnitType);
     }
 
     /**

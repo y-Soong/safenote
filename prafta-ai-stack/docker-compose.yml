@@ -1,0 +1,46 @@
+# PRAFTA 로컬 AI 검증 스택
+#   - pgvector : 코퍼스 DB(source/chunk) + 벡터 유사도 검색  (5432)
+#   - tei      : BGE-m3 임베딩 서버(텍스트 -> 1024차원 벡터)   (8090 -> 컨테이너 80)
+# 기존 사용 포트(웹 8080/8081/8082, MySQL 3306)와 겹치지 않게 5432/8090 사용.
+# 이 스택은 백엔드(MySQL/Spring)와 완전히 분리된 로컬 실험용 인프라다.
+name: prafta-ai-stack
+
+services:
+  pgvector:
+    image: pgvector/pgvector:pg16
+    container_name: prafta-pgvector
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: prafta
+      POSTGRES_PASSWORD: prafta1234        # 로컬 전용 throwaway. 운영은 별도 시크릿 관리(커밋 금지)
+      POSTGRES_DB: prafta_ai
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgvector_data:/var/lib/postgresql/data
+      # 최초 기동(빈 데이터 볼륨) 시 1회만 실행됨. 이후 재기동에서는 재실행되지 않음.
+      - ./init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U prafta -d prafta_ai"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  tei:
+    # 재현성을 위해 특정 태그로 고정하고 싶으면 cpu-latest -> cpu-1.8 등으로 교체.
+    image: ghcr.io/huggingface/text-embeddings-inference:cpu-latest
+    container_name: prafta-tei
+    restart: unless-stopped
+    # --auto-truncate: 8192 토큰(BGE-m3 상한) 초과 입력을 413 대신 잘라서 처리
+    # --max-batch-tokens 4096: CPU 워밍업 메모리 스파이크 완화(WSL2 가용 ~4.8GB 환경에서
+    #   기본값 16384면 워밍업 중 메모리 초과로 프로세스가 재시작 루프에 빠짐).
+    #   우리 코퍼스 청크(≤1200 토큰)엔 충분하고, 초과분은 auto-truncate가 처리.
+    command: --model-id BAAI/bge-m3 --auto-truncate --max-batch-tokens 4096
+    ports:
+      - "8090:80"
+    volumes:
+      - tei_model_cache:/data              # 모델 캐시(재기동 시 재다운로드 방지)
+
+volumes:
+  pgvector_data:
+  tei_model_cache:

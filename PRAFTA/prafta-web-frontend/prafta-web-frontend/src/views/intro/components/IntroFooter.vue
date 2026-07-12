@@ -36,7 +36,10 @@
     <div class="introf__bottom">
       <div class="introf__bottom-inner">
         <span>© {{ year }} PRAFTA. All rights reserved.</span>
-        <span class="introf__bizinfo"><!-- TODO: 사업자등록정보 보강 -->세이프노트 · 근태·인사 + 산업안전 통합 플랫폼</span>
+        <span class="introf__bizinfo"
+          ><!-- TODO: 사업자등록정보 보강 -->세이프노트 · 근태·인사 + 산업안전
+          통합 플랫폼</span
+        >
       </div>
     </div>
   </footer>
@@ -51,7 +54,11 @@ const year = computed(() => new Date().getFullYear());
 
 <style scoped>
 .introf {
-  background: linear-gradient(160deg, var(--color-primary-pressed) 0%, #14532d 100%);
+  background: linear-gradient(
+    160deg,
+    var(--color-primary-pressed) 0%,
+    #14532d 100%
+  );
   color: #fff;
   word-break: keep-all;
 }

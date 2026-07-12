@@ -39,8 +39,14 @@ public class LeavePolicyHistoryVO {
     /** 영향 분석 결과 (JSON 문자열) */
     private String impactSummary;
 
-    /** 입력자 */
+    /** 입력자 (TB_LEAVE_POLICY_HISTORY.INSERT_NO 원문 = 변경자 USER_CD 또는 'SYSTEM' 등). FE 폴백용 */
     private String insertNo;
+
+    /** 변경자 사용자ID (TB_USER LEFT JOIN, INSERT_NO가 USER_CD일 때만 채워짐. 아니면 null) */
+    private String insertUserId;
+
+    /** 변경자 사용자명 (TB_USER LEFT JOIN, INSERT_NO가 USER_CD일 때만 채워짐. 아니면 null) */
+    private String insertUserNm;
 
     /** 입력일시 */
     private String insertDate;

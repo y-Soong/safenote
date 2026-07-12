@@ -186,8 +186,28 @@ const onBack = () => {
 }
 
 // 참석자 리스트 수동 새로고침(자동 polling 없음 — plan Q7)
-const onRefresh = () => {
-  loadAttendees()
+//   새로고침 시 본인 출결(my-attendance)도 확인 → 관리자 내보내기(present=false) /
+//   강제퇴실(MANAGER_FORCED) 감지 시 안내 후 허브 복귀(대기 화면 이탈 방지).
+const onRefresh = async () => {
+  await loadAttendees()
+  if (!session.value.sessionCd) return
+  try {
+    const { data } = await api.get(
+      `/appApi/tbm/sessions/${session.value.sessionCd}/my-attendance`,
+    )
+    if (!data?.present) {
+      await showAlert('관리자가 참석 인원에서 내보냈어요. 목록으로 돌아갈게요.')
+      router.replace('/TbmHub')
+      return
+    }
+    if (data.exitTypeCd === 'MANAGER_FORCED') {
+      await showAlert('관리자에 의해 퇴실 처리되었어요. 목록으로 돌아갈게요.')
+      router.replace('/TbmHub')
+    }
+  } catch (e) {
+    // 비치명적: 참석자 새로고침 자체는 완료됨 → 조용히 무시
+    console.error('[TbmBeforeStart] my-attendance 조회 실패:', e?.message)
+  }
 }
 
 // 퇴실하기: confirm → POST /appApi/tbm/sessions/{sessionCd}/leave-before (A8, 출결 취소)
@@ -209,13 +229,34 @@ const onLeaveBefore = async () => {
   }
 }
 
-// 시작하기: GET /appApi/tbm/sessions/{sessionCd}/state (A5) → statusCd 분기
+// 시작하기: 본인 출결(my-attendance) 선검사 → GET /appApi/tbm/sessions/{sessionCd}/state (A5) → statusCd 분기
+//   관리자 내보내기(present=false) / 강제퇴실(MANAGER_FORCED) 감지 시 → 안내 후 허브 복귀(교육 진입 차단)
 //   IN_PROGRESS → /TbmInProgress 이동
 //   그 외       → '아직 관리자가 교육을 시작하지 않았습니다' 안내($alert, 잔류)
 const onStart = async () => {
   if (checkingState.value) return
   checkingState.value = true
   try {
+    // 내보내기/강제퇴실 가드: 관리자가 참석 인원에서 제외한 근로자가 시작하기로 교육에 진입하는 것을 차단한다.
+    //   (조회 실패는 비치명적 — 가드를 건너뛰고 state 분기로 진행. 실제 진입 후에도 진행/종료 단계에서 재차 감지됨)
+    try {
+      const { data: mine } = await api.get(
+        `/appApi/tbm/sessions/${session.value.sessionCd}/my-attendance`,
+      )
+      if (!mine?.present) {
+        await showAlert('관리자가 참석 인원에서 내보냈어요. 목록으로 돌아갈게요.')
+        router.replace('/TbmHub')
+        return
+      }
+      if (mine.exitTypeCd === 'MANAGER_FORCED') {
+        await showAlert('관리자에 의해 퇴실 처리되었어요. 목록으로 돌아갈게요.')
+        router.replace('/TbmHub')
+        return
+      }
+    } catch (e) {
+      console.error('[TbmBeforeStart] 시작 전 my-attendance 조회 실패:', e?.message)
+    }
+
     const { data } = await api.get(`/appApi/tbm/sessions/${session.value.sessionCd}/state`)
     if (data?.statusCd === 'IN_PROGRESS') {
       router.push({

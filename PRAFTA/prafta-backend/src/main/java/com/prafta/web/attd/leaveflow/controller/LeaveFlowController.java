@@ -13,8 +13,11 @@ import com.prafta.common.dto.TokenInfo;
 import com.prafta.common.security.JwtUtil;
 import com.prafta.web.attd.leaveflow.application.param.LeaveApplyParam;
 import com.prafta.web.attd.leaveflow.application.param.LeaveApprovalActionParam;
+import com.prafta.web.attd.leaveflow.application.param.LeaveDeductionPreviewParam;
 import com.prafta.web.attd.leaveflow.dto.request.LeaveApplyRequest;
 import com.prafta.web.attd.leaveflow.dto.request.LeaveApprovalActionRequest;
+import com.prafta.web.attd.leaveflow.dto.request.LeaveDeductionPreviewRequest;
+import com.prafta.web.attd.leaveflow.dto.response.LeaveDeductionPreviewResponse;
 import com.prafta.web.attd.leaveflow.dto.response.MyApprovalListResponse;
 import com.prafta.web.attd.leaveflow.service.LeaveFlowService;
 
@@ -45,6 +48,22 @@ public class LeaveFlowController {
                 LeaveApplyParam.from(request, jwtUtil.getAllClaimsAsMap(authorization)));
 
         return ResponseEntity.status(HttpStatus.OK).build();
+    }
+
+    /**
+     * LC-07(T3): 예상 차감액 미리보기 — INSERT 없음(조회 전용).
+     * 검증 가드는 신청과 동일하게 태우고(위반 시 해당 에러 그대로), 잔여 부족은 플래그로 응답한다.
+     * 인가: 본인 신청 기준(토큰 gv_userCd)만.
+     */
+    @PostMapping("/preview-deduction")
+    public ResponseEntity<?> previewDeduction(
+            @RequestBody @Valid LeaveDeductionPreviewRequest request,
+            @RequestHeader(value = "Authorization", required = true) String authorization) {
+
+        LeaveDeductionPreviewResponse response = leaveFlowService.previewDeduction(
+                LeaveDeductionPreviewParam.from(request, jwtUtil.getAllClaimsAsMap(authorization)));
+
+        return ResponseEntity.status(HttpStatus.OK).body(response);
     }
 
     /** 결재 단계 승인. */

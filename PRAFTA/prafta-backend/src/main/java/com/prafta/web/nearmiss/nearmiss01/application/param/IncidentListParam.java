@@ -8,7 +8,6 @@ import com.prafta.web.nearmiss.nearmiss01.dto.request.IncidentListRequest;
 public record IncidentListParam(
     String siteCd
     , String reportStatusCd
-    , String incidentTypeCd
     , String potentialSeverityCd
     , String startDate
     , String endDate
@@ -26,7 +25,6 @@ public record IncidentListParam(
         return new IncidentListParam(
             request.getSiteCd()
             , request.getReportStatusCd()
-            , request.getIncidentTypeCd()
             , request.getPotentialSeverityCd()
             , request.getStartDate()
             , request.getEndDate()

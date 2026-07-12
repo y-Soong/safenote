@@ -46,13 +46,24 @@
           <span v-else-if="isLeave(day)" class="bd bd-w">연차</span>
           <span v-else-if="isWorkDay(day)" class="bd bd-n">{{ planShortCode(day) }}</span>
           <span v-if="day.holidayName" class="bd bd-h">{{ day.holidayName }}</span>
+          <!-- 초과근무 있는 날 작은 배지(info 톤). overtimeMinutes>0 일 때만. -->
+          <span v-if="hasOvertime(day)" class="bd bd-ot">초과</span>
           <span class="db__name" :class="{ 'db__name--muted': isOffDay(day) }">{{
             planTitleText(day)
           }}</span>
         </span>
-        <!-- prafta-app-018-E: 연차일은 부분연차 마커(plain text). 근무/휴무는 기존 시간요약(v-html). -->
-        <span v-if="isLeave(day)" class="db__summary">{{ leaveMarkerText(day) }}</span>
+        <!-- prafta-app-018-E: 연차일은 부분연차 마커(plain text). 근무/휴무는 기존 시간요약(v-html).
+             같은 날 시간차/반차 다건이면 각 건을 1줄씩 표시.
+             PRAFTA_COM_002-B-1: 승인 대기(요청중) 연차는 마커 옆에 "요청중" 배지 부가(표시/색은 유지). -->
+        <template v-if="isLeave(day)">
+          <span v-for="(marker, idx) in leaveMarkers(day)" :key="idx" class="db__summary">
+            {{ marker.text }}
+            <span v-if="marker.pending" class="bd bd-w lv-pending-bd">요청중</span>
+          </span>
+        </template>
         <span v-else-if="summaryHtml(day)" class="db__summary" v-html="summaryHtml(day)"></span>
+        <!-- 초과근무 보조 요약 라인 — "· 초과 N시간 M분"(요약과 별도 줄, info 톤). -->
+        <span v-if="overtimeSummaryText(day)" class="db__ot">{{ overtimeSummaryText(day) }}</span>
       </span>
       <svg class="icon dc__chev" width="16" height="16" aria-hidden="true">
         <use href="#i-wk-right" />
@@ -72,6 +83,8 @@
           <p class="ws__val">{{ actualText }}</p>
         </div>
       </div>
+      <!-- 주 초과근무 합계 — 있을 때만 보조 1줄(과하지 않게). -->
+      <p v-if="weekOvertimeText" class="ws__ot">초과근무 {{ weekOvertimeText }}</p>
     </div>
 
     <!-- sprite -->
@@ -111,7 +124,9 @@ import {
   dowKey,
   dayNumber as fmtDayNumber,
   minutesToHhMm,
-  formatLeaveMarker,
+  formatLeaveMarkers,
+  formatTimeSummary,
+  formatOvertimeMinutes,
 } from '../attdFormat'
 import { formatYmdDisplay, formatMdDot } from '@/utils/approvalFormat'
 
@@ -210,19 +225,31 @@ const attendanceSuffix = (status) => {
 const summaryHtml = (day) => {
   if (isLeave(day) || isOffDay(day)) return ''
   if (!day.scheduleSummary) return ''
-  let html = `<span class="lbl">스케줄</span> ${day.scheduleSummary}`
+  let html = `<span class="lbl">스케줄</span> ${formatTimeSummary(day.scheduleSummary)}`
   // 근태 요약은 생성된 경우만(미래/미생성=null)
   if (day.attendanceSummary) {
     const tone = attendanceToneClass(day.attendanceStatus)
     const suffix = attendanceSuffix(day.attendanceStatus)
-    html += ` · <span class="${tone}">근태 ${day.attendanceSummary}${suffix}</span>`
+    html += ` · <span class="${tone}">근태 ${formatTimeSummary(day.attendanceSummary)}${suffix}</span>`
   }
   return html
 }
 
-// prafta-app-018-E: 연차일 마커 1줄 — "월차 · 시간차 · 03:00~04:30 · 0.19일"(종일=라벨만).
-//   day 객체는 BE(E-1)에서 leaveTypeName/leaveUnitType/leaveTimeRange/leaveDays 를 이미 보유.
-const leaveMarkerText = (day) => formatLeaveMarker(day)
+// prafta-app-018-E: 연차일 마커 — "월차 · 시간차 · 03:00~04:30 · 0.19일"(종일=라벨만).
+//   같은 날 시간차/반차 다건이면 각 건을 1줄씩(day.leaves[]). 구버전 응답은 단건 스칼라 폴백.
+const leaveMarkers = (day) => formatLeaveMarkers(day)
+
+// 승인된 초과근무 — day.overtimeMinutes(0 가능)/day.overtimes[]. 0건이면 배지/요약 모두 미표기.
+const hasOvertime = (day) => Number(day && day.overtimeMinutes) > 0
+const overtimeSummaryText = (day) => {
+  const txt = formatOvertimeMinutes(day && day.overtimeMinutes)
+  return txt ? `· 초과 ${txt}` : ''
+}
+// 주 초과 합계 — 각 일자 overtimeMinutes 합산(서버 합계 필드 미제공 가정, 표시 전용).
+const weekOvertimeText = computed(() => {
+  const total = days.value.reduce((sum, d) => sum + (Number(d && d.overtimeMinutes) || 0), 0)
+  return formatOvertimeMinutes(total)
+})
 
 // 합계 — "Nh Nm"
 const plannedText = computed(() => minutesToHhMm(summary.value.plannedWorkMinutes))
@@ -343,6 +370,14 @@ const actualText = computed(() => minutesToHhMm(summary.value.actualWorkMinutes)
   line-height: 1.5;
   font-variant-numeric: tabular-nums;
 }
+/* 초과근무 보조 요약 라인 — info 톤, 시간요약 바로 아래. */
+.db__ot {
+  font-size: 11px;
+  color: var(--color-info);
+  font-weight: 600;
+  line-height: 1.5;
+  font-variant-numeric: tabular-nums;
+}
 .dc__chev {
   flex-shrink: 0;
   color: var(--color-text-tertiary);
@@ -378,6 +413,16 @@ const actualText = computed(() => minutesToHhMm(summary.value.actualWorkMinutes)
 .bd-h {
   background: var(--color-border-light);
   color: var(--color-text-secondary);
+}
+/* 초과근무 배지 — info 톤(연차 warning / 2구간 info 와 톤 통일하되 라벨로 구분). */
+.bd-ot {
+  background: var(--color-info-tint);
+  color: var(--color-info);
+}
+/* PRAFTA_COM_002-B-1: 연차 마커 옆 "요청중" 배지(기존 .bd .bd-w 톤 재사용). 마커 텍스트와 간격/정렬. */
+.lv-pending-bd {
+  margin-left: var(--space-xs);
+  vertical-align: middle;
 }
 
 /* deep — 시간요약 v-html 색상 */
@@ -435,6 +480,14 @@ const actualText = computed(() => minutesToHhMm(summary.value.actualWorkMinutes)
 }
 .ws__item--actual .ws__val {
   color: var(--color-primary);
+}
+/* 주 초과근무 합계 — 합계 그리드 아래 보조 1줄(info 톤). */
+.ws__ot {
+  margin: 10px 0 0;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--color-info);
+  font-variant-numeric: tabular-nums;
 }
 
 .week-sprite {

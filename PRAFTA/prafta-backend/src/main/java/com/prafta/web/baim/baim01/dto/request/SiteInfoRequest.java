@@ -17,7 +17,12 @@ import lombok.Setter;
 public class SiteInfoRequest {
 	private String cmpnyCd;
 	private String siteCd;
+
+	// PRAFTA-COM-001-T2-1: 사업장번호 기본값(siteCd) 세팅 제거 → SITE_NO NOT NULL 위반 방지 위해 필수화.
+	@FieldLabel("사업장번호")
+	@NotBlank
 	private String siteNo;
+
 	private String siteNm;
 
 	// 주소 필수(prafta-038 D3): 기본주소 + 우편번호 필수, 상세주소(addr2)는 선택

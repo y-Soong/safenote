@@ -1,0 +1,117 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.prafta.app.terms.terms01.mapper.Terms01Mapper">
+
+    <!-- ====================================================================
+         미동의 필수약관 목록(앱 로그인 게이트).
+         REQUIRED_YN='Y' AND USE_YN='Y' 인 약관 중, 해당 사용자가 현재버전을
+         AGR_YN='Y' 로 동의하지 않은 약관만 반환한다.
+         약관명은 TB_SYST_VAL_D(SYS008) SYST_VAL_D_NM(selectRequiredTermsList 패턴 동일).
+         동의여부는 (USER_CD, TERMS_ID, 현재버전) AGR_YN='Y' 행 존재로 판정한다.
+         ==================================================================== -->
+    <select id="selectPendingRequiredTerms" resultType="com.prafta.app.terms.terms01.mapper.result.PendingTermsResult">
+    /* Terms01Mapper.selectPendingRequiredTerms */
+    SELECT
+          B.TERMS_ID         AS termsId
+        , S.SYST_VAL_D_NM    AS termsNm
+        , B.TERMS_VERSION    AS termsVersion
+        , B.TERMS_CONTENT    AS termsContent
+    FROM TB_TERMS B
+         INNER JOIN TB_SYST_VAL_D S
+            ON (
+                S.SYST_VAL_CD = 'SYS008'
+            AND S.SYST_VAL_D_CD = B.TERMS_ID
+            )
+         LEFT OUTER JOIN TB_TERMS_USER_AGR_MGMT A
+            ON (
+                A.TERMS_ID = B.TERMS_ID
+            AND A.TERMS_VERSION = B.TERMS_VERSION
+            AND A.CMPNY_CD = #{cmpnyCd}
+            AND A.USER_CD = #{userCd}
+            AND A.AGR_YN = 'Y'
+            )
+    WHERE 1=1
+      AND B.REQUIRED_YN = 'Y'
+      AND B.USE_YN = 'Y'
+      AND A.USER_CD IS NULL
+    </select>
+
+    <!-- ====================================================================
+         선택약관 목록(마이페이지) + 사용자 현재버전 동의여부.
+         REQUIRED_YN='N' AND USE_YN='Y' 약관 + (USER_CD, TERMS_ID, 현재버전) AGR_YN.
+         행이 없거나 AGR_YN!='Y' 면 'N' 으로 정규화한다.
+         ==================================================================== -->
+    <select id="selectOptionalTerms" resultType="com.prafta.app.terms.terms01.mapper.result.OptionalTermsResult">
+    /* Terms01Mapper.selectOptionalTerms */
+    SELECT
+          B.TERMS_ID         AS termsId
+        , S.SYST_VAL_D_NM    AS termsNm
+        , B.TERMS_VERSION    AS termsVersion
+        , B.TERMS_CONTENT    AS termsContent
+        , CASE
+            WHEN A.AGR_YN = 'Y' THEN 'Y'
+            ELSE 'N'
+          END                AS agrYn
+    FROM TB_TERMS B
+         INNER JOIN TB_SYST_VAL_D S
+            ON (
+                S.SYST_VAL_CD = 'SYS008'
+            AND S.SYST_VAL_D_CD = B.TERMS_ID
+            )
+         LEFT OUTER JOIN TB_TERMS_USER_AGR_MGMT A
+            ON (
+                A.TERMS_ID = B.TERMS_ID
+            AND A.TERMS_VERSION = B.TERMS_VERSION
+            AND A.CMPNY_CD = #{cmpnyCd}
+            AND A.USER_CD = #{userCd}
+            )
+    WHERE 1=1
+      AND B.REQUIRED_YN = 'N'
+      AND B.USE_YN = 'Y'
+    </select>
+
+    <!-- ====================================================================
+         선택약관 검증 + 현재버전 resolve.
+         REQUIRED_YN='N' AND USE_YN='Y' 인 약관이면 현재버전(TERMS_VERSION)을 반환,
+         아니면(필수약관/미사용약관/미존재) 결과 없음(null) → 서비스에서 403 차단.
+         ==================================================================== -->
+    <select id="selectOptionalTermsCurrentVersion" resultType="string">
+    /* Terms01Mapper.selectOptionalTermsCurrentVersion */
+    SELECT B.TERMS_VERSION
+    FROM TB_TERMS B
+    WHERE B.TERMS_ID = #{termsId}
+      AND B.REQUIRED_YN = 'N'
+      AND B.USE_YN = 'Y'
+    LIMIT 1
+    </select>
+
+    <!-- ====================================================================
+         약관 동의 upsert. PK=(CMPNY_CD,USER_CD,TERMS_ID,TERMS_VERSION) 충돌 시 AGR_YN 갱신.
+         기존 insertTermsUserAgrMgmt(순수 INSERT)는 중복 PK 시 실패하므로 본 upsert 신설.
+         스키마상 UPDATE_* 컬럼이 없어 INSERT 컬럼(CMPNY_CD/USER_CD/TERMS_ID/TERMS_VERSION/AGR_YN/INSERT_NO/INSERT_DATE)
+         만 사용하며, 충돌 시 AGR_YN 만 최신값으로 갱신한다(멱등).
+         ==================================================================== -->
+    <insert id="upsertTermsAgr" parameterType="com.prafta.app.terms.terms01.application.command.TermsAgrUpsertCommand">
+    /* Terms01Mapper.upsertTermsAgr */
+    INSERT INTO TB_TERMS_USER_AGR_MGMT (
+          CMPNY_CD
+        , USER_CD
+        , TERMS_ID
+        , TERMS_VERSION
+        , AGR_YN
+        , INSERT_NO
+        , INSERT_DATE
+    ) VALUES (
+          #{cmpnyCd}
+        , #{userCd}
+        , #{termsId}
+        , #{termsVersion}
+        , #{agrYn}
+        , #{userCd}
+        , NOW()
+    )
+    ON DUPLICATE KEY UPDATE
+          AGR_YN = VALUES(AGR_YN)
+    </insert>
+
+</mapper>

@@ -11,7 +11,6 @@ import lombok.Data;
  */
 @Data
 public class ReportRequest {
-    private String incidentTypeCd;      // 사건유형[SYS061] (필수)
     private String processCd;           // 공정코드[COM002] (선택)
     private String occurDtime;          // 발생일시 'YYYY-MM-DD HH:mm' (필수)
     private String locationDesc;        // 발생장소(직접입력, 선택)

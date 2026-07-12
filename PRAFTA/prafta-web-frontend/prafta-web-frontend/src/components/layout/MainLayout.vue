@@ -4,8 +4,10 @@
     <div class="side-wrapper">
       <SideMenu
         :menus="sideMenus"
+        :favorite-items="favoriteItems"
         :active-route="activeTab"
         @navigate="onNavigate"
+        @toggle-favorite="onToggleFavorite"
       />
     </div>
 
@@ -70,19 +72,30 @@
 </template>
 
 <script setup>
-import { ref, onMounted, computed } from "vue";
+import { ref, onMounted, computed, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
-import { fnGetMenuList } from "@/api/navigation";
+import {
+  fnGetMenuList,
+  fnGetFavorites,
+  fnToggleFavorite,
+} from "@/api/navigation";
+import { useDashboardNavStore } from "@/stores/dashboardNavStore";
+import { resolveApiErrorMessage } from "@/utils/apiError";
 import TopNav from "@/components/layout/TopNav.vue";
 import SideMenu from "@/components/layout/SideMenu.vue";
 
 const router = useRouter();
 const route = useRoute();
+const dashNav = useDashboardNavStore();
 
 const topMenus = ref([]);
 const sideMenus = ref([]);
 const allSideMenus = ref({});
 const selectedTopMenuId = ref(null);
+
+/* 전역 즐겨찾기 menuDId 집합(탭 무관, 사용자별 영속).
+   식별자는 MENU_D_ID(= menu.route)로 통일한다(BE favorites/토글 EP 키계와 동일). */
+const favoriteIds = ref(new Set());
 
 /* 탭 상태 */
 const tabs = ref([]);
@@ -101,10 +114,79 @@ const cachedNames = computed(() =>
   tabs.value.map((t) => router.resolve(t.route).name).filter(Boolean)
 );
 
-/* 상단 메뉴 선택 -> 좌측 메뉴 교체 */
+/* 전역 즐겨찾기 그룹용 메뉴 목록(탭 무관).
+   allSideMenus 의 모든 탭/그룹 items 를 평탄화하여 즐겨찾기인 항목만 모은다.
+   각 item 에 최신 isFavorite 플래그를 주입한다. */
+const favoriteItems = computed(() => {
+  const result = [];
+  const seen = new Set();
+  const map = allSideMenus.value || {};
+  Object.keys(map).forEach((topId) => {
+    const groups = map[topId] || [];
+    groups.forEach((group) => {
+      (group.items || []).forEach((item) => {
+        // 즐겨찾기 식별자는 MENU_D_ID(= item.route) 기준
+        if (favoriteIds.value.has(item.route) && !seen.has(item.route)) {
+          seen.add(item.route);
+          result.push({ ...item, isFavorite: true });
+        }
+      });
+    });
+  });
+  return result;
+});
+
+/* 현재 favoriteIds 기준으로 sideMenus 의 각 item.isFavorite 를 동기화한다.
+   별표 토글 후 현재 탭 LNB 의 별 아이콘을 즉시 반영하기 위함. */
+function applyFavoritesToSideMenus() {
+  sideMenus.value = (sideMenus.value || []).map((group) => ({
+    ...group,
+    items: (group.items || []).map((item) => ({
+      ...item,
+      isFavorite: favoriteIds.value.has(item.route),
+    })),
+  }));
+}
+
+/* 상단 메뉴 선택 -> 좌측 메뉴 교체(중분류 그룹 배열).
+   즐겨찾기 상태를 각 item 에 주입하여 별표 초기 표시를 맞춘다. */
 function selectTopMenu(topMenuId) {
   selectedTopMenuId.value = topMenuId;
-  sideMenus.value = allSideMenus.value[topMenuId] || [];
+  const groups = allSideMenus.value[topMenuId] || [];
+  sideMenus.value = groups.map((group) => ({
+    ...group,
+    items: (group.items || []).map((item) => ({
+      ...item,
+      isFavorite: favoriteIds.value.has(item.route),
+    })),
+  }));
+}
+
+/* 즐겨찾기 별표 토글: 낙관적 갱신 후 서버 호출, 실패 시 롤백. */
+async function onToggleFavorite(menu) {
+  // 즐겨찾기 식별자는 MENU_D_ID(= menu.route)로 통일(BE 실재검증 키계와 동일)
+  if (!menu || !menu.route) return;
+  const menuDId = menu.route;
+  const wasFavorite = favoriteIds.value.has(menuDId);
+
+  // 낙관적 갱신
+  const next = new Set(favoriteIds.value);
+  if (wasFavorite) next.delete(menuDId);
+  else next.add(menuDId);
+  favoriteIds.value = next;
+  applyFavoritesToSideMenus();
+
+  try {
+    await fnToggleFavorite(menuDId);
+  } catch (err) {
+    // 실패 시 롤백
+    const rollback = new Set(favoriteIds.value);
+    if (wasFavorite) rollback.add(menuDId);
+    else rollback.delete(menuDId);
+    favoriteIds.value = rollback;
+    applyFavoritesToSideMenus();
+    alert(resolveApiErrorMessage(err, "즐겨찾기 변경 중 오류가 발생했습니다."));
+  }
 }
 
 /* 메뉴/탭 네비게이션 */
@@ -120,11 +202,12 @@ function onNavigate(menu) {
   }
 }
 
+/* 탭 추가. 성공 여부를 반환한다 (탭 상한 거부 시 false — 호출부가 후속 정리 판단). */
 function addTab(tab) {
   // 홈 포함 탭 개수 제한 (10개)
   if (tabs.value.length > 10) {
     alert("탭은 최대 10개까지만 열 수 있습니다.");
-    return;
+    return false;
   }
 
   const exists = tabs.value.find((t) => t.route === tab.route);
@@ -132,6 +215,7 @@ function addTab(tab) {
 
   activeTab.value = tab.route;
   router.push(tab.route);
+  return true;
 }
 
 function selectTab(route) {
@@ -169,32 +253,70 @@ function getActiveTabProps() {
  * 현재 URL에 해당하는 메뉴를 메뉴 트리에서 찾아 탭으로 자동 추가하고 active 처리한다.
  */
 function findMenuByRoute(targetRoute, sideMenuMap) {
-  // sideMenuMap: { [topMenuId]: [{ id, label, route, buttons, children? }, ...] }
+  // sideMenuMap: { [topMenuId]: [{ subGroupNm, subGroupIdx, items:[{id,label,route,buttons,isFavorite}] }] }
   for (const topId of Object.keys(sideMenuMap)) {
-    const list = sideMenuMap[topId] || [];
-    const found = findInList(list, targetRoute);
+    const groups = sideMenuMap[topId] || [];
+    const found = findInGroups(groups, targetRoute);
     if (found) return { topId, menu: found };
   }
   return null;
 }
 
-function findInList(list, targetRoute) {
-  for (const item of list) {
-    if (item.route && `/safenote/main/${item.route}` === targetRoute)
-      return item;
-    if (Array.isArray(item.children)) {
-      const sub = findInList(item.children, targetRoute);
-      if (sub) return sub;
+/* 중분류 그룹 배열을 순회하여 라우트가 일치하는 메뉴 item 을 찾는다. */
+function findInGroups(groups, targetRoute) {
+  for (const group of groups) {
+    const items = (group && group.items) || [];
+    for (const item of items) {
+      if (item.route && `/safenote/main/${item.route}` === targetRoute) {
+        return item;
+      }
     }
   }
   return null;
 }
+
+/**
+ * PRAFTA-DASHBOARD-T1: 대시보드 위젯의 "탭 열기 요청" 수신부.
+ * 메뉴 트리에서 라우트를 찾아 기존 onNavigate 와 동일 흐름(selectTopMenu + addTab)으로 탭을 연다.
+ * 메뉴 트리에 없으면(=해당 사용자 권한 메뉴가 아님) 이동을 거부하고 잔여 주입 파라미터를 정리한다.
+ */
+watch(
+  () => dashNav.openTabRequest,
+  (req) => {
+    if (!req || !req.routeName) return;
+    const targetRoute = `/safenote/main/${req.routeName}`;
+    const matched = findMenuByRoute(targetRoute, allSideMenus.value);
+    if (!matched) {
+      alert("해당 화면에 대한 접근 권한이 없습니다.");
+      // 이동 실패 시 주입 파라미터가 남아 다음 진입에 오적용되지 않도록 정리
+      dashNav.consumeParams(req.routeName);
+      return;
+    }
+    // 탭 열기 성공 시에만 LNB(상단 메뉴 그룹)를 전환한다 — 거부 시 화면과 LNB 불일치 방지
+    const added = addTab({
+      label: matched.menu.label,
+      route: targetRoute,
+      buttons: matched.menu.buttons || {},
+    });
+    if (!added) {
+      // 탭 상한 등으로 열기 실패 — 잔존 주입 파라미터 정리 (consume-once 보장)
+      dashNav.consumeParams(req.routeName);
+      return;
+    }
+    selectTopMenu(matched.topId);
+  }
+);
 
 onMounted(async () => {
   try {
     const retMenu = await fnGetMenuList();
     topMenus.value = retMenu.topMenus || [];
     allSideMenus.value = retMenu.sideMenus || {};
+
+    // 즐겨찾기 목록 로드(비치명적). menu item 의 isFavorite 초기 상태 보정 및
+    // 전역 즐겨찾기 그룹 구성에 사용한다.
+    const favorites = await fnGetFavorites();
+    favoriteIds.value = new Set(favorites || []);
 
     const defaultTop = topMenus.value[0];
     if (defaultTop) selectTopMenu(defaultTop.id);

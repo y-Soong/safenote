@@ -56,7 +56,7 @@
         <input
           v-model.trim="searchKeyword"
           type="text"
-          placeholder="세션 제목"
+          placeholder="교육 제목"
           @keyup.enter="fnSearch"
         />
       </div>
@@ -70,7 +70,7 @@
               <path d="M4 4h16v4H4zM4 10h10v10H4z" />
             </svg>
           </span>
-          <span class="subtitle-text">TBM 세션 목록</span>
+          <span class="subtitle-text">TBM 교육 목록</span>
         </div>
 
         <div
@@ -88,7 +88,7 @@
                 <th style="width: 9%">상태</th>
                 <th style="width: 10%">사업장</th>
                 <ThSortable
-                  label="세션 제목"
+                  label="교육 제목"
                   col-key="title"
                   :sort-key="sortKey"
                   :sort-order="sortOrder"
@@ -96,6 +96,7 @@
                   @sort="onSort"
                   @update:width="onResize"
                 />
+                <th style="width: 7%; text-align: center">교육 시간</th>
                 <th style="width: 8%">위험성평가</th>
                 <th style="width: 7%">출결</th>
                 <th style="width: 7%">이수</th>
@@ -124,8 +125,8 @@
             <tbody>
               <template v-if="!sessionList || sessionList.length === 0">
                 <tr>
-                  <td colspan="11" class="edu-grid-empty">
-                    조회된 TBM 세션이 없습니다.
+                  <td colspan="12" class="edu-grid-empty">
+                    조회된 TBM 교육이 없습니다.
                   </td>
                 </tr>
               </template>
@@ -151,6 +152,9 @@
                     >
                       {{ row.title }}
                     </button>
+                  </td>
+                  <td style="text-align: center">
+                    {{ row.eduMinutes ? row.eduMinutes + "분" : "-" }}
                   </td>
                   <td style="text-align: center">
                     <span

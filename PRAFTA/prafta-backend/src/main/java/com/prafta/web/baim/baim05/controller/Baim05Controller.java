@@ -18,6 +18,8 @@ import com.prafta.web.baim.baim05.application.param.DailyUserSlotListParam;
 import com.prafta.web.baim.baim05.application.param.InsertDailyQrUserParam;
 import com.prafta.web.baim.baim05.application.param.LinkPoliciesParam;
 import com.prafta.web.baim.baim05.application.param.SetSlotFixedParam;
+import com.prafta.web.baim.baim05.application.param.SetSlotNodeParam;
+import com.prafta.web.baim.baim05.application.param.SetSlotTypeParam;
 import com.prafta.web.baim.baim05.application.param.SlotHisParam;
 import com.prafta.web.baim.baim05.dto.request.ClearDailyUserSlotsRequest;
 import com.prafta.web.baim.baim05.dto.request.DailyUserLinkPoliciesRequest;
@@ -25,6 +27,8 @@ import com.prafta.web.baim.baim05.dto.request.DailyUserSlotListRequest;
 import com.prafta.web.baim.baim05.dto.request.InsertDailyQrUserRequest;
 import com.prafta.web.baim.baim05.dto.request.LinkPoliciesRequest;
 import com.prafta.web.baim.baim05.dto.request.SetSlotFixedRequest;
+import com.prafta.web.baim.baim05.dto.request.SetSlotNodeRequest;
+import com.prafta.web.baim.baim05.dto.request.SetSlotTypeRequest;
 import com.prafta.web.baim.baim05.dto.response.DailyUserLinkPoliciesResponse;
 import com.prafta.web.baim.baim05.dto.response.DailyUserSlotListResponse;
 import com.prafta.web.baim.baim05.dto.response.InsertDailyQrUserResponse;
@@ -94,6 +98,26 @@ public class Baim05Controller {
 			@RequestHeader(value = "Authorization", required = false) String authorization) {
 
 		baim05Service.setDailyUserSlotFixed(SetSlotFixedParam.from(request, jwtUtil.getAllClaimsAsMap(authorization)));
+
+		return ResponseEntity.status(HttpStatus.OK).build();
+	}
+
+	@PostMapping("/set-daily-user-slot-type")
+	public ResponseEntity<?> setDailyUserSlotType(
+			@RequestBody SetSlotTypeRequest request,
+			@RequestHeader(value = "Authorization", required = false) String authorization) {
+
+		baim05Service.setDailyUserSlotType(SetSlotTypeParam.from(request, jwtUtil.getAllClaimsAsMap(authorization)));
+
+		return ResponseEntity.status(HttpStatus.OK).build();
+	}
+
+	@PostMapping("/set-daily-user-slot-node")
+	public ResponseEntity<?> setDailyUserSlotNode(
+			@RequestBody SetSlotNodeRequest request,
+			@RequestHeader(value = "Authorization", required = false) String authorization) {
+
+		baim05Service.setDailyUserSlotNode(SetSlotNodeParam.from(request, jwtUtil.getAllClaimsAsMap(authorization)));
 
 		return ResponseEntity.status(HttpStatus.OK).build();
 	}

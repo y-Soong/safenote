@@ -95,6 +95,9 @@
 	        AND A.HAZARD_CD = E.HAZARD_CD
 	        )
 	WHERE 1=1
+	  /* 회사 스코프 직접 강제: siteCd 미입력 시에도 타 회사 평가행(평가자 평문명 포함) 누출 방지.
+	     평가요청자(USER_NM) 검색 추가로 PII 노출 영향이 커져 행 단위 회사 게이트를 명시한다. */
+	  AND A.CMPNY_CD = #{gvCmpnyCd}
 	  <if test="siteCd != null and siteCd != ''">
 	  	AND A.SITE_CD = #{siteCd}
 	  </if>
@@ -107,7 +110,13 @@
 	  <if test="riskTypeCd != null and riskTypeCd != ''">
 	  	AND A.RISK_TYPE_CD = #{riskTypeCd}
 	  </if>
-	ORDER BY A.ASSESSMENT_STATUS, A.SITE_CD, A.PROCESS_CD, A.RISK_TYPE_CD, A.HAZARD_CD
+	  <if test="initAssessorNm != null and initAssessorNm != ''">
+	  	AND FNC_CMM_INFO_SRCH(A.CMPNY_CD, 'USER_NM', A.INIT_ASSESSOR_ID, NULL) LIKE CONCAT('%', #{initAssessorNm}, '%')
+	  </if>
+	  <if test="initAssessDate != null and initAssessDate != ''">
+	  	AND DATE(A.INIT_ASSESS_DATE) = #{initAssessDate}
+	  </if>
+	ORDER BY A.INSERT_DATE ASC, A.ASSESSMENT_CD ASC
    	</select>
    	
    	<update id="updateAssessment" parameterType="com.prafta.web.risk.risk03.application.command.AssessmentCommand">
@@ -118,6 +127,11 @@
 		, INIT_LIKELIHOOD_SCORE 	= #{initLikelihoodScore}
 	    , INIT_SEVERITY_SCORE 		= #{initSeverityScore}
 	    , INIT_RISK_LV 				= #{initRiskLv}
+		<!-- WEB_003 저장 액션: AI 반영 블록이 덧붙은 유해요인설명.
+		     예상치 못한 호출자가 null 을 보내 근로자 원본을 지우는 사고 방지 — null 이면 미갱신 -->
+		<if test="initDesc != null">
+		, INIT_DESC 				= #{initDesc}
+		</if>
 		, REVAL_DATE 				= REPLACE(#{revalDate}, '-', '')
 		, REVAL_BEFORE_DESC			= #{revalBeforeDesc}
 	    , REVAL_LIKELIHOOD_SCORE 	= #{revalLikelihoodScore}

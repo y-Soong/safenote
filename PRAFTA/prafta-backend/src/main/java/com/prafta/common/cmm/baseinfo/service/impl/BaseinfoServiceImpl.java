@@ -1,8 +1,10 @@
 package com.prafta.common.cmm.baseinfo.service.impl;
 
 import java.security.SecureRandom;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -200,9 +202,7 @@ public class BaseinfoServiceImpl implements BaseinfoService{
 		
 		SecureRandom random = new SecureRandom();
         int code = 100000 + random.nextInt(900000); // 100000 ~ 999999
-        
-        System.out.println("# SMS Send Code :: " + code);
-        
+        // prafta-app-032 보강3: OTP 평문 stdout 제거(절대 미출력). 인증번호는 어떤 로그에도 남기지 않는다.
         certNo = Integer.toString(code);
 		
 		baseinfoMapper.insertSmsAuthNo(SmsAuthNoCommand.from(phoneEnc, phoneHmac, certNo));
@@ -268,6 +268,8 @@ public class BaseinfoServiceImpl implements BaseinfoService{
 						, null // 회원가입 시 userCd 미존재 — TB_USER_SITE_AUTH 조인 생략
 						, param.siteNo()
 						, param.siteNm()
+						, null // 회원가입은 사용여부 선택 필터 미사용(joinMode 가 'Y' 강제)
+						, "Y" // 회원가입 전용: 활성기간(개시일~종료일) 밖 + USE_YN!='Y' 사업장 제외
 				);
 
 		List<SiteInfoResult> siteInfoResultList = baseinfoMapper.selectSiteInfoList(query);
@@ -299,6 +301,8 @@ public class BaseinfoServiceImpl implements BaseinfoService{
 						, param.nodeType()
 						, param.nodeNm()
 						, param.parentNodeNm()
+						// 회원가입(비로그인) 노드 조회는 현행 유지(담당 지정 노드만) — includeNoAdmin=false.
+						, false
 				);
 
 		List<SiteNodeInfoResult> siteNodeInfoList = baseinfoMapper.selectSiteNodeList(query);
@@ -346,15 +350,21 @@ public class BaseinfoServiceImpl implements BaseinfoService{
 		List<MenuInfoResult> menuInfoList = baseinfoMapper.selectMenuList(MenuListQuery.from(param));
 		
 		if(menuInfoList != null && menuInfoList.size() > 0) {
-			
+
 			Map<String, String> topLabelMap = Map.of();
-			
+
+			// 사용자별 즐겨찾기 MENU_D_ID 집합 조회(IDOR 방지: cmpnyCd/userCd 는 JWT 도출값만 사용).
+			//   빌더에서 item.route(==MENU_D_ID) 가 이 집합에 포함되면 isFavorite=true 로 세팅한다.
+			Set<String> favoriteMenuDIds = new HashSet<>(
+					baseinfoMapper.selectMyFavoriteMenuDIds(param.cmpnyCd(), param.userCd()));
+
 			retDto = MenuListResBuilder.build(
 					menuInfoList
 					, keyId -> topLabelMap.get(keyId)
+					, favoriteMenuDIds
 					);
 		}
-		
+
 		return retDto;
 	}
 	
@@ -373,9 +383,7 @@ public class BaseinfoServiceImpl implements BaseinfoService{
 	}
 
 	public UserIdInfoResponse selectUserIdInfo(UserIdInfoParam param) {
-		
-		System.out.println(param.mblNo());
-		
+		// prafta-app-032 보강3: 휴대폰 평문 stdout 제거(PII 미출력).
 		String phoneNorm = Normalizers.normalizePhone(param.mblNo());
 		String phoneHmac = (phoneNorm == null) ? null : hmacSigner.hmacSha256Base64Url(phoneNorm);
 		
@@ -410,7 +418,12 @@ public class BaseinfoServiceImpl implements BaseinfoService{
 		String userPwHash = null;
 		if(param.userPw() != null) { userPwHash = passwordHasher.hash(param.userPw()); }
 
-		baseinfoMapper.updateUserPw(UserPasswordCommand.from(param, userPwHash));
+		UserPasswordCommand command = UserPasswordCommand.from(param, userPwHash);
+		baseinfoMapper.updateUserPw(command);
+
+		// prafta-app-032 D: 일용직 로그인은 TB_DAILY_USER.USER_PW 로 인증하므로, 동일 USER_CD 의 일용직 행이 있으면
+		//   같은 해시로 동기 갱신한다(같은 트랜잭션). 정규 사용자엔 daily 행이 없어 0행 no-op.
+		baseinfoMapper.updateDailyUserPw(command);
 	}
 	
 	public TermsDetailInfoResponse selectTermsDetailInfo(TermsDetailInfoParam param) {

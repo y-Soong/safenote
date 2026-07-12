@@ -55,6 +55,7 @@
               minlength="4"
               maxlength="10"
               placeholder="4 ~ 10자"
+              autocomplete="username"
             />
             <span class="form-msg">{{ userIdMsg }}</span>
           </div>
@@ -70,6 +71,7 @@
               @blur="focusKill"
               :disabled="cmpnyCdDisabled"
               placeholder="6 ~ 15자"
+              autocomplete="new-password"
             />
             <span class="form-msg">{{ pwMsg }}</span>
           </div>
@@ -85,6 +87,7 @@
               @blur="focusKill"
               :disabled="cmpnyCdDisabled"
               placeholder="6 ~ 15자"
+              autocomplete="new-password"
             />
             <span class="form-msg">{{ pwConfirmMsg }}</span>
           </div>
@@ -731,6 +734,8 @@ function fnSiteSearchPopOpen() {
   openPop(SiteSearchPop, {
     cmpnyCd_p: cmpnyCd.value,
     onSelect: onSiteSelected,
+    // 회원가입: 활성기간 밖(개시일 이전·종료일 이후) 사업장은 목록에서 제외
+    joinMode: true,
   });
 }
 
@@ -741,6 +746,8 @@ const fnSiteNodeSearchPopOpen = () => {
     nodeCd_p: "",
     userId_p: "",
     onSelect: onSiteNodeSelected,
+    // 회원가입(비로그인): 토큰 없이 동작하도록 NoAuth 부서조회 사용
+    joinMode: true,
   });
 };
 

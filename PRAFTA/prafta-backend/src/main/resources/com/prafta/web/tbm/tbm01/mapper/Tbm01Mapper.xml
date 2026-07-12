@@ -23,6 +23,20 @@
 
 	    , FNC_CMM_INFO_SRCH(A.CMPNY_CD, 'USER_NM', A.INSERT_NO, NULL) 	AS insertNm
         , DATE_FORMAT(A.INSERT_DATE, '%Y-%m-%d %H:%i')				AS insertDate
+	    /* T5-2: 사용 중(취소 외 세션 참조) 여부. 'Y'면 수정/삭제 잠금 */
+	    , (
+	    	SELECT CASE WHEN COUNT(1) > 0 THEN 'Y' ELSE 'N' END
+	    	FROM TB_TBM_SESSION_CONTENT SC
+	    		 INNER JOIN TB_TBM_SESSION S
+	    		 	ON (SC.CMPNY_CD = S.CMPNY_CD AND SC.SESSION_CD = S.SESSION_CD)
+	    	WHERE SC.CMPNY_CD = A.CMPNY_CD
+	    	  AND SC.MTRL_CD = A.MTRL_CD
+	    	  AND S.DEL_YN = 'N'
+	    	  AND S.STATUS_CD != 'CANCELLED'
+	      )												AS lockedYn
+	    /* TBM_AI F1: 교육안 재열람(record 말미 순서 정합). GEN_CONTENT=text */
+	    , A.GEN_CONTENT										AS genContent
+	    , DATE_FORMAT(A.GEN_AT, '%Y-%m-%d %H:%i')			AS genAt
 	FROM TB_TBM_EDU_MTRL A
 	     INNER JOIN TB_TBM_EDU_MTRL_ITEM B
 			ON (
@@ -64,6 +78,10 @@
 	    , A.MTRL_TYPE
 	    , A.USE_YN
 	    , A.SITE_CD
+	/* 회사공통(SITE_CD 없음) 자료를 항상 맨 위로. 그 다음은 자료코드(= 생성일 순).
+	   기존에는 ORDER BY 자체가 없어 행 순서가 보장되지 않았다(MySQL 8 은 GROUP BY 암시 정렬 없음). */
+	ORDER BY (A.SITE_CD IS NULL OR A.SITE_CD = '') DESC
+	    , A.MTRL_CD
     </select>
     
     <select id="selectTbmEduItemInfo" parameterType="com.prafta.web.tbm.tbm01.application.query.TbmEduItemInfoListQuery" resultType="com.prafta.web.tbm.tbm01.result.TbmEduItemInfoResult">
@@ -83,6 +101,10 @@
     	, A.USE_YN				AS useYn
     	, A.THUMB_FILE_MGMT_CD	AS thumbFileMgmtCd
     	, A.DURATION_SEC		AS durationSec
+    	/* TBM_AI F1: 항목 AI 재열람(class 프로퍼티 매핑, 위치 무관) */
+    	, A.AI_ANALYZE_YN		AS aiAnalyzeYn
+    	, A.AI_STATUS			AS aiStatus
+    	, A.AI_CONFIRM_DESC		AS aiConfirmDesc
     	/* 데이터 초기화 값 */
     	, A.SORT_IDX			AS oriSortIdx
     	, A.MTRL_ITEM_TYPE		AS oriMtrlItemType
@@ -118,6 +140,16 @@
     SELECT CONCAT(DATE_FORMAT(CURDATE(), '%y%m%d'), FNC_CMM_SEQ_NEXTVAL(#{gvCmpnyCd}, 'MTRL_ITEM_CD'))
 	FROM DUAL
     </select>
+
+	<!-- 회사 스코프 가드(IDOR 방어): 공급된 mtrlCd 가 호출자 회사 소유인지 COUNT.
+	     수정 모드 저장 시 타 회사 MTRL_CD 로 마스터/세부항목 UPSERT(덮어쓰기) 차단용. -->
+	<select id="countOwnedMtrl" resultType="int">
+	/* Tbm01Mapper.countOwnedMtrl */
+	SELECT COUNT(1)
+	FROM TB_TBM_EDU_MTRL
+	WHERE MTRL_CD = #{mtrlCd}
+	  AND CMPNY_CD = #{gvCmpnyCd}
+	</select>
 		
 	<update id="mergeTbmEduItemInfo" parameterType="com.prafta.web.tbm.tbm01.application.command.TbmEduItemInfoCommand">
 	/* Tbm01Mapper.mergeTbmEduItemInfo */
@@ -132,21 +164,34 @@
 	    , DURATION_SEC
 	    , URL
 	    , USE_YN
+	    , AI_ANALYZE_YN
+	    , AI_STATUS
 	    , INSERT_NO
+	    , INSERT_DATE
 	    , UPDATE_NO
+	    , UPDATE_DATE
 	) VALUES (
 	    #{mtrlItemCd}
 	    , #{mtrlCd}
-	    , #{sortIdx}
+	    /* SORT_IDX는 NOT NULL int. 빈문자/NULL 방어(미입력 시 DEFAULT 1) */
+	    , IFNULL(NULLIF(TRIM(#{sortIdx}), ''), 1)
 	    , #{mtrlItemType}
 	    , #{mtrlDesc}
 	    , #{fileMgmtCd}
 	    , #{thumbFileMgmtCd}
 	    , #{durationSec}
 	    , #{url}
-	    , #{useYn}
+	    /* USE_YN NOT NULL. 미입력 시 'Y' 기본 */
+	    , IFNULL(NULLIF(TRIM(#{useYn}), ''), 'Y')
+	    /* TBM_AI v4: 항목별 AI 분석 지정. 신규/미전송 시 'N' 기본 */
+	    , IFNULL(NULLIF(TRIM(#{aiAnalyzeYn}), ''), 'N')
+	    /* AI_STATUS NULL 제거: 신규 INSERT 는 항상 'NONE'(미분석) 시작. 재큐잉/확정은 이후 EP·워커가 전이.
+	       ON DUPLICATE KEY UPDATE 의 AI_STATUS(=상태 보존/NONE 리셋)는 기존 로직 유지(NEW.AI_STATUS 미사용). */
+	    , 'NONE'
 	    , #{gvUserCd}
+	    , NOW()
 	    , #{gvUserCd}
+	    , NOW()
 	) AS NEW
 	ON DUPLICATE KEY UPDATE
 	    MTRL_ITEM_TYPE       = NEW.MTRL_ITEM_TYPE
@@ -156,6 +201,12 @@
 	    , DURATION_SEC       = NEW.DURATION_SEC
 	    , URL                = NEW.URL
 	    , USE_YN             = NEW.USE_YN
+	    , AI_ANALYZE_YN      = NEW.AI_ANALYZE_YN
+	    /* v4: 체크 해제(Y→N) 시 상태만 NONE 리셋(분석/확정 데이터 컬럼은 보존 → 통합 제외).
+	       체크 유지/재체크(=Y)면 기존 AI_STATUS 보존(재체크 항목은 analyze-items가 재큐잉). */
+	    /* ★기존 값 참조는 테이블명으로 한정한다. INSERT 컬럼 목록에 AI_STATUS 가 있어 행 별칭 NEW 에도
+	       동명 컬럼이 존재하므로, 한정자 없는 AI_STATUS 는 모호(MySQL Error 1052). */
+	    , AI_STATUS          = CASE WHEN NEW.AI_ANALYZE_YN = 'N' THEN 'NONE' ELSE TB_TBM_EDU_MTRL_ITEM.AI_STATUS END
 	    , UPDATE_NO          = NEW.UPDATE_NO
 	    , UPDATE_DATE        = NOW()
 	</update>
@@ -192,16 +243,24 @@
 	    , CONTENTS   	= NEW.CONTENTS
 	    , MTRL_TYPE  	= NEW.MTRL_TYPE
 	    , USE_YN     	= NEW.USE_YN
-	    /* 스코프(SITE_CD)는 수정 모드에서 변경 불가(FE-5). 전달값 NULL 이면 기존 값 보존 */
-	    , SITE_CD    	= IFNULL(NEW.SITE_CD, SITE_CD)
+	    /* 스코프(SITE_CD)는 수정 모드에서 변경 불가(FE-5). 전달값 NULL 이면 기존 값 보존.
+	       ★기존 값 참조는 테이블명으로 한정한다. 행 별칭 NEW 에도 SITE_CD 가 있어
+	       한정자 없는 SITE_CD 는 모호(MySQL Error 1052). */
+	    , SITE_CD    	= IFNULL(NEW.SITE_CD, TB_TBM_EDU_MTRL.SITE_CD)
 	    , UPDATE_NO   	= NEW.UPDATE_NO
 	    , UPDATE_DATE 	= NOW()
 	</update>
 	
 	<delete id ="deleteTbmEduItemInfo"  parameterType="com.prafta.web.tbm.tbm01.application.command.TbmEduItemCommand">
 	/* Tbm01Mapper.deleteTbmEduItemInfo */
-	DELETE FROM TB_TBM_EDU_MTRL_ITEM
-	WHERE MTRL_ITEM_CD = #{mtrlItemCd}
+	/* 회사 스코프(IDOR 방어): 마스터(TB_TBM_EDU_MTRL) 조인으로 자기 회사 항목만 삭제.
+	   타 회사 MTRL_ITEM_CD 를 알아도 마스터 CMPNY_CD 불일치로 0행 삭제된다. */
+	DELETE I
+	FROM TB_TBM_EDU_MTRL_ITEM I
+	     INNER JOIN TB_TBM_EDU_MTRL M
+	        ON (I.MTRL_CD = M.MTRL_CD)
+	WHERE I.MTRL_ITEM_CD = #{mtrlItemCd}
+	  AND M.CMPNY_CD = #{gvCmpnyCd}
 	</delete>
 	
 	<delete id ="deleteTbmEduInfo"  parameterType="com.prafta.web.tbm.tbm01.application.command.TbmEduInfoCommand">
@@ -235,16 +294,28 @@
 		, A.USE_YN			AS oriUseYn
 		, FNC_CMM_INFO_SRCH(A.CMPNY_CD, 'USER_NM', A.INSERT_NO, NULL)	AS insertNm
 		, DATE_FORMAT(A.INSERT_DATE, '%Y-%m-%d %H:%i')					AS insertDate
+		/* T5-2: 사용 중(취소 외 세션 참조) 여부. 'Y'면 수정/삭제 잠금 */
+		, (
+			SELECT CASE WHEN COUNT(1) > 0 THEN 'Y' ELSE 'N' END
+			FROM TB_TBM_SESSION_CONTENT SC
+				 INNER JOIN TB_TBM_SESSION S
+				 	ON (SC.CMPNY_CD = S.CMPNY_CD AND SC.SESSION_CD = S.SESSION_CD)
+			WHERE SC.CMPNY_CD = A.CMPNY_CD
+			  AND SC.MTRL_CD = A.MTRL_CD
+			  AND S.DEL_YN = 'N'
+			  AND S.STATUS_CD != 'CANCELLED'
+		  )															AS lockedYn
+		/* TBM_AI F1: 교육안 재열람(record 말미 순서 정합) */
+		, A.GEN_CONTENT										AS genContent
+		, DATE_FORMAT(A.GEN_AT, '%Y-%m-%d %H:%i')			AS genAt
 	FROM TB_TBM_EDU_MTRL A
 	WHERE A.CMPNY_CD = #{gvCmpnyCd}
 	  AND A.MTRL_CD = #{mtrlCd}
 	</select>
 
 	<!-- prafta-033-A: W-03 상세 - 세부항목(미디어) 목록 -->
-	<!-- TbmEduItemInfoResult record 는 23필드(뒤에 ori* 9개)를 가지므로,
-	     상세 조회에서도 동일 위치 매핑을 맞춰 줘야 한다. 안 그러면
-	     MyBatis 가 record canonical constructor 위치 매칭 중
-	     IndexOutOfBoundsException 을 던진다(상세 화면은 ori* 미사용). -->
+	<!-- TbmEduItemInfoResult 는 class(프로퍼티 기반 매핑)로 전환됨 → 컬럼 순서 무관.
+	     아래 ori* 패딩은 현재 불필요하나 무해하여 유지(편집 화면 호환). -->
 	<select id="selectTbmEduDetailItems" parameterType="com.prafta.web.tbm.tbm01.application.query.TbmEduDetailQuery" resultType="com.prafta.web.tbm.tbm01.result.TbmEduItemInfoResult">
 	/* Tbm01Mapper.selectTbmEduDetailItems */
 	SELECT
@@ -262,7 +333,11 @@
 		, A.USE_YN			AS useYn
 		, A.THUMB_FILE_MGMT_CD	AS thumbFileMgmtCd
 		, A.DURATION_SEC	AS durationSec
-		/* record 시그니처 맞춤용(상세 화면 미사용) */
+		/* TBM_AI F1: 항목 AI 재열람(미리보기 확정요지 노출용) */
+		, A.AI_ANALYZE_YN	AS aiAnalyzeYn
+		, A.AI_STATUS		AS aiStatus
+		, A.AI_CONFIRM_DESC	AS aiConfirmDesc
+		/* 데이터 초기화 값(상세 화면 미사용, class 프로퍼티 매핑) */
 		, A.SORT_IDX		AS oriSortIdx
 		, A.MTRL_ITEM_TYPE	AS oriMtrlItemType
 		, A.MTRL_DESC		AS oriMtrlDesc
@@ -309,4 +384,43 @@
 	  AND S.DEL_YN = 'N'
 	ORDER BY S.INSERT_DATE DESC
 	</select>
+
+	<!-- T5-2: 이 교육자료를 참조하는 활성(취소 외) 세션 수. 0 초과면 수정/삭제 잠금 -->
+	<select id="selectTbmEduLockingSessionCnt" resultType="int">
+	/* Tbm01Mapper.selectTbmEduLockingSessionCnt */
+	SELECT COUNT(1)
+	FROM TB_TBM_SESSION_CONTENT SC
+		 INNER JOIN TB_TBM_SESSION S
+		 	ON (SC.CMPNY_CD = S.CMPNY_CD AND SC.SESSION_CD = S.SESSION_CD)
+	WHERE SC.CMPNY_CD = #{gvCmpnyCd}
+	  AND SC.MTRL_CD = #{mtrlCd}
+	  AND S.DEL_YN = 'N'
+	  AND S.STATUS_CD != 'CANCELLED'
+	</select>
+
+	<!-- T5-2: 세부항목 코드로 소속 교육자료(MTRL_CD) 도출(서버 도출, IDOR 방어). 없으면 NULL -->
+	<select id="selectMtrlCdByItemCd" resultType="string">
+	/* Tbm01Mapper.selectMtrlCdByItemCd */
+	SELECT A.MTRL_CD
+	FROM TB_TBM_EDU_MTRL_ITEM A
+		 INNER JOIN TB_TBM_EDU_MTRL M
+		 	ON (A.MTRL_CD = M.MTRL_CD AND M.CMPNY_CD = #{gvCmpnyCd})
+	WHERE A.MTRL_ITEM_CD = #{mtrlItemCd}
+	LIMIT 1
+	</select>
+
+	<!-- 사용 중(잠긴) 교육자료의 세부항목 AI 분석 지정(AI_ANALYZE_YN)만 갱신.
+	     해제(Y→N) 시 AI_STATUS='NONE' 리셋(분석/확정 데이터 컬럼은 보존), 재체크(=Y)면 기존 상태 보존.
+	     WHERE 절 회사 스코프(마스터 CMPNY_CD)로 IDOR 차단. -->
+	<update id="updateTbmEduItemAiAnalyze" parameterType="com.prafta.web.tbm.tbm01.application.command.TbmEduAiAnalyzeCommand">
+	/* Tbm01Mapper.updateTbmEduItemAiAnalyze */
+	UPDATE TB_TBM_EDU_MTRL_ITEM A
+		 INNER JOIN TB_TBM_EDU_MTRL M
+		 	ON (A.MTRL_CD = M.MTRL_CD AND M.CMPNY_CD = #{gvCmpnyCd})
+	SET A.AI_ANALYZE_YN = #{aiAnalyzeYn}
+	  , A.AI_STATUS      = CASE WHEN #{aiAnalyzeYn} = 'N' THEN 'NONE' ELSE A.AI_STATUS END
+	  , A.UPDATE_NO      = #{gvUserCd}
+	  , A.UPDATE_DATE    = NOW()
+	WHERE A.MTRL_ITEM_CD = #{mtrlItemCd}
+	</update>
 </mapper>

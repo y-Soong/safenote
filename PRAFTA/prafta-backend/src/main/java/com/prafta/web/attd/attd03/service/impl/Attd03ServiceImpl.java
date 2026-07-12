@@ -25,8 +25,9 @@ import lombok.extern.slf4j.Slf4j;
 public class Attd03ServiceImpl implements Attd03Service{
 
 	// 연차 사용 단위 화이트리스트 [SYS025]: 00=1일 / 01=반차 / 02=시간차(2h) / 03=시간차(1h) / 04=시간차(30분)
+	//   / 05=반반차(0.25일 — 연차 시간차 환산 개편 LC-06. 비법정 타입은 '05' 설정 시 종일/반차/반반차 허용)
 	private static final java.util.Set<String> ALLOWED_USE_UNIT_TYPES =
-			java.util.Set.of("00", "01", "02", "03", "04");
+			java.util.Set.of("00", "01", "02", "03", "04", "05");
 
 	// 연차 사용가능기간 타입 화이트리스트 [SYS026]: 01=설정안함 / 02=해당 연도 내 / 03=기간설정
 	// (DB 실측: .claude/context/policies/attd/_audit/prafta-018-syst-val-audit.md §SYS026)

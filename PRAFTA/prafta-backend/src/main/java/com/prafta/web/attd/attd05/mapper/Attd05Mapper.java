@@ -35,6 +35,14 @@ public interface Attd05Mapper {
 	List<LeaveOverlayResult> selectLeaveOverlayList(UserWorkPlansQuery query);
 
 	/**
+	 * 그리드 부분 휴가(반차/시간차) 오버레이 — 조회 스코프(노드트리/사업장/월/사용자명) 내
+	 * 종일이 아닌 확정 휴가(leave_use, USE_UNIT_TYPE != '00', CONFIRMED, DEL_YN='N')를
+	 * (userCd, workYmd, 사용단위, 시간대, 사용분) 으로 반환한다. 종일 오버레이가 셀 값을 대체하는 것과 달리,
+	 * 부분 휴가는 근무 스케줄(SCH_CD)이 살아있으므로 셀 위에 마커(칩)로만 얹는다(셀 값 미변경).
+	 */
+	List<com.prafta.web.attd.attd05.result.PartialLeaveOverlayResult> selectPartialLeaveOverlayList(UserWorkPlansQuery query);
+
+	/**
 	 * prafta-com-008-D-5: 그리드 교대 잠금 오버레이 — 조회 스코프(노드트리/사업장/월/사용자명) 사용자의
 	 * 교대팀 소속 구간(잠금) 일자를 (userCd, workYmd) 로 펼쳐 반환한다.
 	 * 판정은 D-1 경계 술어(팀 STR_DATE~END_DATE inclusive ∩ 멤버십 행 존재 ∩ LEAVE_TEAM_YMD 미포함)를

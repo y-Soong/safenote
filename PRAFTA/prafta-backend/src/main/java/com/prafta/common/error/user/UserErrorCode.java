@@ -70,6 +70,43 @@ public enum UserErrorCode implements ApiErrorCode {
     // ===== PRAFTA-046 - 노드-관리자 정합성 가드 (BatchResultPop 표시용, D6 한글 사유 일관) =====
     // 관리자(정/부)가 지정되지 않은 노드에 사용자 생성/이동 차단.
     , USER_400_056(HttpStatus.BAD_REQUEST, "관리자미지정부서")
+
+    // ===== PRAFTA-COM-001-T4 (8.4) - 기본 결재라인 프리셋 삭제 차단 (서버 강제, FE 우회 방지) =====
+    , USER_400_057(HttpStatus.BAD_REQUEST, "기본 프리셋은 삭제할 수 없습니다.")
+
+    // ===== prafta-daily-blacklist - 일일계정 블랙리스트 관리(User_06) =====
+    // 이미 활성 등록된 휴대폰번호 재등록 차단(사전 count + UNIQUE 양쪽 방어).
+    , USER_400_058(HttpStatus.BAD_REQUEST, "이미 등록된 휴대폰번호입니다.")
+    // 해제 대상 블랙리스트 항목 없음(존재하지 않거나 타 회사 — 회사/존재 노출 차단 메시지).
+    , USER_404_003(HttpStatus.NOT_FOUND, "해제할 블랙리스트 항목을 찾을 수 없습니다.")
+    // 등록 사유 길이 초과(DDL varchar(200) — 서버측 truncation/500 방지).
+    , USER_400_059(HttpStatus.BAD_REQUEST, "등록 사유는 200자 이하여야 합니다.")
+
+    // ===== PRAFTA-WEB_001-1 - 사용자 소속이동 예약(필수값/불가케이스) =====
+    // 필수 입력 누락(사용자 친화 메시지).
+    , USER_400_060(HttpStatus.BAD_REQUEST, "소속이동 사유를 입력해 주세요.")
+    , USER_400_061(HttpStatus.BAD_REQUEST, "소속이동일은 내일 이후로 지정해 주세요.")
+    , USER_400_062(HttpStatus.BAD_REQUEST, "이동할 사업장을 선택해 주세요.")
+    , USER_400_063(HttpStatus.BAD_REQUEST, "이동할 소속부서를 선택해 주세요.")
+    , USER_400_064(HttpStatus.BAD_REQUEST, "정규직은 기본 근무타입을 지정해야 합니다.")
+    // 5종 불가케이스(정규직 한정). 관리자에게 사유를 안내.
+    , USER_400_065(HttpStatus.BAD_REQUEST, "사업장 관리자는 소속이동할 수 없습니다.\n사업장 관리자 변경 후 다시 시도해 주세요.")
+    , USER_400_066(HttpStatus.BAD_REQUEST, "부서의 마지막 담당자는 소속이동할 수 없습니다.\n다른 담당자 지정 후 다시 시도해 주세요.")
+    , USER_400_067(HttpStatus.BAD_REQUEST, "순회점검 담당자는 소속이동할 수 없습니다.\n점검 담당자 변경 후 다시 시도해 주세요.")
+    , USER_400_068(HttpStatus.BAD_REQUEST, "교대근무 조에 속한 사용자는 소속이동할 수 없습니다.\n교대조 해제 후 다시 시도해 주세요.")
+    , USER_400_069(HttpStatus.BAD_REQUEST, "등록된 시간차 연차를 기본 근무타입 시간이 포함하지 못합니다.\n근무타입을 조정해 주세요.")
+    // 동일 사용자 활성 예약 중복.
+    , USER_400_070(HttpStatus.BAD_REQUEST, "이미 진행 중인 소속이동 예약이 있습니다.")
+    // 소속이동 사유 길이 초과(DDL varchar(500) 정합 — 미입력(060)과 구분).
+    , USER_400_071(HttpStatus.BAD_REQUEST, "소속이동 사유는 500자 이하여야 합니다.")
+    // 소속이동 권한 부족(master/hr 외) — 보안 민감, 일반 메시지.
+    , USER_403_002(HttpStatus.FORBIDDEN, "권한이 없습니다.")
+    // 대상 사용자 없음(타 회사/미존재 — 존재 비노출 통합 메시지).
+    , USER_404_004(HttpStatus.NOT_FOUND, "대상 사용자를 찾을 수 없습니다.")
+
+    // ===== PRAFTA-WEB_002-T1-03 (1.4-2) - 권한 등급 escalation 서버 가드 =====
+    // 요청자(viewer) 본인보다 높거나 같은 등급의 권한을 타 계정에 부여 시도 시 차단(권한 상승 방지).
+    , USER_403_003(HttpStatus.FORBIDDEN, "본인보다 낮은 등급의 권한만 부여할 수 있습니다.")
     ;
 
     private final HttpStatus httpStatus;

@@ -9,6 +9,7 @@ public record ChkptTargetListParam(
 	String siteCd
 	, String chkLstType
 	, String chkptNm
+	, String useYn
 	, String gvCmpnyCd
 	, String gvUserCd
 ){
@@ -21,6 +22,7 @@ public record ChkptTargetListParam(
 			request.getSiteCd()
 			, request.getChkLstType()
 			, request.getChkptNm()
+			, request.getUseYn()
 			, tokenInfo.gv_cmpnyCd()
 			, tokenInfo.gv_userCd()
 		);

@@ -130,7 +130,7 @@
 
 <script setup>
 import { computed } from 'vue'
-import { formatYmdShortWithDow } from '../attdFormat'
+import { formatYmdShortWithDow, formatTimeSummary } from '../attdFormat'
 
 const props = defineProps({
   // 열림 여부 (v-model)
@@ -161,8 +161,8 @@ const metaText = computed(() => {
   const parts = []
   if (d.workPlanName) parts.push(d.workPlanName)
   else if (d.leaveTypeName) parts.push(d.leaveTypeName)
-  if (d.scheduleSummary) parts.push(d.scheduleSummary)
-  if (d.attendanceSummary) parts.push(`근태 ${d.attendanceSummary}`)
+  if (d.scheduleSummary) parts.push(formatTimeSummary(d.scheduleSummary))
+  if (d.attendanceSummary) parts.push(`근태 ${formatTimeSummary(d.attendanceSummary)}`)
   return parts.join(' · ')
 })
 

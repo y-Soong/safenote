@@ -25,6 +25,7 @@ public record AdminSessionResult(
     , String managerGpsLon
     , String gpsVerifyTypeCd
     , Integer gpsVerifyRadiusM
+    , Integer eduMinutes        // 교육 인정시간(분, 1~60). 미설정 시 null
     , String gpsManualConfirmYn
     , String openedAt
     , String prepStartAt

@@ -83,7 +83,7 @@
       </div>
 
       <div>
-        <label>근로자명</label>
+        <label>사용자명</label>
         <input v-model.trim="currUserNm" type="text" />
       </div>
     </div>
@@ -141,7 +141,9 @@
             </span>
           </div>
           <div class="action-card-body">
-            <button class="btn btn-primary btn-sm" @click="fnSave">저장</button>
+            <button class="btn btn-primary btn-sm" @click="fnSavePolicy">
+              저장
+            </button>
           </div>
         </div>
 
@@ -177,7 +179,7 @@
           <div class="action-card-body">
             <button
               class="btn btn-primary btn-sm"
-              :disabled="!siteCd"
+              :disabled="!siteCd || !dailyUserJoinYn"
               @click="fnCopyJoinLink"
             >
               <svg
@@ -201,7 +203,7 @@
             </button>
             <button
               class="btn btn-primary btn-sm"
-              :disabled="!siteCd"
+              :disabled="!siteCd || !dailyUserJoinYn"
               @click="fnQrCodePopOpen"
             >
               QRCODE
@@ -239,7 +241,7 @@
           <div class="action-card-body">
             <button
               class="btn btn-primary btn-sm"
-              :disabled="!siteCd"
+              :disabled="!siteCd || !dailyUserJoinYn"
               @click="fnGenerateAdminQr"
             >
               + QR 생성
@@ -262,6 +264,9 @@
           </div>
 
           <div class="custom-btn-area">
+            <button class="btn btn-custom" @click="fnBulkNodeAssign">
+              소속부서 일괄지정
+            </button>
             <button class="btn btn-custom" @click="fnBulkOccupy">
               일괄 점유 유지
             </button>
@@ -299,7 +304,7 @@
                   />
                 </th>
                 <ThSortable
-                  label="근로자"
+                  label="사용자"
                   col-key="userNm"
                   :sort-key="sortKey"
                   :sort-order="sortOrder"
@@ -334,13 +339,14 @@
                   @sort="onSort"
                   @update:width="onResize"
                 />
+                <th style="width: 160px">소속부서</th>
                 <th style="width: 130px">구분</th>
                 <th style="width: 100px">상태</th>
                 <th style="width: 90px">QRCODE</th>
                 <th style="width: 120px">만료일자</th>
                 <th style="width: 90px">사용여부</th>
                 <th class="editableCell" style="width: 150px">슬롯점유</th>
-                <th class="editableCell" style="width: 8%">이력보기</th>
+                <th class="editableCell" style="width: 90px">이력보기</th>
               </tr>
             </thead>
             <tbody>
@@ -348,7 +354,7 @@
                 v-if="!DailyUserSlotList || DailyUserSlotList.length === 0"
               >
                 <tr>
-                  <td colspan="12" class="edu-grid-empty">
+                  <td colspan="13" class="edu-grid-empty">
                     등록된 세부 항목이 없습니다.
                   </td>
                 </tr>
@@ -379,6 +385,24 @@
                     {{ dailyUserSlot.slotNo }}
                   </td>
                   <td>
+                    <div class="flex items-center gap-2 w-full">
+                      <span class="truncate min-w-0">{{
+                        dailyUserSlot.nodeNm
+                      }}</span>
+                      <button
+                        class="ml-auto border rounded node-assign-btn"
+                        :disabled="dailyUserSlot.useYn === 'N'"
+                        @click="fnSlotNodeSearchPopOpen(dailyUserSlot)"
+                      >
+                        <img
+                          class="search_icon"
+                          :src="search_icon"
+                          alt="검색"
+                        />
+                      </button>
+                    </div>
+                  </td>
+                  <td>
                     <BaseSelect
                       v-model="dailyUserSlot.slotStatus"
                       :readonly="true"
@@ -398,7 +422,7 @@
                   <td>
                     <BaseSelect
                       v-model="dailyUserSlot.slotType"
-                      :readonly="true"
+                      :readonly="isSlotTypeLocked(dailyUserSlot)"
                       name="slotType"
                     >
                       <option
@@ -445,10 +469,23 @@
                     <div class="flex items-center gap-2 w-full">
                       <button
                         class="btn btn-custom"
-                        :disabled="dailyUserSlot.useYn === 'N'"
+                        :disabled="
+                          dailyUserSlot.useYn === 'N' ||
+                          dailyUserSlot.slotStatus !== '02'
+                        "
                         @click="fnFixSlot(dailyUserSlot)"
                       >
                         점유 유지
+                      </button>
+                      <button
+                        class="btn btn-custom"
+                        :disabled="
+                          dailyUserSlot.useYn === 'N' ||
+                          dailyUserSlot.slotStatus !== '02'
+                        "
+                        @click="fnUnfixSlot(dailyUserSlot)"
+                      >
+                        점유 해지
                       </button>
                       <button
                         class="btn btn-custom-danger"
@@ -514,6 +551,7 @@ import { resolveApiErrorMessage } from "@/utils/apiError";
 import BaseSelect from "@/components/common/BaseSelect.vue";
 import search_icon from "@/assets/img/search_icon.png";
 import SiteSearchPop from "@/components/popup/SiteSearchPop.vue";
+import SiteNodeSearchPop from "@/components/popup/SiteNodeSearchPop.vue";
 import QrCodePop from "@/components/popup/QrCodePop.vue";
 import AdminQrCreatePop from "./popup/AdminQrCreatePop.vue";
 import SlotHistoryPop from "./popup/SlotHistoryPop.vue";
@@ -542,10 +580,10 @@ const DailyUserSlotList = ref([]);
 const { sortKey, sortOrder, sortedData, onSort } =
   useTableSort(DailyUserSlotList);
 const { colWidths, onResize } = useColumnResize({
-  userNm: 200,
+  userNm: 100,
   mblNo: 130,
-  siteNm: 200,
-  slotNo: 100,
+  siteNm: 130,
+  slotNo: 115,
 });
 const systCodeArr = ref({});
 const SiteSearchPopOpen = ref(false);
@@ -596,8 +634,9 @@ const fnGetDailyUserLinkPolicies = async () => {
     if (response.status === 200) {
       const data = response.data.dailyUserLinkPolicy ?? {};
       dayLimitCnt.value = data.dayLimitCnt ?? 0;
-      dailyUserJoinYn.value =
-        data.dailyUserJoinYn === "Y" || data.dailyUserJoinYn === true;
+      // T1-07: 계정 등록 토글은 BE 응답 useYn('Y'/'N') 기준. (구 dailyUserJoinYn 필드는 BE 미반환)
+      dailyUserJoinYn.value = data.useYn === "Y" || data.useYn === true;
+      // T1-06: 활성화 계정 = 현재 점유 중 슬롯 수(BE selectDailyUserLinkPolicyList 에서 집계).
       activeAccountCount.value = data.activeAccountCount ?? 0;
       joinCd.value = data.joinCd ?? "";
     }
@@ -607,13 +646,23 @@ const fnGetDailyUserLinkPolicies = async () => {
   }
 };
 
+// 직접가입 링크/QR 의 공개 base URL 해석.
+//   QR/링크는 외부(모바일)에서 접근하므로 관리자 화면 주소(window.location.origin, 예:
+//   http://localhost:8081)가 아니라 공개 도메인이어야 한다. Cloudflare 고정 도메인을
+//   VITE_PUBLIC_JOIN_BASE_URL(예: https://web.prafta.com)로 주입받아 우선 사용하고,
+//   미설정 시에만 현재 origin 으로 폴백한다(순수 로컬 테스트 대비). 끝 슬래시는 제거.
+const resolveJoinBaseUrl = () => {
+  const base = import.meta.env.VITE_PUBLIC_JOIN_BASE_URL;
+  return (base ? String(base) : window.location.origin).replace(/\/+$/, "");
+};
+
 const fnCopyJoinLink = async () => {
   if (!joinCd.value) {
     await proxy.$alert("발급된 가입 코드가 없습니다.");
     return;
   }
   // 신규 표준 경로는 SafeNote 서비스 프리픽스('/safenote') 하위. 기존 '/dailyUserJoin'은 라우터 alias로 호환.
-  const url = `${window.location.origin}/safenote/dailyUserJoin/${joinCd.value}`;
+  const url = `${resolveJoinBaseUrl()}/safenote/dailyUserJoin/${joinCd.value}`;
   try {
     await navigator.clipboard.writeText(url);
     await proxy.$alert("링크가 복사되었습니다.\n");
@@ -623,13 +672,17 @@ const fnCopyJoinLink = async () => {
     );
   }
 };
-const fnQrCodePopOpen = () => {
+const fnQrCodePopOpen = async () => {
+  // T1-03: 직접가입 QR 은 가입 URL 을 인코딩한다(카메라 스캔 시 가입 페이지로 진입).
+  //        슬롯 행 QR/관리자 발급 QR(출퇴근/식별용 JSON)과 달리, 직접가입은 링크복사와 동일한 URL 을 사용.
+  if (!joinCd.value) {
+    await proxy.$alert("발급된 가입 코드가 없습니다.");
+    return;
+  }
+  const url = `${resolveJoinBaseUrl()}/safenote/dailyUserJoin/${joinCd.value}`;
   openPop(QrCodePop, {
-    qrValue: JSON.stringify({
-      cmpnyCd: sessionStorage.getItem("gv_cmpnyCd"),
-      siteCd: siteCd.value,
-      qrTitle: siteNm.value + " - 일일계정 발급 QR코드",
-    }),
+    qrValue: url,
+    title: siteNm.value + " - 일일계정 발급 QR코드",
   });
 };
 const fnSlotQrCodePopOpen = (slot) => {
@@ -637,13 +690,23 @@ const fnSlotQrCodePopOpen = (slot) => {
     qrValue: JSON.stringify({
       cmpnyCd: slot.cmpnyCd,
       siteCd: slot.siteCd,
-      userCd: slot.userCd,
+      // 슬롯 resultMap(DailyUserInfoMap) 의 사용자코드 프로퍼티는 currUserId 다(이름은 currUserNm).
+      // 과거 slot.userCd(존재하지 않는 필드)로 읽어 QR JSON 에서 userCd 가 누락 → 현장 처리(site-ops)
+      // 스캔 시 ATTD_400_171 로 거부되던 결함 수정.
+      userCd: slot.currUserId,
       qrTitle: siteNm.value + " - " + slot.currUserNm + " QR코드",
     }),
   });
 };
 const formatMblNo = (val) => proxy.$util.formatPhoneNumber(val) ?? "";
 const fnGenerateAdminQr = () => {
+  // T1-07: 계정 등록 OFF 면 발급 차단 안내(서버에서도 BAIM_400_004 로 강제 차단). 버튼 비활성과 이중 가드.
+  if (!dailyUserJoinYn.value) {
+    proxy.$alert(
+      "계정 등록이 OFF 상태입니다.\n계정 등록을 ON 으로 변경 후 발급하세요."
+    );
+    return;
+  }
   openPop(AdminQrCreatePop, {
     slotList: DailyUserSlotList.value,
     siteCd: siteCd.value,
@@ -668,7 +731,9 @@ const fnSlotHistory = (slot) => {
   });
 };
 
-const fnSave = async () => {
+// 활성화 계정 카드 저장: 일일계정 링크정책(활성화 계정 한도 dayLimitCnt + 계정 등록 ON/OFF) 저장.
+//   계정등록 옆 "저장" 버튼 전용. 공통 헤더 저장(fnSave)과 동작이 다르므로 분리한다.
+const fnSavePolicy = async () => {
   const ok = await proxy.$confirm(getMessage(MSG.SAVE_CONFIRM));
   if (!ok) return;
 
@@ -690,6 +755,78 @@ const fnSave = async () => {
     const msg = resolveApiErrorMessage(err, "저장 중 오류가 발생했습니다.");
     await proxy.$alert(msg);
   }
+};
+
+// 통합 저장: 체크된 슬롯 행의 소속부서(nodeCd)/구분(slotType) 변경을 저장한다.
+//   - 체크된 행이 없으면 안내 후 중단.
+//   - 구분 저장은 점유중(slotStatus='02') 행을 제외(점유중 행은 변경 불가, 서버도 fail-closed).
+//   - 소속부서 저장은 체크된 행 전체(빈값=부서 해제 포함).
+//   두 API의 권한·점유 검증은 백엔드가 그대로 수행한다(프론트는 호출만 통합).
+const fnSave = async () => {
+  const checked = collectCheckedSlots();
+  if (checked.length === 0) {
+    await proxy.$alert("선택된 항목이 없습니다.");
+    return;
+  }
+
+  const ok = await proxy.$confirm(getMessage(MSG.SAVE_CONFIRM));
+  if (!ok) return;
+
+  // 구분 저장 대상(점유중 행 제외)
+  const typeRows = checked.filter((s) => s.slotStatus !== "02");
+  // 소속부서 저장 대상(체크된 행 전체)
+  const nodeRows = checked;
+
+  // 부분 실패 시 어떤 저장이 실패했는지 안내하기 위한 실패 라벨 수집
+  const failedLabels = [];
+
+  // 1) 구분 저장
+  if (typeRows.length > 0) {
+    try {
+      await axios.post("/webApi/baim05/set-daily-user-slot-type", {
+        slots: typeRows.map((r) => ({
+          siteCd: r.siteCd,
+          slotNo: r.slotNo,
+          slotType: r.slotType,
+        })),
+      });
+    } catch (err) {
+      const msg = resolveApiErrorMessage(
+        err,
+        "구분 저장 중 오류가 발생했습니다."
+      );
+      failedLabels.push(`구분 저장 실패: ${msg}`);
+    }
+  }
+
+  // 2) 소속부서 저장
+  if (nodeRows.length > 0) {
+    try {
+      await axios.post("/webApi/baim05/set-daily-user-slot-node", {
+        slots: nodeRows.map((r) => ({
+          siteCd: r.siteCd,
+          slotNo: r.slotNo,
+          nodeCd: r.nodeCd ?? "",
+        })),
+      });
+    } catch (err) {
+      const msg = resolveApiErrorMessage(
+        err,
+        "부서 저장 중 오류가 발생했습니다."
+      );
+      failedLabels.push(`부서 저장 실패: ${msg}`);
+    }
+  }
+
+  // 결과 안내: 전부 성공이면 성공 메시지, 일부/전부 실패면 실패 항목 안내
+  if (failedLabels.length === 0) {
+    await proxy.$alert(getMessage(MSG.SAVE_SUCCESS));
+  } else {
+    await proxy.$alert(failedLabels.join("\n"));
+  }
+
+  // 성공/부분실패 무관하게 서버 최신 상태로 1회 재조회(스냅샷 재설정)
+  await fnSearch();
 };
 // 슬롯 식별자 추출(서버는 siteCd/slotNo 만 신뢰, 점유자 식별은 서버 재조회)
 const toSlotItem = (slot) => ({ siteCd: slot.siteCd, slotNo: slot.slotNo });
@@ -736,13 +873,82 @@ const requestClear = async (slots) => {
   }
 };
 
-// 행 단위 - 점유 유지
+// 구분(slotType) 편집 잠금 조건: 점유중(slotStatus='02') 또는 비사용(useYn='N') 슬롯은 변경 불가.
+//   서버도 fail-closed 로 점유 슬롯 변경을 거부한다(프론트 잠금 + 서버 가드 이중 방어).
+const isSlotTypeLocked = (slot) =>
+  slot.slotStatus === "02" || slot.useYn === "N";
+
+// ── 슬롯 소속부서(NODE_CD) 지정/해제 ──────────────────────────────
+// 행 단위 부서 검색 팝업 열기. 선택 시 해당 행의 nodeCd/nodeNm 을 갱신(저장은 '부서 저장' 일괄).
+const fnSlotNodeSearchPopOpen = (slot) => {
+  openPop(SiteNodeSearchPop, {
+    cmpnyCd_p: sessionStorage.getItem("gv_cmpnyCd"),
+    siteCd_p: slot.siteCd,
+    nodeCd_p: "",
+    userId_p: slot.slotNo, // 식별 키로 slotNo 사용(콜백에서 대상 행 매칭)
+    onSelect: onSlotNodeSelected,
+  });
+};
+
+const onSlotNodeSelected = (slotNoVal, nodeCdVal, nodeNmVal) => {
+  const target = DailyUserSlotList.value.find((s) => s.slotNo === slotNoVal);
+  if (target) {
+    target.nodeCd = nodeCdVal ?? "";
+    target.nodeNm = nodeNmVal ?? "";
+  }
+};
+
+// 소속부서 일괄지정: 체크된 행에 동일 부서를 지정(사업장이 다른 행은 부서 검색 사업장 기준으로 거름).
+const fnBulkNodeAssign = () => {
+  const slots = collectCheckedSlots();
+  if (slots.length === 0) {
+    proxy.$alert("선택된 항목이 없습니다.");
+    return;
+  }
+  if (proxy.$util.isEmpty(siteCd.value)) {
+    proxy.$alert(getMessage(MSG.SITE_REQUIRED));
+    return;
+  }
+  // 부서는 사업장에 종속되므로, 선택 행이 모두 조회 사업장(siteCd)에 속해야 일괄지정 가능.
+  if (slots.some((s) => s.siteCd !== siteCd.value)) {
+    proxy.$alert("같은 사업장의 슬롯만 일괄 부서지정할 수 있습니다.");
+    return;
+  }
+  openPop(SiteNodeSearchPop, {
+    cmpnyCd_p: sessionStorage.getItem("gv_cmpnyCd"),
+    siteCd_p: siteCd.value,
+    nodeCd_p: "",
+    onSelect: onBulkNodeAssignSelected,
+  });
+};
+
+const onBulkNodeAssignSelected = (nodeCdVal, nodeNmVal) => {
+  const targets = collectCheckedSlots().filter(
+    (s) => s.siteCd === siteCd.value
+  );
+  targets.forEach((target) => {
+    target.nodeCd = nodeCdVal ?? "";
+    target.nodeNm = nodeNmVal ?? "";
+  });
+};
+
+// 행 단위 - 점유 유지 (FIXED_YN='Y')
 const fnFixSlot = async (slot) => {
   const ok = await proxy.$confirm(
     "해당 슬롯의 점유를 유지하시겠습니까?\n자정 만료 배치에서 점유자가 만료되지 않습니다."
   );
   if (!ok) return;
   await requestSetFixed([slot], "Y");
+};
+
+// 행 단위 - 점유 해지 (FIXED_YN='N'). T1-02: 단일 슬롯 점유 해지 기능 신설(기존 BE 재사용).
+//   점유 유지 해제 → 다음 자정 만료 배치에서 점유자가 만료 대상이 된다. 계정은 변경하지 않음.
+const fnUnfixSlot = async (slot) => {
+  const ok = await proxy.$confirm(
+    "해당 슬롯의 점유 유지를 해지하시겠습니까?\n다음 자정 만료 배치에서 점유자가 만료될 수 있습니다."
+  );
+  if (!ok) return;
+  await requestSetFixed([slot], "N");
 };
 
 // 행 단위 - 비우기 (위험 동작)
@@ -797,12 +1003,14 @@ const fnBulkClear = async () => {
 };
 
 // ================ Watchers ================
+// 소속부서(nodeCd/nodeNm)·상태(slotStatus)·구분(slotType) 값이 바뀌면 해당 행을 자동 체크.
+//   (chk 자기재귀 방지 및 원본 스냅샷 _orig* 은 감시 제외)
 useFieldWatcher(
   DailyUserSlotList,
   (item) => {
     item.chk = true;
   },
-  ["chk"]
+  ["chk", "_origSlotType", "_origNodeCd"]
 );
 
 // ================ Life Cycle Functions ================
@@ -855,6 +1063,10 @@ const fnSearch = async () => {
     return;
   }
 
+  // 조회 버튼으로 활성화 계정 카드(한도 dayLimitCnt/계정등록 토글/활성 계정 수)도 함께 최신화.
+  //   (기존엔 watch(siteCd) 로만 갱신돼 사업장 미변경 조회 시 카드가 갱신되지 않던 결함 수정)
+  await fnGetDailyUserLinkPolicies();
+
   DailyUserSlotList.value = [];
 
   try {
@@ -870,6 +1082,11 @@ const fnSearch = async () => {
 
     if (response.status === 200) {
       DailyUserSlotList.value = response.data?.dailyUserSlotList || [];
+      // 구분(slotType)/소속부서(nodeCd) 변경 감지를 위해 행마다 원본값 스냅샷 저장(dirty 판정 기준).
+      DailyUserSlotList.value.forEach((item) => {
+        item._origSlotType = item.slotType;
+        item._origNodeCd = item.nodeCd ?? "";
+      });
       // // dayLimitCnt 기본값 설정
       // DailyUserSlotList.value.forEach((item) => {
       //   if (item.dayLimitCnt == null || item.dayLimitCnt === "") {
@@ -908,7 +1125,8 @@ const fnSrchSiteInfo = async () => {
 const fnButtonControll = () => {
   // localButtons.value.search = "N";
   localButtons.value.create = "N";
-  localButtons.value.save = "N";
+  // 공통 헤더 저장 버튼 활성화(@save -> fnSave: 일일계정 링크정책 저장)
+  localButtons.value.save = "Y";
   localButtons.value.delete = "N";
   localButtons.value.excel = "N";
 };
@@ -1025,6 +1243,22 @@ const fnInit = () => {
   background: #f3f4f6;
   border-color: #d1d5db;
   color: #9ca3af;
+  cursor: not-allowed;
+}
+
+/* 소속부서 지정 행 검색 버튼 (CSS 변수 기반, 하드코딩 금지) */
+.node-assign-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0.2rem;
+  border: none;
+  border-radius: 4px;
+  background-color: var(--color-primary, #16a34a);
+  cursor: pointer;
+}
+.node-assign-btn:disabled {
+  background-color: var(--color-border, #d1d5db);
   cursor: not-allowed;
 }
 

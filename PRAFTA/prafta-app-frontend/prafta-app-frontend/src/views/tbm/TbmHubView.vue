@@ -39,17 +39,30 @@
     </nav>
 
     <!-- 본문: 선택된 탭의 리스트 -->
-    <main class="tbm-hub-body">
+    <main
+      ref="scrollRef"
+      class="tbm-hub-body"
+      @touchstart.passive="onPullStart"
+      @touchmove="onPullMove"
+      @touchend="onPullEnd"
+      @touchcancel="onPullEnd"
+    >
+      <!-- 당겨서 새로고침 인디케이터(스크롤 컨테이너 최상단 첫 자식) -->
+      <PullRefreshIndicator v-bind="indicatorProps" />
+
       <TbmAvailableList
         v-if="activeTab === 'AVAILABLE'"
+        ref="availableListRef"
         @select="onSelectAvailable"
       />
       <TbmInProgressList
         v-else-if="activeTab === 'IN_PROGRESS'"
+        ref="inProgressListRef"
         @select="onSelectInProgress"
       />
       <TbmCompletedList
         v-else
+        ref="completedListRef"
         @select="onSelectCompleted"
       />
     </main>
@@ -91,11 +104,13 @@ import { useRouter } from 'vue-router'
 
 import api from '@/api/axios'
 import { requestGps } from '@/utils/gpsBridge'
+import { usePullToRefresh } from '@/composables/usePullToRefresh'
 
 import TbmAvailableList from './components/TbmAvailableList.vue'
 import TbmInProgressList from './components/TbmInProgressList.vue'
 import TbmCompletedList from './components/TbmCompletedList.vue'
 import TbmEntryPwdSheet from './components/TbmEntryPwdSheet.vue'
+import PullRefreshIndicator from '@/components/common/PullRefreshIndicator.vue'
 import AppBottomTabBar from '@/components/common/AppBottomTabBar.vue'
 
 const router = useRouter()
@@ -115,6 +130,22 @@ const tabs = [
   { key: 'COMPLETED', label: '교육완료' },
 ]
 const activeTab = ref('AVAILABLE')
+
+// ── 당겨서 새로고침 ─────────────────────────────────────────────────
+//   3탭은 v-if/else-if/else 로 한 번에 하나의 리스트만 마운트된다. 마운트된 자식(들)의
+//   refresh 를 Promise.all 로 호출(현재는 활성 탭 하나만 유효, 옵셔널 체이닝으로 안전).
+const scrollRef = ref(null)
+const availableListRef = ref(null)
+const inProgressListRef = ref(null)
+const completedListRef = ref(null)
+const { onPullStart, onPullMove, onPullEnd, indicatorProps } = usePullToRefresh(
+  scrollRef,
+  async () => {
+    await Promise.all(
+      [availableListRef, inProgressListRef, completedListRef].map((r) => r.value?.refresh?.()),
+    )
+  },
+)
 
 // 입실 비번 시트 상태 + 선택 세션 컨텍스트
 const entrySheetOpen = ref(false)

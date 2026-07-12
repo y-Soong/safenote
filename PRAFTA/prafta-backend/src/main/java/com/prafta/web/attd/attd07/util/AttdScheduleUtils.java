@@ -46,7 +46,8 @@ public final class AttdScheduleUtils {
     public static int[] buildPlanSegment(String workYmd, String startHHmm, String endHHmm) {
         if (workYmd == null || workYmd.length() != 8) return null;
         Integer s = DateTimeUtils.hhmmToMinutes(startHHmm);
-        Integer e = DateTimeUtils.hhmmToMinutes(endHHmm);
+        // 종료는 자정 경계 근무(정책 attd/03 §3.3) "2400"=1440 을 인정하는 종료 전용 파서 사용.
+        Integer e = DateTimeUtils.schEndToMinutes(endHHmm);
         if (s == null || e == null) return null;
         // [QA 재작업 D1] plan stamp origin 통일: workYmd anchor 이므로 dayOffset=0,
         // toMinuteStamp 와 동일하게 기준점을 workYmd-1 00:00 으로 이동(+1440).

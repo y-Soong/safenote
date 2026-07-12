@@ -1,0 +1,616 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.prafta.web.user.user01.mapper.UserTransferMapper">
+
+    <!-- ============================================================
+         대상 사용자 기본 정보(현재 사업장/부서/고용형태) — 회사 스코프 강제.
+         계정상태 03(탈퇴) 제외(이미 탈퇴자는 소속이동 대상 아님).
+         ============================================================ -->
+    <select id="selectUserBasic" resultType="com.prafta.web.user.user01.result.UserTransferBasicResult">
+    /* UserTransferMapper.selectUserBasic */
+    SELECT
+          U.USER_CD                  AS userCd
+        , U.USER_ID                  AS userId
+        , U.USER_NM                  AS userNm
+        , U.SITE_CD                  AS siteCd
+        , U.NODE_CD                  AS nodeCd
+        , U.EMPLOYMENT_TYPE          AS employmentType
+    FROM TB_USER U
+    WHERE U.CMPNY_CD = #{cmpnyCd}
+      AND U.USER_CD  = #{userCd}
+      AND U.ACCOUNT_STATUS != '03'
+    LIMIT 1
+    </select>
+
+    <!-- ============================================================
+         이동 사업장 실재 검증 — (CMPNY_CD, SITE_CD) 존재 여부(회사 스코프, cross-tenant 방지).
+         ============================================================ -->
+    <select id="selectSiteExists" resultType="int">
+    /* UserTransferMapper.selectSiteExists */
+    SELECT COUNT(*)
+    FROM (
+        SELECT 1
+          FROM TB_SITE S
+         WHERE S.CMPNY_CD = #{cmpnyCd}
+           AND S.SITE_CD  = #{siteCd}
+         LIMIT 1
+    ) T
+    </select>
+
+    <!-- ============================================================
+         이동 소속부서 실재 검증 — (CMPNY_CD, SITE_CD, NODE_CD) 존재 여부(회사 스코프, cross-tenant 방지).
+         ============================================================ -->
+    <select id="selectNodeExists" resultType="int">
+    /* UserTransferMapper.selectNodeExists */
+    SELECT COUNT(*)
+    FROM (
+        SELECT 1
+          FROM TB_SITE_NODE N
+         WHERE N.CMPNY_CD = #{cmpnyCd}
+           AND N.SITE_CD  = #{siteCd}
+           AND N.NODE_CD  = #{nodeCd}
+         LIMIT 1
+    ) T
+    </select>
+
+    <!-- ============================================================
+         불가① 사업장 관리자(Baim_01): 대상자가 현재 사업장의 SITE_ADMIN_CD 인지.
+         ============================================================ -->
+    <select id="selectIsSiteAdmin" resultType="int">
+    /* UserTransferMapper.selectIsSiteAdmin */
+    SELECT COUNT(*)
+    FROM (
+        SELECT 1
+          FROM TB_SITE S
+         WHERE S.CMPNY_CD      = #{cmpnyCd}
+           AND S.SITE_CD       = #{siteCd}
+           AND S.SITE_ADMIN_CD = #{userCd}
+         LIMIT 1
+    ) T
+    </select>
+
+    <!-- ============================================================
+         불가② 노드 마지막 담당자(Baim_06):
+         대상자가 MAIN 또는 SUB 담당자(정/부 불문)이면서,
+         두 슬롯 모두 (NULL/빈값 또는 대상자 본인) 이라 대상자 제거 시 다른 담당자가 0명이 되는 노드 수.
+         회사 스코프(CMPNY_CD) 전체에서 판정(노드는 사업장에 종속되나, 마지막 담당자 여부는 회사 범위에서 본다).
+         ============================================================ -->
+    <select id="selectLastAdminNodeCnt" resultType="int">
+    /* UserTransferMapper.selectLastAdminNodeCnt */
+    SELECT COUNT(*)
+    FROM TB_SITE_NODE N
+    WHERE N.CMPNY_CD = #{cmpnyCd}
+      AND (
+            N.MAIN_ADMIN_CD = #{userCd}
+         OR N.SUB_ADMIN_CD  = #{userCd}
+          )
+      AND (NULLIF(TRIM(N.MAIN_ADMIN_CD), '') IS NULL OR N.MAIN_ADMIN_CD = #{userCd})
+      AND (NULLIF(TRIM(N.SUB_ADMIN_CD), '')  IS NULL OR N.SUB_ADMIN_CD  = #{userCd})
+    </select>
+
+    <!-- ============================================================
+         불가③ 순회점검 담당자(ChkLst_01): 대상자가 활성 체크포인트 담당자(MGMT_USER_CD, USE_YN='Y')인지.
+         ============================================================ -->
+    <select id="selectIsChkptManager" resultType="int">
+    /* UserTransferMapper.selectIsChkptManager */
+    SELECT COUNT(*)
+    FROM (
+        SELECT 1
+          FROM TB_CHKPT_TYPE_MGMT M
+         WHERE M.CMPNY_CD     = #{cmpnyCd}
+           AND M.MGMT_USER_CD = #{userCd}
+           AND M.USE_YN       = 'Y'
+         LIMIT 1
+    ) T
+    </select>
+
+    <!-- ============================================================
+         불가⑤ 대상자의 현재/미래 부분(시간차) 연차 목록.
+         Attd05Mapper.selectPartialLeaveOverlayList 의 활성 부분연차 정의와 동일:
+           LEAVE_STATUS='CONFIRMED' AND DEL_YN='N' AND USE_UNIT_TYPE != '00'.
+         + START_DATE >= moveDate(현재/미래) + START_TIME 보유(시간대 있는 행만 = 커버리지 판정 대상).
+         ============================================================ -->
+    <select id="selectFuturePartialLeaves" resultType="com.prafta.web.user.user01.result.PartialLeaveTimeResult">
+    /* UserTransferMapper.selectFuturePartialLeaves */
+    SELECT
+          L.LEAVE_ID         AS leaveId
+        , L.START_DATE       AS startDate
+        , L.START_TIME       AS startTime
+        , L.END_TIME         AS endTime
+        , L.USE_UNIT_TYPE    AS useUnitType
+    FROM TB_USER_LEAVE_USE L
+    WHERE L.CMPNY_CD     = #{cmpnyCd}
+      AND L.USER_CD      = #{userCd}
+      AND L.LEAVE_STATUS = 'CONFIRMED'
+      AND L.DEL_YN       = 'N'
+      AND L.USE_UNIT_TYPE != '00'
+      AND NULLIF(TRIM(L.START_TIME), '') IS NOT NULL
+      AND L.START_DATE <![CDATA[ >= ]]> #{moveDate}
+    ORDER BY L.START_DATE ASC, L.START_TIME ASC
+    </select>
+
+    <!-- ============================================================
+         불가⑤ 기본 근무타입(schCd)의 baseDate 기준 effective 근무 구간 시각(1/2구간).
+         TB_SCH_MGMT(현재본, HIST_IDX=MAX) ∪ TB_SCH_MGMT_HIST UNION 후 APPLY_DATE <= baseDate 최신본.
+         (web attd11 / app admin attd 의 effective-dating 패턴 동형 — 단일 schCd 룩업으로 축약).
+         baseDate 기준 유효본이 없으면 최이른 적용본으로 폴백(COALESCE).
+         ============================================================ -->
+    <select id="selectEffectiveSchSegment" resultType="com.prafta.web.user.user01.result.SchSegmentTimeResult">
+    /* UserTransferMapper.selectEffectiveSchSegment */
+    SELECT
+          E.FST_SCH_STR_TIME   AS fstSchStrTime
+        , E.FST_SCH_END_TIME   AS fstSchEndTime
+        , E.SEC_SCH_STR_TIME   AS secSchStrTime
+        , E.SEC_SCH_END_TIME   AS secSchEndTime
+    FROM (
+        SELECT
+              M.APPLY_DATE
+            , M.FST_SCH_STR_TIME, M.FST_SCH_END_TIME
+            , M.SEC_SCH_STR_TIME, M.SEC_SCH_END_TIME
+        FROM TB_SCH_MGMT M
+        WHERE M.USE_YN   = 'Y'
+          AND M.CMPNY_CD = #{cmpnyCd}
+          AND M.SITE_CD  = #{siteCd}
+          AND M.SCH_CD   = #{schCd}
+        UNION ALL
+        SELECT
+              H.APPLY_DATE
+            , H.FST_SCH_STR_TIME, H.FST_SCH_END_TIME
+            , H.SEC_SCH_STR_TIME, H.SEC_SCH_END_TIME
+        FROM TB_SCH_MGMT_HIST H
+        WHERE H.USE_YN   = 'Y'
+          AND H.CMPNY_CD = #{cmpnyCd}
+          AND H.SITE_CD  = #{siteCd}
+          AND H.SCH_CD   = #{schCd}
+    ) E
+    WHERE E.APPLY_DATE = (
+        SELECT COALESCE(
+                 MAX(CASE WHEN SE.APPLY_DATE <![CDATA[ <= ]]> #{baseDate} THEN SE.APPLY_DATE END)
+               , MIN(SE.APPLY_DATE)
+               )
+        FROM (
+            SELECT M2.APPLY_DATE
+            FROM TB_SCH_MGMT M2
+            WHERE M2.USE_YN   = 'Y'
+              AND M2.CMPNY_CD = #{cmpnyCd}
+              AND M2.SITE_CD  = #{siteCd}
+              AND M2.SCH_CD   = #{schCd}
+            UNION ALL
+            SELECT H2.APPLY_DATE
+            FROM TB_SCH_MGMT_HIST H2
+            WHERE H2.USE_YN   = 'Y'
+              AND H2.CMPNY_CD = #{cmpnyCd}
+              AND H2.SITE_CD  = #{siteCd}
+              AND H2.SCH_CD   = #{schCd}
+        ) SE
+    )
+    ORDER BY E.APPLY_DATE DESC
+    LIMIT 1
+    </select>
+
+    <!-- ============================================================
+         동일 사용자 활성 예약(STATUS='RESERVED') 카운트(중복 사전검사). DB UNIQUE(활성 한정)가 동시성 백스톱.
+         ============================================================ -->
+    <select id="selectActiveReservationCnt" resultType="int">
+    /* UserTransferMapper.selectActiveReservationCnt */
+    SELECT COUNT(*)
+    FROM (
+        SELECT 1
+          FROM TB_USER_TRANSFER_RESERVATION R
+         WHERE R.CMPNY_CD = #{cmpnyCd}
+           AND R.USER_CD  = #{userCd}
+           AND R.STATUS   = 'RESERVED'
+         LIMIT 1
+    ) T
+    </select>
+
+    <!-- 예약 ID 채번('TR' + YYYYMMDD + 시퀀스). -->
+    <select id="selectReservationId" resultType="string">
+    /* UserTransferMapper.selectReservationId */
+    SELECT CONCAT('TR', DATE_FORMAT(NOW(), '%Y%m%d'), FNC_CMM_SEQ_NEXTVAL(#{cmpnyCd}, 'USER_TRANSFER'))
+    FROM DUAL
+    </select>
+
+    <!-- 소속이동 예약 INSERT(STATUS='RESERVED'/NOTICE_ACK_YN='N'/DEL_YN='N' 고정). -->
+    <insert id="insertReservation" parameterType="com.prafta.web.user.user01.application.command.TransferReservationInsertCommand">
+    /* UserTransferMapper.insertReservation */
+    INSERT INTO TB_USER_TRANSFER_RESERVATION (
+          CMPNY_CD
+        , RESERVATION_ID
+        , USER_CD
+        , FROM_SITE_CD
+        , FROM_NODE_CD
+        , TO_SITE_CD
+        , TO_NODE_CD
+        , TO_DEFAULT_SCH_CD
+        , MOVE_DATE
+        , MOVE_REASON
+        , EMPLOYMENT_TYPE
+        , STATUS
+        , NOTICE_ACK_YN
+        , DEL_YN
+        , INSERT_NO
+        , INSERT_DATE
+    ) VALUES (
+          #{cmpnyCd}
+        , #{reservationId}
+        , #{userCd}
+        , #{fromSiteCd}
+        , #{fromNodeCd}
+        , #{toSiteCd}
+        , #{toNodeCd}
+        , #{toDefaultSchCd}
+        , #{moveDate}
+        , #{moveReason}
+        , #{employmentType}
+        , 'RESERVED'
+        , 'N'
+        , 'N'
+        , #{insertNo}
+        , NOW()
+    )
+    </insert>
+
+    <!-- ============================================================
+         PRAFTA-WEB_001-2 (Terminal B) — 발효 실행기/자정 스케줄러 전용.
+         모든 변경은 예약 레코드의 CMPNY_CD/USER_CD 범위로만(cross-tenant 방지).
+         진행중 요청 반려/취소·TBM 종료/미이수는 기존 인터랙티브 반려 서비스가
+         호출자(승인자) 권위·단건 REQ_ID 컨텍스트에 강결합돼 배치 재사용 불가하므로,
+         각 캐노니컬 상태 전이(컬럼 집합)를 동일하게 미러한 회사+사용자 스코프 일괄 UPDATE.
+         ============================================================ -->
+
+    <!-- 발효 대상 예약: RESERVED + 미삭제 + MOVE_DATE <= today. APPLIED/FAILED 는 STATUS 필터로 제외(멱등). -->
+    <select id="selectDueReservations" resultType="com.prafta.web.user.user01.result.TransferReservationExecRow">
+    /* UserTransferMapper.selectDueReservations */
+    SELECT
+          R.CMPNY_CD           AS cmpnyCd
+        , R.RESERVATION_ID     AS reservationId
+        , R.USER_CD            AS userCd
+        , R.FROM_SITE_CD       AS fromSiteCd
+        , R.FROM_NODE_CD       AS fromNodeCd
+        , R.TO_SITE_CD         AS toSiteCd
+        , R.TO_NODE_CD         AS toNodeCd
+        , R.TO_DEFAULT_SCH_CD  AS toDefaultSchCd
+        , R.MOVE_DATE          AS moveDate
+        , R.EMPLOYMENT_TYPE    AS employmentType
+        , R.INSERT_NO          AS insertNo
+    FROM TB_USER_TRANSFER_RESERVATION R
+    WHERE R.STATUS    = 'RESERVED'
+      AND R.DEL_YN    = 'N'
+      AND R.MOVE_DATE <![CDATA[ <= ]]> #{today}
+    ORDER BY R.CMPNY_CD ASC, R.MOVE_DATE ASC, R.RESERVATION_ID ASC
+    </select>
+
+    <!-- 발효 선점 잠금(FOR UPDATE) — 다중 인스턴스 이중작업 방지. 패자는 STATUS!='RESERVED' 확인 후 빠짐. 행 없으면 null. -->
+    <select id="selectReservationStatusForUpdate" resultType="string">
+    /* UserTransferMapper.selectReservationStatusForUpdate */
+    SELECT R.STATUS
+    FROM TB_USER_TRANSFER_RESERVATION R
+    WHERE R.CMPNY_CD       = #{cmpnyCd}
+      AND R.RESERVATION_ID = #{reservationId}
+    FOR UPDATE
+    </select>
+
+    <!-- 발효 성공 마킹(RESERVED 가드 — 정확히 1행). 0행=이미 처리/경합. -->
+    <update id="markReservationApplied">
+    /* UserTransferMapper.markReservationApplied */
+    UPDATE TB_USER_TRANSFER_RESERVATION
+       SET STATUS        = 'APPLIED'
+         , EXECUTED_DATE = NOW()
+         , UPDATE_NO     = #{actor}
+         , UPDATE_DATE   = NOW()
+     WHERE CMPNY_CD       = #{cmpnyCd}
+       AND RESERVATION_ID = #{reservationId}
+       AND STATUS         = 'RESERVED'
+    </update>
+
+    <!-- 발효 실패 격리(RESERVED 가드). FAIL_REASON 기록, 다른 예약 무영향. EXECUTED_DATE 는 미세팅(미발효). -->
+    <update id="markReservationFailed">
+    /* UserTransferMapper.markReservationFailed */
+    UPDATE TB_USER_TRANSFER_RESERVATION
+       SET STATUS      = 'FAILED'
+         , FAIL_REASON = #{failReason}
+         , UPDATE_NO   = #{actor}
+         , UPDATE_DATE = NOW()
+     WHERE CMPNY_CD       = #{cmpnyCd}
+       AND RESERVATION_ID = #{reservationId}
+       AND STATUS         = 'RESERVED'
+    </update>
+
+    <!-- (a) 소속 발효: SITE_CD/NODE_CD 변경 + (정규직) DEFAULT_SCH_CD/SET_DATE 갱신.
+         mergeUserInfo 의 DEFAULT_SCH 조건부 갱신 패턴 정합. -->
+    <update id="updateUserSiteNodeForTransfer">
+    /* UserTransferMapper.updateUserSiteNodeForTransfer */
+    UPDATE TB_USER
+       SET SITE_CD = #{toSiteCd}
+         , NODE_CD = #{toNodeCd}
+        <if test="applyDefaultSch and toDefaultSchCd != null and toDefaultSchCd != ''">
+         , DEFAULT_SCH_CD       = #{toDefaultSchCd}
+         , DEFAULT_SCH_SET_DATE = NOW()
+        </if>
+         , UPDATE_NO   = #{actor}
+         , UPDATE_DATE = NOW()
+     WHERE CMPNY_CD = #{cmpnyCd}
+       AND USER_CD  = #{userCd}
+    </update>
+
+    <!-- (c) 담당 정 자동등록: 이동/생성 노드의 정(MAIN)·부(SUB) 담당이 "모두" 비어있을 때만 대상자를 정(MAIN)으로 세팅.
+         PRAFTA-WEB_002-T1-02(1.3-3/1.4-1): 기존엔 MAIN 만 검사하여 SUB 만 지정된 노드에 정을 잘못 덮어쓰는 결함이 있었다.
+         요구사항("정/부 한 명도 없으면")에 맞춰 SUB_ADMIN_CD 도 비어있어야 한다는 조건을 추가한다. 둘 중 하나라도 있으면 0행. -->
+    <update id="updateNodeMainAdminIfEmpty">
+    /* UserTransferMapper.updateNodeMainAdminIfEmpty */
+    UPDATE TB_SITE_NODE
+       SET MAIN_ADMIN_CD = #{userCd}
+         , UPDATE_NO     = #{actor}
+         , UPDATE_DATE   = NOW()
+     WHERE CMPNY_CD = #{cmpnyCd}
+       AND SITE_CD  = #{siteCd}
+       AND NODE_CD  = #{nodeCd}
+       AND NULLIF(TRIM(MAIN_ADMIN_CD), '') IS NULL
+       AND NULLIF(TRIM(SUB_ADMIN_CD), '')  IS NULL
+    </update>
+
+    <!-- (e) 진행중 근태/연차 요청(신청자=대상자) 취소 → REQ_STATUS='04'.
+         Attd07Mapper.updateUserAttdReqReject 컬럼 집합 미러(상태값만 취소'04'). -->
+    <!-- QT-11-7: 발효로 종료될 "연차 사용('05')" 요청 ID 스냅샷.
+         (e) 단계의 일괄 UPDATE 는 REQ 상태만 바꾸고 연차 원장(use 행·GRANT USED_DAYS)은 손대지 않아
+         차감이 그대로 남았다. 상태 UPDATE 전에 대상 REQ_ID 를 확보해 두었다가, UPDATE 직후
+         LeaveFlowService.restoreLeaveLedgerOnTerminate 로 원복한다(정상 반려와 동일 시퀀스).
+         applicantOrApprover='A' = 대상자가 신청자(취소 대상) / 'P' = 대상자가 미처리 결재자(반려 대상). -->
+    <select id="selectActiveLeaveReqIdsByApplicant" resultType="string">
+    /* UserTransferMapper.selectActiveLeaveReqIdsByApplicant */
+    SELECT R.REQ_ID
+      FROM TB_USER_ATTD_REQ R
+     WHERE R.CMPNY_CD   = #{cmpnyCd}
+       AND R.USER_CD    = #{userCd}
+       AND R.REQ_TYPE   = '05'
+       AND R.REQ_STATUS = '01'
+       AND R.DEL_YN     = 'N'
+    </select>
+
+    <!-- QT-11-7: 스냅샷된 REQ_ID 집합(대상자가 결재자인 건) 중 연차 사용('05') 만 추린다.
+         근태보정/OT/스케줄 요청은 연차 원장과 무관하므로 원복 대상이 아니다. -->
+    <select id="selectLeaveReqIdsIn" resultType="string">
+    /* UserTransferMapper.selectLeaveReqIdsIn */
+    SELECT R.REQ_ID
+      FROM TB_USER_ATTD_REQ R
+     WHERE R.CMPNY_CD = #{cmpnyCd}
+       AND R.REQ_TYPE = '05'
+       AND R.DEL_YN   = 'N'
+       AND R.REQ_ID IN
+       <foreach collection="reqIds" item="rid" open="(" separator="," close=")">
+           #{rid}
+       </foreach>
+    </select>
+
+    <update id="cancelActiveAttdReqByApplicant">
+    /* UserTransferMapper.cancelActiveAttdReqByApplicant */
+    UPDATE TB_USER_ATTD_REQ
+       SET REQ_STATUS      = '04'
+         , PROCESS_USER_CD = #{actor}
+         , PROCESS_COMMENT = #{reason}
+         , PROCESS_DATE    = NOW()
+         , UPDATE_NO       = #{actor}
+         , UPDATE_DATE     = NOW()
+     WHERE CMPNY_CD   = #{cmpnyCd}
+       AND USER_CD    = #{userCd}
+       AND REQ_STATUS = '01'
+       AND DEL_YN     = 'N'
+    </update>
+
+    <!-- (e) 진행중 근태/연차 요청(승인대기 결재자=대상자) — 스냅샷 선조회.
+         [수정5] 본 요청 반려와 결재단계 반려가 서로의 사전상태(부모 '01' ↔ 단계 '00'/'01')에 상호 의존하므로
+         순차 UPDATE 로는 한쪽이 다른쪽을 무력화한다. 따라서 대상 REQ_ID 를 먼저 스냅샷한 뒤
+         두 UPDATE 가 동일 집합을 키로 처리한다(상호 의존 제거, 활성 요청만 한정 — fix5 의도 충족).
+         조건: R.REQ_STATUS='01' AND R.DEL_YN='N' AND 대상자에게 배정된 미처리 결재단계('00'/'01') 존재. -->
+    <select id="selectActiveApproverReqIds" resultType="string">
+    /* UserTransferMapper.selectActiveApproverReqIds */
+    SELECT R.REQ_ID
+    FROM TB_USER_ATTD_REQ R
+    WHERE R.CMPNY_CD   = #{cmpnyCd}
+      AND R.REQ_STATUS = '01'
+      AND R.DEL_YN     = 'N'
+      AND EXISTS (
+           SELECT 1
+             FROM TB_USER_ATTD_REQ_APPROVAL A
+            WHERE A.CMPNY_CD        = R.CMPNY_CD
+              AND A.REQ_ID          = R.REQ_ID
+              AND A.APPROVER_USER_CD = #{userCd}
+              AND A.APPROVAL_STATUS IN ('00', '01')
+          )
+    </select>
+
+    <!-- (e) 스냅샷된 REQ_ID 들의 본 요청 반려 → REQ_STATUS='03'(반려).
+         Attd07Mapper.updateUserAttdReqReject 컬럼 집합 미러. REQ_STATUS='01' 가드(경합 방어). -->
+    <update id="rejectAttdReqByReqIds">
+    /* UserTransferMapper.rejectAttdReqByReqIds */
+    UPDATE TB_USER_ATTD_REQ
+       SET REQ_STATUS      = '03'
+         , PROCESS_USER_CD = #{actor}
+         , PROCESS_COMMENT = #{reason}
+         , PROCESS_DATE    = NOW()
+         , UPDATE_NO       = #{actor}
+         , UPDATE_DATE     = NOW()
+     WHERE CMPNY_CD   = #{cmpnyCd}
+       AND REQ_STATUS = '01'
+       AND DEL_YN     = 'N'
+       AND REQ_ID IN
+       <foreach collection="reqIds" item="rid" open="(" separator="," close=")">
+           #{rid}
+       </foreach>
+    </update>
+
+    <!-- (e) 스냅샷된 REQ_ID 들에서 대상자(결재자)의 미처리 결재단계 반려 → APPROVAL_STATUS='03'(SYS044).
+         ApprovalLineMapper.updateStepStatus 컬럼 집합 미러. 미처리('00'/'01') 단계만. -->
+    <update id="rejectApprovalStepsForApproverByReqIds">
+    /* UserTransferMapper.rejectApprovalStepsForApproverByReqIds */
+    UPDATE TB_USER_ATTD_REQ_APPROVAL
+       SET APPROVAL_STATUS  = '03'
+         , APPROVAL_COMMENT = #{reason}
+         , APPROVAL_DATE    = NOW()
+         , UPDATE_NO        = #{actor}
+         , UPDATE_DATE      = NOW()
+     WHERE CMPNY_CD         = #{cmpnyCd}
+       AND APPROVER_USER_CD = #{userCd}
+       AND APPROVAL_STATUS IN ('00', '01')
+       AND REQ_ID IN
+       <foreach collection="reqIds" item="rid" open="(" separator="," close=")">
+           #{rid}
+       </foreach>
+    </update>
+
+    <!-- (e) 진행중 초과근무 취소: OT_STATUS='IN_PROGRESS' → 'CANCELLED'.
+         selectDailyOvertimeList 술어(OT_STATUS != 'CANCELLED')와 정합. -->
+    <update id="cancelActiveOvertimeByUser">
+    /* UserTransferMapper.cancelActiveOvertimeByUser */
+    UPDATE TB_USER_OVERTIME_MGMT
+       SET OT_STATUS   = 'CANCELLED'
+         , UPDATE_NO   = #{actor}
+         , UPDATE_DATE = NOW()
+     WHERE CMPNY_CD  = #{cmpnyCd}
+       AND USER_CD   = #{userCd}
+       AND OT_STATUS = 'IN_PROGRESS'
+       AND DEL_YN    = 'N'
+    </update>
+
+    <!-- (e) 진행중 연차변경요청 반려: REQ_STATUS IN ('REQUESTED','AGREED') → 'REJECTED'.
+         대상자가 TARGET_USER_CD 또는 INITIATOR_USER_CD 인 비종결 건. Attd13Mapper.rejectChangeRequest 미러. -->
+    <update id="rejectActiveLeaveChangeByUser">
+    /* UserTransferMapper.rejectActiveLeaveChangeByUser */
+    UPDATE TB_LEAVE_CHANGE_REQUEST
+       SET REQ_STATUS      = 'REJECTED'
+         , REJECT_REASON   = #{rejectReason}
+         , CONFIRM_USER_CD = #{actor}
+         , CONFIRM_DATE    = NOW()
+         , UPDATE_NO       = #{actor}
+         , UPDATE_DATE     = NOW()
+     WHERE CMPNY_CD = #{cmpnyCd}
+       AND (TARGET_USER_CD = #{userCd} OR INITIATOR_USER_CD = #{userCd})
+       AND REQ_STATUS IN ('REQUESTED', 'AGREED')
+       AND DEL_YN = 'N'
+    </update>
+
+    <!-- (f-가) 대상자가 진행 관리자(MANAGER_USER_CD)인 시작·미종료 세션 종료처리.
+         STARTED_AT NOT NULL AND ENDED_AT IS NULL AND CANCELLED_AT IS NULL → STATUS_CD='COMPLETED' + ENDED_AT.
+         AppAdminTbmMapper.endSession 미러(EXIT_PWD 미발급 — 강제 종료).
+         [수정4] endSession 원본과 동일하게 STATUS_CD='IN_PROGRESS' 가드 추가(타임스탬프 가드 병행). -->
+    <update id="endActiveTbmSessionsAsManager">
+    /* UserTransferMapper.endActiveTbmSessionsAsManager */
+    UPDATE TB_TBM_SESSION
+       SET STATUS_CD   = 'COMPLETED'
+         , ENDED_AT    = NOW()
+         , UPDATE_NO   = #{actor}
+         , UPDATE_DATE = NOW()
+     WHERE CMPNY_CD        = #{cmpnyCd}
+       AND MANAGER_USER_CD = #{userCd}
+       AND DEL_YN          = 'N'
+       AND STATUS_CD       = 'IN_PROGRESS'
+       AND STARTED_AT   IS NOT NULL
+       AND ENDED_AT     IS NULL
+       AND CANCELLED_AT IS NULL
+    </update>
+
+    <!-- (f-나) 대상자 참석(ENTRY_AT NOT NULL) 중 정상종료(서명)前(COMPLETION != 'COMPLETED') → 미이수.
+         COMPLETION_STATUS_CD='NOT_COMPLETED' + NOT_COMPLETED_REASON + STATUS_UPDATED_BY/AT.
+         Tbm04Mapper.updateCompletion 미러(입퇴실 컬럼 불변). NULL/NOT_COMPLETED 모두 대상(자동이수 폐지 정합).
+         [수정3] 세션 EXISTS 로 "진행중 세션"만 한정 — 과거/종료(ENDED_AT)/취소(CANCELLED_AT) 세션 참석 덮어쓰기 방지.
+         (app-031 정준: 참석=ENTRY_AT NOT NULL, 미이수=참석+미완료. 진행중 세션 한정으로 과대범위 차단.) -->
+    <update id="markTbmAttendanceNotCompleted">
+    /* UserTransferMapper.markTbmAttendanceNotCompleted */
+    UPDATE TB_TBM_ATTENDANCE AT
+       SET AT.COMPLETION_STATUS_CD = 'NOT_COMPLETED'
+         , AT.NOT_COMPLETED_REASON = #{reason}
+         , AT.STATUS_UPDATED_BY    = #{actor}
+         , AT.STATUS_UPDATED_AT    = NOW()
+         , AT.UPDATE_NO            = #{actor}
+         , AT.UPDATE_DATE          = NOW()
+     WHERE AT.CMPNY_CD = #{cmpnyCd}
+       AND AT.USER_CD  = #{userCd}
+       AND AT.DEL_YN   = 'N'
+       AND AT.ENTRY_AT IS NOT NULL
+       AND (AT.COMPLETION_STATUS_CD IS NULL OR AT.COMPLETION_STATUS_CD <![CDATA[ <> ]]> 'COMPLETED')
+       AND EXISTS (
+            SELECT 1
+              FROM TB_TBM_SESSION S
+             WHERE S.CMPNY_CD     = AT.CMPNY_CD
+               AND S.SESSION_CD   = AT.SESSION_CD
+               AND S.DEL_YN       = 'N'
+               AND S.CANCELLED_AT IS NULL
+               AND S.ENDED_AT     IS NULL
+           )
+    </update>
+
+    <!-- ============================================================
+         PRAFTA-WEB_001-3 (Terminal C) — 등록 즉시 PUSH + 로그인 안내 조회/ack.
+         안내 조회/ack 는 대상자 본인(USER_CD) 스코프로만(IDOR 방지).
+         명칭(사업장/부서/기본근무타입)은 회사 스코프 LEFT JOIN 으로 도출.
+         ============================================================ -->
+
+    <!-- 안내 표시정보 공통 SELECT 본문(예약 1행 + 명칭 조인). -->
+    <sql id="transferNoticeColumns">
+          R.RESERVATION_ID    AS reservationId
+        , R.MOVE_DATE         AS moveDate
+        , S.SITE_NM           AS toSiteNm
+        , N.NODE_NM           AS toNodeNm
+        , M.SCH_NO            AS defaultSchNm
+        , R.MOVE_REASON       AS moveReason
+    </sql>
+
+    <sql id="transferNoticeJoins">
+    FROM TB_USER_TRANSFER_RESERVATION R
+    LEFT JOIN TB_SITE S
+           ON S.CMPNY_CD = R.CMPNY_CD
+          AND S.SITE_CD  = R.TO_SITE_CD
+    LEFT JOIN TB_SITE_NODE N
+           ON N.CMPNY_CD = R.CMPNY_CD
+          AND N.SITE_CD  = R.TO_SITE_CD
+          AND N.NODE_CD  = R.TO_NODE_CD
+    LEFT JOIN TB_SCH_MGMT M
+           ON M.CMPNY_CD = R.CMPNY_CD
+          AND M.SITE_CD  = R.TO_SITE_CD
+          AND M.SCH_CD   = R.TO_DEFAULT_SCH_CD
+          AND M.USE_YN   = 'Y'
+    </sql>
+
+    <!-- 단건 예약(PUSH 본문 구성용) — 회사 + 대상자 + 예약 ID 스코프. -->
+    <select id="selectTransferNoticeByReservation" resultType="com.prafta.web.user.user01.result.TransferNoticeResult">
+    /* UserTransferMapper.selectTransferNoticeByReservation */
+    SELECT
+        <include refid="transferNoticeColumns" />
+    <include refid="transferNoticeJoins" />
+    WHERE R.CMPNY_CD       = #{cmpnyCd}
+      AND R.USER_CD        = #{userCd}
+      AND R.RESERVATION_ID = #{reservationId}
+      AND R.DEL_YN         = 'N'
+    LIMIT 1
+    </select>
+
+    <!-- 로그인 안내 — 대상자 본인의 미확인 비종결 예약 최신 1건(IDOR 방지). -->
+    <select id="selectUnackedTransferNotice" resultType="com.prafta.web.user.user01.result.TransferNoticeResult">
+    /* UserTransferMapper.selectUnackedTransferNotice */
+    SELECT
+        <include refid="transferNoticeColumns" />
+    <include refid="transferNoticeJoins" />
+    WHERE R.CMPNY_CD      = #{cmpnyCd}
+      AND R.USER_CD       = #{userCd}
+      AND R.STATUS        IN ('RESERVED', 'APPLIED')
+      AND R.NOTICE_ACK_YN = 'N'
+      AND R.DEL_YN        = 'N'
+    ORDER BY R.INSERT_DATE DESC, R.RESERVATION_ID DESC
+    LIMIT 1
+    </select>
+
+    <!-- 안내 확인(ack) — 회사 + 예약 ID + 대상자(USER_CD) 못박음(타인 ack 차단). 멱등(재확인도 1행). -->
+    <update id="ackTransferNotice">
+    /* UserTransferMapper.ackTransferNotice */
+    UPDATE TB_USER_TRANSFER_RESERVATION
+       SET NOTICE_ACK_YN   = 'Y'
+         , NOTICE_ACK_DATE = NOW()
+         , UPDATE_NO       = #{userCd}
+         , UPDATE_DATE     = NOW()
+     WHERE CMPNY_CD       = #{cmpnyCd}
+       AND RESERVATION_ID = #{reservationId}
+       AND USER_CD        = #{userCd}
+       AND DEL_YN         = 'N'
+    </update>
+</mapper>

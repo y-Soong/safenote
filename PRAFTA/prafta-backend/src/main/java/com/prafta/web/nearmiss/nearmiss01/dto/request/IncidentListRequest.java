@@ -14,7 +14,6 @@ import lombok.Setter;
 public class IncidentListRequest {
     private String siteCd;
     private String reportStatusCd;
-    private String incidentTypeCd;
     private String potentialSeverityCd;
     private String startDate; // YYYY-MM-DD (발생일시 기준)
     private String endDate;   // YYYY-MM-DD

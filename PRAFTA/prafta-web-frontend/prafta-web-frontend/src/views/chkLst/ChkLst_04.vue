@@ -40,7 +40,8 @@
       <!-- 점검구분 (COM001) -->
       <div>
         <label>점검구분</label>
-        <select v-model="chkLstType" name="combo">
+        <select v-model="chkLstType" name="combo" @change="fnChkLstTypeChange">
+          <option value="">전체</option>
           <option
             v-for="opt in (baseCodeArr['COM001'] || []).filter(
               (o) => o.baimValDCd != null
@@ -53,25 +54,44 @@
         </select>
       </div>
 
-      <!-- 점검대상명칭: input(비활성) + 검색버튼 → ChkptTargetSearchPop -->
+      <!-- 점검대상명칭: input(편집가능) + 검색버튼 → ChkptTargetSearchPop -->
+      <!-- 점검구분이 전체("")면 비활성 (targetDisabled) -->
       <div>
         <label>점검대상명칭</label>
-        <input type="text" v-model="chkptNm" disabled placeholder="검색" />
-        <button class="search-btn" @click="fnChkptTargetPopOpen">
+        <input
+          type="text"
+          v-model="chkptNm"
+          :disabled="targetDisabled"
+          placeholder="검색"
+          @input="onChkptNmInput"
+          @blur="onChkptNmBlur"
+        />
+        <button
+          class="search-btn"
+          :disabled="targetDisabled"
+          @click="fnChkptTargetPopOpen"
+        >
           <img class="search_icon" :src="search_icon" alt="검색" />
         </button>
       </div>
 
-      <!-- 점검문항: input(비활성) + 검색버튼 → InspectItemSearchPop -->
+      <!-- 점검문항: input(편집가능) + 검색버튼 → InspectItemSearchPop -->
+      <!-- 점검구분이 전체("")면 비활성 (targetDisabled) -->
       <div>
         <label>점검문항</label>
         <input
           type="text"
           v-model="inspectItemSubj"
-          disabled
+          :disabled="targetDisabled"
           placeholder="검색"
+          @input="onInspectItemInput"
+          @blur="onInspectItemBlur"
         />
-        <button class="search-btn" @click="fnInspectItemPopOpen">
+        <button
+          class="search-btn"
+          :disabled="targetDisabled"
+          @click="fnInspectItemPopOpen"
+        >
           <img class="search_icon" :src="search_icon" alt="검색" />
         </button>
       </div>
@@ -189,6 +209,7 @@
 // ================ Imports ================
 import {
   ref,
+  computed,
   defineProps,
   onMounted,
   getCurrentInstance,
@@ -240,6 +261,9 @@ const actionStatus = ref("");
 
 // 화면 제어
 const siteDisabled = ref(false);
+
+// 점검구분이 전체("")이면 점검대상명칭/점검문항 입력·검색을 비활성
+const targetDisabled = computed(() => proxy.$util.isEmpty(chkLstType.value));
 
 // ================ Life Cycle ================
 const fnInit = () => {
@@ -388,15 +412,51 @@ const fnCallback = (res) => {
   }
 };
 
-const onSiteSelected = (siteCdVal, siteNoVal, siteNmVal) => {
-  siteCd.value = siteCdVal;
-  sr_siteNo.value = siteNoVal;
-  sr_siteNm.value = siteNmVal;
-  // 사업장 변경 시 점검대상/점검문항 선택값 초기화
+// PRAFTA_COM_001-T5-12.1: 점검구분 변경 시 점검대상명칭/점검문항 선택값 초기화
+//   (두 검색 팝업 모두 chkLstType 종속이므로 구분이 바뀌면 하위 선택값을 비운다)
+const fnChkLstTypeChange = () => {
   chkptCd.value = "";
   chkptNm.value = "";
   inspectItemCd.value = "";
   inspectItemSubj.value = "";
+};
+
+const onSiteSelected = (siteCdVal, siteNoVal, siteNmVal) => {
+  siteCd.value = siteCdVal;
+  sr_siteNo.value = siteNoVal;
+  sr_siteNm.value = siteNmVal;
+  // 사업장 변경 시 점검구분을 전체("")로 자동 전환하고 점검대상/점검문항 선택값 초기화
+  chkLstType.value = "";
+  chkptCd.value = "";
+  chkptNm.value = "";
+  inspectItemCd.value = "";
+  inspectItemSubj.value = "";
+};
+
+// 점검대상명칭 사용자 입력: 팝업 선택값을 직접 수정하면 표시값과 코드가 어긋나므로(stale)
+//   타이핑 시점에 선택 코드(chkptCd)를 해제해 재선택을 강제한다.
+//   (팝업 onSelect 는 ref 직접 대입이라 input 이벤트가 발생하지 않아 정상 선택값은 보존된다)
+const onChkptNmInput = () => {
+  chkptCd.value = "";
+};
+
+// 점검대상명칭 blur: 값이 비면 선택 코드(chkptCd)를 해제 (사업장 코드/명 해제 UX 동형)
+const onChkptNmBlur = () => {
+  if (proxy.$util.isEmpty(chkptNm.value)) {
+    chkptCd.value = "";
+  }
+};
+
+// 점검문항 사용자 입력: 위와 동일 — 타이핑 시 선택 코드(inspectItemCd)를 해제(stale 차단)
+const onInspectItemInput = () => {
+  inspectItemCd.value = "";
+};
+
+// 점검문항 blur: 값이 비면 선택 코드(inspectItemCd)를 해제
+const onInspectItemBlur = () => {
+  if (proxy.$util.isEmpty(inspectItemSubj.value)) {
+    inspectItemCd.value = "";
+  }
 };
 
 const fnSiteSearchPopOpen = () => {

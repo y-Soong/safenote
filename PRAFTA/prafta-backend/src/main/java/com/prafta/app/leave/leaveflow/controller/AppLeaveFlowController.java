@@ -13,10 +13,13 @@ import org.springframework.web.bind.annotation.RestController;
 import com.prafta.app.leave.leaveflow.application.param.LeaveApplyMetaParam;
 import com.prafta.app.leave.leaveflow.application.param.LeaveApplyParam;
 import com.prafta.app.leave.leaveflow.application.param.LeaveApproverSearchParam;
+import com.prafta.app.leave.leaveflow.application.param.LeaveDeductionPreviewParam;
 import com.prafta.app.leave.leaveflow.dto.request.LeaveApplyRequest;
+import com.prafta.app.leave.leaveflow.dto.request.LeaveDeductionPreviewRequest;
 import com.prafta.app.leave.leaveflow.dto.response.ApprovalPresetListResponse;
 import com.prafta.app.leave.leaveflow.dto.response.ApproverSearchResponse;
 import com.prafta.app.leave.leaveflow.dto.response.LeaveApplyMetaResponse;
+import com.prafta.app.leave.leaveflow.dto.response.LeaveDeductionPreviewResponse;
 import com.prafta.app.leave.leaveflow.service.AppLeaveFlowService;
 import com.prafta.common.dto.TokenInfo;
 import com.prafta.common.security.JwtUtil;
@@ -92,6 +95,28 @@ public class AppLeaveFlowController {
         ApproverSearchResponse response = appLeaveFlowService.searchApprovers(
                 LeaveApproverSearchParam.from(tokenInfo, keyword, page, size)
         );
+
+        return ResponseEntity.status(HttpStatus.OK).body(response);
+    }
+
+    /**
+     * LC-07(T3): 예상 차감액 미리보기 — INSERT 없음(조회 전용, 웹 /leaveflow/preview-deduction 미러).
+     * 검증 가드는 신청과 동일하게 태우고(위반 시 해당 에러 그대로), 잔여 부족은 플래그로 응답한다.
+     * 인가: 본인 신청 기준(토큰 gv_userCd)만. 일용직은 연차 비대상이라 신청과 동일하게 차단.
+     */
+    @PostMapping("/preview-deduction")
+    public ResponseEntity<?> previewDeduction(
+            @Valid @RequestBody LeaveDeductionPreviewRequest request,
+            @RequestHeader(value = "Authorization", required = false) String authorization
+    ) {
+
+        TokenInfo tokenInfo = jwtUtil.getAllClaimsAsMap(authorization);
+
+        // 신청(/apply)과 동일 게이트 — 일용직 서버 차단(prafta-app-027 follow-up 미러).
+        EmploymentTypeGuard.assertNotDailyWorker(tokenInfo);
+
+        LeaveDeductionPreviewResponse response = appLeaveFlowService.previewDeduction(
+                LeaveDeductionPreviewParam.from(request, tokenInfo));
 
         return ResponseEntity.status(HttpStatus.OK).body(response);
     }

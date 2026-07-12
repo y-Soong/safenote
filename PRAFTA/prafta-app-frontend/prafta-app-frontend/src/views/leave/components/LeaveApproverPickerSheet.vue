@@ -20,6 +20,7 @@
       aria-modal="true"
       aria-label="결재자 추가"
       @click.self="onCancel"
+      @touchmove.self.prevent
     >
       <div class="laps">
         <div class="laps__handle" aria-hidden="true"></div>
@@ -103,7 +104,7 @@
 </template>
 
 <script setup>
-import { ref, computed, watch, getCurrentInstance } from 'vue'
+import { ref, computed, watch, onMounted, onBeforeUnmount, getCurrentInstance } from 'vue'
 import api from '@/api/axios'
 
 const { proxy } = getCurrentInstance() || { proxy: null }
@@ -186,17 +187,47 @@ const onCancel = () => {
   emit('update:modelValue', false)
 }
 
-// 시트 오픈 시 검색어/페이지/체크/후보 초기화 후 첫 페이지 조회.
+// ── 배경(뒤 화면) 스크롤 잠금 ─────────────────────────────────────────────
+// 시트가 열린 동안 document 스크롤을 막아, 시트 대신 뒤의 연차 신청 화면이
+//   스크롤되던 문제(스크롤 누수)를 차단한다. (BaseBottomSheet 패턴 이식)
+let prevBodyOverflow = ''
+let prevHtmlOverflow = ''
+const lockBackgroundScroll = () => {
+  prevBodyOverflow = document.body.style.overflow
+  // 일부 WebView 는 <html>(documentElement)이 스크롤 컨테이너이므로 둘 다 잠근다.
+  prevHtmlOverflow = document.documentElement.style.overflow
+  document.body.style.overflow = 'hidden'
+  document.documentElement.style.overflow = 'hidden'
+}
+const unlockBackgroundScroll = () => {
+  document.body.style.overflow = prevBodyOverflow
+  document.documentElement.style.overflow = prevHtmlOverflow
+}
+
+onMounted(() => {
+  // 초기 open=true 로 마운트되면 즉시 잠금.
+  if (props.modelValue) lockBackgroundScroll()
+})
+onBeforeUnmount(() => {
+  // 열린 채 언마운트돼도 잠금 잔존 방지(결재 불필요 종류 선택 시 시트 언마운트 대비).
+  unlockBackgroundScroll()
+})
+
+// 시트 오픈 시 배경 스크롤 잠금 + 검색어/페이지/체크/후보 초기화 후 첫 페이지 조회. 닫힘 시 잠금 해제.
 watch(
   () => props.modelValue,
   (open) => {
-    if (!open) return
-    keyword.value = ''
-    page.value = 0
-    candidates.value = []
-    hasNext.value = false
-    checkedSet.value = new Set()
-    loadCandidates(false)
+    if (open) {
+      lockBackgroundScroll()
+      keyword.value = ''
+      page.value = 0
+      candidates.value = []
+      hasNext.value = false
+      checkedSet.value = new Set()
+      loadCandidates(false)
+    } else {
+      unlockBackgroundScroll()
+    }
   },
 )
 </script>
@@ -275,6 +306,9 @@ watch(
 .laps__body {
   flex: 1;
   overflow-y: auto;
+  /* 시트 끝 스크롤이 뒤 화면으로 전파(chaining)되지 않게 한다. */
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
   padding: 0 16px 8px;
 }
 .laps__state {

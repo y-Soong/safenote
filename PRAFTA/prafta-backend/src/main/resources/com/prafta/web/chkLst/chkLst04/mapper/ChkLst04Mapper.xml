@@ -85,13 +85,14 @@
     ORDER BY A.WORK_DATE DESC, A.SITE_CD, A.CHKPT_CD, A.INSPECT_ITEM_CD
     </select>
 
-    <!-- 점검대상 검색팝업(siteCd + chkLstType 필수). USE_YN='Y' -->
+    <!-- 점검대상 검색팝업(siteCd + chkLstType 필수). 사용여부는 useYn 조건부 필터(전체='') - PRAFTA_COM_001-T5-12.2 -->
     <select id="selectChkptTargetList" parameterType="com.prafta.web.chkLst.chkLst04.application.query.ChkptTargetListQuery" resultType="com.prafta.web.chkLst.chkLst04.result.ChkptTargetResult">
     /* ChkLst04Mapper.selectChkptTargetList */
     SELECT
           A.CHKPT_CD                AS chkptCd
         , A.CHKPT_NM                AS chkptNm
         , FNC_CMM_INFO_SRCH(A.CMPNY_CD, 'USER_NM', A.MGMT_USER_CD, NULL) AS mgmtUserNm
+        , A.USE_YN                  AS useYn
         , A.CHKPT_DESC              AS chkptDesc
     FROM TB_CHKPT_TYPE_MGMT A
          INNER JOIN TB_USER_SITE_AUTH AU
@@ -104,25 +105,32 @@
       AND A.CMPNY_CD = #{gvCmpnyCd}
       AND A.SITE_CD = #{siteCd}
       AND A.CHKLST_TYPE = #{chkLstType}
-      AND A.USE_YN = 'Y'
+      <!-- PRAFTA_COM_001-T5-12.2.1: 사용여부 필터(전체='' 시 미적용) -->
+      <if test="useYn != null and useYn != ''">
+        AND A.USE_YN = #{useYn}
+      </if>
       <if test="chkptNm != null and chkptNm != ''">
         AND A.CHKPT_NM LIKE CONCAT('%', #{chkptNm}, '%')
       </if>
     ORDER BY A.CHKPT_NM
     </select>
 
-    <!-- 점검문항 검색팝업(chkLstType 필수, 사업장 무관). USE_YN='Y' -->
+    <!-- 점검문항 검색팝업(chkLstType 필수, 사업장 무관). 사용여부는 useYn 조건부 필터(전체='') - PRAFTA_COM_001-T5-12.3 -->
     <select id="selectInspectItemList" parameterType="com.prafta.web.chkLst.chkLst04.application.query.InspectItemListQuery" resultType="com.prafta.web.chkLst.chkLst04.result.InspectItemResult">
     /* ChkLst04Mapper.selectInspectItemList */
     SELECT
           A.INSPECT_ITEM_CD         AS inspectItemCd
         , A.INSPECT_ITEM_SUBJ       AS inspectItemSubj
         , A.STR_DATE                AS strDate
+        , A.USE_YN                  AS useYn
     FROM TB_CHKPT_INSPECT_ITEM A
     WHERE 1=1
       AND A.CMPNY_CD = #{gvCmpnyCd}
       AND A.CHKLST_TYPE = #{chkLstType}
-      AND A.USE_YN = 'Y'
+      <!-- PRAFTA_COM_001-T5-12.3.1: 사용여부 필터(전체='' 시 미적용) -->
+      <if test="useYn != null and useYn != ''">
+        AND A.USE_YN = #{useYn}
+      </if>
       <if test="inspectItemSubj != null and inspectItemSubj != ''">
         AND A.INSPECT_ITEM_SUBJ LIKE CONCAT('%', #{inspectItemSubj}, '%')
       </if>

@@ -3,9 +3,11 @@ package com.prafta.app.leave.leaveflow.service;
 import com.prafta.app.leave.leaveflow.application.param.LeaveApplyMetaParam;
 import com.prafta.app.leave.leaveflow.application.param.LeaveApplyParam;
 import com.prafta.app.leave.leaveflow.application.param.LeaveApproverSearchParam;
+import com.prafta.app.leave.leaveflow.application.param.LeaveDeductionPreviewParam;
 import com.prafta.app.leave.leaveflow.dto.response.ApprovalPresetListResponse;
 import com.prafta.app.leave.leaveflow.dto.response.ApproverSearchResponse;
 import com.prafta.app.leave.leaveflow.dto.response.LeaveApplyMetaResponse;
+import com.prafta.app.leave.leaveflow.dto.response.LeaveDeductionPreviewResponse;
 
 /**
  * prafta-app-018-A/B: 앱 연차 신청 폼 메타 조회 + 신청 쓰기 서비스.
@@ -26,4 +28,13 @@ public interface AppLeaveFlowService {
      * 단위 게이팅(D2) + 구조검증/차감 + 사후마감 + 잔여검증을 모두 통과한 후에만 INSERT 한다.
      */
     void submitLeave(LeaveApplyParam param);
+
+    /**
+     * LC-07(T3): 예상 차감액 미리보기 — INSERT 없음(조회 전용, 웹 previewDeduction 미러).
+     *
+     * <p>검증 가드(출근기록/단위 게이팅/구조·스케줄·휴게/사후마감/1.0 점유/시간대 겹침)는
+     * {@link #submitLeave} 와 동일하게 태워 "신청하면 거부될 값"을 미리 보여주지 않는다.
+     * 잔여 부족은 에러가 아니라 플래그({@code insufficientBalance})로 응답한다.
+     */
+    LeaveDeductionPreviewResponse previewDeduction(LeaveDeductionPreviewParam param);
 }

@@ -1,6 +1,10 @@
 <template>
   <Transition name="fade">
-    <div v-show="true" class="modal-overlay prafta-modal-popup" @click.self="$emit('close')">
+    <div
+      v-show="true"
+      class="modal-overlay prafta-modal-popup"
+      @click.self="$emit('close')"
+    >
       <div
         class="modal-content-wide"
         :style="{ top: position.y + 'px', left: position.x + 'px' }"
@@ -17,7 +21,11 @@
               stroke="currentColor"
               class="w-6 h-6"
             >
-              <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" />
+              <path
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                d="M6 18L18 6M6 6l12 12"
+              />
             </svg>
           </button>
         </div>
@@ -43,9 +51,11 @@
         </div>
 
         <p class="tab-hint">
-          {{ userTypeCd === "REGULAR"
-            ? "휴대전화 사용이 불가한 정규직을 검색해 관리자 권한으로 입실 처리합니다."
-            : "만료되지 않은 일용직만 검색됩니다. 관리자 권한으로 입실 처리합니다." }}
+          {{
+            userTypeCd === "REGULAR"
+              ? "당일 출근한 정규직만 조회됩니다. 휴대전화 사용이 불가한 정규직을 관리자 권한으로 입실 처리합니다."
+              : "만료되지 않은 일용직만 검색됩니다. 관리자 권한으로 입실 처리합니다."
+          }}
         </p>
 
         <!-- 검색 -->
@@ -57,6 +67,19 @@
           <div class="btn-group">
             <button class="btn btn-primary" @click="fnSearch">조회</button>
           </div>
+        </div>
+
+        <!-- 일용직 QR 스캔(T6-08): 외부 스캐너가 키보드처럼 코드 입력 → Enter -->
+        <div v-if="userTypeCd === 'DAILY'" class="scan-row">
+          <label>QR 스캔</label>
+          <input
+            v-model="scanInput"
+            class="scan-input"
+            placeholder="QR 스캐너로 코드를 스캔한 뒤 Enter"
+            :disabled="isBusy"
+            @keyup.enter="fnScanEnter"
+          />
+          <span class="scan-hint">스캔한 일용직을 즉시 입실 처리합니다.</span>
         </div>
 
         <!-- 그리드 -->
@@ -84,7 +107,11 @@
                   <td>{{ row.userId }}</td>
                   <td>{{ row.siteNm || row.siteCd }}</td>
                   <td>
-                    <span :class="row.alreadyEntered ? 'tag-entered' : 'tag-pending'">
+                    <span
+                      :class="
+                        row.alreadyEntered ? 'tag-entered' : 'tag-pending'
+                      "
+                    >
                       {{ row.alreadyEntered ? "입실됨" : "미입실" }}
                     </span>
                   </td>
@@ -126,7 +153,7 @@ const props = defineProps({
   siteCd_p: String,
   onSearch: Function,
 });
-const emit = defineEmits(["close"]);
+defineEmits(["close"]);
 
 const modalRef = ref(null);
 const userTypeCd = ref("REGULAR"); // REGULAR | DAILY
@@ -134,6 +161,7 @@ const keyword = ref("");
 const candidates = ref([]);
 const isLoading = ref(false);
 const isBusy = ref(false);
+const scanInput = ref(""); // 일용직 QR 외부 스캐너 입력(T6-08)
 
 const { position, startDrag } = useCenteredDraggable(modalRef, {
   horizontalRatio: 2,
@@ -148,7 +176,63 @@ const fnSwitchTab = (type) => {
   if (userTypeCd.value === type) return;
   userTypeCd.value = type;
   candidates.value = [];
+  scanInput.value = "";
   fnSearch();
+};
+
+// 일용직 QR 스캔 입실(T6-08): 외부 스캐너 입력값(QR raw)을 파싱해 userCd 를 추출하고 대상 확정.
+//  - 앱 QR 페이로드는 JSON({ userCd, ... }) → userCd 추출. JSON 이 아니면 입력값 자체를 userCd 로 간주(폴백).
+//  - cmpnyCd/siteCd 는 신뢰하지 않으며 서버(manager-enter)가 세션 사업장 소속·활성·만료/탈퇴를 재검증한다.
+const fnScanEnter = async () => {
+  const raw = (scanInput.value || "").trim();
+  if (!raw) return;
+
+  let userCd = "";
+  try {
+    const obj = JSON.parse(raw);
+    userCd = obj && obj.userCd ? String(obj.userCd) : "";
+  } catch (e) {
+    userCd = raw; // JSON 이 아니면 단순 코드(userCd)로 간주
+  }
+  if (!userCd) {
+    await proxy.$alert("스캔한 QR에서 일용직 식별값을 찾을 수 없습니다.");
+    scanInput.value = "";
+    return;
+  }
+
+  const ok = await proxy.$confirm(
+    "스캔한 일용직을 관리자 권한으로 입실 처리하시겠습니까?"
+  );
+  if (!ok) {
+    scanInput.value = "";
+    return;
+  }
+  if (isBusy.value) return;
+  isBusy.value = true;
+  try {
+    const response = await axios.post(
+      "/webApi/tbm02/manager-enter",
+      {
+        sessionCd: props.sessionCd_p,
+        userTypeCd: "DAILY",
+        userCd,
+      },
+      { headers: { "Content-Type": "application/json" } }
+    );
+
+    if (response.status === 200) {
+      await proxy.$alert("스캔한 일용직이 입실 처리되었습니다.");
+      scanInput.value = "";
+      if (typeof props.onSearch === "function") props.onSearch();
+      fnSearch(); // 목록 '입실됨' 반영
+    }
+  } catch (err) {
+    await proxy.$alert(
+      resolveApiErrorMessage(err, "입실 처리 중 오류가 발생했습니다.")
+    );
+  } finally {
+    isBusy.value = false;
+  }
 };
 
 // 입실 후보 검색(정규직/일용직). EntryCandidateResponse: { userTypeCd, candidateList }
@@ -239,6 +323,30 @@ const fnManagerEnter = async (row) => {
 .tab-hint {
   margin: 0;
   padding: 0.5rem 1rem;
+  font-size: var(--btn-font-sm);
+  color: var(--color-text-muted);
+}
+
+/* 일용직 QR 스캔 입력행(T6-08) */
+.scan-row {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  padding: 0.25rem 1rem 0.5rem;
+}
+
+.scan-row label {
+  font-size: var(--btn-font-sm);
+  color: var(--color-text-muted);
+}
+
+.scan-input {
+  flex: 1 1 16rem;
+  min-width: 0;
+}
+
+.scan-hint {
   font-size: var(--btn-font-sm);
   color: var(--color-text-muted);
 }

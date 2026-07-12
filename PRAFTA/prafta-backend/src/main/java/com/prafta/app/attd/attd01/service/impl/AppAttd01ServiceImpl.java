@@ -6,6 +6,7 @@ import java.time.LocalDate;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.Comparator;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
@@ -28,8 +29,10 @@ import com.prafta.app.attd.attd01.application.param.MonthParam;
 import com.prafta.app.attd.attd01.application.param.TodayParam;
 import com.prafta.app.attd.attd01.application.param.WeekParam;
 import com.prafta.app.attd.attd01.application.query.AttdRangeQuery;
+import com.prafta.app.attd.attd01.dto.response.AppliedOvertimeItem;
 import com.prafta.app.attd.attd01.dto.response.AttendanceResponse;
 import com.prafta.app.attd.attd01.dto.response.DayActionsResponse;
+import com.prafta.app.attd.attd01.dto.response.LeaveMarkerItem;
 import com.prafta.app.attd.attd01.dto.response.MonthDayResponse;
 import com.prafta.app.attd.attd01.dto.response.MonthSummaryResponse;
 import com.prafta.app.attd.attd01.dto.response.MyAttendanceDayResponse;
@@ -46,6 +49,7 @@ import com.prafta.app.attd.attd01.result.GpsResult;
 import com.prafta.app.attd.attd01.result.HolidayResult;
 import com.prafta.app.attd.attd01.result.LeaveUseResult;
 import com.prafta.app.attd.attd01.result.OpenAttdResult;
+import com.prafta.app.attd.attd01.result.RangeOvertimeResult;
 import com.prafta.app.attd.attd01.result.ScheduleResult;
 import com.prafta.app.attd.attd01.result.SiteGeofenceResult;
 import com.prafta.app.attd.attd01.service.AppAttd01Service;
@@ -93,6 +97,8 @@ public class AppAttd01ServiceImpl implements AppAttd01Service {
     private static final String STATUS_TWO_SLOT_WORKING = "TWO_SLOT_WORKING";
     private static final String STATUS_CHECKED_OUT = "CHECKED_OUT";
     private static final String STATUS_CHECK_OUT_MISSING = "CHECK_OUT_MISSING";
+    // 과거 2구간 스케줄에서 일부 구간만 근태가 있고 전 구간이 완료되지 않은 상태(근태 누락).
+    private static final String STATUS_ATTD_MISSING = "ATTD_MISSING";
 
     // attendanceStatus 값 (week)
     private static final String ATTD_NORMAL = "NORMAL";
@@ -157,6 +163,9 @@ public class AppAttd01ServiceImpl implements AppAttd01Service {
         List<ScheduleResult> schedules = nullSafe(appAttd01Mapper.selectScheduleByRange(q));
         List<AttdRecordResult> attds = nullSafe(appAttd01Mapper.selectAttdByRange(q));
 
+        // 휴일(웹 휴일관리 TB_HOLIDAY) — 오늘/일상세도 주/월과 동일하게 휴일을 반영(표시 전용).
+        HolidayResult holiday = indexHoliday(nullSafe(appAttd01Mapper.selectHolidaysByRange(q))).get(targetYmd);
+
         // prafta-app-018-E: 그날 연차 사용내역(CONFIRMED) 단일일 조회 — 부분연차 상세 표시 전용.
         //   ⚠️ 표시만 한다. isLeaveDay/slotCount/slots/workStatus/dayType/합계 등 근무일 산출 로직은
         //   일절 건드리지 않는다(근무일 유지). 다건이면 첫 1건만 안전 채택(주간 putIfAbsent 와 일관).
@@ -172,6 +181,9 @@ public class AppAttd01ServiceImpl implements AppAttd01Service {
         boolean closed = isMonthClosed(cmpnyCd, siteCd, userCd, targetYmd.substring(0, 6));
         // 초과근무(등록 or 신청) 보유 여부 — 스케줄 수정 요청 게이팅(보유일은 스케줄 변경 차단). 단일일 조회.
         boolean hasOvertime = !nullSafe(appAttd01Mapper.selectOvertimeYmds(q)).isEmpty();
+        // prafta-app-030 후속: 그날 적용(승인) 초과근무 실적(표시 전용). 단일일이라 그룹 불필요 — 전체가 targetYmd.
+        List<AppliedOvertimeItem> appliedOvertimes =
+                toOvertimeItems(nullSafe(appAttd01Mapper.selectAppliedOvertimesByRange(q)));
 
         ScheduleResult sched = schedules.isEmpty() ? null : schedules.get(0);
         // prafta-com-008-E-2: 연차일 판정을 work_plan(LEAVE_CD) → leave_use(종일 확정) 로 전환.
@@ -283,12 +295,20 @@ public class AppAttd01ServiceImpl implements AppAttd01Service {
                 .sheetActions(sheetActions)
                 .dayType(dayType)
                 .hasIssue(DAY_ACTION_REQUIRED.equals(dayType))
+                .isHoliday(holiday != null)
+                .holidayName(holiday == null ? null : holiday.holidayNm())
                 // prafta-app-018-E: 부분연차 상세필드(표시 전용·근무일 유지). 사용내역 없으면 전부 null/false.
                 .isLeaveUsed(dayLeave != null)
                 .leaveTypeName(dayLeave == null ? null : dayLeave.leaveNm())
                 .leaveUnitType(dayLeave == null ? null : dayLeave.useUnitType())
                 .leaveTimeRange(dayLeave == null ? null : leaveTimeRange(dayLeave.startTime(), dayLeave.endTime()))
                 .leaveDays(dayLeave == null ? null : dayLeave.leaveDays())
+                // PRAFTA_COM_002-B-1: 단건 스칼라(첫 1건) 요청중 여부(다건은 leaves[].pendingApproval).
+                .leavePending(isLeavePending(dayLeave))
+                // 같은 날 부분연차 다건 표시용 마커 목록(시각순). dayLeaves 전체를 매핑(단건 스칼라는 첫 1건 하위호환).
+                .leaves(toLeaveMarkers(dayLeaves))
+                // prafta-app-030 후속: 그날 적용(승인) 초과근무 목록(없으면 빈 리스트).
+                .appliedOvertimes(appliedOvertimes)
                 .build();
     }
 
@@ -390,6 +410,10 @@ public class AppAttd01ServiceImpl implements AppAttd01Service {
 
         if (slotCount >= 2) {
             if (s1Out && s2Out) return STATUS_CHECKED_OUT;
+            // prafta-app-032: 과거일인데 전 구간이 완료(출퇴근 모두)되지 않았고 일부 구간에 근태가 있으면
+            //   "근태 누락"으로 본다(예: 1구간 출퇴근만 등록·2구간 스케줄은 있으나 출근기록 없음, 또는
+            //   1구간 퇴근 미등록). 진행 중(오늘) 2구간은 종전대로 근무중(TWO_SLOT_WORKING).
+            if (isPast && (s1In || s2In)) return STATUS_ATTD_MISSING;
             // prafta-app-015: 2구간 단독 진행(WORK_SEQ=2 먼저 출근, s1In=false·s2In=true)도 정식 도달 가능.
             //   1구간만/2구간만/양 구간 진행 중 어느 쪽이든 근무 중으로 통일(시안 §2.2).
             //   home01 buildAttendance 의 STATUS_WORKING(2구간 진행 중) 산출과 의미 정합.
@@ -500,9 +524,15 @@ public class AppAttd01ServiceImpl implements AppAttd01Service {
         Map<String, ScheduleResult> schByYmd = indexSchedule(nullSafe(appAttd01Mapper.selectScheduleByRange(q)));
         Map<String, List<AttdRecordResult>> attdByYmd = indexAttd(nullSafe(appAttd01Mapper.selectAttdByRange(q)));
         Map<String, HolidayResult> holidayByYmd = indexHoliday(nullSafe(appAttd01Mapper.selectHolidaysByRange(q)));
-        Map<String, LeaveUseResult> leaveByYmd = expandLeave(nullSafe(appAttd01Mapper.selectLeaveUseByRange(q)), startYmd, endYmd);
+        List<LeaveUseResult> weekLeaves = nullSafe(appAttd01Mapper.selectLeaveUseByRange(q));
+        Map<String, LeaveUseResult> leaveByYmd = expandLeave(weekLeaves, startYmd, endYmd);
+        // 같은 날 부분연차 다건 표시용(시각순 마커). 단건 leaveByYmd 는 연차일/스케줄 판정 하위호환 유지.
+        Map<String, List<LeaveUseResult>> leaveListByYmd = expandLeaveMulti(weekLeaves, startYmd, endYmd);
         // 초과근무(등록 or 신청) 보유 일자 집합 — 스케줄 수정 요청 게이팅(보유일은 스케줄 변경 차단).
         Set<String> overtimeYmds = new HashSet<>(nullSafe(appAttd01Mapper.selectOvertimeYmds(q)));
+        // prafta-app-030 후속: 주 범위 1회 호출 후 workYmd 별 그룹(표시 전용·N+1 회피).
+        Map<String, List<RangeOvertimeResult>> overtimeByYmd =
+                groupOvertimeByYmd(nullSafe(appAttd01Mapper.selectAppliedOvertimesByRange(q)));
 
         boolean closed = isMonthClosed(param.cmpnyCd(), param.siteCd(), param.userCd(), startYmd.substring(0, 6));
         // 주가 월 경계를 넘으면 종료일 월의 마감도 확인.
@@ -551,6 +581,9 @@ public class AppAttd01ServiceImpl implements AppAttd01Service {
             WeekDayActionsResponse actions = computeWeekActions(
                     hasSchCd, overtimeYmds.contains(ymd), isLeaveDay, slotCount, attdBySeq, isToday, isPast, dayClosed);
 
+            // prafta-app-030 후속: 그날 적용(승인) 초과근무 합계/목록(표시 전용). 없으면 0/빈 리스트.
+            List<RangeOvertimeResult> dayOvertimes = overtimeByYmd.get(ymd);
+
             days.add(WeekDayResponse.builder()
                     .workYmd(ymd)
                     .dayOfWeek(dayOfWeek(d))
@@ -563,6 +596,10 @@ public class AppAttd01ServiceImpl implements AppAttd01Service {
                     .leaveUnitType(leave == null ? null : leave.useUnitType())
                     .leaveTimeRange(leave == null ? null : leaveTimeRange(leave.startTime(), leave.endTime()))
                     .leaveDays(leave == null ? null : leave.leaveDays())
+                    // PRAFTA_COM_002-B-1: 단건 스칼라(첫 1건) 요청중 여부(다건은 leaves[].pendingApproval).
+                    .leavePending(isLeavePending(leave))
+                    // 같은 날 부분연차 다건 표시용 마커 목록(시각순). 없으면 빈 리스트.
+                    .leaves(toLeaveMarkers(leaveListByYmd.get(ymd)))
                     .workPlanCode(sched == null ? null : sched.workPlanCd())
                     .workPlanName(resolveWorkPlanName(sched, isLeaveDay, leave == null ? null : leave.leaveNm()))
                     .isTwoSlot(isTwoSlot)
@@ -570,6 +607,9 @@ public class AppAttd01ServiceImpl implements AppAttd01Service {
                     .attendanceSummary(attendanceSummary)
                     .attendanceStatus(attendanceStatus)
                     .actions(actions)
+                    // prafta-app-030 후속: 그날 적용(승인) 초과근무 합계 분 + 항목 목록.
+                    .overtimeMinutes(sumOvertimeMinutes(dayOvertimes))
+                    .overtimes(toOvertimeItems(dayOvertimes))
                     .build());
         }
 
@@ -727,6 +767,9 @@ public class AppAttd01ServiceImpl implements AppAttd01Service {
         loadGps(param.cmpnyCd(), allMonthAttds, gpsByCheckIn, gpsByCheckOut);
 
         boolean closed = isMonthClosed(param.cmpnyCd(), param.siteCd(), param.userCd(), ym);
+        // prafta-app-030 후속: 월 범위 1회 호출 후 workYmd 별 분 합계(표시 전용·N+1 회피).
+        Map<String, List<RangeOvertimeResult>> overtimeByYmd =
+                groupOvertimeByYmd(nullSafe(appAttd01Mapper.selectAppliedOvertimesByRange(q)));
 
         List<MonthDayResponse> days = new ArrayList<>();
         int plannedSum = 0;
@@ -777,6 +820,8 @@ public class AppAttd01ServiceImpl implements AppAttd01Service {
                     .dayType(dayType)
                     .holidayName(holiday == null ? null : holiday.holidayNm())
                     .hasIssue(DAY_ACTION_REQUIRED.equals(dayType))
+                    // prafta-app-030 후속: 그날 적용(승인) 초과근무 합계 분(없으면 0).
+                    .overtimeMinutes(sumOvertimeMinutes(overtimeByYmd.get(ymd)))
                     .build());
         }
 
@@ -1333,6 +1378,18 @@ public class AppAttd01ServiceImpl implements AppAttd01Service {
                 .sheetActions(src.getSheetActions())
                 .dayType(src.getDayType())
                 .hasIssue(src.isHasIssue())
+                .isHoliday(src.isHoliday())
+                .holidayName(src.getHolidayName())
+                // 재조립 시 부분연차(시간차/반차) 표시필드도 보존 — 그날 휴가를 쓰고 오프사이트 퇴근하면
+                //   마커가 사라지던 기존 누락을 함께 교정(단건 스칼라 + 다건 목록 모두 보존).
+                .isLeaveUsed(src.isLeaveUsed())
+                .leaveTypeName(src.getLeaveTypeName())
+                .leaveUnitType(src.getLeaveUnitType())
+                .leaveTimeRange(src.getLeaveTimeRange())
+                .leaveDays(src.getLeaveDays())
+                .leaves(src.getLeaves())
+                // prafta-app-030 후속: 재조립 시 적용 초과근무 목록도 보존(buildDayResponse 산출값).
+                .appliedOvertimes(src.getAppliedOvertimes())
                 .isOffsite(isOffsite)
                 .build();
     }
@@ -1449,6 +1506,61 @@ public class AppAttd01ServiceImpl implements AppAttd01Service {
             }
         }
         return map;
+    }
+
+    /**
+     * 연차 사용행을 조회 범위 내 일자별 "전체 목록"으로 펼친다(CONFIRMED 기준, 다건 보존).
+     * expandLeave 가 일자당 첫 1건만 보존하던 것과 달리, 같은 날 다건(시간차 2건 등)을 모두 모은다.
+     * 표시(마커) 전용 — 근무일/연차일 판정에는 사용하지 않는다(그쪽은 expandLeave 단건 유지).
+     */
+    private Map<String, List<LeaveUseResult>> expandLeaveMulti(List<LeaveUseResult> list, String fromYmd, String toYmd) {
+        Map<String, List<LeaveUseResult>> map = new HashMap<>();
+        for (LeaveUseResult lv : list) {
+            String s = max(lv.startDate(), fromYmd);
+            String e = min(lv.endDate(), toYmd);
+            if (s.compareTo(e) > 0) continue;
+            LocalDate cur = LocalDate.parse(s, YMD);
+            LocalDate end = LocalDate.parse(e, YMD);
+            while (!cur.isAfter(end)) {
+                map.computeIfAbsent(cur.format(YMD), k -> new ArrayList<>()).add(lv);
+                cur = cur.plusDays(1);
+            }
+        }
+        return map;
+    }
+
+    /**
+     * 그날 연차 사용내역(LeaveUseResult) 목록 → 표시 마커 항목(LeaveMarkerItem) 목록.
+     * 시각 오름차순(시작시각 없는 종일/반차는 앞)으로 정렬해 일관 표시한다. 빈 입력이면 빈 리스트.
+     * 단건 스칼라(leaveTypeName 등)와 동일 의미/포맷 — FE attdFormat.formatLeaveMarker 가 그대로 소비한다.
+     */
+    private List<LeaveMarkerItem> toLeaveMarkers(List<LeaveUseResult> leaves) {
+        if (leaves == null || leaves.isEmpty()) return Collections.emptyList();
+        List<LeaveUseResult> sorted = new ArrayList<>(leaves);
+        sorted.sort(Comparator.comparing(LeaveUseResult::startTime,
+                Comparator.nullsFirst(Comparator.naturalOrder())));
+        List<LeaveMarkerItem> items = new ArrayList<>(sorted.size());
+        for (LeaveUseResult lv : sorted) {
+            items.add(new LeaveMarkerItem(
+                    lv.leaveNm(),
+                    lv.useUnitType(),
+                    leaveTimeRange(lv.startTime(), lv.endTime()),
+                    lv.leaveDays(),
+                    // PRAFTA_COM_002-B-1: 건별 "요청중" 파생(다건 시 건마다 승인상태가 다를 수 있어 마커별 산출).
+                    isLeavePending(lv)));
+        }
+        return items;
+    }
+
+    /**
+     * PRAFTA_COM_002-B-1: 연차 사용행이 승인 대기(요청중)인지 판정.
+     *
+     * <p>요청중 = 연관 요청행이 존재(REQ_ID NOT NULL → reqStatus 조인됨)하고 그 상태가 '01'(신청)인 경우.
+     *   무결재 즉시확정(REQ_ID NULL → reqStatus null) 또는 승인('02')은 확정으로 보고 false(배지 없음).
+     *   (반려'03'/취소'04'는 표시 대상 행이 아니므로 실무상 도달하지 않으나, 정의상 false 처리.)
+     */
+    private boolean isLeavePending(LeaveUseResult leave) {
+        return leave != null && "01".equals(leave.reqStatus());
     }
 
     /**
@@ -1714,6 +1826,48 @@ public class AppAttd01ServiceImpl implements AppAttd01Service {
 
     private static <T> List<T> nullSafe(List<T> list) {
         return list == null ? Collections.emptyList() : list;
+    }
+
+    // ====================================================================
+    // prafta-app-030 후속: 적용(승인) 초과근무 매핑/그룹/합계 (표시 전용)
+    // ====================================================================
+
+    /** RangeOvertimeResult 1건 → AppliedOvertimeItem(표시 항목). workYmd 는 상위 일자에 종속되므로 미포함. */
+    private AppliedOvertimeItem toOvertimeItem(RangeOvertimeResult r) {
+        return AppliedOvertimeItem.builder()
+                .startDate(r.startDate())
+                .startTime(r.startTime())
+                .endDate(r.endDate())
+                .endTime(r.endTime())
+                .workMinutes(r.workMinutes())
+                .build();
+    }
+
+    /** RangeOvertimeResult 목록 → workYmd 별 그룹 Map(범위 1회 호출 결과를 일자별로 분배 — N+1 회피). */
+    private Map<String, List<RangeOvertimeResult>> groupOvertimeByYmd(List<RangeOvertimeResult> rows) {
+        Map<String, List<RangeOvertimeResult>> byYmd = new HashMap<>();
+        for (RangeOvertimeResult r : nullSafe(rows)) {
+            byYmd.computeIfAbsent(r.workYmd(), k -> new ArrayList<>()).add(r);
+        }
+        return byYmd;
+    }
+
+    /** 일자 그룹의 WORK_MINUTES 합계(null 분은 0으로 무시). */
+    private int sumOvertimeMinutes(List<RangeOvertimeResult> rows) {
+        int sum = 0;
+        for (RangeOvertimeResult r : nullSafe(rows)) {
+            if (r.workMinutes() != null) sum += r.workMinutes();
+        }
+        return sum;
+    }
+
+    /** 일자 그룹 → AppliedOvertimeItem 목록(없으면 빈 리스트). */
+    private List<AppliedOvertimeItem> toOvertimeItems(List<RangeOvertimeResult> rows) {
+        List<AppliedOvertimeItem> items = new ArrayList<>();
+        for (RangeOvertimeResult r : nullSafe(rows)) {
+            items.add(toOvertimeItem(r));
+        }
+        return items;
     }
 
     private Integer parseIntOrZero(String s) {

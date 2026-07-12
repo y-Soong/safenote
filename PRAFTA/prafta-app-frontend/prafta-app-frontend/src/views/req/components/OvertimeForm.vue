@@ -20,12 +20,12 @@
       <div class="ctx__row">
         <span class="ctx__lbl">스케줄</span>
         <span class="ctx__val"
-          >{{ context.workPlanName }} · {{ context.scheduleSummary || '-' }}</span
+          >{{ context.workPlanName }} · {{ scheduleSummaryDisplay || '-' }}</span
         >
       </div>
       <div v-if="context.attendanceSummary" class="ctx__row">
         <span class="ctx__lbl">근태</span>
-        <span class="ctx__val">{{ context.attendanceSummary }}</span>
+        <span class="ctx__val">{{ attendanceSummaryDisplay }}</span>
       </div>
     </section>
 
@@ -181,6 +181,7 @@ import TimeStepperField from '@/components/common/TimeStepperField.vue'
 import ApprovalLineSection from './ApprovalLineSection.vue'
 import AttdApproverPickerSheet from './AttdApproverPickerSheet.vue'
 import { formatYmdDisplay } from '@/utils/approvalFormat'
+import { formatTimeSummary } from '@/views/attd/attdFormat'
 
 const props = defineProps({
   context: { type: Object, required: true },
@@ -306,6 +307,9 @@ const ctxDateDisplay = computed(() => {
   return y && m && d ? `${y}년 ${Number(m)}월 ${Number(d)}일` : '-'
 })
 const ctxSiteDisplay = computed(() => props.context.siteName || '')
+// BE raw HHMM 요약("0716~1811" / "0700~1300 / 1700~2100")을 "HH:MM ~ HH:MM" 표시형으로 변환.
+const scheduleSummaryDisplay = computed(() => formatTimeSummary(props.context.scheduleSummary))
+const attendanceSummaryDisplay = computed(() => formatTimeSummary(props.context.attendanceSummary))
 
 // ── #3 구간별 등록 가능 시간 (표시 전용) ───────────────────────────────
 // 산식(plan §0-4): 앞 OT=실출근~스케줄시작, 뒤 OT=스케줄종료~실퇴근.

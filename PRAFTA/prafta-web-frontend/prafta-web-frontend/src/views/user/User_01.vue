@@ -12,29 +12,9 @@
       @delete="fnDelete"
       @excel="fnExcel" -->
 
+    <!-- 검색바(1행): 사업장 / 소속부서 / 하위부서 조회
+         (2행): 사용자정보(ID·이름 통합) / 사용여부 -->
     <div class="viewSearch">
-      <div>
-        <label>사용자ID</label>
-        <input v-model.trim="userId" type="text" />
-      </div>
-      <div>
-        <label>사용자명</label>
-        <input v-model.trim="userNm" type="text" />
-      </div>
-
-      <div>
-        <label>사용여부</label>
-        <select v-model.trim="useYn" name="combo">
-          <option
-            v-for="opt in systCodeArr['SYS003'] || []"
-            :key="opt.systValDCd"
-            :value="opt.systValDCd"
-          >
-            {{ opt.systValDNm }}
-          </option>
-        </select>
-      </div>
-
       <div>
         <label>사업장</label>
         <input
@@ -91,9 +71,37 @@
 
       <div>
         <label class="checkbox-label">
-          <input type="checkbox" v-model="incSubNodeYn" :disabled="nodeDisabled" />
+          <input
+            type="checkbox"
+            v-model="incSubNodeYn"
+            :disabled="nodeDisabled"
+          />
           하위부서 조회
         </label>
+      </div>
+
+      <div>
+        <label>사용자정보</label>
+        <input
+          v-model.trim="userKeyword"
+          type="text"
+          placeholder="사용자ID 또는 이름"
+          style="width: 200px"
+          @keyup.enter="fnSearch"
+        />
+      </div>
+
+      <div>
+        <label>사용여부</label>
+        <select v-model.trim="useYn" name="combo">
+          <option
+            v-for="opt in systCodeArr['SYS003'] || []"
+            :key="opt.systValDCd"
+            :value="opt.systValDCd"
+          >
+            {{ opt.systValDNm }}
+          </option>
+        </select>
       </div>
     </div>
 
@@ -285,7 +293,7 @@
                         v-for="opt in (baseInfoArr['COM005'] || []).filter(
                           (o) => o.baimValDCd != null
                         )"
-                        :key="opt.baimValCd"
+                        :key="opt.baimValDCd"
                         :value="opt.baimValDCd"
                       >
                         {{ opt.baimValDNm }}
@@ -332,12 +340,7 @@
                     <div class="flex items-center gap-2 w-full">
                       <span class="truncate min-w-0">{{ user.nodeNm }}</span>
                       <button
-                        class="ml-auto border rounded"
-                        style="
-                          background-color: #30796a;
-                          border: none;
-                          padding: 0.2rem 0.2rem;
-                        "
+                        class="ml-auto border rounded node-assign-btn"
                         :disabled="isRowLocked(user)"
                         @click="fnSiteNodeSearchPopOpen(user)"
                       >
@@ -435,8 +438,8 @@ const { colWidths, onResize } = useColumnResize({
 const systCodeArr = ref([]);
 const baseInfoArr = ref([]);
 const SiteSearchPopOpen = ref(false);
-const userId = ref("");
-const userNm = ref("");
+// 사용자정보 통합 검색어(사용자ID·사용자명 동시 부분일치). 기존 userId/userNm 분리 조건 대체.
+const userKeyword = ref("");
 const useYn = ref();
 const siteCd = ref("");
 const siteNo = ref("");
@@ -558,8 +561,7 @@ const fnSearch = async () => {
   try {
     const response = await axios.get("/webApi/user01/user-info-lists", {
       params: {
-        userId: userId.value,
-        userNm: userNm.value,
+        userKeyword: userKeyword.value,
         useYn: useYn.value,
         siteCd: siteCd.value,
         nodeCd: nodeCd.value,
@@ -1055,7 +1057,18 @@ const isRowLocked = (user) => Number(user.authLevel) < Number(authLevel.value);
   pointer-events: none;
 }
 
-/* 하위부서 조회 체크박스(근무계획관리 Attd_05 동일 스타일) */
+/* 조회조건이 여러 행으로 줄바꿈될 때 각 행의 왼쪽 끝선을 사업장과 맞춘다.
+   (전역 form.css는 첫 항목에만 margin-left를 줘서 두 번째 행이 좌측으로 밀린다.) (Attd_14 패턴) */
+.viewSearch {
+  padding-left: calc(0.5rem + var(--space-md, 0.75rem));
+  /* 행 간 간격 축소(열 간격은 유지) */
+  row-gap: 0.5rem;
+}
+.viewSearch > div:first-child {
+  margin-left: 0;
+}
+
+/* 하위부서 조회 체크박스 (Attd_14 checkbox-label 패턴 차용) */
 .checkbox-label {
   display: inline-flex;
   align-items: center;
@@ -1064,6 +1077,9 @@ const isRowLocked = (user) => Number(user.authLevel) < Number(authLevel.value);
   color: var(--color-text-muted, #6b7280);
   cursor: pointer;
   user-select: none;
+  margin-left: -1rem;
+  margin-right: 0.4rem;
+  white-space: nowrap;
 }
 
 .checkbox-label input[type="checkbox"] {
@@ -1121,5 +1137,21 @@ const isRowLocked = (user) => Number(user.authLevel) < Number(authLevel.value);
   margin: 0;
   font-size: 0.75rem;
   color: var(--color-text-muted, #6b7280);
+}
+
+/* 테이블 내 검색(아이콘) 버튼 — Baim_05 기준 통일(CSS 변수 색·라운드·disabled 처리) */
+.node-assign-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0.2rem;
+  border: none;
+  border-radius: 4px;
+  background-color: var(--color-primary, #16a34a);
+  cursor: pointer;
+}
+.node-assign-btn:disabled {
+  background-color: var(--color-border, #d1d5db);
+  cursor: not-allowed;
 }
 </style>

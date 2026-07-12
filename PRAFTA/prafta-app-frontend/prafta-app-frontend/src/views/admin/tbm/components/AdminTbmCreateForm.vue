@@ -89,6 +89,22 @@
       <span class="admin-tbm-form__hint">50 ~ 1000m</span>
     </div>
 
+    <!-- 교육 시간(분) — 사용자 교육 완료 인정시간. 빈값 허용(개설), 있으면 1~60 -->
+    <div class="admin-tbm-form__field">
+      <label class="admin-tbm-form__label" for="tbm-edu-minutes">교육 시간 (분)</label>
+      <input
+        id="tbm-edu-minutes"
+        v-model.number="form.eduMinutes"
+        class="admin-tbm-form__input admin-tbm-form__input--narrow"
+        type="number"
+        min="1"
+        max="60"
+        inputmode="numeric"
+        placeholder="선택"
+      />
+      <span class="admin-tbm-form__hint">1분 이상 60분 이하</span>
+    </div>
+
     <!-- 교육자료 선택 -->
     <div class="admin-tbm-form__field">
       <div class="admin-tbm-form__field-head">
@@ -201,6 +217,7 @@ const form = reactive({
   contentBody: '',
   gpsVerifyTypeCd: 'AUTO',
   gpsVerifyRadiusM: 100,
+  eduMinutes: null, // 교육 인정시간(분). 개설 시 빈값 허용, 있으면 1~60.
 })
 
 // 선택 목록(자료/위험성). 선택 시트(R2-gap)에서 다중선택 → 칩 반영.
@@ -287,6 +304,14 @@ const validate = () => {
     showAlert('교육 제목을 입력해 주세요.')
     return false
   }
+  // 교육 시간: 빈값 허용(개설). 값이 있으면 1~60 정수만.
+  if (form.eduMinutes !== null && form.eduMinutes !== '' && form.eduMinutes !== undefined) {
+    const m = Number(form.eduMinutes)
+    if (!Number.isInteger(m) || m < 1 || m > 60) {
+      showAlert('교육 시간은 1분 이상 60분 이하로 입력해 주세요.')
+      return false
+    }
+  }
   return true
 }
 
@@ -295,6 +320,7 @@ const isDirty = () =>
   !!(
     form.title ||
     (form.contentBody || '').trim() ||
+    (form.eduMinutes !== null && form.eduMinutes !== '' && form.eduMinutes !== undefined) ||
     contentRows.value.length ||
     riskRows.value.length
   )
@@ -308,6 +334,10 @@ const buildPayload = () => ({
   contentBody: form.contentBody,
   gpsVerifyTypeCd: form.gpsVerifyTypeCd,
   gpsVerifyRadiusM: form.gpsVerifyTypeCd === 'DISABLED' ? null : form.gpsVerifyRadiusM,
+  eduMinutes:
+    form.eduMinutes === null || form.eduMinutes === '' || form.eduMinutes === undefined
+      ? null
+      : Number(form.eduMinutes),
   contents: contentRows.value.map((c, i) => ({
     mtrlCd: c.mtrlCd,
     displayOrder: i,

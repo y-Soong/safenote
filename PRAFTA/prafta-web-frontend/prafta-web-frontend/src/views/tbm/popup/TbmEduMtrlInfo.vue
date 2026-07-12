@@ -38,6 +38,14 @@
         <div class="content-wrapper">
           <!-- 🔹 Form -->
           <div class="form-container">
+            <!-- T5-2: 사용 중(취소 외 세션 참조) 교육자료는 내용 수정 불가.
+                 단, 교육자료는 재사용되므로 AI 분석 지정만은 변경 가능(잠금 우회 저장 경로). -->
+            <div v-if="editLocked" class="lock-hint-row">
+              <span class="lock-hint">
+                ⓘ TBM 교육에서 사용 중인 교육자료입니다. 내용은 수정할 수
+                없으며, AI 분석 지정만 변경할 수 있습니다.
+              </span>
+            </div>
             <!-- prafta-033-A: 스코프(회사공통/사업장) + 교육자료 타입 + 사용여부 -->
             <div class="form-row-max">
               <label>스코프</label>
@@ -66,7 +74,11 @@
 
               <label class="inline-label">교육자료 타입</label>
               <div class="inline-select">
-                <BaseSelect id="mtrlType" v-model="formData.mtrlType">
+                <BaseSelect
+                  id="mtrlType"
+                  v-model="formData.mtrlType"
+                  :disabled="editLocked"
+                >
                   <option
                     v-for="opt in (baseCodeArr['COM003'] || []).filter(
                       (o) => o.baimValDCd != null
@@ -81,7 +93,11 @@
 
               <label class="inline-label inline-label-sm">사용여부</label>
               <div class="inline-select inline-select-sm">
-                <BaseSelect id="useYn" v-model="formData.useYn">
+                <BaseSelect
+                  id="useYn"
+                  v-model="formData.useYn"
+                  :disabled="editLocked"
+                >
                   <option
                     v-for="opt in (systCodeArr['SYS003'] || []).filter(
                       (o) => o.systValDCd != null
@@ -119,7 +135,11 @@
                   :disabled="isEditMode"
                   @click="onSiteSearchClick"
                 >
-                  <img class="search_icon" :src="search_icon" alt="사업장 조회" />
+                  <img
+                    class="search_icon"
+                    :src="search_icon"
+                    alt="사업장 조회"
+                  />
                 </button>
               </div>
             </div>
@@ -130,6 +150,7 @@
                 id="title"
                 v-model="formData.title"
                 placeholder="교육자료 제목"
+                :disabled="editLocked"
               />
             </div>
 
@@ -140,6 +161,7 @@
                 ref="contents"
                 style="width: 100%"
                 v-model="formData.contents"
+                :disabled="editLocked"
               />
             </div>
 
@@ -166,6 +188,7 @@
                             id="headChk"
                             v-model="headChk"
                             type="checkbox"
+                            :disabled="editLocked"
                             @click="fnHeadChk"
                           />
                         </th>
@@ -173,9 +196,9 @@
                         <th style="width: 8%">사용여부</th>
                         <th style="width: 8%">정렬순서</th>
                         <th style="width: 12%">파일</th>
-                        <th style="width: 15%">URL</th>
-                        <th style="width: 8%">미리보기</th>
+                        <th style="width: 13%">URL</th>
                         <th>자료설명</th>
+                        <th style="width: 6%">AI 분석</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -192,13 +215,18 @@
                         <tr v-for="(item, idx) in eduMtrlItemList" :key="idx">
                           <td style="text-align: center">{{ idx + 1 }}</td>
                           <td>
-                            <input type="checkbox" v-model="item.chk" />
+                            <input
+                              type="checkbox"
+                              v-model="item.chk"
+                              :disabled="editLocked"
+                            />
                           </td>
                           <td style="text-align: center">
                             <!-- {{ item.mtrlType }} -->
                             <BaseSelect
                               id="mtrlItemType"
                               v-model="item.mtrlItemType"
+                              :disabled="editLocked"
                               @update:modelValue="
                                 () => onMtrlItemTypeChange(item)
                               "
@@ -215,7 +243,11 @@
                             </BaseSelect>
                           </td>
                           <td style="text-align: center">
-                            <BaseSelect id="useYn" v-model="item.useYn">
+                            <BaseSelect
+                              id="useYn"
+                              v-model="item.useYn"
+                              :disabled="editLocked"
+                            >
                               <option
                                 v-for="opt in (
                                   systCodeArr['SYS003'] || []
@@ -232,6 +264,7 @@
                               type="number"
                               v-model="item.sortIdx"
                               style="width: 100%"
+                              :disabled="editLocked"
                             />
                           </td>
                           <td style="text-align: center">
@@ -246,7 +279,9 @@
                                 :ref="(el) => setFileInputRef(el, idx)"
                                 type="file"
                                 :accept="getFileAccept(item.mtrlItemType)"
-                                :disabled="!isFileType(item.mtrlItemType)"
+                                :disabled="
+                                  !isFileType(item.mtrlItemType) || editLocked
+                                "
                                 @change="(e) => onFileSelected(e, item, idx)"
                                 style="display: none"
                               />
@@ -254,11 +289,13 @@
                                 type="button"
                                 class="file-upload-btn"
                                 :class="{
-                                  'file-upload-btn-disabled': !isFileType(
-                                    item.mtrlItemType
-                                  ),
+                                  'file-upload-btn-disabled':
+                                    !isFileType(item.mtrlItemType) ||
+                                    editLocked,
                                 }"
-                                :disabled="!isFileType(item.mtrlItemType)"
+                                :disabled="
+                                  !isFileType(item.mtrlItemType) || editLocked
+                                "
                                 @click="() => handleFileButtonClick(idx)"
                               >
                                 <svg
@@ -308,30 +345,49 @@
                             <input
                               style="width: 100%"
                               v-model="item.url"
-                              :disabled="item.mtrlItemType !== '03'"
+                              :disabled="
+                                item.mtrlItemType !== '03' || editLocked
+                              "
                             />
-                          </td>
-                          <td style="text-align: center">
-                            <img
-                              v-if="getThumbUrl(item)"
-                              :src="getThumbUrl(item)"
-                              class="thumb-preview"
-                              alt="썸네일"
-                            />
-                            <span v-else class="thumb-placeholder">{{
-                              getMediaTypeIcon(item.mtrlItemType)
-                            }}</span>
                           </td>
                           <td style="text-align: left">
                             <input
                               style="width: 100%"
                               v-model="item.mtrlDesc"
+                              :disabled="editLocked"
+                            />
+                          </td>
+                          <!-- AI 분석 지정: 전 타입(이미지 01·동영상 02·유튜브 03·PDF 04) 모두 체크 가능.
+                               01·04 는 VLM 자동분석 대상, 02·03 은 자동분석 없이 AI 분석관리 탭에서
+                               관리자 입력을 AI 분석내용으로 취급(플로우 동일). 잠금 시에도 지정은 변경 가능. -->
+                          <td style="text-align: center">
+                            <input
+                              type="checkbox"
+                              :true-value="'Y'"
+                              :false-value="'N'"
+                              v-model="item.aiAnalyzeYn"
                             />
                           </td>
                         </tr>
                       </template>
                     </tbody>
                   </table>
+                </div>
+                <div class="edu-grid-toolbar">
+                  <button
+                    class="btn btn-second"
+                    :disabled="editLocked"
+                    @click="fnAddRow"
+                  >
+                    행 추가
+                  </button>
+                  <button
+                    class="btn btn-second"
+                    :disabled="editLocked"
+                    @click="fnDelete()"
+                  >
+                    선택 행 삭제
+                  </button>
                 </div>
               </div>
             </div>
@@ -340,12 +396,19 @@
 
         <div class="modal-footer">
           <div class="btn-group">
-            <button class="btn btn-second" @click="fnAddRow">행 추가</button>
-            <button class="btn btn-second" @click="fnDelete()">
-              선택 행 삭제
+            <!-- 초기화: 신규 등록에서만 노출(입력값 비우기). 수정 모드에서는 원본 복원이 불완전
+                 (추가/삭제 행·AI 분석 지정 미복원)해 오해를 부르므로 숨긴다. 되돌리려면 닫고 다시 열면 된다. -->
+            <button
+              v-if="!isEditMode"
+              class="btn btn-second"
+              @click="fnReset"
+            >
+              초기화
             </button>
-            <button class="btn btn-second" @click="fnReset">초기화</button>
-            <button class="btn btn-primary" @click="fnSave()">저장</button>
+            <!-- 사용 중(잠금)일 때도 저장 버튼 활성: fnSave 내부에서 AI 분석 지정만 저장하는 경로로 분기 -->
+            <button class="btn btn-primary" @click="fnSave()">
+              {{ editLocked ? "AI 분석 지정 저장" : "저장" }}
+            </button>
             <button class="btn btn-second" @click="$emit('close')">닫기</button>
           </div>
         </div>
@@ -390,8 +453,6 @@ const emit = defineEmits(["close"]);
 // ================ Ref Data ================
 const modalRef = ref(null);
 
-const apiBaseUrl = import.meta.env.VITE_API_BASE_URL || '';
-
 const systCodeArr = ref([]);
 const baseCodeArr = ref([]);
 const eduMtrlItemList = ref([]);
@@ -399,6 +460,7 @@ const headChk = ref(false);
 const fileInputRefs = ref({});
 const siteList = ref([]); // prafta-033-A: 사업장 목록
 const siteNm = ref(""); // 사업장명 표시용(조회 팝업 선택값)
+const locked = ref(false); // T5-2: 사용 중(취소 외 세션 참조) 여부. 'Y'면 수정/저장 차단
 
 // prafta-033-A: 수정 모드 여부(mtrlCd_p 존재 시). 스코프 변경 잠금에 사용
 const isEditMode = computed(() => !proxy.$util.isEmpty(props.mtrlCd_p));
@@ -408,6 +470,9 @@ const canManageCommon = computed(() => {
   const authCd = sessionStorage.getItem("gv_authCd");
   return authCd === "master" || authCd === "safe";
 });
+
+// T5-2: 수정 모드 + 사용 중(잠금) 일 때 편집/저장 차단(열람만 허용)
+const editLocked = computed(() => isEditMode.value && locked.value);
 
 // ================ Reactive Data ================
 const formData = reactive({
@@ -458,7 +523,7 @@ const fnGetSystinfoList = async () => {
   try {
     const response = await axios.get("/comApi/baseinfo/syst-info-lists", {
       params: {
-        systCodeList: ["SYS003", "SYS018"],
+        systCodeList: ["SYS003", "SYS018", "SYS056"],
       },
     });
 
@@ -577,6 +642,13 @@ const fnOpenSiteSearch = () => {
 // };
 
 const fnSave = async () => {
+  // T5-2: 사용 중(취소 외 세션 참조) 교육자료는 내용 저장 차단(서버에서도 TBM_409_055 로 거부).
+  //   단, 교육자료는 재사용되므로 AI 분석 지정만은 전용 경로로 저장 허용(잠금 우회).
+  if (editLocked.value) {
+    await fnSaveAiAnalyze();
+    return;
+  }
+
   if (!dataValidationChk()) return;
 
   const ok = await proxy.$confirm(getMessage(MSG.SAVE_CONFIRM));
@@ -598,6 +670,9 @@ const fnSave = async () => {
           oriFileNm,
           oriFilePath,
           oriFileExt,
+          // TBM_AI-RB-1: 저장 payload 에서 제외(불필요 전송). aiAnalyzeYn 은 ...rest 로 유지(RA 영속 대상).
+          aiStatus,
+          aiConfirmDesc,
           ...rest
         } = item;
         const row = { ...rest };
@@ -608,9 +683,6 @@ const fnSave = async () => {
         return row;
       })
     );
-
-    console.log("itemListPayload :: ");
-    console.log(itemListPayload);
 
     // prafta-033-A: 스코프 -> SITE_CD. COMMON 이면 빈 값(서버에서 NULL=회사공통 처리)
     const saveSiteCd =
@@ -626,8 +698,6 @@ const fnSave = async () => {
       tbmEduItemInfoModelList: itemListPayload,
     };
 
-    console.log(requestBody);
-
     const response = await axios.post(
       "/webApi/tbm01/save-tbm-edu-infos",
       requestBody,
@@ -635,14 +705,59 @@ const fnSave = async () => {
     );
 
     if (response.status === 200) {
-      fnAlertMsg(getMessage(MSG.SAVE_SUCCESS), () => {
-        emit("close");
-        props.onSearch();
-      });
+      // TBM_AI-RB-1: 저장 성공 → 목록 갱신 후 팝업 종료. 분석/확정은 [AI 분석 관리] 탭으로 이관됨.
+      //   (AI_ANALYZE_YN 영속·체크해제 시 AI_STATUS='NONE' 리셋은 RA 서버가 처리.)
+      await proxy.$alert(getMessage(MSG.SAVE_SUCCESS));
+      props.onSearch();
+      emit("close");
     }
   } catch (err) {
     const msg = resolveApiErrorMessage(err, "저장 중 오류가 발생했습니다.");
 
+    await proxy.$alert(msg);
+  }
+};
+
+/**
+ * 사용 중(잠금) 교육자료의 AI 분석 지정만 저장.
+ * 내용/파일/그리드 항목은 잠금 유지, 분석 대상 타입(이미지 01·PDF 04)의 AI_ANALYZE_YN 만 서버로 전송.
+ * 서버(update-tbm-edu-ai-analyze)는 잠금 검증을 생략하되 권한/회사 스코프(IDOR)는 유지한다.
+ */
+const fnSaveAiAnalyze = async () => {
+  // 저장된 항목(mtrlItemCd 존재)의 AI 분석 지정을 전 타입 전송(신규 미저장 행은 잠금 상태에서 생성 불가).
+  //   01·04 는 VLM 자동분석, 02·03 은 관리자 입력을 AI 분석내용으로 취급 — 지정 플로우는 동일.
+  const items = eduMtrlItemList.value
+    .filter((item) => !proxy.$util.isEmpty(item.mtrlItemCd))
+    .map((item) => ({
+      mtrlItemCd: String(item.mtrlItemCd),
+      aiAnalyzeYn: item.aiAnalyzeYn === "Y" ? "Y" : "N",
+    }));
+
+  if (items.length === 0) {
+    await proxy.$alert("저장할 세부 항목이 없습니다.");
+    return;
+  }
+
+  const ok = await proxy.$confirm(getMessage(MSG.SAVE_CONFIRM));
+  if (!ok) return;
+
+  try {
+    const response = await axios.post(
+      "/webApi/tbm01/update-tbm-edu-ai-analyze",
+      {
+        mtrlCd: String(formData.mtrlCd ?? ""),
+        itemList: items,
+      },
+      { headers: { "Content-Type": "application/json" } }
+    );
+
+    if (response.status === 200) {
+      await proxy.$alert(getMessage(MSG.SAVE_SUCCESS));
+      props.onSearch();
+      emit("close");
+    }
+  } catch (err) {
+    const msg = resolveApiErrorMessage(err, "저장 중 오류가 발생했습니다.");
     await proxy.$alert(msg);
   }
 };
@@ -674,6 +789,8 @@ const fnSearch = async () => {
         formData.scopeType = master.isCommonContent === 'Y' ? 'COMMON' : 'SITE';
         formData.siteCd = master.siteCd || '';
         siteNm.value = master.siteNm || resolveSiteNm(formData.siteCd);
+        // T5-2: 사용 중(취소 외 세션 참조) 여부. 'Y'면 편집/저장 잠금
+        locked.value = master.lockedYn === 'Y';
       }
       eduMtrlItemList.value = response.data?.tbmEduItemInfoResultList ?? [];
 
@@ -686,6 +803,8 @@ const fnSearch = async () => {
         item.oriFileNm = item.fileNm;
         item.oriFilePath = item.filePath;
         item.oriFileExt = item.fileExt;
+        // TBM_AI-RB-1: AI 분석 토글 기본값(저장 payload 영속 대상). 상태/확정서술은 [AI 분석 관리] 탭 소관.
+        if (item.aiAnalyzeYn == null) item.aiAnalyzeYn = "N";
       });
     }
   } catch (err) {
@@ -695,7 +814,7 @@ const fnSearch = async () => {
   }
 };
 
-/** 초기화: ori* 값을 현재 필드로 복사 */
+/** 초기화: ori* 값을 현재 필드로 복사(신규 등록 전용 — ori* 가 빈 값이라 입력값 비우기로 동작) */
 const fnReset = () => {
   if(formData.oriTitle !== undefined) formData.title = formData.oriTitle;
   if(formData.oriContents !== undefined) formData.contents = formData.oriContents;
@@ -713,23 +832,60 @@ const fnReset = () => {
     if (item.oriUrl !== undefined) item.url = item.oriUrl;
     if (item.oriUseYn !== undefined) item.useYn = item.oriUseYn;
     item.file = null; // 새로 첨부한 파일은 제거
+    // 원본 백업이 없는 행(= 신규 추가행)은 첨부 표시 필드도 함께 비운다.
+    //   file 만 지우면 파일명은 남고 실제 파일은 없는 불일치 상태가 된다.
+    if (item.oriFileNm === undefined) {
+      item.fileNm = null;
+      item.fileExt = null;
+      item.filePath = null;
+      item.fileMgmtCd = null;
+    }
   });
-  if (typeof props.reset === 'function') props.reset();
 };
 
 const fnDelete = async () => {
-  const ok = await proxy.$confirm(getMessage(MSG.DELETE_CONFIRM));
-  if (!ok) return;
+  // T5-2: 사용 중(취소 외 세션 참조) 교육자료는 세부항목 삭제 차단(서버에서도 TBM_409_055 로 거부)
+  if (editLocked.value) {
+    await proxy.$alert("이미 사용된 교육자료는 수정할 수 없습니다.");
+    return;
+  }
 
-  const filteredData = eduMtrlItemList.value.filter((item) => item?.chk);
+  // 체크된 행을 저장행(mtrlItemCd 존재)과 미저장 추가행(mtrlItemCd 없음)으로 분리
+  const checkedRows = eduMtrlItemList.value.filter((item) => item?.chk);
 
-  if(filteredData.length === 0) {
+  if (checkedRows.length === 0) {
     proxy.$alert(getMessage(MSG.DELETE_DATA_REQUIRED));
     return;
   }
 
+  const savedRows = checkedRows.filter(
+    (item) => !proxy.$util.isEmpty(item.mtrlItemCd)
+  );
+  const unsavedRows = checkedRows.filter((item) =>
+    proxy.$util.isEmpty(item.mtrlItemCd)
+  );
+
+  const ok = await proxy.$confirm(getMessage(MSG.DELETE_CONFIRM));
+  if (!ok) return;
+
+  // 미저장 추가행은 화면에서만 제거(서버 통신 없음)
+  if (unsavedRows.length > 0) {
+    eduMtrlItemList.value = eduMtrlItemList.value.filter(
+      (item) => !unsavedRows.includes(item)
+    );
+  }
+
+  // 저장행이 없으면 화면 삭제만 하고 종료
+  if (savedRows.length === 0) {
+    await proxy.$alert(getMessage(MSG.SAVE_SUCCESS));
+    return;
+  }
+
   try {
-    const response = await axios.post("/webApi/tbm01/delete-tbm-edu-item-infos", filteredData);
+    const response = await axios.post(
+      "/webApi/tbm01/delete-tbm-edu-item-infos",
+      savedRows
+    );
 
     if (response.status === 200) {
       fnAlertMsg(getMessage(MSG.SAVE_SUCCESS), () => {
@@ -791,26 +947,33 @@ const dataValidationChk = () => {
     proxy.$alert(getMessage(MSG.EDU_ITEM_REQUIRED));
     return false;
   } else {
-    for(let i = 0; i < eduMtrlItemList.value.filter(item => item.chk).length; i++) {
-      if(proxy.$util.isEmpty(eduMtrlItemList.value[i].mtrlItemType)) {
+    // 저장 대상(체크된 행)만 검증. 인덱스 기반 접근은 부분 선택 시 엉뚱한 행을 검사하므로
+    // 체크된 행 리스트 자체를 순회한다.
+    const checkedItems = eduMtrlItemList.value.filter((item) => item.chk);
+    if (checkedItems.length === 0) {
+      proxy.$alert(getMessage(MSG.DELETE_DATA_REQUIRED));
+      return false;
+    }
+    for (const target of checkedItems) {
+      if(proxy.$util.isEmpty(target.mtrlItemType)) {
         proxy.$alert(getMessage(MSG.MATERIAL_TYPE_REQUIRED));
         return false;
       }
-      if(proxy.$util.isEmpty(eduMtrlItemList.value[i].useYn)) {
+      if(proxy.$util.isEmpty(target.useYn)) {
         proxy.$alert(getMessage(MSG.USE_YN_REQUIRED));
         return false;
       }
-      if(eduMtrlItemList.value[i].mtrlItemType === '01' || eduMtrlItemList.value[i].mtrlItemType === '02' || eduMtrlItemList.value[i].mtrlItemType === '04') {
-        const file = eduMtrlItemList.value[i].file;
+      if(target.mtrlItemType === '01' || target.mtrlItemType === '02' || target.mtrlItemType === '04') {
+        const file = target.file;
         const hasNewFile = file && typeof file === 'object' && file instanceof File && file.size > 0;
-        const hasExistingFile = eduMtrlItemList.value[i].fileMgmtCd && eduMtrlItemList.value[i].filePath;
+        const hasExistingFile = target.fileMgmtCd && target.filePath;
         if (!hasNewFile && !hasExistingFile) {
           proxy.$alert(getMessage(MSG.FILE_REQUIRED));
           return false;
         }
       }
-      if(eduMtrlItemList.value[i].mtrlItemType === '03') {
-        if(proxy.$util.isEmpty(eduMtrlItemList.value[i].url)) {
+      if(target.mtrlItemType === '03') {
+        if(proxy.$util.isEmpty(target.url)) {
           proxy.$alert(getMessage(MSG.URL_REQUIRED));
           return false;
         }
@@ -897,6 +1060,8 @@ const onMtrlItemTypeChange = (item) => {
   item.fileNm = null;
   item.file = null;
   item.url = null;
+  // 타입 변경 시 AI 분석 지정 초기화(변경된 자료에 이전 지정이 남지 않도록 안전 기본값)
+  item.aiAnalyzeYn = "N";
 };
 
 /** prafta-033-A: 파일 첨부 대상 타입(01 이미지/02 동영상/04 PDF). 03 유튜브는 URL */
@@ -923,25 +1088,6 @@ const onScopeChange = () => {
       sessionStorage.getItem('gv_siteNm') ||
       '';
   }
-};
-
-/** prafta-033-A: 썸네일 미리보기 URL(서버 썸네일 파일 또는 이미지 파일 자체) */
-const getThumbUrl = (item) => {
-  if (!item) return '';
-  // 이미지 타입은 본 파일 자체를 썸네일로 사용
-  if (item.mtrlItemType === '01' && item.filePath && item.fileMgmtCd) {
-    return getDownloadUrl(item);
-  }
-  return '';
-};
-
-/** prafta-033-A: 썸네일 없는 경우 타입별 아이콘 문자 */
-const getMediaTypeIcon = (mtrlItemType) => {
-  if (mtrlItemType === '02') return '동영상';
-  if (mtrlItemType === '03') return '유튜브';
-  if (mtrlItemType === '04') return 'PDF';
-  if (mtrlItemType === '01') return '이미지';
-  return '-';
 };
 
 const onFileSelected = async (event, item, idx) => {
@@ -980,11 +1126,21 @@ const onFileSelected = async (event, item, idx) => {
 }
 
 const fnAddRow = () => {
+  // 신규 추가행 기본값 보강: 빈문자열/타입 정합(서버 INSERT 시 누락 필드 방지)
   eduMtrlItemList.value.push({
     chk: true,
     mtrlItemType: '01',
     useYn: 'Y',
     sortIdx: eduMtrlItemList.value.length + 1,
+    mtrlDesc: '',
+    url: '',
+    fileNm: '',
+    fileMgmtCd: null,
+    filePath: null,
+    fileExt: null,
+    file: null,
+    // TBM_AI-RB-1: 신규 행 AI 분석 지정 기본값(저장 시 RA 영속)
+    aiAnalyzeYn: 'N',
   });
 }
 
@@ -1071,24 +1227,30 @@ const fnAddRow = () => {
   white-space: nowrap;
 }
 
-.thumb-preview {
-  max-width: 48px;
-  max-height: 48px;
+/* T5-2: 사용 중 교육자료 수정 불가 안내 */
+.lock-hint-row {
+  display: flex;
+  align-items: center;
+  padding: 0.5rem 0.75rem;
+  background: var(--color-warning-bg);
   border: 1px solid var(--color-border);
   border-radius: var(--btn-radius);
-  object-fit: cover;
 }
 
-.thumb-placeholder {
+.lock-hint {
   font-size: var(--btn-font-sm);
-  color: var(--color-text-muted);
+  color: var(--color-warning-text);
+  font-weight: 600;
 }
 
 .content-wrapper {
   /* display: flex; */
   gap: 1rem;
-  padding: 1.2rem;
-  height: calc(100% - 60px);
+  /* 상단 패딩 제거: 전역 .form-container padding(20px)과 겹쳐 헤더-안내문구 간격이 과했음(약 39px). */
+  padding: 0 1.2rem 1.2rem;
+  /* 상단에서 줄인 약 27px(패딩 1.2rem + form-container 상단 8px)만큼 본문 높이도 축소해
+     하단에 생기던 빈 공간 제거 → 팝업 세로 길이도 그만큼 짧아진다. */
+  height: calc(100% - 87px);
   overflow: hidden;
 }
 
@@ -1101,6 +1263,12 @@ const fnAddRow = () => {
   padding-right: 0.5rem;
 }
 
+/* 헤더와 첫 요소(안내문구/스코프) 사이 간격 축소:
+   전역 .prafta-modal-popup .form-container 의 상단 padding(20px)만 축소(좌우/하단은 유지). */
+.content-wrapper .form-container {
+  padding-top: 12px;
+}
+
 .edu-grid-row {
   align-items: flex-start;
 }
@@ -1109,6 +1277,13 @@ const fnAddRow = () => {
   flex: 1;
   display: flex;
   flex-direction: column;
+  gap: 0.5rem;
+}
+
+/* 세부항목 테이블 전용 툴바(우측 하단 정렬) */
+.edu-grid-toolbar {
+  display: flex;
+  justify-content: flex-end;
   gap: 0.5rem;
 }
 

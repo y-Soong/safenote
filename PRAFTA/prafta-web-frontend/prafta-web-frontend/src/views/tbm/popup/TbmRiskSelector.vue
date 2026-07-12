@@ -27,12 +27,57 @@
         </div>
 
         <div class="viewSearch">
-          <div class="form-left">
-            <label>검색</label>
+          <div>
+            <label>위험구분</label>
+            <select v-model="processCd" name="combo">
+              <option value="">전체</option>
+              <option
+                v-for="opt in baseCodeArr['COM002'] || []"
+                :key="opt.baimValDCd"
+                :value="opt.baimValDCd"
+              >
+                {{ opt.baimValDNm }}
+              </option>
+            </select>
+          </div>
+          <div>
+            <label>위험분류</label>
+            <select v-model="riskTypeCd" name="combo">
+              <option value="">전체</option>
+              <option
+                v-for="opt in riskTypeArr.filter((o) => {
+                  if (proxy.$util.isEmpty(processCd)) {
+                    return proxy.$util.isEmpty(o.processCd);
+                  }
+                  return (
+                    o.processCd == processCd || proxy.$util.isEmpty(o.processCd)
+                  );
+                })"
+                :key="opt.riskTypeCd"
+                :value="opt.riskTypeCd"
+              >
+                {{ opt.riskTypeNm }}
+              </option>
+            </select>
+          </div>
+          <div>
+            <label>유해요인 설명</label>
             <input
-              v-model.trim="searchKeyword"
-              placeholder="공정/유해요인"
-              @keyup.enter="fnFilter"
+              v-model.trim="hazardDesc"
+              placeholder="유해요인 설명"
+              @keyup.enter="fnSearch"
+            />
+          </div>
+          <div>
+            <label>평가요청일</label>
+            <CalendarSrch v-model="initAssessDate" />
+          </div>
+          <div>
+            <label>평가요청자</label>
+            <input
+              v-model.trim="initAssessorNm"
+              placeholder="평가요청자"
+              @keyup.enter="fnSearch"
             />
           </div>
           <div class="btn-group">
@@ -46,15 +91,17 @@
               <thead>
                 <tr>
                   <th style="width: 5%; text-align: center">선택</th>
-                  <th style="width: 40%">위험성평가</th>
-                  <th style="width: 15%">공정</th>
+                  <th style="width: 30%">위험성평가</th>
+                  <th style="width: 13%; text-align: center">평가요청일</th>
+                  <th style="width: 12%">평가요청자</th>
+                  <th style="width: 15%">유해요인 설명</th>
                   <th style="width: 12%; text-align: center">진행상태</th>
                 </tr>
               </thead>
               <tbody>
                 <template v-if="!filteredList || filteredList.length === 0">
                   <tr>
-                    <td colspan="4" class="edu-grid-empty">
+                    <td colspan="6" class="edu-grid-empty">
                       조회된 위험성평가가 없습니다.
                     </td>
                   </tr>
@@ -73,7 +120,11 @@
                       />
                     </td>
                     <td>{{ row.displayName || "(이름 미정)" }}</td>
-                    <td>{{ row.processNm || row.processCd }}</td>
+                    <td style="text-align: center">
+                      {{ row.initAssessDate || "-" }}
+                    </td>
+                    <td>{{ row.initAssessorNm || "-" }}</td>
+                    <td>{{ row.hazardNm }}</td>
                     <td style="text-align: center">
                       {{ row.assessmentStatusNm || row.assessmentStatus }}
                     </td>
@@ -101,6 +152,7 @@
 import {
   ref,
   computed,
+  watch,
   defineProps,
   defineEmits,
   onMounted,
@@ -109,6 +161,7 @@ import {
 import axios from "@/api/axios";
 import { resolveApiErrorMessage } from "@/utils/apiError";
 import { useCenteredDraggable } from "@/composables/useCenteredDraggable";
+import CalendarSrch from "@/components/common/CalendarSrch.vue";
 
 const { proxy } = getCurrentInstance();
 
@@ -121,9 +174,16 @@ const emit = defineEmits(["close"]);
 
 const modalRef = ref(null);
 const riskList = ref([]);
-const searchKeyword = ref("");
-const filterKeyword = ref("");
 const selectedMap = ref({}); // key -> row
+
+// 조회조건: 위험구분(COM002) / 위험분류(risk-type) / 유해요인 설명(like)
+const processCd = ref("");
+const riskTypeCd = ref("");
+const hazardDesc = ref("");
+const initAssessDate = ref(""); // 평가요청일 필터(YYYY-MM-DD, 6.3 T6-13)
+const initAssessorNm = ref(""); // 평가요청자 필터(like, 6.3 T6-13)
+const baseCodeArr = ref({}); // COM002(위험구분) 코드 옵션
+const riskTypeArr = ref([]); // 위험분류 옵션
 
 const { position, startDrag } = useCenteredDraggable(modalRef, {
   horizontalRatio: 2,
@@ -133,37 +193,42 @@ const { position, startDrag } = useCenteredDraggable(modalRef, {
 // 위험성평가 식별키(복합키)
 const rowKey = (row) => [row.siteCd, row.processCd, row.assessmentCd].join("|");
 
-const filteredList = computed(() => {
-  const kw = (filterKeyword.value || "").trim();
-  if (!kw) return riskList.value;
-  return riskList.value.filter(
-    (r) =>
-      (r.displayName || "").indexOf(kw) >= 0 ||
-      (r.processNm || "").indexOf(kw) >= 0 ||
-      (r.hazardNm || "").indexOf(kw) >= 0
-  );
+// 서버 조회 결과를 그대로 노출(필터는 서버 파라미터로 처리)
+const filteredList = computed(() => riskList.value);
+
+// 위험구분 변경 시 위험분류 리셋(Risk_03 패턴)
+watch(processCd, () => {
+  riskTypeCd.value = "";
 });
 
 onMounted(async () => {
   (props.selectedKeys_p || []).forEach((k) => {
     selectedMap.value[k] = true;
   });
+  await fnGetBaseinfoList();
+  await fnGetRiskTypeList();
   await fnSearch();
 });
 
-const fnSearch = async () => {
-  riskList.value = [];
+// 위험구분 코드 옵션(COM002) 로딩 — Risk_03.vue 패턴
+const fnGetBaseinfoList = async () => {
   try {
-    const response = await axios.get("/webApi/tbm02/risk-options", {
+    const response = await axios.get("/comApi/baseinfo/base-info-lists", {
       params: {
-        siteCd: props.siteCd_p || "",
-        searchKeyword: searchKeyword.value,
+        cmpnyCd: sessionStorage.getItem("gv_cmpnyCd"),
+        baseCodeList: ["COM002"],
       },
     });
 
     if (response.status === 200) {
-      riskList.value = response.data?.riskList || [];
-      filterKeyword.value = searchKeyword.value;
+      const resData = response.data?.baseInfoList || [];
+      const grouped = {};
+      resData.forEach((item) => {
+        const key = item.baimValCd;
+        if (!grouped[key]) grouped[key] = [];
+        grouped[key].push(item);
+      });
+      baseCodeArr.value = grouped;
     }
   } catch (err) {
     await proxy.$alert(
@@ -172,8 +237,42 @@ const fnSearch = async () => {
   }
 };
 
-const fnFilter = () => {
-  filterKeyword.value = searchKeyword.value;
+// 위험분류 옵션 로딩(기존 risk03 조회 EP 재사용)
+const fnGetRiskTypeList = async () => {
+  try {
+    const response = await axios.get("/webApi/risk03/risk-type-info-lists", {});
+    if (response.status === 200) {
+      riskTypeArr.value = response.data?.riskTypeResultList || [];
+    }
+  } catch (err) {
+    await proxy.$alert(
+      resolveApiErrorMessage(err, "조회 중 오류가 발생했습니다.")
+    );
+  }
+};
+
+const fnSearch = async () => {
+  riskList.value = [];
+  try {
+    const response = await axios.get("/webApi/tbm02/risk-options", {
+      params: {
+        siteCd: props.siteCd_p || "",
+        processCd: processCd.value || "",
+        riskTypeCd: riskTypeCd.value || "",
+        hazardDesc: hazardDesc.value || "",
+        initAssessDate: initAssessDate.value || "",
+        initAssessorNm: initAssessorNm.value || "",
+      },
+    });
+
+    if (response.status === 200) {
+      riskList.value = response.data?.riskList || [];
+    }
+  } catch (err) {
+    await proxy.$alert(
+      resolveApiErrorMessage(err, "조회 중 오류가 발생했습니다.")
+    );
+  }
 };
 
 const isSelected = (row) => !!selectedMap.value[rowKey(row)];

@@ -1,5 +1,5 @@
 <template>
-  <div class="daily-join">
+  <div class="daily-join" ref="rootRef">
     <header class="daily-join__header">
       <h1 class="daily-join__title">일일사용자 회원가입</h1>
     </header>
@@ -243,8 +243,24 @@ const passwordRef = ref(null);
 const passwordConfirmRef = ref(null);
 const mblNoRef = ref(null);
 
+/* 루트 컨테이너 ref (모바일 가시영역 높이 주입용) */
+const rootRef = ref(null);
+
+/* 모바일 동적 주소창 대응: 실제 보이는 높이(window.innerHeight)를 CSS 변수(--djoin-h)로 주입한다.
+   주소창이 노출/숨김되면 resize 가 발생해 다시 측정 → 컨테이너 높이가 항상 가시영역과 일치하여
+   내부 스크롤로 하단(약관·회원가입 버튼)까지 도달 가능. */
+function setViewportHeight() {
+  if (rootRef.value) {
+    rootRef.value.style.setProperty("--djoin-h", `${window.innerHeight}px`);
+  }
+}
+
 /* ============ Life Cycle ============ */
 onMounted(async () => {
+  setViewportHeight();
+  window.addEventListener("resize", setViewportHeight);
+  window.addEventListener("orientationchange", setViewportHeight);
+
   // joinCd 파싱: {회사코드}-{사업장코드5자리}
   const joinCd = route.params.joinCd || "";
   const parts = String(joinCd).split("-");
@@ -278,6 +294,8 @@ onMounted(async () => {
 
 onUnmounted(() => {
   if (timerInterval) clearInterval(timerInterval);
+  window.removeEventListener("resize", setViewportHeight);
+  window.removeEventListener("orientationchange", setViewportHeight);
 });
 
 /* ============ API Functions ============ */
@@ -524,7 +542,9 @@ function fnValidateInput() {
   }
   // 6~15자 + 영문/숫자/특수문자 중 2종 이상 (정규 사용자 규칙, 공통 정책 §3.1)
   if (!fnIsValidPassword(password.value)) {
-    proxy.$alert("비밀번호는 6 ~ 15자, 영문/숫자/특수문자 중 2종 이상이어야 합니다.");
+    proxy.$alert(
+      "비밀번호는 6 ~ 15자, 영문/숫자/특수문자 중 2종 이상이어야 합니다."
+    );
     if (passwordRef.value) passwordRef.value.focus();
     return false;
   }
@@ -562,17 +582,24 @@ function fnValidateInput() {
 </script>
 
 <style scoped>
-/* 화면 높이를 뷰포트로 고정하고, 내용이 넘치면 세로 스크롤바를 노출한다
-   (폼이 길어져 회원가입 버튼이 잘리는 현상 방지) */
+/* 모바일 브라우저(삼성 인터넷/Chrome)의 동적 주소창 때문에 100vh 는 실제 보이는 영역보다
+   커서 하단(약관 끝·회원가입 버튼)이 잘린다. 컨테이너 높이를 JS 로 측정한 실제 가시영역
+   (--djoin-h = window.innerHeight)에 정확히 맞춘 뒤 내부 세로 스크롤을 허용해, 폼이 길어도
+   끝까지 스크롤 도달이 가능하다. 미지원/측정 전에는 dvh→vh 순으로 폴백.
+   하단 안전영역(제스처 바/홈 인디케이터)만큼 여백을 더해 버튼이 가려지지 않게 한다. */
 .daily-join {
   height: 100vh;
+  height: 100dvh;
+  height: var(--djoin-h, 100dvh);
   overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
   box-sizing: border-box;
   background: var(--color-bg);
   display: flex;
   flex-direction: column;
   align-items: center;
   padding: var(--card-padding);
+  padding-bottom: calc(var(--card-padding) + env(safe-area-inset-bottom, 0px));
   font-family: "Pretendard", sans-serif;
 }
 .daily-join__header {
@@ -720,6 +747,7 @@ function fnValidateInput() {
 @media (max-width: 480px) {
   .daily-join {
     padding: 0.75rem;
+    padding-bottom: calc(0.75rem + env(safe-area-inset-bottom, 0px));
   }
   .daily-join__form,
   .daily-join__error,

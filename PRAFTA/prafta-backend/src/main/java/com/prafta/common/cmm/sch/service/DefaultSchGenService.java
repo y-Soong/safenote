@@ -39,7 +39,8 @@ public interface DefaultSchGenService {
     int ensureWorkPlanDay(String cmpnyCd, String userCd, String workYmd);
 
     /**
-     * 기본근무 변경 시 미래 자동생성분만 새 SCH_CD 로 갱신 후, 미래 빈 평일에 신규 생성도 수행한다.
+     * 기본근무 변경 시 명일(today+1)~당해 12/31 범위에서 자동생성분만 새 SCH_CD 로 갱신 후,
+     * 같은 범위의 빈 평일에 신규 생성도 수행한다(D3: 당일 미변경).
      * 마감월은 제외(prafta-028). 수동/연차/교대/촉진 보존.
      *
      * @param cmpnyCd   회사 코드

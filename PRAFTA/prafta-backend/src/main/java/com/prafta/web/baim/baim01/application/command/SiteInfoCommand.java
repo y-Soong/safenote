@@ -27,12 +27,21 @@ public record SiteInfoCommand(
 	, String gvUserCd
 ) {
 	public static SiteInfoCommand from(SiteInfoModel model, String siteCd) {
-		
+		// PRAFTA-COM-001-T2-2: useYn/endDate 무보정 기본 경로(하위 호환). 보정은 from(model, siteCd, endDate, useYn) 사용.
+		return from(model, siteCd, model.endDate(), model.useYn());
+	}
+
+	/**
+	 * PRAFTA-COM-001-T2-2 — 서비스(Baim01ServiceImpl)에서 A안 종료일 경계로 보정한
+	 * endDate/useYn 을 주입받아 Command 를 생성한다(SiteInfoModel 은 불변 record 라 직접 보정 불가).
+	 */
+	public static SiteInfoCommand from(SiteInfoModel model, String siteCd, String endDate, String useYn) {
+
 		if(model == null)
 			throw new ApiException(CommonErrorCode.COMMON_400_001);
 		if(siteCd == null)
 			throw new ApiException(CommonErrorCode.COMMON_400_001);
-		
+
 		return new SiteInfoCommand(
 			model.cmpnyCd()
 			, siteCd
@@ -42,8 +51,8 @@ public record SiteInfoCommand(
 			, model.addr2()
 			, model.zipCode()
 			, model.strDate()
-			, model.endDate()
-			, model.useYn()
+			, endDate
+			, useYn
 			, model.siteAdminCd()
 			, model.telNo()
 			, model.gpsRange()
@@ -52,7 +61,7 @@ public record SiteInfoCommand(
 			, model.lon()
 			, model.gvCmpnyCd()
 			, model.gvUserCd()
-		); 
+		);
 	}
 }
 

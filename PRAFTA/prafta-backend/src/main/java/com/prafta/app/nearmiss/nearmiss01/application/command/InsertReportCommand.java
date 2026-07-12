@@ -13,7 +13,6 @@ import com.prafta.common.exception.ApiException;
 public record InsertReportCommand(
     String siteCd
     , String nearMissId
-    , String incidentTypeCd
     , String processCd
     , String occurDtime
     , String locationDesc
@@ -32,7 +31,6 @@ public record InsertReportCommand(
         return new InsertReportCommand(
             param.tokenInfo().gv_siteCd()
             , nearMissId
-            , param.incidentTypeCd()
             , param.processCd()
             , param.occurDtime()
             , param.locationDesc()

@@ -62,6 +62,7 @@ import com.prafta.web.user.user01.dto.response.MyProfileResponse;
 import com.prafta.web.user.user01.dto.response.SiteNodeAdminCandidateListResponse;
 import com.prafta.web.user.user01.dto.response.UserInfoListResponse;
 import com.prafta.web.user.user01.mapper.User01Mapper;
+import com.prafta.web.user.user01.mapper.UserTransferMapper;
 import com.prafta.web.user.user01.result.MyProfileResult;
 import com.prafta.web.user.user01.result.ServiceCreditResult;
 import com.prafta.web.user.user01.result.TemplateAuthRow;
@@ -92,6 +93,9 @@ import lombok.extern.slf4j.Slf4j;
 @RequiredArgsConstructor
 public class User01ServiceImpl implements User01Service{
 	private final User01Mapper user01Mapper;
+	// PRAFTA-WEB_002-T1-02(1.4-1): 무담당 부서 담당(정) 자동지정 공용 SQL(updateNodeMainAdminIfEmpty) 재사용
+	//   — 소속이동 발효 경로와 동일 매퍼를 공유한다(중복 구현 금지).
+	private final UserTransferMapper userTransferMapper;
 	private final PasswordHasher passwordHasher;
 	private final HmacSigner hmacSigner;
 	private final AesGcmCrypto aesGcmCrypto;
@@ -110,8 +114,10 @@ public class User01ServiceImpl implements User01Service{
 	// REASON_DETAIL varchar(500) - 경력 인정 상세 설명 서버측 길이 상한
 	private static final int REASON_DETAIL_MAX_LEN = 500;
 
-	// PRAFTA-COM-008-E-5: 자동생성 트리거 운영 게이트(기본 false). 미충족이면 설정만 저장하고 생성은 스킵.
-	@org.springframework.beans.factory.annotation.Value("${prafta.default-sch.gen.enabled:false}")
+	// PRAFTA-COM-008-E-5: 자동생성 트리거 운영 게이트. 미충족이면 설정만 저장하고 생성은 스킵.
+	//   코드 기본값을 true 로 통일(로그인 게이트/배치 스케줄러와 정합). properties 에 명시값이 있으면 그 값 우선.
+	//   기본 false 비대칭이 User_01 경로에서 운영 누락(생성 미동작)을 유발하던 문제 해소.
+	@org.springframework.beans.factory.annotation.Value("${prafta.default-sch.gen.enabled:true}")
 	private boolean defaultSchGenEnabled;
 
 	@Override
@@ -235,7 +241,23 @@ public class User01ServiceImpl implements User01Service{
         //   merge 후 조회하면 같은 트랜잭션이라 prevAuthCd 가 신규 authCd 로 덮여
         //   진입/이탈 분기가 전부 dead code 가 된다.
         String prevAuthCd = user01Mapper.selectUserAuthCd(model.cmpnyCd(), model.userCd());
-        
+
+        // PRAFTA-WEB_002-T1-03(1.4-2): 권한 등급 escalation 서버 가드.
+        //   권한(authCd)이 실제로 "변경"될 때만, 새 권한 등급이 요청자(viewer) 등급보다 "엄격히 낮은"(=AUTH_LEVEL
+        //   숫자가 더 큰) 경우만 허용한다. 동일/상위 등급 부여는 차단(권한 상승 방지).
+        //   viewer 등급/대상 등급 모두 서버에서 산출한다(클라가 보낸 등급/옵션을 신뢰하지 않음 — JWT userCd 기준).
+        //   authCd 무변경(현재값 패스스루)은 가드 미적용(소속/이메일 등 일반 수정 무영향).
+        if (model.authCd() != null && !model.authCd().equals(prevAuthCd)) {
+            String viewerAuthCd = user01Mapper.selectUserAuthCd(model.cmpnyCd(), model.gvUserCd());
+            Integer viewerLevel = parseAuthLevel(user01Mapper.selectAuthLevelByAuthCd(model.cmpnyCd(), viewerAuthCd));
+            Integer newLevel = parseAuthLevel(user01Mapper.selectAuthLevelByAuthCd(model.cmpnyCd(), model.authCd()));
+            if (viewerLevel == null || newLevel == null || newLevel <= viewerLevel) {
+                log.warn("권한 등급 상승 차단 - 요청자={}, viewerAuthCd={}, viewerLevel={}, 대상userCd={}, prevAuthCd={}, newAuthCd={}, newLevel={}",
+                        model.gvUserCd(), viewerAuthCd, viewerLevel, model.userCd(), prevAuthCd, model.authCd(), newLevel);
+                throw new ApiException(UserErrorCode.USER_403_003);
+            }
+        }
+
         String phoneNorm = "";
         String emailNorm = Normalizers.normalizeEmail(model.email());
         String birthNorm = Normalizers.normalizeBirth(model.birthDt());
@@ -641,7 +663,10 @@ public class User01ServiceImpl implements User01Service{
 		}
 		int targetAuthLevel = parseIntOrThrow(targetAuthLevelStr, UserErrorCode.USER_400_045);
 		int gvAuthLevel = parseIntOrThrow(param.gvAuthLevel(), CommonErrorCode.COMMON_400_003);
-		if (targetAuthLevel < gvAuthLevel) {
+		// PRAFTA-WEB_002-T1-03(1.4-2): 권한 등급 escalation 가드 강화 — 본인(요청자)보다 "엄격히 낮은"
+		//   등급(=AUTH_LEVEL 숫자가 더 큰) 권한만 부여 가능. 동일 등급 부여(예: master→master)도 차단한다.
+		//   기존 '<'(동일 등급 허용)를 '<='(동일 등급도 차단)로 강화. 사유 코드는 배치 표시 일관성 위해 046(권한레벨초과) 유지.
+		if (targetAuthLevel <= gvAuthLevel) {
 			log.warn("신규 계정 권한레벨 초과 - 요청자={}, gvAuthLevel={}, targetAuthCd={}, targetAuthLevel={}",
 					param.gvUserCd(), gvAuthLevel, param.authCd(), targetAuthLevel);
 			throw new ApiException(UserErrorCode.USER_400_046);
@@ -667,12 +692,10 @@ public class User01ServiceImpl implements User01Service{
 			throw new ApiException(com.prafta.common.error.attd.AttdErrorCode.ATTD_400_140);
 		}
 
-		// 8-1) PRAFTA-046: 노드-관리자 정합성 가드.
-		//   정/부 관리자가 없는 노드에는 근로자를 배정하지 않는다 (관리·승인 주체 부재 방지).
-		int nodeHasAdmin = user01Mapper.selectNodeHasAdmin(param.gvCmpnyCd(), siteCd, param.nodeCd());
-		if (nodeHasAdmin == 0) {
-			throw new ApiException(UserErrorCode.USER_400_056);
-		}
+		// 8-1) PRAFTA-WEB_002-T1-02(1.4-1): 무담당 부서 배정 허용.
+		//   기존 PRAFTA-046 의 "정/부 관리자 미지정 노드 생성 차단(USER_400_056)" 하드 게이트를 제거한다.
+		//   대신 INSERT 직후(아래) 정/부 담당이 모두 비어있는 부서면 신규 사용자를 담당(정)으로 자동지정한다
+		//   (소속이동 발효 경로와 동일 공용 로직 — 관리·승인 주체 부재 방지). 일용직 생성 경로(QR/dailyjoin)는 무관.
 
 		// 9) USER_ID 중복 사전 진단 (UX_TB_USER_ID UNIQUE).
 		int userIdExists = user01Mapper.selectUserIdExists(param.gvCmpnyCd(), param.userId());
@@ -741,6 +764,15 @@ public class User01ServiceImpl implements User01Service{
 				, param.gvUserCd()
 		);
 		user01Mapper.insertOneUser(command);
+
+		// 17-1) PRAFTA-WEB_002-T1-02(1.4-1): 배정 부서의 정(MAIN)·부(SUB) 담당이 모두 비어있으면
+		//   신규 사용자를 담당(정)으로 자동지정한다. 소속이동 발효 경로와 동일 공용 SQL 재사용(중복 구현 금지).
+		//   이미 담당(정 또는 부)이 있으면 0행(무변경).
+		int autoMainAdmin = userTransferMapper.updateNodeMainAdminIfEmpty(
+				param.gvCmpnyCd(), siteCd, param.nodeCd(), userCd, param.gvUserCd());
+		if (autoMainAdmin > 0) {
+			log.info("신규 계정 생성 - 무담당 부서 담당(정) 자동지정. userCd={}, siteCd={}, nodeCd={}", userCd, siteCd, param.nodeCd());
+		}
 
 		// 18) TB_USER_SITE_AUTH INSERT (사용자 ↔ 사이트 권한 한 줄).
 		user01Mapper.insertOneUserSiteAuth(param.gvCmpnyCd(), userCd, siteCd, param.gvUserCd());
@@ -825,6 +857,21 @@ public class User01ServiceImpl implements User01Service{
 			return Integer.parseInt(s.trim());
 		} catch (Exception e) {
 			throw new ApiException(errorCode);
+		}
+	}
+
+	/**
+	 * PRAFTA-WEB_002-T1-03(1.4-2): 권한 등급(AUTH_LEVEL/SORT_IDX) 문자열을 정수로 파싱한다.
+	 * 값이 없거나 숫자가 아니면 null 을 반환한다(escalation 가드는 null 을 fail-closed 로 거부).
+	 */
+	private static Integer parseAuthLevel(String s) {
+		if (s == null || s.isBlank()) {
+			return null;
+		}
+		try {
+			return Integer.parseInt(s.trim());
+		} catch (Exception e) {
+			return null;
 		}
 	}
 

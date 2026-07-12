@@ -20,6 +20,28 @@ export function formatRange(start, end) {
   return `${s} ~ ${e}`
 }
 
+/**
+ * BE 근태/스케줄 요약 문자열을 "HH:MM ~ HH:MM" 표시형으로 변환.
+ *   - 1구간: "0716~1811" → "07:16 ~ 18:11"
+ *   - 2구간: "0700~1300 / 1700~2100" → "07:00 ~ 13:00 / 17:00 ~ 21:00"
+ *   - 진행중(종료 결측): "0716~" → "07:16 ~" (근무중)
+ * BE 는 raw HHMM 으로 내려주고 콜론 삽입은 FE 가 한다(attendanceSummary/scheduleSummary 규약).
+ * 입력이 비거나 형식 불충분한 토큰은 원본을 그대로 두어 손실 없이 폴백한다.
+ */
+export function formatTimeSummary(summary) {
+  if (!summary || typeof summary !== 'string') return summary || ''
+  return summary
+    .split('/')
+    .map((seg) => {
+      const parts = seg.split('~')
+      if (parts.length !== 2) return seg.trim()
+      const left = formatHHMM(parts[0].trim()) || parts[0].trim()
+      const right = formatHHMM(parts[1].trim()) || parts[1].trim()
+      return `${left} ~ ${right}`.trimEnd()
+    })
+    .join(' / ')
+}
+
 /** YYYYMMDD → Date 객체. 형식 불충분 시 null. */
 export function ymdToDate(ymd) {
   const v = String(ymd || '')
@@ -163,6 +185,53 @@ export function formatLeaveDays(days) {
   return String(Number(n.toFixed(2)))
 }
 
+// ====================================================================
+// 승인된 초과근무(applied overtime) 표시 헬퍼 (표시 전용, 순수함수)
+//   BE 응답: { startDate(YYYYMMDD), startTime(HHMM), endDate(YYYYMMDD), endTime(HHMM), workMinutes(int|null) }
+//   분→한글은 minutesToKorean, HHMM→HH:MM 은 formatHHMM 재사용(단일 출처).
+// ====================================================================
+
+/**
+ * OT 1건 → "HH:MM~HH:MM (N시간 M분)" 한 줄 문자열.
+ *   - 오버나이트(시작일≠종료일)면 종료 시각 앞에 날짜 구분을 붙인다:
+ *       종료일이 시작일 +1 → "익일 HH:MM", 그 외 → "MM.DD HH:MM"(날짜는 점 컨벤션).
+ *   - workMinutes 가 null/0 이하이면 분 괄호를 생략하고 시각 range 만 표시.
+ *   - 시각 형식 불충분이면 해당 토큰을 "-" 로 폴백(손실 없이).
+ */
+export function formatOvertimeLine(ot) {
+  const o = ot || {}
+  const start = formatHHMM(o.startTime) || '-'
+  const endHm = formatHHMM(o.endTime) || '-'
+
+  // 오버나이트 종료 표기: 시작일/종료일 비교(둘 다 8자리일 때만 판정).
+  const sd = String(o.startDate || '')
+  const ed = String(o.endDate || '')
+  let endText = endHm
+  if (sd.length === 8 && ed.length === 8 && sd !== ed && endHm !== '-') {
+    const sDate = ymdToDate(sd)
+    const eDate = ymdToDate(ed)
+    if (sDate && eDate) {
+      const diffDays = Math.round((eDate - sDate) / 86400000)
+      if (diffDays === 1) endText = `익일 ${endHm}`
+      else endText = `${ed.slice(4, 6)}.${ed.slice(6, 8)} ${endHm}`
+    }
+  }
+
+  const range = `${start}~${endText}`
+  const min = Number(o.workMinutes)
+  if (Number.isFinite(min) && min > 0) {
+    return `${range} (${minutesToKorean(min)})`
+  }
+  return range
+}
+
+/** OT 분 합계(int) → "N시간 M분" 보조 표기. 0/null 이면 null(미표기). */
+export function formatOvertimeMinutes(min) {
+  const n = Number(min)
+  if (!Number.isFinite(n) || n <= 0) return null
+  return minutesToKorean(n)
+}
+
 /**
  * 연차 사용 마커 1줄 문자열 생성(부분/종일 공통). 단위코드로 토큰 구성 분기.
  *   00 종일  → "월차 · 종일"
@@ -189,4 +258,27 @@ export function formatLeaveMarker(detail) {
   }
 
   return tokens.filter(Boolean).join(' · ')
+}
+
+/**
+ * 같은 날 부분연차(시간차/반차) 다건 마커 객체 배열 생성.
+ *   PRAFTA_COM_002-B-1: 각 항목을 { text, pending } 으로 반환(요청중 배지 분기용).
+ *     - text: 기존 formatLeaveMarker 1줄 문자열(표시/색 불변).
+ *     - pending: 승인 대기(요청중) 여부 — BE leaves[].pendingApproval(다건) 또는 단건 isLeavePending(폴백).
+ *   - BE 가 leaves[](각 항목 {leaveTypeName, leaveUnitType, leaveTimeRange, leaveDays, pendingApproval})를 주면 각 항목을 1줄로.
+ *   - 구버전 응답(leaves 미제공)이면 단건 스칼라(isLeaveUsed 시)로 1줄 폴백(하위호환, 필드 없으면 pending=false).
+ *   - 연차 미사용일이면 빈 배열 → 미렌더.
+ */
+export function formatLeaveMarkers(obj) {
+  const o = obj || {}
+  if (Array.isArray(o.leaves) && o.leaves.length) {
+    return o.leaves
+      .map((lv) => ({ text: formatLeaveMarker(lv), pending: !!lv.pendingApproval }))
+      .filter((m) => m.text)
+  }
+  if (o.isLeaveUsed) {
+    const s = formatLeaveMarker(o)
+    return s ? [{ text: s, pending: !!o.isLeavePending }] : []
+  }
+  return []
 }

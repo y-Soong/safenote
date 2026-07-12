@@ -93,7 +93,7 @@
 		, A.BAIM_VAL_NM				AS baimValNm
 		, A.SORT_IDX				AS sortIdx
 		, A.BAIM_VAL_D_CD			AS baimValDCd
-		, A.BAIM_VAL_D_NM			AS baimBalDNm
+		, A.BAIM_VAL_D_NM			AS baimValDNm
    	FROM
    	(
 	    SELECT 
@@ -150,7 +150,7 @@
 		, A.BAIM_VAL_NM				AS baimValNm
 		, B.SORT_IDX				AS sortIdx
 		, B.BAIM_VAL_D_CD			AS baimValDCd
-		, B.BAIM_VAL_D_NM			AS baimBalDNm
+		, B.BAIM_VAL_D_NM			AS baimValDNm
 	FROM TB_BAIM_VAL_M A
 		 INNER JOIN TB_BAIM_VAL_D B
 			ON (
@@ -276,11 +276,29 @@
 			
 	WHERE 1=1
 	  AND A.CMPNY_CD = #{cmpnyCd}
-	  AND A.USE_YN = 'Y'
-	  AND (
-	    A.END_DATE IS NULL OR
-	  	A.END_DATE <![CDATA[ >= ]]> date_format(NOW(), '%y%m%d')
-  	  )
+	  <!-- USE_YN: 회원가입(joinMode)은 활성('Y')만 강제. 일반(로그인 후) 조회는 화면에서 선택한
+	       사용여부 필터를 적용하고, 미선택이면 전체('Y'+'N') 노출. -->
+	  <choose>
+	    <when test='"Y".equals(joinMode)'>
+	      AND A.USE_YN = 'Y'
+	    </when>
+	    <when test="useYn != null and useYn != ''">
+	      AND A.USE_YN = #{useYn}
+	    </when>
+	  </choose>
+	  <!-- 활성기간(개시일~종료일) 필터는 회원가입(joinMode)에만 적용한다. 일반(로그인 후) 조회는
+	       기간과 무관하게 전체를 노출하고 사용여부 select 필터로만 제어한다(종료된 'N' 사업장도 조회 가능).
+	       STR_DATE/END_DATE 는 varchar(8) YYYYMMDD. 오늘은 8자리(%Y)로 비교한다. -->
+	  <if test='"Y".equals(joinMode)'>
+	      AND (
+	        A.STR_DATE IS NULL OR A.STR_DATE = '' OR
+	        A.STR_DATE <![CDATA[ <= ]]> date_format(NOW(), '%Y%m%d')
+	      )
+	      AND (
+	        A.END_DATE IS NULL OR A.END_DATE = '' OR
+	        A.END_DATE <![CDATA[ >= ]]> date_format(NOW(), '%Y%m%d')
+	      )
+	  </if>
   	  <if test="siteNo != null and siteNo != ''">
   	  	AND A.SITE_NO = #{siteNo}
   	  </if>
@@ -348,7 +366,11 @@
 		  FROM TB_SITE_NODE A
 		 WHERE A.CMPNY_CD = #{cmpnyCd}
 	 	   AND A.SITE_CD = #{siteCd}
-	 	   AND (NULLIF(A.MAIN_ADMIN_CD, '') IS NOT NULL OR NULLIF(A.SUB_ADMIN_CD, '') IS NOT NULL)
+	 	   <!-- PRAFTA-WEB_002-T1-02(1.3-3/1.4-1): 기본은 담당(정/부)이 지정된 노드만 노출(현행).
+	 	        includeNoAdmin=true(정규직 소속이동/생성 컨텍스트) 면 담당 미지정 노드도 포함한다. -->
+	 	   <if test="!includeNoAdmin">
+	 	   	AND (NULLIF(A.MAIN_ADMIN_CD, '') IS NOT NULL OR NULLIF(A.SUB_ADMIN_CD, '') IS NOT NULL)
+	 	   </if>
 	 	   /* 권한별 노드/사이트 제한 */
 		   AND (
 		         (SELECT V.AUTH_CD FROM viewer V) IN ('system','master','hr','safe')
@@ -466,9 +488,11 @@
 		, B.BTN_EXCL								AS btnExcl
 		, B.MENU_IDX								AS menuIdx
 		, B.MENU_SUB_IDX							AS menuSubIdx
+		, B.SUB_GROUP_NM							AS subGroupNm
+		, B.SUB_GROUP_IDX							AS subGroupIdx
 	FROM TB_USER A
 	     INNER JOIN (
-			SELECT 
+			SELECT
 				A.CMPNY_CD
 				, A.AUTH_CD
 				, B.MENU_M_ID
@@ -483,9 +507,11 @@
 	            , A.BTN_EXCL
 	            , B.MENU_IDX
 	            , B.MENU_SUB_IDX
+	            , B.SUB_GROUP_NM
+	            , B.SUB_GROUP_IDX
 			FROM TB_SYST_AUTH_MENU A
 				 INNER JOIN (
-					SELECT 
+					SELECT
 						A.MENU_M_ID
 						, A.MENU_NM AS TOP_MENU_NM
 						, B.MENU_D_ID
@@ -494,6 +520,8 @@
 	                    , A.USE_YN
 	                    , A.MENU_IDX
 	                    , B.MENU_IDX AS MENU_SUB_IDX
+	                    , B.SUB_GROUP_NM
+	                    , B.SUB_GROUP_IDX
 					FROM TB_SYST_MENU_M A
 						 INNER JOIN TB_SYST_MENU_D B
 							ON (
@@ -502,7 +530,7 @@
 							)
 					WHERE A.USE_YN = 'Y'
 					  AND A.MENU_SRC = #{menuSrc}
-					ORDER BY A.MENU_IDX, B.MENU_IDX
+					ORDER BY A.MENU_IDX, B.SUB_GROUP_IDX, B.MENU_IDX
 				 ) B
 					ON (
 						A.MENU_D_ID = B.MENU_D_ID
@@ -517,7 +545,17 @@
 	  AND A.CMPNY_CD = #{cmpnyCd}
 	  AND A.USER_CD = #{userCd}
 	  AND A.USE_YN = 'Y'
-	ORDER BY B.MENU_IDX, B.MENU_SUB_IDX
+	ORDER BY B.MENU_IDX, B.SUB_GROUP_IDX, B.MENU_SUB_IDX
+    </select>
+
+    <select id="selectMyFavoriteMenuDIds" resultType="string">
+    /* BaseinfoMapper."selectMyFavoriteMenuDIds" */
+    SELECT
+    	MENU_D_ID
+    FROM TB_USER_MENU_FAVORITE
+    WHERE 1=1
+      AND CMPNY_CD = #{cmpnyCd}
+      AND USER_CD = #{userCd}
     </select>
 
     <select id="selectUserIdInfo" parameterType="com.prafta.common.cmm.baseinfo.application.query.UserIdInfoQuery" resultType="com.prafta.common.cmm.baseinfo.result.UserIdInfoResult">
@@ -530,6 +568,10 @@
     WHERE 1=1
       AND USER_NM = #{userNm}
       AND MBL_NO_HMAC = #{mblNoHmac}
+    <!-- prafta-app-032 C: 비활성 레거시 중복행과 이름+휴대폰이 겹치면 단건 resultType 이 깨질 수 있어
+         활성 우선·최신 1건으로 정렬 후 LIMIT 1(아이디 찾기는 활성 계정의 ID 노출이 우선). -->
+    ORDER BY (USE_YN = 'Y') DESC, INSERT_DATE DESC
+    LIMIT 1
     </select>
     
     <update id="updateUserPw" parameterType="com.prafta.common.cmm.baseinfo.application.command.UserPasswordCommand">
@@ -539,6 +581,19 @@
 	WHERE 1=1
 	  AND CMPNY_CD = #{cmpnyCd}
 	  AND USER_CD = #{userCd}
+    </update>
+
+    <!-- prafta-app-032 D: 비밀번호 재설정 시 일용직 로그인 테이블(TB_DAILY_USER.USER_PW) 동기 갱신.
+         일용직 로그인(DailyLoginServiceImpl)은 TB_DAILY_USER.USER_PW 로 인증하므로 동일 해시로 맞춘다.
+         정규 사용자는 동일 USER_CD 의 daily 행이 없어 0행 no-op. -->
+    <update id="updateDailyUserPw" parameterType="com.prafta.common.cmm.baseinfo.application.command.UserPasswordCommand">
+    /* BaseinfoMapper.updateDailyUserPw */
+    UPDATE TB_DAILY_USER
+	SET USER_PW     = #{userPw}
+	    , UPDATE_NO   = #{userCd}
+	    , UPDATE_DATE = NOW()
+	WHERE CMPNY_CD = #{cmpnyCd}
+	  AND USER_CD  = #{userCd}
     </update>
 
     <select id="selectSmsVerifiedSmsId" parameterType="com.prafta.common.cmm.baseinfo.application.query.SmsVerifiedCheckQuery" resultType="string">
@@ -674,6 +729,7 @@
 	FROM TB_USER A
 		LEFT JOIN (
 		    SELECT
+		        X.CMPNY_CD,                                   <!-- 회사 스코프 누락 시 USER_CD 동일한 타 회사 사업장이 섞임(테넌트 누수) -->
 		        X.USER_CD,
 		        GROUP_CONCAT(S.SITE_NM ORDER BY S.SITE_CD SEPARATOR ',') AS SITE_NM_LIST
 		    FROM TB_USER_SITE_AUTH X
@@ -681,10 +737,11 @@
 		        ON X.CMPNY_CD = S.CMPNY_CD
 		       AND X.SITE_CD  = S.SITE_CD
 		    WHERE X.USE_YN = 'Y'
-		    GROUP BY X.USER_CD
+		    GROUP BY X.CMPNY_CD, X.USER_CD
 		) B
 			ON (
-				B.USER_CD = A.USER_CD
+				B.CMPNY_CD = A.CMPNY_CD
+			AND B.USER_CD = A.USER_CD
 			)
 		INNER JOIN TB_SITE C
 		    ON (

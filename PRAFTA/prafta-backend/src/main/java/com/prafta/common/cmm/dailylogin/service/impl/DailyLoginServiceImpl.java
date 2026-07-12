@@ -52,6 +52,8 @@ public class DailyLoginServiceImpl implements DailyLoginService {
     private final JwtUtil jwtUtil;
     // PRAFTA-app-027-2'(통합형) — TB_USER 행 로드/정규 토큰 발급 재사용(읽기 전용, 정규 쓰기 미오염).
     private final LoginMapper loginMapper;
+    // prafta-app-032 B — 비활성 일용직 자동 재활성(별도 @Transactional 빈). self-invocation 회피 목적의 분리.
+    private final DailyReentryProcessor dailyReentryProcessor;
 
     // 정규 로그인과 동일한 잠금 정책 프로퍼티 재사용(login.lock.*).
     @Value("${login.lock.duration-minutes}")
@@ -74,8 +76,15 @@ public class DailyLoginServiceImpl implements DailyLoginService {
 
         // 1) USE_YN='Y' 가드 내장 조회 — 비활성/만료 계정은 행 미반환 → 통합 차단 메시지.
         //    cmpnyCd 미전송 + 동일 USER_ID 다회사 활성 공존 시 다건 가능 → 단건이 아니면 통합 차단(500 노출 방지).
-        List<DailyUserResult> userResults = dailyLoginMapper.selectDailyUserForLogin(DailyLoginQuery.from(param));
-        if (userResults == null || userResults.size() != 1) {
+        DailyLoginQuery query = DailyLoginQuery.from(param);
+        List<DailyUserResult> userResults = dailyLoginMapper.selectDailyUserForLogin(query);
+        if (userResults == null || userResults.isEmpty()) {
+            // prafta-app-032 B — 활성 행이 없으면 비활성 일용직 자동 재활성(무마찰 재입장)을 시도한다.
+            //   비번 검증/실패카운트는 여기(비-Transactional)에서 끝내 영속시키고, 비번 일치 + 재활성 대상일 때만
+            //   별도 @Transactional 처리기로 재활성한다. 차단(토글OFF/정원없음/탈퇴/오비번 등)은 예외로 던져진다.
+            userResults = attemptInactiveReentry(param, query);
+        }
+        if (userResults.size() != 1) {
             throw new ApiException(DailyLoginErrorCode.DAILYLOGIN_400_001);
         }
         DailyUserResult userResult = userResults.get(0);
@@ -153,6 +162,61 @@ public class DailyLoginServiceImpl implements DailyLoginService {
         log.info("일용직 로그인 성공 — userCd={}, clientType={}", userResult.userCd(), param.clientType());
 
         return DailyLoginResponse.from(userResult, tbUser, refreshToken, token);
+    }
+
+    /**
+     * prafta-app-032 B — 활성 로그인 0건 시 비활성 일용직 자동 재활성(무마찰 재입장)을 시도한다.
+     *
+     * <p>보조 조회(USE_YN 가드 없음)로 단건 일용직을 찾아 활성경로와 동일한 잠금/비번 검증을 적용한다.
+     * 비번 불일치는 실패카운트 누적(임계 도달 시 잠금) 후 통합 차단(001), 탈퇴/단건아님/미존재도 통합 차단(001)으로
+     * 계정 존재를 노출하지 않는다(enumeration 방지). 비번 일치 + <b>비활성(USE_YN='N' 또는 ACCOUNT_STATUS='05')</b>
+     * 대상에 한해 별도 @Transactional 처리기({@link DailyReentryProcessor})로 재활성 + 슬롯 점유 후
+     * 활성 단건을 반환한다(이후 login() 의 정상 성공 경로가 토큰을 발급).
+     *
+     * <p>본 메서드는 비-Transactional 컨텍스트에서 실행되어 실패카운트가 차단 예외와 함께 롤백되지 않는다
+     * (정규/일용직 잠금 영속 관례 보존). 재활성 자체만 처리기의 트랜잭션으로 원자 처리된다.
+     */
+    private List<DailyUserResult> attemptInactiveReentry(DailyLoginParam param, DailyLoginQuery query) {
+        List<DailyUserResult> rows = dailyLoginMapper.selectDailyUserForInactiveCheck(query);
+        if (rows == null || rows.size() != 1) {
+            // 미존재/다건(동일 ID 다회사 등) — 계정 존재 비노출 통합 차단.
+            throw new ApiException(DailyLoginErrorCode.DAILYLOGIN_400_001);
+        }
+        DailyUserResult r = rows.get(0);
+
+        // 잠금 만료일시 체크(활성경로 미러) — 잠금 중이면 명시 안내(002).
+        if ("Y".equals(r.pwdLockYn())) {
+            String unlockDtimeStr = r.pwdLockExpireDtime();
+            if (unlockDtimeStr != null && !unlockDtimeStr.isBlank()) {
+                LocalDateTime unlockDtime = LocalDateTime.parse(unlockDtimeStr, LOCK_DTIME);
+                if (LocalDateTime.now().isBefore(unlockDtime)) {
+                    throw new ApiException(DailyLoginErrorCode.DAILYLOGIN_400_002);
+                }
+            }
+        }
+        // 만료된 잠금 정리(만료 시각이 지난 행에만 적용).
+        dailyLoginMapper.updateDailyUserPwdUnlock(DailyUserPwdUnlockCommand.from(r));
+
+        // 비밀번호 검증 — 실패 시 누적(임계 도달 시 잠금) 후 통합 차단(영속).
+        if (!passwordHasher.matches(param.userPw(), r.userPw())) {
+            dailyLoginMapper.updateDailyUserPwdFail(
+                    DailyUserPwdFailCommand.from(r, lockDurationMinutes, maxFailCount));
+            throw new ApiException(DailyLoginErrorCode.DAILYLOGIN_400_001);
+        }
+
+        // 탈퇴 계정은 재활성 금지(통합 차단). 대상은 비활성(USE_YN='N'/ACCOUNT_STATUS='05')만.
+        if (r.withdrawalDate() != null && !r.withdrawalDate().isBlank()) {
+            throw new ApiException(DailyLoginErrorCode.DAILYLOGIN_400_001);
+        }
+        boolean inactive = !"Y".equals(r.useYn()) || ACCOUNT_STATUS_INACTIVE.equals(r.accountStatus());
+        if (!inactive) {
+            // 활성 계정인데 본 조회 0건(예: 종료 사업장 소속) — 재활성 대상 아님 → 통합 차단.
+            throw new ApiException(DailyLoginErrorCode.DAILYLOGIN_400_001);
+        }
+
+        // 비번 일치 + 재활성 대상 — 별도 @Transactional 로 원자적 재활성 + 슬롯 점유(차단 시 롤백).
+        log.info("일용직 로그인 자동 재활성 시도 — userCd={}", r.userCd());
+        return dailyReentryProcessor.reactivateAndOccupy(r);
     }
 
     /**

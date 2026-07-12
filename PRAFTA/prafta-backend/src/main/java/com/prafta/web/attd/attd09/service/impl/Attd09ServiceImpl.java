@@ -78,6 +78,7 @@ public class Attd09ServiceImpl implements Attd09Service {
                 .metrics(result.getMetrics())
                 .list(result.getList())
                 .paging(result.getPaging())
+                .convMinutes(result.getConvMinutes()) // LC-07(표기): "N일 H시간 M분" 조립 분모
                 .build();
     }
 
@@ -91,6 +92,8 @@ public class Attd09ServiceImpl implements Attd09Service {
                 .nonLegalSummary(result.getNonLegalSummary())
                 .appliedLeaveTypes(result.getAppliedLeaveTypes())
                 .grantHistory(result.getGrantHistory())
+                .convMinutes(result.getConvMinutes())           // LC-07(표기)
+                .hourlyUsedMinutes(result.getHourlyUsedMinutes()) // LC-07(표기)
                 .build();
     }
 

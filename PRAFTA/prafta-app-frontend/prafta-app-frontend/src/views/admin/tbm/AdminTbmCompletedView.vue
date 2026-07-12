@@ -27,7 +27,17 @@
       <span class="admin-tbm-hd__spacer" aria-hidden="true" />
     </header>
 
-    <main class="admin-tbm-completed-body">
+    <main
+      class="admin-tbm-completed-body"
+      ref="scrollRef"
+      @touchstart.passive="onPullStart"
+      @touchmove="onPullMove"
+      @touchend="onPullEnd"
+      @touchcancel="onPullEnd"
+    >
+      <!-- 당겨서 새로고침 인디케이터 — 스크롤 최상단에서 아래로 당기면 노출 -->
+      <PullRefreshIndicator v-bind="indicatorProps" />
+
       <!-- loading -->
       <p v-if="isLoading" class="admin-tbm-state">불러오는 중…</p>
 
@@ -135,6 +145,8 @@ import { ref, computed, getCurrentInstance, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 
 import api from '@/api/axios'
+import { usePullToRefresh } from '@/composables/usePullToRefresh'
+import PullRefreshIndicator from '@/components/common/PullRefreshIndicator.vue'
 import AdminTbmAttendeeRow from './components/AdminTbmAttendeeRow.vue'
 import AdminTbmCompletionSheet from './components/AdminTbmCompletionSheet.vue'
 import AdminTbmPwdCard from './components/AdminTbmPwdCard.vue'
@@ -172,11 +184,15 @@ const regenerating = ref(false)
 const canManageCompletion = computed(
   () => !!session.value && session.value.gpsVerifyTypeCd !== 'DISABLED',
 )
+// [정합성 수정] 카운트 정의를 서버(앱/웹)와 일치시킨다.
+//   attendees 는 loadAttendees 에서 실입실(entryAt 존재)만 담는다 → attendees.length = 참석자수.
+//   이수 = COMPLETED. 미이수 = 실입실 + 미완료(상태가 COMPLETED 가 아님: NULL=미완료 또는 NOT_COMPLETED).
+//   (관리자 종료 자동이수 폐지로, 완료하지 않은 입실자는 상태 NULL 로 남아 미이수에 포함되어야 한다.)
 const completedCount = computed(
   () => attendees.value.filter((a) => a.completionStatusCd === 'COMPLETED').length,
 )
 const notCompletedCount = computed(
-  () => attendees.value.filter((a) => a.completionStatusCd === 'NOT_COMPLETED').length,
+  () => attendees.value.filter((a) => a.completionStatusCd !== 'COMPLETED').length,
 )
 
 // ── 조회 ──────────────────────────────────────────────────────────
@@ -211,7 +227,9 @@ const loadAttendees = async () => {
       `/appApi/admin/tbm/sessions/${encodeURIComponent(sessionCd.value)}/attendees`,
       { params: { phase: 'COMPLETED' } },
     )
-    attendees.value = Array.isArray(data?.attendees) ? data.attendees : []
+    // [정합성 수정] 미입실자(entryAt 없음)는 참석/이수/미이수 어디에도 잡히지 않도록 실입실만 남긴다.
+    const rows = Array.isArray(data?.attendees) ? data.attendees : []
+    attendees.value = rows.filter((a) => a.entryAt)
   } catch (e) {
     console.error('[AdminTbmCompletedView] 이수자 조회 실패:', e?.message)
     attendees.value = []
@@ -292,6 +310,15 @@ const onRegenerateExit = async () => {
   }
 }
 
+// 당겨서 새로고침 — 상세+이수자 명단을 함께 재조회(각 함수 자체 try/catch 격리).
+const scrollRef = ref(null)
+const { onPullStart, onPullMove, onPullEnd, indicatorProps } = usePullToRefresh(
+  scrollRef,
+  async () => {
+    await Promise.all([loadDetail(), loadAttendees()])
+  },
+)
+
 onMounted(() => {
   loadDetail()
   loadAttendees()
@@ -325,7 +352,8 @@ onMounted(() => {
   --space-md: 12px;
   --space-lg: 16px;
 
-  min-height: 100%;
+  height: 100vh;
+  height: 100dvh;
   background: var(--color-bg);
   color: var(--color-text-primary);
   display: flex;
@@ -371,6 +399,7 @@ onMounted(() => {
 /* 본문 */
 .admin-tbm-completed-body {
   flex: 1;
+  min-height: 0;
   padding: var(--space-md) var(--space-lg) calc(var(--space-lg) + env(safe-area-inset-bottom, 0px));
   overflow-y: auto;
   display: flex;

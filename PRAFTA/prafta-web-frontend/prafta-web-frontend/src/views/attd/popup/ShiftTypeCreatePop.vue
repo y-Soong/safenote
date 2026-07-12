@@ -197,7 +197,6 @@
               모든 조/일 조합에 패턴 또는 휴무를 배치해주세요.
             </p>
           </div>
-
         </div>
 
         <div class="modal-footer">

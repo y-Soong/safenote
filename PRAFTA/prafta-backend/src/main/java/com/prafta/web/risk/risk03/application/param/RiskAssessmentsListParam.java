@@ -11,6 +11,8 @@ public record RiskAssessmentsListParam(
 	, String processCd
 	, String riskTypeCd
 	, String gvCmpnyCd
+	, String initAssessorNm
+	, String initAssessDate
 ){
 	public static RiskAssessmentsListParam from(RiskAssessmentsListRequest request, TokenInfo tokenInfo) {
 
@@ -24,6 +26,8 @@ public record RiskAssessmentsListParam(
         	, request.getProcessCd()
         	, request.getRiskTypeCd()
         	, tokenInfo.gv_cmpnyCd()
+        	, request.getInitAssessorNm()
+        	, request.getInitAssessDate()
         );
     }
 }

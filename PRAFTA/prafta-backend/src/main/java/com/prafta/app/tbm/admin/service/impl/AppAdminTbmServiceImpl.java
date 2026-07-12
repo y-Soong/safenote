@@ -153,6 +153,9 @@ public class AppAdminTbmServiceImpl implements AppAdminTbmService {
     private static final int GPS_RADIUS_MIN = 50;
     private static final int GPS_RADIUS_MAX = 1000;
     private static final int CONTENT_TEXT_MIN = 10;
+    /** 교육 인정시간(분) 범위(요청서 17.3.1 / 공유계약: 1~60 정수, 웹과 동일 규칙). */
+    private static final int EDU_MINUTES_MIN = 1;
+    private static final int EDU_MINUTES_MAX = 60;
     private static final int NOT_COMPLETED_REASON_MIN = 10;   // R3 T4 미이수 사유 최소 길이
     private static final int QR_PAYLOAD_MAX_LENGTH = 4096;     // R-D 일용직 QR 페이로드 방어적 길이 상한(정상 ~3KB)
 
@@ -315,6 +318,7 @@ public class AppAdminTbmServiceImpl implements AppAdminTbmService {
                 .managerGpsLon(session.managerGpsLon())
                 .gpsVerifyTypeCd(session.gpsVerifyTypeCd())
                 .gpsVerifyRadiusM(session.gpsVerifyRadiusM())
+                .eduMinutes(session.eduMinutes())
                 .gpsManualConfirmYn(session.gpsManualConfirmYn())
                 .openedAt(session.openedAt())
                 .prepStartAt(session.prepStartAt())
@@ -386,6 +390,9 @@ public class AppAdminTbmServiceImpl implements AppAdminTbmService {
             throw new ApiException(TbmErrorCode.TBM_400_011);
         }
 
+        // 교육시간 검증(개설은 NULL 허용, 있으면 1~60). 웹과 동일 규칙.
+        validateEduMinutes(param.eduMinutes(), false);
+
         String sessionCd = appAdminTbmMapper.selectSessionCd(param.gvCmpnyCd());
         if (!StringUtils.hasText(sessionCd)) {
             log.error("TBM 세션코드 채번 실패 - cmpnyCd={}", param.gvCmpnyCd());
@@ -437,6 +444,9 @@ public class AppAdminTbmServiceImpl implements AppAdminTbmService {
         if (!StringUtils.hasText(title) || title.length() > 200) {
             throw new ApiException(TbmErrorCode.TBM_400_011);
         }
+
+        // 교육시간 검증(수정은 NULL 허용, 있으면 1~60). 웹과 동일 규칙.
+        validateEduMinutes(param.eduMinutes(), false);
 
         if ("OPENED".equals(guard.statusCd())) {
             validateContentBody(param.contentBody());
@@ -598,6 +608,7 @@ public class AppAdminTbmServiceImpl implements AppAdminTbmService {
                         .riskTypeNm(r.riskTypeNm())
                         .hazardCd(r.hazardCd())
                         .hazardNm(r.hazardNm())
+                        .hazardDesc(r.hazardDesc())
                         .assessmentCd(r.assessmentCd())
                         .assessmentStatus(r.assessmentStatus())
                         .assessmentStatusNm(r.assessmentStatusNm())
@@ -721,6 +732,9 @@ public class AppAdminTbmServiceImpl implements AppAdminTbmService {
             throw new ApiException(TbmErrorCode.TBM_409_013);
         }
 
+        // 교육시간 필수 검증(DB 의 DRAFT 값 기준, 미입력이면 TBM_400_015). 웹과 동일 규칙.
+        validateEduMinutes(guard.eduMinutes(), true);
+
         // GPS 검증세션(AUTO)이면 관리자 현재좌표 필수(개설 시 저장된 GPS_VERIFY_TYPE_CD 기준).
         if ("AUTO".equals(guard.gpsVerifyTypeCd())
                 && (!StringUtils.hasText(param.managerGpsLat()) || !StringUtils.hasText(param.managerGpsLon()))) {
@@ -785,7 +799,11 @@ public class AppAdminTbmServiceImpl implements AppAdminTbmService {
         log.info("앱 관리자 TBM 교육준비 연장 완료(PREP_START_AT 리셋) - sessionCd={}", param.sessionCd());
     }
 
-    // ============================ R3 T1 교육 종료 + T2 자동이수 ============================
+    // ============================ R3 T1 교육 종료 ============================
+    // [정합성 수정] "사용자가 직접 완료해야 이수" 정책 확정:
+    //   관리자 종료는 세션 상태만 IN_PROGRESS→COMPLETED 로 전이하며, 참석자를 자동 이수 처리하지 않는다.
+    //   종료 후에도 사용자는 본인 완료(서명/exit)를 직접 해야 이수(COMPLETED)가 된다.
+    //   (기존 autoCompleteOnEnd 강제 자동이수 + EXIT_AT 일괄세팅 부작용 제거)
 
     @Override
     @Transactional
@@ -811,15 +829,14 @@ public class AppAdminTbmServiceImpl implements AppAdminTbmService {
             throw new ApiException(TbmErrorCode.TBM_409_051);
         }
 
-        // T2: 미종료(EXIT_AT IS NULL) 출결 일괄 자동이수(EXIT_TYPE_CD 는 NULL 유지 — SYS052 종료자동 코드 없음).
-        int autoCompletedCount = appAdminTbmMapper.autoCompleteOnEnd(
-                AdminSessionTransitionCommand.of(param.sessionCd(), param.gvCmpnyCd(), param.gvUserCd()));
-
+        // [정합성 수정] 자동이수(autoCompleteOnEnd) 제거.
+        //   종료 후에도 미종료(EXIT_AT IS NULL) 입실자는 EXIT_AT/COMPLETION_STATUS_CD 가 그대로 남아
+        //   사용자가 직접 exit(서명) 해야 COMPLETED 가 된다. 완료하지 않은 입실자는 미이수로 집계된다.
         AdminSessionResult session = appAdminTbmMapper.selectSessionDetail(
                 AdminSessionDetailQuery.of(param.sessionCd(), param.gvCmpnyCd()));
 
-        log.info("앱 관리자 TBM 교육 종료 완료 - sessionCd={}, autoCompletedCount={}",
-                param.sessionCd(), autoCompletedCount);
+        log.info("앱 관리자 TBM 교육 종료 완료(자동이수 없음, 사용자 직접 완료 필요) - sessionCd={}",
+                param.sessionCd());
 
         // PRAFTA-APP-021-3b(W3): 교육 종료 시 입실 참석자에게 PUSH 적재(afterCommit 격리, 전이 영향 없음).
         try {
@@ -833,7 +850,8 @@ public class AppAdminTbmServiceImpl implements AppAdminTbmService {
                 .sessionCd(param.sessionCd())
                 .statusCd("COMPLETED")
                 .endedAt(session != null ? session.endedAt() : null)
-                .autoCompletedCount(autoCompletedCount)
+                // [정합성 수정] 자동이수 폐지 → 항상 0(응답 계약 호환 위해 필드 유지).
+                .autoCompletedCount(0)
                 .build();
     }
 
@@ -1758,6 +1776,26 @@ public class AppAdminTbmServiceImpl implements AppAdminTbmService {
         } catch (Exception e) {
             log.warn("TBM 자동 교육시작 예정시각 산출 실패 - prepStartAt={}", prepStartAt);
             return null;
+        }
+    }
+
+    /**
+     * 교육 인정시간(분) 검증(공유계약: 1~60 정수, 웹 Tbm02ServiceImpl 과 동일 규칙).
+     *
+     * <p>{@code required=false}: null 허용(개설/수정). 값이 있으면 1~60 검증.
+     * {@code required=true}: null도 거부(교육준비 시작 — 미입력이면 TBM_400_015).
+     */
+    private void validateEduMinutes(Integer eduMinutes, boolean required) {
+        if (eduMinutes == null) {
+            if (required) {
+                log.warn("TBM 교육시간 미입력(교육준비 필수)");
+                throw new ApiException(TbmErrorCode.TBM_400_015);
+            }
+            return;
+        }
+        if (eduMinutes < EDU_MINUTES_MIN || eduMinutes > EDU_MINUTES_MAX) {
+            log.warn("TBM 교육시간 범위 벗어남 - eduMinutes={}", eduMinutes);
+            throw new ApiException(TbmErrorCode.TBM_400_015);
         }
     }
 

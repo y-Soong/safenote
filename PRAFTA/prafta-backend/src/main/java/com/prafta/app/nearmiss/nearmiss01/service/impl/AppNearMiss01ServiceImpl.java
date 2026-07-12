@@ -50,7 +50,7 @@ import lombok.extern.slf4j.Slf4j;
  * 아차사고/사건 보고 (앱) 서비스 구현.
  *
  * <p>웹(com.prafta.web.nearmiss) 채번/사업장권한/상태전이 로직을 앱에 미러링하되,
- *    앱 관리자 조치 범위는 100->200(검토중) 전환과 임시조치 메모, 반려(900)로 한정한다(plan §4.5).
+ *    앱 관리자 조치 범위는 100->200(조치중) 전환과 임시조치 메모, 미처리대상(400)로 한정한다(plan §4.5).
  * <p>식별자는 모두 JWT 클레임(TokenInfo)에서만 도출하고 본문값은 신뢰하지 않는다(IDOR 차단).
  */
 @Slf4j
@@ -61,9 +61,10 @@ public class AppNearMiss01ServiceImpl implements AppNearMiss01Service {
     // 보고 사진 FILE_TYPE[SYS010] — 004:아차사고 (prafta-app-012-sys010-filetype.sql, D-A3)
     private static final String FILE_TYPE_NEAR_MISS = "004";
 
-    private static final String STATUS_RECEIVED  = "100"; // 접수
-    private static final String STATUS_REVIEWING = "200"; // 검토중
-    private static final String STATUS_REJECTED  = "900"; // 반려
+    // SYS063 재번호(D4): 100 접수 / 200 조치중 / 300 완료 / 400 미처리대상.
+    private static final String STATUS_RECEIVED    = "100"; // 접수
+    private static final String STATUS_ACTING      = "200"; // 조치중
+    private static final String STATUS_UNADDRESSED = "400"; // 미처리대상(기존 반려 자리)
 
     // 잠재중대성 ≥ 중대 (SYS062 200 중대 / 300 치명) → 안전관리자 푸시 대상
     private static final String SEVERITY_SERIOUS = "200";
@@ -207,7 +208,7 @@ public class AppNearMiss01ServiceImpl implements AppNearMiss01Service {
         return IncidentInfoResponse.builder().incidentInfo(incidentInfo).build();
     }
 
-    // ── A6 상태전환 (100->200 + 임시조치 / 900 반려) ───────────────
+    // ── A6 상태전환 (100->200 조치중 + 임시조치 / 400 미처리대상) ───
     @Override
     @Transactional
     public void changeStatus(ChangeStatusParam param) {
@@ -234,8 +235,8 @@ public class AppNearMiss01ServiceImpl implements AppNearMiss01Service {
 
         ChangeStatusCommand command = ChangeStatusCommand.from(param);
 
-        if (STATUS_REJECTED.equals(target)) {
-            // 반려: 사유 필수. 앱은 접수(100) 건만 반려 허용(updateReject WHERE 100 가드).
+        if (STATUS_UNADDRESSED.equals(target)) {
+            // 미처리대상: 사유 필수. 앱은 접수(100) 건만 처리 허용(updateReject WHERE 100 가드).
             if (!StringUtils.hasText(param.rejectReason())) {
                 throw new ApiException(NearMissErrorCode.NEARMISS_400_001);
             }
@@ -246,8 +247,8 @@ public class AppNearMiss01ServiceImpl implements AppNearMiss01Service {
             if (updated == 0) {
                 throw new ApiException(NearMissErrorCode.NEARMISS_422_001);
             }
-        } else if (STATUS_REVIEWING.equals(target)) {
-            // 앱 한정 정방향 전이: 100 -> 200 만 허용.
+        } else if (STATUS_ACTING.equals(target)) {
+            // 앱 한정 정방향 전이: 100 -> 200(조치중) 만 허용.
             if (!STATUS_RECEIVED.equals(current)) {
                 throw new ApiException(NearMissErrorCode.NEARMISS_422_001);
             }
@@ -256,7 +257,7 @@ public class AppNearMiss01ServiceImpl implements AppNearMiss01Service {
                 throw new ApiException(NearMissErrorCode.NEARMISS_422_001);
             }
         } else {
-            // 300/400 등 그 외 전이는 앱 비허용(웹 처리).
+            // 300(완료) 등 그 외 전이는 앱 비허용(웹 처리).
             throw new ApiException(NearMissErrorCode.NEARMISS_422_001);
         }
 
@@ -294,7 +295,7 @@ public class AppNearMiss01ServiceImpl implements AppNearMiss01Service {
         String severityNm = SEVERITY_CRITICAL.equals(severity) ? "치명" : "중대";
         String title = String.format("[%s] %s 잠재 아차사고 접수", siteNm, severityNm);
         String body = "현장 아차사고 보고가 접수되었습니다. 확인이 필요합니다.";
-        String payload = buildPayload(nearMissId, param.incidentTypeCd(), severity);
+        String payload = buildPayload(nearMissId, severity);
 
         for (String targetUserCd : targets) {
             NotiOutboxCommand cmd = new NotiOutboxCommand(
@@ -319,10 +320,9 @@ public class AppNearMiss01ServiceImpl implements AppNearMiss01Service {
     }
 
     /** DATA_PAYLOAD JSON 직렬화(Jackson). 실패 시 빈 객체로 폴백(푸시 적재 자체는 막지 않음). */
-    private String buildPayload(String nearMissId, String incidentTypeCd, String potentialSeverityCd) {
+    private String buildPayload(String nearMissId, String potentialSeverityCd) {
         Map<String, String> data = new LinkedHashMap<>();
         data.put("nearMissId", nearMissId);
-        data.put("incidentTypeCd", incidentTypeCd);
         data.put("potentialSeverityCd", potentialSeverityCd);
         try {
             return objectMapper.writeValueAsString(data);

@@ -76,7 +76,17 @@
     </div>
 
     <!-- 본문 (스크롤) -->
-    <main class="ab-body">
+    <main
+      class="ab-body"
+      ref="scrollRef"
+      @touchstart.passive="onPullStart"
+      @touchmove="onPullMove"
+      @touchend="onPullEnd"
+      @touchcancel="onPullEnd"
+    >
+      <!-- 당겨서 새로고침 인디케이터 — 스크롤 최상단에서 아래로 당기면 노출(공통 컴포저블) -->
+      <PullRefreshIndicator v-bind="indicatorProps" />
+
       <!-- 로딩 -->
       <div v-if="isLoading" class="ab-loading" aria-live="polite">불러오는 중...</div>
 
@@ -137,6 +147,8 @@ import { ref, computed, onMounted, getCurrentInstance } from 'vue'
 import { useRouter } from 'vue-router'
 
 import api from '@/api/axios'
+import { usePullToRefresh } from '@/composables/usePullToRefresh'
+import PullRefreshIndicator from '@/components/common/PullRefreshIndicator.vue'
 import { formatYmDot } from '@/utils/approvalFormat'
 import MonthPickerSheet from '@/components/common/MonthPickerSheet.vue'
 
@@ -236,6 +248,13 @@ const loadList = async () => {
   }
 }
 
+// ── 당겨서 새로고침 (공통 컴포저블) — 자료타입 + 현재 검색조건 목록을 재조회. ──
+//   loadList 는 현재 검색 입력(searchTypeCd/searchMonth/searchKeyword)으로 1페이지 재조회한다.
+const scrollRef = ref(null)
+const { onPullStart, onPullMove, onPullEnd, indicatorProps } = usePullToRefresh(scrollRef, async () => {
+  await Promise.all([loadTypes(), loadList()])
+})
+
 onMounted(() => {
   loadTypes()
   loadList()
@@ -258,7 +277,8 @@ onMounted(() => {
   --radius-sm: 6px;
   --radius-md: 10px;
 
-  min-height: 100vh;
+  height: 100vh;
+  height: 100dvh;
   display: flex;
   flex-direction: column;
   background: var(--color-bg);
@@ -377,6 +397,7 @@ onMounted(() => {
 /* 본문 */
 .ab-body {
   flex: 1;
+  min-height: 0;
   overflow-y: auto;
 }
 .ab-loading,

@@ -6,8 +6,6 @@
     <sql id="nearMissColumns">
         A.SITE_CD                                                               AS siteCd
       , A.NEAR_MISS_ID                                                          AS nearMissId
-      , A.INCIDENT_TYPE_CD                                                      AS incidentTypeCd
-      , FNC_CMM_INFO_SRCH(A.CMPNY_CD, 'SYST_VAL', A.INCIDENT_TYPE_CD, 'SYS061') AS incidentTypeNm
       , DATE_FORMAT(A.OCCUR_DTIME, '%Y-%m-%d %H:%i')                            AS occurDtime
       , A.LOCATION_DESC                                                         AS locationDesc
       , A.DESCRIPTION                                                           AS description
@@ -29,7 +27,7 @@
       AND A.USE_YN = 'Y'
     </select>
 
-    <!-- L1 연결 후보: 같은 사업장 + 완료(400) + 해당 평가건에 아직 미연결 + (검색어 옵션) -->
+    <!-- L1 연결 후보: 같은 사업장 + 완료(300) + 해당 평가건에 아직 미연결 + (검색어 옵션) -->
     <select id="selectAvailableNearMiss"
             parameterType="com.prafta.web.risk.risklink01.application.query.AvailableNearMissQuery"
             resultType="com.prafta.web.risk.risklink01.result.LinkNearMissResult">
@@ -40,7 +38,7 @@
     WHERE A.CMPNY_CD = #{gvCmpnyCd}
       AND A.SITE_CD = #{siteCd}
       AND A.USE_YN = 'Y'
-      AND A.REPORT_STATUS_CD = '400'
+      AND A.REPORT_STATUS_CD = '300'
       AND NOT EXISTS (
             SELECT 1
             FROM TB_RISK_NEAR_MISS_LINK L

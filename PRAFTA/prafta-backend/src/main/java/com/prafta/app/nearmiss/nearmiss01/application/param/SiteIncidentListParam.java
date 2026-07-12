@@ -12,7 +12,6 @@ import com.prafta.common.exception.ApiException;
 public record SiteIncidentListParam(
     String siteCd
     , String reportStatusCd
-    , String incidentTypeCd
     , String potentialSeverityCd
     , String startDate
     , String endDate
@@ -30,7 +29,6 @@ public record SiteIncidentListParam(
         return new SiteIncidentListParam(
             tokenInfo.gv_siteCd()
             , request.getReportStatusCd()
-            , request.getIncidentTypeCd()
             , request.getPotentialSeverityCd()
             , request.getStartDate()
             , request.getEndDate()

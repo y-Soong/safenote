@@ -6,10 +6,14 @@
         :style="{ top: position.y + 'px', left: position.x + 'px' }"
         ref="modalRef"
       >
+        <!-- PRAFTA-WEB_003 v3: AI 슬라이드 패널 포지셔닝 셸.
+             ★modal-content-wide 에 position:relative 를 직접 주면 인라인 top/left 가 활성화되어
+             팝업이 튀므로(useCenteredDraggable), 자식 셸에 position:relative 를 부여한다. -->
+        <div class="risk-popup-shell">
         <!-- 🔹 Title  v-if="visible" -->
         <div class="modal-header" @mousedown="startDrag">
           <span>위험성 평가 정보</span>
-          <button class="icon-button" @click="$emit('close')">
+          <button class="icon-button" @click="fnRequestClose">
             <svg
               xmlns="http://www.w3.org/2000/svg"
               fill="none"
@@ -85,6 +89,7 @@
                     <select
                       v-model="formData.initLikelihoodScore"
                       :disabled="
+                        props.readOnly ||
                         props.riskAssessmentData.assessmentStatus != '001'
                       "
                     >
@@ -101,6 +106,7 @@
                     <select
                       v-model="formData.initSeverityScore"
                       :disabled="
+                        props.readOnly ||
                         props.riskAssessmentData.assessmentStatus != '001'
                       "
                     >
@@ -127,16 +133,38 @@
 
           <!-- 오른쪽: 개선 후 -->
           <div class="improvement-section after-section">
-            <div class="section-header">개선 후</div>
+            <div class="section-header section-header--with-action">
+              개선 후
+              <!-- PRAFTA-WEB_003 v3: 개선예정(002)에서만 AI 분석 진입 -->
+              <button
+                v-if="
+                  !props.readOnly &&
+                  formData.assessmentStatus === '002' &&
+                  hasAiScope()
+                "
+                class="btn btn-report ai-open-btn"
+                @click="fnOpenAiPanel"
+              >
+                AI 분석
+              </button>
+            </div>
             <div class="form-container">
               <div class="form-row">
                 <label>진행상태</label>
-                <select v-model="formData.assessmentStatus" name="combo">
+                <select
+                  v-model="formData.assessmentStatus"
+                  name="combo"
+                  :disabled="props.readOnly"
+                >
                   <option
                     v-for="opt in (systCodeArr['SYS011'] || []).filter(
                       (item) => {
                         if (!proxy.$util.isNotEmpty(item.systValDCd))
                           return false;
+                        // 지속개선대상(005)은 드롭다운에서 제외('지속개선대상 지정' 버튼으로만 진입)
+                        if (item.systValDCd === '005') {
+                          return false;
+                        }
                         // props.assessmentStatus가 '001'이면 '001' 옵션 제외
                         if (
                           props.riskAssessmentData.assessmentStatus != '001' &&
@@ -181,8 +209,10 @@
                 "
               >
                 <label>개선예정일자</label>
-                <CalendarSrch v-model="formData.revalDate" />
-                <!-- :readonly="readOnlyFlg" -->
+                <CalendarSrch
+                  v-model="formData.revalDate"
+                  :readonly="props.readOnly"
+                />
               </div>
               <div
                 class="form-row"
@@ -196,6 +226,8 @@
                   v-model="formData.revalBeforeDesc"
                   placeholder="개선완료 전 임시조치 내용을 입력해 주세요"
                   rows="5"
+                  maxlength="500"
+                  :readonly="props.readOnly"
                 ></textarea>
               </div>
               <div class="form-row" v-if="formData.assessmentStatus == '003'">
@@ -212,6 +244,7 @@
                   v-model="formData.revalDesc"
                   placeholder="개선 내용을 입력해 주세요"
                   rows="5"
+                  :readonly="props.readOnly"
                 ></textarea>
               </div>
               <div class="form-row" v-if="formData.assessmentStatus == '003'">
@@ -226,6 +259,7 @@
                     style="display: none"
                   />
                   <button
+                    v-if="!props.readOnly"
                     type="button"
                     :class="[
                       'upload-button',
@@ -261,6 +295,7 @@
                         class="photo-preview"
                       />
                       <button
+                        v-if="!props.readOnly"
                         type="button"
                         class="delete-photo-button"
                         @click="removePreview"
@@ -293,7 +328,10 @@
                 <div class="risk-evaluation-group">
                   <div class="risk-input-item">
                     <label>빈도</label>
-                    <select v-model="formData.revalLikelihoodScore">
+                    <select
+                      v-model="formData.revalLikelihoodScore"
+                      :disabled="props.readOnly"
+                    >
                       <option value="">선택</option>
                       <option value="1">1</option>
                       <option value="2">2</option>
@@ -304,7 +342,10 @@
                   </div>
                   <div class="risk-input-item">
                     <label>강도</label>
-                    <select v-model="formData.revalSeverityScore">
+                    <select
+                      v-model="formData.revalSeverityScore"
+                      :disabled="props.readOnly"
+                    >
                       <option value="">선택</option>
                       <option value="1">1</option>
                       <option value="2">2</option>
@@ -324,48 +365,55 @@
                 </div>
               </div>
 
-              <!-- ▼ prafta-054-5: 참조 아차사고 (개선완료 003 시 개선 후 영역에 표시) -->
-              <div
-                class="form-row ref-nm-form-row"
-                v-if="formData.assessmentStatus == '003'"
-              >
+              <!-- ▼ 참조 아차사고 (개선예정 002 부터 표시, 002 에서만 편집) -->
+              <div class="form-row ref-nm-form-row" v-if="showReference">
                 <label>참조 아차사고</label>
                 <div class="ref-nm-block">
-                  <!-- 검색/연결 버튼 (개선완료 확정 전만) → 조회 팝업 -->
+                  <!-- 검색/연결 버튼 (002 에서만) → 조회 팝업 -->
                   <div class="ref-nm-toolbar" v-if="canEditReference">
                     <button class="btn btn-report" @click="fnOpenRefSearch">
                       아차사고 검색/연결
                     </button>
                   </div>
 
-                  <!-- 연결된 아차사고 테이블 -->
+                  <!-- 연결된 아차사고 테이블 (사고번호 | 장소 | 관리) -->
                   <div class="ref-nm-table-wrap">
                     <table class="ref-nm-table">
                       <thead>
                         <tr>
+                          <th
+                            class="ref-nm-table__del"
+                            v-if="canEditReference"
+                          ></th>
                           <th>사고번호</th>
-                          <th>유형</th>
-                          <th>위험도</th>
-                          <th>발생일시</th>
                           <th>장소</th>
                           <th class="ref-nm-table__act">관리</th>
                         </tr>
                       </thead>
                       <tbody>
-                        <tr v-if="linkedNearMissList.length === 0">
-                          <td colspan="6" class="ref-nm-empty">
+                        <tr v-if="displayLinks.length === 0">
+                          <td
+                            :colspan="canEditReference ? 4 : 3"
+                            class="ref-nm-empty"
+                          >
                             연결된 아차사고가 없습니다.
                           </td>
                         </tr>
-                        <tr
-                          v-for="nm in linkedNearMissList"
-                          :key="nm.nearMissId"
-                        >
+                        <tr v-for="nm in displayLinks" :key="nm.nearMissId">
+                          <td class="ref-nm-table__del" v-if="canEditReference">
+                            <button
+                              class="btn-x"
+                              @click="fnRemoveLink(nm)"
+                              title="연결 해제"
+                            >
+                              x
+                            </button>
+                          </td>
                           <td>{{ nm.nearMissId }}</td>
-                          <td>{{ nm.incidentTypeNm }}</td>
-                          <td>{{ nm.potentialSeverityNm }}</td>
-                          <td>{{ nm.occurDtime }}</td>
-                          <td class="ref-nm-table__loc" :title="nm.locationDesc">
+                          <td
+                            class="ref-nm-table__loc"
+                            :title="nm.locationDesc"
+                          >
                             {{ nm.locationDesc }}
                           </td>
                           <td class="ref-nm-table__act">
@@ -375,13 +423,6 @@
                             >
                               상세
                             </button>
-                            <button
-                              v-if="canEditReference"
-                              class="btn btn-cancel"
-                              @click="fnUnlinkNearMiss(nm)"
-                            >
-                              해제
-                            </button>
                           </td>
                         </tr>
                       </tbody>
@@ -389,7 +430,7 @@
                   </div>
                 </div>
               </div>
-              <!-- ▲ prafta-054-5 -->
+              <!-- ▲ 참조 아차사고 -->
             </div>
           </div>
         </div>
@@ -399,7 +440,7 @@
           <div class="footer-buttons-left">
             <button
               class="btn btn-report"
-              v-if="formData.assessmentStatus == '002'"
+              v-if="['002', '003'].includes(formData.assessmentStatus)"
               @click="fnOpenImprovementPlan()"
             >
               개선실행계획서
@@ -413,19 +454,58 @@
             </button>
           </div>
           <div class="footer-buttons-right">
-            <button class="btn btn-cancel" @click="$emit('close')">취소</button>
+            <button class="btn btn-cancel" @click="fnRequestClose">취소</button>
             <button
               class="btn btn-save"
               v-if="
-                props.riskAssessmentData.assessmentStatus != '003' &&
-                props.riskAssessmentData.assessmentStatus != '004'
+                !props.readOnly &&
+                !['003', '004', '005'].includes(
+                  props.riskAssessmentData.assessmentStatus
+                )
               "
               @click="fnSave()"
             >
               저장
             </button>
+            <!-- T6-14C-hook-2: 검토요청(001)/개선예정(002)에서만 노출. 005로 지정 저장 -->
+            <button
+              class="btn btn-report"
+              v-if="
+                !props.readOnly &&
+                ['001', '002'].includes(
+                  props.riskAssessmentData.assessmentStatus
+                )
+              "
+              @click="fnDesignateContinuous()"
+            >
+              지속개선대상 지정
+            </button>
           </div>
         </div>
+
+        <!-- PRAFTA-WEB_003 v3: AI 분석 슬라이드 패널(팝업 전체 오버레이 — 본체는 별도 SFC).
+             ★Transition 을 부모에 둔다: v-if 언마운트가 부모에서 일어나므로 열림/닫힘 양방향
+             슬라이드(위→아래 진입, 아래→위 퇴장)가 모두 재생된다. -->
+        <Transition name="ai-slide">
+          <RiskAiAnalysisPanel
+            v-if="showAiPanel"
+            :scope="aiScopeKeys()"
+            :summary="{
+              processNm: formData.processNm,
+              riskTypeNm: formData.riskTypeNm,
+              hazardNm: formData.hazardNm,
+              initDesc: formData.initDesc,
+            }"
+            :photo-url="beforePhotoUrl || ''"
+            :has-source-image="!!formData.initFileMgmtCd"
+            @close="fnCloseAiPanel"
+            @save="fnApplyAiSelection"
+            @derived="fnMarkAiDirty"
+            @touched="fnMarkAiDirty"
+          />
+        </Transition>
+        </div>
+        <!-- ▲ risk-popup-shell -->
       </div>
     </div>
   </Transition>
@@ -437,6 +517,7 @@ import {
   ref,
   watch,
   computed,
+  nextTick,
   onMounted,
   onBeforeUnmount,
   defineProps,
@@ -452,6 +533,12 @@ import { readFileAsBase64 } from "@/utils/fileUtil";
 import { useModal } from "@/utils/useModal";
 import NearMissInfo from "@/views/nearMiss/popup/NearMissInfo.vue";
 import RefNearMissSearchPop from "@/views/risk/popup/RefNearMissSearchPop.vue";
+import { getRiskLevelClass6, isVeryLow } from "@/utils/riskLevel";
+import { printImprovementPlan } from "@/utils/print/riskImprovementPlanPrint";
+import { printImprovementCompleteReport } from "@/utils/print/riskImprovementCompleteReportPrint";
+import { buildFileServingUrl } from "@/utils/fileUrl";
+// PRAFTA-WEB_003 v3: AI 분석 슬라이드 패널(본체는 별도 SFC)
+import RiskAiAnalysisPanel from "@/views/risk/popup/RiskAiAnalysisPanel.vue";
 
 const systCodeArr = ref([]);
 const fileInput = ref(null);
@@ -464,6 +551,14 @@ onMounted(async () => {
   await fnGetSystinfoList();
   // prafta-054-5: 연결된 참조 아차사고 목록 초기 로드
   await fnLoadLinkedNearMiss();
+  // PRAFTA-WEB_003 v3(commit-on-save): 오픈 시 이전 세션의 미확정(SAVED_YN='N') AI 작업분을 자동 정리.
+  //   닫기 시 삭제가 실패했거나 브라우저 비정상 종료로 잔존한 행을 회수한다(best-effort — 오픈을 막지 않음).
+  //   TBM 열람(readOnly)에서는 호출하지 않는다.
+  if (!props.readOnly && hasAiScope()) {
+    fnDiscardUnsavedAi().catch((err) => {
+      console.warn("AI 미저장 작업분 정리 실패(오픈은 진행)", err);
+    });
+  }
 });
 
 const init = () => {
@@ -516,20 +611,56 @@ const props = defineProps({
     type: Function,
     default: null,
   },
+  // 읽기전용 모드(TBM 콘솔 등 열람 전용 진입). true 면 편집/저장/지정 비활성.
+  readOnly: {
+    type: Boolean,
+    default: false,
+  },
 });
 
 const emit = defineEmits(["close", "save"]);
 
 const { open: openPop } = useModal();
 
-// prafta-054-5: 참조 아차사고 상태 (후보 검색/연결은 조회 팝업으로 분리)
-const linkedNearMissList = ref([]);
+// 참조 아차사고 상태 (보류-저장 모델: DB 반영은 평가 저장 시 일괄)
+const linkedNearMissList = ref([]); // DB 연결 기존 목록(USE_YN='Y')
+const pendingLinks = ref([]); // 검색팝업에서 새로 선택(미반영) nearMiss 객체들
+const pendingUnlinkIds = ref([]); // 기존 연결 중 해제 예약된 nearMissId
 
-// 개선완료(003)/미처리(004) 이상이면 읽기전용(검색·연결·해제 숨김)
-const canEditReference = computed(() => {
-  const st = props.riskAssessmentData.assessmentStatus;
-  return st !== "003" && st !== "004";
+// 화면 표시 목록 = 기존(해제예약 제외) + 신규(보류). nearMissId 중복 제거.
+const displayLinks = computed(() => {
+  const result = [];
+  const seen = new Set();
+  linkedNearMissList.value.forEach((nm) => {
+    if (pendingUnlinkIds.value.includes(nm.nearMissId)) return;
+    if (seen.has(nm.nearMissId)) return;
+    seen.add(nm.nearMissId);
+    result.push(nm);
+  });
+  pendingLinks.value.forEach((nm) => {
+    if (seen.has(nm.nearMissId)) return;
+    seen.add(nm.nearMissId);
+    result.push(nm);
+  });
+  return result;
 });
+
+// 참조 아차사고 편집(검색/연결/삭제) 가능 조건:
+//   - 화면 드롭다운(formData)의 현재 진행상태가 개선예정(002)/개선완료(003)일 때 노출
+//     (개선예정 레코드에서 드롭다운을 개선완료로 바꿔 저장 전이면 그대로 편집 가능)
+//   - 단, 평가 정보 자체(원본 레코드)가 확정 상태(개선완료003/미처리대상004/지속개선대상005)면
+//     드롭다운 표시값과 무관하게 잠금(이미 확정된 평가는 참조 편집 불가).
+const canEditReference = computed(
+  () =>
+    !props.readOnly &&
+    ["002", "003"].includes(formData.value.assessmentStatus) &&
+    !["003", "004", "005"].includes(props.riskAssessmentData.assessmentStatus)
+);
+
+// 참조 아차사고 영역 표시(002 부터). 005 지속개선대상도 표시(편집은 canEditReference 로 잠금).
+const showReference = computed(() =>
+  ["002", "003", "004", "005"].includes(formData.value.assessmentStatus)
+);
 
 // 연계 API 호출 공통 키 (평가건 PK 3축 + 사업장)
 const refLinkKeys = () => ({
@@ -538,12 +669,64 @@ const refLinkKeys = () => ({
   assessmentCd: props.riskAssessmentData.assessmentCd,
 });
 
-// 아차사고 검색/연결 조회 팝업 열기 (연결 성공 시 연결된 목록 갱신)
+// 아차사고 검색/연결 조회 팝업 열기 (보류-저장: 체크 항목 일괄 수신)
 const fnOpenRefSearch = () => {
   openPop(RefNearMissSearchPop, {
     ...refLinkKeys(),
-    onLinked: fnLoadLinkedNearMiss,
+    preselectedIds: displayLinks.value.map((nm) => nm.nearMissId),
+    onApply: fnApplyPending,
   });
+};
+
+// 검색팝업에서 선택된 아차사고들을 보류 목록에 병합
+const fnApplyPending = (selectedList) => {
+  (selectedList || []).forEach((nm) => {
+    // 해제 예약돼 있던 기존 연결이면 예약 취소
+    const uIdx = pendingUnlinkIds.value.indexOf(nm.nearMissId);
+    if (uIdx >= 0) {
+      pendingUnlinkIds.value.splice(uIdx, 1);
+      return;
+    }
+    const exists =
+      linkedNearMissList.value.some((x) => x.nearMissId === nm.nearMissId) ||
+      pendingLinks.value.some((x) => x.nearMissId === nm.nearMissId);
+    if (!exists) pendingLinks.value.push(nm);
+  });
+};
+
+// 연결 삭제(보류). 신규 보류면 목록에서만 제거, 기존 DB 연결이면 해제 예약.
+const fnRemoveLink = (nm) => {
+  const pIdx = pendingLinks.value.findIndex(
+    (x) => x.nearMissId === nm.nearMissId
+  );
+  if (pIdx >= 0) {
+    pendingLinks.value.splice(pIdx, 1);
+    return;
+  }
+  if (!pendingUnlinkIds.value.includes(nm.nearMissId)) {
+    pendingUnlinkIds.value.push(nm.nearMissId);
+  }
+};
+
+// 보류된 참조 아차사고 변경(해제→연결)을 기존 EP 로 순차 반영(평가 저장 성공 후 호출).
+const fnFlushPendingRefLinks = async () => {
+  for (const id of pendingUnlinkIds.value) {
+    await axios.post(
+      "/webApi/risklink01/unlink",
+      { ...refLinkKeys(), nearMissId: id },
+      { headers: { "Content-Type": "application/json" } }
+    );
+  }
+  for (const nm of pendingLinks.value) {
+    await axios.post(
+      "/webApi/risklink01/link",
+      { ...refLinkKeys(), nearMissId: nm.nearMissId },
+      { headers: { "Content-Type": "application/json" } }
+    );
+  }
+  // 반영 후 보류 상태 초기화
+  pendingUnlinkIds.value = [];
+  pendingLinks.value = [];
 };
 
 // 연결된 아차사고 목록 조회 (USE_YN='Y'). onMounted 에서도 1회 호출
@@ -558,30 +741,6 @@ const fnLoadLinkedNearMiss = async () => {
     }
   } catch (err) {
     const msg = resolveApiErrorMessage(err, "조회 중 오류가 발생했습니다.");
-    await proxy.$alert(msg);
-  }
-};
-
-// 연결 해제(soft delete) → 확인 후 호출, 성공 시 연결된 목록 재조회
-const fnUnlinkNearMiss = async (nm) => {
-  const ok = await proxy.$confirm("이 아차사고 연결을 해제할까요?");
-  if (!ok) return;
-
-  try {
-    const response = await axios.post(
-      "/webApi/risklink01/unlink",
-      {
-        ...refLinkKeys(),
-        nearMissId: nm.nearMissId,
-      },
-      { headers: { "Content-Type": "application/json" } }
-    );
-
-    if (response.status === 200) {
-      await fnLoadLinkedNearMiss();
-    }
-  } catch (err) {
-    const msg = resolveApiErrorMessage(err, "해제 중 오류가 발생했습니다.");
     await proxy.$alert(msg);
   }
 };
@@ -651,57 +810,23 @@ const formData = ref({
 });
 
 // 개선 전 사진 URL 생성 (initFilePath + initFileMgmtCd)
-const beforePhotoUrl = computed(() => {
-  if (formData.value.initFilePath && formData.value.initFileMgmtCd) {
-    const apiBaseUrl = import.meta.env.VITE_API_BASE_URL || "";
-    let fullPath = `${formData.value.initFilePath}/${formData.value.initFileMgmtCd}`;
+//   서빙 URL 조립은 공용 유틸(buildFileServingUrl)로 일원화. fileMgmtCd 는 확장자 포함명.
+const beforePhotoUrl = computed(
+  () =>
+    buildFileServingUrl(
+      formData.value.initFilePath,
+      formData.value.initFileMgmtCd
+    ) || null
+);
 
-    // API_BASE_URL이 있고 상대 경로인 경우에만 추가
-    if (
-      apiBaseUrl &&
-      !formData.value.initFilePath.startsWith("http://") &&
-      !formData.value.initFilePath.startsWith("https://")
-    ) {
-      const baseUrl = apiBaseUrl.endsWith("/")
-        ? apiBaseUrl.slice(0, -1)
-        : apiBaseUrl;
-      const cleanFilePath = formData.value.initFilePath.startsWith("/")
-        ? formData.value.initFilePath.slice(1)
-        : formData.value.initFilePath;
-      fullPath = `${baseUrl}/${cleanFilePath}/${formData.value.initFileMgmtCd}`;
-    }
-
-    return fullPath;
-  }
-  return null;
-});
-
-// 개선 후 사진 URL 생성 (revalFilePath 또는 revalFilePath + revalFileMgmtCd)
-const revalPhotoUrl = computed(() => {
-  const filePath = formData.value.revalFilePath || formData.value.revalFilePath;
-  if (filePath && formData.value.revalFileMgmtCd) {
-    const apiBaseUrl = import.meta.env.VITE_API_BASE_URL || "";
-    let fullPath = `${filePath}/${formData.value.revalFileMgmtCd}`;
-
-    // API_BASE_URL이 있고 상대 경로인 경우에만 추가
-    if (
-      apiBaseUrl &&
-      !filePath.startsWith("http://") &&
-      !filePath.startsWith("https://")
-    ) {
-      const baseUrl = apiBaseUrl.endsWith("/")
-        ? apiBaseUrl.slice(0, -1)
-        : apiBaseUrl;
-      const cleanFilePath = filePath.startsWith("/")
-        ? filePath.slice(1)
-        : filePath;
-      fullPath = `${baseUrl}/${cleanFilePath}/${formData.value.revalFileMgmtCd}`;
-    }
-
-    return fullPath;
-  }
-  return null;
-});
+// 개선 후 사진 URL 생성 (revalFilePath + revalFileMgmtCd)
+const revalPhotoUrl = computed(
+  () =>
+    buildFileServingUrl(
+      formData.value.revalFilePath,
+      formData.value.revalFileMgmtCd
+    ) || null
+);
 
 // 위험도 계산 (빈도 × 강도)
 const calculateRiskLevel = (frequency, intensity) => {
@@ -810,15 +935,8 @@ watch(
   { immediate: true }
 );
 
-// 위험도에 따른 클래스 반환
-const getRiskLevelClass = (riskLevel) => {
-  const level = Number(riskLevel);
-  if (level >= 13 && level <= 20) return "risk-high"; // 높음 (빨간색)
-  if (level >= 7 && level <= 12) return "risk-medium"; // 보통 (주황색)
-  if (level >= 4 && level <= 6) return "risk-low"; // 낮음 (노란색)
-  if (level >= 1 && level <= 3) return "risk-very-low"; // 매우 낮음 (연두색)
-  return "";
-};
+// 위험도에 따른 클래스 반환(6단계 공용 유틸 위임 — Risk_02 권위 기준 일원화)
+const getRiskLevelClass = (riskLevel) => getRiskLevelClass6(riskLevel);
 
 // 이미지 파일 확인 함수
 const isImageFile = (file) =>
@@ -885,10 +1003,59 @@ const removePreview = async () => {
 //   return `${prefix}_${ts}_${safe}`;
 // };
 
-// 저장 처리
-const fnSave = async () => {
-  const ok = await proxy.$confirm(getMessage(MSG.SAVE_CONFIRM));
+// T6-14C-hook-2: 지속개선대상(005) 지정 저장. 기존 save-assessments 재사용.
+const fnDesignateContinuous = async () => {
+  // PRAFTA_COM_001_T6 Low-6: 보류중 참조 아차사고 변경이 남아 있으면 먼저 저장하도록 안내하고 중단한다.
+  //   005 지정 후에는 참조 편집이 불가하므로, 미저장 변경이 후속 반영(422)에서 유실되는 혼란을 방지한다.
+  if (
+    (pendingLinks.value && pendingLinks.value.length > 0) ||
+    (pendingUnlinkIds.value && pendingUnlinkIds.value.length > 0)
+  ) {
+    await proxy.$alert("참조 아차사고 변경을 먼저 저장한 뒤 지정해 주세요.");
+    return;
+  }
+
+  const ok = await proxy.$confirm(
+    "이 항목을 지속개선대상으로 지정할까요? 지정 후에는 수정할 수 없습니다."
+  );
   if (!ok) return;
+  formData.value.assessmentStatus = "005";
+  // 이미 지정 확인을 받았으므로 fnSave 의 저장 확인창은 생략한다(중복 Confirm 방지).
+  await fnSave({ skipConfirm: true });
+};
+
+// 저장 처리
+const fnSave = async ({ skipConfirm = false } = {}) => {
+  // T6-14B-1: 개선완료(003) 저장은 개선 후 위험도가 "매우낮음"(1~3)일 때만 허용
+  if (
+    formData.value.assessmentStatus === "003" &&
+    !isVeryLow(formData.value.revalRiskLv)
+  ) {
+    await proxy.$alert(
+      '개선완료는 개선 후 위험도가 "매우낮음"(1~3)일 때만 저장할 수 있습니다.'
+    );
+    return;
+  }
+
+  // varchar(500) 백스톱: 조립 가드/maxlength 를 우회한 초과값 방어.
+  //   initDesc 검사는 AI 유해요인을 실제 반영해 전송하는 경우(aiHazardApplied)에만 수행 —
+  //   전송하지도 않는 필드(readonly 원본) 길이로 저장을 막지 않는다(사용자 해소 불가 차단 방지).
+  //   revalBeforeDesc 는 항상 전송되므로 상시 검사.
+  if (
+    (aiHazardApplied.value &&
+      (formData.value.initDesc || "").length > DESC_MAX_LEN) ||
+    (formData.value.revalBeforeDesc || "").length > DESC_MAX_LEN
+  ) {
+    await proxy.$alert(
+      `유해요인설명/임시조치 내용은 최대 ${DESC_MAX_LEN}자까지 저장할 수 있습니다.`
+    );
+    return;
+  }
+
+  if (!skipConfirm) {
+    const ok = await proxy.$confirm(getMessage(MSG.SAVE_CONFIRM));
+    if (!ok) return;
+  }
 
   try {
     const requestBody = {
@@ -899,6 +1066,10 @@ const fnSave = async () => {
       initLikelihoodScore: formData.value.initLikelihoodScore || 0,
       initSeverityScore: formData.value.initSeverityScore || 0,
       initRiskLv: formData.value.initRiskLv || 0,
+      // WEB_003 저장 액션: AI 유해요인을 실제 반영한 경우에만 initDesc 전송.
+      //   미포함 시 BE 는 null 수신 → mapper <if>가 스킵해 INIT_DESC 원본 보존
+      //   (근로자가 앱으로 갱신한 값을 팝업 로드 시점 스냅샷으로 되돌리는 사고 방지).
+      ...(aiHazardApplied.value ? { initDesc: formData.value.initDesc } : {}),
       revalDate: formData.value.revalDate,
       revalBeforeDesc: formData.value.revalBeforeDesc,
       revalLikelihoodScore: formData.value.revalLikelihoodScore || 0,
@@ -918,6 +1089,32 @@ const fnSave = async () => {
       { headers: { "Content-Type": "application/json" } }
     );
     if (response.status === 200) {
+      // 평가 저장 성공 후 참조 아차사고 보류 변경을 일괄 반영(해제 → 연결 순).
+      //   기존 /risklink01/unlink·/link EP 재사용(신규 batch EP 없음).
+      //   편집은 002 에서만 가능하므로 003 저장 시점엔 pending 이 비어 있음.
+      await fnFlushPendingRefLinks();
+
+      // PRAFTA-WEB_003 v3(commit-on-save): 이번 세션에 AI 를 건드렸으면(aiDirty) 평가 저장 성공 후
+      //   AI 도출 결과를 SAVED_YN='Y' 로 확정한다. aiDirty=false(AI 미사용)면 호출하지 않는다.
+      //   readOnly(TBM 열람) 진입에서는 확정도 호출하지 않는다.
+      if (!props.readOnly && aiDirty.value) {
+        try {
+          await axios.post(
+            "/webApi/riskai01/commit",
+            { ...aiScopeKeys() },
+            { headers: { "Content-Type": "application/json" } }
+          );
+        } catch (err) {
+          console.warn("AI 분석 결과 확정 실패(저장은 완료)", err);
+          await proxy.$alert(
+            "평가는 저장됐지만 AI 분석 결과 확정에 실패했습니다. 팝업을 다시 열면 AI 분석 내용이 초기화됩니다."
+          );
+        }
+      }
+      // 확정 성공/실패 무관하게 미저장 닫기 가드 해제 — 확정 실패분은 다음 오픈에서 자동 정리되므로
+      //   닫기 시 중복 확인창(fnRequestClose)을 띄우지 않는다.
+      aiDirty.value = false;
+
       proxy.$alert(getMessage(MSG.SAVE_COMPLETED));
       if (props.onSave && typeof props.onSave === "function") {
         props.onSave(response.data);
@@ -944,654 +1141,217 @@ const getAssessmentStatusName = (statusCd) => {
 
 // 개선실행계획서 열기
 const fnOpenImprovementPlan = () => {
-  // 데이터 준비
-  const processNm = formData.value.processNm || "-";
-  const riskTypeNm = formData.value.riskTypeNm || "-";
-  const initAssessDate = formData.value.initAssessDate || "-";
-  const initAssessorNm = formData.value.initAssessorNm || "-";
-  const hazardNm = formData.value.hazardNm || "-";
-  const initDesc = (formData.value.initDesc || "-").replace(/\n/g, "<br>");
-  const initLikelihoodScore = formData.value.initLikelihoodScore || "-";
-  const initSeverityScore = formData.value.initSeverityScore || "-";
-  const initRiskLv = formData.value.initRiskLv || "-";
-  const riskLevelClass = getRiskLevelClass(formData.value.initRiskLv);
-  const assessmentStatusName = getAssessmentStatusName(
-    formData.value.assessmentStatus
-  );
-  const revalDate =
-    formData.value.assessmentStatus == "002" ||
-    formData.value.assessmentStatus == "003"
-      ? formData.value.revalDate || "-"
-      : "";
-  const revalBeforeDesc =
-    formData.value.assessmentStatus == "002" ||
-    formData.value.assessmentStatus == "003"
-      ? (formData.value.revalBeforeDesc || "-").replace(/\n/g, "<br>")
-      : "";
-  const photoHtml = beforePhotoUrl.value
-    ? '<img src="' +
-      beforePhotoUrl.value +
-      '" alt="개선 전 사진" class="print-photo" />'
-    : "사진 없음";
-  const printDate = new Date().toLocaleString("ko-KR");
-
-  // 프린트용 HTML 생성
-  let printContent =
-    "<!DOCTYPE html>" +
-    "<html>" +
-    "<head>" +
-    '<meta charset="UTF-8">' +
-    "<title>개선실행계획서</title>" +
-    "<style>" +
-    "@media print {" +
-    "  @page { size: A4 landscape; margin: 5mm; }" +
-    "  body { margin: 0; padding: 0; height: 100%; overflow: hidden; }" +
-    "}" +
-    "body {" +
-    '  font-family: "Pretendard", sans-serif;' +
-    "  font-size: 13px;" +
-    "  line-height: 1.4;" +
-    "  color: #333;" +
-    "  padding: 10px 8px 5px 8px;" +
-    "  height: 100%;" +
-    "  display: flex;" +
-    "  flex-direction: column;" +
-    "  box-sizing: border-box;" +
-    "}" +
-    ".print-header {" +
-    "  text-align: center;" +
-    "  margin-bottom: 10px;" +
-    "  border-bottom: 2px solid #333;" +
-    "  padding-bottom: 6px;" +
-    "  flex-shrink: 0;" +
-    "}" +
-    ".print-header h1 {" +
-    "  font-size: 20px;" +
-    "  font-weight: bold;" +
-    "  margin: 0;" +
-    "}" +
-    ".print-content {" +
-    "  display: flex;" +
-    "  gap: 10px;" +
-    "  margin-bottom: 2px;" +
-    "  flex: 1;" +
-    "  min-height: 0;" +
-    "}" +
-    ".print-section {" +
-    "  flex: 1;" +
-    "  border: 1px solid #ddd;" +
-    "  border-radius: 4px;" +
-    "  padding: 8px;" +
-    "  display: flex;" +
-    "  flex-direction: column;" +
-    "  min-height: 0;" +
-    "  overflow: hidden;" +
-    "}" +
-    ".section-title {" +
-    "  background: #f5f5f5;" +
-    "  padding: 6px;" +
-    "  font-weight: bold;" +
-    "  border-bottom: 1px solid #ddd;" +
-    "  margin: -8px -8px 6px -8px;" +
-    "  font-size: 14px;" +
-    "  flex-shrink: 0;" +
-    "}" +
-    ".print-row {" +
-    "  display: flex;" +
-    "  margin-bottom: 3px;" +
-    "  align-items: flex-start;" +
-    "  flex-shrink: 0;" +
-    "}" +
-    ".print-label {" +
-    "  flex: 0 0 120px;" +
-    "  font-weight: 500;" +
-    "  color: #333;" +
-    "  font-size: 13px;" +
-    "  padding-top: 5px;" +
-    "}" +
-    ".print-value {" +
-    "  flex: 1;" +
-    "  color: #666;" +
-    "  font-size: 13px;" +
-    "}" +
-    ".print-textarea {" +
-    "  min-height: 35px;" +
-    "  white-space: pre-wrap;" +
-    "  word-break: break-word;" +
-    "  line-height: 1.2;" +
-    "}" +
-    ".print-photo {" +
-    "  max-width: 100%;" +
-    "  max-height: 144px;" +
-    "  border: 1px solid #ddd;" +
-    "  padding: 3px;" +
-    "}" +
-    ".risk-evaluation {" +
-    "  display: flex;" +
-    "  gap: 10px;" +
-    "  align-items: center;" +
-    "}" +
-    ".risk-item {" +
-    "  display: flex;" +
-    "  align-items: center;" +
-    "  gap: 5px;" +
-    "}" +
-    ".risk-item-label {" +
-    "  font-weight: 500;" +
-    "  font-size: 13px;" +
-    "}" +
-    ".risk-level {" +
-    "  padding: 3px 8px;" +
-    "  border-radius: 4px;" +
-    "  font-weight: bold;" +
-    "  min-width: 35px;" +
-    "  text-align: center;" +
-    "  font-size: 13px;" +
-    "}" +
-    ".risk-high { background: #ff6b6b; color: white; }" +
-    ".risk-medium { background: #ffa500; color: white; }" +
-    ".risk-low { background: #ffd700; color: #333; }" +
-    ".risk-very-low { background: #90ee90; color: #333; }" +
-    ".print-date {" +
-    "  text-align: right;" +
-    "  margin-top: auto;" +
-    "  padding-top: 3px;" +
-    "  font-size: 11px;" +
-    "  color: #666;" +
-    "  flex-shrink: 0;" +
-    "}" +
-    "</style>" +
-    "</head>" +
-    "<body>" +
-    '<div class="print-header">' +
-    "<h1>개선실행계획서</h1>" +
-    "</div>" +
-    '<div class="print-content">' +
-    '<div class="print-section">' +
-    '<div class="section-title">개선 전</div>' +
-    '<div class="print-row">' +
-    '<div class="print-label">작업명</div>' +
-    '<div class="print-value">' +
-    processNm +
-    "</div>" +
-    "</div>" +
-    '<div class="print-row">' +
-    '<div class="print-label">위험성구분</div>' +
-    '<div class="print-value">' +
-    processNm +
-    "</div>" +
-    "</div>" +
-    '<div class="print-row">' +
-    '<div class="print-label">위험성분류</div>' +
-    '<div class="print-value">' +
-    riskTypeNm +
-    "</div>" +
-    "</div>" +
-    '<div class="print-row">' +
-    '<div class="print-label">평가요청일자</div>' +
-    '<div class="print-value">' +
-    initAssessDate +
-    "</div>" +
-    "</div>" +
-    '<div class="print-row">' +
-    '<div class="print-label">평가요청자</div>' +
-    '<div class="print-value">' +
-    initAssessorNm +
-    "</div>" +
-    "</div>" +
-    '<div class="print-row">' +
-    '<div class="print-label">유해요인명</div>' +
-    '<div class="print-value">' +
-    hazardNm +
-    "</div>" +
-    "</div>" +
-    '<div class="print-row">' +
-    '<div class="print-label">유해요인설명</div>' +
-    '<div class="print-value print-textarea">' +
-    initDesc +
-    "</div>" +
-    "</div>" +
-    '<div class="print-row">' +
-    '<div class="print-label">사진</div>' +
-    '<div class="print-value">' +
-    photoHtml +
-    "</div>" +
-    "</div>" +
-    '<div class="print-row">' +
-    '<div class="print-label">개선 전 위험성 평가</div>' +
-    '<div class="print-value">' +
-    '<div class="risk-evaluation">' +
-    '<div class="risk-item">' +
-    '<span class="risk-item-label">빈도:</span>' +
-    "<span>" +
-    initLikelihoodScore +
-    "</span>" +
-    "</div>" +
-    '<div class="risk-item">' +
-    '<span class="risk-item-label">강도:</span>' +
-    "<span>" +
-    initSeverityScore +
-    "</span>" +
-    "</div>" +
-    '<div class="risk-item">' +
-    '<span class="risk-item-label">위험도:</span>' +
-    '<span class="risk-level ' +
-    riskLevelClass +
-    '">' +
-    initRiskLv +
-    "</span>" +
-    "</div>" +
-    "</div>" +
-    "</div>" +
-    "</div>" +
-    "</div>" +
-    '<div class="print-section">' +
-    '<div class="section-title">개선 후</div>' +
-    '<div class="print-row">' +
-    '<div class="print-label">진행상태</div>' +
-    '<div class="print-value">' +
-    assessmentStatusName +
-    "</div>" +
-    "</div>";
-
-  // 개선예정일자와 임시조치 내용 추가
-  if (
-    formData.value.assessmentStatus == "002" ||
-    formData.value.assessmentStatus == "003"
-  ) {
-    printContent =
-      printContent +
-      '<div class="print-row">' +
-      '<div class="print-label">개선예정일자</div>' +
-      '<div class="print-value">' +
-      revalDate +
-      "</div>" +
-      "</div>" +
-      '<div class="print-row">' +
-      '<div class="print-label">임시조치 내용</div>' +
-      '<div class="print-value print-textarea">' +
-      revalBeforeDesc +
-      "</div>" +
-      "</div>";
-  }
-
-  printContent =
-    printContent +
-    "</div>" +
-    "</div>" +
-    '<div class="print-date">' +
-    "출력일시: " +
-    printDate +
-    "</div>" +
-    "</body>" +
-    "</html>";
-
-  // 새 창 열기
-  const printWindow = window.open("", "_blank");
-  if (printWindow) {
-    printWindow.document.write(printContent);
-    printWindow.document.close();
-    // 프린트 대화상자 열기
-    setTimeout(() => {
-      printWindow.print();
-      // 프린트 후 창 닫기
-      printWindow.addEventListener("afterprint", () => {
-        printWindow.close();
-      });
-    }, 250);
-  } else {
+  // 개선실행계획서 인쇄 HTML 빌더는 공용 유틸로 추출(@/utils/print/riskImprovementPlanPrint).
+  //   동작/출력은 기존과 1:1 동일. 진행상태명/개선 전 사진 URL 은 기존 방식대로 산출해 전달한다.
+  const opened = printImprovementPlan({
+    processNm: formData.value.processNm,
+    riskTypeNm: formData.value.riskTypeNm,
+    initAssessDate: formData.value.initAssessDate,
+    initAssessorNm: formData.value.initAssessorNm,
+    hazardNm: formData.value.hazardNm,
+    initDesc: formData.value.initDesc,
+    initLikelihoodScore: formData.value.initLikelihoodScore,
+    initSeverityScore: formData.value.initSeverityScore,
+    initRiskLv: formData.value.initRiskLv,
+    assessmentStatus: formData.value.assessmentStatus,
+    assessmentStatusName: getAssessmentStatusName(
+      formData.value.assessmentStatus
+    ),
+    revalDate: formData.value.revalDate,
+    revalBeforeDesc: formData.value.revalBeforeDesc,
+    beforePhotoUrl: beforePhotoUrl.value,
+  });
+  if (!opened) {
     proxy.$alert(getMessage(MSG.POPUP_BLOCKED));
   }
 };
 
 // 개선완료보고서 열기
+//   인쇄 HTML 빌더는 공용 유틸로 추출(@/utils/print/riskImprovementCompleteReportPrint).
+//   동작/출력은 기존 인라인 빌더와 1:1 동일. 사고 일괄출력(AcctSafetyPrintPop)과 단일 출처 공유.
 const fnOpenImprovementReport = () => {
-  // 데이터 준비
-  const processNm = formData.value.processNm || "-";
-  const riskTypeNm = formData.value.riskTypeNm || "-";
-  const initAssessDate = formData.value.initAssessDate || "-";
-  const initAssessorNm = formData.value.initAssessorNm || "-";
-  const hazardNm = formData.value.hazardNm || "-";
-  const initDesc = (formData.value.initDesc || "-").replace(/\n/g, "<br>");
-  const initLikelihoodScore = formData.value.initLikelihoodScore || "-";
-  const initSeverityScore = formData.value.initSeverityScore || "-";
-  const initRiskLv = formData.value.initRiskLv || "-";
-  const initRiskLevelClass = getRiskLevelClass(formData.value.initRiskLv);
-  const assessmentStatusName = getAssessmentStatusName(
-    formData.value.assessmentStatus
-  );
-  const revalDate = formData.value.revalDate || "-";
-  const revalBeforeDesc = (formData.value.revalBeforeDesc || "-").replace(
-    /\n/g,
-    "<br>"
-  );
-  const revalAssessorNm = formData.value.revalAssessorNm || "-";
-  const revalAssessDate = formData.value.revalAssessDate || "-";
-  const revalDesc = (formData.value.revalDesc || "-").replace(/\n/g, "<br>");
-  const revalLikelihoodScore = formData.value.revalLikelihoodScore || "-";
-  const revalSeverityScore = formData.value.revalSeverityScore || "-";
-  const revalRiskLv = formData.value.revalRiskLv || "-";
-  const revalRiskLevelClass = getRiskLevelClass(formData.value.revalRiskLv);
-  const beforePhotoHtml = beforePhotoUrl.value
-    ? '<img src="' +
-      beforePhotoUrl.value +
-      '" alt="개선 전 사진" class="print-photo" />'
-    : "사진 없음";
-  const afterPhotoHtml =
-    previewImage?.value?.url || revalPhotoUrl.value
-      ? '<img src="' +
-        (previewImage?.value?.url || revalPhotoUrl.value) +
-        '" alt="개선 후 사진" class="print-photo" />'
-      : "사진 없음";
-  const printDate = new Date().toLocaleString("ko-KR");
-
-  // 프린트용 HTML 생성
-  let printContent =
-    "<!DOCTYPE html>" +
-    "<html>" +
-    "<head>" +
-    '<meta charset="UTF-8">' +
-    "<title>개선완료보고서</title>" +
-    "<style>" +
-    "@media print {" +
-    "  @page { size: A4 landscape; margin: 5mm; }" +
-    "  body { margin: 0; padding: 0; height: 100%; overflow: hidden; }" +
-    "}" +
-    "body {" +
-    '  font-family: "Pretendard", sans-serif;' +
-    "  font-size: 13px;" +
-    "  line-height: 1.4;" +
-    "  color: #333;" +
-    "  padding: 10px 8px 5px 8px;" +
-    "  height: 100%;" +
-    "  display: flex;" +
-    "  flex-direction: column;" +
-    "  box-sizing: border-box;" +
-    "}" +
-    ".print-header {" +
-    "  text-align: center;" +
-    "  margin-bottom: 10px;" +
-    "  border-bottom: 2px solid #333;" +
-    "  padding-bottom: 6px;" +
-    "  flex-shrink: 0;" +
-    "}" +
-    ".print-header h1 {" +
-    "  font-size: 20px;" +
-    "  font-weight: bold;" +
-    "  margin: 0;" +
-    "}" +
-    ".print-content {" +
-    "  display: flex;" +
-    "  gap: 10px;" +
-    "  margin-bottom: 5px;" +
-    "  flex: 1;" +
-    "  min-height: 0;" +
-    "}" +
-    ".print-section {" +
-    "  flex: 1;" +
-    "  border: 1px solid #ddd;" +
-    "  border-radius: 4px;" +
-    "  padding: 8px;" +
-    "  display: flex;" +
-    "  flex-direction: column;" +
-    "  min-height: 0;" +
-    "  overflow: hidden;" +
-    "}" +
-    ".section-title {" +
-    "  background: #f5f5f5;" +
-    "  padding: 6px;" +
-    "  font-weight: bold;" +
-    "  border-bottom: 1px solid #ddd;" +
-    "  margin: -8px -8px 6px -8px;" +
-    "  font-size: 14px;" +
-    "  flex-shrink: 0;" +
-    "}" +
-    ".print-row {" +
-    "  display: flex;" +
-    "  margin-bottom: 8px;" +
-    "  align-items: flex-start;" +
-    "  flex-shrink: 0;" +
-    "}" +
-    ".print-label {" +
-    "  flex: 0 0 120px;" +
-    "  font-weight: 500;" +
-    "  color: #333;" +
-    "  font-size: 13px;" +
-    "  padding-top: 5px;" +
-    "}" +
-    ".print-value {" +
-    "  flex: 1;" +
-    "  color: #666;" +
-    "  font-size: 13px;" +
-    "  padding-top: 5px;" +
-    "}" +
-    ".print-textarea {" +
-    "  min-height: 35px;" +
-    "  white-space: pre-wrap;" +
-    "  word-break: break-word;" +
-    "  line-height: 1.2;" +
-    "}" +
-    ".print-photo {" +
-    "  max-width: 100%;" +
-    "  max-height: 144px;" +
-    "  border: 1px solid #ddd;" +
-    "}" +
-    ".risk-evaluation {" +
-    "  display: flex;" +
-    "  gap: 10px;" +
-    "  align-items: center;" +
-    "  margin-top: -3px;" +
-    "}" +
-    ".risk-item {" +
-    "  display: flex;" +
-    "  align-items: center;" +
-    "  gap: 5px;" +
-    "}" +
-    ".risk-item-label {" +
-    "  font-weight: 500;" +
-    "  font-size: 13px;" +
-    "}" +
-    ".risk-level {" +
-    "  padding: 3px 8px;" +
-    "  border-radius: 4px;" +
-    "  font-weight: bold;" +
-    "  min-width: 35px;" +
-    "  text-align: center;" +
-    "  font-size: 13px;" +
-    "}" +
-    ".risk-high { background: #ff6b6b; color: white; }" +
-    ".risk-medium { background: #ffa500; color: white; }" +
-    ".risk-low { background: #ffd700; color: #333; }" +
-    ".risk-very-low { background: #90ee90; color: #333; }" +
-    ".print-date {" +
-    "  text-align: right;" +
-    "  margin-top: auto;" +
-    "  padding-top: 5px;" +
-    "  font-size: 11px;" +
-    "  color: #666;" +
-    "  flex-shrink: 0;" +
-    "}" +
-    "</style>" +
-    "</head>" +
-    "<body>" +
-    '<div class="print-header">' +
-    "<h1>개선완료보고서</h1>" +
-    "</div>" +
-    '<div class="print-content">' +
-    '<div class="print-section">' +
-    '<div class="section-title">개선 전</div>' +
-    '<div class="print-row">' +
-    '<div class="print-label">작업명</div>' +
-    '<div class="print-value">' +
-    processNm +
-    "</div>" +
-    "</div>" +
-    '<div class="print-row">' +
-    '<div class="print-label">위험성구분</div>' +
-    '<div class="print-value">' +
-    processNm +
-    "</div>" +
-    "</div>" +
-    '<div class="print-row">' +
-    '<div class="print-label">위험성분류</div>' +
-    '<div class="print-value">' +
-    riskTypeNm +
-    "</div>" +
-    "</div>" +
-    '<div class="print-row">' +
-    '<div class="print-label">평가요청일자</div>' +
-    '<div class="print-value">' +
-    initAssessDate +
-    "</div>" +
-    "</div>" +
-    '<div class="print-row">' +
-    '<div class="print-label">평가요청자</div>' +
-    '<div class="print-value">' +
-    initAssessorNm +
-    "</div>" +
-    "</div>" +
-    '<div class="print-row">' +
-    '<div class="print-label">유해요인명</div>' +
-    '<div class="print-value">' +
-    hazardNm +
-    "</div>" +
-    "</div>" +
-    '<div class="print-row">' +
-    '<div class="print-label">유해요인설명</div>' +
-    '<div class="print-value print-textarea">' +
-    initDesc +
-    "</div>" +
-    "</div>" +
-    '<div class="print-row">' +
-    '<div class="print-label">사진</div>' +
-    '<div class="print-value">' +
-    beforePhotoHtml +
-    "</div>" +
-    "</div>" +
-    '<div class="print-row">' +
-    '<div class="print-label">개선 전 위험성 평가</div>' +
-    '<div class="print-value">' +
-    '<div class="risk-evaluation">' +
-    '<div class="risk-item">' +
-    '<span class="risk-item-label">빈도:</span>' +
-    "<span>" +
-    initLikelihoodScore +
-    "</span>" +
-    "</div>" +
-    '<div class="risk-item">' +
-    '<span class="risk-item-label">강도:</span>' +
-    "<span>" +
-    initSeverityScore +
-    "</span>" +
-    "</div>" +
-    '<div class="risk-item">' +
-    '<span class="risk-item-label">위험도:</span>' +
-    '<span class="risk-level ' +
-    initRiskLevelClass +
-    '">' +
-    initRiskLv +
-    "</span>" +
-    "</div>" +
-    "</div>" +
-    "</div>" +
-    "</div>" +
-    "</div>" +
-    '<div class="print-section">' +
-    '<div class="section-title">개선 후</div>' +
-    '<div class="print-row">' +
-    '<div class="print-label">진행상태</div>' +
-    '<div class="print-value">' +
-    assessmentStatusName +
-    "</div>" +
-    "</div>" +
-    '<div class="print-row">' +
-    '<div class="print-label">개선예정일자</div>' +
-    '<div class="print-value">' +
-    revalDate +
-    "</div>" +
-    "</div>" +
-    '<div class="print-row">' +
-    '<div class="print-label">임시조치 내용</div>' +
-    '<div class="print-value print-textarea">' +
-    revalBeforeDesc +
-    "</div>" +
-    "</div>" +
-    '<div class="print-row">' +
-    '<div class="print-label">개선관리자</div>' +
-    '<div class="print-value">' +
-    revalAssessorNm +
-    "</div>" +
-    "</div>" +
-    '<div class="print-row">' +
-    '<div class="print-label">개선완료일자</div>' +
-    '<div class="print-value">' +
-    revalAssessDate +
-    "</div>" +
-    "</div>" +
-    '<div class="print-row">' +
-    '<div class="print-label">개선내용</div>' +
-    '<div class="print-value print-textarea">' +
-    revalDesc +
-    "</div>" +
-    "</div>" +
-    '<div class="print-row">' +
-    '<div class="print-label">개선사진</div>' +
-    '<div class="print-value">' +
-    afterPhotoHtml +
-    "</div>" +
-    "</div>" +
-    '<div class="print-row">' +
-    '<div class="print-label">개선 후 위험성 평가</div>' +
-    '<div class="print-value">' +
-    '<div class="risk-evaluation">' +
-    '<div class="risk-item">' +
-    '<span class="risk-item-label">빈도:</span>' +
-    "<span>" +
-    revalLikelihoodScore +
-    "</span>" +
-    "</div>" +
-    '<div class="risk-item">' +
-    '<span class="risk-item-label">강도:</span>' +
-    "<span>" +
-    revalSeverityScore +
-    "</span>" +
-    "</div>" +
-    '<div class="risk-item">' +
-    '<span class="risk-item-label">위험도:</span>' +
-    '<span class="risk-level ' +
-    revalRiskLevelClass +
-    '">' +
-    revalRiskLv +
-    "</span>" +
-    "</div>" +
-    "</div>" +
-    "</div>" +
-    "</div>" +
-    "</div>" +
-    "</div>" +
-    '<div class="print-date">' +
-    "출력일시: " +
-    printDate +
-    "</div>" +
-    "</body>" +
-    "</html>";
-
-  // 새 창 열기
-  const printWindow = window.open("", "_blank");
-  if (printWindow) {
-    printWindow.document.write(printContent);
-    printWindow.document.close();
-    // 프린트 대화상자 열기
-    setTimeout(() => {
-      printWindow.print();
-      // 프린트 후 창 닫기
-      printWindow.addEventListener("afterprint", () => {
-        printWindow.close();
-      });
-    }, 250);
-  } else {
+  const opened = printImprovementCompleteReport({
+    processNm: formData.value.processNm,
+    riskTypeNm: formData.value.riskTypeNm,
+    initAssessDate: formData.value.initAssessDate,
+    initAssessorNm: formData.value.initAssessorNm,
+    hazardNm: formData.value.hazardNm,
+    initDesc: formData.value.initDesc,
+    initLikelihoodScore: formData.value.initLikelihoodScore,
+    initSeverityScore: formData.value.initSeverityScore,
+    initRiskLv: formData.value.initRiskLv,
+    assessmentStatusName: getAssessmentStatusName(
+      formData.value.assessmentStatus
+    ),
+    revalDate: formData.value.revalDate,
+    revalBeforeDesc: formData.value.revalBeforeDesc,
+    revalAssessorNm: formData.value.revalAssessorNm,
+    revalAssessDate: formData.value.revalAssessDate,
+    revalDesc: formData.value.revalDesc,
+    revalLikelihoodScore: formData.value.revalLikelihoodScore,
+    revalSeverityScore: formData.value.revalSeverityScore,
+    revalRiskLv: formData.value.revalRiskLv,
+    beforePhotoUrl: beforePhotoUrl.value,
+    // 개선 후 사진: 방금 업로드한 미저장 프리뷰(blob:)가 있으면 우선 사용(기존 동작 유지)
+    afterPhotoUrl: previewImage?.value?.url || revalPhotoUrl.value,
+  });
+  if (!opened) {
     proxy.$alert(getMessage(MSG.POPUP_BLOCKED));
   }
+};
+
+// ==========================================================================
+// PRAFTA-WEB_003 v3: AI 분석 슬라이드 패널 (본체는 RiskAiAnalysisPanel.vue)
+// ==========================================================================
+const showAiPanel = ref(false);
+
+// AI 분석 미저장 dirty 플래그: 이번 팝업 세션에서 도출 수행 또는 결과 반영 후 아직 평가 저장 전이면 true
+const aiDirty = ref(false);
+
+// AI 유해요인 반영 여부: fnApplyAiSelection 에서 hazardLines 를 실제 반영했을 때만 true.
+//   fnSave 는 이 값이 true 일 때만 initDesc 를 전송(미포함 시 BE mapper <if>가 스킵해
+//   근로자가 그 사이 앱으로 갱신한 INIT_DESC 원본을 스냅샷으로 되돌리지 않는다).
+const aiHazardApplied = ref(false);
+
+// 설명 필드 최대 글자수 — TB_RISK_ASSESSMENT.INIT_DESC / REVAL_BEFORE_DESC varchar(500) 근거.
+//   초과 시 MySQL strict 모드에서 저장 전체가 실패하므로 FE 에서 선차단한다.
+const DESC_MAX_LEN = 500;
+
+// AI 반영 블록 시작 마커(재저장 시 마커부터 끝까지 교체 — 중복 축적 방지.
+//   BE RiskAi01ServiceImpl.stripAiAppendix 의 마커와 동일 문자열 유지 필수)
+const AI_HAZARD_MARKER = "[AI분석 유해요인]";
+const AI_MEASURE_MARKER = "[AI분석 개선안]";
+
+// AI 반영 텍스트 조립: 기존 텍스트에 마커가 이미 있으면 마커 위치부터 끝까지 제거(직전 공백/개행 trim)
+//   → 남은 원본 뒤에 "마커 + 넘버링 목록" 블록을 덧붙인다(원본이 비면 블록만).
+const buildAiAppendedText = (baseText, marker, lines) => {
+  let base = baseText || "";
+  const pos = base.indexOf(marker);
+  if (pos >= 0) {
+    base = base.slice(0, pos).replace(/\s+$/, "");
+  }
+  const numbered = lines
+    .map((line, i) => String(i + 1) + ". " + line)
+    .join("\n");
+  const block = marker + "\n" + numbered;
+  return base ? base + "\n" + block : block;
+};
+
+// 패널에서 도출 수행 알림(@derived) — 미저장 닫기 가드용 dirty 마킹
+const fnMarkAiDirty = () => {
+  aiDirty.value = true;
+};
+
+// 패널 [저장](@save): 선택된 유해요인 → 유해요인설명(initDesc), 개선안 → 임시조치 내용(revalBeforeDesc)에
+//   조립 반영 후 패널을 닫고 팝업으로 복귀. 한쪽 배열이 비면 그 필드는 건드리지 않는다(기존 AI 블록 유지).
+const fnApplyAiSelection = async (payload) => {
+  const hazardLines = payload?.hazardLines || [];
+  const measureLines = payload?.measureLines || [];
+
+  // 조립 결과를 먼저 계산(반영 전) — varchar(500) 초과 시 all-or-nothing 으로 둘 다 반영하지 않는다
+  const nextInitDesc =
+    hazardLines.length > 0
+      ? buildAiAppendedText(
+          formData.value.initDesc,
+          AI_HAZARD_MARKER,
+          hazardLines
+        )
+      : null;
+  const nextRevalBeforeDesc =
+    measureLines.length > 0
+      ? buildAiAppendedText(
+          formData.value.revalBeforeDesc,
+          AI_MEASURE_MARKER,
+          measureLines
+        )
+      : null;
+
+  const overFields = [];
+  if (nextInitDesc !== null && nextInitDesc.length > DESC_MAX_LEN) {
+    overFields.push(`유해요인설명 ${nextInitDesc.length}자`);
+  }
+  if (
+    nextRevalBeforeDesc !== null &&
+    nextRevalBeforeDesc.length > DESC_MAX_LEN
+  ) {
+    overFields.push(`임시조치 내용 ${nextRevalBeforeDesc.length}자`);
+  }
+  if (overFields.length > 0) {
+    // 패널을 닫지 않고 유지 — 관리자가 패널에서 선택 항목을 줄여 재시도할 수 있게 한다.
+    //   aiDirty 도 여기서는 설정하지 않는다(derived 이벤트로 이미 true 일 수 있음 — 그대로 둠).
+    await proxy.$alert(
+      `반영 결과가 최대 글자수(${DESC_MAX_LEN}자)를 초과하여 반영할 수 없습니다.\n` +
+        `(${overFields.join(", ")} / 한도 ${DESC_MAX_LEN}자)\n` +
+        "선택 항목을 줄인 뒤 다시 저장해 주세요."
+    );
+    return;
+  }
+
+  if (nextInitDesc !== null) {
+    formData.value.initDesc = nextInitDesc;
+    aiHazardApplied.value = true;
+  }
+  if (nextRevalBeforeDesc !== null) {
+    formData.value.revalBeforeDesc = nextRevalBeforeDesc;
+  }
+  aiDirty.value = true;
+  showAiPanel.value = false;
+};
+
+// 미저장(SAVED_YN='N') AI 도출 행 정리(commit-on-save). 오픈/닫기 공용.
+//   확정(Y) 행은 서버가 보존한다. 실패는 호출부에서 처리(오픈=경고만, 닫기=사용자 알림).
+const fnDiscardUnsavedAi = async () => {
+  await axios.post(
+    "/webApi/riskai01/discard-unsaved",
+    { ...aiScopeKeys() },
+    { headers: { "Content-Type": "application/json" } }
+  );
+};
+
+// 미저장 닫기 가드: AI 분석 dirty 상태면 확인 후 서버의 미확정(SAVED_YN='N') 도출 행을 정리하고 닫는다.
+//   fnSave 성공 경로의 emit("close")는 저장 완료라 이 가드를 타지 않는다.
+const fnRequestClose = async () => {
+  if (!aiDirty.value) {
+    emit("close");
+    return;
+  }
+  const ok = await proxy.$confirm(
+    "AI 분석 결과가 저장되지 않았습니다. 팝업을 닫으면 AI 분석 내용이 초기화됩니다. 닫을까요?"
+  );
+  if (!ok) return;
+  // 미확정 작업분 삭제(commit-on-save). 실패해도 닫기는 진행하되, 조용히 묻지 않고 사용자에게 알린다
+  //   (다음 오픈에서 자동 정리되므로 데이터 잔존은 일시적 — 진단 가능성 확보).
+  try {
+    await fnDiscardUnsavedAi();
+  } catch (err) {
+    console.warn("AI 분석 초기화 실패(닫기는 진행)", err);
+    await proxy.$alert(
+      "AI 분석 내용 초기화에 실패했습니다. 팝업을 다시 열면 자동으로 정리됩니다."
+    );
+  }
+  emit("close");
+};
+
+// 평가건 스코프 키(3축). CMPNY_CD 는 서버가 JWT 로만 도출하므로 바디에 싣지 않는다.
+const aiScopeKeys = () => ({
+  siteCd: props.riskAssessmentData.siteCd,
+  processCd: props.riskAssessmentData.processCd,
+  assessmentCd: props.riskAssessmentData.assessmentCd,
+});
+
+// 스코프 키가 모두 존재하는지(신규/미확정 레코드 방어)
+const hasAiScope = () => {
+  const k = aiScopeKeys();
+  return !!(k.siteCd && k.processCd && k.assessmentCd);
+};
+
+const fnOpenAiPanel = () => {
+  if (!hasAiScope()) return;
+  showAiPanel.value = true;
+};
+
+const fnCloseAiPanel = () => {
+  showAiPanel.value = false;
 };
 
 // 정리
@@ -1614,15 +1374,22 @@ onBeforeUnmount(() => {
 }
 
 .modal-content-wide {
-  width: 100%;
-  max-width: 1400px;
-  max-height: 70vh;
+  width: 95vw;
+  max-width: 1600px;
+  height: 92vh;
+  max-height: 92vh;
   background: #fff;
   border-radius: 8px;
   overflow: hidden;
   box-shadow: 0 0 20px rgba(0, 0, 0, 0.3);
   display: flex;
   flex-direction: column;
+}
+
+/* 헤더/푸터는 항상 고정 노출(줄어들지 않도록) */
+.modal-header,
+.modal-footer {
+  flex-shrink: 0;
 }
 
 .risk-assess-content {
@@ -1810,24 +1577,35 @@ onBeforeUnmount(() => {
   font-size: 0.9rem;
 }
 
-.risk-high {
-  background: #ff6b6b;
-  color: white;
+/* 위험도 등급 색(6단계). Risk_02 관리기준표 팔레트와 동일 권위. */
+.risk-very-high {
+  background: #ff4444;
+  color: #fff;
 }
 
-.risk-medium {
-  background: #ffa500;
-  color: white;
+.risk-high {
+  background: #ff8800;
+  color: #fff;
+}
+
+.risk-slightly-high {
+  background: #ffaa00;
+  color: #1f1e1e;
+}
+
+.risk-normal {
+  background: #ffd700;
+  color: #1f1e1e;
 }
 
 .risk-low {
-  background: #ffd700;
-  color: #333;
+  background: #90ee90;
+  color: #1f1e1e;
 }
 
 .risk-very-low {
-  background: #90ee90;
-  color: #333;
+  background: #228b22;
+  color: #fff;
 }
 
 .readonly-input {
@@ -2118,5 +1896,62 @@ onBeforeUnmount(() => {
   font-size: 0.8125rem;
   text-align: center;
   padding: 0.75rem 0;
+}
+/* 연결 해제(x) 컬럼 */
+.ref-nm-table__del {
+  width: 32px;
+  text-align: center;
+}
+.btn-x {
+  border: 1px solid var(--color-border, #e5e7eb);
+  background: var(--color-surface, #ffffff);
+  color: var(--color-danger, #b91c1c);
+  border-radius: var(--radius-md, 4px);
+  cursor: pointer;
+  line-height: 1;
+  padding: var(--space-xxs, 0.125rem) var(--space-xs, 0.4rem);
+  font-size: var(--font-size-xs, 0.75rem);
+}
+.btn-x:hover {
+  background: var(--color-danger-soft, rgba(185, 28, 28, 0.06));
+}
+
+/* PRAFTA-WEB_003 v3: AI 분석 슬라이드 패널 포지셔닝 셸.
+   ★.modal-content-wide 에 position:relative 를 직접 주지 않는다(인라인 top/left 활성화로 팝업 튐).
+   기존 자식 3개(modal-header/risk-assess-content/modal-footer)를 이 셸로 감싸고,
+   패널(RiskAiAnalysisPanel)은 셸의 마지막 자식(position:absolute; inset:0)으로 덮는다. */
+.risk-popup-shell {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+}
+
+/* PRAFTA-WEB_003 v3: 개선 후 섹션 헤더 우측 "AI 분석" 진입 버튼 */
+.section-header--with-action {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+.ai-open-btn {
+  height: var(--btn-height-sm, 28px);
+}
+
+/* PRAFTA-WEB_003 v3: AI 패널 상→하 슬라이드(열림)/하→상(닫힘) 트랜지션.
+   Transition 직계 자식 = RiskAiAnalysisPanel 루트 엘리먼트(absolute inset:0)에 적용된다. */
+.ai-slide-enter-active,
+.ai-slide-leave-active {
+  transition: transform 0.3s ease;
+}
+.ai-slide-enter-from,
+.ai-slide-leave-to {
+  transform: translateY(-100%);
+}
+.ai-slide-enter-to,
+.ai-slide-leave-from {
+  transform: translateY(0);
 }
 </style>

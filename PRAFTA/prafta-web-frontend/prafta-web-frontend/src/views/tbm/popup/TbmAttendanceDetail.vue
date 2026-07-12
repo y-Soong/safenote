@@ -103,116 +103,114 @@
                   </tr>
                 </template>
                 <template v-else>
-                  <tr
+                  <template
                     v-for="(row, idx) in attendanceList"
                     :key="row.attendanceCd"
-                    :class="rowClass(row)"
                   >
-                    <td style="text-align: center">{{ idx + 1 }}</td>
-                    <td>
-                      <span
-                        class="type-badge"
-                        :class="
-                          row.userTypeCd === 'DAILY'
-                            ? 'type-daily'
-                            : 'type-regular'
-                        "
-                      >
-                        {{ row.userTypeNm || typeNm(row.userTypeCd) }}
-                      </span>
-                    </td>
-                    <td>
-                      <button
-                        type="button"
-                        class="title-link"
-                        @click="fnUserHistory(row)"
-                      >
-                        {{ row.userNm }}
-                      </button>
-                    </td>
-                    <td>
-                      <template v-if="row.userTypeCd === 'DAILY'">
-                        ****{{ row.mblNoLast4 || "" }}
-                      </template>
-                      <template v-else>
-                        {{ row.deptNm || "-" }}
-                      </template>
-                    </td>
-                    <td>{{ row.entryAt || "-" }}</td>
-                    <td>
-                      <template v-if="row.exited">{{ row.exitAt }}</template>
-                      <span v-else class="not-exited">미종료</span>
-                    </td>
-                    <td style="text-align: center">
-                      {{ distanceText(row.entryDistanceM) }}
-                    </td>
-                    <td style="text-align: center">
-                      {{ foregroundText(row.appForegroundSec) }}
-                    </td>
-                    <td>
-                      <span
-                        class="anomaly-badge"
-                        :class="anomalyClass(row.anomalyLevel)"
-                      >
-                        {{ anomalyNm(row.anomalyLevel) }}
-                      </span>
-                      <span v-if="row.eventCount > 0" class="anomaly-sub">
-                        (이벤트 {{ row.eventCount }})
-                      </span>
-                    </td>
-                    <td style="text-align: center">
-                      <span
-                        class="comp-mark"
-                        :class="
-                          row.completionStatusCd === 'COMPLETED'
-                            ? 'comp-ok'
-                            : row.completionStatusCd === 'NOT_COMPLETED'
-                              ? 'comp-no'
-                              : 'comp-none'
-                        "
-                        :title="row.notCompletedReason || ''"
-                      >
-                        {{ compMark(row.completionStatusCd) }}
-                      </span>
-                    </td>
-                    <td style="text-align: center" class="no-print">
-                      <button
-                        type="button"
-                        class="btn btn-second btn-xs"
-                        @click="fnToggleEvents(row)"
-                      >
-                        이벤트
-                      </button>
-                      <button
-                        type="button"
-                        class="btn btn-second btn-xs"
-                        @click="fnCompletion(row)"
-                      >
-                        이수처리
-                      </button>
-                      <button
-                        v-if="hasSignature(row)"
-                        type="button"
-                        class="btn btn-second btn-xs"
-                        @click="fnSignature(row)"
-                      >
-                        서명
-                      </button>
-                    </td>
-                  </tr>
-                  <!-- 이벤트 타임라인 토글 행 -->
-                  <tr
-                    v-if="expandedCd === row.attendanceCd"
-                    :key="row.attendanceCd + '-ev'"
-                  >
-                    <td colspan="11" class="event-cell-row">
-                      <TbmEventTimeline
-                        :attendanceCd_p="row.attendanceCd"
-                        :userNm_p="row.userNm"
-                        embedded
-                      />
-                    </td>
-                  </tr>
+                    <tr :class="rowClass(row)">
+                      <td style="text-align: center">{{ idx + 1 }}</td>
+                      <td>
+                        <span
+                          class="type-badge"
+                          :class="
+                            row.userTypeCd === 'DAILY'
+                              ? 'type-daily'
+                              : 'type-regular'
+                          "
+                        >
+                          {{ row.userTypeNm || typeNm(row.userTypeCd) }}
+                        </span>
+                      </td>
+                      <td>
+                        <button
+                          type="button"
+                          class="title-link"
+                          @click="fnUserHistory(row)"
+                        >
+                          {{ row.userNm }}
+                        </button>
+                      </td>
+                      <td>
+                        <template v-if="row.userTypeCd === 'DAILY'">
+                          ****{{ row.mblNoLast4 || "" }}
+                        </template>
+                        <template v-else>
+                          {{ row.deptNm || "-" }}
+                        </template>
+                      </td>
+                      <td>{{ row.entryAt || "-" }}</td>
+                      <td>
+                        <template v-if="row.exited">{{ row.exitAt }}</template>
+                        <span v-else class="not-exited">미종료</span>
+                      </td>
+                      <td style="text-align: center">
+                        {{ distanceText(row.entryDistanceM) }}
+                      </td>
+                      <td style="text-align: center">
+                        {{ foregroundText(row.appForegroundSec) }}
+                      </td>
+                      <td>
+                        <span
+                          class="anomaly-badge"
+                          :class="anomalyClass(row.anomalyLevel)"
+                        >
+                          {{ anomalyNm(row.anomalyLevel) }}
+                        </span>
+                        <span v-if="row.eventCount > 0" class="anomaly-sub">
+                          (이벤트 {{ row.eventCount }})
+                        </span>
+                      </td>
+                      <td style="text-align: center">
+                        <span
+                          class="comp-mark"
+                          :class="
+                            row.completionStatusCd === 'COMPLETED'
+                              ? 'comp-ok'
+                              : row.completionStatusCd === 'NOT_COMPLETED'
+                                ? 'comp-no'
+                                : 'comp-none'
+                          "
+                          :title="row.notCompletedReason || ''"
+                        >
+                          {{ compMark(row.completionStatusCd) }}
+                        </span>
+                      </td>
+                      <td style="text-align: center" class="no-print">
+                        <button
+                          type="button"
+                          class="btn btn-second btn-xs"
+                          @click="fnToggleEvents(row)"
+                        >
+                          이벤트
+                        </button>
+                        <button
+                          type="button"
+                          class="btn btn-second btn-xs"
+                          @click="fnCompletion(row)"
+                        >
+                          이수처리
+                        </button>
+                        <button
+                          v-if="hasSignature(row)"
+                          type="button"
+                          class="btn btn-second btn-xs"
+                          @click="fnSignature(row)"
+                        >
+                          서명
+                        </button>
+                      </td>
+                    </tr>
+                    <!-- 이벤트 타임라인 토글 행 -->
+                    <tr v-if="expandedCd === row.attendanceCd">
+                      <td colspan="11" class="event-cell-row">
+                        <TbmEventTimeline
+                          :attendanceCd_p="row.attendanceCd"
+                          :userNm_p="row.userNm"
+                          embedded
+                        />
+                      </td>
+                    </tr>
+                  </template>
                 </template>
               </tbody>
             </table>

@@ -21,6 +21,7 @@ public record SessionCommand(
 	, String managerGpsLon
 	, String gpsVerifyTypeCd
 	, Integer gpsVerifyRadiusM
+	, Integer eduMinutes		// 교육 인정시간(분, 1~60). NULL 허용
 	, String gpsManualConfirmYn
 	, boolean opened			// 개설은 항상 false(OPENED_AT/PREP_START_AT은 prepare 전이에서 설정)
 	, String gvCmpnyCd
@@ -48,6 +49,7 @@ public record SessionCommand(
 			, normalize(param.managerGpsLon())
 			, param.gpsVerifyTypeCd()
 			, param.gpsVerifyRadiusM()
+			, param.eduMinutes()
 			, normalizeYn(param.gpsManualConfirmYn())
 			, false
 			, param.gvCmpnyCd()
@@ -71,6 +73,7 @@ public record SessionCommand(
 			, normalize(param.managerGpsLon())
 			, param.gpsVerifyTypeCd()
 			, param.gpsVerifyRadiusM()
+			, param.eduMinutes()
 			, normalizeYn(param.gpsManualConfirmYn())
 			, false
 			, param.gvCmpnyCd()

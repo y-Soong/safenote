@@ -11,6 +11,9 @@ public record SessionGuardResult(
 	, String siteCd
 	, String statusCd
 	, String managerUserCd
+	, String title			// 교육준비(prepare) DB값 기준 검증용
+	, String contentBody	// 교육준비(prepare) DB값 기준 검증용
+	, Integer eduMinutes	// 교육준비(prepare) DB값 기준 검증용(분, 1~60)
 ){
 
 }

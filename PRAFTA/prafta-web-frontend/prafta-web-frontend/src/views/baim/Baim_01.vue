@@ -273,13 +273,7 @@ useFieldWatcher(
 );
 
 // ================ Life Cycle Functions ================
-const fnInit = () => {
-  siteNo.value = sessionStorage.getItem("gv_siteNo") ?? "";
-  siteNm.value = sessionStorage.getItem("gv_siteNm") ?? "";
-};
-
 onMounted(async () => {
-  fnInit();
   fnButtonControll();
   await fnGetSystinfoList();
   await fnSearch();

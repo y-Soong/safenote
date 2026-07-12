@@ -32,6 +32,7 @@
         , P.UPDATE_NO                 AS updateNo
         , DATE_FORMAT(P.UPDATE_DATE, '%Y-%m-%dT%H:%i:%s') AS updateDate
         , U.USAGE_UNIT                AS usageUnit
+        , U.ALLOW_QUARTER             AS allowQuarter
       FROM TB_LEAVE_POLICY P
       LEFT JOIN TB_LEAVE_USAGE_POLICY U
         ON U.POLICY_SEQ = P.POLICY_SEQ
@@ -161,6 +162,7 @@
           POLICY_SEQ
         , CMPNY_CD
         , USAGE_UNIT
+        , ALLOW_QUARTER
         , INSERT_NO
         , INSERT_DATE
         , UPDATE_NO
@@ -170,6 +172,7 @@
           #{policySeq}
         , #{cmpnyCd}
         , #{usageUnit}
+        , #{allowQuarter}
         , #{insertNo}
         , NOW()
         , #{updateNo}
@@ -226,19 +229,25 @@
     <select id="selectPolicyHistory" resultType="com.prafta.common.cmm.leave.vo.LeavePolicyHistoryVO">
     /* LeavePolicyMapper.selectPolicyHistory */
     SELECT
-          HIST_ID                  AS histId
-        , CMPNY_CD                 AS cmpnyCd
-        , POLICY_SEQ               AS policySeq
-        , CHANGE_TYPE              AS changeType
-        , CAST(PREV_SNAPSHOT AS CHAR)   AS prevSnapshot
-        , CAST(NEW_SNAPSHOT AS CHAR)    AS newSnapshot
-        , CHANGE_REASON            AS changeReason
-        , CAST(IMPACT_SUMMARY AS CHAR)  AS impactSummary
-        , INSERT_NO                AS insertNo
-        , DATE_FORMAT(INSERT_DATE, '%Y-%m-%dT%H:%i:%s') AS insertDate
-      FROM TB_LEAVE_POLICY_HISTORY
-     WHERE CMPNY_CD = #{cmpnyCd}
-     ORDER BY INSERT_DATE DESC, HIST_ID DESC
+          H.HIST_ID                  AS histId
+        , H.CMPNY_CD                 AS cmpnyCd
+        , H.POLICY_SEQ               AS policySeq
+        , H.CHANGE_TYPE              AS changeType
+        , CAST(H.PREV_SNAPSHOT AS CHAR)   AS prevSnapshot
+        , CAST(H.NEW_SNAPSHOT AS CHAR)    AS newSnapshot
+        , H.CHANGE_REASON            AS changeReason
+        , CAST(H.IMPACT_SUMMARY AS CHAR)  AS impactSummary
+        , H.INSERT_NO                AS insertNo
+        /* 변경자 표기용: INSERT_NO(USER_CD)로 TB_USER 조인. 'SYSTEM' 등 사용자코드가 아니면 NULL → FE는 insertNo 원문 폴백 */
+        , U.USER_ID                  AS insertUserId
+        , U.USER_NM                  AS insertUserNm
+        , DATE_FORMAT(H.INSERT_DATE, '%Y-%m-%dT%H:%i:%s') AS insertDate
+      FROM TB_LEAVE_POLICY_HISTORY H
+      LEFT JOIN TB_USER U
+        ON U.CMPNY_CD = H.CMPNY_CD
+       AND U.USER_CD  = H.INSERT_NO
+     WHERE H.CMPNY_CD = #{cmpnyCd}
+     ORDER BY H.INSERT_DATE DESC, H.HIST_ID DESC
      LIMIT #{limit} OFFSET #{offset}
     </select>
 

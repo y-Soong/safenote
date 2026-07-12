@@ -59,13 +59,16 @@
 			WHERE R.CMPNY_CD = A.CMPNY_CD
 			  AND R.SESSION_CD = A.SESSION_CD
 		  )				AS riskCount
-		/* 출결 집계(출결 테이블 미사용 단계에서는 0). DEL_YN='N' 기준 */
+		/* 출결 집계. 참석=실입실(ENTRY_AT NOT NULL) 기준, 미이수=입실했으나 미완료(NULL or NOT_COMPLETED).
+		   prafta-app-031: 자동이수 폐지로 종료 세션에 COMPLETION_STATUS_CD=NULL(미완료 입실자)이 상시 잔존하므로
+		   앱(selectAdminHistoryStat)과 동일 정의로 통일(참석=이수+미이수 항등식 보장). */
 		, (
 			SELECT COUNT(1)
 			FROM TB_TBM_ATTENDANCE AT
 			WHERE AT.CMPNY_CD = A.CMPNY_CD
 			  AND AT.SESSION_CD = A.SESSION_CD
 			  AND AT.DEL_YN = 'N'
+			  AND AT.ENTRY_AT IS NOT NULL
 		  )				AS attendanceCount
 		, (
 			SELECT COUNT(1)
@@ -81,7 +84,8 @@
 			WHERE AT.CMPNY_CD = A.CMPNY_CD
 			  AND AT.SESSION_CD = A.SESSION_CD
 			  AND AT.DEL_YN = 'N'
-			  AND AT.COMPLETION_STATUS_CD = 'NOT_COMPLETED'
+			  AND AT.ENTRY_AT IS NOT NULL
+			  AND (AT.COMPLETION_STATUS_CD IS NULL OR AT.COMPLETION_STATUS_CD = 'NOT_COMPLETED')
 		  )				AS notCompletedCount
 	FROM TB_TBM_SESSION A
 		 LEFT OUTER JOIN TB_SITE ST
@@ -117,9 +121,10 @@
 	/* SUM은 행이 0건이면 NULL을 반환하므로 IFNULL로 0 보정(결과 record가 primitive int) */
 	SELECT
 		COUNT(DISTINCT A.SESSION_CD)	AS sessionCount
-		, COUNT(AT.ATTENDANCE_CD)		AS attendanceCount
+		/* prafta-app-031: 참석=실입실(ENTRY_AT NOT NULL), 미이수=입실했으나 미완료(NULL or NOT_COMPLETED). 앱 정의와 통일. */
+		, IFNULL(SUM(CASE WHEN AT.ENTRY_AT IS NOT NULL THEN 1 ELSE 0 END), 0)					AS attendanceCount
 		, IFNULL(SUM(CASE WHEN AT.COMPLETION_STATUS_CD = 'COMPLETED' THEN 1 ELSE 0 END), 0)		AS completedCount
-		, IFNULL(SUM(CASE WHEN AT.COMPLETION_STATUS_CD = 'NOT_COMPLETED' THEN 1 ELSE 0 END), 0)	AS notCompletedCount
+		, IFNULL(SUM(CASE WHEN AT.ENTRY_AT IS NOT NULL AND (AT.COMPLETION_STATUS_CD IS NULL OR AT.COMPLETION_STATUS_CD = 'NOT_COMPLETED') THEN 1 ELSE 0 END), 0)	AS notCompletedCount
 	FROM TB_TBM_SESSION A
 		 LEFT OUTER JOIN TB_TBM_ATTENDANCE AT
 		 	ON (

@@ -10,6 +10,7 @@ import router from '@/router/index.js'
 import api from '@/api/axios'
 import { refreshAccessToken, forceLogout, getRefreshToken } from '@/composables/useAuth'
 import { installPushTokenRefreshHandler } from '@/utils/pushTokenBridge'
+import { installPushOpenedHandler } from '@/utils/pushRouteBridge'
 
 const userStore = useUserStore()
 
@@ -160,6 +161,10 @@ onMounted(async () => {
   // prafta-com-008-F (F03/N2): 푸시 토큰 refresh 콜백을 전역 1회 등록한다.
   //   콜백 내부에서 로그인 토큰(sessionStorage 'token')을 가드 → 로그인 상태일 때만 등록 API 호출.
   installPushTokenRefreshHandler()
+
+  // PRAFTA-WEB_001-5: 푸시 탭(open) 라우팅 콜백(window.__onPushOpened)을 전역 1회 등록한다.
+  //   소속이동(TRANSFER_RESERVED) 등 알림 탭 시 해당 화면으로 라우팅(best-effort).
+  installPushOpenedHandler()
 
   await syncTokenIfNeeded()
   document.addEventListener('visibilitychange', handleVisibilityChange)

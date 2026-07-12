@@ -51,7 +51,8 @@
  			)
    		, #{inspectItemSubj}
    		, #{sortIdx}
-   		, SUBSTRING(REPLACE(#{strDate}, '-', ''), 1, 6)
+   		<!-- 시행일(YYYYMMDD): 시행월(YYYYMM)에서 일 단위로 전환 -->
+   		, SUBSTRING(REPLACE(#{strDate}, '-', ''), 1, 8)
    		, #{useYn}
 		, #{gvUserCd}
 		, now()
@@ -70,7 +71,7 @@
 	<insert id="updateChkptInspectItemList" parameterType="com.prafta.web.chkLst.chkLst02.application.command.ChkptInspectItemCommand">
 	/* ChkLst01Mapper.updateChkptInspectItemList */
 	UPDATE TB_CHKPT_INSPECT_ITEM
-	SET 
+	SET
 		USE_YN = 'N'
 		, UPDATE_NO = #{gvUserCd}
 		, UPDATE_DATE = now()
@@ -78,5 +79,96 @@
 	  AND CMPNY_CD = #{gvCmpnyCd}
 	  AND CHKLST_TYPE = #{chkLstType}
 	  AND INSPECT_ITEM_CD = #{inspectItemCd}
+	</insert>
+
+	<!-- 문항 단건 조회(변경이력 diff 판정용) -->
+	<select id="selectChkptInspectItem" parameterType="com.prafta.web.chkLst.chkLst02.application.command.ChkptInspectItemCommand" resultType="com.prafta.web.chkLst.chkLst02.result.ChkptInspectItemResult">
+	/* ChkLst02Mapper.selectChkptInspectItem */
+	SELECT
+		'' 						AS chk
+		, A.CMPNY_CD			AS cmpnyCd
+	    , A.CHKLST_TYPE			AS chkLstType
+	    , A.INSPECT_ITEM_CD		AS inspectItemCd
+	    , A.INSPECT_ITEM_SUBJ	AS inspectItemSubj
+	    , A.SORT_IDX			AS sortIdx
+	    , A.STR_DATE			AS strDate
+	    , A.USE_YN				AS useYn
+	FROM TB_CHKPT_INSPECT_ITEM A
+	WHERE 1=1
+	  AND A.CMPNY_CD = #{gvCmpnyCd}
+	  AND A.CHKLST_TYPE = #{chkLstType}
+	  AND A.INSPECT_ITEM_CD = #{inspectItemCd}
+	</select>
+
+	<!-- 신규 문항코드 선채번(이력 적재를 위해 merge 이전에 코드 확정) -->
+	<select id="selectNextInspectItemCd" parameterType="com.prafta.web.chkLst.chkLst02.application.command.ChkptInspectItemCommand" resultType="String">
+	/* ChkLst02Mapper.selectNextInspectItemCd */
+	SELECT CONCAT(
+		'DCHK'
+		, '_'
+		, CAST(#{chkLstType} AS UNSIGNED)
+		, '_'
+		, FNC_CMM_SEQ_NEXTVAL(#{gvCmpnyCd}, CONCAT('COM001-', #{chkLstType}))
+	)
+	</select>
+
+	<!-- 문항 변경이력 조회(문항관리 이력 팝업) -->
+	<select id="selectChkptInspectItemHistList" parameterType="com.prafta.web.chkLst.chkLst02.application.query.ChkptInspectItemHistListQuery" resultType="com.prafta.web.chkLst.chkLst02.result.ChkptInspectItemHistResult">
+	/* ChkLst02Mapper.selectChkptInspectItemHistList */
+	SELECT
+		H.CHG_TYPE				AS chgType
+		<!-- 변경유형(01:등록, 02:수정, 03:사용중지, 04:재사용) — 코드테이블 미등재, ChkLst02ServiceImpl 상수와 동기 유지 -->
+		, CASE H.CHG_TYPE
+			WHEN '01' THEN '등록'
+			WHEN '02' THEN '수정'
+			WHEN '03' THEN '사용중지'
+			WHEN '04' THEN '재사용'
+			ELSE H.CHG_TYPE
+		  END					AS chgTypeNm
+		, H.INSPECT_ITEM_SUBJ	AS inspectItemSubj
+		, H.STR_DATE			AS strDate
+		, H.SORT_IDX			AS sortIdx
+		, H.USE_YN				AS useYn
+		, FNC_CMM_INFO_SRCH(H.CMPNY_CD, 'USER_NM', H.INSERT_NO, NULL)	AS chgUserNm
+		, DATE_FORMAT(H.INSERT_DATE, '%Y-%m-%d %H:%i')					AS chgDtime
+	FROM TB_CHKPT_INSPECT_ITEM_HIST H
+	WHERE 1=1
+	  AND H.CMPNY_CD = #{gvCmpnyCd}
+	  AND H.CHKLST_TYPE = #{chkLstType}
+	  AND H.INSPECT_ITEM_CD = #{inspectItemCd}
+	ORDER BY H.INSERT_DATE DESC, H.HIST_ID DESC
+	</select>
+
+	<!-- 문항 변경이력 적재: 저장 직후 문항의 현재 상태(변경 후 값)를 스냅샷 -->
+	<insert id="insertChkptInspectItemHist">
+	/* ChkLst02Mapper.insertChkptInspectItemHist */
+	INSERT INTO TB_CHKPT_INSPECT_ITEM_HIST (
+		CMPNY_CD
+		, CHKLST_TYPE
+		, INSPECT_ITEM_CD
+		, CHG_TYPE
+		, INSPECT_ITEM_SUBJ
+		, STR_DATE
+		, SORT_IDX
+		, USE_YN
+		, INSERT_NO
+		, INSERT_DATE
+	)
+	SELECT
+		A.CMPNY_CD
+		, A.CHKLST_TYPE
+		, A.INSPECT_ITEM_CD
+		, #{chgType}
+		, A.INSPECT_ITEM_SUBJ
+		, A.STR_DATE
+		, A.SORT_IDX
+		, A.USE_YN
+		, #{cmd.gvUserCd}
+		, NOW()
+	FROM TB_CHKPT_INSPECT_ITEM A
+	WHERE 1=1
+	  AND A.CMPNY_CD = #{cmd.gvCmpnyCd}
+	  AND A.CHKLST_TYPE = #{cmd.chkLstType}
+	  AND A.INSPECT_ITEM_CD = #{cmd.inspectItemCd}
 	</insert>
 </mapper>

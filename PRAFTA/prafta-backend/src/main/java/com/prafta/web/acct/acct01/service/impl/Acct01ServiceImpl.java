@@ -17,24 +17,26 @@ import com.prafta.web.acct.acct01.application.param.AcctDeleteParam;
 import com.prafta.web.acct.acct01.application.param.AcctInfoParam;
 import com.prafta.web.acct.acct01.application.param.AcctListParam;
 import com.prafta.web.acct.acct01.application.param.AcctUpdateParam;
+import com.prafta.web.acct.acct01.application.param.AttdTbmPrintParam;
 import com.prafta.web.acct.acct01.application.param.ChkptOptionParam;
 import com.prafta.web.acct.acct01.application.param.LegalStepListParam;
 import com.prafta.web.acct.acct01.application.param.LegalStepSaveParam;
 import com.prafta.web.acct.acct01.application.param.LinkConfirmParam;
 import com.prafta.web.acct.acct01.application.param.LinkQueryParam;
 import com.prafta.web.acct.acct01.application.param.LinkSnapshotParam;
+import com.prafta.web.acct.acct01.application.param.RiskAssessmentPrintParam;
 import com.prafta.web.acct.acct01.application.param.RiskCategoryOptionParam;
 import com.prafta.web.acct.acct01.application.param.VictimSearchParam;
 import com.prafta.web.acct.acct01.dto.request.LinkConfirmRequest;
 import com.prafta.web.acct.acct01.dto.response.AcctCreateResponse;
 import com.prafta.web.acct.acct01.dto.response.AcctInfoResponse;
 import com.prafta.web.acct.acct01.dto.response.AcctListResponse;
+import com.prafta.web.acct.acct01.dto.response.AttdTbmPrintResponse;
 import com.prafta.web.acct.acct01.dto.response.AttendanceLinkResponse;
 import com.prafta.web.acct.acct01.dto.response.ChkptOptionResponse;
 import com.prafta.web.acct.acct01.dto.response.LegalStepHistoryResponse;
 import com.prafta.web.acct.acct01.dto.response.LegalStepListResponse;
 import com.prafta.web.acct.acct01.dto.response.LinkSnapshotResponse;
-import com.prafta.web.acct.acct01.dto.response.NearMissLinkResponse;
 import com.prafta.web.acct.acct01.dto.response.PatrolLinkResponse;
 import com.prafta.web.acct.acct01.dto.response.RiskCategoryOptionResponse;
 import com.prafta.web.acct.acct01.dto.response.RiskLinkResponse;
@@ -42,6 +44,7 @@ import com.prafta.web.acct.acct01.dto.response.TbmLinkResponse;
 import com.prafta.web.acct.acct01.dto.response.VictimSearchResponse;
 import com.prafta.web.acct.acct01.mapper.Acct01Mapper;
 import com.prafta.web.acct.acct01.result.AcctResult;
+import com.prafta.web.acct.acct01.result.RiskAssessmentDetailResult;
 import com.prafta.web.acct.acct01.result.ScheduleLinkResult;
 import com.prafta.web.acct.acct01.service.Acct01Service;
 
@@ -58,8 +61,6 @@ public class Acct01ServiceImpl implements Acct01Service {
         "사고일로부터 1주일 이내 점검 결과를 집계합니다. (양호/불량 기준)";
     private static final String NOTICE_RISK =
         "사고일로부터 최근 3개월 이내 유효 위험성평가입니다. (사고 날짜·시각 기준 조회)";
-    private static final String NOTICE_NEAR_MISS =
-        "사고일로부터 최근 3개월 이내 보고된 아차사고/사건입니다.";
     private static final String NOTICE_TBM =
         "사고 발생 당일 진행된 TBM만 표시합니다. (당일 기준 고정)";
     private static final String NOTICE_ATTD =
@@ -74,7 +75,6 @@ public class Acct01ServiceImpl implements Acct01Service {
     private static final String DOMAIN_CHKPT = "CHKPT";
     private static final String DOMAIN_RISK = "RISK";
     private static final String DOMAIN_TBM = "TBM";
-    private static final String DOMAIN_NEAR_MISS = "NEAR_MISS";
 
     private static final String USER_TYPE_DAILY = "DAILY";
 
@@ -261,14 +261,64 @@ public class Acct01ServiceImpl implements Acct01Service {
             .build();
     }
 
-    @Override
-    public NearMissLinkResponse selectLinkNearMiss(LinkQueryParam param) {
-        LinkQueryContext ctx = resolveLinkContext(param);
+    // ── T8 안전관리 현황 일괄 출력 ──────────────────────────────
 
-        return NearMissLinkResponse.builder()
-            .nearMissList(acct01Mapper.selectNearMissList(ctx))
-            .notice(NOTICE_NEAR_MISS)
+    @Override
+    public AttdTbmPrintResponse selectAttdTbmPrint(AttdTbmPrintParam param) {
+        log.info("근태+TBM 합본 출력 조회 진입 - cmpnyCd={}, siteCd={}, acctId={}",
+            param.gvCmpnyCd(), param.siteCd(), param.acctId());
+
+        // 기존 IDOR 헬퍼 재사용: 사고 헤더(사업장 스코프)로 victim/occurYmd 서버 도출 + 권한 이중 검증.
+        LinkQueryContext ctx = resolveLinkContext(toLinkQueryParam(
+            param.siteCd(), param.acctId(), param.gvCmpnyCd(), param.gvUserCd(), param.gvAuthCd()));
+
+        // 헤더(표시용 마스킹 이름/등급명/사업장명)는 신뢰 원천(ctx) 스코프로 재조회.
+        AcctResult header = acct01Mapper.selectAcctHeader(ctx.gvCmpnyCd(), ctx.siteCd(), param.acctId());
+        if (header == null) {
+            throw new ApiException(AcctErrorCode.ACCT_404_001);
+        }
+
+        // 일용직은 스케줄 없음(selectLinkAttendance 분기/상수 미러링). 실근태·TBM 은 DAILY 도 정상 조회.
+        boolean isDaily = USER_TYPE_DAILY.equals(ctx.victimUserTypeCd());
+        ScheduleLinkResult schedule = isDaily ? null : acct01Mapper.selectAttendanceSchedule(ctx);
+
+        return AttdTbmPrintResponse.builder()
+            .acctHeader(header)
+            .hasSchedule(schedule != null)
+            .scheduleNote(isDaily ? SCHEDULE_NOTE_DAILY : null)
+            .schedule(schedule)
+            .records(acct01Mapper.selectAttendanceRecords(ctx))
+            .tbmList(acct01Mapper.selectTbmList(ctx))
             .build();
+    }
+
+    @Override
+    public RiskAssessmentDetailResult selectRiskAssessmentForPrint(RiskAssessmentPrintParam param) {
+        log.info("위험성평가 출력 보강 조회 진입 - cmpnyCd={}, siteCd={}, acctId={}, assessmentCd={}",
+            param.gvCmpnyCd(), param.siteCd(), param.acctId(), param.assessmentCd());
+
+        if (!StringUtils.hasText(param.assessmentCd())) {
+            throw new ApiException(AcctErrorCode.ACCT_400_001);
+        }
+
+        // 1) 사고 헤더(사업장 스코프) 도출 + 권한 이중 검증(IDOR).
+        LinkQueryContext ctx = resolveLinkContext(toLinkQueryParam(
+            param.siteCd(), param.acctId(), param.gvCmpnyCd(), param.gvUserCd(), param.gvAuthCd()));
+
+        // 2) 요청 assessmentCd 가 해당 사고의 RISK 연계에 실제 등록된 값인지 정확 매칭 검증(부분일치 우회 차단).
+        if (acct01Mapper.selectAcctLinkAssessmentCnt(
+                ctx.gvCmpnyCd(), ctx.siteCd(), param.acctId(), param.assessmentCd()) == 0) {
+            log.warn("위험성평가 연계 검증 실패 - acctId={}, assessmentCd={}", param.acctId(), param.assessmentCd());
+            throw new ApiException(AcctErrorCode.ACCT_404_001);
+        }
+
+        // 3) 사고 헤더 사업장 스코프로 평가 상세 라이브 조회.
+        RiskAssessmentDetailResult detail = acct01Mapper.selectRiskAssessmentDetailForPrint(
+            ctx.gvCmpnyCd(), ctx.siteCd(), param.assessmentCd());
+        if (detail == null) {
+            throw new ApiException(AcctErrorCode.ACCT_404_001);
+        }
+        return detail;
     }
 
     @Override
@@ -418,6 +468,16 @@ public class Acct01ServiceImpl implements Acct01Service {
      * <p>siteCd 는 body 가 아니라 사고 헤더에서 가져온다. 권한 검증은 헤더의 siteCd 로 수행해
      * 사고 ID 조작으로 타 사업장 근태/순회/위험/TBM/아차 데이터를 읽지 못하게 한다(IDOR).
      */
+    /**
+     * 출력(T8) 전용 파라미터를 연계 조회 IDOR 헬퍼(resolveLinkContext) 입력으로 변환한다.
+     * 선택 필터(chklstType/chkptCd/process/risk/hazard)는 출력 집계에선 불필요하므로 null.
+     */
+    private LinkQueryParam toLinkQueryParam(
+            String siteCd, String acctId, String gvCmpnyCd, String gvUserCd, String gvAuthCd) {
+        return new LinkQueryParam(
+            siteCd, acctId, null, null, null, null, null, gvCmpnyCd, gvUserCd, gvAuthCd);
+    }
+
     private LinkQueryContext resolveLinkContext(LinkQueryParam param) {
         if (!StringUtils.hasText(param.acctId())) {
             throw new ApiException(AcctErrorCode.ACCT_400_001);

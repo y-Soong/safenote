@@ -9,6 +9,10 @@ public record OptionParam(
 	String siteCd
 	, String searchKeyword
 	, String processCd
+	, String riskTypeCd
+	, String hazardDesc
+	, String initAssessorNm
+	, String initAssessDate
 	, String gvCmpnyCd
 	, String gvSiteCd
 	, String gvAuthCd
@@ -24,6 +28,10 @@ public record OptionParam(
 			request.getSiteCd()
 			, request.getSearchKeyword()
 			, request.getProcessCd()
+			, request.getRiskTypeCd()
+			, request.getHazardDesc()
+			, request.getInitAssessorNm()
+			, request.getInitAssessDate()
 			, tokenInfo.gv_cmpnyCd()
 			, tokenInfo.gv_siteCd()
 			, tokenInfo.gv_authCd()

@@ -46,7 +46,14 @@ public class WorktimeGateServiceImpl implements WorktimeGateService {
         String todayYmd = worktimeGateMapper.selectTodayYmd();
 
         int openCount = worktimeGateMapper.countOpenAttdToday(cmpnyCd, siteCd, userCd, todayYmd);
-        return openCount > 0;
+        if (openCount > 0) {
+            return true;
+        }
+
+        // prafta-app-031 1.1: 전일 미퇴근(open slot)도 근무중 인정(com-003-A 선례).
+        // 오늘 열린 근태가 없더라도 전일 미퇴근(열린 슬롯)이 있으면 근무중으로 본다.
+        int prevOpenCount = worktimeGateMapper.countOpenAttdPrevDay(cmpnyCd, siteCd, userCd, todayYmd);
+        return prevOpenCount > 0;
     }
 
     @Override

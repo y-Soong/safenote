@@ -1,0 +1,62 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.prafta.common.cmm.leave.mapper.LeaveConversionPolicyMapper">
+
+    <!-- LC-02(F4): 신청 대상일(WORK_YMD) 기준 유효 환산시간(분).
+         APPLY_FROM_DATE <= workYmd 최신 1행. 행 미존재 시 null → 서비스 레이어 480 폴백. -->
+    <select id="selectConversionMinutes" resultType="java.lang.Integer">
+    /* LeaveConversionPolicyMapper.selectConversionMinutes */
+    SELECT P.DAILY_CONV_MINUTES
+      FROM TB_LEAVE_CONVERSION_POLICY P
+     WHERE P.CMPNY_CD        = #{cmpnyCd}
+       AND P.APPLY_FROM_DATE &lt;= #{workYmd}
+     ORDER BY P.APPLY_FROM_DATE DESC
+     LIMIT 1
+    </select>
+
+    <!-- 결과 record LeaveConversionPolicyVO(applyFromDate, dailyConvMinutes, insertNo, insertDate,
+         updateNo, updateDate) 순서 일치(위치매핑) -->
+    <select id="selectConversionHistory" resultType="com.prafta.common.cmm.leave.vo.LeaveConversionPolicyVO">
+    /* LeaveConversionPolicyMapper.selectConversionHistory */
+    SELECT
+          P.APPLY_FROM_DATE                                 AS applyFromDate
+        , P.DAILY_CONV_MINUTES                              AS dailyConvMinutes
+        , P.INSERT_NO                                       AS insertNo
+        , DATE_FORMAT(P.INSERT_DATE, '%Y-%m-%dT%H:%i:%s')   AS insertDate
+        , P.UPDATE_NO                                       AS updateNo
+        , DATE_FORMAT(P.UPDATE_DATE, '%Y-%m-%dT%H:%i:%s')   AS updateDate
+      FROM TB_LEAVE_CONVERSION_POLICY P
+     WHERE P.CMPNY_CD = #{cmpnyCd}
+     ORDER BY P.APPLY_FROM_DATE DESC
+    </select>
+
+    <!-- 같은 적용일 재저장 = 값 UPDATE (plan LC-02-②). -->
+    <update id="updateConversionPolicy">
+    /* LeaveConversionPolicyMapper.updateConversionPolicy */
+    UPDATE TB_LEAVE_CONVERSION_POLICY
+       SET DAILY_CONV_MINUTES = #{dailyConvMinutes}
+         , UPDATE_NO          = #{updateNo}
+         , UPDATE_DATE        = NOW()
+     WHERE CMPNY_CD        = #{cmpnyCd}
+       AND APPLY_FROM_DATE = #{applyFromDate}
+    </update>
+
+    <insert id="insertConversionPolicy">
+    /* LeaveConversionPolicyMapper.insertConversionPolicy */
+    INSERT INTO TB_LEAVE_CONVERSION_POLICY (
+          CMPNY_CD
+        , APPLY_FROM_DATE
+        , DAILY_CONV_MINUTES
+        , INSERT_NO
+        , INSERT_DATE
+    )
+    VALUES (
+          #{cmpnyCd}
+        , #{applyFromDate}
+        , #{dailyConvMinutes}
+        , #{insertNo}
+        , NOW()
+    )
+    </insert>
+
+</mapper>

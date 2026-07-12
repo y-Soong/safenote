@@ -138,6 +138,13 @@ const routes = [
     name: 'AdminTbmSessionDetail',
     component: () => import('@/views/admin/tbm/AdminTbmSessionDetailView.vue'),
   },
+  // 세션 수정(교육내용 위주): 세션 상세 "수정" → /AdminTbmSessionEdit?sessionCd=...
+  //   보호 라우트(publicPaths 미포함, beforeEach 토큰 게이트). DRAFT/OPENED 만 서버가 수정 허용.
+  {
+    path: '/AdminTbmSessionEdit',
+    name: 'AdminTbmSessionEdit',
+    component: () => import('@/views/admin/tbm/AdminTbmSessionEditView.vue'),
+  },
   // prafta-051 R-A: TBM 교육준비 화면(OPENED) — 세션 상세 "교육준비 시작"(/prepare 성공)/"교육준비 화면으로" 진입.
   //   보호 라우트(publicPaths 미포함, beforeEach 토큰 게이트). 진입: /AdminTbmPrep?sessionCd=...
   {
@@ -315,7 +322,6 @@ const routes = [
     component: () => import('@/views/mypage/LeaveApprovalDetailView.vue'),
   },
 
-
   // 퍼블릭
   {
     path: '/ActInfoSrch',
@@ -390,6 +396,24 @@ const routes = [
     path: '/DefaultSchGate',
     name: 'DefaultSchGate',
     component: () => import('@/views/login/DefaultSchGateView.vue'),
+  },
+
+  // 필수약관 미동의 게이트 — 로그인 직후(정식 토큰 보유) 미동의 필수약관이 있으면 진입.
+  //   보호 라우트(publicPaths 미포함, beforeEach 토큰 게이트). 정식 토큰으로 동의 EP 호출.
+  //   동의 거부/뒤로가기 → 로그아웃 후 로그인 복귀(화면 자체 가드).
+  {
+    path: '/TermsAgree',
+    name: 'TermsAgree',
+    component: () => import('@/views/login/TermsAgreeView.vue'),
+  },
+
+  // prafta-app-033: 강제 비밀번호 변경 게이트 — 로그인 응답 nextStep='PASSWORD_CHANGE'(정식 토큰 보유) 시 진입.
+  //   보호 라우트(publicPaths 미포함, beforeEach 토큰 게이트). 정식 토큰으로 비번변경 EP(/appApi/mypage/password) 호출.
+  //   변경 거부/뒤로가기 → 로그아웃 후 로그인 복귀(화면 자체 가드). 성공 → routeAfterLogin(약관 게이트 → 메인).
+  {
+    path: '/ForcedPasswordChange',
+    name: 'ForcedPasswordChange',
+    component: () => import('@/views/login/ForcedPasswordChangeView.vue'),
   },
 
   {

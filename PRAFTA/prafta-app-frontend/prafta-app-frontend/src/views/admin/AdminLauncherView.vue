@@ -85,17 +85,8 @@
       @touchend="onPullEnd"
       @touchcancel="onPullEnd"
     >
-      <!-- 당겨서 새로고침 인디케이터 — 스크롤 최상단에서 아래로 당기면 노출(MainView 패턴 이식) -->
-      <div
-        class="pull-refresh"
-        :class="{ 'pull-refresh--animating': !isDragging }"
-        :style="{ height: pullIndicatorHeight + 'px' }"
-        aria-live="polite"
-      >
-        <span v-if="isRefreshing" class="pull-refresh__text">새로고침 중...</span>
-        <span v-else-if="pullReady" class="pull-refresh__text">놓으면 새로고침</span>
-        <span v-else-if="pullDistance > 0" class="pull-refresh__text">당겨서 새로고침</span>
-      </div>
+      <!-- 당겨서 새로고침 인디케이터 — 스크롤 최상단에서 아래로 당기면 노출(공통 컴포저블) -->
+      <PullRefreshIndicator v-bind="indicatorProps" />
 
       <!-- 로딩 -->
       <div v-if="isLoading" class="admin-loading" aria-live="polite">불러오는 중...</div>
@@ -161,10 +152,12 @@
 </template>
 
 <script setup>
-import { ref, computed, getCurrentInstance, onMounted } from 'vue'
+import { ref, getCurrentInstance, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 
 import api from '@/api/axios'
+import { usePullToRefresh } from '@/composables/usePullToRefresh'
+import PullRefreshIndicator from '@/components/common/PullRefreshIndicator.vue'
 
 import AdminHeader from './components/AdminHeader.vue'
 import AdminTabBar from './components/AdminTabBar.vue'
@@ -220,89 +213,17 @@ const pendingConfirmCount = ref(0)
 //    바뀌지 않으므로 expose 된 refresh() 를 직접 호출한다.)
 const dashboardRef = ref(null)
 
-// ── 당겨서 새로고침 (MainView 패턴 이식) ───────────────────────────────────────
-//   1) touchstart 시점에 본문 스크롤이 최상단이면 추적 시작
-//   2) touchmove 에서 아래로 당긴 거리(저항감 0.5배)를 인디케이터 높이로 환산
-//   3) touchend 시 임계값 이상이면 새로고침 실행(access-context + 대시보드 재조회)
+// ── 당겨서 새로고침 (공통 컴포저블 usePullToRefresh) ───────────────────────────
+//   스크롤 컨테이너(.admin-body) 최상단에서 아래로 당기면 access-context + 대시보드를 재조회.
+//   access-context 는 진입 로딩(isLoading)을 켜지 않고 인디케이터만 쓰도록 silent 호출.
+//   대시보드는 currentSiteCd 가 그대로라 watch 가 발화하지 않으므로 expose refresh 를 직접 호출.
 const bodyEl = ref(null)
-const pullDistance = ref(0) // 현재 당김 거리(px, 인디케이터 높이)
-const isRefreshing = ref(false) // 새로고침 진행 중
-const isDragging = ref(false) // 손가락으로 당기는 중(애니메이션 토글용)
-const PULL_THRESHOLD = 70 // 이 거리 이상 당기고 놓으면 새로고침
-const MAX_PULL = 120 // 인디케이터 최대 높이
-
-const pullReady = computed(() => pullDistance.value >= PULL_THRESHOLD)
-const pullIndicatorHeight = computed(() => (isRefreshing.value ? 48 : pullDistance.value))
-
-let touchStartY = 0
-let tracking = false // 이 제스처를 추적 중인가(스크롤 컨테이너 최상단에서 시작했을 때만)
-let pullArmed = false // 당겨서 새로고침 모드로 확정됐는가(확정 후에만 preventDefault)
-// 방향 확정 데드존(px). 손가락을 댈 때 흔히 생기는 미세한 초기 떨림으로
-// preventDefault 가 걸려 네이티브 스크롤 제스처 전체가 취소되는 버그를 막는다.
-const PULL_ENGAGE_SLOP = 6
-
-// 본문 스크롤(.admin-body)이 최상단에 닿았는지 판정. 문서 스크롤 오판을 막기 위해
-//   반드시 스크롤 컨테이너 ref 의 scrollTop 으로 본다(MainView 동일).
-const isScrolledToTop = () => {
-  const el = bodyEl.value
-  if (!el) return false
-  return el.scrollTop <= 0
-}
-
-const onPullStart = (e) => {
-  if (isRefreshing.value) return
-  // 매 제스처 상태 초기화. 추적은 스크롤 컨테이너 최상단에서만 시작.
-  pullArmed = false
-  tracking = isScrolledToTop()
-  if (tracking) touchStartY = e.touches[0].clientY
-}
-
-const onPullMove = (e) => {
-  if (!tracking || isRefreshing.value) return
-  const delta = e.touches[0].clientY - touchStartY // 아래로 당기면 양수
-
-  // 아직 당김 모드로 확정되지 않았다면: 데드존을 넘는 '첫 의미있는 이동'에서 방향을 확정한다.
-  //   - 최상단에서 아래로 당긴 경우에만 새로고침 모드(pullArmed)로 진입.
-  //   - 그 외(위로 스크롤 등)는 추적을 끊어 이후 preventDefault 가 절대 호출되지 않게 한다
-  //     → 네이티브 스크롤 제스처가 보존된다(상단 붙음/스크롤 먹힘 버그 방지).
-  if (!pullArmed) {
-    if (Math.abs(delta) < PULL_ENGAGE_SLOP) return // 판단 보류(네이티브 스크롤 그대로 둠)
-    if (delta > 0 && isScrolledToTop()) {
-      pullArmed = true
-    } else {
-      tracking = false
-      return
-    }
-  }
-
-  isDragging.value = true
-  pullDistance.value = Math.min(MAX_PULL, delta * 0.5) // 저항감
-  // iOS 고무줄/추가 스크롤 억제(당김 모드로 확정된 경우에만)
-  if (e.cancelable) e.preventDefault()
-}
-
-const onPullEnd = async () => {
-  isDragging.value = false
-  const wasArmed = pullArmed
-  pullArmed = false
-  if (!tracking) return
-  tracking = false
-  const shouldRefresh = wasArmed && pullDistance.value >= PULL_THRESHOLD
-  pullDistance.value = 0
-  if (!shouldRefresh || isRefreshing.value) return
-  isRefreshing.value = true
-  try {
-    // access-context 재조회(현장/모듈맵 갱신) + 대시보드 재조회를 함께 수행.
-    //   access-context 는 진입 로딩(isLoading)을 켜지 않고 인디케이터만 쓰도록 silent 호출.
-    //   대시보드는 currentSiteCd 가 그대로라 watch 가 발화하지 않으므로 expose refresh 를 직접 호출.
-    await Promise.all([
-      loadAccessContext(undefined, { silent: true }),
-      dashboardRef.value?.refresh?.(),
-    ])
-  } finally {
-    isRefreshing.value = false
-  }
-}
+const { onPullStart, onPullMove, onPullEnd, indicatorProps } = usePullToRefresh(bodyEl, async () => {
+  await Promise.all([
+    loadAccessContext(undefined, { silent: true }),
+    dashboardRef.value?.refresh?.(),
+  ])
+})
 
 // ── 진입판정 조회 ─────────────────────────────────────────────────────────────
 // access-context 조회. siteCd 지정 시 현장전환 재조회(D5 — 서버가 USE_YN='Y' 검증).

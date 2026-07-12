@@ -52,7 +52,7 @@
         <p class="ps-group-label">근로자 알림</p>
         <nav class="ps-menu" :class="{ 'ps-menu--disabled': !masterOn }">
           <div
-            v-for="item in workerToggles"
+            v-for="item in visibleWorkerToggles"
             :key="item.key"
             class="ps-row"
             :class="{ 'ps-row--disabled': !masterOn, 'ps-row--readonly': item.savable === false }"
@@ -128,10 +128,12 @@
 </template>
 
 <script setup>
-import { ref, onMounted, getCurrentInstance } from 'vue'
+import { ref, computed, onMounted, getCurrentInstance } from 'vue'
 import { useRouter } from 'vue-router'
 
 import api from '@/api/axios'
+// 일용직(DAILY) 게이트 — MyPageView 와 동일한 세션 기반 판정.
+import { isDailyWorker as isDailyWorkerFn } from '@/utils/employment'
 
 const router = useRouter()
 const { proxy } = getCurrentInstance() || { proxy: null }
@@ -166,6 +168,16 @@ const workerToggles = ref([
   { key: 'R2_LEAVE_CHANGE_CONFIRMED', label: '연차 변경 확정 결과', desc: '항상 받아요', on: true, savable: false },
   { key: 'R3_LEAVE_CHANGE_REJECTED', label: '연차 변경 반려 결과', desc: '항상 받아요', on: true, savable: false },
 ])
+
+// 일용직(DAILY) 여부 — 라운드트립 없이 세션값으로 판정(MyPageView 와 동일 게이트).
+const isDailyWorker = computed(() => isDailyWorkerFn())
+
+// 화면에 노출할 근로자 알림 목록.
+//   일용직은 TBM 교육 알림(W3_TBM)만 의미가 있어 그 한 건만 노출한다(나머지 W/R 항목 미노출).
+//   조회/저장 로직은 workerToggles 전체를 그대로 사용하고, 여기서는 "표시"만 거른다.
+const visibleWorkerToggles = computed(() =>
+  isDailyWorker.value ? workerToggles.value.filter((t) => t.key === 'W3_TBM') : workerToggles.value,
+)
 
 // 관리자 토글 정의 (isAdmin 일 때만 노출 + 저장).
 const adminToggles = ref([

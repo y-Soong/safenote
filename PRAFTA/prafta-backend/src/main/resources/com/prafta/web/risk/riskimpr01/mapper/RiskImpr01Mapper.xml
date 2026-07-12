@@ -1,0 +1,185 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.prafta.web.risk.riskimpr01.mapper.RiskImpr01Mapper">
+
+    <!-- 사업장 접근 권한 확인 (tb_user_site_auth 매핑, USE_YN='Y'). 1 이상이면 접근 가능 -->
+    <select id="countUserSiteAuth" resultType="int">
+    /* RiskImpr01Mapper.countUserSiteAuth */
+    SELECT
+        COUNT(1)
+    FROM TB_USER_SITE_AUTH A
+    WHERE A.CMPNY_CD = #{cmpnyCd}
+      AND A.USER_CD = #{userCd}
+      AND A.SITE_CD = #{siteCd}
+      AND A.USE_YN = 'Y'
+    </select>
+
+    <!-- 대상 위험성평가 건의 진행상태 조회 (사업장 스코프, 없으면 null) -->
+    <select id="selectAssessmentStatus" resultType="java.lang.String">
+    /* RiskImpr01Mapper.selectAssessmentStatus */
+    SELECT
+        A.ASSESSMENT_STATUS
+    FROM TB_RISK_ASSESSMENT A
+    WHERE A.CMPNY_CD = #{cmpnyCd}
+      AND A.SITE_CD = #{siteCd}
+      AND A.PROCESS_CD = #{processCd}
+      AND A.ASSESSMENT_CD = #{assessmentCd}
+    </select>
+
+    <!-- 개선항목 목록 (평가키 스코프, USE_YN='Y', 최신 SEQ 상단) -->
+    <select id="selectImprovementItems"
+            parameterType="com.prafta.web.risk.riskimpr01.application.query.ImprovementItemListQuery"
+            resultType="com.prafta.web.risk.riskimpr01.result.ImprovementItemResult">
+    /* RiskImpr01Mapper.selectImprovementItems */
+    SELECT
+        A.IMPROVEMENT_SEQ                                                       AS improvementSeq
+      , A.IMPROVE_DATE                                                          AS improveDate
+      , A.IMPROVE_DESC                                                          AS improveDesc
+      , A.FILE_MGMT_CD                                                          AS fileMgmtCd
+      , FNC_CMM_INFO_SRCH(A.CMPNY_CD, 'FILE_NAME', A.FILE_MGMT_CD, NULL)        AS fileName
+      , FNC_CMM_INFO_SRCH(A.CMPNY_CD, 'FILE_PATH', A.FILE_MGMT_CD, NULL)        AS filePath
+      , A.LIKELIHOOD_SCORE                                                      AS likelihoodScore
+      , A.SEVERITY_SCORE                                                        AS severityScore
+      , A.RISK_LV                                                               AS riskLv
+    FROM TB_RISK_IMPROVEMENT_ITEM A
+    WHERE A.CMPNY_CD = #{gvCmpnyCd}
+      AND A.SITE_CD = #{siteCd}
+      AND A.PROCESS_CD = #{processCd}
+      AND A.ASSESSMENT_CD = #{assessmentCd}
+      AND A.USE_YN = 'Y'
+    ORDER BY A.IMPROVEMENT_SEQ DESC
+    </select>
+
+    <!-- 신규 채번 (평가키 스코프, USE_YN 무관: 삭제건 SEQ 재사용 방지) -->
+    <select id="selectNextImprovementSeq" resultType="int">
+    /* RiskImpr01Mapper.selectNextImprovementSeq */
+    SELECT
+        IFNULL(MAX(A.IMPROVEMENT_SEQ), 0) + 1
+    FROM TB_RISK_IMPROVEMENT_ITEM A
+    WHERE A.CMPNY_CD = #{cmpnyCd}
+      AND A.SITE_CD = #{siteCd}
+      AND A.PROCESS_CD = #{processCd}
+      AND A.ASSESSMENT_CD = #{assessmentCd}
+    </select>
+
+    <!-- 활성 개선항목 건수 (USE_YN='Y'). 개선완료 가드용 -->
+    <select id="countActiveImprovementItems" resultType="int">
+    /* RiskImpr01Mapper.countActiveImprovementItems */
+    SELECT
+        COUNT(1)
+    FROM TB_RISK_IMPROVEMENT_ITEM A
+    WHERE A.CMPNY_CD = #{cmpnyCd}
+      AND A.SITE_CD = #{siteCd}
+      AND A.PROCESS_CD = #{processCd}
+      AND A.ASSESSMENT_CD = #{assessmentCd}
+      AND A.USE_YN = 'Y'
+    </select>
+
+    <!-- 개선항목 INSERT (USE_YN='Y') -->
+    <insert id="insertImprovementItem"
+            parameterType="com.prafta.web.risk.riskimpr01.application.command.ImprovementItemCommand">
+    /* RiskImpr01Mapper.insertImprovementItem */
+    INSERT INTO TB_RISK_IMPROVEMENT_ITEM
+    (
+        CMPNY_CD
+      , SITE_CD
+      , PROCESS_CD
+      , ASSESSMENT_CD
+      , IMPROVEMENT_SEQ
+      , IMPROVE_DATE
+      , IMPROVE_DESC
+      , FILE_MGMT_CD
+      , LIKELIHOOD_SCORE
+      , SEVERITY_SCORE
+      , RISK_LV
+      , USE_YN
+      , INSERT_NO
+      , INSERT_DATE
+    )
+    VALUES
+    (
+        #{gvCmpnyCd}
+      , #{siteCd}
+      , #{processCd}
+      , #{assessmentCd}
+      , #{improvementSeq}
+      , #{improveDate}
+      , #{improveDesc}
+      , #{fileMgmtCd}
+      , #{likelihoodScore}
+      , #{severityScore}
+      , #{riskLv}
+      , 'Y'
+      , #{gvUserCd}
+      , NOW()
+    )
+    </insert>
+
+    <!-- 개선항목 UPDATE (평가키 + SEQ + USE_YN='Y'). fileMgmtCd 가 null 이면 기존 사진 보존 -->
+    <update id="updateImprovementItem"
+            parameterType="com.prafta.web.risk.riskimpr01.application.command.ImprovementItemCommand">
+    /* RiskImpr01Mapper.updateImprovementItem */
+    UPDATE TB_RISK_IMPROVEMENT_ITEM
+    SET
+        IMPROVE_DATE     = #{improveDate}
+      , IMPROVE_DESC     = #{improveDesc}
+      <if test="fileMgmtCd != null and fileMgmtCd != ''">
+      , FILE_MGMT_CD     = #{fileMgmtCd}
+      </if>
+      , LIKELIHOOD_SCORE = #{likelihoodScore}
+      , SEVERITY_SCORE   = #{severityScore}
+      , RISK_LV          = #{riskLv}
+      , UPDATE_NO        = #{gvUserCd}
+      , UPDATE_DATE      = NOW()
+    WHERE CMPNY_CD = #{gvCmpnyCd}
+      AND SITE_CD = #{siteCd}
+      AND PROCESS_CD = #{processCd}
+      AND ASSESSMENT_CD = #{assessmentCd}
+      AND IMPROVEMENT_SEQ = #{improvementSeq}
+      AND USE_YN = 'Y'
+    </update>
+
+    <!-- 개선항목 soft delete (USE_YN='N', 평가키 + SEQ + USE_YN='Y') -->
+    <update id="softDeleteImprovementItem">
+    /* RiskImpr01Mapper.softDeleteImprovementItem */
+    UPDATE TB_RISK_IMPROVEMENT_ITEM
+    SET
+        USE_YN      = 'N'
+      , UPDATE_NO   = #{userCd}
+      , UPDATE_DATE = NOW()
+    WHERE CMPNY_CD = #{cmpnyCd}
+      AND SITE_CD = #{siteCd}
+      AND PROCESS_CD = #{processCd}
+      AND ASSESSMENT_CD = #{assessmentCd}
+      AND IMPROVEMENT_SEQ = #{improvementSeq}
+      AND USE_YN = 'Y'
+    </update>
+
+    <!-- 개선완료: 진행상태 003 전이 + REVAL_* 동기화 (WHERE 005 한정) -->
+    <update id="updateAssessmentComplete"
+            parameterType="com.prafta.web.risk.riskimpr01.application.command.ImprovementCompleteCommand">
+    /* RiskImpr01Mapper.updateAssessmentComplete */
+    UPDATE TB_RISK_ASSESSMENT
+    SET
+        ASSESSMENT_STATUS      = '003'
+      , REVAL_LIKELIHOOD_SCORE = #{revalLikelihoodScore}
+      , REVAL_SEVERITY_SCORE   = #{revalSeverityScore}
+      , REVAL_RISK_LV          = #{revalRiskLv}
+      <if test="revalDesc != null and revalDesc != ''">
+      , REVAL_DESC             = #{revalDesc}
+      </if>
+      <if test="revalDate != null and revalDate != ''">
+      , REVAL_DATE             = #{revalDate}
+      </if>
+      , REVAL_ASSESSOR_ID      = #{gvUserCd}
+      , REVAL_ASSESS_DATE      = NOW()
+      , UPDATE_NO              = #{gvUserCd}
+      , UPDATE_DATE            = NOW()
+    WHERE CMPNY_CD = #{gvCmpnyCd}
+      AND SITE_CD = #{siteCd}
+      AND PROCESS_CD = #{processCd}
+      AND ASSESSMENT_CD = #{assessmentCd}
+      AND ASSESSMENT_STATUS = '005'
+    </update>
+
+</mapper>

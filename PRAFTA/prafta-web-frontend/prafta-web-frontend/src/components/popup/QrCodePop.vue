@@ -9,7 +9,7 @@
       >
         <!-- 🔹 1. Title 영역 (여기서만 드래그 가능) -->
         <div class="modal-header" @mousedown="startDrag">
-          <span>{{ JSON.parse(props.qrValue).qrTitle }}</span>
+          <span>{{ headerTitle }}</span>
           <button class="icon-button" @click="$emit('close')">✕</button>
         </div>
 
@@ -32,7 +32,7 @@
 
 <script setup>
 ///* eslint-disable */
-import { ref } from "vue";
+import { ref, computed } from "vue";
 import { defineProps } from "vue";
 import { useCenteredDraggable } from "@/composables/useCenteredDraggable";
 import QrcodeVue from "qrcode.vue";
@@ -41,6 +41,19 @@ const modalRef = ref(null);
 
 const props = defineProps({
   qrValue: { type: String, required: true },
+  // T1-03: 헤더/프린트 제목. URL 등 비-JSON qrValue 를 인코딩할 때 별도 prop 으로 제목을 받는다.
+  //        미지정 시 기존 동작(JSON qrValue 의 qrTitle 파싱)으로 하위 호환.
+  title: { type: String, default: "" },
+});
+
+// 제목 결정: title prop 우선. 없으면 qrValue 가 JSON 일 때만 qrTitle 파싱(파싱 실패해도 빈 문자열).
+const headerTitle = computed(() => {
+  if (props.title) return props.title;
+  try {
+    return JSON.parse(props.qrValue)?.qrTitle ?? "";
+  } catch {
+    return "";
+  }
 });
 
 // 공통 훅으로 화면 중앙(살짝 위쪽)에 배치 + 드래그 가능
@@ -50,8 +63,8 @@ const { position, startDrag } = useCenteredDraggable(modalRef, {
 });
 
 function fnPrintQr() {
-  const qrData = JSON.parse(props.qrValue); // ✅ JSON 변환
-  const qrTitle = qrData.qrTitle; // ✅ siteCd 추출
+  // T1-03: 제목은 headerTitle(컴퓨티드) 사용. URL 등 비-JSON qrValue 에서도 안전.
+  const qrTitle = headerTitle.value;
 
   const canvas = document.querySelector("canvas");
   const dataUrl = canvas.toDataURL("image/png");

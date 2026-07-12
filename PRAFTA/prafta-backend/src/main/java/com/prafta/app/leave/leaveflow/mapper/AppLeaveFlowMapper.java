@@ -131,7 +131,8 @@ public interface AppLeaveFlowMapper {
     /**
      * 연차개편 동시성: 사용자 신청('01') 직렬화용 advisory lock 획득(GET_LOCK).
      * '01'은 차감 GRANT 가 없어 FOR UPDATE 를 못 쓰므로 (USER_CD,LEAVE_CD) 키로 세션 단위 직렬화한다.
-     * 1=획득, 0=타임아웃, null=오류. 트랜잭션 무관(세션 단위) → 호출부 finally 에서 releaseAdvisoryLock.
+     * 1=획득, 0=타임아웃, null=오류. 트랜잭션 무관(세션 단위) → 호출부가 트랜잭션 완료
+     * (afterCompletion) 시점에 releaseAdvisoryLock (등록 불가 시 finally 폴백 — 보안리뷰 Medium).
      */
     Integer getAdvisoryLock(@Param("lockKey") String lockKey, @Param("timeoutSec") int timeoutSec);
 

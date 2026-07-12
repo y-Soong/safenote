@@ -11,6 +11,7 @@ public record MonthlyAttdListParam(
 	      , String nodeCd
 	      , String incSubNodeYn
 	      , String userNm
+	      , String employmentType
 	      , String gvCmpnyCd
 	      , String gvAuthCd
 	      , String gvUserCd
@@ -35,6 +36,7 @@ public record MonthlyAttdListParam(
 	              , request.getNodeCd()
 	              , request.getIncSubNodeYn() == null ? "N" : request.getIncSubNodeYn()
 	              , request.getUserNm()
+	              , request.getEmploymentType()
 	              , tokenInfo.gv_cmpnyCd()
 	              , tokenInfo.gv_authCd()
 	              , tokenInfo.gv_userCd()

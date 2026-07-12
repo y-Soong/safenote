@@ -3,7 +3,7 @@
   - 작업 ID: 001-P2-F5 (분해: 001-phase2-admin-approval-plan.md §2-2 ⑤ / §5 ②)
   - 트리거: 상세(AdminApprovalDetailView) ⑤ 결정에서 '반려' + 처리하기 → open=true.
   - 백엔드: POST /appApi/admin/approval/process { reqId, group, decision:'REJECT', comment }
-      반려 사유는 10자 이상 필수(공통 정책서 §9.5 / 재기획서 §5.6). 시트가 1차 검증.
+      반려 사유는 필수(공백 제외 1자 이상, 최소 글자수 제약 제거)(공통 정책서§9.5 / 재기획서 §5.6). 시트가 1차 검증.
   - 참조 패턴: views/admin/tbm/components/AdminTbmForceExitSheet.vue (바텀시트 + 토큰 자급).
   - planner 라운드 스코프: template + style 완성. script 는 props/emits + v-model + 단순 검증(길이)만.
   - developer 라운드 스코프: confirm 수신 → 부모가 process 호출.
@@ -43,13 +43,13 @@
 
         <div class="ap-sheet__body">
           <label class="ap-field">
-            <span class="ap-field__label">반려 사유 (10자 이상 필수)</span>
+            <span class="ap-field__label">반려 사유 (필수)</span>
             <textarea
               v-model="reason"
               class="ap-field__textarea"
               rows="4"
               maxlength="500"
-              placeholder="요청자에게 전달될 반려 사유를 10자 이상 입력해 주세요."
+              placeholder="요청자에게 전달될 반려 사유를 입력해 주세요."
             ></textarea>
           </label>
           <p class="ap-field__counter" :class="{ 'is-invalid': !isValid && reason.length > 0 }">
@@ -85,14 +85,14 @@ const props = defineProps({
   submitting: { type: Boolean, default: false },
 })
 
-// close: 닫기 / confirm: 반려 확정 → 사유 문자열(10자↑ 보장)
+// close: 닫기 / confirm: 반려 확정 → 사유 문자열(공백 제외 1자↑ 보장)
 const emit = defineEmits(['close', 'confirm'])
 
-// 반려 사유(필수 10자↑)
+// 반려 사유(필수, 공백 제외 1자↑)
 const reason = ref('')
 
-// 단순 길이 검증(UI 보조 — 서버도 재검증)
-const isValid = computed(() => reason.value.trim().length >= 10)
+// 사유 입력 여부만 검증(공백 제외 1자 이상이면 통과 — 최소 글자수 제약 제거). 서버도 재검증.
+const isValid = computed(() => reason.value.trim().length > 0)
 
 const onClose = () => emit('close')
 

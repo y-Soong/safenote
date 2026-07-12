@@ -91,6 +91,31 @@
           </option>
         </select>
       </div>
+
+      <div>
+        <label>평가요청자</label>
+        <input
+          id="initAssessorNm"
+          type="text"
+          v-model="initAssessorNm"
+          placeholder="평가요청자명"
+          @blur="focusKill"
+        />
+      </div>
+
+      <div>
+        <label>평가요청일</label>
+        <CalendarSrch v-model="initAssessDate" :range="false" />
+        <button
+          type="button"
+          class="date-clear-btn"
+          title="평가요청일 초기화"
+          :disabled="!initAssessDate"
+          @click="initAssessDate = ''"
+        >
+          ✕
+        </button>
+      </div>
     </div>
 
     <div class="viewBody">
@@ -181,11 +206,20 @@
                   @update:width="onResize"
                 />
                 <ThSortable
-                  label="유해요인등급"
+                  label="개선 전 위험도"
                   col-key="initRiskLv"
                   :sort-key="sortKey"
                   :sort-order="sortOrder"
                   :width="colWidths.initRiskLv"
+                  @sort="onSort"
+                  @update:width="onResize"
+                />
+                <ThSortable
+                  label="개선 후 위험도"
+                  col-key="revalRiskLv"
+                  :sort-key="sortKey"
+                  :sort-order="sortOrder"
+                  :width="colWidths.revalRiskLv"
                   @sort="onSort"
                   @update:width="onResize"
                 />
@@ -208,7 +242,7 @@
                 "
               >
                 <tr>
-                  <td colspan="9" class="edu-grid-empty">
+                  <td colspan="10" class="edu-grid-empty">
                     등록된 세부 항목이 없습니다.
                   </td>
                 </tr>
@@ -217,7 +251,7 @@
                 <tr
                   v-for="(risk, idx) in sortedData"
                   :key="risk.assessmentCd"
-                  @dblclick="fnOpenRiskAssessInfo(risk)"
+                  @dblclick="fnOpenRow(risk)"
                   style="cursor: pointer"
                 >
                   <td style="text-align: center">{{ idx + 1 }}</td>
@@ -240,7 +274,14 @@
                     {{ risk.assessmentStatusNm }}
                   </td>
                   <td>
-                    {{ risk.initRiskLv }}
+                    <span :class="getRiskLevelClass6(risk.initRiskLv)">
+                      {{ formatRiskLevelText(risk.initRiskLv) }}
+                    </span>
+                  </td>
+                  <td>
+                    <span :class="getRiskLevelClass6(risk.revalRiskLv)">
+                      {{ formatRiskLevelText(risk.revalRiskLv) }}
+                    </span>
                   </td>
                   <td>
                     {{ risk.initDesc }}
@@ -261,21 +302,41 @@ import {
   ref,
   defineProps,
   onMounted,
+  onActivated,
   getCurrentInstance,
   defineOptions,
   computed,
   watch,
+  defineAsyncComponent,
 } from "vue";
 import { useModal } from "@/utils/useModal";
+import { useDashboardNavStore } from "@/stores/dashboardNavStore";
 import { useFieldWatcher } from "@/utils/useFieldWatcher";
 import axios from "@/api/axios";
 import { resolveApiErrorMessage } from "@/utils/apiError";
 import ViewHeader from "@/components/common/ViewHeader.vue";
 import search_icon from "@/assets/img/search_icon.png";
 import SiteSearchPop from "@/components/popup/SiteSearchPop.vue";
+import CalendarSrch from "@/components/common/CalendarSrch.vue";
 import RiskAssessInfo from "./popup/RiskAssessInfo.vue";
 import ThSortable from "@/components/common/ThSortable.vue";
 import { useTableSort, useColumnResize } from "@/composables/useTableFeatures.js";
+import {
+  formatRiskLevelText,
+  getRiskLevelClass6,
+} from "@/utils/riskLevel";
+
+// T6-14C-hook-1: 지속평가대상 관리 팝업(P2 소유 컴포넌트, 고정 계약 파일경로).
+//   P2 산출물이 아직 없어도 빌드가 깨지지 않도록 import.meta.glob 로 지연 해석한다.
+//   (glob 은 매칭이 없으면 에러 없이 빈 맵을 반환 → 런타임에 안내 처리.)
+const continuousPopModules = import.meta.glob(
+  "./popup/RiskContinuousImproveManage.vue"
+);
+const RiskContinuousImproveManage = defineAsyncComponent(
+  () =>
+    continuousPopModules["./popup/RiskContinuousImproveManage.vue"]?.() ??
+    Promise.reject(new Error("RiskContinuousImproveManage 미존재"))
+);
 
 defineOptions({ name: "Risk_03" });
 const props = defineProps({
@@ -285,10 +346,14 @@ const props = defineProps({
 
 const localButtons = ref({ ...props.buttons });
 const { open: openPop } = useModal();
+const dashNav = useDashboardNavStore();
 
 
 const riskAssessmentResultList = ref([]);
 const { sortKey, sortOrder, sortedData, onSort } = useTableSort(riskAssessmentResultList);
+// 기본 정렬: 평가요청일 내림차순(최신 항목이 가장 위로)
+sortKey.value = "initAssessDate";
+sortOrder.value = "desc";
 const { colWidths, onResize } = useColumnResize({
   processNm: 110,
   riskTypeNm: 110,
@@ -296,7 +361,8 @@ const { colWidths, onResize } = useColumnResize({
   hazardNm: 120,
   initAssessorNm: 110,
   assessmentStatusNm: 110,
-  initRiskLv: 110,
+  initRiskLv: 130,
+  revalRiskLv: 130,
   initDesc: 160,
 });
 const systCodeArr = ref([]);
@@ -309,6 +375,9 @@ const assessmentStatus = ref();
 const proccessCd = ref();
 const riskTypeCd = ref("");
 const revalDate = ref();
+// 평가요청자(이름 부분일치) / 평가요청일(단일일 YYYY-MM-DD) 조회조건
+const initAssessorNm = ref("");
+const initAssessDate = ref("");
 
 const sr_chkptNm = ref("");
 const sr_useYn = ref("Y");
@@ -329,13 +398,32 @@ const fnInit = () => {
   siteNm.value = sessionStorage.getItem("gv_siteNm") ?? "";
 };
 
+// ── 대시보드 조회조건 주입 (PRAFTA-DASHBOARD-T1) ──────────────
+// 대시보드(Dashboard_01)에서 넘어온 조회조건이 있으면 반영한다 (없으면 no-op).
+// 본 화면은 월/기간 조회조건이 없어 사업장만 주입한다 (T1 확정). 반영 여부를 반환한다.
+const applyDashboardParams = () => {
+  const p = dashNav.consumeParams("Risk_03");
+  if (!p) return false;
+  siteCd.value = p.siteCd ?? "";
+  siteNo.value = p.siteNo ?? "";
+  siteNm.value = p.siteNm ?? "";
+  return true;
+};
+
 onMounted(async () => {
   fnInit();
+  // 대시보드 경유 진입 시 사업장 덮어쓰기 — 아래 fnSearch 가 반영하므로 이중 조회 없음
+  applyDashboardParams();
   fnButtonControll();
   await fnGetSystinfoList();
   await fnGetBaseinfoList();
   await fnGetriskTypeResultList();
   await fnSearch();
+});
+
+// keep-alive 로 이미 열린 탭에 재진입하는 경우 대응
+onActivated(() => {
+  if (applyDashboardParams()) fnSearch();
 });
 
 useFieldWatcher(
@@ -459,6 +547,8 @@ const fnSearch = async () => {
         assessmentStatus: assessmentStatus.value,
         processCd: proccessCd.value,
         riskTypeCd: riskTypeCd.value,
+        initAssessorNm: initAssessorNm.value,
+        initAssessDate: initAssessDate.value,
       },
     });
 
@@ -588,6 +678,59 @@ const fnSiteSearchPopOpen = (callPoint) => {
   }
 };
 
+// T6-14C-hook-1: 지속개선대상(005) 행은 위험성평가 정보팝업이 아니라
+//   "지속평가대상 관리" 팝업(P2 소유)을 연다. 그 외 상태는 기존 정보팝업 유지.
+const fnOpenRow = (risk) => {
+  if (risk.assessmentStatus === "005") {
+    openPop(RiskContinuousImproveManage, {
+      riskAssessmentData: buildRiskAssessmentData(risk),
+      onSaved: () => fnSearch(),
+      onCompleted: () => fnSearch(),
+    });
+    return;
+  }
+  fnOpenRiskAssessInfo(risk);
+};
+
+// 행 → RiskAssessInfo/지속관리 팝업 공통 데이터 매핑(중복 제거)
+const buildRiskAssessmentData = (risk) => ({
+  cmpnyCd: risk.cmpnyCd || "",
+  siteCd: risk.siteCd || "",
+  processCd: risk.processCd || "",
+  processNm: risk.processNm || "",
+  riskTypeCd: risk.riskTypeCd || "",
+  riskTypeNm: risk.riskTypeNm || "",
+  hazardCd: risk.hazardCd || "",
+  hazardNm: risk.hazardNm || "",
+  assessmentCd: risk.assessmentCd || "",
+  assessmentStatus: risk.assessmentStatus || "",
+  assessmentStatusNm: risk.assessmentStatusNm || "",
+  initLikelihoodScore: risk.initLikelihoodScore || "",
+  initSeverityScore: risk.initSeverityScore || "",
+  initRiskLv: risk.initRiskLv || "",
+  initDesc: risk.initDesc || "",
+  initAssessorId: risk.initAssessorId || "",
+  initAssessorNm: risk.initAssessorNm || "",
+  initAssessDate: risk.initAssessDate || "",
+  initFileMgmtCd: risk.initFileMgmtCd || "",
+  initFilePath: risk.initFilePath || "",
+  revalDate: risk.revalDate || "",
+  revalBeforeDesc: risk.revalBeforeDesc || "",
+  revalLikelihoodScore: proxy.$util.isEmpty(risk.revalLikelihoodScore)
+    ? risk.initLikelihoodScore
+    : risk.revalLikelihoodScore || "",
+  revalSeverityScore: proxy.$util.isEmpty(risk.revalSeverityScore)
+    ? risk.initSeverityScore
+    : risk.revalSeverityScore || "",
+  revalRiskLv: risk.revalRiskLv || "",
+  revalDesc: risk.revalDesc || "",
+  revalAssessorId: risk.revalAssessorId || "",
+  revalAssessorNm: risk.revalAssessorNm || "",
+  revalAssessDate: risk.revalAssessDate || "",
+  revalFileMgmtCd: risk.revalFileMgmtCd || "",
+  revalFilePath: risk.revalFilePath || "",
+});
+
 const fnOpenRiskAssessInfo = (risk) => {
   console.log(risk);
 
@@ -646,4 +789,86 @@ const fnAlertMsg = async (message, afterConfirmCallback) => {
 };
 </script>
 
-<style scoped></style>
+<style scoped>
+/* 조회조건이 여러 행으로 줄바꿈될 때 각 행의 왼쪽 끝선을 첫 항목과 맞춘다.
+   (전역 form.css는 첫 항목에만 margin-left를 줘서 두 번째 행이 좌측으로 밀린다.)
+   Attd_14 패턴 차용. */
+.viewSearch {
+  padding-left: calc(0.5rem + var(--space-md, 0.75rem));
+  /* 행 간 간격 축소(열 간격 2rem은 유지). 전역 2rem은 과하고 0.5rem은 좁아 중간값 사용 */
+  row-gap: 1rem;
+}
+.viewSearch > div:first-child {
+  margin-left: 0;
+}
+
+/* 평가요청일 초기화(✕) 버튼. 전역 search-btn 크기에 맞춘 중립 톤 버튼 */
+.date-clear-btn {
+  width: 26px;
+  min-width: 26px;
+  height: var(--btn-height-sm, 26px);
+  min-height: var(--btn-height-sm, 26px);
+  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--color-bg);
+  border: 1px solid var(--color-border);
+  border-radius: var(--btn-radius);
+  color: var(--color-text-muted);
+  font-size: 0.75rem;
+  line-height: 1;
+  cursor: pointer;
+}
+.date-clear-btn:hover:not(:disabled) {
+  border-color: var(--color-border-strong);
+  color: var(--color-text-strong);
+}
+.date-clear-btn:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+.date-clear-btn:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 var(--focus-ring-width, 3px) var(--color-focus-ring);
+}
+
+/* 위험도 등급 색 칩(6단계). Risk_02 관리기준표 팔레트와 동일. */
+.risk-very-high,
+.risk-high,
+.risk-slightly-high,
+.risk-normal,
+.risk-low,
+.risk-very-low {
+  display: inline-block;
+  padding: 0.1rem 0.4rem;
+  border-radius: 4px;
+  font-weight: 600;
+  font-size: 0.8rem;
+  white-space: nowrap;
+}
+.risk-very-high {
+  background: #ff4444;
+  color: #fff;
+}
+.risk-high {
+  background: #ff8800;
+  color: #fff;
+}
+.risk-slightly-high {
+  background: #ffaa00;
+  color: #1f1e1e;
+}
+.risk-normal {
+  background: #ffd700;
+  color: #1f1e1e;
+}
+.risk-low {
+  background: #90ee90;
+  color: #1f1e1e;
+}
+.risk-very-low {
+  background: #228b22;
+  color: #fff;
+}
+</style>

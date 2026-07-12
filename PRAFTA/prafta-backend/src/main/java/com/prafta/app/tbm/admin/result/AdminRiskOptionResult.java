@@ -9,6 +9,7 @@ public record AdminRiskOptionResult(
     , String riskTypeNm
     , String hazardCd
     , String hazardNm
+    , String hazardDesc
     , String assessmentCd
     , String assessmentStatus
     , String assessmentStatusNm

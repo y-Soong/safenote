@@ -14,11 +14,39 @@ public interface LeaveFlowService {
     /** 연차 신청: 검증(시간차/사후마감) → 부여 차감 예약 → 결재 Y면 라인 생성 / N이면 즉시 확정. */
     void submitLeave(LeaveApplyParam param);
 
+    /**
+     * LC-07(T3): 예상 차감액 미리보기 — INSERT 없음(조회 전용).
+     *
+     * <p>검증 가드(단위 구조/스케줄/휴게 가로지름/사후마감/1.0 점유/시간대 겹침)는 {@link #submitLeave}
+     * 와 동일하게 태워 "신청하면 거부될 값"을 미리 보여주지 않는다(위반 시 해당 에러 그대로 반환).
+     * 잔여 부족은 에러가 아니라 플래그({@code insufficientBalance})로 내려 FE 가 사전 경고한다.
+     * 인가: 본인 신청 기준(JWT gv_userCd)만 — 타인 대상 입력 없음.
+     */
+    com.prafta.web.attd.leaveflow.dto.response.LeaveDeductionPreviewResponse previewDeduction(
+            com.prafta.web.attd.leaveflow.application.param.LeaveDeductionPreviewParam param);
+
     /** 결재 단계 승인 (지정 결재자 본인만, 순서 강제). 마지막 단계 승인 시 요청 확정. */
     void approveStep(LeaveApprovalActionParam param);
 
     /** 결재 단계 반려 → 요청 반려 + 차감 해제. */
     void rejectStep(LeaveApprovalActionParam param);
+
+    /**
+     * QT-11-7 — 결재 흐름 밖에서 연차 요청이 강제 종료(취소/반려)될 때 연차 원장을 원복한다.
+     *
+     * <p>소속이동 발효({@code User01TransferExecutionService})처럼 배치가 TB_USER_ATTD_REQ 의 상태만
+     *   직접 UPDATE 하는 경로는, 정상 반려({@link #rejectStep})가 수행하는 <b>use 행 취소 + GRANT
+     *   USED_DAYS 재집계 + 가불 GRANT 회수 + 시간차 재정산(F1)</b> 을 건너뛰어 <b>차감이 그대로 남는다</b>
+     *   (사용자는 쓰지 않은 연차를 잃는다). 그 경로에서 요청 상태를 바꾼 뒤 본 메서드를 호출해
+     *   원장을 원복한다. 원복 시퀀스는 {@code rejectStep} 과 단일 출처를 공유한다.
+     *
+     * <p>REQ_TYPE='06'(연차 수정)은 승인 시에만 반영되므로 되돌릴 차감이 없다 → 무시(no-op).
+     *   대상 요청이 없거나 연차 요청이 아니면 아무 것도 하지 않는다(멱등).
+     *
+     * @param reason use 행 CANCEL_REASON 에 남길 사유(예: "소속이동")
+     * @param actor  처리자 USER_CD(감사 컬럼)
+     */
+    void restoreLeaveLedgerOnTerminate(String cmpnyCd, String reqId, String reason, String actor);
 
     /** 내 결재함: 내가 현재 단계 결재자인 연차 요청 목록 (요청승인관리 연차 탭). */
     java.util.List<com.prafta.web.attd.leaveflow.vo.MyLeaveApprovalVO> getMyPendingLeaveApprovals(

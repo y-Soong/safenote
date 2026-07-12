@@ -386,7 +386,8 @@
               ※ 마감된 기간의 변경은 적용되지 않습니다.
             </p>
             <p class="a06-modal-notice">
-              ※ 연장된 기간에만 교대 근무계획이 추가 생성되며, 기존 스케줄은 유지됩니다.
+              ※ 연장된 기간에만 교대 근무계획이 추가 생성되며, 기존 스케줄은
+              유지됩니다.
             </p>
           </div>
           <div class="a06-modal-footer">
@@ -757,9 +758,6 @@ const toggleGroupExpand = (shiftTeamId) => {
   if (group) group.expanded = !group.expanded;
 };
 
-const getShiftTypeName = (code) =>
-  shiftTypes.value.find((t) => t.code === code)?.name || code;
-
 const getTotalMembers = (group) =>
   group.teams.reduce((s, t) => s + t.members.length, 0);
 
@@ -1026,7 +1024,9 @@ const fnSave = async () => {
       const group = editTarget.value;
       fnSearch();
       if (blockedList.length > 0) {
-        openPop(ShiftLeaveNoticePop, { rows: buildBlockedRows(blockedList, group) });
+        openPop(ShiftLeaveNoticePop, {
+          rows: buildBlockedRows(blockedList, group),
+        });
       } else {
         await proxy.$alert(getMessage(MSG.SAVE_SUCCESS));
       }

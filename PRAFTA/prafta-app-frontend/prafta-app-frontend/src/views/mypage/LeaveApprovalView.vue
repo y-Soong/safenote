@@ -52,7 +52,17 @@
     </div>
 
     <!-- 본문 -->
-    <main class="la-body">
+    <main
+      class="la-body"
+      ref="scrollRef"
+      @touchstart.passive="onPullStart"
+      @touchmove="onPullMove"
+      @touchend="onPullEnd"
+      @touchcancel="onPullEnd"
+    >
+      <!-- 당겨서 새로고침 인디케이터 — 스크롤 최상단에서 아래로 당기면 노출 -->
+      <PullRefreshIndicator v-bind="indicatorProps" />
+
       <div v-if="isLoading" class="la-loading" aria-live="polite">불러오는 중...</div>
 
       <template v-else>
@@ -92,6 +102,8 @@ import { useRouter } from 'vue-router'
 
 import api from '@/api/axios'
 import { resolveApiErrorMessage } from '@/utils/apiError'
+import { usePullToRefresh } from '@/composables/usePullToRefresh'
+import PullRefreshIndicator from '@/components/common/PullRefreshIndicator.vue'
 
 import LeaveApprovalCard from './components/LeaveApprovalCard.vue'
 
@@ -173,6 +185,15 @@ const onBack = () => {
 onMounted(() => {
   loadList()
 })
+
+// 당겨서 새로고침 — 현재 탭 목록(loadList) 재조회. 부작용 없는 조회만.
+const scrollRef = ref(null)
+const { onPullStart, onPullMove, onPullEnd, indicatorProps } = usePullToRefresh(
+  scrollRef,
+  async () => {
+    await loadList()
+  },
+)
 </script>
 
 <style scoped>
@@ -201,7 +222,8 @@ onMounted(() => {
   --space-lg: 16px;
 
   position: relative;
-  min-height: 100vh;
+  height: 100vh;
+  height: 100dvh;
   display: flex;
   flex-direction: column;
   background: var(--color-bg);
@@ -311,6 +333,7 @@ onMounted(() => {
 /* 본문 */
 .la-body {
   flex: 1;
+  min-height: 0;
   overflow-y: auto;
   padding: var(--space-md) var(--space-lg) 40px;
   display: flex;

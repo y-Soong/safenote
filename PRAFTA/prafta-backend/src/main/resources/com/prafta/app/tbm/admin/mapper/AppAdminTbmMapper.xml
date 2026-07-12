@@ -69,6 +69,7 @@
 		, A.TITLE			AS title
 		, A.STATUS_CD		AS statusCd
 		, SC.SYST_VAL_D_NM	AS statusNm
+		, A.EDU_MINUTES		AS eduMinutes
 		, A.MANAGER_USER_CD	AS managerUserCd
 		, FNC_CMM_INFO_SRCH(A.CMPNY_CD, 'USER_NM', A.MANAGER_USER_CD, NULL)	AS managerUserNm
 		, DATE_FORMAT(A.OPENED_AT, '%Y-%m-%d %H:%i')	AS openedAt
@@ -81,28 +82,34 @@
 			WHERE R.CMPNY_CD = A.CMPNY_CD
 			  AND R.SESSION_CD = A.SESSION_CD
 		  )				AS riskCount
+		/* [정합성 수정] 참석자수 = 실입실(ENTRY_AT IS NOT NULL) 기준. 미입실자는 집계 제외. */
 		, (
 			SELECT COUNT(1)
 			FROM TB_TBM_ATTENDANCE AT
 			WHERE AT.CMPNY_CD = A.CMPNY_CD
 			  AND AT.SESSION_CD = A.SESSION_CD
 			  AND AT.DEL_YN = 'N'
+			  AND AT.ENTRY_AT IS NOT NULL
 		  )				AS attendanceCount
+		/* 이수자수 = 실입실 + COMPLETION_STATUS_CD='COMPLETED'. */
 		, (
 			SELECT COUNT(1)
 			FROM TB_TBM_ATTENDANCE AT
 			WHERE AT.CMPNY_CD = A.CMPNY_CD
 			  AND AT.SESSION_CD = A.SESSION_CD
 			  AND AT.DEL_YN = 'N'
+			  AND AT.ENTRY_AT IS NOT NULL
 			  AND AT.COMPLETION_STATUS_CD = 'COMPLETED'
 		  )				AS completedCount
+		/* 미이수자수 = 실입실 + 미완료(상태 NULL=미완료 또는 NOT_COMPLETED). 자동이수 폐지로 NULL 포함 필수. */
 		, (
 			SELECT COUNT(1)
 			FROM TB_TBM_ATTENDANCE AT
 			WHERE AT.CMPNY_CD = A.CMPNY_CD
 			  AND AT.SESSION_CD = A.SESSION_CD
 			  AND AT.DEL_YN = 'N'
-			  AND AT.COMPLETION_STATUS_CD = 'NOT_COMPLETED'
+			  AND AT.ENTRY_AT IS NOT NULL
+			  AND (AT.COMPLETION_STATUS_CD IS NULL OR AT.COMPLETION_STATUS_CD = 'NOT_COMPLETED')
 		  )				AS notCompletedCount
 	FROM TB_TBM_SESSION A
 		 LEFT OUTER JOIN TB_SITE ST
@@ -160,6 +167,7 @@
 		, A.MANAGER_GPS_LON		AS managerGpsLon
 		, A.GPS_VERIFY_TYPE_CD	AS gpsVerifyTypeCd
 		, A.GPS_VERIFY_RADIUS_M	AS gpsVerifyRadiusM
+		, A.EDU_MINUTES			AS eduMinutes
 		, A.GPS_MANUAL_CONFIRM_YN	AS gpsManualConfirmYn
 		, DATE_FORMAT(A.OPENED_AT, '%Y-%m-%d %H:%i')		AS openedAt
 		/* 교육준비 타이머 기준시각(15분 자동 교육시작 기준). FE 카운트다운용 — 초 단위까지 노출. */
@@ -199,6 +207,8 @@
 		, A.MANAGER_USER_CD	AS managerUserCd
 		, U.NODE_CD			AS managerNodeCd
 		, A.GPS_VERIFY_TYPE_CD	AS gpsVerifyTypeCd
+		/* 교육준비(prepare) DB값 기준 교육시간 필수검증용 */
+		, A.EDU_MINUTES		AS eduMinutes
 	FROM TB_TBM_SESSION A
 		 LEFT OUTER JOIN TB_USER U
 		 	ON (
@@ -320,6 +330,7 @@
 		, MANAGER_GPS_LON
 		, GPS_VERIFY_TYPE_CD
 		, GPS_VERIFY_RADIUS_M
+		, EDU_MINUTES
 		, GPS_MANUAL_CONFIRM_YN
 		, OPENED_AT
 		, DEL_YN
@@ -343,6 +354,7 @@
 		, #{managerGpsLon}
 		, IFNULL(#{gpsVerifyTypeCd}, 'AUTO')
 		, IFNULL(#{gpsVerifyRadiusM}, 100)
+		, #{eduMinutes}
 		, #{gpsManualConfirmYn}
 		<choose>
 			<when test="opened">, NOW()</when>
@@ -364,6 +376,8 @@
 		, CONTENT_BODY			= #{contentBody}
 		, GPS_VERIFY_TYPE_CD	= IFNULL(#{gpsVerifyTypeCd}, GPS_VERIFY_TYPE_CD)
 		, GPS_VERIFY_RADIUS_M	= IFNULL(#{gpsVerifyRadiusM}, GPS_VERIFY_RADIUS_M)
+		/* 교육 인정시간(분). 미전송(NULL) 시 기존값 보존 */
+		, EDU_MINUTES			= IFNULL(#{eduMinutes}, EDU_MINUTES)
 		, MANAGER_GPS_LAT		= #{managerGpsLat}
 		, MANAGER_GPS_LON		= #{managerGpsLon}
 		, GPS_MANUAL_CONFIRM_YN	= #{gpsManualConfirmYn}
@@ -662,6 +676,7 @@
 				THEN A.ASSESSMENT_DESC
 			ELSE E.HAZARD_NM
 		  END				AS hazardNm
+		, A.INIT_DESC		AS hazardDesc
 		, A.ASSESSMENT_CD	AS assessmentCd
 		, A.ASSESSMENT_STATUS	AS assessmentStatus
 		, B.SYST_VAL_D_NM	AS assessmentStatusNm
@@ -751,23 +766,9 @@
 	  AND STATUS_CD = 'IN_PROGRESS'
 	</update>
 
-	<!-- T2 종료 자동이수: 미종료(EXIT_AT IS NULL) 출결 일괄 처리.
-	     EXIT_TYPE_CD 는 건드리지 않음(SYS052 종료자동 코드 부재 — NULL 유지). -->
-	<update id="autoCompleteOnEnd" parameterType="com.prafta.app.tbm.admin.application.command.AdminSessionTransitionCommand">
-	/* AppAdminTbmMapper.autoCompleteOnEnd */
-	UPDATE TB_TBM_ATTENDANCE
-	SET
-		EXIT_AT					= NOW()
-		, COMPLETION_STATUS_CD	= 'COMPLETED'
-		, STATUS_UPDATED_BY		= #{gvUserCd}
-		, STATUS_UPDATED_AT		= NOW()
-		, UPDATE_NO				= #{gvUserCd}
-		, UPDATE_DATE			= NOW()
-	WHERE CMPNY_CD = #{gvCmpnyCd}
-	  AND SESSION_CD = #{sessionCd}
-	  AND EXIT_AT IS NULL
-	  AND DEL_YN = 'N'
-	</update>
+	<!-- [정합성 수정] T2 종료 자동이수(autoCompleteOnEnd) 제거.
+	     "사용자가 직접 완료해야 이수" 정책으로 강제 자동이수 + EXIT_AT 일괄세팅을 폐지한다.
+	     종료 후에도 미종료 입실자는 사용자 exit(서명)로만 COMPLETED 가 된다. -->
 
 	<!-- T1 시작 시 동기화 상태 PLAYING UPSERT(AdminSessionStateCommand 재사용). -->
 	<update id="upsertSessionStatePlaying" parameterType="com.prafta.app.tbm.admin.application.command.AdminSessionStateCommand">
@@ -1487,28 +1488,34 @@
 			WHERE R.CMPNY_CD = A.CMPNY_CD
 			  AND R.SESSION_CD = A.SESSION_CD
 		  )				AS riskCount
+		/* [정합성 수정] 참석자수 = 실입실(ENTRY_AT IS NOT NULL) 기준. 미입실자는 집계 제외. */
 		, (
 			SELECT COUNT(1)
 			FROM TB_TBM_ATTENDANCE AT
 			WHERE AT.CMPNY_CD = A.CMPNY_CD
 			  AND AT.SESSION_CD = A.SESSION_CD
 			  AND AT.DEL_YN = 'N'
+			  AND AT.ENTRY_AT IS NOT NULL
 		  )				AS attendanceCount
+		/* 이수자수 = 실입실 + COMPLETION_STATUS_CD='COMPLETED'. */
 		, (
 			SELECT COUNT(1)
 			FROM TB_TBM_ATTENDANCE AT
 			WHERE AT.CMPNY_CD = A.CMPNY_CD
 			  AND AT.SESSION_CD = A.SESSION_CD
 			  AND AT.DEL_YN = 'N'
+			  AND AT.ENTRY_AT IS NOT NULL
 			  AND AT.COMPLETION_STATUS_CD = 'COMPLETED'
 		  )				AS completedCount
+		/* 미이수자수 = 실입실 + 미완료(상태 NULL=미완료 또는 NOT_COMPLETED). 자동이수 폐지로 NULL 포함 필수. */
 		, (
 			SELECT COUNT(1)
 			FROM TB_TBM_ATTENDANCE AT
 			WHERE AT.CMPNY_CD = A.CMPNY_CD
 			  AND AT.SESSION_CD = A.SESSION_CD
 			  AND AT.DEL_YN = 'N'
-			  AND AT.COMPLETION_STATUS_CD = 'NOT_COMPLETED'
+			  AND AT.ENTRY_AT IS NOT NULL
+			  AND (AT.COMPLETION_STATUS_CD IS NULL OR AT.COMPLETION_STATUS_CD = 'NOT_COMPLETED')
 		  )				AS notCompletedCount
 	FROM TB_TBM_SESSION A
 		 LEFT OUTER JOIN TB_SITE ST
@@ -1542,9 +1549,11 @@
 	/* AppAdminTbmMapper.selectAdminHistoryStat */
 	SELECT
 		COUNT(DISTINCT A.SESSION_CD)	AS sessionCount
-		, COUNT(AT.ATTENDANCE_CD)		AS attendanceCount
-		, IFNULL(SUM(CASE WHEN AT.COMPLETION_STATUS_CD = 'COMPLETED' THEN 1 ELSE 0 END), 0)		AS completedCount
-		, IFNULL(SUM(CASE WHEN AT.COMPLETION_STATUS_CD = 'NOT_COMPLETED' THEN 1 ELSE 0 END), 0)	AS notCompletedCount
+		/* [정합성 수정] 참석자수 = 실입실(ENTRY_AT IS NOT NULL). 미입실/미조인 행 제외. */
+		, IFNULL(SUM(CASE WHEN AT.ENTRY_AT IS NOT NULL THEN 1 ELSE 0 END), 0)	AS attendanceCount
+		, IFNULL(SUM(CASE WHEN AT.ENTRY_AT IS NOT NULL AND AT.COMPLETION_STATUS_CD = 'COMPLETED' THEN 1 ELSE 0 END), 0)	AS completedCount
+		/* 미이수 = 실입실 + 미완료(NULL 포함). 자동이수 폐지로 NULL 포함 필수. */
+		, IFNULL(SUM(CASE WHEN AT.ENTRY_AT IS NOT NULL AND (AT.COMPLETION_STATUS_CD IS NULL OR AT.COMPLETION_STATUS_CD = 'NOT_COMPLETED') THEN 1 ELSE 0 END), 0)	AS notCompletedCount
 	FROM TB_TBM_SESSION A
 		 LEFT OUTER JOIN TB_TBM_ATTENDANCE AT
 		 	ON (

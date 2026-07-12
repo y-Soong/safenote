@@ -8,6 +8,7 @@ public record ChkptTargetListQuery(
 	String siteCd
 	, String chkLstType
 	, String chkptNm
+	, String useYn
 	, String gvCmpnyCd
 	, String gvUserCd
 ){
@@ -20,6 +21,7 @@ public record ChkptTargetListQuery(
 			param.siteCd()
 			, param.chkLstType()
 			, param.chkptNm()
+			, param.useYn()
 			, param.gvCmpnyCd()
 			, param.gvUserCd()
 		);

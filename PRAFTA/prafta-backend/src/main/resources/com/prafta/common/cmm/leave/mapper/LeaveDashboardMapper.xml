@@ -850,4 +850,18 @@
        AND GRANT_REASON LIKE '[가불]%'
     </update>
 
+    <!-- ============ LC-07(표기): 시간차 CONFIRMED 사용 분 합계 ============
+      술어는 LeaveDeductionMapper.selectHourlyLeaveAggOnDate 와 동일(시간차 02/03/04, CONFIRMED, DEL_YN='N')
+      하되 일자 경계 없이 전 기간 합산한다. FE "시간차 사용 N시간 M분" 표기 전용(잔여/부여 수치 무관). -->
+    <select id="selectHourlyUsedMinutes" resultType="java.lang.Integer">
+    /* LeaveDashboardMapper.selectHourlyUsedMinutes */
+    SELECT IFNULL(SUM(U.LEAVE_MINUTES), 0)
+      FROM TB_USER_LEAVE_USE U
+     WHERE U.CMPNY_CD      = #{cmpnyCd}
+       AND U.USER_CD       = #{userCd}
+       AND U.USE_UNIT_TYPE IN ('02', '03', '04')
+       AND U.LEAVE_STATUS  = 'CONFIRMED'
+       AND U.DEL_YN        = 'N'
+    </select>
+
 </mapper>

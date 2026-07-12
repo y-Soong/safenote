@@ -31,7 +31,17 @@
       <span class="ap-detail-hd__spacer" aria-hidden="true" />
     </header>
 
-    <main class="ap-detail-body">
+    <main
+      class="ap-detail-body"
+      ref="scrollRef"
+      @touchstart.passive="onPullStart"
+      @touchmove="onPullMove"
+      @touchend="onPullEnd"
+      @touchcancel="onPullEnd"
+    >
+      <!-- 당겨서 새로고침 인디케이터 — 스크롤 최상단에서 아래로 당기면 노출(공통 컴포저블) -->
+      <PullRefreshIndicator v-bind="indicatorProps" />
+
       <!-- 로딩 -->
       <p v-if="isLoading" class="ap-detail-state" aria-live="polite">불러오는 중...</p>
 
@@ -97,7 +107,7 @@
               <dt>시스템 계산</dt>
               <dd>{{ detail.body.systemCalcDisplay || '-' }}</dd>
               <dt>근로자 상신</dt>
-              <dd>{{ detail.body.claimedDisplay || '-' }}</dd>
+              <dd class="ap-meta__dd--break">{{ breakAfterTilde(detail.body.claimedDisplay) || '-' }}</dd>
               <dt v-if="detail.body.approvedDisplay">승인값</dt>
               <dd v-if="detail.body.approvedDisplay">{{ detail.body.approvedDisplay }}</dd>
             </dl>
@@ -236,6 +246,8 @@ import { ref, computed, getCurrentInstance, onMounted } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 
 import api from '@/api/axios'
+import { usePullToRefresh } from '@/composables/usePullToRefresh'
+import PullRefreshIndicator from '@/components/common/PullRefreshIndicator.vue'
 import { resolveApiErrorMessage } from '@/utils/apiError'
 import { formatYmdDisplay, formatDateTimeDisplay, formatTimeWithDateIfDiff } from '@/utils/approvalFormat'
 
@@ -341,6 +353,12 @@ const buildRangeDisplay = (o) => {
   if (!o.startAt && !o.endAt) return ''
   const range = `${o.startAt || '-'} ~ ${o.endAt || '-'}`
   return o.minutes != null ? `${range} (${o.minutes}분)` : range
+}
+
+// 시작 ~ 종료 구간 문자열을 '~' 뒤에서 개행(종료 시각을 다음 줄로)
+const breakAfterTilde = (v) => {
+  if (!v || typeof v !== 'string') return v
+  return v.replace(/\s*~\s*/, ' ~\n')
 }
 
 // 연차 사용 구간(문자열 또는 {from,to})
@@ -520,6 +538,12 @@ const onConfirmAdjust = (adjusted) => {
   submitProcess({ decision: 'APPROVE_ADJUST', adjusted })
 }
 
+// ── 당겨서 새로고침 (공통 컴포저블) — 상세(gate/내용)를 재조회. 부작용 없는 조회만. ──
+const scrollRef = ref(null)
+const { onPullStart, onPullMove, onPullEnd, indicatorProps } = usePullToRefresh(scrollRef, async () => {
+  await loadDetail()
+})
+
 onMounted(loadDetail)
 </script>
 
@@ -552,7 +576,8 @@ onMounted(loadDetail)
   --space-md: 12px;
   --space-lg: 16px;
 
-  min-height: 100%;
+  height: 100vh;
+  height: 100dvh;
   background: var(--color-bg);
   color: var(--color-text-primary);
   display: flex;
@@ -597,6 +622,7 @@ onMounted(loadDetail)
 /* 본문 */
 .ap-detail-body {
   flex: 1;
+  min-height: 0;
   padding: var(--space-md) var(--space-lg) calc(var(--space-lg) + env(safe-area-inset-bottom, 0px));
   overflow-y: auto;
   display: flex;
@@ -667,6 +693,9 @@ onMounted(loadDetail)
   margin: 0;
   color: var(--color-text-primary);
   font-variant-numeric: tabular-nums;
+}
+.ap-meta__dd--break {
+  white-space: pre-line;
 }
 
 /* 배너 */

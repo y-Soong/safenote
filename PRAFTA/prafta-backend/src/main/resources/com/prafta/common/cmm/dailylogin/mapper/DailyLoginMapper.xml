@@ -23,6 +23,9 @@
         , A.PWD_LOCK_YN             AS pwdLockYn
         , A.PWD_FAIL_CNT            AS pwdFailCnt
         , A.PWD_LOCK_EXPIRE_DTIME   AS pwdLockExpireDtime
+        , A.MBL_NO_ENC              AS mblNoEnc       <!-- prafta-app-032 B: 재활성 write-back용 암호문(평문 아님) -->
+        , A.MBL_NO_HMAC             AS mblNoHmac
+        , A.MBL_NO_LAST4            AS mblNoLast4
     FROM TB_DAILY_USER A
          INNER JOIN TB_SITE B
             ON (
@@ -31,6 +34,42 @@
             )
     WHERE A.USER_ID = #{userId}
       AND A.USE_YN  = 'Y'
+      AND B.USE_YN  = 'Y'	<!-- PRAFTA-COM-001-T2-4: 종료(비활성) 사업장 소속 일용직 로그인 차단(일용직은 master 불가→예외 없음). 행 미반환→통합 차단 메시지 -->
+      <if test="cmpnyCd != null and cmpnyCd != ''">
+      AND A.CMPNY_CD = #{cmpnyCd}
+      </if>
+    </select>
+
+    <!-- 비활성 사유 노출용 보조 조회: 본 조회와 동일하되 USE_YN 가드(A/B) 만 제거하여
+         비활성/만료/종료사업장 계정도 반환한다. 서비스가 비밀번호 일치 + 계정 비활성 조건일 때만
+         DAILYLOGIN_400_003(명시 안내)을 노출한다(사전 enumeration 방지). -->
+    <select id="selectDailyUserForInactiveCheck" parameterType="com.prafta.common.cmm.dailylogin.application.query.DailyLoginQuery" resultType="com.prafta.common.cmm.dailylogin.result.DailyUserResult">
+    /* DailyLoginMapper.selectDailyUserForInactiveCheck */
+    SELECT
+        A.CMPNY_CD                  AS cmpnyCd
+        , A.USER_CD                 AS userCd
+        , A.USER_ID                 AS userId
+        , A.USER_NM                 AS userNm
+        , A.USER_PW                 AS userPw
+        , A.SITE_CD                 AS siteCd
+        , B.SITE_NM                 AS siteNm
+        , A.USE_YN                  AS useYn
+        , A.ACCOUNT_STATUS          AS accountStatus
+        , A.WORK_EXPIRE_DATE        AS workExpireDate
+        , A.WITHDRAWAL_DATE         AS withdrawalDate
+        , A.PWD_LOCK_YN             AS pwdLockYn
+        , A.PWD_FAIL_CNT            AS pwdFailCnt
+        , A.PWD_LOCK_EXPIRE_DTIME   AS pwdLockExpireDtime
+        , A.MBL_NO_ENC              AS mblNoEnc       <!-- prafta-app-032 B: 재활성 write-back용 암호문(평문 아님) -->
+        , A.MBL_NO_HMAC             AS mblNoHmac
+        , A.MBL_NO_LAST4            AS mblNoLast4
+    FROM TB_DAILY_USER A
+         INNER JOIN TB_SITE B
+            ON (
+                A.CMPNY_CD = B.CMPNY_CD
+            AND A.SITE_CD  = B.SITE_CD
+            )
+    WHERE A.USER_ID = #{userId}
       <if test="cmpnyCd != null and cmpnyCd != ''">
       AND A.CMPNY_CD = #{cmpnyCd}
       </if>

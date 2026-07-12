@@ -34,17 +34,18 @@ import lombok.extern.slf4j.Slf4j;
 @RequiredArgsConstructor
 public class NearMiss01ServiceImpl implements NearMiss01Service {
 
-    private static final String STATUS_RECEIVED  = "100"; // 접수
-    private static final String STATUS_REVIEWING = "200"; // 검토중
-    private static final String STATUS_ACTING    = "300"; // 조치중
-    private static final String STATUS_COMPLETED = "400"; // 완료
-    private static final String STATUS_REJECTED  = "900"; // 반려
+    // SYS063 재번호(D4): 100 접수 / 200 조치중 / 300 완료 / 400 미처리대상.
+    private static final String STATUS_RECEIVED    = "100"; // 접수
+    private static final String STATUS_ACTING      = "200"; // 조치중
+    private static final String STATUS_COMPLETED   = "300"; // 완료
+    private static final String STATUS_UNADDRESSED = "400"; // 미처리대상(기존 반려 자리)
 
-    // 처리상태 단계 순서(앞→뒤). 단계는 관리상 분리 의미로 유지하되, 전이는 '전진 점프'를 허용한다.
-    //   (정책 A) 활성단계(접수/검토중/조치중)에서 더 뒤 단계로 자유롭게 전진 가능(접수→완료 직접 등).
-    //   뒤로 가기/같은 단계 전이는 불가, 종결 상태(완료/반려)는 더 이상 전이 불가, 반려(900)는 활성단계 어디서든 가능.
+    // 처리상태 단계 순서(앞→뒤). 전이는 '전진 점프'를 허용한다.
+    //   (정책 A) 활성단계(접수/조치중)에서 더 뒤 단계로 자유롭게 전진 가능(접수→완료 직접 등).
+    //   뒤로 가기/같은 단계 전이는 불가, 종결 상태(완료/미처리대상)는 더 이상 전이 불가,
+    //   미처리대상(400)은 활성단계 어디서든 가능(선형 밖 종결).
     private static final List<String> STAGE_ORDER = List.of(
-        STATUS_RECEIVED, STATUS_REVIEWING, STATUS_ACTING, STATUS_COMPLETED
+        STATUS_RECEIVED, STATUS_ACTING, STATUS_COMPLETED
     );
 
     private final NearMiss01Mapper nearMiss01Mapper;
@@ -139,13 +140,13 @@ public class NearMiss01ServiceImpl implements NearMiss01Service {
             throw new ApiException(NearMissErrorCode.NEARMISS_404_001);
         }
 
-        // 종결 상태(완료400/반려900)는 더 이상 전이 불가.
-        if (STATUS_COMPLETED.equals(current) || STATUS_REJECTED.equals(current)) {
+        // 종결 상태(완료300/미처리대상400)는 더 이상 전이 불가.
+        if (STATUS_COMPLETED.equals(current) || STATUS_UNADDRESSED.equals(current)) {
             throw new ApiException(NearMissErrorCode.NEARMISS_422_001);
         }
 
-        if (STATUS_REJECTED.equals(target)) {
-            // 반려(900): 활성 단계 어디서든 가능. 단 사유 필수.
+        if (STATUS_UNADDRESSED.equals(target)) {
+            // 미처리대상(400): 활성 단계 어디서든 가능. 단 사유 필수(REJECT_REASON 컬럼=미처리 사유 재활용).
             if (!StringUtils.hasText(param.rejectReason())) {
                 throw new ApiException(NearMissErrorCode.NEARMISS_400_001);
             }

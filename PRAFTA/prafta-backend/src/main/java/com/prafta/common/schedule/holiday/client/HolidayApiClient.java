@@ -2,6 +2,7 @@ package com.prafta.common.schedule.holiday.client;
 
 import java.net.URI;
 
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.stereotype.Component;
 import org.springframework.util.StringUtils;
 import org.springframework.web.client.RestTemplate;
@@ -15,7 +16,7 @@ public class HolidayApiClient {
     private final RestTemplate holidayRestTemplate;
     private final HolidayApiProperties props;
 
-    public HolidayApiClient(RestTemplate holidayRestTemplate, HolidayApiProperties props) {
+    public HolidayApiClient(@Qualifier("holidayRestTemplate") RestTemplate holidayRestTemplate, HolidayApiProperties props) {
         this.holidayRestTemplate = holidayRestTemplate;
         this.props = props;
         validateProps();

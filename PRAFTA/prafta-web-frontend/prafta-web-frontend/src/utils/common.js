@@ -20,6 +20,7 @@ export default {
   toCamelCaseKeys,
   isInteger,
   formatDateString,
+  ymToDateRange,
 };
 
 export {
@@ -44,6 +45,7 @@ export {
   toCamelCaseKeys,
   isInteger,
   formatDateString,
+  ymToDateRange,
 };
 
 import { ref } from "vue";
@@ -275,4 +277,28 @@ function formatDateString(dateStr) {
     // 그 외는 원본 그대로
     return dateStr;
   }
+}
+
+/**
+ * 월(YYYY-MM) → 해당 월의 시작일/말일 기간 (위젯값 YYYY-MM-DD).
+ *   PRAFTA-DASHBOARD-T1: 대시보드 기준월을 일자 기간 조회 화면에 주입할 때 사용.
+ *  - 'YYYY-MM' → { fromDate: 'YYYY-MM-01', toDate: 'YYYY-MM-말일' }
+ *  - 파싱 불가하면 null 반환
+ */
+function ymToDateRange(ym) {
+  if (!ym) return null;
+  const cleaned = String(ym).replace(/[^0-9]/g, "");
+  if (cleaned.length < 6) return null;
+
+  const year = Number(cleaned.substring(0, 4));
+  const month = Number(cleaned.substring(4, 6));
+  if (!year || month < 1 || month > 12) return null;
+
+  const mm = String(month).padStart(2, "0");
+  // new Date(y, m, 0) = m월의 마지막 날 (m은 1-base 그대로 사용)
+  const lastDay = new Date(year, month, 0).getDate();
+  return {
+    fromDate: `${year}-${mm}-01`,
+    toDate: `${year}-${mm}-${String(lastDay).padStart(2, "0")}`,
+  };
 }

@@ -34,7 +34,7 @@ public class LeaveApplyRequest {
     @Pattern(regexp = "\\d{8}")
     private String workYmd;
 
-    /** 사용 단위 [SYS025] 00=1일/01=반차/02=시간차2h/03=시간차1h/04=시간차30분 */
+    /** 사용 단위 [SYS025] 00=1일/01=반차/02=시간차2h/03=시간차1h/04=시간차30분/05=반반차(LC-06) */
     @FieldLabel("사용단위")
     @NotBlank
     @Size(max = 2)

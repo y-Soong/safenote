@@ -488,10 +488,34 @@
             <span class="lp-option__text">
               <span class="lp-option__label">사용 (자동 통지)</span>
               <span class="lp-option__sub"
-                >6개월/2개월 전 자동 통지서 발송</span
+                >근속기간별 1·2차 사용촉진 자동 진행</span
               >
             </span>
           </button>
+        </div>
+        <div v-if="axis7UsePromotion === 'Y'" class="lp-note lp-note--info">
+          <svg
+            viewBox="0 0 24 24"
+            width="13"
+            height="13"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="2"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+          >
+            <circle cx="12" cy="12" r="10" />
+            <line x1="12" y1="16" x2="12" y2="12" />
+            <line x1="12" y1="8" x2="12.01" y2="8" />
+          </svg>
+          <span>
+            <strong>1년차 이상</strong>: 법정휴가(월차/연차) 만료
+            <strong>6개월 전 1차 촉진</strong>(연차 사용 계획서 요청) →
+            <strong>3개월 전 2차 촉진</strong>(관리자 임의 연차일 지정).<br />
+            <strong>1년차 미만</strong>: 만료
+            <strong>3개월 전 1차 촉진</strong>(연차 사용 계획서 요청) →
+            <strong>1개월 전 2차 촉진</strong>(관리자 임의 연차일 지정).
+          </span>
         </div>
       </section>
 
@@ -566,6 +590,19 @@
               결재 필요 (해제 시 즉시 확정)
             </label>
           </div>
+          <!-- LC-06/LC-08: 반반차(0.25일) 허용 토글 — 사용 단위(USAGE_UNIT) 계층과 독립인 회사 단위 토글 -->
+          <div class="lp-field">
+            <label class="lp-field__label">반반차(0.25일) 허용</label>
+            <label class="lp-check">
+              <input
+                type="checkbox"
+                v-model="allowQuarter"
+                true-value="Y"
+                false-value="N"
+              />
+              허용 (위 사용 단위와 별개로 반반차 신청 개방)
+            </label>
+          </div>
         </div>
         <p class="lp-strong-note">
           ※ 3번에서 <strong>"0.5일 단위 절사"</strong> 선택 시 사용 단위가
@@ -575,6 +612,121 @@
           ※ 시간 단위 휴가는 근로자별 근무 스케줄 시간에 비례하여 자동 차감.
           휴게시간은 자동 제외되어 신청 불가.
         </p>
+      </section>
+
+      <!-- ============ 시간차 1일 환산시간 (LC-08, UI 명세 §5-A) ============ -->
+      <div class="lp-divider">
+        <span class="lp-divider__text">시간차 1일 환산시간</span>
+      </div>
+
+      <section class="lp-card lp-conv">
+        <header class="lp-card__head">
+          <h3 class="lp-card__title">1일 환산시간</h3>
+        </header>
+        <p class="lp-card__desc">
+          시간차 연차 차감의 분모가 되는 <strong>1일 환산시간(분)</strong>을
+          회사 단위로 설정합니다. 저장 즉시가 아니라 적용일 기준으로 반영됩니다.
+        </p>
+
+        <!-- loading -->
+        <div v-if="convLoading" class="lp-conv-loading">조회 중…</div>
+
+        <template v-else>
+          <!-- 현재 적용값 -->
+          <div class="lp-conv-current">
+            <span class="lp-conv-current__label">현재 적용값</span>
+            <strong class="lp-conv-current__value">
+              {{ convCurrent.convMinutes }}분 ({{
+                fnConvHourText(convCurrent.convMinutes)
+              }})
+            </strong>
+            <span v-if="convCurrent.applyFromDate" class="lp-badge lp-badge--cond">
+              적용일 {{ fnConvDateText(convCurrent.applyFromDate) }}
+            </span>
+            <span v-else class="lp-badge lp-badge--cond">기본 480분 적용 중</span>
+          </div>
+
+          <!-- 새 환산시간 + 적용일 입력 -->
+          <div class="lp-inline-row lp-conv-input-row">
+            <span class="lp-inline-label">새 환산시간</span>
+            <input
+              type="number"
+              class="lp-num-input lp-conv-num"
+              v-model="convNewMinutes"
+              min="60"
+              max="1440"
+              step="30"
+            />
+            <span class="lp-inline-label">분</span>
+            <span class="lp-inline-label lp-conv-date-label">적용일</span>
+            <CalendarSrch v-model="convApplyDate" :min-date="convMinDate" />
+            <button
+              class="btn btn-primary"
+              type="button"
+              :disabled="convSaving"
+              @click="fnSaveConversion"
+            >
+              저장
+            </button>
+          </div>
+
+          <div class="lp-note lp-note--info">
+            <svg
+              viewBox="0 0 24 24"
+              width="13"
+              height="13"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+            >
+              <circle cx="12" cy="12" r="10" />
+              <line x1="12" y1="16" x2="12" y2="12" />
+              <line x1="12" y1="8" x2="12.01" y2="8" />
+            </svg>
+            <span>
+              <strong>적용일 이후 신청분부터 반영됩니다. 과거 신청분은
+              재계산되지 않습니다.</strong>
+            </span>
+          </div>
+          <p class="lp-strong-note">
+            ※ <strong>30분 단위 신청이 유한소수가 되는 값만 허용됩니다
+            (예: 240, 300, 480, 600, 750, 960)</strong>. 60~1440 사이 정수만
+            입력할 수 있으며, 허용되지 않는 값(360/420/540 등)은 저장이
+            거부됩니다.
+          </p>
+
+          <!-- 변경 이력 -->
+          <p class="lp-conv-hist-title">변경 이력</p>
+          <div v-if="convHistory.length > 0" class="lp-conv-table-wrap">
+            <table class="lp-conv-table">
+              <thead>
+                <tr>
+                  <th>적용일</th>
+                  <th class="is-right">환산시간</th>
+                  <th>등록자</th>
+                  <th>등록일시</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr v-for="h in convHistory" :key="h.applyFromDate">
+                  <td>{{ fnConvDateText(h.applyFromDate) }}</td>
+                  <td class="is-right">
+                    {{ h.dailyConvMinutes }}분 ({{
+                      fnConvHourText(h.dailyConvMinutes)
+                    }})
+                  </td>
+                  <td>{{ h.updateNo || h.insertNo || "-" }}</td>
+                  <td>{{ h.updateDate || h.insertDate || "-" }}</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+          <p v-else class="lp-conv-empty">
+            변경 이력이 없습니다. (기본 480분 적용 중)
+          </p>
+        </template>
       </section>
 
       <!-- ============ 고급 기능 ============ -->
@@ -643,7 +795,10 @@ import { useModal } from "@/utils/useModal";
 import axios from "@/api/axios";
 import { getMessage, MSG } from "@/messages";
 import { resolveApiErrorMessage } from "@/utils/apiError";
+import { formatYmdDot } from "@/utils/dateFormat";
+import { formatLeaveMinutes } from "@/utils/leaveFormat";
 import ViewHeader from "@/components/common/ViewHeader.vue";
+import CalendarSrch from "@/components/common/CalendarSrch.vue";
 import ReasonInputModal from "@/components/modal/ReasonInputModal.vue";
 import LeavePolicyPreviewPop from "./popup/LeavePolicyPreviewPop.vue";
 import LeavePolicyHistoryPop from "./popup/LeavePolicyHistoryPop.vue";
@@ -694,9 +849,22 @@ const changeReason = ref("");
 const usageUnit = ref("FULL_DAY");
 // 법정연차 신청 결재 여부 (prafta-019-E 결정 #2). 'Y'=결재라인, 'N'=즉시확정
 const aprvUseYn = ref("N");
+// LC-06/LC-08: 반반차(0.25일) 허용 토글 (TB_LEAVE_USAGE_POLICY.ALLOW_QUARTER, 기본 'N')
+const allowQuarter = ref("N");
 
 // --- UI 상태 ---
 const isLoading = ref(false);
+
+// --- 시간차 1일 환산시간 (LC-08, GET/POST /baim07/conversion) ---
+const convLoading = ref(false);
+const convSaving = ref(false);
+// 현재 적용값: convMinutes(미설정 회사는 서버가 480 폴백), applyFromDate(미설정이면 null)
+const convCurrent = ref({ convMinutes: 480, applyFromDate: null });
+// 변경 이력 (적용일 내림차순 — 미래 예약분 포함, LeaveConversionPolicyVO[])
+const convHistory = ref([]);
+// 입력 폼: 새 환산시간(분) + 적용일(CalendarSrch, YYYY-MM-DD)
+const convNewMinutes = ref(480);
+const convApplyDate = ref("");
 
 // ================ Computed ================
 // 1번 매트릭스(§4.3 / prafta-029): axis1=HIRE_DATE면 PRORATE/NEXT_YEAR_BULK 비활성,
@@ -720,6 +888,15 @@ const usageUnitLocked = computed(
 
 // 5번 CUSTOM 여부
 const tenureCustom = computed(() => axis5TenureMode.value === "CUSTOM");
+
+// LC-08: 환산시간 적용일 선택 하한 = 오늘 (백엔드 검증: 오늘 이후만 — F4 소급 재계산 없음)
+const convMinDate = computed(() => {
+  const d = new Date();
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${y}-${m}-${day}`;
+});
 
 // 5번 미리보기 제목
 const tenurePreviewTitle = computed(() => {
@@ -793,6 +970,7 @@ watch(axis5TenureMode, (val) => {
 onMounted(() => {
   fnButtonControll();
   fnSearch();
+  fnLoadConversion();
 });
 
 // ================ API Functions ================
@@ -888,6 +1066,8 @@ const fnBuildSaveRequest = () => {
     // 사용 단위(단일): HALF_DAY 잠금(3번=0.5일 절사) 시 HALF_DAY 강제 (prafta-024 결정 2b)
     usageUnit: usageUnitLocked.value ? "HALF_DAY" : usageUnit.value,
     aprvUseYn: aprvUseYn.value,
+    // LC-06: 반반차(0.25일) 허용 토글 — USAGE_UNIT 계층과 독립 (Y/N 외 값은 서버가 'N' 정규화)
+    allowQuarter: allowQuarter.value,
 
     applyFromDate: applyFromDate.value,
     changeReason: changeReason.value,
@@ -905,6 +1085,73 @@ const fnBuildSaveRequest = () => {
 // --- 변경 이력 (D-2): GET /baim07/policy/history → 모달 팝업 ---
 const fnOpenHistory = () => {
   openPop(LeavePolicyHistoryPop, {});
+};
+
+// --- LC-08: 시간차 1일 환산시간 조회 (현재 적용값 + 변경 이력) ---
+const fnLoadConversion = async () => {
+  convLoading.value = true;
+  try {
+    const res = await axios.get("/webApi/baim07/conversion");
+    const d = res.data || {};
+    convCurrent.value = {
+      convMinutes: d.currentConvMinutes ?? 480,
+      applyFromDate: d.currentApplyFromDate ?? null,
+    };
+    convHistory.value = Array.isArray(d.history) ? d.history : [];
+    // 입력 기본값 = 현재 적용값 (사용자가 값만 바꿔 저장하도록)
+    convNewMinutes.value = convCurrent.value.convMinutes;
+  } catch (err) {
+    // error 상태: 공통 alert (UI 명세 §5-A)
+    const msg = resolveApiErrorMessage(
+      err,
+      "환산시간 조회 중 오류가 발생했습니다."
+    );
+    await proxy.$alert(msg);
+  } finally {
+    convLoading.value = false;
+  }
+};
+
+// --- LC-08: 시간차 1일 환산시간 저장 (신규 적용일 INSERT / 같은 적용일 UPDATE) ---
+const fnSaveConversion = async () => {
+  // 1차 검증(UX 게이트) — 최종 권위는 백엔드(유한소수 방어 포함)
+  const minutesRaw = convNewMinutes.value;
+  const minutes = Number(minutesRaw);
+  if (!Number.isInteger(minutes) || minutes < 60 || minutes > 1440) {
+    await proxy.$alert("환산시간은 60~1440분 범위의 정수로 입력해 주세요.");
+    return;
+  }
+  if (!convApplyDate.value) {
+    await proxy.$alert("적용일을 선택해 주세요.");
+    return;
+  }
+  const ymd = String(convApplyDate.value).replace(/-/g, "");
+  // CalendarSrch minDate 로 차단되지만 방어적으로 재검증 (백엔드도 fail-closed)
+  if (!/^\d{8}$/.test(ymd) || ymd < convMinDate.value.replace(/-/g, "")) {
+    await proxy.$alert("적용일은 오늘 이후 날짜만 선택할 수 있습니다.");
+    return;
+  }
+
+  convSaving.value = true;
+  try {
+    const res = await axios.post("/webApi/baim07/conversion", {
+      applyFromDate: ymd,
+      dailyConvMinutes: minutes,
+    });
+    // 성공: 서버 안내 문구(적용일 이후 신청분부터 반영) 우선 표시 + 이력 갱신
+    await proxy.$alert(res.data?.message || getMessage(MSG.SAVE_SUCCESS));
+    convApplyDate.value = "";
+    await fnLoadConversion();
+  } catch (err) {
+    // 허용되지 않는 값(360/420/540 등)은 서버 400 메시지를 그대로 표시
+    const msg = resolveApiErrorMessage(
+      err,
+      "환산시간 저장 중 오류가 발생했습니다."
+    );
+    await proxy.$alert(msg);
+  } finally {
+    convSaving.value = false;
+  }
 };
 
 // ================ Methods/Functions ================
@@ -942,6 +1189,8 @@ const fnApplyPolicyToState = (p) => {
   // 사용 단위(단일): 미지정/구버전 데이터는 FULL_DAY로 폴백
   usageUnit.value = p.usageUnit || "FULL_DAY";
   aprvUseYn.value = p.aprvUseYn ?? "N";
+  // LC-06: 반반차 허용 토글 (미지정/구버전 데이터는 'N' — fail-closed)
+  allowQuarter.value = p.allowQuarter ?? "N";
 };
 
 // 신규 작성 모드(활성 정책 없음) — 기본값으로 초기화
@@ -960,6 +1209,7 @@ const fnResetToDefault = () => {
   axis7UsePromotion.value = "N";
   usageUnit.value = "FULL_DAY";
   aprvUseYn.value = "N";
+  allowQuarter.value = "N";
 };
 
 // --- axis 선택 핸들러 (UI 토글; 매트릭스 보정은 watch 가 담당) ---
@@ -1105,6 +1355,8 @@ const fnBuildTargetForImpact = () => {
       : "CEIL",
     usageUnit: usageUnitLocked.value ? "HALF_DAY" : usageUnit.value,
     aprvUseYn: aprvUseYn.value,
+    // LC-06: 반반차 토글 — 저장 body 와 동일 규칙으로 전달
+    allowQuarter: allowQuarter.value,
   };
 
   if (axis4Active.value) {
@@ -1125,6 +1377,16 @@ const fnCancel = async () => {
 };
 
 // ================ 내부 유틸 ================
+// LC-08: 환산시간(분) → "8시간"/"7시간 30분" 표시 (leaveFormat 단일 출처)
+const fnConvHourText = (minutes) => formatLeaveMinutes(minutes);
+
+// LC-08: 적용일(YYYYMMDD) → "YYYY.MM.DD" 표시
+const fnConvDateText = (yyyymmdd) => {
+  const s = String(yyyymmdd || "");
+  if (s.length !== 8) return s || "-";
+  return formatYmdDot(s);
+};
+
 const toIntOr = (v, def) => {
   const n = parseInt(v, 10);
   return Number.isNaN(n) ? def : n;
@@ -1562,6 +1824,92 @@ const fnTomorrowYyyymmdd = () => {
 .lp-check:has(input:disabled) {
   color: var(--color-text-muted);
   cursor: not-allowed;
+}
+
+/* ===== 시간차 1일 환산시간 (LC-08) ===== */
+.lp-conv-loading {
+  font-size: 0.75rem;
+  color: var(--color-text-muted);
+  padding: 0.75rem 0;
+}
+
+.lp-conv-current {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.625rem 0.75rem;
+  background: rgba(22, 163, 74, 0.06);
+  border-radius: var(--btn-radius);
+  margin-bottom: 0.625rem;
+}
+
+.lp-conv-current__label {
+  font-size: 0.75rem;
+  color: var(--color-text-muted);
+}
+
+.lp-conv-current__value {
+  font-size: 0.875rem;
+  font-weight: 600;
+  color: var(--color-text-strong);
+}
+
+.lp-conv-input-row {
+  margin-bottom: 0.25rem;
+}
+
+.lp-conv-num {
+  width: 5rem;
+}
+
+.lp-conv-date-label {
+  margin-left: 0.5rem;
+}
+
+.lp-conv-hist-title {
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--color-text-strong);
+  margin: 0.75rem 0 0.375rem;
+  padding-top: 0.625rem;
+  border-top: 1px solid var(--color-border);
+}
+
+.lp-conv-table-wrap {
+  overflow-x: auto;
+}
+
+.lp-conv-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.75rem;
+}
+
+.lp-conv-table th {
+  text-align: left;
+  padding: 0.375rem 0.5rem;
+  font-weight: 600;
+  color: var(--color-text-muted);
+  background: var(--color-bg);
+  border-bottom: 1px solid var(--color-border);
+}
+
+.lp-conv-table td {
+  padding: 0.375rem 0.5rem;
+  border-bottom: 1px solid var(--color-border);
+  color: var(--color-text);
+}
+
+.lp-conv-table th.is-right,
+.lp-conv-table td.is-right {
+  text-align: right;
+}
+
+.lp-conv-empty {
+  font-size: 0.75rem;
+  color: var(--color-text-muted);
+  margin: 0;
+  padding: 0.5rem 0;
 }
 
 /* ===== 고급 기능 카드 ===== */

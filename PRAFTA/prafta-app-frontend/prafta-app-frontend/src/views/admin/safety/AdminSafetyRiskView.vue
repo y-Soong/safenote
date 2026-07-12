@@ -59,7 +59,17 @@
     </nav>
 
     <!-- 본문: 평가 목록 -->
-    <main class="asr-body">
+    <main
+      class="asr-body"
+      ref="scrollRef"
+      @touchstart.passive="onPullStart"
+      @touchmove="onPullMove"
+      @touchend="onPullEnd"
+      @touchcancel="onPullEnd"
+    >
+      <!-- 당겨서 새로고침 인디케이터 — 스크롤 최상단에서 아래로 당기면 노출 -->
+      <PullRefreshIndicator v-bind="indicatorProps" />
+
       <div v-if="isLoading" class="asr-state" aria-live="polite">불러오는 중...</div>
 
       <div v-else-if="findings.length === 0" class="asr-state" aria-live="polite">
@@ -174,10 +184,12 @@
 </template>
 
 <script setup>
-import { ref, computed, getCurrentInstance, onMounted } from 'vue'
+import { ref, computed, getCurrentInstance, onMounted, onBeforeUnmount, watch } from 'vue'
 import { useRouter } from 'vue-router'
 
 import api from '@/api/axios'
+import { usePullToRefresh } from '@/composables/usePullToRefresh'
+import PullRefreshIndicator from '@/components/common/PullRefreshIndicator.vue'
 import { buildFileUrl } from '@/utils/fileUrl'
 import { formatYmdDisplay } from '@/utils/approvalFormat'
 import DateStepperField from '@/components/common/DateStepperField.vue'
@@ -305,12 +317,60 @@ const onOpenDetail = async (item) => {
     isDetailLoading.value = false
   }
 }
-const onCloseDetail = () => {
+// 상세 시트 데이터 초기화(표시 상태/입력값) — 닫기 경로 공통.
+const clearDetailState = () => {
   detailOpen.value = false
   detail.value = null
   revalDate.value = ''
   revalBeforeDesc.value = ''
 }
+// 버튼/딤 클릭으로 닫기: 시트 오픈 시 push한 history state를 정리(뒤로가기 1회 소비) 후 닫기.
+const onCloseDetail = () => {
+  if (sheetPushed) {
+    ignoreNextPop = true
+    history.back()
+    sheetPushed = false
+  }
+  clearDetailState()
+}
+
+// ── 기기 뒤로가기(Android) 처리 — SidePanel 패턴 ──────────────────────────────
+//   상세 시트(항목 카드)가 열린 상태에서 기기 뒤로가기를 누르면 라우트가 pop되어
+//   안전관리 화면으로 빠져나가던 문제를 막는다. 시트 오픈 시 history state를 push해
+//   두고, 뒤로가기(popstate)가 발생하면 시트만 닫아 위험성평가 목록에 머무르게 한다.
+let sheetPushed = false
+let ignoreNextPop = false
+
+const onPopState = () => {
+  // 우리가 history.back()으로 유발한 popstate는 무시.
+  if (ignoreNextPop) {
+    ignoreNextPop = false
+    return
+  }
+  // 기기 뒤로가기로 시트만 닫기(state는 이미 소비됨).
+  if (detailOpen.value) {
+    sheetPushed = false
+    clearDetailState()
+  }
+}
+
+// 상세 시트 표시 여부에 따라 history state push / popstate 리스너 등록·해제.
+watch(detailOpen, (open) => {
+  if (open) {
+    if (!sheetPushed) {
+      history.pushState({ __asrSheet__: true }, '')
+      sheetPushed = true
+    }
+    window.addEventListener('popstate', onPopState)
+  } else {
+    window.removeEventListener('popstate', onPopState)
+    ignoreNextPop = false
+  }
+})
+
+onBeforeUnmount(() => {
+  window.removeEventListener('popstate', onPopState)
+})
 
 // ── H5 상태전환 제출(서버가 전이/권한/동시성 최종 강제). ────────────────────────
 const onTransition = async (targetStatus) => {
@@ -355,6 +415,16 @@ const onTransition = async (targetStatus) => {
     isSubmitting.value = false
   }
 }
+
+// ── 당겨서 새로고침 — 스크롤 최상단에서 아래로 당기면 현재 필터 1페이지를 재조회. ──
+//   부작용 없는 조회(loadFindings)만 수행. 현재 사업장(currentSiteCd)/필터(activeStatus)는 유지.
+const scrollRef = ref(null)
+const { onPullStart, onPullMove, onPullEnd, indicatorProps } = usePullToRefresh(
+  scrollRef,
+  async () => {
+    await loadFindings()
+  },
+)
 
 // 진입 시: 현재 사업장 확정 → 목록 조회(전체).
 onMounted(async () => {

@@ -266,7 +266,8 @@ onMounted(fnLoad);
 <style scoped>
 .hire-hist-pop {
   width: 90%;
-  max-width: 790px;
+  /* PRAFTA-WEB_002-T1-05(1.5): 처리방식/적용/사유 컬럼 값 개행 방지 위해 가로폭 약 30% 확대(790→1030px). */
+  max-width: 1030px;
   max-height: 88vh;
 }
 

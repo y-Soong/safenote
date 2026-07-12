@@ -13,6 +13,10 @@ public record ApprovalCandidateResult(
     , String rankCd
     , String rankNm
     , Integer rankSortIdx
+    // 권한(COM005): 8.2.1 표시·8.2.2 정렬 1순위
+    , String authCd
+    , String authNm
+    , Integer authSortIdx
     , String nodeNm
 ) {
 }

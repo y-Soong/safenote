@@ -49,7 +49,11 @@
             AND SC.SITE_CD  = WP.SITE_CD
             AND SC.SCH_CD   = WP.WORK_PLAN_CD
             AND SC.APPLY_DATE = (
-                SELECT MAX(SE.APPLY_DATE)
+                <!-- 근무일 기준 유효버전이 없으면 최이른 적용버전으로 폴백(COALESCE) -->
+                SELECT COALESCE(
+                         MAX(CASE WHEN SE.APPLY_DATE <![CDATA[ <= ]]> WP.WORK_YMD THEN SE.APPLY_DATE END)
+                       , MIN(SE.APPLY_DATE)
+                       )
                 FROM (
                     SELECT M3.CMPNY_CD, M3.SITE_CD, M3.SCH_CD, M3.APPLY_DATE
                     FROM TB_SCH_MGMT M3 WHERE M3.USE_YN = 'Y'
@@ -60,7 +64,6 @@
                 WHERE SE.CMPNY_CD    = WP.CMPNY_CD
                   AND SE.SITE_CD     = WP.SITE_CD
                   AND SE.SCH_CD      = WP.WORK_PLAN_CD
-                  AND SE.APPLY_DATE <![CDATA[ <= ]]> WP.WORK_YMD
             )
     </sql>
 

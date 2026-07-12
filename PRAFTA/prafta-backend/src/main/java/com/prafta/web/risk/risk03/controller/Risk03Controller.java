@@ -16,6 +16,8 @@ import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.multipart.MultipartFile;
 
 import com.prafta.common.cmm.file.dto.BytesMultipartFile;
+import com.prafta.common.error.risk.RiskErrorCode;
+import com.prafta.common.exception.ApiException;
 import com.prafta.common.security.JwtUtil;
 import com.prafta.web.risk.risk03.application.param.AssessmentParam;
 import com.prafta.web.risk.risk03.application.param.RiskAssessmentsListParam;
@@ -37,6 +39,9 @@ public class Risk03Controller {
 	
 	private final Risk03Service risk03Service;
 	private final JwtUtil jwtUtil;
+
+	// Low-B: 업로드 파일 크기 상한(10MB) — 과대 Base64 페이로드로 인한 메모리 압박 차단
+	private static final int MAX_UPLOAD_BYTES = 10 * 1024 * 1024;
 	
 	@GetMapping("/risk-type-info-lists")
 	public ResponseEntity<?> getRiskTypeInfoList(@RequestHeader(value = "Authorization", required = false) String authorization) {
@@ -60,6 +65,10 @@ public class Risk03Controller {
 		MultipartFile file = null;
 		if (StringUtils.hasText(request.getItemBase64())) {
 			byte[] bytes = Base64.getDecoder().decode(request.getItemBase64().trim());
+			// Low-B: 디코딩된 실제 바이트 기준 크기 상한 검사(저장 전 차단)
+			if (bytes.length > MAX_UPLOAD_BYTES) {
+				throw new ApiException(RiskErrorCode.RISK_400_003);
+			}
 			String fileName = StringUtils.hasText(request.getItemOriginalFilename())
 					? request.getItemOriginalFilename()
 					: "upload.bin";

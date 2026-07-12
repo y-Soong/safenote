@@ -43,11 +43,9 @@
         </select>
       </div>
       <div>
-        <label>종료일(시작)</label>
+        <label>종료일</label>
         <CalendarSrch v-model="startDate" />
-      </div>
-      <div>
-        <label>종료일(종료)</label>
+        <span class="date-range-sep">~</span>
         <CalendarSrch v-model="endDate" />
       </div>
       <div>
@@ -113,7 +111,7 @@
                 </th>
                 <th style="width: 9%">상태</th>
                 <th style="width: 11%">사업장</th>
-                <th style="width: 22%">세션 제목</th>
+                <th style="width: 22%">교육 제목</th>
                 <th style="width: 8%">위험성평가</th>
                 <th style="width: 9%">참여/이수</th>
                 <th style="width: 9%">이수율</th>
@@ -229,10 +227,13 @@ import {
   computed,
   defineProps,
   onMounted,
+  onActivated,
   getCurrentInstance,
   defineOptions,
 } from "vue";
 import { useModal } from "@/utils/useModal";
+import { useDashboardNavStore } from "@/stores/dashboardNavStore";
+import { ymToDateRange } from "@/utils/common";
 import axios from "@/api/axios";
 import { resolveApiErrorMessage } from "@/utils/apiError";
 import ViewHeader from "@/components/common/ViewHeader.vue";
@@ -253,6 +254,7 @@ const props = defineProps({
 // ================ Instance & Composables ================
 const { proxy } = getCurrentInstance();
 const { open: openPop } = useModal();
+const dashNav = useDashboardNavStore();
 
 // ================ Refs ================
 const historyList = ref([]);
@@ -272,8 +274,11 @@ const siteNo = ref("");
 const siteNm = ref("");
 const siteNoFcs = ref(null);
 const statusCd = ref("");
-const startDate = ref("");
-const endDate = ref("");
+// 종료일 기본값: 당해 연도 1월 1일 ~ 12월 31일(Acct_01 발생기간과 동일).
+//   대시보드 경유 진입 시 applyDashboardParams 가 ym 기준으로 덮어쓴다.
+const nowYear = new Date().getFullYear();
+const startDate = ref(`${nowYear}-01-01`);
+const endDate = ref(`${nowYear}-12-31`);
 const searchKeyword = ref("");
 
 // 페이징
@@ -302,11 +307,35 @@ const totalPages = computed(() => {
   return pages < 1 ? 1 : pages;
 });
 
+// ── 대시보드 조회조건 주입 (PRAFTA-DASHBOARD-T1) ──────────────
+// 대시보드(Dashboard_01)에서 넘어온 조회조건이 있으면 반영한다 (없으면 no-op).
+// 기준월(ym)은 본 화면의 일자 기간(startDate/endDate)으로 변환한다. 반영 여부를 반환한다.
+const applyDashboardParams = () => {
+  const p = dashNav.consumeParams("Tbm_04");
+  if (!p) return false;
+  siteCd.value = p.siteCd ?? "";
+  siteNo.value = p.siteNo ?? "";
+  siteNm.value = p.siteNm ?? "";
+  const range = ymToDateRange(p.ym);
+  if (range) {
+    startDate.value = range.fromDate;
+    endDate.value = range.toDate;
+  }
+  return true;
+};
+
 // ================ Life Cycle ================
 onMounted(async () => {
   fnInit();
+  // 대시보드 경유 진입 시 조회조건 덮어쓰기 — 아래 fnSearch 가 반영하므로 이중 조회 없음
+  applyDashboardParams();
   fnButtonControll();
   await fnSearch();
+});
+
+// keep-alive 로 이미 열린 탭에 재진입하는 경우 대응
+onActivated(() => {
+  if (applyDashboardParams()) fnSearch();
 });
 
 // ================ API Functions ================
@@ -487,6 +516,11 @@ const statusClass = (code) => {
 /* 제목 검색 input 너비 2배(.viewSearch input 기본 120px → 240px) */
 .title-search-input {
   width: 240px;
+}
+
+/* 발생기간(Acct_01) 과 동일한 기간 구분자 */
+.date-range-sep {
+  margin: 0 var(--space-xs, 0.25rem);
 }
 
 /* prafta-033-D: 기간 통계 요약 */

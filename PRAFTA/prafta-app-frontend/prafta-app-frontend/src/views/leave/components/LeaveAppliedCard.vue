@@ -15,9 +15,9 @@
         <span class="row__nm">{{ t.leaveNm }}</span>
         <span class="row__vals">
           <span class="row__remain" :class="{ 'row__remain--zero': isZero(t.remainDays) }">
-            잔여 {{ trimDays(t.remainDays) }}일
+            잔여 {{ fmtDays(t.remainDays) }}
           </span>
-          <span class="row__total">/ 한도 {{ trimDays(t.maxAplyDays) }}일</span>
+          <span class="row__total">/ 한도 {{ fmtDays(t.maxAplyDays) }}</span>
         </span>
       </li>
     </ul>
@@ -25,20 +25,23 @@
 </template>
 
 <script setup>
-defineProps({
+import { formatLeaveDays } from '@/utils/leaveFormat'
+
+const props = defineProps({
   // 신청형 휴가('01') 타입 배열. [{ leaveCd, leaveNm, maxAplyDays, usedDays, remainDays }]
   types: {
     type: Array,
     default: () => [],
   },
+  // LC-11: 1일 환산시간(분) — "N일 H시간 M분" 표기 분모(서버 권위). 미제공 시 480 폴백.
+  convMinutes: {
+    type: Number,
+    default: 480,
+  },
 })
 
-// 0.5 단위 표기 (정수면 정수, 소수면 1자리) — LeaveBalanceCard.trimDays 동일.
-const trimDays = (v) => {
-  if (v == null) return '0'
-  const n = Number(v)
-  return Number.isInteger(n) ? String(n) : n.toFixed(1)
-}
+// LC-11: 소수점 노출 금지 — "N일 H시간 M분" 표기(서버 권위값 그대로, 표시만 교체).
+const fmtDays = (v) => formatLeaveDays(Number(v ?? 0), props.convMinutes)
 
 const isZero = (v) => Number(v ?? 0) === 0
 </script>

@@ -16,7 +16,9 @@ public class AssessmentRequest{
 	private String initLikelihoodScore;
 	private String initSeverityScore;
 	private String initRiskLv;
-    
+	/** WEB_003 저장 액션: AI 반영 블록이 덧붙은 유해요인설명(INIT_DESC). null 이면 미갱신. */
+	private String initDesc;
+
 	private String revalDate;
 	private String revalBeforeDesc;
 	private String revalLikelihoodScore;

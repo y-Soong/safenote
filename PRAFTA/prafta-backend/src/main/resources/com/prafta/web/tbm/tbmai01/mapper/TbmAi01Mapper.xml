@@ -1,0 +1,356 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.prafta.web.tbm.tbmai01.mapper.TbmAi01Mapper">
+
+	<!-- 항목→자료→회사 스코프 도출(IDOR). 미소유/미존재면 NULL -->
+	<select id="selectMtrlCdByItemCd" resultType="string">
+	/* TbmAi01Mapper.selectMtrlCdByItemCd */
+	SELECT A.MTRL_CD
+	FROM TB_TBM_EDU_MTRL_ITEM A
+		 INNER JOIN TB_TBM_EDU_MTRL M
+		 	ON (A.MTRL_CD = M.MTRL_CD AND M.CMPNY_CD = #{gvCmpnyCd})
+	WHERE A.MTRL_ITEM_CD = #{mtrlItemCd}
+	LIMIT 1
+	</select>
+
+	<!-- 자료 소유 확인 + 사업장 스코프 도출(mtrlCd 진입 게이트). 없으면 NULL → AI_404_002.
+	     ★record 위치매핑: SELECT 컬럼 순서 = TbmAiMtrlScope 생성자 인자 순서(MTRL_CD, SITE_CD) -->
+	<select id="selectMtrlSiteScope" resultType="com.prafta.web.tbm.tbmai01.application.model.TbmAiMtrlScope">
+	/* TbmAi01Mapper.selectMtrlSiteScope */
+	SELECT
+		MTRL_CD		AS mtrlCd
+		, SITE_CD	AS siteCd
+	FROM TB_TBM_EDU_MTRL
+	WHERE MTRL_CD = #{mtrlCd}
+	  AND CMPNY_CD = #{gvCmpnyCd}
+	  AND USE_YN = 'Y'
+	</select>
+
+	<!-- 사업장 격리: 사용자-사업장 권한 매핑(USE_YN='Y') 카운트(T2 countUserSiteAuth 동등 쿼리) -->
+	<select id="countUserSiteAuth" resultType="int">
+	/* TbmAi01Mapper.countUserSiteAuth */
+	SELECT
+		COUNT(1)
+	FROM TB_USER_SITE_AUTH A
+	WHERE A.CMPNY_CD = #{cmpnyCd}
+	  AND A.USER_CD = #{userCd}
+	  AND A.SITE_CD = #{siteCd}
+	  AND A.USE_YN = 'Y'
+	</select>
+
+	<!-- 큐잉 대상 조회(자료의 분석가능 이미지·PDF 항목 중 재큐잉 가능 상태).
+	     ★v4 RA-3: 체크된(AI_ANALYZE_YN='Y') 항목만 큐잉. flag 영속은 tbm01 저장(RA-1)이 소유. -->
+	<select id="selectAnalyzeTargets" resultType="com.prafta.web.tbm.tbmai01.application.model.TbmAiAnalyzeTarget">
+	/* TbmAi01Mapper.selectAnalyzeTargets */
+	SELECT
+		A.MTRL_ITEM_CD		AS mtrlItemCd
+		, A.MTRL_ITEM_TYPE	AS mtrlItemType
+		, A.FILE_MGMT_CD	AS fileMgmtCd
+	FROM TB_TBM_EDU_MTRL_ITEM A
+		 INNER JOIN TB_TBM_EDU_MTRL M
+		 	ON (A.MTRL_CD = M.MTRL_CD AND M.CMPNY_CD = #{gvCmpnyCd})
+	WHERE A.MTRL_CD = #{mtrlCd}
+	  AND A.USE_YN = 'Y'
+	  AND A.AI_ANALYZE_YN = 'Y'                 /* ★v4 추가: 체크된 항목만 분석 */
+	  AND A.MTRL_ITEM_TYPE IN ('01','04')
+	  /* 확정/분석중 항목은 초기 큐잉에서 제외(확정 보존·중복분석 방지). 재분석은 reanalyze EP */
+	  AND (A.AI_STATUS IS NULL OR A.AI_STATUS IN ('NONE','FAILED','DRAFT'))
+	ORDER BY A.SORT_IDX
+	</select>
+
+	<!-- 큐잉 상태 전이(대상 항목 일괄 ANALYZING).
+	     ★v4 RA-3: flag(AI_ANALYZE_YN) 소유는 tbm01 저장(RA-1)이 가진다 → 여기서 self-set 하지 않음.
+	     selectAnalyzeTargets 와 동일 WHERE(AI_ANALYZE_YN='Y' 게이트 포함)로 대상 집합 일치. -->
+	<update id="markItemsAnalyzing">
+	/* TbmAi01Mapper.markItemsAnalyzing */
+	UPDATE TB_TBM_EDU_MTRL_ITEM A
+		   INNER JOIN TB_TBM_EDU_MTRL M
+		   	  ON (A.MTRL_CD = M.MTRL_CD AND M.CMPNY_CD = #{gvCmpnyCd})
+	SET
+		A.AI_STATUS	= 'ANALYZING'
+		, A.UPDATE_NO	= #{userCd}
+		, A.UPDATE_DATE	= NOW()
+	WHERE A.MTRL_CD = #{mtrlCd}
+	  AND A.USE_YN = 'Y'
+	  AND A.AI_ANALYZE_YN = 'Y'                 /* ★v4 추가 */
+	  AND A.MTRL_ITEM_TYPE IN ('01','04')
+	  AND (A.AI_STATUS IS NULL OR A.AI_STATUS IN ('NONE','FAILED','DRAFT'))
+	</update>
+
+	<!-- 저장 후 자동 큐잉 전용 대상 조회. selectAnalyzeTargets 와 동일하되 DRAFT 를 제외한다.
+	     관리자가 검토 중인 초안(DRAFT)·대화 이력을 무관한 저장 한 번으로 덮어쓰지 않기 위함.
+	     DRAFT 재분석은 명시적 reanalyze EP 로만 수행한다. -->
+	<select id="selectAutoAnalyzeTargets" resultType="com.prafta.web.tbm.tbmai01.application.model.TbmAiAnalyzeTarget">
+	/* TbmAi01Mapper.selectAutoAnalyzeTargets */
+	SELECT
+		A.MTRL_ITEM_CD		AS mtrlItemCd
+		, A.MTRL_ITEM_TYPE	AS mtrlItemType
+		, A.FILE_MGMT_CD	AS fileMgmtCd
+	FROM TB_TBM_EDU_MTRL_ITEM A
+		 INNER JOIN TB_TBM_EDU_MTRL M
+		 	ON (A.MTRL_CD = M.MTRL_CD AND M.CMPNY_CD = #{gvCmpnyCd})
+	WHERE A.MTRL_CD = #{mtrlCd}
+	  AND A.USE_YN = 'Y'
+	  AND A.AI_ANALYZE_YN = 'Y'
+	  AND A.MTRL_ITEM_TYPE IN ('01','04')
+	  AND (A.AI_STATUS IS NULL OR A.AI_STATUS IN ('NONE','FAILED'))
+	ORDER BY A.SORT_IDX
+	</select>
+
+	<!-- 자동 큐잉 상태 전이(DRAFT 제외). selectAutoAnalyzeTargets 와 동일 WHERE 로 대상 집합 일치. -->
+	<update id="markItemsAnalyzingAuto">
+	/* TbmAi01Mapper.markItemsAnalyzingAuto */
+	UPDATE TB_TBM_EDU_MTRL_ITEM A
+		   INNER JOIN TB_TBM_EDU_MTRL M
+		   	  ON (A.MTRL_CD = M.MTRL_CD AND M.CMPNY_CD = #{gvCmpnyCd})
+	SET
+		A.AI_STATUS	= 'ANALYZING'
+		, A.UPDATE_NO	= #{userCd}
+		, A.UPDATE_DATE	= NOW()
+	WHERE A.MTRL_CD = #{mtrlCd}
+	  AND A.USE_YN = 'Y'
+	  AND A.AI_ANALYZE_YN = 'Y'
+	  AND A.MTRL_ITEM_TYPE IN ('01','04')
+	  AND (A.AI_STATUS IS NULL OR A.AI_STATUS IN ('NONE','FAILED'))
+	</update>
+
+	<!-- 단건 ANALYZING 전이(reanalyze). ★v4 RA-3: flag self-set 제거(tbm01 소유).
+	     WHERE 에 AI_ANALYZE_YN 게이트를 두지 않아 관리자 단건 오버라이드 허용(§미해결 1). -->
+	<update id="markItemAnalyzing">
+	/* TbmAi01Mapper.markItemAnalyzing */
+	UPDATE TB_TBM_EDU_MTRL_ITEM A
+		   INNER JOIN TB_TBM_EDU_MTRL M
+		   	  ON (A.MTRL_CD = M.MTRL_CD AND M.CMPNY_CD = #{gvCmpnyCd})
+	SET
+		A.AI_STATUS	= 'ANALYZING'
+		, A.UPDATE_NO	= #{userCd}
+		, A.UPDATE_DATE	= NOW()
+	WHERE A.MTRL_ITEM_CD = #{mtrlItemCd}
+	</update>
+
+	<!-- 단건 항목 AI행 조회(액션 EP 공용). NULL 이면 미소유. 위치매핑: TbmAiItemRow 생성자 순서와 일치 -->
+	<select id="selectItemAiRow" resultType="com.prafta.web.tbm.tbmai01.application.model.TbmAiItemRow">
+	/* TbmAi01Mapper.selectItemAiRow */
+	SELECT
+		A.MTRL_ITEM_CD		AS mtrlItemCd
+		, A.MTRL_CD			AS mtrlCd
+		, A.MTRL_ITEM_TYPE	AS mtrlItemType
+		, A.FILE_MGMT_CD	AS fileMgmtCd
+		, A.AI_ANALYZE_YN	AS aiAnalyzeYn
+		, A.AI_STATUS		AS aiStatus
+		, A.AI_CONFIRM_DESC	AS aiConfirmDesc
+		, A.AI_DRAFT_TEXT	AS aiDraftText
+		, A.AI_CHAT_JSON	AS aiChatJson
+		, DATE_FORMAT(A.AI_ANALYZED_AT, '%Y-%m-%d %H:%i')	AS aiAnalyzedAt
+		, M.SITE_CD			AS siteCd
+	FROM TB_TBM_EDU_MTRL_ITEM A
+		 INNER JOIN TB_TBM_EDU_MTRL M
+		 	ON (A.MTRL_CD = M.MTRL_CD AND M.CMPNY_CD = #{gvCmpnyCd})
+	WHERE A.MTRL_ITEM_CD = #{mtrlItemCd}
+	  AND A.USE_YN = 'Y'
+	</select>
+
+	<!-- 분석 결과 저장(성공=DRAFT + 초안 텍스트 + 초기 대화 시드 + 분석일시) -->
+	<update id="updateItemDraft">
+	/* TbmAi01Mapper.updateItemDraft */
+	UPDATE TB_TBM_EDU_MTRL_ITEM A
+		   INNER JOIN TB_TBM_EDU_MTRL M
+		   	  ON (A.MTRL_CD = M.MTRL_CD AND M.CMPNY_CD = #{gvCmpnyCd})
+	SET
+		A.AI_STATUS			= 'DRAFT'
+		, A.AI_DRAFT_TEXT	= #{draftText}
+		, A.AI_CHAT_JSON	= #{chatJson}
+		, A.AI_ANALYZED_AT	= NOW()
+		, A.UPDATE_NO		= #{userCd}
+		, A.UPDATE_DATE		= NOW()
+	WHERE A.MTRL_ITEM_CD = #{mtrlItemCd}
+	</update>
+
+	<!-- 분석 실패 저장(FAILED) -->
+	<update id="updateItemFailed">
+	/* TbmAi01Mapper.updateItemFailed */
+	UPDATE TB_TBM_EDU_MTRL_ITEM A
+		   INNER JOIN TB_TBM_EDU_MTRL M
+		   	  ON (A.MTRL_CD = M.MTRL_CD AND M.CMPNY_CD = #{gvCmpnyCd})
+	SET
+		A.AI_STATUS			= 'FAILED'
+		, A.AI_ANALYZED_AT	= NOW()
+		, A.UPDATE_NO		= #{userCd}
+		, A.UPDATE_DATE		= NOW()
+	WHERE A.MTRL_ITEM_CD = #{mtrlItemCd}
+	</update>
+
+	<!-- 대화이력 저장(chat-item, 텍스트만 — 상태 미변경) -->
+	<update id="updateItemChatJson">
+	/* TbmAi01Mapper.updateItemChatJson */
+	UPDATE TB_TBM_EDU_MTRL_ITEM A
+		   INNER JOIN TB_TBM_EDU_MTRL M
+		   	  ON (A.MTRL_CD = M.MTRL_CD AND M.CMPNY_CD = #{gvCmpnyCd})
+	SET
+		A.AI_CHAT_JSON	= #{chatJson}
+		, A.UPDATE_NO	= #{userCd}
+		, A.UPDATE_DATE	= NOW()
+	WHERE A.MTRL_ITEM_CD = #{mtrlItemCd}
+	</update>
+
+	<!-- 확정 저장(confirm-item/manual-confirm — CONFIRM_DESC + CONFIRMED, 멱등) -->
+	<update id="updateItemConfirm">
+	/* TbmAi01Mapper.updateItemConfirm */
+	UPDATE TB_TBM_EDU_MTRL_ITEM A
+		   INNER JOIN TB_TBM_EDU_MTRL M
+		   	  ON (A.MTRL_CD = M.MTRL_CD AND M.CMPNY_CD = #{gvCmpnyCd})
+	SET
+		A.AI_CONFIRM_DESC	= #{confirmDesc}
+		, A.AI_STATUS		= 'CONFIRMED'
+		, A.UPDATE_NO		= #{userCd}
+		, A.UPDATE_DATE		= NOW()
+	WHERE A.MTRL_ITEM_CD = #{mtrlItemCd}
+	</update>
+
+	<!-- analysis-status 목록. 위치매핑: TbmAiItemStatusRow 생성자 순서와 일치 -->
+	<select id="selectItemStatuses" resultType="com.prafta.web.tbm.tbmai01.application.model.TbmAiItemStatusRow">
+	/* TbmAi01Mapper.selectItemStatuses */
+	SELECT
+		A.MTRL_ITEM_CD		AS mtrlItemCd
+		, A.MTRL_ITEM_TYPE	AS mtrlItemType
+		, A.AI_ANALYZE_YN	AS aiAnalyzeYn
+		, A.AI_STATUS		AS aiStatus
+		, A.AI_DRAFT_TEXT	AS aiDraftText
+		, A.AI_CONFIRM_DESC	AS aiConfirmDesc
+		, A.AI_CHAT_JSON	AS aiChatJson
+		, DATE_FORMAT(A.AI_ANALYZED_AT, '%Y-%m-%d %H:%i')	AS aiAnalyzedAt
+	FROM TB_TBM_EDU_MTRL_ITEM A
+		 INNER JOIN TB_TBM_EDU_MTRL M
+		 	ON (A.MTRL_CD = M.MTRL_CD AND M.CMPNY_CD = #{gvCmpnyCd})
+	WHERE A.MTRL_CD = #{mtrlCd}
+	  AND A.USE_YN = 'Y'
+	ORDER BY A.SORT_IDX
+	</select>
+
+	<!-- 분석 워크리스트 공통 WHERE(사업장 격리 = assertSiteAccess 동치).
+	     회사스코프(IDOR) M.CMPNY_CD + 회사공통/사업장 가시성 게이트 + 선택 필터. -->
+	<sql id="worklistWhere">
+		WHERE M.CMPNY_CD = #{gvCmpnyCd}
+		  AND M.USE_YN = 'Y'
+		  AND A.USE_YN = 'Y'
+		  /* AI 분석 관리 화면은 '분석 지정된' 항목만 다룬다.
+		     지정 해제(N) 항목은 관리 대상이 아니므로 목록/총건수 양쪽에서 제외한다. */
+		  AND A.AI_ANALYZE_YN = 'Y'
+		  /* ★사업장 격리: assertSiteAccess 동치.
+		     - 회사공통 행(SITE_CD 비어있음): canManageCommon 일 때만 노출
+		     - 사업장 행: companyWide 통과, 아니면 TB_USER_SITE_AUTH 매핑 보유 사업장만 */
+		  AND (
+			( (M.SITE_CD IS NULL OR M.SITE_CD = '')
+			  <if test="!canManageCommon"> AND 1 = 0 </if>
+			)
+			OR
+			( (M.SITE_CD IS NOT NULL AND M.SITE_CD <![CDATA[<>]]> '')
+			  <if test="!companyWide">
+				AND M.SITE_CD IN (
+					SELECT UA.SITE_CD
+					FROM TB_USER_SITE_AUTH UA
+					WHERE UA.CMPNY_CD = #{gvCmpnyCd}
+					  AND UA.USER_CD = #{gvUserCd}
+					  AND UA.USE_YN = 'Y'
+				)
+			  </if>
+			)
+		  )
+		  /* 필터(선택) */
+		  <if test="siteCd != null and siteCd != ''">
+			<choose>
+			  <when test="siteCd == 'COMMON'"> AND (M.SITE_CD IS NULL OR M.SITE_CD = '') </when>
+			  <otherwise> AND M.SITE_CD = #{siteCd} </otherwise>
+			</choose>
+		  </if>
+		  <if test="mtrlItemType != null and mtrlItemType != ''"> AND A.MTRL_ITEM_TYPE = #{mtrlItemType} </if>
+		  <!-- AI 상태 필터. PENDING_ANALYZE / PENDING_CONFIRM 은 SYS056 코드가 아닌 화면 파생 의사코드다.
+		       두 상태 모두 저장값은 AI_STATUS='NONE'(또는 NULL)이고 항목타입으로만 갈린다.
+		         01(이미지)/04(PDF) → VLM 자동분석 대기, 02(동영상)/03(유튜브) → 관리자 확정 대기.
+		       ★NULL 안전: AI_STATUS 가 NULL 인 행이 비교에서 통째로 탈락하지 않도록 IFNULL 로 감싼다. -->
+		  <if test="aiStatus != null and aiStatus != ''">
+			<choose>
+			  <when test="aiStatus == 'PENDING_ANALYZE'">
+				AND IFNULL(A.AI_STATUS, 'NONE') = 'NONE'
+				AND A.MTRL_ITEM_TYPE IN ('01', '04')
+			  </when>
+			  <when test="aiStatus == 'PENDING_CONFIRM'">
+				AND IFNULL(A.AI_STATUS, 'NONE') = 'NONE'
+				AND A.MTRL_ITEM_TYPE IN ('02', '03')
+			  </when>
+			  <otherwise> AND A.AI_STATUS = #{aiStatus} </otherwise>
+			</choose>
+		  </if>
+		  <if test="keyword != null and keyword != ''">
+			<!-- [Low] LIKE 와일드카드(%,_,\) 리터럴 검색 — Attd08/AppAdminTbmMapper 관례(bind+ESCAPE '\') 따름. -->
+			<bind name="safeKeyword"
+			      value="keyword.replace('\\', '\\\\').replace('%', '\\%').replace('_', '\\_')" />
+			AND ( M.TITLE LIKE CONCAT('%', #{safeKeyword}, '%') ESCAPE '\'
+			   OR A.MTRL_DESC LIKE CONCAT('%', #{safeKeyword}, '%') ESCAPE '\' )
+		  </if>
+		  <!-- 첨부파일명 검색. 이 WHERE 는 목록(파일 LEFT JOIN 있음)과 총건수(조인 없음)가 공유하므로
+		       조인 별칭(B)에 의존하지 않도록 EXISTS 로 건다. TB_FILE_INFO PK = CMPNY_CD + FILE_MGMT_CD. -->
+		  <if test="fileNm != null and fileNm != ''">
+			<bind name="safeFileNm"
+			      value="fileNm.replace('\\', '\\\\').replace('%', '\\%').replace('_', '\\_')" />
+			AND EXISTS (
+				SELECT 1
+				FROM TB_FILE_INFO F
+				WHERE F.CMPNY_CD = M.CMPNY_CD
+				  AND F.FILE_MGMT_CD = A.FILE_MGMT_CD
+				  AND F.FILE_NM LIKE CONCAT('%', #{safeFileNm}, '%') ESCAPE '\'
+			)
+		  </if>
+	</sql>
+
+	<!-- 분석 워크리스트 목록. 위치매핑: TbmAiWorklistRow 생성자 순서와 SELECT 컬럼순서 일치 -->
+	<select id="selectAnalysisWorklist" resultType="com.prafta.web.tbm.tbmai01.application.model.TbmAiWorklistRow">
+	/* TbmAi01Mapper.selectAnalysisWorklist */
+	SELECT
+		M.MTRL_CD			AS mtrlCd
+		, M.TITLE			AS title
+		, M.SITE_CD			AS siteCd
+		, A.MTRL_ITEM_CD	AS mtrlItemCd
+		, A.MTRL_ITEM_TYPE	AS mtrlItemType
+		, A.MTRL_DESC		AS mtrlDesc
+		, A.AI_ANALYZE_YN	AS aiAnalyzeYn
+		, A.AI_STATUS		AS aiStatus
+		, CASE WHEN TRIM(IFNULL(A.AI_CONFIRM_DESC, '')) <![CDATA[<>]]> '' THEN 'Y' ELSE 'N' END AS hasConfirmDesc
+		, A.FILE_MGMT_CD	AS fileMgmtCd
+		, B.FILE_NM			AS fileNm
+		, B.FILE_PATH		AS filePath
+		, B.FILE_EXT		AS fileExt
+		, A.URL				AS url
+		, A.THUMB_FILE_MGMT_CD	AS thumbFileMgmtCd
+		, A.DURATION_SEC	AS durationSec
+		, DATE_FORMAT(A.AI_ANALYZED_AT, '%Y-%m-%d %H:%i')	AS aiAnalyzedAt
+	FROM TB_TBM_EDU_MTRL_ITEM A
+		 INNER JOIN TB_TBM_EDU_MTRL M
+		 	ON (A.MTRL_CD = M.MTRL_CD)
+		 /* TB_FILE_INFO PK = CMPNY_CD + FILE_MGMT_CD. 회사 조건이 빠지면 타 회사 동일 코드 행이
+		    붙어 파일명이 뒤바뀌거나 행이 늘어난다(총건수 쿼리와 불일치). */
+		 LEFT OUTER JOIN TB_FILE_INFO B
+		 	ON (B.CMPNY_CD = M.CMPNY_CD AND B.FILE_MGMT_CD = A.FILE_MGMT_CD)
+	<include refid="worklistWhere"/>
+	/* 회사공통(SITE_CD 없음) 자료를 항상 맨 위로 — 페이징(LIMIT/OFFSET)에서도 1페이지에 모이도록.
+	   FE 는 이 순서대로 mtrlCd 로 그룹핑하므로(Map 삽입순) 회사공통 그룹이 상단에 온다.
+	   SORT_IDX 는 자료 안에서 중복될 수 있어(동점) 마지막에 MTRL_ITEM_CD 로 순서를 확정한다 —
+	   동점이 남으면 LIMIT/OFFSET 페이지 경계에서 행이 중복/누락될 수 있다. */
+	ORDER BY (M.SITE_CD IS NULL OR M.SITE_CD = '') DESC
+	    , M.MTRL_CD
+	    , A.SORT_IDX
+	    , A.MTRL_ITEM_CD
+	LIMIT #{limit} OFFSET #{offset}
+	</select>
+
+	<!-- 분석 워크리스트 총건수(동일 WHERE) -->
+	<select id="countAnalysisWorklist" resultType="int">
+	/* TbmAi01Mapper.countAnalysisWorklist */
+	SELECT COUNT(1)
+	FROM TB_TBM_EDU_MTRL_ITEM A
+		 INNER JOIN TB_TBM_EDU_MTRL M
+		 	ON (A.MTRL_CD = M.MTRL_CD)
+	<include refid="worklistWhere"/>
+	</select>
+
+</mapper>

@@ -36,20 +36,6 @@
       </div>
 
       <div>
-        <label>사건유형</label>
-        <select v-model="incidentTypeCd" name="combo">
-          <option value="">전체</option>
-          <option
-            v-for="opt in systCodeArr['SYS061'] || []"
-            :key="opt.systValDCd"
-            :value="opt.systValDCd"
-          >
-            {{ opt.systValDNm }}
-          </option>
-        </select>
-      </div>
-
-      <div>
         <label>잠재중대성</label>
         <select v-model="potentialSeverityCd" name="combo">
           <option value="">전체</option>
@@ -71,7 +57,7 @@
       </div>
     </div>
 
-    <!-- 상태 탭 (SYS063: 100 접수 / 200 검토중 / 300 조치중 / 400 완료) -->
+    <!-- 상태 탭 (SYS063 재번호: 100 접수 / 200 조치중 / 300 완료 / 400 미처리대상) -->
     <div class="status-tabs">
       <button
         v-for="tab in statusTabs"
@@ -118,15 +104,6 @@
                   @update:width="onResize"
                 />
                 <ThSortable
-                  label="유형"
-                  col-key="incidentTypeNm"
-                  :sort-key="sortKey"
-                  :sort-order="sortOrder"
-                  :width="colWidths.incidentTypeNm"
-                  @sort="onSort"
-                  @update:width="onResize"
-                />
-                <ThSortable
                   label="잠재중대성"
                   col-key="potentialSeverityNm"
                   :sort-key="sortKey"
@@ -141,6 +118,33 @@
                   :sort-key="sortKey"
                   :sort-order="sortOrder"
                   :width="colWidths.processNm"
+                  @sort="onSort"
+                  @update:width="onResize"
+                />
+                <ThSortable
+                  label="발생장소"
+                  col-key="locationDesc"
+                  :sort-key="sortKey"
+                  :sort-order="sortOrder"
+                  :width="colWidths.locationDesc"
+                  @sort="onSort"
+                  @update:width="onResize"
+                />
+                <ThSortable
+                  label="경위"
+                  col-key="description"
+                  :sort-key="sortKey"
+                  :sort-order="sortOrder"
+                  :width="colWidths.description"
+                  @sort="onSort"
+                  @update:width="onResize"
+                />
+                <ThSortable
+                  label="즉시조치"
+                  col-key="immediateActionDesc"
+                  :sort-key="sortKey"
+                  :sort-order="sortOrder"
+                  :width="colWidths.immediateActionDesc"
                   @sort="onSort"
                   @update:width="onResize"
                 />
@@ -178,7 +182,7 @@
                 v-if="!incidentResultList || incidentResultList.length === 0"
               >
                 <tr>
-                  <td colspan="8" class="edu-grid-empty">
+                  <td colspan="10" class="edu-grid-empty">
                     등록된 사건이 없습니다.
                   </td>
                 </tr>
@@ -192,7 +196,6 @@
                 >
                   <td style="text-align: center">{{ idx + 1 }}</td>
                   <td>{{ item.nearMissId }}</td>
-                  <td>{{ item.incidentTypeNm }}</td>
                   <td>
                     <span
                       class="severity-badge"
@@ -202,6 +205,16 @@
                     </span>
                   </td>
                   <td>{{ item.processNm }}</td>
+                  <!-- 긴 텍스트 3종: 고정폭 + 말줄임, 전체 내용은 툴팁으로 -->
+                  <td class="cell-ellipsis" :title="item.locationDesc">
+                    {{ item.locationDesc || "-" }}
+                  </td>
+                  <td class="cell-ellipsis" :title="item.description">
+                    {{ item.description || "-" }}
+                  </td>
+                  <td class="cell-ellipsis" :title="item.immediateActionDesc">
+                    {{ item.immediateActionDesc || "-" }}
+                  </td>
                   <td>{{ item.reporterNm }}</td>
                   <td>{{ item.occurDtime }}</td>
                   <td>{{ item.reportStatusNm }}</td>
@@ -251,9 +264,11 @@ const { sortKey, sortOrder, sortedData, onSort } =
   useTableSort(incidentResultList);
 const { colWidths, onResize } = useColumnResize({
   nearMissId: 150,
-  incidentTypeNm: 110,
   potentialSeverityNm: 110,
   processNm: 110,
+  locationDesc: 150,
+  description: 220,
+  immediateActionDesc: 220,
   reporterNm: 100,
   occurDtime: 140,
   reportStatusNm: 90,
@@ -261,18 +276,20 @@ const { colWidths, onResize } = useColumnResize({
 
 // 코드/조회조건
 const systCodeArr = ref([]);
-const incidentTypeCd = ref("");
 const potentialSeverityCd = ref("");
-const startDate = ref();
-const endDate = ref();
+// 발생기간 기본값: 당해년도 1/1 ~ 12/31 (CalendarSrch 모델은 YYYY-MM-DD 문자열)
+const thisYear = new Date().getFullYear();
+const startDate = ref(`${thisYear}-01-01`);
+const endDate = ref(`${thisYear}-12-31`);
 const reportStatusCd = ref(""); // "" = 전체
 
-// 상태 탭 (라벨은 SYS063 매핑이 로드되면 갱신 가능; 골격은 고정 라벨)
+// 상태 탭 (SYS063 재번호: 100 접수 / 200 조치중 / 300 완료 / 400 미처리대상).
+// 라벨은 SYS063 매핑이 로드되면 갱신 가능; 골격은 고정 라벨.
 const statusTabs = ref([
   { code: "100", label: "접수" },
-  { code: "200", label: "검토중" },
-  { code: "300", label: "조치중" },
-  { code: "400", label: "완료" },
+  { code: "200", label: "조치중" },
+  { code: "300", label: "완료" },
+  { code: "400", label: "미처리대상" },
 ]);
 const statusCounts = ref({});
 
@@ -413,12 +430,12 @@ const fnOpenNearMissInfo = (item) => {
   });
 };
 
-// 코드(SYS061 사건유형 / SYS062 잠재중대성 / SYS063 처리상태) 조회 + systValCd 기준 그룹핑
+// 코드(SYS062 잠재중대성 / SYS063 처리상태) 조회 + systValCd 기준 그룹핑
 const fnGetSystinfoList = async () => {
   try {
     const response = await axios.get("/comApi/baseinfo/syst-info-lists", {
       params: {
-        systCodeList: ["SYS061", "SYS062", "SYS063"],
+        systCodeList: ["SYS062", "SYS063"],
       },
     });
 
@@ -454,7 +471,6 @@ const fnGetSystinfoList = async () => {
 // 조회조건 공통 파라미터(식별자 cmpnyCd/userCd는 서버 JWT에서 도출 → 전송하지 않음)
 const fnBuildSearchParams = () => ({
   siteCd: siteCd.value,
-  incidentTypeCd: incidentTypeCd.value,
   potentialSeverityCd: potentialSeverityCd.value,
   startDate: startDate.value,
   endDate: endDate.value,
@@ -469,11 +485,12 @@ const fnGetStatusCounts = async () => {
 
     if (response.status === 200) {
       const cnt = response.data?.statusCount || {};
+      // SYS063 재번호: 100 접수 / 200 조치중 / 300 완료 / 400 미처리대상
       statusCounts.value = {
         "100": cnt.receivedCnt ?? 0,
-        "200": cnt.reviewingCnt ?? 0,
-        "300": cnt.actingCnt ?? 0,
-        "400": cnt.completedCnt ?? 0,
+        "200": cnt.actingCnt ?? 0,
+        "300": cnt.completedCnt ?? 0,
+        "400": cnt.unaddressedCnt ?? 0,
       };
     }
   } catch (err) {
@@ -509,6 +526,14 @@ const fnSearch = async () => {
 <style scoped>
 .date-range-sep {
   margin: 0 var(--space-xs, 0.25rem);
+}
+
+/* 긴 텍스트 컬럼(발생장소/경위/즉시조치): 고정폭 안에서 한 줄 말줄임(...) */
+.cell-ellipsis {
+  max-width: 0; /* table-fixed 에서 컬럼폭을 넘지 않도록 강제 */
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 /* 상태 탭 */

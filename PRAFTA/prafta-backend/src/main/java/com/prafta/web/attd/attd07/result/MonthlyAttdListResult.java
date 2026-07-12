@@ -8,6 +8,7 @@ public record MonthlyAttdListResult(
     , String deptNm
     , String authCd
     , String authNm
+    , String employmentType   // 고용형태: DAILY(일용직) / REGULAR(정규직) / null(미지정=정규직 취급)
 
       /* ── INSERT용 키 (셀별로 박혀있어야 함) ───── */
     , String cmpnyCd

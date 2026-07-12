@@ -39,7 +39,22 @@
 		, #{userId}
 		, now()
 		, #{userId}
-		, now() 
+		, now()
    	)
 	</insert>
+
+	<!-- PRAFTA-WEB_003: 원본 파일 read 용 경로/확장자 조회. 위치매핑(FILE_PATH, FILE_NM, FILE_EXT, FILE_TYPE) -->
+	<select id="selectFileInfoForRead"
+	        parameterType="com.prafta.common.cmm.file.application.query.FileReadQuery"
+	        resultType="com.prafta.common.cmm.file.application.model.FileReadInfo">
+	/* FileMapper.selectFileInfoForRead */
+	SELECT
+	    FILE_PATH
+	  , FILE_NM
+	  , FILE_EXT
+	  , FILE_TYPE
+	FROM TB_FILE_INFO
+	WHERE CMPNY_CD = #{cmpnyCd}
+	  AND FILE_MGMT_CD = #{fileMgmtCd}
+	</select>
 </mapper>

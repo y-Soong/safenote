@@ -11,7 +11,14 @@
     <div class="modal-content lch-pop">
       <header class="modal-header">
         <h2 class="modal-title">연차 변경 요청 상세</h2>
-        <button type="button" class="modal-close" aria-label="닫기" @click="onClose">×</button>
+        <button
+          type="button"
+          class="modal-close"
+          aria-label="닫기"
+          @click="onClose"
+        >
+          ×
+        </button>
       </header>
 
       <div class="modal-body lch-body">
@@ -20,19 +27,40 @@
         <template v-else-if="detail">
           <!-- 요청 메타 -->
           <dl class="lch-detail">
-            <div><dt>발의일시</dt><dd>{{ detail.insertDateText }}</dd></div>
-            <div><dt>발의자</dt><dd>{{ detail.initiatorUserNm }}</dd></div>
-            <div><dt>대상 사용자</dt><dd>{{ detail.targetUserNm }}</dd></div>
-            <div><dt>요청유형</dt><dd>{{ detail.reqTypeNm }}</dd></div>
-            <div><dt>대상 연차일</dt><dd>{{ detail.targetStartDateText || '-' }}</dd></div>
-            <div v-if="detail.reqType === 'MOVE'">
-              <dt>이동 대상일</dt><dd>{{ detail.moveTargetDateText || '-' }}</dd>
+            <div>
+              <dt>발의일시</dt>
+              <dd>{{ detail.insertDateText }}</dd>
             </div>
-            <div><dt>요청 사유</dt><dd>{{ detail.reqReason || '-' }}</dd></div>
+            <div>
+              <dt>발의자</dt>
+              <dd>{{ detail.initiatorUserNm }}</dd>
+            </div>
+            <div>
+              <dt>대상 사용자</dt>
+              <dd>{{ detail.targetUserNm }}</dd>
+            </div>
+            <div>
+              <dt>요청유형</dt>
+              <dd>{{ detail.reqTypeNm }}</dd>
+            </div>
+            <div>
+              <dt>대상 연차일</dt>
+              <dd>{{ detail.targetStartDateText || "-" }}</dd>
+            </div>
+            <div v-if="detail.reqType === 'MOVE'">
+              <dt>이동 대상일</dt>
+              <dd>{{ detail.moveTargetDateText || "-" }}</dd>
+            </div>
+            <div>
+              <dt>요청 사유</dt>
+              <dd>{{ detail.reqReason || "-" }}</dd>
+            </div>
             <div>
               <dt>처리상태</dt>
               <dd>
-                <span class="status-badge" :class="detail.statusClass">{{ detail.reqStatusNm }}</span>
+                <span class="status-badge" :class="detail.statusClass">{{
+                  detail.reqStatusNm
+                }}</span>
               </dd>
             </div>
           </dl>
@@ -45,8 +73,12 @@
                 <span class="lch-step__dot" aria-hidden="true"></span>
                 <div class="lch-step__body">
                   <span class="lch-step__label">요청됨</span>
-                  <span class="lch-step__time">{{ detail.insertDateText }}</span>
-                  <span class="lch-step__sub">{{ detail.initiatorUserNm }} 발의</span>
+                  <span class="lch-step__time">{{
+                    detail.insertDateText
+                  }}</span>
+                  <span class="lch-step__sub"
+                    >{{ detail.initiatorUserNm }} 발의</span
+                  >
                 </div>
               </li>
 
@@ -54,7 +86,9 @@
                 <span class="lch-step__dot" aria-hidden="true"></span>
                 <div class="lch-step__body">
                   <span class="lch-step__label">근로자 응답</span>
-                  <span class="lch-step__sub">{{ detail.workerResponseNm || '대기' }}</span>
+                  <span class="lch-step__sub">{{
+                    detail.workerResponseNm || "대기"
+                  }}</span>
                   <span v-if="detail.responseReason" class="lch-step__reason">
                     사유: {{ detail.responseReason }}
                   </span>
@@ -82,108 +116,112 @@
       </div>
 
       <footer class="modal-footer lch-footer">
-        <button type="button" class="btn btn-ghost" @click="onClose">닫기</button>
+        <button type="button" class="btn btn-ghost" @click="onClose">
+          닫기
+        </button>
       </footer>
     </div>
   </div>
 </template>
 
 <script setup>
-import { ref, computed, getCurrentInstance, onMounted } from 'vue'
-import axios from '@/api/axios'
-import { getMessage, MSG } from '@/messages'
-import { resolveApiErrorMessage } from '@/utils/apiError'
-import { formatYmdDot, formatDateTimeDot } from '@/utils/dateFormat'
+import { ref, computed, getCurrentInstance, onMounted } from "vue";
+import axios from "@/api/axios";
+import { getMessage, MSG } from "@/messages";
+import { resolveApiErrorMessage } from "@/utils/apiError";
+import { formatYmdDot, formatDateTimeDot } from "@/utils/dateFormat";
 
 const props = defineProps({
-  changeReqId: { type: String, default: '' },
-})
-const emit = defineEmits(['close'])
+  changeReqId: { type: String, default: "" },
+});
+const emit = defineEmits(["close"]);
 
-const { proxy } = getCurrentInstance()
+const { proxy } = getCurrentInstance();
 
-const loading = ref(true)
-const detail = ref(null)
+const loading = ref(true);
+const detail = ref(null);
 
 // 코드 → 라벨 매핑은 하드코딩하지 않고 TB_SYST_VAL_D 에서 단일 출처로 로드한다.
 //   SYS071 요청유형 / SYS072 요청상태 / SYS073 근로자 응답 (/comApi/baseinfo/syst-info-lists).
-const systCodeArr = ref({})
+const systCodeArr = ref({});
 
 // 그룹(SYSxxx) + 상세코드(systValDCd) → 라벨(systValDNm). 미로딩/미일치 시 코드값 폴백.
 const codeNm = (group, cd) => {
-  if (cd == null || cd === '') return cd
-  const hit = (systCodeArr.value[group] || []).find((o) => o.systValDCd === cd)
-  return hit ? hit.systValDNm : cd
-}
+  if (cd == null || cd === "") return cd;
+  const hit = (systCodeArr.value[group] || []).find((o) => o.systValDCd === cd);
+  return hit ? hit.systValDNm : cd;
+};
 
 // 처리상태 배지 색 분기(라벨이 아닌 표시 클래스라 코드테이블 대상 아님 — 유지).
 const STATUS_CLASS = {
-  CONFIRMED: 'is-confirmed',
-  REJECTED: 'is-rejected',
-  CLOSED: 'is-closed',
-  REQUESTED: 'is-pending',
-  AGREED: 'is-pending',
-}
+  CONFIRMED: "is-confirmed",
+  REJECTED: "is-rejected",
+  CLOSED: "is-closed",
+  REQUESTED: "is-pending",
+  AGREED: "is-pending",
+};
 
-const fmtYmd = (ymd) => formatYmdDot(ymd)
-const fmtDateTime = (v) => formatDateTimeDot(v)
+const fmtYmd = (ymd) => formatYmdDot(ymd);
+const fmtDateTime = (v) => formatDateTimeDot(v);
 
 // 근로자 응답 단계 상태(완료/거부/대기) 색 분기
 const workerStepClass = computed(() => {
-  const w = detail.value?.workerResponse
-  if (w === 'AGREE') return 'is-done'
-  if (w === 'REJECT') return 'is-rejected'
-  return 'is-pending'
-})
+  const w = detail.value?.workerResponse;
+  if (w === "AGREE") return "is-done";
+  if (w === "REJECT") return "is-rejected";
+  return "is-pending";
+});
 
 // 관리자 확인/반려 단계: 상태에 따라 라벨/색 분기
 const confirmStepLabel = computed(() => {
-  const s = detail.value?.reqStatus
-  if (s === 'CONFIRMED') return '관리자 확정'
-  if (s === 'REJECTED') return '관리자 반려'
-  if (s === 'CLOSED') return '종료'
-  return '관리자 확인 대기'
-})
+  const s = detail.value?.reqStatus;
+  if (s === "CONFIRMED") return "관리자 확정";
+  if (s === "REJECTED") return "관리자 반려";
+  if (s === "CLOSED") return "종료";
+  return "관리자 확인 대기";
+});
 const confirmStepClass = computed(() => {
-  const s = detail.value?.reqStatus
-  if (s === 'CONFIRMED') return 'is-done'
-  if (s === 'REJECTED') return 'is-rejected'
-  if (s === 'CLOSED') return 'is-closed'
-  return 'is-pending'
-})
+  const s = detail.value?.reqStatus;
+  if (s === "CONFIRMED") return "is-done";
+  if (s === "REJECTED") return "is-rejected";
+  if (s === "CLOSED") return "is-closed";
+  return "is-pending";
+});
 
-const onClose = () => emit('close')
+const onClose = () => emit("close");
 
 // 코드 로드 — 요청유형(SYS071)/요청상태(SYS072)/응답(SYS073) 라벨 단일 출처(TB_SYST_VAL_D).
 const fnGetSystinfoList = async () => {
   try {
-    const res = await axios.get('/comApi/baseinfo/syst-info-lists', {
-      params: { systCodeList: ['SYS071', 'SYS072', 'SYS073'] },
-    })
+    const res = await axios.get("/comApi/baseinfo/syst-info-lists", {
+      params: { systCodeList: ["SYS071", "SYS072", "SYS073"] },
+    });
     if (res.status === 200) {
-      const list = res.data?.systInfoList ?? []
-      const grouped = {}
+      const list = res.data?.systInfoList ?? [];
+      const grouped = {};
       list.forEach((item) => {
-        const key = item.systValCd
-        if (!grouped[key]) grouped[key] = []
-        grouped[key].push(item)
-      })
-      systCodeArr.value = grouped
+        const key = item.systValCd;
+        if (!grouped[key]) grouped[key] = [];
+        grouped[key].push(item);
+      });
+      systCodeArr.value = grouped;
     }
   } catch (err) {
     await proxy.$alert(
       resolveApiErrorMessage(err, getMessage(MSG.SEARCH_ERROR_DEFAULT))
-    )
+    );
   }
-}
+};
 
 // 상세 조회: GET /webApi/attd14/admin-requests/{changeReqId} (읽기 전용)
 const fnLoadDetail = async () => {
-  loading.value = true
+  loading.value = true;
   try {
-    const res = await axios.get(`/webApi/attd14/admin-requests/${props.changeReqId}`)
+    const res = await axios.get(
+      `/webApi/attd14/admin-requests/${props.changeReqId}`
+    );
     if (res.status === 200) {
-      const d = res.data?.detail
+      const d = res.data?.detail;
       if (d) {
         detail.value = {
           changeReqId: d.changeReqId,
@@ -200,27 +238,29 @@ const fnLoadDetail = async () => {
           reqReason: d.reqReason,
           responseReason: d.responseReason,
           rejectReason: d.rejectReason,
-          reqTypeNm: codeNm('SYS071', d.reqType),
-          reqStatusNm: codeNm('SYS072', d.reqStatus),
-          workerResponseNm: codeNm('SYS073', d.workerResponse),
-          statusClass: STATUS_CLASS[d.reqStatus] || 'is-pending',
-        }
+          reqTypeNm: codeNm("SYS071", d.reqType),
+          reqStatusNm: codeNm("SYS072", d.reqStatus),
+          workerResponseNm: codeNm("SYS073", d.workerResponse),
+          statusClass: STATUS_CLASS[d.reqStatus] || "is-pending",
+        };
       }
     }
   } catch (err) {
-    await proxy.$alert(resolveApiErrorMessage(err, getMessage(MSG.SEARCH_ERROR)))
-    emit('close')
+    await proxy.$alert(
+      resolveApiErrorMessage(err, getMessage(MSG.SEARCH_ERROR))
+    );
+    emit("close");
   } finally {
-    loading.value = false
+    loading.value = false;
   }
-}
+};
 
 onMounted(async () => {
   // 라벨 코드를 먼저 로드해야 상세 매핑이 정확하다.
-  await fnGetSystinfoList()
-  if (props.changeReqId) await fnLoadDetail()
-  else loading.value = false
-})
+  await fnGetSystinfoList();
+  if (props.changeReqId) await fnLoadDetail();
+  else loading.value = false;
+});
 </script>
 
 <style scoped>

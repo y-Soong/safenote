@@ -8,8 +8,6 @@ public record IncidentResult(
     String cmpnyCd
     , String siteCd
     , String nearMissId
-    , String incidentTypeCd
-    , String incidentTypeNm
     , String processCd
     , String processNm
     , String occurDtime

@@ -49,6 +49,8 @@
   --btn-font: 11px;
   --btn-height-lg: 32px;
   --btn-padding-lg: 13px;
+  /* 팝업 메타 강조(라벨 bold + 확대)용 폰트 토큰 */
+  --btn-font-lg: 14px;
 
   /* App Shell */
   --header-height: 56px;

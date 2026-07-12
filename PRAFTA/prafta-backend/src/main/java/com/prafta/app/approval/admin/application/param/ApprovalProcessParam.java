@@ -12,7 +12,8 @@ import com.prafta.common.exception.ApiException;
  * <p>식별자(cmpny/site/user/auth)는 토큰에서만 운반한다(IDOR 차단). reqId 는 리소스 키이며
  * 서비스가 토큰 스코프 내인지 재검증한다.
  *
- * <p>decision 화이트리스트 검증 + REJECT 코멘트 길이(10자 이상) 서버 재검증을 from 단계에서 수행한다.
+ * <p>decision 화이트리스트 검증 + REJECT 코멘트 필수(공백 제외 1자 이상) 서버 재검증을 from 단계에서 수행한다.
+ *    (최소 글자수 제약은 제거 — 사유 입력만 필수.)
  * (LEAVE approvalStep 필수 검증은 그룹 확정 후 서비스 디스패치에서 수행한다.)
  */
 public record ApprovalProcessParam(
@@ -31,9 +32,6 @@ public record ApprovalProcessParam(
     public static final String DECISION_APPROVE_ADJUST = "APPROVE_ADJUST";
     public static final String DECISION_REJECT = "REJECT";
 
-    /** 반려 사유 최소 길이(plan §3-D — REJECT 시 10자 이상). */
-    private static final int REJECT_COMMENT_MIN = 10;
-
     public static ApprovalProcessParam of(ApprovalProcessRequest request, TokenInfo token) {
         if (token == null || token.gv_cmpnyCd() == null || token.gv_userCd() == null) {
             throw new ApiException(CommonErrorCode.COMMON_400_003);
@@ -50,8 +48,8 @@ public record ApprovalProcessParam(
         }
 
         String comment = request.getComment() == null ? null : request.getComment().trim();
-        if (DECISION_REJECT.equals(decision) && (comment == null || comment.length() < REJECT_COMMENT_MIN)) {
-            // 반려 사유 필수(서버 재검증, 프론트 최소길이와 독립).
+        if (DECISION_REJECT.equals(decision) && (comment == null || comment.isEmpty())) {
+            // 반려 사유 필수(공백 제외 1자 이상, 최소 글자수 제약 없음). comment 는 위에서 trim 되어 isEmpty=공백만 입력 차단.
             throw new ApiException(AttdErrorCode.ATTD_400_057);
         }
 

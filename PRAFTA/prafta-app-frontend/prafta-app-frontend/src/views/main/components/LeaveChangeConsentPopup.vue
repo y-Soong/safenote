@@ -33,17 +33,26 @@
 
         <ul class="lcc-list">
           <li v-for="req in items" :key="req.changeReqId" class="lcc-card">
-            <div class="lcc-card__row">
-              <span class="lcc-card__label">대상 연차일</span>
-              <span class="lcc-card__value">{{ fmtYmd(req.targetStartDate) }}</span>
+            <!-- 변경 전 → 후를 한 줄로 묶어 한눈에 비교. 삭제 요청은 "변경 후"가 없으므로 '삭제'로 표기. -->
+            <div class="lcc-card__transition">
+              <div class="lcc-trans__item">
+                <span class="lcc-trans__cap">변경 전</span>
+                <span class="lcc-trans__date">{{ fmtYmd(req.targetStartDate) }}</span>
+              </div>
+              <span class="lcc-trans__arrow" aria-hidden="true">→</span>
+              <div class="lcc-trans__item">
+                <span class="lcc-trans__cap">변경 후</span>
+                <span
+                  class="lcc-trans__date"
+                  :class="{ 'is-delete': req.reqType !== 'MOVE' }"
+                >
+                  {{ req.reqType === 'MOVE' ? fmtYmd(req.moveTargetDate) : '삭제' }}
+                </span>
+              </div>
             </div>
             <div class="lcc-card__row">
               <span class="lcc-card__label">요청유형</span>
               <span class="lcc-card__value">{{ reqTypeNm(req.reqType) }}</span>
-            </div>
-            <div v-if="req.reqType === 'MOVE'" class="lcc-card__row">
-              <span class="lcc-card__label">이동대상일</span>
-              <span class="lcc-card__value">{{ fmtYmd(req.moveTargetDate) }}</span>
             </div>
             <div class="lcc-card__row">
               <span class="lcc-card__label">관리자 사유</span>
@@ -296,6 +305,45 @@ const onClose = () => {
   flex-direction: column;
   gap: 8px;
 }
+/* 변경 전 → 후 비교 블록 — 두 날짜를 화살표로 잇고 강조해 한눈에 들어오게 한다. */
+.lcc-card__transition {
+  display: flex;
+  align-items: stretch;
+  gap: 8px;
+  padding: 10px 12px;
+  background: var(--color-surface);
+  border: 0.5px solid var(--color-border);
+  border-radius: var(--radius-md);
+}
+.lcc-trans__item {
+  flex: 1 1 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  min-width: 0;
+}
+.lcc-trans__cap {
+  font-size: 11px;
+  color: var(--color-text-tertiary);
+}
+.lcc-trans__date {
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--color-text-primary);
+  word-break: keep-all;
+}
+.lcc-trans__date.is-delete {
+  color: var(--color-danger);
+}
+.lcc-trans__arrow {
+  align-self: center;
+  flex-shrink: 0;
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--color-primary);
+}
+
 .lcc-card__row {
   display: flex;
   justify-content: space-between;

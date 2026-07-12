@@ -6,16 +6,21 @@ import java.math.RoundingMode;
 import org.springframework.stereotype.Service;
 
 import com.prafta.common.cmm.leave.mapper.LeaveDeductionMapper;
+import com.prafta.common.cmm.leave.service.LeaveConversionPolicyService;
 import com.prafta.common.cmm.leave.service.LeaveDeductionService;
+import com.prafta.common.cmm.leave.util.HourlyLeaveChargeUtils;
 import com.prafta.common.cmm.leave.vo.DailyScheduleVO;
+import com.prafta.common.cmm.leave.vo.HourlyChargeVO;
+import com.prafta.common.cmm.leave.vo.HourlyLeaveAggVO;
 import com.prafta.common.util.DateTimeUtils;
 
 import lombok.extern.slf4j.Slf4j;
 
 /**
- * {@link LeaveDeductionService} 구현 (prafta-019-A §2.4).
+ * {@link LeaveDeductionService} 구현 (prafta-019-A §2.4 → 연차 시간차 환산 개편 LC-03).
  *
  * <p>정책서: {@code .claude/context/policies/attd/08-leave.md} §8.1.1, §8.5.9
+ * / 작업지시서_연차-시간차-환산-개편 §2(R1~R4)·F3
  */
 @Slf4j
 @Service
@@ -25,9 +30,13 @@ public class LeaveDeductionServiceImpl implements LeaveDeductionService {
     private static final int MINUTES_PER_DAY = 1440;
 
     private final LeaveDeductionMapper leaveDeductionMapper;
+    /** LC-03: 시간차 차감 분모(1일 환산시간, 신청 대상일 기준 F4) 단일 출처. */
+    private final LeaveConversionPolicyService leaveConversionPolicyService;
 
-    public LeaveDeductionServiceImpl(LeaveDeductionMapper leaveDeductionMapper) {
+    public LeaveDeductionServiceImpl(LeaveDeductionMapper leaveDeductionMapper,
+                                     LeaveConversionPolicyService leaveConversionPolicyService) {
         this.leaveDeductionMapper = leaveDeductionMapper;
+        this.leaveConversionPolicyService = leaveConversionPolicyService;
     }
 
     @Override
@@ -70,7 +79,8 @@ public class LeaveDeductionServiceImpl implements LeaveDeductionService {
      */
     private Integer segmentWorkMinutes(String strTime, String endTime, String brkMin) {
         Integer start = DateTimeUtils.hhmmToMinutes(strTime);
-        Integer end = DateTimeUtils.hhmmToMinutes(endTime);
+        // 종료는 자정 경계 근무(정책 attd/03 §3.3) "2400"=1440 을 인정하는 종료 전용 파서 사용.
+        Integer end = DateTimeUtils.schEndToMinutes(endTime);
         if (start == null || end == null) {
             return null;
         }
@@ -99,13 +109,65 @@ public class LeaveDeductionServiceImpl implements LeaveDeductionService {
         }
     }
 
+    @Deprecated
     @Override
     public BigDecimal calcDeductionDays(int requestMinutes, int dailyStdWorkMinutes) {
+        // LC-03 개편으로 calcHourlyCharge 가 대체(그날 소정근로 분모 → 환산시간 분모 + 하한/캡).
+        //   호출처 0건 — 회귀 대비 한시 유지(인터페이스 @Deprecated 참조).
         if (requestMinutes <= 0 || dailyStdWorkMinutes <= 0) {
             return null;
         }
         return BigDecimal.valueOf(requestMinutes)
                 .divide(BigDecimal.valueOf(dailyStdWorkMinutes), DEDUCTION_SCALE, RoundingMode.HALF_UP);
+    }
+
+    @Override
+    public HourlyChargeVO calcHourlyCharge(String cmpnyCd, String siteCd, String userCd, String workYmd,
+                                           int requestMinutes) {
+        if (cmpnyCd == null || siteCd == null || userCd == null || workYmd == null || requestMinutes <= 0) {
+            return null;
+        }
+
+        // ⓐ 분모 = 회사 "1일 환산시간" (신청 대상일 기준, F4. 미설정 시 480 폴백)
+        int conv = leaveConversionPolicyService.selectConversionMinutes(cmpnyCd, workYmd);
+
+        // 마일스톤(하한) 기준 D = 그날 소정근로분. 스케줄 없는 날은 시간차 신청 자체가 호출부에서
+        //   거부되지만(ATTD_400_110), 방어적으로 null 이면 하한 미적용(floor=0)으로 계산한다.
+        Integer daily = getDailyStdWorkMinutes(cmpnyCd, siteCd, userCd, workYmd);
+
+        // ⓑ 그날 기존 시간차(02/03/04) CONFIRMED 누적 — 전 연차타입 합산(F3 쪼개기 우회 차단).
+        //    고정단위(종일/반차/반반차)는 누적 미포함(plan §8-⑤ — 1.0 점유 가드는 호출부 별도 층).
+        HourlyLeaveAggVO agg = leaveDeductionMapper.selectHourlyLeaveAggOnDate(cmpnyCd, userCd, workYmd);
+        int prevMinutes = (agg == null || agg.cumMinutes() == null) ? 0 : agg.cumMinutes();
+        BigDecimal prevCharged = (agg == null || agg.cumChargedDays() == null)
+                ? BigDecimal.ZERO : agg.cumChargedDays();
+
+        // ⓒ 코어 산식(LC-05 재정산과 단일 출처 — HourlyLeaveChargeUtils)
+        int cumAfter = prevMinutes + requestMinutes;
+        BigDecimal raw = HourlyLeaveChargeUtils.rawDays(cumAfter, conv);
+        BigDecimal floor = HourlyLeaveChargeUtils.milestoneFloorDays(cumAfter, daily);
+        BigDecimal dayTotal = HourlyLeaveChargeUtils.dayTotalDays(cumAfter, conv, daily);
+        BigDecimal charge = dayTotal.subtract(prevCharged);
+        if (charge.signum() < 0) {
+            // 과도기 방어: 보정(T4) 전 구식 차감(그날 소정근로 분모)이 남은 날은 기존 누적 차감 합이
+            //   신식 dayTotal 을 넘을 수 있다 — 음수 부과(환급)는 만들지 않고 0 으로 절상.
+            log.warn("[leave-deduct] 시간차 차액 음수 감지 — 0 절상(과도기 데이터). userCd={}, workYmd={}, "
+                            + "dayTotal={}, prevCharged={}",
+                    userCd, workYmd, dayTotal.toPlainString(), prevCharged.toPlainString());
+            charge = BigDecimal.ZERO.setScale(DEDUCTION_SCALE);
+        }
+
+        boolean floorApplied = floor.compareTo(raw) > 0 && dayTotal.compareTo(floor) == 0;
+        boolean capApplied = raw.max(floor).compareTo(BigDecimal.ONE) > 0;
+        // 발동 마일스톤 요금(0.25/0.5/1.0) — FE 하한 안내 단위 분기용 부가정보(미발동이면 null).
+        BigDecimal floorDays = floorApplied ? floor : null;
+
+        log.debug("[leave-deduct] 시간차 차감 산출: userCd={}, workYmd={}, req={}분, 누적={}분, conv={}, D={}, "
+                        + "raw={}, floor={}, dayTotal={}, charge={}",
+                userCd, workYmd, requestMinutes, cumAfter, conv, daily,
+                raw.toPlainString(), floor.toPlainString(), dayTotal.toPlainString(), charge.toPlainString());
+
+        return new HourlyChargeVO(charge, dayTotal, conv, cumAfter, floorApplied, capApplied, floorDays);
     }
 
     @Override
@@ -151,7 +213,8 @@ public class LeaveDeductionServiceImpl implements LeaveDeductionService {
     /** 신청 구간 [startMin,endMin] 이 근무구간 [schStr,schEnd] 에 완전히 포함되면 true. 구간 미설정이면 false. 야간(종료≤시작)은 +1440 보정. */
     private boolean containedInWork(int startMin, int endMin, String schStr, String schEnd) {
         Integer s = DateTimeUtils.hhmmToMinutes(schStr);
-        Integer e = DateTimeUtils.hhmmToMinutes(schEnd);
+        // 종료는 자정 경계 근무(정책 attd/03 §3.3) "2400"=1440 을 인정하는 종료 전용 파서 사용.
+        Integer e = DateTimeUtils.schEndToMinutes(schEnd);
         if (s == null || e == null) {
             return false;
         }

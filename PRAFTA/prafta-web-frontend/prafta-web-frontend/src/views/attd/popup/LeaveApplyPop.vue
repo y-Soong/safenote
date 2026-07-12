@@ -31,11 +31,11 @@
             <label>사용 단위 <span class="req">*</span></label>
             <BaseSelect v-model="useUnitType">
               <option
-                v-for="u in unitOptions"
+                v-for="u in visibleUnitOptions"
                 :key="u.systValDCd"
                 :value="u.systValDCd"
               >
-                {{ u.systValDNm }}
+                {{ fnUnitLabel(u) }}
               </option>
             </BaseSelect>
           </div>
@@ -52,10 +52,30 @@
             </p>
           </div>
 
+          <!-- LC-09(§5-C): 예상 차감액 미리보기 — 시간차/반반차 한정, 조회 전용(서버가 최종 판정) -->
+          <div v-if="isHourUnit || isQuarterUnit" class="la-field la-preview">
+            <p v-if="previewLoading" class="la-preview-loading">
+              예상 차감 계산 중…
+            </p>
+            <template v-else-if="preview">
+              <p class="la-preview-main">{{ previewText }}</p>
+              <p v-if="preview.floorApplied" class="la-preview-note">
+                {{ floorNoticeText }}
+              </p>
+              <p v-if="preview.capApplied" class="la-preview-note">
+                하루 차감 상한(1일)이 적용됩니다.
+              </p>
+            </template>
+          </div>
+
           <!-- prafta-com-011-6 가불(미래 연차 당겨쓰기) 동의 — 시스템 법정 연차 + 가불 가능 + 잔여 부족 시에만 노출 -->
           <div v-if="showBorrowToggle" class="la-field">
             <label class="la-borrow-toggle">
-              <input type="checkbox" v-model="borrowAgreed" class="la-borrow-cb" />
+              <input
+                type="checkbox"
+                v-model="borrowAgreed"
+                class="la-borrow-cb"
+              />
               <span class="la-borrow-txt">미래 연차를 당겨 사용(가불)</span>
             </label>
 
@@ -63,7 +83,9 @@
             <div v-if="borrowAgreed" class="la-borrow-info">
               <div class="la-borrow-row">
                 <span class="la-borrow-lbl">가불 가능 한도</span>
-                <span class="la-borrow-val">{{ formatDays(borrowQuota) }}일</span>
+                <span class="la-borrow-val"
+                  >{{ formatDays(borrowQuota) }}일</span
+                >
               </div>
               <div v-if="borrowExpiryDisplay" class="la-borrow-row">
                 <span class="la-borrow-lbl">만료(소멸)</span>
@@ -151,6 +173,13 @@
         </div>
 
         <div class="modal-footer la-footer">
+          <!-- LC-09(§5-C): 잔여 부족 예상 경고 배지 (preview 기반, 신청 자체는 서버가 최종 판정) -->
+          <span
+            v-if="preview && preview.insufficientBalance"
+            class="la-balance-warn"
+          >
+            잔여 부족 예상
+          </span>
           <button class="btn-cancel" @click="$emit('close')">취소</button>
           <button class="btn-confirm" :disabled="submitting" @click="fnSubmit">
             신청
@@ -179,6 +208,7 @@ import TimeInput from "@/components/common/TimeInput.vue";
 import CalendarSrch from "@/components/common/CalendarSrch.vue";
 import { formatYmdDot } from "@/utils/dateFormat";
 import { resolveApiErrorMessage } from "@/utils/apiError";
+import { formatLeaveDays, trimLeaveDays } from "@/utils/leaveFormat";
 
 defineOptions({ name: "LeaveApplyPop" });
 const props = defineProps({
@@ -207,6 +237,15 @@ const line = ref([]); // [{ userCd, userNm }]
 // prafta-com-011-6 가불(미래 연차 당겨쓰기) 동의 상태. 종류/단위/날짜 변경 시 리셋.
 const borrowAgreed = ref(false);
 
+// LC-09: 반반차(0.25일, SYS025 '05') 허용 여부 — 회사 사용정책 ALLOW_QUARTER='Y' 일 때만
+//   단위 선택지에 노출한다(조회 실패 시 false 유지 = fail-closed, 서버도 미허용 거부).
+const allowQuarter = ref(false);
+
+// LC-09(§5-C): 예상 차감액 미리보기 상태 (POST /leaveflow/preview-deduction)
+//   preview = { chargeDays, floorApplied, capApplied, insufficientBalance, convMinutes, floorDays } | null
+const preview = ref(null);
+const previewLoading = ref(false);
+
 // 신청 대상: 사용자 신청 타입(leaveType='01') + 시스템 법정 시드(systemYn='Y', 가불 대상 월차/본연차 포함).
 //   기존 비가불 UX 회귀 0 — '01' 노출은 유지하고, 가불용 시스템 법정 종류를 함께 노출한다(앱 메타 미러).
 const applicableTypes = computed(() =>
@@ -224,10 +263,45 @@ const needApproval = computed(
 const isHourUnit = computed(() =>
   ["02", "03", "04"].includes(useUnitType.value)
 );
+// LC-09: 반반차(0.25일 고정단위, 시간대 미기록 — 반차 패턴 미러)
+const isQuarterUnit = computed(() => useUnitType.value === "05");
 const unitGuide = computed(
   () =>
     ({ "02": "2시간", "03": "1시간", "04": "30분" }[useUnitType.value] || "시간")
 );
+
+// LC-09: 단위 선택지 — 반반차('05')는 ALLOW_QUARTER='Y' 회사만 노출(기존 SYS025 노출 패턴 유지)
+const visibleUnitOptions = computed(() =>
+  unitOptions.value.filter(
+    (u) => u.systValDCd !== "05" || allowQuarter.value
+  )
+);
+
+// LC-09: 단위 라벨 — 반반차는 "(0.25일)" 병기(§5-C), 그 외는 SYS025 명칭 그대로
+const fnUnitLabel = (u) =>
+  u.systValDCd === "05" ? `${u.systValDNm}(0.25일)` : u.systValDNm;
+
+// LC-09(§5-C): 예상 차감 표기 — "예상 차감: 0일 4시간 (0.5일)" 형식
+const previewText = computed(() => {
+  if (!preview.value) return "";
+  const p = preview.value;
+  return `예상 차감: ${formatLeaveDays(p.chargeDays, p.convMinutes)} (${trimLeaveDays(p.chargeDays)}일)`;
+});
+
+// 하한 발동 마일스톤 요금(floorDays) → 단위 라벨. 0.25=반반차 / 0.5=반차 / 1=종일.
+const FLOOR_UNIT_LABELS = { 0.25: "반반차", 0.5: "반차", 1: "종일" };
+
+// 하한 발동 안내 문구 — floorDays 기반 단위 분기(§5-C 정밀화).
+//   floorDays 없으면(구응답) 기존 일반화 문구 폴백.
+const floorNoticeText = computed(() => {
+  const p = preview.value;
+  if (!p || !p.floorApplied) return "";
+  const label = FLOOR_UNIT_LABELS[Number(p.floorDays)];
+  if (!label) {
+    return "같은 날 누적 신청이 고정 단위(반반차·반차·종일) 기준 시간에 도달하여 고정 단위 요금이 적용됩니다.";
+  }
+  return `같은 날 누적 신청이 ${label} 시간에 도달하여 ${label} 요금(${trimLeaveDays(p.floorDays)}일)이 적용됩니다.`;
+});
 
 const inLine = (userCd) => line.value.some((s) => s.userCd === userCd);
 
@@ -315,6 +389,59 @@ watch(borrowDateExpired, (expired) => {
   }
 });
 
+// LC-09: 반반차 미허용으로 선택지가 사라지면 선택값을 종일로 폴백(잔존 '05' 제출 방지)
+watch([allowQuarter, useUnitType], () => {
+  if (useUnitType.value === "05" && !allowQuarter.value) {
+    useUnitType.value = "00";
+  }
+});
+
+// ===== LC-09(§5-C): 예상 차감액 미리보기 (입력 디바운스 400ms) =====
+// 호출 조건: 시간차(02/03/04, 시간대 완성) 또는 반반차(05) + 연차타입/근무일 선택 완료.
+const previewEligible = computed(() => {
+  if (!leaveCd.value || !workYmd.value) return false;
+  if (isQuarterUnit.value) return true;
+  return isHourUnit.value && !!startTime.value && !!endTime.value;
+});
+
+let previewTimer = null;
+let previewSeq = 0; // 응답 역전(늦게 도착한 이전 요청) 무시용 시퀀스
+
+const fnLoadPreview = async () => {
+  const seq = ++previewSeq;
+  try {
+    const r = await axios.post("/webApi/leaveflow/preview-deduction", {
+      leaveCd: leaveCd.value,
+      workYmd: workYmd.value.replace(/-/g, ""),
+      useUnitType: useUnitType.value,
+      startTime: isHourUnit.value ? startTime.value.replace(":", "") : null,
+      endTime: isHourUnit.value ? endTime.value.replace(":", "") : null,
+    });
+    if (seq !== previewSeq) return;
+    preview.value = r.data || null;
+  } catch (e) {
+    // preview 실패 시 안내 없이 신청은 가능 — 서버가 최종 판정(§5-C)
+    if (seq !== previewSeq) return;
+    preview.value = null;
+  } finally {
+    if (seq === previewSeq) previewLoading.value = false;
+  }
+};
+
+watch([leaveCd, workYmd, useUnitType, startTime, endTime], () => {
+  if (previewTimer) clearTimeout(previewTimer);
+  // 입력 변경 즉시 시퀀스 증가 — 이전 입력의 in-flight 응답이 디바운스 창 안에
+  // 도착해도 무효화(앱 LeaveApplyView 시퀀스 가드와 동일 규칙).
+  previewSeq++;
+  preview.value = null;
+  if (!previewEligible.value) {
+    previewLoading.value = false;
+    return;
+  }
+  previewLoading.value = true;
+  previewTimer = setTimeout(fnLoadPreview, 400);
+});
+
 // ===== 로딩 =====
 const fnLoadTypes = async () => {
   try {
@@ -343,6 +470,17 @@ const fnLoadCandidates = async () => {
     candidates.value = r.data?.candidates ?? [];
   } catch (e) {
     /* noop */
+  }
+};
+
+// LC-09: 반반차 허용 토글 조회 — 활성 연차정책의 ALLOW_QUARTER(회사 단위, LC-06).
+//   조회 실패/정책 미존재 시 false 유지(fail-closed — 서버 게이트와 동일 방향).
+const fnLoadAllowQuarter = async () => {
+  try {
+    const r = await axios.get("/webApi/baim07/policy/active");
+    allowQuarter.value = r.data?.policy?.allowQuarter === "Y";
+  } catch (e) {
+    /* noop — 미허용 취급 */
   }
 };
 
@@ -392,6 +530,8 @@ const fnApplyPresetSel = () => {
 const leaveTypeCode = computed(() => {
   if (useUnitType.value === "00") return "ANNUAL";
   if (useUnitType.value === "01") return "HALF";
+  // LC-09: 반반차('05')는 정의된 성격 코드가 없어 미전송(null — 앱 신청 폼 미러, 추측 금지)
+  if (useUnitType.value === "05") return null;
   return "HOUR";
 });
 
@@ -442,6 +582,7 @@ onMounted(() => {
   fnLoadUnits();
   fnLoadCandidates();
   fnLoadPresets();
+  fnLoadAllowQuarter();
 });
 </script>
 
@@ -541,6 +682,42 @@ onMounted(() => {
   margin: 0;
   font-size: 0.76rem;
   color: var(--color-warning-text, #b45309);
+}
+
+/* LC-09(§5-C): 예상 차감액 미리보기 — 기존 토큰만 사용(하드코딩 금지) */
+.la-preview {
+  padding: 0.5rem 0.6rem;
+  background: var(--color-bg, #f9fafb);
+  border: 1px solid var(--color-border, #e5e7eb);
+  border-radius: 0.35rem;
+}
+.la-preview-loading {
+  margin: 0;
+  font-size: 0.78rem;
+  color: var(--color-text-muted, #6b7280);
+}
+.la-preview-main {
+  margin: 0;
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--color-text, #111827);
+}
+.la-preview-note {
+  margin: 0.25rem 0 0;
+  font-size: 0.76rem;
+  color: var(--color-warning-text, #b45309);
+}
+/* 잔여 부족 예상 배지 (신청 버튼 옆) */
+.la-balance-warn {
+  align-self: center;
+  margin-right: auto;
+  font-size: 0.76rem;
+  font-weight: 600;
+  padding: 0.15rem 0.5rem;
+  border-radius: 0.35rem;
+  background: var(--color-warning-bg, #fef3c7);
+  color: var(--color-warning-text, #b45309);
+  border: 1px solid var(--color-warning-text, #b45309);
 }
 
 .la-approval {

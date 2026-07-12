@@ -7,12 +7,16 @@
           <h3 class="notice-popup-title">{{ currentItem.title }}</h3>
           <div v-if="isMulti" class="notice-popup-nav">
             <button class="nav-btn" aria-label="이전" @click="fnPrev">‹</button>
-            <span class="nav-indicator">{{ currentIndex + 1 }} / {{ noticeList.length }}</span>
+            <span class="nav-indicator"
+              >{{ currentIndex + 1 }} / {{ noticeList.length }}</span
+            >
             <button class="nav-btn" aria-label="다음" @click="fnNext">›</button>
           </div>
         </div>
 
-        <p class="notice-popup-date">{{ fnFormatDate(currentItem.insertDate) }}</p>
+        <p class="notice-popup-date">
+          {{ fnFormatDate(currentItem.insertDate) }}
+        </p>
 
         <!-- 본문 (공지 내용만 스크롤 — 카드 크기는 고정) -->
         <div class="notice-popup-body">
@@ -24,7 +28,9 @@
           v-if="currentItem.fileList && currentItem.fileList.length > 0"
           class="notice-popup-files"
         >
-          <div class="files-label">📎 첨부파일 {{ currentItem.fileList.length }}건</div>
+          <div class="files-label">
+            📎 첨부파일 {{ currentItem.fileList.length }}건
+          </div>
           <ul class="file-list">
             <li
               v-for="(f, i) in currentItem.fileList"
@@ -58,19 +64,11 @@
         <!-- 하단 버튼 (§6-6 분기) -->
         <div class="notice-popup-actions">
           <!-- 정규직 + 고정 공지: [일주일간 보지 않기] -->
-          <button
-            v-if="showSnooze"
-            class="btn-secondary"
-            @click="fnSnooze"
-          >
+          <button v-if="showSnooze" class="btn-secondary" @click="fnSnooze">
             일주일간 보지 않기
           </button>
           <!-- 확인(CONFIRMED): 정규+비고정, 일용직(고정/비고정 모두) -->
-          <button
-            v-if="showConfirm"
-            class="btn-primary"
-            @click="fnConfirm"
-          >
+          <button v-if="showConfirm" class="btn-primary" @click="fnConfirm">
             확인
           </button>
           <!-- 닫기: 항상 (이력 없이 다음 로그인 재노출) -->

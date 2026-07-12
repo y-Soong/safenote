@@ -23,22 +23,6 @@
 
     <!-- 본문(스크롤) -->
     <main class="nmr-body">
-      <!-- 유형 (SYS061, 필수) -->
-      <section class="nmr-field">
-        <p class="nmr-label">유형 <span class="nmr-req" aria-hidden="true">*</span></p>
-        <div class="nmr-radio-group">
-          <label
-            v-for="opt in incidentTypeOptions"
-            :key="opt.code"
-            class="nmr-radio"
-            :class="{ 'nmr-radio--on': incidentTypeCd === opt.code }"
-          >
-            <input type="radio" name="incidentType" :value="opt.code" v-model="incidentTypeCd" />
-            <span>{{ opt.label }}</span>
-          </label>
-        </div>
-      </section>
-
       <!-- 발생일시 (필수) -->
       <section class="nmr-field">
         <p class="nmr-label">발생일시 <span class="nmr-req" aria-hidden="true">*</span></p>
@@ -188,27 +172,23 @@ const showAlert = (message) => {
 }
 
 // ───────────────────────────────────────────────────────────
-// 코드 옵션 (SYS061 사건유형 / SYS062 잠재중대성).
-//   - 진입 시 /comApi/baseinfo/syst-info-lists 로 SYS061/SYS062 를 동적 조회한다(JoinUser 패턴).
+// 코드 옵션 (SYS062 잠재중대성).
+//   - 진입 시 /comApi/baseinfo/syst-info-lists 로 SYS062 를 동적 조회한다(JoinUser 패턴).
 //   - 조회 실패 시 아래 정적 fallback(코드 시드와 동일) 으로 폼이 동작하도록 유지한다.
 //   - 공통 엔드포인트가 그룹마다 '전체'(상세코드 null) 행을 UNION 으로 끼워넣으므로,
 //     보고 폼에서는 의미 없는 '전체' 항목을 toOptions 에서 제외한다.
 // ───────────────────────────────────────────────────────────
-const incidentTypeOptions = ref([
-  { code: '100', label: '아차사고' },
-  { code: '200', label: '경미사고' },
-])
 const severityOptions = ref([
   { code: '100', label: '경미' },
   { code: '200', label: '중대' },
   { code: '300', label: '치명' },
 ])
 
-// SYS061/SYS062 코드 동적 로딩. 실패해도 정적 fallback 으로 폼은 동작.
+// SYS062 코드 동적 로딩. 실패해도 정적 fallback 으로 폼은 동작.
 const loadCodeOptions = async () => {
   try {
     const res = await api.get('/comApi/baseinfo/syst-info-lists', {
-      params: { systCodeList: ['SYS061', 'SYS062'] },
+      params: { systCodeList: ['SYS062'] },
     })
     const list = res?.data?.systInfoList || []
     const toOptions = (groupCd) =>
@@ -218,9 +198,7 @@ const loadCodeOptions = async () => {
         .sort((a, b) => (a.sortIdx ?? 0) - (b.sortIdx ?? 0))
         .map((it) => ({ code: it.systValDCd, label: it.systValDNm }))
 
-    const types = toOptions('SYS061')
     const severities = toOptions('SYS062')
-    if (types.length) incidentTypeOptions.value = types
     if (severities.length) severityOptions.value = severities
   } catch (err) {
     // 코드 조회 실패는 치명적이지 않음 — 정적 fallback 유지(폼 진행 가능).
@@ -231,7 +209,6 @@ const loadCodeOptions = async () => {
 // ───────────────────────────────────────────────────────────
 // 입력 상태
 // ───────────────────────────────────────────────────────────
-const incidentTypeCd = ref('100') // 기본 아차사고
 const occurDate = ref('') // 'YYYY-MM-DD' (DateStepperField) — 진입 시 오늘 기본값(onMounted)
 const occurTime = ref('') // 'HH:MM' 24h (TimeStepperField) — 진입 시 현재시각 기본값(onMounted)
 const locationDesc = ref('')
@@ -284,11 +261,7 @@ const onBack = () => {
 }
 
 const onSubmit = async () => {
-  // 골격 허용 최소 validation (필수: 유형/발생일시/경위)
-  if (!incidentTypeCd.value) {
-    showAlert('유형을 선택해주세요.')
-    return
-  }
+  // 골격 허용 최소 validation (필수: 발생일시/경위)
   if (!occurDate.value || !occurTime.value) {
     showAlert('발생일시를 입력해주세요.')
     return
@@ -303,7 +276,6 @@ const onSubmit = async () => {
 
   try {
     const formData = new FormData()
-    formData.append('incidentTypeCd', incidentTypeCd.value)
     // 일자('YYYY-MM-DD') + 시각('HH:MM') → 서버 포맷('YYYY-MM-DD HH:mm')
     formData.append('occurDtime', `${occurDate.value} ${occurTime.value}`)
     if (locationDesc.value.trim()) formData.append('locationDesc', locationDesc.value.trim())

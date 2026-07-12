@@ -23,6 +23,9 @@ public enum DailyJoinErrorCode implements ApiErrorCode {
     // 입력값 형식/길이 검증 실패
     , DAILYJOIN_400_006(HttpStatus.BAD_REQUEST, "입력값 형식이 올바르지 않습니다.\n다시 확인해주세요.")
 
+    // prafta-daily-blacklist: 블랙리스트 등록된 휴대폰번호의 신규 가입 차단.
+    , DAILYJOIN_400_007(HttpStatus.BAD_REQUEST, "회원가입이 제한된 휴대폰번호입니다.\n사업장 관리자에게 문의해주세요.")
+
     // 약관 데이터 오류
     , DAILYJOIN_500_001(HttpStatus.INTERNAL_SERVER_ERROR, "약관 데이터 생성 오류!\n관리자에게 문의해주세요.")
     ;

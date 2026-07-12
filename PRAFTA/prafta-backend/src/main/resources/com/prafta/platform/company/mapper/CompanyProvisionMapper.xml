@@ -1,0 +1,321 @@
+﻿<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.prafta.platform.company.mapper.CompanyProvisionMapper">
+
+    <!-- ============================================================
+         공용(부트스트랩 + 프로비저닝)
+         ============================================================ -->
+
+    <!-- 회사코드 존재 여부(충돌검사). -->
+    <select id="selectCmpnyExists" resultType="int">
+    /* CompanyProvisionMapper.selectCmpnyExists */
+    SELECT COUNT(1)
+    FROM TB_CMPNY A
+    WHERE A.CMPNY_CD = #{cmpnyCd}
+    </select>
+
+    <!-- 회사 내 USER_ID 존재 여부(부트스트랩 멱등 판정). -->
+    <select id="selectUserIdExists" resultType="int">
+    /* CompanyProvisionMapper.selectUserIdExists */
+    SELECT COUNT(1)
+    FROM TB_USER A
+    WHERE A.CMPNY_CD = #{cmpnyCd}
+      AND A.USER_ID  = #{userId}
+    </select>
+
+    <!-- 전사 대상 휴대폰번호 존재 여부(프로비저닝 중복검사). -->
+    <select id="selectPhoneNumberExists" resultType="int">
+    /* CompanyProvisionMapper.selectPhoneNumberExists */
+    SELECT COUNT(1)
+    FROM TB_USER A
+    WHERE A.MBL_NO_HMAC = #{phoneHmac}   <!-- HMAC 은 애플리케이션(HmacSigner)에서 시크릿 키로 계산해 전달(존재하지 않는 DB 함수 호출 제거) -->
+      AND A.USE_YN = 'Y'
+    </select>
+
+    <!-- TB_CMPNY 1건 INSERT. -->
+    <insert id="insertCmpny" parameterType="com.prafta.platform.common.command.CompanyInsertCommand">
+    /* CompanyProvisionMapper.insertCmpny */
+    INSERT INTO TB_CMPNY (
+        CMPNY_CD
+        , CMPNY_NM
+        , BSNS_LCN_NO
+        , USE_YN
+        , CONTRACT_YN
+        , CONTRACT_END_DATE
+        , INSERT_NO
+        , INSERT_DATE
+    )
+    VALUES (
+        #{cmpnyCd}
+        , #{cmpnyNm}
+        , #{bsnsLcnNo}
+        , #{useYn}
+        , #{contractYn}
+        , #{contractEndDate}
+        , #{insertNo}
+        , NOW()
+    )
+    </insert>
+
+    <!-- USER_CD 채번 (LoginMapper.selectUserCd / User01Mapper.selectNextUserCd 와 동일 SQL). -->
+    <select id="selectNextUserCd" resultType="java.lang.String">
+    /* CompanyProvisionMapper.selectNextUserCd */
+    SELECT CONCAT(DATE_FORMAT(NOW(), '%Y%m'), FNC_CMM_SEQ_NEXTVAL(#{cmpnyCd}, 'USER_CD'))
+    FROM DUAL
+    </select>
+
+    <!-- TB_USER 1건 INSERT(플랫폼 공용). PWD_LOCK_YN/PWD_FAIL_CNT 는 NOT NULL 명시 세팅. -->
+    <insert id="insertUser" parameterType="com.prafta.platform.common.command.PlatformUserInsertCommand">
+    /* CompanyProvisionMapper.insertUser */
+    INSERT INTO TB_USER (
+        CMPNY_CD
+        , USER_CD
+        , USER_ID
+        , USER_NM
+        , USER_PW
+        , SITE_CD
+        , NODE_CD
+        , AUTH_CD
+        , MBL_NO_ENC
+        , MBL_NO_HMAC
+        , MBL_NO_LAST4
+        , USE_YN
+        , ACCOUNT_STATUS
+        , PWD_LOCK_YN
+        , PWD_FAIL_CNT
+        , INSERT_NO
+        , INSERT_DATE
+        , UPDATE_NO
+        , UPDATE_DATE
+    )
+    VALUES (
+        #{cmpnyCd}
+        , #{userCd}
+        , #{userId}
+        , #{userNm}
+        , #{userPw}
+        , #{siteCd}
+        , #{nodeCd}
+        , #{authCd}
+        , #{mblNoEnc}
+        , #{mblNoHmac}
+        , #{mblNoLast4}
+        , 'Y'
+        , #{accountStatus}
+        , 'N'
+        , 0
+        , #{insertNo}
+        , NOW()
+        , #{insertNo}
+        , NOW()
+    )
+    </insert>
+
+    <!-- ============================================================
+         프로비저닝 전용
+         ============================================================ -->
+
+    <!-- SITE_CD 채번 (Baim01Mapper.selectSiteCd 와 동일 SQL). -->
+    <select id="selectNextSiteCd" resultType="java.lang.String">
+    /* CompanyProvisionMapper.selectNextSiteCd */
+    SELECT FNC_CMM_SEQ_NEXTVAL(#{cmpnyCd}, 'SITE_CD')
+    FROM DUAL
+    </select>
+
+    <!-- TB_SITE 1건 INSERT(최초 사업장). -->
+    <insert id="insertSite" parameterType="com.prafta.platform.company.application.command.SiteInsertCommand">
+    /* CompanyProvisionMapper.insertSite */
+    INSERT INTO TB_SITE (
+        CMPNY_CD
+        , SITE_CD
+        , SITE_NO
+        , SITE_NM
+        , STR_DATE
+        , USE_YN
+        , SITE_ADMIN_CD
+        , INSERT_NO
+        , INSERT_DATE
+        , UPDATE_NO
+        , UPDATE_DATE
+    )
+    VALUES (
+        #{cmpnyCd}
+        , #{siteCd}
+        , #{siteNo}
+        , #{siteNm}
+        , #{strDate}
+        , 'Y'
+        , #{siteAdminCd}
+        , #{insertNo}
+        , NOW()
+        , #{insertNo}
+        , NOW()
+    )
+    </insert>
+
+    <!-- TB_SITE_NODE 1건 INSERT(최초 노드, MAIN_ADMIN_CD=신규 master 로 노드-관리자 정합성 충족). -->
+    <insert id="insertSiteNode" parameterType="com.prafta.platform.company.application.command.SiteNodeInsertCommand">
+    /* CompanyProvisionMapper.insertSiteNode */
+    INSERT INTO TB_SITE_NODE (
+        CMPNY_CD
+        , SITE_CD
+        , NODE_CD
+        , NODE_NM
+        , NODE_TYPE
+        , SELF_ATTD_APPRV_YN
+        , MAIN_ADMIN_CD
+        , INSERT_NO
+        , INSERT_DATE
+        , UPDATE_NO
+        , UPDATE_DATE
+    )
+    VALUES (
+        #{cmpnyCd}
+        , #{siteCd}
+        , #{nodeCd}
+        , #{nodeNm}
+        , #{nodeType}
+        <!-- PRAFTA-001-1: 최초 노드(NODE_CD='n1' 고정)는 자체근태승인 여부를 항상 'Y'로 생성. -->
+        , CASE WHEN #{nodeCd} = 'n1' THEN 'Y' ELSE 'N' END
+        , #{mainAdminCd}
+        , #{insertNo}
+        , NOW()
+        , #{insertNo}
+        , NOW()
+    )
+    </insert>
+
+    <!-- TB_USER_SITE_AUTH 1건 INSERT(사용자↔사업장 권한). -->
+    <insert id="insertUserSiteAuth">
+    /* CompanyProvisionMapper.insertUserSiteAuth */
+    INSERT INTO TB_USER_SITE_AUTH (
+        CMPNY_CD
+        , USER_CD
+        , SITE_CD
+        , USE_YN
+        , INSERT_NO
+        , INSERT_DATE
+        , UPDATE_NO
+        , UPDATE_DATE
+    )
+    VALUES (
+        #{cmpnyCd}
+        , #{userCd}
+        , #{siteCd}
+        , 'Y'
+        , #{gvUserCd}
+        , NOW()
+        , #{gvUserCd}
+        , NOW()
+    )
+    </insert>
+
+    <!-- tb_syst_auth_menu: 템플릿(srcCmpnyCd) AUTH_CD ∈ {master,hr,safe,99999} 행을 신규 회사로 복제. -->
+    <insert id="copyAuthMenuFromTemplate">
+    /* CompanyProvisionMapper.copyAuthMenuFromTemplate */
+    INSERT INTO tb_syst_auth_menu (
+        CMPNY_CD, AUTH_CD, MENU_D_ID, USE_YN, INSERT_NO, INSERT_DATE, UPDATE_NO, UPDATE_DATE
+    )
+    SELECT
+        #{newCmpnyCd}, AUTH_CD, MENU_D_ID, USE_YN,
+        #{gvUserCd}, NOW(), #{gvUserCd}, NOW()
+    FROM tb_syst_auth_menu
+    WHERE CMPNY_CD = #{srcCmpnyCd}
+      AND AUTH_CD IN ('master', 'hr', 'safe', '99999')
+      AND USE_YN = 'Y'
+    </insert>
+
+    <!-- tb_baim_val_m: 템플릿 USE_YN='Y' 그룹을 신규 회사로 복제. -->
+    <insert id="copyBaimValMFromTemplate">
+    /* CompanyProvisionMapper.copyBaimValMFromTemplate */
+    INSERT INTO tb_baim_val_m (
+        CMPNY_CD, BAIM_VAL_CD, BAIM_VAL_NM, USE_YN, INSERT_NO, INSERT_DATE, UPDATE_NO, UPDATE_DATE
+    )
+    SELECT
+        #{newCmpnyCd}, BAIM_VAL_CD, BAIM_VAL_NM, USE_YN,
+        #{gvUserCd}, NOW(), #{gvUserCd}, NOW()
+    FROM tb_baim_val_m
+    WHERE CMPNY_CD = #{srcCmpnyCd}
+      AND USE_YN = 'Y'
+    </insert>
+
+    <!-- tb_baim_val_d: 템플릿 USE_YN='Y' 만(단, COM005 제외), 그룹별 BAIM_VAL_D_CD 를 00001 부터 SORT_IDX 순 재부여하여 복제.
+         COM005(권한) 은 TB_USER.AUTH_CD / tb_syst_auth_menu.AUTH_CD 가 표준코드(system/master/hr/safe/99999)로
+         참조하는 사실상 FK 라 재번호하면 매칭이 깨진다 → 여기서 제외하고 copyBaimValDPreserveAuth 로 원본 보존 복제한다.
+         VAL_D_INFO_1/2, VAL_D_DESC 는 원본 승계(baim02 의 'manage' 마커 등 코드 부가정보 보존). -->
+    <insert id="copyBaimValDFromTemplateRenumber">
+    /* CompanyProvisionMapper.copyBaimValDFromTemplateRenumber */
+    INSERT INTO tb_baim_val_d (
+        CMPNY_CD, BAIM_VAL_CD, BAIM_VAL_D_CD, BAIM_VAL_D_NM, SORT_IDX, USE_YN,
+        VAL_D_INFO_1, VAL_D_INFO_2, VAL_D_DESC,
+        INSERT_NO, INSERT_DATE, UPDATE_NO, UPDATE_DATE )
+    SELECT
+        #{newCmpnyCd}, BAIM_VAL_CD,
+        LPAD(ROW_NUMBER() OVER (PARTITION BY BAIM_VAL_CD ORDER BY SORT_IDX), 5, '0'),
+        BAIM_VAL_D_NM, ROW_NUMBER() OVER (PARTITION BY BAIM_VAL_CD ORDER BY SORT_IDX),
+        USE_YN, VAL_D_INFO_1, VAL_D_INFO_2, VAL_D_DESC,
+        #{gvUserCd}, NOW(), #{gvUserCd}, NOW()
+    FROM tb_baim_val_d
+    WHERE CMPNY_CD = #{srcCmpnyCd}
+      AND USE_YN = 'Y'
+      AND BAIM_VAL_CD != 'COM005'
+    </insert>
+
+    <!-- tb_baim_val_d: COM005(권한) 그룹만 원본(BAIM_VAL_D_CD/SORT_IDX/VAL_D_INFO*) 을 그대로 verbatim 복제.
+         COM005 는 권한코드(표준: system/master/hr/safe/99999)라 renumber 금지 —
+         TB_USER.AUTH_CD / tb_syst_auth_menu.AUTH_CD 가 이 value 로 매칭하는 사실상 FK 다.
+         특히 VAL_D_INFO_1='manage' 마커(system 역할을 관리자 후보에서 제외하는 필수 마커)까지 그대로 복제해야
+         User_01 권한 컬럼/FNC_CMM_INFO_SRCH AUTH_LEVEL 매칭이 유지된다. -->
+    <insert id="copyBaimValDPreserveAuth">
+    /* CompanyProvisionMapper.copyBaimValDPreserveAuth */
+    INSERT INTO tb_baim_val_d (
+        CMPNY_CD, BAIM_VAL_CD, BAIM_VAL_D_CD, BAIM_VAL_D_NM, SORT_IDX, USE_YN,
+        VAL_D_INFO_1, VAL_D_INFO_2, VAL_D_DESC,
+        INSERT_NO, INSERT_DATE, UPDATE_NO, UPDATE_DATE )
+    SELECT
+        #{newCmpnyCd}, BAIM_VAL_CD, BAIM_VAL_D_CD, BAIM_VAL_D_NM, SORT_IDX, USE_YN,
+        VAL_D_INFO_1, VAL_D_INFO_2, VAL_D_DESC,
+        #{gvUserCd}, NOW(), #{gvUserCd}, NOW()
+    FROM tb_baim_val_d
+    WHERE CMPNY_CD = #{srcCmpnyCd}
+      AND USE_YN = 'Y'
+      AND BAIM_VAL_CD = 'COM005'
+    </insert>
+
+    <!-- tb_cmm_seq: 신규 회사 복제된 baim_val_d 그룹별 최대 코드값을 CURR_VAL 로 시드.
+         SEQ_KEY = BAIM_VAL_CD (FNC_CMM_SEQ_NEXTVAL / baim02 mergeCmmCodeDetailInfo 소비 규약 일치 —
+         소비자는 접두어 없이 baimValCd 그대로 SEQ_KEY 를 읽으므로 'BAIM_VAL_D_' 접두어를 붙이면 死 row 가 되어
+         baim02 채번이 1부터 재시작 → renumber 로 이미 존재하는 '00001' 과 PK 충돌한다).
+         COM005 제외: 표준 비숫자 코드(system/master/hr/safe/99999)라 CAST AS UNSIGNED 무의미하고 seq 발급 대상이 아니다.
+         tb_cmm_seq 는 감사컬럼(INSERT_NO/DATE, UPDATE_NO/DATE) 이 없는 4컬럼 테이블(CMPNY_CD, SEQ_KEY, CURR_VAL, MAX_VAL).
+         MAX_VAL 은 DEFAULT 99999 라 생략. -->
+    <insert id="seedCmmSeqFromBaimValD">
+    /* CompanyProvisionMapper.seedCmmSeqFromBaimValD */
+    INSERT INTO tb_cmm_seq (
+        CMPNY_CD, SEQ_KEY, CURR_VAL
+    )
+    SELECT
+        #{newCmpnyCd}, BAIM_VAL_CD,
+        MAX(CAST(BAIM_VAL_D_CD AS UNSIGNED))
+    FROM tb_baim_val_d
+    WHERE CMPNY_CD = #{newCmpnyCd}
+      AND BAIM_VAL_CD != 'COM005'
+    GROUP BY BAIM_VAL_CD
+    </insert>
+
+    <!-- TB_SCH_MGMT: 기본 근무타입(ST001) 1건 INSERT.
+         컬럼은 TB_SCH_MGMT 실제 스키마(APPLY_DATE / FST_SCH_STR_TIME / FST_SCH_END_TIME)에 정합.
+         시드 값(applyDate=yyyyMMdd, 시각=HHmm)은 이미 콜론/하이픈 없는 저장형이라 REPLACE 불필요(Attd01 INSERT 패턴 참고). -->
+    <insert id="insertWorktype" parameterType="com.prafta.platform.company.application.command.WorktypeSeedCommand">
+    /* CompanyProvisionMapper.insertWorktype */
+    INSERT INTO TB_SCH_MGMT (
+        CMPNY_CD, SITE_CD, SCH_CD, SCH_NO, SCH_TYPE, APPLY_DATE, FST_SCH_STR_TIME, FST_SCH_END_TIME,
+        USE_YN, INSERT_NO, INSERT_DATE, UPDATE_NO, UPDATE_DATE
+    )
+    VALUES (
+        #{cmpnyCd}, #{siteCd}, #{schCd}, #{schNo}, #{schType}, #{applyDate}, #{fstSchStrTime}, #{fstSchEndTime},
+        'Y', #{insertNo}, NOW(), #{insertNo}, NOW()
+    )
+    </insert>
+
+</mapper>

@@ -16,4 +16,6 @@ public class MonthDayResponse {
     private final String dayType;     // WORK/LEAVE/OFF/ACTION_REQUIRED
     private final String holidayName;
     private final boolean hasIssue;
+    // prafta-app-030 후속: 그날 적용(승인) 초과근무 합계 분(없으면 0). 캘린더 셀 표시 전용 — dayType/hasIssue 무영향.
+    private final int overtimeMinutes;
 }

@@ -173,20 +173,30 @@
                   style="cursor: pointer"
                   @click="fnOpenDetail(item)"
                 >
-                  <td style="text-align: center">{{ (page - 1) * pageSize + idx + 1 }}</td>
+                  <td style="text-align: center">
+                    {{ (page - 1) * pageSize + idx + 1 }}
+                  </td>
                   <td style="text-align: center">{{ item.insertDateText }}</td>
                   <td>{{ item.targetUserNm }}</td>
                   <td style="text-align: center">{{ item.reqTypeNm }}</td>
-                  <td style="text-align: center">{{ item.targetStartDateText }}</td>
-                  <td style="text-align: center">{{ item.moveTargetDateText || '-' }}</td>
+                  <td style="text-align: center">
+                    {{ item.targetStartDateText }}
+                  </td>
+                  <td style="text-align: center">
+                    {{ item.moveTargetDateText || "-" }}
+                  </td>
                   <td>{{ item.initiatorUserNm }}</td>
-                  <td style="text-align: center">{{ item.workerResponseNm || '-' }}</td>
+                  <td style="text-align: center">
+                    {{ item.workerResponseNm || "-" }}
+                  </td>
                   <td style="text-align: center">
                     <span class="status-badge" :class="item.statusClass">
                       {{ item.reqStatusNm }}
                     </span>
                   </td>
-                  <td style="text-align: center">{{ item.confirmDateText || '-' }}</td>
+                  <td style="text-align: center">
+                    {{ item.confirmDateText || "-" }}
+                  </td>
                 </tr>
               </template>
             </tbody>
@@ -226,100 +236,100 @@
 </template>
 
 <script setup>
-import { ref, computed, getCurrentInstance, onMounted } from 'vue'
-import ViewHeader from '@/components/common/ViewHeader.vue'
-import CalendarSrch from '@/components/common/CalendarSrch.vue'
-import LeaveChangeHistoryDetailPop from './popup/LeaveChangeHistoryDetailPop.vue'
-import SiteSearchPop from '@/components/popup/SiteSearchPop.vue'
-import SiteNodeSearchPop from '@/components/popup/SiteNodeSearchPop.vue'
-import axios from '@/api/axios'
-import { getMessage, MSG } from '@/messages'
-import { resolveApiErrorMessage } from '@/utils/apiError'
-import { useModal } from '@/utils/useModal'
-import search_icon from '@/assets/img/search_icon.png'
-import { formatYmdDot, formatDateTimeDot } from '@/utils/dateFormat'
+import { ref, computed, getCurrentInstance, onMounted } from "vue";
+import ViewHeader from "@/components/common/ViewHeader.vue";
+import CalendarSrch from "@/components/common/CalendarSrch.vue";
+import LeaveChangeHistoryDetailPop from "./popup/LeaveChangeHistoryDetailPop.vue";
+import SiteSearchPop from "@/components/popup/SiteSearchPop.vue";
+import SiteNodeSearchPop from "@/components/popup/SiteNodeSearchPop.vue";
+import axios from "@/api/axios";
+import { getMessage, MSG } from "@/messages";
+import { resolveApiErrorMessage } from "@/utils/apiError";
+import { useModal } from "@/utils/useModal";
+import search_icon from "@/assets/img/search_icon.png";
+import { formatYmdDot, formatDateTimeDot } from "@/utils/dateFormat";
 
 const props = defineProps({
-  title: { type: String, default: '연차 변경 요청 이력' },
+  title: { type: String, default: "연차 변경 요청 이력" },
   buttons: Object,
-})
+});
 
-const { proxy } = getCurrentInstance()
-const { open: openPop } = useModal()
+const { proxy } = getCurrentInstance();
+const { open: openPop } = useModal();
 
 // ── 검색 조건 ────────────────────────────────────────────────────────────
-const periodRange = ref([]) // CalendarSrch range → ['YYYY-MM-DD','YYYY-MM-DD']
-const siteCd = ref('')
-const siteNo = ref('')
-const siteNm = ref('')
-const siteDisabled = ref(false)
-const nodeCd = ref('')
-const nodeNm = ref('')
-const nodeDisabled = ref(true)
-const includeSubNode = ref(true)
-const userKeyword = ref('')
-const reqType = ref('')
-const reqStatus = ref('')
+const periodRange = ref([]); // CalendarSrch range → ['YYYY-MM-DD','YYYY-MM-DD']
+const siteCd = ref("");
+const siteNo = ref("");
+const siteNm = ref("");
+const siteDisabled = ref(false);
+const nodeCd = ref("");
+const nodeNm = ref("");
+const nodeDisabled = ref(true);
+const includeSubNode = ref(true);
+const userKeyword = ref("");
+const reqType = ref("");
+const reqStatus = ref("");
 
 // ── 코드/목록 ────────────────────────────────────────────────────────────
-const historyList = ref([])
-const totalCnt = ref(0)
+const historyList = ref([]);
+const totalCnt = ref(0);
 
 // ── 페이징 ───────────────────────────────────────────────────────────────
-const page = ref(1)
-const pageSize = ref(20)
+const page = ref(1);
+const pageSize = ref(20);
 const totalPages = computed(() => {
-  const pages = Math.ceil(totalCnt.value / pageSize.value)
-  return pages < 1 ? 1 : pages
-})
+  const pages = Math.ceil(totalCnt.value / pageSize.value);
+  return pages < 1 ? 1 : pages;
+});
 
 // ── 상세 팝업 토글 ───────────────────────────────────────────────────────
-const showDetailPop = ref(false)
-const selectedChangeReqId = ref('')
+const showDetailPop = ref(false);
+const selectedChangeReqId = ref("");
 
 // 헤더 버튼 — 권한 메뉴(tb_syst_auth_menu BTN_*)에서 주입된 props.buttons 사용.
 //   Attd_14 시드는 조회(BTN_SRCH)만 'Y', 나머지 'N'(읽기 전용). 다른 화면(Attd_12 등)과 동일 패턴.
-const localButtons = ref({ ...props.buttons })
+const localButtons = ref({ ...props.buttons });
 
 // 권한 스코프(D1+D3): master/hr 는 회사 전사, 그 외(노드 관리자)는 담당 부서 강제.
 //   서버도 동일 정책으로 fail-closed 강제(canManageNodeExcludeSafe, safe 제외).
 const isMasterOrHr = computed(() => {
-  const a = sessionStorage.getItem('gv_authCd')
-  return a === 'master' || a === 'hr'
-})
+  const a = sessionStorage.getItem("gv_authCd");
+  return a === "master" || a === "hr";
+});
 
 // 코드값 → 라벨 매핑은 하드코딩하지 않고 TB_SYST_VAL_D 에서 단일 출처로 로드한다.
 //   SYS071 요청유형 / SYS072 요청상태 / SYS073 근로자 응답 (/comApi/baseinfo/syst-info-lists).
 //   systCodeArr = { SYS071: [...], SYS072: [...], SYS073: [...] } (systValCd 로 그룹핑).
-const systCodeArr = ref({})
+const systCodeArr = ref({});
 
 // 그룹(SYSxxx) + 상세코드(systValDCd) → 라벨(systValDNm). 미로딩/미일치 시 코드값 폴백.
 const codeNm = (group, cd) => {
-  if (cd == null || cd === '') return cd
-  const hit = (systCodeArr.value[group] || []).find((o) => o.systValDCd === cd)
-  return hit ? hit.systValDNm : cd
-}
+  if (cd == null || cd === "") return cd;
+  const hit = (systCodeArr.value[group] || []).find((o) => o.systValDCd === cd);
+  return hit ? hit.systValDNm : cd;
+};
 
 // 검색바 드롭다운 옵션('전체'는 템플릿에서 별도). 정렬/사용여부는 서버 조회 결과 순서를 따른다.
 const reqTypeOptions = computed(() =>
   (systCodeArr.value.SYS071 || []).filter((o) => o.systValDCd != null)
-)
+);
 const reqStatusOptions = computed(() =>
   (systCodeArr.value.SYS072 || []).filter((o) => o.systValDCd != null)
-)
+);
 
 // 처리상태 → 배지 색 분기(확정=primary, 거부=danger, 종료=closed, 그 외 대기성=pending)
 const STATUS_CLASS = {
-  CONFIRMED: 'is-confirmed',
-  REJECTED: 'is-rejected',
-  CLOSED: 'is-closed',
-  REQUESTED: 'is-pending',
-  AGREED: 'is-pending',
-}
+  CONFIRMED: "is-confirmed",
+  REJECTED: "is-rejected",
+  CLOSED: "is-closed",
+  REQUESTED: "is-pending",
+  AGREED: "is-pending",
+};
 
 // 날짜/시각 표시는 dateFormat 단일 출처에 위임(점 표기).
-const fmtYmd = (ymd) => formatYmdDot(ymd)
-const fmtDateTime = (v) => formatDateTimeDot(v)
+const fmtYmd = (ymd) => formatYmdDot(ymd);
+const fmtDateTime = (v) => formatDateTimeDot(v);
 
 // 서버 row → 그리드 표시 객체(라벨/포맷 보강)
 const toRow = (r) => ({
@@ -332,211 +342,215 @@ const toRow = (r) => ({
   confirmDateText: fmtDateTime(r.confirmDate),
   targetStartDateText: fmtYmd(r.targetStartDate),
   moveTargetDateText: fmtYmd(r.moveTargetDate),
-  reqTypeNm: codeNm('SYS071', r.reqType),
-  reqStatusNm: codeNm('SYS072', r.reqStatus),
-  workerResponseNm: codeNm('SYS073', r.workerResponse),
-  statusClass: STATUS_CLASS[r.reqStatus] || 'is-pending',
-})
+  reqTypeNm: codeNm("SYS071", r.reqType),
+  reqStatusNm: codeNm("SYS072", r.reqStatus),
+  workerResponseNm: codeNm("SYS073", r.workerResponse),
+  statusClass: STATUS_CLASS[r.reqStatus] || "is-pending",
+});
 
 // CalendarSrch range 모델(['YYYY-MM-DD','YYYY-MM-DD']) → 백엔드 YYYYMMDD
-const ymdParam = (v) => (v ? String(v).replace(/[^0-9]/g, '') : '')
-const fromDateParam = computed(() => ymdParam(periodRange.value?.[0]))
+const ymdParam = (v) => (v ? String(v).replace(/[^0-9]/g, "") : "");
+const fromDateParam = computed(() => ymdParam(periodRange.value?.[0]));
 const toDateParam = computed(() =>
   ymdParam(periodRange.value?.[1] ?? periodRange.value?.[0])
-)
+);
 
 // 당월 1일 ~ 오늘 기본값 세팅(YYYY-MM-DD)
 const setDefaultPeriod = () => {
-  const now = new Date()
-  const y = now.getFullYear()
-  const m = String(now.getMonth() + 1).padStart(2, '0')
-  const d = String(now.getDate()).padStart(2, '0')
-  periodRange.value = [`${y}-${m}-01`, `${y}-${m}-${d}`]
-}
+  const now = new Date();
+  const y = now.getFullYear();
+  const m = String(now.getMonth() + 1).padStart(2, "0");
+  const d = String(now.getDate()).padStart(2, "0");
+  periodRange.value = [`${y}-${m}-01`, `${y}-${m}-${d}`];
+};
 
 // ── 사업장 / 부서 입력 처리 (Attd_07 패턴 차용) ───────────────────────────
 //   코드/명 입력 후 blur 시 짝 필드 비우고 자동조회(단건 자동세팅 / 다건 팝업).
 const focusKill = (e) => {
-  if (e.target.id === 'siteNo') {
+  if (e.target.id === "siteNo") {
     if (proxy.$util.isEmpty(siteNo.value)) {
-      siteCd.value = ''
-      siteNm.value = ''
-      nodeDisabled.value = true
-      nodeCd.value = ''
-      nodeNm.value = ''
+      siteCd.value = "";
+      siteNm.value = "";
+      nodeDisabled.value = true;
+      nodeCd.value = "";
+      nodeNm.value = "";
     } else {
-      siteNm.value = ''
-      fnSrchSiteInfo()
+      siteNm.value = "";
+      fnSrchSiteInfo();
     }
-  } else if (e.target.id === 'siteNm') {
+  } else if (e.target.id === "siteNm") {
     if (proxy.$util.isEmpty(siteNm.value)) {
-      siteCd.value = ''
-      siteNo.value = ''
-      nodeDisabled.value = true
-      nodeCd.value = ''
-      nodeNm.value = ''
+      siteCd.value = "";
+      siteNo.value = "";
+      nodeDisabled.value = true;
+      nodeCd.value = "";
+      nodeNm.value = "";
     } else {
-      siteNo.value = ''
-      fnSrchSiteInfo()
+      siteNo.value = "";
+      fnSrchSiteInfo();
     }
-  } else if (e.target.id === 'nodeCd') {
+  } else if (e.target.id === "nodeCd") {
     if (proxy.$util.isEmpty(nodeCd.value)) {
-      nodeNm.value = ''
+      nodeNm.value = "";
     } else {
-      nodeNm.value = ''
-      fnSrchNodeInfo()
+      nodeNm.value = "";
+      fnSrchNodeInfo();
     }
-  } else if (e.target.id === 'nodeNm') {
+  } else if (e.target.id === "nodeNm") {
     if (proxy.$util.isEmpty(nodeNm.value)) {
-      nodeCd.value = ''
+      nodeCd.value = "";
     } else {
-      nodeCd.value = ''
-      fnSrchNodeInfo()
+      nodeCd.value = "";
+      fnSrchNodeInfo();
     }
   }
-}
+};
 
 // 사업장 자동조회 (코드/명 입력 후 blur)
 const fnSrchSiteInfo = async () => {
   try {
-    const res = await axios.get('/comApi/baseinfo/site-lists', {
+    const res = await axios.get("/comApi/baseinfo/site-lists", {
       params: {
-        cmpnyCd: sessionStorage.getItem('gv_cmpnyCd'),
+        cmpnyCd: sessionStorage.getItem("gv_cmpnyCd"),
         siteNo: siteNo.value,
         siteNm: siteNm.value,
       },
-    })
-    if (res.status === 200) fnCallback(res)
+    });
+    if (res.status === 200) fnCallback(res);
   } catch (err) {
-    await proxy.$alert(resolveApiErrorMessage(err, getMessage(MSG.SEARCH_ERROR_DEFAULT)))
+    await proxy.$alert(
+      resolveApiErrorMessage(err, getMessage(MSG.SEARCH_ERROR_DEFAULT))
+    );
   }
-}
+};
 
 // 부서 자동조회 (코드/명 입력 후 blur)
 const fnSrchNodeInfo = async () => {
-  if (proxy.$util.isEmpty(siteCd.value)) return
+  if (proxy.$util.isEmpty(siteCd.value)) return;
   try {
-    const res = await axios.get('/comApi/baseinfo/site-node-lists', {
+    const res = await axios.get("/comApi/baseinfo/site-node-lists", {
       params: {
-        cmpnyCd: sessionStorage.getItem('gv_cmpnyCd'),
+        cmpnyCd: sessionStorage.getItem("gv_cmpnyCd"),
         siteCd: siteCd.value,
         nodeCd: nodeCd.value,
         nodeNm: nodeNm.value,
       },
-    })
+    });
     if (res.status === 200) {
-      fnCallback({ ...res, config: { url: '/dummy/site-node-lists' } })
+      fnCallback({ ...res, config: { url: "/dummy/site-node-lists" } });
     }
   } catch (err) {
-    await proxy.$alert(resolveApiErrorMessage(err, getMessage(MSG.SEARCH_ERROR_DEFAULT)))
+    await proxy.$alert(
+      resolveApiErrorMessage(err, getMessage(MSG.SEARCH_ERROR_DEFAULT))
+    );
   }
-}
+};
 
 // 자동조회 응답 처리 — 0건/1건/다건 분기
 const fnCallback = (res) => {
-  if (!proxy.$util.isNotEmpty(res)) return
-  const apiId = res.config.url.split('/').pop()
-  if (apiId === 'site-lists') {
-    const list = res.data?.siteInfoResultList ?? []
+  if (!proxy.$util.isNotEmpty(res)) return;
+  const apiId = res.config.url.split("/").pop();
+  if (apiId === "site-lists") {
+    const list = res.data?.siteInfoResultList ?? [];
     if (list.length === 1) {
-      siteCd.value = list[0].siteCd
-      siteNo.value = list[0].siteNo
-      siteNm.value = list[0].siteNm
-      nodeDisabled.value = false
+      siteCd.value = list[0].siteCd;
+      siteNo.value = list[0].siteNo;
+      siteNm.value = list[0].siteNm;
+      nodeDisabled.value = false;
     } else if (list.length > 1) {
-      fnSiteSearchPopOpen()
+      fnSiteSearchPopOpen();
     } else {
-      siteCd.value = ''
-      siteNo.value = ''
-      siteNm.value = ''
-      nodeDisabled.value = true
-      nodeCd.value = ''
-      nodeNm.value = ''
+      siteCd.value = "";
+      siteNo.value = "";
+      siteNm.value = "";
+      nodeDisabled.value = true;
+      nodeCd.value = "";
+      nodeNm.value = "";
     }
-  } else if (apiId === 'site-node-lists') {
-    const list = res.data?.siteNodeInfoList || []
+  } else if (apiId === "site-node-lists") {
+    const list = res.data?.siteNodeInfoList || [];
     if (list.length === 0) {
-      nodeCd.value = ''
-      nodeNm.value = ''
+      nodeCd.value = "";
+      nodeNm.value = "";
     } else if (list.length === 1) {
-      nodeCd.value = list[0].nodeCd ?? ''
-      nodeNm.value = list[0].nodeNm ?? ''
+      nodeCd.value = list[0].nodeCd ?? "";
+      nodeNm.value = list[0].nodeNm ?? "";
     } else {
-      fnSiteNodeSearchPopOpen()
+      fnSiteNodeSearchPopOpen();
     }
   }
-}
+};
 
 const onSiteSelected = (siteCdVal, siteNoVal, siteNmVal) => {
-  siteCd.value = siteCdVal
-  siteNo.value = siteNoVal
-  siteNm.value = siteNmVal
-  nodeDisabled.value = false
-  nodeCd.value = ''
-  nodeNm.value = ''
-}
+  siteCd.value = siteCdVal;
+  siteNo.value = siteNoVal;
+  siteNm.value = siteNmVal;
+  nodeDisabled.value = false;
+  nodeCd.value = "";
+  nodeNm.value = "";
+};
 
 const fnSiteSearchPopOpen = () => {
   openPop(SiteSearchPop, {
-    cmpnyCd_p: sessionStorage.getItem('gv_cmpnyCd'),
-    siteNo_p: '',
-    siteNm_p: '',
+    cmpnyCd_p: sessionStorage.getItem("gv_cmpnyCd"),
+    siteNo_p: "",
+    siteNm_p: "",
     onSelect: onSiteSelected,
-  })
-}
+  });
+};
 
 const fnSiteNodeSearchPopOpen = () => {
   if (proxy.$util.isEmpty(siteCd.value)) {
-    proxy.$alert(getMessage(MSG.SITE_REQUIRED_FIRST))
-    return
+    proxy.$alert(getMessage(MSG.SITE_REQUIRED_FIRST));
+    return;
   }
   openPop(SiteNodeSearchPop, {
-    cmpnyCd_p: sessionStorage.getItem('gv_cmpnyCd'),
+    cmpnyCd_p: sessionStorage.getItem("gv_cmpnyCd"),
     siteCd_p: siteCd.value,
-    nodeCd_p: '',
-    userCd_p: '',
+    nodeCd_p: "",
+    userCd_p: "",
     onSelect: (nodeCdVal, nodeNmVal) => {
-      nodeCd.value = nodeCdVal ?? ''
-      nodeNm.value = nodeNmVal ?? ''
+      nodeCd.value = nodeCdVal ?? "";
+      nodeNm.value = nodeNmVal ?? "";
     },
-  })
-}
+  });
+};
 
 // ── 코드 로드 ────────────────────────────────────────────────────────────
 //   요청유형(SYS071)/요청상태(SYS072)/응답(SYS073) 라벨·드롭다운 옵션 단일 출처.
 //   다른 화면(Tbm_01/User_01 등)과 동일하게 /comApi/baseinfo/syst-info-lists 사용.
 const fnGetSystinfoList = async () => {
   try {
-    const res = await axios.get('/comApi/baseinfo/syst-info-lists', {
-      params: { systCodeList: ['SYS071', 'SYS072', 'SYS073'] },
-    })
+    const res = await axios.get("/comApi/baseinfo/syst-info-lists", {
+      params: { systCodeList: ["SYS071", "SYS072", "SYS073"] },
+    });
     if (res.status === 200) {
-      const list = res.data?.systInfoList ?? []
-      const grouped = {}
+      const list = res.data?.systInfoList ?? [];
+      const grouped = {};
       list.forEach((item) => {
-        const key = item.systValCd
-        if (!grouped[key]) grouped[key] = []
-        grouped[key].push(item)
-      })
-      systCodeArr.value = grouped
+        const key = item.systValCd;
+        if (!grouped[key]) grouped[key] = [];
+        grouped[key].push(item);
+      });
+      systCodeArr.value = grouped;
     }
   } catch (err) {
     await proxy.$alert(
       resolveApiErrorMessage(err, getMessage(MSG.SEARCH_ERROR_DEFAULT))
-    )
+    );
   }
-}
+};
 
 // ── 조회 ─────────────────────────────────────────────────────────────────
 //   GET /webApi/attd14/admin-requests
 //   서버가 권한/IDOR(canManageNodeExcludeSafe + INC_SUB) fail-closed 강제(safe 제외, ADMIN 발신 고정).
 const fnLoadList = async () => {
   try {
-    const res = await axios.get('/webApi/attd14/admin-requests', {
+    const res = await axios.get("/webApi/attd14/admin-requests", {
       params: {
         SITE_CD: siteCd.value,
         NODE_CD: nodeCd.value,
-        INC_SUB_NODE_YN: includeSubNode.value ? 'Y' : 'N',
+        INC_SUB_NODE_YN: includeSubNode.value ? "Y" : "N",
         USER_NM: userKeyword.value,
         REQ_TYPE: reqType.value,
         REQ_STATUS: reqStatus.value,
@@ -545,66 +559,68 @@ const fnLoadList = async () => {
         PAGE: page.value,
         PAGE_SIZE: pageSize.value,
       },
-    })
+    });
     if (res.status === 200) {
-      const list = res.data?.list ?? []
-      historyList.value = list.map(toRow)
-      totalCnt.value = res.data?.totalCnt ?? 0
+      const list = res.data?.list ?? [];
+      historyList.value = list.map(toRow);
+      totalCnt.value = res.data?.totalCnt ?? 0;
     }
   } catch (err) {
-    historyList.value = []
-    totalCnt.value = 0
-    await proxy.$alert(resolveApiErrorMessage(err, getMessage(MSG.SEARCH_ERROR)))
+    historyList.value = [];
+    totalCnt.value = 0;
+    await proxy.$alert(
+      resolveApiErrorMessage(err, getMessage(MSG.SEARCH_ERROR))
+    );
   }
-}
+};
 
 // 조회(검색조건 변경 → 1페이지부터). 노드 관리자는 담당 부서 선택 필수.
 const fnSearch = async () => {
   if (!isMasterOrHr.value && !nodeCd.value) {
-    historyList.value = []
-    totalCnt.value = 0
-    await proxy.$alert('조회할 부서를 선택해 주세요.')
-    return
+    historyList.value = [];
+    totalCnt.value = 0;
+    await proxy.$alert("조회할 부서를 선택해 주세요.");
+    return;
   }
-  page.value = 1
-  await fnLoadList()
-}
+  page.value = 1;
+  await fnLoadList();
+};
 
 const fnGoPage = (target) => {
-  if (target < 1 || target > totalPages.value) return
-  page.value = target
-  fnLoadList()
-}
+  if (target < 1 || target > totalPages.value) return;
+  page.value = target;
+  fnLoadList();
+};
 
 const fnOpenDetail = (item) => {
-  selectedChangeReqId.value = item.changeReqId
-  showDetailPop.value = true
-}
+  selectedChangeReqId.value = item.changeReqId;
+  showDetailPop.value = true;
+};
 
 onMounted(async () => {
   // 코드(라벨/드롭다운)를 먼저 로드해야 최초 조회 결과의 라벨 매핑이 정확하다.
-  await fnGetSystinfoList()
-  setDefaultPeriod()
+  await fnGetSystinfoList();
+  setDefaultPeriod();
   if (isMasterOrHr.value) {
     // master/hr: 회사 전사 기본(사업장 미지정). 진입 즉시 전사 자동조회.
-    siteDisabled.value = false
-    nodeDisabled.value = true
-    await fnSearch()
+    siteDisabled.value = false;
+    nodeDisabled.value = true;
+    await fnSearch();
   } else {
     // 노드 관리자: 세션 사업장 + 본인 담당 부서 프리셋. 프리셋 있으면 자동조회.
-    siteCd.value = sessionStorage.getItem('gv_siteCd') ?? ''
-    siteNo.value = sessionStorage.getItem('gv_siteNo') ?? ''
-    siteNm.value = sessionStorage.getItem('gv_siteNm') ?? ''
+    siteCd.value = sessionStorage.getItem("gv_siteCd") ?? "";
+    siteNo.value = sessionStorage.getItem("gv_siteNo") ?? "";
+    siteNm.value = sessionStorage.getItem("gv_siteNm") ?? "";
     if (siteCd.value) {
-      nodeDisabled.value = false
-      nodeCd.value = sessionStorage.getItem('gv_nodeCd') ?? ''
-      nodeNm.value = sessionStorage.getItem('gv_nodeNm') ?? ''
+      nodeDisabled.value = false;
+      nodeCd.value = sessionStorage.getItem("gv_nodeCd") ?? "";
+      nodeNm.value = sessionStorage.getItem("gv_nodeNm") ?? "";
     }
     if (nodeCd.value) {
-      await fnSearch()
+      await fnSearch();
     }
   }
-})
+});
 </script>
 
 <style scoped>

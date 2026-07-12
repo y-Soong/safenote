@@ -1,8 +1,6 @@
 package com.prafta.web.user.user02.service.impl;
 
-import java.util.HashMap;
 import java.util.List;
-import java.util.Map;
 
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -16,7 +14,6 @@ import com.prafta.web.user.user02.application.query.AuthMenuListQuery;
 import com.prafta.web.user.user02.dto.response.AuthMenuListResponse;
 import com.prafta.web.user.user02.mapper.User02Mapper;
 import com.prafta.web.user.user02.result.AuthMenuResult;
-import com.prafta.web.user.user02.result.MenuDMenuMResult;
 import com.prafta.web.user.user02.service.User02Service;
 
 import lombok.extern.slf4j.Slf4j;
@@ -48,9 +45,15 @@ public class User02ServiceImpl implements User02Service{
 		return retDto;
 	}
 
-	// PRAFTA-042-2: 화면권한 저장 시 역할별 잠금(해제 불가) 대메뉴 하위 화면은 USE_YN/BTN_* 를
+	// PRAFTA-042-2: 화면권한 저장 시 역할별 잠금(해제 불가) 화면은 USE_YN/BTN_* 를
 	//   모두 'Y' 로 서버가 강제 보정한 뒤 저장한다(D5). FE 우회(devtools/직접 API) 방어.
 	//   거부가 아니라 보정이며, 입력이 잠금과 달랐으면 변조 흔적을 warn 로그로 남긴다(PII 미포함).
+	//
+	// LNB 재편(lnb-restructure): 잠금 기준을 MENU_M_ID → MENU_D_ID 로 전환했다.
+	//   한 대분류 탭(attdHr/safety/system/dailyAcct)에 여러 도메인이 섞이게 되어 MENU_M_ID 단위
+	//   판정이 원래 잠금 의도를 정확히 표현하지 못하기 때문이며, MENU_D_ID 는 LNB 재편 후에도
+	//   불변이라 잠금 의도를 1:1 보존한다. 따라서 menuDId -> menuMId 매핑 조회
+	//   (selectMenuMIdsByMenuDIds)는 더 이상 필요하지 않다.
 	@Override
 	@Transactional
 	public void updateAuthMenuInfo(AuthMenuInfoParam param) {
@@ -60,23 +63,11 @@ public class User02ServiceImpl implements User02Service{
 			return;
 		}
 
-		// 잠금 판정용 menuDId -> menuMId 매핑 일괄 조회(N+1 회피). 한 화면이 복수 대메뉴에 속할 수 있어
-		// 어느 하나라도 잠금이면 잠금으로 본다.
-		List<String> menuDIds = models.stream()
-				.map(AuthMenuInfoModel::menuDId)
-				.distinct()
-				.toList();
-		Map<String, List<String>> menuMIdsByMenuDId = new HashMap<>();
-		for (MenuDMenuMResult row : user02Mapper.selectMenuMIdsByMenuDIds(menuDIds)) {
-			menuMIdsByMenuDId
-					.computeIfAbsent(row.menuDId(), k -> new java.util.ArrayList<>())
-					.add(row.menuMId());
-		}
-
 		for (AuthMenuInfoModel model : models) {
 
-			boolean locked = isLockedForAnyMenuM(
-					model.authCd(), menuMIdsByMenuDId.get(model.menuDId()));
+			// 잠금 판정: MENU_D_ID 기준(master 는 menuDId 무관 전체 잠금).
+			boolean locked = MenuLockPolicy.isLockedMenuByMenuDId(
+					model.authCd(), model.menuDId());
 
 			if (locked) {
 				AuthMenuInfoCommand corrected = lockedCommand(model);
@@ -94,23 +85,6 @@ public class User02ServiceImpl implements User02Service{
 				user02Mapper.mergeAuthMenuInfo(AuthMenuInfoCommand.from(model));
 			}
 		}
-	}
-
-	/** 해당 화면(menuDId)의 어떤 대메뉴라도 역할 기준 잠금이면 true. */
-	private boolean isLockedForAnyMenuM(String authCd, List<String> menuMIds) {
-		// master 는 menuMId 무관 전체 잠금이므로 menuMId 가 비어도 잠금이다.
-		if (MenuLockPolicy.isLockedMenu(authCd, null)) {
-			return true;
-		}
-		if (menuMIds == null || menuMIds.isEmpty()) {
-			return false;
-		}
-		for (String menuMId : menuMIds) {
-			if (MenuLockPolicy.isLockedMenu(authCd, menuMId)) {
-				return true;
-			}
-		}
-		return false;
 	}
 
 	/** 잠금 대상의 USE_YN/BTN_* 를 모두 'Y' 로 강제한 Command 를 생성한다(불변 record라 새 인스턴스). */
