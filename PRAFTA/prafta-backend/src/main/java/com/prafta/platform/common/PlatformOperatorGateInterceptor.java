@@ -8,6 +8,7 @@ import java.util.stream.Collectors;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 import org.springframework.util.StringUtils;
+import org.springframework.web.cors.CorsUtils;
 import org.springframework.web.servlet.HandlerInterceptor;
 
 import com.prafta.common.dto.TokenInfo;
@@ -63,6 +64,13 @@ public class PlatformOperatorGateInterceptor implements HandlerInterceptor {
 
     @Override
     public boolean preHandle(HttpServletRequest request, HttpServletResponse response, Object handler) {
+        // 0) CORS 사전요청(OPTIONS+Origin+Access-Control-Request-Method)은 브라우저 규격상
+        //    Authorization 헤더가 실리지 않으므로 게이트 대상이 아니다 — 본요청에서 전 계층 재평가된다.
+        //    (운영 크로스 오리진(prafta.com→api.prafta.com)에서 조회가 사전요청 단계에서 403 나던 결함 수정)
+        if (CorsUtils.isPreFlightRequest(request)) {
+            return true;
+        }
+
         // 1) IP 허용목록 — 설정된 경우에만 강제(fail-closed).
         if (StringUtils.hasText(allowedIpsRaw)) {
             String clientIp = resolveClientIp(request);
