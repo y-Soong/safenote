@@ -478,12 +478,30 @@ public class RiskAi01ServiceImpl implements RiskAi01Service {
         // ★잘라내기: 검색은 topK=10 이지만 LLM 투입 recompose 는 유사도 상위 5건(MAX_RECOMPOSE_CONTEXT)
         //   까지만 채택한다(hits 는 유사도순 정렬 전제).
         //   verbatim 은 v3.9 부터 메인 검색이 아니라 아래 "전용 검색 + 선택 전용 호출"로 별도 선정.
+        // ★그라운딩 개선(유사도 임계값): 코퍼스에 관련 자료가 없으면 벡터 검색은 "가장 덜 먼" 무관한
+        //   청크(예: 제조업 질의에 건설 컨베이어/지게차)를 반환한다. minScore 미만은 근거로 채택하지
+        //   않아, 무관한 청크를 억지 근거로 삼는 것을 막는다. 전부 미달이면 recompose 가 비어
+        //   아래 "코퍼스 근거부재 → 자유생성(ABSTAINED)" 경로로 폴백한다(정직한 저신뢰 응답).
+        double minScore = aiProperties.getSearch().getDeriveMinScore();
+        double topScore = hits.isEmpty() ? Double.NaN : hits.get(0).getScore();
+        int recomposeTrackCnt = 0;
         List<RagHit> recompose = new ArrayList<>();
         for (RagHit h : hits) {
-            if (RECOMPOSE_TRACK.equals(h.getTrack()) && recompose.size() < MAX_RECOMPOSE_CONTEXT) {
+            if (!RECOMPOSE_TRACK.equals(h.getTrack())) {
+                continue;
+            }
+            recomposeTrackCnt++;
+            if (h.getScore() >= minScore && recompose.size() < MAX_RECOMPOSE_CONTEXT) {
                 recompose.add(h);
             }
         }
+        // ★관측 로그(임계값 튜닝 근거): 실 코퍼스의 최상위 점수와 임계값 통과 건수를 남긴다.
+        //   실환경에서 이 로그의 topScore 분포를 보고 deriveMinScore 를 조정한다.
+        log.info("RAG 그라운딩 판정 - 질의길이={}, recompose후보={}, 최상위점수={}, 임계값={}, 채택={}건{}",
+                query.length(), recomposeTrackCnt,
+                Double.isNaN(topScore) ? "N/A" : String.format("%.4f", topScore),
+                String.format("%.2f", minScore), recompose.size(),
+                recompose.isEmpty() ? " → 근거부재(자유생성 ABSTAINED)" : "");
 
         // ★v3.9 verbatim 참고 원문 선정: 전용 검색(track=verbatim) 후 "선택 전용 LLM" 재랭킹.
         //   그라운딩 호출 전에 수행하되, 어떤 실패도 derive 본류에 영향 없게 내부에서 격리·폴백한다.

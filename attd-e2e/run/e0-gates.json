@@ -1,0 +1,12 @@
+{
+  "QTUSERH": {
+    "tempToken": "eyJhbGciOiJIUzI1NiJ9.eyJndl9jbXBueUNkIjoiMDAxIiwiZ3ZfdXNlckNkIjoiMjAyNjA3MDAwMzYiLCJndl9zY29wZSI6IlBIT05FX0FVVEgiLCJpYXQiOjE3ODQyMjg0ODYsImV4cCI6MTc4NDIyOTA4Nn0.PA7CidIEAEsRySCv_qOv04UN7gQVLkMIE-RKD1Mk5Zc",
+    "nextStep": "PHONE_AUTH",
+    "mbl": "01077770021"
+  },
+  "QTUSERI": {
+    "tempToken": "eyJhbGciOiJIUzI1NiJ9.eyJndl9jbXBueUNkIjoiMDAxIiwiZ3ZfdXNlckNkIjoiMjAyNjA3MDAwMzciLCJndl9zY29wZSI6IlBIT05FX0FVVEgiLCJpYXQiOjE3ODQyMjg0ODYsImV4cCI6MTc4NDIyOTA4Nn0.qI6RXOroijAbpKNHRyyPtLpGLq-SlW-WSxBA78uOaow",
+    "nextStep": "PHONE_AUTH",
+    "mbl": "01077770022"
+  }
+}

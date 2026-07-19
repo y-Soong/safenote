@@ -47,6 +47,8 @@ public enum TbmErrorCode implements ApiErrorCode {
     , TBM_400_014(HttpStatus.BAD_REQUEST, "취소 사유를 입력해 주세요.")
     // PRAFTA_COM_001 T7-17: 교육 인정시간 미입력/범위밖(1~60분) - 사용자 안내(웹/앱 공용)
     , TBM_400_015(HttpStatus.BAD_REQUEST, "교육 시간은 1분 이상 60분 이하로 입력해 주세요.")
+    // 세션-위험성평가 연계 부적합(세션 사업장과 다른 사업장 평가 또는 미존재 평가 키) - 사용자 안내(2026-07-16 보안 보강, 웹/앱 공용)
+    , TBM_400_016(HttpStatus.BAD_REQUEST, "위험성평가 연계 정보가 올바르지 않습니다.")
     // 수정 불가 상태(DRAFT/OPENED 외) - 비즈니스 룰
     , TBM_409_010(HttpStatus.CONFLICT, "현재 상태에서는 수정할 수 없습니다.")
     // 취소 불가 상태(DRAFT/OPENED 외) - 비즈니스 룰
@@ -160,6 +162,24 @@ public enum TbmErrorCode implements ApiErrorCode {
     // 세션에 묶인 AI 분석 지정 항목 중 미확정(NONE/ANALYZING/DRAFT/FAILED/NULL 등)이 하나라도 있음 - 비즈니스 룰
     // (실제 응답은 어떤 항목이 미확정인지 상세 메시지로 대체해 내려간다)
     , TBM_409_060(HttpStatus.CONFLICT, "AI 분석이 확정되지 않은 자료가 있습니다.")
+    // 교육안 생성 목표 글자수(targetChars) 범위 위반(800~5000) - 사용자 안내(2026-07-16 R3)
+    , TBM_400_061(HttpStatus.BAD_REQUEST, "목표 글자수는 800자 이상 5000자 이하로 입력해 주세요.")
+
+    // ===== PRAFTA-SUBCON-T5 TBM 연동 회사 지정(+재지정 체인) =====
+    // 지정 파라미터 누락/형식(자기 회사·개설사 지정 시도 포함) - 사용자 안내
+    , TBM_400_060(HttpStatus.BAD_REQUEST, "요청 정보가 올바르지 않습니다.")
+    // 입실 범위 밖(참석자 소속 회사가 {개설사} ∪ SHARE 체인 에 없음). 입실 경로 P1~P4 공통.
+    , TBM_403_060(HttpStatus.FORBIDDEN, "이 교육에 참여할 수 없는 회사 소속입니다.")
+    // 연동 회사 지정 권한 없음(개설사도 체인 회사도 아님)
+    , TBM_403_061(HttpStatus.FORBIDDEN, "이 교육의 연동 회사를 지정할 권한이 없습니다.")
+    // 처리할 지정 행 없음(미존재/타사 지정분/이미 해제 통합 — 존재 비노출)
+    , TBM_404_060(HttpStatus.NOT_FOUND, "처리할 연동 회사 지정을 찾을 수 없습니다.")
+    // 중복 지정(UK 백스톱 DuplicateKeyException 포함)
+    , TBM_409_061(HttpStatus.CONFLICT, "이미 지정된 회사입니다.")
+    // 지정 대상과 연동 관계(tb_cmpny_relation STATUS='ACCEPTED')가 없음
+    , TBM_409_062(HttpStatus.CONFLICT, "연동 관계가 수립된 회사가 아닙니다.")
+    // 지정/해제 불가 상태(DRAFT/OPENED 외)
+    , TBM_409_063(HttpStatus.CONFLICT, "지금은 연동 회사를 변경할 수 없는 상태입니다.")
 
     ;
 

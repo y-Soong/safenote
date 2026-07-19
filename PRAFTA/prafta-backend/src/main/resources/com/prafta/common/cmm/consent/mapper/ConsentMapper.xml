@@ -1,0 +1,209 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.prafta.common.cmm.consent.mapper.ConsentMapper">
+
+    <!-- ====================================================================
+         활성 약관(USE_YN='Y') 1건 + SYS008 약관명.
+         결과 없음 = 약관 미배포(제도 미가동) → 호출측이 게이트 미노출/전원 포함으로 처리.
+         ★ record(ConsentTermsResult) 매핑 — SELECT 컬럼 순서 = record 컴포넌트 순서 유지.
+         ==================================================================== -->
+    <select id="selectActiveTerms" resultType="com.prafta.common.cmm.consent.mapper.result.ConsentTermsResult">
+    /* ConsentMapper.selectActiveTerms */
+    SELECT
+          B.TERMS_ID         AS termsId
+        , S.SYST_VAL_D_NM    AS termsNm
+        , B.TERMS_VERSION    AS termsVersion
+        , B.TERMS_DESC       AS termsDesc
+    FROM TB_TERMS B
+         <!-- 약관명은 표시용 부가정보다. INNER JOIN 이면 SYS008 코드 디테일 행이 지워졌을 때
+              약관이 살아있는데도 null 이 반환되어 동의 필터가 통째로 꺼진다(fail-open) → LEFT JOIN. -->
+         LEFT OUTER JOIN TB_SYST_VAL_D S
+            ON (
+                S.SYST_VAL_CD = 'SYS008'
+            AND S.SYST_VAL_D_CD = B.TERMS_ID
+            )
+    WHERE 1=1
+      AND B.TERMS_ID = #{termsId}
+      AND B.USE_YN = 'Y'
+    LIMIT 1
+    </select>
+
+    <!-- ====================================================================
+         약관 행 존재 여부(USE_YN 무관 · SYS008 조인 없음).
+         selectActiveTerms 의 null 이 "제도 미도입(행 부재)"인지 "배포 후 비활성화(USE_YN='N')"인지
+         가르는 데 쓴다. 후자를 미도입으로 오인하면 미동의자 PII 가 반출된다(security M-1).
+         ==================================================================== -->
+    <select id="countTermsExists" resultType="int">
+    /* ConsentMapper.countTermsExists */
+    SELECT COUNT(1)
+    FROM TB_TERMS B
+    WHERE B.TERMS_ID = #{termsId}
+    </select>
+
+    <!-- ====================================================================
+         사용자 소속 사업장코드(정규 + 일용직).
+         일용직(TB_DAILY_USER)도 동의 대상이다(T3 결정 2) → UNION ALL 로 함께 조회.
+         ★ 토큰 gv_siteCd 를 쓰지 않는다: 로그인 시점 스냅샷이라 소속이동 발효 반영이 지연되어
+           게이트 오발동/누락(무동의 반출)의 원인이 된다.
+         ==================================================================== -->
+    <select id="selectUserSiteCd" resultType="string">
+    /* ConsentMapper.selectUserSiteCd */
+    SELECT A.SITE_CD
+    FROM (
+        SELECT U.SITE_CD AS SITE_CD, 1 AS SRC_ORD   <!-- 정규 우선 -->
+        FROM TB_USER U
+        WHERE U.CMPNY_CD = #{cmpnyCd}
+          AND U.USER_CD = #{userCd}
+          AND IFNULL(U.USE_YN, 'N') = 'Y'
+        UNION ALL
+        SELECT D.SITE_CD AS SITE_CD, 2 AS SRC_ORD
+        FROM TB_DAILY_USER D
+        WHERE D.CMPNY_CD = #{cmpnyCd}
+          AND D.USER_CD = #{userCd}
+          AND IFNULL(D.USE_YN, 'N') = 'Y'
+    ) A
+    WHERE A.SITE_CD IS NOT NULL
+    <!-- ORDER BY 없는 LIMIT 1 은 비결정적이다 — 정규/일용에 같은 USER_CD 가 있으면 매번 다른 행이 나올 수 있다. -->
+    ORDER BY A.SRC_ORD ASC
+    LIMIT 1
+    </select>
+
+    <!-- ====================================================================
+         활성 연동 링크 참여 여부(제공측 SRC 또는 수신측 DST).
+         관계는 양방향이고 제공 방향은 건별이므로 "미러(DST)"만 보면
+         원본 사업장만 보유한 제공사 근로자가 게이트에서 누락된다(plan §0-4/D3).
+         ==================================================================== -->
+    <select id="countActiveSiteLinkMember" resultType="int">
+    /* ConsentMapper.countActiveSiteLinkMember */
+    SELECT COUNT(1)
+    FROM TB_SITE_LINK L
+    WHERE L.STATUS = 'ACTIVE'
+      AND (
+            (L.SRC_CMPNY_CD = #{cmpnyCd} AND L.SRC_SITE_CD = #{siteCd})
+         OR (L.DST_CMPNY_CD = #{cmpnyCd} AND L.DST_SITE_CD = #{siteCd})
+          )
+    </select>
+
+    <!-- ====================================================================
+         사용자의 특정 약관/버전 현재 동의값. 행이 없으면 결과 없음(null = 미응답).
+         ★ AGR_YN 조건을 걸지 않는다 — 게이트 해제 판정은 "응답 행 존재"(Y/N 무관)이다(plan D2).
+         ==================================================================== -->
+    <select id="selectUserAgrYn" resultType="string">
+    /* ConsentMapper.selectUserAgrYn */
+    SELECT IFNULL(A.AGR_YN, 'N')
+    FROM TB_TERMS_USER_AGR_MGMT A
+    WHERE A.CMPNY_CD = #{cmpnyCd}
+      AND A.USER_CD = #{userCd}
+      AND A.TERMS_ID = #{termsId}
+      AND A.TERMS_VERSION = #{termsVersion}
+    LIMIT 1
+    </select>
+
+    <!-- ====================================================================
+         동의 현재값 + 행 잠금(FOR UPDATE) — 이력 기록 경로 전용.
+         잠금이 없으면 동시 응답 2건이 모두 before=null 을 읽어 "최초 동의" 이력이 2행 남는다
+         (이력 = 반출의 법적 근거 → 중복 전이는 증거 신뢰도 훼손, security L-1).
+         PK 미존재 행의 FOR UPDATE 는 갭 락으로 동시 INSERT 를 직렬화한다.
+         ★ 게이트 조회(읽기 전용)에는 쓰지 않는다.
+         ==================================================================== -->
+    <select id="selectUserAgrYnForUpdate" resultType="string">
+    /* ConsentMapper.selectUserAgrYnForUpdate */
+    SELECT IFNULL(A.AGR_YN, 'N')
+    FROM TB_TERMS_USER_AGR_MGMT A
+    WHERE A.CMPNY_CD = #{cmpnyCd}
+      AND A.USER_CD = #{userCd}
+      AND A.TERMS_ID = #{termsId}
+      AND A.TERMS_VERSION = #{termsVersion}
+    FOR UPDATE
+    </select>
+
+    <!-- ====================================================================
+         동의자 USER_CD 목록(T3 스냅샷 필터).
+         현재버전(TB_TERMS.TERMS_VERSION) 동의만 유효 — 버전 상향 = 재동의 필요(plan D6).
+         반환 집합에 없는 USER_CD = 미동의 → T3 가 해당 근로자 상세행 전량 제외 + CONSENT_EXCLUDED_CNT 증가.
+         userCds 는 호출측(ConsentQueryService)이 500건 청크로 분할해 전달한다.
+         ==================================================================== -->
+    <select id="selectConsentedUserCds" resultType="string">
+    /* ConsentMapper.selectConsentedUserCds */
+    SELECT A.USER_CD
+    FROM TB_TERMS_USER_AGR_MGMT A
+         INNER JOIN TB_TERMS T
+            ON (
+                T.TERMS_ID = A.TERMS_ID
+            AND T.TERMS_VERSION = A.TERMS_VERSION
+            )
+    WHERE 1=1
+      AND A.CMPNY_CD = #{cmpnyCd}
+      AND A.TERMS_ID = #{termsId}
+      AND IFNULL(A.AGR_YN, 'N') = 'Y'
+      AND T.USE_YN = 'Y'
+      AND A.USER_CD IN
+      <foreach item="u" collection="userCds" open="(" separator="," close=")">#{u}</foreach>
+    </select>
+
+    <!-- ====================================================================
+         동의 현재상태 upsert. PK=(CMPNY_CD,USER_CD,TERMS_ID,TERMS_VERSION) 충돌 시 AGR_YN 갱신.
+         스키마에 UPDATE_* 컬럼이 없어 INSERT 컬럼만 사용한다.
+         ★ 이력 우회 방지를 위해 프로젝트 내 유일한 동의 upsert 구문이다
+           (terms01 의 기존 upsertTermsAgr 를 본 구문으로 일원화 — ConsentHistoryRecorder 경유만 호출).
+         ==================================================================== -->
+    <insert id="upsertTermsAgr" parameterType="com.prafta.common.cmm.consent.application.command.ConsentAgrUpsertCommand">
+    /* ConsentMapper.upsertTermsAgr */
+    INSERT INTO TB_TERMS_USER_AGR_MGMT (
+          CMPNY_CD
+        , USER_CD
+        , TERMS_ID
+        , TERMS_VERSION
+        , AGR_YN
+        , INSERT_NO
+        , INSERT_DATE
+    ) VALUES (
+          #{cmpnyCd}
+        , #{userCd}
+        , #{termsId}
+        , #{termsVersion}
+        , #{agrYn}
+        , #{userCd}
+        , NOW()
+    )
+    ON DUPLICATE KEY UPDATE
+          AGR_YN = VALUES(AGR_YN)
+    </insert>
+
+    <!-- ====================================================================
+         동의/철회 전이 이력 INSERT(append-only).
+         ACTION_DTIME 은 서버 NOW()(KST) — 클라 시각을 신뢰하지 않는다.
+         BEFORE_AGR_YN 은 최초 응답 시 NULL.
+         ==================================================================== -->
+    <insert id="insertTermsAgrHist" parameterType="com.prafta.common.cmm.consent.application.command.ConsentHistInsertCommand">
+    /* ConsentMapper.insertTermsAgrHist */
+    INSERT INTO TB_TERMS_USER_AGR_HIST (
+          CMPNY_CD
+        , USER_CD
+        , TERMS_ID
+        , TERMS_VERSION
+        , BEFORE_AGR_YN
+        , AFTER_AGR_YN
+        , AGR_SOURCE
+        , ACTOR_CMPNY_CD
+        , ACTOR_USER_CD
+        , ACTION_DTIME
+        , INSERT_NO
+        , INSERT_DATE
+    ) VALUES (
+          #{cmpnyCd}
+        , #{userCd}
+        , #{termsId}
+        , #{termsVersion}
+        , #{beforeAgrYn}
+        , #{afterAgrYn}
+        , #{agrSource}
+        , #{actorCmpnyCd}
+        , #{actorUserCd}
+        , NOW()
+        , #{actorUserCd}
+        , NOW()
+    )
+    </insert>
+
+</mapper>

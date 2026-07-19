@@ -98,6 +98,7 @@ import { resolveApiErrorMessage } from "@/utils/apiError";
 
 const props = defineProps({
   cmpnyCd_p: String,
+  siteCd_p: String, // PRAFTA-SUBCON-T0-05: 문항 사업장 분리에 따라 필수
   chkLstType_p: String,
   onSelect: Function,
 });
@@ -128,13 +129,14 @@ const formatStrDate = (strDate) => {
   return s;
 };
 
-// 점검문항 조회 (chkLstType 필수, chkLst04 전용 EP)
+// 점검문항 조회 (siteCd + chkLstType 필수, chkLst04 전용 EP)
 const fnSearch = async () => {
   itemList.value = [];
 
   try {
     const response = await axios.get("/webApi/chkLst04/inspect-item-lists", {
       params: {
+        siteCd: props.siteCd_p, // PRAFTA-SUBCON-T0-05: 사업장 키 관통
         chkLstType: props.chkLstType_p,
         inspectItemSubj: inspectItemSubj.value,
         useYn: useYn.value,

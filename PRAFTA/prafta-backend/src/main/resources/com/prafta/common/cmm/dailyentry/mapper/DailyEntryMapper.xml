@@ -1,0 +1,292 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.prafta.common.cmm.dailyentry.mapper.DailyEntryMapper">
+
+    <!-- 승인요청 ID 채번 ('ER' + YYYYMMDD + 시퀀스). dailyjoin selectDailySlotHisId 패턴 미러. -->
+    <select id="selectEntryRequestId" resultType="string">
+    /* DailyEntryMapper.selectEntryRequestId */
+    SELECT CONCAT('ER', DATE_FORMAT(NOW(), '%Y%m%d'), FNC_CMM_SEQ_NEXTVAL(#{cmpnyCd}, 'DAILY_ENTRY_REQ'))
+    FROM DUAL
+    </select>
+
+    <!-- 계정의 open(대기 01 / 승인 02) 요청 단건 조회. UX_DAILY_ENTRY_REQ_OPEN 으로 최대 1건 보장.
+         D7(승인=당일 유효) 코드 자체 보장: 승인('02')은 REQ_DTIME 이 오늘인 경우에만 유효 취급 —
+         만료 배치(prafta.daily-user.expire.enabled 게이트) 가동 여부와 무관하게 어제 승인은 판정에서
+         제외되어 소진 불가. 판정은 NONE 으로 흘러 새 요청 생성 경로로 진행된다(과거 open 행이 남아
+         있으면 기능성 유니크 충돌 → DuplicateKeyException 멱등 흡수 후 006 안내).
+         대기('01')는 날짜 조건 없이 조회 유지(중복 요청 방지 판정은 과거 대기 건도 봐야 함 —
+         과거 '01' 건도 승인 후 소진은 updateEntryRequestConsume 의 REQ_DTIME 조건이 차단). -->
+    <select id="selectOpenEntryRequest" resultType="com.prafta.common.cmm.dailyentry.result.EntryRequestMetaResult">
+    /* DailyEntryMapper.selectOpenEntryRequest */
+    SELECT
+        REQ_ID          AS reqId
+        , SITE_CD       AS siteCd
+        , USER_CD       AS userCd
+        , REQ_TYPE      AS reqType
+        , REQ_STATUS    AS reqStatus
+    FROM TB_DAILY_ENTRY_REQUEST
+    WHERE CMPNY_CD = #{cmpnyCd}
+      AND USER_CD  = #{userCd}
+      AND (
+           REQ_STATUS = '01'
+        OR (
+               REQ_STATUS = '02'
+           AND REQ_DTIME <![CDATA[ >= ]]> CURDATE()
+           )
+      )
+    ORDER BY REQ_DTIME DESC
+    LIMIT 1
+    </select>
+
+    <!-- 당일 거부(03) 이력 존재 카운트 — 처리일시(PROC_DTIME) 가 오늘인 거부 건(효력=당일, plan §1). -->
+    <select id="selectTodayRejectedCnt" resultType="int">
+    /* DailyEntryMapper.selectTodayRejectedCnt */
+    SELECT COUNT(*)
+    FROM (
+        SELECT 1
+          FROM TB_DAILY_ENTRY_REQUEST
+         WHERE CMPNY_CD   = #{cmpnyCd}
+           AND USER_CD    = #{userCd}
+           AND REQ_STATUS = '03'
+           AND PROC_DTIME <![CDATA[ >= ]]> CURDATE()
+           AND PROC_DTIME <![CDATA[ < ]]> DATE_ADD(CURDATE(), INTERVAL 1 DAY)
+         LIMIT 1
+    ) T
+    </select>
+
+    <!-- 승인요청 신규 INSERT (REQ_STATUS='01' 대기 고정, REQ_DTIME=서버 NOW).
+         비로그인 흐름 생성이므로 INSERT_NO = 대상 일용직 USER_CD (dailyjoin 관례). -->
+    <insert id="insertEntryRequest" parameterType="com.prafta.common.cmm.dailyentry.application.command.EntryRequestInsertCommand">
+    /* DailyEntryMapper.insertEntryRequest */
+    INSERT INTO TB_DAILY_ENTRY_REQUEST (
+        CMPNY_CD
+        , REQ_ID
+        , SITE_CD
+        , USER_CD
+        , REQ_TYPE
+        , REQ_STATUS
+        , REQ_DTIME
+        , INSERT_NO
+        , INSERT_DATE
+    )
+    VALUES (
+        #{cmpnyCd}
+        , #{reqId}
+        , #{siteCd}
+        , #{userCd}
+        , #{reqType}
+        , '01'
+        , NOW()
+        , #{userCd}
+        , NOW()
+    )
+    </insert>
+
+    <!-- 처리 대상 요청 단건 + 행 잠금(FOR UPDATE). 동시 승인/거부/소진을 직렬화한다. -->
+    <select id="selectEntryRequestMetaForUpdate" resultType="com.prafta.common.cmm.dailyentry.result.EntryRequestMetaResult">
+    /* DailyEntryMapper.selectEntryRequestMetaForUpdate */
+    SELECT
+        REQ_ID          AS reqId
+        , SITE_CD       AS siteCd
+        , USER_CD       AS userCd
+        , REQ_TYPE      AS reqType
+        , REQ_STATUS    AS reqStatus
+    FROM TB_DAILY_ENTRY_REQUEST
+    WHERE CMPNY_CD = #{cmpnyCd}
+      AND REQ_ID   = #{reqId}
+    FOR UPDATE
+    </select>
+
+    <!-- 승인 처리 — 대기(01)에서만 승인(02)으로 전이(조건부 UPDATE, 0행 = 이미 처리됨). -->
+    <update id="updateEntryRequestApprove">
+    /* DailyEntryMapper.updateEntryRequestApprove */
+    UPDATE TB_DAILY_ENTRY_REQUEST
+    SET REQ_STATUS     = '02'
+        , PROC_USER_CD = #{procUserCd}
+        , PROC_DTIME   = NOW()
+        , UPDATE_NO    = #{procUserCd}
+        , UPDATE_DATE  = NOW()
+    WHERE CMPNY_CD   = #{cmpnyCd}
+      AND REQ_ID     = #{reqId}
+      AND REQ_STATUS = '01'
+    </update>
+
+    <!-- 거부 처리 — 대기(01)에서만 거부(03)로 전이 + 사유 기록(내부 기록용, 일용직 미노출). -->
+    <update id="updateEntryRequestReject">
+    /* DailyEntryMapper.updateEntryRequestReject */
+    UPDATE TB_DAILY_ENTRY_REQUEST
+    SET REQ_STATUS      = '03'
+        , REJECT_REASON = #{reason}
+        , PROC_USER_CD  = #{procUserCd}
+        , PROC_DTIME    = NOW()
+        , UPDATE_NO     = #{procUserCd}
+        , UPDATE_DATE   = NOW()
+    WHERE CMPNY_CD   = #{cmpnyCd}
+      AND REQ_ID     = #{reqId}
+      AND REQ_STATUS = '01'
+    </update>
+
+    <!-- 승인 소진 — 승인(02)에서만 소진(05)으로 전이(D6, 로그인 성공 트랜잭션 내 조건부 UPDATE).
+         0행이면 판정과 소진 사이 상태 변경(동시 로그인/자정 만료) → 호출자가 전체 롤백.
+         D7 코드 자체 보장: REQ_DTIME 이 오늘인 승인만 소진 가능 — 만료 배치(운영 게이트) 미가동이어도
+         어제 요청·승인 건은 여기서 0행 → 전체 롤백(자정 경계 판정~소진 사이 날짜 넘어감 경합 포함).
+         selectOpenEntryRequest 의 '02' 유효 조건과 동일 기준. -->
+    <update id="updateEntryRequestConsume">
+    /* DailyEntryMapper.updateEntryRequestConsume */
+    UPDATE TB_DAILY_ENTRY_REQUEST
+    SET REQ_STATUS      = '05'
+        , CONSUME_DTIME = NOW()
+        , UPDATE_NO     = #{userCd}
+        , UPDATE_DATE   = NOW()
+    WHERE CMPNY_CD   = #{cmpnyCd}
+      AND REQ_ID     = #{reqId}
+      AND REQ_STATUS = '02'
+      AND REQ_DTIME <![CDATA[ >= ]]> CURDATE()
+    </update>
+
+    <!-- 자정 만료(D7) — 요청일시가 오늘 이전(자정 경과)이고 대기(01)/승인(02)인 요청 일괄 만료(04) 전이. -->
+    <update id="updateExpireOverdueEntryRequests">
+    /* DailyEntryMapper.updateExpireOverdueEntryRequests */
+    UPDATE TB_DAILY_ENTRY_REQUEST
+    SET REQ_STATUS    = '04'
+        , UPDATE_NO   = #{updateNo}
+        , UPDATE_DATE = NOW()
+    WHERE REQ_STATUS IN ('01', '02')
+      AND REQ_DTIME <![CDATA[ < ]]> CURDATE()
+    </update>
+
+    <!-- 승인요청 목록 (사업장 스코프 강제 + 상태/유형/요청일 필터).
+         휴대폰: LAST4(앱 마스킹용) + ENC(웹 평문 표시용, 서비스에서 복호화). 처리자명은 TB_USER 조인. -->
+    <select id="selectEntryRequestList" parameterType="com.prafta.common.cmm.dailyentry.application.query.EntryRequestListQuery" resultType="com.prafta.common.cmm.dailyentry.result.EntryRequestRow">
+    /* DailyEntryMapper.selectEntryRequestList */
+    SELECT
+        R.REQ_ID                                        AS reqId
+        , R.SITE_CD                                     AS siteCd
+        , R.USER_CD                                     AS userCd
+        , D.USER_NM                                     AS userNm
+        , D.MBL_NO_LAST4                                AS mblNoLast4
+        , D.MBL_NO_ENC                                  AS mblNoEnc
+        , R.REQ_TYPE                                    AS reqType
+        , R.REQ_STATUS                                  AS reqStatus
+        , DATE_FORMAT(R.REQ_DTIME, '%Y-%m-%d %H:%i')    AS reqDtime
+        , R.PROC_USER_CD                                AS procUserCd
+        , P.USER_NM                                     AS procUserNm
+        , DATE_FORMAT(R.PROC_DTIME, '%Y-%m-%d %H:%i')   AS procDtime
+        , R.REJECT_REASON                               AS rejectReason
+    FROM TB_DAILY_ENTRY_REQUEST R
+         LEFT JOIN TB_DAILY_USER D
+            ON (
+                R.CMPNY_CD = D.CMPNY_CD
+            AND R.USER_CD  = D.USER_CD
+            )
+         LEFT JOIN TB_USER P
+            ON (
+                R.CMPNY_CD     = P.CMPNY_CD
+            AND R.PROC_USER_CD = P.USER_CD
+            )
+    WHERE R.CMPNY_CD = #{cmpnyCd}
+      AND R.SITE_CD  = #{siteCd}
+      <if test="reqStatus != null and reqStatus != ''">
+      AND R.REQ_STATUS = #{reqStatus}
+      </if>
+      <if test="reqType != null and reqType != ''">
+      AND R.REQ_TYPE = #{reqType}
+      </if>
+      <if test="reqDate != null and reqDate != ''">
+      AND R.REQ_DTIME <![CDATA[ >= ]]> STR_TO_DATE(#{reqDate}, '%Y%m%d')
+      AND R.REQ_DTIME <![CDATA[ < ]]> DATE_ADD(STR_TO_DATE(#{reqDate}, '%Y%m%d'), INTERVAL 1 DAY)
+      </if>
+    ORDER BY R.REQ_DTIME DESC
+    LIMIT #{limitCnt}
+    </select>
+
+    <!-- 처리자의 사업장 권한 보유 카운트(TB_USER_SITE_AUTH USE_YN='Y') — 승인/거부/목록 인가 가드. -->
+    <select id="selectSiteAuthCnt" resultType="int">
+    /* DailyEntryMapper.selectSiteAuthCnt */
+    SELECT COUNT(*)
+    FROM (
+        SELECT 1
+          FROM TB_USER_SITE_AUTH
+         WHERE CMPNY_CD = #{cmpnyCd}
+           AND USER_CD  = #{userCd}
+           AND SITE_CD  = #{siteCd}
+           AND USE_YN   = 'Y'
+         LIMIT 1
+    ) T
+    </select>
+
+    <!-- 푸시 대상 — 해당 사업장 권한(SITE_AUTH USE_YN='Y')을 보유한 활성 관리자(역할 IN authCdList).
+         LeaveRefusalMapper.selectSiteRefusalAdmins 의 (1) 역할 기반 파트 미러(일용직은 노드 미배정 → 노드 어드민 제외). -->
+    <select id="selectSiteEntryAdmins" resultType="java.lang.String">
+    /* DailyEntryMapper.selectSiteEntryAdmins */
+    SELECT DISTINCT U.USER_CD
+      FROM TB_USER U
+           INNER JOIN TB_USER_SITE_AUTH SA
+              ON  U.CMPNY_CD = SA.CMPNY_CD
+              AND U.USER_CD  = SA.USER_CD
+              AND SA.SITE_CD = #{siteCd}
+              AND SA.USE_YN  = 'Y'
+     WHERE U.CMPNY_CD = #{cmpnyCd}
+       AND U.USE_YN   = 'Y'
+       AND U.ACCOUNT_STATUS = '01'
+       AND U.AUTH_CD IN
+           <foreach collection="authCdList" item="authCd" open="(" separator="," close=")">
+               #{authCd}
+           </foreach>
+    </select>
+
+    <!-- 승인요청 발생 푸시 outbox INSERT (tb_noti_outbox, 대상자별 1행 — nearmiss01 insertNotiOutbox 미러).
+         NOTI_ID 채번: 'N' + YYYYMMDD + 회사별 당일 3자리 시퀀스. -->
+    <insert id="insertEntryNotiOutbox" parameterType="com.prafta.common.cmm.dailyentry.application.command.EntryNotiOutboxCommand">
+    /* DailyEntryMapper.insertEntryNotiOutbox */
+    INSERT INTO TB_NOTI_OUTBOX
+    (
+        NOTI_ID
+      , CMPNY_CD
+      , SITE_CD
+      , TARGET_USER_CD
+      , NOTI_TYPE
+      , CHANNEL
+      , TITLE
+      , BODY
+      , DATA_PAYLOAD
+      , SEND_STATUS
+      , RETRY_CNT
+      , DEDUP_KEY
+      , DEL_YN
+      , INSERT_NO
+      , INSERT_DATE
+    )
+    VALUES
+    (
+        (SELECT CONCAT(
+            'N'
+          , DATE_FORMAT(NOW(), '%Y%m%d')
+          , LPAD(
+                IFNULL(
+                    MAX(CAST(SUBSTR(T.NOTI_ID, 10, 3) AS UNSIGNED))
+                  , 0
+                ) + 1
+              , 3, '0'
+            )
+        ) FROM TB_NOTI_OUTBOX T
+          WHERE T.CMPNY_CD = #{cmpnyCd}
+            AND T.NOTI_ID LIKE CONCAT('N', DATE_FORMAT(NOW(), '%Y%m%d'), '%'))
+      , #{cmpnyCd}
+      , #{siteCd}
+      , #{targetUserCd}
+      , #{notiType}
+      , 'PUSH'
+      , #{title}
+      , #{body}
+      , #{dataPayload}
+      , 'PENDING'
+      , 0
+      , #{dedupKey}
+      , 'N'
+      , #{insertNo}
+      , NOW()
+    )
+    </insert>
+
+</mapper>

@@ -3,27 +3,28 @@ package com.prafta.app.tbm.admin.application.query;
 import java.util.List;
 
 /**
- * E10 대리입실 대상 유효성 검증 Query(prafta-051 R-B, web Tbm02 countEntryTarget 포팅).
+ * E10/E11 대리입실 대상 유효성 검증 Query(prafta-051 R-B/R-D + PRAFTA-SUBCON-T5).
  *
- * <p>세션 사업장(siteCd, 서버 확정) 소속 활성 사용자 여부를 재검증한다(IDOR/스코프 누수 차단).
- * R-B 는 정규직(REGULAR)만 대상으로 한다(일용직 QR=MANAGER_QR_SCAN 은 R-D).
+ * <p>대상이 활성 사용자인지 재검증한다(IDOR/스코프 누수 차단).
  *
- * <p>노드 스코프(E9 selectEligibleRegulars 동형): companyWide=master/safe(노드 필터 없음).
- * 노드관리자는 scopedNodeCds(세션 사업장 기준 자기노드+자손)로 TB_USER.NODE_CD 를 제한한다
- * (읽기/쓰기 권한 비대칭 차단 — 서브트리 밖 정규직 대리입실 거부).
+ * <p><b>T5</b>: 대상 회사는 {@code targetCmpnyCd}(공통 게이트 {@code assertEntryAllowed} 통과값).
+ * {@code ownTarget}(= 대상이 개설사 자신) 일 때만 사업장/노드 조건을 건다.
+ * 타사 대상은 회사 단위 지정이라 사업장 조건을 걸지 않으며(plan D4), 타사 부서 트리를 알 수 없으므로
+ * 노드 스코프도 적용하지 않는다(적용하면 항상 0건 → 기능 불능. plan D7).
  */
 public record AdminEntryTargetQuery(
-    String gvCmpnyCd
+    String targetCmpnyCd
     , String siteCd
     , String userTypeCd
     , String userCd
     , boolean companyWide
     , List<String> scopedNodeCds
+    , boolean ownTarget
 ){
     public static AdminEntryTargetQuery of(
-            String gvCmpnyCd, String siteCd, String userTypeCd, String userCd,
-            boolean companyWide, List<String> scopedNodeCds) {
+            String targetCmpnyCd, String siteCd, String userTypeCd, String userCd,
+            boolean companyWide, List<String> scopedNodeCds, boolean ownTarget) {
         return new AdminEntryTargetQuery(
-                gvCmpnyCd, siteCd, userTypeCd, userCd, companyWide, scopedNodeCds);
+                targetCmpnyCd, siteCd, userTypeCd, userCd, companyWide, scopedNodeCds, ownTarget);
     }
 }

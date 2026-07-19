@@ -320,6 +320,21 @@ const loadMonth = async (yearMonth) => {
   }
 }
 
+// 일자상세를 "조회만" 한다(캐시 우선). loadDayDetail 과 달리 dayDetail.value(월 탭 상세 패널 상태)를
+//   건드리지 않는다 — 요청 컨텍스트를 보강하려고 화면 상태까지 바꾸면 안 되기 때문.
+const fetchDayDetail = async (workYmd) => {
+  if (dayDetailCache.has(workYmd)) return dayDetailCache.get(workYmd)
+  try {
+    const res = await api.get('/appApi/attd/my/day-detail', { params: { workYmd } })
+    const data = res?.data ?? null
+    if (data) dayDetailCache.set(workYmd, data)
+    return data
+  } catch (e) {
+    console.error('[MyAttendance] day-detail 조회 실패(컨텍스트 보강):', e?.message)
+    return null
+  }
+}
+
 const loadDayDetail = async (workYmd) => {
   if (dayDetailCache.has(workYmd)) {
     dayDetail.value = dayDetailCache.get(workYmd)
@@ -467,6 +482,16 @@ const callCheckInOut = async (mode, ctx) => {
       offsiteMode.value = mode
       offsiteCtx.value = { lat: ctx.lat, lon: ctx.lon, accuracy: ctx.accuracy }
       offsiteSheetOpen.value = true
+      return
+    }
+
+    // 근태 E2E(F2): 150(노무수령거부) — 촉진 확정 연차일 출근/퇴근 차단. 재시도 불가, 전용 차단 안내만 노출.
+    if (errorCode === 'ATTD_400_150') {
+      pendingCtx = null
+      showAlert(
+        message ||
+          '오늘은 연차사용촉진으로 확정된 연차 사용일입니다. 회사는 금일 노무 제공을 수령하지 않으며, 출퇴근·근태 등록이 제한됩니다. 연차 변경이 필요하면 관리자에게 문의해 주세요.',
+      )
       return
     }
 
@@ -622,13 +647,25 @@ const buildContextFromDay = (day) => {
   }
 }
 
-const navigateToAttdRequest = (formType, day) => {
+const navigateToAttdRequest = async (formType, day) => {
   if (!day || !day.workYmd) {
     showAlert('대상 일자를 확인할 수 없습니다.')
     return
   }
+  // 주/월 목록 응답(WeekDayResponse)에는 slots 가 없다(오늘/일자상세 응답에만 존재).
+  //   그 경로로 열린 시트의 day 를 그대로 넘기면 폼이 스케줄·실근태를 알 수 없어
+  //   출퇴근 시각 프리필과 초과근무 "등록 가능 시간"이 통째로 비어버린다.
+  //   → slots 가 없으면 일자상세를 먼저 조회해 컨텍스트를 채운다(캐시 있으면 즉시).
+  let ctxDay = day
+  if (!Array.isArray(day.slots)) {
+    const detail = await fetchDayDetail(day.workYmd)
+    if (detail) {
+      // 시트가 준 메타(actions 등)는 유지하고 slots 등 상세 필드만 보강한다.
+      ctxDay = { ...day, ...toSheetDay(detail), actions: day.actions }
+    }
+  }
   try {
-    sessionStorage.setItem(ATTD_REQ_CONTEXT_KEY, JSON.stringify(buildContextFromDay(day)))
+    sessionStorage.setItem(ATTD_REQ_CONTEXT_KEY, JSON.stringify(buildContextFromDay(ctxDay)))
   } catch (e) {
     console.error('[MyAttendance] 컨텍스트 저장 실패:', e?.message)
     showAlert('컨텍스트 저장에 실패했습니다.')

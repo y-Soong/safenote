@@ -165,6 +165,45 @@
             </div>
           </div>
 
+          <!-- 연동 회사(PRAFTA-SUBCON-T5) — DRAFT/OPENED 구간에서만 관리 가능 -->
+          <div class="detail-section">
+            <div class="detail-section-title share-title">
+              <span>연동 회사</span>
+              <button
+                v-if="canManageShare"
+                type="button"
+                class="btn btn-second btn-sm"
+                @click="fnOpenSharePop"
+              >
+                연동 회사 지정
+              </button>
+            </div>
+            <ul v-if="shareRows.length" class="ref-list">
+              <li v-for="row in shareRows" :key="row.shareId" class="ref-item">
+                <span class="ref-name">{{ row.cmpnyNm }}</span>
+                <span class="ref-meta">
+                  {{ row.designatedDtime }}
+                  <template v-if="row.subCount > 0">
+                    · 하위 지정 {{ row.subCount }}개사
+                  </template>
+                </span>
+                <button
+                  v-if="canManageShare"
+                  type="button"
+                  class="btn btn-second btn-sm"
+                  @click="fnReleaseShare(row)"
+                >
+                  해제
+                </button>
+              </li>
+            </ul>
+            <div v-else class="detail-empty">지정된 연동 회사가 없습니다.</div>
+
+            <p v-if="!canManageShare" class="console-hint">
+              교육이 시작되어 연동 회사를 변경할 수 없습니다.
+            </p>
+          </div>
+
           <!-- 교육자료 (6.2-(1)-2 / (3)-2) -->
           <div v-if="showEduRefs" class="detail-section">
             <div class="detail-section-title">교육자료</div>
@@ -295,6 +334,7 @@ import TbmManagerEntryPop from "./TbmManagerEntryPop.vue";
 import TbmEntryGpsPanel from "./TbmEntryGpsPanel.vue";
 import TbmAttendanceDetail from "./TbmAttendanceDetail.vue";
 import TbmSessionForm from "./TbmSessionForm.vue";
+import TbmShareCmpnyPop from "./TbmShareCmpnyPop.vue";
 import RiskAssessInfo from "@/views/risk/popup/RiskAssessInfo.vue";
 
 const { proxy } = getCurrentInstance();
@@ -447,10 +487,67 @@ const fnSearch = async () => {
 
       // 교육준비 단계면 prepStartAt 기준으로 남은 초 재산출
       computeRemainSec();
+
+      // 연동 회사 지정 현황(PRAFTA-SUBCON-T5)
+      fnSearchShares();
     }
   } catch (err) {
     await proxy.$alert(
       resolveApiErrorMessage(err, "조회 중 오류가 발생했습니다.")
+    );
+  }
+};
+
+// ===== 연동 회사 지정(PRAFTA-SUBCON-T5) =====
+// shareRows = 내가 직접 지정한 회사만(하위 재지정은 subCount 로만 노출 — 2차 이하 회사명 비노출).
+const shareRows = ref([]);
+
+// 지정/해제 가능 구간 = DRAFT | OPENED (서버 TBM_409_063 과 동일 기준)
+const canManageShare = computed(
+  () => session.statusCd === "DRAFT" || session.statusCd === "OPENED"
+);
+
+const fnSearchShares = async () => {
+  try {
+    const response = await axios.get("/webApi/tbm02/session-shares", {
+      params: { sessionCd: props.sessionCd_p },
+    });
+    if (response.status === 200) {
+      shareRows.value = response.data?.shareList || [];
+    }
+  } catch (err) {
+    shareRows.value = [];
+    await proxy.$alert(
+      resolveApiErrorMessage(err, "조회 중 오류가 발생했습니다.")
+    );
+  }
+};
+
+const fnOpenSharePop = () => {
+  openPop(TbmShareCmpnyPop, {
+    sessionCd_p: props.sessionCd_p,
+    onSaved: fnSearchShares,
+  });
+};
+
+const fnReleaseShare = async (row) => {
+  const confirmed = await proxy.$confirm(
+    "지정을 해제하면 해당 회사(및 그 하위 재지정 회사)의 신규 입실이 차단됩니다. 이미 입실한 참석자는 유지됩니다."
+  );
+  if (!confirmed) return;
+
+  try {
+    const response = await axios.post("/webApi/tbm02/session-share-release", {
+      sessionCd: props.sessionCd_p,
+      shareCmpnyCd: row.cmpnyCd,
+    });
+    if (response.status === 200) {
+      await proxy.$alert("연동 회사 지정을 해제했습니다.");
+      fnSearchShares();
+    }
+  } catch (err) {
+    await proxy.$alert(
+      resolveApiErrorMessage(err, "처리 중 오류가 발생했습니다.")
     );
   }
 };
@@ -900,6 +997,14 @@ const gpsTypeNm = (type) => {
   margin: 0;
   font-size: var(--btn-font);
   color: var(--color-text-muted);
+}
+
+/* 연동 회사: 섹션 제목 우측 끝에 지정 버튼을 배치 */
+.share-title {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
 }
 
 .gps-coord {

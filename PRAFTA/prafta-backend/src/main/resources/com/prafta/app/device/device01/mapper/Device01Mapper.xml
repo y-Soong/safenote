@@ -3,7 +3,9 @@
 <mapper namespace="com.prafta.app.device.device01.mapper.Device01Mapper">
 
     <!-- F01 푸시 토큰 UPDATE.
-         WHERE DEVICE_UUID(PK) + USER_CD(JWT) 강제 → 본인 단말만 갱신(IDOR 차단).
+         WHERE CMPNY_CD + DEVICE_UUID(PK) + USER_CD(JWT) 강제 → 본인 단말만 갱신(IDOR 차단).
+         ★테넌트 격리: USER_CD 는 회사별 채번이라 전역 유일하지 않다(다른 회사가 같은 USER_CD 를 갖는다).
+           회사코드 없이 갱신하면 다른 회사 동일 USER_CD 사용자의 단말 토큰을 덮어쓸 수 있다.
          com-002 soft-delete 회복을 위해 DEL_YN='N' 동반(잔존 무효표시 단말의 토큰 갱신 시 되살림).
          UPDATE_NO 는 갱신 수행자(USER_CD), UPDATE_DATE 는 NOW() 로 메타 갱신. -->
     <update id="updatePushToken" parameterType="com.prafta.app.device.device01.application.command.UpsertPushTokenCommand">
@@ -13,7 +15,8 @@
          , DEL_YN      = 'N'
          , UPDATE_NO   = #{userCd}
          , UPDATE_DATE = NOW()
-     WHERE DEVICE_UUID = #{deviceUuid}
+     WHERE CMPNY_CD    = #{cmpnyCd}
+       AND DEVICE_UUID = #{deviceUuid}
        AND USER_CD     = #{userCd}
     </update>
 

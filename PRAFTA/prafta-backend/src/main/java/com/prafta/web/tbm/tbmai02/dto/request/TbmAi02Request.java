@@ -19,4 +19,10 @@ public class TbmAi02Request {
 
     /** 관리자 교육내용 텍스트(generate 전용, 선택). */
     private String adminContentText;
+
+    /**
+     * 목표 글자수(generate 전용, 선택 — 2026-07-16 R3).
+     * null 이면 기존 설정값(1000~1500) 동작, 값 존재 시 서버가 800~5000 범위 검증(위반 TBM_400_061).
+     */
+    private Integer targetChars;
 }

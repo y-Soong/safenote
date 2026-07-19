@@ -119,7 +119,8 @@
         /* 근무계획코드가 스케줄코드인 경우 — 근무일(A.WORK_YMD) 기준 유효 스케줄(effective-dating).
            TB_SCH_MGMT(현재본) + TB_SCH_MGMT_HIST(전 버전) UNION 후
            APPLY_DATE &lt;= WORK_YMD 인 가장 최근 버전의 시간값을 결합한다.
-           (attd07 selectMonthlyAttdList 의 SCH 서브쿼리 그대로 재사용) */
+           (attd07 selectMonthlyAttdList 의 SCH 서브쿼리 그대로 재사용)
+           USE_YN 필터 없음: 사용중지된 근무타입이 배정된 날도 그날 스케줄 시각으로 집계/판정해야 한다. */
         LEFT JOIN (
             SELECT
                   E.CMPNY_CD
@@ -146,7 +147,6 @@
                     , M.SEC_SCH_BRK_MIN
                     , 2147483647 AS HIST_IDX
                 FROM TB_SCH_MGMT M
-                WHERE M.USE_YN = 'Y'
 
                 UNION ALL
 
@@ -163,18 +163,15 @@
                     , H.SEC_SCH_BRK_MIN
                     , H.HIST_IDX
                 FROM TB_SCH_MGMT_HIST H
-                WHERE H.USE_YN = 'Y'
             ) E
             WHERE E.HIST_IDX = (
                 SELECT MAX(E2.HIST_IDX)
                 FROM (
                     SELECT M2.CMPNY_CD, M2.SITE_CD, M2.SCH_CD, M2.APPLY_DATE, 2147483647 AS HIST_IDX
                     FROM TB_SCH_MGMT M2
-                    WHERE M2.USE_YN = 'Y'
                     UNION ALL
                     SELECT H2.CMPNY_CD, H2.SITE_CD, H2.SCH_CD, H2.APPLY_DATE, H2.HIST_IDX
                     FROM TB_SCH_MGMT_HIST H2
-                    WHERE H2.USE_YN = 'Y'
                 ) E2
                 WHERE E2.CMPNY_CD   = E.CMPNY_CD
                   AND E2.SITE_CD    = E.SITE_CD
@@ -196,11 +193,9 @@
                 FROM (
                     SELECT M3.CMPNY_CD, M3.SITE_CD, M3.SCH_CD, M3.APPLY_DATE
                     FROM TB_SCH_MGMT M3
-                    WHERE M3.USE_YN = 'Y'
                     UNION ALL
                     SELECT H3.CMPNY_CD, H3.SITE_CD, H3.SCH_CD, H3.APPLY_DATE
                     FROM TB_SCH_MGMT_HIST H3
-                    WHERE H3.USE_YN = 'Y'
                 ) SE
                 WHERE SE.CMPNY_CD    = WP.CMPNY_CD
                   AND SE.SITE_CD     = WP.SITE_CD

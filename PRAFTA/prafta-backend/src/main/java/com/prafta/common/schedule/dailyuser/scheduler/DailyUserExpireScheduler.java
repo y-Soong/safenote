@@ -4,6 +4,7 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 
+import com.prafta.common.cmm.dailyentry.service.DailyEntryService;
 import com.prafta.common.cmm.dailyuser.service.DailyUserExpireService;
 
 import lombok.RequiredArgsConstructor;
@@ -27,6 +28,8 @@ import lombok.extern.slf4j.Slf4j;
 public class DailyUserExpireScheduler {
 
     private final DailyUserExpireService dailyUserExpireService;
+    // 일용직 계약서+승인제(D7) — 미사용 입장 승인요청의 당일 자정 만료 편승.
+    private final DailyEntryService dailyEntryService;
 
     /** 운영 게이트(기본 false). 운영 검증 후 true 로 전환. */
     @Value("${prafta.daily-user.expire.enabled:false}")
@@ -48,6 +51,16 @@ public class DailyUserExpireScheduler {
             log.info("일용직 만료 배치 완료. 처리 건수={}", affected);
         } catch (Exception e) {
             log.error("일용직 만료 배치 실행 중 예외 발생", e);
+        }
+
+        // 입장 승인제(D7) — 요청일이 지난 대기('01')/승인('02') 승인요청 일괄 만료('04') 편승.
+        // 계정 만료 트랜잭션과 분리된 자체 트랜잭션 + try-catch 로 상호 예외 격리
+        // (서비스 트랜잭션 내부 편승 시 실패가 rollback-only 로 계정 만료까지 오염시키는 것을 방지).
+        try {
+            int expiredRequests = dailyEntryService.expireOverdueRequests();
+            log.info("일용직 입장 승인요청 만료 처리 완료. 처리 건수={}", expiredRequests);
+        } catch (Exception e) {
+            log.error("일용직 입장 승인요청 만료 처리 중 예외 발생(계정 만료 처리와 격리)", e);
         }
     }
 }

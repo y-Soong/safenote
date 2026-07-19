@@ -1,0 +1,266 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.prafta.common.cmm.dailycontract.mapper.DailyContractMapper">
+
+    <!-- 서명 ID 채번 ('CS' + YYYYMMDD + 시퀀스). dailyentry selectEntryRequestId 패턴 미러. -->
+    <select id="selectSignId" resultType="string">
+    /* DailyContractMapper.selectSignId */
+    SELECT CONCAT('CS', DATE_FORMAT(NOW(), '%Y%m%d'), FNC_CMM_SEQ_NEXTVAL(#{cmpnyCd}, 'DAILY_CONTRACT_SIGN'))
+    FROM DUAL
+    </select>
+
+    <!-- 사업장 활성(USE_YN='Y') 계약서 단건 - UX_DAILY_CONTRACT_ACTIVE 기능성 유니크로 최대 1건. -->
+    <select id="selectActiveContract" resultType="com.prafta.common.cmm.dailycontract.result.ActiveContractResult">
+    /* DailyContractMapper.selectActiveContract */
+    SELECT
+        SITE_CD                                       AS siteCd
+        , CONTRACT_VER                                AS contractVer
+        , CONTRACT_NM                                 AS contractNm
+        , FILE_MGMT_CD                                AS fileMgmtCd
+        , DATE_FORMAT(INSERT_DATE, '%Y-%m-%d %H:%i')  AS insertDate
+    FROM TB_DAILY_CONTRACT
+    WHERE CMPNY_CD = #{cmpnyCd}
+      AND SITE_CD  = #{siteCd}
+      AND USE_YN   = 'Y'
+    LIMIT 1
+    </select>
+
+    <!-- 다음 계약서 버전 (MAX+1, 최초 1). -->
+    <select id="selectNextContractVer" resultType="int">
+    /* DailyContractMapper.selectNextContractVer */
+    SELECT IFNULL(MAX(CONTRACT_VER), 0) + 1
+    FROM TB_DAILY_CONTRACT
+    WHERE CMPNY_CD = #{cmpnyCd}
+      AND SITE_CD  = #{siteCd}
+    </select>
+
+    <!-- 활성 계약서 비활성(교체/사용중지 공용) - USE_YN='Y' 전건 'N' 전이. -->
+    <update id="updateContractDeactivate">
+    /* DailyContractMapper.updateContractDeactivate */
+    UPDATE TB_DAILY_CONTRACT
+    SET USE_YN        = 'N'
+        , UPDATE_NO   = #{updateNo}
+        , UPDATE_DATE = NOW()
+    WHERE CMPNY_CD = #{cmpnyCd}
+      AND SITE_CD  = #{siteCd}
+      AND USE_YN   = 'Y'
+    </update>
+
+    <!-- 계약서 신규 버전 INSERT (USE_YN='Y' 고정). 활성 1건 보장은 기능성 유니크가 백스톱. -->
+    <insert id="insertContract" parameterType="com.prafta.common.cmm.dailycontract.application.command.ContractInsertCommand">
+    /* DailyContractMapper.insertContract */
+    INSERT INTO TB_DAILY_CONTRACT (
+        CMPNY_CD
+        , SITE_CD
+        , CONTRACT_VER
+        , CONTRACT_NM
+        , FILE_MGMT_CD
+        , USE_YN
+        , INSERT_NO
+        , INSERT_DATE
+    )
+    VALUES (
+        #{cmpnyCd}
+        , #{siteCd}
+        , #{contractVer}
+        , #{contractNm}
+        , #{fileMgmtCd}
+        , 'Y'
+        , #{insertNo}
+        , NOW()
+    )
+    </insert>
+
+    <!-- 사업장 계약서 버전 이력 (최신 버전 우선).
+         등록자명은 TB_USER LEFT JOIN(User_08 처리자명 조인 패턴 미러) — 탈퇴/부재 사용자는 코드 폴백(qa L-2). -->
+    <select id="selectContractVersionList" resultType="com.prafta.common.cmm.dailycontract.result.ContractVersionRow">
+    /* DailyContractMapper.selectContractVersionList */
+    SELECT
+        C.CONTRACT_VER                                  AS contractVer
+        , C.CONTRACT_NM                                 AS contractNm
+        , C.USE_YN                                      AS useYn
+        , C.INSERT_NO                                   AS insertNo
+        , IFNULL(U.USER_NM, C.INSERT_NO)                AS insertNm
+        , DATE_FORMAT(C.INSERT_DATE, '%Y-%m-%d %H:%i')  AS insertDate
+    FROM TB_DAILY_CONTRACT C
+         LEFT JOIN TB_USER U
+            ON (
+                C.CMPNY_CD  = U.CMPNY_CD
+            AND C.INSERT_NO = U.USER_CD
+            )
+    WHERE C.CMPNY_CD = #{cmpnyCd}
+      AND C.SITE_CD  = #{siteCd}
+    ORDER BY C.CONTRACT_VER DESC
+    LIMIT #{limitCnt}
+    </select>
+
+    <!-- 특정 버전 계약서 이미지 파일코드 (관리자 미리보기). -->
+    <select id="selectContractFileMgmtCd" resultType="string">
+    /* DailyContractMapper.selectContractFileMgmtCd */
+    SELECT FILE_MGMT_CD
+    FROM TB_DAILY_CONTRACT
+    WHERE CMPNY_CD     = #{cmpnyCd}
+      AND SITE_CD      = #{siteCd}
+      AND CONTRACT_VER = #{contractVer}
+    </select>
+
+    <!-- 일용직 사용자 메타(사업장/이름) - 게이트 판정·서명 저장의 서버측 단일 출처. -->
+    <select id="selectDailyUserMeta" resultType="com.prafta.common.cmm.dailycontract.result.DailyUserMetaResult">
+    /* DailyContractMapper.selectDailyUserMeta */
+    SELECT
+        SITE_CD     AS siteCd
+        , USER_NM   AS userNm
+    FROM TB_DAILY_USER
+    WHERE CMPNY_CD = #{cmpnyCd}
+      AND USER_CD  = #{userCd}
+    </select>
+
+    <!-- 최근 소진('05') 승인요청 ID - 재입장 재서명 사이클 판정(D8-①, plan §6 기본안 3). -->
+    <select id="selectLatestConsumedReqId" resultType="string">
+    /* DailyContractMapper.selectLatestConsumedReqId */
+    SELECT REQ_ID
+    FROM TB_DAILY_ENTRY_REQUEST
+    WHERE CMPNY_CD   = #{cmpnyCd}
+      AND USER_CD    = #{userCd}
+      AND REQ_STATUS = '05'
+    ORDER BY CONSUME_DTIME DESC
+    LIMIT 1
+    </select>
+
+    <!-- 특정 계약서 버전의 최신 서명 단건 (게이트 판정/멱등 가드). -->
+    <select id="selectLatestSignForVer" resultType="com.prafta.common.cmm.dailycontract.result.ContractSignMetaResult">
+    /* DailyContractMapper.selectLatestSignForVer */
+    SELECT
+        SIGN_ID                                         AS signId
+        , SITE_CD                                       AS siteCd
+        , USER_CD                                       AS userCd
+        , USER_NM_SNAPSHOT                              AS userNmSnapshot
+        , CONTRACT_VER                                  AS contractVer
+        , REQ_ID                                        AS reqId
+        , MERGED_FILE_MGMT_CD                           AS mergedFileMgmtCd
+        , MERGED_SHA256                                 AS mergedSha256
+        , FIRST_WORK_DATE                               AS firstWorkDate
+        , DATE_FORMAT(SIGN_DTIME, '%Y-%m-%d %H:%i:%s')  AS signDtime
+    FROM TB_DAILY_CONTRACT_SIGN
+    WHERE CMPNY_CD     = #{cmpnyCd}
+      AND USER_CD      = #{userCd}
+      AND CONTRACT_VER = #{contractVer}
+    ORDER BY SIGN_DTIME DESC
+    LIMIT 1
+    </select>
+
+    <!-- 계정의 최신 서명 단건 (버전 무관 - 앱 내 계약서 열람). -->
+    <select id="selectMySignLatest" resultType="com.prafta.common.cmm.dailycontract.result.ContractSignMetaResult">
+    /* DailyContractMapper.selectMySignLatest */
+    SELECT
+        SIGN_ID                                         AS signId
+        , SITE_CD                                       AS siteCd
+        , USER_CD                                       AS userCd
+        , USER_NM_SNAPSHOT                              AS userNmSnapshot
+        , CONTRACT_VER                                  AS contractVer
+        , REQ_ID                                        AS reqId
+        , MERGED_FILE_MGMT_CD                           AS mergedFileMgmtCd
+        , MERGED_SHA256                                 AS mergedSha256
+        , FIRST_WORK_DATE                               AS firstWorkDate
+        , DATE_FORMAT(SIGN_DTIME, '%Y-%m-%d %H:%i:%s')  AS signDtime
+    FROM TB_DAILY_CONTRACT_SIGN
+    WHERE CMPNY_CD = #{cmpnyCd}
+      AND USER_CD  = #{userCd}
+    ORDER BY SIGN_DTIME DESC
+    LIMIT 1
+    </select>
+
+    <!-- 서명본 INSERT (append-only - UPDATE 컬럼 없음 설계, SIGN_DTIME=서버 NOW). -->
+    <insert id="insertContractSign" parameterType="com.prafta.common.cmm.dailycontract.application.command.ContractSignInsertCommand">
+    /* DailyContractMapper.insertContractSign */
+    INSERT INTO TB_DAILY_CONTRACT_SIGN (
+        CMPNY_CD
+        , SIGN_ID
+        , SITE_CD
+        , USER_CD
+        , USER_NM_SNAPSHOT
+        , CONTRACT_VER
+        , REQ_ID
+        , SIGN_FILE_MGMT_CD
+        , MERGED_FILE_MGMT_CD
+        , MERGED_SHA256
+        , FIRST_WORK_DATE
+        , SIGN_DTIME
+        , INSERT_NO
+        , INSERT_DATE
+    )
+    VALUES (
+        #{cmpnyCd}
+        , #{signId}
+        , #{siteCd}
+        , #{userCd}
+        , #{userNmSnapshot}
+        , #{contractVer}
+        , #{reqId}
+        , #{signFileMgmtCd}
+        , #{mergedFileMgmtCd}
+        , #{mergedSha256}
+        , #{firstWorkDate}
+        , NOW()
+        , #{userCd}
+        , NOW()
+    )
+    </insert>
+
+    <!-- 서명본 단건 조회 (관리자 열람 인가 판정 - signId 스코프, 회사 스코프 강제). -->
+    <select id="selectSignMetaById" resultType="com.prafta.common.cmm.dailycontract.result.ContractSignMetaResult">
+    /* DailyContractMapper.selectSignMetaById */
+    SELECT
+        SIGN_ID                                         AS signId
+        , SITE_CD                                       AS siteCd
+        , USER_CD                                       AS userCd
+        , USER_NM_SNAPSHOT                              AS userNmSnapshot
+        , CONTRACT_VER                                  AS contractVer
+        , REQ_ID                                        AS reqId
+        , MERGED_FILE_MGMT_CD                           AS mergedFileMgmtCd
+        , MERGED_SHA256                                 AS mergedSha256
+        , FIRST_WORK_DATE                               AS firstWorkDate
+        , DATE_FORMAT(SIGN_DTIME, '%Y-%m-%d %H:%i:%s')  AS signDtime
+    FROM TB_DAILY_CONTRACT_SIGN
+    WHERE CMPNY_CD = #{cmpnyCd}
+      AND SIGN_ID  = #{signId}
+    </select>
+
+    <!-- 서명 이력 목록 (사업장 스코프 강제 + 기간/이름 필터).
+         이름은 스냅샷(USER_NM_SNAPSHOT)만 사용. 휴대폰: LAST4 + ENC(웹 평문 표시용, 서비스에서 복호화).
+         TB_DAILY_USER 는 LEFT JOIN - 계정 만료/탈퇴/삭제 후에도 서명 레코드는 조회된다(§6-2). -->
+    <select id="selectSignListForAdmin" parameterType="com.prafta.common.cmm.dailycontract.application.query.ContractSignListQuery" resultType="com.prafta.common.cmm.dailycontract.result.ContractSignRow">
+    /* DailyContractMapper.selectSignListForAdmin */
+    SELECT
+        S.SIGN_ID                                       AS signId
+        , S.SITE_CD                                     AS siteCd
+        , S.USER_CD                                     AS userCd
+        , S.USER_NM_SNAPSHOT                            AS userNmSnapshot
+        , D.MBL_NO_LAST4                                AS mblNoLast4
+        , D.MBL_NO_ENC                                  AS mblNoEnc
+        , S.CONTRACT_VER                                AS contractVer
+        , S.FIRST_WORK_DATE                             AS firstWorkDate
+        , DATE_FORMAT(S.SIGN_DTIME, '%Y-%m-%d %H:%i')   AS signDtime
+        , S.MERGED_SHA256                               AS mergedSha256
+    FROM TB_DAILY_CONTRACT_SIGN S
+         LEFT JOIN TB_DAILY_USER D
+            ON (
+                S.CMPNY_CD = D.CMPNY_CD
+            AND S.USER_CD  = D.USER_CD
+            )
+    WHERE S.CMPNY_CD = #{cmpnyCd}
+      AND S.SITE_CD  = #{siteCd}
+      <if test="fromDate != null and fromDate != ''">
+      AND S.SIGN_DTIME <![CDATA[ >= ]]> STR_TO_DATE(#{fromDate}, '%Y%m%d')
+      </if>
+      <if test="toDate != null and toDate != ''">
+      AND S.SIGN_DTIME <![CDATA[ < ]]> DATE_ADD(STR_TO_DATE(#{toDate}, '%Y%m%d'), INTERVAL 1 DAY)
+      </if>
+      <if test="userNm != null and userNm != ''">
+      AND S.USER_NM_SNAPSHOT LIKE CONCAT('%', #{userNm}, '%')
+      </if>
+    ORDER BY S.SIGN_DTIME DESC
+    LIMIT #{limitCnt}
+    </select>
+
+</mapper>

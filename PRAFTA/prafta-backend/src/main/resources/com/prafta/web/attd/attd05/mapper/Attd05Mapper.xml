@@ -815,6 +815,24 @@
     </select>
 
     <!--
+      근태 E2E F4(4-13): 해당 셀(사용자+근무일) 처리 대기 스케줄수정요청 보유 카운트.
+      REQ_TYPE='10'(스케줄수정), REQ_STATUS='01'(신청/대기), DEL_YN='N' 만 카운트.
+      승인/반려/취소된 요청은 제외(오탐 방지). 회사/사업장 스코프 강제. 결과가 0 초과면 관리자 직접 변경 차단.
+    -->
+    <select id="countPendingSchModifyReq" resultType="int">
+    /* Attd05Mapper.countPendingSchModifyReq */
+    SELECT COUNT(1)
+      FROM TB_USER_ATTD_REQ RQ
+     WHERE RQ.CMPNY_CD   = #{cmpnyCd}
+       AND RQ.SITE_CD    = #{siteCd}
+       AND RQ.USER_CD    = #{userCd}
+       AND RQ.WORK_YMD   = #{workYmd}
+       AND RQ.REQ_TYPE   = '10'
+       AND RQ.REQ_STATUS = '01'
+       AND RQ.DEL_YN     = 'N'
+    </select>
+
+    <!--
       해당 월(YYYYMM) 초과근무 보유 카운트 — 월 단위 근무계획 삭제 차단 판정.
       등록 초과근무(취소 제외) + 초과근무 신청(03/04, 상태 신청/승인). WORK_YMD 앞 6자리(LEFT)로 월 매칭.
     -->

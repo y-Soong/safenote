@@ -1,0 +1,49 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.prafta.platform.customer.mapper.PlatformCustomerMapper">
+
+    <!-- 고객사 목록 검색 공통 WHERE (목록/COUNT 동일 조건 보장). -->
+    <sql id="customerListWhere">
+    WHERE 1=1
+      <!-- 운영자 자기 자신(prafta_system_admin)은 고객이 아니므로 제외 - 목적 제한(공통 정책 11.1). -->
+      AND A.CMPNY_CD != 'prafta_system_admin'
+    <if test="cmpnyNm != null">
+      AND A.CMPNY_NM LIKE CONCAT('%', #{cmpnyNm}, '%')
+    </if>
+    <if test="contractYn != null">
+      AND A.CONTRACT_YN = #{contractYn}
+    </if>
+    <if test="useYn != null">
+      AND A.USE_YN = #{useYn}
+    </if>
+    </sql>
+
+    <!-- 고객사 목록(LIMIT 500 고정).
+         주의: record 매핑은 SELECT 컬럼 순서 의존 - CustomerListResult 컴포넌트 순서와 일치 유지. -->
+    <select id="selectCustomerList" parameterType="com.prafta.platform.customer.application.query.CustomerListQuery" resultType="com.prafta.platform.customer.application.result.CustomerListResult">
+    /* PlatformCustomerMapper.selectCustomerList */
+    SELECT
+        A.CMPNY_CD            AS cmpnyCd
+        , A.CMPNY_NM          AS cmpnyNm
+        , A.BSNS_LCN_NO       AS bsnsLcnNo
+        , A.ADDR_1            AS addr1
+        , A.ADDR_2            AS addr2
+        , A.ZIP_CODE          AS zipCode
+        , A.CONTRACT_YN       AS contractYn
+        , A.CONTRACT_END_DATE AS contractEndDate
+        , A.USE_YN            AS useYn
+    FROM TB_CMPNY A
+    <include refid="customerListWhere"/>
+    ORDER BY A.CMPNY_CD ASC
+    LIMIT 500
+    </select>
+
+    <!-- 검색 조건 일치 전체 건수(절단 판정용 - LIMIT 미적용). -->
+    <select id="selectCustomerListCount" parameterType="com.prafta.platform.customer.application.query.CustomerListQuery" resultType="int">
+    /* PlatformCustomerMapper.selectCustomerListCount */
+    SELECT COUNT(1)
+    FROM TB_CMPNY A
+    <include refid="customerListWhere"/>
+    </select>
+
+</mapper>

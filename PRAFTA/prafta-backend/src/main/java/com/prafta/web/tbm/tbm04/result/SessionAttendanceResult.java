@@ -34,5 +34,7 @@ public record SessionAttendanceResult(
 	, int gpsOutOfRangeCount	// GPS 범위 이탈 횟수
 	, int networkLostCount		// NETWORK_LOST 발생 횟수
 	, int eventCount			// 전체 이벤트 수
+	// PRAFTA-SUBCON-T5: 참석자 소속 회사코드(서비스가 1차 relabel 하여 응답에 담는다. 코드 자체는 비노출)
+	, String cmpnyCd
 ){
 }

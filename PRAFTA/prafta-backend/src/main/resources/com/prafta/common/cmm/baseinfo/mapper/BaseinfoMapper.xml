@@ -203,23 +203,30 @@
     
     <select id="selectMblUniqChk" parameterType="com.prafta.common.cmm.baseinfo.application.query.MblUniqueCheckQuery" resultType="int">
     /* BaseinfoMapper."selectMblUniqChk" */
+    <!-- ★테넌트 격리: UNIQUE 제약이 (CMPNY_CD, MBL_NO_HMAC) 라 번호는 회사 안에서만 유일하다.
+         회사 조건 없이 전사를 검사하면 다른 회사에 등록된 번호라는 이유로 정상 가입이 막히고,
+         타사 계정의 존재 여부까지 노출된다(존재 확인 oracle). 검사 범위를 제약과 일치시킨다. -->
     SELECT COUNT(*)
 	FROM TB_USER A
-	WHERE A.MBL_NO_HMAC = #{mblNoHmac}
+	WHERE A.CMPNY_CD    = #{cmpnyCd}
+	  AND A.MBL_NO_HMAC = #{mblNoHmac}
     </select>
     
+    <!-- PLT-LOC-03: PURPOSE_CD='SELF_JOIN' 명시(플랫폼 위치열람 인증과 목적 분리 - 혼용 금지). -->
     <insert id="insertSmsAuthNo" parameterType="com.prafta.common.cmm.baseinfo.application.command.SmsAuthNoCommand">
     /* BaseinfoMapper.insertSmsAuthNo */
     INSERT INTO TB_SMS_AUTH_CODE (
 		MBL_NO_ENC
 		, MBL_NO_HMAC
 	    , AUTH_CD
+	    , PURPOSE_CD
 	    , EXPIRED_AT
 	)
 	VALUES (
 		#{mblNoEnc}
 		, #{mblNoHmac}
 	    , #{certNo}
+	    , 'SELF_JOIN'
 	    , DATE_ADD(NOW(), INTERVAL 1 MINUTE)
 	)
     </insert>
@@ -232,6 +239,8 @@
 	WHERE 1=1
 	  AND MBL_NO_HMAC = #{mblNoHmac}
 	  AND AUTH_CD = #{certNo}
+	  <!-- PLT-LOC-03: 플랫폼 위치열람 목적 코드가 셀프가입 흐름에서 오검증되지 않도록 목적 필터. -->
+	  AND PURPOSE_CD = 'SELF_JOIN'
 	  AND EXPIRED_AT <![CDATA[ >= ]]> NOW()
 	  AND VERIFIED_YN = 'N'
     </select>
@@ -243,10 +252,12 @@
 	    VERIFIED_YN = 'Y',
 	    UPDATE_NO = 'SYSTEM',
 	    UPDATE_DATE = NOW()
-	WHERE 
+	WHERE
 		SMS_ID = #{smsId}
 	    AND MBL_NO_HMAC = #{mblNoHmac}
 	    AND AUTH_CD = #{certNo}
+	    <!-- PLT-LOC-03: 목적 필터(셀프가입 전용 - 플랫폼 위치열람 코드와 혼용 금지). -->
+	    AND PURPOSE_CD = 'SELF_JOIN'
 	    AND EXPIRED_AT <![CDATA[ >= ]]> NOW()
 	    AND VERIFIED_YN = 'N'
     </update>
@@ -262,6 +273,9 @@
     	, A.ADDR_1														AS addr1
     	, A.ADDR_2														AS addr2
     	, A.TEL_NO														AS telNo
+    	<!-- PRAFTA-SUBCON-T2-09: 미러 여부 노출(Attd_01_1 등 화면 판정용 —
+    	     record 순서 함정: SELECT 말미 + record 말미 동시 유지. joinMode 는 미러 제외라 항상 NULL). -->
+    	, A.LINK_SRC_CMPNY_CD											AS linkSrcCmpnyCd
 	FROM TB_SITE A
 		 
 		 <if test="userCd != null and userCd != ''">
@@ -298,6 +312,9 @@
 	        A.END_DATE IS NULL OR A.END_DATE = '' OR
 	        A.END_DATE <![CDATA[ >= ]]> date_format(NOW(), '%Y%m%d')
 	      )
+	      <!-- PRAFTA-SUBCON-T2-07: 회원가입(joinMode) 목록에서 미러(연동) 사업장 제외.
+	           인증 후 일반 조회 분기에는 걸지 않는다(소속이동·관리 화면은 미러를 봐야 함). -->
+	      AND A.LINK_SRC_CMPNY_CD IS NULL
 	  </if>
   	  <if test="siteNo != null and siteNo != ''">
   	  	AND A.SITE_NO = #{siteNo}
@@ -606,6 +623,8 @@
 	WHERE 1=1
 	  AND U.CMPNY_CD = #{cmpnyCd}
 	  AND U.USER_CD = #{userCd}
+	  <!-- PLT-LOC-03: 목적 필터 - 플랫폼 위치열람 인증 통과가 셀프가입/비번재설정 인증으로 재사용되지 않도록 차단. -->
+	  AND S.PURPOSE_CD = 'SELF_JOIN'
 	  AND S.VERIFIED_YN = 'Y'
 	  AND S.UPDATE_DATE <![CDATA[ >= ]]> DATE_SUB(NOW(), INTERVAL 10 MINUTE)
 	ORDER BY S.UPDATE_DATE DESC

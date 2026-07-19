@@ -34,6 +34,9 @@ class PushSenderServiceImplTest {
 
     private static final int MAX_RETRY = 3;
     private static final String NOTI = "N20260603001";
+    // 테넌트 격리(prafta-com-015): NOTI_ID/USER_CD/DEVICE_UUID 는 전역 유일하지 않아
+    //   매퍼 호출이 전부 CMPNY_CD 를 선행 인자로 받는다. row() 가 세팅하는 회사코드와 같은 값.
+    private static final String CMPNY = "C001";
     private static final String USER = "U001";
     private static final String DEV1 = "DEVICE-UUID-1";
     private static final String DEV2 = "DEVICE-UUID-2";
@@ -52,13 +55,13 @@ class PushSenderServiceImplTest {
         ReflectionTestUtils.setField(service, "maxRetry", MAX_RETRY);
         lenient().when(fcmClient.isAvailable()).thenReturn(true);
         // 기본 claim 성공.
-        lenient().when(mapper.claimSending(anyString(), eq(ACTOR))).thenReturn(1);
+        lenient().when(mapper.claimSending(anyString(), anyString(), eq(ACTOR))).thenReturn(1);
     }
 
     private PushOutboxRowVO row(int retryCnt, String payload) {
         PushOutboxRowVO r = new PushOutboxRowVO();
         r.setNotiId(NOTI);
-        r.setCmpnyCd("C001");
+        r.setCmpnyCd(CMPNY);
         r.setTargetUserCd(USER);
         r.setNotiType("LEAVE_GRANT_RECALLED");
         r.setTitle("title");
@@ -79,16 +82,16 @@ class PushSenderServiceImplTest {
     @DisplayName("T1 성공: 토큰 1건 SUCCESS → markSent(SENT) 1건")
     void success_marksSent() {
         when(mapper.selectPendingForSend(50, MAX_RETRY)).thenReturn(List.of(row(0, null)));
-        when(mapper.selectDeviceTokens(USER)).thenReturn(List.of(device(DEV1, "tokenAAAA")));
+        when(mapper.selectDeviceTokens(CMPNY, USER)).thenReturn(List.of(device(DEV1, "tokenAAAA")));
         when(fcmClient.send(eq("tokenAAAA"), anyString(), anyString(), any()))
                 .thenReturn(FcmSendResult.SUCCESS);
 
         int sent = service.dispatchPending();
 
         assertEquals(1, sent);
-        verify(mapper).markSent(NOTI, ACTOR);
-        verify(mapper, never()).markFailed(anyString(), anyInt(), anyString(), anyString());
-        verify(mapper, never()).incrementRetryAndRevertPending(anyString(), anyString(), anyString());
+        verify(mapper).markSent(CMPNY, NOTI, ACTOR);
+        verify(mapper, never()).markFailed(anyString(), anyString(), anyInt(), anyString(), anyString());
+        verify(mapper, never()).incrementRetryAndRevertPending(anyString(), anyString(), anyString(), anyString());
     }
 
     @Test
@@ -96,33 +99,33 @@ class PushSenderServiceImplTest {
     void transient_revertsThenFailsAtLimit() {
         // (a) retryCnt=0 → nextRetry=1 < 3 → incrementRetryAndRevertPending.
         when(mapper.selectPendingForSend(50, MAX_RETRY)).thenReturn(List.of(row(0, null)));
-        when(mapper.selectDeviceTokens(USER)).thenReturn(List.of(device(DEV1, "tokenAAAA")));
+        when(mapper.selectDeviceTokens(CMPNY, USER)).thenReturn(List.of(device(DEV1, "tokenAAAA")));
         when(fcmClient.send(anyString(), anyString(), anyString(), any()))
                 .thenReturn(FcmSendResult.TRANSIENT_FAILURE);
 
         int sent = service.dispatchPending();
 
         assertEquals(0, sent);
-        verify(mapper).incrementRetryAndRevertPending(eq(NOTI), anyString(), eq(ACTOR));
-        verify(mapper, never()).markFailed(anyString(), anyInt(), anyString(), anyString());
+        verify(mapper).incrementRetryAndRevertPending(eq(CMPNY), eq(NOTI), anyString(), eq(ACTOR));
+        verify(mapper, never()).markFailed(anyString(), anyString(), anyInt(), anyString(), anyString());
 
         // (b) retryCnt=2 → nextRetry=3 >= 3 → markFailed(retry=3).
         org.mockito.Mockito.reset(mapper);
-        when(mapper.claimSending(anyString(), eq(ACTOR))).thenReturn(1);
+        when(mapper.claimSending(anyString(), anyString(), eq(ACTOR))).thenReturn(1);
         when(mapper.selectPendingForSend(50, MAX_RETRY)).thenReturn(List.of(row(2, null)));
-        when(mapper.selectDeviceTokens(USER)).thenReturn(List.of(device(DEV1, "tokenAAAA")));
+        when(mapper.selectDeviceTokens(CMPNY, USER)).thenReturn(List.of(device(DEV1, "tokenAAAA")));
 
         service.dispatchPending();
 
-        verify(mapper).markFailed(eq(NOTI), eq(MAX_RETRY), anyString(), eq(ACTOR));
-        verify(mapper, never()).incrementRetryAndRevertPending(anyString(), anyString(), anyString());
+        verify(mapper).markFailed(eq(CMPNY), eq(NOTI), eq(MAX_RETRY), anyString(), eq(ACTOR));
+        verify(mapper, never()).incrementRetryAndRevertPending(anyString(), anyString(), anyString(), anyString());
     }
 
     @Test
     @DisplayName("T3 무효토큰: INVALID_TOKEN → softDeleteDeviceToken 호출. 다른 디바이스 SUCCESS면 markSent")
     void invalidToken_softDeletesAndSucceedsViaOther() {
         when(mapper.selectPendingForSend(50, MAX_RETRY)).thenReturn(List.of(row(0, null)));
-        when(mapper.selectDeviceTokens(USER))
+        when(mapper.selectDeviceTokens(CMPNY, USER))
                 .thenReturn(List.of(device(DEV1, "badAAAA"), device(DEV2, "goodAAAA")));
         when(fcmClient.send(eq("badAAAA"), anyString(), anyString(), any()))
                 .thenReturn(FcmSendResult.INVALID_TOKEN);
@@ -132,36 +135,36 @@ class PushSenderServiceImplTest {
         int sent = service.dispatchPending();
 
         assertEquals(1, sent);
-        verify(mapper).softDeleteDeviceToken(DEV1, ACTOR);
-        verify(mapper, never()).softDeleteDeviceToken(eq(DEV2), anyString());
-        verify(mapper).markSent(NOTI, ACTOR);
+        verify(mapper).softDeleteDeviceToken(CMPNY, DEV1, ACTOR);
+        verify(mapper, never()).softDeleteDeviceToken(anyString(), eq(DEV2), anyString());
+        verify(mapper).markSent(CMPNY, NOTI, ACTOR);
     }
 
     @Test
     @DisplayName("T3b 전부 무효: 모든 토큰 INVALID → soft-delete 후 FAILED(ALL_TOKENS_INVALID)")
     void allInvalid_marksFailed() {
         when(mapper.selectPendingForSend(50, MAX_RETRY)).thenReturn(List.of(row(0, null)));
-        when(mapper.selectDeviceTokens(USER))
+        when(mapper.selectDeviceTokens(CMPNY, USER))
                 .thenReturn(List.of(device(DEV1, "badAAAA"), device(DEV2, "bad2AAAA")));
         when(fcmClient.send(anyString(), anyString(), anyString(), any()))
                 .thenReturn(FcmSendResult.INVALID_TOKEN);
 
         service.dispatchPending();
 
-        verify(mapper).softDeleteDeviceToken(DEV1, ACTOR);
-        verify(mapper).softDeleteDeviceToken(DEV2, ACTOR);
-        verify(mapper).markFailed(eq(NOTI), eq(0), eq(PushWorkerConst.ERR_ALL_TOKENS_INVALID), eq(ACTOR));
+        verify(mapper).softDeleteDeviceToken(CMPNY, DEV1, ACTOR);
+        verify(mapper).softDeleteDeviceToken(CMPNY, DEV2, ACTOR);
+        verify(mapper).markFailed(eq(CMPNY), eq(NOTI), eq(0), eq(PushWorkerConst.ERR_ALL_TOKENS_INVALID), eq(ACTOR));
     }
 
     @Test
     @DisplayName("T4 토큰 0건: selectDeviceTokens 빈 리스트 → markFailed(NO_DEVICE_TOKEN), 전송 미호출")
     void noDeviceToken_marksFailed() {
         when(mapper.selectPendingForSend(50, MAX_RETRY)).thenReturn(List.of(row(0, null)));
-        when(mapper.selectDeviceTokens(USER)).thenReturn(List.of());
+        when(mapper.selectDeviceTokens(CMPNY, USER)).thenReturn(List.of());
 
         service.dispatchPending();
 
-        verify(mapper).markFailed(eq(NOTI), eq(0), eq(PushWorkerConst.ERR_NO_DEVICE_TOKEN), eq(ACTOR));
+        verify(mapper).markFailed(eq(CMPNY), eq(NOTI), eq(0), eq(PushWorkerConst.ERR_NO_DEVICE_TOKEN), eq(ACTOR));
         verify(fcmClient, never()).send(anyString(), anyString(), anyString(), any());
     }
 
@@ -169,15 +172,15 @@ class PushSenderServiceImplTest {
     @DisplayName("T5 claim 멱등: claimSending affected=0 이면 처리 skip(토큰조회/전송/상태전이 없음)")
     void claimZero_skipsProcessing() {
         when(mapper.selectPendingForSend(50, MAX_RETRY)).thenReturn(List.of(row(0, null)));
-        when(mapper.claimSending(NOTI, ACTOR)).thenReturn(0);
+        when(mapper.claimSending(CMPNY, NOTI, ACTOR)).thenReturn(0);
 
         int sent = service.dispatchPending();
 
         assertEquals(0, sent);
-        verify(mapper, never()).selectDeviceTokens(anyString());
+        verify(mapper, never()).selectDeviceTokens(anyString(), anyString());
         verify(fcmClient, never()).send(anyString(), anyString(), anyString(), any());
-        verify(mapper, never()).markSent(anyString(), anyString());
-        verify(mapper, never()).markFailed(anyString(), anyInt(), anyString(), anyString());
+        verify(mapper, never()).markSent(anyString(), anyString(), anyString());
+        verify(mapper, never()).markFailed(anyString(), anyString(), anyInt(), anyString(), anyString());
     }
 
     @Test

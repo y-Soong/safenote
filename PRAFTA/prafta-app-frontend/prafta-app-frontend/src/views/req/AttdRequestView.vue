@@ -140,7 +140,9 @@ const onCancel = () => {
 // 결재선 프리셋 로드(기존 endpoint 재사용, D1 풀 공유). 실패해도 폼은 빈 프리셋으로 동작.
 const loadPresets = async () => {
   try {
-    const { data } = await api.get('/appApi/mypage01/approval-presets')
+    // 컨트롤러 매핑은 /mypage (AppMypage01Controller @RequestMapping("/mypage")).
+    //   'mypage01' 로 부르면 매핑된 핸들러가 없어 500(COMMON_500_000)으로 떨어진다.
+    const { data } = await api.get('/appApi/mypage/approval-presets')
     presets.value = Array.isArray(data?.presets) ? data.presets : []
   } catch (e) {
     console.error('[AttdRequest] 결재선 프리셋 로드 실패:', e?.message)

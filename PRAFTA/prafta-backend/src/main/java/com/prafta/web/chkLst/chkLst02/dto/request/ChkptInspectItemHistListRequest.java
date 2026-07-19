@@ -8,6 +8,7 @@ import lombok.Setter;
 @Setter
 @NoArgsConstructor
 public class ChkptInspectItemHistListRequest{
+	private String siteCd;	// PRAFTA-SUBCON-T0-02: 사업장코드(필수)
 	private String chkLstType;
 	private String inspectItemCd;
 }

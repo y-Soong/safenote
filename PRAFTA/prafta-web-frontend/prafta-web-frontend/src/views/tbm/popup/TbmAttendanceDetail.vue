@@ -81,6 +81,8 @@
                   <th style="width: 4%; text-align: center">No</th>
                   <th style="width: 7%">유형</th>
                   <th style="width: 14%">이름</th>
+                  <!-- 소속 회사(PRAFTA-SUBCON-T5): 서버 relabel 값(1차 회사명). 자사 참석자는 자사명. -->
+                  <th style="width: 10%">소속 회사</th>
                   <th style="width: 13%">소속/끝4자리</th>
                   <th style="width: 11%">입실</th>
                   <th style="width: 11%">종료</th>
@@ -96,7 +98,7 @@
               <tbody>
                 <template v-if="!attendanceList || attendanceList.length === 0">
                   <tr>
-                    <td colspan="11" class="edu-grid-empty">
+                    <td colspan="12" class="edu-grid-empty">
                       출결 명단이 없습니다. (실시간 진행/모바일 앱 이후
                       채워집니다)
                     </td>
@@ -122,14 +124,19 @@
                         </span>
                       </td>
                       <td>
+                        <!-- 타사(연동) 참석자는 서버가 userCd 를 내리지 않는다(최소 노출).
+                             내 회사 직원이 아니므로 사용자별 이수 이력 드릴다운도 열지 않는다. -->
                         <button
+                          v-if="row.userCd"
                           type="button"
                           class="title-link"
                           @click="fnUserHistory(row)"
                         >
                           {{ row.userNm }}
                         </button>
+                        <span v-else>{{ row.userNm }}</span>
                       </td>
+                      <td>{{ row.affilCmpnyNm || "-" }}</td>
                       <td>
                         <template v-if="row.userTypeCd === 'DAILY'">
                           ****{{ row.mblNoLast4 || "" }}
@@ -202,7 +209,7 @@
                     </tr>
                     <!-- 이벤트 타임라인 토글 행 -->
                     <tr v-if="expandedCd === row.attendanceCd">
-                      <td colspan="11" class="event-cell-row">
+                      <td colspan="12" class="event-cell-row">
                         <TbmEventTimeline
                           :attendanceCd_p="row.attendanceCd"
                           :userNm_p="row.userNm"

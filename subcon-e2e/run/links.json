@@ -1,0 +1,10 @@
+{
+  "AB_site": {
+    "srcSiteCd": "00001",
+    "linkId": 2
+  },
+  "BC_site": {
+    "srcSiteCd": "00002",
+    "linkId": 3
+  }
+}

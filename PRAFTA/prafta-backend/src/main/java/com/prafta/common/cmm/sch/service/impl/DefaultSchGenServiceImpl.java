@@ -3,6 +3,8 @@ package com.prafta.common.cmm.sch.service.impl;
 import java.time.DayOfWeek;
 import java.time.LocalDate;
 import java.time.format.DateTimeFormatter;
+import java.util.HashSet;
+import java.util.Set;
 
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Propagation;
@@ -54,6 +56,14 @@ public class DefaultSchGenServiceImpl implements DefaultSchGenService {
         String prevClosedYm = null;
         boolean prevClosed = false;
 
+        // 휴일 배치 로딩(F3/G4): 범위 내 회사 휴일(특정일 tb_holiday + 매년 반복 tb_holiday_rule)을
+        // 루프 진입 전 1회씩만 조회해 Set 으로 사용한다(일별 쿼리 폭증 방지). 회사(CMPNY_CD) 스코프.
+        // 생성 시점 기준으로만 스킵 — 이미 생성된 계획은 소급 변경/삭제하지 않는다.
+        Set<String> holidayYmds = new HashSet<>(
+                defaultSchGenMapper.selectHolidayYmds(cmpnyCd, fromYmd, toYmd));
+        Set<String> holidayRuleMmdds = new HashSet<>(
+                defaultSchGenMapper.selectHolidayRuleMmdds(cmpnyCd));
+
         for (LocalDate cur = from; !cur.isAfter(to); cur = cur.plusDays(1)) {
             // 평일(월~금)만 생성. 주말(토/일) 제외(쟁점①).
             DayOfWeek dow = cur.getDayOfWeek();
@@ -61,6 +71,12 @@ public class DefaultSchGenServiceImpl implements DefaultSchGenService {
                 continue;
             }
             String ymd = cur.format(YMD);
+
+            // 휴일 제외(F3/G4): 회사 휴일(특정일 또는 반복규칙 MM/DD)이면 그날 생성 스킵.
+            // 주말 제외와 동일 취급. F2 노무수령거부 게이트와 동일한 휴일 소스를 사용한다.
+            if (holidayYmds.contains(ymd) || holidayRuleMmdds.contains(ymd.substring(4))) {
+                continue;
+            }
 
             // 교대팀 소속 구간 제외(E-7). 교대패턴이 스케줄을 보장하므로 자동생성 비대상.
             if (shiftMembershipService.isInShiftTeamOn(cmpnyCd, siteCd, userCd, ymd)) {

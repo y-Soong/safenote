@@ -34,7 +34,7 @@
         :key="slot.workSeq"
         :work-seq="slot.workSeq"
         :title="slot.workSeq + '구간'"
-        :removable="slots.length > 1"
+        :removable="isRemovable(slot.workSeq)"
         @remove="onRemoveSlot"
       >
         <label class="field">
@@ -193,6 +193,17 @@ const buildInitialSlots = () => {
 
 const slots = ref(buildInitialSlots())
 const reqReason = ref('')
+
+// 이미 근태가 찍혀 있는(서버가 내려준) 구간의 workSeq 집합.
+//   보정 요청은 "시각을 고쳐 달라"는 것이지 "근태를 지워 달라"는 게 아니므로, 기존 구간은 삭제 대상이 아니다.
+//   → 이 폼에서 새로 추가한 구간만 삭제(쓰레기통)를 허용한다.
+const serverSlotSeqs = new Set(
+  (props.context?.slots || []).map((s, i) => s.workSeq ?? i + 1),
+)
+
+// 삭제 가능 여부 — 서버에 이미 존재하는 구간이면 불가.
+//   근태가 아예 없는 날(서버 구간 0개)의 신규 작성은 종전대로 2구간일 때 서로 삭제 가능.
+const isRemovable = (workSeq) => !serverSlotSeqs.has(workSeq) && slots.value.length > 1
 
 // ── 결재선 상태 (prafta-app-009) ─────────────────────────────────────────
 const approverList = ref([]) // [{ approverUserCd, userNm, userId, rankNm, nodeNm }] (순서 = 결재 단계)

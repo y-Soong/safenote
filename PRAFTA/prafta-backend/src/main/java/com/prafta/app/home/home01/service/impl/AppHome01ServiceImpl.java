@@ -22,6 +22,7 @@ import com.prafta.app.home.home01.result.ScheduleResult;
 import com.prafta.app.home.home01.result.TbmStatusResult;
 import com.prafta.app.home.home01.service.AppHome01Service;
 import com.prafta.common.cmm.leave.mapper.LeavePolicyMapper;
+import com.prafta.common.cmm.leave.service.LeaveRefusalDetectService;
 import com.prafta.common.cmm.leave.util.FiscalYearUtils;
 import com.prafta.common.cmm.leave.vo.LeavePolicyVO;
 
@@ -53,6 +54,8 @@ public class AppHome01ServiceImpl implements AppHome01Service {
     private final AppHome01Mapper appHome01Mapper;
     /** 연차 개편(표시): 활성정책 AXIS2_FISCAL_START_MM/_DD 조회(회계연도 경계 산출 입력). 락 없는 조회 메서드 재사용. */
     private final LeavePolicyMapper leavePolicyMapper;
+    /** 근태 E2E(F2): 촉진 노무수령거부 대상 여부 사전 판정(조회 전용, 부작용 없음) — 홈 카드 출근 분기용. */
+    private final LeaveRefusalDetectService leaveRefusalDetectService;
 
     @Override
     public HomeSummaryResponse selectHomeSummary(HomeSummaryParam param) {
@@ -115,6 +118,11 @@ public class AppHome01ServiceImpl implements AppHome01Service {
             // 연차일은 근무 스케줄을 카드에 노출하지 않는다(연차 차단 정합). 실 출퇴근 레코드 표시/퇴근 가능 여부는 유지.
             sch = null;
         }
+        // 근태 E2E(F2): 종일 연차일 중 "촉진(1·2차) 확정 법정 연차일 · 비휴일" = 노무수령거부 차단 대상 여부.
+        //   연차일일 때만 조회(비연차일은 대상 아님 → 불필요 쿼리 회피). 서버 최종 차단은 ATTD_400_150(guardAndRecord),
+        //   본 플래그는 프론트가 출근 시 확인 팝업 대신 차단 안내를 사전 노출하기 위한 표시 보조값이다.
+        boolean laborRefusal = isLeaveDay && leaveRefusalDetectService.isRefusalTarget(
+                query.cmpnyCd(), query.siteCd(), query.userCd(), query.todayYmd());
         // 외근 여부: 오늘 최근 출근 레코드의 출근 GPS 행(01) 존재 여부(존재=외근). 오늘 출근 없으면 0.
         boolean isOffsite = appHome01Mapper.selectTodayCheckInOffsite(query) > 0;
 
@@ -280,6 +288,7 @@ public class AppHome01ServiceImpl implements AppHome01Service {
                 .checkOutTime(checkOutTime)
                 .isOffsite(isOffsite) // 오늘 최근 출근 GPS 행(01) 존재=외근 (prafta-app-003 B-1).
                 .isLeaveDay(isLeaveDay) // prafta-com-008-E (H1): 기준일 종일 연차일 여부(출근 버튼 비활성/연차 표시 근거).
+                .laborRefusal(laborRefusal) // 근태 E2E(F2): 촉진 노무수령거부 대상 연차일(true 면 출근 시 차단 안내).
                 .canCheckIn(canCheckIn)
                 .canCheckOut(canCheckOut)
                 .prevDayCheckoutPending(prevDayCheckoutPending) // prafta-app-021 §7.6: 전날 미퇴근 마감 대기 신호.

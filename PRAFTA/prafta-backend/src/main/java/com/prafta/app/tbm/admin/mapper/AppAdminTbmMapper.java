@@ -19,6 +19,7 @@ import com.prafta.app.tbm.admin.application.command.AdminSessionSinglePwdCommand
 import com.prafta.app.tbm.admin.application.command.AdminSessionStateCommand;
 import com.prafta.app.tbm.admin.application.command.AdminManagerEnterCommand;
 import com.prafta.app.tbm.admin.application.command.AdminSessionTransitionCommand;
+import com.prafta.app.tbm.admin.application.model.AdminSessionRiskModel;
 import com.prafta.app.tbm.admin.application.query.AdminAttendeeListQuery;
 import com.prafta.app.tbm.admin.application.query.AdminEligibleRegularQuery;
 import com.prafta.app.tbm.admin.application.query.AdminEntryTargetQuery;
@@ -82,6 +83,9 @@ public interface AppAdminTbmMapper {
     void deleteSessionContents(@Param("gvCmpnyCd") String gvCmpnyCd, @Param("sessionCd") String sessionCd);
 
     void insertSessionRisk(AdminSessionRiskCommand command);
+
+    /** 세션-위험성평가 연계 검증: 제출 키(siteCd/processCd/assessmentCd)가 TB_RISK_ASSESSMENT 에 실존하는 건수(중복 제거 키 전제). */
+    int countRiskAssessments(@Param("gvCmpnyCd") String gvCmpnyCd, @Param("keys") List<AdminSessionRiskModel> keys);
 
     void deleteSessionRisks(@Param("gvCmpnyCd") String gvCmpnyCd, @Param("sessionCd") String sessionCd);
 
@@ -169,9 +173,13 @@ public interface AppAdminTbmMapper {
     /**
      * 일용직 QR 입실 "출근 선행" 가드용 — 당일 해당 일용직의 출근 기록(TB_USER_ATTD_MGMT) 존재 여부.
      * CHECK_IN_TIME IS NOT NULL AND DEL_YN='N' 인 당일(WORK_YMD=오늘) 행 수. 0이면 입실 차단(TBM_409_044).
+     *
+     * <p>PRAFTA-SUBCON-T5(plan D6): 자사 대상({@code ownTarget}=true)은 세션 사업장 기준으로 검사하고,
+     * 타사 대상은 그 회사의 (미러) 사업장에 출근이 기록되므로 사업장 조건 없이 회사 단위로 검사한다.
      */
-    int countTodayCheckIn(@Param("gvCmpnyCd") String gvCmpnyCd, @Param("siteCd") String siteCd,
-            @Param("userCd") String userCd, @Param("todayYmd") String todayYmd);
+    int countTodayCheckIn(@Param("targetCmpnyCd") String targetCmpnyCd, @Param("siteCd") String siteCd,
+            @Param("userCd") String userCd, @Param("todayYmd") String todayYmd,
+            @Param("ownTarget") boolean ownTarget);
 
     /* ===== prafta-051 R-C 이탈자 내보내기(입실취소) ===== */
     /**

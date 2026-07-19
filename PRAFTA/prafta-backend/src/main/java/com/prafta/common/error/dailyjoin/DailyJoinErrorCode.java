@@ -26,6 +26,9 @@ public enum DailyJoinErrorCode implements ApiErrorCode {
     // prafta-daily-blacklist: 블랙리스트 등록된 휴대폰번호의 신규 가입 차단.
     , DAILYJOIN_400_007(HttpStatus.BAD_REQUEST, "회원가입이 제한된 휴대폰번호입니다.\n사업장 관리자에게 문의해주세요.")
 
+    // PRAFTA-SUBCON-T2-07: 연동 미러 사업장 가입 차단(미러 존재 사실 상세 비노출).
+    , DAILYJOIN_400_008(HttpStatus.BAD_REQUEST, "가입할 수 없는 사업장입니다.\n사업장 관리자에게 문의해주세요.")
+
     // 약관 데이터 오류
     , DAILYJOIN_500_001(HttpStatus.INTERNAL_SERVER_ERROR, "약관 데이터 생성 오류!\n관리자에게 문의해주세요.")
     ;

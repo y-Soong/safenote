@@ -164,4 +164,32 @@
        AND USER_CD  = #{userCd}
     </update>
 
+    <!--
+      F3(G4): 자동생성 범위 내 회사 휴일(특정일) YMD 목록(YYYYMMDD).
+      tb_holiday USE_YN='Y' + [fromYmd, toYmd] 범위. 회사 스코프(SITE_CD 없음).
+      서비스가 루프 진입 전 1회 로딩해 Set 으로 사용(일별 조회 폭증 방지).
+    -->
+    <select id="selectHolidayYmds" resultType="string">
+    /* DefaultSchGenMapper.selectHolidayYmds */
+    SELECT DATE_FORMAT(H.HOLIDAY_YMD, '%Y%m%d')
+      FROM TB_HOLIDAY H
+     WHERE H.CMPNY_CD    = #{cmpnyCd}
+       AND H.USE_YN      = 'Y'
+       AND H.HOLIDAY_YMD BETWEEN STR_TO_DATE(#{fromYmd}, '%Y%m%d')
+                             AND STR_TO_DATE(#{toYmd}, '%Y%m%d')
+    </select>
+
+    <!--
+      F3(G4): 회사 반복휴일(매년 고정 MM/DD) 목록('MMDD').
+      tb_holiday_rule USE_YN='Y'. F2 노무수령거부 게이트와 동일 소스 정합.
+      서비스가 1회 로딩해 Set 으로 사용(일자 MMDD 비교).
+    -->
+    <select id="selectHolidayRuleMmdds" resultType="string">
+    /* DefaultSchGenMapper.selectHolidayRuleMmdds */
+    SELECT CONCAT(R.HOLIDAY_MM, R.HOLIDAY_DD)
+      FROM TB_HOLIDAY_RULE R
+     WHERE R.CMPNY_CD = #{cmpnyCd}
+       AND R.USE_YN   = 'Y'
+    </select>
+
 </mapper>

@@ -137,6 +137,7 @@
                 <th style="width: 15%">점검대상명칭</th>
                 <th style="width: 15%">점검항목명</th>
                 <th style="width: 8%">불량내용</th>
+                <th style="width: 10%">수행 회사</th>
                 <th style="width: 10%">점검자</th>
                 <th style="width: 10%">점검일자</th>
                 <th style="width: 7%">조치</th>
@@ -144,7 +145,7 @@
             </thead>
             <tbody>
               <tr v-if="!defectList || defectList.length === 0">
-                <td colspan="10" class="edu-grid-empty">
+                <td colspan="11" class="edu-grid-empty">
                   조회된 불량 항목이 없습니다.
                 </td>
               </tr>
@@ -183,6 +184,8 @@
                     상세
                   </button>
                 </td>
+                <!-- PRAFTA-SUBCON-T6-07: 수행 회사(연동 회사가 점검한 불량이면 인접 1차 회사명, 자사 점검이면 자사명) -->
+                <td>{{ defect.performCmpnyNm || "-" }}</td>
                 <td>{{ defect.inspectorNm }}</td>
                 <td style="text-align: center">
                   {{ formatYmdDot(defect.workDate) }}
@@ -499,6 +502,7 @@ const fnInspectItemPopOpen = () => {
   }
   openPop(InspectItemSearchPop, {
     cmpnyCd_p: sessionStorage.getItem("gv_cmpnyCd"),
+    siteCd_p: siteCd.value, // PRAFTA-SUBCON-T0-05: 문항 사업장 분리에 따라 필수
     chkLstType_p: chkLstType.value,
     onSelect: (itemCdVal, itemSubjVal) => {
       inspectItemCd.value = itemCdVal;
@@ -526,6 +530,9 @@ const fnDefectActionPopOpen = (defect) => {
     inspectItemCd_p: defect.inspectItemCd,
     workDate_p: defect.workDate,
     actionDesc_p: defect.actionDesc,
+    // [정책변경 §2] 조치 사진 프리필/표시
+    actionFileMgmtCd_p: defect.actionFileMgmtCd,
+    actionFilePath_p: defect.actionFilePath,
     onSaved: () => {
       fnSearch();
     },

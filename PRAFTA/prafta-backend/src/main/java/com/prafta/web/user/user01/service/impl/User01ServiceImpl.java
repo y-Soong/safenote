@@ -107,9 +107,16 @@ public class User01ServiceImpl implements User01Service{
 	// PRAFTA-COM-008-E-5: 기본 근무타입 검증/자동생성 공용 서비스(common.cmm.sch).
 	private final com.prafta.common.cmm.sch.service.DefaultSchOptionService defaultSchOptionService;
 	private final com.prafta.common.cmm.sch.service.DefaultSchGenService defaultSchGenService;
+	// F1/QT-11-7: 비활성/탈퇴 시 진행중 대기요청 일괄 반려 + 연차 원장 원복(소속이동 발효와 단일 출처).
+	private final com.prafta.web.user.user01.service.UserPendingRequestTerminationService userPendingRequestTerminationService;
 
 	private static final int PW_MIN_LEN = 6;
 	private static final int PW_MAX_LEN = 15;
+
+	// F1: 사용자 비활성(useYn→N) 시 관련 대기요청 자동 반려 사유(PII 금지, 처리 코멘트 기록용).
+	private static final String REASON_DEACTIVATED = "신청자/결재자 비활성으로 자동 반려";
+	// F1: 본인 탈퇴 시 관련 대기요청 자동 반려 사유.
+	private static final String REASON_WITHDRAWN = "신청자/결재자 탈퇴로 자동 반려";
 
 	// REASON_DETAIL varchar(500) - 경력 인정 상세 설명 서버측 길이 상한
 	private static final int REASON_DETAIL_MAX_LEN = 500;
@@ -332,6 +339,17 @@ public class User01ServiceImpl implements User01Service{
             log.info("역할 변경(전사 접근 이탈) - 자동부여 사업장권한 회수(소속 1건 잔존). userCd={}, prevAuthCd={}, newAuthCd={}, homeSiteCd={}",
                     model.userCd(), prevAuthCd, newAuthCd, model.siteCd());
         }
+
+        // F1: 비활성(useYn Y→N) 전환 시, 대상자가 신청자/결재자인 진행중 대기요청을 양방향 자동 반려한다.
+        //   잔존 대기요청이 월 마감을 영구 차단하는 교착(§13.3 마감 차단 조건) 제거.
+        //   직전 상태가 활성일 때만 호출(이미 비활성 재저장 시 불필요 호출 방지 — 종결 자체는 멱등).
+        //   동일 트랜잭션(REQUIRES_NEW 내부, 컴포넌트는 REQUIRED 합류) — 반려 실패 시 비활성 전체 롤백.
+        if ("N".equals(model.useYn()) && !"N".equals(userInfoResult.useYn())) {
+            userPendingRequestTerminationService.terminateAllPendingFor(
+                    model.cmpnyCd(), model.userCd(), REASON_DEACTIVATED, model.gvUserCd());
+            log.info("사용자 비활성 전환 - 진행중 대기요청 자동 반려 완료. cmpnyCd={}, userCd={}, actor={}",
+                    model.cmpnyCd(), model.userCd(), model.gvUserCd());
+        }
     }
 	
 	public SiteNodeAdminCandidateListResponse selectSiteNodeAdminCandidateLists(SiteNodeAdminCandidateListParam param) {
@@ -350,18 +368,26 @@ public class User01ServiceImpl implements User01Service{
 	}
 
 	@Override
+	@Transactional(rollbackFor = Exception.class)
 	public void withdrawMyAccount(WithdrawMyAccountParam param) {
-		
+
 		int userNodeAdminCheck = user01Mapper.selectUserNodeAdminCheck(UserNodeAdminCheckQuery.from(param));
-		
+
 		if(userNodeAdminCheck > 0) {
 			throw new ApiException(UserErrorCode.USER_400_005);
 		}
-		
+
 		int updated = user01Mapper.withdrawMyAccount(WithdrawMyAccountCommand.from(param));
 		if (updated == 0) {
 			throw new ApiException(LoginErrorCode.LOGIN_400_002);
 		}
+
+		// F1: 본인 탈퇴(USE_YN='N'/ACCOUNT_STATUS='03' 즉시 전환) 시, 대상자가 신청자/결재자인
+		//   진행중 대기요청을 양방향 자동 반려한다(잔존 대기요청의 월 마감 교착 제거, §13.3).
+		//   actor = 본인 userCd(자기 탈퇴). 동일 트랜잭션 — 반려 실패 시 탈퇴 전체 롤백(부분 처리 금지).
+		userPendingRequestTerminationService.terminateAllPendingFor(
+				param.cmpnyCd(), param.userCd(), REASON_WITHDRAWN, param.userCd());
+		log.info("본인 탈퇴 - 진행중 대기요청 자동 반려 완료. cmpnyCd={}, userCd={}", param.cmpnyCd(), param.userCd());
 	}
 
 	@Override

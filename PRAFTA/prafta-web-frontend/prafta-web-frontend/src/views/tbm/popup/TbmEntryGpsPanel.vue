@@ -41,6 +41,8 @@
               <thead>
                 <tr>
                   <th>이름</th>
+                  <!-- 소속(PRAFTA-SUBCON-T5): 서버 relabel 값(1차 회사명). 자사 참석자는 자사명. -->
+                  <th>소속</th>
                   <th>입실시각</th>
                   <th>거리(m)</th>
                   <th>입실유형</th>
@@ -49,10 +51,10 @@
               </thead>
               <tbody>
                 <tr v-if="isLoading">
-                  <td colspan="5" class="grid-msg">조회 중...</td>
+                  <td colspan="6" class="grid-msg">조회 중...</td>
                 </tr>
                 <tr v-else-if="entries.length === 0">
-                  <td colspan="5" class="grid-msg">입실자가 없습니다.</td>
+                  <td colspan="6" class="grid-msg">입실자가 없습니다.</td>
                 </tr>
                 <tr
                   v-for="row in entries"
@@ -60,6 +62,7 @@
                   :class="{ 'row-over': isOver(row) }"
                 >
                   <td>{{ row.userNm }}</td>
+                  <td>{{ row.affilCmpnyNm || "-" }}</td>
                   <td>{{ row.entryAt }}</td>
                   <td>
                     <span :class="isOver(row) ? 'dist-over' : 'dist-ok'">

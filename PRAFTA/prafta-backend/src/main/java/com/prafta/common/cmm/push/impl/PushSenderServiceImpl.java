@@ -90,9 +90,12 @@ public class PushSenderServiceImpl implements PushSenderService {
     private boolean processRow(PushOutboxRowVO row) {
         String notiId = row.getNotiId();
         String actor = PushWorkerConst.WORKER_ACTOR;
+        // ★테넌트 격리: NOTI_ID·USER_CD·DEVICE_UUID 는 회사별 채번/클라 제공값이라 전역 유일하지 않다.
+        //   모든 상태전이·토큰조회에 outbox 행의 회사코드를 함께 넘긴다(다른 회사 행 오염/푸시 오배송 방지).
+        String cmpnyCd = row.getCmpnyCd();
 
         // 1) claim: PENDING → SENDING (affected=1 만 이 워커가 처리; 멱등/중복발송 방지).
-        if (pushOutboxMapper.claimSending(notiId, actor) != 1) {
+        if (pushOutboxMapper.claimSending(cmpnyCd, notiId, actor) != 1) {
             log.debug("[push] claim 실패(이미 처리/상태변경됨) notiId={} — skip.", notiId);
             return false;
         }
@@ -100,7 +103,7 @@ public class PushSenderServiceImpl implements PushSenderService {
         // 1-1) PRAFTA-APP-021-2 enforce: 사용자 푸시 설정(마스터/타입 OFF)이면 발송 생략(SUPPRESSED).
         //      claim 직후·토큰 조회 전에 판정한다. opt-out(행 없음=발송) + 테이블 부재 graceful 폴백.
         if (isSuppressedSafe(row)) {
-            int affected = pushOutboxMapper.markSuppressed(notiId, PushWorkerConst.SUPPRESS_REASON, actor);
+            int affected = pushOutboxMapper.markSuppressed(cmpnyCd, notiId, PushWorkerConst.SUPPRESS_REASON, actor);
             log.info("[push] 사용자 설정에 의한 발송 생략(SUPPRESSED) notiId={}, targetUserCd={}, notiType={}, affected={}.",
                     notiId, row.getTargetUserCd(), row.getNotiType(), affected);
             return false;
@@ -112,17 +115,17 @@ public class PushSenderServiceImpl implements PushSenderService {
             dataMap = parsePayload(row.getDataPayload());
         } catch (Exception e) {
             log.warn("[push] DATA_PAYLOAD 파싱 실패 notiId={}: {}", notiId, e.getMessage());
-            pushOutboxMapper.markFailed(notiId, row.getRetryCnt(),
+            pushOutboxMapper.markFailed(cmpnyCd, notiId, row.getRetryCnt(),
                     PushWorkerConst.ERR_INVALID_PAYLOAD, actor);
             return false;
         }
 
         // 3) 대상 토큰 조회. 0건 → 즉시 FAILED(NO_DEVICE_TOKEN), 재시도 누적 없음.
-        List<DeviceTokenVO> devices = pushOutboxMapper.selectDeviceTokens(row.getTargetUserCd());
+        List<DeviceTokenVO> devices = pushOutboxMapper.selectDeviceTokens(cmpnyCd, row.getTargetUserCd());
         if (devices.isEmpty()) {
             log.info("[push] 대상 디바이스 없음 notiId={}, targetUserCd={} — FAILED(NO_DEVICE_TOKEN).",
                     notiId, row.getTargetUserCd());
-            pushOutboxMapper.markFailed(notiId, row.getRetryCnt(),
+            pushOutboxMapper.markFailed(cmpnyCd, notiId, row.getRetryCnt(),
                     PushWorkerConst.ERR_NO_DEVICE_TOKEN, actor);
             return false;
         }
@@ -139,7 +142,7 @@ public class PushSenderServiceImpl implements PushSenderService {
                 case INVALID_TOKEN -> {
                     // prafta-com-015 015-3: 무효 토큰 디바이스 비활성화 관측성(어떤 기기가 왜 빠졌는지 1줄 감사).
                     //   deviceUuid 는 마스킹(앞 8자+***). 토큰값은 로그에 남기지 않는다(S2).
-                    int affected = pushOutboxMapper.softDeleteDeviceToken(d.getDeviceUuid(), actor);
+                    int affected = pushOutboxMapper.softDeleteDeviceToken(cmpnyCd, d.getDeviceUuid(), actor);
                     log.info("[push] 무효 토큰 디바이스 비활성화 notiId={}, deviceUuid={}, 사유=FCM_INVALID_TOKEN, affected={}.",
                             notiId, maskHead(d.getDeviceUuid()), affected);
                 }
@@ -152,7 +155,7 @@ public class PushSenderServiceImpl implements PushSenderService {
 
         // 5) 행 결과 상태전이.
         if (anySuccess) {
-            pushOutboxMapper.markSent(notiId, actor);
+            pushOutboxMapper.markSent(cmpnyCd, notiId, actor);
             return true;
         }
         if (anyTransient) {
@@ -160,15 +163,15 @@ public class PushSenderServiceImpl implements PushSenderService {
             int nextRetry = row.getRetryCnt() + 1;
             if (nextRetry >= maxRetry) {
                 log.info("[push] 재시도 한도 도달 notiId={} (retry {}>={}) — FAILED.", notiId, nextRetry, maxRetry);
-                pushOutboxMapper.markFailed(notiId, nextRetry, truncate(lastTransientCode), actor);
+                pushOutboxMapper.markFailed(cmpnyCd, notiId, nextRetry, truncate(lastTransientCode), actor);
             } else {
-                pushOutboxMapper.incrementRetryAndRevertPending(notiId, truncate(lastTransientCode), actor);
+                pushOutboxMapper.incrementRetryAndRevertPending(cmpnyCd, notiId, truncate(lastTransientCode), actor);
             }
             return false;
         }
         // SUCCESS 0 + TRANSIENT 0 → 전부 INVALID(이미 soft-delete됨) → 영구 실패.
         log.info("[push] 전 디바이스 토큰 무효 notiId={} — FAILED(ALL_TOKENS_INVALID).", notiId);
-        pushOutboxMapper.markFailed(notiId, row.getRetryCnt(),
+        pushOutboxMapper.markFailed(cmpnyCd, notiId, row.getRetryCnt(),
                 PushWorkerConst.ERR_ALL_TOKENS_INVALID, actor);
         return false;
     }

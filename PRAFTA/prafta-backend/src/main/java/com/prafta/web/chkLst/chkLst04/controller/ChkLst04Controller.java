@@ -5,10 +5,11 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.ModelAttribute;
 import org.springframework.web.bind.annotation.PostMapping;
-import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestPart;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.multipart.MultipartFile;
 
 import com.prafta.common.security.JwtUtil;
 import com.prafta.web.chkLst.chkLst04.application.param.ChkptTargetListParam;
@@ -69,13 +70,14 @@ public class ChkLst04Controller {
 		return ResponseEntity.status(HttpStatus.OK).body(response);
 	}
 
-	// 조치 입력/수정 upsert
+	// 조치 입력/수정 upsert(후행 덮어쓰기) — multipart: 조치 내역(폼 필드) + 조치 사진(선택).
 	@PostMapping("/save-defect-action")
-	public ResponseEntity<?> saveDefectAction(@RequestBody DefectActionRequest request,
+	public ResponseEntity<?> saveDefectAction(@ModelAttribute DefectActionRequest request,
+			@RequestPart(value = "file", required = false) MultipartFile file,
 			@RequestHeader(value = "Authorization", required = false) String authorization) {
 
 		chkLst04Service.saveDefectAction(
-				DefectActionParam.from(request, jwtUtil.getAllClaimsAsMap(authorization)));
+				DefectActionParam.from(request, jwtUtil.getAllClaimsAsMap(authorization)), file);
 
 		return ResponseEntity.status(HttpStatus.OK).build();
 	}

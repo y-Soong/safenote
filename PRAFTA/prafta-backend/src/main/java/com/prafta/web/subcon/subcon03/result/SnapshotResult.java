@@ -1,0 +1,27 @@
+package com.prafta.web.subcon.subcon03.result;
+
+/**
+ * 수신 보유 스냅샷 목록 1행(PRAFTA-SUBCON-T3 §5-8).
+ *
+ * <p>OWNER_CMPNY_CD = 자사인 스냅샷만 조회된다(테넌트 스코프 1차 WHERE).
+ * srcCmpnyNm 은 <b>직상위 제공사</b>까지만이다(릴레이로 묶여 온 하위 회사 정보는 존재하지 않는다).
+ * relationActiveYn='N' = 연동이 종료된 회사의 자료(열람은 정상 — 결정 3 존속).
+ * record 매핑은 SELECT 컬럼 순서와 일치해야 한다.
+ */
+public record SnapshotResult(
+    Long snapshotId
+    , Long shareReqId
+    , String dataType
+    , String srcCmpnyNm
+    , String siteNm
+    , String periodStr
+    , String periodEnd
+    , Integer version
+    , Integer rowCnt
+    , String unclosedIncludedYn
+    , Integer consentExcludedCnt
+    , String createDtime
+    , String relationActiveYn
+    , String purpose
+){
+}

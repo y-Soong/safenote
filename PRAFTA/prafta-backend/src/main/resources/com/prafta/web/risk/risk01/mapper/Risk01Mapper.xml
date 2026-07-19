@@ -14,6 +14,11 @@
     	, A.RISK_TYPE_DESC	AS riskTypeDesc
    	FROM TB_RISK_TYPE A
    	WHERE 1=1
+   	  <!-- ★테넌트 격리(누락 수정): 회사 조건이 없어 **다른 회사의 위험분류까지 조회**되고 있었다.
+   	       회사가 001 하나뿐일 때는 드러나지 않다가, 신규 고객사가 생기면 즉시 타사 데이터가 섞인다
+   	       (실증: 신규사 관리자 화면에 001 항목 32건이 함께 노출 → 총 64건).
+   	       같은 매퍼의 다른 문장(deleteRistType/selectRiskHazardList 등)은 이미 CMPNY_CD 를 걸고 있다. -->
+   	  AND A.CMPNY_CD = #{gvCmpnyCd}
    	  AND (
    	  	A.SITE_CD IS NULL OR A.SITE_CD = ''
    	  	<if test="siteCd != null and siteCd != ''">

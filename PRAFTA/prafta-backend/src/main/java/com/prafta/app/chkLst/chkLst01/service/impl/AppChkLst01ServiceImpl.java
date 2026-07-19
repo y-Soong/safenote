@@ -5,6 +5,7 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -35,6 +36,10 @@ import com.prafta.common.dto.TokenInfo;
 import com.prafta.common.error.chkLst.ChkLstErrorCode;
 import com.prafta.common.error.common.CommonErrorCode;
 import com.prafta.common.exception.ApiException;
+import com.prafta.web.subcon.subcon02.application.model.ChkptAnswerChain;
+import com.prafta.web.subcon.subcon02.application.param.InspectAnswerPropagateParam;
+import com.prafta.web.subcon.subcon02.service.ChkptResultHistRecorder;
+import com.prafta.web.subcon.subcon02.service.InspectAnswerPropagationService;
 
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -57,6 +62,18 @@ public class AppChkLst01ServiceImpl implements AppChkLst01Service {
     private static final Pattern FILE_KEY_PATTERN = Pattern.compile("^files\\[(.+)]$");
     private static final String FILE_TYPE_DAILY_INSPECT = "001"; // 001: 일일점검
 
+    /**
+     * [보안검토 M3] 점검답변타입(INSPECT_ANSWER_TYPE, SYS009) 화이트리스트.
+     *
+     * <p>컬럼은 varchar(2) NOT NULL 인데 검증이 없어, 임의 값이 타 테넌트 응답행까지 전파되거나
+     * 2자 초과 입력 시 전파 트랜잭션이 500 으로 터졌다. 코드 전수 조사 결과 실제 사용값은 'Y'(양호)/'N'(불량)
+     * 두 가지뿐이다(앱 SafetyInspectItem.vue 토글, chkLst03/chkLst04/acct01/safety 집계 SQL 전부 Y/N 기준).
+     */
+    private static final Set<String> INSPECT_VALUE_WHITELIST = Set.of("Y", "N");
+
+    /** [보안검토 M3] 사용자 입력 서술 필드 길이 상한(타 테넌트로 전파되는 값 — 무제한 입력 차단). */
+    private static final int DESC_MAX_LEN = 1000;
+
     private final AppChkLst01Mapper appChkLst01Mapper;
     private final ObjectMapper objectMapper;
     private final FileService fileService;
@@ -64,6 +81,12 @@ public class AppChkLst01ServiceImpl implements AppChkLst01Service {
 
     /** prafta-app-022: 안전점검 등록 근무중 게이트(근무중에만 등록 허용). */
     private final WorktimeGateService worktimeGateService;
+
+    /** PRAFTA-SUBCON-T6-05: 점검 응답 write-through 전파(연동 없으면 no-op). */
+    private final InspectAnswerPropagationService inspectAnswerPropagationService;
+
+    /** PRAFTA-SUBCON-T6-AUDIT-02: 점검 응답 덮어쓰기 감사 이력 캡처(기점 티어 — W1). */
+    private final ChkptResultHistRecorder chkptResultHistRecorder;
 
     @Override
     public ChecklistInfoResponse selectChkLstInfo(ChecklistInfoParam param) {
@@ -152,9 +175,27 @@ public class AppChkLst01ServiceImpl implements AppChkLst01Service {
 
             int okCount = 0;
             int badCount = 0;
+            int savedCount = 0;
 
-            // 3) 항목별 처리: (이미지 있으면) 파일 저장 -> mergeChkptInspectAnswer
+            // 문항명 해석용(L4 문항 실재 검증) + 체크포인트명(화면 C 요약).
+            List<ChecklistInfoResult> chkLstRows = selectChkLstRows(param);
+            Map<String, String> subjByItemCd = indexSubjByItemCd(chkLstRows);
+
+            // [qa M-3] 점검대상(chkpt) 매핑은 이 저장 요청의 전 문항에 대해 불변이다.
+            //   문항 루프 안에서 체인을 재해석하면 문항당 (부모 1 + 자식 N) 링크 조회가 반복된다(N+1).
+            //   저장 1회당 체인을 1번만 열고, 티어별 문항 좌표는 체인이 보유한 매핑표로 치환한다.
+            ChkptAnswerChain chain = inspectAnswerPropagationService.openChain(
+                    param.cmpnyCd(), param.siteCd(), param.chkptCd());
+
+            // 3) 항목별 처리: 입력 검증 -> (이미지 있으면) 파일 저장 -> UPSERT(덮어쓰기) -> 체인 전 티어 전파
+            //   [정책 변경] 후행 덮어쓰기(last-writer-wins): 선수행 우선 skip 게이팅은 제거됐다.
+            //   기존 데이터가 있어도 무조건 덮어쓴다(사용자는 앱 확인 팝업에서 이미 동의함 — ChkLst.vue).
             for (InspectAnswerItemModel item : items) {
+
+                // [보안검토 M3] 타 테넌트로 전파되는 사용자 입력이므로 진입부에서 화이트리스트/길이를 검증한다.
+                // [보안검토 L4] 그 점검대상에 실재하는 활성(시행일 도래) 문항인지 확인한다
+                //   — 조회 실패로 목록이 비었을 때는 검증을 건너뛴다(저장 자체를 막지 않는 기존 폴백 유지).
+                validateItemInput(item, subjByItemCd);
 
                 String fileMgmtCd = "";
                 MultipartFile img = fileByItemCd.get(item.itemCd());
@@ -176,12 +217,39 @@ public class AppChkLst01ServiceImpl implements AppChkLst01Service {
                     ));
                 }
 
+                // PRAFTA-SUBCON-T6-AUDIT-02(W1): write 직전 좌표 존재여부로 CHG_TYPE(신규/덮어쓰기)을 판정한다.
+                //   기점 티어의 HIST 는 반드시 여기서 캡처한다(전파 체인은 기점을 제외하므로).
+                boolean answerExisted = chkptResultHistRecorder.existsAnswer(
+                        param.cmpnyCd(), param.siteCd(), param.chkptCd(), item.itemCd(), param.workDate());
+
                 appChkLst01Mapper.mergeChkptInspectAnswer(
                         InspectResultSaveCommand.from(param, item, fileMgmtCd)
                         , tokenInfo
                 );
 
-                // prafta-app-011: 양호/불량 집계
+                // PRAFTA-SUBCON-T6-AUDIT-02(W1): write 직후 방금 쓴 행을 HIST 로 append(트리거 주체=수행자 USER_CD).
+                chkptResultHistRecorder.captureAnswer(
+                        param.cmpnyCd(), param.siteCd(), param.chkptCd(), item.itemCd(), param.workDate(),
+                        ChkptResultHistRecorder.chgType(answerExisted), userCd);
+
+                // PRAFTA-SUBCON-T6-05: 체인 전 티어(상·하 양방향)의 대응 좌표에 응답 복제(사진 포함, 덮어쓰기).
+                //   연동되지 않은(자체) 점검대상/문항이면 매핑 부재로 no-op(체인이 비어 있음).
+                inspectAnswerPropagationService.propagateAnswer(chain, new InspectAnswerPropagateParam(
+                        param.cmpnyCd()
+                        , param.siteCd()
+                        , param.chkptCd()
+                        , item.itemCd()
+                        , param.workDate()
+                        , item.inspectValue()
+                        , item.answerDesc()
+                        , fileMgmtCd
+                        , userCd
+                        , tokenInfo.gv_userNm()
+                ));
+
+                savedCount++;
+
+                // prafta-app-011: 양호/불량 집계(실제 저장분만)
                 if ("Y".equals(item.inspectValue())) {
                     okCount++;
                 } else if ("N".equals(item.inspectValue())) {
@@ -189,14 +257,14 @@ public class AppChkLst01ServiceImpl implements AppChkLst01Service {
                 }
             }
 
-            // prafta-app-011: 체크포인트명 조회 (화면 C 요약 표시용)
-            String chkptName = resolveChkptName(param);
+            // prafta-app-011: 체크포인트명 (화면 C 요약 표시용)
+            String chkptName = resolveChkptName(chkLstRows);
 
             return SaveInspectResultResponse.builder()
                     .chkptName(chkptName)
                     .okCount(okCount)
                     .badCount(badCount)
-                    .savedCount(items.size())
+                    .savedCount(savedCount)
                     .workDate(param.workDate())
                     .build();
 
@@ -211,13 +279,41 @@ public class AppChkLst01ServiceImpl implements AppChkLst01Service {
     }
 
     /**
-     * 저장 완료 응답에 사용할 체크포인트명 조회.
-     * <p>chkptCd + siteCd 로 TB_CHKPT_TYPE_MGMT 를 다시 조회하는 대신,
-     *   selectSiteNm 은 이미 있으므로 단독 CHKPT_NM 조회는 selectChkLstInfo 결과 재사용.
-     *   저장 플로우에서 조회 비용을 최소화하기 위해 별도 쿼리 없이 param 에서 가져올 수 없는 경우
-     *   빈 문자열 폴백으로 처리한다(저장 자체는 이미 완료).
+     * [보안검토 M3/L4] 저장 항목 입력 검증 — 이 값들은 write-through 로 <b>타 테넌트 행에 그대로 기록</b>되므로
+     * 진입부에서 차단한다(전파 도중 500 으로 터지면 원본 저장까지 롤백된다).
+     *
+     * @param subjByItemCd 그 점검대상의 활성 문항 목록(조회 실패 시 빈 맵 — 이때는 문항 실재 검증을 생략한다)
      */
-    private String resolveChkptName(InspectResultSaveParam param) {
+    private void validateItemInput(InspectAnswerItemModel item, Map<String, String> subjByItemCd) {
+
+        if (item.itemCd() == null || item.itemCd().isBlank()) {
+            throw new ApiException(ChkLstErrorCode.CHKLST_400_002);
+        }
+
+        // L4: 그 점검대상에 실재하는 활성 문항만 저장 허용(임의 문항코드로 유령 응답행 생성 차단).
+        if (!subjByItemCd.isEmpty() && !subjByItemCd.containsKey(item.itemCd())) {
+            log.warn("[chkLst01] 미존재/비활성 문항 저장 거부 - itemCd={}", item.itemCd());
+            throw new ApiException(ChkLstErrorCode.CHKLST_400_002);
+        }
+
+        // M3: 점검답변타입 화이트리스트(SYS009 — 실사용 코드값 Y/N).
+        if (!INSPECT_VALUE_WHITELIST.contains(item.inspectValue())) {
+            log.warn("[chkLst01] 허용되지 않은 점검답변타입 - itemCd={}", item.itemCd());
+            throw new ApiException(ChkLstErrorCode.CHKLST_400_002);
+        }
+
+        // M3: 답변 상세 길이 상한.
+        if (item.answerDesc() != null && item.answerDesc().length() > DESC_MAX_LEN) {
+            log.warn("[chkLst01] 답변 상세 길이 초과 - itemCd={}, len={}", item.itemCd(), item.answerDesc().length());
+            throw new ApiException(ChkLstErrorCode.CHKLST_400_003);
+        }
+    }
+
+    /**
+     * 저장 플로우에서 사용할 체크리스트 행 조회(체크포인트명 + 문항명 해석용).
+     * 조회 실패는 저장 자체를 막지 않는다(빈 목록 폴백 — 요약/안내 문구만 비게 된다).
+     */
+    private List<ChecklistInfoResult> selectChkLstRows(InspectResultSaveParam param) {
         try {
             ChecklistInfoQuery query = new ChecklistInfoQuery(
                     param.cmpnyCd()
@@ -226,13 +322,33 @@ public class AppChkLst01ServiceImpl implements AppChkLst01Service {
                     , null
             );
             List<ChecklistInfoResult> rows = appChkLst01Mapper.selectChkLstInfo(query, param.tokenInfo());
-            if (rows != null && !rows.isEmpty() && StringUtils.hasText(rows.get(0).chkptNm())) {
-                return rows.get(0).chkptNm();
-            }
+            return rows == null ? new ArrayList<>() : rows;
         } catch (Exception e) {
-            log.warn("[chkLst01] chkptName 조회 실패 (저장은 완료): {}", e.getMessage());
+            log.warn("[chkLst01] 체크리스트 행 조회 실패 (저장은 진행): {}", e.getMessage());
+            return new ArrayList<>();
+        }
+    }
+
+    /** 저장 완료 응답에 사용할 체크포인트명(화면 C 요약 표시용). */
+    private String resolveChkptName(List<ChecklistInfoResult> rows) {
+        if (rows != null && !rows.isEmpty() && StringUtils.hasText(rows.get(0).chkptNm())) {
+            return rows.get(0).chkptNm();
         }
         return "";
+    }
+
+    /** PRAFTA-SUBCON-T6-05: 문항코드 → 문항명(선수행 skip 안내 문구 구성용). */
+    private Map<String, String> indexSubjByItemCd(List<ChecklistInfoResult> rows) {
+        Map<String, String> subjByItemCd = new HashMap<>();
+        if (rows == null) {
+            return subjByItemCd;
+        }
+        for (ChecklistInfoResult row : rows) {
+            if (row.inspectItemCd() != null) {
+                subjByItemCd.put(row.inspectItemCd(), row.inspectItemSubj());
+            }
+        }
+        return subjByItemCd;
     }
 
     /**

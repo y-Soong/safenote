@@ -373,6 +373,17 @@ const fnSubmitDailyLogin = async () => {
       await routeAfterLogin(router, redirect)
     }
   } catch (err) {
+    // 일용직 계약서+승인제 T4: 입장 승인 대기(006)/거부(007)는 alert 대신 전용 안내 화면으로(R4).
+    //   상태는 history state 로만 전달(URL 미노출). 그 외 에러는 기존 통합 메시지 유지.
+    const errorCode = err.response?.data?.errorCode
+    if (errorCode === 'DAILYLOGIN_400_006') {
+      router.replace({ path: '/DailyEntryPending', state: { status: 'PENDING' } })
+      return
+    }
+    if (errorCode === 'DAILYLOGIN_400_007') {
+      router.replace({ path: '/DailyEntryPending', state: { status: 'REJECTED' } })
+      return
+    }
     await proxy.$alert(err.response?.data?.message || '로그인에 실패했습니다.')
   }
 }

@@ -73,7 +73,7 @@ public class AuthServiceImpl implements AuthService{
 	        throw new ApiException(AuthErrorCode.AUTH_500_002);
 	    }
 
-	    UserResult userResult = authMapper.selectUserForJwt(authTokenResult.userCd());
+	    UserResult userResult = authMapper.selectUserForJwt(authTokenResult.cmpnyCd(), authTokenResult.userCd());
 	    if (userResult == null) {
 	        throw new ApiException(AuthErrorCode.AUTH_500_003);
 	    }

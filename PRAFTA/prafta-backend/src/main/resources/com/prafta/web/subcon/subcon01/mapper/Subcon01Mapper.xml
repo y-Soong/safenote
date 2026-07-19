@@ -1,0 +1,276 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.prafta.web.subcon.subcon01.mapper.Subcon01Mapper">
+
+    <!-- ============================================================
+         메뉴 버튼 권한 보유 카운트(서버측 역할 게이트, Subcon_01).
+         CMPNY_CD + AUTH_CD + MENU_D_ID + USE_YN='Y' 이고 지정 버튼플래그가 'Y'인 행 존재 여부.
+         btnType 은 서비스 상수('SRCH'/'NEW'/'SAVE'/'DELT')만 전달되며, 고정 컬럼으로만 분기(동적 ${} 미사용).
+         (User06Mapper.selectMenuButtonAuthCnt 미러 + BTN_SAVE 분기 추가)
+         ============================================================ -->
+    <select id="selectMenuButtonAuthCnt" resultType="int">
+    /* Subcon01Mapper.selectMenuButtonAuthCnt */
+    SELECT COUNT(*)
+    FROM (
+        SELECT 1
+          FROM TB_SYST_AUTH_MENU
+         WHERE CMPNY_CD  = #{cmpnyCd}
+           AND AUTH_CD   = #{authCd}
+           AND MENU_D_ID = #{menuDId}
+           AND USE_YN    = 'Y'
+           <choose>
+               <when test="btnType == 'SRCH'">AND BTN_SRCH = 'Y'</when>
+               <when test="btnType == 'NEW'">AND BTN_NEW = 'Y'</when>
+               <when test="btnType == 'SAVE'">AND BTN_SAVE = 'Y'</when>
+               <when test="btnType == 'DELT'">AND BTN_DELT = 'Y'</when>
+               <otherwise>AND 1 = 0</otherwise>
+           </choose>
+         LIMIT 1
+    ) T
+    </select>
+
+    <!-- ============================================================
+         회사 정확일치 단건 조회 — §6-1 보안 요건:
+         1) 등호 비교만(LIKE/부분검색 금지 — 회사코드 열거 방지).
+         2) 응답 3필드 한정(회사코드/회사명/사업자번호 — 주소/계약/감사 반환 금지).
+         3) 자기 회사 제외 + 활성만. 유효 술어 = IFNULL(USE_YN,'N')='Y'
+            (Q5 실측: 로그인 게이트(LoginMapper.Login)는 회사 술어 없음,
+             회사 유효 선례 = DailyJoinMapper.selectSiteInfo 의 USE_YN 단일 술어.
+             CONTRACT_YN/CONTRACT_END_DATE 는 어느 게이트도 미사용 → 여기서도 미사용).
+         4) 미충족은 전부 null(사유 무구분 — 서비스가 동일 응답으로 변환).
+         ============================================================ -->
+    <select id="selectCmpnyExact" resultType="com.prafta.web.subcon.subcon01.result.CmpnyExactResult">
+    /* Subcon01Mapper.selectCmpnyExact */
+    SELECT
+        C.CMPNY_CD          AS cmpnyCd
+        , C.CMPNY_NM        AS cmpnyNm
+        , C.BSNS_LCN_NO     AS bsnsLcnNo
+    FROM TB_CMPNY C
+    WHERE C.CMPNY_CD = #{cmpnyCd}
+      AND C.CMPNY_CD != #{gvCmpnyCd}
+      AND C.CMPNY_CD != 'prafta_system_admin'  /* 플랫폼 운영 의사회사 제외(PlatformConstants.PLATFORM_CMPNY_CD) — 연동 대상 아님, 조회/요청 재검증 공통 차단 */
+      AND IFNULL(C.USE_YN, 'N') = 'Y'
+    </select>
+
+    <!-- ============================================================
+         연동 관계 목록 — 자사가 당사자(REQ/TGT)인 전 관계.
+         direction: 자사=요청측 → SENT, 자사=상대측 → RECEIVED (프론트 3분류 기준).
+         상대사 노출 필드는 회사코드/회사명만(사업자번호 목록 미노출 — 최소 노출, §7-3).
+         ※ resultType 이 record 라 SELECT 컬럼 순서 = record 컴포넌트 순서 유지 필수.
+         ============================================================ -->
+    <select id="selectRelationList" resultType="com.prafta.web.subcon.subcon01.result.RelationResult">
+    /* Subcon01Mapper.selectRelationList */
+    SELECT
+        R.RELATION_ID                                           AS relationId
+        , CASE
+            WHEN R.REQ_CMPNY_CD = #{gvCmpnyCd} THEN 'SENT'
+            ELSE 'RECEIVED'
+          END                                                   AS direction
+        , CASE
+            WHEN R.REQ_CMPNY_CD = #{gvCmpnyCd} THEN R.TGT_CMPNY_CD
+            ELSE R.REQ_CMPNY_CD
+          END                                                   AS otherCmpnyCd
+        , IFNULL(C.CMPNY_NM, '')                                AS otherCmpnyNm
+        , R.STATUS                                              AS status
+        , DATE_FORMAT(R.INSERT_DATE, '%Y-%m-%d %H:%i:%s')       AS insertDate
+        , DATE_FORMAT(R.PROCESS_DTIME, '%Y-%m-%d %H:%i:%s')     AS processDtime
+        , R.PROCESS_COMMENT                                     AS processComment
+    FROM TB_CMPNY_RELATION R
+        LEFT OUTER JOIN TB_CMPNY C
+            ON (
+                C.CMPNY_CD = CASE
+                    WHEN R.REQ_CMPNY_CD = #{gvCmpnyCd} THEN R.TGT_CMPNY_CD
+                    ELSE R.REQ_CMPNY_CD
+                END
+            )
+    WHERE (R.REQ_CMPNY_CD = #{gvCmpnyCd} OR R.TGT_CMPNY_CD = #{gvCmpnyCd})
+    ORDER BY R.INSERT_DATE DESC, R.RELATION_ID DESC
+    LIMIT #{limit}
+    </select>
+
+    <!-- 관계 당사자/상태 단건 — 당사자 스코프(비당사자/미존재는 0행 → 서비스 404 존재 비노출). -->
+    <select id="selectRelationPartyRaw" resultType="com.prafta.web.subcon.subcon01.result.RelationPartyRaw">
+    /* Subcon01Mapper.selectRelationPartyRaw */
+    SELECT
+        R.REQ_CMPNY_CD      AS reqCmpnyCd
+        , R.TGT_CMPNY_CD    AS tgtCmpnyCd
+        , R.STATUS          AS status
+    FROM TB_CMPNY_RELATION R
+    WHERE R.RELATION_ID = #{relationId}
+      AND (R.REQ_CMPNY_CD = #{gvCmpnyCd} OR R.TGT_CMPNY_CD = #{gvCmpnyCd})
+    </select>
+
+    <!-- 관계 당사자/상태 단건(내부 전용) — 조건부 UPDATE 성공 직후 훅/이력용. 당사자성 기증명 경로 한정. -->
+    <select id="selectRelationById" resultType="com.prafta.web.subcon.subcon01.result.RelationPartyRaw">
+    /* Subcon01Mapper.selectRelationById */
+    SELECT
+        R.REQ_CMPNY_CD      AS reqCmpnyCd
+        , R.TGT_CMPNY_CD    AS tgtCmpnyCd
+        , R.STATUS          AS status
+    FROM TB_CMPNY_RELATION R
+    WHERE R.RELATION_ID = #{relationId}
+    </select>
+
+    <!-- ============================================================
+         관계 이력 목록 — 행위자 마스킹(Q4):
+         자사 소속 행위자만 USER_NM 해석(조인 실패 시 USER_CD 폴백), 상대사 행위자는 NULL
+         (타 테넌트 인명이 DB 밖으로 나오지 않도록 SQL 단에서 차단 — 서비스가 "상대사 처리" 치환).
+         당사자 검증(selectRelationPartyRaw)은 서비스에서 선행 강제.
+         ============================================================ -->
+    <select id="selectRelationHists" resultType="com.prafta.web.subcon.subcon01.result.RelationHistRaw">
+    /* Subcon01Mapper.selectRelationHists */
+    SELECT
+        H.HIST_ID                                               AS histId
+        , H.ACTION_TYPE                                         AS actionType
+        , CASE
+            WHEN H.ACTION_CMPNY_CD = #{gvCmpnyCd}
+            THEN IFNULL(NULLIF(U.USER_NM, ''), H.ACTION_USER_CD)
+            ELSE NULL
+          END                                                   AS actionUserNm
+        , DATE_FORMAT(H.ACTION_DTIME, '%Y-%m-%d %H:%i:%s')      AS actionDtime
+        , H.ACTION_DESC                                         AS actionDesc
+    FROM TB_CMPNY_RELATION_HIST H
+        LEFT OUTER JOIN TB_USER U
+            ON (
+                U.CMPNY_CD  = H.ACTION_CMPNY_CD
+            AND U.USER_CD   = H.ACTION_USER_CD
+            AND H.ACTION_CMPNY_CD = #{gvCmpnyCd}
+            )
+    WHERE H.RELATION_ID = #{relationId}
+    ORDER BY H.ACTION_DTIME ASC, H.HIST_ID ASC
+    </select>
+
+    <!-- ============================================================
+         활성 관계 중복 가드(§7-2) — 쌍당 1건, 방향 불문. FOR UPDATE 로 생성 트랜잭션 직렬화.
+         gap lock 한계는 ACTIVE_PAIR_KEY UNIQUE(DDL)가 백스톱(동시 INSERT → DuplicateKeyException).
+         ============================================================ -->
+    <select id="selectActivePairCntForUpdate" resultType="int">
+    /* Subcon01Mapper.selectActivePairCntForUpdate */
+    SELECT COUNT(*)
+    FROM (
+        SELECT 1
+          FROM TB_CMPNY_RELATION
+         WHERE STATUS IN ('REQUESTED', 'ACCEPTED')
+           AND (
+                (REQ_CMPNY_CD = #{cmpnyCdA} AND TGT_CMPNY_CD = #{cmpnyCdB})
+             OR (REQ_CMPNY_CD = #{cmpnyCdB} AND TGT_CMPNY_CD = #{cmpnyCdA})
+           )
+         FOR UPDATE
+    ) T
+    </select>
+
+    <!-- 관계 INSERT — STATUS='REQUESTED' 고정, relationId 는 AUTO_INCREMENT 회수. -->
+    <insert id="insertRelation" parameterType="com.prafta.web.subcon.subcon01.application.command.RelationInsertCommand"
+            useGeneratedKeys="true" keyProperty="relationId">
+    /* Subcon01Mapper.insertRelation */
+    INSERT INTO TB_CMPNY_RELATION (
+          REQ_CMPNY_CD
+        , TGT_CMPNY_CD
+        , STATUS
+        , REQ_USER_CD
+        , INSERT_NO
+        , INSERT_DATE
+    ) VALUES (
+          #{reqCmpnyCd}
+        , #{tgtCmpnyCd}
+        , 'REQUESTED'
+        , #{reqUserCd}
+        , #{insertNo}
+        , NOW()
+    )
+    </insert>
+
+    <!-- ============================================================
+         상태 전이 4종 — 조건부 UPDATE(§7-1 전이표 그대로).
+         WHERE 에 기대상태 + 당사자 조건을 함께 걸어 0행이면 서비스가 404(존재 비노출).
+         미존재/타사 관계/이미 처리 상태를 응답으로 구분하지 않는다(IDOR 열거 방지).
+         ============================================================ -->
+
+    <!-- 수락: REQUESTED → ACCEPTED. 상대측(TGT) 소속만. -->
+    <update id="acceptRelation" parameterType="com.prafta.web.subcon.subcon01.application.command.RelationProcessCommand">
+    /* Subcon01Mapper.acceptRelation */
+    UPDATE TB_CMPNY_RELATION
+       SET STATUS           = 'ACCEPTED'
+         , PROCESS_CMPNY_CD = #{actorCmpnyCd}
+         , PROCESS_USER_CD  = #{actorUserCd}
+         , PROCESS_DTIME    = NOW()
+         , PROCESS_COMMENT  = #{comment}
+         , UPDATE_NO        = #{actorUserCd}
+         , UPDATE_DATE      = NOW()
+     WHERE RELATION_ID  = #{relationId}
+       AND STATUS       = 'REQUESTED'
+       AND TGT_CMPNY_CD = #{actorCmpnyCd}
+    </update>
+
+    <!-- 거부: REQUESTED → REJECTED. 상대측(TGT) 소속만. 사유는 PROCESS_COMMENT 에 기록. -->
+    <update id="rejectRelation" parameterType="com.prafta.web.subcon.subcon01.application.command.RelationProcessCommand">
+    /* Subcon01Mapper.rejectRelation */
+    UPDATE TB_CMPNY_RELATION
+       SET STATUS           = 'REJECTED'
+         , PROCESS_CMPNY_CD = #{actorCmpnyCd}
+         , PROCESS_USER_CD  = #{actorUserCd}
+         , PROCESS_DTIME    = NOW()
+         , PROCESS_COMMENT  = #{comment}
+         , UPDATE_NO        = #{actorUserCd}
+         , UPDATE_DATE      = NOW()
+     WHERE RELATION_ID  = #{relationId}
+       AND STATUS       = 'REQUESTED'
+       AND TGT_CMPNY_CD = #{actorCmpnyCd}
+    </update>
+
+    <!-- 취소: REQUESTED → CANCELLED. 요청측(REQ) 소속만. -->
+    <update id="cancelRelation" parameterType="com.prafta.web.subcon.subcon01.application.command.RelationProcessCommand">
+    /* Subcon01Mapper.cancelRelation */
+    UPDATE TB_CMPNY_RELATION
+       SET STATUS           = 'CANCELLED'
+         , PROCESS_CMPNY_CD = #{actorCmpnyCd}
+         , PROCESS_USER_CD  = #{actorUserCd}
+         , PROCESS_DTIME    = NOW()
+         , PROCESS_COMMENT  = #{comment}
+         , UPDATE_NO        = #{actorUserCd}
+         , UPDATE_DATE      = NOW()
+     WHERE RELATION_ID  = #{relationId}
+       AND STATUS       = 'REQUESTED'
+       AND REQ_CMPNY_CD = #{actorCmpnyCd}
+    </update>
+
+    <!-- 해지: ACCEPTED → TERMINATED. 양측 중 어느 쪽이든 가능. -->
+    <update id="terminateRelation" parameterType="com.prafta.web.subcon.subcon01.application.command.RelationProcessCommand">
+    /* Subcon01Mapper.terminateRelation */
+    UPDATE TB_CMPNY_RELATION
+       SET STATUS           = 'TERMINATED'
+         , PROCESS_CMPNY_CD = #{actorCmpnyCd}
+         , PROCESS_USER_CD  = #{actorUserCd}
+         , PROCESS_DTIME    = NOW()
+         , PROCESS_COMMENT  = #{comment}
+         , UPDATE_NO        = #{actorUserCd}
+         , UPDATE_DATE      = NOW()
+     WHERE RELATION_ID = #{relationId}
+       AND STATUS      = 'ACCEPTED'
+       AND (REQ_CMPNY_CD = #{actorCmpnyCd} OR TGT_CMPNY_CD = #{actorCmpnyCd})
+    </update>
+
+    <!-- 관계 이력 INSERT — 모든 전이와 동일 트랜잭션(plan §7-1 공통 규칙). -->
+    <insert id="insertRelationHist" parameterType="com.prafta.web.subcon.subcon01.application.command.RelationHistInsertCommand">
+    /* Subcon01Mapper.insertRelationHist */
+    INSERT INTO TB_CMPNY_RELATION_HIST (
+          RELATION_ID
+        , ACTION_TYPE
+        , ACTION_CMPNY_CD
+        , ACTION_USER_CD
+        , ACTION_DTIME
+        , ACTION_DESC
+        , INSERT_NO
+        , INSERT_DATE
+    ) VALUES (
+          #{relationId}
+        , #{actionType}
+        , #{actionCmpnyCd}
+        , #{actionUserCd}
+        , NOW()
+        , #{actionDesc}
+        , #{insertNo}
+        , NOW()
+    )
+    </insert>
+</mapper>

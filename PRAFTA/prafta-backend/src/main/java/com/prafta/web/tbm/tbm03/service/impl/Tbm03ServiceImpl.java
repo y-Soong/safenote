@@ -1,11 +1,14 @@
 package com.prafta.web.tbm.tbm03.service.impl;
 
+import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
+import java.util.Map;
 
 import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
 
+import com.prafta.common.cmm.tbmshare.service.TbmSessionShareService;
 import com.prafta.common.error.tbm.TbmErrorCode;
 import com.prafta.common.exception.ApiException;
 import com.prafta.common.util.AuthRoleUtils;
@@ -46,6 +49,8 @@ import lombok.extern.slf4j.Slf4j;
 public class Tbm03ServiceImpl implements Tbm03Service {
 
 	private final Tbm03Mapper tbm03Mapper;
+	/** PRAFTA-SUBCON-T5 F4: 타사(연동) 세션의 개최 회사 라벨 해석(하향 인접 차수 가시성). */
+	private final TbmSessionShareService tbmSessionShareService;
 
 	// ============================ T7 집계 목록 ============================
 
@@ -96,19 +101,54 @@ public class Tbm03ServiceImpl implements Tbm03Service {
 		// 스코프 격리: 회사 전체 권한이 아니면 대상 사용자 사업장이 자기 사업장과 일치해야 함(tbm04 흐름 복제)
 		verifyScope(param.gvAuthCd(), param.gvSiteCd(), user.siteCd());
 
+		// 인가 전제: 매퍼의 AT.CMPNY_CD = gvCmpnyCd(내 직원 출결행)가 인가 그 자체다.
+		// F4: 세션 조인에서 CMPNY_CD 를 뺐으므로 타사(연동) 세션 참석 이력도 포함된다(요청서 §3.4).
 		List<UserProgressDetailResult> list = tbm03Mapper.selectUserProgressDetail(query);
 		int totalCount = tbm03Mapper.selectUserProgressDetailCount(query);
 		UserProgressSummaryResult summaryResult = tbm03Mapper.selectUserProgressSummary(query);
 
+		// 타사 세션의 개최 회사 라벨 배치 조회(N+1 회피). 자사 세션은 라벨 없음.
+		List<String> foreignSessionCds = new ArrayList<>();
+		if (list != null) {
+			for (UserProgressDetailResult r : list) {
+				if (r.hostCmpnyCd() != null && !r.hostCmpnyCd().equals(param.gvCmpnyCd())) {
+					foreignSessionCds.add(r.sessionCd());
+				}
+			}
+		}
+		Map<String, String> hostLabels =
+				tbmSessionShareService.resolveHostLabels(foreignSessionCds, param.gvCmpnyCd());
+
+		List<UserProgressDetailResponse.AttendanceItem> items = new ArrayList<>();
+		if (list != null) {
+			for (UserProgressDetailResult r : list) {
+				boolean foreign = r.hostCmpnyCd() != null && !r.hostCmpnyCd().equals(param.gvCmpnyCd());
+
+				items.add(UserProgressDetailResponse.AttendanceItem.builder()
+						.attendanceCd(r.attendanceCd())
+						.sessionCd(r.sessionCd())
+						.sessionTitle(r.sessionTitle())
+						.sessionDate(r.sessionDate())
+						.eduMinutes(r.eduMinutes())
+						.entryAt(r.entryAt())
+						.exitAt(r.exitAt())
+						.completionStatusCd(r.completionStatusCd())
+						.completionStatusNm(r.completionStatusNm())
+						// D3: 타사 세션은 개최 회사만 표시(타사 사업장/회사코드 비노출).
+						.hostCmpnyNm(foreign ? hostLabels.get(r.sessionCd()) : null)
+						.build());
+			}
+		}
+
 		UserProgressDetailResponse.Summary summary = buildSummary(summaryResult);
 
 		log.info("TBM 진행관리 드릴다운 조회 완료 - userCd={}, userType={}, count={}, totalCount={}",
-				param.userCd(), param.userTypeCd(), list != null ? list.size() : 0, totalCount);
+				param.userCd(), param.userTypeCd(), items.size(), totalCount);
 
 		return UserProgressDetailResponse.builder()
 				.user(user)
 				.summary(summary)
-				.attendances(list != null ? list : Collections.emptyList())
+				.attendances(items)
 				.totalCount(totalCount)
 				.page(param.page())
 				.pageSize(param.pageSize())

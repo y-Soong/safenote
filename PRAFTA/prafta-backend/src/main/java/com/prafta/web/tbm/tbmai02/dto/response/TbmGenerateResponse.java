@@ -12,6 +12,8 @@ import lombok.Getter;
  *   <li>{@code genAt} — 생성 시각(yyyy-MM-dd HH:mm:ss).</li>
  *   <li>{@code qualityDegraded} — 관리자 교육내용 미입력으로 확정 안전정보만으로 추정 생성한 경우 true(FE 품질저하 안내용).</li>
  *   <li>{@code includedItemCount} — 통합에 반영된 CONFIRMED 확정 서술 항목 수(FE 제외항목 안내 문구용).</li>
+ *   <li>{@code includedRiskCount} — 컨텍스트에 실투입된 연계 위험성평가 건수(FE 안내용 — 전 필드 공백 건은
+ *       투입·카운트 모두 제외, 2026-07-16 R1/D7).</li>
  * </ul>
  */
 @Getter
@@ -22,4 +24,5 @@ public class TbmGenerateResponse {
     private String genAt;
     private boolean qualityDegraded;
     private int includedItemCount;
+    private int includedRiskCount;
 }

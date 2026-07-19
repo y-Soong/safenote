@@ -28,12 +28,14 @@
     /* DailyJoinMapper.selectUserIdDupleCnt */
     SELECT COUNT(*)
     FROM (
+        <!-- ★로그인 ID 전역 유일화: 로그인은 USER_ID 만으로 사용자를 찾으므로 회사 간 중복이면 로그인이 깨진다.
+             재사용(reuseUserCd) 예외는 USER_CD 가 회사별 채번이라 단독으로 걸면 다른 회사의 동일 USER_CD 행까지
+             제외되어 중복을 놓친다 → 반드시 (CMPNY_CD, USER_CD) 쌍으로 제외한다. -->
         SELECT 1
           FROM TB_DAILY_USER
-         WHERE CMPNY_CD = #{cmpnyCd}
-           AND USER_ID  = #{userId}
+         WHERE USER_ID = #{userId}
            <if test="reuseUserCd != null and reuseUserCd != ''">
-           AND USER_CD <![CDATA[ <> ]]> #{reuseUserCd}
+           AND NOT (CMPNY_CD = #{cmpnyCd} AND USER_CD = #{reuseUserCd})
            </if>
          LIMIT 1
     ) T
@@ -47,10 +49,11 @@
     /* DailyJoinMapper.selectActiveUserIdDupleCnt */
     SELECT COUNT(*)
     FROM (
+        <!-- ★로그인 ID 전역 유일화: 일용직 계정도 TB_USER 에 미러되어 같은 ID 공간을 쓴다.
+             회사 안에서만 검사하면 다른 회사의 같은 ID 와 충돌해 로그인이 깨진다. -->
         SELECT 1
           FROM TB_DAILY_USER
-         WHERE CMPNY_CD = #{cmpnyCd}
-           AND USER_ID  = #{userId}
+         WHERE USER_ID  = #{userId}
            AND USE_YN   = 'Y'
          LIMIT 1
     ) T
@@ -84,13 +87,16 @@
     ) T
     </select>
 
-    <!-- 가입 시점 SMS 인증 재검증 - 인증완료(VERIFIED_YN='Y') 레코드의 SMS_ID 조회 -->
+    <!-- 가입 시점 SMS 인증 재검증 - 인증완료(VERIFIED_YN='Y') 레코드의 SMS_ID 조회.
+         PURPOSE_CD='SELF_JOIN' 필터: 플랫폼 위치열람(PLATFORM_LOCATION) 코드의 역방향 혼용 차단(qa D-1).
+         기존 레코드는 마이그(prafta-platform-4) 기본값으로 전부 SELF_JOIN 이라 동작 무변경. -->
     <select id="selectSmsVerifiedSmsId" parameterType="com.prafta.common.cmm.dailyjoin.application.query.SmsConsumeQuery" resultType="string">
     /* DailyJoinMapper.selectSmsVerifiedSmsId */
     SELECT SMS_ID
       FROM TB_SMS_AUTH_CODE
      WHERE MBL_NO_HMAC = #{mblNoHmac}
        AND AUTH_CD     = #{certNo}
+       AND PURPOSE_CD  = 'SELF_JOIN'
        AND VERIFIED_YN = 'Y'
        AND UPDATE_DATE <![CDATA[ >= ]]> DATE_SUB(NOW(), INTERVAL 10 MINUTE)
      ORDER BY UPDATE_DATE DESC
@@ -107,6 +113,16 @@
     WHERE SMS_ID      = #{smsId}
       AND VERIFIED_YN = 'Y'
     </update>
+
+    <!-- PRAFTA-SUBCON-T2-07: 연동 미러 사업장 가입 차단 술어 — 미러(LINK_SRC NOT NULL)면 1 이상. -->
+    <select id="selectMirrorSiteCnt" resultType="int">
+    /* DailyJoinMapper.selectMirrorSiteCnt */
+    SELECT COUNT(1)
+    FROM TB_SITE A
+    WHERE A.CMPNY_CD = #{cmpnyCd}
+      AND A.SITE_CD  = #{siteCd}
+      AND A.LINK_SRC_CMPNY_CD IS NOT NULL
+    </select>
 
     <!-- 사업장 계정등록 정책 사용여부 조회 -->
     <select id="selectLinkPolicyUseYn" parameterType="com.prafta.common.cmm.dailyjoin.application.query.LinkPolicyQuery" resultType="string">
@@ -231,12 +247,13 @@
     /* DailyJoinMapper.selectTbUserIdDupleCnt */
     SELECT COUNT(*)
     FROM (
+        <!-- ★로그인 ID 전역 유일화: TB_USER 도 같은 로그인 ID 공간이다(전사 검사).
+             재사용 예외는 (CMPNY_CD, USER_CD) 쌍으로 제외(USER_CD 는 회사별 채번). -->
         SELECT 1
           FROM TB_USER
-         WHERE CMPNY_CD = #{cmpnyCd}
-           AND USER_ID  = #{userId}
+         WHERE USER_ID = #{userId}
            <if test="reuseUserCd != null and reuseUserCd != ''">
-           AND USER_CD <![CDATA[ <> ]]> #{reuseUserCd}
+           AND NOT (CMPNY_CD = #{cmpnyCd} AND USER_CD = #{reuseUserCd})
            </if>
          LIMIT 1
     ) T
@@ -412,12 +429,13 @@
     </select>
 
     <!-- 재활성 — TB_DAILY_USER 기존 행 재사용.
-         사업장/ID/이름/비번/휴대폰파생 갱신 + 만료일 오늘로 연장 + 잠금/실패카운트 초기화. -->
+         사업장/ID/이름/비번/휴대폰파생 갱신 + 만료일 오늘로 연장 + 잠금/실패카운트 초기화.
+         입장 승인제: ACCOUNT_STATUS 는 커맨드 값 — 가입 재활성='04'(승인대기), 승인 후 로그인='01'(활성). -->
     <update id="reactivateDailyUser" parameterType="com.prafta.common.cmm.dailyjoin.application.command.InsertDailyUserCommand">
     /* DailyJoinMapper.reactivateDailyUser */
     UPDATE TB_DAILY_USER
     SET USE_YN                 = 'Y'
-        , ACCOUNT_STATUS        = '01'
+        , ACCOUNT_STATUS        = #{accountStatus}
         , SITE_CD               = #{siteCd}
         , USER_ID               = #{userId}
         , USER_NM               = #{userNm}
@@ -437,12 +455,13 @@
     </update>
 
     <!-- 재활성 — TB_USER 기존 통합행 재사용(EMPLOYMENT_TYPE='DAILY' 가드).
-         영향행 0이면 = 통합형 이전 레거시 일용직(TB_USER 없음) → 서비스에서 신규 INSERT 폴백. -->
+         영향행 0이면 = 통합형 이전 레거시 일용직(TB_USER 없음) → 서비스에서 신규 INSERT 폴백.
+         입장 승인제: ACCOUNT_STATUS 는 커맨드 값 — 가입 재활성='04'(승인대기), 승인 후 로그인='01'(활성). -->
     <update id="reactivateTbUser" parameterType="com.prafta.common.cmm.dailyjoin.application.command.InsertDailyUserCommand">
     /* DailyJoinMapper.reactivateTbUser */
     UPDATE TB_USER
     SET USE_YN          = 'Y'
-        , ACCOUNT_STATUS = '01'
+        , ACCOUNT_STATUS = #{accountStatus}
         , SITE_CD        = #{siteCd}
         , USER_ID        = #{userId}
         , USER_NM        = #{userNm}

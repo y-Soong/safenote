@@ -150,6 +150,17 @@ public interface Attd05Mapper {
 			@org.apache.ibatis.annotations.Param("workYmd") String workYmd);
 
 	/**
+	 * 근태 E2E F4(4-13): 해당 셀(사용자+근무일)에 처리 대기 중인 스케줄수정요청 보유 카운트.
+	 * TB_USER_ATTD_REQ 의 REQ_TYPE='10'(스케줄수정), REQ_STATUS='01'(신청/대기), DEL_YN='N' 만 카운트한다.
+	 * 승인('02')/반려('03')/취소('04')된 요청은 잠그지 않는다(오탐 방지).
+	 * &gt; 0 이면 그 일자는 관리자 직접 스케줄 변경 불가(경합 방지 — 대기 요청이 참조할 기준 스케줄 보호).
+	 */
+	int countPendingSchModifyReq(@org.apache.ibatis.annotations.Param("cmpnyCd") String cmpnyCd,
+			@org.apache.ibatis.annotations.Param("siteCd") String siteCd,
+			@org.apache.ibatis.annotations.Param("userCd") String userCd,
+			@org.apache.ibatis.annotations.Param("workYmd") String workYmd);
+
+	/**
 	 * 해당 월(YYYYMM)에 초과근무 보유 일자 카운트 — 월 단위 근무계획 삭제 차단 판정.
 	 * 등록 초과근무(취소 제외) ∪ 초과근무 신청(03/04, 신청/승인). &gt; 0 이면 월 삭제 차단.
 	 * <p>prafta-com-016-C-3: 월 삭제가 "전체 차단"에서 "OT일 부분 제외 삭제"로 바뀌어 본 카운트는

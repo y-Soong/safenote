@@ -22,6 +22,10 @@ import com.prafta.web.tbm.tbm02.application.param.SessionListParam;
 import com.prafta.web.tbm.tbm02.application.param.SessionPrepareParam;
 import com.prafta.web.tbm.tbm02.application.param.SessionPwdParam;
 import com.prafta.web.tbm.tbm02.application.param.SessionSaveParam;
+import com.prafta.web.tbm.tbm02.application.param.SessionShareParam;
+import com.prafta.web.tbm.tbm02.application.param.SharedSessionListParam;
+import com.prafta.web.tbm.tbm02.dto.request.SharedSessionListRequest;
+import com.prafta.web.tbm.tbm02.dto.response.SharedSessionListResponse;
 import com.prafta.web.tbm.tbm02.application.param.SessionTransitionParam;
 import com.prafta.web.tbm.tbm02.application.param.SessionUpdateParam;
 import com.prafta.web.tbm.tbm02.dto.request.EjectAttendanceRequest;
@@ -34,6 +38,7 @@ import com.prafta.web.tbm.tbm02.dto.request.SessionListRequest;
 import com.prafta.web.tbm.tbm02.dto.request.SessionPrepareRequest;
 import com.prafta.web.tbm.tbm02.dto.request.SessionPwdRequest;
 import com.prafta.web.tbm.tbm02.dto.request.SessionSaveRequest;
+import com.prafta.web.tbm.tbm02.dto.request.SessionShareRequest;
 import com.prafta.web.tbm.tbm02.dto.request.SessionTransitionRequest;
 import com.prafta.web.tbm.tbm02.dto.request.SessionUpdateRequest;
 import com.prafta.web.tbm.tbm02.dto.response.ContentOptionResponse;
@@ -48,6 +53,9 @@ import com.prafta.web.tbm.tbm02.dto.response.SessionListResponse;
 import com.prafta.web.tbm.tbm02.dto.response.SessionPrepareResponse;
 import com.prafta.web.tbm.tbm02.dto.response.SessionPwdResponse;
 import com.prafta.web.tbm.tbm02.dto.response.SessionSaveResponse;
+import com.prafta.web.tbm.tbm02.dto.response.SessionShareCandidateResponse;
+import com.prafta.web.tbm.tbm02.dto.response.SessionShareListResponse;
+import com.prafta.web.tbm.tbm02.dto.response.ShareAllowedCmpnyResponse;
 import com.prafta.web.tbm.tbm02.dto.response.SiteOptionResponse;
 import com.prafta.web.tbm.tbm02.service.Tbm02Service;
 
@@ -231,6 +239,79 @@ public class Tbm02Controller {
 
 		tbm02Service.ejectAttendance(
 				EjectAttendanceParam.from(request, jwtUtil.getAllClaimsAsMap(authorization)));
+
+		return ResponseEntity.ok().build();
+	}
+
+	// ============================ PRAFTA-SUBCON-T5 연동 회사 지정 ============================
+
+	/**
+	 * T5 D2: 연동받은 교육 목록(비개설사 전용).
+	 *
+	 * <p>내 회사가 유효하게 지정받은 타사 세션의 헤더 최소 필드만 반환한다(재지정 진입점).
+	 * 세션 상세/콘솔/참석자 API 는 개설사 전용 게이트를 그대로 유지하므로 이 목록에서 진입할 수 없다.
+	 */
+	@GetMapping("/shared-sessions")
+	public ResponseEntity<?> getSharedSessions(@ModelAttribute SharedSessionListRequest request,
+			@RequestHeader(value = "Authorization", required = false) String authorization) {
+
+		SharedSessionListResponse response = tbm02Service.selectSharedSessionList(
+				SharedSessionListParam.from(request, jwtUtil.getAllClaimsAsMap(authorization)));
+
+		return ResponseEntity.status(HttpStatus.OK).body(response);
+	}
+
+	/** T5: 연동 회사 지정 후보(관계 ACCEPTED − 개설사 − 이미 체인에 있는 회사). */
+	@GetMapping("/session-share-candidates")
+	public ResponseEntity<?> getSessionShareCandidates(@ModelAttribute SessionShareRequest request,
+			@RequestHeader(value = "Authorization", required = false) String authorization) {
+
+		SessionShareCandidateResponse response = tbm02Service.selectShareCandidates(
+				SessionShareParam.from(request, jwtUtil.getAllClaimsAsMap(authorization)));
+
+		return ResponseEntity.status(HttpStatus.OK).body(response);
+	}
+
+	/** T5: 연동 회사 지정 현황(내가 직접 지정한 회사 + 하위 재지정 개사 수). */
+	@GetMapping("/session-shares")
+	public ResponseEntity<?> getSessionShares(@ModelAttribute SessionShareRequest request,
+			@RequestHeader(value = "Authorization", required = false) String authorization) {
+
+		SessionShareListResponse response = tbm02Service.selectSessionShares(
+				SessionShareParam.from(request, jwtUtil.getAllClaimsAsMap(authorization)));
+
+		return ResponseEntity.status(HttpStatus.OK).body(response);
+	}
+
+	/** T5: 입실 대상 회사 목록(개설사 + 지정 체인, 서버 relabel). 대리입실 팝업의 대상 회사 셀렉트. */
+	@GetMapping("/session-share-allowed-cmpnys")
+	public ResponseEntity<?> getShareAllowedCmpnys(@ModelAttribute SessionShareRequest request,
+			@RequestHeader(value = "Authorization", required = false) String authorization) {
+
+		ShareAllowedCmpnyResponse response = tbm02Service.selectAllowedCmpnys(
+				SessionShareParam.from(request, jwtUtil.getAllClaimsAsMap(authorization)));
+
+		return ResponseEntity.status(HttpStatus.OK).body(response);
+	}
+
+	/** T5: 연동 회사 지정(DRAFT/OPENED 만). */
+	@PostMapping(value = "/session-share-designate", consumes = MediaType.APPLICATION_JSON_VALUE)
+	public ResponseEntity<?> designateSessionShare(@RequestBody SessionShareRequest request,
+			@RequestHeader(value = "Authorization", required = false) String authorization) {
+
+		tbm02Service.designateShare(
+				SessionShareParam.from(request, jwtUtil.getAllClaimsAsMap(authorization)));
+
+		return ResponseEntity.ok().build();
+	}
+
+	/** T5: 연동 회사 지정 해제(자기 지정분만) + 하위 재지정 캐스케이드. */
+	@PostMapping(value = "/session-share-release", consumes = MediaType.APPLICATION_JSON_VALUE)
+	public ResponseEntity<?> releaseSessionShare(@RequestBody SessionShareRequest request,
+			@RequestHeader(value = "Authorization", required = false) String authorization) {
+
+		tbm02Service.releaseShare(
+				SessionShareParam.from(request, jwtUtil.getAllClaimsAsMap(authorization)));
 
 		return ResponseEntity.ok().build();
 	}

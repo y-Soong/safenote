@@ -27,6 +27,7 @@ import com.prafta.common.error.tbm.TbmErrorCode;
 import com.prafta.common.exception.ApiException;
 import com.prafta.common.util.AuthRoleUtils;
 import com.prafta.web.tbm.tbmai02.application.model.TbmSessionGenSource;
+import com.prafta.web.tbm.tbmai02.application.model.TbmSessionRiskRow;
 import com.prafta.web.tbm.tbmai02.application.model.TbmUnconfirmedAiItem;
 import com.prafta.web.tbm.tbmai02.application.param.TbmAi02Param;
 import com.prafta.web.tbm.tbmai02.dto.response.TbmAiUnconfirmedResponse;
@@ -43,9 +44,11 @@ import lombok.extern.slf4j.Slf4j;
  * <p>★설계 요지:
  *   <ol>
  *     <li>생성 입력 = 세션(sessionCd)에 묶인 교육자료 항목 중 CONFIRMED+확정 서술(AI_CONFIRM_DESC) 비공백 전부
- *         + 관리자 교육내용 텍스트. RAG 코퍼스 미사용(근거는 확정 자료·관리자 입력).
+ *         + 세션 매핑 위험성평가(개선항목 포함, 2026-07-16 R1) + 관리자 교육내용 텍스트.
+ *         RAG 코퍼스 미사용(근거는 확정 자료·위험성평가·관리자 입력).
  *         미확정 AI 분석 항목은 차단하지 않고 건너뛴다(2026-07-11 기획 변경) —
- *         단, 확정 자료 0건이면 TBM_409_060("분석할 자료가 없습니다")으로 거부.</li>
+ *         단, 확정 자료·연계 위험성평가가 모두 0건이면 TBM_409_060("분석할 자료가 없습니다")으로 거부
+ *         (2026-07-16 R2 — 어느 한쪽만 있어도 생성 허용).</li>
  *     <li>출력 = 라인 프로토콜 4섹션(작업개요/핵심 위험요인/안전수칙/오늘의 확인사항). JSON 미채택
  *         (HCX-005 중첩 JSON 취약). 1차 파싱 실패 시 동일 프롬프트 1회 재시도, 재시도도 실패면 AI_502_004.
  *         최종 산출물은 세션 CONTENT_BODY(RICH_HTML) 대상 리치HTML로 렌더한다.</li>
@@ -84,11 +87,20 @@ public class TbmAi02ServiceImpl implements TbmAi02Service {
     /** 교육안 생성 허용 세션 상태(SYS046). COMPLETED/CANCELLED 는 편집 불가 → 생성 차단. */
     private static final Set<String> GENERATABLE_STATUS = Set.of("DRAFT", "OPENED", "IN_PROGRESS");
 
-    /** 확정 자료 0건 시 생성 거부 안내(2026-07-11 기획 변경 — 미확정은 건너뛰되 확정 전무면 생성 불가). */
-    private static final String MSG_NO_CONFIRMED_ITEM =
+    /** 두 재료(확정 교육자료·연계 위험성평가) 모두 0건 시 생성 거부 안내(2026-07-16 R2 — 어느 한쪽만 있어도 생성 허용). */
+    private static final String MSG_NO_SOURCE =
           "분석할 자료가 없습니다.\n\n"
-        + "AI 분석이 확정된 자료가 없어 교육안을 생성할 수 없습니다.\n"
-        + "[AI 분석 관리] 탭에서 자료 내용을 확정한 뒤 다시 시도해 주세요.";
+        + "AI 분석이 확정된 교육자료와 연계된 위험성평가가 모두 없어 교육안을 생성할 수 없습니다.\n"
+        + "[AI 분석 관리] 탭에서 자료를 확정하거나, 위험성평가를 연계한 뒤 다시 시도해 주세요.";
+
+    /** 목표 글자수(targetChars) 허용 하한(2026-07-16 R3 — FE 클라 검증과 동일값 하드계약). */
+    private static final int TARGET_CHARS_MIN = 800;
+
+    /** 목표 글자수(targetChars) 허용 상한(2026-07-16 R3 — FE 클라 검증과 동일값 하드계약). */
+    private static final int TARGET_CHARS_MAX = 5000;
+
+    /** 목표 글자수 지정 시 클램프 상한 비율(%). clampMax = targetChars * 120 / 100 (매직넘버 금지). */
+    private static final int TARGET_CHARS_CLAMP_PCT = 120;
 
     /** 자체 VLM 분석 대상 타입(이미지 01 / PDF 04) — NONE 라벨을 "분석대기"로 표기. */
     private static final Set<String> VLM_ANALYZE_TYPES = Set.of("01", "04");
@@ -125,11 +137,12 @@ public class TbmAi02ServiceImpl implements TbmAi02Service {
      *
      * <p>★few-shot 은 제조업 시나리오 자체 창작(프레스 금형 교체 / 지게차 자재 운반) —
      *    KOSHA TBM 가이드의 <b>4섹션 양식 구조만</b> 차용하고 원문 문장은 복붙하지 않는다(저작권/라이선스).
-     * <p>목표 글자수(min/max)는 상수 하드코딩 금지 — {@link #buildSystemPrompt()} 에서 설정값을 주입한다.
+     * <p>분량 문구(%s 1슬롯)는 상수 하드코딩 금지 — {@link #buildSystemPrompt(Integer)} 가
+     *    {@link #buildLengthGuide(Integer)} 결과(설정값 범위 또는 요청 targetChars)를 주입한다.
      */
     private static final String SYSTEM_PROMPT_TEMPLATE =
           "당신은 제조업 현장의 산업안전 교육(TBM, Tool Box Meeting) 자료 작성 보조자다.\n"
-        + "아래 [교육 주제]·[관리자 교육내용]·[확정 안전정보]만을 근거로 오늘의 TBM 교육안을 작성한다.\n"
+        + "아래 [교육 주제]·[관리자 교육내용]·[확정 안전정보]·[위험성평가 정보]만을 근거로 오늘의 TBM 교육안을 작성한다.\n"
         + "1. 제공된 정보에 없는 사실·수치·설비명을 지어내지 않는다. 확정 안전정보가 빈약하면 일반적인\n"
         + "   제조업 안전 원칙 범위에서 보수적으로 서술한다.\n"
         + "2. 반드시 아래 4개 섹션을 이 순서와 헤더 문구 그대로 출력한다(섹션 누락 금지):\n"
@@ -139,7 +152,7 @@ public class TbmAi02ServiceImpl implements TbmAi02Service {
         + "   ### 오늘의 확인사항\n"
         + "3. '작업개요'는 1~3줄 서술문으로, 나머지 3개 섹션은 각 항목을 '- ' 불릿으로 나열한다.\n"
         + "4. 현장 작업자가 바로 이해할 수 있게 간결한 한국어 실무 문장으로 쓴다.\n"
-        + "5. 전체 분량은 약 %d~%d자를 목표로 한다.\n"
+        + "5. 전체 분량은 %s를 목표로 한다.\n"
         + "6. 머리말·맺음말·JSON·표는 출력하지 않는다. 위 4개 섹션 헤더와 본문만 출력한다.\n"
         + "\n"
         + "[출력 예시 1 — 프레스 금형 교체 작업]\n"
@@ -194,10 +207,26 @@ public class TbmAi02ServiceImpl implements TbmAi02Service {
         if (!StringUtils.hasText(param.sessionCd())) {
             throw new ApiException(CommonErrorCode.COMMON_400_001);
         }
+        // 목표 글자수(선택) 범위 검증: 800~5000 밖이면 사전 거부(2026-07-16 R3 — 클라 검증과 무관하게 서버 강제).
+        if (param.targetChars() != null
+            && (param.targetChars() < TARGET_CHARS_MIN || param.targetChars() > TARGET_CHARS_MAX)) {
+            log.warn("TBM AI 교육안 생성 - 목표 글자수 범위 위반 - sessionCd={}, targetChars={}",
+                param.sessionCd(), param.targetChars());
+            throw new ApiException(TbmErrorCode.TBM_400_061);
+        }
         // 999999(권한 미부여)는 생성 차단(세션 편집 권한과 대칭).
+        // ※ 아래 관리자 게이트(canManageCommon)에 포섭되지만, 세션 편집(Tbm02 verifyManageAuth)과
+        //   동일하게 999999 는 TBM_403_001 로 구분 응답하도록 유지한다.
         if (AuthRoleUtils.isAccessDenied(param.gvAuthCd())) {
             log.warn("TBM AI 교육안 생성 접근 차단 - authCd={}", param.gvAuthCd());
             throw new ApiException(TbmErrorCode.TBM_403_001);
+        }
+        // 관리자 게이트(2026-07-16 보안리뷰 Medium): 세션 편집(update-session verifyManageAuth)과
+        // 대칭인 master/safe 전용 게이트. R1 로 위험성평가 상세 텍스트(INIT_DESC/INIT_RISK_LV 등)가
+        // genContent 에 조립되므로 session-detail 의 관리자 전용 게이팅과 노출 수준을 일치시킨다.
+        if (!AuthRoleUtils.canManageCommon(param.gvAuthCd())) {
+            log.warn("TBM AI 교육안 생성 권한 없음 - authCd={}", param.gvAuthCd());
+            throw new ApiException(TbmErrorCode.TBM_403_010);
         }
 
         // 회사 소유 검증(IDOR): 없으면 TBM_404_010(존재 미노출).
@@ -218,18 +247,21 @@ public class TbmAi02ServiceImpl implements TbmAi02Service {
         assertSiteAccess(source, param);
 
         // ★미확정 AI 분석 항목은 차단하지 않고 건너뛴다(2026-07-11 기획 변경 — 확정 항목만 입력으로 사용).
-        //   단, 확정된 자료가 0건이면 분석할 근거가 없으므로 생성을 거부한다(관리자 교육내용만으로는 생성하지 않음).
+        //   확정 자료·연계 위험성평가 중 어느 한쪽만 있어도 생성한다(2026-07-16 R2).
 
-        // 입력 조립: 세션 묶인 확정 안전정보 + 관리자 교육내용.
+        // 입력 조립: 세션 묶인 확정 안전정보 + 세션 매핑 위험성평가(전건) + 관리자 교육내용.
         String adminText = safeTrim(param.adminContentText());
         List<String> confirmedDescs = tbmAi02Mapper.selectSessionConfirmedItemDescs(param.sessionCd(), param.gvCmpnyCd());
+        List<TbmSessionRiskRow> riskRows = tbmAi02Mapper.selectSessionRiskRows(param.sessionCd(), param.gvCmpnyCd());
+        List<String> riskLines = buildRiskLines(riskRows);
 
         boolean hasAdmin = StringUtils.hasText(adminText);
         int includedItemCount = countNonBlank(confirmedDescs);
-        // 확정 자료 전무 → 분석할 자료 없음 안내(LLM 미호출).
-        if (includedItemCount == 0) {
-            log.warn("TBM AI 교육안 생성 거부 - 확정 자료 0건 - sessionCd={}", param.sessionCd());
-            throw new ApiException(TbmErrorCode.TBM_409_060, MSG_NO_CONFIRMED_ITEM);
+        int includedRiskCount = riskLines.size();
+        // R2: 두 재료(확정 자료·위험성평가) 모두 0건일 때만 거부(LLM 미호출).
+        if (includedItemCount == 0 && includedRiskCount == 0) {
+            log.warn("TBM AI 교육안 생성 거부 - 확정 자료 0건 + 위험성평가 0건 - sessionCd={}", param.sessionCd());
+            throw new ApiException(TbmErrorCode.TBM_409_060, MSG_NO_SOURCE);
         }
         // 관리자 교육내용 미입력 → 확정 서술만으로 추정 생성(FE 품질저하 안내).
         boolean qualityDegraded = !hasAdmin;
@@ -239,8 +271,8 @@ public class TbmAi02ServiceImpl implements TbmAi02Service {
             throw new ApiException(AiErrorCode.AI_503_001);
         }
 
-        String context = buildGenerateContext(source.title(), adminText, confirmedDescs);
-        String system = buildSystemPrompt();
+        String context = buildGenerateContext(source.title(), adminText, confirmedDescs, riskLines, param.targetChars());
+        String system = buildSystemPrompt(param.targetChars());
 
         // 1차 호출 → 파싱. 실패 시 1회 재시도(실패한 1차 호출도 감사 기록).
         LlmRawResponse raw = llmAnswerClient.answer(system, context);
@@ -261,20 +293,25 @@ public class TbmAi02ServiceImpl implements TbmAi02Service {
         }
 
         // 길이 클램프(항목 단위 누적, HTML 태그 중간 절단 방지) 후 리치HTML 렌더.
-        Map<String, String> clamped = clampSectionsToMax(sections);
+        // 목표 글자수 지정 시 상한 = targetChars * 120%(TARGET_CHARS_CLAMP_PCT), 미지정 시 기존 설정값.
+        int clampMax = (param.targetChars() != null)
+            ? param.targetChars() * TARGET_CHARS_CLAMP_PCT / 100
+            : aiProperties.getTbm().getTbmContentMaxChars();
+        Map<String, String> clamped = clampSectionsToMax(sections, clampMax);
         String genContent = renderTbmPlanHtml(clamped);
 
         // 감사·과금(성공 호출, best-effort). ※ DB 미기록 — 세션 CONTENT_BODY 는 FE 저장 경로로 영속.
         recordCall(param, raw, context.length(), false);
 
         String genAt = LocalDateTime.now().format(GEN_AT_FMT);
-        log.info("TBM AI 교육안 생성 완료 - sessionCd={}, length={}, includedItemCount={}, qualityDegraded={}",
-            param.sessionCd(), genContent.length(), includedItemCount, qualityDegraded);
+        log.info("TBM AI 교육안 생성 완료 - sessionCd={}, length={}, includedItemCount={}, includedRiskCount={}, qualityDegraded={}",
+            param.sessionCd(), genContent.length(), includedItemCount, includedRiskCount, qualityDegraded);
         return TbmGenerateResponse.builder()
             .genContent(genContent)
             .genAt(genAt)
             .qualityDegraded(qualityDegraded)
             .includedItemCount(includedItemCount)
+            .includedRiskCount(includedRiskCount)
             .build();
     }
 
@@ -295,9 +332,16 @@ public class TbmAi02ServiceImpl implements TbmAi02Service {
         if (!StringUtils.hasText(param.sessionCd())) {
             throw new ApiException(CommonErrorCode.COMMON_400_001);
         }
+        // ※ 999999 구분 응답(TBM_403_001) 유지 — 아래 관리자 게이트에 포섭되나 generate 와 동일 구조.
         if (AuthRoleUtils.isAccessDenied(param.gvAuthCd())) {
             log.warn("TBM AI 미확정 항목 조회 접근 차단 - authCd={}", param.gvAuthCd());
             throw new ApiException(TbmErrorCode.TBM_403_001);
+        }
+        // 관리자 게이트(2026-07-16 보안리뷰 Medium): generate 와 동일한 master/safe 전용 게이트
+        // (교육자료 제목/서술 등 관리 정보 노출 EP — 세션 편집 verifyManageAuth 와 대칭).
+        if (!AuthRoleUtils.canManageCommon(param.gvAuthCd())) {
+            log.warn("TBM AI 미확정 항목 조회 권한 없음 - authCd={}", param.gvAuthCd());
+            throw new ApiException(TbmErrorCode.TBM_403_010);
         }
         TbmSessionGenSource source = tbmAi02Mapper.selectSessionGenSource(param.sessionCd(), param.gvCmpnyCd());
         if (source == null) {
@@ -373,18 +417,31 @@ public class TbmAi02ServiceImpl implements TbmAi02Service {
     // 내부 헬퍼 — 프롬프트/컨텍스트 조립
     // ==================================================================
 
-    /** 목표 글자수(설정값)를 주입해 시스템 프롬프트 조립(하드코딩 금지). */
-    private String buildSystemPrompt() {
-        int min = aiProperties.getTbm().getTbmContentMinChars();
-        int max = aiProperties.getTbm().getTbmContentMaxChars();
-        return String.format(SYSTEM_PROMPT_TEMPLATE, min, max);
+    /** 분량 문구를 주입해 시스템 프롬프트 조립(하드코딩 금지). targetChars null 이면 설정값 범위 문구. */
+    private String buildSystemPrompt(Integer targetChars) {
+        return String.format(SYSTEM_PROMPT_TEMPLATE, buildLengthGuide(targetChars));
     }
 
     /**
-     * 생성 컨텍스트 조립: [교육 주제] → [관리자 교육내용](있으면) → [확정 안전정보] 번호목록 → [분량 지침].
+     * 분량 지침 문구 생성(D8 — 시스템 프롬프트 5번 규칙·컨텍스트 [분량 지침] 공용, 문구 일원화).
+     * targetChars null → "약 {min}~{max}자"(설정값), 값 존재 → "약 {x}자 내외".
+     */
+    private String buildLengthGuide(Integer targetChars) {
+        if (targetChars != null) {
+            return "약 " + targetChars + "자 내외";
+        }
+        int min = aiProperties.getTbm().getTbmContentMinChars();
+        int max = aiProperties.getTbm().getTbmContentMaxChars();
+        return "약 " + min + "~" + max + "자";
+    }
+
+    /**
+     * 생성 컨텍스트 조립: [교육 주제] → [관리자 교육내용](있으면) → [확정 안전정보] 번호목록
+     * → [위험성평가 정보] 번호목록(있으면, 2026-07-16 R1) → [분량 지침].
      * 총 길이 상한 클램프(프롬프트 폭주 방어).
      */
-    private String buildGenerateContext(String title, String adminText, List<String> confirmedDescs) {
+    private String buildGenerateContext(String title, String adminText, List<String> confirmedDescs,
+            List<String> riskLines, Integer targetChars) {
         StringBuilder sb = new StringBuilder();
         if (StringUtils.hasText(title)) {
             sb.append("[교육 주제] ").append(title.trim()).append('\n');
@@ -406,13 +463,92 @@ public class TbmAi02ServiceImpl implements TbmAi02Service {
                 sb.append(n++).append(". ").append(d).append('\n');
             }
         }
-        int min = aiProperties.getTbm().getTbmContentMinChars();
-        int max = aiProperties.getTbm().getTbmContentMaxChars();
-        sb.append("[분량 지침] 약 ").append(min).append('~').append(max)
-          .append("자, 4개 섹션(작업개요/핵심 위험요인/안전수칙/오늘의 확인사항) 고정");
+        if (riskLines != null && !riskLines.isEmpty()) {
+            sb.append("[위험성평가 정보]\n");
+            int n = 1;
+            for (String line : riskLines) {
+                sb.append(n++).append(". ").append(line).append('\n');
+            }
+        }
+        sb.append("[분량 지침] ").append(buildLengthGuide(targetChars))
+          .append(", 4개 섹션(작업개요/핵심 위험요인/안전수칙/오늘의 확인사항) 고정");
 
         String ctx = sb.toString();
         return ctx.length() > MAX_CONTEXT_LEN ? ctx.substring(0, MAX_CONTEXT_LEN) : ctx;
+    }
+
+    /**
+     * 세션 매핑 위험성평가 flat 행을 평가 키(siteCd|processCd|assessmentCd) 단위로 그룹핑해
+     * 평가 1건당 1줄의 컨텍스트 텍스트를 만든다(조회 정렬 순서 보존 — LinkedHashMap).
+     *
+     * <ul>
+     *   <li>유해요인(D4): ASSESSMENT_DESC 비공백이면 사용, 공백이면 INIT_DESC 폴백.
+     *       둘 다 비공백이고 상이하면 "{ASSESSMENT_DESC} (설명: {INIT_DESC})" 병기.</li>
+     *   <li>라벨-값 쌍(" / " 구분), 공백 필드는 라벨째 생략. 개선항목은 비공백만 "; " 연결.</li>
+     *   <li>전 필드 공백이면 해당 평가 skip(컨텍스트·카운트 모두 제외 — D7).</li>
+     *   <li>완성 줄이 MAX_ITEM_DESC_LEN 초과 시 절단(확정 안전정보 패턴 준용).</li>
+     * </ul>
+     */
+    private List<String> buildRiskLines(List<TbmSessionRiskRow> rows) {
+        if (rows == null || rows.isEmpty()) {
+            return List.of();
+        }
+        // 평가 키 → [대표 행(첫 행), 개선항목 목록] 그룹핑(정렬 순서 보존).
+        Map<String, TbmSessionRiskRow> firstRowByKey = new LinkedHashMap<>();
+        Map<String, List<String>> improvesByKey = new LinkedHashMap<>();
+        for (TbmSessionRiskRow row : rows) {
+            String key = row.siteCd() + "|" + row.processCd() + "|" + row.assessmentCd();
+            firstRowByKey.putIfAbsent(key, row);
+            List<String> improves = improvesByKey.computeIfAbsent(key, k -> new ArrayList<>());
+            if (StringUtils.hasText(row.improveDesc())) {
+                improves.add(row.improveDesc().trim());
+            }
+        }
+
+        List<String> lines = new ArrayList<>(firstRowByKey.size());
+        for (Map.Entry<String, TbmSessionRiskRow> entry : firstRowByKey.entrySet()) {
+            TbmSessionRiskRow row = entry.getValue();
+            List<String> parts = new ArrayList<>();
+
+            // 유해요인(D4): ASSESSMENT_DESC 우선, 공백이면 INIT_DESC 폴백, 둘 다 상이하면 병기.
+            String assessmentDesc = safeTrim(row.assessmentDesc());
+            String initDesc = safeTrim(row.initDesc());
+            String hazard;
+            if (!assessmentDesc.isEmpty() && !initDesc.isEmpty() && !assessmentDesc.equals(initDesc)) {
+                hazard = assessmentDesc + " (설명: " + initDesc + ")";
+            } else if (!assessmentDesc.isEmpty()) {
+                hazard = assessmentDesc;
+            } else {
+                hazard = initDesc;
+            }
+            if (!hazard.isEmpty()) {
+                parts.add("유해요인: " + hazard);
+            }
+            if (StringUtils.hasText(row.initRiskLv())) {
+                parts.add("위험등급: " + row.initRiskLv().trim());
+            }
+            if (StringUtils.hasText(row.revalBeforeDesc())) {
+                parts.add("개선전 조치: " + row.revalBeforeDesc().trim());
+            }
+            if (StringUtils.hasText(row.revalDesc())) {
+                parts.add("개선내용: " + row.revalDesc().trim());
+            }
+            List<String> improves = improvesByKey.get(entry.getKey());
+            if (improves != null && !improves.isEmpty()) {
+                parts.add("개선항목: " + String.join("; ", improves));
+            }
+
+            // 전 필드 공백 → 해당 평가 제외(D7 — includedRiskCount 미포함).
+            if (parts.isEmpty()) {
+                continue;
+            }
+            String line = String.join(" / ", parts);
+            if (line.length() > MAX_ITEM_DESC_LEN) {
+                line = line.substring(0, MAX_ITEM_DESC_LEN);
+            }
+            lines.add(line);
+        }
+        return lines;
     }
 
     // ==================================================================
@@ -558,13 +694,16 @@ public class TbmAi02ServiceImpl implements TbmAi02Service {
     }
 
     /**
-     * 길이 클램프: 섹션·항목(줄) 단위로 plain 글자수를 누적하며 최대 글자수 도달 시 이후 항목을 절단한다
-     * (HTML 태그 중간 절단 방지 — 렌더 전 plain 상태에서 트림). 최소 글자수는 프롬프트 목표로만 유도.
+     * 길이 클램프: 섹션·항목(줄) 단위로 plain 글자수를 누적하며 최대 글자수({@code clampMax}) 도달 시
+     * 이후 항목을 절단한다(HTML 태그 중간 절단 방지 — 렌더 전 plain 상태에서 트림).
+     * 최소 글자수는 프롬프트 목표로만 유도.
      *
+     * <p>{@code clampMax} 는 호출부에서 산출한다(2026-07-16 R3): targetChars 지정 시
+     *    targetChars * {@link #TARGET_CHARS_CLAMP_PCT}%, 미지정 시 설정값(tbmContentMaxChars).
      * <p>한 항목도 담기 전에 예산을 초과하면 최소 1개 항목은 remaining 만큼 절단해 담는다(빈 출력 방지).
      */
-    private Map<String, String> clampSectionsToMax(Map<String, String> sections) {
-        int max = aiProperties.getTbm().getTbmContentMaxChars();
+    private Map<String, String> clampSectionsToMax(Map<String, String> sections, int clampMax) {
+        int max = clampMax;
         Map<String, String> out = new LinkedHashMap<>();
         int used = 0;
         boolean anyKept = false;

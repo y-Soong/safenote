@@ -1,0 +1,47 @@
+[
+  {
+    "role": "A_PRIME",
+    "cmpnyNm": "테스트원청",
+    "bsnsLcnNo": "9990000011",
+    "adminNm": "원청관리자",
+    "adminId": "subt_prime",
+    "adminMbl": "01044440001",
+    "initialPw": "01044440001",
+    "status": 200,
+    "response": {
+      "cmpnyCd": "nrTnBjSa2woeztqfPGIP",
+      "masterUserId": "subt_prime",
+      "initialPasswordGuide": "초기 비밀번호는 관리자 휴대폰번호(하이픈 제외)입니다. 첫 로그인 시 본인인증 후 변경하세요."
+    }
+  },
+  {
+    "role": "B_SUB",
+    "cmpnyNm": "테스트하청",
+    "bsnsLcnNo": "9990000022",
+    "adminNm": "하청관리자",
+    "adminId": "subt_sub1",
+    "adminMbl": "01099990002",
+    "initialPw": "01099990002",
+    "status": 200,
+    "response": {
+      "cmpnyCd": "TOUAfi60vmh8qrIXypdw",
+      "masterUserId": "subt_sub1",
+      "initialPasswordGuide": "초기 비밀번호는 관리자 휴대폰번호(하이픈 제외)입니다. 첫 로그인 시 본인인증 후 변경하세요."
+    }
+  },
+  {
+    "role": "C_SUBSUB",
+    "cmpnyNm": "테스트재하청",
+    "bsnsLcnNo": "9990000033",
+    "adminNm": "재하청관리자",
+    "adminId": "subt_sub2",
+    "adminMbl": "01099990003",
+    "initialPw": "01099990003",
+    "status": 200,
+    "response": {
+      "cmpnyCd": "BftXVyADUca25jZaSqzu",
+      "masterUserId": "subt_sub2",
+      "initialPasswordGuide": "초기 비밀번호는 관리자 휴대폰번호(하이픈 제외)입니다. 첫 로그인 시 본인인증 후 변경하세요."
+    }
+  }
+]

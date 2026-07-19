@@ -38,9 +38,11 @@
 	    , A.GEN_CONTENT										AS genContent
 	    , DATE_FORMAT(A.GEN_AT, '%Y-%m-%d %H:%i')			AS genAt
 	FROM TB_TBM_EDU_MTRL A
+	     <!-- 테넌트 격리: MTRL_CD 는 회사별 채번이라 전역 유일하지 않다. 항목 자신의 CMPNY_CD 로 함께 좁힌다. -->
 	     INNER JOIN TB_TBM_EDU_MTRL_ITEM B
 			ON (
-				A.MTRL_CD = B.MTRL_CD
+				A.CMPNY_CD = B.CMPNY_CD
+			AND A.MTRL_CD = B.MTRL_CD
 			AND B.USE_YN = 'Y'
 	        )
 	WHERE A.CMPNY_CD = #{gvCmpnyCd}
@@ -116,16 +118,21 @@
     	, A.URL					AS oriUrl
     	, A.USE_YN				AS oriUseYn
 	FROM TB_TBM_EDU_MTRL_ITEM A
+		 <!-- 테넌트 격리: MTRL_CD 는 회사별 채번이라 전역 유일하지 않다. 반드시 CMPNY_CD 로 함께 좁힌다. -->
 		 INNER JOIN TB_TBM_EDU_MTRL M
 		 	ON (
-		 		A.MTRL_CD = M.MTRL_CD
-		 	AND M.CMPNY_CD = #{gvCmpnyCd}
+		 		A.CMPNY_CD = M.CMPNY_CD
+		 	AND A.MTRL_CD = M.MTRL_CD
 		 	)
 		 LEFT OUTER JOIN TB_FILE_INFO B
 		 	ON (
-		 		A.FILE_MGMT_CD = B.FILE_MGMT_CD
+		 		<!-- 테넌트 격리: FILE_MGMT_CD 는 회사별 채번(PK=(CMPNY_CD, FILE_MGMT_CD))이라 전역 유일하지 않다.
+		 		     회사코드를 함께 걸지 않으면 다른 회사의 파일 정보가 섞이고 행이 불어난다. -->
+		 		B.CMPNY_CD = A.CMPNY_CD
+		 	AND A.FILE_MGMT_CD = B.FILE_MGMT_CD
 		 	)
-	WHERE A.MTRL_CD = #{mtrlCd}
+	WHERE A.CMPNY_CD = #{gvCmpnyCd}
+	  AND A.MTRL_CD = #{mtrlCd}
 	ORDER BY A.SORT_IDX
     </select>
 
@@ -155,6 +162,8 @@
 	/* Tbm01Mapper.mergeTbmEduItemInfo */
 	INSERT INTO TB_TBM_EDU_MTRL_ITEM (
 	    MTRL_ITEM_CD
+	    /* 테넌트 격리: 항목 PK 는 (CMPNY_CD, MTRL_ITEM_CD) 복합키다. 회사코드는 항상 JWT 도출값(gvCmpnyCd). */
+	    , CMPNY_CD
 	    , MTRL_CD
 	    , SORT_IDX
 	    , MTRL_ITEM_TYPE
@@ -172,6 +181,7 @@
 	    , UPDATE_DATE
 	) VALUES (
 	    #{mtrlItemCd}
+	    , #{gvCmpnyCd}
 	    , #{mtrlCd}
 	    /* SORT_IDX는 NOT NULL int. 빈문자/NULL 방어(미입력 시 DEFAULT 1) */
 	    , IFNULL(NULLIF(TRIM(#{sortIdx}), ''), 1)
@@ -253,14 +263,15 @@
 	
 	<delete id ="deleteTbmEduItemInfo"  parameterType="com.prafta.web.tbm.tbm01.application.command.TbmEduItemCommand">
 	/* Tbm01Mapper.deleteTbmEduItemInfo */
-	/* 회사 스코프(IDOR 방어): 마스터(TB_TBM_EDU_MTRL) 조인으로 자기 회사 항목만 삭제.
-	   타 회사 MTRL_ITEM_CD 를 알아도 마스터 CMPNY_CD 불일치로 0행 삭제된다. */
+	/* 테넌트 격리(IDOR 방어): MTRL_ITEM_CD·MTRL_CD 는 모두 회사별 채번이라 전역 유일하지 않다.
+	   항목 자신의 CMPNY_CD 로 직접 좁혀야 타 회사 항목이 지워지지 않는다.
+	   (예전 주석의 "마스터 CMPNY_CD 불일치로 0행 삭제" 는 MTRL_CD 전역 유일 가정에 기댄 것이라 더는 성립하지 않는다.) */
 	DELETE I
 	FROM TB_TBM_EDU_MTRL_ITEM I
 	     INNER JOIN TB_TBM_EDU_MTRL M
-	        ON (I.MTRL_CD = M.MTRL_CD)
-	WHERE I.MTRL_ITEM_CD = #{mtrlItemCd}
-	  AND M.CMPNY_CD = #{gvCmpnyCd}
+	        ON (I.CMPNY_CD = M.CMPNY_CD AND I.MTRL_CD = M.MTRL_CD)
+	WHERE I.CMPNY_CD = #{gvCmpnyCd}
+	  AND I.MTRL_ITEM_CD = #{mtrlItemCd}
 	</delete>
 	
 	<delete id ="deleteTbmEduInfo"  parameterType="com.prafta.web.tbm.tbm01.application.command.TbmEduInfoCommand">
@@ -283,7 +294,9 @@
 		, (
 			SELECT COUNT(I.MTRL_ITEM_CD)
 			FROM TB_TBM_EDU_MTRL_ITEM I
-			WHERE I.MTRL_CD = A.MTRL_CD
+			/* 테넌트 격리: MTRL_CD 는 회사별 채번이라 전역 유일하지 않다. 항목의 CMPNY_CD 로 함께 좁힌다. */
+			WHERE I.CMPNY_CD = A.CMPNY_CD
+			  AND I.MTRL_CD = A.MTRL_CD
 			  AND I.USE_YN = 'Y'
 		  )					AS mtrlCnt
 		, A.SITE_CD			AS siteCd
@@ -348,16 +361,21 @@
 		, A.URL				AS oriUrl
 		, A.USE_YN			AS oriUseYn
 	FROM TB_TBM_EDU_MTRL_ITEM A
+		 <!-- 테넌트 격리: MTRL_CD 는 회사별 채번이라 전역 유일하지 않다. 반드시 CMPNY_CD 로 함께 좁힌다. -->
 		 INNER JOIN TB_TBM_EDU_MTRL M
 		 	ON (
-		 		A.MTRL_CD = M.MTRL_CD
-		 	AND M.CMPNY_CD = #{gvCmpnyCd}
+		 		A.CMPNY_CD = M.CMPNY_CD
+		 	AND A.MTRL_CD = M.MTRL_CD
 		 	)
 		 LEFT OUTER JOIN TB_FILE_INFO B
 		 	ON (
-		 		A.FILE_MGMT_CD = B.FILE_MGMT_CD
+		 		<!-- 테넌트 격리: FILE_MGMT_CD 는 회사별 채번(PK=(CMPNY_CD, FILE_MGMT_CD))이라 전역 유일하지 않다.
+		 		     회사코드를 함께 걸지 않으면 다른 회사의 파일 정보가 섞이고 행이 불어난다. -->
+		 		B.CMPNY_CD = A.CMPNY_CD
+		 	AND A.FILE_MGMT_CD = B.FILE_MGMT_CD
 		 	)
-	WHERE A.MTRL_CD = #{mtrlCd}
+	WHERE A.CMPNY_CD = #{gvCmpnyCd}
+	  AND A.MTRL_CD = #{mtrlCd}
 	  AND A.USE_YN = 'Y'
 	ORDER BY A.SORT_IDX
 	</select>
@@ -401,26 +419,29 @@
 	<!-- T5-2: 세부항목 코드로 소속 교육자료(MTRL_CD) 도출(서버 도출, IDOR 방어). 없으면 NULL -->
 	<select id="selectMtrlCdByItemCd" resultType="string">
 	/* Tbm01Mapper.selectMtrlCdByItemCd */
+	/* 테넌트 격리: 항목 자신의 CMPNY_CD 로 좁힌다(MTRL_ITEM_CD 는 회사별 채번이라 전역 유일하지 않음). */
 	SELECT A.MTRL_CD
 	FROM TB_TBM_EDU_MTRL_ITEM A
 		 INNER JOIN TB_TBM_EDU_MTRL M
-		 	ON (A.MTRL_CD = M.MTRL_CD AND M.CMPNY_CD = #{gvCmpnyCd})
-	WHERE A.MTRL_ITEM_CD = #{mtrlItemCd}
+		 	ON (A.CMPNY_CD = M.CMPNY_CD AND A.MTRL_CD = M.MTRL_CD)
+	WHERE A.CMPNY_CD = #{gvCmpnyCd}
+	  AND A.MTRL_ITEM_CD = #{mtrlItemCd}
 	LIMIT 1
 	</select>
 
 	<!-- 사용 중(잠긴) 교육자료의 세부항목 AI 분석 지정(AI_ANALYZE_YN)만 갱신.
 	     해제(Y→N) 시 AI_STATUS='NONE' 리셋(분석/확정 데이터 컬럼은 보존), 재체크(=Y)면 기존 상태 보존.
-	     WHERE 절 회사 스코프(마스터 CMPNY_CD)로 IDOR 차단. -->
+	     테넌트 격리: 항목 자신의 CMPNY_CD 로 IDOR 차단(MTRL_ITEM_CD 는 회사별 채번이라 전역 유일하지 않음). -->
 	<update id="updateTbmEduItemAiAnalyze" parameterType="com.prafta.web.tbm.tbm01.application.command.TbmEduAiAnalyzeCommand">
 	/* Tbm01Mapper.updateTbmEduItemAiAnalyze */
 	UPDATE TB_TBM_EDU_MTRL_ITEM A
 		 INNER JOIN TB_TBM_EDU_MTRL M
-		 	ON (A.MTRL_CD = M.MTRL_CD AND M.CMPNY_CD = #{gvCmpnyCd})
+		 	ON (A.CMPNY_CD = M.CMPNY_CD AND A.MTRL_CD = M.MTRL_CD)
 	SET A.AI_ANALYZE_YN = #{aiAnalyzeYn}
 	  , A.AI_STATUS      = CASE WHEN #{aiAnalyzeYn} = 'N' THEN 'NONE' ELSE A.AI_STATUS END
 	  , A.UPDATE_NO      = #{gvUserCd}
 	  , A.UPDATE_DATE    = NOW()
-	WHERE A.MTRL_ITEM_CD = #{mtrlItemCd}
+	WHERE A.CMPNY_CD = #{gvCmpnyCd}
+	  AND A.MTRL_ITEM_CD = #{mtrlItemCd}
 	</update>
 </mapper>

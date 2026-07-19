@@ -15,7 +15,9 @@
 	    , A.CHKPT_DESC		AS chkptDesc
 	    , A.USE_YN			AS useYn
 	    , A.MGMT_USER_CD	AS mgmtUserCd
-	    , C.USER_NM 		AS mgmtUserNm 
+	    , C.USER_NM 		AS mgmtUserNm
+	    <!-- PRAFTA-SUBCON-T6-03: 연동 미러 여부(NULL=자체) — ChkptResult record 말미 필드와 같은 순서 -->
+	    , A.LINK_SRC_CMPNY_CD	AS linkSrcCmpnyCd
 	FROM TB_CHKPT_TYPE_MGMT A
 		 INNER JOIN TB_SITE B
 			ON (
@@ -97,4 +99,77 @@
 	  AND CHKLST_TYPE = #{chkLstType}
 	  AND CHKPT_CD = #{chkptCd}
 	</insert>
+
+	<!-- PRAFTA-SUBCON-T6-03: 점검대상 단건 원시행(미러 잠금 diff 판정용). record 매핑 = SELECT 컬럼 순서 -->
+	<select id="selectChkptRow" resultType="com.prafta.web.chkLst.chkLst01.result.ChkptRowRaw">
+	/* ChkLst01Mapper.selectChkptRow */
+	SELECT
+		A.CHKPT_NM				AS chkptNm
+		, A.CHKPT_DESC			AS chkptDesc
+		, A.USE_YN				AS useYn
+		, A.MGMT_USER_CD		AS mgmtUserCd
+		, A.LINK_SRC_CMPNY_CD	AS linkSrcCmpnyCd
+	FROM TB_CHKPT_TYPE_MGMT A
+	WHERE 1=1
+	  AND A.CMPNY_CD = #{gvCmpnyCd}
+	  AND A.SITE_CD = #{siteCd}
+	  AND A.CHKLST_TYPE = #{chkLstType}
+	  AND A.CHKPT_CD = #{chkptCd}
+	</select>
+
+	<!-- PRAFTA-SUBCON-T6-04: 신규 점검대상코드 선채번(mergeChkptList 의 IFNULL 채번과 동일 시퀀스) -->
+	<select id="selectNextChkptCd" resultType="String">
+	/* ChkLst01Mapper.selectNextChkptCd */
+	SELECT prafta.FNC_CMM_SEQ_NEXTVAL(#{gvCmpnyCd}, 'CHKPT_CD')
+	</select>
+
+	<!-- PRAFTA-SUBCON-T6-03: 미러 점검대상의 담당자 단독 지정(잠금 예외 — 명칭/비고/사용여부는 건드리지 않는다) -->
+	<update id="updateChkptMgmtUser" parameterType="com.prafta.web.chkLst.chkLst01.application.command.ChkptInfoCommand">
+	/* ChkLst01Mapper.updateChkptMgmtUser */
+	UPDATE TB_CHKPT_TYPE_MGMT
+	SET
+		MGMT_USER_CD = #{mgmtUserCd}
+		, UPDATE_NO = #{gvUserCd}
+		, UPDATE_DATE = NOW()
+	WHERE 1=1
+	  AND CMPNY_CD = #{gvCmpnyCd}
+	  AND SITE_CD = #{siteCd}
+	  AND CHKLST_TYPE = #{chkLstType}
+	  AND CHKPT_CD = #{chkptCd}
+	</update>
+
+	<!-- [보안검토 High-2] 사업장 인가(chkLst02.countUserSiteAuth 동형) — 저장/삭제가 T6 전파로 타 테넌트까지
+	     영향을 주므로, 권한 없는 사업장의 점검대상 변조/사용중지를 진입부에서 차단한다. -->
+	<select id="countUserSiteAuth" resultType="int">
+	/* ChkLst01Mapper.countUserSiteAuth */
+	SELECT COUNT(1)
+	FROM TB_USER_SITE_AUTH
+	WHERE 1=1
+	  AND CMPNY_CD = #{gvCmpnyCd}
+	  AND USER_CD = #{gvUserCd}
+	  AND SITE_CD = #{siteCd}
+	  AND USE_YN = 'Y'
+	</select>
+
+	<!-- [보안검토 High-2] 메뉴/버튼 권한(Subcon02Mapper.selectMenuButtonAuthCnt 동형). -->
+	<select id="selectMenuButtonAuthCnt" resultType="int">
+	/* ChkLst01Mapper.selectMenuButtonAuthCnt */
+	SELECT COUNT(*)
+	FROM (
+		SELECT 1
+		  FROM TB_SYST_AUTH_MENU
+		 WHERE CMPNY_CD  = #{cmpnyCd}
+		   AND AUTH_CD   = #{authCd}
+		   AND MENU_D_ID = #{menuDId}
+		   AND USE_YN    = 'Y'
+		   <choose>
+		       <when test="btnType == 'SRCH'">AND BTN_SRCH = 'Y'</when>
+		       <when test="btnType == 'NEW'">AND BTN_NEW = 'Y'</when>
+		       <when test="btnType == 'SAVE'">AND BTN_SAVE = 'Y'</when>
+		       <when test="btnType == 'DELT'">AND BTN_DELT = 'Y'</when>
+		       <otherwise>AND 1 = 0</otherwise>
+		   </choose>
+		 LIMIT 1
+	) T
+	</select>
 </mapper>

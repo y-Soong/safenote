@@ -13,6 +13,8 @@ public record DefectActionParam(
 	, String actionDesc
 	, String gvCmpnyCd
 	, String gvUserCd
+	// PRAFTA-SUBCON-T6-06: 조치자 성명(JWT 클레임 gv_userNm) — 조치 주체 스냅샷 기록용.
+	, String gvUserNm
 ){
 	// 조치 상세 최대 길이(DB TEXT 컬럼이라 무제한 입력 방어)
 	private static final int MAX_ACTION_DESC_LEN = 4000;
@@ -45,6 +47,7 @@ public record DefectActionParam(
 			, request.getActionDesc()
 			, tokenInfo.gv_cmpnyCd()
 			, tokenInfo.gv_userCd()
+			, tokenInfo.gv_userNm()
 		);
 	}
 

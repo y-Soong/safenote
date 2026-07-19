@@ -20,7 +20,13 @@ public interface AuthMapper {
 
 	//	AuthToken selectByRefreshTokenHash(@Param("hash") String hash);
 
-	UserResult selectUserForJwt(@Param("userCd") String hash);
+	/**
+	 * 토큰 재발급용 사용자 조회.
+	 *
+	 * <p>★테넌트 격리: USER_CD 는 회사별 채번이라 전역 유일하지 않다. CMPNY_CD 를 동반하지 않으면
+	 *   다른 회사의 동일 USER_CD 사용자 신원으로 토큰이 발급될 수 있다.
+	 */
+	UserResult selectUserForJwt(@Param("cmpnyCd") String cmpnyCd, @Param("userCd") String userCd);
 
 	// 회전 1단계: 기존 refresh token row 폐기
 	int revokeTokenById(

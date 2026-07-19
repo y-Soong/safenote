@@ -2,6 +2,7 @@ package com.prafta.common.cmm.file.service;
 
 import java.util.List;
 
+import com.prafta.common.cmm.file.application.model.FileBytesResult;
 import com.prafta.common.cmm.file.application.model.ImageBytesResult;
 import com.prafta.common.cmm.file.application.query.FileReadQuery;
 import com.prafta.common.cmm.file.dto.param.FileInfoParam;
@@ -35,4 +36,17 @@ public interface FileService {
 	 * @throws com.prafta.common.exception.ApiException 확장자 위반/traversal(FILE_400_001), PDF 렌더 실패(AI_502_005)
 	 */
 	List<ImageBytesResult> loadPdfPageImages(FileReadQuery query, int pageStride, int maxPages);
+
+	/**
+	 * PRAFTA-SUBCON-T7(Q4): 저장된 파일 원본을 <b>유형 무관</b>으로 바이트로 로드한다(cross-tenant 첨부 복제용).
+	 *
+	 * <p>{@link #loadImageBytes} 는 이미지 화이트리스트 전용이라 PDF 등을 조용히 누락시킨다. 위험성평가/아차사고
+	 *    첨부는 확장자 종류와 무관하게 전부 복제해야 하므로, 업로드 허용 확장자 화이트리스트(스크립트성 형식 제외)를
+	 *    통과한 파일이면 확장자를 보존해 바이트로 읽는다. base-dir traversal 방어(하위 강제)는 동일하게 수행한다.
+	 *
+	 * <p>DB 행이 없거나 디스크에 파일이 없으면 {@code null} 을 반환한다(호출부가 빈 값/404 로 매핑).
+	 *
+	 * @throws com.prafta.common.exception.ApiException 확장자 위반/traversal 등 보안 위반 시(FILE_400_001)
+	 */
+	FileBytesResult loadFileBytes(FileReadQuery query);
 }

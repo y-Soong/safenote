@@ -5,11 +5,20 @@
   - 응답값은 부모가 소유. 본 컴포넌트는 변경을 이벤트로 통지.
 -->
 <template>
-  <div class="it" :class="{ ok: answerType === 'Y', bad: answerType === 'N' }">
+  <div
+    class="it"
+    :class="{ ok: answerType === 'Y', bad: answerType === 'N', locked: isLocked }"
+  >
     <div class="it-head">
       <div class="it-no" aria-hidden="true">{{ index }}</div>
-      <div class="it-subj">{{ item.inspectItemSubj }}</div>
+      <div class="it-subj">
+        {{ item.inspectItemSubj }}
+        <span v-if="isLocked" class="it-lock">이미 점검됨</span>
+      </div>
     </div>
+
+    <!-- 선수행 안내: 같은 날 같은 문항은 먼저 점검한 쪽이 완료다(덮어쓰기 없음) -->
+    <p v-if="isLocked" class="it-perform">수행: {{ performLabel }}</p>
 
     <!-- 양호/불량 토글 -->
     <div class="toggle" role="radiogroup" :aria-label="`${index}번 항목: ${item.inspectItemSubj}`">
@@ -19,6 +28,7 @@
         :class="{ on: answerType === 'Y' }"
         role="radio"
         :aria-checked="answerType === 'Y'"
+        :disabled="isLocked"
         @click="setAnswer('Y')"
       >
         <svg
@@ -42,6 +52,7 @@
         :class="{ on: answerType === 'N' }"
         role="radio"
         :aria-checked="answerType === 'N'"
+        :disabled="isLocked"
         @click="setAnswer('N')"
       >
         <svg
@@ -92,7 +103,20 @@ const emit = defineEmits(['update:answer', 'update:reason', 'update:photo'])
 
 const answerType = computed(() => props.item.answerType ?? null)
 
+// PRAFTA-SUBCON-T6-10: 다른 수행 주체가 오늘 이미 점검한 문항(서버가 저장 시 skip 한다).
+//   본인 응답이면 잠기지 않는다(수정 가능).
+const isLocked = computed(() => props.item.locked === true)
+
+// 수행 주체 표시: "{회사명} {성명}" (스냅샷 값 — 없으면 있는 값만 표시)
+const performLabel = computed(() => {
+  const cmpnyNm = props.item.performCmpnyNm || ''
+  const userNm = props.item.performUserNm || ''
+  return [cmpnyNm, userNm].filter(Boolean).join(' ') || '다른 점검자'
+})
+
 const setAnswer = (type) => {
+  // 선수행 문항은 입력 불가(서버가 최종 강제 — 화면은 안내 목적)
+  if (isLocked.value) return
   // 동일 값 재클릭은 무시 (토글 해제 미허용 — 전 항목 응답 필수)
   if (answerType.value === type) return
   emit('update:answer', type)
@@ -188,5 +212,32 @@ const setAnswer = (type) => {
   background: var(--color-danger-tint);
   border-color: var(--color-danger);
   color: #b91c1c;
+}
+
+/* PRAFTA-SUBCON-T6-10: 선수행(이미 점검됨) 문항 — 입력 비활성 + 수행 주체 안내 */
+.it.locked {
+  background: var(--color-border-light);
+  border-color: var(--color-border);
+}
+.it-lock {
+  display: inline-block;
+  margin-left: 6px;
+  padding: 1px 6px;
+  border-radius: 8px;
+  background: var(--color-warning-text);
+  color: #ffffff;
+  font-size: 11px;
+  font-weight: 700;
+  vertical-align: middle;
+}
+.it-perform {
+  margin: 6px 0 0 32px;
+  font-size: 12px;
+  color: var(--color-text-secondary);
+}
+.tg-i:disabled {
+  background: var(--color-border-light);
+  color: var(--color-text-tertiary);
+  cursor: not-allowed;
 }
 </style>

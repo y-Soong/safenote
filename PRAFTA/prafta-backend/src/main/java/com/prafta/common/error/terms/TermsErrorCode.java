@@ -18,6 +18,8 @@ public enum TermsErrorCode implements ApiErrorCode {
     TERMS_400_001(HttpStatus.BAD_REQUEST, "약관 정보가 올바르지 않습니다.")
     // 403: 선택약관 토글 경로로 필수약관/미사용약관을 변경하려는 시도(게이트 우회 차단)
     , TERMS_403_001(HttpStatus.FORBIDDEN, "해당 약관은 선택 동의 대상이 아닙니다.")
+    // 404: 응답 대상 약관 미배포/미사용(USE_YN='N') 상태에서 동의 응답을 시도(SUBCON-T4)
+    , TERMS_404_001(HttpStatus.NOT_FOUND, "해당 약관을 찾을 수 없습니다.")
     ;
 
     private final HttpStatus httpStatus;

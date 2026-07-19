@@ -1071,6 +1071,24 @@ public class AppAttd01ServiceImpl implements AppAttd01Service {
     @Override
     @Transactional
     public MyAttendanceDayResponse checkIn(CheckInParam param) {
+        // ── 근태 E2E #E6-1(F6): 셀프 출근 처리 중 도메인 예외가 아닌 런타임 오류(예: 특정 데이터 조합의
+        //    2회차 재출근)로 500(COMMON_500_000)이 노출되던 것을 사용자 안내형 4xx(ATTD_400_116)로 전환한다.
+        //    - 도메인 가드(ApiException: 042/080/081/082/086/087/088/089/113/150 등)는 그대로 재전파(4xx 유지).
+        //    - 그 외 비ApiException 런타임만 승격한다. 승격된 예외도 unchecked → @Transactional 이 롤백하므로
+        //      슬롯/원장 부작용은 없다(관찰된 '슬롯 미생성 클린 롤백' 유지). 전체 스택은 error 로그로 보존(진단).
+        try {
+            return checkInInternal(param);
+        } catch (ApiException e) {
+            throw e; // 도메인 4xx 는 원문 그대로 전파(과잉 변환 금지 — 정상 가드 메시지 보존).
+        } catch (RuntimeException e) {
+            log.error("[attd01] 셀프 출근 처리 중 예기치 못한 오류 → ATTD_400_116 전환 (userCd={}, workYmd={})",
+                    param.userCd(), (param.workYmd() != null ? param.workYmd() : "(today)"), e);
+            throw new ApiException(AttdErrorCode.ATTD_400_116);
+        }
+    }
+
+    /** 셀프 출근 실제 처리(F6 방어 가드가 감싸는 내부 구현). 정책/시퀀스는 {@link #checkIn} javadoc 참조. */
+    private MyAttendanceDayResponse checkInInternal(CheckInParam param) {
         String cmpnyCd = param.cmpnyCd();
         String siteCd = param.siteCd();
         String userCd = param.userCd();
@@ -1125,6 +1143,8 @@ public class AppAttd01ServiceImpl implements AppAttd01Service {
         //   촉진(1·2차) 확정 법정 연차일 + 비휴일이면 guard 내부에서 ATTD_400_150 차단 throw(BLOCKED 이력+PUSH 선커밋).
         //   자발(NONE)/비법정/촉진+휴일 연차일은 guard 가 정상 반환 → 출근 허용(안내는 프론트가 isLeaveDay 로 표시).
         //   INSERT 이전에 호출(레코드 생성 전 차단). 083 은 더 이상 발동하지 않는다(노무수령거부=전용 150 코드).
+        //   근태 E2E(F2) 재확인: 본 가드가 "촉진분만 차단, 그 외 연차일 출근 허용"의 서버 단일출처(권위)다.
+        //   프론트가 laborRefusal 플래그(home-summary)로 사전 분기해도, 위조/우회 시 최종 차단은 여기서만 수행한다.
         if (isLeaveDay) {
             // nodeCd 는 가드에서 미사용(추후 페이로드 보존용) → JWT 값(param.nodeCd()) 직접 전달.
             //   가드는 본인 식별자(userCd/workYmd)만으로 판정한다.

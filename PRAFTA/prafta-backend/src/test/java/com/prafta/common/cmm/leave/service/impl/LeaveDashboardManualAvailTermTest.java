@@ -92,10 +92,20 @@ class LeaveDashboardManualAvailTermTest {
     }
 
     private void stubAvailTerm(String termType, String from, String to) {
+        stubAvailTerm(termType, from, to, null);
+    }
+
+    /**
+     * prafta-com-016-B(3-2): '03'(기간설정)의 의미가 "절대 종료일(ADMIN_AVAIL_TO_DT)" 에서
+     * "부여일로부터 N개월(ADMIN_AVAIL_MONTHS, 1~99)" 로 바뀌었다. from/to 컬럼은 조회는 되지만
+     * 산출에 쓰이지 않는다(VO 주석 "016-B 이후 미사용"). 그래서 '03' 케이스는 months 를 함께 스텁한다.
+     */
+    private void stubAvailTerm(String termType, String from, String to, Integer months) {
         LeaveTypeAvailTermVO vo = new LeaveTypeAvailTermVO();
         vo.setAdminAvailTermType(termType);
         vo.setAdminAvailFromDt(from);
         vo.setAdminAvailToDt(to);
+        vo.setAdminAvailMonths(months);
         when(dash.selectAdminAvailTerm(eq(CMPNY), eq(LEAVE_CD))).thenReturn(vo);
     }
 
@@ -134,16 +144,31 @@ class LeaveDashboardManualAvailTermTest {
     }
 
     @Test
-    @DisplayName("03 기간 설정 → AVAIL_TO_DATE = 타입 ADMIN_AVAIL_TO_DT(YYYYMMDD 절대일)")
+    @DisplayName("03 기간 설정 → AVAIL_TO_DATE = 부여일 + ADMIN_AVAIL_MONTHS 개월 (prafta-com-016-B)")
     void availTerm03_period() {
-        stubAvailTerm("03", "20260101", "20271130");
+        // 절대 종료일(to)이 아니라 개월수로 산출한다. to 는 남아 있어도 무시된다(하위호환 컬럼).
+        stubAvailTerm("03", "20260101", "20271130", 18);
 
         svc.manualGrant(CMPNY, command(), AUTH_MASTER, OPERATOR);
 
         LeaveGrantInsertVO vo = captureInserted();
-        assertEquals("20271130", vo.getAvailToDate());
+        // 폼 availFromDate=20260601 + 18개월 = 20271201
+        assertEquals("20271201", vo.getAvailToDate());
         // from 은 폼 입력 유지(타입 from 으로 덮지 않음).
         assertEquals(FORM_AVAIL_FROM, vo.getAvailFromDate());
+    }
+
+    @Test
+    @DisplayName("03 기간설정 개월수 범위밖(1~99 아님) → AXIS6 폴백")
+    void availTerm03_monthsOutOfRange_fallback() {
+        stubAvailTerm("03", null, null, 100);
+        when(policy.findActivePolicy(eq(CMPNY))).thenReturn(null);
+
+        svc.manualGrant(CMPNY, command(), AUTH_MASTER, OPERATOR);
+
+        LeaveGrantInsertVO vo = captureInserted();
+        // 폴백 기본 12개월. 20260601 + 12개월 = 20270601
+        assertEquals("20270601", vo.getAvailToDate());
     }
 
     @Test
@@ -177,9 +202,9 @@ class LeaveDashboardManualAvailTermTest {
     }
 
     @Test
-    @DisplayName("03 기간설정인데 ADMIN_AVAIL_TO_DT 부적합(미설정) → AXIS6 폴백")
-    void availTerm03_invalidTo_fallback() {
-        stubAvailTerm("03", "20260101", null);
+    @DisplayName("03 기간설정인데 ADMIN_AVAIL_MONTHS 미설정 → AXIS6 폴백")
+    void availTerm03_invalidMonths_fallback() {
+        stubAvailTerm("03", "20260101", null, null);
         when(policy.findActivePolicy(eq(CMPNY))).thenReturn(null);
 
         svc.manualGrant(CMPNY, command(), AUTH_MASTER, OPERATOR);
@@ -189,15 +214,9 @@ class LeaveDashboardManualAvailTermTest {
         assertEquals("20270601", vo.getAvailToDate());
     }
 
-    @Test
-    @DisplayName("from > to 모순(03 타입 to 가 폼 from 이전) → ATTD_400_032 거부, INSERT 미실행")
-    void availTerm03_fromAfterTo_rejected() {
-        // 폼 from=20260601, 타입 to=20260101 → from > to
-        stubAvailTerm("03", "20250101", "20260101");
-
-        assertThrows(ApiException.class,
-                () -> svc.manualGrant(CMPNY, command(), AUTH_MASTER, OPERATOR));
-
-        verify(dash, never()).insertManualGrant(any(LeaveGrantInsertVO.class));
-    }
+    // [삭제된 테스트] "from > to 모순 → ATTD_400_032 거부"
+    //   prafta-com-016-B 이전에는 '03' 이 절대 종료일이라 폼 사용가능일보다 이른 종료일을 넣어 모순을 만들 수 있었다.
+    //   지금은 '03' = 부여일 + N개월(N>=1), '02' = 같은 해 1231 이라 산출된 to 가 from 보다 이를 수 없다.
+    //   즉 이 시나리오는 공개 API 로 재현이 불가능해졌다(서비스의 ATTD_400_032 가드는 방어용으로 남아 있음).
+    //   재현 불가능한 예외를 단정하던 테스트라 제거한다.
 }

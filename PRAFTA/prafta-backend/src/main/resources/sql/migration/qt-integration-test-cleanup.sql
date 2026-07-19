@@ -69,8 +69,10 @@ DELETE FROM TB_DAILY_BLACKLIST WHERE CMPNY_CD='001' AND REASON LIKE '[QT-7-5]%';
 
 DELETE FROM TB_USER_DEVICE_LOGIN_HIST
  WHERE CMPNY_CD='001' AND USER_CD IN (SELECT USER_CD FROM tmp_qt_users);
+-- prafta-tenant-2 마이그 이후: tb_user_device 에 CMPNY_CD 가 생기고 인덱스가 (CMPNY_CD, USER_CD) 로 재정의됐다.
+-- USER_CD 단독은 더 이상 선두 키 컬럼이 아니라 safe update mode(Error 1175) 에 걸린다 → CMPNY_CD 를 동반한다.
 DELETE FROM TB_USER_DEVICE
- WHERE USER_CD IN (SELECT USER_CD FROM tmp_qt_users);
+ WHERE CMPNY_CD='001' AND USER_CD IN (SELECT USER_CD FROM tmp_qt_users);
 DELETE FROM TB_AUTH_TOKEN
  WHERE CMPNY_CD='001' AND USER_CD IN (SELECT USER_CD FROM tmp_qt_users);
 DELETE FROM TB_TERMS_USER_AGR_MGMT
@@ -122,3 +124,19 @@ SELECT
 -- 확인 후:
 -- COMMIT;
 -- ROLLBACK;
+
+
+-- =====================================================================
+-- 부록) 2026-07-13 멀티테넌시/전역ID 검증에서 생긴 테스트 데이터
+--   ※ 위 QT 정리와 독립적으로 실행 가능. 실행 전 대상 확인 필수.
+-- =====================================================================
+
+-- (1) 001 회사에 만든 교차중복 검증용 계정 — 근태/연차 데이터 없음(생성만 함).
+SELECT CMPNY_CD, USER_CD, USER_ID, USER_NM FROM TB_USER WHERE USER_ID = 'QTGLOBALOK1';
+-- DELETE FROM TB_USER_SITE_AUTH WHERE CMPNY_CD='001' AND USER_CD = (SELECT USER_CD FROM (SELECT USER_CD FROM TB_USER WHERE CMPNY_CD='001' AND USER_ID='QTGLOBALOK1') T);
+-- DELETE FROM TB_USER WHERE CMPNY_CD='001' AND USER_ID='QTGLOBALOK1';
+
+-- (2) 검증용 신규 고객사(NEWCO~NEWCO5). 운영 전환 전 정리 대상.
+--     회사코드는 랜덤 20자라 회사명으로 식별한다.
+SELECT CMPNY_CD, CMPNY_NM, INSERT_DATE FROM TB_CMPNY WHERE CMPNY_NM LIKE 'NEWCO%';
+-- 회사 단위 삭제는 참조 테이블이 많아 일괄 스크립트가 필요하다(미작성).

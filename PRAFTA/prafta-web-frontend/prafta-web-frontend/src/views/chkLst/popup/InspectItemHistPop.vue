@@ -92,6 +92,7 @@ import axios from "@/api/axios";
 import { resolveApiErrorMessage } from "@/utils/apiError";
 
 const props = defineProps({
+  siteCd_p: String, // PRAFTA-SUBCON-T0-05: 사업장 키 관통
   chkLstType_p: String,
   inspectItemCd_p: String,
   inspectItemSubj_p: String,
@@ -130,6 +131,7 @@ const fnSearch = async () => {
       "/webApi/chkLst02/chkpt-inspect-item-hists",
       {
         params: {
+          siteCd: props.siteCd_p, // PRAFTA-SUBCON-T0-05: 사업장 키 관통
           chkLstType: props.chkLstType_p,
           inspectItemCd: props.inspectItemCd_p,
         },

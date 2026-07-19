@@ -13,6 +13,7 @@ import org.springframework.transaction.annotation.Transactional;
 import com.prafta.common.cmm.schedule.service.ScheduleChangeGuardService;
 import com.prafta.common.cmm.schedule.vo.ScheduleLockVO;
 import com.prafta.common.error.attd.AttdErrorCode;
+import com.prafta.common.error.subcon.SubconErrorCode;
 import com.prafta.common.exception.ApiException;
 import com.prafta.web.attd.attd01.application.command.SchInfoCommand;
 import com.prafta.web.attd.attd01.application.command.SchInfoHistCommand;
@@ -51,6 +52,7 @@ import com.prafta.web.attd.attd01.result.ShiftTeamInfoResult;
 import com.prafta.web.attd.attd01.result.ShiftTypeInfoResult;
 import com.prafta.web.attd.attd01.result.WorkPlanDayResult;
 import com.prafta.web.attd.attd01.service.Attd01Service;
+import com.prafta.web.subcon.subcon02.service.SiteLinkPropagationService;
 
 import lombok.extern.slf4j.Slf4j;
 
@@ -64,10 +66,15 @@ public class Attd01ServiceImpl implements Attd01Service{
 	private final Attd01Mapper attd01Mapper;
 	private final ScheduleChangeGuardService scheduleChangeGuardService;
 
+	// PRAFTA-SUBCON-T2-05: 원본 근무타입 변경의 미러 재귀 전파(동기 + 동일 트랜잭션 — 실패 시 전체 롤백).
+	private final SiteLinkPropagationService siteLinkPropagationService;
+
 	public Attd01ServiceImpl(Attd01Mapper attd01Mapper,
-			ScheduleChangeGuardService scheduleChangeGuardService) {
+			ScheduleChangeGuardService scheduleChangeGuardService,
+			SiteLinkPropagationService siteLinkPropagationService) {
 		this.attd01Mapper = attd01Mapper;
 		this.scheduleChangeGuardService = scheduleChangeGuardService;
+		this.siteLinkPropagationService = siteLinkPropagationService;
 	}
 	
 	public SchInfoListResponse selectSchInfoList(SchInfoListParam param) {
@@ -89,6 +96,13 @@ public class Attd01ServiceImpl implements Attd01Service{
 	@Override
 	@Transactional
 	public void updateSchInfo(SchInfoParam param) {
+
+		// PRAFTA-SUBCON-T2-04: 미러 사업장 근무타입 전면 잠금(신규 생성 포함, 예외 없음 — §5-5).
+		//   미러 근무타입은 원본 소유사의 전파로만 갱신된다. authCd/회사 스코프는 JWT 도출값만 신뢰.
+		if (attd01Mapper.selectSiteLinkSrcCmpny(param.gvCmpnyCd(), param.siteCd()) != null) {
+			log.warn("미러 사업장 근무타입 수정 거부 - gvCmpnyCd={}, siteCd={}", param.gvCmpnyCd(), param.siteCd());
+			throw new ApiException(SubconErrorCode.SUBCON_403_003);
+		}
 
 		String schCd = null;
 
@@ -116,6 +130,7 @@ public class Attd01ServiceImpl implements Attd01Service{
 		// 신규 생성(isEdit=false)은 기존 근무계획이 없으므로 가드 불필요. 시간/휴게 외 변경(이름·사용여부 등)은 통과.
 		if(isEdit) {
 			guardScheduleTimeChange(command);
+			guardScheduleDeactivate(command);
 		}
 
 		attd01Mapper.updateSchInfo(command);
@@ -125,6 +140,10 @@ public class Attd01ServiceImpl implements Attd01Service{
 		int histIdx = attd01Mapper.selectSchHistIdx(SchInfoHistQuery.of(param, schCd));
 
 		attd01Mapper.insertSchHistInfo(SchInfoHistCommand.from(param, histIdx, schCd));
+
+		// PRAFTA-SUBCON-T2-05: 저장 후 미러 재귀 전파(신규 추가·사용중지·APPLY_DATE 포함 —
+		//   활성 링크 없으면 no-op, 실패 시 원본 저장 전체 롤백. 미러 테넌트 HIST 도 함께 기록).
+		siteLinkPropagationService.propagateSchInfo(param.gvCmpnyCd(), param.siteCd(), schCd);
 	}
 
 	/**
@@ -182,6 +201,42 @@ public class Attd01ServiceImpl implements Attd01Service{
 			log.info("근무타입 시간/휴게 변경 차단 - schCd={}, siteCd={}, 영향 일자 {}건: {}",
 					command.schCd(), command.siteCd(), blockedYmds.size(), blockedYmds);
 			throw new ApiException(AttdErrorCode.ATTD_400_162);
+		}
+	}
+
+	/**
+	 * 사용중지 가드: 근무타입(SCH_CD)을 사용중지(USE_YN Y→N)하려는데 그 타입이 오늘 이후 근무계획에
+	 * 배정돼 있으면 ATTD_400_163 으로 하드 차단한다.
+	 *
+	 * <p>사용중지된 근무타입이 근무계획에 남아 있으면 조회 쿼리들이 그날을 유효 스케줄로 보지 않아
+	 * 앱 홈이 "스케줄 없음"으로 빠지고, 출퇴근 판정·연차 차감·출퇴근 리마인더까지 함께 어긋난다.
+	 * 관리자가 근무계획관리에서 해당 일자의 근무타입을 먼저 바꾼 뒤 사용중지하도록 강제한다.
+	 *
+	 * <p>차단 조건: 요청 USE_YN='N' + 기존 USE_YN='Y'(전환) + 오늘 이후 배정 근무계획 1건 이상.
+	 * 이미 사용중지된 타입의 재저장(N→N, 이름 수정 등)은 통과시킨다(정상 흐름을 막지 않는다).
+	 * 과거 근무일 배정분은 실제 이력이므로 검사하지 않는다.
+	 */
+	private void guardScheduleDeactivate(SchInfoCommand command) {
+
+		if(!"N".equals(command.useYn())) {
+			return;
+		}
+
+		// 기존이 이미 'N' 이거나 행이 없으면(신규) 전환이 아니므로 통과.
+		String currentUseYn = attd01Mapper.selectSchUseYn(
+				command.gvCmpnyCd(), command.siteCd(), command.schCd());
+		if(!"Y".equals(currentUseYn)) {
+			return;
+		}
+
+		String todayYmd = LocalDate.now().format(YMD);
+		List<WorkPlanDayResult> futurePlans = attd01Mapper.selectFutureWorkPlanDaysBySchCd(
+				command.gvCmpnyCd(), command.siteCd(), command.schCd(), todayYmd);
+
+		if(futurePlans != null && !futurePlans.isEmpty()) {
+			log.info("근무타입 사용중지 차단 - schCd={}, siteCd={}, 배정된 미래 근무계획 {}건",
+					command.schCd(), command.siteCd(), futurePlans.size());
+			throw new ApiException(AttdErrorCode.ATTD_400_163);
 		}
 	}
 

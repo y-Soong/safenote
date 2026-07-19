@@ -28,6 +28,8 @@ public final class AdminAccessResolver {
     public static final String MODULE_SITE_OPS = "SITE_OPS";
     public static final String MODULE_BOARD = "BOARD";
     public static final String MODULE_SETTINGS = "SETTINGS";
+    /** 일용직 입장 승인(일용직 계약서+승인제 T4). 서버 최종 강제는 DailyEntryService.assertSiteAuthority. */
+    public static final String MODULE_ENTRY = "ENTRY";
 
     private AdminAccessResolver() {
         // 유틸리티 클래스 - 인스턴스 생성 금지
@@ -69,6 +71,9 @@ public final class AdminAccessResolver {
      *   <li>APPROVAL/ATTD_DETAIL : master ∥ hr ∥ nodeAdmin (safe 단독 ⛔).</li>
      *   <li>SAFETY/TBM : master ∥ safe ∥ nodeAdmin (hr 동시보유는 합집합으로 활성 — §3.2 확정).</li>
      *   <li>BOARD/SETTINGS : 데이터 스코프 없는 모듈이므로 항상 활성(BOARD 는 web 미구현=준비중).</li>
+     *   <li>ENTRY : master ∥ hr (일용직 입장 승인 — 일용직 계약서+승인제 T4).
+     *       서버 EP(entryadmin01)의 최종 인가(DailyEntryService.assertSiteAuthority = master/hr)와
+     *       동일 기준. nodeAdmin 단독은 서버가 403 이므로 여기서도 열지 않는다(fail-closed 정합).</li>
      * </ul>
      *
      * @param isNodeAdminInSite 현재 선택 사업장 기준 노드 정/부 관리자 여부
@@ -79,11 +84,14 @@ public final class AdminAccessResolver {
         boolean siteOpsActive = axis.isMaster() || axis.isHr() || axis.isSafe() || isNodeAdminInSite;
         boolean approvalActive = axis.isMaster() || axis.isHr() || isNodeAdminInSite;
         boolean safetyActive = axis.isMaster() || axis.isSafe() || isNodeAdminInSite;
+        // 일용직 입장 승인 — 서버 최종 인가(master/hr)와 동일 기준(nodeAdmin 제외, fail-closed).
+        boolean entryActive = axis.isMaster() || axis.isHr();
 
         Map<String, Boolean> map = new LinkedHashMap<>();
         map.put(MODULE_HOME, homeActive);
         map.put(MODULE_APPROVAL, approvalActive);
         map.put(MODULE_ATTD_DETAIL, approvalActive);
+        map.put(MODULE_ENTRY, entryActive);
         map.put(MODULE_SAFETY, safetyActive);
         map.put(MODULE_TBM, safetyActive);
         map.put(MODULE_SITE_OPS, siteOpsActive);

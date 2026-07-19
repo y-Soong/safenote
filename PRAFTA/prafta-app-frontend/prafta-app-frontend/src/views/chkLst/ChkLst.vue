@@ -40,10 +40,18 @@
           :work-date="workDate"
         />
 
+        <!-- 전 문항 선수행(잠금) 안내 — 저장 버튼이 근거 없이 잠긴 것처럼 보이지 않게 한다 (qa L-1) -->
+        <div v-if="allLocked" class="chk-done" role="status">
+          <p class="chk-done__title">오늘 이 점검대상은 이미 점검이 완료되었어요.</p>
+          <p class="chk-done__sub">{{ allLockedPerformerText }}</p>
+        </div>
+
         <!-- 진행 카운터 -->
+        <!-- 진행 카운터: 선수행(잠금) 문항은 응답 대상이 아니므로 분모에서 제외 -->
         <SafetyInspectProgress
+          v-if="!allLocked"
           :answered="answeredCount"
-          :total="items.length"
+          :total="answerableItems.length"
           :ok-count="okCount"
           :bad-count="badCount"
         />
@@ -61,8 +69,8 @@
       </template>
     </main>
 
-    <!-- 푸터 -->
-    <footer v-if="!isLoading && !loadFailed" class="chk-footer">
+    <!-- 푸터 — 전 문항이 선수행(잠금)이면 저장할 대상이 없으므로 감춘다 (qa L-1) -->
+    <footer v-if="!isLoading && !loadFailed && !allLocked" class="chk-footer">
       <button
         type="button"
         class="chk-save"
@@ -212,20 +220,38 @@ const isItemAnswered = (item) => {
   return false
 }
 
-const answeredCount = computed(() => items.value.filter(isItemAnswered).length)
-const okCount = computed(() => items.value.filter((i) => i.answerType === 'Y').length)
-const badCount = computed(() => items.value.filter((i) => i.answerType === 'N').length)
+// PRAFTA-SUBCON-T6-10: 선수행(잠금) 문항은 응답 대상이 아니다 — 카운터/저장 조건에서 제외한다.
+const answerableItems = computed(() => items.value.filter((i) => !i.locked))
+
+// qa L-1: 다른 수행자가 그날 전 문항을 이미 점검한 경우 — 응답 대상이 0건이라 저장이 영구 비활성이 된다.
+//   근거 없이 잠긴 화면으로 보이므로 빈 상태 안내를 띄우고 저장 버튼 자체를 감춘다.
+const allLocked = computed(() => items.value.length > 0 && answerableItems.value.length === 0)
+
+// 선수행자 표기(회사명/성명은 서버가 내려준 스냅샷 값 — 없으면 문구를 생략)
+const allLockedPerformerText = computed(() => {
+  const first = items.value.find((i) => i.locked)
+  const who = [first?.performCmpnyNm, first?.performUserNm].filter(Boolean).join(' ')
+  return who ? `수행: ${who}` : '다른 수행자가 오늘 점검을 완료했어요.'
+})
+
+const answeredCount = computed(() => answerableItems.value.filter(isItemAnswered).length)
+const okCount = computed(() => answerableItems.value.filter((i) => i.answerType === 'Y').length)
+const badCount = computed(() => answerableItems.value.filter((i) => i.answerType === 'N').length)
 
 // 입력된 응답이 1건이라도 있는지 (이탈 모달 판단)
 const hasAnyInput = computed(() =>
   items.value.some((i) => i.answerType === 'Y' || i.answerType === 'N'),
 )
 
-// 저장 활성: 전 항목 응답 + 모든 불량 사유 충족
-const canSave = computed(() => items.value.length > 0 && items.value.every(isItemAnswered))
+// 저장 활성: 응답 가능한 전 항목 응답 + 모든 불량 사유 충족
+const canSave = computed(
+  () => answerableItems.value.length > 0 && answerableItems.value.every(isItemAnswered),
+)
 
 // 미선택(answerType == null) 항목 수 — "남음" 카운터 기준 (브리프 §3.6)
-const unselectedCount = computed(() => items.value.filter((i) => i.answerType === null).length)
+const unselectedCount = computed(
+  () => answerableItems.value.filter((i) => i.answerType === null).length,
+)
 
 const saveButtonText = computed(() => {
   if (isSaving.value) return '저장 중...'
@@ -301,6 +327,12 @@ const fetchChecklist = async () => {
         answerType: null, // 신규 화면은 미답이 기본 (하드코딩 inspectValue 무시)
         answerDesc: '',
         photo: null,
+        // [정책변경 후행덮어쓰기] 같은 날 같은 문항에 선행 데이터가 있어도 잠그지 않는다(항상 입력 가능).
+        //   저장 시 선행 데이터가 있으면 "덮어쓰시겠습니까?" 확인 팝업으로 동의를 받고, 선행 점검자를
+        //   성명(ID)으로 표시한다. cross-tenant(상위/타사) 저장분도 전파로 자기 테넌트에 복제돼 있어 함께 잡힌다.
+        alreadyAnswered: x.alreadyAnswered === 'Y',
+        performUserNm: x.performUserNm || '',
+        performUserCd: x.performUserCd || '',
       }))
 
       applyCheckpoint(data, list[0])
@@ -338,12 +370,36 @@ const buildFileName = (itemCd, originalName = 'photo.jpg') => {
   return `${itemCd}_${ts}_${safe}`
 }
 
+// 선행 점검자 표기: "성명(ID)" (성명 스냅샷 + USER_CD). 값이 비면 있는 값만, 둘 다 없으면 '다른 점검자'.
+const formatPerformer = (item) => {
+  const nm = (item.performUserNm || '').trim()
+  const cd = (item.performUserCd || '').trim()
+  if (nm && cd) return `${nm}(${cd})`
+  if (nm) return nm
+  if (cd) return cd
+  return '다른 점검자'
+}
+
 const onSave = async () => {
   if (!canSave.value || isSaving.value) return
+
+  // [정책변경 후행덮어쓰기] 저장 대상 문항 중 선행 데이터가 있으면 덮어쓰기 확인을 받는다.
+  //   선행 점검자를 성명(ID)으로 표시(cross-tenant 로 이미 있는 데이터도 alreadyAnswered 로 함께 잡힌다).
+  const priorAnswered = answerableItems.value.filter((i) => i.alreadyAnswered)
+  if (priorAnswered.length > 0) {
+    const who = formatPerformer(priorAnswered[0])
+    const suffix = priorAnswered.length > 1 ? ` 외 ${priorAnswered.length - 1}건` : ''
+    const ok = await showConfirm(
+      `${who}님이 이미 점검했습니다${suffix}. 덮어쓰시겠습니까?`,
+    )
+    if (!ok) return
+  }
+
   isSaving.value = true
   try {
     // items 페이로드 (기존 계약 키 유지: itemCd / inspectValue / answerDesc / fileName)
-    const payloadItems = items.value.map((row) => ({
+    //   PRAFTA-SUBCON-T6-10: 선수행(잠금) 문항은 전송하지 않는다(서버도 skip 하지만 사진 업로드 낭비를 막는다).
+    const payloadItems = answerableItems.value.map((row) => ({
       itemCd: row.inspectItemCd,
       inspectValue: row.answerType,
       answerDesc: row.answerType === 'N' ? row.answerDesc || '' : '',
@@ -359,7 +415,7 @@ const onSave = async () => {
     formData.append('items', new Blob([JSON.stringify(payloadItems)], { type: 'application/json' }))
 
     // 불량 사진: files[itemCd] (기존 계약). 양호 항목은 첨부 없음.
-    items.value.forEach((row) => {
+    answerableItems.value.forEach((row) => {
       const file = row.photo?.file
       if (row.answerType === 'N' && file) {
         formData.append(
@@ -383,6 +439,7 @@ const onSave = async () => {
         okCount: Number.isFinite(data.okCount) ? data.okCount : okCount.value,
         badCount: Number.isFinite(data.badCount) ? data.badCount : badCount.value,
       }
+
       // 메모리 미리보기 URL 정리
       cleanupPreviews()
       saved.value = true // 이탈 모달 우회 플래그
@@ -556,6 +613,27 @@ onBeforeUnmount(() => {
 }
 .chk-empty__sub {
   margin: 8px 0 0;
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--color-text-secondary);
+}
+
+/* 전 문항 선수행 안내(qa L-1) — 색/간격은 본 화면 토큰만 사용 */
+.chk-done {
+  background: var(--color-primary-tint);
+  border: 1px solid var(--color-primary-tint-border);
+  border-radius: 10px;
+  padding: 14px 16px;
+  text-align: center;
+}
+.chk-done__title {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--color-primary-deep);
+}
+.chk-done__sub {
+  margin: 6px 0 0;
   font-size: 13px;
   line-height: 1.5;
   color: var(--color-text-secondary);

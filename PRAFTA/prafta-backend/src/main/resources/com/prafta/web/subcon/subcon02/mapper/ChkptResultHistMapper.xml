@@ -1,0 +1,123 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.prafta.web.subcon.subcon02.mapper.ChkptResultHistMapper">
+
+    <!-- ============================================================
+         PRAFTA-SUBCON-T6-AUDIT-02 — 순회점검 결과 덮어쓰기 감사 이력(append-only) 캡처.
+         스냅샷은 전부 원본 테이블 행에서만 복제한다(INSERT ... SELECT — 사용자 입력 미경유, 주입 면 없음).
+         본 매퍼에는 HIST 대상 UPDATE/DELETE 를 두지 않는다(append-only 규율 — 감사 변조 불가).
+         컬럼은 tb_chkpt_inspect_answer(_hist) / tb_chkpt_defect_action(_hist) 실스키마와 1:1 대조 완료.
+         ============================================================ -->
+
+    <!-- 응답 좌표 존재여부(PK point-lookup) — CHG_TYPE 판정용(존재=덮어쓰기 02, 부재=신규 01). -->
+    <select id="selectExistsAnswer" resultType="int">
+    /* ChkptResultHistMapper.selectExistsAnswer */
+    SELECT COUNT(1)
+    FROM TB_CHKPT_INSPECT_ANSWER
+    WHERE CMPNY_CD        = #{cmpnyCd}
+      AND SITE_CD         = #{siteCd}
+      AND CHKPT_CD        = #{chkptCd}
+      AND INSPECT_ITEM_CD = #{inspectItemCd}
+      AND WORK_DATE       = #{workDate}
+    </select>
+
+    <!-- 응답 스냅샷 append — 방금 쓴 행의 relabel(PERFORM_*)/사진(FILE_MGMT_CD) 스냅샷을 그대로 상속.
+         ACTION_DTIME/INSERT_DATE 는 서버 NOW(KST 고정), INSERT_NO 는 기록 트리거 주체(자체저장=USER_CD, 전파=SYSTEM). -->
+    <insert id="insertAnswerHist">
+    /* ChkptResultHistMapper.insertAnswerHist */
+    INSERT INTO TB_CHKPT_INSPECT_ANSWER_HIST (
+          CMPNY_CD
+        , SITE_CD
+        , CHKPT_CD
+        , INSPECT_ITEM_CD
+        , WORK_DATE
+        , CHG_TYPE
+        , INSPECT_ANSWER_TYPE
+        , ANSWER_DESC
+        , FILE_MGMT_CD
+        , PERFORM_CMPNY_CD
+        , PERFORM_USER_CD
+        , PERFORM_USER_NM
+        , ACTION_DTIME
+        , INSERT_NO
+        , INSERT_DATE
+    )
+    SELECT
+          A.CMPNY_CD
+        , A.SITE_CD
+        , A.CHKPT_CD
+        , A.INSPECT_ITEM_CD
+        , A.WORK_DATE
+        , #{chgType}
+        , A.INSPECT_ANSWER_TYPE
+        , A.ANSWER_DESC
+        , A.FILE_MGMT_CD
+        , A.PERFORM_CMPNY_CD
+        , A.PERFORM_USER_CD
+        , A.PERFORM_USER_NM
+        , NOW()
+        , #{insertNo}
+        , NOW()
+    FROM TB_CHKPT_INSPECT_ANSWER A
+    WHERE A.CMPNY_CD        = #{cmpnyCd}
+      AND A.SITE_CD         = #{siteCd}
+      AND A.CHKPT_CD        = #{chkptCd}
+      AND A.INSPECT_ITEM_CD = #{inspectItemCd}
+      AND A.WORK_DATE       = #{workDate}
+    </insert>
+
+    <!-- 불량조치 좌표 존재여부(PK point-lookup). -->
+    <select id="selectExistsDefectAction" resultType="int">
+    /* ChkptResultHistMapper.selectExistsDefectAction */
+    SELECT COUNT(1)
+    FROM TB_CHKPT_DEFECT_ACTION
+    WHERE CMPNY_CD        = #{cmpnyCd}
+      AND SITE_CD         = #{siteCd}
+      AND CHKPT_CD        = #{chkptCd}
+      AND INSPECT_ITEM_CD = #{inspectItemCd}
+      AND WORK_DATE       = #{workDate}
+    </select>
+
+    <!-- 불량조치 스냅샷 append — 방금 쓴 조치행의 조치자(ACTION_*)/사진 스냅샷을 그대로 상속. -->
+    <insert id="insertDefectActionHist">
+    /* ChkptResultHistMapper.insertDefectActionHist */
+    INSERT INTO TB_CHKPT_DEFECT_ACTION_HIST (
+          CMPNY_CD
+        , SITE_CD
+        , CHKPT_CD
+        , INSPECT_ITEM_CD
+        , WORK_DATE
+        , CHG_TYPE
+        , ACTION_DESC
+        , FILE_MGMT_CD
+        , ACTION_CMPNY_CD
+        , ACTION_USER_CD
+        , ACTION_USER_NM
+        , ACTION_DTIME
+        , INSERT_NO
+        , INSERT_DATE
+    )
+    SELECT
+          A.CMPNY_CD
+        , A.SITE_CD
+        , A.CHKPT_CD
+        , A.INSPECT_ITEM_CD
+        , A.WORK_DATE
+        , #{chgType}
+        , A.ACTION_DESC
+        , A.FILE_MGMT_CD
+        , A.ACTION_CMPNY_CD
+        , A.ACTION_USER_CD
+        , A.ACTION_USER_NM
+        , NOW()
+        , #{insertNo}
+        , NOW()
+    FROM TB_CHKPT_DEFECT_ACTION A
+    WHERE A.CMPNY_CD        = #{cmpnyCd}
+      AND A.SITE_CD         = #{siteCd}
+      AND A.CHKPT_CD        = #{chkptCd}
+      AND A.INSPECT_ITEM_CD = #{inspectItemCd}
+      AND A.WORK_DATE       = #{workDate}
+    </insert>
+
+</mapper>

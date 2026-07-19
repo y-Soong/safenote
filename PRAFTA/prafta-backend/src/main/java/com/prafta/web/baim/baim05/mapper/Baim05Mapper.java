@@ -43,7 +43,7 @@ public interface Baim05Mapper {
 	
 	String selectDailyUserCd(@Param("cmpnyCd") String cmpnyCd);
 	
-	int selectDailyUserDuplicateCnt(@Param("mblNoHmac") String mblNoHmac);
+	int selectDailyUserDuplicateCnt(@Param("cmpnyCd") String cmpnyCd, @Param("mblNoHmac") String mblNoHmac);
 
 	// ===== PRAFTA_COM_001 T1-07: 계정 등록(USE_YN) 토글 서버 게이트 =====
 

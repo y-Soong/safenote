@@ -55,7 +55,8 @@ import lombok.extern.slf4j.Slf4j;
  *
  * <p>★riskai01 과의 결정적 차이: 별도 도출 테이블 없이 AI 상태·초안·확정서술·대화이력을
  *    {@code tb_tbm_edu_mtrl_item} 신규 컬럼에 직접 저장한다. 모든 항목 UPDATE/SELECT 는
- *    {@code TB_TBM_EDU_MTRL} 조인으로 회사 스코프(IDOR)를 강제한다.
+ *    항목 테이블 자신의 {@code CMPNY_CD}(JWT 도출 gvCmpnyCd)로 회사 스코프(IDOR)를 강제한다
+ *    — 항목/자료 코드는 회사별 채번이라 전역 유일하지 않으므로 마스터 조인만으로는 격리가 안 된다.
  * <p>★비동기: 초기/재분석 트리거는 {@code markItemsAnalyzing}(autocommit)로 ANALYZING 선커밋 후
  *    별도 러너 빈({@link TbmAi01AnalyzeRunner}, 프록시 경유)을 호출한다. 본 서비스 메서드에는
  *    {@code @Transactional} 을 부여하지 않는다(ANALYZING 이 async 시작 전 커밋되도록).

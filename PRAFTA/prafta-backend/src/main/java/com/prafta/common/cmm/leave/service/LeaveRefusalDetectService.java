@@ -31,4 +31,17 @@ public interface LeaveRefusalDetectService {
      */
     void guardAndRecord(String cmpnyCd, String siteCd, String userCd, String nodeCd,
                         String workYmd, String attemptType, String operatorUserCd);
+
+    /**
+     * 순수 판정(부작용 없음): 시도일이 노무수령거부 차단 대상(촉진 1·2차 확정 법정 연차일 · 비휴일)인지 여부.
+     *
+     * <p>{@link #guardAndRecord}와 <b>동일 술어</b>({@code LeaveRefusalMapper.selectLaborRefusalTarget})를
+     * 공유하되, BLOCKED 이력/PUSH 적재나 예외 throw 를 하지 않는다. 화면(홈 카드 등)이 촉진 연차일을
+     * 사전에 인지해 "출근하기" 대신 차단 안내를 노출하기 위한 조회 전용 계약이다(근태 E2E F2).
+     *
+     * <p>차단의 최종 권위는 여전히 {@code guardAndRecord}(ATTD_400_150)이며, 본 메서드는 표시 보조일 뿐이다.
+     *
+     * @return 촉진 차단 대상이면 true, 그 외(자발/비법정/휴일/연차 없음)면 false.
+     */
+    boolean isRefusalTarget(String cmpnyCd, String siteCd, String userCd, String workYmd);
 }

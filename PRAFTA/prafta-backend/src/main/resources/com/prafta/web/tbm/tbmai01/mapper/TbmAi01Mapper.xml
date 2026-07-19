@@ -3,13 +3,16 @@
 <mapper namespace="com.prafta.web.tbm.tbmai01.mapper.TbmAi01Mapper">
 
 	<!-- 항목→자료→회사 스코프 도출(IDOR). 미소유/미존재면 NULL -->
+	<!-- 테넌트 격리: MTRL_ITEM_CD·MTRL_CD 는 회사별 채번이라 전역 유일하지 않다.
+	     반드시 항목(A) 자신의 CMPNY_CD 로 좁힌다. -->
 	<select id="selectMtrlCdByItemCd" resultType="string">
 	/* TbmAi01Mapper.selectMtrlCdByItemCd */
 	SELECT A.MTRL_CD
 	FROM TB_TBM_EDU_MTRL_ITEM A
 		 INNER JOIN TB_TBM_EDU_MTRL M
-		 	ON (A.MTRL_CD = M.MTRL_CD AND M.CMPNY_CD = #{gvCmpnyCd})
-	WHERE A.MTRL_ITEM_CD = #{mtrlItemCd}
+		 	ON (A.CMPNY_CD = M.CMPNY_CD AND A.MTRL_CD = M.MTRL_CD)
+	WHERE A.CMPNY_CD = #{gvCmpnyCd}
+	  AND A.MTRL_ITEM_CD = #{mtrlItemCd}
 	LIMIT 1
 	</select>
 
@@ -48,8 +51,10 @@
 		, A.FILE_MGMT_CD	AS fileMgmtCd
 	FROM TB_TBM_EDU_MTRL_ITEM A
 		 INNER JOIN TB_TBM_EDU_MTRL M
-		 	ON (A.MTRL_CD = M.MTRL_CD AND M.CMPNY_CD = #{gvCmpnyCd})
-	WHERE A.MTRL_CD = #{mtrlCd}
+		 	ON (A.CMPNY_CD = M.CMPNY_CD AND A.MTRL_CD = M.MTRL_CD)
+	/* 테넌트 격리: MTRL_CD 는 회사별 채번이라 전역 유일하지 않다. 항목 자신의 CMPNY_CD 로 함께 좁힌다. */
+	WHERE A.CMPNY_CD = #{gvCmpnyCd}
+	  AND A.MTRL_CD = #{mtrlCd}
 	  AND A.USE_YN = 'Y'
 	  AND A.AI_ANALYZE_YN = 'Y'                 /* ★v4 추가: 체크된 항목만 분석 */
 	  AND A.MTRL_ITEM_TYPE IN ('01','04')
@@ -65,12 +70,14 @@
 	/* TbmAi01Mapper.markItemsAnalyzing */
 	UPDATE TB_TBM_EDU_MTRL_ITEM A
 		   INNER JOIN TB_TBM_EDU_MTRL M
-		   	  ON (A.MTRL_CD = M.MTRL_CD AND M.CMPNY_CD = #{gvCmpnyCd})
+		   	  ON (A.CMPNY_CD = M.CMPNY_CD AND A.MTRL_CD = M.MTRL_CD)
 	SET
 		A.AI_STATUS	= 'ANALYZING'
 		, A.UPDATE_NO	= #{userCd}
 		, A.UPDATE_DATE	= NOW()
-	WHERE A.MTRL_CD = #{mtrlCd}
+	/* 테넌트 격리: 항목 자신의 CMPNY_CD 로 함께 좁힌다(MTRL_CD 는 회사별 채번). */
+	WHERE A.CMPNY_CD = #{gvCmpnyCd}
+	  AND A.MTRL_CD = #{mtrlCd}
 	  AND A.USE_YN = 'Y'
 	  AND A.AI_ANALYZE_YN = 'Y'                 /* ★v4 추가 */
 	  AND A.MTRL_ITEM_TYPE IN ('01','04')
@@ -88,8 +95,10 @@
 		, A.FILE_MGMT_CD	AS fileMgmtCd
 	FROM TB_TBM_EDU_MTRL_ITEM A
 		 INNER JOIN TB_TBM_EDU_MTRL M
-		 	ON (A.MTRL_CD = M.MTRL_CD AND M.CMPNY_CD = #{gvCmpnyCd})
-	WHERE A.MTRL_CD = #{mtrlCd}
+		 	ON (A.CMPNY_CD = M.CMPNY_CD AND A.MTRL_CD = M.MTRL_CD)
+	/* 테넌트 격리: 항목 자신의 CMPNY_CD 로 함께 좁힌다(MTRL_CD 는 회사별 채번). */
+	WHERE A.CMPNY_CD = #{gvCmpnyCd}
+	  AND A.MTRL_CD = #{mtrlCd}
 	  AND A.USE_YN = 'Y'
 	  AND A.AI_ANALYZE_YN = 'Y'
 	  AND A.MTRL_ITEM_TYPE IN ('01','04')
@@ -102,12 +111,14 @@
 	/* TbmAi01Mapper.markItemsAnalyzingAuto */
 	UPDATE TB_TBM_EDU_MTRL_ITEM A
 		   INNER JOIN TB_TBM_EDU_MTRL M
-		   	  ON (A.MTRL_CD = M.MTRL_CD AND M.CMPNY_CD = #{gvCmpnyCd})
+		   	  ON (A.CMPNY_CD = M.CMPNY_CD AND A.MTRL_CD = M.MTRL_CD)
 	SET
 		A.AI_STATUS	= 'ANALYZING'
 		, A.UPDATE_NO	= #{userCd}
 		, A.UPDATE_DATE	= NOW()
-	WHERE A.MTRL_CD = #{mtrlCd}
+	/* 테넌트 격리: 항목 자신의 CMPNY_CD 로 함께 좁힌다(MTRL_CD 는 회사별 채번). */
+	WHERE A.CMPNY_CD = #{gvCmpnyCd}
+	  AND A.MTRL_CD = #{mtrlCd}
 	  AND A.USE_YN = 'Y'
 	  AND A.AI_ANALYZE_YN = 'Y'
 	  AND A.MTRL_ITEM_TYPE IN ('01','04')
@@ -120,12 +131,14 @@
 	/* TbmAi01Mapper.markItemAnalyzing */
 	UPDATE TB_TBM_EDU_MTRL_ITEM A
 		   INNER JOIN TB_TBM_EDU_MTRL M
-		   	  ON (A.MTRL_CD = M.MTRL_CD AND M.CMPNY_CD = #{gvCmpnyCd})
+		   	  ON (A.CMPNY_CD = M.CMPNY_CD AND A.MTRL_CD = M.MTRL_CD)
 	SET
 		A.AI_STATUS	= 'ANALYZING'
 		, A.UPDATE_NO	= #{userCd}
 		, A.UPDATE_DATE	= NOW()
-	WHERE A.MTRL_ITEM_CD = #{mtrlItemCd}
+	/* 테넌트 격리: MTRL_ITEM_CD 는 회사별 채번이라 전역 유일하지 않다. 항목 자신의 CMPNY_CD 필수. */
+	WHERE A.CMPNY_CD = #{gvCmpnyCd}
+	  AND A.MTRL_ITEM_CD = #{mtrlItemCd}
 	</update>
 
 	<!-- 단건 항목 AI행 조회(액션 EP 공용). NULL 이면 미소유. 위치매핑: TbmAiItemRow 생성자 순서와 일치 -->
@@ -145,8 +158,10 @@
 		, M.SITE_CD			AS siteCd
 	FROM TB_TBM_EDU_MTRL_ITEM A
 		 INNER JOIN TB_TBM_EDU_MTRL M
-		 	ON (A.MTRL_CD = M.MTRL_CD AND M.CMPNY_CD = #{gvCmpnyCd})
-	WHERE A.MTRL_ITEM_CD = #{mtrlItemCd}
+		 	ON (A.CMPNY_CD = M.CMPNY_CD AND A.MTRL_CD = M.MTRL_CD)
+	/* 테넌트 격리: 항목 자신의 CMPNY_CD 로 좁힌다(MTRL_ITEM_CD 는 회사별 채번). */
+	WHERE A.CMPNY_CD = #{gvCmpnyCd}
+	  AND A.MTRL_ITEM_CD = #{mtrlItemCd}
 	  AND A.USE_YN = 'Y'
 	</select>
 
@@ -155,7 +170,7 @@
 	/* TbmAi01Mapper.updateItemDraft */
 	UPDATE TB_TBM_EDU_MTRL_ITEM A
 		   INNER JOIN TB_TBM_EDU_MTRL M
-		   	  ON (A.MTRL_CD = M.MTRL_CD AND M.CMPNY_CD = #{gvCmpnyCd})
+		   	  ON (A.CMPNY_CD = M.CMPNY_CD AND A.MTRL_CD = M.MTRL_CD)
 	SET
 		A.AI_STATUS			= 'DRAFT'
 		, A.AI_DRAFT_TEXT	= #{draftText}
@@ -163,7 +178,9 @@
 		, A.AI_ANALYZED_AT	= NOW()
 		, A.UPDATE_NO		= #{userCd}
 		, A.UPDATE_DATE		= NOW()
-	WHERE A.MTRL_ITEM_CD = #{mtrlItemCd}
+	/* 테넌트 격리: 항목 자신의 CMPNY_CD 필수(MTRL_ITEM_CD 는 회사별 채번). */
+	WHERE A.CMPNY_CD = #{gvCmpnyCd}
+	  AND A.MTRL_ITEM_CD = #{mtrlItemCd}
 	</update>
 
 	<!-- 분석 실패 저장(FAILED) -->
@@ -171,13 +188,15 @@
 	/* TbmAi01Mapper.updateItemFailed */
 	UPDATE TB_TBM_EDU_MTRL_ITEM A
 		   INNER JOIN TB_TBM_EDU_MTRL M
-		   	  ON (A.MTRL_CD = M.MTRL_CD AND M.CMPNY_CD = #{gvCmpnyCd})
+		   	  ON (A.CMPNY_CD = M.CMPNY_CD AND A.MTRL_CD = M.MTRL_CD)
 	SET
 		A.AI_STATUS			= 'FAILED'
 		, A.AI_ANALYZED_AT	= NOW()
 		, A.UPDATE_NO		= #{userCd}
 		, A.UPDATE_DATE		= NOW()
-	WHERE A.MTRL_ITEM_CD = #{mtrlItemCd}
+	/* 테넌트 격리: 항목 자신의 CMPNY_CD 필수(MTRL_ITEM_CD 는 회사별 채번). */
+	WHERE A.CMPNY_CD = #{gvCmpnyCd}
+	  AND A.MTRL_ITEM_CD = #{mtrlItemCd}
 	</update>
 
 	<!-- 대화이력 저장(chat-item, 텍스트만 — 상태 미변경) -->
@@ -185,12 +204,14 @@
 	/* TbmAi01Mapper.updateItemChatJson */
 	UPDATE TB_TBM_EDU_MTRL_ITEM A
 		   INNER JOIN TB_TBM_EDU_MTRL M
-		   	  ON (A.MTRL_CD = M.MTRL_CD AND M.CMPNY_CD = #{gvCmpnyCd})
+		   	  ON (A.CMPNY_CD = M.CMPNY_CD AND A.MTRL_CD = M.MTRL_CD)
 	SET
 		A.AI_CHAT_JSON	= #{chatJson}
 		, A.UPDATE_NO	= #{userCd}
 		, A.UPDATE_DATE	= NOW()
-	WHERE A.MTRL_ITEM_CD = #{mtrlItemCd}
+	/* 테넌트 격리: 항목 자신의 CMPNY_CD 필수(MTRL_ITEM_CD 는 회사별 채번). */
+	WHERE A.CMPNY_CD = #{gvCmpnyCd}
+	  AND A.MTRL_ITEM_CD = #{mtrlItemCd}
 	</update>
 
 	<!-- 확정 저장(confirm-item/manual-confirm — CONFIRM_DESC + CONFIRMED, 멱등) -->
@@ -198,13 +219,15 @@
 	/* TbmAi01Mapper.updateItemConfirm */
 	UPDATE TB_TBM_EDU_MTRL_ITEM A
 		   INNER JOIN TB_TBM_EDU_MTRL M
-		   	  ON (A.MTRL_CD = M.MTRL_CD AND M.CMPNY_CD = #{gvCmpnyCd})
+		   	  ON (A.CMPNY_CD = M.CMPNY_CD AND A.MTRL_CD = M.MTRL_CD)
 	SET
 		A.AI_CONFIRM_DESC	= #{confirmDesc}
 		, A.AI_STATUS		= 'CONFIRMED'
 		, A.UPDATE_NO		= #{userCd}
 		, A.UPDATE_DATE		= NOW()
-	WHERE A.MTRL_ITEM_CD = #{mtrlItemCd}
+	/* 테넌트 격리: 항목 자신의 CMPNY_CD 필수(MTRL_ITEM_CD 는 회사별 채번). */
+	WHERE A.CMPNY_CD = #{gvCmpnyCd}
+	  AND A.MTRL_ITEM_CD = #{mtrlItemCd}
 	</update>
 
 	<!-- analysis-status 목록. 위치매핑: TbmAiItemStatusRow 생성자 순서와 일치 -->
@@ -221,8 +244,10 @@
 		, DATE_FORMAT(A.AI_ANALYZED_AT, '%Y-%m-%d %H:%i')	AS aiAnalyzedAt
 	FROM TB_TBM_EDU_MTRL_ITEM A
 		 INNER JOIN TB_TBM_EDU_MTRL M
-		 	ON (A.MTRL_CD = M.MTRL_CD AND M.CMPNY_CD = #{gvCmpnyCd})
-	WHERE A.MTRL_CD = #{mtrlCd}
+		 	ON (A.CMPNY_CD = M.CMPNY_CD AND A.MTRL_CD = M.MTRL_CD)
+	/* 테넌트 격리: 항목 자신의 CMPNY_CD 로 함께 좁힌다(MTRL_CD 는 회사별 채번). */
+	WHERE A.CMPNY_CD = #{gvCmpnyCd}
+	  AND A.MTRL_CD = #{mtrlCd}
 	  AND A.USE_YN = 'Y'
 	ORDER BY A.SORT_IDX
 	</select>
@@ -231,6 +256,8 @@
 	     회사스코프(IDOR) M.CMPNY_CD + 회사공통/사업장 가시성 게이트 + 선택 필터. -->
 	<sql id="worklistWhere">
 		WHERE M.CMPNY_CD = #{gvCmpnyCd}
+		  <!-- 테넌트 격리: 항목(A) 자신의 CMPNY_CD 도 직접 좁힌다(항목 코드는 회사별 채번). -->
+		  AND A.CMPNY_CD = #{gvCmpnyCd}
 		  AND M.USE_YN = 'Y'
 		  AND A.USE_YN = 'Y'
 		  /* AI 분석 관리 화면은 '분석 지정된' 항목만 다룬다.
@@ -326,7 +353,8 @@
 		, DATE_FORMAT(A.AI_ANALYZED_AT, '%Y-%m-%d %H:%i')	AS aiAnalyzedAt
 	FROM TB_TBM_EDU_MTRL_ITEM A
 		 INNER JOIN TB_TBM_EDU_MTRL M
-		 	ON (A.MTRL_CD = M.MTRL_CD)
+		 	<!-- 테넌트 격리: MTRL_CD 는 회사별 채번이라 전역 유일하지 않다. 회사코드를 조인키에 포함한다. -->
+		 	ON (A.CMPNY_CD = M.CMPNY_CD AND A.MTRL_CD = M.MTRL_CD)
 		 /* TB_FILE_INFO PK = CMPNY_CD + FILE_MGMT_CD. 회사 조건이 빠지면 타 회사 동일 코드 행이
 		    붙어 파일명이 뒤바뀌거나 행이 늘어난다(총건수 쿼리와 불일치). */
 		 LEFT OUTER JOIN TB_FILE_INFO B
@@ -349,7 +377,8 @@
 	SELECT COUNT(1)
 	FROM TB_TBM_EDU_MTRL_ITEM A
 		 INNER JOIN TB_TBM_EDU_MTRL M
-		 	ON (A.MTRL_CD = M.MTRL_CD)
+		 	<!-- 테넌트 격리: MTRL_CD 는 회사별 채번이라 전역 유일하지 않다. 회사코드를 조인키에 포함한다. -->
+		 	ON (A.CMPNY_CD = M.CMPNY_CD AND A.MTRL_CD = M.MTRL_CD)
 	<include refid="worklistWhere"/>
 	</select>
 

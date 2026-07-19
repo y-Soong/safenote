@@ -747,10 +747,13 @@
 	<!-- USER_ID 중복 체크 (UX_TB_USER_ID UNIQUE 사전 진단). -->
 	<select id="selectUserIdExists" resultType="int">
 	/* User01Mapper.selectUserIdExists */
+	<!-- ★로그인 ID 전역 유일화(2026-07-13 결정): 로그인은 회사코드 없이 USER_ID 만으로 사용자를 찾으므로,
+	     ID 가 회사 간에 중복되면 로그인이 깨진다(다중행/타사 인증). UNIQUE 제약도 UX_TB_USER_ID(USER_ID)
+	     단독으로 전환했다. 따라서 중복검사도 **전사 기준**으로 해야 DB 제약 위반(500) 전에 걸러진다.
+	     일용직 계정도 TB_USER 에 미러되므로 같은 ID 공간을 공유한다. -->
 	SELECT COUNT(1)
 	FROM TB_USER A
-	WHERE A.CMPNY_CD = #{cmpnyCd}
-	  AND A.USER_ID  = #{userId}
+	WHERE A.USER_ID = #{userId}
 	</select>
 
 	<!-- 휴대폰 HMAC 중복 체크 (UX_TB_USER_MBL_NO UNIQUE 사전 진단). -->

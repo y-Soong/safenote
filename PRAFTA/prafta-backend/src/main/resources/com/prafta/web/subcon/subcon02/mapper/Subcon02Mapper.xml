@@ -1,0 +1,775 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.prafta.web.subcon.subcon02.mapper.Subcon02Mapper">
+
+    <!-- ============================================================
+         메뉴 버튼 권한 보유 카운트(서버측 역할 게이트, Subcon_02 — Subcon01 패턴 미러).
+         btnType 은 서비스 상수('SRCH'/'NEW'/'SAVE'/'DELT')만 전달되며, 고정 컬럼으로만 분기(동적 ${} 미사용).
+         ============================================================ -->
+    <select id="selectMenuButtonAuthCnt" resultType="int">
+    /* Subcon02Mapper.selectMenuButtonAuthCnt */
+    SELECT COUNT(*)
+    FROM (
+        SELECT 1
+          FROM TB_SYST_AUTH_MENU
+         WHERE CMPNY_CD  = #{cmpnyCd}
+           AND AUTH_CD   = #{authCd}
+           AND MENU_D_ID = #{menuDId}
+           AND USE_YN    = 'Y'
+           <choose>
+               <when test="btnType == 'SRCH'">AND BTN_SRCH = 'Y'</when>
+               <when test="btnType == 'NEW'">AND BTN_NEW = 'Y'</when>
+               <when test="btnType == 'SAVE'">AND BTN_SAVE = 'Y'</when>
+               <when test="btnType == 'DELT'">AND BTN_DELT = 'Y'</when>
+               <otherwise>AND 1 = 0</otherwise>
+           </choose>
+         LIMIT 1
+    ) T
+    </select>
+
+    <!-- ============================================================
+         사업장 연동 링크 목록 — 자사가 당사자(SRC/DST)인 전 상태(목록=이력, plan D2).
+         direction: 자사=제공측 → SENT, 자사=수신측 → RECEIVED.
+         상대사 노출 필드 = 회사코드/회사명만(최소 노출). SRC 사업장명은 링크 당사자라
+         cross-tenant read 허용(§5-1). 직상위 초과 조상 정보는 응답하지 않는다(인접 차수 가시성).
+         ※ resultType 이 record 라 SELECT 컬럼 순서 = record 컴포넌트 순서 유지 필수.
+         ============================================================ -->
+    <select id="selectSiteLinkList" resultType="com.prafta.web.subcon.subcon02.result.SiteLinkResult">
+    /* Subcon02Mapper.selectSiteLinkList */
+    SELECT
+        L.LINK_ID                                               AS linkId
+        , CASE
+            WHEN L.SRC_CMPNY_CD = #{gvCmpnyCd} THEN 'SENT'
+            ELSE 'RECEIVED'
+          END                                                   AS direction
+        , CASE
+            WHEN L.SRC_CMPNY_CD = #{gvCmpnyCd} THEN L.DST_CMPNY_CD
+            ELSE L.SRC_CMPNY_CD
+          END                                                   AS otherCmpnyCd
+        , IFNULL(C.CMPNY_NM, '')                                AS otherCmpnyNm
+        , L.SRC_SITE_CD                                         AS srcSiteCd
+        , IFNULL(SS.SITE_NM, '')                                AS srcSiteNm
+        , L.DST_SITE_CD                                         AS dstSiteCd
+        , DS.SITE_NM                                            AS dstSiteNm
+        , L.STATUS                                              AS status
+        , DATE_FORMAT(L.INSERT_DATE, '%Y-%m-%d %H:%i:%s')       AS insertDate
+        , DATE_FORMAT(L.PROCESS_DTIME, '%Y-%m-%d %H:%i:%s')     AS processDtime
+        , L.PROCESS_COMMENT                                     AS processComment
+        <!-- PRAFTA-SUBCON-T6-02: 점검 구성 연동 상태(SiteLinkResult record 말미 필드와 같은 순서). -->
+        , L.CHKPT_LINK_STATUS                                   AS chkptLinkStatus
+        , DATE_FORMAT(L.CHKPT_LINK_DTIME, '%Y-%m-%d %H:%i:%s')  AS chkptLinkDtime
+    FROM TB_SITE_LINK L
+        LEFT OUTER JOIN TB_CMPNY C
+            ON (
+                C.CMPNY_CD = CASE
+                    WHEN L.SRC_CMPNY_CD = #{gvCmpnyCd} THEN L.DST_CMPNY_CD
+                    ELSE L.SRC_CMPNY_CD
+                END
+            )
+        LEFT OUTER JOIN TB_SITE SS
+            ON (
+                SS.CMPNY_CD = L.SRC_CMPNY_CD
+            AND SS.SITE_CD  = L.SRC_SITE_CD
+            )
+        LEFT OUTER JOIN TB_SITE DS
+            ON (
+                DS.CMPNY_CD = L.DST_CMPNY_CD
+            AND DS.SITE_CD  = L.DST_SITE_CD
+            )
+    WHERE (L.SRC_CMPNY_CD = #{gvCmpnyCd} OR L.DST_CMPNY_CD = #{gvCmpnyCd})
+    ORDER BY L.INSERT_DATE DESC, L.LINK_ID DESC
+    LIMIT #{limit}
+    </select>
+
+    <!-- 제안 후보 ① — 관계 ACCEPTED 상대 회사 목록(회사코드/회사명만 — 최소 노출). -->
+    <select id="selectActiveRelationCmpnyList" resultType="com.prafta.web.subcon.subcon02.result.RelationCmpnyResult">
+    /* Subcon02Mapper.selectActiveRelationCmpnyList */
+    SELECT
+        CASE
+            WHEN R.REQ_CMPNY_CD = #{gvCmpnyCd} THEN R.TGT_CMPNY_CD
+            ELSE R.REQ_CMPNY_CD
+        END                                                     AS cmpnyCd
+        , IFNULL(C.CMPNY_NM, '')                                AS cmpnyNm
+    FROM TB_CMPNY_RELATION R
+        LEFT OUTER JOIN TB_CMPNY C
+            ON (
+                C.CMPNY_CD = CASE
+                    WHEN R.REQ_CMPNY_CD = #{gvCmpnyCd} THEN R.TGT_CMPNY_CD
+                    ELSE R.REQ_CMPNY_CD
+                END
+            )
+    WHERE R.STATUS = 'ACCEPTED'
+      AND (R.REQ_CMPNY_CD = #{gvCmpnyCd} OR R.TGT_CMPNY_CD = #{gvCmpnyCd})
+    ORDER BY cmpnyNm ASC
+    </select>
+
+    <!-- 제안 후보 ② — 내 활성 사업장(미러 포함 — 미러 재제안이 n차 체인의 본체, §5-2). -->
+    <select id="selectMyActiveSiteList" resultType="com.prafta.web.subcon.subcon02.result.MySiteResult">
+    /* Subcon02Mapper.selectMyActiveSiteList */
+    SELECT
+        A.SITE_CD                                               AS siteCd
+        , A.SITE_NM                                             AS siteNm
+        , CASE
+            WHEN A.LINK_SRC_CMPNY_CD IS NOT NULL THEN 'Y'
+            ELSE 'N'
+          END                                                   AS linkYn
+    FROM TB_SITE A
+    WHERE A.CMPNY_CD = #{gvCmpnyCd}
+      AND IFNULL(A.USE_YN, 'Y') = 'Y'
+    ORDER BY A.SITE_NM ASC
+    </select>
+
+    <!-- 관계 ACCEPTED 관계ID(방향 불문) — 제안 가드 §5-3 #2. 미수립이면 0행(null). -->
+    <select id="selectActiveRelationId" resultType="long">
+    /* Subcon02Mapper.selectActiveRelationId */
+    SELECT R.RELATION_ID
+    FROM TB_CMPNY_RELATION R
+    WHERE R.STATUS = 'ACCEPTED'
+      AND (
+            (R.REQ_CMPNY_CD = #{cmpnyCdA} AND R.TGT_CMPNY_CD = #{cmpnyCdB})
+         OR (R.REQ_CMPNY_CD = #{cmpnyCdB} AND R.TGT_CMPNY_CD = #{cmpnyCdA})
+      )
+    LIMIT 1
+    </select>
+
+    <!-- 제안측 소유 활성 사업장 존재 — 소유 검증 §5-3 #1(타사 사업장 제안 봉인). -->
+    <select id="selectMySiteActiveCnt" resultType="int">
+    /* Subcon02Mapper.selectMySiteActiveCnt */
+    SELECT COUNT(*)
+    FROM TB_SITE A
+    WHERE A.CMPNY_CD = #{cmpnyCd}
+      AND A.SITE_CD  = #{siteCd}
+      AND IFNULL(A.USE_YN, 'Y') = 'Y'
+    </select>
+
+    <!-- 연동 출처 단건 — 루프 가드 조상 순회(§5-3 #4). 서버 데이터(tb_site)만 사용. -->
+    <select id="selectSiteLinkSrc" resultType="com.prafta.web.subcon.subcon02.result.SiteLinkSrcRaw">
+    /* Subcon02Mapper.selectSiteLinkSrc */
+    SELECT
+        A.LINK_SRC_CMPNY_CD     AS linkSrcCmpnyCd
+        , A.LINK_SRC_SITE_CD    AS linkSrcSiteCd
+    FROM TB_SITE A
+    WHERE A.CMPNY_CD = #{cmpnyCd}
+      AND A.SITE_CD  = #{siteCd}
+    </select>
+
+    <!-- ============================================================
+         활성 링크 중복 가드(§5-3 #5) — 같은 (SRC 사업장 → DST 회사) 1건.
+         FOR UPDATE 로 제안 트랜잭션 직렬화. gap lock 한계는 UX_SITE_LINK_ACTIVE
+         UNIQUE(DDL)가 백스톱(동시 INSERT → DuplicateKeyException).
+         ============================================================ -->
+    <select id="selectActiveLinkCntForUpdate" resultType="int">
+    /* Subcon02Mapper.selectActiveLinkCntForUpdate */
+    SELECT COUNT(*)
+    FROM (
+        SELECT 1
+          FROM TB_SITE_LINK
+         WHERE STATUS IN ('PROPOSED', 'ACTIVE')
+           AND SRC_CMPNY_CD = #{srcCmpnyCd}
+           AND SRC_SITE_CD  = #{srcSiteCd}
+           AND DST_CMPNY_CD = #{dstCmpnyCd}
+         FOR UPDATE
+    ) T
+    </select>
+
+    <!-- 링크 INSERT — STATUS='PROPOSED' 고정, linkId 는 AUTO_INCREMENT 회수. -->
+    <insert id="insertSiteLink" parameterType="com.prafta.web.subcon.subcon02.application.command.SiteLinkInsertCommand"
+            useGeneratedKeys="true" keyProperty="linkId">
+    /* Subcon02Mapper.insertSiteLink */
+    INSERT INTO TB_SITE_LINK (
+          RELATION_ID
+        , SRC_CMPNY_CD
+        , SRC_SITE_CD
+        , DST_CMPNY_CD
+        , STATUS
+        , PROPOSE_USER_CD
+        , INSERT_NO
+        , INSERT_DATE
+    ) VALUES (
+          #{relationId}
+        , #{srcCmpnyCd}
+        , #{srcSiteCd}
+        , #{dstCmpnyCd}
+        , 'PROPOSED'
+        , #{proposeUserCd}
+        , #{insertNo}
+        , NOW()
+    )
+    </insert>
+
+    <!-- ============================================================
+         상태 전이 — 조건부 UPDATE(§4 전이표 그대로).
+         WHERE 에 기대상태 + 당사자 조건을 함께 걸어 0행이면 서비스가 404(존재 비노출).
+         미존재/타사 링크/이미 처리 상태를 응답으로 구분하지 않는다(IDOR 열거 방지).
+         ============================================================ -->
+
+    <!-- 수락 선점: PROPOSED → ACTIVE. 수신측(DST) 소속만 + 관계 ACCEPTED 존속 재검증
+         (관계 해지 후 잔존 제안의 수락으로 무관계 미러가 생기는 것을 차단). -->
+    <update id="acceptSiteLinkPreempt" parameterType="com.prafta.web.subcon.subcon02.application.command.SiteLinkProcessCommand">
+    /* Subcon02Mapper.acceptSiteLinkPreempt */
+    UPDATE TB_SITE_LINK L
+       SET L.STATUS           = 'ACTIVE'
+         , L.PROCESS_CMPNY_CD = #{actorCmpnyCd}
+         , L.PROCESS_USER_CD  = #{actorUserCd}
+         , L.PROCESS_DTIME    = NOW()
+         , L.PROCESS_COMMENT  = #{comment}
+         , L.UPDATE_NO        = #{actorUserCd}
+         , L.UPDATE_DATE      = NOW()
+     WHERE L.LINK_ID      = #{linkId}
+       AND L.STATUS       = 'PROPOSED'
+       AND L.DST_CMPNY_CD = #{actorCmpnyCd}
+       AND EXISTS (
+            SELECT 1
+              FROM TB_CMPNY_RELATION R
+             WHERE R.RELATION_ID = L.RELATION_ID
+               AND R.STATUS      = 'ACCEPTED'
+       )
+    </update>
+
+    <!-- 거부: PROPOSED → REJECTED. 수신측(DST) 소속만. 사유는 PROCESS_COMMENT 에 기록. -->
+    <update id="rejectSiteLink" parameterType="com.prafta.web.subcon.subcon02.application.command.SiteLinkProcessCommand">
+    /* Subcon02Mapper.rejectSiteLink */
+    UPDATE TB_SITE_LINK
+       SET STATUS           = 'REJECTED'
+         , PROCESS_CMPNY_CD = #{actorCmpnyCd}
+         , PROCESS_USER_CD  = #{actorUserCd}
+         , PROCESS_DTIME    = NOW()
+         , PROCESS_COMMENT  = #{comment}
+         , UPDATE_NO        = #{actorUserCd}
+         , UPDATE_DATE      = NOW()
+     WHERE LINK_ID      = #{linkId}
+       AND STATUS       = 'PROPOSED'
+       AND DST_CMPNY_CD = #{actorCmpnyCd}
+    </update>
+
+    <!-- 취소: PROPOSED → CANCELLED. 제안측(SRC) 소속만. -->
+    <update id="cancelSiteLink" parameterType="com.prafta.web.subcon.subcon02.application.command.SiteLinkProcessCommand">
+    /* Subcon02Mapper.cancelSiteLink */
+    UPDATE TB_SITE_LINK
+       SET STATUS           = 'CANCELLED'
+         , PROCESS_CMPNY_CD = #{actorCmpnyCd}
+         , PROCESS_USER_CD  = #{actorUserCd}
+         , PROCESS_DTIME    = NOW()
+         , PROCESS_COMMENT  = #{comment}
+         , UPDATE_NO        = #{actorUserCd}
+         , UPDATE_DATE      = NOW()
+     WHERE LINK_ID      = #{linkId}
+       AND STATUS       = 'PROPOSED'
+       AND SRC_CMPNY_CD = #{actorCmpnyCd}
+    </update>
+
+    <!-- 해지: ACTIVE → TERMINATED. 양측 중 어느 쪽이든 가능(독립화는 서비스가 후속 수행). -->
+    <update id="terminateSiteLink" parameterType="com.prafta.web.subcon.subcon02.application.command.SiteLinkProcessCommand">
+    /* Subcon02Mapper.terminateSiteLink */
+    UPDATE TB_SITE_LINK
+       SET STATUS           = 'TERMINATED'
+         , PROCESS_CMPNY_CD = #{actorCmpnyCd}
+         , PROCESS_USER_CD  = #{actorUserCd}
+         , PROCESS_DTIME    = NOW()
+         , PROCESS_COMMENT  = #{comment}
+         , UPDATE_NO        = #{actorUserCd}
+         , UPDATE_DATE      = NOW()
+     WHERE LINK_ID = #{linkId}
+       AND STATUS  = 'ACTIVE'
+       AND (SRC_CMPNY_CD = #{actorCmpnyCd} OR DST_CMPNY_CD = #{actorCmpnyCd})
+    </update>
+
+    <!-- 링크 원시행 단건(내부 전용) — 조건부 UPDATE 성공 직후 미러 생성/독립화용. -->
+    <select id="selectSiteLinkById" resultType="com.prafta.web.subcon.subcon02.result.SiteLinkRaw">
+    /* Subcon02Mapper.selectSiteLinkById */
+    SELECT
+        L.LINK_ID           AS linkId
+        , L.RELATION_ID     AS relationId
+        , L.SRC_CMPNY_CD    AS srcCmpnyCd
+        , L.SRC_SITE_CD     AS srcSiteCd
+        , L.DST_CMPNY_CD    AS dstCmpnyCd
+        , L.DST_SITE_CD     AS dstSiteCd
+        , L.STATUS          AS status
+    FROM TB_SITE_LINK L
+    WHERE L.LINK_ID = #{linkId}
+    </select>
+
+    <!-- ============================================================
+         미러 생성(T2-03, §5-4)
+         ============================================================ -->
+
+    <!-- 수신측 미러 SITE_CD 채번 — baim01 selectSiteCd 시퀀스 재사용(DST 회사 기준, 20자 이하 자동). -->
+    <select id="selectNewMirrorSiteCd" resultType="string">
+    /* Subcon02Mapper.selectNewMirrorSiteCd */
+    SELECT FNC_CMM_SEQ_NEXTVAL(#{dstCmpnyCd}, 'SITE_CD')
+    FROM DUAL
+    </select>
+
+    <!-- 제공측 사업장 원시행(SITE_NO/SITE_NM) — 링크 당사자 검증(수락 선점) 후에만 호출. -->
+    <select id="selectSiteSrcRaw" resultType="com.prafta.web.subcon.subcon02.result.SiteSrcRaw">
+    /* Subcon02Mapper.selectSiteSrcRaw */
+    SELECT
+        A.SITE_NO       AS siteNo
+        , A.SITE_NM     AS siteNm
+    FROM TB_SITE A
+    WHERE A.CMPNY_CD = #{cmpnyCd}
+      AND A.SITE_CD  = #{siteCd}
+    </select>
+
+    <!-- DST 회사 내 SITE_NO 중복 카운트 — D4 접미 보정 판정. -->
+    <select id="selectSiteNoDupCnt" resultType="int">
+    /* Subcon02Mapper.selectSiteNoDupCnt */
+    SELECT COUNT(*)
+    FROM TB_SITE A
+    WHERE A.CMPNY_CD = #{cmpnyCd}
+      AND A.SITE_NO  = #{siteNo}
+    </select>
+
+    <!-- TB_SITE 복제 — 값은 원본 행에서 직접 읽는다(INSERT...SELECT — 사용자 입력 미복제).
+         SITE_ADMIN_CD=NULL(수신사 운영 필드), SITE_NO 는 D4 보정 확정값 주입. -->
+    <insert id="insertMirrorSite" parameterType="com.prafta.web.subcon.subcon02.application.command.MirrorSiteInsertCommand">
+    /* Subcon02Mapper.insertMirrorSite */
+    INSERT INTO TB_SITE (
+          CMPNY_CD
+        , SITE_CD
+        , SITE_NO
+        , SITE_NM
+        , ADDR_1
+        , ADDR_2
+        , ZIP_CODE
+        , STR_DATE
+        , END_DATE
+        , USE_YN
+        , SITE_ADMIN_CD
+        , TEL_NO
+        , GPS_RANGE
+        , SITE_DESC
+        , LAT
+        , LON
+        , LINK_SRC_CMPNY_CD
+        , LINK_SRC_SITE_CD
+        , INSERT_NO
+        , INSERT_DATE
+        , UPDATE_NO
+        , UPDATE_DATE
+    )
+    SELECT
+          #{dstCmpnyCd}
+        , #{dstSiteCd}
+        , #{siteNo}
+        , S.SITE_NM
+        , S.ADDR_1
+        , S.ADDR_2
+        , S.ZIP_CODE
+        , S.STR_DATE
+        , S.END_DATE
+        , S.USE_YN
+        , NULL
+        , S.TEL_NO
+        , S.GPS_RANGE
+        , S.SITE_DESC
+        , S.LAT
+        , S.LON
+        , #{srcCmpnyCd}
+        , #{srcSiteCd}
+        , #{insertNo}
+        , NOW()
+        , #{insertNo}
+        , NOW()
+    FROM TB_SITE S
+    WHERE S.CMPNY_CD = #{srcCmpnyCd}
+      AND S.SITE_CD  = #{srcSiteCd}
+    </insert>
+
+    <!-- 기본 부서노드 1개 — baim01 insertSiteNodeInfo 패턴 미러(루트 n1, NODE_TYPE='00001',
+         SELF_ATTD_APPRV_YN='Y' 강제, PRAFTA-001-1). 이후 트리는 수신사 자율(잠금 없음). -->
+    <insert id="insertMirrorRootNode">
+    /* Subcon02Mapper.insertMirrorRootNode */
+    INSERT INTO TB_SITE_NODE (
+          CMPNY_CD
+        , SITE_CD
+        , NODE_CD
+        , NODE_NM
+        , NODE_TYPE
+        , SELF_ATTD_APPRV_YN
+        , INSERT_NO
+        , INSERT_DATE
+        , UPDATE_NO
+        , UPDATE_DATE
+    ) VALUES (
+          #{cmpnyCd}
+        , #{siteCd}
+        , 'n1'
+        , #{nodeNm}
+        , '00001'
+        , 'Y'
+        , #{insertNo}
+        , NOW()
+        , #{insertNo}
+        , NOW()
+    )
+    </insert>
+
+    <!-- 전사역할 사업장권한 자동부여 — baim01 mergeMasterSiteAuthSet 패턴 미러(DST 회사 기준).
+         이것이 없으면 수신사 관리자가 미러 사업장을 화면에서 못 본다(§5-4 #5). -->
+    <insert id="mergeMasterSiteAuthSet">
+    /* Subcon02Mapper.mergeMasterSiteAuthSet */
+    INSERT INTO TB_USER_SITE_AUTH (
+        CMPNY_CD
+        , USER_CD
+        , SITE_CD
+        , USE_YN
+        , INSERT_NO
+        , INSERT_DATE
+        , UPDATE_NO
+        , UPDATE_DATE
+    )
+    SELECT
+        A.CMPNY_CD
+        , A.USER_CD
+        , #{siteCd} AS SITE_CD
+        , 'Y' AS USE_YN
+        , #{insertNo}
+        , NOW()
+        , #{insertNo}
+        , NOW()
+    FROM TB_USER A
+    WHERE A.CMPNY_CD = #{cmpnyCd} /* 테넌트 격리 - 수신 회사 사용자로 한정 */
+      AND A.AUTH_CD IN ('master', 'hr', 'safe', 'system') /* 전사 접근 역할 + 시스템 관리자 계정 */
+    ON DUPLICATE KEY UPDATE
+        USE_YN          = VALUES(USE_YN)
+        , UPDATE_NO     = VALUES(UPDATE_NO)
+        , UPDATE_DATE   = VALUES(UPDATE_DATE)
+    </insert>
+
+    <!-- TB_SCH_MGMT 활성분 전량 복제 — SCH_CD=원본 그대로(D3 — 미러 사이트는 전파 전용이라 충돌 없음).
+         과거 HIST 는 미복제(연동 시점 현재본만 — 요청서 §3.1). 값은 원본 행에서 직접 읽는다. -->
+    <insert id="insertMirrorSchAll">
+    /* Subcon02Mapper.insertMirrorSchAll */
+    INSERT INTO TB_SCH_MGMT (
+          CMPNY_CD
+        , SITE_CD
+        , SCH_CD
+        , SCH_NO
+        , SCH_TYPE
+        <!-- ※ BASE_YN 은 prafta-com-008-e-4 에서 DROP 된 폐기 컬럼(사업장 단위 기본근무 개념 폐기
+             → 사용자별 DEFAULT_SCH_CD 로 대체). 복제/전파 대상 아님. -->
+        , APPLY_DATE
+        , FST_SCH_STR_TIME
+        , FST_SCH_END_TIME
+        , FST_SCH_BRK_MIN
+        , FST_BRK_STR_TIME
+        , FST_BRK_END_TIME
+        , SEC_SCH_STR_TIME
+        , SEC_SCH_END_TIME
+        , SEC_SCH_BRK_MIN
+        , SEC_BRK_STR_TIME
+        , SEC_BRK_END_TIME
+        , USE_YN
+        , LINK_SRC_CMPNY_CD
+        , LINK_SRC_SCH_CD
+        , INSERT_NO
+        , INSERT_DATE
+        , UPDATE_NO
+        , UPDATE_DATE
+    )
+    SELECT
+          #{dstCmpnyCd}
+        , #{dstSiteCd}
+        , S.SCH_CD
+        , S.SCH_NO
+        , S.SCH_TYPE
+        , S.APPLY_DATE
+        , S.FST_SCH_STR_TIME
+        , S.FST_SCH_END_TIME
+        , S.FST_SCH_BRK_MIN
+        , S.FST_BRK_STR_TIME
+        , S.FST_BRK_END_TIME
+        , S.SEC_SCH_STR_TIME
+        , S.SEC_SCH_END_TIME
+        , S.SEC_SCH_BRK_MIN
+        , S.SEC_BRK_STR_TIME
+        , S.SEC_BRK_END_TIME
+        , S.USE_YN
+        , #{srcCmpnyCd}
+        , S.SCH_CD
+        , #{insertNo}
+        , NOW()
+        , #{insertNo}
+        , NOW()
+    FROM TB_SCH_MGMT S
+    WHERE S.CMPNY_CD = #{srcCmpnyCd}
+      AND S.SITE_CD  = #{srcSiteCd}
+      AND S.USE_YN   = 'Y'
+    </insert>
+
+    <!-- 링크 행에 채번된 DST_SITE_CD 기록(§5-4 #7). -->
+    <update id="updateSiteLinkDstSite">
+    /* Subcon02Mapper.updateSiteLinkDstSite */
+    UPDATE TB_SITE_LINK
+       SET DST_SITE_CD  = #{dstSiteCd}
+         , UPDATE_NO    = #{updateNo}
+         , UPDATE_DATE  = NOW()
+     WHERE LINK_ID = #{linkId}
+    </update>
+
+    <!-- ============================================================
+         독립화(T2-06, §5-6) — LINK_SRC NULL 화만. TB_CMPNY·하위 체인 절대 무접촉(불변식).
+         ============================================================ -->
+
+    <!-- 미러 사업장 독립화(일반 사업장 전환). 출처 일치 가드로 오적용 방지. -->
+    <update id="clearSiteLinkSrc">
+    /* Subcon02Mapper.clearSiteLinkSrc */
+    UPDATE TB_SITE
+       SET LINK_SRC_CMPNY_CD = NULL
+         , LINK_SRC_SITE_CD  = NULL
+         , UPDATE_NO         = #{updateNo}
+         , UPDATE_DATE       = NOW()
+     WHERE CMPNY_CD = #{dstCmpnyCd}
+       AND SITE_CD  = #{dstSiteCd}
+       AND LINK_SRC_CMPNY_CD = #{srcCmpnyCd}
+    </update>
+
+    <!-- 미러 사업장 소속 근무타입 전량 독립화. -->
+    <update id="clearSchLinkSrc">
+    /* Subcon02Mapper.clearSchLinkSrc */
+    UPDATE TB_SCH_MGMT
+       SET LINK_SRC_CMPNY_CD = NULL
+         , LINK_SRC_SCH_CD   = NULL
+         , UPDATE_NO         = #{updateNo}
+         , UPDATE_DATE       = NOW()
+     WHERE CMPNY_CD = #{dstCmpnyCd}
+       AND SITE_CD  = #{dstSiteCd}
+       AND LINK_SRC_CMPNY_CD = #{srcCmpnyCd}
+    </update>
+
+    <!-- 관계ID 산하 활성(PROPOSED/ACTIVE) 링크 목록 — 관계 해지 훅(T1 계약 경로)에서만 사용. -->
+    <select id="selectActiveLinksByRelation" resultType="com.prafta.web.subcon.subcon02.result.SiteLinkRaw">
+    /* Subcon02Mapper.selectActiveLinksByRelation */
+    SELECT
+        L.LINK_ID           AS linkId
+        , L.RELATION_ID     AS relationId
+        , L.SRC_CMPNY_CD    AS srcCmpnyCd
+        , L.SRC_SITE_CD     AS srcSiteCd
+        , L.DST_CMPNY_CD    AS dstCmpnyCd
+        , L.DST_SITE_CD     AS dstSiteCd
+        , L.STATUS          AS status
+    FROM TB_SITE_LINK L
+    WHERE L.RELATION_ID = #{relationId}
+      AND L.STATUS IN ('PROPOSED', 'ACTIVE')
+    ORDER BY L.LINK_ID ASC
+    </select>
+
+    <!-- 관계 해지 자동 독립화 — 당사자 조건 없음(관계 레벨 조건부 UPDATE 로 기증명된 경로 한정).
+         행위자 소속 회사를 특정할 수 없어 PROCESS_CMPNY_CD 는 NULL 유지(자동처리 표식). -->
+    <update id="terminateSiteLinkBySystem">
+    /* Subcon02Mapper.terminateSiteLinkBySystem */
+    UPDATE TB_SITE_LINK
+       SET STATUS           = 'TERMINATED'
+         , PROCESS_USER_CD  = #{actionUserCd}
+         , PROCESS_DTIME    = NOW()
+         , PROCESS_COMMENT  = '관계 해지에 따른 자동 독립화'
+         , UPDATE_NO        = #{actionUserCd}
+         , UPDATE_DATE      = NOW()
+     WHERE LINK_ID = #{linkId}
+       AND STATUS  = 'ACTIVE'
+    </update>
+
+    <!-- 관계 해지 자동 취소 — 잔존 PROPOSED 정리(고아 제안 방지). -->
+    <update id="cancelSiteLinkBySystem">
+    /* Subcon02Mapper.cancelSiteLinkBySystem */
+    UPDATE TB_SITE_LINK
+       SET STATUS           = 'CANCELLED'
+         , PROCESS_USER_CD  = #{actionUserCd}
+         , PROCESS_DTIME    = NOW()
+         , PROCESS_COMMENT  = '관계 해지에 따른 자동 취소'
+         , UPDATE_NO        = #{actionUserCd}
+         , UPDATE_DATE      = NOW()
+     WHERE LINK_ID = #{linkId}
+       AND STATUS  = 'PROPOSED'
+    </update>
+
+    <!-- ============================================================
+         전파(T2-05) — 값은 DB 원본 행에서만 복제(사용자 입력 미경유, UPDATE_NO='SYSTEM').
+         ============================================================ -->
+
+    <!-- 해당 SRC 사업장의 ACTIVE 링크(직속 미러) 목록 — 재귀 전파 단위. -->
+    <select id="selectActiveLinksBySrcSite" resultType="com.prafta.web.subcon.subcon02.result.LinkDstRaw">
+    /* Subcon02Mapper.selectActiveLinksBySrcSite */
+    SELECT
+        L.LINK_ID           AS linkId
+        , L.DST_CMPNY_CD    AS dstCmpnyCd
+        , L.DST_SITE_CD     AS dstSiteCd
+    FROM TB_SITE_LINK L
+    WHERE L.SRC_CMPNY_CD = #{srcCmpnyCd}
+      AND L.SRC_SITE_CD  = #{srcSiteCd}
+      AND L.STATUS       = 'ACTIVE'
+      AND L.DST_SITE_CD IS NOT NULL
+    ORDER BY L.LINK_ID ASC
+    </select>
+
+    <!-- 사업장 기본정보 전파 — 전파 필드 = §5-5 잠금 필드(SITE_NO 는 D4 로 전파 제외,
+         SITE_ADMIN_CD 는 수신사 운영 필드라 제외). 출처 일치 가드로 오적용 방지. -->
+    <update id="propagateMirrorSite">
+    /* Subcon02Mapper.propagateMirrorSite */
+    UPDATE TB_SITE D
+        INNER JOIN TB_SITE S
+            ON (
+                S.CMPNY_CD = #{srcCmpnyCd}
+            AND S.SITE_CD  = #{srcSiteCd}
+            )
+       SET D.SITE_NM     = S.SITE_NM
+         , D.ADDR_1      = S.ADDR_1
+         , D.ADDR_2      = S.ADDR_2
+         , D.ZIP_CODE    = S.ZIP_CODE
+         , D.STR_DATE    = S.STR_DATE
+         , D.END_DATE    = S.END_DATE
+         , D.USE_YN      = S.USE_YN
+         , D.TEL_NO      = S.TEL_NO
+         , D.GPS_RANGE   = S.GPS_RANGE
+         , D.SITE_DESC   = S.SITE_DESC
+         , D.LAT         = S.LAT
+         , D.LON         = S.LON
+         , D.UPDATE_NO   = 'SYSTEM'
+         , D.UPDATE_DATE = NOW()
+     WHERE D.CMPNY_CD = #{dstCmpnyCd}
+       AND D.SITE_CD  = #{dstSiteCd}
+       AND D.LINK_SRC_CMPNY_CD = #{srcCmpnyCd}
+       AND D.LINK_SRC_SITE_CD  = #{srcSiteCd}
+    </update>
+
+    <!-- 근무타입 전파(UPSERT) — 원본 (사이트, SCH_CD) 행을 미러에 반영.
+         미러 부재 시 INSERT(신규 근무타입 추가 전파), 존재 시 전 컬럼 UPDATE(USE_YN 포함).
+         미러 SCH_CD = 원본 SCH_CD 그대로(D3). INSERT...SELECT 라 행 별칭(AS NEW) 불가 →
+         VALUES() 함수 사용(하우스 선례: mergeMasterSiteAuthSet). -->
+    <insert id="propagateMirrorSch">
+    /* Subcon02Mapper.propagateMirrorSch */
+    INSERT INTO TB_SCH_MGMT (
+          CMPNY_CD
+        , SITE_CD
+        , SCH_CD
+        , SCH_NO
+        , SCH_TYPE
+        <!-- ※ BASE_YN 은 prafta-com-008-e-4 에서 DROP 된 폐기 컬럼(사업장 단위 기본근무 개념 폐기
+             → 사용자별 DEFAULT_SCH_CD 로 대체). 복제/전파 대상 아님. -->
+        , APPLY_DATE
+        , FST_SCH_STR_TIME
+        , FST_SCH_END_TIME
+        , FST_SCH_BRK_MIN
+        , FST_BRK_STR_TIME
+        , FST_BRK_END_TIME
+        , SEC_SCH_STR_TIME
+        , SEC_SCH_END_TIME
+        , SEC_SCH_BRK_MIN
+        , SEC_BRK_STR_TIME
+        , SEC_BRK_END_TIME
+        , USE_YN
+        , LINK_SRC_CMPNY_CD
+        , LINK_SRC_SCH_CD
+        , INSERT_NO
+        , INSERT_DATE
+        , UPDATE_NO
+        , UPDATE_DATE
+    )
+    SELECT
+          #{dstCmpnyCd}
+        , #{dstSiteCd}
+        , S.SCH_CD
+        , S.SCH_NO
+        , S.SCH_TYPE
+        , S.APPLY_DATE
+        , S.FST_SCH_STR_TIME
+        , S.FST_SCH_END_TIME
+        , S.FST_SCH_BRK_MIN
+        , S.FST_BRK_STR_TIME
+        , S.FST_BRK_END_TIME
+        , S.SEC_SCH_STR_TIME
+        , S.SEC_SCH_END_TIME
+        , S.SEC_SCH_BRK_MIN
+        , S.SEC_BRK_STR_TIME
+        , S.SEC_BRK_END_TIME
+        , S.USE_YN
+        , #{srcCmpnyCd}
+        , S.SCH_CD
+        , 'SYSTEM'
+        , NOW()
+        , 'SYSTEM'
+        , NOW()
+    FROM TB_SCH_MGMT S
+    WHERE S.CMPNY_CD = #{srcCmpnyCd}
+      AND S.SITE_CD  = #{srcSiteCd}
+      AND S.SCH_CD   = #{schCd}
+    ON DUPLICATE KEY UPDATE
+        SCH_NO              = VALUES(SCH_NO)
+        , SCH_TYPE          = VALUES(SCH_TYPE)
+        , APPLY_DATE        = VALUES(APPLY_DATE)
+        , FST_SCH_STR_TIME  = VALUES(FST_SCH_STR_TIME)
+        , FST_SCH_END_TIME  = VALUES(FST_SCH_END_TIME)
+        , FST_SCH_BRK_MIN   = VALUES(FST_SCH_BRK_MIN)
+        , FST_BRK_STR_TIME  = VALUES(FST_BRK_STR_TIME)
+        , FST_BRK_END_TIME  = VALUES(FST_BRK_END_TIME)
+        , SEC_SCH_STR_TIME  = VALUES(SEC_SCH_STR_TIME)
+        , SEC_SCH_END_TIME  = VALUES(SEC_SCH_END_TIME)
+        , SEC_SCH_BRK_MIN   = VALUES(SEC_SCH_BRK_MIN)
+        , SEC_BRK_STR_TIME  = VALUES(SEC_BRK_STR_TIME)
+        , SEC_BRK_END_TIME  = VALUES(SEC_BRK_END_TIME)
+        , USE_YN            = VALUES(USE_YN)
+        , LINK_SRC_CMPNY_CD = VALUES(LINK_SRC_CMPNY_CD)
+        , LINK_SRC_SCH_CD   = VALUES(LINK_SRC_SCH_CD)
+        , UPDATE_NO         = VALUES(UPDATE_NO)
+        , UPDATE_DATE       = NOW()
+    </insert>
+
+    <!-- 미러 테넌트 근무타입 이력 시퀀스(attd01 selectSchHistIdx 패턴 미러). -->
+    <select id="selectMirrorSchHistIdx" resultType="int">
+    /* Subcon02Mapper.selectMirrorSchHistIdx */
+    SELECT COUNT(*)
+    FROM TB_SCH_MGMT_HIST A
+    WHERE A.CMPNY_CD = #{cmpnyCd}
+      AND A.SITE_CD  = #{siteCd}
+      AND A.SCH_CD   = #{schCd}
+    </select>
+
+    <!-- 미러 테넌트 HIST INSERT(전파 변경분 — D7). 전파 직후 미러 현재본 스냅샷(서버 데이터만). -->
+    <insert id="insertMirrorSchHist">
+    /* Subcon02Mapper.insertMirrorSchHist */
+    INSERT INTO TB_SCH_MGMT_HIST (
+          CMPNY_CD
+        , SITE_CD
+        , HIST_IDX
+        , SCH_CD
+        , APPLY_DATE
+        , FST_SCH_STR_TIME
+        , FST_SCH_END_TIME
+        , FST_SCH_BRK_MIN
+        , FST_BRK_STR_TIME
+        , FST_BRK_END_TIME
+        , SEC_SCH_STR_TIME
+        , SEC_SCH_END_TIME
+        , SEC_SCH_BRK_MIN
+        , SEC_BRK_STR_TIME
+        , SEC_BRK_END_TIME
+        , USE_YN
+        , INSERT_NO
+        , INSERT_DATE
+    )
+    SELECT
+          M.CMPNY_CD
+        , M.SITE_CD
+        , #{histIdx}
+        , M.SCH_CD
+        , M.APPLY_DATE
+        , M.FST_SCH_STR_TIME
+        , M.FST_SCH_END_TIME
+        , M.FST_SCH_BRK_MIN
+        , M.FST_BRK_STR_TIME
+        , M.FST_BRK_END_TIME
+        , M.SEC_SCH_STR_TIME
+        , M.SEC_SCH_END_TIME
+        , M.SEC_SCH_BRK_MIN
+        , M.SEC_BRK_STR_TIME
+        , M.SEC_BRK_END_TIME
+        , M.USE_YN
+        , 'SYSTEM'
+        , NOW()
+    FROM TB_SCH_MGMT M
+    WHERE M.CMPNY_CD = #{cmpnyCd}
+      AND M.SITE_CD  = #{siteCd}
+      AND M.SCH_CD   = #{schCd}
+    </insert>
+</mapper>

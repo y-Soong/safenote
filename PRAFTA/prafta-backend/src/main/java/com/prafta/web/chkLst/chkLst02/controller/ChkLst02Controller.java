@@ -17,9 +17,11 @@ import com.prafta.common.security.JwtUtil;
 import com.prafta.web.chkLst.chkLst02.application.param.ChkptInspectItemHistListParam;
 import com.prafta.web.chkLst.chkLst02.application.param.ChkptInspectItemListParam;
 import com.prafta.web.chkLst.chkLst02.application.param.ChkptInspectItemParam;
+import com.prafta.web.chkLst.chkLst02.application.param.CopyChkptInspectItemParam;
 import com.prafta.web.chkLst.chkLst02.dto.request.ChkptInspectItemHistListRequest;
 import com.prafta.web.chkLst.chkLst02.dto.request.ChkptInspectItemListRequest;
 import com.prafta.web.chkLst.chkLst02.dto.request.ChkptInspectItemRequest;
+import com.prafta.web.chkLst.chkLst02.dto.request.CopyChkptInspectItemRequest;
 import com.prafta.web.chkLst.chkLst02.dto.response.ChkptInspectItemHistListResponse;
 import com.prafta.web.chkLst.chkLst02.dto.response.ChkptInspectItemListResponse;
 import com.prafta.web.chkLst.chkLst02.service.ChkLst02Service;
@@ -55,9 +57,18 @@ public class ChkLst02Controller {
     }
 	
 	@PostMapping("/delete-chkpt-inspect-items")
-    public ResponseEntity<?> deleteChkptInspectItemList(@RequestBody List<ChkptInspectItemRequest> request, @RequestHeader(value = "Authorization", required = false) String authorization ) {
+    public ResponseEntity<?> deleteChkptInspectItemList(@Valid @RequestBody List<ChkptInspectItemRequest> request, @RequestHeader(value = "Authorization", required = false) String authorization ) {
 
     	chkLst02Service.deleteChkptInspectItemList(ChkptInspectItemParam.from(request, jwtUtil.getAllClaimsAsMap(authorization)));
+
+    	return ResponseEntity.status(HttpStatus.OK).build();
+    }
+
+	/** PRAFTA-SUBCON-T0-04: 타 사업장 점검문항 가져오기(선택 복사 — Baim06 copy-site-nodes 패턴 준용) */
+	@PostMapping("/copy-chkpt-inspect-items")
+    public ResponseEntity<?> copyChkptInspectItemList(@Valid @RequestBody CopyChkptInspectItemRequest request, @RequestHeader(value = "Authorization", required = false) String authorization ) {
+
+    	chkLst02Service.copyChkptInspectItemList(CopyChkptInspectItemParam.from(request, jwtUtil.getAllClaimsAsMap(authorization)));
 
     	return ResponseEntity.status(HttpStatus.OK).build();
     }

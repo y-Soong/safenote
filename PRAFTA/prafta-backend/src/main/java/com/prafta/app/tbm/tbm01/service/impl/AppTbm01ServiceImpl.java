@@ -52,6 +52,8 @@ import com.prafta.common.cmm.file.application.query.FileInfoQuery;
 import com.prafta.common.cmm.file.dto.param.FileInfoParam;
 import com.prafta.common.cmm.file.mapper.FileMapper;
 import com.prafta.common.cmm.file.service.FileService;
+import com.prafta.common.cmm.tbmshare.result.TbmSessionAccess;
+import com.prafta.common.cmm.tbmshare.service.TbmSessionShareService;
 import com.prafta.common.cmm.worktime.service.WorktimeGateService;
 import com.prafta.common.dto.TokenInfo;
 import com.prafta.common.error.common.CommonErrorCode;
@@ -83,6 +85,9 @@ public class AppTbm01ServiceImpl implements AppTbm01Service {
     /** TB_FILE_INFO.FILE_TYPE — 003: TBM 서명(디렉토리 그룹). */
     private static final String FILE_TYPE_TBM_SIGN = "003";
 
+    /** 앱 사용자 TBM 은 정규직 고정(D2). grandfather 판정(M4)의 사용자 유형에도 동일 적용. */
+    private static final String USER_TYPE_REGULAR = "REGULAR";
+
     private static final String STATUS_OPENED = "OPENED";
     /** prafta-051-08 C6: 종료 허용 상태 — 교육시작/교육종료 둘 다 허용. */
     private static final String STATUS_IN_PROGRESS = "IN_PROGRESS";
@@ -106,6 +111,9 @@ public class AppTbm01ServiceImpl implements AppTbm01Service {
     /** prafta-app-022: TBM 입실 근무중 게이트(근무중에만 입실 허용). */
     private final WorktimeGateService worktimeGateService;
 
+    /** PRAFTA-SUBCON-T5: 연동 회사 지정 공통 검증 지점(세션 접근/입실 범위/개최사 라벨). */
+    private final TbmSessionShareService tbmSessionShareService;
+
     // -------------------------------------------------------------------------
     // C3: 입실 컨텍스트
     // -------------------------------------------------------------------------
@@ -117,14 +125,15 @@ public class AppTbm01ServiceImpl implements AppTbm01Service {
         String siteCd = token.gv_siteCd();
         String userCd = token.gv_userCd();
 
-        TbmSessionResult session = appTbm01Mapper.selectSession(
-                TbmSessionQuery.from(cmpnyCd, siteCd, param.sessionCd(), userCd));
+        // PRAFTA-SUBCON-T5: 세션 접근 게이트(자사 세션은 사업장 스코프 유지, 타사 세션은 지정 체인 판정).
+        TbmSessionQuery query = viewableQuery(param.sessionCd(), cmpnyCd, siteCd, userCd);
+
+        TbmSessionResult session = appTbm01Mapper.selectSession(query);
         if (session == null) {
             throw new ApiException(TbmErrorCode.TBM_404_030);
         }
 
-        TbmAttendanceResult attendance = appTbm01Mapper.selectMyAttendance(
-                TbmSessionQuery.from(cmpnyCd, siteCd, param.sessionCd(), userCd));
+        TbmAttendanceResult attendance = appTbm01Mapper.selectMyAttendance(query);
         boolean alreadyEntered = attendance != null && attendance.getEntryAt() != null;
 
         return TbmEntryContextResponse.builder()
@@ -152,8 +161,10 @@ public class AppTbm01ServiceImpl implements AppTbm01Service {
         String userCd = token.gv_userCd();
         String sessionCd = param.sessionCd();
 
-        TbmSessionResult session = appTbm01Mapper.selectSession(
-                TbmSessionQuery.from(cmpnyCd, siteCd, sessionCd, userCd));
+        // PRAFTA-SUBCON-T5(P1): 세션 접근 게이트 → 개설사 확보(미지정 회사에는 404 존재 비노출).
+        TbmSessionQuery query = viewableQuery(sessionCd, cmpnyCd, siteCd, userCd);
+
+        TbmSessionResult session = appTbm01Mapper.selectSession(query);
         if (session == null) {
             throw new ApiException(TbmErrorCode.TBM_404_030);
         }
@@ -161,7 +172,12 @@ public class AppTbm01ServiceImpl implements AppTbm01Service {
         // prafta-app-022: 근무중 게이트 — 근무 중에만 TBM 입실 허용(정책 safety §2).
         //   세션 존재 확인(404) 직후, OPENED 검증/비번 검증/멱등 분기보다 앞에서 차단한다.
         //   exit/leaveBefore/withdraw 에는 적용하지 않는다(입실만 게이트).
+        //   타사 세션이어도 본인은 자기 회사 근무 상태 기준으로 판정한다(무변경).
         worktimeGateService.assertWorking(token);
+
+        // PRAFTA-SUBCON-T5 공통 게이트(P1): 참석자 소속 회사 ∈ {개설사} ∪ SHARE 체인.
+        //   출결 INSERT 를 수행하는 모든 경로가 통과해야 하는 단일 지점(요청서 §3.2).
+        tbmSessionShareService.assertEntryAllowed(sessionCd, cmpnyCd);
 
         // D3: OPENED 일 때만 입실 허용.
         if (!STATUS_OPENED.equals(session.getStatusCd())) {
@@ -175,8 +191,7 @@ public class AppTbm01ServiceImpl implements AppTbm01Service {
         verifyPassword(PWD_TYPE_ENTRY, session.getEntryPwd(), param.entryPwd());
 
         // 기입실(멱등): 비밀번호가 일치한 경우에만, UNIQUE 충돌 전에 선조회로 빠르게 안내.
-        TbmAttendanceResult existing = appTbm01Mapper.selectMyAttendance(
-                TbmSessionQuery.from(cmpnyCd, siteCd, sessionCd, userCd));
+        TbmAttendanceResult existing = appTbm01Mapper.selectMyAttendance(query);
         if (existing != null && existing.getEntryAt() != null) {
             return idempotentEnterResponse(existing);
         }
@@ -191,8 +206,7 @@ public class AppTbm01ServiceImpl implements AppTbm01Service {
             appTbm01Mapper.insertAttendance(command);
         } catch (DuplicateKeyException dke) {
             // 동시 요청으로 이미 입실 처리됨 → 기존 출결로 멱등 응답.
-            TbmAttendanceResult after = appTbm01Mapper.selectMyAttendance(
-                    TbmSessionQuery.from(cmpnyCd, siteCd, sessionCd, userCd));
+            TbmAttendanceResult after = appTbm01Mapper.selectMyAttendance(query);
             if (after != null && after.getEntryAt() != null) {
                 return idempotentEnterResponse(after);
             }
@@ -201,8 +215,7 @@ public class AppTbm01ServiceImpl implements AppTbm01Service {
         }
 
         // 채번된 출결 재조회(응답 ATTENDANCE_CD/ENTRY_AT 확정).
-        TbmAttendanceResult saved = appTbm01Mapper.selectMyAttendance(
-                TbmSessionQuery.from(cmpnyCd, siteCd, sessionCd, userCd));
+        TbmAttendanceResult saved = appTbm01Mapper.selectMyAttendance(query);
         if (saved == null) {
             log.error("[tbm01] 입실 직후 출결 조회 실패: sessionCd={}", sessionCd);
             throw new ApiException(CommonErrorCode.COMMON_500_001);
@@ -230,8 +243,10 @@ public class AppTbm01ServiceImpl implements AppTbm01Service {
         String userCd = token.gv_userCd();
         String sessionCd = param.sessionCd();
 
-        TbmSessionResult session = appTbm01Mapper.selectSession(
-                TbmSessionQuery.from(cmpnyCd, siteCd, sessionCd, userCd));
+        // PRAFTA-SUBCON-T5: 종료도 동일 게이트로 세션에 접근한다(타사 세션 참석자의 종료 허용).
+        TbmSessionQuery query = viewableQuery(sessionCd, cmpnyCd, siteCd, userCd);
+
+        TbmSessionResult session = appTbm01Mapper.selectSession(query);
         if (session == null) {
             throw new ApiException(TbmErrorCode.TBM_404_030);
         }
@@ -245,8 +260,7 @@ public class AppTbm01ServiceImpl implements AppTbm01Service {
         }
 
         // 본인 입실 기록 확인.
-        TbmAttendanceResult attendance = appTbm01Mapper.selectMyAttendance(
-                TbmSessionQuery.from(cmpnyCd, siteCd, sessionCd, userCd));
+        TbmAttendanceResult attendance = appTbm01Mapper.selectMyAttendance(query);
         if (attendance == null || attendance.getEntryAt() == null) {
             throw new ApiException(TbmErrorCode.TBM_409_031);
         }
@@ -267,7 +281,10 @@ public class AppTbm01ServiceImpl implements AppTbm01Service {
         verifyPassword(PWD_TYPE_EXIT, session.getExitPwd(), param.exitPwd());
 
         // 종료 서명 파일 저장 → EXIT_SIGN_FILE_MGMT_CD.
-        String signFileMgmtCd = saveSignatureFile(cmpnyCd, userCd, session.getSiteCd(), signFile);
+        // N4: 서명 파일은 <b>참석자 회사</b> 소유 데이터다. 사업장코드로 세션(개설사) SITE_CD 를 넘기면
+        //   타사 테넌트의 파일 메타/경로에 개설사 사업장코드가 혼입된다 → 본인 토큰의 사업장을 쓴다
+        //   (자사 세션이면 값이 동일하므로 회귀 없음. 토큰에 사업장이 없으면 saveSignatureFile 이 회사코드로 폴백).
+        String signFileMgmtCd = saveSignatureFile(cmpnyCd, userCd, siteCd, signFile);
 
         // 출결 UPDATE(본인+미종료만).
         // prafta-051-08: appForegroundSec(앱 포그라운드 누적초, nullable) 동반 저장.
@@ -327,6 +344,9 @@ public class AppTbm01ServiceImpl implements AppTbm01Service {
                     .startedAt(r.getStartedAt())
                     .endedAt(r.getEndedAt())
                     .completionStatusCd(r.getCompletionStatusCd())
+                    // PRAFTA-SUBCON-T5: 타사(연동) 세션이면 개최사 라벨(= 나를 지정한 직상위 회사).
+                    //   자사 세션은 SQL 이 NULL 을 내려주므로 앱 카드에 배지가 뜨지 않는다(기존 UI 무변화).
+                    .hostCmpnyNm(r.getHostCmpnyNm())
                     .build());
         }
 
@@ -388,7 +408,10 @@ public class AppTbm01ServiceImpl implements AppTbm01Service {
         List<TbmContentItemResult> items = appTbm01Mapper.selectSessionContentItems(query);
 
         // 묶음코드별 항목 그룹핑(조회 순서=DISPLAY_ORDER, SORT_IDX 유지).
-        String cmpnyCd = param.tokenInfo().gv_cmpnyCd();
+        // PRAFTA-SUBCON-T5 F8: 교육자료 파일은 <b>개설사 소유</b>(/uploads/{개설사}/...)다. 서명 payload 에
+        //   뷰어 회사코드를 넣으면 FileServingFilter 의 경로-회사 검증과 불일치한다(file.sign.enforce=true
+        //   전환 시 타사 세션 자료 미리보기가 전부 403). 게이트가 돌려준 개설사로 서명한다.
+        String cmpnyCd = query.sessionCmpnyCd();
         Map<String, List<TbmContentResponse.Item>> itemsByMtrl = new LinkedHashMap<>();
         for (TbmContentItemResult it : items) {
             itemsByMtrl.computeIfAbsent(it.getMtrlCd(), k -> new ArrayList<>())
@@ -545,15 +568,15 @@ public class AppTbm01ServiceImpl implements AppTbm01Service {
         String userCd = token.gv_userCd();
         String sessionCd = param.sessionCd();
 
-        // 세션 사업장 스코프 검증(타 사업장 세션 출결 열람 차단). 없으면 404.
-        TbmSessionResult session = appTbm01Mapper.selectSession(
-                TbmSessionQuery.from(cmpnyCd, siteCd, sessionCd, userCd));
+        // 세션 접근 게이트(자사=사업장 스코프, 타사=지정 체인). 없으면 404.
+        TbmSessionQuery query = viewableQuery(sessionCd, cmpnyCd, siteCd, userCd);
+
+        TbmSessionResult session = appTbm01Mapper.selectSession(query);
         if (session == null) {
             throw new ApiException(TbmErrorCode.TBM_404_030);
         }
 
-        TbmAttendanceResult attendance = appTbm01Mapper.selectMyAttendance(
-                TbmSessionQuery.from(cmpnyCd, siteCd, sessionCd, userCd));
+        TbmAttendanceResult attendance = appTbm01Mapper.selectMyAttendance(query);
 
         boolean present = attendance != null;
         boolean entered = present && attendance.getEntryAt() != null;
@@ -635,11 +658,31 @@ public class AppTbm01ServiceImpl implements AppTbm01Service {
         return fileUrlSigner.sign(relPath, cmpnyCd);
     }
 
-    /** A4~A10 공용: Param(token) → 사업장 스코프 강제 Query 변환. */
+    /**
+     * A4~A10 공용: Param(token) → Query 변환.
+     *
+     * <p>PRAFTA-SUBCON-T5: 사업장 WHERE 강제 대신 공통 게이트({@code assertViewable})가 접근을
+     * 판정한다(자사 세션은 사업장 스코프 유지 — 게이트 내부에서 검사, 타사 세션은 지정 체인 도달성).
+     * 게이트가 돌려준 개설사(sessionCmpnyCd)로 세션/콘텐츠/위험성/자료를 조회하고, 출결은 내 회사로 조회한다.
+     */
     private TbmDetailQuery toDetailQuery(TbmSessionDetailParam param) {
         TokenInfo token = param.tokenInfo();
-        return TbmDetailQuery.from(
-                token.gv_cmpnyCd(), token.gv_siteCd(), param.sessionCd(), token.gv_userCd());
+        String cmpnyCd = token.gv_cmpnyCd();
+        String siteCd = token.gv_siteCd();
+
+        // M4: grandfather(지정 해제 후 기존 참석자 조회 허용) 판정은 사용자 단위 → 본인 식별자를 넘긴다.
+        TbmSessionAccess access = tbmSessionShareService.assertViewable(
+                param.sessionCd(), cmpnyCd, siteCd, USER_TYPE_REGULAR, token.gv_userCd());
+
+        return TbmDetailQuery.of(
+                cmpnyCd, access.hostCmpnyCd(), siteCd, param.sessionCd(), token.gv_userCd());
+    }
+
+    /** 입실/종료/컨텍스트 공용: 게이트 통과 후 세션 키(개설사)/출결 키(내 회사)를 담은 Query 생성. */
+    private TbmSessionQuery viewableQuery(String sessionCd, String cmpnyCd, String siteCd, String userCd) {
+        TbmSessionAccess access = tbmSessionShareService.assertViewable(
+                sessionCd, cmpnyCd, siteCd, USER_TYPE_REGULAR, userCd);
+        return TbmSessionQuery.of(cmpnyCd, access.hostCmpnyCd(), siteCd, sessionCd, userCd);
     }
 
     /** A7/A10: 위험성 displayName 합성(공정 · 유형 · 유해위험요인). web SessionRiskItem.displayName 규칙. */

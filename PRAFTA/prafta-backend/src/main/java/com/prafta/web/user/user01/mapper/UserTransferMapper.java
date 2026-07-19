@@ -141,6 +141,17 @@ public interface UserTransferMapper {
             @Param("nodeCd") String nodeCd, @Param("userCd") String userCd, @Param("actor") String actor);
 
     /**
+     * (c-2) [F7/QT-11-8] 소속이동 발효 시 구 사업장 미래 근무계획 정리.
+     * 발효일(fromYmd, 당일 포함) 이후 fromSiteCd 근무계획을 GEN_SOURCE 무관 전량 삭제(A안). 과거분(발효일 미만) 보존.
+     * PK(CMPNY_CD,SITE_CD,USER_CD,WORK_YMD) 로 회사+사업장+사용자 스코프 강제(cross-tenant/타 사업장 미접근).
+     * 근태 실적(TB_USER_ATTD_MGMT)은 미접근 — 근무계획만. node-only 이동(fromSiteCd==toSiteCd) 스킵은 호출부에서.
+     *
+     * @return 삭제 건수(로그용)
+     */
+    int deleteFutureWorkPlansOnSite(@Param("cmpnyCd") String cmpnyCd, @Param("fromSiteCd") String fromSiteCd,
+            @Param("userCd") String userCd, @Param("fromYmd") String fromYmd);
+
+    /**
      * (e) 진행중 근태/연차 요청(대상자=신청자) 취소.
      * 캐노니컬 반려(Attd07Mapper.updateUserAttdReqReject) 컬럼 집합 미러 — REQ_STATUS='04'(취소),
      * PROCESS_USER_CD/PROCESS_COMMENT/PROCESS_DATE 기록. WHERE USER_CD=대상자 AND REQ_STATUS='01' AND DEL_YN='N'.

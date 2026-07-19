@@ -1,0 +1,9 @@
+{
+  "title": "OT 신청(기존 OT 표시 app-030)→승인→내근태 표시(app-021)",
+  "expected": "OT 폼 기승인 OT 노출 + 3탭 OT 합산 / 웹 Attd_07 일자상세 OT행 / DB OT COMPLETED·분수 일치",
+  "actual": "앱(A): 7/12 OT 폼 — '등록 가능 시간 13:00~17:00'(raw−스케줄) 자동 산출·프리필, 상신(req 2026071700151)→웹 Attd_10 초과근무 상신 탭 승인. DB: OT_ID=2026071700044 COMPLETED WORK_MINUTES=240 REQ_ID 연결(ATTD_ID=null — 앱 경유 OT, 기지 결함 #2 전제). 앱 내근태: 이번달 '실 4h 00m(완료분)' 합산 + 7/12 상세 '초과근무 13:00~17:00 (4시간)'. 오늘/이번주 탭은 OT 대상일(7/12)이 범위 밖이라 비표시(정상). 웹 Attd_07 A행 7/12 셀 더블클릭→일자상세 '초과근무 1건 인정 (4시간 0분)'+'정규4시간·초과4시간' 표기. app-030: OT 폼 재진입 시 '이미 등록된 초과근무 2026.07.12 13:00~17:00' 노출 + 겹침 인라인 경고 확인",
+  "webView": "results/shots/QE-1-7_web_attd07-day12-detail.png",
+  "appView": "results/shots/QE-1-7_app_ot-form-existing.png",
+  "dbCheck": "tb_user_overtime_mgmt OT_ID=2026071700044 COMPLETED 240min",
+  "note": "3탭 중 오늘/이번주는 대상일 부재로 무표시 — 스코프 내 검증은 이번달 탭 기준. Attd_07 일자상세 진입은 더블클릭(@dblclick)"
+}

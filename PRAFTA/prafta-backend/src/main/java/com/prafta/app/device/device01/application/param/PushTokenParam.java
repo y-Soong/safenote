@@ -21,6 +21,7 @@ public record PushTokenParam(
     String deviceUuid
     , String pushToken
     , String platform
+    , String gvCmpnyCd
     , String gvUserCd
 ){
     // PUSH_TOKEN 컬럼 길이(varchar(500)) 상한
@@ -30,7 +31,9 @@ public record PushTokenParam(
 
         if (request == null)
             throw new ApiException(CommonErrorCode.COMMON_400_001);
-        if (tokenInfo == null || tokenInfo.gv_userCd() == null || tokenInfo.gv_userCd().isBlank())
+        // 테넌트 격리: USER_CD 는 회사별 채번이라 회사코드 없이는 사용자를 특정할 수 없다. 둘 다 JWT 에서만 도출한다.
+        if (tokenInfo == null || tokenInfo.gv_userCd() == null || tokenInfo.gv_userCd().isBlank()
+                || tokenInfo.gv_cmpnyCd() == null || tokenInfo.gv_cmpnyCd().isBlank())
             throw new ApiException(CommonErrorCode.COMMON_400_003);
 
         String pushToken = request.getPushToken();
@@ -45,6 +48,7 @@ public record PushTokenParam(
             deviceUuid
             , pushToken
             , request.getPlatform()
+            , tokenInfo.gv_cmpnyCd()
             , tokenInfo.gv_userCd()
         );
     }

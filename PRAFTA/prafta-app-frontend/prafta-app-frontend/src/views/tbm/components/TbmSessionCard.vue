@@ -13,6 +13,13 @@
   <button type="button" class="tbm-card" @click="$emit('select', session)">
     <div class="tbm-card__head">
       <p class="tbm-card__title">{{ session.title || 'TBM 세션' }}</p>
+
+      <!-- 개최사 배지(PRAFTA-SUBCON-T5): 타사(연동) 세션일 때만 서버가 hostCmpnyNm 을 내려준다.
+           표시값은 서버 relabel(나를 지정한 직상위 회사) — 프론트에서 조립하지 않는다. -->
+      <span v-if="hostBadgeLabel" class="tbm-card__badge tbm-card__badge--host">
+        {{ hostBadgeLabel }}
+      </span>
+
       <span
         v-if="variant === 'COMPLETED' && completionLabel"
         class="tbm-card__badge"
@@ -35,10 +42,14 @@ const props = defineProps({
   variant: { type: String, default: 'AVAILABLE' },
   // 세션 카드 데이터(서버 응답 항목 1건)
   //  공통: { sessionCd, title, managerUserNm, openedAt, startedAt, endedAt, completionStatusCd }
+  //  T5 추가: { hostCmpnyNm } ← 타사(연동) 세션일 때만 존재. 자사 세션은 undefined(배지 미표시).
   session: { type: Object, default: () => ({}) },
 })
 
 defineEmits(['select'])
+
+// 개최사 배지(타사 세션 구분) — 자사 세션이면 빈 문자열(배지 미표시, 기존 UI 무변화)
+const hostBadgeLabel = computed(() => props.session?.hostCmpnyNm || '')
 
 // 개설자 표기("개설자 홍길동")
 const managerText = computed(() => {
@@ -121,6 +132,18 @@ const completionToneClass = computed(() =>
 .tbm-card__badge--muted {
   background: var(--color-danger-tint);
   color: var(--color-danger-text);
+}
+/* 개최사(타사 연동) 배지 — 중립 톤(이수 배지와 시각적으로 구분) */
+.tbm-card__badge--host {
+  margin-left: auto;
+  background: var(--color-bg);
+  border: 0.5px solid var(--color-border);
+  color: var(--color-text-secondary);
+  font-weight: 500;
+  max-width: 40%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .tbm-card__manager {
   margin: var(--space-sm) 0 0;

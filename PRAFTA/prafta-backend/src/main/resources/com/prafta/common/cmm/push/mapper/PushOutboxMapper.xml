@@ -39,17 +39,21 @@
     -->
     <update id="claimSending">
     /* PushOutboxMapper.claimSending */
+    <!-- 테넌트 격리: NOTI_ID 는 회사별 채번이라 전역 유일하지 않다. 반드시 CMPNY_CD 로 함께 좁힌다. -->
     UPDATE TB_NOTI_OUTBOX
        SET SEND_STATUS = 'SENDING'
          , UPDATE_NO   = #{actor}
          , UPDATE_DATE = NOW()
-     WHERE NOTI_ID     = #{notiId}
+     WHERE CMPNY_CD    = #{cmpnyCd}
+       AND NOTI_ID     = #{notiId}
        AND SEND_STATUS = 'PENDING'
     </update>
 
     <!--
       대상 사용자의 활성 FCM 토큰 조회.
-      tb_user_device 엔 CMPNY_CD 없음(글로벌 유니크) → USER_CD 단일 키.
+      ★테넌트 격리(중요): USER_CD 는 회사별 채번이라 전역 유일하지 않다(서로 다른 회사가 같은 USER_CD 를 가진다).
+        CMPNY_CD 없이 USER_CD 로만 조회하면 **다른 회사 동일 USER_CD 사용자의 기기로 푸시가 오배송**된다.
+        (종전 주석의 "tb_user_device 엔 CMPNY_CD 없음(글로벌 유니크)" 전제는 틀렸다 — 컬럼을 추가하고 조건을 건다.)
       DEL_YN='N' AND PUSH_TOKEN IS NOT NULL 만 대상.
     -->
     <select id="selectDeviceTokens" resultType="com.prafta.common.cmm.push.vo.DeviceTokenVO">
@@ -58,7 +62,8 @@
           D.DEVICE_UUID  AS deviceUuid
         , D.PUSH_TOKEN   AS pushToken
       FROM TB_USER_DEVICE D
-     WHERE D.USER_CD    = #{targetUserCd}
+     WHERE D.CMPNY_CD   = #{cmpnyCd}
+       AND D.USER_CD    = #{targetUserCd}
        AND D.DEL_YN     = 'N'
        AND D.PUSH_TOKEN IS NOT NULL
     </select>
@@ -69,12 +74,14 @@
     -->
     <update id="markSent">
     /* PushOutboxMapper.markSent */
+    <!-- 테넌트 격리: NOTI_ID 는 회사별 채번 → CMPNY_CD 동반 필수. -->
     UPDATE TB_NOTI_OUTBOX
        SET SEND_STATUS = 'SENT'
          , SENT_DATE   = NOW()
          , UPDATE_NO   = #{actor}
          , UPDATE_DATE = NOW()
-     WHERE NOTI_ID     = #{notiId}
+     WHERE CMPNY_CD    = #{cmpnyCd}
+       AND NOTI_ID     = #{notiId}
        AND SEND_STATUS IN ('SENDING', 'PENDING')
     </update>
 
@@ -84,13 +91,15 @@
     -->
     <update id="markFailed">
     /* PushOutboxMapper.markFailed */
+    <!-- 테넌트 격리: NOTI_ID 는 회사별 채번 → CMPNY_CD 동반 필수. -->
     UPDATE TB_NOTI_OUTBOX
        SET SEND_STATUS = 'FAILED'
          , RETRY_CNT   = #{retryCnt}
          , ERROR_MSG   = #{errorMsg}
          , UPDATE_NO   = #{actor}
          , UPDATE_DATE = NOW()
-     WHERE NOTI_ID     = #{notiId}
+     WHERE CMPNY_CD    = #{cmpnyCd}
+       AND NOTI_ID     = #{notiId}
        AND SEND_STATUS IN ('SENDING', 'PENDING')
     </update>
 
@@ -100,13 +109,15 @@
     -->
     <update id="incrementRetryAndRevertPending">
     /* PushOutboxMapper.incrementRetryAndRevertPending */
+    <!-- 테넌트 격리: NOTI_ID 는 회사별 채번 → CMPNY_CD 동반 필수. -->
     UPDATE TB_NOTI_OUTBOX
        SET SEND_STATUS = 'PENDING'
          , RETRY_CNT   = RETRY_CNT + 1
          , ERROR_MSG   = #{errorMsg}
          , UPDATE_NO   = #{actor}
          , UPDATE_DATE = NOW()
-     WHERE NOTI_ID     = #{notiId}
+     WHERE CMPNY_CD    = #{cmpnyCd}
+       AND NOTI_ID     = #{notiId}
        AND SEND_STATUS = 'SENDING'
     </update>
 
@@ -116,11 +127,13 @@
     -->
     <update id="softDeleteDeviceToken">
     /* PushOutboxMapper.softDeleteDeviceToken */
+    <!-- 테넌트 격리: DEVICE_UUID 는 클라이언트 제공값이라 전역 유일을 신뢰할 수 없다. CMPNY_CD 로 함께 좁힌다. -->
     UPDATE TB_USER_DEVICE
        SET DEL_YN      = 'Y'
          , UPDATE_NO   = #{actor}
          , UPDATE_DATE = NOW()
-     WHERE DEVICE_UUID = #{deviceUuid}
+     WHERE CMPNY_CD    = #{cmpnyCd}
+       AND DEVICE_UUID = #{deviceUuid}
        AND DEL_YN      = 'N'
     </update>
 
@@ -148,13 +161,15 @@
     -->
     <update id="markSuppressed">
     /* PushOutboxMapper.markSuppressed */
+    <!-- 테넌트 격리: NOTI_ID 는 회사별 채번 → CMPNY_CD 동반 필수. -->
     UPDATE TB_NOTI_OUTBOX
        SET SEND_STATUS = 'SUPPRESSED'
          , SENT_DATE   = NOW()
          , ERROR_MSG   = #{errorMsg}
          , UPDATE_NO   = #{actor}
          , UPDATE_DATE = NOW()
-     WHERE NOTI_ID     = #{notiId}
+     WHERE CMPNY_CD    = #{cmpnyCd}
+       AND NOTI_ID     = #{notiId}
        AND SEND_STATUS = 'SENDING'
     </update>
 

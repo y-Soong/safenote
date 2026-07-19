@@ -3,11 +3,14 @@ package com.prafta.web.tbm.tbm04.service.impl;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
+import java.util.Map;
 
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
 
+import com.prafta.common.cmm.tbmshare.result.TbmSessionAccess;
+import com.prafta.common.cmm.tbmshare.service.TbmSessionShareService;
 import com.prafta.common.error.tbm.TbmErrorCode;
 import com.prafta.common.exception.ApiException;
 import com.prafta.common.util.AuthRoleUtils;
@@ -52,6 +55,8 @@ import lombok.extern.slf4j.Slf4j;
 public class Tbm04ServiceImpl implements Tbm04Service {
 
 	private final Tbm04Mapper tbm04Mapper;
+	/** PRAFTA-SUBCON-T5: 연동 회사 지정 공통 검증 지점(세션 소유 검증/relabel). */
+	private final TbmSessionShareService tbmSessionShareService;
 
 	/** 미이수 처리 사유 최소 길이(D 문서 §4.1). */
 	private static final int REASON_MIN = 10;
@@ -103,17 +108,41 @@ public class Tbm04ServiceImpl implements Tbm04Service {
 			throw new ApiException(TbmErrorCode.TBM_404_020);
 		}
 
+		// ⚠ PRAFTA-SUBCON-T5(보안): 기존 코드에는 세션 소유 검증이 없었고 테넌트 격리를 매퍼의
+		//   AT.CMPNY_CD = gvCmpnyCd 조건에만 의존했다. T5 가 출결 스코프를 SESSION_CD 단독으로
+		//   넓히므로, 스코프 확대 전에 "세션이 내 회사(개설사) 소유"임을 반드시 선검증한다.
+		//   (검증 없이 넓히면 즉시 IDOR — 타사 세션의 출결 명단이 열린다.)
+		// 웹 관리자 경로는 grandfather 를 적용하지 않는다(개설사 소유 검증이 목적) → 사용자 식별자 null.
+		TbmSessionAccess access = tbmSessionShareService.assertViewable(
+				param.sessionCd(), param.gvCmpnyCd(), null, null, null);
+		if (!access.owner()) {
+			log.warn("TBM 출결 명단 접근 차단(개설사 아님) - sessionCd={}, cmpnyCd={}",
+					param.sessionCd(), param.gvCmpnyCd());
+			throw new ApiException(TbmErrorCode.TBM_403_021);
+		}
+		// 스코프 격리: 회사 전체 권한이 아니면 자기 사업장 세션 출결만.
+		verifyScope(param.gvAuthCd(), param.gvSiteCd(), access.session().siteCd());
+
 		SessionAttendanceQuery query = SessionAttendanceQuery.from(param);
 
 		List<SessionAttendanceResult> list = tbm04Mapper.selectSessionAttendances(query);
+
+		// 타사 참석자 소속 relabel(개설사 직하 1차 회사명. 2차 이하 회사명/코드는 응답에 없음).
+		Map<String, String> labels = tbmSessionShareService.resolveTier1LabelMap(param.sessionCd());
 
 		List<SessionAttendanceResponse.AttendanceItem> items = new ArrayList<>();
 		int completedCount = 0;
 		int notCompletedCount = 0;
 
+		String hostCmpnyCd = access.session().hostCmpnyCd();
+
 		if (list != null) {
 			for (SessionAttendanceResult r : list) {
 				boolean exited = StringUtils.hasText(r.exitAt());
+				// F7(최소 노출): 타사 참석자는 <b>성명만</b> 노출한다(승인 범위 D5/Q1).
+				//   부서명(타사 조직구조)과 사내 사번(USER_CD)은 인접 차수 밖 정보이므로 redaction 한다.
+				//   콘솔 액션은 전부 attendanceCd 로 동작하므로 기능 영향 없음.
+				boolean foreign = r.cmpnyCd() != null && !r.cmpnyCd().equals(hostCmpnyCd);
 				boolean forcedEnd = "MANAGER_FORCED".equals(r.exitTypeCd());
 				String anomalyLevel = resolveAnomalyLevel(r.backgroundCount(),
 						r.gpsOutOfRangeCount(), r.networkLostCount());
@@ -128,10 +157,13 @@ public class Tbm04ServiceImpl implements Tbm04Service {
 						.attendanceCd(r.attendanceCd())
 						.userTypeCd(r.userTypeCd())
 						.userTypeNm(r.userTypeNm())
-						.userCd(r.userCd())
+						.userCd(foreign ? null : r.userCd())
 						.userNm(r.userNm())
-						.deptNm(r.deptNm())
-						.mblNoLast4(r.mblNoLast4())
+						.deptNm(foreign ? null : r.deptNm())
+						// F7-r: 타사 일용직의 휴대폰 끝4자리도 내리지 않는다. 개설사 콘솔의 식별은
+						//   성명 + 소속(1차 relabel)로 충분하고, 출결 액션은 attendanceCd 기반이라 기능
+						//   영향이 없다. 승인 범위(D5/Q1 = 성명만)를 넘지 않기 위한 최소 노출 원칙.
+						.mblNoLast4(foreign ? null : r.mblNoLast4())
 						.entryTypeCd(r.entryTypeCd())
 						.entryAt(r.entryAt())
 						.exitTypeCd(r.exitTypeCd())
@@ -154,6 +186,7 @@ public class Tbm04ServiceImpl implements Tbm04Service {
 						.networkLostCount(r.networkLostCount())
 						.eventCount(r.eventCount())
 						.anomalyLevel(anomalyLevel)
+						.affilCmpnyNm(labels.get(r.cmpnyCd()))
 						.build());
 			}
 		}
@@ -266,18 +299,58 @@ public class Tbm04ServiceImpl implements Tbm04Service {
 		// 스코프 격리: 회사 전체 권한이 아니면 자기 사업장 사용자만
 		verifyScope(param.gvAuthCd(), param.gvSiteCd(), user.siteCd());
 
+		// 인가 전제: AT.CMPNY_CD = gvCmpnyCd(내 회사 출결행) 가 인가 그 자체다. 세션 헤더 조인만
+		// 타사 세션까지 허용해 "자기 직원의 타사 세션 이수 이력"을 볼 수 있게 한다(요청서 §3.4).
 		List<UserAttendanceResult> list = tbm04Mapper.selectUserAttendances(query);
 		int totalCount = tbm04Mapper.selectUserAttendanceCount(query);
 		UserAttendanceSummaryResult summaryResult = tbm04Mapper.selectUserAttendanceSummary(query);
 
+		// F10(N+1 제거): 타사 세션의 개최사 라벨을 행마다 조회하지 않고 세션코드 집합 단위로 1회 배치 조회한다.
+		List<String> foreignSessionCds = new ArrayList<>();
+		if (list != null) {
+			for (UserAttendanceResult r : list) {
+				if (r.hostCmpnyCd() != null && !r.hostCmpnyCd().equals(param.gvCmpnyCd())) {
+					foreignSessionCds.add(r.sessionCd());
+				}
+			}
+		}
+		Map<String, String> hostLabels =
+				tbmSessionShareService.resolveHostLabels(foreignSessionCds, param.gvCmpnyCd());
+
+		List<UserAttendanceResponse.AttendanceItem> items = new ArrayList<>();
+		if (list != null) {
+			for (UserAttendanceResult r : list) {
+				boolean foreign = r.hostCmpnyCd() != null && !r.hostCmpnyCd().equals(param.gvCmpnyCd());
+
+				// PRAFTA-SUBCON-T5(plan D3): 타사 세션 행은 사업장명을 내리지 않는다(타사 사업장 =
+				// 인접 차수 밖 정보). 대신 "개최 회사"(= 나를 지정한 직상위 회사) 라벨만 표시한다.
+				String hostCmpnyNm = foreign ? hostLabels.get(r.sessionCd()) : null;
+
+				items.add(UserAttendanceResponse.AttendanceItem.builder()
+						.attendanceCd(r.attendanceCd())
+						.sessionCd(r.sessionCd())
+						.sessionTitle(r.sessionTitle())
+						.siteCd(foreign ? null : r.siteCd())
+						.siteNm(foreign ? null : r.siteNm())
+						.hostCmpnyNm(hostCmpnyNm)
+						.sessionDate(r.sessionDate())
+						.entryAt(r.entryAt())
+						.exitAt(r.exitAt())
+						.completionStatusCd(r.completionStatusCd())
+						.completionStatusNm(r.completionStatusNm())
+						.riskCount(r.riskCount())
+						.build());
+			}
+		}
+
 		UserAttendanceResponse.Summary summary = buildUserSummary(summaryResult);
 
 		log.info("TBM 사용자별 이수 조회 완료 - userCd={}, userType={}, count={}, totalCount={}",
-				param.userCd(), param.userTypeCd(), list != null ? list.size() : 0, totalCount);
+				param.userCd(), param.userTypeCd(), items.size(), totalCount);
 
 		return UserAttendanceResponse.builder()
 				.user(user)
-				.attendances(list != null ? list : Collections.emptyList())
+				.attendances(items)
 				.totalCount(totalCount)
 				.page(param.page())
 				.pageSize(param.pageSize())

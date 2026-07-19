@@ -8,14 +8,15 @@ import org.springframework.transaction.annotation.Transactional;
 
 import com.prafta.common.cmm.sch.service.DefaultSchGenService;
 import com.prafta.common.util.AuthRoleUtils;
-import com.prafta.web.attd.leaveflow.service.LeaveFlowService;
 import com.prafta.web.user.user01.application.command.UserSiteAuthCommand;
 import com.prafta.web.user.user01.mapper.User01Mapper;
 import com.prafta.web.user.user01.mapper.UserTransferMapper;
+import com.prafta.web.user.user01.result.PendingRequestTerminationResult;
 import com.prafta.web.user.user01.result.TransferBlockReason;
 import com.prafta.web.user.user01.result.TransferReservationExecRow;
 import com.prafta.web.user.user01.result.UserTransferBasicResult;
 import com.prafta.web.user.user01.service.User01TransferExecutionService;
+import com.prafta.web.user.user01.service.UserPendingRequestTerminationService;
 
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -42,7 +43,8 @@ public class User01TransferExecutionServiceImpl implements User01TransferExecuti
     private final User01Mapper user01Mapper; // 사업장권한 UPSERT/회수(D7)·노드 관리자 존재(USER_400_056) 재사용(중복 구현 금지).
     private final DefaultSchGenService defaultSchGenService; // 기본근무 발효 재사용(교대 비소속/평일/멱등).
     private final UserTransferValidator userTransferValidator; // [수정1] 5종 불가케이스 재검증 재사용(Terminal A).
-    private final LeaveFlowService leaveFlowService; // QT-11-7: 종료된 연차 요청의 원장 원복(정상 반려와 단일 출처).
+    // F1/QT-11-7: 진행중 요청 일괄 반려/취소 + 연차 원장 원복 단일 출처(비활성/탈퇴 훅과 공유).
+    private final UserPendingRequestTerminationService userPendingRequestTerminationService;
 
     /** 진행중 요청 반려/취소 사유(요청 4-1). TBM 미이수 사유와 공용. */
     private static final String REASON_TRANSFER = "소속이동";
@@ -104,6 +106,27 @@ public class User01TransferExecutionServiceImpl implements User01TransferExecuti
             }
         }
 
+        // (c-2) [F7/QT-11-8] 구 사업장 미래 근무계획 정리 — 사업장이 실제로 바뀐 경우만.
+        //   발효일(moveDate, 당일 포함) 이후 fromSiteCd 근무계획을 삭제한다((d) 신 사업장 생성 범위와 대칭).
+        //   과거분(발효일 미만)·타 사업장·근태 실적(TB_USER_ATTD_MGMT)은 절대 불변 — 근무계획(TB_USER_WORK_PLAN)만.
+        //   ★node-only 이동(fromSiteCd == toSiteCd, 부서만 변경)은 스킵: 같은 사업장 미래계획(수동/연차 셀) 유실 방지.
+        //   applyDefaultSch 여부와 무관(일용직/기본근무 미설정자도 구 사업장 잔존 미래계획 정리).
+        //   동일 트랜잭션(REQUIRED) — 삭제 실패 시 발효 전체 롤백(부분 발효 금지). DELETE 는 멱등(재발효 없음/재실행 0건).
+        //   [보안 Low] fromSiteCd 와 대칭으로 moveDate(삭제 하한) 도 방어 — 빈 문자열이면 WORK_YMD >= '' 가
+        //   전 기간(과거 재직이력·마감월 포함)에 매칭되어 "과거분 보존" 불변식이 깨진다(삭제 하한 무력화).
+        //   null/blank + YYYYMMDD 형식(길이 8) 미충족 시 삭제 스킵 + warn.
+        String fromSiteCd = row.fromSiteCd();
+        String moveDate = row.moveDate();
+        if (fromSiteCd == null || fromSiteCd.isBlank() || moveDate == null || moveDate.length() != 8) {
+            log.warn("소속이동 발효 - 구 사업장 코드/발효일 부재·비정형 미래 근무계획 정리 스킵 - cmpnyCd={}, userCd={}, reservationId={}, fromSite={}, moveDate={}",
+                    cmpnyCd, userCd, row.reservationId(), fromSiteCd, moveDate);
+        } else if (!fromSiteCd.equals(row.toSiteCd())) {
+            int purged = userTransferMapper.deleteFutureWorkPlansOnSite(
+                    cmpnyCd, fromSiteCd, userCd, moveDate);
+            log.info("소속이동 발효 - 구 사업장 미래 근무계획 정리 cmpnyCd={}, userCd={}, fromSite={}, from={}, 삭제 {}건",
+                    cmpnyCd, userCd, fromSiteCd, moveDate, purged);
+        }
+
         // (d) 기본근무 발효(정규직): [수정2] 전입은 발효일(moveDate) 포함 ~ 당해 12/31 평일 근무계획 생성.
         //     applyDefaultSchChange 는 tomorrow 부터라 발효일(신소속 첫날)이 누락되므로, 전입 경로는
         //     generateForUser 를 (발효일, 당해연말) 범위로 직접 호출한다(D3 "당일 미변경" 의 의도적 carve-out:
@@ -116,41 +139,16 @@ public class User01TransferExecutionServiceImpl implements User01TransferExecuti
                     cmpnyCd, row.toSiteCd(), userCd, row.toDefaultSchCd(), row.moveDate(), yearEnd);
         }
 
-        // (e) 진행중 요청 일괄 반려/취소.
-        //   QT-11-7: 상태 UPDATE 는 연차 원장(use 행·GRANT USED_DAYS)을 건드리지 않는다. 종료되는 연차 요청의
-        //   REQ_ID 를 UPDATE 전에 스냅샷해 두었다가, UPDATE 직후 정상 반려와 동일한 원복 시퀀스를 태운다.
-        //   (스냅샷을 안 하면 REQ_STATUS='01' 조건이 깨져 대상을 다시 찾을 수 없다.)
-        List<String> applicantLeaveReqIds = userTransferMapper.selectActiveLeaveReqIdsByApplicant(cmpnyCd, userCd);
-
-        //   신청자(대상자)건 취소.
-        int reqCancelled = userTransferMapper.cancelActiveAttdReqByApplicant(cmpnyCd, userCd, REASON_TRANSFER, actor);
-        //   승인대기 결재자(대상자)건 반려 — [수정5] 대상 REQ_ID 스냅샷 후 본 요청/결재단계 동일 집합 키로 반려
-        //   (순차 UPDATE 상호 무력화 방지).
-        List<String> approverReqIds = userTransferMapper.selectActiveApproverReqIds(cmpnyCd, userCd);
-        int reqRejected = 0;
-        int stepRejected = 0;
-        List<String> approverLeaveReqIds = List.of();
-        if (approverReqIds != null && !approverReqIds.isEmpty()) {
-            // 원복 대상(연차 사용 '05')만 추린다 — 상태 UPDATE 전에 확정해야 REQ_TYPE 재조회가 안전하다.
-            approverLeaveReqIds = userTransferMapper.selectLeaveReqIdsIn(cmpnyCd, approverReqIds);
-            reqRejected = userTransferMapper.rejectAttdReqByReqIds(cmpnyCd, approverReqIds, REASON_TRANSFER, actor);
-            stepRejected = userTransferMapper.rejectApprovalStepsForApproverByReqIds(
-                    cmpnyCd, userCd, approverReqIds, REASON_TRANSFER, actor);
-        }
-
-        //   QT-11-7: 종료된 연차 요청의 차감 원복(use 행 취소 + GRANT 재집계 + 가불 회수 + 시간차 재정산).
-        //   ★ 결재자였을 뿐인 제3자(신청자)의 연차도 여기서 함께 복구된다 — 반려됐는데 차감만 남는 상태 방지.
-        //   동일 트랜잭션(REQUIRED) — 원복 실패 시 발효 전체 롤백(부분 처리 금지).
-        int leaveRestored = 0;
-        for (String reqId : concatDistinct(applicantLeaveReqIds, approverLeaveReqIds)) {
-            leaveFlowService.restoreLeaveLedgerOnTerminate(cmpnyCd, reqId, REASON_TRANSFER, actor);
-            leaveRestored++;
-        }
-        if (leaveRestored > 0) {
-            log.info("소속이동 발효 - 종료된 연차 요청 원장 원복 {}건. userCd={}", leaveRestored, userCd);
-        }
-        int otCancelled = userTransferMapper.cancelActiveOvertimeByUser(cmpnyCd, userCd, actor);
-        int leaveChgRejected = userTransferMapper.rejectActiveLeaveChangeByUser(cmpnyCd, userCd, REASON_TRANSFER, actor);
+        // (e) 진행중 요청 일괄 반려/취소 + 연차 원장 원복 — F1/QT-11-7 단일 출처(비활성/탈퇴 훅과 공유).
+        //   신청자(대상자)/결재자(대상자) 양방향 종결 + 종료 연차 원장 원복까지 컴포넌트가 수행한다.
+        //   동일 트랜잭션(REQUIRED) — 실패 시 발효 전체 롤백(부분 발효 금지).
+        PendingRequestTerminationResult termResult =
+                userPendingRequestTerminationService.terminateAllPendingFor(cmpnyCd, userCd, REASON_TRANSFER, actor);
+        int reqCancelled = termResult.applicantReqCancelled();
+        int reqRejected = termResult.approverReqRejected();
+        int stepRejected = termResult.approverStepRejected();
+        int otCancelled = termResult.otCancelled();
+        int leaveChgRejected = termResult.leaveChangeRejected();
 
         // (f) TBM. [수정3] 미이수는 "진행중 세션" 한정. 자기 관리세션을 본인이 참석한 경우를 위해
         //   미이수 처리(f-나)를 세션 종료(f-가)보다 먼저 수행한다(세션 종료 후엔 ENDED_AT 로 진행중 EXISTS 가 제외됨).
@@ -232,25 +230,5 @@ public class User01TransferExecutionServiceImpl implements User01TransferExecuti
         return AuthRoleUtils.AUTH_MASTER.equals(authCd)
                 || AuthRoleUtils.AUTH_HR_MANAGER.equals(authCd)
                 || AuthRoleUtils.AUTH_SAFETY_MANAGER.equals(authCd);
-    }
-
-    /**
-     * QT-11-7 — 두 REQ_ID 목록을 중복 없이 합친다(입력 순서 유지, null/빈값 방어).
-     * 대상자가 신청자이면서 동시에 결재자인 요청은 이론상 없지만(본인 결재는 자동승인),
-     * 원복이 2회 실행되지 않도록 방어한다(원복 자체는 멱등이나 불필요한 재정산 호출을 피한다).
-     */
-    private static List<String> concatDistinct(List<String> a, List<String> b) {
-        java.util.LinkedHashSet<String> merged = new java.util.LinkedHashSet<>();
-        if (a != null) {
-            for (String s : a) {
-                if (s != null && !s.isBlank()) merged.add(s);
-            }
-        }
-        if (b != null) {
-            for (String s : b) {
-                if (s != null && !s.isBlank()) merged.add(s);
-            }
-        }
-        return new java.util.ArrayList<>(merged);
     }
 }

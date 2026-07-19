@@ -5,7 +5,8 @@ import com.prafta.common.exception.ApiException;
 import com.prafta.web.chkLst.chkLst02.application.param.ChkptInspectItemListParam;
 
 public record ChkptInspectItemListQuery(
-	String codeCd
+	String siteCd
+	, String codeCd
 	, String gvCmpnyCd
 ){
     public static ChkptInspectItemListQuery from(ChkptInspectItemListParam param) {
@@ -14,7 +15,8 @@ public record ChkptInspectItemListQuery(
         	throw new ApiException(CommonErrorCode.COMMON_400_001);
 
         return new ChkptInspectItemListQuery(
-    		param.codeCd()
+    		param.siteCd()
+    		, param.codeCd()
     		, param.gvCmpnyCd()
         );
     }

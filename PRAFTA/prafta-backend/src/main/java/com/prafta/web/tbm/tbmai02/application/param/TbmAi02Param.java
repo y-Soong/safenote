@@ -13,6 +13,7 @@ import com.prafta.web.tbm.tbmai02.dto.request.TbmAi02Request;
 public record TbmAi02Param(
     String sessionCd
     , String adminContentText
+    , Integer targetChars
     , String gvCmpnyCd
     , String gvUserCd
     , String gvAuthCd
@@ -27,6 +28,7 @@ public record TbmAi02Param(
         return new TbmAi02Param(
             request.getSessionCd()
             , request.getAdminContentText()
+            , request.getTargetChars()
             , tokenInfo.gv_cmpnyCd()
             , tokenInfo.gv_userCd()
             , tokenInfo.gv_authCd()

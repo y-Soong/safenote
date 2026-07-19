@@ -47,6 +47,8 @@
 	    	, A.USE_YN
 	    	, 'SYS003'
     	) 							AS useYnNm
+	    <!-- PRAFTA-SUBCON-T2-04: 미러 여부 노출(record 순서 함정 — SELECT 말미 + record 말미 동시 유지). -->
+	    , A.LINK_SRC_CMPNY_CD		AS linkSrcCmpnyCd
 	FROM TB_SCH_MGMT A
 	WHERE 1=1
 	  AND A.CMPNY_CD = #{gvCmpnyCd}
@@ -84,6 +86,15 @@
     SELECT FNC_CMM_SEQ_NEXTVAL(#{gvCmpnyCd}, CONCAT('SCH_CD-', #{siteCd}))
     FROM DUAL
     </select>
+
+	<!-- PRAFTA-SUBCON-T2-04: 사업장의 연동 원본 회사코드(NULL=일반, NOT NULL=미러=근무타입 전면 잠금). -->
+	<select id="selectSiteLinkSrcCmpny" resultType="string">
+	/* Attd01Mapper.selectSiteLinkSrcCmpny */
+	SELECT A.LINK_SRC_CMPNY_CD
+	FROM TB_SITE A
+	WHERE A.CMPNY_CD = #{gvCmpnyCd}
+	  AND A.SITE_CD  = #{siteCd}
+	</select>
 	
 	<update id="updateSchInfo" parameterType="com.prafta.web.attd.attd01.application.command.SchInfoCommand">
     /* Attd01Mapper.updateSchInfo */
@@ -302,6 +313,16 @@
       AND A.WORK_PLAN_CD = #{schCd}
       AND A.WORK_YMD <![CDATA[ >= ]]> #{fromYmd}
     ORDER BY A.USER_CD, A.WORK_YMD
+    </select>
+
+    <select id="selectSchUseYn" resultType="string">
+    /* Attd01Mapper.selectSchUseYn */
+    <!-- 사용중지 가드: 저장 전 현재 USE_YN. 기존 행이 없으면(신규 생성) 결과 없음 → null. -->
+    SELECT A.USE_YN
+    FROM TB_SCH_MGMT A
+    WHERE A.CMPNY_CD = #{cmpnyCd}
+      AND A.SITE_CD = #{siteCd}
+      AND A.SCH_CD = #{schCd}
     </select>
 
     <select id="selectShiftSchNoCount" parameterType="com.prafta.web.attd.attd01.application.query.ShiftSchNoCountQuery" resultType="int">

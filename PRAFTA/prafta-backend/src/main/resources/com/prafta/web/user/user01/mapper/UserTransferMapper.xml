@@ -134,6 +134,8 @@
          TB_SCH_MGMT(현재본, HIST_IDX=MAX) ∪ TB_SCH_MGMT_HIST UNION 후 APPLY_DATE <= baseDate 최신본.
          (web attd11 / app admin attd 의 effective-dating 패턴 동형 — 단일 schCd 룩업으로 축약).
          baseDate 기준 유효본이 없으면 최이른 적용본으로 폴백(COALESCE).
+         USE_YN 필터 없음: 사용중지된 근무타입이 배정돼 있어도 그 구간 시각은 그대로 해석해야 한다
+         (USE_YN 은 신규 배정 가능 여부일 뿐 근무시각과 무관).
          ============================================================ -->
     <select id="selectEffectiveSchSegment" resultType="com.prafta.web.user.user01.result.SchSegmentTimeResult">
     /* UserTransferMapper.selectEffectiveSchSegment */
@@ -148,8 +150,7 @@
             , M.FST_SCH_STR_TIME, M.FST_SCH_END_TIME
             , M.SEC_SCH_STR_TIME, M.SEC_SCH_END_TIME
         FROM TB_SCH_MGMT M
-        WHERE M.USE_YN   = 'Y'
-          AND M.CMPNY_CD = #{cmpnyCd}
+        WHERE M.CMPNY_CD = #{cmpnyCd}
           AND M.SITE_CD  = #{siteCd}
           AND M.SCH_CD   = #{schCd}
         UNION ALL
@@ -158,8 +159,7 @@
             , H.FST_SCH_STR_TIME, H.FST_SCH_END_TIME
             , H.SEC_SCH_STR_TIME, H.SEC_SCH_END_TIME
         FROM TB_SCH_MGMT_HIST H
-        WHERE H.USE_YN   = 'Y'
-          AND H.CMPNY_CD = #{cmpnyCd}
+        WHERE H.CMPNY_CD = #{cmpnyCd}
           AND H.SITE_CD  = #{siteCd}
           AND H.SCH_CD   = #{schCd}
     ) E
@@ -171,15 +171,13 @@
         FROM (
             SELECT M2.APPLY_DATE
             FROM TB_SCH_MGMT M2
-            WHERE M2.USE_YN   = 'Y'
-              AND M2.CMPNY_CD = #{cmpnyCd}
+            WHERE M2.CMPNY_CD = #{cmpnyCd}
               AND M2.SITE_CD  = #{siteCd}
               AND M2.SCH_CD   = #{schCd}
             UNION ALL
             SELECT H2.APPLY_DATE
             FROM TB_SCH_MGMT_HIST H2
-            WHERE H2.USE_YN   = 'Y'
-              AND H2.CMPNY_CD = #{cmpnyCd}
+            WHERE H2.CMPNY_CD = #{cmpnyCd}
               AND H2.SITE_CD  = #{siteCd}
               AND H2.SCH_CD   = #{schCd}
         ) SE
@@ -599,6 +597,21 @@
     ORDER BY R.INSERT_DATE DESC, R.RESERVATION_ID DESC
     LIMIT 1
     </select>
+
+    <!-- (c-2) [F7/QT-11-8] 소속이동 발효 시 구 사업장 미래 근무계획 정리.
+         발효일(fromYmd, 당일 포함) 이후 fromSiteCd 근무계획을 GEN_SOURCE 무관 전량 삭제(A안 — 사업장이 바뀌면
+         구 사업장 미래계획은 존재 이유가 없어 소스 불문 고아). 과거분(WORK_YMD 발효일 미만)은 재직 이력이므로 보존.
+         PK(CMPNY_CD,SITE_CD,USER_CD,WORK_YMD) 로 회사+사업장+사용자 스코프 강제(cross-tenant/타 사업장 미접근).
+         WORK_YMD 는 varchar(8) YYYYMMDD 동형이라 사전식 비교로 정확(STR_TO_DATE 불요).
+         근태 실적(TB_USER_ATTD_MGMT) 은 절대 미접근 — 근무계획만. node-only 이동 스킵은 서비스에서 처리. -->
+    <delete id="deleteFutureWorkPlansOnSite">
+    /* UserTransferMapper.deleteFutureWorkPlansOnSite (F7/QT-11-8) */
+    DELETE FROM TB_USER_WORK_PLAN
+     WHERE CMPNY_CD = #{cmpnyCd}
+       AND SITE_CD  = #{fromSiteCd}
+       AND USER_CD  = #{userCd}
+       AND WORK_YMD <![CDATA[ >= ]]> #{fromYmd}
+    </delete>
 
     <!-- 안내 확인(ack) — 회사 + 예약 ID + 대상자(USER_CD) 못박음(타인 ack 차단). 멱등(재확인도 1행). -->
     <update id="ackTransferNotice">

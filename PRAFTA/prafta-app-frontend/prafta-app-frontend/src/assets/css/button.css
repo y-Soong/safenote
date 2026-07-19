@@ -16,21 +16,21 @@
 
 .btn-custom {
   padding: 0.1rem 0.5rem;
-  border: 1px solid #30796A;
-  color: #30796A;
+  border: 1px solid #16a34a;
+  color: #16a34a;
 }
 
 .btn-custom:hover {
   color: white;
-  background: #084538;
+  background: #15803d;
 }
 
 .btn-primary {
-  background: #30796A;
+  background: #16a34a;
   color: white;
 }
 .btn-primary:hover {
-  background: #084538;
+  background: #15803d;
 }
 
 .btn-second {
@@ -46,7 +46,7 @@
 
 .search-btn {
   width: 20px;
-  background: #30796a;
+  background: #16a34a;
   border-radius: 3px;
   margin-left: -0.2rem;
   margin-right: -0.2rem;
@@ -54,7 +54,7 @@
 }
 
 .search-btn:hover {
-  background: #084538;
+  background: #15803d;
 }
 
 .icon-button {
@@ -77,8 +77,8 @@
 .create-id-btn {
   margin-top: 0.5rem;
   padding: 0.6rem 1.8rem;
-  border: 1px solid #30796a;
-  background: #30796a;
+  border: 1px solid #16a34a;
+  background: #16a34a;
   color: #fff;
   border-radius: var(--radius-md);
   font-weight: 600;
@@ -87,6 +87,6 @@
 }
 
 .create-id-btn:hover {
-  background: #084538;
+  background: #15803d;
   color: #fff;
 }

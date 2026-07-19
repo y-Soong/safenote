@@ -1,0 +1,13 @@
+{
+  "name": "subcon-e2e",
+  "version": "1.0.0",
+  "private": true,
+  "description": "PRAFTA 하도급(SUBCON) n차 체인 통합테스트 하네스 (임시)",
+  "type": "module",
+  "scripts": {
+    "test": "playwright test"
+  },
+  "dependencies": {
+    "@playwright/test": "^1.61.1"
+  }
+}

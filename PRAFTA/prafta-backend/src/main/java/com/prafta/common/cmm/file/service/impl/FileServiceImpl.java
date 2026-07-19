@@ -22,6 +22,7 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
 import com.prafta.common.cmm.file.application.command.FileInfoCommand;
+import com.prafta.common.cmm.file.application.model.FileBytesResult;
 import com.prafta.common.cmm.file.application.model.FileReadInfo;
 import com.prafta.common.cmm.file.application.model.ImageBytesResult;
 import com.prafta.common.cmm.file.application.query.FileReadQuery;
@@ -49,6 +50,31 @@ public class FileServiceImpl implements FileService {
 	 */
 	@Value("${file.upload.base-dir}")
 	private String uploadBaseDir;
+
+	/**
+	 * 보호 파일 루트 디렉토리 (SEC-1 — 일용직 근로계약서 분리 저장).
+	 * 환경변수 FILE_UPLOAD_SECURE_BASE_DIR 로 덮어쓰며, 미지정 시 {file.upload.base-dir}-secure(형제 디렉토리).
+	 * 무인증 정적 서빙(/uploads/**) 마운트가 가리키는 base 밖이므로 정적 URL 로 접근 불가하다
+	 * (인증 스트림 API 로만 서빙).
+	 */
+	@Value("${file.upload.secure-base-dir}")
+	private String secureUploadBaseDir;
+
+	/**
+	 * 보호 파일타입 — 무인증 정적 서빙 제외 대상 (SEC-1).
+	 * 007: 일용직계약서(계약서 원본/서명 PNG/합성본) — 성명+자필서명 포함 PII 법정 문서.
+	 * 여기 포함된 타입만 secure base 에 저장되며, 그 외(001~006 등)는 기존 저장 동작 불변.
+	 */
+	private static final Set<String> PROTECTED_FILE_TYPES = Set.of("007");
+
+	/** 공개 파일 FILE_PATH 선두 프리픽스(정적 서빙 마운트 경로와 동일). */
+	private static final String PUBLIC_PATH_PREFIX = "uploads";
+
+	/**
+	 * 보호 파일 FILE_PATH 선두 프리픽스 — '/uploads/**' 정적 핸들러 패턴과 불일치해
+	 * URL 로 해석될 수 없다. 로드 시 base 판별 키로도 사용(저장/로드 단일 결정 로직).
+	 */
+	private static final String SECURE_PATH_PREFIX = "uploads-secure";
 
 	/**
 	 * 업로드 허용 확장자 화이트리스트(소문자, 점 제외).
@@ -104,16 +130,23 @@ public class FileServiceImpl implements FileService {
 			String today = LocalDate.now()
 	                .format(DateTimeFormatter.ofPattern("yyyyMMdd"));
 
-	        // 파일 절대경로 — 디스크 저장 위치는 공통 설정(file.upload.base-dir) 기준.
+	        // SEC-1: 보호 파일타입(007 일용직계약서)은 정적 서빙 마운트 밖 secure base 에 분리 저장.
+	        //   그 외 타입은 기존 base 그대로(타 모듈 저장 동작 불변).
+	        boolean protectedType = PROTECTED_FILE_TYPES.contains(param.fileType());
+	        String baseDir = protectedType ? secureUploadBaseDir : uploadBaseDir;
+
+	        // 파일 절대경로 — 디스크 저장 위치는 공통 설정(file.upload.base-dir / secure-base-dir) 기준.
 	        Path absoluteFilePath = Paths.get(
-	        		uploadBaseDir,
+	        		baseDir,
 	        		param.cmpnyCd(), today,
 	        		param.siteCd(), param.fileType()
 			).toAbsolutePath().normalize();
 
-	        // 공개 URL/DB 저장용 상대경로 — '/uploads' 는 정적 서빙 마운트 경로(디스크 위치와 무관)이므로 고정.
+	        // DB 저장용 상대경로 — 공개 파일은 '/uploads'(정적 서빙 마운트 경로, 디스크 위치와 무관) 고정,
+	        // 보호 파일은 '/uploads-secure'(정적 핸들러 패턴 '/uploads/**' 과 불일치 → URL 해석 불가).
+	        // 로드(resolveSavePath)는 이 선두 프리픽스로 base 를 판별하므로 저장/로드가 같은 결정 로직을 탄다.
 	        Path filePath = Paths.get(
-	        		"/uploads",
+	        		protectedType ? "/" + SECURE_PATH_PREFIX : "/" + PUBLIC_PATH_PREFIX,
 	        		param.cmpnyCd(), today,
 	        		param.siteCd(), param.fileType()
 			).normalize();
@@ -212,6 +245,76 @@ public class FileServiceImpl implements FileService {
 		}
 	}
 
+	/**
+	 * 범용 파일 read 확장자 → content_type 매핑(PRAFTA-SUBCON-T7 Q4 첨부 복제용).
+	 * ALLOWED_EXTENSIONS(업로드 화이트리스트) 를 통과한 파일만 이 경로에 들어오므로 스크립트성 형식은 이미 배제된다.
+	 * 표에 없는 확장자는 application/octet-stream 으로 폴백(바이트 복제는 유형 무관이라 무방).
+	 */
+	private static final Map<String, String> GENERIC_MEDIA_TYPES = Map.ofEntries(
+			Map.entry("jpg", "image/jpeg"),
+			Map.entry("jpeg", "image/jpeg"),
+			Map.entry("png", "image/png"),
+			Map.entry("gif", "image/gif"),
+			Map.entry("bmp", "image/bmp"),
+			Map.entry("webp", "image/webp"),
+			Map.entry("heic", "image/heic"),
+			Map.entry("heif", "image/heif"),
+			Map.entry("tif", "image/tiff"),
+			Map.entry("tiff", "image/tiff"),
+			Map.entry("pdf", "application/pdf")
+	);
+
+	@Override
+	public FileBytesResult loadFileBytes(FileReadQuery query) {
+		if (query == null || query.cmpnyCd() == null || query.fileMgmtCd() == null
+				|| query.cmpnyCd().isBlank() || query.fileMgmtCd().isBlank()) {
+			return null;
+		}
+
+		// fileMgmtCd 자체에 경로 구분자/traversal 이 섞이면 즉시 차단(파일명 조립 오염 방지).
+		String fileMgmtCd = query.fileMgmtCd();
+		if (fileMgmtCd.contains("/") || fileMgmtCd.contains("\\") || fileMgmtCd.contains("..")) {
+			log.warn("파일 read 차단(fileMgmtCd 경로문자 포함) - {}", fileMgmtCd);
+			throw new ApiException(FileErrorCode.FILE_400_001);
+		}
+
+		FileReadInfo info = fileMapper.selectFileInfoForRead(query);
+		if (info == null || info.filePath() == null || info.fileExt() == null) {
+			// DB 행 없음(대상 없음) → null(호출부에서 빈 값/404 매핑).
+			return null;
+		}
+
+		// 확장자 정규화(선행 점 제거 + 소문자) + 업로드 화이트리스트 재검증(스크립트성 형식 차단).
+		String ext = info.fileExt().toLowerCase();
+		if (ext.startsWith(".")) {
+			ext = ext.substring(1);
+		}
+		if (!ALLOWED_EXTENSIONS.contains(ext)) {
+			log.warn("파일 read 차단(허용되지 않은 확장자) - fileMgmtCd={}, ext={}", fileMgmtCd, ext);
+			throw new ApiException(FileErrorCode.FILE_400_001);
+		}
+		String contentType = GENERIC_MEDIA_TYPES.getOrDefault(ext, "application/octet-stream");
+
+		// 디스크 절대경로 재조립 + base-dir 컨테인먼트(traversal 최종 차단). 공용 헬퍼로 위임.
+		Path savePath = resolveSavePath(info, fileMgmtCd, ext);
+
+		try {
+			java.io.File f = savePath.toFile();
+			if (!f.exists() || !f.isFile()) {
+				// 디스크에 파일 없음(대상 없음) → null.
+				log.warn("파일 원본 없음 - {}", savePath);
+				return null;
+			}
+			byte[] bytes = Files.readAllBytes(savePath);
+			return new FileBytesResult(bytes, contentType, ext, info.fileNm());
+		} catch (ApiException ae) {
+			throw ae;
+		} catch (Exception e) {
+			log.error("파일 원본 read 실패 - path={}, 원인={}", savePath, e.getMessage());
+			return null;
+		}
+	}
+
 	/** PDF read 전용 확장자(소문자, 점 제외). */
 	private static final String PDF_EXT = "pdf";
 
@@ -304,14 +407,17 @@ public class FileServiceImpl implements FileService {
 	 * @throws ApiException traversal 세그먼트/ base-dir 이탈 시(FILE_400_001)
 	 */
 	private Path resolveSavePath(FileReadInfo info, String fileMgmtCd, String ext) {
-		Path baseCanon = Paths.get(uploadBaseDir).toAbsolutePath().normalize();
+		// SEC-1: FILE_PATH 선두 프리픽스로 저장 base 판별 — '/uploads-secure'(보호 파일)는 secure base,
+		//   '/uploads'(공개 파일)는 기존 base. fileSave 의 저장 결정 로직과 동일(단일 출처 = DB FILE_PATH).
+		String baseDir = isSecureFilePath(info.filePath()) ? secureUploadBaseDir : uploadBaseDir;
+		Path baseCanon = Paths.get(baseDir).toAbsolutePath().normalize();
 		Path dir = baseCanon;
 		for (String seg : info.filePath().split("[/\\\\]")) {
 			if (seg == null || seg.isBlank()) {
 				continue;
 			}
-			if ("uploads".equalsIgnoreCase(seg)) {
-				continue;   // 정적 서빙 마운트 프리픽스 — 디스크 경로에서는 제외
+			if (PUBLIC_PATH_PREFIX.equalsIgnoreCase(seg) || SECURE_PATH_PREFIX.equalsIgnoreCase(seg)) {
+				continue;   // 마운트/보호 프리픽스 — 디스크 경로에서는 제외
 			}
 			if (".".equals(seg) || "..".equals(seg)) {
 				log.warn("파일 read 차단(경로 traversal 세그먼트) - filePath={}", info.filePath());
@@ -327,5 +433,20 @@ public class FileServiceImpl implements FileService {
 			throw new ApiException(FileErrorCode.FILE_400_001);
 		}
 		return savePath;
+	}
+
+	/**
+	 * FILE_PATH 의 첫 유효 세그먼트가 보호 파일 프리픽스('/uploads-secure')인지 판별한다 (SEC-1).
+	 *
+	 * <p>FILE_PATH 는 저장 OS 에 따라 '/' 또는 '\\' 구분자를 가질 수 있어 둘 다 처리한다.
+	 */
+	private boolean isSecureFilePath(String filePath) {
+		for (String seg : filePath.split("[/\\\\]")) {
+			if (seg == null || seg.isBlank()) {
+				continue;
+			}
+			return SECURE_PATH_PREFIX.equalsIgnoreCase(seg);
+		}
+		return false;
 	}
 }

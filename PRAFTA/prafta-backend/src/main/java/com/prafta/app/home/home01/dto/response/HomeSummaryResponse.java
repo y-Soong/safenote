@@ -59,6 +59,14 @@ public class HomeSummaryResponse {
          */
         @JsonProperty("isLeaveDay")
         private final boolean isLeaveDay;
+        /**
+         * 근태 E2E(F2): 기준일이 노무수령거부 차단 대상(연차사용촉진 1·2차 확정 법정 연차일 · 비휴일)인지 여부.
+         * true 면 프론트는 출근 시 "자발 연차일 확인 팝업"이 아니라 곧바로 차단 안내를 노출하고 출근을 진행하지 않는다.
+         * (자발/비법정/촉진+휴일 연차일은 false → 기존 확인 팝업 유지.) 서버 최종 차단은 ATTD_400_150(guardAndRecord).
+         * Jackson 이 boolean is* getter 에서 "is" 를 떼는 것을 방지(계약 키 고정).
+         */
+        @JsonProperty("laborRefusal")
+        private final boolean laborRefusal;
         /** 출근 가능 여부 (서버 산출) */
         private final boolean canCheckIn;
         /** 퇴근 가능 여부 (서버 산출) */

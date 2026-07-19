@@ -197,7 +197,7 @@ public class Baim05ServiceImpl implements Baim05Service{
         InsertDailyQrUserCommand command = InsertDailyQrUserCommand.from(userCd, param, userPw, phoneEnc, phoneHmac, phoneLast4);
         
         // 휴대폰번호 기준 계정 중복 체크(TB_DAILY_USER, USE_YN='Y')
-        int userCnt = baim05Mapper.selectDailyUserDuplicateCnt(phoneHmac);
+        int userCnt = baim05Mapper.selectDailyUserDuplicateCnt(param.gvCmpnyCd(), phoneHmac);
 
         if(userCnt > 0) {
         	throw new ApiException(BaimErrorCode.BAIM_400_003);

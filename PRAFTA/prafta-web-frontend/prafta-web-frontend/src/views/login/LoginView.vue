@@ -63,7 +63,7 @@
       </aside>
 
       <!-- RIGHT: 기존 로그인 UI -->
-      <section class="right">
+      <section class="login-right">
         <main class="login-wrapper">
           <section class="login-box" aria-label="로그인 폼">
             <!-- 헤더 -->
@@ -806,7 +806,14 @@ body,
 }
 
 /* RIGHT PANEL (4) */
-.right {
+/* ⚠️ 본 <style> 은 scoped 가 아니다(:root/html/body/#app 를 정의하므로 전역이어야 한다).
+   따라서 여기서 선언한 클래스명은 앱 전체로 새어 나간다. 과거 이 블록이 `.right` 라는
+   흔한 이름을 쓰는 바람에, Attd_07 목록뷰의 <td class="... right"> 가 display:flex 로 바뀌어
+   테이블 셀 흐름에서 빠지고 실근로시간/인정시간 셀이 세로로 쌓이는 결함이 있었다
+   (.right 는 Attd_01/02/03/07/09·각종 팝업 등 10개 이상 화면이 쓰는 이름).
+   → 로그인 전용 이름(login-right)으로 격리한다. 이 <style> 에 새 클래스를 추가할 때도
+     반드시 login- 프리픽스 등 고유 이름을 쓸 것. */
+.login-right {
   flex: 4;
   min-width: 0;
   display: flex;
@@ -1019,7 +1026,7 @@ body,
   .art {
     display: none;
   }
-  .right {
+  .login-right {
     flex: 1;
   }
 }

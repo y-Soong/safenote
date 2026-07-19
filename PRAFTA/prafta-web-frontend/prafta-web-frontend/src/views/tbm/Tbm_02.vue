@@ -8,7 +8,91 @@
       @create="fnCreate"
     />
 
-    <div class="viewSearch">
+    <!-- 탭(PRAFTA-SUBCON-T5 D2): 내가 개설한 교육 / 다른 회사에서 연동받은 교육.
+         탭 스타일은 Attd_01 표준(밑줄형)을 따른다. -->
+    <div class="attd01-tab-bar">
+      <button
+        type="button"
+        :class="['attd01-tab-btn', { active: activeTab === 'own' }]"
+        @click="fnSwitchTab('own')"
+      >
+        내 교육
+      </button>
+      <button
+        type="button"
+        :class="['attd01-tab-btn', { active: activeTab === 'shared' }]"
+        @click="fnSwitchTab('shared')"
+      >
+        연동받은 교육
+      </button>
+    </div>
+
+    <!-- ===== 연동받은 교육(비개설사 전용): 재지정 관리만 가능. 상세/콘솔 진입점 없음 ===== -->
+    <div v-if="activeTab === 'shared'" class="viewBody">
+      <div class="table-box overflow-x-auto rounded-md border border-slate-300">
+        <table class="data-grid w-full table-fixed text-sm text-left">
+          <thead>
+            <tr>
+              <th style="width: 4%; text-align: center">No</th>
+              <th style="width: 30%">교육 제목</th>
+              <th style="width: 16%">연동해 준 회사</th>
+              <th style="width: 12%">상태</th>
+              <th style="width: 14%">지정일시</th>
+              <th style="width: 10%; text-align: center">우리 참석자</th>
+              <th style="width: 14%; text-align: center">관리</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr v-if="sharedList.length === 0">
+              <td colspan="7" class="edu-grid-empty">
+                연동받은 교육이 없습니다.
+              </td>
+            </tr>
+            <tr v-for="(row, idx) in sharedList" :key="row.sessionCd" v-else>
+              <td style="text-align: center">
+                {{ (sharedPage - 1) * pageSize + idx + 1 }}
+              </td>
+              <td>{{ row.title }}</td>
+              <td>{{ row.designatedByCmpnyNm || "-" }}</td>
+              <td>{{ row.statusNm || row.statusCd }}</td>
+              <td>{{ row.designatedDtime || "-" }}</td>
+              <td style="text-align: center">{{ row.myAttendanceCount }}</td>
+              <td style="text-align: center">
+                <button
+                  class="btn btn-second btn-sm"
+                  @click="fnOpenSharePop(row)"
+                >
+                  재지정 관리
+                </button>
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div v-if="sharedTotalCount > 0" class="pager">
+        <button
+          class="btn btn-second btn-sm"
+          :disabled="sharedPage <= 1"
+          @click="fnGoSharedPage(sharedPage - 1)"
+        >
+          이전
+        </button>
+        <span class="pager-info">
+          {{ sharedPage }} / {{ sharedTotalPages }} (총
+          {{ sharedTotalCount }}건)
+        </span>
+        <button
+          class="btn btn-second btn-sm"
+          :disabled="sharedPage >= sharedTotalPages"
+          @click="fnGoSharedPage(sharedPage + 1)"
+        >
+          다음
+        </button>
+      </div>
+    </div>
+
+    <div v-show="activeTab === 'own'" class="viewSearch">
       <div>
         <label>사업장</label>
         <input
@@ -62,7 +146,7 @@
       </div>
     </div>
 
-    <div class="viewBody">
+    <div v-show="activeTab === 'own'" class="viewBody">
       <div class="table-wrapper subtitle-pane">
         <div class="subtitle">
           <span class="subtitle-icon" aria-hidden="true">
@@ -237,6 +321,7 @@ import search_icon from "@/assets/img/search_icon.png";
 import SiteSearchPop from "@/components/popup/SiteSearchPop.vue";
 import TbmSessionForm from "./popup/TbmSessionForm.vue";
 import TbmSessionConsole from "./popup/TbmSessionConsole.vue";
+import TbmShareCmpnyPop from "./popup/TbmShareCmpnyPop.vue";
 
 // ================ Options ================
 defineOptions({ name: "Tbm_02" });
@@ -284,9 +369,22 @@ const statusOptions = [
   { code: "CANCELLED", name: "취소" },
 ];
 
+// ===== 연동받은 교육 탭(PRAFTA-SUBCON-T5 D2) =====
+// 내 회사가 지정받은 타사 세션 목록. 헤더 최소 필드만 내려오며(본문/자료/참석자/사업장 없음),
+// 이 탭에서 할 수 있는 것은 재지정 관리(TbmShareCmpnyPop)뿐이다 — 상세/콘솔 진입점을 두지 않는다.
+const activeTab = ref("own"); // own | shared
+const sharedList = ref([]);
+const sharedPage = ref(1);
+const sharedTotalCount = ref(0);
+
 // ================ Computed ================
 const totalPages = computed(() => {
   const pages = Math.ceil(totalCount.value / pageSize.value);
+  return pages < 1 ? 1 : pages;
+});
+
+const sharedTotalPages = computed(() => {
+  const pages = Math.ceil(sharedTotalCount.value / pageSize.value);
   return pages < 1 ? 1 : pages;
 });
 
@@ -295,6 +393,51 @@ onMounted(async () => {
   fnInit();
   await fnSearch();
 });
+
+// ================ 연동받은 교육 탭 ================
+const fnSwitchTab = (tab) => {
+  if (activeTab.value === tab) return;
+  activeTab.value = tab;
+  if (tab === "shared") {
+    fnSearchShared();
+  }
+};
+
+const fnSearchShared = async () => {
+  try {
+    const response = await axios.get("/webApi/tbm02/shared-sessions", {
+      params: {
+        page: sharedPage.value,
+        pageSize: pageSize.value,
+      },
+    });
+    if (response.status === 200) {
+      sharedList.value = response.data?.sessionList || [];
+      sharedTotalCount.value = response.data?.totalCount || 0;
+    }
+  } catch (err) {
+    sharedList.value = [];
+    sharedTotalCount.value = 0;
+    await proxy.$alert(
+      resolveApiErrorMessage(err, "조회 중 오류가 발생했습니다.")
+    );
+  }
+};
+
+const fnGoSharedPage = (p) => {
+  if (p < 1 || p > sharedTotalPages.value) return;
+  sharedPage.value = p;
+  fnSearchShared();
+};
+
+// 재지정 관리(기존 지정/해제/현황 엔드포인트 재사용 — 신규 API 없음).
+// 지정 현황은 서버가 "내가 지정한 행"만 내려주므로 형제 회사의 지정 내역은 보이지 않는다.
+const fnOpenSharePop = (row) => {
+  openPop(TbmShareCmpnyPop, {
+    sessionCd_p: row.sessionCd,
+    onSaved: fnSearchShared,
+  });
+};
 
 // ================ API Functions ================
 const fnSrchSiteInfo = async () => {
@@ -451,6 +594,33 @@ const statusClass = (statusCd) => {
 </script>
 
 <style scoped>
+/* 탭 바(PRAFTA-SUBCON-T5 D2) — Attd_01 표준(밑줄형 14px) 준용 */
+.attd01-tab-bar {
+  display: flex;
+  gap: 0.25rem;
+  padding: 0.5rem 0 0;
+  margin-bottom: 0.5rem;
+  border-bottom: 1px solid var(--color-border);
+}
+.attd01-tab-btn {
+  padding: 0.5rem 1rem;
+  border: none;
+  border-bottom: 2px solid transparent;
+  margin-bottom: -1px;
+  background: none;
+  font-size: 0.875rem;
+  color: var(--color-text-muted);
+  cursor: pointer;
+}
+.attd01-tab-btn:hover {
+  color: var(--color-text);
+}
+.attd01-tab-btn.active {
+  font-weight: 600;
+  color: var(--color-primary);
+  border-bottom-color: var(--color-primary);
+}
+
 /* prafta-033-B: 상태 배지 */
 .status-badge {
   display: inline-block;

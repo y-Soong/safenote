@@ -52,6 +52,12 @@ public interface DailyJoinMapper {
     /** SMS 인증 레코드 소진 처리 (VERIFIED_YN='Y' -> 'C' 조건부 UPDATE). 영향행 수 반환. */
     int consumeSmsAuth(SmsAuthConsumeCommand command);
 
+    /**
+     * PRAFTA-SUBCON-T2-07: 연동 미러 사업장 가입 차단 술어 — 미러(LINK_SRC_CMPNY_CD NOT NULL)면 1 이상.
+     * (subcon mapper 의존을 피해 dailyjoin 패키지에 동형 술어를 둠 — 모듈 경계 보존, plan §5-7)
+     */
+    int selectMirrorSiteCnt(@Param("cmpnyCd") String cmpnyCd, @Param("siteCd") String siteCd);
+
     /** 사업장 계정등록 정책 사용여부 조회 (TB_DAILY_USER_LINK_POLICY.USE_YN). */
     String selectLinkPolicyUseYn(LinkPolicyQuery query);
 

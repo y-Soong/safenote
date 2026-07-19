@@ -8,6 +8,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import com.prafta.common.error.baim.BaimErrorCode;
+import com.prafta.common.error.subcon.SubconErrorCode;
 import com.prafta.common.exception.ApiException;
 import com.prafta.common.util.AuthRoleUtils;
 import com.prafta.web.baim.baim01.application.command.MasterSiteAuthSetCommand;
@@ -22,6 +23,7 @@ import com.prafta.web.baim.baim01.dto.response.SiteInfoListResponse;
 import com.prafta.web.baim.baim01.mapper.Baim01Mapper;
 import com.prafta.web.baim.baim01.result.SiteInfoResult;
 import com.prafta.web.baim.baim01.service.Baim01Service;
+import com.prafta.web.subcon.subcon02.service.SiteLinkPropagationService;
 
 import lombok.extern.slf4j.Slf4j;
 
@@ -30,11 +32,16 @@ import lombok.extern.slf4j.Slf4j;
 public class Baim01ServiceImpl implements Baim01Service{
 	private final Baim01Mapper baim01Mapper;
 
+	// PRAFTA-SUBCON-T2-05: 원본 사업장 변경의 미러 재귀 전파(동기 + 동일 트랜잭션 — 실패 시 전체 롤백).
+	private final SiteLinkPropagationService siteLinkPropagationService;
+
 	// PRAFTA-COM-001-T2-2: END_DATE/STR_DATE 는 varchar(8) YYYYMMDD 문자열. 오늘과의 비교도 8자리 문자열 비교로 일관.
 	private static final DateTimeFormatter YMD = DateTimeFormatter.ofPattern("yyyyMMdd");
 
-	public Baim01ServiceImpl(Baim01Mapper baim01Mapper) {
+	public Baim01ServiceImpl(Baim01Mapper baim01Mapper,
+			SiteLinkPropagationService siteLinkPropagationService) {
 		this.baim01Mapper = baim01Mapper;
+		this.siteLinkPropagationService = siteLinkPropagationService;
 	}
 	
 	
@@ -70,6 +77,25 @@ public class Baim01ServiceImpl implements Baim01Service{
 
 			if(!isNewSite) {								// 기존 사업장 데이터 변경
 				siteCd = model.siteCd();
+
+				// PRAFTA-SUBCON-T2-04: 미러(LINK_SRC NOT NULL) 사업장 잠금 가드(plan D5 — 필드 diff 방식).
+				//   잠금 필드(§5-5) 변경 감지 시 거부, 무변경이면 SITE_ADMIN_CD 단독 UPDATE 로 우회
+				//   (mergeSiteInfo 전체 UPSERT 경유 금지 — 전파값 오염 방지). 신규 생성은 미러일 수 없다.
+				String linkSrcCmpnyCd = baim01Mapper.selectSiteLinkSrcCmpny(model.gvCmpnyCd(), siteCd);
+				if (linkSrcCmpnyCd != null) {
+					String[] mirrorResolved = resolveEndDateBoundary(model.endDate(), model.useYn());
+					SiteInfoCommand mirrorCommand = SiteInfoCommand.from(model, siteCd, mirrorResolved[0], mirrorResolved[1]);
+
+					if (baim01Mapper.selectMirrorLockedFieldChangedCnt(mirrorCommand) > 0) {
+						log.warn("미러 사업장 잠금 필드 변경 거부 - gvCmpnyCd={}, siteCd={}, linkSrc={}",
+								model.gvCmpnyCd(), siteCd, linkSrcCmpnyCd);
+						throw new ApiException(SubconErrorCode.SUBCON_403_002);
+					}
+
+					baim01Mapper.updateSiteAdminOnly(mirrorCommand);
+					log.info("미러 사업장 SITE_ADMIN_CD 단독 저장 - gvCmpnyCd={}, siteCd={}", model.gvCmpnyCd(), siteCd);
+					continue;	// 미러는 노드/전체 UPSERT/전파 전부 건너뜀(원본 소유사 전파로만 갱신).
+				}
 			} else {										// 신규 사업장 생성
 				siteCd = baim01Mapper.selectSiteCd(model.gvCmpnyCd());
 			}
@@ -83,6 +109,9 @@ public class Baim01ServiceImpl implements Baim01Service{
 			String resolvedUseYn   = resolved[1];
 
 			baim01Mapper.mergeSiteInfo(SiteInfoCommand.from(model, siteCd, resolvedEndDate, resolvedUseYn));
+
+			// PRAFTA-SUBCON-T2-05: 저장 후 미러 재귀 전파(활성 링크 없으면 no-op — 동일 트랜잭션).
+			siteLinkPropagationService.propagateSiteInfo(model.gvCmpnyCd(), siteCd);
 
 			// PRAFTA-042-4 (D3-①): 전사 접근 역할(master/hr/safe + system)에게 신규 사업장 권한 자동 부여.
 			//   신규 생성 분기에서만 호출한다. 기존 사업장 수정 저장 시 재부여하면 D7(역할 이탈 회수)로

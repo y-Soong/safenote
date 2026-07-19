@@ -203,6 +203,15 @@ const routes = [
     component: () => import('@/views/admin/approval/AdminApprovalDetailView.vue'),
   },
 
+  // 일용직 계약서+승인제 T4: 관리자 모드 일용직 입장 승인 (보호 — publicPaths 미포함, beforeEach 토큰 게이트).
+  //   진입: AdminLauncherView 본문 ENTRY 섹션(moduleActiveMap.ENTRY===true) → /AdminEntryApproval.
+  //   진입 게이팅은 서버 access-context(ENTRY=master∥hr), 처리 인가는 서버 EP(entryadmin01)가 최종 판정.
+  {
+    path: '/AdminEntryApproval',
+    name: 'AdminEntryApproval',
+    component: () => import('@/views/admin/entry/AdminEntryApprovalView.vue'),
+  },
+
   // 관리자 연차 변경/삭제 최종 확인 (보호 — publicPaths 미포함, beforeEach 토큰 게이트).
   //   진입: AdminLauncherView 상단 "연차 변경 확인 대기 N건" 배너 → /AdminLeaveChangeConfirm.
   //   스코프/권한은 서버(공유 Attd13Service)가 단일 출처로 재강제(비관리자 fail-closed).
@@ -307,6 +316,14 @@ const routes = [
     component: () => import('@/views/mypage/ApprovalPresetEditView.vue'),
   },
 
+  // 일용직 계약서+승인제 T4: 내 서명 근로계약서 열람 (보호 — publicPaths 미포함, beforeEach 토큰 게이트).
+  //   진입: MyPageView "내 근로계약서"(일용직 전용 노출) → /MyContract. 본인 스코프는 서버가 JWT 로 강제.
+  {
+    path: '/MyContract',
+    name: 'MyContract',
+    component: () => import('@/views/mypage/MyContractView.vue'),
+  },
+
   // 사용자연차결재-02: 연차 결재 관리(결재 대기/처리 내역 2탭) — 보호 라우트(publicPaths 미포함, beforeEach 토큰 게이트).
   //   진입: 마이페이지 결재 그룹 "연차 결재 관리" → /LeaveApproval.
   {
@@ -407,6 +424,31 @@ const routes = [
     component: () => import('@/views/login/TermsAgreeView.vue'),
   },
 
+  // 일용직 계약서+승인제 T4: 근로계약서 서명 게이트 — termsGate 체인 ①-b(일용직 + signRequiredYn='Y') 진입.
+  //   보호 라우트(publicPaths 미포함, beforeEach 토큰 게이트). 정식 토큰으로 서명 EP 호출.
+  //   서명 거부/뒤로가기 → 로그아웃 후 로그인 복귀(화면 자체 가드 — TermsAgree 미러).
+  {
+    path: '/DailyContractSign',
+    name: 'DailyContractSign',
+    component: () => import('@/views/login/DailyContractSignView.vue'),
+  },
+  // 일용직 계약서+승인제 T4: 입장 승인 대기/거부 안내 — 로그인 실패(DAILYLOGIN_400_006/007) 후 진입.
+  //   비보호 라우트(publicPaths 포함) — 로그인 전 안내 전용(API 호출 없음, R4).
+  {
+    path: '/DailyEntryPending',
+    name: 'DailyEntryPending',
+    component: () => import('@/views/login/DailyEntryPendingView.vue'),
+  },
+
+  // PRAFTA-SUBCON-T4: 연동 회사 제3자 제공 동의 게이트 — 활성 연동 사업장 소속 + 006 미응답 시 진입.
+  //   보호 라우트(publicPaths 미포함, beforeEach 토큰 게이트). 정식 토큰으로 동의 EP 호출.
+  //   ★ 필수약관 게이트와 달리 강제가 아니다: 동의/미동의 모두 정상 통과(로그아웃·이탈가드 없음).
+  {
+    path: '/ThirdPartyConsent',
+    name: 'ThirdPartyConsent',
+    component: () => import('@/views/login/ThirdPartyConsentView.vue'),
+  },
+
   // prafta-app-033: 강제 비밀번호 변경 게이트 — 로그인 응답 nextStep='PASSWORD_CHANGE'(정식 토큰 보유) 시 진입.
   //   보호 라우트(publicPaths 미포함, beforeEach 토큰 게이트). 정식 토큰으로 비번변경 EP(/appApi/mypage/password) 호출.
   //   변경 거부/뒤로가기 → 로그아웃 후 로그인 복귀(화면 자체 가드). 성공 → routeAfterLogin(약관 게이트 → 메인).
@@ -441,6 +483,7 @@ const publicPaths = [
   '/JoinUser',
   '/PhoneAuth', // PRAFTA-037-F3: 인증대기 단계는 정식 토큰 미발급 → public 라우트로 취급
   '/DefaultSchGate', // PRAFTA-COM-008-E-8c: 기본 근무타입 게이트 — 임시 토큰만, 정식 토큰 미발급 → public
+  '/DailyEntryPending', // 일용직 계약서+승인제 T4: 승인 대기/거부 안내 — 로그인 실패 후 진입(토큰 미발급) → public
 ]
 
 // ✅ refresh 동시 호출 방지

@@ -19,8 +19,9 @@
     /* CompanyProvisionMapper.selectUserIdExists */
     SELECT COUNT(1)
     FROM TB_USER A
-    WHERE A.CMPNY_CD = #{cmpnyCd}
-      AND A.USER_ID  = #{userId}
+    <!-- ★로그인 ID 전역 유일화: 신규 고객사 master 의 adminId 도 전사 중복이면 안 된다
+         (로그인이 USER_ID 만으로 사용자를 찾는다). -->
+    WHERE A.USER_ID = #{userId}
     </select>
 
     <!-- 전사 대상 휴대폰번호 존재 여부(프로비저닝 중복검사). -->
@@ -316,6 +317,149 @@
         #{cmpnyCd}, #{siteCd}, #{schCd}, #{schNo}, #{schType}, #{applyDate}, #{fstSchStrTime}, #{fstSchEndTime},
         'Y', #{insertNo}, NOW(), #{insertNo}, NOW()
     )
+    </insert>
+
+    <!-- ====================================================================
+         신규 고객사 필수 시드 (없으면 연차 기능을 아예 쓸 수 없다)
+         ==================================================================== -->
+
+    <!-- (1) 시스템 연차 6종(SYSTEM_YN='Y') — 정책서 §8.5.5, 시드 원본: prafta-018-seed-system-leave-cd-template.sql
+         ★이 6종은 화면(Attd_03)에서 생성할 수 없다(SYSTEM_YN='Y' 는 편집 차단, 신규 생성은 항상 'N'+자동채번 코드).
+           따라서 프로비저닝이 넣어주지 않으면 그 고객사는 연차 부여/신청이 영구 불가하다(ATTD_400_059 / ATTD_404_030).
+         LEAVE_TYPE '02'=관리자부여 / GRANT_TYPE '01'=자동부여 / PAID_TYPE '01'=유급 / LEAVE_NATURE_TYPE '01'=법정. -->
+    <insert id="seedSystemLeaveTypes">
+    /* CompanyProvisionMapper.seedSystemLeaveTypes */
+    INSERT INTO TB_LEAVE_TYPE_MGMT (
+        CMPNY_CD, LEAVE_CD, LEAVE_NO, LEAVE_NM, LEAVE_TYPE, GRANT_TYPE, PAID_TYPE,
+        LEAVE_NATURE_TYPE, USE_YN, SYSTEM_YN, INSERT_NO, INSERT_DATE
+    )
+    SELECT #{newCmpnyCd}, S.LEAVE_CD, S.LEAVE_CD, S.LEAVE_NM, '02', '01', '01',
+           S.NATURE, 'Y', 'Y', #{gvUserCd}, NOW()
+      FROM (
+                      SELECT 'SYS_ANNUAL'       AS LEAVE_CD, '연차'            AS LEAVE_NM, '01' AS NATURE
+            UNION ALL SELECT 'SYS_MONTHLY'                 , '월차'                        , '01'
+            UNION ALL SELECT 'SYS_TENURE_BONUS'            , '근속가산 연차'                , '01'
+            UNION ALL SELECT 'SYS_PREGRANT'                , '일괄선부여 연차'              , '01'
+            UNION ALL SELECT 'SYS_PROMOTION'               , '사용촉진 연차'                , '01'
+            UNION ALL SELECT 'SYS_BIRTHDAY'                , '생일 안식휴가'                , '02'
+           ) S
+     WHERE NOT EXISTS (
+           SELECT 1 FROM TB_LEAVE_TYPE_MGMT T
+            WHERE T.CMPNY_CD = #{newCmpnyCd}
+              AND T.LEAVE_CD = S.LEAVE_CD
+       )
+    </insert>
+
+    <!-- (2) 기본 연차정책(7축) 1건 — 법정 기본값.
+         AXIS1=입사일 기준 / AXIS3=첫해 월차만 / AXIS4=올림(근로자 유리) / AXIS5=법정 근속가산(3년,2년주기,상한25)
+         AXIS6=유효 12개월 / AXIS7=사용촉진 사용 / 결재 사용. APPLY_FROM_DATE=생성일(오늘).
+         관리자가 Baim_07 에서 언제든 변경할 수 있다(변경 시 이력 남고 기존 부여분은 불변). -->
+    <insert id="seedDefaultLeavePolicy" useGeneratedKeys="true" keyProperty="policySeq" keyColumn="POLICY_SEQ"
+            parameterType="com.prafta.platform.company.application.command.LeavePolicySeedCommand">
+    /* CompanyProvisionMapper.seedDefaultLeavePolicy */
+    INSERT INTO TB_LEAVE_POLICY (
+        CMPNY_CD, POLICY_PRESET, AXIS1_GRANT_BASE, AXIS3_FIRST_YEAR_METHOD, AXIS3_PREGRANT_YN,
+        AXIS4_PRORATE_ROUNDING, AXIS5_TENURE_MODE, AXIS5_START_YEAR, AXIS5_INTERVAL, AXIS5_MAX_DAYS,
+        AXIS6_VALIDITY_MONTHS, AXIS7_USE_PROMOTION, APRV_USE_YN, USE_YN, APPLY_FROM_DATE,
+        INSERT_NO, INSERT_DATE, UPDATE_NO, UPDATE_DATE
+    )
+    VALUES (
+        #{cmpnyCd}, 'LEGAL_DEFAULT', 'HIRE_DATE', 'MONTHLY_ONLY', 'N',
+        'CEIL', 'LEGAL', 3, 2, 25,
+        12, 'Y', 'Y', 'Y', #{applyFromDate},
+        #{insertNo}, NOW(), #{insertNo}, NOW()
+    )
+    </insert>
+
+    <!-- (3) 연차 사용정책(정책 1:1) — 사용 단위 기본값. 반반차는 기본 비활성(회사가 켠다). -->
+    <insert id="seedDefaultLeaveUsagePolicy"
+            parameterType="com.prafta.platform.company.application.command.LeavePolicySeedCommand">
+    /* CompanyProvisionMapper.seedDefaultLeaveUsagePolicy */
+    INSERT INTO TB_LEAVE_USAGE_POLICY (
+        POLICY_SEQ, CMPNY_CD, USAGE_UNIT, ALLOW_QUARTER, INSERT_NO, INSERT_DATE, UPDATE_NO, UPDATE_DATE
+    )
+    VALUES (
+        #{policySeq}, #{cmpnyCd}, 'MIN_30', 'N', #{insertNo}, NOW(), #{insertNo}, NOW()
+    )
+    </insert>
+
+    <!-- ====================================================================
+         (4) 위험성평가 기준정보(Risk_01) — "공통관리" 항목만 복제.
+             화면 구조: [공통관리|사업장] 토글 → 카테고리 탭(공정/설비·기계/작업/장소/기타)
+                        → 위험분류(좌) + 유해위험요인(우) 2단.
+             - 공통관리 = SITE_CD 가 비어있는(NULL 또는 '') 전사 항목. 사업장 전용 항목은 복제 대상 아님
+               (신규 회사엔 그 사업장이 없다 → 유령 데이터가 된다).
+             - 카테고리 탭(PROCESS_CD)은 운영사변수 COM002(위험성평가 구분) 코드다.
+               ★프로비저닝은 COM002 를 USE_YN='Y' 만 골라 00001 부터 **재번호**해 복제하므로,
+                 원본 회사와 신규 회사의 번호가 어긋날 수 있다(원본에서 중간 코드를 끄면 밀린다).
+                 번호를 그대로 복사하면 위험분류가 조용히 엉뚱한 탭에 붙는다.
+                 → 원본코드 → **이름** → 신규코드 로 매핑해 번호 밀림과 무관하게 붙인다.
+         ==================================================================== -->
+
+    <!-- (4-1) 위험분류(좌측) — 공통관리·사용중인 것만. 카테고리는 이름 기준 매핑. -->
+    <insert id="copyCommonRiskTypeFromTemplate">
+    /* CompanyProvisionMapper.copyCommonRiskTypeFromTemplate */
+    INSERT INTO TB_RISK_TYPE (
+        CMPNY_CD, RISK_TYPE_CD, RISK_TYPE_NM, SITE_CD, PROCESS_CD, RISK_TYPE_DESC,
+        USE_YN, INSERT_NO, INSERT_DATE, UPDATE_NO, UPDATE_DATE
+    )
+    SELECT
+          #{newCmpnyCd}
+        , R.RISK_TYPE_CD          <!-- 회사별 스코프라 코드 보존 가능(하위 유해위험요인이 이 코드로 붙는다) -->
+        , R.RISK_TYPE_NM
+        , NULL                    <!-- 공통관리 = 사업장 미지정 -->
+        , NEW_C.BAIM_VAL_D_CD     <!-- 신규 회사의 카테고리 코드(이름으로 찾은 것) -->
+        , R.RISK_TYPE_DESC
+        , 'Y', #{gvUserCd}, NOW(), #{gvUserCd}, NOW()
+      FROM TB_RISK_TYPE R
+      JOIN TB_BAIM_VAL_D SRC_C            <!-- 원본 회사: 코드 → 이름 -->
+        ON SRC_C.CMPNY_CD     = R.CMPNY_CD
+       AND SRC_C.BAIM_VAL_CD  = 'COM002'
+       AND SRC_C.BAIM_VAL_D_CD = R.PROCESS_CD
+      JOIN TB_BAIM_VAL_D NEW_C            <!-- 신규 회사: 이름 → 코드 -->
+        ON NEW_C.CMPNY_CD     = #{newCmpnyCd}
+       AND NEW_C.BAIM_VAL_CD  = 'COM002'
+       AND NEW_C.BAIM_VAL_D_NM = SRC_C.BAIM_VAL_D_NM
+     WHERE R.CMPNY_CD = #{srcCmpnyCd}
+       AND R.USE_YN   = 'Y'
+       AND (R.SITE_CD IS NULL OR R.SITE_CD = '')
+    </insert>
+
+    <!-- (4-2) 유해위험요인(우측) — 위 위험분류에 딸린 공통관리 항목만. RISK_TYPE_CD 를 보존했으므로 그대로 붙는다. -->
+    <insert id="copyCommonRiskHazardFromTemplate">
+    /* CompanyProvisionMapper.copyCommonRiskHazardFromTemplate */
+    INSERT INTO TB_RISK_SITE_HAZARD (
+        CMPNY_CD, RISK_TYPE_CD, HAZARD_CD, HAZARD_NM, SITE_CD, HAZARD_DESC,
+        USE_YN, INSERT_NO, INSERT_DATE, UPDATE_NO, UPDATE_DATE
+    )
+    SELECT
+          #{newCmpnyCd}, H.RISK_TYPE_CD, H.HAZARD_CD, H.HAZARD_NM, NULL, H.HAZARD_DESC
+        , 'Y', #{gvUserCd}, NOW(), #{gvUserCd}, NOW()
+      FROM TB_RISK_SITE_HAZARD H
+      JOIN TB_RISK_TYPE NEW_R                 <!-- 신규 회사에 실제 복제된 위험분류에만 붙인다(고아 방지) -->
+        ON NEW_R.CMPNY_CD     = #{newCmpnyCd}
+       AND NEW_R.RISK_TYPE_CD = H.RISK_TYPE_CD
+     WHERE H.CMPNY_CD = #{srcCmpnyCd}
+       AND IFNULL(H.USE_YN, 'Y') = 'Y'
+       AND (H.SITE_CD IS NULL OR H.SITE_CD = '')
+    </insert>
+
+    <!-- (4-3) 채번 시퀀스 보정 — 복제한 코드의 최대값으로 맞춰야 관리자가 새 항목을 추가할 때 PK 충돌이 없다.
+         RISK_TYPE_CD 는 회사 단위, HAZARD_CD 는 회사 단위 시퀀스를 쓴다(FNC_CMM_SEQ_NEXTVAL 패턴). -->
+    <insert id="seedRiskSeq">
+    /* CompanyProvisionMapper.seedRiskSeq */
+    INSERT INTO tb_cmm_seq (CMPNY_CD, SEQ_KEY, CURR_VAL)
+    SELECT #{newCmpnyCd}, 'RISK_TYPE_CD', IFNULL(MAX(CAST(RISK_TYPE_CD AS UNSIGNED)), 0)
+      FROM TB_RISK_TYPE WHERE CMPNY_CD = #{newCmpnyCd}
+    ON DUPLICATE KEY UPDATE CURR_VAL = GREATEST(tb_cmm_seq.CURR_VAL, VALUES(CURR_VAL))
+    </insert>
+
+    <insert id="seedHazardSeq">
+    /* CompanyProvisionMapper.seedHazardSeq */
+    INSERT INTO tb_cmm_seq (CMPNY_CD, SEQ_KEY, CURR_VAL)
+    SELECT #{newCmpnyCd}, 'HAZARD_CD', IFNULL(MAX(CAST(HAZARD_CD AS UNSIGNED)), 0)
+      FROM TB_RISK_SITE_HAZARD WHERE CMPNY_CD = #{newCmpnyCd}
+    ON DUPLICATE KEY UPDATE CURR_VAL = GREATEST(tb_cmm_seq.CURR_VAL, VALUES(CURR_VAL))
     </insert>
 
 </mapper>

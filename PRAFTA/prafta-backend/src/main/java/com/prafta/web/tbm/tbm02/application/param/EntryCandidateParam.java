@@ -14,6 +14,8 @@ public record EntryCandidateParam(
 	String sessionCd
 	, String userTypeCd
 	, String keyword
+	// PRAFTA-SUBCON-T5: 후보 검색 대상 회사(미지정이면 자사). 서버 게이트가 체인 소속을 재검증한다.
+	, String targetCmpnyCd
 	, String gvCmpnyCd
 	, String gvSiteCd
 	, String gvAuthCd
@@ -29,6 +31,7 @@ public record EntryCandidateParam(
 			request.getSessionCd()
 			, request.getUserTypeCd()
 			, request.getKeyword()
+			, request.getTargetCmpnyCd()
 			, tokenInfo.gv_cmpnyCd()
 			, tokenInfo.gv_siteCd()
 			, tokenInfo.gv_authCd()

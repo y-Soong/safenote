@@ -15,9 +15,12 @@ import com.prafta.web.tbm.tbm02.application.command.SessionStateCommand;
 import com.prafta.web.tbm.tbm02.application.command.SessionStateTransitionCommand;
 import com.prafta.web.tbm.tbm02.application.command.EjectAttendanceCommand;
 import com.prafta.web.tbm.tbm02.application.command.ManagerEnterCommand;
+import com.prafta.web.tbm.tbm02.application.model.SessionRiskModel;
 import com.prafta.web.tbm.tbm02.application.query.OptionQuery;
 import com.prafta.web.tbm.tbm02.application.query.SessionDetailQuery;
 import com.prafta.web.tbm.tbm02.application.query.SessionListQuery;
+import com.prafta.web.tbm.tbm02.application.query.SharedSessionListQuery;
+import com.prafta.web.tbm.tbm02.result.SharedSessionResult;
 import com.prafta.web.tbm.tbm02.application.query.EntryCandidateQuery;
 import com.prafta.web.tbm.tbm02.application.query.EntryTargetQuery;
 import com.prafta.web.tbm.tbm02.result.AutoStartTargetResult;
@@ -45,6 +48,12 @@ public interface Tbm02Mapper {
 
 	int selectSessionListCount(SessionListQuery query);
 
+	/* ===== PRAFTA-SUBCON-T5 D2: 연동받은 교육(비개설사 전용) ===== */
+	/** 내 회사가 유효하게 지정받은 타사 세션 목록(헤더 최소 필드). 스코프 SQL 자체가 인가다. */
+	List<SharedSessionResult> selectSharedSessionList(SharedSessionListQuery query);
+
+	int selectSharedSessionListCount(SharedSessionListQuery query);
+
 	/* ===== W-06 상세 ===== */
 	SessionResult selectSessionDetail(SessionDetailQuery query);
 
@@ -65,6 +74,9 @@ public interface Tbm02Mapper {
 	void deleteSessionContents(@Param("gvCmpnyCd") String gvCmpnyCd, @Param("sessionCd") String sessionCd);
 
 	void insertSessionRisk(SessionRiskCommand command);
+
+	/** 세션-위험성평가 연계 검증: 제출 키(siteCd/processCd/assessmentCd)가 TB_RISK_ASSESSMENT 에 실존하는 건수(중복 제거 키 전제). */
+	int countRiskAssessments(@Param("gvCmpnyCd") String gvCmpnyCd, @Param("keys") List<SessionRiskModel> keys);
 
 	void deleteSessionRisks(@Param("gvCmpnyCd") String gvCmpnyCd, @Param("sessionCd") String sessionCd);
 
@@ -109,8 +121,12 @@ public interface Tbm02Mapper {
 	/** 일용직 입실 후보 검색(C7 만료/탈퇴 필터 + alreadyEntered). */
 	List<EntryCandidateResult> selectDailyCandidates(EntryCandidateQuery query);
 
-	/** 대리입실 대상 유효성: 세션 사업장 소속 활성(정규직/일용직 C7) 여부. 1=유효, 0=무효. */
-	int countEntryTarget(EntryTargetQuery query);
+	/**
+	 * 대리입실 대상 유효성 + 소속 회사 도출(PRAFTA-SUBCON-T5 F2).
+	 * 대상 사용자가 실제로 속한 회사코드를 체인 범위(targetCmpnyCds) 안에서 반환한다.
+	 * 빈 목록=대상 부적합. 2건 이상=회사간 USER_CD 충돌(회사별 채번) → 서비스가 거부한다.
+	 */
+	List<String> selectEntryTargetCmpnyCds(EntryTargetQuery query);
 
 	/** 대리입실 슬롯(UNIQUE 키) 점유 행 조회. 없으면 null(→INSERT), 있으면 DEL_YN 으로 분기. */
 	AttendanceSlotResult selectAttendanceSlot(ManagerEnterCommand command);

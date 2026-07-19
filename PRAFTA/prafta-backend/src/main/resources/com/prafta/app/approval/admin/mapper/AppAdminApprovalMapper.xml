@@ -298,7 +298,9 @@
     </select>
 
     <!-- 근무일 기준 유효 스케줄(effective-dating) 버전 1건(현재본+이력본 UNION, APPLY_DATE 동일 시 MAX(HIST_IDX)).
-         시각 컬럼만 반환. 외부에서 APPLY_DATE <![CDATA[ <= ]]> 근무일 MAX 로 상관(effectiveSchApplyKeys 사용). -->
+         시각 컬럼만 반환. 외부에서 APPLY_DATE <![CDATA[ <= ]]> 근무일 MAX 로 상관(effectiveSchApplyKeys 사용).
+         결재 본문의 스케줄 시각 표시용이므로 USE_YN 필터를 두지 않는다 — 사용중지된 근무타입도 이미 배정된
+         근무일에는 그 시각 그대로 보여야 하며, USE_YN 은 신규 배정 가능 여부일 뿐이다. -->
     <sql id="effectiveSchVersion">
         SELECT
               E.CMPNY_CD, E.SITE_CD, E.SCH_CD, E.APPLY_DATE
@@ -308,21 +310,21 @@
             SELECT M.CMPNY_CD, M.SITE_CD, M.SCH_CD, M.APPLY_DATE
                  , M.FST_SCH_STR_TIME, M.FST_SCH_END_TIME, M.SEC_SCH_STR_TIME, M.SEC_SCH_END_TIME
                  , 2147483647 AS HIST_IDX
-            FROM TB_SCH_MGMT M WHERE M.USE_YN = 'Y'
+            FROM TB_SCH_MGMT M
             UNION ALL
             SELECT H.CMPNY_CD, H.SITE_CD, H.SCH_CD, H.APPLY_DATE
                  , H.FST_SCH_STR_TIME, H.FST_SCH_END_TIME, H.SEC_SCH_STR_TIME, H.SEC_SCH_END_TIME
                  , H.HIST_IDX
-            FROM TB_SCH_MGMT_HIST H WHERE H.USE_YN = 'Y'
+            FROM TB_SCH_MGMT_HIST H
         ) E
         WHERE E.HIST_IDX = (
             SELECT MAX(E2.HIST_IDX)
             FROM (
                 SELECT M2.CMPNY_CD, M2.SITE_CD, M2.SCH_CD, M2.APPLY_DATE, 2147483647 AS HIST_IDX
-                FROM TB_SCH_MGMT M2 WHERE M2.USE_YN = 'Y'
+                FROM TB_SCH_MGMT M2
                 UNION ALL
                 SELECT H2.CMPNY_CD, H2.SITE_CD, H2.SCH_CD, H2.APPLY_DATE, H2.HIST_IDX
-                FROM TB_SCH_MGMT_HIST H2 WHERE H2.USE_YN = 'Y'
+                FROM TB_SCH_MGMT_HIST H2
             ) E2
             WHERE E2.CMPNY_CD   = E.CMPNY_CD
               AND E2.SITE_CD    = E.SITE_CD
@@ -331,13 +333,14 @@
         )
     </sql>
 
-    <!-- 유효버전 APPLY_DATE MAX 산출용 키 전용 UNION(현재본+이력본). -->
+    <!-- 유효버전 APPLY_DATE MAX 산출용 키 전용 UNION(현재본+이력본).
+         effectiveSchVersion 과 동일 집합이어야 하므로 여기서도 USE_YN 필터를 두지 않는다(사용중지 근무타입 포함). -->
     <sql id="effectiveSchApplyKeys">
         SELECT M3.CMPNY_CD, M3.SITE_CD, M3.SCH_CD, M3.APPLY_DATE
-        FROM TB_SCH_MGMT M3 WHERE M3.USE_YN = 'Y'
+        FROM TB_SCH_MGMT M3
         UNION ALL
         SELECT H3.CMPNY_CD, H3.SITE_CD, H3.SCH_CD, H3.APPLY_DATE
-        FROM TB_SCH_MGMT_HIST H3 WHERE H3.USE_YN = 'Y'
+        FROM TB_SCH_MGMT_HIST H3
     </sql>
 
     <!--

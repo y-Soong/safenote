@@ -1,0 +1,10 @@
+{
+  "name": "attd-e2e",
+  "private": true,
+  "type": "module",
+  "description": "PRAFTA 근태/인사 프론트 E2E 통합테스트 (Playwright, 웹 8081 + 앱 8082)",
+  "scripts": {},
+  "dependencies": {
+    "@playwright/test": "^1.61.1"
+  }
+}

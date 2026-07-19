@@ -86,7 +86,7 @@
 
     <!-- 오늘 예정 스케줄: work_plan(WORK_PLAN_CD=SCH_CD) → sch_mgmt.
          1·2구간 시각을 모두 조회한다(SEC_*가 채워져 있으면 2구간 스케줄).
-         매칭 스케줄(USE_YN='Y', APPLY_DATE 적용)이 없으면 결과 없음.
+         매칭 스케줄(APPLY_DATE 적용)이 없으면 결과 없음.
          ※ prafta-com-008-E-2 전환 후 work_plan 에는 SCH_CD 만 남으므로(연차일에도 스케줄 반환 가능),
            종일 연차일 여부는 countFullDayLeaveOn(leave_use 단일출처)으로 별도 판정한다. -->
     <select id="selectTodaySchedule"
@@ -110,7 +110,8 @@
       AND P.SITE_CD = #{ param.siteCd }
       AND P.USER_CD = #{ param.userCd }
       AND P.WORK_YMD = #{ param.todayYmd }
-      AND S.USE_YN = 'Y'
+    <!-- 사용중지(USE_YN='N') 근무타입이라도 이미 배정된 근무일에는 그 시각을 그대로 해석한다.
+         USE_YN 은 신규 배정 가능 여부일 뿐 오늘 근무시각과 무관하므로 필터 제거. -->
     <!-- 근무일 기준 유효버전(APPLY_DATE<=근무일) 우선, 없으면(근무일보다 늦게 적용 시작된 스케줄을
          배정한 경우) 최이른 적용버전으로 폴백 — 배정된 스케줄이 "스케줄 없음"으로 빠지지 않게 한다. -->
     ORDER BY (S.APPLY_DATE &lt;= #{ param.todayYmd }) DESC
@@ -143,7 +144,7 @@
       prafta-app-013-1: 전일 스케줄 1건(FST/SEC 시작·종료시각). 오버나이트 기준일 판정용.
       - 전일 WORK_YMD 의 work_plan(WORK_PLAN_CD=SCH_CD) → sch_mgmt INNER JOIN.
       - WORK_PLAN_CD 가 null(휴무/미배정)이거나 매칭 스케줄 없으면 결과 없음 → null.
-      - selectTodaySchedule 과 동일하게 USE_YN='Y', APPLY_DATE<=전일, APPLY_DATE DESC 1건.
+      - selectTodaySchedule 과 동일하게 APPLY_DATE<=전일, APPLY_DATE DESC 1건.
     -->
     <select id="selectScheduleEndForOvernight"
             resultType="com.prafta.app.home.home01.result.OvernightScheduleResult">
@@ -165,7 +166,8 @@
       AND P.SITE_CD = #{ param.siteCd }
       AND P.USER_CD = #{ param.userCd }
       AND P.WORK_YMD = #{ prevYmd }
-      AND S.USE_YN = 'Y'
+    <!-- 전일에 이미 배정된 근무타입이면 사용중지(USE_YN='N') 여부와 무관하게 종료시각을 해석해야
+         오버나이트 기준일 판정이 유지된다 — USE_YN 필터 제거. -->
     <!-- 근무일 기준 유효버전 우선, 없으면 최이른 적용버전으로 폴백(selectTodaySchedule 와 동일 규칙). -->
     ORDER BY (S.APPLY_DATE &lt;= #{ prevYmd }) DESC
            , CASE WHEN S.APPLY_DATE &lt;= #{ prevYmd } THEN S.APPLY_DATE END DESC

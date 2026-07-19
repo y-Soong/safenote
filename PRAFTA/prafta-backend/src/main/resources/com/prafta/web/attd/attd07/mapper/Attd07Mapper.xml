@@ -226,8 +226,8 @@
 	                , M.SEC_SCH_END_TIME
 	                , M.SEC_SCH_BRK_MIN
 	                , 2147483647 AS HIST_IDX
+	            /* 사용중지(USE_YN='N') 근무타입도 이미 배정된 근무일에는 그대로 해석한다(신규 배정 가능 여부와 무관) — USE_YN 필터 없음 */
 	            FROM TB_SCH_MGMT M
-	            WHERE M.USE_YN = 'Y'
 
 	            UNION ALL
 
@@ -245,7 +245,6 @@
 	                , H.SEC_SCH_BRK_MIN
 	                , H.HIST_IDX
 	            FROM TB_SCH_MGMT_HIST H
-	            WHERE H.USE_YN = 'Y'
 	        ) E
 	        /* 동일 SCH_CD + APPLY_DATE 그룹에서 HIST_IDX 최댓값 행만 채택 */
 	        WHERE E.HIST_IDX = (
@@ -253,11 +252,9 @@
 	            FROM (
 	                SELECT M2.CMPNY_CD, M2.SITE_CD, M2.SCH_CD, M2.APPLY_DATE, 2147483647 AS HIST_IDX
 	                FROM TB_SCH_MGMT M2
-	                WHERE M2.USE_YN = 'Y'
 	                UNION ALL
 	                SELECT H2.CMPNY_CD, H2.SITE_CD, H2.SCH_CD, H2.APPLY_DATE, H2.HIST_IDX
 	                FROM TB_SCH_MGMT_HIST H2
-	                WHERE H2.USE_YN = 'Y'
 	            ) E2
 	            WHERE E2.CMPNY_CD   = E.CMPNY_CD
 	              AND E2.SITE_CD    = E.SITE_CD
@@ -279,23 +276,21 @@
 	            FROM (
 	                SELECT M3.CMPNY_CD, M3.SITE_CD, M3.SCH_CD, M3.APPLY_DATE
 	                FROM TB_SCH_MGMT M3
-	                WHERE M3.USE_YN = 'Y'
 	                UNION ALL
 	                SELECT H3.CMPNY_CD, H3.SITE_CD, H3.SCH_CD, H3.APPLY_DATE
 	                FROM TB_SCH_MGMT_HIST H3
-	                WHERE H3.USE_YN = 'Y'
 	            ) SE
 	            WHERE SE.CMPNY_CD    = WP.CMPNY_CD
 	              AND SE.SITE_CD     = WP.SITE_CD
 	              AND SE.SCH_CD      = WP.WORK_PLAN_CD
 	        )
 
-	    /* SCH_TYPE 은 이력본에 컬럼이 없으므로 항상 현재본(TB_SCH_MGMT)에서 가져온다 */
+	    /* SCH_TYPE 은 이력본에 컬럼이 없으므로 항상 현재본(TB_SCH_MGMT)에서 가져온다.
+	       사용중지 근무타입이어도 SCH_TYPE(1구간/2구간)은 그대로 필요하므로 USE_YN 필터를 걸지 않는다(2구간이 1구간처럼 렌더링되는 것 방지) */
 	    LEFT JOIN TB_SCH_MGMT SCHT
 	        ON  SCHT.CMPNY_CD = WP.CMPNY_CD
 	        AND SCHT.SITE_CD  = WP.SITE_CD
 	        AND SCHT.SCH_CD   = WP.WORK_PLAN_CD
-	        AND SCHT.USE_YN   = 'Y'
 
 	    /* prafta-com-008-E-2: 연차일/연차명을 work_plan(LEAVE_CD) 이 아니라 leave_use(LU) 오버레이로 산출.
 	       그날 종일 확정 연차(USE_UNIT_TYPE='00') 1건을 매칭하고, 그 LEAVE_CD 로 종류명(LV)을 조인한다. */
@@ -697,8 +692,8 @@
 					, M.SEC_SCH_END_TIME
 					, M.SEC_SCH_BRK_MIN
 					, 2147483647 AS HIST_IDX
+				/* 사용중지(USE_YN='N') 근무타입도 이미 배정된 근무일에는 그대로 해석한다 — USE_YN 필터 없음 */
 				FROM TB_SCH_MGMT M
-				WHERE M.USE_YN = 'Y'
 
 				UNION ALL
 
@@ -716,7 +711,6 @@
 					, H.SEC_SCH_BRK_MIN
 					, H.HIST_IDX
 				FROM TB_SCH_MGMT_HIST H
-				WHERE H.USE_YN = 'Y'
 			) E
 			/* 동일 SCH_CD + APPLY_DATE 그룹에서 HIST_IDX 최댓값 행만 채택 */
 			WHERE E.HIST_IDX = (
@@ -724,11 +718,9 @@
 				FROM (
 					SELECT M2.CMPNY_CD, M2.SITE_CD, M2.SCH_CD, M2.APPLY_DATE, 2147483647 AS HIST_IDX
 					FROM TB_SCH_MGMT M2
-					WHERE M2.USE_YN = 'Y'
 					UNION ALL
 					SELECT H2.CMPNY_CD, H2.SITE_CD, H2.SCH_CD, H2.APPLY_DATE, H2.HIST_IDX
 					FROM TB_SCH_MGMT_HIST H2
-					WHERE H2.USE_YN = 'Y'
 				) E2
 				WHERE E2.CMPNY_CD   = E.CMPNY_CD
 				  AND E2.SITE_CD    = E.SITE_CD
@@ -750,11 +742,9 @@
 				FROM (
 					SELECT M3.CMPNY_CD, M3.SITE_CD, M3.SCH_CD, M3.APPLY_DATE
 					FROM TB_SCH_MGMT M3
-					WHERE M3.USE_YN = 'Y'
 					UNION ALL
 					SELECT H3.CMPNY_CD, H3.SITE_CD, H3.SCH_CD, H3.APPLY_DATE
 					FROM TB_SCH_MGMT_HIST H3
-					WHERE H3.USE_YN = 'Y'
 				) SE
 				WHERE SE.CMPNY_CD    = WP.CMPNY_CD
 				  AND SE.SITE_CD     = WP.SITE_CD
@@ -766,7 +756,7 @@
 			ON  SCHT.CMPNY_CD = WP.CMPNY_CD
 			AND SCHT.SITE_CD  = WP.SITE_CD
 			AND SCHT.SCH_CD   = WP.WORK_PLAN_CD
-			AND SCHT.USE_YN   = 'Y'
+			/* 사용중지 근무타입도 SCH_TYPE(구간 수)은 그대로 필요 — USE_YN 필터 없음(2구간이 1구간처럼 표시되는 것 방지) */
 
 		/* prafta-com-008-E-2: 연차-스케줄 모델 전환 — work_plan 은 항상 SCH_CD 이므로 LEAVE 조인(미사용) 제거.
 		   일자상세의 확정 연차는 selectDailyConfirmedLeave(leave_use 기준)가 별도로 제공한다. */
@@ -868,10 +858,46 @@
 	    , NULL						AS aftSchedFstEndTime
 	    , NULL						AS aftSchedSecStrTime
 	    , NULL						AS aftSchedSecEndTime
-	    <!-- com-013 #3+#4: record 끝 2필드(reqType/reqReason). 근태 HIST 행은 REQ 연결을
-	         HIST 테이블 단독으로는 권위 있게 도출할 수 없어 둘 다 NULL(관리자 직접/orphan 포함). -->
+	    <!-- record 끝 2필드(reqType/reqReason).
+	         reqType: 스케줄 수정(10) 전용 분기값이라 근태/OT 이력은 NULL(프론트 시간 렌더링 유지).
+
+	         reqReason: 근로자가 올린 요청사유. 관리자 처리사유(PROCESS_REASON)와 별개 컬럼이며,
+	         처리 이력 팝업은 둘을 나란히 보여준다. TB_USER_ATTD_HIST 에 REQ_ID 가 없어 종전에는
+	         NULL 로 뒀으나, 아래 두 단서로 REQ 를 특정할 수 있다.
+	           1) REQ.TARGET_ID = HIST.ATTD_ID — 승인 시 채워지는 확정 링크(반려는 TARGET_ID 가 NULL).
+	           2) REQ.PROCESS_DATE ≈ HIST.INSERT_DATE — 이력은 요청 처리와 같은 트랜잭션에서 적재되므로
+	              두 시각이 사실상 동일하다. 반려(TARGET_ID NULL)와 orphan 이력(MGMT 없음)은 이 단서로 잇는다.
+	         1)이 있으면 우선하고, 없으면 60초 이내 최근접 처리건으로 잇는다(무관한 날짜의 요청이
+	         잘못 붙지 않도록 시간 창을 좁게 둔다).
+
+	         HIST_TYPE 게이트가 핵심이다. 관리자 직접 처리(11 생성 / 12 수정 / 13 OT삭제)는 근로자 요청이
+	         애초에 없으므로 반드시 NULL 이어야 한다(가드 없으면 같은 날 무관한 요청사유가 붙는다).
+	           - 01(근태 승인) / 07(근태 반려) → 근태 요청(01 생성 / 02 수정)
+	           - 08(OT 승인)   / 09(OT 반려)   → OT 요청(03 생성 / 04 수정)
+	         USER_CD 는 A.USER_CD 대신 파라미터를 쓴다(orphan 이력은 MGMT 가 없어 A.USER_CD 가 NULL). -->
 	    , NULL						AS reqType
-	    , NULL						AS reqReason
+	    , CASE WHEN B.HIST_TYPE IN ('01', '07', '08', '09') THEN (
+	          SELECT R.REQ_REASON
+	            FROM TB_USER_ATTD_REQ R
+	           WHERE R.CMPNY_CD     = B.CMPNY_CD
+	             AND R.SITE_CD      = B.SITE_CD
+	             AND R.WORK_YMD     = B.WORK_YMD
+	             AND R.USER_CD      = #{userCd}
+	             AND R.DEL_YN       = 'N'
+	             AND R.PROCESS_DATE IS NOT NULL
+	             AND R.REQ_TYPE IN (
+	                     CASE WHEN B.HIST_TYPE IN ('01', '07') THEN '01' ELSE '03' END
+	                   , CASE WHEN B.HIST_TYPE IN ('01', '07') THEN '02' ELSE '04' END
+	                 )
+	             AND R.REQ_STATUS = CASE WHEN B.HIST_TYPE IN ('01', '08') THEN '02' ELSE '03' END
+	             AND (
+	                     R.TARGET_ID = B.ATTD_ID
+	                  OR ABS(TIMESTAMPDIFF(SECOND, R.PROCESS_DATE, B.INSERT_DATE)) <![CDATA[ <= ]]> 60
+	                 )
+	           ORDER BY (R.TARGET_ID = B.ATTD_ID) DESC
+	                  , ABS(TIMESTAMPDIFF(SECOND, R.PROCESS_DATE, B.INSERT_DATE)) ASC
+	           LIMIT 1
+	      ) ELSE NULL END			AS reqReason
 	FROM TB_USER_ATTD_HIST B
 	     LEFT JOIN TB_USER_ATTD_MGMT A
 			 ON (
@@ -1643,8 +1669,8 @@
                 , M.SEC_SCH_END_TIME
                 , M.SEC_SCH_BRK_MIN
                 , 2147483647 AS HIST_IDX
+            /* 사용중지(USE_YN='N') 근무타입도 이미 배정된 근무일에는 그대로 해석한다 — USE_YN 필터 없음 */
             FROM TB_SCH_MGMT M
-            WHERE M.USE_YN = 'Y'
 
             UNION ALL
 
@@ -1662,7 +1688,6 @@
                 , H.SEC_SCH_BRK_MIN
                 , H.HIST_IDX
             FROM TB_SCH_MGMT_HIST H
-            WHERE H.USE_YN = 'Y'
         ) E
         /* 동일 SCH_CD + APPLY_DATE 그룹에서 HIST_IDX 최댓값 행만 채택 */
         WHERE E.HIST_IDX = (
@@ -1670,11 +1695,9 @@
             FROM (
                 SELECT M2.CMPNY_CD, M2.SITE_CD, M2.SCH_CD, M2.APPLY_DATE, 2147483647 AS HIST_IDX
                 FROM TB_SCH_MGMT M2
-                WHERE M2.USE_YN = 'Y'
                 UNION ALL
                 SELECT H2.CMPNY_CD, H2.SITE_CD, H2.SCH_CD, H2.APPLY_DATE, H2.HIST_IDX
                 FROM TB_SCH_MGMT_HIST H2
-                WHERE H2.USE_YN = 'Y'
             ) E2
             WHERE E2.CMPNY_CD   = E.CMPNY_CD
               AND E2.SITE_CD    = E.SITE_CD
@@ -1696,11 +1719,9 @@
             FROM (
                 SELECT M3.CMPNY_CD, M3.SITE_CD, M3.SCH_CD, M3.APPLY_DATE
                 FROM TB_SCH_MGMT M3
-                WHERE M3.USE_YN = 'Y'
                 UNION ALL
                 SELECT H3.CMPNY_CD, H3.SITE_CD, H3.SCH_CD, H3.APPLY_DATE
                 FROM TB_SCH_MGMT_HIST H3
-                WHERE H3.USE_YN = 'Y'
             ) SE
             WHERE SE.CMPNY_CD    = WP.CMPNY_CD
               AND SE.SITE_CD     = WP.SITE_CD

@@ -127,6 +127,9 @@ import { useRouter, onBeforeRouteLeave } from 'vue-router'
 import api from '@/api/axios'
 import { forceLogout } from '@/composables/useAuth'
 import { useUserStore } from '@/stores/userStore'
+// PRAFTA-SUBCON-T4: 필수약관 통과 후 제3자 제공 동의 게이트(②)로 합류한다.
+//   routeAfterLogin 을 부르면 ①(필수약관)을 재조회하므로 ②부터 시작하는 전용 함수를 쓴다.
+import { routeAfterRequiredTerms } from '@/utils/termsGate'
 
 const { proxy } = getCurrentInstance()
 const router = useRouter()
@@ -174,9 +177,9 @@ const fnLoadPending = async () => {
     const pending = Array.isArray(data?.terms) ? data.terms : []
 
     if (pending.length === 0) {
-      // 동의할 필수약관 없음 → 게이트 통과.
+      // 동의할 필수약관 없음 → 게이트 통과(SUBCON-T4: 제3자 제공 동의 게이트 판정으로 합류).
       bypassGuard = true
-      router.replace(redirect.value)
+      await routeAfterRequiredTerms(router, redirect.value)
       return
     }
 
@@ -222,7 +225,8 @@ const fnAgree = async () => {
   try {
     await api.post('/appApi/terms01/agree-required-terms')
     bypassGuard = true
-    router.replace(redirect.value)
+    // SUBCON-T4: 필수약관 동의 완료 → 제3자 제공 동의 게이트 판정 후 목적지 진입.
+    await routeAfterRequiredTerms(router, redirect.value)
   } catch (e) {
     await showAlert(e?.response?.data?.message || '약관 동의 처리에 실패했습니다.\n잠시 후 다시 시도해 주세요.')
   } finally {

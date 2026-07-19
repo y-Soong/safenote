@@ -61,6 +61,20 @@ public interface Attd01Mapper {
 			@Param("schCd") String schCd,
 			@Param("fromYmd") String fromYmd);
 
+	/**
+	 * 사용중지 가드: 저장 전 근무타입(SCH_CD)의 현재 USE_YN. 신규 생성 등 기존 행이 없으면 null.
+	 * Y→N 전환일 때만 미래 근무계획 배정 여부를 검사하기 위한 판정값.
+	 */
+	String selectSchUseYn(@Param("cmpnyCd") String cmpnyCd,
+			@Param("siteCd") String siteCd,
+			@Param("schCd") String schCd);
+
+	/**
+	 * PRAFTA-SUBCON-T2-04: 사업장의 연동 원본 회사코드(NULL=일반, NOT NULL=미러=근무타입 전면 잠금).
+	 * 행 미존재 시 null. (subcon 모듈 의존을 피해 attd01 패키지에 동형 쿼리를 둠 — 모듈 경계 보존)
+	 */
+	String selectSiteLinkSrcCmpny(@Param("gvCmpnyCd") String gvCmpnyCd, @Param("siteCd") String siteCd);
+
 	int selectShiftSchNoCount(ShiftSchNoCountQuery query);
 	
 	String selectShiftCd(ShiftCdQuery query);

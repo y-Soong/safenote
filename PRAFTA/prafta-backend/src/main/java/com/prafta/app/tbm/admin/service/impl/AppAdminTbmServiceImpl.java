@@ -3,8 +3,10 @@ package com.prafta.app.tbm.admin.service.impl;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.dao.DuplicateKeyException;
@@ -15,6 +17,8 @@ import org.springframework.web.multipart.MultipartFile;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.prafta.common.cmm.tbmshare.result.SessionOwnerResult;
+import com.prafta.common.cmm.tbmshare.service.TbmSessionShareService;
 import com.prafta.app.admin.access.application.query.AdminAccessQuery;
 import com.prafta.app.admin.access.mapper.AppAdminAccessMapper;
 import com.prafta.app.admin.access.result.AccessibleSiteResult;
@@ -143,6 +147,8 @@ public class AppAdminTbmServiceImpl implements AppAdminTbmService {
     private final ObjectMapper objectMapper;                   // E11 QR 페이로드(JSON) 파싱
     /** PRAFTA-APP-021-3b(W3): TBM 교육 시작/종료 통보 PUSH 생산자(입실 참석자 대상, afterCommit 격리). */
     private final TbmEventNotiService tbmEventNotiService;
+    /** PRAFTA-SUBCON-T5: 연동 회사 지정 공통 검증 지점(입실 범위 게이트/소속 relabel). */
+    private final TbmSessionShareService tbmSessionShareService;
 
     private static final int PWD_LENGTH = 6;
     /** prafta-051 §2: 교육준비→교육시작 자동전이 기본 경과시간(분). properties 로 오버라이드 가능(#DF-3). */
@@ -404,7 +410,8 @@ public class AppAdminTbmServiceImpl implements AppAdminTbmService {
                 AdminSessionCommand.forSave(param, sessionCd, "DRAFT", null, null, false));
 
         insertContents(param.contents(), sessionCd, param.gvCmpnyCd(), param.gvUserCd());
-        insertRisks(param.risks(), sessionCd, param.gvCmpnyCd(), param.gvUserCd());
+        // 위험성평가 매핑 INSERT — 세션 사업장 정합·실존 검증 포함
+        insertRisks(param.risks(), sessionCd, param.siteCd(), param.gvCmpnyCd(), param.gvUserCd());
 
         // 상태 row 초기 UPSERT(upsertSessionState)는 교육준비(prepare) 전이로 이동 — 개설 시 미수행.
 
@@ -460,7 +467,8 @@ public class AppAdminTbmServiceImpl implements AppAdminTbmService {
         insertContents(param.contents(), param.sessionCd(), param.gvCmpnyCd(), param.gvUserCd());
 
         appAdminTbmMapper.deleteSessionRisks(param.gvCmpnyCd(), param.sessionCd());
-        insertRisks(param.risks(), param.sessionCd(), param.gvCmpnyCd(), param.gvUserCd());
+        // 세션 사업장은 수정 불가이므로 guard(DB) 기준으로 정합 검증
+        insertRisks(param.risks(), param.sessionCd(), guard.siteCd(), param.gvCmpnyCd(), param.gvUserCd());
 
         log.info("앱 관리자 TBM 세션 수정 완료 - sessionCd={}, status={}", param.sessionCd(), guard.statusCd());
     }
@@ -872,15 +880,43 @@ public class AppAdminTbmServiceImpl implements AppAdminTbmService {
         // phase=LIVE(진행화면) 와 PREP(교육준비, prafta-051 R-C/E12) 는 입실자만(ENTRY_AT IS NOT NULL).
         // COMPLETED(종료화면) 는 출결 전체. PREP 는 응답의 distanceM 으로 이탈자 판단(정밀좌표 미노출).
         boolean enteredOnly = "LIVE".equals(param.phase()) || "PREP".equals(param.phase());
+
+        // PRAFTA-SUBCON-T5: 출결 스코프를 SESSION_CD 단독으로 넓힌다(타사 참석자 포함).
+        //   인가 전제: 위 loadGuard(gvCmpnyCd, sessionCd) + verifyScope 가 "개설사 관리자"만 통과시킨다.
         List<AdminAttendeeResult> list = appAdminTbmMapper.selectSessionAttendeesAdmin(
                 AdminAttendeeListQuery.of(param.sessionCd(), param.gvCmpnyCd(), enteredOnly));
 
+        // 소속 relabel(개설사 직하 1차 회사명. 2차 이하 회사명/코드는 응답에 없음).
+        Map<String, String> labels = tbmSessionShareService.resolveTier1LabelMap(param.sessionCd());
+
+        List<AdminAttendeeListResponse.AttendeeItem> items = new ArrayList<>();
+        if (list != null) {
+            for (AdminAttendeeResult r : list) {
+                // F7(최소 노출): 타사 참석자는 성명만 노출한다. 부서명(타사 조직구조)은 redaction.
+                //   출결 액션은 attendanceCd 로 동작하므로 기능 영향 없음.
+                boolean foreign = r.cmpnyCd() != null && !r.cmpnyCd().equals(param.gvCmpnyCd());
+
+                items.add(AdminAttendeeListResponse.AttendeeItem.builder()
+                        .attendanceCd(r.attendanceCd())
+                        .userNm(r.userNm())
+                        .userTypeCd(r.userTypeCd())
+                        .deptNm(foreign ? null : r.deptNm())
+                        .entryAt(r.entryAt())
+                        .exited(r.exited())
+                        .exitAt(r.exitAt())
+                        .completionStatusCd(r.completionStatusCd())
+                        .distanceM(r.distanceM())
+                        .affilCmpnyNm(labels.get(r.cmpnyCd()))
+                        .build());
+            }
+        }
+
         log.info("앱 관리자 TBM 출결 리스트 조회 완료 - sessionCd={}, phase={}, count={}",
-                param.sessionCd(), param.phase(), list != null ? list.size() : 0);
+                param.sessionCd(), param.phase(), items.size());
 
         return AdminAttendeeListResponse.builder()
-                .attendees(list != null ? list : Collections.emptyList())
-                .totalCount(list != null ? list.size() : 0)
+                .attendees(items)
+                .totalCount(items.size())
                 .build();
     }
 
@@ -1132,6 +1168,17 @@ public class AppAdminTbmServiceImpl implements AppAdminTbmService {
             throw new ApiException(TbmErrorCode.TBM_409_040);
         }
 
+        // PRAFTA-SUBCON-T5 F9: 앱 관리자 대리입실(P3)은 <b>자사 대상 전용</b>이다.
+        //   요청서 §3.2 는 MANAGER_DIRECT(검색 직접입실)의 대상 확장을 <b>웹</b>으로만 명시했고,
+        //   요청서 §4 는 지정/대상선택 UI 를 웹 전용으로 뒀다. 앱에는 대상 회사 선택 UI 가 없으므로
+        //   타사 회사코드를 받아들이면 쓰이지 않는 공격 표면만 남는다 → targetCmpnyCd 수용을 제거한다.
+        //   (앱의 타사 참여 경로는 P4 일용직 QR 입실이며 그쪽은 그대로 유지한다.)
+        //   자사 대상이어도 공통 게이트는 그대로 통과시킨다(세션 존재/개설사 판정 단일 지점 유지).
+        String targetCmpnyCd = param.gvCmpnyCd();
+        SessionOwnerResult session = tbmSessionShareService.assertEntryAllowed(
+                param.sessionCd(), targetCmpnyCd);
+        boolean ownTarget = session.hostCmpnyCd().equals(targetCmpnyCd);
+
         // 노드관리자면 세션 사업장 기준 자기노드+자손 NODE_CD 집합으로 대상 정규직을 제한한다(E9 동형).
         // 읽기(E9 검색)/쓰기(E10 대리입실) 권한 비대칭 차단 — 서브트리 밖 정규직 대리입실 거부.
         List<String> scopedNodeCds = Collections.emptyList();
@@ -1142,18 +1189,19 @@ public class AppAdminTbmServiceImpl implements AppAdminTbmService {
 
         // 대상이 세션 사업장 소속 활성 정규직 + 노드 스코프 내인지 서버 재검증(IDOR — 임의 userCd 입실 차단).
         int valid = appAdminTbmMapper.countEntryTarget(
-                AdminEntryTargetQuery.of(param.gvCmpnyCd(), guard.siteCd(), "REGULAR", param.userCd(),
-                        scope.companyWide(), scopedNodeCds));
+                AdminEntryTargetQuery.of(targetCmpnyCd, guard.siteCd(), "REGULAR", param.userCd(),
+                        scope.companyWide(), scopedNodeCds, ownTarget));
         if (valid <= 0) {
-            log.warn("TBM 정규직 대리입실 대상 부적합(사업장/노드 스코프 밖) - sessionCd={}, userCd={}, site={}",
-                    param.sessionCd(), param.userCd(), guard.siteCd());
+            log.warn("TBM 정규직 대리입실 대상 부적합(사업장/노드 스코프 밖) - sessionCd={}, userCd={}",
+                    param.sessionCd(), param.userCd());
             throw new ApiException(TbmErrorCode.TBM_403_040);
         }
 
         // UK 멱등: 이미 입실(DEL_YN 무관) 행이 있으면 UNIQUE 충돌 → 멱등 안내. 재입실 복구는 R-C(#D-RE2).
+        // 출결행 CMPNY_CD/채번은 참석자 회사(=자사), INSERT 가드는 개설사 기준(T5).
         try {
             int inserted = appAdminTbmMapper.insertManagerDirectEntry(AdminManagerEnterCommand.of(
-                    param.gvCmpnyCd(), param.sessionCd(), "REGULAR", param.userCd(),
+                    targetCmpnyCd, session.hostCmpnyCd(), param.sessionCd(), "REGULAR", param.userCd(),
                     "MANAGER_DIRECT", param.gvUserCd()));
             if (inserted == 0) {
                 // TOCTOU: 가드~INSERT 사이 자동/동시 전이로 OPENED 이탈(D-2 우회 차단). INSERT...SELECT 가드 0건.
@@ -1243,42 +1291,53 @@ public class AppAdminTbmServiceImpl implements AppAdminTbmService {
             throw new ApiException(TbmErrorCode.TBM_409_040);
         }
 
-        // 보안: QR 에 회사/사업장이 들어 있으면 토큰 회사 + 세션 사업장과 일치하는지만 검증(불일치 = 위·변조/타사 QR → 거부).
-        if (StringUtils.hasText(qrCmpnyCd) && !qrCmpnyCd.equals(param.gvCmpnyCd())) {
-            log.warn("TBM 일용직 QR 입실 회사 불일치 거부 - sessionCd={}, userCd={}", param.sessionCd(), qrUserCd);
-            throw new ApiException(TbmErrorCode.TBM_403_040);
-        }
-        if (StringUtils.hasText(qrSiteCd) && !qrSiteCd.equals(guard.siteCd())) {
-            log.warn("TBM 일용직 QR 입실 사업장 불일치 거부 - sessionCd={}, userCd={}, sessionSite={}",
-                    param.sessionCd(), qrUserCd, guard.siteCd());
+        // ===== PRAFTA-SUBCON-T5(P4 재설계) =====
+        // 기존: QR 의 cmpnyCd 가 토큰 회사와 다르면 무조건 거부(타사 QR 차단).
+        // 변경: 차단선을 "토큰 회사 일치" → "지정 체인 소속"으로 이동한다. QR 이 체인 밖 회사를 주장하면
+        //       공통 게이트가 403(TBM_403_060)으로 막는다(QR 위·변조/타사 QR 주입 차단은 그대로 유지).
+        String targetCmpnyCd = StringUtils.hasText(qrCmpnyCd) ? qrCmpnyCd : param.gvCmpnyCd();
+        SessionOwnerResult session = tbmSessionShareService.assertEntryAllowed(
+                param.sessionCd(), targetCmpnyCd);
+        boolean ownTarget = session.hostCmpnyCd().equals(targetCmpnyCd);
+
+        // QR 사업장 검증: 자사(개설사) 대상은 기존대로 세션 사업장과 일치 요구.
+        //   타사 대상은 사업장 일치 검사를 하지 않는다 — 타사 사업장코드는 그 회사 네임스페이스라
+        //   개설사 세션 사업장과 비교하는 것 자체가 무의미하다(plan D4).
+        if (ownTarget && StringUtils.hasText(qrSiteCd) && !qrSiteCd.equals(guard.siteCd())) {
+            log.warn("TBM 일용직 QR 입실 사업장 불일치 거부 - sessionCd={}, sessionSite={}",
+                    param.sessionCd(), guard.siteCd());
             throw new ApiException(TbmErrorCode.TBM_403_040);
         }
 
-        // 대상이 세션 사업장(서버 확정) 소속 유효 일용직인지 서버 재검증(IDOR). tb_daily_user 는 NODE_CD 없음 → 사업장 단위.
+        // 대상이 유효 일용직인지 서버 재검증(IDOR). tb_daily_user 는 NODE_CD 없음 → 사업장/회사 단위.
+        //   만료/탈퇴/계정상태 조건은 그대로(신원 보증 책임은 고용 회사 — 요청서 §3.2).
+        //   ※ 일용직 블랙리스트는 회사별 관리이므로 개설사 블랙리스트는 타사 일용직에 적용되지 않는다(의도된 동작).
         int valid = appAdminTbmMapper.countEntryTarget(
-                AdminEntryTargetQuery.of(param.gvCmpnyCd(), guard.siteCd(), "DAILY", qrUserCd,
-                        true, Collections.emptyList()));
+                AdminEntryTargetQuery.of(targetCmpnyCd, guard.siteCd(), "DAILY", qrUserCd,
+                        true, Collections.emptyList(), ownTarget));
         if (valid <= 0) {
-            log.warn("TBM 일용직 QR 입실 대상 부적합(사업장 밖/만료/탈퇴) - sessionCd={}, userCd={}, site={}",
-                    param.sessionCd(), qrUserCd, guard.siteCd());
+            log.warn("TBM 일용직 QR 입실 대상 부적합(사업장 밖/만료/탈퇴) - sessionCd={}, targetCmpny={}",
+                    param.sessionCd(), targetCmpnyCd);
             throw new ApiException(TbmErrorCode.TBM_403_040);
         }
 
         // prafta-app-025 J1-7 작업 D: 출근 선행 가드. 당일 해당 일용직의 출근 기록이 없으면 입실 차단.
-        //   현장 처리(AdminSiteOpsView)에서 출근을 먼저 등록해야 TBM 입실 가능. 사업장 권위는 세션 SITE(서버 확정).
+        //   T5(plan D6): 자사 대상은 기존대로 세션 사업장 기준. 타사 대상은 그 회사의 (미러) 사업장에
+        //   출근이 기록되므로 개설사 사업장코드로 매칭할 수 없다 → 회사 단위로 검사한다(가드 자체는 유지).
         String todayYmd = java.time.LocalDate.now().format(java.time.format.DateTimeFormatter.ofPattern("yyyyMMdd"));
         int todayCheckIn = appAdminTbmMapper.countTodayCheckIn(
-                param.gvCmpnyCd(), guard.siteCd(), qrUserCd, todayYmd);
+                targetCmpnyCd, guard.siteCd(), qrUserCd, todayYmd, ownTarget);
         if (todayCheckIn <= 0) {
-            log.warn("TBM 일용직 QR 입실 거부(당일 출근 기록 없음) - sessionCd={}, userCd={}, site={}",
-                    param.sessionCd(), qrUserCd, guard.siteCd());
+            log.warn("TBM 일용직 QR 입실 거부(당일 출근 기록 없음) - sessionCd={}, targetCmpny={}",
+                    param.sessionCd(), targetCmpnyCd);
             throw new ApiException(TbmErrorCode.TBM_409_044);
         }
 
         // UK 멱등: 이미 입실 행이 있으면 UNIQUE 충돌 → 멱등 안내. INSERT...SELECT 가드(OPENED)로 TOCTOU 차단.
+        // 출결행 CMPNY_CD/채번은 참석자 회사, INSERT 가드는 개설사 기준(T5).
         try {
             int inserted = appAdminTbmMapper.insertManagerDirectEntry(AdminManagerEnterCommand.of(
-                    param.gvCmpnyCd(), param.sessionCd(), "DAILY", qrUserCd,
+                    targetCmpnyCd, session.hostCmpnyCd(), param.sessionCd(), "DAILY", qrUserCd,
                     "MANAGER_QR_SCAN", param.gvUserCd()));
             if (inserted == 0) {
                 log.warn("TBM 일용직 QR 입실 상태 전이 충돌(교육준비 상태 아님) - sessionCd={}, userCd={}",
@@ -1291,13 +1350,18 @@ public class AppAdminTbmServiceImpl implements AppAdminTbmService {
             throw new ApiException(TbmErrorCode.TBM_409_041);
         }
 
-        log.info("앱 관리자 TBM 일용직 QR 입실 완료 - sessionCd={}, userCd={}, manager={}",
-                param.sessionCd(), qrUserCd, param.gvUserCd());
+        log.info("앱 관리자 TBM 일용직 QR 입실 완료 - sessionCd={}, userCd={}, targetCmpny={}, manager={}",
+                param.sessionCd(), qrUserCd, targetCmpnyCd, param.gvUserCd());
+
+        // 스캔 결과 화면의 회사명은 스캔 주체(개설사) 기준 1차 relabel 값만 내려준다(요청서 §3.2 ①).
+        String affilCmpnyNm = tbmSessionShareService.resolveTier1LabelMap(param.sessionCd())
+                .get(targetCmpnyCd);
 
         return AdminQrScanResponse.builder()
                 .sessionCd(param.sessionCd())
                 .userTypeCd("DAILY")
                 .userCd(qrUserCd)
+                .affilCmpnyNm(affilCmpnyNm)
                 .build();
     }
 
@@ -1641,11 +1705,13 @@ public class AppAdminTbmServiceImpl implements AppAdminTbmService {
         }
     }
 
-    private void insertRisks(List<AdminSessionRiskModel> risks, String sessionCd,
+    /** 위험성평가 매핑 다건 INSERT(DISPLAY_ORDER 자동 부여, 옵션). 삽입 전 사업장 정합·실존 검증. */
+    private void insertRisks(List<AdminSessionRiskModel> risks, String sessionCd, String sessionSiteCd,
             String gvCmpnyCd, String gvUserCd) {
         if (risks == null) {
             return;
         }
+        validateRiskLinks(risks, sessionSiteCd, gvCmpnyCd);
         int order = 0;
         for (AdminSessionRiskModel model : risks) {
             if (!StringUtils.hasText(model.getProcessCd()) || !StringUtils.hasText(model.getAssessmentCd())) {
@@ -1654,6 +1720,44 @@ public class AppAdminTbmServiceImpl implements AppAdminTbmService {
             appAdminTbmMapper.insertSessionRisk(
                     AdminSessionRiskCommand.from(model, sessionCd, order, gvCmpnyCd, gvUserCd));
             order++;
+        }
+    }
+
+    /**
+     * 세션-위험성평가 연계 서버 검증(2026-07-16 보안 보강 — 웹 Tbm02ServiceImpl.validateRiskLinks 미러.
+     * 사용자 결정: 연계는 사업장 단위).
+     *
+     * <ul>
+     *   <li>(a) 제출된 각 평가의 siteCd 가 세션 SITE_CD 와 일치해야 한다(교차 사업장 매핑 불허).</li>
+     *   <li>(b) 제출 키(siteCd/processCd/assessmentCd)가 TB_RISK_ASSESSMENT 에 실존해야 한다
+     *       (중복 제거 후 카운트 쿼리 1방 — 건수 불일치 시 dangling 키 포함으로 판정).</li>
+     * </ul>
+     * insert 대상이 아닌 행(processCd/assessmentCd 공백 — 기존 skip 규칙)은 검증도 생략한다.
+     * 위반 시 TBM_400_016.
+     */
+    private void validateRiskLinks(List<AdminSessionRiskModel> risks, String sessionSiteCd, String gvCmpnyCd) {
+        List<AdminSessionRiskModel> targets = new ArrayList<>();
+        Set<String> distinctKeys = new LinkedHashSet<>();
+        for (AdminSessionRiskModel model : risks) {
+            if (!StringUtils.hasText(model.getProcessCd()) || !StringUtils.hasText(model.getAssessmentCd())) {
+                continue;
+            }
+            if (!sessionSiteCd.equals(model.getSiteCd())) {
+                log.warn("앱 관리자 TBM 세션-위험성평가 사업장 불일치 - sessionSiteCd={}, riskSiteCd={}, assessmentCd={}",
+                        sessionSiteCd, model.getSiteCd(), model.getAssessmentCd());
+                throw new ApiException(TbmErrorCode.TBM_400_016);
+            }
+            if (distinctKeys.add(model.getSiteCd() + "|" + model.getProcessCd() + "|" + model.getAssessmentCd())) {
+                targets.add(model);
+            }
+        }
+        if (targets.isEmpty()) {
+            return;
+        }
+        int found = appAdminTbmMapper.countRiskAssessments(gvCmpnyCd, targets);
+        if (found != targets.size()) {
+            log.warn("앱 관리자 TBM 세션-위험성평가 미존재 키 포함 - submitted={}, found={}", targets.size(), found);
+            throw new ApiException(TbmErrorCode.TBM_400_016);
         }
     }
 

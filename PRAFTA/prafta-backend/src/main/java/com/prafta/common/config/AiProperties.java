@@ -67,6 +67,14 @@ public class AiProperties {
         private int defaultTopK = 5;
         /** topK 상한(초과 시 이 값으로 클램프). */
         private int maxTopK = 20;
+        /**
+         * 위험성평가 AI 도출(riskai01/derive) 그라운딩 최소 유사도(cosine, score=1-distance).
+         * 이 값 미만인 청크는 근거로 채택하지 않는다(무관한 코퍼스를 억지 근거로 삼는 것 방지).
+         * 채택 청크가 0건이면 "코퍼스 근거부재 → 자유생성(ABSTAINED)" 경로로 폴백한다.
+         * ★환경 의존 튜닝값: 실 코퍼스의 점수 분포(도출 로그의 topScore)를 보고 조정한다.
+         *   너무 높으면 정상 질의도 근거부재로 빠지고, 너무 낮으면 필터가 무의미해진다.
+         */
+        private double deriveMinScore = 0.40d;
 
         public int getDefaultTopK() {
             return defaultTopK;
@@ -82,6 +90,14 @@ public class AiProperties {
 
         public void setMaxTopK(int maxTopK) {
             this.maxTopK = maxTopK;
+        }
+
+        public double getDeriveMinScore() {
+            return deriveMinScore;
+        }
+
+        public void setDeriveMinScore(double deriveMinScore) {
+            this.deriveMinScore = deriveMinScore;
         }
     }
 

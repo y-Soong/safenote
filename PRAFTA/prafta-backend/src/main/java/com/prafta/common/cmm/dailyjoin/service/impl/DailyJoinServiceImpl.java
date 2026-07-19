@@ -1,7 +1,5 @@
 package com.prafta.common.cmm.dailyjoin.service.impl;
 
-import java.time.LocalDate;
-import java.time.format.DateTimeFormatter;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -10,9 +8,8 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import com.prafta.common.cmm.baseinfo.application.command.SmsAuthConsumeCommand;
-import com.prafta.common.cmm.dailyjoin.application.command.DailyUserSlotUpdCommand;
+import com.prafta.common.cmm.dailyentry.service.DailyEntryService;
 import com.prafta.common.cmm.dailyjoin.application.command.InsertDailyUserCommand;
-import com.prafta.common.cmm.dailyjoin.application.command.InsertSlotHisCommand;
 import com.prafta.common.cmm.dailyjoin.application.command.TermsUserAgrCommand;
 import com.prafta.common.cmm.dailyjoin.application.param.InsertDailyUserParam;
 import com.prafta.common.cmm.dailyjoin.application.param.SiteInfoParam;
@@ -49,8 +46,11 @@ public class DailyJoinServiceImpl implements DailyJoinService {
     private final HmacSigner hmacSigner;
     private final AesGcmCrypto aesGcmCrypto;
     private final PasswordHasher passwordHasher;
+    // 일용직 계약서+승인제(D6) — 가입 시 승인요청 생성(같은 트랜잭션, 가입 실패 시 함께 롤백).
+    private final DailyEntryService dailyEntryService;
 
-    private static final DateTimeFormatter YMD = DateTimeFormatter.ofPattern("yyyyMMdd");
+    /** [SYS081] 입장 승인요청 유형 — 01:신규가입(가입/재활성 가입 공통). */
+    private static final String ENTRY_REQ_TYPE_JOIN = "01";
 
     @Override
     public SiteInfoResponse selectSiteInfo(SiteInfoParam param) {
@@ -119,6 +119,14 @@ public class DailyJoinServiceImpl implements DailyJoinService {
             throw new ApiException(DailyJoinErrorCode.DAILYJOIN_400_003);
         }
 
+        // g-0. PRAFTA-SUBCON-T2-07: 연동 미러 사업장 가입 차단(정규 가입과 동일 가드 — 목록 우회 직접 호출 방어).
+        //      거부 메시지는 미러 존재 사실을 상세 노출하지 않는다.
+        if (dailyJoinMapper.selectMirrorSiteCnt(param.cmpnyCd(), param.siteCd()) > 0) {
+            log.info("일일사용자 회원가입 차단 - 연동 미러 사업장 cmpnyCd={}, siteCd={}",
+                    sanitizeForLog(param.cmpnyCd()), sanitizeForLog(param.siteCd()));
+            throw new ApiException(DailyJoinErrorCode.DAILYJOIN_400_008);
+        }
+
         // g-1. 가입 전 계정등록 토글 검증 (TB_DAILY_USER_LINK_POLICY.USE_YN OFF면 가입 차단)
         String linkPolicyUseYn = dailyJoinMapper.selectLinkPolicyUseYn(LinkPolicyQuery.of(param.cmpnyCd(), param.siteCd()));
         if (linkPolicyUseYn == null || !"Y".equals(linkPolicyUseYn)) {
@@ -156,9 +164,11 @@ public class DailyJoinServiceImpl implements DailyJoinService {
             throw new ApiException(DailyJoinErrorCode.DAILYJOIN_400_002);
         }
 
-        // g-2. 사업장 첫 빈 슬롯 확보 (없으면 가입 차단)
-        String slotNo = dailyJoinMapper.selectFirstEmptySlotNo(EmptySlotQuery.of(param.cmpnyCd(), param.siteCd()));
-        if (slotNo == null || slotNo.isBlank()) {
+        // g-2. 사업장 빈 슬롯 "존재" 검사만 수행 (없으면 가입 차단 — 정원 초과 가입 무한 허용 방지, plan §6 기본안 2).
+        //      입장 승인제(D6): 실제 점유는 가입 시점이 아니라 승인 후 첫 로그인(DailyReentryProcessor)으로 이연.
+        //      그 시점 정원 부족이면 DAILYLOGIN_400_004 로 차단된다.
+        String emptySlotNo = dailyJoinMapper.selectFirstEmptySlotNo(EmptySlotQuery.of(param.cmpnyCd(), param.siteCd()));
+        if (emptySlotNo == null || emptySlotNo.isBlank()) {
             throw new ApiException(DailyJoinErrorCode.DAILYJOIN_400_005);
         }
 
@@ -201,49 +211,39 @@ public class DailyJoinServiceImpl implements DailyJoinService {
             dailyJoinMapper.insertDailyUser(command);
 
             // f-2. PRAFTA-app-027-3'(통합형) — 같은 트랜잭션에서 TB_USER + TB_USER_SITE_AUTH 동시 INSERT.
-            //      EMPLOYMENT_TYPE='DAILY'/AUTH_CD='99999'/NODE_CD=NULL/ACCOUNT_STATUS='01'/USER_PW=동일 hash.
+            //      EMPLOYMENT_TYPE='DAILY'/AUTH_CD='99999'/NODE_CD=NULL/ACCOUNT_STATUS='04'(승인대기 — D6).
             dailyJoinMapper.insertDailyUserToTbUser(command);
             dailyJoinMapper.insertTbUserSiteAuth(param.cmpnyCd(), userCd, param.siteCd());
         }
 
-        // g-3. 빈 슬롯 점유 (조건부 UPDATE 로 동시성 충돌 방어) — 신규/재활성 공통.
-        int slotUpd = dailyJoinMapper.updateDailyUserSlotCurrUserCd(
-                DailyUserSlotUpdCommand.of(param.cmpnyCd(), param.siteCd(), slotNo, userCd));
-        if (slotUpd <= 0) {
-            // 조회와 점유 사이에 다른 가입자가 슬롯을 선점한 경우 → 트랜잭션 롤백
-            throw new ApiException(DailyJoinErrorCode.DAILYJOIN_400_005);
-        }
-
-        // g-3b. PRAFTA-daily-user-dept-3: 점유 슬롯의 지정 부서(NODE_CD)를 점유 일용직 TB_USER.NODE_CD 로 매칭.
-        //       slot.NODE_CD 가 NULL(미지정)이면 미변경. 값이 있으면 무조건 세팅(신규/재활성 공통).
-        //       EMPLOYMENT_TYPE='DAILY' 가드로 정규 사용자 오염 차단.
-        String slotNodeCd = dailyJoinMapper.selectSlotNodeCd(param.cmpnyCd(), param.siteCd(), slotNo);
-        if (slotNodeCd != null && !slotNodeCd.isBlank()) {
-            dailyJoinMapper.updateTbUserNodeCdFromSlot(param.cmpnyCd(), userCd, slotNodeCd);
-        }
-
-        // g-4. PRAFTA-055-1: 슬롯 점유 이력 INSERT(ISSUE_CHANNEL='01' 직접가입, RELEASE_* = NULL).
-        //      신규/재활성 공통. USER_ID 는 TB_DAILY_USER.USER_ID 와 동일하게 param.userId() 적재
-        //      (만료 배치/조회의 h.USER_ID = d.USER_ID 조인 정합). 본 트랜잭션 포함(점유와 이력 정합).
-        String hisId = dailyJoinMapper.selectDailySlotHisId(param.cmpnyCd());
-        dailyJoinMapper.insertSlotHis(InsertSlotHisCommand.of(
-                hisId
-                , param.cmpnyCd()
-                , param.siteCd()
-                , slotNo
-                , LocalDate.now().format(YMD)
-                , param.userId()));
+        // (구 g-3/g-3b/g-4 제거 — 입장 승인제 D6) 슬롯 점유/지정부서 매칭/점유 이력 적재는 가입 시점이 아니라
+        // 관리자 승인 후 첫 로그인(DailyReentryProcessor.reactivateAndOccupy)으로 이연되었다.
 
         // h. 약관 동의 이력 insert (필수약관 검증 후 요청 항목 저장)
         insertTermsAgreement(userCd, param);
 
-        log.info("일일사용자 회원가입 완료 userCd={}, slotNo={}, 재활성여부={}",
-                userCd, slotNo, (reuseUserCd != null && !reuseUserCd.isBlank()) ? "Y" : "N");
+        // i. 입장 승인요청 생성(REQ_TYPE='01' 신규가입) + 사업장 관리자 푸시 outbox 적재 (D5).
+        //    같은 트랜잭션 — 가입 실패 시 요청도 함께 롤백. open 중복은 멱등(no-op),
+        //    당일 거부 이력이 있으면 007 로 가입 자체가 차단된다(트랜잭션 롤백).
+        dailyEntryService.createEntryRequest(param.cmpnyCd(), param.siteCd(), userCd, ENTRY_REQ_TYPE_JOIN);
 
-        // i. 응답으로 userId 반환
+        log.info("일일사용자 회원가입 완료(승인대기) userCd={}, 재활성여부={}",
+                userCd, (reuseUserCd != null && !reuseUserCd.isBlank()) ? "Y" : "N");
+
+        // j. 응답으로 userId + 승인대기 플래그 반환(가입 완료 화면 "승인 대기" 안내용 — R4).
         return InsertDailyUserResponse.builder()
                 .userId(param.userId())
+                .pendingApprovalYn("Y")
                 .build();
+    }
+
+    /** 로그 위조 방지용 외부 입력 정제 — 개행 제거 + 50자 상한 (subcon01 SEC-ADV-1 규약 미러). */
+    private String sanitizeForLog(String value) {
+        if (value == null) {
+            return null;
+        }
+        String cleaned = value.trim().replaceAll("[\\r\\n]", "");
+        return cleaned.length() > 50 ? cleaned.substring(0, 50) + "..." : cleaned;
     }
 
     /**

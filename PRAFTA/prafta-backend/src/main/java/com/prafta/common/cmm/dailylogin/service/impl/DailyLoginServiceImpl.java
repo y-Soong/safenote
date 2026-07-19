@@ -10,6 +10,8 @@ import java.util.UUID;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
+import com.prafta.common.cmm.dailyentry.result.EntryLoginDecision;
+import com.prafta.common.cmm.dailyentry.service.DailyEntryService;
 import com.prafta.common.cmm.dailylogin.application.command.DailyActiveTokenCommand;
 import com.prafta.common.cmm.dailylogin.application.command.DailyUserPwdFailCommand;
 import com.prafta.common.cmm.dailylogin.application.command.DailyUserPwdUnlockCommand;
@@ -52,8 +54,10 @@ public class DailyLoginServiceImpl implements DailyLoginService {
     private final JwtUtil jwtUtil;
     // PRAFTA-app-027-2'(통합형) — TB_USER 행 로드/정규 토큰 발급 재사용(읽기 전용, 정규 쓰기 미오염).
     private final LoginMapper loginMapper;
-    // prafta-app-032 B — 비활성 일용직 자동 재활성(별도 @Transactional 빈). self-invocation 회피 목적의 분리.
+    // prafta-app-032 B — 비활성 일용직 재활성(별도 @Transactional 빈). self-invocation 회피 목적의 분리.
     private final DailyReentryProcessor dailyReentryProcessor;
+    // 일용직 계약서+승인제(D5) — 입장 승인 판정/요청 생성. 본 서비스(비-Transactional)에서 오케스트레이션한다.
+    private final DailyEntryService dailyEntryService;
 
     // 정규 로그인과 동일한 잠금 정책 프로퍼티 재사용(login.lock.*).
     @Value("${login.lock.duration-minutes}")
@@ -64,6 +68,13 @@ public class DailyLoginServiceImpl implements DailyLoginService {
 
     /** ACCOUNT_STATUS '05' = 비활성화(자정 만료 배치 027-1 이 설정). */
     private static final String ACCOUNT_STATUS_INACTIVE = "05";
+
+    /** ACCOUNT_STATUS '04' = 승인대기(신규가입 — 입장 승인제 D5/D6, SYS013 인증대기 재활용). */
+    private static final String ACCOUNT_STATUS_PENDING_APPROVAL = "04";
+
+    /** [SYS081] 입장 승인요청 유형 — 01:신규가입 / 02:재입장. */
+    private static final String ENTRY_REQ_TYPE_JOIN = "01";
+    private static final String ENTRY_REQ_TYPE_REENTRY = "02";
 
     private static final DateTimeFormatter LOCK_DTIME = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
 
@@ -118,6 +129,16 @@ public class DailyLoginServiceImpl implements DailyLoginService {
             throw new ApiException(DailyLoginErrorCode.DAILYLOGIN_400_001);
         }
 
+        // 5-0) 입장 승인제(D5/D6) — 신규가입 승인대기('04', USE_YN='Y') 분기.
+        //      비밀번호 검증(4)을 통과한 뒤에만 승인 판정을 수행한다(006/007 노출 시점 규칙 — enumeration 방지).
+        //      승인('02') 존재 시에만 활성화('01') + 최초 슬롯 점유 + 요청 소진을 원자 처리하고,
+        //      대기=006 / 당일 거부=007 / 요청 없음=요청 생성+관리자 푸시 후 006.
+        if (ACCOUNT_STATUS_PENDING_APPROVAL.equals(userResult.accountStatus())) {
+            String approvedReqId = resolveEntryApprovalOrThrow(userResult, ENTRY_REQ_TYPE_JOIN);
+            userResults = dailyReentryProcessor.reactivateAndOccupy(userResult, approvedReqId);
+            userResult = userResults.get(0);
+        }
+
         // 5-1) 비밀번호 인증 성공 — 실패 카운트/잠금 무조건 초기화.
         //      (진입 시 unlock 은 만료 시에만 리셋하므로 성공 경로에서 명시적으로 0 복귀시킨다.)
         dailyLoginMapper.updateDailyUserPwdReset(DailyUserPwdUnlockCommand.from(userResult));
@@ -165,12 +186,13 @@ public class DailyLoginServiceImpl implements DailyLoginService {
     }
 
     /**
-     * prafta-app-032 B — 활성 로그인 0건 시 비활성 일용직 자동 재활성(무마찰 재입장)을 시도한다.
+     * prafta-app-032 B / 입장 승인제(D5) — 활성 로그인 0건 시 비활성 일용직 재입장을 시도한다.
      *
      * <p>보조 조회(USE_YN 가드 없음)로 단건 일용직을 찾아 활성경로와 동일한 잠금/비번 검증을 적용한다.
      * 비번 불일치는 실패카운트 누적(임계 도달 시 잠금) 후 통합 차단(001), 탈퇴/단건아님/미존재도 통합 차단(001)으로
      * 계정 존재를 노출하지 않는다(enumeration 방지). 비번 일치 + <b>비활성(USE_YN='N' 또는 ACCOUNT_STATUS='05')</b>
-     * 대상에 한해 별도 @Transactional 처리기({@link DailyReentryProcessor})로 재활성 + 슬롯 점유 후
+     * 대상은 입장 승인 판정(D5: 승인 존재 시에만 진행, 그 외 006/007)을 거쳐 별도 @Transactional
+     * 처리기({@link DailyReentryProcessor})로 재활성 + 슬롯 점유 + 요청 소진 후
      * 활성 단건을 반환한다(이후 login() 의 정상 성공 경로가 토큰을 발급).
      *
      * <p>본 메서드는 비-Transactional 컨텍스트에서 실행되어 실패카운트가 차단 예외와 함께 롤백되지 않는다
@@ -214,9 +236,47 @@ public class DailyLoginServiceImpl implements DailyLoginService {
             throw new ApiException(DailyLoginErrorCode.DAILYLOGIN_400_001);
         }
 
-        // 비번 일치 + 재활성 대상 — 별도 @Transactional 로 원자적 재활성 + 슬롯 점유(차단 시 롤백).
-        log.info("일용직 로그인 자동 재활성 시도 — userCd={}", r.userCd());
-        return dailyReentryProcessor.reactivateAndOccupy(r);
+        // 입장 승인제(D5) — 무마찰 재입장 폐기. 승인('02') 존재 시에만 재활성을 진행하고,
+        // 대기=006 / 당일 거부=007 / 요청 없음=요청 생성(재입장 '02')+관리자 푸시 후 006 으로 차단한다.
+        // 비밀번호 검증 통과 이후 시점이므로 006/007 노출 규칙(enumeration 방지)을 충족한다.
+        String approvedReqId = resolveEntryApprovalOrThrow(r, ENTRY_REQ_TYPE_REENTRY);
+
+        // 비번 일치 + 승인된 재활성 대상 — 별도 @Transactional 로 원자적 재활성 + 슬롯 점유 + 요청 소진(차단 시 롤백).
+        log.info("일용직 로그인 승인 재활성 시도 — userCd={}, reqId={}", r.userCd(), approvedReqId);
+        return dailyReentryProcessor.reactivateAndOccupy(r, approvedReqId);
+    }
+
+    /**
+     * 입장 승인제(D5) — 로그인 대상 일용직의 승인 판정을 수행하고, 승인('02')이 아니면 안내 예외로 차단한다.
+     *
+     * <p>판단 규칙(plan §1): 승인 존재 → 소진 대상 reqId 반환 / 대기 → 006 / 당일 거부 → 007 /
+     * 요청 없음 → 신규 요청 생성(+사업장 관리자 푸시, 별도 트랜잭션 커밋) 후 006.
+     *
+     * <p>본 메서드는 비-Transactional 컨텍스트에서 호출되어야 한다 — 요청 생성이 자체 트랜잭션으로
+     * 커밋된 뒤 006 을 던지므로, 안내 예외와 함께 요청이 롤백되지 않는다.
+     * 반드시 비밀번호 검증 통과 후에 호출한다(006/007 노출 시점 규칙).
+     *
+     * @param reqType 요청 없음 시 생성할 요청 유형 [SYS081] 01:신규가입 / 02:재입장
+     * @return 소진 대상 승인요청 ID (승인 존재 시에만 반환)
+     */
+    private String resolveEntryApprovalOrThrow(DailyUserResult r, String reqType) {
+        EntryLoginDecision decision = dailyEntryService.findLoginDecision(r.cmpnyCd(), r.userCd());
+        switch (decision.type()) {
+            case APPROVED:
+                return decision.reqId();
+            case PENDING:
+                log.info("일용직 로그인 차단 — 입장 승인 대기 중 userCd={}", r.userCd());
+                throw new ApiException(DailyLoginErrorCode.DAILYLOGIN_400_006);
+            case REJECTED_TODAY:
+                log.info("일용직 로그인 차단 — 당일 입장 거부 userCd={}", r.userCd());
+                throw new ApiException(DailyLoginErrorCode.DAILYLOGIN_400_007);
+            case NONE:
+            default:
+                // 신규 승인요청 생성 + 관리자 푸시(내부 @Transactional 커밋) 후 대기 안내.
+                dailyEntryService.createEntryRequest(r.cmpnyCd(), r.siteCd(), r.userCd(), reqType);
+                log.info("일용직 로그인 차단 — 입장 승인요청 생성 후 대기 안내 userCd={}, reqType={}", r.userCd(), reqType);
+                throw new ApiException(DailyLoginErrorCode.DAILYLOGIN_400_006);
+        }
     }
 
     /**
@@ -252,7 +312,8 @@ public class DailyLoginServiceImpl implements DailyLoginService {
             loginMapper.upsertUserDevice(command);
             loginMapper.insertDeviceLoginHist(command);
             // (계정당 활성 디바이스 1대) 같은 사용자의 다른 기기를 비활성화 → 마지막 로그인 기기만 푸시 수신.
-            int deactivated = loginMapper.deactivateOtherUserDevices(userResult.userCd(), param.deviceId());
+            int deactivated = loginMapper.deactivateOtherUserDevices(
+                    userResult.cmpnyCd(), userResult.userCd(), param.deviceId());
             // PII(기기ID/IP) 평문 로그 금지 — 식별 키만 남긴다.
             log.info("일용직 디바이스 로그인 이력 적재 완료 — userCd={}, clientType={}, 비활성화기기={}건"
                     , userResult.userCd(), param.clientType(), deactivated);

@@ -65,6 +65,7 @@
 				 INNER JOIN TB_CHKPT_INSPECT_ITEM C
 					ON (
 						A.CMPNY_CD = C.CMPNY_CD
+					AND A.SITE_CD = C.SITE_CD	<!-- PRAFTA-SUBCON-T0-03: 문항 사업장 키 -->
 					AND A.CHKLST_TYPE = C.CHKLST_TYPE
 					)
 				 LEFT JOIN TB_CHKPT_INSPECT_ANSWER D
@@ -114,6 +115,7 @@
 		INNER JOIN TB_CHKPT_INSPECT_ITEM B
 			ON (
 				A.CMPNY_CD = B.CMPNY_CD
+			AND A.SITE_CD = B.SITE_CD	<!-- PRAFTA-SUBCON-T0-03: 문항 사업장 키 -->
 			AND A.CHKLST_TYPE = B.CHKLST_TYPE
 	        )
 	WHERE A.CMPNY_CD = #{gvCmpnyCd}
@@ -136,6 +138,7 @@
 		INNER JOIN TB_CHKPT_INSPECT_ITEM_HIST H
 			ON (
 				A.CMPNY_CD = H.CMPNY_CD
+			AND A.SITE_CD = H.SITE_CD	<!-- PRAFTA-SUBCON-T0-03: 이력 사업장 키 -->
 			AND A.CHKLST_TYPE = H.CHKLST_TYPE
 	        )
 	WHERE A.CMPNY_CD = #{gvCmpnyCd}
@@ -160,10 +163,21 @@
 	    , C.ANSWER_DESC									AS answerDesc
 	    , CONCAT(C.FILE_MGMT_CD, D.FILE_EXT)			AS fileMgmtCd
 	    , D.FILE_PATH									AS filePath
+	    <!-- PRAFTA-SUBCON-T6-07: 수행 주체(점검자) — 스냅샷 컬럼만 사용한다.
+	         타사 USER_CD 를 자기 회사 사용자 테이블에 조인하면 동명이인/빈값 오표시가 나므로 USER_NM 조인 금지.
+	         레거시(backfill 이전) 행은 INSERT_NO 기준 자사 조회로 폴백한다. -->
+	    , C.PERFORM_CMPNY_CD							AS performCmpnyCd
+	    , IFNULL(PC.CMPNY_NM, '')						AS performCmpnyNm
+	    , IFNULL(C.PERFORM_USER_CD, C.INSERT_NO)		AS performUserCd
+	    , IFNULL(
+	    	C.PERFORM_USER_NM
+	    	, FNC_CMM_INFO_SRCH(C.CMPNY_CD, 'USER_NM', C.INSERT_NO, NULL)
+	      )												AS performUserNm
 	FROM TB_CHKPT_TYPE_MGMT A
 		INNER JOIN TB_CHKPT_INSPECT_ITEM B
 			ON (
 				A.CMPNY_CD = B.CMPNY_CD
+			AND A.SITE_CD = B.SITE_CD	<!-- PRAFTA-SUBCON-T0-03: 문항 사업장 키 -->
 			AND A.CHKLST_TYPE = B.CHKLST_TYPE
 	        )
 		INNER JOIN TB_CHKPT_INSPECT_ANSWER C
@@ -179,6 +193,10 @@
 				A.CMPNY_CD = D.CMPNY_CD
 			AND C.FILE_MGMT_CD = D.FILE_MGMT_CD
 	        AND D.FILE_TYPE = #{fileType}
+	        )
+		LEFT OUTER JOIN TB_CMPNY PC
+			ON (
+				PC.CMPNY_CD = C.PERFORM_CMPNY_CD
 	        )
 	WHERE A.CMPNY_CD = #{gvCmpnyCd}
 	  AND A.SITE_CD = #{siteCd}

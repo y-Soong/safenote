@@ -94,13 +94,30 @@
                   >
                     {{ isCheckingUnconfirmed ? "확인 중…" : "새로고침" }}
                   </button>
-                  <span v-if="isEditMode" class="ai-hint">
-                    ⓘ AI 분석이 확정된 자료만 교육안 생성에 반영됩니다.
-                  </span>
-                  <span v-else class="ai-hint">
+                  <!-- R3: 목표 글자수 입력(기본 1000, 800~5000 — 서버 TBM_400_061 과 동일 범위) -->
+                  <label v-if="isEditMode" class="ai-target-chars">
+                    목표 글자수
+                    <input
+                      type="number"
+                      v-model.number="aiTargetChars"
+                      min="800"
+                      max="5000"
+                      :disabled="isGenerating"
+                    />
+                    자
+                  </label>
+                  <span v-if="!isEditMode" class="ai-hint">
                     ⓘ 임시저장 후 AI 교육안을 생성할 수 있습니다.
                   </span>
                 </div>
+
+                <!-- R1/R3 안내 문구(수정모드) — 반영 재료(D11) + 분량 오차(D12) -->
+                <span v-if="isEditMode" class="ai-hint">
+                  ⓘ 확정된 교육자료와 연계된 위험성평가가 교육안 생성에 반영됩니다.
+                </span>
+                <span v-if="isEditMode" class="ai-hint">
+                  ⓘ 800~5000자. 실제 생성 분량은 목표치에서 다소 오차가 있을 수 있습니다.
+                </span>
 
                 <!-- 미확정 AI 분석 항목 안내 블록(있을 때만) — 생성은 차단하지 않고 해당 항목만 제외됨 -->
                 <div
@@ -352,6 +369,64 @@
                 </table>
               </div>
             </div>
+
+            <!-- 연동 회사 지정(PRAFTA-SUBCON-T5) -->
+            <div class="form-row-max grid-row">
+              <label>연동 회사</label>
+              <div class="grid-content">
+                <div class="grid-toolbar">
+                  <button
+                    type="button"
+                    class="btn btn-second btn-sm"
+                    :disabled="!isEditMode"
+                    @click="fnOpenSharePop"
+                  >
+                    연동 회사 선택
+                  </button>
+                  <span v-if="!isEditMode" class="hint">
+                    ⓘ 임시저장 후 연동 회사를 지정할 수 있습니다.
+                  </span>
+                  <span v-else class="hint">
+                    ⓘ 지정한 회사 직원이 이 교육에 입실할 수 있습니다.
+                  </span>
+                </div>
+                <table class="data-grid sub-grid">
+                  <thead>
+                    <tr>
+                      <th style="width: 6%; text-align: center">순서</th>
+                      <th>회사명</th>
+                      <th style="width: 14%">지정일시</th>
+                      <th style="width: 8%; text-align: center">해제</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <template v-if="shareRows.length === 0">
+                      <tr>
+                        <td colspan="4" class="edu-grid-empty">
+                          지정된 연동 회사가 없습니다.
+                        </td>
+                      </tr>
+                    </template>
+                    <template v-else>
+                      <tr v-for="(row, idx) in shareRows" :key="row.shareId">
+                        <td style="text-align: center">{{ idx + 1 }}</td>
+                        <td>{{ row.cmpnyNm }}</td>
+                        <td>{{ row.designatedDtime }}</td>
+                        <td style="text-align: center">
+                          <button
+                            type="button"
+                            class="btn btn-second btn-sm"
+                            @click="fnReleaseShare(row)"
+                          >
+                            해제
+                          </button>
+                        </td>
+                      </tr>
+                    </template>
+                  </tbody>
+                </table>
+              </div>
+            </div>
           </div>
         </div>
 
@@ -401,6 +476,7 @@ import { useModal } from "@/utils/useModal";
 import { useCenteredDraggable } from "@/composables/useCenteredDraggable";
 import TbmContentSelector from "./TbmContentSelector.vue";
 import TbmRiskSelector from "./TbmRiskSelector.vue";
+import TbmShareCmpnyPop from "./TbmShareCmpnyPop.vue";
 import SiteSearchPop from "@/components/popup/SiteSearchPop.vue";
 import search_icon from "@/assets/img/search_icon.png";
 
@@ -428,6 +504,8 @@ const gpsStatus = ref("idle"); // idle | loading | ok | fail
 const isGenerating = ref(false);
 const aiNotice = ref(""); // 통합/제외 안내 문구
 const aiQualityWarn = ref(false); // qualityDegraded 안내
+// R3: 목표 글자수(기본 1000, 800~5000 — 서버 TBM_400_061 과 동일 하드계약)
+const aiTargetChars = ref(1000);
 
 // 미확정 AI 분석 항목(제외 예정 목록 안내용 — 생성은 차단하지 않음, 2026-07-11 기획 변경).
 // 확정 자료 0건이면 서버 generate 가 "분석할 자료가 없습니다"(TBM_409_060)로 거부한다.
@@ -455,6 +533,63 @@ const { position, startDrag } = useCenteredDraggable(modalRef, {
 const riskKey = (row) =>
   [row.siteCd, row.processCd, row.assessmentCd].join("|");
 
+// ===== 연동 회사 지정(PRAFTA-SUBCON-T5) =====
+// shareRows = 내가 직접 지정한 회사 목록. 하위 재지정 회사는 개사 수(subCount)로만 내려온다.
+const shareRows = ref([]);
+
+// 지정 현황 조회(수정 모드 = sessionCd 확정 이후에만 호출 가능)
+const fnSearchShares = async () => {
+  if (!isEditMode.value) {
+    shareRows.value = [];
+    return;
+  }
+  try {
+    const response = await axios.get("/webApi/tbm02/session-shares", {
+      params: { sessionCd: props.sessionCd_p },
+    });
+    if (response.status === 200) {
+      shareRows.value = response.data?.shareList || [];
+    }
+  } catch (err) {
+    shareRows.value = [];
+    await proxy.$alert(
+      resolveApiErrorMessage(err, "조회 중 오류가 발생했습니다.")
+    );
+  }
+};
+
+// 연동 회사 선택 팝업(신규 개설 전에는 sessionCd 가 없어 호출 불가 → 버튼 비활성)
+const fnOpenSharePop = () => {
+  if (!isEditMode.value) return;
+  openPop(TbmShareCmpnyPop, {
+    sessionCd_p: props.sessionCd_p,
+    onSaved: fnSearchShares,
+  });
+};
+
+// 지정 해제(하위 재지정 캐스케이드 — 서버가 함께 해제한다)
+const fnReleaseShare = async (row) => {
+  const confirmed = await proxy.$confirm(
+    "지정을 해제하면 해당 회사(및 그 하위 재지정 회사)의 신규 입실이 차단됩니다. 이미 입실한 참석자는 유지됩니다."
+  );
+  if (!confirmed) return;
+
+  try {
+    const response = await axios.post("/webApi/tbm02/session-share-release", {
+      sessionCd: props.sessionCd_p,
+      shareCmpnyCd: row.cmpnyCd,
+    });
+    if (response.status === 200) {
+      await proxy.$alert("연동 회사 지정을 해제했습니다.");
+      fnSearchShares();
+    }
+  } catch (err) {
+    await proxy.$alert(
+      resolveApiErrorMessage(err, "처리 중 오류가 발생했습니다.")
+    );
+  }
+};
+
 onMounted(async () => {
   await fnGetSiteList();
 
@@ -464,6 +599,8 @@ onMounted(async () => {
     }
     // 수정 모드: 미확정 AI 분석 항목 선조회(제외 예정 목록 안내용)
     fnLoadUnconfirmed();
+    // 연동 회사 지정 현황 로딩
+    fnSearchShares();
   } else {
     // 신규: 기본 사업장 = 본인 사업장
     formData.siteCd = sessionStorage.getItem("gv_siteCd") || "";
@@ -754,6 +891,26 @@ const fnSave = async (mode) => {
   }
 };
 
+// R4: 수정모드 저장 성공 후 팝업을 유지하며 내부 데이터를 최신화하는 재조회.
+//     콘솔(TbmSessionConsole)은 fnEdit 시 이미 닫혀 detail_p 재전달 경로가 없으므로
+//     session-detail 을 직접 재조회한다(D9). 실패해도 팝업은 닫지 않는다(재시도 가능).
+const fnReloadDetail = async () => {
+  try {
+    const response = await axios.get("/webApi/tbm02/session-detail", {
+      params: { sessionCd: props.sessionCd_p },
+    });
+    if (response.status === 200) {
+      fnLoadFromDetail(response.data || {});
+      fnLoadUnconfirmed();
+      fnSearchShares();
+    }
+  } catch (err) {
+    await proxy.$alert(
+      resolveApiErrorMessage(err, "조회 중 오류가 발생했습니다.")
+    );
+  }
+};
+
 const fnUpdate = async () => {
   if (!fnValidate("OPENED")) return; // 수정은 OPENED 수준 검증 유지(서버가 상태 재검증)
 
@@ -768,9 +925,12 @@ const fnUpdate = async () => {
     );
 
     if (response.status === 200) {
-      await proxy.$alert(getMessage(MSG.SAVE_SUCCESS));
-      emit("close");
+      // R4: 팝업을 닫지 않고 유지 — 저장 직후 AI 교육안 생성 등 연속 작업 지원(D10).
+      await proxy.$alert(
+        "저장되었습니다. 이어서 AI 교육안 생성 등 추가 수정이 가능합니다."
+      );
       if (typeof props.onSearch === "function") props.onSearch();
+      await fnReloadDetail();
     }
   } catch (err) {
     await proxy.$alert(
@@ -805,11 +965,21 @@ const fnLoadUnconfirmed = async () => {
   }
 };
 
-// RC-3: [AI 교육안 생성] — POST /webApi/tbmai02/generate {sessionCd, adminContentText}
+// RC-3: [AI 교육안 생성] — POST /webApi/tbmai02/generate {sessionCd, adminContentText, targetChars}
 //        성공 시 formData.contentBody 를 응답 genContent(HTML)로 덮어쓰고 안내 갱신.
 //        영속은 기존 [저장] 버튼(update-session)으로 처리(generate 는 DB 미기록 초안 반환).
 const fnGenerateAiContent = async () => {
   if (!isEditMode.value) return; // 신규 폼은 버튼 미노출 — 방어
+
+  // R3: 목표 글자수 클라 1차 검증(서버 TBM_400_061 과 동일 문구/범위) — 빈 입력·비정수 포함
+  if (
+    !Number.isInteger(aiTargetChars.value) ||
+    aiTargetChars.value < 800 ||
+    aiTargetChars.value > 5000
+  ) {
+    await proxy.$alert("목표 글자수는 800자 이상 5000자 이하로 입력해 주세요.");
+    return;
+  }
 
   // 기존 교육 내용이 있으면 덮어쓰기 확인
   const hasExisting = stripHtml(formData.contentBody).length > 0;
@@ -827,15 +997,21 @@ const fnGenerateAiContent = async () => {
   try {
     const response = await axios.post(
       "/webApi/tbmai02/generate",
-      { sessionCd: props.sessionCd_p, adminContentText },
+      {
+        sessionCd: props.sessionCd_p,
+        adminContentText,
+        targetChars: aiTargetChars.value,
+      },
       { headers: { "Content-Type": "application/json" } }
     );
 
     const data = response.data || {};
     formData.contentBody = data.genContent || "";
-    aiNotice.value = `AI 분석·확정된 ${
+    aiNotice.value = `AI 분석·확정 자료 ${
       data.includedItemCount ?? 0
-    }개 항목을 통합했습니다. 미분석/미확정 항목은 제외됩니다.`;
+    }건, 연계 위험성평가 ${
+      data.includedRiskCount ?? 0
+    }건을 반영했습니다. 미분석/미확정 자료는 제외됩니다.`;
     aiQualityWarn.value = !!data.qualityDegraded;
   } catch (err) {
     await proxy.$alert(
@@ -1014,6 +1190,20 @@ const fnGenerateAiContent = async () => {
   color: var(--color-text-muted);
   /* 안내 문구는 개행 없이 한 줄로 표시 */
   white-space: nowrap;
+}
+
+/* R3: 목표 글자수 입력 그룹 — 기존 .ai-toolbar flex 흐름에 편승 */
+.ai-target-chars {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-xs, 0.375rem);
+  font-size: var(--btn-font-sm);
+  color: var(--color-text);
+  white-space: nowrap;
+}
+
+.ai-target-chars input {
+  width: 6rem;
 }
 
 .ai-notice {

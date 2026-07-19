@@ -30,8 +30,14 @@ public interface ApprovalLineMapper {
                          @Param("approvalComment") String approvalComment,
                          @Param("processUserCd") String processUserCd);
 
-    /** 요청의 결재라인 전체 삭제 (재구성 시 — 선택). */
-    int deleteApprovalLineByReqId(@Param("reqId") String reqId);
+    /**
+     * 요청의 결재라인 전체 삭제 (재구성 시 — 선택).
+     *
+     * <p>★테넌트 격리: REQ_ID 는 회사별 채번이라 전역 유일하지 않다. 반드시 CMPNY_CD 를 동반해야
+     *   다른 회사의 같은 REQ_ID 결재선을 지우지 않는다(updateStepStatus 와 동일 규약).
+     */
+    int deleteApprovalLineByReqId(@Param("cmpnyCd") String cmpnyCd,
+                                  @Param("reqId") String reqId);
 
     /** 특정 단계의 결재자 본인 여부 검증 등에 사용할 단건 조회. */
     ApprovalStepVO selectApprovalStep(@Param("cmpnyCd") String cmpnyCd,

@@ -137,6 +137,16 @@ def collect_source(src, service_key, rows_per_page, probe):
 
     base = {"ServiceKey": service_key, "type": "json"}
 
+    # 소스별 고정 파라미터 병합(registry api_fixed_params, 예: KOSHA callApiId=1060).
+    # 형식: "k=v" 또는 "k1=v1&k2=v2". 일부 제공기관(KOSHA B552468)은 라우팅용 필수 고정값을
+    # 요구하며, 누락 시 백엔드가 500 "Unexpected errors" 로 크래시한다.
+    fixed = str(src.get("api_fixed_params", "")).strip()
+    if fixed:
+        for kv in fixed.split("&"):
+            if "=" in kv:
+                k, v = kv.split("=", 1)
+                base[k.strip()] = v.strip()
+
     # 1) 첫 호출로 totalCount 확인
     first = http_get_json(endpoint, {**base, "pageNo": 1, "numOfRows": 1})
     code, total, _ = parse_response(first)

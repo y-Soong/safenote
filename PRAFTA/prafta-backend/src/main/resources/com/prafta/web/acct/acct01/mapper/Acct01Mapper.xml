@@ -479,6 +479,7 @@
          LEFT OUTER JOIN TB_CHKPT_INSPECT_ITEM II
             ON (
                 AN.CMPNY_CD = II.CMPNY_CD
+            AND AN.SITE_CD = II.SITE_CD   <!-- PRAFTA-SUBCON-T0-03: 문항 사업장 키 -->
             AND TM.CHKLST_TYPE = II.CHKLST_TYPE
             AND AN.INSPECT_ITEM_CD = II.INSPECT_ITEM_CD
             )

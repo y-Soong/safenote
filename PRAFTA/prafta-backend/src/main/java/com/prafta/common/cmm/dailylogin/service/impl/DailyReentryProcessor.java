@@ -13,6 +13,7 @@ import com.prafta.common.cmm.dailyjoin.application.command.InsertSlotHisCommand;
 import com.prafta.common.cmm.dailyjoin.application.query.EmptySlotQuery;
 import com.prafta.common.cmm.dailyjoin.application.query.LinkPolicyQuery;
 import com.prafta.common.cmm.dailyjoin.mapper.DailyJoinMapper;
+import com.prafta.common.cmm.dailyentry.service.DailyEntryService;
 import com.prafta.common.cmm.dailylogin.application.query.DailyLoginQuery;
 import com.prafta.common.cmm.dailylogin.mapper.DailyLoginMapper;
 import com.prafta.common.cmm.dailylogin.result.DailyUserResult;
@@ -23,18 +24,26 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 
 /**
- * prafta-app-032 B — 일용직 로그인 자동 재활성(무마찰 재입장) 트랜잭션 처리기.
+ * prafta-app-032 B — 일용직 로그인 재활성(입장 승인제) 트랜잭션 처리기.
+ *
+ * <p>일용직 계약서+승인제(D5): 무마찰 재입장은 공식 폐기되었다. 본 처리기는 <b>승인('02')된
+ * 입장 승인요청이 존재하는 경우에만</b> 호출되며, 재활성 + 슬롯 점유 + 이력 적재 + 승인요청 소진('02'→'05')을
+ * 하나의 트랜잭션으로 묶는다. 승인 판정(006/007/요청 생성)은 self-invocation 함정을 피하기 위해
+ * 호출자({@link DailyLoginServiceImpl}, 비-Transactional)가 수행한다.
  *
  * <p>비밀번호 검증/실패카운트 누적은 {@link DailyLoginServiceImpl#login} 측(비-Transactional)에서 끝낸 뒤,
- * <b>비밀번호가 일치하고 재활성 대상</b>인 경우에만 본 처리기를 호출한다. 재활성 + 슬롯 점유 + 이력 적재는
- * 하나의 트랜잭션으로 묶여, 토글 OFF/정원 부족/종료 사업장/정합 깨짐 시 전체 롤백된다(부분 점유 방지).
+ * <b>비밀번호가 일치하고 승인된 재활성/활성화 대상</b>인 경우에만 본 처리기를 호출한다.
+ * 토글 OFF/정원 부족/종료 사업장/정합 깨짐/소진 경합 시 전체 롤백된다(부분 점유 방지).
+ *
+ * <p>신규가입 승인대기(ACCOUNT_STATUS='04', USE_YN='Y') 계정의 승인 후 첫 로그인 활성화도
+ * 본 메서드를 재사용한다(reactivateDailyUser 는 UPDATE 라 '04'→'01' 전이에 그대로 성립).
  *
  * <p>self-invocation 으로는 {@code @Transactional} 이 적용되지 않으므로, 로그인 서비스와 분리된
  * 별도 빈으로 둔다.
  *
  * <p>결정(§1~§4): 빈 슬롯 NODE_CD null 이면 TB_USER.NODE_CD no-op(복귀자 부서 유지),
  * 값 있으면 갱신 / 재활성·슬롯 SQL 은 DailyJoinMapper 재사용(복제 금지) / 정원없음=DAILYLOGIN_400_004,
- * 토글 OFF=DAILYLOGIN_400_003.
+ * 토글 OFF=DAILYLOGIN_400_003 / 소진 경합=DAILYLOGIN_400_006.
  */
 @Slf4j
 @Service
@@ -45,17 +54,21 @@ public class DailyReentryProcessor {
     private final DailyJoinMapper dailyJoinMapper;
     // 재활성 후 활성 단건 재조회(원자적 정합 가드)용.
     private final DailyLoginMapper dailyLoginMapper;
+    // 입장 승인제(D6) — 승인요청 소진('02'→'05')을 같은 트랜잭션에서 수행.
+    private final DailyEntryService dailyEntryService;
 
     private static final DateTimeFormatter YMD = DateTimeFormatter.ofPattern("yyyyMMdd");
 
     /**
-     * 비활성 일용직 행 {@code r} 을 재활성하고 빈 슬롯을 점유한다.
+     * 승인된 일용직 행 {@code r} 을 재활성(또는 '04' 첫 활성화)하고 빈 슬롯을 점유한 뒤,
+     * 승인요청 {@code approvedReqId} 를 소진('02'→'05')한다.
      *
+     * @param approvedReqId 승인('02') 상태로 판정된 입장 승인요청 ID — 호출자가 findLoginDecision 으로 확정
      * @return 재활성 후 활성 로그인 대상 단건(USE_YN='Y' 가드 통과). 토큰 발급 등 후속은 호출자가 진행.
-     * @throws ApiException 토글 OFF(003)/정원 부족(004)/종료 사업장·정합 깨짐(001) 시 — 트랜잭션 롤백.
+     * @throws ApiException 토글 OFF(003)/정원 부족(004)/종료 사업장·정합 깨짐(001)/소진 경합(006) 시 — 트랜잭션 롤백.
      */
     @Transactional
-    public List<DailyUserResult> reactivateAndOccupy(DailyUserResult r) {
+    public List<DailyUserResult> reactivateAndOccupy(DailyUserResult r, String approvedReqId) {
         final String cmpnyCd = r.cmpnyCd();
         final String siteCd = r.siteCd();
         final String userCd = r.userCd();
@@ -132,6 +145,15 @@ public class DailyReentryProcessor {
                     hisId, cmpnyCd, siteCd, slotNo, LocalDate.now().format(YMD), r.userId()));
         }
 
+        // 6-1) 입장 승인제(D6) — 승인요청 소진('02'→'05' 조건부 UPDATE, 같은 트랜잭션).
+        //      0행 = 판정~소진 사이 상태 변경(동시 로그인 소진/자정 만료 경합) → 전체 롤백(재활성/슬롯 점유 원복).
+        //      승인 대기 안내(006)로 응답하며, 재시도 시 판정이 처음부터 다시 수행된다.
+        int consumed = dailyEntryService.consumeApprovedRequest(cmpnyCd, approvedReqId, userCd);
+        if (consumed <= 0) {
+            log.info("일용직 입장 승인요청 소진 경합 — userCd={}, reqId={} (전체 롤백)", userCd, approvedReqId);
+            throw new ApiException(DailyLoginErrorCode.DAILYLOGIN_400_006);
+        }
+
         // 7) 활성 단건 재조회(원자성 가드) — USE_YN='Y' + 사업장 개방(B.USE_YN='Y') 통과 행만.
         //    종료 사업장/정합 깨짐이면 0건 → 통합 차단(001) 으로 전체 롤백(슬롯 점유까지 원복).
         List<DailyUserResult> active = dailyLoginMapper.selectDailyUserForLogin(
@@ -141,7 +163,7 @@ public class DailyReentryProcessor {
         }
 
         // PII(휴대폰) 평문 로그 금지 — 식별 키만 남긴다.
-        log.info("일용직 로그인 자동 재활성 완료 — userCd={}, slotNo={}", userCd, slotNo);
+        log.info("일용직 로그인 승인 재활성 완료 — userCd={}, slotNo={}, reqId={}", userCd, slotNo, approvedReqId);
         return active;
     }
 }

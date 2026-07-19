@@ -65,24 +65,27 @@
 		, (
 			SELECT COUNT(1)
 			FROM TB_TBM_ATTENDANCE AT
-			WHERE AT.CMPNY_CD = A.CMPNY_CD
-			  AND AT.SESSION_CD = A.SESSION_CD
+			/* PRAFTA-SUBCON-T5: 참석자 회사 조건 제거 — 타사(지정 체인) 참석자를 개설사 집계에 포함한다.
+			   인가 전제: 바깥 historyWhere 가 A.CMPNY_CD = gvCmpnyCd(세션 소유)로 이미 제한한다. */
+			WHERE AT.SESSION_CD = A.SESSION_CD
 			  AND AT.DEL_YN = 'N'
 			  AND AT.ENTRY_AT IS NOT NULL
 		  )				AS attendanceCount
 		, (
 			SELECT COUNT(1)
 			FROM TB_TBM_ATTENDANCE AT
-			WHERE AT.CMPNY_CD = A.CMPNY_CD
-			  AND AT.SESSION_CD = A.SESSION_CD
+			/* PRAFTA-SUBCON-T5: 참석자 회사 조건 제거 — 타사(지정 체인) 참석자를 개설사 집계에 포함한다.
+			   인가 전제: 바깥 historyWhere 가 A.CMPNY_CD = gvCmpnyCd(세션 소유)로 이미 제한한다. */
+			WHERE AT.SESSION_CD = A.SESSION_CD
 			  AND AT.DEL_YN = 'N'
 			  AND AT.COMPLETION_STATUS_CD = 'COMPLETED'
 		  )				AS completedCount
 		, (
 			SELECT COUNT(1)
 			FROM TB_TBM_ATTENDANCE AT
-			WHERE AT.CMPNY_CD = A.CMPNY_CD
-			  AND AT.SESSION_CD = A.SESSION_CD
+			/* PRAFTA-SUBCON-T5: 참석자 회사 조건 제거 — 타사(지정 체인) 참석자를 개설사 집계에 포함한다.
+			   인가 전제: 바깥 historyWhere 가 A.CMPNY_CD = gvCmpnyCd(세션 소유)로 이미 제한한다. */
+			WHERE AT.SESSION_CD = A.SESSION_CD
 			  AND AT.DEL_YN = 'N'
 			  AND AT.ENTRY_AT IS NOT NULL
 			  AND (AT.COMPLETION_STATUS_CD IS NULL OR AT.COMPLETION_STATUS_CD = 'NOT_COMPLETED')
@@ -126,10 +129,10 @@
 		, IFNULL(SUM(CASE WHEN AT.COMPLETION_STATUS_CD = 'COMPLETED' THEN 1 ELSE 0 END), 0)		AS completedCount
 		, IFNULL(SUM(CASE WHEN AT.ENTRY_AT IS NOT NULL AND (AT.COMPLETION_STATUS_CD IS NULL OR AT.COMPLETION_STATUS_CD = 'NOT_COMPLETED') THEN 1 ELSE 0 END), 0)	AS notCompletedCount
 	FROM TB_TBM_SESSION A
+		 /* PRAFTA-SUBCON-T5: JOIN 키에서 CMPNY_CD 제거(타사 참석자 포함). 세션 소유는 historyWhere 가 보장. */
 		 LEFT OUTER JOIN TB_TBM_ATTENDANCE AT
 		 	ON (
-		 		A.CMPNY_CD = AT.CMPNY_CD
-		 	AND A.SESSION_CD = AT.SESSION_CD
+		 		A.SESSION_CD = AT.SESSION_CD
 		 	AND AT.DEL_YN = 'N'
 		 	)
 	<include refid="historyWhere" />
@@ -197,6 +200,8 @@
 			WHERE EV.CMPNY_CD = AT.CMPNY_CD
 			  AND EV.ATTENDANCE_CD = AT.ATTENDANCE_CD
 		  )				AS eventCount
+		/* PRAFTA-SUBCON-T5: 참석자 소속 회사코드(서비스가 1차 relabel 하여 응답에 담는다). */
+		, AT.CMPNY_CD	AS cmpnyCd
 	FROM TB_TBM_ATTENDANCE AT
 		 LEFT OUTER JOIN TB_USER RU
 		 	ON (
@@ -235,8 +240,10 @@
 		 	ON (
 		 		AT.COMPLETION_STATUS_CD = CS.SYST_VAL_D_CD
 		 	)
-	WHERE AT.CMPNY_CD = #{gvCmpnyCd}
-	  AND AT.SESSION_CD = #{sessionCd}
+	<!-- PRAFTA-SUBCON-T5: 참석자 회사 조건 제거(타사 참석자 포함).
+	     ⚠ 인가 전제: 서비스 selectSessionAttendances() 가 TbmSessionShareService.assertViewable 로
+	     "세션이 내 회사(개설사) 소유"임을 선검증한 뒤에만 이 쿼리를 호출한다(없으면 즉시 IDOR). -->
+	WHERE AT.SESSION_CD = #{sessionCd}
 	  AND AT.DEL_YN = 'N'
 	  <if test="userTypeCd != null and userTypeCd != ''">
 	    AND AT.USER_TYPE_CD = #{userTypeCd}
@@ -267,8 +274,22 @@
 		 	ON (
 		 		EV.EVENT_TYPE_CD = ET.SYST_VAL_D_CD
 		 	)
-	WHERE EV.CMPNY_CD = #{gvCmpnyCd}
-	  AND EV.ATTENDANCE_CD = #{attendanceCd}
+	<!-- PRAFTA-SUBCON-T5 F5: 이벤트 행은 <b>참석자 회사</b>로 기록되므로 EV.CMPNY_CD = 개설사(토큰) 조건은
+	     타사 참석자의 타임라인을 항상 0건으로 만든다(이상신호 카운트는 값이 나오는데 타임라인만 빈 목록).
+	     조건을 그냥 제거하면 소유 검증이 전혀 없어 즉시 IDOR 이므로, 출결행 ⨝ 세션으로 "그 출결이 속한
+	     세션이 내 회사(개설사) 소유"임을 상관 EXISTS 로 강제한다(회사 조건을 소유 조건으로 교체). -->
+	WHERE EV.ATTENDANCE_CD = #{attendanceCd}
+	  AND EXISTS (
+	      SELECT 1
+	      FROM TB_TBM_ATTENDANCE AT
+	           INNER JOIN TB_TBM_SESSION S
+	              ON (
+	                  S.SESSION_CD = AT.SESSION_CD
+	              )
+	      WHERE AT.ATTENDANCE_CD = #{attendanceCd}
+	        AND EV.CMPNY_CD = AT.CMPNY_CD
+	        AND S.CMPNY_CD = #{gvCmpnyCd}
+	  )
 	ORDER BY EV.EVENT_TIME, EV.EVENT_NO
 	LIMIT #{pageSize} OFFSET #{offset}
 	</select>
@@ -277,8 +298,19 @@
 	/* Tbm04Mapper.selectAttendanceEventCount */
 	SELECT COUNT(1)
 	FROM TB_TBM_ATTENDANCE_EVENT EV
-	WHERE EV.CMPNY_CD = #{gvCmpnyCd}
-	  AND EV.ATTENDANCE_CD = #{attendanceCd}
+	<!-- F5: 목록과 동일한 소유 검증(개설사 소유 세션의 출결에 달린 이벤트만). -->
+	WHERE EV.ATTENDANCE_CD = #{attendanceCd}
+	  AND EXISTS (
+	      SELECT 1
+	      FROM TB_TBM_ATTENDANCE AT
+	           INNER JOIN TB_TBM_SESSION S
+	              ON (
+	                  S.SESSION_CD = AT.SESSION_CD
+	              )
+	      WHERE AT.ATTENDANCE_CD = #{attendanceCd}
+	        AND EV.CMPNY_CD = AT.CMPNY_CD
+	        AND S.CMPNY_CD = #{gvCmpnyCd}
+	  )
 	</select>
 
 	<!-- ============================ W-14 미이수 처리 ============================ -->
@@ -291,13 +323,14 @@
 		, S.MANAGER_USER_CD	AS managerUserCd
 		, AT.COMPLETION_STATUS_CD	AS completionStatusCd
 	FROM TB_TBM_ATTENDANCE AT
+		 /* PRAFTA-SUBCON-T5: 타사 참석자도 개설사가 미이수 처리할 수 있어야 한다.
+		    출결행의 회사 조건 대신, 세션이 내 회사(개설사) 소유임을 조인 조건으로 SQL 안에서 강제한다. */
 		 INNER JOIN TB_TBM_SESSION S
 		 	ON (
-		 		AT.CMPNY_CD = S.CMPNY_CD
-		 	AND AT.SESSION_CD = S.SESSION_CD
+		 		AT.SESSION_CD = S.SESSION_CD
+		 	AND S.CMPNY_CD = #{gvCmpnyCd}
 		 	)
-	WHERE AT.CMPNY_CD = #{gvCmpnyCd}
-	  AND AT.ATTENDANCE_CD = #{attendanceCd}
+	WHERE AT.ATTENDANCE_CD = #{attendanceCd}
 	  AND AT.DEL_YN = 'N'
 	</select>
 
@@ -312,9 +345,19 @@
 		, STATUS_UPDATED_AT		= NOW()
 		, UPDATE_NO				= #{gvUserCd}
 		, UPDATE_DATE			= NOW()
-	WHERE CMPNY_CD = #{gvCmpnyCd}
-	  AND ATTENDANCE_CD = #{attendanceCd}
+	<!-- PRAFTA-SUBCON-T5: 출결행 회사 조건 제거(타사 참석자 미이수 처리 허용). 대신 그 출결이 속한 세션이
+	     내 회사(개설사) 소유인지 EXISTS 로 SQL 안에서 강제한다(서비스 guard 와 이중 방어).
+	     ATTENDANCE_CD 는 UX_TBM_ATTENDANCE_CD(전역 유일)로 단일 행을 지목한다.
+	     ※ MySQL 은 UPDATE 대상 테이블을 서브쿼리 FROM 에 둘 수 없다(오류 1093) → 갱신 대상 행의
+	        SESSION_CD 를 상관 참조하고 서브쿼리에서는 세션 테이블만 읽는다. -->
+	WHERE ATTENDANCE_CD = #{attendanceCd}
 	  AND DEL_YN = 'N'
+	  AND EXISTS (
+	      SELECT 1
+	      FROM TB_TBM_SESSION S
+	      WHERE S.SESSION_CD = TB_TBM_ATTENDANCE.SESSION_CD
+	        AND S.CMPNY_CD = #{gvCmpnyCd}
+	  )
 	</update>
 
 	<!-- ============================ W-15 사용자별 이수 ============================ -->
@@ -402,11 +445,15 @@
 			WHERE R.CMPNY_CD = S.CMPNY_CD
 			  AND R.SESSION_CD = S.SESSION_CD
 		  )					AS riskCount
+		/* PRAFTA-SUBCON-T5: 세션 개설사(내 회사와 다르면 타사 세션 — 서비스가 사업장명을 비우고
+		   개최 회사 라벨로 대체한다, plan D3). */
+		, S.CMPNY_CD		AS hostCmpnyCd
 	FROM TB_TBM_ATTENDANCE AT
+		 /* PRAFTA-SUBCON-T5: 세션 헤더 조인에서 CMPNY_CD 제거 → 자기 직원의 타사 세션 이수 이력 포함.
+		    인가 전제: userAttendanceWhere 의 AT.CMPNY_CD = gvCmpnyCd(내 회사 출결행)가 인가 그 자체다. */
 		 INNER JOIN TB_TBM_SESSION S
 		 	ON (
-		 		AT.CMPNY_CD = S.CMPNY_CD
-		 	AND AT.SESSION_CD = S.SESSION_CD
+		 		AT.SESSION_CD = S.SESSION_CD
 		 	)
 		 LEFT OUTER JOIN TB_SITE ST
 		 	ON (
@@ -431,10 +478,10 @@
 	/* Tbm04Mapper.selectUserAttendanceCount */
 	SELECT COUNT(1)
 	FROM TB_TBM_ATTENDANCE AT
+		 /* PRAFTA-SUBCON-T5: 세션 헤더 조인에서 CMPNY_CD 제거(타사 세션 이수 이력 포함). */
 		 INNER JOIN TB_TBM_SESSION S
 		 	ON (
-		 		AT.CMPNY_CD = S.CMPNY_CD
-		 	AND AT.SESSION_CD = S.SESSION_CD
+		 		AT.SESSION_CD = S.SESSION_CD
 		 	)
 	<include refid="userAttendanceWhere" />
 	</select>
@@ -455,10 +502,10 @@
 			END
 		  ))	AS avgDurationMin
 	FROM TB_TBM_ATTENDANCE AT
+		 /* PRAFTA-SUBCON-T5: 세션 헤더 조인에서 CMPNY_CD 제거(타사 세션 이수 이력 포함). */
 		 INNER JOIN TB_TBM_SESSION S
 		 	ON (
-		 		AT.CMPNY_CD = S.CMPNY_CD
-		 	AND AT.SESSION_CD = S.SESSION_CD
+		 		AT.SESSION_CD = S.SESSION_CD
 		 	)
 	<include refid="userAttendanceWhere" />
 	</select>

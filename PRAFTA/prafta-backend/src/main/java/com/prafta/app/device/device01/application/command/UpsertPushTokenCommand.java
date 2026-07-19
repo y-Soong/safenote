@@ -13,6 +13,7 @@ import com.prafta.common.exception.ApiException;
 public record UpsertPushTokenCommand(
     String deviceUuid
     , String pushToken
+    , String cmpnyCd
     , String userCd
 ){
     public static UpsertPushTokenCommand from(PushTokenParam param) {
@@ -23,6 +24,7 @@ public record UpsertPushTokenCommand(
         return new UpsertPushTokenCommand(
             param.deviceUuid()
             , param.pushToken()
+            , param.gvCmpnyCd()
             , param.gvUserCd()
         );
     }

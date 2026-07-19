@@ -24,4 +24,7 @@ public class TbmSessionListResult {
     private String startedAt;            // yyyy-MM-dd HH:mm (A2/A3)
     private String endedAt;              // yyyy-MM-dd HH:mm (A3, IFNULL(S.ENDED_AT, AT.EXIT_AT))
     private String completionStatusCd;   // SYS053 COMPLETED/NOT_COMPLETED (A3)
+    // PRAFTA-SUBCON-T5: 개최사 라벨(타사 연동 세션일 때만). 자사 세션은 NULL → 앱 카드 배지 미표시.
+    //   값은 "나를 지정한 직상위 회사명"(하향 인접 차수 가시성 — 개설사가 A, 나를 지정한 회사가 B 면 B).
+    private String hostCmpnyNm;
 }

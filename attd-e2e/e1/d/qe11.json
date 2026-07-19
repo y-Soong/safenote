@@ -1,0 +1,9 @@
+{
+  "title": "앱 출근 → 3면",
+  "expected": "앱 홈 출근시각 + 내근태 오늘 표기 / 웹 Attd_08 당일 행 시각 일치 / DB 슬롯 OPEN + CHECK_IN_METHOD",
+  "actual": "앱: 출근 확인팝업→'출근이 등록되었어요', 홈 '근무중 출근 04:11', 내근태 오늘 '근태 04:11 ~ -' + '휴일 · 제헌절' 표기. 웹 Attd_08: QT사원에이 2026.07.17 출근 04:11 상태=정상. DB: ATTD_ID=2026071700149 IN=20260717/0411 METHOD=01 OUT=null WORK_SEQ=1 DEL_YN=N",
+  "webView": "results/shots/QE-1-1_web_attd08-result.png",
+  "appView": "results/shots/QE-1-1_app_myattd-today.png",
+  "dbCheck": "tb_user_attd_mgmt ATTD_ID=2026071700149",
+  "note": "오늘=제헌절(휴일)이지만 근무계획 존재 → 휴일 출근 허용 확인(지시서 §1.4 감안 규정). 앱 내근태에 휴일 라벨 정상 병기"
+}

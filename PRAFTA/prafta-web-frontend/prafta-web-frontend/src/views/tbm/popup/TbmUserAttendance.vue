@@ -121,7 +121,9 @@
                 <tr>
                   <th style="width: 4%; text-align: center">No</th>
                   <th style="width: 28%">교육 제목</th>
-                  <th style="width: 14%">사업장</th>
+                  <!-- PRAFTA-SUBCON-T5: 타사(연동) 세션은 사업장 대신 개최 회사를 표시한다.
+                       서버가 타사 세션 행의 siteNm 을 비우고 hostCmpnyNm 을 내려준다(인접 차수 가시성). -->
+                  <th style="width: 14%">사업장 / 개최 회사</th>
                   <th style="width: 12%">일자</th>
                   <th style="width: 12%">입실</th>
                   <th style="width: 12%">종료</th>
@@ -143,7 +145,14 @@
                       {{ (page - 1) * pageSize + idx + 1 }}
                     </td>
                     <td>{{ row.sessionTitle }}</td>
-                    <td>{{ row.siteNm || row.siteCd }}</td>
+                    <td>
+                      <template v-if="row.hostCmpnyNm">
+                        <span class="host-cmpny">{{ row.hostCmpnyNm }}</span>
+                      </template>
+                      <template v-else>
+                        {{ row.siteNm || row.siteCd || "-" }}
+                      </template>
+                    </td>
                     <td>{{ row.sessionDate || "-" }}</td>
                     <td>{{ row.entryAt || "-" }}</td>
                     <td>{{ row.exitAt || "-" }}</td>
@@ -440,6 +449,11 @@ const compMark = (code) => {
 
 .att-filter label {
   font-size: var(--btn-font-sm);
+  color: var(--color-text-muted);
+}
+
+/* 개최 회사(PRAFTA-SUBCON-T5): 타사 연동 세션 표시 — 사업장명 대신 노출 */
+.host-cmpny {
   color: var(--color-text-muted);
 }
 

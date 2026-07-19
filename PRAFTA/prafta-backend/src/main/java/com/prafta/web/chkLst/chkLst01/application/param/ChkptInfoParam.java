@@ -8,8 +8,15 @@ import com.prafta.common.exception.ApiException;
 import com.prafta.web.chkLst.chkLst01.application.model.ChkptInfoModel;
 import com.prafta.web.chkLst.chkLst01.dto.request.ChkptInfoRequest;
 
+/**
+ * 점검대상 저장/삭제 입력.
+ *
+ * <p>[보안검토 High-2] {@code gvAuthCd} 는 메뉴/버튼 권한 게이트(ChkLst_01 · SAVE/DELT) 판정용이며
+ * JWT 클레임에서만 채운다(요청 본문 미신뢰).
+ */
 public record ChkptInfoParam(
 	List<ChkptInfoModel> chkptInfoModelList
+	, String gvAuthCd
 ){
 	public static ChkptInfoParam from(List<ChkptInfoRequest> requests, TokenInfo tokenInfo) {
 
@@ -37,6 +44,6 @@ public record ChkptInfoParam(
             })
             .toList();
 
-        return new ChkptInfoParam(models);
+        return new ChkptInfoParam(models, tokenInfo.gv_authCd());
     }
 }

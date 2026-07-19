@@ -1,0 +1,656 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.prafta.web.subcon.subcon02.mapper.ChkptLinkMapper">
+
+    <!-- ============================================================
+         PRAFTA-SUBCON-T6 — 순회점검 구성 연동 + 점검 결과 통합(write-through).
+         전파/미러 값은 전부 DB 원본 행에서만 복제한다(사용자 입력 미경유 — 주입 면 차단).
+         감사 컬럼은 시스템 처리 표식('SYSTEM')을 사용한다.
+         ============================================================ -->
+
+    <!-- 점검 연동 실행 선점 — 사업장 링크 ACTIVE + 미러 사업장 존재 + 행위자=SRC(제공측) 소속.
+         0행이면 서비스가 404 로 통합한다(미존재/타사/기연동 무구분 — IDOR 열거 방지). -->
+    <update id="enableChkptLinkPreempt">
+    /* ChkptLinkMapper.enableChkptLinkPreempt */
+    UPDATE TB_SITE_LINK
+       SET CHKPT_LINK_STATUS  = 'ACTIVE'
+         , CHKPT_LINK_DTIME   = NOW()
+         , CHKPT_LINK_USER_CD = #{actorUserCd}
+         , UPDATE_NO          = #{actorUserCd}
+         , UPDATE_DATE        = NOW()
+     WHERE LINK_ID           = #{linkId}
+       AND STATUS            = 'ACTIVE'
+       AND CHKPT_LINK_STATUS = 'NONE'
+       AND SRC_CMPNY_CD      = #{actorCmpnyCd}
+       AND DST_SITE_CD IS NOT NULL
+    </update>
+
+    <!-- 점검 연동 해제 선점 — 양측 중 어느 쪽이든 가능(독립화는 서비스가 후속 수행). -->
+    <update id="disableChkptLinkPreempt">
+    /* ChkptLinkMapper.disableChkptLinkPreempt */
+    UPDATE TB_SITE_LINK
+       SET CHKPT_LINK_STATUS  = 'NONE'
+         , CHKPT_LINK_DTIME   = NOW()
+         , CHKPT_LINK_USER_CD = #{actorUserCd}
+         , UPDATE_NO          = #{actorUserCd}
+         , UPDATE_DATE        = NOW()
+     WHERE LINK_ID           = #{linkId}
+       AND STATUS            = 'ACTIVE'
+       AND CHKPT_LINK_STATUS = 'ACTIVE'
+       AND (SRC_CMPNY_CD = #{actorCmpnyCd} OR DST_CMPNY_CD = #{actorCmpnyCd})
+    </update>
+
+    <!-- 사업장 링크 해지 훅 — 점검 연동 상태 해제(당사자 조건 없음: 링크 레벨에서 기증명된 경로 한정). -->
+    <update id="clearChkptLinkStatusBySystem">
+    /* ChkptLinkMapper.clearChkptLinkStatusBySystem */
+    UPDATE TB_SITE_LINK
+       SET CHKPT_LINK_STATUS  = 'NONE'
+         , CHKPT_LINK_DTIME   = NOW()
+         , CHKPT_LINK_USER_CD = #{actionUserCd}
+         , UPDATE_NO          = #{actionUserCd}
+         , UPDATE_DATE        = NOW()
+     WHERE LINK_ID           = #{linkId}
+       AND CHKPT_LINK_STATUS = 'ACTIVE'
+    </update>
+
+    <!-- 해당 SRC 사업장의 점검연동 ACTIVE 링크(직속 미러) — 미러 확장/전파 재귀 단위. -->
+    <select id="selectActiveChkptLinksBySrcSite" resultType="com.prafta.web.subcon.subcon02.result.LinkDstRaw">
+    /* ChkptLinkMapper.selectActiveChkptLinksBySrcSite */
+    SELECT
+        L.LINK_ID           AS linkId
+        , L.DST_CMPNY_CD    AS dstCmpnyCd
+        , L.DST_SITE_CD     AS dstSiteCd
+    FROM TB_SITE_LINK L
+    WHERE L.SRC_CMPNY_CD      = #{srcCmpnyCd}
+      AND L.SRC_SITE_CD       = #{srcSiteCd}
+      AND L.STATUS            = 'ACTIVE'
+      AND L.CHKPT_LINK_STATUS = 'ACTIVE'
+      AND L.DST_SITE_CD IS NOT NULL
+    ORDER BY L.LINK_ID ASC
+    </select>
+
+    <!-- ============================================================
+         미러 생성(T6-02)
+         ============================================================ -->
+
+    <!-- 원본 사업장의 활성 점검대상 전량. record 매핑 = SELECT 컬럼 순서. -->
+    <select id="selectSrcChkptList" resultType="com.prafta.web.subcon.subcon02.result.ChkptSrcRaw">
+    /* ChkptLinkMapper.selectSrcChkptList */
+    SELECT
+        A.CHKLST_TYPE       AS chkLstType
+        , A.CHKPT_CD        AS chkptCd
+        , A.CHKPT_NM        AS chkptNm
+        , A.CHKPT_DESC      AS chkptDesc
+        , A.USE_YN          AS useYn
+    FROM TB_CHKPT_TYPE_MGMT A
+    WHERE A.CMPNY_CD = #{srcCmpnyCd}
+      AND A.SITE_CD  = #{srcSiteCd}
+      AND A.USE_YN   = 'Y'
+    ORDER BY A.CHKLST_TYPE, A.CHKPT_CD
+    </select>
+
+    <!-- 원본 사업장의 활성 점검문항 전량. -->
+    <select id="selectSrcInspectItemList" resultType="com.prafta.web.subcon.subcon02.result.InspectItemSrcRaw">
+    /* ChkptLinkMapper.selectSrcInspectItemList */
+    SELECT
+        A.CHKLST_TYPE           AS chkLstType
+        , A.INSPECT_ITEM_CD     AS inspectItemCd
+        , A.INSPECT_ITEM_SUBJ   AS inspectItemSubj
+        , A.SORT_IDX            AS sortIdx
+        , A.STR_DATE            AS strDate
+        , A.USE_YN              AS useYn
+    FROM TB_CHKPT_INSPECT_ITEM A
+    WHERE A.CMPNY_CD = #{srcCmpnyCd}
+      AND A.SITE_CD  = #{srcSiteCd}
+      AND A.USE_YN   = 'Y'
+    ORDER BY A.CHKLST_TYPE, A.SORT_IDX, A.INSPECT_ITEM_CD
+    </select>
+
+    <!-- 미러 점검대상코드 채번 — DST 회사 시퀀스(chkLst01 mergeChkptList 규칙 동형). -->
+    <select id="selectNewChkptCd" resultType="string">
+    /* ChkptLinkMapper.selectNewChkptCd */
+    SELECT FNC_CMM_SEQ_NEXTVAL(#{dstCmpnyCd}, 'CHKPT_CD')
+    FROM DUAL
+    </select>
+
+    <!-- 미러 점검문항코드 채번 — DST 회사 시퀀스(chkLst02 selectNextInspectItemCd 규칙 동형). -->
+    <select id="selectNewInspectItemCd" resultType="string">
+    /* ChkptLinkMapper.selectNewInspectItemCd */
+    SELECT CONCAT(
+        'DCHK'
+        , '_'
+        , CAST(#{chkLstType} AS UNSIGNED)
+        , '_'
+        , FNC_CMM_SEQ_NEXTVAL(#{dstCmpnyCd}, CONCAT('COM001-', #{chkLstType}))
+    )
+    </select>
+
+    <!-- 기존 미러 점검대상코드(LINK_SRC 좌표 기준) — 미러 생성/전파 멱등 판정(재귀 확장 시 중복 생성 방지). -->
+    <select id="selectMirrorChkptCd" resultType="string">
+    /* ChkptLinkMapper.selectMirrorChkptCd */
+    SELECT A.CHKPT_CD
+    FROM TB_CHKPT_TYPE_MGMT A
+    WHERE A.CMPNY_CD          = #{dstCmpnyCd}
+      AND A.SITE_CD           = #{dstSiteCd}
+      AND A.LINK_SRC_CMPNY_CD = #{srcCmpnyCd}
+      AND A.LINK_SRC_SITE_CD  = #{srcSiteCd}
+      AND A.LINK_SRC_CHKPT_CD = #{srcChkptCd}
+    LIMIT 1
+    </select>
+
+    <!-- 기존 미러 점검문항코드(LINK_SRC 좌표 기준). -->
+    <select id="selectMirrorInspectItemCd" resultType="string">
+    /* ChkptLinkMapper.selectMirrorInspectItemCd */
+    SELECT A.INSPECT_ITEM_CD
+    FROM TB_CHKPT_INSPECT_ITEM A
+    WHERE A.CMPNY_CD          = #{dstCmpnyCd}
+      AND A.SITE_CD           = #{dstSiteCd}
+      AND A.LINK_SRC_CMPNY_CD = #{srcCmpnyCd}
+      AND A.LINK_SRC_SITE_CD  = #{srcSiteCd}
+      AND A.LINK_SRC_ITEM_CD  = #{srcItemCd}
+    LIMIT 1
+    </select>
+
+    <!-- ============================================================
+         재연동 재귀속(보안검토 M2) — 독립화(LINK_SRC NULL 화)된 과거 미러 행을 원본 좌표(PREV_LINK_SRC)로 되찾는다.
+         이 조회가 없으면 enable -> disable -> enable 반복 시 수신 테넌트에 미러가 매번 새 코드로 INSERT 되어
+         N회 반복 = N배 중복이 쌓인다(점검대상/문항 전량).
+         ============================================================ -->
+
+    <!-- 독립화된 과거 미러 점검대상(재귀속 후보) — 현재 LINK_SRC 는 NULL 이고 PREV_LINK_SRC 가 원본 좌표와 일치. -->
+    <select id="selectOrphanMirrorChkptCd" resultType="string">
+    /* ChkptLinkMapper.selectOrphanMirrorChkptCd */
+    SELECT A.CHKPT_CD
+    FROM TB_CHKPT_TYPE_MGMT A
+    WHERE A.CMPNY_CD               = #{dstCmpnyCd}
+      AND A.SITE_CD                = #{dstSiteCd}
+      AND A.LINK_SRC_CMPNY_CD IS NULL
+      AND A.PREV_LINK_SRC_CMPNY_CD = #{srcCmpnyCd}
+      AND A.PREV_LINK_SRC_SITE_CD  = #{srcSiteCd}
+      AND A.PREV_LINK_SRC_CHKPT_CD = #{srcChkptCd}
+    ORDER BY A.CHKPT_CD
+    LIMIT 1
+    </select>
+
+    <!-- 독립화된 과거 미러 점검문항(재귀속 후보). -->
+    <select id="selectOrphanMirrorInspectItemCd" resultType="string">
+    /* ChkptLinkMapper.selectOrphanMirrorInspectItemCd */
+    SELECT A.INSPECT_ITEM_CD
+    FROM TB_CHKPT_INSPECT_ITEM A
+    WHERE A.CMPNY_CD               = #{dstCmpnyCd}
+      AND A.SITE_CD                = #{dstSiteCd}
+      AND A.LINK_SRC_CMPNY_CD IS NULL
+      AND A.PREV_LINK_SRC_CMPNY_CD = #{srcCmpnyCd}
+      AND A.PREV_LINK_SRC_SITE_CD  = #{srcSiteCd}
+      AND A.PREV_LINK_SRC_ITEM_CD  = #{srcItemCd}
+    ORDER BY A.INSPECT_ITEM_CD
+    LIMIT 1
+    </select>
+
+    <!-- 점검대상 재귀속 — PREV_LINK_SRC 를 LINK_SRC 로 되돌리고 PREV 는 비운다(독립화 상태의 행만). -->
+    <update id="reattachMirrorChkpt">
+    /* ChkptLinkMapper.reattachMirrorChkpt */
+    UPDATE TB_CHKPT_TYPE_MGMT
+       SET LINK_SRC_CMPNY_CD      = PREV_LINK_SRC_CMPNY_CD
+         , LINK_SRC_SITE_CD       = PREV_LINK_SRC_SITE_CD
+         , LINK_SRC_CHKPT_CD      = PREV_LINK_SRC_CHKPT_CD
+         , PREV_LINK_SRC_CMPNY_CD = NULL
+         , PREV_LINK_SRC_SITE_CD  = NULL
+         , PREV_LINK_SRC_CHKPT_CD = NULL
+         , UPDATE_NO              = 'SYSTEM'
+         , UPDATE_DATE            = NOW()
+     WHERE CMPNY_CD               = #{dstCmpnyCd}
+       AND SITE_CD                = #{dstSiteCd}
+       AND CHKPT_CD               = #{dstChkptCd}
+       AND LINK_SRC_CMPNY_CD IS NULL
+       AND PREV_LINK_SRC_CMPNY_CD = #{srcCmpnyCd}
+       AND PREV_LINK_SRC_SITE_CD  = #{srcSiteCd}
+       AND PREV_LINK_SRC_CHKPT_CD = #{srcChkptCd}
+    </update>
+
+    <!-- 점검문항 재귀속(규칙 동일). -->
+    <update id="reattachMirrorInspectItem">
+    /* ChkptLinkMapper.reattachMirrorInspectItem */
+    UPDATE TB_CHKPT_INSPECT_ITEM
+       SET LINK_SRC_CMPNY_CD      = PREV_LINK_SRC_CMPNY_CD
+         , LINK_SRC_SITE_CD       = PREV_LINK_SRC_SITE_CD
+         , LINK_SRC_ITEM_CD       = PREV_LINK_SRC_ITEM_CD
+         , PREV_LINK_SRC_CMPNY_CD = NULL
+         , PREV_LINK_SRC_SITE_CD  = NULL
+         , PREV_LINK_SRC_ITEM_CD  = NULL
+         , UPDATE_NO              = 'SYSTEM'
+         , UPDATE_DATE            = NOW()
+     WHERE CMPNY_CD               = #{dstCmpnyCd}
+       AND SITE_CD                = #{dstSiteCd}
+       AND INSPECT_ITEM_CD        = #{dstItemCd}
+       AND LINK_SRC_CMPNY_CD IS NULL
+       AND PREV_LINK_SRC_CMPNY_CD = #{srcCmpnyCd}
+       AND PREV_LINK_SRC_SITE_CD  = #{srcSiteCd}
+       AND PREV_LINK_SRC_ITEM_CD  = #{srcItemCd}
+    </update>
+
+    <!-- 원본 문항의 점검구분 — 미러 문항코드 채번 시퀀스 키(COM001-{점검구분})에 필요. 추측 금지. -->
+    <select id="selectInspectItemChkLstType" resultType="string">
+    /* ChkptLinkMapper.selectInspectItemChkLstType */
+    SELECT A.CHKLST_TYPE
+    FROM TB_CHKPT_INSPECT_ITEM A
+    WHERE A.CMPNY_CD        = #{cmpnyCd}
+      AND A.SITE_CD         = #{siteCd}
+      AND A.INSPECT_ITEM_CD = #{itemCd}
+    LIMIT 1
+    </select>
+
+    <!-- 미러 점검대상 INSERT — 값은 원본 행에서 직접 읽는다(INSERT ... SELECT).
+         MGMT_USER_CD=NULL: 원본 담당자(제공사 직원)를 복제하면 수신 테넌트에 타사 USER_CD 가 박힌다(plan D8). -->
+    <insert id="insertMirrorChkpt">
+    /* ChkptLinkMapper.insertMirrorChkpt */
+    INSERT INTO TB_CHKPT_TYPE_MGMT (
+          CMPNY_CD
+        , SITE_CD
+        , CHKLST_TYPE
+        , CHKPT_CD
+        , CHKPT_NM
+        , CHKPT_DESC
+        , MGMT_USER_CD
+        , USE_YN
+        , LINK_SRC_CMPNY_CD
+        , LINK_SRC_SITE_CD
+        , LINK_SRC_CHKPT_CD
+        , INSERT_NO
+        , INSERT_DATE
+        , UPDATE_NO
+        , UPDATE_DATE
+    )
+    SELECT
+          #{dstCmpnyCd}
+        , #{dstSiteCd}
+        , S.CHKLST_TYPE
+        , #{chkptCd}
+        , S.CHKPT_NM
+        , S.CHKPT_DESC
+        , NULL
+        , S.USE_YN
+        , #{srcCmpnyCd}
+        , #{srcSiteCd}
+        , S.CHKPT_CD
+        , 'SYSTEM'
+        , NOW()
+        , 'SYSTEM'
+        , NOW()
+    FROM TB_CHKPT_TYPE_MGMT S
+    WHERE S.CMPNY_CD = #{srcCmpnyCd}
+      AND S.SITE_CD  = #{srcSiteCd}
+      AND S.CHKPT_CD = #{srcChkptCd}
+    </insert>
+
+    <!-- 미러 점검문항 INSERT.
+
+         [qa M-1] 시행일(STR_DATE) = GREATEST(원본 시행일, 점검연동 실행일(KST)).
+           원본 시행일을 그대로 복제하면 "연동 이전 기간"에도 수신사 확인서(ChkLst_03/ChkLstRstPop)에서
+           흰 셀(=점검 의무 있었음)로 표시된다. 연동 전에는 수신사에 그 점검대상이 존재하지도 않았으므로
+           수신사 기준 의무는 연동 시점부터 발생한다(메인 세션 정책 확정 — plan §4-1/T6-04 "시행일 원본 그대로" 폐기).
+           선례: T0 "타 사업장 문항 가져오기"도 시행일을 실행일(KST)로 세팅한다(ChkLst02ServiceImpl).
+         ※ 문자열 GREATEST 는 콜레이션 혼합(1267) 위험이 있어 숫자 비교 후 문자열로 되돌린다(STR_DATE = YYYYMMDD).
+         ※ 서버/DB TZ 는 Asia/Seoul 고정이므로 NOW() 가 곧 KST 기준 실행 시각이다.
+         정렬순서/사용여부는 원본 그대로. -->
+    <insert id="insertMirrorInspectItem">
+    /* ChkptLinkMapper.insertMirrorInspectItem */
+    INSERT INTO TB_CHKPT_INSPECT_ITEM (
+          CMPNY_CD
+        , SITE_CD
+        , CHKLST_TYPE
+        , INSPECT_ITEM_CD
+        , INSPECT_ITEM_SUBJ
+        , SORT_IDX
+        , STR_DATE
+        , USE_YN
+        , LINK_SRC_CMPNY_CD
+        , LINK_SRC_SITE_CD
+        , LINK_SRC_ITEM_CD
+        , INSERT_NO
+        , INSERT_DATE
+        , UPDATE_NO
+        , UPDATE_DATE
+    )
+    SELECT
+          #{dstCmpnyCd}
+        , #{dstSiteCd}
+        , S.CHKLST_TYPE
+        , #{inspectItemCd}
+        , S.INSPECT_ITEM_SUBJ
+        , S.SORT_IDX
+        , CAST(
+              GREATEST(
+                  CAST(S.STR_DATE AS UNSIGNED)
+                  , CAST(DATE_FORMAT(NOW(), '%Y%m%d') AS UNSIGNED)
+              ) AS CHAR
+          )
+        , S.USE_YN
+        , #{srcCmpnyCd}
+        , #{srcSiteCd}
+        , S.INSPECT_ITEM_CD
+        , 'SYSTEM'
+        , NOW()
+        , 'SYSTEM'
+        , NOW()
+    FROM TB_CHKPT_INSPECT_ITEM S
+    WHERE S.CMPNY_CD        = #{srcCmpnyCd}
+      AND S.SITE_CD         = #{srcSiteCd}
+      AND S.INSPECT_ITEM_CD = #{srcItemCd}
+    </insert>
+
+    <!-- 미러 테넌트 문항 변경이력 — 저장 직후 미러 문항의 현재 상태를 스냅샷(chkLst02 insertChkptInspectItemHist 동형).
+         수신사 확인서(ChkLst_03) 회색 게이팅이 HIST 기반이라 미러 테넌트에도 이력이 있어야 한다. -->
+    <insert id="insertMirrorInspectItemHist">
+    /* ChkptLinkMapper.insertMirrorInspectItemHist */
+    INSERT INTO TB_CHKPT_INSPECT_ITEM_HIST (
+          CMPNY_CD
+        , SITE_CD
+        , CHKLST_TYPE
+        , INSPECT_ITEM_CD
+        , CHG_TYPE
+        , INSPECT_ITEM_SUBJ
+        , STR_DATE
+        , SORT_IDX
+        , USE_YN
+        , LINK_SRC_CMPNY_CD
+        , LINK_SRC_SITE_CD
+        , LINK_SRC_ITEM_CD
+        , INSERT_NO
+        , INSERT_DATE
+    )
+    SELECT
+          A.CMPNY_CD
+        , A.SITE_CD
+        , A.CHKLST_TYPE
+        , A.INSPECT_ITEM_CD
+        , #{chgType}
+        , A.INSPECT_ITEM_SUBJ
+        , A.STR_DATE
+        , A.SORT_IDX
+        , A.USE_YN
+        , A.LINK_SRC_CMPNY_CD
+        , A.LINK_SRC_SITE_CD
+        , A.LINK_SRC_ITEM_CD
+        , 'SYSTEM'
+        , NOW()
+    FROM TB_CHKPT_INSPECT_ITEM A
+    WHERE A.CMPNY_CD        = #{dstCmpnyCd}
+      AND A.SITE_CD         = #{dstSiteCd}
+      AND A.INSPECT_ITEM_CD = #{inspectItemCd}
+    </insert>
+
+    <!-- ============================================================
+         원본 변경 전파(T6-04) — 출처 일치 가드로 오적용 방지.
+         ============================================================ -->
+
+    <!-- 점검대상 전파 — MGMT_USER_CD 는 수신사 운영 필드라 전파 대상에서 제외한다(plan D8). -->
+    <update id="propagateMirrorChkpt">
+    /* ChkptLinkMapper.propagateMirrorChkpt */
+    UPDATE TB_CHKPT_TYPE_MGMT D
+        INNER JOIN TB_CHKPT_TYPE_MGMT S
+            ON (
+                S.CMPNY_CD = #{srcCmpnyCd}
+            AND S.SITE_CD  = #{srcSiteCd}
+            AND S.CHKPT_CD = #{srcChkptCd}
+            AND S.CHKLST_TYPE = D.CHKLST_TYPE
+            )
+       SET D.CHKPT_NM     = S.CHKPT_NM
+         , D.CHKPT_DESC   = S.CHKPT_DESC
+         , D.USE_YN       = S.USE_YN
+         , D.UPDATE_NO    = 'SYSTEM'
+         , D.UPDATE_DATE  = NOW()
+     WHERE D.CMPNY_CD          = #{dstCmpnyCd}
+       AND D.SITE_CD           = #{dstSiteCd}
+       AND D.CHKPT_CD          = #{dstChkptCd}
+       AND D.LINK_SRC_CMPNY_CD = #{srcCmpnyCd}
+       AND D.LINK_SRC_SITE_CD  = #{srcSiteCd}
+       AND D.LINK_SRC_CHKPT_CD = #{srcChkptCd}
+    </update>
+
+    <!-- 점검문항 전파 — 명칭/정렬순서/시행일/사용여부.
+
+         [qa M-1] 시행일 전파도 GREATEST(원본 시행일, 미러 생성일(=점검연동 실행일)) 규칙을 유지한다.
+           원본이 시행일을 과거로 개정해도 미러 시행일이 연동일 밑으로 재하강하면, 수신사 확인서에서
+           연동 이전 기간이 다시 흰 셀(점검 의무)로 뜬다. 미러 행의 INSERT_DATE 가 곧 그 티어의 연동 실행 시각이므로
+           이를 하한(floor)으로 쓴다(재귀속 행도 최초 연동일이 유지된다 — 보수적으로 안전).
+         ※ 숫자 비교 후 CHAR 로 되돌린다(문자열 GREATEST 의 콜레이션 혼합 회피). -->
+    <update id="propagateMirrorInspectItem">
+    /* ChkptLinkMapper.propagateMirrorInspectItem */
+    UPDATE TB_CHKPT_INSPECT_ITEM D
+        INNER JOIN TB_CHKPT_INSPECT_ITEM S
+            ON (
+                S.CMPNY_CD        = #{srcCmpnyCd}
+            AND S.SITE_CD         = #{srcSiteCd}
+            AND S.INSPECT_ITEM_CD = #{srcItemCd}
+            AND S.CHKLST_TYPE     = D.CHKLST_TYPE
+            )
+       SET D.INSPECT_ITEM_SUBJ = S.INSPECT_ITEM_SUBJ
+         , D.SORT_IDX          = S.SORT_IDX
+         , D.STR_DATE          = CAST(
+                                     GREATEST(
+                                         CAST(S.STR_DATE AS UNSIGNED)
+                                         , CAST(IFNULL(DATE_FORMAT(D.INSERT_DATE, '%Y%m%d'), '0') AS UNSIGNED)
+                                     ) AS CHAR
+                                 )
+         , D.USE_YN            = S.USE_YN
+         , D.UPDATE_NO         = 'SYSTEM'
+         , D.UPDATE_DATE       = NOW()
+     WHERE D.CMPNY_CD          = #{dstCmpnyCd}
+       AND D.SITE_CD           = #{dstSiteCd}
+       AND D.INSPECT_ITEM_CD   = #{dstItemCd}
+       AND D.LINK_SRC_CMPNY_CD = #{srcCmpnyCd}
+       AND D.LINK_SRC_SITE_CD  = #{srcSiteCd}
+       AND D.LINK_SRC_ITEM_CD  = #{srcItemCd}
+    </update>
+
+    <!-- ============================================================
+         독립화(T6-02 해제 / T6-08 사업장 링크 해지 훅).
+         HIST 는 무접촉(이력 불변). 하위 체인도 무접촉(수신사가 새 루트).
+
+         보안검토 M2: LINK_SRC 를 그냥 NULL 로 만들면 원본 좌표가 소실되어, 재연동 시 미러가
+         새 코드로 다시 INSERT 되고 수신 테넌트에 중복이 무제한 누적된다. 따라서 NULL 화 이전에
+         원본 좌표를 PREV_LINK_SRC_* 로 옮겨 보관한다(재연동 시 재귀속의 근거).
+         MySQL 의 UPDATE SET 절은 좌에서 우로 순차 평가되므로 PREV 대입이 NULL 대입보다 앞서야 한다.
+         ============================================================ -->
+
+    <update id="clearChkptLinkSrc">
+    /* ChkptLinkMapper.clearChkptLinkSrc */
+    UPDATE TB_CHKPT_TYPE_MGMT
+       SET PREV_LINK_SRC_CMPNY_CD = LINK_SRC_CMPNY_CD
+         , PREV_LINK_SRC_SITE_CD  = LINK_SRC_SITE_CD
+         , PREV_LINK_SRC_CHKPT_CD = LINK_SRC_CHKPT_CD
+         , LINK_SRC_CMPNY_CD      = NULL
+         , LINK_SRC_SITE_CD       = NULL
+         , LINK_SRC_CHKPT_CD      = NULL
+         , UPDATE_NO              = #{updateNo}
+         , UPDATE_DATE            = NOW()
+     WHERE CMPNY_CD               = #{dstCmpnyCd}
+       AND SITE_CD                = #{dstSiteCd}
+       AND LINK_SRC_CMPNY_CD      = #{srcCmpnyCd}
+    </update>
+
+    <update id="clearInspectItemLinkSrc">
+    /* ChkptLinkMapper.clearInspectItemLinkSrc */
+    UPDATE TB_CHKPT_INSPECT_ITEM
+       SET PREV_LINK_SRC_CMPNY_CD = LINK_SRC_CMPNY_CD
+         , PREV_LINK_SRC_SITE_CD  = LINK_SRC_SITE_CD
+         , PREV_LINK_SRC_ITEM_CD  = LINK_SRC_ITEM_CD
+         , LINK_SRC_CMPNY_CD      = NULL
+         , LINK_SRC_SITE_CD       = NULL
+         , LINK_SRC_ITEM_CD       = NULL
+         , UPDATE_NO              = #{updateNo}
+         , UPDATE_DATE            = NOW()
+     WHERE CMPNY_CD               = #{dstCmpnyCd}
+       AND SITE_CD                = #{dstSiteCd}
+       AND LINK_SRC_CMPNY_CD      = #{srcCmpnyCd}
+    </update>
+
+    <!-- ============================================================
+         점검 결과 통합 write-through(T6-05/06) — BFS 이웃 계산 + 복제.
+         매핑(LINK_SRC)이 없으면 이웃이 없다 = 수신사 자체 문항의 응답은 전파되지 않는다(의도된 동작).
+         ============================================================ -->
+
+    <!-- [qa M-3] 체인 이웃 해석은 "점검대상(chkpt) 단위"로 1회만 수행한다.
+         과거에는 문항마다 (부모 1 + 자식 N) 링크 조회를 반복해 저장 1회당 N+1 이 터졌다.
+         점검대상 매핑은 전 문항에 대해 불변이므로, 아래 3개 조회로 체인을 1회 해석하고
+         문항 좌표는 사이트 쌍 단위 매핑표(selectItemLinkPairs)로 치환한다. -->
+
+    <!-- 기점 점검대상의 점검구분(문항 매핑표 조회 필터에 필요 — 추측 금지). -->
+    <select id="selectChkptChkLstType" resultType="string">
+    /* ChkptLinkMapper.selectChkptChkLstType */
+    SELECT T.CHKLST_TYPE
+    FROM TB_CHKPT_TYPE_MGMT T
+    WHERE T.CMPNY_CD = #{cmpnyCd}
+      AND T.SITE_CD  = #{siteCd}
+      AND T.CHKPT_CD = #{chkptCd}
+    LIMIT 1
+    </select>
+
+    <!-- 부모(1홉 위) 점검대상 — 나의 LINK_SRC 좌표. 점검구분은 미러 생성 시 원본에서 복제되므로 동일하다. -->
+    <select id="selectChkptParentTier" resultType="com.prafta.web.subcon.subcon02.result.ChkptTierRaw">
+    /* ChkptLinkMapper.selectChkptParentTier */
+    SELECT
+        T.LINK_SRC_CMPNY_CD     AS cmpnyCd
+        , T.LINK_SRC_SITE_CD    AS siteCd
+        , T.CHKLST_TYPE         AS chkLstType
+        , T.LINK_SRC_CHKPT_CD   AS chkptCd
+    FROM TB_CHKPT_TYPE_MGMT T
+    WHERE T.CMPNY_CD          = #{cmpnyCd}
+      AND T.SITE_CD           = #{siteCd}
+      AND T.CHKPT_CD          = #{chkptCd}
+      AND T.LINK_SRC_CMPNY_CD IS NOT NULL
+      AND T.LINK_SRC_SITE_CD  IS NOT NULL
+      AND T.LINK_SRC_CHKPT_CD IS NOT NULL
+    LIMIT 1
+    </select>
+
+    <!-- 자식(1홉 아래) 점검대상들 — 나를 LINK_SRC 로 가리키는 미러 좌표. -->
+    <select id="selectChkptChildTiers" resultType="com.prafta.web.subcon.subcon02.result.ChkptTierRaw">
+    /* ChkptLinkMapper.selectChkptChildTiers */
+    SELECT
+        T.CMPNY_CD              AS cmpnyCd
+        , T.SITE_CD             AS siteCd
+        , T.CHKLST_TYPE         AS chkLstType
+        , T.CHKPT_CD            AS chkptCd
+    FROM TB_CHKPT_TYPE_MGMT T
+    WHERE T.LINK_SRC_CMPNY_CD = #{cmpnyCd}
+      AND T.LINK_SRC_SITE_CD  = #{siteCd}
+      AND T.LINK_SRC_CHKPT_CD = #{chkptCd}
+    ORDER BY T.CMPNY_CD, T.SITE_CD, T.CHKPT_CD
+    </select>
+
+    <!-- 사이트 쌍(수신 사업장 ← 원본 사업장) 문항 매핑표 — 한 간선당 1회 조회로 전 문항 좌표를 해석한다.
+         반환: (수신 문항코드, 원본 문항코드). 부모 방향은 그대로, 자식 방향은 역방향으로 뒤집어 사용한다.
+         점검구분(CHKLST_TYPE)으로 한정해 과거 문항-점검대상 조인의 동일 구분 조건을 그대로 유지한다. -->
+    <select id="selectItemLinkPairs" resultType="com.prafta.web.subcon.subcon02.result.ItemLinkPairRaw">
+    /* ChkptLinkMapper.selectItemLinkPairs */
+    SELECT
+        I.INSPECT_ITEM_CD       AS itemCd
+        , I.LINK_SRC_ITEM_CD    AS srcItemCd
+    FROM TB_CHKPT_INSPECT_ITEM I
+    WHERE I.CMPNY_CD          = #{dstCmpnyCd}
+      AND I.SITE_CD           = #{dstSiteCd}
+      AND I.CHKLST_TYPE       = #{chkLstType}
+      AND I.LINK_SRC_CMPNY_CD = #{srcCmpnyCd}
+      AND I.LINK_SRC_SITE_CD  = #{srcSiteCd}
+      AND I.LINK_SRC_ITEM_CD IS NOT NULL
+    ORDER BY I.INSPECT_ITEM_CD
+    </select>
+
+    <!-- 응답 복제(후행 덮어쓰기 — last-writer-wins) — 대응 좌표에 무조건 UPSERT.
+         [정책 변경] 선수행 우선/소유 판정(PERFORM_KEY)은 폐기됐다. PK 존재 시 값/사진/수행자 스냅샷을
+         최신으로 덮어쓴다. AS NEW 별칭으로 ON DUPLICATE 우변의 신규값을 참조한다(기존값 참조 없음 — 전량 덮어쓰기). -->
+    <insert id="upsertAnswer" parameterType="com.prafta.web.subcon.subcon02.application.command.InspectAnswerWriteCommand">
+    /* ChkptLinkMapper.upsertAnswer */
+    INSERT INTO TB_CHKPT_INSPECT_ANSWER (
+          CMPNY_CD
+        , SITE_CD
+        , CHKPT_CD
+        , INSPECT_ITEM_CD
+        , WORK_DATE
+        , INSPECT_ANSWER_TYPE
+        , ANSWER_DESC
+        , FILE_MGMT_CD
+        , PERFORM_CMPNY_CD
+        , PERFORM_USER_CD
+        , PERFORM_USER_NM
+        , INSERT_NO
+        , INSERT_DATE
+        , UPDATE_NO
+        , UPDATE_DATE
+    ) VALUES (
+          #{cmpnyCd}
+        , #{siteCd}
+        , #{chkptCd}
+        , #{inspectItemCd}
+        , #{workDate}
+        , #{inspectAnswerType}
+        , #{answerDesc}
+        , #{fileMgmtCd}
+        , #{performCmpnyCd}
+        , #{performUserCd}
+        , #{performUserNm}
+        , 'SYSTEM'
+        , NOW()
+        , 'SYSTEM'
+        , NOW()
+    ) AS NEW
+    ON DUPLICATE KEY UPDATE
+          INSPECT_ANSWER_TYPE = NEW.INSPECT_ANSWER_TYPE
+        , ANSWER_DESC         = NEW.ANSWER_DESC
+        , FILE_MGMT_CD        = NEW.FILE_MGMT_CD
+        , PERFORM_CMPNY_CD    = NEW.PERFORM_CMPNY_CD
+        , PERFORM_USER_CD     = NEW.PERFORM_USER_CD
+        , PERFORM_USER_NM     = NEW.PERFORM_USER_NM
+        , UPDATE_NO           = 'SYSTEM'
+        , UPDATE_DATE         = NOW()
+    </insert>
+
+    <!-- 불량조치 복제(후행 덮어쓰기 — last-writer-wins) — 대응 좌표에 무조건 UPSERT(사진 포함).
+         [정책 변경] 선처리 우선/소유 판정(ACTION_KEY)은 폐기됐다. PK 존재 시 내역/사진/조치자 스냅샷을
+         최신으로 덮어쓴다. -->
+    <insert id="upsertDefectAction" parameterType="com.prafta.web.subcon.subcon02.application.command.DefectActionWriteCommand">
+    /* ChkptLinkMapper.upsertDefectAction */
+    INSERT INTO TB_CHKPT_DEFECT_ACTION (
+          CMPNY_CD
+        , SITE_CD
+        , CHKPT_CD
+        , INSPECT_ITEM_CD
+        , WORK_DATE
+        , ACTION_DESC
+        , FILE_MGMT_CD
+        , ACTION_CMPNY_CD
+        , ACTION_USER_CD
+        , ACTION_USER_NM
+        , INSERT_NO
+        , INSERT_DATE
+        , UPDATE_NO
+        , UPDATE_DATE
+    ) VALUES (
+          #{cmpnyCd}
+        , #{siteCd}
+        , #{chkptCd}
+        , #{inspectItemCd}
+        , #{workDate}
+        , #{actionDesc}
+        , #{fileMgmtCd}
+        , #{actionCmpnyCd}
+        , #{actionUserCd}
+        , #{actionUserNm}
+        , 'SYSTEM'
+        , NOW()
+        , 'SYSTEM'
+        , NOW()
+    ) AS NEW
+    ON DUPLICATE KEY UPDATE
+          ACTION_DESC     = NEW.ACTION_DESC
+        , FILE_MGMT_CD    = NEW.FILE_MGMT_CD
+        , ACTION_CMPNY_CD = NEW.ACTION_CMPNY_CD
+        , ACTION_USER_CD  = NEW.ACTION_USER_CD
+        , ACTION_USER_NM  = NEW.ACTION_USER_NM
+        , UPDATE_NO       = 'SYSTEM'
+        , UPDATE_DATE     = NOW()
+    </insert>
+
+</mapper>

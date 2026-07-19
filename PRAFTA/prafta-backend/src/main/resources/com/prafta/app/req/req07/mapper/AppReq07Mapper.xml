@@ -138,7 +138,9 @@
            현재본 + 이력본 UNION 후 APPLY_DATE <![CDATA[ <= ]]> WORK_YMD 인 최신 버전. attd07/attd11 동일 패턴.
            OT 겹침 검증 기준 시각을 현재본(미래 적용분 포함)으로 잘못 비교하던 문제 수정.
            근무일 기준 유효버전이 없으면(=근무일이 최이른 적용일 이전) 최이른 적용버전으로 폴백(COALESCE).
-           SCH_CD 자체가 없으면(LEAVE_CD/NULL/미존재) 여전히 0행 → Service 에서 OT 전량 허용(INNER 면제 시맨틱 유지). -->
+           SCH_CD 자체가 없으면(LEAVE_CD/NULL/미존재) 여전히 0행 → Service 에서 OT 전량 허용(INNER 면제 시맨틱 유지).
+           USE_YN 필터 없음: 사용중지된 근무타입이 배정된 날도 그날 스케줄 시각으로 OT 겹침을 검증해야 한다
+           (USE_YN='Y' 는 배정 선택 목록인 selectSchedOptions 에서만 유지). -->
       INNER JOIN (
             SELECT
                   E.CMPNY_CD, E.SITE_CD, E.SCH_CD, E.APPLY_DATE
@@ -150,23 +152,23 @@
                     , M.FST_SCH_STR_TIME, M.FST_SCH_END_TIME
                     , M.SEC_SCH_STR_TIME, M.SEC_SCH_END_TIME
                     , 2147483647 AS HIST_IDX
-                FROM TB_SCH_MGMT M WHERE M.USE_YN = 'Y'
+                FROM TB_SCH_MGMT M
                 UNION ALL
                 SELECT
                       H.CMPNY_CD, H.SITE_CD, H.SCH_CD, H.APPLY_DATE
                     , H.FST_SCH_STR_TIME, H.FST_SCH_END_TIME
                     , H.SEC_SCH_STR_TIME, H.SEC_SCH_END_TIME
                     , H.HIST_IDX
-                FROM TB_SCH_MGMT_HIST H WHERE H.USE_YN = 'Y'
+                FROM TB_SCH_MGMT_HIST H
             ) E
             WHERE E.HIST_IDX = (
                 SELECT MAX(E2.HIST_IDX)
                 FROM (
                     SELECT M2.CMPNY_CD, M2.SITE_CD, M2.SCH_CD, M2.APPLY_DATE, 2147483647 AS HIST_IDX
-                    FROM TB_SCH_MGMT M2 WHERE M2.USE_YN = 'Y'
+                    FROM TB_SCH_MGMT M2
                     UNION ALL
                     SELECT H2.CMPNY_CD, H2.SITE_CD, H2.SCH_CD, H2.APPLY_DATE, H2.HIST_IDX
-                    FROM TB_SCH_MGMT_HIST H2 WHERE H2.USE_YN = 'Y'
+                    FROM TB_SCH_MGMT_HIST H2
                 ) E2
                 WHERE E2.CMPNY_CD   = E.CMPNY_CD
                   AND E2.SITE_CD    = E.SITE_CD
@@ -185,10 +187,10 @@
                        )
                 FROM (
                     SELECT M3.CMPNY_CD, M3.SITE_CD, M3.SCH_CD, M3.APPLY_DATE
-                    FROM TB_SCH_MGMT M3 WHERE M3.USE_YN = 'Y'
+                    FROM TB_SCH_MGMT M3
                     UNION ALL
                     SELECT H3.CMPNY_CD, H3.SITE_CD, H3.SCH_CD, H3.APPLY_DATE
-                    FROM TB_SCH_MGMT_HIST H3 WHERE H3.USE_YN = 'Y'
+                    FROM TB_SCH_MGMT_HIST H3
                 ) SE
                 WHERE SE.CMPNY_CD    = P.CMPNY_CD
                   AND SE.SITE_CD     = P.SITE_CD

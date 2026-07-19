@@ -45,7 +45,7 @@ public class AdminAccessContextResponse {
     /** USE_YN='Y' 접근 가능 사업장 목록(현장전환 셀렉터용). */
     private final List<AccessibleSiteResult> accessibleSites;
 
-    /** 모듈 활성식 산출 맵([권한매트릭스 §3]). HOME/APPROVAL/ATTD_DETAIL/SAFETY/TBM/SITE_OPS/BOARD/SETTINGS. */
+    /** 모듈 활성식 산출 맵([권한매트릭스 §3]). HOME/APPROVAL/ATTD_DETAIL/ENTRY/SAFETY/TBM/SITE_OPS/BOARD/SETTINGS. */
     private final Map<String, Boolean> moduleActiveMap;
 
     /** 데이터 스코프(🔵 노드관리자 단독 축) 적용 모듈 맵(UI 배지용). */

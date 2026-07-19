@@ -5,7 +5,6 @@ import java.util.List;
 import org.apache.ibatis.annotations.Mapper;
 import org.apache.ibatis.annotations.Param;
 
-import com.prafta.app.terms.terms01.application.command.TermsAgrUpsertCommand;
 import com.prafta.app.terms.terms01.mapper.result.OptionalTermsResult;
 import com.prafta.app.terms.terms01.mapper.result.PendingTermsResult;
 
@@ -14,6 +13,9 @@ import com.prafta.app.terms.terms01.mapper.result.PendingTermsResult;
  *
  * <p>스키마 변경 없음. TB_TERMS / TB_TERMS_USER_AGR_MGMT / TB_SYST_VAL_D(SYS008) 만 사용한다.
  *    USER_CD 는 항상 호출 측(서비스)이 JWT 로 확정한 값을 바인딩한다(IDOR 차단).
+ *
+ * <p>★ SUBCON-T4: 동의 upsert 는 본 매퍼에서 제거되고 ConsentMapper.upsertTermsAgr 로 일원화되었다.
+ *    모든 동의 변경은 ConsentHistoryRecorder 를 경유해야 한다(이력 우회 경로 차단).
  */
 @Mapper
 public interface Terms01Mapper {
@@ -29,7 +31,4 @@ public interface Terms01Mapper {
      * 선택약관 토글 경로의 게이트 우회(필수약관/미사용약관 변조) 차단에 사용한다.
      */
     String selectOptionalTermsCurrentVersion(@Param("termsId") String termsId);
-
-    /** 약관 동의 upsert(INSERT ... ON DUPLICATE KEY UPDATE AGR_YN). 영향행 반환. */
-    int upsertTermsAgr(TermsAgrUpsertCommand command);
 }

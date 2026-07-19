@@ -1,0 +1,4 @@
+
+# 로컬 로그 파일(application-local.properties 의 logging.file.name) — 커밋 금지
+logs/
+*.log

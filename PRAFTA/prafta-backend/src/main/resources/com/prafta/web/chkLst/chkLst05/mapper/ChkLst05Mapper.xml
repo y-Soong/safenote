@@ -1,0 +1,158 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.prafta.web.chkLst.chkLst05.mapper.ChkLst05Mapper">
+
+    <!-- ============================================================
+         PRAFTA-SUBCON-T6-AUDIT-03 — 순회점검 결과 덮어쓰기 이력(좌표별 타임라인) 조회.
+         사업장 스코프/IDOR: CMPNY_CD=gv + TB_USER_SITE_AUTH 조인(호출자 권한 사업장만) 이중 차단.
+         수행 회사/조치 회사는 relabel 저장값(H 컬럼) 그대로, 수행자/조치자 성명은 스냅샷 컬럼 그대로(조인 금지).
+         record 매핑 = SELECT 컬럼 순서(AnswerHistResult / DefectHistResult 필드 순서와 일치).
+         ============================================================ -->
+
+    <!-- 점검 응답 덮어쓰기 이력. 사진 서빙 조인(F)은 점검 사진 파일유형(fileType='001'). -->
+    <select id="selectAnswerHistList" parameterType="com.prafta.web.chkLst.chkLst05.application.query.HistListQuery" resultType="com.prafta.web.chkLst.chkLst05.result.AnswerHistResult">
+    /* ChkLst05Mapper.selectAnswerHistList */
+    SELECT
+          H.SITE_CD                                     AS siteCd
+        , S.SITE_NM                                     AS siteNm
+        , T.CHKLST_TYPE                                 AS chkLstType
+        , FNC_CMM_INFO_SRCH(H.CMPNY_CD, 'BAIM_VAL', T.CHKLST_TYPE, 'COM001') AS chkLstTypeNm
+        , H.CHKPT_CD                                    AS chkptCd
+        , T.CHKPT_NM                                    AS chkptNm
+        , H.INSPECT_ITEM_CD                             AS inspectItemCd
+        , I.INSPECT_ITEM_SUBJ                           AS inspectItemSubj
+        , H.WORK_DATE                                   AS workDate
+        , DATE_FORMAT(H.ACTION_DTIME, '%Y-%m-%d %H:%i') AS chgDtime
+        , H.CHG_TYPE                                    AS chgType
+        , CASE H.CHG_TYPE WHEN '01' THEN '신규' WHEN '02' THEN '덮어쓰기' ELSE H.CHG_TYPE END AS chgTypeNm
+        , H.INSPECT_ANSWER_TYPE                         AS inspectAnswerType
+        , H.ANSWER_DESC                                 AS answerDesc
+        , CASE WHEN H.FILE_MGMT_CD IS NOT NULL AND H.FILE_MGMT_CD != '' THEN 'Y' ELSE 'N' END AS photoYn
+        , CONCAT(IFNULL(H.FILE_MGMT_CD, ''), IFNULL(F.FILE_EXT, '')) AS fileMgmtCd
+        , F.FILE_PATH                                   AS filePath
+        , H.PERFORM_CMPNY_CD                            AS performCmpnyCd
+        , IFNULL(C.CMPNY_NM, '')                        AS performCmpnyNm
+        , H.PERFORM_USER_CD                             AS performUserCd
+        , H.PERFORM_USER_NM                             AS performUserNm
+    FROM TB_CHKPT_INSPECT_ANSWER_HIST H
+         INNER JOIN TB_USER_SITE_AUTH AU
+            ON (
+                AU.CMPNY_CD = H.CMPNY_CD
+            AND AU.SITE_CD  = H.SITE_CD
+            AND AU.USER_CD  = #{gvUserCd}
+            )
+         INNER JOIN TB_SITE S
+            ON (
+                S.CMPNY_CD = H.CMPNY_CD
+            AND S.SITE_CD  = H.SITE_CD
+            )
+         LEFT JOIN TB_CHKPT_TYPE_MGMT T
+            ON (
+                T.CMPNY_CD = H.CMPNY_CD
+            AND T.SITE_CD  = H.SITE_CD
+            AND T.CHKPT_CD = H.CHKPT_CD
+            )
+         LEFT JOIN TB_CHKPT_INSPECT_ITEM I
+            ON (
+                I.CMPNY_CD        = H.CMPNY_CD
+            AND I.SITE_CD         = H.SITE_CD
+            AND I.INSPECT_ITEM_CD = H.INSPECT_ITEM_CD
+            AND I.CHKLST_TYPE     = T.CHKLST_TYPE
+            )
+         LEFT JOIN TB_CMPNY C
+            ON (
+                C.CMPNY_CD = H.PERFORM_CMPNY_CD
+            )
+         LEFT JOIN TB_FILE_INFO F
+            ON (
+                F.CMPNY_CD     = H.CMPNY_CD
+            AND F.FILE_MGMT_CD = H.FILE_MGMT_CD
+            AND F.FILE_TYPE    = #{fileType}
+            )
+    WHERE 1=1
+      AND H.CMPNY_CD = #{gvCmpnyCd}
+      AND H.SITE_CD  = #{siteCd}
+      AND H.WORK_DATE BETWEEN #{fromWorkDate} AND #{toWorkDate}
+      <if test="chkptCd != null and chkptCd != ''">
+        AND H.CHKPT_CD = #{chkptCd}
+      </if>
+      <if test="inspectItemCd != null and inspectItemCd != ''">
+        AND H.INSPECT_ITEM_CD = #{inspectItemCd}
+      </if>
+    ORDER BY S.SITE_NM, T.CHKPT_NM, I.INSPECT_ITEM_SUBJ, H.WORK_DATE, H.ACTION_DTIME ASC, H.HIST_ID ASC
+    </select>
+
+    <!-- 불량조치 덮어쓰기 이력. 사진 서빙 조인(F)은 조치 사진 파일유형(fileType='006').
+         조치자(ACTION_*)는 화면 공용 표시를 위해 performCmpnyNm/performUserNm/performUserCd 로 alias. -->
+    <select id="selectDefectHistList" parameterType="com.prafta.web.chkLst.chkLst05.application.query.HistListQuery" resultType="com.prafta.web.chkLst.chkLst05.result.DefectHistResult">
+    /* ChkLst05Mapper.selectDefectHistList */
+    SELECT
+          H.SITE_CD                                     AS siteCd
+        , S.SITE_NM                                     AS siteNm
+        , T.CHKLST_TYPE                                 AS chkLstType
+        , FNC_CMM_INFO_SRCH(H.CMPNY_CD, 'BAIM_VAL', T.CHKLST_TYPE, 'COM001') AS chkLstTypeNm
+        , H.CHKPT_CD                                    AS chkptCd
+        , T.CHKPT_NM                                    AS chkptNm
+        , H.INSPECT_ITEM_CD                             AS inspectItemCd
+        , I.INSPECT_ITEM_SUBJ                           AS inspectItemSubj
+        , H.WORK_DATE                                   AS workDate
+        , DATE_FORMAT(H.ACTION_DTIME, '%Y-%m-%d %H:%i') AS chgDtime
+        , H.CHG_TYPE                                    AS chgType
+        , CASE H.CHG_TYPE WHEN '01' THEN '신규' WHEN '02' THEN '덮어쓰기' ELSE H.CHG_TYPE END AS chgTypeNm
+        , H.ACTION_DESC                                 AS actionDesc
+        , CASE WHEN H.FILE_MGMT_CD IS NOT NULL AND H.FILE_MGMT_CD != '' THEN 'Y' ELSE 'N' END AS photoYn
+        , CONCAT(IFNULL(H.FILE_MGMT_CD, ''), IFNULL(F.FILE_EXT, '')) AS fileMgmtCd
+        , F.FILE_PATH                                   AS filePath
+        , H.ACTION_CMPNY_CD                             AS performCmpnyCd
+        , IFNULL(C.CMPNY_NM, '')                        AS performCmpnyNm
+        , H.ACTION_USER_CD                              AS performUserCd
+        , H.ACTION_USER_NM                              AS performUserNm
+    FROM TB_CHKPT_DEFECT_ACTION_HIST H
+         INNER JOIN TB_USER_SITE_AUTH AU
+            ON (
+                AU.CMPNY_CD = H.CMPNY_CD
+            AND AU.SITE_CD  = H.SITE_CD
+            AND AU.USER_CD  = #{gvUserCd}
+            )
+         INNER JOIN TB_SITE S
+            ON (
+                S.CMPNY_CD = H.CMPNY_CD
+            AND S.SITE_CD  = H.SITE_CD
+            )
+         LEFT JOIN TB_CHKPT_TYPE_MGMT T
+            ON (
+                T.CMPNY_CD = H.CMPNY_CD
+            AND T.SITE_CD  = H.SITE_CD
+            AND T.CHKPT_CD = H.CHKPT_CD
+            )
+         LEFT JOIN TB_CHKPT_INSPECT_ITEM I
+            ON (
+                I.CMPNY_CD        = H.CMPNY_CD
+            AND I.SITE_CD         = H.SITE_CD
+            AND I.INSPECT_ITEM_CD = H.INSPECT_ITEM_CD
+            AND I.CHKLST_TYPE     = T.CHKLST_TYPE
+            )
+         LEFT JOIN TB_CMPNY C
+            ON (
+                C.CMPNY_CD = H.ACTION_CMPNY_CD
+            )
+         LEFT JOIN TB_FILE_INFO F
+            ON (
+                F.CMPNY_CD     = H.CMPNY_CD
+            AND F.FILE_MGMT_CD = H.FILE_MGMT_CD
+            AND F.FILE_TYPE    = #{fileType}
+            )
+    WHERE 1=1
+      AND H.CMPNY_CD = #{gvCmpnyCd}
+      AND H.SITE_CD  = #{siteCd}
+      AND H.WORK_DATE BETWEEN #{fromWorkDate} AND #{toWorkDate}
+      <if test="chkptCd != null and chkptCd != ''">
+        AND H.CHKPT_CD = #{chkptCd}
+      </if>
+      <if test="inspectItemCd != null and inspectItemCd != ''">
+        AND H.INSPECT_ITEM_CD = #{inspectItemCd}
+      </if>
+    ORDER BY S.SITE_NM, T.CHKPT_NM, I.INSPECT_ITEM_SUBJ, H.WORK_DATE, H.ACTION_DTIME ASC, H.HIST_ID ASC
+    </select>
+
+</mapper>

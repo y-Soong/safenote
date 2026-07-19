@@ -64,4 +64,11 @@ public class LeaveRefusalDetectServiceImpl implements LeaveRefusalDetectService 
         // 3) 차단 예외 throw — 호출부의 출근/근태 트랜잭션을 롤백시켜 레코드 생성을 막는다.
         throw new ApiException(AttdErrorCode.ATTD_400_150);
     }
+
+    @Override
+    public boolean isRefusalTarget(String cmpnyCd, String siteCd, String userCd, String workYmd) {
+        // 부작용 없는 순수 판정: guardAndRecord 와 동일 술어(촉진 1·2차 확정 법정 연차일 · 비휴일) 재사용.
+        //   화면 사전 안내(F2 Route B)용 조회 전용 — 이력/PUSH 적재나 예외 throw 없음.
+        return leaveRefusalMapper.selectLaborRefusalTarget(cmpnyCd, siteCd, userCd, workYmd) != null;
+    }
 }

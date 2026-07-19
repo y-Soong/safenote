@@ -195,6 +195,9 @@ const moduleScopedMap = ref({}) // { APPROVAL:true, ... } → 🔵 배지
 //   route 는 Phase 1 빈 골격(ComingSoon) → Phase 2~8 실화면으로 developer 가 교체.
 const modules = [
   { key: 'APPROVAL', title: '승인 관리', iconId: 'i-admin-approval', route: '/AdminApproval', note: '' },
+  // 일용직 계약서+승인제 T4: 일용직 입장 승인(활성=서버 moduleActiveMap.ENTRY, master∥hr).
+  //   아이콘은 기존 스프라이트(i-admin-approval) 재사용 — template(스프라이트) 무변경.
+  { key: 'ENTRY', title: '입장 승인', iconId: 'i-admin-approval', route: '/AdminEntryApproval', note: '' },
   { key: 'ATTD_DETAIL', title: '근태 상세', iconId: 'i-admin-attd', route: '/AdminAttdDetail', note: '' },
   { key: 'SAFETY', title: '안전 관리', iconId: 'i-admin-safety', route: '/AdminSafety', note: '' },
   { key: 'TBM', title: 'TBM 관리', iconId: 'i-admin-tbm', route: '/AdminTbm', note: '' },

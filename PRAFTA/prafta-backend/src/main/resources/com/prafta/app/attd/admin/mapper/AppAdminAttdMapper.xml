@@ -29,7 +29,8 @@
     </sql>
 
     <!-- 유효(effective-dating) 스케줄 서브쿼리(web attd11 SCH 서브쿼리 그대로 재사용).
-         TB_SCH_MGMT(현재본) + TB_SCH_MGMT_HIST(전 버전) UNION 후 APPLY_DATE <= WORK_YMD 인 최신 버전. -->
+         TB_SCH_MGMT(현재본) + TB_SCH_MGMT_HIST(전 버전) UNION 후 APPLY_DATE <= WORK_YMD 인 최신 버전.
+         이미 배정된 근무계획의 시각 해석이므로 USE_YN 필터는 두지 않는다(사용중지 근무타입도 그날 시각은 유효). -->
     <sql id="effectiveSchJoin">
         LEFT JOIN TB_USER_WORK_PLAN WP
             ON  WP.CMPNY_CD = A.CMPNY_CD
@@ -56,7 +57,6 @@
                     , M.SEC_SCH_STR_TIME, M.SEC_SCH_END_TIME, M.SEC_SCH_BRK_MIN
                     , 2147483647 AS HIST_IDX
                 FROM TB_SCH_MGMT M
-                WHERE M.USE_YN = 'Y'
                 UNION ALL
                 SELECT
                       H.CMPNY_CD, H.SITE_CD, H.SCH_CD, H.APPLY_DATE
@@ -64,16 +64,15 @@
                     , H.SEC_SCH_STR_TIME, H.SEC_SCH_END_TIME, H.SEC_SCH_BRK_MIN
                     , H.HIST_IDX
                 FROM TB_SCH_MGMT_HIST H
-                WHERE H.USE_YN = 'Y'
             ) E
             WHERE E.HIST_IDX = (
                 SELECT MAX(E2.HIST_IDX)
                 FROM (
                     SELECT M2.CMPNY_CD, M2.SITE_CD, M2.SCH_CD, M2.APPLY_DATE, 2147483647 AS HIST_IDX
-                    FROM TB_SCH_MGMT M2 WHERE M2.USE_YN = 'Y'
+                    FROM TB_SCH_MGMT M2
                     UNION ALL
                     SELECT H2.CMPNY_CD, H2.SITE_CD, H2.SCH_CD, H2.APPLY_DATE, H2.HIST_IDX
-                    FROM TB_SCH_MGMT_HIST H2 WHERE H2.USE_YN = 'Y'
+                    FROM TB_SCH_MGMT_HIST H2
                 ) E2
                 WHERE E2.CMPNY_CD   = E.CMPNY_CD
                   AND E2.SITE_CD    = E.SITE_CD
@@ -92,10 +91,10 @@
                        )
                 FROM (
                     SELECT M3.CMPNY_CD, M3.SITE_CD, M3.SCH_CD, M3.APPLY_DATE
-                    FROM TB_SCH_MGMT M3 WHERE M3.USE_YN = 'Y'
+                    FROM TB_SCH_MGMT M3
                     UNION ALL
                     SELECT H3.CMPNY_CD, H3.SITE_CD, H3.SCH_CD, H3.APPLY_DATE
-                    FROM TB_SCH_MGMT_HIST H3 WHERE H3.USE_YN = 'Y'
+                    FROM TB_SCH_MGMT_HIST H3
                 ) SE
                 WHERE SE.CMPNY_CD    = WP.CMPNY_CD
                   AND SE.SITE_CD     = WP.SITE_CD

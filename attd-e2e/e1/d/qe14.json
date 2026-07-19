@@ -1,0 +1,9 @@
+{
+  "title": "2구간 seg1 OPEN 중 seg2 출근 차단(app-024) + 완결",
+  "expected": "seg1 OPEN 중 seg2 출근 차단(얼럿 또는 비활성) + seg2 슬롯 미생성. 이후 seg1 퇴근→seg2 출퇴근 완결(WORK_SEQ 2벌 3면)",
+  "actual": "seg1 출근(04:18) 후 홈·내근태 양쪽 모두 '2구간 출근' 버튼 자체 미노출(UI 선차단) — 서버 ATTD_400_081 도달 경로 없음. DB seg2 미생성 확인. 완결: seg1 퇴근 04:20 → seg2 출근 04:20 → seg2 퇴근 04:20. DB WORK_SEQ=1(0418~0420)/2(0420~0420) 2행, 웹 Attd_08 차수 1·2 표기 일치, 앱 내근태 구간별 표기 일치",
+  "webView": "results/shots/QE-1-4_web_attd08-result.png",
+  "appView": "results/shots/QE-1-4_app_complete.png",
+  "dbCheck": "tb_user_attd_mgmt 2026071700150(seq1)/2026071700151(seq2)",
+  "note": "관찰1: seg1 완결 후 홈에 '1구간 출근' 버튼이 다시 노출됨(재출근 진입 여지 — 클릭 미시도). 관찰2: QT2SEG는 APPLY_DATE=20260805 단일 이력(QT6-x 잔재)인데 7/17 배정·표기 동작 — 홈 카드 '예정 09:00~14:00' vs 내근태 seg1 '09:00~13:00' 표기 불일치(효과일 이전 버전 폴백 차이 추정, 환경 특이 조건이라 결함 채번 없이 관찰만)"
+}

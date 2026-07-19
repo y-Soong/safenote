@@ -279,6 +279,9 @@ const prevDayCheckInTime = ref('') // HHMM
 // prafta-com-008-B-6: 기준일 종일 연차일 여부(home-summary attendance.isLeaveDay).
 //   true 면 출근 시도 시 자발 연차일 출근 확인 팝업을 먼저 노출한다(확인 시에만 check-in 호출).
 const attdIsLeaveDay = ref(false)
+// 근태 E2E(F2): 촉진(노무수령거부) 확정 연차일 여부(home-summary attendance.laborRefusal).
+//   true 면 출근 시 확인 팝업 대신 즉시 차단 안내를 노출한다(출근 진행 불가). 서버 최종 차단은 ATTD_400_150.
+const attdLaborRefusal = ref(false)
 
 // ───────────────────────────────────────────────────────────
 // 근태 조회 카드 — home-summary leave / approval 매핑
@@ -397,6 +400,8 @@ const applyAttendance = (attd) => {
   prevDayCheckInTime.value = attd.prevDayCheckInTime || ''
   // prafta-com-008-B-6: 종일 연차일 여부(출근 시 자발 연차일 확인 팝업 분기 근거).
   attdIsLeaveDay.value = !!attd.isLeaveDay
+  // 근태 E2E(F2): 촉진 노무수령거부 대상 연차일 여부(true 면 확인 팝업 대신 차단 안내).
+  attdLaborRefusal.value = !!attd.laborRefusal
 }
 
 const applyLeave = (leave) => {
@@ -969,6 +974,14 @@ const startCheckInOut = async (mode, targetWorkSeq = null, { skipConfirm = false
 const onCheckIn = async (payload) => {
   const targetWorkSeq =
     payload?.targetWorkSeq === 1 || payload?.targetWorkSeq === 2 ? payload.targetWorkSeq : null
+  // 근태 E2E(F2): 촉진(노무수령거부) 확정 연차일이면 확인 팝업(진행 선택지) 대신 즉시 차단 안내만 노출한다.
+  //   비촉진(자발/약정/촉진+휴일) 연차일은 아래 확인 팝업 흐름을 유지한다. 서버 최종 차단은 ATTD_400_150.
+  if (attdIsLeaveDay.value && attdLaborRefusal.value) {
+    showAlert(
+      '오늘은 연차사용촉진으로 확정된 연차 사용일입니다. 회사는 금일 노무 제공을 수령하지 않으며, 출근(근무) 등록이 차단됩니다. 연차 변경이 필요하면 관리자에게 문의해 주세요.',
+    )
+    return
+  }
   if (attdIsLeaveDay.value) {
     // 자발 연차일 출근 확인 팝업 오픈(확인 콜백에서 실제 출근 진행).
     leaveDayPendingWorkSeq = targetWorkSeq

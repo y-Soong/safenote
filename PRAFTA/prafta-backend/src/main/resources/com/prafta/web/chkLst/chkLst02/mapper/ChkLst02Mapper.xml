@@ -2,20 +2,25 @@
 <!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
 <mapper namespace="com.prafta.web.chkLst.chkLst02.mapper.ChkLst02Mapper">
 
+    <!-- PRAFTA-SUBCON-T0-02: 사업장 키 전환 — siteCd 필수, record 매핑 컬럼 순서 주의 -->
     <select id="selectChkptInspectItemList" parameterType="com.prafta.web.chkLst.chkLst02.application.query.ChkptInspectItemListQuery" resultType="com.prafta.web.chkLst.chkLst02.result.ChkptInspectItemResult">
     /* ChkLst01Mapper.selectChkptInspectItemList */
-	SELECT 
+	SELECT
 		'' 						AS chk
 		, A.CMPNY_CD			AS cmpnyCd
+		, A.SITE_CD				AS siteCd
 	    , A.CHKLST_TYPE			AS chkLstType
 	    , A.INSPECT_ITEM_CD		AS inspectItemCd
 	    , A.INSPECT_ITEM_SUBJ	AS inspectItemSubj
 	    , A.SORT_IDX			AS sortIdx
 	    , A.STR_DATE			AS strDate
 	    , A.USE_YN				AS useYn
+	    <!-- PRAFTA-SUBCON-T6-03: 연동 미러 여부(NULL=자체) — ChkptInspectItemResult record 말미 필드와 같은 순서 -->
+	    , A.LINK_SRC_CMPNY_CD	AS linkSrcCmpnyCd
 	FROM TB_CHKPT_INSPECT_ITEM A
 	WHERE 1=1
 	  AND A.CMPNY_CD = #{gvCmpnyCd}
+	  AND A.SITE_CD = #{siteCd}
    	  <if test="codeCd != null and codeCd != ''">
    	  	AND A.CHKLST_TYPE = #{codeCd}
    	  </if>
@@ -26,6 +31,7 @@
 	/* ChkLst01Mapper.mergeChkptInspectItemList */	
     INSERT INTO TB_CHKPT_INSPECT_ITEM (
     	CMPNY_CD
+    	, SITE_CD	<!-- PRAFTA-SUBCON-T0-02: 사업장 키 -->
     	, CHKLST_TYPE
     	, INSPECT_ITEM_CD
     	, INSPECT_ITEM_SUBJ
@@ -39,6 +45,7 @@
    	)
    	VALUES(
    		#{gvCmpnyCd}
+   		, #{siteCd}
    		, #{chkLstType}
    		, IFNULL(
    			#{inspectItemCd}
@@ -77,6 +84,7 @@
 		, UPDATE_DATE = now()
 	WHERE 1=1
 	  AND CMPNY_CD = #{gvCmpnyCd}
+	  AND SITE_CD = #{siteCd}
 	  AND CHKLST_TYPE = #{chkLstType}
 	  AND INSPECT_ITEM_CD = #{inspectItemCd}
 	</insert>
@@ -87,15 +95,19 @@
 	SELECT
 		'' 						AS chk
 		, A.CMPNY_CD			AS cmpnyCd
+		, A.SITE_CD				AS siteCd
 	    , A.CHKLST_TYPE			AS chkLstType
 	    , A.INSPECT_ITEM_CD		AS inspectItemCd
 	    , A.INSPECT_ITEM_SUBJ	AS inspectItemSubj
 	    , A.SORT_IDX			AS sortIdx
 	    , A.STR_DATE			AS strDate
 	    , A.USE_YN				AS useYn
+	    <!-- PRAFTA-SUBCON-T6-03: 연동 미러 여부(저장/삭제 잠금 가드 판정 근거) -->
+	    , A.LINK_SRC_CMPNY_CD	AS linkSrcCmpnyCd
 	FROM TB_CHKPT_INSPECT_ITEM A
 	WHERE 1=1
 	  AND A.CMPNY_CD = #{gvCmpnyCd}
+	  AND A.SITE_CD = #{siteCd}
 	  AND A.CHKLST_TYPE = #{chkLstType}
 	  AND A.INSPECT_ITEM_CD = #{inspectItemCd}
 	</select>
@@ -134,6 +146,7 @@
 	FROM TB_CHKPT_INSPECT_ITEM_HIST H
 	WHERE 1=1
 	  AND H.CMPNY_CD = #{gvCmpnyCd}
+	  AND H.SITE_CD = #{siteCd}
 	  AND H.CHKLST_TYPE = #{chkLstType}
 	  AND H.INSPECT_ITEM_CD = #{inspectItemCd}
 	ORDER BY H.INSERT_DATE DESC, H.HIST_ID DESC
@@ -144,6 +157,7 @@
 	/* ChkLst02Mapper.insertChkptInspectItemHist */
 	INSERT INTO TB_CHKPT_INSPECT_ITEM_HIST (
 		CMPNY_CD
+		, SITE_CD	<!-- PRAFTA-SUBCON-T0-02: 사업장 키 -->
 		, CHKLST_TYPE
 		, INSPECT_ITEM_CD
 		, CHG_TYPE
@@ -156,6 +170,7 @@
 	)
 	SELECT
 		A.CMPNY_CD
+		, A.SITE_CD
 		, A.CHKLST_TYPE
 		, A.INSPECT_ITEM_CD
 		, #{chgType}
@@ -168,7 +183,58 @@
 	FROM TB_CHKPT_INSPECT_ITEM A
 	WHERE 1=1
 	  AND A.CMPNY_CD = #{cmd.gvCmpnyCd}
+	  AND A.SITE_CD = #{cmd.siteCd}
 	  AND A.CHKLST_TYPE = #{cmd.chkLstType}
 	  AND A.INSPECT_ITEM_CD = #{cmd.inspectItemCd}
 	</insert>
+
+	<!-- PRAFTA-SUBCON-T0-02: 사업장 인가 가드 — 호출자가 대상 사업장 권한 보유 여부(공통 §8.3) -->
+	<select id="countUserSiteAuth" resultType="int">
+	/* ChkLst02Mapper.countUserSiteAuth */
+	SELECT COUNT(1)
+	FROM TB_USER_SITE_AUTH
+	WHERE 1=1
+	  AND CMPNY_CD = #{gvCmpnyCd}
+	  AND USER_CD = #{gvUserCd}
+	  AND SITE_CD = #{siteCd}
+	  AND USE_YN = 'Y'
+	</select>
+
+	<!-- PRAFTA-SUBCON-T0-04: 복사 원본 문항 조회(원본 사업장 + 선택 문항코드 목록) -->
+	<select id="selectCopySourceItemList" parameterType="com.prafta.web.chkLst.chkLst02.application.command.CopyChkptInspectItemCommand" resultType="com.prafta.web.chkLst.chkLst02.result.ChkptInspectItemResult">
+	/* ChkLst02Mapper.selectCopySourceItemList */
+	SELECT
+		'' 						AS chk
+		, A.CMPNY_CD			AS cmpnyCd
+		, A.SITE_CD				AS siteCd
+	    , A.CHKLST_TYPE			AS chkLstType
+	    , A.INSPECT_ITEM_CD		AS inspectItemCd
+	    , A.INSPECT_ITEM_SUBJ	AS inspectItemSubj
+	    , A.SORT_IDX			AS sortIdx
+	    , A.STR_DATE			AS strDate
+	    , A.USE_YN				AS useYn
+	    <!-- PRAFTA-SUBCON-T6-03: record 말미 필드 정합(복사 원본이 미러여도 복사는 허용 — 자체 문항 신설) -->
+	    , A.LINK_SRC_CMPNY_CD	AS linkSrcCmpnyCd
+	FROM TB_CHKPT_INSPECT_ITEM A
+	WHERE 1=1
+	  AND A.CMPNY_CD = #{gvCmpnyCd}
+	  AND A.SITE_CD = #{srcSiteCd}
+	  AND A.CHKLST_TYPE = #{chkLstType}
+	  AND A.INSPECT_ITEM_CD IN
+	  <foreach collection="inspectItemCdList" item="itemCd" open="(" separator="," close=")">
+	  	#{itemCd}
+	  </foreach>
+	ORDER BY A.SORT_IDX, A.INSPECT_ITEM_CD
+	</select>
+
+	<!-- PRAFTA-SUBCON-T0-04: 대상 사업장의 같은 점검구분 내 최대 정렬순서(append 기준) -->
+	<select id="selectMaxSortIdx" parameterType="com.prafta.web.chkLst.chkLst02.application.command.CopyChkptInspectItemCommand" resultType="int">
+	/* ChkLst02Mapper.selectMaxSortIdx */
+	SELECT IFNULL(MAX(A.SORT_IDX), 0)
+	FROM TB_CHKPT_INSPECT_ITEM A
+	WHERE 1=1
+	  AND A.CMPNY_CD = #{gvCmpnyCd}
+	  AND A.SITE_CD = #{dstSiteCd}
+	  AND A.CHKLST_TYPE = #{chkLstType}
+	</select>
 </mapper>

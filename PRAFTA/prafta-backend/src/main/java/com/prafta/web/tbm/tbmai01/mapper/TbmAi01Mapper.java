@@ -15,9 +15,10 @@ import com.prafta.web.tbm.tbmai01.application.query.TbmAiWorklistQuery;
 /**
  * TBM 세부항목 AI 분석·확정 매퍼.
  *
- * <p>★모든 항목 UPDATE/SELECT 는 {@code TB_TBM_EDU_MTRL} 조인으로 회사 스코프(IDOR)를 강제한다
- *    (항목 테이블 {@code TB_TBM_EDU_MTRL_ITEM} 에 CMPNY_CD 없음 → 자료 마스터에서 회사 도출).
- *    타 회사 코드를 알아도 {@code M.CMPNY_CD} 불일치로 0행 처리된다.
+ * <p>★모든 항목 UPDATE/SELECT 는 항목 테이블({@code TB_TBM_EDU_MTRL_ITEM}) 자신의 {@code CMPNY_CD} 로
+ *    회사 스코프(IDOR)를 강제한다. MTRL_ITEM_CD·MTRL_CD 는 회사별로 채번되어 전역 유일하지 않으므로
+ *    (PK 가 {@code (CMPNY_CD, MTRL_ITEM_CD)} 복합키), 자료 마스터 조인만으로는 격리가 성립하지 않는다.
+ *    회사코드는 항상 JWT 에서 도출한 값({@code gvCmpnyCd})만 사용한다(클라이언트 body 값 신뢰 금지).
  */
 @Mapper
 public interface TbmAi01Mapper {

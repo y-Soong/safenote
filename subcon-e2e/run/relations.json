@@ -1,0 +1,12 @@
+{
+  "AB": {
+    "provider": "nrTnBjSa2woeztqfPGIP",
+    "target": "TOUAfi60vmh8qrIXypdw",
+    "relationId": 4
+  },
+  "BC": {
+    "provider": "TOUAfi60vmh8qrIXypdw",
+    "target": "BftXVyADUca25jZaSqzu",
+    "relationId": 5
+  }
+}

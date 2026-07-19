@@ -1,0 +1,419 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+
+<!--
+    PRAFTA-SUBCON-T5 — TBM 연동 회사 지정(TB_TBM_SESSION_SHARE) 공통 매퍼.
+
+    설계 전제(마이그레이션 prafta-subcon-t5-1 로 DB 보장):
+      - TB_TBM_SESSION.SESSION_CD 는 UX_TBM_SESSION_CD 로 전역 유일 → SESSION_CD 단독 조회 안전.
+      - 지정 체인의 권위는 "도달성(reachability)" — 개설사에서 DEL_YN='N' 간선만으로 도달 가능한 회사.
+        중간 지정이 해제되면 하위는 캐스케이드 데이터가 없어도 자동으로 도달 불가가 된다.
+      - UK(SESSION_CD, SHARE_CMPNY_CD) 가 DEL_YN 을 포함하지 않아 사이클은 구조적으로 불가능.
+        depth 20 은 데이터 오염 대비 안전핀(T2 MAX_CHAIN_DEPTH 승계).
+-->
+<mapper namespace="com.prafta.common.cmm.tbmshare.mapper.TbmSessionShareMapper">
+
+    <!-- ============================ 세션 소유 ============================ -->
+
+    <!-- 세션 소유/개설 정보. 회사 필터 없이 SESSION_CD 단독(전역 유일키 전제).
+         resultType record(SessionOwnerResult): SELECT 컬럼 순서 = 필드 순서 고정. -->
+    <select id="selectSessionOwner" resultType="com.prafta.common.cmm.tbmshare.result.SessionOwnerResult">
+    /* TbmSessionShareMapper.selectSessionOwner */
+    SELECT
+          S.SESSION_CD      AS sessionCd
+        , S.CMPNY_CD        AS hostCmpnyCd
+        , S.SITE_CD         AS siteCd
+        , S.STATUS_CD       AS statusCd
+        , S.DEL_YN          AS delYn
+    FROM TB_TBM_SESSION S
+    WHERE S.SESSION_CD = #{sessionCd}
+    LIMIT 1
+    </select>
+
+    <!-- ============================ 체인 판정 ============================ -->
+
+    <!-- 도달성 판정(상향 walk). 내 지정행에서 시작해 나를 지정한 회사를 거슬러 올라가
+         개설사(HOST_CMPNY_CD)에 닿으면 1. 중간 간선이 해제(DEL_YN='Y')면 도달 불가. -->
+    <select id="countReachable" resultType="int">
+    /* TbmSessionShareMapper.countReachable */
+    WITH RECURSIVE UPCHAIN AS (
+        SELECT
+              S.SESSION_CD                AS SESSION_CD
+            , S.HOST_CMPNY_CD             AS HOST_CMPNY_CD
+            , S.DESIGNATED_BY_CMPNY_CD    AS DESIGNATED_BY_CMPNY_CD
+            , 1                           AS DEPTH
+        FROM TB_TBM_SESSION_SHARE S
+        WHERE S.SESSION_CD = #{sessionCd}
+          AND S.SHARE_CMPNY_CD = #{cmpnyCd}
+          AND S.DEL_YN = 'N'
+        UNION ALL
+        SELECT
+              P.SESSION_CD
+            , P.HOST_CMPNY_CD
+            , P.DESIGNATED_BY_CMPNY_CD
+            , U.DEPTH + 1
+        FROM UPCHAIN U
+             INNER JOIN TB_TBM_SESSION_SHARE P
+                ON (
+                    P.SESSION_CD = U.SESSION_CD
+                AND P.SHARE_CMPNY_CD = U.DESIGNATED_BY_CMPNY_CD
+                AND P.DEL_YN = 'N'
+                )
+        WHERE U.DEPTH &lt; 20
+          AND U.DESIGNATED_BY_CMPNY_CD &lt;&gt; U.HOST_CMPNY_CD
+    )
+    SELECT COUNT(1)
+    FROM UPCHAIN
+    WHERE DESIGNATED_BY_CMPNY_CD = HOST_CMPNY_CD
+    </select>
+
+    <!-- 개설사 하향 체인 전체 + 1차 relabel(마스터 §1-3 인접 차수 가시성).
+         앵커 = 개설사가 직접 지정한 회사(= 1차, 자기 자신이 라벨).
+         재귀 = 체인 회사가 재지정한 회사(1차 라벨을 부모에게서 그대로 물려받아 접는다).
+         resultType record(ShareChainRow): SELECT 컬럼 순서 = 필드 순서 고정. -->
+    <select id="selectShareChain" resultType="com.prafta.common.cmm.tbmshare.result.ShareChainRow">
+    /* TbmSessionShareMapper.selectShareChain */
+    WITH RECURSIVE CHAIN AS (
+        SELECT
+              S.SHARE_CMPNY_CD    AS SHARE_CMPNY_CD
+            , S.SHARE_CMPNY_CD    AS TIER1_CMPNY_CD
+            , 1                   AS DEPTH
+        FROM TB_TBM_SESSION_SHARE S
+        WHERE S.SESSION_CD = #{sessionCd}
+          AND S.DEL_YN = 'N'
+          AND S.DESIGNATED_BY_CMPNY_CD = #{hostCmpnyCd}
+        UNION ALL
+        SELECT
+              S2.SHARE_CMPNY_CD
+            , C.TIER1_CMPNY_CD
+            , C.DEPTH + 1
+        FROM CHAIN C
+             INNER JOIN TB_TBM_SESSION_SHARE S2
+                ON (
+                    S2.SESSION_CD = #{sessionCd}
+                AND S2.DEL_YN = 'N'
+                AND S2.DESIGNATED_BY_CMPNY_CD = C.SHARE_CMPNY_CD
+                )
+        WHERE C.DEPTH &lt; 20
+    )
+    SELECT
+          C.SHARE_CMPNY_CD          AS shareCmpnyCd
+        , C.TIER1_CMPNY_CD          AS tier1CmpnyCd
+        , IFNULL(T.CMPNY_NM, '')    AS tier1CmpnyNm
+        , C.DEPTH                   AS depth
+    FROM CHAIN C
+         LEFT OUTER JOIN TB_CMPNY T
+            ON (
+                T.CMPNY_CD = C.TIER1_CMPNY_CD
+            )
+    ORDER BY C.DEPTH, C.SHARE_CMPNY_CD
+    </select>
+
+    <!-- F1(grandfather): 이 회사 소속 참석자가 이미 입실해 있는가(DEL_YN='N').
+         지정 해제/관계 해지 후에도 기존 참석자는 세션 조회·종료(서명 제출)를 계속할 수 있어야 한다
+         (요청서 §3.1 · §5-2 — "이미 입실한 참석자는 유지, 신규 입실만 차단").
+         ⚠ 조회 게이트(assertViewable) 전용. 신규 입실 게이트(assertEntryAllowed)에서는 절대 쓰지 않는다. -->
+    <!-- M4: grandfather 완화는 <b>사용자 단위</b>다(앱 목록 SQL 의 술어와 일치).
+         회사 단위로 두면 해제된 회사의 직원 중 한 명만 입실해 있어도 <b>입실한 적 없는 그 회사 직원 전원</b>이
+         세션 콘텐츠/교육자료/위험성/상태를 조회할 수 있게 된다. -->
+    <select id="countMyAttendance" resultType="int">
+    /* TbmSessionShareMapper.countMyAttendance */
+    SELECT COUNT(1)
+    FROM TB_TBM_ATTENDANCE AT
+    WHERE AT.SESSION_CD = #{sessionCd}
+      AND AT.CMPNY_CD = #{cmpnyCd}
+      AND AT.USER_TYPE_CD = #{userTypeCd}
+      AND AT.USER_CD = #{userCd}
+      AND AT.DEL_YN = 'N'
+    </select>
+
+    <!-- F2: 개설사 직하 1차 회사 목록(대상 회사 셀렉트 소스).
+         체인 전체를 내리면 2차 이하 회사코드/개수가 응답에 노출되므로(회사명만 접어봐야 소용없음)
+         셀렉트 소스 자체를 1차 회사로 축약한다. 하위 체인으로의 확장은 서버가 수행한다.
+         resultType record(AllowedCmpnyResult): SELECT 컬럼 순서 = 필드 순서 고정. -->
+    <select id="selectTier1CmpnyList" resultType="com.prafta.common.cmm.tbmshare.result.AllowedCmpnyResult">
+    /* TbmSessionShareMapper.selectTier1CmpnyList */
+    SELECT
+          S.SHARE_CMPNY_CD          AS cmpnyCd
+        , IFNULL(C.CMPNY_NM, '')    AS cmpnyNm
+    FROM TB_TBM_SESSION_SHARE S
+         LEFT OUTER JOIN TB_CMPNY C
+            ON (
+                C.CMPNY_CD = S.SHARE_CMPNY_CD
+            )
+    WHERE S.SESSION_CD = #{sessionCd}
+      AND S.DESIGNATED_BY_CMPNY_CD = #{hostCmpnyCd}
+      AND S.DEL_YN = 'N'
+    ORDER BY cmpnyNm ASC
+    </select>
+
+    <!-- N1: 개설사 직하 1차 회사 여부(1=1차). 클라가 지정 가능한 "대상 회사"를 1차로 제한하는 판정.
+         2차 이하 회사코드를 넣어보며 200/403 차이로 체인 멤버십을 알아내는 열거 오라클을 차단한다. -->
+    <select id="countTier1Designation" resultType="int">
+    /* TbmSessionShareMapper.countTier1Designation */
+    SELECT COUNT(1)
+    FROM TB_TBM_SESSION_SHARE S
+    WHERE S.SESSION_CD = #{sessionCd}
+      AND S.DESIGNATED_BY_CMPNY_CD = #{hostCmpnyCd}
+      AND S.SHARE_CMPNY_CD = #{shareCmpnyCd}
+      AND S.DEL_YN = 'N'
+    </select>
+
+    <!-- F10: 세션코드 집합 → 나를 지정한 직상위 회사명(하향 라벨) 배치 조회(N+1 제거).
+         resultType record(SessionHostLabelRow): SELECT 컬럼 순서 = 필드 순서 고정. -->
+    <select id="selectParentCmpnyNmBySessions" resultType="com.prafta.common.cmm.tbmshare.result.SessionHostLabelRow">
+    /* TbmSessionShareMapper.selectParentCmpnyNmBySessions */
+    SELECT
+          S.SESSION_CD              AS sessionCd
+        , IFNULL(C.CMPNY_NM, '')    AS hostCmpnyNm
+    FROM TB_TBM_SESSION_SHARE S
+         LEFT OUTER JOIN TB_CMPNY C
+            ON (
+                C.CMPNY_CD = S.DESIGNATED_BY_CMPNY_CD
+            )
+    WHERE S.SHARE_CMPNY_CD = #{shareCmpnyCd}
+      AND S.DEL_YN = 'N'
+      AND S.SESSION_CD IN
+      <foreach collection="sessionCds" item="sc" open="(" separator="," close=")">
+        #{sc}
+      </foreach>
+    </select>
+
+    <!-- 회사명 단건(개설사 자기 라벨용). -->
+    <select id="selectCmpnyNm" resultType="java.lang.String">
+    /* TbmSessionShareMapper.selectCmpnyNm */
+    SELECT
+        C.CMPNY_NM
+    FROM TB_CMPNY C
+    WHERE C.CMPNY_CD = #{cmpnyCd}
+    LIMIT 1
+    </select>
+
+    <!-- 하향 라벨: 나를 지정한 직상위 회사명(내가 보는 "개최 회사"). 상위의 상위는 보이지 않는다. -->
+    <select id="selectParentCmpnyNm" resultType="java.lang.String">
+    /* TbmSessionShareMapper.selectParentCmpnyNm */
+    SELECT
+        IFNULL(C.CMPNY_NM, '')
+    FROM TB_TBM_SESSION_SHARE S
+         LEFT OUTER JOIN TB_CMPNY C
+            ON (
+                C.CMPNY_CD = S.DESIGNATED_BY_CMPNY_CD
+            )
+    WHERE S.SESSION_CD = #{sessionCd}
+      AND S.SHARE_CMPNY_CD = #{shareCmpnyCd}
+      AND S.DEL_YN = 'N'
+    LIMIT 1
+    </select>
+
+    <!-- ============================ 지정 현황/후보 ============================ -->
+
+    <!-- 내가 직접 지정한 회사 목록(+하위 재지정 개사 수). 하위 회사명/코드는 노출하지 않는다(subCount 만).
+         resultType record(SessionShareRow): SELECT 컬럼 순서 = 필드 순서 고정. -->
+    <select id="selectShareRows" resultType="com.prafta.common.cmm.tbmshare.result.SessionShareRow">
+    /* TbmSessionShareMapper.selectShareRows */
+    SELECT
+          S.SHARE_ID                AS shareId
+        , S.SHARE_CMPNY_CD          AS cmpnyCd
+        , IFNULL(C.CMPNY_NM, '')    AS cmpnyNm
+        , DATE_FORMAT(S.DESIGNATED_DTIME, '%Y-%m-%d %H:%i')  AS designatedDtime
+        , (
+            SELECT COUNT(1)
+            FROM TB_TBM_SESSION_SHARE S2
+            WHERE S2.SESSION_CD = S.SESSION_CD
+              AND S2.DESIGNATED_BY_CMPNY_CD = S.SHARE_CMPNY_CD
+              AND S2.DEL_YN = 'N'
+          )                         AS subCount
+    FROM TB_TBM_SESSION_SHARE S
+         LEFT OUTER JOIN TB_CMPNY C
+            ON (
+                C.CMPNY_CD = S.SHARE_CMPNY_CD
+            )
+    WHERE S.SESSION_CD = #{sessionCd}
+      AND S.DESIGNATED_BY_CMPNY_CD = #{designatedByCmpnyCd}
+      AND S.DEL_YN = 'N'
+    ORDER BY S.DESIGNATED_DTIME, S.SHARE_ID
+    </select>
+
+    <!-- 지정 후보: 행위자와 관계 ACCEPTED 인 회사 − 개설사 − 이미 이 세션에 유효 지정된 회사.
+         resultType record(ShareCandidateResult): SELECT 컬럼 순서 = 필드 순서 고정. -->
+    <select id="selectDesignateCandidates" resultType="com.prafta.common.cmm.tbmshare.result.ShareCandidateResult">
+    /* TbmSessionShareMapper.selectDesignateCandidates */
+    SELECT
+          X.cmpnyCd                 AS cmpnyCd
+        , IFNULL(C.CMPNY_NM, '')    AS cmpnyNm
+    FROM (
+          SELECT
+              CASE
+                  WHEN R.REQ_CMPNY_CD = #{actorCmpnyCd} THEN R.TGT_CMPNY_CD
+                  ELSE R.REQ_CMPNY_CD
+              END   AS cmpnyCd
+          FROM TB_CMPNY_RELATION R
+          WHERE R.STATUS = 'ACCEPTED'
+            AND (R.REQ_CMPNY_CD = #{actorCmpnyCd} OR R.TGT_CMPNY_CD = #{actorCmpnyCd})
+         ) X
+         LEFT OUTER JOIN TB_CMPNY C
+            ON (
+                C.CMPNY_CD = X.cmpnyCd
+            )
+    WHERE X.cmpnyCd &lt;&gt; #{hostCmpnyCd}
+      AND NOT EXISTS (
+            SELECT 1
+            FROM TB_TBM_SESSION_SHARE S
+            WHERE S.SESSION_CD = #{sessionCd}
+              AND S.SHARE_CMPNY_CD = X.cmpnyCd
+              AND S.DEL_YN = 'N'
+          )
+    ORDER BY cmpnyNm ASC
+    </select>
+
+    <!-- 관계 ACCEPTED 판정(방향 불문).
+         출처: T1 Subcon03Mapper.selectActiveRelationId 와 동일 술어를 복제한다(모듈 역참조 금지 — plan D8).
+         술어가 달라지면 안 된다. T1 이 관계 판정을 바꾸면 본 SQL 도 함께 바꿔야 한다. -->
+    <select id="countActiveRelation" resultType="int">
+    /* TbmSessionShareMapper.countActiveRelation */
+    SELECT COUNT(1)
+    FROM TB_CMPNY_RELATION R
+    WHERE R.STATUS = 'ACCEPTED'
+      AND (
+            (R.REQ_CMPNY_CD = #{cmpnyCdA} AND R.TGT_CMPNY_CD = #{cmpnyCdB})
+         OR (R.REQ_CMPNY_CD = #{cmpnyCdB} AND R.TGT_CMPNY_CD = #{cmpnyCdA})
+      )
+    </select>
+
+    <!-- ============================ 지정/해제 쓰기 ============================ -->
+
+    <!-- 지정 슬롯(UK) 점유 행. 없으면 null(→INSERT), DEL_YN='Y' 면 RESTORE 대상.
+         resultType record(ShareSlotResult): SELECT 컬럼 순서 = 필드 순서 고정. -->
+    <select id="selectShareSlot" resultType="com.prafta.common.cmm.tbmshare.result.ShareSlotResult">
+    /* TbmSessionShareMapper.selectShareSlot */
+    SELECT
+          S.SHARE_ID    AS shareId
+        , S.DEL_YN      AS delYn
+    FROM TB_TBM_SESSION_SHARE S
+    WHERE S.SESSION_CD = #{sessionCd}
+      AND S.SHARE_CMPNY_CD = #{shareCmpnyCd}
+    LIMIT 1
+    </select>
+
+    <!-- 신규 지정. HOST_CMPNY_CD 는 서비스가 세션에서 읽은 값만 넣는다(클라 입력 불신). -->
+    <insert id="insertShare" parameterType="com.prafta.common.cmm.tbmshare.command.ShareDesignateCommand">
+    /* TbmSessionShareMapper.insertShare */
+    INSERT INTO TB_TBM_SESSION_SHARE (
+          SESSION_CD
+        , HOST_CMPNY_CD
+        , SHARE_CMPNY_CD
+        , DESIGNATED_BY_CMPNY_CD
+        , DESIGNATED_BY_USER_CD
+        , DESIGNATED_DTIME
+        , DEL_YN
+        , INSERT_NO
+        , INSERT_DATE
+        , UPDATE_NO
+        , UPDATE_DATE
+    )
+    VALUES (
+          #{sessionCd}
+        , #{hostCmpnyCd}
+        , #{shareCmpnyCd}
+        , #{designatedByCmpnyCd}
+        , #{designatedByUserCd}
+        , NOW()
+        , 'N'
+        , #{designatedByUserCd}
+        , NOW()
+        , #{designatedByUserCd}
+        , NOW()
+    )
+    </insert>
+
+    <!-- 해제 후 재지정: UK(SESSION_CD, SHARE_CMPNY_CD) 가 DEL_YN 미포함이라 재INSERT 는 중복키 →
+         기존 행 RESTORE. 지정자(회사/사용자)/지정일시를 새로 기록하고 해제 감사 컬럼을 초기화한다. -->
+    <update id="restoreShare" parameterType="com.prafta.common.cmm.tbmshare.command.ShareDesignateCommand">
+    /* TbmSessionShareMapper.restoreShare */
+    UPDATE TB_TBM_SESSION_SHARE
+    SET
+          DEL_YN                  = 'N'
+        , HOST_CMPNY_CD           = #{hostCmpnyCd}
+        , DESIGNATED_BY_CMPNY_CD  = #{designatedByCmpnyCd}
+        , DESIGNATED_BY_USER_CD   = #{designatedByUserCd}
+        , DESIGNATED_DTIME        = NOW()
+        , RELEASE_REASON_CD       = NULL
+        , RELEASED_BY_CMPNY_CD    = NULL
+        , RELEASED_BY_USER_CD     = NULL
+        , RELEASED_DTIME          = NULL
+        , UPDATE_NO               = #{designatedByUserCd}
+        , UPDATE_DATE             = NOW()
+    WHERE SESSION_CD = #{sessionCd}
+      AND SHARE_CMPNY_CD = #{shareCmpnyCd}
+      AND DEL_YN = 'Y'
+    </update>
+
+    <!-- 해제(직접 + 하위 캐스케이드 일괄). DEL_YN='N' 행만 갱신(멱등).
+         TB_TBM_ATTENDANCE 는 건드리지 않는다 — 기존 참석자 유지, 신규 입실만 차단(요청서 §3.1). -->
+    <update id="releaseShares" parameterType="com.prafta.common.cmm.tbmshare.command.ShareReleaseCommand">
+    /* TbmSessionShareMapper.releaseShares */
+    UPDATE TB_TBM_SESSION_SHARE
+    SET
+          DEL_YN                = 'Y'
+        , RELEASE_REASON_CD     = #{releaseReasonCd}
+        , RELEASED_BY_CMPNY_CD  = #{releasedByCmpnyCd}
+        , RELEASED_BY_USER_CD   = #{releasedByUserCd}
+        , RELEASED_DTIME        = NOW()
+        , UPDATE_NO             = #{releasedByUserCd}
+        , UPDATE_DATE           = NOW()
+    WHERE SESSION_CD = #{sessionCd}
+      AND DEL_YN = 'N'
+      AND SHARE_CMPNY_CD IN
+      <foreach collection="shareCmpnyCds" item="cc" open="(" separator="," close=")">
+        #{cc}
+      </foreach>
+    </update>
+
+    <!-- 하향 후손 회사코드(루트 자신 포함) — 캐스케이드 해제 대상.
+         앵커를 루트의 실제 지정행에서 뽑아 CTE 컬럼 콜레이션을 테이블과 일치시킨다
+         (리터럴 CAST 앵커는 콜레이션 충돌(1267) 위험 — MySQL 함정 메모 참조). -->
+    <select id="selectDescendantCmpnyCds" resultType="java.lang.String">
+    /* TbmSessionShareMapper.selectDescendantCmpnyCds */
+    WITH RECURSIVE DESC_CHAIN AS (
+        SELECT
+              S.SHARE_CMPNY_CD    AS CMPNY_CD
+            , 1                   AS DEPTH
+        FROM TB_TBM_SESSION_SHARE S
+        WHERE S.SESSION_CD = #{sessionCd}
+          AND S.SHARE_CMPNY_CD = #{rootCmpnyCd}
+          AND S.DEL_YN = 'N'
+        UNION ALL
+        SELECT
+              S2.SHARE_CMPNY_CD
+            , D.DEPTH + 1
+        FROM DESC_CHAIN D
+             INNER JOIN TB_TBM_SESSION_SHARE S2
+                ON (
+                    S2.SESSION_CD = #{sessionCd}
+                AND S2.DEL_YN = 'N'
+                AND S2.DESIGNATED_BY_CMPNY_CD = D.CMPNY_CD
+                )
+        WHERE D.DEPTH &lt; 20
+    )
+    SELECT DISTINCT CMPNY_CD
+    FROM DESC_CHAIN
+    </select>
+
+    <!-- ============================ 관계 해지 훅(T1) ============================ -->
+
+    <!-- 두 회사 사이의 유효 지정(양방향). A가 B를 지정했거나, B가 A를 지정한 유효 행. -->
+    <select id="selectSharesByCmpnyPair" resultType="com.prafta.common.cmm.tbmshare.result.ShareRefRow">
+    /* TbmSessionShareMapper.selectSharesByCmpnyPair */
+    SELECT
+          S.SESSION_CD        AS sessionCd
+        , S.SHARE_CMPNY_CD    AS shareCmpnyCd
+    FROM TB_TBM_SESSION_SHARE S
+    WHERE S.DEL_YN = 'N'
+      AND (
+            (S.DESIGNATED_BY_CMPNY_CD = #{cmpnyCdA} AND S.SHARE_CMPNY_CD = #{cmpnyCdB})
+         OR (S.DESIGNATED_BY_CMPNY_CD = #{cmpnyCdB} AND S.SHARE_CMPNY_CD = #{cmpnyCdA})
+      )
+    ORDER BY S.SESSION_CD, S.SHARE_ID
+    </select>
+
+</mapper>

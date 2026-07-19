@@ -1,0 +1,1567 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.prafta.web.subcon.subcon03.mapper.Subcon03Mapper">
+
+    <!-- ============================================================
+         메뉴 버튼 권한 보유 카운트(서버측 역할 게이트 — Subcon02 패턴 미러).
+         menuDId/btnType 은 서비스 상수만 전달되며, 고정 컬럼으로만 분기(동적 ${} 미사용).
+         ============================================================ -->
+    <select id="selectMenuButtonAuthCnt" resultType="int">
+    /* Subcon03Mapper.selectMenuButtonAuthCnt */
+    SELECT COUNT(*)
+    FROM (
+        SELECT 1
+          FROM TB_SYST_AUTH_MENU
+         WHERE CMPNY_CD  = #{cmpnyCd}
+           AND AUTH_CD   = #{authCd}
+           AND MENU_D_ID = #{menuDId}
+           AND USE_YN    = 'Y'
+           <choose>
+               <when test="btnType == 'SRCH'">AND BTN_SRCH = 'Y'</when>
+               <when test="btnType == 'NEW'">AND BTN_NEW = 'Y'</when>
+               <when test="btnType == 'SAVE'">AND BTN_SAVE = 'Y'</when>
+               <otherwise>AND 1 = 0</otherwise>
+           </choose>
+         LIMIT 1
+    ) T
+    </select>
+
+    <!-- ============================================================
+         공유 요청 목록(§5-1) — 자사가 당사자(요청측/제공측)인 전 상태(목록=이력, D9).
+         direction: 자사=요청측 → SENT, 자사=제공측 → RECEIVED.
+         siteNm 은 항상 자기 테넌트 사업장명이다(보낸 = REQ_SITE_CD, 받은 = TARGET_SITE_CD).
+         상대사 행위자 성명/사용자코드는 응답하지 않는다(T1 Q4 승계).
+         ※ resultType 이 record 라 SELECT 컬럼 순서 = record 컴포넌트 순서 유지 필수.
+         ============================================================ -->
+    <select id="selectShareReqList" resultType="com.prafta.web.subcon.subcon03.result.ShareReqResult">
+    /* Subcon03Mapper.selectShareReqList */
+    SELECT
+        R.SHARE_REQ_ID                                          AS shareReqId
+        , CASE
+            WHEN R.REQ_CMPNY_CD = #{gvCmpnyCd} THEN 'SENT'
+            ELSE 'RECEIVED'
+          END                                                   AS direction
+        , CASE
+            WHEN R.REQ_CMPNY_CD = #{gvCmpnyCd} THEN R.PRV_CMPNY_CD
+            ELSE R.REQ_CMPNY_CD
+          END                                                   AS otherCmpnyCd
+        , IFNULL(C.CMPNY_NM, '')                                AS otherCmpnyNm
+        , R.DATA_TYPE                                           AS dataType
+        , IFNULL(MS.SITE_NM, '')                                AS siteNm
+        , R.PERIOD_STR                                          AS periodStr
+        , R.PERIOD_END                                          AS periodEnd
+        , R.CLOSED_ONLY_YN                                      AS closedOnlyYn
+        , R.PURPOSE                                             AS purpose
+        , R.STATUS                                              AS status
+        , DATE_FORMAT(R.INSERT_DATE, '%Y-%m-%d %H:%i:%s')       AS insertDate
+        , DATE_FORMAT(R.PROCESS_DTIME, '%Y-%m-%d %H:%i:%s')     AS processDtime
+        , R.PROCESS_COMMENT                                     AS processComment
+        , (
+            SELECT MAX(S.VERSION)
+              FROM TB_CMPNY_SHARE_SNAPSHOT S
+             WHERE S.SHARE_REQ_ID = R.SHARE_REQ_ID
+          )                                                     AS snapshotVersion
+    FROM TB_CMPNY_SHARE_REQ R
+        LEFT OUTER JOIN TB_CMPNY C
+            ON (
+                C.CMPNY_CD = CASE
+                    WHEN R.REQ_CMPNY_CD = #{gvCmpnyCd} THEN R.PRV_CMPNY_CD
+                    ELSE R.REQ_CMPNY_CD
+                END
+            )
+        <!-- 자기 테넌트 사업장명만 조회한다(상대 테넌트 사업장명 노출 금지). -->
+        LEFT OUTER JOIN TB_SITE MS
+            ON (
+                MS.CMPNY_CD = #{gvCmpnyCd}
+            AND MS.SITE_CD  = CASE
+                    WHEN R.REQ_CMPNY_CD = #{gvCmpnyCd} THEN R.REQ_SITE_CD
+                    ELSE R.TARGET_SITE_CD
+                END
+            )
+    WHERE (R.REQ_CMPNY_CD = #{gvCmpnyCd} OR R.PRV_CMPNY_CD = #{gvCmpnyCd})
+    ORDER BY R.SHARE_REQ_ID DESC
+    LIMIT #{limit}
+    </select>
+
+    <!-- 요청 후보 ① — 관계 ACCEPTED 상대 회사(회사코드/회사명만 — 최소 노출). -->
+    <select id="selectActiveRelationCmpnyList" resultType="com.prafta.web.subcon.subcon03.result.ShareCmpnyResult">
+    /* Subcon03Mapper.selectActiveRelationCmpnyList */
+    SELECT
+        CASE
+            WHEN R.REQ_CMPNY_CD = #{gvCmpnyCd} THEN R.TGT_CMPNY_CD
+            ELSE R.REQ_CMPNY_CD
+        END                                                     AS cmpnyCd
+        , IFNULL(C.CMPNY_NM, '')                                AS cmpnyNm
+    FROM TB_CMPNY_RELATION R
+        LEFT OUTER JOIN TB_CMPNY C
+            ON (
+                C.CMPNY_CD = CASE
+                    WHEN R.REQ_CMPNY_CD = #{gvCmpnyCd} THEN R.TGT_CMPNY_CD
+                    ELSE R.REQ_CMPNY_CD
+                END
+            )
+    WHERE R.STATUS = 'ACCEPTED'
+      AND (R.REQ_CMPNY_CD = #{gvCmpnyCd} OR R.TGT_CMPNY_CD = #{gvCmpnyCd})
+    ORDER BY cmpnyNm ASC
+    </select>
+
+    <!-- ============================================================
+         요청 후보 ② — 선택 제공사와 사업장 체인이 있는 "내" 사업장(§5-2, D1: 인접 1홉 양방향).
+           PROVIDE: 내가 원본 → 제공사가 미러(원청이 하청 근태를 받는 주 시나리오)
+           RECEIVE: 제공사가 원본 → 내가 미러(역방향)
+         제공측 사업장 코드/명은 어떤 경우에도 응답하지 않는다.
+         ============================================================ -->
+    <select id="selectChainSiteList" resultType="com.prafta.web.subcon.subcon03.result.ChainSiteResult">
+    /* Subcon03Mapper.selectChainSiteList */
+    SELECT
+        T.siteCd            AS siteCd
+        , T.siteNm          AS siteNm
+        , T.chainDirection  AS chainDirection
+    FROM (
+        SELECT
+            S.SITE_CD       AS siteCd
+            , S.SITE_NM     AS siteNm
+            , 'PROVIDE'     AS chainDirection
+        FROM TB_SITE S
+        WHERE S.CMPNY_CD = #{gvCmpnyCd}
+          AND IFNULL(S.USE_YN, 'Y') = 'Y'
+          AND EXISTS (
+                SELECT 1
+                  FROM TB_SITE_LINK L
+                 WHERE L.SRC_CMPNY_CD = #{gvCmpnyCd}
+                   AND L.SRC_SITE_CD  = S.SITE_CD
+                   AND L.DST_CMPNY_CD = #{prvCmpnyCd}
+                   AND L.STATUS       = 'ACTIVE'
+                   AND L.DST_SITE_CD IS NOT NULL
+          )
+
+        UNION
+
+        SELECT
+            S.SITE_CD       AS siteCd
+            , S.SITE_NM     AS siteNm
+            , 'RECEIVE'     AS chainDirection
+        FROM TB_SITE S
+        WHERE S.CMPNY_CD = #{gvCmpnyCd}
+          AND IFNULL(S.USE_YN, 'Y') = 'Y'
+          AND S.LINK_SRC_CMPNY_CD = #{prvCmpnyCd}
+          AND S.LINK_SRC_SITE_CD IS NOT NULL
+    ) T
+    ORDER BY T.siteNm ASC
+    </select>
+
+    <!-- 관계 ACCEPTED 관계ID(방향 불문) — 생성 가드 §5-3 #3. 미수립이면 0행(null). -->
+    <select id="selectActiveRelationId" resultType="long">
+    /* Subcon03Mapper.selectActiveRelationId */
+    SELECT R.RELATION_ID
+    FROM TB_CMPNY_RELATION R
+    WHERE R.STATUS = 'ACCEPTED'
+      AND (
+            (R.REQ_CMPNY_CD = #{cmpnyCdA} AND R.TGT_CMPNY_CD = #{cmpnyCdB})
+         OR (R.REQ_CMPNY_CD = #{cmpnyCdB} AND R.TGT_CMPNY_CD = #{cmpnyCdA})
+      )
+    LIMIT 1
+    </select>
+
+    <!-- 요청측 소유 활성 사업장 존재 — 소유 검증 §5-3 #4(타사 사업장 주입 봉인). -->
+    <select id="selectMySiteActiveCnt" resultType="int">
+    /* Subcon03Mapper.selectMySiteActiveCnt */
+    SELECT COUNT(*)
+    FROM TB_SITE A
+    WHERE A.CMPNY_CD = #{cmpnyCd}
+      AND A.SITE_CD  = #{siteCd}
+      AND IFNULL(A.USE_YN, 'Y') = 'Y'
+    </select>
+
+    <!-- 사업장 체인 해석(§5-2) — 제공측 대응 사업장코드. 서버만 해석한다(클라 입력 불신). -->
+    <select id="selectTargetSiteCdByChain" resultType="string">
+    /* Subcon03Mapper.selectTargetSiteCdByChain */
+    SELECT T.targetSiteCd
+    FROM (
+        SELECT L.DST_SITE_CD AS targetSiteCd
+        FROM TB_SITE_LINK L
+        WHERE L.SRC_CMPNY_CD = #{gvCmpnyCd}
+          AND L.SRC_SITE_CD  = #{siteCd}
+          AND L.DST_CMPNY_CD = #{prvCmpnyCd}
+          AND L.STATUS       = 'ACTIVE'
+          AND L.DST_SITE_CD IS NOT NULL
+
+        UNION ALL
+
+        SELECT S.LINK_SRC_SITE_CD AS targetSiteCd
+        FROM TB_SITE S
+        WHERE S.CMPNY_CD = #{gvCmpnyCd}
+          AND S.SITE_CD  = #{siteCd}
+          AND S.LINK_SRC_CMPNY_CD = #{prvCmpnyCd}
+          AND S.LINK_SRC_SITE_CD IS NOT NULL
+    ) T
+    LIMIT 1
+    </select>
+
+    <!-- 동일 조건 REQUESTED 중복(§5-3 #6) — 종결 상태(APPROVED/REJECTED/CANCELLED)는 재요청 허용이라 제외. -->
+    <select id="selectRequestedDupCnt" resultType="int">
+    /* Subcon03Mapper.selectRequestedDupCnt */
+    SELECT COUNT(*)
+    FROM TB_CMPNY_SHARE_REQ R
+    WHERE R.REQ_CMPNY_CD   = #{reqCmpnyCd}
+      AND R.PRV_CMPNY_CD   = #{prvCmpnyCd}
+      AND R.TARGET_SITE_CD = #{targetSiteCd}
+      AND R.DATA_TYPE      = #{dataType}
+      AND R.PERIOD_STR     = #{periodStr}
+      AND R.PERIOD_END     = #{periodEnd}
+      AND R.STATUS         = 'REQUESTED'
+    </select>
+
+    <!-- 공유요청 INSERT — STATUS='REQUESTED' 고정, TARGET_SITE_CD 는 서버 해석값만 주입. -->
+    <insert id="insertShareReq" parameterType="com.prafta.web.subcon.subcon03.application.command.ShareReqInsertCommand"
+            useGeneratedKeys="true" keyProperty="shareReqId">
+    /* Subcon03Mapper.insertShareReq */
+    INSERT INTO TB_CMPNY_SHARE_REQ (
+          RELATION_ID
+        , REQ_CMPNY_CD
+        , REQ_SITE_CD
+        , PRV_CMPNY_CD
+        , TARGET_SITE_CD
+        , DATA_TYPE
+        , PERIOD_STR
+        , PERIOD_END
+        , CLOSED_ONLY_YN
+        , PURPOSE
+        , STATUS
+        , REQ_USER_CD
+        , INSERT_NO
+        , INSERT_DATE
+    ) VALUES (
+          #{relationId}
+        , #{reqCmpnyCd}
+        , #{reqSiteCd}
+        , #{prvCmpnyCd}
+        , #{targetSiteCd}
+        , #{dataType}
+        , #{periodStr}
+        , #{periodEnd}
+        , #{closedOnlyYn}
+        , #{purpose}
+        , 'REQUESTED'
+        , #{reqUserCd}
+        , #{insertNo}
+        , NOW()
+    )
+    </insert>
+
+    <!-- ============================================================
+         상태 전이 — 조건부 UPDATE(§4 전이표).
+         WHERE 에 기대상태 + 당사자 조건을 함께 걸어 0행이면 서비스가 404(존재 비노출).
+         미존재/타사 요청/기처리 상태를 응답으로 구분하지 않는다(IDOR 열거 방지).
+         ============================================================ -->
+
+    <!-- 취소: REQUESTED → CANCELLED. 요청측(REQ) 소속만. -->
+    <update id="cancelShareReq" parameterType="com.prafta.web.subcon.subcon03.application.command.ShareReqProcessCommand">
+    /* Subcon03Mapper.cancelShareReq */
+    UPDATE TB_CMPNY_SHARE_REQ
+       SET STATUS           = 'CANCELLED'
+         , PROCESS_CMPNY_CD = #{actorCmpnyCd}
+         , PROCESS_USER_CD  = #{actorUserCd}
+         , PROCESS_DTIME    = NOW()
+         , PROCESS_COMMENT  = #{comment}
+         , UPDATE_NO        = #{actorUserCd}
+         , UPDATE_DATE      = NOW()
+     WHERE SHARE_REQ_ID = #{shareReqId}
+       AND STATUS       = 'REQUESTED'
+       AND REQ_CMPNY_CD = #{actorCmpnyCd}
+    </update>
+
+    <!-- 거부: REQUESTED → REJECTED. 제공측(PRV) 소속만. 사유는 PROCESS_COMMENT 에 기록. -->
+    <update id="rejectShareReq" parameterType="com.prafta.web.subcon.subcon03.application.command.ShareReqProcessCommand">
+    /* Subcon03Mapper.rejectShareReq */
+    UPDATE TB_CMPNY_SHARE_REQ
+       SET STATUS           = 'REJECTED'
+         , PROCESS_CMPNY_CD = #{actorCmpnyCd}
+         , PROCESS_USER_CD  = #{actorUserCd}
+         , PROCESS_DTIME    = NOW()
+         , PROCESS_COMMENT  = #{comment}
+         , UPDATE_NO        = #{actorUserCd}
+         , UPDATE_DATE      = NOW()
+     WHERE SHARE_REQ_ID = #{shareReqId}
+       AND STATUS       = 'REQUESTED'
+       AND PRV_CMPNY_CD = #{actorCmpnyCd}
+    </update>
+
+    <!-- 승인 선점: REQUESTED → APPROVED. 제공측(PRV) 소속만(동시 승인 레이스 차단 — 검사는 선점 후). -->
+    <update id="approveShareReqPreempt" parameterType="com.prafta.web.subcon.subcon03.application.command.ShareReqProcessCommand">
+    /* Subcon03Mapper.approveShareReqPreempt */
+    UPDATE TB_CMPNY_SHARE_REQ
+       SET STATUS           = 'APPROVED'
+         , PROCESS_CMPNY_CD = #{actorCmpnyCd}
+         , PROCESS_USER_CD  = #{actorUserCd}
+         , PROCESS_DTIME    = NOW()
+         , PROCESS_COMMENT  = #{comment}
+         , UPDATE_NO        = #{actorUserCd}
+         , UPDATE_DATE      = NOW()
+     WHERE SHARE_REQ_ID = #{shareReqId}
+       AND STATUS       = 'REQUESTED'
+       AND PRV_CMPNY_CD = #{actorCmpnyCd}
+    </update>
+
+    <!-- 공유요청 원시행(내부 전용) — 선점 성공으로 당사자성이 기증명된 경로에서만 사용. -->
+    <select id="selectShareReqById" resultType="com.prafta.web.subcon.subcon03.result.ShareReqRaw">
+    /* Subcon03Mapper.selectShareReqById */
+    SELECT
+        R.SHARE_REQ_ID      AS shareReqId
+        , R.RELATION_ID     AS relationId
+        , R.REQ_CMPNY_CD    AS reqCmpnyCd
+        , R.REQ_SITE_CD     AS reqSiteCd
+        , R.PRV_CMPNY_CD    AS prvCmpnyCd
+        , R.TARGET_SITE_CD  AS targetSiteCd
+        , R.DATA_TYPE       AS dataType
+        , R.PERIOD_STR      AS periodStr
+        , R.PERIOD_END      AS periodEnd
+        , R.CLOSED_ONLY_YN  AS closedOnlyYn
+        , R.PURPOSE         AS purpose
+        , R.STATUS          AS status
+    FROM TB_CMPNY_SHARE_REQ R
+    WHERE R.SHARE_REQ_ID = #{shareReqId}
+    </select>
+
+    <!-- 승인 사전정보용 — 제공측 소속 + REQUESTED 조건 포함(비당사자/기처리는 0행 → 404 통합). -->
+    <select id="selectRequestedShareReqForProvider" resultType="com.prafta.web.subcon.subcon03.result.ShareReqRaw">
+    /* Subcon03Mapper.selectRequestedShareReqForProvider */
+    SELECT
+        R.SHARE_REQ_ID      AS shareReqId
+        , R.RELATION_ID     AS relationId
+        , R.REQ_CMPNY_CD    AS reqCmpnyCd
+        , R.REQ_SITE_CD     AS reqSiteCd
+        , R.PRV_CMPNY_CD    AS prvCmpnyCd
+        , R.TARGET_SITE_CD  AS targetSiteCd
+        , R.DATA_TYPE       AS dataType
+        , R.PERIOD_STR      AS periodStr
+        , R.PERIOD_END      AS periodEnd
+        , R.CLOSED_ONLY_YN  AS closedOnlyYn
+        , R.PURPOSE         AS purpose
+        , R.STATUS          AS status
+    FROM TB_CMPNY_SHARE_REQ R
+    WHERE R.SHARE_REQ_ID = #{shareReqId}
+      AND R.PRV_CMPNY_CD = #{prvCmpnyCd}
+      AND R.STATUS       = 'REQUESTED'
+    </select>
+
+    <!-- 관계 ACCEPTED 존속(승인 시점 재검증 — 해지 레이스). -->
+    <select id="selectRelationAcceptedCnt" resultType="int">
+    /* Subcon03Mapper.selectRelationAcceptedCnt */
+    SELECT COUNT(*)
+    FROM TB_CMPNY_RELATION R
+    WHERE R.RELATION_ID = #{relationId}
+      AND R.STATUS      = 'ACCEPTED'
+    </select>
+
+    <!-- 대상 사업장 부서노드 전수(마감 커버리지 검사 — 전체 센티넬 '*' 는 서비스가 추가). -->
+    <select id="selectSiteNodeCdList" resultType="string">
+    /* Subcon03Mapper.selectSiteNodeCdList */
+    SELECT N.NODE_CD
+    FROM TB_SITE_NODE N
+    WHERE N.CMPNY_CD = #{cmpnyCd}
+      AND N.SITE_CD  = #{siteCd}
+    ORDER BY N.NODE_CD ASC
+    </select>
+
+    <!-- 해당 월에 부서노드 마감으로 덮이지 않는 근태/OT 행 수(NODE_CD NULL/공백/고아).
+         0건이면 전 부서노드 마감만으로 그 달을 마감 완료로 인정한다(부서별 마감 운영 지원).
+         1건 이상이면 전체 센티넬('*') 마감을 요구한다(일용직 등 무부서 근태 커버). -->
+    <select id="countNodeUncoveredAttdRows" resultType="int">
+    /* Subcon03Mapper.countNodeUncoveredAttdRows */
+    SELECT
+        (
+            SELECT COUNT(1)
+            FROM TB_USER_ATTD_MGMT A
+            WHERE A.CMPNY_CD = #{cmpnyCd}
+              AND A.SITE_CD  = #{siteCd}
+              AND A.WORK_YMD LIKE CONCAT(#{closeYm}, '%')
+              AND A.DEL_YN   = 'N'
+              AND (
+                    A.NODE_CD IS NULL
+                 OR A.NODE_CD = ''
+                 OR NOT EXISTS (
+                        SELECT 1
+                        FROM TB_SITE_NODE N
+                        WHERE N.CMPNY_CD = A.CMPNY_CD
+                          AND N.SITE_CD  = A.SITE_CD
+                          AND N.NODE_CD  = A.NODE_CD
+                    )
+              )
+        )
+        +
+        (
+            SELECT COUNT(1)
+            FROM TB_USER_OVERTIME_MGMT O
+            WHERE O.CMPNY_CD  = #{cmpnyCd}
+              AND O.SITE_CD   = #{siteCd}
+              AND O.WORK_YMD LIKE CONCAT(#{closeYm}, '%')
+              AND O.DEL_YN    = 'N'
+              AND O.OT_STATUS = 'COMPLETED'
+              AND (
+                    O.NODE_CD IS NULL
+                 OR O.NODE_CD = ''
+                 OR NOT EXISTS (
+                        SELECT 1
+                        FROM TB_SITE_NODE N
+                        WHERE N.CMPNY_CD = O.CMPNY_CD
+                          AND N.SITE_CD  = O.SITE_CD
+                          AND N.NODE_CD  = O.NODE_CD
+                    )
+              )
+        ) AS UNCOVERED_CNT
+    </select>
+
+    <!-- 회사명(소속표시 스냅샷 — 제공사 자신). -->
+    <select id="selectCmpnyNm" resultType="string">
+    /* Subcon03Mapper.selectCmpnyNm */
+    SELECT C.CMPNY_NM
+    FROM TB_CMPNY C
+    WHERE C.CMPNY_CD = #{cmpnyCd}
+    </select>
+
+    <!-- 사업장명(자기 테넌트 한정). -->
+    <select id="selectSiteNm" resultType="string">
+    /* Subcon03Mapper.selectSiteNm */
+    SELECT S.SITE_NM
+    FROM TB_SITE S
+    WHERE S.CMPNY_CD = #{cmpnyCd}
+      AND S.SITE_CD  = #{siteCd}
+    </select>
+
+    <!-- VERSION 채번 근거(D5) — 동일 조건 키의 기존 승인 스냅샷 수(+1 = 새 VERSION). -->
+    <select id="selectMaxSnapshotVersionByCondition" resultType="int">
+    /* Subcon03Mapper.selectMaxSnapshotVersionByCondition */
+    SELECT IFNULL(MAX(S.VERSION), 0)
+    FROM TB_CMPNY_SHARE_SNAPSHOT S
+        INNER JOIN TB_CMPNY_SHARE_REQ R
+            ON (R.SHARE_REQ_ID = S.SHARE_REQ_ID)
+    WHERE R.REQ_CMPNY_CD   = #{reqCmpnyCd}
+      AND R.PRV_CMPNY_CD   = #{prvCmpnyCd}
+      AND R.TARGET_SITE_CD = #{targetSiteCd}
+      AND R.DATA_TYPE      = #{dataType}
+      AND R.PERIOD_STR     = #{periodStr}
+      AND R.PERIOD_END     = #{periodEnd}
+    </select>
+
+    <!-- ============================================================
+         스냅샷 원천 SELECT 공통 조각 — 스케줄 effective-dating(attd08 복제).
+         TB_SCH_MGMT(현재본, HIST_IDX=2147483647) UNION ALL TB_SCH_MGMT_HIST 에서
+         APPLY_DATE <![CDATA[ <= ]]> WORK_YMD 인 최신 버전을 결합한다(USE_YN 필터 없음 —
+         사용중지된 근무타입이 배정된 날도 그날 시각으로 판정해야 한다).
+         SCH_NO/SCH_TYPE 은 이력본에 없는 비-versioned 컬럼이라 현재본(MT)에서 가져온다.
+         ============================================================ -->
+    <sql id="schEffective">
+        SELECT
+              E.CMPNY_CD
+            , E.SITE_CD
+            , E.SCH_CD
+            , E.APPLY_DATE
+            , MT.SCH_NO
+            , MT.SCH_TYPE
+            , E.FST_SCH_STR_TIME
+            , E.FST_SCH_END_TIME
+            , E.FST_SCH_BRK_MIN
+            , E.SEC_SCH_STR_TIME
+            , E.SEC_SCH_END_TIME
+            , E.SEC_SCH_BRK_MIN
+        FROM (
+            <!-- 대상 사업장 스코프를 파생테이블 안에서 먼저 좁힌다(전사 UNION 전량 스캔 방지 — qa M5). -->
+            SELECT
+                  M.CMPNY_CD, M.SITE_CD, M.SCH_CD, M.APPLY_DATE
+                , M.FST_SCH_STR_TIME, M.FST_SCH_END_TIME, M.FST_SCH_BRK_MIN
+                , M.SEC_SCH_STR_TIME, M.SEC_SCH_END_TIME, M.SEC_SCH_BRK_MIN
+                , 2147483647 AS HIST_IDX
+            FROM TB_SCH_MGMT M
+            WHERE M.CMPNY_CD = #{prvCmpnyCd}
+              AND M.SITE_CD  = #{targetSiteCd}
+            UNION ALL
+            SELECT
+                  H.CMPNY_CD, H.SITE_CD, H.SCH_CD, H.APPLY_DATE
+                , H.FST_SCH_STR_TIME, H.FST_SCH_END_TIME, H.FST_SCH_BRK_MIN
+                , H.SEC_SCH_STR_TIME, H.SEC_SCH_END_TIME, H.SEC_SCH_BRK_MIN
+                , H.HIST_IDX
+            FROM TB_SCH_MGMT_HIST H
+            WHERE H.CMPNY_CD = #{prvCmpnyCd}
+              AND H.SITE_CD  = #{targetSiteCd}
+        ) E
+        LEFT JOIN TB_SCH_MGMT MT
+            ON  MT.CMPNY_CD = E.CMPNY_CD
+            AND MT.SITE_CD  = E.SITE_CD
+            AND MT.SCH_CD   = E.SCH_CD
+        WHERE E.HIST_IDX = (
+            SELECT MAX(E2.HIST_IDX)
+            FROM (
+                SELECT M2.CMPNY_CD, M2.SITE_CD, M2.SCH_CD, M2.APPLY_DATE, 2147483647 AS HIST_IDX
+                FROM TB_SCH_MGMT M2
+                WHERE M2.CMPNY_CD = #{prvCmpnyCd}
+                  AND M2.SITE_CD  = #{targetSiteCd}
+                UNION ALL
+                SELECT H2.CMPNY_CD, H2.SITE_CD, H2.SCH_CD, H2.APPLY_DATE, H2.HIST_IDX
+                FROM TB_SCH_MGMT_HIST H2
+                WHERE H2.CMPNY_CD = #{prvCmpnyCd}
+                  AND H2.SITE_CD  = #{targetSiteCd}
+            ) E2
+            WHERE E2.CMPNY_CD   = E.CMPNY_CD
+              AND E2.SITE_CD    = E.SITE_CD
+              AND E2.SCH_CD     = E.SCH_CD
+              AND E2.APPLY_DATE = E.APPLY_DATE
+        )
+    </sql>
+
+    <!-- ============================================================
+         (T3-04) 근태행 원천(ROW_TYPE='ATTD') — §5-5 쿼리 경계.
+           테넌트/사업장: CMPNY_CD = 제공사 AND SITE_CD = 대상 사업장(근태가 "발생한" 사업장 기준).
+           기간: WORK_YMD BETWEEN 요청 기간. 유효행: DEL_YN='N'.
+           근로자: tb_user(정규) LEFT JOIN + tb_daily_user(일용) LEFT JOIN — 성명은 원천이 평문이라 그대로 복사.
+           OT/연차는 같은 (근로자, 근무일) 의 대표 근태행(최소 WORK_SEQ)에만 결합한다(2차수 중복 합산 방지).
+           판정(ATTD_STATUS_CD)은 attd08 CASE 복제 — 날짜+시각 CONCAT 비교, 야간(종료<시작)은 익일 보정.
+         ※ record 매핑 — SELECT 컬럼 순서 = SnapshotSourceRow 컴포넌트 순서(3개 원천 쿼리 동일 순서).
+         ============================================================ -->
+    <select id="selectAttdSourceRows" resultType="com.prafta.web.subcon.subcon03.result.SnapshotSourceRow">
+    /* Subcon03Mapper.selectAttdSourceRows */
+    SELECT
+        A.USER_CD                                                       AS userCd
+        , CASE WHEN U.USER_CD IS NOT NULL THEN 'REGULAR' ELSE 'DAILY' END AS workerType
+        , COALESCE(U.USER_NM, D.USER_NM)                                AS workerNm
+        , 'ATTD'                                                        AS rowType
+        , A.WORK_YMD                                                    AS workYmd
+        , A.WORK_SEQ                                                    AS workSeq
+        , SCH.SCH_NO                                                    AS schNm
+        , SCH.SCH_TYPE                                                  AS schType
+        , CASE WHEN A.WORK_SEQ = 2 THEN SCH.SEC_SCH_STR_TIME ELSE SCH.FST_SCH_STR_TIME END AS planStrTime
+        , CASE WHEN A.WORK_SEQ = 2 THEN SCH.SEC_SCH_END_TIME ELSE SCH.FST_SCH_END_TIME END AS planEndTime
+        , CASE WHEN A.WORK_SEQ = 2 THEN SCH.SEC_SCH_BRK_MIN  ELSE SCH.FST_SCH_BRK_MIN  END AS planBrkMin
+        , A.CHECK_IN_DATE                                               AS checkInDate
+        , A.CHECK_IN_TIME                                               AS checkInTime
+        , A.CHECK_OUT_DATE                                              AS checkOutDate
+        , A.CHECK_OUT_TIME                                              AS checkOutTime
+        , CASE
+            WHEN A.CHECK_IN_TIME IS NULL OR A.CHECK_IN_TIME = ''
+                THEN 'ABSENT'
+            /* 지각: 실제 출근 일시 > 스케줄 시작 일시(시작은 근무일 당일) */
+            WHEN A.WORK_SEQ = 1 AND SCH.FST_SCH_STR_TIME IS NOT NULL
+                 AND CONCAT(IFNULL(A.CHECK_IN_DATE, A.WORK_YMD), A.CHECK_IN_TIME)
+                     <![CDATA[ > ]]> CONCAT(A.WORK_YMD, SCH.FST_SCH_STR_TIME)
+                THEN 'LATE'
+            WHEN A.WORK_SEQ = 2 AND SCH.SEC_SCH_STR_TIME IS NOT NULL
+                 AND CONCAT(IFNULL(A.CHECK_IN_DATE, A.WORK_YMD), A.CHECK_IN_TIME)
+                     <![CDATA[ > ]]> CONCAT(A.WORK_YMD, SCH.SEC_SCH_STR_TIME)
+                THEN 'LATE'
+            /* 조퇴: 실제 퇴근 일시가 스케줄 종료 일시보다 이르면 조퇴(야간이면 종료는 근무일 익일).
+               ※ 주석 안에도 부등호(&lt;) 문자를 쓰지 말 것 — XML 파서가 태그 시작으로 읽어 매퍼 로딩이 깨진다. */
+            WHEN A.WORK_SEQ = 1 AND SCH.FST_SCH_END_TIME IS NOT NULL
+                 AND A.CHECK_OUT_TIME IS NOT NULL AND A.CHECK_OUT_TIME != ''
+                 AND CONCAT(IFNULL(A.CHECK_OUT_DATE, A.WORK_YMD), A.CHECK_OUT_TIME)
+                     <![CDATA[ < ]]> CONCAT(
+                           CASE WHEN SCH.FST_SCH_STR_TIME IS NOT NULL
+                                 AND SCH.FST_SCH_END_TIME <![CDATA[ < ]]> SCH.FST_SCH_STR_TIME
+                                THEN DATE_FORMAT(DATE_ADD(STR_TO_DATE(A.WORK_YMD, '%Y%m%d'), INTERVAL 1 DAY), '%Y%m%d')
+                                ELSE A.WORK_YMD END
+                         , SCH.FST_SCH_END_TIME)
+                THEN 'EARLY_LEAVE'
+            WHEN A.WORK_SEQ = 2 AND SCH.SEC_SCH_END_TIME IS NOT NULL
+                 AND A.CHECK_OUT_TIME IS NOT NULL AND A.CHECK_OUT_TIME != ''
+                 AND CONCAT(IFNULL(A.CHECK_OUT_DATE, A.WORK_YMD), A.CHECK_OUT_TIME)
+                     <![CDATA[ < ]]> CONCAT(
+                           CASE WHEN SCH.SEC_SCH_STR_TIME IS NOT NULL
+                                 AND SCH.SEC_SCH_END_TIME <![CDATA[ < ]]> SCH.SEC_SCH_STR_TIME
+                                THEN DATE_FORMAT(DATE_ADD(STR_TO_DATE(A.WORK_YMD, '%Y%m%d'), INTERVAL 1 DAY), '%Y%m%d')
+                                ELSE A.WORK_YMD END
+                         , SCH.SEC_SCH_END_TIME)
+                THEN 'EARLY_LEAVE'
+            ELSE 'NORMAL'
+          END                                                           AS attdStatusCd
+        , IFNULL(OT.otMinutes, 0)                                       AS otMinutes
+        , LV.leaveNm                                                    AS leaveNm
+        , LV.leaveDays                                                  AS leaveDays
+        , LV.leaveMinutes                                               AS leaveMinutes
+        , NULL                                                          AS leaveEndYmd
+    FROM TB_USER_ATTD_MGMT A
+        LEFT OUTER JOIN TB_USER U
+            ON  U.CMPNY_CD = A.CMPNY_CD
+            AND U.USER_CD  = A.USER_CD
+        LEFT OUTER JOIN TB_DAILY_USER D
+            ON  D.CMPNY_CD = A.CMPNY_CD
+            AND D.USER_CD  = A.USER_CD
+        LEFT OUTER JOIN TB_USER_WORK_PLAN WP
+            ON  WP.CMPNY_CD = A.CMPNY_CD
+            AND WP.SITE_CD  = A.SITE_CD
+            AND WP.USER_CD  = A.USER_CD
+            AND WP.WORK_YMD = A.WORK_YMD
+        LEFT OUTER JOIN (
+            <include refid="schEffective"/>
+        ) SCH
+            ON  SCH.CMPNY_CD = WP.CMPNY_CD
+            AND SCH.SITE_CD  = WP.SITE_CD
+            AND SCH.SCH_CD   = WP.WORK_PLAN_CD
+            AND SCH.APPLY_DATE = (
+                SELECT COALESCE(
+                         MAX(CASE WHEN SE.APPLY_DATE <![CDATA[ <= ]]> WP.WORK_YMD THEN SE.APPLY_DATE END)
+                       , MIN(SE.APPLY_DATE)
+                       )
+                FROM (
+                    SELECT M3.CMPNY_CD, M3.SITE_CD, M3.SCH_CD, M3.APPLY_DATE
+                    FROM TB_SCH_MGMT M3
+                    UNION ALL
+                    SELECT H3.CMPNY_CD, H3.SITE_CD, H3.SCH_CD, H3.APPLY_DATE
+                    FROM TB_SCH_MGMT_HIST H3
+                ) SE
+                WHERE SE.CMPNY_CD = WP.CMPNY_CD
+                  AND SE.SITE_CD  = WP.SITE_CD
+                  AND SE.SCH_CD   = WP.WORK_PLAN_CD
+            )
+        <!-- 초과근무 합계(확정분만) — 대표 근태행(최소 WORK_SEQ)에만 결합해 중복 합산을 막는다. -->
+        LEFT OUTER JOIN (
+            SELECT
+                  O.USER_CD                                                             AS USER_CD
+                , O.WORK_YMD                                                            AS WORK_YMD
+                , SUM(IFNULL(O.WORK_MINUTES, 0))                                        AS otMinutes
+            FROM TB_USER_OVERTIME_MGMT O
+            WHERE O.CMPNY_CD  = #{prvCmpnyCd}
+              AND O.SITE_CD   = #{targetSiteCd}
+              AND O.WORK_YMD BETWEEN #{periodStr} AND #{periodEnd}
+              AND O.DEL_YN    = 'N'
+              AND O.OT_STATUS = 'COMPLETED'
+            GROUP BY O.USER_CD, O.WORK_YMD
+        ) OT
+            ON  OT.USER_CD  = A.USER_CD
+            AND OT.WORK_YMD = A.WORK_YMD
+            <!-- 대표 근태행 판정 — WORK_SEQ 동률 행이 2건 이상일 수 있어(PK 가 ATTD_ID) ATTD_ID 로 타이브레이크.
+                 동률을 방치하면 같은 OT 합계가 두 행에 붙어 이중 계상된다. -->
+            AND A.ATTD_ID = (
+                SELECT A2.ATTD_ID
+                FROM TB_USER_ATTD_MGMT A2
+                WHERE A2.CMPNY_CD = A.CMPNY_CD
+                  AND A2.SITE_CD  = A.SITE_CD
+                  AND A2.USER_CD  = A.USER_CD
+                  AND A2.WORK_YMD = A.WORK_YMD
+                  AND A2.DEL_YN   = 'N'
+                ORDER BY A2.WORK_SEQ ASC, A2.ATTD_ID ASC
+                LIMIT 1
+            )
+        <!-- 연차(확정분만, 사유 미복사) — 반차 등 근태행이 있는 연차. 대표 근태행에만 결합. -->
+        LEFT OUTER JOIN (
+            SELECT
+                  L.USER_CD                                                             AS USER_CD
+                , L.START_DATE                                                          AS START_DATE
+                , LEFT(GROUP_CONCAT(DISTINCT T.LEAVE_NM ORDER BY T.LEAVE_NM SEPARATOR ','), 200) AS leaveNm
+                , SUM(IFNULL(L.LEAVE_DAYS, 0))                                          AS leaveDays
+                , SUM(IFNULL(L.LEAVE_MINUTES, 0))                                       AS leaveMinutes
+            FROM TB_USER_LEAVE_USE L
+                LEFT OUTER JOIN TB_LEAVE_TYPE_MGMT T
+                    ON  T.CMPNY_CD = L.CMPNY_CD
+                    AND T.LEAVE_CD = L.LEAVE_CD
+            WHERE L.CMPNY_CD     = #{prvCmpnyCd}
+              AND L.SITE_CD      = #{targetSiteCd}
+              AND L.START_DATE BETWEEN #{periodStr} AND #{periodEnd}
+              AND L.DEL_YN       = 'N'
+              AND L.LEAVE_STATUS = 'CONFIRMED'
+            GROUP BY L.USER_CD, L.START_DATE
+        ) LV
+            ON  LV.USER_CD    = A.USER_CD
+            AND LV.START_DATE = A.WORK_YMD
+            <!-- OT 와 동일한 대표행 판정(ATTD_ID 타이브레이크) — 연차 이중 계상 방지. -->
+            AND A.ATTD_ID = (
+                SELECT A3.ATTD_ID
+                FROM TB_USER_ATTD_MGMT A3
+                WHERE A3.CMPNY_CD = A.CMPNY_CD
+                  AND A3.SITE_CD  = A.SITE_CD
+                  AND A3.USER_CD  = A.USER_CD
+                  AND A3.WORK_YMD = A.WORK_YMD
+                  AND A3.DEL_YN   = 'N'
+                ORDER BY A3.WORK_SEQ ASC, A3.ATTD_ID ASC
+                LIMIT 1
+            )
+    WHERE A.CMPNY_CD = #{prvCmpnyCd}
+      AND A.SITE_CD  = #{targetSiteCd}
+      AND A.WORK_YMD BETWEEN #{periodStr} AND #{periodEnd}
+      AND A.DEL_YN   = 'N'
+    ORDER BY A.USER_CD ASC, A.WORK_YMD ASC, A.WORK_SEQ ASC
+    </select>
+
+    <!-- ============================================================
+         (T3-04) 근태행 없는 초과근무 원천(ROW_TYPE='OT_ONLY' — 휴일근무 등. OT.ATTD_ID NULL 허용).
+         같은 (근로자, 근무일) 에 유효 근태행이 없는 확정 OT 만 1행으로 요약한다.
+         ============================================================ -->
+    <select id="selectOtOnlySourceRows" resultType="com.prafta.web.subcon.subcon03.result.SnapshotSourceRow">
+    /* Subcon03Mapper.selectOtOnlySourceRows */
+    SELECT
+        O.USER_CD                                                       AS userCd
+        , CASE WHEN U.USER_CD IS NOT NULL THEN 'REGULAR' ELSE 'DAILY' END AS workerType
+        , COALESCE(U.USER_NM, D.USER_NM)                                AS workerNm
+        , 'OT_ONLY'                                                     AS rowType
+        , O.WORK_YMD                                                    AS workYmd
+        , 0                                                             AS workSeq
+        , NULL                                                          AS schNm
+        , NULL                                                          AS schType
+        , NULL                                                          AS planStrTime
+        , NULL                                                          AS planEndTime
+        , NULL                                                          AS planBrkMin
+        , LEFT(MIN(CONCAT(O.ACTUAL_START_DATE, O.ACTUAL_START_TIME)), 8)  AS checkInDate
+        , RIGHT(MIN(CONCAT(O.ACTUAL_START_DATE, O.ACTUAL_START_TIME)), 4) AS checkInTime
+        , LEFT(MAX(CASE WHEN O.ACTUAL_END_DATE IS NOT NULL AND O.ACTUAL_END_TIME IS NOT NULL
+                        THEN CONCAT(O.ACTUAL_END_DATE, O.ACTUAL_END_TIME) END), 8)  AS checkOutDate
+        , RIGHT(MAX(CASE WHEN O.ACTUAL_END_DATE IS NOT NULL AND O.ACTUAL_END_TIME IS NOT NULL
+                        THEN CONCAT(O.ACTUAL_END_DATE, O.ACTUAL_END_TIME) END), 4) AS checkOutTime
+        , NULL                                                          AS attdStatusCd
+        , SUM(IFNULL(O.WORK_MINUTES, 0))                                AS otMinutes
+        , NULL                                                          AS leaveNm
+        , NULL                                                          AS leaveDays
+        , NULL                                                          AS leaveMinutes
+        , NULL                                                          AS leaveEndYmd
+    FROM TB_USER_OVERTIME_MGMT O
+        LEFT OUTER JOIN TB_USER U
+            ON  U.CMPNY_CD = O.CMPNY_CD
+            AND U.USER_CD  = O.USER_CD
+        LEFT OUTER JOIN TB_DAILY_USER D
+            ON  D.CMPNY_CD = O.CMPNY_CD
+            AND D.USER_CD  = O.USER_CD
+    WHERE O.CMPNY_CD  = #{prvCmpnyCd}
+      AND O.SITE_CD   = #{targetSiteCd}
+      AND O.WORK_YMD BETWEEN #{periodStr} AND #{periodEnd}
+      AND O.DEL_YN    = 'N'
+      AND O.OT_STATUS = 'COMPLETED'
+      AND NOT EXISTS (
+            SELECT 1
+              FROM TB_USER_ATTD_MGMT A
+             WHERE A.CMPNY_CD = O.CMPNY_CD
+               AND A.SITE_CD  = O.SITE_CD
+               AND A.USER_CD  = O.USER_CD
+               AND A.WORK_YMD = O.WORK_YMD
+               AND A.DEL_YN   = 'N'
+      )
+    GROUP BY O.USER_CD, O.WORK_YMD, U.USER_CD, U.USER_NM, D.USER_NM
+    ORDER BY O.USER_CD ASC, O.WORK_YMD ASC
+    </select>
+
+    <!-- ============================================================
+         (T3-04) 근태행 없는 연차 원천(ROW_TYPE='LEAVE_ONLY' — 종일/다일 연차).
+         "왜 출근 기록이 없는가"의 유일한 설명 — 누락하면 원청이 결근으로 오독한다(D4).
+         사유(LEAVE_REASON)는 복사하지 않는다(최소수집).
+         ============================================================ -->
+    <select id="selectLeaveOnlySourceRows" resultType="com.prafta.web.subcon.subcon03.result.SnapshotSourceRow">
+    /* Subcon03Mapper.selectLeaveOnlySourceRows */
+    SELECT
+        L.USER_CD                                                       AS userCd
+        , CASE WHEN U.USER_CD IS NOT NULL THEN 'REGULAR' ELSE 'DAILY' END AS workerType
+        , COALESCE(U.USER_NM, D.USER_NM)                                AS workerNm
+        , 'LEAVE_ONLY'                                                  AS rowType
+        , L.START_DATE                                                  AS workYmd
+        , 0                                                             AS workSeq
+        , NULL                                                          AS schNm
+        , NULL                                                          AS schType
+        , NULL                                                          AS planStrTime
+        , NULL                                                          AS planEndTime
+        , NULL                                                          AS planBrkMin
+        , NULL                                                          AS checkInDate
+        , NULL                                                          AS checkInTime
+        , NULL                                                          AS checkOutDate
+        , NULL                                                          AS checkOutTime
+        , NULL                                                          AS attdStatusCd
+        , 0                                                             AS otMinutes
+        , LEFT(GROUP_CONCAT(DISTINCT T.LEAVE_NM ORDER BY T.LEAVE_NM SEPARATOR ','), 200) AS leaveNm
+        , SUM(IFNULL(L.LEAVE_DAYS, 0))                                  AS leaveDays
+        , SUM(IFNULL(L.LEAVE_MINUTES, 0))                               AS leaveMinutes
+        , MAX(L.END_DATE)                                               AS leaveEndYmd
+    FROM TB_USER_LEAVE_USE L
+        LEFT OUTER JOIN TB_LEAVE_TYPE_MGMT T
+            ON  T.CMPNY_CD = L.CMPNY_CD
+            AND T.LEAVE_CD = L.LEAVE_CD
+        LEFT OUTER JOIN TB_USER U
+            ON  U.CMPNY_CD = L.CMPNY_CD
+            AND U.USER_CD  = L.USER_CD
+        LEFT OUTER JOIN TB_DAILY_USER D
+            ON  D.CMPNY_CD = L.CMPNY_CD
+            AND D.USER_CD  = L.USER_CD
+    WHERE L.CMPNY_CD     = #{prvCmpnyCd}
+      AND L.SITE_CD      = #{targetSiteCd}
+      AND L.START_DATE BETWEEN #{periodStr} AND #{periodEnd}
+      AND L.DEL_YN       = 'N'
+      AND L.LEAVE_STATUS = 'CONFIRMED'
+      AND NOT EXISTS (
+            SELECT 1
+              FROM TB_USER_ATTD_MGMT A
+             WHERE A.CMPNY_CD = L.CMPNY_CD
+               AND A.SITE_CD  = L.SITE_CD
+               AND A.USER_CD  = L.USER_CD
+               AND A.WORK_YMD = L.START_DATE
+               AND A.DEL_YN   = 'N'
+      )
+    GROUP BY L.USER_CD, L.START_DATE, U.USER_CD, U.USER_NM, D.USER_NM
+    ORDER BY L.USER_CD ASC, L.START_DATE ASC
+    </select>
+
+    <!-- 스냅샷 헤더 INSERT — OWNER_CMPNY_CD 는 DB 의 SHARE_REQ.REQ_CMPNY_CD 에서만 온다(클라 불신). -->
+    <insert id="insertSnapshot" parameterType="com.prafta.web.subcon.subcon03.application.command.SnapshotInsertCommand"
+            useGeneratedKeys="true" keyProperty="snapshotId">
+    /* Subcon03Mapper.insertSnapshot */
+    INSERT INTO TB_CMPNY_SHARE_SNAPSHOT (
+          SHARE_REQ_ID
+        , OWNER_CMPNY_CD
+        , VERSION
+        , UNCLOSED_INCLUDED_YN
+        , CONSENT_EXCLUDED_CNT
+        , ROW_CNT
+        , RELAY_INCLUDED_YN
+        , CREATE_DTIME
+        , INSERT_NO
+        , INSERT_DATE
+    ) VALUES (
+          #{shareReqId}
+        , #{ownerCmpnyCd}
+        , #{version}
+        , #{unclosedIncludedYn}
+        , #{consentExcludedCnt}
+        , 0
+        , #{relayIncludedYn}
+        , NOW()
+        , #{insertNo}
+        , NOW()
+    )
+    </insert>
+
+    <!-- 상세행 배치 INSERT(서비스가 청크 분할). PII 최소수집 — 저장 컬럼은 이 목록이 전부다. -->
+    <insert id="insertSnapshotAttdRows">
+    /* Subcon03Mapper.insertSnapshotAttdRows */
+    INSERT INTO TB_CMPNY_SHARE_SNAPSHOT_ATTD (
+          SNAPSHOT_ID
+        , WORKER_SEQ
+        , WORKER_TYPE
+        , WORKER_NM
+        , AFFIL_CMPNY_NM
+        , ROW_TYPE
+        , WORK_YMD
+        , WORK_SEQ
+        , SCH_NM
+        , SCH_TYPE
+        , PLAN_STR_TIME
+        , PLAN_END_TIME
+        , PLAN_BRK_MIN
+        , CHECK_IN_DATE
+        , CHECK_IN_TIME
+        , CHECK_OUT_DATE
+        , CHECK_OUT_TIME
+        , ATTD_STATUS_CD
+        , OT_MINUTES
+        , LEAVE_NM
+        , LEAVE_DAYS
+        , LEAVE_MINUTES
+        , LEAVE_END_YMD
+        , INSERT_NO
+        , INSERT_DATE
+    ) VALUES
+    <foreach collection="rows" item="row" separator=",">
+        (
+              #{row.snapshotId}
+            , #{row.workerSeq}
+            , #{row.workerType}
+            , #{row.workerNm}
+            , #{row.affilCmpnyNm}
+            , #{row.rowType}
+            , #{row.workYmd}
+            , #{row.workSeq}
+            , #{row.schNm}
+            , #{row.schType}
+            , #{row.planStrTime}
+            , #{row.planEndTime}
+            , #{row.planBrkMin}
+            , #{row.checkInDate}
+            , #{row.checkInTime}
+            , #{row.checkOutDate}
+            , #{row.checkOutTime}
+            , #{row.attdStatusCd}
+            , #{row.otMinutes}
+            , #{row.leaveNm}
+            , #{row.leaveDays}
+            , #{row.leaveMinutes}
+            , #{row.leaveEndYmd}
+            , #{row.insertNo}
+            , NOW()
+        )
+    </foreach>
+    </insert>
+
+    <!-- 상세행 총 건수 확정(생성 트랜잭션 내 1회 — 스냅샷 불변 원칙의 유일한 예외, D6). -->
+    <update id="updateSnapshotRowCnt">
+    /* Subcon03Mapper.updateSnapshotRowCnt */
+    UPDATE TB_CMPNY_SHARE_SNAPSHOT
+       SET ROW_CNT     = #{rowCnt}
+         , UPDATE_NO   = #{updateNo}
+         , UPDATE_DATE = NOW()
+     WHERE SNAPSHOT_ID = #{snapshotId}
+    </update>
+
+    <!-- 스냅샷 내 최대 WORKER_SEQ(릴레이 복사 오프셋 — 자체 인원과 하위 인원의 번호 충돌 방지). -->
+    <select id="selectMaxWorkerSeq" resultType="int">
+    /* Subcon03Mapper.selectMaxWorkerSeq */
+    SELECT IFNULL(MAX(D.WORKER_SEQ), 0)
+    FROM TB_CMPNY_SHARE_SNAPSHOT_ATTD D
+    WHERE D.SNAPSHOT_ID = #{snapshotId}
+    </select>
+
+    <!-- ============================================================
+         릴레이 후보(§5-7) — 승인자(제공측)가 "이 사업장 기준으로 하위에서 받아둔" 스냅샷만.
+         하위 제공사 회사코드/회사명은 SELECT 하지 않는다(마스터 §1-5 — 상위는 하위의 하위를 모른다).
+         승인 트랜잭션의 재검증도 이 쿼리를 그대로 사용한다(클라 목록 불신).
+         ============================================================ -->
+    <select id="selectRelayCandidates" resultType="com.prafta.web.subcon.subcon03.result.RelayCandidateResult">
+    /* Subcon03Mapper.selectRelayCandidates */
+    SELECT
+        S.SNAPSHOT_ID                                           AS snapshotId
+        , R.PERIOD_STR                                          AS periodStr
+        , R.PERIOD_END                                          AS periodEnd
+        , CONCAT(
+              LEFT(R.PERIOD_STR, 4), '-', MID(R.PERIOD_STR, 5, 2), '-', RIGHT(R.PERIOD_STR, 2)
+            , ' ~ '
+            , LEFT(R.PERIOD_END, 4), '-', MID(R.PERIOD_END, 5, 2), '-', RIGHT(R.PERIOD_END, 2)
+          )                                                     AS periodLabel
+        , S.VERSION                                             AS version
+        , S.ROW_CNT                                             AS rowCnt
+        , IFNULL(S.UNCLOSED_INCLUDED_YN, 'N')                   AS unclosedIncludedYn
+        , DATE_FORMAT(S.CREATE_DTIME, '%Y-%m-%d %H:%i:%s')      AS createDtime
+    FROM TB_CMPNY_SHARE_SNAPSHOT S
+        INNER JOIN TB_CMPNY_SHARE_REQ R
+            ON (R.SHARE_REQ_ID = S.SHARE_REQ_ID)
+    WHERE S.OWNER_CMPNY_CD = #{ownerCmpnyCd}   /* ① 내가 수신 보유한 스냅샷만 */
+      AND R.REQ_CMPNY_CD   = #{ownerCmpnyCd}   /* 소유 정합 이중 확인 */
+      AND R.REQ_SITE_CD    = #{targetSiteCd}   /* ② 같은 사업장 체인(내 사업장 기준 수신분) */
+      AND R.DATA_TYPE      = #{dataType}       /* ③ 동일 유형 + 기간 부분집합 */
+      AND R.PERIOD_STR <![CDATA[ >= ]]> #{periodStr}
+      AND R.PERIOD_END <![CDATA[ <= ]]> #{periodEnd}
+      <!-- ④ 마감분만 요청이면 미마감 표식이 있는 하위 스냅샷은 묶을 수 없다(요청서 엣지 3).
+           OGNL 단일문자 리터럴('Y')은 char 라 String 비교가 성립하지 않는다 → "Y".equals(...) 사용. -->
+      <if test='closedOnlyYn != null and "Y".equals(closedOnlyYn)'>
+      AND IFNULL(S.UNCLOSED_INCLUDED_YN, 'N') = 'N'
+      </if>
+    ORDER BY S.SNAPSHOT_ID DESC
+    </select>
+
+    <!-- ============================================================
+         릴레이 relabel 복사(§5-7) — 하위 상세행을 새 스냅샷으로 INSERT ... SELECT.
+           · AFFIL_CMPNY_NM = 제공사(승인자) 회사명으로 덮어씀(하위 회사명 소거)
+           · WORKER_SEQ = 하위 번호 + 오프셋(새 스냅샷 스코프 재채번)
+           · 하위 SNAPSHOT_ID / 하위 회사 식별자는 어떤 컬럼에도 넣지 않는다
+           · 소유 검증(OWNER_CMPNY_CD = 승인자)을 SQL 안에서 강제(타사 스냅샷 주입 = IDOR 차단)
+         ============================================================ -->
+    <insert id="copyRelayRows">
+    /* Subcon03Mapper.copyRelayRows */
+    INSERT INTO TB_CMPNY_SHARE_SNAPSHOT_ATTD (
+          SNAPSHOT_ID
+        , WORKER_SEQ
+        , WORKER_TYPE
+        , WORKER_NM
+        , AFFIL_CMPNY_NM
+        , ROW_TYPE
+        , WORK_YMD
+        , WORK_SEQ
+        , SCH_NM
+        , SCH_TYPE
+        , PLAN_STR_TIME
+        , PLAN_END_TIME
+        , PLAN_BRK_MIN
+        , CHECK_IN_DATE
+        , CHECK_IN_TIME
+        , CHECK_OUT_DATE
+        , CHECK_OUT_TIME
+        , ATTD_STATUS_CD
+        , OT_MINUTES
+        , LEAVE_NM
+        , LEAVE_DAYS
+        , LEAVE_MINUTES
+        , LEAVE_END_YMD
+        , INSERT_NO
+        , INSERT_DATE
+    )
+    SELECT
+          #{snapshotId}
+        , D.WORKER_SEQ + #{workerSeqOffset}
+        , D.WORKER_TYPE
+        , D.WORKER_NM
+        , #{affilCmpnyNm}
+        , D.ROW_TYPE
+        , D.WORK_YMD
+        , D.WORK_SEQ
+        , D.SCH_NM
+        , D.SCH_TYPE
+        , D.PLAN_STR_TIME
+        , D.PLAN_END_TIME
+        , D.PLAN_BRK_MIN
+        , D.CHECK_IN_DATE
+        , D.CHECK_IN_TIME
+        , D.CHECK_OUT_DATE
+        , D.CHECK_OUT_TIME
+        , D.ATTD_STATUS_CD
+        , D.OT_MINUTES
+        , D.LEAVE_NM
+        , D.LEAVE_DAYS
+        , D.LEAVE_MINUTES
+        , D.LEAVE_END_YMD
+        , #{insertNo}
+        , NOW()
+    FROM TB_CMPNY_SHARE_SNAPSHOT_ATTD D
+    WHERE D.SNAPSHOT_ID = #{srcSnapshotId}
+      AND EXISTS (
+            SELECT 1
+              FROM TB_CMPNY_SHARE_SNAPSHOT S
+             WHERE S.SNAPSHOT_ID    = D.SNAPSHOT_ID
+               AND S.OWNER_CMPNY_CD = #{ownerCmpnyCd}
+      )
+    </insert>
+
+    <!-- 릴레이 묶음 감사(제공측 테넌트 전용). -->
+    <insert id="insertSnapshotBundle" parameterType="com.prafta.web.subcon.subcon03.application.command.BundleInsertCommand">
+    /* Subcon03Mapper.insertSnapshotBundle */
+    INSERT INTO TB_CMPNY_SHARE_SNAPSHOT_BUNDLE (
+          SNAPSHOT_ID
+        , INCLUDED_RCV_SNAPSHOT_ID
+        , OWNER_CMPNY_CD
+        , ROW_CNT
+        , INSERT_NO
+        , INSERT_DATE
+    ) VALUES (
+          #{snapshotId}
+        , #{includedRcvSnapshotId}
+        , #{ownerCmpnyCd}
+        , #{rowCnt}
+        , #{insertNo}
+        , NOW()
+    )
+    </insert>
+
+    <!-- ============================================================
+         수신 자료 목록(§5-8) — OWNER_CMPNY_CD = 자사 1차 강제(IDOR 방어선).
+         srcCmpnyNm 은 직상위 제공사까지만. BUNDLE 은 절대 조인하지 않는다(하위 회사 비노출).
+         relationActiveYn: 관계가 지금도 ACCEPTED 인가(N = 연동 종료된 회사의 자료 — 열람은 정상).
+         ============================================================ -->
+    <select id="selectSnapshotList" resultType="com.prafta.web.subcon.subcon03.result.SnapshotResult">
+    /* Subcon03Mapper.selectSnapshotList */
+    SELECT
+        S.SNAPSHOT_ID                                           AS snapshotId
+        , S.SHARE_REQ_ID                                        AS shareReqId
+        , R.DATA_TYPE                                           AS dataType
+        , IFNULL(C.CMPNY_NM, '')                                AS srcCmpnyNm
+        , IFNULL(MS.SITE_NM, '')                                AS siteNm
+        , R.PERIOD_STR                                          AS periodStr
+        , R.PERIOD_END                                          AS periodEnd
+        , S.VERSION                                             AS version
+        , S.ROW_CNT                                             AS rowCnt
+        , IFNULL(S.UNCLOSED_INCLUDED_YN, 'N')                   AS unclosedIncludedYn
+        , S.CONSENT_EXCLUDED_CNT                                AS consentExcludedCnt
+        , DATE_FORMAT(S.CREATE_DTIME, '%Y-%m-%d %H:%i:%s')      AS createDtime
+        , CASE WHEN REL.RELATION_ID IS NOT NULL THEN 'Y' ELSE 'N' END AS relationActiveYn
+        , R.PURPOSE                                             AS purpose
+    FROM TB_CMPNY_SHARE_SNAPSHOT S
+        INNER JOIN TB_CMPNY_SHARE_REQ R
+            ON (R.SHARE_REQ_ID = S.SHARE_REQ_ID)
+        LEFT OUTER JOIN TB_CMPNY C
+            ON (C.CMPNY_CD = R.PRV_CMPNY_CD)
+        <!-- 자기 테넌트 사업장명(요청 시 고른 내 사업장). -->
+        LEFT OUTER JOIN TB_SITE MS
+            ON (
+                MS.CMPNY_CD = S.OWNER_CMPNY_CD
+            AND MS.SITE_CD  = R.REQ_SITE_CD
+            )
+        LEFT OUTER JOIN TB_CMPNY_RELATION REL
+            ON (
+                REL.RELATION_ID = R.RELATION_ID
+            AND REL.STATUS      = 'ACCEPTED'
+            )
+    WHERE S.OWNER_CMPNY_CD = #{gvCmpnyCd}
+    ORDER BY S.SNAPSHOT_ID DESC
+    LIMIT #{limit}
+    </select>
+
+    <!-- 수신 자료 상세(§5-8) — 소유 검증을 조회 SQL 안에 둔다(서비스 분기 누락 방지).
+         타사 스냅샷ID 로 호출하면 0행(존재 비노출). 응답에 USER_CD/하위 회사/BUNDLE 은 존재하지 않는다. -->
+    <select id="selectSnapshotDetail" resultType="com.prafta.web.subcon.subcon03.result.SnapshotDetailResult">
+    /* Subcon03Mapper.selectSnapshotDetail */
+    SELECT
+        D.DETAIL_ID         AS detailId
+        , D.WORKER_SEQ      AS workerSeq
+        , D.WORKER_TYPE     AS workerType
+        , D.WORKER_NM       AS workerNm
+        , D.AFFIL_CMPNY_NM  AS affilCmpnyNm
+        , D.ROW_TYPE        AS rowType
+        , D.WORK_YMD        AS workYmd
+        , D.WORK_SEQ        AS workSeq
+        , D.SCH_NM          AS schNm
+        , D.SCH_TYPE        AS schType
+        , D.PLAN_STR_TIME   AS planStrTime
+        , D.PLAN_END_TIME   AS planEndTime
+        , D.PLAN_BRK_MIN    AS planBrkMin
+        , D.CHECK_IN_DATE   AS checkInDate
+        , D.CHECK_IN_TIME   AS checkInTime
+        , D.CHECK_OUT_DATE  AS checkOutDate
+        , D.CHECK_OUT_TIME  AS checkOutTime
+        , D.ATTD_STATUS_CD  AS attdStatusCd
+        , D.OT_MINUTES      AS otMinutes
+        , D.LEAVE_NM        AS leaveNm
+        , D.LEAVE_DAYS      AS leaveDays
+        , D.LEAVE_MINUTES   AS leaveMinutes
+        , D.LEAVE_END_YMD   AS leaveEndYmd
+    FROM TB_CMPNY_SHARE_SNAPSHOT_ATTD D
+    WHERE D.SNAPSHOT_ID = #{snapshotId}
+      AND EXISTS (
+            SELECT 1
+              FROM TB_CMPNY_SHARE_SNAPSHOT S
+             WHERE S.SNAPSHOT_ID    = D.SNAPSHOT_ID
+               AND S.OWNER_CMPNY_CD = #{gvCmpnyCd}
+      )
+    ORDER BY D.WORK_YMD ASC, D.WORKER_SEQ ASC, D.WORK_SEQ ASC, D.DETAIL_ID ASC
+    LIMIT #{limit} OFFSET #{offset}
+    </select>
+
+    <!-- ============================================================
+         관계 해지 훅(T3-07) — REQUESTED 요청만 자동 취소한다.
+         스냅샷/상세행/번들은 무접촉(결정 3: 해지 후에도 수신 자료 존속 — DELETE 경로 없음).
+         ============================================================ -->
+    <select id="selectRequestedCntByRelation" resultType="int">
+    /* Subcon03Mapper.selectRequestedCntByRelation */
+    SELECT COUNT(*)
+    FROM TB_CMPNY_SHARE_REQ R
+    WHERE R.RELATION_ID = #{relationId}
+      AND R.STATUS      = 'REQUESTED'
+    </select>
+
+    <!-- ============================================================
+         [T7] 위험성평가(RISK) 스냅샷 원천 수집(§5-4) — 확정 상태 IN + INIT_ASSESS_DATE 기간.
+           명칭 스냅샷: PROCESS/RISK_TYPE/HAZARD/STATUS 를 제공사 스코프에서 명칭으로 해석(risk03 조인식 준용).
+           성명은 원천 평문(FNC_CMM_INFO_SRCH USER_NM) 그대로. FILE_MGMT_CD 는 원본(제공사 소유) 코드 — 복제 대상.
+         ※ record 위치매핑 — SELECT 컬럼 순서 = RiskSourceRow 컴포넌트 순서(순서 변경 금지).
+         ============================================================ -->
+    <select id="selectRiskSourceRows" resultType="com.prafta.web.subcon.subcon03.result.RiskSourceRow">
+    /* Subcon03Mapper.selectRiskSourceRows */
+    SELECT
+        A.PROCESS_CD                                                        AS processCd
+        , A.ASSESSMENT_CD                                                   AS assessmentCd
+        , A.INIT_ASSESSOR_ID                                                AS initAssessorId
+        , A.REVAL_ASSESSOR_ID                                               AS revalAssessorId
+        , C.BAIM_VAL_D_NM                                                   AS processNm
+        , D.RISK_TYPE_NM                                                    AS riskTypeNm
+        , CASE WHEN A.HAZARD_CD = 'self' THEN A.ASSESSMENT_DESC ELSE E.HAZARD_NM END AS hazardNm
+        , A.ASSESSMENT_DESC                                                 AS assessmentDesc
+        , B.SYST_VAL_D_NM                                                   AS assessmentStatusNm
+        , FNC_CMM_INFO_SRCH(A.CMPNY_CD, 'USER_NM', A.INIT_ASSESSOR_ID, NULL)  AS initAssessorNm
+        , A.INIT_LIKELIHOOD_SCORE                                           AS initLikelihood
+        , A.INIT_SEVERITY_SCORE                                             AS initSeverity
+        , A.INIT_RISK_LV                                                    AS initRiskLv
+        , A.INIT_DESC                                                       AS initDesc
+        , DATE_FORMAT(A.INIT_ASSESS_DATE, '%Y%m%d')                         AS initAssessDate
+        , A.INIT_FILE_MGMT_CD                                               AS initFileMgmtCd
+        , FNC_CMM_INFO_SRCH(A.CMPNY_CD, 'USER_NM', A.REVAL_ASSESSOR_ID, NULL) AS revalAssessorNm
+        , A.REVAL_LIKELIHOOD_SCORE                                          AS revalLikelihood
+        , A.REVAL_SEVERITY_SCORE                                            AS revalSeverity
+        , A.REVAL_RISK_LV                                                   AS revalRiskLv
+        , A.REVAL_DESC                                                      AS revalDesc
+        , A.REVAL_DATE                                                      AS revalAssessDate
+        , A.REVAL_FILE_MGMT_CD                                              AS revalFileMgmtCd
+    FROM TB_RISK_ASSESSMENT A
+        LEFT OUTER JOIN TB_SYST_VAL_D B
+            ON  B.SYST_VAL_CD = 'SYS011'
+            AND B.USE_YN = 'Y'
+            AND A.ASSESSMENT_STATUS = B.SYST_VAL_D_CD
+        LEFT OUTER JOIN TB_BAIM_VAL_D C
+            ON  C.CMPNY_CD = A.CMPNY_CD
+            AND C.BAIM_VAL_CD = 'COM002'
+            AND A.PROCESS_CD = C.BAIM_VAL_D_CD
+            AND C.USE_YN = 'Y'
+        LEFT OUTER JOIN TB_RISK_TYPE D
+            ON  A.CMPNY_CD = D.CMPNY_CD
+            AND A.RISK_TYPE_CD = D.RISK_TYPE_CD
+        LEFT OUTER JOIN TB_RISK_SITE_HAZARD E
+            ON  A.CMPNY_CD = E.CMPNY_CD
+            AND A.RISK_TYPE_CD = E.RISK_TYPE_CD
+            AND A.HAZARD_CD = E.HAZARD_CD
+    WHERE A.CMPNY_CD = #{prvCmpnyCd}
+      AND A.SITE_CD  = #{targetSiteCd}
+      AND A.ASSESSMENT_STATUS IN
+      <foreach collection="statusList" item="st" open="(" separator="," close=")">#{st}</foreach>
+      AND DATE(A.INIT_ASSESS_DATE) BETWEEN STR_TO_DATE(#{periodStr}, '%Y%m%d') AND STR_TO_DATE(#{periodEnd}, '%Y%m%d')
+    ORDER BY A.INIT_ASSESSOR_ID ASC, A.PROCESS_CD ASC, A.ASSESSMENT_CD ASC
+    </select>
+
+    <!-- [T7] 위험성평가 개선항목 원천(USE_YN='Y') — 확정 평가에 매달린 자식만.
+         ※ record 위치매핑 — SELECT 순서 = RiskImproveSourceRow 컴포넌트 순서. -->
+    <select id="selectRiskImproveSourceRows" resultType="com.prafta.web.subcon.subcon03.result.RiskImproveSourceRow">
+    /* Subcon03Mapper.selectRiskImproveSourceRows */
+    SELECT
+        I.PROCESS_CD        AS processCd
+        , I.ASSESSMENT_CD   AS assessmentCd
+        , I.IMPROVEMENT_SEQ AS improveSeq
+        , I.IMPROVE_DATE    AS improveDate
+        , I.IMPROVE_DESC    AS improveDesc
+        , I.LIKELIHOOD_SCORE AS likelihood
+        , I.SEVERITY_SCORE  AS severity
+        , I.RISK_LV         AS riskLv
+        , I.FILE_MGMT_CD    AS fileMgmtCd
+    FROM TB_RISK_IMPROVEMENT_ITEM I
+    WHERE I.CMPNY_CD = #{prvCmpnyCd}
+      AND I.SITE_CD  = #{targetSiteCd}
+      AND I.USE_YN   = 'Y'
+      AND EXISTS (
+            SELECT 1
+              FROM TB_RISK_ASSESSMENT A
+             WHERE A.CMPNY_CD      = I.CMPNY_CD
+               AND A.SITE_CD       = I.SITE_CD
+               AND A.PROCESS_CD    = I.PROCESS_CD
+               AND A.ASSESSMENT_CD = I.ASSESSMENT_CD
+               AND A.ASSESSMENT_STATUS IN
+               <foreach collection="statusList" item="st" open="(" separator="," close=")">#{st}</foreach>
+               AND DATE(A.INIT_ASSESS_DATE) BETWEEN STR_TO_DATE(#{periodStr}, '%Y%m%d') AND STR_TO_DATE(#{periodEnd}, '%Y%m%d')
+      )
+    ORDER BY I.PROCESS_CD ASC, I.ASSESSMENT_CD ASC, I.IMPROVEMENT_SEQ ASC
+    </select>
+
+    <!-- [T7] 위험성평가 상세행 INSERT(단건 — 개선항목 부모 DETAIL_ID 회수). -->
+    <insert id="insertSnapshotRisk" parameterType="com.prafta.web.subcon.subcon03.application.command.SnapshotRiskInsertCommand"
+            useGeneratedKeys="true" keyProperty="detailId">
+    /* Subcon03Mapper.insertSnapshotRisk */
+    INSERT INTO TB_CMPNY_SHARE_SNAPSHOT_RISK (
+          SNAPSHOT_ID
+        , ROW_SEQ
+        , AFFIL_CMPNY_NM
+        , ASSESSOR_SEQ
+        , PROCESS_NM
+        , RISK_TYPE_NM
+        , HAZARD_NM
+        , ASSESSMENT_DESC
+        , ASSESSMENT_STATUS_NM
+        , INIT_ASSESSOR_NM
+        , INIT_LIKELIHOOD
+        , INIT_SEVERITY
+        , INIT_RISK_LV
+        , INIT_DESC
+        , INIT_ASSESS_DATE
+        , INIT_FILE_MGMT_CD
+        , REVAL_ASSESSOR_NM
+        , REVAL_LIKELIHOOD
+        , REVAL_SEVERITY
+        , REVAL_RISK_LV
+        , REVAL_DESC
+        , REVAL_ASSESS_DATE
+        , REVAL_FILE_MGMT_CD
+        , INSERT_NO
+        , INSERT_DATE
+    ) VALUES (
+          #{snapshotId}
+        , #{rowSeq}
+        , #{affilCmpnyNm}
+        , #{assessorSeq}
+        , #{processNm}
+        , #{riskTypeNm}
+        , #{hazardNm}
+        , #{assessmentDesc}
+        , #{assessmentStatusNm}
+        , #{initAssessorNm}
+        , #{initLikelihood}
+        , #{initSeverity}
+        , #{initRiskLv}
+        , #{initDesc}
+        , #{initAssessDate}
+        , #{initFileMgmtCd}
+        , #{revalAssessorNm}
+        , #{revalLikelihood}
+        , #{revalSeverity}
+        , #{revalRiskLv}
+        , #{revalDesc}
+        , #{revalAssessDate}
+        , #{revalFileMgmtCd}
+        , #{insertNo}
+        , NOW()
+    )
+    </insert>
+
+    <!-- [T7] 위험성평가 개선항목 자식행 배치 INSERT. -->
+    <insert id="insertSnapshotRiskImproveRows">
+    /* Subcon03Mapper.insertSnapshotRiskImproveRows */
+    INSERT INTO TB_CMPNY_SHARE_SNAPSHOT_RISK_IMPROVE (
+          DETAIL_ID
+        , SNAPSHOT_ID
+        , IMPROVE_SEQ
+        , IMPROVE_DATE
+        , IMPROVE_DESC
+        , LIKELIHOOD
+        , SEVERITY
+        , RISK_LV
+        , FILE_MGMT_CD
+        , INSERT_NO
+        , INSERT_DATE
+    ) VALUES
+    <foreach collection="rows" item="row" separator=",">
+        (
+              #{row.detailId}
+            , #{row.snapshotId}
+            , #{row.improveSeq}
+            , #{row.improveDate}
+            , #{row.improveDesc}
+            , #{row.likelihood}
+            , #{row.severity}
+            , #{row.riskLv}
+            , #{row.fileMgmtCd}
+            , #{row.insertNo}
+            , NOW()
+        )
+    </foreach>
+    </insert>
+
+    <!-- [T7] 스냅샷 내 최대 RISK ROW_SEQ / ASSESSOR_SEQ(릴레이 오프셋). -->
+    <select id="selectMaxRiskRowSeq" resultType="int">
+    /* Subcon03Mapper.selectMaxRiskRowSeq */
+    SELECT IFNULL(MAX(R.ROW_SEQ), 0)
+    FROM TB_CMPNY_SHARE_SNAPSHOT_RISK R
+    WHERE R.SNAPSHOT_ID = #{snapshotId}
+    </select>
+
+    <select id="selectMaxRiskAssessorSeq" resultType="int">
+    /* Subcon03Mapper.selectMaxRiskAssessorSeq */
+    SELECT IFNULL(MAX(R.ASSESSOR_SEQ), 0)
+    FROM TB_CMPNY_SHARE_SNAPSHOT_RISK R
+    WHERE R.SNAPSHOT_ID = #{snapshotId}
+    </select>
+
+    <!-- ============================================================
+         [T7] 아차사고(NEARMISS) 스냅샷 원천 수집(§5-4) — 확정 상태 IN + OCCUR_DTIME 기간.
+           명칭 스냅샷: PROCESS/POTENTIAL_SEVERITY(SYS062)/REPORT_STATUS(SYS063). 성명 평문. FILE_MGMT_CD 는 복제 대상.
+         ※ record 위치매핑 — SELECT 순서 = NearmissSourceRow 컴포넌트 순서.
+         ※ 기간 비교 부등호는 &gt;= / &lt;= 로 이스케이프(XML 파서 보호).
+         ============================================================ -->
+    <select id="selectNearmissSourceRows" resultType="com.prafta.web.subcon.subcon03.result.NearmissSourceRow">
+    /* Subcon03Mapper.selectNearmissSourceRows */
+    SELECT
+        A.REPORTER_ID                                                       AS reporterId
+        , A.NEAR_MISS_ID                                                    AS nearMissId
+        , FNC_CMM_INFO_SRCH(A.CMPNY_CD, 'USER_NM', A.REPORTER_ID, NULL)     AS reporterNm
+        , DATE_FORMAT(A.OCCUR_DTIME, '%Y-%m-%d %H:%i:%s')                   AS occurDtime
+        , C.BAIM_VAL_D_NM                                                   AS processNm
+        , A.LOCATION_DESC                                                   AS locationDesc
+        , A.DESCRIPTION                                                     AS description
+        , FNC_CMM_INFO_SRCH(A.CMPNY_CD, 'SYST_VAL', A.POTENTIAL_SEVERITY_CD, 'SYS062') AS potentialSeverityNm
+        , A.IMMEDIATE_ACTION_DESC                                           AS immediateActionDesc
+        , A.ADMIN_TEMP_ACTION_DESC                                          AS adminTempActionDesc
+        , A.CAUSE_DESC                                                      AS causeDesc
+        , A.PREVENTION_DESC                                                 AS preventionDesc
+        , FNC_CMM_INFO_SRCH(A.CMPNY_CD, 'SYST_VAL', A.REPORT_STATUS_CD, 'SYS063') AS reportStatusNm
+        , A.FILE_MGMT_CD                                                    AS fileMgmtCd
+    FROM TB_NEAR_MISS A
+        LEFT OUTER JOIN TB_BAIM_VAL_D C
+            ON  A.CMPNY_CD = C.CMPNY_CD
+            AND C.BAIM_VAL_CD = 'COM002'
+            AND A.PROCESS_CD = C.BAIM_VAL_D_CD
+            AND C.USE_YN = 'Y'
+    WHERE A.CMPNY_CD = #{prvCmpnyCd}
+      AND A.SITE_CD  = #{targetSiteCd}
+      AND A.USE_YN   = 'Y'
+      AND A.REPORT_STATUS_CD IN
+      <foreach collection="statusList" item="st" open="(" separator="," close=")">#{st}</foreach>
+      AND A.OCCUR_DTIME <![CDATA[ >= ]]> STR_TO_DATE(CONCAT(#{periodStr}, '000000'), '%Y%m%d%H%i%s')
+      AND A.OCCUR_DTIME <![CDATA[ <= ]]> STR_TO_DATE(CONCAT(#{periodEnd}, '235959'), '%Y%m%d%H%i%s')
+    ORDER BY A.REPORTER_ID ASC, A.OCCUR_DTIME ASC, A.NEAR_MISS_ID ASC
+    </select>
+
+    <!-- [T7] 아차사고 상세행 배치 INSERT. -->
+    <insert id="insertSnapshotNearmissRows">
+    /* Subcon03Mapper.insertSnapshotNearmissRows */
+    INSERT INTO TB_CMPNY_SHARE_SNAPSHOT_NEARMISS (
+          SNAPSHOT_ID
+        , ROW_SEQ
+        , AFFIL_CMPNY_NM
+        , REPORTER_SEQ
+        , REPORTER_NM
+        , OCCUR_DTIME
+        , PROCESS_NM
+        , LOCATION_DESC
+        , DESCRIPTION
+        , POTENTIAL_SEVERITY_NM
+        , IMMEDIATE_ACTION_DESC
+        , ADMIN_TEMP_ACTION_DESC
+        , CAUSE_DESC
+        , PREVENTION_DESC
+        , REPORT_STATUS_NM
+        , FILE_MGMT_CD
+        , INSERT_NO
+        , INSERT_DATE
+    ) VALUES
+    <foreach collection="rows" item="row" separator=",">
+        (
+              #{row.snapshotId}
+            , #{row.rowSeq}
+            , #{row.affilCmpnyNm}
+            , #{row.reporterSeq}
+            , #{row.reporterNm}
+            , #{row.occurDtime}
+            , #{row.processNm}
+            , #{row.locationDesc}
+            , #{row.description}
+            , #{row.potentialSeverityNm}
+            , #{row.immediateActionDesc}
+            , #{row.adminTempActionDesc}
+            , #{row.causeDesc}
+            , #{row.preventionDesc}
+            , #{row.reportStatusNm}
+            , #{row.fileMgmtCd}
+            , #{row.insertNo}
+            , NOW()
+        )
+    </foreach>
+    </insert>
+
+    <!-- [T7] 스냅샷 내 최대 NEARMISS ROW_SEQ / REPORTER_SEQ(릴레이 오프셋). -->
+    <select id="selectMaxNearmissRowSeq" resultType="int">
+    /* Subcon03Mapper.selectMaxNearmissRowSeq */
+    SELECT IFNULL(MAX(N.ROW_SEQ), 0)
+    FROM TB_CMPNY_SHARE_SNAPSHOT_NEARMISS N
+    WHERE N.SNAPSHOT_ID = #{snapshotId}
+    </select>
+
+    <select id="selectMaxNearmissReporterSeq" resultType="int">
+    /* Subcon03Mapper.selectMaxNearmissReporterSeq */
+    SELECT IFNULL(MAX(N.REPORTER_SEQ), 0)
+    FROM TB_CMPNY_SHARE_SNAPSHOT_NEARMISS N
+    WHERE N.SNAPSHOT_ID = #{snapshotId}
+    </select>
+
+    <!-- ============================================================
+         [T7] 수신 상세 조회(§5-8) — 소유 검증(EXISTS OWNER=gv)을 SQL 안에 둔다(서비스 분기 누락 방지).
+           타사 snapshotId 로 호출하면 0행(존재 비노출). 릴레이 복사도 이 조회를 재사용(ownerCmpnyCd=gv=승인자).
+           응답/복사분에 USER_CD/하위 회사/원본 FILE_PATH 는 존재하지 않는다. 성명은 평문 그대로.
+         ============================================================ -->
+    <select id="selectSnapshotRiskRows" resultType="com.prafta.web.subcon.subcon03.result.SnapshotRiskDetailResult">
+    /* Subcon03Mapper.selectSnapshotRiskRows */
+    SELECT
+        R.DETAIL_ID             AS detailId
+        , R.ROW_SEQ             AS rowSeq
+        , R.ASSESSOR_SEQ        AS assessorSeq
+        , R.AFFIL_CMPNY_NM      AS affilCmpnyNm
+        , R.PROCESS_NM          AS processNm
+        , R.RISK_TYPE_NM        AS riskTypeNm
+        , R.HAZARD_NM           AS hazardNm
+        , R.ASSESSMENT_DESC     AS assessmentDesc
+        , R.ASSESSMENT_STATUS_NM AS assessmentStatusNm
+        , R.INIT_ASSESSOR_NM    AS initAssessorNm
+        , R.INIT_LIKELIHOOD     AS initLikelihood
+        , R.INIT_SEVERITY       AS initSeverity
+        , R.INIT_RISK_LV        AS initRiskLv
+        , R.INIT_DESC           AS initDesc
+        , R.INIT_ASSESS_DATE    AS initAssessDate
+        , R.INIT_FILE_MGMT_CD   AS initFileMgmtCd
+        , R.REVAL_ASSESSOR_NM   AS revalAssessorNm
+        , R.REVAL_LIKELIHOOD    AS revalLikelihood
+        , R.REVAL_SEVERITY      AS revalSeverity
+        , R.REVAL_RISK_LV       AS revalRiskLv
+        , R.REVAL_DESC          AS revalDesc
+        , R.REVAL_ASSESS_DATE   AS revalAssessDate
+        , R.REVAL_FILE_MGMT_CD  AS revalFileMgmtCd
+    FROM TB_CMPNY_SHARE_SNAPSHOT_RISK R
+    WHERE R.SNAPSHOT_ID = #{snapshotId}
+      AND EXISTS (
+            SELECT 1
+              FROM TB_CMPNY_SHARE_SNAPSHOT S
+             WHERE S.SNAPSHOT_ID    = R.SNAPSHOT_ID
+               AND S.OWNER_CMPNY_CD = #{gvCmpnyCd}
+      )
+    ORDER BY R.ROW_SEQ ASC, R.DETAIL_ID ASC
+    </select>
+
+    <!-- [T7] 위험성평가 개선항목 자식 조회 — record 위치매핑(improveId..fileMgmtCd 순). -->
+    <select id="selectSnapshotRiskImproveRows" resultType="com.prafta.web.subcon.subcon03.result.SnapshotRiskImproveResult">
+    /* Subcon03Mapper.selectSnapshotRiskImproveRows */
+    SELECT
+        I.IMPROVE_ID    AS improveId
+        , I.DETAIL_ID   AS detailId
+        , I.IMPROVE_SEQ AS improveSeq
+        , I.IMPROVE_DATE AS improveDate
+        , I.IMPROVE_DESC AS improveDesc
+        , I.LIKELIHOOD  AS likelihood
+        , I.SEVERITY    AS severity
+        , I.RISK_LV     AS riskLv
+        , I.FILE_MGMT_CD AS fileMgmtCd
+    FROM TB_CMPNY_SHARE_SNAPSHOT_RISK_IMPROVE I
+    WHERE I.SNAPSHOT_ID = #{snapshotId}
+      AND EXISTS (
+            SELECT 1
+              FROM TB_CMPNY_SHARE_SNAPSHOT S
+             WHERE S.SNAPSHOT_ID    = I.SNAPSHOT_ID
+               AND S.OWNER_CMPNY_CD = #{gvCmpnyCd}
+      )
+    ORDER BY I.DETAIL_ID ASC, I.IMPROVE_SEQ ASC
+    </select>
+
+    <!-- [T7] 아차사고 수신 상세 조회 — occurDtime 표시 포맷(분 단위). 릴레이 재복사도 재사용. -->
+    <select id="selectSnapshotNearmissRows" resultType="com.prafta.web.subcon.subcon03.result.SnapshotNearmissDetailResult">
+    /* Subcon03Mapper.selectSnapshotNearmissRows */
+    SELECT
+        N.DETAIL_ID              AS detailId
+        , N.ROW_SEQ              AS rowSeq
+        , N.REPORTER_SEQ         AS reporterSeq
+        , N.AFFIL_CMPNY_NM       AS affilCmpnyNm
+        , N.REPORTER_NM          AS reporterNm
+        , DATE_FORMAT(N.OCCUR_DTIME, '%Y-%m-%d %H:%i') AS occurDtime
+        , N.PROCESS_NM           AS processNm
+        , N.LOCATION_DESC        AS locationDesc
+        , N.DESCRIPTION          AS description
+        , N.POTENTIAL_SEVERITY_NM AS potentialSeverityNm
+        , N.IMMEDIATE_ACTION_DESC AS immediateActionDesc
+        , N.ADMIN_TEMP_ACTION_DESC AS adminTempActionDesc
+        , N.CAUSE_DESC           AS causeDesc
+        , N.PREVENTION_DESC      AS preventionDesc
+        , N.REPORT_STATUS_NM     AS reportStatusNm
+        , N.FILE_MGMT_CD         AS fileMgmtCd
+    FROM TB_CMPNY_SHARE_SNAPSHOT_NEARMISS N
+    WHERE N.SNAPSHOT_ID = #{snapshotId}
+      AND EXISTS (
+            SELECT 1
+              FROM TB_CMPNY_SHARE_SNAPSHOT S
+             WHERE S.SNAPSHOT_ID    = N.SNAPSHOT_ID
+               AND S.OWNER_CMPNY_CD = #{gvCmpnyCd}
+      )
+    ORDER BY N.ROW_SEQ ASC, N.DETAIL_ID ASC
+    </select>
+
+    <!-- ============================================================
+         [T7] 첨부 서빙 소유+참조 검증(§5-9 — IDOR 봉인).
+           소유: snapshotId 의 OWNER_CMPNY_CD 가 gv 여야 결과행이 존재(아니면 0행 → null).
+           참조: fileMgmtCd 가 그 스냅샷의 상세행/개선항목 첨부 집합에 있으면 REF_CNT 양수.
+           임의 파일코드/타사 snapshotId 는 null(소유 실패) 또는 0(참조 실패) → 서비스가 404 통합.
+         ============================================================ -->
+    <select id="selectSnapshotFileRefCnt" resultType="java.lang.Integer">
+    /* Subcon03Mapper.selectSnapshotFileRefCnt */
+    SELECT (
+          (
+            SELECT COUNT(1)
+              FROM TB_CMPNY_SHARE_SNAPSHOT_RISK R
+             WHERE R.SNAPSHOT_ID = #{snapshotId}
+               AND (R.INIT_FILE_MGMT_CD = #{fileMgmtCd} OR R.REVAL_FILE_MGMT_CD = #{fileMgmtCd})
+          )
+        + (
+            SELECT COUNT(1)
+              FROM TB_CMPNY_SHARE_SNAPSHOT_RISK_IMPROVE I
+             WHERE I.SNAPSHOT_ID  = #{snapshotId}
+               AND I.FILE_MGMT_CD = #{fileMgmtCd}
+          )
+        + (
+            SELECT COUNT(1)
+              FROM TB_CMPNY_SHARE_SNAPSHOT_NEARMISS N
+             WHERE N.SNAPSHOT_ID  = #{snapshotId}
+               AND N.FILE_MGMT_CD = #{fileMgmtCd}
+          )
+    ) AS refCnt
+    FROM TB_CMPNY_SHARE_SNAPSHOT S
+    WHERE S.SNAPSHOT_ID    = #{snapshotId}
+      AND S.OWNER_CMPNY_CD = #{gvCmpnyCd}
+    </select>
+
+    <!-- 관계 해지 자동 취소 — 행위자 소속 회사를 특정할 수 없어 PROCESS_CMPNY_CD 는 NULL 유지(자동처리 표식). -->
+    <update id="cancelShareReqByRelation">
+    /* Subcon03Mapper.cancelShareReqByRelation */
+    UPDATE TB_CMPNY_SHARE_REQ
+       SET STATUS          = 'CANCELLED'
+         , PROCESS_USER_CD = #{actionUserCd}
+         , PROCESS_DTIME   = NOW()
+         , PROCESS_COMMENT = '관계 해지에 따른 자동 취소'
+         , UPDATE_NO       = #{actionUserCd}
+         , UPDATE_DATE     = NOW()
+     WHERE RELATION_ID = #{relationId}
+       AND STATUS      = 'REQUESTED'
+    </update>
+</mapper>

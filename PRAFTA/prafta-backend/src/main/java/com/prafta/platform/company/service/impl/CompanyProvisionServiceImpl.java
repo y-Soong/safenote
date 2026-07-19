@@ -19,6 +19,7 @@ import com.prafta.common.util.AuthRoleUtils;
 import com.prafta.common.util.PasswordHasher;
 import com.prafta.platform.common.command.CompanyInsertCommand;
 import com.prafta.platform.common.command.PlatformUserInsertCommand;
+import com.prafta.platform.company.application.command.LeavePolicySeedCommand;
 import com.prafta.platform.company.application.command.SiteInsertCommand;
 import com.prafta.platform.company.application.command.SiteNodeInsertCommand;
 import com.prafta.platform.company.application.command.WorktypeSeedCommand;
@@ -114,6 +115,13 @@ public class CompanyProvisionServiceImpl implements CompanyProvisionService {
         //    HMAC 은 DB 함수가 아니라 애플리케이션(HmacSigner)에서 시크릿 키로 계산해 비교한다(저장 시와 동일 규약).
         if (companyProvisionMapper.selectPhoneNumberExists(hmacSigner.hmacSha256Base64Url(phoneNorm)) > 0) {
             throw new ApiException(PlatformErrorCode.PLATFORM_400_008);
+        }
+
+        // 5-1) 관리자 ID 중복 검사(전사 대상).
+        //      로그인은 회사코드 없이 USER_ID 만으로 사용자를 찾으므로 ID 는 전역 유일해야 한다
+        //      (UNIQUE UX_TB_USER_ID(USER_ID)). 사전 검사가 없으면 INSERT 단계에서 제약 위반 500 이 난다.
+        if (companyProvisionMapper.selectUserIdExists(null, adminId) > 0) {
+            throw new ApiException(PlatformErrorCode.PLATFORM_400_009);
         }
 
         // 6) 계약 종료일 형식 검증(입력 시만, YYYYMMDD 8자리).
@@ -218,6 +226,31 @@ public class CompanyProvisionServiceImpl implements CompanyProvisionService {
                 , DEFAULT_SCH_END_TIME
                 , param.gvUserCd()
         ));
+
+        // 18-1) ★신규 고객사 필수 시드 — 시스템 연차 6종.
+        //   이 6종(SYS_ANNUAL/MONTHLY/TENURE_BONUS/PREGRANT/PROMOTION/BIRTHDAY)은 SYSTEM_YN='Y' 라
+        //   화면(Attd_03)에서 만들 수 없다(편집 차단 + 신규 생성은 항상 'N'+자동채번 코드).
+        //   여기서 넣어주지 않으면 그 고객사는 연차 부여·신청이 영구 불가하다(ATTD_400_059 / ATTD_404_030).
+        int leaveTypes = companyProvisionMapper.seedSystemLeaveTypes(cmpnyCd, param.gvUserCd());
+
+        // 18-2) ★신규 고객사 필수 시드 — 기본 연차정책(7축 법정값) + 사용정책(1:1).
+        //   정책이 없으면 연차 부여가 아예 동작하지 않는다. 관리자가 Baim_07 에서 언제든 변경할 수 있다.
+        LeavePolicySeedCommand policySeed = new LeavePolicySeedCommand(cmpnyCd, todayYmd, param.gvUserCd());
+        companyProvisionMapper.seedDefaultLeavePolicy(policySeed);   // POLICY_SEQ 회수(useGeneratedKeys)
+        companyProvisionMapper.seedDefaultLeaveUsagePolicy(policySeed);
+
+        // 18-3) 위험성평가 기준정보(Risk_01) — "공통관리" 항목만 복제(사업장 전용은 제외: 신규 회사에 그 사업장이 없다).
+        //   화면이 2단(위험분류 + 유해위험요인)이라 둘 다 옮겨야 반쪽이 되지 않는다.
+        //   카테고리(PROCESS_CD)는 재번호 대상이라 "이름 기준 매핑"으로 붙인다(매퍼 주석 참조).
+        int riskTypes = companyProvisionMapper.copyCommonRiskTypeFromTemplate(
+                TEMPLATE_CMPNY_CD, cmpnyCd, param.gvUserCd());
+        int riskHazards = companyProvisionMapper.copyCommonRiskHazardFromTemplate(
+                TEMPLATE_CMPNY_CD, cmpnyCd, param.gvUserCd());
+        companyProvisionMapper.seedRiskSeq(cmpnyCd);
+        companyProvisionMapper.seedHazardSeq(cmpnyCd);
+
+        log.info("신규 고객사 시드 완료 - cmpnyCd={}, 시스템연차={}건, 연차정책seq={}, 위험분류={}건, 유해위험요인={}건",
+                cmpnyCd, leaveTypes, policySeed.getPolicySeq(), riskTypes, riskHazards);
 
         // 19) 휴일 동기화(올해+내년) — 외부 API 실패가 회사 생성 전체를 롤백시키지 않도록 best-effort.
         //     HolidaySyncService.syncYear 는 @Transactional(REQUIRED) 이라 본 트랜잭션에 참여하면

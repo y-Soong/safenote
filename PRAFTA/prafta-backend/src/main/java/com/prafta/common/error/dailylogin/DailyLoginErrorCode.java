@@ -33,6 +33,12 @@ public enum DailyLoginErrorCode implements ApiErrorCode {
     // prafta-daily-blacklist: 블랙리스트 등록 휴대폰의 자동 재활성 차단.
     //   사유(블랙리스트)는 직접 노출하지 않고 "이용 제한"으로만 안내(정보 노출 회피).
     , DAILYLOGIN_400_005(HttpStatus.BAD_REQUEST, "이용이 제한된 계정입니다. 관리자에게 문의해 주세요.")
+    // 일용직 입장 승인제(D5): 관리자 승인 대기 중(요청 생성 직후 포함). R4 — 승인 후 재로그인 유도.
+    //   반드시 비밀번호 검증을 통과한 경우에만 노출한다(003 전례 미러, enumeration 방지).
+    , DAILYLOGIN_400_006(HttpStatus.BAD_REQUEST, "관리자 승인 대기 중입니다. 승인 후 다시 로그인해 주세요.")
+    // 일용직 입장 승인제(D10): 당일 거부됨. 거부 사유 상세는 미노출(§4-1 통합 메시지).
+    //   비밀번호 검증 통과 후에만 노출(006 과 동일 규칙).
+    , DAILYLOGIN_400_007(HttpStatus.BAD_REQUEST, "입장이 승인되지 않았습니다. 관리자에게 문의해 주세요.")
     ;
 
     private final HttpStatus httpStatus;

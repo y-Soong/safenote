@@ -10,9 +10,15 @@ import com.prafta.web.tbm.tbm02.application.param.SessionListParam;
 import com.prafta.web.tbm.tbm02.application.param.SessionPrepareParam;
 import com.prafta.web.tbm.tbm02.application.param.SessionPwdParam;
 import com.prafta.web.tbm.tbm02.application.param.SessionSaveParam;
+import com.prafta.web.tbm.tbm02.application.param.SessionShareParam;
+import com.prafta.web.tbm.tbm02.application.param.SharedSessionListParam;
+import com.prafta.web.tbm.tbm02.dto.response.SharedSessionListResponse;
 import com.prafta.web.tbm.tbm02.application.param.SessionTransitionParam;
 import com.prafta.web.tbm.tbm02.application.param.SessionUpdateParam;
 import com.prafta.web.tbm.tbm02.dto.response.ContentOptionResponse;
+import com.prafta.web.tbm.tbm02.dto.response.SessionShareCandidateResponse;
+import com.prafta.web.tbm.tbm02.dto.response.SessionShareListResponse;
+import com.prafta.web.tbm.tbm02.dto.response.ShareAllowedCmpnyResponse;
 import com.prafta.web.tbm.tbm02.dto.response.EntryCandidateResponse;
 import com.prafta.web.tbm.tbm02.dto.response.ManagerEnterResponse;
 import com.prafta.web.tbm.tbm02.dto.response.RiskOptionResponse;
@@ -72,6 +78,26 @@ public interface Tbm02Service {
 
 	/** 입실자 내보내기(soft delete, prafta-051-12). */
 	void ejectAttendance(EjectAttendanceParam param);
+
+	/* ===== PRAFTA-SUBCON-T5 연동 회사 지정 ===== */
+
+	/** D2: 연동받은 교육 목록(비개설사 전용, 헤더 최소 필드 + 재지정 진입점). */
+	SharedSessionListResponse selectSharedSessionList(SharedSessionListParam param);
+
+	/** 연동 회사 지정 후보(관계 ACCEPTED − 개설사 − 이미 체인에 있는 회사). */
+	SessionShareCandidateResponse selectShareCandidates(SessionShareParam param);
+
+	/** 연동 회사 지정 현황(내가 직접 지정한 회사 + 하위 재지정 개사 수). */
+	SessionShareListResponse selectSessionShares(SessionShareParam param);
+
+	/** 입실 대상 회사 목록(개설사 + 지정 체인, relabel 적용). */
+	ShareAllowedCmpnyResponse selectAllowedCmpnys(SessionShareParam param);
+
+	/** 연동 회사 지정(DRAFT/OPENED 만). */
+	void designateShare(SessionShareParam param);
+
+	/** 연동 회사 지정 해제(자기 지정분만) + 하위 캐스케이드. */
+	void releaseShare(SessionShareParam param);
 
 	/** 콘텐츠 선택 모달 옵션. */
 	ContentOptionResponse selectContentOptions(OptionParam param);

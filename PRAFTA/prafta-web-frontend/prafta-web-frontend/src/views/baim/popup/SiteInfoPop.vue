@@ -31,12 +31,17 @@
         <div class="content-wrapper">
           <!-- 🔹 Form -->
           <div class="form-container">
+            <!-- PRAFTA-SUBCON-T2-09: 미러(연동) 사업장 안내 — 강제는 서버(T2-04)가 담당. -->
+            <p v-if="isMirror" class="mirror-guide">
+              연동(읽기전용) 사업장입니다. 담당자 지정만 변경할 수 있습니다.
+            </p>
             <div class="form-row-max">
               <label>사업장</label>
               <input
                 id="siteNo"
                 v-model="siteNo"
                 placeholder="사업장코드"
+                :disabled="isMirror"
                 @blur="focusKill"
               />
               <div class="editable-form">
@@ -45,6 +50,7 @@
                   v-model="siteNm"
                   ref="siteNmFcs"
                   placeholder="사업장명"
+                  :disabled="isMirror"
                 />
               </div>
             </div>
@@ -63,6 +69,7 @@
                 class="btn btn-primary"
                 ref="addrFcs"
                 style="margin-left: 1px"
+                :disabled="isMirror"
                 @click="onClickAddressSearch"
               >
                 주소찾기
@@ -79,7 +86,7 @@
 
             <div class="form-row-max editable-form">
               <label>상세주소</label>
-              <input v-model="addr2" placeholder="상세주소" />
+              <input v-model="addr2" placeholder="상세주소" :disabled="isMirror" />
             </div>
 
             <div class="form-row-max">
@@ -94,14 +101,14 @@
                 style="width: 10rem; height: 2rem"
                 v-model="endDate"
                 :min-date="endDateMinDate"
-                :readonly="false"
+                :readonly="isMirror"
               />
             </div>
 
             <div class="form-row-max">
               <label>사용여부</label>
               <div style="width: 10rem">
-                <BaseSelect id="useYn" v-model="useYn">
+                <BaseSelect id="useYn" v-model="useYn" :disabled="isMirror">
                   <option
                     v-for="opt in (systCodeArr['SYS003'] || []).filter(
                       (o) => o.systValDCd != null
@@ -141,6 +148,7 @@
                   ref="telNoFcs"
                   style="width: 10rem"
                   v-model="telNo"
+                  :disabled="isMirror"
                   @blur="focusKill"
                 />
               </div>
@@ -151,6 +159,7 @@
                   style="width: 5rem"
                   v-model="gpsRange"
                   maxlength="4"
+                  :disabled="isMirror"
                   @input="handleGpsRangeInput"
                   @blur="focusKill"
                 />
@@ -165,6 +174,7 @@
                 ref="siteDescFcs"
                 style="width: 100%"
                 v-model="siteDesc"
+                :disabled="isMirror"
               />
             </div>
           </div>
@@ -179,7 +189,14 @@
         <div class="modal-footer">
           <div class="btn-group">
             <button class="btn btn-primary" @click="props.reset">초기화</button>
-            <button class="btn btn-primary" @click="fnSiteSave">저장</button>
+            <!-- 좌표 산출 중에는 저장 차단 — 이전 주소 좌표가 저장되는 것을 막는다. -->
+            <button
+              class="btn btn-primary"
+              :disabled="geocoding"
+              @click="fnSiteSave"
+            >
+              {{ geocoding ? "좌표 확인 중..." : "저장" }}
+            </button>
           </div>
         </div>
       </div>
@@ -252,9 +269,21 @@ const gpsRange = ref("");
 const siteDesc = ref("");
 const siteDescFcs = ref("");
 
+// PRAFTA-SUBCON-T2-09: 미러(연동) 사업장 여부 — 잠금 필드 입력 비활성 근거(서버 T2-04 가 최종 강제).
+const isMirror = ref(false);
+
 // 지오코딩 산출 좌표 (BE 계약 필드명 lat/lon, 문자열 전송)
 const lat = ref("");
 const lon = ref("");
+
+// 지오코딩 진행 상태 — addressSearch 는 비동기 콜백이라, 주소 변경 직후 곧바로 저장하면
+//   lat/lon 이 아직 '이전 주소'의 좌표인 채로 전송될 수 있다(주소-좌표 불일치가 무경고로 저장됨).
+//   저장 버튼 비활성 + 저장 시 in-flight 결과 대기, 2중으로 막는다.
+const geocoding = ref(false);
+let geocodePromise = null;
+
+// 콜백이 끝내 오지 않는 경우(네트워크 단절 등) 저장이 영구 대기하지 않도록 하는 상한.
+const GEOCODE_TIMEOUT_MS = 5000;
 
 const mapContainer = ref(null);
 let map = null;
@@ -363,11 +392,44 @@ const initMap = async () => {
   }
 };
 
-// 주소로 지도 위치 업데이트
+// 주소로 지도 위치 업데이트 (지오코딩 완료 시점을 저장 로직이 기다릴 수 있도록 Promise 반환)
 const updateMapLocation = (address) => {
-  if (!geocoder || !map || !address) return;
+  if (!geocoder || !map || !address) return Promise.resolve();
 
-  geocoder.addressSearch(address, (result, status) => {
+  geocoding.value = true;
+  geocodePromise = new Promise((resolve) => {
+    let settled = false;
+    const done = () => {
+      if (settled) return;
+      settled = true;
+      geocoding.value = false;
+      resolve();
+    };
+    // 콜백 미도착 대비 상한 — 시간 초과 시 좌표 없음으로 확정(저장 시 D4 경고 트리거)
+    const timer = setTimeout(() => {
+      if (settled) return;
+      lat.value = "";
+      lon.value = "";
+      console.warn("주소 검색 시간 초과:", address);
+      done();
+    }, GEOCODE_TIMEOUT_MS);
+
+    geocoder.addressSearch(address, (result, status) => {
+      clearTimeout(timer);
+      if (settled) return;
+      try {
+        applyGeocodeResult(result, status);
+      } finally {
+        done();
+      }
+    });
+  });
+  return geocodePromise;
+};
+
+// 지오코딩 콜백 본문 — 성공 시 좌표/마커/반경원 갱신, 실패 시 좌표 초기화.
+const applyGeocodeResult = (result, status) => {
+  {
     if (status === window.kakao.maps.services.Status.OK) {
       // 산출 좌표 보관 (위도=y, 경도=x). 저장 payload 및 지오펜스 판정에 사용
       lat.value = String(result[0].y);
@@ -422,7 +484,7 @@ const updateMapLocation = (address) => {
       lon.value = "";
       console.warn("주소 검색 실패:", status);
     }
-  });
+  }
 };
 
 // PRAFTA-COM-001-T2-5: 날짜를 YYYY-MM-DD 로 정규화(DB값 YYYYMMDD / 신규 YYYY-MM-DD 혼재 대응).
@@ -454,6 +516,13 @@ watch(
   () => addr1.value,
   (newAddr) => {
     if (newAddr && map) {
+      // 지도 초기화 이후의 주소 변경 = 사용자가 주소찾기로 새 주소를 고른 것.
+      //   이전 주소의 좌표는 즉시 무효화한다 — 지오코딩 결과가 오기 전에 저장되더라도
+      //   낡은 좌표가 새 주소와 함께 실리지 않게(최악의 경우 좌표 없음 confirm 으로 귀결).
+      //   ※ 최초 로드(fnGetSiteInfo)는 map 이 아직 null 이라 여기 걸리지 않으므로
+      //     DB 복원 좌표는 보존된다.
+      lat.value = "";
+      lon.value = "";
       nextTick(() => {
         updateMapLocation(newAddr);
       });
@@ -578,6 +647,8 @@ const fnGetSiteInfo = async (siteCd) => {
         siteDesc.value = response.data?.siteInfoList[0].siteDesc;
         siteAdminCd.value = response.data?.siteInfoList[0].siteAdminCd;
         siteAdminNm.value = response.data?.siteInfoList[0].siteAdminNm;
+        // PRAFTA-SUBCON-T2-09: 미러 여부(linkSrcCmpnyCd NOT NULL) — 잠금 필드 비활성 판정.
+        isMirror.value = !!response.data?.siteInfoList[0].linkSrcCmpnyCd;
         // 저장된 좌표 복원 (지도/저장 정확도 유지). 이후 initMap 지오코딩으로 갱신될 수 있음
         lat.value = proxy.$util.isEmpty(response.data?.siteInfoList[0].lat)
           ? ""
@@ -618,11 +689,24 @@ const fnSiteSave = async () => {
       useYn.value = "N";
     }
 
-    // 좌표 실패 경고(D4): 주소는 정상인데 좌표 산출 실패/미완료 시 경고 후 저장 진행(NULL 좌표 허용)
+    // 지오코딩 in-flight 대기 — 주소를 바꾼 직후 저장을 누르면 이전 주소의 좌표가 실릴 수 있다.
+    //   버튼 비활성(:disabled="geocoding")과 별개로, 대기 중 결과를 반드시 반영하고 진행한다.
+    if (geocoding.value && geocodePromise) {
+      await geocodePromise;
+    }
+
+    // 좌표 미확보 시 저장 여부를 사용자가 선택한다.
+    //   좌표(LAT/LON)가 NULL 이면 서버 지오펜스 판정이 '항상 사업장 안'으로 폴백되어
+    //   GPS 반경 체크가 무력화된다 → 경고만 띄우고 통과시키지 않고 명시적 동의를 받는다.
     if (proxy.$util.isEmpty(lat.value) || proxy.$util.isEmpty(lon.value)) {
-      await proxy.$alert(
-        "주소로부터 좌표를 가져오지 못했습니다.\n출퇴근 유효범위 체크가 안됩니다. 관리자에게 문의해주세요."
+      const ok = await proxy.$confirm(
+        "주소로부터 좌표를 가져오지 못했습니다.\n" +
+          "좌표 없이 저장하면 이 사업장의 출퇴근 유효범위(GPS 반경) 체크가 동작하지 않습니다.\n\n" +
+          "[확인] 좌표 없이 저장 · [취소] 저장 취소 후 주소 다시 선택"
       );
+      if (!ok) {
+        return;
+      }
     }
 
     try {
@@ -763,6 +847,15 @@ async function fnConfirmMsg(message, afterConfirmCallback) {
 </script>
 
 <style scoped>
+/* PRAFTA-SUBCON-T2-09: 미러(연동) 사업장 안내 문구 */
+.mirror-guide {
+  padding: 0.35rem 0.6rem;
+  border-radius: var(--btn-radius, 8px);
+  background: var(--color-primary-bg, #dcfce7);
+  color: var(--color-primary, #16a34a);
+  font-size: var(--btn-font-sm, 12px);
+}
+
 /* GPS 반경 입력 우측 단위 표기 */
 .gps-range-field {
   display: inline-flex;

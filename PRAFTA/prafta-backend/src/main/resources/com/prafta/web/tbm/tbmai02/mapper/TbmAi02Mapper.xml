@@ -30,8 +30,9 @@
             ON (SC.CMPNY_CD = SS.CMPNY_CD AND SC.SESSION_CD = SS.SESSION_CD)
     INNER JOIN TB_TBM_EDU_MTRL M
             ON (M.MTRL_CD = SC.MTRL_CD AND M.CMPNY_CD = SC.CMPNY_CD)
+    <!-- 테넌트 격리: MTRL_CD 는 회사별 채번이라 전역 유일하지 않다. 회사코드를 조인키에 포함한다. -->
     INNER JOIN TB_TBM_EDU_MTRL_ITEM I
-            ON (I.MTRL_CD = M.MTRL_CD)
+            ON (I.CMPNY_CD = M.CMPNY_CD AND I.MTRL_CD = M.MTRL_CD)
     WHERE SS.SESSION_CD = #{sessionCd}
       AND SS.CMPNY_CD = #{cmpnyCd}
       AND SS.DEL_YN = 'N'
@@ -59,8 +60,9 @@
             ON (SC.CMPNY_CD = SS.CMPNY_CD AND SC.SESSION_CD = SS.SESSION_CD)
     INNER JOIN TB_TBM_EDU_MTRL M
             ON (M.MTRL_CD = SC.MTRL_CD AND M.CMPNY_CD = SC.CMPNY_CD)
+    <!-- 테넌트 격리: MTRL_CD 는 회사별 채번이라 전역 유일하지 않다. 회사코드를 조인키에 포함한다. -->
     INNER JOIN TB_TBM_EDU_MTRL_ITEM I
-            ON (I.MTRL_CD = M.MTRL_CD)
+            ON (I.CMPNY_CD = M.CMPNY_CD AND I.MTRL_CD = M.MTRL_CD)
     WHERE SS.SESSION_CD = #{sessionCd}
       AND SS.CMPNY_CD = #{cmpnyCd}
       AND SS.DEL_YN = 'N'
@@ -68,6 +70,41 @@
       AND I.AI_ANALYZE_YN = 'Y'
       AND NOT (IFNULL(I.AI_STATUS, '') = 'CONFIRMED' AND TRIM(IFNULL(I.AI_CONFIRM_DESC, '')) <![CDATA[ <> ]]> '')
     ORDER BY SC.DISPLAY_ORDER, I.SORT_IDX
+    </select>
+
+    <!-- 세션 매핑 위험성평가 + 개선항목(USE_YN='Y') flat 조회.
+         GROUP_CONCAT 미사용(group_concat_max_len 절단 방지) - 서비스에서 평가 키 단위 그룹핑.
+         위험성평가에는 확정 개념 없음 - 연계된 건 전부 포함(상태 필터 없음). DISPLAY_ORDER, IMPROVEMENT_SEQ 순.
+         세션 사업장 정합(SR.SITE_CD = SS.SITE_CD) 심층방어 - 저장 검증(TBM_400_016) 이전의
+         레거시/우회 교차 사업장 매핑이 있어도 교육안 생성 재료에서 배제한다(2026-07-16 보안 보강). -->
+    <!-- ⚠️ record 위치매핑: SELECT 컬럼 순서 = TbmSessionRiskRow 생성자 인자 순서 -->
+    <select id="selectSessionRiskRows" resultType="com.prafta.web.tbm.tbmai02.application.model.TbmSessionRiskRow">
+    /* TbmAi02Mapper.selectSessionRiskRows */
+    SELECT
+          SR.SITE_CD           AS siteCd
+        , SR.PROCESS_CD        AS processCd
+        , SR.ASSESSMENT_CD     AS assessmentCd
+        , RA.ASSESSMENT_DESC   AS assessmentDesc
+        , RA.INIT_DESC         AS initDesc
+        , RA.INIT_RISK_LV      AS initRiskLv
+        , RA.REVAL_BEFORE_DESC AS revalBeforeDesc
+        , RA.REVAL_DESC        AS revalDesc
+        , II.IMPROVE_DESC      AS improveDesc
+    FROM TB_TBM_SESSION SS
+    INNER JOIN TB_TBM_SESSION_RISK SR
+            ON (SR.CMPNY_CD = SS.CMPNY_CD AND SR.SESSION_CD = SS.SESSION_CD
+           AND SR.SITE_CD = SS.SITE_CD)
+    INNER JOIN TB_RISK_ASSESSMENT RA
+            ON (RA.CMPNY_CD = SR.CMPNY_CD AND RA.SITE_CD = SR.SITE_CD
+           AND RA.PROCESS_CD = SR.PROCESS_CD AND RA.ASSESSMENT_CD = SR.ASSESSMENT_CD)
+    LEFT JOIN TB_RISK_IMPROVEMENT_ITEM II
+           ON (II.CMPNY_CD = RA.CMPNY_CD AND II.SITE_CD = RA.SITE_CD
+           AND II.PROCESS_CD = RA.PROCESS_CD AND II.ASSESSMENT_CD = RA.ASSESSMENT_CD
+           AND II.USE_YN = 'Y')
+    WHERE SS.SESSION_CD = #{sessionCd}
+      AND SS.CMPNY_CD = #{cmpnyCd}
+      AND SS.DEL_YN = 'N'
+    ORDER BY SR.DISPLAY_ORDER, SR.ASSESSMENT_CD, II.IMPROVEMENT_SEQ
     </select>
 
     <!-- 사업장 격리: 사용자-사업장 권한 매핑(USE_YN='Y') 카운트(RiskAi01Mapper.countUserSiteAuth 패턴 복제) -->

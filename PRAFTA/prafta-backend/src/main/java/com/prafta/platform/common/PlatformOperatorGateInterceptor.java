@@ -15,6 +15,7 @@ import com.prafta.common.error.platform.PlatformErrorCode;
 import com.prafta.common.exception.ApiException;
 import com.prafta.common.security.JwtUtil;
 
+import jakarta.annotation.PostConstruct;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import lombok.RequiredArgsConstructor;
@@ -43,6 +44,22 @@ public class PlatformOperatorGateInterceptor implements HandlerInterceptor {
     /** 허용 IP 목록(콤마구분). 비어 있으면 IP 검사 생략(개발). 운영에서는 환경변수로 주입. */
     @Value("${prafta.platform.allowed-ips:}")
     private String allowedIpsRaw;
+
+    /**
+     * 신뢰 프록시 목록(콤마구분). RemoteAddr 가 이 목록에 있을 때만 X-Forwarded-For 선두를
+     * 클라이언트 IP 로 채택한다. 기본(빈 값)에서는 XFF 를 신뢰하지 않는다(fail-safe — XFF 위조로
+     * IP 게이트 우회·열람 로그 IP 위조 방지, 보안 리뷰 V-1).
+     */
+    @Value("${prafta.platform.trusted-proxies:}")
+    private String trustedProxiesRaw;
+
+    /** allowed-ips 미설정 기동 경고 1회(보안 리뷰 V-4 — fail-open 상태 가시화). */
+    @PostConstruct
+    void warnIfAllowedIpsEmpty() {
+        if (!StringUtils.hasText(allowedIpsRaw)) {
+            log.warn("[플랫폼 게이트] prafta.platform.allowed-ips 미설정 — IP 허용목록 계층 비활성(운영 배포 전 설정 권장)");
+        }
+    }
 
     @Override
     public boolean preHandle(HttpServletRequest request, HttpServletResponse response, Object handler) {
@@ -75,18 +92,35 @@ public class PlatformOperatorGateInterceptor implements HandlerInterceptor {
 
     /** 콤마구분 허용목록 파싱(공백 제거). */
     private Set<String> allowedIps() {
-        return Arrays.stream(allowedIpsRaw.split(","))
+        return parseCsv(allowedIpsRaw);
+    }
+
+    /** 콤마구분 목록 파싱 공통(공백 제거·빈 토큰 제외). */
+    private static Set<String> parseCsv(String raw) {
+        return Arrays.stream(raw.split(","))
                 .map(String::trim)
                 .filter(StringUtils::hasText)
                 .collect(Collectors.toCollection(HashSet::new));
     }
 
-    /** 클라이언트 IP 해석: X-Forwarded-For 선두 → RemoteAddr 폴백(프록시 환경 대응). */
-    private String resolveClientIp(HttpServletRequest request) {
+    /**
+     * 클라이언트 IP 해석(보안 리뷰 V-1 — XFF 신뢰 검증):
+     * RemoteAddr 가 신뢰 프록시 목록({@code prafta.platform.trusted-proxies})에 있을 때만
+     * X-Forwarded-For 선두를 채택하고, 그 외에는 RemoteAddr 를 그대로 사용한다.
+     * 기본(목록 빈 값)에서는 XFF 를 신뢰하지 않는다(fail-safe).
+     *
+     * <p>위치정보 열람 로그(TB_LOCATION_ACCESS_LOG.CLIENT_IP)도 게이트와 동일 규칙으로 IP 를
+     * 기록해야 하므로 본 빈의 public 메서드로 공개한다(단일 출처 — 규칙 분기 금지).
+     */
+    public String resolveClientIp(HttpServletRequest request) {
+        String remoteAddr = request.getRemoteAddr();
+        if (!parseCsv(trustedProxiesRaw).contains(remoteAddr)) {
+            return remoteAddr; // 신뢰 프록시 경유가 아니면 XFF 불신(위조 가능 헤더).
+        }
         String xff = request.getHeader("X-Forwarded-For");
         if (StringUtils.hasText(xff)) {
             return xff.split(",")[0].trim();
         }
-        return request.getRemoteAddr();
+        return remoteAddr;
     }
 }

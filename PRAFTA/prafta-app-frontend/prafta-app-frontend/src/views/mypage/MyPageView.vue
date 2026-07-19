@@ -143,6 +143,14 @@
               <use href="#i-mp-chev-right" />
             </svg>
           </button>
+          <!-- 일용직 계약서+승인제 T4: 내 서명 근로계약서 열람(교부 의무 §6-1) — 일용직(DAILY)에게만 노출.
+               항상 노출(서명본 유무 무관) — 빈 상태는 MyContractView 가 자체 처리(UI-DC-04). -->
+          <button v-if="isDailyWorker" type="button" class="mp-menu__row" @click="onMyContract">
+            <span class="mp-menu__text">내 근로계약서</span>
+            <svg class="icon mp-menu__chev" width="20" height="20" aria-hidden="true">
+              <use href="#i-mp-chev-right" />
+            </svg>
+          </button>
         </nav>
 
         <!-- 결재 그룹 — 일용직(DAILY)은 연차 결재선/결재 관리 모두 미노출(필요 없는 기능). -->
@@ -281,6 +289,8 @@ import PullRefreshIndicator from '@/components/common/PullRefreshIndicator.vue'
 import { isDailyWorker as isDailyWorkerFn } from '@/utils/employment'
 // LC-11: 연차 일수 표기 공용 유틸 — 소수점 노출 금지, "N일 H시간 M분" 분리 표기.
 import { splitLeaveDays } from '@/utils/leaveFormat'
+// PRAFTA-SUBCON-T4: 연동 회사 제3자 제공 동의(006) 식별 — 철회(Y→N) 확인 팝업 판별용.
+import { THIRD_PARTY_CONSENT_TERMS_ID } from '@/utils/termsGate'
 
 import LogoutConfirmDialog from './components/LogoutConfirmDialog.vue'
 import WithdrawalConfirmDialog from './components/WithdrawalConfirmDialog.vue'
@@ -295,6 +305,11 @@ const showAlert = (message) => {
   if (proxy?.$alert) return proxy.$alert(message)
   window.alert(message)
   return Promise.resolve()
+}
+// 공통: confirm 폴백 (TermsAgreeView 패턴 동일) — SUBCON-T4 철회 확인 팝업에서 사용.
+const showConfirm = (message) => {
+  if (proxy?.$confirm) return proxy.$confirm(message)
+  return Promise.resolve(window.confirm(message))
 }
 
 // ───────────────────────────────────────────────────────────
@@ -373,6 +388,10 @@ const onProfileEdit = () => {
 }
 const onPasswordChange = () => {
   router.push('/PasswordChange')
+}
+// 일용직 계약서+승인제 T4: 내 서명 근로계약서 열람 진입(일용직 전용 노출).
+const onMyContract = () => {
+  router.push('/MyContract')
 }
 const onPresetManage = () => {
   router.push('/ApprovalPresetList')
@@ -530,10 +549,24 @@ const loadOptionalTerms = async () => {
 }
 
 // 선택약관 토글(낙관적 토글 + POST 저장, 실패 시 원복).
+//   PRAFTA-SUBCON-T4: 연동 회사 제3자 제공 동의(006)의 '철회'(Y→N)는 확인 팝업을 거친다.
+//   철회는 소급되지 않는다(이미 제공된 스냅샷은 회수 불가) — 사용자에게 반드시 고지.
+//   N→Y(동의) 및 그 외 선택약관은 기존대로 즉시 저장(팝업 없음).
 const onToggleOptionalTerms = async (terms) => {
   if (isTermsSaving.value) return
   const prev = terms.agrYn
   const next = prev === 'Y' ? 'N' : 'Y'
+
+  if (terms.termsId === THIRD_PARTY_CONSENT_TERMS_ID && prev === 'Y' && next === 'N') {
+    const ok = await showConfirm(
+      '연동 회사 자료 제공에 대한 동의를 철회할까요?\n\n' +
+        '철회하면 이후 생성되는 제공분부터 제외됩니다.\n' +
+        '다만 이미 제공된 자료는 회수되지 않습니다.',
+    )
+    // 취소: 낙관적 토글 이전이므로 스위치 상태 변경 없음(서버 호출도 없음).
+    if (!ok) return
+  }
+
   // 낙관적 토글.
   terms.agrYn = next
   isTermsSaving.value = true

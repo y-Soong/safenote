@@ -8,6 +8,9 @@ import com.prafta.common.exception.ApiException;
 /**
  * prafta-036-B1: 점검결과 저장 Command (mapper.mergeChkptInspectAnswer 진입).
  * prafta-app-011: chkptCd 필드 추가 -- TB_CHKPT_INSPECT_ANSWER PK 구성 요소.
+ *
+ * <p>[정책 변경] 후행 덮어쓰기(last-writer-wins) 전환으로 소유 판정용 performKey 는 폐기됐다.
+ * 저장은 무조건 UPSERT(덮어쓰기)이며, 수행자 스냅샷(PERFORM_*)은 매퍼가 토큰 클레임으로 채운다.
  */
 public record InspectResultSaveCommand(
     String cmpnyCd

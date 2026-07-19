@@ -21,6 +21,12 @@ public enum LoginErrorCode implements ApiErrorCode {
 
     // ===== PRAFTA-046 - 노드-관리자 정합성 가드 (가입자 친화 메시지, 내부구조 노출 차단) =====
     , LOGIN_400_015(HttpStatus.BAD_REQUEST, "선택하신 부서는 현재 가입할 수 없습니다.\n관리자에게 문의해 주세요.")
+
+    // ===== 로그인 ID 전역 유일화 - 셀프 회원가입 ID 중복 =====
+    , LOGIN_400_016(HttpStatus.BAD_REQUEST, "이미 사용 중인 아이디입니다. 다른 아이디를 입력해 주세요.")
+
+    // ===== PRAFTA-SUBCON-T2-07 - 연동 미러 사업장 가입 차단 (미러 존재 사실 상세 비노출) =====
+    , LOGIN_400_017(HttpStatus.BAD_REQUEST, "가입할 수 없는 사업장입니다.\n관리자에게 문의해 주세요.")
     ;
 
     private final HttpStatus httpStatus;

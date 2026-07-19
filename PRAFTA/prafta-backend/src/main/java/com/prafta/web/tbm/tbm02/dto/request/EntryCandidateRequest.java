@@ -17,4 +17,6 @@ public class EntryCandidateRequest {
 	private String sessionCd;	// 대상 세션
 	private String userTypeCd;	// REGULAR | DAILY
 	private String keyword;		// 이름/아이디 부분검색(옵션)
+	// PRAFTA-SUBCON-T5: 대상 회사(미지정이면 자사). 서버가 {개설사} ∪ 지정 체인 소속인지 재검증한다.
+	private String targetCmpnyCd;
 }

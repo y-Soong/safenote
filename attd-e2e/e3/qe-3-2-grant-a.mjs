@@ -1,0 +1,51 @@
+// QE-3-2 시드 — A에 포상휴가 1일 수동 부여(사용 가능일 2026-07-01, 과거일 신청 가능하게).
+import { webLogin, closeAll } from "../lib/browser.mjs";
+import { shotPath } from "../lib/record.mjs";
+
+const main = async () => {
+  try {
+    const { page } = await webLogin("QTHR", "QtTest!2026");
+    page.on("dialog", async (d) => { console.log("DIALOG:", d.message()); await d.accept(); });
+    await page.goto("http://localhost:8081/safenote/main/Attd_09", { waitUntil: "networkidle", timeout: 30000 });
+    await page.waitForTimeout(2500);
+    const q = page.locator('button:has-text("조회")').first();
+    if (await q.count()) { await q.click(); await page.waitForTimeout(2500); }
+    await page.evaluate(() => {
+      const rows = [...document.querySelectorAll("tr")];
+      const row = rows.find((r) => r.innerText.includes("QT사원에이"));
+      const cb = row.querySelector('input[type="checkbox"]');
+      cb.click();
+    });
+    await page.waitForTimeout(800);
+    await page.click('button:has-text("일괄 수동 부여")');
+    await page.waitForTimeout(2000);
+    await page.locator("select:visible").last().selectOption({ label: "포상휴가" });
+    await page.waitForTimeout(500);
+    await page.locator('input[type="number"]:visible').last().fill("1");
+    await page.evaluate(() => {
+      const el = document.querySelector("input.calendar-input");
+      if (el && el._flatpickr) { el._flatpickr.setDate("2026-07-01", true); }
+      else if (el) { el.value = "2026-07-01"; el.dispatchEvent(new Event("input", { bubbles: true })); el.dispatchEvent(new Event("change", { bubbles: true })); }
+    });
+    await page.waitForTimeout(500);
+    const ta = page.locator("textarea:visible").last();
+    if (await ta.count()) await ta.fill("[QE-3-2] 과거일 소급 연차 시드용 포상 1일");
+    await page.click('button:has-text("부여하기")');
+    await page.waitForTimeout(2500);
+    for (let i = 0; i < 2; i++) {
+      const ok = page.locator("button:has-text('확인')").first();
+      if (await ok.count()) { await ok.click().catch(() => {}); await page.waitForTimeout(1500); }
+    }
+    const text = await page.evaluate(() => document.body.innerText);
+    const idx = text.indexOf("QT사원에이");
+    console.log("=== A 행 ===");
+    console.log(text.slice(idx, idx + 260).replace(/\n/g, " | "));
+    await page.screenshot({ path: shotPath("QE-3-2", "web", "grant-done"), fullPage: true });
+  } catch (e) {
+    console.log("FAIL:", e.message);
+    process.exitCode = 1;
+  } finally {
+    await closeAll();
+  }
+};
+main();

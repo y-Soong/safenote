@@ -14,5 +14,8 @@ public record UserProgressDetailResult(
 	, String exitAt
 	, String completionStatusCd
 	, String completionStatusNm
+	// PRAFTA-SUBCON-T5 F4: 세션 개설 회사코드(내 회사와 다르면 타사 세션). 서비스가 개최 회사 라벨
+	// (hostCmpnyNm)로 변환하며 회사코드 자체는 응답에 싣지 않는다(D3 정합).
+	, String hostCmpnyCd
 ){
 }

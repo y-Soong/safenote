@@ -16,13 +16,25 @@
         , T.CHKPT_NM                                    AS chkptNm
         , A.INSPECT_ITEM_CD                             AS inspectItemCd
         , I.INSPECT_ITEM_SUBJ                           AS inspectItemSubj
-        , FNC_CMM_INFO_SRCH(A.CMPNY_CD, 'USER_NM', A.INSERT_NO, NULL) AS inspectorNm
+        <!-- PRAFTA-SUBCON-T6-07: 점검자 = 수행자 스냅샷(PERFORM_USER_NM).
+             전파 행의 INSERT_NO 는 'SYSTEM' 이라 기존 FNC_CMM_INFO_SRCH(INSERT_NO) 표시는 깨진다.
+             레거시(backfill 이전) 행만 INSERT_NO 기준 자사 조회로 폴백한다. -->
+        , IFNULL(
+            A.PERFORM_USER_NM
+            , FNC_CMM_INFO_SRCH(A.CMPNY_CD, 'USER_NM', A.INSERT_NO, NULL)
+          )                                             AS inspectorNm
         , A.WORK_DATE                                   AS workDate
         , A.ANSWER_DESC                                 AS answerDesc
         , CONCAT(A.FILE_MGMT_CD, IFNULL(F.FILE_EXT, '')) AS fileMgmtCd
         , F.FILE_PATH                                   AS filePath
         , D.ACTION_DESC                                 AS actionDesc
         , CASE WHEN D.ACTION_DESC IS NOT NULL THEN 'Y' ELSE 'N' END AS actionStatus
+        <!-- PRAFTA-SUBCON-T6-07: 수행 회사(인접 1차 relabel 저장값) — DefectResult record 말미 필드와 같은 순서 -->
+        , A.PERFORM_CMPNY_CD                            AS performCmpnyCd
+        , IFNULL(PC.CMPNY_NM, '')                       AS performCmpnyNm
+        <!-- [정책변경 §2] 조치 첨부사진(FILE_TYPE 006) — 조치 입력 팝업 프리필/조회용. record 말미 순서 유지 -->
+        , CONCAT(IFNULL(D.FILE_MGMT_CD, ''), IFNULL(AF.FILE_EXT, '')) AS actionFileMgmtCd
+        , AF.FILE_PATH                                  AS actionFilePath
     FROM TB_CHKPT_INSPECT_ANSWER A
          INNER JOIN TB_USER_SITE_AUTH AU
             ON (
@@ -44,6 +56,7 @@
          INNER JOIN TB_CHKPT_INSPECT_ITEM I
             ON (
                 A.CMPNY_CD = I.CMPNY_CD
+            AND A.SITE_CD = I.SITE_CD   <!-- PRAFTA-SUBCON-T0-03: 문항 사업장 키 -->
             AND T.CHKLST_TYPE = I.CHKLST_TYPE
             AND A.INSPECT_ITEM_CD = I.INSPECT_ITEM_CD
             )
@@ -60,6 +73,17 @@
             AND A.CHKPT_CD = D.CHKPT_CD
             AND A.INSPECT_ITEM_CD = D.INSPECT_ITEM_CD
             AND A.WORK_DATE = D.WORK_DATE
+            )
+         <!-- [정책변경 §2] 조치 첨부사진(자기 테넌트 조치사진 FILE_TYPE 006) -->
+         LEFT JOIN TB_FILE_INFO AF
+            ON (
+                D.CMPNY_CD = AF.CMPNY_CD
+            AND D.FILE_MGMT_CD = AF.FILE_MGMT_CD
+            AND AF.FILE_TYPE = #{actionFileType}
+            )
+         LEFT JOIN TB_CMPNY PC
+            ON (
+                PC.CMPNY_CD = A.PERFORM_CMPNY_CD
             )
     WHERE 1=1
       AND A.CMPNY_CD = #{gvCmpnyCd}
@@ -115,7 +139,8 @@
     ORDER BY A.CHKPT_NM
     </select>
 
-    <!-- 점검문항 검색팝업(chkLstType 필수, 사업장 무관). 사용여부는 useYn 조건부 필터(전체='') - PRAFTA_COM_001-T5-12.3 -->
+    <!-- 점검문항 검색팝업(siteCd + chkLstType 필수). 사용여부는 useYn 조건부 필터(전체='')
+         PRAFTA-SUBCON-T0-03: 구 "사업장 무관" 정책(PRAFTA_COM_001-T5-12.3) 폐기 — 문항 사업장 분리에 따라 siteCd 필수화 -->
     <select id="selectInspectItemList" parameterType="com.prafta.web.chkLst.chkLst04.application.query.InspectItemListQuery" resultType="com.prafta.web.chkLst.chkLst04.result.InspectItemResult">
     /* ChkLst04Mapper.selectInspectItemList */
     SELECT
@@ -126,6 +151,7 @@
     FROM TB_CHKPT_INSPECT_ITEM A
     WHERE 1=1
       AND A.CMPNY_CD = #{gvCmpnyCd}
+      AND A.SITE_CD = #{siteCd}
       AND A.CHKLST_TYPE = #{chkLstType}
       <!-- PRAFTA_COM_001-T5-12.3.1: 사용여부 필터(전체='' 시 미적용) -->
       <if test="useYn != null and useYn != ''">
@@ -157,7 +183,10 @@
       AND A.INSPECT_ANSWER_TYPE = 'N'
     </select>
 
-    <!-- 조치 upsert. PK 존재 시 ACTION_DESC/UPDATE_NO/UPDATE_DATE 갱신, 없으면 INSERT. -->
+    <!-- 조치 upsert(후행 덮어쓰기). PK 존재 시 ACTION_DESC/조치사진/조치주체/UPDATE_* 갱신, 없으면 INSERT.
+         PRAFTA-SUBCON-T6-06: 조치 주체(회사/사용자/성명 스냅샷) + 조치 사진(FILE_MGMT_CD)을 함께 기록한다.
+         자기 티어 저장이므로 ACTION_CMPNY_CD = 자기 회사다(타 티어 복제행은 전파 서비스가 relabel 한다).
+         [정책 변경] 소유 판정(ACTION_KEY) 폐기 — 무조건 덮어쓴다. -->
     <insert id="saveDefectAction" parameterType="com.prafta.web.chkLst.chkLst04.application.command.DefectActionCommand">
     /* ChkLst04Mapper.saveDefectAction */
     INSERT INTO TB_CHKPT_DEFECT_ACTION (
@@ -167,6 +196,10 @@
         , INSPECT_ITEM_CD
         , WORK_DATE
         , ACTION_DESC
+        , FILE_MGMT_CD
+        , ACTION_CMPNY_CD
+        , ACTION_USER_CD
+        , ACTION_USER_NM
         , INSERT_NO
         , INSERT_DATE
         , UPDATE_NO
@@ -179,15 +212,23 @@
         , #{inspectItemCd}
         , #{workDate}
         , #{actionDesc}
+        , #{fileMgmtCd}
+        , #{gvCmpnyCd}
+        , #{gvUserCd}
+        , #{gvUserNm}
         , #{gvUserCd}
         , NOW()
-        , NULL
-        , NULL
+        , #{gvUserCd}
+        , NOW()
     ) AS NEW
     ON DUPLICATE KEY UPDATE
-          ACTION_DESC = NEW.ACTION_DESC
-        , UPDATE_NO   = #{gvUserCd}
-        , UPDATE_DATE = NOW()
+          ACTION_DESC     = NEW.ACTION_DESC
+        , FILE_MGMT_CD    = NEW.FILE_MGMT_CD
+        , ACTION_CMPNY_CD = NEW.ACTION_CMPNY_CD
+        , ACTION_USER_CD  = NEW.ACTION_USER_CD
+        , ACTION_USER_NM  = NEW.ACTION_USER_NM
+        , UPDATE_NO       = #{gvUserCd}
+        , UPDATE_DATE     = NOW()
     </insert>
 
 </mapper>

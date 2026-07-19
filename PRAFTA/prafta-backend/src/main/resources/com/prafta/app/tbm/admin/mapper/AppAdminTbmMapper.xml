@@ -10,9 +10,13 @@
 	-->
 
 	<!-- ============================ 채번 ============================ -->
+	<!-- PRAFTA-SUBCON-T5(Option A): 세션코드는 전역 시퀀스('__GLOBAL__')로 채번한다(웹 Tbm02 와 동일).
+	     T5 는 회사 경계를 넘어 SESSION_CD 단독으로 세션/출결을 식별하므로 코드가 전역 유일해야 한다.
+	     DB 보강: UX_TBM_SESSION_CD(UNIQUE) — 마이그레이션 prafta-subcon-t5-1.
+	     ※ MTRL_CD/MTRL_ITEM_CD 채번은 회사별 유지(전환 대상 아님). -->
 	<select id="selectSessionCd" parameterType="java.lang.String" resultType="java.lang.String">
 	/* AppAdminTbmMapper.selectSessionCd */
-	SELECT CONCAT('T', DATE_FORMAT(CURDATE(), '%Y%m%d'), FNC_CMM_SEQ_NEXTVAL(#{gvCmpnyCd}, 'TBM_SESSION_CD'))
+	SELECT CONCAT('T', DATE_FORMAT(CURDATE(), '%Y%m%d'), FNC_CMM_SEQ_NEXTVAL('__GLOBAL__', 'TBM_SESSION_CD'))
 	FROM DUAL
 	</select>
 
@@ -86,8 +90,9 @@
 		, (
 			SELECT COUNT(1)
 			FROM TB_TBM_ATTENDANCE AT
-			WHERE AT.CMPNY_CD = A.CMPNY_CD
-			  AND AT.SESSION_CD = A.SESSION_CD
+			/* PRAFTA-SUBCON-T5: 참석자 회사 조건 제거 — 타사(지정 체인) 참석자를 개설사 집계에 포함.
+			   인가 전제: 바깥 WHERE(세션 소유 A.CMPNY_CD = gvCmpnyCd)가 집계 대상 세션을 이미 제한한다. */
+			WHERE AT.SESSION_CD = A.SESSION_CD
 			  AND AT.DEL_YN = 'N'
 			  AND AT.ENTRY_AT IS NOT NULL
 		  )				AS attendanceCount
@@ -95,8 +100,9 @@
 		, (
 			SELECT COUNT(1)
 			FROM TB_TBM_ATTENDANCE AT
-			WHERE AT.CMPNY_CD = A.CMPNY_CD
-			  AND AT.SESSION_CD = A.SESSION_CD
+			/* PRAFTA-SUBCON-T5: 참석자 회사 조건 제거 — 타사(지정 체인) 참석자를 개설사 집계에 포함.
+			   인가 전제: 바깥 WHERE(세션 소유 A.CMPNY_CD = gvCmpnyCd)가 집계 대상 세션을 이미 제한한다. */
+			WHERE AT.SESSION_CD = A.SESSION_CD
 			  AND AT.DEL_YN = 'N'
 			  AND AT.ENTRY_AT IS NOT NULL
 			  AND AT.COMPLETION_STATUS_CD = 'COMPLETED'
@@ -105,8 +111,9 @@
 		, (
 			SELECT COUNT(1)
 			FROM TB_TBM_ATTENDANCE AT
-			WHERE AT.CMPNY_CD = A.CMPNY_CD
-			  AND AT.SESSION_CD = A.SESSION_CD
+			/* PRAFTA-SUBCON-T5: 참석자 회사 조건 제거 — 타사(지정 체인) 참석자를 개설사 집계에 포함.
+			   인가 전제: 바깥 WHERE(세션 소유 A.CMPNY_CD = gvCmpnyCd)가 집계 대상 세션을 이미 제한한다. */
+			WHERE AT.SESSION_CD = A.SESSION_CD
 			  AND AT.DEL_YN = 'N'
 			  AND AT.ENTRY_AT IS NOT NULL
 			  AND (AT.COMPLETION_STATUS_CD IS NULL OR AT.COMPLETION_STATUS_CD = 'NOT_COMPLETED')
@@ -230,7 +237,9 @@
 		, (
 			SELECT COUNT(I.MTRL_ITEM_CD)
 			FROM TB_TBM_EDU_MTRL_ITEM I
-			WHERE I.MTRL_CD = SC.MTRL_CD
+			/* 테넌트 격리: MTRL_CD 는 회사별 채번이라 전역 유일하지 않다. 항목의 CMPNY_CD 로 함께 좁힌다. */
+			WHERE I.CMPNY_CD = SC.CMPNY_CD
+			  AND I.MTRL_CD = SC.MTRL_CD
 			  AND I.USE_YN = 'Y'
 		  )					AS itemCnt
 		, SC.DISPLAY_ORDER	AS displayOrder
@@ -440,6 +449,22 @@
 	)
 	</insert>
 
+	<!-- 세션-위험성평가 연계 검증(2026-07-16 보안 보강, Tbm02Mapper.countRiskAssessments 미러):
+	     제출 키(사업장/공정/평가코드)가 TB_RISK_ASSESSMENT 에 실존하는 건수. PK 단위 매칭이므로 키당 최대 1행 -
+	     서비스에서 중복 제거한 키 목록을 넘기고, 제출 건수와 카운트 불일치 시 TBM_400_016 으로 거부한다. -->
+	<select id="countRiskAssessments" resultType="int">
+	/* AppAdminTbmMapper.countRiskAssessments */
+	SELECT
+		  COUNT(1)
+	FROM TB_RISK_ASSESSMENT RA
+	WHERE RA.CMPNY_CD = #{gvCmpnyCd}
+	  AND (
+	<foreach collection="keys" item="k" separator=" OR ">
+		(RA.SITE_CD = #{k.siteCd} AND RA.PROCESS_CD = #{k.processCd} AND RA.ASSESSMENT_CD = #{k.assessmentCd})
+	</foreach>
+	  )
+	</select>
+
 	<delete id="deleteSessionRisks" parameterType="java.util.HashMap">
 	/* AppAdminTbmMapper.deleteSessionRisks */
 	DELETE FROM TB_TBM_SESSION_RISK
@@ -615,7 +640,9 @@
 		, (
 			SELECT COUNT(I.MTRL_ITEM_CD)
 			FROM TB_TBM_EDU_MTRL_ITEM I
-			WHERE I.MTRL_CD = A.MTRL_CD
+			/* 테넌트 격리: MTRL_CD 는 회사별 채번이라 전역 유일하지 않다. 항목의 CMPNY_CD 로 함께 좁힌다. */
+			WHERE I.CMPNY_CD = A.CMPNY_CD
+			  AND I.MTRL_CD = A.MTRL_CD
 			  AND I.USE_YN = 'Y'
 		  )					AS itemCnt
 	FROM TB_TBM_EDU_MTRL A
@@ -817,6 +844,8 @@
 		/* prafta-051 R-C(E12): 교육준비 GPS 이탈자 판단용 입실 거리(대리입실은 NULL).
 		   보안 검토(최소노출): 정밀 입실좌표(ENTRY_GPS_LAT/LON)는 프론트 무참조라 SELECT 제외 */
 		, AT.ENTRY_DISTANCE_M		AS distanceM
+		/* PRAFTA-SUBCON-T5: 참석자 소속 회사코드(서비스가 1차 relabel 하여 응답에 담는다). */
+		, AT.CMPNY_CD				AS cmpnyCd
 	FROM TB_TBM_ATTENDANCE AT
 		 LEFT OUTER JOIN TB_USER RU
 		 	ON (
@@ -837,9 +866,18 @@
 		 	AND RU.SITE_CD = ND.SITE_CD
 		 	AND RU.NODE_CD = ND.NODE_CD
 		 	)
-	WHERE AT.CMPNY_CD = #{gvCmpnyCd}
-	  AND AT.SESSION_CD = #{sessionCd}
+	<!-- PRAFTA-SUBCON-T5: 참석자 회사 조건 제거(타사 참석자 포함).
+	     ⚠ 인가 전제: 서비스 selectAttendees() 의 loadGuard(gvCmpnyCd, sessionCd) + verifyScope 가
+	     "개설사 관리자"만 통과시킨다. 세션 소유 검증 없이 스코프만 넓히면 즉시 IDOR.
+	     SQL 안에서도 세션이 내 회사 소유임을 EXISTS 로 이중 방어한다. -->
+	WHERE AT.SESSION_CD = #{sessionCd}
 	  AND AT.DEL_YN = 'N'
+	  AND EXISTS (
+	      SELECT 1
+	      FROM TB_TBM_SESSION S
+	      WHERE S.SESSION_CD = #{sessionCd}
+	        AND S.CMPNY_CD = #{gvCmpnyCd}
+	  )
 	  /* phase=LIVE: 입실자만(ENTRY_AT IS NOT NULL). COMPLETED: 출결 전체 */
 	  <if test="liveOnly">
 	    AND AT.ENTRY_AT IS NOT NULL
@@ -864,11 +902,18 @@
 		, STATUS_UPDATED_AT			= NOW()
 		, UPDATE_NO					= #{gvUserCd}
 		, UPDATE_DATE				= NOW()
-	WHERE CMPNY_CD = #{gvCmpnyCd}
-	  AND SESSION_CD = #{sessionCd}
+	<!-- PRAFTA-SUBCON-T5: 출결행 회사 조건 제거(개설사 관리자가 타사 참석자도 강제퇴실).
+	     세션이 내 회사(개설사) 소유임을 EXISTS 로 SQL 안에서 유지(이중 방어). -->
+	WHERE SESSION_CD = #{sessionCd}
 	  AND ATTENDANCE_CD = #{attendanceCd}
 	  AND EXIT_AT IS NULL
 	  AND DEL_YN = 'N'
+	  AND EXISTS (
+	      SELECT 1
+	      FROM TB_TBM_SESSION S
+	      WHERE S.SESSION_CD = #{sessionCd}
+	        AND S.CMPNY_CD = #{gvCmpnyCd}
+	  )
 	</update>
 
 	<!-- ============================ R3 T4 개별 이수처리 ============================ -->
@@ -883,10 +928,17 @@
 		, STATUS_UPDATED_AT		= NOW()
 		, UPDATE_NO				= #{gvUserCd}
 		, UPDATE_DATE			= NOW()
-	WHERE CMPNY_CD = #{gvCmpnyCd}
-	  AND SESSION_CD = #{sessionCd}
+	<!-- PRAFTA-SUBCON-T5: 출결행 회사 조건 제거(개설사 관리자가 타사 참석자도 이수/미이수 처리).
+	     세션이 내 회사(개설사) 소유임을 EXISTS 로 SQL 안에서 유지(이중 방어). -->
+	WHERE SESSION_CD = #{sessionCd}
 	  AND ATTENDANCE_CD = #{attendanceCd}
 	  AND DEL_YN = 'N'
+	  AND EXISTS (
+	      SELECT 1
+	      FROM TB_TBM_SESSION S
+	      WHERE S.SESSION_CD = #{sessionCd}
+	        AND S.CMPNY_CD = #{gvCmpnyCd}
+	  )
 	</update>
 
 	<!-- ============================ R3 진행화면 슬라이드용 자료 항목 ============================ -->
@@ -906,9 +958,11 @@
 		, F.FILE_PATH		AS filePath
 		, F.FILE_EXT		AS fileExt
 	FROM TB_TBM_EDU_MTRL_ITEM I
+		 /* 테넌트 격리: MTRL_CD 는 회사별 채번이라 전역 유일하지 않다. 회사코드를 조인키에 포함한다. */
 		 INNER JOIN TB_TBM_SESSION_CONTENT SC
 		 	ON (
-		 		I.MTRL_CD = SC.MTRL_CD
+		 		I.CMPNY_CD = SC.CMPNY_CD
+		 	AND I.MTRL_CD = SC.MTRL_CD
 		 	)
 		 LEFT OUTER JOIN TB_FILE_INFO F
 		 	ON (
@@ -916,6 +970,8 @@
 		 	AND F.FILE_MGMT_CD = I.FILE_MGMT_CD
 		 	)
 	WHERE SC.CMPNY_CD = #{gvCmpnyCd}
+	  /* 테넌트 격리: 항목(I) 자신의 CMPNY_CD 도 직접 좁힌다. */
+	  AND I.CMPNY_CD = #{gvCmpnyCd}
 	  AND SC.SESSION_CD = #{sessionCd}
 	  AND I.USE_YN = 'Y'
 	  /* 회사 격리 보강: 항목이 속한 교육자료(M)가 동일 회사 소유인지 EXISTS 가드 */
@@ -923,7 +979,7 @@
 			SELECT 1
 			FROM TB_TBM_EDU_MTRL M
 			WHERE M.MTRL_CD = I.MTRL_CD
-			  AND M.CMPNY_CD = #{gvCmpnyCd}
+			  AND M.CMPNY_CD = I.CMPNY_CD
 		  )
 	  AND EXISTS (
 			SELECT 1
@@ -1007,8 +1063,11 @@
 	  <when test="userTypeCd == 'DAILY'">
 	    SELECT COUNT(1)
 	    FROM TB_DAILY_USER DU
-	    WHERE DU.CMPNY_CD = #{gvCmpnyCd}
-	      AND DU.SITE_CD = #{siteCd}
+	    WHERE DU.CMPNY_CD = #{targetCmpnyCd}
+	      <!-- PRAFTA-SUBCON-T5: 자사(개설사) 대상만 사업장 조건(plan D4). 만료/탈퇴 필터는 그대로. -->
+	      <if test="ownTarget">
+	        AND DU.SITE_CD = #{siteCd}
+	      </if>
 	      AND DU.USER_CD = #{userCd}
 	      AND DU.USE_YN = 'Y'
 	      AND DU.ACCOUNT_STATUS = '01'
@@ -1018,8 +1077,10 @@
 	  <otherwise>
 	    SELECT COUNT(1)
 	    FROM TB_USER U
-	    WHERE U.CMPNY_CD = #{gvCmpnyCd}
-	      AND U.SITE_CD = #{siteCd}
+	    WHERE U.CMPNY_CD = #{targetCmpnyCd}
+	      <if test="ownTarget">
+	        AND U.SITE_CD = #{siteCd}
+	      </if>
 	      AND U.USER_CD = #{userCd}
 	      AND U.USE_YN = 'Y'
 	      AND U.ACCOUNT_STATUS = '01'
@@ -1045,8 +1106,13 @@
 	/* AppAdminTbmMapper.countTodayCheckIn */
 	SELECT COUNT(1)
 	  FROM TB_USER_ATTD_MGMT A
-	 WHERE A.CMPNY_CD = #{gvCmpnyCd}
-	   AND A.SITE_CD  = #{siteCd}
+	 WHERE A.CMPNY_CD = #{targetCmpnyCd}
+	   <!-- PRAFTA-SUBCON-T5(plan D6): 자사 대상은 세션 사업장 기준. 타사 대상은 그 회사의 (미러)
+	        사업장에 출근이 기록되므로 개설사 사업장코드로는 매칭이 불가능하다 → 회사 단위로 검사한다.
+	        가드 자체는 유지한다(출근 없는 유령 입실 방지 의도 보존). -->
+	   <if test="ownTarget">
+	     AND A.SITE_CD  = #{siteCd}
+	   </if>
 	   AND A.USER_CD  = #{userCd}
 	   AND A.WORK_YMD = #{todayYmd}
 	   AND A.DEL_YN   = 'N'
@@ -1080,8 +1146,11 @@
 		, UPDATE_DATE
 	)
 	SELECT
-		  CONCAT('A', DATE_FORMAT(NOW(), '%Y%m%d'), FNC_CMM_SEQ_NEXTVAL(#{gvCmpnyCd}, 'TBM_ATTENDANCE_CD'))
-		, #{gvCmpnyCd}
+		  <!-- PRAFTA-SUBCON-T5(Option A): 출결코드는 전역 시퀀스('__GLOBAL__')로 채번(전역 유일 필요).
+		       CMPNY_CD 는 관리자 회사가 아니라 참석자 회사(targetCmpnyCd) — 타사 참석행을 관리자 회사로
+		       기록하면 UK 가 관리자 회사로 잠겨 데이터가 오염된다(치명). -->
+		  CONCAT('A', DATE_FORMAT(NOW(), '%Y%m%d'), FNC_CMM_SEQ_NEXTVAL('__GLOBAL__', 'TBM_ATTENDANCE_CD'))
+		, #{targetCmpnyCd}
 		, #{sessionCd}
 		, #{userTypeCd}
 		, #{userCd}
@@ -1097,7 +1166,9 @@
 		, #{managerUserCd}
 		, NOW()
 	FROM TB_TBM_SESSION S
-	WHERE S.CMPNY_CD = #{gvCmpnyCd}
+	<!-- INSERT...SELECT 가드는 개설사(hostCmpnyCd, 공통 게이트가 돌려준 값) 기준.
+	     STATUS_CD='OPENED' 로 TOCTOU(가드~INSERT 사이 자동/동시 전이) 를 차단한다. -->
+	WHERE S.CMPNY_CD = #{hostCmpnyCd}
 	  AND S.SESSION_CD = #{sessionCd}
 	  AND S.DEL_YN = 'N'
 	  AND S.STATUS_CD = 'OPENED'
@@ -1115,18 +1186,24 @@
 		USER_CD			AS userCd
 		, USER_TYPE_CD	AS userTypeCd
 	FROM TB_TBM_ATTENDANCE
-	WHERE CMPNY_CD = #{gvCmpnyCd}
-	  AND SESSION_CD = #{sessionCd}
+	<!-- PRAFTA-SUBCON-T5: 출결행 회사 조건 제거(타사 참석자 입실취소 허용). 세션 소유(개설사) 가드는 유지. -->
+	WHERE SESSION_CD = #{sessionCd}
 	  AND ATTENDANCE_CD = #{attendanceCd}
 	  AND DEL_YN = 'N'
+	  AND EXISTS (
+	      SELECT 1
+	      FROM TB_TBM_SESSION S
+	      WHERE S.SESSION_CD = #{sessionCd}
+	        AND S.CMPNY_CD = #{gvCmpnyCd}
+	  )
 	LIMIT 1
 	</select>
 
 	<delete id="deleteCancelEntry" parameterType="com.prafta.app.tbm.admin.application.command.AdminCancelEntryCommand">
 	/* AppAdminTbmMapper.deleteCancelEntry */
 	DELETE FROM TB_TBM_ATTENDANCE
-	WHERE CMPNY_CD = #{gvCmpnyCd}
-	  AND SESSION_CD = #{sessionCd}
+	<!-- PRAFTA-SUBCON-T5: 출결행 회사 조건 제거. EXISTS 의 S.CMPNY_CD = 개설사(내 회사) 가드는 유지 -->
+	WHERE SESSION_CD = #{sessionCd}
 	  AND ATTENDANCE_CD = #{attendanceCd}
 	  AND EXIT_AT IS NULL
 	  AND DEL_YN = 'N'
@@ -1205,7 +1282,9 @@
 		, (
 			SELECT COUNT(I.MTRL_ITEM_CD)
 			FROM TB_TBM_EDU_MTRL_ITEM I
-			WHERE I.MTRL_CD = A.MTRL_CD
+			/* 테넌트 격리: MTRL_CD 는 회사별 채번이라 전역 유일하지 않다. 항목의 CMPNY_CD 로 함께 좁힌다. */
+			WHERE I.CMPNY_CD = A.CMPNY_CD
+			  AND I.MTRL_CD = A.MTRL_CD
 			  AND I.USE_YN = 'Y'
 		  )					AS itemCnt
 		, A.USE_YN			AS useYn
@@ -1275,17 +1354,19 @@
 		, F.FILE_PATH		AS filePath
 		, F.FILE_EXT		AS fileExt
 	FROM TB_TBM_EDU_MTRL_ITEM I
+		 <!-- 테넌트 격리: MTRL_CD 는 회사별 채번이라 전역 유일하지 않다. 회사코드를 조인키에 포함한다. -->
 		 INNER JOIN TB_TBM_EDU_MTRL M
 		 	ON (
-		 		I.MTRL_CD = M.MTRL_CD
-		 	AND M.CMPNY_CD = #{gvCmpnyCd}
+		 		I.CMPNY_CD = M.CMPNY_CD
+		 	AND I.MTRL_CD = M.MTRL_CD
 		 	)
 		 LEFT OUTER JOIN TB_FILE_INFO F
 		 	ON (
 		 		F.CMPNY_CD = M.CMPNY_CD
 		 	AND F.FILE_MGMT_CD = I.FILE_MGMT_CD
 		 	)
-	WHERE I.MTRL_CD = #{mtrlCd}
+	WHERE I.CMPNY_CD = #{gvCmpnyCd}
+	  AND I.MTRL_CD = #{mtrlCd}
 	  AND I.USE_YN = 'Y'
 	ORDER BY I.SORT_IDX
 	</select>
@@ -1339,6 +1420,8 @@
 	/* AppAdminTbmMapper.insertAdminEduMaterialItem */
 	INSERT INTO TB_TBM_EDU_MTRL_ITEM (
 		MTRL_ITEM_CD
+		/* 테넌트 격리: 항목 PK 는 (CMPNY_CD, MTRL_ITEM_CD) 복합키다. 회사코드는 항상 JWT 도출값(gvCmpnyCd). */
+		, CMPNY_CD
 		, MTRL_CD
 		, SORT_IDX
 		, MTRL_ITEM_TYPE
@@ -1354,6 +1437,7 @@
 		, UPDATE_DATE
 	) VALUES (
 		#{mtrlItemCd}
+		, #{gvCmpnyCd}
 		, #{mtrlCd}
 		, #{sortIdx}
 		, #{mtrlItemType}
@@ -1370,7 +1454,9 @@
 	)
 	</insert>
 
-	<!-- 항목 일괄 소프트삭제(수정 시 재구성 / 묶음 삭제 시 동반). 회사 격리 EXISTS 가드. -->
+	<!-- 항목 일괄 소프트삭제(수정 시 재구성 / 묶음 삭제 시 동반).
+	     테넌트 격리: MTRL_CD 는 회사별 채번이라 전역 유일하지 않다. 항목(I) 자신의 CMPNY_CD 로 반드시 좁힌다
+	     (예전처럼 마스터 EXISTS 만 두면 같은 MTRL_CD 를 가진 타 회사 항목까지 소프트삭제된다). -->
 	<update id="softDeleteAdminEduMaterialItems" parameterType="java.util.HashMap">
 	/* AppAdminTbmMapper.softDeleteAdminEduMaterialItems */
 	UPDATE TB_TBM_EDU_MTRL_ITEM I
@@ -1378,13 +1464,14 @@
 		I.USE_YN		= 'N'
 		, I.UPDATE_NO	= #{gvUserCd}
 		, I.UPDATE_DATE	= NOW()
-	WHERE I.MTRL_CD = #{mtrlCd}
+	WHERE I.CMPNY_CD = #{gvCmpnyCd}
+	  AND I.MTRL_CD = #{mtrlCd}
 	  AND I.USE_YN = 'Y'
 	  AND EXISTS (
 			SELECT 1
 			FROM TB_TBM_EDU_MTRL M
 			WHERE M.MTRL_CD = I.MTRL_CD
-			  AND M.CMPNY_CD = #{gvCmpnyCd}
+			  AND M.CMPNY_CD = I.CMPNY_CD
 		  )
 	</update>
 
@@ -1492,8 +1579,9 @@
 		, (
 			SELECT COUNT(1)
 			FROM TB_TBM_ATTENDANCE AT
-			WHERE AT.CMPNY_CD = A.CMPNY_CD
-			  AND AT.SESSION_CD = A.SESSION_CD
+			/* PRAFTA-SUBCON-T5: 참석자 회사 조건 제거 — 타사(지정 체인) 참석자를 개설사 집계에 포함.
+			   인가 전제: 바깥 WHERE(세션 소유 A.CMPNY_CD = gvCmpnyCd)가 집계 대상 세션을 이미 제한한다. */
+			WHERE AT.SESSION_CD = A.SESSION_CD
 			  AND AT.DEL_YN = 'N'
 			  AND AT.ENTRY_AT IS NOT NULL
 		  )				AS attendanceCount
@@ -1501,8 +1589,9 @@
 		, (
 			SELECT COUNT(1)
 			FROM TB_TBM_ATTENDANCE AT
-			WHERE AT.CMPNY_CD = A.CMPNY_CD
-			  AND AT.SESSION_CD = A.SESSION_CD
+			/* PRAFTA-SUBCON-T5: 참석자 회사 조건 제거 — 타사(지정 체인) 참석자를 개설사 집계에 포함.
+			   인가 전제: 바깥 WHERE(세션 소유 A.CMPNY_CD = gvCmpnyCd)가 집계 대상 세션을 이미 제한한다. */
+			WHERE AT.SESSION_CD = A.SESSION_CD
 			  AND AT.DEL_YN = 'N'
 			  AND AT.ENTRY_AT IS NOT NULL
 			  AND AT.COMPLETION_STATUS_CD = 'COMPLETED'
@@ -1511,8 +1600,9 @@
 		, (
 			SELECT COUNT(1)
 			FROM TB_TBM_ATTENDANCE AT
-			WHERE AT.CMPNY_CD = A.CMPNY_CD
-			  AND AT.SESSION_CD = A.SESSION_CD
+			/* PRAFTA-SUBCON-T5: 참석자 회사 조건 제거 — 타사(지정 체인) 참석자를 개설사 집계에 포함.
+			   인가 전제: 바깥 WHERE(세션 소유 A.CMPNY_CD = gvCmpnyCd)가 집계 대상 세션을 이미 제한한다. */
+			WHERE AT.SESSION_CD = A.SESSION_CD
 			  AND AT.DEL_YN = 'N'
 			  AND AT.ENTRY_AT IS NOT NULL
 			  AND (AT.COMPLETION_STATUS_CD IS NULL OR AT.COMPLETION_STATUS_CD = 'NOT_COMPLETED')
@@ -1555,10 +1645,10 @@
 		/* 미이수 = 실입실 + 미완료(NULL 포함). 자동이수 폐지로 NULL 포함 필수. */
 		, IFNULL(SUM(CASE WHEN AT.ENTRY_AT IS NOT NULL AND (AT.COMPLETION_STATUS_CD IS NULL OR AT.COMPLETION_STATUS_CD = 'NOT_COMPLETED') THEN 1 ELSE 0 END), 0)	AS notCompletedCount
 	FROM TB_TBM_SESSION A
+		 /* PRAFTA-SUBCON-T5: JOIN 키에서 CMPNY_CD 제거(타사 참석자 포함). 세션 소유는 adminHistoryWhere 가 보장. */
 		 LEFT OUTER JOIN TB_TBM_ATTENDANCE AT
 		 	ON (
-		 		A.CMPNY_CD = AT.CMPNY_CD
-		 	AND A.SESSION_CD = AT.SESSION_CD
+		 		A.SESSION_CD = AT.SESSION_CD
 		 	AND AT.DEL_YN = 'N'
 		 	)
 	<include refid="adminHistoryWhere" />

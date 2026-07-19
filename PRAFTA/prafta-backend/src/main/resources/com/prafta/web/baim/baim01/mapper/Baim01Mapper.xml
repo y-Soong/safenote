@@ -23,6 +23,8 @@
     	, A.SITE_DESC				AS siteDesc
     	, A.LAT						AS lat
     	, A.LON						AS lon
+    	<!-- PRAFTA-SUBCON-T2-04: 미러 여부 노출(record 순서 함정 — SELECT 말미 + record 말미 동시 유지). -->
+    	, A.LINK_SRC_CMPNY_CD		AS linkSrcCmpnyCd
    	FROM TB_SITE A
  		 LEFT JOIN TB_USER B
 			ON (
@@ -221,4 +223,55 @@
 		, UPDATE_NO 	= VALUES(UPDATE_NO)
 		, UPDATE_DATE 	= VALUES(UPDATE_DATE)
 	</insert>
+
+	<!-- ============================================================
+	     PRAFTA-SUBCON-T2-04 — 미러 사업장 잠금 가드
+	     ============================================================ -->
+
+	<!-- 사업장의 연동 원본 회사코드(NULL=일반, NOT NULL=미러). -->
+	<select id="selectSiteLinkSrcCmpny" resultType="string">
+	/* Baim01Mapper.selectSiteLinkSrcCmpny */
+	SELECT A.LINK_SRC_CMPNY_CD
+	FROM TB_SITE A
+	WHERE A.CMPNY_CD = #{gvCmpnyCd}
+	  AND A.SITE_CD  = #{siteCd}
+	</select>
+
+	<!-- 미러 잠금 필드 diff(plan D5) — 입력 정규화는 mergeSiteInfo 와 동일(날짜/전화 '-' 제거).
+	     ★NOT(...) 안의 NULL 은 UNKNOWN 으로 새므로 전 항 IFNULL 필수(하우스 함정 메모).
+	     GPS_RANGE 는 목록 응답이 IFNULL(...,0) 이라 '0' 기준으로 정규화 비교.
+	     LAT/LON 은 지오코딩 파생값 재산출 편차로 제외(잠금 필드지만 미러 경로는 어차피 미기록). -->
+	<select id="selectMirrorLockedFieldChangedCnt" parameterType="com.prafta.web.baim.baim01.application.command.SiteInfoCommand" resultType="int">
+	/* Baim01Mapper.selectMirrorLockedFieldChangedCnt */
+	SELECT COUNT(*)
+	FROM TB_SITE A
+	WHERE A.CMPNY_CD = #{gvCmpnyCd}
+	  AND A.SITE_CD  = #{siteCd}
+	  AND A.LINK_SRC_CMPNY_CD IS NOT NULL
+	  AND NOT (
+	        IFNULL(A.SITE_NO, '')       = IFNULL(#{siteNo}, '')
+	    AND IFNULL(A.SITE_NM, '')       = IFNULL(#{siteNm}, '')
+	    AND IFNULL(A.ADDR_1, '')        = IFNULL(#{addr1}, '')
+	    AND IFNULL(A.ADDR_2, '')        = IFNULL(#{addr2}, '')
+	    AND IFNULL(A.ZIP_CODE, '')      = IFNULL(#{zipCode}, '')
+	    AND IFNULL(A.STR_DATE, '')      = IFNULL(REPLACE(#{strDate}, '-', ''), '')
+	    AND IFNULL(A.END_DATE, '')      = IFNULL(REPLACE(#{endDate}, '-', ''), '')
+	    AND IFNULL(A.USE_YN, 'Y')       = IFNULL(#{useYn}, 'Y')
+	    AND IFNULL(A.TEL_NO, '')        = IFNULL(REPLACE(#{telNo}, '-', ''), '')
+	    AND IFNULL(A.GPS_RANGE, '0')    = IFNULL(NULLIF(#{gpsRange}, ''), '0')
+	    AND IFNULL(A.SITE_DESC, '')     = IFNULL(#{siteDesc}, '')
+	  )
+	</select>
+
+	<!-- 미러 SITE_ADMIN_CD 단독 UPDATE — 잠금 예외 운영 필드(mergeSiteInfo 전체 UPSERT 경유 금지). -->
+	<update id="updateSiteAdminOnly" parameterType="com.prafta.web.baim.baim01.application.command.SiteInfoCommand">
+	/* Baim01Mapper.updateSiteAdminOnly */
+	UPDATE TB_SITE
+	   SET SITE_ADMIN_CD = #{siteAdminCd}
+	     , UPDATE_NO     = #{gvUserCd}
+	     , UPDATE_DATE   = NOW()
+	 WHERE CMPNY_CD = #{gvCmpnyCd}
+	   AND SITE_CD  = #{siteCd}
+	   AND LINK_SRC_CMPNY_CD IS NOT NULL
+	</update>
 </mapper>

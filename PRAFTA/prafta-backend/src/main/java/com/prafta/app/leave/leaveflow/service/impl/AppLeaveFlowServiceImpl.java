@@ -100,6 +100,9 @@ public class AppLeaveFlowServiceImpl implements AppLeaveFlowService {
     private static final String AVAIL_TERM_NONE = "01";
     /** 연차개편 동시성: '01' 신청 직렬화 advisory lock 타임아웃(초). */
     private static final int LEAVE01_LOCK_TIMEOUT_SEC = 5;
+    // 연차 원장 일수 컬럼 최대 스케일(TB_USER_LEAVE_USE.LEAVE_DAYS / TB_USER_LEAVE_GRANT.USED_DAYS = decimal(8,5)).
+    // apply-meta balanceDays 를 이 스케일로 전달해 시간차 잔여(예 0.075일)를 손실 없이 앱에 넘긴다(반올림 오표기 제거).
+    private static final int LEDGER_DECIMAL_SCALE = 5;
 
     // ===== 018-B 상수(웹 LeaveFlowServiceImpl 미러) =====
     // 요청 상태 [SYS033]
@@ -1058,12 +1061,17 @@ public class AppLeaveFlowServiceImpl implements AppLeaveFlowService {
     }
 
     /**
-     * BigDecimal → double (null=0.0, 소수 1자리 반올림 — leave01 toScaledDouble 패턴, balanceDays 정합).
+     * BigDecimal → double (null=0.0). leave01 toScaledDouble 패턴과 정합.
+     *
+     * <p>apply-meta balanceDays(연차 원장 잔여 = decimal(8,5) 가감산)를 원장 정밀도로 전달한다.
+     * 과거 소수 1자리 반올림(setScale(1))이 시간차 잔여를 왜곡해 앱 분 환산 오표기를 유발하던
+     * 결함을 제거하고, 원장 스케일(5)로 손실 없이 넘긴다.</p>
      */
     private double toScaledDouble(BigDecimal value) {
         if (value == null) {
             return 0.0;
         }
-        return value.setScale(1, RoundingMode.HALF_UP).doubleValue();
+        // 원장 최대 스케일(decimal(8,5)) 로 맞춤 — 반올림 없이 원값 그대로 전달.
+        return value.setScale(LEDGER_DECIMAL_SCALE, RoundingMode.HALF_UP).doubleValue();
     }
 }

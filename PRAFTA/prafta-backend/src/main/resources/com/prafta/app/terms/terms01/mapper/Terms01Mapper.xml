@@ -86,32 +86,10 @@
     </select>
 
     <!-- ====================================================================
-         약관 동의 upsert. PK=(CMPNY_CD,USER_CD,TERMS_ID,TERMS_VERSION) 충돌 시 AGR_YN 갱신.
-         기존 insertTermsUserAgrMgmt(순수 INSERT)는 중복 PK 시 실패하므로 본 upsert 신설.
-         스키마상 UPDATE_* 컬럼이 없어 INSERT 컬럼(CMPNY_CD/USER_CD/TERMS_ID/TERMS_VERSION/AGR_YN/INSERT_NO/INSERT_DATE)
-         만 사용하며, 충돌 시 AGR_YN 만 최신값으로 갱신한다(멱등).
+         ★ SUBCON-T4: 약관 동의 upsert(upsertTermsAgr)는 본 매퍼에서 제거되고
+           ConsentMapper.upsertTermsAgr 로 일원화되었다(common/cmm/consent).
+           동의 변경은 반드시 ConsentHistoryRecorder.recordAndUpsert 를 경유해야 하며,
+           이력(TB_TERMS_USER_AGR_HIST)을 남기지 않는 우회 경로를 두지 않는다(plan §2 T4-03).
          ==================================================================== -->
-    <insert id="upsertTermsAgr" parameterType="com.prafta.app.terms.terms01.application.command.TermsAgrUpsertCommand">
-    /* Terms01Mapper.upsertTermsAgr */
-    INSERT INTO TB_TERMS_USER_AGR_MGMT (
-          CMPNY_CD
-        , USER_CD
-        , TERMS_ID
-        , TERMS_VERSION
-        , AGR_YN
-        , INSERT_NO
-        , INSERT_DATE
-    ) VALUES (
-          #{cmpnyCd}
-        , #{userCd}
-        , #{termsId}
-        , #{termsVersion}
-        , #{agrYn}
-        , #{userCd}
-        , NOW()
-    )
-    ON DUPLICATE KEY UPDATE
-          AGR_YN = VALUES(AGR_YN)
-    </insert>
 
 </mapper>

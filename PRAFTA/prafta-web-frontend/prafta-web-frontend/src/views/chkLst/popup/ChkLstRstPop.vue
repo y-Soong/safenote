@@ -119,6 +119,7 @@
                             :key="day"
                             class="day-cell"
                             :class="{ 'cell-disabled': isCellGrayed(idx, day) }"
+                            :title="getInspectionTooltip(idx, day)"
                           >
                             {{ getInspectionResult(idx, day) }}
                           </td>
@@ -462,6 +463,10 @@ const fnGetInspectionInfo = async () => {
                 inspectItemSubj: inspectIdx[0].inspectItemSubj,
                 fileMgmtCd: item.fileMgmtCd,
                 filePath: item.filePath,
+                // PRAFTA-SUBCON-T6-07: 수행 주체(스냅샷) — 연동 회사가 점검한 셀도 수행자를 표시한다
+                performCmpnyNm: item.performCmpnyNm,
+                performUserNm: item.performUserNm,
+                performUserCd: item.performUserCd,
               };
             }
             return null;
@@ -552,6 +557,26 @@ const getInspectionResult = (idx, day) => {
         Number(result.itemIdx) === Number(idx)
     )?.result || ""
   );
+};
+
+// PRAFTA-SUBCON-T6-07: 응답 셀 hover 툴팁 — 수행 주체(회사/성명/ID) 표시.
+//   회사명은 자기 테넌트에 저장된 인접 1차 회사(relabel 값)이며, 성명은 저장 시점 스냅샷이다.
+const getInspectionTooltip = (idx, day) => {
+  const cell = inspectionInfo.dailyResults.find(
+    (result) =>
+      result != null &&
+      Number(result.inspectDay) === Number(day) &&
+      Number(result.itemIdx) === Number(idx)
+  );
+  if (!cell) return "";
+
+  const cmpnyNm = cell.performCmpnyNm || "";
+  const userNm = cell.performUserNm || "";
+  const userCd = cell.performUserCd || "";
+  if (!cmpnyNm && !userNm) return "";
+
+  const who = userCd ? `${userNm}(${userCd})` : userNm;
+  return cmpnyNm ? `수행: ${cmpnyNm} / ${who}` : `수행: ${who}`;
 };
 
 // 사진 팝업 열기
@@ -714,7 +739,7 @@ const fnPrint = () => {
             font-weight: 500;
           }
           .btn-primary {
-            background-color: #30796a;
+            background-color: #16a34a;
             color: white;
           }
           .btn-secondary {
@@ -877,8 +902,8 @@ const fnPrint = () => {
 
 .month-nav-button:hover:not(:disabled) {
   background-color: #f0f0f0;
-  border-color: #30796a;
-  color: #30796a;
+  border-color: #16a34a;
+  color: #16a34a;
 }
 
 .month-nav-button:disabled {
@@ -1021,7 +1046,7 @@ const fnPrint = () => {
   z-index: 50;
   width: 26px;
   height: 60px;
-  background-color: #30796a;
+  background-color: #16a34a;
   color: white;
   border: none;
   border-radius: 4px 0 0 4px;
@@ -1035,7 +1060,7 @@ const fnPrint = () => {
 }
 
 .toggle-button:hover {
-  background-color: #256b5a;
+  background-color: #15803d;
 }
 
 .toggle-button.active {
@@ -1171,7 +1196,7 @@ const fnPrint = () => {
 
 .view-image-btn {
   padding: 4px 12px;
-  background-color: #30796a;
+  background-color: #16a34a;
   color: white;
   border: none;
   border-radius: 4px;
@@ -1181,7 +1206,7 @@ const fnPrint = () => {
 }
 
 .view-image-btn:hover {
-  background-color: #256b5a;
+  background-color: #15803d;
 }
 
 .image-popup-overlay {

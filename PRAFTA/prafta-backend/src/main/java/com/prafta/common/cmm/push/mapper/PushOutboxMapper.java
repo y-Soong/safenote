@@ -34,39 +34,48 @@ public interface PushOutboxMapper {
 
     /**
      * claim: PENDING → SENDING 조건부 전이(크래시복구/중복발송 방지).
-     * {@code WHERE NOTI_ID=#{notiId} AND SEND_STATUS='PENDING'}.
+     * {@code WHERE CMPNY_CD=#{cmpnyCd} AND NOTI_ID=#{notiId} AND SEND_STATUS='PENDING'}.
+     *
+     * <p>★테넌트 격리: NOTI_ID 는 회사별 채번이라 전역 유일하지 않다. 회사코드 없이 전이하면
+     *   다른 회사의 같은 NOTI_ID 행을 건드린다.
      *
      * @return 1이면 claim 성공(이 워커가 처리), 0이면 이미 다른 주기/상태가 가져감(skip).
      */
-    int claimSending(@Param("notiId") String notiId,
+    int claimSending(@Param("cmpnyCd") String cmpnyCd,
+                     @Param("notiId") String notiId,
                      @Param("actor") String actor);
 
     /**
      * 대상 사용자의 활성 FCM 디바이스 토큰 조회.
-     * {@code WHERE USER_CD=#{targetUserCd} AND DEL_YN='N' AND PUSH_TOKEN IS NOT NULL}.
-     * (tb_user_device 에는 CMPNY_CD 가 없다 — 글로벌 유니크 디바이스, USER_CD 단일 키.)
+     * {@code WHERE CMPNY_CD=#{cmpnyCd} AND USER_CD=#{targetUserCd} AND DEL_YN='N' AND PUSH_TOKEN IS NOT NULL}.
+     *
+     * <p>★테넌트 격리: USER_CD 도 회사별 채번이라 전역 유일하지 않다(서로 다른 회사가 같은 USER_CD 를 가진다).
+     *   종전 구현은 USER_CD 단일 키로 조회해 <b>다른 회사 동일 USER_CD 사용자의 기기로 푸시가 오배송</b>됐다.
      *
      * @return 활성 디바이스 토큰 목록(0건이면 NO_DEVICE_TOKEN 처리).
      */
-    List<DeviceTokenVO> selectDeviceTokens(@Param("targetUserCd") String targetUserCd);
+    List<DeviceTokenVO> selectDeviceTokens(@Param("cmpnyCd") String cmpnyCd,
+                                           @Param("targetUserCd") String targetUserCd);
 
     /**
      * 발송 성공 전이. SEND_STATUS='SENT', SENT_DATE=NOW().
-     * 멱등: {@code WHERE SEND_STATUS IN ('SENDING','PENDING')} (SENT 재처리 방지).
+     * 멱등: {@code WHERE SEND_STATUS IN ('SENDING','PENDING')} (SENT 재처리 방지). CMPNY_CD 동반(테넌트 격리).
      *
      * @return 갱신된 행 수(0이면 이미 종료 상태).
      */
-    int markSent(@Param("notiId") String notiId,
+    int markSent(@Param("cmpnyCd") String cmpnyCd,
+                 @Param("notiId") String notiId,
                  @Param("actor") String actor);
 
     /**
      * 발송 영구 실패 전이. SEND_STATUS='FAILED', RETRY_CNT, ERROR_MSG(500자 가드).
-     * 멱등: {@code WHERE SEND_STATUS IN ('SENDING','PENDING')}.
+     * 멱등: {@code WHERE SEND_STATUS IN ('SENDING','PENDING')}. CMPNY_CD 동반(테넌트 격리).
      *
      * @param retryCnt 최종 재시도 횟수
      * @param errorMsg 실패 사유(서비스에서 500자 substring)
      */
-    int markFailed(@Param("notiId") String notiId,
+    int markFailed(@Param("cmpnyCd") String cmpnyCd,
+                   @Param("notiId") String notiId,
                    @Param("retryCnt") int retryCnt,
                    @Param("errorMsg") String errorMsg,
                    @Param("actor") String actor);
@@ -74,17 +83,20 @@ public interface PushOutboxMapper {
     /**
      * 일시 실패 → PENDING 복귀(다음 주기 재시도). RETRY_CNT+1, ERROR_MSG 보존.
      * claim 으로 SENDING 이 된 행을 다음 주기에 다시 집기 위해 PENDING 으로 되돌린다.
-     * 멱등: {@code WHERE SEND_STATUS='SENDING'}.
+     * 멱등: {@code WHERE SEND_STATUS='SENDING'}. CMPNY_CD 동반(테넌트 격리).
      */
-    int incrementRetryAndRevertPending(@Param("notiId") String notiId,
+    int incrementRetryAndRevertPending(@Param("cmpnyCd") String cmpnyCd,
+                                       @Param("notiId") String notiId,
                                        @Param("errorMsg") String errorMsg,
                                        @Param("actor") String actor);
 
     /**
      * 무효 토큰 soft-delete (B-2 옵션A). DEL_YN='Y' 마킹.
      * PUSH_TOKEN 자체는 보존(감사). 이후 조회에서 DEL_YN 으로 제외된다.
+     * DEVICE_UUID 는 클라이언트 제공값이라 전역 유일을 신뢰할 수 없어 CMPNY_CD 를 동반한다.
      */
-    int softDeleteDeviceToken(@Param("deviceUuid") String deviceUuid,
+    int softDeleteDeviceToken(@Param("cmpnyCd") String cmpnyCd,
+                              @Param("deviceUuid") String deviceUuid,
                               @Param("actor") String actor);
 
     /**
@@ -109,7 +121,8 @@ public interface PushOutboxMapper {
      * @param errorMsg suppress 사유 라벨(PushWorkerConst.SUPPRESS_REASON)
      * @return 갱신된 행 수(0이면 이미 종료 상태/다른 전이).
      */
-    int markSuppressed(@Param("notiId") String notiId,
+    int markSuppressed(@Param("cmpnyCd") String cmpnyCd,
+                       @Param("notiId") String notiId,
                        @Param("errorMsg") String errorMsg,
                        @Param("actor") String actor);
 }

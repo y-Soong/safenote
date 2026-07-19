@@ -11,12 +11,6 @@
     <!-- 조회 영역 -->
     <div class="viewSearch">
       <div>
-        <label>기간</label>
-        <CalendarSrch :range="false" style="width: 130px" v-model="fromDate" />
-        <span class="period-sep">~</span>
-        <CalendarSrch :range="false" style="width: 130px" v-model="toDate" />
-      </div>
-      <div>
         <label>사업장</label>
         <input
           id="siteNo"
@@ -81,44 +75,76 @@
       </div>
     </div>
 
-    <!-- 휴게시간 자동 차감 안내 -->
-    <p class="a08-note">
-      ※ <b>실근로시간</b>과 <b>인정시간(정상근무)</b>은 스케줄에 등록된
-      휴게시간을 자동 차감하여 표시합니다. 초과근무 인정시간은 정해진 휴게시간이
-      없어 관리자가 승인한 근로시간 전체를 표시합니다.
-    </p>
-
-    <!-- 뷰 전환: 전체 / 요약 (Attd_07 토글 패턴 차용) -->
-    <div class="a08-view-toggle">
-      <button
-        type="button"
-        :class="['a08-view-btn', { active: viewMode === 'full' }]"
-        @click="viewMode = 'full'"
-      >
-        전체
-      </button>
-      <button
-        type="button"
-        :class="['a08-view-btn', { active: viewMode === 'summary' }]"
-        @click="viewMode = 'summary'"
-      >
-        요약
-      </button>
+    <!-- 기간 + 뷰 전환 툴바 (Attd_07 툴바 패턴 차용): 기간 픽커(< >)·전체/요약 토글·안내문구 -->
+    <div class="a08-toolbar">
+      <!-- From 캘린더 + 전일/익일 이동 -->
+      <div class="a08-date-nav">
+        <button
+          type="button"
+          class="a08-date-arr"
+          @click="fnFromPrev"
+          aria-label="시작일 전일"
+        >
+          ‹
+        </button>
+        <CalendarSrch :range="false" v-model="fromDate" />
+        <button
+          type="button"
+          class="a08-date-arr"
+          @click="fnFromNext"
+          aria-label="시작일 익일"
+        >
+          ›
+        </button>
+      </div>
+      <span class="period-sep">~</span>
+      <!-- To 캘린더 + 전일/익일 이동 -->
+      <div class="a08-date-nav">
+        <button
+          type="button"
+          class="a08-date-arr"
+          @click="fnToPrev"
+          aria-label="종료일 전일"
+        >
+          ‹
+        </button>
+        <CalendarSrch :range="false" v-model="toDate" />
+        <button
+          type="button"
+          class="a08-date-arr"
+          @click="fnToNext"
+          aria-label="종료일 익일"
+        >
+          ›
+        </button>
+      </div>
+      <!-- 뷰 전환: 전체 / 요약 -->
+      <div class="a08-view-toggle">
+        <button
+          type="button"
+          :class="['a08-view-btn', { active: viewMode === 'full' }]"
+          @click="viewMode = 'full'"
+        >
+          전체
+        </button>
+        <button
+          type="button"
+          :class="['a08-view-btn', { active: viewMode === 'summary' }]"
+          @click="viewMode = 'summary'"
+        >
+          요약
+        </button>
+      </div>
+      <!-- 휴게시간 자동 차감 안내 (전체/요약 버튼 우측) -->
+      <p class="a08-note">
+        ※ <b>실근로시간</b>과 <b>인정시간(정상근무)</b>은 스케줄에 등록된
+        휴게시간을 자동 차감하여 표시합니다. 초과근무 인정시간은 정해진
+        휴게시간이 없어 관리자가 승인한 근로시간 전체를 표시합니다.
+      </p>
     </div>
 
-    <!-- 소제목 바 + 본문(전체/요약)을 subtitle-pane 래퍼로 감싼다 (User_01 패턴 정렬) -->
+    <!-- 본문(전체/요약)을 subtitle-pane 래퍼로 감싼다 (테이블 높이/스크롤 관리) -->
     <div class="table-wrapper subtitle-pane">
-      <!-- 소제목 바 (User_01 / LeavePromotion_01 패턴 차용) -->
-      <div class="subtitle-row">
-        <div class="subtitle">
-          <span class="subtitle-icon" aria-hidden="true">
-            <svg viewBox="0 0 24 24" width="18" height="18">
-              <path d="M4 4h16v4H4zM4 10h10v10H4z" />
-            </svg>
-          </span>
-          <span class="subtitle-text">사용자 리스트</span>
-        </div>
-      </div>
 
       <!-- 본문(전체): 좌측 결과 테이블 / 우측 상세 패널 -->
       <div
@@ -494,6 +520,26 @@ function toIsoDate(d) {
   const m = String(d.getMonth() + 1).padStart(2, "0");
   const day = String(d.getDate()).padStart(2, "0");
   return `${y}-${m}-${day}`;
+}
+
+// 기간 픽커 하루 단위 이동 (< / > 화살표). 값이 없으면 오늘 기준으로 시작.
+function shiftIsoDate(iso, deltaDays) {
+  const base = iso ? iso.split("-").map(Number) : null;
+  const dt = base ? new Date(base[0], base[1] - 1, base[2]) : new Date();
+  dt.setDate(dt.getDate() + deltaDays);
+  return toIsoDate(dt);
+}
+function fnFromPrev() {
+  fromDate.value = shiftIsoDate(fromDate.value, -1);
+}
+function fnFromNext() {
+  fromDate.value = shiftIsoDate(fromDate.value, 1);
+}
+function fnToPrev() {
+  toDate.value = shiftIsoDate(toDate.value, -1);
+}
+function fnToNext() {
+  toDate.value = shiftIsoDate(toDate.value, 1);
 }
 
 // 사업장/부서 자동조회 처리 (Attd_07 패턴 차용)
@@ -1513,14 +1559,16 @@ onBeforeUnmount(() => {
   background: #fff;
 }
 
-/* 휴게 자동차감 안내 문구 */
+/* 휴게 자동차감 안내 문구 — 툴바 내 전체/요약 토글 우측에 배치. 남은 폭을 채우며
+   길면 줄바꿈된다(min-width:0 으로 flex 축소 허용). */
 .a08-note {
-  /* flex-column 에서 압축되지 않도록 자연 높이 고정 */
-  flex: 0 0 auto;
+  flex: 1 1 auto;
+  min-width: 0;
   margin: 0;
-  padding: 0.4rem 0.75rem;
-  font-size: 0.8rem;
-  line-height: 1.4;
+  margin-inline-start: 0.6rem;
+  padding: 0;
+  font-size: 0.75rem;
+  line-height: 1.35;
   color: var(--color-text-muted, #6b7280);
 }
 .a08-note b {
@@ -1543,16 +1591,61 @@ onBeforeUnmount(() => {
   overflow: hidden;
 }
 
-/* 소제목 바: 높이는 내용만큼만 차지하고(축소 금지), 본문(전체/요약)의 테이블과
-   동일한 좌측 여백(0.75rem)으로 정렬한다. 본문은 .a08-body / .a08-summary-body 의
-   padding 0.75rem 으로 테이블이 들여써지므로 소제목도 같은 들여쓰기를 주고,
-   소제목 자체의 기본 padding-inline 은 제거한다. */
-.subtitle-pane > .subtitle-row {
+/* 기간 + 뷰 전환 툴바 (Attd_07 .a07-toolbar 패턴 차용): From/To 픽커(< >)·전체/요약 토글·안내문구.
+   조회영역(.viewSearch) 과 동일한 바(배경+하단 구분선) 형태로 만들어, 조회영역이 아닌
+   테이블 영역의 헤더로 명확히 읽히도록 한다. */
+.a08-toolbar {
   flex: 0 0 auto;
-  padding-inline-start: 0.75rem;
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.5rem 0.75rem;
+  border-bottom: 1px solid var(--color-border, #e5e7eb);
+  background: var(--color-bg, #f9fafb);
+  flex-wrap: wrap;
+  font-family: "Pretendard", sans-serif;
 }
-.subtitle-pane > .subtitle-row .subtitle {
-  padding-inline-start: 0;
+/* 캘린더 + 전일/익일(< >) 이동 버튼 묶음 */
+.a08-date-nav {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+}
+/* 캘린더 입력 형태를 Attd_07 월 픽커(.a07-nav-month-picker)와 동일하게.
+   포맷은 컴포넌트가 Y-m-d 로 유지하므로 날짜는 yyyy-mm-dd 로 표시된다. */
+.a08-date-nav :deep(.calendar-input) {
+  height: 28px;
+  padding: 0 0.5rem;
+  border: 1px solid var(--color-border, #d1d5db);
+  border-radius: 4px;
+  font-size: 0.875rem;
+  font-weight: 600;
+  color: var(--color-text-strong, #111827);
+  background: #fff;
+  cursor: pointer;
+  text-align: center;
+  min-width: 120px;
+  font-family: "Pretendard", sans-serif;
+}
+.a08-date-nav :deep(.calendar-input:hover) {
+  border-color: var(--color-primary, #16a34a);
+  color: var(--color-primary, #16a34a);
+}
+.a08-date-arr {
+  width: 24px;
+  height: 24px;
+  border: 1px solid var(--color-border, #d1d5db);
+  background: #fff;
+  border-radius: 4px;
+  cursor: pointer;
+  color: var(--color-text-muted, #6b7280);
+  font-size: 0.875rem;
+  line-height: 1;
+  flex: 0 0 auto;
+}
+.a08-date-arr:hover {
+  color: var(--color-primary, #16a34a);
+  border-color: var(--color-primary, #16a34a);
 }
 
 .a08-table {
@@ -1839,14 +1932,14 @@ onBeforeUnmount(() => {
 /* 뷰 전환 토글 (전체/요약) — Attd_07 세그먼트 컨트롤과 동일 형태 */
 .a08-view-toggle {
   display: inline-flex;
-  /* .viewComm flex-column 에서 압축되어 버튼이 세로로 잘리지 않도록 자연 높이 고정 */
+  /* 툴바 flex 에서 압축되어 버튼이 세로로 잘리지 않도록 자연 높이 고정 */
   flex: 0 0 auto;
-  /* .viewComm 가 flex-column(align-items: stretch) 이라 행 전체로 늘어남 → 콘텐츠 폭으로 고정 */
-  align-self: flex-start;
+  align-self: center;
   border: 1px solid var(--color-border, #d1d5db);
   border-radius: 4px;
   overflow: hidden;
-  margin: 0 0.75rem 0.4rem;
+  /* 기간 픽커 그룹과 살짝 띄운다 */
+  margin-inline-start: 0.6rem;
 }
 .a08-view-btn {
   background: none;

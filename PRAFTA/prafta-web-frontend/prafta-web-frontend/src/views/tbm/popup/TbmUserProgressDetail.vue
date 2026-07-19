@@ -113,6 +113,8 @@
                 <tr>
                   <th style="width: 4%; text-align: center">No</th>
                   <th style="width: 30%">세션명</th>
+                  <!-- 개최 회사(PRAFTA-SUBCON-T5 F4): 타사(연동) 세션 이력만 값이 있다(자사는 '-'). -->
+                  <th style="width: 12%">개최 회사</th>
                   <th style="width: 13%">교육일</th>
                   <th style="width: 12%; text-align: center">인정시간</th>
                   <th style="width: 13%">입실시각</th>
@@ -123,7 +125,7 @@
               <tbody>
                 <template v-if="!attendances || attendances.length === 0">
                   <tr>
-                    <td colspan="7" class="edu-grid-empty">
+                    <td colspan="8" class="edu-grid-empty">
                       이수 이력이 없습니다.
                     </td>
                   </tr>
@@ -134,6 +136,7 @@
                       {{ (page - 1) * pageSize + idx + 1 }}
                     </td>
                     <td>{{ row.sessionTitle }}</td>
+                    <td>{{ row.hostCmpnyNm || "-" }}</td>
                     <td>{{ row.sessionDate || "-" }}</td>
                     <td style="text-align: center">
                       {{ fmtMinutes(row.eduMinutes) }}

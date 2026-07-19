@@ -60,12 +60,23 @@
         :removable="slots.length > 1"
         @remove="onRemoveSlot"
       >
-        <!-- #3 등록 가능 시간 안내 (구간별, 표시 전용) -->
-        <div class="ot-window" :class="{ 'ot-window--empty': !slotWindowText(slot.workSeq) }">
+        <!-- 등록 가능 시간 (구간별). 웹 Attd_07 일자상세 팝업의 "등록 가능" 칩과 동일 동작 —
+             탭하면 그 범위가 시작/종료 입력칸에 그대로 채워진다. -->
+        <div class="ot-window" :class="{ 'ot-window--empty': !slotWindows(slot.workSeq).length }">
           <span class="ot-window__lbl">등록 가능 시간</span>
-          <span class="ot-window__val">
-            {{ slotWindowText(slot.workSeq) || '등록 가능한 초과 시간이 없어요' }}
-          </span>
+          <ul v-if="slotWindows(slot.workSeq).length" class="ot-window__list">
+            <li v-for="(w, wi) in slotWindows(slot.workSeq)" :key="wi">
+              <button
+                type="button"
+                class="ot-window__chip"
+                :aria-label="`${w.label} 범위로 초과근무 시간 채우기`"
+                @click="applyWindow(slot.workSeq, w)"
+              >
+                {{ w.label }}
+              </button>
+            </li>
+          </ul>
+          <span v-else class="ot-window__val">등록 가능한 초과 시간이 없어요</span>
         </div>
 
         <!-- prafta-app-017(이슈①) 정규 스케줄 겹침 경고 (구간별, 사전차단) -->
@@ -311,63 +322,89 @@ const ctxSiteDisplay = computed(() => props.context.siteName || '')
 const scheduleSummaryDisplay = computed(() => formatTimeSummary(props.context.scheduleSummary))
 const attendanceSummaryDisplay = computed(() => formatTimeSummary(props.context.attendanceSummary))
 
-// ── #3 구간별 등록 가능 시간 (표시 전용) ───────────────────────────────
-// 산식(plan §0-4): 앞 OT=실출근~스케줄시작, 뒤 OT=스케줄종료~실퇴근.
-//   schedule == null 인 구간 → 그 구간 실근무 전체가 등록 가능.
-//   윈도우가 없으면 '' 반환(템플릿이 "없어요" 안내로 표시).
-//   ⚠️ 표시 전용이므로 계산 실패 시 예외 던지지 않고 '' 반환(차단 아님).
-const slotWindowText = (workSeq) => {
+// ── 구간별 등록 가능 시간 (칩 — 탭하면 입력칸에 자동 반영) ──────────────
+// 산식(plan §0-4, 웹 Attd_07 일자상세 팝업과 동일): 등록 가능 OT = 실근태 − 스케줄.
+//   앞 OT = 실출근~스케줄시작, 뒤 OT = 스케줄종료~실퇴근.
+//   schedule == null 인 구간 → 그 구간 실근무 전체가 등록 가능(§9.3.3 "스케줄 없는 날 전량").
+//   반환: [{ startYmd, startHhmm, endYmd, endHhmm, label }] — 칩 표시와 자동 입력에 함께 쓴다.
+//   ⚠️ 계산 실패는 차단이 아니라 무음(빈 배열) 처리 — 사용자가 직접 입력하는 길을 막지 않는다.
+//   경계 판정은 전부 (일자+시각) stamp 로 한다. 시:분만 비교하면 야간/자정 넘김(전날 출근,
+//   0시 시작 스케줄, 익일 퇴근 등)에서 구간이 통째로 누락되거나 날짜가 틀어진다.
+const slotWindows = (workSeq) => {
   try {
     const ctxSlots = props.context?.slots || []
     const ctx = ctxSlots.find((s, i) => (s?.workSeq ?? i + 1) === workSeq)
-    if (!ctx) return ''
+    if (!ctx) return []
 
     const attendance = ctx.attendance
     const schedule = ctx.schedule
     // 근태(실 출퇴근)가 없으면 등록가능 윈도우 산출 불가.
-    if (!attendance) return ''
+    if (!attendance) return []
 
+    const workYmd = props.context.workYmd
     const inHhmm = attendance.checkInTime
     const outHhmm = attendance.checkOutTime
-    const inDisp = hhmmDisplay(inHhmm)
-    const outDisp = hhmmDisplay(outHhmm)
+    const inYmd = attendance.checkInDate || workYmd
+    const outYmd = attendance.checkOutDate || workYmd
 
-    // 스케줄 없는 구간(추가 출근 등) → 실근무 전체가 등록 가능(§9.3.3 "스케줄 없는 날 전량").
-    if (!schedule || (!schedule.startTime && !schedule.endTime)) {
-      if (inDisp && outDisp) return `${inDisp}~${outDisp}`
-      if (inDisp) return `${inDisp}~`
-      return ''
-    }
-
-    const schStart = schedule.startTime // HHMM
-    const schEnd = schedule.endTime // HHMM
-    const windows = []
-
-    // 앞 OT: 실 출근 일시 < 스케줄 시작 일시. 시:분만 비교하면 야간/자정(전날 출근 + 스케줄
-    //   0시 시작 등)에서 전날 근무분(예: 전날 23:57~00:00)이 누락되므로 (일자+시각)으로 비교한다.
-    //   스케줄 시작일자 = 해당 근무일(workYmd), 실 출근일자 = checkInDate(없으면 workYmd 폴백).
-    const inYmd = attendance.checkInDate || props.context.workYmd
-    const schStartStamp = stampOf(props.context.workYmd, schStart)
     const inStamp = stampOf(inYmd, inHhmm)
-    if (!Number.isNaN(inStamp) && !Number.isNaN(schStartStamp) && inStamp < schStartStamp) {
-      windows.push(`${inDisp}~${hhmmDisplay(schStart)}`)
-    }
-    // 뒤 OT: 실퇴근 > 스케줄종료. 자정 넘김(checkOutDate > checkInDate)이면 뒤 OT 인정.
-    if (outHhmm && schEnd && toMin(outHhmm) >= 0 && toMin(schEnd) >= 0) {
-      const overnight =
-        attendance.checkOutDate &&
-        attendance.checkInDate &&
-        attendance.checkOutDate > attendance.checkInDate
-      if (overnight || toMin(outHhmm) > toMin(schEnd)) {
-        windows.push(`${hhmmDisplay(schEnd)}~${outDisp}`)
-      }
+    const outStamp = stampOf(outYmd, outHhmm)
+    // 출근만 있고 퇴근 전이거나 실근무 0분(출근=퇴근)이면 등록할 초과근무가 없다 → 칩 없음.
+    if (Number.isNaN(inStamp) || Number.isNaN(outStamp) || outStamp <= inStamp) return []
+    const actual = [inStamp, outStamp]
+
+    // 스케줄 없는 구간(추가 출근 등) → 실근무 전체가 등록 가능.
+    if (!schedule || (!schedule.startTime && !schedule.endTime)) {
+      return [makeWindow(actual[0], actual[1])]
     }
 
-    return windows.join(', ')
+    const schStartStamp = stampOf(workYmd, schedule.startTime)
+    let schEndStamp = stampOf(workYmd, schedule.endTime)
+    if (Number.isNaN(schStartStamp) || Number.isNaN(schEndStamp)) return []
+    // 자정을 넘기는 스케줄(종료 < 시작)은 종료가 다음날이다.
+    if (schEndStamp < schStartStamp) schEndStamp += 1440
+
+    // 실근태 − 스케줄 (구간 차집합). 스케줄 밖에서 실제로 일한 시간만 등록 가능하다.
+    //   "스케줄 종료 ~ 실퇴근" 으로 잡으면 실제로 근무하지 않은 공백(예: 스케줄 18:00 종료 후
+    //   19:50 에 출근한 경우의 18:00~19:50)까지 포함돼 웹/백엔드 산출과 어긋난다.
+    return subtractInterval(actual, [schStartStamp, schEndStamp]).map(([s, e]) => makeWindow(s, e))
   } catch (e) {
     // 표시 전용 — 계산 실패는 무음 처리.
-    return ''
+    return []
   }
+}
+
+// 구간 차집합 (a − b). 웹 AttdDayDetailPop.subtractIntervals / 백엔드 AttdScheduleUtils 와 동일 규칙.
+//   구간이 하나씩이므로 앞/뒤 잔여 조각(최대 2개)만 나온다. 겹치지 않으면 a 를 그대로 돌려준다.
+function subtractInterval([aStart, aEnd], [bStart, bEnd]) {
+  const out = []
+  if (bStart > aStart) out.push([aStart, Math.min(bStart, aEnd)])
+  if (bEnd < aEnd) out.push([Math.max(bEnd, aStart), aEnd])
+  // 길이 0 이하(빈 조각) 제거.
+  return out.filter(([s, e]) => e > s)
+}
+
+// stamp 쌍 → 칩 1건({ startYmd, startHhmm, endYmd, endHhmm, label }).
+function makeWindow(startStamp, endStamp) {
+  const startYmd = stampToYmd(startStamp)
+  const startHhmm = stampToHhmm(startStamp)
+  const endYmd = stampToYmd(endStamp)
+  const endHhmm = stampToHhmm(endStamp)
+  // 날짜가 다르면(자정 넘김) 종료 쪽에 (익일) 표시를 붙여 사용자가 헷갈리지 않게 한다.
+  const nextDay = endYmd !== startYmd
+  const label = `${hhmmDisplay(startHhmm)}~${hhmmDisplay(endHhmm)}${nextDay ? ' (익일)' : ''}`
+  return { startYmd, startHhmm, endYmd, endHhmm, label }
+}
+
+// 칩 탭 → 해당 구간의 시작/종료 입력칸을 그 범위로 채운다(웹 addOtFromWindow 와 동형).
+//   이미 같은 값이면 그대로 둔다(멱등). 사용자가 이후 수동으로 조정하는 건 자유.
+const applyWindow = (workSeq, w) => {
+  const slot = slots.value.find((s) => s.workSeq === workSeq)
+  if (!slot || !w) return
+  slot.startDate = ymdToInput(w.startYmd)
+  slot.startTime = hhmmToTime(w.startHhmm)
+  slot.endDate = ymdToInput(w.endYmd)
+  slot.endTime = hhmmToTime(w.endHhmm)
 }
 
 // HHMM(4자리) → 분. 형식 위반 시 -1.
@@ -390,6 +427,24 @@ function stampOf(ymd, hhmm) {
   const d = Number(ymd.slice(6, 8))
   const days = Math.round(Date.UTC(y, mo - 1, d) / 86400000)
   return days * 1440 + m
+}
+
+// stamp → YYYYMMDD. stampOf 의 역변환(동일하게 UTC 기준 — 로컬 타임존 영향 없음).
+function stampToYmd(stamp) {
+  const days = Math.floor(stamp / 1440)
+  const dt = new Date(days * 86400000)
+  const y = dt.getUTCFullYear()
+  const mo = String(dt.getUTCMonth() + 1).padStart(2, '0')
+  const d = String(dt.getUTCDate()).padStart(2, '0')
+  return `${y}${mo}${d}`
+}
+
+// stamp → HHMM(그날 0시 기준 분).
+function stampToHhmm(stamp) {
+  const m = ((stamp % 1440) + 1440) % 1440
+  const h = String(Math.floor(m / 60)).padStart(2, '0')
+  const mm = String(m % 60).padStart(2, '0')
+  return `${h}${mm}`
 }
 
 // ── 겹침 경고 (2슬롯) ────────────────────────────────────────────────────
@@ -775,6 +830,29 @@ const onSubmit = () => {
 }
 .ot-window--empty .ot-window__val {
   color: var(--color-text-tertiary);
+}
+/* 등록 가능 범위 칩 — 탭하면 시작/종료 입력칸이 그 범위로 채워진다. */
+.ot-window__list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-xs);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.ot-window__chip {
+  padding: 4px 10px;
+  background: var(--color-surface);
+  border: 0.5px solid var(--color-primary);
+  border-radius: var(--radius-full);
+  color: var(--color-primary-text-darkest);
+  font-family: inherit;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  cursor: pointer;
+}
+.ot-window__chip:active {
+  background: var(--color-primary-tint-border);
 }
 
 .field {

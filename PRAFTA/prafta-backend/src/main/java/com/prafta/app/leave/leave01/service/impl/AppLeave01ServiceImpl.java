@@ -51,6 +51,10 @@ public class AppLeave01ServiceImpl implements AppLeave01Service {
 
     private static final DateTimeFormatter YMD = DateTimeFormatter.ofPattern("yyyyMMdd");
 
+    // 연차 원장 일수 컬럼 최대 스케일(TB_USER_LEAVE_USE.LEAVE_DAYS / TB_USER_LEAVE_GRANT.USED_DAYS = decimal(8,5)).
+    // 응답 일수 수치를 이 스케일로 전달해 시간차 사용분(예 0.075일)을 손실 없이 앱에 넘긴다(반올림 오표기 제거).
+    private static final int LEDGER_DECIMAL_SCALE = 5;
+
     private final AppLeave01Mapper appLeave01Mapper;
     /** 연차 개편(표시): 활성정책 AXIS2_FISCAL_START_MM/_DD 조회(회계연도 경계 산출 입력). 락 없는 조회 메서드 재사용. */
     private final LeavePolicyMapper leavePolicyMapper;
@@ -253,12 +257,22 @@ public class AppLeave01ServiceImpl implements AppLeave01Service {
     }
 
     /**
-     * BigDecimal → double (null=0.0, 소수 1자리 반올림 — home01 toScaledDouble 패턴).
+     * BigDecimal → double (null=0.0).
+     *
+     * <p>연차 원장 정밀도(TB_USER_LEAVE_USE.LEAVE_DAYS / TB_USER_LEAVE_GRANT.USED_DAYS
+     * = decimal(8,5), GRANT_DAYS = decimal(5,2))를 그대로 전달한다. 여기서 처리하는 값은
+     * granted/used/planned/remaining/borrowedDays/totalRemainingDays/appliedLeaveTypes 로
+     * 전부 원장 컬럼의 가감산 결과라 소수 최대 5자리이다.</p>
+     *
+     * <p>과거 소수 1자리 반올림(setScale(1))이 시간차 사용분을 왜곡해(예 1.075일 → 1.1일)
+     * 앱 분(分) 환산 시 "1일 40분"(실제 "1일 30분")으로 오표기되던 결함을 제거한다.
+     * 원장 스케일(5)로 맞추면 손실 없이 전달되고 앱 leaveFormat 이 정확히 "N일 H시간 M분"으로 표기한다.</p>
      */
     private double toScaledDouble(BigDecimal value) {
         if (value == null) {
             return 0.0;
         }
-        return value.setScale(1, RoundingMode.HALF_UP).doubleValue();
+        // 원장 최대 스케일(decimal(8,5)) 로 맞춤 — 반올림 없이 원값 그대로 전달.
+        return value.setScale(LEDGER_DECIMAL_SCALE, RoundingMode.HALF_UP).doubleValue();
     }
 }

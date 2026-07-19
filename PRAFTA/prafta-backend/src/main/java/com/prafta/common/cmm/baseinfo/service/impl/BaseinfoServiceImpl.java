@@ -193,7 +193,8 @@ public class BaseinfoServiceImpl implements BaseinfoService{
 		String certNo = "";
 		
 		if(param.dupChkYn() != null && param.dupChkYn().equals("Y")) {
-			int mblCnt = baseinfoMapper.selectMblUniqChk(MblUniqueCheckQuery.from(phoneHmac));
+			int mblCnt = baseinfoMapper.selectMblUniqChk(
+					MblUniqueCheckQuery.from(param.cmpnyCd(), phoneHmac));
 			
 			if(mblCnt > 0) {
 				throw new ApiException(CommonErrorCode.COMMON_400_001, "이미 등록된 휴대폰번호입니다.\\n 확인 후 다시 시도해주세요.");

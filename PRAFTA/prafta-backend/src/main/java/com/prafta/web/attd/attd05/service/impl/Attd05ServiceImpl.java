@@ -126,6 +126,8 @@ public class Attd05ServiceImpl implements Attd05Service {
     private static final String REASON_LEAVE_PRESERVED = "LEAVE_PRESERVED";
     /** prafta-com-016-C-2 스킵 사유 - 직접 지정 불가 휴가 종류(SYS_ANNUAL/SYS_MONTHLY 외)는 거부. */
     private static final String REASON_LEAVE_CD_NOT_ALLOWED = "LEAVE_CD_NOT_ALLOWED";
+    /** 근태 E2E F4(4-13) 스킵 사유 - 해당일 처리 대기 스케줄수정요청(REQ_TYPE='10', 대기) 보유 → 관리자 직접 변경 불가(경합 방지). */
+    private static final String REASON_HAS_PENDING_SCH_MODIFY = "HAS_PENDING_SCH_MODIFY";
 
     @Override
     public UserWorkPlansResponse getUserWorkPlan(UserWorkPlansParam param) {
@@ -384,6 +386,20 @@ public class Attd05ServiceImpl implements Attd05Service {
     		//   ★연차 셀(법정연차 코드)은 D-3 정합으로 잠금 통과(연차만 허용). 가드를 연차 분기 이전에
     		//   "연차 아닌 셀"에만 적용한다. 관리자 예외 없음(권한 무관 — 가드는 authCd 를 보지 않는다).
     		if (!isLegalLeaveCell) {
+    			// 근태 E2E F4(4-13): 해당 (사용자+근무일)에 처리 대기 중인 스케줄수정요청(REQ_TYPE='10', REQ_STATUS='01')이
+    			//   있으면 관리자 직접 스케줄 변경을 차단(스킵)한다. 승인/반려/취소된 요청은 잠그지 않는다(오탐 방지).
+    			//   경합 방지: 대기 요청이 참조할 기준 스케줄을 관리자가 임의 변경하지 못하게 한다.
+    			//   권한 가드(ensureCanManageTargetUser)·회사/사업장 스코프 통과 이후에만 조회된다.
+    			if (attd05Mapper.countPendingSchModifyReq(
+    					model.gvCmpnyCd(), model.siteCd(), model.userCd(), model.workYmd()) > 0) {
+    				skippedList.add(new SkippedCellResult(
+    						model.userCd(), model.workYmd(), workPlanCd,
+    						REASON_HAS_PENDING_SCH_MODIFY, reasonText(REASON_HAS_PENDING_SCH_MODIFY)));
+    				log.info("근무계획 저장 스킵(대기 스케줄수정요청 경합) - userCd={}, workYmd={}, schCd={}"
+    						, model.userCd(), model.workYmd(), workPlanCd);
+    				continue;
+    			}
+
     			shiftMembershipService.assertNotShiftLocked(
     					model.gvCmpnyCd(), model.siteCd(), model.userCd(), model.workYmd());
 
@@ -860,6 +876,9 @@ public class Attd05ServiceImpl implements Attd05Service {
     	}
     	if (REASON_LEAVE_CD_NOT_ALLOWED.equals(reasonCode)) {
     		return "이 화면에서 직접 지정할 수 있는 휴가는 연차/월차뿐입니다.";
+    	}
+    	if (REASON_HAS_PENDING_SCH_MODIFY.equals(reasonCode)) {
+    		return "처리 대기 중인 스케줄 수정요청이 있어 변경할 수 없습니다. 요청을 먼저 처리해 주세요.";
     	}
     	return "근무타입을 지정할 수 없는 날짜입니다.";
     }

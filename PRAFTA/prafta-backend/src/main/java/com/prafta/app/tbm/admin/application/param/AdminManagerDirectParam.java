@@ -14,6 +14,7 @@ import com.prafta.common.exception.ApiException;
 public record AdminManagerDirectParam(
     String sessionCd
     , String userCd
+    // PRAFTA-SUBCON-T5 F9: 대상 회사코드를 받지 않는다(앱 대리입실 = 자사 전용). 회사는 토큰 출처.
     , String gvCmpnyCd
     , String gvUserCd
     , String gvSiteCd

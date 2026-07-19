@@ -1,0 +1,239 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.prafta.platform.location.mapper.PlatformLocationMapper">
+
+    <!-- ============================================================
+         SMS 인증 게이트 (PURPOSE_CD='PLATFORM_LOCATION' 전용 - 셀프가입 흐름과 격리)
+         ============================================================ -->
+
+    <!-- 운영자 본인 등록 휴대폰(ENC/HMAC) 조회. 평문 컬럼 없음(PII 최소 접촉).
+         주의: record 매핑은 SELECT 컬럼 순서 의존 - OperatorMblResult(mblNoEnc, mblNoHmac) 순서 유지. -->
+    <select id="selectOperatorMbl" parameterType="com.prafta.platform.location.application.query.OperatorMblQuery" resultType="com.prafta.platform.location.application.result.OperatorMblResult">
+    /* PlatformLocationMapper.selectOperatorMbl */
+    SELECT
+        U.MBL_NO_ENC    AS mblNoEnc
+        , U.MBL_NO_HMAC AS mblNoHmac
+    FROM TB_USER U
+    WHERE U.CMPNY_CD = #{cmpnyCd}
+      AND U.USER_CD  = #{userCd}
+    </select>
+
+    <!-- 인증코드 INSERT - baseinfo insertSmsAuthNo 미러(코드 유효 1분).
+         PURPOSE_CD 는 XML 고정 리터럴(호출부 실수로 목적 혼용 방지). -->
+    <insert id="insertPlatformSmsAuth" parameterType="com.prafta.platform.location.application.command.PlatformSmsAuthInsertCommand">
+    /* PlatformLocationMapper.insertPlatformSmsAuth */
+    INSERT INTO TB_SMS_AUTH_CODE (
+        MBL_NO_ENC
+        , MBL_NO_HMAC
+        , AUTH_CD
+        , PURPOSE_CD
+        , EXPIRED_AT
+        , INSERT_NO
+    )
+    VALUES (
+        #{mblNoEnc}
+        , #{mblNoHmac}
+        , #{certNo}
+        , 'PLATFORM_LOCATION'
+        , DATE_ADD(NOW(), INTERVAL 1 MINUTE)
+        , #{gvUserCd}
+    )
+    </insert>
+
+    <!-- 최근 1분 내 동일 HMAC·PLATFORM_LOCATION 목적 발송 건수 - 발송 레이트리밋(보안 리뷰 V-2).
+         1 이상이면 신규 발송 거부(PLATFORM_400_013). idx_sms_auth_mbl_hmac_ins 인덱스 정합. -->
+    <select id="selectRecentPlatformSmsSendCnt" resultType="int">
+    /* PlatformLocationMapper.selectRecentPlatformSmsSendCnt */
+    SELECT
+        COUNT(1)
+    FROM TB_SMS_AUTH_CODE S
+    WHERE 1=1
+      AND S.MBL_NO_HMAC = #{mblNoHmac}
+      AND S.PURPOSE_CD  = 'PLATFORM_LOCATION'
+      AND S.INSERT_DATE <![CDATA[ >= ]]> DATE_SUB(NOW(), INTERVAL 1 MINUTE)
+    </select>
+
+    <!-- 미검증·미만료 인증코드 매칭 - baseinfo selectCertNoSmsId 미러 + 목적 필터.
+         동일 번호 다건 발송 대비 최신 1건만(재발송 시 마지막 코드 기준).
+         FAIL_CNT 5회 이상 코드는 무효(브루트포스 방어 V-2 - 재발송 필요). 초과 여부는 응답에서
+         구분하지 않는다(PLATFORM_400_010 재사용 - 열거 방지). -->
+    <select id="selectPlatformCertSmsId" parameterType="com.prafta.platform.location.application.query.PlatformSmsCertQuery" resultType="string">
+    /* PlatformLocationMapper.selectPlatformCertSmsId */
+    SELECT
+        S.SMS_ID
+    FROM TB_SMS_AUTH_CODE S
+    WHERE 1=1
+      AND S.MBL_NO_HMAC = #{mblNoHmac}
+      AND S.AUTH_CD     = #{certNo}
+      AND S.PURPOSE_CD  = 'PLATFORM_LOCATION'
+      AND S.EXPIRED_AT <![CDATA[ >= ]]> NOW()
+      AND S.VERIFIED_YN = 'N'
+      AND S.FAIL_CNT <![CDATA[ < ]]> 5
+    ORDER BY S.SMS_ID DESC
+    LIMIT 1
+    </select>
+
+    <!-- 인증번호 불일치 시 최신 미검증 PLATFORM_LOCATION 레코드 FAIL_CNT +1(브루트포스 카운터 V-2).
+         UPDATE_NO/UPDATE_DATE 는 건드리지 않는다(UPDATE_DATE 는 검증 통과 시각 = 10분 창 기산점 전용).
+         MySQL 단일 테이블 UPDATE 의 ORDER BY + LIMIT 사용(최신 1건만). -->
+    <update id="increasePlatformSmsFailCnt">
+    /* PlatformLocationMapper.increasePlatformSmsFailCnt */
+    UPDATE TB_SMS_AUTH_CODE
+    SET
+        FAIL_CNT = FAIL_CNT + 1
+    WHERE 1=1
+      AND MBL_NO_HMAC = #{mblNoHmac}
+      AND PURPOSE_CD  = 'PLATFORM_LOCATION'
+      AND VERIFIED_YN = 'N'
+    ORDER BY SMS_ID DESC
+    LIMIT 1
+    </update>
+
+    <!-- 인증 통과 처리(VERIFIED_YN='Y') - baseinfo updateSmsAuthReq 미러 + 목적 필터.
+         UPDATE_DATE 가 10분 유효창의 기산점이 된다. -->
+    <update id="updatePlatformSmsVerified" parameterType="com.prafta.platform.location.application.command.PlatformSmsVerifyCommand">
+    /* PlatformLocationMapper.updatePlatformSmsVerified */
+    UPDATE TB_SMS_AUTH_CODE
+    SET
+        VERIFIED_YN   = 'Y'
+        , UPDATE_NO   = #{gvUserCd}
+        , UPDATE_DATE = NOW()
+    WHERE 1=1
+      AND SMS_ID      = #{smsId}
+      AND MBL_NO_HMAC = #{mblNoHmac}
+      AND AUTH_CD     = #{certNo}
+      AND PURPOSE_CD  = 'PLATFORM_LOCATION'
+      AND EXPIRED_AT <![CDATA[ >= ]]> NOW()
+      AND VERIFIED_YN = 'N'
+      AND FAIL_CNT <![CDATA[ < ]]> 5
+    </update>
+
+    <!-- 유효(10분 창) 인증 상태 판정 - baseinfo selectSmsVerifiedSmsId 미러 + 목적 필터.
+         소비하지 않는다(10분 창 내 다회 조회 허용 - 요청서 3-2).
+         주의: record 매핑은 SELECT 컬럼 순서 의존 - PlatformSmsVerifiedResult(smsId, verifiedAt, remainSec) 순서 유지. -->
+    <select id="selectPlatformSmsVerified" parameterType="com.prafta.platform.location.application.query.PlatformSmsVerifiedQuery" resultType="com.prafta.platform.location.application.result.PlatformSmsVerifiedResult">
+    /* PlatformLocationMapper.selectPlatformSmsVerified */
+    SELECT
+        S.SMS_ID                                            AS smsId
+        , DATE_FORMAT(S.UPDATE_DATE, '%Y-%m-%d %H:%i:%s')   AS verifiedAt
+        , TIMESTAMPDIFF(SECOND, NOW(), DATE_ADD(S.UPDATE_DATE, INTERVAL 10 MINUTE)) AS remainSec
+    FROM TB_SMS_AUTH_CODE S
+    INNER JOIN TB_USER U
+        ON U.MBL_NO_HMAC = S.MBL_NO_HMAC
+    WHERE 1=1
+      AND U.CMPNY_CD    = #{cmpnyCd}
+      AND U.USER_CD     = #{userCd}
+      AND S.PURPOSE_CD  = 'PLATFORM_LOCATION'
+      AND S.VERIFIED_YN = 'Y'
+      AND S.UPDATE_DATE <![CDATA[ >= ]]> DATE_SUB(NOW(), INTERVAL 10 MINUTE)
+    ORDER BY S.UPDATE_DATE DESC
+    LIMIT 1
+    </select>
+
+    <!-- ============================================================
+         위치정보 조회 (read-only)
+         ============================================================ -->
+
+    <!-- 대상 회사 사업장 목록(지도 중심/지오펜스 원용 좌표 포함).
+         USE_YN 필터 없음: 비활성 사업장에도 수집된 위치정보가 남아 있을 수 있다(LBS 전량 열람 목적).
+         주의: record 매핑은 SELECT 컬럼 순서 의존 - LocationSiteResult(siteCd, siteNo, siteNm, lat, lon, gpsRange) 순서 유지. -->
+    <select id="selectLocationSiteList" resultType="com.prafta.platform.location.application.result.LocationSiteResult">
+    /* PlatformLocationMapper.selectLocationSiteList */
+    SELECT
+        S.SITE_CD     AS siteCd
+        , S.SITE_NO   AS siteNo
+        , S.SITE_NM   AS siteNm
+        , S.LAT       AS lat
+        , S.LON       AS lon
+        , S.GPS_RANGE AS gpsRange
+    FROM TB_SITE S
+    WHERE S.CMPNY_CD = #{cmpnyCd}
+    ORDER BY S.SITE_CD ASC
+    </select>
+
+    <!-- 위치정보 UNION ALL 조회: (주) 근태 GPS + (부) TBM 입실.
+         LIMIT 1001 로 조회해 서비스에서 1000건 초과(truncated) 판정.
+         ★UNION 양쪽 SELECT 컬럼 순서/타입 완전 일치 필수(record 매핑은 SELECT 순서 의존):
+           GpsInfoResult(srcType, userCd, measureTime, gpsInfoType, lat, lon, accuracy, mockedYn, ipAddr)
+         (주) idx_gps_search(CMPNY_CD, SITE_CD, API_CALL_DATE) 인덱스 정합.
+         (부) 세션 조인으로 사업장 필터(TB_TBM_ATTENDANCE 에는 SITE_CD 없음). DEL_YN='N' 필수.
+              TBM 입실은 Mock 여부 미판정 수집 - 'N' 고정(화면 '-' 표시), 유형/정확도/IP 는 NULL. -->
+    <select id="selectGpsList" parameterType="com.prafta.platform.location.application.query.GpsListQuery" resultType="com.prafta.platform.location.application.result.GpsInfoResult">
+    /* PlatformLocationMapper.selectGpsList */
+    SELECT
+        'ATTD'            AS srcType
+        , G.USER_CD       AS userCd
+        , G.API_CALL_TIME AS measureTime
+        , G.GPS_INFO_TYPE AS gpsInfoType
+        , G.LAT           AS lat
+        , G.LON           AS lon
+        , G.ACCURACY      AS accuracy
+        , G.IS_MOCKED     AS mockedYn
+        , G.IP_ADDR       AS ipAddr
+    FROM TB_USER_ATTD_GPS G
+    WHERE G.CMPNY_CD      = #{cmpnyCd}
+      AND G.SITE_CD       = #{siteCd}
+      AND G.API_CALL_DATE = #{date}
+    UNION ALL
+    SELECT
+        'TBM'             AS srcType
+        , A.USER_CD       AS userCd
+        , DATE_FORMAT(A.ENTRY_AT, '%H%i%s') AS measureTime
+        , NULL            AS gpsInfoType
+        , A.ENTRY_GPS_LAT AS lat
+        , A.ENTRY_GPS_LON AS lon
+        , NULL            AS accuracy
+        , 'N'             AS mockedYn
+        , NULL            AS ipAddr
+    FROM TB_TBM_ATTENDANCE A
+    INNER JOIN TB_TBM_SESSION S
+        ON  S.CMPNY_CD   = A.CMPNY_CD
+        AND S.SESSION_CD = A.SESSION_CD
+    WHERE A.CMPNY_CD = #{cmpnyCd}
+      AND S.SITE_CD  = #{siteCd}
+      AND A.DEL_YN   = 'N'
+      AND A.ENTRY_GPS_LAT IS NOT NULL
+      AND DATE_FORMAT(A.ENTRY_AT, '%Y%m%d') = #{date}
+    ORDER BY measureTime ASC
+    LIMIT 1001
+    </select>
+
+    <!-- ============================================================
+         열람 로그 (append-only - 본 매퍼에 UPDATE/DELETE statement 를 만들지 않는다)
+         ============================================================ -->
+
+    <!-- 열람 로그 1건 INSERT(조회와 동일 트랜잭션 - 실패 시 조회 전체 실패).
+         ACCESS_DTIME/INSERT_DATE 는 서버 NOW()(클라이언트 시각 불신). -->
+    <insert id="insertLocationAccessLog" parameterType="com.prafta.platform.location.application.command.LocationAccessLogCommand">
+    /* PlatformLocationMapper.insertLocationAccessLog */
+    INSERT INTO TB_LOCATION_ACCESS_LOG (
+        ACCESSOR_USER_CD
+        , ACCESS_DTIME
+        , TARGET_CMPNY_CD
+        , TARGET_SITE_CD
+        , TARGET_DATE
+        , SMS_AUTH_ID
+        , SMS_VERIFIED_AT
+        , RESULT_CNT
+        , CLIENT_IP
+        , REMOTE_ADDR
+        , INSERT_NO
+        , INSERT_DATE
+    )
+    VALUES (
+        #{accessorUserCd}
+        , NOW()
+        , #{targetCmpnyCd}
+        , #{targetSiteCd}
+        , #{targetDate}
+        , #{smsAuthId}
+        , #{smsVerifiedAt}
+        , #{resultCnt}
+        , #{clientIp}
+        , #{remoteAddr}
+        , #{accessorUserCd}
+        , NOW()
+    )
+    </insert>
+
+</mapper>

@@ -50,5 +50,7 @@ public class SessionAttendanceResponse {
 		private int networkLostCount;
 		private int eventCount;
 		private String anomalyLevel;	// NONE / LOW / HIGH (백엔드 산출)
+		// PRAFTA-SUBCON-T5: 참석자 소속(개설사 직하 1차 회사명으로 접은 relabel 값). 자사 참석자는 자사명.
+		private String affilCmpnyNm;
 	}
 }

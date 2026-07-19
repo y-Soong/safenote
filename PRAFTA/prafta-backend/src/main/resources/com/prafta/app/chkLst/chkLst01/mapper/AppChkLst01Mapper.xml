@@ -16,16 +16,35 @@
         , B.INSPECT_ITEM_SUBJ   AS inspectItemSubj
         , 'Y'                   AS inspectValue
         , B.SORT_IDX            AS sortIdx
+        <!-- PRAFTA-SUBCON-T6-07 / [정책변경 후행덮어쓰기]: 오늘 일자 기준 선행 점검 상태(ChecklistInfoResult record 말미와 같은 순서).
+             같은 점검대상·문항·일자에 선행 데이터가 있으면 앱이 저장 시 "덮어쓰시겠습니까?" 확인 팝업을 띄우고,
+             선행 점검자를 성명(ID)으로 표시한다(잠금/skip 없음 — 확인 후 덮어쓴다).
+             수행자 성명/ID 는 저장 시점 스냅샷 컬럼만 쓴다(타사 USER_CD 조인 금지 - 동명이인 오표시).
+             전파(write-through)로 상위/타사 저장분도 자기 테넌트 응답행에 이미 복제돼 있으므로,
+             cross-tenant 선행 데이터도 이 조회로 함께 잡힌다(확인 팝업 대상에 포함). -->
+        , CASE WHEN ANS.INSPECT_ITEM_CD IS NULL THEN 'N' ELSE 'Y' END    AS alreadyAnswered
+        , IFNULL(ANS.PERFORM_USER_NM, '')                               AS performUserNm
+        , IFNULL(ANS.PERFORM_USER_CD, '')                               AS performUserCd
     FROM TB_CHKPT_TYPE_MGMT A
          INNER JOIN TB_CHKPT_INSPECT_ITEM B
          ON (
              A.CMPNY_CD = B.CMPNY_CD
+         AND A.SITE_CD = B.SITE_CD   <!-- PRAFTA-SUBCON-T0-03: 문항 사업장 키 -->
          AND A.CHKLST_TYPE = B.CHKLST_TYPE
          )
          LEFT JOIN TB_SITE S
          ON (
              A.CMPNY_CD = S.CMPNY_CD
          AND A.SITE_CD  = S.SITE_CD
+         )
+         <!-- 오늘 응답행(자기 테넌트만 읽는다 - 전파 복제행이 이미 존재) -->
+         LEFT JOIN TB_CHKPT_INSPECT_ANSWER ANS
+         ON (
+             A.CMPNY_CD = ANS.CMPNY_CD
+         AND A.SITE_CD  = ANS.SITE_CD
+         AND A.CHKPT_CD = ANS.CHKPT_CD
+         AND B.INSPECT_ITEM_CD = ANS.INSPECT_ITEM_CD
+         AND ANS.WORK_DATE = DATE_FORMAT(NOW(), '%Y%m%d')
          )
     WHERE 1=1
       AND A.CMPNY_CD = #{ token.gv_cmpnyCd }
@@ -50,6 +69,9 @@
 
     <!-- prafta-036-B1: 점검답변 UPSERT -->
     <!-- prafta-app-011: PK 구성요소 CHKPT_CD 누락 수정 -->
+    <!-- PRAFTA-SUBCON-T6-05 / [정책변경 후행덮어쓰기]: 수행 주체(회사/사용자/성명 스냅샷) 기록.
+         자기 티어 저장이므로 PERFORM_CMPNY_CD = 자기 회사다(타 티어 복제행은 전파 서비스가 relabel 한다).
+         선행 데이터가 있어도 무조건 덮어쓴다(사용자가 앱 확인 팝업에서 이미 동의 — 소유 판정 없음). -->
     <insert id="mergeChkptInspectAnswer" parameterType="com.prafta.app.chkLst.chkLst01.application.command.InspectResultSaveCommand">
     /* AppChkLst01Mapper.mergeChkptInspectAnswer */
     INSERT INTO TB_CHKPT_INSPECT_ANSWER (
@@ -61,6 +83,9 @@
         , INSPECT_ANSWER_TYPE
         , ANSWER_DESC
         , FILE_MGMT_CD
+        , PERFORM_CMPNY_CD
+        , PERFORM_USER_CD
+        , PERFORM_USER_NM
         , INSERT_NO
         , INSERT_DATE
         , UPDATE_NO
@@ -75,6 +100,9 @@
         , #{param.inspectAnswerType}
         , #{param.answerDesc}
         , #{param.fileMgmtCd}
+        , #{token.gv_cmpnyCd}
+        , #{token.gv_userCd}
+        , #{token.gv_userNm}
         , #{token.gv_userCd}
         , NOW()
         , #{token.gv_userCd}
@@ -84,6 +112,9 @@
         INSPECT_ANSWER_TYPE = VALUES(INSPECT_ANSWER_TYPE)
         , ANSWER_DESC       = VALUES(ANSWER_DESC)
         , FILE_MGMT_CD      = VALUES(FILE_MGMT_CD)
+        , PERFORM_CMPNY_CD  = VALUES(PERFORM_CMPNY_CD)
+        , PERFORM_USER_CD   = VALUES(PERFORM_USER_CD)
+        , PERFORM_USER_NM   = VALUES(PERFORM_USER_NM)
         , UPDATE_NO         = #{token.gv_userCd}
         , UPDATE_DATE       = NOW()
     </insert>

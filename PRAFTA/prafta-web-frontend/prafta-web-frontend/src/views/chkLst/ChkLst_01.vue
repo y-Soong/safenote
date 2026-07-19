@@ -152,11 +152,17 @@
                   </BaseSelect>
                 </td>
                 <td>
-                  <input id="chkptNm" v-model="chkpt.chkptNm" />
+                  <input
+                    id="chkptNm"
+                    v-model="chkpt.chkptNm"
+                    :disabled="isMirror(chkpt)"
+                  />
+                  <span v-if="isMirror(chkpt)" class="link-badge">연동</span>
                 </td>
                 <td>
                   <div class="flex items-center gap-2 w-full">
-                    <span class="truncate min-w-0">{{ chkpt.mgmtUserNm }}</span>
+                    <span v-if="chkpt.mgmtUserNm" class="truncate min-w-0">{{ chkpt.mgmtUserNm }}</span>
+                    <span v-else class="mgmt-empty">담당자 미지정</span>
                     <button
                       class="ml-auto border rounded node-assign-btn"
                       @click="fnUserSearchPopOpen(idx)"
@@ -187,6 +193,7 @@
                     id="chkptDesc"
                     style="width: 100%"
                     v-model="chkpt.chkptDesc"
+                    :disabled="isMirror(chkpt)"
                   />
                 </td>
                 <td style="text-align: center">
@@ -258,6 +265,10 @@ const sr_siteNm = ref("");
 // 화면 제어 변수
 const headChk = ref(false);
 const siteDisabled = ref(false);
+
+// PRAFTA-SUBCON-T6-10: 미러(연동 수신) 행 판정 — 서버 응답의 linkSrcCmpnyCd 기준.
+//   미러 행은 명칭/비고를 수정할 수 없고(서버가 403 강제), 점검 담당자 지정만 허용된다.
+const isMirror = (chkpt) => !!chkpt.linkSrcCmpnyCd;
 
 // ================ Watchers ================
 useFieldWatcher(
@@ -400,13 +411,25 @@ const fnSave = async () => {
 };
 
 const fnDelete = async () => {
-  const filteredData = chkptList.value.filter(
-    (chkpt) => chkpt.chk && chkpt.chkptCd
-  );
+  // qa L-2: 미러(연동 수신) 행은 삭제(사용중지)도 제공 회사에서 관리한다 — 서버가 403(SUBCON_403_004)으로 막지만
+  //   UI 에서 먼저 걸러 오류 노출을 없앤다. (저장 선택은 계속 허용: 미러 행도 점검 담당자 지정은 가능하다 — T6-03)
+  const selected = chkptList.value.filter((chkpt) => chkpt.chk && chkpt.chkptCd);
+  const filteredData = selected.filter((chkpt) => !isMirror(chkpt));
+
+  if (selected.length > 0 && filteredData.length === 0) {
+    proxy.$alert("연동(미러) 점검대상은 삭제할 수 없습니다. 제공 회사에서 관리합니다.");
+    return;
+  }
 
   if (filteredData.length == 0) {
     proxy.$alert(getMessage(MSG.DELETE_DATA_REQUIRED));
     return;
+  }
+
+  if (selected.length !== filteredData.length) {
+    proxy.$alert(
+      "연동(미러) 점검대상은 삭제 대상에서 제외됩니다. 나머지 행만 삭제합니다."
+    );
   }
 
   const ok = await proxy.$confirm(getMessage(MSG.DELETE_CONFIRM));
@@ -637,5 +660,21 @@ const fnAlertMsg = async (message, afterConfirmCallback) => {
 .node-assign-btn:disabled {
   background-color: var(--color-border, #d1d5db);
   cursor: not-allowed;
+}
+
+/* PRAFTA-SUBCON-T6-10: 연동(읽기전용) 배지 — Subcon_02 status-badge 톤 정합 */
+.link-badge {
+  display: inline-block;
+  margin-left: 0.35rem;
+  padding: 0.05rem 0.4rem;
+  border-radius: var(--btn-radius, 8px);
+  background: var(--color-primary-bg, #dcfce7);
+  color: var(--color-primary, #16a34a);
+  font-size: var(--btn-font-sm, 11px);
+  line-height: 1.4;
+}
+.mgmt-empty {
+  color: var(--color-text-muted, #9ca3af);
+  font-size: var(--btn-font-sm, 12px);
 }
 </style>

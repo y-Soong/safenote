@@ -6,6 +6,7 @@ import org.apache.ibatis.annotations.Mapper;
 import org.apache.ibatis.annotations.Param;
 
 import com.prafta.web.chkLst.chkLst02.application.command.ChkptInspectItemCommand;
+import com.prafta.web.chkLst.chkLst02.application.command.CopyChkptInspectItemCommand;
 import com.prafta.web.chkLst.chkLst02.application.query.ChkptInspectItemHistListQuery;
 import com.prafta.web.chkLst.chkLst02.application.query.ChkptInspectItemListQuery;
 import com.prafta.web.chkLst.chkLst02.result.ChkptInspectItemHistResult;
@@ -30,4 +31,13 @@ public interface ChkLst02Mapper {
 
 	/** 문항 변경이력 조회(문항관리 이력 팝업) */
 	List<ChkptInspectItemHistResult> selectChkptInspectItemHistList(ChkptInspectItemHistListQuery query);
+
+	/** PRAFTA-SUBCON-T0-02: 사업장 인가 가드 — 호출자의 대상 사업장 권한 보유 건수 */
+	int countUserSiteAuth(@Param("gvCmpnyCd") String gvCmpnyCd, @Param("gvUserCd") String gvUserCd, @Param("siteCd") String siteCd);
+
+	/** PRAFTA-SUBCON-T0-04: 복사 원본 문항 조회(원본 사업장 + 선택 문항코드 목록) */
+	List<ChkptInspectItemResult> selectCopySourceItemList(CopyChkptInspectItemCommand command);
+
+	/** PRAFTA-SUBCON-T0-04: 대상 사업장의 같은 점검구분 내 최대 정렬순서(append 기준) */
+	int selectMaxSortIdx(CopyChkptInspectItemCommand command);
 }

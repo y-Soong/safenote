@@ -6,6 +6,7 @@ import org.apache.ibatis.annotations.Mapper;
 import org.apache.ibatis.annotations.Param;
 
 import com.prafta.web.tbm.tbmai02.application.model.TbmSessionGenSource;
+import com.prafta.web.tbm.tbmai02.application.model.TbmSessionRiskRow;
 import com.prafta.web.tbm.tbmai02.application.model.TbmUnconfirmedAiItem;
 
 @Mapper
@@ -27,6 +28,12 @@ public interface TbmAi02Mapper {
     // 세션에 묶인 교육자료 항목 중 AI 분석 지정(AI_ANALYZE_YN='Y')됐지만 미확정인 항목 목록
     // (세션→세션콘텐츠→자료→항목 4조인, DISPLAY_ORDER,SORT_IDX 순). 교육안 생성 사전 차단 안내용
     List<TbmUnconfirmedAiItem> selectSessionUnconfirmedAiItems(
+        @Param("sessionCd") String sessionCd
+        , @Param("cmpnyCd") String cmpnyCd
+    );
+
+    // 세션 매핑 위험성평가 + 개선항목 flat 조회(서비스에서 평가 키 단위 그룹핑). 교육안 생성 재료용
+    List<TbmSessionRiskRow> selectSessionRiskRows(
         @Param("sessionCd") String sessionCd
         , @Param("cmpnyCd") String cmpnyCd
     );

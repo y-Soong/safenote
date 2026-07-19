@@ -12,6 +12,10 @@ import lombok.Setter;
 @NoArgsConstructor
 public class ChkptInspectItemRequest {
 	private String cmpnyCd;
+
+	// PRAFTA-SUBCON-T0-02: 사업장 키 전환 — 행별 사업장코드 필수
+	@FieldLabel("사업장코드")
+	@NotBlank
 	private String siteCd;
 	private String chkLstType;
 	private String inspectItemCd;

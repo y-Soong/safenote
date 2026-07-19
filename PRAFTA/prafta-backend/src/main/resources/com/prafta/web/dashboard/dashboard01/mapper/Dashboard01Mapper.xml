@@ -471,8 +471,8 @@
                         , M.SEC_SCH_STR_TIME
                         , M.SEC_SCH_END_TIME
                         , 2147483647 AS HIST_IDX
+                    /* 사용중지(USE_YN='N') 근무타입도 이미 배정된 근무일에는 그대로 해석한다(지각/조퇴 판정 유지) — USE_YN 필터 없음 */
                     FROM TB_SCH_MGMT M
-                    WHERE M.USE_YN = 'Y'
 
                     UNION ALL
 
@@ -487,18 +487,15 @@
                         , H.SEC_SCH_END_TIME
                         , H.HIST_IDX
                     FROM TB_SCH_MGMT_HIST H
-                    WHERE H.USE_YN = 'Y'
                 ) E
                 WHERE E.HIST_IDX = (
                     SELECT MAX(E2.HIST_IDX)
                     FROM (
                         SELECT M2.CMPNY_CD, M2.SITE_CD, M2.SCH_CD, M2.APPLY_DATE, 2147483647 AS HIST_IDX
                         FROM TB_SCH_MGMT M2
-                        WHERE M2.USE_YN = 'Y'
                         UNION ALL
                         SELECT H2.CMPNY_CD, H2.SITE_CD, H2.SCH_CD, H2.APPLY_DATE, H2.HIST_IDX
                         FROM TB_SCH_MGMT_HIST H2
-                        WHERE H2.USE_YN = 'Y'
                     ) E2
                     WHERE E2.CMPNY_CD   = E.CMPNY_CD
                       AND E2.SITE_CD    = E.SITE_CD
@@ -517,11 +514,9 @@
                     FROM (
                         SELECT M3.CMPNY_CD, M3.SITE_CD, M3.SCH_CD, M3.APPLY_DATE
                         FROM TB_SCH_MGMT M3
-                        WHERE M3.USE_YN = 'Y'
                         UNION ALL
                         SELECT H3.CMPNY_CD, H3.SITE_CD, H3.SCH_CD, H3.APPLY_DATE
                         FROM TB_SCH_MGMT_HIST H3
-                        WHERE H3.USE_YN = 'Y'
                     ) SE
                     WHERE SE.CMPNY_CD    = P.CMPNY_CD
                       AND SE.SITE_CD     = P.SITE_CD

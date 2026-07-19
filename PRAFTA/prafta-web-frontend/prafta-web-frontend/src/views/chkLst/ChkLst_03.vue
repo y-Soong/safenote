@@ -213,13 +213,7 @@
                 <td>
                   <div class="flex items-center gap-2 w-full">
                     <button
-                      class="border rounded"
-                      style="
-                        background-color: #30796a;
-                        border: none;
-                        padding: 0.2rem 0.5rem;
-                        color: #fff; /* ← 글자색 흰색 */
-                      "
+                      class="btn btn-primary btn-sm"
                       @click="fnChkLstRstPopOpen(chkptResult)"
                     >
                       점검일지

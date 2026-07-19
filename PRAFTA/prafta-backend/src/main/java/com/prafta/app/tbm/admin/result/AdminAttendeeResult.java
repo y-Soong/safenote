@@ -22,5 +22,8 @@ public record AdminAttendeeResult(
     , String exitAt
     , String completionStatusCd
     , Integer distanceM
+    // PRAFTA-SUBCON-T5: 참석자 소속 회사코드(서비스가 개설사 직하 1차 회사명으로 접어 응답에 담는다.
+    // 회사코드 자체는 응답에 싣지 않는다 — 2차 이하 비노출).
+    , String cmpnyCd
 ){
 }

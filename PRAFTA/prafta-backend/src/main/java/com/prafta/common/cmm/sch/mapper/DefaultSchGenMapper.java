@@ -85,4 +85,19 @@ public interface DefaultSchGenMapper {
                              @Param("userCd") String userCd,
                              @Param("defaultSchCd") String defaultSchCd,
                              @Param("operatorNo") String operatorNo);
+
+    /**
+     * F3(G4): 자동생성 범위 내 회사 휴일(특정일) YMD 목록.
+     * tb_holiday USE_YN='Y' 중 [fromYmd, toYmd] 범위의 HOLIDAY_YMD 를 YYYYMMDD 문자열로 반환.
+     * 회사(CMPNY_CD) 스코프(tb_holiday 에 SITE_CD 없음). 루프 진입 전 1회 배치 로딩(일별 조회 폭증 방지).
+     */
+    List<String> selectHolidayYmds(@Param("cmpnyCd") String cmpnyCd,
+                                   @Param("fromYmd") String fromYmd,
+                                   @Param("toYmd") String toYmd);
+
+    /**
+     * F3(G4): 회사 반복휴일(매년 고정 MM/DD) 목록. tb_holiday_rule USE_YN='Y' → 'MMDD' 문자열.
+     * F2 노무수령거부 게이트(LeaveRefusalMapper)와 동일 소스 정합. 루프 진입 전 1회 배치 로딩.
+     */
+    List<String> selectHolidayRuleMmdds(@Param("cmpnyCd") String cmpnyCd);
 }

@@ -172,7 +172,7 @@ public class LoginServiceImpl implements LoginService{
 		String token = jwtUtil.generateToken(userResult, loginId, param.clientType());
 
 		// 사용자 로그인 시간 기록
-		loginMapper.updateUserLastLoginDtime(userResult.userCd());
+		loginMapper.updateUserLastLoginDtime(userResult.cmpnyCd(), userResult.userCd());
 
 		// prafta-com-003 C3: 디바이스 식별 기반 부정탐지 baseline 적재(디바이스 upsert + 로그인 이력 INSERT).
 		//   전체 try-catch 로 격리 — 적재 실패가 로그인 자체를 막거나 롤백하지 않게 한다(com-001 체크인 훅 패턴).
@@ -215,7 +215,8 @@ public class LoginServiceImpl implements LoginService{
 			loginMapper.insertDeviceLoginHist(command);
 			// (계정당 활성 디바이스 1대) 같은 사용자의 다른 기기를 비활성화 → 마지막 로그인 기기만 푸시 수신.
 			//   stale 기기로의 푸시 누수/오발송을 막고, 디바이스 점유를 항상 최신으로 정리한다.
-			int deactivated = loginMapper.deactivateOtherUserDevices(userResult.userCd(), param.deviceId());
+			int deactivated = loginMapper.deactivateOtherUserDevices(
+					userResult.cmpnyCd(), userResult.userCd(), param.deviceId());
 			// PII(기기ID/IP) 평문 로그 금지 — 식별 키만 남긴다.
 			log.info("디바이스 로그인 이력 적재 완료 — userCd={}, clientType={}, 비활성화기기={}건"
 					, userResult.userCd(), param.clientType(), deactivated);
@@ -249,6 +250,15 @@ public class LoginServiceImpl implements LoginService{
 			log.warn("디바이스 점유 이상탐지 실패(무시, 디바이스 적재 계속) — deviceUuid={}: {}",
 					maskHead(deviceUuid), e.getMessage());
 		}
+	}
+
+	/** 로그 위조 방지용 외부 입력 정제 — 개행 제거 + 50자 상한 (subcon01 SEC-ADV-1 규약 미러). */
+	private String sanitizeForLog(String value) {
+		if (value == null) {
+			return null;
+		}
+		String cleaned = value.trim().replaceAll("[\\r\\n]", "");
+		return cleaned.length() > 50 ? cleaned.substring(0, 50) + "..." : cleaned;
 	}
 
 	/** 식별자 마스킹: 앞 8자 + ***(짧으면 길이만큼). 평문 로그 금지(S2 패턴 미러). */
@@ -374,7 +384,7 @@ public class LoginServiceImpl implements LoginService{
 		loginMapper.insertAuthToken(activeTokenCommand);
 
 		String token = jwtUtil.generateToken(userResult, loginId, clientType);
-		loginMapper.updateUserLastLoginDtime(userResult.userCd());
+		loginMapper.updateUserLastLoginDtime(userResult.cmpnyCd(), userResult.userCd());
 
 		return LoginResponse.from(userResult, refreshToken, token);
 	}
@@ -405,7 +415,7 @@ public class LoginServiceImpl implements LoginService{
                     || deviceId == null || deviceId.isBlank()) {
                 return; // 식별 불가(웹/토큰 없음) → 정리 대상 아님.
             }
-            int cleared = loginMapper.clearPushTokenForDevice(userCd, deviceId);
+            int cleared = loginMapper.clearPushTokenForDevice(param.cmpnyCd(), userCd, deviceId);
             log.info("로그아웃 시 푸시 토큰 정리 — deviceUuid={}, 영향행={}건", maskHead(deviceId), cleared);
         } catch (Exception e) {
             log.warn("로그아웃 시 푸시 토큰 정리 실패(로그아웃 영향 없음) — userCd={}", param.userCd(), e);
@@ -420,6 +430,21 @@ public class LoginServiceImpl implements LoginService{
 		int nodeHasAdmin = loginMapper.selectNodeHasAdmin(param.cmpnyCd(), param.siteCd(), param.nodeCd());
 		if (nodeHasAdmin == 0) {
 			throw new ApiException(LoginErrorCode.LOGIN_400_015);
+		}
+
+		// 0-0) PRAFTA-SUBCON-T2-07: 연동 미러 사업장 가입 차단(2중 가드 — join-site-lists 제외 + INSERT 직전 검증).
+		//      목록 우회 직접 호출 방어. 거부 메시지는 미러 존재 사실을 상세 노출하지 않는다.
+		if (loginMapper.selectMirrorSiteCnt(param.cmpnyCd(), param.siteCd()) > 0) {
+			log.info("회원가입 차단 - 연동 미러 사업장 cmpnyCd={}, siteCd={}",
+					sanitizeForLog(param.cmpnyCd()), sanitizeForLog(param.siteCd()));
+			throw new ApiException(LoginErrorCode.LOGIN_400_017);
+		}
+
+		// 0-1) 로그인 ID 중복 검사(전사 — 일용직 포함).
+		//      로그인은 USER_ID 만으로 사용자를 찾으므로 ID 는 전역 유일해야 한다. 서버측 사전검사가 없으면
+		//      DB UNIQUE(UX_TB_USER_ID) 위반이 500 으로 새어나간다.
+		if (loginMapper.selectUserIdExistsGlobal(param.userId()) > 0) {
+			throw new ApiException(LoginErrorCode.LOGIN_400_016);
 		}
 
 		String userPw = "";
@@ -605,7 +630,7 @@ public class LoginServiceImpl implements LoginService{
 		loginMapper.insertAuthToken(activeTokenCommand);
 
 		String token = jwtUtil.generateToken(activatedUser, loginId, param.clientType());
-		loginMapper.updateUserLastLoginDtime(activatedUser.userCd());
+		loginMapper.updateUserLastLoginDtime(activatedUser.cmpnyCd(), activatedUser.userCd());
 
 		return LoginResponse.from(activatedUser, refreshToken, token);
 	}

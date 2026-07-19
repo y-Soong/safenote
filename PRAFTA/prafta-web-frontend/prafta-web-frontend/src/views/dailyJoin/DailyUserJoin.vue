@@ -16,7 +16,12 @@
       <p class="daily-join__done-id">
         발급된 아이디: <strong>{{ joinedUserId }}</strong>
       </p>
-      <p class="daily-join__done-desc">
+      <!-- 입장 승인제(R4): pendingApprovalYn='Y' 응답이면 승인 대기 안내로 분기(플래그 부재/N 은 기존 문구 폴백) -->
+      <p v-if="pendingApproval" class="daily-join__done-desc">
+        가입이 완료되었습니다. 관리자 승인 후 해당 아이디로 로그인할 수
+        있습니다. 문의는 사업장 관리자에게 해주세요.
+      </p>
+      <p v-else class="daily-join__done-desc">
         해당 아이디로 출입/근태 등록이 가능합니다. 문의는 사업장 관리자에게
         해주세요.
       </p>
@@ -204,6 +209,8 @@ const isLoading = ref(true);
 const isLinkInvalid = ref(false);
 const isJoined = ref(false);
 const joinedUserId = ref("");
+// 입장 승인제(D5/D6) — 가입 직후 계정은 승인대기('04'). 서버 pendingApprovalYn='Y' 소비(qa M-2).
+const pendingApproval = ref(false);
 
 /* 회사/사업장 정보 (joinCd 에서 파싱) */
 const cmpnyCd = ref("");
@@ -507,6 +514,7 @@ const handleSubmit = async () => {
 
     if (response.status === 200) {
       joinedUserId.value = response.data?.userId || userId.value;
+      pendingApproval.value = response.data?.pendingApprovalYn === "Y";
       isJoined.value = true;
     }
   } catch (err) {

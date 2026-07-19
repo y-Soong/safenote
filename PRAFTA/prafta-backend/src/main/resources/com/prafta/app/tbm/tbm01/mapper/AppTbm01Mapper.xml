@@ -3,8 +3,67 @@
 
 <mapper namespace="com.prafta.app.tbm.tbm01.mapper.AppTbm01Mapper">
 
-    <!-- 세션 단건 조회(회사+사업장 스코프). 입실 검증/컨텍스트 공용.
-         siteCd 강제로 타 사업장 세션 접근(조직 스코프 IDOR) 차단. -->
+    <!-- ============================================================================
+         PRAFTA-SUBCON-T5 공통 조각.
+
+         reachCte: "내 회사가 이 세션의 지정 체인에 도달 가능한가"를 세션 단위로 판정하는 재귀 CTE.
+           내 지정행에서 시작해 나를 지정한 회사를 거슬러 올라가 개설사(HOST_CMPNY_CD)에 닿으면 도달 가능.
+           중간 지정이 해제(DEL_YN='Y')되면 그 하위는 자동으로 도달 불가가 된다(도달성이 유일한 권위).
+           IX_TBM_SESSION_SHARE_02(SHARE_CMPNY_CD, DEL_YN, SESSION_CD) 를 탄다. depth 20 안전핀.
+         ============================================================================ -->
+    <sql id="reachCte">
+    WITH RECURSIVE UPCHAIN AS (
+        SELECT
+              SH.SESSION_CD                 AS SESSION_CD
+            , SH.HOST_CMPNY_CD              AS HOST_CMPNY_CD
+            , SH.DESIGNATED_BY_CMPNY_CD     AS DESIGNATED_BY_CMPNY_CD
+            , 1                             AS DEPTH
+        FROM TB_TBM_SESSION_SHARE SH
+        WHERE SH.SHARE_CMPNY_CD = #{cmpnyCd}
+          AND SH.DEL_YN = 'N'
+        UNION ALL
+        SELECT
+              P.SESSION_CD
+            , P.HOST_CMPNY_CD
+            , P.DESIGNATED_BY_CMPNY_CD
+            , U.DEPTH + 1
+        FROM UPCHAIN U
+             INNER JOIN TB_TBM_SESSION_SHARE P
+                ON (
+                    P.SESSION_CD = U.SESSION_CD
+                AND P.SHARE_CMPNY_CD = U.DESIGNATED_BY_CMPNY_CD
+                AND P.DEL_YN = 'N'
+                )
+        WHERE U.DEPTH &lt; 20
+          AND U.DESIGNATED_BY_CMPNY_CD &lt;&gt; U.HOST_CMPNY_CD
+    ),
+    REACH AS (
+        SELECT DISTINCT SESSION_CD
+        FROM UPCHAIN
+        WHERE DESIGNATED_BY_CMPNY_CD = HOST_CMPNY_CD
+    )
+    </sql>
+
+    <!-- 개최사 라벨(하향 인접 차수 가시성): 나를 지정한 직상위 회사명. 자사 세션이면 행이 없어 NULL. -->
+    <sql id="hostCmpnyNmCol">
+        (
+          SELECT IFNULL(HC.CMPNY_NM, '')
+          FROM TB_TBM_SESSION_SHARE HS
+               LEFT OUTER JOIN TB_CMPNY HC
+                  ON (
+                      HC.CMPNY_CD = HS.DESIGNATED_BY_CMPNY_CD
+                  )
+          WHERE HS.SESSION_CD = S.SESSION_CD
+            AND HS.SHARE_CMPNY_CD = #{cmpnyCd}
+            AND HS.DEL_YN = 'N'
+          LIMIT 1
+        )
+    </sql>
+
+    <!-- 세션 단건 조회. 입실 검증/컨텍스트 공용.
+         PRAFTA-SUBCON-T5: 개설사(sessionCmpnyCd) 기준으로 조회한다. 사업장(SITE_CD) 강제는 제거하고,
+         접근 판정은 서비스 진입부의 TbmSessionShareService.assertViewable 이 담당한다
+         (자사 세션은 게이트 내부에서 사업장 스코프를 그대로 검사 — 회귀 방지). -->
     <select id="selectSession"
             parameterType="com.prafta.app.tbm.tbm01.application.query.TbmSessionQuery"
             resultType="com.prafta.app.tbm.tbm01.result.TbmSessionResult">
@@ -22,8 +81,7 @@
         , GPS_VERIFY_TYPE_CD    AS gpsVerifyTypeCd
         , GPS_VERIFY_RADIUS_M   AS gpsVerifyRadiusM
     FROM TB_TBM_SESSION
-    WHERE CMPNY_CD = #{cmpnyCd}
-      AND SITE_CD = #{siteCd}
+    WHERE CMPNY_CD = #{sessionCmpnyCd}
       AND SESSION_CD = #{sessionCd}
       AND DEL_YN = 'N'
     </select>
@@ -71,7 +129,9 @@
         , UPDATE_DATE
     )
     VALUES (
-          CONCAT('A', DATE_FORMAT(NOW(), '%Y%m%d'), FNC_CMM_SEQ_NEXTVAL(#{cmpnyCd}, 'TBM_ATTENDANCE_CD'))
+          <!-- PRAFTA-SUBCON-T5(Option A): 출결코드는 전역 시퀀스('__GLOBAL__')로 채번(전역 유일 필요).
+               CMPNY_CD 는 참석자(=본인) 회사 그대로 — 타사 세션에 입실해도 출결행은 내 회사 소유다. -->
+          CONCAT('A', DATE_FORMAT(NOW(), '%Y%m%d'), FNC_CMM_SEQ_NEXTVAL('__GLOBAL__', 'TBM_ATTENDANCE_CD'))
         , #{cmpnyCd}
         , #{sessionCd}
         , #{userTypeCd}
@@ -125,16 +185,25 @@
             parameterType="com.prafta.app.tbm.tbm01.application.query.TbmSessionListQuery"
             resultType="com.prafta.app.tbm.tbm01.result.TbmSessionListResult">
     /* AppTbm01Mapper.selectAvailableSessions */
+    <include refid="reachCte" />
     SELECT
           S.SESSION_CD                                                       AS sessionCd
         , S.TITLE                                                            AS title
         , FNC_CMM_INFO_SRCH(S.CMPNY_CD, 'USER_NM', S.MANAGER_USER_CD, NULL)  AS managerUserNm
         , DATE_FORMAT(S.OPENED_AT, '%Y-%m-%d %H:%i')                         AS openedAt
+        <!-- PRAFTA-SUBCON-T5: 타사(연동) 세션이면 개최사 라벨. 자사 세션은 NULL. -->
+        , <include refid="hostCmpnyNmCol" />                                 AS hostCmpnyNm
     FROM TB_TBM_SESSION S
-    WHERE S.CMPNY_CD = #{cmpnyCd}
-      AND S.SITE_CD = #{siteCd}
-      AND S.STATUS_CD = 'OPENED'
+    WHERE S.STATUS_CD = 'OPENED'
       AND S.DEL_YN = 'N'
+      <!-- PRAFTA-SUBCON-T5: 자사 세션(기존 사업장 스코프 유지) ∪ 내 회사가 지정 체인에 도달 가능한 타사 세션. -->
+      AND (
+            (S.CMPNY_CD = #{cmpnyCd} AND S.SITE_CD = #{siteCd})
+         OR (
+              S.CMPNY_CD &lt;&gt; #{cmpnyCd}
+          AND EXISTS (SELECT 1 FROM REACH R WHERE R.SESSION_CD = S.SESSION_CD)
+            )
+      )
     ORDER BY S.OPENED_AT DESC, S.SESSION_CD DESC
     </select>
 
@@ -143,21 +212,45 @@
             parameterType="com.prafta.app.tbm.tbm01.application.query.TbmSessionListQuery"
             resultType="com.prafta.app.tbm.tbm01.result.TbmSessionListResult">
     /* AppTbm01Mapper.selectInProgressSessions */
+    <include refid="reachCte" />
     SELECT
           S.SESSION_CD                                                       AS sessionCd
         , S.TITLE                                                            AS title
         , FNC_CMM_INFO_SRCH(S.CMPNY_CD, 'USER_NM', S.MANAGER_USER_CD, NULL)  AS managerUserNm
         , DATE_FORMAT(S.OPENED_AT, '%Y-%m-%d %H:%i')                         AS openedAt
         , DATE_FORMAT(S.STARTED_AT, '%Y-%m-%d %H:%i')                        AS startedAt
+        , NULL                                                               AS endedAt
+        , NULL                                                               AS completionStatusCd
+        , <include refid="hostCmpnyNmCol" />                                 AS hostCmpnyNm
     FROM TB_TBM_SESSION S
-    WHERE S.CMPNY_CD = #{cmpnyCd}
-      AND S.SITE_CD = #{siteCd}
-      AND S.STATUS_CD = 'IN_PROGRESS'
+    WHERE S.STATUS_CD = 'IN_PROGRESS'
       AND S.DEL_YN = 'N'
+      AND (
+            (S.CMPNY_CD = #{cmpnyCd} AND S.SITE_CD = #{siteCd})
+         OR (
+              S.CMPNY_CD &lt;&gt; #{cmpnyCd}
+          AND (
+                EXISTS (SELECT 1 FROM REACH R WHERE R.SESSION_CD = S.SESSION_CD)
+                <!-- F1(grandfather): 지정이 해제돼 도달 불가가 된 뒤에도 <b>이미 입실한</b> 참석자에게는
+                     세션이 계속 보여야 한다(종료·서명 제출 가능해야 함 — 요청서 §3.1 · §5-2).
+                     아래 EXISTS 는 내 회사의 내 출결행이므로 IDOR 이 없다. -->
+             OR EXISTS (
+                    SELECT 1
+                    FROM TB_TBM_ATTENDANCE GA
+                    WHERE GA.CMPNY_CD = #{cmpnyCd}
+                      AND GA.SESSION_CD = S.SESSION_CD
+                      AND GA.USER_TYPE_CD = #{userTypeCd}
+                      AND GA.USER_CD = #{userCd}
+                      AND GA.DEL_YN = 'N'
+                )
+              )
+            )
+      )
+      <!-- 내 출결(출결행은 항상 내 회사 소유)이 있는 IN_PROGRESS 세션만. -->
       AND EXISTS (
             SELECT 1
             FROM TB_TBM_ATTENDANCE AT
-            WHERE AT.CMPNY_CD = S.CMPNY_CD
+            WHERE AT.CMPNY_CD = #{cmpnyCd}
               AND AT.SESSION_CD = S.SESSION_CD
               AND AT.USER_TYPE_CD = #{userTypeCd}
               AND AT.USER_CD = #{userCd}
@@ -180,14 +273,17 @@
         , DATE_FORMAT(S.STARTED_AT, '%Y-%m-%d %H:%i')                        AS startedAt
         , DATE_FORMAT(IFNULL(S.ENDED_AT, AT.EXIT_AT), '%Y-%m-%d %H:%i')      AS endedAt
         , AT.COMPLETION_STATUS_CD                                            AS completionStatusCd
+        , <include refid="hostCmpnyNmCol" />                                 AS hostCmpnyNm
     FROM TB_TBM_ATTENDANCE AT
+         <!-- PRAFTA-SUBCON-T5: 세션 조인에서 CMPNY_CD 제거(타사 세션 이수 이력 포함).
+              인가 전제: AT.CMPNY_CD = 내 회사 + AT.USER_CD = 본인 → 내 출결행만 본다(IDOR 없음).
+              도달성 재검증은 하지 않는다 — 내가 실제로 입실한 기록이므로 지정이 해제돼도 이수 이력은
+              계속 보여야 한다(F1 grandfather 와 동일 취지). 사업장 조건도 제거한다. -->
          INNER JOIN TB_TBM_SESSION S
             ON (
-                AT.CMPNY_CD = S.CMPNY_CD
-            AND AT.SESSION_CD = S.SESSION_CD
+                AT.SESSION_CD = S.SESSION_CD
             )
     WHERE AT.CMPNY_CD = #{cmpnyCd}
-      AND S.SITE_CD = #{siteCd}
       AND AT.USER_TYPE_CD = #{userTypeCd}
       AND AT.USER_CD = #{userCd}
       AND AT.DEL_YN = 'N'
@@ -221,6 +317,9 @@
             AND AT.CMPNY_CD = DU.CMPNY_CD
             AND AT.USER_CD = DU.USER_CD
             )
+    <!-- PRAFTA-SUBCON-T5(plan D5): 앱 사용자에게는 <b>자사 참석자만</b> 노출한다(AT.CMPNY_CD = 내 회사 유지).
+         타사 근로자 실명을 앱 일반 사용자에게 노출하는 것은 PII 확대이므로 스코프를 넓히지 않는다.
+         세션 접근 판정은 서비스의 assertViewable 이 대체하므로 사업장 EXISTS 는 제거하고 존재/삭제만 확인한다. -->
     WHERE AT.CMPNY_CD = #{cmpnyCd}
       AND AT.SESSION_CD = #{sessionCd}
       AND AT.DEL_YN = 'N'
@@ -228,9 +327,8 @@
       AND EXISTS (
             SELECT 1
             FROM TB_TBM_SESSION S
-            WHERE S.CMPNY_CD = AT.CMPNY_CD
+            WHERE S.CMPNY_CD = #{sessionCmpnyCd}
               AND S.SESSION_CD = AT.SESSION_CD
-              AND S.SITE_CD = #{siteCd}
               AND S.DEL_YN = 'N'
           )
     ORDER BY AT.ENTRY_AT, AT.ATTENDANCE_CD
@@ -252,8 +350,8 @@
                 S.CMPNY_CD = ST.CMPNY_CD
             AND S.SESSION_CD = ST.SESSION_CD
             )
-    WHERE S.CMPNY_CD = #{cmpnyCd}
-      AND S.SITE_CD = #{siteCd}
+    <!-- PRAFTA-SUBCON-T5: 개설사(sessionCmpnyCd) 기준. 사업장 조건은 게이트(assertViewable)가 대체. -->
+    WHERE S.CMPNY_CD = #{sessionCmpnyCd}
       AND S.SESSION_CD = #{sessionCd}
       AND S.DEL_YN = 'N'
     </select>
@@ -266,8 +364,8 @@
     SELECT
         S.CONTENT_BODY
     FROM TB_TBM_SESSION S
-    WHERE S.CMPNY_CD = #{cmpnyCd}
-      AND S.SITE_CD = #{siteCd}
+    <!-- PRAFTA-SUBCON-T5: 교육 내용은 개설사 소유 데이터다(sessionCmpnyCd 기준 조회). -->
+    WHERE S.CMPNY_CD = #{sessionCmpnyCd}
       AND S.SESSION_CD = #{sessionCd}
       AND S.DEL_YN = 'N'
     </select>
@@ -288,14 +386,14 @@
                 SC.MTRL_CD = M.MTRL_CD
             AND SC.CMPNY_CD = M.CMPNY_CD
             )
-    WHERE SC.CMPNY_CD = #{cmpnyCd}
+    <!-- PRAFTA-SUBCON-T5: 세션 콘텐츠는 개설사 소유(PK 에 CMPNY_CD=개설사 포함) → sessionCmpnyCd 기준. -->
+    WHERE SC.CMPNY_CD = #{sessionCmpnyCd}
       AND SC.SESSION_CD = #{sessionCd}
       AND EXISTS (
             SELECT 1
             FROM TB_TBM_SESSION S
             WHERE S.CMPNY_CD = SC.CMPNY_CD
               AND S.SESSION_CD = SC.SESSION_CD
-              AND S.SITE_CD = #{siteCd}
               AND S.DEL_YN = 'N'
           )
     ORDER BY SC.DISPLAY_ORDER
@@ -319,32 +417,35 @@
         , F.FILE_PATH        AS filePath
         , F.FILE_EXT         AS fileExt
     FROM TB_TBM_EDU_MTRL_ITEM I
+         <!-- 테넌트 격리: MTRL_CD 는 회사별 채번이라 전역 유일하지 않다. 회사코드를 조인키에 포함한다. -->
          INNER JOIN TB_TBM_SESSION_CONTENT SC
             ON (
-                I.MTRL_CD = SC.MTRL_CD
+                I.CMPNY_CD = SC.CMPNY_CD
+            AND I.MTRL_CD = SC.MTRL_CD
             )
          LEFT OUTER JOIN TB_FILE_INFO F
             ON (
                 F.CMPNY_CD = SC.CMPNY_CD
             AND F.FILE_MGMT_CD = I.FILE_MGMT_CD
             )
-    WHERE SC.CMPNY_CD = #{cmpnyCd}
+    <!-- PRAFTA-SUBCON-T5: 자료/항목은 개설사 소유 데이터다(sessionCmpnyCd 기준. 참석자 회사 아님). -->
+    WHERE SC.CMPNY_CD = #{sessionCmpnyCd}
+      <!-- 테넌트 격리: 항목(I) 자신의 CMPNY_CD 도 개설사로 직접 좁힌다. -->
+      AND I.CMPNY_CD = #{sessionCmpnyCd}
       AND SC.SESSION_CD = #{sessionCd}
       AND I.USE_YN = 'Y'
-      <!-- 회사 스코프 보강: 항목이 속한 교육자료(M)가 동일 회사 소유인지 EXISTS 가드.
-           MTRL_CD 값이 회사 간 겹쳐도 타 회사 자료 항목이 노출되지 않도록 격리만 강화(결과 동일). -->
+      <!-- 회사 스코프 보강: 항목이 속한 교육자료(M)가 동일 회사 소유인지 EXISTS 가드. -->
       AND EXISTS (
             SELECT 1
             FROM TB_TBM_EDU_MTRL M
             WHERE M.MTRL_CD = I.MTRL_CD
-              AND M.CMPNY_CD = #{cmpnyCd}
+              AND M.CMPNY_CD = I.CMPNY_CD
           )
       AND EXISTS (
             SELECT 1
             FROM TB_TBM_SESSION S
             WHERE S.CMPNY_CD = SC.CMPNY_CD
               AND S.SESSION_CD = SC.SESSION_CD
-              AND S.SITE_CD = #{siteCd}
               AND S.DEL_YN = 'N'
           )
     ORDER BY SC.DISPLAY_ORDER, I.SORT_IDX
@@ -401,14 +502,14 @@
             AND RA.RISK_TYPE_CD = E.RISK_TYPE_CD
             AND RA.HAZARD_CD = E.HAZARD_CD
             )
-    WHERE SR.CMPNY_CD = #{cmpnyCd}
+    <!-- PRAFTA-SUBCON-T5: 연계 위험성평가는 개설사 소유 데이터다(sessionCmpnyCd 기준). -->
+    WHERE SR.CMPNY_CD = #{sessionCmpnyCd}
       AND SR.SESSION_CD = #{sessionCd}
       AND EXISTS (
             SELECT 1
             FROM TB_TBM_SESSION S
             WHERE S.CMPNY_CD = SR.CMPNY_CD
               AND S.SESSION_CD = SR.SESSION_CD
-              AND S.SITE_CD = #{siteCd}
               AND S.DEL_YN = 'N'
           )
     ORDER BY SR.DISPLAY_ORDER
@@ -430,9 +531,10 @@
         , F.FILE_PATH                                                     AS signFilePath
         , F.FILE_EXT                                                      AS signFileExt
     FROM TB_TBM_ATTENDANCE AT
+         <!-- PRAFTA-SUBCON-T5: 세션 헤더는 개설사 소유(sessionCmpnyCd), 출결/서명 파일은 내 회사 소유. -->
          INNER JOIN TB_TBM_SESSION S
             ON (
-                AT.CMPNY_CD = S.CMPNY_CD
+                S.CMPNY_CD = #{sessionCmpnyCd}
             AND AT.SESSION_CD = S.SESSION_CD
             )
          LEFT OUTER JOIN TB_FILE_INFO F
@@ -441,7 +543,6 @@
             AND F.FILE_MGMT_CD = AT.EXIT_SIGN_FILE_MGMT_CD
             )
     WHERE AT.CMPNY_CD = #{cmpnyCd}
-      AND S.SITE_CD = #{siteCd}
       AND AT.SESSION_CD = #{sessionCd}
       AND AT.USER_TYPE_CD = #{userTypeCd}
       AND AT.USER_CD = #{userCd}
@@ -462,14 +563,14 @@
                 SC.MTRL_CD = M.MTRL_CD
             AND SC.CMPNY_CD = M.CMPNY_CD
             )
-    WHERE SC.CMPNY_CD = #{cmpnyCd}
+    <!-- PRAFTA-SUBCON-T5: 자료 제목도 개설사 소유 데이터다(sessionCmpnyCd 기준). -->
+    WHERE SC.CMPNY_CD = #{sessionCmpnyCd}
       AND SC.SESSION_CD = #{sessionCd}
       AND EXISTS (
             SELECT 1
             FROM TB_TBM_SESSION S
             WHERE S.CMPNY_CD = SC.CMPNY_CD
               AND S.SESSION_CD = SC.SESSION_CD
-              AND S.SITE_CD = #{siteCd}
               AND S.DEL_YN = 'N'
           )
     ORDER BY SC.DISPLAY_ORDER
@@ -528,12 +629,13 @@
       AND AT.DEL_YN = 'N'
       AND AT.ENTRY_AT IS NOT NULL
       AND AT.EXIT_AT IS NULL
+      <!-- PRAFTA-SUBCON-T5: 세션 사업장 EXISTS 제거(세션 존재/미삭제만 확인).
+           출결행이 내 회사 소유라 IDOR 없음. 미수정 시 타사(연동) 세션 참석분이 퇴근 연동 자동
+           중도퇴실에서 누락되어 "퇴근했는데 TBM 진행중"으로 남는다. -->
       AND EXISTS (
             SELECT 1
             FROM TB_TBM_SESSION S
-            WHERE S.CMPNY_CD = AT.CMPNY_CD
-              AND S.SESSION_CD = AT.SESSION_CD
-              AND S.SITE_CD = #{siteCd}
+            WHERE S.SESSION_CD = AT.SESSION_CD
               AND S.DEL_YN = 'N'
           )
     ORDER BY AT.SESSION_CD

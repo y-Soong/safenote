@@ -32,6 +32,7 @@
          INNER JOIN TB_CHKPT_INSPECT_ITEM I
             ON (
                 I.CMPNY_CD = D.CMPNY_CD
+            AND I.SITE_CD = D.SITE_CD   <!-- PRAFTA-SUBCON-T0-03: 문항 사업장 키 -->
             AND I.CHKLST_TYPE = T.CHKLST_TYPE
             AND I.INSPECT_ITEM_CD = D.INSPECT_ITEM_CD
             )

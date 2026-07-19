@@ -65,8 +65,11 @@
 
     <delete id="deleteApprovalLineByReqId">
     /* ApprovalLineMapper.deleteApprovalLineByReqId */
+    <!-- ★테넌트 격리: REQ_ID 는 회사별 채번이라 전역 유일하지 않다. CMPNY_CD 없이 지우면
+         다른 회사의 같은 REQ_ID 결재선을 통째로 삭제한다(바로 위 updateStepStatus 와 동일 규약). -->
     DELETE FROM TB_USER_ATTD_REQ_APPROVAL
-     WHERE REQ_ID = #{reqId}
+     WHERE CMPNY_CD = #{cmpnyCd}
+       AND REQ_ID   = #{reqId}
     </delete>
 
     <select id="selectApprovalStep" resultType="com.prafta.common.cmm.approval.vo.ApprovalStepVO">

@@ -35,6 +35,20 @@ public enum PlatformErrorCode implements ApiErrorCode {
     , PLATFORM_400_007(HttpStatus.BAD_REQUEST, "관리자 ID는 영문, 숫자, 언더스코어(_), 하이픈(-), 점(.)만 사용 가능합니다.")
     // 휴대폰번호 중복(이미 다른 고객사의 master 계정으로 사용 중).
     , PLATFORM_400_008(HttpStatus.BAD_REQUEST, "이 휴대폰번호는 이미 다른 고객사의 관리자 계정으로 등록되어 있습니다.")
+
+    , PLATFORM_400_009(HttpStatus.BAD_REQUEST, "이미 사용 중인 관리자 ID입니다. 다른 ID를 입력해 주세요.")
+
+    // ===== 위치정보 열람 콘솔(Platform_04 — /platformApi/location/*) =====
+    // SMS 인증 미통과/만료 상태에서 위치정보 조회 API 호출(서버측 게이트 — 프론트 게이트는 보조).
+    , PLATFORM_403_003(HttpStatus.FORBIDDEN, "SMS 인증이 필요합니다. 인증 후 다시 시도해 주세요.")
+    // SMS 인증번호 불일치 또는 만료(코드 유효 1분).
+    , PLATFORM_400_010(HttpStatus.BAD_REQUEST, "인증번호가 일치하지 않거나 만료되었습니다.")
+    // 위치정보 조회 필수 파라미터(회사/사업장/일자) 누락 또는 형식 오류.
+    , PLATFORM_400_011(HttpStatus.BAD_REQUEST, "회사, 사업장, 조회 일자를 모두 지정해야 합니다.")
+    // 운영자 계정에 휴대폰번호가 등록되어 있지 않아 SMS 인증 발송 불가.
+    , PLATFORM_400_012(HttpStatus.BAD_REQUEST, "운영자 계정에 등록된 휴대폰번호가 없습니다.")
+    // SMS 인증코드 발송 레이트리밋(동일 목적 최근 1분 내 재발송 거부 — 브루트포스 방어 V-2).
+    , PLATFORM_400_013(HttpStatus.BAD_REQUEST, "인증번호가 방금 발송되었습니다. 잠시 후 다시 시도해 주세요.")
     ;
 
     private final HttpStatus httpStatus;

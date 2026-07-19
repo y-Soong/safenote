@@ -250,13 +250,16 @@
     </insert>
     
     
-    <update id="updateUserLastLoginDtime" parameterType="string">
+    <update id="updateUserLastLoginDtime">
     /* LoginMapper.updateUserLastLoginDtime */
+    <!-- ★테넌트 격리: USER_CD 는 회사별 채번이라 전역 유일하지 않다(서로 다른 회사가 같은 USER_CD 를 갖는다).
+         회사코드 없이 갱신하면 **로그인할 때마다 다른 회사 동일 USER_CD 사용자의 행까지 함께 갱신**된다. -->
     UPDATE TB_USER
     SET LAST_LOGIN_DTIME = NOW()
     	, UPDATE_NO = 'SYSTEM'
     	, UPDATE_DATE = NOW()
-	WHERE USER_CD = #{userCd}
+	WHERE CMPNY_CD = #{cmpnyCd}
+	  AND USER_CD  = #{userCd}
     </update>
     
     <select id="selectUserCd" resultType="string">
@@ -277,6 +280,27 @@
             NULLIF(TRIM(A.MAIN_ADMIN_CD), '') IS NOT NULL
          OR NULLIF(TRIM(A.SUB_ADMIN_CD), '')  IS NOT NULL
           )
+    </select>
+
+    <!-- PRAFTA-SUBCON-T2-07: 연동 미러 사업장 가입 차단 술어 — 미러(LINK_SRC NOT NULL)면 1 이상. -->
+    <select id="selectMirrorSiteCnt" resultType="int">
+    /* LoginMapper.selectMirrorSiteCnt */
+    SELECT COUNT(1)
+    FROM TB_SITE A
+    WHERE A.CMPNY_CD = #{cmpnyCd}
+      AND A.SITE_CD  = #{siteCd}
+      AND A.LINK_SRC_CMPNY_CD IS NOT NULL
+    </select>
+
+    <!-- 로그인 ID 사용중 여부(전사 + 일용직 포함). 로그인이 USER_ID 단독 조회라 ID 는 전역 유일해야 한다. -->
+    <select id="selectUserIdExistsGlobal" resultType="int">
+    /* LoginMapper.selectUserIdExistsGlobal */
+    SELECT COUNT(1)
+    FROM (
+        SELECT 1 FROM TB_USER       WHERE USER_ID = #{userId} LIMIT 1
+        UNION ALL
+        SELECT 1 FROM TB_DAILY_USER WHERE USER_ID = #{userId} AND USE_YN = 'Y' LIMIT 1
+    ) T
     </select>
 
     <insert id="insertUserInfo" parameterType="com.prafta.common.cmm.login.application.command.UserJoinCommand">
@@ -448,6 +472,11 @@
 		        AND B.USER_CD = #{userCd}
 		        )
 		WHERE 1=1
+		  /* PRAFTA-SUBCON-T4: 웹 로그인 약관 팝업(TermsPop)은 '필수' 약관만 강제한다.
+		     이 조건이 없으면 선택약관(006 연동 회사 제3자 제공 동의)이 팝업에 섞여
+		     체크하지 않으면 로그아웃되는 사실상 강제 동의가 된다(자유의사 요건 파괴).
+		     기존 약관 001~005 는 전부 REQUIRED_YN='Y' 라 현행 동작은 변하지 않는다. */
+		  AND A.REQUIRED_YN = 'Y'
 		  AND A.USE_YN = 'Y'
 	) A
 	WHERE A.USER_TERMS_AGR_YN = 'N'
@@ -475,6 +504,11 @@
 	FROM TB_TERMS
 	WHERE 1=1
 	  AND TERMS_ID = #{systValDCd}
+	  /* PRAFTA-SUBCON-T4: 웹 로그인 약관 팝업 경로는 '필수' 약관만 기록한다.
+	     선택약관(006 제3자 제공 동의)은 반드시 ConsentHistoryRecorder 를 경유해야 전이 이력이 남는다.
+	     이 경로로 006 이 기록되면 이력 없는 동의가 생겨 반출의 법적 근거가 무너진다.
+	     대상 행이 없으면 INSERT...SELECT 가 0행 → 무해(멱등). */
+	  AND REQUIRED_YN = 'Y'
 	/* PK=(CMPNY_CD,USER_CD,TERMS_ID,TERMS_VERSION). 동일 약관 버전 재동의 시 PK 충돌로
 	   트랜잭션이 롤백되는 것을 방지(멱등). 같은 버전 재동의면 동의값/시각만 갱신. */
 	ON DUPLICATE KEY UPDATE
@@ -496,6 +530,7 @@
     /* LoginMapper.upsertUserDevice */
     INSERT INTO TB_USER_DEVICE (
           DEVICE_UUID
+        , CMPNY_CD
         , USER_CD
         , DEVICE_TYPE
         , DEVICE_MODEL
@@ -508,6 +543,7 @@
         , INSERT_DATE
     ) VALUES (
           #{deviceUuid}
+        , #{cmpnyCd}
         , #{userCd}
         , IFNULL(#{deviceType}, 'UNKNOWN')
         , #{deviceModel}
@@ -520,7 +556,8 @@
         , NOW()
     )
     ON DUPLICATE KEY UPDATE
-          USER_CD          = VALUES(USER_CD)
+          CMPNY_CD         = VALUES(CMPNY_CD)
+        , USER_CD          = VALUES(USER_CD)
         , DEVICE_TYPE      = VALUES(DEVICE_TYPE)
         , DEVICE_MODEL     = VALUES(DEVICE_MODEL)
         , OS_VERSION       = VALUES(OS_VERSION)
@@ -572,11 +609,14 @@
          항상 "마지막 로그인 = 유일 활성 기기" 가 성립한다(stale 기기 푸시 누수/오발송 차단). -->
     <update id="deactivateOtherUserDevices">
     /* LoginMapper.deactivateOtherUserDevices */
+    <!-- ★테넌트 격리: USER_CD 는 회사별 채번이라 전역 유일하지 않다(다른 회사가 같은 USER_CD 를 갖는다).
+         CMPNY_CD 없이 실행하면 **다른 회사 동일 USER_CD 사용자의 기기를 강제 비활성화(로그아웃)** 한다. -->
     UPDATE TB_USER_DEVICE
        SET DEL_YN      = 'Y'
          , UPDATE_NO   = #{userCd}
          , UPDATE_DATE = NOW()
-     WHERE USER_CD     = #{userCd}
+     WHERE CMPNY_CD    = #{cmpnyCd}
+       AND USER_CD     = #{userCd}
        AND DEVICE_UUID != #{deviceUuid}
        AND DEL_YN      = 'N'
     </update>
@@ -630,11 +670,13 @@
          ==================================================================== -->
     <update id="clearPushTokenForDevice">
     /* LoginMapper.clearPushTokenForDevice */
+    <!-- 테넌트 격리: USER_CD 는 회사별 채번 → CMPNY_CD 동반 필수. -->
     UPDATE TB_USER_DEVICE
        SET PUSH_TOKEN  = NULL
          , UPDATE_NO   = #{userCd}
          , UPDATE_DATE = NOW()
-     WHERE DEVICE_UUID = #{deviceUuid}
+     WHERE CMPNY_CD    = #{cmpnyCd}
+       AND DEVICE_UUID = #{deviceUuid}
        AND USER_CD     = #{userCd}
     </update>
 </mapper>

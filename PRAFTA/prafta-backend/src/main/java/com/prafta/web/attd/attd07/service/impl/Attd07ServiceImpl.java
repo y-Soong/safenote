@@ -1453,12 +1453,20 @@ public class Attd07ServiceImpl implements Attd07Service {
         String histAttdId = attd07Mapper.selectAttdIdByDay(
                 param.gvCmpnyCd(), param.siteCd(), param.userCd(), param.workYmd());
         if (histAttdId != null && !histAttdId.isEmpty()) {
+            // 이력의 PROCESS_REASON 은 "관리자 처리사유"다. 본 엔드포인트는 두 경로를 겸하므로 구분한다.
+            //   - Attd_07 직접 등록(reqId=null): reqReason = 관리자가 팝업 사유칸에 직접 입력한 값 → 그대로 기록.
+            //   - 요청 승인(reqId 보유): 프론트가 보내는 reqReason 은 근로자가 쓴 신청 사유다. OT 승인에는
+            //     관리자 사유 입력 UI 자체가 없으므로, 이를 처리사유로 적재하면 처리 이력에서 근로자 사유가
+            //     관리자 사유로 둔갑한다. 근태 보정 승인과 동일하게 고정 라벨을 남긴다
+            //     (근로자 사유는 처리 이력의 '요청 사유' 컬럼이 REQ 에서 직접 읽어 보여준다).
+            boolean isReqApprove = param.reqId() != null && !param.reqId().isEmpty();
+            String histProcessReason = isReqApprove ? OT_APPROVE_PROCESS_REASON : param.reqReason();
             for (OvertimeItemModel ot : param.overtimes()) {
                 String histId = attd07Mapper.selectHistId(param.gvCmpnyCd());
                 attd07Mapper.insertUserAttdInfos(InsertUserAttdHistsCommand.forOvertimeApprove(
                         histId, histAttdId, param.gvCmpnyCd(), param.siteCd(), param.workYmd(),
                         ot.startDate(), ot.startTime(), ot.endDate(), ot.endTime(),
-                        param.reqReason(), param.gvUserCd()));
+                        histProcessReason, param.gvUserCd()));
             }
         } else {
             // 운영 규칙상 도달 불가(OT 는 근태기록 없이 등록 불가). 핵심 동작(OT 등록)은 유지하고 이력만 생략한다.
@@ -1484,6 +1492,9 @@ public class Attd07ServiceImpl implements Attd07Service {
 
     /** OT 삭제 사유 미입력 시 처리 이력에 남길 기본 문구. */
     private static final String DEFAULT_OT_DELETE_REASON = "관리자 직접 삭제";
+
+    /** 초과근무 "요청 승인" 경로의 처리 이력 사유(관리자 사유 입력 UI 없음 → 고정 라벨). 근태 보정 승인과 동일 문구. */
+    private static final String OT_APPROVE_PROCESS_REASON = "사용자 요청 승인";
 
     @Override
     @Transactional

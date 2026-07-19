@@ -157,14 +157,24 @@
                     <input type="checkbox" v-model="site.chk" />
                   </td>
                   <td>{{ site.siteNo }}</td>
-                  <td>{{ site.siteNm }}</td>
+                  <td>
+                    {{ site.siteNm
+                    }}<span v-if="site.linkSrcCmpnyCd" class="link-badge"
+                      >연동</span
+                    >
+                  </td>
                   <td>{{ site.addr1 }}</td>
                   <td>{{ site.addr2 }}</td>
                   <td>
                     {{ site.gpsRange }}
                   </td>
                   <td>
-                    <BaseSelect v-model="site.useYn">
+                    <!-- PRAFTA-SUBCON-T2-09: 미러(연동) 사업장은 사용여부(잠금 필드) 인라인 편집 비활성.
+                         강제는 서버(T2-04)가 담당 — UI 는 안내 목적. -->
+                    <BaseSelect
+                      v-model="site.useYn"
+                      :disabled="!!site.linkSrcCmpnyCd"
+                    >
                       <option
                         v-for="opt in (systCodeArr['SYS003'] || []).filter(
                           (o) => o.systValDCd != null
@@ -399,4 +409,16 @@ const fnSiteOpenPop = (popId, param) => {
 };
 </script>
 
-<style scoped></style>
+<style scoped>
+/* PRAFTA-SUBCON-T2-09: 연동(미러) 사업장 배지 — Subcon_02 status-badge 톤 정합 */
+.link-badge {
+  display: inline-block;
+  margin-left: 0.35rem;
+  padding: 0.05rem 0.4rem;
+  border-radius: var(--btn-radius, 8px);
+  background: var(--color-primary-bg, #dcfce7);
+  color: var(--color-primary, #16a34a);
+  font-size: var(--btn-font-sm, 11px);
+  line-height: 1.4;
+}
+</style>

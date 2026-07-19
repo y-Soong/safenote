@@ -1,0 +1,11 @@
+{
+  "role": "A_PRIME",
+  "cmpnyCd": "nrTnBjSa2woeztqfPGIP",
+  "userCd": "20260700001",
+  "authCd": "master",
+  "accountStatus": "01",
+  "nextStep": null,
+  "newPw": "Prafta!2026",
+  "token": "eyJhbGciOiJIUzI1NiJ9.eyJndl9jbXBueUNkIjoibnJUbkJqU2Eyd29lenRxZlBHSVAiLCJndl91c2VyQ2QiOiIyMDI2MDcwMDAwMSIsImd2X3VzZXJJZCI6InN1YnRfcHJpbWUiLCJndl91c2VyTm0iOiLsm5Dssq3qtIDrpqzsnpAiLCJndl9hdXRoQ2QiOiJtYXN0ZXIiLCJndl9hdXRoTGV2ZWwiOiIxIiwiZ3Zfc2l0ZUNkIjoiMDAwMDEiLCJndl9zaXRlTm8iOiIwMDAwMSIsImd2X3NpdGVObSI6IuybkOyyreyImOygleuQqCIsImd2X25vZGVDZCI6Im4xIiwiZ3Zfbm9kZU5tIjoi7JuQ7LKt7IiY7KCV65CoIiwiZ3ZfbG9naW5JZCI6ImJiMDAzNzE0YmM2NTQwMjA5ZmQ4M2U5ZTI2YWM5ZjQ1IiwiZ3ZfY2xpZW50VHlwZSI6IldFQiIsImlhdCI6MTc4NDEyMTczOSwiZXhwIjoxNzg0MTI1MzM5fQ.EmELKwFtdqXCikGG_1rdk5zWf4zDISq2OtMOajWUf-M",
+  "subconOk": true
+}

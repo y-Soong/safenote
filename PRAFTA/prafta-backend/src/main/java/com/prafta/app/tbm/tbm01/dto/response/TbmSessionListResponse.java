@@ -27,5 +27,7 @@ public class TbmSessionListResponse {
         private final String startedAt;            // A2/A3
         private final String endedAt;              // A3
         private final String completionStatusCd;   // A3 SYS053
+        /** PRAFTA-SUBCON-T5: 개최사(타사 연동 세션일 때만). 자사 세션은 null → 배지 미표시. */
+        private final String hostCmpnyNm;
     }
 }
