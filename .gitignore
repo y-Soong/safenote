@@ -150,3 +150,5 @@ PRAFTA_FLUTTER/
 !.claude/refs/
 .claude/refs/*
 !.claude/refs/*.md
+# 하위 프로젝트의 .claude(로컬 설정)는 전부 제외 (루트 앵커 패턴 전환으로 풀렸던 것 복원)
+PRAFTA/**/.claude/
