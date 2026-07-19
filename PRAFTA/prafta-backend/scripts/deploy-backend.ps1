@@ -1,16 +1,18 @@
 ﻿<#
- PRAFTA 백엔드 배포 스크립트 (AWS EC2)
+ PRAFTA 백엔드 배포 스크립트 (AWS EC2) — git 기반
 
- 절차:
-   1) 로컬 gradle 빌드 (bootJar, 테스트 제외)
-   2) JAR 를 서버에 임시 이름(.new)으로 업로드 (전송 중 실패가 라이브 JAR 를 오염시키지 않도록)
-   3) 서버에서 현재 JAR 를 .prev 로 백업 → .new 를 정식 이름으로 교체 → systemd 재기동
-   4) https://api.prafta.com 헬스체크 (Spring 이 응답하면 성공, nginx 502/503/504 면 기동 실패로 간주)
-   5) 헬스체크 실패 시 .prev 로 자동 롤백 후 재기동
+ 배포 원칙: 로컬 작업 트리가 아니라 **git 에 커밋·push 된 코드**만 배포한다.
+   1) git fetch 후 지정 ref(기본 origin/main)를 임시 worktree 에 체크아웃
+   2) 그 worktree 안에서 gradle bootJar 빌드 (로컬 미커밋 변경은 절대 섞이지 않음)
+   3) JAR 를 서버에 임시 이름(.new)으로 업로드 → 현재 JAR .prev 백업 → 교체 → 재기동
+   4) https://api.prafta.com 헬스체크 → 실패 시 .prev 로 자동 롤백
+   5) 배포 커밋 해시를 로컬 이력(.claude/refs/deploy-history.log)과 서버(DEPLOYED_COMMIT_BACKEND)에 기록
 
  사용:
-   powershell -ExecutionPolicy Bypass -File .\scripts\deploy-backend.ps1
-   powershell -ExecutionPolicy Bypass -File .\scripts\deploy-backend.ps1 -SkipBuild   # 빌드 생략(직전 빌드 재사용)
+   powershell -ExecutionPolicy Bypass -File .\scripts\deploy-backend.ps1                        # origin/main 배포
+   powershell -ExecutionPolicy Bypass -File .\scripts\deploy-backend.ps1 -Ref origin/develop    # 특정 브랜치 배포 (개발 WAS 생기면)
+   powershell -ExecutionPolicy Bypass -File .\scripts\deploy-backend.ps1 -Ref 03169b5           # 특정 커밋 배포 (핫픽스/롤백)
+   powershell -ExecutionPolicy Bypass -File .\scripts\deploy-backend.ps1 -UseWorkingTree        # (비상용) 로컬 작업 트리 그대로 배포
 
  전제:
    - SSH 키: %USERPROFILE%\.ssh\prafta-key.pem
@@ -18,7 +20,9 @@
 #>
 [CmdletBinding()]
 param(
-    [switch]$SkipBuild,
+    [string]$Ref = 'origin/main',
+    [switch]$UseWorkingTree,
+    [switch]$SkipFetch,
     [int]$HealthTimeoutSec = 180,
     [string]$KeyPath = "$env:USERPROFILE\.ssh\prafta-key.pem",
     [string]$RemoteTarget = "ec2-user@3.38.237.103",
@@ -29,17 +33,24 @@ param(
 $ErrorActionPreference = 'Stop'
 [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
 
-$backendRoot = Split-Path -Parent $PSScriptRoot
-$localJar    = Join-Path $backendRoot 'build\libs\prafta-backend-0.0.1-SNAPSHOT.jar'
-$remoteDir   = '/home/ec2-user/prafta'
-$remoteJar   = "$remoteDir/prafta-backend.jar"
+$repoRoot  = (& git -C $PSScriptRoot rev-parse --show-toplevel).Trim() -replace '/', '\'
+if ($LASTEXITCODE -ne 0 -or -not $repoRoot) { throw "git repo 루트를 찾지 못함 ($PSScriptRoot)" }
+$remoteDir = '/home/ec2-user/prafta'
+$remoteJar = "$remoteDir/prafta-backend.jar"
+$worktree  = Join-Path $env:TEMP 'prafta-deploy-wt-backend'
+$deployLog = Join-Path $repoRoot '.claude\refs\deploy-history.log'
 
 function Write-Step([string]$msg) { Write-Host "`n=== $msg ===" -ForegroundColor Cyan }
 
-# ssh 원격 명령 실행 (BatchMode: 비밀번호 prompt 로 hang 하지 않도록)
 function Invoke-RemoteSsh([string]$remoteCmd) {
     & ssh -i $KeyPath -o BatchMode=yes -o ConnectTimeout=10 $RemoteTarget $remoteCmd
     if ($LASTEXITCODE -ne 0) { throw "SSH 원격 명령 실패 (exit $LASTEXITCODE): $remoteCmd" }
+}
+
+# 배포 이력 기록 (로컬 .claude/refs — gitignore 대상이라 커밋되지 않음)
+function Write-DeployLog([string]$commit, [string]$result) {
+    $line = "{0} | backend | {1} | {2} | {3}" -f (Get-Date -Format 'yyyy-MM-dd HH:mm:ss'), $commit, $Ref, $result
+    Add-Content -Path $deployLog -Value $line -Encoding UTF8
 }
 
 # 백엔드 생존 판정: Spring 이 응답하면 살아있음, 연결실패/502/503/504(nginx 대리응답) 면 죽어있음
@@ -57,7 +68,6 @@ function Test-ApiAlive {
     }
 }
 
-# 재기동 후 기동 완료까지 폴링
 function Wait-ApiAlive([int]$timeoutSec) {
     $elapsed = 0
     while ($elapsed -lt $timeoutSec) {
@@ -72,50 +82,93 @@ function Wait-ApiAlive([int]$timeoutSec) {
     return $false
 }
 
-# ── 1) 빌드 ──────────────────────────────────────────────
-if (-not $SkipBuild) {
-    Write-Step "1/4 gradle bootJar 빌드"
+# 남아있는 이전 worktree 정리 (실패 잔재 대비)
+function Remove-DeployWorktree {
+    if (Test-Path $worktree) {
+        & git -C $repoRoot worktree remove --force $worktree 2>$null
+        if (Test-Path $worktree) { Remove-Item -Recurse -Force $worktree -ErrorAction SilentlyContinue }
+        & git -C $repoRoot worktree prune 2>$null
+    }
+}
+
+# ── 0) 배포 대상 코드 확정 ──────────────────────────────
+$commit = $null
+$buildRoot = $null
+try {
+    if ($UseWorkingTree) {
+        Write-Step "0/5 (비상 모드) 로컬 작업 트리 기준 배포"
+        $buildRoot = Join-Path $repoRoot 'PRAFTA\prafta-backend'
+        $head = (& git -C $repoRoot rev-parse --short=8 HEAD).Trim()
+        $dirty = if ((& git -C $repoRoot status --porcelain | Measure-Object).Count -gt 0) { '+dirty' } else { '' }
+        $commit = "worktree:$head$dirty"
+        Write-Host "주의: git 미커밋 변경이 그대로 배포될 수 있음 ($commit)" -ForegroundColor Yellow
+    } else {
+        Write-Step "0/5 배포 대상 확정: $Ref"
+        if (-not $SkipFetch) {
+            & git -C $repoRoot fetch origin
+            if ($LASTEXITCODE -ne 0) { throw "git fetch 실패" }
+        }
+        $commit = (& git -C $repoRoot rev-parse --verify --short=8 "$Ref^{commit}").Trim()
+        if ($LASTEXITCODE -ne 0 -or -not $commit) { throw "ref 해석 실패: $Ref (push 되었는지 확인)" }
+        Write-Host "배포 커밋: $commit ($Ref)"
+        & git -C $repoRoot log -1 --format='  %h %s (%ci)' $commit
+
+        Remove-DeployWorktree
+        & git -C $repoRoot worktree add --detach $worktree $commit
+        if ($LASTEXITCODE -ne 0) { throw "git worktree 생성 실패" }
+        $buildRoot = Join-Path $worktree 'PRAFTA\prafta-backend'
+    }
+
+    # ── 1) 빌드 ──────────────────────────────────────────
+    Write-Step "1/5 gradle bootJar 빌드 ($buildRoot)"
     if (-not (Test-Path $JavaHome)) { throw "JAVA_HOME 경로 없음: $JavaHome" }
     $env:JAVA_HOME = $JavaHome
-    Push-Location $backendRoot
+    Push-Location $buildRoot
     try {
         & .\gradlew.bat clean bootJar -x test --no-daemon
         if ($LASTEXITCODE -ne 0) { throw "gradle 빌드 실패 (exit $LASTEXITCODE)" }
     } finally { Pop-Location }
-} else {
-    Write-Step "1/4 빌드 생략 (-SkipBuild)"
+
+    $localJar = Join-Path $buildRoot 'build\libs\prafta-backend-0.0.1-SNAPSHOT.jar'
+    if (-not (Test-Path $localJar)) { throw "빌드 산출물 없음: $localJar" }
+    $jarInfo = Get-Item $localJar
+    Write-Host ("JAR: {0} ({1:N1} MB)" -f $jarInfo.Name, ($jarInfo.Length / 1MB))
+
+    # ── 2) 업로드 (.new 임시 이름) ───────────────────────
+    Write-Step "2/5 JAR 업로드"
+    & scp -i $KeyPath -o BatchMode=yes -o ConnectTimeout=10 $localJar "${RemoteTarget}:${remoteJar}.new"
+    if ($LASTEXITCODE -ne 0) { throw "scp 업로드 실패 (exit $LASTEXITCODE)" }
+
+    # ── 3) 백업 → 교체 → 재기동 ─────────────────────────
+    Write-Step "3/5 서버 교체 및 재기동"
+    Invoke-RemoteSsh "cp -f $remoteJar $remoteJar.prev 2>/dev/null; mv -f $remoteJar.new $remoteJar && sudo systemctl restart prafta-backend"
+
+    # ── 4) 헬스체크 → 실패 시 롤백 ──────────────────────
+    Write-Step "4/5 헬스체크 ($HealthUrl)"
+    if (Wait-ApiAlive $HealthTimeoutSec) {
+        # ── 5) 배포 커밋 기록 ────────────────────────────
+        Write-Step "5/5 배포 이력 기록"
+        Invoke-RemoteSsh "echo '$commit $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')' > $remoteDir/DEPLOYED_COMMIT_BACKEND"
+        Write-DeployLog $commit 'OK'
+        Write-Host "`n배포 완료. 커밋 $commit 라이브 반영됨." -ForegroundColor Green
+        exit 0
+    }
+
+    Write-Host "`n헬스체크 실패 — 이전 JAR 로 롤백합니다." -ForegroundColor Yellow
+    Invoke-RemoteSsh "mv -f $remoteJar.prev $remoteJar && sudo systemctl restart prafta-backend"
+
+    if (Wait-ApiAlive $HealthTimeoutSec) {
+        Write-DeployLog $commit 'ROLLBACK'
+        Write-Host "`n롤백 성공: 이전 버전으로 복구됨. 커밋 $commit 은 반영되지 않았음." -ForegroundColor Yellow
+        Write-Host "서버 로그 확인: ssh -i $KeyPath $RemoteTarget `"sudo journalctl -u prafta-backend -n 100 --no-pager`""
+        exit 1
+    }
+
+    Write-DeployLog $commit 'FAIL'
+    Write-Host "`n롤백 후에도 응답 없음 — 수동 조치 필요!" -ForegroundColor Red
+    Write-Host "  ssh -i $KeyPath $RemoteTarget"
+    Write-Host "  sudo journalctl -u prafta-backend -n 200 --no-pager"
+    exit 2
+} finally {
+    if (-not $UseWorkingTree) { Remove-DeployWorktree }
 }
-
-if (-not (Test-Path $localJar)) { throw "빌드 산출물 없음: $localJar" }
-$jarInfo = Get-Item $localJar
-Write-Host ("JAR: {0} ({1:N1} MB, {2})" -f $jarInfo.Name, ($jarInfo.Length / 1MB), $jarInfo.LastWriteTime)
-
-# ── 2) 업로드 (.new 임시 이름) ───────────────────────────
-Write-Step "2/4 JAR 업로드"
-& scp -i $KeyPath -o BatchMode=yes -o ConnectTimeout=10 $localJar "${RemoteTarget}:${remoteJar}.new"
-if ($LASTEXITCODE -ne 0) { throw "scp 업로드 실패 (exit $LASTEXITCODE)" }
-
-# ── 3) 백업 → 교체 → 재기동 ─────────────────────────────
-Write-Step "3/4 서버 교체 및 재기동"
-Invoke-RemoteSsh "cp -f $remoteJar $remoteJar.prev 2>/dev/null; mv -f $remoteJar.new $remoteJar && sudo systemctl restart prafta-backend"
-
-# ── 4) 헬스체크 → 실패 시 롤백 ──────────────────────────
-Write-Step "4/4 헬스체크 ($HealthUrl)"
-if (Wait-ApiAlive $HealthTimeoutSec) {
-    Write-Host "`n배포 완료. 신규 JAR 라이브 반영됨." -ForegroundColor Green
-    exit 0
-}
-
-Write-Host "`n헬스체크 실패 — 이전 JAR 로 롤백합니다." -ForegroundColor Yellow
-Invoke-RemoteSsh "mv -f $remoteJar.prev $remoteJar && sudo systemctl restart prafta-backend"
-
-if (Wait-ApiAlive $HealthTimeoutSec) {
-    Write-Host "`n롤백 성공: 이전 버전으로 복구됨. 신규 JAR 는 반영되지 않았음." -ForegroundColor Yellow
-    Write-Host "서버 로그 확인: ssh -i $KeyPath $RemoteTarget `"sudo journalctl -u prafta-backend -n 100 --no-pager`""
-    exit 1
-}
-
-Write-Host "`n롤백 후에도 응답 없음 — 수동 조치 필요!" -ForegroundColor Red
-Write-Host "  ssh -i $KeyPath $RemoteTarget"
-Write-Host "  sudo journalctl -u prafta-backend -n 200 --no-pager"
-exit 2
