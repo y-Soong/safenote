@@ -17,6 +17,14 @@
           <div class="popup-content">
             <!-- QR 코드 표시 -->
             <qrcode-vue :value="qrValue" :size="300" />
+            <!-- 코드값 표시: 웹에는 스캐너가 없어 수동 입력(Tbm 입실 팝업의 스캔 입력행 폴백)으로
+                 처리할 수 있도록 식별 코드를 함께 노출한다. displayCode 전달 시에만 표시(하위호환). -->
+            <div v-if="displayCode" class="code-row">
+              <span class="code-value">{{ displayCode }}</span>
+              <button class="btn btn-primary code-copy-btn" @click="fnCopyCode">
+                {{ copied ? "복사됨" : "복사" }}
+              </button>
+            </div>
           </div>
         </div>
 
@@ -44,7 +52,27 @@ const props = defineProps({
   // T1-03: 헤더/프린트 제목. URL 등 비-JSON qrValue 를 인코딩할 때 별도 prop 으로 제목을 받는다.
   //        미지정 시 기존 동작(JSON qrValue 의 qrTitle 파싱)으로 하위 호환.
   title: { type: String, default: "" },
+  // QR 아래에 함께 표시할 식별 코드(일용직 userCd 등). 미전달 시 표시하지 않음(하위호환).
+  displayCode: { type: String, default: "" },
 });
+
+// 코드값 복사 상태(버튼 라벨 피드백용).
+const copied = ref(false);
+async function fnCopyCode() {
+  try {
+    await navigator.clipboard.writeText(props.displayCode);
+  } catch {
+    // clipboard API 불가 환경(비보안 컨텍스트 등) 폴백.
+    const ta = document.createElement("textarea");
+    ta.value = props.displayCode;
+    document.body.appendChild(ta);
+    ta.select();
+    document.execCommand("copy");
+    document.body.removeChild(ta);
+  }
+  copied.value = true;
+  setTimeout(() => (copied.value = false), 1500);
+}
 
 // 제목 결정: title prop 우선. 없으면 qrValue 가 JSON 일 때만 qrTitle 파싱(파싱 실패해도 빈 문자열).
 const headerTitle = computed(() => {
@@ -88,12 +116,19 @@ function fnPrintQr() {
             font-weight: bold;
             margin-bottom: 20px;
           }
+          .userCode {
+            font-size: 24px;
+            font-family: monospace;
+            letter-spacing: 1px;
+            margin-top: 16px;
+          }
         </style>
       </head>
       <body>
         <!-- ✅ QR 위에 siteCd 출력 -->
         <div class="siteCd">${qrTitle}</div>
         <img src="${dataUrl}" />
+        ${props.displayCode ? `<div class="userCode">${props.displayCode}</div>` : ""}
       </body>
     </html>
   `);
@@ -117,5 +152,26 @@ function fnPrintQr() {
   border-radius: 12px;
   text-align: center;
   min-width: 300px;
+}
+
+/* 코드값 표시행: QR 아래 식별 코드 + 복사 버튼 */
+.code-row {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--spacing-sm, 8px);
+  margin-top: var(--spacing-md, 12px);
+}
+.code-value {
+  font-family: monospace;
+  font-size: var(--font-size-lg, 18px);
+  font-weight: 700;
+  letter-spacing: 1px;
+  color: var(--color-text-primary, #111827);
+  user-select: all; /* 클릭 시 전체 선택 — 수동 복사 편의 */
+}
+.code-copy-btn {
+  padding: 0 var(--btn-padding-sm, 10px);
+  min-height: var(--btn-height-sm, 26px);
 }
 </style>

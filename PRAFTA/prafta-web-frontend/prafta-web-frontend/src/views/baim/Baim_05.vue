@@ -696,6 +696,8 @@ const fnSlotQrCodePopOpen = (slot) => {
       userCd: slot.currUserId,
       qrTitle: siteNm.value + " - " + slot.currUserNm + " QR코드",
     }),
+    // 웹 수동 입력 보완: 스캐너 없는 웹 관리자가 코드값을 보고 Tbm 입실 팝업에 직접 입력할 수 있게 노출.
+    displayCode: slot.currUserId,
   });
 };
 const formatMblNo = (val) => proxy.$util.formatPhoneNumber(val) ?? "";
@@ -718,6 +720,8 @@ const fnGenerateAdminQr = () => {
           userCd,
           qrTitle: siteNm.value + " - 관리자 발급 QR코드(" + userNm + ")",
         }),
+        // 웹 수동 입력 보완: 발급 직후 팝업에서 코드값을 바로 확인/복사할 수 있게 노출.
+        displayCode: userCd,
       });
       fnSearch();
     },

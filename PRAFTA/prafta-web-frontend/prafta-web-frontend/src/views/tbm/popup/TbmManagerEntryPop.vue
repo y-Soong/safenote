@@ -82,17 +82,18 @@
           </div>
         </div>
 
-        <!-- 일용직 QR 스캔(T6-08): 외부 스캐너가 키보드처럼 코드 입력 → Enter -->
+        <!-- 일용직 QR 스캔(T6-08): 외부 스캐너가 키보드처럼 코드 입력 → Enter.
+             fnScanEnter 폴백 덕에 QR 팝업(Baim_05)에 표시되는 코드값을 직접 타이핑해도 동작한다. -->
         <div v-if="userTypeCd === 'DAILY'" class="scan-row">
-          <label>QR 스캔</label>
+          <label>QR 스캔/코드</label>
           <input
             v-model="scanInput"
             class="scan-input"
-            placeholder="QR 스캐너로 코드를 스캔한 뒤 Enter"
+            placeholder="QR 스캔 또는 코드 직접 입력 후 Enter"
             :disabled="isBusy"
             @keyup.enter="fnScanEnter"
           />
-          <span class="scan-hint">스캔한 일용직을 즉시 입실 처리합니다.</span>
+          <span class="scan-hint">스캔하거나 입력한 일용직을 즉시 입실 처리합니다.</span>
         </div>
 
         <!-- 그리드 -->
