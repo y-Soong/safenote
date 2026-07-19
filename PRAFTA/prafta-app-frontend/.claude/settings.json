@@ -1,0 +1,11 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(npx --yes eslint src/views/attd/components/AttendanceTodayCard.vue)",
+      "Bash(./gradlew.bat compileJava --no-daemon -q)"
+    ],
+    "additionalDirectories": [
+      "c:\\PRAFTA\\PRAFTA\\prafta-backend\\src\\main\\java\\com\\prafta\\app\\attd\\attd01\\service\\impl"
+    ]
+  }
+}

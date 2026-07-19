@@ -144,4 +144,9 @@ PRAFTA_FLUTTER/
 ############################
 # claude
 ############################
-.claude/
+# .claude 는 기본 전체 제외하되, refs 의 .md 운영 문서만 git 백업 대상으로 예외 처리
+# (07-19 문서 유실 사고 재발 방지. 스크린샷·로그·시크릿성 파일은 계속 제외)
+.claude/*
+!.claude/refs/
+.claude/refs/*
+!.claude/refs/*.md
