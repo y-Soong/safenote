@@ -1,0 +1,45 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.prafta.common.cmm.aiquota.mapper.AiQuotaMapper">
+
+    <!-- 유효한도·당월 사용량 1회 조회.
+         주의: record 매핑은 SELECT 컬럼 순서 의존 - AiQuotaStatusResult 컴포넌트 순서와 일치 유지.
+         두 스칼라 서브쿼리 모두 행 미존재 시 NULL (한도 NULL=기본 800000, 사용량 NULL=0 취급). -->
+    <select id="selectQuotaStatus" resultType="com.prafta.common.cmm.aiquota.application.result.AiQuotaStatusResult">
+    /* AiQuotaMapper.selectQuotaStatus */
+    SELECT
+        (SELECT Q.MONTHLY_TOKEN_LIMIT
+           FROM TB_AI_TOKEN_QUOTA Q
+          WHERE Q.CMPNY_CD = #{cmpnyCd})                    AS monthlyTokenLimit
+      , (SELECT U.INPUT_TOKENS + U.OUTPUT_TOKENS
+           FROM TB_AI_TOKEN_USAGE U
+          WHERE U.CMPNY_CD = #{cmpnyCd}
+            AND U.USE_YM = #{useYm})                        AS usedTokens
+    </select>
+
+    <!-- 사용량 누적 UPSERT.
+         ★MySQL AS NEW 별칭 함정(feedback_mysql_row_alias_ambiguous_column):
+           우변의 기존값은 반드시 `TB_AI_TOKEN_USAGE.컬럼` 으로 테이블명 한정. -->
+    <insert id="upsertUsage">
+    /* AiQuotaMapper.upsertUsage */
+    INSERT INTO TB_AI_TOKEN_USAGE (
+        CMPNY_CD
+      , USE_YM
+      , INPUT_TOKENS
+      , OUTPUT_TOKENS
+      , CALL_CNT
+    ) VALUES (
+        #{cmpnyCd}
+      , #{useYm}
+      , #{inputTokens}
+      , #{outputTokens}
+      , 1
+    ) AS NEW
+    ON DUPLICATE KEY UPDATE
+        INPUT_TOKENS  = TB_AI_TOKEN_USAGE.INPUT_TOKENS + NEW.INPUT_TOKENS
+      , OUTPUT_TOKENS = TB_AI_TOKEN_USAGE.OUTPUT_TOKENS + NEW.OUTPUT_TOKENS
+      , CALL_CNT      = TB_AI_TOKEN_USAGE.CALL_CNT + 1
+      , UPDATE_DATE   = NOW()
+    </insert>
+
+</mapper>

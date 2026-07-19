@@ -27,6 +27,7 @@ import com.prafta.app.ai.ai01.dto.response.VerbatimReference;
 import com.prafta.app.ai.ai01.repository.AiCallRepository;
 import com.prafta.app.ai.ai01.service.Ai01Service;
 import com.prafta.app.ai.ai01.service.AnswerService;
+import com.prafta.common.cmm.aiquota.service.AiQuotaService;
 import com.prafta.common.config.AiProperties;
 import com.prafta.common.error.ai.AiErrorCode;
 import com.prafta.common.exception.ApiException;
@@ -51,6 +52,7 @@ public class AnswerServiceImpl implements AnswerService {
     private final Ai01Service ai01Service;
     private final LlmAnswerClient llmAnswerClient;
     private final AiCallRepository aiCallRepository;
+    private final AiQuotaService aiQuotaService;
     private final AiProperties aiProperties;
     private final ObjectMapper objectMapper;
 
@@ -115,12 +117,16 @@ public class AnswerServiceImpl implements AnswerService {
         if (!llmAnswerClient.isEnabled()) {
             throw new ApiException(AiErrorCode.AI_503_001);
         }
+        // 4-1) 회사 월간 AI 토큰 쿼터 게이트(플랫폼-AI-토큰쿼터 §2-4) — 소진 시 AI_429_001.
+        aiQuotaService.checkOrThrow(param.gvCmpnyCd());
 
         // 5) recompose 컨텍스트 조립(★verbatim 미포함) → LLM 호출.
         Map<Integer, RagHit> markerToHit = new LinkedHashMap<>();
         Map<String, RagHit> idToHit = new LinkedHashMap<>();
         String userPrompt = buildContextPrompt(param.query(), recompose, markerToHit, idToHit);
         LlmRawResponse raw = llmAnswerClient.answer(SYSTEM_PROMPT, userPrompt);
+        // ★쿼터 사용량 누적 — raw 수신 즉시(후속 refusal/파싱 실패 경로에서도 기록 누락 없음).
+        aiQuotaService.record(param.gvCmpnyCd(), raw.inputTokens(), raw.outputTokens());
 
         // 6) refusal → content 파싱 없이 abstain.
         if (raw.refusal()) {

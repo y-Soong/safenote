@@ -194,7 +194,7 @@ import {
 } from "vue";
 import axios from "@/api/axios";
 import { getMessage, MSG } from "@/messages";
-import { resolveApiErrorMessage } from "@/utils/apiError";
+import { resolveApiErrorMessage, isAiQuotaExceeded } from "@/utils/apiError";
 import { useCenteredDraggable } from "@/composables/useCenteredDraggable";
 import LoadingSpinner from "@/components/common/LoadingSpinner.vue";
 
@@ -419,6 +419,10 @@ const fnSendChat = async () => {
       err,
       "대화 처리 중 오류가 발생했습니다."
     );
+    // 회사 월간 AI 토큰 쿼터 소진(AI_429_001) → Alert 모달 우선 표출(inline 병기 — §2-5)
+    if (isAiQuotaExceeded(err)) {
+      await proxy.$alert(chatErrorMsg.value);
+    }
   } finally {
     chatSending.value = false;
   }
@@ -447,6 +451,10 @@ const fnReanalyze = async () => {
       err,
       "재분석 요청 중 오류가 발생했습니다."
     );
+    // 회사 월간 AI 토큰 쿼터 소진(AI_429_001) → Alert 모달 우선 표출(inline 병기 — §2-5)
+    if (isAiQuotaExceeded(err)) {
+      await proxy.$alert(chatErrorMsg.value);
+    }
   } finally {
     reanalyzing.value = false;
   }

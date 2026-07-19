@@ -45,6 +45,8 @@ public enum AiErrorCode implements ApiErrorCode {
     , AI_502_005(HttpStatus.BAD_GATEWAY, "PDF 문서를 이미지로 변환하지 못했습니다.\n손상되었거나 암호화된 PDF일 수 있습니다.")
     // 400: HCX Vision 전송 전 정규화 시 이미지 해상도가 처리 한도(디코딩 폭탄 하드캡)를 초과 — HCX Vision 정규화
     , AI_400_008(HttpStatus.BAD_REQUEST, "이미지 해상도가 처리 한도를 초과했습니다.\n크기를 줄여 다시 시도해 주세요.")
+    // 429: 회사 월간 AI 토큰 쿼터 소진(플랫폼-AI-토큰쿼터 §2-4/5. 한도 0 완전차단 포함)
+    , AI_429_001(HttpStatus.TOO_MANY_REQUESTS, "이번 달 AI 토큰 사용량을 모두 소진했습니다.\n서비스 관리자에게 문의해 주세요.")
     ;
 
     private final HttpStatus httpStatus;

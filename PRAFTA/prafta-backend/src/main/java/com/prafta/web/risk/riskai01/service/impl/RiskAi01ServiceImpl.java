@@ -29,6 +29,7 @@ import com.prafta.app.ai.ai01.dto.response.RagHit;
 import com.prafta.app.ai.ai01.dto.response.RagSearchResponse;
 import com.prafta.app.ai.ai01.repository.AiCallRepository;
 import com.prafta.app.ai.ai01.service.Ai01Service;
+import com.prafta.common.cmm.aiquota.service.AiQuotaService;
 import com.prafta.common.cmm.file.application.model.ImageBytesResult;
 import com.prafta.common.cmm.file.application.query.FileReadQuery;
 import com.prafta.common.cmm.file.service.FileService;
@@ -82,6 +83,7 @@ public class RiskAi01ServiceImpl implements RiskAi01Service {
     private final LlmAnswerClient llmAnswerClient;
     private final FileService fileService;
     private final AiCallRepository aiCallRepository;
+    private final AiQuotaService aiQuotaService;
     private final AiProperties aiProperties;
     private final ObjectMapper objectMapper;
 
@@ -349,8 +351,13 @@ public class RiskAi01ServiceImpl implements RiskAi01Service {
         String suppDesc = resolveSuppDesc(param, before);
         String system = buildImageContext(source, suppDesc);
 
+        // 회사 월간 AI 토큰 쿼터 게이트(플랫폼-AI-토큰쿼터 §2-4) — 호출 직전 1회, 소진 시 AI_429_001.
+        aiQuotaService.checkOrThrow(param.gvCmpnyCd());
+
         // 멀티턴 호출(실패 시 client 가 예외 → 저장 없이 전파. ★캡/롤백 없음).
         LlmRawResponse raw = llmAnswerClient.chat(system, turns);
+        // ★쿼터 사용량 누적 — raw 수신 즉시(refusal 여부와 무관).
+        aiQuotaService.record(param.gvCmpnyCd(), raw.inputTokens(), raw.outputTokens());
 
         // assistant 응답 append(비-refusal + 텍스트 유효 시에만).
         if (!raw.refusal()) {
@@ -466,6 +473,9 @@ public class RiskAi01ServiceImpl implements RiskAi01Service {
         if (!llmAnswerClient.isEnabled()) {
             throw new ApiException(AiErrorCode.AI_503_001);
         }
+        // 회사 월간 AI 토큰 쿼터 게이트(플랫폼-AI-토큰쿼터 §2-4) — 진입부 1회.
+        //   derive 체인 최대 3회 + verbatim 선택 호출(selectVerbatimRefs)도 이 체크로 커버(소프트 리밋 명세 §5).
+        aiQuotaService.checkOrThrow(param.gvCmpnyCd());
 
         // RAG 검색(코퍼스 필수). ★그라운딩 개선 D: topK 5→10 확대(회수율 개선).
         //   LLM 컨텍스트에는 아래 잘라내기에서 recompose 상위 5건만 투입한다(프롬프트 길이 방어).
@@ -526,6 +536,8 @@ public class RiskAi01ServiceImpl implements RiskAi01Service {
         if (recompose.isEmpty()) {
             // 코퍼스 근거부재 → 자유생성(각주 없음, ABSTAINED=Y).
             raw = llmAnswerClient.answer(DERIVE_FREE_SYSTEM_PROMPT, "[위험성평가 요청]\n" + query);
+            // ★쿼터 사용량 누적 — raw 수신 즉시(기존 recordCall 감사와 병행 — 대체 아님).
+            aiQuotaService.record(param.gvCmpnyCd(), raw.inputTokens(), raw.outputTokens());
             DeriveLlmResult parsed = raw.refusal() ? null : parseDerive(raw.combinedText());
             hazards = (parsed == null) ? List.of() : stripHazardMarkers(parsed.hazards());
             citations = List.of();
@@ -536,6 +548,8 @@ public class RiskAi01ServiceImpl implements RiskAi01Service {
             Map<Integer, RagHit> markerToHit = new LinkedHashMap<>();
             String context = buildGroundedContext(query, recompose, markerToHit);
             raw = llmAnswerClient.answer(DERIVE_GROUNDED_SYSTEM_PROMPT, context);
+            // ★쿼터 사용량 누적 — raw 수신 즉시.
+            aiQuotaService.record(param.gvCmpnyCd(), raw.inputTokens(), raw.outputTokens());
             DeriveLlmResult parsed = raw.refusal() ? null : parseDerive(raw.combinedText());
 
             // ★파싱 실패(HCX 확률적 JSON 문법 오류) 시 동일 프롬프트로 1회 재시도.
@@ -545,6 +559,8 @@ public class RiskAi01ServiceImpl implements RiskAi01Service {
                 recordCall(param, ENDPOINT_DERIVE, raw, query.length(), List.of(), true);
                 log.warn("그라운딩 응답 파싱 실패 - 동일 프롬프트로 1회 재시도");
                 raw = llmAnswerClient.answer(DERIVE_GROUNDED_SYSTEM_PROMPT, context);
+                // ★쿼터 사용량 누적 — 재시도 호출도 raw 수신 즉시.
+                aiQuotaService.record(param.gvCmpnyCd(), raw.inputTokens(), raw.outputTokens());
                 parsed = raw.refusal() ? null : parseDerive(raw.combinedText());
             }
 
@@ -556,6 +572,8 @@ public class RiskAi01ServiceImpl implements RiskAi01Service {
                 recordCall(param, ENDPOINT_DERIVE, raw, query.length(), List.of(), true);
 
                 raw = llmAnswerClient.answer(DERIVE_FREE_SYSTEM_PROMPT, "[위험성평가 요청]\n" + query);
+                // ★쿼터 사용량 누적 — 폴백 호출도 raw 수신 즉시.
+                aiQuotaService.record(param.gvCmpnyCd(), raw.inputTokens(), raw.outputTokens());
                 // parseDerive 는 파싱 불가 시 예외 대신 null 반환 — 폴백 파싱 실패는 빈 결과로 종결.
                 DeriveLlmResult fallback = raw.refusal() ? null : parseDerive(raw.combinedText());
                 hazards = (fallback == null) ? List.of() : stripHazardMarkers(fallback.hazards());
@@ -1014,6 +1032,8 @@ public class RiskAi01ServiceImpl implements RiskAi01Service {
         try {
             String context = buildVerbatimSelectContext(query, candidates);
             LlmRawResponse raw = llmAnswerClient.answer(VERBATIM_SELECT_SYSTEM_PROMPT, context);
+            // ★쿼터 사용량 누적 — 선택 전용 호출도 실호출(과금)이므로 raw 수신 즉시 기록.
+            aiQuotaService.record(param.gvCmpnyCd(), raw.inputTokens(), raw.outputTokens());
             List<Integer> picked = raw.refusal() ? null : parseVerbatimSelection(raw.combinedText(), candidates.size());
 
             // 감사: 선택 호출도 실호출 1:1 기록(선정 청크 ID 누적, 선정 0건이면 abstained=true 성격).

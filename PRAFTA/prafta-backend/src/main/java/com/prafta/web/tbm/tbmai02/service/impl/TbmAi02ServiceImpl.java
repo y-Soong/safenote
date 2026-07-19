@@ -20,6 +20,7 @@ import com.prafta.app.ai.ai01.application.model.AiCallLog;
 import com.prafta.app.ai.ai01.client.LlmAnswerClient;
 import com.prafta.app.ai.ai01.client.LlmRawResponse;
 import com.prafta.app.ai.ai01.repository.AiCallRepository;
+import com.prafta.common.cmm.aiquota.service.AiQuotaService;
 import com.prafta.common.config.AiProperties;
 import com.prafta.common.error.ai.AiErrorCode;
 import com.prafta.common.error.common.CommonErrorCode;
@@ -67,6 +68,7 @@ public class TbmAi02ServiceImpl implements TbmAi02Service {
     private final TbmAi02Mapper tbmAi02Mapper;
     private final LlmAnswerClient llmAnswerClient;
     private final AiCallRepository aiCallRepository;
+    private final AiQuotaService aiQuotaService;
     private final AiProperties aiProperties;
 
     /** tb_ai_call 감사 엔드포인트 식별자(모듈별 복제 패턴). */
@@ -270,18 +272,24 @@ public class TbmAi02ServiceImpl implements TbmAi02Service {
         if (!llmAnswerClient.isEnabled()) {
             throw new ApiException(AiErrorCode.AI_503_001);
         }
+        // 회사 월간 AI 토큰 쿼터 게이트(플랫폼-AI-토큰쿼터 §2-4) — 소진 시 AI_429_001.
+        aiQuotaService.checkOrThrow(param.gvCmpnyCd());
 
         String context = buildGenerateContext(source.title(), adminText, confirmedDescs, riskLines, param.targetChars());
         String system = buildSystemPrompt(param.targetChars());
 
         // 1차 호출 → 파싱. 실패 시 1회 재시도(실패한 1차 호출도 감사 기록).
         LlmRawResponse raw = llmAnswerClient.answer(system, context);
+        // ★쿼터 사용량 누적 — 실패한 호출도 과금이므로 raw 수신 즉시 기록.
+        aiQuotaService.record(param.gvCmpnyCd(), raw.inputTokens(), raw.outputTokens());
         Map<String, String> sections = raw.refusal() ? null : parseTbmPlan(raw.combinedText());
 
         for (int attempt = 0; attempt < RETRY_COUNT && sections == null; attempt++) {
             recordCall(param, raw, context.length(), true);
             log.warn("TBM 교육안 라인프로토콜 파싱 실패 - 동일 프롬프트로 1회 재시도");
             raw = llmAnswerClient.answer(system, context);
+            // ★쿼터 사용량 누적 — 재시도 호출도 raw 수신 즉시 기록.
+            aiQuotaService.record(param.gvCmpnyCd(), raw.inputTokens(), raw.outputTokens());
             sections = raw.refusal() ? null : parseTbmPlan(raw.combinedText());
         }
 

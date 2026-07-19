@@ -21,6 +21,7 @@ import com.prafta.app.ai.ai01.client.ImagePart;
 import com.prafta.app.ai.ai01.client.LlmAnswerClient;
 import com.prafta.app.ai.ai01.client.LlmRawResponse;
 import com.prafta.app.ai.ai01.repository.AiCallRepository;
+import com.prafta.common.cmm.aiquota.service.AiQuotaService;
 import com.prafta.common.cmm.file.application.model.ImageBytesResult;
 import com.prafta.common.cmm.file.application.query.FileReadQuery;
 import com.prafta.common.cmm.file.service.FileService;
@@ -72,6 +73,7 @@ public class TbmAi01ServiceImpl implements TbmAi01Service {
     private final FileService fileService;
     private final LlmAnswerClient llmAnswerClient;
     private final AiCallRepository aiCallRepository;
+    private final AiQuotaService aiQuotaService;
     private final AiProperties aiProperties;
     private final ObjectMapper objectMapper;
     private final FileUrlSigner fileUrlSigner;   // 파일 서빙 서명 URL 발급(워크리스트 파일 항목)
@@ -128,6 +130,8 @@ public class TbmAi01ServiceImpl implements TbmAi01Service {
         if (!llmAnswerClient.isEnabled()) {
             throw new ApiException(AiErrorCode.AI_503_001);
         }
+        // 회사 월간 AI 토큰 쿼터 소진 → 사전거부(동일 취지 — 큐잉 후 전량 FAILED 낭비 방지). LLM 미호출이라 record 없음.
+        aiQuotaService.checkOrThrow(param.gvCmpnyCd());
 
         List<TbmAiAnalyzeTarget> targets =
             tbmAi01Mapper.selectAnalyzeTargets(param.mtrlCd(), param.gvCmpnyCd());
@@ -179,6 +183,11 @@ public class TbmAi01ServiceImpl implements TbmAi01Service {
             // 게이트 OFF → 조용히 스킵(저장은 이미 성공). analyzeItems 의 AI_503_001 throw 는 여기서 쓰지 않는다.
             if (!llmAnswerClient.isEnabled()) {
                 log.info("AI 게이트 OFF — 자동 큐잉 건너뜀 - mtrlCd={}", mtrlCd);
+                return;
+            }
+            // 회사 월간 AI 토큰 쿼터 소진 → 조용히 스킵(afterCommit 흐름 — throw 금지. 러너 가드가 최종 방어선).
+            if (aiQuotaService.isExceeded(cmpnyCd)) {
+                log.info("AI 토큰 쿼터 소진 — 자동 큐잉 건너뜀 - mtrlCd={}, cmpnyCd={}", mtrlCd, cmpnyCd);
                 return;
             }
             // ★자동 큐잉은 DRAFT 를 제외한다(selectAutoAnalyzeTargets). 검토 중인 초안·대화 이력을
@@ -247,6 +256,8 @@ public class TbmAi01ServiceImpl implements TbmAi01Service {
         if (!llmAnswerClient.isEnabled()) {
             throw new ApiException(AiErrorCode.AI_503_001);
         }
+        // 회사 월간 AI 토큰 쿼터 게이트(플랫폼-AI-토큰쿼터 §2-4) — 소진 시 AI_429_001.
+        aiQuotaService.checkOrThrow(param.gvCmpnyCd());
 
         // ★매 요청 디스크 재로드(HCX stateless). null/빈 → 404.
         List<ImagePart> images = buildVlmImagesOr404(param.gvCmpnyCd(), row);
@@ -258,6 +269,8 @@ public class TbmAi01ServiceImpl implements TbmAi01Service {
         // 첫 user 턴에만 이미지(들) 재부착(PDF 다페이지도 첫 user 턴에 일괄, ≤5).
         List<HcxTurn> hcxTurns = toHcxTurns(turns, images);
         LlmRawResponse raw = llmAnswerClient.chat(TBM_CHAT_SYSTEM_PROMPT, hcxTurns);
+        // ★쿼터 사용량 누적 — raw 수신 즉시(refusal 여부와 무관).
+        aiQuotaService.record(param.gvCmpnyCd(), raw.inputTokens(), raw.outputTokens());
 
         // 비-refusal + 유효 텍스트 → assistant 턴 append.
         if (!raw.refusal()) {
@@ -338,6 +351,8 @@ public class TbmAi01ServiceImpl implements TbmAi01Service {
         if (!llmAnswerClient.isEnabled()) {
             throw new ApiException(AiErrorCode.AI_503_001);
         }
+        // 회사 월간 AI 토큰 쿼터 소진 → 사전거부(러너 진입 전 — 큐잉 후 FAILED 낭비 방지). LLM 미호출이라 record 없음.
+        aiQuotaService.checkOrThrow(param.gvCmpnyCd());
         // 첨부 사전검증(없으면 재분석 불가 조기거부).
         buildVlmImagesOr404(param.gvCmpnyCd(), row);
 

@@ -32,7 +32,12 @@
         , A.CONTRACT_YN       AS contractYn
         , A.CONTRACT_END_DATE AS contractEndDate
         , A.USE_YN            AS useYn
+        , IFNULL(U.INPUT_TOKENS + U.OUTPUT_TOKENS, 0)        AS usedTokens
+        , IFNULL(Q.MONTHLY_TOKEN_LIMIT, 800000)              AS tokenLimit
+        , CASE WHEN Q.CMPNY_CD IS NULL THEN 'N' ELSE 'Y' END AS quotaCustomYn
     FROM TB_CMPNY A
+    LEFT JOIN TB_AI_TOKEN_QUOTA Q ON Q.CMPNY_CD = A.CMPNY_CD
+    LEFT JOIN TB_AI_TOKEN_USAGE U ON U.CMPNY_CD = A.CMPNY_CD AND U.USE_YM = #{useYm}
     <include refid="customerListWhere"/>
     ORDER BY A.CMPNY_CD ASC
     LIMIT 500
@@ -45,5 +50,33 @@
     FROM TB_CMPNY A
     <include refid="customerListWhere"/>
     </select>
+
+    <!-- 한도 수정 대상 회사 존재 여부(TB_CMPNY 존재 검증 - PLATFORM_400_015 판정용). -->
+    <select id="selectCmpnyExists" resultType="int">
+    /* PlatformCustomerMapper.selectCmpnyExists */
+    SELECT COUNT(1)
+    FROM TB_CMPNY A
+    WHERE A.CMPNY_CD = #{cmpnyCd}
+    </select>
+
+    <!-- 회사별 월간 AI 토큰 한도 UPSERT.
+         ★MySQL AS NEW 별칭 함정(feedback_mysql_row_alias_ambiguous_column):
+           ON DUPLICATE 우변의 신규값은 NEW.컬럼, 기존값 참조 시엔 반드시 테이블명.컬럼. -->
+    <insert id="upsertTokenQuota">
+    /* PlatformCustomerMapper.upsertTokenQuota */
+    INSERT INTO TB_AI_TOKEN_QUOTA (
+        CMPNY_CD
+      , MONTHLY_TOKEN_LIMIT
+      , INSERT_NO
+    ) VALUES (
+        #{cmpnyCd}
+      , #{monthlyTokenLimit}
+      , #{operatorUserCd}
+    ) AS NEW
+    ON DUPLICATE KEY UPDATE
+        MONTHLY_TOKEN_LIMIT = NEW.MONTHLY_TOKEN_LIMIT
+      , UPDATE_NO   = #{operatorUserCd}
+      , UPDATE_DATE = NOW()
+    </insert>
 
 </mapper>

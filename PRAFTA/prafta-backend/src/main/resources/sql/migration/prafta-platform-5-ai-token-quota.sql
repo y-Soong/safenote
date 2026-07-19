@@ -1,0 +1,34 @@
+-- prafta-platform-5-ai-token-quota.sql
+-- 회사별 월간 AI 토큰 쿼터 (작업지시서_플랫폼-AI-토큰쿼터 §4). 실행 대상: 메인 MySQL.
+-- 재실행 멱등: IF NOT EXISTS + UPSERT 시드.
+
+CREATE TABLE IF NOT EXISTS TB_AI_TOKEN_QUOTA (
+    CMPNY_CD             VARCHAR(50)  NOT NULL COMMENT '회사코드',
+    MONTHLY_TOKEN_LIMIT  BIGINT       NOT NULL COMMENT '월간 AI 토큰 한도(입력+출력 합, 원시 토큰 수). -1:무제한, 0:완전차단, 양수:한도',
+    INSERT_NO            VARCHAR(50)  DEFAULT 'SYSTEM' COMMENT '입력자',
+    INSERT_DATE          DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '입력일시',
+    UPDATE_NO            VARCHAR(50)  DEFAULT NULL COMMENT '수정자',
+    UPDATE_DATE          DATETIME     DEFAULT NULL COMMENT '수정일시',
+    PRIMARY KEY (CMPNY_CD)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+  COMMENT='회사별 월간 AI 토큰 한도(행 미존재=기본 800000 적용)';
+
+CREATE TABLE IF NOT EXISTS TB_AI_TOKEN_USAGE (
+    CMPNY_CD       VARCHAR(50) NOT NULL COMMENT '회사코드',
+    USE_YM         CHAR(6)     NOT NULL COMMENT '사용 연월(YYYYMM, KST 기준)',
+    INPUT_TOKENS   BIGINT      NOT NULL DEFAULT 0 COMMENT '입력 토큰 월 누계',
+    OUTPUT_TOKENS  BIGINT      NOT NULL DEFAULT 0 COMMENT '출력 토큰 월 누계',
+    CALL_CNT       INT         NOT NULL DEFAULT 0 COMMENT 'LLM 실호출 건수 월 누계',
+    INSERT_DATE    DATETIME    NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '입력일시',
+    UPDATE_DATE    DATETIME    DEFAULT NULL COMMENT '수정일시(최종 누적 시각)',
+    PRIMARY KEY (CMPNY_CD, USE_YM)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+  COMMENT='회사별 월간 AI 토큰 사용량(월 키 방식 - 초기화 배치 불필요)';
+
+-- 시드: 자사('001') 무제한 (요청서 §2-7)
+INSERT INTO TB_AI_TOKEN_QUOTA (CMPNY_CD, MONTHLY_TOKEN_LIMIT, INSERT_NO)
+VALUES ('001', -1, 'SYSTEM')
+ON DUPLICATE KEY UPDATE
+    MONTHLY_TOKEN_LIMIT = -1
+  , UPDATE_NO = 'SYSTEM'
+  , UPDATE_DATE = NOW();

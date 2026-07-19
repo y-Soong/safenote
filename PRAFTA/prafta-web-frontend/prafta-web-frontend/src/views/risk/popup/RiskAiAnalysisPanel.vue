@@ -479,7 +479,7 @@
 // 도출 단계는 제거 — 도출 버튼은 푸터 상시 노출. confirm-image/IMG_CONFIRMED 는 BE legacy 존치(FE 미사용).
 import { ref, computed, nextTick, onMounted, getCurrentInstance } from "vue";
 import axios from "@/api/axios";
-import { resolveApiErrorMessage } from "@/utils/apiError";
+import { resolveApiErrorMessage, isAiQuotaExceeded } from "@/utils/apiError";
 import { readFileAsBase64 } from "@/utils/fileUtil";
 import LoadingSpinner from "@/components/common/LoadingSpinner.vue";
 
@@ -676,6 +676,10 @@ const fnKickoff = async () => {
       err,
       "이미지 확인 질의 중 오류가 발생했습니다."
     );
+    // 회사 월간 AI 토큰 쿼터 소진(AI_429_001) → Alert 모달 우선 표출(inline 병기 — §2-5)
+    if (isAiQuotaExceeded(err)) {
+      await proxy.$alert(chatErrorMsg.value);
+    }
   } finally {
     chatSending.value = false;
   }
@@ -715,6 +719,10 @@ const fnSendChat = async () => {
       err,
       "이미지 분석 대화 중 오류가 발생했습니다."
     );
+    // 회사 월간 AI 토큰 쿼터 소진(AI_429_001) → Alert 모달 우선 표출(inline 병기 — §2-5)
+    if (isAiQuotaExceeded(err)) {
+      await proxy.$alert(chatErrorMsg.value);
+    }
   } finally {
     chatSending.value = false;
   }
@@ -803,6 +811,10 @@ const fnDerive = async () => {
       err,
       "AI 도출 중 오류가 발생했습니다."
     );
+    // 회사 월간 AI 토큰 쿼터 소진(AI_429_001) → Alert 모달 우선 표출(inline 병기 — §2-5)
+    if (isAiQuotaExceeded(err)) {
+      await proxy.$alert(deriveErrorMsg.value);
+    }
   } finally {
     deriving.value = false;
   }

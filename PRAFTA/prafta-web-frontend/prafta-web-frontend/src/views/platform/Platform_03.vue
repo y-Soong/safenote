@@ -23,7 +23,7 @@
       </div>
       <div>
         <label>계약여부</label>
-        <BaseSelect v-model="srchContractYn" style="width: 90px">
+        <BaseSelect v-model="srchContractYn">
           <option value="">전체</option>
           <option value="Y">Y</option>
           <option value="N">N</option>
@@ -31,7 +31,7 @@
       </div>
       <div>
         <label>사용여부</label>
-        <BaseSelect v-model="srchUseYn" style="width: 90px">
+        <BaseSelect v-model="srchUseYn">
           <option value="">전체</option>
           <option value="Y">Y</option>
           <option value="N">N</option>
@@ -124,12 +124,40 @@
                   @sort="onSort"
                   @update:width="onResize"
                 />
+                <ThSortable
+                  label="당월 AI 사용량"
+                  col-key="usedTokens"
+                  :sort-key="sortKey"
+                  :sort-order="sortOrder"
+                  :width="colWidths.usedTokens"
+                  @sort="onSort"
+                  @update:width="onResize"
+                />
+                <ThSortable
+                  label="AI 한도"
+                  col-key="tokenLimit"
+                  :sort-key="sortKey"
+                  :sort-order="sortOrder"
+                  :width="colWidths.tokenLimit"
+                  @sort="onSort"
+                  @update:width="onResize"
+                />
+                <ThSortable
+                  label="사용률"
+                  col-key="usageRate"
+                  :sort-key="sortKey"
+                  :sort-order="sortOrder"
+                  :width="colWidths.usageRate"
+                  @sort="onSort"
+                  @update:width="onResize"
+                />
+                <th class="event_cell" style="text-align: center; width: 70px">한도변경</th>
               </tr>
             </thead>
             <tbody>
               <template v-if="!customerList || customerList.length === 0">
                 <tr>
-                  <td colspan="8" class="edu-grid-empty">등록된 고객사가 없습니다.</td>
+                  <td colspan="12" class="edu-grid-empty">등록된 고객사가 없습니다.</td>
                 </tr>
               </template>
               <template v-else>
@@ -147,12 +175,31 @@
                     {{ customer.contractEndDate ? formatYmdDot(customer.contractEndDate) : "무기한" }}
                   </td>
                   <td style="text-align: center">{{ customer.useYn }}</td>
+                  <td style="text-align: right">{{ fnFormatMan(customer.usedTokens) }}</td>
+                  <td style="text-align: right">
+                    {{ fnLimitLabel(customer.tokenLimit) }}<span v-if="customer.quotaCustomYn === 'N'" class="p03-default-tag">(기본)</span>
+                  </td>
+                  <td style="text-align: center" :class="fnUsageRateClass(customer)">{{ fnUsageRateLabel(customer) }}</td>
+                  <td style="text-align: center">
+                    <button class="btn btn-primary p03-quota-btn" @click="fnOpenQuotaPop(customer)">변경</button>
+                  </td>
                 </tr>
               </template>
             </tbody>
           </table>
         </div>
       </div>
+
+      <!-- AI 토큰 한도 변경 팝업 -->
+      <AiTokenQuotaPop
+        v-if="quotaPopVisible"
+        :cmpny-cd="quotaTarget.cmpnyCd"
+        :cmpny-nm="quotaTarget.cmpnyNm"
+        :token-limit="quotaTarget.tokenLimit"
+        :used-tokens="quotaTarget.usedTokens"
+        :on-saved="fnSearch"
+        @close="quotaPopVisible = false"
+      />
     </div>
   </div>
 </template>
@@ -166,6 +213,7 @@ import { useTableSort, useColumnResize } from "@/composables/useTableFeatures.js
 import { formatYmdDot } from "@/utils/dateFormat";
 import axios from "@/api/axios";
 import { resolveApiErrorMessage } from "@/utils/apiError";
+import AiTokenQuotaPop from "@/views/platform/popup/AiTokenQuotaPop.vue";
 
 // keep-alive 매칭용 컴포넌트 이름 = 라우트 이름(MENU_D_ID)
 defineOptions({ name: "Platform_03" });
@@ -188,6 +236,10 @@ const customerList = ref([]);
 const truncated = ref(false); // 서버 LIMIT 500 초과 여부
 const totalCnt = ref(0); // 서버 전체 건수(절단 전 — qa D-3)
 
+/* AI 토큰 한도 변경 팝업 상태 */
+const quotaPopVisible = ref(false);
+const quotaTarget = ref({});
+
 /* 총건수 라벨: 절단 시 서버 전체 건수와 표시 건수를 함께 표기(qa D-3) */
 const countLabel = computed(() => {
   if (truncated.value) {
@@ -206,6 +258,9 @@ const { colWidths, onResize } = useColumnResize({
   contractYn: 70,
   contractEndDate: 110,
   useYn: 70,
+  usedTokens: 110,
+  tokenLimit: 100,
+  usageRate: 80,
 });
 
 /* read-only 화면 — 조회 외 버튼 숨김 (Platform_02 fnButtonControll 전례) */
@@ -255,6 +310,41 @@ function fnContractClass(contractEndDate) {
   return "";
 }
 
+/* 원시 토큰 수 → 만 단위 표기(소수 1자리 반올림, ".0" 은 생략 — 예: 234567 → "23.5만", 800000 → "80만") */
+function fnFormatMan(tokens) {
+  const man = (tokens ?? 0) / 10000;
+  return (Math.round(man * 10) / 10).toFixed(1).replace(/\.0$/, "") + "만";
+}
+
+/* AI 한도 라벨: -1 → "무제한" / 0 → "차단" / 양수 → 만 단위 표기 */
+function fnLimitLabel(limit) {
+  if (limit === -1) return "무제한";
+  if (limit === 0) return "차단";
+  return fnFormatMan(limit);
+}
+
+/* 사용률 라벨: 한도 양수일 때만 %(소수 1자리), 무제한/차단은 "-" */
+function fnUsageRateLabel(customer) {
+  if (!(customer.tokenLimit > 0)) return "-";
+  const rate = (customer.usedTokens / customer.tokenLimit) * 100;
+  return (Math.round(rate * 10) / 10).toFixed(1).replace(/\.0$/, "") + "%";
+}
+
+/* 사용률 강조: >=100 danger(is-expired) / >=90 warning(is-expiring) — 기존 클래스 재사용 */
+function fnUsageRateClass(customer) {
+  if (!(customer.tokenLimit > 0)) return "";
+  const rate = (customer.usedTokens / customer.tokenLimit) * 100;
+  if (rate >= 100) return "is-expired";
+  if (rate >= 90) return "is-expiring";
+  return "";
+}
+
+/* 행 [변경] → AI 토큰 한도 변경 팝업 오픈(저장 콜백 = fnSearch 재조회) */
+function fnOpenQuotaPop(customer) {
+  quotaTarget.value = customer;
+  quotaPopVisible.value = true;
+}
+
 /*
  * 고객사 목록 조회 — GET /platformApi/customer/customer-lists (PLT-LOC-02).
  *   응답: { customerList, totalCnt, truncated } — truncated=true 면 500건 초과 안내 배너.
@@ -275,10 +365,20 @@ async function fnSearch() {
 
     if (response.status === 200) {
       // addr: 주소 정렬용 파생 필드(템플릿 col-key="addr" 와 일치 — qa D-2)
-      customerList.value = (response.data?.customerList || []).map((row) => ({
-        ...row,
-        addr: fnJoinAddr(row),
-      }));
+      // usedTokens/tokenLimit: 서버 필드 부재 시(구버전 응답) 0/기본값 폴백
+      // usageRate: 정렬용 파생 필드(숫자, 무제한/차단은 -1 — col-key="usageRate" 정렬 정합)
+      customerList.value = (response.data?.customerList || []).map((row) => {
+        const usedTokens = row.usedTokens ?? 0;
+        const tokenLimit = row.tokenLimit ?? 800000;
+        return {
+          ...row,
+          addr: fnJoinAddr(row),
+          usedTokens,
+          tokenLimit,
+          quotaCustomYn: row.quotaCustomYn ?? "N",
+          usageRate: tokenLimit > 0 ? (usedTokens / tokenLimit) * 100 : -1,
+        };
+      });
       truncated.value = response.data?.truncated === true;
       totalCnt.value = response.data?.totalCnt ?? customerList.value.length;
     }
@@ -290,6 +390,13 @@ async function fnSearch() {
 </script>
 
 <style scoped>
+/* 계약여부/사용여부 셀렉트가 BaseSelect 인라인 width:100% 때문에 한 줄을
+   통째로 차지해 2행으로 떨어지는 것을 방지 — 조회조건 3개를 1행 정렬
+   (VictimSearchPop :deep(select) !important 전례) */
+.viewSearch :deep(select) {
+  width: 90px !important;
+}
+
 /* 500건 초과 절단 안내 배너 — 차단/제한 상황은 배너로 명시(공통 정책서 §13.3) */
 .p03-truncated-banner {
   margin: 0 0 0.5rem;
@@ -316,7 +423,7 @@ async function fnSearch() {
   word-break: break-all;
 }
 
-/* 계약종료일 강조: 만료=danger / 30일 이내=warning */
+/* 계약종료일 강조: 만료=danger / 30일 이내=warning (AI 사용률 >=100/>=90 강조에도 재사용) */
 .is-expired {
   color: var(--color-danger);
   font-weight: 700;
@@ -324,5 +431,17 @@ async function fnSearch() {
 .is-expiring {
   color: var(--color-warning-text);
   font-weight: 700;
+}
+
+/* 기본 한도 표기 태그 */
+.p03-default-tag {
+  margin-left: 0.25rem;
+  font-size: 0.72rem;
+  color: var(--color-text-muted);
+}
+/* 행 내 한도변경 버튼 — 그리드 행 높이에 맞춘 소형 */
+.p03-quota-btn {
+  padding: 0.15rem 0.6rem;
+  font-size: var(--btn-font-sm, 11px);
 }
 </style>

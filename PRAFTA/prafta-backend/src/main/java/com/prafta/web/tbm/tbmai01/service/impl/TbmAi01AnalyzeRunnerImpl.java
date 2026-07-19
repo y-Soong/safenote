@@ -18,6 +18,7 @@ import com.prafta.app.ai.ai01.client.ImagePart;
 import com.prafta.app.ai.ai01.client.LlmAnswerClient;
 import com.prafta.app.ai.ai01.client.LlmRawResponse;
 import com.prafta.app.ai.ai01.repository.AiCallRepository;
+import com.prafta.common.cmm.aiquota.service.AiQuotaService;
 import com.prafta.common.cmm.file.application.model.ImageBytesResult;
 import com.prafta.common.cmm.file.application.query.FileReadQuery;
 import com.prafta.common.cmm.file.service.FileService;
@@ -47,6 +48,7 @@ public class TbmAi01AnalyzeRunnerImpl implements TbmAi01AnalyzeRunner {
     private final FileService fileService;
     private final LlmAnswerClient llmAnswerClient;
     private final AiCallRepository aiCallRepository;
+    private final AiQuotaService aiQuotaService;
     private final AiProperties aiProperties;
     private final ObjectMapper objectMapper;
 
@@ -98,6 +100,14 @@ public class TbmAi01AnalyzeRunnerImpl implements TbmAi01AnalyzeRunner {
             safeFail(t.mtrlItemCd(), cmpnyCd, userCd);
             return;
         }
+        // 회사 월간 AI 토큰 쿼터 소진: 비동기 — throw 금지, FAILED 상태로만 표현(게이트 OFF 와 동일 패턴).
+        //   자동 큐잉(enqueueOnSave)이 스킵을 놓쳐도 이 러너 가드가 항목별 최종 방어선이다.
+        if (aiQuotaService.isExceeded(cmpnyCd)) {
+            log.warn("TBM AI 분석 차단 - AI 토큰 쿼터 소진 - cmpnyCd={}, mtrlItemCd={} FAILED 처리",
+                cmpnyCd, t.mtrlItemCd());
+            safeFail(t.mtrlItemCd(), cmpnyCd, userCd);
+            return;
+        }
 
         // 첨부 로드(타입 분기, ≤5장 클램프). 대상 없음 → FAILED.
         List<ImagePart> images = loadImages(cmpnyCd, t);
@@ -110,6 +120,8 @@ public class TbmAi01AnalyzeRunnerImpl implements TbmAi01AnalyzeRunner {
 
         String userPrompt = buildUserPrompt(adminNote);
         LlmRawResponse raw = llmAnswerClient.answerWithImages(TBM_ANALYZE_SYSTEM_PROMPT, userPrompt, images);
+        // ★쿼터 사용량 누적 — raw 수신 즉시(초안 유효성/FAILED 전이와 무관).
+        aiQuotaService.record(cmpnyCd, raw.inputTokens(), raw.outputTokens());
 
         // 결과 파싱: 빈 문자열 → 초안 없음 → FAILED.
         String draft = raw.refusal() ? "" : safeTrim(raw.combinedText());

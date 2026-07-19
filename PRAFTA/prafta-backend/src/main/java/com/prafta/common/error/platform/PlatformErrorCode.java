@@ -49,6 +49,12 @@ public enum PlatformErrorCode implements ApiErrorCode {
     , PLATFORM_400_012(HttpStatus.BAD_REQUEST, "운영자 계정에 등록된 휴대폰번호가 없습니다.")
     // SMS 인증코드 발송 레이트리밋(동일 목적 최근 1분 내 재발송 거부 — 브루트포스 방어 V-2).
     , PLATFORM_400_013(HttpStatus.BAD_REQUEST, "인증번호가 방금 발송되었습니다. 잠시 후 다시 시도해 주세요.")
+
+    // ===== AI 토큰 한도 수정(POST /platformApi/customer/token-quota) =====
+    // 한도 모드/값 검증 실패(모드 미상 또는 LIMIT 모드 만 단위 정수 1~1,000,000 위반).
+    , PLATFORM_400_014(HttpStatus.BAD_REQUEST, "AI 토큰 한도 입력값이 올바르지 않습니다.")
+    // 대상 회사 미존재(TB_CMPNY 부재) 또는 운영자 자기 자신(prafta_system_admin) 지정.
+    , PLATFORM_400_015(HttpStatus.BAD_REQUEST, "대상 회사를 찾을 수 없습니다.")
     ;
 
     private final HttpStatus httpStatus;

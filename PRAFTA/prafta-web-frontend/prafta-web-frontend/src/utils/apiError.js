@@ -32,3 +32,14 @@ export function resolveApiErrorMessage(err, fallbackMessage) {
   }
   return fallbackMessage;
 }
+
+/**
+ * 회사 월간 AI 토큰 쿼터 소진(AI_429_001) 여부 — AI 화면 공통 alert 분기용.
+ * (플랫폼-AI-토큰쿼터 §2-5: 소진 시 서버 message 를 Alert 모달로 우선 표출)
+ *
+ * @param {*} err axios catch 블록에서 받은 에러 객체.
+ * @returns {boolean} 쿼터 소진 에러 여부.
+ */
+export function isAiQuotaExceeded(err) {
+  return err?.response?.data?.errorCode === "AI_429_001";
+}
