@@ -148,11 +148,11 @@ import { useModal } from "@/utils/useModal";
 import { resolveApiErrorMessage } from "@/utils/apiError";
 import axios from "@/api/axios";
 import ViewHeader from "@/components/common/ViewHeader.vue";
-import SiteLinkProposePop from "@/components/popup/SiteLinkProposePop.vue";
-import SiteLinkRejectPop from "@/components/popup/SiteLinkRejectPop.vue";
-import SiteLinkTerminatePop from "@/components/popup/SiteLinkTerminatePop.vue";
-import ChkptLinkEnablePop from "@/components/popup/ChkptLinkEnablePop.vue";
-import ChkptLinkDisablePop from "@/components/popup/ChkptLinkDisablePop.vue";
+import SiteLinkProposePop from "@/views/subcon/popup/SiteLinkProposePop.vue";
+import SiteLinkRejectPop from "@/views/subcon/popup/SiteLinkRejectPop.vue";
+import SiteLinkTerminatePop from "@/views/subcon/popup/SiteLinkTerminatePop.vue";
+import ChkptLinkEnablePop from "@/views/subcon/popup/ChkptLinkEnablePop.vue";
+import ChkptLinkDisablePop from "@/views/subcon/popup/ChkptLinkDisablePop.vue";
 
 // =========================== Define ===========================
 defineOptions({ name: "Subcon_02" });

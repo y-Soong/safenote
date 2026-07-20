@@ -124,9 +124,9 @@ import { useModal } from "@/utils/useModal";
 import { resolveApiErrorMessage } from "@/utils/apiError";
 import axios from "@/api/axios";
 import ViewHeader from "@/components/common/ViewHeader.vue";
-import ShareReqCreatePop from "@/components/popup/ShareReqCreatePop.vue";
-import ShareReqApprovePop from "@/components/popup/ShareReqApprovePop.vue";
-import ShareReqRejectPop from "@/components/popup/ShareReqRejectPop.vue";
+import ShareReqCreatePop from "@/views/subcon/popup/ShareReqCreatePop.vue";
+import ShareReqApprovePop from "@/views/subcon/popup/ShareReqApprovePop.vue";
+import ShareReqRejectPop from "@/views/subcon/popup/ShareReqRejectPop.vue";
 
 // =========================== Define ===========================
 defineOptions({ name: "Subcon_03" });

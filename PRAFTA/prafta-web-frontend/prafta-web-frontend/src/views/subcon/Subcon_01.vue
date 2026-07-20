@@ -155,10 +155,10 @@ import { useModal } from "@/utils/useModal";
 import { resolveApiErrorMessage } from "@/utils/apiError";
 import axios from "@/api/axios";
 import ViewHeader from "@/components/common/ViewHeader.vue";
-import CmpnyRelationReqPop from "@/components/popup/CmpnyRelationReqPop.vue";
-import CmpnyRelationRejectPop from "@/components/popup/CmpnyRelationRejectPop.vue";
-import CmpnyRelationTerminatePop from "@/components/popup/CmpnyRelationTerminatePop.vue";
-import CmpnyRelationHistPop from "@/components/popup/CmpnyRelationHistPop.vue";
+import CmpnyRelationReqPop from "@/views/subcon/popup/CmpnyRelationReqPop.vue";
+import CmpnyRelationRejectPop from "@/views/subcon/popup/CmpnyRelationRejectPop.vue";
+import CmpnyRelationTerminatePop from "@/views/subcon/popup/CmpnyRelationTerminatePop.vue";
+import CmpnyRelationHistPop from "@/views/subcon/popup/CmpnyRelationHistPop.vue";
 
 // =========================== Define ===========================
 defineOptions({ name: "Subcon_01" });
