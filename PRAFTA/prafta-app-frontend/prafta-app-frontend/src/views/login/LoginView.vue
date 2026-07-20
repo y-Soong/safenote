@@ -132,7 +132,6 @@ import { useRouter, useRoute } from 'vue-router'
 import safenote_logo from '@/assets/img/safenote_sign.png'
 import axios from '@/api/axios'
 import { requestDeviceInfo, getCachedDeviceMeta } from '@/utils/deviceBridge'
-import { registerPushToken } from '@/utils/pushTokenBridge'
 import { routeAfterLogin } from '@/utils/termsGate'
 
 const userId = ref('')
@@ -263,9 +262,8 @@ const fnSubmitLogin = async () => {
       sessionStorage.setItem('gv_employmentType', employmentType || '')
       localStorage.setItem('refreshToken', refreshToken)
 
-      // prafta-com-008-F (F03): 로그인 성공(토큰 저장) 직후 푸시 토큰 등록.
-      //   fire-and-forget — 실패해도 로그인/라우팅을 막지 않는다(권한 거부 사용자도 정상 진행).
-      registerPushToken()
+      // prafta-com-008-F (F03) 푸시 토큰 등록은 게이트 체인 통과 후로 이연(termsGate.routeAfterRequiredTerms).
+      //   여기서 호출하면 약관 미동의 시 서버 게이트(AUTH_403_001)에 걸려 강제 로그아웃 레이스가 발생한다.
 
       // ✅ 아이디 저장 처리
       if (rememberId.value) {
@@ -358,8 +356,7 @@ const fnSubmitDailyLogin = async () => {
       sessionStorage.setItem('gv_employmentType', employmentType || 'DAILY')
       localStorage.setItem('refreshToken', refreshToken)
 
-      // 로그인 성공 직후 푸시 토큰 등록(fire-and-forget).
-      registerPushToken()
+      // 푸시 토큰 등록은 게이트 체인 통과 후로 이연(termsGate.routeAfterRequiredTerms — 정규 로그인과 동일 사유).
 
       // ✅ 아이디 저장 처리
       if (rememberId.value) {

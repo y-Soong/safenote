@@ -260,6 +260,12 @@ onBeforeRouteLeave(async (to, from, next) => {
     next()
     return
   }
+  // 방어: 세션이 이미 없으면(다른 API 의 AUTH_403_001 등으로 인터셉터가 강제 로그아웃한 뒤의
+  //   리다이렉트) 사용자의 자발적 이탈이 아니다 — confirm 없이 통과시킨다(오발동 방지).
+  if (!sessionStorage.getItem('token')) {
+    next()
+    return
+  }
   const ok = await showConfirm(
     '필수 약관에 동의하지 않으면 서비스를 이용할 수 없어요.\n로그아웃하고 로그인 화면으로 돌아갈까요?',
   )

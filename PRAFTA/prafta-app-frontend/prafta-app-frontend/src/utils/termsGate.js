@@ -12,6 +12,8 @@
 import api from '@/api/axios'
 // 일용직(DAILY) 판정 — 세션값(gv_employmentType) 기반. 정규 사용자는 계약서 게이트 라운드트립 자체를 생략.
 import { isDailyWorker } from '@/utils/employment'
+// 푸시 토큰 등록 — 반드시 필수 게이트(약관/비번) 해소 후에 호출한다(아래 routeAfterRequiredTerms 주석 참조).
+import { registerPushToken } from '@/utils/pushTokenBridge'
 
 /** 연동 회사 제3자 제공 동의 약관 ID(SYS008 '006'). 마이페이지 철회 확인 팝업 판별에도 사용. */
 export const THIRD_PARTY_CONSENT_TERMS_ID = '006'
@@ -63,6 +65,14 @@ export async function routeAfterLogin(router, redirect) {
  */
 export async function routeAfterRequiredTerms(router, redirect) {
   const fallback = redirect || '/MainView'
+
+  // 푸시 토큰 등록(fire-and-forget) — 원래 LoginView 가 로그인 직후 호출했으나,
+  //   서버 게이트(AUTH_403_001)가 이 EP(/appApi/device01/push-token, 화이트리스트 외)를 차단하면
+  //   인터셉터의 "약관 동의 필요" alert → 강제 로그아웃이 약관 동의 화면 진입과 레이스를 일으켰다
+  //   (동의 화면 이탈 가드 confirm 오발동 + 동의 불가 루프). 필수 게이트(약관/비번) 해소가 확정된
+  //   이 시점으로 이연한다. 모든 로그인 경로가 본 함수로 수렴하므로 호출 누락 없음.
+  //   (①-b 계약서·② 제3자 동의 게이트는 AUTH_403_001 차단 대상이 아니라 이 시점이면 안전)
+  registerPushToken()
 
   if (isDailyWorker()) {
     try {

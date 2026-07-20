@@ -380,6 +380,11 @@ onBeforeRouteLeave(async (to, from, next) => {
     next()
     return
   }
+  // 방어: 세션이 이미 없으면(인터셉터 강제 로그아웃 후 리다이렉트) confirm 없이 통과(TermsAgreeView 미러).
+  if (!sessionStorage.getItem('token')) {
+    next()
+    return
+  }
   const ok = await showConfirm(CANCEL_CONFIRM_MSG)
   if (ok) {
     await fnLogout()
