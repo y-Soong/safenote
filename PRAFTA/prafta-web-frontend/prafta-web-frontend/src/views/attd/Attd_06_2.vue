@@ -426,8 +426,8 @@ import { resolveApiErrorMessage } from "@/utils/apiError";
 import search_icon from "@/assets/img/search_icon.png";
 import SiteSearchPop from "@/components/popup/SiteSearchPop.vue";
 import SiteNodeSearchPop from "@/components/popup/SiteNodeSearchPop.vue";
-import UsersMultiSearchPop from "@/components/popup/UsersMultiSearchPop.vue";
-import ShiftLeaveNoticePop from "@/components/popup/ShiftLeaveNoticePop.vue";
+import UsersMultiSearchPop from "@/views/attd/popup/UsersMultiSearchPop.vue";
+import ShiftLeaveNoticePop from "@/views/attd/popup/ShiftLeaveNoticePop.vue";
 
 defineOptions({ name: "Attd_06_2" });
 

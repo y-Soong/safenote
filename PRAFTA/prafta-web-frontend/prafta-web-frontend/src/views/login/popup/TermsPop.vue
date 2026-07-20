@@ -117,7 +117,7 @@ import axios from "@/api/axios";
 import { getMessage, MSG } from "@/messages";
 import { resolveApiErrorMessage } from "@/utils/apiError";
 import TermsDetailPop from "@/components/popup/TermsDetailPop.vue";
-import JoinUserPop from "@/components/popup/JoinUserPop.vue";
+import JoinUserPop from "@/views/login/popup/JoinUserPop.vue";
 
 // ================ Props & Emits ================
 const props = defineProps({

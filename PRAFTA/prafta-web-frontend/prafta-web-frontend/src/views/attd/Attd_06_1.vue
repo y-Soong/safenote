@@ -625,7 +625,7 @@ import { resolveApiErrorMessage } from "@/utils/apiError";
 import search_icon from "@/assets/img/search_icon.png";
 import SiteSearchPop from "@/components/popup/SiteSearchPop.vue";
 import SiteNodeSearchPop from "@/components/popup/SiteNodeSearchPop.vue";
-import ShiftLeaveNoticePop from "@/components/popup/ShiftLeaveNoticePop.vue";
+import ShiftLeaveNoticePop from "@/views/attd/popup/ShiftLeaveNoticePop.vue";
 
 defineOptions({ name: "Attd_06_1" });
 

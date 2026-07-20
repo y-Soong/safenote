@@ -164,7 +164,7 @@ import { resolveApiErrorMessage } from "@/utils/apiError";
 import axios from "@/api/axios";
 import ViewHeader from "@/components/common/ViewHeader.vue";
 import ThSortable from "@/components/common/ThSortable.vue";
-import DailyBlacklistRegPop from "@/components/popup/DailyBlacklistRegPop.vue";
+import DailyBlacklistRegPop from "@/views/user/popup/DailyBlacklistRegPop.vue";
 import {
   useTableSort,
   useColumnResize,

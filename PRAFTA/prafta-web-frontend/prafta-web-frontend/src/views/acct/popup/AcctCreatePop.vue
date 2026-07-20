@@ -280,7 +280,7 @@ import BaseSelect from "@/components/common/BaseSelect.vue";
 import CalendarSrch from "@/components/common/CalendarSrch.vue";
 import TimeInput from "@/components/common/TimeInput.vue";
 import SiteSearchPop from "@/components/popup/SiteSearchPop.vue";
-import ChkptSearchPop from "@/components/popup/ChkptSearchPop.vue";
+import ChkptSearchPop from "@/views/acct/popup/ChkptSearchPop.vue";
 import VictimSearchPop from "./VictimSearchPop.vue";
 import HazardSearchPop from "./HazardSearchPop.vue";
 

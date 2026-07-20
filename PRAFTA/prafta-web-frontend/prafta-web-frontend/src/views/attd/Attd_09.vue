@@ -335,7 +335,7 @@ import SiteSearchPop from "@/components/popup/SiteSearchPop.vue";
 import SiteNodeSearchPop from "@/components/popup/SiteNodeSearchPop.vue";
 import LeaveDetailPop from "./popup/LeaveDetailPop.vue";
 import ManualGrantPop from "./popup/ManualGrantPop.vue";
-import PolicyGrantPreviewPop from "@/components/popup/PolicyGrantPreviewPop.vue";
+import PolicyGrantPreviewPop from "@/views/attd/popup/PolicyGrantPreviewPop.vue";
 
 // ================ Options ================
 defineOptions({ name: "Attd_09" });

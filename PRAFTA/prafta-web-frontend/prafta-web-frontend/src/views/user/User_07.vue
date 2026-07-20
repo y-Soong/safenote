@@ -200,7 +200,7 @@ import { resolveApiErrorMessage } from "@/utils/apiError";
 import axios from "@/api/axios";
 import ViewHeader from "@/components/common/ViewHeader.vue";
 import ThSortable from "@/components/common/ThSortable.vue";
-import DailyContractRegPop from "@/components/popup/DailyContractRegPop.vue";
+import DailyContractRegPop from "@/views/user/popup/DailyContractRegPop.vue";
 import {
   useTableSort,
   useColumnResize,

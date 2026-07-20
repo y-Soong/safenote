@@ -158,9 +158,9 @@ import TermsPop from "./popup/TermsPop.vue";
 import PhoneAuthPop from "./popup/PhoneAuthPop.vue";
 import DefaultSchGatePop from "./popup/DefaultSchGatePop.vue";
 import ForcedPasswordChangePop from "./popup/ForcedPasswordChangePop.vue";
-import ActInfoSrch from "@/components/popup/ActInfoSrchPop.vue";
-import NoticePopupCarousel from "@/components/popup/NoticePopupCarousel.vue";
-import TransferNoticePopup from "@/components/popup/TransferNoticePopup.vue";
+import ActInfoSrch from "@/views/login/popup/ActInfoSrchPop.vue";
+import NoticePopupCarousel from "@/views/login/popup/NoticePopupCarousel.vue";
+import TransferNoticePopup from "@/views/login/popup/TransferNoticePopup.vue";
 import { forceLogout } from "@/composables/useAuth";
 
 // ================ Instance & Composables ================
