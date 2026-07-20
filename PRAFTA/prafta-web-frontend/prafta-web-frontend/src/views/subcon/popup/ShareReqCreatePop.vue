@@ -13,8 +13,8 @@
 
         <div class="form-container">
           <p class="reg-guide">
-            연동 중인 회사에 해당 사업장의 근태 자료 제공을 요청합니다. 상대 회사가 승인하면
-            승인 시점의 자료가 우리 회사 소유로 복제(스냅샷)되며 읽기전용으로 조회됩니다.
+            연동 중인 상대 회사에 사업장 데이터 제공을 요청합니다.<br />
+            상대 회사가 요청을 승인하면 승인 시점의 자료가 복제되며 읽기 전용으로 조회할 수 있습니다.
           </p>
 
           <div class="form-row-max">
@@ -49,9 +49,9 @@
 
           <div class="form-row-max">
             <label>대상 기간</label>
-            <input v-model="periodStr" type="date" />
+            <CalendarSrch v-model="periodStr" class="period-date" :max-date="periodEnd || todayStr" />
             <span class="range-sep">~</span>
-            <input v-model="periodEnd" type="date" />
+            <CalendarSrch v-model="periodEnd" class="period-date" :min-date="periodStr" :max-date="todayStr" />
           </div>
 
           <div v-if="dataType === 'ATTD'" class="form-row-max">
@@ -95,6 +95,7 @@
 import { ref, onMounted, defineProps, defineEmits, getCurrentInstance } from "vue";
 import axios from "@/api/axios";
 import { resolveApiErrorMessage } from "@/utils/apiError";
+import CalendarSrch from "@/components/common/CalendarSrch.vue";
 
 const props = defineProps({ onSaved: Function });
 const emit = defineEmits(["close"]);
@@ -114,8 +115,14 @@ const purpose = ref("");
 // 요청 중복 클릭 방지 플래그.
 const saving = ref(false);
 
-// input[type=date]("YYYY-MM-DD") → 서버 포맷("YYYYMMDD").
+// CalendarSrch 모델값("YYYY-MM-DD") → 서버 포맷("YYYYMMDD").
 const toYmd = (v) => (v || "").replace(/-/g, "");
+
+// 오늘("YYYY-MM-DD") — 캘린더 상한(미래 기간 요청 금지)에 사용.
+const now = new Date();
+const todayStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(
+  now.getDate()
+).padStart(2, "0")}`;
 
 // 데이터 유형 라벨(확인 메시지용).
 const dataTypeLabel = (t) => ({ ATTD: "근태", RISK: "위험성평가", NEARMISS: "아차사고" }[t] || t);
@@ -240,6 +247,22 @@ const fnCreate = async () => {
 </script>
 
 <style scoped>
+/* 헤더와 안내문 사이 간격 축소 — 전역 modal-popup-guide.css의 padding: 20px 중 상단만 줄임 */
+.prafta-modal-popup .form-container {
+  padding-top: 12px;
+}
+
+/* 상단 안내문 — DailyBlacklistRegPop .reg-guide 전례 + 본문 폰트 크기로 확대 */
+.reg-guide {
+  margin: 0;
+  font-size: var(--btn-font-lg, 14px);
+  color: var(--color-text-muted, #4b5563);
+  background: var(--color-warning-bg, #fef3c7);
+  border-radius: var(--btn-radius, 8px);
+  padding: 0.5rem 0.75rem;
+  line-height: 1.5;
+}
+
 .form-row-max {
   display: flex;
   align-items: center;
@@ -253,21 +276,60 @@ const fnCreate = async () => {
   flex-shrink: 0;
   color: var(--color-text-muted, #6b7280);
 }
-.form-row-max select,
-.form-row-max input[type="date"] {
+.form-row-max select {
   flex: 1;
   min-width: 0;
 }
-.range-sep {
-  flex-shrink: 0;
+/* 전역 modal.css의 .form-row-max span(flex:0 0 50px) 고정폭이 '~' 양옆 공백을 만들므로 재정의 */
+.form-row-max .range-sep {
+  flex: 0 0 auto;
+  width: auto;
   color: var(--color-text-muted, #6b7280);
 }
-.chk-inline {
+/* 기간 캘린더 — FROM/TO 가 남은 행 폭을 균등 분할해 우측 끝단을 다른 입력란과 정렬.
+   내부 입력은 모달 입력 스타일에 맞춤(LeavePromotionAutoBatchPop .lpb-date 전례) */
+.form-row-max .period-date {
+  flex: 1 1 0;
+  min-width: 0;
+}
+.period-date :deep(.calendar-input) {
+  box-sizing: border-box;
+  width: 100%;
+  padding: 0.4rem 0.5rem;
+  background: var(--color-bg, #f9fafb);
+  border: 1px solid var(--color-border, #e5e7eb);
+  border-radius: var(--input-radius, 10px);
+  font-size: 0.875rem;
+  color: var(--color-text-strong, #111827);
+}
+.period-date :deep(.calendar-input:focus) {
+  border-color: var(--color-border-strong, #d1d5db);
+  outline: none;
+  box-shadow: 0 0 0 var(--focus-ring-width, 3px) var(--color-focus-ring);
+}
+/* 전역 modal.css의 .form-row-max label(120px)·input(flex:1 1 150px)·span(flex:0 0 50px)
+   규칙이 체크박스 행에 그대로 적용되어 레이아웃이 깨지므로 여기서 재정의 */
+.form-row-max label.chk-inline {
   display: flex;
   align-items: center;
   gap: var(--space-sm, 0.5rem);
   width: auto;
+  flex: 1;
+  min-width: 0;
+  font-weight: 400;
   color: var(--color-text, #374151);
+}
+.form-row-max .chk-inline input[type="checkbox"] {
+  flex: 0 0 auto;
+  width: auto;
+  padding: 0;
+  accent-color: var(--color-primary, #16a34a);
+}
+.form-row-max .chk-inline span {
+  flex: 0 1 auto;
+  min-width: 0;
+  font-weight: 400;
+  line-height: 1.4;
 }
 .purpose-input {
   flex: 1;
