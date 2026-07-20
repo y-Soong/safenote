@@ -26,6 +26,18 @@ const routes = [
     name: "Home",
     component: () => import("@/views/intro/CompanyIntroView.vue"),
   },
+  // 개인정보 처리방침 (비로그인 공개 — 스토어 제출용 공개 URL, 약관 002 문안)
+  {
+    path: "/privacy",
+    name: "PrivacyPolicy",
+    component: () => import("@/views/intro/PrivacyPolicyView.vue"),
+  },
+  // 계정 삭제 안내 (비로그인 공개 — 구글 플레이 계정삭제 URL 제출용)
+  {
+    path: "/account-deletion",
+    name: "AccountDeletion",
+    component: () => import("@/views/intro/AccountDeletionView.vue"),
+  },
   // SafeNote 서비스 진입 = 로그인
   { path: SERVICE_BASE, name: "Login", component: LoginView },
   // 일일계정 ID 생성용 별도 경로 (PRAFTA-007) — path 중복 해소

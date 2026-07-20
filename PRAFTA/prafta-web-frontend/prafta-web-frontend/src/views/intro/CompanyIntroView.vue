@@ -118,6 +118,8 @@
       <div class="intro-footer__inner">
         <span>© {{ year }} PRAFTA. All rights reserved.</span>
         <span class="intro-footer__links">
+          <router-link to="/privacy">개인정보 처리방침</router-link>
+          <router-link to="/account-deletion">계정 삭제 안내</router-link>
           <a href="#top">SafeNote</a>
         </span>
       </div>
@@ -466,6 +468,10 @@ const steps = [
   justify-content: space-between;
   color: var(--color-text-muted);
   font-size: 13px;
+}
+.intro-footer__links {
+  display: inline-flex;
+  gap: 18px;
 }
 .intro-footer__links a {
   color: var(--color-text-muted);
