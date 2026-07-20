@@ -23,5 +23,8 @@ public record SnapshotResult(
     , String createDtime
     , String relationActiveYn
     , String purpose
+    , String reqUserNm      // 요청자 성명 - 자사 소속 요청자만 해석(상대사 요청자는 null), 성명 공란 시 USER_CD 폴백
+    , String reqDtime       // 요청일시(TB_CMPNY_SHARE_REQ.INSERT_DATE)
+    , String processDtime   // 승인일시(PROCESS_DTIME) - 승인 주체는 마스킹 정책상 미제공, nullable
 ){
 }

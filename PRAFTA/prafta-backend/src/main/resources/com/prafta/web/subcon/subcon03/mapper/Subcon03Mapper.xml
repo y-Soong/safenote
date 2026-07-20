@@ -1051,6 +1051,13 @@
         , DATE_FORMAT(S.CREATE_DTIME, '%Y-%m-%d %H:%i:%s')      AS createDtime
         , CASE WHEN REL.RELATION_ID IS NOT NULL THEN 'Y' ELSE 'N' END AS relationActiveYn
         , R.PURPOSE                                             AS purpose
+        , CASE
+            WHEN R.REQ_CMPNY_CD = S.OWNER_CMPNY_CD
+            THEN IFNULL(NULLIF(RU.USER_NM, ''), R.REQ_USER_CD)
+            ELSE NULL
+          END                                                   AS reqUserNm
+        , DATE_FORMAT(R.INSERT_DATE, '%Y-%m-%d %H:%i:%s')       AS reqDtime
+        , DATE_FORMAT(R.PROCESS_DTIME, '%Y-%m-%d %H:%i:%s')     AS processDtime
     FROM TB_CMPNY_SHARE_SNAPSHOT S
         INNER JOIN TB_CMPNY_SHARE_REQ R
             ON (R.SHARE_REQ_ID = S.SHARE_REQ_ID)
@@ -1066,6 +1073,14 @@
             ON (
                 REL.RELATION_ID = R.RELATION_ID
             AND REL.STATUS      = 'ACCEPTED'
+            )
+        <!-- 요청자 성명 해석 - 자사 소속 요청자만(T1 행위자 마스킹 패턴과 동일). 상대사 요청자는 NULL.
+             승인 주체(PROCESS_CMPNY_CD/PROCESS_USER_CD)는 상대사 행위자 정보라 SELECT 금지 - 승인 일시만 노출. -->
+        LEFT OUTER JOIN TB_USER RU
+            ON (
+                RU.CMPNY_CD = R.REQ_CMPNY_CD
+            AND RU.USER_CD  = R.REQ_USER_CD
+            AND R.REQ_CMPNY_CD = S.OWNER_CMPNY_CD
             )
     WHERE S.OWNER_CMPNY_CD = #{gvCmpnyCd}
     ORDER BY S.SNAPSHOT_ID DESC

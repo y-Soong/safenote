@@ -59,9 +59,8 @@
             </div>
             <div class="detail-ver">
               <label>버전</label>
-              <select v-model="selectedId" @change="fnChangeVersion">
-                <option v-for="v in versionList" :key="v.snapshotId" :value="v.snapshotId">v{{ v.version }}</option>
-              </select>
+              <span class="detail-ver-current">v{{ selected.version }} ({{ versionList.length }}개)</span>
+              <button class="btn btn-custom" @click="showVersionPop = true">버전 선택</button>
             </div>
           </div>
           <p v-if="selected && selected.relationActiveYn === 'N'" class="detail-note">
@@ -139,6 +138,15 @@
         </div>
       </div>
     </div>
+
+    <!-- 스냅샷 버전 선택 팝업 — 데이터는 versionList computed 그대로 전달(팝업 자체 API 호출 없음). -->
+    <SnapshotVersionSelectPop
+      v-if="showVersionPop"
+      :version-list="versionList"
+      :current-snapshot-id="selectedId"
+      @select="fnSelectVersion"
+      @close="showVersionPop = false"
+    />
   </div>
 </template>
 
@@ -148,6 +156,10 @@ import { ref, computed, defineProps, onMounted, getCurrentInstance, defineOption
 import { resolveApiErrorMessage } from "@/utils/apiError";
 import axios from "@/api/axios";
 import ViewHeader from "@/components/common/ViewHeader.vue";
+import SnapshotVersionSelectPop from "@/views/subcon/popup/SnapshotVersionSelectPop.vue";
+// RISK/NEARMISS 상세는 자식 컴포넌트가 snapshotId prop 변화를 감지해 자체 조회한다 (qa D1: 미등록으로 미렌더되던 기존 결함 수정)
+import SnapshotRiskDetail from "@/components/subcon/SnapshotRiskDetail.vue";
+import SnapshotNearmissDetail from "@/components/subcon/SnapshotNearmissDetail.vue";
 
 // =========================== Define ===========================
 defineOptions({ name: "Subcon_04" });
@@ -158,6 +170,7 @@ const localButtons = ref({ ...props.buttons });
 const snapshotList = ref([]); // GET /webApi/subcon03/snapshot-lists
 const detailList = ref([]); // GET /webApi/subcon03/snapshot-detail
 const selectedId = ref(null);
+const showVersionPop = ref(false); // 스냅샷 버전 선택 팝업 표시 여부
 
 // 상세 페이징 — 서버가 200행씩 끊는다. 전체 건수는 목록 행의 rowCnt(스냅샷 상세행 수).
 const DETAIL_PAGE_SIZE = 200;
@@ -248,6 +261,13 @@ const fnChangeVersion = () => {
   }
 };
 
+// 팝업에서 버전 선택 → 기존 버전전환 흐름 재사용 (ATTD 직접 재조회, RISK/NEARMISS 는 자식이 snapshotId prop 변화 감지).
+const fnSelectVersion = (snapshotId) => {
+  if (selectedId.value === snapshotId) return;
+  selectedId.value = snapshotId;
+  fnChangeVersion();
+};
+
 // 페이지 이동.
 const fnMovePage = (next) => {
   if (next < 1 || next > totalPages.value || isLoading.value) return;
@@ -326,6 +346,9 @@ const fnLoadDetail = async () => {
 }
 .detail-ver label {
   color: var(--color-text-muted, #6b7280);
+  font-size: var(--btn-font-sm, 12px);
+}
+.detail-ver-current {
   font-size: var(--btn-font-sm, 12px);
 }
 .detail-note {
