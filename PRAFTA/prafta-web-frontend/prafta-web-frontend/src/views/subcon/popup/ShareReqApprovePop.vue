@@ -1,7 +1,7 @@
 <template>
   <Transition name="fade">
     <div v-show="true" class="modal-overlay prafta-modal-popup">
-      <div class="modal-content">
+      <div class="modal-content-narrow">
         <div class="modal-header">
           <span>데이터 공유 승인</span>
           <button class="icon-button" @click="$emit('close')">

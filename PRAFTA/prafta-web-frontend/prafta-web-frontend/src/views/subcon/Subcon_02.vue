@@ -1,5 +1,24 @@
 <template>
-  <div class="viewComm">
+  <div class="viewComm subcon02-container">
+    <!-- 제공한/받은 연동 탭 (Attd_01 표준 — 화면 최상단 밑줄형 탭바) -->
+    <div class="subcon02-tab-bar">
+      <button
+        type="button"
+        :class="['subcon02-tab-btn', { active: activeTab === 'sent' }]"
+        @click="activeTab = 'sent'"
+      >
+        제공한 연동
+      </button>
+      <button
+        type="button"
+        :class="['subcon02-tab-btn', { active: activeTab === 'received' }]"
+        @click="activeTab = 'received'"
+      >
+        받은 연동
+        <span v-if="receivedPendingCnt > 0" class="tab-badge">{{ receivedPendingCnt }}</span>
+      </button>
+    </div>
+
     <ViewHeader
       class="commViewHeader"
       :title="props.title"
@@ -9,17 +28,6 @@
     />
 
     <div class="viewBody">
-      <!-- 제공한/받은 연동 탭 (Attd_01 밑줄형 표준 — Subcon_01 승계) -->
-      <div class="subcon02-tab-bar">
-        <button :class="['subcon02-tab-btn', { active: activeTab === 'sent' }]" @click="activeTab = 'sent'">
-          제공한 연동
-        </button>
-        <button :class="['subcon02-tab-btn', { active: activeTab === 'received' }]" @click="activeTab = 'received'">
-          받은 연동
-          <span v-if="receivedPendingCnt > 0" class="tab-badge">{{ receivedPendingCnt }}</span>
-        </button>
-      </div>
-
       <div class="table-wrapper subtitle-pane">
         <div class="table-box overflow-x-auto rounded-md border border-slate-300"
              style="--box-h: 66vh; --box-sticky-top: 1px; --box-ox: auto">
@@ -308,7 +316,14 @@ const fnOpenChkptLinkDisablePop = (row) => {
 </script>
 
 <style scoped>
-/* 탭바 — Attd_01 밑줄형 표준(14px, Subcon_01 승계) */
+/* Attd_01 표준 — 탭바를 화면 최상단(헤더 위)에 두는 컨테이너 구조 */
+.subcon02-container {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+/* 탭바 — Attd_01 밑줄형 표준(14px) */
 .subcon02-tab-bar {
   display: flex;
   gap: 0.25rem;
