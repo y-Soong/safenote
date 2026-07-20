@@ -3,7 +3,8 @@
 
  배포 원칙: 로컬 작업 트리가 아니라 **git 에 커밋·push 된 코드**만 배포한다.
    1) git fetch 후 지정 ref(기본 origin/main)를 임시 worktree 에 체크아웃
-   2) 그 worktree 안에서 npm ci + vite 빌드 (로컬 미커밋 변경은 절대 섞이지 않음)
+   2) 로컬 .env/.env.production(gitignore 대상)을 worktree 로 복사 후 npm ci + vite 빌드
+      (env 미복사 시 VITE_PUBLIC_* 키가 undefined 로 빌드되어 카카오맵 등이 죽는다)
    3) dist/index.html <head> 에 런타임 설정(window.__APP_CONFIG__) 자동 주입 + 주입 가드
    4) S3 업로드(에셋 장기캐시 / index.html no-cache) → CloudFront 무효화(E37OL8Q9Q1FSLZ)
    5) 라이브 검증 후 배포 커밋 해시를 .claude/refs/deploy-history.log 에 기록
@@ -82,6 +83,18 @@ try {
         & git -C $repoRoot worktree add --detach $worktree $commit
         if ($LASTEXITCODE -ne 0) { throw "git worktree 생성 실패" }
         $webRoot = Join-Path $worktree $webRelPath
+
+        # 빌드타임 env 복사 — .env/.env.production 은 gitignore 대상이라 깨끗한
+        # worktree 에는 없다. 없이 빌드하면 VITE_PUBLIC_* 키가 undefined 로 접혀
+        # 카카오맵 SDK 로드 코드가 데드코드 제거된다 (2026-07-20 운영 지도 미표시 원인).
+        $localWebRoot = Join-Path $repoRoot $webRelPath
+        foreach ($envName in @('.env', '.env.production')) {
+            $envSrc = Join-Path $localWebRoot $envName
+            if (Test-Path $envSrc) { Copy-Item $envSrc (Join-Path $webRoot $envName) -Force }
+        }
+        if (-not (Test-Path (Join-Path $webRoot '.env.production'))) {
+            throw ".env.production 복사 실패 — 로컬 $localWebRoot 에 파일이 있는지 확인"
+        }
     }
 
     $distDir   = Join-Path $webRoot 'dist'
@@ -101,6 +114,16 @@ try {
     } finally { Pop-Location }
 
     if (-not (Test-Path $indexHtml)) { throw "빌드 산출물 없음: $indexHtml" }
+
+    # 빌드 가드: 카카오맵 appkey 인라인 확인 — env 누락 빌드는 SDK 로드 코드가
+    # 통째로 제거되어 지도가 전부 죽으므로 업로드 전에 차단한다.
+    $kakaoOk = Get-ChildItem (Join-Path $distDir 'assets') -Filter '*.js' |
+        Where-Object { Select-String -Path $_.FullName -Pattern 'dapi\.kakao\.com.*appkey=' -Quiet } |
+        Select-Object -First 1
+    if (-not $kakaoOk) {
+        throw "빌드 산출물에 카카오맵 appkey 미포함 — .env.production 의 VITE_PUBLIC_KAKAO_APP_JS_KEY 확인. 업로드 중단."
+    }
+    Write-Host "카카오맵 appkey 인라인 확인: $($kakaoOk.Name)"
 
     # ── 2) 런타임 설정 주입 ──────────────────────────────
     Write-Step "2/6 런타임 설정 주입 (window.__APP_CONFIG__)"
