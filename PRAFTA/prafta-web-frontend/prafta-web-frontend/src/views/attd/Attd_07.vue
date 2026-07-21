@@ -1446,8 +1446,9 @@ const fnSearch = async () => {
     return;
   }
 
-  // PRAFTA-028 - master/hr 이 아니면 사업장+소속부서를 모두 지정해야 조회 가능
-  if (!isMasterOrHr.value && proxy.$util.isEmpty(nodeCd.value)) {
+  // 소속부서는 역할 무관 필수 — 백엔드(monthly-attd-lists)가 부서 기준으로 조회하므로
+  //   미선택 시 서버 generic 400("요청 필수 파라미터 누락") 대신 어떤 조건이 비었는지 안내한다.
+  if (proxy.$util.isEmpty(nodeCd.value)) {
     await proxy.$alert("소속 부서를 선택해 주세요.");
     return;
   }
