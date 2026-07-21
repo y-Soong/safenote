@@ -15,243 +15,243 @@
 
     <div>
       <div class="viewSearch">
-      <div>
-        <label>사업장</label>
-        <input
-          id="siteNo"
-          type="text"
-          v-model="siteNo"
-          placeholder="사업장코드"
-          @blur="focusKill"
-        />
-        <button class="search-btn" @click="fnSiteSearchPopOpen()">
-          <img class="search_icon" :src="search_icon" alt="검색" />
-        </button>
-        <input
-          id="siteNm"
-          type="text"
-          v-model="siteNm"
-          placeholder="사업장명"
-          @blur="focusKill"
-        />
-      </div>
-      <div>
-        <label>자료유형</label>
-        <select v-model.trim="mtrlType" name="combo">
-          <option
-            v-for="opt in baseCodeArr['COM003'] || []"
-            :key="opt.baimValDCd"
-            :value="opt.baimValDCd"
-          >
-            {{ opt.baimValDNm }}
-          </option>
-        </select>
-      </div>
-      <div>
-        <label>자료명</label>
-        <input
-          v-model.trim="mtrlTitle"
-          type="text"
-          @input="fnDebouncedSearch"
-        />
-      </div>
-      <div>
-        <label>사용여부</label>
-        <select v-model.trim="useYn" name="combo">
-          <option
-            v-for="opt in systCodeArr['SYS003'] || []"
-            :key="opt.systValDCd"
-            :value="opt.systValDCd"
-          >
-            {{ opt.systValDNm }}
-          </option>
-        </select>
-      </div>
-    </div>
-
-    <div class="viewBody">
-      <div class="table-wrapper subtitle-pane">
-        <!-- ⬇️ 소제목 바 -->
-        <div class="subtitle">
-          <span class="subtitle-icon" aria-hidden="true">
-            <!-- 단순 마크 아이콘 (SVG) -->
-            <svg viewBox="0 0 24 24" width="18" height="18">
-              <path d="M4 4h16v4H4zM4 10h10v10H4z" />
-            </svg>
-          </span>
-          <span class="subtitle-text">교육자료 리스트</span>
+        <div>
+          <label>사업장</label>
+          <input
+            id="siteNo"
+            type="text"
+            v-model="siteNo"
+            placeholder="사업장코드"
+            @blur="focusKill"
+          />
+          <button class="search-btn" @click="fnSiteSearchPopOpen()">
+            <img class="search_icon" :src="search_icon" alt="검색" />
+          </button>
+          <input
+            id="siteNm"
+            type="text"
+            v-model="siteNm"
+            placeholder="사업장명"
+            @blur="focusKill"
+          />
         </div>
+        <div>
+          <label>자료유형</label>
+          <select v-model.trim="mtrlType" name="combo">
+            <option
+              v-for="opt in baseCodeArr['COM003'] || []"
+              :key="opt.baimValDCd"
+              :value="opt.baimValDCd"
+            >
+              {{ opt.baimValDNm }}
+            </option>
+          </select>
+        </div>
+        <div>
+          <label>자료명</label>
+          <input
+            v-model.trim="mtrlTitle"
+            type="text"
+            @input="fnDebouncedSearch"
+          />
+        </div>
+        <div>
+          <label>사용여부</label>
+          <select v-model.trim="useYn" name="combo">
+            <option
+              v-for="opt in systCodeArr['SYS003'] || []"
+              :key="opt.systValDCd"
+              :value="opt.systValDCd"
+            >
+              {{ opt.systValDNm }}
+            </option>
+          </select>
+        </div>
+      </div>
 
-        <div
-          class="table-box overflow-x-auto rounded-md border border-slate-300"
-          style="--box-h: 70vh; --box-sticky-top: 1px; --box-ox: auto"
-        >
-          <table
-            class="data-grid w-full table-fixed text-sm text-left rtl:text-right"
+      <div class="viewBody">
+        <div class="table-wrapper subtitle-pane">
+          <!-- ⬇️ 소제목 바 -->
+          <div class="subtitle">
+            <span class="subtitle-icon" aria-hidden="true">
+              <!-- 단순 마크 아이콘 (SVG) -->
+              <svg viewBox="0 0 24 24" width="18" height="18">
+                <path d="M4 4h16v4H4zM4 10h10v10H4z" />
+              </svg>
+            </span>
+            <span class="subtitle-text">교육자료 리스트</span>
+          </div>
+
+          <div
+            class="table-box overflow-x-auto rounded-md border border-slate-300"
+            style="--box-h: 70vh; --box-sticky-top: 1px; --box-ox: auto"
           >
-            <thead>
-              <tr>
-                <th class="event_cell" style="text-align: center; width: 2%">
-                  No
-                </th>
-                <th style="width: 4%">
-                  <input
-                    id="headChk"
-                    v-model="headChk"
-                    type="checkbox"
-                    @click="fnHeadChk"
-                  />
-                </th>
-                <th class="event_cell" style="width: 8%">스코프</th>
-                <ThSortable
-                  label="교육자료명"
-                  col-key="title"
-                  :sort-key="sortKey"
-                  :sort-order="sortOrder"
-                  :width="colWidths.title"
-                  @sort="onSort"
-                  @update:width="onResize"
-                />
-                <th class="event_cell" style="width: 10%">교육자료 타입</th>
-                <th style="width: 15%">사용여부</th>
-                <ThSortable
-                  label="교육자료 설명"
-                  col-key="contents"
-                  :sort-key="sortKey"
-                  :sort-order="sortOrder"
-                  :width="colWidths.contents"
-                  @sort="onSort"
-                  @update:width="onResize"
-                />
-                <ThSortable
-                  label="등록된 교육자료 수"
-                  col-key="mtrlCnt"
-                  :sort-key="sortKey"
-                  :sort-order="sortOrder"
-                  :width="colWidths.mtrlCnt"
-                  @sort="onSort"
-                  @update:width="onResize"
-                />
-                <ThSortable
-                  label="등록자"
-                  col-key="insertNm"
-                  :sort-key="sortKey"
-                  :sort-order="sortOrder"
-                  :width="colWidths.insertNm"
-                  @sort="onSort"
-                  @update:width="onResize"
-                />
-                <ThSortable
-                  label="등록일자"
-                  col-key="insertDate"
-                  :sort-key="sortKey"
-                  :sort-order="sortOrder"
-                  :width="colWidths.insertDate"
-                  @sort="onSort"
-                  @update:width="onResize"
-                />
-              </tr>
-            </thead>
-            <tbody>
-              <template
-                v-if="
-                  !tbmEduInfoResultList || tbmEduInfoResultList.length === 0
-                "
-              >
+            <table
+              class="data-grid w-full table-fixed text-sm text-left rtl:text-right"
+            >
+              <thead>
                 <tr>
-                  <td colspan="10" class="edu-grid-empty">
-                    등록된 세부 항목이 없습니다.
-                  </td>
-                </tr>
-              </template>
-              <template v-else>
-                <tr v-for="(info, idx) in sortedData" :key="info.id">
-                  <td style="text-align: center">{{ idx + 1 }}</td>
-                  <td>
+                  <th class="event_cell" style="text-align: center; width: 2%">
+                    No
+                  </th>
+                  <th style="width: 4%">
                     <input
+                      id="headChk"
+                      v-model="headChk"
                       type="checkbox"
-                      v-model="info.chk"
-                      :disabled="info.lockedYn === 'Y'"
+                      @click="fnHeadChk"
                     />
-                  </td>
-                  <td style="text-align: center">
-                    <span
-                      class="scope-badge"
-                      :class="
-                        info.isCommonContent === 'Y'
-                          ? 'scope-badge-common'
-                          : 'scope-badge-site'
-                      "
-                    >
-                      {{
-                        info.isCommonContent === "Y"
-                          ? "회사공통"
-                          : fnSiteNm(info.siteCd)
-                      }}
-                    </span>
-                  </td>
-                  <!-- 제목 셀: 단일 클릭=상세 팝업. 다른 셀처럼 td dblclick=수정 핸들러를
+                  </th>
+                  <th class="event_cell" style="width: 8%">스코프</th>
+                  <ThSortable
+                    label="교육자료명"
+                    col-key="title"
+                    :sort-key="sortKey"
+                    :sort-order="sortOrder"
+                    :width="colWidths.title"
+                    @sort="onSort"
+                    @update:width="onResize"
+                  />
+                  <th class="event_cell" style="width: 10%">교육자료 타입</th>
+                  <th style="width: 15%">사용여부</th>
+                  <ThSortable
+                    label="교육자료 설명"
+                    col-key="contents"
+                    :sort-key="sortKey"
+                    :sort-order="sortOrder"
+                    :width="colWidths.contents"
+                    @sort="onSort"
+                    @update:width="onResize"
+                  />
+                  <ThSortable
+                    label="등록된 교육자료 수"
+                    col-key="mtrlCnt"
+                    :sort-key="sortKey"
+                    :sort-order="sortOrder"
+                    :width="colWidths.mtrlCnt"
+                    @sort="onSort"
+                    @update:width="onResize"
+                  />
+                  <ThSortable
+                    label="등록자"
+                    col-key="insertNm"
+                    :sort-key="sortKey"
+                    :sort-order="sortOrder"
+                    :width="colWidths.insertNm"
+                    @sort="onSort"
+                    @update:width="onResize"
+                  />
+                  <ThSortable
+                    label="등록일자"
+                    col-key="insertDate"
+                    :sort-key="sortKey"
+                    :sort-order="sortOrder"
+                    :width="colWidths.insertDate"
+                    @sort="onSort"
+                    @update:width="onResize"
+                  />
+                </tr>
+              </thead>
+              <tbody>
+                <template
+                  v-if="
+                    !tbmEduInfoResultList || tbmEduInfoResultList.length === 0
+                  "
+                >
+                  <tr>
+                    <td colspan="10" class="edu-grid-empty">
+                      등록된 세부 항목이 없습니다.
+                    </td>
+                  </tr>
+                </template>
+                <template v-else>
+                  <tr v-for="(info, idx) in sortedData" :key="info.id">
+                    <td style="text-align: center">{{ idx + 1 }}</td>
+                    <td>
+                      <input
+                        type="checkbox"
+                        v-model="info.chk"
+                        :disabled="info.lockedYn === 'Y'"
+                      />
+                    </td>
+                    <td style="text-align: center">
+                      <span
+                        class="scope-badge"
+                        :class="
+                          info.isCommonContent === 'Y'
+                            ? 'scope-badge-common'
+                            : 'scope-badge-site'
+                        "
+                      >
+                        {{
+                          info.isCommonContent === "Y"
+                            ? "회사공통"
+                            : fnSiteNm(info.siteCd)
+                        }}
+                      </span>
+                    </td>
+                    <!-- 제목 셀: 단일 클릭=상세 팝업. 다른 셀처럼 td dblclick=수정 핸들러를
                        달면 더블클릭 시 click 2회+dblclick 1회가 동시에 발생하여 팝업이
                        겹쳐 unmount 도중 호출 에러가 나므로, 이 셀에서는 dblclick 미연결. -->
-                  <td>
-                    <button
-                      type="button"
-                      class="title-link"
-                      @click.stop="fnTbmEduDetailPopOpen(info)"
-                    >
-                      {{ info.title }}
-                    </button>
-                  </td>
-                  <td>
-                    <BaseSelect
-                      v-model="info.mtrlType"
-                      :disabled="info.lockedYn === 'Y'"
-                    >
-                      <option
-                        v-for="opt in (baseCodeArr['COM003'] || []).filter(
-                          (o) => o.baimValDCd != null
-                        )"
-                        :key="opt.baimValDCd"
-                        :value="opt.baimValDCd"
+                    <td>
+                      <button
+                        type="button"
+                        class="title-link"
+                        @click.stop="fnTbmEduDetailPopOpen(info)"
                       >
-                        {{ opt.baimValDNm }}
-                      </option>
-                    </BaseSelect>
-                  </td>
-                  <td @dblclick="fnTbmEduMtrlInfoPopOpen(info)">
-                    <BaseSelect
-                      v-model="info.useYn"
-                      :disabled="info.lockedYn === 'Y'"
-                    >
-                      <option
-                        v-for="opt in (systCodeArr['SYS003'] || []).filter(
-                          (o) => o.systValDCd != null
-                        )"
-                        :key="opt.systValDCd"
-                        :value="opt.systValDCd"
+                        {{ info.title }}
+                      </button>
+                    </td>
+                    <td>
+                      <BaseSelect
+                        v-model="info.mtrlType"
+                        :disabled="info.lockedYn === 'Y'"
                       >
-                        {{ opt.systValDNm }}
-                      </option>
-                    </BaseSelect>
-                  </td>
-                  <td @dblclick="fnTbmEduMtrlInfoPopOpen(info)">
-                    {{ info.contents }}
-                  </td>
-                  <td @dblclick="fnTbmEduMtrlInfoPopOpen(info)">
-                    {{ info.mtrlCnt }}
-                  </td>
-                  <td @dblclick="fnTbmEduMtrlInfoPopOpen(info)">
-                    {{ info.insertNm }}
-                  </td>
-                  <td @dblclick="fnTbmEduMtrlInfoPopOpen(info)">
-                    {{ info.insertDate }}
-                  </td>
-                </tr>
-              </template>
-            </tbody>
-          </table>
+                        <option
+                          v-for="opt in (baseCodeArr['COM003'] || []).filter(
+                            (o) => o.baimValDCd != null
+                          )"
+                          :key="opt.baimValDCd"
+                          :value="opt.baimValDCd"
+                        >
+                          {{ opt.baimValDNm }}
+                        </option>
+                      </BaseSelect>
+                    </td>
+                    <td @dblclick="fnTbmEduMtrlInfoPopOpen(info)">
+                      <BaseSelect
+                        v-model="info.useYn"
+                        :disabled="info.lockedYn === 'Y'"
+                      >
+                        <option
+                          v-for="opt in (systCodeArr['SYS003'] || []).filter(
+                            (o) => o.systValDCd != null
+                          )"
+                          :key="opt.systValDCd"
+                          :value="opt.systValDCd"
+                        >
+                          {{ opt.systValDNm }}
+                        </option>
+                      </BaseSelect>
+                    </td>
+                    <td @dblclick="fnTbmEduMtrlInfoPopOpen(info)">
+                      {{ info.contents }}
+                    </td>
+                    <td @dblclick="fnTbmEduMtrlInfoPopOpen(info)">
+                      {{ info.mtrlCnt }}
+                    </td>
+                    <td @dblclick="fnTbmEduMtrlInfoPopOpen(info)">
+                      {{ info.insertNm }}
+                    </td>
+                    <td @dblclick="fnTbmEduMtrlInfoPopOpen(info)">
+                      {{ info.insertDate }}
+                    </td>
+                  </tr>
+                </template>
+              </tbody>
+            </table>
+          </div>
         </div>
-      </div>
       </div>
     </div>
   </div>

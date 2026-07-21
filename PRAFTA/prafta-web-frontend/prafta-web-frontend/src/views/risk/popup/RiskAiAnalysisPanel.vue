@@ -3,472 +3,572 @@
        v-if 언마운트가 부모에서 일어나므로 열림/닫힘 양방향 애니메이션이 재생된다.
        루트는 단일 엘리먼트(absolute inset:0) 유지 필수. -->
   <div class="ai-panel">
-      <!-- ★AI 작업중 블러 오버레이 (초기 로드/채팅/확정/도출 공통) -->
-      <div v-if="aiBusy" class="ai-panel__busy">
-        <LoadingSpinner />
-        <span class="ai-panel__busy-text">{{ busyText }}</span>
-      </div>
+    <!-- ★AI 작업중 블러 오버레이 (초기 로드/채팅/확정/도출 공통) -->
+    <div v-if="aiBusy" class="ai-panel__busy">
+      <LoadingSpinner />
+      <span class="ai-panel__busy-text">{{ busyText }}</span>
+    </div>
 
-      <!-- 헤더: 타이틀 + 초기화 + 단계 칩 내비게이션 + 닫기 -->
-      <div class="ai-panel__header">
-        <span class="ai-panel__title">AI 분석</span>
-        <!-- 초기화(처음부터 다시): 서버 도출 행 DELETE 후 재진입(확인 다이얼로그 경유) -->
-        <button
-          type="button"
-          class="btn btn-report ai-panel__reset"
-          :disabled="aiBusy"
-          @click="fnReset"
-        >
-          초기화
-        </button>
-        <!-- 단계 칩 내비게이션(v3.7 2단계): 클릭 시 해당 step 으로 로컬 전환(서버 상태 불변).
+    <!-- 헤더: 타이틀 + 초기화 + 단계 칩 내비게이션 + 닫기 -->
+    <div class="ai-panel__header">
+      <span class="ai-panel__title">AI 분석</span>
+      <!-- 초기화(처음부터 다시): 서버 도출 행 DELETE 후 재진입(확인 다이얼로그 경유) -->
+      <button
+        type="button"
+        class="btn btn-report ai-panel__reset"
+        :disabled="aiBusy"
+        @click="fnReset"
+      >
+        초기화
+      </button>
+      <!-- 단계 칩 내비게이션(v3.7 2단계): 클릭 시 해당 step 으로 로컬 전환(서버 상태 불변).
              칩1 = 사진 有 "이미지 확정" / 사진 無 "정보 확인", 칩2 = 결과(도출 데이터 있을 때만 클릭 가능) -->
-        <ol class="ai-steps">
-          <li
-            class="ai-steps__item"
-            :class="stepChipClass('imageConfirm')"
-            @click="fnGoStep('imageConfirm')"
-          >
-            {{ props.hasSourceImage ? "이미지 확정" : "정보 확인" }}
-          </li>
-          <li
-            class="ai-steps__item"
-            :class="stepChipClass('result')"
-            @click="fnGoStep('result')"
-          >
-            결과
-          </li>
-        </ol>
-        <button class="icon-button" type="button" @click="fnClose">
-          <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"
-               stroke-width="1.5" stroke="currentColor" class="w-6 h-6">
-            <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" />
-          </svg>
-        </button>
-      </div>
+      <ol class="ai-steps">
+        <li
+          class="ai-steps__item"
+          :class="stepChipClass('imageConfirm')"
+          @click="fnGoStep('imageConfirm')"
+        >
+          {{ props.hasSourceImage ? "이미지 확정" : "정보 확인" }}
+        </li>
+        <li
+          class="ai-steps__item"
+          :class="stepChipClass('result')"
+          @click="fnGoStep('result')"
+        >
+          결과
+        </li>
+      </ol>
+      <button class="icon-button" type="button" @click="fnClose">
+        <svg
+          xmlns="http://www.w3.org/2000/svg"
+          fill="none"
+          viewBox="0 0 24 24"
+          stroke-width="1.5"
+          stroke="currentColor"
+          class="w-6 h-6"
+        >
+          <path
+            stroke-linecap="round"
+            stroke-linejoin="round"
+            d="M6 18L18 6M6 6l12 12"
+          />
+        </svg>
+      </button>
+    </div>
 
-      <!-- 본문 -->
-      <div class="ai-panel__body">
-        <!-- ── STEP 1: 이미지 확정(사진 有) / 정보 확인(사진 無) — v3.7 2단계 구조 ── -->
-        <section v-if="step === 'imageConfirm'" class="ai-confirm">
-          <!-- 좌측: 근로자 이미지(크기 고정) + 개선 전 내용 요약(구 도출 탭에서 이동 — 기존 스타일 재사용) -->
-          <div class="ai-confirm__left">
-            <div class="ai-confirm__photo">
-              <img
-                v-if="props.photoUrl"
-                :src="props.photoUrl"
-                alt="개선 전 사진"
-                class="ai-confirm__photo-img"
-              />
-              <div v-else class="ai-confirm__photo-empty">이미지 없음</div>
+    <!-- 본문 -->
+    <div class="ai-panel__body">
+      <!-- ── STEP 1: 이미지 확정(사진 有) / 정보 확인(사진 無) — v3.7 2단계 구조 ── -->
+      <section v-if="step === 'imageConfirm'" class="ai-confirm">
+        <!-- 좌측: 근로자 이미지(크기 고정) + 개선 전 내용 요약(구 도출 탭에서 이동 — 기존 스타일 재사용) -->
+        <div class="ai-confirm__left">
+          <div class="ai-confirm__photo">
+            <img
+              v-if="props.photoUrl"
+              :src="props.photoUrl"
+              alt="개선 전 사진"
+              class="ai-confirm__photo-img"
+            />
+            <div v-else class="ai-confirm__photo-empty">이미지 없음</div>
+          </div>
+          <div class="ai-derive__summary">
+            <div class="ai-derive__summary-title">
+              개선 전 내용 요약 (읽기 전용)
             </div>
-            <div class="ai-derive__summary">
-              <div class="ai-derive__summary-title">개선 전 내용 요약 (읽기 전용)</div>
-              <div class="ai-derive__row">
-                <span class="ai-derive__row-label">작업명</span>
-                <span class="ai-derive__row-value">{{ props.summary.processNm || "-" }}</span>
-              </div>
-              <div class="ai-derive__row">
-                <span class="ai-derive__row-label">위험성분류</span>
-                <span class="ai-derive__row-value">{{ props.summary.riskTypeNm || "-" }}</span>
-              </div>
-              <div class="ai-derive__row">
-                <span class="ai-derive__row-label">유해요인명</span>
-                <span class="ai-derive__row-value">{{ props.summary.hazardNm || "-" }}</span>
-              </div>
-              <div class="ai-derive__row ai-derive__row--multiline">
-                <span class="ai-derive__row-label">유해요인설명</span>
-                <span class="ai-derive__row-value">{{ props.summary.initDesc || "-" }}</span>
-              </div>
+            <div class="ai-derive__row">
+              <span class="ai-derive__row-label">작업명</span>
+              <span class="ai-derive__row-value">{{
+                props.summary.processNm || "-"
+              }}</span>
+            </div>
+            <div class="ai-derive__row">
+              <span class="ai-derive__row-label">위험성분류</span>
+              <span class="ai-derive__row-value">{{
+                props.summary.riskTypeNm || "-"
+              }}</span>
+            </div>
+            <div class="ai-derive__row">
+              <span class="ai-derive__row-label">유해요인명</span>
+              <span class="ai-derive__row-value">{{
+                props.summary.hazardNm || "-"
+              }}</span>
+            </div>
+            <div class="ai-derive__row ai-derive__row--multiline">
+              <span class="ai-derive__row-label">유해요인설명</span>
+              <span class="ai-derive__row-value">{{
+                props.summary.initDesc || "-"
+              }}</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- 우측(사진 有): 자유 대화형 채팅 — 예/아니오·보충입력 블록 제거(v3.7), 입력줄 상시 노출 -->
+        <div v-if="props.hasSourceImage" class="ai-confirm__chat">
+          <div class="ai-chat__log" ref="chatLogRef">
+            <div
+              v-for="(t, i) in visibleTurns"
+              :key="'turn-' + i"
+              class="ai-chat__row"
+              :class="
+                t.role === 'user'
+                  ? 'ai-chat__row--user'
+                  : 'ai-chat__row--assistant'
+              "
+            >
+              <span class="ai-chat__bubble">{{ t.text }}</span>
+            </div>
+            <div v-if="visibleTurns.length === 0" class="ai-chat__empty">
+              AI 가 사진을 판독하는 중입니다…
             </div>
           </div>
 
-          <!-- 우측(사진 有): 자유 대화형 채팅 — 예/아니오·보충입력 블록 제거(v3.7), 입력줄 상시 노출 -->
-          <div v-if="props.hasSourceImage" class="ai-confirm__chat">
-            <div class="ai-chat__log" ref="chatLogRef">
+          <p v-if="chatErrorMsg" class="ai-panel__state ai-panel__state--error">
+            {{ chatErrorMsg }}
+          </p>
+          <p
+            v-if="deriveErrorMsg"
+            class="ai-panel__state ai-panel__state--error"
+          >
+            {{ deriveErrorMsg }}
+          </p>
+
+          <!-- 채팅 입력줄(항상 노출): 설명/질문 + 이미지 첨부(캡·선검증 기존 유지) + 전송 -->
+          <div class="ai-chat__input">
+            <textarea
+              v-model="chatInput"
+              class="ai-chat__input-field"
+              rows="2"
+              placeholder="사진에 대한 설명이나 질문을 입력하세요. (예: sorter가 아니라 컨베이어 라인입니다.)"
+              :disabled="aiBusy"
+            ></textarea>
+            <div class="ai-chat__input-actions">
+              <input
+                type="file"
+                ref="imageInputRef"
+                accept="image/jpeg,image/png,image/webp"
+                multiple
+                style="display: none"
+                @change="fnPickImages"
+              />
+              <button
+                type="button"
+                class="btn btn-report"
+                :disabled="aiBusy || adminImages.length >= 2"
+                @click="imageInputRef?.click()"
+              >
+                이미지 첨부
+              </button>
+              <span class="ai-correct__attach-hint"
+                >jpg/png/webp · 장당 3MB · 최대 2장</span
+              >
+              <button
+                type="button"
+                class="btn btn-save ai-chat__send"
+                :disabled="
+                  aiBusy || (!chatInput.trim() && adminImages.length === 0)
+                "
+                @click="fnSendChat"
+              >
+                전송
+              </button>
+            </div>
+            <ul v-if="adminImages.length" class="ai-correct__chips">
+              <li
+                v-for="(img, i) in adminImages"
+                :key="'img-' + i"
+                class="ai-correct__chip"
+              >
+                <span class="ai-correct__chip-name">{{ img.name }}</span>
+                <button
+                  type="button"
+                  class="btn-x"
+                  :disabled="aiBusy"
+                  title="첨부 제거"
+                  @click="fnRemoveImage(i)"
+                >
+                  x
+                </button>
+              </li>
+            </ul>
+          </div>
+        </div>
+
+        <!-- 우측(사진 無): 관리자 의견 — BE chat-image 는 이미지 필수 게이트라 채팅 미제공 -->
+        <div v-else class="ai-confirm__opinion">
+          <label class="ai-confirm__opinion-label" for="aiOpinion"
+            >관리자 의견 (선택)</label
+          >
+          <textarea
+            id="aiOpinion"
+            v-model="suppDesc"
+            class="ai-confirm__opinion-field"
+            rows="6"
+            placeholder="AI 도출에 참고할 관리자 의견을 입력하세요. (예: 이 작업은 우천 시 미끄럼 위험이 큽니다.)"
+            :disabled="aiBusy"
+            @blur="fnSaveSupplement"
+          ></textarea>
+          <p class="ai-confirm__opinion-hint">
+            입력한 의견은 AI 도출에 반영됩니다.
+          </p>
+          <p
+            v-if="deriveErrorMsg"
+            class="ai-panel__state ai-panel__state--error"
+          >
+            {{ deriveErrorMsg }}
+          </p>
+        </div>
+      </section>
+
+      <!-- ── STEP 2: 결과 (v3.8 재설계 — 좌 40% 컨텍스트 / 우 60% 아코디언) ── -->
+      <section v-else class="ai-result">
+        <!-- 좌측(40%): 이미지 + 개선 전 요약 + 확정 대화(사진 無면 관리자 의견) — 단계1 좌측 구성 재사용 -->
+        <div class="ai-result__left">
+          <div class="ai-confirm__photo">
+            <img
+              v-if="props.photoUrl"
+              :src="props.photoUrl"
+              alt="개선 전 사진"
+              class="ai-confirm__photo-img"
+            />
+            <div v-else class="ai-confirm__photo-empty">이미지 없음</div>
+          </div>
+          <div class="ai-derive__summary">
+            <div class="ai-derive__summary-title">
+              개선 전 내용 요약 (읽기 전용)
+            </div>
+            <div class="ai-derive__row">
+              <span class="ai-derive__row-label">작업명</span>
+              <span class="ai-derive__row-value">{{
+                props.summary.processNm || "-"
+              }}</span>
+            </div>
+            <div class="ai-derive__row">
+              <span class="ai-derive__row-label">위험성분류</span>
+              <span class="ai-derive__row-value">{{
+                props.summary.riskTypeNm || "-"
+              }}</span>
+            </div>
+            <div class="ai-derive__row">
+              <span class="ai-derive__row-label">유해요인명</span>
+              <span class="ai-derive__row-value">{{
+                props.summary.hazardNm || "-"
+              }}</span>
+            </div>
+            <div class="ai-derive__row ai-derive__row--multiline">
+              <span class="ai-derive__row-label">유해요인설명</span>
+              <span class="ai-derive__row-value">{{
+                props.summary.initDesc || "-"
+              }}</span>
+            </div>
+          </div>
+          <!-- 확정 대화 카드(사진 有): 기본=마지막 AI 발화(확정된 이미지 이해), 토글로 전체 대화 확장 -->
+          <div v-if="props.hasSourceImage" class="ai-result__dialog">
+            <div class="ai-result__dialog-head">
+              <span class="ai-result__dialog-title">확정 대화</span>
+              <button
+                type="button"
+                class="ai-result__dialog-toggle"
+                @click="showFullDialog = !showFullDialog"
+              >
+                {{ showFullDialog ? "마지막 발화만" : "전체 대화 보기" }}
+              </button>
+            </div>
+            <div v-if="!showFullDialog" class="ai-result__dialog-last">
+              {{ lastAssistantText || "-" }}
+            </div>
+            <div v-else class="ai-result__dialog-full">
               <div
                 v-for="(t, i) in visibleTurns"
-                :key="'turn-' + i"
-                class="ai-chat__row"
-                :class="t.role === 'user' ? 'ai-chat__row--user' : 'ai-chat__row--assistant'"
+                :key="'dlg-' + i"
+                class="ai-result__dialog-line"
               >
-                <span class="ai-chat__bubble">{{ t.text }}</span>
-              </div>
-              <div v-if="visibleTurns.length === 0" class="ai-chat__empty">
-                AI 가 사진을 판독하는 중입니다…
+                <span class="ai-result__dialog-role">{{
+                  t.role === "user" ? "관리자" : "AI"
+                }}</span>
+                <span class="ai-result__dialog-text">{{ t.text }}</span>
               </div>
             </div>
+          </div>
+          <!-- 사진 無: 관리자 의견(읽기 전용 표시) -->
+          <div v-else class="ai-result__dialog">
+            <div class="ai-result__dialog-head">
+              <span class="ai-result__dialog-title">관리자 의견</span>
+            </div>
+            <div class="ai-result__dialog-last">{{ suppDesc || "-" }}</div>
+          </div>
+        </div>
 
-            <p v-if="chatErrorMsg" class="ai-panel__state ai-panel__state--error">
-              {{ chatErrorMsg }}
-            </p>
-            <p v-if="deriveErrorMsg" class="ai-panel__state ai-panel__state--error">
-              {{ deriveErrorMsg }}
-            </p>
-
-            <!-- 채팅 입력줄(항상 노출): 설명/질문 + 이미지 첨부(캡·선검증 기존 유지) + 전송 -->
-            <div class="ai-chat__input">
-              <textarea
-                v-model="chatInput"
-                class="ai-chat__input-field"
-                rows="2"
-                placeholder="사진에 대한 설명이나 질문을 입력하세요. (예: sorter가 아니라 컨베이어 라인입니다.)"
-                :disabled="aiBusy"
-              ></textarea>
-              <div class="ai-chat__input-actions">
+        <!-- 우측(60%): 유해요인 아코디언 — 행 클릭 시 아래로 개선안 확장(단일 확장) -->
+        <div class="ai-result__right">
+          <div class="ai-result__col-title">유해요인 및 개선안</div>
+          <ul class="ai-acc">
+            <!-- AI 도출 유해요인(키 'ai-N' — 기존 선택 키 체계 유지) -->
+            <li
+              v-for="(hz, i) in hazards"
+              :key="'hz-' + i"
+              class="ai-acc__item"
+            >
+              <div
+                class="ai-acc__row"
+                :class="{
+                  'ai-acc__row--active': activeHazardKey === 'ai-' + i,
+                }"
+                @click="fnSelectHazard('ai-' + i)"
+              >
                 <input
-                  type="file"
-                  ref="imageInputRef"
-                  accept="image/jpeg,image/png,image/webp"
-                  multiple
-                  style="display: none"
-                  @change="fnPickImages"
+                  type="checkbox"
+                  class="ai-result__check"
+                  :checked="selectedHazards.includes('ai-' + i)"
+                  :disabled="aiBusy"
+                  @click.stop
+                  @change="fnToggleHazard('ai-' + i)"
                 />
-                <button
-                  type="button"
-                  class="btn btn-report"
-                  :disabled="aiBusy || adminImages.length >= 2"
-                  @click="imageInputRef?.click()"
-                >
-                  이미지 첨부
-                </button>
-                <span class="ai-correct__attach-hint">jpg/png/webp · 장당 3MB · 최대 2장</span>
-                <button
-                  type="button"
-                  class="btn btn-save ai-chat__send"
-                  :disabled="aiBusy || (!chatInput.trim() && adminImages.length === 0)"
-                  @click="fnSendChat"
-                >
-                  전송
-                </button>
+                <span class="ai-result__text">
+                  {{ hz.text }}
+                  <sup v-if="hz.markers && hz.markers.length" class="ai-cite">{{
+                    hz.markers.join("")
+                  }}</sup>
+                </span>
+                <span class="ai-acc__arrow">{{
+                  activeHazardKey === "ai-" + i ? "▲" : "▼"
+                }}</span>
               </div>
-              <ul v-if="adminImages.length" class="ai-correct__chips">
-                <li v-for="(img, i) in adminImages" :key="'img-' + i" class="ai-correct__chip">
-                  <span class="ai-correct__chip-name">{{ img.name }}</span>
-                  <button
-                    type="button"
-                    class="btn-x"
-                    :disabled="aiBusy"
-                    title="첨부 제거"
-                    @click="fnRemoveImage(i)"
+              <div v-if="activeHazardKey === 'ai-' + i" class="ai-acc__panel">
+                <ul class="ai-acc__measures">
+                  <li
+                    v-for="(ms, j) in hz.measures || []"
+                    :key="'ms-' + j"
+                    class="ai-acc__measure"
                   >
-                    x
-                  </button>
+                    <input
+                      type="checkbox"
+                      class="ai-result__check"
+                      :checked="isMeasureSelected('ai-' + i, j)"
+                      :disabled="aiBusy"
+                      @change="fnToggleMeasure('ai-' + i, j)"
+                    />
+                    <span class="ai-result__text">
+                      {{ ms.text }}
+                      <sup
+                        v-if="ms.markers && ms.markers.length"
+                        class="ai-cite"
+                        >{{ ms.markers.join("") }}</sup
+                      >
+                    </span>
+                  </li>
+                  <li
+                    v-if="!(hz.measures && hz.measures.length)"
+                    class="ai-result__empty"
+                  >
+                    관련 개선안이 없습니다. 다시 도출해 주세요.
+                  </li>
+                </ul>
+              </div>
+            </li>
+            <!-- verbatim 원문 유해요인(키 'vb-N' — LLM 미경유 패스스루, 원문 그대로 표시) -->
+            <li
+              v-for="(vb, i) in verbatimHazardItems"
+              :key="'vb-' + i"
+              class="ai-acc__item"
+            >
+              <div
+                class="ai-acc__row ai-acc__row--verbatim"
+                :class="{
+                  'ai-acc__row--active': activeHazardKey === 'vb-' + i,
+                }"
+                @click="fnSelectHazard('vb-' + i)"
+              >
+                <input
+                  type="checkbox"
+                  class="ai-result__check"
+                  :checked="selectedHazards.includes('vb-' + i)"
+                  :disabled="aiBusy"
+                  @click.stop
+                  @change="fnToggleHazard('vb-' + i)"
+                />
+                <span class="ai-acc__body">
+                  <span class="ai-result__text">
+                    <span class="ai-vb-badge">원문</span>
+                    {{ vb.text }}
+                  </span>
+                  <span class="ai-result__vb-source">{{ vb.sourceName }}</span>
+                </span>
+                <span class="ai-acc__arrow">{{
+                  activeHazardKey === "vb-" + i ? "▲" : "▼"
+                }}</span>
+              </div>
+              <div v-if="activeHazardKey === 'vb-' + i" class="ai-acc__panel">
+                <p class="ai-result__vb-note">
+                  원문 항목은 출처와 함께 원문 그대로 표시됩니다.
+                </p>
+                <ul class="ai-acc__measures">
+                  <li
+                    v-for="(ms, j) in vb.measures"
+                    :key="'vms-' + j"
+                    class="ai-acc__measure"
+                  >
+                    <input
+                      type="checkbox"
+                      class="ai-result__check"
+                      :checked="isMeasureSelected('vb-' + i, j)"
+                      :disabled="aiBusy"
+                      @change="fnToggleMeasure('vb-' + i, j)"
+                    />
+                    <span class="ai-result__text">{{ ms.text }}</span>
+                  </li>
+                  <li v-if="vb.measures.length === 0" class="ai-result__empty">
+                    관련 개선안이 없습니다.
+                  </li>
+                </ul>
+              </div>
+            </li>
+            <li
+              v-if="hazards.length === 0 && verbatimHazardItems.length === 0"
+              class="ai-result__empty"
+            >
+              도출된 유해요인이 없습니다.
+            </li>
+          </ul>
+
+          <!-- 참고 원문(verbatim 패스스루 — LLM 미경유, 원문 무변경 표시. v3.8: 기관명/링크/라이선스 보강,
+                 구 저장분은 필드 없음 → v-if 생략 방어) -->
+          <div v-if="verbatimRefs.length" class="ai-verbatim">
+            <button
+              type="button"
+              class="ai-verbatim__toggle"
+              :aria-expanded="showVerbatim"
+              @click="fnToggleVerbatim"
+            >
+              <span class="ai-verbatim__toggle-arrow">{{
+                showVerbatim ? "▼" : "▶"
+              }}</span>
+              참고 원문 (출처 원문 그대로)
+            </button>
+            <div v-if="showVerbatim" class="ai-verbatim__body">
+              <p class="ai-verbatim__notice">
+                라이선스에 따라 원문 그대로 표시됩니다(변경 불가).
+              </p>
+              <ul class="ai-verbatim__list">
+                <li
+                  v-for="(vr, i) in verbatimRefs"
+                  :key="'vr-' + i"
+                  class="ai-verbatim__item"
+                >
+                  <div class="ai-verbatim__source">
+                    <span v-if="vr.sourceOrg" class="ai-verbatim__org">{{
+                      vr.sourceOrg
+                    }}</span>
+                    <a
+                      v-if="vr.sourceUrl"
+                      :href="vr.sourceUrl"
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      class="ai-verbatim__source-name ai-src-link"
+                      >{{ vr.sourceName }}</a
+                    >
+                    <span v-else class="ai-verbatim__source-name">{{
+                      vr.sourceName
+                    }}</span>
+                    <span
+                      v-if="vr.dataReliability"
+                      class="ai-verbatim__badge"
+                      >{{ vr.dataReliability }}</span
+                    >
+                    <span v-if="vr.licenseType" class="ai-verbatim__license">{{
+                      vr.licenseType
+                    }}</span>
+                  </div>
+                  <div v-if="vr.content" class="ai-verbatim__field">
+                    <span class="ai-verbatim__field-label">재해개요</span>
+                    <span class="ai-verbatim__field-value">{{
+                      vr.content
+                    }}</span>
+                  </div>
+                  <div v-if="vr.hazardText" class="ai-verbatim__field">
+                    <span class="ai-verbatim__field-label">유해요인</span>
+                    <span class="ai-verbatim__field-value">{{
+                      vr.hazardText
+                    }}</span>
+                  </div>
+                  <div v-if="vr.measureText" class="ai-verbatim__field">
+                    <span class="ai-verbatim__field-label">감소대책</span>
+                    <span class="ai-verbatim__field-value">{{
+                      vr.measureText
+                    }}</span>
+                  </div>
                 </li>
               </ul>
             </div>
           </div>
 
-          <!-- 우측(사진 無): 관리자 의견 — BE chat-image 는 이미지 필수 게이트라 채팅 미제공 -->
-          <div v-else class="ai-confirm__opinion">
-            <label class="ai-confirm__opinion-label" for="aiOpinion">관리자 의견 (선택)</label>
-            <textarea
-              id="aiOpinion"
-              v-model="suppDesc"
-              class="ai-confirm__opinion-field"
-              rows="6"
-              placeholder="AI 도출에 참고할 관리자 의견을 입력하세요. (예: 이 작업은 우천 시 미끄럼 위험이 큽니다.)"
-              :disabled="aiBusy"
-              @blur="fnSaveSupplement"
-            ></textarea>
-            <p class="ai-confirm__opinion-hint">입력한 의견은 AI 도출에 반영됩니다.</p>
-            <p v-if="deriveErrorMsg" class="ai-panel__state ai-panel__state--error">
-              {{ deriveErrorMsg }}
-            </p>
-          </div>
-        </section>
-
-        <!-- ── STEP 2: 결과 (v3.8 재설계 — 좌 40% 컨텍스트 / 우 60% 아코디언) ── -->
-        <section v-else class="ai-result">
-          <!-- 좌측(40%): 이미지 + 개선 전 요약 + 확정 대화(사진 無면 관리자 의견) — 단계1 좌측 구성 재사용 -->
-          <div class="ai-result__left">
-            <div class="ai-confirm__photo">
-              <img
-                v-if="props.photoUrl"
-                :src="props.photoUrl"
-                alt="개선 전 사진"
-                class="ai-confirm__photo-img"
-              />
-              <div v-else class="ai-confirm__photo-empty">이미지 없음</div>
-            </div>
-            <div class="ai-derive__summary">
-              <div class="ai-derive__summary-title">개선 전 내용 요약 (읽기 전용)</div>
-              <div class="ai-derive__row">
-                <span class="ai-derive__row-label">작업명</span>
-                <span class="ai-derive__row-value">{{ props.summary.processNm || "-" }}</span>
-              </div>
-              <div class="ai-derive__row">
-                <span class="ai-derive__row-label">위험성분류</span>
-                <span class="ai-derive__row-value">{{ props.summary.riskTypeNm || "-" }}</span>
-              </div>
-              <div class="ai-derive__row">
-                <span class="ai-derive__row-label">유해요인명</span>
-                <span class="ai-derive__row-value">{{ props.summary.hazardNm || "-" }}</span>
-              </div>
-              <div class="ai-derive__row ai-derive__row--multiline">
-                <span class="ai-derive__row-label">유해요인설명</span>
-                <span class="ai-derive__row-value">{{ props.summary.initDesc || "-" }}</span>
-              </div>
-            </div>
-            <!-- 확정 대화 카드(사진 有): 기본=마지막 AI 발화(확정된 이미지 이해), 토글로 전체 대화 확장 -->
-            <div v-if="props.hasSourceImage" class="ai-result__dialog">
-              <div class="ai-result__dialog-head">
-                <span class="ai-result__dialog-title">확정 대화</span>
-                <button
-                  type="button"
-                  class="ai-result__dialog-toggle"
-                  @click="showFullDialog = !showFullDialog"
-                >
-                  {{ showFullDialog ? "마지막 발화만" : "전체 대화 보기" }}
-                </button>
-              </div>
-              <div v-if="!showFullDialog" class="ai-result__dialog-last">
-                {{ lastAssistantText || "-" }}
-              </div>
-              <div v-else class="ai-result__dialog-full">
-                <div
-                  v-for="(t, i) in visibleTurns"
-                  :key="'dlg-' + i"
-                  class="ai-result__dialog-line"
-                >
-                  <span class="ai-result__dialog-role">{{
-                    t.role === "user" ? "관리자" : "AI"
-                  }}</span>
-                  <span class="ai-result__dialog-text">{{ t.text }}</span>
-                </div>
-              </div>
-            </div>
-            <!-- 사진 無: 관리자 의견(읽기 전용 표시) -->
-            <div v-else class="ai-result__dialog">
-              <div class="ai-result__dialog-head">
-                <span class="ai-result__dialog-title">관리자 의견</span>
-              </div>
-              <div class="ai-result__dialog-last">{{ suppDesc || "-" }}</div>
-            </div>
-          </div>
-
-          <!-- 우측(60%): 유해요인 아코디언 — 행 클릭 시 아래로 개선안 확장(단일 확장) -->
-          <div class="ai-result__right">
-            <div class="ai-result__col-title">유해요인 및 개선안</div>
-            <ul class="ai-acc">
-              <!-- AI 도출 유해요인(키 'ai-N' — 기존 선택 키 체계 유지) -->
-              <li v-for="(hz, i) in hazards" :key="'hz-' + i" class="ai-acc__item">
-                <div
-                  class="ai-acc__row"
-                  :class="{ 'ai-acc__row--active': activeHazardKey === 'ai-' + i }"
-                  @click="fnSelectHazard('ai-' + i)"
-                >
-                  <input
-                    type="checkbox"
-                    class="ai-result__check"
-                    :checked="selectedHazards.includes('ai-' + i)"
-                    :disabled="aiBusy"
-                    @click.stop
-                    @change="fnToggleHazard('ai-' + i)"
-                  />
-                  <span class="ai-result__text">
-                    {{ hz.text }}
-                    <sup v-if="hz.markers && hz.markers.length" class="ai-cite">{{
-                      hz.markers.join("")
-                    }}</sup>
-                  </span>
-                  <span class="ai-acc__arrow">{{
-                    activeHazardKey === "ai-" + i ? "▲" : "▼"
-                  }}</span>
-                </div>
-                <div v-if="activeHazardKey === 'ai-' + i" class="ai-acc__panel">
-                  <ul class="ai-acc__measures">
-                    <li
-                      v-for="(ms, j) in hz.measures || []"
-                      :key="'ms-' + j"
-                      class="ai-acc__measure"
-                    >
-                      <input
-                        type="checkbox"
-                        class="ai-result__check"
-                        :checked="isMeasureSelected('ai-' + i, j)"
-                        :disabled="aiBusy"
-                        @change="fnToggleMeasure('ai-' + i, j)"
-                      />
-                      <span class="ai-result__text">
-                        {{ ms.text }}
-                        <sup v-if="ms.markers && ms.markers.length" class="ai-cite">{{
-                          ms.markers.join("")
-                        }}</sup>
-                      </span>
-                    </li>
-                    <li v-if="!(hz.measures && hz.measures.length)" class="ai-result__empty">
-                      관련 개선안이 없습니다. 다시 도출해 주세요.
-                    </li>
-                  </ul>
-                </div>
-              </li>
-              <!-- verbatim 원문 유해요인(키 'vb-N' — LLM 미경유 패스스루, 원문 그대로 표시) -->
-              <li v-for="(vb, i) in verbatimHazardItems" :key="'vb-' + i" class="ai-acc__item">
-                <div
-                  class="ai-acc__row ai-acc__row--verbatim"
-                  :class="{ 'ai-acc__row--active': activeHazardKey === 'vb-' + i }"
-                  @click="fnSelectHazard('vb-' + i)"
-                >
-                  <input
-                    type="checkbox"
-                    class="ai-result__check"
-                    :checked="selectedHazards.includes('vb-' + i)"
-                    :disabled="aiBusy"
-                    @click.stop
-                    @change="fnToggleHazard('vb-' + i)"
-                  />
-                  <span class="ai-acc__body">
-                    <span class="ai-result__text">
-                      <span class="ai-vb-badge">원문</span>
-                      {{ vb.text }}
-                    </span>
-                    <span class="ai-result__vb-source">{{ vb.sourceName }}</span>
-                  </span>
-                  <span class="ai-acc__arrow">{{
-                    activeHazardKey === "vb-" + i ? "▲" : "▼"
-                  }}</span>
-                </div>
-                <div v-if="activeHazardKey === 'vb-' + i" class="ai-acc__panel">
-                  <p class="ai-result__vb-note">
-                    원문 항목은 출처와 함께 원문 그대로 표시됩니다.
-                  </p>
-                  <ul class="ai-acc__measures">
-                    <li
-                      v-for="(ms, j) in vb.measures"
-                      :key="'vms-' + j"
-                      class="ai-acc__measure"
-                    >
-                      <input
-                        type="checkbox"
-                        class="ai-result__check"
-                        :checked="isMeasureSelected('vb-' + i, j)"
-                        :disabled="aiBusy"
-                        @change="fnToggleMeasure('vb-' + i, j)"
-                      />
-                      <span class="ai-result__text">{{ ms.text }}</span>
-                    </li>
-                    <li v-if="vb.measures.length === 0" class="ai-result__empty">
-                      관련 개선안이 없습니다.
-                    </li>
-                  </ul>
-                </div>
-              </li>
+          <!-- 근거 출처(v3.8 보강: 마커 · 기관명 · 자료명(링크) · 신뢰등급 — 구 저장분은 v-if 생략) -->
+          <div v-if="citations.length" class="ai-result__cites">
+            <div class="ai-result__col-title">근거 출처</div>
+            <ol class="ai-cite-list">
               <li
-                v-if="hazards.length === 0 && verbatimHazardItems.length === 0"
-                class="ai-result__empty"
+                v-for="(ct, i) in citations"
+                :key="'ct-' + i"
+                class="ai-cite-list__item"
               >
-                도출된 유해요인이 없습니다.
+                <span class="ai-cite-list__marker">{{ ct.marker }}</span>
+                <span v-if="ct.sourceOrg">{{ ct.sourceOrg }} ·</span>
+                <a
+                  v-if="ct.sourceUrl"
+                  :href="ct.sourceUrl"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  class="ai-src-link"
+                  >{{ ct.sourceName }}</a
+                >
+                <span v-else>{{ ct.sourceName }}</span>
+                <span v-if="ct.dataReliability"
+                  >· {{ ct.dataReliability }}</span
+                >
               </li>
-            </ul>
-
-            <!-- 참고 원문(verbatim 패스스루 — LLM 미경유, 원문 무변경 표시. v3.8: 기관명/링크/라이선스 보강,
-                 구 저장분은 필드 없음 → v-if 생략 방어) -->
-            <div v-if="verbatimRefs.length" class="ai-verbatim">
-              <button
-                type="button"
-                class="ai-verbatim__toggle"
-                :aria-expanded="showVerbatim"
-                @click="fnToggleVerbatim"
-              >
-                <span class="ai-verbatim__toggle-arrow">{{ showVerbatim ? "▼" : "▶" }}</span>
-                참고 원문 (출처 원문 그대로)
-              </button>
-              <div v-if="showVerbatim" class="ai-verbatim__body">
-                <p class="ai-verbatim__notice">
-                  라이선스에 따라 원문 그대로 표시됩니다(변경 불가).
-                </p>
-                <ul class="ai-verbatim__list">
-                  <li
-                    v-for="(vr, i) in verbatimRefs"
-                    :key="'vr-' + i"
-                    class="ai-verbatim__item"
-                  >
-                    <div class="ai-verbatim__source">
-                      <span v-if="vr.sourceOrg" class="ai-verbatim__org">{{
-                        vr.sourceOrg
-                      }}</span>
-                      <a
-                        v-if="vr.sourceUrl"
-                        :href="vr.sourceUrl"
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        class="ai-verbatim__source-name ai-src-link"
-                      >{{ vr.sourceName }}</a>
-                      <span v-else class="ai-verbatim__source-name">{{ vr.sourceName }}</span>
-                      <span v-if="vr.dataReliability" class="ai-verbatim__badge">{{
-                        vr.dataReliability
-                      }}</span>
-                      <span v-if="vr.licenseType" class="ai-verbatim__license">{{
-                        vr.licenseType
-                      }}</span>
-                    </div>
-                    <div v-if="vr.content" class="ai-verbatim__field">
-                      <span class="ai-verbatim__field-label">재해개요</span>
-                      <span class="ai-verbatim__field-value">{{ vr.content }}</span>
-                    </div>
-                    <div v-if="vr.hazardText" class="ai-verbatim__field">
-                      <span class="ai-verbatim__field-label">유해요인</span>
-                      <span class="ai-verbatim__field-value">{{ vr.hazardText }}</span>
-                    </div>
-                    <div v-if="vr.measureText" class="ai-verbatim__field">
-                      <span class="ai-verbatim__field-label">감소대책</span>
-                      <span class="ai-verbatim__field-value">{{ vr.measureText }}</span>
-                    </div>
-                  </li>
-                </ul>
-              </div>
-            </div>
-
-            <!-- 근거 출처(v3.8 보강: 마커 · 기관명 · 자료명(링크) · 신뢰등급 — 구 저장분은 v-if 생략) -->
-            <div v-if="citations.length" class="ai-result__cites">
-              <div class="ai-result__col-title">근거 출처</div>
-              <ol class="ai-cite-list">
-                <li v-for="(ct, i) in citations" :key="'ct-' + i" class="ai-cite-list__item">
-                  <span class="ai-cite-list__marker">{{ ct.marker }}</span>
-                  <span v-if="ct.sourceOrg">{{ ct.sourceOrg }} ·</span>
-                  <a
-                    v-if="ct.sourceUrl"
-                    :href="ct.sourceUrl"
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    class="ai-src-link"
-                  >{{ ct.sourceName }}</a>
-                  <span v-else>{{ ct.sourceName }}</span>
-                  <span v-if="ct.dataReliability">· {{ ct.dataReliability }}</span>
-                </li>
-              </ol>
-            </div>
-            <p v-if="abstained" class="ai-panel__note">
-              확정된 근거 기반 결과가 없어 일반 지식 기반 참고로 제시합니다(각주 없음).
-            </p>
-            <p v-if="disclaimer" class="ai-panel__disclaimer">{{ disclaimer }}</p>
+            </ol>
           </div>
-        </section>
-      </div>
-
-      <!-- 푸터 (v3.7: 도출 단계 제거 — 도출 버튼을 푸터로 이동, 결과 단계에서는 재도출 역할) -->
-      <div class="ai-panel__footer">
-        <div class="ai-panel__footer-left"></div>
-        <div class="ai-panel__footer-right">
-          <button type="button" class="btn btn-cancel" :disabled="aiBusy" @click="fnClose">
-            닫기
-          </button>
-          <button type="button" class="btn btn-save" :disabled="aiBusy" @click="fnDerive">
-            AI 유해요인/개선안 도출
-          </button>
-          <!-- 저장: 이번 범위에서는 표시만(실제 데이터 세팅은 후속 요청) -->
-          <button
-            v-if="step === 'result'"
-            type="button"
-            class="btn btn-save"
-            :disabled="aiBusy"
-            @click="fnSaveSelection"
-          >
-            저장
-          </button>
+          <p v-if="abstained" class="ai-panel__note">
+            확정된 근거 기반 결과가 없어 일반 지식 기반 참고로 제시합니다(각주
+            없음).
+          </p>
+          <p v-if="disclaimer" class="ai-panel__disclaimer">{{ disclaimer }}</p>
         </div>
+      </section>
+    </div>
+
+    <!-- 푸터 (v3.7: 도출 단계 제거 — 도출 버튼을 푸터로 이동, 결과 단계에서는 재도출 역할) -->
+    <div class="ai-panel__footer">
+      <div class="ai-panel__footer-left"></div>
+      <div class="ai-panel__footer-right">
+        <button
+          type="button"
+          class="btn btn-cancel"
+          :disabled="aiBusy"
+          @click="fnClose"
+        >
+          닫기
+        </button>
+        <button
+          type="button"
+          class="btn btn-save"
+          :disabled="aiBusy"
+          @click="fnDerive"
+        >
+          AI 유해요인/개선안 도출
+        </button>
+        <!-- 저장: 이번 범위에서는 표시만(실제 데이터 세팅은 후속 요청) -->
+        <button
+          v-if="step === 'result'"
+          type="button"
+          class="btn btn-save"
+          :disabled="aiBusy"
+          @click="fnSaveSelection"
+        >
+          저장
+        </button>
       </div>
+    </div>
   </div>
 </template>
 

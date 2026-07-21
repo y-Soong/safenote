@@ -164,63 +164,67 @@
                   :key="item.inspectItemCd"
                 >
                   <td style="text-align: center">{{ idx + 1 }}</td>
-                <td>
-                  <input type="checkbox" v-model="item.chk" :disabled="isMirror(item)" />
-                </td>
-                <td>
-                  <input
-                    id="sortIdx"
-                    v-model="item.sortIdx"
-                    :disabled="isMirror(item)"
-                    @blur="focusKill(item.sortIdx, idx)"
-                  />
-                </td>
-                <td>
-                  <input
-                    style="width: 100%"
-                    v-model="item.inspectItemSubj"
-                    :disabled="isMirror(item)"
-                  />
-                  <span v-if="isMirror(item)" class="link-badge">연동</span>
-                </td>
-                <td>
-                  <BaseSelect
-                    v-model="item.useYn"
-                    :readonly="true"
-                    name="codeDetailSrc"
-                  >
-                    <option
-                      v-for="opt in (systCodeArr['SYS003'] || []).filter(
-                        (o) => o.systValDCd != null
-                      )"
-                      :key="opt.systValDCd"
-                      :value="opt.systValDCd"
+                  <td>
+                    <input
+                      type="checkbox"
+                      v-model="item.chk"
+                      :disabled="isMirror(item)"
+                    />
+                  </td>
+                  <td>
+                    <input
+                      id="sortIdx"
+                      v-model="item.sortIdx"
+                      :disabled="isMirror(item)"
+                      @blur="focusKill(item.sortIdx, idx)"
+                    />
+                  </td>
+                  <td>
+                    <input
+                      style="width: 100%"
+                      v-model="item.inspectItemSubj"
+                      :disabled="isMirror(item)"
+                    />
+                    <span v-if="isMirror(item)" class="link-badge">연동</span>
+                  </td>
+                  <td>
+                    <BaseSelect
+                      v-model="item.useYn"
+                      :readonly="true"
+                      name="codeDetailSrc"
                     >
-                      {{ opt.systValDNm }}
-                    </option>
-                  </BaseSelect>
-                </td>
-                <td>
-                  <!-- 시행월→시행일 전환: 일 단위 캘린더 (YYYYMMDD 압축값도 CalendarSrch 가 정규화) -->
-                  <CalendarSrch
-                    :range="false"
-                    style="width: 150px"
-                    v-model="item.strDate"
-                    :disabled="isMirror(item)"
-                  />
-                </td>
-                <td style="text-align: center">
-                  <!-- 저장된 문항만 변경이력 조회 가능(신규 미저장 행은 코드 없음) -->
-                  <button
-                    v-if="item.inspectItemCd"
-                    class="btn btn-custom"
-                    style="padding: 2px 10px"
-                    @click="fnHistPopOpen(item)"
-                  >
-                    이력
-                  </button>
-                  <span v-else>-</span>
-                </td>
+                      <option
+                        v-for="opt in (systCodeArr['SYS003'] || []).filter(
+                          (o) => o.systValDCd != null
+                        )"
+                        :key="opt.systValDCd"
+                        :value="opt.systValDCd"
+                      >
+                        {{ opt.systValDNm }}
+                      </option>
+                    </BaseSelect>
+                  </td>
+                  <td>
+                    <!-- 시행월→시행일 전환: 일 단위 캘린더 (YYYYMMDD 압축값도 CalendarSrch 가 정규화) -->
+                    <CalendarSrch
+                      :range="false"
+                      style="width: 150px"
+                      v-model="item.strDate"
+                      :disabled="isMirror(item)"
+                    />
+                  </td>
+                  <td style="text-align: center">
+                    <!-- 저장된 문항만 변경이력 조회 가능(신규 미저장 행은 코드 없음) -->
+                    <button
+                      v-if="item.inspectItemCd"
+                      class="btn btn-custom"
+                      style="padding: 2px 10px"
+                      @click="fnHistPopOpen(item)"
+                    >
+                      이력
+                    </button>
+                    <span v-else>-</span>
+                  </td>
                 </tr>
               </template>
             </tbody>

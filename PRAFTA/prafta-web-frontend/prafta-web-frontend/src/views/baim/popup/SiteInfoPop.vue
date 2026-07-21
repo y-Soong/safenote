@@ -86,7 +86,11 @@
 
             <div class="form-row-max editable-form">
               <label>상세주소</label>
-              <input v-model="addr2" placeholder="상세주소" :disabled="isMirror" />
+              <input
+                v-model="addr2"
+                placeholder="상세주소"
+                :disabled="isMirror"
+              />
             </div>
 
             <div class="form-row-max">

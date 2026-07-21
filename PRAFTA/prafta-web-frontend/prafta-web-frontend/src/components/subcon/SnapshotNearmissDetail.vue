@@ -10,18 +10,49 @@
           <span class="status-badge">{{ row.reportStatusNm }}</span>
         </header>
         <dl class="nm-card__body">
-          <div><dt>장소</dt><dd>{{ row.locationDesc }}</dd></div>
-          <div><dt>공정/작업</dt><dd>{{ row.processNm || "-" }}</dd></div>
-          <div><dt>내용</dt><dd>{{ row.description }}</dd></div>
-          <div><dt>잠재 중대성</dt><dd>{{ row.potentialSeverityNm || "-" }}</dd></div>
-          <div><dt>즉시 조치</dt><dd>{{ row.immediateActionDesc || "-" }}</dd></div>
-          <div><dt>임시 조치</dt><dd>{{ row.adminTempActionDesc || "-" }}</dd></div>
-          <div><dt>원인</dt><dd>{{ row.causeDesc || "-" }}</dd></div>
-          <div><dt>재발방지</dt><dd>{{ row.preventionDesc || "-" }}</dd></div>
-          <div><dt>제보자</dt><dd>{{ row.affilCmpnyNm }} · {{ row.reporterNm || "-" }}</dd></div>
+          <div>
+            <dt>장소</dt>
+            <dd>{{ row.locationDesc }}</dd>
+          </div>
+          <div>
+            <dt>공정/작업</dt>
+            <dd>{{ row.processNm || "-" }}</dd>
+          </div>
+          <div>
+            <dt>내용</dt>
+            <dd>{{ row.description }}</dd>
+          </div>
+          <div>
+            <dt>잠재 중대성</dt>
+            <dd>{{ row.potentialSeverityNm || "-" }}</dd>
+          </div>
+          <div>
+            <dt>즉시 조치</dt>
+            <dd>{{ row.immediateActionDesc || "-" }}</dd>
+          </div>
+          <div>
+            <dt>임시 조치</dt>
+            <dd>{{ row.adminTempActionDesc || "-" }}</dd>
+          </div>
+          <div>
+            <dt>원인</dt>
+            <dd>{{ row.causeDesc || "-" }}</dd>
+          </div>
+          <div>
+            <dt>재발방지</dt>
+            <dd>{{ row.preventionDesc || "-" }}</dd>
+          </div>
+          <div>
+            <dt>제보자</dt>
+            <dd>{{ row.affilCmpnyNm }} · {{ row.reporterNm || "-" }}</dd>
+          </div>
         </dl>
         <div v-if="row.fileMgmtCd" class="nm-card__photo">
-          <img :src="fileUrl(row.fileMgmtCd)" alt="아차사고 사진" @click="fnOpenImage(row.fileMgmtCd)" />
+          <img
+            :src="fileUrl(row.fileMgmtCd)"
+            alt="아차사고 사진"
+            @click="fnOpenImage(row.fileMgmtCd)"
+          />
         </div>
       </article>
     </template>

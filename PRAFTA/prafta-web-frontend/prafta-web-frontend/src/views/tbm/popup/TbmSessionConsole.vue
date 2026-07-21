@@ -400,8 +400,7 @@ const canCancel = computed(
 
 // 교육자료/위험성평가 표시: 교육시작(IN_PROGRESS)/교육종료(COMPLETED) 상태에서 노출(6.2-(1)-2 / (3)-2)
 const showEduRefs = computed(
-  () =>
-    session.statusCd === "IN_PROGRESS" || session.statusCd === "COMPLETED"
+  () => session.statusCd === "IN_PROGRESS" || session.statusCd === "COMPLETED"
 );
 
 const remainText = computed(() => {

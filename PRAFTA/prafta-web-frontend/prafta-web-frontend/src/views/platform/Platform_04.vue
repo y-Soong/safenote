@@ -22,9 +22,18 @@
     <div class="viewSearch">
       <div>
         <label>회사</label>
-        <select v-model="srchCmpnyCd" name="combo" style="width: 200px" :disabled="!smsVerified">
+        <select
+          v-model="srchCmpnyCd"
+          name="combo"
+          style="width: 200px"
+          :disabled="!smsVerified"
+        >
           <option value="">회사 선택</option>
-          <option v-for="cmpny in cmpnyList" :key="cmpny.cmpnyCd" :value="cmpny.cmpnyCd">
+          <option
+            v-for="cmpny in cmpnyList"
+            :key="cmpny.cmpnyCd"
+            :value="cmpny.cmpnyCd"
+          >
             {{ cmpny.cmpnyNm }}
           </option>
         </select>
@@ -55,7 +64,11 @@
       </div>
       <div>
         <label>날짜</label>
-        <CalendarSrch v-model="srchDate" :disabled="!smsVerified" style="width: 140px" />
+        <CalendarSrch
+          v-model="srchDate"
+          :disabled="!smsVerified"
+          style="width: 140px"
+        />
       </div>
       <!-- 인증 잔여시간 배지 — 조회 필드에서 분리해 행 우측으로 정렬(상태 표시, 서버 10분 판정의 보조) -->
       <div v-if="smsVerified" class="p04-auth-badge-wrap">
@@ -84,15 +97,24 @@
             <span class="subtitle-text">위치정보 목록</span>
             <span v-if="gpsList.length > 0" class="p04-count">
               총 {{ gpsList.length }}건
-              <span v-if="mockedCount > 0" class="p04-mock-warn">(Mock {{ mockedCount }}건)</span>
+              <span v-if="mockedCount > 0" class="p04-mock-warn"
+                >(Mock {{ mockedCount }}건)</span
+              >
             </span>
           </div>
 
-          <div class="table-box" style="--box-h: 62vh; --box-sticky-top: 1px; --box-ox: auto">
-            <table class="data-grid w-full table-fixed text-sm text-left rtl:text-right">
+          <div
+            class="table-box"
+            style="--box-h: 62vh; --box-sticky-top: 1px; --box-ox: auto"
+          >
+            <table
+              class="data-grid w-full table-fixed text-sm text-left rtl:text-right"
+            >
               <thead>
                 <tr>
-                  <th class="event_cell" style="text-align: center; width: 4%">No</th>
+                  <th class="event_cell" style="text-align: center; width: 4%">
+                    No
+                  </th>
                   <th style="width: 10%">측정시각</th>
                   <th style="width: 14%">사용자코드</th>
                   <th style="width: 10%">GPS유형</th>
@@ -106,12 +128,16 @@
               <tbody>
                 <template v-if="listLoading">
                   <tr>
-                    <td colspan="9" class="edu-grid-empty">위치정보를 불러오는 중...</td>
+                    <td colspan="9" class="edu-grid-empty">
+                      위치정보를 불러오는 중...
+                    </td>
                   </tr>
                 </template>
                 <template v-else-if="!gpsList || gpsList.length === 0">
                   <tr>
-                    <td colspan="9" class="edu-grid-empty">수집된 위치정보가 없습니다.</td>
+                    <td colspan="9" class="edu-grid-empty">
+                      수집된 위치정보가 없습니다.
+                    </td>
                   </tr>
                 </template>
                 <template v-else>
@@ -123,20 +149,32 @@
                     @click="fnRowClick(gps, idx)"
                   >
                     <td style="text-align: center">{{ idx + 1 }}</td>
-                    <td style="text-align: center">{{ formatHms(gps.measureTime) }}</td>
+                    <td style="text-align: center">
+                      {{ formatHms(gps.measureTime) }}
+                    </td>
                     <td class="p04-mono">{{ gps.userCd }}</td>
-                    <td style="text-align: center">{{ fnGpsTypeLabel(gps.gpsInfoType) }}</td>
+                    <td style="text-align: center">
+                      {{ fnGpsTypeLabel(gps.gpsInfoType) }}
+                    </td>
                     <td>{{ gps.lat }}</td>
                     <td>{{ gps.lon }}</td>
                     <td style="text-align: right">{{ gps.accuracy ?? "-" }}</td>
                     <td style="text-align: center">
-                      <span v-if="gps.isMocked === 'Y'" class="p04-badge p04-badge--mock">Mock</span>
+                      <span
+                        v-if="gps.isMocked === 'Y'"
+                        class="p04-badge p04-badge--mock"
+                        >Mock</span
+                      >
                       <span v-else>-</span>
                     </td>
                     <td style="text-align: center">
                       <span
                         class="p04-badge"
-                        :class="gps.srcType === 'TBM' ? 'p04-badge--tbm' : 'p04-badge--attd'"
+                        :class="
+                          gps.srcType === 'TBM'
+                            ? 'p04-badge--tbm'
+                            : 'p04-badge--attd'
+                        "
                       >
                         {{ gps.srcType === "TBM" ? "TBM입실" : "근태" }}
                       </span>
@@ -153,7 +191,9 @@
           <div class="subtitle">
             <span class="subtitle-icon" aria-hidden="true">
               <svg viewBox="0 0 24 24" width="18" height="18">
-                <path d="M12 2C7.6 2 4 5.6 4 10c0 6 8 12 8 12s8-6 8-12c0-4.4-3.6-8-8-8zm0 11a3 3 0 1 1 0-6 3 3 0 0 1 0 6z" />
+                <path
+                  d="M12 2C7.6 2 4 5.6 4 10c0 6 8 12 8 12s8-6 8-12c0-4.4-3.6-8-8-8zm0 11a3 3 0 1 1 0-6 3 3 0 0 1 0 6z"
+                />
               </svg>
             </span>
             <span class="subtitle-text">지도</span>
@@ -163,16 +203,28 @@
           <div v-if="mapError" class="p04-map-empty p04-map-empty--error">
             지도를 불러오지 못했습니다.
           </div>
-          <div v-else-if="!listLoading && gpsList.length === 0" class="p04-map-empty">
+          <div
+            v-else-if="!listLoading && gpsList.length === 0"
+            class="p04-map-empty"
+          >
             조회 결과가 있으면 지도에 표시됩니다.
           </div>
           <div v-else ref="mapContainer" class="p04-map-canvas"></div>
 
           <!-- 범례 -->
           <div class="p04-map-legend">
-            <span class="p04-legend-item"><span class="p04-legend-pin p04-legend-pin--attd"></span>근태 GPS</span>
-            <span class="p04-legend-item"><span class="p04-legend-pin p04-legend-pin--tbm"></span>TBM 입실</span>
-            <span class="p04-legend-item"><span class="p04-legend-pin p04-legend-pin--site"></span>사업장 중심 · 허용반경</span>
+            <span class="p04-legend-item"
+              ><span class="p04-legend-pin p04-legend-pin--attd"></span>근태
+              GPS</span
+            >
+            <span class="p04-legend-item"
+              ><span class="p04-legend-pin p04-legend-pin--tbm"></span>TBM
+              입실</span
+            >
+            <span class="p04-legend-item"
+              ><span class="p04-legend-pin p04-legend-pin--site"></span>사업장
+              중심 · 허용반경</span
+            >
           </div>
         </div>
       </div>
@@ -243,7 +295,9 @@ const mapContainer = ref(null);
 const mapError = ref(false);
 const systCodeArr = ref({}); // SYS028 라벨 (comApi syst-info-lists — Platform_02 전례)
 
-const mockedCount = computed(() => gpsList.value.filter((g) => g.isMocked === "Y").length);
+const mockedCount = computed(
+  () => gpsList.value.filter((g) => g.isMocked === "Y").length
+);
 
 /* read-only 화면 — 조회 외 버튼 숨김 (Platform_02 fnButtonControll 전례) */
 const localButtons = ref({ ...props.buttons });
@@ -294,7 +348,9 @@ async function fnSyncSmsStatus() {
     if (response.status === 200) {
       const verified = response.data?.verified === true;
       smsVerified.value = verified;
-      authRemainSec.value = verified ? Number(response.data?.remainSec) || 0 : 0;
+      authRemainSec.value = verified
+        ? Number(response.data?.remainSec) || 0
+        : 0;
       if (verified) {
         fnStartAuthCountdown();
       } else {
@@ -344,7 +400,10 @@ async function fnGetCmpnyList() {
       cmpnyList.value = response.data?.customerList || [];
     }
   } catch (err) {
-    const msg = resolveApiErrorMessage(err, "회사 목록 조회 중 오류가 발생했습니다.");
+    const msg = resolveApiErrorMessage(
+      err,
+      "회사 목록 조회 중 오류가 발생했습니다."
+    );
     await proxy.$alert(msg);
   }
 }
@@ -454,14 +513,20 @@ async function fnSearch() {
     listLoading.value = false;
 
     // SMS 인증 만료/미통과(서버 판정) → 오버레이 재표시
-    if (err?.response?.status === 403 && err?.response?.data?.errorCode === "PLATFORM_403_003") {
+    if (
+      err?.response?.status === 403 &&
+      err?.response?.data?.errorCode === "PLATFORM_403_003"
+    ) {
       fnStopAuthCountdown();
       authRemainSec.value = 0;
       smsVerified.value = false;
       return;
     }
 
-    const msg = resolveApiErrorMessage(err, "위치정보 조회 중 오류가 발생했습니다.");
+    const msg = resolveApiErrorMessage(
+      err,
+      "위치정보 조회 중 오류가 발생했습니다."
+    );
     await proxy.$alert(msg);
   }
 }
@@ -492,7 +557,9 @@ const loadKakaoMapScript = () => {
       resolve();
       return;
     }
-    const existingScript = document.querySelector('script[src*="dapi.kakao.com"]');
+    const existingScript = document.querySelector(
+      'script[src*="dapi.kakao.com"]'
+    );
     if (existingScript) {
       const checkInterval = setInterval(() => {
         if (window.kakao && window.kakao.maps) {
@@ -565,7 +632,11 @@ async function fnRenderMap() {
   const siteLat = Number(site?.lat);
   const siteLon = Number(site?.lon);
   const hasSite =
-    site != null && site.lat != null && site.lon != null && !isNaN(siteLat) && !isNaN(siteLon);
+    site != null &&
+    site.lat != null &&
+    site.lon != null &&
+    !isNaN(siteLat) &&
+    !isNaN(siteLon);
 
   if (points.length === 0 && !hasSite) return;
 
@@ -609,7 +680,12 @@ async function fnRenderMap() {
     kakaoOverlays.push(siteMarker);
 
     const radius = Number(site.gpsRange);
-    if (site.gpsRange != null && String(site.gpsRange).trim() !== "" && !isNaN(radius) && radius > 0) {
+    if (
+      site.gpsRange != null &&
+      String(site.gpsRange).trim() !== "" &&
+      !isNaN(radius) &&
+      radius > 0
+    ) {
       const circle = new window.kakao.maps.Circle({
         center: sitePos,
         radius,
@@ -663,7 +739,9 @@ function fnCleanupMap() {
 /* SYS028 GPS유형 라벨 (TBM 수집분은 유형 없음 → '-', 미해석 시 코드 원값) */
 function fnGpsTypeLabel(gpsInfoType) {
   if (!gpsInfoType) return "-";
-  const found = (systCodeArr.value.SYS028 || []).find((c) => c.systValDCd === gpsInfoType);
+  const found = (systCodeArr.value.SYS028 || []).find(
+    (c) => c.systValDCd === gpsInfoType
+  );
   return found?.systValDNm || gpsInfoType;
 }
 

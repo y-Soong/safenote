@@ -8,11 +8,7 @@
     <div class="dash-header">
       <span class="dash-title">대시보드</span>
       <div class="dash-header__right">
-        <span
-          v-if="siteNm"
-          class="dash-header__site"
-          :title="siteNm"
-        >
+        <span v-if="siteNm" class="dash-header__site" :title="siteNm">
           {{ siteNm }}
         </span>
         <span v-else class="dash-header__site is-empty">사업장 미선택</span>

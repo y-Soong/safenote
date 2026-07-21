@@ -62,7 +62,11 @@
         <div v-if="allowedCmpnys.length > 1" class="target-row">
           <label>대상 회사</label>
           <select v-model="targetCmpnyCd" @change="fnSearch">
-            <option v-for="c in allowedCmpnys" :key="c.cmpnyCd" :value="c.cmpnyCd">
+            <option
+              v-for="c in allowedCmpnys"
+              :key="c.cmpnyCd"
+              :value="c.cmpnyCd"
+            >
               {{ c.cmpnyNm }}
             </option>
           </select>
@@ -93,7 +97,9 @@
             :disabled="isBusy"
             @keyup.enter="fnScanEnter"
           />
-          <span class="scan-hint">스캔하거나 입력한 일용직을 즉시 입실 처리합니다.</span>
+          <span class="scan-hint"
+            >스캔하거나 입력한 일용직을 즉시 입실 처리합니다.</span
+          >
         </div>
 
         <!-- 그리드 -->
@@ -304,7 +310,8 @@ const fnSearch = async () => {
   if (isForeignTarget() && keyword.value.trim().length < 2) {
     candidates.value = [];
     affilCmpnyNm.value = "";
-    emptyMsg.value = "연동 회사 직원은 이름 또는 아이디를 2자 이상 입력해 조회하세요.";
+    emptyMsg.value =
+      "연동 회사 직원은 이름 또는 아이디를 2자 이상 입력해 조회하세요.";
     return;
   }
   emptyMsg.value = "대상 사용자가 없습니다.";

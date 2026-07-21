@@ -398,11 +398,7 @@
           <div class="btn-group">
             <!-- 초기화: 신규 등록에서만 노출(입력값 비우기). 수정 모드에서는 원본 복원이 불완전
                  (추가/삭제 행·AI 분석 지정 미복원)해 오해를 부르므로 숨긴다. 되돌리려면 닫고 다시 열면 된다. -->
-            <button
-              v-if="!isEditMode"
-              class="btn btn-second"
-              @click="fnReset"
-            >
+            <button v-if="!isEditMode" class="btn btn-second" @click="fnReset">
               초기화
             </button>
             <!-- 사용 중(잠금)일 때도 저장 버튼 활성: fnSave 내부에서 AI 분석 지정만 저장하는 경로로 분기 -->

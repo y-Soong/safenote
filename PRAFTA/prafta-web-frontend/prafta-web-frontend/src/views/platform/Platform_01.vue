@@ -12,7 +12,8 @@
 
     <div class="viewBody platform-create">
       <p class="desc">
-        신규 고객사를 등록합니다. 회사코드는 자동 발급되며, 입력한 관리자 정보로 master 계정 1개가 생성됩니다.
+        신규 고객사를 등록합니다. 회사코드는 자동 발급되며, 입력한 관리자 정보로
+        master 계정 1개가 생성됩니다.
       </p>
 
       <!-- 입력 폼 -->
@@ -25,7 +26,13 @@
           <tr>
             <th>회사명 <span class="req">*</span></th>
             <td>
-              <input v-model.trim="form.cmpnyNm" type="text" maxlength="50" placeholder="회사명" :disabled="saving" />
+              <input
+                v-model.trim="form.cmpnyNm"
+                type="text"
+                maxlength="50"
+                placeholder="회사명"
+                :disabled="saving"
+              />
             </td>
           </tr>
           <tr>
@@ -57,7 +64,13 @@
           <tr>
             <th>관리자명 <span class="req">*</span></th>
             <td>
-              <input v-model.trim="form.adminNm" type="text" maxlength="50" placeholder="관리자 이름" :disabled="saving" />
+              <input
+                v-model.trim="form.adminNm"
+                type="text"
+                maxlength="50"
+                placeholder="관리자 이름"
+                :disabled="saving"
+              />
             </td>
           </tr>
           <tr>
@@ -70,7 +83,10 @@
                 placeholder="로그인에 사용할 ID (영문, 숫자, 특수문자 조합)"
                 :disabled="saving"
               />
-              <p class="hint">최초 master 계정의 로그인 ID로 사용됩니다. 회사 내에서 유일하게 입력하세요.</p>
+              <p class="hint">
+                최초 master 계정의 로그인 ID로 사용됩니다. 회사 내에서 유일하게
+                입력하세요.
+              </p>
             </td>
           </tr>
           <tr>
@@ -84,7 +100,10 @@
                 placeholder="숫자 10~11자리(하이픈 제외)"
                 :disabled="saving"
               />
-              <p class="hint">초기 비밀번호 = 이 휴대폰번호(숫자). 첫 로그인 시 SMS 본인인증 후 변경 가능합니다.</p>
+              <p class="hint">
+                초기 비밀번호 = 이 휴대폰번호(숫자). 첫 로그인 시 SMS 본인인증
+                후 변경 가능합니다.
+              </p>
             </td>
           </tr>
         </tbody>
@@ -116,7 +135,8 @@
           </tbody>
         </table>
         <p class="result-note">
-          위 정보를 고객사 관리자에게 안전하게 전달하세요. 회사코드는 추측 불가한 식별자이며, 분실 시 재확인이 어렵습니다.
+          위 정보를 고객사 관리자에게 안전하게 전달하세요. 회사코드는 추측
+          불가한 식별자이며, 분실 시 재확인이 어렵습니다.
         </p>
       </div>
     </div>
@@ -139,7 +159,8 @@ const props = defineProps({
 });
 
 const { proxy } = getCurrentInstance() || { proxy: null };
-const showAlert = (msg) => (proxy?.$alert ? proxy.$alert(msg) : Promise.resolve(window.alert(msg)));
+const showAlert = (msg) =>
+  proxy?.$alert ? proxy.$alert(msg) : Promise.resolve(window.alert(msg));
 const showConfirm = (msg) =>
   proxy?.$confirm ? proxy.$confirm(msg) : Promise.resolve(window.confirm(msg));
 
@@ -160,7 +181,13 @@ const digits = (v) => String(v || "").replace(/[^0-9]/g, "");
 
 // 클라 1차 검증(서버가 최종 검증). 형식은 서버와 동일 기준.
 function validate() {
-  if (!form.cmpnyNm || !form.bsnsLcnNo || !form.adminNm || !form.adminId || !form.adminMbl) {
+  if (
+    !form.cmpnyNm ||
+    !form.bsnsLcnNo ||
+    !form.adminNm ||
+    !form.adminId ||
+    !form.adminMbl
+  ) {
     return "필수 입력값(회사명/사업자번호/관리자명/관리자ID/관리자 휴대폰)을 모두 입력해 주세요.";
   }
   if (digits(form.bsnsLcnNo).length !== 10) {
@@ -192,7 +219,9 @@ async function fnSave() {
     return;
   }
 
-  const ok = await showConfirm(`'${form.cmpnyNm}' 고객사를 등록할까요? 회사코드와 master 계정이 생성됩니다.`);
+  const ok = await showConfirm(
+    `'${form.cmpnyNm}' 고객사를 등록할까요? 회사코드와 master 계정이 생성됩니다.`
+  );
   if (!ok) return;
 
   saving.value = true;
@@ -210,7 +239,8 @@ async function fnSave() {
     result.value = {
       cmpnyCd: data?.cmpnyCd || "",
       masterUserId: data?.masterUserId || "",
-      initialPasswordGuide: data?.initialPasswordGuide || "초기 비밀번호 = 관리자 휴대폰번호",
+      initialPasswordGuide:
+        data?.initialPasswordGuide || "초기 비밀번호 = 관리자 휴대폰번호",
     };
     // 입력 폼 초기화(중복 등록 방지)
     form.cmpnyNm = "";
@@ -221,7 +251,9 @@ async function fnSave() {
     form.adminMbl = "";
     await showAlert("고객사 등록이 완료되었습니다.");
   } catch (e) {
-    await showAlert(resolveApiErrorMessage(e, "고객사 등록 중 오류가 발생했습니다."));
+    await showAlert(
+      resolveApiErrorMessage(e, "고객사 등록 중 오류가 발생했습니다.")
+    );
   } finally {
     saving.value = false;
   }

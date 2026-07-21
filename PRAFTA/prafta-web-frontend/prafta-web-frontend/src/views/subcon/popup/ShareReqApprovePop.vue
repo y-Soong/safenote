@@ -5,8 +5,19 @@
         <div class="modal-header">
           <span>데이터 공유 승인</span>
           <button class="icon-button" @click="$emit('close')">
-            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-6 h-6">
-              <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" />
+            <svg
+              xmlns="http://www.w3.org/2000/svg"
+              fill="none"
+              viewBox="0 0 24 24"
+              stroke-width="1.5"
+              stroke="currentColor"
+              class="w-6 h-6"
+            >
+              <path
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                d="M6 18L18 6M6 6l12 12"
+              />
             </svg>
           </button>
         </div>
@@ -17,31 +28,56 @@
             <li><b>요청 회사</b> {{ info.reqCmpnyNm }}</li>
             <li><b>대상 사업장</b> {{ info.siteNm }}</li>
             <li><b>기간</b> {{ info.periodLabel }}</li>
-            <li><b>마감 근태만</b> {{ info.closedOnlyYn === "Y" ? "예" : "아니오" }}</li>
+            <li>
+              <b>마감 근태만</b>
+              {{ info.closedOnlyYn === "Y" ? "예" : "아니오" }}
+            </li>
             <li><b>제공 목적</b> {{ info.purpose }}</li>
           </ul>
 
           <!-- 마감 상태 -->
-          <div v-if="info.closedOnlyYn === 'Y' && !info.closedAll" class="gate-block">
+          <div
+            v-if="info.closedOnlyYn === 'Y' && !info.closedAll"
+            class="gate-block"
+          >
             <p class="gate-title">근태 마감이 완료되지 않았습니다.</p>
-            <p class="gate-body">미마감 월: {{ (info.unclosedYms || []).join(", ") }}</p>
+            <p class="gate-body">
+              미마감 월: {{ (info.unclosedYms || []).join(", ") }}
+            </p>
             <p class="gate-body">해당 월을 마감한 뒤 승인할 수 있습니다.</p>
           </div>
-          <div v-else-if="info.closedOnlyYn === 'N' && !info.closedAll" class="gate-warn">
-            <p class="gate-body">미마감 근태가 포함됩니다. 스냅샷에 <b>미마감 포함</b> 표식이 영구 기록됩니다.</p>
+          <div
+            v-else-if="info.closedOnlyYn === 'N' && !info.closedAll"
+            class="gate-warn"
+          >
+            <p class="gate-body">
+              미마감 근태가 포함됩니다. 스냅샷에 <b>미마감 포함</b> 표식이 영구
+              기록됩니다.
+            </p>
           </div>
 
           <!-- 릴레이 후보(연동사로부터 수신 보유 중인 자료) -->
           <div v-if="(info.relayCandidates || []).length" class="relay-box">
             <p class="relay-title">함께 제공할 연동사 수신자료 (선택)</p>
             <p class="relay-note">
-              선택한 자료는 우리 회사 소속으로 표시되어 함께 전달됩니다(하위 회사 정보는 포함되지 않습니다).
+              선택한 자료는 우리 회사 소속으로 표시되어 함께 전달됩니다(하위
+              회사 정보는 포함되지 않습니다).
             </p>
-            <label v-for="c in info.relayCandidates" :key="c.snapshotId" class="relay-item">
-              <input v-model="bundleIds" type="checkbox" :value="c.snapshotId" />
+            <label
+              v-for="c in info.relayCandidates"
+              :key="c.snapshotId"
+              class="relay-item"
+            >
+              <input
+                v-model="bundleIds"
+                type="checkbox"
+                :value="c.snapshotId"
+              />
               <span>
                 {{ c.periodLabel }} · v{{ c.version }} · {{ c.rowCnt }}건
-                <span v-if="c.unclosedIncludedYn === 'Y'" class="mini-badge">미마감 포함</span>
+                <span v-if="c.unclosedIncludedYn === 'Y'" class="mini-badge"
+                  >미마감 포함</span
+                >
               </span>
             </label>
           </div>
@@ -49,8 +85,16 @@
 
         <div class="modal-footer">
           <div class="btn-group">
-            <button class="btn btn-primary" @click="$emit('close')">닫기</button>
-            <button class="btn btn-primary" :disabled="!canApprove" @click="fnApprove">승인</button>
+            <button class="btn btn-primary" @click="$emit('close')">
+              닫기
+            </button>
+            <button
+              class="btn btn-primary"
+              :disabled="!canApprove"
+              @click="fnApprove"
+            >
+              승인
+            </button>
           </div>
         </div>
       </div>

@@ -264,7 +264,9 @@
               <td class="is-right ld-grp-legal">
                 {{ fnDays(row.legal.granted) }}
               </td>
-              <td class="is-right ld-grp-legal">{{ fnDays(row.legal.used) }}</td>
+              <td class="is-right ld-grp-legal">
+                {{ fnDays(row.legal.used) }}
+              </td>
               <td class="is-right ld-grp-legal ld-scheduled">
                 {{ fnDays(row.legal.scheduled) }}
               </td>
@@ -288,7 +290,9 @@
               <td class="is-right ld-grp-total">
                 {{ fnDays(row.total.granted) }}
               </td>
-              <td class="is-right ld-grp-total">{{ fnDays(row.total.used) }}</td>
+              <td class="is-right ld-grp-total">
+                {{ fnDays(row.total.used) }}
+              </td>
               <td class="is-right ld-grp-total ld-scheduled">
                 {{ fnDays(row.total.scheduled) }}
               </td>

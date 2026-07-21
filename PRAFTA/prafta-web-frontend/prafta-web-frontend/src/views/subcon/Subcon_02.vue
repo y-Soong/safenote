@@ -15,7 +15,9 @@
         @click="activeTab = 'received'"
       >
         받은 연동
-        <span v-if="receivedPendingCnt > 0" class="tab-badge">{{ receivedPendingCnt }}</span>
+        <span v-if="receivedPendingCnt > 0" class="tab-badge">{{
+          receivedPendingCnt
+        }}</span>
       </button>
     </div>
 
@@ -29,13 +31,20 @@
 
     <div class="viewBody">
       <div class="table-wrapper subtitle-pane">
-        <div class="table-box overflow-x-auto rounded-md border border-slate-300"
-             style="--box-h: 66vh; --box-sticky-top: 1px; --box-ox: auto">
+        <div
+          class="table-box overflow-x-auto rounded-md border border-slate-300"
+          style="--box-h: 66vh; --box-sticky-top: 1px; --box-ox: auto"
+        >
           <!-- 제공한 연동 -->
-          <table v-show="activeTab === 'sent'" class="data-grid w-full table-fixed text-sm text-left">
+          <table
+            v-show="activeTab === 'sent'"
+            class="data-grid w-full table-fixed text-sm text-left"
+          >
             <thead>
               <tr>
-                <th class="event_cell" style="text-align: center; width: 4%">No</th>
+                <th class="event_cell" style="text-align: center; width: 4%">
+                  No
+                </th>
                 <th>대상 회사코드</th>
                 <th>회사명</th>
                 <th>내 사업장</th>
@@ -44,12 +53,18 @@
                 <th>제안일시</th>
                 <th>처리일시</th>
                 <th>코멘트</th>
-                <th class="event_cell" style="text-align: center; width: 200px">관리</th>
+                <th class="event_cell" style="text-align: center; width: 200px">
+                  관리
+                </th>
               </tr>
             </thead>
             <tbody>
               <template v-if="!sentList.length">
-                <tr><td colspan="10" class="edu-grid-empty">제공한 연동이 없습니다.</td></tr>
+                <tr>
+                  <td colspan="10" class="edu-grid-empty">
+                    제공한 연동이 없습니다.
+                  </td>
+                </tr>
               </template>
               <template v-else>
                 <tr v-for="(row, idx) in sentList" :key="row.linkId">
@@ -58,10 +73,17 @@
                   <td>{{ row.otherCmpnyNm }}</td>
                   <td>{{ row.srcSiteNm }}</td>
                   <td style="text-align: center">
-                    <span class="status-badge" :class="statusClass(row.status)">{{ statusLabel(row.status) }}</span>
+                    <span
+                      class="status-badge"
+                      :class="statusClass(row.status)"
+                      >{{ statusLabel(row.status) }}</span
+                    >
                   </td>
                   <td style="text-align: center">
-                    <span class="status-badge" :class="chkptLinkClass(row.chkptLinkStatus)">
+                    <span
+                      class="status-badge"
+                      :class="chkptLinkClass(row.chkptLinkStatus)"
+                    >
                       {{ chkptLinkLabel(row.chkptLinkStatus) }}
                     </span>
                   </td>
@@ -69,22 +91,42 @@
                   <td>{{ row.processDtime }}</td>
                   <td class="comment-cell">{{ row.processComment }}</td>
                   <td style="text-align: center">
-                    <button v-if="canProcess && row.status === 'PROPOSED'" class="btn btn-sm btn-primary" @click="fnCancel(row)">취소</button>
                     <button
-                      v-if="canProcess && row.status === 'ACTIVE' && row.chkptLinkStatus !== 'ACTIVE'"
+                      v-if="canProcess && row.status === 'PROPOSED'"
+                      class="btn btn-sm btn-primary"
+                      @click="fnCancel(row)"
+                    >
+                      취소
+                    </button>
+                    <button
+                      v-if="
+                        canProcess &&
+                        row.status === 'ACTIVE' &&
+                        row.chkptLinkStatus !== 'ACTIVE'
+                      "
                       class="btn btn-sm btn-primary"
                       @click="fnOpenChkptLinkEnablePop(row)"
                     >
                       점검 연동
                     </button>
                     <button
-                      v-if="canTerminate && row.status === 'ACTIVE' && row.chkptLinkStatus === 'ACTIVE'"
+                      v-if="
+                        canTerminate &&
+                        row.status === 'ACTIVE' &&
+                        row.chkptLinkStatus === 'ACTIVE'
+                      "
                       class="btn btn-sm"
                       @click="fnOpenChkptLinkDisablePop(row)"
                     >
                       점검 해제
                     </button>
-                    <button v-if="canTerminate && row.status === 'ACTIVE'" class="btn btn-sm" @click="fnOpenTerminatePop(row)">해지</button>
+                    <button
+                      v-if="canTerminate && row.status === 'ACTIVE'"
+                      class="btn btn-sm"
+                      @click="fnOpenTerminatePop(row)"
+                    >
+                      해지
+                    </button>
                   </td>
                 </tr>
               </template>
@@ -92,10 +134,15 @@
           </table>
 
           <!-- 받은 연동 -->
-          <table v-show="activeTab === 'received'" class="data-grid w-full table-fixed text-sm text-left">
+          <table
+            v-show="activeTab === 'received'"
+            class="data-grid w-full table-fixed text-sm text-left"
+          >
             <thead>
               <tr>
-                <th class="event_cell" style="text-align: center; width: 4%">No</th>
+                <th class="event_cell" style="text-align: center; width: 4%">
+                  No
+                </th>
                 <th>제공 회사코드</th>
                 <th>회사명</th>
                 <th>제공 사업장</th>
@@ -103,12 +150,18 @@
                 <th>상태</th>
                 <th style="width: 90px">점검연동</th>
                 <th>제안일시</th>
-                <th class="event_cell" style="text-align: center; width: 200px">관리</th>
+                <th class="event_cell" style="text-align: center; width: 200px">
+                  관리
+                </th>
               </tr>
             </thead>
             <tbody>
               <template v-if="!receivedList.length">
-                <tr><td colspan="9" class="edu-grid-empty">받은 연동이 없습니다.</td></tr>
+                <tr>
+                  <td colspan="9" class="edu-grid-empty">
+                    받은 연동이 없습니다.
+                  </td>
+                </tr>
               </template>
               <template v-else>
                 <tr v-for="(row, idx) in receivedList" :key="row.linkId">
@@ -118,26 +171,55 @@
                   <td>{{ row.srcSiteNm }}</td>
                   <td>{{ row.dstSiteNm }}</td>
                   <td style="text-align: center">
-                    <span class="status-badge" :class="statusClass(row.status)">{{ statusLabel(row.status) }}</span>
+                    <span
+                      class="status-badge"
+                      :class="statusClass(row.status)"
+                      >{{ statusLabel(row.status) }}</span
+                    >
                   </td>
                   <td style="text-align: center">
-                    <span class="status-badge" :class="chkptLinkClass(row.chkptLinkStatus)">
+                    <span
+                      class="status-badge"
+                      :class="chkptLinkClass(row.chkptLinkStatus)"
+                    >
                       {{ chkptLinkLabel(row.chkptLinkStatus) }}
                     </span>
                   </td>
                   <td>{{ row.insertDate }}</td>
                   <td style="text-align: center">
-                    <button v-if="canProcess && row.status === 'PROPOSED'" class="btn btn-sm btn-primary" @click="fnAccept(row)">수락</button>
-                    <button v-if="canProcess && row.status === 'PROPOSED'" class="btn btn-sm" @click="fnOpenRejectPop(row)">거부</button>
+                    <button
+                      v-if="canProcess && row.status === 'PROPOSED'"
+                      class="btn btn-sm btn-primary"
+                      @click="fnAccept(row)"
+                    >
+                      수락
+                    </button>
+                    <button
+                      v-if="canProcess && row.status === 'PROPOSED'"
+                      class="btn btn-sm"
+                      @click="fnOpenRejectPop(row)"
+                    >
+                      거부
+                    </button>
                     <!-- 점검 연동 '실행'은 제공측 전용이라 받은 탭에는 없다. 해제는 양측 가능. -->
                     <button
-                      v-if="canTerminate && row.status === 'ACTIVE' && row.chkptLinkStatus === 'ACTIVE'"
+                      v-if="
+                        canTerminate &&
+                        row.status === 'ACTIVE' &&
+                        row.chkptLinkStatus === 'ACTIVE'
+                      "
                       class="btn btn-sm"
                       @click="fnOpenChkptLinkDisablePop(row)"
                     >
                       점검 해제
                     </button>
-                    <button v-if="canTerminate && row.status === 'ACTIVE'" class="btn btn-sm" @click="fnOpenTerminatePop(row)">해지</button>
+                    <button
+                      v-if="canTerminate && row.status === 'ACTIVE'"
+                      class="btn btn-sm"
+                      @click="fnOpenTerminatePop(row)"
+                    >
+                      해지
+                    </button>
                   </td>
                 </tr>
               </template>

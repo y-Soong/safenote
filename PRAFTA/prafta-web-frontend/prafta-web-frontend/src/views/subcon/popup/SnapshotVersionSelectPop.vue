@@ -5,8 +5,19 @@
         <div class="modal-header">
           <span>스냅샷 버전 선택</span>
           <button class="icon-button" @click="$emit('close')">
-            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-6 h-6">
-              <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" />
+            <svg
+              xmlns="http://www.w3.org/2000/svg"
+              fill="none"
+              viewBox="0 0 24 24"
+              stroke-width="1.5"
+              stroke="currentColor"
+              class="w-6 h-6"
+            >
+              <path
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                d="M6 18L18 6M6 6l12 12"
+              />
             </svg>
           </button>
         </div>
@@ -14,7 +25,8 @@
         <div class="form-container">
           <!-- 안내 — 팝업은 표시 전용(자체 API 호출 없음). 데이터는 부모 versionList prop 그대로. -->
           <p class="ver-note">
-            같은 요청 조건(출처 회사 · 사업장 · 기간 · 유형)의 버전 목록입니다. 행을 선택하면 해당 버전으로 상세가 전환됩니다.
+            같은 요청 조건(출처 회사 · 사업장 · 기간 · 유형)의 버전 목록입니다.
+            행을 선택하면 해당 버전으로 상세가 전환됩니다.
           </p>
 
           <table class="ver-grid">
@@ -39,12 +51,18 @@
                 <tr
                   v-for="row in props.versionList"
                   :key="row.snapshotId"
-                  :class="{ 'is-current': row.snapshotId === props.currentSnapshotId }"
+                  :class="{
+                    'is-current': row.snapshotId === props.currentSnapshotId,
+                  }"
                   @click="fnSelectRow(row)"
                 >
                   <td class="ta-c">
                     v{{ row.version }}
-                    <span v-if="row.snapshotId === props.currentSnapshotId" class="cur-badge">현재</span>
+                    <span
+                      v-if="row.snapshotId === props.currentSnapshotId"
+                      class="cur-badge"
+                      >현재</span
+                    >
                   </td>
                   <td>{{ periodLabel(row) }}</td>
                   <td>{{ row.reqUserNm || "-" }}</td>
@@ -52,8 +70,15 @@
                   <td>{{ row.processDtime || "-" }}</td>
                   <td class="ta-c">{{ row.rowCnt }}</td>
                   <td>
-                    <span v-if="row.unclosedIncludedYn === 'Y'" class="status-badge is-warn">미마감 포함</span>
-                    <span v-if="row.consentExcludedCnt > 0" class="status-badge is-muted">
+                    <span
+                      v-if="row.unclosedIncludedYn === 'Y'"
+                      class="status-badge is-warn"
+                      >미마감 포함</span
+                    >
+                    <span
+                      v-if="row.consentExcludedCnt > 0"
+                      class="status-badge is-muted"
+                    >
                       동의 제외 {{ row.consentExcludedCnt }}명
                     </span>
                   </td>
@@ -63,12 +88,16 @@
           </table>
 
           <!-- 승인 주체는 상대사 행위자 마스킹 정책(T1)에 따라 표시하지 않는다 — 일시만 제공. -->
-          <p class="ver-foot-note">승인 주체는 상대사 정보 보호 정책에 따라 표시하지 않습니다.</p>
+          <p class="ver-foot-note">
+            승인 주체는 상대사 정보 보호 정책에 따라 표시하지 않습니다.
+          </p>
         </div>
 
         <div class="modal-footer">
           <div class="btn-group">
-            <button class="btn btn-primary" @click="$emit('close')">닫기</button>
+            <button class="btn btn-primary" @click="$emit('close')">
+              닫기
+            </button>
           </div>
         </div>
       </div>

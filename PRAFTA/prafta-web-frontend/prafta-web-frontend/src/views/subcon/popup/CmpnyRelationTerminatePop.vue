@@ -5,24 +5,42 @@
         <div class="modal-header">
           <span>연동 해지</span>
           <button class="icon-button" @click="$emit('close')">
-            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-6 h-6">
-              <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" />
+            <svg
+              xmlns="http://www.w3.org/2000/svg"
+              fill="none"
+              viewBox="0 0 24 24"
+              stroke-width="1.5"
+              stroke="currentColor"
+              class="w-6 h-6"
+            >
+              <path
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                d="M6 18L18 6M6 6l12 12"
+              />
             </svg>
           </button>
         </div>
         <div class="form-container">
           <p class="reg-guide">
-            '{{ props.otherCmpnyNm }}' 회사와의 연동을 해지합니다. 해지 시 아래 산하 연동 건이 함께 정리됩니다.
+            '{{ props.otherCmpnyNm }}' 회사와의 연동을 해지합니다. 해지 시 아래
+            산하 연동 건이 함께 정리됩니다.
           </p>
           <!-- 산하 연동 영향 요약 (GET relation-terminate-summary) -->
           <ul v-if="impacts.length" class="impact-list">
-            <li v-for="(it, idx) in impacts" :key="idx">{{ it.label }} {{ it.count }}건</li>
+            <li v-for="(it, idx) in impacts" :key="idx">
+              {{ it.label }} {{ it.count }}건
+            </li>
           </ul>
-          <p v-else class="impact-empty">해지 시 함께 정리될 연동 건이 없습니다.</p>
+          <p v-else class="impact-empty">
+            해지 시 함께 정리될 연동 건이 없습니다.
+          </p>
         </div>
         <div class="modal-footer">
           <div class="btn-group">
-            <button class="btn btn-primary" @click="$emit('close')">취소</button>
+            <button class="btn btn-primary" @click="$emit('close')">
+              취소
+            </button>
             <button class="btn btn-primary" @click="fnTerminate">해지</button>
           </div>
         </div>

@@ -42,7 +42,8 @@
     <div class="viewBody">
       <!-- 500건 초과 절단 안내 (요청서 §3-1 LIMIT 필수) -->
       <div v-if="truncated" class="p03-truncated-banner">
-        검색 결과가 500건을 초과합니다. 상위 500건만 표시합니다. 검색 조건을 좁혀 주세요.
+        검색 결과가 500건을 초과합니다. 상위 500건만 표시합니다. 검색 조건을
+        좁혀 주세요.
       </div>
 
       <div class="table-wrapper subtitle-pane">
@@ -53,14 +54,23 @@
             </svg>
           </span>
           <span class="subtitle-text">고객사 목록</span>
-          <span class="p03-count" v-if="customerList.length > 0">{{ countLabel }}</span>
+          <span class="p03-count" v-if="customerList.length > 0">{{
+            countLabel
+          }}</span>
         </div>
 
-        <div class="table-box" style="--box-h: 68vh; --box-sticky-top: 1px; --box-ox: auto">
-          <table class="data-grid w-full table-fixed text-sm text-left rtl:text-right">
+        <div
+          class="table-box"
+          style="--box-h: 68vh; --box-sticky-top: 1px; --box-ox: auto"
+        >
+          <table
+            class="data-grid w-full table-fixed text-sm text-left rtl:text-right"
+          >
             <thead>
               <tr>
-                <th class="event_cell" style="text-align: center; width: 2%">No</th>
+                <th class="event_cell" style="text-align: center; width: 2%">
+                  No
+                </th>
                 <ThSortable
                   label="회사코드"
                   col-key="cmpnyCd"
@@ -151,17 +161,24 @@
                   @sort="onSort"
                   @update:width="onResize"
                 />
-                <th class="event_cell" style="text-align: center; width: 70px">한도변경</th>
+                <th class="event_cell" style="text-align: center; width: 70px">
+                  한도변경
+                </th>
               </tr>
             </thead>
             <tbody>
               <template v-if="!customerList || customerList.length === 0">
                 <tr>
-                  <td colspan="12" class="edu-grid-empty">등록된 고객사가 없습니다.</td>
+                  <td colspan="12" class="edu-grid-empty">
+                    등록된 고객사가 없습니다.
+                  </td>
                 </tr>
               </template>
               <template v-else>
-                <tr v-for="(customer, idx) in sortedData" :key="customer.cmpnyCd">
+                <tr
+                  v-for="(customer, idx) in sortedData"
+                  :key="customer.cmpnyCd"
+                >
                   <td style="text-align: center">{{ idx + 1 }}</td>
                   <td class="p03-mono">{{ customer.cmpnyCd }}</td>
                   <td>{{ customer.cmpnyNm }}</td>
@@ -172,16 +189,37 @@
                     style="text-align: center"
                     :class="fnContractClass(customer.contractEndDate)"
                   >
-                    {{ customer.contractEndDate ? formatYmdDot(customer.contractEndDate) : "무기한" }}
+                    {{
+                      customer.contractEndDate
+                        ? formatYmdDot(customer.contractEndDate)
+                        : "무기한"
+                    }}
                   </td>
                   <td style="text-align: center">{{ customer.useYn }}</td>
-                  <td style="text-align: right">{{ fnFormatMan(customer.usedTokens) }}</td>
                   <td style="text-align: right">
-                    {{ fnLimitLabel(customer.tokenLimit) }}<span v-if="customer.quotaCustomYn === 'N'" class="p03-default-tag">(기본)</span>
+                    {{ fnFormatMan(customer.usedTokens) }}
                   </td>
-                  <td style="text-align: center" :class="fnUsageRateClass(customer)">{{ fnUsageRateLabel(customer) }}</td>
+                  <td style="text-align: right">
+                    {{ fnLimitLabel(customer.tokenLimit)
+                    }}<span
+                      v-if="customer.quotaCustomYn === 'N'"
+                      class="p03-default-tag"
+                      >(기본)</span
+                    >
+                  </td>
+                  <td
+                    style="text-align: center"
+                    :class="fnUsageRateClass(customer)"
+                  >
+                    {{ fnUsageRateLabel(customer) }}
+                  </td>
                   <td style="text-align: center">
-                    <button class="btn btn-primary p03-quota-btn" @click="fnOpenQuotaPop(customer)">변경</button>
+                    <button
+                      class="btn btn-primary p03-quota-btn"
+                      @click="fnOpenQuotaPop(customer)"
+                    >
+                      변경
+                    </button>
                   </td>
                 </tr>
               </template>
@@ -205,11 +243,21 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted, getCurrentInstance, defineOptions, defineProps } from "vue";
+import {
+  ref,
+  computed,
+  onMounted,
+  getCurrentInstance,
+  defineOptions,
+  defineProps,
+} from "vue";
 import ViewHeader from "@/components/common/ViewHeader.vue";
 import BaseSelect from "@/components/common/BaseSelect.vue";
 import ThSortable from "@/components/common/ThSortable.vue";
-import { useTableSort, useColumnResize } from "@/composables/useTableFeatures.js";
+import {
+  useTableSort,
+  useColumnResize,
+} from "@/composables/useTableFeatures.js";
 import { formatYmdDot } from "@/utils/dateFormat";
 import axios from "@/api/axios";
 import { resolveApiErrorMessage } from "@/utils/apiError";
@@ -305,7 +353,9 @@ function fnContractClass(contractEndDate) {
   if (end < today) return "is-expired";
 
   // 오늘 + 30일 (월말 이월은 Date 생성자가 처리)
-  const limit = fnToYmd(new Date(now.getFullYear(), now.getMonth(), now.getDate() + 30));
+  const limit = fnToYmd(
+    new Date(now.getFullYear(), now.getMonth(), now.getDate() + 30)
+  );
   if (end <= limit) return "is-expiring";
   return "";
 }

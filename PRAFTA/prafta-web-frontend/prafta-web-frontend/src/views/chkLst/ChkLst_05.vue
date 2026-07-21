@@ -20,7 +20,11 @@
           :disabled="siteDisabled"
           @blur="focusKill"
         />
-        <button class="search-btn" :disabled="siteDisabled" @click="fnSiteSearchPopOpen">
+        <button
+          class="search-btn"
+          :disabled="siteDisabled"
+          @click="fnSiteSearchPopOpen"
+        >
           <img class="search_icon" :src="search_icon" alt="검색" />
         </button>
         <input
@@ -39,7 +43,9 @@
         <select v-model="chkLstType" name="combo" @change="fnChkLstTypeChange">
           <option value="">전체</option>
           <option
-            v-for="opt in (baseCodeArr['COM001'] || []).filter((o) => o.baimValDCd != null)"
+            v-for="opt in (baseCodeArr['COM001'] || []).filter(
+              (o) => o.baimValDCd != null
+            )"
             :key="opt.baimValDCd"
             :value="opt.baimValDCd"
           >
@@ -59,7 +65,11 @@
           @input="onChkptNmInput"
           @blur="onChkptNmBlur"
         />
-        <button class="search-btn" :disabled="targetDisabled" @click="fnChkptTargetPopOpen">
+        <button
+          class="search-btn"
+          :disabled="targetDisabled"
+          @click="fnChkptTargetPopOpen"
+        >
           <img class="search_icon" :src="search_icon" alt="검색" />
         </button>
       </div>
@@ -113,14 +123,18 @@
                 <th style="width: 14%">시각</th>
                 <th style="width: 16%">수행자(ID)</th>
                 <th style="width: 14%">회사</th>
-                <th style="width: 10%">{{ activeTab === 'answer' ? '점검결과' : '조치내용' }}</th>
+                <th style="width: 10%">
+                  {{ activeTab === "answer" ? "점검결과" : "조치내용" }}
+                </th>
                 <th style="width: 8%">사진</th>
                 <th style="width: 12%">변경유형</th>
               </tr>
             </thead>
             <tbody>
               <tr v-if="!groupedList || groupedList.length === 0">
-                <td colspan="6" class="edu-grid-empty">조회된 이력이 없습니다.</td>
+                <td colspan="6" class="edu-grid-empty">
+                  조회된 이력이 없습니다.
+                </td>
               </tr>
               <template
                 v-for="(group, gi) in groupedList"
@@ -136,25 +150,39 @@
                     <span class="group-sep">·</span>
                     <span class="group-item">{{ group.inspectItemSubj }}</span>
                     <span class="group-sep">·</span>
-                    <span class="group-date">{{ formatYmdDot(group.workDate) }}</span>
+                    <span class="group-date">{{
+                      formatYmdDot(group.workDate)
+                    }}</span>
                   </td>
                 </tr>
                 <!-- 타임라인 행(오름차순) -->
                 <tr v-for="(row, ri) in group.rows" :key="gi + '_' + ri">
                   <td>{{ row.chgDtime }}</td>
-                  <td>{{ row.performUserNm || '-' }}<span v-if="row.performUserCd" class="perform-id">({{ row.performUserCd }})</span></td>
-                  <td>{{ row.performCmpnyNm || '-' }}</td>
+                  <td>
+                    {{ row.performUserNm || "-"
+                    }}<span v-if="row.performUserCd" class="perform-id"
+                      >({{ row.performUserCd }})</span
+                    >
+                  </td>
+                  <td>{{ row.performCmpnyNm || "-" }}</td>
                   <td style="text-align: center">
                     <template v-if="activeTab === 'answer'">
                       <span
                         class="answer-badge"
-                        :class="row.inspectAnswerType === 'N' ? 'is-bad' : 'is-ok'"
+                        :class="
+                          row.inspectAnswerType === 'N' ? 'is-bad' : 'is-ok'
+                        "
                       >
-                        {{ row.inspectAnswerType === 'N' ? '불량' : '양호' }}
+                        {{ row.inspectAnswerType === "N" ? "불량" : "양호" }}
                       </span>
                     </template>
                     <template v-else>
-                      <button class="btn btn-custom" @click="fnDetailPopOpen(group, row)">상세</button>
+                      <button
+                        class="btn btn-custom"
+                        @click="fnDetailPopOpen(group, row)"
+                      >
+                        상세
+                      </button>
                     </template>
                   </td>
                   <td style="text-align: center">

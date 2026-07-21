@@ -163,13 +163,25 @@
         <!-- 푸터 -->
         <div class="modal-footer">
           <div class="btn-group">
-            <button class="btn btn-second" :disabled="aiBusy" @click="$emit('close')">
+            <button
+              class="btn btn-second"
+              :disabled="aiBusy"
+              @click="$emit('close')"
+            >
               닫기
             </button>
-            <button class="btn btn-second" :disabled="aiBusy" @click="fnReanalyze">
+            <button
+              class="btn btn-second"
+              :disabled="aiBusy"
+              @click="fnReanalyze"
+            >
               재분석
             </button>
-            <button class="btn btn-primary" :disabled="aiBusy" @click="fnConfirm">
+            <button
+              class="btn btn-primary"
+              :disabled="aiBusy"
+              @click="fnConfirm"
+            >
               확정
             </button>
           </div>

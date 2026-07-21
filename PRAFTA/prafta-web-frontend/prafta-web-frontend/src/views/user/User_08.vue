@@ -39,16 +39,28 @@
       <div class="viewSearch">
         <div>
           <label>사업장</label>
-          <select v-model="entrySiteCd" class="w-select" @change="fnSearchEntry">
+          <select
+            v-model="entrySiteCd"
+            class="w-select"
+            @change="fnSearchEntry"
+          >
             <option value="">전체</option>
-            <option v-for="site in siteList" :key="site.siteCd" :value="site.siteCd">
+            <option
+              v-for="site in siteList"
+              :key="site.siteCd"
+              :value="site.siteCd"
+            >
               {{ site.siteNm }}
             </option>
           </select>
         </div>
         <div>
           <label>상태</label>
-          <select v-model="entryStatus" class="w-select-sm" @change="fnSearchEntry">
+          <select
+            v-model="entryStatus"
+            class="w-select-sm"
+            @change="fnSearchEntry"
+          >
             <option value="">전체</option>
             <option value="01">대기</option>
             <option value="02">승인</option>
@@ -59,7 +71,11 @@
         </div>
         <div>
           <label>유형</label>
-          <select v-model="entryType" class="w-select-sm" @change="fnSearchEntry">
+          <select
+            v-model="entryType"
+            class="w-select-sm"
+            @change="fnSearchEntry"
+          >
             <option value="">전체</option>
             <option value="01">신규가입</option>
             <option value="02">재입장</option>
@@ -96,10 +112,15 @@
             class="table-box overflow-x-auto rounded-md border border-slate-300"
             style="--box-h: 62vh; --box-sticky-top: 1px; --box-ox: auto"
           >
-            <table class="data-grid w-full table-fixed text-sm text-left rtl:text-right">
+            <table
+              class="data-grid w-full table-fixed text-sm text-left rtl:text-right"
+            >
               <thead>
                 <tr>
-                  <th class="event_cell" style="text-align: center; width: 36px">
+                  <th
+                    class="event_cell"
+                    style="text-align: center; width: 36px"
+                  >
                     <input
                       type="checkbox"
                       :checked="allChecked"
@@ -107,7 +128,9 @@
                       @change="fnToggleAll"
                     />
                   </th>
-                  <th class="event_cell" style="text-align: center; width: 4%">No</th>
+                  <th class="event_cell" style="text-align: center; width: 4%">
+                    No
+                  </th>
                   <ThSortable
                     label="이름"
                     col-key="userNm"
@@ -162,7 +185,12 @@
                     @sort="onEntrySort"
                     @update:width="onEntryResize"
                   />
-                  <th class="event_cell" style="text-align: center; width: 120px">관리</th>
+                  <th
+                    class="event_cell"
+                    style="text-align: center; width: 120px"
+                  >
+                    관리
+                  </th>
                 </tr>
               </thead>
               <tbody>
@@ -198,11 +226,18 @@
                     </td>
                     <td>{{ row.reqDtime }}</td>
                     <td style="text-align: center">
-                      <span class="status-badge" :class="statusClass(row.reqStatus)">
+                      <span
+                        class="status-badge"
+                        :class="statusClass(row.reqStatus)"
+                      >
                         {{ statusLabel(row.reqStatus) }}
                       </span>
                     </td>
-                    <td>{{ row.procNm ? `${row.procNm} / ${row.procDtime}` : "-" }}</td>
+                    <td>
+                      {{
+                        row.procNm ? `${row.procNm} / ${row.procDtime}` : "-"
+                      }}
+                    </td>
                     <td style="text-align: center">
                       <template v-if="row.reqStatus === '01'">
                         <button
@@ -230,7 +265,11 @@
       </div>
 
       <!-- 거부 사유 인라인 패널 (D10: 사유 기록 + 블랙리스트 바로가기) -->
-      <div v-if="rejectTarget" class="reject-overlay" @click.self="fnCloseReject">
+      <div
+        v-if="rejectTarget"
+        class="reject-overlay"
+        @click.self="fnCloseReject"
+      >
         <div class="reject-panel">
           <p class="reject-panel__title">입장 거부</p>
           <p class="reject-panel__who">
@@ -245,7 +284,9 @@
             placeholder="거부 사유 (필수, 최대 200자 — 내부 기록용, 근로자에게 노출되지 않습니다)"
           ></textarea>
           <div class="reject-panel__btns">
-            <button class="btn btn-sm btn-primary" @click="fnCloseReject">취소</button>
+            <button class="btn btn-sm btn-primary" @click="fnCloseReject">
+              취소
+            </button>
             <button
               class="btn btn-sm btn-primary btn-reject"
               :disabled="rejectReason.length === 0 || processing"
@@ -265,7 +306,11 @@
           <label>사업장</label>
           <select v-model="signSiteCd" class="w-select" @change="fnSearchSign">
             <option value="">전체</option>
-            <option v-for="site in siteList" :key="site.siteCd" :value="site.siteCd">
+            <option
+              v-for="site in siteList"
+              :key="site.siteCd"
+              :value="site.siteCd"
+            >
               {{ site.siteNm }}
             </option>
           </select>
@@ -300,7 +345,8 @@
               <span class="subtitle-text">계약서 서명 이력</span>
             </div>
             <span class="retain-note">
-              서명본은 계정 만료·탈퇴 후에도 3년간 보존·조회됩니다 (근로기준법 §42)
+              서명본은 계정 만료·탈퇴 후에도 3년간 보존·조회됩니다 (근로기준법
+              §42)
             </span>
           </div>
 
@@ -308,10 +354,14 @@
             class="table-box overflow-x-auto rounded-md border border-slate-300"
             style="--box-h: 62vh; --box-sticky-top: 1px; --box-ox: auto"
           >
-            <table class="data-grid w-full table-fixed text-sm text-left rtl:text-right">
+            <table
+              class="data-grid w-full table-fixed text-sm text-left rtl:text-right"
+            >
               <thead>
                 <tr>
-                  <th class="event_cell" style="text-align: center; width: 4%">No</th>
+                  <th class="event_cell" style="text-align: center; width: 4%">
+                    No
+                  </th>
                   <ThSortable
                     label="이름"
                     col-key="userNm"
@@ -357,7 +407,12 @@
                     @sort="onSignSort"
                     @update:width="onSignResize"
                   />
-                  <th class="event_cell" style="text-align: center; width: 130px">관리</th>
+                  <th
+                    class="event_cell"
+                    style="text-align: center; width: 130px"
+                  >
+                    관리
+                  </th>
                 </tr>
               </thead>
               <tbody>
@@ -380,10 +435,16 @@
                       {{ shortHash(row.mergedSha256) }}
                     </td>
                     <td style="text-align: center">
-                      <button class="btn btn-sm btn-primary" @click="fnViewSign(row)">
+                      <button
+                        class="btn btn-sm btn-primary"
+                        @click="fnViewSign(row)"
+                      >
                         열람
                       </button>
-                      <button class="btn btn-sm btn-primary" @click="fnDownloadSign(row)">
+                      <button
+                        class="btn btn-sm btn-primary"
+                        @click="fnDownloadSign(row)"
+                      >
                         다운로드
                       </button>
                     </td>

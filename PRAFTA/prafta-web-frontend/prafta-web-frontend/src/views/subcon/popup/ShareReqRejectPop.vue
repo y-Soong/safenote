@@ -5,8 +5,19 @@
         <div class="modal-header">
           <span>데이터 공유 요청 거부</span>
           <button class="icon-button" @click="$emit('close')">
-            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-6 h-6">
-              <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" />
+            <svg
+              xmlns="http://www.w3.org/2000/svg"
+              fill="none"
+              viewBox="0 0 24 24"
+              stroke-width="1.5"
+              stroke="currentColor"
+              class="w-6 h-6"
+            >
+              <path
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                d="M6 18L18 6M6 6l12 12"
+              />
             </svg>
           </button>
         </div>
@@ -24,8 +35,16 @@
         </div>
         <div class="modal-footer">
           <div class="btn-group">
-            <button class="btn btn-primary" @click="$emit('close')">취소</button>
-            <button class="btn btn-primary" :disabled="!comment" @click="fnReject">거부</button>
+            <button class="btn btn-primary" @click="$emit('close')">
+              취소
+            </button>
+            <button
+              class="btn btn-primary"
+              :disabled="!comment"
+              @click="fnReject"
+            >
+              거부
+            </button>
           </div>
         </div>
       </div>

@@ -113,10 +113,12 @@
 
                 <!-- R1/R3 안내 문구(수정모드) — 반영 재료(D11) + 분량 오차(D12) -->
                 <span v-if="isEditMode" class="ai-hint">
-                  ⓘ 확정된 교육자료와 연계된 위험성평가가 교육안 생성에 반영됩니다.
+                  ⓘ 확정된 교육자료와 연계된 위험성평가가 교육안 생성에
+                  반영됩니다.
                 </span>
                 <span v-if="isEditMode" class="ai-hint">
-                  ⓘ 800~5000자. 실제 생성 분량은 목표치에서 다소 오차가 있을 수 있습니다.
+                  ⓘ 800~5000자. 실제 생성 분량은 목표치에서 다소 오차가 있을 수
+                  있습니다.
                 </span>
 
                 <!-- 미확정 AI 분석 항목 안내 블록(있을 때만) — 생성은 차단하지 않고 해당 항목만 제외됨 -->
@@ -125,16 +127,16 @@
                   class="ai-unconfirmed"
                 >
                   <p class="ai-unconfirmed-msg">
-                    AI 분석이 확정되지 않은 아래 자료는 교육안 생성에서 제외됩니다.
-                    포함하려면 [AI 분석 관리] 탭에서 확정한 뒤 [새로고침]을 눌러 주세요.
+                    AI 분석이 확정되지 않은 아래 자료는 교육안 생성에서
+                    제외됩니다. 포함하려면 [AI 분석 관리] 탭에서 확정한 뒤
+                    [새로고침]을 눌러 주세요.
                   </p>
                   <ul class="ai-unconfirmed-list">
-                    <li
-                      v-for="item in unconfirmedItems"
-                      :key="item.mtrlItemCd"
-                    >
+                    <li v-for="item in unconfirmedItems" :key="item.mtrlItemCd">
                       {{ item.mtrlTitle }} /
-                      {{ item.mtrlDesc || "(설명 없음)" }} ({{ item.statusLabel }})
+                      {{ item.mtrlDesc || "(설명 없음)" }} ({{
+                        item.statusLabel
+                      }})
                     </li>
                   </ul>
                 </div>
@@ -152,7 +154,8 @@
                 <!-- RC-3: 생성 결과 안내(제외항목/품질저하) -->
                 <p v-if="aiNotice" class="ai-notice">{{ aiNotice }}</p>
                 <p v-if="aiQualityWarn" class="ai-notice-warn">
-                  ⚠ 관리자 교육내용 미입력 — 확정 자료만으로 추정 생성되었습니다.
+                  ⚠ 관리자 교육내용 미입력 — 확정 자료만으로 추정
+                  생성되었습니다.
                 </p>
               </div>
             </div>

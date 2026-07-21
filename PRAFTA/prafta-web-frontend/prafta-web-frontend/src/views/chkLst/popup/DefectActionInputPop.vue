@@ -54,7 +54,9 @@
               alt="기존 조치 사진"
               class="action-photo"
             />
-            <span v-else class="action-photo-empty">첨부된 조치 사진이 없습니다.</span>
+            <span v-else class="action-photo-empty"
+              >첨부된 조치 사진이 없습니다.</span
+            >
 
             <input
               ref="fileInputRef"
@@ -81,7 +83,8 @@
               </button>
             </div>
             <p class="hint">
-              이미지 파일만 첨부할 수 있습니다. 새 사진을 첨부하지 않고 저장하면 기존 조치 사진은 제거됩니다.
+              이미지 파일만 첨부할 수 있습니다. 새 사진을 첨부하지 않고 저장하면
+              기존 조치 사진은 제거됩니다.
             </p>
           </div>
         </div>

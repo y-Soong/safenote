@@ -34,7 +34,12 @@ WHERE CMPNY_CD = 'IqzQKPKMpu75RsCoDN6m';
 --   사용자: 20260700001(NEWCO3ADMIN/master), 20260700002(NC3USER/일반)
 --   패턴: 대부분 정상 / 07-07 U2 지각성 출근(0915) / 07-09 U2 이른 퇴근(1650)
 --   ※ 근무계획(스케줄) 미시드 — 스냅샷에서 계획시간은 공란, 판정은 NORMAL 로 표시됨
+--   ※ 멱등 실행: 기존 시드 행을 먼저 제거하므로 재실행해도 1062(PK 중복)가 나지 않는다
 -- ------------------------------------------------------------
+DELETE FROM TB_USER_ATTD_MGMT
+WHERE CMPNY_CD = 'IqzQKPKMpu75RsCoDN6m'
+  AND INSERT_NO = 'RELAY_SEED';
+
 INSERT INTO TB_USER_ATTD_MGMT (
       ATTD_ID
     , CMPNY_CD

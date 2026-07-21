@@ -27,7 +27,11 @@
               stroke="currentColor"
               class="w-6 h-6"
             >
-              <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" />
+              <path
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                d="M6 18L18 6M6 6l12 12"
+              />
             </svg>
           </button>
         </div>
@@ -75,7 +79,9 @@
               <tbody>
                 <template v-if="!sortedData || sortedData.length === 0">
                   <tr>
-                    <td colspan="2" class="edu-grid-empty">등록된 세부 항목이 없습니다.</td>
+                    <td colspan="2" class="edu-grid-empty">
+                      등록된 세부 항목이 없습니다.
+                    </td>
                   </tr>
                 </template>
                 <template v-else>
@@ -111,7 +117,10 @@ import { useCenteredDraggable } from "@/composables/useCenteredDraggable";
 import axios from "@/api/axios";
 import { resolveApiErrorMessage } from "@/utils/apiError";
 import ThSortable from "@/components/common/ThSortable.vue";
-import { useTableSort, useColumnResize } from "@/composables/useTableFeatures.js";
+import {
+  useTableSort,
+  useColumnResize,
+} from "@/composables/useTableFeatures.js";
 
 const props = defineProps({
   // 대상 회사코드(Platform_04 에서 선택한 회사). 없으면 조회 불가.

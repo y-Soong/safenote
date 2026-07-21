@@ -5,24 +5,44 @@
         <div class="modal-header">
           <span>사업장 연동 해지</span>
           <button class="icon-button" @click="$emit('close')">
-            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-6 h-6">
-              <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" />
+            <svg
+              xmlns="http://www.w3.org/2000/svg"
+              fill="none"
+              viewBox="0 0 24 24"
+              stroke-width="1.5"
+              stroke="currentColor"
+              class="w-6 h-6"
+            >
+              <path
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                d="M6 18L18 6M6 6l12 12"
+              />
             </svg>
           </button>
         </div>
         <div class="form-container">
-          <p class="terminate-warn">
-            '{{ props.siteNm }}' 연동을 해지합니다.
-          </p>
+          <p class="terminate-warn">'{{ props.siteNm }}' 연동을 해지합니다.</p>
           <ul class="terminate-guide">
-            <li>해지 즉시 수신 회사의 <b>일반(독립) 사업장</b>으로 전환됩니다. 데이터 이동이나 근로자 회수는 없습니다.</li>
-            <li>수신 회사가 다른 회사에 재연동한 하위 연동은 <b>계속 유지</b>되며, 이후에는 수신 회사의 수정이 하위로 반영됩니다.</li>
-            <li>같은 상대와 다시 연동하면 <b>새 미러 사업장이 생성</b>됩니다. 기존 독립 사업장의 정리는 수신 회사 몫입니다.</li>
+            <li>
+              해지 즉시 수신 회사의 <b>일반(독립) 사업장</b>으로 전환됩니다.
+              데이터 이동이나 근로자 회수는 없습니다.
+            </li>
+            <li>
+              수신 회사가 다른 회사에 재연동한 하위 연동은 <b>계속 유지</b>되며,
+              이후에는 수신 회사의 수정이 하위로 반영됩니다.
+            </li>
+            <li>
+              같은 상대와 다시 연동하면 <b>새 미러 사업장이 생성</b>됩니다. 기존
+              독립 사업장의 정리는 수신 회사 몫입니다.
+            </li>
           </ul>
         </div>
         <div class="modal-footer">
           <div class="btn-group">
-            <button class="btn btn-primary" @click="$emit('close')">취소</button>
+            <button class="btn btn-primary" @click="$emit('close')">
+              취소
+            </button>
             <button class="btn btn-primary" @click="fnTerminate">해지</button>
           </div>
         </div>

@@ -619,7 +619,9 @@
                         + {{ i + 1 }}구간 초과근무 추가
                       </button>
                       <div
-                        v-if="!isDailyWorker && isSegmentFromDb(i) && hasAnyOt(i)"
+                        v-if="
+                          !isDailyWorker && isSegmentFromDb(i) && hasAnyOt(i)
+                        "
                         class="ot-actions"
                       >
                         <button
@@ -1678,9 +1680,7 @@ const confirmedLeaveCards = computed(() =>
       key: `cl-${i}`,
       leaveNm: lv.leaveNm || "연차사용",
       unitLabel,
-      timeRange: isTimed
-        ? hourlyRangeLabel(lv.startTime, lv.endTime)
-        : null,
+      timeRange: isTimed ? hourlyRangeLabel(lv.startTime, lv.endTime) : null,
       leaveDaysLabel: chargeDaysLabel(lv.leaveDays),
     };
   })

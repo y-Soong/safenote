@@ -5,8 +5,19 @@
         <div class="modal-header">
           <span>데이터 공유 요청</span>
           <button class="icon-button" @click="$emit('close')">
-            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-6 h-6">
-              <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" />
+            <svg
+              xmlns="http://www.w3.org/2000/svg"
+              fill="none"
+              viewBox="0 0 24 24"
+              stroke-width="1.5"
+              stroke="currentColor"
+              class="w-6 h-6"
+            >
+              <path
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                d="M6 18L18 6M6 6l12 12"
+              />
             </svg>
           </button>
         </div>
@@ -14,14 +25,19 @@
         <div class="form-container">
           <p class="reg-guide">
             연동 중인 상대 회사에 사업장 데이터 제공을 요청합니다.<br />
-            상대 회사가 요청을 승인하면 승인 시점의 자료가 복제되며 읽기 전용으로 조회할 수 있습니다.
+            상대 회사가 요청을 승인하면 승인 시점의 자료가 복제되며 읽기
+            전용으로 조회할 수 있습니다.
           </p>
 
           <div class="form-row-max">
             <label>제공 회사</label>
             <select v-model="prvCmpnyCd" @change="fnLoadSites">
               <option value="">선택하세요</option>
-              <option v-for="c in cmpnyList" :key="c.cmpnyCd" :value="c.cmpnyCd">
+              <option
+                v-for="c in cmpnyList"
+                :key="c.cmpnyCd"
+                :value="c.cmpnyCd"
+              >
                 {{ c.cmpnyNm }} ({{ c.cmpnyCd }})
               </option>
             </select>
@@ -31,11 +47,14 @@
             <label>대상 사업장</label>
             <select v-model="siteCd" :disabled="!prvCmpnyCd">
               <option value="">선택하세요</option>
-              <option v-for="s in siteList" :key="s.siteCd" :value="s.siteCd">{{ s.siteNm }}</option>
+              <option v-for="s in siteList" :key="s.siteCd" :value="s.siteCd">
+                {{ s.siteNm }}
+              </option>
             </select>
           </div>
           <p v-if="prvCmpnyCd && !siteList.length" class="create-note">
-            선택한 회사와 연동된 사업장이 없습니다. 사업장 연동 관리에서 먼저 연동하세요.
+            선택한 회사와 연동된 사업장이 없습니다. 사업장 연동 관리에서 먼저
+            연동하세요.
           </p>
 
           <div class="form-row-max">
@@ -49,9 +68,18 @@
 
           <div class="form-row-max">
             <label>대상 기간</label>
-            <CalendarSrch v-model="periodStr" class="period-date" :max-date="periodEnd || todayStr" />
+            <CalendarSrch
+              v-model="periodStr"
+              class="period-date"
+              :max-date="periodEnd || todayStr"
+            />
             <span class="range-sep">~</span>
-            <CalendarSrch v-model="periodEnd" class="period-date" :min-date="periodStr" :max-date="todayStr" />
+            <CalendarSrch
+              v-model="periodEnd"
+              class="period-date"
+              :min-date="periodStr"
+              :max-date="todayStr"
+            />
           </div>
 
           <div v-if="dataType === 'ATTD'" class="form-row-max">
@@ -79,8 +107,14 @@
 
         <div class="modal-footer">
           <div class="btn-group">
-            <button class="btn btn-primary" @click="$emit('close')">취소</button>
-            <button class="btn btn-primary" :disabled="!prvCmpnyCd || !siteCd || !purpose" @click="fnCreate">
+            <button class="btn btn-primary" @click="$emit('close')">
+              취소
+            </button>
+            <button
+              class="btn btn-primary"
+              :disabled="!prvCmpnyCd || !siteCd || !purpose"
+              @click="fnCreate"
+            >
               요청
             </button>
           </div>

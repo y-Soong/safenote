@@ -185,12 +185,15 @@ const fnGetSystinfoList = async () => {
 
 const fnGetTermsInfo = async () => {
   try {
-    const response = await axios.get("/platformApi/terms/terms-detail-info-list", {
-      params: {
-        termsId: termsId.value,
-        termsVersion: termsVersion.value,
-      },
-    });
+    const response = await axios.get(
+      "/platformApi/terms/terms-detail-info-list",
+      {
+        params: {
+          termsId: termsId.value,
+          termsVersion: termsVersion.value,
+        },
+      }
+    );
 
     if (response.status === 200) {
       if (response.data.termsDetailInfoList.length == 1) {
@@ -223,14 +226,17 @@ const fnGetTermsInfo = async () => {
 const fnSaveTerms = async () => {
   fnConfirmMsg("저장하시겠습니까 ?", async () => {
     try {
-      const response = await axios.post("/platformApi/terms/update-terms-info", {
-        termsId: termsId.value,
-        termsNm: termsNm.value,
-        requiredYn: requiredYn.value,
-        termsContent: termsContent.value,
-        strDate: strDate.value,
-        termsDesc: termsDesc.value,
-      });
+      const response = await axios.post(
+        "/platformApi/terms/update-terms-info",
+        {
+          termsId: termsId.value,
+          termsNm: termsNm.value,
+          requiredYn: requiredYn.value,
+          termsContent: termsContent.value,
+          strDate: strDate.value,
+          termsDesc: termsDesc.value,
+        }
+      );
 
       if (response.status === 200) {
         const alertMsg = "처리됐습니다.";

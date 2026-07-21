@@ -61,7 +61,9 @@
               아래 사유로 소속이동할 수 없습니다.
             </p>
             <ul>
-              <li v-for="(r, idx) in blockReasons" :key="idx">{{ r.message }}</li>
+              <li v-for="(r, idx) in blockReasons" :key="idx">
+                {{ r.message }}
+              </li>
             </ul>
           </div>
 

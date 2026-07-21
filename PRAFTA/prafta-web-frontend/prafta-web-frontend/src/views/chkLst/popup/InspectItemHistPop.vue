@@ -64,7 +64,9 @@
                     <td>{{ item.chgTypeNm }}</td>
                     <td>{{ item.inspectItemSubj }}</td>
                     <td>{{ formatStrDate(item.strDate) }}</td>
-                    <td style="text-align: center">{{ item.sortIdx ?? "-" }}</td>
+                    <td style="text-align: center">
+                      {{ item.sortIdx ?? "-" }}
+                    </td>
                     <td>{{ item.useYn === "N" ? "미사용" : "사용" }}</td>
                     <td>{{ item.chgUserNm || "-" }}</td>
                   </tr>

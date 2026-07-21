@@ -5,26 +5,60 @@
         <div class="modal-header">
           <span>순회점검 구성 연동</span>
           <button class="icon-button" @click="$emit('close')">
-            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-6 h-6">
-              <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" />
+            <svg
+              xmlns="http://www.w3.org/2000/svg"
+              fill="none"
+              viewBox="0 0 24 24"
+              stroke-width="1.5"
+              stroke="currentColor"
+              class="w-6 h-6"
+            >
+              <path
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                d="M6 18L18 6M6 6l12 12"
+              />
             </svg>
           </button>
         </div>
 
         <div class="form-container">
-          <p class="chkpt-link-title">'{{ props.siteNm }}'의 순회점검 구성을 연동합니다.</p>
+          <p class="chkpt-link-title">
+            '{{ props.siteNm }}'의 순회점검 구성을 연동합니다.
+          </p>
           <ul class="chkpt-link-guide">
-            <li>현재 <b>사용중인 점검대상과 점검문항</b>이 상대 회사의 연동 사업장에 복제됩니다.</li>
-            <li>복제된 점검대상·문항은 상대 회사가 <b>수정할 수 없으며</b>(점검 담당자 지정만 가능), 이후 내 변경사항이 자동 반영됩니다.</li>
-            <li>점검 결과는 <b>연동 회사 전체에서 하나로 통합</b>됩니다. 어느 회사가 점검하든 양쪽 실적에 반영되며, 같은 날 같은 문항은 <b>먼저 점검한 쪽이 완료</b>됩니다.</li>
-            <li>해제하면 상대 회사의 자체 점검 구성으로 전환되고(기존 실적은 보존), 결과 통합이 중단됩니다.</li>
+            <li>
+              현재 <b>사용중인 점검대상과 점검문항</b>이 상대 회사의 연동
+              사업장에 복제됩니다.
+            </li>
+            <li>
+              복제된 점검대상·문항은 상대 회사가 <b>수정할 수 없으며</b>(점검
+              담당자 지정만 가능), 이후 내 변경사항이 자동 반영됩니다.
+            </li>
+            <li>
+              점검 결과는 <b>연동 회사 전체에서 하나로 통합</b>됩니다. 어느
+              회사가 점검하든 양쪽 실적에 반영되며, 같은 날 같은 문항은
+              <b>먼저 점검한 쪽이 완료</b>됩니다.
+            </li>
+            <li>
+              해제하면 상대 회사의 자체 점검 구성으로 전환되고(기존 실적은
+              보존), 결과 통합이 중단됩니다.
+            </li>
           </ul>
         </div>
 
         <div class="modal-footer">
           <div class="btn-group">
-            <button class="btn btn-primary" @click="$emit('close')">취소</button>
-            <button class="btn btn-primary" :disabled="processing" @click="fnEnable">연동</button>
+            <button class="btn btn-primary" @click="$emit('close')">
+              취소
+            </button>
+            <button
+              class="btn btn-primary"
+              :disabled="processing"
+              @click="fnEnable"
+            >
+              연동
+            </button>
           </div>
         </div>
       </div>

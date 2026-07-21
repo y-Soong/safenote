@@ -97,12 +97,17 @@
                   </tr>
                 </template>
                 <template v-else>
-                  <tr v-for="(item, idx) in previewList" :key="item.inspectItemCd">
+                  <tr
+                    v-for="(item, idx) in previewList"
+                    :key="item.inspectItemCd"
+                  >
                     <td style="text-align: center">{{ idx + 1 }}</td>
                     <td>
                       <input type="checkbox" v-model="item.chk" />
                     </td>
-                    <td style="text-align: center">{{ item.sortIdx ?? "-" }}</td>
+                    <td style="text-align: center">
+                      {{ item.sortIdx ?? "-" }}
+                    </td>
                     <td>{{ item.inspectItemSubj }}</td>
                     <td>{{ item.useYn === "N" ? "미사용" : "사용" }}</td>
                     <td>{{ formatStrDate(item.strDate) }}</td>

@@ -145,7 +145,6 @@
 
     <!-- 본문(전체/요약)을 subtitle-pane 래퍼로 감싼다 (테이블 높이/스크롤 관리) -->
     <div class="table-wrapper subtitle-pane">
-
       <!-- 본문(전체): 좌측 결과 테이블 / 우측 상세 패널 -->
       <div
         v-show="viewMode === 'full'"

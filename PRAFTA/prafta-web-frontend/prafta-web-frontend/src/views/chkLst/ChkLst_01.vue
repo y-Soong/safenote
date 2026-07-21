@@ -161,7 +161,9 @@
                 </td>
                 <td>
                   <div class="flex items-center gap-2 w-full">
-                    <span v-if="chkpt.mgmtUserNm" class="truncate min-w-0">{{ chkpt.mgmtUserNm }}</span>
+                    <span v-if="chkpt.mgmtUserNm" class="truncate min-w-0">{{
+                      chkpt.mgmtUserNm
+                    }}</span>
                     <span v-else class="mgmt-empty">담당자 미지정</span>
                     <button
                       class="ml-auto border rounded node-assign-btn"
@@ -413,11 +415,15 @@ const fnSave = async () => {
 const fnDelete = async () => {
   // qa L-2: 미러(연동 수신) 행은 삭제(사용중지)도 제공 회사에서 관리한다 — 서버가 403(SUBCON_403_004)으로 막지만
   //   UI 에서 먼저 걸러 오류 노출을 없앤다. (저장 선택은 계속 허용: 미러 행도 점검 담당자 지정은 가능하다 — T6-03)
-  const selected = chkptList.value.filter((chkpt) => chkpt.chk && chkpt.chkptCd);
+  const selected = chkptList.value.filter(
+    (chkpt) => chkpt.chk && chkpt.chkptCd
+  );
   const filteredData = selected.filter((chkpt) => !isMirror(chkpt));
 
   if (selected.length > 0 && filteredData.length === 0) {
-    proxy.$alert("연동(미러) 점검대상은 삭제할 수 없습니다. 제공 회사에서 관리합니다.");
+    proxy.$alert(
+      "연동(미러) 점검대상은 삭제할 수 없습니다. 제공 회사에서 관리합니다."
+    );
     return;
   }
 

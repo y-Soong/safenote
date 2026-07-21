@@ -1,17 +1,26 @@
 <template>
   <div class="viewComm">
-    <ViewHeader class="commViewHeader" :title="props.title" :buttons="localButtons" @search="fnSearch" />
+    <ViewHeader
+      class="commViewHeader"
+      :title="props.title"
+      :buttons="localButtons"
+      @search="fnSearch"
+    />
 
     <div class="viewBody">
       <div class="snapshot-layout">
         <!-- 좌: 스냅샷 목록 -->
         <div class="table-wrapper snapshot-list">
-          <div class="table-box overflow-x-auto rounded-md border border-slate-300"
-               style="--box-h: 70vh; --box-sticky-top: 1px; --box-ox: auto">
+          <div
+            class="table-box overflow-x-auto rounded-md border border-slate-300"
+            style="--box-h: 70vh; --box-sticky-top: 1px; --box-ox: auto"
+          >
             <table class="data-grid w-full table-fixed text-sm text-left">
               <thead>
                 <tr>
-                  <th class="event_cell" style="text-align: center; width: 8%">No</th>
+                  <th class="event_cell" style="text-align: center; width: 8%">
+                    No
+                  </th>
                   <th style="width: 14%">유형</th>
                   <th>출처 회사</th>
                   <th>사업장</th>
@@ -23,7 +32,11 @@
               </thead>
               <tbody>
                 <template v-if="!snapshotList.length">
-                  <tr><td colspan="8" class="edu-grid-empty">공유받은 자료가 없습니다.</td></tr>
+                  <tr>
+                    <td colspan="8" class="edu-grid-empty">
+                      공유받은 자료가 없습니다.
+                    </td>
+                  </tr>
                 </template>
                 <template v-else>
                   <tr
@@ -33,15 +46,25 @@
                     @click="fnSelect(row)"
                   >
                     <td style="text-align: center">{{ idx + 1 }}</td>
-                    <td style="text-align: center">{{ dataTypeLabel(row.dataType) }}</td>
+                    <td style="text-align: center">
+                      {{ dataTypeLabel(row.dataType) }}
+                    </td>
                     <td>{{ row.srcCmpnyNm }}</td>
                     <td>{{ row.siteNm }}</td>
                     <td>{{ periodLabel(row) }}</td>
                     <td style="text-align: center">v{{ row.version }}</td>
                     <td style="text-align: center">{{ row.rowCnt }}</td>
                     <td>
-                      <span v-if="row.unclosedIncludedYn === 'Y'" class="status-badge is-warn">미마감 포함</span>
-                      <span v-if="row.relationActiveYn === 'N'" class="status-badge is-closed">연동 종료</span>
+                      <span
+                        v-if="row.unclosedIncludedYn === 'Y'"
+                        class="status-badge is-warn"
+                        >미마감 포함</span
+                      >
+                      <span
+                        v-if="row.relationActiveYn === 'N'"
+                        class="status-badge is-closed"
+                        >연동 종료</span
+                      >
                     </td>
                   </tr>
                 </template>
@@ -54,23 +77,35 @@
         <div class="table-wrapper snapshot-detail">
           <div v-if="selected" class="detail-head">
             <div class="detail-meta">
-              출처 {{ selected.srcCmpnyNm }} · {{ periodLabel(selected) }} · 생성 {{ selected.createDtime }}
-              <span v-if="selected.consentExcludedCnt > 0"> · 미동의 제외 {{ selected.consentExcludedCnt }}명</span>
+              출처 {{ selected.srcCmpnyNm }} · {{ periodLabel(selected) }} ·
+              생성 {{ selected.createDtime }}
+              <span v-if="selected.consentExcludedCnt > 0">
+                · 미동의 제외 {{ selected.consentExcludedCnt }}명</span
+              >
             </div>
             <div class="detail-ver">
               <label>버전</label>
-              <span class="detail-ver-current">v{{ selected.version }} ({{ versionList.length }}개)</span>
-              <button class="btn btn-custom" @click="showVersionPop = true">버전 선택</button>
+              <span class="detail-ver-current"
+                >v{{ selected.version }} ({{ versionList.length }}개)</span
+              >
+              <button class="btn btn-custom" @click="showVersionPop = true">
+                버전 선택
+              </button>
             </div>
           </div>
-          <p v-if="selected && selected.relationActiveYn === 'N'" class="detail-note">
+          <p
+            v-if="selected && selected.relationActiveYn === 'N'"
+            class="detail-note"
+          >
             연동이 종료된 회사의 자료입니다. 열람만 가능합니다.
           </p>
 
           <!-- ATTD: 기존 근태 그리드(그대로 유지) -->
           <template v-if="selected && selected.dataType === 'ATTD'">
-            <div class="table-box overflow-x-auto rounded-md border border-slate-300"
-                 style="--box-h: 62vh; --box-sticky-top: 1px; --box-ox: auto">
+            <div
+              class="table-box overflow-x-auto rounded-md border border-slate-300"
+              style="--box-h: 62vh; --box-sticky-top: 1px; --box-ox: auto"
+            >
               <table class="data-grid w-full table-fixed text-sm text-left">
                 <thead>
                   <tr>
@@ -89,20 +124,34 @@
                 </thead>
                 <tbody>
                   <template v-if="!detailList.length">
-                    <tr><td colspan="11" class="edu-grid-empty">표시할 데이터가 없습니다.</td></tr>
+                    <tr>
+                      <td colspan="11" class="edu-grid-empty">
+                        표시할 데이터가 없습니다.
+                      </td>
+                    </tr>
                   </template>
                   <template v-else>
                     <tr v-for="row in detailList" :key="row.detailId">
                       <td>{{ fmtYmd(row.workYmd) }}</td>
                       <td>{{ row.workerNm }}</td>
                       <td>{{ row.affilCmpnyNm }}</td>
-                      <td style="text-align: center">{{ workerTypeLabel(row.workerType) }}</td>
+                      <td style="text-align: center">
+                        {{ workerTypeLabel(row.workerType) }}
+                      </td>
                       <td>{{ row.schNm }}</td>
                       <td>{{ planLabel(row) }}</td>
-                      <td style="text-align: center">{{ fmtHm(row.checkInTime) }}</td>
-                      <td style="text-align: center">{{ fmtHm(row.checkOutTime) }}</td>
-                      <td style="text-align: center">{{ attdStatusLabel(row.attdStatusCd) }}</td>
-                      <td style="text-align: center">{{ row.otMinutes || 0 }}</td>
+                      <td style="text-align: center">
+                        {{ fmtHm(row.checkInTime) }}
+                      </td>
+                      <td style="text-align: center">
+                        {{ fmtHm(row.checkOutTime) }}
+                      </td>
+                      <td style="text-align: center">
+                        {{ attdStatusLabel(row.attdStatusCd) }}
+                      </td>
+                      <td style="text-align: center">
+                        {{ row.otMinutes || 0 }}
+                      </td>
                       <td>{{ row.leaveNm }}</td>
                     </tr>
                   </template>
@@ -112,13 +161,22 @@
 
             <!-- 페이지 이동 — 상세는 서버가 200행씩 끊어 준다(전체 건수는 목록의 rowCnt). -->
             <div v-if="totalPages > 1" class="detail-pager">
-              <button class="btn btn-custom" :disabled="page <= 1 || isLoading" @click="fnMovePage(page - 1)">
+              <button
+                class="btn btn-custom"
+                :disabled="page <= 1 || isLoading"
+                @click="fnMovePage(page - 1)"
+              >
                 이전
               </button>
               <span class="detail-pager-label">
-                {{ page }} / {{ totalPages }} 페이지 · 전체 {{ selected?.rowCnt || 0 }}건
+                {{ page }} / {{ totalPages }} 페이지 · 전체
+                {{ selected?.rowCnt || 0 }}건
               </span>
-              <button class="btn btn-custom" :disabled="page >= totalPages || isLoading" @click="fnMovePage(page + 1)">
+              <button
+                class="btn btn-custom"
+                :disabled="page >= totalPages || isLoading"
+                @click="fnMovePage(page + 1)"
+              >
                 다음
               </button>
             </div>

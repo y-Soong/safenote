@@ -11,7 +11,9 @@
       <div class="modal-content-narrow">
         <!-- Title -->
         <div class="modal-header">
-          <span>{{ props.hasActive ? "계약서 교체(새 버전)" : "계약서 등록" }}</span>
+          <span>{{
+            props.hasActive ? "계약서 교체(새 버전)" : "계약서 등록"
+          }}</span>
           <button class="icon-button" @click="$emit('close')">
             <svg
               xmlns="http://www.w3.org/2000/svg"
@@ -33,8 +35,9 @@
         <!-- Form -->
         <div class="form-container">
           <p class="reg-guide">
-            등록하면 새 버전이 생성되고 기존 활성 계약서는 자동 종료됩니다.
-            해당 사업장의 모든 일용직은 <strong>다음 로그인 시 재서명</strong>해야 합니다.
+            등록하면 새 버전이 생성되고 기존 활성 계약서는 자동 종료됩니다. 해당
+            사업장의 모든 일용직은 <strong>다음 로그인 시 재서명</strong>해야
+            합니다.
           </p>
 
           <!-- 계약서명 고정 — 일용직 로그인 시 공통 서명 대상이라 별도 명칭 불필요(수정 불가) -->
@@ -60,13 +63,19 @@
 
           <!-- 미리보기 -->
           <div v-if="previewUrl" class="preview-box">
-            <img class="preview-box__img" :src="previewUrl" alt="계약서 미리보기" />
+            <img
+              class="preview-box__img"
+              :src="previewUrl"
+              alt="계약서 미리보기"
+            />
           </div>
         </div>
 
         <div class="modal-footer">
           <div class="btn-group">
-            <button class="btn btn-primary" @click="$emit('close')">취소</button>
+            <button class="btn btn-primary" @click="$emit('close')">
+              취소
+            </button>
             <button class="btn btn-primary" :disabled="saving" @click="fnSave">
               저장
             </button>

@@ -281,14 +281,12 @@ const focusKill = (e) => {
   background: var(--color-bg, #f9fafb);
 }
 
-/* 인증요청/확인 버튼 폭 고정 — "인증요청"↔"60초 후 재요청" 텍스트 길이가 바뀌어도
-   버튼이 커지지 않아 행이 모달 폭을 넘치지 않는다(타이머 전환 시 가로 스크롤/우측 끝선 어긋남 방지). */
+/* 인증요청/확인 버튼은 회원가입 팝업(JoinUserPop)과 동일하게 글자 폭 기준(전역 .btn 규격).
+   "인증요청"↔"60초 후 재요청" 텍스트 전환으로 버튼 폭이 변해도
+   입력이 남는 공간에서 줄어들어 행이 모달 폭을 넘치지 않는다. */
 .form-row-max .btn {
-  flex: 0 0 7.5rem;
-  white-space: nowrap;
-  text-align: center;
+  flex: 0 0 auto;
 }
-/* 입력은 남는 공간에서 줄어들 수 있어야 한다(min-width:auto 기본값이 축소를 막아 행 넘침 유발). */
 .form-row-max input {
   min-width: 0;
 }

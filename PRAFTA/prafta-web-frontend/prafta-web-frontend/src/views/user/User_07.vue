@@ -22,7 +22,11 @@
         <label>사업장</label>
         <select v-model="siteCd" class="site-select" @change="fnSearch">
           <option value="">선택</option>
-          <option v-for="site in siteList" :key="site.siteCd" :value="site.siteCd">
+          <option
+            v-for="site in siteList"
+            :key="site.siteCd"
+            :value="site.siteCd"
+          >
             {{ site.siteNm }}
           </option>
         </select>
@@ -32,17 +36,19 @@
     <div class="viewBody">
       <!-- 권장 조항 안내(§4-3 — 관리자 안내문) -->
       <div class="clause-guide">
-        <p class="clause-guide__title">계약서 양식 권장 조항 (노무사 최종 검토 권장)</p>
+        <p class="clause-guide__title">
+          계약서 양식 권장 조항 (노무사 최종 검토 권장)
+        </p>
         <p class="clause-guide__text">
-          "근로계약기간은 근로일 당일 1일로 한다. 역일을 달리하여 계속되는 근무는 시업일의
-          1근로일로 본다. 회사가 근로자의 노무 제공을 수령한 근로일에 한하여 본 계약과 동일
-          조건으로 계약이 성립하며, 앱 로그인·계정 활성화·출근 기록의 존재만으로는 계약이
-          성립하지 아니한다."
+          "근로계약기간은 근로일 당일 1일로 한다. 역일을 달리하여 계속되는
+          근무는 시업일의 1근로일로 본다. 회사가 근로자의 노무 제공을 수령한
+          근로일에 한하여 본 계약과 동일 조건으로 계약이 성립하며, 앱
+          로그인·계정 활성화·출근 기록의 존재만으로는 계약이 성립하지 아니한다."
         </p>
         <p class="clause-guide__warn">
-          계약서를 교체(새 버전 등록)하면 해당 사업장의 모든 일용직이 다음 로그인 시
-          재서명해야 합니다. 반복 갱신 장기화(기간제법 2년) 이슈는 시스템이 통제하지 않으므로
-          운영상 별도 관리가 필요합니다.
+          계약서를 교체(새 버전 등록)하면 해당 사업장의 모든 일용직이 다음
+          로그인 시 재서명해야 합니다. 반복 갱신 장기화(기간제법 2년) 이슈는
+          시스템이 통제하지 않으므로 운영상 별도 관리가 필요합니다.
         </p>
       </div>
 
@@ -51,14 +57,20 @@
         <template v-if="activeContract">
           <div class="active-card__info">
             <span class="status-badge is-active">사용중</span>
-            <span class="active-card__name">{{ activeContract.contractNm }}</span>
+            <span class="active-card__name">{{
+              activeContract.contractNm
+            }}</span>
             <span class="active-card__meta">
-              v{{ activeContract.contractVer }} · 등록 {{ activeContract.insertDate }} ·
+              v{{ activeContract.contractVer }} · 등록
+              {{ activeContract.insertDate }} ·
               {{ activeContract.insertNm }}
             </span>
           </div>
           <div class="active-card__actions">
-            <button class="btn btn-sm btn-primary" @click="fnPreview(activeContract)">
+            <button
+              class="btn btn-sm btn-primary"
+              @click="fnPreview(activeContract)"
+            >
               미리보기
             </button>
             <button
@@ -72,8 +84,8 @@
         </template>
         <template v-else>
           <p class="active-card__empty">
-            등록된 계약서가 없습니다. 계약서 미등록 사업장은 입장 승인제만 적용되고
-            서명 게이트는 건너뜁니다.
+            등록된 계약서가 없습니다. 계약서 미등록 사업장은 입장 승인제만
+            적용되고 서명 게이트는 건너뜁니다.
           </p>
         </template>
       </div>
@@ -95,10 +107,14 @@
           class="table-box overflow-x-auto rounded-md border border-slate-300"
           style="--box-h: 52vh; --box-sticky-top: 1px; --box-ox: auto"
         >
-          <table class="data-grid w-full table-fixed text-sm text-left rtl:text-right">
+          <table
+            class="data-grid w-full table-fixed text-sm text-left rtl:text-right"
+          >
             <thead>
               <tr>
-                <th class="event_cell" style="text-align: center; width: 4%">No</th>
+                <th class="event_cell" style="text-align: center; width: 4%">
+                  No
+                </th>
                 <ThSortable
                   label="버전"
                   col-key="contractVer"
@@ -144,7 +160,9 @@
                   @sort="onSort"
                   @update:width="onResize"
                 />
-                <th class="event_cell" style="text-align: center; width: 100px">관리</th>
+                <th class="event_cell" style="text-align: center; width: 100px">
+                  관리
+                </th>
               </tr>
             </thead>
             <tbody>
@@ -171,7 +189,10 @@
                   <td>{{ row.insertNm }}</td>
                   <td>{{ row.insertDate }}</td>
                   <td style="text-align: center">
-                    <button class="btn btn-sm btn-primary" @click="fnPreview(row)">
+                    <button
+                      class="btn btn-sm btn-primary"
+                      @click="fnPreview(row)"
+                    >
                       미리보기
                     </button>
                   </td>

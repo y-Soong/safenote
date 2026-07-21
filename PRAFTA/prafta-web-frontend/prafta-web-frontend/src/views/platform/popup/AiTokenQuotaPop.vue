@@ -12,9 +12,19 @@
         <div class="modal-header">
           <span>AI 토큰 한도 변경</span>
           <button class="icon-button" @click="$emit('close')">
-            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"
-                 stroke-width="1.5" stroke="currentColor" class="w-6 h-6">
-              <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" />
+            <svg
+              xmlns="http://www.w3.org/2000/svg"
+              fill="none"
+              viewBox="0 0 24 24"
+              stroke-width="1.5"
+              stroke="currentColor"
+              class="w-6 h-6"
+            >
+              <path
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                d="M6 18L18 6M6 6l12 12"
+              />
             </svg>
           </button>
         </div>
@@ -25,7 +35,9 @@
           <div class="quota-summary">
             <div class="quota-summary-row">
               <span class="quota-summary-label">회사</span>
-              <span class="quota-summary-value">{{ cmpnyNm }} ({{ cmpnyCd }})</span>
+              <span class="quota-summary-value"
+                >{{ cmpnyNm }} ({{ cmpnyCd }})</span
+              >
             </div>
             <div class="quota-summary-row">
               <span class="quota-summary-label">당월 사용량</span>
@@ -34,11 +46,18 @@
           </div>
 
           <!-- 한도 방식 라디오 (LIMIT / UNLIMITED / BLOCK) -->
-          <div class="quota-mode-group" role="radiogroup" aria-label="한도 방식">
+          <div
+            class="quota-mode-group"
+            role="radiogroup"
+            aria-label="한도 방식"
+          >
             <label class="quota-mode-row">
               <input type="radio" value="LIMIT" v-model="quotaMode" />
               <span class="quota-mode-label">한도 설정</span>
-              <span class="quota-limit-input-wrap" v-show="quotaMode === 'LIMIT'">
+              <span
+                class="quota-limit-input-wrap"
+                v-show="quotaMode === 'LIMIT'"
+              >
                 <input
                   ref="limitManFcs"
                   v-model.number="limitMan"
@@ -75,8 +94,12 @@
 
         <div class="modal-footer">
           <div class="btn-group">
-            <button class="btn btn-primary" @click="$emit('close')">취소</button>
-            <button class="btn btn-primary" :disabled="saving" @click="fnSave">저장</button>
+            <button class="btn btn-primary" @click="$emit('close')">
+              취소
+            </button>
+            <button class="btn btn-primary" :disabled="saving" @click="fnSave">
+              저장
+            </button>
           </div>
         </div>
       </div>

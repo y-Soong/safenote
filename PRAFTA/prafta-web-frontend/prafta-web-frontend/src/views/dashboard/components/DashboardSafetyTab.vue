@@ -405,7 +405,9 @@ const tbmCurrentCnt = computed(() => {
 });
 
 // ── S5: 최근 사고 — 통합 무스크롤 목표로 상위 2건만 표시 (사용자 확정 2026-07-08) ──
-const recentAcctTop = computed(() => (acct.value.recentAcctList ?? []).slice(0, 2));
+const recentAcctTop = computed(() =>
+  (acct.value.recentAcctList ?? []).slice(0, 2)
+);
 
 // 위젯 이동 버튼 → 부모(Dashboard_01)로 대상 라우트명 위임
 const onMove = (routeName) => {

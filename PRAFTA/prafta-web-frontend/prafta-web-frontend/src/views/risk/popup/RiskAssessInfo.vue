@@ -10,500 +10,510 @@
              ★modal-content-wide 에 position:relative 를 직접 주면 인라인 top/left 가 활성화되어
              팝업이 튀므로(useCenteredDraggable), 자식 셸에 position:relative 를 부여한다. -->
         <div class="risk-popup-shell">
-        <!-- 🔹 Title  v-if="visible" -->
-        <div class="modal-header" @mousedown="startDrag">
-          <span>위험성 평가 정보</span>
-          <button class="icon-button" @click="fnRequestClose">
-            <svg
-              xmlns="http://www.w3.org/2000/svg"
-              fill="none"
-              viewBox="0 0 24 24"
-              stroke-width="1.5"
-              stroke="currentColor"
-              class="w-6 h-6"
-            >
-              <path
-                stroke-linecap="round"
-                stroke-linejoin="round"
-                d="M6 18L18 6M6 6l12 12"
-              />
-            </svg>
-          </button>
-        </div>
+          <!-- 🔹 Title  v-if="visible" -->
+          <div class="modal-header" @mousedown="startDrag">
+            <span>위험성 평가 정보</span>
+            <button class="icon-button" @click="fnRequestClose">
+              <svg
+                xmlns="http://www.w3.org/2000/svg"
+                fill="none"
+                viewBox="0 0 24 24"
+                stroke-width="1.5"
+                stroke="currentColor"
+                class="w-6 h-6"
+              >
+                <path
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                  d="M6 18L18 6M6 6l12 12"
+                />
+              </svg>
+            </button>
+          </div>
 
-        <!-- 메인 컨텐츠 -->
-        <div class="risk-assess-content">
-          <!-- 왼쪽: 개선 전 -->
-          <div class="improvement-section before-section">
-            <div class="section-header">개선 전</div>
-            <div class="form-container">
-              <div class="form-row">
-                <label>작업명</label>
-                <input v-model="formData.processNm" readonly />
-              </div>
-              <div class="form-row">
-                <label>위험성구분</label>
-                <input v-model="formData.processNm" readonly />
-              </div>
-              <div class="form-row">
-                <label>위험성분류</label>
-                <input v-model="formData.riskTypeNm" readonly />
-              </div>
-              <div class="form-row">
-                <label>평가요청일자</label>
-                <input v-model="formData.initAssessDate" readonly />
-              </div>
-              <div class="form-row">
-                <label>평가요청자</label>
-                <input v-model="formData.initAssessorNm" readonly />
-              </div>
-              <div class="form-row">
-                <label>유해요인명</label>
-                <input v-model="formData.hazardNm" readonly />
-              </div>
-              <div class="form-row">
-                <label>유해요인설명</label>
-                <textarea
-                  v-model="formData.initDesc"
-                  readonly
-                  rows="3"
-                ></textarea>
-              </div>
-              <div class="form-row">
-                <label>사진</label>
-                <div class="photo-container">
-                  <img
-                    v-if="beforePhotoUrl"
-                    :src="beforePhotoUrl"
-                    alt="개선 전 사진"
-                    class="photo-preview"
-                  />
-                  <div v-else class="photo-placeholder">사진 없음</div>
+          <!-- 메인 컨텐츠 -->
+          <div class="risk-assess-content">
+            <!-- 왼쪽: 개선 전 -->
+            <div class="improvement-section before-section">
+              <div class="section-header">개선 전</div>
+              <div class="form-container">
+                <div class="form-row">
+                  <label>작업명</label>
+                  <input v-model="formData.processNm" readonly />
                 </div>
-              </div>
-              <div class="form-row risk-assessment">
-                <label>개선 전 위험성 평가</label>
-                <div class="risk-evaluation-group">
-                  <div class="risk-input-item">
-                    <label>빈도</label>
-                    <select
-                      v-model="formData.initLikelihoodScore"
-                      :disabled="
-                        props.readOnly ||
-                        props.riskAssessmentData.assessmentStatus != '001'
-                      "
-                    >
-                      <option value="">선택</option>
-                      <option value="1">1</option>
-                      <option value="2">2</option>
-                      <option value="3">3</option>
-                      <option value="4">4</option>
-                      <option value="5">5</option>
-                    </select>
+                <div class="form-row">
+                  <label>위험성구분</label>
+                  <input v-model="formData.processNm" readonly />
+                </div>
+                <div class="form-row">
+                  <label>위험성분류</label>
+                  <input v-model="formData.riskTypeNm" readonly />
+                </div>
+                <div class="form-row">
+                  <label>평가요청일자</label>
+                  <input v-model="formData.initAssessDate" readonly />
+                </div>
+                <div class="form-row">
+                  <label>평가요청자</label>
+                  <input v-model="formData.initAssessorNm" readonly />
+                </div>
+                <div class="form-row">
+                  <label>유해요인명</label>
+                  <input v-model="formData.hazardNm" readonly />
+                </div>
+                <div class="form-row">
+                  <label>유해요인설명</label>
+                  <textarea
+                    v-model="formData.initDesc"
+                    readonly
+                    rows="3"
+                  ></textarea>
+                </div>
+                <div class="form-row">
+                  <label>사진</label>
+                  <div class="photo-container">
+                    <img
+                      v-if="beforePhotoUrl"
+                      :src="beforePhotoUrl"
+                      alt="개선 전 사진"
+                      class="photo-preview"
+                    />
+                    <div v-else class="photo-placeholder">사진 없음</div>
                   </div>
-                  <div class="risk-input-item">
-                    <label>강도</label>
-                    <select
-                      v-model="formData.initSeverityScore"
-                      :disabled="
-                        props.readOnly ||
-                        props.riskAssessmentData.assessmentStatus != '001'
-                      "
-                    >
-                      <option value="">선택</option>
-                      <option value="1">1</option>
-                      <option value="2">2</option>
-                      <option value="3">3</option>
-                      <option value="4">4</option>
-                    </select>
-                  </div>
-                  <div class="risk-input-item">
-                    <label>위험도</label>
-                    <div
-                      class="risk-level-display"
-                      :class="getRiskLevelClass(formData.initRiskLv)"
-                    >
-                      {{ formData.initRiskLv || "-" }}
+                </div>
+                <div class="form-row risk-assessment">
+                  <label>개선 전 위험성 평가</label>
+                  <div class="risk-evaluation-group">
+                    <div class="risk-input-item">
+                      <label>빈도</label>
+                      <select
+                        v-model="formData.initLikelihoodScore"
+                        :disabled="
+                          props.readOnly ||
+                          props.riskAssessmentData.assessmentStatus != '001'
+                        "
+                      >
+                        <option value="">선택</option>
+                        <option value="1">1</option>
+                        <option value="2">2</option>
+                        <option value="3">3</option>
+                        <option value="4">4</option>
+                        <option value="5">5</option>
+                      </select>
+                    </div>
+                    <div class="risk-input-item">
+                      <label>강도</label>
+                      <select
+                        v-model="formData.initSeverityScore"
+                        :disabled="
+                          props.readOnly ||
+                          props.riskAssessmentData.assessmentStatus != '001'
+                        "
+                      >
+                        <option value="">선택</option>
+                        <option value="1">1</option>
+                        <option value="2">2</option>
+                        <option value="3">3</option>
+                        <option value="4">4</option>
+                      </select>
+                    </div>
+                    <div class="risk-input-item">
+                      <label>위험도</label>
+                      <div
+                        class="risk-level-display"
+                        :class="getRiskLevelClass(formData.initRiskLv)"
+                      >
+                        {{ formData.initRiskLv || "-" }}
+                      </div>
                     </div>
                   </div>
                 </div>
               </div>
             </div>
-          </div>
 
-          <!-- 오른쪽: 개선 후 -->
-          <div class="improvement-section after-section">
-            <div class="section-header section-header--with-action">
-              개선 후
-              <!-- PRAFTA-WEB_003 v3: 개선예정(002)에서만 AI 분석 진입 -->
-              <button
-                v-if="
-                  !props.readOnly &&
-                  formData.assessmentStatus === '002' &&
-                  hasAiScope()
-                "
-                class="btn btn-report ai-open-btn"
-                @click="fnOpenAiPanel"
-              >
-                AI 분석
-              </button>
-            </div>
-            <div class="form-container">
-              <div class="form-row">
-                <label>진행상태</label>
-                <select
-                  v-model="formData.assessmentStatus"
-                  name="combo"
-                  :disabled="props.readOnly"
+            <!-- 오른쪽: 개선 후 -->
+            <div class="improvement-section after-section">
+              <div class="section-header section-header--with-action">
+                개선 후
+                <!-- PRAFTA-WEB_003 v3: 개선예정(002)에서만 AI 분석 진입 -->
+                <button
+                  v-if="
+                    !props.readOnly &&
+                    formData.assessmentStatus === '002' &&
+                    hasAiScope()
+                  "
+                  class="btn btn-report ai-open-btn"
+                  @click="fnOpenAiPanel"
                 >
-                  <option
-                    v-for="opt in (systCodeArr['SYS011'] || []).filter(
-                      (item) => {
-                        if (!proxy.$util.isNotEmpty(item.systValDCd))
-                          return false;
-                        // 지속개선대상(005)은 드롭다운에서 제외('지속개선대상 지정' 버튼으로만 진입)
-                        if (item.systValDCd === '005') {
-                          return false;
-                        }
-                        // props.assessmentStatus가 '001'이면 '001' 옵션 제외
-                        if (
-                          props.riskAssessmentData.assessmentStatus != '001' &&
-                          item.systValDCd === '001'
-                        ) {
-                          return false;
-                        }
-
-                        if (
-                          props.riskAssessmentData.assessmentStatus == '003' &&
-                          (item.systValDCd == '001' ||
-                            item.systValDCd == '002' ||
-                            item.systValDCd == '004')
-                        ) {
-                          return false;
-                        }
-
-                        if (
-                          props.riskAssessmentData.assessmentStatus == '004' &&
-                          (item.systValDCd == '001' ||
-                            item.systValDCd == '002' ||
-                            item.systValDCd == '003')
-                        ) {
-                          return false;
-                        }
-
-                        return true;
-                      }
-                    )"
-                    :key="opt.systValDCd"
-                    :value="opt.systValDCd"
+                  AI 분석
+                </button>
+              </div>
+              <div class="form-container">
+                <div class="form-row">
+                  <label>진행상태</label>
+                  <select
+                    v-model="formData.assessmentStatus"
+                    name="combo"
+                    :disabled="props.readOnly"
                   >
-                    {{ opt.systValDNm }}
-                  </option>
-                </select>
-              </div>
-              <div
-                class="form-row"
-                v-if="
-                  formData.assessmentStatus == '002' ||
-                  formData.assessmentStatus == '003'
-                "
-              >
-                <label>개선예정일자</label>
-                <CalendarSrch
-                  v-model="formData.revalDate"
-                  :readonly="props.readOnly"
-                />
-              </div>
-              <div
-                class="form-row"
-                v-if="
-                  formData.assessmentStatus == '002' ||
-                  formData.assessmentStatus == '003'
-                "
-              >
-                <label>임시조치 내용</label>
-                <textarea
-                  v-model="formData.revalBeforeDesc"
-                  placeholder="개선완료 전 임시조치 내용을 입력해 주세요"
-                  rows="5"
-                  maxlength="500"
-                  :readonly="props.readOnly"
-                ></textarea>
-              </div>
-              <div class="form-row" v-if="formData.assessmentStatus == '003'">
-                <label>개선완료일자</label>
-                <input v-model="formData.revalAssessDate" readonly />
-              </div>
-              <div class="form-row" v-if="formData.assessmentStatus == '003'">
-                <label>개선관리자</label>
-                <input v-model="formData.revalAssessorNm" readonly />
-              </div>
-              <div class="form-row" v-if="formData.assessmentStatus == '003'">
-                <label>개선내용</label>
-                <textarea
-                  v-model="formData.revalDesc"
-                  placeholder="개선 내용을 입력해 주세요"
-                  rows="5"
-                  :readonly="props.readOnly"
-                ></textarea>
-              </div>
-              <div class="form-row" v-if="formData.assessmentStatus == '003'">
-                <label>개선사진</label>
-                <div class="file-upload-wrapper">
-                  <input
-                    type="file"
-                    ref="fileInput"
-                    accept="image/*"
-                    @change="onFileSelected"
-                    @input="onFileSelected"
-                    style="display: none"
-                  />
-                  <button
-                    v-if="!props.readOnly"
-                    type="button"
-                    :class="[
-                      'upload-button',
-                      { 'upload-button-small': previewImage || revalPhotoUrl },
-                    ]"
-                    @click="fileInput?.click()"
-                    style="margin-left: -0.5px"
-                  >
-                    <svg
-                      xmlns="http://www.w3.org/2000/svg"
-                      fill="none"
-                      viewBox="0 0 24 24"
-                      stroke-width="1.5"
-                      stroke="currentColor"
-                      class="upload-icon"
+                    <option
+                      v-for="opt in (systCodeArr['SYS011'] || []).filter(
+                        (item) => {
+                          if (!proxy.$util.isNotEmpty(item.systValDCd))
+                            return false;
+                          // 지속개선대상(005)은 드롭다운에서 제외('지속개선대상 지정' 버튼으로만 진입)
+                          if (item.systValDCd === '005') {
+                            return false;
+                          }
+                          // props.assessmentStatus가 '001'이면 '001' 옵션 제외
+                          if (
+                            props.riskAssessmentData.assessmentStatus !=
+                              '001' &&
+                            item.systValDCd === '001'
+                          ) {
+                            return false;
+                          }
+
+                          if (
+                            props.riskAssessmentData.assessmentStatus ==
+                              '003' &&
+                            (item.systValDCd == '001' ||
+                              item.systValDCd == '002' ||
+                              item.systValDCd == '004')
+                          ) {
+                            return false;
+                          }
+
+                          if (
+                            props.riskAssessmentData.assessmentStatus ==
+                              '004' &&
+                            (item.systValDCd == '001' ||
+                              item.systValDCd == '002' ||
+                              item.systValDCd == '003')
+                          ) {
+                            return false;
+                          }
+
+                          return true;
+                        }
+                      )"
+                      :key="opt.systValDCd"
+                      :value="opt.systValDCd"
                     >
-                      <path
-                        stroke-linecap="round"
-                        stroke-linejoin="round"
-                        d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5m-13.5-9L12 3m0 0l4.5 4.5M12 3v13.5"
-                      />
-                    </svg>
-                    <span>사진 업로드</span>
-                  </button>
-                  <div
-                    v-if="previewImage || revalPhotoUrl"
-                    class="uploaded-photo-container"
-                  >
-                    <div class="photo-container">
-                      <img
-                        :src="previewImage ? previewImage.url : revalPhotoUrl"
-                        alt="개선 후 사진"
-                        class="photo-preview"
-                      />
-                      <button
-                        v-if="!props.readOnly"
-                        type="button"
-                        class="delete-photo-button"
-                        @click="removePreview"
-                        title="사진 삭제"
+                      {{ opt.systValDNm }}
+                    </option>
+                  </select>
+                </div>
+                <div
+                  class="form-row"
+                  v-if="
+                    formData.assessmentStatus == '002' ||
+                    formData.assessmentStatus == '003'
+                  "
+                >
+                  <label>개선예정일자</label>
+                  <CalendarSrch
+                    v-model="formData.revalDate"
+                    :readonly="props.readOnly"
+                  />
+                </div>
+                <div
+                  class="form-row"
+                  v-if="
+                    formData.assessmentStatus == '002' ||
+                    formData.assessmentStatus == '003'
+                  "
+                >
+                  <label>임시조치 내용</label>
+                  <textarea
+                    v-model="formData.revalBeforeDesc"
+                    placeholder="개선완료 전 임시조치 내용을 입력해 주세요"
+                    rows="5"
+                    maxlength="500"
+                    :readonly="props.readOnly"
+                  ></textarea>
+                </div>
+                <div class="form-row" v-if="formData.assessmentStatus == '003'">
+                  <label>개선완료일자</label>
+                  <input v-model="formData.revalAssessDate" readonly />
+                </div>
+                <div class="form-row" v-if="formData.assessmentStatus == '003'">
+                  <label>개선관리자</label>
+                  <input v-model="formData.revalAssessorNm" readonly />
+                </div>
+                <div class="form-row" v-if="formData.assessmentStatus == '003'">
+                  <label>개선내용</label>
+                  <textarea
+                    v-model="formData.revalDesc"
+                    placeholder="개선 내용을 입력해 주세요"
+                    rows="5"
+                    :readonly="props.readOnly"
+                  ></textarea>
+                </div>
+                <div class="form-row" v-if="formData.assessmentStatus == '003'">
+                  <label>개선사진</label>
+                  <div class="file-upload-wrapper">
+                    <input
+                      type="file"
+                      ref="fileInput"
+                      accept="image/*"
+                      @change="onFileSelected"
+                      @input="onFileSelected"
+                      style="display: none"
+                    />
+                    <button
+                      v-if="!props.readOnly"
+                      type="button"
+                      :class="[
+                        'upload-button',
+                        {
+                          'upload-button-small': previewImage || revalPhotoUrl,
+                        },
+                      ]"
+                      @click="fileInput?.click()"
+                      style="margin-left: -0.5px"
+                    >
+                      <svg
+                        xmlns="http://www.w3.org/2000/svg"
+                        fill="none"
+                        viewBox="0 0 24 24"
+                        stroke-width="1.5"
+                        stroke="currentColor"
+                        class="upload-icon"
                       >
-                        <svg
-                          xmlns="http://www.w3.org/2000/svg"
-                          fill="none"
-                          viewBox="0 0 24 24"
-                          stroke-width="1.5"
-                          stroke="currentColor"
-                          class="delete-icon"
+                        <path
+                          stroke-linecap="round"
+                          stroke-linejoin="round"
+                          d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5m-13.5-9L12 3m0 0l4.5 4.5M12 3v13.5"
+                        />
+                      </svg>
+                      <span>사진 업로드</span>
+                    </button>
+                    <div
+                      v-if="previewImage || revalPhotoUrl"
+                      class="uploaded-photo-container"
+                    >
+                      <div class="photo-container">
+                        <img
+                          :src="previewImage ? previewImage.url : revalPhotoUrl"
+                          alt="개선 후 사진"
+                          class="photo-preview"
+                        />
+                        <button
+                          v-if="!props.readOnly"
+                          type="button"
+                          class="delete-photo-button"
+                          @click="removePreview"
+                          title="사진 삭제"
                         >
-                          <path
-                            stroke-linecap="round"
-                            stroke-linejoin="round"
-                            d="M6 18L18 6M6 6l12 12"
-                          />
-                        </svg>
+                          <svg
+                            xmlns="http://www.w3.org/2000/svg"
+                            fill="none"
+                            viewBox="0 0 24 24"
+                            stroke-width="1.5"
+                            stroke="currentColor"
+                            class="delete-icon"
+                          >
+                            <path
+                              stroke-linecap="round"
+                              stroke-linejoin="round"
+                              d="M6 18L18 6M6 6l12 12"
+                            />
+                          </svg>
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+                <div
+                  class="form-row risk-assessment"
+                  v-if="formData.assessmentStatus == '003'"
+                >
+                  <label>개선 후 위험성 평가</label>
+                  <div class="risk-evaluation-group">
+                    <div class="risk-input-item">
+                      <label>빈도</label>
+                      <select
+                        v-model="formData.revalLikelihoodScore"
+                        :disabled="props.readOnly"
+                      >
+                        <option value="">선택</option>
+                        <option value="1">1</option>
+                        <option value="2">2</option>
+                        <option value="3">3</option>
+                        <option value="4">4</option>
+                        <option value="5">5</option>
+                      </select>
+                    </div>
+                    <div class="risk-input-item">
+                      <label>강도</label>
+                      <select
+                        v-model="formData.revalSeverityScore"
+                        :disabled="props.readOnly"
+                      >
+                        <option value="">선택</option>
+                        <option value="1">1</option>
+                        <option value="2">2</option>
+                        <option value="3">3</option>
+                        <option value="4">4</option>
+                      </select>
+                    </div>
+                    <div class="risk-input-item">
+                      <label>위험도</label>
+                      <div
+                        class="risk-level-display"
+                        :class="getRiskLevelClass(formData.revalRiskLv)"
+                      >
+                        {{ formData.revalRiskLv || "-" }}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                <!-- ▼ 참조 아차사고 (개선예정 002 부터 표시, 002 에서만 편집) -->
+                <div class="form-row ref-nm-form-row" v-if="showReference">
+                  <label>참조 아차사고</label>
+                  <div class="ref-nm-block">
+                    <!-- 검색/연결 버튼 (002 에서만) → 조회 팝업 -->
+                    <div class="ref-nm-toolbar" v-if="canEditReference">
+                      <button class="btn btn-report" @click="fnOpenRefSearch">
+                        아차사고 검색/연결
                       </button>
                     </div>
-                  </div>
-                </div>
-              </div>
-              <div
-                class="form-row risk-assessment"
-                v-if="formData.assessmentStatus == '003'"
-              >
-                <label>개선 후 위험성 평가</label>
-                <div class="risk-evaluation-group">
-                  <div class="risk-input-item">
-                    <label>빈도</label>
-                    <select
-                      v-model="formData.revalLikelihoodScore"
-                      :disabled="props.readOnly"
-                    >
-                      <option value="">선택</option>
-                      <option value="1">1</option>
-                      <option value="2">2</option>
-                      <option value="3">3</option>
-                      <option value="4">4</option>
-                      <option value="5">5</option>
-                    </select>
-                  </div>
-                  <div class="risk-input-item">
-                    <label>강도</label>
-                    <select
-                      v-model="formData.revalSeverityScore"
-                      :disabled="props.readOnly"
-                    >
-                      <option value="">선택</option>
-                      <option value="1">1</option>
-                      <option value="2">2</option>
-                      <option value="3">3</option>
-                      <option value="4">4</option>
-                    </select>
-                  </div>
-                  <div class="risk-input-item">
-                    <label>위험도</label>
-                    <div
-                      class="risk-level-display"
-                      :class="getRiskLevelClass(formData.revalRiskLv)"
-                    >
-                      {{ formData.revalRiskLv || "-" }}
+
+                    <!-- 연결된 아차사고 테이블 (사고번호 | 장소 | 관리) -->
+                    <div class="ref-nm-table-wrap">
+                      <table class="ref-nm-table">
+                        <thead>
+                          <tr>
+                            <th
+                              class="ref-nm-table__del"
+                              v-if="canEditReference"
+                            ></th>
+                            <th>사고번호</th>
+                            <th>장소</th>
+                            <th class="ref-nm-table__act">관리</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          <tr v-if="displayLinks.length === 0">
+                            <td
+                              :colspan="canEditReference ? 4 : 3"
+                              class="ref-nm-empty"
+                            >
+                              연결된 아차사고가 없습니다.
+                            </td>
+                          </tr>
+                          <tr v-for="nm in displayLinks" :key="nm.nearMissId">
+                            <td
+                              class="ref-nm-table__del"
+                              v-if="canEditReference"
+                            >
+                              <button
+                                class="btn-x"
+                                @click="fnRemoveLink(nm)"
+                                title="연결 해제"
+                              >
+                                x
+                              </button>
+                            </td>
+                            <td>{{ nm.nearMissId }}</td>
+                            <td
+                              class="ref-nm-table__loc"
+                              :title="nm.locationDesc"
+                            >
+                              {{ nm.locationDesc }}
+                            </td>
+                            <td class="ref-nm-table__act">
+                              <button
+                                class="btn btn-cancel"
+                                @click="fnOpenNearMissDetail(nm)"
+                              >
+                                상세
+                              </button>
+                            </td>
+                          </tr>
+                        </tbody>
+                      </table>
                     </div>
                   </div>
                 </div>
+                <!-- ▲ 참조 아차사고 -->
               </div>
-
-              <!-- ▼ 참조 아차사고 (개선예정 002 부터 표시, 002 에서만 편집) -->
-              <div class="form-row ref-nm-form-row" v-if="showReference">
-                <label>참조 아차사고</label>
-                <div class="ref-nm-block">
-                  <!-- 검색/연결 버튼 (002 에서만) → 조회 팝업 -->
-                  <div class="ref-nm-toolbar" v-if="canEditReference">
-                    <button class="btn btn-report" @click="fnOpenRefSearch">
-                      아차사고 검색/연결
-                    </button>
-                  </div>
-
-                  <!-- 연결된 아차사고 테이블 (사고번호 | 장소 | 관리) -->
-                  <div class="ref-nm-table-wrap">
-                    <table class="ref-nm-table">
-                      <thead>
-                        <tr>
-                          <th
-                            class="ref-nm-table__del"
-                            v-if="canEditReference"
-                          ></th>
-                          <th>사고번호</th>
-                          <th>장소</th>
-                          <th class="ref-nm-table__act">관리</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        <tr v-if="displayLinks.length === 0">
-                          <td
-                            :colspan="canEditReference ? 4 : 3"
-                            class="ref-nm-empty"
-                          >
-                            연결된 아차사고가 없습니다.
-                          </td>
-                        </tr>
-                        <tr v-for="nm in displayLinks" :key="nm.nearMissId">
-                          <td class="ref-nm-table__del" v-if="canEditReference">
-                            <button
-                              class="btn-x"
-                              @click="fnRemoveLink(nm)"
-                              title="연결 해제"
-                            >
-                              x
-                            </button>
-                          </td>
-                          <td>{{ nm.nearMissId }}</td>
-                          <td
-                            class="ref-nm-table__loc"
-                            :title="nm.locationDesc"
-                          >
-                            {{ nm.locationDesc }}
-                          </td>
-                          <td class="ref-nm-table__act">
-                            <button
-                              class="btn btn-cancel"
-                              @click="fnOpenNearMissDetail(nm)"
-                            >
-                              상세
-                            </button>
-                          </td>
-                        </tr>
-                      </tbody>
-                    </table>
-                  </div>
-                </div>
-              </div>
-              <!-- ▲ 참조 아차사고 -->
             </div>
           </div>
-        </div>
 
-        <!-- 푸터 버튼 -->
-        <div class="modal-footer">
-          <div class="footer-buttons-left">
-            <button
-              class="btn btn-report"
-              v-if="['002', '003'].includes(formData.assessmentStatus)"
-              @click="fnOpenImprovementPlan()"
-            >
-              개선실행계획서
-            </button>
-            <button
-              class="btn btn-report"
-              v-if="formData.assessmentStatus == '003'"
-              @click="fnOpenImprovementReport()"
-            >
-              개선완료보고서
-            </button>
+          <!-- 푸터 버튼 -->
+          <div class="modal-footer">
+            <div class="footer-buttons-left">
+              <button
+                class="btn btn-report"
+                v-if="['002', '003'].includes(formData.assessmentStatus)"
+                @click="fnOpenImprovementPlan()"
+              >
+                개선실행계획서
+              </button>
+              <button
+                class="btn btn-report"
+                v-if="formData.assessmentStatus == '003'"
+                @click="fnOpenImprovementReport()"
+              >
+                개선완료보고서
+              </button>
+            </div>
+            <div class="footer-buttons-right">
+              <button class="btn btn-cancel" @click="fnRequestClose">
+                취소
+              </button>
+              <button
+                class="btn btn-save"
+                v-if="
+                  !props.readOnly &&
+                  !['003', '004', '005'].includes(
+                    props.riskAssessmentData.assessmentStatus
+                  )
+                "
+                @click="fnSave()"
+              >
+                저장
+              </button>
+              <!-- T6-14C-hook-2: 검토요청(001)/개선예정(002)에서만 노출. 005로 지정 저장 -->
+              <button
+                class="btn btn-report"
+                v-if="
+                  !props.readOnly &&
+                  ['001', '002'].includes(
+                    props.riskAssessmentData.assessmentStatus
+                  )
+                "
+                @click="fnDesignateContinuous()"
+              >
+                지속개선대상 지정
+              </button>
+            </div>
           </div>
-          <div class="footer-buttons-right">
-            <button class="btn btn-cancel" @click="fnRequestClose">취소</button>
-            <button
-              class="btn btn-save"
-              v-if="
-                !props.readOnly &&
-                !['003', '004', '005'].includes(
-                  props.riskAssessmentData.assessmentStatus
-                )
-              "
-              @click="fnSave()"
-            >
-              저장
-            </button>
-            <!-- T6-14C-hook-2: 검토요청(001)/개선예정(002)에서만 노출. 005로 지정 저장 -->
-            <button
-              class="btn btn-report"
-              v-if="
-                !props.readOnly &&
-                ['001', '002'].includes(
-                  props.riskAssessmentData.assessmentStatus
-                )
-              "
-              @click="fnDesignateContinuous()"
-            >
-              지속개선대상 지정
-            </button>
-          </div>
-        </div>
 
-        <!-- PRAFTA-WEB_003 v3: AI 분석 슬라이드 패널(팝업 전체 오버레이 — 본체는 별도 SFC).
+          <!-- PRAFTA-WEB_003 v3: AI 분석 슬라이드 패널(팝업 전체 오버레이 — 본체는 별도 SFC).
              ★Transition 을 부모에 둔다: v-if 언마운트가 부모에서 일어나므로 열림/닫힘 양방향
              슬라이드(위→아래 진입, 아래→위 퇴장)가 모두 재생된다. -->
-        <Transition name="ai-slide">
-          <RiskAiAnalysisPanel
-            v-if="showAiPanel"
-            :scope="aiScopeKeys()"
-            :summary="{
-              processNm: formData.processNm,
-              riskTypeNm: formData.riskTypeNm,
-              hazardNm: formData.hazardNm,
-              initDesc: formData.initDesc,
-            }"
-            :photo-url="beforePhotoUrl || ''"
-            :has-source-image="!!formData.initFileMgmtCd"
-            @close="fnCloseAiPanel"
-            @save="fnApplyAiSelection"
-            @derived="fnMarkAiDirty"
-            @touched="fnMarkAiDirty"
-          />
-        </Transition>
+          <Transition name="ai-slide">
+            <RiskAiAnalysisPanel
+              v-if="showAiPanel"
+              :scope="aiScopeKeys()"
+              :summary="{
+                processNm: formData.processNm,
+                riskTypeNm: formData.riskTypeNm,
+                hazardNm: formData.hazardNm,
+                initDesc: formData.initDesc,
+              }"
+              :photo-url="beforePhotoUrl || ''"
+              :has-source-image="!!formData.initFileMgmtCd"
+              @close="fnCloseAiPanel"
+              @save="fnApplyAiSelection"
+              @derived="fnMarkAiDirty"
+              @touched="fnMarkAiDirty"
+            />
+          </Transition>
         </div>
         <!-- ▲ risk-popup-shell -->
       </div>

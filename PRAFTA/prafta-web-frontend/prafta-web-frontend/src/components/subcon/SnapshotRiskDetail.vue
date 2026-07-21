@@ -1,7 +1,9 @@
 <template>
   <div class="risk-detail">
-    <div class="table-box overflow-x-auto rounded-md border border-slate-300"
-         style="--box-h: 62vh; --box-sticky-top: 1px; --box-ox: auto">
+    <div
+      class="table-box overflow-x-auto rounded-md border border-slate-300"
+      style="--box-h: 62vh; --box-sticky-top: 1px; --box-ox: auto"
+    >
       <table class="data-grid w-full text-sm text-left">
         <thead>
           <tr>
@@ -17,7 +19,11 @@
         </thead>
         <tbody>
           <template v-if="!rows.length">
-            <tr><td colspan="8" class="edu-grid-empty">표시할 데이터가 없습니다.</td></tr>
+            <tr>
+              <td colspan="8" class="edu-grid-empty">
+                표시할 데이터가 없습니다.
+              </td>
+            </tr>
           </template>
           <template v-else>
             <template v-for="row in rows" :key="row.detailId">
@@ -28,7 +34,15 @@
                   <div class="cell-sub">{{ row.assessmentDesc }}</div>
                 </td>
                 <td style="text-align: center">{{ row.assessmentStatusNm }}</td>
-                <td style="text-align: center">{{ riskLvLabel(row.initRiskLv, row.initLikelihood, row.initSeverity) }}</td>
+                <td style="text-align: center">
+                  {{
+                    riskLvLabel(
+                      row.initRiskLv,
+                      row.initLikelihood,
+                      row.initSeverity
+                    )
+                  }}
+                </td>
                 <td>{{ row.initDesc }}</td>
                 <td style="text-align: center">
                   <img
@@ -40,11 +54,21 @@
                   />
                   <span v-else class="cell-sub">-</span>
                 </td>
-                <td style="text-align: center">{{ riskLvLabel(row.revalRiskLv, row.revalLikelihood, row.revalSeverity) }}</td>
+                <td style="text-align: center">
+                  {{
+                    riskLvLabel(
+                      row.revalRiskLv,
+                      row.revalLikelihood,
+                      row.revalSeverity
+                    )
+                  }}
+                </td>
                 <td>
                   <ul v-if="(row.improves || []).length" class="improve-list">
                     <li v-for="imp in row.improves" :key="imp.improveId">
-                      <span class="cell-sub">{{ fmtYmd(imp.improveDate) }}</span>
+                      <span class="cell-sub">{{
+                        fmtYmd(imp.improveDate)
+                      }}</span>
                       {{ imp.improveDesc }}
                       <img
                         v-if="imp.fileMgmtCd"

@@ -5,15 +5,27 @@
         <div class="modal-header">
           <span>연동 요청</span>
           <button class="icon-button" @click="$emit('close')">
-            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-6 h-6">
-              <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" />
+            <svg
+              xmlns="http://www.w3.org/2000/svg"
+              fill="none"
+              viewBox="0 0 24 24"
+              stroke-width="1.5"
+              stroke="currentColor"
+              class="w-6 h-6"
+            >
+              <path
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                d="M6 18L18 6M6 6l12 12"
+              />
             </svg>
           </button>
         </div>
 
         <div class="form-container">
           <p class="reg-guide">
-            연동할 회사의 회사코드를 정확히 입력해 조회하세요. 요청은 상대 회사 관리자가 수락해야 연동됩니다.
+            연동할 회사의 회사코드를 정확히 입력해 조회하세요. 요청은 상대 회사
+            관리자가 수락해야 연동됩니다.
           </p>
 
           <div class="form-row-max">
@@ -26,22 +38,40 @@
               maxlength="50"
               @keyup.enter="fnSearchCmpny"
             />
-            <button class="btn btn-sm btn-primary" @click="fnSearchCmpny">조회</button>
+            <button class="btn btn-sm btn-primary" @click="fnSearchCmpny">
+              조회
+            </button>
           </div>
 
           <!-- 조회 결과 카드: found=결과 / searched&&!found=결과없음(사유 무구분) -->
           <div v-if="searched && found" class="cmpny-result-card">
-            <div class="cmpny-result-row"><label>회사코드</label><span>{{ found.cmpnyCd }}</span></div>
-            <div class="cmpny-result-row"><label>회사명</label><span>{{ found.cmpnyNm }}</span></div>
-            <div class="cmpny-result-row"><label>사업자번호</label><span>{{ found.bsnsLcnNo }}</span></div>
+            <div class="cmpny-result-row">
+              <label>회사코드</label><span>{{ found.cmpnyCd }}</span>
+            </div>
+            <div class="cmpny-result-row">
+              <label>회사명</label><span>{{ found.cmpnyNm }}</span>
+            </div>
+            <div class="cmpny-result-row">
+              <label>사업자번호</label><span>{{ found.bsnsLcnNo }}</span>
+            </div>
           </div>
-          <p v-else-if="searched" class="cmpny-result-empty">조회 결과가 없습니다.</p>
+          <p v-else-if="searched" class="cmpny-result-empty">
+            조회 결과가 없습니다.
+          </p>
         </div>
 
         <div class="modal-footer">
           <div class="btn-group">
-            <button class="btn btn-primary" @click="$emit('close')">취소</button>
-            <button class="btn btn-primary" :disabled="!found" @click="fnRequest">연동 요청</button>
+            <button class="btn btn-primary" @click="$emit('close')">
+              취소
+            </button>
+            <button
+              class="btn btn-primary"
+              :disabled="!found"
+              @click="fnRequest"
+            >
+              연동 요청
+            </button>
           </div>
         </div>
       </div>

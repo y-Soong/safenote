@@ -52,7 +52,9 @@
       </template>
 
       <div v-if="isPlanLoading" class="dash-state">조회 중…</div>
-      <div v-else-if="planError" class="dash-state is-error">{{ planError }}</div>
+      <div v-else-if="planError" class="dash-state is-error">
+        {{ planError }}
+      </div>
       <div v-else-if="!planReg" class="dash-state">
         조회 조건 선택 후 [조회]를 누르세요.
       </div>
@@ -79,7 +81,9 @@
       @move="onMove"
     >
       <div v-if="isAttdLoading" class="dash-state">조회 중…</div>
-      <div v-else-if="attdError" class="dash-state is-error">{{ attdError }}</div>
+      <div v-else-if="attdError" class="dash-state is-error">
+        {{ attdError }}
+      </div>
       <div v-else-if="!attdStatus" class="dash-state">
         조회 조건 선택 후 [조회]를 누르세요.
       </div>
@@ -90,7 +94,12 @@
         <!-- 파이: 정상 vs 비정상 -->
         <div class="attd-rate__unit">
           <div class="attd-rate__donut">
-            <svg class="attd-rate__svg" viewBox="0 0 120 120" role="img" aria-label="정상/비정상 근무율">
+            <svg
+              class="attd-rate__svg"
+              viewBox="0 0 120 120"
+              role="img"
+              aria-label="정상/비정상 근무율"
+            >
               <circle class="attd-rate__track" cx="60" cy="60" :r="DONUT_R" />
               <circle
                 v-for="seg in statusDonutSegments"
@@ -105,13 +114,23 @@
               />
             </svg>
             <div class="attd-rate__center">
-              <strong class="attd-rate__pct">{{ attdStatus.normalRate }}%</strong>
+              <strong class="attd-rate__pct"
+                >{{ attdStatus.normalRate }}%</strong
+              >
               <span class="attd-rate__label">정상</span>
             </div>
           </div>
           <ul class="attd-rate__legend">
-            <li><i class="attd-rate__dot is-normal"></i>정상 <b>{{ attdStatus.normalCnt }}</b>건</li>
-            <li><i class="attd-rate__dot is-abnormal"></i>비정상 <b>{{ abnormalCnt }}</b>건</li>
+            <li>
+              <i class="attd-rate__dot is-normal"></i>정상
+              <b>{{ attdStatus.normalCnt }}</b
+              >건
+            </li>
+            <li>
+              <i class="attd-rate__dot is-abnormal"></i>비정상
+              <b>{{ abnormalCnt }}</b
+              >건
+            </li>
           </ul>
         </div>
       </div>
@@ -155,7 +174,9 @@
 
         <p class="req-info__note">내 결재함(요청 승인 관리) 기준</p>
         <p
-          v-if="correctionCnt === null || overtimeCnt === null || leaveCnt === null"
+          v-if="
+            correctionCnt === null || overtimeCnt === null || leaveCnt === null
+          "
           class="req-info__note"
         >
           조회 권한이 있는 항목만 건수가 표시됩니다.
@@ -179,73 +200,73 @@
       </div>
       <div v-else class="ot-trend">
         <div class="ot-trend__plot">
-        <svg
-          class="ot-trend__chart"
-          :viewBox="`0 0 ${OT_CHART.w} ${OT_CHART.h}`"
-          preserveAspectRatio="none"
-          role="img"
-          aria-label="초과근무 6개월 추이"
-        >
-          <!-- 격자선: 가로(수평) + 세로(수직) — 데이터 라인 아래에 먼저 그림 -->
-          <line
-            v-for="(gy, i) in otGrid.horizontal"
-            :key="`gh-${i}`"
-            class="ot-trend__grid"
-            :x1="OT_CHART.padX"
-            :y1="gy"
-            :x2="OT_CHART.w - OT_CHART.padX"
-            :y2="gy"
-          />
-          <line
-            v-for="(gx, i) in otGrid.vertical"
-            :key="`gv-${i}`"
-            class="ot-trend__grid"
-            :x1="gx"
-            :y1="OT_CHART.padTop"
-            :x2="gx"
-            :y2="OT_CHART.h - OT_CHART.padBottom"
-          />
-          <!-- 하단 기준선(x축) -->
-          <line
-            class="ot-trend__axis"
-            :x1="OT_CHART.padX"
-            :y1="OT_CHART.h - OT_CHART.padBottom"
-            :x2="OT_CHART.w - OT_CHART.padX"
-            :y2="OT_CHART.h - OT_CHART.padBottom"
-          />
-          <polyline class="ot-trend__line" :points="otPolyline" />
-          <!-- 포인트: hover 시 값 라벨 표시 (네이티브 title 은 중복 툴팁이라 미사용) -->
-          <g v-for="p in otPoints" :key="p.ym" class="ot-trend__pt">
-            <text
-              class="ot-trend__val"
-              :x="p.x"
-              :y="p.y - 13"
-              text-anchor="middle"
-            >
-              {{ fmtOtHours(p.minutes) }}
-            </text>
-            <circle
-              class="ot-trend__dot"
-              :class="{ 'is-base': p.ym === searchYm }"
-              :cx="p.x"
-              :cy="p.y"
-              r="2.45"
-            />
-            <!-- hover 판정 확장용 투명 히트 영역 -->
-            <circle class="ot-trend__hit" :cx="p.x" :cy="p.y" r="12" />
-          </g>
-        </svg>
-        <!-- y축 눈금값(초과근무 시간): SVG 밖 HTML 오버레이 — 격자선 높이에 맞춰 좌측 배치 -->
-        <div class="ot-trend__yaxis" aria-hidden="true">
-          <span
-            v-for="(t, i) in otYTicks"
-            :key="`yt-${i}`"
-            class="ot-trend__ytick"
-            :style="{ top: t.topPct }"
+          <svg
+            class="ot-trend__chart"
+            :viewBox="`0 0 ${OT_CHART.w} ${OT_CHART.h}`"
+            preserveAspectRatio="none"
+            role="img"
+            aria-label="초과근무 6개월 추이"
           >
-            {{ t.label }}
-          </span>
-        </div>
+            <!-- 격자선: 가로(수평) + 세로(수직) — 데이터 라인 아래에 먼저 그림 -->
+            <line
+              v-for="(gy, i) in otGrid.horizontal"
+              :key="`gh-${i}`"
+              class="ot-trend__grid"
+              :x1="OT_CHART.padX"
+              :y1="gy"
+              :x2="OT_CHART.w - OT_CHART.padX"
+              :y2="gy"
+            />
+            <line
+              v-for="(gx, i) in otGrid.vertical"
+              :key="`gv-${i}`"
+              class="ot-trend__grid"
+              :x1="gx"
+              :y1="OT_CHART.padTop"
+              :x2="gx"
+              :y2="OT_CHART.h - OT_CHART.padBottom"
+            />
+            <!-- 하단 기준선(x축) -->
+            <line
+              class="ot-trend__axis"
+              :x1="OT_CHART.padX"
+              :y1="OT_CHART.h - OT_CHART.padBottom"
+              :x2="OT_CHART.w - OT_CHART.padX"
+              :y2="OT_CHART.h - OT_CHART.padBottom"
+            />
+            <polyline class="ot-trend__line" :points="otPolyline" />
+            <!-- 포인트: hover 시 값 라벨 표시 (네이티브 title 은 중복 툴팁이라 미사용) -->
+            <g v-for="p in otPoints" :key="p.ym" class="ot-trend__pt">
+              <text
+                class="ot-trend__val"
+                :x="p.x"
+                :y="p.y - 13"
+                text-anchor="middle"
+              >
+                {{ fmtOtHours(p.minutes) }}
+              </text>
+              <circle
+                class="ot-trend__dot"
+                :class="{ 'is-base': p.ym === searchYm }"
+                :cx="p.x"
+                :cy="p.y"
+                r="2.45"
+              />
+              <!-- hover 판정 확장용 투명 히트 영역 -->
+              <circle class="ot-trend__hit" :cx="p.x" :cy="p.y" r="12" />
+            </g>
+          </svg>
+          <!-- y축 눈금값(초과근무 시간): SVG 밖 HTML 오버레이 — 격자선 높이에 맞춰 좌측 배치 -->
+          <div class="ot-trend__yaxis" aria-hidden="true">
+            <span
+              v-for="(t, i) in otYTicks"
+              :key="`yt-${i}`"
+              class="ot-trend__ytick"
+              :style="{ top: t.topPct }"
+            >
+              {{ t.label }}
+            </span>
+          </div>
         </div>
         <!-- 월 라벨: SVG 밖 HTML 로 렌더(파이 범례와 동일 실측 폰트). 각 포인트 아래 정렬 -->
         <div class="ot-trend__months">
@@ -275,13 +296,19 @@
       @move="onMove"
     >
       <div v-if="isLeaveLoading" class="dash-state">조회 중…</div>
-      <div v-else-if="leaveError" class="dash-state is-error">{{ leaveError }}</div>
+      <div v-else-if="leaveError" class="dash-state is-error">
+        {{ leaveError }}
+      </div>
       <div v-else-if="!leaveUsage" class="dash-state">
         조회 조건 선택 후 [조회]를 누르세요.
       </div>
       <div v-else class="leave-rate">
         <div class="leave-rate__gauge-wrap">
-          <svg class="leave-rate__gauge" viewBox="0 0 200 112" aria-hidden="true">
+          <svg
+            class="leave-rate__gauge"
+            viewBox="0 0 200 112"
+            aria-hidden="true"
+          >
             <!-- 반원 트랙 = 미사용 잔여 (r=84, 반둘레 ≈ 263.9) -->
             <path
               class="leave-rate__track"
@@ -311,18 +338,23 @@
         <ul class="leave-rate__legend">
           <li>
             <i class="leave-rate__dot is-used"></i>사용
-            <b>{{ leaveUsedRatePct }}</b>%
+            <b>{{ leaveUsedRatePct }}</b
+            >%
           </li>
           <li>
             <i class="leave-rate__dot is-planned"></i>예정
-            <b>{{ leavePlannedRatePct }}</b>%
+            <b>{{ leavePlannedRatePct }}</b
+            >%
           </li>
           <li>
             <i class="leave-rate__dot is-unused"></i>미사용
-            <b>{{ leaveUnusedRatePct }}</b>%
+            <b>{{ leaveUnusedRatePct }}</b
+            >%
           </li>
         </ul>
-        <p class="leave-rate__note">현재 기준 · 법정연차(본연차·월차·근속가산)</p>
+        <p class="leave-rate__note">
+          현재 기준 · 법정연차(본연차·월차·근속가산)
+        </p>
       </div>
     </DashboardWidgetCard>
   </div>
@@ -368,10 +400,12 @@ const planMonth = computed({
 
 // 화살표 이동 (Attd_07 shiftMonth 패턴) — 현재월 없으면 오늘 기준
 const shiftPlanMonth = (delta) => {
-  const cur = props.baseYm || (() => {
-    const d = new Date();
-    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
-  })();
+  const cur =
+    props.baseYm ||
+    (() => {
+      const d = new Date();
+      return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+    })();
   const [y, m] = cur.split("-").map(Number);
   const d = new Date(y, m - 1 + delta, 1);
   planMonth.value = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
@@ -477,7 +511,9 @@ const leaveCnt = ref(null);
 // A5 합계 — 조회된 카운트만 합산 (null 은 제외)
 const reqTotalCnt = computed(
   () =>
-    (correctionCnt.value ?? 0) + (overtimeCnt.value ?? 0) + (leaveCnt.value ?? 0)
+    (correctionCnt.value ?? 0) +
+    (overtimeCnt.value ?? 0) +
+    (leaveCnt.value ?? 0)
 );
 
 const fmtCnt = (v) => (v === null || v === undefined ? "-" : v);
@@ -516,7 +552,10 @@ const otPoints = computed(() => {
     const minutes = Number(m.totalMinutes) || 0;
     return {
       x: OT_CHART.padX + (n === 1 ? innerW / 2 : (i * innerW) / (n - 1)),
-      y: OT_CHART.h - OT_CHART.padBottom - (minutes / otMaxMinutes.value) * innerH,
+      y:
+        OT_CHART.h -
+        OT_CHART.padBottom -
+        (minutes / otMaxMinutes.value) * innerH,
       ym: m.ym,
       minutes,
     };
@@ -586,15 +625,18 @@ const leaveRatio = (v) => {
 };
 
 // 중앙 % = 총량 소진율(Σ사용 ÷ Σ부여). 게이지 세그먼트와 동일하게 0~100 클램프.
-const leaveUsedRatePct = computed(
-  () => Math.round(leaveRatio(leaveUsage.value?.usedDays) * 100)
+const leaveUsedRatePct = computed(() =>
+  Math.round(leaveRatio(leaveUsage.value?.usedDays) * 100)
 );
 
 // 예정 % — 게이지 세그먼트와 동일 규칙(사용 잔여분까지만 채움).
 //   사용·예정이 각각 올림되어 합이 101%가 되지 않도록, 반올림 후에도 (100 − 사용) 상한을 건다.
 const leavePlannedRatePct = computed(() => {
   const usedR = leaveRatio(leaveUsage.value?.usedDays);
-  const plannedR = Math.min(leaveRatio(leaveUsage.value?.plannedDays), 1 - usedR);
+  const plannedR = Math.min(
+    leaveRatio(leaveUsage.value?.plannedDays),
+    1 - usedR
+  );
   return Math.min(Math.round(plannedR * 100), 100 - leaveUsedRatePct.value);
 });
 
@@ -611,7 +653,10 @@ const leaveUsedLen = computed(
 );
 const leavePlannedLen = computed(() => {
   const usedR = leaveRatio(leaveUsage.value?.usedDays);
-  const plannedR = Math.min(leaveRatio(leaveUsage.value?.plannedDays), 1 - usedR);
+  const plannedR = Math.min(
+    leaveRatio(leaveUsage.value?.plannedDays),
+    1 - usedR
+  );
   return plannedR * LEAVE_GAUGE_FULL;
 });
 
@@ -1242,7 +1287,9 @@ const fetchReqCounts = async () => {
   stroke: currentColor;
   stroke-width: 16;
   stroke-linecap: butt; /* 세그먼트 이음새가 겹치지 않게 round 미사용 */
-  transition: stroke-dasharray 0.3s ease, stroke-dashoffset 0.3s ease;
+  transition:
+    stroke-dasharray 0.3s ease,
+    stroke-dashoffset 0.3s ease;
 }
 
 /* 3분할 색 매핑 (게이지 세그먼트 stroke + 범례 dot 공용) */

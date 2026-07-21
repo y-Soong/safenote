@@ -11,7 +11,12 @@
   - 골격: planner 작성(template + scoped style), script 로직: developer 작성(PLT-LOC-06).
 -->
 <template>
-  <div class="sms-gate" role="dialog" aria-modal="true" aria-label="위치정보 열람 SMS 인증">
+  <div
+    class="sms-gate"
+    role="dialog"
+    aria-modal="true"
+    aria-label="위치정보 열람 SMS 인증"
+  >
     <div class="sms-gate__card">
       <!-- 잠금 아이콘 -->
       <div class="sms-gate__icon" aria-hidden="true">
@@ -31,7 +36,12 @@
 
       <!-- 1단계: 발송 -->
       <div v-if="step === 'idle'" class="sms-gate__actions">
-        <button type="button" class="sms-gate__btn sms-gate__btn--primary" :disabled="sending" @click="fnSend">
+        <button
+          type="button"
+          class="sms-gate__btn sms-gate__btn--primary"
+          :disabled="sending"
+          @click="fnSend"
+        >
           {{ sending ? "발송 중…" : "인증번호 발송" }}
         </button>
       </div>
@@ -49,7 +59,10 @@
             :disabled="verifying"
             @keyup.enter="fnVerify"
           />
-          <span class="sms-gate__timer" :class="{ 'is-expired': remainSec <= 0 }">
+          <span
+            class="sms-gate__timer"
+            :class="{ 'is-expired': remainSec <= 0 }"
+          >
             {{ remainSec > 0 ? fnFormatRemain(remainSec) : "만료" }}
           </span>
         </div>
@@ -66,7 +79,12 @@
           >
             {{ verifying ? "확인 중…" : "확인" }}
           </button>
-          <button type="button" class="sms-gate__btn sms-gate__btn--ghost" :disabled="sending" @click="fnSend">
+          <button
+            type="button"
+            class="sms-gate__btn sms-gate__btn--ghost"
+            :disabled="sending"
+            @click="fnSend"
+          >
             재발송
           </button>
         </div>
@@ -80,7 +98,13 @@
 </template>
 
 <script setup>
-import { ref, onMounted, onBeforeUnmount, getCurrentInstance, defineEmits } from "vue";
+import {
+  ref,
+  onMounted,
+  onBeforeUnmount,
+  getCurrentInstance,
+  defineEmits,
+} from "vue";
 import axios from "@/api/axios";
 import { resolveApiErrorMessage } from "@/utils/apiError";
 
@@ -155,7 +179,10 @@ async function fnSend() {
       fnStartCountdown();
     }
   } catch (err) {
-    const msg = resolveApiErrorMessage(err, "인증번호 발송 중 오류가 발생했습니다.");
+    const msg = resolveApiErrorMessage(
+      err,
+      "인증번호 발송 중 오류가 발생했습니다."
+    );
     if (step.value === "sent") {
       errorMsg.value = msg;
     } else {
@@ -172,7 +199,8 @@ async function fnSend() {
  *   실패(PLATFORM_400_010 불일치/만료): 인라인 오류 표시 + 입력 초기화.
  */
 async function fnVerify() {
-  if (verifying.value || remainSec.value <= 0 || certNo.value.length !== 6) return;
+  if (verifying.value || remainSec.value <= 0 || certNo.value.length !== 6)
+    return;
   errorMsg.value = "";
   verifying.value = true;
 
@@ -185,7 +213,10 @@ async function fnVerify() {
       emit("verified");
     }
   } catch (err) {
-    errorMsg.value = resolveApiErrorMessage(err, "인증번호 확인 중 오류가 발생했습니다.");
+    errorMsg.value = resolveApiErrorMessage(
+      err,
+      "인증번호 확인 중 오류가 발생했습니다."
+    );
     certNo.value = "";
   } finally {
     verifying.value = false;

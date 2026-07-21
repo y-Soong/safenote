@@ -11,7 +11,10 @@
       >
         <!-- 헤더 -->
         <div class="modal-header" @mousedown="startDrag">
-          <span>안전관리 현황 출력 — {{ props.victimUserNm }} / {{ props.acctId }}</span>
+          <span
+            >안전관리 현황 출력 — {{ props.victimUserNm }} /
+            {{ props.acctId }}</span
+          >
           <button
             type="button"
             class="icon-button"
@@ -33,7 +36,9 @@
             ◀
           </button>
           <div class="acc-print-nav__center">
-            <div class="acc-print-nav__idx">{{ sectionIdx + 1 }} / {{ sections.length }}</div>
+            <div class="acc-print-nav__idx">
+              {{ sectionIdx + 1 }} / {{ sections.length }}
+            </div>
             <div class="acc-print-nav__title">{{ currentSection.label }}</div>
           </div>
           <button
@@ -53,7 +58,10 @@
 
           <template v-else>
             <!-- ① 순회점검 ─────────────────────────────────────────── -->
-            <section v-show="currentSection.key === 'chkpt'" class="acc-print-section">
+            <section
+              v-show="currentSection.key === 'chkpt'"
+              class="acc-print-section"
+            >
               <div class="acc-print-section__head">
                 <h3>순회점검 점검결과 확인서</h3>
                 <button
@@ -77,12 +85,16 @@
                 </li>
               </ul>
               <p class="acc-print-note">
-                ※ 점검결과 확인서는 사고일이 속한 월(月) 기준으로 라이브 조회됩니다.
+                ※ 점검결과 확인서는 사고일이 속한 월(月) 기준으로 라이브
+                조회됩니다.
               </p>
             </section>
 
             <!-- ② 위험성평가 ────────────────────────────────────────── -->
-            <section v-show="currentSection.key === 'risk'" class="acc-print-section">
+            <section
+              v-show="currentSection.key === 'risk'"
+              class="acc-print-section"
+            >
               <div class="acc-print-section__head">
                 <h3>위험성평가 (개선실행계획서 / 개선완료보고서)</h3>
               </div>
@@ -92,9 +104,15 @@
               <ul v-else class="acc-print-list acc-print-list--risk">
                 <li v-for="(r, i) in riskList" :key="i">
                   <div class="acc-print-list__main">
-                    <span class="acc-print-list__lead">{{ r.assessmentCd }}</span>
+                    <span class="acc-print-list__lead">{{
+                      r.assessmentCd
+                    }}</span>
                     <span class="acc-print-list__sub">
-                      {{ [r.processNm, r.riskTypeNm, r.hazardNm].filter(Boolean).join(" / ") }}
+                      {{
+                        [r.processNm, r.riskTypeNm, r.hazardNm]
+                          .filter(Boolean)
+                          .join(" / ")
+                      }}
                     </span>
                   </div>
                   <div class="acc-print-list__actions">
@@ -116,15 +134,23 @@
                 </li>
               </ul>
               <p class="acc-print-note">
-                ※ 식별자(assessmentCd)는 사고 스냅샷에서, 본문은 사고일/사업장 스코프로 라이브 조회됩니다.
+                ※ 식별자(assessmentCd)는 사고 스냅샷에서, 본문은 사고일/사업장
+                스코프로 라이브 조회됩니다.
               </p>
             </section>
 
             <!-- ③ 근태 + TBM 합본 (신규 출력물) ───────────────────────── -->
-            <section v-show="currentSection.key === 'attdTbm'" class="acc-print-section">
+            <section
+              v-show="currentSection.key === 'attdTbm'"
+              class="acc-print-section"
+            >
               <div class="acc-print-section__head">
                 <h3>근태(스케줄 + 실근태) + TBM 교육 합본</h3>
-                <button type="button" class="btn btn-primary" @click="fnPrintAttdTbm">
+                <button
+                  type="button"
+                  class="btn btn-primary"
+                  @click="fnPrintAttdTbm"
+                >
                   인쇄
                 </button>
               </div>
@@ -139,7 +165,10 @@
                       <th>사고 ID</th>
                       <td>{{ props.acctId }}</td>
                       <th>발생일시</th>
-                      <td>{{ fmtYmd(props.occurYmd) }} {{ fmtHm(props.occurTime) }}</td>
+                      <td>
+                        {{ fmtYmd(props.occurYmd) }}
+                        {{ fmtHm(props.occurTime) }}
+                      </td>
                     </tr>
                     <tr>
                       <th>피해자</th>
@@ -182,7 +211,9 @@
                     </tr>
                   </tbody>
                 </table>
-                <div v-else class="acc-report__empty">스케줄 기록 없음 (연차/휴무 가능)</div>
+                <div v-else class="acc-report__empty">
+                  스케줄 기록 없음 (연차/휴무 가능)
+                </div>
 
                 <!-- 실근태 차수표 -->
                 <h3 class="acc-report__sub">실근태 (차수별)</h3>
@@ -196,14 +227,20 @@
                   </thead>
                   <tbody>
                     <tr v-if="attdData.records.length === 0">
-                      <td colspan="3" class="acc-report__empty-cell">실근태 기록 없음</td>
+                      <td colspan="3" class="acc-report__empty-cell">
+                        실근태 기록 없음
+                      </td>
                     </tr>
                     <tr v-for="(rec, i) in attdData.records" :key="i">
                       <td>{{ rec.workSeq }}</td>
-                      <td>{{ fmtYmd(rec.checkInDate) }} {{ fmtHm(rec.checkInTime) }}</td>
+                      <td>
+                        {{ fmtYmd(rec.checkInDate) }}
+                        {{ fmtHm(rec.checkInTime) }}
+                      </td>
                       <td>
                         <template v-if="rec.checkOutTime">
-                          {{ fmtYmd(rec.checkOutDate) }} {{ fmtHm(rec.checkOutTime) }}
+                          {{ fmtYmd(rec.checkOutDate) }}
+                          {{ fmtHm(rec.checkOutTime) }}
                         </template>
                         <template v-else>미퇴근</template>
                       </td>
@@ -225,7 +262,9 @@
                   </thead>
                   <tbody>
                     <tr v-if="attdData.tbmList.length === 0">
-                      <td colspan="5" class="acc-report__empty-cell">당일 TBM 기록 없음</td>
+                      <td colspan="5" class="acc-report__empty-cell">
+                        당일 TBM 기록 없음
+                      </td>
                     </tr>
                     <tr v-for="(t, i) in attdData.tbmList" :key="i">
                       <td>{{ t.title }}</td>
@@ -238,8 +277,8 @@
                 </table>
 
                 <p class="acc-report__foot">
-                  ※ 본 출력물은 본 시스템 기록 기준이며, '기록 없음'은 행위 부재가 아니라
-                  입력 부재일 수 있습니다.
+                  ※ 본 출력물은 본 시스템 기록 기준이며, '기록 없음'은 행위
+                  부재가 아니라 입력 부재일 수 있습니다.
                 </p>
               </div>
             </section>
@@ -249,7 +288,11 @@
         <!-- 푸터 -->
         <div class="modal-footer">
           <div class="btn-group">
-            <button type="button" class="btn btn-primary" @click="$emit('close')">
+            <button
+              type="button"
+              class="btn btn-primary"
+              @click="$emit('close')"
+            >
               닫기
             </button>
           </div>

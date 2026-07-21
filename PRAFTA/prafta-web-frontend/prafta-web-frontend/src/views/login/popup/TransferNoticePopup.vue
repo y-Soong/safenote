@@ -63,11 +63,7 @@
         <!-- 🔹 Footer -->
         <div class="modal-footer">
           <div class="btn-group">
-            <button
-              class="btn btn-primary"
-              :disabled="acking"
-              @click="fnAck"
-            >
+            <button class="btn btn-primary" :disabled="acking" @click="fnAck">
               확인
             </button>
           </div>

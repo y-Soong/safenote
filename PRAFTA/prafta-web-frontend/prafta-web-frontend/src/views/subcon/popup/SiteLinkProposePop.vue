@@ -5,23 +5,39 @@
         <div class="modal-header">
           <span>사업장 연동 제안</span>
           <button class="icon-button" @click="$emit('close')">
-            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-6 h-6">
-              <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" />
+            <svg
+              xmlns="http://www.w3.org/2000/svg"
+              fill="none"
+              viewBox="0 0 24 24"
+              stroke-width="1.5"
+              stroke="currentColor"
+              class="w-6 h-6"
+            >
+              <path
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                d="M6 18L18 6M6 6l12 12"
+              />
             </svg>
           </button>
         </div>
 
         <div class="form-container">
           <p class="reg-guide">
-            연동 중인 회사에 내 사업장을 제안합니다. 상대 회사가 수락하면 사업장과 근무타입이
-            상대 회사에 복제(미러)되며, 이후 내 수정 사항이 자동 반영됩니다.
+            연동 중인 회사에 내 사업장을 제안합니다. 상대 회사가 수락하면
+            사업장과 근무타입이 상대 회사에 복제(미러)되며, 이후 내 수정 사항이
+            자동 반영됩니다.
           </p>
 
           <div class="form-row-max">
             <label>대상 회사</label>
             <select v-model="tgtCmpnyCd">
               <option value="">선택하세요</option>
-              <option v-for="c in cmpnyList" :key="c.cmpnyCd" :value="c.cmpnyCd">
+              <option
+                v-for="c in cmpnyList"
+                :key="c.cmpnyCd"
+                :value="c.cmpnyCd"
+              >
                 {{ c.cmpnyNm }} ({{ c.cmpnyCd }})
               </option>
             </select>
@@ -32,20 +48,32 @@
             <select v-model="siteCd">
               <option value="">선택하세요</option>
               <option v-for="s in siteList" :key="s.siteCd" :value="s.siteCd">
-                {{ s.siteNm }}<template v-if="s.linkYn === 'Y'"> [연동받은 사업장]</template>
+                {{ s.siteNm
+                }}<template v-if="s.linkYn === 'Y'">
+                  [연동받은 사업장]</template
+                >
               </option>
             </select>
           </div>
 
           <p class="propose-note">
-            연동받은(미러) 사업장도 재제안할 수 있습니다. 단, 연동 출처(상위) 회사로는 다시 제안할 수 없습니다.
+            연동받은(미러) 사업장도 재제안할 수 있습니다. 단, 연동 출처(상위)
+            회사로는 다시 제안할 수 없습니다.
           </p>
         </div>
 
         <div class="modal-footer">
           <div class="btn-group">
-            <button class="btn btn-primary" @click="$emit('close')">취소</button>
-            <button class="btn btn-primary" :disabled="!tgtCmpnyCd || !siteCd" @click="fnPropose">연동 제안</button>
+            <button class="btn btn-primary" @click="$emit('close')">
+              취소
+            </button>
+            <button
+              class="btn btn-primary"
+              :disabled="!tgtCmpnyCd || !siteCd"
+              @click="fnPropose"
+            >
+              연동 제안
+            </button>
           </div>
         </div>
       </div>
