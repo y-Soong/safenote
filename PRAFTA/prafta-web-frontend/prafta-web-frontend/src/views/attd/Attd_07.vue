@@ -122,9 +122,6 @@
         >
           {{ monthCloseLabel }}
         </button>
-        <button class="a07-btn-line" @click="fnOpenExcelUploadPop">
-          ↑ 엑셀 업로드
-        </button>
       </div>
     </div>
 
@@ -1233,7 +1230,6 @@ const fnOpenGpsPop = (outside) => {
 
 // ── 팝업 핸들러 ───────────────────────────────────────────
 // 일자 상세 팝업(AttdDayDetailPop)은 record 데이터를 그대로 전달
-// 잔여 팝업: AttdMonthClosePop / AttdExcelUploadPop (추후)
 // PRAFTA-019-C 근태 마감 상태 조회 (사업장 + 월 기준)
 const fnLoadCloseStatus = async () => {
   if (proxy.$util.isEmpty(siteCd.value)) {
@@ -1336,9 +1332,6 @@ const fnOpenMonthClosePop = async () => {
     );
   }
 };
-const fnOpenExcelUploadPop = () =>
-  proxy.$alert(getMessage(MSG.EXCEL_UPLOAD_PREPARING));
-
 // 팝업은 식별자만 전달하고 상세/이력은 팝업 내부에서 API로 조회한다.
 // (attd1Id 우선, 없으면 attd2Id, 둘 다 없으면 신규 케이스로 빈문자 전달)
 // attdId가 없는 케이스는 팝업이 API를 안 부르므로 사용자/스케줄을 fallback_p로 같이 넘긴다.
