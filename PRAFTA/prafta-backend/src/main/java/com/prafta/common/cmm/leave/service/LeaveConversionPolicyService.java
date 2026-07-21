@@ -1,56 +1,32 @@
 package com.prafta.common.cmm.leave.service;
 
-import java.util.List;
-
-import com.prafta.common.cmm.leave.vo.LeaveConversionPolicyVO;
-
 /**
- * 연차 시간차 "1일 환산시간"(분모) 정책 서비스 (연차 시간차 환산 개편 LC-02).
+ * 연차 시간차 "1일 환산시간"(분모) 서비스 (연차 시간차 환산 개편 LC-02 → 2026-07-21 480 고정 전환).
  *
- * <p>회사 단위 설정(기본 480분) + 적용일 이력(effective-dating, F4). 시간차 차감의 분모는
- * 그날 스케줄이 아닌 본 설정값으로 고정된다(R1 — 지시서 §2).
- *
- * <p>설계 원칙:
+ * <p>2026-07-21 사용자 결정: 환산시간을 <b>480분(8시간) 고정</b>으로 전환한다.
  * <ul>
- *   <li>분모 선택 기준일 = 신청 대상일(WORK_YMD). 사후 신청도 근무일 기준으로 일관(F4).</li>
- *   <li>설정 미존재 회사는 480 폴백(시드 불필요 — 8시간 사업장 결과 불변, 설계 문서 §1-⑤).</li>
- *   <li>적용일은 오늘 이후만 허용(과거 소급 금지 — 소급 재계산 없음과 정합, F4).</li>
- *   <li>유효범위 60~1440분(plan §8-②) + R2 무반올림 방어(30분 단위 5자리 유한소수) 검증.</li>
- *   <li>저장/이력 조회는 정책 변경 권한자(AUTH_MASTER OR AUTH_HR_MANAGER)만 —
- *       {@code LeavePolicyService}(baim07) 권한 가드 미러(§8.5.7).</li>
+ *   <li>회사별 설정(tb_leave_conversion_policy)·적용일 이력(F4 effective-dating)·Baim_07
+ *       설정 화면은 폐기 — 유한소수 검증(R2) 때문에 현실적 대안값(420/360/450 등)이
+ *       애초에 입력 불가라 설정의 실용성이 없었고, 설정 변경이 잔여 표기 변동·혼합 이력·
+ *       최소단위 미만 끝수를 만드는 원천이었다.</li>
+ *   <li>8시간 미만 스케줄 회사는 하한 가드(R3 — 그날 소정근로분 D 기준 0.25/0.5/1.0)가,
+ *       초과 스케줄은 캡(R4 — 1.0)이 보호하므로 고정으로도 정합(잔여 왜곡은 근로자 유리 방향만).</li>
+ *   <li>tb_leave_conversion_policy 테이블은 드랍하지 않고 방치(dormant) — 기존 행 정리는
+ *       prafta-leave-conv-3-fix480-cleanup.sql 참조. 설정형으로 되돌릴 경우 git 이력 복원.</li>
  * </ul>
  *
- * <p>출처: 작업지시서_연차-시간차-환산-개편 T0·F4 / plan §1·§2 LC-02 / 정책서 attd/08-leave.md §8.5.9
+ * <p>출처: 작업지시서_연차-시간차-환산-개편 T0·F4(원설계) / 정책서 attd/08-leave.md §8.5.9
  */
 public interface LeaveConversionPolicyService {
 
-    /** 기본 1일 환산시간(분) — 설정 미존재 회사 폴백(8시간). */
+    /** 1일 환산시간(분) — 480분(8시간) 전사 고정 (2026-07-21 결정). */
     int DEFAULT_CONV_MINUTES = 480;
-    /** 환산시간 입력 하한(분) — plan §8-②. */
-    int MIN_CONV_MINUTES = 60;
-    /** 환산시간 입력 상한(분) — plan §8-②. */
-    int MAX_CONV_MINUTES = 1440;
 
     /**
-     * 신청 대상일(WORK_YMD) 기준 유효 환산시간(분) 조회.
+     * 유효 환산시간(분) 조회 — 항상 480 고정.
      *
-     * <p>{@code APPLY_FROM_DATE <= workYmd} 최신 1행. 행 미존재/비정상 값이면 480 폴백.
-     * 시간차 차감(LC-03)·재정산(LC-05)의 분모 단일 출처.
+     * <p>시간차 차감(LC-03)·재정산(LC-05)·표기(LC-07)의 분모 단일 출처. 호출부 시그니처
+     * 호환을 위해 파라미터는 유지하되 무시한다(설정형 복원 대비).
      */
     int selectConversionMinutes(String cmpnyCd, String workYmd);
-
-    /**
-     * 환산시간 변경 이력 조회(적용일 내림차순).
-     *
-     * <p>권한: AUTH_MASTER OR AUTH_HR_MANAGER (Baim_07 정책 이력과 동일 가드).
-     */
-    List<LeaveConversionPolicyVO> findHistory(String cmpnyCd, String authCd);
-
-    /**
-     * 환산시간 저장 — 신규 적용일 INSERT, 같은 적용일 재저장은 UPDATE.
-     *
-     * <p>검증: 권한(AUTH_MASTER OR AUTH_HR_MANAGER) / 적용일 YYYYMMDD + 오늘 이후만(ATTD_400_190)
-     * / 60~1440분(ATTD_400_191) / R2 유한소수 방어(ATTD_400_192).
-     */
-    void savePolicy(String cmpnyCd, String applyFromDate, Integer dailyConvMinutes, String authCd, String userCd);
 }

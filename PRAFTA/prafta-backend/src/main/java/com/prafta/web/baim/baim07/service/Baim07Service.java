@@ -1,14 +1,10 @@
 package com.prafta.web.baim.baim07.service;
 
 import com.prafta.web.baim.baim07.application.param.ActivePolicyParam;
-import com.prafta.web.baim.baim07.application.param.LeaveConversionParam;
-import com.prafta.web.baim.baim07.application.param.LeaveConversionSaveParam;
 import com.prafta.web.baim.baim07.application.param.LeavePolicyHistoryListParam;
 import com.prafta.web.baim.baim07.application.param.LeavePolicySaveParam;
 import com.prafta.web.baim.baim07.dto.response.AnalyzeImpactResponse;
 import com.prafta.web.baim.baim07.dto.response.ImpactPreviewResponse;
-import com.prafta.web.baim.baim07.dto.response.LeaveConversionResponse;
-import com.prafta.web.baim.baim07.dto.response.LeaveConversionSaveResponse;
 import com.prafta.web.baim.baim07.dto.response.LeavePolicyHistoryListResponse;
 import com.prafta.web.baim.baim07.dto.response.LeavePolicyResponse;
 import com.prafta.web.baim.baim07.dto.response.LeavePolicySaveResponse;
@@ -40,10 +36,4 @@ public interface Baim07Service {
 
     /** 정책 변경 영향 분석 (화면 8, 읽기 전용 시뮬레이션 — 저장 없음) */
     AnalyzeImpactResponse analyzeImpact(LeavePolicySaveParam param);
-
-    /** 시간차 1일 환산시간 조회 — 현재 적용값 + 변경 이력 (LC-02, AUTH_MASTER OR AUTH_HR_MANAGER) */
-    LeaveConversionResponse getConversion(LeaveConversionParam param);
-
-    /** 시간차 1일 환산시간 저장 — 신규 적용일 INSERT / 같은 적용일 UPDATE (LC-02) */
-    LeaveConversionSaveResponse saveConversion(LeaveConversionSaveParam param);
 }
