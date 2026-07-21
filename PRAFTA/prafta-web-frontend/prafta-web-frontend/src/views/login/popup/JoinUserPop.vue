@@ -756,6 +756,9 @@ function onSiteSelected(siteCdVal, siteNoVal, siteNmVal) {
   siteNo.value = siteNoVal;
   siteNm.value = siteNmVal;
   nodeDisabled.value = false;
+  // 사업장 변경 시 소속부서 초기화(부서는 사업장 종속 — 타 사업장 부서로 가입되는 것 방지)
+  nodeCd.value = "";
+  nodeNm.value = "";
   nodeSrchBtnFcs.value.focus();
 }
 

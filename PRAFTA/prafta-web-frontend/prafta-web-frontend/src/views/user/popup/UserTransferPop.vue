@@ -408,6 +408,9 @@ const fnNodeSearchPopOpen = () => {
 const onSiteSelected = (siteCdVal, _siteNoVal, siteNmVal) => {
   toSiteCd.value = siteCdVal;
   toSiteNm.value = siteNmVal;
+  // 이동할 사업장 변경 시 이동할 부서 초기화(부서는 사업장 종속 — 타 사업장 부서 잔존 방지)
+  toNodeCd.value = "";
+  toNodeNm.value = "";
 };
 
 const onNodeSelected = (nodeCdVal, nodeNmVal) => {

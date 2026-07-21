@@ -1296,6 +1296,9 @@ const onSiteSelected = (siteCdVal, siteNoVal, siteNmVal) => {
   siteCd.value = siteCdVal;
   siteNo.value = siteNoVal;
   siteNm.value = siteNmVal;
+  // 사업장 변경 시 소속부서 초기화(부서는 사업장 종속 — 타 사업장 부서코드로 저장되는 것 방지)
+  nodeCd.value = "";
+  nodeNm.value = "";
 };
 
 // PRAFTA_COM_003-B: 추가 사이트 권한 관련 함수(fnAddAdditionalSite/onAdditionalSiteSelected/fnRemoveAdditionalSite) 제거.

@@ -420,6 +420,9 @@ const fnCallback = (res) => {
         siteNo.value = siteList[0].siteNo;
         siteNm.value = siteList[0].siteNm;
         nodeDisabled.value = false;
+        // 사업장 변경 시 소속부서 초기화(부서는 사업장 종속 — 팝업 선택 경로와 정합)
+        nodeCd.value = "";
+        nodeNm.value = "";
       } else if (siteList.length > 1) {
         fnSiteSearchPopOpen();
         SiteSearchPopOpen.value = true;
