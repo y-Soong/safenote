@@ -57,7 +57,6 @@
             관리자가 요청한 연차 변경/삭제 동의가
             <strong>{{ consentPendingCount }}</strong>건 있어요
           </span>
-          <span class="consent-banner__cta" aria-hidden="true">확인 ▸</span>
         </button>
 
         <!-- 출퇴근 -->
@@ -876,6 +875,12 @@ const callCheckInOut = async (mode, ctx) => {
       offsiteMode.value = mode
       offsiteCtx.value = { lat: ctx.lat, lon: ctx.lon, accuracy: ctx.accuracy }
       offsiteSheetOpen.value = true
+      // 자발 연차일 확인 팝업이 열려 있었다면 닫는다 — 사용자 확인은 이미 끝났고
+      // 이후 재호출 맥락(targetWorkSeq 포함)은 pendingCtx 가 보존한다. 닫지 않으면
+      // 외근 사유 시트와 이중으로 겹쳐 보이는 문제(연차일+지오펜스 밖 출근 경로).
+      leaveDayConfirmSubmitting.value = false
+      leaveDayConfirmOpen.value = false
+      leaveDayPendingWorkSeq = null
       return
     }
 
@@ -1202,12 +1207,6 @@ const onNoticeRow = (noticeId) => {
 }
 .consent-banner__text strong {
   font-weight: 700;
-}
-.consent-banner__cta {
-  flex-shrink: 0;
-  font-size: 13px;
-  font-weight: 600;
-  color: var(--color-warning-text);
 }
 
 </style>

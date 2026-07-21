@@ -75,6 +75,23 @@ public interface AppLeave01Mapper {
     );
 
     /**
+     * 사용 내역(연 단위): CONFIRMED·DEL_YN='N' 사용 실적을 START_DATE 범위로 조회(최신순, LIMIT 500).
+     * <p>연차 종류명은 TB_LEAVE_TYPE_MGMT LEFT JOIN(타입 삭제 대비). 미래 시작일(사용예정)도 포함.
+     * 식별값은 토큰 도출값만(IDOR — 본인 자기조회).
+     *
+     * @param cmpnyCd 회사 코드(토큰 도출)
+     * @param userCd  사용자 코드(토큰 도출)
+     * @param fromYmd 조회 시작일(YYYYMMDD, inclusive — 연도 0101)
+     * @param toYmd   조회 종료일(YYYYMMDD, inclusive — 연도 1231)
+     */
+    List<com.prafta.app.leave.leave01.result.LeaveUseHistoryRow> selectLeaveUsesByRange(
+            @Param("cmpnyCd") String cmpnyCd
+            , @Param("userCd") String userCd
+            , @Param("fromYmd") String fromYmd
+            , @Param("toYmd") String toYmd
+    );
+
+    /**
      * LC-07(표기): 사용자의 시간차(SYS025 02/03/04) CONFIRMED 사용 분 합계(전 기간, DEL_YN='N').
      * 웹 {@code LeaveDashboardMapper.selectHourlyUsedMinutes} 미러 — FE "시간차 사용 N시간 M분"
      * 원본 표기 전용(잔여/부여 수치 무관). 대상 0건이면 0(IFNULL). 식별값은 토큰 도출값(IDOR).

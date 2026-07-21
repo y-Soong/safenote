@@ -13,8 +13,10 @@ import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
 
 import com.prafta.app.leave.leave01.application.param.MyLeaveSummaryParam;
+import com.prafta.app.leave.leave01.application.param.MyLeaveUseListParam;
 import com.prafta.app.leave.leave01.application.query.MyLeaveSummaryQuery;
 import com.prafta.app.leave.leave01.dto.response.MyLeaveSummaryResponse;
+import com.prafta.app.leave.leave01.dto.response.MyLeaveUseListResponse;
 import com.prafta.app.leave.leave01.mapper.AppLeave01Mapper;
 import com.prafta.app.leave.leave01.result.AppliedLeaveTypeRow;
 import com.prafta.app.leave.leave01.result.LeaveExpiringResult;
@@ -87,6 +89,28 @@ public class AppLeave01ServiceImpl implements AppLeave01Service {
         log.info("[leave01] 연차 현황 조회 완료 userCd={}", param.userCd());
 
         return response;
+    }
+
+    @Override
+    public MyLeaveUseListResponse selectMyLeaveUses(MyLeaveUseListParam param) {
+
+        // year 미지정이면 DB 기준 올해로 보정(클라이언트 시계 불신 — 기준일 단일 출처 유지).
+        String year = param.year();
+        if (!StringUtils.hasText(year)) {
+            year = appLeave01Mapper.selectTodayYmd().substring(0, 4);
+        }
+
+        List<com.prafta.app.leave.leave01.result.LeaveUseHistoryRow> list =
+                appLeave01Mapper.selectLeaveUsesByRange(
+                        param.cmpnyCd(), param.userCd(), year + "0101", year + "1231");
+
+        log.info("[leave01] 연차 사용 내역 조회 userCd={}, year={}, count={}",
+                param.userCd(), year, list == null ? 0 : list.size());
+
+        return MyLeaveUseListResponse.builder()
+                .year(year)
+                .list(list == null ? List.of() : list)
+                .build();
     }
 
     /**

@@ -7,8 +7,12 @@ import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
+import org.springframework.web.bind.annotation.RequestParam;
+
 import com.prafta.app.leave.leave01.application.param.MyLeaveSummaryParam;
+import com.prafta.app.leave.leave01.application.param.MyLeaveUseListParam;
 import com.prafta.app.leave.leave01.dto.response.MyLeaveSummaryResponse;
+import com.prafta.app.leave.leave01.dto.response.MyLeaveUseListResponse;
 import com.prafta.app.leave.leave01.service.AppLeave01Service;
 import com.prafta.common.dto.TokenInfo;
 import com.prafta.common.security.JwtUtil;
@@ -45,6 +49,25 @@ public class AppLeave01Controller {
 
         MyLeaveSummaryResponse response = appLeave01Service.selectMyLeaveSummary(
                 MyLeaveSummaryParam.from(tokenInfo)
+        );
+
+        return ResponseEntity.status(HttpStatus.OK).body(response);
+    }
+
+    /**
+     * 본인 연차 사용 내역(연 단위) 조회 — 연차 현황 화면 하단 리스트.
+     * <p>GET /prafta/appApi/leave01/my-leave-uses?year=YYYY (year 미지정=올해)
+     */
+    @GetMapping("/my-leave-uses")
+    public ResponseEntity<?> getMyLeaveUses(
+            @RequestParam(value = "year", required = false) String year,
+            @RequestHeader(value = "Authorization", required = false) String authorization
+    ) {
+
+        TokenInfo tokenInfo = jwtUtil.getAllClaimsAsMap(authorization);
+
+        MyLeaveUseListResponse response = appLeave01Service.selectMyLeaveUses(
+                MyLeaveUseListParam.from(tokenInfo, year)
         );
 
         return ResponseEntity.status(HttpStatus.OK).body(response);

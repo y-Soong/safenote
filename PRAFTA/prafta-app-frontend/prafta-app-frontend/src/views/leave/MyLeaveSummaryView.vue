@@ -80,6 +80,56 @@
 
         <!-- 빈 상태 (로드 완료했으나 데이터 없음) -->
         <p v-if="showEmptyState" class="lv-empty">표시할 연차 정보가 없어요</p>
+
+        <!-- 사용한 연차 리스트 (연 단위 조회) -->
+        <section class="lv-used">
+          <div class="lv-used__hd">
+            <h2 class="lv-used__title">사용한 연차</h2>
+            <div class="lv-used__year" role="group" aria-label="조회 연도 선택">
+              <button
+                type="button"
+                class="lv-used__year-btn"
+                aria-label="이전 연도"
+                :disabled="usedLoading"
+                @click="onUsedYearMove(-1)"
+              >
+                <svg class="icon" width="16" height="16" aria-hidden="true">
+                  <use href="#i-lv-chev-left" />
+                </svg>
+              </button>
+              <span class="lv-used__year-lbl">{{ usedYear }}년</span>
+              <button
+                type="button"
+                class="lv-used__year-btn"
+                aria-label="다음 연도"
+                :disabled="usedLoading"
+                @click="onUsedYearMove(1)"
+              >
+                <svg class="icon lv-used__chev-right" width="16" height="16" aria-hidden="true">
+                  <use href="#i-lv-chev-left" />
+                </svg>
+              </button>
+            </div>
+          </div>
+
+          <div v-if="usedLoading" class="lv-used__loading" aria-live="polite">불러오는 중...</div>
+          <p v-else-if="usedList.length === 0" class="lv-used__empty">
+            {{ usedYear }}년에 사용한 연차가 없어요
+          </p>
+          <ul v-else class="lv-used__list">
+            <li v-for="row in usedList" :key="row.leaveId" class="lv-used__row">
+              <div class="lv-used__row-main">
+                <span class="lv-used__date">{{ usedDateText(row) }}</span>
+                <span class="lv-used__name">
+                  {{ row.leaveNm || '연차' }}
+                  <span class="lv-used__unit">{{ usedUnitLabel(row.useUnitType) }}</span>
+                  <span v-if="isFutureUse(row)" class="lv-used__badge">예정</span>
+                </span>
+              </div>
+              <span class="lv-used__amount">{{ usedAmountText(row) }}</span>
+            </li>
+          </ul>
+        </section>
       </template>
     </main>
 
@@ -180,6 +230,12 @@ const hourlyUsedMinutes = ref(0)
 // 그룹 토글 (UI 상태 — 허용 범위). 진입 기본값: 전체
 const activeGroup = ref('TOTAL')
 
+// 사용한 연차 리스트(연 단위) — GET /appApi/leave01/my-leave-uses?year=YYYY
+//   usedYear 초기값은 클라이언트 올해로 표기하되, 첫 응답의 서버 보정 연도(year)로 동기화한다.
+const usedYear = ref(new Date().getFullYear())
+const usedList = ref([])
+const usedLoading = ref(true)
+
 // 콜아웃 세션 한정 닫힘 상태 (재진입 시 재노출 — §3.3)
 const calloutDismissed = ref(false)
 
@@ -265,14 +321,93 @@ const loadSummary = async ({ showLoading = true } = {}) => {
   }
 }
 
-// 당겨서 새로고침 — 본문 유지하고 연차 현황만 재조회(부작용 없는 조회).
+// ───────────────────────────────────────────────────────────
+// 사용한 연차 리스트(연 단위) — 표시 전용, 서버 권위값 그대로.
+// ───────────────────────────────────────────────────────────
+const loadUses = async (year) => {
+  usedLoading.value = true
+  try {
+    const res = await api.get('/appApi/leave01/my-leave-uses', {
+      params: year ? { year } : {},
+    })
+    usedList.value = Array.isArray(res?.data?.list) ? res.data.list : []
+    // 서버 보정 연도(미지정 요청 시 올해)로 표기를 동기화한다.
+    const serverYear = Number(res?.data?.year)
+    if (serverYear > 0) usedYear.value = serverYear
+  } catch (e) {
+    console.error('[MyLeaveSummary] 연차 사용 내역 조회 실패:', e?.message)
+    usedList.value = []
+  } finally {
+    usedLoading.value = false
+  }
+}
+
+const onUsedYearMove = (delta) => {
+  const next = usedYear.value + delta
+  usedYear.value = next
+  loadUses(String(next))
+}
+
+// SYS025 사용 단위 라벨(표시 전용).
+const USED_UNIT_LABELS = {
+  '00': '종일',
+  '01': '반차',
+  '02': '시간차',
+  '03': '시간차',
+  '04': '시간차',
+  '05': '반반차',
+}
+const usedUnitLabel = (unitType) => USED_UNIT_LABELS[unitType] ?? ''
+
+// 시간차(02/03/04) 여부 — 분 표기 우선 판정.
+const isHourlyUse = (row) => ['02', '03', '04'].includes(row?.useUnitType)
+
+// YYYYMMDD → M.D 표기. 기간이면 "M.D ~ M.D", 시간차면 "M.D HH:MM~HH:MM".
+const fmtMd = (ymd) => {
+  const s = String(ymd ?? '')
+  if (s.length !== 8) return '-'
+  return `${Number(s.slice(4, 6))}.${Number(s.slice(6, 8))}`
+}
+const fmtHm = (hhmm) => {
+  const s = String(hhmm ?? '')
+  return s.length === 4 ? `${s.slice(0, 2)}:${s.slice(2, 4)}` : ''
+}
+const usedDateText = (row) => {
+  const start = fmtMd(row.startDate)
+  if (isHourlyUse(row) && row.startTime && row.endTime) {
+    return `${start} ${fmtHm(row.startTime)}~${fmtHm(row.endTime)}`
+  }
+  if (row.endDate && row.endDate !== row.startDate) {
+    return `${start} ~ ${fmtMd(row.endDate)}`
+  }
+  return start
+}
+
+// 차감량 표기 — 시간차는 원본(분), 그 외는 일수(환산 조립은 공용 유틸).
+const usedAmountText = (row) => {
+  if (isHourlyUse(row) && Number(row.leaveMinutes) > 0) {
+    return formatMinutesToHm(Number(row.leaveMinutes))
+  }
+  return formatLeaveDays(Number(row.leaveDays) || 0, convMinutes.value)
+}
+
+// 미래 시작일(사용예정 확정분) 뱃지 판정 — 표시 전용이라 클라이언트 오늘 기준으로 충분.
+const clientTodayYmd = () => {
+  const d = new Date()
+  return `${d.getFullYear()}${String(d.getMonth() + 1).padStart(2, '0')}${String(d.getDate()).padStart(2, '0')}`
+}
+const isFutureUse = (row) => String(row?.startDate ?? '') > clientTodayYmd()
+
+// 당겨서 새로고침 — 본문 유지하고 연차 현황 + 사용 내역(현재 연도)을 재조회(부작용 없는 조회).
 const scrollRef = ref(null)
 const { onPullStart, onPullMove, onPullEnd, indicatorProps } = usePullToRefresh(scrollRef, async () => {
-  await loadSummary({ showLoading: false })
+  await Promise.all([loadSummary({ showLoading: false }), loadUses(String(usedYear.value))])
 })
 
 onMounted(() => {
   loadSummary()
+  // 최초 진입: year 미지정 → 서버가 올해로 보정(응답 year 로 표기 동기화).
+  loadUses()
 })
 </script>
 
@@ -420,6 +555,125 @@ onMounted(() => {
   margin: 0;
   font-size: 12px;
   color: var(--color-text-secondary);
+}
+
+/* 사용한 연차 리스트 (연 단위 조회) — 카드 톤은 메타카드와 동일(CSS 변수만). */
+.lv-used {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-sm);
+  padding: var(--space-md);
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-sm);
+}
+.lv-used__hd {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+.lv-used__title {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--color-text-primary);
+}
+.lv-used__year {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-xs);
+}
+.lv-used__year-btn {
+  width: 32px;
+  height: 32px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: transparent;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  color: var(--color-text-secondary);
+  cursor: pointer;
+  font-family: inherit;
+}
+.lv-used__year-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+.lv-used__chev-right {
+  transform: rotate(180deg);
+}
+.lv-used__year-lbl {
+  min-width: 56px;
+  text-align: center;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--color-text-primary);
+  font-variant-numeric: tabular-nums;
+}
+.lv-used__loading,
+.lv-used__empty {
+  margin: 0;
+  padding: var(--space-lg) 0;
+  text-align: center;
+  font-size: 13px;
+  color: var(--color-text-tertiary);
+}
+.lv-used__list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.lv-used__row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-sm);
+  padding: 10px 0;
+  border-bottom: 1px solid var(--color-border-light);
+}
+.lv-used__row:last-child {
+  border-bottom: 0;
+  padding-bottom: 0;
+}
+.lv-used__row-main {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+.lv-used__date {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--color-text-primary);
+  font-variant-numeric: tabular-nums;
+}
+.lv-used__name {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-xs);
+  font-size: 12px;
+  color: var(--color-text-secondary);
+}
+.lv-used__unit {
+  color: var(--color-text-tertiary);
+}
+.lv-used__badge {
+  padding: 1px 6px;
+  background: var(--color-primary-tint);
+  border: 1px solid var(--color-primary-tint-border);
+  border-radius: var(--radius-full);
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--color-primary-text-deep);
+}
+.lv-used__amount {
+  flex-shrink: 0;
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--color-text-primary);
+  font-variant-numeric: tabular-nums;
 }
 
 /* 푸터 */

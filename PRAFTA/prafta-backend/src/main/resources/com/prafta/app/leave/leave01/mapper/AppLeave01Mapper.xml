@@ -212,4 +212,34 @@
        AND U.DEL_YN        = 'N'
     </select>
 
+    <!-- ============ 사용 내역(연 단위) ============
+      CONFIRMED + DEL_YN='N' 사용 실적을 START_DATE 범위(연도 0101~1231)로 조회(최신순).
+      연차 종류명은 TB_LEAVE_TYPE_MGMT LEFT JOIN(타입 삭제 대비 — null 이면 FE 폴백 표기).
+      미래 시작일(사용예정 확정분) 포함. 식별값은 토큰 도출값만(IDOR — 본인 자기조회).
+      ⚠️ resultType record — SELECT 컬럼 순서 = LeaveUseHistoryRow 생성자 순서(변경 시 동시 수정). -->
+    <select id="selectLeaveUsesByRange" resultType="com.prafta.app.leave.leave01.result.LeaveUseHistoryRow">
+    /* AppLeave01Mapper.selectLeaveUsesByRange */
+    SELECT
+          U.LEAVE_ID       AS leaveId
+        , U.START_DATE     AS startDate
+        , U.END_DATE       AS endDate
+        , U.START_TIME     AS startTime
+        , U.END_TIME       AS endTime
+        , U.USE_UNIT_TYPE  AS useUnitType
+        , U.LEAVE_DAYS     AS leaveDays
+        , U.LEAVE_MINUTES  AS leaveMinutes
+        , LT.LEAVE_NM      AS leaveNm
+      FROM TB_USER_LEAVE_USE U
+           LEFT JOIN TB_LEAVE_TYPE_MGMT LT
+               ON  LT.CMPNY_CD = U.CMPNY_CD
+               AND LT.LEAVE_CD = U.LEAVE_CD
+     WHERE U.CMPNY_CD     = #{cmpnyCd}
+       AND U.USER_CD      = #{userCd}
+       AND U.LEAVE_STATUS = 'CONFIRMED'
+       AND U.DEL_YN       = 'N'
+       AND U.START_DATE BETWEEN #{fromYmd} AND #{toYmd}
+     ORDER BY U.START_DATE DESC, U.START_TIME DESC, U.LEAVE_ID DESC
+     LIMIT 500
+    </select>
+
 </mapper>
