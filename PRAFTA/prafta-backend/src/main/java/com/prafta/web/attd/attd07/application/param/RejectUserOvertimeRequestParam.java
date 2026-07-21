@@ -68,13 +68,8 @@ public record RejectUserOvertimeRequestParam(
             throw new ApiException(CommonErrorCode.COMMON_400_001);
         }
 
-        // SEC-017 - cross-site IDOR guard.
-        // body 가 호출자의 JWT site scope 와 다른 사업장을 지정하면 거부한다.
-        if (!request.getSiteCd().equals(tokenInfo.gv_siteCd())) {
-            log.warn("OT reject request site mismatch with token. requested={}, token={}",
-                    request.getSiteCd(), tokenInfo.gv_siteCd());
-            throw new ApiException(CommonErrorCode.COMMON_400_001);
-        }
+        // SEC-017 - cross-site IDOR 가드는 서비스 계층 SiteAccessService.assertSiteAccess 로 이관
+        //   (사업장 권한 원장 TB_USER_SITE_AUTH 기반 인가).
 
         return new RejectUserOvertimeRequestParam(
               request.getReqId()

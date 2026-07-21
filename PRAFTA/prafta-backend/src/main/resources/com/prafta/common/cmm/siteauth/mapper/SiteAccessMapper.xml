@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.prafta.common.cmm.siteauth.mapper.SiteAccessMapper">
+
+    <!-- 사업장 접근 권한 확인(TB_USER_SITE_AUTH, USE_YN='Y'). 1 이상이면 접근 가능. -->
+    <select id="selectUserSiteAuthCnt" resultType="int">
+    /* SiteAccessMapper.selectUserSiteAuthCnt */
+    SELECT COUNT(*)
+    FROM TB_USER_SITE_AUTH A
+    WHERE A.CMPNY_CD = #{cmpnyCd}
+      AND A.USER_CD  = #{userCd}
+      AND A.SITE_CD  = #{siteCd}
+      AND A.USE_YN   = 'Y'
+    </select>
+</mapper>

@@ -19,6 +19,7 @@ public record EntryCandidateParam(
 	, String gvCmpnyCd
 	, String gvSiteCd
 	, String gvAuthCd
+	, String gvUserCd
 ){
 	public static EntryCandidateParam from(EntryCandidateRequest request, TokenInfo tokenInfo) {
 
@@ -35,6 +36,7 @@ public record EntryCandidateParam(
 			, tokenInfo.gv_cmpnyCd()
 			, tokenInfo.gv_siteCd()
 			, tokenInfo.gv_authCd()
+			, tokenInfo.gv_userCd()
 		);
 	}
 }

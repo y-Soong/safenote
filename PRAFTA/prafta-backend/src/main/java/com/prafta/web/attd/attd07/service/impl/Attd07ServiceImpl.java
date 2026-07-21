@@ -9,6 +9,7 @@ import org.springframework.transaction.annotation.Transactional;
 import com.prafta.common.cmm.leave.service.LeaveRefusalConst;
 import com.prafta.common.cmm.leave.service.LeaveRefusalDetectService;
 import com.prafta.common.cmm.push.ApprovalResultNotiService;
+import com.prafta.common.cmm.siteauth.service.SiteAccessService;
 import com.prafta.common.error.attd.AttdErrorCode;
 import com.prafta.common.exception.ApiException;
 import com.prafta.common.util.AttdOverlapUtils;
@@ -76,6 +77,8 @@ public class Attd07ServiceImpl implements Attd07Service {
     private final com.prafta.common.cmm.shift.service.ShiftMembershipService shiftMembershipService;
     /** 교차일(앞뒤 근무일) 근무 스케줄 시각 겹침 가드(공용 cmm 빈 — 야간 오버나이트 포함). */
     private final com.prafta.common.cmm.schedule.service.ScheduleOverlapGuardService scheduleOverlapGuardService;
+    /** 사업장 접근 인가(공용 cmm 빈) — 토큰 사업장 등식 대신 User_03 원장(TB_USER_SITE_AUTH) 기반 인가. */
+    private final SiteAccessService siteAccessService;
 
     /**
      * 출퇴근 방법(METHOD) 기본값. SYS031 '01'(사용자/앱). 근태 보정 승인 시 METHOD 미전달(앱 관리자 경로)일 때
@@ -129,6 +132,9 @@ public class Attd07ServiceImpl implements Attd07Service {
     @Override
     public AttdRecordListResponse getMonthlyAttdList(MonthlyAttdListParam param) {
 
+        // 사업장 접근 인가(User_03 원장 기반) — 팝업 API 들과 대칭으로 목록 조회도 사업장 스코프를 강제한다.
+        siteAccessService.assertSiteAccess(param.gvCmpnyCd(), param.gvUserCd(), param.gvAuthCd(), param.gvSiteCd(), param.siteCd());
+
         List<MonthlyAttdListResult> attdRecordResultList = attd07Mapper.selectMonthlyAttdList(MonthlyAttdListQuery.from(param));
         List<MonthlyAttdReqSummaryResult> monthlyAttdReqSummaryResultList = attd07Mapper.selectMonthlyAttdReqSummary(MonthlyAttdListQuery.from(param));
 
@@ -146,6 +152,13 @@ public class Attd07ServiceImpl implements Attd07Service {
     @Transactional
     public void updateUserAttdInfos(UpdateUserAttdInfosParam param) {
         List<UpdateUserAttdInfosModel> models = param.updateUserAttdInfosModelList();
+
+        // 사업장 접근 인가 — 레코드별 siteCd 전수(중복 제거) 검증(User_03 원장 기반, 구 등식 가드 대체).
+        //   siteCd 가 빈 레코드는 assert 가 403 으로 fail-closed 차단한다.
+        models.stream().map(UpdateUserAttdInfosModel::siteCd).distinct().forEach(sc -> {
+            UpdateUserAttdInfosModel first = models.get(0);
+            siteAccessService.assertSiteAccess(first.gvCmpnyCd(), first.gvUserCd(), first.gvAuthCd(), first.gvSiteCd(), sc);
+        });
 
         // 0. 근무 구간 시각 겹침 판정(정책서 attd §7.6) 준비:
         //    각 model 의 최종 ATTD_ID 를 먼저 확정(신규=채번)하고, 배치 내 attdId 집합/새 구간을 모은다.
@@ -399,6 +412,9 @@ public class Attd07ServiceImpl implements Attd07Service {
     @Override
     public DailyAttdDetailsResponse getDailyAttdDetails(DailyAttdDetailsParam param) {
 
+        // SEC-019 - 사업장 접근 인가(User_03 원장 기반, 구 토큰 사업장 등식 가드 대체).
+        siteAccessService.assertSiteAccess(param.gvCmpnyCd(), param.gvUserCd(), param.gvAuthCd(), param.gvSiteCd(), param.siteCd());
+
         // SEC-019 - 매니저 전용 게이트.
         // AttdDayDetailPop 은 정책서 §14.1의 관리자 화면(근태 현황 조회)에서 호출되는 일자 상세 팝업이다.
         // 일반 작업자가 본 endpoint로 타인의 출퇴근/OT/PII(userNm/userId)에 접근하지 못하도록
@@ -412,7 +428,7 @@ public class Attd07ServiceImpl implements Attd07Service {
         }
 
         // SEC-019 - cross-user IDOR 재검증.
-        // Param.from 단계에서 body siteCd ↔ JWT gv_siteCd 일치는 이미 검증 완료.
+        // 사업장 인가는 위 assertSiteAccess 로 완료.
         // 여기서는 대상 사용자가 호출자의 회사/사이트 scope 안에 실재하는지 DB 차원에서 다시 확인한다
         // (UpdateUserOvertimeRequestParam SEC-017 과 동일한 mapper 재사용).
         int userExists = attd07Mapper.selectUserExistInCmpnySite(
@@ -474,6 +490,9 @@ public class Attd07ServiceImpl implements Attd07Service {
     @Transactional
     public void dailyAttdDetailDelete(DailyAttdDetailDeleteParam param) {
 
+        // SEC-017 - 사업장 접근 인가(User_03 원장 기반, 구 토큰 사업장 등식 가드 대체).
+        siteAccessService.assertSiteAccess(param.gvCmpnyCd(), param.gvUserCd(), param.gvAuthCd(), param.gvSiteCd(), param.siteCd());
+
         // [보안 재작업] SEC-015 - 매니저 전용 게이트. PRAFTA-016 이후 본 endpoint 는
         // 근태 + 연결 OT 를 연쇄 soft-delete 하므로 일반 작업자가 호출해선 안 된다.
         // 역할 검사는 JWT 기반 gvAuthCd 를 사용하므로 body 위조로 권한 escalation 을
@@ -525,6 +544,10 @@ public class Attd07ServiceImpl implements Attd07Service {
             log.warn("approve rejected - REQ not found. reqId={}, cmpnyCd={}", param.reqId(), param.gvCmpnyCd());
             throw new ApiException(AttdErrorCode.ATTD_404_001);
         }
+
+        // SEC-017 - 사업장 접근 인가(User_03 원장 기반) — 반려 경로(rejectUserAttdRequest)와 대칭.
+        //   body 가 아닌 REQ 권위값(reqRow.siteCd)을 기준으로 판정한다.
+        siteAccessService.assertSiteAccess(param.gvCmpnyCd(), param.gvUserCd(), param.gvAuthCd(), param.gvSiteCd(), reqRow.siteCd());
 
         // SEC-018: REQ_TYPE 가드.
         // 본 endpoint는 근태 수정 요청만 처리한다.
@@ -714,6 +737,9 @@ public class Attd07ServiceImpl implements Attd07Service {
     @Transactional
     public void rejectUserAttdRequest(RejectUserAttdRequestParam param) {
 
+        // SEC-017 - 사업장 접근 인가(User_03 원장 기반, 구 토큰 사업장 등식 가드 대체).
+        siteAccessService.assertSiteAccess(param.gvCmpnyCd(), param.gvUserCd(), param.gvAuthCd(), param.gvSiteCd(), param.siteCd());
+
         // 1. 회사 scope으로 권위 있는 REQ row를 로드한다. 없으면 거부한다.
         UserAttdReqResult reqRow = attd07Mapper.selectUserAttdReqByReqId(param.reqId(), param.gvCmpnyCd());
         if (reqRow == null) {
@@ -829,6 +855,9 @@ public class Attd07ServiceImpl implements Attd07Service {
     @Override
     @Transactional
     public void approveSchedModifyRequest(ApproveSchedModifyRequestParam param) {
+
+        // SEC-017 - 사업장 접근 인가(User_03 원장 기반, 구 토큰 사업장 등식 가드 대체).
+        siteAccessService.assertSiteAccess(param.gvCmpnyCd(), param.gvUserCd(), param.gvAuthCd(), param.gvSiteCd(), param.siteCd());
 
         // 1. 회사 scope 으로 권위 있는 REQ row 를 로드한다. 없으면 거부한다.
         UserAttdReqResult reqRow = attd07Mapper.selectUserAttdReqByReqId(param.reqId(), param.gvCmpnyCd());
@@ -947,6 +976,9 @@ public class Attd07ServiceImpl implements Attd07Service {
     @Transactional
     public void rejectSchedModifyRequest(RejectUserAttdRequestParam param) {
 
+        // SEC-017 - 사업장 접근 인가(User_03 원장 기반, 구 토큰 사업장 등식 가드 대체).
+        siteAccessService.assertSiteAccess(param.gvCmpnyCd(), param.gvUserCd(), param.gvAuthCd(), param.gvSiteCd(), param.siteCd());
+
         // 1. 회사 scope 으로 권위 있는 REQ row 를 로드한다. 없으면 거부한다.
         UserAttdReqResult reqRow = attd07Mapper.selectUserAttdReqByReqId(param.reqId(), param.gvCmpnyCd());
         if (reqRow == null) {
@@ -1030,6 +1062,9 @@ public class Attd07ServiceImpl implements Attd07Service {
     @Override
     @Transactional
     public void rejectUserOvertimeRequest(RejectUserOvertimeRequestParam param) {
+
+        // SEC-017 - 사업장 접근 인가(User_03 원장 기반, 구 토큰 사업장 등식 가드 대체).
+        siteAccessService.assertSiteAccess(param.gvCmpnyCd(), param.gvUserCd(), param.gvAuthCd(), param.gvSiteCd(), param.siteCd());
 
         // 1. 회사 scope으로 권위 있는 REQ row를 로드한다. 없으면 거부한다.
         UserAttdReqResult reqRow = attd07Mapper.selectUserAttdReqByReqId(param.reqId(), param.gvCmpnyCd());
@@ -1121,6 +1156,9 @@ public class Attd07ServiceImpl implements Attd07Service {
     @Override
     @Transactional
     public void updateUserOvertimeRequests(UpdateUserOvertimeRequestParam param) {
+
+        // SEC-017 - 사업장 접근 인가(User_03 원장 기반, 구 토큰 사업장 등식 가드 대체).
+        siteAccessService.assertSiteAccess(param.gvCmpnyCd(), param.gvUserCd(), param.gvAuthCd(), param.gvSiteCd(), param.siteCd());
 
         // SEC-015/SEC-016 + com-013-06-FU(r28) - 매니저 전용 게이트 + 자기처리/상위결재 정책.
         // OT 직접 등록은 일반 작업자가 호출해선 안 되고, 노드 SELF_ATTD_APPRV_YN='N' 정책에서
@@ -1499,6 +1537,9 @@ public class Attd07ServiceImpl implements Attd07Service {
     @Override
     @Transactional
     public void deleteUserOvertime(DeleteUserOvertimeParam param) {
+
+        // SEC-017 - 사업장 접근 인가(User_03 원장 기반, 구 토큰 사업장 등식 가드 대체).
+        siteAccessService.assertSiteAccess(param.gvCmpnyCd(), param.gvUserCd(), param.gvAuthCd(), param.gvSiteCd(), param.siteCd());
 
         // [보안 com-016-e-001] OT 삭제 경로를 형제 등록 경로(updateUserOvertimeRequests, 약 864~882)와
         //   대칭으로 하드닝한다. 기존 삭제 경로는 (a) 자기처리 정책 게이트(SELF_ATTD_APPRV_YN) 누락,

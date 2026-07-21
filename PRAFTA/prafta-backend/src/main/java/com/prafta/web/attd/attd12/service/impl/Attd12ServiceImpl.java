@@ -48,12 +48,17 @@ public class Attd12ServiceImpl implements Attd12Service {
 
     private final Attd12Mapper attd12Mapper;
     private final AttdCloseService attdCloseService;
+    /** 사업장 접근 인가(공용 cmm 빈) — 토큰 사업장 등식 대신 User_03 원장(TB_USER_SITE_AUTH) 기반 인가. */
+    private final com.prafta.common.cmm.siteauth.service.SiteAccessService siteAccessService;
 
     @Override
     public FraudAttdSuspectResponse getFraudAttdSuspects(FraudAttdSuspectParam param) {
 
         log.info("Attd_12 부정 출퇴근(기기 공유) 의심 조회 진입 - workYm={}, siteCd={}, nodeCd={}, incSub={}, type={}",
                 param.workYm(), param.siteCd(), param.nodeCd(), param.incSubNodeYn(), param.suspectType());
+
+        // 사업장 접근 인가(구 토큰 사업장 등식 가드 대체 — User_03 원장 기반).
+        siteAccessService.assertSiteAccess(param.gvCmpnyCd(), param.gvUserCd(), param.gvAuthCd(), param.gvSiteCd(), param.siteCd());
 
         // 권한 게이트 — master/hr/safe 전사 또는 노드 관리자만. 그 외/타부서는 차단(PII 노출 화면).
         //   프론트 가드는 우회 가능하므로 서버에서 강제(Attd_11 동일 패턴).

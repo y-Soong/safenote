@@ -107,6 +107,10 @@ public enum UserErrorCode implements ApiErrorCode {
     // ===== PRAFTA-WEB_002-T1-03 (1.4-2) - 권한 등급 escalation 서버 가드 =====
     // 요청자(viewer) 본인보다 높거나 같은 등급의 권한을 타 계정에 부여 시도 시 차단(권한 상승 방지).
     , USER_403_003(HttpStatus.FORBIDDEN, "본인보다 낮은 등급의 권한만 부여할 수 있습니다.")
+
+    // ===== User_03 사업장 권한 관리 - master/hr 회수 차단 =====
+    // master/hr 은 전 사업장 권한 보유가 불변식(SiteAccessService 전사 통과와 정합) — 회수 시도 차단.
+    , USER_400_072(HttpStatus.BAD_REQUEST, "마스터/HR 관리자의 사업장 권한은 회수할 수 없습니다.")
     ;
 
     private final HttpStatus httpStatus;

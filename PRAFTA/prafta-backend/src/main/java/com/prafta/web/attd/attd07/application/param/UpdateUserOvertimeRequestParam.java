@@ -90,15 +90,9 @@ public record UpdateUserOvertimeRequestParam(
             throw new ApiException(CommonErrorCode.COMMON_400_001);
         }
 
-        // SEC-017 - cross-site IDOR guard.
-        // Reject the request if the body asks to operate on a site different
-        // from the caller's JWT site scope. The service layer additionally
-        // re-checks the target user's site via selectUserExistInScope.
-        if (!request.getSiteCd().equals(tokenInfo.gv_siteCd())) {
-            log.warn("OT request site mismatch with token. requested={}, token={}",
-                    request.getSiteCd(), tokenInfo.gv_siteCd());
-            throw new ApiException(CommonErrorCode.COMMON_400_001);
-        }
+        // SEC-017 - cross-site IDOR 가드는 서비스 계층 SiteAccessService.assertSiteAccess 로 이관
+        //   (사업장 권한 원장 TB_USER_SITE_AUTH 기반 인가. 대상 사용자 스코프는 서비스의
+        //    selectUserExistInScope 재검증으로 유지).
 
         List<OvertimeItemModel> models = new ArrayList<>(request.getOvertimes().size());
         for (OvertimeItemRequest ot : request.getOvertimes()) {

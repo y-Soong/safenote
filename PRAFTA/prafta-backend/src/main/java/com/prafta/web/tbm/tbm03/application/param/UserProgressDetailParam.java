@@ -16,6 +16,7 @@ public record UserProgressDetailParam(
 	, String gvCmpnyCd
 	, String gvSiteCd
 	, String gvAuthCd
+	, String gvUserCd
 ){
 	public static UserProgressDetailParam from(UserProgressDetailRequest request, TokenInfo tokenInfo) {
 
@@ -41,6 +42,7 @@ public record UserProgressDetailParam(
 			, tokenInfo.gv_cmpnyCd()
 			, tokenInfo.gv_siteCd()
 			, tokenInfo.gv_authCd()
+			, tokenInfo.gv_userCd()
 		);
 	}
 }

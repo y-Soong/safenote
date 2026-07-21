@@ -19,7 +19,8 @@ public record PromotionTargetSearchParam(
         String tenureFilter,
         String gvCmpnyCd,
         String gvAuthCd,
-        String gvUserCd
+        String gvUserCd,
+        String gvSiteCd
 ) {
     public static PromotionTargetSearchParam from(PromotionTargetSearchRequest request, TokenInfo tokenInfo) {
         if (request == null || tokenInfo == null) {
@@ -32,10 +33,8 @@ public record PromotionTargetSearchParam(
                 || tokenInfo.gv_siteCd() == null || tokenInfo.gv_siteCd().isEmpty()) {
             throw new ApiException(CommonErrorCode.COMMON_400_001);
         }
-        // cross-site IDOR 가드 — 요청 siteCd 가 세션 고정 사업장과 다르면 거부.
-        if (!request.getSiteCd().equals(tokenInfo.gv_siteCd())) {
-            throw new ApiException(CommonErrorCode.COMMON_400_001);
-        }
+        // cross-site IDOR 가드는 서비스 계층 SiteAccessService.assertSiteAccess 로 이관
+        //   (사업장 권한 원장 TB_USER_SITE_AUTH 기반 인가).
         String resolved = request.resolveTenure();
         String tenure = (resolved == null || resolved.isBlank()) ? "ALL" : resolved;
         return new PromotionTargetSearchParam(
@@ -46,7 +45,8 @@ public record PromotionTargetSearchParam(
                 tenure,
                 tokenInfo.gv_cmpnyCd(),
                 tokenInfo.gv_authCd(),
-                tokenInfo.gv_userCd()
+                tokenInfo.gv_userCd(),
+                tokenInfo.gv_siteCd()
         );
     }
 }

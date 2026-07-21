@@ -768,7 +768,7 @@ public class AppAdminApprovalServiceImpl implements AppAdminApprovalService {
                         meta.endDate(), meta.endTime(), null,
                         null, null, null, null,
                         p.comment(),
-                        p.gvCmpnyCd(), p.gvUserCd(), p.gvAuthCd()));
+                        p.gvCmpnyCd(), p.gvUserCd(), p.gvAuthCd(), p.gvSiteCd()));
                 break;
             case G_OVERTIME:
                 // 초과근무 승인: 신청 구간 1건(START~END)을 OT 등록 엔진(web)에 투입해 등록. attdId 는 일자 기준 서버 도출 위임(null).

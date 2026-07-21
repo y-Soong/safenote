@@ -88,9 +88,13 @@ public class WebLeavePromo01ServiceImpl implements WebLeavePromo01Service {
     private final LeaveDashboardMapper leaveDashboardMapper;
     private final LeaveApprovalNotiMapper leaveApprovalNotiMapper;
     private final ObjectMapper objectMapper;
+    /** 사업장 접근 인가(공용 cmm 빈) — 토큰 사업장 등식 대신 User_03 원장(TB_USER_SITE_AUTH) 기반 인가. */
+    private final com.prafta.common.cmm.siteauth.service.SiteAccessService siteAccessService;
 
     @Override
     public PromotionTargetListResponse getDesignateTargets(PromotionTargetSearchParam param) {
+        // 사업장 접근 인가(구 토큰 사업장 등식 가드 대체 — User_03 원장 기반).
+        siteAccessService.assertSiteAccess(param.gvCmpnyCd(), param.gvUserCd(), param.gvAuthCd(), param.gvSiteCd(), param.siteCd());
         // 노드 권한 게이트 — master/hr/safe 전사 또는 노드 관리자만(PII 노출 조회 화면). 프론트 가드 우회 방어.
         if (!attdCloseService.canManageNode(
                 param.gvAuthCd(), param.gvUserCd(), param.gvCmpnyCd(), param.siteCd(), param.nodeCd())) {
@@ -375,10 +379,11 @@ public class WebLeavePromo01ServiceImpl implements WebLeavePromo01Service {
         }
         String cmpnyCd = tokenInfo.gv_cmpnyCd();
         String siteCd = request.getSiteCd();
-        // cross-site IDOR 가드 — 요청 siteCd 가 세션 고정 사업장과 다르면 거부.
-        if (siteCd == null || siteCd.isBlank() || !siteCd.equals(tokenInfo.gv_siteCd())) {
+        if (siteCd == null || siteCd.isBlank()) {
             throw new ApiException(CommonErrorCode.COMMON_400_001);
         }
+        // 사업장 접근 인가(구 토큰 사업장 등식 가드 대체 — User_03 원장 기반).
+        siteAccessService.assertSiteAccess(cmpnyCd, tokenInfo.gv_userCd(), tokenInfo.gv_authCd(), tokenInfo.gv_siteCd(), siteCd);
         String nodeCd = request.getNodeCd();
         // 노드 권한 게이트 — designate/targets 와 동일(master/hr/safe 전사 또는 노드 관리자).
         if (!attdCloseService.canManageNode(
@@ -477,6 +482,8 @@ public class WebLeavePromo01ServiceImpl implements WebLeavePromo01Service {
 
     @Override
     public byte[] buildExcelTemplate(PromotionTargetSearchParam param) {
+        // 사업장 접근 인가(구 토큰 사업장 등식 가드 대체 — User_03 원장 기반).
+        siteAccessService.assertSiteAccess(param.gvCmpnyCd(), param.gvUserCd(), param.gvAuthCd(), param.gvSiteCd(), param.siteCd());
         // 노드 권한 게이트(조회 화면과 동일).
         if (!attdCloseService.canManageNode(
                 param.gvAuthCd(), param.gvUserCd(), param.gvCmpnyCd(), param.siteCd(), param.nodeCd())) {

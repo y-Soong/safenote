@@ -65,6 +65,8 @@ public class Tbm01ServiceImpl implements Tbm01Service{
     private final FileMapper fileMapper;
     private final FileUrlSigner fileUrlSigner;   // 파일 서빙 서명 URL 발급(공통 인프라)
     private final TbmAi01Service tbmAi01Service;  // 저장 후 AI 자동 큐잉(best-effort, 커밋 이후 트리거)
+    /** 사업장 접근 인가(공용 cmm 빈) — 토큰 사업장 등식 대신 User_03 원장(TB_USER_SITE_AUTH) 기반 인가. */
+    private final com.prafta.common.cmm.siteauth.service.SiteAccessService siteAccessService;
 
 	public TbmEduInfoListResponse selectTbmEduInfo(TbmEduInfoListParam param) {
 		// prafta-033-A: 999999(권한 미부여)는 콘텐츠 화면 진입 차단(서버에서도 거부)
@@ -106,11 +108,12 @@ public class Tbm01ServiceImpl implements Tbm01Service{
 			throw new ApiException(CommonErrorCode.COMMON_400_401);
 		}
 
-		// 스코프 격리: 회사 전체 권한(master/safe)이 아니면 회사공통 또는 자기 사업장만 열람 가능
+		// 스코프 격리: 회사 전체 권한(master/safe)이 아니면 회사공통 또는 접근 권한 보유 사업장만 열람 가능
+		//   (User_03 원장 기반 — 토큰 사업장 등식 대신 SiteAccessService 로 판정).
 		if (!AuthRoleUtils.isCompanyWide(param.gvAuthCd())) {
 			boolean isCommon = master.siteCd() == null || master.siteCd().isEmpty();
-			boolean isOwnSite = param.gvSiteCd() != null && param.gvSiteCd().equals(master.siteCd());
-			if (!isCommon && !isOwnSite) {
+			if (!isCommon && !siteAccessService.hasSiteAccess(
+					param.gvCmpnyCd(), param.gvUserCd(), param.gvAuthCd(), param.gvSiteCd(), master.siteCd())) {
 				log.warn("TBM 콘텐츠 상세 스코프 위반 - authCd={}, ownSite={}, targetSite={}",
 						param.gvAuthCd(), param.gvSiteCd(), master.siteCd());
 				throw new ApiException(TbmErrorCode.TBM_403_003);
@@ -163,9 +166,11 @@ public class Tbm01ServiceImpl implements Tbm01Service{
 			throw new ApiException(TbmErrorCode.TBM_403_002);
 		}
 
-		// 사업장 콘텐츠 저장: 회사 전체 권한이 아니면 자기 사업장으로만 저장 가능(스코프 격리)
+		// 사업장 콘텐츠 저장: 회사 전체 권한이 아니면 접근 권한 보유 사업장으로만 저장 가능(스코프 격리)
+		//   (User_03 원장 기반 — 토큰 사업장 등식 대신 SiteAccessService 로 판정).
 		if (!isCommonSave && !AuthRoleUtils.isCompanyWide(param.gvAuthCd())) {
-			if (param.gvSiteCd() == null || !param.gvSiteCd().equals(param.siteCd())) {
+			if (!siteAccessService.hasSiteAccess(
+					param.gvCmpnyCd(), param.gvUserCd(), param.gvAuthCd(), param.gvSiteCd(), param.siteCd())) {
 				log.warn("TBM 타 사업장 콘텐츠 저장 시도 - authCd={}, ownSite={}, targetSite={}",
 						param.gvAuthCd(), param.gvSiteCd(), param.siteCd());
 				throw new ApiException(TbmErrorCode.TBM_403_003);

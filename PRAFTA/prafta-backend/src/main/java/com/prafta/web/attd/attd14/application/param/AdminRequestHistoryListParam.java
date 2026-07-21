@@ -27,6 +27,7 @@ public record AdminRequestHistoryListParam(
     , String gvCmpnyCd
     , String gvAuthCd
     , String gvUserCd
+    , String gvSiteCd
 ) {
     private static final int DEFAULT_SIZE = 20;
     private static final int MAX_SIZE = 100;
@@ -50,11 +51,10 @@ public record AdminRequestHistoryListParam(
                 siteCd = null;
             }
         } else {
-            // 노드 관리자: siteCd 미지정 시 토큰 사업장으로, 지정 시 토큰 사업장과 일치 강제(cross-site IDOR 차단)
+            // 노드 관리자: siteCd 미지정 시 토큰 사업장으로 기본. 타 사업장 지정 인가는
+            //   서비스 계층 SiteAccessService.assertSiteAccess(User_03 원장 기반)로 검증한다.
             if (siteCd == null || siteCd.isBlank()) {
                 siteCd = tokenInfo.gv_siteCd();
-            } else if (!siteCd.equals(tokenInfo.gv_siteCd())) {
-                throw new ApiException(CommonErrorCode.COMMON_400_001);
             }
         }
 
@@ -80,6 +80,7 @@ public record AdminRequestHistoryListParam(
             , tokenInfo.gv_cmpnyCd()
             , tokenInfo.gv_authCd()
             , tokenInfo.gv_userCd()
+            , tokenInfo.gv_siteCd()
         );
     }
 

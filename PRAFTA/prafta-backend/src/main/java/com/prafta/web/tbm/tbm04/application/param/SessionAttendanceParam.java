@@ -13,6 +13,7 @@ public record SessionAttendanceParam(
 	, String gvCmpnyCd
 	, String gvSiteCd
 	, String gvAuthCd
+	, String gvUserCd
 ){
 	public static SessionAttendanceParam from(SessionAttendanceRequest request, TokenInfo tokenInfo) {
 
@@ -33,6 +34,7 @@ public record SessionAttendanceParam(
 			, tokenInfo.gv_cmpnyCd()
 			, tokenInfo.gv_siteCd()
 			, tokenInfo.gv_authCd()
+			, tokenInfo.gv_userCd()
 		);
 	}
 }

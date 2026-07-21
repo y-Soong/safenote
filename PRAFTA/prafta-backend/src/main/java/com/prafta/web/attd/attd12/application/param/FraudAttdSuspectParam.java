@@ -21,6 +21,7 @@ public record FraudAttdSuspectParam(
         , String gvCmpnyCd
         , String gvAuthCd
         , String gvUserCd
+        , String gvSiteCd
 ) {
     public static FraudAttdSuspectParam from(FraudAttdSuspectRequest request, TokenInfo tokenInfo) {
 
@@ -36,9 +37,8 @@ public record FraudAttdSuspectParam(
         if (tokenInfo.gv_cmpnyCd() == null || tokenInfo.gv_cmpnyCd().isEmpty()
                 || tokenInfo.gv_siteCd() == null || tokenInfo.gv_siteCd().isEmpty())
             throw new ApiException(CommonErrorCode.COMMON_400_001);
-        // cross-site IDOR 가드 — 요청 siteCd 가 세션 고정 사업장(JWT gv_siteCd)과 다르면 거부
-        if (!request.getSiteCd().equals(tokenInfo.gv_siteCd()))
-            throw new ApiException(CommonErrorCode.COMMON_400_001);
+        // cross-site IDOR 가드는 서비스 계층 SiteAccessService.assertSiteAccess 로 이관
+        //   (사업장 권한 원장 TB_USER_SITE_AUTH 기반 인가).
 
         return new FraudAttdSuspectParam(
                 request.getWorkYm()
@@ -49,6 +49,7 @@ public record FraudAttdSuspectParam(
                 , tokenInfo.gv_cmpnyCd()
                 , tokenInfo.gv_authCd()
                 , tokenInfo.gv_userCd()
+                , tokenInfo.gv_siteCd()
         );
     }
 }

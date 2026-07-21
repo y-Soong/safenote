@@ -14,6 +14,7 @@ public record TbmEduDetailParam(
 	, String gvCmpnyCd
 	, String gvSiteCd
 	, String gvAuthCd
+	, String gvUserCd
 ){
 	public static TbmEduDetailParam from(TbmEduDetailRequest request, TokenInfo tokenInfo) {
 
@@ -29,6 +30,7 @@ public record TbmEduDetailParam(
 			, tokenInfo.gv_cmpnyCd()
 			, tokenInfo.gv_siteCd()
 			, tokenInfo.gv_authCd()
+			, tokenInfo.gv_userCd()
 		);
 	}
 }

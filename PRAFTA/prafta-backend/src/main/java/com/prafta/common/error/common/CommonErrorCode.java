@@ -15,6 +15,8 @@ public enum CommonErrorCode implements ApiErrorCode {
     // prafta-app-027 follow-up: 일용직(EMPLOYMENT_TYPE='DAILY')은 이용할 수 없는 기능(연차/근태요청/초과근무) 차단.
     //   내부 구조 비노출 친화 메시지.
     , COMMON_403_002(HttpStatus.FORBIDDEN, "일용직 회원은 이용할 수 없는 기능입니다.")
+    // 사업장 접근 인가 실패(SiteAccessService) — 토큰 사업장 불일치이면서 TB_USER_SITE_AUTH 미보유.
+    , COMMON_403_003(HttpStatus.FORBIDDEN, "해당 사업장에 대한 접근 권한이 없습니다.")
     , COMMON_400_600(HttpStatus.UNAUTHORIZED, "인증되지 않은 토큰입니다.\n관리자에게 문의해주세요.")
     , COMMON_500_001(HttpStatus.INTERNAL_SERVER_ERROR, "처리 중 오류가 발생하였습니다.\\n관리자에게 문의해주십시오.")
     

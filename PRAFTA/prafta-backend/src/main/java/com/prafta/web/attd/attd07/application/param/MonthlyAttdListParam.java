@@ -15,6 +15,7 @@ public record MonthlyAttdListParam(
 	      , String gvCmpnyCd
 	      , String gvAuthCd
 	      , String gvUserCd
+	      , String gvSiteCd
 	  ){
 	      public static MonthlyAttdListParam from(MonthlyAttdListRequest request, TokenInfo tokenInfo) {
 
@@ -40,6 +41,7 @@ public record MonthlyAttdListParam(
 	              , tokenInfo.gv_cmpnyCd()
 	              , tokenInfo.gv_authCd()
 	              , tokenInfo.gv_userCd()
+	              , tokenInfo.gv_siteCd()
 	          );
 	      }
 	  }

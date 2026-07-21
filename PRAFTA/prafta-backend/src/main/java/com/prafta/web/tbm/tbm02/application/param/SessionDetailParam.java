@@ -10,6 +10,7 @@ public record SessionDetailParam(
 	, String gvCmpnyCd
 	, String gvSiteCd
 	, String gvAuthCd
+	, String gvUserCd
 ){
 	public static SessionDetailParam from(SessionDetailRequest request, TokenInfo tokenInfo) {
 
@@ -23,6 +24,7 @@ public record SessionDetailParam(
 			, tokenInfo.gv_cmpnyCd()
 			, tokenInfo.gv_siteCd()
 			, tokenInfo.gv_authCd()
+			, tokenInfo.gv_userCd()
 		);
 	}
 }

@@ -51,6 +51,8 @@ public class Tbm03ServiceImpl implements Tbm03Service {
 	private final Tbm03Mapper tbm03Mapper;
 	/** PRAFTA-SUBCON-T5 F4: 타사(연동) 세션의 개최 회사 라벨 해석(하향 인접 차수 가시성). */
 	private final TbmSessionShareService tbmSessionShareService;
+	/** 사업장 접근 인가(공용 cmm 빈) — 토큰 사업장 등식 대신 User_03 원장(TB_USER_SITE_AUTH) 기반 인가. */
+	private final com.prafta.common.cmm.siteauth.service.SiteAccessService siteAccessService;
 
 	// ============================ T7 집계 목록 ============================
 
@@ -99,7 +101,7 @@ public class Tbm03ServiceImpl implements Tbm03Service {
 		}
 
 		// 스코프 격리: 회사 전체 권한이 아니면 대상 사용자 사업장이 자기 사업장과 일치해야 함(tbm04 흐름 복제)
-		verifyScope(param.gvAuthCd(), param.gvSiteCd(), user.siteCd());
+		verifyScope(param.gvCmpnyCd(), param.gvUserCd(), param.gvAuthCd(), param.gvSiteCd(), user.siteCd());
 
 		// 인가 전제: 매퍼의 AT.CMPNY_CD = gvCmpnyCd(내 직원 출결행)가 인가 그 자체다.
 		// F4: 세션 조인에서 CMPNY_CD 를 뺐으므로 타사(연동) 세션 참석 이력도 포함된다(요청서 §3.4).
@@ -173,12 +175,12 @@ public class Tbm03ServiceImpl implements Tbm03Service {
 				.build();
 	}
 
-	/** 스코프 격리: 회사 전체 권한이 아니면 자기 사업장 리소스만 접근 가능. */
-	private void verifyScope(String authCd, String ownSiteCd, String targetSiteCd) {
+	/** 스코프 격리: 회사 전체 권한이 아니면 접근 권한 보유 사업장(User_03 원장 포함) 리소스만 접근 가능. */
+	private void verifyScope(String cmpnyCd, String userCd, String authCd, String ownSiteCd, String targetSiteCd) {
 		if (AuthRoleUtils.isCompanyWide(authCd)) {
 			return;
 		}
-		if (ownSiteCd == null || !ownSiteCd.equals(targetSiteCd)) {
+		if (!siteAccessService.hasSiteAccess(cmpnyCd, userCd, authCd, ownSiteCd, targetSiteCd)) {
 			log.warn("TBM 진행관리 스코프 위반 - authCd={}, ownSite={}, targetSite={}",
 					authCd, ownSiteCd, targetSiteCd);
 			throw new ApiException(TbmErrorCode.TBM_403_021);

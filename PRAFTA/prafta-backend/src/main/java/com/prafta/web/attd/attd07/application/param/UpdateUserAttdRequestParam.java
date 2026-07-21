@@ -34,6 +34,7 @@ public record UpdateUserAttdRequestParam(
     , String gvCmpnyCd
     , String gvUserCd
     , String gvAuthCd
+    , String gvSiteCd
 ) {
 
     private static final Logger log = LoggerFactory.getLogger(UpdateUserAttdRequestParam.class);
@@ -85,6 +86,7 @@ public record UpdateUserAttdRequestParam(
             , tokenInfo.gv_cmpnyCd()
             , tokenInfo.gv_userCd()
             , tokenInfo.gv_authCd()
+            , tokenInfo.gv_siteCd()
         );
     }
 }

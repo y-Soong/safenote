@@ -17,6 +17,7 @@ public record AttdCloseParam(
     , String gvCmpnyCd
     , String gvAuthCd
     , String gvUserCd
+    , String gvSiteCd
 ) {
     public static AttdCloseParam from(AttdCloseRequest request, TokenInfo tokenInfo) {
         if (request == null || tokenInfo == null) {
@@ -28,13 +29,12 @@ public record AttdCloseParam(
         }
         if (tokenInfo.gv_cmpnyCd() == null || tokenInfo.gv_cmpnyCd().isEmpty()
                 || tokenInfo.gv_siteCd() == null || tokenInfo.gv_siteCd().isEmpty()
-                || tokenInfo.gv_authCd() == null || tokenInfo.gv_authCd().isEmpty()) {
+                || tokenInfo.gv_authCd() == null || tokenInfo.gv_authCd().isEmpty()
+                || tokenInfo.gv_userCd() == null || tokenInfo.gv_userCd().isEmpty()) {
             throw new ApiException(CommonErrorCode.COMMON_400_001);
         }
-        // cross-site IDOR 가드 — body siteCd가 JWT gv_siteCd와 다르면 거부 (형제 SEC-017/019 동일 패턴)
-        if (!request.getSiteCd().equals(tokenInfo.gv_siteCd())) {
-            throw new ApiException(CommonErrorCode.COMMON_400_001);
-        }
+        // cross-site IDOR 가드는 서비스 계층 SiteAccessService.assertSiteAccess 로 이관
+        //   (사업장 권한 원장 TB_USER_SITE_AUTH 기반 인가).
         return new AttdCloseParam(
               request.getSiteCd()
             , request.getNodeCd()
@@ -44,6 +44,7 @@ public record AttdCloseParam(
             , tokenInfo.gv_cmpnyCd()
             , tokenInfo.gv_authCd()
             , tokenInfo.gv_userCd()
+            , tokenInfo.gv_siteCd()
         );
     }
 }

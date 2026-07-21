@@ -71,6 +71,8 @@ public class Attd13ServiceImpl implements Attd13Service {
 
     private final Attd13Mapper attd13Mapper;
     private final AttdCloseService attdCloseService;
+    /** 사업장 접근 인가(공용 cmm 빈) — 토큰 사업장 등식 대신 User_03 원장(TB_USER_SITE_AUTH) 기반 인가. */
+    private final com.prafta.common.cmm.siteauth.service.SiteAccessService siteAccessService;
     private final LeaveFlowMapper leaveFlowMapper;
     private final LeaveDashboardMapper leaveDashboardMapper;
     private final ObjectMapper objectMapper;
@@ -88,6 +90,8 @@ public class Attd13ServiceImpl implements Attd13Service {
         //   - 노드 정·부 관리자: 본인 담당 노드(+하위) 강제. 부서 미지정 진입은 403 대신 안내성 BadRequest.
         boolean siteWide = AuthRoleUtils.isManager(param.gvAuthCd());
         if (!siteWide) {
+            // 사업장 접근 인가(구 토큰 사업장 등식 가드 대체 — User_03 원장 기반).
+            siteAccessService.assertSiteAccess(param.gvCmpnyCd(), param.gvUserCd(), param.gvAuthCd(), param.gvSiteCd(), param.siteCd());
             // 노드 관리자는 부서 필수(미지정 시 즉시 403 대신 안내). 빈 nodeCd 로 조회하면 ensureCanManageScope 가 403.
             if (param.nodeCd() == null || param.nodeCd().isBlank() || WHOLE_SITE.equals(param.nodeCd())) {
                 throw new ApiException(AttdErrorCode.ATTD_400_130);

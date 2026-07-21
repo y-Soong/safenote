@@ -102,6 +102,8 @@ public class Tbm02ServiceImpl implements Tbm02Service {
 	private final TbmSessionShareService tbmSessionShareService;
 	/** PRAFTA-SUBCON-T5 M1: 대리입실 후보 불투명 핸들 코덱(AES-GCM). */
 	private final TbmEntryHandleCodec tbmEntryHandleCodec;
+	/** 사업장 접근 인가(공용 cmm 빈) — 토큰 사업장 등식 대신 User_03 원장(TB_USER_SITE_AUTH) 기반 인가. */
+	private final com.prafta.common.cmm.siteauth.service.SiteAccessService siteAccessService;
 
 	/** 비밀번호 자리수(랜덤 6자리). */
 	private static final int PWD_LENGTH = 6;
@@ -170,7 +172,7 @@ public class Tbm02ServiceImpl implements Tbm02Service {
 		}
 
 		// 스코프 격리: 회사 전체 권한이 아니면 자기 사업장 세션만 열람 가능
-		verifyScope(param.gvAuthCd(), param.gvSiteCd(), session.siteCd());
+		verifyScope(param.gvCmpnyCd(), param.gvUserCd(), param.gvAuthCd(), param.gvSiteCd(), session.siteCd());
 
 		List<SessionContentResult> contents = tbm02Mapper.selectSessionContents(query);
 		List<SessionRiskResult> risks = tbm02Mapper.selectSessionRisks(query);
@@ -254,7 +256,7 @@ public class Tbm02ServiceImpl implements Tbm02Service {
 		if (!StringUtils.hasText(param.siteCd())) {
 			throw new ApiException(CommonErrorCode.COMMON_400_001);
 		}
-		verifyScope(param.gvAuthCd(), param.gvSiteCd(), param.siteCd());
+		verifyScope(param.gvCmpnyCd(), param.gvUserCd(), param.gvAuthCd(), param.gvSiteCd(), param.siteCd());
 
 		// 제목 검증(개설 시점 유일 필수 항목)
 		String title = param.title() != null ? param.title().trim() : "";
@@ -314,7 +316,7 @@ public class Tbm02ServiceImpl implements Tbm02Service {
 		}
 
 		SessionGuardResult guard = loadGuard(param.gvCmpnyCd(), param.sessionCd());
-		verifyScope(param.gvAuthCd(), param.gvSiteCd(), guard.siteCd());
+		verifyScope(param.gvCmpnyCd(), param.gvUserCd(), param.gvAuthCd(), param.gvSiteCd(), guard.siteCd());
 
 		// 전이 가능 시점: DRAFT 만(C3)
 		if (!"DRAFT".equals(guard.statusCd())) {
@@ -525,7 +527,7 @@ public class Tbm02ServiceImpl implements Tbm02Service {
 		}
 
 		SessionGuardResult guard = loadGuard(param.gvCmpnyCd(), param.sessionCd());
-		verifyScope(param.gvAuthCd(), param.gvSiteCd(), guard.siteCd());
+		verifyScope(param.gvCmpnyCd(), param.gvUserCd(), param.gvAuthCd(), param.gvSiteCd(), guard.siteCd());
 
 		// 수정 가능 시점: DRAFT / OPENED 만
 		if (!"DRAFT".equals(guard.statusCd()) && !"OPENED".equals(guard.statusCd())) {
@@ -578,7 +580,7 @@ public class Tbm02ServiceImpl implements Tbm02Service {
 		}
 
 		SessionGuardResult guard = loadGuard(param.gvCmpnyCd(), param.sessionCd());
-		verifyScope(param.gvAuthCd(), param.gvSiteCd(), guard.siteCd());
+		verifyScope(param.gvCmpnyCd(), param.gvUserCd(), param.gvAuthCd(), param.gvSiteCd(), guard.siteCd());
 
 		// 취소 가능 시점: DRAFT / OPENED 만(IN_PROGRESS 이후는 강제종료=C 소관)
 		if (!"DRAFT".equals(guard.statusCd()) && !"OPENED".equals(guard.statusCd())) {
@@ -609,7 +611,7 @@ public class Tbm02ServiceImpl implements Tbm02Service {
 		}
 
 		SessionGuardResult guard = loadGuard(param.gvCmpnyCd(), param.sessionCd());
-		verifyScope(param.gvAuthCd(), param.gvSiteCd(), guard.siteCd());
+		verifyScope(param.gvCmpnyCd(), param.gvUserCd(), param.gvAuthCd(), param.gvSiteCd(), guard.siteCd());
 
 		// 재발급 가능 시점: OPENED 만
 		if (!"OPENED".equals(guard.statusCd())) {
@@ -654,7 +656,7 @@ public class Tbm02ServiceImpl implements Tbm02Service {
 
 		// 콘솔은 개설사 전용(비개설사의 타사 세션 콘솔 접근 차단 — 요청서 §5-7). 유지.
 		SessionGuardResult guard = loadGuard(param.gvCmpnyCd(), param.sessionCd());
-		verifyScope(param.gvAuthCd(), param.gvSiteCd(), guard.siteCd());
+		verifyScope(param.gvCmpnyCd(), param.gvUserCd(), param.gvAuthCd(), param.gvSiteCd(), guard.siteCd());
 
 		// PRAFTA-SUBCON-T5 F2/N1: 클라가 지정할 수 있는 대상 회사는 <b>개설사 또는 1차 회사</b>뿐이다.
 		//   체인 전체를 통과시키면(assertEntryAllowed) 회사코드를 바꿔가며 호출해 200/403 차이로
@@ -742,7 +744,7 @@ public class Tbm02ServiceImpl implements Tbm02Service {
 		}
 
 		SessionGuardResult guard = loadGuard(param.gvCmpnyCd(), param.sessionCd());
-		verifyScope(param.gvAuthCd(), param.gvSiteCd(), guard.siteCd());
+		verifyScope(param.gvCmpnyCd(), param.gvUserCd(), param.gvAuthCd(), param.gvSiteCd(), guard.siteCd());
 
 		// 교육준비(OPENED) 상태에서만 입실 처리(C)
 		if (!"OPENED".equals(guard.statusCd())) {
@@ -883,7 +885,7 @@ public class Tbm02ServiceImpl implements Tbm02Service {
 		// 인가 전제: loadGuard 가 "내 회사 소유 세션"일 때만 통과시키므로 개설사만 도달한다(IDOR 차단).
 		// 그 뒤에야 출결 스코프를 SESSION_CD 단독으로 넓힌다(타사 참석자 포함 — 요청서 §3.3).
 		SessionGuardResult guard = loadGuard(param.gvCmpnyCd(), param.sessionCd());
-		verifyScope(param.gvAuthCd(), param.gvSiteCd(), guard.siteCd());
+		verifyScope(param.gvCmpnyCd(), param.gvUserCd(), param.gvAuthCd(), param.gvSiteCd(), guard.siteCd());
 
 		List<SessionAttendanceResult> list = tbm02Mapper.selectSessionAttendances(
 				new SessionDetailQuery(param.sessionCd(), param.gvCmpnyCd()));
@@ -1010,7 +1012,7 @@ public class Tbm02ServiceImpl implements Tbm02Service {
 
 		// 콘솔(개설사 전용) 게이트 유지 후 대상 회사 목록 산출.
 		SessionGuardResult guard = loadGuard(param.gvCmpnyCd(), param.sessionCd());
-		verifyScope(param.gvAuthCd(), param.gvSiteCd(), guard.siteCd());
+		verifyScope(param.gvCmpnyCd(), param.gvUserCd(), param.gvAuthCd(), param.gvSiteCd(), guard.siteCd());
 
 		return ShareAllowedCmpnyResponse.builder()
 				.cmpnyList(tbmSessionShareService.selectAllowedCmpnyList(param.sessionCd(), param.gvCmpnyCd()))
@@ -1063,7 +1065,7 @@ public class Tbm02ServiceImpl implements Tbm02Service {
 		}
 
 		SessionGuardResult guard = loadGuard(param.gvCmpnyCd(), param.sessionCd());
-		verifyScope(param.gvAuthCd(), param.gvSiteCd(), guard.siteCd());
+		verifyScope(param.gvCmpnyCd(), param.gvUserCd(), param.gvAuthCd(), param.gvSiteCd(), guard.siteCd());
 
 		// 교육준비(OPENED) 상태에서만 내보내기(C8)
 		if (!"OPENED".equals(guard.statusCd())) {
@@ -1234,7 +1236,7 @@ public class Tbm02ServiceImpl implements Tbm02Service {
 		}
 
 		SessionGuardResult guard = loadGuard(param.gvCmpnyCd(), param.sessionCd());
-		verifyScope(param.gvAuthCd(), param.gvSiteCd(), guard.siteCd());
+		verifyScope(param.gvCmpnyCd(), param.gvUserCd(), param.gvAuthCd(), param.gvSiteCd(), guard.siteCd());
 		return guard;
 	}
 
@@ -1280,12 +1282,12 @@ public class Tbm02ServiceImpl implements Tbm02Service {
 		}
 	}
 
-	/** 스코프 격리: 회사 전체 권한이 아니면 자기 사업장 세션만 접근 가능. */
-	private void verifyScope(String authCd, String ownSiteCd, String targetSiteCd) {
+	/** 스코프 격리: 회사 전체 권한이 아니면 접근 권한 보유 사업장(User_03 원장 포함) 세션만 접근 가능. */
+	private void verifyScope(String cmpnyCd, String userCd, String authCd, String ownSiteCd, String targetSiteCd) {
 		if (AuthRoleUtils.isCompanyWide(authCd)) {
 			return;
 		}
-		if (ownSiteCd == null || !ownSiteCd.equals(targetSiteCd)) {
+		if (!siteAccessService.hasSiteAccess(cmpnyCd, userCd, authCd, ownSiteCd, targetSiteCd)) {
 			log.warn("TBM 세션 스코프 위반 - authCd={}, ownSite={}, targetSite={}",
 					authCd, ownSiteCd, targetSiteCd);
 			throw new ApiException(TbmErrorCode.TBM_403_011);

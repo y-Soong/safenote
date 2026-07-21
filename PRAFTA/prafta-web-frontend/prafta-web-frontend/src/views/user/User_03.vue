@@ -231,6 +231,7 @@
                     id="headChkSub"
                     v-model="headChkSub"
                     type="checkbox"
+                    :disabled="isManagerTarget()"
                     @click="fnHeadChk('headChkSub')"
                   />
                 </th>
@@ -287,7 +288,7 @@
                     <input
                       type="checkbox"
                       v-model="site.chk"
-                      :disabled="isLocked(site)"
+                      :disabled="isLocked(site) || isManagerTarget()"
                     />
                   </td>
                   <td>{{ site.siteNo }}</td>
@@ -349,6 +350,7 @@ const headChkMain = ref(false);
 const headChkSub = ref(false);
 const currentUserSiteCd = ref('');
 const currentUserCd = ref('');
+const currentUserAuthCd = ref('');
 
 // =========================== Data ===========================
 const { proxy } = getCurrentInstance();
@@ -477,9 +479,14 @@ const fnSearch = async () => {
 const fnSiteInfoSearch = async (user) => {
   currentUserSiteCd.value = user.siteCd;
   currentUserCd.value = user.userCd;
+  currentUserAuthCd.value = String(user.authCd ?? "").trim();
 
   fnSiteInfoSearchTran();
 };
+
+// master/hr 은 전 사업장 권한 보유가 불변식 — 사업장 권한 회수 불가(서버 USER_400_072 가드와 정합).
+const isManagerTarget = () =>
+  currentUserAuthCd.value === "master" || currentUserAuthCd.value === "hr";
 
 const fnSiteInfoSearchTran = async () => {
   try {
@@ -554,6 +561,12 @@ function fnScrollTo(id) {
   // 섹션이 화면 중앙 근처로 오도록 스크롤
   el.scrollIntoView({ behavior: "smooth", block: "center" });
 
+  // master/hr 대상은 권한 회수(배정 → 미배정, ▲) 불가 — 서버 USER_400_072 가드와 정합.
+  if (id === "top" && isManagerTarget()) {
+    proxy.$alert("마스터/HR 관리자의 사업장 권한은 회수할 수 없습니다.");
+    return;
+  }
+
   // 1) 대상 리스트 선택
   const src = id === "top" ? siteAllocList.value : siteUnallocList.value;
 
@@ -580,6 +593,8 @@ function fnHeadChk(targetId) {
       }
     });
   } else if (targetId == "headChkSub") {
+    // master/hr 대상은 권한 회수 불가 — 배정 목록 일괄 체크 차단.
+    if (isManagerTarget()) return;
     headChkSub.value = !headChkSub.value;
     siteAllocList.value.forEach((item) => {
       if (!isLocked(item)) {

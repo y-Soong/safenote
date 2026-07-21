@@ -57,6 +57,8 @@ public class Tbm04ServiceImpl implements Tbm04Service {
 	private final Tbm04Mapper tbm04Mapper;
 	/** PRAFTA-SUBCON-T5: 연동 회사 지정 공통 검증 지점(세션 소유 검증/relabel). */
 	private final TbmSessionShareService tbmSessionShareService;
+	/** 사업장 접근 인가(공용 cmm 빈) — 토큰 사업장 등식 대신 User_03 원장(TB_USER_SITE_AUTH) 기반 인가. */
+	private final com.prafta.common.cmm.siteauth.service.SiteAccessService siteAccessService;
 
 	/** 미이수 처리 사유 최소 길이(D 문서 §4.1). */
 	private static final int REASON_MIN = 10;
@@ -121,7 +123,7 @@ public class Tbm04ServiceImpl implements Tbm04Service {
 			throw new ApiException(TbmErrorCode.TBM_403_021);
 		}
 		// 스코프 격리: 회사 전체 권한이 아니면 자기 사업장 세션 출결만.
-		verifyScope(param.gvAuthCd(), param.gvSiteCd(), access.session().siteCd());
+		verifyScope(param.gvCmpnyCd(), param.gvUserCd(), param.gvAuthCd(), param.gvSiteCd(), access.session().siteCd());
 
 		SessionAttendanceQuery query = SessionAttendanceQuery.from(param);
 
@@ -265,7 +267,7 @@ public class Tbm04ServiceImpl implements Tbm04Service {
 		// 권한: 개설자 본인 / safe / master
 		verifyCompletionAuth(param.gvAuthCd(), param.gvUserCd(), guard.managerUserCd());
 		// 스코프 격리: 회사 전체 권한이 아니면 자기 사업장 출결만
-		verifyScope(param.gvAuthCd(), param.gvSiteCd(), guard.siteCd());
+		verifyScope(param.gvCmpnyCd(), param.gvUserCd(), param.gvAuthCd(), param.gvSiteCd(), guard.siteCd());
 
 		int affected = tbm04Mapper.updateCompletion(CompletionUpdateCommand.from(param));
 		if (affected == 0) {
@@ -297,7 +299,7 @@ public class Tbm04ServiceImpl implements Tbm04Service {
 		}
 
 		// 스코프 격리: 회사 전체 권한이 아니면 자기 사업장 사용자만
-		verifyScope(param.gvAuthCd(), param.gvSiteCd(), user.siteCd());
+		verifyScope(param.gvCmpnyCd(), param.gvUserCd(), param.gvAuthCd(), param.gvSiteCd(), user.siteCd());
 
 		// 인가 전제: AT.CMPNY_CD = gvCmpnyCd(내 회사 출결행) 가 인가 그 자체다. 세션 헤더 조인만
 		// 타사 세션까지 허용해 "자기 직원의 타사 세션 이수 이력"을 볼 수 있게 한다(요청서 §3.4).
@@ -440,12 +442,12 @@ public class Tbm04ServiceImpl implements Tbm04Service {
 		throw new ApiException(TbmErrorCode.TBM_403_020);
 	}
 
-	/** 스코프 격리: 회사 전체 권한이 아니면 자기 사업장 리소스만 접근 가능. */
-	private void verifyScope(String authCd, String ownSiteCd, String targetSiteCd) {
+	/** 스코프 격리: 회사 전체 권한이 아니면 접근 권한 보유 사업장(User_03 원장 포함) 리소스만 접근 가능. */
+	private void verifyScope(String cmpnyCd, String userCd, String authCd, String ownSiteCd, String targetSiteCd) {
 		if (AuthRoleUtils.isCompanyWide(authCd)) {
 			return;
 		}
-		if (ownSiteCd == null || !ownSiteCd.equals(targetSiteCd)) {
+		if (!siteAccessService.hasSiteAccess(cmpnyCd, userCd, authCd, ownSiteCd, targetSiteCd)) {
 			log.warn("TBM 이력 스코프 위반 - authCd={}, ownSite={}, targetSite={}",
 					authCd, ownSiteCd, targetSiteCd);
 			throw new ApiException(TbmErrorCode.TBM_403_021);

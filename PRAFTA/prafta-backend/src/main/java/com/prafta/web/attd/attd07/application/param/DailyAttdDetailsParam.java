@@ -76,15 +76,10 @@ public record DailyAttdDetailsParam(
             throw new ApiException(CommonErrorCode.COMMON_400_001);
         }
 
-        // SEC-019 - cross-site IDOR 가드.
-        // body의 siteCd가 JWT의 gv_siteCd 와 다르면 즉시 거부한다.
-        // 서비스 계층의 selectUserExistInCmpnySite 재검증과 함께 다층 방어를 구성한다.
-        // (UpdateUserOvertimeRequestParam.from 의 SEC-017 가드와 동일한 패턴)
-        if (!request.getSiteCd().equals(tokenInfo.gv_siteCd())) {
-            log.warn("DailyAttdDetails site mismatch with token. requested={}, token={}",
-                    request.getSiteCd(), tokenInfo.gv_siteCd());
-            throw new ApiException(CommonErrorCode.COMMON_400_001);
-        }
+        // SEC-019 - cross-site IDOR 가드는 서비스 계층 SiteAccessService.assertSiteAccess 로 이관.
+        //   (토큰 사업장 등식 강제는 User_03 사업장 권한 원장(TB_USER_SITE_AUTH)과 불일치 —
+        //    하도급 미러 사업장 등 다사업장 관리가 막혔다. 서비스의 selectUserExistInCmpnySite
+        //    재검증과 함께 다층 방어는 유지된다.)
 
         return new DailyAttdDetailsParam(
               request.getAttdId()

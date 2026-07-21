@@ -44,6 +44,8 @@ public class Attd11ServiceImpl implements Attd11Service {
 
     private final Attd11Mapper attd11Mapper;
     private final AttdCloseService attdCloseService;
+    /** 사업장 접근 인가(공용 cmm 빈) — 토큰 사업장 등식 대신 User_03 원장(TB_USER_SITE_AUTH) 기반 인가. */
+    private final com.prafta.common.cmm.siteauth.service.SiteAccessService siteAccessService;
 
     private static final DateTimeFormatter YMD = DateTimeFormatter.ofPattern("yyyyMMdd");
 
@@ -52,6 +54,9 @@ public class Attd11ServiceImpl implements Attd11Service {
 
         log.info("Attd_11 월별 사용자 근태 판정 조회 진입 - workYm={}, siteCd={}, nodeCd={}, incSub={}",
                 param.workYm(), param.siteCd(), param.nodeCd(), param.incSubNodeYn());
+
+        // 사업장 접근 인가(구 토큰 사업장 등식 가드 대체 — User_03 원장 기반).
+        siteAccessService.assertSiteAccess(param.gvCmpnyCd(), param.gvUserCd(), param.gvAuthCd(), param.gvSiteCd(), param.siteCd());
 
         // 권한 게이트 (PRAFTA-028 / decisions §7) — master/hr 또는 노드 관리자만 허용.
         //   비 master/hr 이 nodeCd 미지정(=사업장 전체)이거나 관리 권한 없는 부서를 조회하면 차단.

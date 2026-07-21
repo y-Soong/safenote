@@ -46,9 +46,13 @@ public class AttdCloseServiceImpl implements AttdCloseService {
     private static final String WHOLE_SITE = "*";
 
     private final AttdCloseMapper attdCloseMapper;
+    /** 사업장 접근 인가(공용 cmm 빈) — 토큰 사업장 등식 대신 User_03 원장(TB_USER_SITE_AUTH) 기반 인가. */
+    private final com.prafta.common.cmm.siteauth.service.SiteAccessService siteAccessService;
 
     @Override
     public AttdCloseStatusResponse getCloseStatus(AttdCloseStatusParam param) {
+        // 사업장 접근 인가(구 토큰 사업장 등식 가드 대체).
+        siteAccessService.assertSiteAccess(param.gvCmpnyCd(), param.gvUserCd(), param.gvAuthCd(), param.gvSiteCd(), param.siteCd());
         String cmpnyCd = param.gvCmpnyCd();
         String siteCd = param.siteCd();
         String closeYm = param.closeYm();
@@ -95,6 +99,8 @@ public class AttdCloseServiceImpl implements AttdCloseService {
     @Override
     @Transactional
     public void closeAttendance(AttdCloseParam param) {
+        // 사업장 접근 인가(구 토큰 사업장 등식 가드 대체).
+        siteAccessService.assertSiteAccess(param.gvCmpnyCd(), param.gvUserCd(), param.gvAuthCd(), param.gvSiteCd(), param.siteCd());
         String cmpnyCd = param.gvCmpnyCd();
         String siteCd = param.siteCd();
         String closeYm = param.closeYm();
@@ -131,6 +137,8 @@ public class AttdCloseServiceImpl implements AttdCloseService {
     @Override
     @Transactional
     public void uncloseAttendance(AttdCloseParam param) {
+        // 사업장 접근 인가(구 토큰 사업장 등식 가드 대체).
+        siteAccessService.assertSiteAccess(param.gvCmpnyCd(), param.gvUserCd(), param.gvAuthCd(), param.gvSiteCd(), param.siteCd());
         String cmpnyCd = param.gvCmpnyCd();
         String siteCd = param.siteCd();
         String closeYm = param.closeYm();

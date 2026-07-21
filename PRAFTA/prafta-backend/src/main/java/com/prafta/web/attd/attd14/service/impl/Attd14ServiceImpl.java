@@ -33,6 +33,8 @@ public class Attd14ServiceImpl implements Attd14Service {
 
     private final Attd14Mapper attd14Mapper;
     private final AttdCloseService attdCloseService;
+    /** 사업장 접근 인가(공용 cmm 빈) — 토큰 사업장 등식 대신 User_03 원장(TB_USER_SITE_AUTH) 기반 인가. */
+    private final com.prafta.common.cmm.siteauth.service.SiteAccessService siteAccessService;
 
     @Override
     public AdminRequestHistoryListResponse getAdminRequestHistory(AdminRequestHistoryListParam param) {
@@ -41,6 +43,8 @@ public class Attd14ServiceImpl implements Attd14Service {
         //   - 노드 정·부 관리자: 본인 담당 노드(+하위) 강제. 부서 미지정 진입은 안내성 BadRequest.
         boolean siteWide = AuthRoleUtils.isManager(param.gvAuthCd());
         if (!siteWide) {
+            // 사업장 접근 인가(구 토큰 사업장 등식 가드 대체 — User_03 원장 기반).
+            siteAccessService.assertSiteAccess(param.gvCmpnyCd(), param.gvUserCd(), param.gvAuthCd(), param.gvSiteCd(), param.siteCd());
             if (param.nodeCd() == null || param.nodeCd().isBlank() || WHOLE_SITE.equals(param.nodeCd())) {
                 throw new ApiException(AttdErrorCode.ATTD_400_130);
             }

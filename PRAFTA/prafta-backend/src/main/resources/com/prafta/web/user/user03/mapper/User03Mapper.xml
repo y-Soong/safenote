@@ -43,6 +43,15 @@
 	  AND USE_YN = 'Y'
 	</select>
 	
+	<!-- 대상 사용자 권한코드 조회 — master/hr 사업장 권한 회수 차단 가드용. -->
+	<select id="selectUserAuthCd" resultType="string">
+	/* User03Mapper.selectUserAuthCd */
+	SELECT AUTH_CD
+	FROM TB_USER
+	WHERE CMPNY_CD = #{cmpnyCd}
+	  AND USER_CD  = #{userCd}
+	</select>
+
 	<insert id="mergeUserSiteAuth" parameterType="com.prafta.web.user.user03.application.command.UserSiteAuthCommand">
 	/* User03Mapper.mergeUserSiteAuth */
 	    INSERT INTO TB_USER_SITE_AUTH (
