@@ -62,7 +62,7 @@
             <div class="ra-inbox__head">
               연차 변경 요청 대기 ({{ leavechangeList.length }})
             </div>
-            <div class="ra-list ra-list--compact">
+            <div class="ra-list">
               <div v-if="leavechangeList.length === 0" class="ra-empty">
                 확인 대기 중인 연차 변경 요청이 없습니다.
               </div>
@@ -765,23 +765,15 @@ onMounted(() => {
   border-bottom: 1px solid var(--color-border, #e5e7eb);
 }
 /* "연차 상신" 탭 ra-inbox 컬럼을 두 소섹션으로 세로 분할(B안).
-   기존 블록(.ra-inbox__block 첫 번째)은 가변 높이 유지(기존 UX 동일),
-   신규 연차변경 블록은 고정 높이 + 자체 스크롤로 보조 정보 성격을 시각적으로 구분한다. */
+   두 블록 모두 flex-basis 0으로 동일 비율 분배 → 고정 높이로 정확히 반반씩 차지(사용자 요청). */
 .ra-inbox__block {
   display: flex;
   flex-direction: column;
+  flex: 1 1 0;
   min-height: 0;
 }
-.ra-inbox__block:first-child {
-  flex: 1 1 auto;
-}
 .ra-inbox__block--leavechange {
-  flex: 0 0 auto;
   border-top: 1px solid var(--color-border, #e5e7eb);
-}
-.ra-list--compact {
-  max-height: 180px;
-  overflow-y: auto;
 }
 .ra-list {
   flex: 1;
