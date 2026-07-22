@@ -26,30 +26,64 @@
     <div class="viewBody ra-body">
       <!-- 연차 탭: 2분할 (접수함 / 상세) -->
       <template v-if="activeTab === 'leave'">
-        <!-- 접수함 -->
+        <!-- 접수함: 좌측 컬럼을 두 소섹션으로 분리(B안) — 기존 결재 대기(위, 무수정) + 신규 연차 변경 대기(아래, 신규) -->
         <section class="ra-inbox">
-          <div class="ra-inbox__head">
-            내 결재 대기 ({{ approvalList.length }})
-          </div>
-          <div class="ra-list">
-            <div v-if="approvalList.length === 0" class="ra-empty">
-              대기 중인 연차 결재가 없습니다.
+          <!-- 기존 "내 결재 대기" 블록 — wrapper 만 추가, 내부 마크업/로직 100% 동일 -->
+          <div class="ra-inbox__block">
+            <div class="ra-inbox__head">
+              내 결재 대기 ({{ approvalList.length }})
             </div>
-            <div
-              v-for="row in approvalList"
-              :key="row.reqId + '-' + row.approvalStep"
-              class="ra-row"
-              :class="{ selected: selected && selected.reqId === row.reqId }"
-              @click="fnSelect(row)"
-            >
-              <div class="ra-row__main">
-                <span class="ra-row__name">{{ row.requesterUserNm }}</span>
-                <span class="ra-row__dept">{{ row.nodeNm || "-" }}</span>
-                <span v-if="row.selfYn === 'Y'" class="ra-chip self">본인</span>
+            <div class="ra-list">
+              <div v-if="approvalList.length === 0" class="ra-empty">
+                대기 중인 연차 결재가 없습니다.
               </div>
-              <div class="ra-row__sub">
-                {{ fmtDate(row.workYmd) }} · {{ row.unitNm || row.leaveType }} ·
-                {{ Number(row.leaveDays) }}일
+              <div
+                v-for="row in approvalList"
+                :key="row.reqId + '-' + row.approvalStep"
+                class="ra-row"
+                :class="{ selected: selected && selected.reqId === row.reqId }"
+                @click="fnSelect(row)"
+              >
+                <div class="ra-row__main">
+                  <span class="ra-row__name">{{ row.requesterUserNm }}</span>
+                  <span class="ra-row__dept">{{ row.nodeNm || "-" }}</span>
+                  <span v-if="row.selfYn === 'Y'" class="ra-chip self">본인</span>
+                </div>
+                <div class="ra-row__sub">
+                  {{ fmtDate(row.workYmd) }} · {{ row.unitNm || row.leaveType }} ·
+                  {{ Number(row.leaveDays) }}일
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- 신규: 연차 변경(이동/삭제) 요청 대기 — 별도 배열(leavechangeList), 위 블록과 데이터 미병합 -->
+          <div class="ra-inbox__block ra-inbox__block--leavechange">
+            <div class="ra-inbox__head">
+              연차 변경 요청 대기 ({{ leavechangeList.length }})
+            </div>
+            <div class="ra-list ra-list--compact">
+              <div v-if="leavechangeList.length === 0" class="ra-empty">
+                확인 대기 중인 연차 변경 요청이 없습니다.
+              </div>
+              <div
+                v-for="row in leavechangeList"
+                :key="row.changeReqId"
+                class="ra-row"
+                @click="fnSelectLeaveChange(row)"
+              >
+                <div class="ra-row__main">
+                  <span class="ra-row__name">{{ row.targetUserNm }}</span>
+                  <span class="ra-chip type">{{ leaveChangeTypeNm(row.reqType) }}</span>
+                  <span class="ra-chip self">{{ leaveChangeInitiatorNm(row.initiatorType) }}</span>
+                </div>
+                <div class="ra-row__sub">
+                  {{ fmtDate(row.targetStartDate) }}
+                  <template v-if="row.reqType === 'MOVE'">
+                    → {{ fmtDate(row.moveTargetDate) }}
+                  </template>
+                  · {{ leaveChangeStatusNm(row.reqStatus) }}
+                </div>
               </div>
             </div>
           </div>
@@ -255,6 +289,13 @@
         </section>
       </template>
     </div>
+
+    <LeaveChangeConfirmPop
+      v-if="showLeaveChangePop"
+      :change-req-id="selectedLeaveChangeReqId"
+      @close="showLeaveChangePop = false"
+      @confirmed="fnAfterLeaveChangeConfirmed"
+    />
   </div>
 </template>
 
@@ -269,6 +310,7 @@ import {
 } from "vue";
 import axios from "@/api/axios";
 import ViewHeader from "@/components/common/ViewHeader.vue";
+import LeaveChangeConfirmPop from "./popup/LeaveChangeConfirmPop.vue";
 import { resolveApiErrorMessage } from "@/utils/apiError";
 import { formatYmdDot } from "@/utils/dateFormat";
 
@@ -303,6 +345,27 @@ const reqProcessing = ref(false);
 const leaveCount = ref(0);
 const correctionCount = ref(0);
 const overtimeCount = ref(0);
+
+// "연차 상신" 탭 내 "연차 변경 요청 대기" 소섹션(B안) — approvalList 와 별개 배열, 데이터 병합 없음.
+//   상세/확인/반려는 기존 LeaveChangeConfirmPop 재사용, 중복 컴포넌트 금지.
+const leavechangeList = ref([]);
+const leavechangeCount = ref(0);
+const showLeaveChangePop = ref(false);
+const selectedLeaveChangeReqId = ref("");
+
+// 연차 변경 요청 코드 → 라벨 매핑(TB_LEAVE_CHANGE_REQUEST 전용 — SYS032 와 무관, 재사용 금지)
+const LEAVE_CHANGE_TYPE_NM = { MOVE: "이동", DELETE: "삭제" };
+const LEAVE_CHANGE_INITIATOR_NM = { ADMIN: "관리자발의", WORKER: "근로자발의" };
+const LEAVE_CHANGE_STATUS_NM = {
+  REQUESTED: "요청(응답대기)",
+  AGREED: "동의(확인대기)",
+  REJECTED: "거부",
+  CONFIRMED: "확정",
+  CLOSED: "종료",
+};
+const leaveChangeTypeNm = (t) => LEAVE_CHANGE_TYPE_NM[t] || t || "-";
+const leaveChangeInitiatorNm = (t) => LEAVE_CHANGE_INITIATOR_NM[t] || t || "-";
+const leaveChangeStatusNm = (s) => LEAVE_CHANGE_STATUS_NM[s] || s || "-";
 
 const tabLabel = (key) => tabs.find((t) => t.key === key)?.label ?? "";
 
@@ -352,7 +415,10 @@ const fnSelectTab = (key) => {
 
 // 탭 전환/내부 재조회 진입점 — 활성 탭 데이터 로드.
 const fnLoad = async () => {
-  if (activeTab.value === "leave") return fnLoadApprovals();
+  if (activeTab.value === "leave") {
+    // B안: 결재 대기 + 연차 변경 대기 두 소섹션을 동시 로드(데이터 병합 없음, 별개 배열 유지)
+    return Promise.all([fnLoadApprovals(), fnLoadLeaveChanges()]);
+  }
   if (activeTab.value === "correction" || activeTab.value === "overtime") {
     return fnLoadReqInbox();
   }
@@ -379,6 +445,34 @@ const fnLoadApprovals = async () => {
   }
 };
 
+// "연차 상신" 탭 내 "연차 변경 요청 대기" 소섹션 목록 조회(B안) — 확인 대기(AGREED) 건만 노출.
+//   사이트/부서 셀렉터가 없는 화면이므로 SITE_CD/NODE_CD 는 비워서 호출(master/hr 는 전사, 노드 관리자는 400 — 상세설명 4번).
+//   fnLoadApprovals 와 독립적으로 실패를 격리해, 한쪽이 실패해도 다른 소섹션은 정상 표시되게 한다.
+const fnLoadLeaveChanges = async () => {
+  try {
+    const r = await axios.get("/webApi/attd13/change-requests", {
+      params: { REQ_STATUS: "AGREED" },
+    });
+    leavechangeList.value = r.data?.list ?? [];
+    leavechangeCount.value = r.data?.totalCnt ?? leavechangeList.value.length;
+  } catch (e) {
+    await proxy.$alert(resolveApiErrorMessage(e, "연차 변경 요청 조회 오류."));
+  }
+};
+
+// 소섹션 행 클릭 → 상세/확인/반려 팝업 오픈(UI 토글 — 로직 없음, 기존 LeaveChangeConfirmPop 재사용)
+const fnSelectLeaveChange = (row) => {
+  selectedLeaveChangeReqId.value = row.changeReqId;
+  showLeaveChangePop.value = true;
+};
+
+// 팝업에서 확인/반려 완료 시 연차변경 소섹션·탭 배지만 재조회(approvalList 는 영향 없음)
+const fnAfterLeaveChangeConfirmed = () => {
+  showLeaveChangePop.value = false;
+  fnLoadLeaveChanges();
+  fnLoadCounts();
+};
+
 const fnLoadReqInbox = async () => {
   try {
     const r = await axios.get("/webApi/reqinbox/pending", {
@@ -396,7 +490,7 @@ const fnLoadReqInbox = async () => {
   }
 };
 
-// 탭 배지용 대기 건수 로드 — 활성 탭과 무관하게 연차/근태보정/초과근무 3종 모두 갱신.
+// 탭 배지용 대기 건수 로드 — 활성 탭과 무관하게 연차(결재+변경 합산)/근태보정/초과근무 갱신.
 // 배지 카운트는 보조 정보이므로 실패해도 화면 흐름은 막지 않는다.
 const fnLoadCounts = async () => {
   try {
@@ -409,9 +503,24 @@ const fnLoadCounts = async () => {
         params: { reqTypeGroup: "overtime" },
       }),
     ]);
-    leaveCount.value = (leaveRes.data?.approvalList ?? []).length;
+    const approvalCnt = (leaveRes.data?.approvalList ?? []).length;
     correctionCount.value = (corrRes.data?.pendingList ?? []).length;
     overtimeCount.value = (otRes.data?.pendingList ?? []).length;
+
+    // 연차 변경 요청 대기 건수는 별도 try/catch 로 격리(노드 관리자 400 등 실패해도 위 3개 배지 갱신은 막지 않는다).
+    try {
+      const changeRes = await axios.get("/webApi/attd13/change-requests", {
+        params: { REQ_STATUS: "AGREED" },
+      });
+      leavechangeCount.value =
+        changeRes.data?.totalCnt ?? (changeRes.data?.list ?? []).length;
+    } catch (e) {
+      console.warn("[Attd_10] 연차 변경 요청 카운트 로드 실패", e);
+    }
+
+    // B안 배지 합산 결정(상세설명 5번 근거): 탭 배지는 "이 탭에 처리할 게 총 몇 건" 을 보여줘야 하므로
+    //   결재 대기 + 연차 변경 대기를 합산한다. 소섹션별 개별 건수는 각 블록 헤더에서 별도 표시.
+    leaveCount.value = approvalCnt + leavechangeCount.value;
   } catch (e) {
     console.warn("[Attd_10] 탭 카운트 로드 실패", e);
   }
@@ -654,6 +763,25 @@ onMounted(() => {
   font-weight: 600;
   font-size: 0.9rem;
   border-bottom: 1px solid var(--color-border, #e5e7eb);
+}
+/* "연차 상신" 탭 ra-inbox 컬럼을 두 소섹션으로 세로 분할(B안).
+   기존 블록(.ra-inbox__block 첫 번째)은 가변 높이 유지(기존 UX 동일),
+   신규 연차변경 블록은 고정 높이 + 자체 스크롤로 보조 정보 성격을 시각적으로 구분한다. */
+.ra-inbox__block {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+.ra-inbox__block:first-child {
+  flex: 1 1 auto;
+}
+.ra-inbox__block--leavechange {
+  flex: 0 0 auto;
+  border-top: 1px solid var(--color-border, #e5e7eb);
+}
+.ra-list--compact {
+  max-height: 180px;
+  overflow-y: auto;
 }
 .ra-list {
   flex: 1;

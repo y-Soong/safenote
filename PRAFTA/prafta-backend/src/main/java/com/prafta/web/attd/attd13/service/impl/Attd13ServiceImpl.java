@@ -348,6 +348,10 @@ public class Attd13ServiceImpl implements Attd13Service {
 
     /** 이동 검증: 만료일(AVAIL_TO_DATE) 이내 + 이동 대상일 DIRECT_USE_KEY 충돌(동일 직원·연차코드·일자) 거부. */
     private void validateMove(String cmpnyCd, LeaveUseTargetResult target, String moveTargetDate) {
+        // 이동 대상일 과거 날짜 가드(오늘 포함 허용, 그 이전만 차단) — 관리자/근로자 발의·확인 재검증 3경로 공통.
+        if (moveTargetDate == null || moveTargetDate.compareTo(todayYmd()) < 0) {
+            throw new ApiException(AttdErrorCode.ATTD_400_131);
+        }
         // 만료 초과(§3-2): grant 만료일이 있으면 이동 대상일이 그 이내여야 함
         if (target.grantId() != null && !target.grantId().isBlank()) {
             String availTo = attd13Mapper.selectGrantAvailToDate(cmpnyCd, target.grantId());

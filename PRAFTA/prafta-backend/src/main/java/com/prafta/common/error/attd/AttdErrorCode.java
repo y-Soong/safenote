@@ -260,6 +260,8 @@ public enum AttdErrorCode implements ApiErrorCode {
     , ATTD_409_120(HttpStatus.CONFLICT, "처리할 수 없는 상태입니다. 잠시 후 다시 시도해 주세요.")
     // 노드 관리자 목록 조회 시 부서 미선택(전사 권한 아님 — 안내성 BadRequest)
     , ATTD_400_130(HttpStatus.BAD_REQUEST, "조회할 부서를 선택해 주세요.")
+    // 이동 대상일 과거 날짜 가드(작업지시서 Attd10-연차변경탭_및_이동버그수정) — 워커/관리자 발의·확인 재검증 공통(validateMove).
+    , ATTD_400_131(HttpStatus.BAD_REQUEST, "이동 대상일은 오늘 이후 날짜로 지정해 주세요.")
 
     // ===== PRAFTA-COM-008-E 기본 근무타입 설정/로그인 게이트 =====
     // 선택한 기본 근무타입이 해당 사업장의 활성 근무타입이 아님(화이트리스트 위반).
