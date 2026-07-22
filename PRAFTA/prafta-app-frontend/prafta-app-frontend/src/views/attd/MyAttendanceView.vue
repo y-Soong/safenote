@@ -588,6 +588,10 @@ const toSheetDay = (detail) => {
     siteName: detail.siteName,
     hasIssue: detail.hasIssue,
     slots: detail.slots,
+    // 작업지시서_연차변경화면_진입버튼: AttendanceActionSheet 라벨 분기 + LeaveMoveRequest 프리셀렉트용.
+    isLeaveUsed: detail.isLeaveUsed,
+    leaveId: detail.leaveId,
+    leaveMovable: detail.leaveMovable,
   }
 }
 
@@ -715,6 +719,11 @@ const onSheetAction = (payload) => {
     if (!day || !day.workYmd) {
       showAlert('대상 일자를 확인할 수 없습니다.')
       return
+    }
+    // 작업지시서_연차변경화면_진입버튼: 이동 가능일(서버 산출 leaveMovable)이면 이동요청 화면으로 분기.
+    //   그 외(과거 연차일 포함)는 기존 /LeaveApply 흐름 그대로 유지.
+    if (day.isLeaveUsed && day.leaveMovable) {
+      return router.push({ path: '/LeaveMoveRequest', query: { leaveId: day.leaveId } })
     }
     try {
       sessionStorage.setItem(LEAVE_APPLY_CONTEXT_KEY, JSON.stringify(buildContextFromDay(day)))

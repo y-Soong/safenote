@@ -60,6 +60,10 @@ public class MyAttendanceDayResponse {
     private final String leaveUnitType;
     private final String leaveTimeRange;
     private final BigDecimal leaveDays;
+    // 작업지시서_연차변경화면_진입버튼: 연차 이동(TARGET_LEAVE_ID) 발의용 식별자 + 이동 가능 여부.
+    //   leaveId=TB_USER_LEAVE_USE.LEAVE_ID(연차 미사용일이면 null). leaveMovable=미래/오늘 + CONFIRMED 파생값.
+    private final String leaveId;
+    private final boolean leaveMovable;
     // PRAFTA_COM_002-B-1: 단건 스칼라(첫 1건) 연차가 승인 대기(요청중)인지. is 탈락 방지(@JsonProperty).
     //   판정=REQ_ID NOT NULL AND REQ_STATUS='01'. 다건은 leaves[].pendingApproval 로 건별 표기.
     @JsonProperty("isLeavePending")

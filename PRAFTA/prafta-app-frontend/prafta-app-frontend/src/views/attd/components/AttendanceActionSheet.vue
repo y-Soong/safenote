@@ -167,8 +167,13 @@ const metaText = computed(() => {
 })
 
 // 액션 4종 — 항상 노출, 활성/비활성만 제어 (서버 산출 day.actions, §3.3)
+// 작업지시서_연차변경화면_진입버튼: day.isLeaveUsed && day.leaveMovable(서버 산출, 클라 재계산 없음)이면
+//   "연차 변경"으로 라벨 전환 + 이동요청 화면 진입. 과거 연차일 등 그 외는 기존 "연차 신청" 라벨/흐름 유지
+//   (canRequestLeave 게이팅 자체는 불변 — 요청서 결정 §2).
 const actionList = computed(() => {
   const a = (props.day && props.day.actions) || {}
+  const d = props.day || {}
+  const isLeaveMovable = !!d.isLeaveUsed && !!d.leaveMovable
   return [
     {
       type: 'scheduleModify',
@@ -188,7 +193,12 @@ const actionList = computed(() => {
       iconId: '#i-as-clock',
       enabled: !!a.canRequestOvertime,
     },
-    { type: 'leave', label: '연차 신청', iconId: '#i-as-umbrella', enabled: !!a.canRequestLeave },
+    {
+      type: 'leave',
+      label: isLeaveMovable ? '연차 변경' : '연차 신청',
+      iconId: '#i-as-umbrella',
+      enabled: !!a.canRequestLeave,
+    },
   ]
 })
 

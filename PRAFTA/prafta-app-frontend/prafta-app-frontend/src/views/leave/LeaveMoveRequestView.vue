@@ -91,7 +91,7 @@
 
 <script setup>
 import { ref, computed, onMounted, getCurrentInstance } from 'vue'
-import { useRouter } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 
 import api from '@/api/axios'
 import { usePullToRefresh } from '@/composables/usePullToRefresh'
@@ -100,6 +100,7 @@ import { resolveApiErrorMessage } from '@/utils/apiError'
 import { formatYmdDisplay } from '@/utils/approvalFormat'
 import DateStepperField from '@/components/common/DateStepperField.vue'
 
+const route = useRoute()
 const router = useRouter()
 const { proxy } = getCurrentInstance() || { proxy: null }
 
@@ -147,6 +148,8 @@ const toLeave = (lv) => ({
 
 // GET /appApi/leavechange/movable-leaves
 //   본인(JWT) 미래 확정 연차일 목록(이동 가능 대상). → movableLeaves.value
+//   작업지시서_연차변경화면_진입버튼: 쿼리파라미터 leaveId 가 있으면 목록 로드 후 프리셀렉트.
+//     목록에 없으면(만료/이미 처리 등 레이스) 조용히 무시 — 에러 팝업 없음, placeholder 유지.
 const loadMyLeaves = async () => {
   isLoading.value = true
   loadError.value = ''
@@ -154,6 +157,10 @@ const loadMyLeaves = async () => {
     const res = await api.get('/appApi/leavechange/movable-leaves')
     const list = res?.data?.list || []
     movableLeaves.value = list.map(toLeave)
+    const presetLeaveId = String(route.query.leaveId || '')
+    if (presetLeaveId && movableLeaves.value.some((lv) => lv.leaveId === presetLeaveId)) {
+      selectedLeaveId.value = presetLeaveId
+    }
   } catch (err) {
     loadError.value = resolveApiErrorMessage(err, '연차 목록을 불러오지 못했어요.')
   } finally {

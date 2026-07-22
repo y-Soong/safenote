@@ -188,6 +188,11 @@ public class AppAttd01ServiceImpl implements AppAttd01Service {
         ScheduleResult sched = schedules.isEmpty() ? null : schedules.get(0);
         // prafta-com-008-E-2: 연차일 판정을 work_plan(LEAVE_CD) → leave_use(종일 확정) 로 전환.
         boolean isLeaveDay = isFullDayLeave(dayLeave);
+        // 작업지시서_연차변경화면_진입버튼: 연차 이동 가능 여부(부분연차 포함, isLeaveDay 무관).
+        //   selectMovableLeaves(Attd13Mapper) 와 동일 조건 — CONFIRMED(쿼리 필터) + START_DATE >= todayYmd.
+        boolean leaveMovable = dayLeave != null
+                && StringUtils.hasText(dayLeave.leaveId())
+                && dayLeave.startDate().compareTo(todayYmd) >= 0;
         boolean isTwoSlot = sched != null && StringUtils.hasText(sched.secSchStrTime());
         boolean hasScheduleDay = sched != null && !isLeaveDay;
 
@@ -303,6 +308,9 @@ public class AppAttd01ServiceImpl implements AppAttd01Service {
                 .leaveUnitType(dayLeave == null ? null : dayLeave.useUnitType())
                 .leaveTimeRange(dayLeave == null ? null : leaveTimeRange(dayLeave.startTime(), dayLeave.endTime()))
                 .leaveDays(dayLeave == null ? null : dayLeave.leaveDays())
+                // 작업지시서_연차변경화면_진입버튼: 이동 발의 식별자 + 이동 가능 여부.
+                .leaveId(dayLeave == null ? null : dayLeave.leaveId())
+                .leaveMovable(leaveMovable)
                 // PRAFTA_COM_002-B-1: 단건 스칼라(첫 1건) 요청중 여부(다건은 leaves[].pendingApproval).
                 .leavePending(isLeavePending(dayLeave))
                 // 같은 날 부분연차 다건 표시용 마커 목록(시각순). dayLeaves 전체를 매핑(단건 스칼라는 첫 1건 하위호환).
@@ -556,6 +564,10 @@ public class AppAttd01ServiceImpl implements AppAttd01Service {
             LeaveUseResult leave = leaveByYmd.get(ymd);
             // prafta-com-008-E-2: 연차일 판정을 leave_use(종일 확정) 기준으로 전환.
             boolean isLeaveDay = isFullDayLeave(leave);
+            // 작업지시서_연차변경화면_진입버튼: 연차 이동 가능 여부(부분연차 포함, isLeaveDay 무관).
+            boolean leaveMovable = leave != null
+                    && StringUtils.hasText(leave.leaveId())
+                    && leave.startDate().compareTo(todayYmd) >= 0;
             boolean isTwoSlot = sched != null && StringUtils.hasText(sched.secSchStrTime());
             boolean hasSchCd = sched != null && !isLeaveDay; // 근무 스케줄(SCH_CD) 존재 여부
 
@@ -596,6 +608,9 @@ public class AppAttd01ServiceImpl implements AppAttd01Service {
                     .leaveUnitType(leave == null ? null : leave.useUnitType())
                     .leaveTimeRange(leave == null ? null : leaveTimeRange(leave.startTime(), leave.endTime()))
                     .leaveDays(leave == null ? null : leave.leaveDays())
+                    // 작업지시서_연차변경화면_진입버튼: 이동 발의 식별자 + 이동 가능 여부.
+                    .leaveId(leave == null ? null : leave.leaveId())
+                    .leaveMovable(leaveMovable)
                     // PRAFTA_COM_002-B-1: 단건 스칼라(첫 1건) 요청중 여부(다건은 leaves[].pendingApproval).
                     .leavePending(isLeavePending(leave))
                     // 같은 날 부분연차 다건 표시용 마커 목록(시각순). 없으면 빈 리스트.

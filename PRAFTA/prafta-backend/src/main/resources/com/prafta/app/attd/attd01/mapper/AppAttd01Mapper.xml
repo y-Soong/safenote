@@ -225,6 +225,8 @@
         , U.LEAVE_MINUTES  AS leaveMinutes
         <!-- PRAFTA_COM_002-B-1: 승인 대기(요청중) 연차 구분용 — 연관 요청행 상태(위치매핑 끝 컬럼). -->
         , R.REQ_STATUS     AS reqStatus
+        <!-- 작업지시서_연차변경화면_진입버튼: 이동 발의(TARGET_LEAVE_ID) 식별자. 위치매핑 마지막 컬럼 고정. -->
+        , U.LEAVE_ID       AS leaveId
       FROM TB_USER_LEAVE_USE U
       LEFT JOIN TB_LEAVE_TYPE_MGMT LT
         ON  LT.CMPNY_CD = U.CMPNY_CD
