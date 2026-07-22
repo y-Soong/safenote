@@ -2,55 +2,110 @@
 <!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
 <mapper namespace="com.prafta.app.req.req06.mapper.AppReq06Mapper">
 
+    <!-- ============ 본인 요청 통합 소스 (UNION ALL 파생 테이블) ============
+      prafta-내승인요청연차통합-1: 기존 TB_USER_ATTD_REQ(01~06,10) 단일 소스에
+      근로자 본인 발의 연차 이동 요청(TB_LEAVE_CHANGE_REQUEST, INITIATOR_TYPE='WORKER')을 통합.
+      - 소스 1: TB_USER_ATTD_REQ (REQ_TYPE IN '01'~'06','10', SYS032 07~09 예약 코드 응답 차단)
+      - 소스 2: TB_LEAVE_CHANGE_REQUEST (근로자 본인 발의만. 관리자 발의(ADMIN)+근로자 동의대기 건은
+        LeaveChangeConsentPopup.vue 가 별도 처리 중이라 여기 포함하지 않는다)
+        · reqType 은 'MOVE'/'DELETE' 원본을 'LC_MOVE'/'LC_DELETE' 로 합성(SYS032 비등록, 서비스 레이어 하드코딩 라벨)
+        · reqStatus 는 REQUESTED/AGREED→'01', CONFIRMED→'02', REJECTED→'03' 으로 SYS033 체계 정규화
+        · workYmd 는 이동 대상일(MOVE_TARGET_DATE), startDate 는 이동 전 원래 연차일(TB_USER_LEAVE_USE.START_DATE) -->
+    <sql id="myReqUnionSource">
+        (
+            SELECT A.REQ_ID          AS reqId
+                 , A.REQ_TYPE        AS reqType
+                 , A.REQ_STATUS      AS reqStatus
+                 , A.WORK_YMD        AS workYmd
+                 , A.START_DATE      AS startDate
+                 , A.START_TIME      AS startTime
+                 , A.END_DATE        AS endDate
+                 , A.END_TIME        AS endTime
+                 , A.LEAVE_TYPE      AS leaveType
+                 , A.LEAVE_DAYS      AS leaveDays
+                 , A.SCH_CD          AS schCd
+                 , A.PROCESS_COMMENT AS processComment
+                 , A.PROCESS_DATE    AS processDate
+                 , A.INSERT_DATE     AS insertDate
+              FROM TB_USER_ATTD_REQ A
+             WHERE A.CMPNY_CD = #{cmpnyCd}
+               AND A.SITE_CD  = #{siteCd}
+               AND A.USER_CD  = #{userCd}
+               AND A.DEL_YN   = 'N'
+               AND A.REQ_TYPE IN ('01','02','03','04','05','06','10')
+
+            UNION ALL
+
+            SELECT R.CHANGE_REQ_ID AS reqId
+                 , (CASE R.REQ_TYPE WHEN 'MOVE' THEN 'LC_MOVE' ELSE 'LC_DELETE' END) AS reqType
+                 , (CASE R.REQ_STATUS
+                      WHEN 'AGREED'    THEN '01'
+                      WHEN 'CONFIRMED' THEN '02'
+                      WHEN 'REJECTED'  THEN '03'
+                      ELSE '01'
+                    END) AS reqStatus
+                 , R.MOVE_TARGET_DATE AS workYmd
+                 , LU.START_DATE      AS startDate
+                 , NULL AS startTime
+                 , NULL AS endDate
+                 , NULL AS endTime
+                 , NULL AS leaveType
+                 , NULL AS leaveDays
+                 , NULL AS schCd
+                 , R.REJECT_REASON AS processComment
+                 , R.CONFIRM_DATE  AS processDate
+                 , R.INSERT_DATE   AS insertDate
+              FROM TB_LEAVE_CHANGE_REQUEST R
+              LEFT JOIN TB_USER_LEAVE_USE LU
+                ON LU.CMPNY_CD = R.CMPNY_CD
+               AND LU.LEAVE_ID = R.TARGET_LEAVE_ID
+             WHERE R.CMPNY_CD       = #{cmpnyCd}
+               AND R.SITE_CD        = #{siteCd}
+               AND R.TARGET_USER_CD = #{userCd}
+               AND R.INITIATOR_TYPE = 'WORKER'
+               AND R.DEL_YN         = 'N'
+        ) U
+    </sql>
+
     <!-- ============ 공통 WHERE 조각 ============
-      - CMPNY_CD/SITE_CD/USER_CD 스코프 강제(IDOR)
-      - DEL_YN='N'
-      - REQ_TYPE IN ('01'~'06','10') 고정 (SYS032 시스템 코드 07/08/09 응답 차단, '10'=스케줄 수정 요청)
       - reqTypes/reqStatuses 가 있을 때만 추가 IN
-      - targetYmd 범위가 있을 때만 BETWEEN -->
+      - targetYmd 범위가 있을 때만 BETWEEN
+      (스코프/DEL_YN/REQ_TYPE 고정 필터는 myReqUnionSource 파생 테이블 내부에서 이미 적용됨) -->
     <sql id="myReqWhere">
-        WHERE A.CMPNY_CD = #{cmpnyCd}
-          AND A.SITE_CD  = #{siteCd}
-          AND A.USER_CD  = #{userCd}
-          AND A.DEL_YN   = 'N'
-          AND A.REQ_TYPE IN ('01','02','03','04','05','06','10')
-        <if test="reqTypes != null and !reqTypes.isEmpty()">
-          AND A.REQ_TYPE IN
-          <foreach collection="reqTypes" item="t" open="(" separator="," close=")">
-            #{t}
-          </foreach>
-        </if>
-        <if test="reqStatuses != null and !reqStatuses.isEmpty()">
-          AND A.REQ_STATUS IN
-          <foreach collection="reqStatuses" item="s" open="(" separator="," close=")">
-            #{s}
-          </foreach>
-        </if>
-        <if test="targetYmdFrom != null">
-          AND A.WORK_YMD &gt;= #{targetYmdFrom}
-        </if>
-        <if test="targetYmdTo != null">
-          AND A.WORK_YMD &lt;= #{targetYmdTo}
-        </if>
+        <where>
+            <if test="reqTypes != null and !reqTypes.isEmpty()">
+              AND U.reqType IN
+              <foreach collection="reqTypes" item="t" open="(" separator="," close=")">
+                #{t}
+              </foreach>
+            </if>
+            <if test="reqStatuses != null and !reqStatuses.isEmpty()">
+              AND U.reqStatus IN
+              <foreach collection="reqStatuses" item="s" open="(" separator="," close=")">
+                #{s}
+              </foreach>
+            </if>
+            <if test="targetYmdFrom != null">
+              AND U.workYmd &gt;= #{targetYmdFrom}
+            </if>
+            <if test="targetYmdTo != null">
+              AND U.workYmd &lt;= #{targetYmdTo}
+            </if>
+        </where>
     </sql>
 
     <!-- ============ 본인 전체 건수 (필터 무관) ============ -->
     <select id="selectMyTotalCount" resultType="int">
     /* AppReq06Mapper.selectMyTotalCount */
     SELECT COUNT(1)
-      FROM TB_USER_ATTD_REQ A
-     WHERE A.CMPNY_CD = #{cmpnyCd}
-       AND A.SITE_CD  = #{siteCd}
-       AND A.USER_CD  = #{userCd}
-       AND A.DEL_YN   = 'N'
-       AND A.REQ_TYPE IN ('01','02','03','04','05','06','10')
+      FROM <include refid="myReqUnionSource"/>
     </select>
 
     <!-- ============ 필터 적용 후 총합 ============ -->
     <select id="selectMyFilteredCount" parameterType="com.prafta.app.req.req06.application.query.MyReqListQuery" resultType="int">
     /* AppReq06Mapper.selectMyFilteredCount */
     SELECT COUNT(1)
-      FROM TB_USER_ATTD_REQ A
+      FROM <include refid="myReqUnionSource"/>
     <include refid="myReqWhere"/>
     </select>
 
@@ -59,37 +114,37 @@
             resultType="com.prafta.app.req.req06.result.MyReqItemResult">
     /* AppReq06Mapper.selectMyReqPage */
     SELECT
-          A.REQ_ID          AS reqId
-        , A.REQ_TYPE        AS reqType
-        , A.REQ_STATUS      AS reqStatus
-        , A.WORK_YMD        AS workYmd
-        , A.START_DATE      AS startDate
-        , A.START_TIME      AS startTime
-        , A.END_DATE        AS endDate
-        , A.END_TIME        AS endTime
-        , A.LEAVE_TYPE      AS leaveType
-        , A.LEAVE_DAYS      AS leaveDays
-        , A.SCH_CD          AS schCd
-        , A.PROCESS_COMMENT AS processComment
-        , A.PROCESS_DATE    AS processDate
-        , A.INSERT_DATE     AS insertDate
-      FROM TB_USER_ATTD_REQ A
+          U.reqId          AS reqId
+        , U.reqType        AS reqType
+        , U.reqStatus      AS reqStatus
+        , U.workYmd        AS workYmd
+        , U.startDate      AS startDate
+        , U.startTime      AS startTime
+        , U.endDate        AS endDate
+        , U.endTime        AS endTime
+        , U.leaveType      AS leaveType
+        , U.leaveDays      AS leaveDays
+        , U.schCd          AS schCd
+        , U.processComment AS processComment
+        , U.processDate    AS processDate
+        , U.insertDate     AS insertDate
+      FROM <include refid="myReqUnionSource"/>
     <include refid="myReqWhere"/>
     <choose>
         <when test="sort == 'RECENT'">
-            ORDER BY A.INSERT_DATE DESC, A.REQ_ID DESC
+            ORDER BY U.insertDate DESC, U.reqId DESC
         </when>
         <when test="sort == 'TARGET_DATE'">
             ORDER BY
-              ABS(DATEDIFF(STR_TO_DATE(COALESCE(A.WORK_YMD,'99991231'),'%Y%m%d'), CURDATE())) ASC
-            , A.INSERT_DATE DESC
-            , A.REQ_ID DESC
+              ABS(DATEDIFF(STR_TO_DATE(COALESCE(U.workYmd,'99991231'),'%Y%m%d'), CURDATE())) ASC
+            , U.insertDate DESC
+            , U.reqId DESC
         </when>
         <otherwise>
             <!-- PENDING_FIRST (기본) -->
-            ORDER BY (CASE A.REQ_STATUS WHEN '01' THEN 0 ELSE 1 END) ASC
-                   , A.INSERT_DATE DESC
-                   , A.REQ_ID DESC
+            ORDER BY (CASE U.reqStatus WHEN '01' THEN 0 ELSE 1 END) ASC
+                   , U.insertDate DESC
+                   , U.reqId DESC
         </otherwise>
     </choose>
     LIMIT #{limit} OFFSET #{offset}

@@ -1,6 +1,9 @@
 <!--
-  RequestTypeFilterSheet.vue — 요청 유형 다중 선택 (SYS032 7종)
+  RequestTypeFilterSheet.vue — 요청 유형 다중 선택 (SYS032 7종 + LC_MOVE 1종, 8종)
   - 작업 ID: PRAFTA-APP-006-5 / PRAFTA-APP-029-5 (스케줄수정 '10' 추가)
+  - PRAFTA-내승인요청연차통합-2: 연차 이동(LC_MOVE) 옵션 추가.
+    LC_MOVE 는 SYS032 예약 충돌(07~09) 회피 목적의 합성 코드 — SYS032 DB 미등록,
+    향후 SYS032 서버 조회로 전환 시에도 LC_MOVE 는 별도 하드코딩 유지(AppReq06ServiceImpl 참조).
 -->
 <template>
   <BaseBottomSheet
@@ -63,8 +66,8 @@ const props = defineProps({
 })
 const emit = defineEmits(['update:modelValue', 'apply'])
 
-// TODO(developer): 라벨 단일출처(SYS032) FU — 현재 01~06 이 하드코딩 라벨이므로 일관성 위해 '10' 도 동일 방식 1줄 추가.
-//   추후 SYS032 서버 조회로 OPTIONS 전체를 치환하면 '10' 도 자동 포함된다(목록/카드 라벨은 이미 서버 reqTypeDisplay 사용).
+// TODO(developer): 라벨 단일출처(SYS032) FU — 현재 01~06/10 이 하드코딩 라벨이므로 일관성 위해 유지.
+//   추후 SYS032 서버 조회로 OPTIONS 전체를 치환하더라도 LC_MOVE 는 SYS032 비등록 코드이므로 별도 유지 필요.
 const OPTIONS = [
   { code: '01', label: '근태 생성' },
   { code: '02', label: '근태 수정' },
@@ -73,6 +76,7 @@ const OPTIONS = [
   { code: '05', label: '연차 사용' },
   { code: '06', label: '연차 수정' },
   { code: '10', label: '스케줄수정' },
+  { code: 'LC_MOVE', label: '연차 이동' },
 ]
 
 const localSelected = ref([...props.selected])

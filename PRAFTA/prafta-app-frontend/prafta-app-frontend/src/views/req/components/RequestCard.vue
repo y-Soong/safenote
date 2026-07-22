@@ -18,7 +18,7 @@
     <div class="req-card__body">
       <p class="req-card__target-ymd">{{ item.targetYmdDisplay }}</p>
       <p
-        v-for="(line, idx) in (item.summary && item.summary.lines) || []"
+        v-for="(line, idx) in item.summaryLines || []"
         :key="idx"
         class="req-card__summary-line"
       >

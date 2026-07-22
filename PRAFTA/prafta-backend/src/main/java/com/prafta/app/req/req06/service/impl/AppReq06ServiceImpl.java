@@ -30,15 +30,19 @@ import lombok.extern.slf4j.Slf4j;
  *
  * <p>가공 흐름:
  * <ol>
- *   <li>전체/필터 카운트 + 페이지 행(limit+1) 조회</li>
+ *   <li>전체/필터 카운트 + 페이지 행(limit+1) 조회 (TB_USER_ATTD_REQ '01'~'06','10' + TB_LEAVE_CHANGE_REQUEST
+ *       근로자 본인 발의 연차 이동/삭제 'LC_MOVE'/'LC_DELETE' UNION ALL, prafta-내승인요청연차통합-1)</li>
  *   <li>SYS032/SYS033 라벨 일괄 조회 (in-memory map — 호출당 1회)</li>
- *   <li>각 행을 응답 DTO 로 매핑 (REQ_TYPE/REQ_STATUS 라벨, 요일/날짜 디스플레이, summary.lines)</li>
+ *   <li>각 행을 응답 DTO 로 매핑 (REQ_TYPE/REQ_STATUS 라벨, 요일/날짜 디스플레이, summaryLines)</li>
  *   <li>limit+1 의 마지막 행이 있으면 hasMore=true 로 잘라낸다</li>
  * </ol>
  *
  * <p>LEAVE_TYPE 은 SYS 코드가 아닌 자유 텍스트 컬럼이므로 본 서비스 내부의 하드코딩 맵으로 매핑한다.
  * 미매핑 값은 원본 코드 그대로 노출(fallback).
  * prafta-043: 초과근무 유형(OT_TYPE) 전면 파기로 OT_TYPE 라벨 매핑/노출 제거.
+ *
+ * <p>reqType='LC_MOVE'/'LC_DELETE' 는 SYS032 비등록 합성 코드(TB_SYST_VAL_D 07~09 는 예약)이므로
+ * {@link #LEAVE_CHANGE_TYPE_LABEL} 로 별도 매핑한다(prafta-내승인요청연차통합-1).
  */
 @Slf4j
 @Service
@@ -59,6 +63,13 @@ public class AppReq06ServiceImpl implements AppReq06Service {
             "HALF_PM", "오후반차",
             "SICK", "병가",
             "FAMILY", "경조사"
+    );
+
+    // ─────────────── 연차 이동/삭제(TB_LEAVE_CHANGE_REQUEST) 합성 REQ_TYPE 하드코딩 매핑 ───────────────
+    // prafta-내승인요청연차통합-1: SYS032(07~09) 는 예약 코드라 재사용 불가 → 서비스 레이어 하드코딩.
+    private static final Map<String, String> LEAVE_CHANGE_TYPE_LABEL = Map.of(
+            "LC_MOVE", "연차 이동",
+            "LC_DELETE", "연차 삭제"
     );
 
     @Override
@@ -91,7 +102,9 @@ public class AppReq06ServiceImpl implements AppReq06Service {
                                          Map<String, String> reqTypeMap,
                                          Map<String, String> reqStatusMap) {
 
-        String reqTypeDisplay = reqTypeMap.getOrDefault(safe(r.reqType()), safe(r.reqType()));
+        String reqTypeDisplay = safe(r.reqType()).startsWith("LC_")
+                ? LEAVE_CHANGE_TYPE_LABEL.getOrDefault(safe(r.reqType()), safe(r.reqType()))
+                : reqTypeMap.getOrDefault(safe(r.reqType()), safe(r.reqType()));
         String reqStatusDisplay = reqStatusMap.getOrDefault(safe(r.reqStatus()), safe(r.reqStatus()));
 
         String targetYmdDisplay = formatYmdWithWeekday(r.workYmd());
@@ -152,6 +165,12 @@ public class AppReq06ServiceImpl implements AppReq06Service {
             //   스케줄명 라벨(SCH_NO) 조인은 후속(§7-3) — 1차는 코드 표시.
             String sch = (r.schCd() == null || r.schCd().isBlank()) ? "미지정" : r.schCd();
             lines.add("스케줄 변경 · " + sch);
+        } else if ("LC_MOVE".equals(reqType)) {
+            // 연차 이동: "이동 전 원래 연차일(startDate) → 이동 대상일(workYmd)"
+            lines.add("연차 이동 · " + formatYmdSlash(r.startDate()) + " → " + formatYmdSlash(r.workYmd()));
+        } else if ("LC_DELETE".equals(reqType)) {
+            // 연차 삭제: 근로자 발의 경로가 없어 현재 도달 불가하나 방어적으로 구현.
+            lines.add("연차 삭제 · " + formatYmdSlash(r.startDate()));
         }
         return lines;
     }
