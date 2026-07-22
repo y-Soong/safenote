@@ -354,10 +354,36 @@
       AND R.STATUS      = 'ACCEPTED'
     </select>
 
-    <!-- 대상 사업장 부서노드 전수(마감 커버리지 검사 — 전체 센티넬 '*' 는 서비스가 추가). -->
+    <!-- 대상 사업장 부서노드 전수(마감 커버리지 검사 — 전체 센티넬 '*' 는 서비스가 추가).
+         [T1 게이트 완화] 활성 소속 사용자(USE_YN='Y', 미탈퇴) 0명인 빈 부서는 검사 대상에서 제외한다.
+         기준은 "소속 사용자 0명"이지 "그 달 근태 0건"이 아니다 — 직원이 있는데 기록이 없는 달은
+         여전히 마감이 필요하다(0건=확정 아님 원칙 유지). 게이트(월 완전마감 판정) 전용 쿼리이며
+         행 단위 커버리지 판정용 전체 노드 목록(selectSiteNodeList)과 혼용하지 않는다. -->
     <select id="selectSiteNodeCdList" resultType="string">
     /* Subcon03Mapper.selectSiteNodeCdList */
     SELECT N.NODE_CD
+    FROM TB_SITE_NODE N
+    WHERE N.CMPNY_CD = #{cmpnyCd}
+      AND N.SITE_CD  = #{siteCd}
+      AND EXISTS (
+            SELECT 1
+            FROM TB_USER U
+            WHERE U.CMPNY_CD = N.CMPNY_CD
+              AND U.SITE_CD  = N.SITE_CD
+              AND U.NODE_CD  = N.NODE_CD
+              AND U.USE_YN   = 'Y'
+              AND U.WITHDRAWAL_DATE IS NULL
+      )
+    ORDER BY N.NODE_CD ASC
+    </select>
+
+    <!-- [PS-03] 대상 사업장 전체 노드 목록(코드+명, 무필터) — 행 단위 커버리지 판정의 노드 유효성(고아 여부)
+         판정과 제외 부서명 표기에 사용한다. 게이트용 필터드 selectSiteNodeCdList 와 혼용 금지. -->
+    <select id="selectSiteNodeList" resultType="com.prafta.web.subcon.subcon03.result.SiteNodeResult">
+    /* Subcon03Mapper.selectSiteNodeList */
+    SELECT
+        N.NODE_CD    AS nodeCd
+        , N.NODE_NM  AS nodeNm
     FROM TB_SITE_NODE N
     WHERE N.CMPNY_CD = #{cmpnyCd}
       AND N.SITE_CD  = #{siteCd}
@@ -577,6 +603,8 @@
         , LV.leaveDays                                                  AS leaveDays
         , LV.leaveMinutes                                               AS leaveMinutes
         , NULL                                                          AS leaveEndYmd
+        <!-- [PS-04] 마감 커버리지 필터용 노드(record 끝 append — 3쿼리 동일 순서 엄수). -->
+        , A.NODE_CD                                                     AS nodeCd
     FROM TB_USER_ATTD_MGMT A
         LEFT OUTER JOIN TB_USER U
             ON  U.CMPNY_CD = A.CMPNY_CD
@@ -710,6 +738,9 @@
         , NULL                                                          AS leaveDays
         , NULL                                                          AS leaveMinutes
         , NULL                                                          AS leaveEndYmd
+        <!-- [PS-04] 커버리지 필터용 노드(record 끝 append). 같은 날 OT 가 복수 노드에 걸치는
+             이례 케이스는 MIN 으로 결정화한다(GROUP BY (USER_CD, WORK_YMD) 유지). -->
+        , MIN(O.NODE_CD)                                                AS nodeCd
     FROM TB_USER_OVERTIME_MGMT O
         LEFT OUTER JOIN TB_USER U
             ON  U.CMPNY_CD = O.CMPNY_CD
@@ -764,6 +795,10 @@
         , SUM(IFNULL(L.LEAVE_DAYS, 0))                                  AS leaveDays
         , SUM(IFNULL(L.LEAVE_MINUTES, 0))                               AS leaveMinutes
         , MAX(L.END_DATE)                                               AS leaveEndYmd
+        <!-- [PS-04] 커버리지 필터용 노드(record 끝 append). TB_USER_LEAVE_USE 에는 NODE_CD 가 없어
+             정규직은 현재 소속(TB_USER.NODE_CD — attd07 isClosedForUser 와 동일 해석 원리),
+             일용직(TB_DAILY_USER)은 NULL 로 남아 전체마감('*') 전용으로 판정된다. -->
+        , U.NODE_CD                                                     AS nodeCd
     FROM TB_USER_LEAVE_USE L
         LEFT OUTER JOIN TB_LEAVE_TYPE_MGMT T
             ON  T.CMPNY_CD = L.CMPNY_CD
@@ -788,7 +823,7 @@
                AND A.WORK_YMD = L.START_DATE
                AND A.DEL_YN   = 'N'
       )
-    GROUP BY L.USER_CD, L.START_DATE, U.USER_CD, U.USER_NM, D.USER_NM
+    GROUP BY L.USER_CD, L.START_DATE, U.USER_CD, U.USER_NM, D.USER_NM, U.NODE_CD
     ORDER BY L.USER_CD ASC, L.START_DATE ASC
     </select>
 
@@ -801,6 +836,8 @@
         , OWNER_CMPNY_CD
         , VERSION
         , UNCLOSED_INCLUDED_YN
+        , CLOSED_PARTIAL_YN
+        , COVERAGE_META
         , CONSENT_EXCLUDED_CNT
         , ROW_CNT
         , RELAY_INCLUDED_YN
@@ -812,6 +849,8 @@
         , #{ownerCmpnyCd}
         , #{version}
         , #{unclosedIncludedYn}
+        , #{closedPartialYn}
+        , #{coverageMeta}
         , #{consentExcludedCnt}
         , 0
         , #{relayIncludedYn}
@@ -920,6 +959,8 @@
         , S.ROW_CNT                                             AS rowCnt
         , IFNULL(S.UNCLOSED_INCLUDED_YN, 'N')                   AS unclosedIncludedYn
         , DATE_FORMAT(S.CREATE_DTIME, '%Y-%m-%d %H:%i:%s')      AS createDtime
+        <!-- [PS-05] 부분 포함 표식(record 끝 append). 구본(NULL)은 전체 포함 간주(D-4) → 'N'. -->
+        , IFNULL(S.CLOSED_PARTIAL_YN, 'N')                      AS closedPartialYn
     FROM TB_CMPNY_SHARE_SNAPSHOT S
         INNER JOIN TB_CMPNY_SHARE_REQ R
             ON (R.SHARE_REQ_ID = S.SHARE_REQ_ID)
@@ -929,7 +970,10 @@
       AND R.DATA_TYPE      = #{dataType}       /* ③ 동일 유형 + 기간 부분집합 */
       AND R.PERIOD_STR <![CDATA[ >= ]]> #{periodStr}
       AND R.PERIOD_END <![CDATA[ <= ]]> #{periodEnd}
-      <!-- ④ 마감분만 요청이면 미마감 표식이 있는 하위 스냅샷은 묶을 수 없다(요청서 엣지 3).
+      <!-- ④ 마감분만 요청이면 "미마감 포함" 표식이 있는 하위 스냅샷은 묶을 수 없다(요청서 엣지 3).
+           [D-3 재정의] ④ 는 미마감 포함 여부만 검사한다 — 마감분만 필터로 만든 부분 포함 스냅샷은
+           UNCLOSED='N' 이라 자동 적격이며(의도된 동작), 부분 포함 여부는 CLOSED_PARTIAL_YN 표식
+           병합으로 상위에 전파된다.
            OGNL 단일문자 리터럴('Y')은 char 라 String 비교가 성립하지 않는다 → "Y".equals(...) 사용. -->
       <if test='closedOnlyYn != null and "Y".equals(closedOnlyYn)'>
       AND IFNULL(S.UNCLOSED_INCLUDED_YN, 'N') = 'N'
@@ -1058,6 +1102,11 @@
           END                                                   AS reqUserNm
         , DATE_FORMAT(R.INSERT_DATE, '%Y-%m-%d %H:%i:%s')       AS reqDtime
         , DATE_FORMAT(R.PROCESS_DTIME, '%Y-%m-%d %H:%i:%s')     AS processDtime
+        <!-- [PS-07] 부분 포함 가이드 필드(record 끝 append — 목록·버전 팝업 공용).
+             closedPartialYn 은 IFNULL 금지 — NULL=구본(메타 없음, 전체 포함 간주)이 D-4 표기 구분에 필요. -->
+        , IFNULL(R.CLOSED_ONLY_YN, 'Y')                         AS closedOnlyYn
+        , S.CLOSED_PARTIAL_YN                                   AS closedPartialYn
+        , S.COVERAGE_META                                       AS coverageMeta
     FROM TB_CMPNY_SHARE_SNAPSHOT S
         INNER JOIN TB_CMPNY_SHARE_REQ R
             ON (R.SHARE_REQ_ID = S.SHARE_REQ_ID)

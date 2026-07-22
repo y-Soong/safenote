@@ -4,6 +4,8 @@ import java.time.YearMonth;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
+import java.util.Set;
 
 import org.springframework.stereotype.Service;
 
@@ -105,6 +107,41 @@ public class ShareCloseGateService {
         }
 
         return true;
+    }
+
+    /**
+     * [PS-03] 행 단위 마감 커버리지 판정(D-2) — 마감 커버리지 필터(Subcon03ServiceImpl#computeCoverage)
+     * 와 승인 사전정보 예고가 공용으로 쓰는 술어. 신규 마감 SQL 을 만들지 않고 {@link AttdCloseService}
+     * 를 그대로 재사용한다(attd §13 단일 출처 원칙).
+     *
+     * <p>유효 노드(대상 사업장 전체 노드 목록 {@code validNodeCds} 에 존재)면 그 노드의 마감 여부
+     * (자기/상위(INC_SUB) 마감 포함 — {@link AttdCloseService#isClosedForNode} 내장 규칙)를 본다.
+     * NULL/공백/고아(전체 노드 목록에 없는) 노드는 전체 센티넬('*') 마감 여부를 본다 — 게이트의
+     * {@code countNodeUncoveredAttdRows}("고아는 '*' 전용") 의미와 정확히 동치다.
+     *
+     * <p>(월×유효노드) 판정 결과는 호출자가 넘긴 {@code gateCache} 에 메모이즈한다(행 수천 건 ×
+     * 판정 SQL N+1 방지). 캐시는 <b>요청 처리(승인 1회 또는 예고 1회) 스코프의 로컬 Map</b>이어야
+     * 한다 — 이 서비스 빈에 필드로 캐시하지 않는다(스레드 안전 — 다른 회사/기간의 판정이 섞이면 안 됨).
+     *
+     * @param validNodeCds 대상 사업장의 전체 노드 코드 집합({@code Subcon03Mapper#selectSiteNodeList} 결과)
+     * @param gateCache    (closeYm|유효노드) → 마감여부 메모이즈 캐시(호출자가 매 계산마다 새로 생성해 전달)
+     */
+    public boolean isRowCovered(String cmpnyCd, String siteCd, String nodeCd, String closeYm,
+            Set<String> validNodeCds, Map<String, Boolean> gateCache) {
+
+        String effectiveNode = (nodeCd == null || nodeCd.isBlank() || !validNodeCds.contains(nodeCd))
+                ? WHOLE_SITE_NODE
+                : nodeCd;
+
+        String cacheKey = closeYm + "|" + effectiveNode;
+        Boolean cached = gateCache.get(cacheKey);
+        if (cached != null) {
+            return cached;
+        }
+
+        boolean closed = attdCloseService.isClosedForNode(cmpnyCd, siteCd, effectiveNode, closeYm);
+        gateCache.put(cacheKey, closed);
+        return closed;
     }
 
     /** 기간이 걸치는 월 집합(YYYYMM 순회 — 서버에서 "오늘"을 만들지 않고 저장된 기간 값만 사용). */

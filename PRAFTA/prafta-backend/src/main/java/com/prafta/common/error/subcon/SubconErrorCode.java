@@ -61,9 +61,14 @@ public enum SubconErrorCode implements ApiErrorCode {
     , SUBCON_409_005(HttpStatus.CONFLICT, "이미 처리 대기 중인 요청입니다.")
     // 사업장 체인 부재(요청자 사업장과 제공사 사이에 ACTIVE 사업장 연동이 없음).
     , SUBCON_409_006(HttpStatus.CONFLICT, "연동된 사업장이 아닙니다.")
-    // 마감 미완료(CLOSED_ONLY_YN='Y' 요청 — 미마감 월 목록은 승인 사전정보 API 응답 본문 참조).
+    // [미사용 — 부분 공유 전환(2026-07-22)] 구 마감 미완료 차단(CLOSED_ONLY_YN='Y' 요청 시 승인 거부).
+    //   "마감분만" 옵션이 차단 게이트에서 부분 포함 필터로 재정의(D-1/D-2)되어 더 이상 던지지 않는다.
+    //   enum 은 프론트 에러 메시지 매핑 회귀 방지를 위해 유지한다.
     , SUBCON_409_007(HttpStatus.CONFLICT, "근태 마감이 완료되지 않은 기간입니다.")
     // 릴레이 후보 부적격(서버 재검증 실패 — 소유/체인/기간/미마감 4조건 미충족).
+    //   [D-3 재정의] ④ 는 "미마감 포함(UNCLOSED_INCLUDED_YN='Y')" 여부만 검사한다 — 마감분만 필터로
+    //   만든 부분 포함 스냅샷(CLOSED_PARTIAL_YN='Y')은 미마감 포함이 아니므로 적격이며, 부분 포함
+    //   여부는 표식 병합으로 상위에 전파된다.
     , SUBCON_409_008(HttpStatus.CONFLICT, "함께 제공할 수 없는 자료가 포함되어 있습니다.")
     // 제3자 제공 동의 약관(006)이 배포되어 있으나 비활성(USE_YN='N') — 동의 필터를 적용할 수 없으므로
     // 승인을 차단한다(fail-closed). 전원 포함으로 진행하면 명시적 미동의자의 PII 가 반출된다(security M-1).

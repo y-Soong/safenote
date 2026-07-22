@@ -16,5 +16,7 @@ public record RelayCandidateResult(
     , Integer rowCnt
     , String unclosedIncludedYn
     , String createDtime
+    // [PS-05] 부분 포함(마감분만 필터) 표식 — record 끝 append. 구본 NULL 은 SQL IFNULL 로 'N'(D-4).
+    , String closedPartialYn
 ){
 }

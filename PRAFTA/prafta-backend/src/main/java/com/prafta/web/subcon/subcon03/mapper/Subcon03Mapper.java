@@ -21,6 +21,7 @@ import com.prafta.web.subcon.subcon03.result.RiskSourceRow;
 import com.prafta.web.subcon.subcon03.result.ShareCmpnyResult;
 import com.prafta.web.subcon.subcon03.result.ShareReqRaw;
 import com.prafta.web.subcon.subcon03.result.ShareReqResult;
+import com.prafta.web.subcon.subcon03.result.SiteNodeResult;
 import com.prafta.web.subcon.subcon03.result.SnapshotDetailResult;
 import com.prafta.web.subcon.subcon03.result.SnapshotNearmissDetailResult;
 import com.prafta.web.subcon.subcon03.result.SnapshotResult;
@@ -103,8 +104,18 @@ public interface Subcon03Mapper {
 
     // =========================== 마감 게이팅(T3-03, §5-4) ===========================
 
-    /** 대상 사업장의 부서노드 코드 전수(마감 커버리지 검사 대상 — 전체 센티넬 '*' 는 서비스가 추가). */
+    /**
+     * 대상 사업장의 부서노드 코드 전수(마감 커버리지 검사 대상 — 전체 센티넬 '*' 는 서비스가 추가).
+     * [T1 게이트 완화] 활성 소속 사용자(USE_YN='Y', 미탈퇴) 0명인 빈 부서는 제외된다.
+     * 게이트(월 완전마감 판정) 전용 — 행 단위 판정용 {@link #selectSiteNodeList} 와 혼용 금지.
+     */
     List<String> selectSiteNodeCdList(@Param("cmpnyCd") String cmpnyCd, @Param("siteCd") String siteCd);
+
+    /**
+     * [PS-03] 대상 사업장 전체 노드 목록(코드+명, 무필터) — 행 단위 커버리지 판정의 노드 유효성
+     * (고아 여부)과 제외 부서명 표기에 사용한다.
+     */
+    List<SiteNodeResult> selectSiteNodeList(@Param("cmpnyCd") String cmpnyCd, @Param("siteCd") String siteCd);
 
     /**
      * 해당 월에 <b>부서노드 마감으로는 덮이지 않는</b> 근태/초과근무 행 수.

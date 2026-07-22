@@ -75,6 +75,14 @@
                       class="status-badge is-warn"
                       >미마감 포함</span
                     >
+                    <!-- 마감분만 부분 포함(D-2) — 버전 간 표식이 다를 수 있어 행별 독립 판정 -->
+                    <span
+                      v-if="
+                        row.dataType === 'ATTD' && row.closedPartialYn === 'Y'
+                      "
+                      class="status-badge is-warn"
+                      >마감분만 · 부분 포함</span
+                    >
                     <span
                       v-if="row.consentExcludedCnt > 0"
                       class="status-badge is-muted"

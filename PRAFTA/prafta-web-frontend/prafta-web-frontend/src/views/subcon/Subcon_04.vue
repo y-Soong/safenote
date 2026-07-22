@@ -61,6 +61,14 @@
                         >미마감 포함</span
                       >
                       <span
+                        v-if="
+                          row.dataType === 'ATTD' &&
+                          row.closedPartialYn === 'Y'
+                        "
+                        class="status-badge is-warn"
+                        >마감분만 · 부분 포함</span
+                      >
+                      <span
                         v-if="row.relationActiveYn === 'N'"
                         class="status-badge is-closed"
                         >연동 종료</span
@@ -99,6 +107,46 @@
           >
             연동이 종료된 회사의 자료입니다. 열람만 가능합니다.
           </p>
+
+          <!-- ATTD 마감 커버리지 가이드(배지 판정표 D-2~D-4 — RISK/NEARMISS 표식 없음 유지) -->
+          <template v-if="selected && selected.dataType === 'ATTD'">
+            <p v-if="selected.closedPartialYn === 'Y'" class="detail-note">
+              마감분만 포함된 자료입니다.<span v-if="coverageExcludedText">
+                제외 내역: {{ coverageExcludedText }}</span
+              >
+            </p>
+            <p
+              v-if="selected.closedPartialYn === 'Y' && relayPartialIncluded"
+              class="detail-note"
+            >
+              함께 제공된 연동사 자료에도 부분 포함분이 있습니다.
+            </p>
+            <p
+              v-if="selected.unclosedIncludedYn === 'Y'"
+              class="detail-note"
+            >
+              미마감 근태가 포함된 자료입니다.
+            </p>
+            <p
+              v-if="
+                selected.unclosedIncludedYn !== 'Y' &&
+                selected.closedPartialYn === 'N' &&
+                selected.closedOnlyYn === 'Y'
+              "
+              class="detail-note"
+            >
+              마감분 전체가 포함된 자료입니다.
+            </p>
+            <p
+              v-if="
+                selected.unclosedIncludedYn !== 'Y' &&
+                selected.closedPartialYn == null
+              "
+              class="detail-note"
+            >
+              전체 포함 자료입니다.
+            </p>
+          </template>
 
           <!-- ATTD: 기존 근태 그리드(그대로 유지) -->
           <template v-if="selected && selected.dataType === 'ATTD'">
@@ -212,6 +260,10 @@
 /* eslint-disable */
 import { ref, computed, defineProps, onMounted, getCurrentInstance, defineOptions } from "vue";
 import { resolveApiErrorMessage } from "@/utils/apiError";
+import {
+  parseCoverageMeta,
+  coverageExcludedSummary,
+} from "@/utils/snapshotCoverage";
 import axios from "@/api/axios";
 import ViewHeader from "@/components/common/ViewHeader.vue";
 import SnapshotVersionSelectPop from "@/views/subcon/popup/SnapshotVersionSelectPop.vue";
@@ -241,6 +293,21 @@ const totalPages = computed(() => {
   const cnt = selected.value?.rowCnt || 0;
   return cnt > 0 ? Math.ceil(cnt / DETAIL_PAGE_SIZE) : 1;
 });
+
+// 선택 스냅샷의 커버리지 메타 — JSON 문자열 안전 파싱(실패/부재 시 null → 제외 내역 문구 생략 fallback).
+const selectedCoverageMeta = computed(() =>
+  parseCoverageMeta(selected.value?.coverageMeta)
+);
+
+// 상세 헤더 가이드용 제외 내역 요약(status !== FULL 월만) — 빈 문자열이면 표기 생략.
+const coverageExcludedText = computed(() =>
+  coverageExcludedSummary(selectedCoverageMeta.value)
+);
+
+// 릴레이 병합 부분 포함 여부(D-3) — 함께 제공된 연동사 자료 안내 줄.
+const relayPartialIncluded = computed(
+  () => selectedCoverageMeta.value?.relayPartialIncludedYn === "Y"
+);
 
 // 같은 요청 조건(출처·사업장·기간·유형)의 버전 목록 — 버전 간 이동
 const versionList = computed(() => {

@@ -33,5 +33,9 @@ public record SnapshotSourceRow(
     , BigDecimal leaveDays
     , Integer leaveMinutes
     , String leaveEndYmd
+    // [PS-04] 마감 커버리지 필터용 노드 — record 끝 append(SELECT 끝과 순서 일치).
+    //   ATTD=A.NODE_CD, OT_ONLY=MIN(O.NODE_CD), LEAVE_ONLY=U.NODE_CD(일용직은 NULL → '*' 전용).
+    //   서버 내부 판정 전용 — 스냅샷 상세행/응답에 저장·노출하지 않는다.
+    , String nodeCd
 ){
 }

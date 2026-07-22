@@ -1,6 +1,7 @@
 package com.prafta.web.subcon.subcon03.service.impl;
 
 import java.time.LocalDate;
+import java.time.YearMonth;
 import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
 import java.time.format.DateTimeParseException;
@@ -13,6 +14,7 @@ import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.TreeMap;
 import java.util.TreeSet;
 import java.util.stream.Collectors;
 
@@ -20,6 +22,8 @@ import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.prafta.common.cmm.file.application.model.FileBytesResult;
 import com.prafta.common.cmm.file.application.query.FileReadQuery;
 import com.prafta.common.cmm.file.service.FileService;
@@ -53,6 +57,8 @@ import com.prafta.web.subcon.subcon03.dto.response.SnapshotRiskDetailResponse;
 import com.prafta.web.subcon.subcon03.mapper.Subcon03Mapper;
 import com.prafta.web.subcon.subcon03.result.ChainSiteResult;
 import com.prafta.web.subcon.subcon03.result.CloseGateResult;
+import com.prafta.web.subcon.subcon03.result.CoverageMonthResult;
+import com.prafta.web.subcon.subcon03.result.CoverageResult;
 import com.prafta.web.subcon.subcon03.result.NearmissSourceRow;
 import com.prafta.web.subcon.subcon03.result.RelayCandidateResult;
 import com.prafta.web.subcon.subcon03.result.RiskImproveSourceRow;
@@ -60,6 +66,7 @@ import com.prafta.web.subcon.subcon03.result.RiskSourceRow;
 import com.prafta.web.subcon.subcon03.result.ShareCmpnyResult;
 import com.prafta.web.subcon.subcon03.result.ShareReqRaw;
 import com.prafta.web.subcon.subcon03.result.ShareReqResult;
+import com.prafta.web.subcon.subcon03.result.SiteNodeResult;
 import com.prafta.web.subcon.subcon03.result.SnapshotDetailResult;
 import com.prafta.web.subcon.subcon03.result.SnapshotNearmissDetailResult;
 import com.prafta.web.subcon.subcon03.result.SnapshotResult;
@@ -95,6 +102,9 @@ public class Subcon03ServiceImpl implements Subcon03Service {
 
     private final Subcon03Mapper subcon03Mapper;
     private final ShareCloseGateService shareCloseGateService;
+
+    /** [PS-04] 커버리지 요약 메타(COVERAGE_META) JSON 직렬화 — 다른 서비스 공용 빈 재사용(신규 유틸 불필요). */
+    private final ObjectMapper objectMapper;
 
     /** [T7] 위험성평가/아차사고 첨부 물리 복제(수신사 소유 신규 파일). */
     private final SnapshotFileCopyService snapshotFileCopyService;
@@ -166,6 +176,12 @@ public class Subcon03ServiceImpl implements Subcon03Service {
 
     private static final DateTimeFormatter YMD_FMT = DateTimeFormatter.BASIC_ISO_DATE;
     private static final ZoneId KST = ZoneId.of("Asia/Seoul");
+
+    /** [PS-03/04/06] 마감 커버리지 판정/META 계약값 포맷(YYYYMM) — approve/approve-info 공용. */
+    private static final DateTimeFormatter YM_FMT = DateTimeFormatter.ofPattern("yyyyMM");
+
+    /** [PS-02] 커버리지 META 월별 제외 부서명 캡(초과 시 "외 N개 부서" 1항목으로 요약). */
+    private static final int COVERAGE_DEPT_NAME_CAP = 20;
 
     /** 로그 위조 방지용 외부 입력 정제 — 개행 제거 + 50자 상한(T1 SEC-ADV-1 승계. 성명에는 쓰지 않는다). */
     private String sanitizeForLog(String value) {
@@ -375,8 +391,23 @@ public class Subcon03ServiceImpl implements Subcon03Service {
                 param.gvCmpnyCd(), req.targetSiteCd(), req.dataType(),
                 req.periodStr(), req.periodEnd(), req.closedOnlyYn());
 
-        log.info("공유 승인 사전정보 조회 종료 - shareReqId={}, 마감완료={}, 릴레이 후보 {}건",
-                req.shareReqId(), gate.closedAll(), relayCandidates.size());
+        // [PS-06] 포함/제외 범위 예고(D-1/D-2) — ATTD && closedOnlyYn='Y' 일 때만. approve(PS-04)와
+        //   같은 computeCoverage 를 재사용해 예고≠실제 불일치를 막는다. 동의 필터는 여기서 미적용
+        //   (실제 승인 시 미동의 제외로 건수가 더 줄 수 있음 — 팝업 문구에 반영).
+        List<CoverageMonthResult> coverageMonths = null;
+        Integer includedRowCnt = null;
+        String expectedEmptyYn = null;
+        if (TYPE_ATTD.equals(req.dataType()) && "Y".equals(req.closedOnlyYn())) {
+            CoverageResult coverage = computeCoverage(req, loadAttdSourceRows(req));
+            coverageMonths = coverage.months().stream()
+                    .map(m -> new CoverageMonthResult(fmtYm(m.ym()), m.status(), m.excludedDeptNms(), m.orphanUnclosedYn()))
+                    .collect(Collectors.toList());
+            includedRowCnt = coverage.includedRows().size();
+            expectedEmptyYn = includedRowCnt == 0 ? "Y" : "N";
+        }
+
+        log.info("공유 승인 사전정보 조회 종료 - shareReqId={}, 마감완료={}, 릴레이 후보 {}건, 예상포함 {}건",
+                req.shareReqId(), gate.closedAll(), relayCandidates.size(), includedRowCnt);
 
         return ShareReqApproveInfoResponse.builder()
                 .shareReqId(req.shareReqId())
@@ -391,6 +422,9 @@ public class Subcon03ServiceImpl implements Subcon03Service {
                 .closedAll(gate.closedAll())
                 .unclosedYms(gate.unclosedYms())
                 .relayCandidates(relayCandidates)
+                .coverageMonths(coverageMonths)
+                .includedRowCnt(includedRowCnt)
+                .expectedEmptyYn(expectedEmptyYn)
                 .build();
     }
 
@@ -421,6 +455,9 @@ public class Subcon03ServiceImpl implements Subcon03Service {
         }
 
         // 4) 유형별 마감 게이팅(§5-2) — ATTD 만 마감 검사. RISK/NEARMISS 는 마감 개념이 없어 skip(closedAll 간주).
+        //    [D-1/D-2, 2026-07-22] "마감분만" 은 더 이상 승인 차단 게이트가 아니다 — 부분 포함 필터로
+        //    재정의(PS-04)되어 여기서는 closedAll 만 산출한다(closedOnlyYn='N' 경로의 UNCLOSED_INCLUDED_YN
+        //    산정에만 쓰인다). 구 차단(SUBCON_409_007)은 미사용 전환(SubconErrorCode 주석 참조 — enum 유지).
         String dataType = req.dataType();
         boolean isAttd = TYPE_ATTD.equals(dataType);
 
@@ -429,39 +466,40 @@ public class Subcon03ServiceImpl implements Subcon03Service {
             CloseGateResult gate = shareCloseGateService.evaluate(
                     req.prvCmpnyCd(), req.targetSiteCd(), req.periodStr(), req.periodEnd());
             closedAll = gate.closedAll();
-            if ("Y".equals(req.closedOnlyYn()) && !closedAll) {
-                throw new ApiException(SubconErrorCode.SUBCON_409_007);
-            }
         }
 
         // 5) 릴레이 후보 서버 재검증(클라 목록 불신 — 타사 스냅샷ID 주입 = IDOR). DATA_TYPE 격리는 SQL 내부.
         List<RelayCandidateResult> bundles = resolveBundles(param, req);
         boolean relayUnclosed = bundles.stream().anyMatch(b -> "Y".equals(b.unclosedIncludedYn()));
+        // [PS-05, D-3] 하위 스냅샷 중 부분 포함(마감분만 필터로 일부 제외) 이 있었는지 — 상위 표식에 병합.
+        boolean relayPartialIncluded = bundles.stream().anyMatch(b -> "Y".equals(b.closedPartialYn()));
 
-        // 미마감 포함 표식 — ATTD 만 유효(자체 미마감 OR 하위 미마감 체인 전파). RISK/NEARMISS 는 항상 'N'(D8).
-        String unclosedIncludedYn = isAttd ? ((!closedAll || relayUnclosed) ? "Y" : "N") : "N";
+        // 미마감 포함 표식(D-3 재정의) — closedOnlyYn='Y' 는 커버리지 필터로 자체 기여가 항상 'N'
+        // (마감분만 담김 — 미마감이 아니다). closedOnlyYn='N' 은 기존식(!closedAll) 유지. 릴레이 기여는 공통.
+        boolean selfUnclosedContribution = isAttd && !"Y".equals(req.closedOnlyYn()) && !closedAll;
+        String unclosedIncludedYn = isAttd ? ((selfUnclosedContribution || relayUnclosed) ? "Y" : "N") : "N";
         String relayIncludedYn = bundles.isEmpty() ? "N" : "Y";
 
         // 소속표시 = 제공사 회사명(자체행/릴레이 relabel 공용).
         String affilCmpnyNm = subcon03Mapper.selectCmpnyNm(req.prvCmpnyCd());
 
-        // 6) 유형별 원천 수집 + 동의 필터(헤더 CONSENT_EXCLUDED_CNT 근거 — 헤더 INSERT 전에 확정).
+        // 6) 유형별 원천 수집 + 커버리지 필터(D-2, 동의 필터 이전 단계 — AND 결합) + 동의 필터
+        //    (헤더 CONSENT_EXCLUDED_CNT/CLOSED_PARTIAL_YN/COVERAGE_META 근거 — 헤더 INSERT 전에 확정).
         List<SnapshotSourceRow> attdIncluded = null;
         RiskCollected riskData = null;
         NearmissCollected nmData = null;
+        CoverageResult coverage = null;
         int consentExcludedCnt;
 
         if (isAttd) {
-            List<SnapshotSourceRow> sourceRows = new ArrayList<>();
-            sourceRows.addAll(subcon03Mapper.selectAttdSourceRows(
-                    req.prvCmpnyCd(), req.targetSiteCd(), req.periodStr(), req.periodEnd()));
-            sourceRows.addAll(subcon03Mapper.selectOtOnlySourceRows(
-                    req.prvCmpnyCd(), req.targetSiteCd(), req.periodStr(), req.periodEnd()));
-            sourceRows.addAll(subcon03Mapper.selectLeaveOnlySourceRows(
-                    req.prvCmpnyCd(), req.targetSiteCd(), req.periodStr(), req.periodEnd()));
+            List<SnapshotSourceRow> sourceRows = loadAttdSourceRows(req);
 
-            Set<String> excludedUserCds = resolveConsentExcluded(req, sourceRows);
-            attdIncluded = sourceRows.stream()
+            // [PS-04, D-2] 커버리지 필터 — closedOnlyYn='N' 이면 no-op(전량 통과, coverage.partial()=false).
+            //   동의 필터의 입력이 된다(AND 결합 — 커버 통과분이어도 미동의면 계속 제외, security §5).
+            coverage = computeCoverage(req, sourceRows);
+
+            Set<String> excludedUserCds = resolveConsentExcluded(req, coverage.includedRows());
+            attdIncluded = coverage.includedRows().stream()
                     .filter(r -> !excludedUserCds.contains(r.userCd()))
                     .collect(Collectors.toList());
             consentExcludedCnt = excludedUserCds.size();
@@ -479,12 +517,25 @@ public class Subcon03ServiceImpl implements Subcon03Service {
         int version = subcon03Mapper.selectMaxSnapshotVersionByCondition(req.reqCmpnyCd(), req.prvCmpnyCd(),
                 req.targetSiteCd(), req.dataType(), req.periodStr(), req.periodEnd()) + 1;
 
+        // [PS-04, D-3] 부분 포함 표식 — 자체(커버리지 필터로 실제 제외 발생) OR 릴레이 병합.
+        //   closedOnlyYn='N'/RISK/NEARMISS 는 필터 미적용이라 항상 'N'(NULL 은 구본 전용 — 신규분 금지).
+        boolean selfPartial = isAttd && "Y".equals(req.closedOnlyYn()) && coverage != null && coverage.partial();
+        String closedPartialYn = (selfPartial || relayPartialIncluded) ? "Y" : "N";
+
+        // [PS-04, PS-02 스키마] 커버리지 요약 META — closedOnlyYn='Y' && ATTD 일 때만 기록(그 외 NULL —
+        //   가이드 대상 아님). 메타에 성명/USER_CD 는 절대 담지 않는다(부서명·월·건수까지, 공통 §11).
+        String coverageMeta = (isAttd && "Y".equals(req.closedOnlyYn()))
+                ? buildCoverageMeta(coverage, relayPartialIncluded)
+                : null;
+
         // 8) 헤더 INSERT — OWNER_CMPNY_CD 는 DB 의 REQ_CMPNY_CD 만 사용(클라 바디 불신).
         SnapshotInsertCommand header = new SnapshotInsertCommand(
                 req.shareReqId()
                 , req.reqCmpnyCd()
                 , version
                 , unclosedIncludedYn
+                , closedPartialYn
+                , coverageMeta
                 , consentExcludedCnt
                 , relayIncludedYn
                 , param.gvUserCd());
@@ -524,8 +575,11 @@ public class Subcon03ServiceImpl implements Subcon03Service {
         int totalRowCnt = ownRowCnt + relayRowCnt;
         subcon03Mapper.updateSnapshotRowCnt(snapshotId, totalRowCnt, param.gvUserCd());
 
-        log.info("공유 스냅샷 생성 — shareReqId={}, type={}, snapshotId={}, ver={}, 자체 {}행, 릴레이 {}행, 미동의 제외 {}, 미마감포함={}",
-                req.shareReqId(), dataType, snapshotId, version, ownRowCnt, relayRowCnt, consentExcludedCnt, unclosedIncludedYn);
+        int coverageExcludedCnt = (coverage != null) ? coverage.excludedRowCnt() : 0;
+        log.info("공유 스냅샷 생성 — shareReqId={}, type={}, snapshotId={}, ver={}, 자체 {}행, 릴레이 {}행, "
+                        + "미동의 제외 {}, 미마감포함={}, 마감분만부분포함={}, 커버리지제외 {}건",
+                req.shareReqId(), dataType, snapshotId, version, ownRowCnt, relayRowCnt, consentExcludedCnt,
+                unclosedIncludedYn, closedPartialYn, coverageExcludedCnt);
 
         return ShareReqApproveResponse.builder()
                 .snapshotId(snapshotId)
@@ -533,6 +587,7 @@ public class Subcon03ServiceImpl implements Subcon03Service {
                 .rowCnt(totalRowCnt)
                 .consentExcludedCnt(consentExcludedCnt)
                 .unclosedIncludedYn(unclosedIncludedYn)
+                .closedPartialYn(closedPartialYn)
                 .build();
     }
 
@@ -700,6 +755,168 @@ public class Subcon03ServiceImpl implements Subcon03Service {
             bundles.add(matched);
         }
         return bundles;
+    }
+
+    // =========================== private — 마감 커버리지 필터(PS-03/04/06, D-1/D-2) ===========================
+
+    /** ATTD 원천 3쿼리(근태/OT_ONLY/LEAVE_ONLY) 로드 — approve(PS-04)·approve-info(PS-06) 공용. */
+    private List<SnapshotSourceRow> loadAttdSourceRows(ShareReqRaw req) {
+        List<SnapshotSourceRow> rows = new ArrayList<>();
+        rows.addAll(subcon03Mapper.selectAttdSourceRows(
+                req.prvCmpnyCd(), req.targetSiteCd(), req.periodStr(), req.periodEnd()));
+        rows.addAll(subcon03Mapper.selectOtOnlySourceRows(
+                req.prvCmpnyCd(), req.targetSiteCd(), req.periodStr(), req.periodEnd()));
+        rows.addAll(subcon03Mapper.selectLeaveOnlySourceRows(
+                req.prvCmpnyCd(), req.targetSiteCd(), req.periodStr(), req.periodEnd()));
+        return rows;
+    }
+
+    /**
+     * [PS-04·PS-06 공용] 마감 커버리지 필터 + 월별 요약(D-1/D-2) — approve(실제 스냅샷 생성)와
+     * approve-info(승인 전 예고)가 <b>동일 계산</b>을 쓴다(예고≠실제 불일치 방지). closedOnlyYn='N'
+     * 이면 필터 없이 전량 통과(no-op — 그 옵션은 가이드 대상이 아니므로 월별 요약도 만들지 않는다).
+     *
+     * <p>필터 순서(§5-4, D-2): 동의 필터(resolveConsentExcluded) <b>이전</b> 단계 — 호출부가
+     * {@link CoverageResult#includedRows()} 를 동의 필터의 입력으로 넘긴다(AND 결합, 대체 아님).
+     *
+     * <p>월 status 판정: 그 달 원천행이 0건이거나 제외행이 0건이면 FULL(제외할 것이 없다 — 데이터가
+     * 원래 없던 달을 "미마감" 으로 오표시하지 않는다), 제외 후 포함행이 0건이면 NONE, 그 외 PARTIAL.
+     */
+    private CoverageResult computeCoverage(ShareReqRaw req, List<SnapshotSourceRow> sourceRows) {
+        if (!"Y".equals(req.closedOnlyYn())) {
+            return new CoverageResult(sourceRows, Collections.emptyList(), false, 0);
+        }
+
+        List<SiteNodeResult> nodeList = subcon03Mapper.selectSiteNodeList(req.prvCmpnyCd(), req.targetSiteCd());
+        Set<String> validNodeCds = new HashSet<>();
+        Map<String, String> nodeNmByCd = new HashMap<>();
+        for (SiteNodeResult n : nodeList) {
+            validNodeCds.add(n.nodeCd());
+            nodeNmByCd.put(n.nodeCd(), n.nodeNm());
+        }
+
+        // (월×유효노드) 판정 메모이즈 — 이 계산 1회(승인 또는 예고) 스코프의 로컬 캐시(필드 캐시 금지).
+        Map<String, Boolean> gateCache = new HashMap<>();
+
+        Map<String, Integer> totalByYm = new TreeMap<>();
+        Map<String, Integer> excludedByYm = new TreeMap<>();
+        Map<String, TreeSet<String>> excludedDeptsByYm = new TreeMap<>();
+        Set<String> orphanYms = new TreeSet<>();
+
+        List<SnapshotSourceRow> included = new ArrayList<>();
+        int excludedRowCnt = 0;
+
+        for (SnapshotSourceRow row : sourceRows) {
+            String ym = row.workYmd().substring(0, 6);
+            totalByYm.merge(ym, 1, Integer::sum);
+
+            boolean covered = shareCloseGateService.isRowCovered(
+                    req.prvCmpnyCd(), req.targetSiteCd(), row.nodeCd(), ym, validNodeCds, gateCache);
+            if (covered) {
+                included.add(row);
+                continue;
+            }
+
+            excludedRowCnt++;
+            excludedByYm.merge(ym, 1, Integer::sum);
+            boolean orphan = row.nodeCd() == null || row.nodeCd().isBlank() || !validNodeCds.contains(row.nodeCd());
+            if (orphan) {
+                orphanYms.add(ym);
+            } else {
+                excludedDeptsByYm.computeIfAbsent(ym, k -> new TreeSet<>())
+                        .add(nodeNmByCd.getOrDefault(row.nodeCd(), row.nodeCd()));
+            }
+        }
+
+        List<CoverageMonthResult> months = new ArrayList<>();
+        for (YearMonth ym : monthsOfRange(req.periodStr(), req.periodEnd())) {
+            String key = ym.format(YM_FMT);
+            int total = totalByYm.getOrDefault(key, 0);
+            int excluded = excludedByYm.getOrDefault(key, 0);
+
+            String status;
+            if (excluded == 0) {
+                status = "FULL";
+            } else if (total - excluded == 0) {
+                status = "NONE";
+            } else {
+                status = "PARTIAL";
+            }
+
+            List<String> deptNms = capDeptNames(excludedDeptsByYm.get(key));
+            String orphanYn = orphanYms.contains(key) ? "Y" : null;
+            months.add(new CoverageMonthResult(key, status, deptNms, orphanYn));
+        }
+
+        return new CoverageResult(included, months, excludedRowCnt > 0, excludedRowCnt);
+    }
+
+    /** 제외 부서명 캡(D-2 META 계약 — 최대 20개 + 초과 시 "외 N개 부서" 1항목). */
+    private List<String> capDeptNames(TreeSet<String> deptNms) {
+        if (deptNms == null || deptNms.isEmpty()) {
+            return Collections.emptyList();
+        }
+        if (deptNms.size() <= COVERAGE_DEPT_NAME_CAP) {
+            return new ArrayList<>(deptNms);
+        }
+        List<String> result = new ArrayList<>(new ArrayList<>(deptNms).subList(0, COVERAGE_DEPT_NAME_CAP));
+        result.add("외 " + (deptNms.size() - COVERAGE_DEPT_NAME_CAP) + "개 부서");
+        return result;
+    }
+
+    /** 기간이 걸치는 월 집합(YYYYMM 순회) — ShareCloseGateService#monthsOf 와 동일 로직(단, 커버리지
+     *  월별 요약 전용이라 별도 서비스로 공용화하지 않는다 — 소규모 순수함수, 중복 비용 낮음). */
+    private List<YearMonth> monthsOfRange(String periodStr, String periodEnd) {
+        YearMonth start = YearMonth.parse(periodStr.substring(0, 6), YM_FMT);
+        YearMonth end = YearMonth.parse(periodEnd.substring(0, 6), YM_FMT);
+        List<YearMonth> months = new ArrayList<>();
+        for (YearMonth cur = start; !cur.isAfter(end); cur = cur.plusMonths(1)) {
+            months.add(cur);
+        }
+        return months;
+    }
+
+    /** 커버리지 META YYYYMM → 응답 "YYYY-MM" 변환(PS-06 — META 저장값은 YYYYMM 그대로 유지). */
+    private String fmtYm(String yyyymm) {
+        if (yyyymm == null || yyyymm.length() != 6) {
+            return yyyymm;
+        }
+        return yyyymm.substring(0, 4) + "-" + yyyymm.substring(4, 6);
+    }
+
+    /**
+     * [PS-02 스키마] 커버리지 요약 META JSON 조립 — 월별 status/제외 부서명(실제 제외 행 기준)만
+     * 담는다. FULL 월은 excludedDeptNms/orphanUnclosedYn 을 생략한다(불필요한 빈 필드 노출 방지).
+     * 메타에 성명·USER_CD 는 절대 담지 않는다(공통 §11 — 부서명·월·건수까지).
+     */
+    private String buildCoverageMeta(CoverageResult coverage, boolean relayPartialIncludedYn) {
+        try {
+            List<Map<String, Object>> monthsJson = new ArrayList<>();
+            for (CoverageMonthResult m : coverage.months()) {
+                Map<String, Object> mm = new LinkedHashMap<>();
+                mm.put("ym", m.ym());
+                mm.put("status", m.status());
+                if (!"FULL".equals(m.status())) {
+                    if (m.excludedDeptNms() != null && !m.excludedDeptNms().isEmpty()) {
+                        mm.put("excludedDeptNms", m.excludedDeptNms());
+                    }
+                    if ("Y".equals(m.orphanUnclosedYn())) {
+                        mm.put("orphanUnclosedYn", "Y");
+                    }
+                }
+                monthsJson.add(mm);
+            }
+
+            Map<String, Object> meta = new LinkedHashMap<>();
+            meta.put("closedOnly", "Y");
+            meta.put("months", monthsJson);
+            meta.put("relayPartialIncludedYn", relayPartialIncludedYn ? "Y" : "N");
+            return objectMapper.writeValueAsString(meta);
+        } catch (JsonProcessingException e) {
+            // 메타 직렬화 실패는 스냅샷 생성 자체를 막지 않는다(가이드 표시 보조 정보일 뿐 — 승인 롤백 대상 아님).
+            log.error("커버리지 요약 META 직렬화 실패(META=null 로 진행) - shareReqId 처리 중", e);
+            return null;
+        }
     }
 
     /**
