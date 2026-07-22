@@ -72,35 +72,21 @@
         </div>
       </div>
 
-      <!-- 보낸/받은 요청 탭 (Attd_01 밑줄형 표준) -->
-      <div class="subcon01-tab-bar">
-        <button
-          :class="['subcon01-tab-btn', { active: activeTab === 'sent' }]"
-          @click="activeTab = 'sent'"
-        >
-          보낸 요청
-        </button>
-        <button
-          :class="['subcon01-tab-btn', { active: activeTab === 'received' }]"
-          @click="activeTab = 'received'"
-        >
-          받은 요청
-          <span v-if="receivedPendingCnt > 0" class="tab-badge">{{
-            receivedPendingCnt
-          }}</span>
-        </button>
-      </div>
-
+      <!-- 요청 내역 (보낸/받은 통합 — 상태 라벨에 방향 반영) -->
       <div class="table-wrapper subtitle-pane">
+        <div class="subtitle-row">
+          <div class="subtitle">
+            <span class="subtitle-text">요청 내역</span>
+            <span v-if="receivedPendingCnt > 0" class="pending-count"
+              >수락 대기 {{ receivedPendingCnt }}건</span
+            >
+          </div>
+        </div>
         <div
           class="table-box overflow-x-auto rounded-md border border-slate-300"
           style="--box-h: 38vh; --box-sticky-top: 1px; --box-ox: auto"
         >
-          <!-- 보낸 요청 -->
-          <table
-            v-show="activeTab === 'sent'"
-            class="data-grid w-full table-fixed text-sm text-left"
-          >
+          <table class="data-grid w-full table-fixed text-sm text-left">
             <thead>
               <tr>
                 <th class="event_cell" style="text-align: center; width: 4%">
@@ -112,81 +98,21 @@
                 <th>요청일시</th>
                 <th>처리일시</th>
                 <th>코멘트</th>
-                <th class="event_cell" style="text-align: center; width: 140px">
-                  관리
-                </th>
-              </tr>
-            </thead>
-            <tbody>
-              <template v-if="!sentList.length">
-                <tr>
-                  <td colspan="8" class="edu-grid-empty">
-                    보낸 요청이 없습니다.
-                  </td>
-                </tr>
-              </template>
-              <template v-else>
-                <tr v-for="(row, idx) in sentList" :key="row.relationId">
-                  <td style="text-align: center">{{ idx + 1 }}</td>
-                  <td>{{ row.otherCmpnyCd }}</td>
-                  <td>{{ row.otherCmpnyNm }}</td>
-                  <td style="text-align: center">
-                    <span
-                      class="status-badge"
-                      :class="statusClass(row.status)"
-                      >{{ statusLabel(row.status) }}</span
-                    >
-                  </td>
-                  <td>{{ row.insertDate }}</td>
-                  <td>{{ row.processDtime }}</td>
-                  <td class="comment-cell">{{ row.processComment }}</td>
-                  <td style="text-align: center">
-                    <button
-                      v-if="canProcess && row.status === 'REQUESTED'"
-                      class="btn btn-sm btn-primary"
-                      @click="fnCancel(row)"
-                    >
-                      취소
-                    </button>
-                    <button class="btn btn-sm" @click="fnOpenHistPop(row)">
-                      이력
-                    </button>
-                  </td>
-                </tr>
-              </template>
-            </tbody>
-          </table>
-
-          <!-- 받은 요청 -->
-          <table
-            v-show="activeTab === 'received'"
-            class="data-grid w-full table-fixed text-sm text-left"
-          >
-            <thead>
-              <tr>
-                <th class="event_cell" style="text-align: center; width: 4%">
-                  No
-                </th>
-                <th>요청 회사코드</th>
-                <th>회사명</th>
-                <th>상태</th>
-                <th>요청일시</th>
-                <th>처리일시</th>
                 <th class="event_cell" style="text-align: center; width: 180px">
                   관리
                 </th>
               </tr>
             </thead>
             <tbody>
-              <template v-if="!receivedList.length">
+              <template v-if="!requestList.length">
                 <tr>
-                  <td colspan="7" class="edu-grid-empty">
-                    받은 요청이 없습니다.
+                  <td colspan="8" class="edu-grid-empty">
+                    요청 내역이 없습니다.
                   </td>
                 </tr>
               </template>
               <template v-else>
-                <tr v-for="(row, idx) in receivedList" :key="row.relationId">
+                <tr v-for="(row, idx) in requestList" :key="row.relationId">
                   <td style="text-align: center">{{ idx + 1 }}</td>
                   <td>{{ row.otherCmpnyCd }}</td>
                   <td>{{ row.otherCmpnyNm }}</td>
@@ -194,26 +120,38 @@
                     <span
                       class="status-badge"
                       :class="statusClass(row.status)"
-                      >{{ statusLabel(row.status) }}</span
+                      >{{ statusLabel(row) }}</span
                     >
                   </td>
                   <td>{{ row.insertDate }}</td>
                   <td>{{ row.processDtime }}</td>
+                  <td class="comment-cell">{{ row.processComment }}</td>
                   <td style="text-align: center">
-                    <button
-                      v-if="canProcess && row.status === 'REQUESTED'"
-                      class="btn btn-sm btn-primary"
-                      @click="fnAccept(row)"
-                    >
-                      수락
-                    </button>
-                    <button
-                      v-if="canProcess && row.status === 'REQUESTED'"
-                      class="btn btn-sm"
-                      @click="fnOpenRejectPop(row)"
-                    >
-                      거부
-                    </button>
+                    <template v-if="row.status === 'REQUESTED' && row.direction === 'SENT'">
+                      <button
+                        v-if="canProcess"
+                        class="btn btn-sm btn-primary"
+                        @click="fnCancel(row)"
+                      >
+                        취소
+                      </button>
+                    </template>
+                    <template v-else-if="row.status === 'REQUESTED' && row.direction === 'RECEIVED'">
+                      <button
+                        v-if="canProcess"
+                        class="btn btn-sm btn-primary"
+                        @click="fnAccept(row)"
+                      >
+                        수락
+                      </button>
+                      <button
+                        v-if="canProcess"
+                        class="btn btn-sm"
+                        @click="fnOpenRejectPop(row)"
+                      >
+                        거부
+                      </button>
+                    </template>
                     <button class="btn btn-sm" @click="fnOpenHistPop(row)">
                       이력
                     </button>
@@ -246,22 +184,39 @@ const props = defineProps({ title: String, buttons: Object });
 
 // =========================== Ref ===========================
 const localButtons = ref({ ...props.buttons });
-const activeTab = ref("sent");
 const relationList = ref([]); // GET /webApi/subcon01/relation-lists 원본
 
-// 3분류 — 서버 응답의 방향(direction: SENT/RECEIVED)/상태 기준
+// 2분류 — 연동중(ACCEPTED)은 상단 목록, 나머지는 하단 요청 내역 통합 목록.
+// 보낸/받은 구분은 탭이 아닌 상태 라벨(statusLabel)에 방향을 녹여 표현.
 const acceptedList = computed(() => relationList.value.filter((r) => r.status === "ACCEPTED"));
-const sentList = computed(() => relationList.value.filter((r) => r.direction === "SENT" && r.status !== "ACCEPTED"));
-const receivedList = computed(() => relationList.value.filter((r) => r.direction === "RECEIVED" && r.status !== "ACCEPTED"));
-const receivedPendingCnt = computed(() => receivedList.value.filter((r) => r.status === "REQUESTED").length);
+// 정렬: 내가 응답해야 하는 건(받은 요청중)을 최상단에, 그다음 보낸 요청중, 나머지는 최신순.
+const requestList = computed(() =>
+  relationList.value
+    .filter((r) => r.status !== "ACCEPTED")
+    .slice()
+    .sort((a, b) => {
+      const priority = (r) =>
+        r.status !== "REQUESTED" ? 2 : r.direction === "RECEIVED" ? 0 : 1;
+      const diff = priority(a) - priority(b);
+      if (diff !== 0) return diff;
+      return (b.insertDate || "").localeCompare(a.insertDate || "");
+    })
+);
+const receivedPendingCnt = computed(
+  () => relationList.value.filter((r) => r.direction === "RECEIVED" && r.status === "REQUESTED").length
+);
 
 // 메뉴 버튼권한 → 액션 노출 (§5 매핑: 수락/거부/취소=save, 해지=delete)
 const canProcess = computed(() => localButtons.value?.save === "Y");
 const canTerminate = computed(() => localButtons.value?.delete === "Y");
 
-// 상태 배지 라벨/클래스
-const statusLabel = (s) =>
-  ({ REQUESTED: "요청중", ACCEPTED: "연동중", REJECTED: "거부됨", CANCELLED: "취소됨", TERMINATED: "해지됨" }[s] || s);
+// 상태 라벨 — REQUESTED는 방향에 따라 "요청중"(보냄)/"수락 대기"(받음)로 분리, 그 외는 상태만으로 확정.
+const statusLabel = (row) => {
+  if (row.status === "REQUESTED") {
+    return row.direction === "RECEIVED" ? "수락 대기" : "요청중";
+  }
+  return { ACCEPTED: "연동중", REJECTED: "거부됨", CANCELLED: "취소됨", TERMINATED: "해지됨" }[row.status] || row.status;
+};
 const statusClass = (s) => ({ REQUESTED: "is-requested", ACCEPTED: "is-accepted" }[s] || "is-closed");
 
 // =========================== Data ===========================
@@ -397,45 +352,15 @@ const fnOpenHistPop = (row) => {
 </script>
 
 <style scoped>
-/* 탭바 — Attd_01 밑줄형 표준(14px) */
-.subcon01-tab-bar {
-  display: flex;
-  gap: 0.25rem;
-  padding: 0.5rem 0 0;
-  margin-bottom: 0.5rem;
-  border-bottom: 1px solid var(--color-border, #e5e7eb);
-}
-.subcon01-tab-btn {
-  padding: 0.5rem 1rem;
-  border: none;
-  border-bottom: 2px solid transparent;
-  margin-bottom: -1px;
-  background: none;
-  font-size: 0.875rem;
-  color: var(--color-text-muted, #6b7280);
-  cursor: pointer;
-}
-.subcon01-tab-btn:hover {
-  color: var(--color-text, #374151);
-}
-.subcon01-tab-btn.active {
-  font-weight: 600;
-  color: var(--color-primary, #16a34a);
-  border-bottom-color: var(--color-primary);
-}
-
-/* 받은 요청 배지 */
-.tab-badge {
-  display: inline-block;
-  min-width: 1.25rem;
-  margin-left: 0.25rem;
-  padding: 0 0.35rem;
+/* 소제목 우측 — 수락 대기 건수(플랫폼 화면 p03-count 패턴 참고) */
+.pending-count {
+  margin-left: 0.5rem;
+  padding: 0.1rem 0.5rem;
   border-radius: 999px;
-  background: var(--color-primary, #16a34a);
-  color: #fff;
-  font-size: var(--btn-font-sm, 11px);
-  line-height: 1.4rem;
-  text-align: center;
+  background: var(--color-warning-bg, #fef3c7);
+  color: var(--color-warning-text, #b45309);
+  font-size: 0.78rem;
+  font-weight: 600;
 }
 
 /* 상태 배지 (User_06 status-badge 패턴) */
