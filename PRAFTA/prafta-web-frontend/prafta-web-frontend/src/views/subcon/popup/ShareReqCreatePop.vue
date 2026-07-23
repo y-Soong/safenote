@@ -135,20 +135,6 @@ const props = defineProps({ onSaved: Function });
 const emit = defineEmits(["close"]);
 const { proxy } = getCurrentInstance();
 
-// =========================== Ref ===========================
-const cmpnyList = ref([]); // 관계 ACCEPTED 상대 회사
-const siteList = ref([]); // 선택 회사와 체인이 있는 내 사업장
-const prvCmpnyCd = ref("");
-const siteCd = ref("");
-const dataType = ref("ATTD");
-const periodStr = ref("");
-const periodEnd = ref("");
-const closedOnly = ref(true); // 기본 ON (마스터 §1-6)
-const purpose = ref("");
-
-// 요청 중복 클릭 방지 플래그.
-const saving = ref(false);
-
 // CalendarSrch 모델값("YYYY-MM-DD") → 서버 포맷("YYYYMMDD").
 const toYmd = (v) => (v || "").replace(/-/g, "");
 
@@ -157,6 +143,26 @@ const now = new Date();
 const todayStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(
   now.getDate()
 ).padStart(2, "0")}`;
+
+// 이번 달 1일~말일 기본값 — 말일이 아직 오지 않았으면(미래 금지 규칙) 오늘까지로 자른다.
+const fmt = (d) =>
+  `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+const monthFirstStr = fmt(new Date(now.getFullYear(), now.getMonth(), 1));
+const monthLastStr = fmt(new Date(now.getFullYear(), now.getMonth() + 1, 0));
+
+// =========================== Ref ===========================
+const cmpnyList = ref([]); // 관계 ACCEPTED 상대 회사
+const siteList = ref([]); // 선택 회사와 체인이 있는 내 사업장
+const prvCmpnyCd = ref("");
+const siteCd = ref("");
+const dataType = ref("ATTD");
+const periodStr = ref(monthFirstStr);
+const periodEnd = ref(monthLastStr > todayStr ? todayStr : monthLastStr);
+const closedOnly = ref(true); // 기본 ON (마스터 §1-6)
+const purpose = ref("");
+
+// 요청 중복 클릭 방지 플래그.
+const saving = ref(false);
 
 // 데이터 유형 라벨(확인 메시지용).
 const dataTypeLabel = (t) => ({ ATTD: "근태", RISK: "위험성평가", NEARMISS: "아차사고" }[t] || t);
