@@ -47,4 +47,18 @@ public class ShareReqApproveInfoResponse {
 
     /** [PS-06, D-1] includedRowCnt==0 이면 'Y'(0건 경고 트리거). 산출 대상이 아니면 null. */
     String expectedEmptyYn;
+
+    /**
+     * [동의 미필 사각지대 개선] 동의 필터까지 반영한 예상 포함 건수 — <b>예고이지 확정이 아니다</b>
+     * (조회~승인 사이 동의 상태가 바뀔 수 있음). ATTD 는 closedOnlyYn 값과 무관하게 계산(동의
+     * 필터는 마감 옵션과 별개 축). RISK/NEARMISS 도 동일 계산(collectRiskSource/collectNearmissSource
+     * 재사용). 약관(006) 비활성 등으로 계산 실패 시 null.
+     */
+    Integer consentIncludedRowCnt;
+
+    /** 동의 미필로 제외 예상되는 대상자 수(인원 기준 — 성명/USER_CD 미포함, 건수까지만). */
+    Integer consentExcludedCandidateCnt;
+
+    /** consentIncludedRowCnt == 0 이면 'Y'(0건 예고 트리거). 계산 불가 시 null. */
+    String consentPreviewEmptyYn;
 }

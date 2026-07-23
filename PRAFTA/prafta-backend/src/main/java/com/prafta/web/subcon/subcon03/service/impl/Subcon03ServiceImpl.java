@@ -397,17 +397,71 @@ public class Subcon03ServiceImpl implements Subcon03Service {
         List<CoverageMonthResult> coverageMonths = null;
         Integer includedRowCnt = null;
         String expectedEmptyYn = null;
-        if (TYPE_ATTD.equals(req.dataType()) && "Y".equals(req.closedOnlyYn())) {
+
+        // [동의 미필 사각지대 개선, 2026-07-23] 동의 필터까지 반영한 예상 포함 건수(예고) — ATTD 는
+        //   closedOnlyYn 값과 무관하게 계산한다(동의 필터가 마감 옵션과 별개 축으로 항상 적용되므로).
+        //   RISK/NEARMISS 도 동일 동의 필터 경로를 타므로 함께 계산한다(마감 개념은 없음).
+        Integer consentIncludedRowCnt = null;
+        Integer consentExcludedCandidateCnt = null;
+        String consentPreviewEmptyYn = null;
+
+        if (TYPE_ATTD.equals(req.dataType())) {
             CoverageResult coverage = computeCoverage(req, loadAttdSourceRows(req));
-            coverageMonths = coverage.months().stream()
-                    .map(m -> new CoverageMonthResult(fmtYm(m.ym()), m.status(), m.excludedDeptNms(), m.orphanUnclosedYn()))
-                    .collect(Collectors.toList());
-            includedRowCnt = coverage.includedRows().size();
-            expectedEmptyYn = includedRowCnt == 0 ? "Y" : "N";
+            if ("Y".equals(req.closedOnlyYn())) {
+                coverageMonths = coverage.months().stream()
+                        .map(m -> new CoverageMonthResult(fmtYm(m.ym()), m.status(), m.excludedDeptNms(), m.orphanUnclosedYn()))
+                        .collect(Collectors.toList());
+                includedRowCnt = coverage.includedRows().size();
+                expectedEmptyYn = includedRowCnt == 0 ? "Y" : "N";
+            }
+
+            try {
+                Set<String> excludedUserCds = resolveConsentExcluded(req, coverage.includedRows());
+                long consentPassCnt = coverage.includedRows().stream()
+                        .filter(r -> !excludedUserCds.contains(r.userCd()))
+                        .count();
+                consentIncludedRowCnt = (int) consentPassCnt;
+                consentExcludedCandidateCnt = excludedUserCds.size();
+                consentPreviewEmptyYn = consentPassCnt == 0 ? "Y" : "N";
+            } catch (ApiException e) {
+                if (SubconErrorCode.SUBCON_409_009.equals(e.getErrorCode())) {
+                    // [E-4] 약관 비활성(fail-closed) — 예고 계산만 스킵, 조회 자체는 막지 않는다.
+                    //   실제 승인 시점에는 여전히 409 로 차단된다(동작 변경 없음).
+                    log.warn("승인 사전정보 — 동의 예상치 계산 스킵(약관 비활성) - shareReqId={}", req.shareReqId());
+                } else {
+                    throw e;
+                }
+            }
+        } else if (TYPE_RISK.equals(req.dataType())) {
+            try {
+                RiskCollected riskData = collectRiskSource(req);
+                consentIncludedRowCnt = riskData.parents().size();
+                consentExcludedCandidateCnt = riskData.excludedCnt();
+                consentPreviewEmptyYn = riskData.parents().isEmpty() ? "Y" : "N";
+            } catch (ApiException e) {
+                if (SubconErrorCode.SUBCON_409_009.equals(e.getErrorCode())) {
+                    log.warn("승인 사전정보 — 동의 예상치 계산 스킵(약관 비활성) - shareReqId={}", req.shareReqId());
+                } else {
+                    throw e;
+                }
+            }
+        } else if (TYPE_NEARMISS.equals(req.dataType())) {
+            try {
+                NearmissCollected nmData = collectNearmissSource(req);
+                consentIncludedRowCnt = nmData.rows().size();
+                consentExcludedCandidateCnt = nmData.excludedCnt();
+                consentPreviewEmptyYn = nmData.rows().isEmpty() ? "Y" : "N";
+            } catch (ApiException e) {
+                if (SubconErrorCode.SUBCON_409_009.equals(e.getErrorCode())) {
+                    log.warn("승인 사전정보 — 동의 예상치 계산 스킵(약관 비활성) - shareReqId={}", req.shareReqId());
+                } else {
+                    throw e;
+                }
+            }
         }
 
-        log.info("공유 승인 사전정보 조회 종료 - shareReqId={}, 마감완료={}, 릴레이 후보 {}건, 예상포함 {}건",
-                req.shareReqId(), gate.closedAll(), relayCandidates.size(), includedRowCnt);
+        log.info("공유 승인 사전정보 조회 종료 - shareReqId={}, 마감완료={}, 릴레이 후보 {}건, 예상포함 {}건, 동의반영예상포함 {}건",
+                req.shareReqId(), gate.closedAll(), relayCandidates.size(), includedRowCnt, consentIncludedRowCnt);
 
         return ShareReqApproveInfoResponse.builder()
                 .shareReqId(req.shareReqId())
@@ -425,6 +479,9 @@ public class Subcon03ServiceImpl implements Subcon03Service {
                 .coverageMonths(coverageMonths)
                 .includedRowCnt(includedRowCnt)
                 .expectedEmptyYn(expectedEmptyYn)
+                .consentIncludedRowCnt(consentIncludedRowCnt)
+                .consentExcludedCandidateCnt(consentExcludedCandidateCnt)
+                .consentPreviewEmptyYn(consentPreviewEmptyYn)
                 .build();
     }
 

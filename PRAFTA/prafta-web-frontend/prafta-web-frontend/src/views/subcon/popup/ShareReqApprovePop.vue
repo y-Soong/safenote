@@ -35,6 +35,18 @@
             <li><b>제공 목적</b> {{ info.purpose }}</li>
           </ul>
 
+          <!-- 동의 안내(상시 노출) — 마감분만/전량, closedAll 여부와 무관하게 항상 표시(사각지대 개선) -->
+          <div class="consent-note">
+            <p class="consent-note-body">
+              제3자 제공 동의를 하지 않은 대상자의 데이터는 승인 시 자동으로 제외됩니다.
+            </p>
+            <p v-if="hasConsentRisk" class="consent-note-body">
+              현재 조회 시점 기준 동의 미필 대상 {{ info.consentExcludedCandidateCnt }}명이 있어
+              실제 제공 건수가 아래 예상보다 더 줄어들 수 있습니다. (승인 시점 동의 상태에 따라
+              달라질 수 있는 예고값이며, 확정 값이 아닙니다.)
+            </p>
+          </div>
+
           <!-- 마감 상태 — 마감분만 요청 + 미마감 존재: 차단 대신 포함/제외 안내(부분 공유 전환 D-1/D-2) -->
           <div
             v-if="info.closedOnlyYn === 'Y' && !info.closedAll"
@@ -50,7 +62,6 @@
             </p>
             <p class="gate-body">
               제외된 데이터는 해당 부서/월 마감 후 재요청·재승인 시 포함됩니다.
-              실제 제공 건수는 제3자 제공 동의 여부에 따라 더 줄 수 있습니다.
             </p>
           </div>
           <div
@@ -63,9 +74,15 @@
             </p>
           </div>
 
-          <!-- 포함 0건 경고(D-1) — 빈 스냅샷 생성 예고 -->
-          <div v-if="info.expectedEmptyYn === 'Y'" class="gate-block">
-            <p class="gate-title">포함될 데이터가 0건입니다.</p>
+          <!-- 포함 0건 경고(D-1) — 빈 스냅샷 생성 예고. 마감 커버리지/동의 두 원인을 구분해 안내(사각지대 개선) -->
+          <div
+            v-if="info.expectedEmptyYn === 'Y' || info.consentPreviewEmptyYn === 'Y'"
+            class="gate-block"
+          >
+            <p class="gate-title">포함될 데이터가 0건일 수 있습니다.</p>
+            <p v-for="(line, i) in emptyReasonLines" :key="i" class="gate-body">
+              {{ line }}
+            </p>
             <p class="gate-body">승인 시 빈 스냅샷이 생성됩니다.</p>
           </div>
 
@@ -167,6 +184,26 @@ const hasPartialMonth = computed(() =>
   )
 );
 
+// 동의 미필 위험 존재 여부 — 예상 제외 대상자가 1명 이상일 때만 강조 문구 노출.
+const hasConsentRisk = computed(
+  () => (info.value.consentExcludedCandidateCnt ?? 0) > 0
+);
+
+// 0건 예고 원인 구분 — 커버리지(마감) 원인과 동의 원인을 구분해 문구를 다르게 보여준다.
+const emptyReasonLines = computed(() => {
+  const lines = [];
+  if (info.value.expectedEmptyYn === "Y") {
+    lines.push("마감 커버리지 기준으로 포함될 데이터가 0건입니다.");
+  } else if (info.value.consentPreviewEmptyYn === "Y") {
+    lines.push(
+      "마감 커버리지상 포함될 데이터는 있으나, 현재 동의 상태 기준으로는 전원 미동의라 " +
+        "실제 제공 건수가 0건이 될 것으로 예상됩니다(승인 시점 동의 상태에 따라 달라질 수 " +
+        "있는 예고값입니다)."
+    );
+  }
+  return lines;
+});
+
 // =========================== Life Cycle ===========================
 // 승인 사전정보 조회 — GET /webApi/subcon03/share-req-approve-info?shareReqId=...
 //   마감 상태(closedAll/unclosedYms)와 릴레이 후보를 서버가 판정해 내려준다.
@@ -190,10 +227,13 @@ onMounted(async () => {
 // 승인 — POST /webApi/subcon03/share-req-approve { shareReqId, bundleSnapshotIds }.
 //   승인 시점에 서버가 마감/관계/릴레이 후보를 재검사한 뒤 스냅샷을 생성한다(단일 트랜잭션).
 const fnApprove = async () => {
-  // 확인 문구 3분기(D-1) — 0건 > 부분 포함 > 기존 순.
+  // 확인 문구 분기(사각지대 개선) — 커버리지 0건 > 동의만으로 0건 예상 > 부분 포함 > 기존 순.
   let confirmMsg = "승인 시 해당 기간 근태가 요청 회사로 복제됩니다. 진행할까요?";
   if (info.value.expectedEmptyYn === "Y") {
     confirmMsg = "포함될 데이터가 0건입니다. 그래도 승인하여 빈 스냅샷을 생성할까요?";
+  } else if (info.value.consentPreviewEmptyYn === "Y") {
+    confirmMsg =
+      "동의 미필로 실제 제공 건수가 0건이 될 것으로 예상됩니다(예고). 그래도 승인할까요?";
   } else if (hasPartialMonth.value) {
     confirmMsg = "마감된 데이터만 포함되어 제공됩니다. 진행할까요?";
   }
@@ -239,10 +279,22 @@ const fnApprove = async () => {
 }
 .gate-block,
 .gate-warn,
-.relay-box {
+.relay-box,
+.consent-note {
   margin-top: var(--space-md, 0.75rem);
   padding: var(--space-sm, 0.5rem) var(--space-md, 0.75rem);
   border-radius: var(--btn-radius, 8px);
+}
+.consent-note {
+  background: var(--color-info-bg, #dbeafe);
+}
+.consent-note-body {
+  margin: 0;
+  font-size: var(--btn-font-sm, 12px);
+  color: var(--color-info-text, #1d4ed8);
+}
+.consent-note-body + .consent-note-body {
+  margin-top: 0.25rem;
 }
 .gate-block {
   background: var(--color-danger-bg, #fee2e2);
