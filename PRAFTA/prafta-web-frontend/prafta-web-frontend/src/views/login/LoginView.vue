@@ -491,17 +491,9 @@ const fnSiteOpenPop = (popId, param) => openPop(popId, param);
     0 1px 2px rgba(16, 24, 40, 0.06), 0 1px 3px rgba(16, 24, 40, 0.1);
 }
 
-html,
-body,
-#app {
-  margin: 0;
-  padding: 0;
-  height: 100%;
-  overflow: hidden;
-}
-
 .page {
   min-height: 100vh;
+  overflow: hidden;
   background: var(--bg);
 }
 
