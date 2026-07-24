@@ -33,4 +33,16 @@ public interface AppReq06Mapper {
 
     /** SYS032 / SYS033 라벨 일괄 조회. key="SYS코드:디테일코드" 형식이 아니라 별도 호출 권장. */
     List<Map<String, String>> selectSystValDLabels(@Param("systValCd") String systValCd);
+
+    /**
+     * PRAFTA-내승인요청결재라인-1: 결재라인 상세 조회 전 소유권 검증(IDOR 가드).
+     *
+     * <p>{@code reqId} 가 본인 소유의 TB_USER_ATTD_REQ 행인지 확인한다. 0건이면 결재라인 상세를
+     * 조회하지 않고 서비스 단계에서 즉시 403 처리한다. reqId 가 LC 접두(연차 이동/삭제 합성 ID)이면
+     * TB_USER_ATTD_REQ 에 없으므로 자연히 0건 → 403(방어용).
+     */
+    int existsMyReqId(@Param("cmpnyCd") String cmpnyCd,
+                      @Param("siteCd") String siteCd,
+                      @Param("userCd") String userCd,
+                      @Param("reqId") String reqId);
 }

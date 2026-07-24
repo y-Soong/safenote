@@ -14,13 +14,20 @@ import java.util.Map;
 
 import org.springframework.stereotype.Service;
 
+import com.prafta.app.req.req06.application.param.ApprovalLineDetailParam;
 import com.prafta.app.req.req06.application.param.MyReqListParam;
 import com.prafta.app.req.req06.application.query.MyReqListQuery;
+import com.prafta.app.req.req06.dto.response.ApprovalLineDetailResponse;
+import com.prafta.app.req.req06.dto.response.ApprovalStepItemResponse;
 import com.prafta.app.req.req06.dto.response.MyReqItemResponse;
 import com.prafta.app.req.req06.dto.response.MyReqListResponse;
 import com.prafta.app.req.req06.mapper.AppReq06Mapper;
 import com.prafta.app.req.req06.result.MyReqItemResult;
 import com.prafta.app.req.req06.service.AppReq06Service;
+import com.prafta.common.cmm.approval.mapper.ApprovalLineMapper;
+import com.prafta.common.cmm.approval.vo.ApprovalStepVO;
+import com.prafta.common.error.common.CommonErrorCode;
+import com.prafta.common.exception.ApiException;
 
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -50,6 +57,7 @@ import lombok.extern.slf4j.Slf4j;
 public class AppReq06ServiceImpl implements AppReq06Service {
 
     private final AppReq06Mapper mapper;
+    private final ApprovalLineMapper approvalLineMapper;
 
     private static final DateTimeFormatter F_ISO = DateTimeFormatter.ISO_LOCAL_DATE_TIME;
     private static final DateTimeFormatter F_YMD = DateTimeFormatter.ofPattern("yyyyMMdd");
@@ -95,6 +103,33 @@ public class AppReq06ServiceImpl implements AppReq06Service {
         }
 
         return new MyReqListResponse(totalCount, filteredCount, items, hasMore);
+    }
+
+    @Override
+    public ApprovalLineDetailResponse selectApprovalLineDetail(ApprovalLineDetailParam param) {
+
+        // IDOR 가드: 본인 소유 TB_USER_ATTD_REQ 행인지 먼저 검증(§1.4). 0건이면 존재 여부를
+        // 노출하지 않고 403 하나로 통일 응답한다(LC_ 접두 reqId 도 자연히 여기서 탈락).
+        int owned = mapper.existsMyReqId(param.cmpnyCd(), param.siteCd(), param.userCd(), param.reqId());
+        if (owned <= 0) {
+            throw new ApiException(CommonErrorCode.COMMON_403_001);
+        }
+
+        List<ApprovalStepVO> steps = approvalLineMapper.selectApprovalLineByReqId(param.cmpnyCd(), param.reqId());
+
+        List<ApprovalStepItemResponse> stepItems = new ArrayList<>(steps.size());
+        for (ApprovalStepVO step : steps) {
+            stepItems.add(new ApprovalStepItemResponse(
+                    step.getApprovalStep(),
+                    step.getApproverUserNm(),
+                    step.getApprovalStatus(),
+                    step.getApprovalStatusNm(),
+                    step.getApprovalComment(),
+                    step.getApprovalDate()
+            ));
+        }
+
+        return new ApprovalLineDetailResponse(param.reqId(), stepItems);
     }
 
     // ─────────────── 행 → 응답 매핑 ───────────────

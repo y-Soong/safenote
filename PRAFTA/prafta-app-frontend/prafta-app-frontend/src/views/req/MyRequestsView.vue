@@ -83,6 +83,9 @@
     />
     <RequestSortSheet v-model="sortSheetOpen" :selected="sort" @apply="onApplySort" />
 
+    <!-- 결재라인 상세 (PRAFTA-내승인요청결재라인-2) -->
+    <ApprovalLineDetailSheet v-model="approvalSheetOpen" :item="selectedItem" />
+
     <!-- 인라인 SVG sprite (본 화면 전용) -->
     <svg width="0" height="0" class="req-sprite" aria-hidden="true" focusable="false">
       <defs>
@@ -119,6 +122,7 @@ import RequestStatusFilterSheet from './components/RequestStatusFilterSheet.vue'
 import RequestDateRangeFilterSheet from './components/RequestDateRangeFilterSheet.vue'
 import RequestTypeFilterSheet from './components/RequestTypeFilterSheet.vue'
 import RequestSortSheet from './components/RequestSortSheet.vue'
+import ApprovalLineDetailSheet from './components/ApprovalLineDetailSheet.vue'
 
 const router = useRouter()
 const { proxy } = getCurrentInstance() || { proxy: null }
@@ -350,9 +354,15 @@ const onResetFilters = async () => {
   await reobserveAfterRender()
 }
 
-const onCardClick = () => {
-  // 요청 상세 화면 진입 (§7 follow-up F1) — 1차는 stub.
-  showAlert('준비 중입니다')
+// 결재라인 상세 시트 상태 (PRAFTA-내승인요청결재라인-2)
+const approvalSheetOpen = ref(false)
+const selectedItem = ref(null)
+
+// LC_MOVE/LC_DELETE 는 RequestCard.vue 가 애초에 click 을 emit 하지 않으므로
+// (PRAFTA-내승인요청결재라인-3, 옵션 B) 여기서는 근태 요청(01~06,10)만 들어온다는 전제로 단순화.
+const onCardClick = (item) => {
+  selectedItem.value = item
+  approvalSheetOpen.value = true
 }
 
 // ───────────────────────────────────────────────────────────

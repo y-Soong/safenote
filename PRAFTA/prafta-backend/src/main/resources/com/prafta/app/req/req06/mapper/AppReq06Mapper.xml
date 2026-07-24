@@ -162,4 +162,16 @@
        AND IFNULL(USE_YN,'Y') = 'Y'
     </select>
 
+    <!-- ============ 결재라인 상세 조회 전 소유권 검증 (IDOR 가드, PRAFTA-내승인요청결재라인-1) ============ -->
+    <select id="existsMyReqId" resultType="int">
+    /* AppReq06Mapper.existsMyReqId */
+    SELECT COUNT(1)
+      FROM TB_USER_ATTD_REQ A
+     WHERE A.CMPNY_CD = #{cmpnyCd}
+       AND A.SITE_CD  = #{siteCd}
+       AND A.USER_CD  = #{userCd}
+       AND A.REQ_ID   = #{reqId}
+       AND A.DEL_YN   = 'N'
+    </select>
+
 </mapper>

@@ -4,12 +4,15 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.ModelAttribute;
+import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
+import com.prafta.app.req.req06.application.param.ApprovalLineDetailParam;
 import com.prafta.app.req.req06.application.param.MyReqListParam;
 import com.prafta.app.req.req06.dto.request.MyReqListRequest;
+import com.prafta.app.req.req06.dto.response.ApprovalLineDetailResponse;
 import com.prafta.app.req.req06.dto.response.MyReqListResponse;
 import com.prafta.app.req.req06.service.AppReq06Service;
 import com.prafta.common.dto.TokenInfo;
@@ -51,6 +54,27 @@ public class AppReq06Controller {
 
         MyReqListResponse response = appReq06Service.selectMyReqList(
                 MyReqListParam.from(request, tokenInfo)
+        );
+
+        return ResponseEntity.status(HttpStatus.OK).body(response);
+    }
+
+    /**
+     * PRAFTA-내승인요청결재라인-1: 본인 요청 결재라인 상세 조회.
+     *
+     * @param reqId         조회 대상 요청 ID (경로변수, 소유권은 서비스 단계에서 검증)
+     * @param authorization Bearer JWT — 토큰의 gv_cmpnyCd/gv_siteCd/gv_userCd 만 사용
+     */
+    @GetMapping("/my/{reqId}/approval-line")
+    public ResponseEntity<?> getMyApprovalLineDetail(
+            @PathVariable String reqId,
+            @RequestHeader(value = "Authorization", required = false) String authorization
+    ) {
+
+        TokenInfo tokenInfo = jwtUtil.getAllClaimsAsMap(authorization);
+
+        ApprovalLineDetailResponse response = appReq06Service.selectApprovalLineDetail(
+                ApprovalLineDetailParam.from(reqId, tokenInfo)
         );
 
         return ResponseEntity.status(HttpStatus.OK).body(response);

@@ -2,9 +2,17 @@
   RequestCard.vue — 요청 카드 (SYS032 6종 × SYS033 4종 = 24 케이스)
   - 작업 ID: PRAFTA-APP-006-7
   - props.item: MyReqItemResponse (백엔드 PRAFTA-APP-006-1 응답 1건)
+  - PRAFTA-내승인요청결재라인-3(옵션 B, 2026-07-24 확정): LC_MOVE/LC_DELETE(연차 이동/삭제)는
+    다단계 결재라인 개념이 없으므로 "자세히" 진입점 자체를 렌더링하지 않는다(대체 뷰도 만들지 않음).
 -->
 <template>
-  <article class="req-card" role="button" tabindex="0" @click="$emit('click')">
+  <article
+    class="req-card"
+    :class="{ 'req-card--static': !hasDetailLink }"
+    :role="hasDetailLink ? 'button' : undefined"
+    :tabindex="hasDetailLink ? 0 : undefined"
+    @click="onClick"
+  >
     <!-- 상단: 유형 + 상태 배지 -->
     <header class="req-card__top">
       <span class="req-card__type">{{ item.reqTypeDisplay }}</span>
@@ -39,7 +47,7 @@
         {{ item.reqDateDisplay
         }}<template v-if="item.processedDateDisplay"> / {{ item.processedDateDisplay }}</template>
       </span>
-      <span class="req-card__meta-more">
+      <span v-if="hasDetailLink" class="req-card__meta-more">
         자세히
         <svg width="12" height="12" aria-hidden="true">
           <use href="#i-req-chev-right" />
@@ -73,7 +81,15 @@ const props = defineProps({
   item: { type: Object, required: true },
 })
 
-defineEmits(['click'])
+const emit = defineEmits(['click'])
+
+// PRAFTA-내승인요청결재라인-3: LC_MOVE/LC_DELETE(연차 이동/삭제)는 결재라인 상세 진입 대상 아님.
+const hasDetailLink = computed(() => !String(props.item?.reqType || '').startsWith('LC_'))
+
+const onClick = () => {
+  if (!hasDetailLink.value) return
+  emit('click')
+}
 
 const badgeClass = computed(() => {
   switch (props.item?.reqStatus) {
@@ -103,6 +119,9 @@ const badgeClass = computed(() => {
   cursor: pointer;
   text-align: left;
   font-family: inherit;
+}
+.req-card--static {
+  cursor: default;
 }
 
 .req-card__top {

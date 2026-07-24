@@ -1,6 +1,8 @@
 package com.prafta.app.req.req06.service;
 
+import com.prafta.app.req.req06.application.param.ApprovalLineDetailParam;
 import com.prafta.app.req.req06.application.param.MyReqListParam;
+import com.prafta.app.req.req06.dto.response.ApprovalLineDetailResponse;
 import com.prafta.app.req.req06.dto.response.MyReqListResponse;
 
 /**
@@ -16,4 +18,12 @@ public interface AppReq06Service {
      * <p>응답 가공: REQ_TYPE/REQ_STATUS 라벨 매핑, 요일/날짜 한국어 디스플레이, summary.lines 단순 가공.
      */
     MyReqListResponse selectMyReqList(MyReqListParam param);
+
+    /**
+     * PRAFTA-내승인요청결재라인-1: 본인 요청 결재라인 상세 조회.
+     *
+     * <p>소유권 검증(existsMyReqId) 통과 후에만 결재라인을 조회한다. 미소유/미존재 reqId 는
+     * 403(COMMON_403_001) 하나로 통일 응답한다(404 구분 노출 금지, IDOR 방어).
+     */
+    ApprovalLineDetailResponse selectApprovalLineDetail(ApprovalLineDetailParam param);
 }
