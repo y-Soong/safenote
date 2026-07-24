@@ -8,7 +8,6 @@
     <div class="introh__inner">
       <RouterLink class="introh__brand" to="/">
         <span class="introh__mark">프라프타</span>
-        <span class="introh__sub">SAFENOTE</span>
       </RouterLink>
 
       <nav class="introh__links" :class="{ 'is-open': menuOpen }">

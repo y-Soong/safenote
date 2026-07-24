@@ -1,7 +1,7 @@
 <template>
   <!--
-    프라프타 홈페이지 — 서비스 소개 (/service, 세이프노트)
-    출처: SAFENOTE 서비스소개서 / 홈페이지 IA 명세 §3. ★ = 차별화 기능.
+    프라프타 홈페이지 — 서비스 소개 (/service, PRAFTA)
+    출처: PRAFTA 서비스소개서 / 홈페이지 IA 명세 §3. ★ = 차별화 기능.
   -->
   <div class="intro-page">
     <IntroHeader />
@@ -9,9 +9,9 @@
     <!-- 서비스 히어로 -->
     <section class="phead">
       <div class="phead__inner">
-        <p class="phead__kicker">SAFENOTE</p>
+        <p class="phead__kicker">PRAFTA</p>
         <h1 class="phead__title">
-          세이프노트 — 근태·인사 + 산업안전 통합 플랫폼
+          PRAFTA — 근태·인사 + 산업안전 통합 플랫폼
         </h1>
         <p class="phead__slogan">현장의 사람과 안전을, 하나의 서비스로</p>
       </div>
@@ -147,7 +147,7 @@
         <h2 class="section__title">법규 대응 — 의무를 기능으로 충족합니다</h2>
         <div class="laws">
           <div class="laws__head">
-            <span>법령</span><span>핵심 의무</span><span>세이프노트 대응</span>
+            <span>법령</span><span>핵심 의무</span><span>PRAFTA 대응</span>
           </div>
           <div v-for="l in laws" :key="l.law" class="laws__row">
             <span class="laws__law">{{ l.law }}</span>
@@ -155,7 +155,7 @@
               ><b class="laws__m">핵심 의무</b>{{ l.duty }}</span
             >
             <span class="laws__feat"
-              ><b class="laws__m">세이프노트 대응</b>{{ l.feature }}</span
+              ><b class="laws__m">PRAFTA 대응</b>{{ l.feature }}</span
             >
           </div>
         </div>
@@ -209,7 +209,7 @@ import MockupFrame from "./components/MockupFrame.vue";
 const router = useRouter();
 const goContact = () => router.push("/contact");
 
-// 법규 대응 매핑 (법령 → 핵심 의무 → 세이프노트 대응)
+// 법규 대응 매핑 (법령 → 핵심 의무 → PRAFTA 대응)
 const laws = [
   {
     law: "산업안전보건법",

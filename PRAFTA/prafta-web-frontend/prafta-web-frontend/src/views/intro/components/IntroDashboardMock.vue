@@ -8,8 +8,8 @@
     <!-- 좌측 내비 -->
     <aside class="dash__lnb">
       <div class="dash__brand">
-        <span class="dash__brand-mark">S</span>
-        <span class="dash__brand-txt">SAFENOTE</span>
+        <span class="dash__brand-mark">P</span>
+        <span class="dash__brand-txt">PRAFTA</span>
       </div>
       <nav class="dash__nav">
         <span class="dash__nav-item is-active"

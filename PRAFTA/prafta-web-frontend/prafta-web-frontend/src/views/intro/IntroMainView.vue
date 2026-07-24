@@ -1,7 +1,7 @@
 <template>
   <!--
     프라프타 홈페이지 — 메인(랜딩)
-    출처: SAFENOTE 서비스소개서 / .claude 홈페이지 IA 명세 §1
+    출처: PRAFTA 서비스소개서 / .claude 홈페이지 IA 명세 §1
     위치 규칙: 신규 화면은 views/intro/ 하위에만 생성.
   -->
   <div class="intro-page">
@@ -21,7 +21,7 @@
           </h1>
           <p class="hero__desc">
             흩어진 출퇴근·연차·근무 관리와 위험성평가·TBM·안전점검을
-            <strong>세이프노트 하나로</strong> — 노무와 산업재해 리스크를 동시에
+            <strong>PRAFTA 하나로</strong> — 노무와 산업재해 리스크를 동시에
             줄입니다.
           </p>
           <div class="hero__actions">
@@ -35,7 +35,7 @@
             <a
               class="btn btn--ghost btn--lg"
               :href="BROCHURE_URL"
-              download="세이프노트_서비스소개서.pdf"
+              download="PRAFTA_서비스소개서.pdf"
               >소개서 다운로드</a
             >
             <button type="button" class="btn btn--text" @click="goService">
@@ -59,13 +59,13 @@
             <img
               class="hero__dash"
               :src="dashboardImg"
-              alt="세이프노트 관리자 대시보드 화면"
+              alt="PRAFTA 관리자 대시보드 화면"
             />
           </div>
           <img
             class="hero__phone"
             :src="riskAppImg"
-            alt="세이프노트 모바일 위험성 발굴 화면"
+            alt="PRAFTA 모바일 위험성 발굴 화면"
           />
         </div>
       </div>
@@ -74,8 +74,8 @@
     <!-- 2. 핵심 가치(특장점 4) -->
     <section class="section">
       <div class="section__inner">
-        <p class="section__kicker">WHY SAFENOTE</p>
-        <h2 class="section__title">세이프노트 도입 시, 달라지는 점</h2>
+        <p class="section__kicker">WHY PRAFTA</p>
+        <h2 class="section__title">PRAFTA 도입 시, 달라지는 점</h2>
         <ul class="cards cards--4">
           <li v-for="(v, i) in values" :key="v.title" class="card value">
             <div class="value__num">{{ i + 1 }}</div>
@@ -138,7 +138,7 @@
           <div class="compare__head">
             <span class="compare__h-area"></span>
             <span class="compare__h-before">도입 전</span>
-            <span class="compare__h-after">세이프노트 도입 후</span>
+            <span class="compare__h-after">PRAFTA 도입 후</span>
           </div>
           <div v-for="row in compare" :key="row.area" class="compare__row">
             <span class="compare__area">{{ row.area }}</span>
@@ -157,7 +157,7 @@
         <!-- TODO: MockupFrame 에 videoSrc/appVideoSrc 전달 시 자동재생 영상으로 교체 -->
         <div class="preview">
           <MockupFrame
-            label="세이프노트"
+            label="PRAFTA"
             :overlap="true"
             class="preview__mock"
           />
@@ -229,7 +229,7 @@
           <a
             class="btn btn--ghost btn--lg"
             :href="BROCHURE_URL"
-            download="세이프노트_서비스소개서.pdf"
+            download="PRAFTA_서비스소개서.pdf"
             >소개서 다운로드</a
           >
         </div>

@@ -13,7 +13,6 @@
       <div class="intro-nav__inner">
         <a class="intro-brand" href="#top">
           <span class="intro-brand__mark">PRAFTA</span>
-          <span class="intro-brand__sub">SafeNote</span>
         </a>
         <nav class="intro-nav__links">
           <a href="#features">기능</a>
@@ -36,7 +35,7 @@
         <p class="intro-hero__eyebrow">현장 안전·근태 통합 관리</p>
         <h1 class="intro-hero__title">
           더 안전한 현장을 위한<br />
-          가장 간단한 방법, <span class="accent">SafeNote</span>
+          가장 간단한 방법, <span class="accent">PRAFTA</span>
         </h1>
         <p class="intro-hero__desc">
           출퇴근부터 TBM, 위험성평가, 아차사고 관리까지.<br />
@@ -48,7 +47,7 @@
             class="intro-btn intro-btn--primary intro-btn--lg"
             @click="goService"
           >
-            SafeNote 시작하기
+            PRAFTA 시작하기
           </button>
           <a class="intro-btn intro-btn--ghost intro-btn--lg" href="#features"
             >기능 둘러보기</a
@@ -120,7 +119,7 @@
         <span class="intro-footer__links">
           <router-link to="/privacy">개인정보 처리방침</router-link>
           <router-link to="/account-deletion">계정 삭제 안내</router-link>
-          <a href="#top">SafeNote</a>
+          <a href="#top">PRAFTA</a>
         </span>
       </div>
     </footer>

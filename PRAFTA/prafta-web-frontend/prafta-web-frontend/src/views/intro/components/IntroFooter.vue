@@ -37,7 +37,7 @@
       <div class="introf__bottom-inner">
         <span>© {{ year }} PRAFTA. All rights reserved.</span>
         <span class="introf__bizinfo"
-          ><!-- TODO: 사업자등록정보 보강 -->세이프노트 · 근태·인사 + 산업안전
+          ><!-- TODO: 사업자등록정보 보강 -->PRAFTA · 근태·인사 + 산업안전
           통합 플랫폼</span
         >
       </div>

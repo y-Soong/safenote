@@ -113,7 +113,7 @@
             </ul>
 
             <div class="new-user">
-              <p class="new-user-text">Safenote가 처음이신가요?</p>
+              <p class="new-user-text">PRAFTA가 처음이신가요?</p>
               <button
                 type="button"
                 class="btn-secondary"
@@ -133,7 +133,7 @@
               >고객센터 1800-1152 (평일 09:00~18:00)</span
             >
           </div>
-          <small>© SAFENOTE INC. ALL RIGHTS RESERVED.</small>
+          <small>© PRAFTA. ALL RIGHTS RESERVED.</small>
         </footer>
       </section>
     </main>

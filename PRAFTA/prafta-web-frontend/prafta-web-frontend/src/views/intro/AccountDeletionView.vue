@@ -11,7 +11,6 @@
       <div class="deletion-nav__inner">
         <router-link class="deletion-brand" to="/">
           <span class="deletion-brand__mark">PRAFTA</span>
-          <span class="deletion-brand__sub">SafeNote</span>
         </router-link>
         <router-link class="deletion-nav__home" to="/">홈으로</router-link>
       </div>
@@ -20,10 +19,10 @@
     <main class="deletion-body">
       <article class="deletion-doc">
         <h1 class="deletion-doc__title">계정 및 데이터 삭제 안내</h1>
-        <p class="deletion-doc__meta">SafeNote(PRAFTA) 앱 이용자용</p>
+        <p class="deletion-doc__meta">PRAFTA 앱 이용자용</p>
 
         <p>
-          프라프타(PRAFTA)(이하 "회사"라 합니다)는 SafeNote 서비스 이용자가
+          프라프타(PRAFTA)(이하 "회사"라 합니다)는 PRAFTA 서비스 이용자가
           언제든지 계정 및 관련 데이터의 삭제를 요청할 수 있도록 다음의 절차를
           제공합니다.
         </p>
@@ -34,7 +33,7 @@
           <ul>
             <li>
               <strong>소속 회사 관리자를 통한 요청</strong> — 소속
-              회사(고객사)의 SafeNote 관리자에게 계정 삭제(퇴직 처리)를 요청하면
+              회사(고객사)의 PRAFTA 관리자에게 계정 삭제(퇴직 처리)를 요청하면
               관리자 웹에서 계정이 삭제 처리됩니다.
             </li>
             <li>

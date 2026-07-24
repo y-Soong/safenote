@@ -12,7 +12,6 @@
       <div class="privacy-nav__inner">
         <router-link class="privacy-brand" to="/">
           <span class="privacy-brand__mark">PRAFTA</span>
-          <span class="privacy-brand__sub">SafeNote</span>
         </router-link>
         <router-link class="privacy-nav__home" to="/">홈으로</router-link>
       </div>

@@ -23,7 +23,7 @@
           프라프타는 흩어져 있던 현장 관리 업무 — <strong>근태·인사</strong>와
           <strong>산업안전</strong> — 을 하나의 플랫폼으로 완성하는 회사입니다.
           우리는 제조·물류·산업현장을 위한 통합 SaaS
-          <strong>세이프노트(SAFENOTE)</strong>를 만듭니다.
+          <strong>PRAFTA</strong>를 만듭니다.
         </p>
       </div>
     </section>
@@ -53,7 +53,7 @@
     <!-- 우리가 만드는 것 -->
     <section class="section">
       <div class="section__inner">
-        <h2 class="section__title">우리가 만드는 것 — 세이프노트</h2>
+        <h2 class="section__title">우리가 만드는 것 — PRAFTA</h2>
         <p class="section__lead">
           근태·인사 + 산업안전 통합 SaaS, 현장의 사람과 안전을 하나의 서비스로.
         </p>

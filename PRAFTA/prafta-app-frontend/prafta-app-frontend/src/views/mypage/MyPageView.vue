@@ -216,7 +216,7 @@
         <button type="button" class="mp-withdraw" @click="onWithdrawClick">회원 탈퇴</button>
 
         <!-- 앱 버전 -->
-        <p class="mp-version">PRAFTA SAFENOTE v1.0.0</p>
+        <p class="mp-version">PRAFTA v1.0.0</p>
       </template>
     </main>
 
@@ -453,7 +453,7 @@ const onWithdrawConfirm = async () => {
   try {
     await api.post('/appApi/auth/withdraw', { confirmed: true })
     // 인사말 후 로컬 세션/토큰 초기화 + 로그인 화면 이동.
-    await showAlert('그동안 PRAFTA SAFENOTE를 이용해 주셔서 감사합니다.')
+    await showAlert('그동안 PRAFTA를 이용해 주셔서 감사합니다.')
     await forceLogout()
     delete api.defaults.headers.common.Authorization
     try {

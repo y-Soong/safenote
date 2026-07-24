@@ -3,7 +3,7 @@
     <!-- 로고 / 브랜드 -->
     <div class="brand">
       <img :src="safenote_logo" class="brand-logo" alt="logo" />
-      <h1 class="brand-title">SAFENOTE</h1>
+      <h1 class="brand-title">PRAFTA</h1>
     </div>
 
     <!-- 로그인 박스 -->
