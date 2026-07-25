@@ -254,11 +254,15 @@
     </select>
     
 	<update id="updateUserPw" parameterType="com.prafta.web.user.user01.application.command.UserPasswdCommand">
-	/* User01Mapper.updateUserPw */
+	/* User01Mapper.updateUserPw — 관리자 초기화: 잠금 해제 + 다음 로그인 시 강제 변경 게이트(PWD_CHG_DTIME IS NULL) 적용 */
 	UPDATE
 		TB_USER
 	SET
-		USER_PW = #{userPw}
+		USER_PW               = #{userPw}
+		, PWD_CHG_DTIME        = NULL
+		, PWD_FAIL_CNT         = 0
+		, PWD_LOCK_YN          = 'N'
+		, PWD_LOCK_EXPIRE_DTIME = NULL
 	WHERE 1=1
 	  AND CMPNY_CD = #{cmpnyCd}
 	  AND USER_CD = #{userCd}
@@ -269,6 +273,16 @@
 	SELECT
 		USER_CD  AS userCd
 		, USER_PW AS userPw
+	FROM TB_USER
+	WHERE CMPNY_CD = #{cmpnyCd}
+	  AND USER_CD  = #{userCd}
+	  AND USE_YN   = 'Y'
+	</select>
+
+	<select id="selectUserMblNoEnc" resultType="java.lang.String">
+	/* User01Mapper.selectUserMblNoEnc — 관리자 비밀번호 초기화용 */
+	SELECT
+		MBL_NO_ENC
 	FROM TB_USER
 	WHERE CMPNY_CD = #{cmpnyCd}
 	  AND USER_CD  = #{userCd}

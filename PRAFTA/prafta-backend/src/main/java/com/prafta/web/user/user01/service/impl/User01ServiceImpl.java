@@ -150,7 +150,13 @@ public class User01ServiceImpl implements User01Service{
 	
 	public int updateUserPw(UserPasswdParam param) {
 
-		String userPw = passwordHasher.hash(param.userCd());
+		// 새 비밀번호 = 대상 회원의 휴대폰번호(하이픈 제외) — 회원가입 초기 비밀번호 관례(D3)와 동일.
+		String mblNoEnc = user01Mapper.selectUserMblNoEnc(param.cmpnyCd(), param.userCd());
+		if (mblNoEnc == null || mblNoEnc.isBlank()) {
+			throw new ApiException(UserErrorCode.USER_404_004);
+		}
+		String phoneNorm = aesGcmCrypto.decrypt(mblNoEnc);
+		String userPw = passwordHasher.hash(phoneNorm);
 
 		return user01Mapper.updateUserPw(UserPasswdCommand.from(param, userPw));
 	}

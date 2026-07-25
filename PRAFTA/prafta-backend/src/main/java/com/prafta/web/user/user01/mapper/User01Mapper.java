@@ -51,6 +51,9 @@ public interface User01Mapper {
 
 	UserPwResult selectUserPwByUserId(@Param("cmpnyCd") String cmpnyCd, @Param("userCd") String userCd);
 
+	// 관리자 비밀번호 초기화용 — 대상 회원의 암호화된 휴대폰번호(MBL_NO_ENC) 조회.
+	String selectUserMblNoEnc(@Param("cmpnyCd") String cmpnyCd, @Param("userCd") String userCd);
+
 	int updateMyPw(UserPasswdCommand command);
 
 	int withdrawMyAccount(WithdrawMyAccountCommand command);

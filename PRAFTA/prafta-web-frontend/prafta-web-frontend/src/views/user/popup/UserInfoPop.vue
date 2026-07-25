@@ -1109,7 +1109,7 @@ const fnUserPwReset = async () => {
   try {
     // cmpnyCd는 서버가 토큰으로 강제하므로 전송하지 않는다.
     const response = await axios.post("/webApi/user01/update-user-passwd", {
-      userId: userId.value,
+      userCd: userCd.value,
     });
     if (response.status === 200) {
       fnAlertMsg(getMessage(MSG.SAVE_SUCCESS), () => {});
