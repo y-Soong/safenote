@@ -1,0 +1,483 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.prafta.web.attd.attd15.mapper.Attd15Mapper">
+
+    <!-- ================================================================
+         ATTD15-T1 - 주52시간 관리 조회.
+
+         node_tree(하위부서 RECURSIVE) + target_user(USE_YN='Y', WITHDRAWAL_DATE IS NULL,
+         EMPLOYMENT_TYPE 일용직 제외, USER_NM LIKE) 스코프는 Attd11Mapper 패턴을 그대로 이식.
+         effective-dating 스케줄 서브쿼리(SCH)도 Attd11Mapper.selectAttdSummaryRows 동일 복제.
+         ================================================================ -->
+
+    <!-- 1) 대상 사용자(모수) — 스케줄/실적이 0인 사용자도 노출(사용자 결정 §2.4)하기 위한 base list. -->
+    <select id="selectTargetUsers" parameterType="com.prafta.web.attd.attd15.application.query.Weekly52hListsQuery" resultType="com.prafta.web.attd.attd15.result.TargetUserResult">
+    /* Attd15Mapper.selectTargetUsers */
+        WITH RECURSIVE
+        node_tree AS (
+            SELECT
+                  N.CMPNY_CD
+                , N.SITE_CD
+                , N.NODE_CD
+                , N.NODE_NM
+            FROM TB_SITE_NODE N
+            WHERE N.CMPNY_CD = #{gvCmpnyCd}
+              AND N.SITE_CD  = #{siteCd}
+            <if test="nodeCd != null and nodeCd != ''">
+              AND N.NODE_CD  = #{nodeCd}
+            </if>
+            <if test="nodeCd == null or nodeCd == ''">
+              AND N.PARENT_NODE_CD IS NULL
+            </if>
+
+            <if test='"Y".equals(incSubNodeYn) or nodeCd == null or nodeCd == ""'>
+            UNION ALL
+
+            SELECT
+                  C.CMPNY_CD
+                , C.SITE_CD
+                , C.NODE_CD
+                , C.NODE_NM
+            FROM TB_SITE_NODE C
+            INNER JOIN node_tree P
+                ON  C.CMPNY_CD       = P.CMPNY_CD
+                AND C.SITE_CD        = P.SITE_CD
+                AND C.PARENT_NODE_CD = P.NODE_CD
+            </if>
+        ),
+
+        target_user AS (
+            SELECT
+                  U.CMPNY_CD
+                , U.SITE_CD
+                , U.USER_CD
+                , U.USER_ID
+                , U.USER_NM
+                , U.NODE_CD
+                , NT.NODE_NM
+            FROM TB_USER U
+            INNER JOIN node_tree NT
+                ON  U.CMPNY_CD = NT.CMPNY_CD
+                AND U.SITE_CD  = NT.SITE_CD
+                AND U.NODE_CD  = NT.NODE_CD
+            WHERE U.CMPNY_CD        = #{gvCmpnyCd}
+              AND U.SITE_CD         = #{siteCd}
+              AND U.USE_YN          = 'Y'
+              AND U.WITHDRAWAL_DATE IS NULL
+              AND (U.EMPLOYMENT_TYPE IS NULL OR U.EMPLOYMENT_TYPE <![CDATA[ <> ]]> 'DAILY')
+            <if test="userNm != null and userNm != ''">
+              AND U.USER_NM LIKE CONCAT('%', #{userNm}, '%')
+            </if>
+        )
+
+        SELECT
+              S.SITE_NM   AS siteNm
+            , U.USER_CD   AS userCd
+            , U.USER_ID   AS userId
+            , U.USER_NM   AS userNm
+            , U.NODE_NM   AS deptNm
+        FROM target_user U
+        INNER JOIN TB_SITE S
+            ON  S.CMPNY_CD = U.CMPNY_CD
+            AND S.SITE_CD  = U.SITE_CD
+        ORDER BY U.USER_CD
+    </select>
+
+
+    <!-- 2) 등록된 스케줄 기준 — 주간(월~일) 근무일(WORK_PLAN_CD 가 스케줄코드) 원시 스케줄 행. -->
+    <select id="selectWeeklyScheduledRows" parameterType="com.prafta.web.attd.attd15.application.query.Weekly52hListsQuery" resultType="com.prafta.web.attd.attd15.result.ScheduledRowResult">
+    /* Attd15Mapper.selectWeeklyScheduledRows */
+        WITH RECURSIVE
+        node_tree AS (
+            SELECT
+                  N.CMPNY_CD
+                , N.SITE_CD
+                , N.NODE_CD
+                , N.NODE_NM
+            FROM TB_SITE_NODE N
+            WHERE N.CMPNY_CD = #{gvCmpnyCd}
+              AND N.SITE_CD  = #{siteCd}
+            <if test="nodeCd != null and nodeCd != ''">
+              AND N.NODE_CD  = #{nodeCd}
+            </if>
+            <if test="nodeCd == null or nodeCd == ''">
+              AND N.PARENT_NODE_CD IS NULL
+            </if>
+
+            <if test='"Y".equals(incSubNodeYn) or nodeCd == null or nodeCd == ""'>
+            UNION ALL
+
+            SELECT
+                  C.CMPNY_CD
+                , C.SITE_CD
+                , C.NODE_CD
+                , C.NODE_NM
+            FROM TB_SITE_NODE C
+            INNER JOIN node_tree P
+                ON  C.CMPNY_CD       = P.CMPNY_CD
+                AND C.SITE_CD        = P.SITE_CD
+                AND C.PARENT_NODE_CD = P.NODE_CD
+            </if>
+        ),
+
+        target_user AS (
+            SELECT
+                  U.CMPNY_CD
+                , U.SITE_CD
+                , U.USER_CD
+            FROM TB_USER U
+            INNER JOIN node_tree NT
+                ON  U.CMPNY_CD = NT.CMPNY_CD
+                AND U.SITE_CD  = NT.SITE_CD
+                AND U.NODE_CD  = NT.NODE_CD
+            WHERE U.CMPNY_CD        = #{gvCmpnyCd}
+              AND U.SITE_CD         = #{siteCd}
+              AND U.USE_YN          = 'Y'
+              AND U.WITHDRAWAL_DATE IS NULL
+              AND (U.EMPLOYMENT_TYPE IS NULL OR U.EMPLOYMENT_TYPE <![CDATA[ <> ]]> 'DAILY')
+            <if test="userNm != null and userNm != ''">
+              AND U.USER_NM LIKE CONCAT('%', #{userNm}, '%')
+            </if>
+        )
+
+        SELECT
+              U.USER_CD              AS userCd
+            , WP.WORK_YMD             AS workYmd
+            , SCH.FST_SCH_STR_TIME    AS fstSchStrTime
+            , SCH.FST_SCH_END_TIME    AS fstSchEndTime
+            , SCH.FST_SCH_BRK_MIN     AS fstSchBrkMin
+            , SCH.SEC_SCH_STR_TIME    AS secSchStrTime
+            , SCH.SEC_SCH_END_TIME    AS secSchEndTime
+            , SCH.SEC_SCH_BRK_MIN     AS secSchBrkMin
+        FROM target_user U
+        INNER JOIN TB_USER_WORK_PLAN WP
+            ON  WP.CMPNY_CD = U.CMPNY_CD
+            AND WP.SITE_CD  = U.SITE_CD
+            AND WP.USER_CD  = U.USER_CD
+            AND WP.WORK_YMD BETWEEN #{weekStartYmd} AND #{weekEndYmd}
+
+        /* 근무계획코드가 스케줄코드(SCH_CD)인 근무일만 남긴다 — INNER JOIN 이 자연 필터(LEAVE_CD 는
+           아래 서브쿼리와 매칭되지 않아 제외됨. Attd11Mapper.selectAbsentDayCount 의 "모수" EXISTS
+           서브쿼리와 동일한 필터 의도를 INNER JOIN 매칭 실패로 달성). 근무일(WP.WORK_YMD) 기준
+           유효 스케줄(effective-dating): TB_SCH_MGMT(현재본) + TB_SCH_MGMT_HIST(전 버전) UNION 후
+           APPLY_DATE &lt;= WORK_YMD 인 가장 최근 버전(없으면 MIN 폴백). Attd11Mapper 동일 서브쿼리. -->
+        INNER JOIN (
+            SELECT
+                  E.CMPNY_CD
+                , E.SITE_CD
+                , E.SCH_CD
+                , E.APPLY_DATE
+                , E.FST_SCH_STR_TIME
+                , E.FST_SCH_END_TIME
+                , E.FST_SCH_BRK_MIN
+                , E.SEC_SCH_STR_TIME
+                , E.SEC_SCH_END_TIME
+                , E.SEC_SCH_BRK_MIN
+            FROM (
+                SELECT
+                      M.CMPNY_CD
+                    , M.SITE_CD
+                    , M.SCH_CD
+                    , M.APPLY_DATE
+                    , M.FST_SCH_STR_TIME
+                    , M.FST_SCH_END_TIME
+                    , M.FST_SCH_BRK_MIN
+                    , M.SEC_SCH_STR_TIME
+                    , M.SEC_SCH_END_TIME
+                    , M.SEC_SCH_BRK_MIN
+                    , 2147483647 AS HIST_IDX
+                FROM TB_SCH_MGMT M
+
+                UNION ALL
+
+                SELECT
+                      H.CMPNY_CD
+                    , H.SITE_CD
+                    , H.SCH_CD
+                    , H.APPLY_DATE
+                    , H.FST_SCH_STR_TIME
+                    , H.FST_SCH_END_TIME
+                    , H.FST_SCH_BRK_MIN
+                    , H.SEC_SCH_STR_TIME
+                    , H.SEC_SCH_END_TIME
+                    , H.SEC_SCH_BRK_MIN
+                    , H.HIST_IDX
+                FROM TB_SCH_MGMT_HIST H
+            ) E
+            WHERE E.HIST_IDX = (
+                SELECT MAX(E2.HIST_IDX)
+                FROM (
+                    SELECT M2.CMPNY_CD, M2.SITE_CD, M2.SCH_CD, M2.APPLY_DATE, 2147483647 AS HIST_IDX
+                    FROM TB_SCH_MGMT M2
+                    UNION ALL
+                    SELECT H2.CMPNY_CD, H2.SITE_CD, H2.SCH_CD, H2.APPLY_DATE, H2.HIST_IDX
+                    FROM TB_SCH_MGMT_HIST H2
+                ) E2
+                WHERE E2.CMPNY_CD   = E.CMPNY_CD
+                  AND E2.SITE_CD    = E.SITE_CD
+                  AND E2.SCH_CD     = E.SCH_CD
+                  AND E2.APPLY_DATE = E.APPLY_DATE
+            )
+        ) SCH
+            ON  SCH.CMPNY_CD = WP.CMPNY_CD
+            AND SCH.SITE_CD  = WP.SITE_CD
+            AND SCH.SCH_CD   = WP.WORK_PLAN_CD
+            AND SCH.APPLY_DATE = (
+                SELECT COALESCE(
+                         MAX(CASE WHEN SE.APPLY_DATE <![CDATA[ <= ]]> WP.WORK_YMD THEN SE.APPLY_DATE END)
+                       , MIN(SE.APPLY_DATE)
+                       )
+                FROM (
+                    SELECT M3.CMPNY_CD, M3.SITE_CD, M3.SCH_CD, M3.APPLY_DATE
+                    FROM TB_SCH_MGMT M3
+                    UNION ALL
+                    SELECT H3.CMPNY_CD, H3.SITE_CD, H3.SCH_CD, H3.APPLY_DATE
+                    FROM TB_SCH_MGMT_HIST H3
+                ) SE
+                WHERE SE.CMPNY_CD    = WP.CMPNY_CD
+                  AND SE.SITE_CD     = WP.SITE_CD
+                  AND SE.SCH_CD      = WP.WORK_PLAN_CD
+            )
+
+        ORDER BY U.USER_CD, WP.WORK_YMD
+    </select>
+
+
+    <!-- 3) 실제 근무 기준 — 주간(월~일) 출퇴근 실적 원시 행(Attd11 방식, 스케줄 클램프 없음). -->
+    <select id="selectWeeklyActualRows" parameterType="com.prafta.web.attd.attd15.application.query.Weekly52hListsQuery" resultType="com.prafta.web.attd.attd15.result.ActualRowResult">
+    /* Attd15Mapper.selectWeeklyActualRows */
+        WITH RECURSIVE
+        node_tree AS (
+            SELECT
+                  N.CMPNY_CD
+                , N.SITE_CD
+                , N.NODE_CD
+                , N.NODE_NM
+            FROM TB_SITE_NODE N
+            WHERE N.CMPNY_CD = #{gvCmpnyCd}
+              AND N.SITE_CD  = #{siteCd}
+            <if test="nodeCd != null and nodeCd != ''">
+              AND N.NODE_CD  = #{nodeCd}
+            </if>
+            <if test="nodeCd == null or nodeCd == ''">
+              AND N.PARENT_NODE_CD IS NULL
+            </if>
+
+            <if test='"Y".equals(incSubNodeYn) or nodeCd == null or nodeCd == ""'>
+            UNION ALL
+
+            SELECT
+                  C.CMPNY_CD
+                , C.SITE_CD
+                , C.NODE_CD
+                , C.NODE_NM
+            FROM TB_SITE_NODE C
+            INNER JOIN node_tree P
+                ON  C.CMPNY_CD       = P.CMPNY_CD
+                AND C.SITE_CD        = P.SITE_CD
+                AND C.PARENT_NODE_CD = P.NODE_CD
+            </if>
+        ),
+
+        target_user AS (
+            SELECT
+                  U.CMPNY_CD
+                , U.SITE_CD
+                , U.USER_CD
+            FROM TB_USER U
+            INNER JOIN node_tree NT
+                ON  U.CMPNY_CD = NT.CMPNY_CD
+                AND U.SITE_CD  = NT.SITE_CD
+                AND U.NODE_CD  = NT.NODE_CD
+            WHERE U.CMPNY_CD        = #{gvCmpnyCd}
+              AND U.SITE_CD         = #{siteCd}
+              AND U.USE_YN          = 'Y'
+              AND U.WITHDRAWAL_DATE IS NULL
+              AND (U.EMPLOYMENT_TYPE IS NULL OR U.EMPLOYMENT_TYPE <![CDATA[ <> ]]> 'DAILY')
+            <if test="userNm != null and userNm != ''">
+              AND U.USER_NM LIKE CONCAT('%', #{userNm}, '%')
+            </if>
+        )
+
+        SELECT
+              U.USER_CD                                                        AS userCd
+            , A.WORK_YMD                                                       AS workYmd
+            , A.WORK_SEQ                                                       AS workSeq
+            , CASE WHEN A.WORK_SEQ = 2 THEN SCH.SEC_SCH_BRK_MIN ELSE SCH.FST_SCH_BRK_MIN END AS planBreakMin
+            , A.CHECK_IN_DATE                                                  AS actInDate
+            , A.CHECK_IN_TIME                                                  AS actInTime
+            , A.CHECK_OUT_DATE                                                 AS actOutDate
+            , A.CHECK_OUT_TIME                                                 AS actOutTime
+
+        FROM target_user U
+        INNER JOIN TB_USER_ATTD_MGMT A
+            ON  A.CMPNY_CD = U.CMPNY_CD
+            AND A.SITE_CD  = U.SITE_CD
+            AND A.USER_CD  = U.USER_CD
+            AND A.WORK_SEQ IN (1, 2)
+            AND A.DEL_YN   = 'N'
+            AND A.WORK_YMD BETWEEN #{weekStartYmd} AND #{weekEndYmd}
+
+        LEFT JOIN TB_USER_WORK_PLAN WP
+            ON  WP.CMPNY_CD = A.CMPNY_CD
+            AND WP.SITE_CD  = A.SITE_CD
+            AND WP.USER_CD  = A.USER_CD
+            AND WP.WORK_YMD = A.WORK_YMD
+
+        /* 근무일(A.WORK_YMD) 기준 유효 스케줄(effective-dating). Attd11Mapper 동일 서브쿼리 복제
+           (실제 근무 휴게 공제는 스케줄 정의 휴게분을 사용 — Attd11 workMinutes 계산과 동일 기준). */
+        LEFT JOIN (
+            SELECT
+                  E.CMPNY_CD
+                , E.SITE_CD
+                , E.SCH_CD
+                , E.APPLY_DATE
+                , E.FST_SCH_STR_TIME
+                , E.FST_SCH_END_TIME
+                , E.FST_SCH_BRK_MIN
+                , E.SEC_SCH_STR_TIME
+                , E.SEC_SCH_END_TIME
+                , E.SEC_SCH_BRK_MIN
+            FROM (
+                SELECT
+                      M.CMPNY_CD
+                    , M.SITE_CD
+                    , M.SCH_CD
+                    , M.APPLY_DATE
+                    , M.FST_SCH_STR_TIME
+                    , M.FST_SCH_END_TIME
+                    , M.FST_SCH_BRK_MIN
+                    , M.SEC_SCH_STR_TIME
+                    , M.SEC_SCH_END_TIME
+                    , M.SEC_SCH_BRK_MIN
+                    , 2147483647 AS HIST_IDX
+                FROM TB_SCH_MGMT M
+
+                UNION ALL
+
+                SELECT
+                      H.CMPNY_CD
+                    , H.SITE_CD
+                    , H.SCH_CD
+                    , H.APPLY_DATE
+                    , H.FST_SCH_STR_TIME
+                    , H.FST_SCH_END_TIME
+                    , H.FST_SCH_BRK_MIN
+                    , H.SEC_SCH_STR_TIME
+                    , H.SEC_SCH_END_TIME
+                    , H.SEC_SCH_BRK_MIN
+                    , H.HIST_IDX
+                FROM TB_SCH_MGMT_HIST H
+            ) E
+            WHERE E.HIST_IDX = (
+                SELECT MAX(E2.HIST_IDX)
+                FROM (
+                    SELECT M2.CMPNY_CD, M2.SITE_CD, M2.SCH_CD, M2.APPLY_DATE, 2147483647 AS HIST_IDX
+                    FROM TB_SCH_MGMT M2
+                    UNION ALL
+                    SELECT H2.CMPNY_CD, H2.SITE_CD, H2.SCH_CD, H2.APPLY_DATE, H2.HIST_IDX
+                    FROM TB_SCH_MGMT_HIST H2
+                ) E2
+                WHERE E2.CMPNY_CD   = E.CMPNY_CD
+                  AND E2.SITE_CD    = E.SITE_CD
+                  AND E2.SCH_CD     = E.SCH_CD
+                  AND E2.APPLY_DATE = E.APPLY_DATE
+            )
+        ) SCH
+            ON  SCH.CMPNY_CD = WP.CMPNY_CD
+            AND SCH.SITE_CD  = WP.SITE_CD
+            AND SCH.SCH_CD   = WP.WORK_PLAN_CD
+            AND SCH.APPLY_DATE = (
+                SELECT COALESCE(
+                         MAX(CASE WHEN SE.APPLY_DATE <![CDATA[ <= ]]> WP.WORK_YMD THEN SE.APPLY_DATE END)
+                       , MIN(SE.APPLY_DATE)
+                       )
+                FROM (
+                    SELECT M3.CMPNY_CD, M3.SITE_CD, M3.SCH_CD, M3.APPLY_DATE
+                    FROM TB_SCH_MGMT M3
+                    UNION ALL
+                    SELECT H3.CMPNY_CD, H3.SITE_CD, H3.SCH_CD, H3.APPLY_DATE
+                    FROM TB_SCH_MGMT_HIST H3
+                ) SE
+                WHERE SE.CMPNY_CD    = WP.CMPNY_CD
+                  AND SE.SITE_CD     = WP.SITE_CD
+                  AND SE.SCH_CD      = WP.WORK_PLAN_CD
+            )
+
+        ORDER BY U.USER_CD, A.WORK_YMD, A.WORK_SEQ
+    </select>
+
+
+    <!-- 4) 사용자별 COMPLETED 초과근무 분 합(해당 주). -->
+    <select id="selectWeeklyOvertimeSummary" parameterType="com.prafta.web.attd.attd15.application.query.Weekly52hListsQuery" resultType="com.prafta.web.attd.attd15.result.OvertimeSummaryResult">
+    /* Attd15Mapper.selectWeeklyOvertimeSummary */
+        WITH RECURSIVE
+        node_tree AS (
+            SELECT
+                  N.CMPNY_CD
+                , N.SITE_CD
+                , N.NODE_CD
+                , N.NODE_NM
+            FROM TB_SITE_NODE N
+            WHERE N.CMPNY_CD = #{gvCmpnyCd}
+              AND N.SITE_CD  = #{siteCd}
+            <if test="nodeCd != null and nodeCd != ''">
+              AND N.NODE_CD  = #{nodeCd}
+            </if>
+            <if test="nodeCd == null or nodeCd == ''">
+              AND N.PARENT_NODE_CD IS NULL
+            </if>
+
+            <if test='"Y".equals(incSubNodeYn) or nodeCd == null or nodeCd == ""'>
+            UNION ALL
+
+            SELECT
+                  C.CMPNY_CD
+                , C.SITE_CD
+                , C.NODE_CD
+                , C.NODE_NM
+            FROM TB_SITE_NODE C
+            INNER JOIN node_tree P
+                ON  C.CMPNY_CD       = P.CMPNY_CD
+                AND C.SITE_CD        = P.SITE_CD
+                AND C.PARENT_NODE_CD = P.NODE_CD
+            </if>
+        ),
+
+        target_user AS (
+            SELECT
+                  U.CMPNY_CD
+                , U.SITE_CD
+                , U.USER_CD
+            FROM TB_USER U
+            INNER JOIN node_tree NT
+                ON  U.CMPNY_CD = NT.CMPNY_CD
+                AND U.SITE_CD  = NT.SITE_CD
+                AND U.NODE_CD  = NT.NODE_CD
+            WHERE U.CMPNY_CD        = #{gvCmpnyCd}
+              AND U.SITE_CD         = #{siteCd}
+              AND U.USE_YN          = 'Y'
+              AND U.WITHDRAWAL_DATE IS NULL
+              AND (U.EMPLOYMENT_TYPE IS NULL OR U.EMPLOYMENT_TYPE <![CDATA[ <> ]]> 'DAILY')
+            <if test="userNm != null and userNm != ''">
+              AND U.USER_NM LIKE CONCAT('%', #{userNm}, '%')
+            </if>
+        )
+
+        SELECT
+              O.USER_CD                       AS userCd
+            , IFNULL(SUM(O.WORK_MINUTES), 0)  AS otMinutes
+        FROM TB_USER_OVERTIME_MGMT O
+        INNER JOIN target_user U
+            ON  O.CMPNY_CD = U.CMPNY_CD
+            AND O.SITE_CD  = U.SITE_CD
+            AND O.USER_CD  = U.USER_CD
+        WHERE O.CMPNY_CD  = #{gvCmpnyCd}
+          AND O.SITE_CD   = #{siteCd}
+          AND O.WORK_YMD  BETWEEN #{weekStartYmd} AND #{weekEndYmd}
+          AND O.DEL_YN    = 'N'
+          AND O.OT_STATUS = 'COMPLETED'
+        GROUP BY O.USER_CD
+    </select>
+
+</mapper>
