@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<configuration>
+    <include resource="org/springframework/boot/logging/logback/defaults.xml"/>
+    <include resource="org/springframework/boot/logging/logback/console-appender.xml"/>
+
+    <!--
+        prod 프로필에서만 FILE 어펜더를 추가한다. Spring Boot 기본 file-appender.xml 은
+        SizeAndTimeBasedRollingPolicy 가 고정이라 파일명에 %i(순번) 토큰을 강제하는데,
+        하루 1파일(prafta-yyyyMMdd.log.gz) 네이밍을 유지하려고 TimeBasedRollingPolicy 를
+        직접 지정했다. maxHistory 를 지정하지 않아 아카이브는 자동 삭제되지 않는다.
+    -->
+    <springProfile name="prod">
+        <springProperty scope="context" name="LOG_FILE_DIR" source="log.file.dir"/>
+
+        <appender name="FILE" class="ch.qos.logback.core.rolling.RollingFileAppender">
+            <file>${LOG_FILE_DIR}/prafta.log</file>
+            <encoder>
+                <pattern>${FILE_LOG_PATTERN}</pattern>
+                <charset>${FILE_LOG_CHARSET}</charset>
+            </encoder>
+            <rollingPolicy class="ch.qos.logback.core.rolling.TimeBasedRollingPolicy">
+                <fileNamePattern>${LOG_FILE_DIR}/archive/prafta-%d{yyyyMMdd}.log.gz</fileNamePattern>
+            </rollingPolicy>
+        </appender>
+
+        <root level="INFO">
+            <appender-ref ref="CONSOLE"/>
+            <appender-ref ref="FILE"/>
+        </root>
+    </springProfile>
+
+    <springProfile name="!prod">
+        <root level="INFO">
+            <appender-ref ref="CONSOLE"/>
+        </root>
+    </springProfile>
+</configuration>
