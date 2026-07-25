@@ -160,7 +160,7 @@
            아래 서브쿼리와 매칭되지 않아 제외됨. Attd11Mapper.selectAbsentDayCount 의 "모수" EXISTS
            서브쿼리와 동일한 필터 의도를 INNER JOIN 매칭 실패로 달성). 근무일(WP.WORK_YMD) 기준
            유효 스케줄(effective-dating): TB_SCH_MGMT(현재본) + TB_SCH_MGMT_HIST(전 버전) UNION 후
-           APPLY_DATE &lt;= WORK_YMD 인 가장 최근 버전(없으면 MIN 폴백). Attd11Mapper 동일 서브쿼리. -->
+           APPLY_DATE &lt;= WORK_YMD 인 가장 최근 버전(없으면 MIN 폴백). Attd11Mapper 동일 서브쿼리. */
         INNER JOIN (
             SELECT
                   E.CMPNY_CD
