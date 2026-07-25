@@ -8,6 +8,10 @@ import com.prafta.app.tbm.admin.application.param.AdminSessionUpdateParam;
  *
  * <p>상태/비밀번호/개설시각은 서비스가 saveMode에 따라 결정해 채운다(서버 권위).
  * CONTENT_FORMAT_CD 는 기존 기본값(RICH_HTML)을 유지하여 web 표시 호환을 보장한다(T5).
+ *
+ * <p>GPS좌표-암호화-전환-06: 관리자 좌표는 평문(MANAGER_GPS_LAT/LON) 대신 암호문
+ * (managerGpsLatEnc/LonEnc → MANAGER_GPS_LAT_ENC/LON_ENC)만 저장한다. 암호화는 서비스 계층
+ * (GpsCoordCrypto.encryptString — trim/빈값 null + scale 7 정규화)에서 수행해 전달한다.
  */
 public record AdminSessionCommand(
     String sessionCd
@@ -18,8 +22,8 @@ public record AdminSessionCommand(
     , String entryPwd           // OPENED 시에만 값(서버 생성), DRAFT 시 null
     , String exitPwd
     , String managerUserCd
-    , String managerGpsLat
-    , String managerGpsLon
+    , String managerGpsLatEnc   // 개설 위도 암호문(AES-GCM v1.)
+    , String managerGpsLonEnc   // 개설 경도 암호문
     , String gpsVerifyTypeCd
     , Integer gpsVerifyRadiusM
     , Integer eduMinutes        // 교육 인정시간(분, 1~60). NULL 허용
@@ -56,8 +60,12 @@ public record AdminSessionCommand(
         );
     }
 
-    /** 수정(UPDATE) 커맨드. 비밀번호/상태는 변경하지 않는다. */
-    public static AdminSessionCommand forUpdate(AdminSessionUpdateParam param) {
+    /**
+     * 수정(UPDATE) 커맨드. 비밀번호/상태는 변경하지 않는다.
+     * 좌표 암호문(managerGpsLatEnc/LonEnc)은 서비스가 GpsCoordCrypto 로 암호화해 전달한다(-06).
+     */
+    public static AdminSessionCommand forUpdate(
+            AdminSessionUpdateParam param, String managerGpsLatEnc, String managerGpsLonEnc) {
 
         return new AdminSessionCommand(
             param.sessionCd()
@@ -68,8 +76,8 @@ public record AdminSessionCommand(
             , null
             , null
             , param.gvUserCd()
-            , normalize(param.managerGpsLat())
-            , normalize(param.managerGpsLon())
+            , managerGpsLatEnc
+            , managerGpsLonEnc
             , param.gpsVerifyTypeCd()
             , param.gpsVerifyRadiusM()
             , param.eduMinutes()

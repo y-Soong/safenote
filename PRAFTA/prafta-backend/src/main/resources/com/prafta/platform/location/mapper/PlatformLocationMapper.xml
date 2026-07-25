@@ -153,18 +153,22 @@
 
     <!-- 위치정보 UNION ALL 조회: (주) 근태 GPS + (부) TBM 입실.
          LIMIT 1001 로 조회해 서비스에서 1000건 초과(truncated) 판정.
+         GPS좌표-암호화-전환-04: 암호문(ENC)+구 평문 4컬럼 병렬 조회 - fallback 복호화는 서비스 계층.
          ★UNION 양쪽 SELECT 컬럼 순서/타입 완전 일치 필수(record 매핑은 SELECT 순서 의존):
-           GpsInfoResult(srcType, userCd, measureTime, gpsInfoType, lat, lon, accuracy, mockedYn, ipAddr)
+           GpsInfoRow(srcType, userCd, measureTime, gpsInfoType, latEnc, lonEnc, lat, lon, accuracy, mockedYn, ipAddr)
          (주) idx_gps_search(CMPNY_CD, SITE_CD, API_CALL_DATE) 인덱스 정합.
          (부) 세션 조인으로 사업장 필터(TB_TBM_ATTENDANCE 에는 SITE_CD 없음). DEL_YN='N' 필수.
-              TBM 입실은 Mock 여부 미판정 수집 - 'N' 고정(화면 '-' 표시), 유형/정확도/IP 는 NULL. -->
-    <select id="selectGpsList" parameterType="com.prafta.platform.location.application.query.GpsListQuery" resultType="com.prafta.platform.location.application.result.GpsInfoResult">
+              TBM 입실은 Mock 여부 미판정 수집 - 'N' 고정(화면 '-' 표시), 유형/정확도/IP 는 NULL.
+              좌표 존재 술어는 (평문 OR 암호문) - 평문 소거 후에도 TBM 행이 열람에서 누락되지 않게(핵심 회귀 지점). -->
+    <select id="selectGpsList" parameterType="com.prafta.platform.location.application.query.GpsListQuery" resultType="com.prafta.platform.location.application.result.GpsInfoRow">
     /* PlatformLocationMapper.selectGpsList */
     SELECT
         'ATTD'            AS srcType
         , G.USER_CD       AS userCd
         , G.API_CALL_TIME AS measureTime
         , G.GPS_INFO_TYPE AS gpsInfoType
+        , G.LAT_ENC       AS latEnc
+        , G.LON_ENC       AS lonEnc
         , G.LAT           AS lat
         , G.LON           AS lon
         , G.ACCURACY      AS accuracy
@@ -180,6 +184,8 @@
         , A.USER_CD       AS userCd
         , DATE_FORMAT(A.ENTRY_AT, '%H%i%s') AS measureTime
         , NULL            AS gpsInfoType
+        , A.ENTRY_GPS_LAT_ENC AS latEnc
+        , A.ENTRY_GPS_LON_ENC AS lonEnc
         , A.ENTRY_GPS_LAT AS lat
         , A.ENTRY_GPS_LON AS lon
         , NULL            AS accuracy
@@ -192,7 +198,7 @@
     WHERE A.CMPNY_CD = #{cmpnyCd}
       AND S.SITE_CD  = #{siteCd}
       AND A.DEL_YN   = 'N'
-      AND A.ENTRY_GPS_LAT IS NOT NULL
+      AND (A.ENTRY_GPS_LAT IS NOT NULL OR A.ENTRY_GPS_LAT_ENC IS NOT NULL)
       AND DATE_FORMAT(A.ENTRY_AT, '%Y%m%d') = #{date}
     ORDER BY measureTime ASC
     LIMIT 1001

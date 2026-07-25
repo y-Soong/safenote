@@ -12,7 +12,7 @@ import com.prafta.platform.location.application.query.GpsListQuery;
 import com.prafta.platform.location.application.query.OperatorMblQuery;
 import com.prafta.platform.location.application.query.PlatformSmsCertQuery;
 import com.prafta.platform.location.application.query.PlatformSmsVerifiedQuery;
-import com.prafta.platform.location.application.result.GpsInfoResult;
+import com.prafta.platform.location.application.result.GpsInfoRow;
 import com.prafta.platform.location.application.result.LocationSiteResult;
 import com.prafta.platform.location.application.result.OperatorMblResult;
 import com.prafta.platform.location.application.result.PlatformSmsVerifiedResult;
@@ -57,8 +57,11 @@ public interface PlatformLocationMapper {
     /** 대상 회사 사업장 목록(좌표/지오펜스 반경 포함). */
     List<LocationSiteResult> selectLocationSiteList(@Param("cmpnyCd") String cmpnyCd);
 
-    /** 위치정보 UNION 조회(근태 GPS + TBM 입실, LIMIT 1001 — 초과 절단 판정용). */
-    List<GpsInfoResult> selectGpsList(GpsListQuery query);
+    /**
+     * 위치정보 UNION 조회(근태 GPS + TBM 입실, LIMIT 1001 — 초과 절단 판정용).
+     * GPS좌표-암호화-전환-04: 암호문+평문 병렬 행 반환(fallback 복호화는 서비스 계층).
+     */
+    List<GpsInfoRow> selectGpsList(GpsListQuery query);
 
     // ===== 열람 로그(append-only — UPDATE/DELETE statement 금지) =====
 

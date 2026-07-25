@@ -170,8 +170,11 @@
 		, A.EXIT_PWD			AS exitPwd
 		, A.MANAGER_USER_CD		AS managerUserCd
 		, FNC_CMM_INFO_SRCH(A.CMPNY_CD, 'USER_NM', A.MANAGER_USER_CD, NULL)	AS managerUserNm
+		<!-- GPS좌표-암호화-전환-06: 암호문+구 평문 병렬 조회(fallback 복호화는 서비스). record 컬럼 순서 유지 -->
 		, A.MANAGER_GPS_LAT		AS managerGpsLat
 		, A.MANAGER_GPS_LON		AS managerGpsLon
+		, A.MANAGER_GPS_LAT_ENC	AS managerGpsLatEnc
+		, A.MANAGER_GPS_LON_ENC	AS managerGpsLonEnc
 		, A.GPS_VERIFY_TYPE_CD	AS gpsVerifyTypeCd
 		, A.GPS_VERIFY_RADIUS_M	AS gpsVerifyRadiusM
 		, A.EDU_MINUTES			AS eduMinutes
@@ -335,8 +338,9 @@
 		, ENTRY_PWD
 		, EXIT_PWD
 		, MANAGER_USER_CD
-		, MANAGER_GPS_LAT
-		, MANAGER_GPS_LON
+		<!-- GPS좌표-암호화-전환-06: 좌표는 암호문 컬럼에만 저장(평문 MANAGER_GPS_LAT/LON 기록 중단) -->
+		, MANAGER_GPS_LAT_ENC
+		, MANAGER_GPS_LON_ENC
 		, GPS_VERIFY_TYPE_CD
 		, GPS_VERIFY_RADIUS_M
 		, EDU_MINUTES
@@ -359,8 +363,8 @@
 		, #{entryPwd}
 		, #{exitPwd}
 		, #{managerUserCd}
-		, #{managerGpsLat}
-		, #{managerGpsLon}
+		, #{managerGpsLatEnc}
+		, #{managerGpsLonEnc}
 		, IFNULL(#{gpsVerifyTypeCd}, 'AUTO')
 		, IFNULL(#{gpsVerifyRadiusM}, 100)
 		, #{eduMinutes}
@@ -387,8 +391,11 @@
 		, GPS_VERIFY_RADIUS_M	= IFNULL(#{gpsVerifyRadiusM}, GPS_VERIFY_RADIUS_M)
 		/* 교육 인정시간(분). 미전송(NULL) 시 기존값 보존 */
 		, EDU_MINUTES			= IFNULL(#{eduMinutes}, EDU_MINUTES)
-		, MANAGER_GPS_LAT		= #{managerGpsLat}
-		, MANAGER_GPS_LON		= #{managerGpsLon}
+		/* GPS좌표-암호화-전환-06: 암호문만 저장 + 구 평문은 명시 NULL(stale 평문 잔존 방지 — fallback 은 ENC 우선) */
+		, MANAGER_GPS_LAT_ENC	= #{managerGpsLatEnc}
+		, MANAGER_GPS_LON_ENC	= #{managerGpsLonEnc}
+		, MANAGER_GPS_LAT		= NULL
+		, MANAGER_GPS_LON		= NULL
 		, GPS_MANUAL_CONFIRM_YN	= #{gpsManualConfirmYn}
 		, UPDATE_NO				= #{gvUserCd}
 		, UPDATE_DATE			= NOW()
@@ -526,8 +533,11 @@
 	SET
 		STATUS_CD			= 'OPENED'
 		, ENTRY_PWD			= #{entryPwd}
-		, MANAGER_GPS_LAT	= #{managerGpsLat}
-		, MANAGER_GPS_LON	= #{managerGpsLon}
+		/* GPS좌표-암호화-전환-06: 암호문만 저장 + 구 평문은 명시 NULL(stale 평문 잔존 방지) */
+		, MANAGER_GPS_LAT_ENC	= #{managerGpsLatEnc}
+		, MANAGER_GPS_LON_ENC	= #{managerGpsLonEnc}
+		, MANAGER_GPS_LAT	= NULL
+		, MANAGER_GPS_LON	= NULL
 		, OPENED_AT			= IFNULL(OPENED_AT, NOW())
 		, PREP_START_AT		= NOW()
 		, UPDATE_NO			= #{gvUserCd}
@@ -1122,6 +1132,8 @@
 	<!--
 		관리자 직접 입실 INSERT. ENTRY_TYPE_CD 는 호출부 분기(R-B 정규직=MANAGER_DIRECT / R-D 일용직 QR=MANAGER_QR_SCAN, SYS051).
 		ENTRY_GPS_LAT/LON 은 세션의 MANAGER_GPS_LAT/LON 을 감사용으로 복사(INSERT...SELECT) — body 에 좌표 없음, D-4.
+		GPS좌표-암호화-전환-07: 평문·암호문 4컬럼 쌍을 그대로 값 복사(재암호화 아님 — GCM nonce 재사용 이슈 없음).
+		전환기 혼재 대응: 백필 전 구 세션(평문만)은 평문이, 신 세션(암호문만)은 암호문이 복사되어 행 단위 fallback 정합 유지.
 		ENTRY_DISTANCE_M=NULL(거리검증 안 함). UK(CMPNY,SESSION,USER_TYPE,USER) 충돌 시 DuplicateKeyException(멱등 안내).
 		SELECT 가드 STATUS_CD='OPENED' — loadGuard~INSERT 사이 자동/동시 전이로 OPENED 이탈 시 0건(TOCTOU 차단, D-2 우회 방지).
 	-->
@@ -1138,6 +1150,8 @@
 		, ENTRY_AT
 		, ENTRY_GPS_LAT
 		, ENTRY_GPS_LON
+		, ENTRY_GPS_LAT_ENC
+		, ENTRY_GPS_LON_ENC
 		, ENTRY_DISTANCE_M
 		, DEL_YN
 		, INSERT_NO
@@ -1159,6 +1173,8 @@
 		, NOW()
 		, S.MANAGER_GPS_LAT
 		, S.MANAGER_GPS_LON
+		, S.MANAGER_GPS_LAT_ENC
+		, S.MANAGER_GPS_LON_ENC
 		, NULL
 		, 'N'
 		, #{managerUserCd}

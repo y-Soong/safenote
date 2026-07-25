@@ -76,8 +76,12 @@
         , STATUS_CD             AS statusCd
         , ENTRY_PWD             AS entryPwd
         , EXIT_PWD              AS exitPwd
+        <!-- GPS좌표-암호화-전환-06: 암호문+구 평문 병렬 조회 - 입실 지오펜스 판정은 서비스에서
+             fallback 복호화(ENC 우선) 후 기존 haversine 계산에 사용(판정 로직 무변경) -->
         , MANAGER_GPS_LAT       AS managerGpsLat
         , MANAGER_GPS_LON       AS managerGpsLon
+        , MANAGER_GPS_LAT_ENC   AS managerGpsLatEnc
+        , MANAGER_GPS_LON_ENC   AS managerGpsLonEnc
         , GPS_VERIFY_TYPE_CD    AS gpsVerifyTypeCd
         , GPS_VERIFY_RADIUS_M   AS gpsVerifyRadiusM
     FROM TB_TBM_SESSION
@@ -107,7 +111,9 @@
       AND DEL_YN = 'N'
     </select>
 
-    <!-- 출결 INSERT(입실). ATTENDANCE_CD = 'A'+YYYYMMDD+SEQ 채번. -->
+    <!-- 출결 INSERT(입실). ATTENDANCE_CD = 'A'+YYYYMMDD+SEQ 채번.
+         GPS좌표-암호화-전환-07: 좌표는 암호문 컬럼(ENTRY_GPS_LAT_ENC/LON_ENC)에만 저장(평문 기록 중단).
+         좌표 결측(측위 실패)이면 암호문도 NULL(기존 동작 미러). ENTRY_DISTANCE_M 은 정수 m - 대상 외. -->
     <insert id="insertAttendance"
             parameterType="com.prafta.app.tbm.tbm01.application.command.TbmEnterCommand">
     /* AppTbm01Mapper.insertAttendance */
@@ -119,8 +125,8 @@
         , USER_CD
         , ENTRY_TYPE_CD
         , ENTRY_AT
-        , ENTRY_GPS_LAT
-        , ENTRY_GPS_LON
+        , ENTRY_GPS_LAT_ENC
+        , ENTRY_GPS_LON_ENC
         , ENTRY_DISTANCE_M
         , DEL_YN
         , INSERT_NO
@@ -138,8 +144,8 @@
         , #{userCd}
         , #{entryTypeCd}
         , NOW()
-        , #{lat}
-        , #{lon}
+        , #{latEnc}
+        , #{lonEnc}
         , #{distanceM}
         , 'N'
         , #{insertNo}

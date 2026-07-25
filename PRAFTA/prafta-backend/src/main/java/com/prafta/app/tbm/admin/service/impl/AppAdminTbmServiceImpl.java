@@ -118,6 +118,7 @@ import com.prafta.common.error.common.CommonErrorCode;
 import com.prafta.common.error.tbm.TbmErrorCode;
 import com.prafta.common.exception.ApiException;
 import com.prafta.common.security.FileUrlSigner;
+import com.prafta.common.security.crypto.GpsCoordCrypto;
 import com.prafta.common.util.AuthRoleUtils;
 import com.prafta.common.util.NumericPwdGenerator;
 import com.prafta.app.tbm.admin.dto.response.AdminEduMaterialItemResponse;
@@ -149,6 +150,9 @@ public class AppAdminTbmServiceImpl implements AppAdminTbmService {
     private final TbmEventNotiService tbmEventNotiService;
     /** PRAFTA-SUBCON-T5: 연동 회사 지정 공통 검증 지점(입실 범위 게이트/소속 relabel). */
     private final TbmSessionShareService tbmSessionShareService;
+
+    /** GPS좌표-암호화-전환-06: 관리자 좌표 AES-GCM 암복호화(쓰기 암호화 + 상세 fallback 복호화). */
+    private final GpsCoordCrypto gpsCoordCrypto;
 
     private static final int PWD_LENGTH = 6;
     /** prafta-051 §2: 교육준비→교육시작 자동전이 기본 경과시간(분). properties 로 오버라이드 가능(#DF-3). */
@@ -320,8 +324,10 @@ public class AppAdminTbmServiceImpl implements AppAdminTbmService {
                 .pwdVisible(pwdVisible)
                 .managerUserCd(session.managerUserCd())
                 .managerUserNm(session.managerUserNm())
-                .managerGpsLat(session.managerGpsLat())
-                .managerGpsLon(session.managerGpsLon())
+                // GPS좌표-암호화-전환-06: fallback 복호화(ENC 우선, NULL 이면 구 평문) — 복호화 평문은
+                // scale 7 문자열("37.5010000")이라 기존 decimal→String 응답 포맷과 동일(prefill 라운드트립 호환).
+                .managerGpsLat(gpsCoordCrypto.resolveToString(session.managerGpsLatEnc(), session.managerGpsLat()))
+                .managerGpsLon(gpsCoordCrypto.resolveToString(session.managerGpsLonEnc(), session.managerGpsLon()))
                 .gpsVerifyTypeCd(session.gpsVerifyTypeCd())
                 .gpsVerifyRadiusM(session.gpsVerifyRadiusM())
                 .eduMinutes(session.eduMinutes())
@@ -461,7 +467,9 @@ public class AppAdminTbmServiceImpl implements AppAdminTbmService {
                     param.gpsVerifyRadiusM(), param.gpsManualConfirmYn());
         }
 
-        appAdminTbmMapper.updateSession(AdminSessionCommand.forUpdate(param));
+        // GPS좌표-암호화-전환-06: 좌표는 검증(validateGps — 암호화 전 원본 문자열 기준) 후 암호화해 저장.
+        appAdminTbmMapper.updateSession(AdminSessionCommand.forUpdate(param,
+                encryptGpsOrReject(param.managerGpsLat()), encryptGpsOrReject(param.managerGpsLon())));
 
         appAdminTbmMapper.deleteSessionContents(param.gvCmpnyCd(), param.sessionCd());
         insertContents(param.contents(), param.sessionCd(), param.gvCmpnyCd(), param.gvUserCd());
@@ -753,8 +761,10 @@ public class AppAdminTbmServiceImpl implements AppAdminTbmService {
         // 입실비번 발급(6자리). 종료비번은 미발급(null 유지).
         String entryPwd = NumericPwdGenerator.generate(PWD_LENGTH);
 
+        // GPS좌표-암호화-전환-06: 좌표는 필수검증(원본 문자열 기준) 후 암호화해 저장.
         int affected = appAdminTbmMapper.prepareSession(AdminSessionPrepareCommand.of(
-                param.sessionCd(), entryPwd, param.managerGpsLat(), param.managerGpsLon(),
+                param.sessionCd(), entryPwd,
+                encryptGpsOrReject(param.managerGpsLat()), encryptGpsOrReject(param.managerGpsLon()),
                 param.gvCmpnyCd(), param.gvUserCd()));
         if (affected == 0) {
             // 동시 전이/상태 변경으로 DRAFT 가 아님.
@@ -1934,6 +1944,20 @@ public class AppAdminTbmServiceImpl implements AppAdminTbmService {
 
         if (radiusM != null && (radiusM < GPS_RADIUS_MIN || radiusM > GPS_RADIUS_MAX)) {
             throw new ApiException(TbmErrorCode.TBM_400_013);
+        }
+    }
+
+    /**
+     * GPS좌표-암호화-전환-06: 관리자 좌표 문자열 → scale 7 정규화 → AES-GCM 암호문.
+     * 공백/빈값은 null(기존 normalize 트림 규칙 미러). 숫자 파싱 실패는 기존 GPS 오류 체계(TBM_400_012)로
+     * 거부한다(현재도 DB decimal 변환 실패로 거부되던 입력 — 오류 지점만 앞당김). 좌표값 로그 출력 금지.
+     */
+    private String encryptGpsOrReject(String raw) {
+        try {
+            return gpsCoordCrypto.encryptString(raw);
+        } catch (NumberFormatException e) {
+            log.warn("TBM 관리자 좌표 숫자 형식 오류(값 미출력)");
+            throw new ApiException(TbmErrorCode.TBM_400_012);
         }
     }
 

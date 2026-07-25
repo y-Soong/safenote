@@ -60,6 +60,7 @@ import com.prafta.common.error.common.CommonErrorCode;
 import com.prafta.common.error.tbm.TbmErrorCode;
 import com.prafta.common.exception.ApiException;
 import com.prafta.common.security.FileUrlSigner;
+import com.prafta.common.security.crypto.GpsCoordCrypto;
 
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -113,6 +114,9 @@ public class AppTbm01ServiceImpl implements AppTbm01Service {
 
     /** PRAFTA-SUBCON-T5: 연동 회사 지정 공통 검증 지점(세션 접근/입실 범위/개최사 라벨). */
     private final TbmSessionShareService tbmSessionShareService;
+
+    /** GPS좌표-암호화-전환-06/-07: 좌표 AES-GCM 암복호화(입실 저장 암호화 + 세션 좌표 fallback 복호화). */
+    private final GpsCoordCrypto gpsCoordCrypto;
 
     // -------------------------------------------------------------------------
     // C3: 입실 컨텍스트
@@ -196,12 +200,14 @@ public class AppTbm01ServiceImpl implements AppTbm01Service {
             return idempotentEnterResponse(existing);
         }
 
-        // D5: GPS 거리 계산/검증.
+        // D5: GPS 거리 계산/검증 — 암호화 전 원본 Double 좌표로 기존 위치에서 수행(판정 무변경).
         Integer distanceM = resolveDistanceAndVerify(session, param.lat(), param.lon());
 
         // 출결 INSERT (UNIQUE 충돌 = 동시성 멱등).
+        // GPS좌표-암호화-전환-07: 좌표는 암호문만 저장(BigDecimal.valueOf 경유 정규화 — 좌표 결측이면 null).
         TbmEnterCommand command = TbmEnterCommand.of(
-                cmpnyCd, sessionCd, userCd, param.lat(), param.lon(), distanceM);
+                cmpnyCd, sessionCd, userCd,
+                gpsCoordCrypto.encrypt(param.lat()), gpsCoordCrypto.encrypt(param.lon()), distanceM);
         try {
             appTbm01Mapper.insertAttendance(command);
         } catch (DuplicateKeyException dke) {
@@ -715,6 +721,9 @@ public class AppTbm01ServiceImpl implements AppTbm01Service {
     /**
      * D5: 거리 계산 및 검증.
      * <p>AUTO: 좌표/세션좌표로 거리 산출, 반경 초과 시 차단. MANUAL/DISABLED: 거리만 기록(차단 안 함).
+     * <p>GPS좌표-암호화-전환-06: 세션 저장 좌표는 fallback 복호화(ENC 우선, NULL 이면 구 평문)로
+     * 확정한 뒤 기존 haversine 계산에 사용한다 — 판정 로직/결과는 전환 전후 동일.
+     * 복호화 좌표값은 로그에 출력하지 않는다(D5).
      * @return 거리(m). 계산 불가(좌표/세션좌표 부재)면 null.
      */
     private Integer resolveDistanceAndVerify(TbmSessionResult session, Double lat, Double lon) {
@@ -726,13 +735,19 @@ public class AppTbm01ServiceImpl implements AppTbm01Service {
             return null;
         }
 
+        // 세션 좌표 fallback resolve(-06): 암호문이 있으면 복호화값, 없으면 구 평문(백필 전 행).
+        java.math.BigDecimal sessionLat =
+                gpsCoordCrypto.resolveToBigDecimal(session.getManagerGpsLatEnc(), session.getManagerGpsLat());
+        java.math.BigDecimal sessionLon =
+                gpsCoordCrypto.resolveToBigDecimal(session.getManagerGpsLonEnc(), session.getManagerGpsLon());
+
         Integer distanceM = null;
         if (lat != null && lon != null
-                && session.getManagerGpsLat() != null && session.getManagerGpsLon() != null) {
+                && sessionLat != null && sessionLon != null) {
             double d = haversineMeters(
                     lat, lon,
-                    session.getManagerGpsLat().doubleValue(),
-                    session.getManagerGpsLon().doubleValue());
+                    sessionLat.doubleValue(),
+                    sessionLon.doubleValue());
             distanceM = (int) Math.round(d);
         }
 

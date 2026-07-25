@@ -336,10 +336,14 @@
         ORDER BY workYmd, userCd, rowType, workSeq
     </select>
 
-    <select id="selectAttdGpsTrail" parameterType="com.prafta.web.attd.attd08.application.query.AttdGpsTrailQuery" resultType="com.prafta.web.attd.attd08.result.AttdGpsTrailResult">
+    <!-- GPS좌표-암호화-전환-03: 암호문(ENC)+구 평문 4컬럼을 함께 내려 서비스에서 fallback 복호화한다
+         (매퍼 복호화 금지). ⚠️ record 매핑은 SELECT 컬럼 순서 의존 — AttdGpsTrailRow 순서 유지. -->
+    <select id="selectAttdGpsTrail" parameterType="com.prafta.web.attd.attd08.application.query.AttdGpsTrailQuery" resultType="com.prafta.web.attd.attd08.result.AttdGpsTrailRow">
     /* Attd08Mapper.selectAttdGpsTrail */
         SELECT
               G.GPS_ID         AS gpsId
+            , G.LAT_ENC        AS latEnc
+            , G.LON_ENC        AS lonEnc
             , G.LAT            AS lat
             , G.LON            AS lon
             , G.ACCURACY       AS accuracy

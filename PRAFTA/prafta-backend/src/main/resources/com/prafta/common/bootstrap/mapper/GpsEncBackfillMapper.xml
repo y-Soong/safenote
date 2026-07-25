@@ -1,0 +1,88 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.prafta.common.bootstrap.mapper.GpsEncBackfillMapper">
+
+    <!-- ============================================================
+         GPS좌표-암호화-전환-05: GPS 좌표 암호문 백필(일회성 러너 전용)
+         - 대상: *_ENC IS NULL AND 평문 쌍 존재(멱등 - 재실행 시 0건)
+         - UPDATE 는 평문 컬럼 무변경(소거는 verify-and-purge SQL 수동 실행)
+         - record 매핑은 SELECT 컬럼 순서 의존: GpsEncBackfillRow(cmpnyCd, rowKey, lat, lon)
+         - 운영 30행(15+7+8) 소규모 - LIMIT/청크 불필요(사용자 확정)
+         ============================================================ -->
+
+    <!-- (1) 근태 출퇴근 GPS. 키=(CMPNY_CD, GPS_ID) -->
+    <select id="selectAttdGpsTargets" resultType="com.prafta.common.bootstrap.result.GpsEncBackfillRow">
+    /* GpsEncBackfillMapper.selectAttdGpsTargets */
+    SELECT
+          G.CMPNY_CD AS cmpnyCd
+        , G.GPS_ID   AS rowKey
+        , G.LAT      AS lat
+        , G.LON      AS lon
+    FROM TB_USER_ATTD_GPS G
+    WHERE G.LAT_ENC IS NULL
+      AND G.LAT IS NOT NULL
+      AND G.LON IS NOT NULL
+    </select>
+
+    <update id="updateAttdGpsEnc">
+    /* GpsEncBackfillMapper.updateAttdGpsEnc */
+    UPDATE TB_USER_ATTD_GPS
+    SET
+          LAT_ENC = #{latEnc}
+        , LON_ENC = #{lonEnc}
+    WHERE CMPNY_CD = #{cmpnyCd}
+      AND GPS_ID   = #{rowKey}
+      AND LAT_ENC IS NULL
+    </update>
+
+    <!-- (2) TBM 입실 좌표. 키=(CMPNY_CD, ATTENDANCE_CD) -->
+    <select id="selectTbmAttendanceTargets" resultType="com.prafta.common.bootstrap.result.GpsEncBackfillRow">
+    /* GpsEncBackfillMapper.selectTbmAttendanceTargets */
+    SELECT
+          A.CMPNY_CD      AS cmpnyCd
+        , A.ATTENDANCE_CD AS rowKey
+        , A.ENTRY_GPS_LAT AS lat
+        , A.ENTRY_GPS_LON AS lon
+    FROM TB_TBM_ATTENDANCE A
+    WHERE A.ENTRY_GPS_LAT_ENC IS NULL
+      AND A.ENTRY_GPS_LAT IS NOT NULL
+      AND A.ENTRY_GPS_LON IS NOT NULL
+    </select>
+
+    <update id="updateTbmAttendanceEnc">
+    /* GpsEncBackfillMapper.updateTbmAttendanceEnc */
+    UPDATE TB_TBM_ATTENDANCE
+    SET
+          ENTRY_GPS_LAT_ENC = #{latEnc}
+        , ENTRY_GPS_LON_ENC = #{lonEnc}
+    WHERE CMPNY_CD      = #{cmpnyCd}
+      AND ATTENDANCE_CD = #{rowKey}
+      AND ENTRY_GPS_LAT_ENC IS NULL
+    </update>
+
+    <!-- (3) TBM 세션 관리자 좌표. 키=(CMPNY_CD, SESSION_CD) -->
+    <select id="selectTbmSessionTargets" resultType="com.prafta.common.bootstrap.result.GpsEncBackfillRow">
+    /* GpsEncBackfillMapper.selectTbmSessionTargets */
+    SELECT
+          S.CMPNY_CD        AS cmpnyCd
+        , S.SESSION_CD      AS rowKey
+        , S.MANAGER_GPS_LAT AS lat
+        , S.MANAGER_GPS_LON AS lon
+    FROM TB_TBM_SESSION S
+    WHERE S.MANAGER_GPS_LAT_ENC IS NULL
+      AND S.MANAGER_GPS_LAT IS NOT NULL
+      AND S.MANAGER_GPS_LON IS NOT NULL
+    </select>
+
+    <update id="updateTbmSessionEnc">
+    /* GpsEncBackfillMapper.updateTbmSessionEnc */
+    UPDATE TB_TBM_SESSION
+    SET
+          MANAGER_GPS_LAT_ENC = #{latEnc}
+        , MANAGER_GPS_LON_ENC = #{lonEnc}
+    WHERE CMPNY_CD   = #{cmpnyCd}
+      AND SESSION_CD = #{rowKey}
+      AND MANAGER_GPS_LAT_ENC IS NULL
+    </update>
+
+</mapper>

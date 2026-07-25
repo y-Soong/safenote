@@ -1,6 +1,7 @@
 package com.prafta.platform.location.service.impl;
 
 import java.security.SecureRandom;
+import java.util.ArrayList;
 import java.util.List;
 
 import org.springframework.stereotype.Service;
@@ -8,6 +9,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import com.prafta.common.error.platform.PlatformErrorCode;
 import com.prafta.common.exception.ApiException;
+import com.prafta.common.security.crypto.GpsCoordCrypto;
 import com.prafta.platform.location.application.command.LocationAccessLogCommand;
 import com.prafta.platform.location.application.command.PlatformSmsAuthInsertCommand;
 import com.prafta.platform.location.application.command.PlatformSmsVerifyCommand;
@@ -20,6 +22,7 @@ import com.prafta.platform.location.application.query.OperatorMblQuery;
 import com.prafta.platform.location.application.query.PlatformSmsCertQuery;
 import com.prafta.platform.location.application.query.PlatformSmsVerifiedQuery;
 import com.prafta.platform.location.application.result.GpsInfoResult;
+import com.prafta.platform.location.application.result.GpsInfoRow;
 import com.prafta.platform.location.application.result.LocationSiteResult;
 import com.prafta.platform.location.application.result.OperatorMblResult;
 import com.prafta.platform.location.application.result.PlatformSmsVerifiedResult;
@@ -38,6 +41,9 @@ import lombok.extern.slf4j.Slf4j;
 public class PlatformLocationServiceImpl implements PlatformLocationService {
 
     private final PlatformLocationMapper platformLocationMapper;
+
+    /** GPS좌표-암호화-전환-04: 좌표 fallback 복호화(ENC 우선, NULL 이면 구 평문). */
+    private final GpsCoordCrypto gpsCoordCrypto;
 
     /** 위치정보 응답 최대 건수(초과 시 절단 + truncated=true). */
     private static final int GPS_LIST_MAX = 1000;
@@ -146,11 +152,28 @@ public class PlatformLocationServiceImpl implements PlatformLocationService {
         }
 
         // 2) 위치정보 UNION 조회(근태 GPS + TBM 입실) — LIMIT 1001 로 초과 여부 판정.
-        List<GpsInfoResult> gpsList = platformLocationMapper.selectGpsList(GpsListQuery.from(param));
+        List<GpsInfoRow> gpsRows = platformLocationMapper.selectGpsList(GpsListQuery.from(param));
 
-        boolean truncated = gpsList.size() > GPS_LIST_MAX;
+        boolean truncated = gpsRows.size() > GPS_LIST_MAX;
         if (truncated) {
-            gpsList = gpsList.subList(0, GPS_LIST_MAX);
+            gpsRows = gpsRows.subList(0, GPS_LIST_MAX);
+        }
+
+        // GPS좌표-암호화-전환-04: 양측(ATTD/TBM) 공통 행 단위 fallback 복호화(ENC 우선, NULL 이면 구 평문)
+        // 후 기존 GpsInfoResult 로 재조립 — 응답 계약 불변(Platform_04.vue 무수정). 좌표값 로그 출력 금지.
+        List<GpsInfoResult> gpsList = new ArrayList<>();
+        for (GpsInfoRow row : gpsRows) {
+            gpsList.add(new GpsInfoResult(
+                    row.srcType()
+                    , row.userCd()
+                    , row.measureTime()
+                    , row.gpsInfoType()
+                    , gpsCoordCrypto.resolveToBigDecimal(row.latEnc(), row.lat())
+                    , gpsCoordCrypto.resolveToBigDecimal(row.lonEnc(), row.lon())
+                    , row.accuracy()
+                    , row.mockedYn()
+                    , row.ipAddr()
+            ));
         }
 
         // 3) 열람 로그 INSERT(같은 트랜잭션) — 실패(예외) 시 조회 응답도 실패(확인자료 누락 경로 봉쇄, 공통 §11.3).

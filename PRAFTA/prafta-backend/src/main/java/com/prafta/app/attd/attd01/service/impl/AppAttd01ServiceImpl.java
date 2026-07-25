@@ -58,6 +58,7 @@ import com.prafta.common.cmm.leave.service.LeaveRefusalConst;
 import com.prafta.common.cmm.leave.service.LeaveRefusalDetectService;
 import com.prafta.common.error.attd.AttdErrorCode;
 import com.prafta.common.exception.ApiException;
+import com.prafta.common.security.crypto.GpsCoordCrypto;
 import com.prafta.common.util.AttdOverlapUtils;
 import com.prafta.common.util.DateTimeUtils;
 
@@ -127,6 +128,9 @@ public class AppAttd01ServiceImpl implements AppAttd01Service {
 
     /** prafta-app-022-6: 퇴근 시 진행중 TBM 자동 중도퇴실(attd01 → tbm01 단방향, best-effort). */
     private final AppTbm01Service appTbm01Service;
+
+    /** GPS좌표-암호화-전환-02: 좌표 AES-GCM 암호화(저장 전용 — 지오펜스 판정은 요청 평문 좌표 그대로 사용). */
+    private final GpsCoordCrypto gpsCoordCrypto;
 
     // ====================================================================
     // 1) 오늘 / 일자 상세 (동일 응답 구조)
@@ -1004,9 +1008,10 @@ public class AppAttd01ServiceImpl implements AppAttd01Service {
         appAttd01Mapper.deleteCheckOutGps(cmpnyCd, open.attdId());
         if (isOffsite) {
             String gpsId = appAttd01Mapper.selectGpsId(cmpnyCd);
+            // GPS좌표-암호화-전환-02: 좌표는 암호문만 저장(평문 LAT/LON 기록 중단). 좌표/암호문 로그 금지.
             CheckOutGpsCommand gpsCmd = new CheckOutGpsCommand(
                     gpsId, cmpnyCd, open.attdId(), open.siteCd(), userCd, GPS_TYPE_CHECK_OUT,
-                    param.lat(), param.lon(), param.accuracy(),
+                    gpsCoordCrypto.encrypt(param.lat()), gpsCoordCrypto.encrypt(param.lon()), param.accuracy(),
                     today, apiCallTime, param.isMocked(), param.ipAddr(), param.offsiteReason(), userCd);
             appAttd01Mapper.insertCheckOutGps(gpsCmd);
         }
@@ -1322,9 +1327,10 @@ public class AppAttd01ServiceImpl implements AppAttd01Service {
         // GPS 행은 "지오펜스 밖(외근)"일 때만 INSERT(GPS_INFO_TYPE='01'). 안/폴백=정상이면 미저장.
         if (isOffsite) {
             String gpsId = appAttd01Mapper.selectGpsId(cmpnyCd);
+            // GPS좌표-암호화-전환-02: 좌표는 암호문만 저장(평문 LAT/LON 기록 중단). 좌표/암호문 로그 금지.
             CheckInGpsCommand gpsCmd = new CheckInGpsCommand(
                     gpsId, cmpnyCd, attdId, siteCd, userCd, GPS_TYPE_CHECK_IN,
-                    param.lat(), param.lon(), param.accuracy(),
+                    gpsCoordCrypto.encrypt(param.lat()), gpsCoordCrypto.encrypt(param.lon()), param.accuracy(),
                     today, apiCallTime, param.isMocked(), param.ipAddr(), param.offsiteReason(), userCd);
             appAttd01Mapper.insertCheckInGps(gpsCmd);
         }

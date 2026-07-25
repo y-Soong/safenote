@@ -7,6 +7,10 @@ import com.prafta.web.tbm.tbm02.application.param.SessionUpdateParam;
  * TB_TBM_SESSION INSERT/UPDATE 커맨드.
  *
  * <p>상태/비밀번호/개설시각은 서비스가 saveMode에 따라 결정해 채운다(서버 권위).
+ *
+ * <p>GPS좌표-암호화-전환-06: 관리자 좌표는 평문(MANAGER_GPS_LAT/LON) 대신 암호문
+ * (managerGpsLatEnc/LonEnc → MANAGER_GPS_LAT_ENC/LON_ENC)만 저장한다. 암호화는 서비스 계층
+ * (GpsCoordCrypto.encryptString — trim/빈값 null + scale 7 정규화)에서 수행해 전달한다.
  */
 public record SessionCommand(
 	String sessionCd
@@ -17,8 +21,8 @@ public record SessionCommand(
 	, String entryPwd			// 개설 시 항상 null. 입실비번은 교육준비(prepare) 전이 시 발급
 	, String exitPwd			// 개설 시 항상 null. 종료비번은 교육종료(complete) 전이 시 발급
 	, String managerUserCd
-	, String managerGpsLat
-	, String managerGpsLon
+	, String managerGpsLatEnc	// 개설 위도 암호문(AES-GCM v1.)
+	, String managerGpsLonEnc	// 개설 경도 암호문
 	, String gpsVerifyTypeCd
 	, Integer gpsVerifyRadiusM
 	, Integer eduMinutes		// 교육 인정시간(분, 1~60). NULL 허용
@@ -33,8 +37,11 @@ public record SessionCommand(
 	 * <p>비밀번호/GPS 좌표 수집은 교육준비(prepare) 전이로 이동했으므로 개설 시점에는
 	 * 비번 null·OPENED_AT 미설정(opened=false)으로 일관 저장한다. 단, GPS 검증 설정값
 	 * (타입/반경/수동확인)은 DRAFT 단계에서 미리 지정 가능하므로 보존한다.
+	 * 좌표 암호문(managerGpsLatEnc/LonEnc)은 서비스가 GpsCoordCrypto 로 암호화해 전달한다(-06).
 	 */
-	public static SessionCommand forSave(SessionSaveParam param, String sessionCd) {
+	public static SessionCommand forSave(
+			SessionSaveParam param, String sessionCd,
+			String managerGpsLatEnc, String managerGpsLonEnc) {
 
 		return new SessionCommand(
 			sessionCd
@@ -45,8 +52,8 @@ public record SessionCommand(
 			, null
 			, null
 			, param.gvUserCd()
-			, normalize(param.managerGpsLat())
-			, normalize(param.managerGpsLon())
+			, managerGpsLatEnc
+			, managerGpsLonEnc
 			, param.gpsVerifyTypeCd()
 			, param.gpsVerifyRadiusM()
 			, param.eduMinutes()
@@ -57,8 +64,12 @@ public record SessionCommand(
 		);
 	}
 
-	/** 수정(UPDATE) 커맨드. 비밀번호/상태는 변경하지 않는다. */
-	public static SessionCommand forUpdate(SessionUpdateParam param) {
+	/**
+	 * 수정(UPDATE) 커맨드. 비밀번호/상태는 변경하지 않는다.
+	 * 좌표 암호문(managerGpsLatEnc/LonEnc)은 서비스가 GpsCoordCrypto 로 암호화해 전달한다(-06).
+	 */
+	public static SessionCommand forUpdate(
+			SessionUpdateParam param, String managerGpsLatEnc, String managerGpsLonEnc) {
 
 		return new SessionCommand(
 			param.sessionCd()
@@ -69,8 +80,8 @@ public record SessionCommand(
 			, null
 			, null
 			, param.gvUserCd()
-			, normalize(param.managerGpsLat())
-			, normalize(param.managerGpsLon())
+			, managerGpsLatEnc
+			, managerGpsLonEnc
 			, param.gpsVerifyTypeCd()
 			, param.gpsVerifyRadiusM()
 			, param.eduMinutes()

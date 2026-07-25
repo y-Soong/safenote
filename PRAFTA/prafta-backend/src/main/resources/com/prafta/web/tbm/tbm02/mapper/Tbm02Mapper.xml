@@ -235,8 +235,11 @@
 		, A.EXIT_PWD			AS exitPwd
 		, A.MANAGER_USER_CD		AS managerUserCd
 		, FNC_CMM_INFO_SRCH(A.CMPNY_CD, 'USER_NM', A.MANAGER_USER_CD, NULL)	AS managerUserNm
+		<!-- GPS좌표-암호화-전환-06: 암호문+구 평문 병렬 조회(fallback 복호화는 서비스). record 컬럼 순서 유지 -->
 		, A.MANAGER_GPS_LAT		AS managerGpsLat
 		, A.MANAGER_GPS_LON		AS managerGpsLon
+		, A.MANAGER_GPS_LAT_ENC	AS managerGpsLatEnc
+		, A.MANAGER_GPS_LON_ENC	AS managerGpsLonEnc
 		, A.GPS_VERIFY_TYPE_CD	AS gpsVerifyTypeCd
 		, A.GPS_VERIFY_RADIUS_M	AS gpsVerifyRadiusM
 		, A.EDU_MINUTES			AS eduMinutes
@@ -421,8 +424,9 @@
 		, ENTRY_PWD
 		, EXIT_PWD
 		, MANAGER_USER_CD
-		, MANAGER_GPS_LAT
-		, MANAGER_GPS_LON
+		<!-- GPS좌표-암호화-전환-06: 좌표는 암호문 컬럼에만 저장(평문 MANAGER_GPS_LAT/LON 기록 중단) -->
+		, MANAGER_GPS_LAT_ENC
+		, MANAGER_GPS_LON_ENC
 		, GPS_VERIFY_TYPE_CD
 		, GPS_VERIFY_RADIUS_M
 		, EDU_MINUTES
@@ -445,8 +449,8 @@
 		, #{entryPwd}
 		, #{exitPwd}
 		, #{managerUserCd}
-		, #{managerGpsLat}
-		, #{managerGpsLon}
+		, #{managerGpsLatEnc}
+		, #{managerGpsLonEnc}
 		, IFNULL(#{gpsVerifyTypeCd}, 'AUTO')
 		, IFNULL(#{gpsVerifyRadiusM}, 100)
 		, #{eduMinutes}
@@ -473,8 +477,11 @@
 		, GPS_VERIFY_RADIUS_M	= IFNULL(#{gpsVerifyRadiusM}, GPS_VERIFY_RADIUS_M)
 		/* 교육 인정시간(분). 미전송(NULL) 시 기존값 보존 */
 		, EDU_MINUTES			= IFNULL(#{eduMinutes}, EDU_MINUTES)
-		, MANAGER_GPS_LAT		= #{managerGpsLat}
-		, MANAGER_GPS_LON		= #{managerGpsLon}
+		/* GPS좌표-암호화-전환-06: 암호문만 저장 + 구 평문은 명시 NULL(stale 평문 잔존 방지 — fallback 은 ENC 우선) */
+		, MANAGER_GPS_LAT_ENC	= #{managerGpsLatEnc}
+		, MANAGER_GPS_LON_ENC	= #{managerGpsLonEnc}
+		, MANAGER_GPS_LAT		= NULL
+		, MANAGER_GPS_LON		= NULL
 		, GPS_MANUAL_CONFIRM_YN	= #{gpsManualConfirmYn}
 		, UPDATE_NO				= #{gvUserCd}
 		, UPDATE_DATE			= NOW()
@@ -617,8 +624,11 @@
 		/* §X-2(Q5-A): 교육준비는 경량 전이. TITLE/CONTENT_BODY 는 개설/수정에서 확정된 DB값을
 		   유지하며 prepare 에서 덮어쓰지 않는다(FE 미전송 값으로 인한 손실 방지). */
 		, ENTRY_PWD				= #{entryPwd}
-		, MANAGER_GPS_LAT		= #{managerGpsLat}
-		, MANAGER_GPS_LON		= #{managerGpsLon}
+		/* GPS좌표-암호화-전환-06: 암호문만 저장 + 구 평문은 명시 NULL(stale 평문 잔존 방지) */
+		, MANAGER_GPS_LAT_ENC	= #{managerGpsLatEnc}
+		, MANAGER_GPS_LON_ENC	= #{managerGpsLonEnc}
+		, MANAGER_GPS_LAT		= NULL
+		, MANAGER_GPS_LON		= NULL
 		, GPS_VERIFY_TYPE_CD	= IFNULL(#{gpsVerifyTypeCd}, GPS_VERIFY_TYPE_CD)
 		, GPS_VERIFY_RADIUS_M	= IFNULL(#{gpsVerifyRadiusM}, GPS_VERIFY_RADIUS_M)
 		, GPS_MANUAL_CONFIRM_YN	= #{gpsManualConfirmYn}
@@ -1152,6 +1162,9 @@
 		, ENTRY_AT				= NOW()
 		, ENTRY_GPS_LAT			= NULL
 		, ENTRY_GPS_LON			= NULL
+		/* GPS좌표-암호화-전환-07: 암호문 쌍도 함께 초기화(평문 NULL 초기화와 쌍 정합) */
+		, ENTRY_GPS_LAT_ENC		= NULL
+		, ENTRY_GPS_LON_ENC		= NULL
 		, ENTRY_DISTANCE_M		= NULL
 		, APP_FOREGROUND_SEC	= NULL
 		, EXIT_TYPE_CD			= NULL

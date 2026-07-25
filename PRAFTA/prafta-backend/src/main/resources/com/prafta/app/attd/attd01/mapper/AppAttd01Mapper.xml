@@ -471,7 +471,8 @@
        AND GPS_INFO_TYPE = '02'
     </delete>
 
-    <!-- 퇴근 GPS 기록 INSERT (GPS_INFO_TYPE='02' 퇴근, SYS028). OFFSITE_REASON=외근 사유(prafta-app-008). -->
+    <!-- 퇴근 GPS 기록 INSERT (GPS_INFO_TYPE='02' 퇴근, SYS028). OFFSITE_REASON=외근 사유(prafta-app-008).
+         GPS좌표-암호화-전환-02: 좌표는 암호문 컬럼(LAT_ENC/LON_ENC)에만 저장(평문 LAT/LON 기록 중단). -->
     <insert id="insertCheckOutGps">
     /* AppAttd01Mapper.insertCheckOutGps */
     INSERT INTO TB_USER_ATTD_GPS (
@@ -481,8 +482,8 @@
         , SITE_CD
         , USER_CD
         , GPS_INFO_TYPE
-        , LAT
-        , LON
+        , LAT_ENC
+        , LON_ENC
         , ACCURACY
         , API_CALL_DATE
         , API_CALL_TIME
@@ -499,8 +500,8 @@
         , #{g.siteCd}
         , #{g.userCd}
         , #{g.gpsInfoType}
-        , #{g.lat}
-        , #{g.lon}
+        , #{g.latEnc}
+        , #{g.lonEnc}
         , #{g.accuracy}
         , #{g.apiCallDate}
         , #{g.apiCallTime}
@@ -622,7 +623,8 @@
     )
     </insert>
 
-    <!-- 출근 GPS 기록 INSERT (GPS_INFO_TYPE='01' 출근, SYS028). OFFSITE_REASON=외근 사유(prafta-app-008). -->
+    <!-- 출근 GPS 기록 INSERT (GPS_INFO_TYPE='01' 출근, SYS028). OFFSITE_REASON=외근 사유(prafta-app-008).
+         GPS좌표-암호화-전환-02: 좌표는 암호문 컬럼(LAT_ENC/LON_ENC)에만 저장(평문 LAT/LON 기록 중단). -->
     <insert id="insertCheckInGps">
     /* AppAttd01Mapper.insertCheckInGps */
     INSERT INTO TB_USER_ATTD_GPS (
@@ -632,8 +634,8 @@
         , SITE_CD
         , USER_CD
         , GPS_INFO_TYPE
-        , LAT
-        , LON
+        , LAT_ENC
+        , LON_ENC
         , ACCURACY
         , API_CALL_DATE
         , API_CALL_TIME
@@ -650,8 +652,8 @@
         , #{g.siteCd}
         , #{g.userCd}
         , #{g.gpsInfoType}
-        , #{g.lat}
-        , #{g.lon}
+        , #{g.latEnc}
+        , #{g.lonEnc}
         , #{g.accuracy}
         , #{g.apiCallDate}
         , #{g.apiCallTime}
