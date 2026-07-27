@@ -5,12 +5,9 @@
   - 진입: MyPageView 메뉴 "내 근로계약서"(일용직 gv_employmentType==='DAILY' 에게만 노출, developer 추가)
       → router.push('/MyContract') (보호 라우트)
   - 참조 패턴: MyPageView(헤더/토큰), DailyContractSignView(이미지 뷰어)
-  - planner 라운드 스코프: template + style 완성. script 는 선언 + TODO(developer).
-  - developer 라운드 스코프(TODO):
-      (1) GET /appApi/dailycontract01/my-sign — 최신 서명본 메타(contractVer, signDtime, firstWorkDate)
-      (2) GET /appApi/dailycontract01/my-sign-image (blob) — 합성본 이미지 로드
-      (3) [이미지 저장] — blob 다운로드(a[download]) 또는 Web Share API(웹뷰 환경 동작 확인 필요)
-      (4) /MyContract 보호 라우트 등록 + MyPageView 메뉴 행 추가
+  - 멀티페이지(PDF) 지원 개편: .claude/requests/common/작업지시서_계약서-멀티페이지-PDF지원.plan.md §5 T6 / §8-6
+      · 소비 EP: GET my-sign(formatType/pageCount 확장) → GET my-sign-page?page=N(페이지 PNG) / GET my-sign-file(원본 저장)
+      · 구버전 폴백 EP(my-sign-image)는 신규 앱에서 사용하지 않는다(세로 병합 렌더 비용 회피).
 -->
 <template>
   <div class="my-contract-view">
@@ -61,9 +58,15 @@
           </dl>
         </section>
 
-        <!-- 합성본 이미지 뷰어 -->
+        <!-- 서명본 페이지 뷰어 — 서명본 PDF 는 페이지 이미지로 세로 나열(웹뷰 PDF 표시 불안정 회피) -->
         <div class="mc-doc">
-          <img class="mc-doc__img" :src="signImageUrl" alt="서명된 근로계약서" />
+          <img
+            v-for="p in pageCount"
+            :key="p"
+            class="mc-doc__img"
+            :src="pageUrls[p]"
+            :alt="`서명된 근로계약서 ${p}페이지`"
+          />
         </div>
       </template>
     </main>
@@ -71,7 +74,7 @@
     <!-- 하단: 저장(교부 의무 이행 수단) -->
     <footer v-if="hasSign && !isLoading && !loadFailed" class="mc-ft">
       <button type="button" class="mc-ft__btn" :disabled="isSaving" @click="onSave">
-        {{ isSaving ? '저장 중...' : '이미지 저장' }}
+        {{ isSaving ? '저장 중...' : '계약서 저장' }}
       </button>
     </footer>
   </div>
@@ -103,9 +106,12 @@ const contractVer = ref('')
 const signDtime = ref('')
 const firstWorkDate = ref('')
 
-// 합성본 이미지 objectURL + 저장용 blob 보관(이미지 저장 시 재다운로드 없이 재사용)
-const signImageUrl = ref('')
-let signImageBlob = null
+// 서명본 형식/페이지 수(my-sign 응답 — 멀티페이지 지원 T4). 파일 유실 시 서버가 null 을 내려준다.
+const formatType = ref('')
+const pageCount = ref(0)
+
+// 페이지 이미지 objectURL 맵 { [page]: objectURL } — 1-base, 언마운트/재조회 시 전량 revoke
+const pageUrls = ref({})
 
 // YYYYMMDD → YYYY.MM.DD 표기(메타 카드용). 형식 불일치 시 원문 그대로.
 const formatYmd = (ymd) => {
@@ -114,8 +120,18 @@ const formatYmd = (ymd) => {
   return `${s.slice(0, 4)}.${s.slice(4, 6)}.${s.slice(6, 8)}`
 }
 
+/** 페이지 objectURL 전량 해제 — 재조회/언마운트 시 누수 방지. */
+const revokeAllPageUrls = () => {
+  Object.values(pageUrls.value).forEach((url) => {
+    if (url) URL.revokeObjectURL(url)
+  })
+  pageUrls.value = {}
+}
+
 // ── 조회 ─────────────────────────────────────────────────────────────
-// 1) my-sign 메타(signYn='N'=빈 상태) → 2) my-sign-image 합성본 스트림(blob).
+// 1) my-sign 메타(signYn='N'=빈 상태, formatType/pageCount 포함)
+// 2) my-sign-page?page=N 페이지 이미지 스트림(blob)을 1..pageCount 순차 로드.
+//    신규 앱은 my-sign-image(구버전 폴백 병합 PNG)를 사용하지 않는다 — 폴백 렌더 비용 회피.
 const loadMySign = async () => {
   isLoading.value = true
   loadFailed.value = false
@@ -133,17 +149,29 @@ const loadMySign = async () => {
     contractVer.value = data.contractVer ?? ''
     signDtime.value = data.signDtime || ''
     firstWorkDate.value = formatYmd(data.firstWorkDate)
+    formatType.value = data.formatType || ''
 
-    // 합성본 이미지 스트림(경로 미노출 — 인증 헤더는 api 인스턴스가 동봉).
-    const { data: blob } = await api.get('/appApi/dailycontract01/my-sign-image', {
-      responseType: 'blob',
-    })
-    if (signImageUrl.value) URL.revokeObjectURL(signImageUrl.value)
-    signImageBlob = blob
-    signImageUrl.value = URL.createObjectURL(blob)
+    // pageCount 가 null 이면 서명본 파일을 읽지 못한 상태(서버가 두 필드만 null 로 내려준다)
+    //   → 페이지를 구성할 수 없으므로 에러 상태로 두고 재시도를 유도한다.
+    const count = Number(data.pageCount)
+    if (!Number.isFinite(count) || count < 1) {
+      throw new Error('invalid pageCount')
+    }
+
+    // 재조회 시 이전 페이지 objectURL 정리 후 순차 로드(동시 다발 요청 회피).
+    revokeAllPageUrls()
+    pageCount.value = count
+
+    for (let p = 1; p <= count; p += 1) {
+      const { data: blob } = await api.get('/appApi/dailycontract01/my-sign-page', {
+        params: { page: p },
+        responseType: 'blob',
+      })
+      pageUrls.value[p] = URL.createObjectURL(blob)
+    }
   } catch (e) {
     console.warn('[MyContract] 계약서 조회 실패:', e?.message)
-    // 메타/이미지 어느 단계든 실패 → 에러 상태(재시도 버튼). 존재 미확정이어도 재시도 유도가 안전.
+    // 메타/페이지 어느 단계든 실패 → 에러 상태(재시도 버튼). 존재 미확정이어도 재시도 유도가 안전.
     hasSign.value = true
     loadFailed.value = true
   } finally {
@@ -157,8 +185,8 @@ onMounted(() => {
 })
 
 onUnmounted(() => {
-  // objectURL 정리(메모리 누수 방지).
-  if (signImageUrl.value) URL.revokeObjectURL(signImageUrl.value)
+  // 페이지 objectURL 전량 정리(메모리 누수 방지).
+  revokeAllPageUrls()
 })
 
 const onRetry = () => {
@@ -169,16 +197,33 @@ const onBack = () => {
   router.back()
 }
 
-// [이미지 저장] — 교부 의무(§6-1) 이행 수단. 이미 로드된 합성본 blob 을 a[download] 로 저장.
+/**
+ * 저장 파일 확장자 판정 — 서버 응답 Content-Type 우선(신규=application/pdf, 레거시=image/png).
+ * type 이 비어 있는 웹뷰 환경 대비로 my-sign 의 formatType 을 2차 근거로 사용한다.
+ */
+const resolveSaveExt = (blob) => {
+  const type = String(blob?.type || '').toLowerCase()
+  if (type.includes('application/pdf')) return 'pdf'
+  if (type.includes('image/png')) return 'png'
+  if (type.includes('image/jpeg')) return 'jpg'
+  return formatType.value === 'IMG' ? 'png' : 'pdf'
+}
+
+// [계약서 저장] — 교부 의무(§6-1) 이행 수단. my-sign-file 로 서명본 원본 바이트(PDF 또는 레거시 PNG)를
+//   받아 a[download] 로 저장한다(화면 표시용 페이지 PNG 가 아니라 원본을 교부).
 //   웹뷰(Flutter 셸)에서 blob 다운로드 미지원 기기가 있을 수 있음(실기기 확인 대상 — qa 인계).
 const onSave = async () => {
-  if (isSaving.value || !signImageBlob) return
+  if (isSaving.value) return
   isSaving.value = true
   try {
-    const ymd = String(firstWorkDate.value || '').replaceAll('.', '')
-    const fileName = `근로계약서_${ymd || 'sign'}.png`
+    const { data: blob } = await api.get('/appApi/dailycontract01/my-sign-file', {
+      responseType: 'blob',
+    })
 
-    const url = URL.createObjectURL(signImageBlob)
+    const ymd = String(firstWorkDate.value || '').replaceAll('.', '')
+    const fileName = `근로계약서_${ymd || 'sign'}.${resolveSaveExt(blob)}`
+
+    const url = URL.createObjectURL(blob)
     const a = document.createElement('a')
     a.href = url
     a.download = fileName
@@ -188,8 +233,8 @@ const onSave = async () => {
     // 다운로드 트리거 후 지연 해제(즉시 revoke 시 일부 웹뷰에서 저장 실패).
     setTimeout(() => URL.revokeObjectURL(url), 10000)
   } catch (e) {
-    console.warn('[MyContract] 이미지 저장 실패:', e?.message)
-    await showAlert('이미지 저장에 실패했습니다. 화면을 캡처하여 보관해 주세요.')
+    console.warn('[MyContract] 계약서 저장 실패:', e?.message)
+    await showAlert('계약서 저장에 실패했습니다. 화면을 캡처하여 보관해 주세요.')
   } finally {
     isSaving.value = false
   }
@@ -327,6 +372,10 @@ const onSave = async () => {
   display: block;
   width: 100%;
   height: auto;
+}
+/* 멀티페이지 서명본 — 페이지 사이 간격만 부여(레이아웃 모델 변경 없음) */
+.mc-doc__img + .mc-doc__img {
+  margin-top: var(--space-md);
 }
 
 /* 하단 저장 */

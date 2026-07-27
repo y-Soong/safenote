@@ -5,11 +5,16 @@ import java.util.List;
 import org.springframework.stereotype.Service;
 import org.springframework.web.multipart.MultipartFile;
 
+import com.prafta.common.cmm.dailycontract.result.ContractAmendPrecheckResult;
+import com.prafta.common.cmm.dailycontract.result.ContractDocMeta;
 import com.prafta.common.cmm.dailycontract.result.ContractVersionRow;
 import com.prafta.common.cmm.dailycontract.service.DailyContractService;
-import com.prafta.common.cmm.file.application.model.ImageBytesResult;
+import com.prafta.common.cmm.file.application.model.FileBytesResult;
 import com.prafta.common.dto.TokenInfo;
+import com.prafta.web.user.user07.dto.response.ContractAmendPrecheckResponse;
+import com.prafta.web.user.user07.dto.response.ContractAmendResponse;
 import com.prafta.web.user.user07.dto.response.ContractListResponse;
+import com.prafta.web.user.user07.dto.response.ContractMetaResponse;
 import com.prafta.web.user.user07.dto.response.ContractRegResponse;
 import com.prafta.web.user.user07.dto.response.ContractStopResponse;
 import com.prafta.web.user.user07.dto.response.ContractVersionItem;
@@ -45,7 +50,8 @@ public class User07ServiceImpl implements User07Service {
                         , r.useYn()
                         , r.insertNo()
                         , r.insertNm()
-                        , r.insertDate()))
+                        , r.insertDate()
+                        , r.formatType()))
                 .toList();
 
         // 활성 요약 카드 — 버전 이력에서 USE_YN='Y' 단건(기능성 유니크로 최대 1건).
@@ -89,8 +95,53 @@ public class User07ServiceImpl implements User07Service {
     }
 
     @Override
-    public ImageBytesResult loadContractImage(String siteCd, int contractVer, TokenInfo token) {
+    public ContractAmendResponse amendContract(String siteCd, int contractVer, MultipartFile file,
+            TokenInfo token) {
+        log.info("웹 계약서 정정 진입 — cmpnyCd={}, siteCd={}, ver={}, 처리자={}",
+                token.gv_cmpnyCd(), siteCd, contractVer, token.gv_userCd());
+
+        // 서명 0건 조건 / 사업장 인가 / 업로드 검증 / 잠금·조건부 UPDATE 는 전부 core 가 수행한다.
+        dailyContractService.amendActiveContract(
+                token.gv_cmpnyCd(), siteCd, contractVer, file, token.gv_userCd(), token.gv_authCd());
+
+        // 정정은 버전을 올리지 않는다(J9) — 대상 버전을 그대로 되돌려 준다.
+        return ContractAmendResponse.builder()
+                .contractVer(contractVer)
+                .build();
+    }
+
+    @Override
+    public ContractAmendPrecheckResponse loadAmendPrecheck(String siteCd, int contractVer, TokenInfo token) {
+        ContractAmendPrecheckResult precheck = dailyContractService.findAmendPrecheck(
+                token.gv_cmpnyCd(), siteCd, contractVer, token.gv_userCd(), token.gv_authCd());
+        if (precheck == null) {
+            return null;
+        }
+        return ContractAmendPrecheckResponse.builder()
+                .amendable(precheck.amendable())
+                .signCnt(precheck.signCnt())
+                .pinnedApprovedCnt(precheck.pinnedApprovedCnt())
+                .pendingCnt(precheck.pendingCnt())
+                .build();
+    }
+
+    @Override
+    public FileBytesResult loadContractImage(String siteCd, int contractVer, TokenInfo token) {
         return dailyContractService.loadContractImageForAdmin(
                 token.gv_cmpnyCd(), siteCd, contractVer, token.gv_userCd(), token.gv_authCd());
+    }
+
+    @Override
+    public ContractMetaResponse loadContractMeta(String siteCd, int contractVer, TokenInfo token) {
+        // 사업장 인가 가드(assertSiteAuthority)는 core 가 contract-image 와 동일 기준으로 재검증한다.
+        ContractDocMeta doc = dailyContractService.findContractMetaForAdmin(
+                token.gv_cmpnyCd(), siteCd, contractVer, token.gv_userCd(), token.gv_authCd());
+        if (doc == null) {
+            return null;
+        }
+        return ContractMetaResponse.builder()
+                .formatType(doc.formatType())
+                .pageCount(doc.pageCount())
+                .build();
     }
 }

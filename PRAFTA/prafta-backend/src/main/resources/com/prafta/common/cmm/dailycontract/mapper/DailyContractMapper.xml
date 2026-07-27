@@ -25,6 +25,25 @@
     LIMIT 1
     </select>
 
+    <!-- 특정 버전 계약서 단건 - USE_YN 조건 없음(승인시점 버전확정 T2 / K5).
+         pin 된 버전이 그 사이 사용중지되어도 열람·서명을 완주해야 하므로 활성 조건을 걸지 않는다.
+         PK(CMPNY_CD,SITE_CD,CONTRACT_VER) 단건 조회.
+         ⚠️ resultType=record 위치 매핑 - SELECT 컬럼 순서 = ActiveContractResult 컴포넌트 순서
+            (selectActiveContract 와 동일 순서 유지). -->
+    <select id="selectContractByVer" resultType="com.prafta.common.cmm.dailycontract.result.ActiveContractResult">
+    /* DailyContractMapper.selectContractByVer */
+    SELECT
+        SITE_CD                                       AS siteCd
+        , CONTRACT_VER                                AS contractVer
+        , CONTRACT_NM                                 AS contractNm
+        , FILE_MGMT_CD                                AS fileMgmtCd
+        , DATE_FORMAT(INSERT_DATE, '%Y-%m-%d %H:%i')  AS insertDate
+    FROM TB_DAILY_CONTRACT
+    WHERE CMPNY_CD     = #{cmpnyCd}
+      AND SITE_CD      = #{siteCd}
+      AND CONTRACT_VER = #{contractVer}
+    </select>
+
     <!-- 다음 계약서 버전 (MAX+1, 최초 1). -->
     <select id="selectNextContractVer" resultType="int">
     /* DailyContractMapper.selectNextContractVer */
@@ -72,7 +91,10 @@
     </insert>
 
     <!-- 사업장 계약서 버전 이력 (최신 버전 우선).
-         등록자명은 TB_USER LEFT JOIN(User_08 처리자명 조인 패턴 미러) — 탈퇴/부재 사용자는 코드 폴백(qa L-2). -->
+         등록자명은 TB_USER LEFT JOIN(User_08 처리자명 조인 패턴 미러) — 탈퇴/부재 사용자는 코드 폴백(qa L-2).
+         formatType: TB_FILE_INFO.FILE_EXT LEFT JOIN 으로 도출(멀티페이지 지원 T4) — PDF 파싱 0회.
+           FILE_EXT 는 선행 점 포함 저장('.pdf')이라 점 유무 양쪽을 허용한다. 파일행 부재는 'IMG' 폴백.
+         ⚠️ resultType=record 위치 매핑 — SELECT 컬럼 순서 = ContractVersionRow 컴포넌트 순서. -->
     <select id="selectContractVersionList" resultType="com.prafta.common.cmm.dailycontract.result.ContractVersionRow">
     /* DailyContractMapper.selectContractVersionList */
     SELECT
@@ -82,11 +104,19 @@
         , C.INSERT_NO                                   AS insertNo
         , IFNULL(U.USER_NM, C.INSERT_NO)                AS insertNm
         , DATE_FORMAT(C.INSERT_DATE, '%Y-%m-%d %H:%i')  AS insertDate
+        , CASE WHEN LOWER(IFNULL(F.FILE_EXT, '')) IN ('pdf', '.pdf') THEN 'PDF'
+               ELSE 'IMG'
+          END                                           AS formatType
     FROM TB_DAILY_CONTRACT C
          LEFT JOIN TB_USER U
             ON (
                 C.CMPNY_CD  = U.CMPNY_CD
             AND C.INSERT_NO = U.USER_CD
+            )
+         LEFT JOIN TB_FILE_INFO F
+            ON (
+                C.CMPNY_CD      = F.CMPNY_CD
+            AND C.FILE_MGMT_CD  = F.FILE_MGMT_CD
             )
     WHERE C.CMPNY_CD = #{cmpnyCd}
       AND C.SITE_CD  = #{siteCd}
@@ -115,15 +145,44 @@
       AND USER_CD  = #{userCd}
     </select>
 
-    <!-- 최근 소진('05') 승인요청 ID - 재입장 재서명 사이클 판정(D8-①, plan §6 기본안 3). -->
-    <select id="selectLatestConsumedReqId" resultType="string">
-    /* DailyContractMapper.selectLatestConsumedReqId */
-    SELECT REQ_ID
+    <!-- 현재 승인 사이클 행 - '05'(최신 소진) 우선, 없으면 당일 '02'(최신 승인). pin 단일 출처.
+         (승인시점 버전확정 T2/§4. 구 selectLatestConsumedReqId 를 완전 대체)
+
+         '05' 를 '02' 보다 우선하는 이유: UX_DAILY_ENTRY_REQ_OPEN 은 open(01/02)만 계정당 1건으로
+         제한하고 '05' 는 open 이 아니므로 새 '01'/'02' 와 공존한다. 재입장 요청이 승인('02')됐지만
+         아직 로그인(소진)하지 않은 상태에서 '02' 를 먼저 집으면 아직 시작되지 않은 미래 사이클의
+         pin 으로 현재 세션을 판정하게 된다(순서 반전 금지).
+
+         '02' 폴백이 필요한 이유: 소진이 게이트보다 늦게 일어나는 경로(게이트 EP 단독 호출, 소진
+         UPDATE 0행 경합)에서 '05' 가 0건이 될 수 있다. 그때 pin 을 못 읽으면 M-2 결함이 재현된다.
+
+         '02' 에 당일 조건을 붙이는 근거: selectOpenEntryRequest / updateEntryRequestConsume 이 이미
+         "승인('02')은 REQ_DTIME 이 오늘인 경우에만 유효"(D7)로 정의돼 있다. 어제 승인·미소진 건은
+         소진 불가(폐기 예정)이므로 그 pin 으로 오늘 서명 대상을 정하면 로그인 흐름과 출처가 갈라진다.
+         '05' 에는 날짜 조건을 붙이지 않는다(구 구현과 동일 = 무회귀. 자정 넘긴 세션의 재평가 포함).
+         '01' 대기 / '03' 거부 / '04' 만료는 절대 보지 않는다(승인만 확정 행위 - J2).
+         IX_DAILY_ENTRY_REQ_USER (CMPNY_CD,USER_CD,REQ_STATUS,REQ_DTIME) 로 커버된다.
+
+         ⚠️ resultType=record 위치 매핑 - SELECT 컬럼 순서 = EntryCycleResult 컴포넌트 순서.
+            contractVer 는 Integer(nullable) 여야 한다 - int 면 NULL이 0(미등록 센티넬)으로 오판정된다. -->
+    <select id="selectCurrentCycleRequest" resultType="com.prafta.common.cmm.dailycontract.result.EntryCycleResult">
+    /* DailyContractMapper.selectCurrentCycleRequest */
+    SELECT
+        REQ_ID                                          AS reqId
+        , REQ_STATUS                                    AS reqStatus
+        , CONTRACT_VER                                  AS contractVer
     FROM TB_DAILY_ENTRY_REQUEST
-    WHERE CMPNY_CD   = #{cmpnyCd}
-      AND USER_CD    = #{userCd}
-      AND REQ_STATUS = '05'
-    ORDER BY CONSUME_DTIME DESC
+    WHERE CMPNY_CD = #{cmpnyCd}
+      AND USER_CD  = #{userCd}
+      AND (
+           REQ_STATUS = '05'
+        OR (
+               REQ_STATUS = '02'
+           AND REQ_DTIME <![CDATA[ >= ]]> CURDATE()
+           )
+      )
+    ORDER BY CASE REQ_STATUS WHEN '05' THEN 0 ELSE 1 END
+           , IFNULL(CONSUME_DTIME, PROC_DTIME) DESC
     LIMIT 1
     </select>
 
@@ -261,6 +320,89 @@
       </if>
     ORDER BY S.SIGN_DTIME DESC
     LIMIT #{limitCnt}
+    </select>
+
+    <!-- ====================================================================
+         미서명 계약서 in-place 정정 (승인시점 버전확정 T3 / K6·K7·J8~J11)
+         ==================================================================== -->
+
+    <!-- 특정 (사업장, 버전) 서명 행 수 - 정정 가능 조건(0건)의 서버측 근거.
+         IX_DAILY_CONTRACT_SIGN_SITE (CMPNY_CD,SITE_CD,SIGN_DTIME) + CONTRACT_VER 잔여 필터.
+         존재 여부만 필요하므로 LIMIT 1 서브쿼리로 조기 종료한다. -->
+    <select id="selectSignCntByVer" resultType="int">
+    /* DailyContractMapper.selectSignCntByVer */
+    SELECT COUNT(*)
+    FROM (
+        SELECT 1
+          FROM TB_DAILY_CONTRACT_SIGN
+         WHERE CMPNY_CD     = #{cmpnyCd}
+           AND SITE_CD      = #{siteCd}
+           AND CONTRACT_VER = #{contractVer}
+         LIMIT 1
+    ) T
+    </select>
+
+    <!-- 정정 대상 계약서 단건 + 행 잠금(FOR UPDATE) - 동시 정정 / 정정+교체 직렬화.
+         USE_YN 을 함께 읽어 "그 사이 다른 관리자가 교체·중지했는지"를 판정한다(409_002).
+         ⚠️ resultType=record 위치 매핑 - SELECT 컬럼 순서 = ContractLockRow 컴포넌트 순서. -->
+    <select id="selectContractForUpdate" resultType="com.prafta.common.cmm.dailycontract.result.ContractLockRow">
+    /* DailyContractMapper.selectContractForUpdate */
+    SELECT
+        CONTRACT_VER                                    AS contractVer
+        , CONTRACT_NM                                   AS contractNm
+        , FILE_MGMT_CD                                  AS fileMgmtCd
+        , USE_YN                                        AS useYn
+    FROM TB_DAILY_CONTRACT
+    WHERE CMPNY_CD     = #{cmpnyCd}
+      AND SITE_CD      = #{siteCd}
+      AND CONTRACT_VER = #{contractVer}
+    FOR UPDATE
+    </select>
+
+    <!-- 계약서 파일 in-place 교체 - CONTRACT_VER 미증가 / USE_YN 불변(J9) = 재서명 트리거 미발생.
+         CONTRACT_NM 은 SET 하지 않는다(등록 팝업에서 고정값이라 정정에서만 변경 가능하면 일관성이 깨짐 - Q5).
+         USE_YN='Y' 조건부 = 잠금 이후 상태 반전에 대한 백스톱(0행 → 409_002).
+         이전 FILE_MGMT_CD 는 DB 에 남지 않으므로 호출부가 로그에 남긴다(J8 감사 추적). -->
+    <update id="updateContractFile">
+    /* DailyContractMapper.updateContractFile */
+    UPDATE TB_DAILY_CONTRACT
+    SET FILE_MGMT_CD  = #{fileMgmtCd}
+        , UPDATE_NO   = #{updateNo}
+        , UPDATE_DATE = NOW()
+    WHERE CMPNY_CD     = #{cmpnyCd}
+      AND SITE_CD      = #{siteCd}
+      AND CONTRACT_VER = #{contractVer}
+      AND USE_YN       = 'Y'
+    </update>
+
+    <!-- 해당 버전을 pin 한 승인 요청 수 - 정정 경고(J10). 정정된 내용으로 서명하게 되는 대상.
+         ★'02'(미소진 승인)뿐 아니라 '05'(소진 = 이미 로그인해 지금 서명 화면에 있을 수 있는 사람)도
+           반드시 포함한다(qa Q-1). 정정은 서명 0건일 때만 허용되므로 pin=해당버전인 '05' 행은
+           정의상 전부 미서명이며 = 정정본으로 서명하게 되는 가장 위험한 모집단이다. '02' 만 세면
+           경고가 바로 이 집단을 빠뜨려 "대상 없음"으로 표시된다.
+         당일 조건은 과거 사이클의 '05' 과대 계상을 막는다(D7 자정 만료 기준과 동일 취지).
+         IX_DAILY_ENTRY_REQ_SITE (CMPNY_CD,SITE_CD,REQ_STATUS,REQ_DTIME) 로 사업장+상태까지 좁혀지고
+         CONTRACT_VER 는 잔여 필터다. -->
+    <select id="selectPinnedApprovedReqCnt" resultType="int">
+    /* DailyContractMapper.selectPinnedApprovedReqCnt */
+    SELECT COUNT(*)
+    FROM TB_DAILY_ENTRY_REQUEST
+    WHERE CMPNY_CD     = #{cmpnyCd}
+      AND SITE_CD      = #{siteCd}
+      AND REQ_STATUS   IN ('02', '05')
+      AND CONTRACT_VER = #{contractVer}
+      AND <![CDATA[ (PROC_DTIME >= CURDATE() OR CONSUME_DTIME >= CURDATE()) ]]>
+    </select>
+
+    <!-- 같은 사업장 대기('01') 요청 수 - 정정 경고(J10). 대기 건은 아직 pin 이 없으므로 버전 무관이며,
+         승인 시점에 정정된 파일이 확정된다. -->
+    <select id="selectPendingReqCnt" resultType="int">
+    /* DailyContractMapper.selectPendingReqCnt */
+    SELECT COUNT(*)
+    FROM TB_DAILY_ENTRY_REQUEST
+    WHERE CMPNY_CD   = #{cmpnyCd}
+      AND SITE_CD    = #{siteCd}
+      AND REQ_STATUS = '01'
     </select>
 
 </mapper>

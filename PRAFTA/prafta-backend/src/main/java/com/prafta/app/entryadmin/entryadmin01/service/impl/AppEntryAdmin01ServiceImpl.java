@@ -58,7 +58,13 @@ public class AppEntryAdmin01ServiceImpl implements AppEntryAdmin01Service {
                         , r.userNm()
                         , maskMblNo(r.mblNoLast4())
                         , r.reqType()
-                        , r.reqDtime()))
+                        , r.reqDtime()
+                        // 확정 계약서 표시(T4/K9) — 웹 User_08 과 동일 기준. pin 원값 그대로 전달한다.
+                        , r.pinnedContractVer()
+                        , r.pinnedFormatType()
+                        , r.activeContractVer()
+                        , r.activeFormatType()
+                        , r.lastSignedContractVer()))
                 .toList();
 
         log.info("앱 입장 승인 대기 목록 조회 종료 — siteCd={}, rows={}", param.gvSiteCd(), items.size());

@@ -97,15 +97,20 @@
     FOR UPDATE
     </select>
 
-    <!-- 승인 처리 — 대기(01)에서만 승인(02)으로 전이(조건부 UPDATE, 0행 = 이미 처리됨). -->
+    <!-- 승인 처리 — 대기(01)에서만 승인(02)으로 전이(조건부 UPDATE, 0행 = 이미 처리됨).
+         CONTRACT_VER = 승인 시점 확정 계약서 버전(pin — 승인시점 버전확정 T1/K1). 상태 전이와 같은
+         문장·같은 트랜잭션에서 기록하므로 "승인은 됐는데 pin 은 비었다" 같은 중간 상태가 없다.
+         값 의미: >0 활성 버전 / 0 승인 시점 미등록(K4 — 해당 사이클 게이트 스킵) /
+                 NULL 은 이 문장이 만들지 않는다(배포 전 레거시 전용 의미, K8). -->
     <update id="updateEntryRequestApprove">
     /* DailyEntryMapper.updateEntryRequestApprove */
     UPDATE TB_DAILY_ENTRY_REQUEST
-    SET REQ_STATUS     = '02'
-        , PROC_USER_CD = #{procUserCd}
-        , PROC_DTIME   = NOW()
-        , UPDATE_NO    = #{procUserCd}
-        , UPDATE_DATE  = NOW()
+    SET REQ_STATUS      = '02'
+        , PROC_USER_CD  = #{procUserCd}
+        , PROC_DTIME    = NOW()
+        , CONTRACT_VER  = #{contractVer}
+        , UPDATE_NO     = #{procUserCd}
+        , UPDATE_DATE   = NOW()
     WHERE CMPNY_CD   = #{cmpnyCd}
       AND REQ_ID     = #{reqId}
       AND REQ_STATUS = '01'
@@ -156,7 +161,21 @@
     </update>
 
     <!-- 승인요청 목록 (사업장 스코프 강제 + 상태/유형/요청일 필터).
-         휴대폰: LAST4(앱 마스킹용) + ENC(웹 평문 표시용, 서비스에서 복호화). 처리자명은 TB_USER 조인. -->
+         휴대폰: LAST4(앱 마스킹용) + ENC(웹 평문 표시용, 서비스에서 복호화). 처리자명은 TB_USER 조인.
+
+         확정 계약서 표시용 5컬럼(승인시점 버전확정 T4 / K9) — 관리자가 "무엇을 확정하는지" 보고 승인하도록.
+           pinnedContractVer      : R.CONTRACT_VER 원값. ★정규화 금지 —
+                                    NULL(pin 도입 전 레거시 = 활성 폴백)과 0(승인 시점 미등록 = 게이트 스킵)은
+                                    화면에서 "레거시" / "없음" 으로 다르게 표기되므로 한쪽으로 뭉개면 안 된다.
+           pinnedFormatType       : pin 버전의 형식. pin 버전이 활성 버전과 다를 때도 형식을 표기할 수 있게 한다.
+                                    PK 정확 조인(1행)이라 비용은 사실상 0.
+           activeContractVer      : 사업장 활성 버전 = 대기('01') 행이 승인되면 확정될 버전
+           activeFormatType       : 활성 버전 형식
+           lastSignedContractVer  : 해당 USER_CD 의 최종 서명 버전(없으면 NULL) — "재서명 대상" 판정 재료
+         배지 판정은 화면에서 한다(서버는 값만 준다). FILE_MGMT_CD 등 내부 식별자는 노출하지 않는다.
+         FILE_EXT 는 선행 점 포함 저장('.pdf')이라 점 유무 양쪽을 허용한다(selectContractVersionList 패턴).
+         활성 계약서 조인은 UX_DAILY_CONTRACT_ACTIVE 로 사업장당 최대 1건이라 행 증식이 없다.
+         ⚠️ resultType=record 위치 매핑 - 신규 컬럼은 반드시 맨 뒤에 append(순서 변경 금지). -->
     <select id="selectEntryRequestList" parameterType="com.prafta.common.cmm.dailyentry.application.query.EntryRequestListQuery" resultType="com.prafta.common.cmm.dailyentry.result.EntryRequestRow">
     /* DailyEntryMapper.selectEntryRequestList */
     SELECT
@@ -173,6 +192,28 @@
         , P.USER_NM                                     AS procUserNm
         , DATE_FORMAT(R.PROC_DTIME, '%Y-%m-%d %H:%i')   AS procDtime
         , R.REJECT_REASON                               AS rejectReason
+        , R.CONTRACT_VER                                AS pinnedContractVer
+        , CASE WHEN PC.CONTRACT_VER IS NULL THEN NULL
+               WHEN LOWER(IFNULL(PF.FILE_EXT, '')) IN ('pdf', '.pdf') THEN 'PDF'
+               ELSE 'IMG'
+          END                                           AS pinnedFormatType
+        , AC.CONTRACT_VER                               AS activeContractVer
+        , CASE WHEN AC.CONTRACT_VER IS NULL THEN NULL
+               WHEN LOWER(IFNULL(AF.FILE_EXT, '')) IN ('pdf', '.pdf') THEN 'PDF'
+               ELSE 'IMG'
+          END                                           AS activeFormatType
+        , (
+            /* 최종 서명 버전 - "재서명 대상" 배지 판정용.
+               ★SITE_CD 조건 필수(qa Q-4): 계약서 버전은 사업장별로 독립 채번되므로 타 사업장에서
+                 서명한 v3 을 이 사업장 v3 과 같다고 보면 배지가 잘못 빠진다(미서명인데 미표시). */
+            SELECT S.CONTRACT_VER
+              FROM TB_DAILY_CONTRACT_SIGN S
+             WHERE S.CMPNY_CD = R.CMPNY_CD
+               AND S.USER_CD  = R.USER_CD
+               AND S.SITE_CD  = R.SITE_CD
+             ORDER BY S.SIGN_DTIME DESC
+             LIMIT 1
+          )                                             AS lastSignedContractVer
     FROM TB_DAILY_ENTRY_REQUEST R
          LEFT JOIN TB_DAILY_USER D
             ON (
@@ -183,6 +224,28 @@
             ON (
                 R.CMPNY_CD     = P.CMPNY_CD
             AND R.PROC_USER_CD = P.USER_CD
+            )
+         LEFT JOIN TB_DAILY_CONTRACT PC
+            ON (
+                R.CMPNY_CD     = PC.CMPNY_CD
+            AND R.SITE_CD      = PC.SITE_CD
+            AND R.CONTRACT_VER = PC.CONTRACT_VER
+            )
+         LEFT JOIN TB_FILE_INFO PF
+            ON (
+                PC.CMPNY_CD     = PF.CMPNY_CD
+            AND PC.FILE_MGMT_CD = PF.FILE_MGMT_CD
+            )
+         LEFT JOIN TB_DAILY_CONTRACT AC
+            ON (
+                R.CMPNY_CD = AC.CMPNY_CD
+            AND R.SITE_CD  = AC.SITE_CD
+            AND AC.USE_YN  = 'Y'
+            )
+         LEFT JOIN TB_FILE_INFO AF
+            ON (
+                AC.CMPNY_CD     = AF.CMPNY_CD
+            AND AC.FILE_MGMT_CD = AF.FILE_MGMT_CD
             )
     WHERE R.CMPNY_CD = #{cmpnyCd}
       AND R.SITE_CD  = #{siteCd}

@@ -1,5 +1,6 @@
 package com.prafta.common.cmm.dailyentry.service.impl;
 
+import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -9,6 +10,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.prafta.common.cmm.dailycontract.DailyContractPinner;
 import com.prafta.common.cmm.dailyentry.application.command.EntryNotiOutboxCommand;
 import com.prafta.common.cmm.dailyentry.application.command.EntryRequestInsertCommand;
 import com.prafta.common.cmm.dailyentry.application.query.EntryRequestListQuery;
@@ -41,6 +43,14 @@ public class DailyEntryServiceImpl implements DailyEntryService {
 
     private final DailyEntryMapper dailyEntryMapper;
     private final ObjectMapper objectMapper;
+    /**
+     * 승인 시점 계약서 버전 확정(pin) 해석 — 매퍼만 의존하는 얇은 컴포넌트.
+     *
+     * <p>★{@code DailyContractService} 를 직접 주입하면 안 된다. {@code DailyContractServiceImpl} 이
+     * 이미 본 서비스({@code DailyEntryService})를 주입받고 있어 Spring 순환 참조로 기동이 실패한다
+     * (plan §7 R1). 반드시 이 컴포넌트를 경유한다.
+     */
+    private final DailyContractPinner dailyContractPinner;
 
     /** [SYS082] 요청 상태 — 대기/승인. */
     private static final String REQ_STATUS_PENDING = "01";
@@ -130,9 +140,14 @@ public class DailyEntryServiceImpl implements DailyEntryService {
             throw new ApiException(CommonErrorCode.COMMON_400_001);
         }
 
+        // 사업장별 활성 계약서 버전 캐시(pin) — 일괄 승인에서 같은 사업장을 반복 조회하지 않도록
+        //   루프 밖에서 1개만 만들어 전달한다(plan T1-4 / R10). 같은 트랜잭션 안이므로 캐시 값과
+        //   실제 기록 값이 갈라지지 않으며, 전건이 동일 pin 을 갖는다.
+        Map<String, Integer> verCache = new HashMap<>();
+
         int processed = 0;
         for (String reqId : reqIds) {
-            processOne(cmpnyCd, reqId, procUserCd, procAuthCd, true, null);
+            processOne(cmpnyCd, reqId, procUserCd, procAuthCd, true, null, verCache);
             processed++;
         }
 
@@ -151,7 +166,8 @@ public class DailyEntryServiceImpl implements DailyEntryService {
             throw new ApiException(CommonErrorCode.COMMON_400_002);
         }
 
-        processOne(cmpnyCd, reqId, procUserCd, procAuthCd, false, reason);
+        // 거부는 pin 하지 않는다(CONTRACT_VER NULL 유지 — J2. 승인만 계약 내용 확정 행위) → verCache 불필요.
+        processOne(cmpnyCd, reqId, procUserCd, procAuthCd, false, reason, null);
 
         log.info("일용직 입장 거부 처리 완료 — cmpnyCd={}, reqId={}, procUserCd={}", cmpnyCd, reqId, procUserCd);
     }
@@ -166,9 +182,14 @@ public class DailyEntryServiceImpl implements DailyEntryService {
     /**
      * 승인/거부 단건 처리 — 행 잠금 조회 + 사업장 인가 가드 + 대기('01') 상태 검증 + 조건부 전이.
      * 실패 시 예외로 전체 롤백(일괄 처리 all-or-nothing).
+     *
+     * <p>승인 분기에서는 <b>잠금 조회한 요청의 SITE_CD</b> 기준 활성 계약서 버전을 pin 으로 함께 기록한다
+     * (승인시점 버전확정 T1 / K1·K4). 신규가입('01')·재입장('02') 구분 없이 동일 적용(J3).
+     *
+     * @param verCache 사업장별 pin 버전 캐시(승인 경로 전용). 거부 경로는 {@code null}
      */
     private void processOne(String cmpnyCd, String reqId, String procUserCd, String procAuthCd,
-            boolean approve, String reason) {
+            boolean approve, String reason, Map<String, Integer> verCache) {
         if (reqId == null || reqId.isBlank()) {
             throw new ApiException(CommonErrorCode.COMMON_400_001);
         }
@@ -186,13 +207,35 @@ public class DailyEntryServiceImpl implements DailyEntryService {
             throw new ApiException(DailyEntryErrorCode.DAILYENTRY_400_001);
         }
 
-        int updated = approve
-                ? dailyEntryMapper.updateEntryRequestApprove(cmpnyCd, reqId, procUserCd)
-                : dailyEntryMapper.updateEntryRequestReject(cmpnyCd, reqId, reason, procUserCd);
+        int updated;
+        if (approve) {
+            // pin 해석 — 승인 UPDATE 와 같은 트랜잭션. 활성 계약서가 없으면 센티넬 0(K4).
+            int contractVer = resolvePinVer(cmpnyCd, meta.siteCd(), verCache);
+            updated = dailyEntryMapper.updateEntryRequestApprove(cmpnyCd, reqId, procUserCd, contractVer);
+            if (updated > 0) {
+                log.info("일용직 입장 승인 계약서 버전 확정 — cmpnyCd={}, reqId={}, siteCd={}, pinVer={}",
+                        cmpnyCd, reqId, meta.siteCd(), contractVer);
+            }
+        } else {
+            updated = dailyEntryMapper.updateEntryRequestReject(cmpnyCd, reqId, reason, procUserCd);
+        }
         if (updated <= 0) {
             // 잠금 조회 이후 전이 실패는 정합 깨짐 — 이미 처리됨으로 통일 응답.
             throw new ApiException(DailyEntryErrorCode.DAILYENTRY_400_001);
         }
+    }
+
+    /**
+     * 승인 시점 pin 버전 해석 — 사업장별 1회만 조회한다(일괄 승인 N 쿼리 방지 — R10).
+     *
+     * <p>캐시가 없으면(단건 경로 등) 직접 조회한다. 반환값은 항상 0 이상이며,
+     * 0 = "승인 시점 활성 계약서 미등록"(K4)이다.
+     */
+    private int resolvePinVer(String cmpnyCd, String siteCd, Map<String, Integer> verCache) {
+        if (verCache == null) {
+            return dailyContractPinner.resolveActiveVerForPin(cmpnyCd, siteCd);
+        }
+        return verCache.computeIfAbsent(siteCd, s -> dailyContractPinner.resolveActiveVerForPin(cmpnyCd, s));
     }
 
     /**

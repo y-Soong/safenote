@@ -38,6 +38,40 @@ public interface FileService {
 	List<ImageBytesResult> loadPdfPageImages(FileReadQuery query, int pageStride, int maxPages);
 
 	/**
+	 * 계약서 멀티페이지 T1: {@link #loadPdfPageImages(FileReadQuery, int, int)} 의 DPI 지정 오버로드.
+	 *
+	 * <p>기존 3-arg 는 TBM AI 계약(120 DPI + 실패 시 AI_502_005 매핑)을 유지하기 위해 본 메서드에
+	 *    위임하며, 열람용(150 DPI) 등 다른 DPI 가 필요한 신규 경로만 본 메서드를 직접 호출한다.
+	 *
+	 * @param dpi 렌더 DPI
+	 * @throws com.prafta.common.exception.ApiException 확장자 위반/traversal(FILE_400_001),
+	 *         암호 PDF(FILE_400_002), 렌더 실패(FILE_500_001)
+	 */
+	List<ImageBytesResult> loadPdfPageImages(FileReadQuery query, int pageStride, int maxPages, float dpi);
+
+	/**
+	 * 계약서 멀티페이지 T1: 저장된 PDF 의 <b>단일 페이지</b>를 PNG 로 렌더한다(1-base 페이지 번호).
+	 *
+	 * <p>확장자 화이트리스트(pdf 전용) + traversal 방어는 {@link #loadPdfPageImages} 와 동일하다.
+	 *    대상 없음(DB 행/디스크 파일 부재) 또는 페이지 범위 밖이면 {@code null} 을 반환한다
+	 *    (범위 초과의 에러코드 매핑은 도메인 계층 책임).
+	 *
+	 * @param pageIndex1Base 1-base 페이지 번호
+	 * @throws com.prafta.common.exception.ApiException 확장자 위반/traversal(FILE_400_001),
+	 *         암호 PDF(FILE_400_002), 렌더 실패(FILE_500_001)
+	 */
+	ImageBytesResult loadPdfPageImage(FileReadQuery query, int pageIndex1Base, float dpi);
+
+	/**
+	 * 계약서 멀티페이지 T1: 저장된 PDF 의 페이지 수를 반환한다.
+	 *
+	 * @return 페이지 수. 대상 없음(DB 행/디스크 파일 부재)이면 0
+	 * @throws com.prafta.common.exception.ApiException 확장자 위반/traversal(FILE_400_001),
+	 *         암호 PDF(FILE_400_002), 파싱 실패(FILE_500_001)
+	 */
+	int loadPdfPageCount(FileReadQuery query);
+
+	/**
 	 * PRAFTA-SUBCON-T7(Q4): 저장된 파일 원본을 <b>유형 무관</b>으로 바이트로 로드한다(cross-tenant 첨부 복제용).
 	 *
 	 * <p>{@link #loadImageBytes} 는 이미지 화이트리스트 전용이라 PDF 등을 조용히 누락시킨다. 위험성평가/아차사고

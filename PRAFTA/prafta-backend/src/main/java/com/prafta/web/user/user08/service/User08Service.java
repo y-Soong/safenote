@@ -1,6 +1,6 @@
 package com.prafta.web.user.user08.service;
 
-import com.prafta.common.cmm.file.application.model.ImageBytesResult;
+import com.prafta.common.cmm.file.application.model.FileBytesResult;
 import com.prafta.web.user.user08.application.param.ContractSignListParam;
 import com.prafta.web.user.user08.application.param.EntryApproveParam;
 import com.prafta.web.user.user08.application.param.EntryRejectParam;
@@ -29,6 +29,12 @@ public interface User08Service {
     /** 서명 이력 목록 조회 (탭2 — 만료/탈퇴 계정 포함, §6-2). */
     ContractSignListResponse selectContractSignList(ContractSignListParam param);
 
-    /** 서명본 합성 이미지 로드 (열람/다운로드 — signId 사업장 인가 가드는 core 수행). */
-    ImageBytesResult loadContractSignImage(String signId, String gvCmpnyCd, String gvUserCd, String gvAuthCd);
+    /**
+     * 서명본 로드 (열람/다운로드 — signId 사업장 인가 가드는 core 수행).
+     *
+     * <p>서명본 PDF 통일(T3) 이후에도 <b>원본 바이트를 그대로</b> 내려 준다. 레거시 PNG 합성본은
+     * 재합성·변환하지 않는다(P3 — 증적 무결성). 프론트는 응답 {@code blob.type} 으로 다운로드
+     * 확장자를 판정한다(T8).
+     */
+    FileBytesResult loadContractSignImage(String signId, String gvCmpnyCd, String gvUserCd, String gvAuthCd);
 }

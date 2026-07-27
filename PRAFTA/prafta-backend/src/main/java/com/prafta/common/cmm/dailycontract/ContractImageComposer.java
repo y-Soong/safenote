@@ -6,16 +6,18 @@ import java.awt.Font;
 import java.awt.Graphics2D;
 import java.awt.RenderingHints;
 import java.awt.image.BufferedImage;
-import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 
 import javax.imageio.ImageIO;
 
 /**
- * 일용직 근로계약서 합성 유틸 (R5 — 서버 합성).
+ * 일용직 근로계약서 <b>서명 블록</b> 렌더 유틸 (R5 — 서버 합성).
  *
- * <p>계약서 원본 이미지 하단에 "계약 정보(시스템 자동 생성)" 블록(요청서 §4-3 레이아웃)을 덧붙여
- * 단일 PNG 로 합성한다. 블록 구성: 성명 / 최초 근로일(=서명일) / 계약 단위 "근로일 당일 1일" /
+ * <p>멀티페이지(PDF) 지원 개편(P2)으로 역할을 <b>블록 PNG 생성기</b>로 축소했다. 기존 전체 세로 합성
+ * ({@code compose})은 제거되고, 생성된 블록 PNG 는 {@link ContractPdfBuilder} 가 서명본 PDF 의
+ * 마지막 페이지로 삽입한다. 블록 문안/순서/폰트/여백 계산은 기존과 100% 동일하게 유지한다.
+ *
+ * <p>블록 구성: 성명 / 최초 근로일(=서명일) / 계약 단위 "근로일 당일 1일" /
  * 서명일시(서버 NOW) / 서명 이미지. 미래 종료일은 어디에도 기재하지 않는다(D1).
  *
  * <p>한글 렌더링 폰트: 논리 폰트 {@code SansSerif} 를 사용한다 — Windows 는 기본 매핑으로 한글이
@@ -37,29 +39,28 @@ public final class ContractImageComposer {
     }
 
     /**
-     * 계약서 원본 + 자동 계약정보 블록 + 서명 이미지를 세로로 합성해 PNG 바이트를 반환한다.
+     * 자동 계약정보 블록 + 서명 이미지를 단독 PNG 로 렌더한다(서명본 PDF 마지막 페이지 재료 — P2).
      *
-     * @param contractImageBytes 계약서 원본 이미지 바이트(png/jpg — ImageIO 디코딩 가능해야 함)
+     * <p>문안/순서/폰트/여백 계산은 기존 전체 합성({@code compose})의 블록 영역과 문자 단위로 동일하다.
+     * 렌더 폭은 삽입될 PDF 페이지 폭에 맞춰 호출부가 결정한다
+     * ({@code ContractPdfBuilder.resolveSignBlockRenderWidthPx} — 150DPI 정합, 최소 640px).
+     *
+     * @param targetWidthPx      블록 렌더 폭(px). 640 미만이면 640 으로 보정
      * @param signImage          서명 PNG 디코딩 결과(호출부에서 검증 완료된 BufferedImage)
      * @param userNm             성명(서명 시점 스냅샷)
      * @param firstWorkDateLabel 최초 근로일 표시 문자열(예: 2026-07-16)
      * @param signDtimeLabel     서명일시 표시 문자열(서버 시각, 예: 2026-07-16 08:12:33)
-     * @return 합성본 PNG 바이트
-     * @throws java.io.IOException 원본 디코딩/합성본 인코딩 실패 시(호출부에서 에러코드 매핑)
+     * @return 블록 PNG 바이트
+     * @throws java.io.IOException PNG 인코딩 실패 시(호출부에서 에러코드 매핑)
      */
-    public static byte[] compose(
-            byte[] contractImageBytes
+    public static byte[] renderSignBlock(
+            int targetWidthPx
             , BufferedImage signImage
             , String userNm
             , String firstWorkDateLabel
             , String signDtimeLabel) throws java.io.IOException {
 
-        BufferedImage contract = ImageIO.read(new ByteArrayInputStream(contractImageBytes));
-        if (contract == null) {
-            throw new java.io.IOException("계약서 원본 이미지를 디코딩할 수 없습니다.");
-        }
-
-        int width = Math.max(contract.getWidth(), MIN_CANVAS_WIDTH);
+        int width = Math.max(targetWidthPx, MIN_CANVAS_WIDTH);
 
         // 폭 비례 스케일 — 기준폭 640px 에서 본문 16px.
         int fontSize = Math.max(14, width / 40);
@@ -80,26 +81,24 @@ public final class ContractImageComposer {
                 + lineGap                   /* 서명 라벨 */
                 + signH + padding;
 
-        int contractDrawX = (width - contract.getWidth()) / 2;
-        int totalHeight = contract.getHeight() + blockHeight;
-
-        BufferedImage merged = new BufferedImage(width, totalHeight, BufferedImage.TYPE_INT_RGB);
+        BufferedImage merged = new BufferedImage(width, blockHeight, BufferedImage.TYPE_INT_RGB);
         Graphics2D g = merged.createGraphics();
         try {
             g.setRenderingHint(RenderingHints.KEY_TEXT_ANTIALIASING, RenderingHints.VALUE_TEXT_ANTIALIAS_ON);
             g.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
             g.setRenderingHint(RenderingHints.KEY_INTERPOLATION, RenderingHints.VALUE_INTERPOLATION_BILINEAR);
 
-            // 배경 백색 + 계약서 원본(상단, 수평 중앙).
+            // 배경 백색.
             g.setColor(Color.WHITE);
-            g.fillRect(0, 0, width, totalHeight);
-            g.drawImage(contract, contractDrawX, 0, null);
+            g.fillRect(0, 0, width, blockHeight);
 
-            // 블록 상단 구분선.
-            int blockTop = contract.getHeight();
+            // 블록 상단 구분선(기존 합성본의 원본/블록 경계선을 페이지 상단선으로 계승).
+            int blockTop = 0;
             g.setColor(new Color(0x33, 0x33, 0x33));
-            g.setStroke(new BasicStroke(Math.max(1f, fontSize / 12f)));
-            g.drawLine(padding, blockTop, width - padding, blockTop);
+            float strokeWidth = Math.max(1f, fontSize / 12f);
+            g.setStroke(new BasicStroke(strokeWidth));
+            int lineY = Math.max(1, Math.round(strokeWidth / 2f));
+            g.drawLine(padding, lineY, width - padding, lineY);
 
             int textX = padding;
             int y = blockTop + padding + fontSize;

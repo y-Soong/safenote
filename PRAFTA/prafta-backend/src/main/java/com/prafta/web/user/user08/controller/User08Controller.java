@@ -12,7 +12,7 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
-import com.prafta.common.cmm.file.application.model.ImageBytesResult;
+import com.prafta.common.cmm.file.application.model.FileBytesResult;
 import com.prafta.common.dto.TokenInfo;
 import com.prafta.common.error.dailycontract.DailyContractErrorCode;
 import com.prafta.common.exception.ApiException;
@@ -110,14 +110,20 @@ public class User08Controller {
         return ResponseEntity.status(HttpStatus.OK).body(response);
     }
 
-    /** 서명본 합성 이미지 스트림 (열람/다운로드 — signId 사업장 인가 가드는 core 수행, IDOR 차단). */
+    /**
+     * 서명본 스트림 (열람/다운로드 — signId 사업장 인가 가드는 core 수행, IDOR 차단).
+     *
+     * <p>서명본 PDF 통일(T3) 이후 Content-Type 은 {@code application/pdf}(신규) 또는
+     * {@code image/png}(레거시)로 동적이다. URL·파라미터·인가는 무변경이며, 프론트가 응답
+     * {@code blob.type} 으로 다운로드 확장자를 판정한다(T8).
+     */
     @GetMapping("/contract-sign-image")
     public ResponseEntity<?> getContractSignImage(
             @RequestParam("signId") String signId,
             @RequestHeader(value = "Authorization", required = false) String authorization) {
 
         TokenInfo token = jwtUtil.getAllClaimsAsMap(authorization);
-        ImageBytesResult image = user08Service.loadContractSignImage(
+        FileBytesResult image = user08Service.loadContractSignImage(
                 signId, token.gv_cmpnyCd(), token.gv_userCd(), token.gv_authCd());
         if (image == null) {
             // DB 메타는 있으나 디스크 파일 유실 등 — 존재 비노출 통일(404).
@@ -125,7 +131,7 @@ public class User08Controller {
         }
 
         return ResponseEntity.status(HttpStatus.OK)
-                .contentType(MediaType.parseMediaType(image.mediaType()))
+                .contentType(MediaType.parseMediaType(image.contentType()))
                 .body(image.data());
     }
 }

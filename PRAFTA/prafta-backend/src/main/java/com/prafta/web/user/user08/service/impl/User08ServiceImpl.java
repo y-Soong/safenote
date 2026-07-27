@@ -10,7 +10,7 @@ import com.prafta.common.cmm.dailycontract.service.DailyContractService;
 import com.prafta.common.cmm.dailyentry.application.query.EntryRequestListQuery;
 import com.prafta.common.cmm.dailyentry.result.EntryRequestRow;
 import com.prafta.common.cmm.dailyentry.service.DailyEntryService;
-import com.prafta.common.cmm.file.application.model.ImageBytesResult;
+import com.prafta.common.cmm.file.application.model.FileBytesResult;
 import com.prafta.common.security.crypto.AesGcmCrypto;
 import com.prafta.web.user.user08.application.param.ContractSignListParam;
 import com.prafta.web.user.user08.application.param.EntryApproveParam;
@@ -72,7 +72,14 @@ public class User08ServiceImpl implements User08Service {
                         , r.reqDtime()
                         , r.procUserNm()
                         , r.procDtime()
-                        , r.rejectReason()))
+                        , r.rejectReason()
+                        // 확정 계약서 표시(T4/K9) — pin 원값 그대로 전달한다.
+                        //   ★null(레거시)과 0(승인 시점 미등록)을 서로 바꾸거나 뭉개지 않는다(화면 표기가 다름).
+                        , r.pinnedContractVer()
+                        , r.pinnedFormatType()
+                        , r.activeContractVer()
+                        , r.activeFormatType()
+                        , r.lastSignedContractVer()))
                 .toList();
 
         log.info("웹 입장 승인요청 목록 조회 종료 — siteCd={}, rows={}", param.siteCd(), items.size());
@@ -145,7 +152,7 @@ public class User08ServiceImpl implements User08Service {
     }
 
     @Override
-    public ImageBytesResult loadContractSignImage(String signId, String gvCmpnyCd, String gvUserCd, String gvAuthCd) {
+    public FileBytesResult loadContractSignImage(String signId, String gvCmpnyCd, String gvUserCd, String gvAuthCd) {
         log.info("웹 계약서 서명본 열람 진입 — cmpnyCd={}, signId={}, 열람자={}", gvCmpnyCd, signId, gvUserCd);
 
         // signId 의 SITE_CD 기준 사업장 인가 가드(IDOR)는 core 가 수행한다.

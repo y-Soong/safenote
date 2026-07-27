@@ -56,15 +56,35 @@
       <div class="active-card" v-if="siteCd">
         <template v-if="activeContract">
           <div class="active-card__info">
-            <span class="status-badge is-active">사용중</span>
-            <span class="active-card__name">{{
-              activeContract.contractNm
-            }}</span>
-            <span class="active-card__meta">
-              v{{ activeContract.contractVer }} · 등록
-              {{ activeContract.insertDate }} ·
-              {{ activeContract.insertNm }}
-            </span>
+            <div class="active-card__line">
+              <span class="status-badge is-active">사용중</span>
+              <span class="active-card__name">{{
+                activeContract.contractNm
+              }}</span>
+              <span class="active-card__meta">
+                v{{ activeContract.contractVer }} · 등록
+                {{ activeContract.insertDate }} · {{ activeContract.insertNm }} ·
+                {{ fnFormatLabel(activeContract.formatType) }}
+                <template v-if="activePageCount">
+                  · {{ activePageCount }}페이지
+                </template>
+              </span>
+              <!-- 서명자 존재 시 정정 불가 사유를 카드에서 먼저 보여준다(J7) -->
+              <span v-if="amendSignCnt > 0" class="sign-chip">
+                서명 {{ amendSignCnt }}건
+              </span>
+            </div>
+            <!-- 정정 vs 교체 오조작 방지 — 두 액션의 결과를 대조해서 상시 노출 -->
+            <p class="active-card__hint">
+              <span class="active-card__hint-row">
+                <strong>정정</strong> = v{{ activeContract.contractVer }} 파일만
+                제자리 교체 · 버전 유지 · <strong>재서명 없음</strong>
+              </span>
+              <span class="active-card__hint-row">
+                <strong>교체</strong> = 새 버전 생성 ·
+                <strong>사업장 전원 재서명</strong> (상단 [등록] 버튼)
+              </span>
+            </p>
           </div>
           <div class="active-card__actions">
             <button
@@ -72,6 +92,31 @@
               @click="fnPreview(activeContract)"
             >
               미리보기
+            </button>
+            <!-- 정정(in-place) — primary 로 만들지 않는다(교체보다 눈에 띄면 오용을 유도) -->
+            <button
+              class="btn btn-sm btn-amend"
+              :disabled="!canAmend"
+              :title="amendBtnTitle"
+              @click="fnOpenAmendPop"
+            >
+              <svg
+                class="btn-amend__icon"
+                viewBox="0 0 24 24"
+                width="12"
+                height="12"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="1.8"
+                aria-hidden="true"
+              >
+                <path
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                  d="M16.5 3.5l4 4L8 20H4v-4z"
+                />
+              </svg>
+              정정(버전 유지)
             </button>
             <button
               v-if="canDelete"
@@ -134,6 +179,15 @@
                   @update:width="onResize"
                 />
                 <ThSortable
+                  label="형식"
+                  col-key="formatType"
+                  :sort-key="sortKey"
+                  :sort-order="sortOrder"
+                  :width="colWidths.formatType"
+                  @sort="onSort"
+                  @update:width="onResize"
+                />
+                <ThSortable
                   label="상태"
                   col-key="useYn"
                   :sort-key="sortKey"
@@ -168,7 +222,7 @@
             <tbody>
               <template v-if="!contracts || contracts.length === 0">
                 <tr>
-                  <td colspan="7" class="edu-grid-empty">
+                  <td colspan="8" class="edu-grid-empty">
                     등록된 세부 항목이 없습니다.
                   </td>
                 </tr>
@@ -178,6 +232,9 @@
                   <td style="text-align: center">{{ idx + 1 }}</td>
                   <td style="text-align: center">v{{ row.contractVer }}</td>
                   <td>{{ row.contractNm }}</td>
+                  <td style="text-align: center">
+                    {{ fnFormatLabel(row.formatType) }}
+                  </td>
                   <td style="text-align: center">
                     <span
                       class="status-badge"
@@ -225,6 +282,7 @@ import axios from "@/api/axios";
 import ViewHeader from "@/components/common/ViewHeader.vue";
 import ThSortable from "@/components/common/ThSortable.vue";
 import DailyContractRegPop from "@/views/user/popup/DailyContractRegPop.vue";
+import DailyContractAmendPop from "@/views/user/popup/DailyContractAmendPop.vue";
 import {
   useTableSort,
   useColumnResize,
@@ -243,10 +301,14 @@ const siteList = ref([]);
 const siteCd = ref("");
 const contracts = ref([]);
 
+// 활성 계약서 페이지 수 — 활성 1건만 contract-meta 로 조회(목록 전건 PDF 파싱 방지)
+const activePageCount = ref(null);
+
 const { sortKey, sortOrder, sortedData, onSort } = useTableSort(contracts);
 const { colWidths, onResize } = useColumnResize({
   contractVer: 70,
   contractNm: 260,
+  formatType: 80,
   useYn: 90,
   insertNm: 120,
   insertDate: 170,
@@ -259,6 +321,44 @@ const activeContract = computed(
 
 // 사용중지 권한 — 메뉴 버튼 권한(BTN_DELT)으로 노출 제어(User_06 미러)
 const canDelete = computed(() => localButtons.value?.delete === "Y");
+
+// 형식 표기 — 서버가 TB_FILE_INFO.FILE_EXT 로 도출한 'PDF' | 'IMG'(미상은 이미지 표기)
+const fnFormatLabel = (formatType) => (formatType === "PDF" ? "PDF" : "이미지");
+
+// ─────────── 정정(in-place) 가능 여부 ───────────
+// GET /webApi/user07/contract-amend-precheck 응답 { amendable, signCnt, pinnedApprovedCnt, pendingCnt }
+//   null = 미조회/조회 실패 → 버튼 비활성(서버가 최종 방어하지만 UI 에서도 가드).
+const amendPrecheck = ref(null);
+const amendPrecheckLoading = ref(false);
+
+const amendSignCnt = computed(() => amendPrecheck.value?.signCnt ?? 0);
+
+// 정정 = 활성 계약서 파일 교체이므로 등록(BTN_CREATE)과 동일한 메뉴 버튼 권한을 요구한다(sec SEC-14).
+//   이 게이트가 없으면 등록·사용중지 버튼이 회수된 관리자도 정정 경로로 파일을 바꿀 수 있어
+//   화면 레벨 권한 정책이 등록/중지와 비대칭이 된다(서버 권한 경계 자체는 master/hr ∩ 사업장 권한으로 동일).
+const canAmendByMenu = computed(() => localButtons.value?.create === "Y");
+
+const canAmend = computed(
+  () =>
+    canAmendByMenu.value &&
+    !!activeContract.value &&
+    !amendPrecheckLoading.value &&
+    amendPrecheck.value?.amendable === true,
+);
+
+// 버튼 tooltip — 왜 비활성인지 사유를 반드시 노출한다(숨기면 관리자가 교체=전원 재서명으로 우회한다).
+const amendBtnTitle = computed(() => {
+  if (!activeContract.value) return "";
+  if (!canAmendByMenu.value) return "계약서 등록/정정 권한이 없습니다.";
+  if (amendPrecheckLoading.value) return "정정 가능 여부를 확인하고 있습니다.";
+  if (!amendPrecheck.value) {
+    return "정정 가능 여부를 확인하지 못했습니다. 조회를 다시 실행해 주세요.";
+  }
+  if (amendPrecheck.value.amendable !== true) {
+    return `이미 서명한 근로자가 ${amendSignCnt.value}명 있어 정정할 수 없습니다. 내용을 바꿔야 하면 [등록]으로 새 버전을 등록해 주세요.`;
+  }
+  return `현재 버전 v${activeContract.value.contractVer} 의 파일만 교체합니다. 버전은 올라가지 않고 재서명도 발생하지 않습니다.`;
+});
 
 // =========================== Data ===========================
 const { proxy } = getCurrentInstance();
@@ -312,6 +412,8 @@ const fnLoadSiteList = async () => {
 // 버전 이력 조회 — GET /webApi/user07/contract-lists?siteCd= (cmpnyCd 는 서버 JWT)
 const fnSearch = async () => {
   contracts.value = [];
+  activePageCount.value = null;
+  amendPrecheck.value = null;
   if (!siteCd.value) return;
 
   try {
@@ -322,18 +424,91 @@ const fnSearch = async () => {
     if (response.status === 200) {
       // 등록자명(insertNm)은 서버가 TB_USER 조인 이름으로 반환(탈퇴/부재 시 서버가 USER_CD 폴백).
       //   구버전 응답 대비 insertNo 폴백 유지. 활성 요약 카드(activeContract)는 computed 가 자동 도출.
+      //   formatType 은 서버가 FILE_EXT 조인으로 도출('PDF'|'IMG') — 목록에서는 PDF 파싱이 발생하지 않는다.
       contracts.value = (response.data?.versionList || []).map((c) => ({
         contractVer: c.contractVer,
         contractNm: c.contractNm,
         useYn: c.useYn,
         insertNm: c.insertNm || c.insertNo,
         insertDate: c.insertDate,
+        formatType: c.formatType,
       }));
     }
   } catch (err) {
     const msg = resolveApiErrorMessage(err, "조회 중 오류가 발생했습니다.");
     await proxy.$alert(msg);
+    return;
   }
+
+  await fnLoadActiveMeta();
+  await fnLoadAmendPrecheck();
+};
+
+// 활성 계약서 페이지 수 — GET /webApi/user07/contract-meta?siteCd=&contractVer=
+//   페이지 수는 PDF 파싱이 필요해 활성 1건만 조회한다(목록 전건 파싱 금지). 부가 정보이므로
+//   실패해도 화면을 막지 않는다(형식 표기는 목록 응답으로 이미 확보).
+const fnLoadActiveMeta = async () => {
+  activePageCount.value = null;
+  const active = activeContract.value;
+  if (!active) return;
+
+  try {
+    const response = await axios.get("/webApi/user07/contract-meta", {
+      params: { siteCd: siteCd.value, contractVer: active.contractVer },
+    });
+
+    if (response.status === 200) {
+      const count = Number(response.data?.pageCount);
+      activePageCount.value = Number.isFinite(count) && count > 0 ? count : null;
+    }
+  } catch (err) {
+    console.warn("[User_07] 활성 계약서 페이지 수 조회 실패:", err?.message);
+  }
+};
+
+// 정정 precheck 조회 — GET /webApi/user07/contract-amend-precheck?siteCd=&contractVer=
+//   활성 카드 메타(fnLoadActiveMeta)와 같은 시점에 갱신한다. 부가 정보이므로 실패해도 화면을 막지 않는다
+//   (실패 시 버튼만 비활성 + tooltip 사유 — $alert 로 조회 흐름을 끊지 않는다).
+const fnLoadAmendPrecheck = async () => {
+  amendPrecheck.value = null;
+  const active = activeContract.value;
+  if (!active) return;
+
+  amendPrecheckLoading.value = true;
+  try {
+    const response = await axios.get("/webApi/user07/contract-amend-precheck", {
+      params: { siteCd: siteCd.value, contractVer: active.contractVer },
+    });
+
+    if (response.status === 200) {
+      const data = response.data || {};
+      // amendable 은 엄격 비교(=== true)로만 통과시킨다 — 문자열 "true"/키 누락을 truthy 로
+      //   흘리면 서명자가 있는 버전에서도 정정 버튼이 열린다.
+      amendPrecheck.value = {
+        amendable: data.amendable === true,
+        signCnt: Number(data.signCnt ?? 0),
+        pinnedApprovedCnt: Number(data.pinnedApprovedCnt ?? 0),
+        pendingCnt: Number(data.pendingCnt ?? 0),
+      };
+    }
+  } catch (err) {
+    amendPrecheck.value = null;
+    console.warn("[User_07] 정정 precheck 조회 실패:", err?.message);
+  } finally {
+    amendPrecheckLoading.value = false;
+  }
+};
+
+// 정정 팝업 열기 — 서명 0건일 때만(서버 재검증이 최종 방어).
+//   precheck 는 팝업이 마운트 시 다시 조회한다(부모 조회 이후 서명이 커밋될 수 있다).
+const fnOpenAmendPop = () => {
+  if (!canAmend.value || !activeContract.value) return;
+  openPop(DailyContractAmendPop, {
+    siteCd: siteCd.value,
+    contractVer: activeContract.value.contractVer,
+    contractNm: activeContract.value.contractNm,
+    onSaved: fnSearch,
+  });
 };
 
 // 등록/교체 팝업 — 저장 성공 시 목록 갱신. 새 버전 등록 = 기존 활성 자동 종료(D8 재서명 트리거)
@@ -476,6 +651,68 @@ const fnStop = async () => {
   gap: 0.4rem;
   flex-shrink: 0;
 }
+
+/* 활성 카드 정보 열 — 힌트 줄을 넣기 위해 세로 스택으로 전환(카드 2열 구조는 유지) */
+.active-card__info {
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.35rem;
+}
+.active-card__line {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  flex-wrap: wrap;
+  min-width: 0;
+}
+
+/* 정정 vs 교체 대조 힌트 */
+.active-card__hint {
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
+  margin: 0;
+  font-size: var(--btn-font-sm);
+  line-height: 1.5;
+  color: var(--color-text-muted);
+}
+.active-card__hint-row strong {
+  color: var(--color-text);
+}
+
+/* 서명자 존재 표시(정정 불가 사유) */
+.sign-chip {
+  padding: 0.1rem 0.5rem;
+  border-radius: var(--btn-radius);
+  background: var(--color-warning-bg);
+  color: var(--color-warning-text);
+  font-size: var(--btn-font-sm);
+  line-height: 1.4;
+  white-space: nowrap;
+}
+
+/* 정정 버튼 — 중립 아웃라인. primary(교체·사용중지)와 색/형태로 구분한다 */
+.btn-amend {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border-strong);
+  color: var(--color-text);
+}
+.btn-amend:hover:not(:disabled) {
+  background: var(--color-bg);
+  border-color: var(--color-text-muted);
+}
+.btn-amend:disabled {
+  color: var(--color-text-muted);
+  border-color: var(--color-border);
+  cursor: not-allowed;
+}
+.btn-amend__icon {
+  flex-shrink: 0;
+}
+
 .active-card__empty {
   margin: 0;
   font-size: 0.8rem;

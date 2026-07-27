@@ -1,23 +1,14 @@
 package com.prafta.common.cmm.file.service.impl;
 
-import java.awt.image.BufferedImage;
-import java.io.ByteArrayOutputStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.time.LocalDate;
 import java.time.format.DateTimeFormatter;
-import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
 
-import javax.imageio.ImageIO;
-
-import org.apache.pdfbox.Loader;
-import org.apache.pdfbox.pdmodel.PDDocument;
-import org.apache.pdfbox.pdmodel.encryption.InvalidPasswordException;
-import org.apache.pdfbox.rendering.PDFRenderer;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
@@ -29,6 +20,7 @@ import com.prafta.common.cmm.file.application.query.FileReadQuery;
 import com.prafta.common.cmm.file.dto.param.FileInfoParam;
 import com.prafta.common.cmm.file.mapper.FileMapper;
 import com.prafta.common.cmm.file.service.FileService;
+import com.prafta.common.cmm.file.support.PdfSupport;
 import com.prafta.common.error.ai.AiErrorCode;
 import com.prafta.common.error.file.FileErrorCode;
 import com.prafta.common.exception.ApiException;
@@ -325,6 +317,64 @@ public class FileServiceImpl implements FileService {
 
 	@Override
 	public List<ImageBytesResult> loadPdfPageImages(FileReadQuery query, int pageStride, int maxPages) {
+		// TBM AI 계약 유지(회귀 금지): DPI=120f 고정 + PDF 처리 실패는 AI_502_005 로 매핑.
+		//   렌더 결과 바이트는 4-arg 오버로드와 동일하다(같은 코드 경로).
+		try {
+			return loadPdfPageImages(query, pageStride, maxPages, PDF_RENDER_DPI);
+		} catch (ApiException ae) {
+			if (FileErrorCode.FILE_400_002.equals(ae.getErrorCode())
+					|| FileErrorCode.FILE_500_001.equals(ae.getErrorCode())) {
+				// 암호화/렌더 실패 → 기존 호출부(TbmAi01) 가 기대하는 AI 에러코드로 remap.
+				throw new ApiException(AiErrorCode.AI_502_005);
+			}
+			throw ae;
+		}
+	}
+
+	@Override
+	public List<ImageBytesResult> loadPdfPageImages(FileReadQuery query, int pageStride, int maxPages, float dpi) {
+		byte[] pdfBytes = readPdfBytesOrNull(query);
+		if (pdfBytes == null) {
+			// 대상 없음(DB 행/디스크 파일 부재) → null(호출부에서 404 매핑).
+			return null;
+		}
+		return PdfSupport.renderPagesToPng(pdfBytes, pageStride, maxPages, dpi).stream()
+				.map(png -> new ImageBytesResult(png, "image/png"))
+				.toList();
+	}
+
+	@Override
+	public ImageBytesResult loadPdfPageImage(FileReadQuery query, int pageIndex1Base, float dpi) {
+		byte[] pdfBytes = readPdfBytesOrNull(query);
+		if (pdfBytes == null) {
+			return null;
+		}
+		// 1-base → 0-base. 범위 밖이면 PdfSupport 가 null 을 반환한다(도메인이 400_007 등으로 매핑).
+		byte[] png = PdfSupport.renderPageToPng(pdfBytes, pageIndex1Base - 1, dpi);
+		if (png == null) {
+			return null;
+		}
+		return new ImageBytesResult(png, "image/png");
+	}
+
+	@Override
+	public int loadPdfPageCount(FileReadQuery query) {
+		byte[] pdfBytes = readPdfBytesOrNull(query);
+		if (pdfBytes == null) {
+			return 0;
+		}
+		return PdfSupport.readPageCount(pdfBytes);
+	}
+
+	/**
+	 * PDF 원본 바이트 로드 — 확장자 화이트리스트(pdf 전용) + base-dir 컨테인먼트(traversal 방어) 후 read.
+	 *
+	 * <p>기존 {@code loadPdfPageImages} 의 전처리(파라미터/fileMgmtCd 경로문자/확장자/파일 존재 검증)를
+	 *    그대로 옮긴 공용 헬퍼다. 대상 없음(DB 행 부재/디스크 파일 부재)은 {@code null} 을 반환한다.
+	 *
+	 * @throws ApiException fileMgmtCd 경로문자·비 PDF 확장자·traversal(FILE_400_001), read 실패(FILE_500_001)
+	 */
+	private byte[] readPdfBytesOrNull(FileReadQuery query) {
 		if (query == null || query.cmpnyCd() == null || query.fileMgmtCd() == null
 				|| query.cmpnyCd().isBlank() || query.fileMgmtCd().isBlank()) {
 			return null;
@@ -339,7 +389,7 @@ public class FileServiceImpl implements FileService {
 
 		FileReadInfo info = fileMapper.selectFileInfoForRead(query);
 		if (info == null || info.filePath() == null || info.fileExt() == null) {
-			// DB 행 없음(대상 없음) → null(호출부에서 AI_404_002 매핑).
+			// DB 행 없음(대상 없음) → null(호출부에서 404 매핑).
 			return null;
 		}
 
@@ -363,35 +413,11 @@ public class FileServiceImpl implements FileService {
 			return null;
 		}
 
-		// PDF 렌더(PDFBox 3.x): 페이지를 stride 간격으로 성기게 샘플, 최대 maxPages 장까지 PNG 로 변환.
 		try {
-			byte[] pdfBytes = Files.readAllBytes(savePath);
-			try (PDDocument doc = Loader.loadPDF(pdfBytes)) {
-				if (doc.isEncrypted()) {
-					// 암호화 PDF 는 렌더 불가.
-					throw new ApiException(AiErrorCode.AI_502_005);
-				}
-				PDFRenderer renderer = new PDFRenderer(doc);
-				int total = doc.getNumberOfPages();
-				int stride = Math.max(1, pageStride);
-				int cap = Math.max(1, maxPages);
-				List<ImageBytesResult> out = new ArrayList<>();
-				for (int i = 0; i < total && out.size() < cap; i += stride) {
-					BufferedImage img = renderer.renderImageWithDPI(i, PDF_RENDER_DPI);
-					ByteArrayOutputStream baos = new ByteArrayOutputStream();
-					ImageIO.write(img, "png", baos);
-					out.add(new ImageBytesResult(baos.toByteArray(), "image/png"));
-				}
-				return out;
-			}
-		} catch (InvalidPasswordException e) {
-			log.warn("PDF 페이지 렌더 실패(암호화) - path={}", savePath);
-			throw new ApiException(AiErrorCode.AI_502_005);
-		} catch (ApiException ae) {
-			throw ae;
+			return Files.readAllBytes(savePath);
 		} catch (Exception e) {
-			log.error("PDF 페이지 렌더 실패 - path={}, 원인={}", savePath, e.getMessage());
-			throw new ApiException(AiErrorCode.AI_502_005);
+			log.error("PDF 원본 read 실패 - path={}, 원인={}", savePath, e.getMessage());
+			throw new ApiException(FileErrorCode.FILE_500_001);
 		}
 	}
 

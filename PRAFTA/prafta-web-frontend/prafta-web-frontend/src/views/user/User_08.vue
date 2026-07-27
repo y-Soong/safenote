@@ -98,6 +98,13 @@
               </span>
               <span class="subtitle-text">입장 승인 요청</span>
             </div>
+            <!-- 일괄 승인 사전 요약 — 클릭 전에 재서명 대상 규모를 인지시킨다 -->
+            <span v-if="checkedReqIds.length > 0" class="bulk-summary">
+              선택 {{ checkedReqIds.length }}건
+              <template v-if="checkedResignCnt > 0">
+                · 재서명 대상 {{ checkedResignCnt }}건
+              </template>
+            </span>
             <!-- D9: 전체 체크 → 일괄 승인 -->
             <button
               class="btn btn-sm btn-primary"
@@ -158,6 +165,11 @@
                     @sort="onEntrySort"
                     @update:width="onEntryResize"
                   />
+                  <!-- 확정 계약서(K9) — 대기 행은 승인 시 확정될 활성 버전, 승인/소진 행은 pin 된 버전.
+                       표시 출처가 행 상태에 따라 갈리므로 ThSortable(단일 colKey 정렬)을 쓰지 않는다. -->
+                  <th class="event_cell" style="text-align: center; width: 150px">
+                    확정 계약서
+                  </th>
                   <ThSortable
                     label="요청일시"
                     col-key="reqDtime"
@@ -196,7 +208,7 @@
               <tbody>
                 <template v-if="!entryRequests || entryRequests.length === 0">
                   <tr>
-                    <td colspan="9" class="edu-grid-empty">
+                    <td colspan="10" class="edu-grid-empty">
                       등록된 세부 항목이 없습니다.
                     </td>
                   </tr>
@@ -222,6 +234,26 @@
                         :class="row.reqType === '01' ? 'is-new' : 'is-reentry'"
                       >
                         {{ row.reqType === "01" ? "신규가입" : "재입장" }}
+                      </span>
+                    </td>
+                    <!-- 확정 계약서 — 값 없음/센티넬 0/레거시 NULL 을 구분해 표기(2-2 표) -->
+                    <td class="contract-cell" style="text-align: center">
+                      <span
+                        class="contract-cell__ver"
+                        :class="{ 'is-none': !fnEffVerText(row).hasVer }"
+                        :title="fnEffVerText(row).title"
+                      >
+                        {{ fnEffVerText(row).text }}
+                      </span>
+                      <span v-if="fnEffFormat(row)" class="contract-cell__fmt">
+                        · {{ fnEffFormat(row) }}
+                      </span>
+                      <span
+                        v-if="fnNeedsResign(row)"
+                        class="resign-badge"
+                        :title="fnResignTitle(row)"
+                      >
+                        재서명 대상
                       </span>
                     </td>
                     <td>{{ row.reqDtime }}</td>
@@ -549,6 +581,86 @@ const statusClass = (s) =>
     "05": "is-consumed",
   })[s] || "";
 
+// ─────────── 확정 계약서 표시(K9) ───────────
+// 표시 출처: 대기('01')=activeContractVer(승인 시 확정될 값) / 승인·소진('02','05')=pinnedContractVer(pin)
+//   거부·만료('03','04')는 확정 행위가 없어 pin 이 없다(J2) → 표기하지 않는다.
+// 특수값: null(대기)=사업장 미등록 / 0(승인·소진)=승인 시점 미등록 센티넬 / null(승인·소진)=pin 도입 전 레거시
+const ENTRY_PINNED_STATUS = ["02", "05"];
+
+/** 표시 대상 버전 원시값 — 행 상태별 출처만 고른다(가공 없음). undefined = 표기 대상 아님 */
+const fnEffVerRaw = (row) => {
+  if (row.reqStatus === "01") return row.activeContractVer;
+  if (ENTRY_PINNED_STATUS.includes(row.reqStatus)) return row.pinnedContractVer;
+  return undefined;
+};
+
+/** 셀 표시 텍스트 + tooltip + 버전 보유 여부 */
+const fnEffVerText = (row) => {
+  const raw = fnEffVerRaw(row);
+  if (raw === undefined) {
+    return { text: "-", title: "", hasVer: false };
+  }
+  if (raw === null) {
+    return ENTRY_PINNED_STATUS.includes(row.reqStatus)
+      ? {
+          text: "레거시",
+          title:
+            "pin 도입 전 승인 건 — 서명 시점의 활성 계약서 기준으로 판정됩니다.",
+          hasVer: false,
+        }
+      : {
+          text: "없음",
+          title: "계약서 미등록 사업장 — 승인해도 서명 게이트를 건너뜁니다.",
+          hasVer: false,
+        };
+  }
+  if (Number(raw) === 0) {
+    return {
+      text: "없음",
+      title:
+        "승인 시점에 계약서가 미등록이었습니다 — 이 사이클은 서명 게이트를 건너뜁니다.",
+      hasVer: false,
+    };
+  }
+  return { text: `v${raw}`, title: "", hasVer: true };
+};
+
+/** 표시 버전의 형식 라벨 — 값이 없으면 표기 생략(추측 금지).
+ *  서버가 pinnedFormatType 을 주지 않는 동안은 "표시 버전 == 활성 버전"일 때만 activeFormatType 을 쓴다. */
+const fnEffFormat = (row) => {
+  const info = fnEffVerText(row);
+  if (!info.hasVer) return "";
+  const raw = fnEffVerRaw(row);
+  const type =
+    row.pinnedFormatType ??
+    (Number(raw) === Number(row.activeContractVer) ? row.activeFormatType : null);
+  if (!type) return "";
+  return type === "PDF" ? "PDF" : "이미지";
+};
+
+/** 재서명 대상 — 표시 버전이 있고, 그 버전이 최종 서명 버전과 다를 때 */
+const fnNeedsResign = (row) => {
+  const info = fnEffVerText(row);
+  if (!info.hasVer) return false;
+  return Number(fnEffVerRaw(row)) !== Number(row.lastSignedContractVer);
+};
+
+const fnResignTitle = (row) => {
+  const last = row.lastSignedContractVer;
+  if (last === null || last === undefined) {
+    return "서명 이력 없음 — 다음 로그인 시 서명이 필요합니다.";
+  }
+  return `최종 서명 v${last} → 확정 v${fnEffVerRaw(row)} (다음 로그인 시 재서명)`;
+};
+
+/** 일괄 승인 사전 요약 — 체크된 대기 행 중 재서명 대상 건수 */
+const checkedResignCnt = computed(
+  () =>
+    entryRequests.value.filter(
+      (r) => r.checked && r.reqStatus === "01" && fnNeedsResign(r),
+    ).length,
+);
+
 // =========================== 탭2: 서명 이력 ===========================
 const signSiteCd = ref("");
 const signFromDate = ref("");
@@ -686,6 +798,14 @@ const fnSearchEntry = async () => {
         procNm: r.procUserNm,
         procDtime: r.procDtime,
         checked: false,
+        // 확정 계약서 표시용(백엔드 T4) — 값이 없으면 화면이 "-"/형식 생략으로 degrade 한다.
+        //   ★반드시 `??` — `||` 로 폴백하면 센티넬 0(승인 시 미등록=게이트 스킵)이
+        //     null(레거시=활성 폴백)로 바뀌어 화면이 정반대 정보를 준다.
+        pinnedContractVer: r.pinnedContractVer ?? null,
+        activeContractVer: r.activeContractVer ?? null,
+        lastSignedContractVer: r.lastSignedContractVer ?? null,
+        activeFormatType: r.activeFormatType ?? null,
+        pinnedFormatType: r.pinnedFormatType ?? null,
       }));
     }
   } catch (err) {
@@ -736,8 +856,13 @@ const fnApprove = async (row) => {
 
 // 일괄 승인(D9) — POST /webApi/user08/entry-approve { reqIds: checkedReqIds }
 const fnBulkApprove = async () => {
+  // 재서명 대상이 있으면 규모를 confirm 에 함께 노출한다(§2-4 문구 원문). 0건이면 기존 문구 유지.
+  const bulkCnt = checkedReqIds.value.length;
+  const resignCnt = checkedResignCnt.value;
   const ok = await proxy.$confirm(
-    `선택한 ${checkedReqIds.value.length}건을 일괄 승인하시겠습니까?`,
+    resignCnt > 0
+      ? `선택한 ${bulkCnt}건을 일괄 승인하시겠습니까?\n${bulkCnt}건 중 ${resignCnt}건이 재서명 대상입니다.`
+      : `선택한 ${bulkCnt}건을 일괄 승인하시겠습니까?`,
   );
   if (!ok) return;
   await fnProcessApprove(checkedReqIds.value);
@@ -830,6 +955,23 @@ const fnSearchSign = async () => {
   }
 };
 
+// 서명본 확장자 매핑 — 서명본은 신규=PDF, 레거시=PNG 합성본이 혼재한다.
+//   화면 데이터로 추측하면 혼재 목록에서 오판하므로 반드시 응답 Content-Type(blob.type)으로 판정한다.
+const SIGN_EXT_BY_MIME = {
+  "application/pdf": "pdf",
+  "image/png": "png",
+  "image/jpeg": "jpg",
+};
+
+/** 서명본 저장 확장자 — 미상/공백 Content-Type 은 png 폴백(다운로드 자체는 실패시키지 않는다). */
+const resolveSignFileExt = (blob) => {
+  const mime = String(blob?.type || "")
+    .split(";")[0]
+    .trim()
+    .toLowerCase();
+  return SIGN_EXT_BY_MIME[mime] || "png";
+};
+
 // 서명본 blob 조회 공통 — 스트림 EP 만 사용(파일 경로 비노출, 인가는 서버 core 가드).
 const fnLoadSignBlob = async (signId) => {
   const response = await axios.get("/webApi/user08/contract-sign-image", {
@@ -872,7 +1014,8 @@ const fnDownloadSign = async (row) => {
     const url = URL.createObjectURL(blob);
     const link = document.createElement("a");
     link.href = url;
-    link.download = `contract-sign-${row.signId}.png`;
+    // 파일명은 signId 만 사용(성명/휴대폰 등 PII 삽입 금지) + 확장자는 응답 Content-Type 기준.
+    link.download = `contract-sign-${row.signId}.${resolveSignFileExt(blob)}`;
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
@@ -985,6 +1128,49 @@ const fnDownloadSign = async (row) => {
 .status-badge.is-consumed {
   background: var(--color-border, #e5e7eb);
   color: var(--color-text-muted, #4b5563);
+}
+
+/* 확정 계약서 셀 — 버전 + 형식 + 재서명 배지(2줄 허용) */
+.contract-cell {
+  line-height: 1.4;
+  white-space: normal;
+}
+.contract-cell__ver {
+  font-weight: 600;
+  color: var(--color-text);
+}
+.contract-cell__ver.is-none {
+  font-weight: 400;
+  color: var(--color-text-muted);
+}
+.contract-cell__fmt {
+  margin-left: 0.15rem;
+  font-size: var(--btn-font-sm);
+  color: var(--color-text-muted);
+}
+
+/* 재서명 대상 배지 — "조치 필요" 톤(대기 배지와 동일 계열) */
+.resign-badge {
+  display: block;
+  margin-top: 0.15rem;
+  padding: 0.1rem 0.4rem;
+  border-radius: var(--btn-radius);
+  background: var(--color-warning-bg);
+  color: var(--color-warning-text);
+  font-size: var(--btn-font-sm);
+  line-height: 1.4;
+  white-space: nowrap;
+}
+
+/* 일괄 승인 사전 요약 칩 */
+.bulk-summary {
+  /* .subtitle-row(table.css)가 space-between 이라 자식이 3개(제목·칩·버튼)가 되면 칩이 행 중앙으로
+     밀린다. margin-left:auto 로 남는 공간을 왼쪽에 흡수시켜 버튼 옆(우측)에 붙인다. */
+  margin-left: auto;
+  margin-right: 0.4rem;
+  font-size: var(--btn-font-sm);
+  color: var(--color-text-muted);
+  white-space: nowrap;
 }
 
 /* 거부 버튼 톤 */

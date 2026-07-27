@@ -22,5 +22,13 @@ public record EntryRequestRow(
     , String procUserNm
     , String procDtime     // YYYY-MM-DD HH:mm
     , String rejectReason  // 내부 기록용(관리 화면 한정 노출 — 일용직에게 미노출)
+    // ── 확정 계약서 표시(승인시점 버전확정 T4 / K9) — 신규 컴포넌트는 반드시 맨 뒤에 append.
+    //    pin 은 관리자의 확정 행위이므로, 무엇을 확정하는지 보지 않고 승인하게 두면 안 된다.
+    , Integer pinnedContractVer      // 자기 행 pin(승인/소진 행에서 유효). ★NULL=레거시 / 0=승인 시점 미등록
+                                     //   — 두 값은 화면에서 다르게 표기되므로 정규화(한쪽으로 뭉개기) 금지
+    , String pinnedFormatType        // pin 버전 형식 'PDF'|'IMG'(pin 버전 행이 없으면 null)
+    , Integer activeContractVer      // 사업장 활성 버전(대기 행이 승인되면 확정될 버전). 미등록이면 null
+    , String activeFormatType        // 활성 버전 형식 'PDF'|'IMG'. 미등록이면 null
+    , Integer lastSignedContractVer  // 해당 계정의 최종 서명 버전(없으면 null) — "재서명 대상" 판정 재료
 ) {
 }

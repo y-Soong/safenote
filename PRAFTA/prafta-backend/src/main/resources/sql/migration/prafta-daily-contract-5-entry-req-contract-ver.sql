@@ -1,0 +1,84 @@
+-- ============================================================================
+-- PRAFTA-daily-contract-5 — 입장 승인요청에 "승인 시점 확정 계약서 버전"(pin) 컬럼 추가
+-- 작성일: 2026-07-27
+-- 적용 환경: MySQL 8.0.42 (개발) / 8.4.10 (운영 RDS)
+-- 출처: .claude/requests/common/작업지시서_계약서-승인시점-버전확정.md §5-1 (K1·K4·K8)
+--       .claude/requests/common/작업지시서_계약서-승인시점-버전확정.plan.md §2
+--
+-- 목적:
+--   관리자 승인(REQ_STATUS '01'->'02') 시점의 활성 계약서 버전을 승인 레코드에 고정(pin)한다.
+--   서명 게이트/열람/합성이 이 값을 단일 출처로 사용하므로,
+--   "근로자가 서명 화면에 머무는 동안 관리자가 계약서를 교체하면 열람하지 않은 새 버전으로
+--    서명본이 합성된다"(선행 qa M-2 / security SEC-4)는 경합이 구조적으로 성립하지 않게 된다.
+--
+-- 설계 근거:
+--   - TB_DAILY_CONTRACT_SIGN.REQ_ID 가 이미 서명-승인 사이클을 연결하므로, 승인 레코드에
+--     버전을 pin 하면 두 레코드의 버전 일치가 구조적으로 보장된다.
+--   - 승인 시각(PROC_DTIME)으로 사후 역산하는 방식은 USE_YN 전환 시각이 UPDATE_DATE 에만
+--     남고 덮어써질 수 있어 신뢰할 수 없다 -> 명시 컬럼을 둔다.
+--   - 값 의미 3분류(코드의 리졸버 분기와 1:1 대응):
+--       NULL : 배포 전 생성된 레거시 승인 -> 활성 버전 기준 폴백(K8)
+--       0    : 승인 시점에 활성 계약서 미등록 -> 그 사이클은 서명 게이트 스킵(K4)
+--              (버전 채번이 IFNULL(MAX(CONTRACT_VER),0)+1 이라 실제 버전은 1부터 시작한다.
+--               따라서 센티넬 0 은 실존 버전과 절대 충돌하지 않는다 — 채번 SQL 실측 확인)
+--       >0   : 확정된 계약서 버전
+--   - 타입은 TB_DAILY_CONTRACT.CONTRACT_VER / TB_DAILY_CONTRACT_SIGN.CONTRACT_VER 와 동일한 int.
+--   - 기존 행 백필은 하지 않는다(승인 시점의 활성 버전을 사후에 알 수 없으므로 추측 금지).
+--   - 신규 인덱스 없음: 정정 시 pin 참조 건수 조회는 기존
+--     IX_DAILY_ENTRY_REQ_SITE (CMPNY_CD,SITE_CD,REQ_STATUS,REQ_DTIME) 로 사업장+상태까지 좁혀지고
+--     CONTRACT_VER 는 잔여 필터다(대상 행 수가 사업장당 대기/승인 건수 규모).
+--
+-- ★ 개발 DB · 운영 DB **양쪽 모두 적용** 필요 (한쪽만 적용 시 1054 Unknown column 장애 — 전례 다수).
+-- ★ 적용 순서 게이트: 이 SQL 을 **애플리케이션 배포보다 먼저** 양쪽에 적용한다.
+--   컬럼 없는 DB 에 pin 코드가 올라가면 승인 API 전체가 1054 로 실패해 일용직 입장이 전면 차단된다.
+-- 운영 적용: 사용자 수동(Workbench/SSH). 본 파일은 작성만, 에이전트의 DB 직접 적용 금지.
+-- ============================================================================
+
+-- ----------------------------------------------------------------------------
+-- 적용 전 확인 (0행이어야 함. 1행이면 이미 적용된 환경이므로 ALTER 를 건너뛸 것)
+-- ----------------------------------------------------------------------------
+-- SELECT COLUMN_NAME, COLUMN_TYPE, IS_NULLABLE, COLUMN_DEFAULT
+--   FROM information_schema.COLUMNS
+--  WHERE TABLE_SCHEMA = DATABASE()
+--    AND TABLE_NAME   = 'TB_DAILY_ENTRY_REQUEST'
+--    AND COLUMN_NAME  = 'CONTRACT_VER';
+
+-- ----------------------------------------------------------------------------
+-- 적용
+-- ----------------------------------------------------------------------------
+ALTER TABLE `TB_DAILY_ENTRY_REQUEST`
+  ADD COLUMN `CONTRACT_VER` int DEFAULT NULL
+    COMMENT '승인 시점 확정 계약서 버전(TB_DAILY_CONTRACT.CONTRACT_VER. 승인 시 pin / NULL=배포 전 레거시(활성 폴백) / 0=승인 시점 계약서 미등록(서명 게이트 스킵))'
+    AFTER `PROC_DTIME`;
+
+-- ----------------------------------------------------------------------------
+-- 적용 후 검증
+-- ----------------------------------------------------------------------------
+-- 1) 컬럼 생성 확인 (1행, int / YES / NULL):
+--    SELECT COLUMN_NAME, COLUMN_TYPE, IS_NULLABLE, COLUMN_DEFAULT, COLUMN_COMMENT
+--      FROM information_schema.COLUMNS
+--     WHERE TABLE_SCHEMA = DATABASE()
+--       AND TABLE_NAME   = 'TB_DAILY_ENTRY_REQUEST'
+--       AND COLUMN_NAME  = 'CONTRACT_VER';
+-- 2) 기존 행 전건 NULL 확인 (nonNullCnt = 0 이어야 함):
+--    SELECT COUNT(*) AS totalCnt, COUNT(CONTRACT_VER) AS nonNullCnt
+--      FROM TB_DAILY_ENTRY_REQUEST;
+-- 3) 배포 후 스모크 — 승인 1건 처리하고 pin 이 채워지는지:
+--    SELECT REQ_ID, SITE_CD, REQ_STATUS, CONTRACT_VER, PROC_DTIME
+--      FROM TB_DAILY_ENTRY_REQUEST
+--     WHERE CMPNY_CD = '<회사코드>' AND REQ_STATUS = '02'
+--     ORDER BY PROC_DTIME DESC
+--     LIMIT 5;
+--    ※ 계약서 등록 사업장은 활성 버전(>0), 미등록 사업장은 0 이 기록되어야 한다.
+--      거부('03')/만료('04') 행은 NULL 유지가 정상이다.
+
+-- ============================================================================
+-- 롤백 (코드 원복과 함께만 실행. 컬럼만 되돌리면 pin 참조 코드가 1054 로 죽는다 ->
+--        반드시 (1) 애플리케이션 배포 원복 -> (2) 아래 DROP 순서)
+-- ----------------------------------------------------------------------------
+-- ALTER TABLE `TB_DAILY_ENTRY_REQUEST` DROP COLUMN `CONTRACT_VER`;
+--
+-- 롤백 안전성: 이 컬럼을 참조하는 FK/인덱스/뷰/트리거가 없고, 값 소실은
+--   "pin 정보 소실 -> 활성 기준 폴백(K8)"으로 자연 강등되므로 데이터 정합 붕괴는 없다.
+--   단, 롤백 시점 이후의 서명은 다시 M-2 경합에 노출된다(설계상 원복이므로 수용).
+-- ============================================================================

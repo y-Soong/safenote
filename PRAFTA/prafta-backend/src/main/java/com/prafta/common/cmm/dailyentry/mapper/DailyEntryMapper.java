@@ -34,9 +34,16 @@ public interface DailyEntryMapper {
     /** 처리 대상 요청 단건 조회 + 행 잠금(FOR UPDATE — 동시 승인/거부 직렬화). 없으면 null. */
     EntryRequestMetaResult selectEntryRequestMetaForUpdate(@Param("cmpnyCd") String cmpnyCd, @Param("reqId") String reqId);
 
-    /** 승인 처리 ('01' 대기 → '02' 승인 조건부 UPDATE). 영향행 수 반환(0 = 이미 처리됨). */
+    /**
+     * 승인 처리 ('01' 대기 → '02' 승인 조건부 UPDATE). 영향행 수 반환(0 = 이미 처리됨).
+     *
+     * <p>승인 시점 확정 계약서 버전(pin — 승인시점 버전확정 T1)을 <b>같은 문장</b>에서 기록한다.
+     * 별도 UPDATE 문을 두면 pin 만 반영되고 상태 전이가 실패하는 창이 생긴다.
+     *
+     * @param contractVer pin 값 — 활성 계약서 버전(>0) 또는 미등록 센티넬 0(K4)
+     */
     int updateEntryRequestApprove(@Param("cmpnyCd") String cmpnyCd, @Param("reqId") String reqId,
-            @Param("procUserCd") String procUserCd);
+            @Param("procUserCd") String procUserCd, @Param("contractVer") int contractVer);
 
     /** 거부 처리 ('01' 대기 → '03' 거부 조건부 UPDATE, 사유 기록). 영향행 수 반환. */
     int updateEntryRequestReject(@Param("cmpnyCd") String cmpnyCd, @Param("reqId") String reqId,

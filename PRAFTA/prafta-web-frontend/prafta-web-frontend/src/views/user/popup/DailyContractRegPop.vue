@@ -47,27 +47,39 @@
           </div>
 
           <div class="form-row-max form-row-top">
-            <label>계약서 이미지</label>
+            <label>계약서 파일</label>
             <div class="file-field">
               <input
                 ref="fileInputRef"
                 type="file"
-                accept="image/*"
+                accept="application/pdf,image/png,image/jpeg"
                 class="file-field__input"
                 @change="onFileChange"
               />
-              <p class="file-field__hint">이미지 파일(JPG/PNG), 10MB 이하</p>
+              <p class="file-field__hint">
+                PDF 또는 이미지(JPG/PNG), 10MB 이하, 최대 20페이지
+              </p>
               <span class="form-msg">{{ fileMsg }}</span>
             </div>
           </div>
 
-          <!-- 미리보기 -->
+          <!-- 미리보기(이미지 전용) -->
           <div v-if="previewUrl" class="preview-box">
             <img
               class="preview-box__img"
               :src="previewUrl"
               alt="계약서 미리보기"
             />
+          </div>
+
+          <!-- PDF 선택 시: 팝업 내 렌더 없이 파일 정보 + 확인 경로 안내(팝업 높이 바운딩 규약) -->
+          <div v-else-if="isPdfSelected" class="file-note">
+            <p class="file-note__name">{{ selectedFile.name }}</p>
+            <p class="file-note__meta">PDF · {{ selectedFileSizeText }}</p>
+            <p class="file-note__guide">
+              PDF는 이 팝업에서 미리보기를 제공하지 않습니다. 저장 후 목록의
+              [미리보기]로 내용을 확인해 주세요.
+            </p>
           </div>
         </div>
 
@@ -90,6 +102,7 @@
 /* eslint-disable */
 import {
   ref,
+  computed,
   defineProps,
   defineEmits,
   getCurrentInstance,
@@ -120,8 +133,25 @@ const fileInputRef = ref(null);
 
 const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10MB
 
+// 서버 화이트리스트와 동일한 contentType 만 1차 통과시킨다(서버가 매직바이트/페이지 수를 재검증).
+const PDF_MIME = "application/pdf";
+const ALLOWED_MIMES = [PDF_MIME, "image/png", "image/jpeg"];
+
+// PDF 선택 여부 — 팝업 내 렌더 없이 파일 정보만 표기(요청서 §6-2)
+const isPdfSelected = computed(
+  () => (selectedFile.value?.type || "") === PDF_MIME,
+);
+
+// 파일 크기 표기(1MB 미만은 KB) — PDF 안내 블록 표시용
+const selectedFileSizeText = computed(() => {
+  const size = selectedFile.value?.size || 0;
+  if (size <= 0) return "";
+  if (size < 1024 * 1024) return `${Math.max(1, Math.round(size / 1024))}KB`;
+  return `${(size / (1024 * 1024)).toFixed(1)}MB`;
+});
+
 // =========================== Methods ===========================
-// 파일 선택 → 클라이언트 1차 검증(이미지/크기) + 미리보기(UI 토글 — 허용 범위)
+// 파일 선택 → 클라이언트 1차 검증(형식/크기) + 미리보기(이미지만 — PDF 는 안내 블록으로 대체)
 const onFileChange = (e) => {
   fileMsg.value = "";
   const file = e.target.files?.[0] || null;
@@ -134,8 +164,8 @@ const onFileChange = (e) => {
 
   if (!file) return;
 
-  if (!file.type.startsWith("image/")) {
-    fileMsg.value = "이미지 파일만 업로드할 수 있습니다.";
+  if (!ALLOWED_MIMES.includes(file.type)) {
+    fileMsg.value = "PDF 또는 이미지(JPG/PNG) 파일만 업로드할 수 있습니다.";
     fileInputRef.value.value = "";
     return;
   }
@@ -146,7 +176,10 @@ const onFileChange = (e) => {
   }
 
   selectedFile.value = file;
-  previewUrl.value = URL.createObjectURL(file);
+  // PDF 는 팝업 내 렌더를 하지 않으므로 objectURL 을 만들지 않는다(누수·높이 초과 방지).
+  if (file.type !== PDF_MIME) {
+    previewUrl.value = URL.createObjectURL(file);
+  }
 };
 
 const fnSave = async () => {
@@ -154,7 +187,7 @@ const fnSave = async () => {
 
   // 1) 입력 검증 — 파일 필수(계약서명은 고정값이라 검증 불필요).
   if (!selectedFile.value) {
-    fileMsg.value = "계약서 이미지 파일을 선택해주세요.";
+    fileMsg.value = "계약서 파일을 선택해주세요.";
     return;
   }
 
@@ -170,7 +203,8 @@ const fnSave = async () => {
   saving.value = true;
 
   // 3) 등록 — POST /webApi/user07/contract (multipart/form-data).
-  //    cmpnyCd 는 서버 JWT 클레임 사용(절대 전달 금지). 서버가 확장자/크기/이미지 디코딩을 재검증한다.
+  //    cmpnyCd 는 서버 JWT 클레임 사용(절대 전달 금지).
+  //    서버가 확장자-내용 정합(매직바이트)·크기·이미지 디코딩·PDF 암호화/페이지 수(1~20)를 재검증한다.
   try {
     const formData = new FormData();
     formData.append("siteCd", props.siteCd);
@@ -248,5 +282,33 @@ onBeforeUnmount(() => {
   display: block;
   width: 100%;
   height: auto;
+}
+
+/* PDF 선택 안내 — 팝업 내 PDF 렌더 없음(파일명·크기 + 확인 경로만) */
+.file-note {
+  border: 1px solid var(--color-border, #e5e7eb);
+  border-radius: var(--btn-radius, 8px);
+  padding: 0.5rem 0.75rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+}
+.file-note__name {
+  margin: 0;
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--color-text, #374151);
+  word-break: break-all;
+}
+.file-note__meta {
+  margin: 0;
+  font-size: var(--btn-font-sm, 11px);
+  color: var(--color-text-muted, #6b7280);
+}
+.file-note__guide {
+  margin: 0.15rem 0 0;
+  font-size: var(--btn-font-sm, 11px);
+  line-height: 1.5;
+  color: var(--color-text-muted, #6b7280);
 }
 </style>

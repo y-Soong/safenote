@@ -12,5 +12,6 @@ public record ContractVersionRow(
     , String insertNo      // 등록자 USER_CD
     , String insertNm      // 등록자명(TB_USER 조인 — 탈퇴/부재 시 USER_CD 폴백, qa L-2)
     , String insertDate    // YYYY-MM-DD HH:mm
+    , String formatType    // 'PDF' | 'IMG' (TB_FILE_INFO.FILE_EXT 조인 도출 — 멀티페이지 지원 T4)
 ) {
 }
