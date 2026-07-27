@@ -162,7 +162,7 @@
 
       <!-- ============ 직원 테이블 (2단 헤더) ============ -->
       <div class="ld-table-wrap">
-        <table class="ld-table">
+        <table class="ld-table" :style="theadStyleVars">
           <colgroup>
             <col style="width: 36px" />
             <col style="width: 12%" />
@@ -187,7 +187,7 @@
             <col style="width: 7%" />
           </colgroup>
           <thead>
-            <tr>
+            <tr ref="theadRow1El">
               <th rowspan="2" class="is-middle">
                 <input
                   type="checkbox"
@@ -326,7 +326,15 @@
 
 <script setup>
 // ================ Imports ================
-import { ref, computed, defineProps, onMounted, getCurrentInstance } from "vue";
+import {
+  ref,
+  computed,
+  defineProps,
+  onMounted,
+  onActivated,
+  onBeforeUnmount,
+  getCurrentInstance,
+} from "vue";
 import { useModal } from "@/utils/useModal";
 import axios from "@/api/axios";
 import { resolveApiErrorMessage } from "@/utils/apiError";
@@ -356,6 +364,33 @@ const { open: openPop } = useModal();
 
 // ================ Refs (Variables) ================
 const localButtons = ref({ ...props.buttons });
+
+// 2단 헤더 sticky 오프셋 — 1행(rowspan 셀) 실제 렌더 높이를 측정해 2행(횟수/시간 누계 등)의
+// top 값으로 주입한다 (Attd_08 패턴 차용). ResizeObserver 로 항상 실측해 헤더 경계 틈을 막는다.
+const theadRow1El = ref(null);
+const thead1H = ref(34);
+const theadStyleVars = computed(() => ({
+  "--ld-thead1-h": `${thead1H.value}px`,
+}));
+let thead1RO = null;
+const measureThead1 = () => {
+  const h = theadRow1El.value?.getBoundingClientRect().height;
+  if (h) thead1H.value = h;
+};
+onMounted(() => {
+  measureThead1();
+  if (window.ResizeObserver && theadRow1El.value) {
+    thead1RO = new ResizeObserver(measureThead1);
+    thead1RO.observe(theadRow1El.value);
+  } else {
+    window.addEventListener("resize", measureThead1);
+  }
+});
+onActivated(measureThead1);
+onBeforeUnmount(() => {
+  if (thead1RO) thead1RO.disconnect();
+  else window.removeEventListener("resize", measureThead1);
+});
 
 // 검색 조건 (사용자명)
 const filter = ref({
@@ -1092,7 +1127,11 @@ const fnCsvCell = (v) => {
   z-index: 1;
 }
 
-/* 2단 헤더 sticky: 1행은 상단, 2행은 1행 높이만큼 아래에 고정 (Attd_08 패턴) */
+/* 2단 헤더 sticky: 1행은 상단, 2행은 1행 높이만큼 아래에 고정.
+   top 오프셋을 rem 값으로 고정 추정하면 폰트/브라우저 렌더링 차이로 1행의
+   실제 높이와 어긋나 헤더 경계 틈으로 스크롤된 본문 행이 비친다. 대신
+   JS(ResizeObserver)로 1행의 실제 렌더 높이를 측정해 --ld-thead1-h 로
+   주입하고, 2행은 그 값을 top 으로 그대로 사용한다 (Attd_08 패턴). */
 .ld-table thead tr:first-child th {
   position: sticky;
   top: 0;
@@ -1100,7 +1139,7 @@ const fnCsvCell = (v) => {
 
 .ld-table thead tr:last-child th {
   position: sticky;
-  top: 2.1rem;
+  top: var(--ld-thead1-h, 2.1rem);
 }
 
 .ld-table th.is-left {

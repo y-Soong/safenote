@@ -99,9 +99,9 @@
           </div>
         </div>
         <div class="a11-table-wrap">
-          <table class="a11-table">
+          <table class="a11-table" :style="theadStyleVars">
             <thead>
-              <tr>
+              <tr ref="theadRow1El">
                 <th rowspan="2">사번</th>
                 <th rowspan="2">이름</th>
                 <th rowspan="2">부서</th>
@@ -159,6 +159,8 @@ import {
   defineProps,
   defineOptions,
   onMounted,
+  onActivated,
+  onBeforeUnmount,
 } from "vue";
 import ViewHeader from "@/components/common/ViewHeader.vue";
 import CalendarSrchMonth from "@/components/common/CalendarSrchMonth.vue";
@@ -183,6 +185,33 @@ const { open: openPop } = useModal();
 
 // ── 헤더 버튼 (조회 전용 화면 — 생성/저장/삭제만 숨김, 엑셀 노출) ──
 const localButtons = ref({ ...props.buttons });
+
+// 2단 헤더 sticky 오프셋 — 1행(rowspan 셀) 실제 렌더 높이를 측정해 2행(횟수/시간 누계)의
+// top 값으로 주입한다 (Attd_08 패턴 차용). ResizeObserver 로 항상 실측해 헤더 경계 틈을 막는다.
+const theadRow1El = ref(null);
+const thead1H = ref(34);
+const theadStyleVars = computed(() => ({
+  "--a11-thead1-h": `${thead1H.value}px`,
+}));
+let thead1RO = null;
+const measureThead1 = () => {
+  const h = theadRow1El.value?.getBoundingClientRect().height;
+  if (h) thead1H.value = h;
+};
+onMounted(() => {
+  measureThead1();
+  if (window.ResizeObserver && theadRow1El.value) {
+    thead1RO = new ResizeObserver(measureThead1);
+    thead1RO.observe(theadRow1El.value);
+  } else {
+    window.addEventListener("resize", measureThead1);
+  }
+});
+onActivated(measureThead1);
+onBeforeUnmount(() => {
+  if (thead1RO) thead1RO.disconnect();
+  else window.removeEventListener("resize", measureThead1);
+});
 const fnButtonControll = () => {
   localButtons.value.create = "N";
   localButtons.value.save = "N";
@@ -555,14 +584,18 @@ onMounted(() => {
   color: var(--color-text, #374151);
   font-weight: 600;
 }
-/* 2단 헤더 sticky: 1행은 상단, 2행은 1행 높이만큼 아래에 고정 */
+/* 2단 헤더 sticky: 1행은 상단, 2행은 1행 높이만큼 아래에 고정.
+   top 오프셋을 rem 값으로 고정 추정하면 폰트/브라우저 렌더링 차이로 1행의
+   실제 높이와 어긋나 헤더 경계 틈으로 스크롤된 본문 행이 비친다. 대신
+   JS(ResizeObserver)로 1행의 실제 렌더 높이를 측정해 --a11-thead1-h 로
+   주입하고, 2행은 그 값을 top 으로 그대로 사용한다 (Attd_08 패턴). */
 .a11-table thead tr:first-child th {
   position: sticky;
   top: 0;
 }
 .a11-table thead tr:last-child th {
   position: sticky;
-  top: 2.1rem;
+  top: var(--a11-thead1-h, 2.1rem);
 }
 .a11-table tbody td {
   /* 헤더와 동일하게 컬럼별 세로선이 보이도록 사방 테두리 */

@@ -152,9 +152,9 @@
         :class="{ 'detail-open': !!selected }"
       >
         <div class="a08-table-wrap">
-          <table class="a08-table">
+          <table class="a08-table" :style="theadStyleVars">
             <thead>
-              <tr>
+              <tr ref="theadRow1El">
                 <th rowspan="2">사용자명</th>
                 <th rowspan="2">부서</th>
                 <th rowspan="2">근무구분</th>
@@ -698,6 +698,34 @@ const selected = ref(null);
 
 // 뷰 전환 모드 — 'full'(전체) | 'summary'(요약) (Attd_07 토글 패턴 차용)
 const viewMode = ref("full");
+
+// 2단 헤더 sticky 오프셋 — 1행(rowspan 셀) 실제 렌더 높이를 측정해 2행(출근일 등)의
+// top 값으로 주입한다. rem 값을 고정 추정하면 폰트/브라우저 렌더링 차이로 헤더 경계
+// 틈이 생겨 스크롤된 본문 행이 비치는 문제가 있어, ResizeObserver 로 항상 실측한다.
+const theadRow1El = ref(null);
+const thead1H = ref(37);
+const theadStyleVars = computed(() => ({
+  "--a08-thead1-h": `${thead1H.value}px`,
+}));
+let thead1RO = null;
+const measureThead1 = () => {
+  const h = theadRow1El.value?.getBoundingClientRect().height;
+  if (h) thead1H.value = h;
+};
+onMounted(() => {
+  measureThead1();
+  if (window.ResizeObserver && theadRow1El.value) {
+    thead1RO = new ResizeObserver(measureThead1);
+    thead1RO.observe(theadRow1El.value);
+  } else {
+    window.addEventListener("resize", measureThead1);
+  }
+});
+onActivated(measureThead1);
+onBeforeUnmount(() => {
+  if (thead1RO) thead1RO.disconnect();
+  else window.removeEventListener("resize", measureThead1);
+});
 
 // 클라이언트측 기간 검증 (≤3개월)
 function isWithinThreeMonths(fromIso, toIso) {
@@ -1661,20 +1689,25 @@ onBeforeUnmount(() => {
   border: 1px solid var(--color-border, #e5e7eb);
   padding: 0.5rem 0.4rem;
   line-height: 1.2;
+  box-sizing: border-box;
   z-index: 1;
   text-align: center;
   white-space: nowrap;
   color: var(--color-text, #374151);
   font-weight: 600;
 }
-/* 2단 헤더 sticky: 1행은 상단, 2행은 1행 높이만큼 아래에 고정 */
+/* 2단 헤더 sticky: 1행은 상단, 2행은 1행 높이만큼 아래에 고정.
+   top 오프셋을 rem 값으로 고정 추정하면 폰트/브라우저 렌더링 차이로 1행의
+   실제 높이와 어긋나 헤더 경계 틈으로 스크롤된 본문 행이 비치는 문제가 있었다.
+   대신 JS(ResizeObserver)로 1행의 실제 렌더 높이를 측정해 --a08-thead1-h 로
+   주입하고, 2행은 그 값을 top 으로 그대로 사용해 항상 정확히 맞물리게 한다. */
 .a08-table thead tr:first-child th {
   position: sticky;
   top: 0;
 }
 .a08-table thead tr:last-child th {
   position: sticky;
-  top: 2.1rem;
+  top: var(--a08-thead1-h, 2.3rem);
 }
 .a08-table tbody td {
   /* 컬럼 사이 세로선이 보이도록 사방 1px 테두리 (.data-grid 표준 패턴) */
@@ -1966,7 +1999,7 @@ onBeforeUnmount(() => {
   overflow: hidden;
   min-height: 0;
 }
-/* 요약 테이블은 단일 헤더 행 → 2단 헤더용 sticky 오프셋(2.1rem)을 0으로 되돌린다 */
+/* 요약 테이블은 단일 헤더 행 → 2단 헤더용 sticky 오프셋(2.3rem)을 0으로 되돌린다 */
 .a08-summary-table thead tr:last-child th {
   top: 0;
 }
