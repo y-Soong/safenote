@@ -1189,6 +1189,8 @@ const fnGenerateAiContent = async () => {
 }
 
 .ai-hint {
+  /* 전역 .form-row-max span 의 flex-basis 50px 해제 — 세로 flex(.editor-col)에서 높이 50px로 작동해 문구 간격이 벌어짐 */
+  flex: 0 0 auto;
   font-size: var(--btn-font-sm);
   color: var(--color-text-muted);
   /* 안내 문구는 개행 없이 한 줄로 표시 */

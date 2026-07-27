@@ -24,7 +24,8 @@
 
 -- ── 1) 위치정보 열람 로그 (append-only) ──
 --   위치정보법상 이용·제공사실 확인자료 대응(요청서 §5-2 / 공통 정책서 §11.3 "상세 위치 조회").
---   보존기간: 위치정보법 시행령상 확인자료 보존 의무(최소 6개월) 대응 — 자동 파기 배치는 본 스코프 외.
+--   보존기간: 1년 이상 보존(2026-07-26 LBS 신고 관리지침 §4.3 확정). 자동 파기 배치 없음 —
+--   append-only 무기한 보관으로 요건 충족(법정 최소 6개월을 상회). 파기 배치를 새로 만들지 말 것.
 --   UPDATE/DELETE 경로를 만들지 않는다(append-only). 고볼륨 append 관례에 따라 BIGINT AUTO_INCREMENT PK.
 CREATE TABLE `tb_location_access_log` (
   `ACCESS_NO`        bigint        NOT NULL AUTO_INCREMENT COMMENT '열람 일련번호 (PK)',
