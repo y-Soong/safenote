@@ -211,9 +211,19 @@ public class DailyContractServiceImpl implements DailyContractService {
 
         String fileMgmtCd = dailyContractMapper.selectContractFileMgmtCd(cmpnyCd, siteCd, contractVer);
         if (fileMgmtCd == null) {
+            // 해당 버전 자체가 없음 → 호출부가 400_003(등록된 계약서가 없습니다)으로 매핑.
             return null;
         }
-        return fileService.loadImageBytes(new FileReadQuery(cmpnyCd, fileMgmtCd));
+
+        ImageBytesResult image = fileService.loadImageBytes(new FileReadQuery(cmpnyCd, fileMgmtCd));
+        if (image == null) {
+            // 계약서 행은 있는데 디스크 원본이 없는 상태(DB 만 이관되고 업로드 파일 미이관 등).
+            //   "미등록"과 구분해야 운영자가 재등록으로 바로 복구할 수 있다.
+            log.error("계약서 원본 파일 없음 — cmpnyCd={}, siteCd={}, ver={}, fileMgmtCd={}",
+                    cmpnyCd, siteCd, contractVer, fileMgmtCd);
+            throw new ApiException(DailyContractErrorCode.DAILYCONTRACT_404_002);
+        }
+        return image;
     }
 
     @Override
@@ -226,7 +236,15 @@ public class DailyContractServiceImpl implements DailyContractService {
         if (active == null) {
             return null;
         }
-        return fileService.loadImageBytes(new FileReadQuery(cmpnyCd, active.fileMgmtCd()));
+
+        ImageBytesResult image = fileService.loadImageBytes(new FileReadQuery(cmpnyCd, active.fileMgmtCd()));
+        if (image == null) {
+            // 활성 계약서 행은 있는데 원본 파일이 없음 — 일용직에게 "미등록"으로 안내되면 안 된다(관리자 재등록 필요).
+            log.error("일용직 계약서 원본 파일 없음 — cmpnyCd={}, siteCd={}, ver={}",
+                    cmpnyCd, meta.siteCd(), active.contractVer());
+            throw new ApiException(DailyContractErrorCode.DAILYCONTRACT_404_002);
+        }
+        return image;
     }
 
     @Override
@@ -256,9 +274,9 @@ public class DailyContractServiceImpl implements DailyContractService {
         // 5) 계약서 원본 로드(경로 방어/화이트리스트는 FileService 가 수행).
         ImageBytesResult contractImage = fileService.loadImageBytes(new FileReadQuery(cmpnyCd, active.fileMgmtCd()));
         if (contractImage == null) {
-            log.error("일용직 계약서 원본 파일 없음 — cmpnyCd={}, siteCd={}, ver={}",
+            log.error("일용직 계약서 원본 파일 없음(서명 불가) — cmpnyCd={}, siteCd={}, ver={}",
                     cmpnyCd, meta.siteCd(), active.contractVer());
-            throw new ApiException(DailyContractErrorCode.DAILYCONTRACT_400_003);
+            throw new ApiException(DailyContractErrorCode.DAILYCONTRACT_404_002);
         }
 
         // 6) 합성(§4-3 자동 계약정보 블록) — 서명일시/최초 근로일은 서버 시각만(§6-3, D1).

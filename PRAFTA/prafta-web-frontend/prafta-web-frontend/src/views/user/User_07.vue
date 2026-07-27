@@ -217,7 +217,10 @@ import {
   defineOptions,
 } from "vue";
 import { useModal } from "@/utils/useModal";
-import { resolveApiErrorMessage } from "@/utils/apiError";
+import {
+  resolveApiErrorMessage,
+  resolveBlobApiErrorMessage,
+} from "@/utils/apiError";
 import axios from "@/api/axios";
 import ViewHeader from "@/components/common/ViewHeader.vue";
 import ThSortable from "@/components/common/ThSortable.vue";
@@ -357,12 +360,25 @@ const fnPreview = async (row) => {
 
     if (response.status === 200) {
       const url = URL.createObjectURL(response.data);
-      window.open(url, "_blank");
+      // 응답 대기(await) 뒤의 window.open 은 사용자 제스처와 끊겨 팝업 차단에 걸릴 수 있다.
+      //   차단되면 아무 반응이 없어 "오류"로 오인되므로 원인을 명시적으로 안내한다.
+      const win = window.open(url, "_blank");
+      if (!win) {
+        URL.revokeObjectURL(url);
+        await proxy.$alert(
+          "브라우저가 새 창을 차단했습니다.\n팝업 차단을 해제한 뒤 다시 시도해주세요.",
+        );
+        return;
+      }
       // 새 탭 로드가 끝난 뒤 objectURL 해제(즉시 해제 시 탭에서 로드 실패).
       setTimeout(() => URL.revokeObjectURL(url), 60000);
     }
   } catch (err) {
-    const msg = resolveApiErrorMessage(err, "미리보기 중 오류가 발생했습니다.");
+    // 스트림 EP 라 에러 본문도 Blob 으로 도착한다 — blob 전용 리졸버로 서버 사유를 그대로 노출.
+    const msg = await resolveBlobApiErrorMessage(
+      err,
+      "미리보기 중 오류가 발생했습니다.",
+    );
     await proxy.$alert(msg);
   }
 };

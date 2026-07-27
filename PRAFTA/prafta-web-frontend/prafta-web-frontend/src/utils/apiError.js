@@ -34,6 +34,41 @@ export function resolveApiErrorMessage(err, fallbackMessage) {
 }
 
 /**
+ * blob 응답(responseType: "blob") 전용 에러 메시지 처리.
+ *
+ * 왜 별도 함수가 필요한가
+ *  - 스트림 EP(계약서 미리보기, 서명본 열람/다운로드 등)는 responseType 이 "blob" 이라
+ *    에러 응답의 JSON 본문도 Blob 으로 도착한다. 이때 `err.response.data.message` 는
+ *    항상 undefined 라서 resolveApiErrorMessage 는 무조건 폴백 문구만 반환한다.
+ *  - 그 결과 서버가 원인을 정확히 내려줘도("계약서 원본 파일을 찾을 수 없습니다") 화면에는
+ *    "미리보기 중 오류가 발생했습니다" 같은 일반 문구만 떠서 운영자가 원인을 알 수 없었다.
+ *
+ * 동작
+ *  - 본문이 Blob 이면 텍스트로 읽어 JSON 파싱 후 `message` 를 사용한다.
+ *  - Blob 이 아니거나(네트워크 오류 등) 파싱 실패면 기존 동기 로직/폴백으로 되돌아간다.
+ *
+ * @param {*} err axios catch 블록에서 받은 에러 객체.
+ * @param {string} fallbackMessage 백엔드 메시지를 얻지 못했을 때 표시할 화면별 기본 메시지.
+ * @returns {Promise<string>} 사용자에게 표시할 에러 메시지.
+ */
+export async function resolveBlobApiErrorMessage(err, fallbackMessage) {
+  const data = err?.response?.data;
+  if (typeof Blob !== "undefined" && data instanceof Blob) {
+    try {
+      const parsed = JSON.parse(await data.text());
+      const backendMessage = parsed?.message;
+      if (typeof backendMessage === "string" && backendMessage.trim() !== "") {
+        return backendMessage;
+      }
+    } catch (e) {
+      // 본문이 JSON 이 아니거나 읽기 실패 → 폴백 문구 사용.
+    }
+    return fallbackMessage;
+  }
+  return resolveApiErrorMessage(err, fallbackMessage);
+}
+
+/**
  * 회사 월간 AI 토큰 쿼터 소진(AI_429_001) 여부 — AI 화면 공통 alert 분기용.
  * (플랫폼-AI-토큰쿼터 §2-5: 소진 시 서버 message 를 Alert 모달로 우선 표출)
  *
