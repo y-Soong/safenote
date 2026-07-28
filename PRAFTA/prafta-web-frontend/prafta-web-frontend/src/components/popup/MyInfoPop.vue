@@ -64,6 +64,45 @@
           </div>
         </div>
 
+        <!-- 약관 동의 설정 (선택약관 on/off) — 선택약관이 1건 이상일 때만 노출.
+             앱 마이페이지(MyPageView "약관 동의 설정")와 같은 목록/동작을 웹에도 제공한다.
+             연동 회사 제3자 제공 동의(006)는 이 토글이 유일한 웹 상시 변경 수단이다. -->
+        <template v-if="optionalTerms.length > 0">
+          <div class="section-title">약관 동의 설정</div>
+          <div class="form-container">
+            <div
+              v-for="terms in optionalTerms"
+              :key="terms.termsId"
+              class="terms-row"
+            >
+              <div class="terms-row-text">
+                <span class="terms-row-label">{{
+                  "(선택) " + terms.termsNm
+                }}</span>
+                <button
+                  type="button"
+                  class="terms-row-view"
+                  @click="fnViewTerms(terms)"
+                >
+                  보기
+                </button>
+              </div>
+              <button
+                type="button"
+                role="switch"
+                class="terms-switch"
+                :class="{ 'terms-switch-on': terms.agrYn === 'Y' }"
+                :aria-checked="terms.agrYn === 'Y' ? 'true' : 'false'"
+                :aria-label="terms.termsNm + ' 동의'"
+                :disabled="isTermsSaving"
+                @click="fnToggleTerms(terms)"
+              >
+                <span class="terms-switch-knob"></span>
+              </button>
+            </div>
+          </div>
+        </template>
+
         <!-- 비밀번호 변경 -->
         <div class="section-title">비밀번호 변경</div>
         <div class="form-container">
@@ -118,13 +157,18 @@
 <script setup>
 import { ref, onMounted, getCurrentInstance } from "vue";
 import { useCenteredDraggable } from "@/composables/useCenteredDraggable";
+import { useModal } from "@/utils/useModal";
 import { useUserStore } from "@/stores/userStore";
 import axios from "@/api/axios";
 import { getMessage, MSG } from "@/messages";
 import { resolveApiErrorMessage } from "@/utils/apiError";
 import { formatDateTimeDotWithSec } from "@/utils/dateFormat";
+// 연동 회사 제3자 제공 동의(006) 식별 — 철회(Y→N) 확인 팝업 판별용(앱 termsGate 와 동일 상수).
+import { THIRD_PARTY_CONSENT_TERMS_ID } from "@/utils/consentTerms";
+import TermsDetailPop from "@/components/popup/TermsDetailPop.vue";
 
 const { proxy } = getCurrentInstance();
+const { open: openPop } = useModal();
 const userStore = useUserStore();
 const modalRef = ref(null);
 
@@ -147,8 +191,15 @@ const currentPw = ref("");
 const newPw = ref("");
 const newPwConfirm = ref("");
 
+// 선택약관 동의 설정 — GET /comApi/consent/my-optional-terms 응답(현재버전 + agrYn).
+//   비치명적: 조회 실패 시 빈 목록(섹션 미노출). 토글은 POST /comApi/consent/my-optional-terms-agree.
+const optionalTerms = ref([]);
+// 토글 저장 직렬화 가드(동시 저장 경합 방지).
+const isTermsSaving = ref(false);
+
 onMounted(async () => {
   await fnLoadMyInfo();
+  await fnLoadOptionalTerms();
 });
 
 const fnLoadMyInfo = async () => {
@@ -184,6 +235,70 @@ const fnLoadMyInfo = async () => {
   } catch {
     // 조회 실패 시 userStore 값으로 대체 (이미 세팅됨)
   }
+};
+
+// 선택약관 목록 조회. 대상은 서버가 토큰으로만 결정한다(식별자 미전달, IDOR 방지).
+//   비치명적: 실패해도 alert 하지 않고 섹션만 감춘다(내 정보 팝업 본연의 기능은 계속 쓸 수 있어야 한다).
+const fnLoadOptionalTerms = async () => {
+  try {
+    const response = await axios.get("/comApi/consent/my-optional-terms");
+    const list = response?.data?.terms || [];
+    optionalTerms.value = list.map((t) => ({
+      termsId: t.termsId,
+      termsNm: t.termsNm,
+      termsVersion: t.termsVersion,
+      agrYn: t.agrYn === "Y" ? "Y" : "N",
+    }));
+  } catch {
+    optionalTerms.value = [];
+  }
+};
+
+// 선택약관 토글(낙관적 토글 + POST 저장, 실패 시 원복).
+//   연동 회사 제3자 제공 동의(006)의 '철회'(Y→N)만 확인 팝업을 거친다 — 철회는 소급되지 않으므로
+//   이미 제공된 자료가 회수되지 않는다는 점을 반드시 고지한다. 동의(N→Y)는 즉시 저장.
+const fnToggleTerms = async (terms) => {
+  if (isTermsSaving.value) return;
+
+  const prev = terms.agrYn;
+  const next = prev === "Y" ? "N" : "Y";
+
+  if (
+    terms.termsId === THIRD_PARTY_CONSENT_TERMS_ID &&
+    prev === "Y" &&
+    next === "N"
+  ) {
+    const ok = await proxy.$confirm(
+      getMessage(MSG.MY_INFO_TERMS_THIRD_PARTY_WITHDRAW_CONFIRM)
+    );
+    // 취소: 낙관적 토글 이전이라 스위치 상태 변경도, 서버 호출도 없다.
+    if (!ok) return;
+  }
+
+  terms.agrYn = next;
+  isTermsSaving.value = true;
+  try {
+    // termsVersion 은 보내지 않는다 — 서버가 현재버전을 resolve 한다(클라 버전 위조 차단).
+    await axios.post("/comApi/consent/my-optional-terms-agree", {
+      termsId: terms.termsId,
+      agrYn: next,
+    });
+  } catch (err) {
+    terms.agrYn = prev;
+    await proxy.$alert(
+      resolveApiErrorMessage(err, getMessage(MSG.MY_INFO_TERMS_SAVE_FAILED))
+    );
+  } finally {
+    isTermsSaving.value = false;
+  }
+};
+
+// 약관 전문 보기 — 기존 약관 상세 팝업 재사용(로그인 약관 팝업과 동일 경로).
+const fnViewTerms = (terms) => {
+  openPop(TermsDetailPop, {
+    termsId_p: terms.termsId,
+    termsNm_p: terms.termsNm,
+  });
 };
 
 const fnSelfWithdrawal = async () => {
@@ -281,6 +396,78 @@ const fnChangePassword = async () => {
   padding: 0.75rem 1.2rem;
   border-top: 1px solid var(--color-border, #e5e7eb);
   background: var(--color-bg, #f9fafb);
+}
+
+/* ===== 약관 동의 설정(선택약관 토글) ===== */
+.terms-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+
+.terms-row-text {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  min-width: 0;
+}
+
+.terms-row-label {
+  font-size: 0.85rem;
+  color: var(--color-text, #374151);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.terms-row-view {
+  flex-shrink: 0;
+  background: transparent;
+  border: 0;
+  padding: 0;
+  font-size: 0.8rem;
+  color: var(--color-primary, #16a34a);
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+/* 스위치: 앱 마이페이지 토글과 동일한 조작감(켜짐=동의) */
+.terms-switch {
+  flex-shrink: 0;
+  position: relative;
+  width: 40px;
+  height: 22px;
+  padding: 0;
+  border: 0;
+  border-radius: 999px;
+  background: var(--color-border-strong, #d1d5db);
+  cursor: pointer;
+  transition: background 0.15s ease;
+}
+
+.terms-switch:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
+.terms-switch-on {
+  background: var(--color-primary, #16a34a);
+}
+
+.terms-switch-knob {
+  position: absolute;
+  top: 3px;
+  left: 3px;
+  width: 16px;
+  height: 16px;
+  border-radius: 999px;
+  background: #ffffff;
+  transition: transform 0.15s ease;
+}
+
+.terms-switch-on .terms-switch-knob {
+  transform: translateX(18px);
 }
 
 .btn-withdrawal {

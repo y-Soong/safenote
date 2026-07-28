@@ -142,6 +142,55 @@
     </select>
 
     <!-- ====================================================================
+         선택약관 목록 + 사용자 현재버전 동의여부(마이페이지 / 웹 내 정보 팝업 공용).
+         Terms01Mapper 에서 이관 — 앱·웹이 같은 술어(REQUIRED_YN='N' AND USE_YN='Y')를 보게 한다.
+         ★ record(OptionalTermsResult) 매핑 — SELECT 컬럼 순서 = record 컴포넌트 순서 유지.
+         ==================================================================== -->
+    <select id="selectOptionalTerms" resultType="com.prafta.common.cmm.consent.mapper.result.OptionalTermsResult">
+    /* ConsentMapper.selectOptionalTerms */
+    SELECT
+          B.TERMS_ID         AS termsId
+        , S.SYST_VAL_D_NM    AS termsNm
+        , B.TERMS_VERSION    AS termsVersion
+        , B.TERMS_CONTENT    AS termsContent
+        , CASE
+            WHEN A.AGR_YN = 'Y' THEN 'Y'
+            ELSE 'N'
+          END                AS agrYn
+    FROM TB_TERMS B
+         INNER JOIN TB_SYST_VAL_D S
+            ON (
+                S.SYST_VAL_CD = 'SYS008'
+            AND S.SYST_VAL_D_CD = B.TERMS_ID
+            )
+         LEFT OUTER JOIN TB_TERMS_USER_AGR_MGMT A
+            ON (
+                A.TERMS_ID = B.TERMS_ID
+            AND A.TERMS_VERSION = B.TERMS_VERSION
+            AND A.CMPNY_CD = #{cmpnyCd}
+            AND A.USER_CD = #{userCd}
+            )
+    WHERE 1=1
+      AND B.REQUIRED_YN = 'N'
+      AND B.USE_YN = 'Y'
+    </select>
+
+    <!-- ====================================================================
+         선택약관 검증 + 현재버전 resolve.
+         REQUIRED_YN='N' AND USE_YN='Y' 인 약관이면 현재버전(TERMS_VERSION)을 반환,
+         아니면(필수약관/미사용약관/미존재) 결과 없음(null) → 서비스에서 403 차단.
+         ==================================================================== -->
+    <select id="selectOptionalTermsCurrentVersion" resultType="string">
+    /* ConsentMapper.selectOptionalTermsCurrentVersion */
+    SELECT B.TERMS_VERSION
+    FROM TB_TERMS B
+    WHERE B.TERMS_ID = #{termsId}
+      AND B.REQUIRED_YN = 'N'
+      AND B.USE_YN = 'Y'
+    LIMIT 1
+    </select>
+
+    <!-- ====================================================================
          동의 현재상태 upsert. PK=(CMPNY_CD,USER_CD,TERMS_ID,TERMS_VERSION) 충돌 시 AGR_YN 갱신.
          스키마에 UPDATE_* 컬럼이 없어 INSERT 컬럼만 사용한다.
          ★ 이력 우회 방지를 위해 프로젝트 내 유일한 동의 upsert 구문이다

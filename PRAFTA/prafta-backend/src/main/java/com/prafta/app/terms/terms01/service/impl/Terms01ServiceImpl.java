@@ -18,9 +18,7 @@ import com.prafta.app.terms.terms01.service.Terms01Service;
 import com.prafta.common.cmm.consent.ConsentConst;
 import com.prafta.common.cmm.consent.mapper.result.ConsentTermsResult;
 import com.prafta.common.cmm.consent.service.ConsentHistoryRecorder;
-import com.prafta.common.cmm.consent.service.ConsentQueryService;
-import com.prafta.common.error.terms.TermsErrorCode;
-import com.prafta.common.exception.ApiException;
+import com.prafta.common.cmm.consent.service.ConsentTermsService;
 
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -41,8 +39,10 @@ import lombok.extern.slf4j.Slf4j;
 public class Terms01ServiceImpl implements Terms01Service {
 
     private final Terms01Mapper terms01Mapper;
-    private final ConsentQueryService consentQueryService;
     private final ConsentHistoryRecorder consentHistoryRecorder;
+    // ★ 선택약관 목록/토글 · 제3자 제공 동의(006) 게이트/응답은 공용 서비스에 위임한다.
+    //   웹 내 정보 팝업/웹 로그인 게이트가 같은 경로를 타야 채널 간 판정이 갈리지 않는다.
+    private final ConsentTermsService consentTermsService;
 
     @Override
     public PendingTermsResponse selectPendingRequiredTerms(String cmpnyCd, String userCd) {
@@ -74,97 +74,30 @@ public class Terms01ServiceImpl implements Terms01Service {
 
     @Override
     public OptionalTermsResponse selectOptionalTerms(String cmpnyCd, String userCd) {
-        OptionalTermsResponse response = OptionalTermsResponse.of(terms01Mapper.selectOptionalTerms(cmpnyCd, userCd));
-        log.info("선택약관 목록 조회 - cmpnyCd={}, userCd={}, 건수={}", cmpnyCd, userCd, response.getTerms().size());
-        return response;
+        // 공용 서비스 위임(응답 스펙 불변 — terms[] 각 항목의 필드명/의미 동일).
+        return OptionalTermsResponse.of(consentTermsService.listOptionalTerms(cmpnyCd, userCd));
     }
 
     @Override
-    @Transactional
     public TermsAgreeResponse toggleOptionalTerms(OptionalTermsAgreeParam param) {
-        // 1) 대상이 선택약관(REQUIRED_YN='N' AND USE_YN='Y')인지 검증 + 현재버전 resolve(클라 버전 위조 차단).
-        //    필수약관/미사용약관/미존재면 null → 게이트 우회 시도로 간주하여 차단.
-        String currentVersion = terms01Mapper.selectOptionalTermsCurrentVersion(param.termsId());
-        if (currentVersion == null || currentVersion.isBlank()) {
-            log.warn("선택약관 토글 거부(선택약관 아님) - userCd={}, termsId={}", param.userCd(), param.termsId());
-            throw new ApiException(TermsErrorCode.TERMS_403_001);
-        }
-
-        // 2) (CMPNY_CD, USER_CD, TERMS_ID, 현재버전) AGR_YN 전이 기록 + upsert(멱등).
-        //    CMPNY_CD 는 Param(=JWT) 회사 스코프. 006 철회(Y→N)도 여기로 들어오며 이력이 남는다.
-        int affected = consentHistoryRecorder.recordAndUpsert(
-                param.cmpnyCd(), param.userCd(), param.termsId(), currentVersion, param.agrYn()
-                , ConsentConst.SOURCE_MYPAGE, param.cmpnyCd(), param.userCd());
-
-        log.info("선택약관 토글 완료 - userCd={}, termsId={}, agrYn={}, 영향행={}"
-                , param.userCd(), param.termsId(), param.agrYn(), affected);
+        // 선택약관 검증/현재버전 resolve/이력 기록은 공용 서비스가 수행한다(@Transactional 도 그쪽).
+        int affected = consentTermsService.toggleOptionalTerms(
+                param.cmpnyCd(), param.userCd(), param.termsId(), param.agrYn(), ConsentConst.SOURCE_MYPAGE);
         return TermsAgreeResponse.success(affected);
     }
 
     @Override
     public SubconConsentGateResponse selectSubconConsentGate(String cmpnyCd, String userCd) {
-        // 1) 006 약관 배포 여부. 미배포(USE_YN='N' 또는 행 부재) = 제도 미가동 → 게이트 미노출.
-        ConsentTermsResult terms = consentQueryService.resolveActiveTerms(ConsentConst.THIRD_PARTY_CONSENT_TERMS_ID);
-        if (terms == null) {
-            log.debug("제3자 제공 동의 게이트 - 약관 미배포(게이트 미노출) cmpnyCd={}, userCd={}", cmpnyCd, userCd);
-            return SubconConsentGateResponse.notRequired();
-        }
-
-        // 1-2) 006 이 '선택약관'인지 응답 저장 경로와 동일한 술어로 확인한다(REQUIRED_YN='N' AND USE_YN='Y').
-        //      게이트는 노출되는데 응답 저장이 TERMS_403_001 로 막히면, 사용자는 매 로그인 게이트를 만나고
-        //      어떤 버튼으로도 해소할 수 없다(동의의 자유의사도 훼손). 술어를 일치시켜 그 상태를 원천 차단한다.
-        String optionalVersion = terms01Mapper.selectOptionalTermsCurrentVersion(terms.termsId());
-        if (optionalVersion == null || optionalVersion.isBlank()) {
-            log.warn("제3자 제공 동의 게이트 - 006 이 선택약관이 아님(게이트 미노출) cmpnyCd={}, userCd={}", cmpnyCd, userCd);
-            return SubconConsentGateResponse.notRequired();
-        }
-
-        // 2) 소속 사업장이 활성 연동 링크에 참여(SRC 또는 DST) 중인지 DB 실측 판정(토큰 gv_siteCd 불신).
-        if (!consentQueryService.isLinkedSiteMember(cmpnyCd, userCd)) {
-            log.debug("제3자 제공 동의 게이트 - 비연동 사업장(게이트 미노출) cmpnyCd={}, userCd={}", cmpnyCd, userCd);
-            return SubconConsentGateResponse.notRequired();
-        }
-
-        // 3) 현재버전 응답 존재 여부. 'Y'(동의)든 'N'(미동의)든 응답이 있으면 게이트 해제(재노출 없음).
-        String agrYn = consentQueryService.selectUserAgrYn(
-                cmpnyCd, userCd, terms.termsId(), terms.termsVersion());
-        if (agrYn != null) {
-            log.debug("제3자 제공 동의 게이트 - 응답 완료(게이트 미노출) cmpnyCd={}, userCd={}, agrYn={}"
-                    , cmpnyCd, userCd, agrYn);
-            return SubconConsentGateResponse.notRequired();
-        }
-
-        log.info("제3자 제공 동의 게이트 노출 - cmpnyCd={}, userCd={}, termsId={}, ver={}"
-                , cmpnyCd, userCd, terms.termsId(), terms.termsVersion());
-        return SubconConsentGateResponse.required(terms);
+        // 공용 서비스 위임 — 판정 결과가 null 이면 게이트 불필요(약관 미배포/비연동 사업장/응답 완료).
+        ConsentTermsResult terms = consentTermsService.resolveSubconConsentGate(cmpnyCd, userCd);
+        return terms == null ? SubconConsentGateResponse.notRequired() : SubconConsentGateResponse.required(terms);
     }
 
     @Override
-    @Transactional
     public SubconConsentRespondResponse respondSubconConsent(SubconConsentRespondParam param) {
-        // 1) 약관 상수(006) 기준 현재버전 resolve. 미배포/미사용이면 응답 저장 불가.
-        String termsId = ConsentConst.THIRD_PARTY_CONSENT_TERMS_ID;
-        ConsentTermsResult terms = consentQueryService.resolveActiveTerms(termsId);
-        if (terms == null) {
-            log.warn("제3자 제공 동의 응답 거부(약관 미배포) - userCd={}, termsId={}", param.userCd(), termsId);
-            throw new ApiException(TermsErrorCode.TERMS_404_001);
-        }
-
-        // 2) 선택약관 검증(REQUIRED_YN='N' AND USE_YN='Y') — 본 경로로 필수약관을 토글할 수 없게 재확인.
-        String optionalVersion = terms01Mapper.selectOptionalTermsCurrentVersion(termsId);
-        if (optionalVersion == null || optionalVersion.isBlank()) {
-            log.warn("제3자 제공 동의 응답 거부(선택약관 아님) - userCd={}, termsId={}", param.userCd(), termsId);
-            throw new ApiException(TermsErrorCode.TERMS_403_001);
-        }
-
-        // 3) 동의('Y')/미동의('N') 모두 저장 = 응답 완료 = 게이트 해제. 전이 시에만 이력 1행.
-        //    ★ 철회 소급 없음: 기존 스냅샷(tb_cmpny_share_snapshot*)은 조회조차 하지 않는다.
-        int affected = consentHistoryRecorder.recordAndUpsert(
-                param.cmpnyCd(), param.userCd(), termsId, optionalVersion, param.agrYn()
-                , ConsentConst.SOURCE_GATE, param.cmpnyCd(), param.userCd());
-
-        log.info("제3자 제공 동의 응답 - cmpnyCd={}, userCd={}, ver={}, agrYn={}, 경로=GATE, 영향행={}"
-                , param.cmpnyCd(), param.userCd(), optionalVersion, param.agrYn(), affected);
+        // 공용 서비스 위임(@Transactional 도 그쪽). 동의/미동의 모두 저장 = 게이트 해제.
+        consentTermsService.respondSubconConsent(
+                param.cmpnyCd(), param.userCd(), param.agrYn(), ConsentConst.SOURCE_GATE);
         return SubconConsentRespondResponse.success(param.agrYn());
     }
 }

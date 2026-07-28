@@ -5,7 +5,6 @@ import java.util.List;
 import org.apache.ibatis.annotations.Mapper;
 import org.apache.ibatis.annotations.Param;
 
-import com.prafta.app.terms.terms01.mapper.result.OptionalTermsResult;
 import com.prafta.app.terms.terms01.mapper.result.PendingTermsResult;
 
 /**
@@ -23,12 +22,6 @@ public interface Terms01Mapper {
     /** 미동의 필수약관(REQUIRED_YN='Y' AND USE_YN='Y') 목록 — 사용자 현재버전 미동의분만(회사 스코프). */
     List<PendingTermsResult> selectPendingRequiredTerms(@Param("cmpnyCd") String cmpnyCd, @Param("userCd") String userCd);
 
-    /** 선택약관(REQUIRED_YN='N' AND USE_YN='Y') 목록 + 사용자 현재버전 동의여부(없으면 'N', 회사 스코프). */
-    List<OptionalTermsResult> selectOptionalTerms(@Param("cmpnyCd") String cmpnyCd, @Param("userCd") String userCd);
-
-    /**
-     * 특정 약관이 "선택약관(REQUIRED_YN='N' AND USE_YN='Y')" 이면 현재버전을 반환, 아니면 null.
-     * 선택약관 토글 경로의 게이트 우회(필수약관/미사용약관 변조) 차단에 사용한다.
-     */
-    String selectOptionalTermsCurrentVersion(@Param("termsId") String termsId);
+    // ★ 선택약관 목록/현재버전 resolve 는 ConsentMapper(common/cmm/consent)로 이관되었다.
+    //   웹 내 정보 팝업이 같은 구문을 공유해야 하므로 복사본을 두지 않는다(Terms01Mapper.xml 주석 참조).
 }

@@ -158,6 +158,7 @@ import TermsPop from "./popup/TermsPop.vue";
 import PhoneAuthPop from "./popup/PhoneAuthPop.vue";
 import DefaultSchGatePop from "./popup/DefaultSchGatePop.vue";
 import ForcedPasswordChangePop from "./popup/ForcedPasswordChangePop.vue";
+import ThirdPartyConsentPop from "./popup/ThirdPartyConsentPop.vue";
 import ActInfoSrch from "@/views/login/popup/ActInfoSrchPop.vue";
 import NoticePopupCarousel from "@/views/login/popup/NoticePopupCarousel.vue";
 import TransferNoticePopup from "@/views/login/popup/TransferNoticePopup.vue";
@@ -394,17 +395,45 @@ const fnUserTermsAgrChk = async () => {
         openPop(TermsPop, {
           loginFlg_p: "Y",
           userTermsNonAgrList_p: userTermsNonAgrList.value,
-          onMoveMain: fnMoveMainPath,
+          // 필수약관 동의 완료 → 곧바로 메인이 아니라 제3자 제공 동의 게이트로 이어진다.
+          onMoveMain: fnSubconConsentGate,
           onUserLogout: fnUserLogout,
         });
       } else {
-        fnMoveMainPath();
+        fnSubconConsentGate();
       }
     }
   } catch (err) {
     const msg = resolveApiErrorMessage(err, "로그인에 실패했습니다..");
     await proxy.$alert(msg);
   }
+};
+
+/**
+ * 연동 회사 제3자 제공 동의(006) 게이트 — 필수약관 단계 뒤, 메인 진입 앞.
+ *
+ * - 활성 연동 사업장 소속 + 현재버전 미응답인 사용자에게만 1회 노출된다(서버 판정).
+ * - 필수약관과 달리 강제가 아니다: 동의/미동의 모두 통과하며, 응답 없이 닫아도 메인으로 들어간다.
+ * - 게이트 조회 실패는 비치명적 — 로그인을 막지 않고 통과시킨다(다음 로그인에 재시도).
+ *   앱 termsGate 의 "가용성 우선 통과" 규약과 동일하게 맞춘다.
+ */
+const fnSubconConsentGate = async () => {
+  try {
+    const response = await axios.get("/comApi/consent/subcon-consent-gate");
+    const gate = response?.data || {};
+
+    if (gate.gateRequiredYn === "Y") {
+      openPop(ThirdPartyConsentPop, {
+        gate_p: gate,
+        onDone: fnMoveMainPath,
+      });
+      return;
+    }
+  } catch (err) {
+    // 조회 실패(네트워크/서버) → 진입을 막지 않는다.
+  }
+
+  fnMoveMainPath();
 };
 
 // ================ Methods/Functions ================

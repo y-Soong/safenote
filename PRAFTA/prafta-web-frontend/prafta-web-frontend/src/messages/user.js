@@ -35,4 +35,10 @@ export const USER_MESSAGES = {
     "탈퇴하시면 모든 개인정보가 삭제되며 복구가\n불가능합니다.\n정말 회원탈퇴 하시겠습니까?",
   MY_INFO_WITHDRAWAL_SUCCESS: "회원탈퇴가 완료되었습니다.",
   MY_INFO_WITHDRAWAL_FAILED: "회원탈퇴 처리 중 오류가 발생했습니다.",
+
+  // MyInfoPop - 약관 동의 설정(선택약관 토글)
+  MY_INFO_TERMS_SAVE_FAILED: "설정을 저장하지 못했습니다.\n잠시 후 다시 시도해주세요.",
+  // 연동 회사 제3자 제공 동의(006) 철회 확인 — 앱 마이페이지와 동일 고지(철회는 소급되지 않음).
+  MY_INFO_TERMS_THIRD_PARTY_WITHDRAW_CONFIRM:
+    "연동 회사 자료 제공에 대한 동의를 철회하시겠습니까?\n\n철회하면 이후 생성되는 제공분부터 제외됩니다.\n다만 이미 제공된 자료는 회수되지 않습니다.",
 };

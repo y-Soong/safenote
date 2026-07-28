@@ -2,7 +2,7 @@ package com.prafta.app.terms.terms01.dto.response;
 
 import java.util.List;
 
-import com.prafta.app.terms.terms01.mapper.result.OptionalTermsResult;
+import com.prafta.common.cmm.consent.mapper.result.OptionalTermsResult;
 
 import lombok.Builder;
 import lombok.Getter;

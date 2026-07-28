@@ -37,53 +37,12 @@
     </select>
 
     <!-- ====================================================================
-         선택약관 목록(마이페이지) + 사용자 현재버전 동의여부.
-         REQUIRED_YN='N' AND USE_YN='Y' 약관 + (USER_CD, TERMS_ID, 현재버전) AGR_YN.
-         행이 없거나 AGR_YN!='Y' 면 'N' 으로 정규화한다.
+         ★ 선택약관 목록(selectOptionalTerms) / 현재버전 resolve(selectOptionalTermsCurrentVersion)는
+           본 매퍼에서 제거되고 ConsentMapper(common/cmm/consent)로 이관되었다.
+           웹 내 정보 팝업(제3자 제공 동의 토글)이 같은 구문을 써야 하는데, 앱·웹이 각자 복사본을
+           들고 있으면 술어(REQUIRED_YN/USE_YN)가 갈려 채널별로 노출 약관이 달라진다.
+           앱 서비스(Terms01ServiceImpl)는 ConsentTermsService 를 경유하며 응답 스펙은 불변이다.
          ==================================================================== -->
-    <select id="selectOptionalTerms" resultType="com.prafta.app.terms.terms01.mapper.result.OptionalTermsResult">
-    /* Terms01Mapper.selectOptionalTerms */
-    SELECT
-          B.TERMS_ID         AS termsId
-        , S.SYST_VAL_D_NM    AS termsNm
-        , B.TERMS_VERSION    AS termsVersion
-        , B.TERMS_CONTENT    AS termsContent
-        , CASE
-            WHEN A.AGR_YN = 'Y' THEN 'Y'
-            ELSE 'N'
-          END                AS agrYn
-    FROM TB_TERMS B
-         INNER JOIN TB_SYST_VAL_D S
-            ON (
-                S.SYST_VAL_CD = 'SYS008'
-            AND S.SYST_VAL_D_CD = B.TERMS_ID
-            )
-         LEFT OUTER JOIN TB_TERMS_USER_AGR_MGMT A
-            ON (
-                A.TERMS_ID = B.TERMS_ID
-            AND A.TERMS_VERSION = B.TERMS_VERSION
-            AND A.CMPNY_CD = #{cmpnyCd}
-            AND A.USER_CD = #{userCd}
-            )
-    WHERE 1=1
-      AND B.REQUIRED_YN = 'N'
-      AND B.USE_YN = 'Y'
-    </select>
-
-    <!-- ====================================================================
-         선택약관 검증 + 현재버전 resolve.
-         REQUIRED_YN='N' AND USE_YN='Y' 인 약관이면 현재버전(TERMS_VERSION)을 반환,
-         아니면(필수약관/미사용약관/미존재) 결과 없음(null) → 서비스에서 403 차단.
-         ==================================================================== -->
-    <select id="selectOptionalTermsCurrentVersion" resultType="string">
-    /* Terms01Mapper.selectOptionalTermsCurrentVersion */
-    SELECT B.TERMS_VERSION
-    FROM TB_TERMS B
-    WHERE B.TERMS_ID = #{termsId}
-      AND B.REQUIRED_YN = 'N'
-      AND B.USE_YN = 'Y'
-    LIMIT 1
-    </select>
 
     <!-- ====================================================================
          ★ SUBCON-T4: 약관 동의 upsert(upsertTermsAgr)는 본 매퍼에서 제거되고

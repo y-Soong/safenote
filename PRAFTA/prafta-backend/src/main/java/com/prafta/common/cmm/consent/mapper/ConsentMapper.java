@@ -8,6 +8,7 @@ import org.apache.ibatis.annotations.Param;
 import com.prafta.common.cmm.consent.application.command.ConsentAgrUpsertCommand;
 import com.prafta.common.cmm.consent.application.command.ConsentHistInsertCommand;
 import com.prafta.common.cmm.consent.mapper.result.ConsentTermsResult;
+import com.prafta.common.cmm.consent.mapper.result.OptionalTermsResult;
 
 /**
  * 약관 동의(Consent) 공통 Mapper — PRAFTA-SUBCON-T4-02.
@@ -81,6 +82,22 @@ public interface ConsentMapper {
             @Param("cmpnyCd") String cmpnyCd
             , @Param("termsId") String termsId
             , @Param("userCds") List<String> userCds);
+
+    /**
+     * 선택약관(REQUIRED_YN='N' AND USE_YN='Y') 목록 + 사용자 현재버전 동의여부(없으면 'N', 회사 스코프).
+     *
+     * <p>앱 마이페이지와 웹 내 정보 팝업이 같은 목록을 본다 — 술어(REQUIRED_YN/USE_YN)가 갈리면
+     *    채널별로 노출 약관이 달라지므로 구문을 여기 한 곳에만 둔다(Terms01Mapper 에서 이관).
+     */
+    List<OptionalTermsResult> selectOptionalTerms(
+            @Param("cmpnyCd") String cmpnyCd
+            , @Param("userCd") String userCd);
+
+    /**
+     * 특정 약관이 "선택약관(REQUIRED_YN='N' AND USE_YN='Y')" 이면 현재버전을 반환, 아니면 null.
+     * 토글/게이트 응답 경로에서 필수약관·미사용약관 변조로 게이트를 우회하려는 시도를 차단한다.
+     */
+    String selectOptionalTermsCurrentVersion(@Param("termsId") String termsId);
 
     /**
      * 동의 현재상태 upsert(TB_TERMS_USER_AGR_MGMT). 영향행 반환.

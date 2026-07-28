@@ -291,9 +291,40 @@ const fnVerify = async () => {
   }
 }
 
+// 화면 타이머 정리 + 라우트 이탈 가드 해제. 게이트/메인으로 넘어가는 모든 분기가 공유한다
+//   (한 분기에서만 빠뜨리면 이탈 가드가 라우팅을 막거나 타이머가 살아남는다).
+const fnStopScreenTimers = () => {
+  cleanedUp = true
+  if (resendInterval) {
+    clearInterval(resendInterval)
+    resendInterval = null
+  }
+  if (ttlInterval) {
+    clearInterval(ttlInterval)
+    ttlInterval = null
+  }
+}
+
 const fnApplyLoginResponse = async (data) => {
   // 웹 LoginView.fnSubmitLogin 정상 분기와 동일 구조.
   // 정책 §11.1: 휴대폰/이메일은 응답에 없으며 sessionStorage/store 에 보관하지 않는다.
+
+  // PRAFTA-COM-008-E-8: 인증대기('04') 활성화 직후 서버가 기본 근무타입 게이트를 재평가한다
+  //   (LoginServiceImpl.verifyPhoneAuth). 이 응답의 token 은 정식 토큰이 아니라 scope=DEFAULT_SCH
+  //   임시 토큰이므로, 그대로 세션에 넣고 진행하면 이후 모든 API 가 COMMON_400_600(임시 scope 차단)으로
+  //   튕긴다. LoginView 와 동일하게 게이트 화면으로 넘긴다(임시 토큰은 history state 로만 전달).
+  if (data?.nextStep === 'DEFAULT_SCH') {
+    fnStopScreenTimers()
+    router.replace({
+      path: '/DefaultSchGate',
+      state: {
+        defaultSchToken: data.token,
+        cmpnyCd: data.cmpnyCd,
+      },
+    })
+    return
+  }
+
   const {
     token,
     userCd,
@@ -307,6 +338,7 @@ const fnApplyLoginResponse = async (data) => {
     nodeNm,
     authCd,
     authLevel,
+    employmentType,
     refreshToken,
   } = data
 
@@ -324,6 +356,9 @@ const fnApplyLoginResponse = async (data) => {
   sessionStorage.setItem('gv_nodeNm', nodeNm)
   sessionStorage.setItem('gv_authCd', authCd)
   sessionStorage.setItem('gv_authLevel', authLevel)
+  // prafta-app-025 J1-4: 고용형태(일용직=DAILY). LoginView 와 달리 여기서 누락되어 있어
+  //   본인인증 경로로 들어온 일용직은 계약서 서명 게이트(termsGate ①-b)가 통째로 스킵됐다.
+  sessionStorage.setItem('gv_employmentType', employmentType || '')
 
   if (refreshToken) {
     localStorage.setItem('refreshToken', refreshToken)
@@ -344,14 +379,22 @@ const fnApplyLoginResponse = async (data) => {
   })
 
   // 라우트 이탈 가드가 차단하지 않도록(타이머 정리 후 게이트 라우팅).
-  cleanedUp = true
-  if (resendInterval) {
-    clearInterval(resendInterval)
-    resendInterval = null
-  }
-  if (ttlInterval) {
-    clearInterval(ttlInterval)
-    ttlInterval = null
+  fnStopScreenTimers()
+
+  // prafta-app-033: 강제 비밀번호 변경 게이트(PWD_CHG_DTIME IS NULL → nextStep='PASSWORD_CHANGE').
+  //   ★ 웹 User_01 에서 만든 계정의 최초 로그인은 '인증대기('04') → 본인인증' 경로로 들어오는데,
+  //     여기서 이 분기가 빠져 있어 비번 게이트가 미해소인 채로 뒤 단계가 진행됐다. 그 상태에서는
+  //     서버 게이트(AuthAspect)가 화이트리스트 밖 EP 를 전부 AUTH_403_001 로 막으므로,
+  //     제3자 제공 동의 게이트 조회(subcon-consent-gate)도 403 → 프론트가 "가용성 우선 통과"로
+  //     조용히 삼켜 동의 화면이 아예 뜨지 않았다(푸시 토큰 등록도 동일하게 실패).
+  //   LoginView/DefaultSchGateView 와 동일하게 비번 변경 화면을 먼저 태우고,
+  //   성공 시 그 화면이 routeAfterLogin 으로 남은 게이트 체인(약관 → 계약서 → 제3자 동의)을 잇는다.
+  if (data?.nextStep === 'PASSWORD_CHANGE' || data?.mustChangePassword) {
+    router.replace({
+      path: '/ForcedPasswordChange',
+      state: { redirect: '/MainView' },
+    })
+    return
   }
 
   // 필수약관 미동의 게이트: 미동의 약관이 있으면 /TermsAgree, 없으면 /MainView 로 라우팅.
