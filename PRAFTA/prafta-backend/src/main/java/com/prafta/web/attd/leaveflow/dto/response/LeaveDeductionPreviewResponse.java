@@ -36,4 +36,18 @@ public class LeaveDeductionPreviewResponse {
      * 하한 미발동({@code floorApplied=false})/고정단위 신청이면 {@code null}.
      */
     private final BigDecimal floorDays;
+
+    /**
+     * PC-05(D6): 짜투리 보전 발동 예상 여부 — true 면 이대로 신청 시 잔여 전액({@code remnantDays})이
+     * 차감되고 부족분({@code companyCoverMinutes})은 회사 부담으로 기록된다.
+     * 발동 예상 시 {@code insufficientBalance}=false 로 내린다(신청은 성공하므로 — FE 는 부족 경고
+     * 대신 발동 안내를 표시, UI-C).
+     */
+    private final boolean remnantTriggered;
+
+    /** 발동 시 실제 차감될 잔여 전액(일). 미발동이면 {@code null}. */
+    private final BigDecimal remnantDays;
+
+    /** 회사 부담분(분 — coverDays × 본인 분모, DOWN 절사). 미발동이면 {@code null}. */
+    private final Integer companyCoverMinutes;
 }

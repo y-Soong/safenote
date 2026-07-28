@@ -555,6 +555,9 @@ public class LeavePolicyServiceImpl implements LeavePolicyService {
         //   ALLOW_QUARTER 컬럼은 하위호환 목적으로 남기되, 입력이 아니라 USAGE_UNIT 파생값으로만 기록한다.
         vo.setAllowQuarter(USAGE_UNIT_QUARTER_DAY.equals(vo.getUsageUnit()) ? YN_Y : YN_N);
 
+        // PC-05(D3): 짜투리 잔여 보전 옵션 — 기본 N(OFF). 비정상 값은 N 으로 정규화(fail-closed).
+        vo.setAllowRemnantRoundUp(normalizeYn(cmd.allowRemnantRoundUp(), YN_N));
+
         // 법정연차 결재 여부 (prafta-019-E 결정 #2) — 기본 N(즉시 확정)
         vo.setAprvUseYn(normalizeYn(cmd.aprvUseYn(), YN_N));
 
@@ -694,6 +697,7 @@ public class LeavePolicyServiceImpl implements LeavePolicyService {
         snap.put("applyFromDate", vo.getApplyFromDate());
         snap.put("usageUnit", vo.getUsageUnit());
         snap.put("allowQuarter", vo.getAllowQuarter()); // LC-10: USAGE_UNIT 파생값(구 이력과의 비교 연속성 유지)
+        snap.put("allowRemnantRoundUp", vo.getAllowRemnantRoundUp()); // PC-05(D3): 짜투리 잔여 보전 옵션
         try {
             return objectMapper.writeValueAsString(snap);
         } catch (JsonProcessingException e) {

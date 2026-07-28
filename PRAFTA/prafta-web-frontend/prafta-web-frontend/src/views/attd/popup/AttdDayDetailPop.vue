@@ -1124,6 +1124,9 @@ const confirmedLeaves = ref([]);
 // PRAFTA-003-7: getDailyAttdDetails 응답의 dailyOvertimeResultList 원본 보관용.
 //   initForm()에서 segments[*].otList 에 분배해서 프리필하는 데 사용한다.
 const dailyOvertimeList = ref([]);
+// PC-09(N8): 대상 사용자·대상일 기준 1일 환산시간(분) — daily-attd-details 응답 convMinutes.
+//   개인 분모(480 캡, 백엔드가 미산출 시 480 폴백 보장). 연차 차감 "N일 H시간 M분" 조립 분모.
+const convMinutes = ref(480);
 
 // "YYYY-MM-DD" → "YYYYMMDD"
 const ymdDashToNum = (s) => (s || "").replace(/-/g, "");
@@ -1153,13 +1156,14 @@ const schedLabel = (fstStr, fstEnd, secStr, secEnd) => {
 };
 
 // LC-09(§5-B): 연차 차감일수 표기 — 소수점 노출 금지, "N일 H시간 M분 차감" 조립.
-//   attd07 상세 응답에는 convMinutes 가 없어 480분 폴백(formatLeaveDays 기본값).
+//   PC-09(N8): 분모 = daily-attd-details 응답 convMinutes(대상 사용자·대상일 개인 분모).
+//   (기존 480 고정 폴백 결함 D2 해소 — 미수신 시에만 ref 초기값 480 사용)
 //   NaN/null → '' (카드에서 라벨 숨김 — 기존 normalizeDays 동작 유지).
 const chargeDaysLabel = (v) => {
   if (v === null || v === undefined || v === "") return "";
   const n = Number(v);
   if (Number.isNaN(n)) return "";
-  return `${formatLeaveDays(n)} 차감`;
+  return `${formatLeaveDays(n, convMinutes.value)} 차감`;
 };
 
 // LC-09(§5-B): 시간차 행의 LEAVE_MINUTES 원본 병기 — "10:00~11:30 (1시간 30분)".
@@ -3033,6 +3037,8 @@ const fnSearch = async () => {
       dailyOvertimeList.value = response.data?.dailyOvertimeResultList ?? [];
       // PRAFTA-APP-018-F: 그날 확정 연차 사용내역(자동확정/직접 포함, 미처리 결재대기 제외).
       confirmedLeaves.value = response.data?.confirmedLeaveResultList ?? [];
+      // PC-09(N8): 대상 사용자·대상일 기준 개인 분모(분). 미수신(구서버)이면 480 유지.
+      convMinutes.value = response.data?.convMinutes ?? 480;
     }
   } catch (err) {
     // 조회 실패해도 fallback 값으로 화면은 정상 렌더되도록 알림만 띄움

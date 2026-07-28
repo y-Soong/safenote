@@ -128,7 +128,9 @@ const loadMeta = async () => {
 // ── LC-10: 예상 차감 preview (POST /appApi/leaveflow/preview-deduction) ──
 // 폼(LeaveApplyForm)이 디바운스 후 emit 한 payload 를 받아 조회 전용 preview 를 호출한다.
 //   실패는 비치명적: 카드 표시만 생략하고 신청은 가능(서버가 최종 판정 — plan §5-D).
-const preview = ref(null) // { chargeDays, floorApplied, capApplied, insufficientBalance, convMinutes, floorDays } | null
+// { chargeDays, floorApplied, capApplied, insufficientBalance, convMinutes, floorDays,
+//   remnantTriggered, remnantDays, companyCoverMinutes(PC-05 짜투리 보전 — 발동 시 insufficientBalance=false) } | null
+const preview = ref(null)
 const isPreviewLoading = ref(false)
 // 응답 역전 방지 시퀀스 — 마지막 요청의 응답만 채택(빠른 입력 변경 시 stale 응답 무시).
 let previewSeq = 0

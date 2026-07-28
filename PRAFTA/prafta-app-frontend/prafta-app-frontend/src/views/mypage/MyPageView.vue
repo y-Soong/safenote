@@ -345,6 +345,7 @@ const leavePlanned = ref(0)
 const leaveUsed = ref(0)
 const leaveSummaryFailed = ref(false)
 // LC-11: 1일 환산시간(분, 서버 권위 — my-leave-summary.convMinutes). "N일 H시간 M분" 분모. 미제공 시 480.
+//   PC-03(개인 분모 전환): 응답값이 회사 공통 480 → 본인 기본 근무타입 소정근로분(480 캡)으로 바뀜 — 소비 로직 무변경.
 const leaveConvMinutes = ref(480)
 
 // 선택약관 동의 설정 — GET /appApi/terms01/optional-terms 응답(현재버전 + agrYn).

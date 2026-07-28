@@ -417,6 +417,48 @@
     </select>
 
     <!-- ============================================================
+         PC-02(D8): 일반(비가불) 신청 분할 차감용 활성 부여 목록(만료 임박순, 잔여>0, FOR UPDATE).
+         웹 LeaveFlowMapper.selectDeductibleGrants 미러(SQL 본문 동일).
+         ============================================================ -->
+    <select id="selectDeductibleGrants" resultType="com.prafta.app.leave.leaveflow.result.DeductibleGrantRow">
+    /* AppLeaveFlowMapper.selectDeductibleGrants */
+    SELECT
+          G.GRANT_ID   AS grantId
+        , G.GRANT_DAYS AS grantDays
+        , G.USED_DAYS  AS usedDays
+      FROM TB_USER_LEAVE_GRANT G
+     WHERE G.CMPNY_CD = #{cmpnyCd}
+       AND G.USER_CD  = #{userCd}
+       AND G.LEAVE_CD = #{leaveCd}
+       AND G.DEL_YN   = 'N'
+       AND G.STATUS   = 'ACTIVE'
+       AND G.AVAIL_FROM_DATE &lt;= #{workYmd}
+       AND G.AVAIL_TO_DATE   &gt;= #{workYmd}
+       AND (G.GRANT_DAYS - G.USED_DAYS) &gt; 0
+     ORDER BY G.AVAIL_TO_DATE ASC, G.GRANT_DATE ASC, G.GRANT_ID ASC
+     FOR UPDATE
+    </select>
+
+    <!-- ============================================================
+         보안리뷰 M-1: 차감 가능 합산 잔여(잠금 없음 - 판정 전용).
+         selectDeductibleGrants 술어 동일, FOR UPDATE 제거 + SUM.
+         짜투리 사전 판정/preview 가 행 잠금을 잡지 않게 분리(웹 미러).
+         ============================================================ -->
+    <select id="selectDeductibleRemainingSum" resultType="java.math.BigDecimal">
+    /* AppLeaveFlowMapper.selectDeductibleRemainingSum */
+    SELECT COALESCE(SUM(G.GRANT_DAYS - G.USED_DAYS), 0)
+      FROM TB_USER_LEAVE_GRANT G
+     WHERE G.CMPNY_CD = #{cmpnyCd}
+       AND G.USER_CD  = #{userCd}
+       AND G.LEAVE_CD = #{leaveCd}
+       AND G.DEL_YN   = 'N'
+       AND G.STATUS   = 'ACTIVE'
+       AND G.AVAIL_FROM_DATE &lt;= #{workYmd}
+       AND G.AVAIL_TO_DATE   &gt;= #{workYmd}
+       AND (G.GRANT_DAYS - G.USED_DAYS) &gt; 0
+    </select>
+
+    <!-- ============================================================
          prafta-com-011-2 가불(Q1=b): 잔여 분할 차감용 활성 부여 목록(만료 임박순, 잔여>0, FOR UPDATE).
          웹 LeaveFlowMapper.selectBorrowDeductibleGrants 미러(SQL 본문 동일). 비가불 경로는 호출하지 않는다(회귀 0).
          ============================================================ -->

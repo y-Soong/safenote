@@ -55,4 +55,11 @@ public class LeaveDashboardItemVO {
      * 0이면 가불 사용 없음. 정산/회수 등 액션은 없다(결정 §5).
      */
     private final BigDecimal borrowedDays;
+
+    /**
+     * PC-07(N8): 행별(대상 사용자) 1일 환산시간(분) — 오늘 기준 개인 분모(480 캡).
+     * 산출 불가(교대 등 기본 근무타입 미지정)면 {@code null} — FE 는 480 폴백으로 표기
+     * ({@code formatLeaveDays(v, rowConv ?? 480)}).
+     */
+    private final Integer convMinutes;
 }

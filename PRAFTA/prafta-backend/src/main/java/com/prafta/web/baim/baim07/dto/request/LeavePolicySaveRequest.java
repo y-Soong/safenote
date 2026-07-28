@@ -109,6 +109,13 @@ public class LeavePolicySaveRequest {
     @Size(max = 20)
     private String usageUnit;
 
+    // PC-05(D3): 짜투리 잔여 보전 옵션. 'Y' = 잔여 < 최소 사용단위 요금일 때 최소단위 1건 사용
+    //   허용 + 부족분 회사 부담 / 'N'(기본) = 시스템 미개입(소멸 임박 리포트 지원).
+    //   Y/N 정규화는 LeavePolicyServiceImpl.buildNewPolicyVO 에서 수행(비정상 값 → 'N').
+    @FieldLabel("짜투리 잔여 보전")
+    @Size(max = 1)
+    private String allowRemnantRoundUp;
+
     // ===== 메타 =====
     @FieldLabel("변경 사유")
     @Size(max = 500)

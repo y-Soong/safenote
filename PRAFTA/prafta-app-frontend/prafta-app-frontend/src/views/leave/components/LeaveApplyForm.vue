@@ -84,6 +84,11 @@
             {{ u.label }}
           </button>
         </div>
+        <!-- PC-11: 교대근무자 시간차 비노출 사유 안내 (apply-meta hourlyBlocked — D2·N5).
+             시간차(02/03/04)는 서버가 allowedUnits 에서 이미 제거 → 칩 자동 비노출, 여기선 사유만 안내. -->
+        <p v-if="hourlyUnavailableNotice" class="unit-notice">
+          기본 근무타입이 없어 시간 단위 연차는 사용할 수 없습니다.
+        </p>
       </section>
 
       <!-- 3) 날짜 -->
@@ -294,6 +299,15 @@
           <p v-if="preview.insufficientBalance" class="preview-card__warn">
             예상 차감이 남은 연차를 초과해요. 이대로 신청하면 거절될 수 있어요.
           </p>
+          <!-- PC-11: 짜투리 발동 회사 부담 행 (웹 UI-C 미러 — D6). 발동 예상 시 서버가
+               insufficientBalance=false 로 내리므로 위 부족 경고와 동시 노출되지 않는다. -->
+          <div v-if="preview.remnantTriggered" class="preview-card__row">
+            <span class="preview-card__lbl">회사 부담</span>
+            <span class="preview-card__val preview-card__val--cover">{{ coverMinutesText }}</span>
+          </div>
+          <p v-if="preview.remnantTriggered" class="preview-card__remnant">
+            잔여 전액이 차감되고 부족분은 회사 부담으로 처리됩니다.
+          </p>
         </template>
       </section>
     </template>
@@ -323,7 +337,7 @@
 
 <script setup>
 import { ref, computed, onMounted, onUnmounted, watch, getCurrentInstance } from 'vue'
-import { formatLeaveDays, trimRawDays } from '@/utils/leaveFormat'
+import { formatLeaveDays, formatMinutesToHm, trimRawDays } from '@/utils/leaveFormat'
 import DateStepperField from '@/components/common/DateStepperField.vue'
 import TimeStepperField from '@/components/common/TimeStepperField.vue'
 // developer: 결재자 추가 시트(LeaveApproverPickerSheet)는 본 작업의 후속 골격 또는
@@ -333,7 +347,10 @@ import LeaveApproverPickerSheet from './LeaveApproverPickerSheet.vue'
 
 const props = defineProps({
   // 018-A apply-meta 응답: { leaveTypes: [{ leaveCd, leaveNm, systemYn, aprvRequired, allowedUnits[], balanceDays, applicable }],
-  //   convMinutes(오늘 기준 1일 환산시간(분) — 잔여 표기용 근사치, 구응답이면 부재 → 480 폴백) }
+  //   convMinutes(오늘 기준 1일 환산시간(분) — PC-03 개인 분모 전환: 본인 기본 근무타입 소정근로분·480 캡·
+  //     미산출 시 서버 480 폴백. 잔여 표기용 근사치, 구응답이면 부재 → 480 폴백),
+  //   hourlyBlocked(PC-03 D2·N5: 기본 근무타입 미지정(교대 등)으로 시간차 사용 불가 — allowedUnits 에서
+  //     시간차(02/03/04)가 이미 제거되어 옴. FE 는 안내 문구만 노출) }
   meta: { type: Object, default: () => ({ leaveTypes: [] }) },
   // 018-A approval-presets 응답의 presets 배열: [{ presetId, presetNm, defaultYn, steps:[{ stepNo, approverUserCd, userNm, userId, rankNm, nodeNm }] }]
   presets: { type: Array, default: () => [] },
@@ -341,7 +358,10 @@ const props = defineProps({
   context: { type: Object, default: () => ({}) },
   submitting: { type: Boolean, default: false },
   // LC-10: 예상 차감 preview 응답(부모 소유). { chargeDays, floorApplied, capApplied, insufficientBalance,
-  //   convMinutes, floorDays(발동 마일스톤 요금 0.25/0.5/1 — 구응답이면 부재) }
+  //   convMinutes, floorDays(발동 마일스톤 요금 0.25/0.5/1 — 구응답이면 부재),
+  //   remnantTriggered(PC-05 D6: 짜투리 보전 발동 예상 — 발동 시 insufficientBalance=false 로 옴),
+  //   remnantDays(발동 시 차감될 잔여 전액(일) — 미발동 null),
+  //   companyCoverMinutes(회사 부담분(분) — 미발동 null) }
   //   preview 실패/비대상이면 null — 표시 생략하고 신청은 가능(서버가 최종 판정).
   preview: { type: Object, default: null },
   // LC-10: preview 호출 진행 플래그(부모 소유) — 요약 카드 로딩 표시용.
@@ -397,9 +417,13 @@ const approverPickerOpen = ref(false)
 // ── 파생값 (단순 표시/필터 — 비즈니스 로직 아님) ─────────────────────────
 const leaveTypes = computed(() => props.meta?.leaveTypes || [])
 
-// 잔여 "N일 H시간 M분" 표기용 환산시간(분) — apply-meta convMinutes(오늘 기준 근사치, 서버 산출).
+// 잔여 "N일 H시간 M분" 표기용 환산시간(분) — apply-meta convMinutes(PC-03: 본인 개인 분모, 오늘 기준 근사치).
 //   구응답(필드 부재)/무효면 undefined → formatLeaveDays 내부 480 폴백.
 const metaConvMinutes = computed(() => props.meta?.convMinutes)
+
+// PC-11: 교대근무자 시간차 비노출 사유 안내 노출 여부 — apply-meta hourlyBlocked(서버 권위, 클라 추측 금지).
+//   시간차 단위 자체는 서버가 allowedUnits 에서 제거하므로 칩 비노출은 자동 — 여기선 사유 문구만 게이팅.
+const hourlyUnavailableNotice = computed(() => props.meta?.hourlyBlocked === true)
 
 const selectedType = computed(
   () => leaveTypes.value.find((t) => t.leaveCd === selectedLeaveCd.value) || null,
@@ -539,7 +563,10 @@ const estimatedDays = computed(() => {
 })
 
 // 잔여 초과 사전 경고 — 신청 일수 추정 > 선택 종류 balanceDays 면 true. 계산 불가 시 false.
+//   PC-11: 짜투리 보전 발동 예상(preview.remnantTriggered — 서버 권위)이면 신청이 성공하므로 억제
+//   (발동 안내 카드가 대신 노출 — "거절될 수 있어요" 와의 모순 방지, dev2 설계 확정 6 미러).
 const overBalanceWarning = computed(() => {
+  if (props.preview?.remnantTriggered) return false
   const type = selectedType.value
   if (!type) return false
   const bal = Number(type.balanceDays)
@@ -692,6 +719,13 @@ const floorNoticeText = computed(() => {
     return '같은 날 누적 신청이 고정 단위(반반차·반차·종일) 기준 시간에 도달하여 고정 단위 요금이 적용됩니다.'
   }
   return `같은 날 누적 신청이 ${label} 시간에 도달하여 ${label} 요금(${trimRawDays(p.floorDays)}일)이 적용됩니다.`
+})
+
+// PC-11: 짜투리 발동 회사 부담분 텍스트 — 예: "1시간 30분". 발동 시에만 노출(companyCoverMinutes 서버 산출).
+const coverMinutesText = computed(() => {
+  const p = props.preview
+  if (!p || !p.remnantTriggered) return ''
+  return formatMinutesToHm(p.companyCoverMinutes)
 })
 
 // 'HHMM' → 분. 형식 위반 시 -1. (스케줄 HHMM 용)
@@ -1009,6 +1043,12 @@ onMounted(() => {
   color: var(--color-primary-text-deep);
   font-weight: 500;
 }
+/* PC-11: 교대근무자 시간차 비노출 사유 안내 (time-guide 톤 미러 — 앱 토큰으로 치환) */
+.unit-notice {
+  margin: 0;
+  font-size: 12px;
+  color: var(--color-text-tertiary);
+}
 
 /* 시간차 입력 영역 헤더(제목 + 편의버튼) */
 .time-head {
@@ -1303,6 +1343,15 @@ onMounted(() => {
   margin: 0;
   font-size: 12px;
   color: var(--color-danger);
+}
+/* PC-11: 짜투리 발동 회사 부담 행/안내 (웹 UI-C 미러 — 앱 토큰으로 치환) */
+.preview-card__val--cover {
+  color: var(--color-primary);
+}
+.preview-card__remnant {
+  margin: 0;
+  font-size: 12px;
+  color: var(--color-primary-text-deep);
 }
 
 /* 가불 동의 토글 + 안내 (prafta-com-011-4) — 기존 토큰/패턴 재사용 */

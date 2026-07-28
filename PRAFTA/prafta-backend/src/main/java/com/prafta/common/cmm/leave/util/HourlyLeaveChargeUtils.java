@@ -12,13 +12,14 @@ import com.prafta.common.cmm.leave.service.LeaveDeductionService;
  * {@code LeaveHourlyResettleService})이 <b>반드시 본 클래스를 공유</b>한다 — 신청 시 계산과
  * 재정산이 항상 같은 값을 내도록 산식을 단일 출처화한다(지시서 F1).
  *
- * <p>확정 규칙(지시서 §2 / 설계 문서 §0):
+ * <p>확정 규칙(지시서 §2 / 설계 문서 §0 / 개인 분모 개편 PC-03 §5-② N2):
  * <ul>
- *   <li>R1 환산 고정: raw = 그날 시간차 누적 분 ÷ 회사 "1일 환산시간"(conv, 기본 480분).</li>
- *   <li>R2 원장 무반올림: conv 는 {@link #isTerminatingConvMinutes(int)} 검증을 통과한 값만
- *       허용되어 30분 단위 신청분이 소수 5자리(decimal(8,5)) 안에서 정확히 나누어떨어진다.
- *       나눗셈의 {@code RoundingMode.DOWN}은 비정상 conv 유입 시 과대차감 방지용 방어일 뿐,
- *       유효 conv 에서는 절사가 발생하지 않는다(exact).</li>
+ *   <li>R1 환산: raw = 그날 시간차 누적 분 ÷ "1일 환산시간"(conv — PC-03 부터 개인 기본
+ *       근무타입 소정근로분, 480 캡. {@code LeaveConversionPolicyService} 단일 출처).</li>
+ *   <li>R2 DOWN 절사(개정 — N2): 개인 분모는 420/450 등 <b>순환소수 분모</b>가 정상 유입되므로
+ *       유한소수 강제({@link #isTerminatingConvMinutes(int)})는 역할 종료. 나눗셈의
+ *       {@code RoundingMode.DOWN}(소수 5자리, decimal(8,5))이 <b>정식 규칙</b>이다 —
+ *       절사 끝수는 근로자 유리 방향(과소 차감)으로만 발생한다.</li>
  *   <li>R3 하한 가드: 누적 분이 고정단위 시간(반반차 D/4·반차 D/2·종일 D)에 도달하면
  *       그날 차감 합계에 해당 단위 요금(0.25/0.5/1.0)을 하한으로 적용.
  *       마일스톤은 반반차 신설 확정(결정 ①)으로 처음부터 3단이다.</li>
@@ -54,8 +55,9 @@ public final class HourlyLeaveChargeUtils {
     /**
      * 순수 환산(R1·R2): {@code 누적 분 ÷ 환산시간(conv)}.
      *
-     * <p>유효 conv({@link #isTerminatingConvMinutes(int)} 통과)에서는 결과가 소수 5자리 내
-     * 유한소수라 절사 없이 exact 하다. DOWN 은 비정상 conv 방어(근로자 유리 방향 절사).
+     * <p>R2 개정(PC-03, N2): {@code RoundingMode.DOWN}(소수 5자리) 절사가 <b>정식 규칙</b>이다.
+     * 개인 분모(420/450 등 순환소수 분모)에서 발생하는 절사 끝수(≤0.00012 수준)는 근로자 유리
+     * 방향(과소 차감)이며, 짜투리 보전(ON)/소멸 리포트(OFF)가 후속 처리한다.
      *
      * @return 환산 일수(scale=5). 입력이 유효하지 않으면 0.
      */
@@ -105,13 +107,18 @@ public final class HourlyLeaveChargeUtils {
     }
 
     /**
-     * R2 무반올림 방어: 30분 단위 신청분이 소수 5자리(LEAVE_DAYS decimal(8,5)) 안에서
+     * (구 R2) 30분 단위 신청분이 소수 5자리(LEAVE_DAYS decimal(8,5)) 안에서
      * 정확히 나누어떨어지는 환산시간인지 판정한다.
      *
      * <p>모든 시간차 신청분은 30분의 배수이므로 {@code 30/conv} 가 5자리 유한소수이면
      * (⇔ {@code 30×10^5 % conv == 0}) 임의 누적 분의 환산값도 유한소수다.
      * 예: 480 ✓(0.0625) / 600 ✓(0.05) / 750 ✓(0.04) / 420 ✗(1/14 순환) / 360 ✗(1/12 순환).
+     *
+     * @deprecated 개인 분모 개편(PC-03, N2)으로 역할 종료 — 개인 소정근로분은 유한소수를 강제할 수
+     *             없어(420/450 등 정상 유입) R2 는 "DOWN 절사 정식 규칙"으로 개정되었다. 호출처 0건,
+     *             회귀 대비 한시 유지 후 제거 예정.
      */
+    @Deprecated
     public static boolean isTerminatingConvMinutes(int convMinutes) {
         return convMinutes > 0 && (MIN_UNIT_MINUTES * SCALE_POW10) % convMinutes == 0;
     }

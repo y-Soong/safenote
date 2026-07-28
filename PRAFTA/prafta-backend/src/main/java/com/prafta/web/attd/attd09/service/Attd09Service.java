@@ -8,6 +8,8 @@ import com.prafta.web.attd.attd09.application.param.ManualGrantParam;
 import com.prafta.web.attd.attd09.application.param.ManualTypesParam;
 import com.prafta.web.attd.attd09.application.param.PolicyGrantParam;
 import com.prafta.web.attd.attd09.application.param.PolicyInfoParam;
+import com.prafta.web.attd.attd09.application.param.RemnantReportParam;
+import com.prafta.web.attd.attd09.application.param.RemnantSummaryParam;
 import com.prafta.web.attd.attd09.dto.response.HireDateGrantResponse;
 import com.prafta.web.attd.attd09.dto.response.LeaveDashboardResponse;
 import com.prafta.web.attd.attd09.dto.response.LeaveDetailResponse;
@@ -17,6 +19,8 @@ import com.prafta.web.attd.attd09.dto.response.ManualTypesResponse;
 import com.prafta.web.attd.attd09.dto.response.PolicyGrantPolicyInfoResponse;
 import com.prafta.web.attd.attd09.dto.response.PolicyGrantPreviewResponse;
 import com.prafta.web.attd.attd09.dto.response.PolicyGrantResponse;
+import com.prafta.web.attd.attd09.dto.response.RemnantCoverSummaryResponse;
+import com.prafta.web.attd.attd09.dto.response.RemnantReportResponse;
 
 /**
  * attd09 — 연차 현황 대시보드/상세/수동 부여 (PRAFTA-017-2, 정책서 §8.5).
@@ -56,4 +60,10 @@ public interface Attd09Service {
      * <p>첫해 방식(AXIS3)이 PRORATE면 차년도 일괄 폴백 안내 문구를 함께 반환한다(부여 로직 불변).
      */
     PolicyGrantPolicyInfoResponse getPolicyInfo(PolicyInfoParam param);
+
+    /** PC-07(D9-②): 회사 부담 보전 연간 집계(N일/M건 + 상세 목록). 관리자(MASTER/HR) 전용. */
+    RemnantCoverSummaryResponse getRemnantCoverSummary(RemnantSummaryParam param);
+
+    /** PC-07(D9-③·N2): 소멸 임박 짜투리 리포트(절사 끝수 구분 포함). 관리자(MASTER/HR) 전용. */
+    RemnantReportResponse getRemnantReport(RemnantReportParam param);
 }

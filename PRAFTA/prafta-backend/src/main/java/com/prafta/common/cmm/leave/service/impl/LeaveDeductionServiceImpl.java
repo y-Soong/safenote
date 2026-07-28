@@ -9,9 +9,12 @@ import com.prafta.common.cmm.leave.mapper.LeaveDeductionMapper;
 import com.prafta.common.cmm.leave.service.LeaveConversionPolicyService;
 import com.prafta.common.cmm.leave.service.LeaveDeductionService;
 import com.prafta.common.cmm.leave.util.HourlyLeaveChargeUtils;
+import com.prafta.common.cmm.leave.util.ScheduleWorkMinutesUtils;
 import com.prafta.common.cmm.leave.vo.DailyScheduleVO;
 import com.prafta.common.cmm.leave.vo.HourlyChargeVO;
 import com.prafta.common.cmm.leave.vo.HourlyLeaveAggVO;
+import com.prafta.common.error.attd.AttdErrorCode;
+import com.prafta.common.exception.ApiException;
 import com.prafta.common.util.DateTimeUtils;
 
 import lombok.extern.slf4j.Slf4j;
@@ -51,62 +54,13 @@ public class LeaveDeductionServiceImpl implements LeaveDeductionService {
             return null;
         }
 
-        Integer fst = segmentWorkMinutes(sch.getFstSchStrTime(), sch.getFstSchEndTime(), sch.getFstSchBrkMin());
-        if (fst == null) {
-            // 1구간이 비정상이면 전체 산출 불가 (1구간은 필수)
-            log.warn("1일 소정근로분 계산 실패 - 1구간 시각 비정상: cmpnyCd={}, siteCd={}, userCd={}, workYmd={}, schCd={}",
+        // PC-03: 구간 합산 산식은 ScheduleWorkMinutesUtils 로 공용 추출(개인 분모 산출과 단일 출처).
+        Integer total = ScheduleWorkMinutesUtils.dailyStdWorkMinutes(sch);
+        if (total == null) {
+            log.warn("1일 소정근로분 계산 실패 - 스케줄 시각 비정상: cmpnyCd={}, siteCd={}, userCd={}, workYmd={}, schCd={}",
                     cmpnyCd, siteCd, userCd, workYmd, sch.getSchCd());
-            return null;
         }
-
-        int total = fst;
-
-        // 2구간은 선택적 — 시작/종료가 모두 있을 때만 합산
-        if (sch.getSecSchStrTime() != null && !sch.getSecSchStrTime().isBlank()
-                && sch.getSecSchEndTime() != null && !sch.getSecSchEndTime().isBlank()) {
-            Integer sec = segmentWorkMinutes(sch.getSecSchStrTime(), sch.getSecSchEndTime(), sch.getSecSchBrkMin());
-            if (sec != null) {
-                total += sec;
-            }
-        }
-
-        return total > 0 ? Integer.valueOf(total) : null;
-    }
-
-    /**
-     * 한 구간의 근로분 = {@code (종료 - 시작) - 휴게(분)}. 종료 ≤ 시작이면 야간 구간으로 보아 +1440 보정.
-     * 시각 파싱 실패나 음수 결과 시 {@code null}.
-     */
-    private Integer segmentWorkMinutes(String strTime, String endTime, String brkMin) {
-        Integer start = DateTimeUtils.hhmmToMinutes(strTime);
-        // 종료는 자정 경계 근무(정책 attd/03 §3.3) "2400"=1440 을 인정하는 종료 전용 파서 사용.
-        Integer end = DateTimeUtils.schEndToMinutes(endTime);
-        if (start == null || end == null) {
-            return null;
-        }
-
-        int span = end - start;
-        if (span <= 0) {
-            // 야간 구간 (예: 22:00 ~ 06:00)
-            span += MINUTES_PER_DAY;
-        }
-
-        int brk = parseBrkMin(brkMin);
-        int work = span - brk;
-        return work > 0 ? Integer.valueOf(work) : null;
-    }
-
-    /** 휴게(분) 문자열 파싱. null/비정상/음수면 0. */
-    private int parseBrkMin(String brkMin) {
-        if (brkMin == null || brkMin.isBlank()) {
-            return 0;
-        }
-        try {
-            int v = Integer.parseInt(brkMin.trim());
-            return v > 0 ? v : 0;
-        } catch (NumberFormatException e) {
-            return 0;
-        }
+        return total;
     }
 
     @Deprecated
@@ -128,8 +82,16 @@ public class LeaveDeductionServiceImpl implements LeaveDeductionService {
             return null;
         }
 
-        // ⓐ 분모 = 회사 "1일 환산시간" (신청 대상일 기준, F4. 미설정 시 480 폴백)
-        int conv = leaveConversionPolicyService.selectConversionMinutes(cmpnyCd, workYmd);
+        // ⓐ 분모 = 개인 기본 근무타입 소정근로분(대상일 기준 유효 버전, 480 캡 — PC-03 D1).
+        //    산출 불가(DEFAULT_SCH_CD 미지정(교대 등)/스케줄 이상)면 시간차 사용 차단(D2·N5 fail-closed).
+        //    본 진입부가 차단 판정의 단일 출처 — 웹/앱 submitLeave·preview 는 예외를 그대로 전파한다.
+        Integer convResolved = leaveConversionPolicyService.resolvePersonalConvMinutes(cmpnyCd, userCd, workYmd);
+        if (convResolved == null) {
+            log.info("[leave-deduct] 시간차 차단: 개인 분모 산출 불가(기본 근무타입 미지정 등). userCd={}, workYmd={}",
+                    userCd, workYmd);
+            throw new ApiException(AttdErrorCode.ATTD_400_193);
+        }
+        int conv = convResolved;
 
         // 마일스톤(하한) 기준 D = 그날 소정근로분. 스케줄 없는 날은 시간차 신청 자체가 호출부에서
         //   거부되지만(ATTD_400_110), 방어적으로 null 이면 하한 미적용(floor=0)으로 계산한다.

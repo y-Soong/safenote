@@ -22,4 +22,10 @@ public class DailyAttdDetailsResponse {
     List<DailyOvertimeResult> dailyOvertimeResultList;
     /** PRAFTA-APP-018-F: 그날 확정 연차 사용내역(자동확정/직접 포함, 미처리 결재대기 제외). 표시 전용. */
     List<ConfirmedLeaveResult> confirmedLeaveResultList;
+
+    /**
+     * PC-07(N8): 대상 사용자·대상일 기준 1일 환산시간(분, 개인 분모 480 캡 — 미산출 480 폴백).
+     * AttdDayDetailPop 의 연차 "N일 H시간 M분" 표기 분모(기존 480 고정 폴백 결함 D2 해소, additive).
+     */
+    int convMinutes;
 }

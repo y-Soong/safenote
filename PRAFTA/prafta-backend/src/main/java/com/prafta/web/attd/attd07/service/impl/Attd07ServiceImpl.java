@@ -6,6 +6,7 @@ import java.util.List;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import com.prafta.common.cmm.leave.service.LeaveConversionPolicyService;
 import com.prafta.common.cmm.leave.service.LeaveRefusalConst;
 import com.prafta.common.cmm.leave.service.LeaveRefusalDetectService;
 import com.prafta.common.cmm.push.ApprovalResultNotiService;
@@ -79,6 +80,8 @@ public class Attd07ServiceImpl implements Attd07Service {
     private final com.prafta.common.cmm.schedule.service.ScheduleOverlapGuardService scheduleOverlapGuardService;
     /** 사업장 접근 인가(공용 cmm 빈) — 토큰 사업장 등식 대신 User_03 원장(TB_USER_SITE_AUTH) 기반 인가. */
     private final SiteAccessService siteAccessService;
+    /** PC-07(N8): 일자상세 응답 convMinutes(대상 사용자·대상일 개인 분모) — AttdDayDetailPop 480 폴백 해소. */
+    private final LeaveConversionPolicyService leaveConversionPolicyService;
 
     /**
      * 출퇴근 방법(METHOD) 기본값. SYS031 '01'(사용자/앱). 근태 보정 승인 시 METHOD 미전달(앱 관리자 경로)일 때
@@ -477,12 +480,20 @@ public class Attd07ServiceImpl implements Attd07Service {
         //   추가 권한 코드 불필요. 쿼리 WHERE 의 CMPNY/SITE/USER 스코프로 cross-site IDOR 이중 차단.
         List<ConfirmedLeaveResult> confirmedLeaveResultList = attd07Mapper.selectDailyConfirmedLeave(DailyAttdDetailsQuery.from(param));
 
+        // PC-07(N8): 대상 사용자·대상일 기준 개인 분모(480 캡). 산출 불가(교대 등)면 480 폴백 —
+        //   AttdDayDetailPop 의 "N일 H시간 M분" 조립이 회사 고정 480 대신 본 값을 쓴다(기존 결함 D2 해소).
+        Integer personalConv = leaveConversionPolicyService.resolvePersonalConvMinutes(
+                param.gvCmpnyCd(), param.userCd(), param.workYmd());
+        int convMinutes = (personalConv != null)
+                ? personalConv : LeaveConversionPolicyService.DEFAULT_CONV_MINUTES;
+
         return DailyAttdDetailsResponse.builder()
                 .dailyAttdDetailsResult(dailyAttdDetailsResult)
                 .dailyAttdDetailHistoryResultList(dailyAttdDetailHistoryResultList)
                 .monthlyAttdReqResultList(monthlyAttdReqResultList)
                 .dailyOvertimeResultList(dailyOvertimeResultList)
                 .confirmedLeaveResultList(confirmedLeaveResultList)
+                .convMinutes(convMinutes)
                 .build();
     }
 

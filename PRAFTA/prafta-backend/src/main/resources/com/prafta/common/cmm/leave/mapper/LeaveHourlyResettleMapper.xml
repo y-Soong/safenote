@@ -2,26 +2,46 @@
 <!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
 <mapper namespace="com.prafta.common.cmm.leave.mapper.LeaveHourlyResettleMapper">
 
-    <!-- LC-05(F1): 그날 잔존 시간차(02/03/04, CONFIRMED) 사용행 - 시간순 재적용 대상.
+    <!-- LC-05(F1) → PC-01: 그날 잔존 시간차(02/03/04, CONFIRMED) 사용행 - 시간순 재적용 대상.
          반차/반반차/종일은 고정요금이라 재정산 비대상(제외).
-         결과 record HourlyLeaveUseRowVO(leaveId, grantId, leaveMinutes, leaveDays, startTime)
+         PC-01(N1): REQ_ID(분할 INSERT 묶음 키) + 부여 만료일(AVAIL_TO_DATE, 묶음 내 배분 정렬 키) 추가.
+         GRANT 미연결 행은 availToDate null(배분 최후순). 정렬은 시간순 + REQ 묶음 연속성 보장.
+         결과 record HourlyLeaveUseRowVO(leaveId, reqId, grantId, leaveMinutes, leaveDays, startTime, availToDate)
          순서 일치(위치매핑). -->
     <select id="selectHourlyLeaveRowsOnDate" resultType="com.prafta.common.cmm.leave.vo.HourlyLeaveUseRowVO">
     /* LeaveHourlyResettleMapper.selectHourlyLeaveRowsOnDate */
     SELECT
           U.LEAVE_ID      AS leaveId
+        , U.REQ_ID        AS reqId
         , U.GRANT_ID      AS grantId
         , U.LEAVE_MINUTES AS leaveMinutes
         , U.LEAVE_DAYS    AS leaveDays
         , U.START_TIME    AS startTime
+        , G.AVAIL_TO_DATE AS availToDate
       FROM TB_USER_LEAVE_USE U
+      LEFT JOIN TB_USER_LEAVE_GRANT G
+        ON G.CMPNY_CD = U.CMPNY_CD
+       AND G.GRANT_ID = U.GRANT_ID
      WHERE U.CMPNY_CD      = #{cmpnyCd}
        AND U.USER_CD       = #{userCd}
        AND U.START_DATE    = #{workYmd}
        AND U.USE_UNIT_TYPE IN ('02', '03', '04')
        AND U.LEAVE_STATUS  = 'CONFIRMED'
        AND U.DEL_YN        = 'N'
-     ORDER BY U.START_TIME ASC, U.LEAVE_ID ASC
+     ORDER BY U.START_TIME ASC, U.REQ_ID ASC, U.LEAVE_ID ASC
+    </select>
+
+    <!-- PC-05: 그날 짜투리 보전(COVER)이 걸린 REQ_ID 목록. 발동 건 use 행 합 = 잔여 전액(정상 요금과
+         상이)이라 재정산 재배분에서 제외한다(누적에는 포함 - 후속 묶음 무영향). COVER_STATUS 불문. -->
+    <select id="selectRemnantCoveredReqIds" resultType="string">
+    /* LeaveHourlyResettleMapper.selectRemnantCoveredReqIds */
+    SELECT DISTINCT C.REQ_ID
+      FROM TB_LEAVE_REMNANT_COVER C
+     WHERE C.CMPNY_CD = #{cmpnyCd}
+       AND C.USER_CD  = #{userCd}
+       AND C.WORK_YMD = #{workYmd}
+       AND C.DEL_YN   = 'N'
+       AND C.REQ_ID IS NOT NULL
     </select>
 
     <!-- LC-05: 재정산 차감 일수 반영. LEAVE_DAYS 만 변경(soft cancel 이력 보존 §8.5.8,

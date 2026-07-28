@@ -387,6 +387,15 @@ const fnSave = async () => {
     }
   }
 
+  // PC-09(N6): 소정근로(근무시간 − 휴게시간 합) 8시간(480분) 초과 시 저장 전 경고.
+  //   저장은 허용(차단 아님) — 시간차 연차 분모는 8시간 캡으로 계산됨을 안내한다.
+  const stdWorkMin = calcStdWorkMinutes();
+  if (stdWorkMin != null && stdWorkMin > 480) {
+    await proxy.$alert(
+      "소정근로가 8시간을 초과합니다. 휴게시간 입력을 확인하세요.\n(시간차 연차 분모는 8시간으로 계산됩니다)"
+    );
+  }
+
   const ok = await proxy.$confirm(
     isEditMode.value ? getMessage(MSG.SAVE_CONFIRM) : getMessage(MSG.CREATE_CONFIRM)
   );
@@ -473,6 +482,40 @@ const onApplyDateChange = (newVal) => {
     return;
   }
   applyDate.value = newVal;
+};
+
+/**
+ * PC-09(N6): 소정근로시간(분) 계산 — 구간별 (근무 길이 − 휴게시간)의 합.
+ * 오버나이트(종료<=시작)는 자정 넘김으로 보고 1440을 더한다(validateWorkTime 과 동일 규칙).
+ * 시각 파싱 불가 시 null(경고 판정 생략 — validateWorkTime 이 이미 형식을 걸러준 뒤 호출됨).
+ */
+const calcStdWorkMinutes = () => {
+  const toMinutes = (v) => {
+    if (!v || typeof v !== "string") return null;
+    const s = String(v).trim().replace(/\D/g, "");
+    if (s.length < 4) return null;
+    const h = parseInt(s.slice(0, 2), 10);
+    const m = parseInt(s.slice(2, 4), 10);
+    if (h === 24 && m === 0) return 24 * 60;
+    if (h < 0 || h > 23 || m < 0 || m > 59) return null;
+    return h * 60 + m;
+  };
+  const span = (start, end) => (end > start ? end - start : end + 1440 - start);
+
+  const fstStart = toMinutes(fstSchStrTime.value);
+  const fstEnd = toMinutes(fstSchEndTime.value);
+  if (fstStart == null || fstEnd == null || fstStart === fstEnd) return null;
+  const fstBrk = parseInt(String(fstSchBrkMin.value || "0"), 10) || 0;
+  let total = Math.max(0, span(fstStart, fstEnd) - fstBrk);
+
+  if (schType.value === "02") {
+    const secStart = toMinutes(secSchStrTime.value);
+    const secEnd = toMinutes(secSchEndTime.value);
+    if (secStart == null || secEnd == null || secStart === secEnd) return null;
+    const secBrk = parseInt(String(secSchBrkMin.value || "0"), 10) || 0;
+    total += Math.max(0, span(secStart, secEnd) - secBrk);
+  }
+  return total;
 };
 
 /**

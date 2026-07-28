@@ -95,6 +95,96 @@
     </select>
 
     <!--
+      PC-03(D1·N4): 사용자 기본 근무타입(tb_user.DEFAULT_SCH_CD)의 대상일 기준 유효 스케줄 시각 조회.
+      selectDailySchedule 의 effective-dating 패턴 재사용 - WORK_PLAN 조인 대신 TB_USER 직접.
+      사업장 스코프는 사용자 현재 SITE_CD 파생(DEFAULT_SCH_CD 는 소속 사업장 근무타입 참조).
+      DEFAULT_SCH_CD 미지정(NULL/빈값)/참조 스케줄 미존재면 행 없음 - null 반환(fail-closed, N5).
+      USE_YN 필터 없음(사용중지 근무타입이 기본으로 남아 있어도 분모 해석은 그대로 - selectDailySchedule 동일).
+    -->
+    <select id="selectUserDefaultSchedule" resultType="com.prafta.common.cmm.leave.vo.DailyScheduleVO">
+    /* LeaveDeductionMapper.selectUserDefaultSchedule */
+    SELECT
+          S.SCH_CD            AS schCd
+        , S.FST_SCH_STR_TIME  AS fstSchStrTime
+        , S.FST_SCH_END_TIME  AS fstSchEndTime
+        , S.FST_SCH_BRK_MIN   AS fstSchBrkMin
+        , S.SEC_SCH_STR_TIME  AS secSchStrTime
+        , S.SEC_SCH_END_TIME  AS secSchEndTime
+        , S.SEC_SCH_BRK_MIN   AS secSchBrkMin
+        , S.FST_BRK_STR_TIME  AS fstBrkStrTime
+        , S.FST_BRK_END_TIME  AS fstBrkEndTime
+        , S.SEC_BRK_STR_TIME  AS secBrkStrTime
+        , S.SEC_BRK_END_TIME  AS secBrkEndTime
+      FROM TB_USER U
+      JOIN (
+            SELECT
+                  E.CMPNY_CD, E.SITE_CD, E.SCH_CD, E.APPLY_DATE
+                , E.FST_SCH_STR_TIME, E.FST_SCH_END_TIME, E.FST_SCH_BRK_MIN
+                , E.SEC_SCH_STR_TIME, E.SEC_SCH_END_TIME, E.SEC_SCH_BRK_MIN
+                , E.FST_BRK_STR_TIME, E.FST_BRK_END_TIME
+                , E.SEC_BRK_STR_TIME, E.SEC_BRK_END_TIME
+            FROM (
+                SELECT
+                      M.CMPNY_CD, M.SITE_CD, M.SCH_CD, M.APPLY_DATE
+                    , M.FST_SCH_STR_TIME, M.FST_SCH_END_TIME, M.FST_SCH_BRK_MIN
+                    , M.SEC_SCH_STR_TIME, M.SEC_SCH_END_TIME, M.SEC_SCH_BRK_MIN
+                    , M.FST_BRK_STR_TIME, M.FST_BRK_END_TIME
+                    , M.SEC_BRK_STR_TIME, M.SEC_BRK_END_TIME
+                    , 2147483647 AS HIST_IDX
+                FROM TB_SCH_MGMT M
+                UNION ALL
+                SELECT
+                      H.CMPNY_CD, H.SITE_CD, H.SCH_CD, H.APPLY_DATE
+                    , H.FST_SCH_STR_TIME, H.FST_SCH_END_TIME, H.FST_SCH_BRK_MIN
+                    , H.SEC_SCH_STR_TIME, H.SEC_SCH_END_TIME, H.SEC_SCH_BRK_MIN
+                    , H.FST_BRK_STR_TIME, H.FST_BRK_END_TIME
+                    , H.SEC_BRK_STR_TIME, H.SEC_BRK_END_TIME
+                    , H.HIST_IDX
+                FROM TB_SCH_MGMT_HIST H
+            ) E
+            WHERE E.HIST_IDX = (
+                SELECT MAX(E2.HIST_IDX)
+                FROM (
+                    SELECT M2.CMPNY_CD, M2.SITE_CD, M2.SCH_CD, M2.APPLY_DATE, 2147483647 AS HIST_IDX
+                    FROM TB_SCH_MGMT M2
+                    UNION ALL
+                    SELECT H2.CMPNY_CD, H2.SITE_CD, H2.SCH_CD, H2.APPLY_DATE, H2.HIST_IDX
+                    FROM TB_SCH_MGMT_HIST H2
+                ) E2
+                WHERE E2.CMPNY_CD   = E.CMPNY_CD
+                  AND E2.SITE_CD    = E.SITE_CD
+                  AND E2.SCH_CD     = E.SCH_CD
+                  AND E2.APPLY_DATE = E.APPLY_DATE
+            )
+        ) S
+        ON S.CMPNY_CD = U.CMPNY_CD
+       AND S.SITE_CD  = U.SITE_CD
+       AND S.SCH_CD   = U.DEFAULT_SCH_CD
+       AND S.APPLY_DATE = (
+                <!-- 대상일 기준 유효버전이 없으면 최이른 적용버전으로 폴백(COALESCE) - selectDailySchedule 동일 -->
+                SELECT COALESCE(
+                         MAX(CASE WHEN SE.APPLY_DATE <![CDATA[ <= ]]> #{workYmd} THEN SE.APPLY_DATE END)
+                       , MIN(SE.APPLY_DATE)
+                       )
+                FROM (
+                    SELECT M3.CMPNY_CD, M3.SITE_CD, M3.SCH_CD, M3.APPLY_DATE
+                    FROM TB_SCH_MGMT M3
+                    UNION ALL
+                    SELECT H3.CMPNY_CD, H3.SITE_CD, H3.SCH_CD, H3.APPLY_DATE
+                    FROM TB_SCH_MGMT_HIST H3
+                ) SE
+                WHERE SE.CMPNY_CD    = U.CMPNY_CD
+                  AND SE.SITE_CD     = U.SITE_CD
+                  AND SE.SCH_CD      = U.DEFAULT_SCH_CD
+       )
+     WHERE U.CMPNY_CD = #{cmpnyCd}
+       AND U.USER_CD  = #{userCd}
+       AND U.DEFAULT_SCH_CD IS NOT NULL
+       AND U.DEFAULT_SCH_CD != ''
+     LIMIT 1
+    </select>
+
+    <!--
       LC-03(F3): 그날 기존 시간차(02/03/04) CONFIRMED 누적 분·누적 차감 합.
       전 연차타입 합산(LEAVE_CD 불문 - 타입 쪼개기 우회 차단, F3).
       고정단위(종일 00/반차 01/반반차 05)는 하한 마일스톤 누적에서 제외(plan §8-⑤).

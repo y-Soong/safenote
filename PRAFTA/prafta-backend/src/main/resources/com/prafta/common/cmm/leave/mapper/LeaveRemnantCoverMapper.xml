@@ -1,0 +1,297 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.prafta.common.cmm.leave.mapper.LeaveRemnantCoverMapper">
+
+    <!-- PC-05(D3): 활성 정책의 짜투리 보전 옵션 + 사용 단위.
+         결과 record RemnantPolicyVO(allowRemnantRoundUp, usageUnit) 순서 일치(위치매핑).
+         활성 정책/사용정책 미존재 시 행 없음 → null(발동 비대상 fail-closed). -->
+    <select id="selectRemnantPolicy" resultType="com.prafta.common.cmm.leave.vo.RemnantPolicyVO">
+    /* LeaveRemnantCoverMapper.selectRemnantPolicy */
+    SELECT
+          UP.ALLOW_REMNANT_ROUND_UP AS allowRemnantRoundUp
+        , UP.USAGE_UNIT             AS usageUnit
+      FROM TB_LEAVE_POLICY P
+      JOIN TB_LEAVE_USAGE_POLICY UP
+        ON UP.POLICY_SEQ = P.POLICY_SEQ
+     WHERE P.CMPNY_CD = #{cmpnyCd}
+       AND P.USE_YN   = 'Y'
+     ORDER BY P.POLICY_SEQ DESC
+     LIMIT 1
+    </select>
+
+    <!-- PC-05(D6)·PC-06(D7): 대상 5종 활성 부여(잔여>0, 대상일 유효, 만료 임박순, FOR UPDATE).
+         LeaveFlowMapper.selectDeductibleGrants 술어 미러 + LEAVE_CD 집합(IN) + LEAVE_CD 반환.
+         결과 record RemnantDeductibleGrantVO(grantId, leaveCd, grantDays, usedDays) 순서 일치(위치매핑). -->
+    <select id="selectRemnantDeductibleGrants" resultType="com.prafta.common.cmm.leave.vo.RemnantDeductibleGrantVO">
+    /* LeaveRemnantCoverMapper.selectRemnantDeductibleGrants */
+    SELECT
+          G.GRANT_ID   AS grantId
+        , G.LEAVE_CD   AS leaveCd
+        , G.GRANT_DAYS AS grantDays
+        , G.USED_DAYS  AS usedDays
+      FROM TB_USER_LEAVE_GRANT G
+     WHERE G.CMPNY_CD = #{cmpnyCd}
+       AND G.USER_CD  = #{userCd}
+       AND G.LEAVE_CD IN
+       <foreach collection="leaveCds" item="cd" open="(" separator="," close=")">#{cd}</foreach>
+       AND G.DEL_YN   = 'N'
+       AND G.STATUS   = 'ACTIVE'
+       AND G.AVAIL_FROM_DATE &lt;= #{workYmd}
+       AND G.AVAIL_TO_DATE   &gt;= #{workYmd}
+       AND (G.GRANT_DAYS - G.USED_DAYS) &gt; 0
+     ORDER BY G.AVAIL_TO_DATE ASC, G.GRANT_DATE ASC, G.GRANT_ID ASC
+     FOR UPDATE
+    </select>
+
+    <!-- PC-05(D5-ⓔ): 대상 5종 CONFIRMED 사용기록 중 실사용일 미도래(START_DATE >= 오늘) 건수.
+         신청일이 아닌 근무일(실사용일) 기준 — D5 사용자 명시 요구. -->
+    <select id="countUpcomingLeaveUse" resultType="int">
+    /* LeaveRemnantCoverMapper.countUpcomingLeaveUse */
+    SELECT COUNT(*)
+      FROM TB_USER_LEAVE_USE U
+     WHERE U.CMPNY_CD     = #{cmpnyCd}
+       AND U.USER_CD      = #{userCd}
+       AND U.LEAVE_STATUS = 'CONFIRMED'
+       AND U.DEL_YN       = 'N'
+       AND U.START_DATE  &gt;= #{fromYmd}
+       AND U.LEAVE_CD IN
+       <foreach collection="leaveCds" item="cd" open="(" separator="," close=")">#{cd}</foreach>
+    </select>
+
+    <!-- 사용기록 ID 채번 — LeaveFlowMapper.selectNextLeaveId 미러(동일 시퀀스 'LEAVE_USE_ID' 공유). -->
+    <select id="selectNextLeaveId" resultType="string">
+    /* LeaveRemnantCoverMapper.selectNextLeaveId */
+    SELECT CONCAT('LV', DATE_FORMAT(NOW(), '%Y%m%d'), FNC_CMM_SEQ_NEXTVAL(#{cmpnyCd}, 'LEAVE_USE_ID')) FROM DUAL
+    </select>
+
+    <!-- 보전 이력 ID 채번 — 신규 시퀀스 키 'LEAVE_REMNANT_COVER'(FNC_CMM_SEQ_NEXTVAL 회사별 자동 INSERT). -->
+    <select id="selectNextCoverId" resultType="string">
+    /* LeaveRemnantCoverMapper.selectNextCoverId */
+    SELECT CONCAT('RC', DATE_FORMAT(NOW(), '%Y%m%d'), FNC_CMM_SEQ_NEXTVAL(#{cmpnyCd}, 'LEAVE_REMNANT_COVER')) FROM DUAL
+    </select>
+
+    <!-- use 행 INSERT — LeaveFlowMapper.insertLeaveUse 미러(매퍼별 보유 관례). -->
+    <insert id="insertLeaveUse" parameterType="com.prafta.common.cmm.leave.vo.RemnantLeaveUseVO">
+    /* LeaveRemnantCoverMapper.insertLeaveUse */
+    INSERT INTO TB_USER_LEAVE_USE (
+          LEAVE_ID
+        , CMPNY_CD
+        , SITE_CD
+        , USER_CD
+        , LEAVE_CD
+        , REQ_ID
+        , GRANT_ID
+        , START_DATE
+        , START_TIME
+        , END_DATE
+        , END_TIME
+        , USE_UNIT_TYPE
+        , LEAVE_DAYS
+        , LEAVE_MINUTES
+        , LEAVE_REASON
+        , LEAVE_STATUS
+        , DEL_YN
+        , INSERT_NO
+        , INSERT_DATE
+    )
+    VALUES (
+          #{leaveId}
+        , #{cmpnyCd}
+        , #{siteCd}
+        , #{userCd}
+        , #{leaveCd}
+        , #{reqId}
+        , #{grantId}
+        , #{startDate}
+        , #{startTime}
+        , #{endDate}
+        , #{endTime}
+        , #{useUnitType}
+        , #{leaveDays}
+        , #{leaveMinutes}
+        , #{leaveReason}
+        , #{leaveStatus}
+        , 'N'
+        , #{insertNo}
+        , NOW()
+    )
+    </insert>
+
+    <!-- PC-05(D6): 회사 부담 보전 이력 INSERT (ACTIVE). 컬럼 = prafta-pc-1-remnant-ddl.sql 1:1. -->
+    <insert id="insertCover" parameterType="com.prafta.common.cmm.leave.vo.RemnantCoverInsertVO">
+    /* LeaveRemnantCoverMapper.insertCover */
+    INSERT INTO TB_LEAVE_REMNANT_COVER (
+          COVER_ID
+        , CMPNY_CD
+        , SITE_CD
+        , USER_CD
+        , REQ_ID
+        , WORK_YMD
+        , USE_UNIT_TYPE
+        , CHARGE_DAYS
+        , REMNANT_DAYS
+        , COVER_DAYS
+        , COVER_MINUTES
+        , CONV_MINUTES
+        , COVER_STATUS
+        , DEL_YN
+        , INSERT_NO
+        , INSERT_DATE
+    )
+    VALUES (
+          #{coverId}
+        , #{cmpnyCd}
+        , #{siteCd}
+        , #{userCd}
+        , #{reqId}
+        , #{workYmd}
+        , #{useUnitType}
+        , #{chargeDays}
+        , #{remnantDays}
+        , #{coverDays}
+        , #{coverMinutes}
+        , #{convMinutes}
+        , 'ACTIVE'
+        , 'N'
+        , #{insertNo}
+        , NOW()
+    )
+    </insert>
+
+    <!-- USED_DAYS 재집계 — LeaveFlowMapper.recomputeGrantUsedDays 미러(매퍼별 보유 관례). -->
+    <update id="recomputeGrantUsedDays">
+    /* LeaveRemnantCoverMapper.recomputeGrantUsedDays */
+    UPDATE TB_USER_LEAVE_GRANT G
+       SET G.USED_DAYS = IFNULL((
+               SELECT SUM(U.LEAVE_DAYS)
+                 FROM TB_USER_LEAVE_USE U
+                WHERE U.CMPNY_CD     = G.CMPNY_CD
+                  AND U.GRANT_ID     = G.GRANT_ID
+                  AND U.LEAVE_STATUS = 'CONFIRMED'
+                  AND U.DEL_YN       = 'N'
+           ), 0)
+         , G.UPDATE_NO   = #{updateNo}
+         , G.UPDATE_DATE = NOW()
+     WHERE G.CMPNY_CD = #{cmpnyCd}
+       AND G.GRANT_ID = #{grantId}
+    </update>
+
+    <!-- PC-06(D7): 회수 판정 대상 ACTIVE COVER 전량(WORK_YMD ASC, FOR UPDATE — 동시 회수 직렬화 보강).
+         결과 record RemnantCoverRowVO(coverId, reqId, siteCd, workYmd, useUnitType, chargeDays,
+         remnantDays, coverDays, coverMinutes, convMinutes) 순서 일치(위치매핑). -->
+    <select id="selectActiveCovers" resultType="com.prafta.common.cmm.leave.vo.RemnantCoverRowVO">
+    /* LeaveRemnantCoverMapper.selectActiveCovers */
+    SELECT
+          C.COVER_ID      AS coverId
+        , C.REQ_ID        AS reqId
+        , C.SITE_CD       AS siteCd
+        , C.WORK_YMD      AS workYmd
+        , C.USE_UNIT_TYPE AS useUnitType
+        , C.CHARGE_DAYS   AS chargeDays
+        , C.REMNANT_DAYS  AS remnantDays
+        , C.COVER_DAYS    AS coverDays
+        , C.COVER_MINUTES AS coverMinutes
+        , C.CONV_MINUTES  AS convMinutes
+      FROM TB_LEAVE_REMNANT_COVER C
+     WHERE C.CMPNY_CD     = #{cmpnyCd}
+       AND C.USER_CD      = #{userCd}
+       AND C.COVER_STATUS = 'ACTIVE'
+       AND C.DEL_YN       = 'N'
+     ORDER BY C.WORK_YMD ASC, C.COVER_ID ASC
+     FOR UPDATE
+    </select>
+
+    <!-- PC-06(D7): 회수 반영. 부분 회수는 ACTIVE 유지, 전액 회수 시 RECLAIMED + RECLAIM_DATE. -->
+    <update id="updateCoverReclaim">
+    /* LeaveRemnantCoverMapper.updateCoverReclaim */
+    UPDATE TB_LEAVE_REMNANT_COVER
+       SET COVER_DAYS    = #{coverDays}
+         , COVER_MINUTES = #{coverMinutes}
+        <if test="reclaimed">
+         , COVER_STATUS  = 'RECLAIMED'
+         , RECLAIM_DATE  = NOW()
+        </if>
+         , UPDATE_NO     = #{updateNo}
+         , UPDATE_DATE   = NOW()
+     WHERE CMPNY_CD = #{cmpnyCd}
+       AND COVER_ID = #{coverId}
+       AND DEL_YN   = 'N'
+    </update>
+
+    <!-- PC-07(D9-②): 연간 회사 부담 상세 목록. COVER_DAYS>0 만(전액 회수분 제외 = 실부담).
+         USER_NM 평문 — 관리자(MASTER/HR) 게이트 뒤에서만 호출(서비스 진입부 강제).
+         결과 record RemnantCoverListRowVO(coverId, userCd, userNm, workYmd, useUnitType, chargeDays,
+         remnantDays, coverDays, coverMinutes, convMinutes, coverStatus, reqId, insertDate) 순서 일치. -->
+    <select id="selectCoverSummaryRows" resultType="com.prafta.common.cmm.leave.vo.RemnantCoverListRowVO">
+    /* LeaveRemnantCoverMapper.selectCoverSummaryRows */
+    SELECT
+          C.COVER_ID      AS coverId
+        , C.USER_CD       AS userCd
+        , U.USER_NM       AS userNm
+        , C.WORK_YMD      AS workYmd
+        , C.USE_UNIT_TYPE AS useUnitType
+        , C.CHARGE_DAYS   AS chargeDays
+        , C.REMNANT_DAYS  AS remnantDays
+        , C.COVER_DAYS    AS coverDays
+        , C.COVER_MINUTES AS coverMinutes
+        , C.CONV_MINUTES  AS convMinutes
+        , C.COVER_STATUS  AS coverStatus
+        , C.REQ_ID        AS reqId
+        , DATE_FORMAT(C.INSERT_DATE, '%Y-%m-%dT%H:%i:%s') AS insertDate
+      FROM TB_LEAVE_REMNANT_COVER C
+      LEFT JOIN TB_USER U
+        ON U.CMPNY_CD = C.CMPNY_CD
+       AND U.USER_CD  = C.USER_CD
+     WHERE C.CMPNY_CD   = #{cmpnyCd}
+       AND C.DEL_YN     = 'N'
+       AND C.COVER_DAYS &gt; 0
+       AND C.WORK_YMD LIKE CONCAT(#{year}, '%')
+     ORDER BY C.WORK_YMD DESC, C.COVER_ID DESC
+     LIMIT 500
+    </select>
+
+    <!-- PC-07(D9-③): 사용자별 대상 5종 합산 잔여(오늘 유효, 잔여>0) + 최근접 소멸일.
+         활성 사용자 한정(LeavePolicyMapper.countActiveUsers 기준 미러).
+         결과 record RemnantUserRemainVO(userCd, userNm, remnantDays, nearestExpireYmd) 순서 일치. -->
+    <select id="selectRemnantRemainByUser" resultType="com.prafta.common.cmm.leave.vo.RemnantUserRemainVO">
+    /* LeaveRemnantCoverMapper.selectRemnantRemainByUser */
+    SELECT
+          U.USER_CD                        AS userCd
+        , U.USER_NM                        AS userNm
+        , SUM(G.GRANT_DAYS - G.USED_DAYS)  AS remnantDays
+        , MIN(G.AVAIL_TO_DATE)             AS nearestExpireYmd
+      FROM TB_USER U
+      JOIN TB_USER_LEAVE_GRANT G
+        ON G.CMPNY_CD = U.CMPNY_CD
+       AND G.USER_CD  = U.USER_CD
+     WHERE U.CMPNY_CD = #{cmpnyCd}
+       AND U.USE_YN   = 'Y'
+       AND U.WITHDRAWAL_DATE IS NULL
+       AND U.ACCOUNT_STATUS  = '01'
+       AND G.DEL_YN   = 'N'
+       AND G.STATUS   = 'ACTIVE'
+       AND G.AVAIL_FROM_DATE &lt;= #{todayYmd}
+       AND G.AVAIL_TO_DATE   &gt;= #{todayYmd}
+       AND (G.GRANT_DAYS - G.USED_DAYS) &gt; 0
+       AND G.LEAVE_CD IN
+       <foreach collection="leaveCds" item="cd" open="(" separator="," close=")">#{cd}</foreach>
+     GROUP BY U.USER_CD, U.USER_NM
+    HAVING SUM(G.GRANT_DAYS - G.USED_DAYS) &gt; 0
+     ORDER BY MIN(G.AVAIL_TO_DATE) ASC, U.USER_CD ASC
+     LIMIT 500
+    </select>
+
+    <!-- N9 직렬화: 발동 판정~기록 / 회수(D7)를 사용자 단위 advisory lock 으로 직렬화.
+         세션 단위 → 호출부가 트랜잭션 완료(afterCompletion) 시점에 releaseAdvisoryLock
+         (등록 불가 시 finally 폴백). (LeaveFlowMapper.getAdvisoryLock 미러) -->
+    <select id="getAdvisoryLock" resultType="java.lang.Integer">
+    /* LeaveRemnantCoverMapper.getAdvisoryLock */
+    SELECT GET_LOCK(#{lockKey}, #{timeoutSec})
+    </select>
+
+    <select id="releaseAdvisoryLock" resultType="java.lang.Integer">
+    /* LeaveRemnantCoverMapper.releaseAdvisoryLock */
+    SELECT RELEASE_LOCK(#{lockKey})
+    </select>
+
+</mapper>

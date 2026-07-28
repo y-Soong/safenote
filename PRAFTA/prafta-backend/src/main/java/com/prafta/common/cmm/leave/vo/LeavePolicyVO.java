@@ -101,4 +101,11 @@ public class LeavePolicyVO {
      * 구 이력 스냅샷과의 비교 연속성을 위해 컬럼/필드만 유지한다.
      */
     private String allowQuarter;
+
+    /**
+     * 짜투리 잔여 보전 옵션 Y/N (PC-05, D3).
+     * 'Y' = 잔여 &lt; 최소 사용단위 요금일 때 최소단위 1건 사용 허용 + 부족분 회사 부담(TB_LEAVE_REMNANT_COVER 기록).
+     * 'N'(기본) = 시스템 미개입 — 소멸 임박 짜투리 리포트(D9-③)로 지원.
+     */
+    private String allowRemnantRoundUp;
 }

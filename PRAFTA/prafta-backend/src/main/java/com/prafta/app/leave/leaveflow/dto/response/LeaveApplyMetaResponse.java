@@ -7,13 +7,18 @@ import java.util.List;
  *
  * <p>키명은 018-C(FE)가 그대로 소비하므로 임의 변경 금지. record 사용으로 boolean is- 접두 탈락 이슈 없음.
  *
- * <p>{@code convMinutes} : 1일 환산시간(분) — <b>오늘 기준</b> 유효값(additive, 연차 시간차 환산 개편).
- * 신청 폼의 잔여(balanceDays) "N일 H시간 M분" 표기용 근사치다(신청 대상일 기준이 아님 — 정확한 분모는
- * preview 응답의 convMinutes 가 권위). 미설정 시 480.
+ * <p>{@code convMinutes} : 1일 환산시간(분) — <b>오늘 기준 본인 개인 분모</b>(기본 근무타입
+ * 소정근로분, 480 캡 — PC-03 D1) 근사치. 신청 폼의 잔여(balanceDays) "N일 H시간 M분" 표기용이다
+ * (신청 대상일 기준이 아님 — 정확한 분모는 preview 응답의 convMinutes 가 권위). 산출 불가 시 480 폴백.
+ *
+ * <p>{@code hourlyBlocked} : 개인 분모 산출 불가(교대근무 등 기본 근무타입 미지정 — PC-03 D2·N5).
+ * true 면 allowedUnits 에서 시간차(02/03/04)가 제거되어 있고, FE 는 "기본 근무타입이 없어 시간 단위
+ * 연차는 사용할 수 없습니다" 안내를 노출한다(PC-11).
  */
 public record LeaveApplyMetaResponse(
       List<LeaveTypeItem> leaveTypes
     , int convMinutes
+    , boolean hourlyBlocked
 ) {
     /**
      * 신청 가능 연차종류 1건.

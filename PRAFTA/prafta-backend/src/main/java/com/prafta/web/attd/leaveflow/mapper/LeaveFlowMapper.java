@@ -200,6 +200,31 @@ public interface LeaveFlowMapper {
                                                                    @Param("leaveCd") String leaveCd,
                                                                    @Param("workYmd") String workYmd);
 
+    /**
+     * PC-02(D8): 일반(비가불) 신청 분할 차감용 활성 부여 목록(만료 임박순, 잔여&gt;0, FOR UPDATE).
+     *
+     * <p>{@code selectBorrowDeductibleGrants} 술어 재사용 + GRANT_ID 타이브레이커. 호출부는 만료
+     *   임박순으로 신청 요금을 분할 충당하고, 합산 잔여가 부족하면 ATTD_400_051 로 거부한다
+     *   (단건 {@code selectDeductibleGrant} 의 조각 부여 교착 해소 — 앱 미러).
+     */
+    java.util.List<DeductibleGrantVO> selectDeductibleGrants(@Param("cmpnyCd") String cmpnyCd,
+                                                             @Param("userCd") String userCd,
+                                                             @Param("leaveCd") String leaveCd,
+                                                             @Param("workYmd") String workYmd);
+
+    /**
+     * 보안리뷰 M-1: 차감 가능한 활성 부여의 합산 잔여(잠금 없음 — 판정 전용).
+     *
+     * <p>submitLeave 짜투리 사전 판정·preview 잔여 부족 판정용. FOR UPDATE 목록 조회
+     *   ({@code selectDeductibleGrants})를 판정에 재사용하면 행 잠금 보유 후 remnant advisory lock 을
+     *   대기하는 순서 역전(회수 경로와 교차 시 GET_LOCK 타임아웃 정지)이 생기므로 잠금 없는
+     *   SUM 으로 분리한다. 실제 차감 계획은 여전히 FOR UPDATE 목록으로 수행(앱 미러).
+     */
+    java.math.BigDecimal selectDeductibleRemainingSum(@Param("cmpnyCd") String cmpnyCd,
+                                                      @Param("userCd") String userCd,
+                                                      @Param("leaveCd") String leaveCd,
+                                                      @Param("workYmd") String workYmd);
+
     /** 요청에 연결된 사용 행의 GRANT_ID 조회(반려 시 부여 재계산 대상). 없으면 null. */
     String selectGrantIdByReqId(@Param("cmpnyCd") String cmpnyCd,
                                 @Param("reqId") String reqId);

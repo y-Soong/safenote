@@ -12,6 +12,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 
 import com.prafta.common.cmm.leave.mapper.LeaveDashboardMapper;
 import com.prafta.common.cmm.leave.service.LeaveHourlyResettleService;
+import com.prafta.common.cmm.leave.service.LeaveRemnantCoverService;
 import com.prafta.common.cmm.leave.vo.NotiOutboxInsertVO;
 import com.prafta.common.error.attd.AttdErrorCode;
 import com.prafta.common.exception.ApiException;
@@ -78,6 +79,8 @@ public class Attd13ServiceImpl implements Attd13Service {
     private final ObjectMapper objectMapper;
     /** LC-05(F1): 시간차 행 삭제 시 그날 잔존 시간차 건 시간순 재정산(코어 산식 LC-03 공유). */
     private final LeaveHourlyResettleService leaveHourlyResettleService;
+    /** PC-06(D7): 삭제(동의 확정)로 잔여 복원 시 미도래 짜투리 보전 건 회수(정상 차감 전환). */
+    private final LeaveRemnantCoverService leaveRemnantCoverService;
 
     // ============================================================
     // 관리자(웹)
@@ -387,6 +390,9 @@ public class Attd13ServiceImpl implements Attd13Service {
             leaveHourlyResettleService.resettleHourlyLeaveOnDate(
                     cmpnyCd, target.siteCd(), target.userCd(), target.startDate(), operatorUserCd);
         }
+        // PC-06(D7): 삭제로 잔여가 복원됐다 — 미도래(근무일 > 오늘) 짜투리 보전 건을 복원 잔여
+        //   한도 내에서 정상 차감으로 전환한다(부분 회수 허용, 당일=도래 유지).
+        leaveRemnantCoverService.reclaimIfPossible(cmpnyCd, target.userCd(), operatorUserCd);
         // prafta-com-008-E-2: 출근 차단은 leave_use 기준 → cancelLeaveUse 로 자동 해제(work_plan SCH_CD 유지).
     }
 
