@@ -76,8 +76,11 @@ public class LeaveFlowServiceImpl implements LeaveFlowService {
     private static final String UNIT_HOUR2 = "02";
     private static final String UNIT_HOUR1 = "03";
     private static final String UNIT_MIN30 = "04";
-    /** LC-06: 반반차(0.25일 고정단위). 처리 = 반차 패턴 미러(시간대 미기록, 시간차 누적 미포함). */
+    /** 반반차(0.25일 고정단위). 처리 = 반차 패턴 미러(시간대 미기록, 시간차 누적 미포함). */
     private static final String UNIT_QUARTER = "05";
+
+    /** LC-10: 반반차를 개방하는 회사 사용단위 값(tb_leave_usage_policy.USAGE_UNIT). */
+    private static final String USAGE_UNIT_QUARTER_DAY = "QUARTER_DAY";
 
     private static final String USE_CONFIRMED = "CONFIRMED";
 
@@ -158,13 +161,13 @@ public class LeaveFlowServiceImpl implements LeaveFlowService {
             }
             leaveMinutes = daily / 2;
         } else if (UNIT_QUARTER.equals(unit)) {
-            // LC-06(T5): 반반차 = 반차 패턴 미러. leaveDays 0.25 고정, 분 = daily/4(정수 나눗셈),
+            // 반반차 = 반차 패턴 미러. leaveDays 0.25 고정, 분 = daily/4(정수 나눗셈),
             //   시간대(START/END_TIME) 미기록(plan §8-④). 시간차 누적(하한 마일스톤)엔 미포함(§8-⑤),
             //   1.0 점유 가드에는 아래 selectOccupiedLeaveDaysOnDate 합산으로 자동 포함.
-            // 허용 게이트: 법정 = 회사 사용정책 ALLOW_QUARTER='Y'(null=미허용 fail-closed),
+            // LC-10 허용 게이트: 법정 = 회사 사용정책 USAGE_UNIT='QUARTER_DAY'(null=미허용 fail-closed),
             //   비법정 = 타입 USE_UNIT_TYPE='05' 명시 설정(계층 삽입 없음 — 하위호환).
             boolean quarterAllowed = statutory
-                    ? "Y".equals(leaveFlowMapper.selectPolicyAllowQuarter(cmpny))
+                    ? USAGE_UNIT_QUARTER_DAY.equals(leaveFlowMapper.selectPolicyUsageUnit(cmpny))
                     : UNIT_QUARTER.equals(type.useUnitType());
             if (!quarterAllowed) {
                 log.info("[leaveflow] 반반차 신청 거부: 미허용 (userCd={}, leaveCd={}, statutory={})",
@@ -508,9 +511,9 @@ public class LeaveFlowServiceImpl implements LeaveFlowService {
             }
             charge = new BigDecimal("0.50000");
         } else if (UNIT_QUARTER.equals(unit)) {
-            // LC-06 허용 게이트 미러: 법정=ALLOW_QUARTER / 비법정=타입 '05' 설정.
+            // LC-10 허용 게이트 미러: 법정=USAGE_UNIT='QUARTER_DAY' / 비법정=타입 '05' 설정.
             boolean quarterAllowed = statutory
-                    ? "Y".equals(leaveFlowMapper.selectPolicyAllowQuarter(cmpny))
+                    ? USAGE_UNIT_QUARTER_DAY.equals(leaveFlowMapper.selectPolicyUsageUnit(cmpny))
                     : UNIT_QUARTER.equals(type.useUnitType());
             if (!quarterAllowed) {
                 throw new ApiException(AttdErrorCode.ATTD_400_054);

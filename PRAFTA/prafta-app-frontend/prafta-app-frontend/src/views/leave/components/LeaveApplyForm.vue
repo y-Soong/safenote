@@ -358,7 +358,7 @@ const showAlert = (message) => {
 }
 
 // ── 사용 단위 라벨(SYS025) — 표시 전용 상수 ──────────────────────────────
-// 00 종일 / 01 반차 / 02 2시간 / 03 1시간 / 04 30분 / 05 반반차(LC-06 — ALLOW_QUARTER='Y' 회사만
+// 00 종일 / 01 반차 / 02 2시간 / 03 1시간 / 04 30분 / 05 반반차(LC-10 — USAGE_UNIT='QUARTER_DAY' 회사만
 //   서버가 allowedUnits 에 '05' 를 포함하므로, 노출 게이트는 기존 allowedUnits 패턴 그대로)
 const UNIT_LABELS = {
   '00': '종일',

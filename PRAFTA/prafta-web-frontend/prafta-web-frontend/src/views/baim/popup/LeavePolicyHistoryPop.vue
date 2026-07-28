@@ -189,6 +189,11 @@ const YN_MAP = { Y: "사용", N: "미사용" };
 const USAGE_UNIT_MAP = {
   FULL_DAY: "1일 단위",
   HALF_DAY: "0.5일 단위",
+  // LC-10: 반반차를 사용 단위 선택지로 편입(구 ALLOW_QUARTER 독립 토글 폐기)
+  QUARTER_DAY: "0.25일 단위 (반반차)",
+  HOUR_2: "시간차 2시간",
+  HOUR_1: "시간차 1시간",
+  MIN_30: "시간차 30분",
 };
 
 // 비교 대상 axis 정의 (표시 라벨 + 값 포맷터)

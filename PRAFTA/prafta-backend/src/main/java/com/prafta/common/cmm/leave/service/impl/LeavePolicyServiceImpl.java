@@ -83,6 +83,8 @@ public class LeavePolicyServiceImpl implements LeavePolicyService {
     // ===== 사용 단위 (단일, prafta-024) =====
     private static final String USAGE_UNIT_FULL_DAY = "FULL_DAY";
     private static final String USAGE_UNIT_HALF_DAY = "HALF_DAY";
+    /** LC-10: 반반차(0.25일). 선택 시 허용집합 = 종일/반차/반반차 (시간차 미허용). */
+    private static final String USAGE_UNIT_QUARTER_DAY = "QUARTER_DAY";
     private static final String USAGE_UNIT_HOUR_2 = "HOUR_2";
     private static final String USAGE_UNIT_HOUR_1 = "HOUR_1";
     private static final String USAGE_UNIT_MIN_30 = "MIN_30";
@@ -549,8 +551,9 @@ public class LeavePolicyServiceImpl implements LeavePolicyService {
         //   그 외에는 화이트리스트 정규화(미지정/비정상 값은 FULL_DAY).
         vo.setUsageUnit(normalizeUsageUnit(cmd.usageUnit(), vo.getAxis4ProrateRounding()));
 
-        // LC-06: 반반차(0.25일) 허용 토글 — USAGE_UNIT 계층과 독립. 미전송/비정상 값은 'N'(fail-closed).
-        vo.setAllowQuarter(normalizeYn(cmd.allowQuarter(), YN_N));
+        // LC-10: 반반차는 USAGE_UNIT='QUARTER_DAY' 선택으로 표현한다(구 독립 토글 폐기).
+        //   ALLOW_QUARTER 컬럼은 하위호환 목적으로 남기되, 입력이 아니라 USAGE_UNIT 파생값으로만 기록한다.
+        vo.setAllowQuarter(USAGE_UNIT_QUARTER_DAY.equals(vo.getUsageUnit()) ? YN_Y : YN_N);
 
         // 법정연차 결재 여부 (prafta-019-E 결정 #2) — 기본 N(즉시 확정)
         vo.setAprvUseYn(normalizeYn(cmd.aprvUseYn(), YN_N));
@@ -690,7 +693,7 @@ public class LeavePolicyServiceImpl implements LeavePolicyService {
         snap.put("useYn", vo.getUseYn());
         snap.put("applyFromDate", vo.getApplyFromDate());
         snap.put("usageUnit", vo.getUsageUnit());
-        snap.put("allowQuarter", vo.getAllowQuarter()); // LC-06: 반반차 토글(이력 스냅샷 보존, additive)
+        snap.put("allowQuarter", vo.getAllowQuarter()); // LC-10: USAGE_UNIT 파생값(구 이력과의 비교 연속성 유지)
         try {
             return objectMapper.writeValueAsString(snap);
         } catch (JsonProcessingException e) {
@@ -1297,7 +1300,7 @@ public class LeavePolicyServiceImpl implements LeavePolicyService {
     /**
      * 사용 단위(단일, prafta-024) 정규화.
      * AXIS4=HALF_DAY(0.5일 단위 절사)면 HALF_DAY 강제(결정 2b).
-     * 그 외에는 화이트리스트(FULL_DAY/HALF_DAY/HOUR_2/HOUR_1/MIN_30) 값만 인정하고,
+     * 그 외에는 화이트리스트(FULL_DAY/HALF_DAY/QUARTER_DAY/HOUR_2/HOUR_1/MIN_30) 값만 인정하고,
      * 공백/비정상 값은 FULL_DAY로 정규화한다.
      */
     private String normalizeUsageUnit(String usageUnit, String axis4ProrateRounding) {
@@ -1313,6 +1316,7 @@ public class LeavePolicyServiceImpl implements LeavePolicyService {
     private boolean isValidUsageUnit(String u) {
         return USAGE_UNIT_FULL_DAY.equals(u)
                 || USAGE_UNIT_HALF_DAY.equals(u)
+                || USAGE_UNIT_QUARTER_DAY.equals(u)
                 || USAGE_UNIT_HOUR_2.equals(u)
                 || USAGE_UNIT_HOUR_1.equals(u)
                 || USAGE_UNIT_MIN_30.equals(u);

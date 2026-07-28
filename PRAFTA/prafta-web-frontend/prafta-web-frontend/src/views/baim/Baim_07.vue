@@ -549,6 +549,17 @@
                 />
                 0.5일 (반차)
               </label>
+              <!-- LC-10: 반반차를 사용 단위 선택지로 편입(구 독립 토글 폐기).
+                   선택 시 허용집합 = 종일/반차/반반차 — 시간차는 열리지 않는다. -->
+              <label class="lp-check">
+                <input
+                  type="radio"
+                  value="QUARTER_DAY"
+                  v-model="usageUnit"
+                  :disabled="usageUnitLocked"
+                />
+                0.25일 (반반차)
+              </label>
               <label class="lp-check">
                 <input
                   type="radio"
@@ -590,22 +601,21 @@
               결재 필요 (해제 시 즉시 확정)
             </label>
           </div>
-          <!-- LC-06/LC-08: 반반차(0.25일) 허용 토글 — 사용 단위(USAGE_UNIT) 계층과 독립인 회사 단위 토글 -->
-          <div class="lp-field">
-            <label class="lp-field__label">반반차(0.25일) 허용</label>
-            <label class="lp-check">
-              <input
-                type="checkbox"
-                v-model="allowQuarter"
-                true-value="Y"
-                false-value="N"
-              />
-              허용 (위 사용 단위와 별개로 반반차 신청 개방)
-            </label>
-          </div>
         </div>
         <p class="lp-strong-note">
-          ※ 3번에서 <strong>"0.5일 단위 절사"</strong> 선택 시 사용 단위가
+          ※ 선택한 단위보다 <strong>굵은 단위는 자동으로 허용</strong>됩니다. (예:
+          [시간차 1시간] 선택 → 1일·반차·2시간·1시간 모두 신청 가능)
+        </p>
+        <p class="lp-strong-note">
+          ※ <strong>[0.25일 (반반차)]</strong>는 예외로, 선택 시
+          <strong>1일 · 반차 · 반반차</strong>만 허용되고
+          <strong>시간차는 열리지 않습니다.</strong> 반반차는 시각을 지정하지 않는
+          고정 단위이므로, 시각 지정형 시간차를 함께 쓰려면 시간차 단위를
+          선택하세요.
+        </p>
+        <p class="lp-strong-note">
+          ※ <strong>[비례 부여 시 반올림]</strong> 값이
+          <strong>"0.5일 단위 절사"</strong>인 경우 사용 단위가
           <strong>[0.5일 (반차)]</strong>로 고정됩니다.
         </p>
         <p class="lp-strong-note">
@@ -765,12 +775,11 @@ const applyFromDate = ref(""); // YYYYMMDD. 저장 직전 내일(오늘+1일)로
 const changeReason = ref("");
 
 // --- 사용 단위 정책 (TB_LEAVE_USAGE_POLICY) ---
-// 단일 선택(prafta-024): FULL_DAY / HALF_DAY / HOUR_2 / HOUR_1 / MIN_30
+// 단일 선택(prafta-024 + LC-10): FULL_DAY / HALF_DAY / QUARTER_DAY / HOUR_2 / HOUR_1 / MIN_30
+//   QUARTER_DAY(반반차)는 계층 특례 — 선택 시 서버 허용집합이 [종일, 반차, 반반차]가 된다.
 const usageUnit = ref("FULL_DAY");
 // 법정연차 신청 결재 여부 (prafta-019-E 결정 #2). 'Y'=결재라인, 'N'=즉시확정
 const aprvUseYn = ref("N");
-// LC-06/LC-08: 반반차(0.25일) 허용 토글 (TB_LEAVE_USAGE_POLICY.ALLOW_QUARTER, 기본 'N')
-const allowQuarter = ref("N");
 
 // --- UI 상태 ---
 const isLoading = ref(false);
@@ -965,8 +974,6 @@ const fnBuildSaveRequest = () => {
     // 사용 단위(단일): HALF_DAY 잠금(3번=0.5일 절사) 시 HALF_DAY 강제 (prafta-024 결정 2b)
     usageUnit: usageUnitLocked.value ? "HALF_DAY" : usageUnit.value,
     aprvUseYn: aprvUseYn.value,
-    // LC-06: 반반차(0.25일) 허용 토글 — USAGE_UNIT 계층과 독립 (Y/N 외 값은 서버가 'N' 정규화)
-    allowQuarter: allowQuarter.value,
 
     applyFromDate: applyFromDate.value,
     changeReason: changeReason.value,
@@ -1019,10 +1026,9 @@ const fnApplyPolicyToState = (p) => {
   axis7UsePromotion.value = p.axis7UsePromotion ?? "N";
 
   // 사용 단위(단일): 미지정/구버전 데이터는 FULL_DAY로 폴백
+  //   LC-10: 구 데이터의 allowQuarter='Y'는 승계하지 않는다. 반반차는 USAGE_UNIT='QUARTER_DAY'로만 표현.
   usageUnit.value = p.usageUnit || "FULL_DAY";
   aprvUseYn.value = p.aprvUseYn ?? "N";
-  // LC-06: 반반차 허용 토글 (미지정/구버전 데이터는 'N' — fail-closed)
-  allowQuarter.value = p.allowQuarter ?? "N";
 };
 
 // 신규 작성 모드(활성 정책 없음) — 기본값으로 초기화
@@ -1041,7 +1047,6 @@ const fnResetToDefault = () => {
   axis7UsePromotion.value = "N";
   usageUnit.value = "FULL_DAY";
   aprvUseYn.value = "N";
-  allowQuarter.value = "N";
 };
 
 // --- axis 선택 핸들러 (UI 토글; 매트릭스 보정은 watch 가 담당) ---
@@ -1187,8 +1192,6 @@ const fnBuildTargetForImpact = () => {
       : "CEIL",
     usageUnit: usageUnitLocked.value ? "HALF_DAY" : usageUnit.value,
     aprvUseYn: aprvUseYn.value,
-    // LC-06: 반반차 토글 — 저장 body 와 동일 규칙으로 전달
-    allowQuarter: allowQuarter.value,
   };
 
   if (axis4Active.value) {

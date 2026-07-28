@@ -61,8 +61,7 @@ public record LeavePolicySaveParam(
             , request.getAxis7UsePromotion()
             , request.getAprvUseYn()
             , request.getApplyFromDate()
-            , request.getUsageUnit()
-            , request.getAllowQuarter() // LC-06: 반반차 허용 토글(Y/N 외 값은 서비스에서 'N' 정규화)
+            , request.getUsageUnit() // LC-10: 반반차는 'QUARTER_DAY' 값으로 표현(구 allowQuarter 토글 폐기)
             , request.getChangeReason()
         );
 

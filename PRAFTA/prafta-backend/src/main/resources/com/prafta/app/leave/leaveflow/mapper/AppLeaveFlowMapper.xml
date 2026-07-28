@@ -51,16 +51,16 @@
     </select>
 
     <!-- ============================================================
-         apply-meta: 회사 활성 법정정책의 단일 허용단위 + 법정 결재여부 + 반반차 토글(LC-06)
+         apply-meta: 회사 활성 법정정책의 단일 허용단위 + 법정 결재여부
          - tb_leave_policy(활성 1건) JOIN tb_leave_usage_policy(POLICY_SEQ 1:1).
-         - 결과 record LeaveUsagePolicyRow(usageUnit, policyAprvUseYn, allowQuarter) 순서 일치.
+         - 결과 record LeaveUsagePolicyRow(usageUnit, policyAprvUseYn) 순서 일치.
+         - LC-10: 반반차는 USAGE_UNIT='QUARTER_DAY' 로 표현(구 ALLOW_QUARTER 컬럼 미조회).
          ============================================================ -->
     <select id="selectCompanyUsageUnit" resultType="com.prafta.app.leave.leaveflow.result.LeaveUsagePolicyRow">
     /* AppLeaveFlowMapper.selectCompanyUsageUnit */
     SELECT
           UP.USAGE_UNIT    AS usageUnit
         , P.APRV_USE_YN    AS policyAprvUseYn
-        , UP.ALLOW_QUARTER AS allowQuarter
       FROM TB_LEAVE_POLICY P
       JOIN TB_LEAVE_USAGE_POLICY UP
         ON UP.POLICY_SEQ = P.POLICY_SEQ

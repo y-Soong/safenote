@@ -237,9 +237,10 @@ const line = ref([]); // [{ userCd, userNm }]
 // prafta-com-011-6 가불(미래 연차 당겨쓰기) 동의 상태. 종류/단위/날짜 변경 시 리셋.
 const borrowAgreed = ref(false);
 
-// LC-09: 반반차(0.25일, SYS025 '05') 허용 여부 — 회사 사용정책 ALLOW_QUARTER='Y' 일 때만
-//   단위 선택지에 노출한다(조회 실패 시 false 유지 = fail-closed, 서버도 미허용 거부).
-const allowQuarter = ref(false);
+// LC-10: 반반차(0.25일, SYS025 '05') 허용 여부 — 회사 사용정책 USAGE_UNIT='QUARTER_DAY' 일 때만
+//   단위 선택지에 노출한다(구 ALLOW_QUARTER 독립 토글 폐기).
+//   조회 실패/정책 미존재 시 false 유지 = fail-closed, 서버도 동일 기준으로 거부.
+const quarterAllowed = ref(false);
 
 // LC-09(§5-C): 예상 차감액 미리보기 상태 (POST /leaveflow/preview-deduction)
 //   preview = { chargeDays, floorApplied, capApplied, insufficientBalance, convMinutes, floorDays } | null
@@ -270,10 +271,10 @@ const unitGuide = computed(
     ({ "02": "2시간", "03": "1시간", "04": "30분" }[useUnitType.value] || "시간")
 );
 
-// LC-09: 단위 선택지 — 반반차('05')는 ALLOW_QUARTER='Y' 회사만 노출(기존 SYS025 노출 패턴 유지)
+// LC-10: 단위 선택지 — 반반차('05')는 USAGE_UNIT='QUARTER_DAY' 회사만 노출(기존 SYS025 노출 패턴 유지)
 const visibleUnitOptions = computed(() =>
   unitOptions.value.filter(
-    (u) => u.systValDCd !== "05" || allowQuarter.value
+    (u) => u.systValDCd !== "05" || quarterAllowed.value
   )
 );
 
@@ -390,8 +391,8 @@ watch(borrowDateExpired, (expired) => {
 });
 
 // LC-09: 반반차 미허용으로 선택지가 사라지면 선택값을 종일로 폴백(잔존 '05' 제출 방지)
-watch([allowQuarter, useUnitType], () => {
-  if (useUnitType.value === "05" && !allowQuarter.value) {
+watch([quarterAllowed, useUnitType], () => {
+  if (useUnitType.value === "05" && !quarterAllowed.value) {
     useUnitType.value = "00";
   }
 });
@@ -473,12 +474,12 @@ const fnLoadCandidates = async () => {
   }
 };
 
-// LC-09: 반반차 허용 토글 조회 — 활성 연차정책의 ALLOW_QUARTER(회사 단위, LC-06).
+// LC-10: 반반차 허용 조회 — 활성 연차정책의 USAGE_UNIT 이 'QUARTER_DAY' 인지로 판정한다.
 //   조회 실패/정책 미존재 시 false 유지(fail-closed — 서버 게이트와 동일 방향).
-const fnLoadAllowQuarter = async () => {
+const fnLoadQuarterAllowed = async () => {
   try {
     const r = await axios.get("/webApi/baim07/policy/active");
-    allowQuarter.value = r.data?.policy?.allowQuarter === "Y";
+    quarterAllowed.value = r.data?.policy?.usageUnit === "QUARTER_DAY";
   } catch (e) {
     /* noop — 미허용 취급 */
   }
@@ -582,7 +583,7 @@ onMounted(() => {
   fnLoadUnits();
   fnLoadCandidates();
   fnLoadPresets();
-  fnLoadAllowQuarter();
+  fnLoadQuarterAllowed();
 });
 </script>
 

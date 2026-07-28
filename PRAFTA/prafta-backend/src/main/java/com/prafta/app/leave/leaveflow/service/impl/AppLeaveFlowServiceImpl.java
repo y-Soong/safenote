@@ -148,10 +148,9 @@ public class AppLeaveFlowServiceImpl implements AppLeaveFlowService {
             statutoryAllowedUnits = LeaveUnitGranularity.allowedUnitsByCode(FALLBACK_UNIT_CODE);
             statutoryAprvRequired = false;
         } else {
+            // LC-10: 반반차('05')는 USAGE_UNIT='QUARTER_DAY' 선택 시 [00,01,05]로 개방(구 ALLOW_QUARTER 토글 폐기).
             String code = LeaveUnitGranularity.usageUnitToCode(companyPolicy.usageUnit());
-            // LC-06: 반반차('05')는 USAGE_UNIT 계층과 독립인 회사 토글(ALLOW_QUARTER='Y')로 개방.
-            statutoryAllowedUnits = LeaveUnitGranularity.withQuarter(
-                    LeaveUnitGranularity.allowedUnitsByCode(code), isYes(companyPolicy.allowQuarter()));
+            statutoryAllowedUnits = LeaveUnitGranularity.allowedUnitsByCode(code);
             statutoryAprvRequired = isYes(companyPolicy.policyAprvUseYn());
         }
 
@@ -360,9 +359,9 @@ public class AppLeaveFlowServiceImpl implements AppLeaveFlowService {
             }
             leaveMinutes = daily / 2;
         } else if (UNIT_QUARTER.equals(unit)) {
-            // LC-06(T5): 반반차 = 반차 패턴 미러(웹 LeaveFlowServiceImpl 동일). leaveDays 0.25 고정,
-            //   분 = daily/4(정수 나눗셈), 시간대 미기록(plan §8-④). 허용 게이트(ALLOW_QUARTER/타입 '05')는
-            //   위 (2) 단위 게이팅(resolveAllowedUnits + withQuarter)에서 이미 강제됨(ATTD_400_102).
+            // 반반차 = 반차 패턴 미러(웹 LeaveFlowServiceImpl 동일). leaveDays 0.25 고정,
+            //   분 = daily/4(정수 나눗셈), 시간대 미기록(plan §8-④). 허용 게이트(법정 USAGE_UNIT='QUARTER_DAY'
+            //   / 비법정 타입 '05')는 위 (2) 단위 게이팅(resolveAllowedUnits)에서 이미 강제됨(ATTD_400_102 — LC-10).
             leaveDays = new BigDecimal("0.25000");
             Integer daily = leaveDeductionService.getDailyStdWorkMinutes(cmpny, site, user, workYmd);
             if (daily == null) {
@@ -581,7 +580,7 @@ public class AppLeaveFlowServiceImpl implements AppLeaveFlowService {
             throw new ApiException(AttdErrorCode.ATTD_400_108);
         }
 
-        // 2) 단위 게이팅 미러(D2 — 반반차 ALLOW_QUARTER/타입 '05' 포함).
+        // 2) 단위 게이팅 미러(D2 — 반반차는 법정 USAGE_UNIT='QUARTER_DAY'/비법정 타입 '05'로 개방, LC-10).
         List<String> allowedUnits = resolveAllowedUnits(cmpny, statutory, type.useUnitType());
         if (!allowedUnits.contains(unit)) {
             throw new ApiException(AttdErrorCode.ATTD_400_102);
@@ -964,7 +963,7 @@ public class AppLeaveFlowServiceImpl implements AppLeaveFlowService {
 
     /**
      * 허용 사용단위 집합 산출(018-A {@link LeaveUnitGranularity} SSOT 재사용).
-     * 법정 = 회사 USAGE_UNIT 계층(정책 미존재면 종일만 폴백) + 반반차 토글(ALLOW_QUARTER — LC-06)
+     * 법정 = 회사 USAGE_UNIT 계층(정책 미존재면 종일만 폴백, 'QUARTER_DAY'면 종일/반차/반반차 — LC-10)
      * / 비법정 = 타입 USE_UNIT_TYPE 계층(NULL→00, '05' 설정 시 종일/반차/반반차).
      */
     private List<String> resolveAllowedUnits(String cmpnyCd, boolean statutory, String typeUseUnitType) {
@@ -973,11 +972,8 @@ public class AppLeaveFlowServiceImpl implements AppLeaveFlowService {
             if (companyPolicy == null) {
                 return LeaveUnitGranularity.allowedUnitsByCode(FALLBACK_UNIT_CODE);
             }
-            // LC-06: 반반차('05')는 USAGE_UNIT 계층과 독립인 회사 토글(ALLOW_QUARTER='Y')로 개방.
-            return LeaveUnitGranularity.withQuarter(
-                    LeaveUnitGranularity.allowedUnitsByCode(
-                            LeaveUnitGranularity.usageUnitToCode(companyPolicy.usageUnit()))
-                    , isYes(companyPolicy.allowQuarter()));
+            return LeaveUnitGranularity.allowedUnitsByCode(
+                    LeaveUnitGranularity.usageUnitToCode(companyPolicy.usageUnit()));
         }
         return LeaveUnitGranularity.allowedUnitsByCode(
                 (typeUseUnitType == null) ? FALLBACK_UNIT_CODE : typeUseUnitType);

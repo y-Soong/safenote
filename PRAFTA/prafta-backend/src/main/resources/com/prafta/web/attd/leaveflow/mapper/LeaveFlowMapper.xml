@@ -142,10 +142,11 @@
      LIMIT 1
     </select>
 
-    <!-- LC-06: 활성 법정정책의 반반차(0.25일) 허용 토글. 사용정책 행 미존재 시 null → 호출부 'N' 취급(fail-closed). -->
-    <select id="selectPolicyAllowQuarter" resultType="string">
-    /* LeaveFlowMapper.selectPolicyAllowQuarter */
-    SELECT UP.ALLOW_QUARTER
+    <!-- LC-10: 활성 법정정책의 사용 단위. 반반차 허용은 'QUARTER_DAY' 여부로 판정.
+         사용정책 행 미존재 시 null → 호출부 비허용 취급(fail-closed). -->
+    <select id="selectPolicyUsageUnit" resultType="string">
+    /* LeaveFlowMapper.selectPolicyUsageUnit */
+    SELECT UP.USAGE_UNIT
       FROM TB_LEAVE_POLICY P
       JOIN TB_LEAVE_USAGE_POLICY UP
         ON UP.POLICY_SEQ = P.POLICY_SEQ

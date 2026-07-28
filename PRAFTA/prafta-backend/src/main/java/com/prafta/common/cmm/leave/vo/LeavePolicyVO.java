@@ -89,14 +89,16 @@ public class LeavePolicyVO {
     // ===== TB_LEAVE_USAGE_POLICY (1:1) =====
     /**
      * 회사 허용 사용 단위 (단일, prafta-024).
-     * FULL_DAY / HALF_DAY / HOUR_2 / HOUR_1 / MIN_30 중 1개.
+     * FULL_DAY / HALF_DAY / QUARTER_DAY / HOUR_2 / HOUR_1 / MIN_30 중 1개.
      * AXIS4=HALF_DAY(0.5일 단위 절사) 시 HALF_DAY 강제.
+     * QUARTER_DAY(반반차, LC-10) 선택 시 허용집합 = 종일/반차/반반차 — 시간차는 허용되지 않는다.
      */
     private String usageUnit;
 
     /**
-     * 반반차(0.25일, SYS025 '05') 허용 토글 Y/N (연차 시간차 환산 개편 LC-06).
-     * USAGE_UNIT 계층과 독립인 회사 단위 토글 — 'Y'일 때만 법정 연차의 반반차 신청 허용.
+     * 반반차 허용 Y/N — <b>더 이상 입력값이 아니다</b>(LC-10).
+     * USAGE_UNIT='QUARTER_DAY' 에서 파생되어 기록만 되며, 신청 게이팅은 USAGE_UNIT 을 직접 본다.
+     * 구 이력 스냅샷과의 비교 연속성을 위해 컬럼/필드만 유지한다.
      */
     private String allowQuarter;
 }

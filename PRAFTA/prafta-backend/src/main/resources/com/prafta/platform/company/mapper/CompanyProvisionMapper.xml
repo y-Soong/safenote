@@ -371,7 +371,8 @@
     )
     </insert>
 
-    <!-- (3) 연차 사용정책(정책 1:1) — 사용 단위 기본값. 반반차는 기본 비활성(회사가 켠다). -->
+    <!-- (3) 연차 사용정책(정책 1:1) — 사용 단위 기본값 MIN_30.
+         LC-10: 반반차는 USAGE_UNIT='QUARTER_DAY' 선택 시에만 개방되므로 ALLOW_QUARTER 는 'N' 파생값 고정. -->
     <insert id="seedDefaultLeaveUsagePolicy"
             parameterType="com.prafta.platform.company.application.command.LeavePolicySeedCommand">
     /* CompanyProvisionMapper.seedDefaultLeaveUsagePolicy */

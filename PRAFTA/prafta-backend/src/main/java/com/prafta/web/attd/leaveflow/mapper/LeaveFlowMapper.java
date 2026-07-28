@@ -79,10 +79,11 @@ public interface LeaveFlowMapper {
     String selectPolicyAprvUseYn(@Param("cmpnyCd") String cmpnyCd);
 
     /**
-     * LC-06: 활성 법정정책의 반반차(0.25일) 허용 토글(tb_leave_usage_policy.ALLOW_QUARTER).
-     * 사용정책 행 미존재/활성정책 없음이면 null → 호출부는 'N'(비허용) 취급(fail-closed).
+     * LC-10: 활성 법정정책의 사용 단위(tb_leave_usage_policy.USAGE_UNIT).
+     * 반반차 허용 여부는 이 값이 'QUARTER_DAY' 인지로 판정한다(구 ALLOW_QUARTER 토글 폐기).
+     * 사용정책 행 미존재/활성정책 없음이면 null → 호출부는 비허용 취급(fail-closed).
      */
-    String selectPolicyAllowQuarter(@Param("cmpnyCd") String cmpnyCd);
+    String selectPolicyUsageUnit(@Param("cmpnyCd") String cmpnyCd);
 
     /**
      * PRAFTA-COM-004 보안: 주어진 USER_CD 목록 중 동일 회사 + 동일 사업장 + 재직(활성) 상태인
