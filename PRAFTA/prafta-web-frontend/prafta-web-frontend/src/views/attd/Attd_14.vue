@@ -22,11 +22,9 @@
     <div class="viewSearch">
       <div>
         <label>발의기간</label>
-        <CalendarSrch
-          v-model="periodRange"
-          range
-          :style="{ width: '200px', textAlign: 'center' }"
-        />
+        <CalendarSrch v-model="periodFrom" />
+        <span class="date-range-sep">~</span>
+        <CalendarSrch v-model="periodTo" />
       </div>
 
       <div>
@@ -258,7 +256,9 @@ const { proxy } = getCurrentInstance();
 const { open: openPop } = useModal();
 
 // ── 검색 조건 ────────────────────────────────────────────────────────────
-const periodRange = ref([]); // CalendarSrch range → ['YYYY-MM-DD','YYYY-MM-DD']
+// 발의기간 from/to — User_05 슬롯 점유일시 패턴(개별 CalendarSrch + ~ 구분자)
+const periodFrom = ref(""); // 'YYYY-MM-DD'
+const periodTo = ref(""); // 'YYYY-MM-DD'
 const siteCd = ref("");
 const siteNo = ref("");
 const siteNm = ref("");
@@ -348,12 +348,10 @@ const toRow = (r) => ({
   statusClass: STATUS_CLASS[r.reqStatus] || "is-pending",
 });
 
-// CalendarSrch range 모델(['YYYY-MM-DD','YYYY-MM-DD']) → 백엔드 YYYYMMDD
+// CalendarSrch 모델('YYYY-MM-DD') → 백엔드 YYYYMMDD (종료일 미입력 시 시작일 단일일 조회)
 const ymdParam = (v) => (v ? String(v).replace(/[^0-9]/g, "") : "");
-const fromDateParam = computed(() => ymdParam(periodRange.value?.[0]));
-const toDateParam = computed(() =>
-  ymdParam(periodRange.value?.[1] ?? periodRange.value?.[0])
-);
+const fromDateParam = computed(() => ymdParam(periodFrom.value));
+const toDateParam = computed(() => ymdParam(periodTo.value || periodFrom.value));
 
 // 당월 1일 ~ 오늘 기본값 세팅(YYYY-MM-DD)
 const setDefaultPeriod = () => {
@@ -361,7 +359,8 @@ const setDefaultPeriod = () => {
   const y = now.getFullYear();
   const m = String(now.getMonth() + 1).padStart(2, "0");
   const d = String(now.getDate()).padStart(2, "0");
-  periodRange.value = [`${y}-${m}-01`, `${y}-${m}-${d}`];
+  periodFrom.value = `${y}-${m}-01`;
+  periodTo.value = `${y}-${m}-${d}`;
 };
 
 // ── 사업장 / 부서 입력 처리 (Attd_07 패턴 차용) ───────────────────────────
@@ -636,6 +635,12 @@ onMounted(async () => {
 }
 .viewSearch > div:first-child {
   margin-left: 0;
+}
+
+/* 발의기간 from~to 구분자 (User_05 .date-range-sep 표준) */
+.date-range-sep {
+  margin: 0 0.4rem;
+  color: var(--color-text-muted, #6b7280);
 }
 
 /* 하위부서 포함 체크박스 (Attd_07 checkbox-label 패턴 차용) */

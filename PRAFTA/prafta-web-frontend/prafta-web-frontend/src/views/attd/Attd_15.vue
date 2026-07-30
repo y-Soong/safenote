@@ -622,8 +622,9 @@ onMounted(() => {
 .a15-table tbody tr:hover {
   background: var(--color-bg);
 }
+/* 전역 표준 .edu-grid-empty(table.css)와 동일 높이 — .a15-table tbody td 패딩을 이기기 위해 !important 유지 */
 .a15-empty {
-  padding: 2rem !important;
+  padding: 1.2rem 0.5rem !important;
   color: var(--color-text-muted);
   text-align: center;
 }

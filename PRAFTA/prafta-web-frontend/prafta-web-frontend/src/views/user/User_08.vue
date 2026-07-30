@@ -83,7 +83,10 @@
         </div>
         <div>
           <label>요청일</label>
-          <input v-model="entryDate" type="date" @change="fnSearchEntry" />
+          <CalendarSrch
+            v-model="entryDate"
+            @update:modelValue="fnSearchEntry"
+          />
         </div>
       </div>
 
@@ -349,9 +352,15 @@
         </div>
         <div>
           <label>서명일</label>
-          <input v-model="signFromDate" type="date" @change="fnSearchSign" />
-          <span class="date-tilde">~</span>
-          <input v-model="signToDate" type="date" @change="fnSearchSign" />
+          <CalendarSrch
+            v-model="signFromDate"
+            @update:modelValue="fnSearchSign"
+          />
+          <span class="date-range-sep">~</span>
+          <CalendarSrch
+            v-model="signToDate"
+            @update:modelValue="fnSearchSign"
+          />
         </div>
         <div>
           <label>이름</label>
@@ -511,6 +520,7 @@ import {
 import axios from "@/api/axios";
 import ViewHeader from "@/components/common/ViewHeader.vue";
 import ThSortable from "@/components/common/ThSortable.vue";
+import CalendarSrch from "@/components/common/CalendarSrch.vue";
 import DailyBlacklistRegPop from "@/views/user/popup/DailyBlacklistRegPop.vue";
 import {
   useTableSort,
@@ -536,7 +546,9 @@ const processing = ref(false);
 const entrySiteCd = ref("");
 const entryStatus = ref("01"); // 기본 = 대기
 const entryType = ref("");
-const entryDate = ref(""); // 기본값 = 오늘(YYYY-MM-DD) — onMounted 에서 fnTodayIso() 로 세팅
+// 기본값 = 오늘(YYYY-MM-DD, 로컬 기준). CalendarSrch 는 부모의 프로그램적 세팅에도 update 를
+//   재방출하므로(onMounted 세팅 시 사업장 미선택 상태에서 조회 오발동) 선언 시점에 초기화한다.
+const entryDate = ref(fnTodayIso());
 
 // 항목: { reqId, userNm, mblNo(서버 복호화 평문 "010-XXXX-XXXX"), reqType, reqStatus, reqDtime, procNm, procDtime, checked }
 const entryRequests = ref([]);
@@ -693,17 +705,17 @@ const getSession = (key) => {
 };
 
 // 로컬 기준 오늘(YYYY-MM-DD) — toISOString()은 UTC 라 KST 00~09시에 전날로 밀리는 결함 전례, 사용 금지.
-const fnTodayIso = () => {
+// 함수 선언문(호이스팅) — 위 entryDate 선언 시점 초기화에서 호출되므로 화살표 const 로 바꾸지 말 것.
+function fnTodayIso() {
   const d = new Date();
   const p = (n) => String(n).padStart(2, "0");
   return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
-};
+}
 
-// input[type=date] 값(YYYY-MM-DD) → 서버 포맷(YYYYMMDD)
+// CalendarSrch 값(YYYY-MM-DD) → 서버 포맷(YYYYMMDD)
 const fnToYyyymmdd = (v) => (v ? String(v).replace(/-/g, "") : "");
 
 onMounted(async () => {
-  entryDate.value = fnTodayIso();
   await fnLoadSiteList();
 });
 
@@ -1082,8 +1094,9 @@ const fnDownloadSign = async (row) => {
 .w-select-sm {
   width: 110px;
 }
-.date-tilde {
-  margin: 0 0.25rem;
+/* from~to 구분자 (User_05 .date-range-sep 표준) */
+.date-range-sep {
+  margin: 0 0.4rem;
   color: var(--color-text-muted, #6b7280);
 }
 

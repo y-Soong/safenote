@@ -128,11 +128,9 @@
         </select>
       </div>
       <div>
-        <label>개설일(시작)</label>
+        <label>개설일</label>
         <CalendarSrch v-model="startDate" />
-      </div>
-      <div>
-        <label>개설일(종료)</label>
+        <span class="date-range-sep">~</span>
         <CalendarSrch v-model="endDate" />
       </div>
       <div>
@@ -594,6 +592,12 @@ const statusClass = (statusCd) => {
 </script>
 
 <style scoped>
+/* 개설일 from~to 구분자 (User_05 .date-range-sep 표준) */
+.date-range-sep {
+  margin: 0 0.4rem;
+  color: var(--color-text-muted, #6b7280);
+}
+
 /* 탭 바(PRAFTA-SUBCON-T5 D2) — Attd_01 표준(밑줄형 14px) 준용 */
 .attd01-tab-bar {
   display: flex;
