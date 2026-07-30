@@ -15,7 +15,8 @@
    powershell -ExecutionPolicy Bypass -File .\scripts\deploy-web.ps1 -UseWorkingTree        # (비상용) 로컬 작업 트리 그대로 배포
 
  전제:
-   - AWS CLI: pip user 설치본 (python -m awscli), prafta-deploy 자격증명 구성됨
+   - AWS CLI: v2(단독 실행파일) 우선 사용, 없으면 pip 판(python -m awscli) 폴백. prafta-deploy 자격증명 구성됨
+     (자격증명 위치 %USERPROFILE%\.aws 는 v1/v2 공통이라 CLI 를 바꿔도 재설정 불필요)
    - 상세 배경: .claude/refs/AWS_배포현황_및_운영전환가이드.md §3, §8
 #>
 [CmdletBinding()]
@@ -36,11 +37,46 @@ $ErrorActionPreference = 'Stop'
 
 $repoRoot = (& git -C $PSScriptRoot rev-parse --show-toplevel).Trim() -replace '/', '\'
 if ($LASTEXITCODE -ne 0 -or -not $repoRoot) { throw "git repo 루트를 찾지 못함 ($PSScriptRoot)" }
-$worktree  = Join-Path $env:TEMP 'prafta-deploy-wt-web'
+# worktree 임시 경로 — $env:TEMP 가 시스템 temp(C:\Windows\Temp)로 잡힌 셸에서는 esbuild 가
+#   상위 디렉토리를 거슬러 읽다가 "Access is denied" 로 죽는다(일반 계정은 열거 권한 없음).
+#   열거 가능한지 실제로 확인하고, 안 되면 사용자 로컬 temp 로 폴백한다.
+function Resolve-TempRoot {
+    foreach ($cand in @($env:TEMP, (Join-Path $env:LOCALAPPDATA 'Temp'))) {
+        if (-not $cand) { continue }
+        try { Get-ChildItem $cand -ErrorAction Stop | Out-Null; return $cand } catch { }
+    }
+    throw "쓸 수 있는 임시 디렉토리를 찾지 못함 (TEMP=$env:TEMP)"
+}
+$worktree  = Join-Path (Resolve-TempRoot) 'prafta-deploy-wt-web'
 $deployLog = Join-Path $repoRoot '.claude\refs\deploy-history.log'
 $webRelPath = 'PRAFTA\prafta-web-frontend\prafta-web-frontend'
 
 function Write-Step([string]$msg) { Write-Host "`n=== $msg ===" -ForegroundColor Cyan }
+
+# AWS CLI 실행기 결정 — v2(단독 실행파일) 우선, 없으면 기존 pip 판(python -m awscli) 폴백.
+#   2026-07-31: Anaconda 의 pyOpenSSL 19.0.0 과 사용자 site-packages 의 cryptography 45 가
+#   충돌해 pip 판 awscli 가 X509_V_FLAG_NOTIFY_POLICY AttributeError 로 죽었다. CLI v2 는
+#   파이썬에 의존하지 않아 이 계열 충돌이 재발하지 않는다. PATH 갱신 전 셸에서도 잡히도록
+#   표준 설치 경로를 직접 확인한다.
+#   ※ 함수에서 단일 원소 배열을 return 하면 PowerShell 이 문자열로 풀어버려($awsExe[0] 이 'C' 가 됨)
+#     실행기 결정은 함수 없이 변수에 직접 담는다.
+$awsExe    = $null
+$awsPrefix = @()
+$awsCmd    = Get-Command aws -ErrorAction SilentlyContinue
+if ($awsCmd) {
+    $awsExe = $awsCmd.Source
+} else {
+    foreach ($p in @("$env:ProgramFiles\Amazon\AWSCLIV2\aws.exe",
+                     "${env:ProgramFiles(x86)}\Amazon\AWSCLIV2\aws.exe")) {
+        if (Test-Path $p) { $awsExe = $p; break }
+    }
+}
+if (-not $awsExe) { $awsExe = 'python'; $awsPrefix = @('-m', 'awscli') }
+
+# AWS CLI 호출 래퍼 — 호출부가 실행기 형태(v2 단독 exe / python -m)를 몰라도 되게 감싼다.
+function Invoke-Aws([string[]]$AwsArgs) {
+    & $awsExe @awsPrefix @AwsArgs
+}
 
 # 배포 이력 기록 (로컬 .claude/refs — gitignore 대상이라 커밋되지 않음)
 function Write-DeployLog([string]$commit, [string]$result) {
@@ -143,16 +179,16 @@ try {
 
     # ── 3) S3 업로드 ─────────────────────────────────────
     Write-Step "3/6 S3 업로드 (s3://$Bucket)"
-    & python -m awscli s3 sync $distDir "s3://$Bucket/" --delete --cache-control "public,max-age=31536000,immutable" --exclude "index.html"
+    Invoke-Aws @('s3', 'sync', $distDir, "s3://$Bucket/", '--delete', '--cache-control', 'public,max-age=31536000,immutable', '--exclude', 'index.html')
     if ($LASTEXITCODE -ne 0) { throw "s3 sync 실패 (exit $LASTEXITCODE)" }
 
-    & python -m awscli s3 cp $indexHtml "s3://$Bucket/index.html" --cache-control "no-cache,no-store,must-revalidate" --content-type "text/html; charset=utf-8"
+    Invoke-Aws @('s3', 'cp', $indexHtml, "s3://$Bucket/index.html", '--cache-control', 'no-cache,no-store,must-revalidate', '--content-type', 'text/html; charset=utf-8')
     if ($LASTEXITCODE -ne 0) { throw "index.html 업로드 실패 (exit $LASTEXITCODE)" }
 
     # ── 4) CloudFront 캐시 무효화 ────────────────────────
     if (-not $SkipInvalidation) {
         Write-Step "4/6 CloudFront 캐시 무효화 ($DistributionId)"
-        & python -m awscli cloudfront create-invalidation --distribution-id $DistributionId --paths "/*"
+        Invoke-Aws @('cloudfront', 'create-invalidation', '--distribution-id', $DistributionId, '--paths', '/*')
         if ($LASTEXITCODE -ne 0) {
             # S3 업로드는 이미 성공 — 무효화만 실패한 것이므로 배포 자체를 실패로 처리하지 않는다
             Write-Host "CloudFront 무효화 실패 — 콘솔에서 수동 실행: CloudFront → $DistributionId → Invalidations → /*" -ForegroundColor Yellow
