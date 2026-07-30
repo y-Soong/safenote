@@ -54,6 +54,11 @@
           <span class="subtitle-text">연차 타입 리스트</span>
         </div>
 
+        <!-- PC-09(D4): 짜투리 보전 대상 안내 — 비법정 타입은 보전(회사 부담) 비대상 -->
+        <p class="leave-type-note">
+          비법정 연차 타입은 짜투리 보전(회사 부담) 비대상입니다.
+        </p>
+
         <div
           class="table-box overflow-x-auto rounded-md border border-slate-300"
           style="--box-h: 70vh; --box-sticky-top: 1px; --box-ox: auto"
@@ -396,6 +401,13 @@ onMounted(async () => {
 <style scoped>
 .row-clickable {
   cursor: default;
+}
+
+/* PC-09(D4): 짜투리 보전 비대상 안내 1줄 */
+.leave-type-note {
+  margin: 0 0 var(--header-right-gap);
+  font-size: var(--btn-font);
+  color: var(--color-text-muted);
 }
 
 .btn-history-icon {

@@ -73,6 +73,7 @@
           :ym="viewYm"
           :selectable-ymds="selectableYmds"
           :existing-leave-ymds="existingLeaveYmds"
+          :max-count="maxSelectableCount"
           @prev-month="onPrevMonth"
           @next-month="onNextMonth"
         />
@@ -83,6 +84,7 @@
           :selectable-ymds="selectableYmds"
           :min-date="minDate"
           :max-date="maxDate"
+          :max-count="maxSelectableCount"
         />
       </template>
     </main>
@@ -155,6 +157,13 @@ const viewYm = ref('')
 // 키인 min/max (YYYY-MM-DD) — 오늘 ~ 기준 만료일.
 const minDate = computed(() => toDashYmd(todayYmd()))
 const maxDate = computed(() => toDashYmd(promotion.value?.availTo))
+
+// 선택 가능 최대 일수 = 미지정 잔여 연차(1일 단위 계획이므로 소수 잔여는 버림).
+//   초과 선택은 서버가 결국 거부하지만, 저장 결과를 사용자가 예측할 수 있도록
+//   날짜 지정 단계(캘린더 토글·키인 추가)에서부터 상한을 건다.
+const maxSelectableCount = computed(() =>
+  Math.max(0, Math.floor(Number(promotion.value?.remainingDays) || 0)),
+)
 
 // YYYYMMDD → "YYYY.MM.DD" (표시 단일 출처 위임, D1)
 const formatYmd = (ymd) => formatYmdDisplay(ymd)

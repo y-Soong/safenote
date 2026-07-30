@@ -111,6 +111,89 @@
         </div>
       </div>
 
+      <!-- PC-09: 회사 부담 보전 집계 칩 (짜투리 보전 ON 회사만 — D9-②)
+           remnantPolicyOn 은 3상태(null=미조회/조회실패 → 칩·리포트 모두 비노출) -->
+      <div v-if="remnantPolicyOn === true" class="a09-remnant-chip-row">
+        <div class="a09-remnant-chip">
+          <span class="a09-remnant-chip__label">회사 부담 보전 (올해)</span>
+          <strong class="a09-remnant-chip__value">
+            {{ coverSummaryText }}
+          </strong>
+          <button
+            v-if="coverItems.length > 0"
+            type="button"
+            class="a09-remnant-chip__more"
+            @click="coverDetailOpen = !coverDetailOpen"
+          >
+            {{ coverDetailOpen ? "상세 접기 ▲" : "상세 ▼" }}
+          </button>
+        </div>
+        <!-- 칩 [상세] 펼침: COVER 행 목록 (골격 TODO — 팝업 대신 인라인 펼침 채택) -->
+        <table
+          v-if="coverDetailOpen"
+          class="a09-remnant-report__table a09-cover-detail"
+        >
+          <thead>
+            <tr>
+              <th>근무일</th>
+              <th>이름</th>
+              <th>차감 잔여</th>
+              <th>회사 부담</th>
+              <th>상태</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr v-for="c in coverItems" :key="c.coverId">
+              <td>{{ fnFormatDate(c.workYmd) }}</td>
+              <td>{{ c.userNm }}</td>
+              <td>{{ fnDays(c.remnantDays, c.convMinutes) }}</td>
+              <td>{{ fnCoverMinutesText(c.coverMinutes) }}</td>
+              <td>{{ c.coverStatus === "ACTIVE" ? "유효" : "회수" }}</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <!-- PC-09: 소멸 임박 짜투리 리포트 (짜투리 보전 OFF 회사만 — D9-③·N2)
+           문구 규칙(D9): "근로자 손해" 표현 금지 — "연차미사용수당 정산 대상" 으로 표기 -->
+      <section v-if="remnantPolicyOn === false" class="a09-remnant-report">
+        <header class="a09-remnant-report__head">
+          <h3 class="a09-remnant-report__title">소멸 임박 짜투리 잔여</h3>
+          <p class="a09-remnant-report__note">
+            최소 사용단위 미만으로 남아 신청으로 소진할 수 없는 잔여입니다.
+            미사용분은 연차미사용수당 정산 대상입니다.
+          </p>
+        </header>
+        <table class="a09-remnant-report__table">
+          <thead>
+            <tr>
+              <th>이름</th>
+              <th>잔여</th>
+              <th>구분</th>
+              <th>최근접 소멸일</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr v-for="row in remnantReportRows" :key="row.userCd">
+              <td>{{ row.userNm }}</td>
+              <td>{{ row.remnantText }}</td>
+              <td>
+                <span
+                  class="a09-remnant-badge"
+                  :class="{ 'a09-remnant-badge--dust': row.isRoundingDust }"
+                >
+                  {{ row.isRoundingDust ? "절사 끝수" : "짜투리" }}
+                </span>
+              </td>
+              <td>{{ row.nearestExpireDate }}</td>
+            </tr>
+            <tr v-if="!remnantReportRows.length">
+              <td colspan="4" class="a09-remnant-report__empty">대상 없음</td>
+            </tr>
+          </tbody>
+        </table>
+      </section>
+
       <!-- ============ 일괄 액션바 (항상 표시 · 선택 직원이 없으면 버튼 비활성) ============ -->
       <div
         class="ld-bulk-bar"
@@ -261,50 +344,51 @@
                 {{ fnCreditText(row.creditMonths) }}
               </td>
 
+              <!-- PC-09(N8): 일수 표기는 행별 개인 분모(row.convMinutes, null=480 폴백)로 조립 -->
               <td class="is-right ld-grp-legal">
-                {{ fnDays(row.legal.granted) }}
+                {{ fnDays(row.legal.granted, row.convMinutes) }}
               </td>
               <td class="is-right ld-grp-legal">
-                {{ fnDays(row.legal.used) }}
+                {{ fnDays(row.legal.used, row.convMinutes) }}
               </td>
               <td class="is-right ld-grp-legal ld-scheduled">
-                {{ fnDays(row.legal.scheduled) }}
+                {{ fnDays(row.legal.scheduled, row.convMinutes) }}
               </td>
               <td class="is-right ld-grp-legal ld-cell-group-end ld-strong">
-                {{ fnDays(row.legal.remaining) }}
+                {{ fnDays(row.legal.remaining, row.convMinutes) }}
               </td>
 
               <td class="is-right ld-grp-nonlegal">
-                {{ fnDays(row.nonLegal.granted) }}
+                {{ fnDays(row.nonLegal.granted, row.convMinutes) }}
               </td>
               <td class="is-right ld-grp-nonlegal">
-                {{ fnDays(row.nonLegal.used) }}
+                {{ fnDays(row.nonLegal.used, row.convMinutes) }}
               </td>
               <td class="is-right ld-grp-nonlegal ld-scheduled">
-                {{ fnDays(row.nonLegal.scheduled) }}
+                {{ fnDays(row.nonLegal.scheduled, row.convMinutes) }}
               </td>
               <td class="is-right ld-grp-nonlegal ld-cell-group-end">
-                {{ fnDays(row.nonLegal.remaining) }}
+                {{ fnDays(row.nonLegal.remaining, row.convMinutes) }}
               </td>
 
               <td class="is-right ld-grp-total">
-                {{ fnDays(row.total.granted) }}
+                {{ fnDays(row.total.granted, row.convMinutes) }}
               </td>
               <td class="is-right ld-grp-total">
-                {{ fnDays(row.total.used) }}
+                {{ fnDays(row.total.used, row.convMinutes) }}
               </td>
               <td class="is-right ld-grp-total ld-scheduled">
-                {{ fnDays(row.total.scheduled) }}
+                {{ fnDays(row.total.scheduled, row.convMinutes) }}
               </td>
               <td class="is-right ld-grp-total ld-cell-group-end ld-strong">
-                {{ fnDays(row.total.remaining) }}
+                {{ fnDays(row.total.remaining, row.convMinutes) }}
                 <!-- 가불 사용분(prafta-com-011-7, 표시 전용) — 미발생 가불 USED 합이 있으면 잔여 아래 강조 표기 -->
                 <span
                   v-if="fnBorrowedDays(row) > 0"
                   class="ld-borrowed-badge"
                   title="아직 발생하지 않은 미래 연차를 미리 당겨 사용한 분(가불)"
                 >
-                  가불 {{ fnDays(row.borrowedDays) }}
+                  가불 {{ fnDays(row.borrowedDays, row.convMinutes) }}
                 </span>
               </td>
 
@@ -339,7 +423,7 @@ import { useModal } from "@/utils/useModal";
 import axios from "@/api/axios";
 import { resolveApiErrorMessage } from "@/utils/apiError";
 import { formatYmdDot } from "@/utils/dateFormat";
-import { formatLeaveDays } from "@/utils/leaveFormat";
+import { formatLeaveDays, formatLeaveMinutes } from "@/utils/leaveFormat";
 import { getMessage, MSG } from "@/messages";
 import search_icon from "@/assets/img/search_icon.png";
 import ViewHeader from "@/components/common/ViewHeader.vue";
@@ -424,9 +508,21 @@ const list = ref([]);
 // 선택된 직원 코드 목록
 const selectedUserCds = ref([]);
 
-// LC-09(§5-B): 1일 환산시간(분) — 목록 응답(convMinutes)에서 채움. 미수신 시 480 폴백.
-//   "N일 H시간 M분" 표기 조립에만 사용(정렬/내부 계산은 원 수치 유지).
+// LC-09(§5-B): 1일 환산시간(분) — 목록 응답 최상위(convMinutes)에서 채움. 미수신 시 480 폴백.
+//   PC-09(N8): 표기 분모는 행별 개인 분모(row.convMinutes)가 우선이며, 본 값은
+//   행별 값이 없을 때의 폴백으로만 쓴다(정렬/내부 계산은 원 수치 유지).
 const convMinutes = ref(480);
+
+// PC-09(D9-②③): 짜투리 보전 정책 상태 — true=ON(집계 칩) / false=OFF(소멸 임박 리포트)
+//   null=미조회·조회 실패(칩/리포트 모두 비노출 — 오노출 방지)
+const remnantPolicyOn = ref(null);
+// ON: 회사 부담 보전 집계(올해) — 합계(일)/건수/상세 COVER 행
+const coverTotalDays = ref(0);
+const coverCount = ref(0);
+const coverItems = ref([]);
+const coverDetailOpen = ref(false);
+// OFF: 소멸 임박 짜투리 리포트 행(표시용 가공 완료 형태)
+const remnantReportRows = ref([]);
 
 // 페이지를 넘나들며 로드된 직원 정보 누적(userCd → {hireDate, userNm}).
 // 입사일 기준 부여 시 선택 직원의 입사일 사전 검증에 사용(현재 페이지 밖 선택분도 커버).
@@ -449,11 +545,18 @@ const isAllSelected = computed(
     list.value.every((r) => selectedUserCds.value.includes(r.userCd))
 );
 
+// PC-09(D9-②): 집계 칩 텍스트 — 예: "1일 2시간 30분 / 4건".
+//   합계는 사용자별 분모가 섞인 집계라 표기 분모는 480(기본) 고정으로 조립한다.
+const coverSummaryText = computed(
+  () => `${formatLeaveDays(coverTotalDays.value)} / ${coverCount.value}건`
+);
+
 // ================ Life Cycle Functions ================
 onMounted(() => {
   fnButtonControll();
   fnInitSite();
   fnLoadPolicyInfo();
+  fnLoadRemnantInfo();
   fnSearch();
 });
 
@@ -546,6 +649,46 @@ const fnLoadPolicyInfo = async () => {
   }
 };
 
+// PC-09(D9-②③): 짜투리 보전 집계/리포트 조회.
+//   ① cover-summary(올해)로 정책 ON/OFF 판별 → ON이면 집계 칩 데이터 채움
+//   ② OFF면 remnant-report 추가 조회 → 소멸 임박 리포트 행 가공(표기 문자열까지 완성)
+//   조회 실패 시 remnantPolicyOn=null 유지(칩/리포트 비노출) — fnLoadPolicyInfo 비차단 관례 미러.
+const fnLoadRemnantInfo = async () => {
+  try {
+    const year = String(new Date().getFullYear());
+    const res = await axios.get(
+      "/webApi/attd09/leave-dashboard/remnant-cover-summary",
+      { params: { year } }
+    );
+    const d = res.data || {};
+    if (d.remnantPolicyOn === true) {
+      coverTotalDays.value = d.totalCoverDays ?? 0;
+      coverCount.value = d.coverCount ?? 0;
+      coverItems.value = Array.isArray(d.items) ? d.items : [];
+      remnantPolicyOn.value = true;
+      return;
+    }
+    // OFF: 소멸 임박 리포트 조회 (roundingDust = 절사 끝수 < 0.001 구분 플래그 — §5-④)
+    const r2 = await axios.get(
+      "/webApi/attd09/leave-dashboard/remnant-report"
+    );
+    const rows = Array.isArray(r2.data?.rows) ? r2.data.rows : [];
+    remnantReportRows.value = rows.map((row) => ({
+      userCd: row.userCd,
+      userNm: row.userNm,
+      // 잔여 표기는 본인 분모(convMinutes, 백엔드 480 폴백 보장) 기준으로 조립
+      remnantText: formatLeaveDays(row.remnantDays, row.convMinutes),
+      isRoundingDust: row.roundingDust === true,
+      nearestExpireDate: fnFormatDate(row.nearestExpireYmd),
+    }));
+    remnantPolicyOn.value = false;
+  } catch (err) {
+    // 비차단: 섹션 비노출로 두고 콘솔만 (권한 부족/미배포 환경 등)
+    remnantPolicyOn.value = null;
+    console.warn("짜투리 보전 집계/리포트 조회 실패", err);
+  }
+};
+
 // 엑셀(전체 직원 데이터 CSV) — LeavePolicyImpactPop fnDownloadReport 패턴
 const fnExcel = () => {
   if (list.value.length === 0) {
@@ -571,6 +714,7 @@ const fnExcel = () => {
     "사용률(%)",
   ];
   // LC-09(§5-B): 일수 컬럼은 화면과 동일하게 "N일 H시간 M분" 표기(소수점 노출 금지)
+  //   PC-09(N8): 화면과 동일하게 행별 개인 분모(convMinutes)로 조립
   const rows = list.value.map((r) => [
     r.userCd,
     r.userNm,
@@ -579,14 +723,14 @@ const fnExcel = () => {
     r.tenureText,
     fnEmploymentLabel(r.employmentType),
     r.creditMonths,
-    fnDays(r.legal?.granted),
-    fnDays(r.legal?.used),
-    fnDays(r.legal?.scheduled),
-    fnDays(r.legal?.remaining),
-    fnDays(r.nonLegal?.granted),
-    fnDays(r.nonLegal?.used),
-    fnDays(r.nonLegal?.scheduled),
-    fnDays(r.nonLegal?.remaining),
+    fnDays(r.legal?.granted, r.convMinutes),
+    fnDays(r.legal?.used, r.convMinutes),
+    fnDays(r.legal?.scheduled, r.convMinutes),
+    fnDays(r.legal?.remaining, r.convMinutes),
+    fnDays(r.nonLegal?.granted, r.convMinutes),
+    fnDays(r.nonLegal?.used, r.convMinutes),
+    fnDays(r.nonLegal?.scheduled, r.convMinutes),
+    fnDays(r.nonLegal?.remaining, r.convMinutes),
     r.usageRate,
   ]);
   const csvBody = [header, ...rows]
@@ -943,8 +1087,12 @@ const fnEmploymentLabel = (type) => {
 };
 
 // ================ 내부 유틸 ================
-// LC-09(§5-B): 일수 표기 — 소수점 노출 금지, "N일 H시간 M분"(leaveFormat 단일 출처)
-const fnDays = (v) => formatLeaveDays(v, convMinutes.value);
+// LC-09(§5-B)·PC-09(N8): 일수 표기 — 소수점 노출 금지, "N일 H시간 M분"(leaveFormat 단일 출처).
+//   rowConv = 행별 개인 분모(list[].convMinutes). null/미전달이면 최상위 convMinutes(→480) 폴백.
+const fnDays = (v, rowConv) => formatLeaveDays(v, rowConv ?? convMinutes.value);
+
+// PC-09(D9-②): 회사 부담분(분) 표기 — "H시간 M분"
+const fnCoverMinutesText = (m) => formatLeaveMinutes(m);
 
 // YYYYMMDD → "YYYY.MM.DD" 표기. 빈값/형식불충분은 "-".
 const fnFormatDate = (yyyymmdd) => {
@@ -1036,6 +1184,102 @@ const fnCsvCell = (v) => {
   color: var(--color-text-muted);
   font-weight: 500;
   margin-left: 0.125rem;
+}
+
+/* ===== PC-09: 회사 부담 집계 칩 / 소멸 임박 리포트 ===== */
+.a09-remnant-chip-row {
+  display: flex;
+  flex-direction: column;
+  gap: var(--header-right-gap);
+  align-items: flex-start;
+}
+
+.a09-remnant-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--header-right-gap);
+  border: var(--card-border);
+  border-radius: var(--btn-radius-lg);
+  background: var(--color-surface);
+  padding: var(--btn-padding-sm) var(--btn-padding-lg);
+  font-size: var(--btn-font);
+  color: var(--color-text);
+}
+
+.a09-remnant-chip__value {
+  color: var(--color-primary);
+}
+
+.a09-remnant-chip__more {
+  border: none;
+  background: transparent;
+  color: var(--color-text-muted);
+  font-size: var(--btn-font);
+  cursor: pointer;
+  padding: 0;
+}
+
+.a09-remnant-chip__more:hover {
+  color: var(--color-text-strong);
+}
+
+.a09-remnant-report {
+  border: var(--card-border);
+  border-radius: var(--card-radius);
+  background: var(--card-bg);
+  box-shadow: var(--card-shadow);
+  padding: var(--card-padding);
+}
+
+.a09-remnant-report__title {
+  margin: 0;
+  color: var(--color-text-strong);
+  font-size: var(--btn-font-lg);
+}
+
+.a09-remnant-report__note {
+  color: var(--color-text-muted);
+  font-size: var(--btn-font);
+}
+
+.a09-remnant-report__table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.a09-remnant-report__table th,
+.a09-remnant-report__table td {
+  border-bottom: 1px solid var(--color-border);
+  padding: var(--btn-padding-sm);
+  font-size: var(--btn-font);
+  color: var(--color-text);
+  text-align: left;
+}
+
+.a09-remnant-badge {
+  display: inline-block;
+  border-radius: var(--btn-radius);
+  background: var(--color-warning-bg);
+  color: var(--color-warning-text);
+  padding: 0 var(--btn-padding-sm);
+  font-size: var(--btn-font-sm);
+}
+
+.a09-remnant-badge--dust {
+  background: var(--color-bg);
+  color: var(--color-text-muted);
+}
+
+.a09-remnant-report__empty {
+  text-align: center;
+  color: var(--color-text-muted);
+}
+
+/* 칩 [상세] 펼침 테이블 — 칩 폭에 묶이지 않게 카드 톤으로 감싼다 */
+.a09-cover-detail {
+  border: var(--card-border);
+  border-radius: var(--btn-radius-lg);
+  background: var(--color-surface);
 }
 
 /* ===== 일괄 액션바 ===== */

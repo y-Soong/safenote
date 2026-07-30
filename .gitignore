@@ -152,3 +152,5 @@ PRAFTA_FLUTTER/
 !.claude/refs/*.md
 # 하위 프로젝트의 .claude(로컬 설정)는 전부 제외 (루트 앵커 패턴 전환으로 풀렸던 것 복원)
 PRAFTA/**/.claude/
+# 백엔드 로컬 업로드 저장소(계약서/서명본 등 - 커밋 금지)
+PRAFTA/prafta-backend/uploads-secure/

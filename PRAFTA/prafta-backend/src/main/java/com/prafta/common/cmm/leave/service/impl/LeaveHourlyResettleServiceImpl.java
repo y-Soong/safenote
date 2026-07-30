@@ -1,8 +1,12 @@
 package com.prafta.common.cmm.leave.service.impl;
 
 import java.math.BigDecimal;
+import java.util.ArrayList;
+import java.util.Comparator;
+import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 
 import org.springframework.stereotype.Service;
@@ -22,10 +26,12 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 
 /**
- * {@link LeaveHourlyResettleService} 구현 (연차 시간차 환산 개편 LC-05 — F1·F2).
+ * {@link LeaveHourlyResettleService} 구현 (연차 시간차 환산 개편 LC-05 — F1·F2
+ * → 개인 분모 개편 PC-01: REQ_ID 묶음 단위 재작업).
  *
- * <p>plan §2 LC-05-② 재정산 알고리즘(의사코드)을 그대로 구현한다. 코어 산식은
- * {@link HourlyLeaveChargeUtils}(LC-03)를 공유 — 신청 계산과 재정산의 단일 출처.
+ * <p>코어 산식은 {@link HourlyLeaveChargeUtils}(LC-03)를 공유 — 신청 계산과 재정산의 단일 출처.
+ * PC-01(N1): 분할 INSERT(한 신청=여러 use 행, LEAVE_MINUTES 첫 행만)에 대비해 행 단위가 아닌
+ * REQ_ID 묶음 단위로 분을 합산·재산출하고, charge 를 묶음 내 행들에 만료 임박순으로 배분한다.
  */
 @Slf4j
 @Service
@@ -68,36 +74,94 @@ public class LeaveHourlyResettleServiceImpl implements LeaveHourlyResettleServic
                 return;
             }
 
-            int conv = leaveConversionPolicyService.selectConversionMinutes(cmpnyCd, workYmd); // F4: 대상일 기준 분모
+            // PC-03: 분모 = 개인 기본 근무타입 소정근로분(대상일 기준 유효 버전, 480 캡).
+            //   산출 불가(교대 전환자 과거 데이터 등)면 480 폴백 — 과거 차감 근사 유지(§7-③, 메인 세션 확정).
+            Integer convResolved = leaveConversionPolicyService.resolvePersonalConvMinutes(cmpnyCd, userCd, workYmd);
+            int conv = (convResolved != null) ? convResolved : LeaveConversionPolicyService.DEFAULT_CONV_MINUTES;
             Integer daily = leaveDeductionService.getDailyStdWorkMinutes(cmpnyCd, siteCd, userCd, workYmd);
 
-            // 시간순 재적용(지시서 F1): 각 건 charge = dayTotal(누적) − 직전 dayTotal 의 차액.
+            // PC-01(N1): REQ_ID 묶음 단위 재적용. 분할 INSERT(가불·일반 분할 차감)는 LEAVE_MINUTES 를
+            //   첫 행에만 실으므로 행 단위 누적은 2번째 이후 행을 0분 취급해 원장을 누수시킨다 —
+            //   묶음(신청) 합산 분으로 누적하고 재산출 charge 를 묶음 내 행들에 배분한다.
+            //   REQ_ID NULL 행은 LEAVE_ID 단독 묶음(직접 차감 방어). 정렬(시간순, REQ 연속)은 SQL 보장.
+            Map<String, List<HourlyLeaveUseRowVO>> groups = new LinkedHashMap<>();
+            for (HourlyLeaveUseRowVO row : rows) {
+                String key = (row.reqId() != null && !row.reqId().isEmpty())
+                        ? "R:" + row.reqId() : "L:" + row.leaveId();
+                groups.computeIfAbsent(key, k -> new ArrayList<>()).add(row);
+            }
+
+            // PC-05: 짜투리 보전(COVER) 발동 REQ 묶음은 use 행 합 = "잔여 전액"(정상 요금과 상이) —
+            //   재배분하면 잔여(0) 초과 차감이 되므로 행 갱신을 건너뛴다. 누적 분(cumMin)과 가상
+            //   정상요금 누적(cumCharged=dayTotal)에는 그대로 포함해 후속 묶음 부과가 어긋나지 않게 한다
+            //   (부담분 차이는 COVER 가 보존 — 근로자 원장에 전가하지 않는다).
+            Set<String> coveredReqIds = new LinkedHashSet<>(
+                    leaveHourlyResettleMapper.selectRemnantCoveredReqIds(cmpnyCd, userCd, workYmd));
+
+            // 시간순 재적용(지시서 F1): 각 묶음 charge = dayTotal(누적) − 직전 dayTotal 의 차액.
             //   dayTotal 은 누적 분에 단조 증가하므로 charge 는 항상 0 이상 — 음수 부과 없음.
             int cumMin = 0;
             BigDecimal cumCharged = BigDecimal.ZERO;
             int updatedCount = 0;
             Set<String> grantIds = new LinkedHashSet<>();
-            for (HourlyLeaveUseRowVO row : rows) {
-                if (row.leaveMinutes() == null) {
-                    // plan §8-③: 시간차 분할행(LEAVE_MINUTES NULL)은 실데이터 0건 + LC-04 가불 차단으로
-                    //   신규 유입 없음 — 비정상 데이터 방어(0분 취급, 로그만).
-                    log.warn("[leave-resettle] LEAVE_MINUTES 없는 시간차 행 감지(0분 취급). leaveId={}", row.leaveId());
+            for (List<HourlyLeaveUseRowVO> group : groups.values()) {
+                // 묶음 분 = Σ LEAVE_MINUTES (NULL=0 — 분할행은 첫 행만 분 보유하므로 합산이 곧 신청 분).
+                int reqMinutes = 0;
+                for (HourlyLeaveUseRowVO row : group) {
+                    reqMinutes += (row.leaveMinutes() == null) ? 0 : row.leaveMinutes();
+                    if (row.grantId() != null && !row.grantId().isEmpty()) {
+                        grantIds.add(row.grantId());
+                    }
                 }
-                cumMin += (row.leaveMinutes() == null) ? 0 : row.leaveMinutes();
+                if (reqMinutes <= 0) {
+                    // 묶음 합산이 0분인 경우만 비정상(분할행 개별 NULL 은 정상 케이스 — PC-01).
+                    log.warn("[leave-resettle] LEAVE_MINUTES 합산 0분 시간차 묶음 감지(0분 취급). 첫 leaveId={}",
+                            group.get(0).leaveId());
+                }
+                cumMin += reqMinutes;
                 BigDecimal dayTotal = HourlyLeaveChargeUtils.dayTotalDays(cumMin, conv, daily);
-                BigDecimal charge = dayTotal.subtract(cumCharged);
-                if (row.leaveDays() == null || charge.compareTo(row.leaveDays()) != 0) {
-                    leaveHourlyResettleMapper.updateLeaveUseDays(cmpnyCd, row.leaveId(), charge, actorUserCd);
-                    updatedCount++;
-                    log.info("[leave-resettle] 시간차 재산출: leaveId={}, {}분(누적 {}분), {} → {}",
-                            row.leaveId(), row.leaveMinutes(), cumMin,
-                            row.leaveDays() == null ? null : row.leaveDays().toPlainString(),
-                            charge.toPlainString());
+                BigDecimal groupCharge = dayTotal.subtract(cumCharged);
+
+                // PC-05: COVER 발동 묶음은 행 재배분 skip(위 주석 참조) — 누적만 반영하고 다음 묶음으로.
+                String groupReqId = group.get(0).reqId();
+                if (groupReqId != null && coveredReqIds.contains(groupReqId)) {
+                    log.info("[leave-resettle] 짜투리 보전 묶음 재배분 skip: reqId={}, 묶음 {}분(누적 {}분)",
+                            groupReqId, reqMinutes, cumMin);
+                    cumCharged = dayTotal;
+                    continue;
+                }
+
+                // 배분: 부여 만료 임박순(AVAIL_TO_DATE ASC, null 최후)으로 각 행 기존 LEAVE_DAYS 를
+                //   상한으로 채우고, 초과 잔량은 마지막(만료 최후순) 행에 가산(증가 재정산 흡수 — plan PC-01-②).
+                List<HourlyLeaveUseRowVO> byExpiry = new ArrayList<>(group);
+                byExpiry.sort(Comparator
+                        .comparing((HourlyLeaveUseRowVO r) -> r.availToDate() == null ? "99999999" : r.availToDate())
+                        .thenComparing(HourlyLeaveUseRowVO::leaveId));
+                BigDecimal[] newDays = new BigDecimal[byExpiry.size()];
+                BigDecimal remaining = groupCharge;
+                for (int i = 0; i < byExpiry.size(); i++) {
+                    BigDecimal cap = (byExpiry.get(i).leaveDays() == null)
+                            ? BigDecimal.ZERO : byExpiry.get(i).leaveDays();
+                    BigDecimal take = cap.min(remaining).max(BigDecimal.ZERO);
+                    newDays[i] = take;
+                    remaining = remaining.subtract(take);
+                }
+                if (remaining.signum() > 0) {
+                    newDays[byExpiry.size() - 1] = newDays[byExpiry.size() - 1].add(remaining);
+                }
+
+                for (int i = 0; i < byExpiry.size(); i++) {
+                    HourlyLeaveUseRowVO row = byExpiry.get(i);
+                    if (row.leaveDays() == null || newDays[i].compareTo(row.leaveDays()) != 0) {
+                        leaveHourlyResettleMapper.updateLeaveUseDays(cmpnyCd, row.leaveId(), newDays[i], actorUserCd);
+                        updatedCount++;
+                        log.info("[leave-resettle] 시간차 재산출: leaveId={}, reqId={}, 묶음 {}분(누적 {}분), {} → {}",
+                                row.leaveId(), row.reqId(), reqMinutes, cumMin,
+                                row.leaveDays() == null ? null : row.leaveDays().toPlainString(),
+                                newDays[i].toPlainString());
+                    }
                 }
                 cumCharged = dayTotal;
-                if (row.grantId() != null && !row.grantId().isEmpty()) {
-                    grantIds.add(row.grantId());
-                }
             }
 
             // 원장 자동 정합(지시서 §3-1): 변경이 있었을 때만 영향 GRANT 전부 USED_DAYS 재집계.
@@ -108,9 +172,9 @@ public class LeaveHourlyResettleServiceImpl implements LeaveHourlyResettleServic
                 }
             }
 
-            log.info("[leave-resettle] 시간차 재정산 완료. userCd={}, workYmd={}, 대상 {}건, 변경 {}건, "
+            log.info("[leave-resettle] 시간차 재정산 완료. userCd={}, workYmd={}, 대상 {}행/{}묶음, 변경 {}건, "
                             + "GRANT 재계산 {}건, conv={}, D={}",
-                    userCd, workYmd, rows.size(), updatedCount,
+                    userCd, workYmd, rows.size(), groups.size(), updatedCount,
                     updatedCount > 0 ? grantIds.size() : 0, conv, daily);
         } finally {
             // afterCompletion 등록 성공 시 여기서 해제하지 않는다(이중 해제 방지) —

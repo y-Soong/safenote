@@ -9,6 +9,7 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 import com.prafta.common.security.JwtUtil;
@@ -20,6 +21,8 @@ import com.prafta.web.attd.attd09.application.param.ManualGrantParam;
 import com.prafta.web.attd.attd09.application.param.ManualTypesParam;
 import com.prafta.web.attd.attd09.application.param.PolicyGrantParam;
 import com.prafta.web.attd.attd09.application.param.PolicyInfoParam;
+import com.prafta.web.attd.attd09.application.param.RemnantReportParam;
+import com.prafta.web.attd.attd09.application.param.RemnantSummaryParam;
 import com.prafta.web.attd.attd09.dto.request.BulkManualGrantRequest;
 import com.prafta.web.attd.attd09.dto.request.HireDateGrantRequest;
 import com.prafta.web.attd.attd09.dto.request.LeaveDashboardListRequest;
@@ -35,6 +38,8 @@ import com.prafta.web.attd.attd09.dto.response.ManualTypesResponse;
 import com.prafta.web.attd.attd09.dto.response.PolicyGrantPolicyInfoResponse;
 import com.prafta.web.attd.attd09.dto.response.PolicyGrantPreviewResponse;
 import com.prafta.web.attd.attd09.dto.response.PolicyGrantResponse;
+import com.prafta.web.attd.attd09.dto.response.RemnantCoverSummaryResponse;
+import com.prafta.web.attd.attd09.dto.response.RemnantReportResponse;
 import com.prafta.web.attd.attd09.service.Attd09Service;
 
 import lombok.RequiredArgsConstructor;
@@ -198,6 +203,37 @@ public class Attd09Controller {
 
         PolicyGrantResponse response = attd09Service.policyGrant(
                 PolicyGrantParam.from(request, jwtUtil.getAllClaimsAsMap(authorization)));
+
+        return ResponseEntity.status(HttpStatus.OK).body(response);
+    }
+
+    /**
+     * PC-07(D9-②): 회사 부담 보전 연간 집계 (짜투리 보전 ON 회사 — Attd_09 집계 칩).
+     * 정책서 §8.5.7: AUTH_MASTER OR AUTH_HR_MANAGER 필요 (서비스 진입부에서 강제).
+     *
+     * @param year 집계 연도(YYYY). 미지정/형식 불일치면 올해 폴백.
+     */
+    @GetMapping("/leave-dashboard/remnant-cover-summary")
+    public ResponseEntity<?> getRemnantCoverSummary(
+            @RequestParam(value = "year", required = false) String year,
+            @RequestHeader(value = "Authorization", required = false) String authorization) {
+
+        RemnantCoverSummaryResponse response = attd09Service.getRemnantCoverSummary(
+                RemnantSummaryParam.from(year, jwtUtil.getAllClaimsAsMap(authorization)));
+
+        return ResponseEntity.status(HttpStatus.OK).body(response);
+    }
+
+    /**
+     * PC-07(D9-③·N2): 소멸 임박 짜투리 리포트 (짜투리 보전 OFF 회사 — Attd_09 리포트 섹션).
+     * 정책서 §8.5.7: AUTH_MASTER OR AUTH_HR_MANAGER 필요 (서비스 진입부에서 강제).
+     */
+    @GetMapping("/leave-dashboard/remnant-report")
+    public ResponseEntity<?> getRemnantReport(
+            @RequestHeader(value = "Authorization", required = false) String authorization) {
+
+        RemnantReportResponse response = attd09Service.getRemnantReport(
+                RemnantReportParam.from(jwtUtil.getAllClaimsAsMap(authorization)));
 
         return ResponseEntity.status(HttpStatus.OK).body(response);
     }

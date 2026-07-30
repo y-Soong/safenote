@@ -16,6 +16,10 @@ import java.math.BigDecimal;
  * @param convMinutes         적용된 1일 환산시간(분, 신청 대상일 기준 F4) — FE "N일 H시간 M분" 조립용
  * @param floorDays           발동한 마일스톤 요금(0.25=반반차/0.5=반차/1.0=종일) — FE 하한 안내 단위 분기용(additive).
  *                            하한 미발동/고정단위 신청이면 {@code null}
+ * @param remnantTriggered    PC-05(D6): 짜투리 보전 발동 예상 여부 — true 면 잔여 전액 차감 + 회사 부담.
+ *                            발동 예상 시 insufficientBalance=false 로 내린다(신청 성공 예정 — UI-D)
+ * @param remnantDays         발동 시 실제 차감될 잔여 전액(일). 미발동 {@code null}
+ * @param companyCoverMinutes 회사 부담분(분 — coverDays × 본인 분모, DOWN 절사). 미발동 {@code null}
  */
 public record LeaveDeductionPreviewResponse(
       BigDecimal chargeDays
@@ -24,5 +28,8 @@ public record LeaveDeductionPreviewResponse(
     , boolean insufficientBalance
     , int convMinutes
     , BigDecimal floorDays
+    , boolean remnantTriggered
+    , BigDecimal remnantDays
+    , Integer companyCoverMinutes
 ) {
 }

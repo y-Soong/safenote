@@ -1,32 +1,40 @@
 package com.prafta.common.cmm.leave.service;
 
 /**
- * 연차 시간차 "1일 환산시간"(분모) 서비스 (연차 시간차 환산 개편 LC-02 → 2026-07-21 480 고정 전환).
+ * 연차 시간차 "1일 환산시간"(분모) 서비스
+ * (LC-02 → 2026-07-21 480 고정 전환 → 개인 분모 개편 PC-03, D1).
  *
- * <p>2026-07-21 사용자 결정: 환산시간을 <b>480분(8시간) 고정</b>으로 전환한다.
+ * <p>2026-07-28 사용자 결정(D1): 분모를 <b>개인 기본 근무타입({@code tb_user.DEFAULT_SCH_CD})의
+ * 소정근로분</b>으로 전환한다. 480 전사 고정 폐기.
  * <ul>
- *   <li>회사별 설정(tb_leave_conversion_policy)·적용일 이력(F4 effective-dating)·Baim_07
- *       설정 화면은 폐기 — 유한소수 검증(R2) 때문에 현실적 대안값(420/360/450 등)이
- *       애초에 입력 불가라 설정의 실용성이 없었고, 설정 변경이 잔여 표기 변동·혼합 이력·
- *       최소단위 미만 끝수를 만드는 원천이었다.</li>
- *   <li>8시간 미만 스케줄 회사는 하한 가드(R3 — 그날 소정근로분 D 기준 0.25/0.5/1.0)가,
- *       초과 스케줄은 캡(R4 — 1.0)이 보호하므로 고정으로도 정합(잔여 왜곡은 근로자 유리 방향만).</li>
- *   <li>tb_leave_conversion_policy 테이블은 드랍하지 않고 방치(dormant) — 기존 행 정리는
- *       prafta-leave-conv-3-fix480-cleanup.sql 참조. 설정형으로 되돌릴 경우 git 이력 복원.</li>
+ *   <li>분모 해석 = "처리 시점의 DEFAULT_SCH_CD" + "대상일 기준 유효 스케줄 버전"
+ *       (tb_sch_mgmt + _hist effective-dating — N4. 소급 재계산 없음).</li>
+ *   <li>소정근로가 480분(8시간)을 초과하는 근무타입은 <b>480 캡</b>(§5-③ — 근로자 유리).</li>
+ *   <li>산출 불가(DEFAULT_SCH_CD 미지정(교대 등)/스케줄 미존재/시각 비정상/0 이하)는
+ *       {@code null} — fail-closed(N5). 시간차 차단 판정({@code calcHourlyCharge} 진입부,
+ *       ATTD_400_193)과 표기 480 폴백은 호출부 책임 분리.</li>
+ *   <li>tb_leave_conversion_policy 테이블은 계속 dormant(부활 금지 — 분모는 테이블이 아니라
+ *       개인 근무타입에서 파생).</li>
  * </ul>
  *
- * <p>출처: 작업지시서_연차-시간차-환산-개편 T0·F4(원설계) / 정책서 attd/08-leave.md §8.5.9
+ * <p>출처: 작업지시서_연차-개인분모-전환-및-짜투리-보전 D1·D2·N4·N5·N7 / plan PC-03
+ * / 정책서 attd/08-leave.md §8.5.9
  */
 public interface LeaveConversionPolicyService {
 
-    /** 1일 환산시간(분) — 480분(8시간) 전사 고정 (2026-07-21 결정). */
+    /** 분모 폴백·캡 기준(분) — 재정산 폴백(§7-③)·표기 폴백·480 캡(§5-③)의 단일 상수. */
     int DEFAULT_CONV_MINUTES = 480;
 
     /**
-     * 유효 환산시간(분) 조회 — 항상 480 고정.
+     * 개인 분모(1일 환산시간, 분) 산출 — 시간차 차감(LC-03)·재정산(PC-01)·표기(N8)의 단일 출처.
      *
-     * <p>시간차 차감(LC-03)·재정산(LC-05)·표기(LC-07)의 분모 단일 출처. 호출부 시그니처
-     * 호환을 위해 파라미터는 유지하되 무시한다(설정형 복원 대비).
+     * <p>ⓐ {@code tb_user.DEFAULT_SCH_CD} 조회(NULL/빈값 → null)
+     * ⓑ 대상일 기준 유효 스케줄 버전(effective-dating, 폴백 최이른 버전 — N4)
+     * ⓒ 소정근로분 산출({@code ScheduleWorkMinutesUtils} — 1·2구간 합산, 야간 보정, 휴게 차감)
+     * ⓓ 480 캡 ⓔ 산출 불가 → {@code null}(fail-closed).
+     *
+     * @param workYmd 대상일(YYYYMMDD) — 스케줄 버전 해석 기준
+     * @return 분모(분, 1~480). 산출 불가면 {@code null}.
      */
-    int selectConversionMinutes(String cmpnyCd, String workYmd);
+    Integer resolvePersonalConvMinutes(String cmpnyCd, String userCd, String workYmd);
 }

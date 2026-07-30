@@ -61,10 +61,17 @@
 </template>
 
 <script setup>
-import { computed } from 'vue'
+import { computed, getCurrentInstance } from 'vue'
 
 import { formatYmDot } from '@/utils/approvalFormat'
 import MonthCalendarBase from '@/components/common/MonthCalendarBase.vue'
+
+const { proxy } = getCurrentInstance() || { proxy: null }
+const showAlert = (message) => {
+  if (proxy?.$alert) return proxy.$alert(message)
+  window.alert(message)
+  return Promise.resolve()
+}
 
 const props = defineProps({
   // 표시 중인 연/월 (YYYYMM)
@@ -86,6 +93,11 @@ const props = defineProps({
   modelValue: {
     type: Array,
     default: () => [],
+  },
+  // 선택 가능 최대 일수(미지정 잔여 연차) — null 이면 상한 없음
+  maxCount: {
+    type: Number,
+    default: null,
   },
 })
 
@@ -113,8 +125,16 @@ const onToggle = (cell) => {
   if (!cell || cell.isOutside || !isSelectable(cell) || isExisting(cell)) return
   const next = [...props.modelValue]
   const i = next.indexOf(cell.ymd)
-  if (i >= 0) next.splice(i, 1)
-  else next.push(cell.ymd)
+  if (i >= 0) {
+    next.splice(i, 1)
+  } else {
+    // 미지정 잔여 연차 개수를 넘는 날짜 지정 차단(해제는 항상 허용).
+    if (props.maxCount != null && next.length >= props.maxCount) {
+      showAlert(`미지정 잔여 연차 ${props.maxCount}일까지만 선택할 수 있습니다.`)
+      return
+    }
+    next.push(cell.ymd)
+  }
   emit('update:modelValue', next)
 }
 </script>

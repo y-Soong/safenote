@@ -62,6 +62,7 @@ public record LeavePolicySaveParam(
             , request.getAprvUseYn()
             , request.getApplyFromDate()
             , request.getUsageUnit() // LC-10: 반반차는 'QUARTER_DAY' 값으로 표현(구 allowQuarter 토글 폐기)
+            , request.getAllowRemnantRoundUp() // PC-05(D3): 짜투리 잔여 보전 옵션(Y/N)
             , request.getChangeReason()
         );
 

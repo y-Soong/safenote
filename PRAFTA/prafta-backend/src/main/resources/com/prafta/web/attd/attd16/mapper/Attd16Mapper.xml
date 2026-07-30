@@ -1,0 +1,133 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.prafta.web.attd.attd16.mapper.Attd16Mapper">
+
+    <!-- ================================================================
+         ATTD16-T1 - 연차 사용 현황 캘린더 조회 (읽기 전용, 단일 SELECT).
+
+         1) date_seq  : 조회월 월초~월말 일자 시퀀스(재귀 CTE). Dashboard01Mapper.selectPatrolMonthMiss
+                        의 DAYS CTE 패턴 미러 — 시드를 DATE 타입(STR_TO_DATE)으로 두고 varchar(8)
+                        컬럼과 비교할 때만 DATE_FORMAT 으로 문자열화한다(문자열 시드 재귀 CTE 의
+                        길이 절단/콜레이션 혼합 위험 회피).
+         2) node_tree : 부서 하위 전개(재귀 CTE). nodeCd 가 있고 incSubNodeYn='Y' 일 때만 생성한다.
+                        nodeCd 만 있으면 단일 부서 비교, nodeCd 가 비어 있으면 부서 필터 미적용
+                        (사업장 전체 — 이때 TB_USER.NODE_CD 가 NULL 인 사용자도 포함된다).
+         3) 부서 판정  : TB_USER.NODE_CD 단일 출처(TB_USER_LEAVE_USE 에는 NODE_CD 컬럼이 없다).
+
+         모든 파라미터는 #{} 바인딩만 사용한다(동적 컬럼/정렬 없음 → ${} 사용처 없음).
+         ================================================================ -->
+
+    <select id="selectLeaveUsageCalendarList" parameterType="com.prafta.web.attd.attd16.application.query.LeaveUsageCalendarQuery" resultType="com.prafta.web.attd.attd16.result.LeaveUsageCalendarRowResult">
+    /* Attd16Mapper.selectLeaveUsageCalendarList */
+        WITH RECURSIVE
+        date_seq AS (
+            SELECT STR_TO_DATE(#{monthStart}, '%Y%m%d') AS D
+
+            UNION ALL
+
+            SELECT D + INTERVAL 1 DAY
+            FROM date_seq
+            WHERE D <![CDATA[ < ]]> STR_TO_DATE(#{monthEnd}, '%Y%m%d')
+        )
+        <if test='nodeCd != null and nodeCd != "" and "Y".equals(incSubNodeYn)'>
+        , node_tree AS (
+            SELECT
+                  N.CMPNY_CD
+                , N.SITE_CD
+                , N.NODE_CD
+            FROM TB_SITE_NODE N
+            WHERE N.CMPNY_CD = #{gvCmpnyCd}
+              AND N.SITE_CD  = #{siteCd}
+              AND N.NODE_CD  = #{nodeCd}
+
+            UNION ALL
+
+            SELECT
+                  C.CMPNY_CD
+                , C.SITE_CD
+                , C.NODE_CD
+            FROM TB_SITE_NODE C
+            INNER JOIN node_tree P
+                ON  C.CMPNY_CD       = P.CMPNY_CD
+                AND C.SITE_CD        = P.SITE_CD
+                AND C.PARENT_NODE_CD = P.NODE_CD
+        )
+        </if>
+
+        /* SELECT 컬럼 순서 = LeaveUsageCalendarRowResult 생성자 인자 순서와 1:1 (record 매핑).
+           PII 최소화: LEAVE_REASON / EVIDENCE_FILE_ID / 연락처 / 이메일 / 생년월일은 내려주지 않는다. */
+        SELECT
+              DATE_FORMAT(D.D, '%Y%m%d')  AS dateYmd
+            , LU.USER_CD                  AS userCd
+            , U.USER_NM                   AS userNm
+            , U.NODE_CD                   AS nodeCd
+            , N.NODE_NM                   AS nodeNm
+            , LU.LEAVE_CD                 AS leaveCd
+            , LT.LEAVE_NM                 AS leaveNm
+            , LU.USE_UNIT_TYPE            AS useUnitType
+            , LU.START_TIME               AS startTime
+            , LU.END_TIME                 AS endTime
+            , LU.LEAVE_DAYS               AS leaveDays
+            , LU.LEAVE_MINUTES            AS leaveMinutes
+
+        FROM TB_USER_LEAVE_USE LU
+
+        /* 기간형(START_DATE~END_DATE) 연차를 일자 단위로 전개한다. 양 컬럼 모두 varchar(8) YYYYMMDD
+           이므로 date_seq 의 DATE 값을 DATE_FORMAT 으로 맞춰 비교한다. */
+        INNER JOIN date_seq D
+            ON  DATE_FORMAT(D.D, '%Y%m%d') BETWEEN LU.START_DATE AND LU.END_DATE
+
+        /* 이름·부서 출처. 부서 판정은 U.NODE_CD 단일 출처. */
+        INNER JOIN TB_USER U
+            ON  U.CMPNY_CD = LU.CMPNY_CD
+            AND U.USER_CD  = LU.USER_CD
+
+        /* 부서명. NODE_CD 는 사업장 간 중복 사용되므로(실측: '001' 의 'n1' 이 7개 사업장에 존재)
+           반드시 사용자 본인 사업장(U.SITE_CD) 기준으로 조인한다 — LU.SITE_CD 로 조인하면
+           타 사업장 동일 코드 부서명이 잘못 표시된다(qa 결함 D1). */
+        LEFT JOIN TB_SITE_NODE N
+            ON  N.CMPNY_CD = U.CMPNY_CD
+            AND N.SITE_CD  = U.SITE_CD
+            AND N.NODE_CD  = U.NODE_CD
+
+        /* 연차 종류명. 조인 키는 tb_leave_type_mgmt PK(CMPNY_CD, LEAVE_CD) 복합. */
+        LEFT JOIN TB_LEAVE_TYPE_MGMT LT
+            ON  LT.CMPNY_CD = LU.CMPNY_CD
+            AND LT.LEAVE_CD = LU.LEAVE_CD
+
+        WHERE LU.CMPNY_CD     = #{gvCmpnyCd}
+          AND LU.SITE_CD      = #{siteCd}
+          AND LU.LEAVE_STATUS = 'CONFIRMED'
+          AND LU.DEL_YN       = 'N'
+          /* 월 교차 조건(IDX_LEAVE_USE_SITE 활용). LEAVE_STATUS 값은 CANCELLED(L 두 개)와 짝. */
+          AND LU.START_DATE   <![CDATA[ <= ]]> #{monthEnd}
+          AND LU.END_DATE     <![CDATA[ >= ]]> #{monthStart}
+          /* SEC-A16-04: 퇴사자는 퇴사일이 속한 월까지만 노출한다(재직 중이던 과거월 이력은 보존,
+             퇴사 후 월에는 성명이 계속 조회되지 않게 차단 — 현황 화면 관례 attd07/11/15 취지).
+             USE_YN 은 조건에 두지 않는다(비활성 계정 != 퇴사 — 재직자 이력 소실 방지). */
+          AND (U.WITHDRAWAL_DATE IS NULL OR U.WITHDRAWAL_DATE <![CDATA[ >= ]]> #{monthStart})
+          /* qa 결함 D1: 부서 판정 술어에 사업장 차원을 세운다. NODE_CD 는 사업장 간 중복 코드이므로
+             사용자 소속 사업장을 고정하지 않으면 타 사업장 동일 코드 부서가 오매칭된다.
+             Attd_15 target_user CTE 관례(U.SITE_CD = #{siteCd} + node_tree 3컬럼 조인) 미러. */
+          AND U.SITE_CD       = #{siteCd}
+
+        <if test='nodeCd != null and nodeCd != "" and "Y".equals(incSubNodeYn)'>
+          AND EXISTS (
+              SELECT 1
+              FROM node_tree NT
+              WHERE NT.CMPNY_CD = U.CMPNY_CD
+                AND NT.SITE_CD  = U.SITE_CD
+                AND NT.NODE_CD  = U.NODE_CD
+          )
+        </if>
+        <if test='nodeCd != null and nodeCd != "" and !"Y".equals(incSubNodeYn)'>
+          AND U.NODE_CD = #{nodeCd}
+        </if>
+
+        /* qa 결함 D5: 동명이인/동일 시각 건의 순서가 비결정이 되지 않게 USER_CD, LEAVE_ID 로
+           tie-break 한다(LeaveDashboardMapper 관례). 셀 이름 노출 순서/상세 카드 순서가 조회마다
+           바뀌면 "외 N명"에 들어가는 사람이 달라져 사용자 혼란을 준다. */
+        ORDER BY D.D, U.USER_NM, LU.START_TIME, LU.USER_CD, LU.LEAVE_ID
+    </select>
+
+</mapper>

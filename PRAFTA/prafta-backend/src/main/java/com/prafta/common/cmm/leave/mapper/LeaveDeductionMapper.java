@@ -27,6 +27,18 @@ public interface LeaveDeductionMapper {
                                         @Param("workYmd") String workYmd);
 
     /**
+     * PC-03(D1·N4): 사용자 기본 근무타입({@code tb_user.DEFAULT_SCH_CD})의 대상일 기준 유효
+     * 스케줄 시각 조회 — 개인 분모(1일 환산시간) 산출 입력.
+     *
+     * <p>{@code selectDailySchedule} 의 effective-dating 서브쿼리 패턴을 재사용하되, WORK_PLAN
+     * 조인 대신 {@code tb_user.DEFAULT_SCH_CD} 를 직접 참조한다(사업장은 사용자 현재 SITE_CD 파생).
+     * DEFAULT_SCH_CD 미지정(NULL/빈값)이거나 참조 스케줄이 없으면 {@code null}.
+     */
+    DailyScheduleVO selectUserDefaultSchedule(@Param("cmpnyCd") String cmpnyCd,
+                                              @Param("userCd") String userCd,
+                                              @Param("workYmd") String workYmd);
+
+    /**
      * 그날 기존 시간차(02/03/04) CONFIRMED 누적 분·누적 차감 합 (LC-03, F3).
      *
      * <p><b>전 연차타입 합산</b>(LEAVE_CD 불문 — 타입을 나눠 쪼개는 우회 차단, F3).

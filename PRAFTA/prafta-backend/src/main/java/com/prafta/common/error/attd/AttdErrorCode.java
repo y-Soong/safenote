@@ -355,6 +355,12 @@ public enum AttdErrorCode implements ApiErrorCode {
     // LC-02(R2 무반올림 방어): 30분 단위 신청분이 소수 5자리(decimal(8,5)) 안에서 정확히
     //   나누어떨어지는 환산시간만 허용(비종결 소수 → 원장 반올림 유입 차단).
     , ATTD_400_192(HttpStatus.BAD_REQUEST, "사용할 수 없는 환산시간이에요. 30분 단위 신청이 정확히 나누어지는 값(예: 480, 600, 750)으로 입력해 주세요.")
+
+    // ===== 연차 개인 분모 개편(PC-03) — D2·N5 =====
+    // 개인 분모(기본 근무타입 소정근로분) 산출 불가 사용자는 시간차(02/03/04) 사용 차단(fail-closed).
+    //   교대근무 등 DEFAULT_SCH_CD 미지정/참조 스케줄 이상이 대상 — 종일/반차/반반차는 계속 가능.
+    //   판정 단일 출처 = LeaveDeductionServiceImpl.calcHourlyCharge 진입부(웹/앱 신청·preview 전파).
+    , ATTD_400_193(HttpStatus.BAD_REQUEST, "기본 근무타입이 없어 시간 단위 연차를 사용할 수 없어요. 종일·반차·반반차로 신청해 주세요.")
     ;
 
     private final HttpStatus httpStatus;

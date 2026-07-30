@@ -223,6 +223,7 @@ const appliedLeaveTypes = ref([])
 // 미상계 가불 사용 합계(일) — prafta-com-011-5. 0이면 카드 숨김(MVP 표시 전용).
 const borrowedDays = ref(0)
 // LC-11: 1일 환산시간(분, 서버 권위 — 오늘 기준). "N일 H시간 M분" 조립 분모. 미제공 시 480 폴백.
+//   PC-03(개인 분모 전환): 응답값이 회사 공통 480 → 본인 기본 근무타입 소정근로분(480 캡)으로 바뀜 — 소비 로직 무변경.
 const convMinutes = ref(480)
 // LC-11: 시간차(02/03/04) CONFIRMED 사용 분 합계(전 기간) — 원본(분) 병기용. 0이면 미노출.
 const hourlyUsedMinutes = ref(0)

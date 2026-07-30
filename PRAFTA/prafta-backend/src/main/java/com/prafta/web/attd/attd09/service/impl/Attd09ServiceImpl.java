@@ -7,6 +7,7 @@ import java.util.List;
 import com.prafta.common.cmm.leave.service.LeaveDashboardService;
 import com.prafta.common.cmm.leave.service.LeaveGrantEngineService;
 import com.prafta.common.cmm.leave.service.LeavePolicyService;
+import com.prafta.common.cmm.leave.service.LeaveRemnantCoverService;
 import com.prafta.common.cmm.leave.vo.HireDateGrantResultVO;
 import com.prafta.common.cmm.leave.vo.LeaveDashboardResultVO;
 import com.prafta.common.cmm.leave.vo.LeaveDetailResultVO;
@@ -15,6 +16,8 @@ import com.prafta.common.cmm.leave.vo.LeaveRecallResultVO;
 import com.prafta.common.cmm.leave.vo.ManualGrantResultVO;
 import com.prafta.common.cmm.leave.vo.PolicyGrantPreviewRowVO;
 import com.prafta.common.cmm.leave.vo.PolicyGrantPreviewVO;
+import com.prafta.common.cmm.leave.vo.RemnantCoverSummaryVO;
+import com.prafta.common.cmm.leave.vo.RemnantReportVO;
 import com.prafta.common.error.attd.AttdErrorCode;
 import com.prafta.common.exception.ApiException;
 import com.prafta.common.util.AuthRoleUtils;
@@ -26,6 +29,8 @@ import com.prafta.web.attd.attd09.application.param.ManualGrantParam;
 import com.prafta.web.attd.attd09.application.param.ManualTypesParam;
 import com.prafta.web.attd.attd09.application.param.PolicyGrantParam;
 import com.prafta.web.attd.attd09.application.param.PolicyInfoParam;
+import com.prafta.web.attd.attd09.application.param.RemnantReportParam;
+import com.prafta.web.attd.attd09.application.param.RemnantSummaryParam;
 import com.prafta.web.attd.attd09.dto.response.HireDateGrantResponse;
 import com.prafta.web.attd.attd09.dto.response.LeaveDashboardResponse;
 import com.prafta.web.attd.attd09.dto.response.LeaveDetailResponse;
@@ -35,6 +40,8 @@ import com.prafta.web.attd.attd09.dto.response.ManualTypesResponse;
 import com.prafta.web.attd.attd09.dto.response.PolicyGrantPolicyInfoResponse;
 import com.prafta.web.attd.attd09.dto.response.PolicyGrantPreviewResponse;
 import com.prafta.web.attd.attd09.dto.response.PolicyGrantResponse;
+import com.prafta.web.attd.attd09.dto.response.RemnantCoverSummaryResponse;
+import com.prafta.web.attd.attd09.dto.response.RemnantReportResponse;
 import com.prafta.web.attd.attd09.service.Attd09Service;
 
 import lombok.RequiredArgsConstructor;
@@ -62,6 +69,8 @@ public class Attd09ServiceImpl implements Attd09Service {
     private final LeaveDashboardService leaveDashboardService;
     private final LeaveGrantEngineService leaveGrantEngineService;
     private final LeavePolicyService leavePolicyService;
+    /** PC-07(D9-②③): 짜투리 회사 부담 집계/소멸 임박 리포트 — 비즈니스 로직 위임(어댑터 관례). */
+    private final LeaveRemnantCoverService leaveRemnantCoverService;
 
     @Override
     public LeaveDashboardResponse getDashboard(LeaveDashboardListParam param) {
@@ -207,6 +216,31 @@ public class Attd09ServiceImpl implements Attd09Service {
                 .firstYearMethod(firstYearMethod)
                 .prorateFallback(prorateFallback)
                 .noticeText(noticeText)
+                .build();
+    }
+
+    @Override
+    public RemnantCoverSummaryResponse getRemnantCoverSummary(RemnantSummaryParam param) {
+        // 관리자 게이트는 서비스 진입부(LeaveRemnantCoverService)에서 강제(정책서 §8.5.7).
+        RemnantCoverSummaryVO result = leaveRemnantCoverService.getCoverSummary(
+                param.gvCmpnyCd(), param.gvAuthCd(), param.year());
+        return RemnantCoverSummaryResponse.builder()
+                .remnantPolicyOn(result.remnantPolicyOn())
+                .year(result.year())
+                .totalCoverDays(result.totalCoverDays())
+                .coverCount(result.coverCount())
+                .items(result.items())
+                .build();
+    }
+
+    @Override
+    public RemnantReportResponse getRemnantReport(RemnantReportParam param) {
+        // 관리자 게이트는 서비스 진입부(LeaveRemnantCoverService)에서 강제(정책서 §8.5.7).
+        RemnantReportVO result = leaveRemnantCoverService.getRemnantReport(
+                param.gvCmpnyCd(), param.gvAuthCd());
+        return RemnantReportResponse.builder()
+                .remnantPolicyOn(result.remnantPolicyOn())
+                .rows(result.rows())
                 .build();
     }
 

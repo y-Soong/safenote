@@ -37,12 +37,22 @@
       </div>
     </section>
 
-    <!-- 1) 연차 종류 -->
+    <!-- 1) 연차 종류 (종류 선택 후 접힘 — 종류가 많을 때 화면 길이 절약) -->
     <section class="fs">
-      <p class="fs__title">연차 종류</p>
+      <div class="fs__title-row">
+        <p class="fs__title">연차 종류</p>
+        <button
+          v-if="selectedType"
+          type="button"
+          class="fs__toggle"
+          @click="typeListCollapsed = !typeListCollapsed"
+        >
+          {{ typeListCollapsed ? `전체 보기 (${leaveTypes.length})` : '접기' }}
+        </button>
+      </div>
       <div class="type-list">
         <button
-          v-for="lt in leaveTypes"
+          v-for="lt in visibleLeaveTypes"
           :key="lt.leaveCd"
           type="button"
           class="type-item"
@@ -84,6 +94,11 @@
             {{ u.label }}
           </button>
         </div>
+        <!-- PC-11: 교대근무자 시간차 비노출 사유 안내 (apply-meta hourlyBlocked — D2·N5).
+             시간차(02/03/04)는 서버가 allowedUnits 에서 이미 제거 → 칩 자동 비노출, 여기선 사유만 안내. -->
+        <p v-if="hourlyUnavailableNotice" class="unit-notice">
+          기본 근무타입이 없어 시간 단위 연차는 사용할 수 없습니다.
+        </p>
       </section>
 
       <!-- 3) 날짜 -->
@@ -121,6 +136,22 @@
           </div>
         </div>
 
+        <!-- 대상일 근무/휴게 시각 안내 — 시간차는 휴게시간을 가로지를 수 없으므로(서버 ATTD_400_055)
+             시각 선택 전에 휴게 구간을 보여준다. 조회 실패/스케줄 없는 날은 표시 생략·안내만. -->
+        <div v-if="dayScheduleInfo" class="sch-info">
+          <div class="sch-info__row">
+            <span class="sch-info__lbl">근무</span>
+            <span class="sch-info__val">{{ dayScheduleInfo.workText }}</span>
+          </div>
+          <div v-if="dayScheduleInfo.breakText" class="sch-info__row">
+            <span class="sch-info__lbl">휴게</span>
+            <span class="sch-info__val sch-info__val--brk">{{ dayScheduleInfo.breakText }}</span>
+          </div>
+        </div>
+        <p v-else-if="daySchedule && !daySchedule.hasSchedule" class="sch-info-none">
+          해당 일자에 적용된 근무 스케줄이 없어요.
+        </p>
+
         <label class="field">
           <span class="field__label"><span class="req">*</span>시작</span>
           <TimeStepperField v-model="startTimeInput" :step="30" placeholder="시작 시각" />
@@ -138,7 +169,7 @@
               −
             </button>
             <span class="end-stepper__val">{{ endTimeInput || '--:--' }}</span>
-            <span class="end-stepper__n">{{ stepCount }}{{ unitShortLabel }}</span>
+            <span class="end-stepper__n">{{ stepTotalText }}</span>
             <button
               type="button"
               class="end-stepper__btn"
@@ -294,6 +325,15 @@
           <p v-if="preview.insufficientBalance" class="preview-card__warn">
             예상 차감이 남은 연차를 초과해요. 이대로 신청하면 거절될 수 있어요.
           </p>
+          <!-- PC-11: 짜투리 발동 회사 부담 행 (웹 UI-C 미러 — D6). 발동 예상 시 서버가
+               insufficientBalance=false 로 내리므로 위 부족 경고와 동시 노출되지 않는다. -->
+          <div v-if="preview.remnantTriggered" class="preview-card__row">
+            <span class="preview-card__lbl">회사 부담</span>
+            <span class="preview-card__val preview-card__val--cover">{{ coverMinutesText }}</span>
+          </div>
+          <p v-if="preview.remnantTriggered" class="preview-card__remnant">
+            잔여 전액이 차감되고 부족분은 회사 부담으로 처리됩니다.
+          </p>
         </template>
       </section>
     </template>
@@ -323,7 +363,7 @@
 
 <script setup>
 import { ref, computed, onMounted, onUnmounted, watch, getCurrentInstance } from 'vue'
-import { formatLeaveDays, trimRawDays } from '@/utils/leaveFormat'
+import { formatLeaveDays, formatMinutesToHm, trimRawDays } from '@/utils/leaveFormat'
 import DateStepperField from '@/components/common/DateStepperField.vue'
 import TimeStepperField from '@/components/common/TimeStepperField.vue'
 // developer: 결재자 추가 시트(LeaveApproverPickerSheet)는 본 작업의 후속 골격 또는
@@ -333,7 +373,10 @@ import LeaveApproverPickerSheet from './LeaveApproverPickerSheet.vue'
 
 const props = defineProps({
   // 018-A apply-meta 응답: { leaveTypes: [{ leaveCd, leaveNm, systemYn, aprvRequired, allowedUnits[], balanceDays, applicable }],
-  //   convMinutes(오늘 기준 1일 환산시간(분) — 잔여 표기용 근사치, 구응답이면 부재 → 480 폴백) }
+  //   convMinutes(오늘 기준 1일 환산시간(분) — PC-03 개인 분모 전환: 본인 기본 근무타입 소정근로분·480 캡·
+  //     미산출 시 서버 480 폴백. 잔여 표기용 근사치, 구응답이면 부재 → 480 폴백),
+  //   hourlyBlocked(PC-03 D2·N5: 기본 근무타입 미지정(교대 등)으로 시간차 사용 불가 — allowedUnits 에서
+  //     시간차(02/03/04)가 이미 제거되어 옴. FE 는 안내 문구만 노출) }
   meta: { type: Object, default: () => ({ leaveTypes: [] }) },
   // 018-A approval-presets 응답의 presets 배열: [{ presetId, presetNm, defaultYn, steps:[{ stepNo, approverUserCd, userNm, userId, rankNm, nodeNm }] }]
   presets: { type: Array, default: () => [] },
@@ -341,13 +384,20 @@ const props = defineProps({
   context: { type: Object, default: () => ({}) },
   submitting: { type: Boolean, default: false },
   // LC-10: 예상 차감 preview 응답(부모 소유). { chargeDays, floorApplied, capApplied, insufficientBalance,
-  //   convMinutes, floorDays(발동 마일스톤 요금 0.25/0.5/1 — 구응답이면 부재) }
+  //   convMinutes, floorDays(발동 마일스톤 요금 0.25/0.5/1 — 구응답이면 부재),
+  //   remnantTriggered(PC-05 D6: 짜투리 보전 발동 예상 — 발동 시 insufficientBalance=false 로 옴),
+  //   remnantDays(발동 시 차감될 잔여 전액(일) — 미발동 null),
+  //   companyCoverMinutes(회사 부담분(분) — 미발동 null) }
   //   preview 실패/비대상이면 null — 표시 생략하고 신청은 가능(서버가 최종 판정).
   preview: { type: Object, default: null },
   // LC-10: preview 호출 진행 플래그(부모 소유) — 요약 카드 로딩 표시용.
   previewLoading: { type: Boolean, default: false },
+  // 대상일 근무/휴게 시각(부모 소유, GET day-schedule 응답) — 시간차 휴게 가로지름 사전 안내용.
+  //   { hasSchedule, fstSchStrTime, fstSchEndTime, secSchStrTime, secSchEndTime,
+  //     fstBrkStrTime, fstBrkEndTime, secBrkStrTime, secBrkEndTime } | null(미조회/실패 — 표시 생략)
+  daySchedule: { type: Object, default: null },
 })
-const emit = defineEmits(['submit', 'cancel', 'preview-request'])
+const emit = defineEmits(['submit', 'cancel', 'preview-request', 'day-schedule-request'])
 
 const { proxy } = getCurrentInstance() || { proxy: null }
 // 공통: alert 폴백(앱 전역 $alert 우선, 없으면 window.alert) — LeaveApplyView 패턴 동일.
@@ -388,6 +438,9 @@ const reason = ref('')
 // 가불(미래 연차 당겨쓰기) 동의 상태 (prafta-com-011-4). 종류/날짜 변경 시 리셋.
 const borrowAgreed = ref(false)
 
+// 연차 종류 리스트 접힘 상태 — 종류 선택 후 자동 접힘(종류가 많을 때 화면 길이 절약).
+const typeListCollapsed = ref(false)
+
 // 결재선 상태
 const selectedPresetId = ref('')
 // approverList: [{ approverUserCd, userNm, userId, rankNm, nodeNm }] (순서 = 결재 단계)
@@ -397,9 +450,13 @@ const approverPickerOpen = ref(false)
 // ── 파생값 (단순 표시/필터 — 비즈니스 로직 아님) ─────────────────────────
 const leaveTypes = computed(() => props.meta?.leaveTypes || [])
 
-// 잔여 "N일 H시간 M분" 표기용 환산시간(분) — apply-meta convMinutes(오늘 기준 근사치, 서버 산출).
+// 잔여 "N일 H시간 M분" 표기용 환산시간(분) — apply-meta convMinutes(PC-03: 본인 개인 분모, 오늘 기준 근사치).
 //   구응답(필드 부재)/무효면 undefined → formatLeaveDays 내부 480 폴백.
 const metaConvMinutes = computed(() => props.meta?.convMinutes)
+
+// PC-11: 교대근무자 시간차 비노출 사유 안내 노출 여부 — apply-meta hourlyBlocked(서버 권위, 클라 추측 금지).
+//   시간차 단위 자체는 서버가 allowedUnits 에서 제거하므로 칩 비노출은 자동 — 여기선 사유 문구만 게이팅.
+const hourlyUnavailableNotice = computed(() => props.meta?.hourlyBlocked === true)
 
 const selectedType = computed(
   () => leaveTypes.value.find((t) => t.leaveCd === selectedLeaveCd.value) || null,
@@ -414,11 +471,21 @@ const unitOptions = computed(() => {
   return allowed.map((code) => ({ code, label: UNIT_LABELS[code] || code }))
 })
 
+// 접힘 시 선택 종류 1건만 노출(펼침/미선택은 전체). 접힌 항목 클릭은 onSelectType 이 펼침으로 처리.
+const visibleLeaveTypes = computed(() =>
+  typeListCollapsed.value && selectedType.value ? [selectedType.value] : leaveTypes.value,
+)
+
 // 시간차 단위 여부(02·03·04)
 const isTimeUnit = computed(() => ['02', '03', '04'].includes(useUnitType.value))
 
-// 시간차 단위 짧은 라벨(종료 스텝퍼 옆 'N2시간' 등 표시).
-const unitShortLabel = computed(() => UNIT_LABELS[useUnitType.value] || '')
+// 종료 스텝퍼 옆 신청 총 시간 표시 — 예: 7×30분 = "3시간 30분".
+//   (구현 주의: 스텝수+단위라벨 문자열 연결("730분")은 시간처럼 오독되므로 총 분량으로 환산 표기)
+const stepTotalText = computed(() => {
+  const unitMin = UNIT_MINUTES[useUnitType.value]
+  if (!unitMin) return ''
+  return formatMinutesToHm(stepCount.value * unitMin)
+})
 
 // 종료 시각(읽기전용 파생): 시작 미입력/비시간차면 ''. 아니면 시작 + stepCount×단위분(24h wrap).
 //   minutesToInput() 재사용. 시작은 30분 단위 TimeStepperField 값.
@@ -472,6 +539,53 @@ const unitGuideText = computed(() => {
   // developer: 휴게시간 가로지름 불가 등 정책 문구 확정(attd §8.5). 골격은 기본 안내만.
   return `${label} 단위로 신청해 주세요. 휴게시간을 가로지를 수 없어요.`
 })
+
+// ── 대상일 근무/휴게 시각 안내 (day-schedule) ─────────────────────────────
+// 'HHMM' → 'HH:MM' 표시. 형식 위반이면 ''.
+const fmtHHMM = (hhmm) => {
+  if (!hhmm || !/^\d{4}$/.test(hhmm)) return ''
+  return `${hhmm.slice(0, 2)}:${hhmm.slice(2)}`
+}
+
+// 'HHMM' 시각쌍 → "HH:MM~HH:MM". 한쪽이라도 무효면 null.
+const fmtRange = (str, end) => {
+  const s = fmtHHMM(str)
+  const e = fmtHHMM(end)
+  return s && e ? `${s}~${e}` : null
+}
+
+// 표시용 근무/휴게 텍스트. 스케줄 없음/미조회면 null(블록 미노출).
+//   2구간 스케줄은 " / " 로 병기. 휴게 미설정이면 breakText='' (근무만 노출).
+const dayScheduleInfo = computed(() => {
+  const ds = props.daySchedule
+  if (!ds || ds.hasSchedule !== true) return null
+  const workRanges = [
+    fmtRange(ds.fstSchStrTime, ds.fstSchEndTime),
+    fmtRange(ds.secSchStrTime, ds.secSchEndTime),
+  ].filter(Boolean)
+  if (workRanges.length === 0) return null
+  const breakRanges = [
+    fmtRange(ds.fstBrkStrTime, ds.fstBrkEndTime),
+    fmtRange(ds.secBrkStrTime, ds.secBrkEndTime),
+  ].filter(Boolean)
+  return {
+    workText: workRanges.join(' / '),
+    breakText: breakRanges.join(' / '),
+  }
+})
+
+// 시간차 단위 + 날짜 완성 시에만 조회 대상(그 외 null → 표시 해제).
+const dayScheduleYmd = computed(() => {
+  if (!isTimeUnit.value) return null
+  const ymd = toYmd(workDateInput.value)
+  return ymd && ymd.length === 8 ? ymd : null
+})
+
+// 대상 변경 → 부모에 조회 요청 emit(API 호출은 부모 소유 — preview 패턴 동일). 즉시 emit(디바운스
+//   불요 — 날짜/단위 변경은 이산적). immediate 로 컨텍스트 프리필 진입도 커버.
+watch(dayScheduleYmd, (ymd) => {
+  emit('day-schedule-request', ymd)
+}, { immediate: true })
 
 // 결재자 emit 용 userCd 배열(순서 보존 — 위치 재인덱싱 아님, 표시 순서 그대로)
 const approverUserCds = computed(() => approverList.value.map((a) => a.approverUserCd))
@@ -539,7 +653,10 @@ const estimatedDays = computed(() => {
 })
 
 // 잔여 초과 사전 경고 — 신청 일수 추정 > 선택 종류 balanceDays 면 true. 계산 불가 시 false.
+//   PC-11: 짜투리 보전 발동 예상(preview.remnantTriggered — 서버 권위)이면 신청이 성공하므로 억제
+//   (발동 안내 카드가 대신 노출 — "거절될 수 있어요" 와의 모순 방지, dev2 설계 확정 6 미러).
 const overBalanceWarning = computed(() => {
+  if (props.preview?.remnantTriggered) return false
   const type = selectedType.value
   if (!type) return false
   const bal = Number(type.balanceDays)
@@ -694,6 +811,13 @@ const floorNoticeText = computed(() => {
   return `같은 날 누적 신청이 ${label} 시간에 도달하여 ${label} 요금(${trimRawDays(p.floorDays)}일)이 적용됩니다.`
 })
 
+// PC-11: 짜투리 발동 회사 부담분 텍스트 — 예: "1시간 30분". 발동 시에만 노출(companyCoverMinutes 서버 산출).
+const coverMinutesText = computed(() => {
+  const p = props.preview
+  if (!p || !p.remnantTriggered) return ''
+  return formatMinutesToHm(p.companyCoverMinutes)
+})
+
 // 'HHMM' → 분. 형식 위반 시 -1. (스케줄 HHMM 용)
 function toMin4(hhmm) {
   if (!hhmm || hhmm.length !== 4 || !/^\d{4}$/.test(hhmm)) return -1
@@ -736,9 +860,16 @@ const resolveDefaultUnit = (type) => {
 }
 
 // 종류 변경 시 단위/시각/결재선 재초기화. 단위는 종류별 허용 단위 안에서 종일을 기본 선택한다.
+//   선택 후에는 리스트를 접는다(화면 길이 절약). 이미 선택된 종류 재탭은 입력 리셋 없이
+//   접힘/펼침 토글만 한다(접힘 상태의 단일 항목 탭 = 펼치기).
 const onSelectType = (lt) => {
   if (!lt?.applicable) return
+  if (selectedLeaveCd.value === lt.leaveCd) {
+    typeListCollapsed.value = !typeListCollapsed.value
+    return
+  }
   selectedLeaveCd.value = lt.leaveCd
+  typeListCollapsed.value = true
   useUnitType.value = resolveDefaultUnit(lt)
   startTimeInput.value = ''
   stepCount.value = 1
@@ -925,6 +1056,22 @@ onMounted(() => {
   font-size: 13px;
   color: var(--color-text-tertiary);
 }
+/* 섹션 제목 + 접기/펼치기 토글 행 (연차 종류) */
+.fs__title-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+.fs__toggle {
+  height: 28px;
+  padding: 0 var(--space-sm);
+  background: transparent;
+  border: 0;
+  font-size: 12px;
+  color: var(--color-primary-text-deep);
+  cursor: pointer;
+  font-family: inherit;
+}
 
 /* 연차 종류 리스트 */
 .type-list {
@@ -1009,6 +1156,12 @@ onMounted(() => {
   color: var(--color-primary-text-deep);
   font-weight: 500;
 }
+/* PC-11: 교대근무자 시간차 비노출 사유 안내 (time-guide 톤 미러 — 앱 토큰으로 치환) */
+.unit-notice {
+  margin: 0;
+  font-size: 12px;
+  color: var(--color-text-tertiary);
+}
 
 /* 시간차 입력 영역 헤더(제목 + 편의버튼) */
 .time-head {
@@ -1035,6 +1188,41 @@ onMounted(() => {
   border-color: var(--color-primary);
   color: var(--color-primary);
 }
+/* 대상일 근무/휴게 시각 안내 (시간차 — 휴게 가로지름 사전 안내) */
+.sch-info {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-xs);
+  padding: var(--space-sm) var(--space-md);
+  background: var(--color-warning-tint);
+  border: 0.5px solid var(--color-warning);
+  border-radius: var(--radius-md);
+}
+.sch-info__row {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: var(--space-sm);
+}
+.sch-info__lbl {
+  font-size: 12px;
+  color: var(--color-warning-text);
+}
+.sch-info__val {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--color-text-primary);
+  font-variant-numeric: tabular-nums;
+}
+.sch-info__val--brk {
+  color: var(--color-warning-text);
+}
+.sch-info-none {
+  margin: 0;
+  font-size: 12px;
+  color: var(--color-text-tertiary);
+}
+
 .time-guide {
   margin: 0;
   display: flex;
@@ -1303,6 +1491,15 @@ onMounted(() => {
   margin: 0;
   font-size: 12px;
   color: var(--color-danger);
+}
+/* PC-11: 짜투리 발동 회사 부담 행/안내 (웹 UI-C 미러 — 앱 토큰으로 치환) */
+.preview-card__val--cover {
+  color: var(--color-primary);
+}
+.preview-card__remnant {
+  margin: 0;
+  font-size: 12px;
+  color: var(--color-primary-text-deep);
 }
 
 /* 가불 동의 토글 + 안내 (prafta-com-011-4) — 기존 토큰/패턴 재사용 */

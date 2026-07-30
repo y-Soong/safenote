@@ -75,6 +75,11 @@ public class AppLeave01ServiceImpl implements AppLeave01Service {
         // LC-07(표기): 오늘 기준 환산시간 + 시간차 사용 분 합계(전 기간) — 기존 필드 불변, additive.
         Integer hourlyUsedMinutes = appLeave01Mapper.selectHourlyUsedMinutes(param.cmpnyCd(), param.userCd());
 
+        // PC-03(N7·N8): convMinutes = 오늘 기준 본인 개인 분모(480 캡). 산출 불가(교대 등)면
+        //   표기 전용 480 폴백(FE formatLeaveDays 폴백과 정합).
+        Integer personalConv = leaveConversionPolicyService.resolvePersonalConvMinutes(
+                param.cmpnyCd(), param.userCd(), todayYmd);
+
         MyLeaveSummaryResponse response = MyLeaveSummaryResponse.builder()
                 .user(buildUser(baseQuery))
                 .groups(buildGroups(baseQuery))
@@ -82,7 +87,7 @@ public class AppLeave01ServiceImpl implements AppLeave01Service {
                 .appliedLeaveTypes(buildAppliedLeaveTypes(param))
                 .borrowedDays(toScaledDouble(nz(
                         appLeave01Mapper.selectBorrowedDaysTotal(param.cmpnyCd(), param.userCd(), todayYmd))))
-                .convMinutes(leaveConversionPolicyService.selectConversionMinutes(param.cmpnyCd(), todayYmd))
+                .convMinutes(personalConv != null ? personalConv : LeaveConversionPolicyService.DEFAULT_CONV_MINUTES)
                 .hourlyUsedMinutes(hourlyUsedMinutes == null ? 0 : hourlyUsedMinutes)
                 .build();
 

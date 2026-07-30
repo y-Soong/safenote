@@ -38,6 +38,9 @@ public class AttdCloseStatusResponse {
     int gpsUnconfirmedCnt;
     /** 미승인 초과근무(초과근무 신청 대기) 건수 */
     int unapprovedOtCnt;
+
+    /** 미결 연차 변경(이동/삭제) 요청 건수 — REQUESTED(근로자 응답대기) + AGREED(관리자 확인대기) */
+    int pendingLeaveChangeCnt;
     /** 차단 사유 합계 */
     int blockTotalCnt;
 

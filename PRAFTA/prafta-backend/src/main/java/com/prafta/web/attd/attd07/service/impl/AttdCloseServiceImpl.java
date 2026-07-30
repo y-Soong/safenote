@@ -70,7 +70,9 @@ public class AttdCloseServiceImpl implements AttdCloseService {
         int pendingReqCnt = attdCloseMapper.countPendingReq(cmpnyCd, siteCd, nodeCd, incSubYn, closeYm);
         int gpsUnconfirmedCnt = attdCloseMapper.countGpsUnconfirmed(cmpnyCd, siteCd, nodeCd, incSubYn, closeYm);
         int unapprovedOtCnt = attdCloseMapper.countUnapprovedOt(cmpnyCd, siteCd, nodeCd, incSubYn, closeYm);
-        int blockTotal = pendingReqCnt + gpsUnconfirmedCnt + unapprovedOtCnt;
+        // 미결 연차 변경(이동/삭제) 요청도 차단 사유 — 마감 후엔 Attd13 마감 가드에 걸려 교착이 된다.
+        int pendingLeaveChangeCnt = attdCloseMapper.countPendingLeaveChange(cmpnyCd, siteCd, nodeCd, incSubYn, closeYm);
+        int blockTotal = pendingReqCnt + gpsUnconfirmedCnt + unapprovedOtCnt + pendingLeaveChangeCnt;
 
         boolean closable = !closed && blockTotal == 0;
 
@@ -90,6 +92,7 @@ public class AttdCloseServiceImpl implements AttdCloseService {
                 .pendingReqCnt(pendingReqCnt)
                 .gpsUnconfirmedCnt(gpsUnconfirmedCnt)
                 .unapprovedOtCnt(unapprovedOtCnt)
+                .pendingLeaveChangeCnt(pendingLeaveChangeCnt)
                 .blockTotalCnt(blockTotal)
                 .closable(closable)
                 .histList(histList)
@@ -118,7 +121,8 @@ public class AttdCloseServiceImpl implements AttdCloseService {
         // 자동/강제 마감 금지(§3.3): 스코프 내 차단 사유가 1건이라도 있으면 마감 불가
         int blockTotal = attdCloseMapper.countPendingReq(cmpnyCd, siteCd, nodeCd, incSubYn, closeYm)
                 + attdCloseMapper.countGpsUnconfirmed(cmpnyCd, siteCd, nodeCd, incSubYn, closeYm)
-                + attdCloseMapper.countUnapprovedOt(cmpnyCd, siteCd, nodeCd, incSubYn, closeYm);
+                + attdCloseMapper.countUnapprovedOt(cmpnyCd, siteCd, nodeCd, incSubYn, closeYm)
+                + attdCloseMapper.countPendingLeaveChange(cmpnyCd, siteCd, nodeCd, incSubYn, closeYm);
         if (blockTotal > 0) {
             log.warn("근태 마감 차단 - 미결 항목 잔존. cmpnyCd={}, siteCd={}, nodeCd={}, incSub={}, closeYm={}, blockTotal={}",
                     cmpnyCd, siteCd, nodeCd, incSubYn, closeYm, blockTotal);

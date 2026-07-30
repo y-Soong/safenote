@@ -619,12 +619,13 @@
           <strong>[0.5일 (반차)]</strong>로 고정됩니다.
         </p>
         <p class="lp-strong-note">
-          ※ 시간 단위 휴가는 <strong>1일 = 8시간(480분)</strong> 기준으로
-          환산되어 차감. 휴게시간은 자동 제외되어 신청 불가.
+          ※ 시간 단위 휴가는 각 직원의
+          <strong>기본 근무타입 소정근로시간</strong>을 1일로 환산해 차감.
+          휴게시간은 자동 제외되어 신청 불가.
         </p>
       </section>
 
-      <!-- ============ 시간차 1일 환산시간 — 480분(8시간) 고정 안내 (설정 제거, 2026-07-21) ============ -->
+      <!-- ============ 시간차 1일 환산시간 — 개인 기본 근무타입 기준 (PC-08 갱신) ============ -->
       <div class="lp-divider">
         <span class="lp-divider__text">시간차 1일 환산시간</span>
       </div>
@@ -634,10 +635,19 @@
           <h3 class="lp-card__title">1일 환산시간</h3>
         </header>
         <p class="lp-card__desc">
-          시간차 연차는 근무 스케줄과 무관하게
-          <strong>1일 = 8시간(480분)</strong> 기준으로 환산되어 차감됩니다.
-          (30분 = 0.0625일, 1시간 = 0.125일, 2시간 = 0.25일)
+          시간차 연차는 각 직원의 <strong>기본 근무타입 소정근로시간</strong>을
+          1일로 환산해 차감됩니다. (예: 7시간 근무자의 1시간 = 1/7일)
         </p>
+        <p class="lp-strong-note">
+          ※ 소정근로가 <strong>8시간을 초과</strong>하는 근무타입은
+          <strong>8시간(480분)</strong> 기준으로 계산됩니다. (근로자 유리)
+        </p>
+        <p class="lp-strong-note">
+          ※ 기본 근무타입이 없는 직원(교대근무 등)은
+          <strong>시간 단위 연차를 사용할 수 없습니다.</strong> (종일·반차·반반차는
+          가능)
+        </p>
+        <!-- R3 하한 규칙 안내는 개인 분모 전환 후에도 유효(PC-03 ⑦ 존치) — 기존 안내 유지 -->
         <div class="lp-note lp-note--info">
           <svg
             viewBox="0 0 24 24"
@@ -659,6 +669,71 @@
             <strong>0.25일 · 0.5일 · 1일</strong>이 하한으로 차감되며, 하루
             차감 합계는 1일을 넘지 않습니다.
           </span>
+        </div>
+      </section>
+
+      <!-- ============ 짜투리 잔여 보전 (PC-08 신설, D3·D9-①) ============ -->
+      <div class="lp-divider">
+        <span class="lp-divider__text">짜투리 잔여 보전</span>
+      </div>
+
+      <section class="lp-card lp-remnant">
+        <div class="lp-remnant__row">
+          <label class="lp-check">
+            <input
+              type="checkbox"
+              v-model="allowRemnantRoundUp"
+              true-value="Y"
+              false-value="N"
+            />
+            잔여 연차가 최소 사용단위보다 작을 때 보전 (회사 부담)
+          </label>
+        </div>
+        <p class="lp-card__desc">
+          <template v-if="allowRemnantRoundUp === 'Y'">
+            잔여가 최소 사용단위 미만으로 남은 직원은 최소단위 1건 사용이
+            허용되고, 부족분은 <strong>회사 부담</strong>으로 기록됩니다. (연차
+            현황에서 집계 확인)
+          </template>
+          <template v-else>
+            잔여 좌초분은 시스템이 차감하지 않으며,
+            <strong>미사용분은 연차미사용수당 정산 대상</strong>입니다. (연차
+            현황의 소멸 임박 리포트로 지원)
+          </template>
+        </p>
+        <button
+          type="button"
+          class="lp-remnant__more"
+          @click="remnantDetailOpen = !remnantDetailOpen"
+        >
+          {{ remnantDetailOpen ? "접기 ▲" : "자세히 ▼" }}
+        </button>
+        <div
+          v-if="remnantDetailOpen"
+          class="lp-note lp-note--info lp-remnant__detail"
+        >
+          <ul>
+            <li>
+              대상: 법정 연차 5종(연차·월차·근속가산·일괄선부여·사용촉진). 생일
+              안식휴가·비법정 타입은 제외됩니다.
+            </li>
+            <li>
+              발동 조건: 대상 잔여 합산이 최소 사용단위 요금 미만 + 잔여 0 초과
+              + 미래에 예정된 연차 없음.
+            </li>
+            <li>
+              발동 시 잔여 전액이 차감되고, 최소단위와의 차액은 회사 부담분으로
+              별도 기록됩니다.
+            </li>
+            <li>
+              최소 사용단위가 [1일 (전일)]인 회사는 부담 범위가 최대 (1일 −
+              잔여)까지 커질 수 있습니다.
+            </li>
+            <li>
+              보전 건의 근무일이 오기 전에 다른 연차 취소로 잔여가 복원되면,
+              복원분에서 정상 차감으로 전환(회수)됩니다.
+            </li>
+          </ul>
         </div>
       </section>
 
@@ -780,6 +855,12 @@ const changeReason = ref("");
 const usageUnit = ref("FULL_DAY");
 // 법정연차 신청 결재 여부 (prafta-019-E 결정 #2). 'Y'=결재라인, 'N'=즉시확정
 const aprvUseYn = ref("N");
+
+// PC-08(D3·D9-①): 짜투리 잔여 보전 옵션 (TB_LEAVE_USAGE_POLICY.ALLOW_REMNANT_ROUND_UP)
+//   'Y'=최소단위 발동+회사 부담 / 'N'=소멸 임박 리포트 지원(미사용분은 연차미사용수당 정산 대상)
+const allowRemnantRoundUp = ref("N");
+// 보전 카드 [자세히] 펼침 상태 (UI 전용)
+const remnantDetailOpen = ref(false);
 
 // --- UI 상태 ---
 const isLoading = ref(false);
@@ -974,6 +1055,8 @@ const fnBuildSaveRequest = () => {
     // 사용 단위(단일): HALF_DAY 잠금(3번=0.5일 절사) 시 HALF_DAY 강제 (prafta-024 결정 2b)
     usageUnit: usageUnitLocked.value ? "HALF_DAY" : usageUnit.value,
     aprvUseYn: aprvUseYn.value,
+    // PC-08(D3): 짜투리 잔여 보전 옵션 저장 (동일 키 왕복 — 미전송 시 백엔드 'N' 정규화)
+    allowRemnantRoundUp: allowRemnantRoundUp.value,
 
     applyFromDate: applyFromDate.value,
     changeReason: changeReason.value,
@@ -1029,6 +1112,8 @@ const fnApplyPolicyToState = (p) => {
   //   LC-10: 구 데이터의 allowQuarter='Y'는 승계하지 않는다. 반반차는 USAGE_UNIT='QUARTER_DAY'로만 표현.
   usageUnit.value = p.usageUnit || "FULL_DAY";
   aprvUseYn.value = p.aprvUseYn ?? "N";
+  // PC-08(D3): 짜투리 잔여 보전 옵션 — 미지정/구버전 데이터는 'N'(OFF) 폴백
+  allowRemnantRoundUp.value = p.allowRemnantRoundUp ?? "N";
 };
 
 // 신규 작성 모드(활성 정책 없음) — 기본값으로 초기화
@@ -1047,6 +1132,7 @@ const fnResetToDefault = () => {
   axis7UsePromotion.value = "N";
   usageUnit.value = "FULL_DAY";
   aprvUseYn.value = "N";
+  allowRemnantRoundUp.value = "N"; // PC-08: 기본 OFF
 };
 
 // --- axis 선택 핸들러 (UI 토글; 매트릭스 보정은 watch 가 담당) ---
@@ -1192,6 +1278,9 @@ const fnBuildTargetForImpact = () => {
       : "CEIL",
     usageUnit: usageUnitLocked.value ? "HALF_DAY" : usageUnit.value,
     aprvUseYn: aprvUseYn.value,
+    // PC-08(D3): 영향 분석 경유 [정책 변경 진행] 저장 시에도 옵션이 'N'으로
+    //   묵시 초기화되지 않도록 fnBuildSaveRequest 와 동일하게 포함한다.
+    allowRemnantRoundUp: allowRemnantRoundUp.value,
   };
 
   if (axis4Active.value) {
@@ -1649,6 +1738,33 @@ const fnTomorrowYyyymmdd = () => {
 .lp-check:has(input:disabled) {
   color: var(--color-text-muted);
   cursor: not-allowed;
+}
+
+/* ===== PC-08: 짜투리 잔여 보전 카드 ===== */
+.lp-remnant__row {
+  display: flex;
+  align-items: center;
+  gap: var(--header-right-gap);
+}
+
+.lp-remnant__more {
+  margin-top: var(--outline-offset);
+  border: none;
+  background: transparent;
+  color: var(--color-text-muted);
+  font-size: var(--btn-font);
+  cursor: pointer;
+  padding: 0;
+}
+
+.lp-remnant__more:hover {
+  color: var(--color-text-strong);
+}
+
+.lp-remnant__detail ul {
+  margin: 0;
+  padding-left: var(--card-padding);
+  color: var(--color-text);
 }
 
 /* ===== 고급 기능 카드 ===== */

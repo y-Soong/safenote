@@ -30,10 +30,12 @@
           <div class="la-field">
             <label>사용 단위 <span class="req">*</span></label>
             <BaseSelect v-model="useUnitType">
+              <!-- PC-10(D2·N5): 교대 차단(ATTD_400_193) 수신 후에는 시간차 단위 선택 불가 -->
               <option
                 v-for="u in visibleUnitOptions"
                 :key="u.systValDCd"
                 :value="u.systValDCd"
+                :disabled="hourlyBlocked && isHourUnitCode(u.systValDCd)"
               >
                 {{ fnUnitLabel(u) }}
               </option>
@@ -65,7 +67,22 @@
               <p v-if="preview.capApplied" class="la-preview-note">
                 하루 차감 상한(1일)이 적용됩니다.
               </p>
+              <!-- PC-10: 짜투리 발동 안내 (preview.remnantTriggered — D6) -->
+              <p
+                v-if="preview.remnantTriggered"
+                class="la-preview-remnant"
+              >
+                잔여 연차
+                전액({{ formatLeaveDays(preview.remnantDays, preview.convMinutes) }})이
+                차감되고, 부족분
+                <strong>{{ formatLeaveMinutes(preview.companyCoverMinutes) }}</strong>은
+                회사 부담으로 처리됩니다.
+              </p>
             </template>
+            <!-- PC-10: 교대근무자 시간차 차단 안내 (서버 에러코드 수신 시 — D2·N5) -->
+            <p v-if="hourlyBlockedMessage" class="la-preview-blocked">
+              {{ hourlyBlockedMessage }}
+            </p>
           </div>
 
           <!-- prafta-com-011-6 가불(미래 연차 당겨쓰기) 동의 — 시스템 법정 연차 + 가불 가능 + 잔여 부족 시에만 노출 -->
@@ -208,7 +225,11 @@ import TimeInput from "@/components/common/TimeInput.vue";
 import CalendarSrch from "@/components/common/CalendarSrch.vue";
 import { formatYmdDot } from "@/utils/dateFormat";
 import { resolveApiErrorMessage } from "@/utils/apiError";
-import { formatLeaveDays, trimLeaveDays } from "@/utils/leaveFormat";
+import {
+  formatLeaveDays,
+  formatLeaveMinutes,
+  trimLeaveDays,
+} from "@/utils/leaveFormat";
 
 defineOptions({ name: "LeaveApplyPop" });
 const props = defineProps({
@@ -243,9 +264,18 @@ const borrowAgreed = ref(false);
 const quarterAllowed = ref(false);
 
 // LC-09(§5-C): 예상 차감액 미리보기 상태 (POST /leaveflow/preview-deduction)
-//   preview = { chargeDays, floorApplied, capApplied, insufficientBalance, convMinutes, floorDays } | null
+//   preview = { chargeDays, floorApplied, capApplied, insufficientBalance, convMinutes, floorDays,
+//               remnantTriggered, remnantDays, companyCoverMinutes } | null
+//   PC-10(D6): 발동 예상 시 remnantTriggered=true + insufficientBalance=false(부족 경고와 상호배타).
 const preview = ref(null);
 const previewLoading = ref(false);
+
+// PC-10(D2·N5): 교대근무자 시간차 차단 상태 — preview 가 ATTD_400_193 으로 거부되면 세팅.
+//   차단은 사용자 속성(기본 근무타입 없음)이라 세션 내 유지하고 시간차 단위 선택을 막는다.
+const hourlyBlocked = ref(false);
+const hourlyBlockedMessage = ref("");
+// 시간차(02/03/04) 단위 코드 여부 — 옵션 disable 판정용
+const isHourUnitCode = (cd) => ["02", "03", "04"].includes(cd);
 
 // 신청 대상: 사용자 신청 타입(leaveType='01') + 시스템 법정 시드(systemYn='Y', 가불 대상 월차/본연차 포함).
 //   기존 비가불 UX 회귀 0 — '01' 노출은 유지하고, 가불용 시스템 법정 종류를 함께 노출한다(앱 메타 미러).
@@ -421,9 +451,17 @@ const fnLoadPreview = async () => {
     if (seq !== previewSeq) return;
     preview.value = r.data || null;
   } catch (e) {
-    // preview 실패 시 안내 없이 신청은 가능 — 서버가 최종 판정(§5-C)
     if (seq !== previewSeq) return;
     preview.value = null;
+    // PC-10(D2·N5): 교대근무자 시간차 차단(ATTD_400_193) — 서버 메시지를 그대로 안내하고
+    //   시간차 단위 선택을 disable 한다(제출도 서버가 fail-closed 로 거부).
+    if (e?.response?.data?.errorCode === "ATTD_400_193") {
+      hourlyBlocked.value = true;
+      hourlyBlockedMessage.value =
+        e.response.data.message ||
+        "기본 근무타입이 없어 시간 단위 연차를 사용할 수 없어요. 종일·반차·반반차로 신청해 주세요.";
+    }
+    // 그 외 preview 실패는 안내 없이 신청 가능 — 서버가 최종 판정(§5-C)
   } finally {
     if (seq === previewSeq) previewLoading.value = false;
   }
@@ -707,6 +745,17 @@ onMounted(() => {
   margin: 0.25rem 0 0;
   font-size: 0.76rem;
   color: var(--color-warning-text, #b45309);
+}
+/* PC-10: 짜투리 발동/교대 차단 안내 */
+.la-preview-remnant {
+  color: var(--color-primary);
+  font-size: var(--btn-font);
+  margin: var(--outline-offset) 0 0;
+}
+.la-preview-blocked {
+  color: var(--color-danger);
+  font-size: var(--btn-font);
+  margin: var(--outline-offset) 0 0;
 }
 /* 잔여 부족 예상 배지 (신청 버튼 옆) */
 .la-balance-warn {

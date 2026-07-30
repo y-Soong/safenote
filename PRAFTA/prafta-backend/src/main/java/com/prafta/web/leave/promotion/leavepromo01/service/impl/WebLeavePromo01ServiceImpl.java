@@ -4,8 +4,10 @@ import java.io.InputStream;
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.format.DateTimeFormatter;
+import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 
@@ -37,22 +39,30 @@ import com.prafta.common.error.leavepromo.LeavePromoErrorCode;
 import com.prafta.common.exception.ApiException;
 import com.prafta.web.attd.attd07.service.AttdCloseService;
 import com.prafta.web.leave.promotion.leavepromo01.application.param.PromotionDesignateParam;
+import com.prafta.web.leave.promotion.leavepromo01.application.param.PromotionFirstTargetSearchParam;
 import com.prafta.web.leave.promotion.leavepromo01.application.param.PromotionTargetSearchParam;
+import com.prafta.web.leave.promotion.leavepromo01.application.query.PromotionFirstTargetSearchQuery;
 import com.prafta.web.leave.promotion.leavepromo01.application.query.PromotionTargetSearchQuery;
 import com.prafta.web.leave.promotion.leavepromo01.dto.PromotionExcelFailItem;
 import com.prafta.web.leave.promotion.leavepromo01.dto.request.AutoBatchCommitRequest;
 import com.prafta.web.leave.promotion.leavepromo01.dto.request.AutoBatchPreviewRequest;
+import com.prafta.web.leave.promotion.leavepromo01.dto.request.PromotionRemindRequest;
 import com.prafta.web.leave.promotion.leavepromo01.dto.response.AutoBatchCommitResponse;
 import com.prafta.web.leave.promotion.leavepromo01.dto.response.PromotionDesignateResultResponse;
 import com.prafta.web.leave.promotion.leavepromo01.dto.response.PromotionExcelUploadResponse;
+import com.prafta.web.leave.promotion.leavepromo01.dto.response.PromotionFirstTargetListResponse;
+import com.prafta.web.leave.promotion.leavepromo01.dto.response.PromotionFirstTargetView;
+import com.prafta.web.leave.promotion.leavepromo01.dto.response.PromotionRemindResultResponse;
 import com.prafta.web.leave.promotion.leavepromo01.dto.response.PromotionTargetListResponse;
 import com.prafta.web.leave.promotion.leavepromo01.mapper.WebLeavePromo01Mapper;
+import com.prafta.web.leave.promotion.leavepromo01.result.PromotionFirstTargetRowResult;
 import com.prafta.web.leave.promotion.leavepromo01.result.PromotionTargetRowResult;
 import com.prafta.web.leave.promotion.leavepromo01.service.PromotionExcelFailStore;
 import com.prafta.web.leave.promotion.leavepromo01.service.WebLeavePromo01Service;
 import com.prafta.web.leave.promotion.leavepromo01.util.PromotionExcelRowParser;
 import com.prafta.web.leave.promotion.leavepromo01.util.PromotionExcelTemplateBuilder;
 import com.prafta.web.leave.promotion.leavepromo01.vo.DesignateTargetMetaVO;
+import com.prafta.web.leave.promotion.leavepromo01.vo.FirstRoundMetaVO;
 
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -70,6 +80,7 @@ import lombok.extern.slf4j.Slf4j;
 public class WebLeavePromo01ServiceImpl implements WebLeavePromo01Service {
 
     private static final DateTimeFormatter YMD = DateTimeFormatter.ofPattern("yyyyMMdd");
+    private static final String STAGE_FIRST = "FIRST";
     private static final String STAGE_SECOND = "SECOND";
     private static final String DESIGNATOR_COMPANY = "COMPANY";
     private static final String REASON_SECOND = "연차 사용촉진 2차 지정(회사직권)";
@@ -77,6 +88,35 @@ public class WebLeavePromo01ServiceImpl implements WebLeavePromo01Service {
     // 엑셀 업로드 제한(User_01 동일 가드).
     private static final long MAX_UPLOAD_BYTES = 5L * 1024 * 1024; // 5MB
     private static final int MAX_DATA_ROWS = 2000;
+
+    // ── 1차 현황/독촉 파생 기준(작업지시서 §4·§5, 확정 D2·D6·D8) ──
+    //   ⚠️ 날짜 오프셋 연산은 본 서비스(Java)에서만 수행한다. SQL 에 DATE_ADD/INTERVAL 로 옮기지 말 것
+    //      (경계 불일치). 판정 엔진(LeavePromotionServiceImpl)과 같은 값이며 변경 시 양쪽 동시 수정.
+    /** 1차 통지 구간 시작: 만료 6개월 전(지연 통지 판별 기준일 산출에 사용). */
+    private static final int STAGE1_MONTHS_BEFORE = 6;
+    /** 2차 도래 예정: 만료 3개월 전. */
+    private static final int STAGE2_MONTHS_BEFORE = 3;
+    /** 촉진 절차 상한: 만료 2개월 전(D8 — 이 날 포함 이후는 목록·독촉에서 제외). */
+    private static final int PROMOTION_HARD_STOP_MONTHS_BEFORE = 2;
+    /** 근로자 계획 제출 기한(역일, D2 — 근로기준법 제61조 "촉구받은 때부터 10일 이내"). */
+    private static final int PLAN_SUBMIT_DEADLINE_DAYS = 10;
+    /** 구 1차 통지 창 길이(일). 통지일이 (만료-6개월 + 9일)을 넘으면 "지연 통지"(§4 파생 규칙). */
+    private static final int LATE_NOTICE_WINDOW_DAYS = 10;
+    /** 독촉 일괄 요청 상한(남용 방지). */
+    private static final int MAX_REMIND_TARGETS = 200;
+
+    // ── 1차 현황 상태 코드/라벨(서버 산출 — 프론트 재판정 금지) ──
+    private static final String STATUS_NOT_SUBMITTED = "NOT_SUBMITTED";
+    private static final String STATUS_OVERDUE_NOT_SUBMITTED = "OVERDUE_NOT_SUBMITTED";
+    private static final String STATUS_SUBMITTED = "SUBMITTED";
+    private static final String STATUS_LATE_SUBMITTED = "LATE_SUBMITTED";
+
+    // ── 독촉 스킵 사유 코드 ──
+    private static final String SKIP_NOT_TARGET = "NOT_TARGET";
+    private static final String SKIP_NO_AUTH = "NO_AUTH";
+    private static final String SKIP_ROUND_CLOSED = "ROUND_CLOSED";
+    private static final String SKIP_ALREADY_SUBMITTED = "ALREADY_SUBMITTED";
+    private static final String SKIP_ALREADY_REMINDED_TODAY = "ALREADY_REMINDED_TODAY";
 
     private final WebLeavePromo01Mapper webLeavePromo01Mapper;
     private final LeavePromotionMapper leavePromotionMapper;
@@ -165,17 +205,32 @@ public class WebLeavePromo01ServiceImpl implements WebLeavePromo01Service {
             throw new ApiException(LeavePromoErrorCode.LEAVEPROMO_403_001);
         }
 
+        // 기준일은 진입 시 1회만 산출(재산정·회차 종료 판정·마스터 기록이 자정 경계에서 갈리지 않게).
+        LocalDate today = LocalDate.now();
+
         // 3) 2차 도래 기준 만료일 확정(§3-3 재산정 교차체크).
         String baseAvailTo = meta.getBaseAvailToDate();
         if (baseAvailTo == null || baseAvailTo.isBlank()) {
             PromotionTargetResult recomputed =
-                    leavePromotionService.recomputeForUser(cmpnyCd, targetUserCd, LocalDate.now());
+                    leavePromotionService.recomputeForUser(cmpnyCd, targetUserCd, today);
             if (recomputed == null
                     || recomputed.stage() != PromotionTargetResult.PromotionStage.SECOND) {
                 log.info("[webLeavePromo] 2차 미도래 대상 — 지정 거부. target={}", targetUserCd);
                 throw new ApiException(LeavePromoErrorCode.LEAVEPROMO_400_002);
             }
             baseAvailTo = recomputed.baseAvailToDate();
+        }
+
+        // 3-1) 회차 종료 게이트(확정 D8) — 기준 만료일 2개월 전 당일 이후는 촉진 절차 자체가 불가하다
+        //      (근로기준법 §61 2차 통보 기한). 마스터에 만료일이 있으면 위 재산정을 타지 않으므로,
+        //      정상 경로 대부분이 이 검사를 건너뛰고 있었다(qa 지적). 1차 판정·1차 현황 조회·독촉과
+        //      동일 술어를 쓴다 — 셋 중 하나만 바꾸면 경계가 어긋나니 변경 시 4곳을 함께 수정할 것.
+        LocalDate roundAvailTo = parsePromotionYmd(baseAvailTo);
+        if (roundAvailTo == null
+                || !today.isBefore(roundAvailTo.minusMonths(PROMOTION_HARD_STOP_MONTHS_BEFORE))) {
+            log.info("[webLeavePromo] 2차 직권지정 거부(회차 종료 D8) — target={}, baseAvailTo={}",
+                    targetUserCd, baseAvailTo);
+            throw new ApiException(LeavePromoErrorCode.LEAVEPROMO_400_003);
         }
 
         // 4) 날짜 다건 직권지정(SECOND/COMPANY). 대상자 소속 사업장으로 등록(서버 메타).
@@ -210,9 +265,10 @@ public class WebLeavePromo01ServiceImpl implements WebLeavePromo01Service {
         }
 
         // 5) SECOND 회차 마스터 갱신(STATUS=DESIGNATED). 없으면 신규 INSERT(A-2 보고 #5 규약).
-        String today = LocalDate.now().format(YMD);
+        //    기록일은 위에서 1회 산출한 today 를 재사용한다(재산정·판정과 같은 날짜 보장).
+        String todayYmd = today.format(YMD);
         String dedupKey = buildDesignateDedupKey(targetUserCd, baseAvailTo);
-        upsertSecondMaster(cmpnyCd, meta.getSiteCd(), targetUserCd, baseAvailTo, today, dedupKey,
+        upsertSecondMaster(cmpnyCd, meta.getSiteCd(), targetUserCd, baseAvailTo, todayYmd, dedupKey,
                 BigDecimal.valueOf(designated.size()), adminUserCd);
 
         // 6) PUSH 적재(afterCommit 격리 — 지정 본 흐름에 영향 금지). 신규 지정일만 나열.
@@ -625,5 +681,384 @@ public class WebLeavePromo01ServiceImpl implements WebLeavePromo01Service {
             t = request.getTenureType();
         }
         return (t == null || t.isBlank()) ? "ALL" : t;
+    }
+
+    // ============================================================
+    // 1차 현황 조회(작업지시서_연차촉진-1차현황-화면-및-배치활성화 §5-1)
+    // ============================================================
+
+    @Override
+    public PromotionFirstTargetListResponse getFirstTargets(PromotionFirstTargetSearchParam param) {
+        // 사업장 접근 인가(User_03 원장 기반) — 2차 조회와 완전 동일 게이트.
+        siteAccessService.assertSiteAccess(param.gvCmpnyCd(), param.gvUserCd(), param.gvAuthCd(),
+                param.gvSiteCd(), param.siteCd());
+        // 노드 권한 게이트 — master/hr/safe 전사 또는 노드 관리자만(PII 노출 조회 화면).
+        if (!attdCloseService.canManageNode(
+                param.gvAuthCd(), param.gvUserCd(), param.gvCmpnyCd(), param.siteCd(), param.nodeCd())) {
+            log.warn("[webLeavePromo] 1차 현황 조회 권한 없음 — userCd={}, authCd={}, siteCd={}, nodeCd={}",
+                    param.gvUserCd(), param.gvAuthCd(), param.siteCd(), param.nodeCd());
+            throw new ApiException(LeavePromoErrorCode.LEAVEPROMO_403_001);
+        }
+
+        List<PromotionFirstTargetRowResult> rows =
+                webLeavePromo01Mapper.selectFirstTargets(PromotionFirstTargetSearchQuery.from(param));
+
+        // 기준일은 진입 시 1회만 산출(행별 재산출 금지 — 경계 판정 결정성).
+        LocalDate today = LocalDate.now();
+
+        List<PromotionFirstTargetView> views = new ArrayList<>();
+        int notSubmittedCount = 0;
+        int overdueNotSubmittedCount = 0;
+        int lateNoticeCount = 0;
+        int submittedCount = 0;
+        int remindableCount = 0;
+
+        if (rows != null) {
+            for (PromotionFirstTargetRowResult r : rows) {
+                PromotionFirstTargetView v = toFirstTargetView(r, today);
+                if (v == null) {
+                    // 회차 종료(D8) 또는 통지일/만료일 비정상 — 목록에서 제외.
+                    continue;
+                }
+                views.add(v);
+                if (STATUS_NOT_SUBMITTED.equals(v.getStatusCd())) {
+                    notSubmittedCount++;
+                } else if (STATUS_OVERDUE_NOT_SUBMITTED.equals(v.getStatusCd())) {
+                    overdueNotSubmittedCount++;
+                } else {
+                    // SUBMITTED / LATE_SUBMITTED 는 "제출완료" 로 합산.
+                    submittedCount++;
+                }
+                if ("Y".equals(v.getLateNoticeYn())) {
+                    lateNoticeCount++;
+                }
+                if ("Y".equals(v.getRemindableYn())) {
+                    remindableCount++;
+                }
+            }
+        }
+
+        log.info("[webLeavePromo] 1차 현황 조회 — siteCd={}, nodeCd={}, incSub={}, 결과 {}건(미제출 {}, 기한초과 {})",
+                param.siteCd(), param.nodeCd(), param.incSubNodeYn(),
+                views.size(), notSubmittedCount, overdueNotSubmittedCount);
+
+        return PromotionFirstTargetListResponse.builder()
+                .targetList(views)
+                .summary(PromotionFirstTargetListResponse.Summary.builder()
+                        .totalCount(views.size())
+                        .notSubmittedCount(notSubmittedCount)
+                        .overdueNotSubmittedCount(overdueNotSubmittedCount)
+                        .lateNoticeCount(lateNoticeCount)
+                        .submittedCount(submittedCount)
+                        .remindableCount(remindableCount)
+                        .build())
+                .build();
+    }
+
+    /**
+     * raw 1행을 화면 View 로 변환(모든 날짜 오프셋 연산은 여기서만). 회차 종료/데이터 비정상이면 null.
+     *
+     * <p>지정 일수(STAGE1_DESIGNATED_DAYS)는 {@code submittedYn} 파생에만 쓰고 View 에 싣지 않는다(D1).
+     */
+    private PromotionFirstTargetView toFirstTargetView(PromotionFirstTargetRowResult r, LocalDate today) {
+        LocalDate noticed = parsePromotionYmd(r.noticedDate());
+        LocalDate availTo = parsePromotionYmd(r.baseAvailToDate());
+        if (noticed == null || availTo == null) {
+            // 통지일 미기록(비정상) 행은 제출 기한 산출이 불가하므로 조회·독촉 대상에서 제외한다.
+            log.warn("[webLeavePromo] 1차 현황 행 제외(통지일/기준 만료일 비정상) — userCd={}", r.userCd());
+            return null;
+        }
+
+        // D8 — 만료 2개월 전 당일부터는 촉진 절차 불가(경계 = 제외).
+        if (!today.isBefore(availTo.minusMonths(PROMOTION_HARD_STOP_MONTHS_BEFORE))) {
+            return null;
+        }
+
+        LocalDate deadline = noticed.plusDays(PLAN_SUBMIT_DEADLINE_DAYS);
+        String deadlineYmd = deadline.format(YMD);
+        String stage2DueYmd = availTo.minusMonths(STAGE2_MONTHS_BEFORE).format(YMD);
+
+        // 지연 통지 = 통지일이 구 10일 창 종료일(만료-6개월 + 9일)을 넘김(§4 파생 규칙).
+        LocalDate lateNoticeLimit = availTo.minusMonths(STAGE1_MONTHS_BEFORE)
+                .plusDays(LATE_NOTICE_WINDOW_DAYS - 1L);
+        String lateNoticeYn = noticed.isAfter(lateNoticeLimit) ? "Y" : "N";
+
+        BigDecimal designatedDays = r.stage1DesignatedDays();
+        boolean submitted = designatedDays != null && designatedDays.signum() > 0;
+
+        // 회차 스코프(이전 회차분 배제) — 통지일 이전 기록은 이번 회차 것이 아니다.
+        String firstSubmitDate = scopeToRound(r.firstSubmitDateRaw(), r.noticedDate());
+        String lastRemindDate = scopeToRound(r.lastRemindDateRaw(), r.noticedDate());
+        int remindCnt = (lastRemindDate == null || r.remindCntRaw() == null) ? 0 : r.remindCntRaw();
+
+        String statusCd;
+        String statusNm;
+        if (!submitted) {
+            if (!today.isAfter(deadline)) {
+                statusCd = STATUS_NOT_SUBMITTED;
+                statusNm = "미제출";
+            } else {
+                statusCd = STATUS_OVERDUE_NOT_SUBMITTED;
+                statusNm = "기한초과 미제출";
+            }
+        } else if (firstSubmitDate != null && firstSubmitDate.compareTo(deadlineYmd) > 0) {
+            statusCd = STATUS_LATE_SUBMITTED;
+            statusNm = "기한후 제출완료";
+        } else {
+            // 제출 흔적은 있으나 등록일을 특정할 수 없으면 기한 내 제출로 관대 분류(근로자 불이익 추정 금지).
+            statusCd = STATUS_SUBMITTED;
+            statusNm = "제출완료";
+        }
+
+        return PromotionFirstTargetView.builder()
+                .userCd(r.userCd())
+                .userNm(r.userNm())
+                .nodeCd(r.nodeCd())
+                .nodeNm(r.nodeNm())
+                .siteCd(r.siteCd())
+                .siteNm(r.siteNm())
+                .noticedDate(r.noticedDate())
+                .deadlineDate(deadlineYmd)
+                .baseAvailToDate(r.baseAvailToDate())
+                .stage2DueDate(stage2DueYmd)
+                .submittedYn(submitted ? "Y" : "N")
+                .firstSubmitDate(firstSubmitDate)
+                .lateNoticeYn(lateNoticeYn)
+                .loginNotifiedYn(r.loginNotifiedYn())
+                .remindCnt(remindCnt)
+                .lastRemindDate(lastRemindDate)
+                .remindableYn(submitted ? "N" : "Y")
+                .dDay(ChronoUnit.DAYS.between(today, deadline))
+                .statusCd(statusCd)
+                .statusNm(statusNm)
+                .build();
+    }
+
+    /** 집계값(YYYYMMDD)의 회차 스코프 적용. 통지일보다 이전이면 이전 회차분이므로 null. */
+    private String scopeToRound(String ymd, String noticedYmd) {
+        if (ymd == null || ymd.isBlank() || noticedYmd == null || noticedYmd.isBlank()) {
+            return null;
+        }
+        return (ymd.compareTo(noticedYmd) < 0) ? null : ymd;
+    }
+
+    /** 촉진 날짜(YYYYMMDD) 파싱. 형식 오류/미기록이면 null. */
+    private LocalDate parsePromotionYmd(String ymd) {
+        if (ymd == null || ymd.length() != 8) {
+            return null;
+        }
+        try {
+            return LocalDate.parse(ymd, YMD);
+        } catch (Exception e) {
+            return null;
+        }
+    }
+
+    // ============================================================
+    // 1차 독촉 재발송(작업지시서_연차촉진-1차현황-화면-및-배치활성화 §5-2, 확정 D4)
+    // ============================================================
+
+    @Override
+    public PromotionRemindResultResponse remind(PromotionRemindRequest request, TokenInfo tokenInfo) {
+        if (request == null || tokenInfo == null
+                || tokenInfo.gv_cmpnyCd() == null || tokenInfo.gv_cmpnyCd().isEmpty()
+                || tokenInfo.gv_siteCd() == null || tokenInfo.gv_siteCd().isEmpty()) {
+            throw new ApiException(CommonErrorCode.COMMON_400_001);
+        }
+        // 중복 제거(같은 대상 2회 발송 방지) + null/blank 무시.
+        LinkedHashSet<String> targets = new LinkedHashSet<>();
+        if (request.getUserCds() != null) {
+            for (String u : request.getUserCds()) {
+                if (u != null && !u.isBlank()) {
+                    targets.add(u.trim());
+                }
+            }
+        }
+        if (targets.isEmpty() || targets.size() > MAX_REMIND_TARGETS) {
+            throw new ApiException(LeavePromoErrorCode.LEAVEPROMO_400_001);
+        }
+
+        String cmpnyCd = tokenInfo.gv_cmpnyCd();
+        String gvSiteCd = tokenInfo.gv_siteCd();
+        String adminUserCd = tokenInfo.gv_userCd();
+        String adminAuthCd = tokenInfo.gv_authCd();
+        // 대상 사업장 = 화면 조회 조건(미전달이면 세션 사업장). 1차 현황 조회가 원장 인가만 통과하면
+        // 타 사업장을 반환하므로, 여기서도 같은 사업장을 대상으로 삼아야 조회/발송 범위가 어긋나지 않는다.
+        String targetSiteCd = (request.getSiteCd() != null && !request.getSiteCd().isBlank())
+                ? request.getSiteCd().trim()
+                : gvSiteCd;
+        // 사업장 접근 인가(User_03 원장 기반) — 조회 EP 와 동일 게이트. 클라이언트가 보낸 siteCd 는
+        // 이 검증을 통과한 뒤에만 대상자 재조회 스코프로 쓰인다(IDOR 방어).
+        siteAccessService.assertSiteAccess(cmpnyCd, adminUserCd, adminAuthCd, gvSiteCd, targetSiteCd);
+
+        // 기준일/키 접미는 진입 시 1회 산출(결정성 — 자정 경계에서 키가 갈리지 않게).
+        LocalDate today = LocalDate.now();
+        String todayYmd = today.format(YMD);
+        boolean singleRequest = targets.size() == 1;
+
+        int sentCount = 0;
+        int failedCount = 0;
+        List<PromotionRemindResultResponse.SkippedItem> skippedItems = new ArrayList<>();
+        Map<String, Integer> reasonStat = new LinkedHashMap<>();
+
+        for (String targetUserCd : targets) {
+            try {
+                // ① 대상자 메타 서버 재조회(사업장/부서/회차) — 클라이언트 값 불신뢰(IDOR).
+                //    스코프 사업장은 위에서 인가 검증을 마친 targetSiteCd 다.
+                FirstRoundMetaVO meta =
+                        webLeavePromo01Mapper.selectFirstRoundMeta(cmpnyCd, targetSiteCd, targetUserCd);
+                if (meta == null) {
+                    addSkip(skippedItems, reasonStat, targetUserCd, SKIP_NOT_TARGET);
+                    continue;
+                }
+
+                // ② 대상자 소속 부서 관리 권한 재검증(서버 조회 사업장 기준).
+                if (!attdCloseService.canManageUser(
+                        adminAuthCd, adminUserCd, cmpnyCd, meta.getSiteCd(), targetUserCd)) {
+                    log.warn("[webLeavePromo] 1차 독촉 권한 없음 — admin={}, target={}, siteCd={}",
+                            adminUserCd, targetUserCd, meta.getSiteCd());
+                    if (singleRequest) {
+                        throw new ApiException(LeavePromoErrorCode.LEAVEPROMO_403_001);
+                    }
+                    addSkip(skippedItems, reasonStat, targetUserCd, SKIP_NO_AUTH);
+                    continue;
+                }
+
+                LocalDate availTo = parsePromotionYmd(meta.getBaseAvailToDate());
+                LocalDate noticed = parsePromotionYmd(meta.getNoticedDate());
+                if (availTo == null || noticed == null) {
+                    // 통지일 미기록(비정상) — 제출 기한 안내가 불가하므로 발송하지 않는다.
+                    log.warn("[webLeavePromo] 1차 독촉 제외(통지일/기준 만료일 비정상) — target={}", targetUserCd);
+                    addSkip(skippedItems, reasonStat, targetUserCd, SKIP_NOT_TARGET);
+                    continue;
+                }
+
+                // ③ 회차 유효(D8) — 만료 2개월 전 당일 이후는 촉진 절차 불가.
+                if (!today.isBefore(availTo.minusMonths(PROMOTION_HARD_STOP_MONTHS_BEFORE))) {
+                    addSkip(skippedItems, reasonStat, targetUserCd, SKIP_ROUND_CLOSED);
+                    continue;
+                }
+
+                // ④ 미제출자만 — 이미 이행한 근로자에 대한 오발송 금지(공통 §10.3).
+                BigDecimal designatedDays = meta.getStage1DesignatedDays();
+                if (designatedDays != null && designatedDays.signum() > 0) {
+                    addSkip(skippedItems, reasonStat, targetUserCd, SKIP_ALREADY_SUBMITTED);
+                    continue;
+                }
+
+                // ⑤ 1일 1회 — 사전 count 는 UX 용이고 최종 권위는 UK_NOTI_OUTBOX_DEDUP 이다.
+                String dedupKey = buildRemindDedupKey(targetUserCd, meta.getBaseAvailToDate(), todayYmd);
+                if (webLeavePromo01Mapper.countRemindToday(cmpnyCd, dedupKey) > 0) {
+                    addSkip(skippedItems, reasonStat, targetUserCd, SKIP_ALREADY_REMINDED_TODAY);
+                    continue;
+                }
+
+                // ⑥ outbox 1행 적재(PENDING). 마스터(NOTICED_DATE 등)는 어떤 경우에도 갱신하지 않는다(D4).
+                boolean inserted = insertRemindOutbox(cmpnyCd, meta.getSiteCd(), targetUserCd,
+                        noticed.plusDays(PLAN_SUBMIT_DEADLINE_DAYS), dedupKey, adminUserCd);
+                if (inserted) {
+                    sentCount++;
+                } else {
+                    // 동시 클릭 경합 — UNIQUE 충돌을 "오늘 이미 발송" 으로 흡수.
+                    addSkip(skippedItems, reasonStat, targetUserCd, SKIP_ALREADY_REMINDED_TODAY);
+                }
+            } catch (ApiException e) {
+                throw e;
+            } catch (Exception e) {
+                // 사용자 단위 격리 — 한 건 실패가 나머지 발송을 막지 않는다.
+                log.error("[webLeavePromo] 1차 독촉 처리 실패 — target={}", targetUserCd, e);
+                failedCount++;
+            }
+        }
+
+        log.info("[webLeavePromo] 1차 독촉 발송 — admin={}, 요청 {}건, 발송 {}, 스킵 {}, 실패 {}, 사유별={}",
+                adminUserCd, targets.size(), sentCount, skippedItems.size(), failedCount, reasonStat);
+
+        return PromotionRemindResultResponse.builder()
+                .sentCount(sentCount)
+                .skippedCount(skippedItems.size())
+                .failedCount(failedCount)
+                .skippedItems(skippedItems)
+                .build();
+    }
+
+    /**
+     * 독촉 1일 1회 멱등 키(대상·회차·날짜 단위). 신규 접두 PROMO_REMIND_ 를 쓰고, 기존 회차 키
+     * (PROMO_NOTICE_ 접두 / PROMO_DESIG_ 접두) 포맷은 절대 건드리지 않는다 — 앱이 같은 포맷을 조립한다.
+     */
+    private String buildRemindDedupKey(String userCd, String availTo, String todayYmd) {
+        return "PROMO_REMIND_" + userCd + "_" + availTo + "_" + todayYmd;
+    }
+
+    /** 스킵 1건 집계(사유 코드/라벨). 응답·로그 어디에도 평문 이름을 넣지 않는다. */
+    private void addSkip(List<PromotionRemindResultResponse.SkippedItem> items,
+                         Map<String, Integer> reasonStat, String userCd, String reasonCd) {
+        items.add(PromotionRemindResultResponse.SkippedItem.builder()
+                .userCd(userCd)
+                .reasonCd(reasonCd)
+                .reasonNm(resolveSkipReasonNm(reasonCd))
+                .build());
+        reasonStat.merge(reasonCd, 1, Integer::sum);
+    }
+
+    /** 스킵 사유 라벨(한국어). */
+    private String resolveSkipReasonNm(String reasonCd) {
+        return switch (reasonCd) {
+            case SKIP_NOT_TARGET -> "1차 통지 대상이 아닙니다.";
+            case SKIP_NO_AUTH -> "해당 근로자에 대한 관리 권한이 없습니다.";
+            case SKIP_ROUND_CLOSED -> "촉진 가능 기간이 지났습니다.";
+            case SKIP_ALREADY_SUBMITTED -> "이미 사용 계획을 제출했습니다.";
+            case SKIP_ALREADY_REMINDED_TODAY -> "오늘 이미 독촉을 발송했습니다.";
+            default -> "발송 대상이 아닙니다.";
+        };
+    }
+
+    /**
+     * 독촉 PUSH outbox 1행 적재(PENDING). 채번/INSERT 는 LeaveDashboardMapper 재사용.
+     *
+     * @return 신규 적재 true / DEDUP_KEY UNIQUE 충돌(오늘 이미 발송) false
+     */
+    private boolean insertRemindOutbox(String cmpnyCd, String siteCd, String userCd,
+                                       LocalDate deadline, String dedupKey, String operatorNo) {
+        String userNm = resolveUserNm(cmpnyCd, userCd);
+        String deadlineYmd = deadline.format(YMD);
+        String body = String.format(LeavePromotionNotiConst.REMIND_BODY_FORMAT,
+                userNm, formatDateList(List.of(deadlineYmd)));
+
+        NotiOutboxInsertVO outbox = new NotiOutboxInsertVO();
+        outbox.setNotiId(leaveDashboardMapper.selectNextNotiId(cmpnyCd));
+        outbox.setCmpnyCd(cmpnyCd);
+        outbox.setSiteCd(siteCd);
+        outbox.setTargetUserCd(userCd);
+        outbox.setNotiType(LeavePromotionNotiConst.NOTI_TYPE_PROMOTION_REMIND);
+        outbox.setChannel(LeavePromotionNotiConst.CHANNEL_PUSH);
+        outbox.setTitle(LeavePromotionNotiConst.REMIND_TITLE);
+        outbox.setBody(body);
+        outbox.setDataPayload(buildRemindPayload(userCd, deadlineYmd));
+        outbox.setSendStatus(LeavePromotionNotiConst.SEND_STATUS_PENDING);
+        outbox.setDedupKey(dedupKey);
+        outbox.setInsertNo(operatorNo);
+        try {
+            leaveDashboardMapper.insertNotiOutbox(outbox);
+            return true;
+        } catch (DuplicateKeyException dup) {
+            log.info("[webLeavePromo] 1차 독촉 중복 적재 흡수(오늘 이미 발송) — userCd={}", userCd);
+            return false;
+        }
+    }
+
+    /** 독촉 DATA_PAYLOAD(라우팅 키만, 평문 이름 미포함). 실패 시 빈 객체 폴백. */
+    private String buildRemindPayload(String userCd, String deadlineYmd) {
+        Map<String, Object> data = new LinkedHashMap<>();
+        data.put("type", LeavePromotionNotiConst.NOTI_TYPE_PROMOTION_REMIND);
+        data.put("userCd", userCd);
+        data.put("stage", STAGE_FIRST);
+        data.put("deadlineDate", deadlineYmd);
+        try {
+            return objectMapper.writeValueAsString(data);
+        } catch (Exception e) {
+            log.warn("[webLeavePromo] 독촉 payload 직렬화 실패 — userCd={}", userCd, e);
+            return "{}";
+        }
     }
 }

@@ -21,6 +21,7 @@ import com.prafta.web.attd.attd07.result.ConfirmedLeaveResult;
 import com.prafta.web.attd.attd07.result.DayAttdSegmentResult;
 import com.prafta.web.attd.attd07.result.DailyAttdDetailHistoryResult;
 import com.prafta.web.attd.attd07.result.DailyAttdDetailsResult;
+import com.prafta.web.attd.attd07.result.DailyLeaveChangeReqResult;
 import com.prafta.web.attd.attd07.result.DailyOvertimeResult;
 import com.prafta.web.attd.attd07.result.MonthlyAttdListResult;
 import com.prafta.web.attd.attd07.result.MonthlyAttdReqResult;
@@ -99,6 +100,33 @@ public interface Attd07Mapper {
      *   스코프는 일자상세와 동일(CMPNY/SITE/USER), 진입부 2단 권한 가드 승계.
      */
     List<ConfirmedLeaveResult> selectDailyConfirmedLeave(DailyAttdDetailsQuery query);
+
+    /**
+     * 그날(workYmd) 걸려 있는 연차 변경(이동/삭제) 활성 요청 — TB_LEAVE_CHANGE_REQUEST.
+     *
+     * <p>근태 요청(TB_USER_ATTD_REQ)과 별개 테이블이라 종전엔 일자 상세 팝업에서 보이지도 처리되지도
+     * 않았다(Attd_13 / Attd_10 전용). 활성 상태(REQUESTED:근로자 응답대기 / AGREED:관리자 확인대기) 중
+     * <b>출발일(연차 사용일) 또는 이동 대상일</b>이 조회 일자와 일치하는 건을 내려, 근태 요청과 동일하게
+     * 양쪽 셀에서 같은 요청이 보이게 한다.
+     *
+     * <p>스코프는 일자상세와 동일(CMPNY/SITE/대상 USER). 진입부 2단 권한 가드
+     * (canManageNode + selectUserExistInCmpnySite) 통과 후 호출되므로 추가 권한 코드 불필요
+     * (selectDailyConfirmedLeave 와 동일 근거).
+     */
+    List<DailyLeaveChangeReqResult> selectDailyLeaveChangeReq(DailyAttdDetailsQuery query);
+
+    /**
+     * 월간 연차 변경(이동/삭제) 활성 요청 요약 — 캘린더 셀 강조용.
+     *
+     * <p>{@link #selectMonthlyAttdReqSummary} 와 동일한 부서 트리(node_tree) 스코프를 쓰되,
+     * TB_LEAVE_CHANGE_REQUEST 에는 NODE_CD 가 없으므로 대상자(TARGET_USER_CD)의 TB_USER.NODE_CD 로
+     * 스코프를 판정한다. MOVE 는 출발일·이동대상일 <b>두 행</b>(둘 다 조회 월에 속할 때), DELETE 는
+     * 출발일 1행을 내린다 — 근태 요청처럼 관련된 모든 셀이 강조되게 하기 위함.
+     *
+     * <p>결과 타입은 (식별자, 일자, 사용자) 3컬럼이라 {@link MonthlyAttdReqSummaryResult} 를 재사용한다
+     * (reqId 자리에 CHANGE_REQ_ID). 근태 요청 목록과는 응답에서 별도 리스트로 분리해 카운트 중복을 막는다.
+     */
+    List<MonthlyAttdReqSummaryResult> selectMonthlyLeaveChangeReqSummary(MonthlyAttdListQuery query);
 
     /**
      * PRAFTA-003-6: 일자 상세 조회 시 함께 노출되는 OT(초과근무) 리스트.

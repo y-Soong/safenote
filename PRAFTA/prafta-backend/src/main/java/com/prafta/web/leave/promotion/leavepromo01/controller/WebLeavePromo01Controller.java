@@ -21,14 +21,19 @@ import org.springframework.web.multipart.MultipartFile;
 import com.prafta.common.cmm.leave.promotion.autobatch.BatchProposal;
 import com.prafta.common.security.JwtUtil;
 import com.prafta.web.leave.promotion.leavepromo01.application.param.PromotionDesignateParam;
+import com.prafta.web.leave.promotion.leavepromo01.application.param.PromotionFirstTargetSearchParam;
 import com.prafta.web.leave.promotion.leavepromo01.application.param.PromotionTargetSearchParam;
 import com.prafta.web.leave.promotion.leavepromo01.dto.request.AutoBatchCommitRequest;
 import com.prafta.web.leave.promotion.leavepromo01.dto.request.AutoBatchPreviewRequest;
 import com.prafta.web.leave.promotion.leavepromo01.dto.request.PromotionDesignateRequest;
+import com.prafta.web.leave.promotion.leavepromo01.dto.request.PromotionFirstTargetSearchRequest;
+import com.prafta.web.leave.promotion.leavepromo01.dto.request.PromotionRemindRequest;
 import com.prafta.web.leave.promotion.leavepromo01.dto.request.PromotionTargetSearchRequest;
 import com.prafta.web.leave.promotion.leavepromo01.dto.response.AutoBatchCommitResponse;
 import com.prafta.web.leave.promotion.leavepromo01.dto.response.PromotionDesignateResultResponse;
 import com.prafta.web.leave.promotion.leavepromo01.dto.response.PromotionExcelUploadResponse;
+import com.prafta.web.leave.promotion.leavepromo01.dto.response.PromotionFirstTargetListResponse;
+import com.prafta.web.leave.promotion.leavepromo01.dto.response.PromotionRemindResultResponse;
 import com.prafta.web.leave.promotion.leavepromo01.dto.response.PromotionTargetListResponse;
 import com.prafta.web.leave.promotion.leavepromo01.service.WebLeavePromo01Service;
 
@@ -40,8 +45,10 @@ import lombok.extern.slf4j.Slf4j;
  *
  * <p>프론트 호출 경로(자동 프리픽스 com.prafta.web.* → /prafta/webApi):
  * <ul>
- *   <li>GET  /webApi/leavepromo01/targets   — 2차 대상자 + 미사용 연차수 조회(노드 권한)</li>
- *   <li>POST /webApi/leavepromo01/designate — 사용자 1명에 날짜 다건 직권지정 + PUSH</li>
+ *   <li>GET  /webApi/leavepromo01/targets       — 2차 대상자 + 미사용 연차수 조회(노드 권한)</li>
+ *   <li>POST /webApi/leavepromo01/designate     — 사용자 1명에 날짜 다건 직권지정 + PUSH</li>
+ *   <li>GET  /webApi/leavepromo01/first-targets — 1차 통지 대상자 현황 + 요약 카운트</li>
+ *   <li>POST /webApi/leavepromo01/remind        — 1차 미제출자 계획 제출 독촉(재안내) PUSH</li>
  * </ul>
  * 인증/식별: jwtUtil.getAllClaimsAsMap(Authorization) → TokenInfo. siteCd 세션 고정 검증·노드 권한은
  *   Param/서비스에서 강제(IDOR). 근로자 지정일 이동은 attd13 동의흐름(C) 재사용 — 본 컨트롤러 범위 외.
@@ -74,6 +81,30 @@ public class WebLeavePromo01Controller {
 
         PromotionDesignateResultResponse response = webLeavePromo01Service.designate(
                 PromotionDesignateParam.from(request, jwtUtil.getAllClaimsAsMap(authorization)));
+        return ResponseEntity.status(HttpStatus.OK).body(response);
+    }
+
+    // ===== 1차 현황(작업지시서_연차촉진-1차현황-화면-및-배치활성화 §5) =====
+
+    /** 1차 통지 대상자 현황 + 요약 카운트 조회(조회조건·사업장 인가·노드 권한). */
+    @GetMapping("/first-targets")
+    public ResponseEntity<?> getFirstTargets(
+            @ModelAttribute PromotionFirstTargetSearchRequest request,
+            @RequestHeader(value = "Authorization", required = false) String authorization) {
+
+        PromotionFirstTargetListResponse response = webLeavePromo01Service.getFirstTargets(
+                PromotionFirstTargetSearchParam.from(request, jwtUtil.getAllClaimsAsMap(authorization)));
+        return ResponseEntity.status(HttpStatus.OK).body(response);
+    }
+
+    /** 1차 미제출자 계획 제출 독촉(재안내) PUSH 재발송. 사업장/부서는 서버가 재조회로 확정(IDOR). */
+    @PostMapping("/remind")
+    public ResponseEntity<?> remind(
+            @RequestBody PromotionRemindRequest request,
+            @RequestHeader(value = "Authorization", required = false) String authorization) {
+
+        PromotionRemindResultResponse response = webLeavePromo01Service.remind(
+                request, jwtUtil.getAllClaimsAsMap(authorization));
         return ResponseEntity.status(HttpStatus.OK).body(response);
     }
 

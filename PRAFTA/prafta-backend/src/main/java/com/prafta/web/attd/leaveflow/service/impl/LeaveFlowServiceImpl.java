@@ -18,12 +18,14 @@ import com.prafta.common.cmm.leave.service.LeaveDeductionService;
 import com.prafta.common.cmm.leave.service.LeaveGrantEngineService;
 import com.prafta.common.cmm.leave.service.LeaveGrantEngineService.BorrowFamily;
 import com.prafta.common.cmm.leave.service.LeaveHourlyResettleService;
+import com.prafta.common.cmm.leave.service.LeaveRemnantCoverService;
 import com.prafta.common.cmm.leave.util.FiscalYearUtils;
 import com.prafta.common.cmm.leave.util.HourlyLeaveChargeUtils;
 import com.prafta.common.cmm.leave.vo.BorrowGrantResultVO;
 import com.prafta.common.cmm.leave.vo.BorrowGrantResultVO.BorrowGrantSlotVO;
 import com.prafta.common.cmm.leave.vo.HourlyChargeVO;
 import com.prafta.common.cmm.leave.vo.LeavePolicyVO;
+import com.prafta.common.cmm.leave.vo.RemnantTriggerPlanVO;
 import com.prafta.common.cmm.push.ApprovalResultNotiService;
 import com.prafta.common.error.attd.AttdErrorCode;
 import com.prafta.common.error.common.CommonErrorCode;
@@ -116,6 +118,8 @@ public class LeaveFlowServiceImpl implements LeaveFlowService {
     private final LeaveHourlyResettleService leaveHourlyResettleService;
     /** LC-07: preview 응답의 convMinutes(고정단위 케이스) — 신청 대상일 기준 환산시간(F4) 단일 출처. */
     private final LeaveConversionPolicyService leaveConversionPolicyService;
+    /** PC-05/06: 짜투리 잔여 보전 — 발동 판정(D5)·발동 처리(D6)·회수(D7) 단일 출처(앱과 공유 빈). */
+    private final LeaveRemnantCoverService leaveRemnantCoverService;
 
     @Override
     @Transactional
@@ -254,11 +258,15 @@ public class LeaveFlowServiceImpl implements LeaveFlowService {
             leaveGrantEngineService.assertBorrowWorkYmdWithinExpiry(cmpny, user, hireDate, workYmd, borrowFamily);
         }
 
-        List<GrantCharge> charges; // 차감 대상(부여 ID + 일수). '01'은 [(null, leaveDays)].
+        List<GrantCharge> charges = null; // 차감 대상(부여 ID + 일수). '01'은 [(null, leaveDays)]. 짜투리 발동 시 null.
+        RemnantTriggerPlanVO remnantPlan = null; // PC-05: 짜투리 발동 계획(발동 시 charges 대신 사용)
+        Integer hourlyConv = null;       // 시간차 분모(발동 판정 입력 — calcHourlyCharge 결과 재사용)
         String lockKey = null;
         String dayLockKey = null;
+        String remnantLockKey = null;
         boolean lockDeferred = false;    // '01' lock 해제가 afterCompletion 에 등록됐는지
         boolean dayLockDeferred = false; // leaveDay lock 해제가 afterCompletion 에 등록됐는지
+        boolean remnantLockDeferred = false; // leaveRemnant lock 해제가 afterCompletion 에 등록됐는지
         try {
             if (hourlyUnit) {
                 // F5: 같은 사용자·같은 날 시간차 누적 판정 직렬화 — leave01 advisory lock 패턴 재사용.
@@ -278,6 +286,7 @@ public class LeaveFlowServiceImpl implements LeaveFlowService {
                     throw new ApiException(AttdErrorCode.ATTD_400_052);
                 }
                 leaveDays = hc.chargeDays();
+                hourlyConv = hc.convMinutes(); // PC-05: 발동 판정 입력(분모 재조회 없이 재사용)
                 log.info("[leaveflow] 시간차 차감 산출: userCd={}, workYmd={}, {}분(누적 {}분), conv={}, "
                                 + "charge={}, dayTotal={}, 하한={}, 캡={}",
                         user, workYmd, leaveMinutes, hc.cumMinutesAfter(), hc.convMinutes(),
@@ -343,18 +352,47 @@ public class LeaveFlowServiceImpl implements LeaveFlowService {
                 // prafta-com-011-2 (Q1=b): 잔여 우선 차감 + 부족분만 가불.
                 charges = resolveBorrowCharges(cmpny, user, leaveCd, workYmd, leaveDays, borrowFamily, hireDate, user);
             } else {
-                DeductibleGrantVO grant = leaveFlowMapper.selectDeductibleGrant(cmpny, user, leaveCd, workYmd, leaveDays);
-                if (grant == null) {
-                    throw new ApiException(AttdErrorCode.ATTD_400_051);
+                // PC-02(D8): 일반 신청 분할 차감 — 단일 부여 전량 충당(selectDeductibleGrant 단건)에서
+                //   만료 임박순 다부여 분할 충당으로 교체(조각 부여 교착 해소, resolveBorrowCharges
+                //   잔여 우선 루프와 동일 패턴 — 가불 없이). 합산 잔여 부족이면 기존 ATTD_400_051 유지.
+                // PC-05(D3~D6): 잔여 부족 지점에서 짜투리 발동을 판정해 충족 시 거부 대신 발동 처리(앱 미러).
+                if (leaveDays.signum() > 0
+                        && sumDeductibleRemaining(cmpny, user, leaveCd, workYmd).compareTo(leaveDays) < 0) {
+                    // N9: 발동 판정~기록을 사용자 단위 advisory lock 으로 직렬화.
+                    //   시간차 신청이면 위 leaveDay lock 이후 획득(획득 순서 leaveDay → leaveRemnant 고정 — 데드락 방지).
+                    remnantLockKey = LeaveRemnantCoverService.remnantLockKey(cmpny, user);
+                    acquireRemnantLock(remnantLockKey);
+                    remnantLockDeferred = AdvisoryLockTxUtils.deferReleaseToAfterCompletion(
+                            remnantLockKey, this::releaseRemnantLock);
+                    Integer convForRemnant = (hourlyConv != null)
+                            ? hourlyConv
+                            : leaveConversionPolicyService.resolvePersonalConvMinutes(cmpny, user, workYmd);
+                    remnantPlan = leaveRemnantCoverService.evaluateTrigger(
+                            cmpny, user, workYmd, leaveCd, unit, leaveMinutes, leaveDays, convForRemnant);
+                    if (remnantPlan == null) {
+                        log.info("[leaveflow] 연차 신청 거부: 합산 잔여 부족(짜투리 발동 비대상) "
+                                        + "(userCd={}, leaveCd={}, needed={})",
+                                user, leaveCd, leaveDays.toPlainString());
+                        throw new ApiException(AttdErrorCode.ATTD_400_051);
+                    }
+                    // D6: 실제 차감 = 잔여 전액 — 요청(REQ.LEAVE_DAYS)·통보도 실차감 기준(원장·표시 정합).
+                    leaveDays = remnantPlan.remnantDays();
+                } else {
+                    charges = resolveGeneralCharges(cmpny, user, leaveCd, workYmd, leaveDays);
                 }
-                charges = List.of(new GrantCharge(grant.grantId(), leaveDays));
             }
 
         // 5) 요청 생성 (REQ_TYPE='05'). 결재 Y면 신청('01'), N이면 즉시 승인('02').
+        //    NODE_CD: 종전엔 본문값(p.nodeCd())을 그대로 저장했다. 이 값은 위조 가능하고, 부서 스코프
+        //    판정(결재 대상·부서 지정 마감 차단·캘린더 강조)에 쓰이므로 남의 부서로 밀어넣을 여지가 있었다.
+        //    앱 경로(AppLeaveFlowServiceImpl submitLeaveCore)와 동일하게 서버가 직접 조회한 소속부서를
+        //    저장한다. 신청은 본인 전용(LeaveApplyParam 이 userCd 를 토큰에서 강제)이라 대행 시나리오가
+        //    없고, 신청 시점 조회이므로 '요청 시점 스냅샷' 의미도 그대로다(이후 소속이동에도 불변).
+        String reqNodeCd = attdCloseService.resolveUserNodeCd(cmpny, site, user);
         String reqId = leaveFlowMapper.selectNextReqId(cmpny);
         String reqStatus = aprvRequired ? REQ_APPLIED : REQ_APPROVED;
         leaveFlowMapper.insertLeaveReq(new LeaveReqInsertCommand(
-                reqId, cmpny, site, user, reqStatus, p.reason(), workYmd, p.nodeCd(),
+                reqId, cmpny, site, user, reqStatus, p.reason(), workYmd, reqNodeCd,
                 workYmd, startTime, workYmd, endTime, p.leaveType(), leaveDays, user));
 
         // 6) 결재 Y → 라인 일괄 생성. 자기 승인 원칙(§9.5): 본인이 결재자인 단계는
@@ -423,21 +461,28 @@ public class LeaveFlowServiceImpl implements LeaveFlowService {
         //    '01'(사용자 신청)은 grantId=null → GRANT 가 없으므로 recomputeGrantUsedDays 생략(잔여=회계연도 사용분 파생).
         //    leaveMinutes 는 분할 시 모호하므로 첫 charge 에만 싣는다(가불은 종일 위주, 표시·집계는 일수 기준).
         String leaveId = null; // 무결재 즉시확정 통보(notifyLeaveUsedNoAprv)용 — 마지막 INSERT 한 사용기록 ID.
-        boolean firstCharge = true;
-        for (GrantCharge charge : charges) {
-            leaveId = leaveFlowMapper.selectNextLeaveId(cmpny);
-            LeaveUseVO use = LeaveUseVO.builder()
-                    .leaveId(leaveId).cmpnyCd(cmpny).siteCd(site).userCd(user).leaveCd(leaveCd)
-                    .reqId(reqId).grantId(charge.grantId())
-                    .startDate(workYmd).startTime(startTime).endDate(workYmd).endTime(endTime)
-                    .useUnitType(unit).leaveDays(charge.days()).leaveMinutes(firstCharge ? leaveMinutes : null)
-                    .leaveReason(p.reason()).leaveStatus(USE_CONFIRMED).insertNo(user)
-                    .build();
-            leaveFlowMapper.insertLeaveUse(use);
-            if (charge.grantId() != null) {
-                leaveFlowMapper.recomputeGrantUsedDays(cmpny, charge.grantId(), user);
+        if (remnantPlan != null) {
+            // PC-05(D6): 짜투리 발동 — 잔여 전액을 대상 5종 부여로 분할 차감(use 행: 신청 REQ_ID·단위,
+            //   LEAVE_CD 는 부여 귀속) + 회사 부담분 TB_LEAVE_REMNANT_COVER 기록 + 영향 GRANT 재집계.
+            leaveId = leaveRemnantCoverService.applyTrigger(cmpny, site, user, workYmd, unit,
+                    startTime, endTime, leaveMinutes, p.reason(), reqId, remnantPlan, user);
+        } else {
+            boolean firstCharge = true;
+            for (GrantCharge charge : charges) {
+                leaveId = leaveFlowMapper.selectNextLeaveId(cmpny);
+                LeaveUseVO use = LeaveUseVO.builder()
+                        .leaveId(leaveId).cmpnyCd(cmpny).siteCd(site).userCd(user).leaveCd(leaveCd)
+                        .reqId(reqId).grantId(charge.grantId())
+                        .startDate(workYmd).startTime(startTime).endDate(workYmd).endTime(endTime)
+                        .useUnitType(unit).leaveDays(charge.days()).leaveMinutes(firstCharge ? leaveMinutes : null)
+                        .leaveReason(p.reason()).leaveStatus(USE_CONFIRMED).insertNo(user)
+                        .build();
+                leaveFlowMapper.insertLeaveUse(use);
+                if (charge.grantId() != null) {
+                    leaveFlowMapper.recomputeGrantUsedDays(cmpny, charge.grantId(), user);
+                }
+                firstCharge = false;
             }
-            firstCharge = false;
         }
 
         // 결재 Y인데 전 단계가 본인 자동승인이면 요청 즉시 확정(§9.5 자기 승인 원칙)
@@ -475,6 +520,9 @@ public class LeaveFlowServiceImpl implements LeaveFlowService {
             if (dayLockKey != null && !dayLockDeferred) {
                 releaseLeaveDayLock(dayLockKey);
             }
+            if (remnantLockKey != null && !remnantLockDeferred) {
+                releaseRemnantLock(remnantLockKey);
+            }
         }
     }
 
@@ -501,6 +549,7 @@ public class LeaveFlowServiceImpl implements LeaveFlowService {
         boolean capApplied = false;
         Integer convFromCharge = null; // 시간차는 calcHourlyCharge 가 이미 분모를 조회하므로 재사용
         BigDecimal floorDays = null; // 발동 마일스톤 요금(0.25/0.5/1.0) — FE 하한 안내 단위 분기용(미발동 null)
+        Integer previewMinutes = null; // 시간차 신청 분(짜투리 발동 판정 입력 — PC-05)
 
         if (UNIT_FULL.equals(unit)) {
             charge = new BigDecimal("1.00000");
@@ -553,6 +602,7 @@ public class LeaveFlowServiceImpl implements LeaveFlowService {
             capApplied = hc.capApplied();
             convFromCharge = hc.convMinutes();
             floorDays = hc.floorDays();
+            previewMinutes = minutes;
         } else {
             throw new ApiException(AttdErrorCode.ATTD_400_054);
         }
@@ -582,6 +632,7 @@ public class LeaveFlowServiceImpl implements LeaveFlowService {
         // 5) 잔여 부족 판정 — 에러가 아니라 플래그(FE 사전 경고, §3-3 잔여 부족 반려 해소).
         //    가불(isBorrow)은 preview 비대상(가불은 종일/반차 전용 + 결재 강제 — 잔여 기준만 판정).
         boolean insufficient = false;
+        boolean grantBased = false; // 부여 기반 신청 여부(짜투리 발동 preview 대상 — PC-05)
         if (charge.signum() > 0) {
             boolean userApplyType = LEAVE_TYPE_USER_APPLY.equals(type.leaveType()) && !statutory;
             if (userApplyType) {
@@ -603,19 +654,43 @@ public class LeaveFlowServiceImpl implements LeaveFlowService {
                     insufficient = used.add(charge).compareTo(BigDecimal.valueOf(maxAplyDays)) > 0;
                 }
             } else {
-                // 부여 기반: 차감 가능 GRANT 유무. (FOR UPDATE SQL 재사용 — 비트랜잭션 preview 라
-                //   autocommit 으로 행 잠금이 즉시 해제되어 실질 잠금 부작용 없음.)
-                insufficient = (leaveFlowMapper.selectDeductibleGrant(cmpny, user, leaveCd, workYmd, charge) == null);
+                // PC-02(D8): 부여 기반 — 합산 잔여(만료 임박순 전 부여) 기준으로 교체(분할 차감과 동일 판정).
+                //   (FOR UPDATE SQL 재사용 — 비트랜잭션 preview 라 autocommit 으로 행 잠금이 즉시
+                //   해제되어 실질 잠금 부작용 없음 — 기존 단건 판정과 동일 관례.)
+                grantBased = true;
+                insufficient = sumDeductibleRemaining(cmpny, user, leaveCd, workYmd).compareTo(charge) < 0;
             }
         }
 
-        int conv = (convFromCharge != null)
+        // PC-03(N7·N8): convMinutes = 대상일 기준 본인 분모. 시간차는 calcHourlyCharge 가 이미
+        //   조회(산출 불가면 ATTD_400_193 전파), 고정단위(종일/반차/반반차)는 표기 전용이라
+        //   산출 불가 시 480 폴백(FE formatLeaveDays 폴백과 정합).
+        Integer convPersonal = (convFromCharge != null)
                 ? convFromCharge
-                : leaveConversionPolicyService.selectConversionMinutes(cmpny, workYmd);
+                : leaveConversionPolicyService.resolvePersonalConvMinutes(cmpny, user, workYmd);
+        int conv = (convPersonal != null) ? convPersonal : LeaveConversionPolicyService.DEFAULT_CONV_MINUTES;
+
+        // PC-05(D6) preview: 부여 기반 신청이 잔여 부족이면 짜투리 발동 여부를 판정해 안내(FE UI-C/D).
+        //   발동 예상이면 신청은 성공하므로 insufficient 를 내리고 발동 필드를 싣는다.
+        //   lock 없는 추정치 — 제출 시 remnant lock 하에 재판정(시간차 preview 관례 미러).
+        boolean remnantTriggered = false;
+        BigDecimal remnantDays = null;
+        Integer companyCoverMinutes = null;
+        if (insufficient && grantBased) {
+            RemnantTriggerPlanVO plan = leaveRemnantCoverService.evaluateTrigger(
+                    cmpny, user, workYmd, leaveCd, unit, previewMinutes, charge, convPersonal);
+            if (plan != null) {
+                remnantTriggered = true;
+                remnantDays = plan.remnantDays();
+                companyCoverMinutes = plan.coverMinutes();
+                insufficient = false;
+            }
+        }
 
         log.debug("[leaveflow] 예상 차감 preview: userCd={}, workYmd={}, unit={}, charge={}, 하한={}, 캡={}, "
-                        + "잔여부족={}, conv={}",
-                user, workYmd, unit, charge.toPlainString(), floorApplied, capApplied, insufficient, conv);
+                        + "잔여부족={}, conv={}, 짜투리발동={}",
+                user, workYmd, unit, charge.toPlainString(), floorApplied, capApplied, insufficient, conv,
+                remnantTriggered);
 
         return LeaveDeductionPreviewResponse.builder()
                 .chargeDays(charge)
@@ -624,6 +699,9 @@ public class LeaveFlowServiceImpl implements LeaveFlowService {
                 .insufficientBalance(insufficient)
                 .convMinutes(conv)
                 .floorDays(floorDays)
+                .remnantTriggered(remnantTriggered)
+                .remnantDays(remnantDays)
+                .companyCoverMinutes(companyCoverMinutes)
                 .build();
     }
 
@@ -682,6 +760,27 @@ public class LeaveFlowServiceImpl implements LeaveFlowService {
         }
     }
 
+    /**
+     * PC-05(N9): 짜투리 발동 판정~기록 직렬화 lock 획득(앱 미러). 타임아웃/오류면 동시 신청으로
+     * 보고 잔여 부족 계열(ATTD_400_051)로 변환 — leave01 lock 실패 변환 관례 미러.
+     */
+    private void acquireRemnantLock(String lockKey) {
+        Integer got = leaveFlowMapper.getAdvisoryLock(lockKey, LEAVE01_LOCK_TIMEOUT_SEC);
+        if (got == null || got != 1) {
+            log.info("[leaveflow] 짜투리 leaveRemnant advisory lock 미획득 — lockKey={}, got={}", lockKey, got);
+            throw new ApiException(AttdErrorCode.ATTD_400_051);
+        }
+    }
+
+    /** PC-05: 짜투리 leaveRemnant advisory lock 해제(예외 무시 — 세션 종료 시 자동 해제됨). */
+    private void releaseRemnantLock(String lockKey) {
+        try {
+            leaveFlowMapper.releaseAdvisoryLock(lockKey);
+        } catch (Exception e) {
+            log.warn("[leaveflow] 짜투리 leaveRemnant advisory lock 해제 실패(무시) — lockKey={}", lockKey, e);
+        }
+    }
+
     /** 시간차(02/03/04) 단위 여부 — LC-05 재정산 훅 대상 판정. */
     private boolean isHourlyUnit(String unit) {
         return UNIT_HOUR2.equals(unit) || UNIT_HOUR1.equals(unit) || UNIT_MIN30.equals(unit);
@@ -730,6 +829,8 @@ public class LeaveFlowServiceImpl implements LeaveFlowService {
             //   05(연차사용)는 기존대로 일 단위 출근 차단을 적용한다.
             if (REQ_TYPE_LEAVE_MODIFY.equals(req.reqType())) {
                 applyLeaveModify(p.gvCmpnyCd(), req, p.gvUserCd());
+                // PC-06(D7): 수정 승인으로 차감이 줄어 잔여가 복원될 수 있다 — 미도래 짜투리 보전 건 회수.
+                leaveRemnantCoverService.reclaimIfPossible(p.gvCmpnyCd(), req.userCd(), p.gvUserCd());
                 log.info("연차 수정 최종 승인. reqId={}, leaveId={}", p.reqId(), req.targetId());
             } else {
                 applyFullDayAttendanceBlock(p.gvCmpnyCd(), p.reqId(), p.gvUserCd());
@@ -865,6 +966,13 @@ public class LeaveFlowServiceImpl implements LeaveFlowService {
         if (detail != null && isHourlyUnit(detail.useUnitType())) {
             leaveHourlyResettleService.resettleHourlyLeaveOnDate(cmpnyCd,
                     detail.siteCd(), detail.userCd(), detail.startDate(), actor);
+        }
+
+        // PC-06(D7): 잔여 복원 후 미도래(WORK_YMD > 오늘) 짜투리 보전 건을 정상 차감으로 전환(부분 회수 허용).
+        //   반려·강제종료(앱 위임 포함) 전 경로가 본 메서드로 수렴하므로 이 한 지점으로 커버(plan §0-4).
+        //   detail null 이면 되돌린 CONFIRMED 행이 없던 요청 — 복원분 없음, 회수 생략.
+        if (detail != null) {
+            leaveRemnantCoverService.reclaimIfPossible(cmpnyCd, detail.userCd(), actor);
         }
     }
 
@@ -1117,6 +1225,61 @@ public class LeaveFlowServiceImpl implements LeaveFlowService {
             return BorrowFamily.ANNUAL;
         }
         return null;
+    }
+
+    /**
+     * PC-02(D8): 일반(비가불·비'01') 신청의 부여 충당 계획 — 만료 임박순(AVAIL_TO_DATE ASC) 다부여 분할 차감(앱 미러).
+     *
+     * <ul>
+     *   <li>잔여&gt;0 활성 부여를 만료 임박순으로 needed 까지 채운다(FOR UPDATE 직렬화 —
+     *       {@link #resolveBorrowCharges} 잔여 우선 루프와 동일 패턴, 가불 없이).</li>
+     *   <li>합산 잔여 &lt; needed 면 기존과 동일하게 ATTD_400_051(조각 부여 교착만 해소, 거부 기준 불변).</li>
+     *   <li>needed 0(하한/캡 이후 차액 0 등)은 기존 단건 경로 유지 — 잔여 0 부여에도 0 차감 행이
+     *       기록되던 기존 동작 보존(REQ-사용행 연결 유지, 회귀 0).</li>
+     * </ul>
+     */
+    private List<GrantCharge> resolveGeneralCharges(String cmpny, String user, String leaveCd, String workYmd,
+                                                    BigDecimal needed) {
+        if (needed.signum() <= 0) {
+            DeductibleGrantVO grant = leaveFlowMapper.selectDeductibleGrant(cmpny, user, leaveCd, workYmd, needed);
+            if (grant == null) {
+                throw new ApiException(AttdErrorCode.ATTD_400_051);
+            }
+            return List.of(new GrantCharge(grant.grantId(), needed));
+        }
+        List<DeductibleGrantVO> grants = leaveFlowMapper.selectDeductibleGrants(cmpny, user, leaveCd, workYmd);
+        List<GrantCharge> charges = new ArrayList<>();
+        BigDecimal remaining = needed;
+        for (DeductibleGrantVO g : grants) {
+            if (remaining.signum() <= 0) {
+                break;
+            }
+            BigDecimal avail = nz(g.grantDays()).subtract(nz(g.usedDays()));
+            if (avail.signum() <= 0) {
+                continue;
+            }
+            BigDecimal take = avail.min(remaining);
+            charges.add(new GrantCharge(g.grantId(), take));
+            remaining = remaining.subtract(take);
+        }
+        if (remaining.signum() > 0) {
+            log.info("[leaveflow] 연차 신청 거부: 합산 잔여 부족 (userCd={}, leaveCd={}, needed={}, 부족분={})",
+                    user, leaveCd, needed.toPlainString(), remaining.toPlainString());
+            throw new ApiException(AttdErrorCode.ATTD_400_051);
+        }
+        return charges;
+    }
+
+    /**
+     * PC-02(D8): 차감 가능한 활성 부여의 합산 잔여 — preview 잔여 부족 판정·짜투리 사전 판정(앱 미러).
+     *
+     * <p>보안리뷰 M-1: FOR UPDATE 목록 조회 재사용 시 행 잠금 보유 후 remnant advisory lock 을
+     * 대기하는 순서 역전(회수 경로와 교차 → GET_LOCK 타임아웃 정지)이 생겨, 잠금 없는 SUM 전용
+     * 쿼리로 분리했다. 실제 차감 계획({@code resolveGeneralCharges})은 여전히 FOR UPDATE 로 재판정한다.
+     */
+    private BigDecimal sumDeductibleRemaining(String cmpny, String user, String leaveCd, String workYmd) {
+        BigDecimal sum = leaveFlowMapper.selectDeductibleRemainingSum(cmpny, user, leaveCd, workYmd);
+        return (sum == null) ? BigDecimal.ZERO : sum;
     }
 
     /**

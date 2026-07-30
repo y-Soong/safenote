@@ -10,7 +10,9 @@
 -->
 <template>
   <div class="lpd">
-    <p class="lpd__title">선택한 날짜 ({{ modelValue.length }})</p>
+    <p class="lpd__title">
+      선택한 날짜 ({{ modelValue.length }}<template v-if="maxCount != null">/{{ maxCount }}</template>)
+    </p>
 
     <!-- 선택 날짜 행 목록 -->
     <ul v-if="modelValue.length > 0" class="lpd__list">
@@ -82,6 +84,11 @@ const props = defineProps({
     type: String,
     default: '',
   },
+  // 선택 가능 최대 일수(미지정 잔여 연차) — null 이면 상한 없음
+  maxCount: {
+    type: Number,
+    default: null,
+  },
 })
 
 const emit = defineEmits(['update:modelValue'])
@@ -111,7 +118,7 @@ const onRemove = (ymd) => {
   emit('update:modelValue', props.modelValue.filter((d) => d !== ymd))
 }
 
-// 날짜 키인 추가 — 중복/선택가능 검증 후 추가.
+// 날짜 키인 추가 — 중복/선택가능/잔여 상한 검증 후 추가.
 const onAdd = () => {
   if (!keyinYmd.value) return
   // 'YYYY-MM-DD' → 'YYYYMMDD'
@@ -123,6 +130,11 @@ const onAdd = () => {
   }
   if (props.selectableYmds.length > 0 && !props.selectableYmds.includes(ymd)) {
     showAlert('선택할 수 없는 날짜입니다. (휴일/주말/근무일 아님/만료 초과)')
+    return
+  }
+  // 미지정 잔여 연차 개수를 넘는 날짜 지정 차단(캘린더 토글과 동일 상한).
+  if (props.maxCount != null && props.modelValue.length >= props.maxCount) {
+    showAlert(`미지정 잔여 연차 ${props.maxCount}일까지만 선택할 수 있습니다.`)
     return
   }
   emit('update:modelValue', [...props.modelValue, ymd])

@@ -361,24 +361,109 @@
 	        , A.WORK_YMD	AS workYmd
 	        , A.USER_CD		AS userCd
 	    FROM TB_USER_ATTD_REQ A
-	    INNER JOIN node_tree NT
-	        ON  A.CMPNY_CD = NT.CMPNY_CD
-	        AND A.SITE_CD  = NT.SITE_CD
-	        AND A.NODE_CD  = NT.NODE_CD
 	    WHERE A.CMPNY_CD   = #{gvCmpnyCd}
 	      AND A.SITE_CD    = #{siteCd}
 	      AND A.WORK_YMD   LIKE CONCAT(REPLACE(#{workYm}, '-', ''), '%')
 	      AND A.DEL_YN     = 'N'
 	      AND A.REQ_STATUS = '01'    <!-- 신청('01') 상태인 요청만 조회 (SYS033) -->
-      <!-- PRAFTA: 연차(05/06)는 현재 로그인 사용자가 그 요청의 '현재 처리 단계' 결재자일 때만 노출.
-           근태/OT(01~04)는 매니저 모델이므로 무영향. selectMyPendingLeaveApprovals 와 동일 조건. -->
-      AND ( A.REQ_TYPE NOT IN ('05','06')
-            OR EXISTS ( SELECT 1
-                          FROM TB_USER_ATTD_REQ_APPROVAL AP
-                         WHERE AP.CMPNY_CD = A.CMPNY_CD
-                           AND AP.REQ_ID   = A.REQ_ID
-                           AND AP.APPROVER_USER_CD = #{gvUserCd}
-                           AND AP.APPROVAL_STATUS  = '01' ) )
+	      <!-- 결재자 필터 제거(표시/처리 분리). 종전엔 연차(05/06)를 '현재 단계 결재자 본인'에게만 내려서,
+	           마감 차단 카운트(AttdCloseMapper.countPendingReq — 결재자 무관 전수)와 어긋났다:
+	           "처리 필요 3건"인데 강조 셀은 1개 → 마감이 왜 막히는지 화면에서 추적 불가.
+	           Attd_07 은 마감 책임 화면이므로 부서 관리자/master/hr 은 걸려 있는 요청을 볼 수 있어야 한다.
+	           실제 승인/반려 권한은 별개로 유지된다(팝업이 approvalStep NULL 이면 버튼 미노출 + 서버 재검증). -->
+	      <!-- 부서 스코프. 종전엔 A.NODE_CD 로 node_tree INNER JOIN 했는데, 연차 신청(REQ_TYPE='05')은
+	           REQ.NODE_CD 를 NULL 로 저장한다(본문 비신뢰 정책 — AppLeaveFlowServiceImpl submitLeaveCore).
+	           그래서 미처리 연차 요청이 이 요약에서 전부 탈락 = 캘린더 셀 '처리 필요' 강조 미표시.
+	           대상자의 현재 소속부서로 폴백한다(AppAdminApprovalMapper 의 COALESCE(R.NODE_CD, U.NODE_CD)
+	           'A4 fallback' 과 동일 패턴). NODE_CD 가 채워진 요청(01~04/10)은 종전과 동일 동작. -->
+	      AND COALESCE(NULLIF(A.NODE_CD, ''), (
+	              SELECT U.NODE_CD
+	                FROM TB_USER U
+	               WHERE U.CMPNY_CD = A.CMPNY_CD
+	                 AND U.SITE_CD  = A.SITE_CD
+	                 AND U.USER_CD  = A.USER_CD
+	               LIMIT 1
+	          )) IN (SELECT NT.NODE_CD FROM node_tree NT)
+    </select>
+
+    <select id="selectMonthlyLeaveChangeReqSummary" parameterType="com.prafta.web.attd.attd07.application.query.MonthlyAttdListQuery" resultType="com.prafta.web.attd.attd07.result.MonthlyAttdReqSummaryResult">
+	/* Attd07Mapper.selectMonthlyLeaveChangeReqSummary */
+    <!-- 연차 변경(이동/삭제) 활성 요청의 캘린더 셀 강조용 요약. selectMonthlyAttdReqSummary 와 동일한
+         부서 트리 스코프를 쓰되, TB_LEAVE_CHANGE_REQUEST 에 NODE_CD 가 없으므로 대상자의 TB_USER.NODE_CD
+         로 판정한다(Attd13Mapper.selectChangeRequests 의 부서 필터와 동일 출처).
+         MOVE 는 출발일 + 이동대상일 두 행(각각 조회 월에 속할 때만), DELETE 는 출발일 1행이 나온다.
+         결과는 (reqId=CHANGE_REQ_ID, workYmd, userCd) 3컬럼 — MonthlyAttdReqSummaryResult 재사용. -->
+	    WITH RECURSIVE
+	    /* 1. 부서 트리 — 시작 노드부터 하위까지 */
+	    node_tree AS (
+	        SELECT
+	              N.CMPNY_CD
+	            , N.SITE_CD
+	            , N.NODE_CD
+	        FROM TB_SITE_NODE N
+	        WHERE N.CMPNY_CD = #{gvCmpnyCd}
+	          AND N.SITE_CD  = #{siteCd}
+	          AND N.NODE_CD  = #{nodeCd}
+
+	        <if test='"Y".equals(incSubNodeYn)'>
+	        UNION ALL
+
+	        SELECT
+	              C.CMPNY_CD
+	            , C.SITE_CD
+	            , C.NODE_CD
+	        FROM TB_SITE_NODE C
+	        INNER JOIN node_tree P
+	            ON  C.CMPNY_CD       = P.CMPNY_CD
+	            AND C.SITE_CD        = P.SITE_CD
+	            AND C.PARENT_NODE_CD = P.NODE_CD
+	        </if>
+	    )
+
+	    /* 2-1. 출발일(현재 연차 사용일) 기준 행 */
+	    SELECT
+	        R.CHANGE_REQ_ID		AS reqId
+	        , LU.START_DATE		AS workYmd
+	        , R.TARGET_USER_CD	AS userCd
+	    FROM TB_LEAVE_CHANGE_REQUEST R
+	    INNER JOIN TB_USER_LEAVE_USE LU
+	        ON  LU.CMPNY_CD = R.CMPNY_CD
+	        AND LU.LEAVE_ID = R.TARGET_LEAVE_ID
+	    INNER JOIN TB_USER TU
+	        ON  TU.CMPNY_CD = R.CMPNY_CD
+	        AND TU.SITE_CD  = R.SITE_CD
+	        AND TU.USER_CD  = R.TARGET_USER_CD
+	    INNER JOIN node_tree NT
+	        ON  NT.CMPNY_CD = TU.CMPNY_CD
+	        AND NT.SITE_CD  = TU.SITE_CD
+	        AND NT.NODE_CD  = TU.NODE_CD
+	    WHERE R.CMPNY_CD   = #{gvCmpnyCd}
+	      AND R.SITE_CD    = #{siteCd}
+	      AND R.DEL_YN     = 'N'
+	      AND R.REQ_STATUS IN ('REQUESTED', 'AGREED')
+	      AND LU.START_DATE LIKE CONCAT(REPLACE(#{workYm}, '-', ''), '%')
+
+	    UNION ALL
+
+	    /* 2-2. 이동 대상일 기준 행 (MOVE 만 — DELETE 는 MOVE_TARGET_DATE NULL 로 자동 제외) */
+	    SELECT
+	        R.CHANGE_REQ_ID		AS reqId
+	        , R.MOVE_TARGET_DATE	AS workYmd
+	        , R.TARGET_USER_CD	AS userCd
+	    FROM TB_LEAVE_CHANGE_REQUEST R
+	    INNER JOIN TB_USER TU
+	        ON  TU.CMPNY_CD = R.CMPNY_CD
+	        AND TU.SITE_CD  = R.SITE_CD
+	        AND TU.USER_CD  = R.TARGET_USER_CD
+	    INNER JOIN node_tree NT
+	        ON  NT.CMPNY_CD = TU.CMPNY_CD
+	        AND NT.SITE_CD  = TU.SITE_CD
+	        AND NT.NODE_CD  = TU.NODE_CD
+	    WHERE R.CMPNY_CD   = #{gvCmpnyCd}
+	      AND R.SITE_CD    = #{siteCd}
+	      AND R.DEL_YN     = 'N'
+	      AND R.REQ_STATUS IN ('REQUESTED', 'AGREED')
+	      AND R.MOVE_TARGET_DATE LIKE CONCAT(REPLACE(#{workYm}, '-', ''), '%')
     </select>
 
     <!-- PRAFTA-017 - Attd_07 목록뷰 일자별 초과근무 목록 (월 단위).
@@ -1025,15 +1110,11 @@
 	  AND A.USER_CD = #{userCd}
 	  AND A.WORK_YMD = #{workYmd}
 	  AND A.REQ_STATUS = '01'		<!-- 신청('01') 상태인 요청건만 조회 (SYS033) -->
-      <!-- PRAFTA: 연차(05/06)는 현재 로그인 사용자가 그 요청의 '현재 처리 단계' 결재자일 때만 카드로 노출.
-           근태/OT(01~04)는 매니저 모델이므로 무영향. -->
-      AND ( A.REQ_TYPE NOT IN ('05','06')
-            OR EXISTS ( SELECT 1
-                          FROM TB_USER_ATTD_REQ_APPROVAL AP
-                         WHERE AP.CMPNY_CD = A.CMPNY_CD
-                           AND AP.REQ_ID   = A.REQ_ID
-                           AND AP.APPROVER_USER_CD = #{gvUserCd}
-                           AND AP.APPROVAL_STATUS  = '01' ) )
+      <!-- 결재자 필터 제거(표시/처리 분리). 종전엔 연차(05/06)를 '현재 단계 결재자 본인'에게만 카드로
+           내렸는데, 그 결과 마감을 막는 요청이 화면 어디에도 안 보이는 상태가 됐다(요약 쿼리와 동일 사유).
+           일자 상세 진입 자체가 이미 부서 관리 권한 가드(canManageNode + 대상자 스코프 검증)를 통과한 뒤이고,
+           같은 팝업의 확정 연차 섹션은 결재선과 무관하게 전부 표시하므로 표시 기준을 일치시킨다.
+           처리 권한은 위 approvalStep(결재자 아니면 NULL)로 프론트가 버튼을 감추고, 서버 EP 가 재검증한다. -->
     </select>
 
     <select id="selectDailyConfirmedLeave"
@@ -1069,6 +1150,51 @@
        AND U.DEL_YN       = 'N'
        AND ( U.REQ_ID IS NULL OR R.REQ_STATUS != '01' )   <!-- 미처리 결재대기분은 D 카드가 소유(이중표시 방지) -->
      ORDER BY U.START_TIME, U.LEAVE_ID
+    </select>
+
+    <select id="selectDailyLeaveChangeReq"
+            parameterType="com.prafta.web.attd.attd07.application.query.DailyAttdDetailsQuery"
+            resultType="com.prafta.web.attd.attd07.result.DailyLeaveChangeReqResult">
+    /* Attd07Mapper.selectDailyLeaveChangeReq */
+    <!-- 연차 변경(이동/삭제) 활성 요청. TB_USER_ATTD_REQ 와 별개 테이블(TB_LEAVE_CHANGE_REQUEST)이라
+         종전 일자 상세 팝업에서 누락돼 있었다. 활성 상태만 노출:
+           REQUESTED = 관리자 발의 후 근로자 응답대기(표시 전용) / AGREED = 관리자 확인대기(처리 대상).
+         날짜 매칭은 출발일(LU.START_DATE) 또는 이동 대상일(R.MOVE_TARGET_DATE) 양쪽 — 근태 요청과
+         동일하게 관련된 두 셀에서 같은 요청이 보이도록 한다. DELETE 는 MOVE_TARGET_DATE 가 NULL 이라
+         출발일로만 매칭된다.
+         대상 연차행(LU)은 LEAVE_STATUS 로 필터하지 않는다 — 취소된 연차에 매달린 잔여 요청도 관리자가
+         반려로 정리할 수 있어야 한다(교착 방지). 스코프는 CMPNY/SITE/대상 USER 로 고정(IDOR 차단). -->
+    SELECT
+          R.CHANGE_REQ_ID                                                          AS changeReqId
+        , R.TARGET_LEAVE_ID                                                        AS targetLeaveId
+        , R.INITIATOR_TYPE                                                         AS initiatorType
+        , R.REQ_TYPE                                                               AS reqType
+        , R.REQ_STATUS                                                             AS reqStatus
+        , LU.START_DATE                                                            AS targetStartDate
+        , R.MOVE_TARGET_DATE                                                       AS moveTargetDate
+        , R.REQ_REASON                                                             AS reqReason
+        , DATE_FORMAT(R.INSERT_DATE, '%Y%m%d%H%i%s')                               AS insertDate
+        , LU.LEAVE_CD                                                              AS leaveCd
+        , LT.LEAVE_NM                                                              AS leaveNm
+        , LU.USE_UNIT_TYPE                                                         AS useUnitType
+        , FNC_CMM_INFO_SRCH(R.CMPNY_CD, 'SYST_VAL', LU.USE_UNIT_TYPE, 'SYS025')    AS unitNm
+        , LU.START_TIME                                                            AS startTime
+        , LU.END_TIME                                                              AS endTime
+        , LU.LEAVE_DAYS                                                            AS leaveDays
+      FROM TB_LEAVE_CHANGE_REQUEST R
+      INNER JOIN TB_USER_LEAVE_USE LU
+              ON LU.CMPNY_CD = R.CMPNY_CD
+             AND LU.LEAVE_ID = R.TARGET_LEAVE_ID
+      LEFT JOIN TB_LEAVE_TYPE_MGMT LT
+             ON LT.CMPNY_CD = LU.CMPNY_CD
+            AND LT.LEAVE_CD = LU.LEAVE_CD
+     WHERE R.CMPNY_CD       = #{gvCmpnyCd}
+       AND R.SITE_CD        = #{siteCd}
+       AND R.TARGET_USER_CD = #{userCd}
+       AND R.DEL_YN         = 'N'
+       AND R.REQ_STATUS     IN ('REQUESTED', 'AGREED')
+       AND ( LU.START_DATE = #{workYmd} OR R.MOVE_TARGET_DATE = #{workYmd} )
+     ORDER BY R.INSERT_DATE DESC, R.CHANGE_REQ_ID DESC
     </select>
 
     <select id="selectDailyLeaveApprovalHistory" parameterType="com.prafta.web.attd.attd07.application.query.DailyAttdDetailsQuery" resultType="com.prafta.web.attd.attd07.result.DailyAttdDetailHistoryResult">

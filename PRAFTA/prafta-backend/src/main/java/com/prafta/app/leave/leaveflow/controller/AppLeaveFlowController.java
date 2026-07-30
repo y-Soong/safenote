@@ -13,12 +13,14 @@ import org.springframework.web.bind.annotation.RestController;
 import com.prafta.app.leave.leaveflow.application.param.LeaveApplyMetaParam;
 import com.prafta.app.leave.leaveflow.application.param.LeaveApplyParam;
 import com.prafta.app.leave.leaveflow.application.param.LeaveApproverSearchParam;
+import com.prafta.app.leave.leaveflow.application.param.LeaveDayScheduleParam;
 import com.prafta.app.leave.leaveflow.application.param.LeaveDeductionPreviewParam;
 import com.prafta.app.leave.leaveflow.dto.request.LeaveApplyRequest;
 import com.prafta.app.leave.leaveflow.dto.request.LeaveDeductionPreviewRequest;
 import com.prafta.app.leave.leaveflow.dto.response.ApprovalPresetListResponse;
 import com.prafta.app.leave.leaveflow.dto.response.ApproverSearchResponse;
 import com.prafta.app.leave.leaveflow.dto.response.LeaveApplyMetaResponse;
+import com.prafta.app.leave.leaveflow.dto.response.LeaveDayScheduleResponse;
 import com.prafta.app.leave.leaveflow.dto.response.LeaveDeductionPreviewResponse;
 import com.prafta.app.leave.leaveflow.service.AppLeaveFlowService;
 import com.prafta.common.dto.TokenInfo;
@@ -95,6 +97,24 @@ public class AppLeaveFlowController {
         ApproverSearchResponse response = appLeaveFlowService.searchApprovers(
                 LeaveApproverSearchParam.from(tokenInfo, keyword, page, size)
         );
+
+        return ResponseEntity.status(HttpStatus.OK).body(response);
+    }
+
+    /**
+     * 신청 대상일 근무/휴게 시각 조회(조회 전용) — 시간차 연차 휴게 가로지름(ATTD_400_055) 사전 안내용.
+     * 식별값은 토큰 강제(IDOR 차단), workYmd 만 쿼리로 받는다. 스케줄 없는 날은 hasSchedule=false.
+     */
+    @GetMapping("/day-schedule")
+    public ResponseEntity<?> getDaySchedule(
+            @RequestHeader(value = "Authorization", required = false) String authorization,
+            @RequestParam(value = "workYmd", required = false) String workYmd
+    ) {
+
+        TokenInfo tokenInfo = jwtUtil.getAllClaimsAsMap(authorization);
+
+        LeaveDayScheduleResponse response = appLeaveFlowService.selectDaySchedule(
+                LeaveDayScheduleParam.from(tokenInfo, workYmd));
 
         return ResponseEntity.status(HttpStatus.OK).body(response);
     }

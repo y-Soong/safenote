@@ -28,6 +28,7 @@ package com.prafta.common.cmm.leave.command;
  * @param applyFromDate          정책 적용 시작일 (YYYYMMDD, 오늘 이상)
  * @param usageUnit              회사 허용 사용 단위 (단일): FULL_DAY/HALF_DAY/QUARTER_DAY/HOUR_2/HOUR_1/MIN_30
  *                               (prafta-024, LC-10에서 QUARTER_DAY 편입 — 구 allowQuarter 독립 토글 폐기)
+ * @param allowRemnantRoundUp    짜투리 잔여 보전 옵션 (Y/N — PC-05 D3. 공백/비정상 값은 'N' 정규화)
  * @param changeReason           변경 사유 (HISTORY 기록용, NULL 허용)
  */
 public record LeavePolicyCommand(
@@ -47,6 +48,7 @@ public record LeavePolicyCommand(
     , String aprvUseYn
     , String applyFromDate
     , String usageUnit
+    , String allowRemnantRoundUp
     , String changeReason
 ) {
 }

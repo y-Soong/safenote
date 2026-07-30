@@ -396,7 +396,14 @@
                     </td>
                   </tr>
                   <!-- 정규근무 행 (kind === 'work') -->
-                  <tr v-else :class="r.status" @click="fnOpenAttdAdjustPop(r)">
+                  <!-- 행 더블클릭 → 일자 상세 팝업. 캘린더 뷰(m-day-cell @dblclick)와 동일 제스처·동일 조건
+                       (종전엔 단일 클릭 + status==='alert' 행만 열려, 연차/연차변경 요청이 걸린 날은
+                        같은 팝업을 목록 뷰에서 열 수 없었다). -->
+                  <tr
+                    v-else
+                    :class="r.status"
+                    @dblclick="fnOpenAttdAdjustPop(r)"
+                  >
                     <!-- 비고 -->
                     <td class="col-note">
                       <template v-if="r.outsideList && r.outsideList.length">
@@ -718,10 +725,18 @@ const recordMap = ref({});
 // 처리 필요 목록 (response.data.monthlyAttdReqSummaryResultList)
 //   { reqId, workYmd, userCd } — "처리 필요 n 건" 카운트 + 캘린더 셀 라벨형 표시
 const reqIdList = ref([]);
+// 연차 변경(이동/삭제) 활성 요청 요약 (response.data.monthlyLeaveChangeSummaryResultList)
+//   { reqId(=CHANGE_REQ_ID), workYmd, userCd } — 캘린더 셀 강조 전용.
+//   이동요청은 출발일·이동대상일 두 행이 내려와 양쪽 셀이 모두 강조된다(근태 요청 UX 정합).
+//   "처리 필요 n건" 카운트에는 섞지 않는다 — 그 값은 백엔드 blockTotalCnt(연차 변경 포함)가 권위.
+const leaveChangeSummaryList = ref([]);
 // userCd_workYmd 키 Set — 캘린더 셀별 매칭 O(1)
 const reqCellSet = computed(() => {
   const s = new Set();
   for (const r of reqIdList.value) {
+    if (r?.userCd && r?.workYmd) s.add(`${r.userCd}_${r.workYmd}`);
+  }
+  for (const r of leaveChangeSummaryList.value) {
     if (r?.userCd && r?.workYmd) s.add(`${r.userCd}_${r.workYmd}`);
   }
   return s;
@@ -1369,7 +1384,10 @@ const fnOpenDayDetailPop = (user, d) => {
 };
 
 const fnOpenAttdAdjustPop = (row) => {
-  if (row.status !== "alert") return;
+  // 캘린더 뷰(fnOpenDayDetailPop)와 동일하게 상태 무관하게 연다.
+  //   종전 `status !== 'alert'` 게이트는 연차(status='pre')·정상 근무일에 걸린 연차 변경 요청을
+  //   목록 뷰에서 열 수 없게 만들었다. 팝업 내용은 workYmd 기준 조회라 어느 경로로 열어도 동일하다.
+  if (!selectedUser.value) return;
   const [y, m] = workYm.value.split("-").map(Number);
   const ymd = `${y}-${String(m).padStart(2, "0")}-${String(row.day).padStart(2, "0")}`;
   const record =
@@ -1390,6 +1408,8 @@ const fnOpenAttdAdjustPop = (row) => {
 // ── 응답 → 화면 모델 매핑 ─────────────────────────────────
 const fnBindResponse = (data) => {
   reqIdList.value = data?.monthlyAttdReqSummaryResultList ?? [];
+  leaveChangeSummaryList.value =
+    data?.monthlyLeaveChangeSummaryResultList ?? [];
   monthlyOvertimeList.value = data?.monthlyOvertimeResultList ?? [];
 
   const recs = data?.attdRecordResultList ?? [];

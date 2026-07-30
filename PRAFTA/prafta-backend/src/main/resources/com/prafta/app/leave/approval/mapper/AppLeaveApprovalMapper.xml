@@ -101,7 +101,17 @@
         , AP.APPROVAL_STEP                                               AS approvalStep
         , R.REQ_TYPE                                                     AS reqType
         , FNC_CMM_INFO_SRCH(R.CMPNY_CD, 'USER_NM', R.USER_CD, null)      AS requesterUserNm
-        , FNC_CMM_INFO_SRCH(R.CMPNY_CD, 'NODE', R.SITE_CD, R.NODE_CD)    AS nodeNm
+        <!-- 부서명. 연차 요청은 REQ.NODE_CD 가 NULL 인 경로가 있어 그대로 쓰면 공란이 된다 →
+             신청자의 현재 소속부서로 폴백(같은 파일 selectMyPendingLeaveApprovals·AppAdminApprovalMapper 정합).
+             U 는 TB_USER_LEAVE_USE 별칭이라 TB_USER 는 스칼라 서브쿼리로 참조한다. -->
+        , FNC_CMM_INFO_SRCH(R.CMPNY_CD, 'NODE', R.SITE_CD, COALESCE(NULLIF(R.NODE_CD, ''), (
+              SELECT RU.NODE_CD
+                FROM TB_USER RU
+               WHERE RU.CMPNY_CD = R.CMPNY_CD
+                 AND RU.SITE_CD  = R.SITE_CD
+                 AND RU.USER_CD  = R.USER_CD
+               LIMIT 1
+          )))                                                            AS nodeNm
         , R.WORK_YMD                                                     AS workYmd
         , LT.LEAVE_NM                                                    AS leaveNm
         , FNC_CMM_INFO_SRCH(R.CMPNY_CD, 'SYST_VAL', U.USE_UNIT_TYPE, 'SYS025') AS unitNm

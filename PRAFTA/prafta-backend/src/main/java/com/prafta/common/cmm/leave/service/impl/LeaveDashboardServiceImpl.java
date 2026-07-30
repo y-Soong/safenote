@@ -155,9 +155,14 @@ public class LeaveDashboardServiceImpl implements LeaveDashboardService {
                 : leaveDashboardMapper.selectDashboardList(
                         cmpnyCd, siteFilter, nodeFilter, incSub, keyword, offset, safeSize);
 
+        // PC-07(N8): 행별 conv = 대상 사용자의 오늘 기준 개인 분모(480 캡, 미산출 null → FE 480 폴백).
+        //   페이지당 최대 100행이라 서비스 루프로 산출(SQL 조인안 대신 — effective-dating 서브쿼리 재사용).
+        String todayYmd = LocalDate.now().format(DateTimeFormatter.BASIC_ISO_DATE);
         List<LeaveDashboardItemVO> items = new ArrayList<>(rows.size());
         for (LeaveDashboardRowVO row : rows) {
-            items.add(toItem(row));
+            Integer rowConv = leaveConversionPolicyService.resolvePersonalConvMinutes(
+                    cmpnyCd, row.getUserCd(), todayYmd);
+            items.add(toItem(row, rowConv));
         }
 
         LeaveDashboardMetricsResultVO metrics = buildMetrics(
@@ -170,13 +175,13 @@ public class LeaveDashboardServiceImpl implements LeaveDashboardService {
                 .metrics(metrics)
                 .list(items)
                 .paging(PagingMetaVO.builder().page(safePage).size(safeSize).totalCount(total).build())
-                // LC-07(표기): 오늘 기준 환산시간 — FE 가 일수 수치를 "N일 H시간 M분"으로 조립하는 분모.
-                .convMinutes(leaveConversionPolicyService.selectConversionMinutes(
-                        cmpnyCd, LocalDate.now().format(DateTimeFormatter.BASIC_ISO_DATE)))
+                // PC-03(N8): 목록은 사용자별 분모가 서로 달라 단일 값이 무의미 — 표기 전용 480 폴백
+                //   (기존 480 고정과 동일 값, 회귀 0). 행별 convMinutes 는 PC-07 에서 제공한다.
+                .convMinutes(LeaveConversionPolicyService.DEFAULT_CONV_MINUTES)
                 .build();
     }
 
-    private LeaveDashboardItemVO toItem(LeaveDashboardRowVO row) {
+    private LeaveDashboardItemVO toItem(LeaveDashboardRowVO row, Integer rowConvMinutes) {
         // usedTotal = 캐시 USED_DAYS 합계(도래+미도래). scheduled = 그 중 미도래분(START_DATE > 오늘).
         // used(도래분) = usedTotal - scheduled. remaining = granted - usedTotal (= granted - (used+scheduled), 기존과 동일).
         BigDecimal legalGranted = nz(row.getLegalGranted());
@@ -228,6 +233,8 @@ public class LeaveDashboardServiceImpl implements LeaveDashboardService {
                 .usageRate(usageRate(totalGranted, totalUsedTotal))
                 // 가불 사용분(prafta-com-011-7, 표시 전용 §5). 매퍼 IFNULL로 0 보장이나 방어적 nz.
                 .borrowedDays(nz(row.getBorrowedDays()))
+                // PC-07(N8): 행별 개인 분모(오늘 기준, 미산출 null — FE 480 폴백).
+                .convMinutes(rowConvMinutes)
                 .build();
     }
 
@@ -318,9 +325,11 @@ public class LeaveDashboardServiceImpl implements LeaveDashboardService {
         log.info("연차 상세 조회. cmpnyCd={}, userCd={}, history건수={}, 신청형타입건수={}",
                 cmpnyCd, userCd, history.size(), appliedLeaveTypes.size());
 
-        // LC-07(표기): 오늘 기준 환산시간 + 시간차 사용 분 합계(전 기간) — FE 원본 분 표기용(additive).
-        int convMinutes = leaveConversionPolicyService.selectConversionMinutes(
-                cmpnyCd, LocalDate.now().format(DateTimeFormatter.BASIC_ISO_DATE));
+        // PC-03(N7·N8): convMinutes = 오늘 기준 "대상 사용자" 개인 분모(480 캡). 산출 불가(교대 등)면
+        //   표기 전용 480 폴백(FE formatLeaveDays 폴백과 정합) + 시간차 사용 분 합계(전 기간, additive).
+        Integer personalConv = leaveConversionPolicyService.resolvePersonalConvMinutes(
+                cmpnyCd, userCd, LocalDate.now().format(DateTimeFormatter.BASIC_ISO_DATE));
+        int convMinutes = (personalConv != null) ? personalConv : LeaveConversionPolicyService.DEFAULT_CONV_MINUTES;
         Integer hourlyUsedMinutes = leaveDashboardMapper.selectHourlyUsedMinutes(cmpnyCd, userCd);
 
         return LeaveDetailResultVO.builder()

@@ -58,7 +58,19 @@
           FROM TB_USER_ATTD_REQ A
          WHERE A.CMPNY_CD   = #{cmpnyCd}
            AND A.SITE_CD    = #{siteCd}
-           AND A.NODE_CD    IN (SELECT NODE_CD FROM node_tree)
+           <!-- 부서 스코프. 연차 신청(REQ_TYPE='05')은 REQ.NODE_CD 를 NULL 로 저장하므로
+                (AppLeaveFlowServiceImpl submitLeaveCore — 본문 비신뢰 정책) 종전 A.NODE_CD IN (...) 로는
+                미처리 연차 요청이 전부 탈락해 부서 지정 마감이 그냥 통과됐다(연차 미확정 상태 마감 구멍).
+                대상자의 현재 소속부서로 폴백한다(AppAdminApprovalMapper COALESCE 'A4 fallback' 동일 패턴).
+                NODE_CD 가 채워진 요청(01/02/10)은 종전과 동일 동작. -->
+           AND COALESCE(NULLIF(A.NODE_CD, ''), (
+                   SELECT U.NODE_CD
+                     FROM TB_USER U
+                    WHERE U.CMPNY_CD = A.CMPNY_CD
+                      AND U.SITE_CD  = A.SITE_CD
+                      AND U.USER_CD  = A.USER_CD
+                    LIMIT 1
+               )) IN (SELECT NODE_CD FROM node_tree)
            AND LEFT(A.WORK_YMD, 6) = #{closeYm}
            AND A.REQ_STATUS = '01'
            AND A.DEL_YN     = 'N'
@@ -98,11 +110,80 @@
           FROM TB_USER_ATTD_REQ A
          WHERE A.CMPNY_CD   = #{cmpnyCd}
            AND A.SITE_CD    = #{siteCd}
-           AND A.NODE_CD    IN (SELECT NODE_CD FROM node_tree)
+           <!-- countPendingReq 와 동일한 소속부서 폴백(OT 03/04 는 NODE_CD 가 채워지므로 현재 영향 없음.
+                향후 NULL 유입 시 조용히 탈락하지 않게 하는 예방적 정합). -->
+           AND COALESCE(NULLIF(A.NODE_CD, ''), (
+                   SELECT U.NODE_CD
+                     FROM TB_USER U
+                    WHERE U.CMPNY_CD = A.CMPNY_CD
+                      AND U.SITE_CD  = A.SITE_CD
+                      AND U.USER_CD  = A.USER_CD
+                    LIMIT 1
+               )) IN (SELECT NODE_CD FROM node_tree)
            AND LEFT(A.WORK_YMD, 6) = #{closeYm}
            AND A.REQ_STATUS = '01'
            AND A.DEL_YN     = 'N'
            AND A.REQ_TYPE IN ('03', '04')
+      </otherwise>
+    </choose>
+    </select>
+
+    <!--
+      미결 연차 변경(이동/삭제) 요청 — TB_LEAVE_CHANGE_REQUEST 활성 상태(REQUESTED/AGREED).
+      연차 승인 요청(05/06)은 countPendingReq 로 이미 마감을 차단하는데 별 테이블인 변경 요청만
+      빠져 있었다. 마감되면 Attd13 의 ensureNotClosed(출발일·이동대상일 양쪽) 때문에 확인도 반려도
+      못 하는 교착이 되므로 차단 사유에 포함한다.
+      월 판정 = 출발일(LU.START_DATE) 또는 이동대상일 중 하나라도 마감월에 걸리면 대상
+      (월 경계 이동이 양쪽 마감을 모두 통과하는 구멍 차단).
+      이 테이블엔 NODE_CD 가 없어 TB_USER 로 대상자 소속부서를 구해 스코프 한정한다(countGpsUnconfirmed 동형).
+    -->
+    <select id="countPendingLeaveChange" resultType="int">
+    /* AttdCloseMapper.countPendingLeaveChange */
+    <choose>
+      <when test='"*".equals(nodeCd)'>
+        SELECT COUNT(*)
+          FROM TB_LEAVE_CHANGE_REQUEST R
+          INNER JOIN TB_USER_LEAVE_USE LU
+                  ON LU.CMPNY_CD = R.CMPNY_CD
+                 AND LU.LEAVE_ID = R.TARGET_LEAVE_ID
+         WHERE R.CMPNY_CD   = #{cmpnyCd}
+           AND R.SITE_CD    = #{siteCd}
+           AND R.DEL_YN     = 'N'
+           AND R.REQ_STATUS IN ('REQUESTED', 'AGREED')
+           AND ( LEFT(LU.START_DATE, 6) = #{closeYm}
+              OR LEFT(R.MOVE_TARGET_DATE, 6) = #{closeYm} )
+      </when>
+      <otherwise>
+        WITH RECURSIVE node_tree AS (
+            SELECT N.NODE_CD
+              FROM TB_SITE_NODE N
+             WHERE N.CMPNY_CD = #{cmpnyCd} AND N.SITE_CD = #{siteCd} AND N.NODE_CD = #{nodeCd}
+            <if test='"Y".equals(incSubNodeYn)'>
+            UNION ALL
+            SELECT C.NODE_CD
+              FROM TB_SITE_NODE C
+              JOIN node_tree P
+                ON C.CMPNY_CD = #{cmpnyCd} AND C.SITE_CD = #{siteCd} AND C.PARENT_NODE_CD = P.NODE_CD
+            </if>
+        )
+        SELECT COUNT(*)
+          FROM TB_LEAVE_CHANGE_REQUEST R
+          INNER JOIN TB_USER_LEAVE_USE LU
+                  ON LU.CMPNY_CD = R.CMPNY_CD
+                 AND LU.LEAVE_ID = R.TARGET_LEAVE_ID
+         WHERE R.CMPNY_CD   = #{cmpnyCd}
+           AND R.SITE_CD    = #{siteCd}
+           AND R.DEL_YN     = 'N'
+           AND R.REQ_STATUS IN ('REQUESTED', 'AGREED')
+           AND ( LEFT(LU.START_DATE, 6) = #{closeYm}
+              OR LEFT(R.MOVE_TARGET_DATE, 6) = #{closeYm} )
+           AND R.TARGET_USER_CD IN (
+                   SELECT NU.USER_CD
+                     FROM TB_USER NU
+                    WHERE NU.CMPNY_CD = #{cmpnyCd}
+                      AND NU.SITE_CD  = #{siteCd}
+                      AND NU.NODE_CD  IN (SELECT NODE_CD FROM node_tree)
+               )
       </otherwise>
     </choose>
     </select>

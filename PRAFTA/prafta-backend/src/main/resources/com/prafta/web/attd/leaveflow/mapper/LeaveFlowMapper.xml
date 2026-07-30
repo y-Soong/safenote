@@ -477,6 +477,50 @@
      FOR UPDATE
     </select>
 
+    <!-- ============================================================
+         PC-02(D8): 일반(비가불) 신청 분할 차감용 활성 부여 목록(만료 임박순, 잔여>0, FOR UPDATE).
+         selectBorrowDeductibleGrants 술어 재사용 + GRANT_ID 타이브레이커(안정 정렬).
+         호출부가 만료 임박순으로 신청 요금을 분할 충당하며, 합산 잔여가 부족하면 ATTD_400_051.
+         (앱 AppLeaveFlowMapper.selectDeductibleGrants 미러)
+         ============================================================ -->
+    <select id="selectDeductibleGrants" resultType="com.prafta.web.attd.leaveflow.vo.DeductibleGrantVO">
+    /* LeaveFlowMapper.selectDeductibleGrants */
+    SELECT
+          G.GRANT_ID   AS grantId
+        , G.GRANT_DAYS AS grantDays
+        , G.USED_DAYS  AS usedDays
+      FROM TB_USER_LEAVE_GRANT G
+     WHERE G.CMPNY_CD = #{cmpnyCd}
+       AND G.USER_CD  = #{userCd}
+       AND G.LEAVE_CD = #{leaveCd}
+       AND G.DEL_YN   = 'N'
+       AND G.STATUS   = 'ACTIVE'
+       AND G.AVAIL_FROM_DATE &lt;= #{workYmd}
+       AND G.AVAIL_TO_DATE   &gt;= #{workYmd}
+       AND (G.GRANT_DAYS - G.USED_DAYS) &gt; 0
+     ORDER BY G.AVAIL_TO_DATE ASC, G.GRANT_DATE ASC, G.GRANT_ID ASC
+     FOR UPDATE
+    </select>
+
+    <!-- ============================================================
+         보안리뷰 M-1: 차감 가능 합산 잔여(잠금 없음 - 판정 전용).
+         selectDeductibleGrants 술어 동일, FOR UPDATE 제거 + SUM.
+         짜투리 사전 판정/preview 가 행 잠금을 잡지 않게 분리(앱 미러).
+         ============================================================ -->
+    <select id="selectDeductibleRemainingSum" resultType="java.math.BigDecimal">
+    /* LeaveFlowMapper.selectDeductibleRemainingSum */
+    SELECT COALESCE(SUM(G.GRANT_DAYS - G.USED_DAYS), 0)
+      FROM TB_USER_LEAVE_GRANT G
+     WHERE G.CMPNY_CD = #{cmpnyCd}
+       AND G.USER_CD  = #{userCd}
+       AND G.LEAVE_CD = #{leaveCd}
+       AND G.DEL_YN   = 'N'
+       AND G.STATUS   = 'ACTIVE'
+       AND G.AVAIL_FROM_DATE &lt;= #{workYmd}
+       AND G.AVAIL_TO_DATE   &gt;= #{workYmd}
+       AND (G.GRANT_DAYS - G.USED_DAYS) &gt; 0
+    </select>
+
     <!-- prafta-com-011-2 가불: 요청에 연결된 사용 행의 GRANT_ID 전체(분할 차감 대응, 반려 시 부여 재계산 대상). -->
     <select id="selectGrantIdsByReqId" resultType="string">
     /* LeaveFlowMapper.selectGrantIdsByReqId */
@@ -516,7 +560,18 @@
         , AP.APPROVAL_STEP                                                   AS approvalStep
         , R.USER_CD                                                          AS requesterUserCd
         , FNC_CMM_INFO_SRCH(R.CMPNY_CD, 'USER_NM', R.USER_CD, null)          AS requesterUserNm
-        , FNC_CMM_INFO_SRCH(R.CMPNY_CD, 'NODE', R.SITE_CD, R.NODE_CD)         AS nodeNm
+        <!-- 부서명. 연차 요청은 REQ.NODE_CD 를 NULL 로 저장하는 경로가 있어(AppLeaveFlowServiceImpl
+             submitLeaveCore — 본문 비신뢰 정책) 그대로 쓰면 Attd_10 연차 결재함 부서 칸이 공란('-')이 된다.
+             신청자의 현재 소속부서로 폴백한다(AppAdminApprovalMapper 의 COALESCE 패턴 동일).
+             U 는 TB_USER_LEAVE_USE 별칭이라 TB_USER 는 스칼라 서브쿼리로 참조한다. -->
+        , FNC_CMM_INFO_SRCH(R.CMPNY_CD, 'NODE', R.SITE_CD, COALESCE(NULLIF(R.NODE_CD, ''), (
+              SELECT RU.NODE_CD
+                FROM TB_USER RU
+               WHERE RU.CMPNY_CD = R.CMPNY_CD
+                 AND RU.SITE_CD  = R.SITE_CD
+                 AND RU.USER_CD  = R.USER_CD
+               LIMIT 1
+          )))                                                                AS nodeNm
         , R.WORK_YMD                                                         AS workYmd
         , R.LEAVE_TYPE                                                       AS leaveType
         , U.LEAVE_CD                                                         AS leaveCd

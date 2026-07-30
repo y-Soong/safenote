@@ -198,7 +198,9 @@ public class AppAttd01ServiceImpl implements AppAttd01Service {
                 && StringUtils.hasText(dayLeave.leaveId())
                 && dayLeave.startDate().compareTo(todayYmd) >= 0;
         boolean isTwoSlot = sched != null && StringUtils.hasText(sched.secSchStrTime());
-        boolean hasScheduleDay = sched != null && !isLeaveDay;
+        // 스케줄 존재 = SCH_CD 매칭까지 요구. selectScheduleByRange 는 근무계획(WP) 행 기준 LEFT JOIN 이라
+        //   WORK_PLAN_CD NULL(휴무 지정)/스케줄 미매치 행도 sched 가 non-null 로 오지만 스케줄 없는 날이다.
+        boolean hasScheduleDay = sched != null && sched.schCd() != null && !isLeaveDay;
 
         // workSeq -> 근태레코드 매핑.
         Map<Integer, AttdRecordResult> attdBySeq = new HashMap<>();
@@ -275,7 +277,7 @@ public class AppAttd01ServiceImpl implements AppAttd01Service {
         String attendanceSummary = hasSchedule ? attendanceSummary(attdBySeq, slotCount) : null;
 
         // dayType/hasIssue 산출 — selectMonth 와 동일 규칙(처리 필요 빠른 액션 노출 근거, 시안 §4.4.3).
-        boolean hasSchCd = sched != null && !isLeaveDay;
+        boolean hasSchCd = hasScheduleDay;
         boolean actionRequired = isPast && hasSchCd
                 && hasActionRequired(sched, slotCount, attdBySeq, attds, gpsByCheckIn, gpsByCheckOut, closed, targetYmd);
         String dayType;
@@ -573,7 +575,9 @@ public class AppAttd01ServiceImpl implements AppAttd01Service {
                     && StringUtils.hasText(leave.leaveId())
                     && leave.startDate().compareTo(todayYmd) >= 0;
             boolean isTwoSlot = sched != null && StringUtils.hasText(sched.secSchStrTime());
-            boolean hasSchCd = sched != null && !isLeaveDay; // 근무 스케줄(SCH_CD) 존재 여부
+            // 근무 스케줄 존재 = SCH_CD 매칭까지 요구(selectScheduleByRange 는 WP 행 기준 LEFT JOIN 이라
+            //   WORK_PLAN_CD NULL(휴무)/미매치 행도 non-null 로 온다 — 스케줄 없는 날 오판 방지).
+            boolean hasSchCd = sched != null && sched.schCd() != null && !isLeaveDay;
 
             List<AttdRecordResult> dayAttds = attdByYmd.getOrDefault(ymd, Collections.emptyList());
             Map<Integer, AttdRecordResult> attdBySeq = new HashMap<>();
@@ -805,7 +809,9 @@ public class AppAttd01ServiceImpl implements AppAttd01Service {
             // prafta-com-008-E-2: 슬롯/근무 산출용 연차일 = leave_use 종일 확정. (달력 점 dayType=LEAVE 는 부분연차도 포함 — 표시 유지)
             boolean isLeaveDay = isFullDayLeave(leave);
             boolean isTwoSlot = sched != null && StringUtils.hasText(sched.secSchStrTime());
-            boolean hasSchCd = sched != null && !isLeaveDay;
+            // 근무 스케줄 존재 = SCH_CD 매칭까지 요구(주간과 동일 — WORK_PLAN_CD NULL(휴무)/미매치 행이
+            //   dayType=WORK(초록 셀)로 오판되던 문제 수정).
+            boolean hasSchCd = sched != null && sched.schCd() != null && !isLeaveDay;
 
             List<AttdRecordResult> dayAttds = attdByYmd.getOrDefault(ymd, Collections.emptyList());
             Map<Integer, AttdRecordResult> attdBySeq = new HashMap<>();

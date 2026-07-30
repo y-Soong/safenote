@@ -171,6 +171,26 @@ public interface AppLeaveFlowMapper {
                               @Param("userCd") String userCd);
 
     /**
+     * PC-02(D8): 일반(비가불) 신청 분할 차감용 활성 부여 목록(만료 임박순, 잔여&gt;0, FOR UPDATE).
+     * 웹 {@code LeaveFlowMapper.selectDeductibleGrants} 미러(SQL 본문 동일). 호출부는 만료 임박순으로
+     * 신청 요금을 분할 충당하고, 합산 잔여가 부족하면 ATTD_400_051 로 거부한다.
+     */
+    List<DeductibleGrantRow> selectDeductibleGrants(@Param("cmpnyCd") String cmpnyCd,
+                                                    @Param("userCd") String userCd,
+                                                    @Param("leaveCd") String leaveCd,
+                                                    @Param("workYmd") String workYmd);
+
+    /**
+     * 보안리뷰 M-1: 차감 가능한 활성 부여의 합산 잔여(잠금 없음 — 판정 전용).
+     * 웹 {@code LeaveFlowMapper.selectDeductibleRemainingSum} 미러(SQL 본문 동일).
+     * FOR UPDATE 목록을 판정에 재사용할 때 생기는 행 잠금↔remnant advisory lock 순서 역전 방지.
+     */
+    java.math.BigDecimal selectDeductibleRemainingSum(@Param("cmpnyCd") String cmpnyCd,
+                                                      @Param("userCd") String userCd,
+                                                      @Param("leaveCd") String leaveCd,
+                                                      @Param("workYmd") String workYmd);
+
+    /**
      * prafta-com-011-2 가불(Q1=b 잔여 우선 차감): 차감 가능한 활성 부여 목록(만료 임박순, 잔여>0, FOR UPDATE).
      * 웹 {@code LeaveFlowMapper.selectBorrowDeductibleGrants} 미러(SQL 본문 동일). 비가불 경로는 호출하지 않는다.
      */
