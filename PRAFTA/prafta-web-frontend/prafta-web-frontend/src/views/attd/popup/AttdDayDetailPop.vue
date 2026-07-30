@@ -161,11 +161,11 @@
               <span>{{ cfg.workingNotice }}</span>
             </div>
 
-            <!-- 근로자 요청 카드 리스트 -->
-            <div v-if="reqCards.length" class="req-section">
+            <!-- 근로자 요청 카드 리스트 (근태/연차 결재 요청 + 연차 변경 요청) -->
+            <div v-if="reqSectionCount" class="req-section">
               <div class="req-section-head">
                 <h3>근로자 요청</h3>
-                <span class="req-count">({{ reqCards.length }})</span>
+                <span class="req-count">({{ reqSectionCount }})</span>
               </div>
               <div class="req-card-list">
                 <div
@@ -184,7 +184,10 @@
 
                   <div
                     class="req-diff"
-                    :class="{ 'req-diff--sched': card.mode === 'sched' }"
+                    :class="{
+                      'req-diff--sched': card.mode === 'sched',
+                      'req-diff--leave': card.mode === 'leave',
+                    }"
                   >
                     <!-- 스케줄 수정(10): 근무시간(스케줄) 기준 BEFORE/AFTER (PRAFTA-APP-007-WEB-7)
                          com-013 #2: 2구간 스케줄 값이 좁은 칼럼에서 줄바꿈되지 않도록
@@ -278,7 +281,9 @@
                     </button>
                   </div>
 
-                  <div class="req-card-actions">
+                  <!-- 결재자만 처리 가능(연차 05/06). 비결재자에게는 요청 내용만 보이고 버튼은 감춘다 —
+                       마감을 막는 항목을 화면에서 추적할 수 있게 하되 권한은 넘기지 않는다. -->
+                  <div v-if="card.canProcess" class="req-card-actions">
                     <button
                       type="button"
                       class="req-btn req-btn-approve"
@@ -295,6 +300,103 @@
                     >
                       반려
                     </button>
+                  </div>
+                  <div v-else class="lc-wait-hint">
+                    내 결재 단계가 아닙니다. 결재 담당자만 승인/반려할 수
+                    있습니다.
+                  </div>
+                </div>
+
+                <!-- 연차 변경(이동/삭제) 요청 카드.
+                     출처가 TB_LEAVE_CHANGE_REQUEST 라 결재 EP 가 다르다(attd13 confirm/reject).
+                     BEFORE/AFTER 칸을 그대로 써서 좌=현재 연차일 / 우=이동 대상일(삭제면 "삭제")을 보여준다
+                     (종전 연차 카드가 그리드 첫 트랙만 채워 반쪽으로 보였던 공간을 활용). -->
+                <div
+                  v-for="card in leaveChangeCards"
+                  :key="card.key"
+                  class="req-card"
+                >
+                  <div class="req-card-head">
+                    <span
+                      class="req-badge"
+                      :class="{ 'req-badge--wait': !card.actionable }"
+                    >
+                      <span class="dot"></span>
+                      {{ card.reqStatusNm }}
+                    </span>
+                    <span class="req-title">{{ card.reqTypeNm }}</span>
+                  </div>
+                  <div class="req-card-sub">
+                    {{ card.initiatorNm }} · {{ card.insertDate }} 신청 ·
+                    {{ card.sideHint }}
+                  </div>
+
+                  <div class="req-diff">
+                    <div class="req-diff-col">
+                      <div class="req-diff-head">현재 연차일</div>
+                      <div class="req-diff-row">
+                        <span class="req-diff-val">{{
+                          card.fromDateLabel
+                        }}</span>
+                      </div>
+                    </div>
+                    <div class="req-diff-arrow">→</div>
+                    <div class="req-diff-col">
+                      <div class="req-diff-head">
+                        {{ card.reqType === "MOVE" ? "이동 대상일" : "처리" }}
+                      </div>
+                      <div class="req-diff-row">
+                        <span class="req-diff-val is-changed">{{
+                          card.toDateLabel
+                        }}</span>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div class="req-leave-line lc-detail-line">
+                    <span class="req-leave-seg">{{ card.leaveNm }}</span>
+                    <span class="req-leave-seg">{{ card.unitLabel }}</span>
+                    <span v-if="card.timeRange" class="req-leave-seg">{{
+                      card.timeRange
+                    }}</span>
+                    <span v-if="card.leaveDaysLabel" class="req-leave-seg">{{
+                      card.leaveDaysLabel
+                    }}</span>
+                  </div>
+
+                  <div v-if="card.reqReason" class="req-reason-row">
+                    <span class="req-reason-lbl">사유</span>
+                    <button
+                      type="button"
+                      class="hist-reason-btn"
+                      @click="openReasonPopup(card.reqReason)"
+                    >
+                      보기
+                    </button>
+                  </div>
+
+                  <!-- AGREED(관리자 확인 대기)만 처리 가능.
+                       REQUESTED 는 관리자 발의 후 근로자 응답을 기다리는 단계라 버튼을 내지 않는다. -->
+                  <div v-if="card.actionable" class="req-card-actions">
+                    <button
+                      type="button"
+                      class="req-btn req-btn-approve"
+                      :disabled="isMonthClosed || leaveChangeBusy"
+                      @click="fnApproveLeaveChange(card)"
+                    >
+                      승인
+                    </button>
+                    <button
+                      type="button"
+                      class="req-btn req-btn-reject"
+                      :disabled="isMonthClosed || leaveChangeBusy"
+                      @click="fnRejectLeaveChange(card)"
+                    >
+                      반려
+                    </button>
+                  </div>
+                  <div v-else class="lc-wait-hint">
+                    근로자가 동의하면 확인할 수 있습니다.
                   </div>
                 </div>
               </div>
@@ -1121,6 +1223,10 @@ const historyList = ref([]); // 처리 이력
 const reqList = ref([]); // 근로자 요청 (monthlyAttdReqResultList)
 // PRAFTA-APP-018-F: 그날 확정 연차 사용내역 (confirmedLeaveResultList). 표시 전용.
 const confirmedLeaves = ref([]);
+// 연차 변경(이동/삭제) 활성 요청 (leaveChangeReqResultList).
+//   TB_LEAVE_CHANGE_REQUEST 출처 — 근태 요청(TB_USER_ATTD_REQ)과 별 테이블이라 종전 이 팝업에서
+//   누락돼 있었다. 출발일·이동대상일 양쪽 셀에서 동일 요청이 보인다.
+const leaveChangeReqs = ref([]);
 // PRAFTA-003-7: getDailyAttdDetails 응답의 dailyOvertimeResultList 원본 보관용.
 //   initForm()에서 segments[*].otList 에 분배해서 프리필하는 데 사용한다.
 const dailyOvertimeList = ref([]);
@@ -1595,6 +1701,15 @@ const reqCards = computed(() => {
       reqReason: req.reqReason || "",
       // 연차(05/06) 결재 라우팅용 — 백엔드가 현재 로그인 사용자의 처리 단계를 내려줌(비결재자/그 외 타입은 null)
       approvalStep: req.approvalStep ?? null,
+      // 승인/반려 버튼 노출 여부(표시/처리 분리).
+      //   연차(05/06)는 다단계 결재라 '현재 단계 결재자' 만 처리할 수 있다(서버가 approvalStep 요구 →
+      //   비결재자는 NULL 이라 호출 자체가 실패). 종전엔 백엔드가 비결재자에게 카드를 아예 안 내렸는데,
+      //   그러면 마감을 막는 요청이 화면에서 사라져 추적이 불가해 표시는 허용하도록 바꿨다.
+      //   그 대신 여기서 버튼을 감춘다. 근태/OT/스케줄(01~04/10)은 매니저 모델이라 종전대로 항상 처리 가능.
+      canProcess:
+        req.reqType === "05" || req.reqType === "06"
+          ? !!req.approvalStep
+          : true,
     };
     // PRAFTA-APP-007-WEB-7: 스케줄 수정(10) 은 출퇴근 시각이 아니라 "현재→목표 스케줄"을 비교한다.
     //   현재(cur*)는 tb_user_work_plan→tb_sch_mgmt, 목표(tgt*)는 REQ.SCH_CD→tb_sch_mgmt (WEB-5 응답).
@@ -1688,6 +1803,73 @@ const confirmedLeaveCards = computed(() =>
       leaveDaysLabel: chargeDaysLabel(lv.leaveDays),
     };
   })
+);
+
+// ── 연차 변경(이동/삭제) 요청 카드 (leaveChangeReqResultList) ──
+//   Attd_13 의 라벨 맵과 동일 문구를 쓴다(화면 간 용어 일치).
+const LC_TYPE_NM = { MOVE: "연차 일자 이동 요청", DELETE: "연차 삭제 요청" };
+const LC_STATUS_NM = {
+  REQUESTED: "근로자 동의 대기",
+  AGREED: "확인 대기",
+};
+const LC_INITIATOR_NM = { ADMIN: "관리자 발의", WORKER: "근로자 요청" };
+
+// "20260805" → "08.05(수)". 값이 없으면 "-".
+const fmtLeaveChangeDate = (ymd) => {
+  const s = String(ymd ?? "");
+  if (!/^\d{8}$/.test(s)) return "-";
+  const d = new Date(+s.slice(0, 4), +s.slice(4, 6) - 1, +s.slice(6, 8));
+  return `${s.slice(4, 6)}.${s.slice(6, 8)}(${dowLabels[d.getDay()]})`;
+};
+
+const leaveChangeCards = computed(() => {
+  const viewYmd = ymdDashToNum(props.date_p);
+  return (leaveChangeReqs.value || []).map((r, i) => {
+    const isMove = r.reqType === "MOVE";
+    const unitCode = r.useUnitType ?? null;
+    // 시간차(02 2시간 / 03 1시간 / 04 30분)일 때만 시각 범위 병기 — 연차 카드와 동일 규칙
+    const isTimed = ["02", "03", "04"].includes(unitCode);
+    const unitLabel = r.unitNm
+      ? isTimed
+        ? `시간차 ${r.unitNm}`
+        : r.unitNm
+      : "연차";
+    // 지금 열려 있는 셀이 출발일인지 이동 대상일인지 — 카드 상단에 방향 안내를 띄운다.
+    //   (근태 요청처럼 관련된 두 날짜 모두에서 같은 요청이 보이므로 혼동 방지용)
+    const isTargetSide = isMove && viewYmd && viewYmd === r.moveTargetDate;
+    return {
+      key: `lc-${r.changeReqId ?? i}`,
+      changeReqId: r.changeReqId,
+      reqType: r.reqType,
+      reqTypeNm: LC_TYPE_NM[r.reqType] ?? "연차 변경 요청",
+      reqStatus: r.reqStatus,
+      reqStatusNm: LC_STATUS_NM[r.reqStatus] ?? r.reqStatus ?? "",
+      initiatorNm: LC_INITIATOR_NM[r.initiatorType] ?? "",
+      insertDate: fmtInsertDate(r.insertDate),
+      reqReason: r.reqReason || "",
+      // BEFORE/AFTER 칸: 좌=현재 연차일(출발일), 우=이동 대상일(삭제면 "삭제")
+      fromDateLabel: fmtLeaveChangeDate(r.targetStartDate),
+      toDateLabel: isMove ? fmtLeaveChangeDate(r.moveTargetDate) : "삭제",
+      // 연차 상세 1줄(종류·단위·시간차 범위·차감일수) — 연차 카드 표기 규칙 재사용
+      leaveNm: r.leaveNm || "연차",
+      unitLabel,
+      timeRange: isTimed ? hourlyRangeLabel(r.startTime, r.endTime) : null,
+      leaveDaysLabel: chargeDaysLabel(r.leaveDays),
+      // 지금 보고 있는 셀 기준 방향 안내
+      sideHint: !isMove
+        ? "이 날짜의 연차를 삭제"
+        : isTargetSide
+          ? "이 날짜로 이동"
+          : "이 날짜에서 이동",
+      // AGREED(관리자 확인 대기)만 처리 가능. REQUESTED 는 근로자 응답을 기다리는 단계.
+      actionable: r.reqStatus === "AGREED",
+    };
+  });
+});
+
+// 근로자 요청 섹션 헤더 카운트 — 근태/연차 요청 + 연차 변경 요청 합산.
+const reqSectionCount = computed(
+  () => reqCards.value.length + leaveChangeCards.value.length
 );
 
 // ── 최종 cfg ──────────────────────────────────────────────
@@ -2803,6 +2985,56 @@ const fnRejectReq = (card) => {
   };
 };
 
+// ── 연차 변경(이동/삭제) 요청 처리 ─────────────────────────
+//   신규 EP 없이 attd13 의 기존 엔드포인트를 재사용한다. 대상자 관리 권한·마감 가드(출발일+이동일
+//   양쪽)·만료/충돌 재검증·AGREED 상태 가드가 모두 서버(Attd13ServiceImpl)에 있으므로 프론트는
+//   호출과 갱신만 담당한다. 실패 메시지는 서버 ApiException 문구를 그대로 노출한다.
+const leaveChangeBusy = ref(false);
+
+const fnApproveLeaveChange = async (card) => {
+  if (await guardClosed()) return;
+  if (leaveChangeBusy.value) return;
+  const ok = await proxy.$confirm(
+    card.reqType === "MOVE"
+      ? `연차를 ${card.toDateLabel} 로 이동하시겠습니까?`
+      : "해당 연차를 삭제하시겠습니까? 해당 일자는 근무일로 복귀합니다."
+  );
+  if (!ok) return;
+
+  leaveChangeBusy.value = true;
+  try {
+    const response = await axios.post(
+      `/webApi/attd13/change-requests/${card.changeReqId}/confirm`
+    );
+    if (response.status === 200) {
+      await proxy.$alert(getMessage(MSG.SAVE_COMPLETED));
+      await fnSearch();
+    }
+  } catch (err) {
+    console.error(
+      "[AttdDayDetailPop] confirm leave-change request failed",
+      err
+    );
+    await proxy.$alert(resolveApiErrorMessage(err, getMessage(MSG.SAVE_ERROR)));
+  } finally {
+    leaveChangeBusy.value = false;
+  }
+};
+
+// 연차 변경 요청 반려 — 공용 반려 사유 모달(kind='leaveChange')로 사유를 받는다.
+const fnRejectLeaveChange = (card) => {
+  if (isMonthClosed.value) {
+    proxy.$alert("마감된 월입니다. 마감 해제 후 수정할 수 있습니다.");
+    return;
+  }
+  rejectModal.value = {
+    open: true,
+    kind: "leaveChange",
+    busy: false,
+    context: { changeReqId: card.changeReqId },
+  };
+};
+
 // 반려 사유 입력 모달 "확인" 핸들러 — 입력된 사유로 반려 API 호출.
 //   기존 승인(fnApproveReq/fnApproveOvertime)의 호출/에러처리 패턴을 따른다.
 const onRejectConfirm = async (reason) => {
@@ -2830,6 +3062,14 @@ const onRejectConfirm = async (reason) => {
         approvalStep: context.approvalStep,
         comment: reason,
       });
+    } else if (kind === "leaveChange") {
+      // 연차 변경(이동/삭제) 반려 — attd13 기존 EP. 반려 사유(rejectReason) 서버 필수.
+      //   원 연차는 불변이고 요청만 REJECTED 로 전이된다.
+      //   요청 body 키는 대문자 REJECT_REASON (백엔드 DTO 가 @JsonProperty 로 고정 — LeaveChangeConfirmPop 정합).
+      await axios.post(
+        `/webApi/attd13/change-requests/${context.changeReqId}/reject`,
+        { REJECT_REASON: reason }
+      );
     } else if (kind === "schedModify") {
       // [PRAFTA-APP-007] 스케줄 수정 요청(10) 반려 — 전용 엔드포인트. 반려 사유(rejectReason) 서버 필수.
       //   body 의 키 필드는 서버 REQ row 와 일치 검증되며, 스케줄(tb_user_work_plan)은 미반영.
@@ -2990,6 +3230,7 @@ const fnSearch = async () => {
   };
   historyList.value = [];
   reqList.value = [];
+  leaveChangeReqs.value = [];
   // PRAFTA-003-7: OT 리스트도 응답 전엔 비워두고, 응답 후 덮어쓴다.
   dailyOvertimeList.value = [];
   // PRAFTA-009 part2: reload 시 외근 GPS 패널을 닫는다(ATTD_ID 가 갱신될 수 있음).
@@ -3037,6 +3278,8 @@ const fnSearch = async () => {
       dailyOvertimeList.value = response.data?.dailyOvertimeResultList ?? [];
       // PRAFTA-APP-018-F: 그날 확정 연차 사용내역(자동확정/직접 포함, 미처리 결재대기 제외).
       confirmedLeaves.value = response.data?.confirmedLeaveResultList ?? [];
+      // 연차 변경(이동/삭제) 활성 요청. 미수신(구서버)이면 빈 배열 → 카드 미노출(회귀 없음).
+      leaveChangeReqs.value = response.data?.leaveChangeReqResultList ?? [];
       // PC-09(N8): 대상 사용자·대상일 기준 개인 분모(분). 미수신(구서버)이면 480 유지.
       convMinutes.value = response.data?.convMinutes ?? 480;
     }
@@ -3500,6 +3743,15 @@ onMounted(() => {
   border-radius: 50%;
   background: #4f46e5;
 }
+/* 연차 변경 요청 중 아직 처리할 수 없는 단계(REQUESTED — 근로자 동의 대기) 배지.
+   처리 가능(AGREED)한 카드와 색으로 구분해 오조작을 줄인다. */
+.req-badge--wait {
+  background: #f3f4f6;
+  color: #6b7280;
+}
+.req-badge--wait .dot {
+  background: #9ca3af;
+}
 .req-title {
   font-size: 13.5px;
   font-weight: 700;
@@ -3594,6 +3846,18 @@ onMounted(() => {
   color: var(--color-text-strong, var(--color-text, #111827));
   font-variant-numeric: tabular-nums;
 }
+/* 연차(05/06) 카드 전용 — 자식이 req-leave-line 하나뿐이라 3트랙 그리드(1fr auto 1fr)의
+   첫 칸만 채워 카드가 반쪽으로 보였다. 풀폭 단일 컬럼으로 전환한다(정보 손실 없음).
+   겉 컨테이너의 배경/보더는 안쪽 req-leave-line 과 이중이 되므로 제거한다. */
+.req-diff--leave {
+  display: block;
+  padding: 0;
+  background: none;
+  border: none;
+}
+.req-diff--leave .req-leave-line {
+  width: 100%;
+}
 .req-leave-seg + .req-leave-seg::before {
   content: "·";
   margin-right: 6px;
@@ -3609,6 +3873,21 @@ onMounted(() => {
   flex-direction: column;
   gap: 8px;
   margin-top: 8px;
+}
+/* 연차 변경 요청 카드의 연차 상세 1줄 — BEFORE/AFTER 블록 아래에 붙인다. */
+.lc-detail-line {
+  margin-top: 8px;
+}
+/* 근로자 동의 대기(REQUESTED) 카드의 액션 자리 안내문. */
+.lc-wait-hint {
+  margin-top: 12px;
+  padding: 8px 10px;
+  border-radius: 6px;
+  background: var(--bg-subtle, #f9fafb);
+  border: 1px dashed var(--color-border, #e5e7eb);
+  font-size: 11.5px;
+  color: var(--color-text-muted, #9ca3af);
+  text-align: center;
 }
 .req-reason-row {
   display: flex;

@@ -383,10 +383,16 @@ public class LeaveFlowServiceImpl implements LeaveFlowService {
             }
 
         // 5) 요청 생성 (REQ_TYPE='05'). 결재 Y면 신청('01'), N이면 즉시 승인('02').
+        //    NODE_CD: 종전엔 본문값(p.nodeCd())을 그대로 저장했다. 이 값은 위조 가능하고, 부서 스코프
+        //    판정(결재 대상·부서 지정 마감 차단·캘린더 강조)에 쓰이므로 남의 부서로 밀어넣을 여지가 있었다.
+        //    앱 경로(AppLeaveFlowServiceImpl submitLeaveCore)와 동일하게 서버가 직접 조회한 소속부서를
+        //    저장한다. 신청은 본인 전용(LeaveApplyParam 이 userCd 를 토큰에서 강제)이라 대행 시나리오가
+        //    없고, 신청 시점 조회이므로 '요청 시점 스냅샷' 의미도 그대로다(이후 소속이동에도 불변).
+        String reqNodeCd = attdCloseService.resolveUserNodeCd(cmpny, site, user);
         String reqId = leaveFlowMapper.selectNextReqId(cmpny);
         String reqStatus = aprvRequired ? REQ_APPLIED : REQ_APPROVED;
         leaveFlowMapper.insertLeaveReq(new LeaveReqInsertCommand(
-                reqId, cmpny, site, user, reqStatus, p.reason(), workYmd, p.nodeCd(),
+                reqId, cmpny, site, user, reqStatus, p.reason(), workYmd, reqNodeCd,
                 workYmd, startTime, workYmd, endTime, p.leaveType(), leaveDays, user));
 
         // 6) 결재 Y → 라인 일괄 생성. 자기 승인 원칙(§9.5): 본인이 결재자인 단계는

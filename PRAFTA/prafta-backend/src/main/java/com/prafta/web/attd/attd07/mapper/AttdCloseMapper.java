@@ -40,6 +40,24 @@ public interface AttdCloseMapper {
                           @Param("incSubNodeYn") String incSubNodeYn,
                           @Param("closeYm") String closeYm);
 
+    /**
+     * 미결 연차 변경(이동/삭제) 요청 건수 — TB_LEAVE_CHANGE_REQUEST 의 활성 상태
+     * (REQUESTED:근로자 응답대기 / AGREED:관리자 확인대기). 스코프 내로 한정.
+     *
+     * <p>연차 승인 요청(REQ_TYPE 05/06)은 이미 {@link #countPendingReq} 에 포함돼 마감을 차단하는데,
+     * 별 테이블인 연차 변경 요청만 빠져 있었다. 그대로 마감하면 Attd13 의 마감 가드
+     * (ensureNotClosed — 출발일·이동대상일 양쪽 검사) 때문에 해당 요청은 마감 해제 없이는 확인도
+     * 반려도 못 하는 <b>교착 상태</b>가 된다. 그래서 차단 사유에 포함한다.
+     *
+     * <p>월 판정은 출발일(TB_USER_LEAVE_USE.START_DATE) 또는 이동 대상일 중 하나라도 마감월에
+     * 걸리면 대상이다(월 경계 이동이 어느 쪽 마감도 통과해 버리는 구멍 차단).
+     */
+    int countPendingLeaveChange(@Param("cmpnyCd") String cmpnyCd,
+                                @Param("siteCd") String siteCd,
+                                @Param("nodeCd") String nodeCd,
+                                @Param("incSubNodeYn") String incSubNodeYn,
+                                @Param("closeYm") String closeYm);
+
     /** GPS 미확인 건수 — IS_MOCKED='Y'. 스코프 내로 한정. */
     int countGpsUnconfirmed(@Param("cmpnyCd") String cmpnyCd,
                             @Param("siteCd") String siteCd,

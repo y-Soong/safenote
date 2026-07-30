@@ -560,7 +560,18 @@
         , AP.APPROVAL_STEP                                                   AS approvalStep
         , R.USER_CD                                                          AS requesterUserCd
         , FNC_CMM_INFO_SRCH(R.CMPNY_CD, 'USER_NM', R.USER_CD, null)          AS requesterUserNm
-        , FNC_CMM_INFO_SRCH(R.CMPNY_CD, 'NODE', R.SITE_CD, R.NODE_CD)         AS nodeNm
+        <!-- 부서명. 연차 요청은 REQ.NODE_CD 를 NULL 로 저장하는 경로가 있어(AppLeaveFlowServiceImpl
+             submitLeaveCore — 본문 비신뢰 정책) 그대로 쓰면 Attd_10 연차 결재함 부서 칸이 공란('-')이 된다.
+             신청자의 현재 소속부서로 폴백한다(AppAdminApprovalMapper 의 COALESCE 패턴 동일).
+             U 는 TB_USER_LEAVE_USE 별칭이라 TB_USER 는 스칼라 서브쿼리로 참조한다. -->
+        , FNC_CMM_INFO_SRCH(R.CMPNY_CD, 'NODE', R.SITE_CD, COALESCE(NULLIF(R.NODE_CD, ''), (
+              SELECT RU.NODE_CD
+                FROM TB_USER RU
+               WHERE RU.CMPNY_CD = R.CMPNY_CD
+                 AND RU.SITE_CD  = R.SITE_CD
+                 AND RU.USER_CD  = R.USER_CD
+               LIMIT 1
+          )))                                                                AS nodeNm
         , R.WORK_YMD                                                         AS workYmd
         , R.LEAVE_TYPE                                                       AS leaveType
         , U.LEAVE_CD                                                         AS leaveCd
