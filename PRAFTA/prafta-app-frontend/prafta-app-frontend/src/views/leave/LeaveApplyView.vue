@@ -40,9 +40,11 @@
         :submitting="isSubmitting"
         :preview="preview"
         :preview-loading="isPreviewLoading"
+        :day-schedule="daySchedule"
         @submit="onSubmit"
         @cancel="onCancel"
         @preview-request="onPreviewRequest"
+        @day-schedule-request="onDayScheduleRequest"
       />
     </main>
 
@@ -155,6 +157,32 @@ const onPreviewRequest = async (payload) => {
     if (seq === previewSeq) preview.value = null
   } finally {
     if (seq === previewSeq) isPreviewLoading.value = false
+  }
+}
+
+// ── 시간차 휴게시간 안내: 대상일 근무/휴게 시각 조회 (GET /appApi/leaveflow/day-schedule) ──
+// 폼이 시간차 단위 + 날짜 완성 시 emit → 조회 전용 호출. 실패는 비치명적(표시만 생략).
+// { hasSchedule, fstSchStrTime, fstSchEndTime, secSchStrTime, secSchEndTime,
+//   fstBrkStrTime, fstBrkEndTime, secBrkStrTime, secBrkEndTime } | null
+const daySchedule = ref(null)
+// 응답 역전 방지 시퀀스(preview 패턴 미러) — 빠른 날짜 변경 시 stale 응답 무시.
+let dayScheduleSeq = 0
+
+const onDayScheduleRequest = async (workYmd) => {
+  // null = 비대상 단위/날짜 미완성 → 표시 해제(잔존 안내 누수 방지).
+  if (!workYmd) {
+    dayScheduleSeq += 1
+    daySchedule.value = null
+    return
+  }
+  const seq = ++dayScheduleSeq
+  try {
+    const res = await api.get('/appApi/leaveflow/day-schedule', { params: { workYmd } })
+    if (seq !== dayScheduleSeq) return // stale 응답 폐기
+    daySchedule.value = res?.data ?? null
+  } catch (err) {
+    console.warn('[LeaveApply] 일자 스케줄 조회 실패(표시 생략):', err?.message)
+    if (seq === dayScheduleSeq) daySchedule.value = null
   }
 }
 

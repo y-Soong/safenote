@@ -37,12 +37,22 @@
       </div>
     </section>
 
-    <!-- 1) 연차 종류 -->
+    <!-- 1) 연차 종류 (종류 선택 후 접힘 — 종류가 많을 때 화면 길이 절약) -->
     <section class="fs">
-      <p class="fs__title">연차 종류</p>
+      <div class="fs__title-row">
+        <p class="fs__title">연차 종류</p>
+        <button
+          v-if="selectedType"
+          type="button"
+          class="fs__toggle"
+          @click="typeListCollapsed = !typeListCollapsed"
+        >
+          {{ typeListCollapsed ? `전체 보기 (${leaveTypes.length})` : '접기' }}
+        </button>
+      </div>
       <div class="type-list">
         <button
-          v-for="lt in leaveTypes"
+          v-for="lt in visibleLeaveTypes"
           :key="lt.leaveCd"
           type="button"
           class="type-item"
@@ -126,6 +136,22 @@
           </div>
         </div>
 
+        <!-- 대상일 근무/휴게 시각 안내 — 시간차는 휴게시간을 가로지를 수 없으므로(서버 ATTD_400_055)
+             시각 선택 전에 휴게 구간을 보여준다. 조회 실패/스케줄 없는 날은 표시 생략·안내만. -->
+        <div v-if="dayScheduleInfo" class="sch-info">
+          <div class="sch-info__row">
+            <span class="sch-info__lbl">근무</span>
+            <span class="sch-info__val">{{ dayScheduleInfo.workText }}</span>
+          </div>
+          <div v-if="dayScheduleInfo.breakText" class="sch-info__row">
+            <span class="sch-info__lbl">휴게</span>
+            <span class="sch-info__val sch-info__val--brk">{{ dayScheduleInfo.breakText }}</span>
+          </div>
+        </div>
+        <p v-else-if="daySchedule && !daySchedule.hasSchedule" class="sch-info-none">
+          해당 일자에 적용된 근무 스케줄이 없어요.
+        </p>
+
         <label class="field">
           <span class="field__label"><span class="req">*</span>시작</span>
           <TimeStepperField v-model="startTimeInput" :step="30" placeholder="시작 시각" />
@@ -143,7 +169,7 @@
               −
             </button>
             <span class="end-stepper__val">{{ endTimeInput || '--:--' }}</span>
-            <span class="end-stepper__n">{{ stepCount }}{{ unitShortLabel }}</span>
+            <span class="end-stepper__n">{{ stepTotalText }}</span>
             <button
               type="button"
               class="end-stepper__btn"
@@ -366,8 +392,12 @@ const props = defineProps({
   preview: { type: Object, default: null },
   // LC-10: preview 호출 진행 플래그(부모 소유) — 요약 카드 로딩 표시용.
   previewLoading: { type: Boolean, default: false },
+  // 대상일 근무/휴게 시각(부모 소유, GET day-schedule 응답) — 시간차 휴게 가로지름 사전 안내용.
+  //   { hasSchedule, fstSchStrTime, fstSchEndTime, secSchStrTime, secSchEndTime,
+  //     fstBrkStrTime, fstBrkEndTime, secBrkStrTime, secBrkEndTime } | null(미조회/실패 — 표시 생략)
+  daySchedule: { type: Object, default: null },
 })
-const emit = defineEmits(['submit', 'cancel', 'preview-request'])
+const emit = defineEmits(['submit', 'cancel', 'preview-request', 'day-schedule-request'])
 
 const { proxy } = getCurrentInstance() || { proxy: null }
 // 공통: alert 폴백(앱 전역 $alert 우선, 없으면 window.alert) — LeaveApplyView 패턴 동일.
@@ -408,6 +438,9 @@ const reason = ref('')
 // 가불(미래 연차 당겨쓰기) 동의 상태 (prafta-com-011-4). 종류/날짜 변경 시 리셋.
 const borrowAgreed = ref(false)
 
+// 연차 종류 리스트 접힘 상태 — 종류 선택 후 자동 접힘(종류가 많을 때 화면 길이 절약).
+const typeListCollapsed = ref(false)
+
 // 결재선 상태
 const selectedPresetId = ref('')
 // approverList: [{ approverUserCd, userNm, userId, rankNm, nodeNm }] (순서 = 결재 단계)
@@ -438,11 +471,21 @@ const unitOptions = computed(() => {
   return allowed.map((code) => ({ code, label: UNIT_LABELS[code] || code }))
 })
 
+// 접힘 시 선택 종류 1건만 노출(펼침/미선택은 전체). 접힌 항목 클릭은 onSelectType 이 펼침으로 처리.
+const visibleLeaveTypes = computed(() =>
+  typeListCollapsed.value && selectedType.value ? [selectedType.value] : leaveTypes.value,
+)
+
 // 시간차 단위 여부(02·03·04)
 const isTimeUnit = computed(() => ['02', '03', '04'].includes(useUnitType.value))
 
-// 시간차 단위 짧은 라벨(종료 스텝퍼 옆 'N2시간' 등 표시).
-const unitShortLabel = computed(() => UNIT_LABELS[useUnitType.value] || '')
+// 종료 스텝퍼 옆 신청 총 시간 표시 — 예: 7×30분 = "3시간 30분".
+//   (구현 주의: 스텝수+단위라벨 문자열 연결("730분")은 시간처럼 오독되므로 총 분량으로 환산 표기)
+const stepTotalText = computed(() => {
+  const unitMin = UNIT_MINUTES[useUnitType.value]
+  if (!unitMin) return ''
+  return formatMinutesToHm(stepCount.value * unitMin)
+})
 
 // 종료 시각(읽기전용 파생): 시작 미입력/비시간차면 ''. 아니면 시작 + stepCount×단위분(24h wrap).
 //   minutesToInput() 재사용. 시작은 30분 단위 TimeStepperField 값.
@@ -496,6 +539,53 @@ const unitGuideText = computed(() => {
   // developer: 휴게시간 가로지름 불가 등 정책 문구 확정(attd §8.5). 골격은 기본 안내만.
   return `${label} 단위로 신청해 주세요. 휴게시간을 가로지를 수 없어요.`
 })
+
+// ── 대상일 근무/휴게 시각 안내 (day-schedule) ─────────────────────────────
+// 'HHMM' → 'HH:MM' 표시. 형식 위반이면 ''.
+const fmtHHMM = (hhmm) => {
+  if (!hhmm || !/^\d{4}$/.test(hhmm)) return ''
+  return `${hhmm.slice(0, 2)}:${hhmm.slice(2)}`
+}
+
+// 'HHMM' 시각쌍 → "HH:MM~HH:MM". 한쪽이라도 무효면 null.
+const fmtRange = (str, end) => {
+  const s = fmtHHMM(str)
+  const e = fmtHHMM(end)
+  return s && e ? `${s}~${e}` : null
+}
+
+// 표시용 근무/휴게 텍스트. 스케줄 없음/미조회면 null(블록 미노출).
+//   2구간 스케줄은 " / " 로 병기. 휴게 미설정이면 breakText='' (근무만 노출).
+const dayScheduleInfo = computed(() => {
+  const ds = props.daySchedule
+  if (!ds || ds.hasSchedule !== true) return null
+  const workRanges = [
+    fmtRange(ds.fstSchStrTime, ds.fstSchEndTime),
+    fmtRange(ds.secSchStrTime, ds.secSchEndTime),
+  ].filter(Boolean)
+  if (workRanges.length === 0) return null
+  const breakRanges = [
+    fmtRange(ds.fstBrkStrTime, ds.fstBrkEndTime),
+    fmtRange(ds.secBrkStrTime, ds.secBrkEndTime),
+  ].filter(Boolean)
+  return {
+    workText: workRanges.join(' / '),
+    breakText: breakRanges.join(' / '),
+  }
+})
+
+// 시간차 단위 + 날짜 완성 시에만 조회 대상(그 외 null → 표시 해제).
+const dayScheduleYmd = computed(() => {
+  if (!isTimeUnit.value) return null
+  const ymd = toYmd(workDateInput.value)
+  return ymd && ymd.length === 8 ? ymd : null
+})
+
+// 대상 변경 → 부모에 조회 요청 emit(API 호출은 부모 소유 — preview 패턴 동일). 즉시 emit(디바운스
+//   불요 — 날짜/단위 변경은 이산적). immediate 로 컨텍스트 프리필 진입도 커버.
+watch(dayScheduleYmd, (ymd) => {
+  emit('day-schedule-request', ymd)
+}, { immediate: true })
 
 // 결재자 emit 용 userCd 배열(순서 보존 — 위치 재인덱싱 아님, 표시 순서 그대로)
 const approverUserCds = computed(() => approverList.value.map((a) => a.approverUserCd))
@@ -770,9 +860,16 @@ const resolveDefaultUnit = (type) => {
 }
 
 // 종류 변경 시 단위/시각/결재선 재초기화. 단위는 종류별 허용 단위 안에서 종일을 기본 선택한다.
+//   선택 후에는 리스트를 접는다(화면 길이 절약). 이미 선택된 종류 재탭은 입력 리셋 없이
+//   접힘/펼침 토글만 한다(접힘 상태의 단일 항목 탭 = 펼치기).
 const onSelectType = (lt) => {
   if (!lt?.applicable) return
+  if (selectedLeaveCd.value === lt.leaveCd) {
+    typeListCollapsed.value = !typeListCollapsed.value
+    return
+  }
   selectedLeaveCd.value = lt.leaveCd
+  typeListCollapsed.value = true
   useUnitType.value = resolveDefaultUnit(lt)
   startTimeInput.value = ''
   stepCount.value = 1
@@ -959,6 +1056,22 @@ onMounted(() => {
   font-size: 13px;
   color: var(--color-text-tertiary);
 }
+/* 섹션 제목 + 접기/펼치기 토글 행 (연차 종류) */
+.fs__title-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+.fs__toggle {
+  height: 28px;
+  padding: 0 var(--space-sm);
+  background: transparent;
+  border: 0;
+  font-size: 12px;
+  color: var(--color-primary-text-deep);
+  cursor: pointer;
+  font-family: inherit;
+}
 
 /* 연차 종류 리스트 */
 .type-list {
@@ -1075,6 +1188,41 @@ onMounted(() => {
   border-color: var(--color-primary);
   color: var(--color-primary);
 }
+/* 대상일 근무/휴게 시각 안내 (시간차 — 휴게 가로지름 사전 안내) */
+.sch-info {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-xs);
+  padding: var(--space-sm) var(--space-md);
+  background: var(--color-warning-tint);
+  border: 0.5px solid var(--color-warning);
+  border-radius: var(--radius-md);
+}
+.sch-info__row {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: var(--space-sm);
+}
+.sch-info__lbl {
+  font-size: 12px;
+  color: var(--color-warning-text);
+}
+.sch-info__val {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--color-text-primary);
+  font-variant-numeric: tabular-nums;
+}
+.sch-info__val--brk {
+  color: var(--color-warning-text);
+}
+.sch-info-none {
+  margin: 0;
+  font-size: 12px;
+  color: var(--color-text-tertiary);
+}
+
 .time-guide {
   margin: 0;
   display: flex;

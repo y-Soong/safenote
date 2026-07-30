@@ -18,10 +18,12 @@ import com.prafta.app.leave.leaveflow.application.helper.LeaveUnitGranularity;
 import com.prafta.app.leave.leaveflow.application.param.LeaveApplyMetaParam;
 import com.prafta.app.leave.leaveflow.application.param.LeaveApplyParam;
 import com.prafta.app.leave.leaveflow.application.param.LeaveApproverSearchParam;
+import com.prafta.app.leave.leaveflow.application.param.LeaveDayScheduleParam;
 import com.prafta.app.leave.leaveflow.application.param.LeaveDeductionPreviewParam;
 import com.prafta.app.leave.leaveflow.dto.response.ApprovalPresetListResponse;
 import com.prafta.app.leave.leaveflow.dto.response.ApproverSearchResponse;
 import com.prafta.app.leave.leaveflow.dto.response.LeaveApplyMetaResponse;
+import com.prafta.app.leave.leaveflow.dto.response.LeaveDayScheduleResponse;
 import com.prafta.app.leave.leaveflow.dto.response.LeaveDeductionPreviewResponse;
 import com.prafta.app.leave.leaveflow.mapper.AppLeaveFlowMapper;
 import com.prafta.app.leave.leaveflow.result.ApproverRow;
@@ -35,6 +37,7 @@ import com.prafta.app.mypage.mypage01.result.PresetMasterResult;
 import com.prafta.app.mypage.mypage01.result.PresetStepResult;
 import com.prafta.common.cmm.approval.mapper.ApprovalLineMapper;
 import com.prafta.common.cmm.approval.vo.ApprovalStepVO;
+import com.prafta.common.cmm.leave.mapper.LeaveDeductionMapper;
 import com.prafta.common.cmm.leave.mapper.LeavePolicyMapper;
 import com.prafta.common.cmm.leave.service.LeaveApprovalNotiService;
 import com.prafta.common.cmm.leave.service.LeaveConversionPolicyService;
@@ -88,6 +91,8 @@ public class AppLeaveFlowServiceImpl implements AppLeaveFlowService {
     private final LeaveConversionPolicyService leaveConversionPolicyService;
     /** PC-05: 짜투리 잔여 보전 — 발동 판정(D5)·발동 처리(D6) 단일 출처(웹과 공유 빈, 회수 D7은 웹 훅 전담). */
     private final LeaveRemnantCoverService leaveRemnantCoverService;
+    /** 일자별 스케줄(휴게 포함) 조회 — 시간차 휴게 가로지름 사전 안내(day-schedule). 공통 매퍼 재사용. */
+    private final LeaveDeductionMapper leaveDeductionMapper;
 
     // 법정정책 미존재 시 폴백 단위(종일만).
     private static final String FALLBACK_UNIT_CODE = "00";
@@ -789,6 +794,14 @@ public class AppLeaveFlowServiceImpl implements AppLeaveFlowService {
                 remnantTriggered, remnantDays, companyCoverMinutes);
     }
 
+    @Override
+    public LeaveDayScheduleResponse selectDaySchedule(LeaveDayScheduleParam p) {
+        // 시간차 휴게 가로지름(ATTD_400_055) 사전 안내용 조회 전용 — 스케줄 없는 날은 에러가 아니라
+        //   hasSchedule=false (신청 가능 여부 판정은 submitLeave/preview 가 담당, 여기선 표시 정보만).
+        return LeaveDayScheduleResponse.from(
+                leaveDeductionMapper.selectDailySchedule(p.cmpnyCd(), p.siteCd(), p.userCd(), p.workYmd()));
+    }
+
     /**
      * PC-02(D8): 일반(비가불·비'01') 신청의 부여 충당 계획 — 만료 임박순(AVAIL_TO_DATE ASC) 다부여 분할 차감(웹 미러).
      *
@@ -934,11 +947,17 @@ public class AppLeaveFlowServiceImpl implements AppLeaveFlowService {
                                  List<GrantCharge> charges, RemnantTriggerPlanVO remnantPlan) {
 
         // 6) 요청 INSERT(REQ_TYPE='05'). 결재 Y면 신청('01'), N이면 즉시 승인('02').
-        //    nodeCd 는 본문 비신뢰 → null 저장(자기승인 판정은 서버 USER→NODE 조인으로 독립 수행).
+        //    NODE_CD: 본문(p.nodeCd())은 위조 가능해 신뢰하지 않는다. 다만 종전처럼 null 을 저장하면
+        //    "이 요청이 어느 부서 건인지" 기록이 사라져, NODE_CD 로 부서 스코프를 판정하는 쪽에서
+        //    연차 요청이 통째로 탈락한다(캘린더 '처리 필요' 강조 미표시 / 부서 지정 근태 마감이
+        //    미처리 연차를 못 막음 / 결재함 부서명 공란). 그래서 "안 쓴다" 대신 신청 시점에 서버가
+        //    직접 조회한 소속부서를 박는다 — 출처만 신뢰 가능해지고 '요청 시점 스냅샷' 성질은 동일하며,
+        //    이후 소속이동이 있어도 이 행의 값은 변하지 않는다.
+        String reqNodeCd = attdCloseService.resolveUserNodeCd(cmpny, site, user);
         String reqId = appLeaveFlowMapper.selectNextReqId(cmpny);
         String reqStatus = aprvRequired ? REQ_APPLIED : REQ_APPROVED;
         appLeaveFlowMapper.insertLeaveReq(new LeaveReqInsertCommand(
-                reqId, cmpny, site, user, reqStatus, p.reason(), workYmd, null,
+                reqId, cmpny, site, user, reqStatus, p.reason(), workYmd, reqNodeCd,
                 workYmd, startTime, workYmd, endTime, p.leaveType(), leaveDays, user));
 
         // 7) 결재 Y → 라인 일괄 생성 + 자기 승인 원칙(§9.5, 웹 161~200 미러)

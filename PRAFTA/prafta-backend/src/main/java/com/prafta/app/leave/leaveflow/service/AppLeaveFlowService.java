@@ -3,10 +3,12 @@ package com.prafta.app.leave.leaveflow.service;
 import com.prafta.app.leave.leaveflow.application.param.LeaveApplyMetaParam;
 import com.prafta.app.leave.leaveflow.application.param.LeaveApplyParam;
 import com.prafta.app.leave.leaveflow.application.param.LeaveApproverSearchParam;
+import com.prafta.app.leave.leaveflow.application.param.LeaveDayScheduleParam;
 import com.prafta.app.leave.leaveflow.application.param.LeaveDeductionPreviewParam;
 import com.prafta.app.leave.leaveflow.dto.response.ApprovalPresetListResponse;
 import com.prafta.app.leave.leaveflow.dto.response.ApproverSearchResponse;
 import com.prafta.app.leave.leaveflow.dto.response.LeaveApplyMetaResponse;
+import com.prafta.app.leave.leaveflow.dto.response.LeaveDayScheduleResponse;
 import com.prafta.app.leave.leaveflow.dto.response.LeaveDeductionPreviewResponse;
 
 /**
@@ -37,4 +39,10 @@ public interface AppLeaveFlowService {
      * 잔여 부족은 에러가 아니라 플래그({@code insufficientBalance})로 응답한다.
      */
     LeaveDeductionPreviewResponse previewDeduction(LeaveDeductionPreviewParam param);
+
+    /**
+     * 신청 대상일의 근무/휴게 시각 조회(조회 전용) — 시간차 연차의 휴게 가로지름(ATTD_400_055)
+     * 사전 안내용. 스케줄 없는 날은 {@code hasSchedule=false} 로 응답한다(에러 아님).
+     */
+    LeaveDayScheduleResponse selectDaySchedule(LeaveDayScheduleParam param);
 }
