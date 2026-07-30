@@ -36,10 +36,14 @@ public interface LeavePromotionMapper {
      * <p>각 후보의 역산 기준 = 본연차(STATUTORY_ANNUAL) grant 중 가장 임박한 AVAIL_TO_DATE 1건
      * (resolvePromotionBaseGrant 단일 기준). 잔여 = 본연차+근속가산 ACTIVE (GRANT_DAYS-USED_DAYS) 합.
      *
-     * <p>도래 시점(1차=만료6개월전, 2차=만료3개월전) 판정은 결정성을 위해 서비스 레이어에서
-     * {@code today} 와 비교한다(SQL 에서 NOW() 분기 금지).
+     * <p>해당 회차(BASE_AVAIL_TO_DATE 동일) <b>FIRST 마스터 존재 여부(firstMasterYn)·최초 통지일
+     * (firstNoticedDate)</b> 를 TB_LEAVE_PROMOTION_LOG LEFT JOIN 으로 1패스에 싣는다(구간 판정 입력).
+     * 후보 루프 안 단건 조회(N+1)를 만들지 말 것.
      *
-     * @return 회사·사용자 단위 후보 목록(BASE_AVAIL_TO_DATE/잔여 포함). 없으면 빈 리스트.
+     * <p>도래 시점 판정(1차/2차 구간 판정 — 작업지시서 §4, D5·D6·D8)은 결정성을 위해 서비스 레이어에서
+     * {@code today} 와 비교한다(SQL 에서 NOW()/날짜 연산 분기 금지).
+     *
+     * @return 회사·사용자 단위 후보 목록(BASE_AVAIL_TO_DATE/잔여/FIRST 마스터 메타 포함). 없으면 빈 리스트.
      */
     List<PromotionCandidateVO> selectPromotionCandidates();
 
@@ -48,6 +52,8 @@ public interface LeavePromotionMapper {
      *
      * <p>입사일/부여기준 변경으로 BASE_AVAIL_TO_DATE 가 바뀌었을 수 있어, 통지/지정 직전에
      * 동일 산식으로 재조회한다(§3-3 재산정). 미해당(1년차 미만/촉진 미사용/grant 부재)이면 null.
+     * 목록 쿼리와 동일하게 회차 FIRST 마스터 메타(firstMasterYn/firstNoticedDate)를 함께 싣는다
+     * (구간 판정 산식 동일성 유지).
      *
      * @param cmpnyCd 회사 코드 (CMPNY_CD 스코프)
      * @param userCd  대상 사용자 코드

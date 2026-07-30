@@ -162,4 +162,207 @@
      LIMIT 1
     </select>
 
+    <!--
+      ============================================================
+      1차 현황(작업지시서_연차촉진-1차현황-화면-및-배치활성화 §5) — 조회 / 독촉
+      ============================================================
+    -->
+
+    <!--
+      1차 통지 대상자 현황(raw). node_tree 전개·스코프는 selectDesignateTargets 와 동일 패턴.
+      - 대상: FIRST 마스터(DEL_YN='N') 보유자. STATUS 필터 없음 — 1차를 COMPLETED 로 전이시키는
+        코드가 없고(실측), 상태가 늘어날 때 행이 사라지면 안 된다.
+      - 회차 유효(만료 2개월 전 미도래) 판정과 기한·D-day·상태 4분류는 전부 서비스(Java)가 계산한다.
+        본 쿼리는 표기 변환(DATE_FORMAT)·동등/부등 비교·집계만 담당한다(날짜 연산 이중화 금지).
+      - SUB(촉진 연차 최초 등록일) / RM(독촉 이력)은 집계 LEFT JOIN 1본씩 — 행별 서브쿼리 금지(N+1).
+      ⚠️ resultType 이 record 이므로 아래 SELECT 컬럼 순서 = 생성자 인자 순서(위치 기반).
+    -->
+    <select id="selectFirstTargets" parameterType="com.prafta.web.leave.promotion.leavepromo01.application.query.PromotionFirstTargetSearchQuery" resultType="com.prafta.web.leave.promotion.leavepromo01.result.PromotionFirstTargetRowResult">
+    /* WebLeavePromo01Mapper.selectFirstTargets */
+        WITH RECURSIVE
+        node_tree AS (
+            SELECT
+                  N.CMPNY_CD
+                , N.SITE_CD
+                , N.NODE_CD
+                , N.NODE_NM
+            FROM TB_SITE_NODE N
+            WHERE N.CMPNY_CD = #{gvCmpnyCd}
+              AND N.SITE_CD  = #{siteCd}
+            <if test="nodeCd != null and nodeCd != ''">
+              AND N.NODE_CD  = #{nodeCd}
+            </if>
+            <if test="nodeCd == null or nodeCd == ''">
+              AND N.PARENT_NODE_CD IS NULL
+            </if>
+
+            <if test='"Y".equals(incSubNodeYn) or nodeCd == null or nodeCd == ""'>
+            UNION ALL
+
+            SELECT
+                  C.CMPNY_CD
+                , C.SITE_CD
+                , C.NODE_CD
+                , C.NODE_NM
+            FROM TB_SITE_NODE C
+            INNER JOIN node_tree P
+                ON  C.CMPNY_CD       = P.CMPNY_CD
+                AND C.SITE_CD        = P.SITE_CD
+                AND C.PARENT_NODE_CD = P.NODE_CD
+            </if>
+        )
+
+        SELECT
+              U.USER_CD                             AS userCd
+            , U.USER_NM                             AS userNm
+            , U.NODE_CD                             AS nodeCd
+            , NT.NODE_NM                            AS nodeNm
+            , U.SITE_CD                             AS siteCd
+            , S.SITE_NM                             AS siteNm
+            , M.NOTICED_DATE                        AS noticedDate
+            , M.BASE_AVAIL_TO_DATE                  AS baseAvailToDate
+            , IFNULL(M.STAGE1_DESIGNATED_DAYS, 0)   AS stage1DesignatedDays
+            , M.LOGIN_NOTIFIED_YN                   AS loginNotifiedYn
+            , SUB.FIRST_SUBMIT_DATE                 AS firstSubmitDateRaw
+            , IFNULL(RM.REMIND_CNT, 0)              AS remindCntRaw
+            , RM.LAST_REMIND_DATE                   AS lastRemindDateRaw
+          FROM TB_USER U
+          INNER JOIN node_tree NT
+            ON  U.CMPNY_CD = NT.CMPNY_CD
+            AND U.SITE_CD  = NT.SITE_CD
+            AND U.NODE_CD  = NT.NODE_CD
+          INNER JOIN TB_SITE S
+            ON  S.CMPNY_CD = U.CMPNY_CD
+            AND S.SITE_CD  = U.SITE_CD
+          INNER JOIN TB_LEAVE_POLICY P
+            ON  P.CMPNY_CD            = U.CMPNY_CD
+            AND P.USE_YN              = 'Y'
+            AND P.AXIS7_USE_PROMOTION = 'Y'
+          INNER JOIN (
+                /* FIRST 회차 마스터 — 가장 임박한 만료일 1건(STATUS 무필터, DEL_YN 만 적용) */
+                SELECT
+                      M1.CMPNY_CD
+                    , M1.USER_CD
+                    , M1.BASE_AVAIL_TO_DATE
+                    , M1.NOTICED_DATE
+                    , M1.STAGE1_DESIGNATED_DAYS
+                    , M1.LOGIN_NOTIFIED_YN
+                  FROM TB_LEAVE_PROMOTION_LOG M1
+                 WHERE M1.CMPNY_CD    = #{gvCmpnyCd}
+                   AND M1.PROMO_STAGE = 'FIRST'
+                   AND M1.DEL_YN      = 'N'
+                   AND NOT EXISTS (
+                         SELECT 1
+                           FROM TB_LEAVE_PROMOTION_LOG M2
+                          WHERE M2.CMPNY_CD    = M1.CMPNY_CD
+                            AND M2.USER_CD     = M1.USER_CD
+                            AND M2.PROMO_STAGE = 'FIRST'
+                            AND M2.DEL_YN      = 'N'
+                            AND (
+                                  M2.BASE_AVAIL_TO_DATE <![CDATA[ < ]]> M1.BASE_AVAIL_TO_DATE
+                               OR (M2.BASE_AVAIL_TO_DATE = M1.BASE_AVAIL_TO_DATE AND M2.PROMO_ID <![CDATA[ < ]]> M1.PROMO_ID)
+                                )
+                       )
+               ) M
+            ON  M.CMPNY_CD = U.CMPNY_CD
+            AND M.USER_CD  = U.USER_CD
+          LEFT JOIN (
+                /*
+                  1차 촉진 연차 최초 등록일(제출 시점 판정).
+                  GRANT_ID 로 회차를 스코프하지 않는다 — 차감 grant 는 만료 임박순으로 선택되므로
+                  근속가산 grant 가 선택될 수 있어 마스터 BASE_GRANT_ID 와 불일치할 수 있다.
+                  회차 스코프는 서비스가 통지일 기준(등록일이 통지일 미만이면 이전 회차분)으로 적용한다.
+                */
+                SELECT
+                      LU.CMPNY_CD
+                    , LU.USER_CD
+                    , DATE_FORMAT(MIN(LU.INSERT_DATE), '%Y%m%d') AS FIRST_SUBMIT_DATE
+                  FROM TB_USER_LEAVE_USE LU
+                 WHERE LU.CMPNY_CD        = #{gvCmpnyCd}
+                   AND LU.LEAVE_CD        = 'SYS_ANNUAL'
+                   AND LU.LEAVE_STATUS    = 'CONFIRMED'
+                   AND LU.DEL_YN          = 'N'
+                   AND LU.PROMOTION_STAGE = 'FIRST'
+                 GROUP BY LU.CMPNY_CD, LU.USER_CD
+               ) SUB
+            ON  SUB.CMPNY_CD = U.CMPNY_CD
+            AND SUB.USER_CD  = U.USER_CD
+          LEFT JOIN (
+                /*
+                  독촉(재안내) 발송 이력 집계. NOTI_TYPE 문자열은
+                  LeavePromotionNotiConst.NOTI_TYPE_PROMOTION_REMIND / SYS045 시드와 동일해야 한다.
+                  회차 스코프도 서비스가 통지일 기준으로 적용한다.
+                */
+                SELECT
+                      NO2.CMPNY_CD
+                    , NO2.TARGET_USER_CD
+                    , COUNT(1) AS REMIND_CNT
+                    , DATE_FORMAT(MAX(NO2.INSERT_DATE), '%Y%m%d') AS LAST_REMIND_DATE
+                  FROM TB_NOTI_OUTBOX NO2
+                 WHERE NO2.CMPNY_CD  = #{gvCmpnyCd}
+                   AND NO2.NOTI_TYPE = 'LEAVE_PROMOTION_REMIND'
+                   AND NO2.DEL_YN    = 'N'
+                 GROUP BY NO2.CMPNY_CD, NO2.TARGET_USER_CD
+               ) RM
+            ON  RM.CMPNY_CD       = U.CMPNY_CD
+            AND RM.TARGET_USER_CD = U.USER_CD
+         WHERE U.CMPNY_CD       = #{gvCmpnyCd}
+           AND U.SITE_CD        = #{siteCd}
+           AND U.USE_YN         = 'Y'
+           AND U.ACCOUNT_STATUS = '01'
+        <if test="userNm != null and userNm != ''">
+           AND U.USER_NM LIKE CONCAT('%', #{userNm}, '%')
+        </if>
+         ORDER BY U.USER_NM ASC, U.USER_CD ASC
+    </select>
+
+    <!--
+      독촉 대상자 FIRST 회차 메타(서버 재조회). selectDesignateTargetMeta 를 FIRST 로 미러.
+      siteCd 일치 + 활성 사용자 한정. FIRST 마스터가 없으면 0행이므로 서비스가 "대상 아님"으로 스킵.
+    -->
+    <select id="selectFirstRoundMeta" resultType="com.prafta.web.leave.promotion.leavepromo01.vo.FirstRoundMetaVO">
+    /* WebLeavePromo01Mapper.selectFirstRoundMeta */
+    SELECT
+          U.SITE_CD                  AS siteCd
+        , U.NODE_CD                  AS nodeCd
+        , M.BASE_AVAIL_TO_DATE       AS baseAvailToDate
+        , M.NOTICED_DATE             AS noticedDate
+        , M.STAGE1_DESIGNATED_DAYS   AS stage1DesignatedDays
+      FROM TB_USER U
+      INNER JOIN (
+            SELECT
+                  M1.USER_CD
+                , M1.BASE_AVAIL_TO_DATE
+                , M1.NOTICED_DATE
+                , IFNULL(M1.STAGE1_DESIGNATED_DAYS, 0) AS STAGE1_DESIGNATED_DAYS
+              FROM TB_LEAVE_PROMOTION_LOG M1
+             WHERE M1.CMPNY_CD    = #{cmpnyCd}
+               AND M1.USER_CD     = #{userCd}
+               AND M1.PROMO_STAGE = 'FIRST'
+               AND M1.DEL_YN      = 'N'
+             ORDER BY M1.BASE_AVAIL_TO_DATE ASC, M1.PROMO_ID ASC
+             LIMIT 1
+           ) M
+        ON M.USER_CD = U.USER_CD
+     WHERE U.CMPNY_CD       = #{cmpnyCd}
+       AND U.USER_CD        = #{userCd}
+       AND U.SITE_CD        = #{siteCd}
+       AND U.USE_YN         = 'Y'
+       AND U.ACCOUNT_STATUS = '01'
+     LIMIT 1
+    </select>
+
+    <!--
+      오늘 같은 대상에게 이미 독촉을 발송했는지 카운트. DEDUP_KEY 정확 일치(LIKE 금지).
+      UX 용 사전 점검이며 최종 중복 방지 권위는 UNIQUE(CMPNY_CD, DEDUP_KEY) 다.
+    -->
+    <select id="countRemindToday" resultType="int">
+    /* WebLeavePromo01Mapper.countRemindToday */
+    SELECT COUNT(1)
+      FROM TB_NOTI_OUTBOX
+     WHERE CMPNY_CD  = #{cmpnyCd}
+       AND DEDUP_KEY = #{dedupKey}
+       AND DEL_YN    = 'N'
+    </select>
+
 </mapper>

@@ -33,6 +33,12 @@ import lombok.extern.slf4j.Slf4j;
  *   도래자 산출 → 1차는 {@link LeavePromotionNotiService#notifyFirstPromotion}(마스터+PUSH),
  *   2차는 마스터에 STAGE2_TARGET_DAYS 기록(웹 A-4 화면이 조회). 사용자 단위 예외 격리.
  *
+ * <p><b>도래 판정은 구간 판정</b>이다(작업지시서_연차촉진-1차현황-화면-및-배치활성화 §4, D5·D6·D8).
+ *   1차 = 회차 FIRST 마스터 부재 + today 가 [만료-6개월, 만료-2개월) 구간,
+ *   2차 = 회차 FIRST 마스터 존재 + today 가 max(만료-3개월, 통지일+10일) 이상이며 만료-2개월 미만.
+ *   배치가 특정 하루를 놓쳐도 다음 실행에서 흡수되므로(소급 통지 D6) 별도 백필 스크립트가 필요 없다.
+ *   중복 통지는 UNIQUE(CMPNY_CD, DEDUP_KEY) + {@code DuplicateKeyException} 흡수로 차단된다(멱등 불변).
+ *
  * <p>결정성: {@code today} 를 본 배치에서 1회 산출해 서비스에 주입한다(서비스는 now() 미호출).
  */
 @Slf4j
