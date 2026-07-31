@@ -128,6 +128,7 @@ import { Html5Qrcode } from 'html5-qrcode'
 import { useRouter } from 'vue-router'
 
 import api from '@/api/axios'
+import { openNativeAppSettings } from '@/utils/appSettingsBridge'
 import SafetyCameraPermissionView from '@/views/chkLst/components/SafetyCameraPermissionView.vue'
 
 const router = useRouter()
@@ -287,11 +288,12 @@ const onClose = () => {
   router.replace('/AdminHome')
 }
 
-const openAppSettings = () => {
-  try {
-    window.location.href = 'app-settings:'
-  } catch {
-    /* deep link 미지원 환경 — 수동 설정 안내 */
+// OS 앱 설정 화면 열기. 네이티브 브리지로만 가능하다 —
+// window.location='app-settings:' 는 웹뷰에서 열리지 않고 로딩만 걸린다(실측).
+const openAppSettings = async () => {
+  const ok = await openNativeAppSettings()
+  if (!ok) {
+    window.alert('설정 앱에서 PRAFTA > 카메라 권한을 직접 켜주세요.')
   }
 }
 
