@@ -37,7 +37,18 @@ $repoRoot  = (& git -C $PSScriptRoot rev-parse --show-toplevel).Trim() -replace 
 if ($LASTEXITCODE -ne 0 -or -not $repoRoot) { throw "git repo 루트를 찾지 못함 ($PSScriptRoot)" }
 $remoteDir = '/home/ec2-user/prafta'
 $remoteJar = "$remoteDir/prafta-backend.jar"
-$worktree  = Join-Path $env:TEMP 'prafta-deploy-wt-backend'
+
+# 임시 디렉토리 선정 — 비대화형 셸에서는 $env:TEMP 가 C:\WINDOWS\TEMP 로 잡히는데
+# 일반 계정은 그 디렉토리를 '열거'할 권한이 없어 빌드 도구가 상위를 거슬러 읽다 실패한다.
+# 실제로 열거 가능한지 확인하고, 안 되면 사용자 로컬 temp 로 폴백한다(deploy-web.ps1 과 동일).
+function Resolve-TempRoot {
+    foreach ($cand in @($env:TEMP, (Join-Path $env:LOCALAPPDATA 'Temp'))) {
+        if (-not $cand) { continue }
+        try { Get-ChildItem $cand -ErrorAction Stop | Out-Null; return $cand } catch { }
+    }
+    throw "쓸 수 있는 임시 디렉토리를 찾지 못함 (TEMP=$env:TEMP)"
+}
+$worktree  = Join-Path (Resolve-TempRoot) 'prafta-deploy-wt-backend'
 $deployLog = Join-Path $repoRoot '.claude\refs\deploy-history.log'
 
 function Write-Step([string]$msg) { Write-Host "`n=== $msg ===" -ForegroundColor Cyan }
