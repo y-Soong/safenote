@@ -404,8 +404,12 @@ onBeforeUnmount(() => {
   overflow: hidden;
   background: #0a0a0a;
 }
+/* ★!important 필수 — html5-qrcode 가 start() 시 인라인 position:relative 를 박아
+   absolute 를 덮어쓰면 컨테이너 높이가 auto 로 풀리고, video 의 height:100% 가 무시되어
+   비디오가 제 화면비 높이만 차지한다(아래 영역이 배경색으로 남는 검정 증상).
+   상세는 views/_common/QrScanner.vue 의 동일 주석 참조 — 두 화면 동형 구조다. */
 .site-ops-cam__reader {
-  position: absolute;
+  position: absolute !important;
   inset: 0;
 }
 .site-ops-cam__reader :deep(video) {

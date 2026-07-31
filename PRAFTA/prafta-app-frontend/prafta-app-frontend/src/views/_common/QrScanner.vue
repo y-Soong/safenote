@@ -348,8 +348,16 @@ onBeforeUnmount(() => {
   overflow: hidden;
   background: #0a0a0a;
 }
+/* ★position:absolute 에 !important 가 반드시 필요하다.
+   html5-qrcode 는 start() 시 이 컨테이너에 인라인으로 position:relative 를 박는다
+   (html5-qrcode.js: element.style.position = "relative"). 인라인 선언이 클래스 규칙을
+   이기므로 !important 가 없으면 absolute 가 무효화되고, inset:0 은 relative 박스의 크기를
+   만들지 못해 컨테이너 높이가 auto 로 풀린다. 그러면 아래 video 의 height:100% 가
+   "auto 높이 부모에 대한 백분율"이라 무시되고, 라이브러리가 폭만 지정한 채(높이 미지정,
+   camera/core-impl.js createVideoElement) 비디오가 제 화면비 높이만 차지해
+   남은 아래 영역이 .qr-cam 배경(#0a0a0a)으로 남는다 = 화면 절반 검정 증상. */
 .qr-cam__reader {
-  position: absolute;
+  position: absolute !important;
   inset: 0;
 }
 .qr-cam__reader :deep(video) {
