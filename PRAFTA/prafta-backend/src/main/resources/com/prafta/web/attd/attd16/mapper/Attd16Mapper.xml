@@ -108,7 +108,10 @@
           AND (U.WITHDRAWAL_DATE IS NULL OR U.WITHDRAWAL_DATE <![CDATA[ >= ]]> #{monthStart})
           /* qa 결함 D1: 부서 판정 술어에 사업장 차원을 세운다. NODE_CD 는 사업장 간 중복 코드이므로
              사용자 소속 사업장을 고정하지 않으면 타 사업장 동일 코드 부서가 오매칭된다.
-             Attd_15 target_user CTE 관례(U.SITE_CD = #{siteCd} + node_tree 3컬럼 조인) 미러. */
+             Attd_15 target_user CTE 관례(U.SITE_CD 바인딩 + node_tree 3컬럼 조인) 미러.
+             주의: SQL 주석 안에는 파라미터 표기(샵중괄호)를 쓰지 않는다 — MyBatis 가 주석 안에서도
+             치환하여 ParameterMapping 을 1건 더 만들지만 JDBC 드라이버는 주석 속 물음표를 세지 않아
+             "Parameter index out of range" 로 조회가 통째로 실패한다. */
           AND U.SITE_CD       = #{siteCd}
 
         <if test='nodeCd != null and nodeCd != "" and "Y".equals(incSubNodeYn)'>
