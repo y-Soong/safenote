@@ -129,6 +129,7 @@ import { useRouter } from 'vue-router'
 
 import api from '@/api/axios'
 import { openNativeAppSettings } from '@/utils/appSettingsBridge'
+import { startCoverScale } from '@/utils/qrPreviewCover'
 import SafetyCameraPermissionView from '@/views/chkLst/components/SafetyCameraPermissionView.vue'
 
 const router = useRouter()
@@ -153,6 +154,7 @@ let html5QrCode = null
 let isStarting = false
 let toastTimer = null
 let closeTimer = null
+let stopCoverScale = null // 프리뷰 cover 배율 감시 해제 함수
 
 // ── 모드 토글(UI) ────────────────────────────────────────────────────
 const setMode = (next) => {
@@ -259,6 +261,10 @@ const startScanner = async () => {
     await html5QrCode.start({ deviceId: { exact: backCam.id } }, config, onScanSuccess, () => {
       /* 프레임별 인식 실패는 정상 동작(무시) */
     })
+
+    // 프리뷰를 화면에 꽉 차게(cover) 보이도록 배율 주입. CSS 로 늘리면 디코딩이 깨진다
+    // — 상세는 utils/qrPreviewCover.js 주석 참조.
+    stopCoverScale = startCoverScale(document.getElementById('site-ops-reader'))
   } catch (err) {
     console.warn('[AdminSiteOps] 카메라 초기화 실패:', err?.message)
     cameraFailed.value = true
@@ -268,6 +274,10 @@ const startScanner = async () => {
 }
 
 const stopScanner = () => {
+  if (stopCoverScale) {
+    stopCoverScale()
+    stopCoverScale = null
+  }
   if (!html5QrCode) return
   const instance = html5QrCode
   html5QrCode = null
@@ -414,10 +424,15 @@ onBeforeUnmount(() => {
   position: absolute !important;
   inset: 0;
 }
+/* ★video 의 width/height 를 건드리지 않는다 — 늘리면 html5-qrcode 의 디코딩 좌표가
+   깨져 QR 이 인식되지 않는다. 화면 채우기는 transform 으로만 한다.
+   상세는 views/_common/QrScanner.vue 의 동일 주석 / utils/qrPreviewCover.js 참조. */
 .site-ops-cam__reader :deep(video) {
-  width: 100% !important;
-  height: 100% !important;
-  object-fit: cover;
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%) scale(var(--qr-cover-scale, 1));
+  transform-origin: center center;
 }
 .site-ops-cam__reader :deep(#site-ops-reader__dashboard),
 .site-ops-cam__reader :deep(#site-ops-reader__header_message),

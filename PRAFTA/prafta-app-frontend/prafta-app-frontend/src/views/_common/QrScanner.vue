@@ -108,6 +108,7 @@ import { ref, onMounted, onBeforeUnmount } from 'vue'
 import { Html5Qrcode } from 'html5-qrcode'
 import { useRouter } from 'vue-router'
 import { openNativeAppSettings } from '@/utils/appSettingsBridge'
+import { startCoverScale } from '@/utils/qrPreviewCover'
 import SafetyCameraPermissionView from '@/views/chkLst/components/SafetyCameraPermissionView.vue'
 import SafetyQrErrorOverlay from '@/views/chkLst/components/SafetyQrErrorOverlay.vue'
 
@@ -123,6 +124,7 @@ const qrErrorMessage = ref('QR 코드 형식을 확인할 수 없어요. 다시 
 let html5QrCode = null
 let isStarting = false
 let qrErrorTimer = null
+let stopCoverScale = null // 프리뷰 cover 배율 감시 해제 함수
 
 // ───────────────────────────────────────────────────────────
 // QR 페이로드 파싱 — 스캐너 단계에서는 "형식 검증"만 수행.
@@ -233,6 +235,10 @@ const startScanner = async () => {
     await html5QrCode.start({ deviceId: { exact: backCam.id } }, config, onScanSuccess, () => {
       /* 프레임별 인식 실패는 정상 동작(무시) */
     })
+
+    // 프리뷰를 화면에 꽉 차게(cover) 보이도록 배율 주입. CSS 로 늘리면 디코딩이 깨진다
+    // — 상세는 utils/qrPreviewCover.js 주석 참조.
+    stopCoverScale = startCoverScale(document.getElementById('qr-reader'))
   } catch (err) {
     // 권한 거부/카메라 점유/장치 부재 → 폴백 화면(케이스 6)
     console.warn('[QrScanner] 카메라 초기화 실패:', err?.message)
@@ -243,6 +249,10 @@ const startScanner = async () => {
 }
 
 const stopScanner = () => {
+  if (stopCoverScale) {
+    stopCoverScale()
+    stopCoverScale = null
+  }
   if (!html5QrCode) return
   const instance = html5QrCode
   html5QrCode = null
@@ -361,10 +371,18 @@ onBeforeUnmount(() => {
   position: absolute !important;
   inset: 0;
 }
+/* ★video 의 width/height 를 건드리지 않는다.
+   html5-qrcode 는 video 의 레이아웃 크기(clientWidth/clientHeight)가 실제 프레임의
+   화면비와 같다고 보고 디코딩 좌표를 계산한다(foreverScan). 늘려버리면 가로형 프레임이
+   세로 캔버스에 짓눌려 QR 이 인식되지 않는다(2026-07-31 실측 회귀).
+   화면 채우기는 transform 으로만 한다 — transform 은 레이아웃 크기를 바꾸지 않는다.
+   배율은 utils/qrPreviewCover.js 가 --qr-cover-scale 로 주입한다. */
 .qr-cam__reader :deep(video) {
-  width: 100% !important;
-  height: 100% !important;
-  object-fit: cover;
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%) scale(var(--qr-cover-scale, 1));
+  transform-origin: center center;
 }
 /* html5-qrcode 기본 UI(테두리/안내문) 숨김 — 자체 가이드 사용 */
 .qr-cam__reader :deep(#qr-reader__dashboard),
