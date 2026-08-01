@@ -1,7 +1,8 @@
 # QR 카메라 프리뷰 양플랫폼 검증 작업지시서
 
-> 작성: 2026-07-29 밤 (다음 세션 재개용) | 상태: **07-30 원인 규명·픽스 커밋(deebe3c)·APK 빌드 완료 — 실기기 검증 대기** (하단 §6 참조)
-> 관련 메모리: `project_prafta_ios_release_prep` / 선행 문서: `iOS_TestFlight_배포_작업지시서.md`
+> 작성: 2026-07-29 밤 | 상태: **✅ 종결 (2026-08-01)** — 양플랫폼 실기기 검증 완료, 하단 §7 최종 결론 참조
+> 관련 메모리: `project_prafta_ios_release_prep`, `feedback_qr_scanner_which_component_and_html5qrcode_css` / 선행 문서: `iOS_TestFlight_배포_작업지시서.md`
+> ⚠️ §1~§6 의 mobile_scanner 조사는 **오진 경로**였다(순회점검 QR 은 Flutter 가 아니라 웹뷰 Vue 스캐너). 기록 보존용으로만 남긴다.
 
 ---
 
@@ -96,3 +97,45 @@ APK 빌드 완료: `build\app\outputs\flutter-apk\app-release.apk` (63MB, api.pr
    실패 시 `adb logcat | findstr QR_PREVIEW` 로 보고 사이즈 확보 (4:3 이 나오는데도 검정이면 다른 원인).
 2. 안드 OK → push → **Codemagic Start new build**(main/ios-testflight) → TestFlight 에서 iOS 프리뷰/스캔 확인.
 3. 실패 시 폴백: 버전 스윕 7.3.x→7.2.x→7.1.3 (§3-3) 또는 최후수단 §4.
+
+---
+
+## 7. 최종 결론 (2026-07-31 ~ 08-01, 종결)
+
+### 진짜 원인 — 순회점검 QR 은 mobile_scanner 가 아니었다
+
+문제의 화면(순회점검 QR·일용직 QR)은 Flutter 네이티브 스캐너가 아니라 **웹뷰 안 Vue 스캐너**
+(`prafta-app-frontend` 의 `QrScanner.vue` / `AdminSiteOpsView.vue`, html5-qrcode)였다.
+§1~§6 의 mobile_scanner 버전 조사·cameraResolution 픽스(deebe3c)는 이 증상과 무관
+(SCAN_QR 브리지 경로에는 해가 없어 커밋은 유지). 감별법·재발 방지는 메모리
+`feedback_qr_scanner_which_component_and_html5qrcode_css` 에 집약.
+
+### 해결된 결함 3건 (모두 실기기 검증 완료)
+
+| 날짜 | 증상 | 원인 | 픽스 커밋 (웹 repo / Flutter repo) |
+|---|---|---|---|
+| 07-31 | 화면 절반 검정(스캔은 됨) | html5-qrcode 가 컨테이너에 인라인 `position:relative` 를 박아 absolute 무효화 → 컨테이너 auto 높이 | `0a760cd7` / `3c1b798` (`!important`) |
+| 07-31 | 회귀: 꽉 차는데 인식 불가(iOS) | video 를 CSS 로 늘리면 디코딩 좌표(레이아웃 크기=프레임 화면비 전제)가 깨짐 | `5f79b09f` / `555ff8e` (transform scale, `utils/qrPreviewCover.js`) |
+| 08-01 | 갤럭시 화면 전체 검정, 안내 없음 | **네이티브 CAMERA 권한 부재**. 안드 웹뷰가 이를 NotReadableError 로 보고 + `start()` hang 으로 폴백 미발동 + getCameras() 라벨 매칭이 전면 카메라로 오폴백 | `aa4aad57` / `31a07b4` |
+
+### 08-01 픽스 내용 (최종 구조)
+
+- **`REQUEST_CAMERA_PERMISSION` 브리지 신설**(web_app.dart): 웹이 getUserMedia 전에 네이티브
+  권한 선확인/요청. `{status:GRANTED|DENIED|PERMANENTLY_DENIED}`. permission_handler 공용이라 iOS 동일.
+- **`utils/qrCameraStart.js` 공용 유틸**: `facingMode:{exact:'environment'}` 로 카메라 1회만 오픈
+  (Overconstrained 시 비강제 재시도) + 8초 타임아웃(hang→실패 전환, 유령 세션 stop) + 실패 사유
+  분류(denied/busy/error). html5-qrcode 가 에러를 문자열로 감싸 err.name 이 소실되므로 문자열 매칭 병행.
+- **`SafetyCameraPermissionView` 사유별 분기**: denied=[설정으로 이동] / busy·error=[다시 시도].
+- 진단 인프라: 안드 chrome://inspect 는 `isInspectable`(iOS 전용)이 아니라
+  `setWebContentsDebuggingEnabled` 필요 → `WEBVIEW_DEBUG` dart-define + `build-apk.ps1 -WebviewDebug`
+  로 게이트(그 APK 는 배부 금지).
+
+### 검증 결과
+
+- 갤럭시 S25U: 프리뷰 전체화면 + 실스캔 인식 + (제출 전 확인 항목: 권한 거부 폴백) — 08-01 확인
+- iOS TestFlight(31a07b4 빌드): 이상 없음 — 08-01 사용자 확인
+
+### 잔여 (이 건 아님 — 다른 트랙)
+
+- iOS 앱스토어 정식 제출 → `iOS_AppStore_제출_가이드.md` 로 진행 중
+- §5 의 기존 잔여(iOS 첫 세션 화면이동 관찰·푸시 실검증 등)는 그대로 유효
