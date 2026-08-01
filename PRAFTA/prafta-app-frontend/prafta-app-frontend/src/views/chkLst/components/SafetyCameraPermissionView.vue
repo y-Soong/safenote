@@ -1,7 +1,11 @@
 <!--
-  SafetyCameraPermissionView.vue — 카메라 권한 거부 폴백 (prafta-app-011 케이스 6)
-  - 라이트 헤더 + 경고 아이콘 + 안내 + [취소]/[설정으로 이동].
-  - 부모(QrScanner)가 cancel / open-settings 이벤트를 받아 라우팅·deep link 처리.
+  SafetyCameraPermissionView.vue — 카메라 사용 불가 폴백 (prafta-app-011 케이스 6)
+  - 라이트 헤더 + 경고 아이콘 + 사유별 안내 + [취소]/[설정으로 이동 | 다시 시도].
+  - reason prop 으로 실패 사유별 문구/버튼 분기 (2026-08-01 갤럭시 검은 화면 건 후속):
+      denied(기본) = 권한 거부 → 설정으로 이동
+      busy         = 카메라 점유/개방 실패 → 다시 시도
+      error        = 타임아웃 등 그 외 → 다시 시도
+  - 부모(QrScanner/AdminSiteOps)가 cancel / open-settings / retry 이벤트를 받아 처리.
 -->
 <template>
   <div class="cam-perm">
@@ -35,21 +39,29 @@
           />
         </svg>
       </div>
-      <h2 class="cp-title">카메라 접근 권한이 필요해요</h2>
-      <p class="cp-desc">
-        QR 코드를 인식하려면 카메라 사용 권한을 허용해 주세요. 설정 앱에서 PRAFTA 권한을 켤 수
-        있어요.
-      </p>
+      <h2 class="cp-title">{{ copy.title }}</h2>
+      <p class="cp-desc">{{ copy.desc }}</p>
     </main>
 
-    <!-- 푸터 -->
+    <!-- 푸터: denied=설정으로 이동 / busy·error=다시 시도 -->
     <footer class="cp-footer">
       <button type="button" class="cp-btn cp-btn--secondary" @click="$emit('cancel')">취소</button>
-      <button type="button" class="cp-btn cp-btn--primary" @click="$emit('open-settings')">
+      <button
+        v-if="reason === 'denied'"
+        type="button"
+        class="cp-btn cp-btn--primary"
+        @click="$emit('open-settings')"
+      >
         <svg class="icon" width="18" height="18" aria-hidden="true">
           <use href="#i-cp-settings" />
         </svg>
         설정으로 이동
+      </button>
+      <button v-else type="button" class="cp-btn cp-btn--primary" @click="$emit('retry')">
+        <svg class="icon" width="18" height="18" aria-hidden="true">
+          <use href="#i-cp-retry" />
+        </svg>
+        다시 시도
       </button>
     </footer>
 
@@ -82,13 +94,54 @@
             d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"
           />
         </symbol>
+        <symbol
+          id="i-cp-retry"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="2"
+          stroke-linecap="round"
+          stroke-linejoin="round"
+        >
+          <polyline points="23 4 23 10 17 10" />
+          <polyline points="1 20 1 14 7 14" />
+          <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15" />
+        </symbol>
       </defs>
     </svg>
   </div>
 </template>
 
 <script setup>
-defineEmits(['cancel', 'open-settings'])
+import { computed } from 'vue'
+
+// 실패 사유(qrCameraStart.js 의 CAMERA_FAIL 어휘와 동일). 미지정 시 기존 동작(denied) 보존.
+const props = defineProps({
+  reason: {
+    type: String,
+    default: 'denied',
+    validator: (v) => ['denied', 'busy', 'error'].includes(v),
+  },
+})
+
+defineEmits(['cancel', 'open-settings', 'retry'])
+
+// 사유별 안내 문구
+const COPY = {
+  denied: {
+    title: '카메라 접근 권한이 필요해요',
+    desc: 'QR 코드를 인식하려면 카메라 사용 권한을 허용해 주세요. 설정 앱에서 PRAFTA 권한을 켤 수 있어요.',
+  },
+  busy: {
+    title: '카메라를 사용할 수 없어요',
+    desc: '다른 앱이 카메라를 사용 중일 수 있어요. 카메라를 쓰는 앱을 닫은 뒤 다시 시도해 주세요.',
+  },
+  error: {
+    title: '카메라를 켜지 못했어요',
+    desc: '일시적인 문제일 수 있어요. 잠시 후 다시 시도해 주세요. 계속 안 되면 앱을 완전히 종료했다가 다시 실행해 주세요.',
+  },
+}
+const copy = computed(() => COPY[props.reason] || COPY.denied)
 </script>
 
 <style scoped>

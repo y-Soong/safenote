@@ -9,11 +9,13 @@
 -->
 <template>
   <div class="qr-scan">
-    <!-- 카메라 권한/초기화 실패 폴백 (케이스 6) -->
+    <!-- 카메라 권한/초기화 실패 폴백 (케이스 6) — cameraFailed 에 실패 사유가 실린다 -->
     <SafetyCameraPermissionView
       v-if="cameraFailed"
+      :reason="cameraFailed"
       @cancel="goHome"
       @open-settings="openAppSettings"
+      @retry="retryCamera"
     />
 
     <!-- 정상 스캐너 -->
@@ -104,10 +106,12 @@
 </template>
 
 <script setup>
-import { ref, onMounted, onBeforeUnmount } from 'vue'
+import { ref, onMounted, onBeforeUnmount, nextTick } from 'vue'
 import { Html5Qrcode } from 'html5-qrcode'
 import { useRouter } from 'vue-router'
 import { openNativeAppSettings } from '@/utils/appSettingsBridge'
+import { requestNativeCameraPermission } from '@/utils/cameraPermissionBridge'
+import { startBackCameraScan, CAMERA_FAIL } from '@/utils/qrCameraStart'
 import { startCoverScale } from '@/utils/qrPreviewCover'
 import SafetyCameraPermissionView from '@/views/chkLst/components/SafetyCameraPermissionView.vue'
 import SafetyQrErrorOverlay from '@/views/chkLst/components/SafetyQrErrorOverlay.vue'
@@ -117,7 +121,8 @@ const router = useRouter()
 // ───────────────────────────────────────────────────────────
 // 상태
 // ───────────────────────────────────────────────────────────
-const cameraFailed = ref(false) // 카메라 초기화/권한 실패 → 폴백 화면(케이스 6)
+// 카메라 초기화/권한 실패 → 폴백 화면(케이스 6). null=정상, 그 외 CAMERA_FAIL 사유 문자열.
+const cameraFailed = ref(null)
 const qrError = ref(false) // QR 형식 오류 → 토스트 오버레이(케이스 7)
 const qrErrorMessage = ref('QR 코드 형식을 확인할 수 없어요. 다시 스캔해 주세요.')
 
@@ -220,19 +225,24 @@ const startScanner = async () => {
   if (isStarting) return
   isStarting = true
   try {
+    // 0) 네이티브 카메라 권한 선확인(미허용이면 OS 프롬프트). 안드 웹뷰는 권한 부재를
+    //    NotReadableError 로 뭉개 사유 분기가 불가능하므로 getUserMedia 전에 브리지로
+    //    직접 확인한다(08-01 갤럭시 검은 화면 건). UNAVAILABLE(PC/구셸)이면 그대로 진행.
+    const perm = await requestNativeCameraPermission()
+    if (perm === 'DENIED' || perm === 'PERMANENTLY_DENIED') {
+      cameraFailed.value = CAMERA_FAIL.DENIED
+      return
+    }
+
     html5QrCode = new Html5Qrcode('qr-reader')
     // qrbox 를 지정하지 않는다. 지정 시 html5-qrcode 가 자체 스캔영역 가이드 박스를
     // 추가로 그려, 우리 디자인 프레임(.qr-frame)과 겹쳐 박스가 2개로 보인다.
     // 전체 프레임 스캔으로 두고, 시각 가이드는 .qr-frame 만 사용한다.
     const config = { fps: 10 }
 
-    const devices = await Html5Qrcode.getCameras()
-    if (!devices || !devices.length) throw new Error('No camera found')
-
-    // 후면 카메라 우선
-    const backCam = devices.find((d) => /back|rear|environment/i.test(d.label)) || devices[0]
-
-    await html5QrCode.start({ deviceId: { exact: backCam.id } }, config, onScanSuccess, () => {
+    // 후면 카메라 + 타임아웃 + 실패 사유 분류 — 상세는 utils/qrCameraStart.js 주석 참조.
+    // (구 getCameras()+라벨 매칭 방식은 카메라 이중 오픈·전면 오선택·hang 문제로 폐기)
+    await startBackCameraScan(html5QrCode, config, onScanSuccess, () => {
       /* 프레임별 인식 실패는 정상 동작(무시) */
     })
 
@@ -240,12 +250,26 @@ const startScanner = async () => {
     // — 상세는 utils/qrPreviewCover.js 주석 참조.
     stopCoverScale = startCoverScale(document.getElementById('qr-reader'))
   } catch (err) {
-    // 권한 거부/카메라 점유/장치 부재 → 폴백 화면(케이스 6)
-    console.warn('[QrScanner] 카메라 초기화 실패:', err?.message)
-    cameraFailed.value = true
+    // 권한 거부/카메라 점유/타임아웃 → 사유별 폴백 화면(케이스 6)
+    console.warn('[QrScanner] 카메라 초기화 실패:', err?.reason, err?.message)
+    // 미시작 인스턴스 잔재 정리(시작 실패라 stop 은 불필요)
+    try {
+      html5QrCode?.clear()
+    } catch {
+      /* noop */
+    }
+    html5QrCode = null
+    cameraFailed.value = err?.reason || CAMERA_FAIL.ERROR
   } finally {
     isStarting = false
   }
+}
+
+// 폴백 화면의 '다시 시도' — 스캐너 템플릿 재마운트(#qr-reader 재생성) 후 재시작.
+const retryCamera = async () => {
+  cameraFailed.value = null
+  await nextTick()
+  startScanner()
 }
 
 const stopScanner = () => {

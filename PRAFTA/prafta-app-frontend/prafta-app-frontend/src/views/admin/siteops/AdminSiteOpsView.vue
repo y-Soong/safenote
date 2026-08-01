@@ -15,11 +15,13 @@
 -->
 <template>
   <div class="site-ops">
-    <!-- 카메라 권한/초기화 실패 폴백 (QrScanner.vue 와 동일 폴백 재사용) -->
+    <!-- 카메라 권한/초기화 실패 폴백 (QrScanner.vue 와 동일 폴백 재사용) — cameraFailed 에 실패 사유 -->
     <SafetyCameraPermissionView
       v-if="cameraFailed"
+      :reason="cameraFailed"
       @cancel="onClose"
       @open-settings="openAppSettings"
+      @retry="retryCamera"
     />
 
     <template v-else>
@@ -123,12 +125,14 @@
 </template>
 
 <script setup>
-import { ref, onMounted, onBeforeUnmount } from 'vue'
+import { ref, onMounted, onBeforeUnmount, nextTick } from 'vue'
 import { Html5Qrcode } from 'html5-qrcode'
 import { useRouter } from 'vue-router'
 
 import api from '@/api/axios'
 import { openNativeAppSettings } from '@/utils/appSettingsBridge'
+import { requestNativeCameraPermission } from '@/utils/cameraPermissionBridge'
+import { startBackCameraScan, CAMERA_FAIL } from '@/utils/qrCameraStart'
 import { startCoverScale } from '@/utils/qrPreviewCover'
 import SafetyCameraPermissionView from '@/views/chkLst/components/SafetyCameraPermissionView.vue'
 
@@ -138,8 +142,8 @@ const router = useRouter()
 // 출퇴근 모드: 'IN'=출근 / 'OUT'=퇴근 (UI 토글 — 허용 범위)
 const mode = ref('IN')
 
-// 카메라 초기화/권한 실패 → 폴백 화면
-const cameraFailed = ref(false)
+// 카메라 초기화/권한 실패 → 폴백 화면. null=정상, 그 외 CAMERA_FAIL 사유 문자열.
+const cameraFailed = ref(null)
 // 한 건 처리 중 잠금(연속 스캔에서 중복 POST 방지). 처리 끝나면 해제하여 다음 스캔 대기.
 const busy = ref(false)
 
@@ -249,16 +253,18 @@ const startScanner = async () => {
   if (isStarting) return
   isStarting = true
   try {
+    // 0) 네이티브 카메라 권한 선확인 — 사유/근거는 QrScanner.vue 동일 주석 참조.
+    const perm = await requestNativeCameraPermission()
+    if (perm === 'DENIED' || perm === 'PERMANENTLY_DENIED') {
+      cameraFailed.value = CAMERA_FAIL.DENIED
+      return
+    }
+
     html5QrCode = new Html5Qrcode('site-ops-reader')
     const config = { fps: 10 }
 
-    const devices = await Html5Qrcode.getCameras()
-    if (!devices || !devices.length) throw new Error('No camera found')
-
-    // 후면 카메라 우선
-    const backCam = devices.find((d) => /back|rear|environment/i.test(d.label)) || devices[0]
-
-    await html5QrCode.start({ deviceId: { exact: backCam.id } }, config, onScanSuccess, () => {
+    // 후면 카메라 + 타임아웃 + 실패 사유 분류 — 상세는 utils/qrCameraStart.js 주석 참조.
+    await startBackCameraScan(html5QrCode, config, onScanSuccess, () => {
       /* 프레임별 인식 실패는 정상 동작(무시) */
     })
 
@@ -266,11 +272,25 @@ const startScanner = async () => {
     // — 상세는 utils/qrPreviewCover.js 주석 참조.
     stopCoverScale = startCoverScale(document.getElementById('site-ops-reader'))
   } catch (err) {
-    console.warn('[AdminSiteOps] 카메라 초기화 실패:', err?.message)
-    cameraFailed.value = true
+    console.warn('[AdminSiteOps] 카메라 초기화 실패:', err?.reason, err?.message)
+    // 미시작 인스턴스 잔재 정리(시작 실패라 stop 은 불필요)
+    try {
+      html5QrCode?.clear()
+    } catch {
+      /* noop */
+    }
+    html5QrCode = null
+    cameraFailed.value = err?.reason || CAMERA_FAIL.ERROR
   } finally {
     isStarting = false
   }
+}
+
+// 폴백 화면의 '다시 시도' — 스캐너 템플릿 재마운트(#site-ops-reader 재생성) 후 재시작.
+const retryCamera = async () => {
+  cameraFailed.value = null
+  await nextTick()
+  startScanner()
 }
 
 const stopScanner = () => {
