@@ -1,4 +1,4 @@
-# PRAFTA iOS App Store 정식 제출 가이드 (2026-07-31 작성, 08-01 갱신)
+# PRAFTA iOS App Store 정식 제출 가이드 (2026-07-31 작성, 08-02 제출 완료)
 
 > TestFlight 배포는 이미 동작 중이다(빌드 110까지 실기기 확인 완료).
 > 이 문서는 **거기서부터 App Store 정식 출시까지**를 다룬다.
@@ -8,26 +8,81 @@
 
 ---
 
-## ★ 재개 지점 (2026-08-01 밤 기준 — 여기부터 이어서)
+## ✅ 제출 완료 (2026-08-02) — 현재 상태
 
-**심사에 쓸 빌드는 이미 올라가 있다**: Flutter repo `31a07b4`(08-01, QR 권한 폴백 픽스 포함)의
-Codemagic 빌드. TestFlight 실기기 확인까지 끝났다(QR 프리뷰+실스캔 이상 없음). **재빌드 불필요.**
+| 항목 | 값 |
+|---|---|
+| 상태 | 🟡 **심사 대기 중 (Waiting for Review)** |
+| 제출 항목 | iOS 앱 1.0.0 **(빌드 116)** |
+| 제출 일시 | 2026-08-02 16:57 |
+| 제출 ID | `51a8d5df-3d0e-491d-aff6-e5bcf75ec6f8` |
+| 출시 방식 | **수동 출시** — 승인돼도 버튼을 눌러야 공개된다 |
+| 데모 계정 | `SOON` (스크린샷을 찍은 계정과 동일) |
 
-남은 작업 순서 (상세는 각 §):
+**다음 할 일 = 심사 결과 대기** (보통 24~48시간, 신규 개발자 첫 앱은 더 걸릴 수 있음).
+승인 시 버전 페이지에서 출시 버튼을 누른다(§11). 리젝 시 Resolution Center 사유 → §10 대응표.
 
-1. ✋ **권한 거부 경로 최종 체크** (§2 의 체크리스트, 10분) — 심사자가 밟는 경로. 특히:
-   앱 재설치→위치/카메라 **거부**→'나중에 하기'→데모 계정 로그인(생존 확인 겸)→QR 진입 시
-   권한 재요청→거부 시 "카메라 접근 권한이 필요해요"+[설정으로 이동] 폴백(08-01 신규) 동작.
-2. ✋ **스크린샷 6컷 촬영** (§3 시나리오, 데모 계정·세로·PII 금지) →
-   `C:\PRAFTA\.claude\refs\` 에 넣고 Claude 에게 요청 → 🤖 규격(6.9인치) 변환.
-3. ✋ **App Store Connect 입력** — §4 App Information / §5 가격(무료·한국만) /
-   §6 버전 정보(문안 복붙) / §7 App Privacy(표 그대로) / §8 심사 정보(영문 비고+데모 계정 치환).
-4. ✋ **제출** (§9) — 빌드 선택(TestFlight 에서 확인한 그 빌드번호), **수동 출시** 선택, Submit.
-5. 제출 후: ITMS-90683 메일 오면 Claude 에게 보고(§2 하단). 리젝 시 사유 원문 전달(§10).
+### 빌드 116 = 115(검증본) + 로그인 화면 문의처 교체
 
-같은 날 함께 종결된 것: QR 카메라 검은 화면 3건 전부 해소·양플랫폼 검증 완료
-(`QR_카메라_프리뷰_양플랫폼_검증_작업지시서.md` §7 최종 결론 참조). 안드 쪽 운영 반영이
-필요해지면 AAB 재빌드 별도(심사 중 v3/대기 v4 에는 이번 픽스 없음).
+빌드 115(Flutter `31a07b4`)로 QR·GPS·권한 거부 경로 실기기 검증을 마친 뒤,
+로그인 화면 푸터의 **더미 번호 `고객센터 1234-5678`** 을 발견해 `dudjswp@gmail.com` 으로 교체했다.
+플레이스홀더는 **가이드라인 2.1(App Completeness)** 리젝 사유이고 심사자가 반드시 보는 화면이다.
+커밋 = `2de99080`(웹 repo) / `454bbf7`(Flutter 번들). 이걸 실어 빌드한 것이 **116**.
+
+### 제출 전 함께 잡은 데이터측 결함 2건
+
+- **TBM 목록에 E2E 테스트 데이터 노출** (`[T5 E2E] 연동 세션 검증` 등) →
+  운영·개발 `tb_tbm_session` TITLE UPDATE 로 교체. **스크린샷 촬영 전에 데이터부터 손볼 것**
+  (촬영 → 발견 → 재촬영 왕복이 실제로 발생했다).
+- **데모 계정 불일치** — 로그인 정보란 `ADMIN`(AUTH_CD `master`) vs 비고 `SOON`.
+  심사자는 입력란 계정을 쓰므로 관리자 UI 를 보게 되어 스크린샷과 불일치(2.3) → `SOON` 으로 통일.
+  같은 맥락으로 비고의 "site with a relaxed radius" 도 사실과 달라(실제로는 범위 밖 → 외근 등록
+  폴백) 실제 동작 설명으로 교체하고, **한국어 UI 하단 탭바 영문 안내**를 추가했다.
+
+---
+
+## ⚠️ 본문 중 실제 콘솔과 달랐던 부분 (다음 버전 제출 시 반드시 읽을 것)
+
+1. **스크린샷 규격 — §3 의 "6.9인치(1290×2796)" 는 틀렸다.**
+   실제 슬롯은 **`iPhone 6.5 디스플레이`** 이고 요구 규격은
+   `1242×2688 / 2688×1242 / **1284×2778** / 2778×1284`.
+   요구 규격은 **콘솔 화면 표기가 유일한 진실**이므로 문서를 믿지 말고 화면을 볼 것.
+   - 변환본: `OneDrive\바탕 화면\prafta\APP_이미지\ios\appstore_1284x2778\` (01~06)
+   - **알파 채널이 있으면 업로드가 거부된다** → 24bpp RGB 로 저장할 것
+   - 원본 1170×2532(6.1인치 실기기)와 화면비가 거의 같아 단순 확대로 대응 가능
+2. **개인정보처리방침 URL 은 §4(앱 정보)가 아니라 §7(App Privacy) 페이지 상단**에 있다.
+3. **버전 레코드는 반드시 `1.0.0`.** `1.0` 으로 만들면 빌드 선택 목록에 빌드가 아예 안 뜬다
+   (`pubspec: 1.0.0+4` → `CFBundleShortVersionString = 1.0.0` 과 정확히 일치해야 함).
+   제출 전에는 버전 페이지에서 편집 가능.
+4. **가격 기준통화(대한민국 KRW) ≠ 배포 국가 제한.**
+   배포 국가는 `가격 및 사용 가능 여부 → 앱 사용 가능 여부` 에서 따로 설정한다(기본 175개국).
+5. **검증 오류가 하나라도 떠 있으면 페이지 저장 자체가 막혀 입력한 텍스트가 통째로 날아간다.**
+   (스크린샷 규격 오류 상태에서 설명·키워드·심사정보를 전부 유실했다.)
+   → **한 덩어리 입력 → 즉시 저장**을 반복할 것.
+6. **`심사에 추가` 를 막는 것은 대개 앱 정보 쪽**이다 — 콘텐츠 권한 + 연령 등급 설문.
+
+### 콘텐츠 권한 · 연령 등급 답안 (→ 최종 4+)
+
+- **콘텐츠 권한 = 예**(타사 콘텐츠 포함·권한 보유). 카카오맵을 렌더링하고 고객사 업로드
+  문서를 표시하므로 "아니요"는 부정확하다.
+- **제한되지 않은 웹 액세스 = 아니요** — 웹뷰지만 앱 번들 내부 화면과 자사 API 만 로드한다.
+  "예"로 답하면 등급이 17+ 로 올라간다.
+- **사용자 생성 콘텐츠 = 아니요** — 문항 정의가 "배포"(공개 피드)다. PRAFTA 는 같은 회사
+  안에서만 오가는 업무 기록. **"예"로 답하면 신고·차단·모더레이션 구현을 요구받아 오히려 리젝된다.**
+- 소셜 미디어 / 13세 미만 비활성화 / 메시지 및 채팅 / 광고 = **아니요**
+- **의료 또는 건강 = 없음** — 산업안전은 의료가 아니다. "자주" 등을 고르면 규제 대상
+  의료기기 신고 절차로 빠진다.
+
+### 한국어 콘솔 ↔ 본문 STEP 매핑
+
+| 본문 | 콘솔 메뉴 |
+|---|---|
+| §4 STEP 3 앱 정보 | 일반 정보 → **앱 정보** (+ 콘텐츠 권한 · 연령 등급) |
+| §5 STEP 4 가격 | 수익화 → **가격 및 사용 가능 여부** |
+| §6 STEP 5 버전 등록정보 | iOS 앱 → **1.0.0 제출 준비 중** (스크린샷·설명·빌드) |
+| §7 STEP 6 App Privacy | 신뢰 및 안전 → **앱이 수집하는 개인정보** |
+| §8 STEP 7 앱 심사 정보 | 버전 페이지 하단 **앱 심사 정보** |
+| §9 STEP 8 제출 | 버전 페이지 우측 상단 **심사에 추가** |
 
 ---
 
@@ -256,12 +311,26 @@ Permissions
   ("Later" button on the permission screens). Features that require a
   permission request it again at the moment of use.
 
+Account deletion
+- Account deletion is available in-app: My page > account settings > withdraw.
+
 Notes for testing
-- Clock-in may be restricted by distance from the registered worksite.
-  The demo account is configured on a site with a relaxed radius.
+- The UI is in Korean. Bottom tab bar, left to right:
+  Home / Attendance / Safety / TBM / My page.
+- The demo account is registered to a worksite in Seoul, South Korea.
+  When you tap the green "clock in" button from outside that worksite,
+  the app opens an "off-site check-in" sheet: type any text in the reason
+  field and tap the green button to complete the check-in.
+  This is expected behavior, not an error.
 - The app content is rendered in a WebView served from the app bundle;
   business data comes from our API over HTTPS.
 ```
+
+> ⚠️ 위 문안은 08-02 제출 때 **실제로 고쳐 넣은 최종본**이다. 초안에 있던
+> `The demo account is configured on a site with a relaxed radius.` 는 사실이 아니었다
+> (실제로는 근무지 범위 밖 → 외근 등록 폴백으로 완료됨). 심사자는 한국 사업장에서
+> 수천 km 떨어진 곳에서 테스트하므로 **반드시 그 화면을 본다** — 실제 동작을 그대로 적어야
+> "고장인가?" 로 이어지지 않는다. 한국어 UI 탭바 안내와 계정 삭제 경로도 같은 이유로 넣었다.
 
 > 괄호 부분은 실제 데모 계정 값으로 치환할 것.
 > "위치는 기능 실행 시점에만 / 백그라운드 수집 없음 / 권한 거부해도 사용 가능" 이 세 문장이
