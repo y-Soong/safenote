@@ -120,7 +120,7 @@
     <!-- Footer -->
     <footer class="footer">
       <p class="footer-brand">PRAFTA</p>
-      <p>고객센터 1234-5678</p>
+      <p>고객센터 dudjswp@gmail.com</p>
       <p>© PRAFTA INC. ALL RIGHTS RESERVED.</p>
     </footer>
   </div>
