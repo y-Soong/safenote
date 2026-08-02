@@ -154,46 +154,6 @@
         </table>
       </div>
 
-      <!-- PC-09: 소멸 임박 짜투리 리포트 (짜투리 보전 OFF 회사만 — D9-③·N2)
-           문구 규칙(D9): "근로자 손해" 표현 금지 — "연차미사용수당 정산 대상" 으로 표기 -->
-      <section v-if="remnantPolicyOn === false" class="a09-remnant-report">
-        <header class="a09-remnant-report__head">
-          <h3 class="a09-remnant-report__title">소멸 임박 짜투리 잔여</h3>
-          <p class="a09-remnant-report__note">
-            최소 사용단위 미만으로 남아 신청으로 소진할 수 없는 잔여입니다.
-            미사용분은 연차미사용수당 정산 대상입니다.
-          </p>
-        </header>
-        <table class="a09-remnant-report__table">
-          <thead>
-            <tr>
-              <th>이름</th>
-              <th>잔여</th>
-              <th>구분</th>
-              <th>최근접 소멸일</th>
-            </tr>
-          </thead>
-          <tbody>
-            <tr v-for="row in remnantReportRows" :key="row.userCd">
-              <td>{{ row.userNm }}</td>
-              <td>{{ row.remnantText }}</td>
-              <td>
-                <span
-                  class="a09-remnant-badge"
-                  :class="{ 'a09-remnant-badge--dust': row.isRoundingDust }"
-                >
-                  {{ row.isRoundingDust ? "절사 끝수" : "짜투리" }}
-                </span>
-              </td>
-              <td>{{ row.nearestExpireDate }}</td>
-            </tr>
-            <tr v-if="!remnantReportRows.length">
-              <td colspan="4" class="a09-remnant-report__empty">대상 없음</td>
-            </tr>
-          </tbody>
-        </table>
-      </section>
-
       <!-- ============ 일괄 액션바 (항상 표시 · 선택 직원이 없으면 버튼 비활성) ============ -->
       <div
         class="ld-bulk-bar"
@@ -206,6 +166,22 @@
           <template v-else>부여할 직원을 선택하세요</template>
         </div>
         <div class="ld-bulk-actions">
+          <!-- PC-09(D9-③·N2): 소멸 임박 짜투리 리포트 — 인라인 섹션 대신 팝업으로 노출
+               (짜투리 보전 OFF 회사만 · 선택 직원과 무관하므로 항상 활성) -->
+          <button
+            v-if="remnantPolicyOn === false"
+            class="btn btn-second"
+            type="button"
+            @click="fnOpenRemnantReport"
+          >
+            소멸 임박 짜투리
+            <span
+              class="ld-remnant-count"
+              :class="{ 'is-zero': remnantReportRows.length === 0 }"
+            >
+              {{ remnantReportRows.length }}
+            </span>
+          </button>
           <button
             class="btn btn-second"
             type="button"
@@ -431,6 +407,7 @@ import SiteSearchPop from "@/components/popup/SiteSearchPop.vue";
 import SiteNodeSearchPop from "@/components/popup/SiteNodeSearchPop.vue";
 import LeaveDetailPop from "./popup/LeaveDetailPop.vue";
 import ManualGrantPop from "./popup/ManualGrantPop.vue";
+import RemnantReportPop from "./popup/RemnantReportPop.vue";
 import PolicyGrantPreviewPop from "@/views/attd/popup/PolicyGrantPreviewPop.vue";
 
 // ================ Options ================
@@ -966,6 +943,13 @@ const fnOpenDetail = (row) => {
   });
 };
 
+// --- 소멸 임박 짜투리 리포트 팝업 (PC-09 D9-③ — 인라인 섹션에서 팝업으로 전환) ---
+const fnOpenRemnantReport = () => {
+  openPop(RemnantReportPop, {
+    rows: remnantReportRows.value,
+  });
+};
+
 // --- 일괄 수동 부여 모달 ---
 const fnOpenBulkGrant = () => {
   if (selectedUserCds.value.length === 0) return;
@@ -1223,25 +1207,8 @@ const fnCsvCell = (v) => {
   color: var(--color-text-strong);
 }
 
-.a09-remnant-report {
-  border: var(--card-border);
-  border-radius: var(--card-radius);
-  background: var(--card-bg);
-  box-shadow: var(--card-shadow);
-  padding: var(--card-padding);
-}
-
-.a09-remnant-report__title {
-  margin: 0;
-  color: var(--color-text-strong);
-  font-size: var(--btn-font-lg);
-}
-
-.a09-remnant-report__note {
-  color: var(--color-text-muted);
-  font-size: var(--btn-font);
-}
-
+/* 소멸 임박 리포트 자체는 RemnantReportPop 팝업으로 이동 —
+   아래 __table 스타일은 칩 [상세] 펼침 테이블(.a09-cover-detail)이 계속 사용한다 */
 .a09-remnant-report__table {
   width: 100%;
   border-collapse: collapse;
@@ -1254,25 +1221,6 @@ const fnCsvCell = (v) => {
   font-size: var(--btn-font);
   color: var(--color-text);
   text-align: left;
-}
-
-.a09-remnant-badge {
-  display: inline-block;
-  border-radius: var(--btn-radius);
-  background: var(--color-warning-bg);
-  color: var(--color-warning-text);
-  padding: 0 var(--btn-padding-sm);
-  font-size: var(--btn-font-sm);
-}
-
-.a09-remnant-badge--dust {
-  background: var(--color-bg);
-  color: var(--color-text-muted);
-}
-
-.a09-remnant-report__empty {
-  text-align: center;
-  color: var(--color-text-muted);
 }
 
 /* 칩 [상세] 펼침 테이블 — 칩 폭에 묶이지 않게 카드 톤으로 감싼다 */
@@ -1314,6 +1262,26 @@ const fnCsvCell = (v) => {
   display: flex;
   gap: 0.375rem;
   align-items: center;
+}
+
+/* 소멸 임박 짜투리 버튼의 건수 배지 — 대상이 있으면 경고톤으로 환기 */
+.ld-remnant-count {
+  display: inline-block;
+  min-width: 1.125rem;
+  padding: 0 0.25rem;
+  margin-left: 0.25rem;
+  border-radius: var(--btn-radius);
+  background: var(--color-warning-bg);
+  color: var(--color-warning-text);
+  font-size: 0.6875rem;
+  font-weight: 600;
+  line-height: 1.4;
+  text-align: center;
+}
+
+.ld-remnant-count.is-zero {
+  background: var(--color-bg);
+  color: var(--color-text-muted);
 }
 
 /* ===== 정책 기준 부여 버튼 + PRORATE 폴백 안내 배지 (prafta-022 보완) ===== */
