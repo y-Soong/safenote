@@ -1099,11 +1099,19 @@
 	     <!-- PRAFTA-APP-018-D: 연차 사용단위 산출용 사용기록 조인 (selectMyPendingLeaveApprovals 미러).
 	          05(연차사용)=U.REQ_ID=A.REQ_ID(CONFIRMED), 06(연차수정)=U.LEAVE_ID=A.TARGET_ID.
 	          CMPNY_CD 동일성 + 1:1 키 고정으로 타 사용자 사용기록 유출 차단(IDOR 불변).
-	          LEFT JOIN 이므로 01~04/10 요청은 U.* NULL → 회귀 없음. -->
+	          LEFT JOIN 이므로 01~04/10 요청은 U.* NULL → 회귀 없음.
+	          분할차감(PC-02/PC-05): 05 는 use 행이 부여별 N개일 수 있어 첫 분할행(MIN LEAVE_ID)으로
+	          고정해 카드 복제를 막는다(승인 목록 쿼리들과 동일 규칙). -->
 	     LEFT JOIN TB_USER_LEAVE_USE U
 	            ON U.CMPNY_CD = A.CMPNY_CD
 	           AND U.DEL_YN   = 'N'
-	           AND ( (A.REQ_TYPE = '05' AND U.REQ_ID   = A.REQ_ID AND U.LEAVE_STATUS = 'CONFIRMED')
+	           AND ( (A.REQ_TYPE = '05' AND U.REQ_ID   = A.REQ_ID AND U.LEAVE_STATUS = 'CONFIRMED'
+	                  AND U.LEAVE_ID = ( SELECT MIN(X.LEAVE_ID)
+	                                       FROM TB_USER_LEAVE_USE X
+	                                      WHERE X.CMPNY_CD     = A.CMPNY_CD
+	                                        AND X.REQ_ID       = A.REQ_ID
+	                                        AND X.LEAVE_STATUS = 'CONFIRMED'
+	                                        AND X.DEL_YN       = 'N' ))
 	              OR (A.REQ_TYPE = '06' AND U.LEAVE_ID = A.TARGET_ID) )
 	WHERE A.CMPNY_CD = #{gvCmpnyCd}
 	  AND A.SITE_CD = #{siteCd}
@@ -1133,7 +1141,16 @@
         , FNC_CMM_INFO_SRCH(U.CMPNY_CD, 'SYST_VAL', U.USE_UNIT_TYPE, 'SYS025')  AS unitNm
         , U.START_TIME                                                          AS startTime
         , U.END_TIME                                                            AS endTime
-        , U.LEAVE_DAYS                                                          AS leaveDays
+        <!-- 분할차감(PC-02/PC-05): 요청 연결 use 행은 부여별 N개로 나뉠 수 있어 단일 행 일수는
+             부분값 — REQ 단위 합산으로 총 일수를 낸다(직접사용 REQ_ID NULL 행은 단독). -->
+        , CASE WHEN U.REQ_ID IS NULL THEN U.LEAVE_DAYS
+               ELSE ( SELECT SUM(X.LEAVE_DAYS)
+                        FROM TB_USER_LEAVE_USE X
+                       WHERE X.CMPNY_CD     = U.CMPNY_CD
+                         AND X.REQ_ID       = U.REQ_ID
+                         AND X.LEAVE_STATUS = 'CONFIRMED'
+                         AND X.DEL_YN       = 'N' )
+          END                                                                   AS leaveDays
       FROM TB_USER_LEAVE_USE U
       LEFT JOIN TB_LEAVE_TYPE_MGMT LT
              ON LT.CMPNY_CD = U.CMPNY_CD
@@ -1149,6 +1166,14 @@
        AND U.LEAVE_STATUS = 'CONFIRMED'
        AND U.DEL_YN       = 'N'
        AND ( U.REQ_ID IS NULL OR R.REQ_STATUS != '01' )   <!-- 미처리 결재대기분은 D 카드가 소유(이중표시 방지) -->
+       <!-- 분할차감 dedupe: 같은 REQ 의 분할행 중 첫 행(MIN LEAVE_ID)만 노출(일수는 위에서 REQ 합산). -->
+       AND ( U.REQ_ID IS NULL
+          OR U.LEAVE_ID = ( SELECT MIN(X.LEAVE_ID)
+                              FROM TB_USER_LEAVE_USE X
+                             WHERE X.CMPNY_CD     = U.CMPNY_CD
+                               AND X.REQ_ID       = U.REQ_ID
+                               AND X.LEAVE_STATUS = 'CONFIRMED'
+                               AND X.DEL_YN       = 'N' ) )
      ORDER BY U.START_TIME, U.LEAVE_ID
     </select>
 

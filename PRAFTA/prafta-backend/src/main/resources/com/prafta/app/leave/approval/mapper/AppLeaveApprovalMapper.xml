@@ -51,7 +51,16 @@
           END                                                            AS paidYn
         , U.USE_UNIT_TYPE                                                AS useUnitType
         , FNC_CMM_INFO_SRCH(U.CMPNY_CD, 'SYST_VAL', U.USE_UNIT_TYPE, 'SYS025') AS unitNm
-        , U.LEAVE_DAYS                                                   AS leaveDays
+        <!-- 분할차감(PC-02/PC-05): 요청 연결(05) 사용기록은 부여별 N행으로 나뉠 수 있어
+             단일 행의 LEAVE_DAYS 는 부분값이다. REQ 단위 합산으로 총 일수를 낸다(06 대상행은 단일). -->
+        , CASE WHEN U.REQ_ID = #{reqId} THEN (
+                   SELECT SUM(X.LEAVE_DAYS)
+                     FROM TB_USER_LEAVE_USE X
+                    WHERE X.CMPNY_CD     = U.CMPNY_CD
+                      AND X.REQ_ID       = U.REQ_ID
+                      AND X.LEAVE_STATUS = 'CONFIRMED'
+                      AND X.DEL_YN       = 'N'
+               ) ELSE U.LEAVE_DAYS END                                   AS leaveDays
         , U.LEAVE_MINUTES                                                AS leaveMinutes
         , U.START_DATE                                                   AS startDate
         , U.START_TIME                                                   AS startTime
@@ -67,7 +76,8 @@
              (U.REQ_ID = #{reqId} AND U.LEAVE_STATUS = 'CONFIRMED')
           OR (#{targetId} IS NOT NULL AND U.LEAVE_ID = #{targetId})
        )
-     ORDER BY U.INSERT_DATE DESC
+     <!-- 분할 시 첫 행(MIN LEAVE_ID)이 LEAVE_MINUTES 총량 보유 — 첫 행을 기준행으로 채택. -->
+     ORDER BY U.LEAVE_ID
      LIMIT 1
     </select>
 
@@ -125,11 +135,21 @@
       JOIN TB_USER_ATTD_REQ R
         ON R.CMPNY_CD = AP.CMPNY_CD
        AND R.REQ_ID   = AP.REQ_ID
+      <!-- 분할차감(PC-02/PC-05): 한 신청의 use 행이 부여별 N개일 수 있어 REQ_ID 조인만으로는
+           이력 행이 복제된다. 첫 분할행(MIN LEAVE_ID)으로 고정(selectPendingLeave 동일 규칙). -->
       LEFT JOIN TB_USER_LEAVE_USE U
         ON U.CMPNY_CD = R.CMPNY_CD
        AND U.DEL_YN   = 'N'
        AND (
-             (R.REQ_TYPE = '05' AND U.REQ_ID   = R.REQ_ID AND U.LEAVE_STATUS = 'CONFIRMED')
+             (R.REQ_TYPE = '05' AND U.REQ_ID   = R.REQ_ID AND U.LEAVE_STATUS = 'CONFIRMED'
+              AND U.LEAVE_ID = (
+                    SELECT MIN(X.LEAVE_ID)
+                      FROM TB_USER_LEAVE_USE X
+                     WHERE X.CMPNY_CD     = R.CMPNY_CD
+                       AND X.REQ_ID       = R.REQ_ID
+                       AND X.LEAVE_STATUS = 'CONFIRMED'
+                       AND X.DEL_YN       = 'N'
+              ))
           OR (R.REQ_TYPE = '06' AND U.LEAVE_ID = R.TARGET_ID)
        )
       LEFT JOIN TB_LEAVE_TYPE_MGMT LT

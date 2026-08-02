@@ -592,12 +592,22 @@
        AND R.REQ_ID   = AP.REQ_ID
       <!-- PRAFTA-025: 05(연차사용)는 요청에 연결된 사용기록(U.REQ_ID=R.REQ_ID)을,
            06(연차수정)은 수정 대상 사용기록(U.LEAVE_ID=R.TARGET_ID)을 조인해 표시한다.
-           표시 일수/시각은 R(요청이 담은 새 값)을 우선 사용한다. -->
+           표시 일수/시각은 R(요청이 담은 새 값)을 우선 사용한다.
+           분할차감(PC-02/PC-05): 한 신청의 use 행이 부여별 N개일 수 있어 첫 분할행(MIN LEAVE_ID)으로
+           고정 — LEAVE_MINUTES 는 첫 행에만 총량을 싣는 불변식(REQ 합산 정합)이라 첫 행이 곧 총 분이다. -->
       LEFT JOIN TB_USER_LEAVE_USE U
         ON U.CMPNY_CD = R.CMPNY_CD
        AND U.DEL_YN   = 'N'
        AND (
-             (R.REQ_TYPE = '05' AND U.REQ_ID   = R.REQ_ID AND U.LEAVE_STATUS = 'CONFIRMED')
+             (R.REQ_TYPE = '05' AND U.REQ_ID   = R.REQ_ID AND U.LEAVE_STATUS = 'CONFIRMED'
+              AND U.LEAVE_ID = (
+                    SELECT MIN(X.LEAVE_ID)
+                      FROM TB_USER_LEAVE_USE X
+                     WHERE X.CMPNY_CD     = R.CMPNY_CD
+                       AND X.REQ_ID       = R.REQ_ID
+                       AND X.LEAVE_STATUS = 'CONFIRMED'
+                       AND X.DEL_YN       = 'N'
+              ))
           OR (R.REQ_TYPE = '06' AND U.LEAVE_ID = R.TARGET_ID)
        )
       LEFT JOIN TB_LEAVE_TYPE_MGMT LT
