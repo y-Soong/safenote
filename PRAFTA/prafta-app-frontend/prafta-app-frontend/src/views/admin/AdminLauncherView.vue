@@ -128,6 +128,7 @@
             :enabled="moduleActiveMap[m.key] === true"
             :scoped="moduleScopedMap[m.key] === true"
             :note="m.note"
+            :badge-count="moduleBadgeMap[m.key] || 0"
             @select="onModuleSelect(m)"
           />
         </div>
@@ -211,6 +212,11 @@ const siteSheetOpen = ref(false)
 // 연차 변경 확인 대기(AGREED) 건수 — 진입 배너 노출용. 서버 스코프 판정 결과만 신뢰(빈 목록=0).
 const pendingConfirmCount = ref(0)
 
+// 모듈별 미처리 건수 배지 — { APPROVAL: n, ENTRY: n }.
+//   홈에서 신규 요청 유무를 알 수 있게 한다(기존에는 화면에 직접 들어가야만 확인 가능).
+//   ⚠️ C1: 건수도 서버 산출값만 신뢰한다. 조회 실패/비권한은 0(배지 비노출)이며 진입을 막지 않는다.
+const moduleBadgeMap = ref({})
+
 // 대시보드 컴포넌트 ref — 당겨서 새로고침 시 대시보드 재조회를 명시 호출하기 위함.
 //   (현장 전환은 props.siteCd watch 로 자동 재조회되지만, 당겨서 새로고침은 siteCd 가
 //    바뀌지 않으므로 expose 된 refresh() 를 직접 호출한다.)
@@ -254,8 +260,11 @@ const loadAccessContext = async (siteCd, { silent = false } = {}) => {
     // 진입 가능 관리자면 연차 변경 확인 대기(AGREED) 건수 조회(배너용). 비관리자는 서버가 빈 목록/403 → 0.
     if (canEnterAdmin.value) {
       loadPendingConfirms()
+      // 모듈 배지는 moduleActiveMap 이 채워진 뒤에 조회한다(비활성 모듈 호출 스킵 판단에 필요).
+      loadModuleBadges()
     } else {
       pendingConfirmCount.value = 0
+      moduleBadgeMap.value = {}
     }
   } catch (e) {
     console.warn('[AdminLauncher] access-context 조회 실패:', e?.message)
@@ -265,6 +274,47 @@ const loadAccessContext = async (siteCd, { silent = false } = {}) => {
   } finally {
     if (!silent) isLoading.value = false
   }
+}
+
+// 모듈별 미처리 건수 조회(배지용).
+//   기존 목록 엔드포인트가 이미 집계를 돌려주므로 전용 API 를 신설하지 않는다.
+//     · 승인 관리: GET /appApi/admin/approval/pending → counts.ALL (pageSize=1 로 목록 부하 최소화)
+//     · 입장 승인: GET /appApi/entryadmin01/pending-lists → totalCount
+//   비활성 모듈은 호출 자체를 건너뛴다(불필요한 403 방지). 실패는 0 으로 두고 조용히 넘어간다 —
+//   배지는 보조 정보이므로 홈 진입을 막거나 알림을 띄우지 않는다.
+const loadModuleBadges = async () => {
+  const next = {}
+
+  const tasks = []
+  if (moduleActiveMap.value.APPROVAL === true) {
+    tasks.push(
+      api
+        .get('/appApi/admin/approval/pending', { params: { group: 'ALL', page: 1, pageSize: 1 } })
+        .then(({ data }) => {
+          next.APPROVAL = Number(data?.counts?.ALL ?? data?.totalCount) || 0
+        })
+        .catch(() => {
+          next.APPROVAL = 0
+        }),
+    )
+  }
+  if (moduleActiveMap.value.ENTRY === true) {
+    tasks.push(
+      api
+        .get('/appApi/entryadmin01/pending-lists')
+        .then(({ data }) => {
+          next.ENTRY =
+            Number(data?.totalCount) ||
+            (Array.isArray(data?.pendingList) ? data.pendingList.length : 0)
+        })
+        .catch(() => {
+          next.ENTRY = 0
+        }),
+    )
+  }
+
+  await Promise.all(tasks)
+  moduleBadgeMap.value = next
 }
 
 // 연차 변경 확인 대기(AGREED) 건수 조회. 실패/비권한은 0(배너 미노출) — 진입 차단 금지.

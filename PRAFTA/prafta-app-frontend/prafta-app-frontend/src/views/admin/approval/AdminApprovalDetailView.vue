@@ -123,9 +123,10 @@
               <dd>{{ detail.body.unitNm || '-' }}</dd>
               <dt>사용 구간</dt>
               <dd>{{ detail.body.appliedRangeDisplay || '-' }}</dd>
-              <dt>잔여(부여/사용/잔여)</dt>
+              <dt>잔여 현황</dt>
               <dd>
-                {{ detail.body.balance?.granted ?? '-' }} / {{ detail.body.balance?.used ?? '-' }} /
+                부여 {{ detail.body.balance?.granted ?? '-' }} · 사용
+                {{ detail.body.balance?.used ?? '-' }} · 잔여
                 {{ detail.body.balance?.remain ?? '-' }}
               </dd>
               <dt v-if="detail.body.stepDisplay">결재 단계</dt>
@@ -688,6 +689,8 @@ onMounted(loadDetail)
 }
 .ap-meta dt {
   color: var(--color-text-tertiary);
+  /* 라벨이 컬럼 폭(6.5rem)을 넘어도 글자 중간이 아닌 어절 단위로만 개행 */
+  word-break: keep-all;
 }
 .ap-meta dd {
   margin: 0;

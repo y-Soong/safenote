@@ -27,6 +27,14 @@
     <span class="module-section__body">
       <span class="module-section__title-row">
         <span class="module-section__title">{{ title }}</span>
+        <!-- 미처리 건수 배지 — 활성 + 1건 이상일 때만. 화면에 들어가 보지 않아도
+             신규 요청 유무를 홈에서 알 수 있게 한다(0건이면 비노출로 노이즈 방지). -->
+        <span
+          v-if="enabled && badgeCount > 0"
+          class="module-section__badge"
+          :aria-label="`미처리 ${badgeCount}건`"
+          >{{ badgeText }}</span
+        >
         <!-- 데이터 스코프 배지(노드 관리자 자기노드 등) — 활성 + scoped 일 때만 -->
         <span v-if="scoped && enabled" class="module-section__scope" aria-label="내 노드 범위"
           >내 노드</span
@@ -50,6 +58,8 @@
 </template>
 
 <script setup>
+import { computed } from 'vue'
+
 const props = defineProps({
   // 모듈 표시명
   title: { type: String, required: true },
@@ -61,9 +71,15 @@ const props = defineProps({
   scoped: { type: Boolean, default: false },
   // 보조 표기(예: '준비중')
   note: { type: String, default: '' },
+  // 미처리 건수(서버 조회값). 0/미지정이면 배지 비노출.
+  //   ⚠️ C1: 여기서 건수를 계산하지 않는다 — 부모가 서버 응답으로 채운 값만 표시한다.
+  badgeCount: { type: Number, default: 0 },
 })
 
 const emit = defineEmits(['select'])
+
+// 세 자리 이상은 배지가 행 레이아웃을 밀어내므로 99+ 로 절삭 표기한다.
+const badgeText = computed(() => (props.badgeCount > 99 ? '99+' : String(props.badgeCount)))
 
 // 비활성 섹션은 emit 차단(영역은 고정 노출하되 동작 없음).
 const onClick = () => {
@@ -124,6 +140,22 @@ const onClick = () => {
   color: var(--color-primary);
   font-size: 11px;
   font-weight: 700;
+  border-radius: var(--radius-full);
+}
+/* 미처리 건수 배지 — 스코프 배지(연한 톤)와 구분되도록 danger 톤 채움.
+   토큰은 부모(.admin-launcher-view) 선언분을 상속한다. */
+.module-section__badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 5px;
+  background: var(--color-danger);
+  color: #fff;
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 1;
   border-radius: var(--radius-full);
 }
 .module-section__note {
