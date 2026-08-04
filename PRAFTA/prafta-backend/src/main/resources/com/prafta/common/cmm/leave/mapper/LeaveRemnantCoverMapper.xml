@@ -21,14 +21,16 @@
 
     <!-- PC-05(D6)·PC-06(D7): 대상 5종 활성 부여(잔여>0, 대상일 유효, 만료 임박순, FOR UPDATE).
          LeaveFlowMapper.selectDeductibleGrants 술어 미러 + LEAVE_CD 집합(IN) + LEAVE_CD 반환.
-         결과 record RemnantDeductibleGrantVO(grantId, leaveCd, grantDays, usedDays) 순서 일치(위치매핑). -->
+         결과 record RemnantDeductibleGrantVO(grantId, leaveCd, grantDays, usedDays, availToDate)
+         순서 일치(위치매핑 - T10 확장분 availToDate 는 마지막 컬럼+마지막 컴포넌트 동시 추가). -->
     <select id="selectRemnantDeductibleGrants" resultType="com.prafta.common.cmm.leave.vo.RemnantDeductibleGrantVO">
     /* LeaveRemnantCoverMapper.selectRemnantDeductibleGrants */
     SELECT
-          G.GRANT_ID   AS grantId
-        , G.LEAVE_CD   AS leaveCd
-        , G.GRANT_DAYS AS grantDays
-        , G.USED_DAYS  AS usedDays
+          G.GRANT_ID      AS grantId
+        , G.LEAVE_CD      AS leaveCd
+        , G.GRANT_DAYS    AS grantDays
+        , G.USED_DAYS     AS usedDays
+        , G.AVAIL_TO_DATE AS availToDate
       FROM TB_USER_LEAVE_GRANT G
      WHERE G.CMPNY_CD = #{cmpnyCd}
        AND G.USER_CD  = #{userCd}
@@ -218,6 +220,20 @@
        AND DEL_YN   = 'N'
     </update>
 
+    <!-- T1·T2: 대상 REQ 의 ACTIVE cover 무효화(CANCELLED — 데이터 값 신설, DDL 불요).
+         회수 use INSERT 없이 상태만 전환. reclaimIfPossible 호출 전에 수행(자기 cover 부활 방지). -->
+    <update id="cancelCoversByReqId">
+    /* LeaveRemnantCoverMapper.cancelCoversByReqId */
+    UPDATE TB_LEAVE_REMNANT_COVER
+       SET COVER_STATUS = 'CANCELLED'
+         , UPDATE_NO    = #{updateNo}
+         , UPDATE_DATE  = NOW()
+     WHERE CMPNY_CD     = #{cmpnyCd}
+       AND REQ_ID       = #{reqId}
+       AND COVER_STATUS = 'ACTIVE'
+       AND DEL_YN       = 'N'
+    </update>
+
     <!-- PC-07(D9-②): 연간 회사 부담 상세 목록. COVER_DAYS>0 만(전액 회수분 제외 = 실부담).
          USER_NM 평문 — 관리자(MASTER/HR) 게이트 뒤에서만 호출(서비스 진입부 강제).
          결과 record RemnantCoverListRowVO(coverId, userCd, userNm, workYmd, useUnitType, chargeDays,
@@ -245,6 +261,9 @@
      WHERE C.CMPNY_CD   = #{cmpnyCd}
        AND C.DEL_YN     = 'N'
        AND C.COVER_DAYS &gt; 0
+       <!-- T1·T2 보완(plan §2-5): 이동/삭제로 무효화(CANCELLED)된 cover 는 COVER_DAYS 가 남아 있어
+            일수 술어만으로는 제외되지 않음 — 회사 실부담 집계에서 명시 제외. -->
+       AND C.COVER_STATUS != 'CANCELLED'
        AND C.WORK_YMD LIKE CONCAT(#{year}, '%')
      ORDER BY C.WORK_YMD DESC, C.COVER_ID DESC
      LIMIT 500

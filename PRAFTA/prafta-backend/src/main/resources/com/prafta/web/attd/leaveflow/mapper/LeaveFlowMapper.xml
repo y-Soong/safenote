@@ -669,6 +669,27 @@
      LIMIT 1
     </select>
 
+    <!-- T4(D-1) - 연차 수정('06') 분할 묶음 가드용: 대상 LEAVE_ID 가 속한 REQ 의 CONFIRMED 행 수.
+         2건 이상 = 분할 묶음(PC-02/PC-05) - in-place 부분 수정이 "LEAVE_MINUTES 첫 행만 총량"
+         불변식을 깨므로 승인 반영을 거부(ATTD_400_133)한다. 직접사용(REQ_ID NULL)은 서브쿼리가
+         NULL 을 반환해 카운트 0(비분할 취급). 술어 = 표준 dedupe 집합. -->
+    <select id="countReqSplitRows" resultType="int">
+    /* LeaveFlowMapper.countReqSplitRows */
+    SELECT COUNT(*)
+      FROM TB_USER_LEAVE_USE U
+     WHERE U.CMPNY_CD     = #{cmpnyCd}
+       AND U.LEAVE_STATUS = 'CONFIRMED'
+       AND U.DEL_YN       = 'N'
+       AND U.REQ_ID       = (
+           SELECT B.REQ_ID
+             FROM TB_USER_LEAVE_USE B
+            WHERE B.CMPNY_CD = #{cmpnyCd}
+              AND B.LEAVE_ID = #{leaveId}
+              AND B.DEL_YN   = 'N'
+            LIMIT 1
+       )
+    </select>
+
     <!-- PRAFTA-025 - 연차 수정('06') 승인: 기존 사용기록을 새 값으로 in-place 갱신.
          연차코드/부여/사용단위는 보존하고 일자·시각·일수·분·사유만 갱신한다. -->
     <update id="updateLeaveUseModify">

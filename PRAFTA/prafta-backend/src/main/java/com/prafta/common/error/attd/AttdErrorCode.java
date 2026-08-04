@@ -248,6 +248,9 @@ public enum AttdErrorCode implements ApiErrorCode {
     , ATTD_400_122(HttpStatus.BAD_REQUEST, "이동 대상일을 입력해 주세요.")
     , ATTD_400_123(HttpStatus.BAD_REQUEST, "요청 유형이 올바르지 않습니다.")
     , ATTD_400_124(HttpStatus.BAD_REQUEST, "응답 값이 올바르지 않습니다.")
+    // (F1 재활성, 2026-08-04 사용자 확정) 만료일 이내 이동 제한 복원 — 이동 대상일이 원 차감 부여들의
+    //   min(AVAIL_TO_DATE) 를 초과하면 거부한다("이동"이 올해분 소멸+내년분 차감을 숨기는 함정 방지.
+    //   만료 이후 날짜가 필요하면 삭제 후 재신청이 정답 흐름). 발의 검증·확정 재검증 양쪽(validateMove).
     , ATTD_400_125(HttpStatus.BAD_REQUEST, "이동 대상일이 연차 만료일을 초과합니다. 만료일 이내로 지정해 주세요.")
     , ATTD_400_126(HttpStatus.BAD_REQUEST, "이동 대상일에 이미 같은 연차가 등록되어 있어 이동할 수 없습니다.")
     , ATTD_400_127(HttpStatus.BAD_REQUEST, "마감된 기간의 연차는 변경/삭제할 수 없습니다.")
@@ -262,6 +265,15 @@ public enum AttdErrorCode implements ApiErrorCode {
     , ATTD_400_130(HttpStatus.BAD_REQUEST, "조회할 부서를 선택해 주세요.")
     // 이동 대상일 과거 날짜 가드(작업지시서 Attd10-연차변경탭_및_이동버그수정) — 워커/관리자 발의·확인 재검증 공통(validateMove).
     , ATTD_400_131(HttpStatus.BAD_REQUEST, "이동 대상일은 오늘 이후 날짜로 지정해 주세요.")
+    // T1(연차-분할차감 잔존이슈): 이동 재정의(원 차감 취소+대상일 재차감)에서 대상일 기준 유효 부여 잔여 부족 —
+    //   재차감 거부 단일 사유(짜투리 재판정 미충족 수렴 포함). 확정 실패 시 요청은 AGREED 잔류(전체 롤백).
+    , ATTD_400_132(HttpStatus.BAD_REQUEST, "이동 대상일 기준 사용 가능한 연차 잔여가 부족하여 이동할 수 없습니다.")
+    // T4(D-1): 분할 차감된 묶음(같은 REQ 의 CONFIRMED 사용행 2건 이상)에 대한 연차 수정('06') 승인 거부 —
+    //   in-place 부분 수정이 "LEAVE_MINUTES 첫 행만 총량" 불변식을 붕괴시키므로 서버에서 차단.
+    , ATTD_400_133(HttpStatus.BAD_REQUEST, "분할 차감된 연차는 수정 요청으로 변경할 수 없습니다. 삭제 후 재신청 또는 이동 요청을 이용해 주세요.")
+    // F3(qa D-2): 출발일 == 이동 대상일 이동 거부 — 동일일 재차감은 시간차 요금이 자기 누적을 포함해
+    //   과소 산출될 수 있고(캡 구간), 재정산 초과 잔량 가산이 부여 상한을 우회할 소지가 있어 서버에서 차단.
+    , ATTD_400_134(HttpStatus.BAD_REQUEST, "이동 대상일이 기존 연차 사용일과 같습니다. 다른 날짜를 지정해 주세요.")
 
     // ===== PRAFTA-COM-008-E 기본 근무타입 설정/로그인 게이트 =====
     // 선택한 기본 근무타입이 해당 사업장의 활성 근무타입이 아님(화이트리스트 위반).

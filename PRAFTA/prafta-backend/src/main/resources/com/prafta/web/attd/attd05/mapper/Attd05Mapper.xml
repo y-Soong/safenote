@@ -219,6 +219,16 @@
        AND L.USE_UNIT_TYPE = '00'
        AND DATE_FORMAT(d.dt, '%Y%m%d') <![CDATA[ >= ]]> L.START_DATE
        AND DATE_FORMAT(d.dt, '%Y%m%d') <![CDATA[ <= ]]> L.END_DATE
+       <!-- 분할차감 dedupe: 같은 REQ 의 분할행 중 첫 행(MIN LEAVE_ID)만 오버레이로 반환.
+            일수 미반환 쿼리라 CASE-SUM 불요(오버레이 본질 = 존재+시간대). leaveId 가 대표행으로
+            고정되어 셀 동의요청(attd13 발의, TARGET_LEAVE_ID) 대표행 정규화와 정합. -->
+       AND ( L.REQ_ID IS NULL
+          OR L.LEAVE_ID = ( SELECT MIN(X.LEAVE_ID)
+                              FROM TB_USER_LEAVE_USE X
+                             WHERE X.CMPNY_CD     = L.CMPNY_CD
+                               AND X.REQ_ID       = L.REQ_ID
+                               AND X.LEAVE_STATUS = 'CONFIRMED'
+                               AND X.DEL_YN       = 'N' ) )
     INNER JOIN TB_USER U
         ON U.CMPNY_CD = L.CMPNY_CD
        AND U.USER_CD  = L.USER_CD
@@ -284,6 +294,16 @@
        AND L.USE_UNIT_TYPE != '00'
        AND DATE_FORMAT(d.dt, '%Y%m%d') <![CDATA[ >= ]]> L.START_DATE
        AND DATE_FORMAT(d.dt, '%Y%m%d') <![CDATA[ <= ]]> L.END_DATE
+       <!-- 분할차감 dedupe: 같은 REQ 의 분할행 중 첫 행(MIN LEAVE_ID)만 칩으로 반환.
+            첫 행이 LEAVE_MINUTES 총량 보유(REQ 합산 정합 불변식) — 둘째 칩 minutes NULL 표기 깨짐 소멸.
+            일수 미반환 쿼리라 CASE-SUM 불요. -->
+       AND ( L.REQ_ID IS NULL
+          OR L.LEAVE_ID = ( SELECT MIN(X.LEAVE_ID)
+                              FROM TB_USER_LEAVE_USE X
+                             WHERE X.CMPNY_CD     = L.CMPNY_CD
+                               AND X.REQ_ID       = L.REQ_ID
+                               AND X.LEAVE_STATUS = 'CONFIRMED'
+                               AND X.DEL_YN       = 'N' ) )
     INNER JOIN TB_USER U
         ON U.CMPNY_CD = L.CMPNY_CD
        AND U.USER_CD  = L.USER_CD

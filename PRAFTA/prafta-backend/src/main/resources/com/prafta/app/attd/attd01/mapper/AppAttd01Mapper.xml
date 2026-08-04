@@ -217,16 +217,19 @@
         , U.END_DATE       AS endDate
         , U.LEAVE_CD       AS leaveCd
         , LT.LEAVE_NM      AS leaveNm
-        <!-- 분할차감(PC-02/PC-05): 요청 연결 use 행은 부여별 N개로 나뉠 수 있어 단일 행 일수는
-             부분값 — REQ 단위 합산으로 총 일수를 낸다(위치매핑 — 컬럼 순서 불변). -->
-        , CASE WHEN U.REQ_ID IS NULL THEN U.LEAVE_DAYS
-               ELSE ( SELECT SUM(X.LEAVE_DAYS)
-                        FROM TB_USER_LEAVE_USE X
-                       WHERE X.CMPNY_CD     = U.CMPNY_CD
-                         AND X.REQ_ID       = U.REQ_ID
-                         AND X.LEAVE_STATUS = 'CONFIRMED'
-                         AND X.DEL_YN       = 'N' )
-          END              AS leaveDays
+        <!-- T9(D-2 표기 정의): 사용자 노출 "일수" = 신청량(R.LEAVE_DAYS) 우선.
+             PC-05 짜투리 발동 건은 use 합산(개인 차감분)이 신청량보다 작아 IFNULL 로 신청량을 앞세운다.
+             직접사용(REQ_ID NULL)·R 미매칭(DEL_YN 포함) 건은 기존 REQ 합산/행 값 폴백으로 동작 보존.
+             분할차감(PC-02): 단일 행 일수는 부분값이라 REQ 단위 합산(위치매핑 — 컬럼 순서 불변). -->
+        , IFNULL(R.LEAVE_DAYS
+               , CASE WHEN U.REQ_ID IS NULL THEN U.LEAVE_DAYS
+                      ELSE ( SELECT SUM(X.LEAVE_DAYS)
+                               FROM TB_USER_LEAVE_USE X
+                              WHERE X.CMPNY_CD     = U.CMPNY_CD
+                                AND X.REQ_ID       = U.REQ_ID
+                                AND X.LEAVE_STATUS = 'CONFIRMED'
+                                AND X.DEL_YN       = 'N' )
+                 END )     AS leaveDays
         <!-- prafta-app-018-E: 부분연차 상세(위치매핑 — LeaveUseResult append 순서와 일치) -->
         , U.USE_UNIT_TYPE  AS useUnitType
         , U.START_TIME     AS startTime

@@ -2,6 +2,7 @@ package com.prafta.app.leavechange.leavechange01.dto.request;
 
 import com.fasterxml.jackson.annotation.JsonProperty;
 import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.Pattern;
 import lombok.Getter;
 import lombok.Setter;
 
@@ -21,8 +22,12 @@ public class LeaveChangeMoveRequest {
     @JsonProperty("TARGET_LEAVE_ID")
     private String TARGET_LEAVE_ID;
 
-    /** 이동 대상일 (YYYYMMDD). */
+    /**
+     * 이동 대상일 (YYYYMMDD).
+     * F7c(sec Low-003): 형식 1차 방어 — 실재 날짜(2월 31일 등) 검증은 서버 validateMove 의 LocalDate 파싱.
+     */
     @NotBlank
+    @Pattern(regexp = "\\d{8}")
     @JsonProperty("MOVE_TARGET_DATE")
     private String MOVE_TARGET_DATE;
 

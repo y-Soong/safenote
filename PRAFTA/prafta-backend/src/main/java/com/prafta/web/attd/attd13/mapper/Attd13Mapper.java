@@ -5,7 +5,10 @@ import java.util.List;
 import org.apache.ibatis.annotations.Mapper;
 import org.apache.ibatis.annotations.Param;
 
+import java.math.BigDecimal;
+
 import com.prafta.web.attd.attd13.application.command.LeaveChangeRequestInsertCommand;
+import com.prafta.web.attd.attd13.application.command.MovedLeaveUseInsertCommand;
 import com.prafta.web.attd.attd13.result.LeaveChangeRequestRowResult;
 import com.prafta.web.attd.attd13.result.LeaveUseTargetResult;
 import com.prafta.web.attd.attd13.result.MovableLeaveResult;
@@ -44,20 +47,57 @@ public interface Attd13Mapper {
 
     /**
      * 이동 대상일에 동일 직원·동일 연차코드의 확정(CONFIRMED) 사용행이 이미 있는지 카운트
-     * (DIRECT_USE_KEY 충돌 사전 검증). 자기 자신(leaveId)은 제외한다.
+     * (DIRECT_USE_KEY 충돌 사전 검증). 자기 자신(leaveId)을 제외하고, T3 확장으로
+     * {@code excludeReqId} 가 있으면 자기 REQ 전 행(분할 묶음)도 제외한다.
+     * {@code leaveCd} 는 REQ 연결 건이면 REQ 원 종류(TB_USER_ATTD_REQ.LEAVE_TYPE) 기준.
      */
     int countLeaveUseOnDate(@Param("cmpnyCd") String cmpnyCd,
                             @Param("userCd") String userCd,
                             @Param("leaveCd") String leaveCd,
                             @Param("targetDate") String targetDate,
-                            @Param("excludeLeaveId") String excludeLeaveId);
+                            @Param("excludeLeaveId") String excludeLeaveId,
+                            @Param("excludeReqId") String excludeReqId);
 
     /**
-     * 대상 연차가 차감한 부여(GRANT)의 만료일(AVAIL_TO_DATE, YYYYMMDD) 단건. 없으면 null.
-     * 이동 대상일 만료 초과 검증용.
+     * T3: 같은 REQ 분할 묶음의 대표행(MIN LEAVE_ID, CONFIRMED·미삭제) 단건. 없으면 null.
+     * 발의/확정 시 비대표행 LEAVE_ID 입력을 대표행으로 정규화한다(ACTIVE_LEAVE_KEY 멱등의 REQ 단위 성립).
+     */
+    String selectRepresentativeLeaveId(@Param("cmpnyCd") String cmpnyCd,
+                                       @Param("reqId") String reqId);
+
+    /**
+     * T1 발의 soft 체크(§2-6): 자기 묶음(REQ 또는 단건)의 CONFIRMED 차감분 중 "이동 대상일 기준
+     * 유효(ACTIVE, AVAIL_FROM~TO 포함) + 원 종류(leaveCd) 귀속" 부여에 걸린 일수 합.
+     * 취소 시 복원되어 재차감에 쓸 수 있는 분량의 근사치(잠금 없음 — 확정 시 재검증이 단일 신뢰 지점).
+     */
+    BigDecimal sumSelfRestorableDaysOnDate(@Param("cmpnyCd") String cmpnyCd,
+                                           @Param("reqId") String reqId,
+                                           @Param("leaveId") String leaveId,
+                                           @Param("leaveCd") String leaveCd,
+                                           @Param("targetDate") String targetDate);
+
+    /**
+     * (F1 재활성) 대상 연차가 차감한 부여(GRANT)의 만료일(AVAIL_TO_DATE) 단건.
+     * 만료일 이내 이동 제한 복원(ATTD_400_125, 2026-08-04 사용자 확정)의 직접사용(REQ_ID NULL)
+     * 경로에서 재사용한다. REQ 묶음은 {@link #selectMinGrantAvailToDateByReq} 사용.
      */
     String selectGrantAvailToDate(@Param("cmpnyCd") String cmpnyCd,
                                   @Param("grantId") String grantId);
+
+    /**
+     * F1: REQ 묶음(CONFIRMED 잔존 행)이 차감한 부여들의 최소 만료일(min AVAIL_TO_DATE).
+     * 이동 대상일이 이 값을 넘으면 ATTD_400_125 거부(validateMove — 발의·확정 재검증 공통).
+     */
+    String selectMinGrantAvailToDateByReq(@Param("cmpnyCd") String cmpnyCd,
+                                          @Param("reqId") String reqId);
+
+    /**
+     * F9(qa D-4): 삭제 확정의 가불 회수({@code cancelBorrowGrantByReqId})에서 건너뛰어진
+     * (USED_DAYS &gt; 0 잔존) 가불 GRANT 목록 — log.info 보고 전용 조회.
+     * 기존 statement(LeaveDashboardMapper.selectBorrowGrantIdsForCancel)는 수정하지 않는다.
+     */
+    List<String> selectRemainingBorrowGrantIdsByReq(@Param("cmpnyCd") String cmpnyCd,
+                                                    @Param("reqId") String reqId);
 
     /**
      * 근로자 본인의 이동 가능 연차일 목록(C-5a). 미래 확정 연차 중 본인 소유만.
@@ -145,16 +185,19 @@ public interface Attd13Mapper {
     // ============================================================
 
     /**
-     * MOVE 확정: 대상 연차 사용행의 START_DATE/END_DATE 를 새 일자로 갱신.
-     * 최초 지정일(ORIG_DESIGNATED_DATE)이 비어 있으면 기존 START_DATE 로 보존 세팅한다.
-     * WHERE 를 CONFIRMED + 미삭제로 못박는다.
-     *
-     * @return 갱신 행 수
+     * (T1 사장 — 참조 0건 유지) 구 MOVE 반영: START_DATE 단순 UPDATE.
+     * 이동이 "원 차감 취소 + 대상일 재차감"으로 재정의되어 미사용(plan §2-2).
      */
     int moveLeaveUseDate(@Param("cmpnyCd") String cmpnyCd,
                          @Param("leaveId") String leaveId,
                          @Param("newDate") String newDate,
                          @Param("updateNo") String updateNo);
+
+    /**
+     * T1: 이동 재차감 use 행 INSERT — 속성 승계(PROMOTION_STAGE/DESIGNATOR_TYPE/ORIG_DESIGNATED_DATE)
+     * 포함. {@code LeaveFlowMapper.insertLeaveUse} 는 승계 컬럼 미포함(§0-1-6)이라 전용 신설(불변 원칙).
+     */
+    int insertMovedLeaveUse(MovedLeaveUseInsertCommand cmd);
 
     /**
      * DELETE 확정: 대상 연차 사용행 soft cancel(LEAVE_STATUS='CANCELLED' + 사유/일시). WHERE 못박음.

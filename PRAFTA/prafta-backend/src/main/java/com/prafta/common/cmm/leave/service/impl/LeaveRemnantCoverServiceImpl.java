@@ -4,14 +4,18 @@ import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.LocalDate;
 import java.time.format.DateTimeFormatter;
+import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
 import java.util.List;
 
 import org.springframework.stereotype.Service;
 
+import com.prafta.common.cmm.leave.mapper.LeaveDashboardMapper;
 import com.prafta.common.cmm.leave.mapper.LeaveRemnantCoverMapper;
 import com.prafta.common.cmm.leave.service.LeaveConversionPolicyService;
+import com.prafta.common.cmm.leave.service.LeaveGrantEngineService;
 import com.prafta.common.cmm.leave.service.LeaveRemnantCoverService;
+import com.prafta.common.cmm.leave.vo.BorrowProjectionVO;
 import com.prafta.common.cmm.leave.util.HourlyLeaveChargeUtils;
 import com.prafta.common.cmm.leave.vo.RemnantCoverInsertVO;
 import com.prafta.common.cmm.leave.vo.RemnantCoverListRowVO;
@@ -70,9 +74,16 @@ public class LeaveRemnantCoverServiceImpl implements LeaveRemnantCoverService {
     /** 회수 use 행 사유(감사 추적용 고정 문구). */
     private static final String RECLAIM_USE_REASON = "짜투리 보전 회수(정상 차감 전환)";
 
+    /** T10(ⓕ): 1년 미만 월차 최대 발생 수(§8.5.4) — 가불 엔진 MONTHLY_MAX 와 동일 상수. */
+    private static final int MONTHLY_MAX = 11;
+
     private final LeaveRemnantCoverMapper leaveRemnantCoverMapper;
     /** 리포트 행별 본인 분모(오늘 기준) — PC-03 단일 출처 재사용. */
     private final LeaveConversionPolicyService leaveConversionPolicyService;
+    /** T10(ⓕ): 차기 본연차/근속가산 도래일 projection 재사용(산식 미러 복제 금지 — plan §1-T10). */
+    private final LeaveGrantEngineService leaveGrantEngineService;
+    /** T10(ⓕ): HIRE_DATE·경력인정 개월 단건 조회 재사용(기존 select — 신규 쿼리 없음). */
+    private final LeaveDashboardMapper leaveDashboardMapper;
 
     // ============================================================
     // PC-05 — 발동 판정(D5) / 발동 처리(D6)
@@ -126,6 +137,38 @@ public class LeaveRemnantCoverServiceImpl implements LeaveRemnantCoverService {
         // ⓔ: 미래 예정 연차 0건(실사용일 도래 기준 — D5 사용자 명시 요구).
         if (leaveRemnantCoverMapper.countUpcomingLeaveUse(cmpnyCd, userCd, todayYmd(), TARGET_LEAVE_CDS) > 0) {
             return null;
+        }
+        // ⓕ (T10 정책 개정, 2026-08-03 사용자 확정): "잔여가 소멸하기 전에 다음 대상 부여가 도래할
+        //   예정이면 발동하지 않는다"(일반형 — SYS_MONTHLY 하드코딩 아님). 월차 11개는 만료일이
+        //   전부 동일(입사+1년−1일 일괄소멸)해 마지막 월차 도래 전 구간의 잔여는 결합 사용이
+        //   가능하므로 자투리가 아니다. 보수안: 잔여를 구성하는 "모든" 조각의 AVAIL_TO_DATE 가
+        //   다음 도래일(nextGrantYmd) 이후에도 유효할 때만 스킵 — 하나라도 먼저 소멸하면 발동 유지.
+        //   산출 불가/오류 시 발동 유지 폴백(스킵은 근로자 신청 거부로 이어지므로 불확실하면 기존 동작).
+        String nextGrantYmd = resolveNextGrantYmd(cmpnyCd, userCd);
+        if (nextGrantYmd != null) {
+            int fragments = 0;
+            String minAvailTo = null;
+            boolean allSurvive = true;
+            for (RemnantDeductibleGrantVO g : grants) {
+                BigDecimal avail = nz(g.grantDays()).subtract(nz(g.usedDays()));
+                if (avail.signum() <= 0) {
+                    continue;
+                }
+                fragments++;
+                String availTo = g.availToDate();
+                if (minAvailTo == null || (availTo != null && availTo.compareTo(minAvailTo) < 0)) {
+                    minAvailTo = availTo;
+                }
+                if (availTo == null || availTo.compareTo(nextGrantYmd) < 0) {
+                    allSurvive = false; // 다음 도래 전에 소멸하는 조각 존재(진짜 자투리) — 발동 유지
+                }
+            }
+            if (fragments > 0 && allSurvive) {
+                log.info("[leave-remnant] 발동 스킵(ⓕ 결합 가능 잔여): userCd={}, workYmd={}, nextGrantYmd={}, "
+                                + "잔여 조각={}개, 최소 만료일={}",
+                        userCd, workYmd, nextGrantYmd, fragments, minAvailTo);
+                return null;
+            }
         }
 
         // 발동 계획: 잔여 전액을 만료 임박순 분할(원장 음수 금지 D6). 회사 부담분 = 정상 요금 − 잔여.
@@ -183,6 +226,67 @@ public class LeaveRemnantCoverServiceImpl implements LeaveRemnantCoverService {
                 plan.charges().size(), plan.coverDays().toPlainString(), plan.coverMinutes());
 
         return leaveId;
+    }
+
+    /**
+     * T10(ⓕ): 다음 도래 예정 대상 부여일(YYYYMMDD) 산출 — 월차/본연차(근속가산 포함) 두 계열의 최솟값.
+     *
+     * <ul>
+     *   <li>월차: 실근속(경력인정 제외 — §8.5.4, 가불 슬롯 산식 createMonthlyBorrowGrant 동일 기준) 기준
+     *       다음 슬롯 m = actualMonths+1 이 11 이하이면 hire+m개월. m &gt; 11 이면 도래 없음.
+     *       경력인정 더블딥(월차 비대상) 보수 근사: 실근속&lt;12 인데 산정근속(실근속+경력인정)&ge;12 이면
+     *       월차 미생성 가능성이 있어 월차 계열을 무시한다(오차 방향 = 발동 유지 — 과스킵 없음).</li>
+     *   <li>본연차/근속가산: {@code projectNextAnnualGrant} 재사용 — days &gt; 0 일 때만 availFromYmd 인정.</li>
+     * </ul>
+     *
+     * <p>산출 불가(입사일 미상/형식 오류)·조회 실패 시 {@code null}(호출부 = 발동 유지 폴백 — 스킵은
+     * 근로자 신청 거부로 이어지므로 불확실하면 기존 동작 유지, plan §1-T10 확정).
+     */
+    private String resolveNextGrantYmd(String cmpnyCd, String userCd) {
+        try {
+            String hireDate = leaveDashboardMapper.selectUserHireDate(cmpnyCd, userCd);
+            if (hireDate == null || !hireDate.matches("\\d{8}")) {
+                return null; // 입사일 미상 — 산출 불가(발동 유지 폴백)
+            }
+            LocalDate hire = LocalDate.parse(hireDate, DateTimeFormatter.BASIC_ISO_DATE);
+            LocalDate today = LocalDate.now();
+            if (hire.isAfter(today)) {
+                return null;
+            }
+
+            // 월차 계열: 실근속 기준 다음 슬롯(가불 엔진 createMonthlyBorrowGrant 671행과 동일 기준).
+            String monthlyNext = null;
+            int actualMonths = (int) Math.max(0, ChronoUnit.MONTHS.between(hire, today));
+            int nextSlot = actualMonths + 1;
+            if (nextSlot <= MONTHLY_MAX) {
+                // 더블딥 보수 근사: 정확 판정(엔진 isCreditDoubleDip)은 full 본연차 발생까지 보나 private —
+                //   (1)(2) 조건만으로 근사하고, 해당하면 월차 계열 무시(무시 방향 = 발동 유지라 무손해).
+                int creditMonths = Math.max(0, leaveDashboardMapper.selectCreditMonths(cmpnyCd, userCd));
+                if (actualMonths + creditMonths < 12) {
+                    monthlyNext = hire.plusMonths(nextSlot).format(DateTimeFormatter.BASIC_ISO_DATE);
+                }
+            }
+
+            // 본연차/근속가산 계열: days > 0 일 때만 도래 예정으로 인정.
+            String annualNext = null;
+            BorrowProjectionVO proj = leaveGrantEngineService.projectNextAnnualGrant(cmpnyCd, userCd, hireDate);
+            if (proj != null && proj.getDays() != null && proj.getDays().signum() > 0
+                    && proj.getAvailFromYmd() != null) {
+                annualNext = proj.getAvailFromYmd();
+            }
+
+            if (monthlyNext == null) {
+                return annualNext; // 두 계열 모두 없으면 null → ⓕ 통과(발동 유지)
+            }
+            if (annualNext == null) {
+                return monthlyNext;
+            }
+            return (monthlyNext.compareTo(annualNext) <= 0) ? monthlyNext : annualNext;
+        } catch (Exception e) {
+            log.warn("[leave-remnant] ⓕ 다음 부여 도래일 산출 실패 — 발동 유지 폴백. cmpnyCd={}, userCd={}",
+                    cmpnyCd, userCd, e);
+            return null;
+        }
     }
 
     // ============================================================
@@ -261,6 +365,25 @@ public class LeaveRemnantCoverServiceImpl implements LeaveRemnantCoverService {
                 releaseLock(lockKey);
             }
         }
+    }
+
+    // ============================================================
+    // T1·T2 — 자기 cover 무효화(CANCELLED)
+    // ============================================================
+
+    @Override
+    public int cancelCoversByReq(String cmpnyCd, String reqId, String actorUserCd) {
+        if (cmpnyCd == null || cmpnyCd.isBlank() || reqId == null || reqId.isBlank()) {
+            return 0;
+        }
+        // 회수 use INSERT 없이 상태만 CANCELLED — 원 use 행이 이미 취소(또는 곧 취소)되는 흐름 전용.
+        //   반드시 reclaimIfPossible 호출 "전"에 수행해야 자기 cover 부활(plan §0-1-2)이 없다.
+        int cancelled = leaveRemnantCoverMapper.cancelCoversByReqId(cmpnyCd, reqId, actorUserCd);
+        if (cancelled > 0) {
+            log.info("[leave-remnant] 자기 cover 무효화(CANCELLED): cmpnyCd={}, reqId={}, {}건, by={}",
+                    cmpnyCd, reqId, cancelled, actorUserCd);
+        }
+        return cancelled;
     }
 
     // ============================================================

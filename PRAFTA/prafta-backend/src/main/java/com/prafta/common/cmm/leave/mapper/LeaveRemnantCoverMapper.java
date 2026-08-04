@@ -78,6 +78,16 @@ public interface LeaveRemnantCoverMapper {
                            @Param("reclaimed") boolean reclaimed,
                            @Param("updateNo") String updateNo);
 
+    /**
+     * T1·T2: 대상 REQ 의 ACTIVE cover 무효화(COVER_STATUS='CANCELLED', 회수 use INSERT 없음).
+     * WHERE 를 ACTIVE + 미삭제로 못박아 도래/회수 완료분은 건드리지 않는다.
+     *
+     * @return 갱신 행 수
+     */
+    int cancelCoversByReqId(@Param("cmpnyCd") String cmpnyCd,
+                            @Param("reqId") String reqId,
+                            @Param("updateNo") String updateNo);
+
     /** D9-②: 연간 회사 부담 상세 목록 (COVER_DAYS&gt;0, 사용자명 조인 — 관리자 화면 한정). */
     List<RemnantCoverListRowVO> selectCoverSummaryRows(@Param("cmpnyCd") String cmpnyCd,
                                                        @Param("year") String year);

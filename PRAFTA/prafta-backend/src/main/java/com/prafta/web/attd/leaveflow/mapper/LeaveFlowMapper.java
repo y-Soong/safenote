@@ -259,6 +259,12 @@ public interface LeaveFlowMapper {
             @Param("cmpnyCd") String cmpnyCd, @Param("leaveId") String leaveId);
 
     /**
+     * T4(D-1): 대상 LEAVE_ID 가 속한 REQ 의 CONFIRMED·미삭제 사용행 수 — 분할 묶음(2건 이상) 판정.
+     * 대상 행의 REQ_ID 가 NULL(직접사용)이면 0 을 반환한다(비분할 취급).
+     */
+    int countReqSplitRows(@Param("cmpnyCd") String cmpnyCd, @Param("leaveId") String leaveId);
+
+    /**
      * PRAFTA-025 - 연차 수정('06') 승인: 기존 사용기록(LEAVE_ID)을 새 값으로 in-place 갱신한다.
      * 연차코드(LEAVE_CD)/차감 부여(GRANT_ID)/사용단위(USE_UNIT_TYPE)는 보존하고
      * 사용 일자·시각·일수·분·사유만 갱신한다. CONFIRMED + 미삭제 행만 대상.

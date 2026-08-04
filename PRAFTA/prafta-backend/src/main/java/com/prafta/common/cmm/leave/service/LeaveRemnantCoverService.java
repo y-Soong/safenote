@@ -69,6 +69,16 @@ public interface LeaveRemnantCoverService {
      */
     void reclaimIfPossible(String cmpnyCd, String userCd, String actorUserCd);
 
+    /**
+     * T1(이동)·T2(삭제): 대상 REQ 의 ACTIVE cover 를 무효화(CANCELLED)한다 — 회수 use INSERT 없이
+     * 상태만 전환. REQ 전 use 행 취소와 같은 트랜잭션에서, {@link #reclaimIfPossible} 호출 <b>전</b>에
+     * 수행해야 한다(취소 직후 회수 훅이 그 REQ 로 새 use 행을 만들어 삭제한 휴가가 부활하는 것을 차단 —
+     * plan §0-1-2). 호출자 트랜잭션에 참여한다.
+     *
+     * @return 무효화된 cover 행 수
+     */
+    int cancelCoversByReq(String cmpnyCd, String reqId, String actorUserCd);
+
     /** D9-②: 연간 회사 부담 집계(N일/M건) + 상세 목록. 관리자(MASTER/HR) 전용(진입부 강제 §8.5.7). */
     RemnantCoverSummaryVO getCoverSummary(String cmpnyCd, String authCd, String year);
 

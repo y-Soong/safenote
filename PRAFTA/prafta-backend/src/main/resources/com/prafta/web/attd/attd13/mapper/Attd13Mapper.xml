@@ -16,27 +16,56 @@
       FROM DUAL
     </select>
 
-    <!-- ============ 대상 연차 검증용 단건 ============ -->
+    <!-- ============ 대상 연차 검증용 단건 ============
+      T1 확장: 재차감·속성 승계(§2-4)용 컬럼을 마지막에 추가(기존 9컬럼 순서 불변 - record 위치매핑).
+      reqLeaveCd = REQ 원 종류(TB_USER_ATTD_REQ.LEAVE_TYPE).
+      F6(qa D-8): EVIDENCE_FILE_ID 승계용 컬럼을 마지막에 추가(위치매핑 - VO 마지막 컴포넌트와 동시). -->
     <select id="selectLeaveUseTarget" resultType="com.prafta.web.attd.attd13.result.LeaveUseTargetResult">
     /* Attd13Mapper.selectLeaveUseTarget */
     SELECT
-          U.LEAVE_ID      AS leaveId
-        , U.CMPNY_CD      AS cmpnyCd
-        , U.SITE_CD       AS siteCd
-        , U.USER_CD       AS userCd
-        , U.LEAVE_CD      AS leaveCd
-        , U.GRANT_ID      AS grantId
-        , U.START_DATE    AS startDate
-        , U.USE_UNIT_TYPE AS useUnitType
-        , U.LEAVE_STATUS  AS leaveStatus
+          U.LEAVE_ID             AS leaveId
+        , U.CMPNY_CD             AS cmpnyCd
+        , U.SITE_CD              AS siteCd
+        , U.USER_CD              AS userCd
+        , U.LEAVE_CD             AS leaveCd
+        , U.GRANT_ID             AS grantId
+        , U.START_DATE           AS startDate
+        , U.USE_UNIT_TYPE        AS useUnitType
+        , U.LEAVE_STATUS         AS leaveStatus
+        , U.REQ_ID               AS reqId
+        , R.LEAVE_TYPE           AS reqLeaveCd
+        , U.START_TIME           AS startTime
+        , U.END_TIME             AS endTime
+        , U.LEAVE_MINUTES        AS leaveMinutes
+        , U.PROMOTION_STAGE      AS promotionStage
+        , U.DESIGNATOR_TYPE      AS designatorType
+        , U.ORIG_DESIGNATED_DATE AS origDesignatedDate
+        , U.LEAVE_REASON         AS leaveReason
+        , U.EVIDENCE_FILE_ID     AS evidenceFileId
       FROM TB_USER_LEAVE_USE U
+      LEFT JOIN TB_USER_ATTD_REQ R
+        ON R.CMPNY_CD = U.CMPNY_CD
+       AND R.REQ_ID   = U.REQ_ID
      WHERE U.CMPNY_CD = #{cmpnyCd}
        AND U.LEAVE_ID = #{leaveId}
        AND U.DEL_YN   = 'N'
      LIMIT 1
     </select>
 
-    <!-- 이동 대상일 동일 연차 기존재(DIRECT_USE_KEY 충돌) 카운트. 자기자신 제외. -->
+    <!-- T3: 같은 REQ 분할 묶음의 대표행(MIN LEAVE_ID) - 발의/확정 시 비대표행 입력 정규화.
+      술어 = 표준 dedupe 집합(CMPNY_CD + REQ_ID + CONFIRMED + DEL_YN='N'). -->
+    <select id="selectRepresentativeLeaveId" resultType="string">
+    /* Attd13Mapper.selectRepresentativeLeaveId */
+    SELECT MIN(U.LEAVE_ID)
+      FROM TB_USER_LEAVE_USE U
+     WHERE U.CMPNY_CD     = #{cmpnyCd}
+       AND U.REQ_ID       = #{reqId}
+       AND U.LEAVE_STATUS = 'CONFIRMED'
+       AND U.DEL_YN       = 'N'
+    </select>
+
+    <!-- 이동 대상일 동일 연차 기존재(DIRECT_USE_KEY 충돌) 카운트. 자기자신 제외 +
+      T3 확장: 자기 REQ 전 행(분할 묶음)도 제외(excludeReqId 는 nullable). -->
     <select id="countLeaveUseOnDate" resultType="int">
     /* Attd13Mapper.countLeaveUseOnDate */
     SELECT COUNT(*)
@@ -48,9 +77,41 @@
        AND U.LEAVE_ID    != #{excludeLeaveId}
        AND U.LEAVE_STATUS = 'CONFIRMED'
        AND U.DEL_YN       = 'N'
+    <if test="excludeReqId != null and excludeReqId != ''">
+       AND (U.REQ_ID IS NULL OR U.REQ_ID != #{excludeReqId})
+    </if>
     </select>
 
-    <!-- 대상 부여 만료일(AVAIL_TO_DATE) 단건 (이동 만료 검증) -->
+    <!-- T1 발의 soft 체크(§2-6): 자기 묶음의 CONFIRMED 차감분 중 "대상일 기준 유효 + 원 종류 귀속"
+      부여에 걸린 일수 합(취소 시 복원되어 재차감 가능한 근사치). 잠금 없음 - 확정 시 재검증이 신뢰 지점.
+      reqId 연결 건은 REQ 스코프, 직접사용은 leaveId 단건 스코프. -->
+    <select id="sumSelfRestorableDaysOnDate" resultType="java.math.BigDecimal">
+    /* Attd13Mapper.sumSelfRestorableDaysOnDate */
+    SELECT COALESCE(SUM(U.LEAVE_DAYS), 0)
+      FROM TB_USER_LEAVE_USE U
+      JOIN TB_USER_LEAVE_GRANT G
+        ON G.CMPNY_CD = U.CMPNY_CD
+       AND G.GRANT_ID = U.GRANT_ID
+     WHERE U.CMPNY_CD     = #{cmpnyCd}
+       AND U.LEAVE_STATUS = 'CONFIRMED'
+       AND U.DEL_YN       = 'N'
+    <choose>
+        <when test="reqId != null and reqId != ''">
+       AND U.REQ_ID       = #{reqId}
+        </when>
+        <otherwise>
+       AND U.LEAVE_ID     = #{leaveId}
+        </otherwise>
+    </choose>
+       AND G.LEAVE_CD = #{leaveCd}
+       AND G.DEL_YN   = 'N'
+       AND G.STATUS   = 'ACTIVE'
+       AND G.AVAIL_FROM_DATE &lt;= #{targetDate}
+       AND G.AVAIL_TO_DATE   &gt;= #{targetDate}
+    </select>
+
+    <!-- (F1 재활성 - 2026-08-04) 대상 부여 만료일 단건. 만료일 이내 이동 제한 복원(ATTD_400_125)의
+      직접사용(REQ_ID NULL) 경로에서 재사용 - REQ 묶음은 selectMinGrantAvailToDateByReq 사용. -->
     <select id="selectGrantAvailToDate" resultType="string">
     /* Attd13Mapper.selectGrantAvailToDate */
     SELECT G.AVAIL_TO_DATE
@@ -60,14 +121,65 @@
      LIMIT 1
     </select>
 
-    <!-- 근로자 본인 이동 가능 연차일(미래 확정 연차, 만료 미경과) -->
+    <!-- F1: REQ 묶음이 차감한 부여들의 최소 만료일(min AVAIL_TO_DATE). 이동 대상일이 이 값을 넘으면
+      ATTD_400_125 거부(발의 검증·확정 재검증 공통 - validateMove). CONFIRMED 잔존 행 기준. -->
+    <select id="selectMinGrantAvailToDateByReq" resultType="string">
+    /* Attd13Mapper.selectMinGrantAvailToDateByReq */
+    SELECT MIN(G.AVAIL_TO_DATE)
+      FROM TB_USER_LEAVE_USE U
+      JOIN TB_USER_LEAVE_GRANT G
+        ON G.CMPNY_CD = U.CMPNY_CD
+       AND G.GRANT_ID = U.GRANT_ID
+     WHERE U.CMPNY_CD     = #{cmpnyCd}
+       AND U.REQ_ID       = #{reqId}
+       AND U.LEAVE_STATUS = 'CONFIRMED'
+       AND U.DEL_YN       = 'N'
+    </select>
+
+    <!-- F9(qa D-4): 삭제 확정 시 가불 회수(cancelBorrowGrantByReqId)에서 건너뛰어진(USED_DAYS 잔존)
+      가불 GRANT 목록 - log.info 보고용 조회 전용. 술어는 LeaveDashboardMapper.selectBorrowGrantIdsForCancel
+      와 동형이되 USED_DAYS 조건만 반전(기존 statement 수정 금지 - 05 반려 경로 동작 불변). -->
+    <select id="selectRemainingBorrowGrantIdsByReq" resultType="string">
+    /* Attd13Mapper.selectRemainingBorrowGrantIdsByReq */
+    SELECT DISTINCT G.GRANT_ID
+      FROM TB_USER_LEAVE_GRANT G
+     WHERE G.CMPNY_CD     = #{cmpnyCd}
+       AND G.GRANT_REASON LIKE '[가불]%'
+       AND G.STATUS       = 'ACTIVE'
+       AND G.DEL_YN       = 'N'
+       AND G.USED_DAYS   <![CDATA[ > ]]> 0
+       AND G.GRANT_ID IN (
+             SELECT U.GRANT_ID
+               FROM TB_USER_LEAVE_USE U
+              WHERE U.CMPNY_CD = #{cmpnyCd}
+                AND U.REQ_ID   = #{reqId}
+                AND U.GRANT_ID IS NOT NULL
+           )
+    </select>
+
+    <!-- 근로자 본인 이동 가능 연차일(미래 확정 연차).
+      T3(§0-4 표준 패턴): 분할 묶음은 대표행(MIN LEAVE_ID) 1건으로 dedupe + LEAVE_DAYS 는 REQ 합산
+      (record MovableLeaveResult 위치매핑 - 4번째 leaveDays 자리 표현식만 in-place 교체, 컬럼 수/순서 불변).
+      dedupe 서브쿼리 술어 = 표준 집합(CMPNY_CD 상관 + REQ_ID 상관 + CONFIRMED + DEL_YN='N') -
+      본 쿼리의 USER_CD·미래일 술어는 "같은 REQ 분할행" 식별 목적이 아니므로 서브쿼리에 넣지 않는다(plan §1-T3).
+      availToDate 는 대표행 부여 기준 표시용 - F1(2026-08-04) 만료 제한 복원으로 확정 검증은
+      묶음 min(AVAIL_TO_DATE)(selectMinGrantAvailToDateByReq) 기준(ATTD_400_125). -->
     <select id="selectMovableLeaves" resultType="com.prafta.web.attd.attd13.result.MovableLeaveResult">
     /* Attd13Mapper.selectMovableLeaves */
     SELECT
           U.LEAVE_ID         AS leaveId
         , U.LEAVE_CD         AS leaveCd
         , U.START_DATE       AS startDate
-        , U.LEAVE_DAYS       AS leaveDays
+        , CASE WHEN U.REQ_ID IS NULL THEN U.LEAVE_DAYS
+               ELSE (
+                    SELECT SUM(S.LEAVE_DAYS)
+                      FROM TB_USER_LEAVE_USE S
+                     WHERE S.CMPNY_CD     = U.CMPNY_CD
+                       AND S.REQ_ID       = U.REQ_ID
+                       AND S.LEAVE_STATUS = 'CONFIRMED'
+                       AND S.DEL_YN       = 'N'
+               )
+          END                AS leaveDays
         , U.USE_UNIT_TYPE    AS useUnitType
         , U.PROMOTION_STAGE  AS promotionStage
         , U.DESIGNATOR_TYPE  AS designatorType
@@ -81,6 +193,16 @@
        AND U.LEAVE_STATUS = 'CONFIRMED'
        AND U.DEL_YN       = 'N'
        AND U.START_DATE  >= #{todayYmd}
+       AND ( U.REQ_ID IS NULL
+          OR U.LEAVE_ID = (
+                SELECT MIN(X.LEAVE_ID)
+                  FROM TB_USER_LEAVE_USE X
+                 WHERE X.CMPNY_CD     = U.CMPNY_CD
+                   AND X.REQ_ID       = U.REQ_ID
+                   AND X.LEAVE_STATUS = 'CONFIRMED'
+                   AND X.DEL_YN       = 'N'
+             )
+       )
      ORDER BY U.START_DATE ASC, U.LEAVE_ID ASC
     </select>
 
@@ -326,7 +448,67 @@
        AND DEL_YN        = 'N'
     </update>
 
-    <!-- ============ MOVE 반영: START_DATE/END_DATE 갱신(최초지정일 보존) ============ -->
+    <!-- ============ T1: 이동 재차감 use 행 INSERT (속성 승계 §2-4) ============
+      LeaveFlowMapper.insertLeaveUse 는 승계 컬럼 미포함(§0-1-6)이라 전용 신설(불변 원칙).
+      LEAVE_MINUTES 는 첫 charge 행만 원 총량(불변식 1), ORIG_DESIGNATED_DATE 는 서비스가
+      IFNULL(원 대표행 기존값, 원 START_DATE)로 산출해 전달한다.
+      F6(qa D-8): EVIDENCE_FILE_ID 승계 추가(원 대표행 값 - LEAVE_REASON 과 동일하게 전 행 승계). -->
+    <insert id="insertMovedLeaveUse" parameterType="com.prafta.web.attd.attd13.application.command.MovedLeaveUseInsertCommand">
+    /* Attd13Mapper.insertMovedLeaveUse */
+    INSERT INTO TB_USER_LEAVE_USE (
+          LEAVE_ID
+        , CMPNY_CD
+        , SITE_CD
+        , USER_CD
+        , LEAVE_CD
+        , REQ_ID
+        , GRANT_ID
+        , START_DATE
+        , START_TIME
+        , END_DATE
+        , END_TIME
+        , USE_UNIT_TYPE
+        , LEAVE_DAYS
+        , LEAVE_MINUTES
+        , LEAVE_REASON
+        , EVIDENCE_FILE_ID
+        , LEAVE_STATUS
+        , PROMOTION_STAGE
+        , DESIGNATOR_TYPE
+        , ORIG_DESIGNATED_DATE
+        , DEL_YN
+        , INSERT_NO
+        , INSERT_DATE
+    )
+    VALUES (
+          #{leaveId}
+        , #{cmpnyCd}
+        , #{siteCd}
+        , #{userCd}
+        , #{leaveCd}
+        , #{reqId}
+        , #{grantId}
+        , #{startDate}
+        , #{startTime}
+        , #{endDate}
+        , #{endTime}
+        , #{useUnitType}
+        , #{leaveDays}
+        , #{leaveMinutes}
+        , #{leaveReason}
+        , #{evidenceFileId}
+        , 'CONFIRMED'
+        , IFNULL(#{promotionStage}, 'NONE')
+        , IFNULL(#{designatorType}, 'VOLUNTARY')
+        , #{origDesignatedDate}
+        , 'N'
+        , #{insertNo}
+        , NOW()
+    )
+    </insert>
+
+    <!-- ============ (T1 사장 - 참조 0건 유지) 구 MOVE 반영: START_DATE 단순 UPDATE ============
+      이동이 "원 차감 취소 + 대상일 재차감"으로 재정의되어 미사용(plan §2-2). -->
     <update id="moveLeaveUseDate">
     /* Attd13Mapper.moveLeaveUseDate */
     UPDATE TB_USER_LEAVE_USE

@@ -2,6 +2,7 @@ package com.prafta.web.attd.attd13.dto.request;
 
 import com.fasterxml.jackson.annotation.JsonProperty;
 import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.Pattern;
 import lombok.Getter;
 import lombok.Setter;
 
@@ -27,7 +28,11 @@ public class ChangeRequestCreateRequest {
     @JsonProperty("REQ_TYPE")
     private String REQ_TYPE;
 
-    /** 이동 대상일 (YYYYMMDD, MOVE 시 필수 / DELETE 시 무시). */
+    /**
+     * 이동 대상일 (YYYYMMDD, MOVE 시 필수 / DELETE 시 무시).
+     * F7c(sec Low-003): 형식 1차 방어 — 실재 날짜(2월 31일 등) 검증은 서버 validateMove 의 LocalDate 파싱.
+     */
+    @Pattern(regexp = "\\d{8}")
     @JsonProperty("MOVE_TARGET_DATE")
     private String MOVE_TARGET_DATE;
 

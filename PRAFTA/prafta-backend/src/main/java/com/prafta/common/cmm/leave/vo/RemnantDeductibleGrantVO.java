@@ -13,5 +13,7 @@ public record RemnantDeductibleGrantVO(
     , String leaveCd
     , BigDecimal grantDays
     , BigDecimal usedDays
+    /** 부여 만료일(YYYYMMDD) — T10 조건 ⓕ(다음 부여 도래 전 소멸 조각 판정) 입력. 마지막 컴포넌트(위치매핑). */
+    , String availToDate
 ) {
 }

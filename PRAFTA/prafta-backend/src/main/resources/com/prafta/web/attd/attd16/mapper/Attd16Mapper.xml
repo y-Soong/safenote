@@ -67,7 +67,16 @@
             , LU.USE_UNIT_TYPE            AS useUnitType
             , LU.START_TIME               AS startTime
             , LU.END_TIME                 AS endTime
-            , LU.LEAVE_DAYS               AS leaveDays
+            <!-- 분할차감(PC-02/PC-05): 요청 연결 use 행은 부여별 N개로 나뉠 수 있어 단일 행 일수는
+                 부분값 — REQ 단위 합산으로 총 일수를 낸다(record 위치매핑 — 컬럼 수/순서 불변). -->
+            , CASE WHEN LU.REQ_ID IS NULL THEN LU.LEAVE_DAYS
+                   ELSE ( SELECT SUM(X.LEAVE_DAYS)
+                            FROM TB_USER_LEAVE_USE X
+                           WHERE X.CMPNY_CD     = LU.CMPNY_CD
+                             AND X.REQ_ID       = LU.REQ_ID
+                             AND X.LEAVE_STATUS = 'CONFIRMED'
+                             AND X.DEL_YN       = 'N' )
+              END                       AS leaveDays
             , LU.LEAVE_MINUTES            AS leaveMinutes
 
         FROM TB_USER_LEAVE_USE LU
@@ -102,6 +111,16 @@
           /* 월 교차 조건(IDX_LEAVE_USE_SITE 활용). LEAVE_STATUS 값은 CANCELLED(L 두 개)와 짝. */
           AND LU.START_DATE   <![CDATA[ <= ]]> #{monthEnd}
           AND LU.END_DATE     <![CDATA[ >= ]]> #{monthStart}
+          <!-- 분할차감 dedupe: 같은 REQ 의 분할행 중 첫 행(MIN LEAVE_ID)만 노출 — 첫 행이 LEAVE_MINUTES
+               총량 보유(REQ 합산 정합 불변식). 일수는 SELECT 절에서 REQ 합산. 표시 종류(LEAVE_CD)는
+               대표행 기준(PC-05 건은 부여 귀속 코드 — 허용 한계, 지시서 R-3). 직접사용(REQ_ID NULL)은 단독 유지. -->
+          AND ( LU.REQ_ID IS NULL
+             OR LU.LEAVE_ID = ( SELECT MIN(X.LEAVE_ID)
+                                  FROM TB_USER_LEAVE_USE X
+                                 WHERE X.CMPNY_CD     = LU.CMPNY_CD
+                                   AND X.REQ_ID       = LU.REQ_ID
+                                   AND X.LEAVE_STATUS = 'CONFIRMED'
+                                   AND X.DEL_YN       = 'N' ) )
           /* SEC-A16-04: 퇴사자는 퇴사일이 속한 월까지만 노출한다(재직 중이던 과거월 이력은 보존,
              퇴사 후 월에는 성명이 계속 조회되지 않게 차단 — 현황 화면 관례 attd07/11/15 취지).
              USE_YN 은 조건에 두지 않는다(비활성 계정 != 퇴사 — 재직자 이력 소실 방지). */

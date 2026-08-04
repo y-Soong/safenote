@@ -60,6 +60,12 @@
                 AND R.HOLIDAY_MM = SUBSTR(#{targetYmd}, 5, 2)
                 AND R.HOLIDAY_DD = SUBSTR(#{targetYmd}, 7, 2)
            )
+     <!-- 분할차감(PC-02/PC-05) 대표행 결정화: 게이트 통과 행 중 최소 LEAVE_ID 를 반환해
+          RELATED_LEAVE_ID 를 시도 간 안정화한다(구: ORDER BY 부재로 반환 행 비결정).
+          REQ 스코프 dedupe(MIN LEAVE_ID 고정)는 미적용 — 분할행별 부여 귀속(G.GRANT_TYPE)이
+          달라 대표행이 게이트(법정/월차 배제)에서 탈락하면 판정 위음성이 생기므로,
+          게이트 술어의 존재 판정(EXISTS 의미)을 보존하고 대표행 선정만 결정화한다. -->
+     ORDER BY U.LEAVE_ID ASC
      LIMIT 1
     </select>
 

@@ -1141,16 +1141,19 @@
         , FNC_CMM_INFO_SRCH(U.CMPNY_CD, 'SYST_VAL', U.USE_UNIT_TYPE, 'SYS025')  AS unitNm
         , U.START_TIME                                                          AS startTime
         , U.END_TIME                                                            AS endTime
-        <!-- 분할차감(PC-02/PC-05): 요청 연결 use 행은 부여별 N개로 나뉠 수 있어 단일 행 일수는
-             부분값 — REQ 단위 합산으로 총 일수를 낸다(직접사용 REQ_ID NULL 행은 단독). -->
-        , CASE WHEN U.REQ_ID IS NULL THEN U.LEAVE_DAYS
-               ELSE ( SELECT SUM(X.LEAVE_DAYS)
-                        FROM TB_USER_LEAVE_USE X
-                       WHERE X.CMPNY_CD     = U.CMPNY_CD
-                         AND X.REQ_ID       = U.REQ_ID
-                         AND X.LEAVE_STATUS = 'CONFIRMED'
-                         AND X.DEL_YN       = 'N' )
-          END                                                                   AS leaveDays
+        <!-- T9(D-2 표기 정의): 사용자 노출 "일수" = 신청량(R.LEAVE_DAYS) 우선.
+             PC-05 짜투리 발동 건은 use 합산(개인 차감분)이 신청량보다 작아 IFNULL 로 신청량을 앞세운다.
+             직접사용(REQ_ID NULL)·R 미매칭 건은 기존 식(REQ 합산/행 값) 폴백으로 동작 보존.
+             분할차감(PC-02): 요청 연결 use 행은 부여별 N개로 나뉠 수 있어 단일 행 일수는 부분값. -->
+        , IFNULL(R.LEAVE_DAYS
+               , CASE WHEN U.REQ_ID IS NULL THEN U.LEAVE_DAYS
+                      ELSE ( SELECT SUM(X.LEAVE_DAYS)
+                               FROM TB_USER_LEAVE_USE X
+                              WHERE X.CMPNY_CD     = U.CMPNY_CD
+                                AND X.REQ_ID       = U.REQ_ID
+                                AND X.LEAVE_STATUS = 'CONFIRMED'
+                                AND X.DEL_YN       = 'N' )
+                 END )                                                          AS leaveDays
       FROM TB_USER_LEAVE_USE U
       LEFT JOIN TB_LEAVE_TYPE_MGMT LT
              ON LT.CMPNY_CD = U.CMPNY_CD
@@ -1205,7 +1208,20 @@
         , FNC_CMM_INFO_SRCH(R.CMPNY_CD, 'SYST_VAL', LU.USE_UNIT_TYPE, 'SYS025')    AS unitNm
         , LU.START_TIME                                                            AS startTime
         , LU.END_TIME                                                              AS endTime
-        , LU.LEAVE_DAYS                                                            AS leaveDays
+        <!-- T9 부수 교정: TARGET_LEAVE_ID 는 대표행 단일 행이라 LU.LEAVE_DAYS 는 분할(PC-02) 건에서
+             부분값 — §0-4 CASE-SUM 으로 REQ 단위 총량을 표기한다(직접사용 REQ_ID NULL 은 행 값 그대로).
+             본 쿼리는 취소된 연차의 잔여 요청도 노출(교착 방지)하므로 CONFIRMED 합산이 0건이면
+             IFNULL 로 기존 행 값 폴백(표기 공란 방지 — 기존 동작 보존).
+             신청량(R.LEAVE_DAYS) 통일은 보류군 — TB_USER_ATTD_REQ 조인 신설 금지. -->
+        , CASE WHEN LU.REQ_ID IS NULL THEN LU.LEAVE_DAYS
+               ELSE IFNULL( ( SELECT SUM(X.LEAVE_DAYS)
+                                FROM TB_USER_LEAVE_USE X
+                               WHERE X.CMPNY_CD     = LU.CMPNY_CD
+                                 AND X.REQ_ID       = LU.REQ_ID
+                                 AND X.LEAVE_STATUS = 'CONFIRMED'
+                                 AND X.DEL_YN       = 'N' )
+                          , LU.LEAVE_DAYS )
+          END                                                                      AS leaveDays
       FROM TB_LEAVE_CHANGE_REQUEST R
       INNER JOIN TB_USER_LEAVE_USE LU
               ON LU.CMPNY_CD = R.CMPNY_CD

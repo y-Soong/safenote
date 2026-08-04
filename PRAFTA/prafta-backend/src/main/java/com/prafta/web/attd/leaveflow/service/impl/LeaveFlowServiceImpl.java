@@ -1160,6 +1160,14 @@ public class LeaveFlowServiceImpl implements LeaveFlowService {
         if (leaveId == null || leaveId.isEmpty()) {
             throw new ApiException(AttdErrorCode.ATTD_404_030);
         }
+        // T4(D-1) 가드: 대상이 분할 차감 묶음(같은 REQ 의 CONFIRMED 행 2건 이상 — PC-02/PC-05)이면 거부.
+        //   updateLeaveUseModify 는 단일 행 in-place 갱신이라 분할 묶음에 허용하면 "LEAVE_MINUTES 첫 행만
+        //   총량" 불변식(§0-3-1)이 즉시 붕괴한다. 비분할 REQ·직접사용(REQ_ID NULL, 카운트 0)은 기존 동작.
+        if (leaveFlowMapper.countReqSplitRows(cmpnyCd, leaveId) >= 2) {
+            log.info("[leaveflow] 연차 수정('06') 승인 거부: 분할 차감 묶음 대상 (cmpnyCd={}, leaveId={})",
+                    cmpnyCd, leaveId);
+            throw new ApiException(AttdErrorCode.ATTD_400_133);
+        }
         LeaveModifyTargetVO tgt = leaveFlowMapper.selectLeaveModifyTarget(cmpnyCd, leaveId);
         if (tgt == null) {
             // 대상 사용기록이 없거나 이미 취소됨 → 수정 대상 부재
@@ -1237,9 +1245,13 @@ public class LeaveFlowServiceImpl implements LeaveFlowService {
      *   <li>needed 0(하한/캡 이후 차액 0 등)은 기존 단건 경로 유지 — 잔여 0 부여에도 0 차감 행이
      *       기록되던 기존 동작 보존(REQ-사용행 연결 유지, 회귀 0).</li>
      * </ul>
+     *
+     * <p>T1(연차-분할차감 잔존이슈): Attd13 이동 재차감이 신청 경로와 동일 할당을 재사용하도록
+     * 가시성만 private → public 으로 조정했다(시그니처·본문 불변 — 기존 신청 경로 동작 바이트 수준 불변 DoD).
+     * 트랜잭션/잠금은 호출자가 관리한다(내부는 FOR UPDATE 조회 + 계산뿐).
      */
-    private List<GrantCharge> resolveGeneralCharges(String cmpny, String user, String leaveCd, String workYmd,
-                                                    BigDecimal needed) {
+    public List<GrantCharge> resolveGeneralCharges(String cmpny, String user, String leaveCd, String workYmd,
+                                                   BigDecimal needed) {
         if (needed.signum() <= 0) {
             DeductibleGrantVO grant = leaveFlowMapper.selectDeductibleGrant(cmpny, user, leaveCd, workYmd, needed);
             if (grant == null) {
@@ -1354,7 +1366,10 @@ public class LeaveFlowServiceImpl implements LeaveFlowService {
         return (v == null) ? BigDecimal.ZERO : v;
     }
 
-    /** prafta-com-011-2: 차감 대상 1건(부여 ID + 일수). 가불 split 시 한 신청이 여러 GrantCharge 로 분할된다. */
-    private record GrantCharge(String grantId, BigDecimal days) {
+    /**
+     * prafta-com-011-2: 차감 대상 1건(부여 ID + 일수). 가불 split 시 한 신청이 여러 GrantCharge 로 분할된다.
+     * (T1: {@link #resolveGeneralCharges} 공개화에 따라 반환 타입 가시성만 public 으로 조정 — 구조 불변.)
+     */
+    public record GrantCharge(String grantId, BigDecimal days) {
     }
 }
