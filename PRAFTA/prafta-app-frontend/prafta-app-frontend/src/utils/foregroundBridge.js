@@ -13,6 +13,8 @@
 // 누적/합산은 네이티브 몫이며, 여기서는 값 취득/정규화/전달까지만 담당한다.
 // 세션 귀속·NULL 처리·저장은 백엔드 몫이다.
 
+import { isKnownMissing } from '@/utils/shellCapability'
+
 // 브리지 사용 가능 여부(웹뷰 내부에서만 true).
 function isBridgeAvailable() {
   return (
@@ -48,6 +50,13 @@ export async function requestForegroundSec(opts = {}) {
   // 웹 디버그 등 브리지가 없으면 즉시 반환(네트워크 호출 금지).
   if (!isBridgeAvailable()) {
     console.log('[foregroundBridge] flutter_inappwebview 브리지 없음 → BRIDGE_UNAVAILABLE')
+    return { status: 'BRIDGE_UNAVAILABLE', foregroundSec: null }
+  }
+
+  // 셸이 GET_APP_FOREGROUND_SEC 를 모른다고 선언(원격 Vue + 구버전 셸 스큐)
+  // → 타임아웃 대기 없이 즉시 부재 처리.
+  if (isKnownMissing('GET_APP_FOREGROUND_SEC')) {
+    console.log('[foregroundBridge] 셸 미지원 핸들러 선언(GET_APP_FOREGROUND_SEC) → BRIDGE_UNAVAILABLE')
     return { status: 'BRIDGE_UNAVAILABLE', foregroundSec: null }
   }
 

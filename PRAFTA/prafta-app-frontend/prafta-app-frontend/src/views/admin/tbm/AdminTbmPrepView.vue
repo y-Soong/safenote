@@ -178,6 +178,7 @@ import { ref, computed, getCurrentInstance, onMounted, onUnmounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 
 import api from '@/api/axios'
+import { isKnownMissing } from '@/utils/shellCapability'
 import { usePullToRefresh } from '@/composables/usePullToRefresh'
 import PullRefreshIndicator from '@/components/common/PullRefreshIndicator.vue'
 import AdminTbmPwdCard from './components/AdminTbmPwdCard.vue'
@@ -443,6 +444,13 @@ const onScanQr = async () => {
   // 브리지 미주입 환경(웹/dev 브라우저) 폴백: QR 스캔은 앱 전용.
   const bridge = window.flutter_inappwebview
   if (!bridge || typeof bridge.callHandler !== 'function') {
+    await showAlert('앱에서만 QR 스캔이 가능해요.')
+    return
+  }
+
+  // 셸이 SCAN_QR 을 모른다고 선언(원격 Vue + 구버전 셸 스큐) → 브리지 없음과 동일 안내.
+  // ★ SCAN_QR 에는 타임아웃을 걸지 않는다 — 네이티브 스캔 화면에서 사용자가 오래 머무는 것이 정상 흐름.
+  if (isKnownMissing('SCAN_QR')) {
     await showAlert('앱에서만 QR 스캔이 가능해요.')
     return
   }

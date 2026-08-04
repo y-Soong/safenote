@@ -10,27 +10,33 @@ import autoprefixer from "autoprefixer";
 // 보안 컨텍스트(HTTPS)가 필수다. mkcert로 발급한 인증서를 그대로 사용한다.
 // cert 폴더의 '<IP>-key.pem' / '<IP>.pem' 쌍을 자동 감지하므로,
 // 로컬 IP가 바뀌어 인증서를 재발급해도 이 파일은 수정할 필요가 없다.
+// cert/ 는 gitignore 대상이라 배포용 clean worktree(deploy-app-web.ps1)에는 없다.
+// dev 서버(server.https)에서만 쓰이므로 폴더가 있을 때만 로드한다 —
+// 폴더가 있는데 인증서 쌍이 안 맞으면 기존대로 즉시 실패시켜 원인 은폐를 막는다.
 const certDir = fileURLToPath(new URL("./cert", import.meta.url));
-const keyFile = fs
-  .readdirSync(certDir)
-  .find((f) => f.endsWith("-key.pem"));
-if (!keyFile) {
-  throw new Error(
-    `[vite] cert 폴더에 '*-key.pem' 인증서가 없습니다: ${certDir}\n` +
-      `mkcert 로 '<IP>-key.pem' / '<IP>.pem' 쌍을 먼저 생성해 주세요.`
-  );
+let https;
+if (fs.existsSync(certDir)) {
+  const keyFile = fs
+    .readdirSync(certDir)
+    .find((f) => f.endsWith("-key.pem"));
+  if (!keyFile) {
+    throw new Error(
+      `[vite] cert 폴더에 '*-key.pem' 인증서가 없습니다: ${certDir}\n` +
+        `mkcert 로 '<IP>-key.pem' / '<IP>.pem' 쌍을 먼저 생성해 주세요.`
+    );
+  }
+  const certFile = keyFile.replace(/-key\.pem$/, ".pem");
+  const certPath = path.join(certDir, certFile);
+  if (!fs.existsSync(certPath)) {
+    throw new Error(
+      `[vite] '${keyFile}' 에 대응하는 인증서 '${certFile}' 가 없습니다: ${certDir}`
+    );
+  }
+  https = {
+    key: fs.readFileSync(path.join(certDir, keyFile)),
+    cert: fs.readFileSync(certPath),
+  };
 }
-const certFile = keyFile.replace(/-key\.pem$/, ".pem");
-const certPath = path.join(certDir, certFile);
-if (!fs.existsSync(certPath)) {
-  throw new Error(
-    `[vite] '${keyFile}' 에 대응하는 인증서 '${certFile}' 가 없습니다: ${certDir}`
-  );
-}
-const https = {
-  key: fs.readFileSync(path.join(certDir, keyFile)),
-  cert: fs.readFileSync(certPath),
-};
 
 export default defineConfig({
   plugins: [vue()],

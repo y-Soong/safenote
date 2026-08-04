@@ -3,7 +3,7 @@
 > 작성일: 2026-07-18 / 최종 갱신: 2026-07-19 (★07-19 밤 파일 유실 발견 → 세션 기록에서 전문 복원 + 실무 명령어 최상단 재배치)
 > 작성 배경: 로컬 개발 환경에서 운영하던 PRAFTA 전체 스택(백엔드·웹·앱·AI)을 AWS 클라우드로 이전 완료.
 > 현재 단계: **시연 단계** (실고객 0, 무료 플랜 크레딧 운영)
-> **★2026-07-18 앞단 Cloudflare→CloudFront+WAF 전환 완료(§8). ★2026-07-19 git 기반 배포 스크립트 정립 + HTTP 80 폐쇄 + CloudFront 오리진 https-only 수정(§3·§6-14·§8).**
+> **★2026-07-18 앞단 Cloudflare→CloudFront+WAF 전환 완료(§8). ★2026-07-19 git 기반 배포 스크립트 정립 + HTTP 80 폐쇄 + CloudFront 오리진 https-only 수정(§3·§6-14·§8). ★2026-08-04 앱 프론트(웹뷰 콘텐츠) 원격 호스팅 `app.prafta.com` 신설(§2·§3 — 현재 킬 스위치 OFF=전원 번들).**
 
 ---
 
@@ -25,6 +25,11 @@ powershell -ExecutionPolicy Bypass -File .\scripts\deploy-backend.ps1
 # ── 웹 배포 (origin/main) ──
 cd C:\PRAFTA\PRAFTA\prafta-web-frontend\prafta-web-frontend
 powershell -ExecutionPolicy Bypass -File .\scripts\deploy-web.ps1
+
+# ── 앱 프론트(웹뷰 콘텐츠) 원격 배포 (origin/main → app.prafta.com) ──
+cd C:\PRAFTA\PRAFTA\prafta-app-frontend\prafta-app-frontend
+powershell -ExecutionPolicy Bypass -File .\scripts\deploy-app-web.ps1 -DistributionId E20RXW16D6VDSN
+#   원격 활성화 배포 = -RemoteEnabled 추가 / 킬 스위치(전원 번들 회귀) = -ManifestOnly (상세 §2 앱 프론트 섹션)
 
 # ── 앱 APK 빌드 ──
 cd C:\PRAFTA\PRAFTA_FLUTTER\safenote
@@ -109,7 +114,7 @@ python -m awscli ec2 stop-instances --instance-ids i-0920b060dee420594 --region 
 |---|---|
 | AWS 계정 | 727086661681 (무료 플랜, $100+활동크레딧) |
 | 리전 | **서울 (ap-northeast-2)** ※처음 시드니에 잘못 만들었다 재생성한 이력 있음 |
-| IAM 배포 사용자 | `prafta-deploy` — 정책 4개: AmazonS3FullAccess + 인라인 `prafta-cloudfront-invalidation`(웹 배포 무효화 한정) + AmazonEC2ReadOnlyAccess + CloudFrontReadOnlyAccess(07-19 진단용 부착, 유지) |
+| IAM 배포 사용자 | `prafta-deploy` — 정책 4개: AmazonS3FullAccess + 인라인 `prafta-cloudfront-invalidation`(웹·앱 프론트 배포 무효화 한정 — ★08-04 앱 배포 ID `E20RXW16D6VDSN` 추가) + AmazonEC2ReadOnlyAccess + CloudFrontReadOnlyAccess(07-19 진단용 부착, 유지) |
 | 도메인 | prafta.com (Cloudflare DNS 관리) |
 
 ### EC2 #1 — 백엔드 (`prafta-backend`) 🟢 상시 가동
@@ -169,13 +174,31 @@ python -m awscli ec2 stop-instances --instance-ids i-0920b060dee420594 --region 
 | 웹 엔드포인트 | http://prafta.com.s3-website.ap-northeast-2.amazonaws.com |
 | 캐시 정책 | assets=장기캐시(immutable) / index.html=no-cache |
 
-### Cloudflare DNS 레코드 (전 레코드 DNS only/회색 — 4개가 전부)
+### S3 + CloudFront — 앱 프론트(웹뷰 콘텐츠, `app.prafta.com`) ★2026-08-04 신설
+| 항목 | 값 |
+|---|---|
+| 용도 | Flutter 셸 웹뷰의 **원격 로딩** 오리진 — 원격 실패/킬 스위치 OFF 시 앱 내 번들(`assets/vue_app/`)로 자동 폴백 |
+| S3 버킷 | **`app.prafta.com`** (서울, 버킷명=도메인명 규칙) — 정적 호스팅 + 퍼블릭 읽기 (웹 버킷과 동일 구성) |
+| CloudFront 배포 | **`E20RXW16D6VDSN`** (d3q49w3f2hjcnc.cloudfront.net), 대체도메인 `app.prafta.com`, Free 플랜 + 번들 WAF |
+| 오리진 | (Other) S3 웹사이트 엔드포인트 **HTTP only** (§6-12 규칙 동일) |
+| 인증서 | ACM us-east-1 `84d3578b…` + 최소 TLSv1.2_2021. **검증 CNAME 2건(`_e01ca….app` / `_e5fd….prafta.com`)은 자동 갱신용 — Cloudflare 에서 영구 유지(삭제 금지)** |
+| SPA 폴백 | 오류페이지 403/404 → /index.html + 200 |
+| 캐시 정책 | `index.html`·`app-manifest.json`=no-cache / 해시 청크=장기캐시 |
+| 킬 스위치 | `https://app.prafta.com/app-manifest.json` 의 `enabled` — **현재 `enabled:false` (롤아웃 1단계 = 전원 번들)** |
+| 배포 스크립트 | `PRAFTA/prafta-app-frontend/prafta-app-frontend/scripts/deploy-app-web.ps1` — git 커밋 코드만 배포(worktree) + `__APP_BUILD__` 주입 + 매니페스트 생성. `-ManifestOnly`=매니페스트(enabled 토글)만 즉시 배포. ※param 기본값에 배포 ID 미반영 상태라 `-DistributionId E20RXW16D6VDSN` 지정 필요 |
+
+- 첫 배포(08-04)는 `-UseWorkingTree` 비상 모드였음 — **정식 롤아웃 전 커밋 후 git 기반 재배포로 교체할 것.**
+- 배경·로딩 전략·롤아웃 단계·테스트: `.claude/refs/앱_웹뷰_원격로딩_전환_작업지시서.md` §4·§6-2·§7-8 참조.
+
+### Cloudflare DNS 레코드 (전 레코드 DNS only/회색)
 | 레코드 | 값 | 상태 |
 |---|---|---|
 | `prafta.com` (@) | CNAME → **d1vtp7jqcdi3j.cloudfront.net** | 라이브 (웹→CloudFront) |
 | `api.prafta.com` | CNAME → **d2iahzc1fk18ru.cloudfront.net** | 라이브 (API→CloudFront) |
+| `app.prafta.com` | CNAME → **d3q49w3f2hjcnc.cloudfront.net** | 라이브 (앱 프론트→CloudFront, ★08-04 추가) |
 | `origin.prafta.com` | A → 3.38.237.103 | CloudFront의 API 오리진 + certbot 검증용 |
 | `_e5fd79f...` | CNAME → acm-validations.aws | ACM 인증서 검증 레코드(유지 — 삭제 시 갱신 실패) |
+| `_e01ca....app` | CNAME → acm-validations.aws | 앱 프론트 ACM 검증 레코드(★08-04 추가, **영구 유지 — 삭제 시 갱신 실패**) |
 | ~~`web.prafta.com`~~ | ~~Tunnel~~ | **★07-19 삭제 완료(미사용 잔존 정리)** |
 
 > ⚠️ **CNAME 타입 변경 불가**: Cloudflare는 기존 A 레코드를 편집으로 CNAME으로 못 바꾼다 → **삭제 후 새 CNAME 추가**가 정답. / **프리픽스 리스트는 IP 버전 칸이 빈 게 정상**(pl-은 IP 묶음).
@@ -201,12 +224,13 @@ python -m awscli ec2 stop-instances --instance-ids i-0920b060dee420594 --region 
 |---|---|---|
 | 백엔드 | `PRAFTA/prafta-backend/scripts/deploy-backend.ps1` | worktree 빌드 + .new 업로드/.prev 백업 + 헬스체크 + **실패 시 자동 롤백** + 커밋 기록 |
 | 웹 | `PRAFTA/prafta-web-frontend/prafta-web-frontend/scripts/deploy-web.ps1` | worktree 에서 npm ci+빌드 + `__APP_CONFIG__` **자동 주입+가드** + S3 sync + CloudFront 무효화 + 라이브 검증 + 커밋 기록 |
-| 앱 | `PRAFTA_FLUTTER/safenote/scripts/build-apk.ps1` (기존) | — |
+| 앱 프론트(원격) ★08-04 | `PRAFTA/prafta-app-frontend/prafta-app-frontend/scripts/deploy-app-web.ps1` | worktree 에서 npm ci+빌드 + `__APP_BUILD__` 주입 + `app-manifest.json` 생성(킬 스위치) + S3 sync(index·매니페스트=no-cache) + CloudFront 무효화 + 라이브 검증 + 커밋 기록. `-ManifestOnly`=매니페스트만 즉시 배포 |
+| 앱 셸(APK) | `PRAFTA_FLUTTER/safenote/scripts/build-apk.ps1` (기존) | — |
 
 스크립트 공통 옵션: `-Ref origin/develop` / `-Ref <커밋해시>`(핫픽스·롤백) / `-UseWorkingTree`(비상용, 로컬 작업 트리 그대로) / 웹 추가 `-SkipInvalidation`.
 
 - 헬스체크 판정: 이 앱은 미매핑 경로에 500 을 반환(전역 예외 처리 특성, 07-19 실측)하므로 **500 도 생존 신호**. 다운 판정은 연결실패/502/503/504(nginx·CloudFront 대리응답)만.
-- ✅ CloudFront 무효화 권한 = 해결됨(07-19) — `prafta-deploy` 인라인 정책 `prafta-cloudfront-invalidation`(CreateInvalidation+GetInvalidation, E37OL8Q9Q1FSLZ 한정). 그 외 CloudFront 액션은 여전히 불가(의도된 최소권한).
+- ✅ CloudFront 무효화 권한 = 해결됨(07-19) — `prafta-deploy` 인라인 정책 `prafta-cloudfront-invalidation`(CreateInvalidation+GetInvalidation, 웹 E37OL8Q9Q1FSLZ + ★08-04 앱 프론트 E20RXW16D6VDSN 한정). 그 외 CloudFront 액션은 여전히 불가(의도된 최소권한).
 - **신규 마이그레이션 SQL 이 있으면 반드시 백엔드 배포 전에 선적용** (Flyway 도입 전까지 수동 — 요청서 `작업지시서_Flyway-마이그레이션-자동적용.md` 착수 대기).
 - 완전 수동 절차(스크립트 불가 시)는 **부록 A** 참조.
 
@@ -309,6 +333,8 @@ Cloudflare 무료플랜이 한국 트래픽을 미국 LAX 엣지로 라우팅(AP
 |---|---|---|---|---|
 | **prafta-web** | `E37OL8Q9Q1FSLZ` | d1vtp7jqcdi3j.cloudfront.net | prafta.com | (Other) S3 웹사이트 엔드포인트 **HTTP only** |
 | **prafta-api** | `E1RO89G48H78J7` | d2iahzc1fk18ru.cloudfront.net | api.prafta.com | (Other) `origin.prafta.com` **★https-only 443 + 최소 TLSv1.2 (07-19 수정 — §6-14)** |
+
+> ★2026-08-04 앱 프론트용 배포 `E20RXW16D6VDSN`(app.prafta.com)이 추가로 생겼다 — 구성 상세는 §2 "앱 프론트" 섹션 참조 (위 표는 07-18 전환 당시 2개 기준).
 
 **웹 배포 동작**: 뷰어=Redirect HTTPS / 캐시=CachingOptimized / 기본루트=`index.html` / 오류페이지 404·403 → /index.html + 200(SPA).
 **API 배포 동작 (★핵심)**: 허용메서드=GET~DELETE 전체 / 캐시=CachingDisabled / **오리진 요청 정책=`AllViewer`** / 응답헤더 정책=없음 / 오류페이지 없음 / **오리진 프로토콜=https-only**.

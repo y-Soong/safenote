@@ -16,6 +16,11 @@
 // 비즈니스 로직 금지 — 설정 화면 호출만 담당한다.
 //
 
+import { isKnownMissing } from '@/utils/shellCapability'
+
+// 브리지 응답 대기 타임아웃(ms). hang(이론적 케이스)에서만 발동한다.
+const CALL_TIMEOUT_MS = 5000
+
 function isBridgeAvailable() {
   return (
     typeof window !== 'undefined' &&
@@ -38,8 +43,20 @@ export async function openNativeAppSettings() {
     return false
   }
 
+  // 셸이 이 핸들러를 모른다고 선언(원격 Vue + 구버전 셸 스큐) → 호출 없이 즉시 실패 처리.
+  if (isKnownMissing('OPEN_APP_SETTINGS')) {
+    console.log('[appSettingsBridge] 셸 미지원 핸들러 선언 → 설정 열기 불가')
+    return false
+  }
+
   try {
-    const res = await window.flutter_inappwebview.callHandler('OPEN_APP_SETTINGS')
+    // callHandler 호출과 타임아웃 레이스(gpsBridge 패턴). hang 시에만 발동한다.
+    // 타임아웃은 null 로 resolve → 아래 status 판정에서 false(기존 실패 경로와 동일).
+    const callPromise = window.flutter_inappwebview.callHandler('OPEN_APP_SETTINGS')
+    const timeoutPromise = new Promise((resolve) => {
+      setTimeout(() => resolve(null), CALL_TIMEOUT_MS)
+    })
+    const res = await Promise.race([callPromise, timeoutPromise])
     return !!res && res.status === 'OK'
   } catch (e) {
     console.log(`[appSettingsBridge] callHandler 실패: ${e && e.message}`)

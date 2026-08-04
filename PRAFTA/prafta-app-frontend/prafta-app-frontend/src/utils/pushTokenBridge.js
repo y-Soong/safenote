@@ -18,6 +18,7 @@
 // 토큰 자체는 발송키일 뿐 PII 가 아니나, 로깅 시 마스킹(앞 8자 + ***)한다.
 
 import api from '@/api/axios'
+import { isKnownMissing } from '@/utils/shellCapability'
 
 // 등록 엔드포인트(F01 계약). gv_deviceId 는 axios 인터셉터가 자동 동봉한다.
 const REGISTER_ENDPOINT = '/appApi/device01/push-token'
@@ -66,6 +67,12 @@ export async function getPushToken(opts = {}) {
   // 웹 디버그 등 브리지가 없으면 즉시 null(네트워크 호출 금지).
   if (!isBridgeAvailable()) {
     console.log('[pushTokenBridge] flutter_inappwebview 브리지 없음 → 등록 스킵')
+    return null
+  }
+
+  // 셸이 GET_PUSH_TOKEN 을 모른다고 선언(원격 Vue + 구버전 셸 스큐) → 타임아웃 대기 없이 즉시 등록 스킵.
+  if (isKnownMissing('GET_PUSH_TOKEN')) {
+    console.log('[pushTokenBridge] 셸 미지원 핸들러 선언(GET_PUSH_TOKEN) → 등록 스킵')
     return null
   }
 

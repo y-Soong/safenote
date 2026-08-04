@@ -14,6 +14,8 @@
 //
 // 좌표 활용(지오펜스/저장)은 백엔드 몫이며, 여기서는 좌표 획득/전달까지만 담당한다.
 
+import { isKnownMissing } from '@/utils/shellCapability'
+
 // 브리지 사용 가능 여부(웹뷰 내부에서만 true).
 function isBridgeAvailable() {
   return (
@@ -96,6 +98,12 @@ export async function requestGps(opts = {}) {
       return requestGpsViaBrowser(timeoutMs)
     }
     console.log('[gpsBridge] flutter_inappwebview 브리지 없음 → BRIDGE_UNAVAILABLE')
+    return { status: 'BRIDGE_UNAVAILABLE' }
+  }
+
+  // 셸이 GET_GPS 를 모른다고 선언(원격 Vue + 구버전 셸 스큐) → 타임아웃 대기 없이 즉시 부재 처리.
+  if (isKnownMissing('GET_GPS')) {
+    console.log('[gpsBridge] 셸 미지원 핸들러 선언(GET_GPS) → BRIDGE_UNAVAILABLE')
     return { status: 'BRIDGE_UNAVAILABLE' }
   }
 

@@ -215,8 +215,8 @@
         <!-- 회원 탈퇴 (텍스트 링크, tertiary) -->
         <button type="button" class="mp-withdraw" @click="onWithdrawClick">회원 탈퇴</button>
 
-        <!-- 앱 버전 -->
-        <p class="mp-version">PRAFTA v1.0.0</p>
+        <!-- 앱 버전 + 로딩 소스(원격로딩 전환 §7 판정 수단: remote/bundle 표기) -->
+        <p class="mp-version">{{ buildLabel }}</p>
       </template>
     </main>
 
@@ -291,6 +291,7 @@ import { isDailyWorker as isDailyWorkerFn } from '@/utils/employment'
 import { splitLeaveDays } from '@/utils/leaveFormat'
 // PRAFTA-SUBCON-T4: 연동 회사 제3자 제공 동의(006) 식별 — 철회(Y→N) 확인 팝업 판별용.
 import { THIRD_PARTY_CONSENT_TERMS_ID } from '@/utils/termsGate'
+import { getShellInfo } from '@/utils/shellCapability'
 
 import LogoutConfirmDialog from './components/LogoutConfirmDialog.vue'
 import WithdrawalConfirmDialog from './components/WithdrawalConfirmDialog.vue'
@@ -347,6 +348,20 @@ const leaveSummaryFailed = ref(false)
 // LC-11: 1일 환산시간(분, 서버 권위 — my-leave-summary.convMinutes). "N일 H시간 M분" 분모. 미제공 시 480.
 //   PC-03(개인 분모 전환): 응답값이 회사 공통 480 → 본인 기본 근무타입 소정근로분(480 캡)으로 바뀜 — 소비 로직 무변경.
 const leaveConvMinutes = ref(480)
+
+// 앱 버전 + 로딩 소스 표기 — 셸이 주입한 __SHELL__(T1) 기반. 구버전 셸/브라우저(__SHELL__
+// 부재)에서는 기존 고정 표기를 유지한다(무회귀). loadSource 는 remote/bundle 판정 수단(§7).
+const buildLabel = computed(() => {
+  const shell = getShellInfo()
+  if (!shell) return 'PRAFTA v1.0.0'
+  const ver = shell.appVersion ? `v${shell.appVersion}` : 'v1.0.0'
+  const parts = [`PRAFTA ${ver}`]
+  if (shell.loadSource) parts.push(shell.loadSource)
+  // 원격 배포 산출물에만 배포 스크립트(T5)가 __APP_BUILD__ 를 주입한다 — 해시로 배포본 식별(§7).
+  const buildCommit = window.__APP_BUILD__ && window.__APP_BUILD__.commit
+  if (buildCommit) parts.push(buildCommit)
+  return parts.join(' · ')
+})
 
 // 선택약관 동의 설정 — GET /appApi/terms01/optional-terms 응답(현재버전 + agrYn).
 //   비치명적: 실패 시 빈 목록(섹션 미노출). 토글은 POST /appApi/terms01/optional-terms-agree.

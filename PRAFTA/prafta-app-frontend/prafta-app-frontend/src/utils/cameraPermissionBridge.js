@@ -15,6 +15,14 @@
 // 비즈니스 로직 금지 — 권한 확인/요청만 담당한다.
 //
 
+import { isKnownMissing } from '@/utils/shellCapability'
+
+// 브리지 응답 대기 타임아웃(ms). hang(이론적 케이스)에서만 발동한다.
+const CALL_TIMEOUT_MS = 3000
+
+// 타임아웃 판별용 센티널(네이티브 응답과 절대 충돌하지 않는 고유 객체).
+const TIMEOUT_SENTINEL = Object.freeze({})
+
 function isBridgeAvailable() {
   return (
     typeof window !== 'undefined' &&
@@ -36,8 +44,25 @@ export async function requestNativeCameraPermission() {
     return 'UNAVAILABLE'
   }
 
+  // 셸이 이 핸들러를 모른다고 선언(원격 Vue + 구버전 셸 스큐) → 호출 없이
+  // 기존 null 응답 경로와 동일하게 선확인 생략.
+  if (isKnownMissing('REQUEST_CAMERA_PERMISSION')) {
+    console.log('[cameraPermissionBridge] 셸 미지원 핸들러 선언 → 선확인 생략')
+    return 'UNAVAILABLE'
+  }
+
   try {
-    const res = await window.flutter_inappwebview.callHandler('REQUEST_CAMERA_PERMISSION')
+    // callHandler 호출과 타임아웃 레이스(gpsBridge 패턴). hang 시에만 발동한다.
+    const callPromise = window.flutter_inappwebview.callHandler('REQUEST_CAMERA_PERMISSION')
+    const timeoutPromise = new Promise((resolve) => {
+      setTimeout(() => resolve(TIMEOUT_SENTINEL), CALL_TIMEOUT_MS)
+    })
+    const res = await Promise.race([callPromise, timeoutPromise])
+    if (res === TIMEOUT_SENTINEL) {
+      // 타임아웃 = 기존 null 응답 경로와 동일 의미(선확인 생략 후 진행).
+      console.log('[cameraPermissionBridge] 응답 타임아웃 → 선확인 생략')
+      return 'UNAVAILABLE'
+    }
     const status = res && res.status
     if (status === 'GRANTED' || status === 'DENIED' || status === 'PERMANENTLY_DENIED') {
       return status

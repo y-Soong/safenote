@@ -15,6 +15,8 @@
 //
 // 비즈니스 로직(저장/판정/부정탐지)은 백엔드 몫. 여기서는 취득/캐싱/전달만 담당한다.
 
+import { isKnownMissing } from '@/utils/shellCapability'
+
 const STORAGE_KEY = 'gv_deviceId'
 
 // 마지막으로 받은 디바이스 메타(로그인 요청 동봉용). null = 미취득/웹 디버그.
@@ -56,6 +58,12 @@ export async function requestDeviceInfo(opts = {}) {
   if (!isBridgeAvailable()) {
     // 웹 디버그 등 브리지 없음 → 폴백. 네트워크 호출 금지.
     console.log('[deviceBridge] flutter_inappwebview 브리지 없음 → 폴백(localStorage UUID)')
+    return null
+  }
+
+  // 셸이 GET_DEVICE_INFO 를 모른다고 선언(원격 Vue + 구버전 셸 스큐) → 타임아웃 대기 없이 즉시 폴백.
+  if (isKnownMissing('GET_DEVICE_INFO')) {
+    console.log('[deviceBridge] 셸 미지원 핸들러 선언(GET_DEVICE_INFO) → 폴백(localStorage UUID)')
     return null
   }
 
