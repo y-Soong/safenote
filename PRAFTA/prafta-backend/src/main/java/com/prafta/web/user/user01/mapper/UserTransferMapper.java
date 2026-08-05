@@ -43,14 +43,24 @@ public interface UserTransferMapper {
     int selectIsChkptManager(@Param("cmpnyCd") String cmpnyCd, @Param("userCd") String userCd);
 
     /**
-     * 불가⑤ 대상자의 현재/미래 부분(시간차) 연차 목록.
+     * 불가⑤ 대상자의 현재/미래(발효일 이후) 확정 부분(시간차) 연차 목록.
      * LEAVE_STATUS='CONFIRMED' AND DEL_YN='N' AND USE_UNIT_TYPE != '00' AND START_TIME 보유 AND START_DATE >= moveDate.
+     * E1·W8(당일분모 전환): 존재 자체가 이동 차단 사유(deleteFutureWorkPlansOnSite 의 WORK_YMD >= 발효일 경계와 동일).
      */
     List<PartialLeaveTimeResult> selectFuturePartialLeaves(@Param("cmpnyCd") String cmpnyCd,
             @Param("userCd") String userCd, @Param("moveDate") String moveDate);
 
     /**
-     * 불가⑤ 기본 근무타입(schCd)의 baseDate 기준 effective 근무 구간 시각(1/2구간).
+     * 불가⑤ 대상자의 미래(발효일 이후) 미결 시간차 신청 카운트 (E1·W8 당일분모 전환).
+     * REQ_TYPE='05' AND REQ_STATUS='01' AND DEL_YN='N' AND START/END_TIME 보유 AND WORK_YMD >= moveDate
+     * (ScheduleGuardMapper 미결 시간차 잠금(F-F 술어)과 동형). 1 이상이면 이동 차단.
+     */
+    int selectFuturePendingHourlyReqCnt(@Param("cmpnyCd") String cmpnyCd,
+            @Param("userCd") String userCd, @Param("moveDate") String moveDate);
+
+    /**
+     * (구 불가⑤ 커버리지 판정용 — E1·W8 당일분모 전환으로 validator 에서 은퇴, 호출부 0건 데드 보존)
+     * 기본 근무타입(schCd)의 baseDate 기준 effective 근무 구간 시각(1/2구간).
      * TB_SCH_MGMT(현재본) ∪ TB_SCH_MGMT_HIST(이력) 중 APPLY_DATE <= baseDate 최신본. 없으면 최이른 적용본 폴백. 미존재 시 null.
      */
     SchSegmentTimeResult selectEffectiveSchSegment(@Param("cmpnyCd") String cmpnyCd, @Param("siteCd") String siteCd,

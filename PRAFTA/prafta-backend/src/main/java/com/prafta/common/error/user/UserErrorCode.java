@@ -94,6 +94,9 @@ public enum UserErrorCode implements ApiErrorCode {
     , USER_400_066(HttpStatus.BAD_REQUEST, "부서의 마지막 담당자는 소속이동할 수 없습니다.\n다른 담당자 지정 후 다시 시도해 주세요.")
     , USER_400_067(HttpStatus.BAD_REQUEST, "순회점검 담당자는 소속이동할 수 없습니다.\n점검 담당자 변경 후 다시 시도해 주세요.")
     , USER_400_068(HttpStatus.BAD_REQUEST, "교대근무 조에 속한 사용자는 소속이동할 수 없습니다.\n교대조 해제 후 다시 시도해 주세요.")
+    // (데드 보존) 구 불가⑤ — 시간차 연차 커버리지 판정(개인분모 체제). 당일분모 전환(E1·W8, 2026-08-04 확정)으로
+    //   "미래 시간차 존재 = 무조건 차단"(USER_400_073)이 대체 — 커버리지 여부와 무관해져 발생 경로 소멸.
+    //   호출부 0건. enum 상수는 보존(외부 참조·로그 추적 안정성). 재사용 금지.
     , USER_400_069(HttpStatus.BAD_REQUEST, "등록된 시간차 연차를 기본 근무타입 시간이 포함하지 못합니다.\n근무타입을 조정해 주세요.")
     // 동일 사용자 활성 예약 중복.
     , USER_400_070(HttpStatus.BAD_REQUEST, "이미 진행 중인 소속이동 예약이 있습니다.")
@@ -111,6 +114,14 @@ public enum UserErrorCode implements ApiErrorCode {
     // ===== User_03 사업장 권한 관리 - master/hr 회수 차단 =====
     // master/hr 은 전 사업장 권한 보유가 불변식(SiteAccessService 전사 통과와 정합) — 회수 시도 차단.
     , USER_400_072(HttpStatus.BAD_REQUEST, "마스터/HR 관리자의 사업장 권한은 회수할 수 없습니다.")
+
+    // ===== 연차 시간차 당일분모 전환(E1·W8) — 미래 시간차 보유자 소속이동 차단 =====
+    // 시간차 분모(E1) = 당일 배정 스케줄인데, 소속이동 발효는 발효일 이후 구 사업장 근무계획을 전량
+    //   삭제(deleteFutureWorkPlansOnSite, WORK_YMD >= 발효일)하므로 미래 시간차의 분모 소스가 소실된다.
+    //   발효일 이후 확정 시간차 사용 또는 미결 시간차 신청이 있으면 이동 차단(구 불가⑤ 커버리지 판정 대체 —
+    //   UserTransferValidator ⑤). 종일/반차/반반차는 차감량이 스케줄 무관(고정 1.0/0.5/0.25)이라 이동 허용.
+    //   탈출구 = 해당 연차 취소·처리 → 이동 → (필요 시) 재신청. 사용자 확정 2026-08-04.
+    , USER_400_073(HttpStatus.BAD_REQUEST, "미래 일자에 시간 단위 연차가 신청·사용된 직원은 사업장을 이동할 수 없습니다.\n해당 연차를 먼저 취소·처리한 뒤 이동해 주세요.")
     ;
 
     private final HttpStatus httpStatus;

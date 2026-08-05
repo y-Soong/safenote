@@ -8,6 +8,7 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 import com.prafta.common.security.JwtUtil;
@@ -17,6 +18,7 @@ import com.prafta.platform.customer.dto.request.CustomerListRequest;
 import com.prafta.platform.customer.dto.request.TokenQuotaUpdateRequest;
 import com.prafta.platform.customer.dto.response.CustomerListResponse;
 import com.prafta.platform.customer.dto.response.TokenQuotaUpdateResponse;
+import com.prafta.platform.customer.dto.response.TokenUsageListResponse;
 import com.prafta.platform.customer.service.PlatformCustomerService;
 
 import lombok.RequiredArgsConstructor;
@@ -46,6 +48,15 @@ public class PlatformCustomerController {
 
         CustomerListResponse response = platformCustomerService.selectCustomerList(
                 CustomerListParam.from(request));
+
+        return ResponseEntity.status(HttpStatus.OK).body(response);
+    }
+
+    /** 회사별 월간 AI 토큰 사용량 이력 조회(최근 24개월 — Platform_03 이력 팝업, read-only). */
+    @GetMapping("/token-usage-lists")
+    public ResponseEntity<?> getTokenUsageList(@RequestParam(value = "cmpnyCd", required = false) String cmpnyCd) {
+
+        TokenUsageListResponse response = platformCustomerService.selectTokenUsageList(cmpnyCd);
 
         return ResponseEntity.status(HttpStatus.OK).body(response);
     }

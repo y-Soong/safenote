@@ -70,6 +70,8 @@ public class AppReq07ServiceImpl implements AppReq07Service {
     private final LeaveRefusalDetectService leaveRefusalDetectService;
     /** prafta-com-008-D: 교대 잠금 가드(공용 cmm 빈 — 앱 스케줄수정 요청 시 교대 소속 구간 차단. app→web 직접호출 아님). */
     private final com.prafta.common.cmm.shift.service.ShiftMembershipService shiftMembershipService;
+    /** E3(당일분모 전환, W5): 연차 잠금일(확정 전 단위 + 미결 시간차) 스케줄수정 발의 사전 차단(공용 cmm 빈). */
+    private final com.prafta.common.cmm.schedule.service.ScheduleChangeGuardService scheduleChangeGuardService;
     /** prafta-com-008-B-3: 연차일 OT 차단 판정용 종일연차 카운트(단일출처 술어 재사용 — 신규쿼리 금지). */
     private final AppAttd01Mapper appAttd01Mapper;
 
@@ -113,6 +115,22 @@ public class AppReq07ServiceImpl implements AppReq07Service {
         //   대상이면 ATTD_400_160 throw(신규 400대 — 003/600 회피로 앱 인터셉터 강제 로그아웃 방지). 중복락/INSERT 이전.
         shiftMembershipService.assertNotShiftLocked(
                 param.cmpnyCd(), param.siteCd(), param.userCd(), param.workYmd());
+
+        // ----- E3(당일분모 전환, W5): 연차 잠금일 스케줄수정 발의 사전 차단 -----
+        //   확정 연차(전 단위) 또는 미결 시간차 신청이 있는 날은 발의 시점부터 거부한다(ATTD_400_164 —
+        //   ★400대 유지, 003/600 금지: 앱 인터셉터 강제 로그아웃 함정). UX 용 사전 차단이며 최종 방어는
+        //   승인 측(web Attd07.approveSchedModifyRequest W4, REQ 권위값 판정). OT 잠금은 아래 룰A
+        //   상호배제(기존)가 담당하므로 본 가드는 연차(LEAVE) 잠금만 본다.
+        java.util.List<com.prafta.common.cmm.schedule.vo.ScheduleLockVO> leaveLocks =
+                scheduleChangeGuardService.findLockedDays(
+                        param.cmpnyCd(), param.siteCd(), param.userCd(), java.util.List.of(param.workYmd()));
+        boolean leaveLocked = leaveLocks.stream()
+                .anyMatch(l -> l.getReason() == com.prafta.common.cmm.schedule.vo.ScheduleLockVO.Reason.LEAVE);
+        if (leaveLocked) {
+            log.info("[req07] 스케줄수정 발의 거부(E3): 연차 잠금일(확정/미결 시간차). userCd={}, workYmd={}",
+                    param.userCd(), param.workYmd());
+            throw new ApiException(AttdErrorCode.ATTD_400_164);
+        }
 
         // ----- prafta-app-009 F15: 중복 차단 SELECT→INSERT race window 직렬화(advisory lock) -----
         //   PRAFTA-APP-022 TOCTOU: 룰A 상호배제(OT↔스케줄수정 cross-type)는 타입별 dupLock 만으론 직렬화되지

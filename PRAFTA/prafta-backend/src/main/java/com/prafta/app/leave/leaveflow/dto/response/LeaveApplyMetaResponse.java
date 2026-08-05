@@ -7,13 +7,14 @@ import java.util.List;
  *
  * <p>키명은 018-C(FE)가 그대로 소비하므로 임의 변경 금지. record 사용으로 boolean is- 접두 탈락 이슈 없음.
  *
- * <p>{@code convMinutes} : 1일 환산시간(분) — <b>오늘 기준 본인 개인 분모</b>(기본 근무타입
- * 소정근로분, 480 캡 — PC-03 D1) 근사치. 신청 폼의 잔여(balanceDays) "N일 H시간 M분" 표기용이다
- * (신청 대상일 기준이 아님 — 정확한 분모는 preview 응답의 convMinutes 가 권위). 산출 불가 시 480 폴백.
+ * <p>{@code convMinutes} : 1일 환산시간(분) — <b>오늘 기준 본인 참고 분모</b>(E4 규약: 기본 근무타입
+ * 소정근로분 근사치, 480 캡, 미산출 480 폴백 — 실스케줄과 편차 허용, 사용자 확정 2026-08-03).
+ * 신청 폼의 잔여(balanceDays) "N일 H시간 M분" 표기용이다(신청 대상일 기준이 아님 — 실차감 분모는
+ * 당일 배정 스케줄(E1)이며 preview 응답의 convMinutes 가 권위).
  *
- * <p>{@code hourlyBlocked} : 개인 분모 산출 불가(교대근무 등 기본 근무타입 미지정 — PC-03 D2·N5).
- * true 면 allowedUnits 에서 시간차(02/03/04)가 제거되어 있고, FE 는 "기본 근무타입이 없어 시간 단위
- * 연차는 사용할 수 없습니다" 안내를 노출한다(PC-11).
+ * <p>{@code hourlyBlocked} : (E5 해제 — 항상 false) 구 D2 의 사용자 속성 기반 시간차 차단 플래그.
+ * 당일분모 전환(E1)으로 차단 근거가 소멸해 판정·strip 을 제거했다. 필드는 구 앱 FE 하위호환용으로
+ * 유지한다(P4 릴리즈 시차 — 구 클라이언트도 서버 검증(ATTD_400_110/194)이 최종 판정하므로 안전).
  */
 public record LeaveApplyMetaResponse(
       List<LeaveTypeItem> leaveTypes

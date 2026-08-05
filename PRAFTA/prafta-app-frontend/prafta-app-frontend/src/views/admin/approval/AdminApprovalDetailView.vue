@@ -820,6 +820,10 @@ onMounted(loadDetail)
   font-size: 14px;
   color: var(--color-text-primary);
   cursor: pointer;
+  /* label 박스가 행 전체(가로 100%)라 웹뷰 기본 탭 하이라이트가 행 전체를 덮는다.
+     선택 피드백은 라디오 자체의 체크 상태로 충분하므로 넓은 배경은 제거한다.
+     (전역 base 규칙과 중복이지만, 이 화면의 의도를 명시적으로 남긴다) */
+  -webkit-tap-highlight-color: transparent;
 }
 .ap-decide__adjust-open {
   margin-top: var(--space-md);

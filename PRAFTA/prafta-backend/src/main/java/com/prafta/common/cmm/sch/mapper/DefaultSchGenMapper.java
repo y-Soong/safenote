@@ -48,6 +48,8 @@ public interface DefaultSchGenMapper {
      * 기본근무 변경 시 미래 자동생성분만 새 SCH_CD 로 갱신.
      * 대상 = WORK_YMD &gt; fromYmd(=오늘) AND GEN_SOURCE='DEFAULT_SCH'. 수동/연차/교대/촉진 보존.
      * 마감월 제외는 호출부에서 처리(여기선 단순 미래 자동생성분 갱신).
+     * E3(당일분모 전환, W6): 연차 잠금일(확정 비종일 연차 + 미결 시간차 신청) 제외 — 당일 분모 보존.
+     * 제외는 조용히 skip(배치성 — 하드 실패 금지), 건수 로그는 {@link #countFutureDefaultSchLockedDays}.
      *
      * @return 갱신 행 수
      */
@@ -57,6 +59,15 @@ public interface DefaultSchGenMapper {
                                @Param("fromYmd") String fromYmd,
                                @Param("newSchCd") String newSchCd,
                                @Param("operatorNo") String operatorNo);
+
+    /**
+     * E3(W6) 보조: {@link #updateFutureDefaultSch} 가 연차 잠금(확정 비종일 연차 OR 미결 시간차)으로
+     * 제외(보존)하는 미래 자동생성분 건수 — skip 로그 전용(read-only, 술어 동일).
+     */
+    int countFutureDefaultSchLockedDays(@Param("cmpnyCd") String cmpnyCd,
+                                        @Param("siteCd") String siteCd,
+                                        @Param("userCd") String userCd,
+                                        @Param("fromYmd") String fromYmd);
 
     /**
      * prafta-com-008-E-5/E-8: 사업장 활성(USE_YN='Y') 근무타입 옵션 목록.

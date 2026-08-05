@@ -89,15 +89,17 @@
             type="button"
             class="unit-chip"
             :class="{ 'unit-chip--on': useUnitType === u.code }"
+            :disabled="isHourlyUnitCode(u.code) && hourlyDisabledByDay"
             @click="onSelectUnit(u.code)"
           >
             {{ u.label }}
           </button>
         </div>
-        <!-- PC-11: 교대근무자 시간차 비노출 사유 안내 (apply-meta hourlyBlocked — D2·N5).
-             시간차(02/03/04)는 서버가 allowedUnits 에서 이미 제거 → 칩 자동 비노출, 여기선 사유만 안내. -->
-        <p v-if="hourlyUnavailableNotice" class="unit-notice">
-          기본 근무타입이 없어 시간 단위 연차는 사용할 수 없습니다.
+        <!-- E2·E5(당일분모 전환): 시간차 가능 여부는 날짜 속성(당일 근무계획 배정 여부).
+             day-schedule 응답 도착 전엔 칩 enable 유지(낙관 — 서버 400_110/194 가 최종 판정),
+             도착 후 hasSchedule=false 면 시간차 칩 disable + 안내. (구 hourlyBlocked 사용자 속성 안내는 E5 해제로 제거) -->
+        <p v-if="hourlyDisabledByDay" class="unit-notice">
+          이 날은 근무계획이 없어 시간 단위 연차를 사용할 수 없어요. 종일 연차로 신청해 주세요.
         </p>
       </section>
 
@@ -148,8 +150,9 @@
             <span class="sch-info__val sch-info__val--brk">{{ dayScheduleInfo.breakText }}</span>
           </div>
         </div>
+        <!-- E2(당일분모 전환): 미배정일 안내 확장 — 시간차 자체가 불가함을 명시(종일 유도) -->
         <p v-else-if="daySchedule && !daySchedule.hasSchedule" class="sch-info-none">
-          해당 일자에 적용된 근무 스케줄이 없어요.
+          이 날은 근무계획이 없어 시간 단위 연차를 사용할 수 없어요. 종일 연차로 신청해 주세요.
         </p>
 
         <label class="field">
@@ -373,10 +376,10 @@ import LeaveApproverPickerSheet from './LeaveApproverPickerSheet.vue'
 
 const props = defineProps({
   // 018-A apply-meta 응답: { leaveTypes: [{ leaveCd, leaveNm, systemYn, aprvRequired, allowedUnits[], balanceDays, applicable }],
-  //   convMinutes(오늘 기준 1일 환산시간(분) — PC-03 개인 분모 전환: 본인 기본 근무타입 소정근로분·480 캡·
-  //     미산출 시 서버 480 폴백. 잔여 표기용 근사치, 구응답이면 부재 → 480 폴백),
-  //   hourlyBlocked(PC-03 D2·N5: 기본 근무타입 미지정(교대 등)으로 시간차 사용 불가 — allowedUnits 에서
-  //     시간차(02/03/04)가 이미 제거되어 옴. FE 는 안내 문구만 노출) }
+  //   convMinutes(오늘 기준 1일 환산시간(분) — E4 참고치: 본인 기본 근무타입 기준 근사·480 캡·
+  //     미산출 시 서버 480 폴백. 잔여 표기용 근사치(실차감 분모는 당일 배정 스케줄 — E1), 구응답이면 부재 → 480 폴백),
+  //   hourlyBlocked(E5 교대 차단 해제로 서버가 항상 false 반환 — 하위호환 잔존 필드, FE 미사용.
+  //     시간차 가능 여부는 날짜 속성(day-schedule hasSchedule)으로 게이팅) }
   meta: { type: Object, default: () => ({ leaveTypes: [] }) },
   // 018-A approval-presets 응답의 presets 배열: [{ presetId, presetNm, defaultYn, steps:[{ stepNo, approverUserCd, userNm, userId, rankNm, nodeNm }] }]
   presets: { type: Array, default: () => [] },
@@ -454,9 +457,14 @@ const leaveTypes = computed(() => props.meta?.leaveTypes || [])
 //   구응답(필드 부재)/무효면 undefined → formatLeaveDays 내부 480 폴백.
 const metaConvMinutes = computed(() => props.meta?.convMinutes)
 
-// PC-11: 교대근무자 시간차 비노출 사유 안내 노출 여부 — apply-meta hourlyBlocked(서버 권위, 클라 추측 금지).
-//   시간차 단위 자체는 서버가 allowedUnits 에서 제거하므로 칩 비노출은 자동 — 여기선 사유 문구만 게이팅.
-const hourlyUnavailableNotice = computed(() => props.meta?.hourlyBlocked === true)
+// E2·E5(당일분모 전환): 시간차(02/03/04) 게이팅은 날짜 속성 — 당일 근무계획 미배정이면 칩 disable + 안내.
+//   day-schedule 미도착/조회 실패 시엔 enable 유지(낙관) — 서버 400_110/194 fail-closed 가 최종 판정.
+//   (구 hourlyUnavailableNotice: apply-meta hourlyBlocked 기반 사용자 속성 안내 — E5 교대 차단 해제로 제거)
+const HOURLY_UNIT_CODES = ['02', '03', '04']
+const isHourlyUnitCode = (code) => HOURLY_UNIT_CODES.includes(code)
+const hourlyDisabledByDay = computed(
+  () => Boolean(props.daySchedule) && props.daySchedule.hasSchedule !== true,
+)
 
 const selectedType = computed(
   () => leaveTypes.value.find((t) => t.leaveCd === selectedLeaveCd.value) || null,
@@ -574,9 +582,15 @@ const dayScheduleInfo = computed(() => {
   }
 })
 
-// 시간차 단위 + 날짜 완성 시에만 조회 대상(그 외 null → 표시 해제).
+// 선택 종류가 시간차 단위를 허용하는지 — E2 날짜 게이팅은 시간차 단위 선택 "전"(날짜 선택 시점)에
+//   칩 disable 판정이 필요하므로, 조회 조건을 구 isTimeUnit(단위 선택 후)에서 종류 허용 기준으로 확장.
+const hasHourlyUnits = computed(() =>
+  (selectedType.value?.allowedUnits || []).some((c) => isHourlyUnitCode(c)),
+)
+
+// 시간차 허용 종류 + 날짜 완성 시에만 조회 대상(그 외 null → 표시 해제).
 const dayScheduleYmd = computed(() => {
-  if (!isTimeUnit.value) return null
+  if (!hasHourlyUnits.value) return null
   const ymd = toYmd(workDateInput.value)
   return ymd && ymd.length === 8 ? ymd : null
 })
@@ -586,6 +600,18 @@ const dayScheduleYmd = computed(() => {
 watch(dayScheduleYmd, (ymd) => {
   emit('day-schedule-request', ymd)
 }, { immediate: true })
+
+// E2: 미배정일 판명 시 선택 중이던 시간차 단위를 비시간차 단위(종일 우선)로 폴백 — disable 된 칩이
+//   선택 상태로 잔존하는 것을 방지(웹 LeaveApplyPop quarterAllowed 폴백 패턴 미러). 시각 입력도 리셋.
+watch(hourlyDisabledByDay, (blocked) => {
+  if (!blocked || !isTimeUnit.value) return
+  const allowed = selectedType.value?.allowedUnits || []
+  useUnitType.value = allowed.includes('00')
+    ? '00'
+    : allowed.find((c) => !isHourlyUnitCode(c)) || ''
+  startTimeInput.value = ''
+  stepCount.value = 1
+})
 
 // 결재자 emit 용 userCd 배열(순서 보존 — 위치 재인덱싱 아님, 표시 순서 그대로)
 const approverUserCds = computed(() => approverList.value.map((a) => a.approverUserCd))
@@ -789,10 +815,19 @@ const showPreviewCard = computed(() => {
   return eligible && (props.previewLoading || !!props.preview)
 })
 
-// "예상 차감: 0일 4시간 (0.5일)" — 일·시간 표기(convMinutes 분모) + 원시 차감액 병기(plan §5-D).
+// E4(당일분모 전환): 시간차는 "이 날 기준 {신청 시간} = {X}일 차감" — 분모가 당일 배정 스케줄임을
+//   날짜 기준으로 표기(신청 시간 = stepCount×단위분, X = 서버 chargeDays 그대로). 반반차(05)는
+//   시간량이 없어 기존 표기("N일 H시간 (0.25일)") 유지.
 const previewChargeText = computed(() => {
   const p = props.preview
   if (!p) return ''
+  if (isTimeUnit.value) {
+    const unitMin = UNIT_MINUTES[useUnitType.value]
+    if (unitMin) {
+      const reqText = formatMinutesToHm(stepCount.value * unitMin)
+      return `이 날 기준 ${reqText} = ${trimRawDays(p.chargeDays)}일 차감`
+    }
+  }
   return `${formatLeaveDays(p.chargeDays, p.convMinutes)} (${trimRawDays(p.chargeDays)}일)`
 })
 
@@ -1156,7 +1191,12 @@ onMounted(() => {
   color: var(--color-primary-text-deep);
   font-weight: 500;
 }
-/* PC-11: 교대근무자 시간차 비노출 사유 안내 (time-guide 톤 미러 — 앱 토큰으로 치환) */
+/* E2(당일분모 전환): 미배정일 시간차 칩 disable 시각 상태 — .type-item--off 패턴 미러 */
+.unit-chip:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+/* 미배정일 시간차 불가 안내 (time-guide 톤 미러 — 앱 토큰으로 치환) */
 .unit-notice {
   margin: 0;
   font-size: 12px;

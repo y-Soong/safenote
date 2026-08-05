@@ -11,20 +11,34 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 
 /**
- * {@link LeaveConversionPolicyService} 구현 — 개인 기본 근무타입 소정근로분 (PC-03, D1).
+ * {@link LeaveConversionPolicyService} 구현 (PC-03 D1 → 당일분모 전환 E1).
  *
- * <p>480 상수 반환(2026-07-21 전환)을 폐기하고, {@code tb_user.DEFAULT_SCH_CD} 가 가리키는
- * 스케줄의 대상일 기준 유효 버전에서 소정근로분을 산출한다. 산식은
- * {@link ScheduleWorkMinutesUtils}(그날 D 계산과 단일 출처)를 공유한다.
- * 480 초과는 480 캡(근로자 유리, §5-③), 산출 불가는 null(fail-closed, N5).
+ * <p>실차감 분모 = 당일 배정 스케줄 소정근로분({@link #resolveDailyConvMinutes} — E1),
+ * 참고 표시 분모 = 개인 기본 근무타입 소정근로분({@link #resolvePersonalConvMinutes} — E4 전용).
+ * 산식은 양쪽 모두 {@link ScheduleWorkMinutesUtils}(그날 D 계산과 단일 출처)를 공유한다.
+ * 480 초과는 480 캡(근로자 유리, E7), 산출 불가는 null(fail-closed).
  */
 @Slf4j
 @Service
 @RequiredArgsConstructor
 public class LeaveConversionPolicyServiceImpl implements LeaveConversionPolicyService {
 
-    /** 기본 근무타입 스케줄 조회(effective-dating) — selectDailySchedule 패턴 공유 매퍼. */
+    /** 당일 배정 스케줄·기본 근무타입 스케줄 조회(effective-dating) 공유 매퍼. */
     private final LeaveDeductionMapper leaveDeductionMapper;
+
+    @Override
+    public Integer resolveDailyConvMinutes(String cmpnyCd, String siteCd, String userCd, String workYmd) {
+        if (cmpnyCd == null || siteCd == null || userCd == null || workYmd == null) {
+            return null;
+        }
+
+        // 당일 배정 스케줄(TB_USER_WORK_PLAN → TB_SCH_MGMT). 미배정/연차 코드면 행 없음 → null(fail-closed, E2).
+        DailyScheduleVO sch = leaveDeductionMapper.selectDailySchedule(cmpnyCd, siteCd, userCd, workYmd);
+        if (sch == null) {
+            return null;
+        }
+        return capConvMinutes(sch, "당일", cmpnyCd, userCd, workYmd);
+    }
 
     @Override
     public Integer resolvePersonalConvMinutes(String cmpnyCd, String userCd, String workYmd) {
@@ -32,21 +46,28 @@ public class LeaveConversionPolicyServiceImpl implements LeaveConversionPolicySe
             return null;
         }
 
-        // DEFAULT_SCH_CD 미지정(교대 등)/참조 스케줄 미존재면 행 없음 → null(fail-closed).
+        // E4 참고 표시 전용 — DEFAULT_SCH_CD 미지정(교대 등)/참조 스케줄 미존재면 행 없음 → null.
         DailyScheduleVO sch = leaveDeductionMapper.selectUserDefaultSchedule(cmpnyCd, userCd, workYmd);
         if (sch == null) {
             return null;
         }
+        return capConvMinutes(sch, "개인(참고)", cmpnyCd, userCd, workYmd);
+    }
 
+    /**
+     * 스케줄 시각 → 소정근로분 → 480 캡(E7) 공통 처리.
+     * 시각 비정상/0 이하는 데이터 품질 이슈로 보고 차단 측(null, fail-closed).
+     */
+    private Integer capConvMinutes(DailyScheduleVO sch, String kind,
+                                   String cmpnyCd, String userCd, String workYmd) {
         Integer minutes = ScheduleWorkMinutesUtils.dailyStdWorkMinutes(sch);
         if (minutes == null || minutes <= 0) {
-            // 스케줄은 있으나 시각 비정상/0 이하 — 데이터 품질 이슈로 보고 차단 측(fail-closed).
-            log.warn("[leave-conv] 개인 분모 산출 실패 - 기본 근무타입 시각 비정상: cmpnyCd={}, userCd={}, workYmd={}, schCd={}",
-                    cmpnyCd, userCd, workYmd, sch.getSchCd());
+            log.warn("[leave-conv] {} 분모 산출 실패 - 스케줄 시각 비정상: cmpnyCd={}, userCd={}, workYmd={}, schCd={}",
+                    kind, cmpnyCd, userCd, workYmd, sch.getSchCd());
             return null;
         }
 
-        // 480 캡(§5-③): 휴게 미입력 등으로 소정근로가 8시간을 초과하는 근무타입은 8시간 기준(근로자 유리).
+        // 480 캡(E7): 휴게 미입력 등으로 소정근로가 8시간을 초과하는 스케줄은 8시간 기준(근로자 유리).
         return Math.min(minutes, DEFAULT_CONV_MINUTES);
     }
 }

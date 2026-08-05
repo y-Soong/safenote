@@ -74,9 +74,12 @@ public class LeaveHourlyResettleServiceImpl implements LeaveHourlyResettleServic
                 return;
             }
 
-            // PC-03: 분모 = 개인 기본 근무타입 소정근로분(대상일 기준 유효 버전, 480 캡).
-            //   산출 불가(교대 전환자 과거 데이터 등)면 480 폴백 — 과거 차감 근사 유지(§7-③, 메인 세션 확정).
-            Integer convResolved = leaveConversionPolicyService.resolvePersonalConvMinutes(cmpnyCd, userCd, workYmd);
+            // E1(당일분모 전환): 분모 = 당일 배정 스케줄 소정근로분(480 캡 E7) — 신청 흐름과 동일 출처.
+            //   E3 잠금(시간차 존재일 스케줄 변경 불가)으로 신규분은 재조회해도 원 차감 시점 분모와 동일(M4).
+            //   산출 불가(사업장 이동 후 근무계획 소실·레거시 데이터 등)면 480 폴백 — 레거시(480/기본분모
+            //   시절) 차감분 근사 유지. ★레거시 차감분은 신 분모(당일)로 재계산되어 값이 달라질 수 있음 —
+            //   E6 무보정 원칙 승계로 허용(plan §7-② / qa §8-Q7).
+            Integer convResolved = leaveConversionPolicyService.resolveDailyConvMinutes(cmpnyCd, siteCd, userCd, workYmd);
             int conv = (convResolved != null) ? convResolved : LeaveConversionPolicyService.DEFAULT_CONV_MINUTES;
             Integer daily = leaveDeductionService.getDailyStdWorkMinutes(cmpnyCd, siteCd, userCd, workYmd);
 

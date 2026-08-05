@@ -88,6 +88,8 @@
                 <th style="text-align: center; width: 3%">No</th>
                 <th>사용자</th>
                 <th>대상 연차일</th>
+                <!-- G1: 시간차/반차 구분 없이 "무슨 연차인지"를 목록에서 바로 식별 -->
+                <th>사용단위</th>
                 <th>요청유형</th>
                 <th>이동대상일</th>
                 <th>발의주체</th>
@@ -99,7 +101,7 @@
             <tbody>
               <template v-if="!changeReqList || changeReqList.length === 0">
                 <tr>
-                  <td colspan="9" class="edu-grid-empty">
+                  <td colspan="10" class="edu-grid-empty">
                     조회된 요청이 없습니다.
                   </td>
                 </tr>
@@ -114,6 +116,9 @@
                   <td style="text-align: center">{{ idx + 1 }}</td>
                   <td>{{ item.userNm }}</td>
                   <td style="text-align: center">{{ item.targetStartDate }}</td>
+                  <td style="text-align: center">
+                    {{ item.unitLabel || "-" }}
+                  </td>
                   <td style="text-align: center">{{ item.reqTypeNm }}</td>
                   <td style="text-align: center">
                     {{ item.moveTargetDate || "-" }}
@@ -220,6 +225,14 @@ const WORKER_RESPONSE_NM = { PENDING: "대기", AGREE: "동의", REJECT: "거부
 // 표시용 날짜 포맷은 dateFormat 단일 출처에 위임(점 구분 YYYY.MM.DD).
 const fmtYmd = (ymd) => formatYmdDot(ymd);
 
+// G1: 사용단위 라벨 — 시간차(SYS025 02:2시간 / 03:1시간 / 04:30분)는 '시간차 ' 접두
+//   (AttdDayDetailPop 표기 관례와 동형). 단위 라벨이 없으면 빈 값 → 그리드에서 '-' 표시.
+const HOURLY_UNITS = ["02", "03", "04"];
+const unitLabelOf = (unitCode, unitNm) => {
+  if (!unitNm) return "";
+  return HOURLY_UNITS.includes(unitCode) ? `시간차 ${unitNm}` : unitNm;
+};
+
 // 서버 row → 그리드 표시 객체로 보강(라벨/포맷)
 const toRow = (r) => ({
   changeReqId: r.changeReqId,
@@ -227,6 +240,7 @@ const toRow = (r) => ({
   reqType: r.reqType,
   userNm: r.targetUserNm,
   targetStartDate: fmtYmd(r.targetStartDate),
+  unitLabel: unitLabelOf(r.useUnitType, r.unitNm),
   reqTypeNm: REQ_TYPE_NM[r.reqType] || r.reqType,
   moveTargetDate: fmtYmd(r.moveTargetDate),
   initiatorTypeNm: INITIATOR_TYPE_NM[r.initiatorType] || r.initiatorType,

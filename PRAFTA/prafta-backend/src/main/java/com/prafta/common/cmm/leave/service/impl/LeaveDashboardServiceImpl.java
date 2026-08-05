@@ -155,7 +155,9 @@ public class LeaveDashboardServiceImpl implements LeaveDashboardService {
                 : leaveDashboardMapper.selectDashboardList(
                         cmpnyCd, siteFilter, nodeFilter, incSub, keyword, offset, safeSize);
 
-        // PC-07(N8): 행별 conv = 대상 사용자의 오늘 기준 개인 분모(480 캡, 미산출 null → FE 480 폴백).
+        // E4 참고치 규약(당일분모 전환 후 유지): 행별 conv = 대상 사용자의 오늘 기준 참고 분모(기본
+        //   근무타입 근사치, 480 캡, 미산출 null → FE 480 폴백). 특정일 없는 대시보드 표기 전용 —
+        //   실차감 분모(당일 배정 스케줄, E1)와 편차 허용(사용자 확정 2026-08-03).
         //   페이지당 최대 100행이라 서비스 루프로 산출(SQL 조인안 대신 — effective-dating 서브쿼리 재사용).
         String todayYmd = LocalDate.now().format(DateTimeFormatter.BASIC_ISO_DATE);
         List<LeaveDashboardItemVO> items = new ArrayList<>(rows.size());
@@ -325,8 +327,10 @@ public class LeaveDashboardServiceImpl implements LeaveDashboardService {
         log.info("연차 상세 조회. cmpnyCd={}, userCd={}, history건수={}, 신청형타입건수={}",
                 cmpnyCd, userCd, history.size(), appliedLeaveTypes.size());
 
-        // PC-03(N7·N8): convMinutes = 오늘 기준 "대상 사용자" 개인 분모(480 캡). 산출 불가(교대 등)면
-        //   표기 전용 480 폴백(FE formatLeaveDays 폴백과 정합) + 시간차 사용 분 합계(전 기간, additive).
+        // E4 참고치 규약(당일분모 전환 후 유지): convMinutes = 오늘 기준 "대상 사용자" 참고 분모(기본
+        //   근무타입 근사치, 480 캡). 특정일 없는 상세 표기 전용 — 실차감 분모(당일 배정 스케줄, E1)와
+        //   편차 허용(사용자 확정 2026-08-03). 산출 불가면 480 폴백(FE formatLeaveDays 폴백과 정합)
+        //   + 시간차 사용 분 합계(전 기간, additive).
         Integer personalConv = leaveConversionPolicyService.resolvePersonalConvMinutes(
                 cmpnyCd, userCd, LocalDate.now().format(DateTimeFormatter.BASIC_ISO_DATE));
         int convMinutes = (personalConv != null) ? personalConv : LeaveConversionPolicyService.DEFAULT_CONV_MINUTES;

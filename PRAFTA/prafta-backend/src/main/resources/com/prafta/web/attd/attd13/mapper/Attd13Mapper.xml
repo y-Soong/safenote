@@ -272,6 +272,26 @@
         , R.CONFIRM_USER_CD                          AS confirmUserCd
         , DATE_FORMAT(R.CONFIRM_DATE, '%Y%m%d%H%i%s') AS confirmDate
         , DATE_FORMAT(R.INSERT_DATE,  '%Y%m%d%H%i%s') AS insertDate
+    <!-- G1(2026-08-04): 대상 연차의 사용단위/시각/차감량 표시용 컬럼(record 마지막 8 컴포넌트와 1:1).
+         leaveDays 는 분할차감(PC-02) 건에서 대표행 값이 부분값이라 REQ 단위 CASE-SUM 으로 총량을 낸다
+         (Attd07Mapper.selectDailyLeaveChangeReq 와 동형 - CONFIRMED 합산 0건이면 IFNULL 로 행 값 폴백).
+         시각/leaveMinutes 는 TARGET_LEAVE_ID 가 대표행이라 행 값을 그대로 쓴다(불변식 1). -->
+        , LU.LEAVE_CD                                AS leaveCd
+        , LT.LEAVE_NM                                AS leaveNm
+        , LU.USE_UNIT_TYPE                           AS useUnitType
+        , FNC_CMM_INFO_SRCH(LU.CMPNY_CD, 'SYST_VAL', LU.USE_UNIT_TYPE, 'SYS025') AS unitNm
+        , LU.START_TIME                              AS startTime
+        , LU.END_TIME                                AS endTime
+        , CASE WHEN LU.REQ_ID IS NULL THEN LU.LEAVE_DAYS
+               ELSE IFNULL( ( SELECT SUM(X.LEAVE_DAYS)
+                                FROM TB_USER_LEAVE_USE X
+                               WHERE X.CMPNY_CD     = LU.CMPNY_CD
+                                 AND X.REQ_ID       = LU.REQ_ID
+                                 AND X.LEAVE_STATUS = 'CONFIRMED'
+                                 AND X.DEL_YN       = 'N' )
+                          , LU.LEAVE_DAYS )
+          END                                        AS leaveDays
+        , LU.LEAVE_MINUTES                           AS leaveMinutes
       FROM TB_LEAVE_CHANGE_REQUEST R
       LEFT JOIN TB_USER TU
         ON TU.CMPNY_CD = R.CMPNY_CD
@@ -279,6 +299,9 @@
       LEFT JOIN TB_USER_LEAVE_USE LU
         ON LU.CMPNY_CD = R.CMPNY_CD
        AND LU.LEAVE_ID = R.TARGET_LEAVE_ID
+      LEFT JOIN TB_LEAVE_TYPE_MGMT LT
+        ON LT.CMPNY_CD = LU.CMPNY_CD
+       AND LT.LEAVE_CD = LU.LEAVE_CD
      WHERE R.CMPNY_CD = #{cmpnyCd}
        AND R.DEL_YN   = 'N'
     <!-- 사업장 스코프: 노드 관리자(siteWide='N')는 항상 자기 사업장 강제. master/hr 는 선택 사업장 지정 시에만 필터. -->
@@ -346,6 +369,23 @@
         , R.CONFIRM_USER_CD                          AS confirmUserCd
         , DATE_FORMAT(R.CONFIRM_DATE, '%Y%m%d%H%i%s') AS confirmDate
         , DATE_FORMAT(R.INSERT_DATE,  '%Y%m%d%H%i%s') AS insertDate
+    <!-- G1(2026-08-04): 표시용 확장 — selectChangeRequests 와 동일 컬럼/동일 순서(record 위치매핑). -->
+        , LU.LEAVE_CD                                AS leaveCd
+        , LT.LEAVE_NM                                AS leaveNm
+        , LU.USE_UNIT_TYPE                           AS useUnitType
+        , FNC_CMM_INFO_SRCH(LU.CMPNY_CD, 'SYST_VAL', LU.USE_UNIT_TYPE, 'SYS025') AS unitNm
+        , LU.START_TIME                              AS startTime
+        , LU.END_TIME                                AS endTime
+        , CASE WHEN LU.REQ_ID IS NULL THEN LU.LEAVE_DAYS
+               ELSE IFNULL( ( SELECT SUM(X.LEAVE_DAYS)
+                                FROM TB_USER_LEAVE_USE X
+                               WHERE X.CMPNY_CD     = LU.CMPNY_CD
+                                 AND X.REQ_ID       = LU.REQ_ID
+                                 AND X.LEAVE_STATUS = 'CONFIRMED'
+                                 AND X.DEL_YN       = 'N' )
+                          , LU.LEAVE_DAYS )
+          END                                        AS leaveDays
+        , LU.LEAVE_MINUTES                           AS leaveMinutes
       FROM TB_LEAVE_CHANGE_REQUEST R
       LEFT JOIN TB_USER TU
         ON TU.CMPNY_CD = R.CMPNY_CD
@@ -353,6 +393,9 @@
       LEFT JOIN TB_USER_LEAVE_USE LU
         ON LU.CMPNY_CD = R.CMPNY_CD
        AND LU.LEAVE_ID = R.TARGET_LEAVE_ID
+      LEFT JOIN TB_LEAVE_TYPE_MGMT LT
+        ON LT.CMPNY_CD = LU.CMPNY_CD
+       AND LT.LEAVE_CD = LU.LEAVE_CD
      WHERE R.CMPNY_CD      = #{cmpnyCd}
        AND R.CHANGE_REQ_ID = #{changeReqId}
        AND R.DEL_YN        = 'N'
@@ -383,6 +426,24 @@
         , R.CONFIRM_USER_CD                          AS confirmUserCd
         , DATE_FORMAT(R.CONFIRM_DATE, '%Y%m%d%H%i%s') AS confirmDate
         , DATE_FORMAT(R.INSERT_DATE,  '%Y%m%d%H%i%s') AS insertDate
+    <!-- G1(2026-08-04): 표시용 확장 — selectChangeRequests 와 동일 컬럼/동일 순서(record 위치매핑).
+         근로자 동의 팝업이 "무슨 연차인지" 를 보고 동의할 수 있게 하는 것이 본 확장의 1차 목적. -->
+        , LU.LEAVE_CD                                AS leaveCd
+        , LT.LEAVE_NM                                AS leaveNm
+        , LU.USE_UNIT_TYPE                           AS useUnitType
+        , FNC_CMM_INFO_SRCH(LU.CMPNY_CD, 'SYST_VAL', LU.USE_UNIT_TYPE, 'SYS025') AS unitNm
+        , LU.START_TIME                              AS startTime
+        , LU.END_TIME                                AS endTime
+        , CASE WHEN LU.REQ_ID IS NULL THEN LU.LEAVE_DAYS
+               ELSE IFNULL( ( SELECT SUM(X.LEAVE_DAYS)
+                                FROM TB_USER_LEAVE_USE X
+                               WHERE X.CMPNY_CD     = LU.CMPNY_CD
+                                 AND X.REQ_ID       = LU.REQ_ID
+                                 AND X.LEAVE_STATUS = 'CONFIRMED'
+                                 AND X.DEL_YN       = 'N' )
+                          , LU.LEAVE_DAYS )
+          END                                        AS leaveDays
+        , LU.LEAVE_MINUTES                           AS leaveMinutes
       FROM TB_LEAVE_CHANGE_REQUEST R
       LEFT JOIN TB_USER TU
         ON TU.CMPNY_CD = R.CMPNY_CD
@@ -390,6 +451,9 @@
       LEFT JOIN TB_USER_LEAVE_USE LU
         ON LU.CMPNY_CD = R.CMPNY_CD
        AND LU.LEAVE_ID = R.TARGET_LEAVE_ID
+      LEFT JOIN TB_LEAVE_TYPE_MGMT LT
+        ON LT.CMPNY_CD = LU.CMPNY_CD
+       AND LT.LEAVE_CD = LU.LEAVE_CD
      WHERE R.CMPNY_CD       = #{cmpnyCd}
        AND R.TARGET_USER_CD = #{targetUserCd}
        AND R.REQ_STATUS     = 'REQUESTED'

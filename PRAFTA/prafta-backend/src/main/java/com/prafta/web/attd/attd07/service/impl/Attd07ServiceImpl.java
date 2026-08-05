@@ -79,6 +79,8 @@ public class Attd07ServiceImpl implements Attd07Service {
     private final com.prafta.common.cmm.shift.service.ShiftMembershipService shiftMembershipService;
     /** 교차일(앞뒤 근무일) 근무 스케줄 시각 겹침 가드(공용 cmm 빈 — 야간 오버나이트 포함). */
     private final com.prafta.common.cmm.schedule.service.ScheduleOverlapGuardService scheduleOverlapGuardService;
+    /** E3(당일분모 전환, W4): 연차 잠금일(확정 전 단위 + 미결 시간차) 스케줄수정 승인 하드 차단(공용 cmm 빈). */
+    private final com.prafta.common.cmm.schedule.service.ScheduleChangeGuardService scheduleChangeGuardService;
     /** 사업장 접근 인가(공용 cmm 빈) — 토큰 사업장 등식 대신 User_03 원장(TB_USER_SITE_AUTH) 기반 인가. */
     private final SiteAccessService siteAccessService;
     /** PC-07(N8): 일자상세 응답 convMinutes(대상 사용자·대상일 개인 분모) — AttdDayDetailPop 480 폴백 해소. */
@@ -491,10 +493,15 @@ public class Attd07ServiceImpl implements Attd07Service {
         //   조회 권한 근거는 위 confirmedLeaveResultList 와 동일(진입부 2단 가드 승계 + 쿼리 스코프).
         List<DailyLeaveChangeReqResult> leaveChangeReqResultList = attd07Mapper.selectDailyLeaveChangeReq(DailyAttdDetailsQuery.from(param));
 
-        // PC-07(N8): 대상 사용자·대상일 기준 개인 분모(480 캡). 산출 불가(교대 등)면 480 폴백 —
-        //   AttdDayDetailPop 의 "N일 H시간 M분" 조립이 회사 고정 480 대신 본 값을 쓴다(기존 결함 D2 해소).
-        Integer personalConv = leaveConversionPolicyService.resolvePersonalConvMinutes(
-                param.gvCmpnyCd(), param.userCd(), param.workYmd());
+        // E4(Q-2 확정, 2026-08-04): 일자 특정 화면이므로 convMinutes = "당일 분모 우선"(E1 이후 실차감
+        //   분모 = 당일 배정 스케줄 — 그날 실제 차감값과 표기 정합). 산출 불가 시 폴백 체인 =
+        //   참고치(개인 기본 근무타입, E4 규약 — 편차 허용, 사용자 확정 2026-08-03) → 480.
+        Integer dailyConv = leaveConversionPolicyService.resolveDailyConvMinutes(
+                param.gvCmpnyCd(), param.siteCd(), param.userCd(), param.workYmd());
+        Integer personalConv = (dailyConv != null)
+                ? dailyConv
+                : leaveConversionPolicyService.resolvePersonalConvMinutes(
+                        param.gvCmpnyCd(), param.userCd(), param.workYmd());
         int convMinutes = (personalConv != null)
                 ? personalConv : LeaveConversionPolicyService.DEFAULT_CONV_MINUTES;
 
@@ -962,6 +969,22 @@ public class Attd07ServiceImpl implements Attd07Service {
             log.warn("sched-modify approve rejected - 교차일 스케줄 겹침. reqId={}, workYmd={}, schCd={}",
                     reqRow.reqId(), reqRow.workYmd(), schCd);
             throw new ApiException(AttdErrorCode.ATTD_400_115);
+        }
+
+        // 5-4. E3(당일분모 전환, W4): 연차 잠금일(확정 연차 전 단위 + 미결 시간차 신청) 스케줄수정 승인 하드
+        //      차단(ATTD_400_164). 시간차 분모(E1)가 당일 배정 스케줄이므로, 잠금일의 스케줄을 바꾸면 차감
+        //      분모가 훼손된다. 판정 입력은 REQ 권위값(reqRow.siteCd/userCd/workYmd)만 사용(body 위조 무력).
+        //      OT 잠금은 본 가드의 대상이 아니다(기존 경로 정책 불변 — 연차 잠금만 신설 차단).
+        //      관리자 탈출구 = 연차 취소·처리 → 재승인. upsert(work_plan 갱신) 이전에 차단.
+        List<com.prafta.common.cmm.schedule.vo.ScheduleLockVO> leaveLocks =
+                scheduleChangeGuardService.findLockedDays(
+                        param.gvCmpnyCd(), reqRow.siteCd(), reqRow.userCd(), List.of(reqRow.workYmd()));
+        boolean leaveLocked = leaveLocks.stream()
+                .anyMatch(l -> l.getReason() == com.prafta.common.cmm.schedule.vo.ScheduleLockVO.Reason.LEAVE);
+        if (leaveLocked) {
+            log.warn("sched-modify approve rejected - 연차 잠금일(확정/미결 시간차) 스케줄 변경 차단(E3). reqId={}, workYmd={}",
+                    reqRow.reqId(), reqRow.workYmd());
+            throw new ApiException(AttdErrorCode.ATTD_400_164);
         }
 
         // 6. tb_user_work_plan 의 (cmpny, site, user, ymd) 한 칸 WORK_PLAN_CD 를 SCH_CD 로 upsert (D1/D2).

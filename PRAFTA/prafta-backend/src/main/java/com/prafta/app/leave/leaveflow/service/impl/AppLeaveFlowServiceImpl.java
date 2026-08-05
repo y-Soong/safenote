@@ -167,26 +167,26 @@ public class AppLeaveFlowServiceImpl implements AppLeaveFlowService {
         //   입사일은 토큰 도출 userCd 로 1회 조회(식별값 본문 비신뢰). 미존재면 가불 한도 0(=비가불 동일).
         String hireDate = appLeaveFlowMapper.selectUserHireDate(param.cmpnyCd(), param.userCd());
 
-        // PC-03(D2·N5): 오늘 기준 본인 분모 산출. 불가(교대 등 DEFAULT_SCH_CD 미지정)면 시간차
-        //   단위(02/03/04)를 allowedUnits 에서 제거(법정·비법정 공통 — 차감 산식이 conv 를 쓰므로)
-        //   + hourlyBlocked 플래그로 FE 안내. convMinutes 는 표기 전용 480 폴백.
+        // E4·E5(당일분모 전환): 오늘 기준 본인 분모는 "참고 표기 전용"(convMinutes — 기본 근무타입
+        //   근사치, 실스케줄과 편차 허용, 사용자 확정 2026-08-03). 구 D2 의 사용자 속성 기반 시간차
+        //   차단(hourlyBlocked 판정 + stripHourlyUnits)은 E5 로 해제 — 분모가 당일 배정 스케줄로
+        //   전환되어 "기본 근무타입 미지정(교대 등)" 차단 근거가 소멸했다. 미배정일 시간차는 날짜
+        //   속성으로 서버가 최종 차단(ATTD_400_110/194 — submit·preview)하고 FE 는 day-schedule
+        //   기반 게이팅(T5)으로 안내한다.
         Integer personalConv = leaveConversionPolicyService.resolvePersonalConvMinutes(
                 param.cmpnyCd(), param.userCd(), todayYmd());
-        boolean hourlyBlocked = (personalConv == null);
 
         List<LeaveApplyMetaResponse.LeaveTypeItem> items = new ArrayList<>(rows.size());
         for (LeaveTypeMetaRow row : rows) {
 
             boolean isStatutory = isYes(row.systemYn());
 
-            // allowedUnits: 법정=회사 USAGE_UNIT 계층 / 비법정=타입 USE_UNIT_TYPE 계층(NULL→00 폴백)
+            // allowedUnits: 법정=회사 USAGE_UNIT 계층 / 비법정=타입 USE_UNIT_TYPE 계층(NULL→00 폴백).
+            //   E5: 구 D2 strip(개인 분모 불가 시 시간차 단위 제거)은 해제 — 정책 계층 그대로 반환.
             List<String> allowedUnits = isStatutory
                     ? statutoryAllowedUnits
                     : LeaveUnitGranularity.allowedUnitsByCode(
                             (row.useUnitType() == null) ? FALLBACK_UNIT_CODE : row.useUnitType());
-            if (hourlyBlocked) {
-                allowedUnits = stripHourlyUnits(allowedUnits);
-            }
 
             // aprvRequired: 법정=정책 APRV_USE_YN / 비법정=타입 APRV_USE_YN
             boolean aprvRequired = isStatutory
@@ -226,28 +226,16 @@ public class AppLeaveFlowServiceImpl implements AppLeaveFlowService {
             ));
         }
 
-        // 잔여 "N일 H시간 M분" 표기용 환산시간(분) — 오늘 기준 본인 분모 근사치(PC-03 N7).
+        // 잔여 "N일 H시간 M분" 표기용 환산시간(분) — 오늘 기준 본인 분모 근사치(E4 참고치 규약:
+        //   기본 근무타입 기준, 미산출 480 폴백 — 실스케줄과 편차 허용, 사용자 확정 2026-08-03).
         //   (신청 대상일이 아직 미정인 폼 진입 시점 표기라 근사로 충분 — 확정 분모는 preview/제출 시 재산출)
-        int convMinutes = hourlyBlocked ? LeaveConversionPolicyService.DEFAULT_CONV_MINUTES : personalConv;
+        int convMinutes = (personalConv != null) ? personalConv : LeaveConversionPolicyService.DEFAULT_CONV_MINUTES;
 
-        log.info("[leaveflow] 연차 신청 메타 조회 완료 userCd={}, 종류수={}, conv={}, hourlyBlocked={}",
-                param.userCd(), items.size(), convMinutes, hourlyBlocked);
+        log.info("[leaveflow] 연차 신청 메타 조회 완료 userCd={}, 종류수={}, conv={}",
+                param.userCd(), items.size(), convMinutes);
 
-        return new LeaveApplyMetaResponse(items, convMinutes, hourlyBlocked);
-    }
-
-    /**
-     * PC-03(D2): 시간차(02/03/04) 단위 제거 — 개인 분모 산출 불가 사용자는 시간 단위 연차 비노출.
-     * 종일/반차/반반차는 그대로 유지(그날 스케줄 D 기준 — 무영향).
-     */
-    private List<String> stripHourlyUnits(List<String> units) {
-        List<String> filtered = new ArrayList<>(units.size());
-        for (String u : units) {
-            if (!UNIT_HOUR2.equals(u) && !UNIT_HOUR1.equals(u) && !UNIT_MIN30.equals(u)) {
-                filtered.add(u);
-            }
-        }
-        return filtered;
+        // hourlyBlocked = 항상 false(E5 해제·필드는 구 앱 FE 하위호환용 유지 — P4 릴리즈 시차 안전).
+        return new LeaveApplyMetaResponse(items, convMinutes, false);
     }
 
     @Override
@@ -588,9 +576,12 @@ public class AppLeaveFlowServiceImpl implements AppLeaveFlowService {
                     acquireRemnantLock(remnantLockKey);
                     remnantLockDeferred = AdvisoryLockTxUtils.deferReleaseToAfterCompletion(
                             remnantLockKey, this::releaseRemnantLock);
+                    // E7: 짜투리 발동 판정의 최소 사용단위 요금은 "신청 대상일의 분모" 기준 —
+                    //   시간차는 calcHourlyCharge 결과(당일 분모) 재사용, 고정단위는 당일 분모 직접 조회.
+                    //   null(미배정일 종일 신청 등)이면 evaluateTrigger 가 시간차 제외 최소단위(반차)로 판정(정합). 웹 미러.
                     Integer convForRemnant = (hourlyConv != null)
                             ? hourlyConv
-                            : leaveConversionPolicyService.resolvePersonalConvMinutes(cmpny, user, workYmd);
+                            : leaveConversionPolicyService.resolveDailyConvMinutes(cmpny, site, user, workYmd);
                     remnantPlan = leaveRemnantCoverService.evaluateTrigger(
                             cmpny, user, workYmd, leaveCd, unit, leaveMinutes, leaveDays, convForRemnant);
                     if (remnantPlan == null) {
@@ -760,23 +751,29 @@ public class AppLeaveFlowServiceImpl implements AppLeaveFlowService {
             }
         }
 
-        // PC-03(N7·N8): convMinutes = 대상일 기준 본인 분모. 시간차는 calcHourlyCharge 가 이미
-        //   조회(산출 불가면 ATTD_400_193 전파), 고정단위(종일/반차/반반차)는 표기 전용이라
-        //   산출 불가 시 480 폴백(FE formatLeaveDays 폴백과 정합). 웹 미러.
-        Integer convPersonal = (convFromCharge != null)
+        // E1·E4: convMinutes = 신청 대상일 기준 당일 분모. 시간차는 calcHourlyCharge 가 이미
+        //   조회(산출 불가면 ATTD_400_194 전파), 고정단위(종일/반차/반반차)는 표기 전용이라
+        //   폴백 체인 = 당일 분모 → 참고치(개인 기본 근무타입, E4 규약 — 편차 허용, 사용자 확정
+        //   2026-08-03) → 480(FE formatLeaveDays 폴백과 정합). 웹 미러.
+        Integer convDaily = (convFromCharge != null)
                 ? convFromCharge
+                : leaveConversionPolicyService.resolveDailyConvMinutes(cmpny, site, user, workYmd);
+        Integer convPersonal = (convDaily != null)
+                ? convDaily
                 : leaveConversionPolicyService.resolvePersonalConvMinutes(cmpny, user, workYmd);
         int conv = (convPersonal != null) ? convPersonal : LeaveConversionPolicyService.DEFAULT_CONV_MINUTES;
 
         // PC-05(D6) preview: 부여 기반 신청이 잔여 부족이면 짜투리 발동 여부를 판정해 안내(FE UI-D).
         //   발동 예상이면 신청은 성공하므로 insufficient 를 내리고 발동 필드를 싣는다.
         //   lock 없는 추정치 — 제출 시 remnant lock 하에 재판정(시간차 preview 관례 미러). 웹 미러.
+        //   E7: 판정 입력 conv 는 submit 과 동일하게 "당일 분모"(convDaily — 참고치 폴백 미적용)를
+        //   전달한다. 참고치를 섞으면 미배정일 최소단위 판정이 submit(반차)과 어긋난다(preview≠확정).
         boolean remnantTriggered = false;
         BigDecimal remnantDays = null;
         Integer companyCoverMinutes = null;
         if (insufficient && grantBased) {
             RemnantTriggerPlanVO plan = leaveRemnantCoverService.evaluateTrigger(
-                    cmpny, user, workYmd, leaveCd, unit, previewMinutes, charge, convPersonal);
+                    cmpny, user, workYmd, leaveCd, unit, previewMinutes, charge, convDaily);
             if (plan != null) {
                 remnantTriggered = true;
                 remnantDays = plan.remnantDays();

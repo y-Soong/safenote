@@ -573,9 +573,9 @@
     <delete id="deleteUserWorkPlans" parameterType="com.prafta.web.attd.attd05.application.command.SchTypeDeleCommand">
     /* Attd05Mapper.deleteUserWorkPlans */
     /* prafta-com-013-04-1: 월 단위 일괄 삭제도 연차 등록일은 건너뛴다(셀 비우기 보호와 대칭).
-       종일 확정 연차(leave_use)가 덮인 날짜의 work_plan 행은 삭제 대상에서 제외한다.
-       판정 술어는 셀 비우기(selectFullDayLeaveCdOnCell)·그리드 오버레이(selectLeaveOverlayList)와 동일:
-       USE_UNIT_TYPE='00', LEAVE_STATUS='CONFIRMED', DEL_YN='N', START_DATE ~ END_DATE 구간에 WORK_YMD 포함.
+       확정 연차(leave_use)가 덮인 날짜의 work_plan 행은 삭제 대상에서 제외한다.
+       E3(당일분모 전환, DFCT-1 보완): 구 술어는 종일('00')만 보존 → 전 단위(USE_UNIT_TYPE 무관) 보존 +
+       미결 시간차 신청일 보존으로 확장. 시간차 분모(E1) = 당일 배정 스케줄이라 그 행 삭제 = 분모 소실.
        연차 취소는 attd13 동의흐름을 경유하므로(전면 동의 원칙) 여기서는 삭제하지 않는다.
 
        prafta-com-016-C-3: 초과근무(OT) 등록/신청 보유일도 삭제 대상에서 제외(부분 삭제).
@@ -588,15 +588,32 @@
       AND WP.USER_CD = #{userCd}
       AND WP.WORK_YMD LIKE CONCAT(replace(#{workYm},'-', ''), '%')
       AND NOT EXISTS (
+            /* 확정 연차 보존 — E3(당일분모 전환, DFCT-1): 구 술어는 종일('00')만 보존했으나,
+               시간차 분모(E1)가 당일 배정 스케줄이므로 확정 반차/반반차/시간차 보유일의 행 삭제도
+               분모 소스 소실 = 원장 훼손이다. USE_UNIT_TYPE 무관 전 단위 보존(com-016 잠금과 정합). */
             SELECT 1
               FROM TB_USER_LEAVE_USE U
              WHERE U.CMPNY_CD      = WP.CMPNY_CD
                AND U.USER_CD       = WP.USER_CD
                AND U.LEAVE_STATUS  = 'CONFIRMED'
                AND U.DEL_YN        = 'N'
-               AND U.USE_UNIT_TYPE = '00'
                AND U.START_DATE   <![CDATA[ <= ]]> WP.WORK_YMD
                AND U.END_DATE     <![CDATA[ >= ]]> WP.WORK_YMD
+          )
+      AND NOT EXISTS (
+            /* 미결 시간차 신청 보존 — E3(당일분모 전환, DFCT-1): 신청 시점부터 그날 스케줄 잠금.
+               술어는 ScheduleGuardMapper 미결 시간차 잠금(F-F)과 동형(시간차만 시각 기록 —
+               반차·반반차·종일 신청은 자연 제외). 연차 REQ 는 사용자 단위 자원이라 SITE_CD 무스코프. */
+            SELECT 1
+              FROM TB_USER_ATTD_REQ LRQ
+             WHERE LRQ.CMPNY_CD   = WP.CMPNY_CD
+               AND LRQ.USER_CD    = WP.USER_CD
+               AND LRQ.WORK_YMD   = WP.WORK_YMD
+               AND LRQ.REQ_TYPE   = '05'
+               AND LRQ.REQ_STATUS = '01'
+               AND LRQ.DEL_YN     = 'N'
+               AND LRQ.START_TIME IS NOT NULL
+               AND LRQ.END_TIME   IS NOT NULL
           )
       AND NOT EXISTS (
             SELECT 1
@@ -666,15 +683,44 @@
        AND WP.USER_CD  = #{userCd}
        AND LEFT(WP.WORK_YMD, 6) = #{workYm}
        AND EXISTS (
+             /* E3(DFCT-1 보완): 보존 대상이 전 단위로 확장됨에 따라 안내도 종일 한정 해제 —
+                deleteUserWorkPlans 확정 연차 NOT EXISTS 와 동일 술어 유지(안내·보존 정합). */
              SELECT 1
                FROM TB_USER_LEAVE_USE U
               WHERE U.CMPNY_CD      = WP.CMPNY_CD
                 AND U.USER_CD       = WP.USER_CD
                 AND U.LEAVE_STATUS  = 'CONFIRMED'
                 AND U.DEL_YN        = 'N'
-                AND U.USE_UNIT_TYPE = '00'
                 AND U.START_DATE   <![CDATA[ <= ]]> WP.WORK_YMD
                 AND U.END_DATE     <![CDATA[ >= ]]> WP.WORK_YMD
+           )
+     ORDER BY WP.WORK_YMD
+    </select>
+
+    <!--
+      E3(당일분모 전환, DFCT-1 보완): 해당 월(YYYYMM)에 미결 시간차 신청으로 삭제에서 보존된
+      일자(WORK_YMD) 목록 — BatchResultPop 안내용(HAS_PENDING_LEAVE). 판정 술어는
+      deleteUserWorkPlans 의 미결 시간차 NOT EXISTS 와 동일(F-F — ScheduleGuardMapper 동형).
+    -->
+    <select id="selectMonthPendingHourlyReqDays" resultType="string">
+    /* Attd05Mapper.selectMonthPendingHourlyReqDays */
+    SELECT DISTINCT WP.WORK_YMD
+      FROM TB_USER_WORK_PLAN WP
+     WHERE WP.CMPNY_CD = #{cmpnyCd}
+       AND WP.SITE_CD  = #{siteCd}
+       AND WP.USER_CD  = #{userCd}
+       AND LEFT(WP.WORK_YMD, 6) = #{workYm}
+       AND EXISTS (
+             SELECT 1
+               FROM TB_USER_ATTD_REQ LRQ
+              WHERE LRQ.CMPNY_CD   = WP.CMPNY_CD
+                AND LRQ.USER_CD    = WP.USER_CD
+                AND LRQ.WORK_YMD   = WP.WORK_YMD
+                AND LRQ.REQ_TYPE   = '05'
+                AND LRQ.REQ_STATUS = '01'
+                AND LRQ.DEL_YN     = 'N'
+                AND LRQ.START_TIME IS NOT NULL
+                AND LRQ.END_TIME   IS NOT NULL
            )
      ORDER BY WP.WORK_YMD
     </select>

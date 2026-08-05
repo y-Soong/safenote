@@ -7,6 +7,7 @@ import org.apache.ibatis.annotations.Param;
 
 import com.prafta.platform.customer.application.query.CustomerListQuery;
 import com.prafta.platform.customer.application.result.CustomerListResult;
+import com.prafta.platform.customer.application.result.TokenUsageListResult;
 
 /**
  * 플랫폼 고객 리스트 매퍼.
@@ -23,8 +24,11 @@ public interface PlatformCustomerMapper {
     /** 검색 조건 일치 전체 건수(LIMIT 무관 — 절단 판정용). */
     int selectCustomerListCount(CustomerListQuery query);
 
-    /** 대상 회사 존재 여부(TB_CMPNY COUNT — 한도 수정 대상 검증용). */
+    /** 대상 회사 존재 여부(TB_CMPNY COUNT — 한도 수정/이력 조회 대상 검증용). */
     int selectCmpnyExists(@Param("cmpnyCd") String cmpnyCd);
+
+    /** 회사별 월간 AI 토큰 사용량 이력(USE_YM 내림차순, LIMIT 24 — read-only). */
+    List<TokenUsageListResult> selectTokenUsageList(@Param("cmpnyCd") String cmpnyCd);
 
     /** 회사별 월간 AI 토큰 한도 UPSERT(감사컬럼에 운영자 userCd 기록). */
     int upsertTokenQuota(@Param("cmpnyCd") String cmpnyCd

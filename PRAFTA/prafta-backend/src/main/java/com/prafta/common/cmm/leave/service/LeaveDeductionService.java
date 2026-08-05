@@ -7,10 +7,10 @@ import com.prafta.common.cmm.leave.vo.HourlyChargeVO;
 /**
  * 시간차 연차 동적 차감 계산 서비스 (prafta-019-A §2.4 → 연차 시간차 환산 개편 LC-03).
  *
- * <p>연차 시간차 환산 개편(LC-03)으로 분모가 "그날 소정근로분"에서 "1일 환산시간"
- * ({@link LeaveConversionPolicyService})으로 전환되었고(R1), 개인 분모 개편(PC-03, D1)으로
- * 그 환산시간이 개인 기본 근무타입 소정근로분(480 캡, 산출 불가 시 시간차 차단)이 되었다.
- * 그날 시간차 누적 분 기준의 하한 가드(R3, 3단 마일스톤)와 상한 캡(R4, 1.0일)을 적용해
+ * <p>연차 시간차 환산 개편(LC-03)으로 분모가 "1일 환산시간"({@link LeaveConversionPolicyService})으로
+ * 추상화되었고(R1), 개인 분모 개편(PC-03 D1)을 거쳐 당일분모 전환(E1, 2026-08-03 확정)으로
+ * 그 환산시간이 <b>당일 배정 스케줄 소정근로분</b>(480 캡 E7, 산출 불가 시 시간차 차단 ATTD_400_194)이
+ * 되었다. 그날 시간차 누적 분 기준의 하한 가드(R3, 3단 마일스톤)와 상한 캡(R4, 1.0일)을 적용해
  * 이번 건 부과 차액을 산출한다 — {@link #calcHourlyCharge}.
  *
  * <p>정책서: {@code .claude/context/policies/attd/08-leave.md} §8.1.1, §8.5.9
@@ -52,9 +52,9 @@ public interface LeaveDeductionService {
      *
      * <p>내부 처리:
      * <ol>
-     *   <li>분모 = {@code LeaveConversionPolicyService.resolvePersonalConvMinutes(cmpnyCd, userCd, workYmd)}
-     *       (개인 기본 근무타입 소정근로분, 대상일 기준 유효 버전, 480 캡 — PC-03 D1).
-     *       산출 불가(교대 등)면 ATTD_400_193 으로 시간차 차단(D2·N5 fail-closed, 단일 출처).</li>
+     *   <li>분모 = 당일 배정 스케줄 소정근로분(E1 — {@code selectDailySchedule} 조회를 D 산출과
+     *       공유, 480 캡 E7. {@code LeaveConversionPolicyService.resolveDailyConvMinutes} 와 동일 산식).
+     *       산출 불가(미배정 등)면 ATTD_400_194 로 시간차 차단(E2 fail-closed, 단일 출처).</li>
      *   <li>그날 기존 시간차(02/03/04) CONFIRMED 누적 분·누적 차감 합 조회 — <b>전 연차타입 합산</b>
      *       (F3, 타입을 나눠 쪼개는 우회 차단). 고정단위(종일/반차/반반차)는 누적에서 제외(plan §8-⑤).</li>
      *   <li>코어 산식({@code HourlyLeaveChargeUtils} — LC-05 재정산과 단일 출처):

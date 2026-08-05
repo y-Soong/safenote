@@ -9,7 +9,8 @@ import com.prafta.common.util.DateTimeUtils;
  * <p>기존 {@code LeaveDeductionServiceImpl}의 private 구간 계산(segmentWorkMinutes)을 공용 추출했다.
  * <ul>
  *   <li>그날 소정근로분 D(마일스톤 하한 기준 — {@code getDailyStdWorkMinutes})와</li>
- *   <li>개인 분모 conv(기본 근무타입 소정근로분 — {@code resolvePersonalConvMinutes})가</li>
+ *   <li>실차감 분모 conv(당일 배정 스케줄 소정근로분 — {@code resolveDailyConvMinutes}, E1)와</li>
+ *   <li>참고 표시 분모(기본 근무타입 소정근로분 — {@code resolvePersonalConvMinutes}, E4 전용)가</li>
  * </ul>
  * 반드시 같은 산식을 공유하도록 본 클래스를 단일 출처로 사용한다.
  *

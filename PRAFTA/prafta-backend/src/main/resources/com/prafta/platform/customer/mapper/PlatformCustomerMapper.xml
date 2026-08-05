@@ -59,6 +59,22 @@
     WHERE A.CMPNY_CD = #{cmpnyCd}
     </select>
 
+    <!-- 회사별 월간 AI 토큰 사용량 이력(Platform_03 이력 팝업).
+         주의: record 매핑은 SELECT 컬럼 순서 의존 - TokenUsageListResult 컴포넌트 순서와 일치 유지. -->
+    <select id="selectTokenUsageList" resultType="com.prafta.platform.customer.application.result.TokenUsageListResult">
+    /* PlatformCustomerMapper.selectTokenUsageList */
+    SELECT
+        U.USE_YM                          AS useYm
+        , U.CALL_CNT                      AS callCnt
+        , U.INPUT_TOKENS                  AS inputTokens
+        , U.OUTPUT_TOKENS                 AS outputTokens
+        , U.INPUT_TOKENS + U.OUTPUT_TOKENS AS totalTokens
+    FROM TB_AI_TOKEN_USAGE U
+    WHERE U.CMPNY_CD = #{cmpnyCd}
+    ORDER BY U.USE_YM DESC
+    LIMIT 24
+    </select>
+
     <!-- 회사별 월간 AI 토큰 한도 UPSERT.
          ★MySQL AS NEW 별칭 함정(feedback_mysql_row_alias_ambiguous_column):
            ON DUPLICATE 우변의 신규값은 NEW.컬럼, 기존값 참조 시엔 반드시 테이블명.컬럼. -->

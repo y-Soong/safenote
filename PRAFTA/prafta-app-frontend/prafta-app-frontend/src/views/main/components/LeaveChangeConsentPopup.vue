@@ -50,6 +50,24 @@
                 </span>
               </div>
             </div>
+            <!-- G1: 대상 연차 속성(종류/단위/구간/차감량) — 근로자가 "무슨 연차인지" 알고 동의하도록.
+                 사용 구간은 시간차(02~04)만 값이 있다(반차·반반차는 시각 미기록). -->
+            <div v-if="req.leaveNm" class="lcc-card__row">
+              <span class="lcc-card__label">연차 종류</span>
+              <span class="lcc-card__value">{{ req.leaveNm }}</span>
+            </div>
+            <div v-if="unitLabel(req)" class="lcc-card__row">
+              <span class="lcc-card__label">사용 단위</span>
+              <span class="lcc-card__value">{{ unitLabel(req) }}</span>
+            </div>
+            <div v-if="timeRange(req)" class="lcc-card__row">
+              <span class="lcc-card__label">사용 구간</span>
+              <span class="lcc-card__value">{{ timeRange(req) }}</span>
+            </div>
+            <div v-if="leaveDaysLabel(req)" class="lcc-card__row">
+              <span class="lcc-card__label">차감 일수</span>
+              <span class="lcc-card__value">{{ leaveDaysLabel(req) }}</span>
+            </div>
             <div class="lcc-card__row">
               <span class="lcc-card__label">요청유형</span>
               <span class="lcc-card__value">{{ reqTypeNm(req.reqType) }}</span>
@@ -129,6 +147,7 @@
 import { ref } from 'vue'
 
 import { formatYmdDisplay } from '@/utils/approvalFormat'
+import { formatMinutesToHm, trimRawDays } from '@/utils/leaveFormat'
 
 const props = defineProps({
   // 팝업 표시 여부 (v-model:open)
@@ -137,7 +156,8 @@ const props = defineProps({
     default: false,
   },
   // 미응답(REQUESTED) 관리자 발의 요청 목록 — 부모(MainView)가 조회해 전달.
-  //   각 항목: { changeReqId, reqType('MOVE'|'DELETE'), targetStartDate(YYYYMMDD), moveTargetDate, reqReason }
+  //   각 항목: { changeReqId, reqType('MOVE'|'DELETE'), targetStartDate(YYYYMMDD), moveTargetDate, reqReason,
+  //             leaveNm, useUnitType(SYS025), unitNm, startTime(HHmm), endTime(HHmm), leaveDays, leaveMinutes }
   items: {
     type: Array,
     default: () => [],
@@ -164,6 +184,60 @@ const reqTypeNm = (t) => REQ_TYPE_NM[t] || t
 const fmtYmd = (ymd) => {
   if (!ymd || ymd.length !== 8) return ymd || ''
   return formatYmdDisplay(ymd)
+}
+
+// ── G1: 대상 연차 속성 표기 ────────────────────────────────────────────────
+// 시간차 단위(SYS025 02:2시간 / 03:1시간 / 04:30분)만 시각 구간을 보유한다.
+//   반차(01)·반반차(05)는 신청 시 시각을 기록하지 않아 startTime/endTime 이 NULL — 구간 행을 숨긴다.
+const HOURLY_UNITS = ['02', '03', '04']
+const isHourlyUnit = (unitCode) => HOURLY_UNITS.includes(unitCode)
+
+// "1230" → "12:30"
+const fmtHm = (hhmm) => {
+  const s = String(hhmm ?? '')
+  return s.length >= 4 ? `${s.slice(0, 2)}:${s.slice(2, 4)}` : ''
+}
+const hhmmToMin = (hhmm) => {
+  const s = String(hhmm ?? '')
+  if (s.length !== 4) return null
+  const h = parseInt(s.slice(0, 2), 10)
+  const m = parseInt(s.slice(2, 4), 10)
+  if (Number.isNaN(h) || Number.isNaN(m)) return null
+  if (h < 0 || h > 23 || m < 0 || m > 59) return null
+  return h * 60 + m
+}
+
+// 사용 단위 라벨 — 시간차면 '시간차 ' 접두(웹 AttdDayDetailPop 표기 관례와 동형).
+const unitLabel = (req) => {
+  if (!req?.unitNm) return ''
+  return isHourlyUnit(req.useUnitType) ? `시간차 ${req.unitNm}` : req.unitNm
+}
+
+// 사용 구간 — "10:00~12:00 (2시간)". 차감 분(원본)이 있으면 그 값을, 없으면 구간에서 산출.
+const timeRange = (req) => {
+  if (!isHourlyUnit(req?.useUnitType) || !req?.startTime || !req?.endTime) return ''
+  const range = `${fmtHm(req.startTime)}~${fmtHm(req.endTime)}`
+  const raw = Number(req.leaveMinutes)
+  if (Number.isFinite(raw) && raw > 0) return `${range} (${formatMinutesToHm(raw)})`
+  const s = hhmmToMin(req.startTime)
+  const e = hhmmToMin(req.endTime)
+  if (s == null || e == null || e <= s) return range
+  return `${range} (${formatMinutesToHm(e - s)})`
+}
+
+// 차감 일수 — 개인 분모(convMinutes)가 응답에 없으므로 "N일 H시간" 조립을 하지 않는다
+//   (480 폴백 오표기 방지). 단순 일수 표기 + 시간차는 원본 분을 병기.
+const leaveDaysLabel = (req) => {
+  const v = req?.leaveDays
+  if (v === null || v === undefined || v === '') return ''
+  const n = Number(v)
+  if (!Number.isFinite(n)) return ''
+  const base = `${trimRawDays(n)}일`
+  const raw = Number(req.leaveMinutes)
+  if (isHourlyUnit(req.useUnitType) && Number.isFinite(raw) && raw > 0) {
+    return `${base} (${formatMinutesToHm(raw)})`
+  }
+  return base
 }
 
 const startReject = (req) => {

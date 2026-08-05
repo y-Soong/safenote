@@ -35,6 +35,23 @@
               <dt>대상 연차일</dt>
               <dd>{{ detail.targetStartDate }}</dd>
             </div>
+            <!-- G1: 대상 연차 속성(종류/단위/구간/차감량). 사용 구간은 시간차(02~04)만 값이 있다. -->
+            <div v-if="detail.leaveNm">
+              <dt>연차 종류</dt>
+              <dd>{{ detail.leaveNm }}</dd>
+            </div>
+            <div v-if="detail.unitLabel">
+              <dt>사용 단위</dt>
+              <dd>{{ detail.unitLabel }}</dd>
+            </div>
+            <div v-if="detail.timeRange">
+              <dt>사용 구간</dt>
+              <dd>{{ detail.timeRange }}</dd>
+            </div>
+            <div v-if="detail.leaveDaysLabel">
+              <dt>차감 일수</dt>
+              <dd>{{ detail.leaveDaysLabel }}</dd>
+            </div>
             <div>
               <dt>요청유형</dt>
               <dd>{{ detail.reqTypeNm }}</dd>
@@ -124,6 +141,7 @@ import axios from "@/api/axios";
 import { getMessage, MSG } from "@/messages";
 import { resolveApiErrorMessage } from "@/utils/apiError";
 import { formatYmdDot } from "@/utils/dateFormat";
+import { formatLeaveMinutes, trimLeaveDays } from "@/utils/leaveFormat";
 
 const props = defineProps({
   changeReqId: { type: String, default: "" },
@@ -154,6 +172,60 @@ const WORKER_RESPONSE_NM = { PENDING: "대기", AGREE: "동의", REJECT: "거부
 const fmtYmd = (ymd) => {
   if (!ymd || ymd.length !== 8) return ymd ?? "";
   return formatYmdDot(ymd);
+};
+
+// ── G1: 대상 연차 속성 표기 ────────────────────────────────────────────────
+// 시간차 단위(SYS025 02:2시간 / 03:1시간 / 04:30분)만 시각 구간을 보유한다.
+//   반차(01)·반반차(05)는 신청 시 시각을 기록하지 않아 START_TIME/END_TIME 이 NULL —
+//   구간 행 자체를 숨긴다(빈 "~" 표시 방지).
+const HOURLY_UNITS = ["02", "03", "04"];
+const isHourlyUnit = (unitCode) => HOURLY_UNITS.includes(unitCode);
+
+// "1230" → "12:30" (AttdDayDetailPop 표기 관례와 동형)
+const fmtTime = (hhmm) => {
+  const v = String(hhmm ?? "");
+  return v.length >= 4 ? `${v.slice(0, 2)}:${v.slice(2, 4)}` : "";
+};
+const hhmmToMin = (hhmm) => {
+  const v = String(hhmm ?? "");
+  if (v.length !== 4) return null;
+  const h = parseInt(v.slice(0, 2), 10);
+  const m = parseInt(v.slice(2, 4), 10);
+  if (Number.isNaN(h) || Number.isNaN(m)) return null;
+  if (h < 0 || h > 23 || m < 0 || m > 59) return null;
+  return h * 60 + m;
+};
+
+// 단위 라벨 — 시간차면 '시간차 ' 접두(AttdDayDetailPop 과 동일 규칙). 코드만 있고 라벨이 없으면 미표시.
+const unitLabelOf = (unitCode, unitNm) => {
+  if (!unitNm) return "";
+  return isHourlyUnit(unitCode) ? `시간차 ${unitNm}` : unitNm;
+};
+
+// 사용 구간 — "10:00~12:00 (2시간)". 차감 분(원본)이 있으면 그 값을, 없으면 구간에서 산출.
+const timeRangeOf = (unitCode, startTime, endTime, leaveMinutes) => {
+  if (!isHourlyUnit(unitCode) || !startTime || !endTime) return "";
+  const range = `${fmtTime(startTime)}~${fmtTime(endTime)}`;
+  const raw = Number(leaveMinutes);
+  if (Number.isFinite(raw) && raw > 0) return `${range} (${formatLeaveMinutes(raw)})`;
+  const s = hhmmToMin(startTime);
+  const e = hhmmToMin(endTime);
+  if (s == null || e == null || e <= s) return range;
+  return `${range} (${formatLeaveMinutes(e - s)})`;
+};
+
+// 차감 일수 — 개인 분모(convMinutes)가 응답에 없으므로 "N일 H시간" 조립을 하지 않는다
+//   (480 폴백 오표기 방지). 단순 일수 표기 + 시간차는 원본 분을 병기한다.
+const leaveDaysLabelOf = (leaveDays, unitCode, leaveMinutes) => {
+  if (leaveDays === null || leaveDays === undefined || leaveDays === "") return "";
+  const n = Number(leaveDays);
+  if (!Number.isFinite(n)) return "";
+  const base = `${trimLeaveDays(n)}일`;
+  const raw = Number(leaveMinutes);
+  if (isHourlyUnit(unitCode) && Number.isFinite(raw) && raw > 0) {
+    return `${base} (${formatLeaveMinutes(raw)})`;
+  }
+  return base;
 };
 
 // 동의(AGREED) 상태만 최종 확인/승인 가능 (UI 게이트 — 서버도 동일 강제)
@@ -188,6 +260,20 @@ const fnLoadDetail = async () => {
           reqReason: d.reqReason,
           responseReason: d.responseReason,
           rejectReason: d.rejectReason,
+          // G1: 대상 연차 속성(종류/단위/구간/차감량)
+          leaveNm: d.leaveNm,
+          unitLabel: unitLabelOf(d.useUnitType, d.unitNm),
+          timeRange: timeRangeOf(
+            d.useUnitType,
+            d.startTime,
+            d.endTime,
+            d.leaveMinutes
+          ),
+          leaveDaysLabel: leaveDaysLabelOf(
+            d.leaveDays,
+            d.useUnitType,
+            d.leaveMinutes
+          ),
           reqTypeNm: REQ_TYPE_NM[d.reqType] || d.reqType,
           initiatorTypeNm:
             INITIATOR_TYPE_NM[d.initiatorType] || d.initiatorType,

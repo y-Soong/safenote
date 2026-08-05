@@ -17,6 +17,7 @@ import com.prafta.platform.customer.application.query.CustomerListQuery;
 import com.prafta.platform.customer.application.result.CustomerListResult;
 import com.prafta.platform.customer.dto.response.CustomerListResponse;
 import com.prafta.platform.customer.dto.response.TokenQuotaUpdateResponse;
+import com.prafta.platform.customer.dto.response.TokenUsageListResponse;
 import com.prafta.platform.customer.mapper.PlatformCustomerMapper;
 import com.prafta.platform.customer.service.PlatformCustomerService;
 
@@ -80,6 +81,24 @@ public class PlatformCustomerServiceImpl implements PlatformCustomerService {
                 .cmpnyCd(param.cmpnyCd())
                 .tokenLimit(param.monthlyTokenLimit())
                 .quotaCustomYn("Y")
+                .build();
+    }
+
+    @Override
+    public TokenUsageListResponse selectTokenUsageList(String cmpnyCd) {
+
+        // 대상 검증은 한도 변경(updateTokenQuota)과 동일 기준 — 미지정/운영자 자기 자신/TB_CMPNY 미존재 거부.
+        String trimmedCmpnyCd = cmpnyCd == null ? "" : cmpnyCd.trim();
+        if (trimmedCmpnyCd.isEmpty()
+                || PlatformConstants.PLATFORM_CMPNY_CD.equals(trimmedCmpnyCd)
+                || platformCustomerMapper.selectCmpnyExists(trimmedCmpnyCd) == 0) {
+            log.warn("AI 토큰 사용량 이력 조회 거부 - 대상 회사 미존재/운영자 자기 지정 - cmpnyCd={}", trimmedCmpnyCd);
+            throw new ApiException(PlatformErrorCode.PLATFORM_400_015);
+        }
+
+        return TokenUsageListResponse.builder()
+                .cmpnyCd(trimmedCmpnyCd)
+                .usageList(platformCustomerMapper.selectTokenUsageList(trimmedCmpnyCd))
                 .build();
     }
 }

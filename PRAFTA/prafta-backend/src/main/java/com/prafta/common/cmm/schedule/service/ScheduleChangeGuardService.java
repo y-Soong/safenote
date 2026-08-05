@@ -7,10 +7,13 @@ import com.prafta.common.cmm.schedule.vo.ScheduleLockVO;
 /**
  * 공통 스케줄 변경 가드 서비스 (prafta-com-016 shared-schedule-guard).
  *
- * <p><b>원칙</b>: 확정 연차(종일/반차/시간차 — USE_UNIT_TYPE 무관) 또는 초과근무(등록/신청)가 있는
- * (사용자, 날짜)는 그 날의 근무 스케줄을 변경할 수 없다. 본 서비스는 (cmpnyCd, siteCd, userCd, 날짜목록)을
- * 받아 잠긴 날짜 + 사유({@link ScheduleLockVO.Reason#LEAVE} / {@link ScheduleLockVO.Reason#OT})를 반환한다.
+ * <p><b>원칙</b>: 확정 연차(종일/반차/시간차 — USE_UNIT_TYPE 무관), <b>미결 시간차 신청</b>(E3 당일분모
+ * 전환 — 신청 시점부터 그날 당일 분모 보존, {@link ScheduleLockVO#isLeavePending()}) 또는
+ * 초과근무(등록/신청)가 있는 (사용자, 날짜)는 그 날의 근무 스케줄을 변경할 수 없다.
+ * 본 서비스는 (cmpnyCd, siteCd, userCd, 날짜목록)을 받아 잠긴 날짜 + 사유
+ * ({@link ScheduleLockVO.Reason#LEAVE} / {@link ScheduleLockVO.Reason#OT})를 반환한다.
  * 판정만 수행하며(read-only), 차단/skip 의 정책 결정은 각 호출 경로가 한다.
+ * ★E3 확장은 기존 확정 연차 잠금(전 단위)을 완화하지 않는다 — 미결 잠금은 시간차 신청에만 추가된다.
  *
  * <h3>호출 가이드 (경로별)</h3>
  * <ul>

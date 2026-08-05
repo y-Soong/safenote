@@ -258,6 +258,11 @@ const onPickFile = (e) => {
   font-weight: 600;
   cursor: pointer;
 }
+/* 버튼처럼 쓰는 label(파일 선택) — 전역 base 에서 탭 하이라이트를 끈 대신
+   누르는 대상(버튼 박스) 자체에만 눌림 피드백을 남긴다. */
+.mtrl-item-row__file-btn:active {
+  background: var(--color-primary-tint);
+}
 .mtrl-item-row__file-input {
   position: absolute;
   width: 1px;

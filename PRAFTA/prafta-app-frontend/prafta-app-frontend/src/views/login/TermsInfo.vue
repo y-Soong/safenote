@@ -23,7 +23,7 @@
     <div class="flex-1 px-6">
       <h3 class="text-gray-800 font-semibold mb-6 text-2xl">약관에 동의해주세요</h3>
 
-      <label class="flex p-4 bg-gray-100 rounded-md">
+      <label class="flex p-4 bg-gray-100 rounded-md terms-row terms-row--box">
         <input type="checkbox" class="hidden" v-model="checked" @click="fnAllClick" />
         <span
           class="w-6 h-6 flex items-center justify-center border-2 border-gray-400 transition-all duration-200 mr-2 rounded-md"
@@ -51,7 +51,7 @@
       <!-- 세부약관 내용 -->
       <div class="form-container pt-5">
         <label
-          class="flex items-center cursor-pointer select-none mb-4"
+          class="flex items-center cursor-pointer select-none mb-4 terms-row"
           v-for="terms in termsList"
           :key="terms.systValDCd"
         >
@@ -200,3 +200,21 @@ const goBack = () => {
   router.back()
 }
 </script>
+
+<style scoped>
+/* 동의 행 눌림 피드백 — TermsAgreeView.vue 와 동일 규칙(전역 label tap-highlight 제거 보완).
+   Tailwind 2 는 active variant 가 기본 비활성이라 scoped 규칙으로 처리한다. */
+.terms-row {
+  transition: background-color 0.15s ease, opacity 0.15s ease;
+}
+
+/* 회색 박스형(전체 동의): 배경을 한 단계 진하게 */
+.terms-row--box:active {
+  background-color: #e5e7eb; /* tailwind gray-200 */
+}
+
+/* 배경 없는 행(세부 약관): 레이아웃 변화 없이 살짝 흐리게 */
+.terms-row:not(.terms-row--box):active {
+  opacity: 0.6;
+}
+</style>

@@ -128,6 +128,8 @@ public class Attd05ServiceImpl implements Attd05Service {
     private static final String REASON_LEAVE_CD_NOT_ALLOWED = "LEAVE_CD_NOT_ALLOWED";
     /** 근태 E2E F4(4-13) 스킵 사유 - 해당일 처리 대기 스케줄수정요청(REQ_TYPE='10', 대기) 보유 → 관리자 직접 변경 불가(경합 방지). */
     private static final String REASON_HAS_PENDING_SCH_MODIFY = "HAS_PENDING_SCH_MODIFY";
+    /** E3(당일분모 전환) 스킵 사유 - 해당일 미결(승인 대기) 시간차 연차 신청 보유 → 스케줄 변경 불가(당일 분모 보존). */
+    private static final String REASON_HAS_PENDING_LEAVE = "HAS_PENDING_LEAVE";
 
     @Override
     public UserWorkPlansResponse getUserWorkPlan(UserWorkPlansParam param) {
@@ -413,9 +415,8 @@ public class Attd05ServiceImpl implements Attd05Service {
     							model.gvCmpnyCd(), model.siteCd(), model.userCd(),
     							java.util.List.of(model.workYmd()));
     			if (!locks.isEmpty()) {
-    				boolean otLocked = locks.stream()
-    						.anyMatch(l -> l.getReason() == com.prafta.common.cmm.schedule.vo.ScheduleLockVO.Reason.OT);
-    				String reasonCode = otLocked ? REASON_HAS_OVERTIME : REASON_HAS_LEAVE;
+    				// E3: 사유 우선순위 OT > 확정 연차 > 미결 시간차(전부 미결 잠금뿐일 때만 PENDING_LEAVE).
+    				String reasonCode = resolveLockReasonCode(locks);
     				skippedList.add(new SkippedCellResult(
     						model.userCd(), model.workYmd(), workPlanCd,
     						reasonCode, reasonText(reasonCode)));
@@ -610,9 +611,9 @@ public class Attd05ServiceImpl implements Attd05Service {
     					REASON_HAS_OVERTIME, reasonText(REASON_HAS_OVERTIME)));
     			reportedDays.add(otYmd);
     		}
-    		// prafta-com-016-C-3 후속: 종일 확정 연차로 보존(삭제 제외)된 일자도 함께 안내한다.
-    		//   DELETE 가 연차일 work_plan 을 NOT EXISTS 로 보존하지만, 기존엔 OT 보존일만 안내해
-    		//   연차 보존일이 결과 팝업에서 누락됐다(사용자 제보). OT 와 동일 포맷으로 동반 안내한다.
+    		// prafta-com-016-C-3 후속: 확정 연차로 보존(삭제 제외)된 일자도 함께 안내한다.
+    		//   E3(당일분모 전환, DFCT-1 보완): 보존·안내가 종일 한정에서 전 단위로 확장 —
+    		//   시간차 분모(E1)가 당일 배정 스케줄이라 반차/반반차/시간차 보유일도 삭제 제외 대상.
     		//   OT 와 같은 일자(중복)는 OT 사유로 이미 안내했으므로 건너뛴다.
     		List<String> leaveDays = attd05Mapper.selectMonthLeaveDays(
     				model.gvCmpnyCd(), model.siteCd(), model.userCd(), workYm6);
@@ -627,9 +628,23 @@ public class Attd05ServiceImpl implements Attd05Service {
     			reportedDays.add(lvYmd);
     			leaveReported++;
     		}
-    		if (!otDays.isEmpty() || leaveReported > 0) {
-    			log.info("근무계획 월 삭제 부분 제외 - userCd={}, workYm={}, OT보존 {}건, 연차보존 {}건",
-    					model.userCd(), model.workYm(), otDays.size(), leaveReported);
+    		// E3(DFCT-1 보완): 미결 시간차 신청으로 보존된 일자 안내(HAS_PENDING_LEAVE — 셀 저장 skip 사유 재사용).
+    		List<String> pendingHourlyDays = attd05Mapper.selectMonthPendingHourlyReqDays(
+    				model.gvCmpnyCd(), model.siteCd(), model.userCd(), workYm6);
+    		int pendingReported = 0;
+    		for (String pdYmd : pendingHourlyDays) {
+    			if (reportedDays.contains(pdYmd)) {
+    				continue;
+    			}
+    			skippedList.add(new SkippedCellResult(
+    					model.userCd(), pdYmd, null,
+    					REASON_HAS_PENDING_LEAVE, reasonText(REASON_HAS_PENDING_LEAVE)));
+    			reportedDays.add(pdYmd);
+    			pendingReported++;
+    		}
+    		if (!otDays.isEmpty() || leaveReported > 0 || pendingReported > 0) {
+    			log.info("근무계획 월 삭제 부분 제외 - userCd={}, workYm={}, OT보존 {}건, 연차보존 {}건, 미결시간차보존 {}건",
+    					model.userCd(), model.workYm(), otDays.size(), leaveReported, pendingReported);
     		}
 
     		attd05Mapper.deleteUserWorkPlans(SchTypeDeleCommand.from(model));
@@ -708,9 +723,8 @@ public class Attd05ServiceImpl implements Attd05Service {
     						model.gvCmpnyCd(), model.siteCd(), model.userCd(),
     						java.util.List.of(model.workYmd()));
     		if (!cellLocks.isEmpty()) {
-    			boolean otLocked = cellLocks.stream()
-    					.anyMatch(l -> l.getReason() == com.prafta.common.cmm.schedule.vo.ScheduleLockVO.Reason.OT);
-    			String reasonCode = otLocked ? REASON_HAS_OVERTIME : REASON_HAS_LEAVE;
+    			// E3: 사유 우선순위 OT > 확정 연차 > 미결 시간차(전부 미결 잠금뿐일 때만 PENDING_LEAVE).
+    			String reasonCode = resolveLockReasonCode(cellLocks);
     			skippedList.add(new SkippedCellResult(
     					model.userCd(), model.workYmd(), null,
     					reasonCode, reasonText(reasonCode)));
@@ -842,6 +856,27 @@ public class Attd05ServiceImpl implements Attd05Service {
     	return null;
     }
 
+    /**
+     * 공통 스케줄 변경 가드(findLockedDays) 잠금 목록 → 대표 스킵 사유 코드(E3 확장).
+     * 우선순위: OT > 확정 연차 > 미결 시간차. (한 날에 여러 잠금이 공존할 수 있으므로,
+     * 안내는 조치 부담이 큰 순서로 대표 1건만 — 기존 otLocked 우선 로직 승계.)
+     */
+    private String resolveLockReasonCode(List<com.prafta.common.cmm.schedule.vo.ScheduleLockVO> locks) {
+    	boolean otLocked = false;
+    	boolean confirmedLeave = false;
+    	for (com.prafta.common.cmm.schedule.vo.ScheduleLockVO lock : locks) {
+    		if (lock.getReason() == com.prafta.common.cmm.schedule.vo.ScheduleLockVO.Reason.OT) {
+    			otLocked = true;
+    		} else if (!lock.isLeavePending()) {
+    			confirmedLeave = true;
+    		}
+    	}
+    	if (otLocked) {
+    		return REASON_HAS_OVERTIME;
+    	}
+    	return confirmedLeave ? REASON_HAS_LEAVE : REASON_HAS_PENDING_LEAVE;
+    }
+
     /** 스킵 사유 코드에 대응하는 사유 문구 (한국어) */
     private String reasonText(String reasonCode) {
     	if (REASON_BEFORE_CREATE.equals(reasonCode)) {
@@ -879,6 +914,9 @@ public class Attd05ServiceImpl implements Attd05Service {
     	}
     	if (REASON_HAS_PENDING_SCH_MODIFY.equals(reasonCode)) {
     		return "처리 대기 중인 스케줄 수정요청이 있어 변경할 수 없습니다. 요청을 먼저 처리해 주세요.";
+    	}
+    	if (REASON_HAS_PENDING_LEAVE.equals(reasonCode)) {
+    		return "승인 대기 중인 시간 단위 연차 신청이 있는 날짜는 근무 스케줄을 변경할 수 없습니다. 신청을 먼저 처리해 주세요.";
     	}
     	return "근무타입을 지정할 수 없는 날짜입니다.";
     }

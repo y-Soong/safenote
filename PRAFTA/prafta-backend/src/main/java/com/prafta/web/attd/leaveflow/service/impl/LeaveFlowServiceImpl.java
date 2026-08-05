@@ -364,9 +364,12 @@ public class LeaveFlowServiceImpl implements LeaveFlowService {
                     acquireRemnantLock(remnantLockKey);
                     remnantLockDeferred = AdvisoryLockTxUtils.deferReleaseToAfterCompletion(
                             remnantLockKey, this::releaseRemnantLock);
+                    // E7: 짜투리 발동 판정의 최소 사용단위 요금은 "신청 대상일의 분모" 기준 —
+                    //   시간차는 calcHourlyCharge 결과(당일 분모) 재사용, 고정단위는 당일 분모 직접 조회.
+                    //   null(미배정일 종일 신청 등)이면 evaluateTrigger 가 시간차 제외 최소단위(반차)로 판정(정합).
                     Integer convForRemnant = (hourlyConv != null)
                             ? hourlyConv
-                            : leaveConversionPolicyService.resolvePersonalConvMinutes(cmpny, user, workYmd);
+                            : leaveConversionPolicyService.resolveDailyConvMinutes(cmpny, site, user, workYmd);
                     remnantPlan = leaveRemnantCoverService.evaluateTrigger(
                             cmpny, user, workYmd, leaveCd, unit, leaveMinutes, leaveDays, convForRemnant);
                     if (remnantPlan == null) {
@@ -662,23 +665,29 @@ public class LeaveFlowServiceImpl implements LeaveFlowService {
             }
         }
 
-        // PC-03(N7·N8): convMinutes = 대상일 기준 본인 분모. 시간차는 calcHourlyCharge 가 이미
-        //   조회(산출 불가면 ATTD_400_193 전파), 고정단위(종일/반차/반반차)는 표기 전용이라
-        //   산출 불가 시 480 폴백(FE formatLeaveDays 폴백과 정합).
-        Integer convPersonal = (convFromCharge != null)
+        // E1·E4: convMinutes = 신청 대상일 기준 당일 분모. 시간차는 calcHourlyCharge 가 이미
+        //   조회(산출 불가면 ATTD_400_194 전파), 고정단위(종일/반차/반반차)는 표기 전용이라
+        //   폴백 체인 = 당일 분모 → 참고치(개인 기본 근무타입, E4 규약 — 편차 허용, 사용자 확정
+        //   2026-08-03) → 480(FE formatLeaveDays 폴백과 정합).
+        Integer convDaily = (convFromCharge != null)
                 ? convFromCharge
+                : leaveConversionPolicyService.resolveDailyConvMinutes(cmpny, site, user, workYmd);
+        Integer convPersonal = (convDaily != null)
+                ? convDaily
                 : leaveConversionPolicyService.resolvePersonalConvMinutes(cmpny, user, workYmd);
         int conv = (convPersonal != null) ? convPersonal : LeaveConversionPolicyService.DEFAULT_CONV_MINUTES;
 
         // PC-05(D6) preview: 부여 기반 신청이 잔여 부족이면 짜투리 발동 여부를 판정해 안내(FE UI-C/D).
         //   발동 예상이면 신청은 성공하므로 insufficient 를 내리고 발동 필드를 싣는다.
         //   lock 없는 추정치 — 제출 시 remnant lock 하에 재판정(시간차 preview 관례 미러).
+        //   E7: 판정 입력 conv 는 submit 과 동일하게 "당일 분모"(convDaily — 참고치 폴백 미적용)를
+        //   전달한다. 참고치를 섞으면 미배정일 최소단위 판정이 submit(반차)과 어긋난다(preview≠확정).
         boolean remnantTriggered = false;
         BigDecimal remnantDays = null;
         Integer companyCoverMinutes = null;
         if (insufficient && grantBased) {
             RemnantTriggerPlanVO plan = leaveRemnantCoverService.evaluateTrigger(
-                    cmpny, user, workYmd, leaveCd, unit, previewMinutes, charge, convPersonal);
+                    cmpny, user, workYmd, leaveCd, unit, previewMinutes, charge, convDaily);
             if (plan != null) {
                 remnantTriggered = true;
                 remnantDays = plan.remnantDays();

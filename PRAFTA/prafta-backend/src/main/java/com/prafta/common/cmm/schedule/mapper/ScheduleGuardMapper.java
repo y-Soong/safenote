@@ -11,11 +11,14 @@ import com.prafta.common.cmm.schedule.mapper.result.SchWindowResult;
 /**
  * 공통 스케줄 변경 가드 매퍼(prafta-com-016 shared-schedule-guard).
  *
- * <p>확정 연차 / 초과근무 보유 일자를 (사용자, 날짜목록) 입력으로 일괄 조회한다.
+ * <p>확정 연차 / 미결 시간차 신청(E3) / 초과근무 보유 일자를 (사용자, 날짜목록) 입력으로 일괄 조회한다.
  * 술어는 attd05 / leaveflow 의 기존 단일출처와 동일하다:
  * <ul>
- *   <li>연차: TB_USER_LEAVE_USE LEAVE_STATUS='CONFIRMED' AND DEL_YN='N'
+ *   <li>확정 연차: TB_USER_LEAVE_USE LEAVE_STATUS='CONFIRMED' AND DEL_YN='N'
  *       AND START_DATE &lt;= ymd &lt;= END_DATE (USE_UNIT_TYPE 무관 — 종일·반차·시간차 전부).</li>
+ *   <li>미결 시간차(E3 당일분모 전환): TB_USER_ATTD_REQ REQ_TYPE='05' AND REQ_STATUS='01'
+ *       AND DEL_YN='N' AND START_TIME/END_TIME NOT NULL AND WORK_YMD = ymd
+ *       (시각 보유 = 시간차만 — 반차·반반차·종일 신청은 시각 미기록. F-F 실측 술어).</li>
  *   <li>OT: 등록(tb_user_overtime_mgmt 비취소) ∪ 신청(tb_user_attd_req REQ_TYPE 03/04, 상태 01/02).
  *       attd05 countDayOvertime 와 동일.</li>
  * </ul>
@@ -24,9 +27,10 @@ import com.prafta.common.cmm.schedule.mapper.result.SchWindowResult;
 public interface ScheduleGuardMapper {
 
     /**
-     * 입력 날짜목록 중 확정 연차가 덮인 날짜를 (workYmd, useUnitType) 로 반환한다.
-     * 다일 연차의 중간 일자도 START_DATE~END_DATE 구간으로 포함한다(그리드 오버레이와 동일).
-     * 동일 일자에 사용단위가 여러 건이면 종일('00') 우선, 그 외엔 임의 1건으로 묶는다(표시용).
+     * 입력 날짜목록 중 연차 잠금 날짜를 (workYmd, useUnitType, pendingYn) 로 반환한다.
+     * 확정 연차(pendingYn='N'): 다일 연차의 중간 일자도 START_DATE~END_DATE 구간으로 포함(그리드
+     * 오버레이와 동일). 동일 일자에 사용단위가 여러 건이면 종일('00') 우선, 그 외엔 임의 1건(표시용).
+     * 미결 시간차(pendingYn='Y', E3): useUnitType=null. 같은 날 확정+미결 공존 시 2행 반환.
      */
     List<LeaveLockDayResult> selectLeaveLockedDays(@Param("cmpnyCd") String cmpnyCd,
                                                    @Param("userCd") String userCd,

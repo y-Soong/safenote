@@ -588,7 +588,8 @@ public class Attd13ServiceImpl implements Attd13Service {
                     // 대표행 분 결손(불변식 위반 데이터 방어) — 요금 산출 불가
                     throw new ApiException(AttdErrorCode.ATTD_400_052);
                 }
-                // 분모·하한·캡 재적용. 산출 불가(대상일 스케줄 없음 400_052 / 분모 불가 400_193)는 그대로 전파.
+                // 분모·하한·캡 재적용(E1: 분모 = 이동 대상일 당일 배정 스케줄).
+                //   산출 불가(대상일 스케줄 없음 400_052 / 분모 불가 400_194)는 그대로 전파.
                 HourlyChargeVO hc = leaveDeductionService.calcHourlyCharge(cmpnyCd, siteCd, userCd, newDate, totalMinutes);
                 if (hc == null) {
                     throw new ApiException(AttdErrorCode.ATTD_400_052);
@@ -659,9 +660,11 @@ public class Attd13ServiceImpl implements Attd13Service {
                     throw new ApiException(AttdErrorCode.ATTD_400_132);
                 }
                 // N9: 판정~기록 직렬화 — remnant lock 은 1단계에서 선획득 완료(F7a, leaveDay → remnant 순서).
+                // E7: 재발동 판정의 최소 사용단위 요금도 "이동 대상일의 당일 분모" 기준 —
+                //   시간차는 calcHourlyCharge 결과 재사용, 고정단위는 당일 분모 직접 조회(신청 경로 정합).
                 Integer conv = (hourlyConv != null)
                         ? hourlyConv
-                        : leaveConversionPolicyService.resolvePersonalConvMinutes(cmpnyCd, userCd, newDate);
+                        : leaveConversionPolicyService.resolveDailyConvMinutes(cmpnyCd, siteCd, userCd, newDate);
                 RemnantTriggerPlanVO plan = leaveRemnantCoverService.evaluateTrigger(
                         cmpnyCd, userCd, newDate, moveLeaveCd, unit, totalMinutes, chargeDays, conv);
                 if (plan == null) {

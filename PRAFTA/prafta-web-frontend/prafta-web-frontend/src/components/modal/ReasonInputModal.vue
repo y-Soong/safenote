@@ -10,8 +10,25 @@
         @keydown.esc="$emit('cancel')"
       >
         <div class="modal-content reason-modal">
-          <div class="reason-modal__header">
-            {{ title }}
+          <!-- 헤더: 팝업 가이드 표준(.modal-header) — 52px / 그린 틴트 / 우측 X 닫기 -->
+          <div class="modal-header">
+            <span>{{ title }}</span>
+            <button class="icon-button" type="button" @click="$emit('cancel')">
+              <svg
+                xmlns="http://www.w3.org/2000/svg"
+                fill="none"
+                viewBox="0 0 24 24"
+                stroke-width="1.5"
+                stroke="currentColor"
+                class="w-6 h-6"
+              >
+                <path
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                  d="M6 18L18 6M6 6l12 12"
+                />
+              </svg>
+            </button>
           </div>
 
           <div class="modal-body reason-modal__body">
@@ -35,16 +52,18 @@
             </div>
           </div>
 
-          <div class="modal-footer reason-modal__footer">
+          <!-- 푸터: 팝업 가이드 표준(.modal-footer) — 우측 정렬 / 취소(secondary) → 확인(primary) 순 -->
+          <div class="modal-footer">
+            <button class="btn btn-second" type="button" @click="$emit('cancel')">
+              취소
+            </button>
             <button
               class="btn btn-primary"
+              type="button"
               :disabled="required && !isValid"
               @click="handleConfirm"
             >
               확인
-            </button>
-            <button class="btn btn-primary" @click="$emit('cancel')">
-              취소
             </button>
           </div>
         </div>
@@ -116,13 +135,8 @@ onMounted(() => {
   overflow: hidden;
 }
 
-.reason-modal__header {
-  padding: var(--card-padding);
-  font-weight: 600;
-  font-size: 1rem;
-  color: var(--color-text-strong);
-  border-bottom: 1px solid var(--color-border);
-}
+/* 헤더는 modal-popup-guide.css 의 .prafta-modal-popup .modal-header 표준을 그대로 사용한다.
+   (높이 52px / 그린 틴트 배경 / 하단 구분선 / 제목 span + 우측 X — 개별 오버라이드 금지) */
 
 .reason-modal__body {
   padding: var(--card-padding);
@@ -169,15 +183,6 @@ onMounted(() => {
   color: var(--color-text-muted);
 }
 
-.reason-modal__footer {
-  display: flex;
-  justify-content: center;
-  gap: 1rem;
-  padding: 0 var(--card-padding) var(--card-padding);
-}
-
-.btn.btn-primary:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
-}
+/* 푸터는 modal-popup-guide.css 의 .prafta-modal-popup .modal-footer 표준을 그대로 사용한다.
+   (높이 60px / 우측 정렬 / gap 8px / 하단 밀착 / 상단 구분선 — 개별 오버라이드 금지) */
 </style>

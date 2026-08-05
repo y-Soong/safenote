@@ -426,7 +426,9 @@ public class LeaveRemnantCoverServiceImpl implements LeaveRemnantCoverService {
             if (remnant.signum() <= 0) {
                 continue;
             }
-            // 최소단위 요금은 본인 분모 기준(개인차 — §7-② 분해): 오늘 기준 conv, 교대자는 시간차 제외 최소.
+            // M6·E4 참고치 규약(당일분모 전환 후 유지): 특정일 없는 배치성 판정(소멸 임박 리포트)은
+            //   참고 분모(기본 근무타입 근사치, 미지정 480) 기준 — 실차감 분모(당일 배정 스케줄, E1)와
+            //   편차 허용(사용자 확정 2026-08-03). 오늘 기준 conv, 미산출자는 시간차 제외 최소(반차).
             Integer conv = leaveConversionPolicyService.resolvePersonalConvMinutes(cmpnyCd, r.userCd(), today);
             String minUnit = resolveMinUnit(usageUnit, conv == null);
             int convOrDefault = (conv != null) ? conv : LeaveConversionPolicyService.DEFAULT_CONV_MINUTES;
@@ -471,7 +473,8 @@ public class LeaveRemnantCoverServiceImpl implements LeaveRemnantCoverService {
     /**
      * 회사 USAGE_UNIT(단일 설정) → 그 사용자의 최소 사용단위(SYS025).
      * 설정 코드 자체가 허용 최소 단위(계층 SSOT = 앱 LeaveUnitGranularity — 매핑만 미러, 동기화 주의).
-     * {@code hourlyBlocked}(개인 분모 산출 불가 — 교대 등)면 시간차 제외 후 최소 = 반차('01').
+     * {@code hourlyBlocked}(분모 산출 불가 — E1 이후 발동 판정은 "신청 대상일 당일 분모" null(미배정일),
+     * 배치성 리포트는 참고 분모 null)면 시간차 제외 후 최소 = 반차('01').
      */
     private String resolveMinUnit(String usageUnit, boolean hourlyBlocked) {
         String code;

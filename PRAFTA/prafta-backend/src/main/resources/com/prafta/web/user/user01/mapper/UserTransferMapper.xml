@@ -105,10 +105,13 @@
     </select>
 
     <!-- ============================================================
-         불가⑤ 대상자의 현재/미래 부분(시간차) 연차 목록.
+         불가⑤ 대상자의 현재/미래(발효일 이후) 확정 부분(시간차) 연차 목록.
          Attd05Mapper.selectPartialLeaveOverlayList 의 활성 부분연차 정의와 동일:
            LEAVE_STATUS='CONFIRMED' AND DEL_YN='N' AND USE_UNIT_TYPE != '00'.
-         + START_DATE >= moveDate(현재/미래) + START_TIME 보유(시간대 있는 행만 = 커버리지 판정 대상).
+         + START_DATE >= moveDate(현재/미래) + START_TIME 보유(시간대 있는 행만).
+         E1·W8(당일분모 전환, 2026-08-04): 커버리지 판정 재료가 아니라 "존재 = 이동 차단" 판정 재료.
+           경계(>= moveDate)는 deleteFutureWorkPlansOnSite 의 WORK_YMD >= 발효일 삭제 경계와 동일 —
+           삭제 범위 안에 시간차가 있으면 분모 소스(당일 배정 스케줄)가 소실되므로 차단한다.
          ============================================================ -->
     <select id="selectFuturePartialLeaves" resultType="com.prafta.web.user.user01.result.PartialLeaveTimeResult">
     /* UserTransferMapper.selectFuturePartialLeaves */
@@ -130,7 +133,27 @@
     </select>
 
     <!-- ============================================================
-         불가⑤ 기본 근무타입(schCd)의 baseDate 기준 effective 근무 구간 시각(1/2구간).
+         불가⑤ 대상자의 미래(발효일 이후) 미결 시간차 신청 카운트 (E1·W8 당일분모 전환).
+         ScheduleGuardMapper 미결 시간차 잠금과 동형(F-F 실측 술어): 시간차 신청만 시각을 기록하므로
+         START/END_TIME NOT NULL 로 반차·반반차·종일 신청은 자연 제외. 1 이상이면 이동 차단.
+         ============================================================ -->
+    <select id="selectFuturePendingHourlyReqCnt" resultType="int">
+    /* UserTransferMapper.selectFuturePendingHourlyReqCnt */
+    SELECT COUNT(*)
+      FROM TB_USER_ATTD_REQ RQ
+     WHERE RQ.CMPNY_CD   = #{cmpnyCd}
+       AND RQ.USER_CD    = #{userCd}
+       AND RQ.REQ_TYPE   = '05'
+       AND RQ.REQ_STATUS = '01'
+       AND RQ.DEL_YN     = 'N'
+       AND RQ.START_TIME IS NOT NULL
+       AND RQ.END_TIME   IS NOT NULL
+       AND RQ.WORK_YMD <![CDATA[ >= ]]> #{moveDate}
+    </select>
+
+    <!-- ============================================================
+         (구 불가⑤ 커버리지 판정용 — E1·W8 당일분모 전환으로 validator 에서 은퇴, 호출부 0건 데드 보존)
+         기본 근무타입(schCd)의 baseDate 기준 effective 근무 구간 시각(1/2구간).
          TB_SCH_MGMT(현재본, HIST_IDX=MAX) ∪ TB_SCH_MGMT_HIST UNION 후 APPLY_DATE <= baseDate 최신본.
          (web attd11 / app admin attd 의 effective-dating 패턴 동형 — 단일 schCd 룩업으로 축약).
          baseDate 기준 유효본이 없으면 최이른 적용본으로 폴백(COALESCE).

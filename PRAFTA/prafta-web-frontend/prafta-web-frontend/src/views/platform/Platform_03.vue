@@ -197,7 +197,13 @@
                   </td>
                   <td style="text-align: center">{{ customer.useYn }}</td>
                   <td style="text-align: right">
-                    {{ fnFormatMan(customer.usedTokens) }}
+                    <button
+                      class="p03-usage-link"
+                      title="월별 사용 이력 보기"
+                      @click="fnOpenUsagePop(customer)"
+                    >
+                      {{ fnFormatMan(customer.usedTokens) }}
+                    </button>
                   </td>
                   <td style="text-align: right">
                     {{ fnLimitLabel(customer.tokenLimit)
@@ -238,6 +244,14 @@
         :on-saved="fnSearch"
         @close="quotaPopVisible = false"
       />
+
+      <!-- 월별 AI 토큰 사용량 이력 팝업 -->
+      <AiTokenUsagePop
+        v-if="usagePopVisible"
+        :cmpny-cd="usageTarget.cmpnyCd"
+        :cmpny-nm="usageTarget.cmpnyNm"
+        @close="usagePopVisible = false"
+      />
     </div>
   </div>
 </template>
@@ -262,6 +276,7 @@ import { formatYmdDot } from "@/utils/dateFormat";
 import axios from "@/api/axios";
 import { resolveApiErrorMessage } from "@/utils/apiError";
 import AiTokenQuotaPop from "@/views/platform/popup/AiTokenQuotaPop.vue";
+import AiTokenUsagePop from "@/views/platform/popup/AiTokenUsagePop.vue";
 
 // keep-alive 매칭용 컴포넌트 이름 = 라우트 이름(MENU_D_ID)
 defineOptions({ name: "Platform_03" });
@@ -287,6 +302,10 @@ const totalCnt = ref(0); // 서버 전체 건수(절단 전 — qa D-3)
 /* AI 토큰 한도 변경 팝업 상태 */
 const quotaPopVisible = ref(false);
 const quotaTarget = ref({});
+
+/* 월별 AI 토큰 사용량 이력 팝업 상태 */
+const usagePopVisible = ref(false);
+const usageTarget = ref({});
 
 /* 총건수 라벨: 절단 시 서버 전체 건수와 표시 건수를 함께 표기(qa D-3) */
 const countLabel = computed(() => {
@@ -395,6 +414,12 @@ function fnOpenQuotaPop(customer) {
   quotaPopVisible.value = true;
 }
 
+/* 행 "당월 AI 사용량" 셀 → 월별 사용량 이력 팝업 오픈(read-only) */
+function fnOpenUsagePop(customer) {
+  usageTarget.value = customer;
+  usagePopVisible.value = true;
+}
+
 /*
  * 고객사 목록 조회 — GET /platformApi/customer/customer-lists (PLT-LOC-02).
  *   응답: { customerList, totalCnt, truncated } — truncated=true 면 500건 초과 안내 배너.
@@ -493,5 +518,20 @@ async function fnSearch() {
 .p03-quota-btn {
   padding: 0.15rem 0.6rem;
   font-size: var(--btn-font-sm, 11px);
+}
+
+/* 당월 사용량 셀 — 링크형 버튼(클릭=월별 이력 팝업) */
+.p03-usage-link {
+  padding: 0;
+  border: none;
+  background: none;
+  font: inherit;
+  color: var(--color-primary, #2563eb);
+  text-decoration: underline;
+  cursor: pointer;
+}
+.p03-usage-link:focus-visible {
+  outline: var(--focus-ring-width, 3px) solid var(--color-focus-ring);
+  outline-offset: var(--outline-offset, 2px);
 }
 </style>

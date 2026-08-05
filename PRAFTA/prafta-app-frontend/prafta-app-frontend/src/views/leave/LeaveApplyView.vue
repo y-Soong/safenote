@@ -176,6 +176,9 @@ const onDayScheduleRequest = async (workYmd) => {
     return
   }
   const seq = ++dayScheduleSeq
+  // E2(당일분모 전환): daySchedule 이 시간차 칩 게이팅(hasSchedule)에 쓰이므로, 새 조회 시작 시
+  //   이전 날짜의 stale 값이 새 날짜의 칩을 잘못 잠그지 않도록 즉시 해제(응답 도착 전 = 낙관 enable).
+  daySchedule.value = null
   try {
     const res = await api.get('/appApi/leaveflow/day-schedule', { params: { workYmd } })
     if (seq !== dayScheduleSeq) return // stale 응답 폐기

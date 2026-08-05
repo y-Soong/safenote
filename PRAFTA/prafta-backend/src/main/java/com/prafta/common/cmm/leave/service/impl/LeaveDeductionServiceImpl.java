@@ -33,13 +33,9 @@ public class LeaveDeductionServiceImpl implements LeaveDeductionService {
     private static final int MINUTES_PER_DAY = 1440;
 
     private final LeaveDeductionMapper leaveDeductionMapper;
-    /** LC-03: 시간차 차감 분모(1일 환산시간, 신청 대상일 기준 F4) 단일 출처. */
-    private final LeaveConversionPolicyService leaveConversionPolicyService;
 
-    public LeaveDeductionServiceImpl(LeaveDeductionMapper leaveDeductionMapper,
-                                     LeaveConversionPolicyService leaveConversionPolicyService) {
+    public LeaveDeductionServiceImpl(LeaveDeductionMapper leaveDeductionMapper) {
         this.leaveDeductionMapper = leaveDeductionMapper;
-        this.leaveConversionPolicyService = leaveConversionPolicyService;
     }
 
     @Override
@@ -82,20 +78,26 @@ public class LeaveDeductionServiceImpl implements LeaveDeductionService {
             return null;
         }
 
-        // ⓐ 분모 = 개인 기본 근무타입 소정근로분(대상일 기준 유효 버전, 480 캡 — PC-03 D1).
-        //    산출 불가(DEFAULT_SCH_CD 미지정(교대 등)/스케줄 이상)면 시간차 사용 차단(D2·N5 fail-closed).
-        //    본 진입부가 차단 판정의 단일 출처 — 웹/앱 submitLeave·preview 는 예외를 그대로 전파한다.
-        Integer convResolved = leaveConversionPolicyService.resolvePersonalConvMinutes(cmpnyCd, userCd, workYmd);
-        if (convResolved == null) {
-            log.info("[leave-deduct] 시간차 차단: 개인 분모 산출 불가(기본 근무타입 미지정 등). userCd={}, workYmd={}",
+        // ⓐ 분모 = 당일 배정 스케줄 소정근로분(E1, 480 캡 E7 — 당일분모 전환 2026-08-03 확정).
+        //    이미 조회하는 selectDailySchedule 결과를 D(마일스톤 하한 기준, raw)와 conv(=min(D,480))에
+        //    함께 재사용한다(F-E — LeaveConversionPolicyService.resolveDailyConvMinutes 와 동일 산식:
+        //    같은 쿼리 + ScheduleWorkMinutesUtils + 480 캡. 중복 쿼리 회피).
+        //    산출 불가(근무계획 미배정/시각 비정상)면 시간차 사용 차단(E2 fail-closed, ATTD_400_194).
+        //    E1 이후 이 분기는 선행 가드(ATTD_400_110, 스케줄 없는 날 시간차 거부)에 걸러져 실질 도달
+        //    불가한 방어층이다. 본 진입부가 차단 판정의 단일 출처 — 웹/앱 submitLeave·preview 는 예외를
+        //    그대로 전파한다.
+        //    ★불변식(M4): E3 잠금(미결 시간차 신청 시점부터 그날 스케줄 변경 불가)으로 "시간차 존재 기간
+        //    중 그날 스케줄 불변"이 구조 보장 → 취소·반려 재정산이 conv 를 재조회해도 원 차감 시점 분모와
+        //    동일하다(레거시 차감분 예외는 LeaveHourlyResettleServiceImpl 참조 — E6 무보정 승계).
+        DailyScheduleVO daySch = leaveDeductionMapper.selectDailySchedule(cmpnyCd, siteCd, userCd, workYmd);
+        Integer daily = (daySch == null) ? null : ScheduleWorkMinutesUtils.dailyStdWorkMinutes(daySch);
+        if (daily == null || daily <= 0) {
+            log.info("[leave-deduct] 시간차 차단: 당일 분모 산출 불가(근무계획 미배정/시각 비정상). userCd={}, workYmd={}",
                     userCd, workYmd);
-            throw new ApiException(AttdErrorCode.ATTD_400_193);
+            throw new ApiException(AttdErrorCode.ATTD_400_194);
         }
-        int conv = convResolved;
-
-        // 마일스톤(하한) 기준 D = 그날 소정근로분. 스케줄 없는 날은 시간차 신청 자체가 호출부에서
-        //   거부되지만(ATTD_400_110), 방어적으로 null 이면 하한 미적용(floor=0)으로 계산한다.
-        Integer daily = getDailyStdWorkMinutes(cmpnyCd, siteCd, userCd, workYmd);
+        // conv = min(D, 480) — E7 캡은 분모(conv)에만 적용. 마일스톤 하한 기준 D 는 raw 유지(기존 의미 보존).
+        int conv = Math.min(daily, LeaveConversionPolicyService.DEFAULT_CONV_MINUTES);
 
         // ⓑ 그날 기존 시간차(02/03/04) CONFIRMED 누적 — 전 연차타입 합산(F3 쪼개기 우회 차단).
         //    고정단위(종일/반차/반반차)는 누적 미포함(plan §8-⑤ — 1.0 점유 가드는 호출부 별도 층).

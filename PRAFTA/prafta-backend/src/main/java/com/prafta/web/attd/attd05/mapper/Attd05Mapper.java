@@ -182,11 +182,22 @@ public interface Attd05Mapper {
 			@org.apache.ibatis.annotations.Param("workYm") String workYm);
 
 	/**
-	 * prafta-com-016-C-3 후속: 해당 월(YYYYMM)에 종일 확정 연차로 삭제에서 보존된 일자(WORK_YMD) 목록.
+	 * prafta-com-016-C-3 후속: 해당 월(YYYYMM)에 확정 연차로 삭제에서 보존된 일자(WORK_YMD) 목록.
 	 * 월 부분 삭제에서 제외된 연차 보존일을 사용자에게 안내(BatchResultPop)하기 위한 조회.
-	 * 판정 술어는 deleteUserWorkPlans 의 연차 NOT EXISTS 와 동일. workYm 은 YYYYMM(6자리 LEFT 매칭).
+	 * E3(당일분모 전환, DFCT-1 보완): 보존이 전 단위(USE_UNIT_TYPE 무관)로 확장되어 안내도 종일 한정 해제.
+	 * 판정 술어는 deleteUserWorkPlans 의 확정 연차 NOT EXISTS 와 동일. workYm 은 YYYYMM(6자리 LEFT 매칭).
 	 */
 	List<String> selectMonthLeaveDays(@org.apache.ibatis.annotations.Param("cmpnyCd") String cmpnyCd,
+			@org.apache.ibatis.annotations.Param("siteCd") String siteCd,
+			@org.apache.ibatis.annotations.Param("userCd") String userCd,
+			@org.apache.ibatis.annotations.Param("workYm") String workYm);
+
+	/**
+	 * E3(당일분모 전환, DFCT-1 보완): 해당 월(YYYYMM)에 미결 시간차 신청으로 삭제에서 보존된
+	 * 일자(WORK_YMD) 목록 — BatchResultPop 안내용(HAS_PENDING_LEAVE).
+	 * 판정 술어는 deleteUserWorkPlans 의 미결 시간차 NOT EXISTS 와 동일(F-F — ScheduleGuardMapper 동형).
+	 */
+	List<String> selectMonthPendingHourlyReqDays(@org.apache.ibatis.annotations.Param("cmpnyCd") String cmpnyCd,
 			@org.apache.ibatis.annotations.Param("siteCd") String siteCd,
 			@org.apache.ibatis.annotations.Param("userCd") String userCd,
 			@org.apache.ibatis.annotations.Param("workYm") String workYm);

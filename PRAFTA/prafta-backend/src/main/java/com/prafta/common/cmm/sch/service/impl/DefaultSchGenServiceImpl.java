@@ -150,6 +150,15 @@ public class DefaultSchGenServiceImpl implements DefaultSchGenService {
 
         // 1) 명일 이후 자동생성분만 새 SCH_CD 로 갱신(수동/연차/교대/촉진 보존).
         //    WHERE WORK_YMD > fromYmd(=오늘) 이므로 명일부터 갱신되어 generateForUser 시작과 정합한다.
+        //    E3(당일분모 전환, W6): 연차 잠금일(확정 비종일 연차 + 미결 시간차 신청)은 갱신 대상에서
+        //    제외(SQL NOT EXISTS)한다 — 시간차 분모(E1)가 당일 배정 스케줄이라 그날 행 덮어쓰기가 차감
+        //    분모를 훼손하기 때문. 배치성이므로 하드 실패 없이 조용히 보존하고, 제외 건수만 로그로 남긴다.
+        int lockedSkipped = defaultSchGenMapper.countFutureDefaultSchLockedDays(
+                cmpnyCd, siteCd, userCd, todayYmd);
+        if (lockedSkipped > 0) {
+            log.info("기본근무 변경 반영 — 연차 잠금일(확정 비종일/미결 시간차) {}건 보존(E3 skip). cmpnyCd={}, userCd={}",
+                    lockedSkipped, cmpnyCd, userCd);
+        }
         int updated = defaultSchGenMapper.updateFutureDefaultSch(
                 cmpnyCd, siteCd, userCd, todayYmd, newSchCd, SYSTEM_OPERATOR);
 

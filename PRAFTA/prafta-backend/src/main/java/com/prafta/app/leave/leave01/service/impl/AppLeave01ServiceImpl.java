@@ -75,8 +75,9 @@ public class AppLeave01ServiceImpl implements AppLeave01Service {
         // LC-07(표기): 오늘 기준 환산시간 + 시간차 사용 분 합계(전 기간) — 기존 필드 불변, additive.
         Integer hourlyUsedMinutes = appLeave01Mapper.selectHourlyUsedMinutes(param.cmpnyCd(), param.userCd());
 
-        // PC-03(N7·N8): convMinutes = 오늘 기준 본인 개인 분모(480 캡). 산출 불가(교대 등)면
-        //   표기 전용 480 폴백(FE formatLeaveDays 폴백과 정합).
+        // E4 참고치 규약(당일분모 전환 후 유지): convMinutes = 오늘 기준 본인 참고 분모(기본 근무타입
+        //   근사치, 480 캡). 특정일 없는 잔여 카드 표기 전용 — 실차감 분모(당일 배정 스케줄, E1)와
+        //   편차 허용(사용자 확정 2026-08-03). 산출 불가면 480 폴백(FE formatLeaveDays 폴백과 정합).
         Integer personalConv = leaveConversionPolicyService.resolvePersonalConvMinutes(
                 param.cmpnyCd(), param.userCd(), todayYmd);
 

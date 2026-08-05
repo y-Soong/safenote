@@ -11,7 +11,6 @@ import com.prafta.common.cmm.shift.service.ShiftMembershipService;
 import com.prafta.common.error.user.UserErrorCode;
 import com.prafta.web.user.user01.mapper.UserTransferMapper;
 import com.prafta.web.user.user01.result.PartialLeaveTimeResult;
-import com.prafta.web.user.user01.result.SchSegmentTimeResult;
 import com.prafta.web.user.user01.result.TransferBlockReason;
 import com.prafta.web.user.user01.result.UserTransferBasicResult;
 
@@ -32,7 +31,11 @@ import lombok.extern.slf4j.Slf4j;
  *   <li>② 노드 마지막 담당자 = 대상자가 MAIN/SUB 담당자이고 제거 시 담당자 0명.</li>
  *   <li>③ 순회점검 담당자 = 대상자가 TB_CHKPT_TYPE_MGMT.MGMT_USER_CD(USE_YN='Y').</li>
  *   <li>④ 교대조 소속 = 이동일 기준 {@link ShiftMembershipService#isInShiftTeamOn}.</li>
- *   <li>⑤ 시간차 연차 미커버 = 현재/미래 부분연차([START_TIME,END_TIME])를 기본근무타입 근무구간 합집합이 완전히 감싸지 못함.</li>
+ *   <li>⑤ 미래 시간차 연차 보유 = 발효일 이후 확정 시간차 사용 또는 미결 시간차 신청 존재
+ *       (E1·W8 당일분모 전환, 2026-08-04 사용자 확정 — 구 "커버리지 미커버" 판정 대체.
+ *       발효 시 구 사업장 미래 근무계획이 전량 삭제(WORK_YMD &gt;= 발효일)되어 시간차 분모
+ *       (당일 배정 스케줄)가 소실되므로, 커버리지와 무관하게 존재 자체로 차단한다.
+ *       종일/반차/반반차는 차감량이 스케줄 무관이라 이동 허용).</li>
  * </ul>
  */
 @Slf4j
@@ -50,9 +53,11 @@ public class UserTransferValidator {
      *
      * @param cmpnyCd         회사 코드(토큰 도출값, 스코프)
      * @param target          대상 사용자 기본 정보(현재 사업장/부서/고용형태)
-     * @param toDefaultSchCd  관리자가 지정한 기본 근무타입(⑤ 판정용, null 이면 ⑤ 생략)
-     * @param toSiteCd        이동 사업장(⑤ 근무타입 effective 조회 스코프). null 이면 대상자 현재 사업장으로 폴백.
-     * @param moveDate        소속이동일 YYYYMMDD(④/⑤ 판정용, null/blank 이면 ④는 오늘 기준, ⑤는 생략)
+     * @param toDefaultSchCd  관리자가 지정한 기본 근무타입(구 ⑤ 커버리지 판정용 — E1·W8 로 ⑤가 존재 판정으로
+     *                        바뀌어 미사용. 호출부 시그니처 안정성을 위해 유지)
+     * @param toSiteCd        이동 사업장(구 ⑤ 커버리지 판정용 — 상동, 미사용 유지)
+     * @param moveDate        소속이동일 YYYYMMDD(④/⑤ 판정용, null/blank 이면 ④는 오늘 기준, ⑤는 생략 —
+     *                        예약·발효 경로는 항상 보유하므로 강제 경로에서 생략되는 일은 없다)
      * @return 불가 사유 목록(없으면 빈 목록)
      */
     public List<TransferBlockReason> evaluate(String cmpnyCd, UserTransferBasicResult target, String toDefaultSchCd,
@@ -84,11 +89,12 @@ public class UserTransferValidator {
             reasons.add(reason(UserErrorCode.USER_400_068));
         }
 
-        // ⑤ 시간차 연차 미커버(기본근무타입·이동일 모두 있어야 판정 가능)
-        if (toDefaultSchCd != null && !toDefaultSchCd.isBlank()
-                && moveDate != null && !moveDate.isBlank()) {
-            if (hasUncoveredPartialLeave(cmpnyCd, userCd, toDefaultSchCd, toSiteCd, fromSiteCd, moveDate)) {
-                reasons.add(reason(UserErrorCode.USER_400_069));
+        // ⑤ 미래 시간차 연차 보유(E1·W8 당일분모 전환 — 이동일 있어야 판정 가능. 예약·발효 경로는 항상 보유).
+        //   구 커버리지 판정(기본근무타입이 시간대를 감싸는지, USER_400_069)은 대체 — 발효 시 미래 근무계획이
+        //   전량 삭제되어 분모 소스가 소실되므로, 커버리지와 무관하게 존재 자체로 차단(USER_400_073).
+        if (moveDate != null && !moveDate.isBlank()) {
+            if (hasFutureHourlyLeave(cmpnyCd, userCd, moveDate)) {
+                reasons.add(reason(UserErrorCode.USER_400_073));
             }
         }
 
@@ -96,119 +102,25 @@ public class UserTransferValidator {
     }
 
     /**
-     * 불가⑤ 판정: 현재/미래 부분(시간차) 연차 중 기본근무타입 근무구간 합집합이 완전히 감싸지 못하는 행이 하나라도 있으면 true.
-     *
-     * <p>근무구간 = 기본근무타입(schCd)의 이동일 기준 effective 1구간(FST)·2구간(SEC) 합집합.
-     * 자정을 넘기는 구간(end &lt;= start)은 +1440분으로 보정 후 병합한다.
+     * 불가⑤ 판정(E1·W8): 발효일(moveDate, 당일 포함) 이후 확정 시간차 사용 또는 미결 시간차 신청이
+     * 하나라도 있으면 true. 경계는 발효 시 미래 근무계획 삭제(deleteFutureWorkPlansOnSite,
+     * WORK_YMD &gt;= 발효일)와 동일 — 삭제 범위 안의 시간차가 차단 대상이다.
+     * 판정 쿼리 예외는 삼키지 않고 전파한다(fail-closed — 허용으로 열리지 않음).
      */
-    private boolean hasUncoveredPartialLeave(String cmpnyCd, String userCd, String schCd,
-            String toSiteCd, String fromSiteCd, String moveDate) {
-
-        List<PartialLeaveTimeResult> leaves = userTransferMapper.selectFuturePartialLeaves(cmpnyCd, userCd, moveDate);
-        if (leaves == null || leaves.isEmpty()) {
-            return false; // 시간차 연차 없음 → 커버리지 판정 불필요(불가 아님)
-        }
-
-        // 근무타입 시간은 이동 사업장 스코프로 조회(미지정 시 대상자 현재 사업장 폴백).
-        String schSiteCd = (toSiteCd != null && !toSiteCd.isBlank()) ? toSiteCd : fromSiteCd;
-        SchSegmentTimeResult seg = userTransferMapper.selectEffectiveSchSegment(cmpnyCd, schSiteCd, schCd, moveDate);
-
-        // 근무타입/시간을 찾지 못하면 어떤 연차도 감쌀 수 없음 → 불가(fail-closed).
-        if (seg == null) {
-            log.warn("소속이동 불가⑤ 판정 - 기본근무타입 시간 조회 실패(불가 처리) cmpnyCd={}, schCd={}, siteCd={}",
-                    cmpnyCd, schCd, schSiteCd);
+    private boolean hasFutureHourlyLeave(String cmpnyCd, String userCd, String moveDate) {
+        List<PartialLeaveTimeResult> confirmed = userTransferMapper.selectFuturePartialLeaves(cmpnyCd, userCd, moveDate);
+        if (confirmed != null && !confirmed.isEmpty()) {
+            log.info("소속이동 불가⑤(E1·W8) - 발효일 이후 확정 시간차 보유. userCd={}, moveDate={}, cnt={}",
+                    userCd, moveDate, confirmed.size());
             return true;
         }
-
-        List<int[]> workWindows = mergeIntervals(toIntervals(seg));
-        if (workWindows.isEmpty()) {
-            log.warn("소속이동 불가⑤ 판정 - 기본근무타입 근무구간 없음(불가 처리) cmpnyCd={}, schCd={}", cmpnyCd, schCd);
+        int pendingCnt = userTransferMapper.selectFuturePendingHourlyReqCnt(cmpnyCd, userCd, moveDate);
+        if (pendingCnt > 0) {
+            log.info("소속이동 불가⑤(E1·W8) - 발효일 이후 미결 시간차 신청 보유. userCd={}, moveDate={}, cnt={}",
+                    userCd, moveDate, pendingCnt);
             return true;
         }
-
-        for (PartialLeaveTimeResult leave : leaves) {
-            Integer ls = toMinutes(leave.startTime());
-            Integer le = toMinutes(leave.endTime());
-            if (ls == null || le == null) {
-                // 시간 파싱 불가(데이터 이상) → 보수적으로 불가 처리.
-                log.warn("소속이동 불가⑤ 판정 - 연차 시간 파싱 실패(불가 처리) leaveId={}, start={}, end={}",
-                        leave.leaveId(), leave.startTime(), leave.endTime());
-                return true;
-            }
-            if (le <= ls) {
-                le += 1440; // 자정을 넘기는 연차 구간 보정
-            }
-            if (!isCovered(ls, le, workWindows)) {
-                return true; // 감싸지 못하는 연차 존재 → 불가
-            }
-        }
         return false;
-    }
-
-    /** 근무구간(1/2구간)을 [start,end] 분 단위 구간 목록으로 변환(자정 넘김 보정 포함). */
-    private List<int[]> toIntervals(SchSegmentTimeResult seg) {
-        List<int[]> intervals = new ArrayList<>();
-        addInterval(intervals, seg.fstSchStrTime(), seg.fstSchEndTime());
-        addInterval(intervals, seg.secSchStrTime(), seg.secSchEndTime());
-        return intervals;
-    }
-
-    private void addInterval(List<int[]> intervals, String strTime, String endTime) {
-        Integer s = toMinutes(strTime);
-        Integer e = toMinutes(endTime);
-        if (s == null || e == null) {
-            return;
-        }
-        if (e <= s) {
-            e += 1440; // 오버나이트 근무 보정
-        }
-        intervals.add(new int[]{s, e});
-    }
-
-    /** 구간 목록을 시작순 정렬 후 겹치거나 맞닿는 구간을 병합한다. */
-    private List<int[]> mergeIntervals(List<int[]> intervals) {
-        List<int[]> merged = new ArrayList<>();
-        intervals.sort((a, b) -> Integer.compare(a[0], b[0]));
-        for (int[] cur : intervals) {
-            if (merged.isEmpty()) {
-                merged.add(new int[]{cur[0], cur[1]});
-                continue;
-            }
-            int[] last = merged.get(merged.size() - 1);
-            if (cur[0] <= last[1]) { // 겹침 또는 맞닿음 → 병합
-                last[1] = Math.max(last[1], cur[1]);
-            } else {
-                merged.add(new int[]{cur[0], cur[1]});
-            }
-        }
-        return merged;
-    }
-
-    /** [ls,le] 가 병합된 근무구간 중 하나에 완전히 포함되는지. */
-    private boolean isCovered(int ls, int le, List<int[]> windows) {
-        for (int[] w : windows) {
-            if (w[0] <= ls && le <= w[1]) {
-                return true;
-            }
-        }
-        return false;
-    }
-
-    /** "HHmm" 4자리 문자열을 0~1439 분으로 변환. 형식 불량이면 null. */
-    private Integer toMinutes(String hhmm) {
-        if (hhmm == null) {
-            return null;
-        }
-        String t = hhmm.trim();
-        if (t.length() != 4 || !t.chars().allMatch(Character::isDigit)) {
-            return null;
-        }
-        int hh = Integer.parseInt(t.substring(0, 2));
-        int mm = Integer.parseInt(t.substring(2, 4));
-        if (hh > 23 || mm > 59) {
-            return null;
-        }
-        return hh * 60 + mm;
     }
 
     private TransferBlockReason reason(UserErrorCode code) {

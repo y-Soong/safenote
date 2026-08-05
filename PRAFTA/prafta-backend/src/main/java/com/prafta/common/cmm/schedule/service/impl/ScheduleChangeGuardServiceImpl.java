@@ -35,11 +35,13 @@ public class ScheduleChangeGuardServiceImpl implements ScheduleChangeGuardServic
             return locked;
         }
 
-        // 연차 잠금일(USE_UNIT_TYPE 무관) — 종일/반차/시간차 전부.
+        // 연차 잠금일 — 확정(USE_UNIT_TYPE 무관, 종일/반차/시간차 전부) + 미결 시간차 신청(E3,
+        //   PENDING_YN='Y' — 미결 잠금은 시간차만. 신청 시점부터 그날 스케줄 변경을 막아 당일 분모를 보존).
         List<LeaveLockDayResult> leaveDays =
                 scheduleGuardMapper.selectLeaveLockedDays(cmpnyCd, userCd, workYmds);
         for (LeaveLockDayResult row : leaveDays) {
-            locked.add(new ScheduleLockVO(row.getWorkYmd(), ScheduleLockVO.Reason.LEAVE, row.getUseUnitType()));
+            locked.add(new ScheduleLockVO(row.getWorkYmd(), ScheduleLockVO.Reason.LEAVE,
+                    row.getUseUnitType(), "Y".equals(row.getPendingYn())));
         }
 
         // 초과근무 잠금일(등록 또는 신청).

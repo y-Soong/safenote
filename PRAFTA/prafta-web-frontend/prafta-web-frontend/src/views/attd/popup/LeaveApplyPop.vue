@@ -30,7 +30,8 @@
           <div class="la-field">
             <label>사용 단위 <span class="req">*</span></label>
             <BaseSelect v-model="useUnitType">
-              <!-- PC-10(D2·N5): 교대 차단(ATTD_400_193) 수신 후에는 시간차 단위 선택 불가 -->
+              <!-- E2(당일분모 전환): 미배정일 차단(ATTD_400_194, 구 193 병행) 수신 후에는 해당 날짜에
+                   한해 시간차 단위 선택 불가 — 근무일 변경 시 해제(날짜 속성) -->
               <option
                 v-for="u in visibleUnitOptions"
                 :key="u.systValDCd"
@@ -79,7 +80,7 @@
                 회사 부담으로 처리됩니다.
               </p>
             </template>
-            <!-- PC-10: 교대근무자 시간차 차단 안내 (서버 에러코드 수신 시 — D2·N5) -->
+            <!-- E2(당일분모 전환): 미배정일 시간차 차단 안내 (서버 194/구 193 수신 시 — 날짜 기준) -->
             <p v-if="hourlyBlockedMessage" class="la-preview-blocked">
               {{ hourlyBlockedMessage }}
             </p>
@@ -270,10 +271,17 @@ const quarterAllowed = ref(false);
 const preview = ref(null);
 const previewLoading = ref(false);
 
-// PC-10(D2·N5): 교대근무자 시간차 차단 상태 — preview 가 ATTD_400_193 으로 거부되면 세팅.
-//   차단은 사용자 속성(기본 근무타입 없음)이라 세션 내 유지하고 시간차 단위 선택을 막는다.
+// E2(당일분모 전환): 미배정일 시간차 차단 상태 — preview 가 ATTD_400_194(신설, 구 193 병행 수용)로
+//   거부되면 세팅. 차단은 날짜 속성(그날 근무계획 미배정)이므로 근무일 변경 시 해제한다.
+//   (구 해석: 사용자 속성(기본 근무타입 없음)·세션 내 유지 — E5 교대 차단 해제로 폐기)
 const hourlyBlocked = ref(false);
 const hourlyBlockedMessage = ref("");
+
+// 날짜 속성 차단이므로 근무일이 바뀌면 차단 해제(재판정은 다음 preview 가 수행).
+watch(workYmd, () => {
+  hourlyBlocked.value = false;
+  hourlyBlockedMessage.value = "";
+});
 // 시간차(02/03/04) 단위 코드 여부 — 옵션 disable 판정용
 const isHourUnitCode = (cd) => ["02", "03", "04"].includes(cd);
 
@@ -312,10 +320,25 @@ const visibleUnitOptions = computed(() =>
 const fnUnitLabel = (u) =>
   u.systValDCd === "05" ? `${u.systValDNm}(0.25일)` : u.systValDNm;
 
-// LC-09(§5-C): 예상 차감 표기 — "예상 차감: 0일 4시간 (0.5일)" 형식
+// 'HH:MM' → 분. 형식 위반 시 -1 (E4 신청 시간량 계산용 — endTime 은 allow24 로 '24:00' 허용).
+const hhmmToMin = (s) => {
+  if (!/^\d{2}:\d{2}$/.test(s || "")) return -1;
+  return Number(s.slice(0, 2)) * 60 + Number(s.slice(3, 5));
+};
+
+// E4(당일분모 전환): 시간차는 "이 날 기준 {신청 시간} = {X}일 차감" — 분모가 당일 배정 스케줄임을
+//   날짜 기준으로 표기(신청 시간 = 종료-시작, X = 서버 chargeDays 그대로). 반반차(05)는 시간량이
+//   없어 기존 표기("예상 차감: N일 H시간 (0.25일)") 유지.
 const previewText = computed(() => {
   if (!preview.value) return "";
   const p = preview.value;
+  if (isHourUnit.value) {
+    const sMin = hhmmToMin(startTime.value);
+    const eMin = hhmmToMin(endTime.value);
+    if (sMin >= 0 && eMin > sMin) {
+      return `이 날 기준 ${formatLeaveMinutes(eMin - sMin)} = ${trimLeaveDays(p.chargeDays)}일 차감`;
+    }
+  }
   return `예상 차감: ${formatLeaveDays(p.chargeDays, p.convMinutes)} (${trimLeaveDays(p.chargeDays)}일)`;
 });
 
@@ -453,13 +476,15 @@ const fnLoadPreview = async () => {
   } catch (e) {
     if (seq !== previewSeq) return;
     preview.value = null;
-    // PC-10(D2·N5): 교대근무자 시간차 차단(ATTD_400_193) — 서버 메시지를 그대로 안내하고
-    //   시간차 단위 선택을 disable 한다(제출도 서버가 fail-closed 로 거부).
-    if (e?.response?.data?.errorCode === "ATTD_400_193") {
+    // E2(당일분모 전환): 미배정일 시간차 차단 — 신설 ATTD_400_194 수신 시(구 193 은 데드 보존
+    //   전환기 병행 수용) 서버 메시지를 그대로 안내하고 해당 날짜의 시간차 단위 선택을 disable
+    //   한다(제출도 서버가 fail-closed 로 거부). 근무일 변경 시 위 watch 가 해제.
+    const previewErrCode = e?.response?.data?.errorCode;
+    if (previewErrCode === "ATTD_400_194" || previewErrCode === "ATTD_400_193") {
       hourlyBlocked.value = true;
       hourlyBlockedMessage.value =
         e.response.data.message ||
-        "기본 근무타입이 없어 시간 단위 연차를 사용할 수 없어요. 종일·반차·반반차로 신청해 주세요.";
+        "이 날은 근무계획이 없어 시간 단위 연차를 사용할 수 없어요. 종일·반차·반반차로 신청해 주세요.";
     }
     // 그 외 preview 실패는 안내 없이 신청 가능 — 서버가 최종 판정(§5-C)
   } finally {

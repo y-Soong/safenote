@@ -94,19 +94,89 @@
     <!--
       기본근무 변경 시 미래 자동생성분만 갱신. 대상 = WORK_YMD > fromYmd AND GEN_SOURCE='DEFAULT_SCH'.
       수동(MANUAL)/연차(LEAVE)/교대(SHIFT)/촉진 행은 GEN_SOURCE 가 달라 자동 보존된다.
+      E3(당일분모 전환, W6): 연차 잠금일 제외 — 시간차 분모(E1)가 당일 배정 스케줄이므로 그날 행을
+      덮어쓰면 차감 분모가 훼손된다. 제외 범위(NOT EXISTS 2건):
+        1) 확정 비종일 연차(반차/반반차/시간차 — USE_UNIT_TYPE != '00'. 종일 연차 셀은 GEN_SOURCE 가
+           달라(:96 실측) 위 GEN_SOURCE 술어로 이미 자동 보존 — 제외 술어 불요)
+        2) 미결 시간차 신청(REQ_TYPE='05', REQ_STATUS='01', 시각 보유 — ScheduleGuardMapper F-F 술어 동일)
+      배치성 갱신이므로 하드 실패 없음(잠금일만 조용히 건너뜀 — 제외 건수 로그는 서비스가
+      countFutureDefaultSchLockedDays 로 수행).
     -->
     <update id="updateFutureDefaultSch">
     /* DefaultSchGenMapper.updateFutureDefaultSch */
-    UPDATE TB_USER_WORK_PLAN
-       SET WORK_PLAN_CD = #{newSchCd}
-         , UPDATE_NO    = #{operatorNo}
-         , UPDATE_DATE  = NOW()
-     WHERE CMPNY_CD   = #{cmpnyCd}
-       AND SITE_CD    = #{siteCd}
-       AND USER_CD    = #{userCd}
-       AND WORK_YMD   &gt; #{fromYmd}
-       AND GEN_SOURCE = 'DEFAULT_SCH'
+    UPDATE TB_USER_WORK_PLAN WP
+       SET WP.WORK_PLAN_CD = #{newSchCd}
+         , WP.UPDATE_NO    = #{operatorNo}
+         , WP.UPDATE_DATE  = NOW()
+     WHERE WP.CMPNY_CD   = #{cmpnyCd}
+       AND WP.SITE_CD    = #{siteCd}
+       AND WP.USER_CD    = #{userCd}
+       AND WP.WORK_YMD   &gt; #{fromYmd}
+       AND WP.GEN_SOURCE = 'DEFAULT_SCH'
+       AND NOT EXISTS (
+            SELECT 1
+              FROM TB_USER_LEAVE_USE U
+             WHERE U.CMPNY_CD     = #{cmpnyCd}
+               AND U.USER_CD      = #{userCd}
+               AND U.LEAVE_STATUS = 'CONFIRMED'
+               AND U.DEL_YN       = 'N'
+               AND U.USE_UNIT_TYPE &lt;&gt; '00'
+               AND U.START_DATE  &lt;= WP.WORK_YMD
+               AND U.END_DATE    &gt;= WP.WORK_YMD
+           )
+       AND NOT EXISTS (
+            SELECT 1
+              FROM TB_USER_ATTD_REQ RQ
+             WHERE RQ.CMPNY_CD   = #{cmpnyCd}
+               AND RQ.USER_CD    = #{userCd}
+               AND RQ.WORK_YMD   = WP.WORK_YMD
+               AND RQ.REQ_TYPE   = '05'
+               AND RQ.REQ_STATUS = '01'
+               AND RQ.DEL_YN     = 'N'
+               AND RQ.START_TIME IS NOT NULL
+               AND RQ.END_TIME   IS NOT NULL
+           )
     </update>
+
+    <!--
+      E3(W6) 보조: 위 updateFutureDefaultSch 가 잠금으로 제외(보존)하는 미래 자동생성분 건수.
+      술어는 update 본문과 동일 대상 + 잠금(확정 비종일 연차 OR 미결 시간차) — skip 로그 전용(read-only).
+    -->
+    <select id="countFutureDefaultSchLockedDays" resultType="int">
+    /* DefaultSchGenMapper.countFutureDefaultSchLockedDays */
+    SELECT COUNT(*)
+      FROM TB_USER_WORK_PLAN WP
+     WHERE WP.CMPNY_CD   = #{cmpnyCd}
+       AND WP.SITE_CD    = #{siteCd}
+       AND WP.USER_CD    = #{userCd}
+       AND WP.WORK_YMD   &gt; #{fromYmd}
+       AND WP.GEN_SOURCE = 'DEFAULT_SCH'
+       AND (
+            EXISTS (
+                SELECT 1
+                  FROM TB_USER_LEAVE_USE U
+                 WHERE U.CMPNY_CD     = #{cmpnyCd}
+                   AND U.USER_CD      = #{userCd}
+                   AND U.LEAVE_STATUS = 'CONFIRMED'
+                   AND U.DEL_YN       = 'N'
+                   AND U.USE_UNIT_TYPE &lt;&gt; '00'
+                   AND U.START_DATE  &lt;= WP.WORK_YMD
+                   AND U.END_DATE    &gt;= WP.WORK_YMD
+               )
+            OR EXISTS (
+                SELECT 1
+                  FROM TB_USER_ATTD_REQ RQ
+                 WHERE RQ.CMPNY_CD   = #{cmpnyCd}
+                   AND RQ.USER_CD    = #{userCd}
+                   AND RQ.WORK_YMD   = WP.WORK_YMD
+                   AND RQ.REQ_TYPE   = '05'
+                   AND RQ.REQ_STATUS = '01'
+                   AND RQ.DEL_YN     = 'N'
+                   AND RQ.START_TIME IS NOT NULL
+                   AND RQ.END_TIME   IS NOT NULL
+               )
+           )
+    </select>
 
     <!--
       prafta-com-008-E-5/E-8: 사업장 활성(USE_YN='Y') 근무타입 옵션 목록.

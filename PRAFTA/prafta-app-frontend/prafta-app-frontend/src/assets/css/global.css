@@ -26,7 +26,12 @@
 
   /* 이미지/버튼 등 터치 친화 */
   img, video { max-width: 100%; height: auto; }
-  button, input, textarea { -webkit-tap-highlight-color: transparent; }
+  /* label 포함 이유:
+     label 은 대부분 "라벨 텍스트 + 입력 컨트롤"을 감싸는 레이아웃 래퍼(flex column 등)라
+     실제 누르는 대상(라디오/체크박스/입력)보다 박스가 훨씬 넓다.
+     웹뷰 기본 탭 하이라이트는 이 박스 전체를 칠하므로 "행 전체에 배경색이 깔리는" 현상이 생긴다.
+     누르는 대상 자체의 피드백(체크 상태 변화, 버튼 :active)은 각 컴포넌트가 따로 제공한다. */
+  button, input, textarea, label { -webkit-tap-highlight-color: transparent; }
 
   /* iOS 입력 시 스크롤 튐 방지(필요 시 주석 해제)
   input, textarea, select { font-size: 16px; }
