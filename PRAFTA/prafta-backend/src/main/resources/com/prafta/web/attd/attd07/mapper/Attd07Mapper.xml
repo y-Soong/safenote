@@ -1415,6 +1415,7 @@
     /* Attd07Mapper.selectAttdSegmentsAroundDayExcept */
     SELECT
           M.ATTD_ID         AS attdId
+        , M.WORK_YMD        AS workYmd
         , M.WORK_SEQ        AS workSeq
         , M.CHECK_IN_DATE   AS checkInDate
         , M.CHECK_IN_TIME   AS checkInTime

@@ -263,6 +263,29 @@
      LIMIT 1
     </select>
 
+    <!-- 앞뒤 근무일(D-1 / D+1) 근태 구간 — 근태보정 승인 상세 표시용(겹침가드 개선 2026-08-06).
+         web Attd07Mapper.selectAttdSegmentsAroundDayExcept 의 의도적 미러(app 에서 web 매퍼 주입 선례 없음).
+         당일(baseYmd)은 제외한다(요청 내용 섹션이 이미 표시). 회사/사업장/사용자 스코프 필수.
+         ★ record 매핑은 SELECT 컬럼 순서를 따른다 — NeighborAttdSegmentRow 컴포넌트 순서와 함께 유지할 것. -->
+    <select id="selectNeighborAttdSegments" resultType="com.prafta.app.approval.admin.result.NeighborAttdSegmentRow">
+    /* AppAdminApprovalMapper.selectNeighborAttdSegments */
+    SELECT
+          M.WORK_YMD        AS workYmd
+        , M.WORK_SEQ        AS workSeq
+        , M.CHECK_IN_DATE   AS checkInDate
+        , M.CHECK_IN_TIME   AS checkInTime
+        , M.CHECK_OUT_DATE  AS checkOutDate
+        , M.CHECK_OUT_TIME  AS checkOutTime
+      FROM TB_USER_ATTD_MGMT M
+     WHERE M.CMPNY_CD = #{cmpnyCd}
+       AND M.SITE_CD  = #{siteCd}
+       AND M.USER_CD  = #{userCd}
+       AND M.WORK_YMD BETWEEN #{fromYmd} AND #{toYmd}
+       AND M.WORK_YMD != #{baseYmd}
+       AND M.DEL_YN   = 'N'
+     ORDER BY M.WORK_YMD, M.WORK_SEQ
+    </select>
+
     <!-- 연차 본문: 05=요청연결 사용기록 / 06=수정대상 사용기록(LEAVE_ID=TARGET_ID). -->
     <select id="selectLeaveBody" resultType="com.prafta.app.approval.admin.result.LeaveBodyRow">
     /* AppAdminApprovalMapper.selectLeaveBody */

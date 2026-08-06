@@ -8,6 +8,7 @@ import com.prafta.web.attd.attd07.result.DailyAttdDetailsResult;
 import com.prafta.web.attd.attd07.result.DailyLeaveChangeReqResult;
 import com.prafta.web.attd.attd07.result.DailyOvertimeResult;
 import com.prafta.web.attd.attd07.result.MonthlyAttdReqResult;
+import com.prafta.web.attd.attd07.result.NeighborAttdSegmentView;
 
 import lombok.Builder;
 import lombok.Value;
@@ -35,4 +36,11 @@ public class DailyAttdDetailsResponse {
      * AttdDayDetailPop 의 연차 "N일 H시간 M분" 표기 분모(기존 480 고정 폴백 결함 D2 해소, additive).
      */
     int convMinutes;
+
+    /**
+     * 겹침가드 개선(2026-08-06): 앞뒤 근무일(D-1 / D+1) 근태 구간 목록(당일 구간은 제외 — time-card 가 이미 표시).
+     * 이웃 근무일의 미마감 근태가 이 날짜의 근태 등록·승인을 막는 원인일 때 화면에서 특정할 수 있게 한다.
+     * 표시 문자열·상태(status)는 서버가 완성해 내려준다(프론트 재판정 금지). 0건이면 빈 리스트.
+     */
+    List<NeighborAttdSegmentView> neighborAttdSegmentList;
 }

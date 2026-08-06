@@ -149,6 +149,14 @@
           </div>
         </section>
 
+        <!-- 앞뒤 근무일(D-1 / D+1) 근태 — 근태보정 한정(겹침가드 개선 2026-08-06).
+             이웃 근무일의 미마감 근태가 이 승인을 막는 원인일 때 화면에서 특정한다.
+             0건이면 섹션 자체를 렌더하지 않는다. -->
+        <AdminApprovalNeighborSegments
+          v-if="detail.group === 'CORRECTION' && (detail.body.neighborSegments || []).length"
+          :segments="detail.body.neighborSegments"
+        />
+
         <!-- ④ 사유·증빙 -->
         <section class="ap-sec">
           <h2 class="ap-sec__title">사유 · 증빙</h2>
@@ -254,6 +262,7 @@ import { formatYmdDisplay, formatDateTimeDisplay, formatTimeWithDateIfDiff } fro
 
 import AdminApprovalRejectSheet from './components/AdminApprovalRejectSheet.vue'
 import AdminApprovalAdjustSheet from './components/AdminApprovalAdjustSheet.vue'
+import AdminApprovalNeighborSegments from './components/AdminApprovalNeighborSegments.vue'
 
 const router = useRouter()
 const route = useRoute()
@@ -397,6 +406,9 @@ const normalizeDetail = (data) => {
   if (group === 'CORRECTION') {
     body.beforeDisplay = rawBody.beforeDisplay || buildCheckDisplay(rawBody.before, meta.targetYmd)
     body.afterDisplay = rawBody.afterDisplay || buildCheckDisplay(rawBody.after, meta.targetYmd)
+    // 겹침가드 개선(2026-08-06): 앞뒤 근무일(D-1 / D+1) 근태 구간. 표시 문자열·status 는 서버 완성값이라
+    //   배열 정규화만 한다(미수신·구서버면 빈 배열 → 섹션 미노출, 회귀 없음).
+    body.neighborSegments = Array.isArray(rawBody.neighborSegments) ? rawBody.neighborSegments : []
   } else if (group === 'OVERTIME') {
     body.claimModeNm =
       rawBody.claimModeNm ||

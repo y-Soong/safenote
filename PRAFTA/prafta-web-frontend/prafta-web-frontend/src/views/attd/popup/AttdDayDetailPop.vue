@@ -161,6 +161,15 @@
               <span>{{ cfg.workingNotice }}</span>
             </div>
 
+            <!-- 앞뒤 근무일(D-1 / D+1) 근태 구간 (겹침가드 개선 2026-08-06).
+                 이웃 근무일의 미마감 근태가 이 날짜의 등록·승인을 막는 원인일 때 여기서 특정한다.
+                 0건이면 섹션 자체를 렌더하지 않는다(팝업 세로 공간 절약). -->
+            <AttdNeighborDaySegments
+              v-if="neighborSegments.length"
+              :segments="neighborSegments"
+              :loading="loading"
+            />
+
             <!-- 근로자 요청 카드 리스트 (근태/연차 결재 요청 + 연차 변경 요청) -->
             <div v-if="reqSectionCount" class="req-section">
               <div class="req-section-head">
@@ -1118,6 +1127,7 @@ import {
 import CalendarSrch from "@/components/common/CalendarSrch.vue";
 import ReasonInputModal from "@/components/modal/ReasonInputModal.vue";
 import AttdGpsCoordPanel from "@/views/attd/popup/AttdGpsCoordPanel.vue";
+import AttdNeighborDaySegments from "@/views/attd/popup/AttdNeighborDaySegments.vue";
 import axios from "@/api/axios";
 import { getMessage, MSG } from "@/messages";
 import { resolveApiErrorMessage } from "@/utils/apiError";
@@ -1233,6 +1243,10 @@ const dailyOvertimeList = ref([]);
 // PC-09(N8): 대상 사용자·대상일 기준 1일 환산시간(분) — daily-attd-details 응답 convMinutes.
 //   개인 분모(480 캡, 백엔드가 미산출 시 480 폴백 보장). 연차 차감 "N일 H시간 M분" 조립 분모.
 const convMinutes = ref(480);
+// 겹침가드 개선(2026-08-06): 앞뒤 근무일(D-1 / D+1) 근태 구간 (neighborAttdSegmentList).
+//   표시 문자열·상태(status)는 서버 완성값 — 프론트 재가공·재판정 금지.
+//   미수신(구서버)이면 빈 배열 → 섹션 미노출(회귀 없음).
+const neighborSegments = ref([]);
 
 // "YYYY-MM-DD" → "YYYYMMDD"
 const ymdDashToNum = (s) => (s || "").replace(/-/g, "");
@@ -3282,6 +3296,8 @@ const fnSearch = async () => {
       leaveChangeReqs.value = response.data?.leaveChangeReqResultList ?? [];
       // PC-09(N8): 대상 사용자·대상일 기준 개인 분모(분). 미수신(구서버)이면 480 유지.
       convMinutes.value = response.data?.convMinutes ?? 480;
+      // 겹침가드 개선: 앞뒤 근무일 근태 구간(당일 구간은 서버가 제외). 미수신이면 빈 배열.
+      neighborSegments.value = response.data?.neighborAttdSegmentList ?? [];
     }
   } catch (err) {
     // 조회 실패해도 fallback 값으로 화면은 정상 렌더되도록 알림만 띄움

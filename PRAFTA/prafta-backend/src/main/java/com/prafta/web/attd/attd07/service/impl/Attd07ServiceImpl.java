@@ -13,6 +13,7 @@ import com.prafta.common.cmm.push.ApprovalResultNotiService;
 import com.prafta.common.cmm.siteauth.service.SiteAccessService;
 import com.prafta.common.error.attd.AttdErrorCode;
 import com.prafta.common.exception.ApiException;
+import com.prafta.common.util.AttdOverlapMessages;
 import com.prafta.common.util.AttdOverlapUtils;
 import com.prafta.common.util.AuthRoleUtils;
 import com.prafta.common.util.DateTimeUtils;
@@ -55,6 +56,7 @@ import com.prafta.web.attd.attd07.result.MonthlyAttdListResult;
 import com.prafta.web.attd.attd07.result.MonthlyAttdReqResult;
 import com.prafta.web.attd.attd07.result.MonthlyAttdReqSummaryResult;
 import com.prafta.web.attd.attd07.result.MonthlyOvertimeResult;
+import com.prafta.web.attd.attd07.result.NeighborAttdSegmentView;
 import com.prafta.web.attd.attd07.result.UserAttdReqResult;
 import com.prafta.web.attd.attd07.service.Attd07Service;
 import com.prafta.web.attd.attd07.service.AttdCloseService;
@@ -255,39 +257,52 @@ public class Attd07ServiceImpl implements Attd07Service {
         	//   + 배치 내 다른 model 의 새 구간(같은 회사/사업장/사용자/근무일 한정)
         	//   을 합쳐 겹침을 검사한다. 인접 경계는 허용.
         	{
-        		List<int[]> segs = new ArrayList<>();
-        		int[] selfSeg = buildSegment(model.workYmd(), model.checkInDate(), model.checkInTime(),
-        				model.checkOutDate(), model.checkOutTime());
+        		List<AttdOverlapUtils.Segment> segs = new ArrayList<>();
+        		AttdOverlapUtils.Segment selfSeg = buildSegment(model.workYmd(), model.workYmd(), attdId, null,
+        				model.checkInDate(), model.checkInTime(), model.checkOutDate(), model.checkOutTime(), true);
         		if (selfSeg != null) {
+        			warnIfNotJudgeable(selfSeg);
         			segs.add(selfSeg);
 
         			// (a) 근무일 ±1 윈도우의 다른 구간(배치 attdId 전체 제외) — DB 조회. 단건씩 제외할 수 없어
         			//     배치 attdId 를 모두 제외한 뒤 (b) 배치 내 새 구간으로 보완한다.
         			//     QT-2-6: 오버나이트(D 근무일, 퇴근 D+1) 와 이웃 근무일 근태의 실시각 겹침을 잡기 위해
         			//     조회 범위를 D-1 ~ D+1 로 넓힌다. 모든 구간은 model.workYmd() 기준 stamp 로 환산되어 비교된다.
+        			//     겹침가드 개선(2026-08-06): 이웃날 open 은 그 근무일의 다음날 00:00 에서 종료(§7.6 D-2),
+        			//     손상 구간(퇴근 ≤ 출근 등)은 판정 제외 후 경고 로그(D-1).
         			for (DayAttdSegmentResult ex : safe(attd07Mapper.selectAttdSegmentsAroundDayExcept(
         					model.gvCmpnyCd(), model.siteCd(), model.userCd(),
         					shiftYmd(model.workYmd(), -1), shiftYmd(model.workYmd(), 1), null))) {
         				if (containsAttdId(resolvedAttdIds, ex.attdId())) continue; // 배치 포함분은 (b)에서 새값으로 평가
-        				int[] s = buildSegment(model.workYmd(), ex.checkInDate(), ex.checkInTime(),
-        						ex.checkOutDate(), ex.checkOutTime());
-        				if (s != null) segs.add(s);
+        				AttdOverlapUtils.Segment s = buildSegment(model.workYmd(), ex.workYmd(), ex.attdId(), ex.workSeq(),
+        						ex.checkInDate(), ex.checkInTime(), ex.checkOutDate(), ex.checkOutTime(), false);
+        				if (s != null) {
+        					warnIfNotJudgeable(s);
+        					segs.add(s);
+        				}
         			}
 
-        			// (b) 배치 내 다른 model 의 새 구간(같은 회사/사업장/사용자/근무일 한정).
+        			// (b) 배치 내 다른 model 의 새 구간(같은 회사/사업장/사용자/근무일 한정). 아직 저장 전이라 attdId 는 넘기지 않는다
+        			//     (배치 내 구간임을 안내 문구에서 구분하기 위한 표식 — Segment.batchPending()).
         			for (int j = 0; j < models.size(); j++) {
         				if (j == i) continue;
         				UpdateUserAttdInfosModel other = models.get(j);
         				if (!sameScopeDay(model, other)) continue;
-        				int[] s = buildSegment(other.workYmd(), other.checkInDate(), other.checkInTime(),
-        						other.checkOutDate(), other.checkOutTime());
-        				if (s != null) segs.add(s);
+        				AttdOverlapUtils.Segment s = buildSegment(model.workYmd(), other.workYmd(), null, null,
+        						other.checkInDate(), other.checkInTime(), other.checkOutDate(), other.checkOutTime(), false);
+        				if (s != null) {
+        					warnIfNotJudgeable(s);
+        					segs.add(s);
+        				}
         			}
 
-        			if (AttdOverlapUtils.hasSegmentOverlap(segs)) {
-        				log.warn("admin-direct attd overlap rejected (§7.6). userCd={}, workYmd={}, attdId={}",
-        						model.userCd(), model.workYmd(), attdId);
-        				throw new ApiException(AttdErrorCode.ATTD_400_113);
+        			AttdOverlapUtils.Conflict conflict = AttdOverlapUtils.findConflict(segs);
+        			if (conflict != null) {
+        				log.warn("admin-direct attd overlap rejected (§7.6). userCd={}, workYmd={}, attdId={}, otherWorkYmd={}, otherKind={}",
+        						model.userCd(), model.workYmd(), attdId,
+        						conflict.other().workYmd(), conflict.other().kind());
+        				throw new ApiException(AttdErrorCode.ATTD_400_113,
+        						AttdOverlapMessages.overlapMessage(model.workYmd(), conflict.other()));
         			}
         		}
         	}
@@ -333,27 +348,38 @@ public class Attd07ServiceImpl implements Attd07Service {
      *
      * <p>QT-2-6: 종전에는 같은 근무일만 검사해 오버나이트 근태(WORK_YMD=D, 퇴근 D+1)와 이웃 근무일
      *   근태가 실시각으로 겹쳐도 통과했다(원장 이중 산입). 비교 기준선은 대상 근무일(workYmd)로 통일한다.
+     *
+     * <p>겹침가드 개선(2026-08-06): 이웃 근무일의 미마감(open) 구간은 그 근무일의 다음날 00:00 에서 종료하고
+     *   (§7.6 D-2 — 이웃날 미마감 1건이 대상일 전체를 봉쇄하던 결함 해소), 손상 구간(퇴근 ≤ 출근 등)은
+     *   판정에서 제외한다(D-1). 차단 시에는 원인(이웃날 미마감/당일 미마감/실제 겹침)을 날짜·차수·시각과 함께 안내한다.
      */
     private void ensureNoSegmentOverlap(String siteCd, String userCd, String workYmd, String excludeAttdId,
                                         String checkInDate, String checkInTime,
                                         String checkOutDate, String checkOutTime,
                                         String gvCmpnyCd) {
-        int[] newSeg = buildSegment(workYmd, checkInDate, checkInTime, checkOutDate, checkOutTime);
+        AttdOverlapUtils.Segment newSeg = buildSegment(workYmd, workYmd, excludeAttdId, null,
+                checkInDate, checkInTime, checkOutDate, checkOutTime, true);
         if (newSeg == null) {
             return; // 출근 stamp 미확정 → 검사 제외
         }
-        List<int[]> segs = new ArrayList<>();
+        List<AttdOverlapUtils.Segment> segs = new ArrayList<>();
+        warnIfNotJudgeable(newSeg);
         segs.add(newSeg);
         for (DayAttdSegmentResult ex : safe(attd07Mapper.selectAttdSegmentsAroundDayExcept(
                 gvCmpnyCd, siteCd, userCd, shiftYmd(workYmd, -1), shiftYmd(workYmd, 1), excludeAttdId))) {
-            int[] s = buildSegment(workYmd, ex.checkInDate(), ex.checkInTime(),
-                    ex.checkOutDate(), ex.checkOutTime());
-            if (s != null) segs.add(s);
+            AttdOverlapUtils.Segment s = buildSegment(workYmd, ex.workYmd(), ex.attdId(), ex.workSeq(),
+                    ex.checkInDate(), ex.checkInTime(), ex.checkOutDate(), ex.checkOutTime(), false);
+            if (s != null) {
+                warnIfNotJudgeable(s);
+                segs.add(s);
+            }
         }
-        if (AttdOverlapUtils.hasSegmentOverlap(segs)) {
-            log.warn("attd request overlap rejected (§7.6). userCd={}, workYmd={}, excludeAttdId={}",
-                    userCd, workYmd, excludeAttdId);
-            throw new ApiException(AttdErrorCode.ATTD_400_113);
+        AttdOverlapUtils.Conflict conflict = AttdOverlapUtils.findConflict(segs);
+        if (conflict != null) {
+            log.warn("attd request overlap rejected (§7.6). userCd={}, workYmd={}, excludeAttdId={}, otherWorkYmd={}, otherKind={}",
+                    userCd, workYmd, excludeAttdId, conflict.other().workYmd(), conflict.other().kind());
+            throw new ApiException(AttdErrorCode.ATTD_400_113,
+                    AttdOverlapMessages.overlapMessage(workYmd, conflict.other()));
         }
     }
 
@@ -367,18 +393,41 @@ public class Attd07ServiceImpl implements Attd07Service {
     }
 
     /**
-     * (출근/퇴근 일자·시각)을 workYmd 기준 [start, end] 분 stamp 구간으로 빌드한다.
-     * 출근 stamp 미확정이면 null(검사 제외), 퇴근 미입력(open)이면 종료 SENTINEL.
-     * 출근/퇴근 모두 같은 근무일(workYmd) 기준으로 stamp 화한다(자정 넘김은 일자 차이로 자동 반영).
+     * (출근/퇴근 일자·시각) 한 행을 대상 근무일(baseWorkYmd) 기준 겹침 판정 구간으로 빌드한다.
+     * 출근 stamp 미확정이면 null(검사 제외).
      *
-     * <p>QT-2-6: 이웃 근무일(D±1) 행도 "대상 근무일(workYmd)" 을 기준선으로 stamp 화하므로
+     * <p>QT-2-6: 이웃 근무일(D±1) 행도 "대상 근무일(baseWorkYmd)" 을 기준선으로 stamp 화하므로
      *   (dayOffset 이 -1/+1 로 반영되어) 같은 축에서 비교된다.
+     *
+     * <p>겹침가드 개선(2026-08-06): 행이 속한 근무일(segWorkYmd)을 함께 넘겨야 이웃날 open clamp(§7.6 D-2)와
+     *   원인별 안내 문구("몇 월 며칠 몇 차 근무")가 성립한다. segWorkYmd 는 <b>행의 WORK_YMD</b> 이며
+     *   CHECK_IN_DATE 가 아니다(오버나이트 행은 출근일이 D 여도 WORK_YMD 가 D 다).
      */
-    private static int[] buildSegment(String workYmd, String inDate, String inTime,
-                                      String outDate, String outTime) {
-        Integer inStamp = DateTimeUtils.toMinuteStamp(workYmd, inDate, inTime);
-        Integer outStamp = DateTimeUtils.toMinuteStamp(workYmd, outDate, outTime);
-        return AttdOverlapUtils.buildStamp(inStamp, outStamp);
+    private static AttdOverlapUtils.Segment buildSegment(String baseWorkYmd, String segWorkYmd,
+                                                         String attdId, String workSeq,
+                                                         String inDate, String inTime,
+                                                         String outDate, String outTime,
+                                                         boolean self) {
+        return AttdOverlapUtils.buildSegment(baseWorkYmd, segWorkYmd, attdId, workSeq,
+                inDate, inTime, outDate, outTime, self);
+    }
+
+    /**
+     * 겹침 판정에서 제외된 구간(손상 행 = 퇴근 ≤ 출근 / 퇴근일자 결측, 또는 이웃날 open 이 이미 근무일 경계를 넘긴 행)을
+     * 운영 탐지용 경고 로그로 남긴다(사용자 노출 아님 — 화면 표시는 승인·상세 응답의 status 로 처리).
+     */
+    private static void warnIfNotJudgeable(AttdOverlapUtils.Segment seg) {
+        if (seg.judgeable()) {
+            return;
+        }
+        // 제외 사유를 구분해 로깅한다(운영 조사 시 오진 방지).
+        //   CORRUPT      = 퇴근 ≤ 출근(길이 0/역전)
+        //   그 외(OPEN)  = 이웃날 open 이 자기 근무일 경계를 이미 넘겨 clamp 결과 폭이 0 이하
+        String reason = (seg.kind() == AttdOverlapUtils.SegmentKind.CORRUPT)
+                ? "퇴근시각 미성립(퇴근 ≤ 출근)"
+                : "이웃날 open 이 근무일 경계를 초과";
+        log.warn("[겹침가드] 근태 행 판정 제외({}). workYmd={}, workSeq={}, attdId={}, kind={}",
+                reason, seg.workYmd(), seg.workSeq(), seg.attdId(), seg.kind());
     }
 
     /** null-safe 리스트 보정(빈 리스트 반환). */
@@ -505,6 +554,13 @@ public class Attd07ServiceImpl implements Attd07Service {
         int convMinutes = (personalConv != null)
                 ? personalConv : LeaveConversionPolicyService.DEFAULT_CONV_MINUTES;
 
+        // 겹침가드 개선(2026-08-06): 앞뒤 근무일(D-1/D+1) 근태 구간 — 겹침 가드가 이웃날 미마감 때문에 발동할 때
+        //   관리자가 화면에서 원인 행을 특정할 수 있게 한다. 겹침 판정이 이미 쓰는 쿼리를 그대로 재사용(신규 쿼리 0건)하고
+        //   당일 구간은 서비스에서 제외한다(time-card 가 이미 표시). 조회 권한 근거는 위 confirmedLeaveResultList 와 동일
+        //   (진입부 2단 가드 승계 + 쿼리 스코프). 신규 노출 PII 없음(근태 시각만).
+        List<NeighborAttdSegmentView> neighborAttdSegmentList =
+                buildNeighborSegments(param.gvCmpnyCd(), param.siteCd(), param.userCd(), param.workYmd());
+
         return DailyAttdDetailsResponse.builder()
                 .dailyAttdDetailsResult(dailyAttdDetailsResult)
                 .dailyAttdDetailHistoryResultList(dailyAttdDetailHistoryResultList)
@@ -513,7 +569,47 @@ public class Attd07ServiceImpl implements Attd07Service {
                 .confirmedLeaveResultList(confirmedLeaveResultList)
                 .leaveChangeReqResultList(leaveChangeReqResultList)
                 .convMinutes(convMinutes)
+                .neighborAttdSegmentList(neighborAttdSegmentList)
                 .build();
+    }
+
+    /**
+     * 앞뒤 근무일(D-1 / D+1) 근태 구간 뷰 목록을 만든다(당일 구간 제외).
+     *
+     * <p>겹침 판정용 쿼리({@code selectAttdSegmentsAroundDayExcept}, excludeAttdId=null)를 그대로 재사용한다.
+     *   상태(status)는 각 행 자기 근무일 기준으로 판정하며, 표시 문자열은 서버가 완성한다.
+     *   손상 행(CORRUPT)이 포함되면 운영 탐지용 경고 로그를 1회 남긴다.
+     */
+    private List<NeighborAttdSegmentView> buildNeighborSegments(String cmpnyCd, String siteCd,
+                                                                String userCd, String workYmd) {
+        List<NeighborAttdSegmentView> views = new ArrayList<>();
+        boolean corruptFound = false;
+        for (DayAttdSegmentResult row : safe(attd07Mapper.selectAttdSegmentsAroundDayExcept(
+                cmpnyCd, siteCd, userCd, shiftYmd(workYmd, -1), shiftYmd(workYmd, 1), null))) {
+            if (row.workYmd() == null || row.workYmd().equals(workYmd)) {
+                continue; // 당일 구간은 time-card 가 이미 표시
+            }
+            AttdOverlapUtils.SegmentKind kind = AttdOverlapUtils.classify(
+                    row.workYmd(), row.checkInDate(), row.checkInTime(), row.checkOutDate(), row.checkOutTime());
+            if (kind == null) {
+                kind = AttdOverlapUtils.SegmentKind.CORRUPT; // 출근 stamp 산출 불가(스키마상 NOT NULL — 이론상 미도달)
+            }
+            if (kind == AttdOverlapUtils.SegmentKind.CORRUPT) {
+                corruptFound = true;
+            }
+            views.add(new NeighborAttdSegmentView(
+                    row.workYmd(),
+                    AttdOverlapMessages.dayLabel(workYmd, row.workYmd()),
+                    row.workSeq(),
+                    AttdOverlapMessages.seqLabel(row.workSeq()),
+                    AttdOverlapMessages.stampText(row.workYmd(), row.checkInDate(), row.checkInTime()),
+                    AttdOverlapMessages.checkOutTextFor(kind, row.workYmd(), row.checkOutDate(), row.checkOutTime()),
+                    kind.name()));
+        }
+        if (corruptFound) {
+            log.warn("[겹침가드] 앞뒤 근무일 구간에 퇴근시각 미성립(CORRUPT) 행 포함. siteCd={}, workYmd={}", siteCd, workYmd);
+        }
+        return views;
     }
 
     @Override
@@ -984,7 +1080,9 @@ public class Attd07ServiceImpl implements Attd07Service {
         if (leaveLocked) {
             log.warn("sched-modify approve rejected - 연차 잠금일(확정/미결 시간차) 스케줄 변경 차단(E3). reqId={}, workYmd={}",
                     reqRow.reqId(), reqRow.workYmd());
-            throw new ApiException(AttdErrorCode.ATTD_400_164);
+            // F-7(2026-08-06): 잠금 원인(확정 연차 / 미결 시간차)에 맞는 문구를 동적 주입한다(코드 번호는 유지).
+            throw new ApiException(AttdErrorCode.ATTD_400_164,
+                    com.prafta.common.cmm.schedule.ScheduleLockMessages.scheduleChangeBlockedMessage(leaveLocks));
         }
 
         // 6. tb_user_work_plan 의 (cmpny, site, user, ymd) 한 칸 WORK_PLAN_CD 를 SCH_CD 로 upsert (D1/D2).

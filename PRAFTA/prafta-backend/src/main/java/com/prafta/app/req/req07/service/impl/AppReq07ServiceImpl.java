@@ -129,7 +129,9 @@ public class AppReq07ServiceImpl implements AppReq07Service {
         if (leaveLocked) {
             log.info("[req07] 스케줄수정 발의 거부(E3): 연차 잠금일(확정/미결 시간차). userCd={}, workYmd={}",
                     param.userCd(), param.workYmd());
-            throw new ApiException(AttdErrorCode.ATTD_400_164);
+            // F-7(2026-08-06): 잠금 원인(확정 연차 / 미결 시간차)에 맞는 문구를 동적 주입한다(코드 번호는 유지).
+            throw new ApiException(AttdErrorCode.ATTD_400_164,
+                    com.prafta.common.cmm.schedule.ScheduleLockMessages.scheduleChangeBlockedMessage(leaveLocks));
         }
 
         // ----- prafta-app-009 F15: 중복 차단 SELECT→INSERT race window 직렬화(advisory lock) -----

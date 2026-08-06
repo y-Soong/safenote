@@ -10,6 +10,7 @@ import com.prafta.app.approval.admin.result.AttdSnapshotRow;
 import com.prafta.app.approval.admin.result.HistoryRow;
 import com.prafta.app.approval.admin.result.LeaveBalanceRow;
 import com.prafta.app.approval.admin.result.LeaveBodyRow;
+import com.prafta.app.approval.admin.result.NeighborAttdSegmentRow;
 import com.prafta.app.approval.admin.result.PendingCorrOtRow;
 import com.prafta.app.approval.admin.result.PendingLeaveRow;
 import com.prafta.app.approval.admin.result.ReqMetaRow;
@@ -53,6 +54,20 @@ public interface AppAdminApprovalMapper {
     /** 근태보정 Before 스냅샷(TARGET_ID 의 현재 출퇴근). 없으면 null. */
     AttdSnapshotRow selectAttdSnapshot(@Param("cmpnyCd") String cmpnyCd,
                                        @Param("attdId") String attdId);
+
+    /**
+     * 겹침가드 개선(2026-08-06): 대상 근무일 앞뒤(D-1 / D+1)의 활성 근태 구간 — 근태보정 승인 상세 표시용.
+     *
+     * <p>웹 {@code Attd07Mapper.selectAttdSegmentsAroundDayExcept} 의 의도적 미러다
+     *   (app 패키지에서 web 매퍼를 주입한 선례가 없어 계층 규약을 유지한다).
+     *   당일(baseYmd) 행은 SQL 에서 제외하고, WHERE 에 회사/사업장/사용자 스코프를 반드시 건다(cross-site IDOR 이중 차단).
+     */
+    List<NeighborAttdSegmentRow> selectNeighborAttdSegments(@Param("cmpnyCd") String cmpnyCd,
+                                                            @Param("siteCd") String siteCd,
+                                                            @Param("userCd") String userCd,
+                                                            @Param("fromYmd") String fromYmd,
+                                                            @Param("toYmd") String toYmd,
+                                                            @Param("baseYmd") String baseYmd);
 
     /** 연차 본문(05=요청 연결 사용기록 / 06=수정대상 사용기록). 없으면 null. */
     LeaveBodyRow selectLeaveBody(@Param("cmpnyCd") String cmpnyCd,

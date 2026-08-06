@@ -59,6 +59,7 @@ import com.prafta.common.cmm.leave.service.LeaveRefusalDetectService;
 import com.prafta.common.error.attd.AttdErrorCode;
 import com.prafta.common.exception.ApiException;
 import com.prafta.common.security.crypto.GpsCoordCrypto;
+import com.prafta.common.util.AttdOverlapMessages;
 import com.prafta.common.util.AttdOverlapUtils;
 import com.prafta.common.util.DateTimeUtils;
 
@@ -949,37 +950,57 @@ public class AppAttd01ServiceImpl implements AppAttd01Service {
         }
 
         // 5-2) 근무 구간 시각 겹침 금지(정책서 attd §7.6). 대상 슬롯 open 확정 이후·UPDATE 이전에서
-        //      [이 슬롯 출근 stamp, 신규 퇴근 stamp] 가 같은 일자 다른 구간(이 attdId 제외, open=SENTINEL)과
-        //      겹치면 차단한다. 재퇴근도 동일 검사(덮어쓸 퇴근시각 기준). OpenAttdResult 에 출근 필드가
-        //      없으므로 selectAttdByRange 로 이 attdId 의 출근값을 확보한다. 인접 경계는 허용(hasOverlap 규약).
+        //      [이 슬롯 출근 stamp, 신규 퇴근 stamp] 가 다른 구간(이 attdId 제외)과 겹치면 차단한다.
+        //      재퇴근도 동일 검사(덮어쓸 퇴근시각 기준). OpenAttdResult 에 출근 필드가 없으므로
+        //      selectAttdByRange 로 이 attdId 의 출근값을 확보한다. 인접 경계는 허용(findConflict 규약).
+        //      당일 open 은 SENTINEL(같은 날 이중 출근 방지), 이웃날 open 은 그 근무일의 다음날 00:00 에서 종료.
         {
-            AttdRangeQuery overlapQ = new AttdRangeQuery(cmpnyCd, open.siteCd(), userCd, open.workYmd(), open.workYmd());
+            // 겹침가드 개선(2026-08-06, §0-3 D-3): 신규 퇴근 시각이 근무일 다음날로 넘어가는 경우에 한해
+            //   조회 범위를 D ~ D+1 로 확장한다. 앱은 자기 근무일 하루만 읽어 왔기 때문에, 오버나이트 퇴근을
+            //   채울 때 다음날 근태와의 실제 겹침을 검출하지 못하는 공백이 있었다(웹 2경로는 D-1~D+1 조회).
+            //   같은 날 퇴근이면 종전대로 당일만 조회한다(불필요한 조회 증가 방지).
+            //   정상 흐름("전날 퇴근 먼저 → 오늘 재출근")은 퇴근 시점에 D+1 근태가 없어 영향받지 않는다.
+            boolean crossesToNextDay = !open.workYmd().equals(today);
+            String overlapToYmd = crossesToNextDay
+                    ? DateTimeUtils.plusDays(open.workYmd(), 1)
+                    : open.workYmd();
+            if (overlapToYmd == null) overlapToYmd = open.workYmd(); // 형식 오류 fail-safe(종전 동작)
+            AttdRangeQuery overlapQ = new AttdRangeQuery(cmpnyCd, open.siteCd(), userCd, open.workYmd(), overlapToYmd);
             List<AttdRecordResult> dayRecords = nullSafe(appAttd01Mapper.selectAttdByRange(overlapQ));
             // 이 attdId 의 출근값 확보.
             AttdRecordResult self = null;
             for (AttdRecordResult a : dayRecords) {
                 if (open.attdId().equals(a.attdId())) { self = a; break; }
             }
-            Integer selfInStamp = (self == null) ? null
-                    : DateTimeUtils.toMinuteStamp(self.workYmd(), self.checkInDate(), self.checkInTime());
-            Integer newOutStamp = DateTimeUtils.toMinuteStamp(open.workYmd(), today, checkOutTime);
-            int[] newSeg = AttdOverlapUtils.buildStamp(selfInStamp, newOutStamp);
-            // selfInStamp 가 null(출근 stamp 미확정)이면 검사 제외(newSeg==null).
+            // 판정 기준선 = 이 슬롯의 근무일(open.workYmd()). 기존 구간은 자기 WORK_YMD 로 dayOffset 이 산출된다.
+            AttdOverlapUtils.Segment newSeg = (self == null) ? null
+                    : AttdOverlapUtils.buildSegment(open.workYmd(), self.workYmd(),
+                            self.attdId(), String.valueOf(self.workSeq()),
+                            self.checkInDate(), self.checkInTime(), today, checkOutTime, true);
+            // 출근 stamp 미확정(또는 대상 행 미조회)이면 검사 제외(newSeg==null).
             if (newSeg != null) {
-                List<int[]> segs = new ArrayList<>();
+                List<AttdOverlapUtils.Segment> segs = new ArrayList<>();
                 segs.add(newSeg);
                 for (AttdRecordResult a : dayRecords) {
                     if (open.attdId().equals(a.attdId())) continue; // 이 슬롯 제외
-                    Integer exIn = DateTimeUtils.toMinuteStamp(a.workYmd(), a.checkInDate(), a.checkInTime());
-                    if (exIn == null) continue;
-                    int[] exSeg = AttdOverlapUtils.buildStamp(
-                            exIn, DateTimeUtils.toMinuteStamp(a.workYmd(), a.checkOutDate(), a.checkOutTime()));
-                    if (exSeg != null) segs.add(exSeg);
+                    AttdOverlapUtils.Segment exSeg = AttdOverlapUtils.buildSegment(
+                            open.workYmd(), a.workYmd(), a.attdId(), String.valueOf(a.workSeq()),
+                            a.checkInDate(), a.checkInTime(), a.checkOutDate(), a.checkOutTime(), false);
+                    if (exSeg == null) continue;
+                    if (!exSeg.judgeable()) {
+                        // 손상 행(퇴근 ≤ 출근 등)은 판정 제외(§7.6 D-1). 운영 탐지용 경고만 남긴다.
+                        log.warn("[겹침가드] 퇴근시각 미성립 근태 행 판정 제외. workYmd={}, workSeq={}, attdId={}, kind={}",
+                                exSeg.workYmd(), exSeg.workSeq(), exSeg.attdId(), exSeg.kind());
+                    }
+                    segs.add(exSeg);
                 }
-                if (AttdOverlapUtils.hasSegmentOverlap(segs)) {
-                    log.info("[attd01] 셀프 퇴근 거부: 근무 구간 시각 겹침(§7.6) (userCd={}, workYmd={}, attdId={}, newOut={})",
-                            userCd, open.workYmd(), open.attdId(), checkOutTime);
-                    throw new ApiException(AttdErrorCode.ATTD_400_113);
+                AttdOverlapUtils.Conflict conflict = AttdOverlapUtils.findConflict(segs);
+                if (conflict != null) {
+                    log.info("[attd01] 셀프 퇴근 거부: 근무 구간 시각 겹침(§7.6) (userCd={}, workYmd={}, attdId={}, newOut={}, otherWorkYmd={}, otherKind={})",
+                            userCd, open.workYmd(), open.attdId(), checkOutTime,
+                            conflict.other().workYmd(), conflict.other().kind());
+                    throw new ApiException(AttdErrorCode.ATTD_400_113,
+                            AttdOverlapMessages.overlapMessage(open.workYmd(), conflict.other()));
                 }
             }
         }
@@ -1297,22 +1318,30 @@ public class AppAttd01ServiceImpl implements AppAttd01Service {
         //      인접 경계(앞 구간 종료==신규 출근)는 허용(in <= newIn < end 만 겹침으로 판정).
         //      신규 구간은 아직 퇴근이 없는 open 이라, 기존 구간과의 겹침은 "신규 출근 instant 가 기존 구간 내부"
         //      검사로 충분하다(open↔open 동시열림은 081 가드가 이미 차단).
+        //      겹침가드 개선(2026-08-06, §7.6 D-1): 손상 구간(퇴근 ≤ 출근 = 길이 0/역전, 퇴근일자 결측)은 판정에서
+        //      제외한다 → "출근 누락 → 퇴근 시점에 자리 생성 → 보정 요청" 정상 흐름이 당일 재출근을 영구 차단하던
+        //      결함(백로그 B-11) 해소. 당일 이중 출근 차단은 open 구간 SENTINEL + ATTD_400_081 로 그대로 유지된다.
         {
             Integer newInStamp = DateTimeUtils.toMinuteStamp(workYmd, today, checkInTime);
             if (newInStamp != null) {
                 AttdRangeQuery overlapQ = new AttdRangeQuery(cmpnyCd, siteCd, userCd, workYmd, workYmd);
                 for (AttdRecordResult a : nullSafe(appAttd01Mapper.selectAttdByRange(overlapQ))) {
-                    Integer exInStamp = DateTimeUtils.toMinuteStamp(
-                            a.workYmd(), a.checkInDate(), a.checkInTime());
-                    if (exInStamp == null) continue; // 출근 stamp 없는 구간은 검사 제외
-                    int[] exSeg = AttdOverlapUtils.buildStamp(
-                            exInStamp,
-                            DateTimeUtils.toMinuteStamp(a.workYmd(), a.checkOutDate(), a.checkOutTime()));
-                    // exSeg[0] <= newIn < exSeg[1] 이면 신규 출근이 기존 구간 내부 → 겹침.
-                    if (exSeg != null && exSeg[0] <= newInStamp && newInStamp < exSeg[1]) {
-                        log.info("[attd01] 셀프 출근 거부: 근무 구간 시각 겹침(§7.6) (userCd={}, workYmd={}, newIn={}, exAttdId={})",
-                                userCd, workYmd, checkInTime, a.attdId());
-                        throw new ApiException(AttdErrorCode.ATTD_400_113);
+                    AttdOverlapUtils.Segment exSeg = AttdOverlapUtils.buildSegment(
+                            workYmd, a.workYmd(), a.attdId(), String.valueOf(a.workSeq()),
+                            a.checkInDate(), a.checkInTime(), a.checkOutDate(), a.checkOutTime(), false);
+                    if (exSeg == null) continue; // 출근 stamp 없는 구간은 검사 제외
+                    if (!exSeg.judgeable()) {
+                        // 손상 행은 점유 폭 0 으로 보고 판정 제외(운영 탐지용 경고만).
+                        log.warn("[겹침가드] 퇴근시각 미성립 근태 행 판정 제외. workYmd={}, workSeq={}, attdId={}, kind={}",
+                                exSeg.workYmd(), exSeg.workSeq(), exSeg.attdId(), exSeg.kind());
+                        continue;
+                    }
+                    // exSeg.start <= newIn < exSeg.end 이면 신규 출근이 기존 구간 내부 → 겹침.
+                    if (exSeg.start() <= newInStamp && newInStamp < exSeg.end()) {
+                        log.info("[attd01] 셀프 출근 거부: 근무 구간 시각 겹침(§7.6) (userCd={}, workYmd={}, newIn={}, exAttdId={}, exKind={})",
+                                userCd, workYmd, checkInTime, a.attdId(), exSeg.kind());
+                        throw new ApiException(AttdErrorCode.ATTD_400_113,
+                                AttdOverlapMessages.overlapMessage(workYmd, exSeg));
                     }
                 }
             }

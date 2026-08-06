@@ -862,19 +862,16 @@ public class Attd05ServiceImpl implements Attd05Service {
      * 안내는 조치 부담이 큰 순서로 대표 1건만 — 기존 otLocked 우선 로직 승계.)
      */
     private String resolveLockReasonCode(List<com.prafta.common.cmm.schedule.vo.ScheduleLockVO> locks) {
-    	boolean otLocked = false;
-    	boolean confirmedLeave = false;
-    	for (com.prafta.common.cmm.schedule.vo.ScheduleLockVO lock : locks) {
-    		if (lock.getReason() == com.prafta.common.cmm.schedule.vo.ScheduleLockVO.Reason.OT) {
-    			otLocked = true;
-    		} else if (!lock.isLeavePending()) {
-    			confirmedLeave = true;
-    		}
+    	// F-7(2026-08-06): 판정 로직을 공용 헬퍼로 이관하고 본 메서드는 사유 코드 변환만 담당한다
+    	//   (Attd_05 셀 스킵 사유 ↔ Attd_07/Req_07 차단 문구의 경로 간 판정 불일치 제거). 동작 불변.
+    	switch (com.prafta.common.cmm.schedule.ScheduleLockMessages.resolveLockKind(locks)) {
+    		case OVERTIME:
+    			return REASON_HAS_OVERTIME;
+    		case CONFIRMED_LEAVE:
+    			return REASON_HAS_LEAVE;
+    		default:
+    			return REASON_HAS_PENDING_LEAVE;
     	}
-    	if (otLocked) {
-    		return REASON_HAS_OVERTIME;
-    	}
-    	return confirmedLeave ? REASON_HAS_LEAVE : REASON_HAS_PENDING_LEAVE;
     }
 
     /** 스킵 사유 코드에 대응하는 사유 문구 (한국어) */

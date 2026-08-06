@@ -28,6 +28,7 @@ import com.prafta.app.approval.admin.result.AttdSnapshotRow;
 import com.prafta.app.approval.admin.result.HistoryRow;
 import com.prafta.app.approval.admin.result.LeaveBalanceRow;
 import com.prafta.app.approval.admin.result.LeaveBodyRow;
+import com.prafta.app.approval.admin.result.NeighborAttdSegmentRow;
 import com.prafta.app.approval.admin.result.PendingCorrOtRow;
 import com.prafta.app.approval.admin.result.PendingLeaveRow;
 import com.prafta.app.approval.admin.result.ReqMetaRow;
@@ -38,7 +39,10 @@ import com.prafta.common.cmm.approval.vo.ApprovalStepVO;
 import com.prafta.common.error.attd.AttdErrorCode;
 import com.prafta.common.error.common.CommonErrorCode;
 import com.prafta.common.exception.ApiException;
+import com.prafta.common.util.AttdOverlapMessages;
+import com.prafta.common.util.AttdOverlapUtils;
 import com.prafta.common.util.AuthRoleUtils;
+import com.prafta.common.util.DateTimeUtils;
 import com.prafta.web.attd.attd07.application.model.OvertimeItemModel;
 import com.prafta.web.attd.attd07.application.param.ApproveSchedModifyRequestParam;
 import com.prafta.web.attd.attd07.application.param.RejectUserAttdRequestParam;
@@ -386,6 +390,11 @@ public class AppAdminApprovalServiceImpl implements AppAdminApprovalService {
             body.put("correctionTypeNm", null);   // 보정유형 코드 미저장(요청테이블) — 후속
             body.put("before", before);
             body.put("after", after);
+            // 겹침가드 개선(2026-08-06): 앞뒤 근무일(D-1/D+1) 근태 구간. 이웃 근무일의 미마감 근태가
+            //   이 보정 승인을 막는 원인일 때 관리자가 화면에서 특정할 수 있게 한다(정책서 attd §7.6).
+            //   표시 문자열·status 는 서버 완성값(프론트 재판정 금지). 0건이면 빈 리스트.
+            body.put("neighborSegments",
+                    buildNeighborSegments(cmpnyCd, meta.siteCd(), meta.userCd(), meta.workYmd()));
         } else if (G_OVERTIME.equals(group)) {
             Map<String, Object> claimed = new LinkedHashMap<>();
             claimed.put("startAt", joinDt(meta.startDate(), meta.startTime()));
@@ -448,6 +457,56 @@ public class AppAdminApprovalServiceImpl implements AppAdminApprovalService {
             body.put("after", after);
         }
         return body;
+    }
+
+    /**
+     * 앞뒤 근무일(D-1 / D+1) 근태 구간 목록(표시 전용, 겹침가드 개선 2026-08-06).
+     *
+     * <p>웹 일자상세(daily-attd-details)의 {@code neighborAttdSegmentList} 와 동일한 형상으로 내려준다.
+     *   상태(status)는 각 행 자기 근무일 기준 판정(CLOSED/OPEN/CORRUPT)이며 서버 단일 출처다.
+     *   상세 EP 진입부의 scope/node 권한 가드를 승계하고, 쿼리 WHERE 로 회사/사업장/사용자 스코프를 이중 차단한다.
+     *   ATTD_ID 는 화면에서 쓰지 않으므로 내려보내지 않는다(IDOR 표면 축소).
+     */
+    private List<Map<String, Object>> buildNeighborSegments(String cmpnyCd, String siteCd,
+                                                            String userCd, String workYmd) {
+        List<Map<String, Object>> out = new ArrayList<>();
+        if (!StringUtils.hasText(siteCd) || !StringUtils.hasText(userCd) || !StringUtils.hasText(workYmd)) {
+            return out;
+        }
+        String fromYmd = DateTimeUtils.plusDays(workYmd, -1);
+        String toYmd = DateTimeUtils.plusDays(workYmd, 1);
+        if (fromYmd == null || toYmd == null) {
+            return out; // 근무일 형식 오류 fail-safe(표시 생략)
+        }
+        List<NeighborAttdSegmentRow> rows =
+                mapper.selectNeighborAttdSegments(cmpnyCd, siteCd, userCd, fromYmd, toYmd, workYmd);
+        if (rows == null || rows.isEmpty()) {
+            return out;
+        }
+        boolean corruptFound = false;
+        for (NeighborAttdSegmentRow row : rows) {
+            AttdOverlapUtils.SegmentKind kind = AttdOverlapUtils.classify(
+                    row.workYmd(), row.checkInDate(), row.checkInTime(), row.checkOutDate(), row.checkOutTime());
+            if (kind == null) {
+                kind = AttdOverlapUtils.SegmentKind.CORRUPT; // 출근 stamp 산출 불가(스키마상 NOT NULL — 이론상 미도달)
+            }
+            if (kind == AttdOverlapUtils.SegmentKind.CORRUPT) {
+                corruptFound = true;
+            }
+            Map<String, Object> item = new LinkedHashMap<>();
+            item.put("workYmd", row.workYmd());
+            item.put("dayLabel", AttdOverlapMessages.dayLabel(workYmd, row.workYmd()));
+            item.put("workSeq", row.workSeq());
+            item.put("seqLabel", AttdOverlapMessages.seqLabel(row.workSeq()));
+            item.put("checkInText", AttdOverlapMessages.stampText(row.workYmd(), row.checkInDate(), row.checkInTime()));
+            item.put("checkOutText", AttdOverlapMessages.checkOutTextFor(kind, row.workYmd(), row.checkOutDate(), row.checkOutTime()));
+            item.put("status", kind.name());
+            out.add(item);
+        }
+        if (corruptFound) {
+            log.warn("[겹침가드] 앞뒤 근무일 구간에 퇴근시각 미성립(CORRUPT) 행 포함. siteCd={}, workYmd={}", siteCd, workYmd);
+        }
+        return out;
     }
 
     /**
