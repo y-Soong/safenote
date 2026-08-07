@@ -58,7 +58,7 @@
 
 <script setup>
 import { ref, watch } from 'vue'
-import BaseBottomSheet from './BaseBottomSheet.vue'
+import BaseBottomSheet from '@/components/common/BaseBottomSheet.vue'
 import DateStepperField from '@/components/common/DateStepperField.vue'
 
 const props = defineProps({

@@ -56,7 +56,7 @@
 
 <script setup>
 import { ref, watch } from 'vue'
-import BaseBottomSheet from './BaseBottomSheet.vue'
+import BaseBottomSheet from '@/components/common/BaseBottomSheet.vue'
 import api from '@/api/axios'
 import { resolveApiErrorMessage } from '@/utils/apiError'
 

@@ -1,8 +1,10 @@
 <!--
-  BaseBottomSheet.vue — 바텀시트 공통 베이스 (4종 시트 공통)
-  - 작업 ID: PRAFTA-APP-006-2
+  BaseBottomSheet.vue — 바텀시트 공통 베이스 (전 화면 공통)
+  - 작업 ID: PRAFTA-APP-006-2 / HB-14(F-6): views/req/components → components/common 으로 이동(Q7-b).
+    공용 컴포넌트가 views 하위를 참조하지 않도록 위치만 옮겼고 내용은 불변이다.
   - props: modelValue (v-model), title, showFooter
   - slots: default(옵션 영역), footer (showFooter 일 때만 노출)
+  - ⚠️ 배경 스크롤 잠금/해제는 이 컴포넌트 소유다. 사용처에서 중복 구현 금지(과거 2회 재발 — 잔결함 F-6).
 -->
 <template>
   <transition name="req-sheet-fade">

@@ -117,7 +117,7 @@
     </footer>
 
     <!-- 결재자 추가 바텀시트 (prafta-app-009) -->
-    <AttdApproverPickerSheet
+    <ApproverPickerSheet
       v-if="showApprovalSection"
       v-model="approverPickerOpen"
       :excluded-user-cds="approverUserCds"
@@ -132,7 +132,7 @@ import SlotCard from './SlotCard.vue'
 import DateStepperField from '@/components/common/DateStepperField.vue'
 import TimeStepperField from '@/components/common/TimeStepperField.vue'
 import ApprovalLineSection from './ApprovalLineSection.vue'
-import AttdApproverPickerSheet from './AttdApproverPickerSheet.vue'
+import ApproverPickerSheet from '@/components/common/ApproverPickerSheet.vue'
 import { formatTimeSummary } from '@/views/attd/attdFormat'
 
 const props = defineProps({

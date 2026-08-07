@@ -549,17 +549,9 @@
                 />
                 0.5일 (반차)
               </label>
-              <!-- LC-10: 반반차를 사용 단위 선택지로 편입(구 독립 토글 폐기).
-                   선택 시 허용집합 = 종일/반차/반반차 — 시간차는 열리지 않는다. -->
-              <label class="lp-check">
-                <input
-                  type="radio"
-                  value="QUARTER_DAY"
-                  v-model="usageUnit"
-                  :disabled="usageUnitLocked"
-                />
-                0.25일 (반반차)
-              </label>
+              <!-- HB-04(2026-08-07): 반반차(QUARTER_DAY) 폐지 — 선택지 제거.
+                   서버가 구 'QUARTER_DAY' 를 HALF_DAY 로 축소 정규화하므로, 선택지를 남겨두면
+                   "0.25일로 저장했는데 반차로 바뀌는" 무고지 변경이 발생한다. -->
               <label class="lp-check">
                 <input
                   type="radio"
@@ -607,13 +599,6 @@
           [시간차 1시간] 선택 → 1일·반차·2시간·1시간 모두 신청 가능)
         </p>
         <p class="lp-strong-note">
-          ※ <strong>[0.25일 (반반차)]</strong>는 예외로, 선택 시
-          <strong>1일 · 반차 · 반반차</strong>만 허용되고
-          <strong>시간차는 열리지 않습니다.</strong> 반반차는 시각을 지정하지 않는
-          고정 단위이므로, 시각 지정형 시간차를 함께 쓰려면 시간차 단위를
-          선택하세요.
-        </p>
-        <p class="lp-strong-note">
           ※ <strong>[비례 부여 시 반올림]</strong> 값이
           <strong>"0.5일 단위 절사"</strong>인 경우 사용 단위가
           <strong>[0.5일 (반차)]</strong>로 고정됩니다.
@@ -647,8 +632,8 @@
         <p class="lp-strong-note">
           ※ 시간차는 <strong>근무계획이 배정된 날만</strong> 신청할 수 있으며,
           배정되지 않은 날은
-          <strong>시간 단위 연차를 사용할 수 없습니다.</strong> (종일·반차·반반차는
-          가능. 교대근무자도 배정일에는 시간차 사용 가능)
+          <strong>시간 단위 연차를 사용할 수 없습니다.</strong> (종일만 가능.
+          교대근무자도 배정일에는 시간차 사용 가능)
         </p>
         <!-- R3 하한 규칙 안내는 개인 분모 전환 후에도 유효(PC-03 ⑦ 존치) — 기존 안내 유지 -->
         <div class="lp-note lp-note--info">
@@ -853,8 +838,9 @@ const applyFromDate = ref(""); // YYYYMMDD. 저장 직전 내일(오늘+1일)로
 const changeReason = ref("");
 
 // --- 사용 단위 정책 (TB_LEAVE_USAGE_POLICY) ---
-// 단일 선택(prafta-024 + LC-10): FULL_DAY / HALF_DAY / QUARTER_DAY / HOUR_2 / HOUR_1 / MIN_30
-//   QUARTER_DAY(반반차)는 계층 특례 — 선택 시 서버 허용집합이 [종일, 반차, 반반차]가 된다.
+// 단일 선택(prafta-024 + HB-04): FULL_DAY / HALF_DAY / HOUR_2 / HOUR_1 / MIN_30 5종.
+//   HB-04(2026-08-07): 반반차(QUARTER_DAY) 폐지 — 선택지에서 제거했다. 구 저장값은 아래 fnApplyPolicy
+//   에서 HALF_DAY 로 정규화한다(서버 축소 정규화와 동일 방향).
 const usageUnit = ref("FULL_DAY");
 // 법정연차 신청 결재 여부 (prafta-019-E 결정 #2). 'Y'=결재라인, 'N'=즉시확정
 const aprvUseYn = ref("N");
@@ -1112,8 +1098,11 @@ const fnApplyPolicyToState = (p) => {
   axis7UsePromotion.value = p.axis7UsePromotion ?? "N";
 
   // 사용 단위(단일): 미지정/구버전 데이터는 FULL_DAY로 폴백
-  //   LC-10: 구 데이터의 allowQuarter='Y'는 승계하지 않는다. 반반차는 USAGE_UNIT='QUARTER_DAY'로만 표현.
-  usageUnit.value = p.usageUnit || "FULL_DAY";
+  //   HB-04(2026-08-07): 반반차 폐지 — 구 데이터의 'QUARTER_DAY' 는 HALF_DAY 로 정규화해 표시한다.
+  //   (서버도 저장 시 동일하게 축소 정규화한다. 정규화하지 않으면 라디오가 무선택 상태가 되어
+  //    관리자가 값을 확인하지 못한 채 저장하게 된다.)
+  usageUnit.value =
+    p.usageUnit === "QUARTER_DAY" ? "HALF_DAY" : p.usageUnit || "FULL_DAY";
   aprvUseYn.value = p.aprvUseYn ?? "N";
   // PC-08(D3): 짜투리 잔여 보전 옵션 — 미지정/구버전 데이터는 'N'(OFF) 폴백
   allowRemnantRoundUp.value = p.allowRemnantRoundUp ?? "N";

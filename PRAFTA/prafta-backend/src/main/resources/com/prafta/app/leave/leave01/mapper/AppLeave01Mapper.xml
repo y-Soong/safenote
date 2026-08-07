@@ -212,25 +212,62 @@
        AND U.DEL_YN        = 'N'
     </select>
 
-    <!-- ============ HB-13(F-3): 시간차 사용 분을 "사용 / 사용예정"으로 분리 ============
+    <!-- ============ HB-13(F-3, §20 재확정): 시간차 실분 + 반차 일수를 "사용 / 사용예정"으로 분리 ============
       당일분모 전환(E1) 이후 FE 가 일수→시간을 단일 분모로 역환산하면 실제 3시간이 2시간 48분으로
       표시되는 결함이 생긴다(분모가 날마다 다르기 때문). 실제 분 합계를 그대로 내려 역환산을 없앤다.
-      분리 술어는 웹 Dashboard01 의 usedDays / plannedDays 와 동일하게 START_DATE 기준:
-        START_DATE <= 오늘 = 사용(past) / START_DATE > 오늘 = 사용예정(planned).
+      §20-2(B안): 정수부가 아닌 잔여 소수(반차 0.5일)가 표기에서 증발하지 않도록 반차 일수도 함께 내린다.
+        ⚠️ COUNT 집계 금지 — 짜투리 분할차감으로 한 반차가 여러 행으로 쪼개져 건수가 과다 계상된다.
+        SUM(LEAVE_DAYS) 를 내리고 건수 환산(0.5 로 나눔)은 FE 가 한다(분할되어도 행 합계는 0.5 로 보존).
+
+      ★ NEW-1 모수 정합: 집계 대상 집합(모수)을 selectGroupAgg 와 완전히 동일하게 맞춘다.
+        이 값들은 groups.used / groups.planned 와 같은 셀에 병기되고, FE 는
+        "rest = days 빼기 반차일수" 로 종일분 정수부를 낸다. 두 숫자의 모수가 다르면 rest 가 음수가 되어
+        종일분("N일")이 통째로 사라진다(예: 당해 사용한 반차의 차감 부여가 EXPIRE_YN='Y' 로 소멸하면
+        groups.used 에서는 빠지는데 반차 일수에는 남는 경우).
+        → selectGroupAgg 의 활성 부여 술어를 그대로 이식한다:
+             GRANT_ID 조인 + STATUS='ACTIVE' + EXPIRE_YN='N' + DEL_YN='N'
+             + NOT(가불 마커 '[가불]%' AND AVAIL_FROM_DATE 가 todayYmd 초과)
+           grantTypePrefix 필터는 걸지 않는다 — 병기는 TOTAL 토글에서만 하므로 TOTAL 상당
+           스코프(prefix 무관 전체합)가 맞다(selectGroupAgg 의 prefix=null 호출과 동일).
+        § 이로써 "groups.used 이상 반차 사용일수", "groups.planned 이상 반차 예정일수" 가 구조적으로
+          보장된다(같은 FROM/JOIN/WHERE 에서 USE_UNIT_TYPE='01' 만 걸러낸 부분집합이므로).
+        ※ GRANT_ID 가 NULL 인 사용 행은 groups.used(부여 테이블 집계) 에도 애초에 안 잡히므로,
+          조인으로 빠지는 것이 정합이다.
+
+      ★ 회계연도 술어(§20-3 초안)는 제거했다 — 모수를 결정하는 축은 "활성 부여"다.
+        회계연도 축을 겹치면(활성부여 교집합 회계연도) groups 와 또 어긋난다.
+      past/planned 분리 기준(START_DATE 가 todayYmd 이하 / 초과)은 유지한다 — 이건 모수가 아니라
+        "이미 썼나 / 쓸 예정인가" 구분이며, selectGroupAgg 의 planned 경계와 동일한 todayYmd 를 쓴다.
+
       기존 selectHourlyUsedMinutes(전 기간 합계)는 웹 대시보드도 쓰므로 그대로 둔다.
       ⚠️ SELECT 컬럼 순서 = HourlyUsedSplitRow 컴포넌트 순서(위치 매핑). -->
     <select id="selectHourlyUsedMinutesSplit"
             resultType="com.prafta.app.leave.leave01.result.HourlyUsedSplitRow">
     /* AppLeave01Mapper.selectHourlyUsedMinutesSplit */
     SELECT
-          IFNULL(SUM(CASE WHEN U.START_DATE <![CDATA[ <= ]]> DATE_FORMAT(NOW(), '%Y%m%d')
+          IFNULL(SUM(CASE WHEN U.USE_UNIT_TYPE IN ('02', '03', '04')
+                           AND U.START_DATE <![CDATA[ <= ]]> #{todayYmd}
                           THEN U.LEAVE_MINUTES ELSE 0 END), 0) AS pastMinutes
-        , IFNULL(SUM(CASE WHEN U.START_DATE <![CDATA[ > ]]> DATE_FORMAT(NOW(), '%Y%m%d')
+        , IFNULL(SUM(CASE WHEN U.USE_UNIT_TYPE IN ('02', '03', '04')
+                           AND U.START_DATE <![CDATA[ > ]]> #{todayYmd}
                           THEN U.LEAVE_MINUTES ELSE 0 END), 0) AS plannedMinutes
+        , IFNULL(SUM(CASE WHEN U.USE_UNIT_TYPE = '01'
+                           AND U.START_DATE <![CDATA[ <= ]]> #{todayYmd}
+                          THEN U.LEAVE_DAYS ELSE 0 END), 0) AS halfDayPastDays
+        , IFNULL(SUM(CASE WHEN U.USE_UNIT_TYPE = '01'
+                           AND U.START_DATE <![CDATA[ > ]]> #{todayYmd}
+                          THEN U.LEAVE_DAYS ELSE 0 END), 0) AS halfDayPlannedDays
       FROM TB_USER_LEAVE_USE U
+           JOIN TB_USER_LEAVE_GRANT G
+               ON  G.CMPNY_CD   = U.CMPNY_CD
+               AND G.GRANT_ID   = U.GRANT_ID
+               AND G.STATUS     = 'ACTIVE'
+               AND G.EXPIRE_YN  = 'N'
+               AND G.DEL_YN     = 'N'
+               AND NOT (G.GRANT_REASON LIKE '[가불]%' AND G.AVAIL_FROM_DATE <![CDATA[ > ]]> #{todayYmd})
      WHERE U.CMPNY_CD      = #{cmpnyCd}
        AND U.USER_CD       = #{userCd}
-       AND U.USE_UNIT_TYPE IN ('02', '03', '04')
+       AND U.USE_UNIT_TYPE IN ('01', '02', '03', '04')
        AND U.LEAVE_STATUS  = 'CONFIRMED'
        AND U.DEL_YN        = 'N'
     </select>

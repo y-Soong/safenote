@@ -150,10 +150,12 @@
       </button>
     </footer>
 
-    <!-- 결재자 추가 바텀시트 (010-22) -->
-    <PresetApproverPickerSheet
+    <!-- 결재자 추가 바텀시트 (010-22) — HB-14(F-6) 통합 공용 시트.
+         프리셋 후보는 앱 전용 GET /appApi/mypage/approval-candidates 이므로 source="mypage". -->
+    <ApproverPickerSheet
       v-model="pickerOpen"
       :excluded-user-cds="selectedUserCds"
+      source="mypage"
       @add="onApproversAdded"
     />
 
@@ -242,7 +244,7 @@ import { useRouter, useRoute } from 'vue-router'
 
 import api from '@/api/axios'
 
-import PresetApproverPickerSheet from './components/PresetApproverPickerSheet.vue'
+import ApproverPickerSheet from '@/components/common/ApproverPickerSheet.vue'
 
 const router = useRouter()
 const route = useRoute()

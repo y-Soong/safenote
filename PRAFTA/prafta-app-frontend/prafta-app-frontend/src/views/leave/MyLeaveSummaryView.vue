@@ -49,15 +49,31 @@
         />
 
         <!-- 메인 잔여 카드 -->
-        <LeaveBalanceCard :label="balanceLabel" :group="currentGroup" :conv-minutes="convMinutes" />
+        <LeaveBalanceCard
+          :label="balanceLabel"
+          :group="currentGroup"
+          :conv-minutes="convMinutes"
+          :hourly-used-minutes="cellHourlyUsedMinutes"
+          :hourly-planned-minutes="cellHourlyPlannedMinutes"
+          :half-day-used-days="cellHalfDayUsedDays"
+          :half-day-planned-days="cellHalfDayPlannedDays"
+          @guide="onRemainingGuide"
+        />
 
         <!-- 3분할 KPI (부여 / 사용 / 사용예정) -->
-        <LeaveSplitKpi :group="currentGroup" :conv-minutes="convMinutes" />
+        <LeaveSplitKpi
+          :group="currentGroup"
+          :conv-minutes="convMinutes"
+          :hourly-used-minutes="cellHourlyUsedMinutes"
+          :hourly-planned-minutes="cellHourlyPlannedMinutes"
+          :half-day-used-days="cellHalfDayUsedDays"
+          :half-day-planned-days="cellHalfDayPlannedDays"
+        />
 
-        <!-- LC-11: 시간차 사용분 원본(분) 병기 — 차감 일수 합계와 별개인 서버 합계값 그대로 표시. -->
-        <p v-if="hourlyUsedMinutes > 0" class="lv-hourly-note">
-          시간차 사용 {{ hourlyUsedText }} 포함
-        </p>
+        <!-- LC-11: 시간차 사용분 원본(분) 병기 — 차감 일수 합계와 별개인 서버 합계값 그대로 표시.
+             HB-13(F-3): 전체 토글에서는 사용/사용예정 셀이 실분을 직접 표기하므로 중복 노출을 피한다
+             (시간차 실분은 그룹 구분이 없어 법정/법정 외 토글에서만 전체 합계로 안내). -->
+        <p v-if="showHourlyNote" class="lv-hourly-note">시간차 사용 {{ hourlyUsedText }} 포함</p>
 
         <!-- 메타 카드 (입사일 / 근속 / 사용률) -->
         <LeaveMetaCard :user="user" :usage-rate="currentUsageRate" />
@@ -149,6 +165,23 @@
       </button>
     </footer>
 
+    <!-- HB-13(F-3): 잔여 시간 표기 근사치 안내 — 공용 BaseBottomSheet 재사용(신규 시트 인프라 금지).
+         앱 전역 $alert 미등록이라 alert() 는 window.alert 로 떨어지므로 사용하지 않는다. -->
+    <BaseBottomSheet v-model="guideOpen" title="잔여 연차 시간 표기 안내" :show-footer="false">
+      <div class="lv-guide">
+        <p class="lv-guide__p">잔여 연차의 <strong>시간 표기는 참고용 근사치</strong>입니다.</p>
+        <p class="lv-guide__p">
+          연차는 일수로 관리되고, 실제 차감 시간은
+          <strong>그날 배정된 근무 스케줄에 따라 달라집니다.</strong>
+        </p>
+        <p class="lv-guide__p lv-guide__p--sub">
+          (예: 같은 반차라도 9시간 근무일과 8시간 근무일의 차감 시간이 다릅니다.)
+        </p>
+        <p class="lv-guide__p">이미 사용한 시간은 정확한 값이며, 잔여만 근사치입니다.</p>
+        <button type="button" class="lv-guide__close" @click="guideOpen = false">확인</button>
+      </div>
+    </BaseBottomSheet>
+
     <!-- 인라인 SVG sprite (본 화면 전용) -->
     <svg width="0" height="0" class="lv-sprite" aria-hidden="true" focusable="false">
       <defs>
@@ -188,6 +221,7 @@ import api from '@/api/axios'
 import { formatLeaveDays, formatMinutesToHm } from '@/utils/leaveFormat'
 import { usePullToRefresh } from '@/composables/usePullToRefresh'
 import PullRefreshIndicator from '@/components/common/PullRefreshIndicator.vue'
+import BaseBottomSheet from '@/components/common/BaseBottomSheet.vue'
 
 import LeaveGroupToggle from './components/LeaveGroupToggle.vue'
 import LeaveExpiryCallout from './components/LeaveExpiryCallout.vue'
@@ -227,6 +261,17 @@ const borrowedDays = ref(0)
 const convMinutes = ref(480)
 // LC-11: 시간차(02/03/04) CONFIRMED 사용 분 합계(전 기간) — 원본(분) 병기용. 0이면 미노출.
 const hourlyUsedMinutes = ref(0)
+// HB-13(F-3): 위 합계를 사용/사용예정으로 분리한 서버 실분(START_DATE <= 오늘 / > 오늘).
+//   사용/사용예정 표기를 일수→시간 역환산이 아니라 실분으로 내기 위한 값(구 응답이면 0 폴백).
+const hourlyUsedMinutesPast = ref(0)
+const hourlyUsedMinutesPlanned = ref(0)
+// HB-13 §20-2(B안): 반차 사용/사용예정 "일수"(건수 아님 — 분할차감 대응, 서버 SUM 값).
+//   정수부만 쓰는 표기에서 반차 0.5일이 증발하던 문제를 없애기 위한 값(구 응답이면 0 폴백).
+const halfDayUsedDaysPast = ref(0)
+const halfDayUsedDaysPlanned = ref(0)
+
+// HB-13(F-3): 잔여 시간 표기 근사치 안내 시트 오픈 상태(UI 상태).
+const guideOpen = ref(false)
 
 // 그룹 토글 (UI 상태 — 허용 범위). 진입 기본값: 전체
 const activeGroup = ref('TOTAL')
@@ -277,12 +322,31 @@ const hasBorrowed = computed(() => Number(borrowedDays.value) > 0)
 // LC-11: 시간차 사용분 원본 표기("1시간 30분") — 서버 합계값 그대로, 재계산 없음.
 const hourlyUsedText = computed(() => formatMinutesToHm(hourlyUsedMinutes.value))
 
+// HB-13(F-3): 시간차 실분·반차 일수는 법정/법정 외 구분이 없는 전체 합계다. 그룹 토글이 전체가 아닐 때
+//   그 셀에 붙이면 그룹 수치와 어긋나므로, 전체(TOTAL) 토글에서만 셀 병기에 사용한다(§20-2 도 동일 스코프).
+const isTotalGroup = computed(() => activeGroup.value === 'TOTAL')
+const cellHourlyUsedMinutes = computed(() => (isTotalGroup.value ? hourlyUsedMinutesPast.value : 0))
+const cellHourlyPlannedMinutes = computed(() =>
+  isTotalGroup.value ? hourlyUsedMinutesPlanned.value : 0,
+)
+const cellHalfDayUsedDays = computed(() => (isTotalGroup.value ? halfDayUsedDaysPast.value : 0))
+const cellHalfDayPlannedDays = computed(() =>
+  isTotalGroup.value ? halfDayUsedDaysPlanned.value : 0,
+)
+// 하단 병기 노트: 전체 토글에서는 셀이 실분을 직접 표기하므로 중복 노출하지 않는다.
+const showHourlyNote = computed(() => hourlyUsedMinutes.value > 0 && !isTotalGroup.value)
+
 // ───────────────────────────────────────────────────────────
 // 이벤트 핸들러
 // ───────────────────────────────────────────────────────────
 const onBack = () => {
   // 메인 홈 복귀 (MyAttendanceView onBack 패턴 동일)
   router.push('/MainView')
+}
+
+// HB-13(F-3): 잔여 라벨 ⓘ 버튼 → 근사치 안내 시트 오픈(정확값인 사용/사용예정에는 붙이지 않는다).
+const onRemainingGuide = () => {
+  guideOpen.value = true
 }
 
 const onCalloutClose = () => {
@@ -314,6 +378,12 @@ const loadSummary = async ({ showLoading = true } = {}) => {
     // LC-11: 표기 분모/시간차 사용분 — 서버 미제공(구버전 응답) 시 480/0 폴백.
     convMinutes.value = Number(res?.data?.convMinutes) > 0 ? Number(res.data.convMinutes) : 480
     hourlyUsedMinutes.value = Number(res?.data?.hourlyUsedMinutes) || 0
+    // HB-13(F-3): 사용/사용예정 실분(서버 additive 필드). 구 응답이면 0 → 기존 일수 표기로 폴백.
+    hourlyUsedMinutesPast.value = Number(res?.data?.hourlyUsedMinutesPast) || 0
+    hourlyUsedMinutesPlanned.value = Number(res?.data?.hourlyUsedMinutesPlanned) || 0
+    // HB-13 §20-2: 반차 사용/사용예정 일수(서버 additive 필드). 구 응답이면 0 → 반차 항목 미표기.
+    halfDayUsedDaysPast.value = Number(res?.data?.halfDayUsedDaysPast) || 0
+    halfDayUsedDaysPlanned.value = Number(res?.data?.halfDayUsedDaysPlanned) || 0
   } catch (e) {
     console.error('[MyLeaveSummary] 연차 현황 조회 실패:', e?.message)
     showAlert('연차 정보를 불러오지 못했어요. 잠시 후 다시 시도해 주세요.')
@@ -523,6 +593,40 @@ onMounted(() => {
   font-size: 12px;
   color: var(--color-text-tertiary);
   font-variant-numeric: tabular-nums;
+}
+
+/* HB-13(F-3): 잔여 시간 표기 안내 시트 본문 — 시트 셸은 BaseBottomSheet 소유(토큰만 사용). */
+.lv-guide {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-sm);
+  padding: var(--space-sm) 0 var(--space-md);
+}
+.lv-guide__p {
+  margin: 0;
+  font-size: 14px;
+  line-height: 1.6;
+  color: var(--color-text-secondary);
+}
+.lv-guide__p strong {
+  color: var(--color-text-primary);
+  font-weight: 600;
+}
+.lv-guide__p--sub {
+  font-size: 13px;
+  color: var(--color-text-tertiary);
+}
+.lv-guide__close {
+  margin-top: var(--space-sm);
+  height: 48px;
+  background: var(--color-primary);
+  border: 0;
+  border-radius: var(--radius-md);
+  color: var(--color-surface);
+  font-size: 15px;
+  font-weight: 600;
+  cursor: pointer;
+  font-family: inherit;
 }
 
 /* 가불 사용분 카드 (prafta-com-011-5) — 표시 전용. 메타카드/경고 톤 재사용(CSS 변수만). */

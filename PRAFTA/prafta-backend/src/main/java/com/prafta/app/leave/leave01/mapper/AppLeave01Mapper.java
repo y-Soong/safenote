@@ -103,14 +103,30 @@ public interface AppLeave01Mapper {
     );
 
     /**
-     * HB-13(F-3): 시간차 CONFIRMED 사용 분을 "사용(START_DATE &le; 오늘) / 사용예정(&gt; 오늘)"으로 분리.
+     * HB-13(F-3, §20 재확정): 시간차 CONFIRMED 사용 분 + 반차(SYS025 '01') 사용 일수를
+     * "사용(START_DATE &le; 오늘) / 사용예정(&gt; 오늘)"으로 분리.
      *
      * <p>당일분모 전환(E1)으로 시간차 분모가 날마다 달라져, FE 가 일수→시간을 단일 분모로 역환산하면
      * 실제 3시간이 2시간 48분으로 표시되는 결함(F-3)이 생긴다. 실분을 그대로 내려 역환산을 제거한다.
      * 분리 술어는 웹 Dashboard01 의 usedDays/plannedDays 와 동일(START_DATE 기준).
+     *
+     * <p>§20-2: 표기가 일수 정수부만 쓰므로 반차 0.5일이 증발한다 → 반차 일수를 별도 컬럼으로 함께 내린다
+     * (건수 아님 — 짜투리 분할차감 대응. 건수 환산은 소비측에서 0.5 로 나눔).
+     *
+     * <p><b>★ NEW-1(모수 정합)</b>: 이 값들은 {@code groups.TOTAL.used}/{@code planned} 와 <b>같은 셀에 병기</b>되고
+     * FE 가 {@code rest = days - 반차일수} 로 종일분을 산출하므로, 모수가 {@link #selectGroupAgg} 와 다르면
+     * {@code rest} 가 음수가 되어 종일분("N일")이 표기에서 사라진다. 따라서 집계 대상을 selectGroupAgg 와
+     * 동일한 <b>활성 부여 집합</b>으로 맞춘다(GRANT_ID 조인 + STATUS='ACTIVE' + EXPIRE_YN='N' + DEL_YN='N'
+     * + 미발생 가불 GRANT 제외). grantTypePrefix 는 걸지 않는다 — 병기는 TOTAL 토글 전용이라
+     * TOTAL 상당 스코프(prefix 무관 전체합)가 맞다.
+     * <p>§20-3 초안의 회계연도 술어는 <b>제거</b>했다 — 모수를 정하는 축은 활성 부여이며, 두 축을 겹치면
+     * groups 와 다시 어긋난다. {@code todayYmd} 는 past/planned 경계 + 가불 미발생 판정에 함께 쓰인다.
+     *
+     * @param todayYmd 기준일 YYYYMMDD(사용/사용예정 경계 — selectGroupAgg 와 동일값 주입)
      */
     HourlyUsedSplitRow selectHourlyUsedMinutesSplit(
             @Param("cmpnyCd") String cmpnyCd
             , @Param("userCd") String userCd
+            , @Param("todayYmd") String todayYmd
     );
 }

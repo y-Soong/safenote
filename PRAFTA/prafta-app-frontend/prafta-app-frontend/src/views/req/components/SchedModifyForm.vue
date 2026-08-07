@@ -129,7 +129,7 @@
     />
 
     <!-- 결재자 추가 바텀시트 (prafta-app-009) -->
-    <AttdApproverPickerSheet
+    <ApproverPickerSheet
       v-if="showApprovalSection"
       v-model="approverPickerOpen"
       :excluded-user-cds="approverUserCds"
@@ -143,7 +143,7 @@ import { ref, computed, onMounted, getCurrentInstance } from 'vue'
 import api from '@/api/axios'
 import SchedPickSheet from './SchedPickSheet.vue'
 import ApprovalLineSection from './ApprovalLineSection.vue'
-import AttdApproverPickerSheet from './AttdApproverPickerSheet.vue'
+import ApproverPickerSheet from '@/components/common/ApproverPickerSheet.vue'
 
 const props = defineProps({
   context: { type: Object, required: true },

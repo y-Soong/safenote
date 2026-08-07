@@ -163,7 +163,10 @@ const onPreviewRequest = async (payload) => {
 // ── 시간차 휴게시간 안내: 대상일 근무/휴게 시각 조회 (GET /appApi/leaveflow/day-schedule) ──
 // 폼이 시간차 단위 + 날짜 완성 시 emit → 조회 전용 호출. 실패는 비치명적(표시만 생략).
 // { hasSchedule, fstSchStrTime, fstSchEndTime, secSchStrTime, secSchEndTime,
-//   fstBrkStrTime, fstBrkEndTime, secBrkStrTime, secBrkEndTime } | null
+//   fstBrkStrTime, fstBrkEndTime, secBrkStrTime, secBrkEndTime,
+//   halfDayBoundaryTime, halfStartPartRange, halfEndPartRange } | null
+// HB-03(반차 시간대 도입): 뒤 3필드는 반차 경계 미리보기(서버 산출 권위값 — additive, 구 서버면 부재).
+//   폼이 반차 파트 카드의 시각 표기·선택 가능 여부 판정에 사용한다.
 const daySchedule = ref(null)
 // 응답 역전 방지 시퀀스(preview 패턴 미러) — 빠른 날짜 변경 시 stale 응답 무시.
 let dayScheduleSeq = 0
@@ -190,8 +193,9 @@ const onDayScheduleRequest = async (workYmd) => {
 }
 
 // ── 018-B 제출 ───────────────────────────────────────────────────────────
-// payload(폼 emit): { leaveCd, leaveType, workYmd, useUnitType, startTime, endTime,
+// payload(폼 emit): { leaveCd, leaveType, workYmd, useUnitType, halfPart, startTime, endTime,
 //                     reason, approverUserCds, presetId } ← 018-B 요청 본문과 1:1
+//   HB-10: halfPart('START'|'END')는 반차('01') 신청 시 필수 — 미전송이면 서버가 ATTD_400_195 로 거부한다.
 const onSubmit = async (payload) => {
   if (isSubmitting.value) return
   // TODO(developer):

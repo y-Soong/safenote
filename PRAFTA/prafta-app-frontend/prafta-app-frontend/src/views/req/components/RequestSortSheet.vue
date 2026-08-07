@@ -29,7 +29,7 @@
 </template>
 
 <script setup>
-import BaseBottomSheet from './BaseBottomSheet.vue'
+import BaseBottomSheet from '@/components/common/BaseBottomSheet.vue'
 
 defineProps({
   modelValue: { type: Boolean, default: false },

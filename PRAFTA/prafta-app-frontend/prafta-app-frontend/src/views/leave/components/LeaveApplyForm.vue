@@ -13,10 +13,10 @@
                        insufficientBalance, convMinutes, floorDays }) — 부모 소유. 실패/비대상이면 null(표시 생략)
       previewLoading : preview 호출 진행 플래그(부모 소유)
   - emits:
-      submit({ leaveCd, leaveType, workYmd, useUnitType, startTime, endTime, reason,
+      submit({ leaveCd, leaveType, workYmd, useUnitType, halfPart, startTime, endTime, reason,
                approverUserCds, presetId })   ← 018-B POST /appApi/leaveflow/apply 요청 본문 키와 1:1
       cancel
-      preview-request(payload|null)          ← LC-10: 시간차/반반차 입력 완성 시 디바운스 후 emit.
+      preview-request(payload|null)          ← LC-10: 시간차 입력 완성 시 디바운스 후 emit.
                                                 null 이면 preview 표시 해제(입력 미완성/비대상 단위)
   - ⚠️ allowedUnits/balanceDays/aprvRequired 는 전부 서버(meta) 권위. 클라 추측 금지.
   - ⚠️ 종일(00)/반차(01)/시간차(02·03·04) 분기는 선택된 종류의 allowedUnits 안에서만.
@@ -64,7 +64,9 @@
           @click="onSelectType(lt)"
         >
           <span class="type-item__name">{{ lt.leaveNm }}</span>
-          <span class="type-item__bal">잔여 {{ formatLeaveDays(lt.balanceDays, metaConvMinutes) }}</span>
+          <span class="type-item__bal"
+            >잔여 {{ formatLeaveDays(lt.balanceDays, metaConvMinutes) }}</span
+          >
         </button>
 
         <p v-if="leaveTypes.length === 0" class="fs__empty">신청 가능한 연차 종류가 없어요</p>
@@ -76,7 +78,9 @@
       <!-- 잔여 요약 -->
       <div class="balance-box">
         <span class="balance-box__lbl">선택한 연차 잔여</span>
-        <span class="balance-box__val">{{ formatLeaveDays(selectedType.balanceDays, metaConvMinutes) }}</span>
+        <span class="balance-box__val">{{
+          formatLeaveDays(selectedType.balanceDays, metaConvMinutes)
+        }}</span>
       </div>
 
       <!-- 2) 사용 단위 (allowedUnits 게이팅) -->
@@ -89,17 +93,22 @@
             type="button"
             class="unit-chip"
             :class="{ 'unit-chip--on': useUnitType === u.code }"
-            :disabled="isHourlyUnitCode(u.code) && hourlyDisabledByDay"
+            :disabled="isScheduleRequiredUnit(u.code) && scheduleRequiredDisabledByDay"
             @click="onSelectUnit(u.code)"
           >
             {{ u.label }}
           </button>
         </div>
-        <!-- E2·E5(당일분모 전환): 시간차 가능 여부는 날짜 속성(당일 근무계획 배정 여부).
-             day-schedule 응답 도착 전엔 칩 enable 유지(낙관 — 서버 400_110/194 가 최종 판정),
-             도착 후 hasSchedule=false 면 시간차 칩 disable + 안내. (구 hourlyBlocked 사용자 속성 안내는 E5 해제로 제거) -->
-        <p v-if="hourlyDisabledByDay" class="unit-notice">
-          이 날은 근무계획이 없어 시간 단위 연차를 사용할 수 없어요. 종일 연차로 신청해 주세요.
+        <!-- E2·E5(당일분모 전환) + HB-11(F-4): 스케줄 필요 단위(반차·시간차) 가능 여부는 날짜 속성
+             (당일 근무계획 배정 여부). day-schedule 응답 도착 전엔 칩 enable 유지(낙관 — 서버
+             400_110/194 가 최종 판정), 도착 후 hasSchedule=false 면 반차·시간차 칩 disable + 안내.
+             (구 hourlyBlocked 사용자 속성 안내는 E5 해제로 제거) -->
+        <p v-if="scheduleRequiredDisabledByDay" class="unit-notice">
+          이 날은 근무계획이 없어 종일 연차만 신청할 수 있어요.
+        </p>
+        <!-- F-5: 휴무/미배정일 종일 연차 안내 — 차단하지 않는다(사용자 확정 2026-08-05). -->
+        <p v-if="showRestDayNotice" class="unit-notice unit-notice--rest">
+          이 날은 근무계획이 없어요(휴무). 종일 연차를 써도 실제로 더 쉬게 되지는 않아요.
         </p>
       </section>
 
@@ -110,6 +119,51 @@
           <span class="field__label"><span class="req">*</span>날짜</span>
           <DateStepperField v-model="workDateInput" placeholder="날짜 선택" />
         </label>
+      </section>
+
+      <!-- 3-1) 반차 파트 (useUnitType==='01' 전용) — 경계 시각은 서버 day-schedule 권위값.
+           시작기준 = 늦게 출근 / 종료기준 = 일찍 퇴근. 실제 시각을 함께 노출한다(스케줄마다 다름). -->
+      <section v-if="isHalfUnit" class="fs">
+        <p class="fs__title">반차 구분</p>
+
+        <div class="half-list">
+          <button
+            type="button"
+            class="half-card"
+            :class="{ 'half-card--on': halfPart === 'START' }"
+            :disabled="halfPartBlocked"
+            @click="halfPart = 'START'"
+          >
+            <span class="half-card__name">늦게 출근</span>
+            <span class="half-card__range">{{ halfStartRangeText || '--:-- ~ --:--' }}</span>
+            <span class="half-card__hint">이 시간까지 쉬고 출근</span>
+          </button>
+
+          <button
+            type="button"
+            class="half-card"
+            :class="{ 'half-card--on': halfPart === 'END' }"
+            :disabled="halfPartBlocked"
+            @click="halfPart = 'END'"
+          >
+            <span class="half-card__name">일찍 퇴근</span>
+            <span class="half-card__range">{{ halfEndRangeText || '--:-- ~ --:--' }}</span>
+            <span class="half-card__hint">이 시간부터 쉬고 퇴근</span>
+          </button>
+        </div>
+
+        <!-- 경계 안내 — 휴게를 건너뛰고 근로를 절반으로 나눈 시각임을 명시 -->
+        <p v-if="halfBoundaryText" class="half-note">
+          <span class="half-note__dot" aria-hidden="true">·</span>
+          이 날 근무를 절반으로 나누는 기준 시각은
+          <strong>{{ halfBoundaryText }}</strong> 예요. (휴게시간은 근무로 세지 않아요)
+        </p>
+        <!-- 차단이 확정된 경우에만 경고. daySchedule 미도착 구간에는 아무것도 띄우지 않는다
+             (틀린 안내를 순간 노출하지 않기 위함 — halfPartBlocked 주석 참조) -->
+        <p v-else-if="halfPartBlocked" class="half-note half-note--warn">
+          <span class="half-note__dot" aria-hidden="true">·</span>
+          이 날은 근무계획이 없어 반차를 신청할 수 없어요. 종일 연차로 신청해 주세요.
+        </p>
       </section>
 
       <!-- 4) 시간차 단위(02·03·04) — 시작~종료 시각 -->
@@ -353,9 +407,9 @@
       </button>
     </footer>
 
-    <!-- 결재자 추가 바텀시트 (참조: PresetApproverPickerSheet.vue) -->
-    <!-- developer: 후보 검색은 018-A GET /appApi/leaveflow/approver-search?keyword=&page=&size= -->
-    <LeaveApproverPickerSheet
+    <!-- 결재자 추가 바텀시트 — HB-14(F-6) 통합 공용 시트.
+         후보 검색은 018-A GET /appApi/leaveflow/approver-search?keyword=&page=&size= (source 기본값) -->
+    <ApproverPickerSheet
       v-if="aprvRequired"
       v-model="approverPickerOpen"
       :excluded-user-cds="approverUserCds"
@@ -369,10 +423,8 @@ import { ref, computed, onMounted, onUnmounted, watch, getCurrentInstance } from
 import { formatLeaveDays, formatMinutesToHm, trimRawDays } from '@/utils/leaveFormat'
 import DateStepperField from '@/components/common/DateStepperField.vue'
 import TimeStepperField from '@/components/common/TimeStepperField.vue'
-// developer: 결재자 추가 시트(LeaveApproverPickerSheet)는 본 작업의 후속 골격 또는
-//            mypage PresetApproverPickerSheet 를 leaveflow approver-search 엔드포인트로 재구성하여 사용.
-//            (prafta-app-018-C-tasks.md §결재자 시트 참조 — 신규 시트 골격 본 파일과 함께 작성)
-import LeaveApproverPickerSheet from './LeaveApproverPickerSheet.vue'
+// HB-14(F-6): 화면마다 3벌이던 결재자 시트를 공용 1벌로 통합(LeaveApproverPickerSheet 대체).
+import ApproverPickerSheet from '@/components/common/ApproverPickerSheet.vue'
 
 const props = defineProps({
   // 018-A apply-meta 응답: { leaveTypes: [{ leaveCd, leaveNm, systemYn, aprvRequired, allowedUnits[], balanceDays, applicable }],
@@ -397,7 +449,11 @@ const props = defineProps({
   previewLoading: { type: Boolean, default: false },
   // 대상일 근무/휴게 시각(부모 소유, GET day-schedule 응답) — 시간차 휴게 가로지름 사전 안내용.
   //   { hasSchedule, fstSchStrTime, fstSchEndTime, secSchStrTime, secSchEndTime,
-  //     fstBrkStrTime, fstBrkEndTime, secBrkStrTime, secBrkEndTime } | null(미조회/실패 — 표시 생략)
+  //     fstBrkStrTime, fstBrkEndTime, secBrkStrTime, secBrkEndTime,
+  //     halfDayBoundaryTime, halfStartPartRange, halfEndPartRange } | null(미조회/실패 — 표시 생략)
+  //   HB-03(반차 시간대 도입): 뒤 3필드는 반차 경계 미리보기(서버 산출 권위값 — FE 재계산 금지).
+  //     halfDayBoundaryTime='HHMM' / halfStartPartRange·halfEndPartRange='HHMM~HHMM'.
+  //     스케줄 없음/산출 불가면 전부 null(구 응답도 부재 → null 취급).
   daySchedule: { type: Object, default: null },
 })
 const emit = defineEmits(['submit', 'cancel', 'preview-request', 'day-schedule-request'])
@@ -411,15 +467,14 @@ const showAlert = (message) => {
 }
 
 // ── 사용 단위 라벨(SYS025) — 표시 전용 상수 ──────────────────────────────
-// 00 종일 / 01 반차 / 02 2시간 / 03 1시간 / 04 30분 / 05 반반차(LC-10 — USAGE_UNIT='QUARTER_DAY' 회사만
-//   서버가 allowedUnits 에 '05' 를 포함하므로, 노출 게이트는 기존 allowedUnits 패턴 그대로)
+// 00 종일 / 01 반차 / 02 2시간 / 03 1시간 / 04 30분
+//   HB-04(2026-08-07): 반반차('05') 폐지 — 서버 allowedUnits 가 '05' 를 반환하지 않는다.
 const UNIT_LABELS = {
   '00': '종일',
   '01': '반차',
   '02': '2시간',
   '03': '1시간',
   '04': '30분',
-  '05': '반반차(0.25일)',
 }
 
 // 시간차 단위(02·03·04)별 1스텝 분량(분). 종료 = 시작 + N×단위분 계산에 사용.
@@ -432,6 +487,10 @@ const UNIT_MINUTES = {
 // ── 반응형 상태 (developer: 초기값/리셋/시각 자동계산 로직 보완) ──────────
 const selectedLeaveCd = ref('')
 const useUnitType = ref('') // SYS025 코드
+// ── 반차 파트(시작기준/종료기준) — HB-10 ──────────────────────────────
+// halfPart: 'START'(늦게 출근) | 'END'(일찍 퇴근). 제출 payload 키와 1:1.
+//   반차('01') 신청 시 필수 — 미선택 제출은 서버가 fail-closed 거부(ATTD_400_195)하므로 FE 도 차단한다.
+const halfPart = ref('')
 const workDateInput = ref('') // 'YYYY-MM-DD' (DateStepperField v-model)
 const startTimeInput = ref('') // 'HH:MM' (TimeStepperField v-model, 30분 단위)
 // 종료 시각 = 시작 + stepCount × 단위분. [+]/[−] 로 stepCount 조정(최소 1).
@@ -457,14 +516,28 @@ const leaveTypes = computed(() => props.meta?.leaveTypes || [])
 //   구응답(필드 부재)/무효면 undefined → formatLeaveDays 내부 480 폴백.
 const metaConvMinutes = computed(() => props.meta?.convMinutes)
 
-// E2·E5(당일분모 전환): 시간차(02/03/04) 게이팅은 날짜 속성 — 당일 근무계획 미배정이면 칩 disable + 안내.
-//   day-schedule 미도착/조회 실패 시엔 enable 유지(낙관) — 서버 400_110/194 fail-closed 가 최종 판정.
+// E2·E5(당일분모 전환) + HB-11(F-4): "스케줄이 배정된 날에만 신청 가능한 단위" 게이팅은 날짜 속성 —
+//   당일 근무계획 미배정이면 칩 disable + 안내. day-schedule 미도착/조회 실패 시엔 enable 유지(낙관)
+//   — 서버 400_110/194 fail-closed 가 최종 판정.
+//   ★ 반차('01')도 경계 시각을 당일 스케줄에서 역산하므로 미배정일 신청 불가(서버 ATTD_400_110)다.
 //   (구 hourlyUnavailableNotice: apply-meta hourlyBlocked 기반 사용자 속성 안내 — E5 교대 차단 해제로 제거)
+const SCHEDULE_REQUIRED_UNIT_CODES = ['01', '02', '03', '04']
+const isScheduleRequiredUnit = (code) => SCHEDULE_REQUIRED_UNIT_CODES.includes(code)
+//   ★ NEW-3 부수: 조회 게이트에 종일('00')이 포함되면서, 종일만 허용하는 종류(USAGE_UNIT='FULL_DAY')
+//     에도 daySchedule 이 도착하게 됐다. 그때 이 값이 true 가 되면 "종일 연차만 신청할 수 있어요"
+//     안내(:106)가 F-5 휴무 안내(:110)와 겹쳐 두 줄이 쌓인다. 그 문구는 "다른 단위가 있는데 막혔다"는
+//     뜻이므로, 애초에 스케줄 필요 단위가 하나도 없는 종류에서는 성립하지 않는다 → 조건에 포함한다.
+//     (칩 :disabled 는 isScheduleRequiredUnit(u.code) 와 AND 라 그런 칩이 없는 종류에선 영향 0.)
+const scheduleRequiredDisabledByDay = computed(
+  () =>
+    hasScheduleRequiredUnits.value &&
+    Boolean(props.daySchedule) &&
+    props.daySchedule.hasSchedule !== true,
+)
+
+// 시간차 단위 집합(02/03/04) — 스텝퍼·시각입력 분기 전용. 위 스케줄 필요 집합과 의미가 다르므로 합치지 않는다.
 const HOURLY_UNIT_CODES = ['02', '03', '04']
 const isHourlyUnitCode = (code) => HOURLY_UNIT_CODES.includes(code)
-const hourlyDisabledByDay = computed(
-  () => Boolean(props.daySchedule) && props.daySchedule.hasSchedule !== true,
-)
 
 const selectedType = computed(
   () => leaveTypes.value.find((t) => t.leaveCd === selectedLeaveCd.value) || null,
@@ -485,7 +558,10 @@ const visibleLeaveTypes = computed(() =>
 )
 
 // 시간차 단위 여부(02·03·04)
-const isTimeUnit = computed(() => ['02', '03', '04'].includes(useUnitType.value))
+const isTimeUnit = computed(() => isHourlyUnitCode(useUnitType.value))
+
+// 반차 단위 여부(표시 분기 전용)
+const isHalfUnit = computed(() => useUnitType.value === '01')
 
 // 종료 스텝퍼 옆 신청 총 시간 표시 — 예: 7×30분 = "3시간 30분".
 //   (구현 주의: 스텝수+단위라벨 문자열 연결("730분")은 시간처럼 오독되므로 총 분량으로 환산 표기)
@@ -582,36 +658,99 @@ const dayScheduleInfo = computed(() => {
   }
 })
 
-// 선택 종류가 시간차 단위를 허용하는지 — E2 날짜 게이팅은 시간차 단위 선택 "전"(날짜 선택 시점)에
-//   칩 disable 판정이 필요하므로, 조회 조건을 구 isTimeUnit(단위 선택 후)에서 종류 허용 기준으로 확장.
-const hasHourlyUnits = computed(() =>
-  (selectedType.value?.allowedUnits || []).some((c) => isHourlyUnitCode(c)),
+// ── HB-10: 반차 경계 미리보기 (서버 day-schedule 권위값) ────────────────────
+// ★ 클라이언트에서 경계를 재계산하지 않는다 — 서버 산식(ScheduleWorkMinutesUtils)이 단일 출처다.
+//   서버 표기 'HHMM~HHMM'(자정 경계는 '2400') → 표시용 'HH:MM~HH:MM'. 형식 위반/부재면 ''.
+const fmtServerRange = (range) => {
+  if (typeof range !== 'string') return ''
+  const parts = range.split('~')
+  if (parts.length !== 2) return ''
+  return fmtRange(parts[0], parts[1]) || ''
+}
+
+// 근무를 절반으로 나누는 기준 시각('HH:MM'). 스케줄 없음/산출 불가면 ''(반차 카드 disable 판정에도 사용).
+const halfBoundaryText = computed(() => fmtHHMM(props.daySchedule?.halfDayBoundaryTime))
+
+// 반차 파트 선택 차단 판정 — ★ scheduleRequiredDisabledByDay 와 같은 "낙관 enable" 규약을 따른다.
+//   daySchedule 미도착(조회 in-flight) 구간에는 차단하지 않는다. `!halfBoundaryText` 로 판정하면
+//   로딩 수백 ms 동안 카드가 잠기고 "근무계획이 없어…" 라는 사실과 다른 문구가 노출된다.
+//   차단은 "스케줄이 없음을 확인했을 때" 또는 "스케줄은 있는데 서버가 경계를 못 냈을 때"만.
+const halfPartBlocked = computed(() => {
+  if (!props.daySchedule) return false // 미도착 → 낙관 enable
+  return props.daySchedule.hasSchedule !== true || !halfBoundaryText.value
+})
+// 시작기준(늦게 출근)이 쉬는 구간 = [근무 시작, 경계)
+const halfStartRangeText = computed(() => fmtServerRange(props.daySchedule?.halfStartPartRange))
+// 종료기준(일찍 퇴근)이 쉬는 구간 = [경계, 근무 종료)
+const halfEndRangeText = computed(() => fmtServerRange(props.daySchedule?.halfEndPartRange))
+
+// F-5(HB-12): 휴무·미배정일에 종일('00') 연차를 고를 때만 안내. 차단하지 않는다(사용자 확정 2026-08-05).
+//   신규 조회 없이 기존 day-schedule 응답만 재사용(미조회/실패 시엔 안내 생략 — 오안내 방지).
+const showRestDayNotice = computed(
+  () =>
+    useUnitType.value === '00' &&
+    Boolean(props.daySchedule) &&
+    props.daySchedule.hasSchedule !== true,
 )
 
-// 시간차 허용 종류 + 날짜 완성 시에만 조회 대상(그 외 null → 표시 해제).
+// 선택 종류가 스케줄 필요 단위(반차·시간차)를 허용하는지 — E2 날짜 게이팅은 단위 선택 "전"(날짜 선택
+//   시점)에 칩 disable 판정이 필요하므로, 조회 조건을 구 isTimeUnit(단위 선택 후)에서 종류 허용 기준으로 확장.
+//   HB-10: 반차 경계 미리보기도 같은 day-schedule 응답을 쓰므로 '01' 허용 종류도 조회 대상이다.
+const hasScheduleRequiredUnits = computed(() =>
+  (selectedType.value?.allowedUnits || []).some((c) => isScheduleRequiredUnit(c)),
+)
+
+// ★ NEW-3(F-5/HB-12 미발동 수정): day-schedule 조회 대상에 종일('00')도 포함한다.
+//   회사 정책이 USAGE_UNIT='FULL_DAY'(Baim_07 기본값)면 allowedUnits = ['00'] 뿐이라
+//   구 게이트(스케줄 필요 단위 보유)로는 조회 자체가 나가지 않았고 → daySchedule 이 영원히 null →
+//   showRestDayNotice 의 Boolean(props.daySchedule) 이 false → 휴무 안내가 영구 미노출이었다.
+//   그런데 F-5 의 주 대상("휴무·미배정일에 종일 연차가 경고 없이 차감")이 정확히 그 구성이다.
+//   ※ 종일 경로에서 이 응답은 '안내 표시 전용'이다 — 차단·검증·차감 로직에는 쓰지 않는다(사용자 확정).
+const needsDaySchedule = computed(() => {
+  const allowed = selectedType.value?.allowedUnits || []
+  return allowed.some((c) => isScheduleRequiredUnit(c)) || allowed.includes('00')
+})
+
+// 조회 대상 종류 + 날짜 완성 시에만 조회 대상(그 외 null → 표시 해제).
+//   ※ 중복 호출 방지: 조회는 이 computed 의 "값 변화"에만 반응한다(watch). 종류를 바꿔도 같은 날짜면
+//     값이 그대로라 재조회가 없고, 게이트가 넓어져 종류 전환 시 null↔ymd 왕복도 오히려 줄어든다.
 const dayScheduleYmd = computed(() => {
-  if (!hasHourlyUnits.value) return null
+  if (!needsDaySchedule.value) return null
   const ymd = toYmd(workDateInput.value)
   return ymd && ymd.length === 8 ? ymd : null
 })
 
 // 대상 변경 → 부모에 조회 요청 emit(API 호출은 부모 소유 — preview 패턴 동일). 즉시 emit(디바운스
 //   불요 — 날짜/단위 변경은 이산적). immediate 로 컨텍스트 프리필 진입도 커버.
-watch(dayScheduleYmd, (ymd) => {
-  emit('day-schedule-request', ymd)
-}, { immediate: true })
+watch(
+  dayScheduleYmd,
+  (ymd) => {
+    emit('day-schedule-request', ymd)
+  },
+  { immediate: true },
+)
 
-// E2: 미배정일 판명 시 선택 중이던 시간차 단위를 비시간차 단위(종일 우선)로 폴백 — disable 된 칩이
-//   선택 상태로 잔존하는 것을 방지(웹 LeaveApplyPop quarterAllowed 폴백 패턴 미러). 시각 입력도 리셋.
-watch(hourlyDisabledByDay, (blocked) => {
-  if (!blocked || !isTimeUnit.value) return
+// E2 + HB-11: 미배정일 판명 시 선택 중이던 스케줄 필요 단위(반차·시간차)를 종일 우선으로 폴백 —
+//   disable 된 칩이 선택 상태로 잔존하는 것을 방지. 시각 입력·반차 파트도 함께 리셋.
+watch(scheduleRequiredDisabledByDay, (blocked) => {
+  if (!blocked || !isScheduleRequiredUnit(useUnitType.value)) return
   const allowed = selectedType.value?.allowedUnits || []
   useUnitType.value = allowed.includes('00')
     ? '00'
-    : allowed.find((c) => !isHourlyUnitCode(c)) || ''
+    : allowed.find((c) => !isScheduleRequiredUnit(c)) || ''
   startTimeInput.value = ''
   stepCount.value = 1
+  halfPart.value = ''
 })
+
+// HB-10: 대상일이 바뀌면(=경계 재산출) 이전 날짜 기준으로 고른 반차 파트를 무효화한다.
+//   경계 시각이 스케줄마다 다르므로, 사용자가 새 경계를 보고 다시 고르게 하는 것이 안전하다.
+watch(
+  () => props.daySchedule,
+  () => {
+    halfPart.value = ''
+  },
+)
 
 // 결재자 emit 용 userCd 배열(순서 보존 — 위치 재인덱싱 아님, 표시 순서 그대로)
 const approverUserCds = computed(() => approverList.value.map((a) => a.approverUserCd))
@@ -654,13 +793,13 @@ const contextSchedule = computed(() => {
   return { startTime: sch.startTime || '', endTime: sch.endTime || '' }
 })
 
-// 신청 일수 추정(종일 1.0 / 반차 0.5 / 반반차 0.25 / 시간차 (종료-시작)분÷소정근로분). 계산 불가/미선택 시 null.
+// 신청 일수 추정(종일 1.0 / 반차 0.5 / 시간차 (종료-시작)분÷소정근로분). 계산 불가/미선택 시 null.
 //   표시 전용 근사(서버가 최종 판정). 잔여초과 경고와 가불 토글 노출 판정의 단일출처.
+//   HB-04: 반반차('05') 분기 폐지.
 const estimatedDays = computed(() => {
   if (!selectedType.value) return null
   if (useUnitType.value === '00') return 1.0
   if (useUnitType.value === '01') return 0.5
-  if (useUnitType.value === '05') return 0.25 // 반반차(LC-06): 0.25일 고정단위
   if (isTimeUnit.value) {
     // 시간차: (종료-시작)분 ÷ 소정근로분. 소정근로 출처는 컨텍스트 스케줄(시작~종료), 휴게 미반영 근사.
     const startM = toMinutes(startTimeInput.value)
@@ -753,28 +892,19 @@ watch(borrowDateExpired, (expired) => {
   }
 })
 
-// ── LC-10: 예상 차감 preview 요청 (시간차/반반차 — POST /appApi/leaveflow/preview-deduction) ──
+// ── LC-10: 예상 차감 preview 요청 (시간차 — POST /appApi/leaveflow/preview-deduction) ──
 // 입력 완성 시 디바운스 후 부모에 emit(API 호출은 부모 소유 — 컨테이너/폼 역할 분담 유지).
 const PREVIEW_DEBOUNCE_MS = 400
 let previewTimer = null
 
 // preview 대상 payload(요청 본문 키 1:1). 비대상(종일/반차)·입력 미완성이면 null.
-//   시간차(02/03/04) = 날짜 + 시작/종료 완성 + 자정 미초과일 때. 반반차(05) = 날짜만(시간대 미기록).
+//   시간차(02/03/04) = 날짜 + 시작/종료 완성 + 자정 미초과일 때. (HB-04: 반반차 분기 폐지)
 const previewPayload = computed(() => {
   if (!selectedType.value) return null
   const ymd = toYmd(workDateInput.value)
   if (!ymd || ymd.length !== 8) return null
   const unit = useUnitType.value
-  if (unit === '05') {
-    return {
-      leaveCd: selectedLeaveCd.value,
-      workYmd: ymd,
-      useUnitType: unit,
-      startTime: null,
-      endTime: null,
-    }
-  }
-  if (['02', '03', '04'].includes(unit)) {
+  if (isHourlyUnitCode(unit)) {
     if (!startTimeInput.value || !endTimeInput.value || endOverflowsDay.value) return null
     return {
       leaveCd: selectedLeaveCd.value,
@@ -808,16 +938,15 @@ onUnmounted(() => {
   if (previewTimer) clearTimeout(previewTimer)
 })
 
-// 예상 차감 카드 노출: preview 대상 단위(시간차/반반차) + (로딩 중 또는 응답 보유).
-//   preview 실패(null)면 미노출 — 신청은 가능(서버 최종 판정).
-const showPreviewCard = computed(() => {
-  const eligible = isTimeUnit.value || useUnitType.value === '05'
-  return eligible && (props.previewLoading || !!props.preview)
-})
+// 예상 차감 카드 노출: preview 대상 단위(시간차) + (로딩 중 또는 응답 보유).
+//   preview 실패(null)면 미노출 — 신청은 가능(서버 최종 판정). HB-04: 반반차 대상 제거.
+const showPreviewCard = computed(
+  () => isTimeUnit.value && (props.previewLoading || !!props.preview),
+)
 
 // E4(당일분모 전환): 시간차는 "이 날 기준 {신청 시간} = {X}일 차감" — 분모가 당일 배정 스케줄임을
-//   날짜 기준으로 표기(신청 시간 = stepCount×단위분, X = 서버 chargeDays 그대로). 반반차(05)는
-//   시간량이 없어 기존 표기("N일 H시간 (0.25일)") 유지.
+//   날짜 기준으로 표기(신청 시간 = stepCount×단위분, X = 서버 chargeDays 그대로).
+//   단위분 산출 불가(방어) 시에만 기존 일반 표기("N일 H시간 (X일)")로 폴백한다.
 const previewChargeText = computed(() => {
   const p = props.preview
   if (!p) return ''
@@ -831,17 +960,23 @@ const previewChargeText = computed(() => {
   return `${formatLeaveDays(p.chargeDays, p.convMinutes)} (${trimRawDays(p.chargeDays)}일)`
 })
 
-// 하한 발동 마일스톤 요금(floorDays) → 단위 라벨. 0.25=반반차 / 0.5=반차 / 1=종일.
-const FLOOR_UNIT_LABELS = { 0.25: '반반차', 0.5: '반차', 1: '종일' }
+// 하한 발동 마일스톤 요금(floorDays) → 단위 라벨. 0.5=반차 / 1=종일.
+//   HB-04: 반반차 폐지로 0.25 라벨 제거 — 서버 하한 마일스톤(R3)은 0.25 를 계속 산출할 수 있으므로
+//   그 경우엔 아래 폴백 문구(단위명 미언급)로 안내한다.
+const FLOOR_UNIT_LABELS = { 0.5: '반차', 1: '종일' }
 
-// 하한 발동 안내 문구 — floorDays 기반 단위 분기. floorDays 없으면(구응답) 일반 문구 폴백.
+// 하한 발동 안내 문구 — floorDays 기반 단위 분기. 라벨 없는 값(0.25)·구응답이면 일반 문구 폴백.
 const floorNoticeText = computed(() => {
   const p = props.preview
   if (!p || !p.floorApplied) return ''
   const label = FLOOR_UNIT_LABELS[Number(p.floorDays)]
   if (!label) {
-    // 구응답(floorDays 부재)/미지 값 폴백 — 일반화 문구.
-    return '같은 날 누적 신청이 고정 단위(반반차·반차·종일) 기준 시간에 도달하여 고정 단위 요금이 적용됩니다.'
+    const rawFloor = Number(p.floorDays)
+    if (p.floorDays != null && Number.isFinite(rawFloor) && rawFloor > 0) {
+      return `같은 날 누적 신청이 하한 기준 시간에 도달하여 ${trimRawDays(rawFloor)}일이 차감됩니다.`
+    }
+    // 구응답(floorDays 부재) 폴백 — 일반화 문구.
+    return '같은 날 누적 신청이 고정 단위 기준 시간에 도달하여 고정 단위 요금이 적용됩니다.'
   }
   return `같은 날 누적 신청이 ${label} 시간에 도달하여 ${label} 요금(${trimRawDays(p.floorDays)}일)이 적용됩니다.`
 })
@@ -870,6 +1005,8 @@ const isValid = computed(() => {
   if (isTimeUnit.value && (!startTimeInput.value || !endTimeInput.value)) return false
   // 종료가 자정을 넘어가면(익일 wrap) 제출 차단 — BE(eMin<=sMin) 가 ATTD_400_052 로 거부하므로 사전 방어.
   if (isTimeUnit.value && endOverflowsDay.value) return false
+  // HB-10: 반차는 파트(늦게 출근/일찍 퇴근) 필수 — 서버 fail-closed(ATTD_400_195) 사전 방어.
+  if (isHalfUnit.value && !halfPart.value) return false
   if (aprvRequired.value && approverList.value.length === 0) return false
   // 가불 토글 ON + 만료 경과 일자면 제출 차단(결정 §3, 서버 fail-closed 사전 방어).
   if (borrowDateExpired.value) return false
@@ -908,6 +1045,7 @@ const onSelectType = (lt) => {
   useUnitType.value = resolveDefaultUnit(lt)
   startTimeInput.value = ''
   stepCount.value = 1
+  halfPart.value = '' // HB-10: 종류 변경 시 반차 파트 초기화
   selectedPresetId.value = ''
   approverList.value = []
   borrowAgreed.value = false // 가불 동의는 종류별 — 종류 변경 시 해제
@@ -915,14 +1053,16 @@ const onSelectType = (lt) => {
 
 // 단위 전환. 시간차가 아닌 단위(종일/반차)로 전환 시 잔존 시작값을 비워 누수 방지.
 //   시간차로 전환/변경 시 stepCount 를 1 로 리셋(종료는 computed 라 자동 재계산).
+//   HB-10: 반차 외 단위로 전환하면 반차 파트를 비운다(잔존 파트가 제출되는 것을 방지).
 const onSelectUnit = (code) => {
   useUnitType.value = code
-  if (['02', '03', '04'].includes(code)) {
+  if (isHourlyUnitCode(code)) {
     stepCount.value = 1
   } else {
     startTimeInput.value = ''
     stepCount.value = 1
   }
+  if (code !== '01') halfPart.value = ''
 }
 
 // 종료 스텝 증감 — 최소 N=1. 증가 시 자정 초과(익일 wrap)면 무시.
@@ -942,6 +1082,7 @@ const onQuickFill = (unitCode) => {
   useUnitType.value = unitCode
   startTimeInput.value = ''
   stepCount.value = 1
+  if (unitCode !== '01') halfPart.value = '' // HB-10: 종일 전환 시 반차 파트 초기화
 }
 
 // 프리셋 선택 → steps 를 approverList 로 전개(STEP_NO=배열 순서 보존). 같은 프리셋 재선택 시 토글 해제.
@@ -1004,6 +1145,9 @@ const onSubmit = () => {
     // ⚠️ leaveType(성격코드)은 018-A apply-meta 응답에 없음 → 보낼 값 없음(추측 금지). 미전송(서버 null 저장).
     workYmd: toYmd(workDateInput.value),
     useUnitType: useUnitType.value,
+    // HB-10: 반차 파트('START'=늦게 출근 / 'END'=일찍 퇴근). 반차 외 단위는 null(서버 무시).
+    //   서버가 이 값으로 경계 시각을 역산해 START_TIME/END_TIME 을 확정한다(FE 시각 산출 금지).
+    halfPart: isHalfUnit.value ? halfPart.value : null,
     startTime: timeUnit ? toHHMM(startTimeInput.value) : null,
     endTime: timeUnit ? toHHMM(endTimeInput.value) : null,
     reason: reasonText || null,
@@ -1200,6 +1344,64 @@ onMounted(() => {
 .unit-notice {
   margin: 0;
   font-size: 12px;
+  color: var(--color-text-tertiary);
+}
+.unit-notice--rest {
+  color: var(--color-warning-text);
+}
+
+/* 반차 파트 선택 — unit-chip / sch-info 토큰 계열 승계 */
+.half-list {
+  display: flex;
+  gap: var(--space-sm);
+}
+.half-card {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-xs);
+  padding: var(--space-sm) var(--space-md);
+  background: var(--color-surface);
+  border: 0.5px solid var(--color-border);
+  border-radius: var(--radius-md);
+  text-align: left;
+  cursor: pointer;
+  font-family: inherit;
+}
+.half-card--on {
+  border-color: var(--color-primary);
+  background: var(--color-primary-tint);
+}
+.half-card:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+.half-card__name {
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--color-text-primary);
+}
+.half-card__range {
+  font-size: 13px;
+  color: var(--color-primary-text-deep);
+}
+.half-card__hint {
+  font-size: 12px;
+  color: var(--color-text-tertiary);
+}
+.half-note {
+  display: flex;
+  gap: var(--space-xs);
+  margin: var(--space-sm) 0 0;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--color-text-secondary);
+}
+.half-note--warn {
+  color: var(--color-warning-text);
+}
+.half-note__dot {
+  flex-shrink: 0;
   color: var(--color-text-tertiary);
 }
 

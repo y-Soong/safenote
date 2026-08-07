@@ -41,8 +41,13 @@ public class MyLeaveSummaryResponse {
     private final int convMinutes;
 
     /**
-     * LC-07(표기): 시간차(SYS025 02/03/04) CONFIRMED 사용 분 합계(전 기간). FE "시간차 사용
+     * LC-07(표기): 시간차(SYS025 02/03/04) CONFIRMED 사용 분 합계. FE "시간차 사용
      * N시간 M분" 원본 표기용 — 차감 일수 합계와 별개(잔여/부여 수치 무관, additive).
+     *
+     * <p>⚠️ HB-13 NEW-1(모수 정합)으로 집계 범위가 <b>전 기간 → 활성 부여 집합</b>으로 바뀌었다
+     * ({@code groups} 와 동일한 모수 — GRANT_ID 조인 + ACTIVE/EXPIRE_YN='N'/DEL_YN='N' + 미발생 가불 제외).
+     * 필드 자체는 구 앱 호환을 위해 존치하되, 구 앱 하단 노트의 숫자도 함께 바뀐다(의도된 교정 —
+     * 같은 화면의 usedDays/plannedDays 가 활성 부여 기준이라 원래 축이 어긋나 있었다).
      */
     private final int hourlyUsedMinutes;
 
@@ -57,6 +62,23 @@ public class MyLeaveSummaryResponse {
 
     /** HB-13(F-3): 시간차 <b>사용예정</b>(START_DATE &gt; 오늘) 분 합계(additive). */
     private final int hourlyUsedMinutesPlanned;
+
+    /**
+     * HB-13 §20-2(B안): 반차(SYS025 '01') <b>사용</b>(START_DATE &le; 오늘) <b>일수</b> 합계
+     * (CONFIRMED, additive).
+     *
+     * <p>표기가 일수 정수부만 쓰므로 반차 0.5일이 증발하던 문제(§20-1)를 없애기 위한 값이다.
+     * FE 는 이 일수를 0.5 로 나누어 "반차 N회"로 표기한다(소수점 노출 금지 LC-11 유지).
+     * ⚠️ 건수가 아니라 일수다 — 짜투리 분할차감으로 한 반차가 여러 행이 될 수 있어 건수 집계는
+     * 과다 계상된다(분할되어도 일수 합계는 0.5 로 보존).
+     *
+     * <p>★ NEW-1: 모수는 {@code groups} 와 동일한 <b>활성 부여 집합</b>이다. 그래야
+     * {@code groups.used - halfDayUsedDaysPast} 가 음수가 되지 않는다(부분집합 관계 보장).
+     */
+    private final double halfDayUsedDaysPast;
+
+    /** HB-13 §20-2: 반차 <b>사용예정</b>(START_DATE &gt; 오늘) 일수 합계(건수 아님, additive). */
+    private final double halfDayUsedDaysPlanned;
 
     /** 사용자 메타 영역. */
     @Getter

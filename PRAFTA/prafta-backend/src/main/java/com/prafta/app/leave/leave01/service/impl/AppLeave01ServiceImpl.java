@@ -73,15 +73,28 @@ public class AppLeave01ServiceImpl implements AppLeave01Service {
 
         log.info("[leave01] 연차 현황 조회 시작 userCd={}, today={}", param.userCd(), todayYmd);
 
-        // LC-07(표기): 오늘 기준 환산시간 + 시간차 사용 분 합계(전 기간) — 기존 필드 불변, additive.
+        // 회계연도 윈도우(단일출처 FiscalYearUtils) — 신청형 휴가('01' 타입) 사용분 집계 경계.
+        FiscalYearUtils.FiscalWindow fiscal = resolveFiscalWindow(param.cmpnyCd());
+
+        // LC-07(표기): 오늘 기준 환산시간 + 시간차 사용 분 합계 — 기존 필드 불변, additive.
         // HB-13(F-3): 같은 합계를 "사용 / 사용예정"으로 분리해 함께 내린다. FE 가 일수→시간을 단일
         //   분모로 역환산하던 것을 실분 표기로 대체하기 위함(당일분모 전환 E1 이 만든 표시 결함).
-        //   전 기간 합계(hourlyUsedMinutes, 구 앱 호환)는 분리 결과의 합으로 산출해 쿼리 1회로 줄인다.
-        HourlyUsedSplitRow hourlySplit =
-                appLeave01Mapper.selectHourlyUsedMinutesSplit(param.cmpnyCd(), param.userCd());
+        //   합계(hourlyUsedMinutes, 구 앱 호환)는 분리 결과의 합으로 산출해 쿼리 1회로 줄인다.
+        // HB-13 §20-2(B안): 정수부만 쓰는 표기에서 반차 0.5일이 증발하므로 반차 일수도 함께 받는다
+        //   (건수 아님 — 분할차감 대응. FE 가 0.5 로 나눠 "반차 N회" 표기).
+        // ★ NEW-1(모수 정합): 이 값들은 groups.TOTAL.used/planned 와 같은 셀에 병기되고, FE 가
+        //   rest = days - 반차일수 로 종일분을 낸다. 그래서 집계 모수를 selectGroupAgg 와 동일한
+        //   "활성 부여 집합"으로 맞췄다(쿼리 내 GRANT 조인). 모수가 어긋나면 rest 가 음수가 되어
+        //   종일분("N일")이 표기에서 사라진다. 회계연도 축은 겹치지 않는다(§20-3 초안 철회) —
+        //   모수를 정하는 축은 하나여야 하고, 그 축은 groups 와 동일한 활성 부여다.
+        //   todayYmd 는 past/planned 경계 + 미발생 가불 판정에 함께 쓰인다(selectGroupAgg 와 동일값).
+        HourlyUsedSplitRow hourlySplit = appLeave01Mapper.selectHourlyUsedMinutesSplit(
+                param.cmpnyCd(), param.userCd(), todayYmd);
         int hourlyPastMinutes = (hourlySplit == null) ? 0 : hourlySplit.pastMinutes();
         int hourlyPlannedMinutes = (hourlySplit == null) ? 0 : hourlySplit.plannedMinutes();
         int hourlyUsedMinutes = hourlyPastMinutes + hourlyPlannedMinutes;
+        BigDecimal halfDayPastDays = nz(hourlySplit == null ? null : hourlySplit.halfDayPastDays());
+        BigDecimal halfDayPlannedDays = nz(hourlySplit == null ? null : hourlySplit.halfDayPlannedDays());
 
         // E4 참고치 규약(당일분모 전환 후 유지): convMinutes = 오늘 기준 본인 참고 분모(기본 근무타입
         //   근사치, 480 캡). 특정일 없는 잔여 카드 표기 전용 — 실차감 분모(당일 배정 스케줄, E1)와
@@ -93,13 +106,15 @@ public class AppLeave01ServiceImpl implements AppLeave01Service {
                 .user(buildUser(baseQuery))
                 .groups(buildGroups(baseQuery))
                 .expiringSoon(buildExpiringSoon(baseQuery))
-                .appliedLeaveTypes(buildAppliedLeaveTypes(param))
+                .appliedLeaveTypes(buildAppliedLeaveTypes(param, fiscal))
                 .borrowedDays(toScaledDouble(nz(
                         appLeave01Mapper.selectBorrowedDaysTotal(param.cmpnyCd(), param.userCd(), todayYmd))))
                 .convMinutes(personalConv != null ? personalConv : LeaveConversionPolicyService.DEFAULT_CONV_MINUTES)
                 .hourlyUsedMinutes(hourlyUsedMinutes)
                 .hourlyUsedMinutesPast(hourlyPastMinutes)
                 .hourlyUsedMinutesPlanned(hourlyPlannedMinutes)
+                .halfDayUsedDaysPast(toScaledDouble(halfDayPastDays))
+                .halfDayUsedDaysPlanned(toScaledDouble(halfDayPlannedDays))
                 .build();
 
         log.info("[leave01] 연차 현황 조회 완료 userCd={}", param.userCd());
@@ -223,10 +238,10 @@ public class AppLeave01ServiceImpl implements AppLeave01Service {
      * <p>법정/관리자부여(groups)와 분리된 별도 섹션. 회계연도 경계는 단일출처 {@link FiscalYearUtils} 로 산출하여
      *   사용분 술어(CONFIRMED·DEL_YN='N'·당해 회계연도)와 함께 주입한다(leaveflow.selectFiscalUsedDays 동일 술어).
      *   각 타입: 한도(MAX_APLY_DAYS, NULL→0 fail-closed) - 사용분 = 잔여. '01' 타입 0개면 빈 리스트.
+     * <p>회계연도 윈도우는 호출부가 1회 산출해 주입한다(§20-3 — 시간차/반차 표기값과 동일 경계 공유).
      */
-    private List<MyLeaveSummaryResponse.AppliedLeaveType> buildAppliedLeaveTypes(MyLeaveSummaryParam param) {
-
-        FiscalYearUtils.FiscalWindow fiscal = resolveFiscalWindow(param.cmpnyCd());
+    private List<MyLeaveSummaryResponse.AppliedLeaveType> buildAppliedLeaveTypes(
+            MyLeaveSummaryParam param, FiscalYearUtils.FiscalWindow fiscal) {
 
         List<AppliedLeaveTypeRow> rows = appLeave01Mapper.selectAppliedLeaveTypes(
                 param.cmpnyCd(), param.userCd(),

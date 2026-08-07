@@ -58,7 +58,7 @@
 
 <script setup>
 import { ref, watch } from 'vue'
-import BaseBottomSheet from './BaseBottomSheet.vue'
+import BaseBottomSheet from '@/components/common/BaseBottomSheet.vue'
 
 const props = defineProps({
   modelValue: { type: Boolean, default: false },

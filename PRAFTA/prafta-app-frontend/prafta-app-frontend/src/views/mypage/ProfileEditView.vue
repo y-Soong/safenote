@@ -113,9 +113,9 @@
       </template>
     </main>
 
-    <!-- 푸터 -->
+    <!-- 푸터 — F-10 규약: 왼쪽=진행/확정(저장), 오른쪽=이탈(취소), 폭 균등.
+         저장은 파괴적이지 않으므로 primary(위험 액션만 danger). -->
     <footer class="pe-footer">
-      <button type="button" class="pe-btn pe-btn--ghost" @click="onCancel">취소</button>
       <button
         type="button"
         class="pe-btn pe-btn--primary"
@@ -125,6 +125,7 @@
       >
         저장
       </button>
+      <button type="button" class="pe-btn pe-btn--ghost" @click="onCancel">취소</button>
     </footer>
 
     <!-- 인라인 SVG sprite -->
@@ -237,6 +238,10 @@ const onRequestMobileCode = async (phone) => {
       MOBILE_DUP: '이미 다른 계정에서 사용 중인 번호예요.',
       INVALID_MOBILE: '휴대폰 번호 형식이 올바르지 않아요.',
       TOO_MANY_ATTEMPTS: '요청이 너무 많아요. 잠시 후 다시 시도해 주세요.',
+      // SMS-PPURIO-08: 문자 게이트웨이 발송 실패(뿌리오 연동).
+      SMS_502_001: '인증번호 발송에 실패했어요. 잠시 후 다시 시도해 주세요.',
+      SMS_502_002: '인증번호 발송이 거절됐어요. 잠시 후 다시 시도해 주세요.',
+      SMS_502_003: '인증번호 발송 서버 인증에 실패했어요. 관리자에게 문의해 주세요.',
     }
     showAlert(
       map[code] ||
@@ -568,8 +573,8 @@ onMounted(async () => {
   font-family: inherit;
   border: 0;
 }
+/* F-9: flex 고정폭(0 0 96px) 제거 → .pe-btn 의 flex:1 상속으로 좌우 균등 */
 .pe-btn--ghost {
-  flex: 0 0 96px;
   background: var(--color-surface);
   color: var(--color-text-secondary);
   border: 1px solid var(--color-border);

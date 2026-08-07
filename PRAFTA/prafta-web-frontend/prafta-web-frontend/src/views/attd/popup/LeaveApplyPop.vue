@@ -43,6 +43,28 @@
             </BaseSelect>
           </div>
 
+          <!-- 반차 파트(시작기준/종료기준) — 경계 시각은 서버 권위값(day-schedule/preview) -->
+          <div v-if="isHalfUnit" class="la-field">
+            <label>반차 구분 <span class="req">*</span></label>
+            <div class="la-half-row">
+              <label class="la-half-opt">
+                <input v-model="halfPart" type="radio" value="START" />
+                <span class="la-half-opt__name">늦게 출근</span>
+                <span class="la-half-opt__range">{{ halfStartRangeText || "--:-- ~ --:--" }}</span>
+              </label>
+              <label class="la-half-opt">
+                <input v-model="halfPart" type="radio" value="END" />
+                <span class="la-half-opt__name">일찍 퇴근</span>
+                <span class="la-half-opt__range">{{ halfEndRangeText || "--:-- ~ --:--" }}</span>
+              </label>
+            </div>
+            <p class="la-hint">
+              근무를 절반으로 나누는 기준 시각은
+              <strong>{{ halfBoundaryText || "-" }}</strong> 입니다. (휴게시간은 근무로 세지
+              않습니다)
+            </p>
+          </div>
+
           <div v-if="isHourUnit" class="la-field">
             <label>시간대 <span class="req">*</span></label>
             <div class="la-time-row">
@@ -55,8 +77,8 @@
             </p>
           </div>
 
-          <!-- LC-09(§5-C): 예상 차감액 미리보기 — 시간차/반반차 한정, 조회 전용(서버가 최종 판정) -->
-          <div v-if="isHourUnit || isQuarterUnit" class="la-field la-preview">
+          <!-- LC-09(§5-C): 예상 차감액 미리보기 — 시간차 한정, 조회 전용(서버가 최종 판정) -->
+          <div v-if="isHourUnit" class="la-field la-preview">
             <p v-if="previewLoading" class="la-preview-loading">
               예상 차감 계산 중…
             </p>
@@ -251,6 +273,9 @@ const submitting = ref(false);
 const leaveCd = ref("");
 const workYmd = ref("");
 const useUnitType = ref("00");
+// HB-16: 반차 파트. 'START'(늦게 출근) | 'END'(일찍 퇴근) — 제출 본문 halfPart 와 1:1.
+//   반차('01') 신청 시 필수(서버 fail-closed ATTD_400_195). 단위/근무일 변경 시 초기화.
+const halfPart = ref("");
 const startTime = ref("09:00");
 const endTime = ref("11:00");
 const reason = ref("");
@@ -259,15 +284,13 @@ const line = ref([]); // [{ userCd, userNm }]
 // prafta-com-011-6 가불(미래 연차 당겨쓰기) 동의 상태. 종류/단위/날짜 변경 시 리셋.
 const borrowAgreed = ref(false);
 
-// LC-10: 반반차(0.25일, SYS025 '05') 허용 여부 — 회사 사용정책 USAGE_UNIT='QUARTER_DAY' 일 때만
-//   단위 선택지에 노출한다(구 ALLOW_QUARTER 독립 토글 폐기).
-//   조회 실패/정책 미존재 시 false 유지 = fail-closed, 서버도 동일 기준으로 거부.
-const quarterAllowed = ref(false);
-
 // LC-09(§5-C): 예상 차감액 미리보기 상태 (POST /leaveflow/preview-deduction)
 //   preview = { chargeDays, floorApplied, capApplied, insufficientBalance, convMinutes, floorDays,
-//               remnantTriggered, remnantDays, companyCoverMinutes } | null
+//               remnantTriggered, remnantDays, companyCoverMinutes,
+//               halfDayBoundaryTime, halfStartPartRange, halfEndPartRange } | null
 //   PC-10(D6): 발동 예상 시 remnantTriggered=true + insufficientBalance=false(부족 경고와 상호배타).
+//   HB-03(반차 시간대 도입): 뒤 3필드는 반차('01') preview 에서만 채워지는 경계 미리보기(서버 권위값).
+//     ★ 클라이언트 재계산 금지 — 서버 산식(ScheduleWorkMinutesUtils)이 단일 출처다.
 const preview = ref(null);
 const previewLoading = ref(false);
 
@@ -302,23 +325,21 @@ const needApproval = computed(
 const isHourUnit = computed(() =>
   ["02", "03", "04"].includes(useUnitType.value)
 );
-// LC-09: 반반차(0.25일 고정단위, 시간대 미기록 — 반차 패턴 미러)
-const isQuarterUnit = computed(() => useUnitType.value === "05");
+// HB-16: 반차 단위 여부(파트 선택 필드 노출 분기)
+const isHalfUnit = computed(() => useUnitType.value === "01");
 const unitGuide = computed(
   () =>
     ({ "02": "2시간", "03": "1시간", "04": "30분" }[useUnitType.value] || "시간")
 );
 
-// LC-10: 단위 선택지 — 반반차('05')는 USAGE_UNIT='QUARTER_DAY' 회사만 노출(기존 SYS025 노출 패턴 유지)
+// HB-04(2026-08-07): 반반차('05') 폐지 — SYS025 코드값은 과거 데이터 조회용으로 남지만
+//   신청 선택지에서는 항상 제외한다(서버도 신청·검증 경로에서 거부).
 const visibleUnitOptions = computed(() =>
-  unitOptions.value.filter(
-    (u) => u.systValDCd !== "05" || quarterAllowed.value
-  )
+  unitOptions.value.filter((u) => u.systValDCd !== "05")
 );
 
-// LC-09: 단위 라벨 — 반반차는 "(0.25일)" 병기(§5-C), 그 외는 SYS025 명칭 그대로
-const fnUnitLabel = (u) =>
-  u.systValDCd === "05" ? `${u.systValDNm}(0.25일)` : u.systValDNm;
+// 단위 라벨 — SYS025 명칭 그대로(반반차 "(0.25일)" 병기는 HB-04 로 폐지)
+const fnUnitLabel = (u) => u.systValDNm;
 
 // 'HH:MM' → 분. 형식 위반 시 -1 (E4 신청 시간량 계산용 — endTime 은 allow24 로 '24:00' 허용).
 const hhmmToMin = (s) => {
@@ -327,8 +348,8 @@ const hhmmToMin = (s) => {
 };
 
 // E4(당일분모 전환): 시간차는 "이 날 기준 {신청 시간} = {X}일 차감" — 분모가 당일 배정 스케줄임을
-//   날짜 기준으로 표기(신청 시간 = 종료-시작, X = 서버 chargeDays 그대로). 반반차(05)는 시간량이
-//   없어 기존 표기("예상 차감: N일 H시간 (0.25일)") 유지.
+//   날짜 기준으로 표기(신청 시간 = 종료-시작, X = 서버 chargeDays 그대로).
+//   시간량 산출 불가(방어) 시에만 기존 일반 표기("예상 차감: N일 H시간 (X일)")로 폴백한다.
 const previewText = computed(() => {
   if (!preview.value) return "";
   const p = preview.value;
@@ -342,20 +363,52 @@ const previewText = computed(() => {
   return `예상 차감: ${formatLeaveDays(p.chargeDays, p.convMinutes)} (${trimLeaveDays(p.chargeDays)}일)`;
 });
 
-// 하한 발동 마일스톤 요금(floorDays) → 단위 라벨. 0.25=반반차 / 0.5=반차 / 1=종일.
-const FLOOR_UNIT_LABELS = { 0.25: "반반차", 0.5: "반차", 1: "종일" };
+// 하한 발동 마일스톤 요금(floorDays) → 단위 라벨. 0.5=반차 / 1=종일.
+//   HB-04: 반반차 폐지로 0.25 라벨 제거 — 서버 하한 마일스톤(R3)은 0.25 를 계속 산출할 수 있으므로
+//   그 경우엔 아래 폴백 문구(단위명 미언급)로 안내한다.
+const FLOOR_UNIT_LABELS = { 0.5: "반차", 1: "종일" };
 
 // 하한 발동 안내 문구 — floorDays 기반 단위 분기(§5-C 정밀화).
-//   floorDays 없으면(구응답) 기존 일반화 문구 폴백.
+//   라벨 없는 값(0.25)·구응답(floorDays 부재)은 일반화 문구 폴백.
 const floorNoticeText = computed(() => {
   const p = preview.value;
   if (!p || !p.floorApplied) return "";
   const label = FLOOR_UNIT_LABELS[Number(p.floorDays)];
   if (!label) {
-    return "같은 날 누적 신청이 고정 단위(반반차·반차·종일) 기준 시간에 도달하여 고정 단위 요금이 적용됩니다.";
+    const rawFloor = Number(p.floorDays);
+    if (p.floorDays != null && Number.isFinite(rawFloor) && rawFloor > 0) {
+      return `같은 날 누적 신청이 하한 기준 시간에 도달하여 ${trimLeaveDays(rawFloor)}일이 차감됩니다.`;
+    }
+    return "같은 날 누적 신청이 고정 단위 기준 시간에 도달하여 고정 단위 요금이 적용됩니다.";
   }
   return `같은 날 누적 신청이 ${label} 시간에 도달하여 ${label} 요금(${trimLeaveDays(p.floorDays)}일)이 적용됩니다.`;
 });
+
+// ── HB-16: 반차 경계 미리보기 (서버 preview 권위값) ────────────────────────
+// 'HHMM' → 'HH:MM'. 형식 위반/부재면 ''. (자정 경계 '2400' → '24:00')
+const fmtHhmm = (hhmm) =>
+  /^\d{4}$/.test(hhmm || "") ? `${hhmm.slice(0, 2)}:${hhmm.slice(2)}` : "";
+
+// 서버 표기 'HHMM~HHMM' → 'HH:MM~HH:MM'. 형식 위반/부재면 ''.
+const fmtServerRange = (range) => {
+  if (typeof range !== "string") return "";
+  const parts = range.split("~");
+  if (parts.length !== 2) return "";
+  const s = fmtHhmm(parts[0]);
+  const e = fmtHhmm(parts[1]);
+  return s && e ? `${s}~${e}` : "";
+};
+
+// 근무를 절반으로 나누는 기준 시각('HH:MM'). 스케줄 없음/산출 불가/preview 미도착이면 ''.
+const halfBoundaryText = computed(() => fmtHhmm(preview.value?.halfDayBoundaryTime));
+// 시작기준(늦게 출근)이 쉬는 구간 = [근무 시작, 경계)
+const halfStartRangeText = computed(() =>
+  fmtServerRange(preview.value?.halfStartPartRange)
+);
+// 종료기준(일찍 퇴근)이 쉬는 구간 = [경계, 근무 종료)
+const halfEndRangeText = computed(() =>
+  fmtServerRange(preview.value?.halfEndPartRange)
+);
 
 const inLine = (userCd) => line.value.some((s) => s.userCd === userCd);
 
@@ -443,18 +496,29 @@ watch(borrowDateExpired, (expired) => {
   }
 });
 
-// LC-09: 반반차 미허용으로 선택지가 사라지면 선택값을 종일로 폴백(잔존 '05' 제출 방지)
-watch([quarterAllowed, useUnitType], () => {
-  if (useUnitType.value === "05" && !quarterAllowed.value) {
+// HB-04: 반반차 폐지 — 구 정책/구 저장값으로 '05' 가 선택 상태로 잔존하면 종일로 폴백(제출 방지).
+watch(useUnitType, (unit) => {
+  if (unit === "05") {
     useUnitType.value = "00";
+  }
+  // HB-16: 반차 외 단위로 전환하면 반차 파트를 비운다(잔존 파트 제출 방지).
+  if (unit !== "01") {
+    halfPart.value = "";
   }
 });
 
+// HB-16: 근무일이 바뀌면 경계가 재산출되므로 이전 날짜 기준으로 고른 파트를 무효화한다.
+watch(workYmd, () => {
+  halfPart.value = "";
+});
+
 // ===== LC-09(§5-C): 예상 차감액 미리보기 (입력 디바운스 400ms) =====
-// 호출 조건: 시간차(02/03/04, 시간대 완성) 또는 반반차(05) + 연차타입/근무일 선택 완료.
+// 호출 조건: 시간차(02/03/04, 시간대 완성) 또는 반차(01) + 연차타입/근무일 선택 완료.
+//   HB-16: 반차는 경계 미리보기(halfDayBoundaryTime 등)를 얻기 위해 preview 를 호출한다
+//   (시간대 입력 없이 날짜만으로 산출 — 서버가 당일 스케줄에서 역산).
 const previewEligible = computed(() => {
   if (!leaveCd.value || !workYmd.value) return false;
-  if (isQuarterUnit.value) return true;
+  if (isHalfUnit.value) return true;
   return isHourUnit.value && !!startTime.value && !!endTime.value;
 });
 
@@ -484,7 +548,7 @@ const fnLoadPreview = async () => {
       hourlyBlocked.value = true;
       hourlyBlockedMessage.value =
         e.response.data.message ||
-        "이 날은 근무계획이 없어 시간 단위 연차를 사용할 수 없어요. 종일·반차·반반차로 신청해 주세요.";
+        "이 날은 근무계획이 없어 종일 연차만 신청할 수 있어요.";
     }
     // 그 외 preview 실패는 안내 없이 신청 가능 — 서버가 최종 판정(§5-C)
   } finally {
@@ -537,16 +601,7 @@ const fnLoadCandidates = async () => {
   }
 };
 
-// LC-10: 반반차 허용 조회 — 활성 연차정책의 USAGE_UNIT 이 'QUARTER_DAY' 인지로 판정한다.
-//   조회 실패/정책 미존재 시 false 유지(fail-closed — 서버 게이트와 동일 방향).
-const fnLoadQuarterAllowed = async () => {
-  try {
-    const r = await axios.get("/webApi/baim07/policy/active");
-    quarterAllowed.value = r.data?.policy?.usageUnit === "QUARTER_DAY";
-  } catch (e) {
-    /* noop — 미허용 취급 */
-  }
-};
+// (HB-04: 반반차 허용 조회 fnLoadQuarterAllowed 는 반반차 폐지로 제거 — 선택지 자체가 사라졌다)
 
 // 본인 프리셋 로드 + 기본 프리셋 자동 적용 (prafta-020)
 const fnLoadPresets = async () => {
@@ -594,8 +649,6 @@ const fnApplyPresetSel = () => {
 const leaveTypeCode = computed(() => {
   if (useUnitType.value === "00") return "ANNUAL";
   if (useUnitType.value === "01") return "HALF";
-  // LC-09: 반반차('05')는 정의된 성격 코드가 없어 미전송(null — 앱 신청 폼 미러, 추측 금지)
-  if (useUnitType.value === "05") return null;
   return "HOUR";
 });
 
@@ -604,6 +657,10 @@ const fnSubmit = async () => {
   if (!workYmd.value) return proxy.$alert("근무일을 선택해주세요.");
   if (isHourUnit.value && (!startTime.value || !endTime.value)) {
     return proxy.$alert("시간대를 입력해주세요.");
+  }
+  // HB-16: 반차는 파트(늦게 출근/일찍 퇴근) 필수 — 서버 fail-closed(ATTD_400_195) 사전 방어.
+  if (isHalfUnit.value && !halfPart.value) {
+    return proxy.$alert("반차 구분(늦게 출근 / 일찍 퇴근)을 선택해주세요.");
   }
   if (needApproval.value && line.value.length === 0) {
     return proxy.$alert("결재라인을 구성해주세요.");
@@ -618,6 +675,9 @@ const fnSubmit = async () => {
     leaveType: leaveTypeCode.value,
     workYmd: workYmd.value.replace(/-/g, ""),
     useUnitType: useUnitType.value,
+    // HB-16: 반차 파트('START'=늦게 출근 / 'END'=일찍 퇴근). 반차 외 단위는 null(서버 무시).
+    //   서버가 이 값으로 경계 시각을 역산해 START_TIME/END_TIME 을 확정한다(FE 시각 산출 금지).
+    halfPart: isHalfUnit.value ? halfPart.value : null,
     startTime: isHourUnit.value ? startTime.value.replace(":", "") : null,
     endTime: isHourUnit.value ? endTime.value.replace(":", "") : null,
     reason: reason.value,
@@ -646,7 +706,6 @@ onMounted(() => {
   fnLoadUnits();
   fnLoadCandidates();
   fnLoadPresets();
-  fnLoadQuarterAllowed();
 });
 </script>
 
@@ -693,6 +752,29 @@ onMounted(() => {
   font-size: 0.78rem;
   color: var(--color-text-muted, #6b7280);
   margin: 0;
+}
+/* HB-16: 반차 파트(늦게 출근 / 일찍 퇴근) 선택 행 */
+.la-half-row {
+  display: flex;
+  gap: 8px;
+}
+.la-half-opt {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 10px;
+  border: 1px solid var(--color-border);
+  border-radius: 4px;
+  background: var(--color-surface);
+  cursor: pointer;
+}
+.la-half-opt__name {
+  color: var(--color-text);
+}
+.la-half-opt__range {
+  margin-left: auto;
+  color: var(--color-text-muted);
 }
 /* prafta-com-011-6 가불 동의 토글 + 안내 — 기존 토큰만 사용(하드코딩 금지) */
 .la-borrow-toggle {

@@ -288,7 +288,8 @@ import PullRefreshIndicator from '@/components/common/PullRefreshIndicator.vue'
 // prafta-app-028: 일용직(DAILY) 게이트 — 연차 요약 섹션 노출 판정(MainView 잔여연차 카드와 동일 게이트).
 import { isDailyWorker as isDailyWorkerFn } from '@/utils/employment'
 // LC-11: 연차 일수 표기 공용 유틸 — 소수점 노출 금지, "N일 H시간 M분" 분리 표기.
-import { splitLeaveDays } from '@/utils/leaveFormat'
+// HB-13(F-3 §20-2): 사용/사용예정은 역환산 대신 반차 건수·시간차 실분 병기(splitLeaveDaysWithHourly).
+import { splitLeaveDays, splitLeaveDaysWithHourly } from '@/utils/leaveFormat'
 // PRAFTA-SUBCON-T4: 연동 회사 제3자 제공 동의(006) 식별 — 철회(Y→N) 확인 팝업 판별용.
 import { THIRD_PARTY_CONSENT_TERMS_ID } from '@/utils/termsGate'
 import { getShellInfo } from '@/utils/shellCapability'
@@ -348,6 +349,14 @@ const leaveSummaryFailed = ref(false)
 // LC-11: 1일 환산시간(분, 서버 권위 — my-leave-summary.convMinutes). "N일 H시간 M분" 분모. 미제공 시 480.
 //   PC-03(개인 분모 전환): 응답값이 회사 공통 480 → 본인 기본 근무타입 소정근로분(480 캡)으로 바뀜 — 소비 로직 무변경.
 const leaveConvMinutes = ref(480)
+// HB-13(F-3 §20-2): 사용/사용예정 셀의 부가 항목 원값(서버 additive 필드, 구 응답이면 0 폴백).
+//   시간차는 "실사용 분"(START_DATE <= 오늘 / > 오늘 로 분리), 반차는 "일수"(건수 아님 — 분할차감 대응).
+//   이 값들은 법정/법정 외 구분이 없는 전체 합계라 groups.TOTAL 에만 병기할 수 있는데,
+//   본 화면은 애초에 groups.TOTAL 만 사용하므로(위 매핑 주석) MyLeaveSummaryView 의 전체-토글 한정 분기와 정합한다.
+const leaveHourlyMinutesPast = ref(0)
+const leaveHourlyMinutesPlanned = ref(0)
+const leaveHalfDayDaysPast = ref(0)
+const leaveHalfDayDaysPlanned = ref(0)
 
 // 앱 버전 + 로딩 소스 표기 — 셸이 주입한 __SHELL__(T1) 기반. 구버전 셸/브라우저(__SHELL__
 // 부재)에서는 기존 고정 표기를 유지한다(무회귀). loadSource 는 remote/bundle 판정 수단(§7).
@@ -374,9 +383,28 @@ const isDailyWorker = computed(() => isDailyWorkerFn())
 
 // LC-11: 소수점 노출 금지 — 일(dayText)은 큰 숫자, 시간·분(subText)은 보조 텍스트로 분리 표기.
 //   내부 계산값(leaveRemaining 등 숫자 ref)은 그대로 두고 표시만 교체(muted 판정 회귀 없음).
+// 잔여는 역환산 참고치 유지(E4·Q6 확정) — 부가 항목을 붙이지 않는다.
 const leaveRemainingParts = computed(() => splitLeaveDays(leaveRemaining.value, leaveConvMinutes.value))
-const leavePlannedParts = computed(() => splitLeaveDays(leavePlanned.value, leaveConvMinutes.value))
-const leaveUsedParts = computed(() => splitLeaveDays(leaveUsed.value, leaveConvMinutes.value))
+// HB-13(F-3 §20-2): 사용예정/사용은 반차 건수 + 시간차 실분을 보조 텍스트에 병기(일수→시간 역환산 제거).
+//   상세 화면(MyLeaveSummaryView 의 LeaveBalanceCard/LeaveSplitKpi)과 동일 규칙·동일 원값을 쓴다
+//   — 메인 카드와 상세 화면의 수치가 어긋나지 않도록(F-3 이 화면 간 모순으로 번지는 것을 차단).
+//   반차·시간차가 모두 0 이면 splitLeaveDays 와 완전히 동일한 결과라 기존 표기 회귀가 없다.
+const leavePlannedParts = computed(() =>
+  splitLeaveDaysWithHourly(
+    leavePlanned.value,
+    leaveConvMinutes.value,
+    leaveHourlyMinutesPlanned.value,
+    leaveHalfDayDaysPlanned.value,
+  ),
+)
+const leaveUsedParts = computed(() =>
+  splitLeaveDaysWithHourly(
+    leaveUsed.value,
+    leaveConvMinutes.value,
+    leaveHourlyMinutesPast.value,
+    leaveHalfDayDaysPast.value,
+  ),
+)
 
 // 모달 토글 (UI 상태 — 허용 범위)
 const logoutDialogOpen = ref(false)
@@ -534,6 +562,11 @@ const loadLeaveSummary = async () => {
     leaveUsed.value = total.used ?? 0 // 사용 연차(실제 소진분)
     // LC-11: 표기 분모 — 서버 미제공(구버전 응답) 시 480 폴백.
     leaveConvMinutes.value = Number(data?.convMinutes) > 0 ? Number(data.convMinutes) : 480
+    // HB-13(F-3 §20-2): 사용/사용예정 병기용 원값(서버 additive 필드). 구 응답이면 0 → 기존 표기로 폴백.
+    leaveHourlyMinutesPast.value = Number(data?.hourlyUsedMinutesPast) || 0
+    leaveHourlyMinutesPlanned.value = Number(data?.hourlyUsedMinutesPlanned) || 0
+    leaveHalfDayDaysPast.value = Number(data?.halfDayUsedDaysPast) || 0
+    leaveHalfDayDaysPlanned.value = Number(data?.halfDayUsedDaysPlanned) || 0
     // 새로고침 재호출 대비: 성공 경로에서 실패 플래그를 명시적으로 리셋(이전 실패 상태 박제 방지).
     leaveSummaryFailed.value = false
   } catch (e) {

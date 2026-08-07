@@ -2,8 +2,8 @@
   AdminSiteSwitchSheet.vue — 현장 전환 셀렉터(하단 시트)
   - 작업 ID: 001-P1-F3 (분해: .claude/requests/app_requests/001-phase1-admin-shell-plan.md §5)
   - 출처: 001_관리자모드-권한매트릭스.md §3.1 (현장전환 노출 = USE_YN='Y' 사업장 수 > 1, 역할 무관)
-  - 공통 컴포넌트 재사용: BaseBottomSheet (views/req/components/BaseBottomSheet.vue)
-      → developer 가 공통 디렉토리로 승격 시 import 경로 갱신(D9).
+  - 공통 컴포넌트 재사용: BaseBottomSheet (components/common/BaseBottomSheet.vue)
+      → HB-14(F-6)에서 공통 디렉토리로 승격 완료(D9 해소).
   - planner 라운드 스코프: template + style. 선택 사업장 emit 만(영속화/전파는 developer, D5).
   - 디자인 토큰: 부모(AdminLauncherView)에서 선언한 var(--...) 상속.
 -->
@@ -55,7 +55,7 @@
 </template>
 
 <script setup>
-import BaseBottomSheet from '@/views/req/components/BaseBottomSheet.vue'
+import BaseBottomSheet from '@/components/common/BaseBottomSheet.vue'
 
 defineProps({
   // v-model (시트 노출)
