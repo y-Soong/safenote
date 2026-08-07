@@ -541,7 +541,11 @@
            기간: WORK_YMD BETWEEN 요청 기간. 유효행: DEL_YN='N'.
            근로자: tb_user(정규) LEFT JOIN + tb_daily_user(일용) LEFT JOIN — 성명은 원천이 평문이라 그대로 복사.
            OT/연차는 같은 (근로자, 근무일) 의 대표 근태행(최소 WORK_SEQ)에만 결합한다(2차수 중복 합산 방지).
-           판정(ATTD_STATUS_CD)은 attd08 CASE 복제 — 날짜+시각 CONCAT 비교, 야간(종료<시작)은 익일 보정.
+           판정(ATTD_STATUS_CD)은 attd08 CASE 복제 — 날짜+시각 CONCAT 비교, 야간(종료 이 시작보다 이르면) 익일 보정.
+         ※ NF-2a(2026-08-07): 아래 CASE 는 "반차가 없는 날"의 판정이다. 확정 부분연차(반차)가 있는 날은
+           서비스(Subcon03ServiceImpl.applyHalfLeaveAttdStatus)가 PartialLeaveWindowUtils 단일 출처로
+           재판정해 이 값을 덮어쓴다 — SQL 문자열 비교로는 야간 반차의 익일 경계를 표현할 수 없기 때문이다.
+           이 CASE 에 반차 산식을 추가하지 말 것(웹 Attd_08/Attd_11 과 답이 갈린다).
          ※ record 매핑 — SELECT 컬럼 순서 = SnapshotSourceRow 컴포넌트 순서(3개 원천 쿼리 동일 순서).
          ============================================================ -->
     <select id="selectAttdSourceRows" resultType="com.prafta.web.subcon.subcon03.result.SnapshotSourceRow">
@@ -825,6 +829,33 @@
       )
     GROUP BY L.USER_CD, L.START_DATE, U.USER_CD, U.USER_NM, D.USER_NM, U.NODE_CD
     ORDER BY L.USER_CD ASC, L.START_DATE ASC
+    </select>
+
+    <!-- ============================================================
+         NF-2a(2026-08-07): 기간 내 확정 부분연차(반차 '01') 면제 시각 구간.
+           selectAttdSourceRows 의 ATTD_STATUS_CD 를 서비스가 재판정하기 위한 입력이다.
+           술어는 웹 Attd08Mapper/Attd11Mapper.selectHalfLeaveWindows 와 동일 —
+           회사·사업장·기간 스코프 필수(전건 스캔 금지) + CONFIRMED + 미삭제 + 시각 보유.
+           시각 없는 구 반차/시간차(02~04)는 대상이 아니다(시간차 판정 변경은 비목표).
+           분할차감 행은 같은 시각이 여러 행으로 오므로 DISTINCT 로 접는다.
+         ※ SELECT 컬럼 순서 = HalfLeaveWindowRow 컴포넌트 순서(위치 매핑).
+         ============================================================ -->
+    <select id="selectHalfLeaveWindows" resultType="com.prafta.web.subcon.subcon03.result.HalfLeaveWindowRow">
+    /* Subcon03Mapper.selectHalfLeaveWindows */
+    SELECT DISTINCT
+          L.USER_CD     AS userCd
+        , L.START_DATE  AS workYmd
+        , L.START_TIME  AS startTime
+        , L.END_TIME    AS endTime
+      FROM TB_USER_LEAVE_USE L
+     WHERE L.CMPNY_CD      = #{prvCmpnyCd}
+       AND L.SITE_CD       = #{targetSiteCd}
+       AND L.START_DATE BETWEEN #{periodStr} AND #{periodEnd}
+       AND L.USE_UNIT_TYPE = '01'
+       AND L.LEAVE_STATUS  = 'CONFIRMED'
+       AND L.DEL_YN        = 'N'
+       AND L.START_TIME IS NOT NULL
+       AND L.END_TIME   IS NOT NULL
     </select>
 
     <!-- 스냅샷 헤더 INSERT — OWNER_CMPNY_CD 는 DB 의 SHARE_REQ.REQ_CMPNY_CD 에서만 온다(클라 불신). -->

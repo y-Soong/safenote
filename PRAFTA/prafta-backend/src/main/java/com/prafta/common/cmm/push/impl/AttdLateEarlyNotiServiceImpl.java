@@ -12,6 +12,7 @@ import org.springframework.stereotype.Service;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.prafta.common.cmm.leave.mapper.LeaveApprovalNotiMapper;
 import com.prafta.common.cmm.leave.mapper.LeaveDashboardMapper;
+import com.prafta.common.cmm.leave.util.PartialLeaveWindowUtils;
 import com.prafta.common.cmm.leave.vo.NotiOutboxInsertVO;
 import com.prafta.common.cmm.push.AttdLateEarlyNotiConst;
 import com.prafta.common.cmm.push.AttdLateEarlyNotiService;
@@ -42,14 +43,17 @@ public class AttdLateEarlyNotiServiceImpl implements AttdLateEarlyNotiService {
     @Override
     public void detectLate(String cmpnyCd, String siteCd, String workerUserCd, String nodeCd,
                            String workYmd, String attdId, String checkInDate, String checkInTime,
-                           String schStartHhmm, String actorUserCd) {
+                           String rawSchStrHhmm, String rawSchEndHhmm, String schStartHhmm, String actorUserCd) {
         try {
             // 스케줄 시작/출근 시각 결측이면 판정 불가 → no-op.
             if (!hasHhmm(schStartHhmm) || !hasHhmm(checkInTime) || workYmd == null) {
                 return;
             }
             String inYmd = hasYmd(checkInDate) ? checkInDate : workYmd;
-            long schStartStamp = toMinuteStamp(workYmd, schStartHhmm);
+            // ★ qa N-2: 판정용 시작이 근무일 당일인지 익일인지는 원 스케줄 프레임으로 정한다
+            //   (야간 시작기준 반차의 유효 시작 01:15 를 당일로 두면 허위 지각 PUSH 가 나간다).
+            long schStartStamp = toMinuteStamp(
+                    shiftYmd(workYmd, rawSchStrHhmm, rawSchEndHhmm, schStartHhmm), schStartHhmm);
             long actInStamp = toMinuteStamp(inYmd, checkInTime);
             if (actInStamp <= schStartStamp) {
                 return; // 정시/조기 출근 — 지각 아님.
@@ -69,17 +73,15 @@ public class AttdLateEarlyNotiServiceImpl implements AttdLateEarlyNotiService {
     @Override
     public void detectEarly(String cmpnyCd, String siteCd, String workerUserCd, String nodeCd,
                             String workYmd, String attdId, String checkOutDate, String checkOutTime,
-                            String schStartHhmm, String schEndHhmm, String actorUserCd) {
+                            String rawSchStrHhmm, String rawSchEndHhmm, String schEndHhmm, String actorUserCd) {
         try {
             if (!hasHhmm(schEndHhmm) || !hasHhmm(checkOutTime) || workYmd == null) {
                 return;
             }
-            // 야간(종료<시작)이면 스케줄 종료는 근무일 익일로 본다(웹 Attd_11 동일).
-            String endYmd = workYmd;
-            if (hasHhmm(schStartHhmm) && schEndHhmm.compareTo(schStartHhmm) < 0) {
-                endYmd = ymdPlusDays(workYmd, 1);
-            }
-            long schEndStamp = toMinuteStamp(endYmd, schEndHhmm);
+            // ★ qa N-2: 익일 여부는 원 스케줄 프레임으로 판정한다(유효 시각끼리 비교하던 종전 규칙은
+            //   야간 종료기준 반차의 유효 종료 01:15 를 당일로 두어 조기 퇴근을 놓쳤다).
+            long schEndStamp = toMinuteStamp(
+                    shiftYmd(workYmd, rawSchStrHhmm, rawSchEndHhmm, schEndHhmm), schEndHhmm);
             String outYmd = hasYmd(checkOutDate) ? checkOutDate : workYmd;
             long actOutStamp = toMinuteStamp(outYmd, checkOutTime);
             if (actOutStamp >= schEndStamp) {
@@ -183,5 +185,14 @@ public class AttdLateEarlyNotiServiceImpl implements AttdLateEarlyNotiService {
 
     private String ymdPlusDays(String ymd, int days) {
         return LocalDate.parse(ymd, YMD).plusDays(days).format(YMD);
+    }
+
+    /**
+     * 판정용 시각이 속한 일자(근무일 또는 익일) — 원 스케줄 프레임 기준.
+     * 웹 {@code Attd08ServiceImpl.shiftYmd} / 앱 {@code AppAttd01ServiceImpl.shiftYmd} 와 동일 규칙(D-1).
+     */
+    private String shiftYmd(String workYmd, String rawSchStr, String rawSchEnd, String hhmm) {
+        int offset = PartialLeaveWindowUtils.dayOffsetOf(rawSchStr, rawSchEnd, hhmm);
+        return (offset == 0) ? workYmd : ymdPlusDays(workYmd, offset);
     }
 }

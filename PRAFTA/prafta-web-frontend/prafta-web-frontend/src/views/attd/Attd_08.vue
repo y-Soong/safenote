@@ -506,6 +506,13 @@ const incSubNodeYn = ref(false);
 const searchUserNm = ref("");
 const siteNoFcs = ref(null);
 
+// security H-1: 전사 권한(master/hr) 여부 — 그 외 권한은 사업장 + 소속부서 필수(서버 canManageNode 게이트).
+//   Attd_11(:243~247) 동일 패턴.
+const isMasterOrHr = computed(() => {
+  const a = sessionStorage.getItem("gv_authCd");
+  return a === "master" || a === "hr";
+});
+
 function defaultFrom() {
   const d = new Date();
   d.setMonth(d.getMonth() - 1);
@@ -743,6 +750,12 @@ function isWithinThreeMonths(fromIso, toIso) {
 const fnSearch = async () => {
   if (proxy.$util.isEmpty(siteCd.value)) {
     await proxy.$alert("사업장을 선택해 주세요.");
+    return;
+  }
+  // security H-1: 서버 부서 관리 권한 게이트(canManageNode)와 동일 조건을 화면에서도 안내한다
+  //   (Attd_11 :434~438 미러). 전사 권한이 아니면 부서 미지정 = 사업장 전체 조회라 서버가 403 을 준다.
+  if (!isMasterOrHr.value && proxy.$util.isEmpty(nodeCd.value)) {
+    await proxy.$alert("소속 부서를 선택해 주세요.");
     return;
   }
   if (
@@ -1086,10 +1099,46 @@ const ymdPlusDays = (ymd, days) => {
 };
 
 /**
+ * HB-05(D1): 판정용 유효 소정 시각.
+ * 서버(Attd08ServiceImpl)가 그날 확정 반차를 반영해 산출한 값(effPlanStart/effPlanEnd)을 쓴다.
+ * - 반차가 없으면 그 차수 구간의 원 스케줄 시각과 동일하다.
+ * - 구간 전체가 면제(반차 2건으로 종일 면제 등)면 null → 지각·조퇴 판정 제외.
+ * - 구버전 응답(필드 없음) 방어: 없으면 원 스케줄 시각으로 폴백한다.
+ */
+// ⚠️ null(= 구간 전체 면제)과 "필드 자체가 없음"(구버전 응답)을 구분해야 한다.
+//    null 을 미전달로 오인해 원 스케줄로 폴백하면 종일 쉰 사람에게 지각·조퇴가 다시 뜬다.
+const effPlanStartOf = (r) => {
+  if (r && "effPlanStart" in r) return r.effPlanStart || null;
+  return (String(r?.workSeq) === "2" ? r?.plan2Start : r?.plan1Start) || null;
+};
+const effPlanEndOf = (r) => {
+  if (r && "effPlanEnd" in r) return r.effPlanEnd || null;
+  return (String(r?.workSeq) === "2" ? r?.plan2End : r?.plan1End) || null;
+};
+// 그 행(차수)의 원 스케줄 시각 — 판정용 시각의 일자 프레임(당일/익일) 판정에만 쓴다.
+const rawPlanStartOf = (r) =>
+  (String(r?.workSeq) === "2" ? r?.plan2Start : r?.plan1Start) || null;
+const rawPlanEndOf = (r) =>
+  (String(r?.workSeq) === "2" ? r?.plan2End : r?.plan1End) || null;
+/**
+ * 판정용 시각이 근무일 당일(0)인지 익일(1)인지 — 원 스케줄 프레임 기준.
+ * 야간 스케줄(원 종료 < 원 시작)에서는 스케줄 시작보다 이른 시각이 전부 익일이다.
+ * 반차 경계가 자정을 넘기면 유효 소정 시각도 익일 값이 되므로(예: 시작기준 반차 → 판정용 시작 01:15)
+ * 유효 시각끼리 비교하는 종전 규칙으로는 "01:15 출근"이 지각으로 오판정된다.
+ * 서버 PartialLeaveWindowUtils.dayOffsetOf 와 동일 규칙.
+ */
+const dayOffsetOf = (rawStart, rawEnd, hhmm) => {
+  if (!rawStart || !rawEnd || !hhmm) return 0;
+  const s = String(rawStart);
+  const e = String(rawEnd);
+  if (e >= s) return 0; // 야간 아님(자정종료 "2400" 포함)
+  return String(hhmm) < s ? 1 : 0;
+};
+
+/**
  * 상태 판정 (지각/조퇴/결근/정상).
- * 백엔드는 시각(HHmm)만 비교해 날짜를 무시하므로(예: 전일 23:20 출근이
- * 당일 00:00 스케줄에 대해 지각으로 잘못 판정) 화면에서 날짜까지 포함해
- * 일시(yyyyMMddHHmm)로 다시 판정한다.
+ * 백엔드도 동일 규칙으로 판정하지만(attdStatusCd), 화면은 표시 시점 데이터로 일관되게
+ * 재판정한다 — 판정 기준 시각만 서버 권위값(effPlan*)을 쓴다.
  */
 const computeStatus = (r) => {
   const seq = String(r.workSeq);
@@ -1098,25 +1147,30 @@ const computeStatus = (r) => {
   const inTime = isSeq2 ? r.act2InTime : r.act1InTime;
   const outDate = isSeq2 ? r.act2OutDate : r.act1OutDate;
   const outTime = isSeq2 ? r.act2OutTime : r.act1OutTime;
-  const planStart = isSeq2 ? r.plan2Start : r.plan1Start;
-  const planEnd = isSeq2 ? r.plan2End : r.plan1End;
+  const planStart = effPlanStartOf(r);
+  const planEnd = effPlanEndOf(r);
+  const rawStart = rawPlanStartOf(r);
+  const rawEnd = rawPlanEndOf(r);
   const workYmd = String(r.workYmd ?? "");
 
   // 출근 기록이 없으면 결근
   if (!inTime) return "ABSENT";
 
-  // 지각: 실제 출근 일시 > 스케줄 시작 일시
+  // 지각: 실제 출근 일시 > 유효 소정 시작 일시(일자 프레임 = 원 스케줄 기준)
   if (planStart) {
-    const schStart = workYmd + String(planStart);
+    const startYmd =
+      dayOffsetOf(rawStart, rawEnd, planStart) === 1
+        ? ymdPlusDays(workYmd, 1)
+        : workYmd;
+    const schStart = startYmd + String(planStart);
     const actIn = (inDate ? String(inDate) : workYmd) + String(inTime);
     if (actIn > schStart) return "LATE";
   }
 
-  // 조퇴: 실제 퇴근 일시 < 스케줄 종료 일시
+  // 조퇴: 실제 퇴근 일시 < 유효 소정 종료 일시
   if (planEnd && outTime) {
-    // 종료시각이 시작시각보다 이르면 익일 종료(야간 스케줄)로 본다
     const endYmd =
-      planStart && String(planEnd) < String(planStart)
+      dayOffsetOf(rawStart, rawEnd, planEnd) === 1
         ? ymdPlusDays(workYmd, 1)
         : workYmd;
     const schEnd = endYmd + String(planEnd);
@@ -1179,30 +1233,32 @@ const fmtMinutes = (min) => {
   const mm = m % 60;
   return `전체 ${m}분 (${h}시간${mm > 0 ? ` ${mm}분` : ""})`;
 };
-// 지각(분): 실제 출근 − 스케줄 시작 (양수일 때만). 정규근무 행만.
+// 지각(분): 실제 출근 − 유효 소정 시작 (양수일 때만). 정규근무 행만.
+//   ★ HB-05(D1): 기준 시각은 서버가 내려준 effPlanStart(반차 반영 유효 소정)를 쓴다.
+//     반차가 없으면 원 스케줄 시각과 같고, 구간 전체가 면제되면 null 이라 0 분이 된다.
+//     클라이언트에서 반차 규칙을 재계산하지 않는다(서버 단일 출처).
 const lateMin = (r) => {
   if (r._isOt) return 0;
-  const isSeq2 = String(r.workSeq) === "2";
-  const planStart = isSeq2 ? r.plan2Start : r.plan1Start;
+  const planStart = effPlanStartOf(r);
   if (!planStart || !r._inTime) return 0;
-  const schStartM = dtMinutes(r.workYmd, planStart, r.workYmd);
+  const baseStartM = dtMinutes(r.workYmd, planStart, r.workYmd);
   const actInM = dtMinutes(r._inDate, r._inTime, r.workYmd);
-  if (schStartM == null || actInM == null) return 0;
+  if (baseStartM == null || actInM == null) return 0;
+  const schStartM =
+    baseStartM + dayOffsetOf(rawPlanStartOf(r), rawPlanEndOf(r), planStart) * 1440;
   return Math.max(0, actInM - schStartM);
 };
-// 조기퇴근(분): 스케줄 종료 − 실제 퇴근 (양수일 때만). 정규근무 행만.
+// 조기퇴근(분): 유효 소정 종료 − 실제 퇴근 (양수일 때만). 정규근무 행만.
 const earlyLeaveMin = (r) => {
   if (r._isOt) return 0;
-  const isSeq2 = String(r.workSeq) === "2";
-  const planStart = isSeq2 ? r.plan2Start : r.plan1Start;
-  const planEnd = isSeq2 ? r.plan2End : r.plan1End;
+  const planEnd = effPlanEndOf(r);
   if (!planEnd || !r._outTime) return 0;
-  const schStartM = dtMinutes(r.workYmd, planStart, r.workYmd);
-  let schEndM = dtMinutes(r.workYmd, planEnd, r.workYmd);
+  // 야간 스케줄이면 원 스케줄 프레임으로 익일 여부를 판정한다(유효 시각 간 비교 금지).
+  const baseEndM = dtMinutes(r.workYmd, planEnd, r.workYmd);
   const actOutM = dtMinutes(r._outDate, r._outTime, r.workYmd);
-  if (schEndM == null || actOutM == null) return 0;
-  // 야간 스케줄(종료<시작)은 익일 종료로 보정
-  if (schStartM != null && schEndM < schStartM) schEndM += 1440;
+  if (baseEndM == null || actOutM == null) return 0;
+  const schEndM =
+    baseEndM + dayOffsetOf(rawPlanStartOf(r), rawPlanEndOf(r), planEnd) * 1440;
   return Math.max(0, schEndM - actOutM);
 };
 // 상태 우선순위 — 한 사람 하루에 차수가 여럿이면 단일 상태로 산출.
@@ -1518,12 +1574,17 @@ const setGpsViewMode = async (mode) => {
 };
 
 // 진입 시 sessionStorage 의 사업장 정보로 초기화 (Attd_05 패턴 차용)
+//   ★ security H-1(2026-08-07): 서버에 부서 관리 권한 게이트(canManageNode)가 추가되어,
+//     master/hr 이 아닌 사용자는 부서(nodeCd)를 지정하지 않으면 403 을 맞는다.
+//     Attd_11(fnInit :507~516)·Attd_13 과 동일하게 세션 소속부서를 프리필해 진입 즉시 403 을 막는다.
 const fnInit = () => {
   siteCd.value = sessionStorage.getItem("gv_siteCd") ?? "";
   siteNo.value = sessionStorage.getItem("gv_siteNo") ?? "";
   siteNm.value = sessionStorage.getItem("gv_siteNm") ?? "";
   if (siteCd.value) {
     nodeDisabled.value = false;
+    nodeCd.value = sessionStorage.getItem("gv_nodeCd") ?? "";
+    nodeNm.value = sessionStorage.getItem("gv_nodeNm") ?? "";
   }
 };
 
@@ -1549,8 +1610,12 @@ const applyDashboardParams = () => {
 };
 
 // 본 화면 fnSearch 는 사업장 필수 — 사업장이 있을 때만 자동 재조회한다.
+//   security H-1: 비 master/hr 은 부서까지 있어야 서버 게이트를 통과하므로, 프리필 대상이 없으면
+//   자동조회를 건너뛴다(불필요한 403 alert 방지 — 사용자가 부서를 고르고 직접 조회).
 const fnSearchByDashboard = () => {
-  if (applyDashboardParams() && siteCd.value) fnSearch();
+  if (!applyDashboardParams() || !siteCd.value) return;
+  if (!isMasterOrHr.value && proxy.$util.isEmpty(nodeCd.value)) return;
+  fnSearch();
 };
 
 onMounted(() => {

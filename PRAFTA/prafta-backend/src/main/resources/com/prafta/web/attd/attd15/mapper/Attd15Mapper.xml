@@ -149,6 +149,34 @@
             , SCH.SEC_SCH_STR_TIME    AS secSchStrTime
             , SCH.SEC_SCH_END_TIME    AS secSchEndTime
             , SCH.SEC_SCH_BRK_MIN     AS secSchBrkMin
+            /* HB-07(D3, Q4 확정 2026-08-07): 그날 확정 연차 면제분.
+               주간 "등록된 스케줄 기준" 소정 합계에서 이 값을 뺀다 — 반차일은 D-H, 종일 연차일은 0.
+               ★ "반차만 제외"는 종일(540분) > 반차(270분) 역전을 만들어 채택 불가.
+               TB_USER_WORK_PLAN 은 연차일에도 SCH_CD 를 유지하므로(prafta-com-008-E-2) 조인 없이는
+               종일 연차일 소정이 전량 계상된다 — 연차 사용자에게 가짜 "초과" 경보가 뜨던 원인.
+               부분연차 면제분(분할차감 행은 첫 행에만 총량 — 불변식) 합계와, 종일 연차 존재 여부를
+               따로 내린다(종일 면제분 = D 이고 D 는 서비스가 ScheduleWorkMinutesUtils 로 계산). */
+            , IFNULL((
+                  SELECT SUM(L.LEAVE_MINUTES)
+                  FROM TB_USER_LEAVE_USE L
+                  WHERE L.CMPNY_CD      = WP.CMPNY_CD
+                    AND L.USER_CD       = WP.USER_CD
+                    AND L.LEAVE_STATUS  = 'CONFIRMED'
+                    AND L.DEL_YN        = 'N'
+                    AND L.START_DATE    = WP.WORK_YMD
+                    AND L.USE_UNIT_TYPE <![CDATA[ <> ]]> '00'
+              ), 0)                    AS leaveExemptMinutes
+            , CASE WHEN EXISTS (
+                  SELECT 1
+                  FROM TB_USER_LEAVE_USE LF
+                  WHERE LF.CMPNY_CD      = WP.CMPNY_CD
+                    AND LF.USER_CD       = WP.USER_CD
+                    AND LF.LEAVE_STATUS  = 'CONFIRMED'
+                    AND LF.DEL_YN        = 'N'
+                    AND LF.USE_UNIT_TYPE = '00'
+                    AND LF.START_DATE <![CDATA[ <= ]]> WP.WORK_YMD
+                    AND LF.END_DATE   <![CDATA[ >= ]]> WP.WORK_YMD
+              ) THEN 'Y' ELSE 'N' END  AS fullDayLeaveYn
         FROM target_user U
         INNER JOIN TB_USER_WORK_PLAN WP
             ON  WP.CMPNY_CD = U.CMPNY_CD

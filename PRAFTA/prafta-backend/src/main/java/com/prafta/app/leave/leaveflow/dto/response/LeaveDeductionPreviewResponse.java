@@ -20,6 +20,9 @@ import java.math.BigDecimal;
  *                            발동 예상 시 insufficientBalance=false 로 내린다(신청 성공 예정 — UI-D)
  * @param remnantDays         발동 시 실제 차감될 잔여 전액(일). 미발동 {@code null}
  * @param companyCoverMinutes 회사 부담분(분 — coverDays × 본인 분모, DOWN 절사). 미발동 {@code null}
+ * @param halfDayBoundaryTime 반차 경계 시각(HHMM) — 반차 단위 preview 에서만 채워진다. 그 외 {@code null}(HB-03, additive)
+ * @param halfStartPartRange  시작기준(늦게 출근) 반차가 쉬는 구간 "HHMM~HHMM". 반차 외/산출 불가면 {@code null}
+ * @param halfEndPartRange    종료기준(일찍 퇴근) 반차가 쉬는 구간 "HHMM~HHMM". 반차 외/산출 불가면 {@code null}
  */
 public record LeaveDeductionPreviewResponse(
       BigDecimal chargeDays
@@ -31,5 +34,8 @@ public record LeaveDeductionPreviewResponse(
     , boolean remnantTriggered
     , BigDecimal remnantDays
     , Integer companyCoverMinutes
+    , String halfDayBoundaryTime
+    , String halfStartPartRange
+    , String halfEndPartRange
 ) {
 }

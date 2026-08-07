@@ -28,8 +28,8 @@ public record LeaveApplyMetaResponse(
      *   <li>{@code systemYn} : 법정여부 'Y'/'N'(원본 문자열).</li>
      *   <li>{@code aprvRequired} : 결재필요(법정=policy.APRV_USE_YN / 비법정=type.APRV_USE_YN, 'Y'→true).</li>
      *   <li>{@code allowedUnits} : 허용 사용단위 SYS025 코드 목록(D2-a 계층, 굵→잘게: 00,01,02,03,04 부분집합.
-     *       LC-10: 반반차 '05'는 계층 밖 특례 — 법정=USAGE_UNIT='QUARTER_DAY' / 비법정=타입 USE_UNIT_TYPE='05'
-     *       일 때 [00,01,05] 로 산출되며, 이 경우 시간차(02~04)는 포함되지 않는다).</li>
+     *       HB-04(2026-08-07) 반반차 '05' 폐지 — 구 설정('QUARTER_DAY'·'05')은 반차로 축소 해석되어
+     *       '05' 는 어떤 경우에도 포함되지 않는다).</li>
      *   <li>{@code balanceDays} : 현재 잔여(부여-사용 합, 활성집합, 소수1자리).</li>
      *   <li>{@code applicable} : 신청가능(잔여>0). false 면 FE disabled.</li>
      *   <li>{@code borrowable} : 가불 가능 여부(prafta-com-011-2). 시스템 법정 월차/본연차이고 borrowQuota>0 일 때 true.</li>

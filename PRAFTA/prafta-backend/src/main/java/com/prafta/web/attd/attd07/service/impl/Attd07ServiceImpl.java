@@ -9,6 +9,7 @@ import org.springframework.transaction.annotation.Transactional;
 import com.prafta.common.cmm.leave.service.LeaveConversionPolicyService;
 import com.prafta.common.cmm.leave.service.LeaveRefusalConst;
 import com.prafta.common.cmm.leave.service.LeaveRefusalDetectService;
+import com.prafta.common.cmm.leave.util.PartialLeaveWindowUtils;
 import com.prafta.common.cmm.push.ApprovalResultNotiService;
 import com.prafta.common.cmm.siteauth.service.SiteAccessService;
 import com.prafta.common.error.attd.AttdErrorCode;
@@ -47,6 +48,7 @@ import com.prafta.web.attd.attd07.mapper.Attd07Mapper;
 import com.prafta.web.attd.attd07.result.AllowedWindowResult;
 import com.prafta.web.attd.attd07.result.AttdSnapshotResult;
 import com.prafta.web.attd.attd07.result.ConfirmedLeaveResult;
+import com.prafta.web.attd.attd07.result.LeaveExemptWindowResult;
 import com.prafta.web.attd.attd07.result.DailyAttdDetailHistoryResult;
 import com.prafta.web.attd.attd07.result.DayAttdSegmentResult;
 import com.prafta.web.attd.attd07.result.DailyAttdDetailsResult;
@@ -1479,9 +1481,22 @@ public class Attd07ServiceImpl implements Attd07Service {
             throw new ApiException(AttdErrorCode.ATTD_400_014);
         }
 
+        // 4-B. HB-08(D5) - 그날 확정 부분연차(반차/시간차)의 면제 구간을 로드한다.
+        //    등록 가능 범위 = 실근태 - (스케줄 구간 ∪ 연차 면제 구간).
+        //    ★ 지시서 문언("스케줄 구간에서 반차 쉬는 구간을 제외")대로 스케줄을 줄이면 D5 가 오히려
+        //      악화된다(D5 는 2구간에 스케줄이 아예 null 이라 뺄 것이 없고, 스케줄을 줄이면 OT 가 늘어난다).
+        //      필요한 연산은 피감수를 넓히는 합집합이다.
+        //    회귀 금지 ①(조기출근 OT 120분): 면제 구간과 겹치지 않는 스케줄 밖 근무는 그대로 남는다.
+        //    회귀 금지 ③(시간차): 시간차 면제 구간은 항상 스케줄 안이라 합집합해도 결과가 변하지 않는다.
+        //    ★ 3차(§15-2): 면제 구간 환산은 반드시 그날 원 스케줄을 프레임으로 정렬한다(windows 보유).
+        List<int[]> leaveExemptSegs = buildLeaveExemptSegments(param.workYmd(),
+                attd07Mapper.selectLeaveExemptWindows(
+                        param.gvCmpnyCd(), param.siteCd(), param.userCd(), param.workYmd()),
+                windows, param.userCd());
+
         // 5. PRAFTA-011 - 등록가능시간을 구간별로 분리 계산한다.
-        //    각 WORK_SEQ 에 대해 "그 구간 actual - 그 구간 schedule" 차집합을 구하고,
-        //    매칭되는 스케줄이 없는 구간은 그 구간 근무 전체를 등록가능으로 본다.
+        //    각 WORK_SEQ 에 대해 "그 구간 actual - (그 구간 schedule ∪ 연차 면제 구간)" 차집합을 구한다.
+        //    매칭 스케줄이 없는 구간도 연차 면제 구간은 빼야 한다(D5 교정 지점).
         //    구간별 결과를 모두 합쳐 최종 allowed 윈도우를 만든다.
         //    1구간/2구간 actual 은 (오버나이트 보정 포함) 서로 겹치지 않도록 stamp 되어 있다.
         List<int[]> allowedAll = new ArrayList<>(2);
@@ -1496,16 +1511,20 @@ public class Attd07ServiceImpl implements Attd07Service {
             actList.add(actSeg);
 
             int[] schSeg = schBySeq[seq];
+            // 피감수 = 그 구간 스케줄(있으면) ∪ 그날 연차 면제 구간.
+            List<int[]> subtrahend = new ArrayList<>(leaveExemptSegs.size() + 1);
+            if (schSeg != null) {
+                subtrahend.add(schSeg);
+            }
+            subtrahend.addAll(leaveExemptSegs);
+
             List<int[]> seqAllowed;
-            if (schSeg == null) {
-                // 매칭 스케줄 없는 구간 - 그 구간 근무 전체를 등록가능으로 본다.
+            if (subtrahend.isEmpty()) {
+                // 스케줄도 연차도 없는 구간 - 그 구간 근무 전체를 등록가능으로 본다(종전 동작).
                 seqAllowed = IntervalUtils.merge(actList);
             } else {
-                List<int[]> schList = new ArrayList<>(1);
-                schList.add(schSeg);
-                // 구간 actual - 구간 schedule 차집합.
                 seqAllowed = IntervalUtils.subtract(
-                        IntervalUtils.merge(actList), IntervalUtils.merge(schList));
+                        IntervalUtils.merge(actList), IntervalUtils.merge(subtrahend));
             }
             allowedAll.addAll(seqAllowed);
         }
@@ -1765,5 +1784,44 @@ public class Attd07ServiceImpl implements Attd07Service {
             log.info("초과근무 삭제 완료. otId={}, userCd={}, workYmd={}",
                     otId, param.userCd(), param.workYmd());
         }
+    }
+
+    /**
+     * HB-08(D5): 연차 면제 구간 행을 workYmd 기준 분 stamp 구간으로 변환한다.
+     * stamp origin 은 스케줄/실근태와 동일(workYmd-1 00:00 = 0).
+     *
+     * <p>★ 3차 재작업(§15-2, 2026-08-07): 환산은 <b>그날 원 스케줄을 프레임으로</b> 단일 진입점
+     * ({@code PartialLeaveWindowUtils.exemptStampRange})에서만 수행한다. 스케줄 없이 환산하면
+     * 야간 종료기준 반차({@code '0115'~'0430'} — 양 끝이 자정 이후라 행 안에 wrap 신호가 없다)가
+     * 정확히 1440분 앞에 배치되어 면제가 빠지지 않는다(N-1, OT 수당 과다).
+     *
+     * <p>산출 실패(스케줄 프레임 부재·시각 비정상)는 <b>스킵하지 않는다</b>(§15-2-3 fail-open 금지) —
+     * 그날 전체를 면제로 보아 OT 를 거부하고 WARN 을 남긴다.
+     */
+    private List<int[]> buildLeaveExemptSegments(String workYmd, List<LeaveExemptWindowResult> rows,
+                                                 AllowedWindowResult windows, String userCd) {
+        List<int[]> out = new ArrayList<>();
+        if (rows == null || rows.isEmpty()) {
+            return out;
+        }
+        List<PartialLeaveWindowUtils.ScheduleSegment> schedule =
+                PartialLeaveWindowUtils.scheduleSegments(
+                        windows.plan1Start(), windows.plan1End(),
+                        windows.plan2Start(), windows.plan2End());
+        for (LeaveExemptWindowResult r : rows) {
+            int[] range = PartialLeaveWindowUtils.exemptStampRange(
+                    r.startTime(), r.endTime(), schedule);
+            if (range == null) {
+                log.warn("OT 등록가능범위 - 연차 면제 구간 환산 불가(그날 OT 보수 차단). userCd={}, workYmd={}, "
+                                + "leave={}~{}, sch1={}~{}, sch2={}~{}",
+                        userCd, workYmd, r.startTime(), r.endTime(),
+                        windows.plan1Start(), windows.plan1End(),
+                        windows.plan2Start(), windows.plan2End());
+                out.add(PartialLeaveWindowUtils.fullDayBlockStampRange());
+                continue;
+            }
+            out.add(range);
+        }
+        return out;
     }
 }

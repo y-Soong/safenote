@@ -38,4 +38,20 @@ public record SnapshotSourceRow(
     //   서버 내부 판정 전용 — 스냅샷 상세행/응답에 저장·노출하지 않는다.
     , String nodeCd
 ){
+
+    /**
+     * NF-2a(2026-08-07): 근태 판정({@code attdStatusCd})만 교체한 사본.
+     *
+     * <p>확정 부분연차(반차)가 있는 날은 SQL CASE 가 아니라 서비스가
+     * {@code PartialLeaveWindowUtils} 단일 출처로 재판정한 값을 쓴다.
+     * 컴포넌트를 추가·재배치하지 않으므로 MyBatis 위치 매핑에는 영향이 없다.
+     */
+    public SnapshotSourceRow withAttdStatusCd(String newAttdStatusCd) {
+        return new SnapshotSourceRow(
+                userCd, workerType, workerNm, rowType, workYmd, workSeq
+                , schNm, schType, planStrTime, planEndTime, planBrkMin
+                , checkInDate, checkInTime, checkOutDate, checkOutTime
+                , newAttdStatusCd, otMinutes, leaveNm, leaveDays, leaveMinutes, leaveEndYmd
+                , nodeCd);
+    }
 }

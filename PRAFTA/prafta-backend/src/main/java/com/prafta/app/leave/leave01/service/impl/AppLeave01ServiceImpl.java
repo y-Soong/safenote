@@ -19,6 +19,7 @@ import com.prafta.app.leave.leave01.dto.response.MyLeaveSummaryResponse;
 import com.prafta.app.leave.leave01.dto.response.MyLeaveUseListResponse;
 import com.prafta.app.leave.leave01.mapper.AppLeave01Mapper;
 import com.prafta.app.leave.leave01.result.AppliedLeaveTypeRow;
+import com.prafta.app.leave.leave01.result.HourlyUsedSplitRow;
 import com.prafta.app.leave.leave01.result.LeaveExpiringResult;
 import com.prafta.app.leave.leave01.result.LeaveGroupAggResult;
 import com.prafta.app.leave.leave01.result.LeaveUserResult;
@@ -73,7 +74,14 @@ public class AppLeave01ServiceImpl implements AppLeave01Service {
         log.info("[leave01] 연차 현황 조회 시작 userCd={}, today={}", param.userCd(), todayYmd);
 
         // LC-07(표기): 오늘 기준 환산시간 + 시간차 사용 분 합계(전 기간) — 기존 필드 불변, additive.
-        Integer hourlyUsedMinutes = appLeave01Mapper.selectHourlyUsedMinutes(param.cmpnyCd(), param.userCd());
+        // HB-13(F-3): 같은 합계를 "사용 / 사용예정"으로 분리해 함께 내린다. FE 가 일수→시간을 단일
+        //   분모로 역환산하던 것을 실분 표기로 대체하기 위함(당일분모 전환 E1 이 만든 표시 결함).
+        //   전 기간 합계(hourlyUsedMinutes, 구 앱 호환)는 분리 결과의 합으로 산출해 쿼리 1회로 줄인다.
+        HourlyUsedSplitRow hourlySplit =
+                appLeave01Mapper.selectHourlyUsedMinutesSplit(param.cmpnyCd(), param.userCd());
+        int hourlyPastMinutes = (hourlySplit == null) ? 0 : hourlySplit.pastMinutes();
+        int hourlyPlannedMinutes = (hourlySplit == null) ? 0 : hourlySplit.plannedMinutes();
+        int hourlyUsedMinutes = hourlyPastMinutes + hourlyPlannedMinutes;
 
         // E4 참고치 규약(당일분모 전환 후 유지): convMinutes = 오늘 기준 본인 참고 분모(기본 근무타입
         //   근사치, 480 캡). 특정일 없는 잔여 카드 표기 전용 — 실차감 분모(당일 배정 스케줄, E1)와
@@ -89,7 +97,9 @@ public class AppLeave01ServiceImpl implements AppLeave01Service {
                 .borrowedDays(toScaledDouble(nz(
                         appLeave01Mapper.selectBorrowedDaysTotal(param.cmpnyCd(), param.userCd(), todayYmd))))
                 .convMinutes(personalConv != null ? personalConv : LeaveConversionPolicyService.DEFAULT_CONV_MINUTES)
-                .hourlyUsedMinutes(hourlyUsedMinutes == null ? 0 : hourlyUsedMinutes)
+                .hourlyUsedMinutes(hourlyUsedMinutes)
+                .hourlyUsedMinutesPast(hourlyPastMinutes)
+                .hourlyUsedMinutesPlanned(hourlyPlannedMinutes)
                 .build();
 
         log.info("[leave01] 연차 현황 조회 완료 userCd={}", param.userCd());

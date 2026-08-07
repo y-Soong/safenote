@@ -23,6 +23,16 @@ public record MonthlyAttdSummaryResult(
         , long lateMinutes         // 지각 분 합
         , int earlyLeaveCnt        // 조퇴 판정 건수(차수 단위)
         , long earlyLeaveMinutes   // 조퇴 분 합
-        , int absentDayCnt         // 미출근일 수(스케줄 있으나 미출근, 휴일·연차·미래일 제외) — COM-016-F 8-3
+        , int absentDayCnt         // 결근이 발생한 일수(결근분 > 0 인 날) — COM-016-F 8-3
+        /**
+         * HB-06: 결근분 합(분). {@code Σ max(0, 그날 소정근로분 D - 그날 확정 연차 면제분)}.
+         * 출근기록이 있는 날은 0(지각·조퇴 지표와 중복 계상 방지).
+         */
+        , long absentMinutes
+        /**
+         * HB-06: 결근 일수(소수 1자리). {@code Σ (그날 결근분 / 그날 D)}.
+         * 화면 표기는 "0.5일 (3시간 45분)" 처럼 일수 + 시간 병기(B안 확정 2026-08-07).
+         */
+        , double absentDays
 ) {
 }

@@ -46,6 +46,18 @@ public class MyLeaveSummaryResponse {
      */
     private final int hourlyUsedMinutes;
 
+    /**
+     * HB-13(F-3): 시간차 <b>사용</b>(START_DATE &le; 오늘) 분 합계. {@code hourlyUsedMinutes} 를
+     * 사용/사용예정으로 쪼갠 값(additive — 구 필드/구 앱 동작 불변).
+     *
+     * <p>FE 는 이 실분을 그대로 표기해야 한다. 일수→시간 역환산(단일 분모)은 당일분모 전환(E1) 이후
+     * 실제 3시간을 2시간 48분으로 보이게 만든다(잔결함 F-3). 잔여만 근사치 역환산을 유지한다(E4).
+     */
+    private final int hourlyUsedMinutesPast;
+
+    /** HB-13(F-3): 시간차 <b>사용예정</b>(START_DATE &gt; 오늘) 분 합계(additive). */
+    private final int hourlyUsedMinutesPlanned;
+
     /** 사용자 메타 영역. */
     @Getter
     @Builder

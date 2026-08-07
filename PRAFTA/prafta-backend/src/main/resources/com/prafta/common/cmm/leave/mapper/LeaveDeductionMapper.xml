@@ -204,4 +204,30 @@
        AND U.DEL_YN        = 'N'
     </select>
 
+    <!--
+      sec N-2(2026-08-07): 그날 "시각 보유" 연차(반차 01 + 시간차 02/03/04) CONFIRMED 행의 시각 구간.
+      종전 countOverlappingTimeLeaveOnDate 의 술어를 그대로 옮겼고(회귀 0), 절대 시각 환산·겹침 판정만
+      Java(PartialLeaveWindowUtils.exemptStampRange + 그날 원 스케줄 프레임)로 이관한다.
+      시각이 없는 구 반차는 START_TIME/END_TIME IS NOT NULL 로 자연 제외된다.
+      결과 record LeaveTimeWindowVO(startTime, endTime) 순서 일치(위치매핑).
+      O-1(2026-08-07): 형제 쿼리(Attd07Mapper.selectLeaveExemptWindows / AppAttd01Mapper.selectPartialLeaveWindowsOn)
+        와 동일하게 SITE_CD 스코프를 건다(3키). 사업장 이동 이력자의 타 사업장 행이 섞여 과탐(오거부)되던 지점.
+    -->
+    <select id="selectTimeLeaveWindowsOnDate" resultType="com.prafta.common.cmm.leave.vo.LeaveTimeWindowVO">
+    /* LeaveDeductionMapper.selectTimeLeaveWindowsOnDate */
+    SELECT
+          U.START_TIME AS startTime
+        , U.END_TIME   AS endTime
+      FROM TB_USER_LEAVE_USE U
+     WHERE U.CMPNY_CD      = #{cmpnyCd}
+       AND U.SITE_CD       = #{siteCd}
+       AND U.USER_CD       = #{userCd}
+       AND U.LEAVE_STATUS  = 'CONFIRMED'
+       AND U.DEL_YN        = 'N'
+       AND U.START_DATE    = #{workYmd}
+       AND U.USE_UNIT_TYPE IN ('01', '02', '03', '04')
+       AND U.START_TIME IS NOT NULL
+       AND U.END_TIME   IS NOT NULL
+    </select>
+
 </mapper>

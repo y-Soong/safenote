@@ -101,6 +101,12 @@
             , A.CHECK_OUT_DATE                                                 AS actOutDate
             , A.CHECK_OUT_TIME                                                 AS actOutTime
 
+            /* (삭제) 그날 확정 반차 면제 구간 MIN 스칼라 서브쿼리 — 2026-08-07 D-3.
+               "반차는 하루 1건"을 전제했으나 실제로는 하루 2건(시작기준 0.5 + 종료기준 0.5 = 1.0)이
+               성립해 MIN 이 0900 + 1300 을 섞어 종일 쉰 사람에게 지각·조퇴가 떴다.
+               → 면제 구간은 selectHalfLeaveWindows 로 행 그대로 읽고, 합집합 판정은 서비스
+                 (PartialLeaveWindowUtils.resolveAll)가 한다. */
+
         FROM target_user U
         INNER JOIN TB_USER_ATTD_MGMT A
             ON  A.CMPNY_CD = U.CMPNY_CD
@@ -312,8 +318,16 @@
          스코프(node_tree + target_user)·권한 모수는 selectAttdSummaryRows 와 동일.
          결과 행 모수는 변경 없음 — 서비스에서 기존 결과 행에만 매핑(보수적/무회귀).
          ================================================================ -->
-    <select id="selectAbsentDayCount" parameterType="com.prafta.web.attd.attd11.application.query.MonthlyAttdSummaryQuery" resultType="com.prafta.web.attd.attd11.result.AbsentDayCountResult">
-    /* Attd11Mapper.selectAbsentDayCount */
+    <!-- HB-06(2026-08-07 확정): 결근을 "일수"가 아니라 "분(minutes)"으로 계상한다.
+             결근분 = max(0, 그날 소정근로분 D - 그날 확정 연차 면제분 합계), 단 출근기록이 있으면 0.
+         정수 1일 계상은 반차를 쓰고 나머지 절반에 이탈했을 때 "연차 0.5일 + 결근 1일 = 1.5일"이라는
+         이중 계상을 만든다. 그래서 본 쿼리는 COUNT 대신 <b>일자별 원시 행</b>을 내리고,
+         D 계산은 서비스가 ScheduleWorkMinutesUtils(단일 출처)로 수행한다 — D 산식이 갈라지지 않게.
+         "출근기록 있으면 결근 아님"(현행)은 그대로 유지한다. 출근한 날까지 분으로 재면 지각·조퇴가
+         결근으로 흡수되어 두 지표가 겹친다(Attd_11 에 지각·조퇴 지표가 별도 존재).
+         종일 연차일은 종전대로 NOT EXISTS 로 제외한다(면제분 = D 라 결근분 0 — 결과 동일, 변경 최소). -->
+    <select id="selectAbsentDayRows" parameterType="com.prafta.web.attd.attd11.application.query.MonthlyAttdSummaryQuery" resultType="com.prafta.web.attd.attd11.result.AbsentDayRowResult">
+    /* Attd11Mapper.selectAbsentDayRows */
         WITH RECURSIVE
         node_tree AS (
             SELECT
@@ -367,8 +381,27 @@
         )
 
         SELECT
-              WP.USER_CD                  AS userCd
-            , COUNT(DISTINCT WP.WORK_YMD) AS absentDayCnt
+              WP.USER_CD             AS userCd
+            , WP.WORK_YMD            AS workYmd
+            , SCH.FST_SCH_STR_TIME   AS fstSchStrTime
+            , SCH.FST_SCH_END_TIME   AS fstSchEndTime
+            , SCH.FST_SCH_BRK_MIN    AS fstSchBrkMin
+            , SCH.SEC_SCH_STR_TIME   AS secSchStrTime
+            , SCH.SEC_SCH_END_TIME   AS secSchEndTime
+            , SCH.SEC_SCH_BRK_MIN    AS secSchBrkMin
+            /* 그날 확정 부분연차(반차 '01' + 시간차 '02'~'04') 면제분 합계.
+               분할차감(PC-02/PC-05) 행은 첫 행에만 LEAVE_MINUTES 총량을 싣는 불변식이라 SUM = 총량.
+               종일('00')은 위 NOT EXISTS 로 이미 제외되어 여기 합산 대상이 아니다. */
+            , IFNULL((
+                  SELECT SUM(L.LEAVE_MINUTES)
+                  FROM TB_USER_LEAVE_USE L
+                  WHERE L.CMPNY_CD      = WP.CMPNY_CD
+                    AND L.USER_CD       = WP.USER_CD
+                    AND L.LEAVE_STATUS  = 'CONFIRMED'
+                    AND L.DEL_YN        = 'N'
+                    AND L.START_DATE    = WP.WORK_YMD
+                    AND L.USE_UNIT_TYPE <![CDATA[ <> ]]> '00'
+              ), 0)                    AS leaveExemptMinutes
         FROM target_user U
         INNER JOIN TB_USER_WORK_PLAN WP
             ON  WP.CMPNY_CD = U.CMPNY_CD
@@ -376,21 +409,72 @@
             AND WP.USER_CD  = U.USER_CD
             AND WP.WORK_YMD LIKE CONCAT(REPLACE(#{workYm}, '-', ''), '%')
 
-        /* 모수: WORK_PLAN_CD 가 스케줄코드(SCH_CD)인 근무일만 (연차셀 LEAVE_CD 분리) */
-        WHERE WP.WORK_PLAN_CD IS NOT NULL
-          AND EXISTS (
-                SELECT 1
+        /* 모수: WORK_PLAN_CD 가 스케줄코드(SCH_CD)인 근무일만 (연차셀 LEAVE_CD 분리).
+           종전 EXISTS 를 effective-dating INNER JOIN 으로 교체했다 — 모수 판정은 동일(매칭 실패 시 제외)하되
+           소정근로분 D 산출에 필요한 시각/휴게를 함께 내리기 위함이다(selectAttdSummaryRows 동일 서브쿼리). */
+        INNER JOIN (
+            SELECT
+                  E.CMPNY_CD
+                , E.SITE_CD
+                , E.SCH_CD
+                , E.APPLY_DATE
+                , E.FST_SCH_STR_TIME
+                , E.FST_SCH_END_TIME
+                , E.FST_SCH_BRK_MIN
+                , E.SEC_SCH_STR_TIME
+                , E.SEC_SCH_END_TIME
+                , E.SEC_SCH_BRK_MIN
+            FROM (
+                SELECT
+                      M.CMPNY_CD, M.SITE_CD, M.SCH_CD, M.APPLY_DATE
+                    , M.FST_SCH_STR_TIME, M.FST_SCH_END_TIME, M.FST_SCH_BRK_MIN
+                    , M.SEC_SCH_STR_TIME, M.SEC_SCH_END_TIME, M.SEC_SCH_BRK_MIN
+                    , 2147483647 AS HIST_IDX
                 FROM TB_SCH_MGMT M
-                WHERE M.CMPNY_CD = WP.CMPNY_CD
-                  AND M.SITE_CD  = WP.SITE_CD
-                  AND M.SCH_CD   = WP.WORK_PLAN_CD
                 UNION ALL
-                SELECT 1
+                SELECT
+                      H.CMPNY_CD, H.SITE_CD, H.SCH_CD, H.APPLY_DATE
+                    , H.FST_SCH_STR_TIME, H.FST_SCH_END_TIME, H.FST_SCH_BRK_MIN
+                    , H.SEC_SCH_STR_TIME, H.SEC_SCH_END_TIME, H.SEC_SCH_BRK_MIN
+                    , H.HIST_IDX
                 FROM TB_SCH_MGMT_HIST H
-                WHERE H.CMPNY_CD = WP.CMPNY_CD
-                  AND H.SITE_CD  = WP.SITE_CD
-                  AND H.SCH_CD   = WP.WORK_PLAN_CD
-              )
+            ) E
+            WHERE E.HIST_IDX = (
+                SELECT MAX(E2.HIST_IDX)
+                FROM (
+                    SELECT M2.CMPNY_CD, M2.SITE_CD, M2.SCH_CD, M2.APPLY_DATE, 2147483647 AS HIST_IDX
+                    FROM TB_SCH_MGMT M2
+                    UNION ALL
+                    SELECT H2.CMPNY_CD, H2.SITE_CD, H2.SCH_CD, H2.APPLY_DATE, H2.HIST_IDX
+                    FROM TB_SCH_MGMT_HIST H2
+                ) E2
+                WHERE E2.CMPNY_CD   = E.CMPNY_CD
+                  AND E2.SITE_CD    = E.SITE_CD
+                  AND E2.SCH_CD     = E.SCH_CD
+                  AND E2.APPLY_DATE = E.APPLY_DATE
+            )
+        ) SCH
+            ON  SCH.CMPNY_CD = WP.CMPNY_CD
+            AND SCH.SITE_CD  = WP.SITE_CD
+            AND SCH.SCH_CD   = WP.WORK_PLAN_CD
+            AND SCH.APPLY_DATE = (
+                SELECT COALESCE(
+                         MAX(CASE WHEN SE.APPLY_DATE <![CDATA[ <= ]]> WP.WORK_YMD THEN SE.APPLY_DATE END)
+                       , MIN(SE.APPLY_DATE)
+                       )
+                FROM (
+                    SELECT M3.CMPNY_CD, M3.SITE_CD, M3.SCH_CD, M3.APPLY_DATE
+                    FROM TB_SCH_MGMT M3
+                    UNION ALL
+                    SELECT H3.CMPNY_CD, H3.SITE_CD, H3.SCH_CD, H3.APPLY_DATE
+                    FROM TB_SCH_MGMT_HIST H3
+                ) SE
+                WHERE SE.CMPNY_CD = WP.CMPNY_CD
+                  AND SE.SITE_CD  = WP.SITE_CD
+                  AND SE.SCH_CD   = WP.WORK_PLAN_CD
+            )
+
+        WHERE WP.WORK_PLAN_CD IS NOT NULL
 
         /* 미래일 제외 (오늘 이후는 아직 출근 기회 미도래) */
           AND WP.WORK_YMD <![CDATA[ <= ]]> DATE_FORMAT(CURDATE(), '%Y%m%d')
@@ -430,7 +514,30 @@
                   AND A.CHECK_IN_TIME <![CDATA[ <> ]]> ''
               )
 
-        GROUP BY WP.USER_CD
+        ORDER BY WP.USER_CD, WP.WORK_YMD
+    </select>
+
+    <!-- HB-05(D1)/D-3: 조회 월의 확정 반차('01' + 시각 보유) 면제 구간 목록.
+         한 날에 여러 건(시작기준 + 종료기준)이 있을 수 있어 집계하지 않고 행 그대로 내린다
+         — 합집합 판정은 서비스(PartialLeaveWindowUtils.resolveAll)가 한다.
+         분할차감(PC-02/PC-05) 행은 같은 시각이 여러 행으로 오므로 DISTINCT 로 접는다.
+         ⚠️ SELECT 컬럼 순서 = HalfLeaveWindowResult 컴포넌트 순서(위치 매핑). -->
+    <select id="selectHalfLeaveWindows" parameterType="com.prafta.web.attd.attd11.application.query.MonthlyAttdSummaryQuery" resultType="com.prafta.web.attd.attd11.result.HalfLeaveWindowResult">
+    /* Attd11Mapper.selectHalfLeaveWindows */
+        SELECT DISTINCT
+              L.USER_CD     AS userCd
+            , L.START_DATE  AS workYmd
+            , L.START_TIME  AS startTime
+            , L.END_TIME    AS endTime
+        FROM TB_USER_LEAVE_USE L
+        WHERE L.CMPNY_CD      = #{gvCmpnyCd}
+          AND L.SITE_CD       = #{siteCd}
+          AND L.START_DATE LIKE CONCAT(REPLACE(#{workYm}, '-', ''), '%')
+          AND L.USE_UNIT_TYPE = '01'
+          AND L.LEAVE_STATUS  = 'CONFIRMED'
+          AND L.DEL_YN        = 'N'
+          AND L.START_TIME IS NOT NULL
+          AND L.END_TIME   IS NOT NULL
     </select>
 
 </mapper>

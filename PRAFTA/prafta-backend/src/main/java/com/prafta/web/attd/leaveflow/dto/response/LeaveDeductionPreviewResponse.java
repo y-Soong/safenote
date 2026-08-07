@@ -50,4 +50,16 @@ public class LeaveDeductionPreviewResponse {
 
     /** 회사 부담분(분 — coverDays × 본인 분모, DOWN 절사). 미발동이면 {@code null}. */
     private final Integer companyCoverMinutes;
+
+    /**
+     * HB-03: 반차 경계 시각(HHMM) — 근로를 절반으로 나누는 시각(휴게 제외 누적 기준).
+     * 반차('01') preview 에서만 채워지며 그 외 단위/산출 불가면 {@code null}(additive).
+     */
+    private final String halfDayBoundaryTime;
+
+    /** HB-03: 시작기준(늦게 출근) 반차가 쉬는 구간 "HHMM~HHMM". 반차 외/산출 불가면 {@code null}. */
+    private final String halfStartPartRange;
+
+    /** HB-03: 종료기준(일찍 퇴근) 반차가 쉬는 구간 "HHMM~HHMM". 반차 외/산출 불가면 {@code null}. */
+    private final String halfEndPartRange;
 }

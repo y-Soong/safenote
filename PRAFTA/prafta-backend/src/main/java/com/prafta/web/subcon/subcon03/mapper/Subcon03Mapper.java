@@ -14,6 +14,7 @@ import com.prafta.web.subcon.subcon03.application.command.SnapshotNearmissInsert
 import com.prafta.web.subcon.subcon03.application.command.SnapshotRiskImproveInsertCommand;
 import com.prafta.web.subcon.subcon03.application.command.SnapshotRiskInsertCommand;
 import com.prafta.web.subcon.subcon03.result.ChainSiteResult;
+import com.prafta.web.subcon.subcon03.result.HalfLeaveWindowRow;
 import com.prafta.web.subcon.subcon03.result.NearmissSourceRow;
 import com.prafta.web.subcon.subcon03.result.RelayCandidateResult;
 import com.prafta.web.subcon.subcon03.result.RiskImproveSourceRow;
@@ -158,6 +159,17 @@ public interface Subcon03Mapper {
 
     /** 근태행이 없는 연차 원천(LEAVE_ONLY — 종일/다일 연차). */
     List<SnapshotSourceRow> selectLeaveOnlySourceRows(@Param("prvCmpnyCd") String prvCmpnyCd,
+            @Param("targetSiteCd") String targetSiteCd, @Param("periodStr") String periodStr,
+            @Param("periodEnd") String periodEnd);
+
+    /**
+     * NF-2a(2026-08-07): 기간 내 확정 부분연차(반차 {@code '01'}) 면제 시각 구간.
+     *
+     * <p>{@code selectAttdSourceRows} 의 {@code ATTD_STATUS_CD} 를 서비스가 재판정하기 위한 입력이다.
+     * 술어는 웹 {@code Attd08Mapper/Attd11Mapper.selectHalfLeaveWindows} 와 동일
+     * (회사·사업장·기간 스코프 필수 + CONFIRMED + 미삭제 + 시각 보유).
+     */
+    List<HalfLeaveWindowRow> selectHalfLeaveWindows(@Param("prvCmpnyCd") String prvCmpnyCd,
             @Param("targetSiteCd") String targetSiteCd, @Param("periodStr") String periodStr,
             @Param("periodEnd") String periodEnd);
 

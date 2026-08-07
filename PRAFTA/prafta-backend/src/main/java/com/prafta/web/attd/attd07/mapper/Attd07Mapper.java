@@ -18,6 +18,7 @@ import com.prafta.web.attd.attd07.application.query.OvertimeAllowedWindowQuery;
 import com.prafta.web.attd.attd07.result.AllowedWindowResult;
 import com.prafta.web.attd.attd07.result.AttdSnapshotResult;
 import com.prafta.web.attd.attd07.result.ConfirmedLeaveResult;
+import com.prafta.web.attd.attd07.result.LeaveExemptWindowResult;
 import com.prafta.web.attd.attd07.result.DayAttdSegmentResult;
 import com.prafta.web.attd.attd07.result.DailyAttdDetailHistoryResult;
 import com.prafta.web.attd.attd07.result.DailyAttdDetailsResult;
@@ -292,6 +293,22 @@ public interface Attd07Mapper {
      * 를 재사용한다.
      */
     AllowedWindowResult selectActualWindowNoSchedule(OvertimeAllowedWindowQuery query);
+
+    /**
+     * HB-08(D5): 그날 확정된 <b>시각 보유</b> 연차(반차 '01' + 시간차 '02'~'04')의 면제 구간 목록.
+     *
+     * <p>초과근무 등록 가능 범위 = {@code 실근태 - (스케줄 구간 ∪ 연차 면제 구간)}.
+     * 종전에는 {@code 실근태 - 스케줄}이라, 종료기준 반차 후 재출근한 2구간처럼 스케줄이 아예 없는
+     * 구간이 전량 OT 로 인정되어 수당이 과다 지급될 수 있었다(D5).
+     *
+     * <p>시각이 없는 구 반차는 {@code START_TIME IS NOT NULL} 로 자연 제외되어 종전 동작을 유지한다.
+     * 종일('00')은 대상이 아니다 — 종일 연차일 OT 는 {@link #countFullDayLeaveOn} 게이트가
+     * ATTD_400_151 로 통째 차단한다(회귀 금지 ②).
+     */
+    List<LeaveExemptWindowResult> selectLeaveExemptWindows(@Param("cmpnyCd") String cmpnyCd,
+                                                           @Param("siteCd") String siteCd,
+                                                           @Param("userCd") String userCd,
+                                                           @Param("workYmd") String workYmd);
 
     /**
      * Issues a new OT_ID from the company-scoped sequence (FNC_CMM_SEQ_NEXTVAL).

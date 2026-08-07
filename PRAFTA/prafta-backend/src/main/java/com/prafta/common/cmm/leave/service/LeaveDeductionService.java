@@ -2,6 +2,7 @@ package com.prafta.common.cmm.leave.service;
 
 import java.math.BigDecimal;
 
+import com.prafta.common.cmm.leave.util.ScheduleWorkMinutesUtils.HalfDayBoundary;
 import com.prafta.common.cmm.leave.vo.HourlyChargeVO;
 
 /**
@@ -33,6 +34,17 @@ public interface LeaveDeductionService {
      * @return 1일 소정근로분(분, 양수). 근무 계획/스케줄이 없거나 계산 불가 시 {@code null}.
      */
     Integer getDailyStdWorkMinutes(String cmpnyCd, String siteCd, String userCd, String workYmd);
+
+    /**
+     * 반차 경계 산출 (반차 시간대 도입 HB-01/02, 2026-08-07).
+     *
+     * <p>그날 배정 스케줄을 조회해 {@code ScheduleWorkMinutesUtils.halfDayBoundary} 로 위임한다.
+     * 경계 = 근무 시작부터 근로만 누적해 {@code D/2}(정수 절사)에 도달하는 시각이며,
+     * 반환 {@code exemptMinutes} 는 차감 {@code LEAVE_MINUTES}(= daily/2)와 <b>같은 값</b>이어야 한다.
+     *
+     * @return 경계 산출 결과. 근무 계획/스케줄이 없거나 계산 불가 시 {@code null}(호출부가 ATTD_400_110 거부).
+     */
+    HalfDayBoundary getHalfDayBoundary(String cmpnyCd, String siteCd, String userCd, String workYmd);
 
     /**
      * (구) 시간차 차감 일수 = {@code 신청분 ÷ 1일 소정근로분} (decimal(8,5), 반올림 HALF_UP).
@@ -94,4 +106,25 @@ public interface LeaveDeductionService {
      */
     boolean withinScheduledWorkHours(String cmpnyCd, String siteCd, String userCd, String workYmd,
                                      int startMin, int endMin);
+
+    /**
+     * sec N-2(2026-08-07): 신청/이동하려는 연차 시간대가 그날 이미 확정된 "시각 보유" 연차
+     * (반차 '01' + 시간차 '02'~'04')와 겹치는지 판정한다(겹치면 호출부가 {@code ATTD_400_112} 거부).
+     *
+     * <p>종전에는 매퍼 SQL(웹 {@code LeaveFlowMapper} / 앱 {@code AppLeaveFlowMapper} 의
+     * {@code countOverlappingTimeLeaveOnDate})이 CONCAT(DATE,TIME) 12자리 비교에 wrap CASE 를 붙여
+     * 판정했는데, <b>각 행이 자기 {@code END_TIME < START_TIME} 일 때만</b> +1일 보정하는 구조라
+     * 한쪽만 wrap 되는 조합(야간 시작기준 반차 {@code 2200~0200} vs 시간차 {@code 0030~0130})에서
+     * 프레임이 어긋나 겹침을 놓쳤다. 판정을 Java 로 옮기고 절대 시각 환산은
+     * {@code PartialLeaveWindowUtils.exemptStampRange}(그날 원 스케줄 프레임) 단일 진입점에 위임한다.
+     *
+     * <p>그날 스케줄을 얻지 못하거나 시각 환산이 불가하면 <b>겹침으로 본다</b>(fail-closed, §15-2-3).
+     * 반차·시간차는 모두 선행 가드에서 스케줄 존재를 이미 확인하므로 정상 경로에서는 도달하지 않는다.
+     *
+     * @param startHhmm 신청/이동 대상 시각 시작(HHmm)
+     * @param endHhmm   신청/이동 대상 시각 종료(HHmm)
+     * @return 겹치면 {@code true}. 시각이 없으면(고정단위 종일 등) {@code false}.
+     */
+    boolean overlapsTimeLeaveOnDate(String cmpnyCd, String siteCd, String userCd, String workYmd,
+                                    String startHhmm, String endHhmm);
 }

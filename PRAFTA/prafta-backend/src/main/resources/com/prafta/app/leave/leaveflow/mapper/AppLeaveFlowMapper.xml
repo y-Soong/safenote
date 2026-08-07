@@ -161,23 +161,11 @@
        AND U.END_DATE    <![CDATA[ >= ]]> #{workYmd}
     </select>
 
-    <!-- 같은 날 시간차(02/03/04) 시간대 겹침 카운트. 좌폐우개 겹침: 기존시작 < 신규종료 AND 기존종료 > 신규시작.
-         HHMM 4자리 문자열은 사전식=시간식 비교라 그대로 부등호 비교 가능. -->
-    <select id="countOverlappingTimeLeaveOnDate" resultType="int">
-    /* AppLeaveFlowMapper.countOverlappingTimeLeaveOnDate */
-    SELECT COUNT(1)
-      FROM TB_USER_LEAVE_USE U
-     WHERE U.CMPNY_CD       = #{cmpnyCd}
-       AND U.USER_CD        = #{userCd}
-       AND U.LEAVE_STATUS   = 'CONFIRMED'
-       AND U.DEL_YN         = 'N'
-       AND U.START_DATE     = #{workYmd}
-       AND U.USE_UNIT_TYPE IN ('02', '03', '04')
-       AND U.START_TIME IS NOT NULL
-       AND U.END_TIME   IS NOT NULL
-       AND U.START_TIME <![CDATA[ < ]]> #{endTime}
-       AND U.END_TIME   <![CDATA[ > ]]> #{startTime}
-    </select>
+    <!-- sec N-2(2026-08-07): countOverlappingTimeLeaveOnDate 삭제(웹 LeaveFlowMapper 미러).
+         wrap CASE 가 각 행의 END_TIME < START_TIME 만 보고 +1일 보정해서, 한쪽만 wrap 되는 조합
+         (야간 시작기준 반차 2200~0200 vs 시간차 0030~0130)에서 겹침을 놓쳤다(ATTD_400_112 우회).
+         겹침 판정은 LeaveDeductionService.overlapsTimeLeaveOnDate 로 이관
+         (행 조회 = LeaveDeductionMapper.selectTimeLeaveWindowsOnDate, 환산 = 그날 원 스케줄 프레임). -->
 
     <select id="selectNextReqId" resultType="string">
     /* AppLeaveFlowMapper.selectNextReqId */

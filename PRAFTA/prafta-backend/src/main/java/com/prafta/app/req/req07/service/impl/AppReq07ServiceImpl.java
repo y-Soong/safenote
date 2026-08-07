@@ -23,10 +23,12 @@ import com.prafta.app.req.req07.dto.response.result.PendingOvertimeResult;
 import com.prafta.app.req.req07.dto.response.result.ScheduleWindowResult;
 import com.prafta.app.req.req07.dto.response.result.SchedOptionResult;
 import com.prafta.app.attd.attd01.mapper.AppAttd01Mapper;
+import com.prafta.app.attd.attd01.result.PartialLeaveWindowResult;
 import com.prafta.app.req.req07.mapper.AppReq07Mapper;
 import com.prafta.app.req.req07.service.AppReq07Service;
 import com.prafta.app.req.req09.service.AttdApprovalLineService;
 import com.prafta.common.cmm.leave.service.LeaveRefusalConst;
+import com.prafta.common.cmm.leave.util.PartialLeaveWindowUtils;
 import com.prafta.common.cmm.leave.service.LeaveRefusalDetectService;
 import com.prafta.common.error.attd.AttdErrorCode;
 import com.prafta.common.exception.ApiException;
@@ -435,6 +437,13 @@ public class AppReq07ServiceImpl implements AppReq07Service {
             ScheduleWindowResult schedule = mapper.selectWorkPlanSchedule(
                     param.cmpnyCd(), param.siteCd(), param.userCd(), param.workYmd());
 
+            // ----- HB-08(D5): 그날 확정 부분연차(반차/시간차) 면제 구간 -----
+            //   등록 가능 범위 = 실근태 - (스케줄 구간 ∪ 연차 면제 구간). 종료기준 반차 후 재출근처럼
+            //   스케줄이 없는 구간이 전량 OT 로 인정되던 구멍(D5, 수당 과다 지급)을 막는다.
+            //   회귀 금지 ①: 면제 구간과 겹치지 않는 조기출근 구간은 그대로 인정된다.
+            List<PartialLeaveWindowResult> leaveWindows = appAttd01Mapper.selectPartialLeaveWindowsOn(
+                    param.cmpnyCd(), param.siteCd(), param.userCd(), param.workYmd());
+
             // ----- slot 단위 가드(이슈② 근태보정 미처리 → 이슈① 스케줄 겹침) -----
             for (SlotRequest s : param.slots()) {
                 // (이슈②) 해당 구간 근태보정 미처리(생성01·수정02) 존재 → 그 구간 거부.
@@ -452,6 +461,9 @@ public class AppReq07ServiceImpl implements AppReq07Service {
                         param.workYmd(), s);
                 // (이슈①) OT 시각이 해당 구간 정규 스케줄과 겹치면 거부.
                 assertNoScheduleOverlap(param.workYmd(), schedule, s, param.userCd());
+                // (HB-08 D5) OT 시각이 그날 연차 면제 구간과 겹치면 거부.
+                //   ★ 3차(§15-2): 면제 구간 환산에 그날 원 스케줄(schedule)을 프레임으로 넘긴다.
+                assertNoLeaveExemptOverlap(param.workYmd(), leaveWindows, schedule, s, param.userCd());
             }
 
             // ----- prafta-app-030: 기존 적용 OT(TB_USER_OVERTIME_MGMT)와 시간 겹침 차단(오버나이트 포함) -----
@@ -786,6 +798,59 @@ public class AppReq07ServiceImpl implements AppReq07Service {
                     userCd, workYmd, slot.getWorkSeq(),
                     slot.getStartTime(), slot.getEndTime(), schStrTime, schEndTime);
             throw new ApiException(AttdErrorCode.ATTD_400_100);
+        }
+    }
+
+    /**
+     * HB-08(D5): OT 슬롯이 그날 확정 부분연차(반차/시간차) 면제 구간과 겹치면 거부(ATTD_400_196).
+     *
+     * <p>웹 {@code Attd07ServiceImpl} 은 등록 가능 범위를 구간 차집합
+     * ({@code 실근태 - (스케줄 ∪ 연차 면제)})으로 계산하고, 앱은 슬롯 단위 겹침 거부 방식이라
+     * 같은 규칙을 "면제 구간과 겹치면 거부"로 표현한다(판정 결과 동일).
+     *
+     * <p>★ 3차 재작업(§15-2, 2026-08-07): 연차 시각의 절대 시각 환산은 공용 단일 진입점
+     * {@code PartialLeaveWindowUtils.exemptStampRange}(그날 원 스케줄을 프레임으로 정렬)에만 맡긴다.
+     * 행 안의 wrap 신호({@code END_TIME < START_TIME})만 보던 종전 방식은 <b>양 끝이 모두 자정 이후</b>인
+     * 야간 종료기준 반차({@code '0115'~'0430'})를 근무일 당일로 잘못 배치했다(N-1 — 면제 구간이 1440분 앞).
+     *
+     * <p>환산 불가(스케줄 프레임 부재·시각 비정상)는 건너뛰지 않고 <b>그날 OT 를 거부</b>한다
+     * (§15-2-3 fail-open 금지 — 판정 근거가 없으면 수당 과다 인정보다 보수 처리).
+     */
+    private void assertNoLeaveExemptOverlap(String workYmd, List<PartialLeaveWindowResult> leaveWindows,
+                                            ScheduleWindowResult schedule, SlotRequest slot, String userCd) {
+        if (leaveWindows == null || leaveWindows.isEmpty()) {
+            return;
+        }
+        long otStart = ymdToDays(slot.getStartDate()) * 1440L + parseHHmm(slot.getStartTime());
+        long otEnd = ymdToDays(slot.getEndDate()) * 1440L + parseHHmm(slot.getEndTime());
+        // 공용 유틸 stamp 축(근무일 전날 00:00 = 0)을 절대 분으로 되돌리는 기준점.
+        long base = (ymdToDays(workYmd) - 1L) * 1440L;
+
+        List<PartialLeaveWindowUtils.ScheduleSegment> frame = (schedule == null)
+                ? List.of()
+                : PartialLeaveWindowUtils.scheduleSegments(
+                        schedule.fstStrTime(), schedule.fstEndTime(),
+                        schedule.secStrTime(), schedule.secEndTime());
+
+        for (PartialLeaveWindowResult lv : leaveWindows) {
+            int[] range = PartialLeaveWindowUtils.exemptStampRange(lv.startTime(), lv.endTime(), frame);
+            if (range == null) {
+                // 환산 불가 → 보수 판정(그날 OT 거부) + WARN. 종전엔 건너뛰어 OT 가 과다 인정됐다.
+                log.warn("[HB-08] OT 연차 면제 구간 환산 불가(그날 OT 보수 거부) — userCd={}, workYmd={}, "
+                                + "leave={}~{}, schCd={}",
+                        userCd, workYmd, lv.startTime(), lv.endTime(),
+                        (schedule == null) ? null : schedule.schCd());
+                throw new ApiException(AttdErrorCode.ATTD_400_196);
+            }
+            long lvStart = base + range[0];
+            long lvEnd = base + range[1];
+            // 겹침: otStart < lvEnd && lvStart < otEnd (접함 허용).
+            if (otStart < lvEnd && lvStart < otEnd) {
+                log.info("[HB-08] OT 연차 면제 구간 겹침 거부 — userCd={}, workYmd={}, workSeq={}, ot=[{}~{}], leave=[{}~{}]",
+                        userCd, workYmd, slot.getWorkSeq(),
+                        slot.getStartTime(), slot.getEndTime(), lv.startTime(), lv.endTime());
+                throw new ApiException(AttdErrorCode.ATTD_400_196);
+            }
         }
     }
 

@@ -8,6 +8,8 @@ import java.time.format.DateTimeParseException;
 import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
@@ -15,6 +17,7 @@ import java.util.stream.Collectors;
 import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
 
+import com.prafta.common.cmm.leave.util.PartialLeaveWindowUtils;
 import com.prafta.common.error.common.CommonErrorCode;
 import com.prafta.common.exception.ApiException;
 import com.prafta.common.util.AuthRoleUtils;
@@ -36,6 +39,8 @@ import com.prafta.web.dashboard.dashboard01.mapper.Dashboard01Mapper;
 import com.prafta.web.dashboard.dashboard01.result.DashAcctGradeCountResult;
 import com.prafta.web.dashboard.dashboard01.result.DashAttdPlanRegRateRowResult;
 import com.prafta.web.dashboard.dashboard01.result.DashAttdStatusCountResult;
+import com.prafta.web.dashboard.dashboard01.result.DashHalfLeaveWindowRow;
+import com.prafta.web.dashboard.dashboard01.result.DashPartialLeaveAttdRow;
 import com.prafta.web.dashboard.dashboard01.result.DashRecentAcctResult;
 import com.prafta.web.dashboard.dashboard01.result.DashSiteBaselineResult;
 import com.prafta.web.dashboard.dashboard01.result.LeaveUseSplitResult;
@@ -278,28 +283,115 @@ public class Dashboard01ServiceImpl implements Dashboard01Service {
 		assertSiteAccess(param.gvAuthCd(), param.gvUserCd(), param.gvCmpnyCd(), param.siteCd());
 
 		// 일 단위 롤업 카운트 (ABSENT > LATE > EARLY_LEAVE > NORMAL — Attd08 판정식 이식)
+		//   ★ NF-2b: 확정 부분연차(반차) 보유일은 이 집계에서 제외되어 온다(쿼리의 NOT EXISTS).
 		DashAttdStatusCountResult counts = dashboard01Mapper.selectDashAttdStatusCount(
 			param.gvCmpnyCd(), param.siteCd(), param.nodeCd(), param.incSubNodeYn(), param.workYm());
 
+		// NF-2b: 제외된 반차일을 PartialLeaveWindowUtils 단일 출처로 재판정해 더한다.
+		DashAttdStatusCountResult merged = addPartialLeaveDayCounts(param, counts);
+
 		// 합산 정합 방어 (CASE 가 상호배타라 어긋나면 쿼리/데이터 결함 — 경고만 남기고 그대로 응답)
-		int sum = counts.normalCnt() + counts.lateCnt() + counts.earlyLeaveCnt() + counts.absentCnt();
-		if (sum != counts.targetDayCnt()) {
-			log.warn("근태 상태 합산 정합 불일치 - targetDayCnt={}, sum={}", counts.targetDayCnt(), sum);
+		int sum = merged.normalCnt() + merged.lateCnt() + merged.earlyLeaveCnt() + merged.absentCnt();
+		if (sum != merged.targetDayCnt()) {
+			log.warn("근태 상태 합산 정합 불일치 - targetDayCnt={}, sum={}", merged.targetDayCnt(), sum);
 		}
 
 		// 판정 대상 계획일이 없으면 rate null (FE "판정 대상 근무계획이 없습니다" 표시)
-		Double normalRate = counts.targetDayCnt() > 0
-			? Double.valueOf(calcRate(counts.normalCnt(), counts.targetDayCnt()))
+		Double normalRate = merged.targetDayCnt() > 0
+			? Double.valueOf(calcRate(merged.normalCnt(), merged.targetDayCnt()))
 			: null;
 
 		return DashAttdStatusRateResponse.builder()
-			.targetDayCnt(counts.targetDayCnt())
-			.normalCnt(counts.normalCnt())
-			.lateCnt(counts.lateCnt())
-			.earlyLeaveCnt(counts.earlyLeaveCnt())
-			.absentCnt(counts.absentCnt())
+			.targetDayCnt(merged.targetDayCnt())
+			.normalCnt(merged.normalCnt())
+			.lateCnt(merged.lateCnt())
+			.earlyLeaveCnt(merged.earlyLeaveCnt())
+			.absentCnt(merged.absentCnt())
 			.normalRate(normalRate)
 			.build();
+	}
+
+	/**
+	 * NF-2b(2026-08-07): 확정 부분연차(반차) 보유 계획일의 상태를 재판정해 A2 카운트에 합산한다.
+	 *
+	 * <p><b>왜 SQL 이 아니라 Java 인가</b> — 반차 반영 판정은 연차 시각을 그날 <b>원 스케줄 프레임</b>으로
+	 * 정렬해야 하는데(야간 스케줄에서 스케줄 시작보다 이른 시각은 익일), SQL 의 문자열 CONCAT 비교로는
+	 * 이 구분이 불가능하다. 산식을 SQL 에 재구현하면 웹 Attd_08/Attd_11·앱과 답이 갈린다(2차 D-1 재발).
+	 *
+	 * <p>집계 쿼리가 {@code NOT EXISTS} 로 제외한 집합을 원시행 쿼리가 {@code EXISTS} 로 되받으므로
+	 * (같은 CTE·같은 조각) 두 집합은 정확히 상보다 — 이중 계상도 누락도 발생하지 않는다.
+	 * 일 단위 롤업 규칙(미출근 &gt; 지각 &gt; 조퇴 &gt; 정상)은 쿼리와 동일하다.
+	 */
+	private DashAttdStatusCountResult addPartialLeaveDayCounts(DashAttdStatusRateParam param,
+			DashAttdStatusCountResult base) {
+
+		List<DashPartialLeaveAttdRow> rows = dashboard01Mapper.selectDashPartialLeaveAttdRows(
+			param.gvCmpnyCd(), param.siteCd(), param.nodeCd(), param.incSubNodeYn(), param.workYm());
+		if (rows == null || rows.isEmpty()) {
+			return base;
+		}
+
+		Map<String, List<PartialLeaveWindowUtils.LeaveWindow>> leaveByUserYmd = new HashMap<>();
+		for (DashHalfLeaveWindowRow w : dashboard01Mapper.selectDashPartialLeaveWindows(
+				param.gvCmpnyCd(), param.siteCd(), param.workYm())) {
+			if (w.userCd() == null || w.workYmd() == null) {
+				continue;
+			}
+			leaveByUserYmd.computeIfAbsent(w.userCd() + "|" + w.workYmd(), k -> new ArrayList<>())
+				.add(new PartialLeaveWindowUtils.LeaveWindow(w.startTime(), w.endTime()));
+		}
+
+		// (사용자, 근무일) 단위로 접어 차수 상태를 롤업한다(쿼리의 MAX 집계와 동일 의미).
+		Map<String, List<DashPartialLeaveAttdRow>> byDay = new LinkedHashMap<>();
+		for (DashPartialLeaveAttdRow r : rows) {
+			byDay.computeIfAbsent(r.userCd() + "|" + r.workYmd(), k -> new ArrayList<>()).add(r);
+		}
+
+		int targetDayCnt = base.targetDayCnt();
+		int normalCnt = base.normalCnt();
+		int lateCnt = base.lateCnt();
+		int earlyLeaveCnt = base.earlyLeaveCnt();
+		int absentCnt = base.absentCnt();
+
+		for (Map.Entry<String, List<DashPartialLeaveAttdRow>> e : byDay.entrySet()) {
+			List<PartialLeaveWindowUtils.LeaveWindow> leaves = leaveByUserYmd.get(e.getKey());
+			if (leaves == null || leaves.isEmpty()) {
+				// EXISTS 로 걸러온 날이므로 정상 경로에서는 도달하지 않는다(사업장 이동 등 이례 데이터 방어).
+				log.warn("대시보드 A2 반차 구간 미조회(원 스케줄로 판정) - key={}", e.getKey());
+			}
+			boolean hasCheckIn = false;
+			boolean late = false;
+			boolean early = false;
+			for (DashPartialLeaveAttdRow r : e.getValue()) {
+				String status = PartialLeaveWindowUtils.resolveAttdStatus(
+					r.workYmd(), r.planStart(), r.planEnd(), leaves,
+					r.checkInDate(), r.checkInTime(), r.checkOutDate(), r.checkOutTime());
+				if (status == null || PartialLeaveWindowUtils.STATUS_ABSENT.equals(status)) {
+					continue; // 그 차수는 출근기록 없음 — 다른 차수가 있으면 그쪽이 판정한다
+				}
+				hasCheckIn = true;
+				if (PartialLeaveWindowUtils.STATUS_LATE.equals(status)) {
+					late = true;
+				} else if (PartialLeaveWindowUtils.STATUS_EARLY_LEAVE.equals(status)) {
+					early = true;
+				}
+			}
+			targetDayCnt++;
+			if (!hasCheckIn) {
+				absentCnt++;
+			} else if (late) {
+				lateCnt++;
+			} else if (early) {
+				earlyLeaveCnt++;
+			} else {
+				normalCnt++;
+			}
+		}
+
+		log.info("대시보드 A2 반차일 재판정 - 대상일={}일, targetDayCnt {}→{}",
+			byDay.size(), base.targetDayCnt(), targetDayCnt);
+
+		return new DashAttdStatusCountResult(targetDayCnt, normalCnt, lateCnt, earlyLeaveCnt, absentCnt);
 	}
 
 	// ── T3: 근태 탭 A3 초과근무 6개월 추이 + A4 법정연차 3분할 ──────

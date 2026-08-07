@@ -7,6 +7,7 @@ import java.util.List;
 
 import com.prafta.app.leave.leave01.application.query.MyLeaveSummaryQuery;
 import com.prafta.app.leave.leave01.result.AppliedLeaveTypeRow;
+import com.prafta.app.leave.leave01.result.HourlyUsedSplitRow;
 import com.prafta.app.leave.leave01.result.LeaveExpiringResult;
 import com.prafta.app.leave.leave01.result.LeaveGroupAggResult;
 import com.prafta.app.leave.leave01.result.LeaveUserResult;
@@ -97,6 +98,18 @@ public interface AppLeave01Mapper {
      * 원본 표기 전용(잔여/부여 수치 무관). 대상 0건이면 0(IFNULL). 식별값은 토큰 도출값(IDOR).
      */
     Integer selectHourlyUsedMinutes(
+            @Param("cmpnyCd") String cmpnyCd
+            , @Param("userCd") String userCd
+    );
+
+    /**
+     * HB-13(F-3): 시간차 CONFIRMED 사용 분을 "사용(START_DATE &le; 오늘) / 사용예정(&gt; 오늘)"으로 분리.
+     *
+     * <p>당일분모 전환(E1)으로 시간차 분모가 날마다 달라져, FE 가 일수→시간을 단일 분모로 역환산하면
+     * 실제 3시간이 2시간 48분으로 표시되는 결함(F-3)이 생긴다. 실분을 그대로 내려 역환산을 제거한다.
+     * 분리 술어는 웹 Dashboard01 의 usedDays/plannedDays 와 동일(START_DATE 기준).
+     */
+    HourlyUsedSplitRow selectHourlyUsedMinutesSplit(
             @Param("cmpnyCd") String cmpnyCd
             , @Param("userCd") String userCd
     );

@@ -2,6 +2,7 @@ package com.prafta.common.cmm.leave.service.impl;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
+import java.util.List;
 
 import org.springframework.stereotype.Service;
 
@@ -9,10 +10,12 @@ import com.prafta.common.cmm.leave.mapper.LeaveDeductionMapper;
 import com.prafta.common.cmm.leave.service.LeaveConversionPolicyService;
 import com.prafta.common.cmm.leave.service.LeaveDeductionService;
 import com.prafta.common.cmm.leave.util.HourlyLeaveChargeUtils;
+import com.prafta.common.cmm.leave.util.PartialLeaveWindowUtils;
 import com.prafta.common.cmm.leave.util.ScheduleWorkMinutesUtils;
 import com.prafta.common.cmm.leave.vo.DailyScheduleVO;
 import com.prafta.common.cmm.leave.vo.HourlyChargeVO;
 import com.prafta.common.cmm.leave.vo.HourlyLeaveAggVO;
+import com.prafta.common.cmm.leave.vo.LeaveTimeWindowVO;
 import com.prafta.common.error.attd.AttdErrorCode;
 import com.prafta.common.exception.ApiException;
 import com.prafta.common.util.DateTimeUtils;
@@ -57,6 +60,25 @@ public class LeaveDeductionServiceImpl implements LeaveDeductionService {
                     cmpnyCd, siteCd, userCd, workYmd, sch.getSchCd());
         }
         return total;
+    }
+
+    @Override
+    public ScheduleWorkMinutesUtils.HalfDayBoundary getHalfDayBoundary(String cmpnyCd, String siteCd,
+                                                                      String userCd, String workYmd) {
+        if (cmpnyCd == null || siteCd == null || userCd == null || workYmd == null) {
+            return null;
+        }
+        DailyScheduleVO sch = leaveDeductionMapper.selectDailySchedule(cmpnyCd, siteCd, userCd, workYmd);
+        if (sch == null) {
+            // 근무 계획/스케줄 없음 → 반차 경계 산출 불가(호출부가 ATTD_400_110 으로 거부).
+            return null;
+        }
+        ScheduleWorkMinutesUtils.HalfDayBoundary boundary = ScheduleWorkMinutesUtils.halfDayBoundary(sch);
+        if (boundary == null) {
+            log.warn("반차 경계 계산 실패 - 스케줄 시각 비정상: cmpnyCd={}, siteCd={}, userCd={}, workYmd={}, schCd={}",
+                    cmpnyCd, siteCd, userCd, workYmd, sch.getSchCd());
+        }
+        return boundary;
     }
 
     @Deprecated
@@ -172,6 +194,55 @@ public class LeaveDeductionServiceImpl implements LeaveDeductionService {
         }
         return containedInWork(startMin, endMin, sch.getFstSchStrTime(), sch.getFstSchEndTime())
                 || containedInWork(startMin, endMin, sch.getSecSchStrTime(), sch.getSecSchEndTime());
+    }
+
+    @Override
+    public boolean overlapsTimeLeaveOnDate(String cmpnyCd, String siteCd, String userCd, String workYmd,
+                                           String startHhmm, String endHhmm) {
+        if (cmpnyCd == null || siteCd == null || userCd == null || workYmd == null
+                || startHhmm == null || endHhmm == null) {
+            return false;
+        }
+
+        // ① 그날 원 스케줄 = 연차 시각을 절대 시각으로 바꾸는 날짜 프레임(§15-2 규약).
+        DailyScheduleVO sch = leaveDeductionMapper.selectDailySchedule(cmpnyCd, siteCd, userCd, workYmd);
+        List<PartialLeaveWindowUtils.ScheduleSegment> frame = (sch == null)
+                ? List.of()
+                : PartialLeaveWindowUtils.scheduleSegments(
+                        sch.getFstSchStrTime(), sch.getFstSchEndTime(),
+                        sch.getSecSchStrTime(), sch.getSecSchEndTime());
+
+        int[] target = PartialLeaveWindowUtils.exemptStampRange(startHhmm, endHhmm, frame);
+        if (target == null) {
+            // 프레임 부재/시각 비정상 → 판정 근거 없음. fail-closed(겹침으로 간주) + WARN.
+            log.warn("[leave-deduct] 연차 시간대 겹침 판정 불가(보수 거부) - userCd={}, workYmd={}, {}~{}, schCd={}",
+                    userCd, workYmd, startHhmm, endHhmm, (sch == null) ? null : sch.getSchCd());
+            return true;
+        }
+
+        // ② 그날 확정 "시각 보유" 연차 행(통상 0~3건)을 같은 프레임으로 환산해 겹침 비교.
+        List<LeaveTimeWindowVO> rows =
+                leaveDeductionMapper.selectTimeLeaveWindowsOnDate(cmpnyCd, siteCd, userCd, workYmd);
+        if (rows == null || rows.isEmpty()) {
+            return false;
+        }
+        for (LeaveTimeWindowVO row : rows) {
+            if (row == null) {
+                continue;
+            }
+            int[] exist = PartialLeaveWindowUtils.exemptStampRange(row.startTime(), row.endTime(), frame);
+            if (exist == null) {
+                log.warn("[leave-deduct] 기존 연차 시각 환산 불가(보수 거부) - userCd={}, workYmd={}, {}~{}",
+                        userCd, workYmd, row.startTime(), row.endTime());
+                return true;
+            }
+            if (PartialLeaveWindowUtils.stampOverlaps(target, exist)) {
+                log.info("[leave-deduct] 연차 시간대 겹침 - userCd={}, workYmd={}, 신규={}~{}, 기존={}~{}",
+                        userCd, workYmd, startHhmm, endHhmm, row.startTime(), row.endTime());
+                return true;
+            }
+        }
+        return false;
     }
 
     /** 신청 구간 [startMin,endMin] 이 근무구간 [schStr,schEnd] 에 완전히 포함되면 true. 구간 미설정이면 false. 야간(종료≤시작)은 +1440 보정. */

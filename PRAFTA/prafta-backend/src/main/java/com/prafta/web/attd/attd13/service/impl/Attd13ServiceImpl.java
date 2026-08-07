@@ -21,6 +21,8 @@ import com.prafta.common.cmm.leave.service.LeaveGrantEngineService;
 import com.prafta.common.cmm.leave.service.LeaveHourlyResettleService;
 import com.prafta.common.cmm.leave.service.LeaveRemnantCoverService;
 import com.prafta.common.cmm.leave.util.HourlyLeaveChargeUtils;
+import com.prafta.common.cmm.leave.util.ScheduleWorkMinutesUtils;
+import com.prafta.common.cmm.leave.util.ScheduleWorkMinutesUtils.HalfDayBoundary;
 import com.prafta.common.cmm.leave.vo.HourlyChargeVO;
 import com.prafta.common.cmm.leave.vo.NotiOutboxInsertVO;
 import com.prafta.common.cmm.leave.vo.RemnantTriggerPlanVO;
@@ -553,7 +555,11 @@ public class Attd13ServiceImpl implements Attd13Service {
         final String reqId = (target.reqId() != null && !target.reqId().isBlank()) ? target.reqId() : null;
         final String moveLeaveCd = resolveEffectiveLeaveCd(target);
         final boolean hourly = isHourlyUnit(unit);
-        final Integer totalMinutes = target.leaveMinutes(); // 대표행 총 분(불변식 1 — 고정단위는 null 가능)
+        // 대표행 총 분(불변식 1 — 고정단위는 null 가능). 반차는 아래 D-5 재산출로 대상일 값으로 갱신된다.
+        Integer totalMinutes = target.leaveMinutes();
+        // 이동 후 저장할 시각(반차는 대상일 스케줄에서 재산출, 그 외는 원값 승계).
+        String movedStartTime = target.startTime();
+        String movedEndTime = target.endTime();
 
         // key → afterCompletion 등록 여부(false 면 finally 에서 직접 해제)
         Map<String, Boolean> heldLocks = new LinkedHashMap<>();
@@ -581,6 +587,37 @@ public class Attd13ServiceImpl implements Attd13Service {
                 chargeDays = new BigDecimal("1.00000");
             } else if (UNIT_HALF.equals(unit)) {
                 chargeDays = new BigDecimal("0.50000");
+                // ★ D-5(2026-08-07): 반차 이동은 대상일 스케줄에서 경계를 재산출한다.
+                //   재산출하지 않으면 "원래 날 스케줄에서 나온 시각"이 새 날짜의 지각·조퇴·OT 판정에
+                //   그대로 참여하고(미배정일로도 이동 가능) LEAVE_MINUTES 도 원래 날 값이 남는다.
+                //   §8.5.10-4 "승인 시 경계 미재계산"은 E3 잠금(신청일 스케줄 변경 차단)이 전제라
+                //   대상일이 바뀌는 이동에는 적용되지 않는다.
+                //   시각이 없는 구 반차(START/END_TIME NULL)는 종전 동작 유지(재산출 대상 아님).
+                if (movedStartTime != null && movedEndTime != null) {
+                    HalfDayBoundary hbNew = leaveDeductionService.getHalfDayBoundary(
+                            cmpnyCd, siteCd, userCd, newDate);
+                    HalfDayBoundary hbOld = leaveDeductionService.getHalfDayBoundary(
+                            cmpnyCd, siteCd, userCd, target.startDate());
+                    if (hbNew == null || hbOld == null) {
+                        // 대상일(또는 원일자) 스케줄 없음 → 경계 산출 불가. 신청 경로와 동일 코드로 거부.
+                        log.info("연차 이동 거부(D-5): 반차 경계 산출 불가. cmpnyCd={}, leaveId={}, {}→{}, 원일자산출={}, 대상일산출={}",
+                                cmpnyCd, target.leaveId(), target.startDate(), newDate,
+                                hbOld != null, hbNew != null);
+                        throw new ApiException(AttdErrorCode.ATTD_400_110);
+                    }
+                    // 파트(시작기준/종료기준)는 별도 컬럼 없이 원일자 경계에서 역산한다
+                    //   (저장 시각의 시작이 그날 근무 시작과 같으면 시작기준).
+                    boolean startPart = movedStartTime.equals(
+                            ScheduleWorkMinutesUtils.hhmmOfDay(hbOld.workStartMin()));
+                    int startMin = startPart ? hbNew.workStartMin() : hbNew.boundaryMin();
+                    int endMin = startPart ? hbNew.boundaryMin() : hbNew.workEndMin();
+                    movedStartTime = ScheduleWorkMinutesUtils.hhmmOfDay(startMin);
+                    movedEndTime = ScheduleWorkMinutesUtils.hhmmOfDay(endMin);
+                    totalMinutes = hbNew.exemptMinutes(); // 대상일 기준 면제분(= 대상일 D / 2)
+                    log.info("연차 이동 반차 경계 재산출. cmpnyCd={}, leaveId={}, {}→{}, part={}, {}~{}, 면제={}분",
+                            cmpnyCd, target.leaveId(), target.startDate(), newDate,
+                            startPart ? "START" : "END", movedStartTime, movedEndTime, totalMinutes);
+                }
             } else if (UNIT_QUARTER.equals(unit)) {
                 chargeDays = new BigDecimal("0.25000");
             } else if (hourly) {
@@ -631,10 +668,15 @@ public class Attd13ServiceImpl implements Attd13Service {
                         cmpnyCd, userCd, newDate, occupied.toPlainString(), chargeDays.toPlainString());
                 throw new ApiException(AttdErrorCode.ATTD_400_111);
             }
-            if (hourly && leaveFlowMapper.countOverlappingTimeLeaveOnDate(
-                    cmpnyCd, userCd, newDate, target.startTime(), target.endTime()) > 0) {
-                log.info("연차 이동 거부(F5): 대상일 시간차 시간대 겹침. cmpnyCd={}, userCd={}, moveTo={}, {}~{}",
-                        cmpnyCd, userCd, newDate, target.startTime(), target.endTime());
+            // HB-09(D4): 겹침 검사 게이트를 "시각 보유 단위"로 확장 — 반차도 경계 시각을 갖게 되어
+            //   대상일에 이미 있는 시간차/반차와의 시간대 충돌을 막는다(구 반차는 시각이 없어 자연 제외).
+            //   ★ D-5: 반차는 위 2)에서 대상일 스케줄로 재산출한 시각(movedStartTime/EndTime)으로 검사한다.
+            //   ★ sec N-2(2026-08-07): 판정을 SQL wrap CASE 에서 Java 로 이관(대상일 원 스케줄 프레임 정렬).
+            if (movedStartTime != null && movedEndTime != null
+                    && leaveDeductionService.overlapsTimeLeaveOnDate(
+                            cmpnyCd, siteCd, userCd, newDate, movedStartTime, movedEndTime)) {
+                log.info("연차 이동 거부(F5): 대상일 연차 시간대 겹침. cmpnyCd={}, userCd={}, moveTo={}, {}~{}",
+                        cmpnyCd, userCd, newDate, movedStartTime, movedEndTime);
                 throw new ApiException(AttdErrorCode.ATTD_400_112);
             }
 
@@ -674,7 +716,7 @@ public class Attd13ServiceImpl implements Attd13Service {
                 // 재발동: 새 use 행(잔여 전액 분할) + 새 cover(WORK_YMD=대상일) — applyTrigger 불변 재사용.
                 try {
                     leaveRemnantCoverService.applyTrigger(cmpnyCd, siteCd, userCd, newDate, unit,
-                            target.startTime(), target.endTime(), totalMinutes, target.leaveReason(),
+                            movedStartTime, movedEndTime, totalMinutes, target.leaveReason(),
                             reqId, plan, operatorUserCd);
                 } catch (org.springframework.dao.DuplicateKeyException e) {
                     // F7b(sec Low-002): 재발동 use INSERT 의 UNIQUE 경합도 일반 재차감과 동일하게
@@ -696,7 +738,7 @@ public class Attd13ServiceImpl implements Attd13Service {
                 try {
                     attd13Mapper.insertMovedLeaveUse(new MovedLeaveUseInsertCommand(
                             newLeaveId, cmpnyCd, siteCd, userCd, moveLeaveCd, null, target.grantId(),
-                            newDate, target.startTime(), newDate, target.endTime(), unit,
+                            newDate, movedStartTime, newDate, movedEndTime, unit,
                             chargeDays, totalMinutes, target.leaveReason(), target.evidenceFileId(),
                             target.promotionStage(), target.designatorType(), origDesignated, operatorUserCd));
                 } catch (org.springframework.dao.DuplicateKeyException e) {
@@ -723,7 +765,7 @@ public class Attd13ServiceImpl implements Attd13Service {
                     try {
                         attd13Mapper.insertMovedLeaveUse(new MovedLeaveUseInsertCommand(
                                 newLeaveId, cmpnyCd, siteCd, userCd, moveLeaveCd, reqId, charge.grantId(),
-                                newDate, target.startTime(), newDate, target.endTime(), unit,
+                                newDate, movedStartTime, newDate, movedEndTime, unit,
                                 charge.days(), firstCharge ? totalMinutes : null, target.leaveReason(),
                                 target.evidenceFileId(), target.promotionStage(), target.designatorType(),
                                 origDesignated, operatorUserCd));

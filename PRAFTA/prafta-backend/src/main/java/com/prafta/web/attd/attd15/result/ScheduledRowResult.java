@@ -25,5 +25,15 @@ public record ScheduledRowResult(
         , String secSchStrTime
         , String secSchEndTime
         , String secSchBrkMin
+
+        /**
+         * HB-07(D3): 그날 확정 부분연차(반차 '01' + 시간차 '02'~'04') 면제분 합계(분). 없으면 0.
+         * 서비스가 {@code max(0, planned - exempt)} 로 주간 소정을 계상한다.
+         */
+        , int leaveExemptMinutes
+        /**
+         * HB-07(Q4): 그날 종일('00') 확정 연차 존재 여부('Y'/'N'). 'Y' 면 면제분 = D 로 보아 소정 0.
+         */
+        , String fullDayLeaveYn
 ) {
 }

@@ -8,9 +8,20 @@ import com.prafta.common.error.common.CommonErrorCode;
 import com.prafta.common.exception.ApiException;
 import com.prafta.web.attd.attd08.dto.request.AttdGpsTrailRequest;
 
+/**
+ * Attd_08 GPS 궤적 조회 파라미터.
+ *
+ * <p>★ security H-1(2026-08-07): 응답이 <b>복호화된 위·경도 평문</b>이라 인가가 필수다.
+ * 파라미터는 {@code attdId} 뿐이라 인가를 여기서 판정할 수 없으므로, 서비스가 근태 행의
+ * 사업장/부서를 먼저 조회한 뒤 {@code assertSiteAccess} + {@code canManageNode} 로 판정한다.
+ * 그 입력이 되는 토큰 클레임을 함께 싣는다.
+ */
 public record AttdGpsTrailParam(
       String attdId
     , String gvCmpnyCd
+    , String gvAuthCd
+    , String gvUserCd
+    , String gvSiteCd
 ) {
 
     private static final Logger log = LoggerFactory.getLogger(AttdGpsTrailParam.class);
@@ -45,9 +56,19 @@ public record AttdGpsTrailParam(
             throw new ApiException(CommonErrorCode.COMMON_400_002);
         }
 
+        // security H-1: 인가 판정 입력(토큰 클레임) 결손이면 fail-closed.
+        if (tokenInfo.gv_cmpnyCd() == null || tokenInfo.gv_cmpnyCd().isEmpty()
+                || tokenInfo.gv_siteCd() == null || tokenInfo.gv_siteCd().isEmpty()) {
+            log.warn("AttdGpsTrailParam.from - token claim missing: gv_cmpnyCd / gv_siteCd");
+            throw new ApiException(CommonErrorCode.COMMON_400_001);
+        }
+
         return new AttdGpsTrailParam(
               request.getAttdId()
             , tokenInfo.gv_cmpnyCd()
+            , tokenInfo.gv_authCd()
+            , tokenInfo.gv_userCd()
+            , tokenInfo.gv_siteCd()
         );
     }
 }

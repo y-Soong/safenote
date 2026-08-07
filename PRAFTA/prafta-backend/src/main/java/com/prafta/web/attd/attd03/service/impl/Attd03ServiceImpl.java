@@ -25,9 +25,18 @@ import lombok.extern.slf4j.Slf4j;
 public class Attd03ServiceImpl implements Attd03Service{
 
 	// 연차 사용 단위 화이트리스트 [SYS025]: 00=1일 / 01=반차 / 02=시간차(2h) / 03=시간차(1h) / 04=시간차(30분)
-	//   / 05=반반차(0.25일 — 연차 시간차 환산 개편 LC-06. 비법정 타입은 '05' 설정 시 종일/반차/반반차 허용)
+	//   ★ D-4(2026-08-07): 반반차 '05' 는 폐지되어 화이트리스트에서 제외한다(HB-04).
+	//     남겨두면 마이그레이션 직후 관리자가 다시 '05' 휴가종류를 만들 수 있고, 그 종류는 신청 경로에서
+	//     거부되어(ATTD_400_102/054) "종일만 신청 가능한 정체불명" 상태가 된다.
+	//     구 '05' 입력은 거부하지 않고 반차('01')로 축소 해석한다 — 신청 경로 정규화
+	//     (LeaveUnitGranularity.USAGE_UNIT_TO_CODE / LeavePolicyServiceImpl)와 동일 규약.
 	private static final java.util.Set<String> ALLOWED_USE_UNIT_TYPES =
-			java.util.Set.of("00", "01", "02", "03", "04", "05");
+			java.util.Set.of("00", "01", "02", "03", "04");
+
+	/** [폐지] 반반차 코드값(SYS025 '05') — 입력으로 들어오면 반차로 축소 해석한다. */
+	private static final String USE_UNIT_TYPE_QUARTER_RETIRED = "05";
+	/** 반차 코드값(SYS025 '01'). */
+	private static final String USE_UNIT_TYPE_HALF = "01";
 
 	// 연차 사용가능기간 타입 화이트리스트 [SYS026]: 01=설정안함 / 02=해당 연도 내 / 03=기간설정
 	// (DB 실측: .claude/context/policies/attd/_audit/prafta-018-syst-val-audit.md §SYS026)
@@ -228,6 +237,7 @@ public class Attd03ServiceImpl implements Attd03Service{
 	 *
 	 * <p>입력 분기별 처리 (prafta-044-FU 로 자동부여 포함하도록 확대):
 	 * <ul>
+	 *   <li>폐지된 반반차('05') 입력은 반차('01')로 축소 해석한다(D-4, 2026-08-07).</li>
 	 *   <li>사용자 신청(leaveType='01') · 관리자 부여(leaveType='02', 자동/수동 모두):
 	 *       useUnitType 입력 분기 → SYS025 허용 코드(00~04) 화이트리스트 검증 후 영속.
 	 *       위반 시 {@link AttdErrorCode#ATTD_400_054} (허용되지 않은 연차 사용 단위).
@@ -244,6 +254,13 @@ public class Attd03ServiceImpl implements Attd03Service{
 		// 사용자 신청(01) · 관리자 부여(02, 자동/수동 모두): useUnitType 영속 분기 → 화이트리스트 검증
 		boolean isUnitInputBranch =
 				"01".equals(leaveType) || "02".equals(leaveType);
+
+		// D-4: 폐지된 반반차('05') 입력은 반차('01')로 축소 해석(구 화면/구 앱 잔재 방어).
+		if (USE_UNIT_TYPE_QUARTER_RETIRED.equals(useUnitType)) {
+			log.info("연차 타입 사용 단위 정규화 - 폐지된 반반차('05') 입력을 반차('01')로 축소. leaveNo={}, leaveType={}",
+					param.leaveNo(), leaveType);
+			useUnitType = USE_UNIT_TYPE_HALF;
+		}
 
 		if (isUnitInputBranch) {
 			if (useUnitType == null || !ALLOWED_USE_UNIT_TYPES.contains(useUnitType)) {

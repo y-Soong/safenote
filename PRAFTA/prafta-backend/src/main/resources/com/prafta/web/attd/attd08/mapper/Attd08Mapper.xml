@@ -83,45 +83,13 @@
                 ELSE 'N'
               END                                                                AS isOutsideYn
 
-            /* status: 스케줄 vs 실제 — 날짜+시각(YYYYMMDDHHmm) 일시 기준 비교.
-               시각(HHmm) 문자열만 비교하면 자정 넘김 야간 근무가 지각/조퇴로 오판정되므로
-               (예: 전일 23:20 출근이 당일 00:00 스케줄에 지각으로 잘못 판정) 날짜를 함께 본다.
-               야간 스케줄(종료시각 &lt; 시작시각)은 종료를 근무일 익일로 보정한다.
-               attd11 Attd11ServiceImpl / Attd_08.vue computeStatus 와 동일 규칙. */
-            , CASE
-                WHEN A.CHECK_IN_TIME IS NULL OR A.CHECK_IN_TIME = ''
-                    THEN 'ABSENT'
-                /* 지각: 실제 출근 일시 &gt; 스케줄 시작 일시(시작은 근무일 당일) */
-                WHEN A.WORK_SEQ = 1 AND SCH.FST_SCH_STR_TIME IS NOT NULL
-                     AND CONCAT(IFNULL(A.CHECK_IN_DATE, A.WORK_YMD), A.CHECK_IN_TIME)
-                         &gt; CONCAT(A.WORK_YMD, SCH.FST_SCH_STR_TIME)
-                    THEN 'LATE'
-                WHEN A.WORK_SEQ = 2 AND SCH.SEC_SCH_STR_TIME IS NOT NULL
-                     AND CONCAT(IFNULL(A.CHECK_IN_DATE, A.WORK_YMD), A.CHECK_IN_TIME)
-                         &gt; CONCAT(A.WORK_YMD, SCH.SEC_SCH_STR_TIME)
-                    THEN 'LATE'
-                /* 조퇴: 실제 퇴근 일시 &lt; 스케줄 종료 일시.
-                   종료시각 &lt; 시작시각이면 야간으로 보고 종료는 근무일 익일. */
-                WHEN A.WORK_SEQ = 1 AND SCH.FST_SCH_END_TIME IS NOT NULL
-                     AND A.CHECK_OUT_TIME IS NOT NULL AND A.CHECK_OUT_TIME != ''
-                     AND CONCAT(IFNULL(A.CHECK_OUT_DATE, A.WORK_YMD), A.CHECK_OUT_TIME)
-                         &lt; CONCAT(
-                               CASE WHEN SCH.FST_SCH_STR_TIME IS NOT NULL AND SCH.FST_SCH_END_TIME &lt; SCH.FST_SCH_STR_TIME
-                                    THEN DATE_FORMAT(DATE_ADD(STR_TO_DATE(A.WORK_YMD, '%Y%m%d'), INTERVAL 1 DAY), '%Y%m%d')
-                                    ELSE A.WORK_YMD END
-                             , SCH.FST_SCH_END_TIME)
-                    THEN 'EARLY_LEAVE'
-                WHEN A.WORK_SEQ = 2 AND SCH.SEC_SCH_END_TIME IS NOT NULL
-                     AND A.CHECK_OUT_TIME IS NOT NULL AND A.CHECK_OUT_TIME != ''
-                     AND CONCAT(IFNULL(A.CHECK_OUT_DATE, A.WORK_YMD), A.CHECK_OUT_TIME)
-                         &lt; CONCAT(
-                               CASE WHEN SCH.SEC_SCH_STR_TIME IS NOT NULL AND SCH.SEC_SCH_END_TIME &lt; SCH.SEC_SCH_STR_TIME
-                                    THEN DATE_FORMAT(DATE_ADD(STR_TO_DATE(A.WORK_YMD, '%Y%m%d'), INTERVAL 1 DAY), '%Y%m%d')
-                                    ELSE A.WORK_YMD END
-                             , SCH.SEC_SCH_END_TIME)
-                    THEN 'EARLY_LEAVE'
-                ELSE 'NORMAL'
-              END                                                                AS attdStatusCd
+            /* status(지각/조퇴/결근/정상) — ★ 2026-08-07 D-1: 판정을 Java(Attd08ServiceImpl)로 이관했다.
+               종전 SQL CASE 는 시각을 HHMM "문자열"로 비교해, 야간(2200~0430)·자정 종료(2400) 스케줄에서
+               반차 반영 보정이 조용히 무발동했다(Attd_08 만 "지각 195분", Attd_11·앱은 정상 → 두 화면이
+               반대로 말하는 상태). 분 단위 판정 규칙을 Attd_11/앱과 같은 단일 출처
+               (PartialLeaveWindowUtils + 일시 stamp 비교)로 통일하고, 여기서는 자리(컬럼 순서)만 유지한다.
+               ⚠️ 값은 서비스가 채운다 — UNION 타입 결정을 위해 CHAR 로 캐스팅한 NULL 을 둔다. */
+            , CAST(NULL AS CHAR(12))                                             AS attdStatusCd
 
             /* row type discriminator (PRAFTA-015) - 정규근태 분기 */
             , 'NORMAL'                                                           AS rowType
@@ -129,6 +97,15 @@
 
             /* 초과근무 인정시간 - 정규근태는 개념 없음 */
             , NULL                                                               AS otWorkMinutes
+
+            /* HB-05(D1): "반차 반영 유효 소정 시각"(그 행의 차수 구간 기준, HHmm).
+               여기서는 원 스케줄 시각을 그대로 싣고, 그날 확정 반차가 있으면 서비스(Java)가
+               PartialLeaveWindowUtils 로 덮어쓴다. 구간 전체가 면제되면 NULL(판정 제외).
+               화면(Attd_08.vue)은 지각·조퇴 재계산에 planXStart/End 대신 이 값을 쓴다
+               — 클라이언트가 반차 규칙을 재구현하지 않게 하기 위함(단일 출처).
+               ⚠️ SELECT 컬럼 순서 = AttdListsResult 컴포넌트 순서(위치 매핑). UNION 분기도 동수 유지. */
+            , CASE WHEN A.WORK_SEQ = 2 THEN SCH.SEC_SCH_STR_TIME ELSE SCH.FST_SCH_STR_TIME END AS effPlanStart
+            , CASE WHEN A.WORK_SEQ = 2 THEN SCH.SEC_SCH_END_TIME ELSE SCH.FST_SCH_END_TIME END AS effPlanEnd
 
         FROM TB_USER_ATTD_MGMT A
         INNER JOIN node_tree NT
@@ -221,6 +198,13 @@
                   AND SE.SCH_CD      = WP.WORK_PLAN_CD
             )
 
+        <!-- (삭제) 그날 확정 반차 MIN 집계 조인 — 2026-08-07 D-3/sec L-4.
+             ① MIN(START_TIME)/MIN(END_TIME) 은 "반차는 하루 1건"을 전제했으나 실제로는 하루 2건
+                (시작기준 0.5 + 종료기준 0.5 = 1.0)이 성립해 0900 + 1300 이 섞였다(종일 쉰 사람에게 조퇴).
+             ② 파생테이블이 TB_USER_LEAVE_USE 전건을 GROUP BY 해 자원 낭비(sec L-4).
+             → 면제 구간은 selectHalfLeaveWindows 로 조회기간·회사 스코프를 걸어 따로 읽고,
+                합집합 판정은 서비스(PartialLeaveWindowUtils.resolveAll)가 한다. -->
+
         LEFT JOIN TB_USER_ATTD_MGMT A1
             ON  A1.CMPNY_CD = A.CMPNY_CD
             AND A1.SITE_CD  = A.SITE_CD
@@ -299,7 +283,7 @@
                 ELSE 'N'
               END                                                                AS isOutsideYn
 
-            /* status - 초과근무 행은 화면에서 '-' 로 표시하므로 NULL */
+            /* status - 초과근무 행은 화면에서 '-' 로 표시하므로 NULL(서비스도 OT 행은 판정하지 않는다) */
             , NULL                                                               AS attdStatusCd
 
             /* row type discriminator (PRAFTA-015) - 초과근무 분기 */
@@ -308,6 +292,10 @@
 
             /* 초과근무 인정시간 - 관리자 승인 실근무 분(휴게 제외) */
             , O.WORK_MINUTES                                                     AS otWorkMinutes
+
+            /* HB-05: 정규근태 분기와 컬럼 수/순서를 맞추기 위한 자리(OT 행은 판정 대상 아님). */
+            , NULL                                                               AS effPlanStart
+            , NULL                                                               AS effPlanEnd
 
         /* 초과근무의 NODE_CD 는 nullable 이다. node_tree 와 INNER JOIN 하므로
            NODE_CD 가 NULL 인 초과근무 행은 결과에서 제외된다. 이는 정규근태 분기와
@@ -334,6 +322,47 @@
         /* UNION 전체 정렬은 SELECT-list alias 로 작성한다(테이블 한정명 사용 불가).
            rowType 으로 같은 사용자·일자에서 정규근태(NORMAL)가 먼저, 초과근무(OT)가 뒤로 정렬된다. */
         ORDER BY workYmd, userCd, rowType, workSeq
+    </select>
+
+    <!-- HB-05(D1)/D-3: 조회기간 안의 확정 반차('01' + 시각 보유) 면제 구간 목록.
+         한 날에 여러 건(시작기준 + 종료기준)이 있을 수 있으므로 집계하지 않고 행 그대로 내린다
+         — 합집합 판정은 서비스(PartialLeaveWindowUtils.resolveAll)가 한다.
+         시각 없는 구 반차/시간차는 대상이 아니다(시간차 판정 변경은 요청서 §2 비목표).
+         분할차감(PC-02/PC-05) 행은 같은 시각이 여러 행으로 오므로 DISTINCT 로 접는다.
+         ⚠️ sec L-4: 회사·사업장·조회기간 술어 필수(전건 스캔 금지).
+         ⚠️ SELECT 컬럼 순서 = HalfLeaveWindowResult 컴포넌트 순서(위치 매핑). -->
+    <select id="selectHalfLeaveWindows" parameterType="com.prafta.web.attd.attd08.application.query.AttdListsQuery" resultType="com.prafta.web.attd.attd08.result.HalfLeaveWindowResult">
+    /* Attd08Mapper.selectHalfLeaveWindows */
+        SELECT DISTINCT
+              L.USER_CD     AS userCd
+            , L.START_DATE  AS workYmd
+            , L.START_TIME  AS startTime
+            , L.END_TIME    AS endTime
+        FROM TB_USER_LEAVE_USE L
+        WHERE L.CMPNY_CD      = #{gvCmpnyCd}
+          AND L.SITE_CD       = #{siteCd}
+          AND L.START_DATE <![CDATA[ >= ]]> #{fromYmd}
+          AND L.START_DATE <![CDATA[ <= ]]> #{toYmd}
+          AND L.USE_UNIT_TYPE = '01'
+          AND L.LEAVE_STATUS  = 'CONFIRMED'
+          AND L.DEL_YN        = 'N'
+          AND L.START_TIME IS NOT NULL
+          AND L.END_TIME   IS NOT NULL
+    </select>
+
+    <!-- security H-1: attd-gps-trail 인가 판정용 — 근태 행의 소속(사업장/부서)과 소유자.
+         파라미터(attdId)만으로는 인가를 판정할 수 없어 행을 먼저 읽는다. 좌표는 읽지 않는다. -->
+    <select id="selectAttdOwnerScope" resultType="com.prafta.web.attd.attd08.result.AttdOwnerScopeResult">
+    /* Attd08Mapper.selectAttdOwnerScope */
+        SELECT
+              M.SITE_CD  AS siteCd
+            , M.NODE_CD  AS nodeCd
+            , M.USER_CD  AS userCd
+        FROM TB_USER_ATTD_MGMT M
+        WHERE M.CMPNY_CD = #{cmpnyCd}
+          AND M.ATTD_ID  = #{attdId}
+          AND M.DEL_YN   = 'N'
+        LIMIT 1
     </select>
 
     <!-- GPS좌표-암호화-전환-03: 암호문(ENC)+구 평문 4컬럼을 함께 내려 서비스에서 fallback 복호화한다

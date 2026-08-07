@@ -13,6 +13,7 @@ import com.prafta.app.attd.attd01.application.query.AttdRangeQuery;
 import com.prafta.app.attd.attd01.result.AttdRecordResult;
 import com.prafta.app.attd.attd01.result.GpsResult;
 import com.prafta.app.attd.attd01.result.HolidayResult;
+import com.prafta.app.attd.attd01.result.PartialLeaveWindowResult;
 import com.prafta.app.attd.attd01.result.LeaveUseResult;
 import com.prafta.app.attd.attd01.result.OpenAttdResult;
 import com.prafta.app.attd.attd01.result.RangeOvertimeResult;
@@ -75,6 +76,19 @@ public interface AppAttd01Mapper {
                             @Param("siteCd") String siteCd,
                             @Param("userCd") String userCd,
                             @Param("workYmd") String workYmd);
+
+    /**
+     * HB-08(D5) 앱 미러: 그날 확정 <b>시각 보유</b> 연차(반차 '01' + 시간차 '02'~'04')의 면제 구간 목록.
+     *
+     * <p>앱 초과근무 발의 가드가 "연차로 쉬는 시간대"를 거부(ATTD_400_196)하는 판정 입력.
+     * 웹 {@code Attd07Mapper.selectLeaveExemptWindows} 와 동일 술어(app↔web 매퍼 직접 의존 회피 미러).
+     * 시각 없는 구 반차는 자연 제외되어 종전 동작을 유지하며, 종일('00')은 대상이 아니다
+     * ({@link #countFullDayLeaveOn} 게이트가 ATTD_400_151 로 통째 차단 — 회귀 금지 ②).
+     */
+    List<PartialLeaveWindowResult> selectPartialLeaveWindowsOn(@Param("cmpnyCd") String cmpnyCd,
+                                                               @Param("siteCd") String siteCd,
+                                                               @Param("userCd") String userCd,
+                                                               @Param("workYmd") String workYmd);
 
     /**
      * 본인 소속부서 NODE_CD 조회 (마감 커버리지 판정용).

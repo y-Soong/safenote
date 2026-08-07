@@ -1968,6 +1968,32 @@
     LIMIT 1
     </select>
 
+    <!-- HB-08(D5): 그날 확정 "시각 보유" 연차(반차 01 + 시간차 02/03/04)의 면제 구간.
+         등록 가능 범위 = 실근태 - (스케줄 구간 ∪ 연차 면제 구간).
+         - 시각 없는 구 반차는 START_TIME/END_TIME IS NOT NULL 로 자연 제외(종전 동작 유지).
+         - 종일('00')은 대상 아님 — countFullDayLeaveOn 게이트(ATTD_400_151)가 통째로 차단한다.
+         - 분할차감(PC-02/PC-05) 행은 같은 REQ 로 여러 행이 생기지만 시각은 동일하므로
+           DISTINCT 로 중복 구간을 접는다(구간 합집합 결과는 어차피 동일 — 방어적 축약).
+         ⚠️ SELECT 컬럼 순서 = LeaveExemptWindowResult 컴포넌트 순서(위치 매핑). -->
+    <select id="selectLeaveExemptWindows" resultType="com.prafta.web.attd.attd07.result.LeaveExemptWindowResult">
+    /* Attd07Mapper.selectLeaveExemptWindows */
+    SELECT DISTINCT
+          L.START_DATE  AS startDate
+        , L.START_TIME  AS startTime
+        , L.END_DATE    AS endDate
+        , L.END_TIME    AS endTime
+    FROM TB_USER_LEAVE_USE L
+    WHERE L.CMPNY_CD      = #{cmpnyCd}
+      AND L.SITE_CD       = #{siteCd}
+      AND L.USER_CD       = #{userCd}
+      AND L.START_DATE    = #{workYmd}
+      AND L.LEAVE_STATUS  = 'CONFIRMED'
+      AND L.DEL_YN        = 'N'
+      AND L.USE_UNIT_TYPE IN ('01', '02', '03', '04')
+      AND L.START_TIME IS NOT NULL
+      AND L.END_TIME   IS NOT NULL
+    </select>
+
     <select id="selectOtId" parameterType="string" resultType="string">
     /* Attd07Mapper.selectOtId */
     SELECT CONCAT(DATE_FORMAT(NOW(), '%Y%m%d'), FNC_CMM_SEQ_NEXTVAL(#{gvCmpnyCd}, 'OT_ID')) AS otId

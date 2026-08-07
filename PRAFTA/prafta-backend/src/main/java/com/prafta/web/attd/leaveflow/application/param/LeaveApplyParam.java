@@ -15,6 +15,8 @@ public record LeaveApplyParam(
     , String leaveType
     , String workYmd
     , String useUnitType
+    /** 반차(01) 파트: START(시작기준=늦게 출근) / END(종료기준=일찍 퇴근). 반차 외 단위에서는 무시(HB-02). */
+    , String halfPart
     , String startTime
     , String endTime
     , String reason
@@ -44,6 +46,7 @@ public record LeaveApplyParam(
             , request.getLeaveType()
             , request.getWorkYmd()
             , request.getUseUnitType()
+            , request.getHalfPart()
             , request.getStartTime()
             , request.getEndTime()
             , request.getReason()

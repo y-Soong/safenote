@@ -19,6 +19,10 @@ import com.prafta.common.cmm.leave.vo.DailyScheduleVO;
  * @param fstBrkEndTime 1구간 휴게 종료(HHMM, 휴게시각 미설정이면 null)
  * @param secBrkStrTime 2구간 휴게 시작(HHMM, 없으면 null)
  * @param secBrkEndTime 2구간 휴게 종료(HHMM, 없으면 null)
+ * @param halfDayBoundaryTime 반차 경계 시각(HHMM). 근로를 절반으로 나누는 시각(휴게 제외 누적 기준).
+ *                            스케줄 없음/산출 불가면 null — HB-03(additive, 구 앱 무영향)
+ * @param halfStartPartRange  시작기준(늦게 출근) 반차가 쉬는 구간 "HHMM~HHMM". 산출 불가면 null
+ * @param halfEndPartRange    종료기준(일찍 퇴근) 반차가 쉬는 구간 "HHMM~HHMM". 산출 불가면 null
  */
 public record LeaveDayScheduleResponse(
       boolean hasSchedule
@@ -30,14 +34,21 @@ public record LeaveDayScheduleResponse(
     , String fstBrkEndTime
     , String secBrkStrTime
     , String secBrkEndTime
+    , String halfDayBoundaryTime
+    , String halfStartPartRange
+    , String halfEndPartRange
 ) {
     /** 스케줄 없는 날 응답(시각 전부 null). */
     public static LeaveDayScheduleResponse empty() {
-        return new LeaveDayScheduleResponse(false, null, null, null, null, null, null, null, null);
+        return new LeaveDayScheduleResponse(false, null, null, null, null, null, null, null, null,
+                null, null, null);
     }
 
-    /** 스케줄 VO → 응답 매핑. */
-    public static LeaveDayScheduleResponse from(DailyScheduleVO sch) {
+    /** 스케줄 VO → 응답 매핑(반차 경계 필드 포함 — HB-03). */
+    public static LeaveDayScheduleResponse from(DailyScheduleVO sch,
+                                                String halfDayBoundaryTime,
+                                                String halfStartPartRange,
+                                                String halfEndPartRange) {
         if (sch == null) {
             return empty();
         }
@@ -51,6 +62,9 @@ public record LeaveDayScheduleResponse(
             , sch.getFstBrkEndTime()
             , sch.getSecBrkStrTime()
             , sch.getSecBrkEndTime()
+            , halfDayBoundaryTime
+            , halfStartPartRange
+            , halfEndPartRange
         );
     }
 }

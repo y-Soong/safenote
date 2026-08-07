@@ -34,11 +34,22 @@ public class LeaveApplyRequest {
     @Pattern(regexp = "\\d{8}")
     private String workYmd;
 
-    /** 사용 단위 [SYS025] 00=1일/01=반차/02=시간차2h/03=시간차1h/04=시간차30분/05=반반차(LC-06) */
+    /**
+     * 사용 단위 [SYS025] 00=1일/01=반차/02=시간차2h/03=시간차1h/04=시간차30분.
+     * ('05' 반반차는 2026-08-07 폐지 — 신청·검증 경로에서 거부, 과거 데이터 조회만 존치)
+     */
     @FieldLabel("사용단위")
     @NotBlank
     @Size(max = 2)
     private String useUnitType;
+
+    /**
+     * 반차(01) 전용 파트. {@code START}=시작기준(늦게 출근) / {@code END}=종료기준(일찍 퇴근).
+     * 반차 신청 시 필수(미지정·오값이면 서버 fail-closed 거부 ATTD_400_195). 앱 미러.
+     */
+    @FieldLabel("반차구분")
+    @Size(max = 5)
+    private String halfPart;
 
     @FieldLabel("시작시각")
     @Size(max = 4)

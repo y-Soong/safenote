@@ -89,16 +89,9 @@ public interface AppLeaveFlowMapper {
                                              @Param("userCd") String userCd,
                                              @Param("workYmd") String workYmd);
 
-    /**
-     * 같은 날 시간대가 겹치는 시간차 연차(USE_UNIT_TYPE in '02','03','04') 개수. 신규 [startTime,endTime) 와
-     * 기존 [START_TIME,END_TIME) 가 겹치면(기존시작 &lt; 신규종료 AND 기존종료 &gt; 신규시작) 카운트.
-     * 결과 &gt; 0 이면 거부(ATTD_400_112). 시간차 단위 신청 시에만 호출(HHMM 문자열, 좌폐우개 비교).
-     */
-    int countOverlappingTimeLeaveOnDate(@Param("cmpnyCd") String cmpnyCd,
-                                        @Param("userCd") String userCd,
-                                        @Param("workYmd") String workYmd,
-                                        @Param("startTime") String startTime,
-                                        @Param("endTime") String endTime);
+    // ★ sec N-2(2026-08-07): countOverlappingTimeLeaveOnDate 제거(웹 LeaveFlowMapper 미러).
+    //   SQL wrap CASE 의 한쪽만 wrap 되는 조합 미탐지(ATTD_400_112 우회)를 봉합하기 위해
+    //   판정을 LeaveDeductionService.overlapsTimeLeaveOnDate(그날 원 스케줄 프레임)로 일원화.
 
     /** 요청 ID 채번(YYYYMMDD + 시퀀스). */
     String selectNextReqId(@Param("cmpnyCd") String cmpnyCd);

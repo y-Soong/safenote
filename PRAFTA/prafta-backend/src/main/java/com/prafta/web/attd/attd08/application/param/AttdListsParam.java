@@ -14,6 +14,15 @@ import com.prafta.common.error.common.CommonErrorCode;
 import com.prafta.common.exception.ApiException;
 import com.prafta.web.attd.attd08.dto.request.AttdListsRequest;
 
+/**
+ * Attd_08 근태 현황 조회 파라미터.
+ *
+ * <p>★ security H-1(2026-08-07): 종전에는 토큰에서 {@code gv_cmpnyCd} 만 받아, 같은 회사 사용자가
+ * {@code siteCd}/{@code nodeCd} 를 임의 지정해 타 사업장·타 부서의 근태(PII)를 열람할 수 있었다.
+ * 인가 판정에 필요한 토큰 클레임(userCd/authCd/siteCd)을 함께 실어 서비스 진입부에서
+ * {@code SiteAccessService.assertSiteAccess} + {@code AttdCloseService.canManageNode} 로 강제한다
+ * (Attd_11/Attd_15 와 동일 패턴).
+ */
 public record AttdListsParam(
       String fromDate
     , String toDate
@@ -22,6 +31,9 @@ public record AttdListsParam(
     , String incSubNodeYn
     , String userNm
     , String gvCmpnyCd
+    , String gvAuthCd
+    , String gvUserCd
+    , String gvSiteCd
 ) {
     private static final DateTimeFormatter DATE_FMT = DateTimeFormatter.ofPattern("yyyy-MM-dd");
 
@@ -48,6 +60,12 @@ public record AttdListsParam(
         }
         if (request.getSiteCd() == null || request.getSiteCd().isBlank()) {
             log.warn("AttdListsParam.from - required field missing: siteCd");
+            throw new ApiException(CommonErrorCode.COMMON_400_001);
+        }
+        // security H-1: 인가 판정 입력(토큰 클레임) 결손이면 fail-closed.
+        if (tokenInfo.gv_cmpnyCd() == null || tokenInfo.gv_cmpnyCd().isEmpty()
+                || tokenInfo.gv_siteCd() == null || tokenInfo.gv_siteCd().isEmpty()) {
+            log.warn("AttdListsParam.from - token claim missing: gv_cmpnyCd / gv_siteCd");
             throw new ApiException(CommonErrorCode.COMMON_400_001);
         }
 
@@ -80,6 +98,9 @@ public record AttdListsParam(
             , request.getIncSubNodeYn() == null ? "N" : request.getIncSubNodeYn()
             , request.getUserNm()
             , tokenInfo.gv_cmpnyCd()
+            , tokenInfo.gv_authCd()
+            , tokenInfo.gv_userCd()
+            , tokenInfo.gv_siteCd()
         );
     }
 }

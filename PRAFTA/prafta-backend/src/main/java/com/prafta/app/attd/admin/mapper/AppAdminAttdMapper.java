@@ -6,6 +6,7 @@ import org.apache.ibatis.annotations.Mapper;
 
 import com.prafta.app.attd.admin.application.query.AdminAttdScopeQuery;
 import com.prafta.app.attd.admin.result.DailyAttdRow;
+import com.prafta.app.attd.admin.result.HalfLeaveWindowRow;
 import com.prafta.app.attd.admin.result.MonthlyAttdRow;
 
 /**
@@ -24,4 +25,15 @@ public interface AppAdminAttdMapper {
 
     /** 월(workYm LIKE) 근태 원시 행(차수 단위) — 스코프 + 키워드. ORDER BY USER_CD, WORK_YMD, WORK_SEQ. */
     List<MonthlyAttdRow> selectMonthlyAttdRows(AdminAttdScopeQuery query);
+
+    /**
+     * NF-1(2026-08-07): 조회 대상 기간의 확정 부분연차(반차 {@code '01'}) 면제 시각 구간.
+     *
+     * <p>웹 {@code Attd08Mapper/Attd11Mapper.selectHalfLeaveWindows} 와 동일 술어(회사·사업장·기간 스코프 필수).
+     * 일자 조회면 {@code workYmd} 단일일, 월별 조회면 {@code workYm} LIKE 로 기간을 잡는다
+     * (같은 Query 를 쓰는 근태 원시행 조회와 기간 축을 맞춘다).
+     * 노드 스코프는 걸지 않는다 — 서비스가 (USER_CD, WORK_YMD) 키로 조인하므로 스코프 밖 사용자의
+     * 행은 조회 결과에 도달하지 않는다(웹 두 화면과 동일한 취급).
+     */
+    List<HalfLeaveWindowRow> selectHalfLeaveWindows(AdminAttdScopeQuery query);
 }

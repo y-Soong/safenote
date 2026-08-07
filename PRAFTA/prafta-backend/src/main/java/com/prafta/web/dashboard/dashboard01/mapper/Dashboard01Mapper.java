@@ -9,6 +9,8 @@ import org.apache.ibatis.annotations.Param;
 import com.prafta.web.dashboard.dashboard01.result.DashAcctGradeCountResult;
 import com.prafta.web.dashboard.dashboard01.result.DashAttdPlanRegRateRowResult;
 import com.prafta.web.dashboard.dashboard01.result.DashAttdStatusCountResult;
+import com.prafta.web.dashboard.dashboard01.result.DashHalfLeaveWindowRow;
+import com.prafta.web.dashboard.dashboard01.result.DashPartialLeaveAttdRow;
 import com.prafta.web.dashboard.dashboard01.result.DashRecentAcctResult;
 import com.prafta.web.dashboard.dashboard01.result.DashSiteBaselineResult;
 import com.prafta.web.dashboard.dashboard01.result.LeaveUseSplitResult;
@@ -109,11 +111,34 @@ public interface Dashboard01Mapper {
     );
 
     // A2 정상/지각/조퇴/미출근 일수 카운트 (일 단위 롤업 — Attd08 판정식 + Attd11 미출근 모수 이식)
+    //   ★ NF-2b: 확정 부분연차(반차) 보유일은 이 집계에서 빠진다(서비스가 재판정해 더한다).
     DashAttdStatusCountResult selectDashAttdStatusCount(
         @Param("gvCmpnyCd") String gvCmpnyCd
         , @Param("siteCd") String siteCd
         , @Param("nodeCd") String nodeCd
         , @Param("incSubNodeYn") String incSubNodeYn
+        , @Param("workYm") String workYm
+    );
+
+    /**
+     * NF-2b(2026-08-07): 확정 부분연차(반차) 보유 계획일의 근태 원시행(차수 단위).
+     *
+     * <p>{@code selectDashAttdStatusCount} 가 제외한 바로 그 집합이다(같은 CTE·같은 EXISTS 조각).
+     * 지각·조퇴 판정은 서비스가 {@code PartialLeaveWindowUtils} 단일 출처로 수행한다 —
+     * SQL 문자열 비교로는 야간 반차의 익일 경계를 표현할 수 없기 때문이다.
+     */
+    List<DashPartialLeaveAttdRow> selectDashPartialLeaveAttdRows(
+        @Param("gvCmpnyCd") String gvCmpnyCd
+        , @Param("siteCd") String siteCd
+        , @Param("nodeCd") String nodeCd
+        , @Param("incSubNodeYn") String incSubNodeYn
+        , @Param("workYm") String workYm
+    );
+
+    /** NF-2b: 그 달 확정 부분연차(반차) 면제 시각 구간 — 위 원시행 재판정의 입력. */
+    List<DashHalfLeaveWindowRow> selectDashPartialLeaveWindows(
+        @Param("gvCmpnyCd") String gvCmpnyCd
+        , @Param("siteCd") String siteCd
         , @Param("workYm") String workYm
     );
 

@@ -484,7 +484,9 @@ public class LeaveRemnantCoverServiceImpl implements LeaveRemnantCoverService {
             code = switch (usageUnit) {
                 case "FULL_DAY" -> UNIT_FULL;
                 case "HALF_DAY" -> UNIT_HALF;
-                case "QUARTER_DAY" -> UNIT_QUARTER;
+                // HB-04(2026-08-07): 반반차 폐지 — 구 설정은 반차로 축소 해석
+                //   (LeaveUnitGranularity.USAGE_UNIT_TO_CODE / LeavePolicyServiceImpl 정규화와 동일 규약).
+                case "QUARTER_DAY" -> UNIT_HALF;
                 case "HOUR_2" -> UNIT_HOUR2;
                 case "HOUR_1" -> UNIT_HOUR1;
                 case "MIN_30" -> UNIT_MIN30;

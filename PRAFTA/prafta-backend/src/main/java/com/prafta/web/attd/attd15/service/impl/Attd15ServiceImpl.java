@@ -173,7 +173,17 @@ public class Attd15ServiceImpl implements Attd15Service {
                 .build();
     }
 
-    /** 스케줄 예정 근로분(1구간 + (2구간)) — AppAttd01ServiceImpl.plannedMinutes 동일 계산식. */
+    /**
+     * 그날 소정근로분(1구간 + (2구간)) — AppAttd01ServiceImpl.plannedMinutes 동일 계산식.
+     *
+     * <p>HB-07(D3 / Q4 확정 2026-08-07): 여기서 <b>그날 확정 연차 면제분</b>을 뺀다.
+     * <pre>일자별 소정 = max(0, planned - 그날 확정 연차 면제분 합계)</pre>
+     * 종일 연차일은 면제분 = planned 이므로 0 이 된다. Attd_05 가 이미 종일 연차일 셀을 "연차"로
+     * 대체 표시하므로(prafta-com-008-E-6) 표시 모델과도 정합한다.
+     * 반차·시간차일은 면제분(LEAVE_MINUTES 합)만 빠지므로 스케줄은 살아 있는 것으로 보인다.
+     *
+     * <p>회귀 금지: "실제 근무 기준" 합계(actualRawMinutesByUser + OT)와 잠정치(마감) 판정은 불변.
+     */
     private long plannedMinutesOfRow(ScheduledRowResult r) {
         long total = 0;
         Integer m1 = computeWorkMinutes(r.fstSchStrTime(), r.fstSchEndTime(), parseIntOrZero(r.fstSchBrkMin()));
@@ -187,7 +197,13 @@ public class Attd15ServiceImpl implements Attd15Service {
                 total += m2;
             }
         }
-        return total;
+
+        if ("Y".equals(r.fullDayLeaveYn())) {
+            // 종일 연차일: 면제분 = 그날 소정 전량 → 소정 0.
+            return 0L;
+        }
+        long exempt = Math.max(0, r.leaveExemptMinutes());
+        return Math.max(0L, total - exempt);
     }
 
     /** HHMM -> 자정 기준 분. 잘못된 값이면 null. (AppAttd01ServiceImpl.toMinutes 동일) */

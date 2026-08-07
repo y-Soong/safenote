@@ -27,15 +27,10 @@ public interface LeaveFlowMapper {
                                              @Param("userCd") String userCd,
                                              @Param("workYmd") String workYmd);
 
-    /**
-     * 같은 날 시간대가 겹치는 시간차 연차(USE_UNIT_TYPE in '02','03','04') 개수(앱 미러).
-     * 좌폐우개 겹침: 기존시작 &lt; 신규종료 AND 기존종료 &gt; 신규시작. &gt; 0 이면 ATTD_400_112 로 거부.
-     */
-    int countOverlappingTimeLeaveOnDate(@Param("cmpnyCd") String cmpnyCd,
-                                        @Param("userCd") String userCd,
-                                        @Param("workYmd") String workYmd,
-                                        @Param("startTime") String startTime,
-                                        @Param("endTime") String endTime);
+    // ★ sec N-2(2026-08-07): countOverlappingTimeLeaveOnDate 제거.
+    //   SQL wrap CASE 는 각 행이 자기 END_TIME < START_TIME 일 때만 +1일 보정해서, 한쪽만 wrap 되는
+    //   조합(야간 시작기준 반차 2200~0200 vs 시간차 0030~0130)에서 프레임이 어긋나 겹침을 놓쳤다.
+    //   판정은 LeaveDeductionService.overlapsTimeLeaveOnDate(그날 원 스케줄 프레임 + 공용 환산 유틸)로 일원화.
 
     /** 요청 ID 채번 (CONCAT(YYYYMMDD, seq)). */
     String selectNextReqId(@Param("cmpnyCd") String cmpnyCd);
@@ -78,12 +73,8 @@ public interface LeaveFlowMapper {
     /** 활성 법정 정책의 결재 여부 (tb_leave_policy.APRV_USE_YN). 없으면 null. */
     String selectPolicyAprvUseYn(@Param("cmpnyCd") String cmpnyCd);
 
-    /**
-     * LC-10: 활성 법정정책의 사용 단위(tb_leave_usage_policy.USAGE_UNIT).
-     * 반반차 허용 여부는 이 값이 'QUARTER_DAY' 인지로 판정한다(구 ALLOW_QUARTER 토글 폐기).
-     * 사용정책 행 미존재/활성정책 없음이면 null → 호출부는 비허용 취급(fail-closed).
-     */
-    String selectPolicyUsageUnit(@Param("cmpnyCd") String cmpnyCd);
+    // (삭제) selectPolicyUsageUnit — D-8(2026-08-07). 반반차 폐지(HB-04)로 호출부 0건이 되어 제거.
+    //   법정정책 사용단위 계층 판정은 LeaveUnitGranularity(SSOT)가 담당한다.
 
     /**
      * PRAFTA-COM-004 보안: 주어진 USER_CD 목록 중 동일 회사 + 동일 사업장 + 재직(활성) 상태인
@@ -268,13 +259,16 @@ public interface LeaveFlowMapper {
      * PRAFTA-025 - 연차 수정('06') 승인: 기존 사용기록(LEAVE_ID)을 새 값으로 in-place 갱신한다.
      * 연차코드(LEAVE_CD)/차감 부여(GRANT_ID)/사용단위(USE_UNIT_TYPE)는 보존하고
      * 사용 일자·시각·일수·분·사유만 갱신한다. CONFIRMED + 미삭제 행만 대상.
+     *
+     * <p>O-2(2026-08-07): {@code END_DATE} 파라미터는 <b>두지 않는다</b> — SQL 이 {@code startDate} 를
+     * 그대로 쓴다("연차 1행 = 하루" 불변식의 구조적 강제, Q5 정정). 자정 넘김은 시각 wrap 으로만 표현한다.
+     *
      * @return 영향받은 행 수 (0 또는 1)
      */
     int updateLeaveUseModify(@Param("cmpnyCd") String cmpnyCd,
                              @Param("leaveId") String leaveId,
                              @Param("startDate") String startDate,
                              @Param("startTime") String startTime,
-                             @Param("endDate") String endDate,
                              @Param("endTime") String endTime,
                              @Param("leaveDays") java.math.BigDecimal leaveDays,
                              @Param("leaveMinutes") Integer leaveMinutes,

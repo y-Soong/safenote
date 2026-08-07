@@ -56,6 +56,7 @@ import com.prafta.app.attd.attd01.service.AppAttd01Service;
 import com.prafta.app.tbm.tbm01.service.AppTbm01Service;
 import com.prafta.common.cmm.leave.service.LeaveRefusalConst;
 import com.prafta.common.cmm.leave.service.LeaveRefusalDetectService;
+import com.prafta.common.cmm.leave.util.PartialLeaveWindowUtils;
 import com.prafta.common.error.attd.AttdErrorCode;
 import com.prafta.common.exception.ApiException;
 import com.prafta.common.security.crypto.GpsCoordCrypto;
@@ -109,6 +110,9 @@ public class AppAttd01ServiceImpl implements AppAttd01Service {
     private static final String ATTD_MISSING = "MISSING";
     private static final String ATTD_WORKING = "WORKING";
     private static final String ATTD_NOT_STARTED = "NOT_STARTED";
+
+    /** 사용 단위 [SYS025] '01' 반차 — HB-05 지각·조퇴 판정 보정 대상(시각 보유분 한정). */
+    private static final String LEAVE_UNIT_HALF_DAY = "01";
 
     // dayType 값 (month)
     private static final String DAY_WORK = "WORK";
@@ -596,7 +600,9 @@ public class AppAttd01ServiceImpl implements AppAttd01Service {
             String scheduleSummary = hasSchCd ? scheduleSummary(sched, isTwoSlot) : null;
             String attendanceSummary = hasSchCd ? attendanceSummary(attdBySeq, slotCount) : null;
             String attendanceStatus = hasSchCd
-                    ? computeAttendanceStatus(sched, slotCount, attdBySeq, isToday, isPast)
+                    // D-3: 그날 반차 전건(하루 2건 가능)을 넘겨 합집합으로 판정한다.
+                    ? computeAttendanceStatus(sched, slotCount, attdBySeq, isToday, isPast,
+                            leaveListByYmd.get(ymd))
                     : null;
 
             WeekDayActionsResponse actions = computeWeekActions(
@@ -662,7 +668,7 @@ public class AppAttd01ServiceImpl implements AppAttd01Service {
      */
     private String computeAttendanceStatus(
             ScheduleResult sched, int slotCount, Map<Integer, AttdRecordResult> attdBySeq,
-            boolean isToday, boolean isPast) {
+            boolean isToday, boolean isPast, List<LeaveUseResult> leaves) {
 
         boolean isTwoSlot = StringUtils.hasText(sched.secSchStrTime());
 
@@ -681,18 +687,97 @@ public class AppAttd01ServiceImpl implements AppAttd01Service {
         // 완료: 지각/조퇴 판정. 시:분만 비교하면 야간/자정 넘김(슬롯 시작 00:00, 전일 출근,
         //   익일 퇴근)에서 오판하므로, 웹 Attd_11(PRAFTA-034)과 동일하게 실제 (일자+시각)
         //   타임스탬프로 스케줄 일시와 비교한다.
+        // HB-05(D1): 그날 확정 반차가 있으면 판정 기준을 "반차 반영 유효 소정 구간"으로 치환한다
+        //   (정책 §10.1.1). 시각 없는 구 반차·시간차·무연차일은 원값이 그대로 돌아와 판정 불변.
+        String fstStr = effectiveStart(sched.fstSchStrTime(), sched.fstSchEndTime(), leaves);
+        String fstEnd = effectiveEnd(sched.fstSchStrTime(), sched.fstSchEndTime(), leaves);
+        String secEnd = effectiveEnd(sched.secSchStrTime(), sched.secSchEndTime(), leaves);
+
         // 지각 = 슬롯1 실제 출근일시(출근일자+시각) > 스케줄 시작일시(슬롯1, 항상 스케줄 대응).
-        boolean late = isLateStamp(s1, sched.workYmd(), sched.fstSchStrTime());
+        //   ★ qa N-2(2026-08-07): 판정용 시각의 일자 프레임은 "원 스케줄"로 잡는다(Attd_08/Attd_11 동일).
+        boolean late = isLateStamp(s1, sched.workYmd(),
+                sched.fstSchStrTime(), sched.fstSchEndTime(), fstStr);
         // 조퇴 기준 종료시각/대상 슬롯: 스케줄 2구간이면 2구간 종료·slot2 퇴근, 그 외(1구간 스케줄)는
         //   스케줄 대응 마지막 슬롯=slot1 기준(추가 근무 slot2 는 스케줄 미대응 → 조퇴 판정 제외).
         AttdRecordResult lastScheduledSlot = isTwoSlot && attdBySeq.get(2) != null ? attdBySeq.get(2) : s1;
-        String schStrForEnd = isTwoSlot ? sched.secSchStrTime() : sched.fstSchStrTime();
-        String schEnd = isTwoSlot ? sched.secSchEndTime() : sched.fstSchEndTime();
-        // 조퇴 = 실제 퇴근일시 < 스케줄 종료일시. 야간(종료<시작)이면 종료를 익일로 본다.
-        boolean early = isEarlyStamp(lastScheduledSlot, sched.workYmd(), schStrForEnd, schEnd);
+        String rawEndFrameStr = isTwoSlot ? sched.secSchStrTime() : sched.fstSchStrTime();
+        String rawEndFrameEnd = isTwoSlot ? sched.secSchEndTime() : sched.fstSchEndTime();
+        String schEnd = isTwoSlot ? secEnd : fstEnd;
+        // 조퇴 = 실제 퇴근일시 < 스케줄 종료일시. 야간이면 원 스케줄 프레임으로 익일 여부를 판정한다.
+        boolean early = isEarlyStamp(lastScheduledSlot, sched.workYmd(),
+                rawEndFrameStr, rawEndFrameEnd, schEnd);
         if (late) return ATTD_LATE;
         if (early) return ATTD_EARLY_LEAVE;
         return ATTD_NORMAL;
+    }
+
+    /**
+     * HB-05(D1): 반차를 반영한 판정용 구간 시작(HHmm). 구간 전체가 면제되면 null(판정 제외).
+     * 반차가 없거나 시각이 없으면 원값 그대로(회귀 0).
+     */
+    private String effectiveStart(String schStr, String schEnd, List<LeaveUseResult> leaves) {
+        PartialLeaveWindowUtils.EffectiveWorkWindow eff = resolveHalfWindow(schStr, schEnd, leaves);
+        return (eff == null) ? schStr : (eff.fullyExempt() ? null : eff.planStart());
+    }
+
+    /** HB-05(D1): 반차를 반영한 판정용 구간 종료(HHmm). 구간 전체가 면제되면 null(판정 제외). */
+    private String effectiveEnd(String schStr, String schEnd, List<LeaveUseResult> leaves) {
+        PartialLeaveWindowUtils.EffectiveWorkWindow eff = resolveHalfWindow(schStr, schEnd, leaves);
+        return (eff == null) ? schEnd : (eff.fullyExempt() ? null : eff.planEnd());
+    }
+
+    /**
+     * HB-05(D1): 그날 확정 반차('01', 시각 보유) <b>전건</b> 조회 — 지각·조퇴 PUSH 판정 입력.
+     *
+     * <p>기존 범위 조회({@code selectLeaveUseByRange}, CONFIRMED·DEL_YN='N')를 단일일로 재사용한다
+     * (신규 쿼리 신설 회피).
+     * <p>★ D-3(2026-08-07): 반차는 하루 2건(시작기준 0.5 + 종료기준 0.5 = 1.0)이 성립하므로
+     * 단건만 보면 종일 쉰 사람에게 지각·조퇴 PUSH 가 나간다 → 전건을 모아 합집합으로 판정한다.
+     * 비면 빈 목록 → 호출부가 원 스케줄 시각을 그대로 쓴다(회귀 0).
+     */
+    private List<LeaveUseResult> selectHalfDayLeavesOn(String cmpnyCd, String siteCd, String userCd, String workYmd) {
+        List<LeaveUseResult> out = new ArrayList<>();
+        try {
+            List<LeaveUseResult> leaves = nullSafe(appAttd01Mapper.selectLeaveUseByRange(
+                    new AttdRangeQuery(cmpnyCd, siteCd, userCd, workYmd, workYmd)));
+            for (LeaveUseResult lv : leaves) {
+                if (LEAVE_UNIT_HALF_DAY.equals(lv.useUnitType())
+                        && StringUtils.hasText(lv.startTime())
+                        && StringUtils.hasText(lv.endTime())) {
+                    out.add(lv);
+                }
+            }
+        } catch (Exception e) {
+            // 판정 보조 조회 실패가 출퇴근 본 흐름을 막지 않도록 흡수(원 스케줄 기준 판정으로 폴백).
+            log.error("[attd01] 반차 조회 실패(원 스케줄 기준 판정으로 폴백) userCd={}, workYmd={}", userCd, workYmd, e);
+        }
+        return out;
+    }
+
+    /**
+     * 반차('01') + 시각 보유 건만 골라 유효 소정 구간을 산출한다. 대상이 없으면 null
+     * → 호출부가 원값을 유지한다(요청서 §2 비목표: 시간차 판정 변경 없음).
+     * 하루 2건(시작기준 + 종료기준)이면 순차 적용되어 구간 전체 면제로 수렴한다(D-3).
+     */
+    private PartialLeaveWindowUtils.EffectiveWorkWindow resolveHalfWindow(
+            String schStr, String schEnd, List<LeaveUseResult> leaves) {
+        if (leaves == null || leaves.isEmpty()
+                || !StringUtils.hasText(schStr) || !StringUtils.hasText(schEnd)) {
+            return null;
+        }
+        List<PartialLeaveWindowUtils.LeaveWindow> windows = new ArrayList<>(leaves.size());
+        for (LeaveUseResult lv : leaves) {
+            if (lv != null
+                    && LEAVE_UNIT_HALF_DAY.equals(lv.useUnitType())
+                    && StringUtils.hasText(lv.startTime())
+                    && StringUtils.hasText(lv.endTime())) {
+                windows.add(new PartialLeaveWindowUtils.LeaveWindow(lv.startTime(), lv.endTime()));
+            }
+        }
+        if (windows.isEmpty()) {
+            return null;
+        }
+        return PartialLeaveWindowUtils.resolveAll(schStr, schEnd, windows);
     }
 
     /**
@@ -1072,10 +1157,17 @@ public class AppAttd01ServiceImpl implements AppAttd01Service {
             if (outSched != null && outSched.schCd() != null) {
                 boolean outTwoSlot = StringUtils.hasText(outSched.secSchStrTime());
                 boolean useSec = outTwoSlot && open.workSeq() == 2;
-                String schStartHhmm = useSec ? outSched.secSchStrTime() : outSched.fstSchStrTime();
-                String schEndHhmm = useSec ? outSched.secSchEndTime() : outSched.fstSchEndTime();
+                String rawStr = useSec ? outSched.secSchStrTime() : outSched.fstSchStrTime();
+                String rawEnd = useSec ? outSched.secSchEndTime() : outSched.fstSchEndTime();
+                // ★ HB-05(D1): 조퇴 PUSH 도 반차 반영 유효 소정 구간 기준(화면 판정과 동일 근거).
+                //   종료기준 반차자가 경계 시각에 퇴근하면 조퇴가 아니며 PUSH 도 발송하지 않는다.
+                List<LeaveUseResult> halfLeaves =
+                        selectHalfDayLeavesOn(cmpnyCd, open.siteCd(), userCd, open.workYmd());
+                String schEndHhmm = effectiveEnd(rawStr, rawEnd, halfLeaves);
+                // ★ qa N-2: 원 스케줄(rawStr/rawEnd)을 일자 프레임으로 함께 넘긴다(화면 판정과 동일 근거).
                 attdLateEarlyNotiService.detectEarly(cmpnyCd, open.siteCd(), userCd, open.nodeCd(),
-                        open.workYmd(), open.attdId(), today, checkOutTime, schStartHhmm, schEndHhmm, userCd);
+                        open.workYmd(), open.attdId(), today, checkOutTime,
+                        rawStr, rawEnd, schEndHhmm, userCd);
             }
         } catch (Exception e) {
             log.error("[attd01] 조퇴 감지 hook 실패(퇴근 영향 없음) (userCd={}, workYmd={})", userCd, open.workYmd(), e);
@@ -1380,10 +1472,17 @@ public class AppAttd01ServiceImpl implements AppAttd01Service {
         //      스케줄 없는 날은 판정 기준이 없어 생략(연차일은 위에서 이미 출근 차단됨).
         //      선택 구간 시작 시각: 2구간 스케줄이면 출근 구간(workSeq)에 맞춰 1구간=FST/2구간=SEC, 그 외 FST.
         if (hasSchedule) {
-            String schStartHhmm = (isTwoSlot && workSeq == 2) ? sched.secSchStrTime() : sched.fstSchStrTime();
+            // ★ HB-05(D1): PUSH 도 화면과 동일한 "반차 반영 유효 소정 구간"으로 판정해야 한다.
+            //   이걸 빼면 화면은 정시로 보이는데 관리자에게 지각 PUSH 만 오발송된다.
+            String pushSchStr = (isTwoSlot && workSeq == 2) ? sched.secSchStrTime() : sched.fstSchStrTime();
+            String pushSchEnd = (isTwoSlot && workSeq == 2) ? sched.secSchEndTime() : sched.fstSchEndTime();
+            String schStartHhmm = effectiveStart(pushSchStr, pushSchEnd,
+                    selectHalfDayLeavesOn(cmpnyCd, siteCd, userCd, workYmd));
             try {
+                // ★ qa N-2: 원 스케줄(pushSchStr/pushSchEnd)을 일자 프레임으로 함께 넘긴다
+                //   (야간 시작기준 반차의 유효 시작 01:15 를 당일로 두면 허위 지각 PUSH 가 나간다).
                 attdLateEarlyNotiService.detectLate(cmpnyCd, siteCd, userCd, nodeCd, workYmd, attdId,
-                        today, checkInTime, schStartHhmm, userCd);
+                        today, checkInTime, pushSchStr, pushSchEnd, schStartHhmm, userCd);
             } catch (Exception e) {
                 log.error("[attd01] 지각 감지 hook 실패(체크인 영향 없음) (userCd={}, workYmd={})", userCd, workYmd, e);
             }
@@ -1714,41 +1813,64 @@ public class AppAttd01ServiceImpl implements AppAttd01Service {
     }
 
     /**
-     * 지각 판정: 실제 출근 일시(출근일자+출근시각) &gt; 스케줄 시작 일시(근무일자+시작시각).
+     * 지각 판정: 실제 출근 일시(출근일자+출근시각) &gt; 판정용 시작 일시.
      *
      * <p>시:분만 비교하던 종전 방식은 야간/자정 넘김에서 오판했다. 예) 슬롯 시작이 00:00 이고
      *   근무자가 전일 23:54 에 출근하면 실제로는 6분 전 출근이지만 시:분 비교(2354&gt;0000)로는
      *   지각으로 잘못 잡혔다. 출근일자(CHECK_IN_DATE)를 포함한 통합 분 stamp 로 비교하여
-     *   웹 Attd_11(PRAFTA-034) 과 동일 기준으로 판정한다. 시작에는 자정 보정을 적용하지 않는다.
+     *   웹 Attd_11(PRAFTA-034) 과 동일 기준으로 판정한다.
+     *
+     * <p>★ qa N-2(2026-08-07): 판정용 시작을 <b>항상 근무일 당일</b>로 두던 종전 규칙은 야간
+     *   시작기준 반차(판정용 시작 01:15 = 익일)를 지각으로 오판정했다(같은 사람이 Attd_08/Attd_11
+     *   에서는 정상 — 3경로 불일치). 일자 프레임은 <b>원 스케줄</b>로 잡는다
+     *   ({@code PartialLeaveWindowUtils.dayOffsetOf} — Attd_08 {@code shiftYmd} 와 동일 규칙).
+     *
+     * @param rawSchStrHhmm 원 스케줄 구간 시작(반차 반영 <b>전</b>)
+     * @param rawSchEndHhmm 원 스케줄 구간 종료(반차 반영 <b>전</b>)
+     * @param schStrHhmm    판정용(반차 반영 후) 시작 시각
      */
-    private boolean isLateStamp(AttdRecordResult attd, String workYmd, String schStrHhmm) {
+    private boolean isLateStamp(AttdRecordResult attd, String workYmd,
+                                String rawSchStrHhmm, String rawSchEndHhmm, String schStrHhmm) {
         if (attd == null || !hasHhmm(attd.checkInTime()) || !hasHhmm(schStrHhmm) || workYmd == null) {
             return false;
         }
-        long schStartStamp = toMinuteStamp(workYmd, schStrHhmm);
+        long schStartStamp = toMinuteStamp(
+                shiftYmd(workYmd, rawSchStrHhmm, rawSchEndHhmm, schStrHhmm), schStrHhmm);
         String inYmd = StringUtils.hasText(attd.checkInDate()) ? attd.checkInDate() : workYmd;
         long actInStamp = toMinuteStamp(inYmd, attd.checkInTime());
         return actInStamp > schStartStamp;
     }
 
     /**
-     * 조퇴 판정: 실제 퇴근 일시(퇴근일자+퇴근시각) &lt; 스케줄 종료 일시.
+     * 조퇴 판정: 실제 퇴근 일시(퇴근일자+퇴근시각) &lt; 판정용 종료 일시.
      *
-     * <p>야간(스케줄 종료 &lt; 시작)이면 종료는 근무일자 익일로 본다(웹 Attd_11 / Attd_08 동일).
-     *   퇴근일자(CHECK_OUT_DATE)를 포함한 통합 분 stamp 로 비교한다.
+     * <p>★ qa N-2(2026-08-07): 익일 여부를 "유효 종료 &lt; 유효 시작"으로 보던 종전 규칙은
+     *   야간 종료기준 반차(유효 종료 01:15, 유효 시작 22:00)에서 자정 넘김을 놓쳐 조기 퇴근을
+     *   조퇴로 잡지 못했다(fail-open). 일자 프레임은 <b>원 스케줄</b>로 잡는다(Attd_08/Attd_11 동일).
+     *
+     * @param rawSchStrHhmm 원 스케줄 구간 시작(반차 반영 <b>전</b>)
+     * @param rawSchEndHhmm 원 스케줄 구간 종료(반차 반영 <b>전</b>)
+     * @param schEndHhmm    판정용(반차 반영 후) 종료 시각
      */
-    private boolean isEarlyStamp(AttdRecordResult attd, String workYmd, String schStrHhmm, String schEndHhmm) {
+    private boolean isEarlyStamp(AttdRecordResult attd, String workYmd,
+                                 String rawSchStrHhmm, String rawSchEndHhmm, String schEndHhmm) {
         if (attd == null || !hasHhmm(attd.checkOutTime()) || !hasHhmm(schEndHhmm) || workYmd == null) {
             return false;
         }
-        String endYmd = workYmd;
-        if (hasHhmm(schStrHhmm) && schEndHhmm.compareTo(schStrHhmm) < 0) {
-            endYmd = ymdPlusDays(workYmd, 1); // 야간 자정 넘김: 종료는 익일.
-        }
-        long schEndStamp = toMinuteStamp(endYmd, schEndHhmm);
+        long schEndStamp = toMinuteStamp(
+                shiftYmd(workYmd, rawSchStrHhmm, rawSchEndHhmm, schEndHhmm), schEndHhmm);
         String outYmd = StringUtils.hasText(attd.checkOutDate()) ? attd.checkOutDate() : workYmd;
         long actOutStamp = toMinuteStamp(outYmd, attd.checkOutTime());
         return actOutStamp < schEndStamp;
+    }
+
+    /**
+     * 판정용 시각이 속한 일자(근무일 또는 익일) — 원 스케줄 프레임 기준.
+     * 웹 {@code Attd08ServiceImpl.shiftYmd} / {@code Attd11ServiceImpl.shiftYmd} 이식(3경로 일치, D-1).
+     */
+    private String shiftYmd(String workYmd, String rawSchStr, String rawSchEnd, String hhmm) {
+        int offset = PartialLeaveWindowUtils.dayOffsetOf(rawSchStr, rawSchEnd, hhmm);
+        return (offset == 0) ? workYmd : ymdPlusDays(workYmd, offset);
     }
 
     /** HHMM(4자리 숫자) 유효성. */

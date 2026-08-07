@@ -137,6 +137,35 @@
     </select>
 
     <!--
+      HB-08(D5) 앱 미러: 그날 확정 "시각 보유" 연차(반차 01 + 시간차 02/03/04)의 면제 구간.
+      앱 OT 발의 가드가 "연차로 쉬는 시간대에 OT 를 올리는 것"을 거부하는 데 쓴다
+      (웹 Attd07Mapper.selectLeaveExemptWindows 와 동일 술어 — app↔web 매퍼 직접 의존 회피용 미러).
+      시각 없는 구 반차는 START_TIME/END_TIME IS NOT NULL 로 자연 제외. 종일('00')은 대상 아님
+      (countFullDayLeaveOn 게이트가 ATTD_400_151 로 통째 차단).
+      분할차감 행은 시각이 동일하므로 DISTINCT 로 축약한다.
+      ⚠️ SELECT 컬럼 순서 = PartialLeaveWindowResult 컴포넌트 순서(위치 매핑).
+    -->
+    <select id="selectPartialLeaveWindowsOn"
+            resultType="com.prafta.app.attd.attd01.result.PartialLeaveWindowResult">
+    /* AppAttd01Mapper.selectPartialLeaveWindowsOn */
+    SELECT DISTINCT
+          U.START_DATE  AS startDate
+        , U.START_TIME  AS startTime
+        , U.END_DATE    AS endDate
+        , U.END_TIME    AS endTime
+      FROM TB_USER_LEAVE_USE U
+     WHERE U.CMPNY_CD      = #{cmpnyCd}
+       AND U.SITE_CD       = #{siteCd}
+       AND U.USER_CD       = #{userCd}
+       AND U.START_DATE    = #{workYmd}
+       AND U.LEAVE_STATUS  = 'CONFIRMED'
+       AND U.DEL_YN        = 'N'
+       AND U.USE_UNIT_TYPE IN ('01', '02', '03', '04')
+       AND U.START_TIME IS NOT NULL
+       AND U.END_TIME   IS NOT NULL
+    </select>
+
+    <!--
       실 근태 레코드 + 사업장명. DEL_YN='N' 만. 레코드당 단일 SITE_CD(출근지=퇴근지).
     -->
     <select id="selectAttdByRange" resultType="com.prafta.app.attd.attd01.result.AttdRecordResult">

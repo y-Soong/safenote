@@ -102,8 +102,8 @@ public class LeavePolicySaveRequest {
 
     // ===== TB_LEAVE_USAGE_POLICY =====
     // prafta-024: 사용 단위를 단일 선택으로 전환.
-    // LC-10: 반반차를 선택지에 편입 (FULL_DAY/HALF_DAY/QUARTER_DAY/HOUR_2/HOUR_1/MIN_30).
-    //   구 allowQuarter 독립 토글은 폐기 — 반반차는 USAGE_UNIT='QUARTER_DAY' 로만 개방한다.
+    // HB-04(2026-08-07): 반반차 폐지 — 선택지는 FULL_DAY/HALF_DAY/HOUR_2/HOUR_1/MIN_30 5종이다.
+    //   구 'QUARTER_DAY' 는 서버에서 HALF_DAY 로 축소 정규화된다(fail-closed, 신규 선택 불가).
     // 값 화이트리스트 및 AXIS4=HALF_DAY 강제 규칙은 LeavePolicyServiceImpl 에서 검증/정규화한다.
     @FieldLabel("사용 단위")
     @Size(max = 20)

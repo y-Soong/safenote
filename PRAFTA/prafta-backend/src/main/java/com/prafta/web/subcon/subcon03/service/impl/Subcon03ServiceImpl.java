@@ -27,6 +27,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.prafta.common.cmm.file.application.model.FileBytesResult;
 import com.prafta.common.cmm.file.application.query.FileReadQuery;
 import com.prafta.common.cmm.file.service.FileService;
+import com.prafta.common.cmm.leave.util.PartialLeaveWindowUtils;
 import com.prafta.common.error.subcon.SubconErrorCode;
 import com.prafta.common.exception.ApiException;
 import com.prafta.web.subcon.subcon03.application.command.BundleInsertCommand;
@@ -59,6 +60,7 @@ import com.prafta.web.subcon.subcon03.result.ChainSiteResult;
 import com.prafta.web.subcon.subcon03.result.CloseGateResult;
 import com.prafta.web.subcon.subcon03.result.CoverageMonthResult;
 import com.prafta.web.subcon.subcon03.result.CoverageResult;
+import com.prafta.web.subcon.subcon03.result.HalfLeaveWindowRow;
 import com.prafta.web.subcon.subcon03.result.NearmissSourceRow;
 import com.prafta.web.subcon.subcon03.result.RelayCandidateResult;
 import com.prafta.web.subcon.subcon03.result.RiskImproveSourceRow;
@@ -819,13 +821,78 @@ public class Subcon03ServiceImpl implements Subcon03Service {
     /** ATTD 원천 3쿼리(근태/OT_ONLY/LEAVE_ONLY) 로드 — approve(PS-04)·approve-info(PS-06) 공용. */
     private List<SnapshotSourceRow> loadAttdSourceRows(ShareReqRaw req) {
         List<SnapshotSourceRow> rows = new ArrayList<>();
-        rows.addAll(subcon03Mapper.selectAttdSourceRows(
-                req.prvCmpnyCd(), req.targetSiteCd(), req.periodStr(), req.periodEnd()));
+        // NF-2a: 근태행의 ATTD_STATUS_CD 는 SQL CASE(반차 미반영) 결과이므로, 확정 부분연차가 있는 날만
+        //   PartialLeaveWindowUtils 단일 출처로 재판정해 덮어쓴다(웹 Attd_08/Attd_11·앱과 동일 답).
+        rows.addAll(applyHalfLeaveAttdStatus(
+                subcon03Mapper.selectAttdSourceRows(
+                        req.prvCmpnyCd(), req.targetSiteCd(), req.periodStr(), req.periodEnd()),
+                subcon03Mapper.selectHalfLeaveWindows(
+                        req.prvCmpnyCd(), req.targetSiteCd(), req.periodStr(), req.periodEnd())));
         rows.addAll(subcon03Mapper.selectOtOnlySourceRows(
                 req.prvCmpnyCd(), req.targetSiteCd(), req.periodStr(), req.periodEnd()));
         rows.addAll(subcon03Mapper.selectLeaveOnlySourceRows(
                 req.prvCmpnyCd(), req.targetSiteCd(), req.periodStr(), req.periodEnd()));
         return rows;
+    }
+
+    /**
+     * NF-2a(2026-08-07): 확정 부분연차(반차)가 있는 근태행의 {@code ATTD_STATUS_CD} 재판정.
+     *
+     * <p><b>왜 SQL 이 아니라 Java 인가</b> — 반차 반영 판정은 연차 시각을 그날 <b>원 스케줄 프레임</b>으로
+     * 정렬해야 하는데(야간 스케줄에서 스케줄 시작보다 이른 시각은 익일), SQL 의 문자열 CONCAT 비교로는
+     * 이 구분이 불가능하다. 산식을 SQL 에 재구현하면 웹 Attd_08/Attd_11·앱과 답이 갈린다(2차 D-1 재발).
+     *
+     * <p>반차가 없는 날은 SQL CASE 결과를 <b>그대로</b> 둔다(회귀 0).
+     * {@code WORK_SEQ} 가 1·2 가 아닌 행도 종전 값을 유지한다 — SQL CASE 가 그 분기에서 판정하지 않으므로
+     * (항상 {@code NORMAL}) 재판정 대상이 아니다.
+     *
+     * <p>스케줄 시각이 빈 문자열인 행(개발 DB 실측: {@code TB_SCH_MGMT.SEC_SCH_STR_TIME=''} 19/47)은
+     * SQL 의 {@code IS NOT NULL} 가드를 통과해 <b>무조건 LATE</b> 로 찍히는데, 유틸은 웹 Attd_08 과 같이
+     * 공백을 판정 불가로 보고 {@code NORMAL} 을 낸다. 반차일에 한해 유틸 답을 채택한다(6경로 일치가 목적).
+     */
+    private List<SnapshotSourceRow> applyHalfLeaveAttdStatus(List<SnapshotSourceRow> attdRows,
+                                                             List<HalfLeaveWindowRow> windows) {
+        if (attdRows == null || attdRows.isEmpty()) {
+            return Collections.emptyList();
+        }
+        if (windows == null || windows.isEmpty()) {
+            return attdRows;
+        }
+
+        Map<String, List<PartialLeaveWindowUtils.LeaveWindow>> leaveByUserYmd = new HashMap<>();
+        for (HalfLeaveWindowRow w : windows) {
+            if (w.userCd() == null || w.workYmd() == null) {
+                continue;
+            }
+            leaveByUserYmd.computeIfAbsent(w.userCd() + "|" + w.workYmd(), k -> new ArrayList<>())
+                    .add(new PartialLeaveWindowUtils.LeaveWindow(w.startTime(), w.endTime()));
+        }
+
+        int overridden = 0;
+        List<SnapshotSourceRow> out = new ArrayList<>(attdRows.size());
+        for (SnapshotSourceRow r : attdRows) {
+            List<PartialLeaveWindowUtils.LeaveWindow> leaves =
+                    leaveByUserYmd.get(r.userCd() + "|" + r.workYmd());
+            boolean judgeable = leaves != null && !leaves.isEmpty()
+                    && r.workSeq() != null && (r.workSeq() == 1 || r.workSeq() == 2);
+            if (!judgeable) {
+                out.add(r);
+                continue;
+            }
+            String status = PartialLeaveWindowUtils.resolveAttdStatus(
+                    r.workYmd(), r.planStrTime(), r.planEndTime(), leaves,
+                    r.checkInDate(), r.checkInTime(), r.checkOutDate(), r.checkOutTime());
+            if (status == null || status.equals(r.attdStatusCd())) {
+                out.add(r);
+                continue;
+            }
+            overridden++;
+            out.add(r.withAttdStatusCd(status));
+        }
+        if (overridden > 0) {
+            log.info("[subcon03] 반차 반영 근태판정 재산출 - 대상행={}건(전체 {}건)", overridden, attdRows.size());
+        }
+        return out;
     }
 
     /**

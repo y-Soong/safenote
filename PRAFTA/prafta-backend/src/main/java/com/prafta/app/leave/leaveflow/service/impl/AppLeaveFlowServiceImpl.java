@@ -47,7 +47,10 @@ import com.prafta.common.cmm.leave.service.LeaveGrantEngineService.BorrowFamily;
 import com.prafta.common.cmm.leave.service.LeaveRemnantCoverService;
 import com.prafta.common.cmm.leave.util.FiscalYearUtils;
 import com.prafta.common.cmm.leave.util.HourlyLeaveChargeUtils;
+import com.prafta.common.cmm.leave.util.ScheduleWorkMinutesUtils;
+import com.prafta.common.cmm.leave.util.ScheduleWorkMinutesUtils.HalfDayBoundary;
 import com.prafta.common.cmm.leave.vo.BorrowGrantResultVO;
+import com.prafta.common.cmm.leave.vo.DailyScheduleVO;
 import com.prafta.common.cmm.leave.vo.BorrowGrantResultVO.BorrowGrantSlotVO;
 import com.prafta.common.cmm.leave.vo.HourlyChargeVO;
 import com.prafta.common.cmm.leave.vo.LeavePolicyVO;
@@ -127,8 +130,14 @@ public class AppLeaveFlowServiceImpl implements AppLeaveFlowService {
     private static final String UNIT_HOUR2 = "02";
     private static final String UNIT_HOUR1 = "03";
     private static final String UNIT_MIN30 = "04";
-    /** LC-06: 반반차(0.25일 고정단위). 처리 = 반차 패턴 미러(시간대 미기록, 시간차 누적 미포함). 웹 미러. */
-    private static final String UNIT_QUARTER = "05";
+    // (폐지) 반반차 '05' — 2026-08-07 반차 시간대 도입(HB-04)으로 신청·검증 경로에서 제거.
+    //   코드값(SYS025 '05')과 과거 데이터 조회 경로는 존치하며, 신청은 단위 게이팅(ATTD_400_102)과
+    //   아래 else 분기(ATTD_400_054)에서 fail-closed 로 거부된다.
+
+    /** 반차 파트: 시작기준(늦게 출근) — 면제 = [근무시작, 경계). */
+    private static final String HALF_PART_START = "START";
+    /** 반차 파트: 종료기준(일찍 퇴근) — 면제 = [경계, 근무종료). */
+    private static final String HALF_PART_END = "END";
 
     private static final String USE_CONFIRMED = "CONFIRMED";
     private static final String SELF_APPROVE_COMMENT = "자체근태승인 자동 승인";
@@ -157,7 +166,8 @@ public class AppLeaveFlowServiceImpl implements AppLeaveFlowService {
             statutoryAllowedUnits = LeaveUnitGranularity.allowedUnitsByCode(FALLBACK_UNIT_CODE);
             statutoryAprvRequired = false;
         } else {
-            // LC-10: 반반차('05')는 USAGE_UNIT='QUARTER_DAY' 선택 시 [00,01,05]로 개방(구 ALLOW_QUARTER 토글 폐기).
+            // HB-04(D-8): 반반차('05') 폐지 — 구 설정 'QUARTER_DAY' 는 반차('01')로 축소 해석된다
+            //   (usageUnitToCode 정규화). 허용집합에 '05' 가 나오는 경로는 없다.
             String code = LeaveUnitGranularity.usageUnitToCode(companyPolicy.usageUnit());
             statutoryAllowedUnits = LeaveUnitGranularity.allowedUnitsByCode(code);
             statutoryAprvRequired = isYes(companyPolicy.policyAprvUseYn());
@@ -374,22 +384,31 @@ public class AppLeaveFlowServiceImpl implements AppLeaveFlowService {
         } else if (UNIT_HALF.equals(unit)) {
             leaveDays = new BigDecimal("0.50000");
             // 반차는 소정근로의 절반을 차감하므로 근무 스케줄이 있어야 한다.
-            //   스케줄 없는 날(getDailyStdWorkMinutes==null)은 반차 신청 불가(종일 연차만 가능). 웹 LeaveFlow 동일.
-            Integer daily = leaveDeductionService.getDailyStdWorkMinutes(cmpny, site, user, workYmd);
-            if (daily == null) {
+            //   스케줄 없는 날(경계 산출 불가)은 반차 신청 불가(종일 연차만 가능). 웹 LeaveFlow 동일.
+            // HB-02: 파트(시작기준/종료기준)를 받아 경계 시각을 확정 저장한다(정책 §8.5.10).
+            HalfDayBoundary hb = leaveDeductionService.getHalfDayBoundary(cmpny, site, user, workYmd);
+            if (hb == null) {
                 throw new ApiException(AttdErrorCode.ATTD_400_110);
             }
-            leaveMinutes = daily / 2;
-        } else if (UNIT_QUARTER.equals(unit)) {
-            // 반반차 = 반차 패턴 미러(웹 LeaveFlowServiceImpl 동일). leaveDays 0.25 고정,
-            //   분 = daily/4(정수 나눗셈), 시간대 미기록(plan §8-④). 허용 게이트(법정 USAGE_UNIT='QUARTER_DAY'
-            //   / 비법정 타입 '05')는 위 (2) 단위 게이팅(resolveAllowedUnits)에서 이미 강제됨(ATTD_400_102 — LC-10).
-            leaveDays = new BigDecimal("0.25000");
-            Integer daily = leaveDeductionService.getDailyStdWorkMinutes(cmpny, site, user, workYmd);
-            if (daily == null) {
-                throw new ApiException(AttdErrorCode.ATTD_400_110);
+            String halfPart = normalizeHalfPart(p.halfPart());
+            if (halfPart == null) {
+                // sec L-1: 클라 원시 입력을 그대로 출력하지 않는다(CR/LF 로그 위조 여지). 값은 미출력.
+                log.info("[leaveflow] 반차 신청 거부: 파트 미지정/부적합 (userCd={}, workYmd={})", user, workYmd);
+                throw new ApiException(AttdErrorCode.ATTD_400_195);
             }
-            leaveMinutes = daily / 4;
+            leaveMinutes = hb.exemptMinutes(); // = daily / 2 (경계 산식과 동일 출처 — 값 불일치 원천 차단)
+            int startMin = HALF_PART_START.equals(halfPart) ? hb.workStartMin() : hb.boundaryMin();
+            int endMin = HALF_PART_START.equals(halfPart) ? hb.boundaryMin() : hb.workEndMin();
+            startTime = ScheduleWorkMinutesUtils.hhmmOfDay(startMin);
+            endTime = ScheduleWorkMinutesUtils.hhmmOfDay(endMin);
+            // ★ Q5 정정(2026-08-07): START_DATE = END_DATE = workYmd 고정.
+            //   연차 1행 = 하루가 코드베이스 전반의 불변식이라(실측 63행 전부 동일), END_DATE 를 익일로
+            //   저장하면 `START_DATE <= d AND END_DATE >= d` 형태의 기간 술어 6곳이 야간 반차를 이틀로
+            //   매칭한다(특히 selectOccupiedLeaveDaysOnDate 가 다음날 종일 연차를 ATTD_400_111 로 거부).
+            //   자정 넘김은 "END_TIME < START_TIME 이면 익일"이라는 시각 wrap 으로만 표현하고,
+            //   실제 instant 가 필요한 소비처(OT 면제구간·겹침 SQL)가 그 규약을 해석한다.
+            log.info("[leaveflow] 반차 경계 확정: userCd={}, workYmd={}, part={}, {}~{}, 면제={}분",
+                    user, workYmd, halfPart, startTime, endTime, leaveMinutes);
         } else if (hourlyUnit) {
             startTime = p.startTime();
             endTime = p.endTime();
@@ -448,9 +467,10 @@ public class AppLeaveFlowServiceImpl implements AppLeaveFlowService {
         BorrowFamily borrowFamily = null;
         String hireDate = null;
         if (borrow) {
-            if (hourlyUnit || UNIT_QUARTER.equals(unit)) {
-                // LC-04/LC-06(plan §8-③): 시간차·반반차 + 가불 조합 서버 거부 — 가불은 종일/반차만(웹 미러).
+            if (hourlyUnit) {
+                // LC-04(plan §8-③): 시간차 + 가불 조합 서버 거부 — 가불은 종일/반차만(웹 미러).
                 //   (가불 분할 INSERT 는 LEAVE_MINUTES 를 첫 행에만 실어 그날 누적 판정을 오염시킴.)
+                //   HB-04: 반반차 폐지로 구 `|| UNIT_QUARTER` 조건 제거(도달 불가 — 단위 게이팅에서 이미 거부).
                 throw new ApiException(AttdErrorCode.ATTD_400_183);
             }
             if (!statutory) {
@@ -520,9 +540,14 @@ public class AppLeaveFlowServiceImpl implements AppLeaveFlowService {
                         user, workYmd, occupied.toPlainString(), leaveDays.toPlainString());
                 throw new ApiException(AttdErrorCode.ATTD_400_111);
             }
-            if (hourlyUnit) {
-                if (appLeaveFlowMapper.countOverlappingTimeLeaveOnDate(cmpny, user, workYmd, startTime, endTime) > 0) {
-                    log.info("[leaveflow] 연차 신청 거부: 같은 날 시간차 시간대 겹침 (userCd={}, workYmd={}, {}~{})",
+            // HB-09(D4): 겹침 검사 게이트를 "시각을 가진 단위"로 확장 — 반차도 경계 시각을 갖게 되어
+            //   반차 ↔ 시간차 시간대 충돌을 막을 수 있다(예: 시작기준 반차 09:00~14:15 + 10:00~11:00 시간차.
+            //   합계 0.625 ≤ 1.0 이라 ATTD_400_111 로는 걸리지 않아 지금까지 통과하던 조합).
+            //   ★ sec N-2(2026-08-07): 판정을 SQL wrap CASE 에서 Java 로 이관(그날 원 스케줄 프레임 정렬).
+            if (startTime != null && endTime != null) {
+                if (leaveDeductionService.overlapsTimeLeaveOnDate(
+                        cmpny, site, user, workYmd, startTime, endTime)) {
+                    log.info("[leaveflow] 연차 신청 거부: 같은 날 연차 시간대 겹침 (userCd={}, workYmd={}, {}~{})",
                             user, workYmd, startTime, endTime);
                     throw new ApiException(AttdErrorCode.ATTD_400_112);
                 }
@@ -636,7 +661,7 @@ public class AppLeaveFlowServiceImpl implements AppLeaveFlowService {
             throw new ApiException(AttdErrorCode.ATTD_400_108);
         }
 
-        // 2) 단위 게이팅 미러(D2 — 반반차는 법정 USAGE_UNIT='QUARTER_DAY'/비법정 타입 '05'로 개방, LC-10).
+        // 2) 단위 게이팅 미러(D2). HB-04: 반반차('05')는 허용집합에서 폐지되어 여기서 거부된다.
         List<String> allowedUnits = resolveAllowedUnits(cmpny, statutory, type.useUnitType());
         if (!allowedUnits.contains(unit)) {
             throw new ApiException(AttdErrorCode.ATTD_400_102);
@@ -647,17 +672,20 @@ public class AppLeaveFlowServiceImpl implements AppLeaveFlowService {
         boolean floorApplied = false;
         boolean capApplied = false;
         Integer convFromCharge = null; // 시간차는 calcHourlyCharge 가 이미 분모를 조회하므로 재사용
-        BigDecimal floorDays = null; // 발동 마일스톤 요금(0.25/0.5/1.0) — FE 하한 안내 단위 분기용(미발동 null)
+        BigDecimal floorDays = null; // 발동 마일스톤 요금(0.5/1.0) — FE 하한 안내 단위 분기용(미발동 null)
         Integer previewMinutes = null; // 시간차 신청 분(짜투리 발동 판정 입력 — PC-05, 웹 미러)
+        // HB-03: 반차 경계 미리보기(신청 전 "몇 시부터/까지" 표기). 반차 외 단위/산출 불가면 전부 null.
+        HalfDayBoundary halfBoundary = null;
 
         if (UNIT_FULL.equals(unit)) {
             charge = new BigDecimal("1.00000");
-        } else if (UNIT_HALF.equals(unit) || UNIT_QUARTER.equals(unit)) {
-            // 반차/반반차는 스케줄 필수(submitLeave 동일 거부). 고정요금 0.5/0.25.
-            if (leaveDeductionService.getDailyStdWorkMinutes(cmpny, site, user, workYmd) == null) {
+        } else if (UNIT_HALF.equals(unit)) {
+            // 반차는 스케줄 필수(submitLeave 동일 거부). 고정요금 0.5.
+            halfBoundary = leaveDeductionService.getHalfDayBoundary(cmpny, site, user, workYmd);
+            if (halfBoundary == null) {
                 throw new ApiException(AttdErrorCode.ATTD_400_110);
             }
-            charge = UNIT_HALF.equals(unit) ? new BigDecimal("0.50000") : new BigDecimal("0.25000");
+            charge = new BigDecimal("0.50000");
         } else if (hourlyUnit) {
             Integer sMin = DateTimeUtils.hhmmToMinutes(p.startTime());
             Integer eMin = DateTimeUtils.hhmmToMinutes(p.endTime());
@@ -713,9 +741,11 @@ public class AppLeaveFlowServiceImpl implements AppLeaveFlowService {
         if (occupied.add(charge).compareTo(BigDecimal.ONE) > 0) {
             throw new ApiException(AttdErrorCode.ATTD_400_111);
         }
+        // HB-09: 반차도 겹침 검사 대상(preview 는 파트 미확정이라 실제 경계 구간으로 검사할 수 없어
+        //   시간차만 사전 판정한다 — 반차는 submitLeave 에서 최종 판정. preview 는 사전 안내 용도).
         if (hourlyUnit
-                && appLeaveFlowMapper.countOverlappingTimeLeaveOnDate(
-                        cmpny, user, workYmd, p.startTime(), p.endTime()) > 0) {
+                && leaveDeductionService.overlapsTimeLeaveOnDate(
+                        cmpny, site, user, workYmd, p.startTime(), p.endTime())) {
             throw new ApiException(AttdErrorCode.ATTD_400_112);
         }
 
@@ -788,15 +818,52 @@ public class AppLeaveFlowServiceImpl implements AppLeaveFlowService {
                 remnantTriggered);
 
         return new LeaveDeductionPreviewResponse(charge, floorApplied, capApplied, insufficient, conv, floorDays,
-                remnantTriggered, remnantDays, companyCoverMinutes);
+                remnantTriggered, remnantDays, companyCoverMinutes,
+                halfDayBoundaryTime(halfBoundary), halfStartPartRange(halfBoundary), halfEndPartRange(halfBoundary));
     }
 
     @Override
     public LeaveDayScheduleResponse selectDaySchedule(LeaveDayScheduleParam p) {
         // 시간차 휴게 가로지름(ATTD_400_055) 사전 안내용 조회 전용 — 스케줄 없는 날은 에러가 아니라
         //   hasSchedule=false (신청 가능 여부 판정은 submitLeave/preview 가 담당, 여기선 표시 정보만).
-        return LeaveDayScheduleResponse.from(
-                leaveDeductionMapper.selectDailySchedule(p.cmpnyCd(), p.siteCd(), p.userCd(), p.workYmd()));
+        // HB-03: 반차 경계 미리보기 3필드를 함께 내린다(additive — 구 앱 무영향).
+        //   ★ 경계는 서버 산식(ScheduleWorkMinutesUtils)이 단일 출처다. FE 재계산 금지.
+        DailyScheduleVO sch = leaveDeductionMapper.selectDailySchedule(
+                p.cmpnyCd(), p.siteCd(), p.userCd(), p.workYmd());
+        HalfDayBoundary hb = ScheduleWorkMinutesUtils.halfDayBoundary(sch);
+        return LeaveDayScheduleResponse.from(sch,
+                halfDayBoundaryTime(hb), halfStartPartRange(hb), halfEndPartRange(hb));
+    }
+
+    /** HB-02: 반차 파트 정규화. START/END(대소문자 무관) 외 값·공백은 null(호출부 fail-closed 거부). */
+    private String normalizeHalfPart(String raw) {
+        if (raw == null || raw.isBlank()) {
+            return null;
+        }
+        String v = raw.trim().toUpperCase();
+        if (HALF_PART_START.equals(v) || HALF_PART_END.equals(v)) {
+            return v;
+        }
+        return null;
+    }
+
+    /** HB-03: 반차 경계 시각 표기(HHMM, 자정 경계는 "2400"). 산출 불가면 null. */
+    private String halfDayBoundaryTime(HalfDayBoundary hb) {
+        return (hb == null) ? null : ScheduleWorkMinutesUtils.toHhmm(hb.boundaryMin());
+    }
+
+    /** HB-03: 시작기준(늦게 출근) 반차가 쉬는 구간 표기 "HHMM~HHMM". 산출 불가면 null. */
+    private String halfStartPartRange(HalfDayBoundary hb) {
+        return (hb == null) ? null
+                : ScheduleWorkMinutesUtils.toHhmm(hb.workStartMin()) + "~"
+                        + ScheduleWorkMinutesUtils.toHhmm(hb.boundaryMin());
+    }
+
+    /** HB-03: 종료기준(일찍 퇴근) 반차가 쉬는 구간 표기 "HHMM~HHMM". 산출 불가면 null. */
+    private String halfEndPartRange(HalfDayBoundary hb) {
+        return (hb == null) ? null
+                : ScheduleWorkMinutesUtils.toHhmm(hb.boundaryMin()) + "~"
+                        + ScheduleWorkMinutesUtils.toHhmm(hb.workEndMin());
     }
 
     /**
@@ -953,6 +1020,10 @@ public class AppLeaveFlowServiceImpl implements AppLeaveFlowService {
         String reqNodeCd = attdCloseService.resolveUserNodeCd(cmpny, site, user);
         String reqId = appLeaveFlowMapper.selectNextReqId(cmpny);
         String reqStatus = aprvRequired ? REQ_APPLIED : REQ_APPROVED;
+        // ★ HB-02(§9-1): 경계 시각은 LEAVE_USE 뿐 아니라 신청 테이블(TB_USER_ATTD_REQ)에도 저장한다.
+        //   미결 연차 잠금 술어(ScheduleGuardMapper·Attd05Mapper·DefaultSchGenMapper·UserTransferMapper)가
+        //   "REQ 에 시각이 있는가"를 "시각 민감 연차" 판정에 쓰므로, 반차만 빠지면 술어 의미와 데이터가 어긋난다.
+        //   ★ Q5 정정: START_DATE = END_DATE = workYmd 고정(자정 넘김은 시각 wrap 으로만 표현).
         appLeaveFlowMapper.insertLeaveReq(new LeaveReqInsertCommand(
                 reqId, cmpny, site, user, reqStatus, p.reason(), workYmd, reqNodeCd,
                 workYmd, startTime, workYmd, endTime, p.leaveType(), leaveDays, user));
@@ -1152,8 +1223,8 @@ public class AppLeaveFlowServiceImpl implements AppLeaveFlowService {
 
     /**
      * 허용 사용단위 집합 산출(018-A {@link LeaveUnitGranularity} SSOT 재사용).
-     * 법정 = 회사 USAGE_UNIT 계층(정책 미존재면 종일만 폴백, 'QUARTER_DAY'면 종일/반차/반반차 — LC-10)
-     * / 비법정 = 타입 USE_UNIT_TYPE 계층(NULL→00, '05' 설정 시 종일/반차/반반차).
+     * 법정 = 회사 USAGE_UNIT 계층(정책 미존재면 종일만 폴백) / 비법정 = 타입 USE_UNIT_TYPE 계층(NULL→00).
+     * HB-04(D-8): 반반차 폐지 — 구 설정 'QUARTER_DAY'·'05' 는 반차로 축소 해석되어 '05' 는 반환되지 않는다.
      */
     private List<String> resolveAllowedUnits(String cmpnyCd, boolean statutory, String typeUseUnitType) {
         if (statutory) {

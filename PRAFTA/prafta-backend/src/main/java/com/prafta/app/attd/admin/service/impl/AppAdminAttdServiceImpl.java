@@ -4,6 +4,7 @@ import java.time.LocalDate;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -20,8 +21,10 @@ import com.prafta.app.attd.admin.dto.response.DailyAttdResponse;
 import com.prafta.app.attd.admin.dto.response.MonthlyAttdResponse;
 import com.prafta.app.attd.admin.mapper.AppAdminAttdMapper;
 import com.prafta.app.attd.admin.result.DailyAttdRow;
+import com.prafta.app.attd.admin.result.HalfLeaveWindowRow;
 import com.prafta.app.attd.admin.result.MonthlyAttdRow;
 import com.prafta.app.attd.admin.service.AppAdminAttdService;
+import com.prafta.common.cmm.leave.util.PartialLeaveWindowUtils;
 import com.prafta.common.error.attd.AttdErrorCode;
 import com.prafta.common.exception.ApiException;
 import com.prafta.common.util.AuthRoleUtils;
@@ -135,6 +138,10 @@ public class AppAdminAttdServiceImpl implements AppAdminAttdService {
 
         List<DailyAttdRow> rows = mapper.selectDailyAttdRows(query);
 
+        // NF-1: 그날 확정 반차 면제 구간(사용자·근무일 단위) — 지각·조퇴 판정 기준을 웹 Attd_08/Attd_11 과 맞춘다.
+        Map<String, List<PartialLeaveWindowUtils.LeaveWindow>> leaveByUserYmd =
+                groupHalfLeaveWindows(mapper.selectHalfLeaveWindows(query));
+
         // 사용자 단위 집계(등장 순서 유지 — 매퍼가 USER_CD, WORK_SEQ 순 정렬).
         Map<String, DailyAcc> accByUser = new LinkedHashMap<>();
         for (DailyAttdRow r : rows) {
@@ -145,8 +152,21 @@ public class AppAdminAttdServiceImpl implements AppAdminAttdService {
             String outDate = blankToNull(r.checkOutDate());
             String outTime = blankToNull(r.checkOutTime());
             String workYmd = blankToNull(r.workYmd());
-            String planStart = blankToNull(r.planStart());
-            String planEnd = blankToNull(r.planEnd());
+
+            // NF-1: 반차 반영 유효 소정 구간(그날 면제 구간 전부를 순차 적용 — 반차 2건이면 종일 면제).
+            //   판정용 시각의 일자 프레임은 "원 스케줄"(rawStart/rawEnd)로 잡는다(야간 시작기준 반차 오판정 방지).
+            String rawStart = blankToNull(r.planStart());
+            String rawEnd = blankToNull(r.planEnd());
+            String planStart = rawStart;
+            String planEnd = rawEnd;
+            List<PartialLeaveWindowUtils.LeaveWindow> leaves =
+                    leaveByUserYmd.get(leaveKey(r.userCd(), workYmd));
+            if (leaves != null && !leaves.isEmpty() && planStart != null && planEnd != null) {
+                PartialLeaveWindowUtils.EffectiveWorkWindow eff =
+                        PartialLeaveWindowUtils.resolveAll(planStart, planEnd, leaves);
+                planStart = eff.fullyExempt() ? null : blankToNull(eff.planStart());
+                planEnd = eff.fullyExempt() ? null : blankToNull(eff.planEnd());
+            }
 
             acc.slotCount += 1;
 
@@ -175,22 +195,21 @@ public class AppAdminAttdServiceImpl implements AppAdminAttdService {
                 }
             }
 
-            // 지각: 출근 + 스케줄 시작 존재 시 실제출근일시 > 스케줄시작일시(raw stamp).
+            // 지각: 출근 + 유효 소정 시작 존재 시 실제출근일시 > 유효 소정 시작 일시.
             if (inTime != null && planStart != null && workYmd != null) {
-                long schStartStamp = toMinuteStamp(workYmd, planStart);
+                long schStartStamp = toMinuteStamp(
+                        shiftYmd(workYmd, rawStart, rawEnd, planStart), planStart);
                 long actInStamp = toMinuteStamp(inDate != null ? inDate : workYmd, inTime);
                 if (actInStamp > schStartStamp) {
                     acc.isLate = true;
                 }
             }
 
-            // 조퇴: 퇴근 + 스케줄 종료 존재 시 실제퇴근일시 < 스케줄종료일시(야간이면 종료 익일 보정).
+            // 조퇴: 퇴근 + 유효 소정 종료 존재 시 실제퇴근일시 < 유효 소정 종료 일시.
+            //   야간(원 스케줄 종료 < 시작)이면 스케줄 시작보다 이른 시각은 근무일 익일로 본다.
             if (outTime != null && planEnd != null && workYmd != null) {
-                String endYmd = workYmd;
-                if (planStart != null && planEnd.compareTo(planStart) < 0) {
-                    endYmd = ymdPlusDays(workYmd, 1);
-                }
-                long schEndStamp = toMinuteStamp(endYmd, planEnd);
+                long schEndStamp = toMinuteStamp(
+                        shiftYmd(workYmd, rawStart, rawEnd, planEnd), planEnd);
                 long actOutStamp = toMinuteStamp(outDate != null ? outDate : workYmd, outTime);
                 if (actOutStamp < schEndStamp) {
                     acc.isEarly = true;
@@ -246,6 +265,10 @@ public class AppAdminAttdServiceImpl implements AppAdminAttdService {
 
         List<MonthlyAttdRow> rows = mapper.selectMonthlyAttdRows(query);
 
+        // NF-1: 그 달 확정 반차 면제 구간(사용자·근무일 단위) — 일자 조회와 동일 판정 기준.
+        Map<String, List<PartialLeaveWindowUtils.LeaveWindow>> leaveByUserYmd =
+                groupHalfLeaveWindows(mapper.selectHalfLeaveWindows(query));
+
         Map<String, MonthlyAcc> accByUser = new LinkedHashMap<>();
         for (MonthlyAttdRow r : rows) {
             MonthlyAcc acc = accByUser.computeIfAbsent(r.userCd(), k -> new MonthlyAcc(r));
@@ -255,9 +278,21 @@ public class AppAdminAttdServiceImpl implements AppAdminAttdService {
             String outDate = blankToNull(r.actOutDate());
             String outTime = blankToNull(r.actOutTime());
             String workYmd = blankToNull(r.workYmd());
-            String planStart = blankToNull(r.planStart());
-            String planEnd = blankToNull(r.planEnd());
             int breakMin = r.planBreakMin() == null ? 0 : r.planBreakMin();
+
+            // NF-1: 반차 반영 유효 소정 구간(일자 조회와 동일 — PartialLeaveWindowUtils 단일 출처).
+            String rawStart = blankToNull(r.planStart());
+            String rawEnd = blankToNull(r.planEnd());
+            String planStart = rawStart;
+            String planEnd = rawEnd;
+            List<PartialLeaveWindowUtils.LeaveWindow> leaves =
+                    leaveByUserYmd.get(leaveKey(r.userCd(), workYmd));
+            if (leaves != null && !leaves.isEmpty() && planStart != null && planEnd != null) {
+                PartialLeaveWindowUtils.EffectiveWorkWindow eff =
+                        PartialLeaveWindowUtils.resolveAll(planStart, planEnd, leaves);
+                planStart = eff.fullyExempt() ? null : blankToNull(eff.planStart());
+                planEnd = eff.fullyExempt() ? null : blankToNull(eff.planEnd());
+            }
 
             // 근무일수: 출근 기록 존재 distinct WORK_YMD(차수 무관).
             if (inTime != null && workYmd != null) {
@@ -274,22 +309,20 @@ public class AppAdminAttdServiceImpl implements AppAdminAttdService {
                 }
             }
 
-            // 지각(차수 단위 카운트): 실제출근일시 > 스케줄시작일시.
+            // 지각(차수 단위 카운트): 실제출근일시 > 유효 소정 시작 일시.
             if (inTime != null && planStart != null && workYmd != null) {
-                long schStartStamp = toMinuteStamp(workYmd, planStart);
+                long schStartStamp = toMinuteStamp(
+                        shiftYmd(workYmd, rawStart, rawEnd, planStart), planStart);
                 long actInStamp = toMinuteStamp(inDate != null ? inDate : workYmd, inTime);
                 if (actInStamp > schStartStamp) {
                     acc.lateCnt += 1;
                 }
             }
 
-            // 조퇴(차수 단위 카운트): 실제퇴근일시 < 스케줄종료일시(야간 종료 익일 보정).
+            // 조퇴(차수 단위 카운트): 실제퇴근일시 < 유효 소정 종료 일시(야간 종료 익일 보정).
             if (outTime != null && planEnd != null && workYmd != null) {
-                String endYmd = workYmd;
-                if (planStart != null && planEnd.compareTo(planStart) < 0) {
-                    endYmd = ymdPlusDays(workYmd, 1);
-                }
-                long schEndStamp = toMinuteStamp(endYmd, planEnd);
+                long schEndStamp = toMinuteStamp(
+                        shiftYmd(workYmd, rawStart, rawEnd, planEnd), planEnd);
                 long actOutStamp = toMinuteStamp(outDate != null ? outDate : workYmd, outTime);
                 if (actOutStamp < schEndStamp) {
                     acc.earlyCnt += 1;
@@ -368,6 +401,42 @@ public class AppAdminAttdServiceImpl implements AppAdminAttdService {
         int hh = Integer.parseInt(hhmm.substring(0, 2));
         int mm = Integer.parseInt(hhmm.substring(2, 4));
         return epochDays * 1440L + (long) hh * 60L + mm;
+    }
+
+    /**
+     * NF-1: 확정 반차 면제 구간을 (USER_CD|WORK_YMD) 키로 모은다.
+     *
+     * <p>반차는 하루 2건(시작기준 0.5 + 종료기준 0.5 = 1.0)이 성립하므로 단건 가정 금지 —
+     * 여러 건을 {@code resolveAll} 로 순차 적용해 합집합으로 판정한다(웹 Attd_08/Attd_11 동일).
+     */
+    private Map<String, List<PartialLeaveWindowUtils.LeaveWindow>> groupHalfLeaveWindows(
+            List<HalfLeaveWindowRow> windows) {
+
+        Map<String, List<PartialLeaveWindowUtils.LeaveWindow>> map = new HashMap<>();
+        if (windows == null || windows.isEmpty()) {
+            return map;
+        }
+        for (HalfLeaveWindowRow w : windows) {
+            if (w.userCd() == null || w.workYmd() == null) {
+                continue;
+            }
+            map.computeIfAbsent(leaveKey(w.userCd(), w.workYmd()), k -> new ArrayList<>())
+                    .add(new PartialLeaveWindowUtils.LeaveWindow(w.startTime(), w.endTime()));
+        }
+        return map;
+    }
+
+    private String leaveKey(String userCd, String workYmd) {
+        return userCd + "|" + workYmd;
+    }
+
+    /**
+     * 판정용 시각이 속한 일자(근무일 또는 익일) — 원 스케줄 프레임 기준.
+     * 야간 스케줄에서 스케줄 시작보다 이른 시각은 익일이다(웹 Attd_08/Attd_11 shiftYmd 동일).
+     */
+    private String shiftYmd(String workYmd, String rawStart, String rawEnd, String hhmm) {
+        int offset = PartialLeaveWindowUtils.dayOffsetOf(rawStart, rawEnd, hhmm);
+        return (offset == 0) ? workYmd : ymdPlusDays(workYmd, offset);
     }
 
     private String ymdPlusDays(String ymd, int days) {

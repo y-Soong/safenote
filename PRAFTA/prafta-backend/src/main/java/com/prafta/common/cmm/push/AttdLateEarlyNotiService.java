@@ -23,21 +23,29 @@ public interface AttdLateEarlyNotiService {
      * @param attdId       근태 레코드 ID(dedupKey)
      * @param checkInDate  실제 출근 일자(YYYYMMDD)
      * @param checkInTime  실제 출근 시각(HHMM)
-     * @param schStartHhmm 선택 구간 스케줄 시작 시각(HHMM)
+     * @param rawSchStrHhmm 선택 구간 <b>원</b> 스케줄 시작(HHMM, 반차 반영 전) — 일자 프레임 판정용
+     * @param rawSchEndHhmm 선택 구간 <b>원</b> 스케줄 종료(HHMM, 반차 반영 전) — 일자 프레임 판정용
+     * @param schStartHhmm 선택 구간 <b>판정용</b>(반차 반영 후) 시작 시각(HHMM)
      * @param actorUserCd  적재 INSERT_NO
      */
     void detectLate(String cmpnyCd, String siteCd, String workerUserCd, String nodeCd,
                     String workYmd, String attdId, String checkInDate, String checkInTime,
-                    String schStartHhmm, String actorUserCd);
+                    String rawSchStrHhmm, String rawSchEndHhmm, String schStartHhmm, String actorUserCd);
 
     /**
      * 조퇴 감지/통보. 퇴근 UPDATE 직후 호출. {@code 실제 퇴근(checkOutDate+checkOutTime) < 스케줄 종료}
-     * 이면 조퇴로 본다(야간=종료<시작이면 종료를 익일로 보정). 아니면 no-op.
+     * 이면 조퇴로 본다. 아니면 no-op.
      *
-     * @param schStartHhmm 선택 구간 스케줄 시작 시각(HHMM) — 야간 자정 넘김 판정용
-     * @param schEndHhmm   선택 구간 스케줄 종료 시각(HHMM)
+     * <p>★ qa N-2(2026-08-07): 자정 넘김을 "유효 종료 &lt; 유효 시작"으로 판정하던 종전 규칙은 야간 반차에서
+     * 오판했다(시작기준 반차 → 관리자에게 <b>허위 지각 PUSH</b>, 종료기준 반차 → 조퇴 미탐지 fail-open).
+     * 원 스케줄을 프레임으로 받아 {@code PartialLeaveWindowUtils.dayOffsetOf} 로 일자를 정한다
+     * (웹 Attd_08/Attd_11 · 앱 화면 판정과 동일 규칙 — D-1 "3경로 일치").
+     *
+     * @param rawSchStrHhmm 선택 구간 <b>원</b> 스케줄 시작(HHMM, 반차 반영 전)
+     * @param rawSchEndHhmm 선택 구간 <b>원</b> 스케줄 종료(HHMM, 반차 반영 전)
+     * @param schEndHhmm    선택 구간 <b>판정용</b>(반차 반영 후) 종료 시각(HHMM)
      */
     void detectEarly(String cmpnyCd, String siteCd, String workerUserCd, String nodeCd,
                      String workYmd, String attdId, String checkOutDate, String checkOutTime,
-                     String schStartHhmm, String schEndHhmm, String actorUserCd);
+                     String rawSchStrHhmm, String rawSchEndHhmm, String schEndHhmm, String actorUserCd);
 }

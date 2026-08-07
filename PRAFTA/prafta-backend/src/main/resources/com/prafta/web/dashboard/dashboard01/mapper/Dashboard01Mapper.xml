@@ -294,9 +294,12 @@
          effective-dating 스케줄 시각 = Attd11 selectAttdSummaryRows SCH 서브쿼리 복제(APPLY_DATE<=근무일 MAX).
          일 단위 롤업 우선순위: 미출근 &gt; 지각 &gt; 조퇴 &gt; 정상 (상호배타 → 합=targetDayCnt).
          ⚠ SELECT 컬럼 순서 = DashAttdStatusCountResult 생성자 순서와 1:1 (record 매핑) -->
-    <select id="selectDashAttdStatusCount"
-            resultType="com.prafta.web.dashboard.dashboard01.result.DashAttdStatusCountResult">
-    /* Dashboard01Mapper.selectDashAttdStatusCount */
+    <!-- NF-2b(2026-08-07) 공용 CTE: node_tree + target_user + plan_day.
+         A2 집계 쿼리(selectDashAttdStatusCount)와 반차일 원시행 쿼리(selectDashPartialLeaveAttdRows)가
+         "판정 대상 계획일" 모수를 문자 그대로 공유해야 두 집합이 정확히 상보(complement)가 된다.
+         (한쪽에만 술어가 어긋나면 반차일이 이중 계상되거나 통째로 누락된다.)
+         plan_day 별칭은 두 쿼리 모두 PD 로 고정한다(공용 조각이 PD 를 참조). -->
+    <sql id="dashAttdScopeCte">
         WITH RECURSIVE
         node_tree AS (
             SELECT
@@ -398,13 +401,39 @@
                       AND HD.USE_YN   = 'Y'
                       AND DATE_FORMAT(HD.HOLIDAY_YMD, '%Y%m%d') = WP.WORK_YMD
                   )
-        ),
+        )
+    </sql>
 
+    <!-- NF-2b: 그날 확정 부분연차(반차 '01', 시각 보유) 보유 여부. 별칭 PD 는 호출부의 계획일 소스.
+         술어는 web Attd08Mapper/Attd11Mapper.selectHalfLeaveWindows 및
+         selectDashPartialLeaveWindows 와 동일해야 한다(세 곳이 같은 집합을 가리킨다).
+         시각 없는 구 반차/시간차(02~04)는 대상이 아니다(판정 변경 비목표). -->
+    <sql id="dashPartialLeaveDayExists">
+                    SELECT 1
+                    FROM TB_USER_LEAVE_USE L
+                    WHERE L.CMPNY_CD      = PD.CMPNY_CD
+                      AND L.SITE_CD       = PD.SITE_CD
+                      AND L.USER_CD       = PD.USER_CD
+                      AND L.START_DATE    = PD.WORK_YMD
+                      AND L.USE_UNIT_TYPE = '01'
+                      AND L.LEAVE_STATUS  = 'CONFIRMED'
+                      AND L.DEL_YN        = 'N'
+                      AND L.START_TIME IS NOT NULL
+                      AND L.END_TIME   IS NOT NULL
+    </sql>
+
+    <select id="selectDashAttdStatusCount"
+            resultType="com.prafta.web.dashboard.dashboard01.result.DashAttdStatusCountResult">
+    /* Dashboard01Mapper.selectDashAttdStatusCount */
+        <include refid="dashAttdScopeCte"/>
+        ,
         /* 계획일 1일 = 1상태 롤업 (차수 지각/조퇴는 MAX 로 접기) */
         day_status AS (
             SELECT
-                  P.USER_CD
-                , P.WORK_YMD
+                  PD.CMPNY_CD
+                , PD.SITE_CD
+                , PD.USER_CD
+                , PD.WORK_YMD
                 /* 그날 어느 차수든 출근기록(CHECK_IN) 있으면 1 — 0 이면 미출근 */
                 , MAX(CASE WHEN A.CHECK_IN_TIME IS NOT NULL AND A.CHECK_IN_TIME <![CDATA[ <> ]]> '' THEN 1 ELSE 0 END) AS hasCheckIn
                 /* 지각 플래그 (Attd08 CASE 이식 — 실제 출근 일시 &gt; 스케줄 시작 일시) */
@@ -441,15 +470,35 @@
                                      , SCH.SEC_SCH_END_TIME)
                             THEN 1
                         ELSE 0 END) AS earlyFlag
-            FROM plan_day P
+            FROM plan_day PD
+            <include refid="dashAttdSchJoin"/>
+            GROUP BY PD.CMPNY_CD, PD.SITE_CD, PD.USER_CD, PD.WORK_YMD
+        )
+
+        SELECT
+              CAST(COUNT(1) AS SIGNED)                                                                 AS targetDayCnt
+            , CAST(IFNULL(SUM(CASE WHEN hasCheckIn = 1 AND lateFlag = 0 AND earlyFlag = 0 THEN 1 ELSE 0 END), 0) AS SIGNED) AS normalCnt
+            , CAST(IFNULL(SUM(CASE WHEN hasCheckIn = 1 AND lateFlag = 1 THEN 1 ELSE 0 END), 0) AS SIGNED)                    AS lateCnt
+            , CAST(IFNULL(SUM(CASE WHEN hasCheckIn = 1 AND lateFlag = 0 AND earlyFlag = 1 THEN 1 ELSE 0 END), 0) AS SIGNED)  AS earlyLeaveCnt
+            , CAST(IFNULL(SUM(CASE WHEN hasCheckIn = 0 THEN 1 ELSE 0 END), 0) AS SIGNED)                                     AS absentCnt
+        FROM day_status PD
+        /* NF-2b: 확정 부분연차(반차) 보유일은 이 집계에서 제외하고 서비스가 PartialLeaveWindowUtils 로
+           재판정해 더한다. SQL 문자열 비교로는 야간 반차의 익일 경계를 표현할 수 없어(2차 D-1 재발 지점)
+           산식을 여기에 재구현하지 않는다. 제외 술어와 서비스 재판정 대상 집합은 같은 조각을 쓴다. */
+        WHERE NOT EXISTS (
+            <include refid="dashPartialLeaveDayExists"/>
+        )
+    </select>
+
+    <!-- NF-2b 공용: 계획일(PD) 의 근태 원시행 + 근무일 기준 유효 스케줄(effective-dating — Attd11 SCH 복제). -->
+    <sql id="dashAttdSchJoin">
             LEFT JOIN TB_USER_ATTD_MGMT A
-                ON  A.CMPNY_CD = P.CMPNY_CD
-                AND A.SITE_CD  = P.SITE_CD
-                AND A.USER_CD  = P.USER_CD
-                AND A.WORK_YMD = P.WORK_YMD
+                ON  A.CMPNY_CD = PD.CMPNY_CD
+                AND A.SITE_CD  = PD.SITE_CD
+                AND A.USER_CD  = PD.USER_CD
+                AND A.WORK_YMD = PD.WORK_YMD
                 AND A.WORK_SEQ IN (1, 2)
                 AND A.DEL_YN   = 'N'
-            /* 근무일 기준 유효 스케줄 (effective-dating — Attd11 SCH 서브쿼리 복제) */
             LEFT JOIN (
                 SELECT
                       E.CMPNY_CD
@@ -503,12 +552,12 @@
                       AND E2.APPLY_DATE = E.APPLY_DATE
                 )
             ) SCH
-                ON  SCH.CMPNY_CD = P.CMPNY_CD
-                AND SCH.SITE_CD  = P.SITE_CD
-                AND SCH.SCH_CD   = P.WORK_PLAN_CD
+                ON  SCH.CMPNY_CD = PD.CMPNY_CD
+                AND SCH.SITE_CD  = PD.SITE_CD
+                AND SCH.SCH_CD   = PD.WORK_PLAN_CD
                 AND SCH.APPLY_DATE = (
                     SELECT COALESCE(
-                             MAX(CASE WHEN SE.APPLY_DATE <![CDATA[ <= ]]> P.WORK_YMD THEN SE.APPLY_DATE END)
+                             MAX(CASE WHEN SE.APPLY_DATE <![CDATA[ <= ]]> PD.WORK_YMD THEN SE.APPLY_DATE END)
                            , MIN(SE.APPLY_DATE)
                            )
                     FROM (
@@ -518,20 +567,63 @@
                         SELECT H3.CMPNY_CD, H3.SITE_CD, H3.SCH_CD, H3.APPLY_DATE
                         FROM TB_SCH_MGMT_HIST H3
                     ) SE
-                    WHERE SE.CMPNY_CD    = P.CMPNY_CD
-                      AND SE.SITE_CD     = P.SITE_CD
-                      AND SE.SCH_CD      = P.WORK_PLAN_CD
+                    WHERE SE.CMPNY_CD    = PD.CMPNY_CD
+                      AND SE.SITE_CD     = PD.SITE_CD
+                      AND SE.SCH_CD      = PD.WORK_PLAN_CD
                 )
-            GROUP BY P.USER_CD, P.WORK_YMD
-        )
+    </sql>
+
+    <!-- ============ NF-2b: 반차 보유 계획일의 근태 원시행 (서비스 재판정 입력) ============
+      selectDashAttdStatusCount 가 NOT EXISTS 로 제외한 바로 그 집합을 EXISTS 로 되받는다
+      (같은 CTE·같은 EXISTS 조각 → 두 집합은 정확히 상보. 이중 계상/누락 불가).
+      행 수는 "그 달 시각 보유 확정 반차가 있는 (사용자, 근무일)" 뿐이라 통상 수십 건 이하다.
+      판정(유효 소정 구간 산출 + 야간 일자 프레임)은 서비스가 PartialLeaveWindowUtils 로 수행한다.
+      ⚠ SELECT 컬럼 순서 = DashPartialLeaveAttdRow 컴포넌트 순서(위치 매핑). -->
+    <select id="selectDashPartialLeaveAttdRows"
+            resultType="com.prafta.web.dashboard.dashboard01.result.DashPartialLeaveAttdRow">
+    /* Dashboard01Mapper.selectDashPartialLeaveAttdRows */
+        <include refid="dashAttdScopeCte"/>
 
         SELECT
-              CAST(COUNT(1) AS SIGNED)                                                                 AS targetDayCnt
-            , CAST(IFNULL(SUM(CASE WHEN hasCheckIn = 1 AND lateFlag = 0 AND earlyFlag = 0 THEN 1 ELSE 0 END), 0) AS SIGNED) AS normalCnt
-            , CAST(IFNULL(SUM(CASE WHEN hasCheckIn = 1 AND lateFlag = 1 THEN 1 ELSE 0 END), 0) AS SIGNED)                    AS lateCnt
-            , CAST(IFNULL(SUM(CASE WHEN hasCheckIn = 1 AND lateFlag = 0 AND earlyFlag = 1 THEN 1 ELSE 0 END), 0) AS SIGNED)  AS earlyLeaveCnt
-            , CAST(IFNULL(SUM(CASE WHEN hasCheckIn = 0 THEN 1 ELSE 0 END), 0) AS SIGNED)                                     AS absentCnt
-        FROM day_status
+              PD.USER_CD                                                                    AS userCd
+            , PD.WORK_YMD                                                                   AS workYmd
+            , A.WORK_SEQ                                                                    AS workSeq
+            , CASE WHEN A.WORK_SEQ = 2 THEN SCH.SEC_SCH_STR_TIME ELSE SCH.FST_SCH_STR_TIME END AS planStart
+            , CASE WHEN A.WORK_SEQ = 2 THEN SCH.SEC_SCH_END_TIME ELSE SCH.FST_SCH_END_TIME END AS planEnd
+            , A.CHECK_IN_DATE                                                               AS checkInDate
+            , A.CHECK_IN_TIME                                                               AS checkInTime
+            , A.CHECK_OUT_DATE                                                              AS checkOutDate
+            , A.CHECK_OUT_TIME                                                              AS checkOutTime
+        FROM plan_day PD
+        <include refid="dashAttdSchJoin"/>
+        WHERE EXISTS (
+            <include refid="dashPartialLeaveDayExists"/>
+        )
+        ORDER BY PD.USER_CD, PD.WORK_YMD, A.WORK_SEQ
+    </select>
+
+    <!-- ============ NF-2b: 반차 면제 시각 구간 (서비스 재판정 입력) ============
+      술어는 web Attd08Mapper/Attd11Mapper.selectHalfLeaveWindows 와 동일(회사·사업장·기간 스코프 필수).
+      노드 스코프는 걸지 않는다 — 서비스가 (USER_CD, WORK_YMD) 키로 조인하므로 스코프 밖 행은 도달하지 않는다.
+      분할차감 행은 같은 시각이 여러 행으로 오므로 DISTINCT 로 접는다.
+      ⚠ SELECT 컬럼 순서 = DashHalfLeaveWindowRow 컴포넌트 순서(위치 매핑). -->
+    <select id="selectDashPartialLeaveWindows"
+            resultType="com.prafta.web.dashboard.dashboard01.result.DashHalfLeaveWindowRow">
+    /* Dashboard01Mapper.selectDashPartialLeaveWindows */
+        SELECT DISTINCT
+              L.USER_CD     AS userCd
+            , L.START_DATE  AS workYmd
+            , L.START_TIME  AS startTime
+            , L.END_TIME    AS endTime
+        FROM TB_USER_LEAVE_USE L
+        WHERE L.CMPNY_CD      = #{gvCmpnyCd}
+          AND L.SITE_CD       = #{siteCd}
+          AND L.START_DATE LIKE CONCAT(REPLACE(#{workYm}, '-', ''), '%')
+          AND L.USE_UNIT_TYPE = '01'
+          AND L.LEAVE_STATUS  = 'CONFIRMED'
+          AND L.DEL_YN        = 'N'
+          AND L.START_TIME IS NOT NULL
+          AND L.END_TIME   IS NOT NULL
     </select>
 
     <!-- ============ T3: 근태 탭 A3 초과근무 6개월 추이(overtime-trend) ============

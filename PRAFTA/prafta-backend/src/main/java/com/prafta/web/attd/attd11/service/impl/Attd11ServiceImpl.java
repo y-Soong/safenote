@@ -13,6 +13,9 @@ import java.util.Set;
 
 import org.springframework.stereotype.Service;
 
+import com.prafta.common.cmm.leave.util.PartialLeaveWindowUtils;
+import com.prafta.common.cmm.leave.util.ScheduleWorkMinutesUtils;
+import com.prafta.common.cmm.leave.vo.DailyScheduleVO;
 import com.prafta.common.error.attd.AttdErrorCode;
 import com.prafta.common.exception.ApiException;
 import com.prafta.web.attd.attd07.service.AttdCloseService;
@@ -20,8 +23,9 @@ import com.prafta.web.attd.attd11.application.param.MonthlyAttdSummaryParam;
 import com.prafta.web.attd.attd11.application.query.MonthlyAttdSummaryQuery;
 import com.prafta.web.attd.attd11.dto.response.MonthlyAttdSummaryResponse;
 import com.prafta.web.attd.attd11.mapper.Attd11Mapper;
-import com.prafta.web.attd.attd11.result.AbsentDayCountResult;
+import com.prafta.web.attd.attd11.result.AbsentDayRowResult;
 import com.prafta.web.attd.attd11.result.AttdSummaryRowResult;
+import com.prafta.web.attd.attd11.result.HalfLeaveWindowResult;
 import com.prafta.web.attd.attd11.result.MonthlyAttdSummaryResult;
 import com.prafta.web.attd.attd11.result.OvertimeSummaryResult;
 import com.prafta.web.attd.attd11.service.Attd11Service;
@@ -73,19 +77,46 @@ public class Attd11ServiceImpl implements Attd11Service {
         List<AttdSummaryRowResult> rows = attd11Mapper.selectAttdSummaryRows(query);
         List<OvertimeSummaryResult> otRows = attd11Mapper.selectOvertimeSummary(query);
 
+        // HB-05(D1)/D-3: 그날 확정 반차 면제 구간을 (사용자, 근무일) 단위로 모은다.
+        //   ★ 반차는 하루 2건(시작기준 0.5 + 종료기준 0.5 = 1.0)이 성립하므로 단건 가정(MIN 집계) 금지 —
+        //     여러 건을 순차 적용해 합집합으로 판정한다(종일 쉰 사람에게 지각·조퇴가 뜨던 결함).
+        Map<String, List<PartialLeaveWindowUtils.LeaveWindow>> leaveByUserYmd = new HashMap<>();
+        for (HalfLeaveWindowResult w : attd11Mapper.selectHalfLeaveWindows(query)) {
+            if (w.userCd() == null || w.workYmd() == null) {
+                continue;
+            }
+            leaveByUserYmd.computeIfAbsent(w.userCd() + "|" + w.workYmd(), k -> new ArrayList<>())
+                    .add(new PartialLeaveWindowUtils.LeaveWindow(w.startTime(), w.endTime()));
+        }
+
         // 사용자별 초과근무 분 합 (decisions §3-4 : COMPLETED 만)
         Map<String, Long> otMinutesByUser = new HashMap<>();
         for (OvertimeSummaryResult ot : otRows) {
             otMinutesByUser.put(ot.userCd(), ot.otMinutes());
         }
 
-        // 사용자별 미출근일 수 (COM-016-F 8-3 : 스케줄 있으나 미출근, 휴일·연차·미래일 제외)
-        //   기존 결과 행 집합/모수는 변경하지 않고 매핑만 한다(보수적/무회귀 — 미출근만 있는
+        // 사용자별 결근 계상 (COM-016-F 8-3 + HB-06 : 스케줄 있으나 미출근, 휴일·종일연차·미래일 제외)
+        //   ★ HB-06(2026-08-07 확정): 결근을 "일수"가 아니라 "분"으로 계상한다.
+        //     결근분 = max(0, 그날 소정근로분 D - 그날 확정 부분연차 면제분). 출근기록이 있는 날은
+        //     쿼리 단계에서 제외되므로 여기 오지 않는다(지각·조퇴 지표와 중복 계상 방지 — 현행 규칙 유지).
+        //     D 는 ScheduleWorkMinutesUtils 로 계산해 연차 차감·주52·반차 경계와 산식을 공유한다.
+        //   기존 결과 행 집합/모수는 변경하지 않고 매핑만 한다(보수적/무회귀 — 결근만 있는
         //   사용자를 새 행으로 노출하지 않음. 출근/초과근무 기록이 있는 기존 행에만 주입).
-        List<AbsentDayCountResult> absentRows = attd11Mapper.selectAbsentDayCount(query);
-        Map<String, Integer> absentByUser = new HashMap<>();
-        for (AbsentDayCountResult ab : absentRows) {
-            absentByUser.put(ab.userCd(), ab.absentDayCnt());
+        Map<String, AbsentAccumulator> absentByUser = new HashMap<>();
+        for (AbsentDayRowResult ab : attd11Mapper.selectAbsentDayRows(query)) {
+            Integer daily = ScheduleWorkMinutesUtils.dailyStdWorkMinutes(toScheduleVO(ab));
+            if (daily == null || daily <= 0) {
+                // 스케줄 시각이 비정상이면 그날은 계상하지 않는다(추정 금지).
+                log.warn("Attd_11 결근 계상 skip - 소정근로분 산출 불가: userCd={}, workYmd={}",
+                        ab.userCd(), ab.workYmd());
+                continue;
+            }
+            int absentMin = Math.max(0, daily - Math.max(0, ab.leaveExemptMinutes()));
+            if (absentMin <= 0) {
+                continue; // 면제분이 소정 전량을 덮은 날(시간차 합계 = D 등) → 결근 아님
+            }
+            absentByUser.computeIfAbsent(ab.userCd(), k -> new AbsentAccumulator())
+                    .add(absentMin, daily);
         }
 
         // 사용자별 누적기(등장 순서 유지 — 매퍼가 USER_CD, WORK_YMD, WORK_SEQ 순 정렬)
@@ -99,9 +130,27 @@ public class Attd11ServiceImpl implements Attd11Service {
             String outDate = blankToNull(r.actOutDate());
             String outTime = blankToNull(r.actOutTime());
             String workYmd = blankToNull(r.workYmd());
-            String planStart = blankToNull(r.planStart());
-            String planEnd = blankToNull(r.planEnd());
             int breakMin = r.planBreakMin() == null ? 0 : r.planBreakMin();
+
+            // HB-05(D1): 그날 확정 반차가 있으면 판정 기준을 "반차 반영 유효 소정 구간"으로 치환한다
+            //   (정책 §10.1.1). 시작기준 반차 → planStart = 경계 / 종료기준 반차 → planEnd = 경계.
+            //   구간 전체가 면제되면(반차 2건으로 종일 면제·2구간 중 한 구간 통째 면제) 그 구간은 판정 제외.
+            //   시각 없는 구 반차·시간차·무연차일은 resolveAll 이 원값을 그대로 돌려주므로 판정 불변.
+            //   ★ 판정용 시각의 일자 프레임은 "원 스케줄"(rawStart/rawEnd)로 잡는다 — 야간 스케줄에서
+            //     스케줄 시작보다 이른 시각은 익일이다. 유효 시각끼리 비교하는 종전 규칙은 야간
+            //     시작기준 반차(판정용 시작 01:15)를 당일로 두어 지각으로 오판정한다(Attd_08 동일 규칙).
+            String rawStart = blankToNull(r.planStart());
+            String rawEnd = blankToNull(r.planEnd());
+            String planStart = rawStart;
+            String planEnd = rawEnd;
+            List<PartialLeaveWindowUtils.LeaveWindow> leaves =
+                    leaveByUserYmd.get(r.userCd() + "|" + r.workYmd());
+            if (leaves != null && !leaves.isEmpty() && planStart != null && planEnd != null) {
+                PartialLeaveWindowUtils.EffectiveWorkWindow eff =
+                        PartialLeaveWindowUtils.resolveAll(planStart, planEnd, leaves);
+                planStart = eff.fullyExempt() ? null : blankToNull(eff.planStart());
+                planEnd = eff.fullyExempt() ? null : blankToNull(eff.planEnd());
+            }
 
             // 근무일수: 출근 기록(CHECK_IN_TIME)이 존재하는 distinct WORK_YMD (차수 무관)
             if (inTime != null && workYmd != null) {
@@ -118,9 +167,10 @@ public class Attd11ServiceImpl implements Attd11Service {
                 }
             }
 
-            // 지각: 출근 기록 + 스케줄 시작 존재 시, 실제출근일시 > 스케줄시작일시
+            // 지각: 출근 기록 + 스케줄 시작 존재 시, 실제출근일시 > 유효 소정 시작 일시
             if (inTime != null && planStart != null && workYmd != null) {
-                long schStartStamp = toMinuteStamp(workYmd, planStart);
+                long schStartStamp = toMinuteStamp(
+                        shiftYmd(workYmd, rawStart, rawEnd, planStart), planStart);
                 long actInStamp = toMinuteStamp(inDate != null ? inDate : workYmd, inTime);
                 if (actInStamp > schStartStamp) {
                     acc.lateCnt += 1;
@@ -128,14 +178,12 @@ public class Attd11ServiceImpl implements Attd11Service {
                 }
             }
 
-            // 조퇴: 퇴근 기록 + 스케줄 종료 존재 시, 실제퇴근일시 < 스케줄종료일시
-            //   야간(스케줄 종료 < 시작)이면 종료는 근무일자 익일로 본다 (Attd_08 computeStatus)
+            // 조퇴: 퇴근 기록 + 스케줄 종료 존재 시, 실제퇴근일시 < 유효 소정 종료 일시
+            //   야간(원 스케줄 종료 < 시작)이면 스케줄 시작보다 이른 시각은 근무일자 익일로 본다
+            //   (Attd_08 Attd08ServiceImpl.resolveStatus 와 동일 규칙).
             if (outTime != null && planEnd != null && workYmd != null) {
-                String endYmd = workYmd;
-                if (planStart != null && planEnd.compareTo(planStart) < 0) {
-                    endYmd = ymdPlusDays(workYmd, 1);
-                }
-                long schEndStamp = toMinuteStamp(endYmd, planEnd);
+                long schEndStamp = toMinuteStamp(
+                        shiftYmd(workYmd, rawStart, rawEnd, planEnd), planEnd);
                 long actOutStamp = toMinuteStamp(outDate != null ? outDate : workYmd, outTime);
                 if (actOutStamp < schEndStamp) {
                     acc.earlyLeaveCnt += 1;
@@ -162,7 +210,9 @@ public class Attd11ServiceImpl implements Attd11Service {
                     , acc.lateMinutes
                     , acc.earlyLeaveCnt
                     , acc.earlyLeaveMinutes
-                    , absentByUser.getOrDefault(e.getKey(), 0)
+                    , absentDayCntOf(absentByUser.get(e.getKey()))
+                    , absentMinutesOf(absentByUser.get(e.getKey()))
+                    , absentDaysOf(absentByUser.get(e.getKey()))
             ));
         }
 
@@ -186,7 +236,9 @@ public class Attd11ServiceImpl implements Attd11Service {
                     , 0L
                     , 0
                     , 0L
-                    , absentByUser.getOrDefault(ot.userCd(), 0)
+                    , absentDayCntOf(absentByUser.get(ot.userCd()))
+                    , absentMinutesOf(absentByUser.get(ot.userCd()))
+                    , absentDaysOf(absentByUser.get(ot.userCd()))
             ));
         }
 
@@ -214,8 +266,55 @@ public class Attd11ServiceImpl implements Attd11Service {
         return LocalDate.parse(ymd, YMD).plusDays(days).format(YMD);
     }
 
+    /** 판정용 시각이 속한 일자(근무일 또는 익일) — 원 스케줄 프레임 기준(Attd_08 동일 규칙). */
+    private String shiftYmd(String workYmd, String rawStart, String rawEnd, String hhmm) {
+        int offset = PartialLeaveWindowUtils.dayOffsetOf(rawStart, rawEnd, hhmm);
+        return (offset == 0) ? workYmd : ymdPlusDays(workYmd, offset);
+    }
+
     private String blankToNull(String s) {
         return (s == null || s.isEmpty()) ? null : s;
+    }
+
+    /** HB-06: 결근 원시 행 → 소정근로분 계산 입력 VO(ScheduleWorkMinutesUtils 단일 출처 재사용). */
+    private DailyScheduleVO toScheduleVO(AbsentDayRowResult r) {
+        DailyScheduleVO vo = new DailyScheduleVO();
+        vo.setFstSchStrTime(r.fstSchStrTime());
+        vo.setFstSchEndTime(r.fstSchEndTime());
+        vo.setFstSchBrkMin(r.fstSchBrkMin());
+        vo.setSecSchStrTime(r.secSchStrTime());
+        vo.setSecSchEndTime(r.secSchEndTime());
+        vo.setSecSchBrkMin(r.secSchBrkMin());
+        return vo;
+    }
+
+    private int absentDayCntOf(AbsentAccumulator acc) {
+        return (acc == null) ? 0 : acc.dayCnt;
+    }
+
+    private long absentMinutesOf(AbsentAccumulator acc) {
+        return (acc == null) ? 0L : acc.minutes;
+    }
+
+    /** HB-06: 결근 일수 = Σ(그날 결근분 / 그날 D). 소수 1자리 반올림(연차 표기 관례와 동일). */
+    private double absentDaysOf(AbsentAccumulator acc) {
+        if (acc == null) {
+            return 0d;
+        }
+        return Math.round(acc.days * 10d) / 10d;
+    }
+
+    /** HB-06: 사용자별 결근 누적기(분 + 일수 환산). */
+    private static final class AbsentAccumulator {
+        int dayCnt = 0;
+        long minutes = 0L;
+        double days = 0d;
+
+        void add(int absentMinutes, int dailyStdMinutes) {
+            dayCnt += 1;
+            minutes += absentMinutes;
+            days += (double) absentMinutes / (double) dailyStdMinutes;
+        }
     }
 
     /** 사용자 단위 집계 누적기. */
