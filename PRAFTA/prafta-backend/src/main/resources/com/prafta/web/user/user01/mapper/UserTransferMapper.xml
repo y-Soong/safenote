@@ -133,9 +133,11 @@
     </select>
 
     <!-- ============================================================
-         불가⑤ 대상자의 미래(발효일 이후) 미결 시간차 신청 카운트 (E1·W8 당일분모 전환).
-         ScheduleGuardMapper 미결 시간차 잠금과 동형(F-F 실측 술어): 시간차 신청만 시각을 기록하므로
-         START/END_TIME NOT NULL 로 반차·반반차·종일 신청은 자연 제외. 1 이상이면 이동 차단.
+         불가⑤ 대상자의 미래(발효일 이후) 미결 시각 보유 연차 신청 카운트 (E1·W8 당일분모 전환).
+         ScheduleGuardMapper 미결 잠금과 동형(F-F 실측 술어): START/END_TIME NOT NULL.
+         ★ 2026-08-08 반차 시간대 도입으로 대상이 반차 + 시간차가 되었다(종전 주석 "반차는 자연 제외"는
+         무효 — 반차 REQ 가 경계 시각을 기록). 이는 의도된 확장이고, USER_400_073 문구가 이미
+         "반차 또는 시간 단위 연차"로 확장돼 있어 안내도 정합하다. 1 이상이면 이동 차단.
          ============================================================ -->
     <select id="selectFuturePendingHourlyReqCnt" resultType="int">
     /* UserTransferMapper.selectFuturePendingHourlyReqCnt */

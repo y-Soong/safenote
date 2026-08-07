@@ -46,7 +46,7 @@ public record LeaveChangeRequestRowResult(
     /** 사용단위 한글 라벨 (SYS025 FNC 산출) */
     , String unitNm
 
-    /** 시작 시각 (HHmm. 시간차 02/03/04 만 값 보유 — 반차/반반차는 미기록) */
+    /** 시작 시각 (HHmm. 시간차 02/03/04 + 반차 01 이 값 보유 — 반차 시간대 도입(2026-08-08)으로 확장. 종일 00 은 미기록) */
     , String startTime
 
     /** 종료 시각 (HHmm. 시간차 02/03/04 만 값 보유) */

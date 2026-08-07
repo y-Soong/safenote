@@ -601,9 +601,10 @@
                AND U.END_DATE     <![CDATA[ >= ]]> WP.WORK_YMD
           )
       AND NOT EXISTS (
-            /* 미결 시간차 신청 보존 — E3(당일분모 전환, DFCT-1): 신청 시점부터 그날 스케줄 잠금.
-               술어는 ScheduleGuardMapper 미결 시간차 잠금(F-F)과 동형(시간차만 시각 기록 —
-               반차·반반차·종일 신청은 자연 제외). 연차 REQ 는 사용자 단위 자원이라 SITE_CD 무스코프. */
+            /* 미결 시각 보유 연차 신청 보존 — E3(당일분모 전환, DFCT-1): 신청 시점부터 그날 스케줄 잠금.
+               술어는 ScheduleGuardMapper 미결 잠금(F-F)과 동형. ★ 2026-08-08 반차 시간대 도입으로
+               대상이 반차 + 시간차로 넓어졌다(반차 REQ 가 경계 시각을 기록). 종일 신청만 자연 제외된다.
+               연차 REQ 는 사용자 단위 자원이라 SITE_CD 무스코프. */
             SELECT 1
               FROM TB_USER_ATTD_REQ LRQ
              WHERE LRQ.CMPNY_CD   = WP.CMPNY_CD

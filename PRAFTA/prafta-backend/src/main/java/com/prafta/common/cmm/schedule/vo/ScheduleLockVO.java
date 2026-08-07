@@ -32,8 +32,11 @@ public class ScheduleLockVO {
     private final String leaveUseUnitType;
 
     /**
-     * E3(당일분모 전환): 미결 시간차 신청(REQ_TYPE='05', REQ_STATUS='01', 시각 보유) 잠금이면 true.
-     * 확정 연차/OT 잠금이면 false. 미결 잠금은 "시간차만" 대상(종일/반차/반반차 신청은 잠그지 않음).
+     * E3(당일분모 전환): 미결 연차 신청(REQ_TYPE='05', REQ_STATUS='01', 시각 보유) 잠금이면 true.
+     * 확정 연차/OT 잠금이면 false.
+     *
+     * <p>★ 미결 잠금 대상은 <b>반차 + 시간차</b> 다(2026-08-08 반차 시간대 도입). 종전 주석의
+     *   "시간차만 대상 — 반차는 잠그지 않음"은 무효다. 시각을 기록하지 않는 종일 신청만 제외된다.
      */
     private final boolean leavePending;
 
