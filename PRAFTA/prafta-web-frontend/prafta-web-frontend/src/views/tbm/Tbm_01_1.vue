@@ -580,7 +580,9 @@ const fnDelete = async () => {
     return;
   }
 
-  const ok = await proxy.$confirm(getMessage(MSG.DELETE_CONFIRM));
+  const ok = await proxy.$confirm(getMessage(MSG.DELETE_CONFIRM), {
+    variant: "danger",
+  });
   if (!ok) return;
 
   try {

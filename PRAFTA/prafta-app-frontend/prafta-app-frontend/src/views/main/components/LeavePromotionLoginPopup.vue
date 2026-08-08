@@ -51,20 +51,21 @@
         </dl>
       </div>
 
+      <!-- F-10 규약: 왼쪽=진행/확정(계획 등록), 오른쪽=이탈(나중에) -->
       <footer class="lp-popup__footer">
-        <button
-          type="button"
-          class="lp-popup__btn lp-popup__btn--ghost"
-          @click="onLater"
-        >
-          나중에
-        </button>
         <button
           type="button"
           class="lp-popup__btn lp-popup__btn--primary"
           @click="onRegister"
         >
           계획 등록 ▶
+        </button>
+        <button
+          type="button"
+          class="lp-popup__btn lp-popup__btn--ghost"
+          @click="onLater"
+        >
+          나중에
         </button>
       </footer>
     </div>

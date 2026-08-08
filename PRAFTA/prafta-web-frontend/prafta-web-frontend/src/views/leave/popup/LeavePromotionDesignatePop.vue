@@ -55,8 +55,8 @@
           </p>
         </div>
 
+        <!-- F-10 규약: 왼쪽=진행/확정(직권 지정, primary), 오른쪽=이탈(취소, ghost), 폭 균등 -->
         <div class="modal-footer lpd-footer">
-          <button class="btn-ghost" @click="$emit('close')">취소</button>
           <button
             class="btn-primary"
             :disabled="isSaving || selectedYmds.length === 0 || isOver"
@@ -64,6 +64,7 @@
           >
             {{ isSaving ? "지정 중..." : "직권 지정" }}
           </button>
+          <button class="btn-ghost" @click="$emit('close')">취소</button>
         </div>
       </div>
     </div>
@@ -265,6 +266,11 @@ const onConfirm = async () => {
   display: flex;
   justify-content: flex-end;
   gap: 8px;
+}
+/* F-10 규약: 좌우 버튼 폭 균등 */
+.lpd-footer .btn-ghost,
+.lpd-footer .btn-primary {
+  flex: 1;
 }
 .btn-ghost {
   height: var(--btn-height-lg, 32px);

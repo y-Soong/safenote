@@ -89,10 +89,8 @@
           </p>
         </div>
 
+        <!-- F-10 규약: 왼쪽=진행/확정(변경), 오른쪽=이탈(취소) -->
         <footer class="cp-sheet__footer">
-          <button type="button" class="cp-sheet__btn cp-sheet__btn--ghost" @click="onClose">
-            취소
-          </button>
           <button
             type="button"
             class="cp-sheet__btn cp-sheet__btn--primary"
@@ -100,6 +98,9 @@
             @click="onConfirm"
           >
             변경
+          </button>
+          <button type="button" class="cp-sheet__btn cp-sheet__btn--ghost" @click="onClose">
+            취소
           </button>
         </footer>
       </div>

@@ -160,16 +160,9 @@
           </div>
         </div>
 
-        <!-- 푸터 -->
+        <!-- 푸터 (F-10 규약: 왼쪽=진행/확정(재분석·확정), 오른쪽=이탈(닫기)) -->
         <div class="modal-footer">
           <div class="btn-group">
-            <button
-              class="btn btn-second"
-              :disabled="aiBusy"
-              @click="$emit('close')"
-            >
-              닫기
-            </button>
             <button
               class="btn btn-second"
               :disabled="aiBusy"
@@ -183,6 +176,13 @@
               @click="fnConfirm"
             >
               확정
+            </button>
+            <button
+              class="btn btn-second"
+              :disabled="aiBusy"
+              @click="$emit('close')"
+            >
+              닫기
             </button>
           </div>
         </div>

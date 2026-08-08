@@ -67,7 +67,12 @@ public interface Attd05Mapper {
 	
 	void saveUserWorkPlans(SchTypeCommand command);
 
-	void deleteUserWorkPlans(SchTypeDeleCommand command);
+	/**
+	 * F-11-1: 근무계획 월 단위 일괄 삭제 — 반환형을 {@code void}에서 {@code int}로 변경.
+	 * MyBatis {@code <delete>}는 기본적으로 영향받은 행 수를 반환하므로 XML 변경 없이 매핑된다.
+	 * @return 실제 삭제된 행 수(NOT EXISTS 가드로 보존된 일자는 제외된 수치)
+	 */
+	int deleteUserWorkPlans(SchTypeDeleCommand command);
 
 	/**
 	 * PRAFTA-041 - 셀(사용자+근무일)의 현재 WORK_PLAN_CD 조회 — 비우기 시 법정연차 여부 판별(서버 권위).

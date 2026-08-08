@@ -252,10 +252,10 @@
           </div>
         </div>
 
-        <!-- 3. Footer -->
+        <!-- 3. Footer (F-10 규약: 왼쪽=진행/확정(등록), 오른쪽=이탈(취소), 폭 균등) -->
         <div class="modal-foot">
-          <button class="btn btn-second" @click="$emit('close')">취소</button>
           <button class="btn btn-primary" @click="fnCreate">등록</button>
+          <button class="btn btn-second" @click="$emit('close')">취소</button>
         </div>
       </div>
     </div>
@@ -879,5 +879,9 @@ const fnCreate = async () => {
   padding: 0.875rem 1rem;
   border-top: 1px solid var(--color-border, #e5e7eb);
   background: var(--color-bg, #f9fafb);
+}
+/* F-10 규약: 좌우 버튼 폭 균등 */
+.modal-foot .btn {
+  flex: 1;
 }
 </style>

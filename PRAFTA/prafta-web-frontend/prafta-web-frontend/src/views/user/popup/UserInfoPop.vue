@@ -226,7 +226,9 @@
             </p>
           </template>
 
-          <!-- 수정 모드: 사업장/부서/기본 근무타입은 읽기전용. 변경은 '소속이동'으로 일원화(PRAFTA-WEB_001-4). -->
+          <!-- 수정 모드: 사업장/부서는 읽기전용(변경은 '소속이동'으로 일원화, PRAFTA-WEB_001-4).
+               기본 근무타입은 F-8-1 로 독립 변경 경로 신설 — 생성 모드와 동일한 BaseSelect 재사용,
+               대상 사업장은 현재 사용자의 SITE_CD 고정(사업장 자체 변경은 소속이동 전용). -->
           <template v-else>
             <div class="form-row-max">
               <label>사업장</label>
@@ -246,15 +248,34 @@
                 placeholder="미설정"
               />
             </div>
+
+            <!-- F-8-1: 기본 근무타입 편집 언락. 서버(User01ServiceImpl)는 이미 defaultSchCd
+                 화이트리스트 검증 + 자동생성 갱신을 처리하므로 프론트만 언락하면 된다. -->
             <div class="form-row-max">
               <label>기본 근무타입</label>
-              <input
-                class="row-readonly"
-                :value="defaultSchLabel"
-                readonly
-                placeholder="미설정"
-              />
+              <BaseSelect
+                id="defaultSchCdEdit"
+                v-model="defaultSchCd"
+                :disabled="schTypeLoading || !siteCd"
+              >
+                <option :value="''">-</option>
+                <option
+                  v-for="opt in schTypeOptions"
+                  :key="opt.schCd"
+                  :value="opt.schCd"
+                >
+                  {{ opt.schNo }} ({{ fnFmtSchTime(opt.fstSchStrTime) }}~{{
+                    fnFmtSchTime(opt.fstSchEndTime)
+                  }})
+                </option>
+              </BaseSelect>
             </div>
+            <p class="default-sch-hint" v-if="defaultSchCd">
+              ⓘ 기본 근무타입 변경 시 내일(명일)부터 당해 연말까지 평일
+              근무계획이 자동 생성·갱신됩니다(빈 날·자동생성분만,
+              휴일·연차·교대팀 구간 제외).
+            </p>
+
             <div class="form-row-max" v-if="canTransfer">
               <label>소속이동</label>
               <button class="btn btn-primary" @click="fnTransferOpen">
@@ -262,8 +283,8 @@
               </button>
             </div>
             <p class="default-sch-hint" v-if="canTransfer">
-              ⓘ 사업장/부서/기본 근무타입 변경은 '소속이동'으로
-              처리됩니다(지정한 이동일에 발효).
+              ⓘ 사업장/부서 변경은 '소속이동'으로 처리됩니다(지정한
+              이동일에 발효).
             </p>
           </template>
 
@@ -535,6 +556,8 @@ const siteNm = ref("");
 const useYn = ref("");
 // PRAFTA-COM-008-E-5: 기본 근무타입 select 상태.
 const defaultSchCd = ref("");
+// F-8-1: 수정 모드 진입 시 조회값 스냅샷(변경 여부 판정 + 변경 확인창 게이팅용).
+const oriDefaultSchCd = ref("");
 const schTypeOptions = ref([]);
 const schTypeLoading = ref(false);
 const birthDt = ref("");
@@ -601,16 +624,6 @@ const isCreate = computed(() => props.callmethod_p === "C");
 
 // PRAFTA-WEB_001-4: 소속이동 가능 게이트(master/hr & 수정 모드). 생성 모드는 직접 입력 사용.
 const canTransfer = computed(() => isHrOrMaster.value && !isCreate.value);
-
-// 수정 모드 읽기전용 표시용 기본 근무타입 라벨(옵션 목록에서 매칭, 미발견 시 코드 폴백).
-const defaultSchLabel = computed(() => {
-  if (!defaultSchCd.value) return "";
-  const opt = schTypeOptions.value.find((o) => o.schCd === defaultSchCd.value);
-  if (!opt) return defaultSchCd.value;
-  return `${opt.schNo} (${fnFmtSchTime(opt.fstSchStrTime)}~${fnFmtSchTime(
-    opt.fstSchEndTime
-  )})`;
-});
 
 // ── PRAFTA-COM-008-E-5: 기본 근무타입 ────────────────────────
 // 'HHmm' → 'HH:mm' 라벨 포맷(4자리 미만이면 원본 반환).
@@ -829,6 +842,8 @@ const fnGetUserInfo = async (userId) => {
         // PRAFTA-COM-008-E-5: 기본 근무타입 prefill. siteCd 세팅으로 옵션이 비동기 로드되며,
         //   동일 사업장이라 선택값이 목록에 포함되어 watch 의 reset 가드에 걸리지 않는다.
         defaultSchCd.value = response.data.userInfoList[0].defaultSchCd || "";
+        // F-8-1: 변경 여부 판정용 원본값 스냅샷.
+        oriDefaultSchCd.value = defaultSchCd.value;
 
         if (
           sessionStorage.getItem("gv_authCd") == "system" ||
@@ -926,6 +941,14 @@ const fnUserInfoSave = async () => {
     return;
   }
 
+  // F-8-1: 기본 근무타입 변경은 미래 스케줄 대량 갱신을 유발하므로 별도 1단계 확인창을 먼저 띄운다.
+  if (!isCreate.value && defaultSchCd.value !== oriDefaultSchCd.value) {
+    const schConfirmed = await proxy.$confirm(
+      "기본 근무타입 변경 시 명일부터 연말까지 근무계획이 자동 생성·갱신됩니다. 계속하시겠습니까?"
+    );
+    if (!schConfirmed) return;
+  }
+
   const result = await proxy.$confirm(getMessage(MSG.SAVE_CONFIRM));
   if (!result) return;
 
@@ -972,10 +995,12 @@ const fnUserInfoSave = async () => {
 
   // 조회/수정 모드(기존 로직)
   try {
-    // PRAFTA-WEB_001-4: 사업장/부서/기본 근무타입은 직접 수정 UI 제거 → '소속이동'으로만 변경.
+    // PRAFTA-WEB_001-4: 사업장/부서는 직접 수정 UI 제거 → '소속이동'으로만 변경.
     //   단 update-user-infos 매퍼가 SITE_CD/NODE_CD 를 무조건 SET 하므로(조건절 없음),
     //   전송을 누락하면 NULL 로 덮여 소속이 지워진다. 따라서 읽기전용으로 표시 중인 '현재값'을
     //   그대로 패스스루하여 동일값 재기록(무변경)되게 한다. (직접 변경 UI 부재로 값은 바뀌지 않음)
+    // F-8-1: 기본 근무타입(defaultSchCd)은 이제 이 화면에서 직접 변경 가능 — 아래 defaultSchCd 는
+    //   위 BaseSelect 의 편집값을 그대로 전송한다(서버가 화이트리스트 검증 + 자동생성 갱신 수행).
     const response = await axios.post("/webApi/user01/update-user-infos", [
       {
         cmpnyCd: cmpnyCd.value,

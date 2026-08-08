@@ -581,6 +581,8 @@ public class Attd05ServiceImpl implements Attd05Service {
     	// 대상 사용자별 검증 결과 캐시로 중복 조회 방지. 권한 없는 대상 하나라도 있으면 전체 실패(트랜잭션 롤백).
     	Map<String, Boolean> manageCache = new java.util.HashMap<>();
     	int deletedUserCount = 0;
+    	// F-11-1: 매퍼가 실제 삭제 행 수(int)를 반환하도록 바뀌어, 사용자별 삭제 건수를 누적 집계한다.
+    	int totalDeletedCount = 0;
     	List<SkippedCellResult> skippedList = new ArrayList<>();
     	for(SchTypeDeleModel model : param.schTypeDeleModelList()) {
     		// PRAFTA-041-4 - 대상 사용자 관리 권한 검증
@@ -647,13 +649,14 @@ public class Attd05ServiceImpl implements Attd05Service {
     					model.userCd(), model.workYm(), otDays.size(), leaveReported, pendingReported);
     		}
 
-    		attd05Mapper.deleteUserWorkPlans(SchTypeDeleCommand.from(model));
+    		totalDeletedCount += attd05Mapper.deleteUserWorkPlans(SchTypeDeleCommand.from(model));
     		deletedUserCount++;
     	}
-    	log.info("근무계획 월 삭제 완료 - 대상 사용자 {}명, OT/연차 보존 제외 {}건",
-    			deletedUserCount, skippedList.size());
+    	log.info("근무계획 월 삭제 완료 - 대상 사용자 {}명, 실삭제 {}건, OT/연차 보존 제외 {}건",
+    			deletedUserCount, totalDeletedCount, skippedList.size());
     	return com.prafta.web.attd.attd05.dto.response.DeleteUserWorkPlansResponse.builder()
     			.deletedUserCount(deletedUserCount)
+    			.deletedCount(totalDeletedCount)
     			.skippedList(skippedList)
     			.build();
     }

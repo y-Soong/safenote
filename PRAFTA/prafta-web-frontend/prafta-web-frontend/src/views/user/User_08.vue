@@ -318,16 +318,17 @@
             maxlength="200"
             placeholder="거부 사유 (필수, 최대 200자 — 내부 기록용, 근로자에게 노출되지 않습니다)"
           ></textarea>
+          <!-- F-10 규약: 왼쪽=진행/확정(파괴적 확정=거부 확정, danger), 오른쪽=이탈(취소, ghost), 폭 균등 -->
           <div class="reject-panel__btns">
-            <button class="btn btn-sm btn-primary" @click="fnCloseReject">
-              취소
-            </button>
             <button
               class="btn btn-sm btn-primary btn-reject"
               :disabled="rejectReason.length === 0 || processing"
               @click="fnConfirmReject"
             >
               거부 확정
+            </button>
+            <button class="btn btn-sm btn-second" @click="fnCloseReject">
+              취소
             </button>
           </div>
         </div>
@@ -1238,6 +1239,10 @@ const fnDownloadSign = async (row) => {
   display: flex;
   justify-content: flex-end;
   gap: 0.4rem;
+}
+/* F-10 규약: 좌우 버튼 폭 균등 */
+.reject-panel__btns .btn {
+  flex: 1;
 }
 
 /* 보존 안내 */

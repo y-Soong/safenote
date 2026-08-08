@@ -88,10 +88,10 @@
           </div>
         </div>
 
-        <!-- 푸터 -->
+        <!-- 푸터 (F-10 규약: 왼쪽=진행/확정(저장), 오른쪽=이탈(닫기), 폭 균등) -->
         <div class="modal-footer">
-          <button class="btn btn-cancel" @click="$emit('close')">닫기</button>
           <button class="btn btn-save" @click="fnApplySelection">저장</button>
+          <button class="btn btn-cancel" @click="$emit('close')">닫기</button>
         </div>
       </div>
     </div>
@@ -337,6 +337,11 @@ onMounted(() => {
 
 .btn-report:hover {
   background: rgba(22, 163, 74, 0.06);
+}
+
+/* F-10 규약: 좌우 버튼 폭 균등 */
+.modal-footer .btn {
+  flex: 1;
 }
 
 .fade-enter-active,

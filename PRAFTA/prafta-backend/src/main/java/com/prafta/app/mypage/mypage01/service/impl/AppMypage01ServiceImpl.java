@@ -17,6 +17,7 @@ import com.prafta.app.mypage.mypage01.application.param.PasswordChangeParam;
 import com.prafta.app.mypage.mypage01.application.param.PresetActionParam;
 import com.prafta.app.mypage.mypage01.application.param.PresetSaveParam;
 import com.prafta.app.mypage.mypage01.application.param.ProfileUpdateParam;
+import com.prafta.app.mypage.mypage01.application.param.UpdateDefaultSchParam;
 import com.prafta.app.mypage.mypage01.dto.response.ApprovalCandidateItem;
 import com.prafta.app.mypage.mypage01.dto.response.ApprovalCandidateListResponse;
 import com.prafta.app.mypage.mypage01.dto.response.MobileSendResponse;
@@ -38,6 +39,7 @@ import com.prafta.common.cmm.sms.policy.SmsRateLimitGuard;
 import com.prafta.common.cmm.sms.policy.SmsSendContext;
 import com.prafta.common.cmm.sms.policy.SmsVerifyGuard;
 import com.prafta.common.dto.TokenInfo;
+import com.prafta.common.error.attd.AttdErrorCode;
 import com.prafta.common.error.common.CommonErrorCode;
 import com.prafta.common.error.mypage.MypageErrorCode;
 import com.prafta.common.exception.ApiException;
@@ -75,6 +77,15 @@ public class AppMypage01ServiceImpl implements AppMypage01Service {
 
     /** [3차 / sec N-4] 인증번호 검증(대입) 방어. ★발송 축(SmsRateLimitGuard)과 별개 경로다(sec N-3). */
     private final SmsVerifyGuard smsVerifyGuard;
+
+    // F-8-2: 본인 기본 근무타입 자기변경 — 검증/자동생성 공용 서비스(common.cmm.sch). 웹 User01ServiceImpl 과 동일 재사용.
+    private final com.prafta.common.cmm.sch.service.DefaultSchOptionService defaultSchOptionService;
+    private final com.prafta.common.cmm.sch.service.DefaultSchGenService defaultSchGenService;
+    private final com.prafta.common.cmm.sch.mapper.DefaultSchGenMapper defaultSchGenMapper;
+
+    // F-8-2: 자동생성 트리거 운영 게이트(LoginServiceImpl/User01ServiceImpl 과 동일 프로퍼티, 기본값 true).
+    @org.springframework.beans.factory.annotation.Value("${prafta.default-sch.gen.enabled:true}")
+    private boolean defaultSchGenEnabled;
 
     // 휴대폰 정규화 후 허용 자리수(10~11). 정책 §3.2.
     private static final int PHONE_MIN_DIGITS = 10;
@@ -115,6 +126,10 @@ public class AppMypage01ServiceImpl implements AppMypage01Service {
                 .birthDateMasked(maskBirth(r.birthDate()))
                 .lastLoginDtime(r.lastLoginDtime())
                 .presetCount(presetCount)
+                .defaultSchCd(r.defaultSchCd())
+                .defaultSchNo(r.defaultSchNo())
+                .defaultSchStrTime(r.defaultSchStrTime())
+                .defaultSchEndTime(r.defaultSchEndTime())
                 .build();
     }
 
@@ -629,6 +644,76 @@ public class AppMypage01ServiceImpl implements AppMypage01Service {
                 .myRankSortIdx(myRankSortIdx)
                 .candidates(items)
                 .build();
+    }
+
+    // ============================================================
+    // F-8-2: 본인 기본 근무타입 자기변경(세션 사업장 고정)
+    // ============================================================
+
+    @Override
+    public java.util.List<com.prafta.common.cmm.sch.vo.SchOptionVO> getDefaultSchOptions(TokenInfo tokenInfo) {
+        if (tokenInfo == null) {
+            throw new ApiException(CommonErrorCode.COMMON_400_003);
+        }
+        String siteCd = resolveSiteCd(tokenInfo);
+        if (siteCd == null || siteCd.isBlank()) {
+            return java.util.List.of();
+        }
+        return defaultSchOptionService.getActiveSchOptions(tokenInfo.gv_cmpnyCd(), siteCd);
+    }
+
+    /**
+     * LoginServiceImpl.setDefaultSch(로그인 게이트)·User01ServiceImpl.updateMyDefaultSch(웹 내정보)와
+     * 동일 패턴: 화이트리스트 검증 → DEFAULT_SCH_CD 저장 → 즉시 자동생성(실패는 격리).
+     */
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public void updateDefaultSch(UpdateDefaultSchParam param) {
+        String cmpnyCd = param.tokenInfo().gv_cmpnyCd();
+        String userCd = param.tokenInfo().gv_userCd();
+
+        String defaultSchCd = trimToNull(param.defaultSchCd());
+        if (defaultSchCd == null) {
+            throw new ApiException(AttdErrorCode.ATTD_400_141);
+        }
+
+        // 사업장은 세션에서만 도출(본인 사업장 변경은 이 흐름 범위 밖).
+        String siteCd = resolveSiteCd(param.tokenInfo());
+        if (siteCd == null || siteCd.isBlank()) {
+            throw new ApiException(AttdErrorCode.ATTD_400_140);
+        }
+
+        // 화이트리스트 검증(클라 제출값 신뢰 금지).
+        if (!defaultSchOptionService.isValidDefaultSch(cmpnyCd, siteCd, defaultSchCd)) {
+            throw new ApiException(AttdErrorCode.ATTD_400_140);
+        }
+
+        int updated = defaultSchGenMapper.updateUserDefaultSch(cmpnyCd, userCd, defaultSchCd, userCd);
+        if (updated == 0) {
+            throw new ApiException(CommonErrorCode.COMMON_400_004);
+        }
+
+        // 즉시 자동생성(미래 스케줄 갱신) — 실패는 격리(사용자 저장에 영향 없음, 기존 관례 승계).
+        if (defaultSchGenEnabled) {
+            try {
+                defaultSchGenService.applyDefaultSchChange(cmpnyCd, siteCd, userCd, defaultSchCd);
+            } catch (Exception e) {
+                log.error("앱 본인 기본 근무타입 변경 자동생성 실패(설정은 저장됨) - userCd={}, defaultSchCd={}",
+                        userCd, defaultSchCd, e);
+            }
+        }
+
+        log.info("앱 본인 기본 근무타입 변경(자기결정) 완료 - userCd={}, siteCd={}, defaultSchCd={}",
+                userCd, siteCd, defaultSchCd);
+    }
+
+    /** 세션 클레임(gv_siteCd) 우선, 비어 있으면 DB 조회로 폴백(레거시 토큰 대비, setDefaultSch 패턴 미러). */
+    private String resolveSiteCd(TokenInfo tokenInfo) {
+        String siteCd = tokenInfo.gv_siteCd();
+        if (siteCd == null || siteCd.isBlank()) {
+            siteCd = defaultSchGenMapper.selectUserSiteCd(tokenInfo.gv_cmpnyCd(), tokenInfo.gv_userCd());
+        }
+        return siteCd;
     }
 
     // ============================================================

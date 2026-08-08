@@ -41,4 +41,9 @@ export const USER_MESSAGES = {
   // 연동 회사 제3자 제공 동의(006) 철회 확인 — 앱 마이페이지와 동일 고지(철회는 소급되지 않음).
   MY_INFO_TERMS_THIRD_PARTY_WITHDRAW_CONFIRM:
     "연동 회사 자료 제공에 대한 동의를 철회하시겠습니까?\n\n철회하면 이후 생성되는 제공분부터 제외됩니다.\n다만 이미 제공된 자료는 회수되지 않습니다.",
+
+  // MyInfoPop - 근무 정보(기본 근무타입 자기변경, F-8-3)
+  MY_INFO_DEFAULT_SCH_CHANGE_CONFIRM:
+    "기본 근무타입을 변경하면 명일부터 연말까지 근무계획이 자동 생성·갱신됩니다.\n변경하시겠습니까?",
+  MY_INFO_DEFAULT_SCH_SAVE_FAILED: "기본 근무타입 변경 중 오류가 발생했습니다.",
 };

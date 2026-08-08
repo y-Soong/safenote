@@ -83,13 +83,14 @@
           </div>
         </div>
 
+        <!-- F-10 규약: 왼쪽=진행/확정(저장, primary), 오른쪽=이탈(취소, ghost), 폭 균등 -->
         <div class="modal-footer">
           <div class="btn-group">
-            <button class="btn btn-primary" @click="$emit('close')">
-              취소
-            </button>
             <button class="btn btn-primary" :disabled="saving" @click="fnSave">
               저장
+            </button>
+            <button class="btn btn-second" @click="$emit('close')">
+              취소
             </button>
           </div>
         </div>
@@ -253,6 +254,11 @@ onBeforeUnmount(() => {
 
 .form-row-top {
   align-items: flex-start;
+}
+
+/* F-10 규약: 좌우 버튼 폭 균등 */
+.modal-footer .btn-group .btn {
+  flex: 1;
 }
 
 .file-field {

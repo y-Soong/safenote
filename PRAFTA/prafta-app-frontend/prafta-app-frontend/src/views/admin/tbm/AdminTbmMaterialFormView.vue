@@ -135,13 +135,13 @@
           </div>
         </div>
 
-        <!-- 액션 -->
+        <!-- 액션 (F-10 규약: 왼쪽=진행/확정, 오른쪽=이탈) -->
         <div class="mtrl-form__actions">
-          <button type="button" class="btn btn--ghost" :disabled="submitting" @click="onCancel">
-            취소
-          </button>
           <button type="submit" class="btn btn--primary" :disabled="submitting">
             {{ isEdit ? '수정 저장' : '등록' }}
+          </button>
+          <button type="button" class="btn btn--ghost" :disabled="submitting" @click="onCancel">
+            취소
           </button>
         </div>
       </form>

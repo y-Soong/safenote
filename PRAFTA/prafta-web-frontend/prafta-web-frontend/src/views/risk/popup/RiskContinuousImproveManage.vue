@@ -285,16 +285,17 @@
           </div>
         </div>
 
-        <!-- 푸터 -->
+        <!-- 푸터 (F-10 규약: 왼쪽=진행/확정(저장·개선완료), 오른쪽=이탈(취소)) -->
         <div class="modal-footer">
-          <div class="footer-buttons-left"></div>
-          <div class="footer-buttons-right">
-            <button class="btn btn-cancel" @click="$emit('close')">취소</button>
+          <div class="footer-buttons-left">
             <button class="btn btn-save" @click="saveAll">저장</button>
             <!-- 개선완료: 005→003 전이, 개선 후 위험도 매우낮음(1-3) 가드는 BE/FE 공동 -->
             <button class="btn btn-report" @click="completeImprovement">
               개선완료
             </button>
+          </div>
+          <div class="footer-buttons-right">
+            <button class="btn btn-cancel" @click="$emit('close')">취소</button>
           </div>
         </div>
       </div>

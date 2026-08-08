@@ -41,6 +41,19 @@
 	ORDER BY D.SORT_IDX ASC, D.BAIM_VAL_D_CD ASC
 	</select>
 
+	<!-- 참조 시트⑤: 직급(코드/명). 회사 코드그룹 BAIM_VAL 'COM007' 에서 조회 -->
+	<select id="selectTemplateRankList" resultType="com.prafta.web.user.user01.result.TemplateRankRow">
+	/* User01Mapper.selectTemplateRankList */
+	SELECT
+		  D.BAIM_VAL_D_CD	AS rankCd
+		, D.BAIM_VAL_D_NM	AS rankNm
+	FROM TB_BAIM_VAL_D D
+	WHERE D.CMPNY_CD = #{cmpnyCd}
+	  AND D.BAIM_VAL_CD = 'COM007'
+	  AND IFNULL(D.USE_YN, 'Y') = 'Y'
+	ORDER BY D.SORT_IDX ASC, D.BAIM_VAL_D_CD ASC
+	</select>
+
 	<select id="selectUserNodeAdminCheck" parameterType="com.prafta.web.user.user01.application.query.UserNodeAdminCheckQuery" resultType="int">
     /* User01Mapper.selectUserNodeAdminCheck */
 	SELECT COUNT(*)
@@ -521,6 +534,11 @@
 	    <arg name="email"          column="email"          javaType="java.lang.String"
 	         typeHandler="com.prafta.common.security.crypto.mybatis.AesGcmDecryptTypeHandler"/>
 	    <arg name="lastLoginDtime" column="lastLoginDtime" javaType="java.lang.String"/>
+	    <!-- F-8-2: 현재 기본 근무타입 표시용(비PII, 평문 그대로). 미설정이면 전부 NULL(LEFT JOIN). -->
+	    <arg name="defaultSchCd"      column="defaultSchCd"      javaType="java.lang.String"/>
+	    <arg name="defaultSchNo"      column="defaultSchNo"      javaType="java.lang.String"/>
+	    <arg name="defaultSchStrTime" column="defaultSchStrTime" javaType="java.lang.String"/>
+	    <arg name="defaultSchEndTime" column="defaultSchEndTime" javaType="java.lang.String"/>
 	  </constructor>
 	</resultMap>
 
@@ -534,11 +552,21 @@
 		, A.MBL_NO_ENC												AS mblNo
 		, A.EMAIL_ENC												AS email
 		, A.LAST_LOGIN_DTIME										AS lastLoginDtime
+		, A.DEFAULT_SCH_CD											AS defaultSchCd
+		, M.SCH_NO													AS defaultSchNo
+		, M.FST_SCH_STR_TIME										AS defaultSchStrTime
+		, M.FST_SCH_END_TIME										AS defaultSchEndTime
 	FROM TB_USER A
 		LEFT JOIN TB_SITE C
 			ON (
 				A.CMPNY_CD = C.CMPNY_CD
 			AND A.SITE_CD  = C.SITE_CD
+			)
+		LEFT JOIN TB_SCH_MGMT M
+			ON (
+				A.CMPNY_CD       = M.CMPNY_CD
+			AND A.SITE_CD        = M.SITE_CD
+			AND A.DEFAULT_SCH_CD = M.SCH_CD
 			)
 	WHERE A.CMPNY_CD = #{gvCmpnyCd}
 	  AND A.USER_CD  = #{gvUserCd}

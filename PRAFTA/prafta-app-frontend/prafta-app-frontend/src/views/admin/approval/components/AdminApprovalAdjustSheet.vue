@@ -95,10 +95,8 @@
           </p>
         </div>
 
+        <!-- F-10 규약: 왼쪽=진행/확정, 오른쪽=이탈(취소) -->
         <footer class="ap-adj__footer">
-          <button type="button" class="ap-adj__btn ap-adj__btn--ghost" @click="onClose">
-            취소
-          </button>
           <button
             type="button"
             class="ap-adj__btn ap-adj__btn--primary"
@@ -106,6 +104,9 @@
             @click="onConfirm"
           >
             조정 후 승인
+          </button>
+          <button type="button" class="ap-adj__btn ap-adj__btn--ghost" @click="onClose">
+            취소
           </button>
         </footer>
       </div>

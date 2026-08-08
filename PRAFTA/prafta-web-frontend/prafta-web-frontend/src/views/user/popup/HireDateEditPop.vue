@@ -353,9 +353,9 @@
         </div>
 
         <!-- 🔹 Footer -->
+        <!-- F-10 규약: 왼쪽=진행/확정(변경 적용, primary), 오른쪽=이탈(취소, ghost), 폭 균등 -->
         <div class="modal-footer">
           <div class="btn-group">
-            <button class="btn btn-second" @click="$emit('close')">취소</button>
             <button
               class="btn btn-primary"
               :disabled="!canApply || isSaving"
@@ -363,6 +363,7 @@
             >
               변경 적용
             </button>
+            <button class="btn btn-second" @click="$emit('close')">취소</button>
           </div>
         </div>
       </div>
@@ -1069,5 +1070,10 @@ const fnApplyHireDate = async () => {
   padding: 0.75rem 1rem;
   border-top: 1px solid var(--color-border);
   background: var(--color-bg);
+}
+
+/* F-10 규약: 좌우 버튼 폭 균등 */
+.modal-footer .btn-group .btn {
+  flex: 1;
 }
 </style>

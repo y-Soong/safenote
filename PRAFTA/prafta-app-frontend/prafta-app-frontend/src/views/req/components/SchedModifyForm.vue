@@ -109,12 +109,12 @@
       요청은 관리자 승인 후 반영돼요. 스케줄 마감 전까지 신청해 주세요.
     </p>
 
-    <!-- 푸터 -->
+    <!-- 푸터 (F-10 규약: 왼쪽=진행/확정, 오른쪽=이탈, 폭 균등) -->
     <footer class="form-ft">
-      <button type="button" class="btn btn--x" @click="$emit('cancel')">취소</button>
       <button type="submit" class="btn btn--p" :disabled="!isValid || submitting">
         {{ submitting ? '등록 중...' : '요청하기' }}
       </button>
+      <button type="button" class="btn btn--x" @click="$emit('cancel')">취소</button>
     </footer>
 
     <!-- 스케줄 선택 바텀시트 -->
@@ -562,7 +562,7 @@ const onSubmit = () => {
   position: sticky;
   bottom: 0;
   display: grid;
-  grid-template-columns: 1fr 2fr;
+  grid-template-columns: 1fr 1fr;
   gap: var(--space-sm);
   padding: var(--space-sm) 0 calc(var(--space-sm) + env(safe-area-inset-bottom));
   background: var(--color-bg);

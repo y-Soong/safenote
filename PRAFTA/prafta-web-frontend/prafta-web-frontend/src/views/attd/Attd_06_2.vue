@@ -390,14 +390,15 @@
               유지됩니다.
             </p>
           </div>
+          <!-- F-10 규약: 왼쪽=진행/확정(저장, primary), 오른쪽=이탈(취소) -->
           <div class="a06-modal-footer">
+            <button class="btn btn-sm btn-primary" @click="fnSave">저장</button>
             <button
               class="btn btn-sm btn-second"
               @click="showPeriodModal = false"
             >
               취소
             </button>
-            <button class="btn btn-sm btn-primary" @click="fnSave">저장</button>
           </div>
         </div>
       </div>
@@ -776,7 +777,8 @@ const deleteAssignment = async (group) => {
   // prafta-com-016-D-6: 교대타입명이 아닌 교대근무 팀명(shiftTeamNm) 표시. 빈값이면 팀ID 폴백.
   const teamNm = group.shiftTeamNm || group.shiftTeamId;
   const ok = await proxy.$confirm(
-    getMessage(MSG.SHIFT_TEAM_DELETE_CONFIRM, { teamNm })
+    getMessage(MSG.SHIFT_TEAM_DELETE_CONFIRM, { teamNm }),
+    { variant: "danger" }
   );
   if (!ok) return;
   try {

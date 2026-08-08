@@ -73,10 +73,8 @@
           </div>
 
           <!-- ===== 푸터 버튼 ===== -->
+          <!-- F-10 규약: 왼쪽=진행/확정(적용, primary), 오른쪽=이탈(취소) -->
           <div class="btn-group" style="margin-top: 1rem">
-            <button class="btn btn-second" type="button" @click="fnClose">
-              취소
-            </button>
             <button
               class="btn btn-primary"
               type="button"
@@ -84,6 +82,9 @@
               @click="fnApply"
             >
               적용
+            </button>
+            <button class="btn btn-second" type="button" @click="fnClose">
+              취소
             </button>
           </div>
         </div>

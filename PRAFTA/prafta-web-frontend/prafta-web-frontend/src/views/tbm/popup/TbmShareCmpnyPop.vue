@@ -65,9 +65,9 @@
           </div>
         </div>
 
+        <!-- F-10 규약: 왼쪽=진행/확정(지정), 오른쪽=이탈(취소), 폭 균등 -->
         <div class="modal-footer">
           <div class="btn-group">
-            <button class="btn btn-second" @click="$emit('close')">취소</button>
             <button
               class="btn btn-primary"
               :disabled="!selectedCmpnyCd || isBusy"
@@ -75,6 +75,7 @@
             >
               지정
             </button>
+            <button class="btn btn-second" @click="$emit('close')">취소</button>
           </div>
         </div>
       </div>
@@ -179,5 +180,9 @@ onMounted(() => {
   overflow-y: auto;
   border: 1px solid var(--color-border);
   border-radius: var(--radius-sm, 0.375rem);
+}
+/* F-10 규약: 좌우 버튼 폭 균등 */
+.modal-footer .btn-group .btn {
+  flex: 1;
 }
 </style>

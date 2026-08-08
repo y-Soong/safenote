@@ -280,10 +280,10 @@
           </div>
         </div>
 
-        <!-- 4. Footer -->
+        <!-- 4. Footer (F-10 규약: 왼쪽=진행/확정(확인), 오른쪽=이탈(닫기), 폭 균등) -->
         <div class="modal-foot">
-          <button class="btn btn-second" @click="$emit('close')">닫기</button>
           <button class="btn btn-primary" @click="fnFinish">확인</button>
+          <button class="btn btn-second" @click="$emit('close')">닫기</button>
         </div>
       </div>
     </div>
@@ -708,5 +708,9 @@ const fmtDateTime = (ymd, hhmm) => {
   padding: 0.875rem 1rem;
   border-top: 1px solid var(--color-border, #e5e7eb);
   background: var(--color-bg, #f9fafb);
+}
+/* F-10 규약: 좌우 버튼 폭 균등 */
+.modal-foot .btn {
+  flex: 1;
 }
 </style>

@@ -540,15 +540,8 @@
     <!-- 푸터 (v3.7: 도출 단계 제거 — 도출 버튼을 푸터로 이동, 결과 단계에서는 재도출 역할) -->
     <div class="ai-panel__footer">
       <div class="ai-panel__footer-left"></div>
+      <!-- F-10 규약: 왼쪽=진행/확정(도출·저장), 오른쪽=이탈(닫기) -->
       <div class="ai-panel__footer-right">
-        <button
-          type="button"
-          class="btn btn-cancel"
-          :disabled="aiBusy"
-          @click="fnClose"
-        >
-          닫기
-        </button>
         <button
           type="button"
           class="btn btn-save"
@@ -566,6 +559,14 @@
           @click="fnSaveSelection"
         >
           저장
+        </button>
+        <button
+          type="button"
+          class="btn btn-cancel"
+          :disabled="aiBusy"
+          @click="fnClose"
+        >
+          닫기
         </button>
       </div>
     </div>

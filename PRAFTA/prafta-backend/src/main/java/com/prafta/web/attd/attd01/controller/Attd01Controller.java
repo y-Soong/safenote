@@ -5,6 +5,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.ModelAttribute;
+import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestHeader;
@@ -12,18 +13,21 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
 import com.prafta.common.security.JwtUtil;
+import com.prafta.web.attd.attd01.application.param.AssignedUsersParam;
 import com.prafta.web.attd.attd01.application.param.SchInfoHistParam;
 import com.prafta.web.attd.attd01.application.param.SchInfoListParam;
 import com.prafta.web.attd.attd01.application.param.SchInfoParam;
 import com.prafta.web.attd.attd01.application.param.ShiftSchDetailParam;
 import com.prafta.web.attd.attd01.application.param.ShiftSchInfoListParam;
 import com.prafta.web.attd.attd01.application.param.ShiftSchInfoParam;
+import com.prafta.web.attd.attd01.dto.request.AssignedUsersRequest;
 import com.prafta.web.attd.attd01.dto.request.SchInfoHistRequest;
 import com.prafta.web.attd.attd01.dto.request.SchInfoListRequest;
 import com.prafta.web.attd.attd01.dto.request.SchInfoRequest;
 import com.prafta.web.attd.attd01.dto.request.ShiftSchDetailRequest;
 import com.prafta.web.attd.attd01.dto.request.ShiftSchInfoListRequest;
 import com.prafta.web.attd.attd01.dto.request.ShiftSchInfoRequest;
+import com.prafta.web.attd.attd01.dto.response.AssignedUsersResponse;
 import com.prafta.web.attd.attd01.dto.response.SchInfoHistResponse;
 import com.prafta.web.attd.attd01.dto.response.SchInfoListResponse;
 import com.prafta.web.attd.attd01.dto.response.ShiftSchDetailResponse;
@@ -86,9 +90,18 @@ public class Attd01Controller {
 	
 	@GetMapping("/shift-sch-details")
     public ResponseEntity<?> getShiftSchDetail(@ModelAttribute ShiftSchDetailRequest request, @RequestHeader(value = "Authorization", required = false) String authorization) {
-    	
+
     	ShiftSchDetailResponse retList = attd01Service.selectShiftSchDetail(ShiftSchDetailParam.from(request, jwtUtil.getAllClaimsAsMap(authorization)));
-		
+
     	return ResponseEntity.status(HttpStatus.OK).body(retList);
+    }
+
+	// F-12-2: 근무타입별 배정현황 조회 — §3.3 "배정된 근로자가 없는 경우에만 삭제/사용중지 가능" 정책 이행 지원.
+	@GetMapping("/{schCd}/assigned-users")
+    public ResponseEntity<?> getAssignedUsers(@PathVariable("schCd") String schCd, @ModelAttribute AssignedUsersRequest request, @RequestHeader(value = "Authorization", required = false) String authorization) {
+
+    	AssignedUsersResponse response = attd01Service.selectAssignedUsers(AssignedUsersParam.from(schCd, request, jwtUtil.getAllClaimsAsMap(authorization)));
+
+    	return ResponseEntity.status(HttpStatus.OK).body(response);
     }
 }

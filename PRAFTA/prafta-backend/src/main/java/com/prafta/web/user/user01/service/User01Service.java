@@ -12,6 +12,7 @@ import com.prafta.web.user.user01.application.param.UserCreateParam;
 import com.prafta.web.user.user01.application.param.UserCreditParam;
 import com.prafta.web.user.user01.application.param.UserHireDateParam;
 import com.prafta.web.user.user01.application.param.UserInfoListParam;
+import com.prafta.web.user.user01.application.param.UpdateMyDefaultSchParam;
 import com.prafta.web.user.user01.application.param.UserPasswdParam;
 import com.prafta.web.user.user01.application.param.WithdrawMyAccountParam;
 import com.prafta.web.user.user01.application.param.WithdrawalCancelParam;
@@ -63,4 +64,9 @@ public interface User01Service {
 
 	// ===== PRAFTA-COM-008-E-5 - 기본 근무타입 select 옵션(대상 사업장 활성 근무타입) =====
 	java.util.List<com.prafta.common.cmm.sch.vo.SchOptionVO> getSchTypeOptions(String cmpnyCd, String siteCd);
+
+	// ===== F-8-2 - 본인 기본 근무타입 자기변경(웹 내정보, 세션 사업장 고정) =====
+	java.util.List<com.prafta.common.cmm.sch.vo.SchOptionVO> getMyDefaultSchOptions(String cmpnyCd, String userCd);
+
+	void updateMyDefaultSch(UpdateMyDefaultSchParam param);
 }

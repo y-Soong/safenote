@@ -62,6 +62,8 @@ import com.prafta.web.user.user01.application.param.TransferEligibilityParam;
 import com.prafta.web.user.user01.application.param.TransferReservationParam;
 import com.prafta.web.user.user01.dto.request.TransferNoticeAckRequest;
 import com.prafta.web.user.user01.dto.request.TransferReservationRequest;
+import com.prafta.web.user.user01.application.param.UpdateMyDefaultSchParam;
+import com.prafta.web.user.user01.dto.request.UpdateMyDefaultSchRequest;
 import com.prafta.web.user.user01.service.User01BatchService;
 import com.prafta.web.user.user01.service.User01Service;
 import com.prafta.web.user.user01.service.User01TransferService;
@@ -219,6 +221,36 @@ public class User01Controller {
 
         return ResponseEntity.status(HttpStatus.OK)
                 .body(user01Service.getSchTypeOptions(cmpnyCd, siteCd));
+    }
+
+    // ===== F-8-2 - 본인 기본 근무타입 자기변경(웹 내정보, 세션 사업장 고정) =====
+
+    /**
+     * 옵션 조회 — 대상 사업장은 세션 토큰 식별 사용자의 SITE_CD 로만 도출한다(IDOR 방지, 파라미터 없음).
+     */
+    @GetMapping("/my-default-sch-options")
+    public ResponseEntity<?> getMyDefaultSchOptions(
+            @RequestHeader(value = "Authorization", required = false) String authorization) {
+
+        com.prafta.common.dto.TokenInfo tokenInfo = jwtUtil.getAllClaimsAsMap(authorization);
+        String cmpnyCd = (tokenInfo == null) ? null : tokenInfo.gv_cmpnyCd();
+        String userCd = (tokenInfo == null) ? null : tokenInfo.gv_userCd();
+
+        return ResponseEntity.status(HttpStatus.OK)
+                .body(user01Service.getMyDefaultSchOptions(cmpnyCd, userCd));
+    }
+
+    /**
+     * 저장 — 대상 회사/사용자는 세션 토큰에서만 도출(IDOR 방지). 사업장 변경은 여기서 다루지 않는다(소속이동 전용).
+     */
+    @PostMapping("/update-my-default-sch")
+    public ResponseEntity<?> updateMyDefaultSch(
+            @RequestBody UpdateMyDefaultSchRequest request,
+            @RequestHeader(value = "Authorization", required = true) String authorization) {
+
+        user01Service.updateMyDefaultSch(UpdateMyDefaultSchParam.from(request, jwtUtil.getAllClaimsAsMap(authorization)));
+
+        return ResponseEntity.status(HttpStatus.OK).build();
     }
 
     // ===== PRAFTA-036 - 관리자 단건 사용자 생성 (UserInfoPop callmethod_p='C' 모드) =====

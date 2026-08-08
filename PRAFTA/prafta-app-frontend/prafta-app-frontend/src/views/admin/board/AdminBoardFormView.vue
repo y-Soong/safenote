@@ -127,12 +127,12 @@
       </div>
     </main>
 
-    <!-- 하단 액션 -->
+    <!-- 하단 액션 (F-10 규약: 왼쪽=진행/확정(저장), 오른쪽=이탈(취소)) -->
     <footer class="bf-footer">
-      <button type="button" class="bf-btn bf-btn--ghost" @click="onCancel">취소</button>
       <button type="button" class="bf-btn bf-btn--primary" :disabled="saving" @click="onSave">
         {{ saving ? '저장 중...' : '저장' }}
       </button>
+      <button type="button" class="bf-btn bf-btn--ghost" @click="onCancel">취소</button>
     </footer>
 
     <!-- 인라인 SVG 스프라이트 -->

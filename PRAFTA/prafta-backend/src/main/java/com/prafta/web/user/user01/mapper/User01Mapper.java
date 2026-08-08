@@ -26,6 +26,7 @@ import com.prafta.web.user.user01.result.MyProfileResult;
 import com.prafta.web.user.user01.result.ServiceCreditResult;
 import com.prafta.web.user.user01.result.TemplateAuthRow;
 import com.prafta.web.user.user01.result.TemplateNodeRow;
+import com.prafta.web.user.user01.result.TemplateRankRow;
 import com.prafta.web.user.user01.result.TemplateSiteRow;
 import com.prafta.web.user.user01.result.UserHireDateHistoryResult;
 import com.prafta.web.user.user01.result.UserHireInfoResult;
@@ -46,7 +47,9 @@ public interface User01Mapper {
 	List<TemplateNodeRow> selectTemplateNodeList(@Param("cmpnyCd") String cmpnyCd);
 
 	List<TemplateAuthRow> selectTemplateAuthList(@Param("cmpnyCd") String cmpnyCd);
-	
+
+	List<TemplateRankRow> selectTemplateRankList(@Param("cmpnyCd") String cmpnyCd);
+
 	int updateUserPw(UserPasswdCommand dto);
 
 	UserPwResult selectUserPwByUserId(@Param("cmpnyCd") String cmpnyCd, @Param("userCd") String userCd);

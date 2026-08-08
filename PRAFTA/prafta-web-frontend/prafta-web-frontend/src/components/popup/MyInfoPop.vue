@@ -64,6 +64,74 @@
           </div>
         </div>
 
+        <!-- 근무 정보 (F-8-3) — 기본 근무타입 자기변경(웹 내정보). 현재값 표시 + 인라인 변경.
+             본인 변경은 정책서 §6.1 이 "관리자 주체"로만 서술돼 있어 명시적 근거는 없으나,
+             2026-08-05 사용자 확정(3경로: 관리자/웹 내정보/앱 마이페이지)에 따라 F-8-2 API 를 연결한다. -->
+        <div class="section-title">근무 정보</div>
+        <div class="form-container">
+          <div class="form-row-max" v-if="!isEditingDefaultSch">
+            <label>기본 근무타입</label>
+            <input :value="defaultSchLabel" disabled placeholder="미설정" />
+            <button
+              type="button"
+              class="btn btn-second"
+              @click="onStartEditDefaultSch"
+            >
+              변경
+            </button>
+          </div>
+
+          <template v-else>
+            <div class="form-row-max">
+              <label>기본 근무타입</label>
+              <BaseSelect
+                id="myDefaultSchCd"
+                v-model="pendingDefaultSchCd"
+                :disabled="isSchOptionsLoading || isSavingDefaultSch"
+              >
+                <option :value="''">-</option>
+                <option
+                  v-for="opt in defaultSchOptions"
+                  :key="opt.schCd"
+                  :value="opt.schCd"
+                >
+                  {{ opt.schNo }} ({{ fnFmtSchTime(opt.fstSchStrTime) }}~{{
+                    fnFmtSchTime(opt.fstSchEndTime)
+                  }})
+                </option>
+              </BaseSelect>
+            </div>
+            <p class="default-sch-hint">
+              ⓘ 기본 근무타입 변경 시 내일(명일)부터 당해 연말까지 평일
+              근무계획이 자동 생성·갱신됩니다(빈 날·자동생성분만,
+              휴일·연차·교대팀 구간 제외).
+            </p>
+            <span class="form-msg" v-if="defaultSchErrorMsg">{{
+              defaultSchErrorMsg
+            }}</span>
+
+            <!-- F-10 규약: 왼쪽=진행/확정(저장, primary), 오른쪽=이탈(취소) — 파일 기존 관례상
+                 이탈 버튼은 정의되지 않은 btn-ghost 대신 공용 btn-second 사용(닫기 버튼과 동일). -->
+            <div class="default-sch-actions">
+              <button
+                type="button"
+                class="btn btn-primary"
+                :disabled="!pendingDefaultSchCd || isSavingDefaultSch"
+                @click="onSaveDefaultSch"
+              >
+                저장
+              </button>
+              <button
+                type="button"
+                class="btn btn-second"
+                @click="onCancelEditDefaultSch"
+              >
+                취소
+              </button>
+            </div>
+          </template>
+        </div>
+
         <!-- 약관 동의 설정 (선택약관 on/off) — 선택약관이 1건 이상일 때만 노출.
              앱 마이페이지(MyPageView "약관 동의 설정")와 같은 목록/동작을 웹에도 제공한다.
              연동 회사 제3자 제공 동의(006)는 이 토글이 유일한 웹 상시 변경 수단이다. -->
@@ -144,7 +212,8 @@
             <button class="btn btn-withdrawal" @click="fnSelfWithdrawal">
               회원탈퇴
             </button>
-            <button class="btn btn-default" @click="$emit('close')">
+            <!-- F-10 규약: 이탈(닫기)은 ghost 계열 — 정의되지 않은 btn-default 대신 공용 btn-second 사용 -->
+            <button class="btn btn-second" @click="$emit('close')">
               닫기
             </button>
           </div>
@@ -166,6 +235,7 @@ import { formatDateTimeDotWithSec } from "@/utils/dateFormat";
 // 연동 회사 제3자 제공 동의(006) 식별 — 철회(Y→N) 확인 팝업 판별용(앱 termsGate 와 동일 상수).
 import { THIRD_PARTY_CONSENT_TERMS_ID } from "@/utils/consentTerms";
 import TermsDetailPop from "@/components/popup/TermsDetailPop.vue";
+import BaseSelect from "@/components/common/BaseSelect.vue";
 
 const { proxy } = getCurrentInstance();
 const { open: openPop } = useModal();
@@ -190,6 +260,16 @@ const lastLoginDtime = ref("");
 const currentPw = ref("");
 const newPw = ref("");
 const newPwConfirm = ref("");
+
+// 근무 정보(F-8-2) — 기본 근무타입 자기변경. 현재값은 my-profile 보강 응답으로 표시.
+const defaultSchCd = ref(""); // 현재 설정된 기본 근무타입 코드
+const defaultSchLabel = ref(""); // 현재값 표시용 라벨("주간조 (09:00~18:00)")
+const isEditingDefaultSch = ref(false);
+const defaultSchOptions = ref([]);
+const isSchOptionsLoading = ref(false);
+const pendingDefaultSchCd = ref("");
+const isSavingDefaultSch = ref(false);
+const defaultSchErrorMsg = ref("");
 
 // 선택약관 동의 설정 — GET /comApi/consent/my-optional-terms 응답(현재버전 + agrYn).
 //   비치명적: 조회 실패 시 빈 목록(섹션 미노출). 토글은 POST /comApi/consent/my-optional-terms-agree.
@@ -231,9 +311,93 @@ const fnLoadMyInfo = async () => {
         // 마지막 로그인 일시(초 실재) → 점/콜론 표시. dateFormat 단일 출처 위임.
         lastLoginDtime.value = formatDateTimeDotWithSec(info.lastLoginDtime);
       }
+      // F-8-2 보강 필드 — 현재 기본 근무타입 표시(미설정이면 전부 null).
+      defaultSchCd.value = info.defaultSchCd || "";
+      defaultSchLabel.value = info.defaultSchNo
+        ? `${info.defaultSchNo} (${fnFmtSchTime(
+            info.defaultSchStrTime
+          )}~${fnFmtSchTime(info.defaultSchEndTime)})`
+        : "";
     }
   } catch {
     // 조회 실패 시 userStore 값으로 대체 (이미 세팅됨)
+  }
+};
+
+// ── F-8-3: 근무 정보(기본 근무타입 자기변경) ────────────────────────
+// 'HHmm' → 'HH:mm' 라벨 포맷(DefaultSchGatePop.vue 와 동일).
+const fnFmtSchTime = (t) => {
+  if (!t || t.length < 4) return t || "";
+  return `${t.substring(0, 2)}:${t.substring(2, 4)}`;
+};
+
+// 변경 클릭 → 인라인 전환 + 옵션 로드(현재값으로 선택 초기화).
+const onStartEditDefaultSch = async () => {
+  isEditingDefaultSch.value = true;
+  pendingDefaultSchCd.value = defaultSchCd.value;
+  defaultSchErrorMsg.value = "";
+  await fnLoadDefaultSchOptions();
+};
+
+// 세션 사업장 고정 옵션 조회(파라미터 없음 — 서버가 토큰으로만 사업장 도출, IDOR 방지).
+const fnLoadDefaultSchOptions = async () => {
+  isSchOptionsLoading.value = true;
+  try {
+    const response = await axios.get("/webApi/user01/my-default-sch-options");
+    defaultSchOptions.value = response.data ?? [];
+    if (defaultSchOptions.value.length === 0) {
+      defaultSchErrorMsg.value =
+        "선택 가능한 근무타입이 없습니다. 관리자에게 문의해 주세요.";
+    }
+  } catch (err) {
+    defaultSchOptions.value = [];
+    defaultSchErrorMsg.value = resolveApiErrorMessage(
+      err,
+      "근무타입 목록 조회 중 오류가 발생했습니다."
+    );
+  } finally {
+    isSchOptionsLoading.value = false;
+  }
+};
+
+const onCancelEditDefaultSch = () => {
+  isEditingDefaultSch.value = false;
+  defaultSchErrorMsg.value = "";
+};
+
+// 저장 — 부작용 고지(명일부터 연말까지 근무계획 자동 생성·갱신) 확인 후 저장.
+const onSaveDefaultSch = async () => {
+  if (!pendingDefaultSchCd.value) return;
+
+  const confirmed = await proxy.$confirm(
+    getMessage(MSG.MY_INFO_DEFAULT_SCH_CHANGE_CONFIRM)
+  );
+  if (!confirmed) return;
+
+  isSavingDefaultSch.value = true;
+  defaultSchErrorMsg.value = "";
+  try {
+    await axios.post("/webApi/user01/update-my-default-sch", {
+      defaultSchCd: pendingDefaultSchCd.value,
+    });
+    // 성공 — 선택된 옵션으로 현재값 표시 갱신 후 인라인 편집 종료.
+    const selected = defaultSchOptions.value.find(
+      (o) => o.schCd === pendingDefaultSchCd.value
+    );
+    defaultSchCd.value = pendingDefaultSchCd.value;
+    if (selected) {
+      defaultSchLabel.value = `${selected.schNo} (${fnFmtSchTime(
+        selected.fstSchStrTime
+      )}~${fnFmtSchTime(selected.fstSchEndTime)})`;
+    }
+    isEditingDefaultSch.value = false;
+  } catch (err) {
+    defaultSchErrorMsg.value = resolveApiErrorMessage(
+      err,
+      getMessage(MSG.MY_INFO_DEFAULT_SCH_SAVE_FAILED)
+    );
+  } finally {
+    isSavingDefaultSch.value = false;
   }
 };
 
@@ -396,6 +560,23 @@ const fnChangePassword = async () => {
   padding: 0.75rem 1.2rem;
   border-top: 1px solid var(--color-border, #e5e7eb);
   background: var(--color-bg, #f9fafb);
+}
+
+/* ===== 근무 정보(기본 근무타입 자기변경, F-8-3) ===== */
+.default-sch-hint {
+  margin: 0;
+  font-size: 0.8rem;
+  line-height: 1.5;
+  color: var(--color-text-muted, #6b7280);
+}
+
+.default-sch-actions {
+  display: flex;
+  gap: 0.5rem;
+}
+
+.default-sch-actions .btn {
+  flex: 1;
 }
 
 /* ===== 약관 동의 설정(선택약관 토글) ===== */

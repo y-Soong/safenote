@@ -136,9 +136,8 @@
       </template>
     </main>
 
-    <!-- 푸터 -->
+    <!-- 푸터 (F-10 규약: 왼쪽=진행/확정(저장), 오른쪽=이탈(취소), 폭 균등) -->
     <footer class="ed-footer">
-      <button type="button" class="ed-btn ed-btn--ghost" @click="onCancel">취소</button>
       <button
         type="button"
         class="ed-btn ed-btn--primary"
@@ -148,6 +147,7 @@
       >
         저장
       </button>
+      <button type="button" class="ed-btn ed-btn--ghost" @click="onCancel">취소</button>
     </footer>
 
     <!-- 결재자 추가 바텀시트 (010-22) — HB-14(F-6) 통합 공용 시트.
@@ -255,8 +255,8 @@ const showAlert = (message) => {
   window.alert(message)
   return Promise.resolve()
 }
-const askConfirm = async (message) => {
-  if (proxy?.$confirm) return await proxy.$confirm(message)
+const askConfirm = async (message, variant) => {
+  if (proxy?.$confirm) return await proxy.$confirm(message, { variant })
   return window.confirm(message)
 }
 
@@ -411,7 +411,7 @@ const onSave = async () => {
 }
 const onDelete = async () => {
   if (!isEditMode.value || isDeleting.value) return
-  const ok = await askConfirm(`'${presetNm.value || '이 프리셋'}'을(를) 삭제할까요?`)
+  const ok = await askConfirm(`'${presetNm.value || '이 프리셋'}'을(를) 삭제할까요?`, 'danger')
   if (!ok) return
   isDeleting.value = true
   try {
@@ -802,7 +802,6 @@ onMounted(async () => {
   border: 0;
 }
 .ed-btn--ghost {
-  flex: 0 0 96px;
   background: var(--color-surface);
   color: var(--color-text-secondary);
   border: 1px solid var(--color-border);

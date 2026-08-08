@@ -861,7 +861,9 @@ const fnDelete = async () => {
     proxy.$util.isEmpty(item.mtrlItemCd)
   );
 
-  const ok = await proxy.$confirm(getMessage(MSG.DELETE_CONFIRM));
+  const ok = await proxy.$confirm(getMessage(MSG.DELETE_CONFIRM), {
+    variant: "danger",
+  });
   if (!ok) return;
 
   // 미저장 추가행은 화면에서만 제거(서버 통신 없음)

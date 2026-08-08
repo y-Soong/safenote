@@ -461,10 +461,8 @@
                 개선완료보고서
               </button>
             </div>
+            <!-- F-10 규약: 왼쪽=진행/확정(저장·지속개선대상 지정), 오른쪽=이탈(취소) -->
             <div class="footer-buttons-right">
-              <button class="btn btn-cancel" @click="fnRequestClose">
-                취소
-              </button>
               <button
                 class="btn btn-save"
                 v-if="
@@ -489,6 +487,9 @@
                 @click="fnDesignateContinuous()"
               >
                 지속개선대상 지정
+              </button>
+              <button class="btn btn-cancel" @click="fnRequestClose">
+                취소
               </button>
             </div>
           </div>

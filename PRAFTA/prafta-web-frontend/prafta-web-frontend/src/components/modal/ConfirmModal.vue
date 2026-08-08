@@ -12,11 +12,16 @@
           <div class="modal-body">
             <p style="white-space: pre-line">{{ message }}</p>
           </div>
+          <!-- F-10 규약: 왼쪽=진행/확정(색은 variant 로 안전=primary/파괴=danger), 오른쪽=이탈(ghost), 폭 균등 -->
           <div class="modal-footer">
-            <button class="btn btn-primary" @click="$emit('confirm')">
+            <button
+              class="btn"
+              :class="variant === 'danger' ? 'btn-danger' : 'btn-primary'"
+              @click="$emit('confirm')"
+            >
               확인
             </button>
-            <button class="btn btn-primary" @click="$emit('cancel')">
+            <button class="btn btn-ghost" @click="$emit('cancel')">
               취소
             </button>
           </div>
@@ -31,6 +36,12 @@ import { defineProps, defineEmits, ref, onMounted, nextTick } from "vue";
 
 defineProps({
   message: String,
+  // F-10: 파괴적 확인(삭제 등)은 'danger' 로 호출 — 미지정 시 기존과 동일한 안전(primary) 취급
+  variant: {
+    type: String,
+    default: "primary",
+    validator: (v) => ["primary", "danger"].includes(v),
+  },
 });
 
 defineEmits(["confirm", "cancel", "close"]);
@@ -70,21 +81,22 @@ onMounted(() => {
 .modal-footer {
   margin-top: 1rem;
   display: flex;
-  justify-content: center;
   gap: 1rem;
 }
 
-/* .btn.btn-primary {
-  background-color: #3b82f6;
-  color: white;
-  border: none;
-  padding: 0.6rem 1.2rem;
-  margin: 0.5rem;
-  border-radius: 4px;
-  cursor: pointer;
+.modal-footer .btn {
+  flex: 1;
 }
-.btn.btn-primary:disabled {
-  opacity: 0.6;
-  cursor: not-allowed;
-} */
+
+.btn-danger {
+  background: var(--color-danger, #ef4444);
+  color: #ffffff;
+  border: none;
+}
+
+.btn-ghost {
+  background: transparent;
+  border: 1px solid var(--color-border, #e5e7eb);
+  color: var(--color-text, #374151);
+}
 </style>

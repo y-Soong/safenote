@@ -1529,7 +1529,9 @@ const fnDelete = async () => {
     workYm: workYm.value,
   }));
 
-  const ok = await proxy.$confirm(getMessage(MSG.DELETE_CONFIRM));
+  const ok = await proxy.$confirm(getMessage(MSG.DELETE_CONFIRM), {
+    variant: "danger",
+  });
   if (!ok) return;
 
   try {
@@ -1540,6 +1542,9 @@ const fnDelete = async () => {
     if (response.status === 200) {
       // prafta-com-016-C-3: 월 삭제는 OT 보유일을 부분 제외(삭제 안 함)하고 그 목록을 skippedList 로 내려준다.
       //   연차 등록일도 서버 SQL 이 보존한다(NOT EXISTS leave_use). 제외 건수가 있으면 BatchResultPop 안내.
+      // F-11-1/F-11-2: 서버가 실제 삭제 행 수(deletedCount)를 세어 반환하므로,
+      //   이를 성공 건수로 사용해 "0건 성공" 오표시를 정정한다(구버전 응답 폴백: 필드 없으면 0 취급).
+      const deletedCount = response.data?.deletedCount ?? 0;
       const skippedList = Array.isArray(response.data?.skippedList)
         ? response.data.skippedList
         : [];
@@ -1550,8 +1555,8 @@ const fnDelete = async () => {
           message: s.reason || "초과근무가 등록되어 삭제에서 제외되었습니다.",
         }));
         openPop(BatchResultPop, {
-          totalCount: skippedList.length,
-          successCount: 0,
+          totalCount: deletedCount + skippedList.length,
+          successCount: deletedCount,
           failCount: skippedList.length,
           identifierLabel: "근무일",
           dataList,

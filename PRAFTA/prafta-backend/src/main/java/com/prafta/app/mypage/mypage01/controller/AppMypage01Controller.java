@@ -20,6 +20,7 @@ import com.prafta.app.mypage.mypage01.application.param.PasswordChangeParam;
 import com.prafta.app.mypage.mypage01.application.param.PresetActionParam;
 import com.prafta.app.mypage.mypage01.application.param.PresetSaveParam;
 import com.prafta.app.mypage.mypage01.application.param.ProfileUpdateParam;
+import com.prafta.app.mypage.mypage01.application.param.UpdateDefaultSchParam;
 import com.prafta.app.mypage.mypage01.dto.request.ApprovalCandidateRequest;
 import com.prafta.app.mypage.mypage01.dto.request.MobileSendRequest;
 import com.prafta.app.mypage.mypage01.dto.request.MobileVerifyRequest;
@@ -27,6 +28,7 @@ import com.prafta.app.mypage.mypage01.dto.request.PasswordChangeRequest;
 import com.prafta.app.mypage.mypage01.dto.request.PresetActionRequest;
 import com.prafta.app.mypage.mypage01.dto.request.PresetSaveRequest;
 import com.prafta.app.mypage.mypage01.dto.request.ProfileUpdateRequest;
+import com.prafta.app.mypage.mypage01.dto.request.UpdateDefaultSchRequest;
 import com.prafta.app.mypage.mypage01.dto.response.MypageProfileEditResponse;
 import com.prafta.app.mypage.mypage01.service.AppMypage01Service;
 import com.prafta.common.cmm.sms.policy.SmsClientIpResolver;
@@ -186,5 +188,28 @@ public class AppMypage01Controller {
 
         return ResponseEntity.status(HttpStatus.OK).body(appMypage01Service.getApprovalCandidates(
                 ApprovalCandidateParam.from(request, jwtUtil.getAllClaimsAsMap(authorization))));
+    }
+
+    // ===== F-8-2: 본인 기본 근무타입 자기변경(세션 사업장 고정) =====
+
+    /** 선택지 조회 — 대상 사업장은 세션 토큰 식별 사용자의 SITE_CD 로만 도출(파라미터 없음). */
+    @GetMapping("/default-sch-options")
+    public ResponseEntity<?> getDefaultSchOptions(
+            @RequestHeader(value = "Authorization", required = false) String authorization) {
+
+        TokenInfo tokenInfo = jwtUtil.getAllClaimsAsMap(authorization);
+        return ResponseEntity.status(HttpStatus.OK).body(appMypage01Service.getDefaultSchOptions(tokenInfo));
+    }
+
+    /** 저장 — 대상 회사/사용자는 세션 토큰에서만 도출(IDOR 방지). */
+    @PostMapping("/update-default-sch")
+    public ResponseEntity<?> updateDefaultSch(
+            @RequestBody UpdateDefaultSchRequest request,
+            @RequestHeader(value = "Authorization", required = false) String authorization) {
+
+        appMypage01Service.updateDefaultSch(
+                UpdateDefaultSchParam.from(request, jwtUtil.getAllClaimsAsMap(authorization)));
+
+        return ResponseEntity.status(HttpStatus.OK).body(java.util.Map.of("success", true));
     }
 }

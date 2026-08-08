@@ -109,10 +109,8 @@
         </template>
       </div>
 
+      <!-- F-10 규약: 왼쪽=진행/확정(반려·승인 — 둘 다 요청을 처리하는 결정), 오른쪽=이탈(닫기) -->
       <footer class="modal-footer lcc-footer">
-        <button type="button" class="btn btn-ghost" @click="onClose">
-          닫기
-        </button>
         <button
           v-if="canReject"
           type="button"
@@ -129,6 +127,9 @@
           @click="onConfirm"
         >
           {{ canReject ? "승인(반영)" : "최종 확인(반영)" }}
+        </button>
+        <button type="button" class="btn btn-ghost" @click="onClose">
+          닫기
         </button>
       </footer>
     </div>

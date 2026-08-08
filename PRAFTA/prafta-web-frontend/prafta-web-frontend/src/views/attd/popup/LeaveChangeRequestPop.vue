@@ -87,10 +87,8 @@
         </section>
       </div>
 
+      <!-- F-10 규약: 왼쪽=진행/확정(요청, primary), 오른쪽=이탈(취소) -->
       <footer class="modal-footer lcr-footer">
-        <button type="button" class="btn btn-ghost" @click="onClose">
-          취소
-        </button>
         <button
           type="button"
           class="btn btn-primary"
@@ -98,6 +96,9 @@
           @click="onSubmit"
         >
           요청
+        </button>
+        <button type="button" class="btn btn-ghost" @click="onClose">
+          취소
         </button>
       </footer>
     </div>

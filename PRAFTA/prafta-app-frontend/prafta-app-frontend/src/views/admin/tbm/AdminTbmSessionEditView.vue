@@ -138,12 +138,12 @@
           <p v-else class="admin-tbm-form__empty">연계된 위험성평가가 없어요</p>
         </div>
 
-        <!-- 액션 -->
+        <!-- 액션 (F-10 규약: 왼쪽=진행/확정(저장), 오른쪽=이탈(취소)) -->
         <div class="admin-tbm-form__actions">
+          <button type="submit" class="btn btn--primary" :disabled="submitting">저장</button>
           <button type="button" class="btn btn--ghost" :disabled="submitting" @click="onCancel">
             취소
           </button>
-          <button type="submit" class="btn btn--primary" :disabled="submitting">저장</button>
         </div>
       </form>
     </main>

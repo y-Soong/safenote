@@ -63,7 +63,10 @@
               연차 변경 요청 대기 ({{ leavechangeList.length }})
             </div>
             <div class="ra-list">
-              <div v-if="leavechangeList.length === 0" class="ra-empty">
+              <div v-if="leaveChangeNoDept" class="ra-empty">
+                담당 부서가 없어 연차 변경 요청을 조회할 수 없습니다.
+              </div>
+              <div v-else-if="leavechangeList.length === 0" class="ra-empty">
                 확인 대기 중인 연차 변경 요청이 없습니다.
               </div>
               <div
@@ -303,6 +306,7 @@
 /* eslint-disable */
 import {
   ref,
+  computed,
   onMounted,
   getCurrentInstance,
   defineProps,
@@ -352,6 +356,15 @@ const leavechangeList = ref([]);
 const leavechangeCount = ref(0);
 const showLeaveChangePop = ref(false);
 const selectedLeaveChangeReqId = ref("");
+// 담당 부서(gv_nodeCd)가 없는 노드 관리자 — 조회를 생략하고 인라인 안내만 표시(F-1, alert 금지).
+const leaveChangeNoDept = ref(false);
+
+// 권한 스코프(F-1) — Attd_13.vue 의 프리필 규칙과 동형: master/hr 는 전사, 그 외는 담당 부서 강제.
+//   이 화면엔 부서 셀렉터가 없으므로 세션값을 그대로 프리필 파라미터로 사용한다.
+const isMasterOrHr = computed(() => {
+  const a = sessionStorage.getItem("gv_authCd");
+  return a === "master" || a === "hr";
+});
 
 // 연차 변경 요청 코드 → 라벨 매핑(TB_LEAVE_CHANGE_REQUEST 전용 — SYS032 와 무관, 재사용 금지)
 const LEAVE_CHANGE_TYPE_NM = { MOVE: "이동", DELETE: "삭제" };
@@ -446,13 +459,30 @@ const fnLoadApprovals = async () => {
 };
 
 // "연차 상신" 탭 내 "연차 변경 요청 대기" 소섹션 목록 조회(B안) — 확인 대기(AGREED) 건만 노출.
-//   사이트/부서 셀렉터가 없는 화면이므로 SITE_CD/NODE_CD 는 비워서 호출(master/hr 는 전사, 노드 관리자는 400 — 상세설명 4번).
+//   사이트/부서 셀렉터가 없는 화면이므로 Attd_13.vue 의 프리필 규칙을 그대로 따른다(F-1):
+//   master/hr 는 전사 조회, 그 외(노드 관리자)는 세션 사업장(gv_siteCd)/담당 부서(gv_nodeCd)로 고정 조회.
+//   프리필할 담당 부서가 없으면 서버 호출 자체를 생략하고 소섹션을 비운 채 인라인 안내만 표시한다
+//   (전역 alert 로 화면 흐름을 끊지 않는다 — 부서 필수 EP 를 부서 없이 호출해 발생하던 400 즉시 방지).
 //   fnLoadApprovals 와 독립적으로 실패를 격리해, 한쪽이 실패해도 다른 소섹션은 정상 표시되게 한다.
 const fnLoadLeaveChanges = async () => {
+  leaveChangeNoDept.value = false;
+  const params = { REQ_STATUS: "AGREED" };
+  if (!isMasterOrHr.value) {
+    const nodeCd = sessionStorage.getItem("gv_nodeCd") ?? "";
+    if (!nodeCd) {
+      // 담당 부서가 없는 노드 관리자 — 조회를 건너뛰고 조용히 비운다(alert 금지, 상세설명 2번).
+      leavechangeList.value = [];
+      leavechangeCount.value = 0;
+      leaveChangeNoDept.value = true;
+      return;
+    }
+    params.SITE_CD = sessionStorage.getItem("gv_siteCd") ?? "";
+    params.NODE_CD = nodeCd;
+    // 이 화면엔 별도 하위부서 포함 토글이 없어 Attd_13 기본값(포함)으로 고정(상세설명 3번).
+    params.INC_SUB_NODE_YN = "Y";
+  }
   try {
-    const r = await axios.get("/webApi/attd13/change-requests", {
-      params: { REQ_STATUS: "AGREED" },
-    });
+    const r = await axios.get("/webApi/attd13/change-requests", { params });
     leavechangeList.value = r.data?.list ?? [];
     leavechangeCount.value = r.data?.totalCnt ?? leavechangeList.value.length;
   } catch (e) {

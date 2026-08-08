@@ -115,11 +115,9 @@ const EXCEL_HEADERS = [
   "생년월일(YYMMDD)",
   "직급코드",
   "입사일(YYYYMMDD)",
-  "고용형태(REGULAR/CONTRACT/DAILY/EXECUTIVE)",
-  "계약종료일(YYYYMMDD)",
+  "고용형태(REGULAR/CONTRACT/EXECUTIVE)",
   "경력인정개월수",
-  "경력인정사유유형(SYS042)",
-  "경력인정상세",
+  "상세 설명",
 ];
 
 /*
@@ -197,7 +195,7 @@ const fnExportExcel = () => {
     ...sheet1Rows,
   ];
   const ws1 = XLSX.utils.aoa_to_sheet(ws1Data);
-  // 1행 안내문을 A1:P1(16컬럼 전체)로 병합 — 양식 가독성.
+  // 1행 안내문을 헤더 전체 컬럼으로 병합 — 양식 가독성.
   ws1["!merges"] = [
     { s: { r: 0, c: 0 }, e: { r: 0, c: EXCEL_HEADERS.length - 1 } },
   ];

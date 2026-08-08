@@ -91,11 +91,9 @@
             placeholder="반려 사유를 입력하세요 (필수)"
           ></textarea>
 
+          <!-- F-10 규약: 왼쪽=진행/확정(파괴적 진행=danger), 오른쪽=이탈(취소) -->
           <div class="alc-card__actions">
             <template v-if="rejectingId === req.changeReqId">
-              <button type="button" class="alc-btn alc-btn--ghost" :disabled="submitting" @click="cancelReject">
-                취소
-              </button>
               <button
                 type="button"
                 class="alc-btn alc-btn--danger"
@@ -103,6 +101,9 @@
                 @click="onReject(req)"
               >
                 반려 확정
+              </button>
+              <button type="button" class="alc-btn alc-btn--ghost" :disabled="submitting" @click="cancelReject">
+                취소
               </button>
             </template>
             <template v-else>

@@ -32,11 +32,12 @@
           </svg>
         </div>
         <h2 class="lcd__title">로그아웃할까요?</h2>
+        <!-- F-10 규약: 왼쪽=진행/확정(로그아웃), 오른쪽=이탈(취소) -->
         <div class="lcd__actions">
-          <button type="button" class="lcd__btn lcd__btn--ghost" @click="onCancel">취소</button>
           <button type="button" class="lcd__btn lcd__btn--primary" @click="onConfirm">
             로그아웃
           </button>
+          <button type="button" class="lcd__btn lcd__btn--ghost" @click="onCancel">취소</button>
         </div>
       </div>
     </div>

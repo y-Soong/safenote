@@ -620,7 +620,9 @@ const fnSearch = async () => {
 };
 
 const fnDeleteHoliday = async (item) => {
-  const ok = await proxy.$confirm(getMessage(MSG.LEAVE_DELETE_CONFIRM));
+  const ok = await proxy.$confirm(getMessage(MSG.LEAVE_DELETE_CONFIRM), {
+    variant: "danger",
+  });
   if (!ok) return;
 
   try {

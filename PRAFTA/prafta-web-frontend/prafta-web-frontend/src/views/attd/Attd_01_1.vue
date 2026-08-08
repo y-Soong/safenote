@@ -175,12 +175,13 @@
                   @update:width="onResize"
                 />
                 <th class="editableCell" style="width: 8%">변경이력</th>
+                <th class="editableCell" style="width: 8%">배정현황</th>
               </tr>
             </thead>
             <tbody>
               <template v-if="!schList || schList.length === 0">
                 <tr>
-                  <td colspan="10" class="edu-grid-empty">
+                  <td colspan="11" class="edu-grid-empty">
                     등록된 세부 항목이 없습니다.
                   </td>
                 </tr>
@@ -227,6 +228,29 @@
                       </svg>
                     </button>
                   </td>
+                  <td style="text-align: center" @click.stop>
+                    <button
+                      type="button"
+                      class="btn-history-icon"
+                      title="배정현황"
+                      @click="fnAssignedUsersPopOpen(sch)"
+                    >
+                      <svg
+                        xmlns="http://www.w3.org/2000/svg"
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke="currentColor"
+                        stroke-width="1.5"
+                        stroke-linecap="round"
+                        stroke-linejoin="round"
+                      >
+                        <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" />
+                        <circle cx="9" cy="7" r="4" />
+                        <path d="M23 21v-2a4 4 0 0 0-3-3.87" />
+                        <path d="M16 3.13a4 4 0 0 1 0 7.75" />
+                      </svg>
+                    </button>
+                  </td>
                 </tr>
               </template>
             </tbody>
@@ -254,6 +278,7 @@ import search_icon from "@/assets/img/search_icon.png";
 import SiteSearchPop from "@/components/popup/SiteSearchPop.vue";
 import SchInfoPop from "./popup/SchInfoPop.vue";
 import SchInfoHistPop from "./popup/SchInfoHistPop.vue";
+import SchAssignedUsersPop from "./popup/SchAssignedUsersPop.vue";
 import ThSortable from "@/components/common/ThSortable.vue";
 import {
   useTableSort,
@@ -411,7 +436,9 @@ const fnDelete = async () => {
     proxy.$alert(getMessage(MSG.SAVE_DATA_REQUIRED));
     return;
   }
-  const ok = await proxy.$confirm(getMessage(MSG.DELETE_CONFIRM));
+  const ok = await proxy.$confirm(getMessage(MSG.DELETE_CONFIRM), {
+    variant: "danger",
+  });
   if (!ok) return;
   try {
     await axios.post("/webApi/chkLst01/deleteschList", filteredData);
@@ -568,6 +595,13 @@ const fnAlertMsg = async (message, afterConfirmCallback) => {
 
 const fnChangeHistOpen = (sch) => {
   openPop(SchInfoHistPop, {
+    schData_p: sch,
+  });
+};
+
+// F-12-2: 근무타입별 배정현황 조회 팝업(정책 §3.3 삭제/사용중지 사전 확인 지원).
+const fnAssignedUsersPopOpen = (sch) => {
+  openPop(SchAssignedUsersPop, {
     schData_p: sch,
   });
 };

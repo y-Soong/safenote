@@ -7,6 +7,7 @@ import com.prafta.app.mypage.mypage01.application.param.PasswordChangeParam;
 import com.prafta.app.mypage.mypage01.application.param.PresetActionParam;
 import com.prafta.app.mypage.mypage01.application.param.PresetSaveParam;
 import com.prafta.app.mypage.mypage01.application.param.ProfileUpdateParam;
+import com.prafta.app.mypage.mypage01.application.param.UpdateDefaultSchParam;
 import com.prafta.app.mypage.mypage01.dto.response.ApprovalCandidateListResponse;
 import com.prafta.app.mypage.mypage01.dto.response.MobileSendResponse;
 import com.prafta.app.mypage.mypage01.dto.response.MobileVerifyResponse;
@@ -57,4 +58,12 @@ public interface AppMypage01Service {
 
     /** 010-05: 결재자 후보 목록. */
     ApprovalCandidateListResponse getApprovalCandidates(ApprovalCandidateParam param);
+
+    // ===== F-8-2: 본인 기본 근무타입 자기변경(세션 사업장 고정) =====
+
+    /** 선택지 조회 — 대상 사업장은 세션 토큰 식별 사용자의 SITE_CD 로만 도출(파라미터 없음). */
+    java.util.List<com.prafta.common.cmm.sch.vo.SchOptionVO> getDefaultSchOptions(TokenInfo tokenInfo);
+
+    /** 저장 — 화이트리스트 검증 후 저장 + 즉시 자동생성(실패는 격리). */
+    void updateDefaultSch(UpdateDefaultSchParam param);
 }

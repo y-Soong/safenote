@@ -22,5 +22,10 @@ public record UserProfileResult(
     , String genderCode     // GENDER (SYS004 100/200, NULL 허용)
     , String genderNm       // SYS004 라벨
     , String lastLoginDtime
+    // F-8-2: 현재 기본 근무타입 표시용(비PII, 평문). 미설정이면 전부 NULL.
+    , String defaultSchCd
+    , String defaultSchNo
+    , String defaultSchStrTime
+    , String defaultSchEndTime
 ) {
 }

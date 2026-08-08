@@ -21,6 +21,9 @@ public class DeleteUserWorkPlansResponse {
 	/** 실제 삭제된 사용자 수(요청 사용자 중 삭제 시도 대상). 참고용. */
 	int deletedUserCount;
 
+	/** F-11-1: 실제 삭제된 근무계획(TB_USER_WORK_PLAN) 행 수 합계. 프론트 결과 팝업의 성공 건수 표시용. */
+	int deletedCount;
+
 	/** OT 보유로 삭제에서 제외된 (사용자, 일자) 목록. */
 	List<SkippedCellResult> skippedList;
 }

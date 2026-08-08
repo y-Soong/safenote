@@ -343,7 +343,9 @@ const fnSave = async () => {
 /** 저장된 노드 삭제 API 호출 후 재조회 */
 const fnDeleteOrgNode = async (node) => {
   if (proxy.$util.isEmpty(siteCd.value)) return;
-  const ok = await proxy.$confirm(getMessage(MSG.DELETE_NODE_CONFIRM));
+  const ok = await proxy.$confirm(getMessage(MSG.DELETE_NODE_CONFIRM), {
+    variant: "danger",
+  });
   if (!ok) return;
 
   try {
@@ -363,7 +365,8 @@ const fnSiteNodeAllDelete = async () => {
   }
 
   const ok = await proxy.$confirm(
-    getMessage(MSG.SITE_ALL_DELETE_CONFIRM, { siteNm: siteNm.value })
+    getMessage(MSG.SITE_ALL_DELETE_CONFIRM, { siteNm: siteNm.value }),
+    { variant: "danger" }
   );
   if (!ok) return;
 
@@ -424,7 +427,9 @@ const fnSrchSiteInfo = async () => {
 };
 
 const fnDeleteSiteNodeAdmin = async (nodeCd, siteCd, userCd, userNm) => {
-  const ok = await proxy.$confirm(getMessage(MSG.DELETE_CONFIRM));
+  const ok = await proxy.$confirm(getMessage(MSG.DELETE_CONFIRM), {
+    variant: "danger",
+  });
   if (!ok) return;
 
   try {

@@ -415,6 +415,13 @@ public enum AttdErrorCode implements ApiErrorCode {
     //   재사용하면 관리자·근로자가 없는 스케줄 겹침을 찾게 되므로(F-7 계열) 사유를 분리한다.
     //   종일 연차일은 ATTD_400_151 이 통째로 차단한다(별도 코드 유지).
     , ATTD_400_196(HttpStatus.BAD_REQUEST, "연차로 쉬는 시간대에는 초과근무를 등록할 수 없어요. 실제 근무한 시간으로 조정해 주세요.")
+
+    // ===== F-2: 근무타입 휴게시각 서버 검증 신설(fail-open 봉합, 2026-08-08) =====
+    // 프론트(SchInfoPop.vue validateWorkTime)의 오버나이트 withinSpan 검증을 서버로 이식.
+    //   휴게시간(분)이 근무시간을 초과하거나, 휴게 시작/종료(=시작+휴게분) 시각이 근무시간
+    //   범위(오버나이트 포함)를 벗어나면 차단한다. 구체 사유는 detailMessage 로 대체된다
+    //   (ApiException(errorCode, detailMessage) 패턴 — 아래 기본 메시지는 폴백용).
+    , ATTD_400_197(HttpStatus.BAD_REQUEST, "휴게시간 설정이 올바르지 않습니다.")
     ;
 
     private final HttpStatus httpStatus;

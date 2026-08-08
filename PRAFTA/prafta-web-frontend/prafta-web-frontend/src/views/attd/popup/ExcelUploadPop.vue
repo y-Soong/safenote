@@ -220,10 +220,11 @@
         />
 
         <!-- 푸터 -->
+        <!-- F-10 규약: 왼쪽=진행/확정(저장, primary), 오른쪽=이탈(닫기) -->
         <div class="modal-footer">
           <div class="btn-group">
-            <button class="btn btn-second" @click="$emit('close')">닫기</button>
             <button class="btn btn-primary" @click="fnSave">저장</button>
+            <button class="btn btn-second" @click="$emit('close')">닫기</button>
           </div>
         </div>
       </div>

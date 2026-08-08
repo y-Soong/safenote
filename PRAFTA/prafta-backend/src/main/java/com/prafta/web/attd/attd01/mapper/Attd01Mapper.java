@@ -19,6 +19,7 @@ import com.prafta.web.attd.attd01.application.query.ShiftCdQuery;
 import com.prafta.web.attd.attd01.application.query.ShiftSchDetailQuery;
 import com.prafta.web.attd.attd01.application.query.ShiftSchInfoListQuery;
 import com.prafta.web.attd.attd01.application.query.ShiftSchNoCountQuery;
+import com.prafta.web.attd.attd01.result.AssignedUserResult;
 import com.prafta.web.attd.attd01.result.SchHistResult;
 import com.prafta.web.attd.attd01.result.SchInfoResult;
 import com.prafta.web.attd.attd01.result.ShiftAssignInfoResult;
@@ -74,6 +75,19 @@ public interface Attd01Mapper {
 	 * 행 미존재 시 null. (subcon 모듈 의존을 피해 attd01 패키지에 동형 쿼리를 둠 — 모듈 경계 보존)
 	 */
 	String selectSiteLinkSrcCmpny(@Param("gvCmpnyCd") String gvCmpnyCd, @Param("siteCd") String siteCd);
+
+	/**
+	 * F-12-2: 근무타입(SCH_CD)별 배정현황 — 사용자별 최초~최근 배정일 + 배정일수.
+	 * guardScheduleDeactivate 와 동일 기준(WORK_YMD &gt;= fromYmd)으로 집계해, 팝업 목록이
+	 * 실제 사용중지 시 차단되는 대상과 일치하도록 맞춘다.
+	 */
+	// 보안수정(security High): scopeNodeCd — master/hr/safe 는 null(사업장 전체),
+	// 그 외는 세션 부서(gv_nodeCd) 앵커(+하위)로 조회 범위를 강제(Attd01ServiceImpl 게이트와 짝).
+	List<AssignedUserResult> selectAssignedUsersBySchCd(@Param("cmpnyCd") String cmpnyCd,
+			@Param("siteCd") String siteCd,
+			@Param("schCd") String schCd,
+			@Param("fromYmd") String fromYmd,
+			@Param("scopeNodeCd") String scopeNodeCd);
 
 	int selectShiftSchNoCount(ShiftSchNoCountQuery query);
 	

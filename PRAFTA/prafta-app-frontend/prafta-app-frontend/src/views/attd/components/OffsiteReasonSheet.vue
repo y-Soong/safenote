@@ -92,8 +92,8 @@
           <p class="ofs__count">{{ reason.length }}/500</p>
         </div>
 
+        <!-- F-10 규약: 왼쪽=진행/확정(등록), 오른쪽=이탈(취소) -->
         <footer class="ofs__footer">
-          <button type="button" class="ofs__btn ofs__btn--ghost" @click="onCancel">취소</button>
           <button
             type="button"
             class="ofs__btn ofs__btn--primary"
@@ -101,6 +101,7 @@
           >
             외근으로 등록
           </button>
+          <button type="button" class="ofs__btn ofs__btn--ghost" @click="onCancel">취소</button>
         </footer>
       </div>
     </div>

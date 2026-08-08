@@ -153,12 +153,12 @@
       <p v-else class="admin-tbm-form__warn">위험성평가가 연계되지 않았어요 (개설은 가능)</p>
     </div>
 
-    <!-- 액션 -->
+    <!-- 액션 (F-10 규약: 왼쪽=진행/확정(개설), 오른쪽=이탈(닫기)) -->
     <div class="admin-tbm-form__actions">
+      <button type="submit" class="btn btn--primary" :disabled="submitting">개설</button>
       <button type="button" class="btn btn--ghost" :disabled="submitting" @click="onClose">
         닫기
       </button>
-      <button type="submit" class="btn btn--primary" :disabled="submitting">개설</button>
     </div>
 
     <!-- 교육자료/위험성평가 선택 시트 (R2-gap developer 연동) -->

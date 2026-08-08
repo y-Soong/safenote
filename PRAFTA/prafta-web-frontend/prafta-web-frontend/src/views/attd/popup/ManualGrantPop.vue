@@ -150,10 +150,8 @@
         </div>
 
         <!-- ============ 푸터 ============ -->
+        <!-- F-10 규약: 왼쪽=진행/확정(부여, primary), 오른쪽=이탈(취소) -->
         <div class="modal-footer">
-          <button class="btn btn-second" type="button" @click="fnClose">
-            취소
-          </button>
           <button
             class="btn btn-primary"
             type="button"
@@ -161,6 +159,9 @@
             @click="fnSubmit"
           >
             부여하기
+          </button>
+          <button class="btn btn-second" type="button" @click="fnClose">
+            취소
           </button>
         </div>
       </div>

@@ -146,9 +146,9 @@
         </div>
 
         <!-- 🔹 Footer -->
+        <!-- F-10 규약: 왼쪽=진행/확정(소속이동 예약, primary), 오른쪽=이탈(취소, ghost), 폭 균등 -->
         <div class="modal-footer">
           <div class="btn-group">
-            <button class="btn btn-second" @click="$emit('close')">취소</button>
             <button
               class="btn btn-primary"
               :disabled="!eligible || saving"
@@ -156,6 +156,7 @@
             >
               소속이동 예약
             </button>
+            <button class="btn btn-second" @click="$emit('close')">취소</button>
           </div>
         </div>
       </div>
@@ -482,6 +483,11 @@ const fnSubmit = async () => {
 .user-transfer-pop {
   width: 90%;
   max-width: 520px;
+}
+
+/* F-10 규약: 좌우 버튼 폭 균등 */
+.modal-footer .btn-group .btn {
+  flex: 1;
 }
 
 .form-container {

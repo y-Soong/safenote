@@ -220,10 +220,11 @@
           >
             잔여 부족 예상
           </span>
-          <button class="btn-cancel" @click="$emit('close')">취소</button>
+          <!-- F-10 규약: 왼쪽=진행/확정(신청, primary), 오른쪽=이탈(취소) -->
           <button class="btn-confirm" :disabled="submitting" @click="fnSubmit">
             신청
           </button>
+          <button class="btn-cancel" @click="$emit('close')">취소</button>
         </div>
       </div>
     </div>

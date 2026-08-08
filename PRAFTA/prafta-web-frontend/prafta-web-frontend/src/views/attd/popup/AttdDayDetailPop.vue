@@ -932,9 +932,7 @@
             ></textarea>
           </div>
           <div class="del-pop-foot">
-            <button class="btn-cancel" type="button" @click="closeDeletePopup">
-              취소
-            </button>
+            <!-- F-10 규약: 왼쪽=진행/확정(삭제 실행, danger), 오른쪽=이탈(취소) -->
             <button
               class="btn-danger"
               type="button"
@@ -942,6 +940,9 @@
               @click="fnDelete"
             >
               삭제
+            </button>
+            <button class="btn-cancel" type="button" @click="closeDeletePopup">
+              취소
             </button>
           </div>
         </div>
@@ -2155,7 +2156,9 @@ const fnDeleteOvertime = async (segIdx) => {
   const checkedNew = seg.otList.filter((o) => o.checked && !o.otId);
   if (!checkedSaved.length && !checkedNew.length) return;
 
-  const ok = await proxy.$confirm(getMessage(MSG.OT_DELETE_CONFIRM));
+  const ok = await proxy.$confirm(getMessage(MSG.OT_DELETE_CONFIRM), {
+    variant: "danger",
+  });
   if (!ok) return;
 
   // 1) 기저장행이 없으면 서버 호출 없이 신규 체크행만 로컬 제거.

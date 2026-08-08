@@ -99,8 +99,8 @@
           </p>
         </div>
 
+        <!-- F-10 규약: 왼쪽=진행/확정(직권 지정, primary), 오른쪽=이탈(닫기, ghost), 폭 균등 -->
         <div class="modal-footer lpb-footer">
-          <button class="btn-ghost" @click="$emit('close')">닫기</button>
           <button
             class="btn-primary"
             :disabled="!proposal || isCommitting"
@@ -108,6 +108,7 @@
           >
             {{ isCommitting ? "커밋 중..." : "이 배치로 직권 지정" }}
           </button>
+          <button class="btn-ghost" @click="$emit('close')">닫기</button>
         </div>
       </div>
     </div>
@@ -336,6 +337,11 @@ const onCommit = async () => {
   display: flex;
   justify-content: flex-end;
   gap: 8px;
+}
+/* F-10 규약: 좌우 버튼 폭 균등 */
+.lpb-footer .btn-ghost,
+.lpb-footer .btn-primary {
+  flex: 1;
 }
 .btn-ghost {
   height: var(--btn-height-lg, 32px);

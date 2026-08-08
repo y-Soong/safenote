@@ -143,6 +143,14 @@
               <use href="#i-mp-chev-right" />
             </svg>
           </button>
+          <!-- F-8-3: 근무 정보(기본 근무타입 자기변경). 현재값은 GET /appApi/mypage/profile 보강 응답. -->
+          <button type="button" class="mp-menu__row" @click="onDefaultSchClick">
+            <span class="mp-menu__text">근무 정보</span>
+            <span class="mp-menu__meta">{{ defaultSchLabel || '미설정' }}</span>
+            <svg class="icon mp-menu__chev" width="20" height="20" aria-hidden="true">
+              <use href="#i-mp-chev-right" />
+            </svg>
+          </button>
           <!-- 일용직 계약서+승인제 T4: 내 서명 근로계약서 열람(교부 의무 §6-1) — 일용직(DAILY)에게만 노출.
                항상 노출(서명본 유무 무관) — 빈 상태는 MyContractView 가 자체 처리(UI-DC-04). -->
           <button v-if="isDailyWorker" type="button" class="mp-menu__row" @click="onMyContract">
@@ -233,6 +241,14 @@
       @confirm="onWithdrawConfirm"
     />
 
+    <!-- F-8-3: 근무 정보(기본 근무타입 자기변경) 바텀시트 -->
+    <DefaultSchEditSheet
+      v-model="defaultSchSheetOpen"
+      :current-sch-cd="defaultSchCd"
+      :current-label="defaultSchLabel"
+      @saved="onDefaultSchSaved"
+    />
+
     <!-- 인라인 SVG sprite (본 화면 전용) -->
     <svg width="0" height="0" class="mp-sprite" aria-hidden="true" focusable="false">
       <defs>
@@ -296,6 +312,7 @@ import { getShellInfo } from '@/utils/shellCapability'
 
 import LogoutConfirmDialog from './components/LogoutConfirmDialog.vue'
 import WithdrawalConfirmDialog from './components/WithdrawalConfirmDialog.vue'
+import DefaultSchEditSheet from './components/DefaultSchEditSheet.vue'
 import AppBottomTabBar from '@/components/common/AppBottomTabBar.vue'
 
 const router = useRouter()
@@ -324,6 +341,11 @@ const userNm = ref('')
 const siteNm = ref('')
 const nodeNm = ref('')
 const presetCount = ref(0)
+
+// F-8-3: 근무 정보(기본 근무타입 자기변경). 현재값은 profile 보강 응답(defaultSchCd/No/StrTime/EndTime).
+const defaultSchCd = ref('')
+const defaultSchLabel = ref('')
+const defaultSchSheetOpen = ref(false)
 
 // 사용자연차결재-04: "연차 결재 관리" 대기 건수 배지(경량 조회, 비치명적). 실패 시 0(미노출).
 const pendingApprovalCount = ref(0)
@@ -432,6 +454,20 @@ const onProfileEdit = () => {
 }
 const onPasswordChange = () => {
   router.push('/PasswordChange')
+}
+// F-8-3: 근무 정보 항목 탭 → 바텀시트 오픈.
+const onDefaultSchClick = () => {
+  defaultSchSheetOpen.value = true
+}
+// F-8-3: 바텀시트 저장 완료(saved) → 목록 항목 표시값 갱신(재조회 없이 즉시 반영).
+const onDefaultSchSaved = (newSchCd, newLabel) => {
+  defaultSchCd.value = newSchCd
+  if (newLabel) defaultSchLabel.value = newLabel
+}
+// 'HHmm' → 'HH:mm' (근무 정보 메뉴 항목 표시용)
+const fmtSchTime = (t) => {
+  if (!t || t.length < 4) return t || ''
+  return `${t.substring(0, 2)}:${t.substring(2, 4)}`
 }
 // 일용직 계약서+승인제 T4: 내 서명 근로계약서 열람 진입(일용직 전용 노출).
 const onMyContract = () => {
@@ -659,6 +695,11 @@ const loadAll = async ({ showLoading = true } = {}) => {
     siteNm.value = data?.siteNm || ''
     nodeNm.value = data?.nodeNm || ''
     presetCount.value = data?.presetCount ?? 0
+    // F-8-3: 현재 기본 근무타입 표시(미설정이면 defaultSchNo 가 없어 라벨은 빈 문자열 → "미설정" 표기).
+    defaultSchCd.value = data?.defaultSchCd || ''
+    defaultSchLabel.value = data?.defaultSchNo
+      ? `${data.defaultSchNo} (${fmtSchTime(data.defaultSchStrTime)}~${fmtSchTime(data.defaultSchEndTime)})`
+      : ''
   } catch (e) {
     // 401/403 등 토큰 에러는 axios 인터셉터가 처리. 그 외 실패는 세션값으로 최소 폴백 표시.
     console.warn('[MyPage] 프로필 조회 실패:', e?.message)

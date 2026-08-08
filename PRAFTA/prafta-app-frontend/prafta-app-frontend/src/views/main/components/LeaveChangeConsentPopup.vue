@@ -88,15 +88,8 @@
             ></textarea>
 
             <div class="lcc-card__actions">
+              <!-- F-10 규약: 왼쪽=진행/확정(파괴적 진행=danger), 오른쪽=이탈(취소) -->
               <template v-if="rejectingId === req.changeReqId">
-                <button
-                  type="button"
-                  class="lcc-btn lcc-btn--ghost"
-                  :disabled="submitting"
-                  @click="cancelReject"
-                >
-                  취소
-                </button>
                 <button
                   type="button"
                   class="lcc-btn lcc-btn--danger"
@@ -104,6 +97,14 @@
                   @click="onReject(req)"
                 >
                   거부 확정
+                </button>
+                <button
+                  type="button"
+                  class="lcc-btn lcc-btn--ghost"
+                  :disabled="submitting"
+                  @click="cancelReject"
+                >
+                  취소
                 </button>
               </template>
               <template v-else>

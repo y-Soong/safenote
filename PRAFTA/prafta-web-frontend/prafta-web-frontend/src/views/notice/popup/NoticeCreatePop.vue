@@ -313,10 +313,10 @@
           </div>
         </div>
 
-        <!-- 액션 -->
+        <!-- 액션 (F-10 규약: 왼쪽=진행/확정(저장), 오른쪽=이탈(취소), 폭 균등) -->
         <div class="modal-footer">
-          <button class="btn-secondary" @click="$emit('close')">취소</button>
           <button class="btn-primary" @click="fnSave">저장</button>
+          <button class="btn-secondary" @click="$emit('close')">취소</button>
         </div>
       </div>
     </div>
@@ -944,10 +944,9 @@ const fnSave = async () => {
   color: var(--color-text, #374151);
 }
 
-/* 하단 취소/저장: 고정 동일 너비로 맞추고 우측 정렬(footer 가 flex-end) */
+/* F-10 규약: 좌우 버튼 폭 균등 */
 .modal-footer .btn-primary,
 .modal-footer .btn-secondary {
-  width: 80px;
-  min-width: 80px;
+  flex: 1;
 }
 </style>

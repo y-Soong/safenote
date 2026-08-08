@@ -26,4 +26,9 @@ public class MypageProfileResponse {
     private final String birthDateMasked; // 1993-**-**
     private final String lastLoginDtime;
     private final int presetCount;
+    // F-8-2: 현재 기본 근무타입 표시용(비PII, 평문 그대로). 미설정이면 전부 null.
+    private final String defaultSchCd;
+    private final String defaultSchNo;
+    private final String defaultSchStrTime;
+    private final String defaultSchEndTime;
 }

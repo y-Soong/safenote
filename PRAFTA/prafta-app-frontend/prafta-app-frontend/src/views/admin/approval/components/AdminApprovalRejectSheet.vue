@@ -57,10 +57,8 @@
           </p>
         </div>
 
+        <!-- F-10 규약: 왼쪽=진행/확정(파괴적 진행=danger), 오른쪽=이탈(취소) -->
         <footer class="ap-sheet__footer">
-          <button type="button" class="ap-sheet__btn ap-sheet__btn--ghost" @click="onClose">
-            취소
-          </button>
           <button
             type="button"
             class="ap-sheet__btn ap-sheet__btn--danger"
@@ -68,6 +66,9 @@
             @click="onConfirm"
           >
             반려하기
+          </button>
+          <button type="button" class="ap-sheet__btn ap-sheet__btn--ghost" @click="onClose">
+            취소
           </button>
         </footer>
       </div>

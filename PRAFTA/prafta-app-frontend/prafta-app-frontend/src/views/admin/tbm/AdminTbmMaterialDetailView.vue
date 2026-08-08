@@ -141,8 +141,8 @@ const showAlert = (message) => {
   window.alert(message)
   return Promise.resolve()
 }
-const askConfirm = async (message) => {
-  if (proxy?.$confirm) return await proxy.$confirm(message)
+const askConfirm = async (message, variant) => {
+  if (proxy?.$confirm) return await proxy.$confirm(message, { variant })
   return window.confirm(message)
 }
 
@@ -228,7 +228,7 @@ const onEdit = () => {
 // 삭제 — confirm 후 DELETE /appApi/admin/tbm/edu-materials/{mtrlCd} → 성공 시 목록으로 back.
 const onDelete = async () => {
   if (busy.value) return
-  const ok = await askConfirm('이 교육자료를 삭제할까요? 되돌릴 수 없어요.')
+  const ok = await askConfirm('이 교육자료를 삭제할까요? 되돌릴 수 없어요.', 'danger')
   if (!ok) return
   busy.value = true
   try {

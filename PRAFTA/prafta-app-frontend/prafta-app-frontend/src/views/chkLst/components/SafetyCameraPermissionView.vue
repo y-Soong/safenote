@@ -43,9 +43,8 @@
       <p class="cp-desc">{{ copy.desc }}</p>
     </main>
 
-    <!-- 푸터: denied=설정으로 이동 / busy·error=다시 시도 -->
+    <!-- 푸터: denied=설정으로 이동 / busy·error=다시 시도 (F-10 규약: 왼쪽=진행/확정, 오른쪽=이탈) -->
     <footer class="cp-footer">
-      <button type="button" class="cp-btn cp-btn--secondary" @click="$emit('cancel')">취소</button>
       <button
         v-if="reason === 'denied'"
         type="button"
@@ -63,6 +62,7 @@
         </svg>
         다시 시도
       </button>
+      <button type="button" class="cp-btn cp-btn--secondary" @click="$emit('cancel')">취소</button>
     </footer>
 
     <!-- 인라인 SVG 스프라이트 -->

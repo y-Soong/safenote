@@ -91,10 +91,8 @@
 
         <!-- ============ 푸터 ============ -->
         <!-- btn-danger 전역 클래스 부재(button.css) → btn-primary 기반 + scoped 위험 색상 덮어쓰기 -->
+        <!-- F-10 규약: 왼쪽=진행/확정(회수, danger), 오른쪽=이탈(취소) -->
         <div class="modal-footer">
-          <button class="btn btn-second" type="button" @click="fnClose">
-            취소
-          </button>
           <button
             class="btn btn-primary lrc-recall-btn"
             type="button"
@@ -102,6 +100,9 @@
             @click="fnSubmit"
           >
             회수하기
+          </button>
+          <button class="btn btn-second" type="button" @click="fnClose">
+            취소
           </button>
         </div>
       </div>

@@ -38,14 +38,8 @@
         </p>
       </div>
 
+      <!-- F-10 규약: 왼쪽=진행/확정(출근하기), 오른쪽=이탈(취소) -->
       <footer class="ldc-popup__footer">
-        <button
-          type="button"
-          class="ldc-popup__btn ldc-popup__btn--ghost"
-          @click="onCancel"
-        >
-          취소
-        </button>
         <button
           type="button"
           class="ldc-popup__btn ldc-popup__btn--primary"
@@ -53,6 +47,13 @@
           @click="onConfirm"
         >
           출근하기
+        </button>
+        <button
+          type="button"
+          class="ldc-popup__btn ldc-popup__btn--ghost"
+          @click="onCancel"
+        >
+          취소
         </button>
       </footer>
     </div>

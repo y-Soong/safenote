@@ -400,11 +400,12 @@
       {{ helperText }}
     </p>
 
+    <!-- F-10 규약: 왼쪽=진행/확정(신청하기), 오른쪽=이탈(취소), 폭 균등 -->
     <footer class="form-ft">
-      <button type="button" class="btn btn--x" @click="$emit('cancel')">취소</button>
       <button type="submit" class="btn btn--p" :disabled="!isValid || submitting">
         {{ submitting ? '신청 중...' : '신청하기' }}
       </button>
+      <button type="button" class="btn btn--x" @click="$emit('cancel')">취소</button>
     </footer>
 
     <!-- 결재자 추가 바텀시트 — HB-14(F-6) 통합 공용 시트.
@@ -1829,7 +1830,7 @@ onMounted(() => {
   position: sticky;
   bottom: 0;
   display: grid;
-  grid-template-columns: 1fr 2fr;
+  grid-template-columns: 1fr 1fr;
   gap: var(--space-sm);
   padding: var(--space-sm) 0 calc(var(--space-sm) + env(safe-area-inset-bottom));
   background: var(--color-bg);

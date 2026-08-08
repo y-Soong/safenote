@@ -171,9 +171,9 @@
           </div>
         </div>
 
+        <!-- F-10 규약: 왼쪽=진행/확정(수정), 오른쪽=이탈(닫기) -->
         <div class="modal-footer">
           <div class="btn-group">
-            <button class="btn btn-second" @click="$emit('close')">닫기</button>
             <button
               v-if="props.onEdit && master.lockedYn !== 'Y'"
               type="button"
@@ -182,6 +182,7 @@
             >
               수정
             </button>
+            <button class="btn btn-second" @click="$emit('close')">닫기</button>
           </div>
         </div>
       </div>

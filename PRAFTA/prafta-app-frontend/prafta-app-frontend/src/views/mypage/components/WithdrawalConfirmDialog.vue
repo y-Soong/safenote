@@ -71,9 +71,8 @@
           <span class="wcd__check-label">회원탈퇴 유의사항을 모두 확인했습니다</span>
         </button>
 
-        <!-- 액션 -->
+        <!-- 액션 (F-10 규약: 왼쪽=진행/확정(파괴적 진행=danger), 오른쪽=이탈(취소)) -->
         <div class="wcd__actions">
-          <button type="button" class="wcd__btn wcd__btn--ghost" @click="onCancel">취소</button>
           <button
             type="button"
             class="wcd__btn wcd__btn--danger"
@@ -83,6 +82,7 @@
           >
             탈퇴하기
           </button>
+          <button type="button" class="wcd__btn wcd__btn--ghost" @click="onCancel">취소</button>
         </div>
       </div>
     </div>

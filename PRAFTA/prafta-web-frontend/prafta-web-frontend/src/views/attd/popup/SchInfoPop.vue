@@ -614,6 +614,14 @@ const validateWorkTime = () => {
         message: "구간1 휴게시간 시작 시각은 근무시간 범위 안이어야 합니다.",
       };
     }
+    // F-2(갭2): 휴게 시작 + 휴게분(=종료)도 근무시간 범위(오버나이트 포함) 안이어야 한다.
+    const fstBrkOffset = (fstBrkStart - fstStart + 1440) % 1440;
+    if (fstBrkOffset + fstBrk > fstWorkMin) {
+      return {
+        valid: false,
+        message: "구간1 휴게시간 종료 시각이 근무 종료 시각을 초과합니다.",
+      };
+    }
   }
 
   if (schType.value === "02") {
@@ -641,6 +649,14 @@ const validateWorkTime = () => {
         return {
           valid: false,
           message: "구간2 휴게시간 시작 시각은 근무시간 범위 안이어야 합니다.",
+        };
+      }
+      // F-2(갭2): 휴게 시작 + 휴게분(=종료)도 근무시간 범위(오버나이트 포함) 안이어야 한다.
+      const secBrkOffset = (secBrkStart - secStart + 1440) % 1440;
+      if (secBrkOffset + secBrk > secWorkMin) {
+        return {
+          valid: false,
+          message: "구간2 휴게시간 종료 시각이 근무 종료 시각을 초과합니다.",
         };
       }
     }

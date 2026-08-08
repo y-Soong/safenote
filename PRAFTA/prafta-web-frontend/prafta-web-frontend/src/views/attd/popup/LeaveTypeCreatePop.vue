@@ -456,17 +456,18 @@
           </div>
         </div>
 
+        <!-- F-10 규약: 왼쪽=진행/확정(저장, primary), 오른쪽=이탈(취소) -->
         <div class="modal-footer">
           <div class="footer-actions">
-            <button class="btn btn-secondary" @click="$emit('close')">
-              취소
-            </button>
             <button
               class="btn btn-primary"
               :disabled="!canSave"
               @click="fnSave"
             >
               저장
+            </button>
+            <button class="btn btn-secondary" @click="$emit('close')">
+              취소
             </button>
           </div>
         </div>

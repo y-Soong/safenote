@@ -68,6 +68,7 @@
           </p>
         </div>
 
+        <!-- F-10 규약: 왼쪽=진행/확정(변경), 오른쪽=이탈(취소), 폭 균등 -->
         <div class="modal-footer">
           <div class="btn-group">
             <button
@@ -267,5 +268,10 @@ const fnSubmit = async () => {
 .btn.btn-primary:disabled {
   opacity: 0.5;
   cursor: not-allowed;
+}
+
+/* F-10 규약: 좌우 버튼 폭 균등 */
+.modal-footer .btn-group .btn {
+  flex: 1;
 }
 </style>

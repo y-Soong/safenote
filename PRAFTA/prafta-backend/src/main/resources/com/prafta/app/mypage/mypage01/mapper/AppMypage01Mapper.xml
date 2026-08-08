@@ -25,6 +25,11 @@
         <arg name="genderCode"     column="genderCode"     javaType="java.lang.String"/>
         <arg name="genderNm"       column="genderNm"       javaType="java.lang.String"/>
         <arg name="lastLoginDtime" column="lastLoginDtime" javaType="java.lang.String"/>
+        <!-- F-8-2: 현재 기본 근무타입 표시용(비PII, 평문 그대로). 미설정이면 전부 NULL(LEFT JOIN). -->
+        <arg name="defaultSchCd"      column="defaultSchCd"      javaType="java.lang.String"/>
+        <arg name="defaultSchNo"      column="defaultSchNo"      javaType="java.lang.String"/>
+        <arg name="defaultSchStrTime" column="defaultSchStrTime" javaType="java.lang.String"/>
+        <arg name="defaultSchEndTime" column="defaultSchEndTime" javaType="java.lang.String"/>
       </constructor>
     </resultMap>
 
@@ -44,10 +49,18 @@
         , A.GENDER                                                          AS genderCode
         , FNC_CMM_INFO_SRCH(A.CMPNY_CD, 'SYST_VAL', A.GENDER, 'SYS004')       AS genderNm
         , DATE_FORMAT(A.LAST_LOGIN_DTIME, '%Y-%m-%dT%H:%i:%s')                AS lastLoginDtime
+        , A.DEFAULT_SCH_CD                                                   AS defaultSchCd
+        , M.SCH_NO                                                           AS defaultSchNo
+        , M.FST_SCH_STR_TIME                                                 AS defaultSchStrTime
+        , M.FST_SCH_END_TIME                                                 AS defaultSchEndTime
       FROM TB_USER A
       LEFT JOIN TB_SITE C
         ON  A.CMPNY_CD = C.CMPNY_CD
         AND A.SITE_CD  = C.SITE_CD
+      LEFT JOIN TB_SCH_MGMT M
+        ON  A.CMPNY_CD       = M.CMPNY_CD
+        AND A.SITE_CD        = M.SITE_CD
+        AND A.DEFAULT_SCH_CD = M.SCH_CD
      WHERE A.CMPNY_CD = #{cmpnyCd}
        AND A.USER_CD  = #{userCd}
     </select>

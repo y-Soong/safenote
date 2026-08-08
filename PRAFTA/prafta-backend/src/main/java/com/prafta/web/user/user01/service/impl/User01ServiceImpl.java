@@ -46,6 +46,7 @@ import com.prafta.web.user.user01.application.param.UserCreateParam;
 import com.prafta.web.user.user01.application.param.UserCreditParam;
 import com.prafta.web.user.user01.application.param.UserHireDateParam;
 import com.prafta.web.user.user01.application.param.UserInfoListParam;
+import com.prafta.web.user.user01.application.param.UpdateMyDefaultSchParam;
 import com.prafta.web.user.user01.application.param.UserPasswdParam;
 import com.prafta.web.user.user01.application.param.WithdrawMyAccountParam;
 import com.prafta.web.user.user01.application.param.WithdrawalCancelParam;
@@ -67,6 +68,7 @@ import com.prafta.web.user.user01.result.MyProfileResult;
 import com.prafta.web.user.user01.result.ServiceCreditResult;
 import com.prafta.web.user.user01.result.TemplateAuthRow;
 import com.prafta.web.user.user01.result.TemplateNodeRow;
+import com.prafta.web.user.user01.result.TemplateRankRow;
 import com.prafta.web.user.user01.result.TemplateSiteRow;
 import com.prafta.web.user.user01.result.UserHireDateHistoryResult;
 import com.prafta.web.user.user01.result.UserHireInfoResult;
@@ -107,6 +109,8 @@ public class User01ServiceImpl implements User01Service{
 	// PRAFTA-COM-008-E-5: 기본 근무타입 검증/자동생성 공용 서비스(common.cmm.sch).
 	private final com.prafta.common.cmm.sch.service.DefaultSchOptionService defaultSchOptionService;
 	private final com.prafta.common.cmm.sch.service.DefaultSchGenService defaultSchGenService;
+	// F-8-2: 본인 기본 근무타입 자기변경 — SITE_CD 조회/저장에 공용 매퍼 재사용(LoginServiceImpl.setDefaultSch 패턴).
+	private final com.prafta.common.cmm.sch.mapper.DefaultSchGenMapper defaultSchGenMapper;
 	// F1/QT-11-7: 비활성/탈퇴 시 진행중 대기요청 일괄 반려 + 연차 원장 원복(소속이동 발효와 단일 출처).
 	private final com.prafta.web.user.user01.service.UserPendingRequestTerminationService userPendingRequestTerminationService;
 
@@ -131,6 +135,68 @@ public class User01ServiceImpl implements User01Service{
 	public java.util.List<com.prafta.common.cmm.sch.vo.SchOptionVO> getSchTypeOptions(String cmpnyCd, String siteCd) {
 		// PRAFTA-COM-008-E-5: UserInfoPop 기본 근무타입 select 채움(사업장 활성 근무타입).
 		return defaultSchOptionService.getActiveSchOptions(cmpnyCd, siteCd);
+	}
+
+	/**
+	 * F-8-2: 본인 기본 근무타입 자기변경 — 선택지 조회.
+	 *
+	 * <p>사업장은 세션 토큰 식별 사용자의 SITE_CD 로만 도출한다(IDOR/사업장 이동 우회 방지, 파라미터로 받지 않음).
+	 * 사업장 미상이면 빈 목록(LoginController.getDefaultSchOptions 와 동일 관례).
+	 */
+	@Override
+	public java.util.List<com.prafta.common.cmm.sch.vo.SchOptionVO> getMyDefaultSchOptions(String cmpnyCd, String userCd) {
+		String siteCd = defaultSchGenMapper.selectUserSiteCd(cmpnyCd, userCd);
+		if (siteCd == null || siteCd.isBlank()) {
+			return java.util.List.of();
+		}
+		return defaultSchOptionService.getActiveSchOptions(cmpnyCd, siteCd);
+	}
+
+	/**
+	 * F-8-2: 본인 기본 근무타입 자기변경 — 저장.
+	 *
+	 * <p>LoginServiceImpl.setDefaultSch(로그인 게이트) 패턴을 정상 세션 토큰 경로로 재사용한다.
+	 * 화이트리스트 검증(defaultSchOptionService.isValidDefaultSch) → DEFAULT_SCH_CD 저장
+	 * → 즉시 자동생성(defaultSchGenService.applyDefaultSchChange, 실패는 격리 — 저장 자체엔 영향 없음).
+	 */
+	@Override
+	@Transactional(rollbackFor = Exception.class)
+	public void updateMyDefaultSch(UpdateMyDefaultSchParam param) {
+
+		String defaultSchCd = (param.defaultSchCd() == null || param.defaultSchCd().isBlank())
+				? null : param.defaultSchCd().trim();
+		if (defaultSchCd == null) {
+			throw new ApiException(com.prafta.common.error.attd.AttdErrorCode.ATTD_400_141);
+		}
+
+		// 사업장은 세션에서만 도출(본인 사업장 변경은 소속이동 전용 — 여기서 받지 않음).
+		String siteCd = defaultSchGenMapper.selectUserSiteCd(param.cmpnyCd(), param.userCd());
+		if (siteCd == null || siteCd.isBlank()) {
+			throw new ApiException(com.prafta.common.error.attd.AttdErrorCode.ATTD_400_140);
+		}
+
+		// 화이트리스트 검증(클라 제출값 신뢰 금지).
+		if (!defaultSchOptionService.isValidDefaultSch(param.cmpnyCd(), siteCd, defaultSchCd)) {
+			throw new ApiException(com.prafta.common.error.attd.AttdErrorCode.ATTD_400_140);
+		}
+
+		int updated = defaultSchGenMapper.updateUserDefaultSch(param.cmpnyCd(), param.userCd(), defaultSchCd, param.userCd());
+		if (updated == 0) {
+			throw new ApiException(LoginErrorCode.LOGIN_400_002);
+		}
+
+		// 즉시 자동생성(미래 스케줄 갱신) — 실패는 격리(사용자 저장에 영향 없음, 기존 관례 승계).
+		if (defaultSchGenEnabled) {
+			try {
+				defaultSchGenService.applyDefaultSchChange(param.cmpnyCd(), siteCd, param.userCd(), defaultSchCd);
+			} catch (Exception e) {
+				log.error("본인 기본 근무타입 변경 자동생성 실패(설정은 저장됨) - userCd={}, defaultSchCd={}",
+						param.userCd(), defaultSchCd, e);
+			}
+		}
+
+		log.info("본인 기본 근무타입 변경(자기결정) 완료 - userCd={}, siteCd={}, defaultSchCd={}",
+				param.userCd(), siteCd, defaultSchCd);
 	}
 
 	public UserInfoListResponse selectUserInfoList(UserInfoListParam param) {
@@ -636,9 +702,11 @@ public class User01ServiceImpl implements User01Service{
 	// 정책서 공통 §3.1·§3.5·§8·§11.1, plan §1 D1~D7.
 	// ====================================================================
 
-	// 고용형태 [SYS041] 허용 코드 (REGULAR/CONTRACT/DAILY/EXECUTIVE).
+	// 고용형태 [SYS041] 허용 코드 (REGULAR/CONTRACT/EXECUTIVE).
+	// 일용직(DAILY)은 QR/일용직 가입 별도 경로(dailyjoin) 전용 — 관리자 생성(단건/엑셀)에서는 거부한다(F-13 확장).
+	// 이 셋은 신규 생성(insertUserOne) 검증 전용이며 기존 DAILY 계정의 수정 경로에는 관여하지 않는다.
 	private static final java.util.Set<String> ALLOWED_EMPLOYMENT_TYPES =
-			java.util.Set.of("REGULAR", "CONTRACT", "DAILY", "EXECUTIVE");
+			java.util.Set.of("REGULAR", "CONTRACT", "EXECUTIVE");
 
 	// 경력 인정 사유 유형 [SYS042] 허용 코드.
 	private static final java.util.Set<String> ALLOWED_REASON_TYPES = java.util.Set.of(
@@ -937,7 +1005,7 @@ public class User01ServiceImpl implements User01Service{
 
 		log.info("사용자 생성 양식 다운로드 - 요청자={}", tokenInfo.gv_userCd());
 
-		// PRAFTA-049: 입력 코드 참조 시트②③④ 데이터(회사 스코프) 조회 후 양식에 동봉.
+		// PRAFTA-049: 입력 코드 참조 시트②③④⑤ 데이터(회사 스코프) 조회 후 양식에 동봉.
 		String cmpnyCd = tokenInfo.gv_cmpnyCd();
 
 		List<String[]> siteRows = new ArrayList<>();
@@ -956,7 +1024,12 @@ public class User01ServiceImpl implements User01Service{
 			authRows.add(new String[] { a.authCd(), a.authNm() });
 		}
 
-		return UserExcelTemplateBuilder.build(siteRows, nodeRows, authRows);
+		List<String[]> rankRows = new ArrayList<>();
+		for (TemplateRankRow r : user01Mapper.selectTemplateRankList(cmpnyCd)) {
+			rankRows.add(new String[] { r.rankCd(), r.rankNm() });
+		}
+
+		return UserExcelTemplateBuilder.build(siteRows, nodeRows, authRows, rankRows);
 	}
 
 	// 법정 본연차 기본 일수 (근로기준법 §60① 1년 이상 근로자, AXIS 정밀 반영 아님)

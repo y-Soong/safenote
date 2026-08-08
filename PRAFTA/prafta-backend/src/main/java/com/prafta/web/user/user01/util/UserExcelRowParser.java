@@ -29,7 +29,9 @@ public final class UserExcelRowParser {
     /** 데이터 행 시작 인덱스(0-based). 1행=0, 2행=1, 3행=2, 4행=3. */
     public static final int DATA_START_ROW_INDEX = 3;
 
-    /** 헤더 정의 — 컬럼 순서가 곧 파서 인덱스. {@link UserExcelTemplateBuilder#EXAMPLE_ROW} 와 동일 순서. */
+    /** 헤더 정의 — 컬럼 순서가 곧 파서 인덱스. {@link UserExcelTemplateBuilder#EXAMPLE_ROW} 와 동일 순서.
+     *  F-13 확장: 계약종료일·경력인정사유유형 컬럼 제거(단건 생성 팝업과 동일 정책 — 미전송 필드),
+     *  일용직(DAILY)은 QR/일용직 가입 별도 경로 전용이라 고용형태 선택지에서 제외. */
     public static final String[] HEADERS = new String[] {
             "사용자ID(필수)"
             , "사용자명(필수)"
@@ -42,11 +44,9 @@ public final class UserExcelRowParser {
             , "생년월일(YYMMDD)"
             , "직급코드"
             , "입사일(YYYYMMDD)"
-            , "고용형태(REGULAR/CONTRACT/DAILY/EXECUTIVE)"
-            , "계약종료일(YYYYMMDD)"
+            , "고용형태(REGULAR/CONTRACT/EXECUTIVE)"
             , "경력인정개월수"
-            , "경력인정사유유형(SYS042)"
-            , "경력인정상세"
+            , "상세 설명"
     };
 
     /**
@@ -85,10 +85,9 @@ public final class UserExcelRowParser {
             req.setRankCd(strAt(row, 9));
             req.setHireDate(strAt(row, 10));
             req.setEmploymentType(strAt(row, 11));
-            req.setContractEndDate(strAt(row, 12));
-            req.setCreditMonths(intAt(row, 13));
-            req.setCreditReasonType(strAt(row, 14));
-            req.setCreditReasonDetail(strAt(row, 15));
+            // 계약종료일·경력인정사유유형은 양식에서 제거됨(단건 팝업과 동일 정책) — 미설정(null) 유지.
+            req.setCreditMonths(intAt(row, 12));
+            req.setCreditReasonDetail(strAt(row, 13));
 
             result.add(UserCreateParam.from(req, tokenInfo));
         }
@@ -96,13 +95,13 @@ public final class UserExcelRowParser {
     }
 
     /**
-     * prafta-052 — 실패 행 재업로드용 원본 행(양식 16컬럼 순서)으로 변환한다.
+     * prafta-052 — 실패 행 재업로드용 원본 행(양식 14컬럼 순서)으로 변환한다.
      * {@link #HEADERS} 순서와 1:1 일치해야 한다(시트1 재업로드 호환의 핵심).
      * creditMonths(Integer)는 문자열로, null 은 빈 문자열로 정규화한다.
-     * additionalSiteCdList/gv* 토큰 클레임은 양식 16컬럼이 아니므로 포함하지 않는다.
+     * additionalSiteCdList/gv* 토큰 클레임은 양식 14컬럼이 아니므로 포함하지 않는다.
      *
      * @param p 실패한 행의 생성 파라미터(null 이면 빈 리스트)
-     * @return 양식 16컬럼 순서의 문자열 리스트(시트1에 그대로 펼침)
+     * @return 양식 14컬럼 순서의 문자열 리스트(시트1에 그대로 펼침)
      */
     public static List<String> toSourceRow(UserCreateParam p) {
         if (p == null) {
@@ -121,10 +120,8 @@ public final class UserExcelRowParser {
               , nz(p.rankCd())            // 9  직급코드
               , nz(p.hireDate())          // 10 입사일(YYYYMMDD)
               , nz(p.employmentType())    // 11 고용형태
-              , nz(p.contractEndDate())   // 12 계약종료일(YYYYMMDD)
-              , p.creditMonths() == null ? "" : String.valueOf(p.creditMonths()) // 13 경력인정개월수
-              , nz(p.creditReasonType())  // 14 경력인정사유유형(SYS042)
-              , nz(p.creditReasonDetail())// 15 경력인정상세
+              , p.creditMonths() == null ? "" : String.valueOf(p.creditMonths()) // 12 경력인정개월수
+              , nz(p.creditReasonDetail())// 13 상세 설명(경력인정)
         );
     }
 

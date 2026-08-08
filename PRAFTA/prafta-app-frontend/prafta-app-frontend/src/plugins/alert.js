@@ -54,7 +54,8 @@ export default {
     }
 
     // $confirm 메서드 등록
-    app.config.globalProperties.$confirm = (message) => {
+    // options.variant: 'primary'(기본) | 'danger' — F-10 규약, 삭제 등 파괴적 확인에 한해 'danger' 전달
+    app.config.globalProperties.$confirm = (message, options = {}) => {
       return new Promise((resolve) => {
         const container = document.createElement('div')
         document.body.appendChild(container)
@@ -88,6 +89,7 @@ export default {
         const vnode = createVNode(ConfirmModal, {
           visible: true,
           message: message.replace(/\\n/g, '\n'),
+          variant: options.variant === 'danger' ? 'danger' : 'primary',
           onConfirm: () => {
             cleanup()
             console.log(resolve)

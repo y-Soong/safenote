@@ -201,16 +201,17 @@
 
         <div class="modal-footer">
           <p class="footer-hint">① 입력 오류가 있는 경우 생성할 수 없습니다.</p>
+          <!-- F-10 규약: 왼쪽=진행/확정(생성·수정, primary), 오른쪽=이탈(취소·닫기) -->
           <div class="footer-actions">
-            <button class="btn btn-secondary" @click="$emit('close')">
-              {{ isReadOnly ? "닫기" : "취소" }}
-            </button>
             <button
               class="btn btn-primary"
               :disabled="!canCreate"
               @click="fnCreate"
             >
               {{ isReadOnly ? "수정" : "생성" }}
+            </button>
+            <button class="btn btn-secondary" @click="$emit('close')">
+              {{ isReadOnly ? "닫기" : "취소" }}
             </button>
           </div>
         </div>
