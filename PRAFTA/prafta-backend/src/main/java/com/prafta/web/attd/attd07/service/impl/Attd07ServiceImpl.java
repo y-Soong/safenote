@@ -55,6 +55,7 @@ import com.prafta.web.attd.attd07.result.DailyAttdDetailsResult;
 import com.prafta.web.attd.attd07.result.DailyLeaveChangeReqResult;
 import com.prafta.web.attd.attd07.result.DailyOvertimeResult;
 import com.prafta.web.attd.attd07.result.MonthlyAttdListResult;
+import com.prafta.web.attd.attd07.result.OtLeaveExemptWindowView;
 import com.prafta.web.attd.attd07.result.MonthlyAttdReqResult;
 import com.prafta.web.attd.attd07.result.MonthlyAttdReqSummaryResult;
 import com.prafta.web.attd.attd07.result.MonthlyOvertimeResult;
@@ -563,6 +564,12 @@ public class Attd07ServiceImpl implements Attd07Service {
         List<NeighborAttdSegmentView> neighborAttdSegmentList =
                 buildNeighborSegments(param.gvCmpnyCd(), param.siteCd(), param.userCd(), param.workYmd());
 
+        // OT 칩 정합(2026-08-08): "등록 가능" 칩이 FE 자체 계산(실근태−스케줄)이라 연차 면제를 반영하지
+        //   못해, 반차일 2차 재출근 구간에서 칩(전량)과 서버 검증(ATTD_400_012 거부)이 불일치했다
+        //   (무인테스트 실측). 검증과 동일한 단일 출처(buildLeaveExemptSegments → PartialLeaveWindowUtils)
+        //   로 산출한 면제 구간을 additive 로 내려 FE 가 계산 없이 그대로 뺀다. 구 FE 는 필드 무시(무영향).
+        List<OtLeaveExemptWindowView> otLeaveExemptWindowList = buildOtLeaveExemptWindows(param);
+
         return DailyAttdDetailsResponse.builder()
                 .dailyAttdDetailsResult(dailyAttdDetailsResult)
                 .dailyAttdDetailHistoryResultList(dailyAttdDetailHistoryResultList)
@@ -572,6 +579,7 @@ public class Attd07ServiceImpl implements Attd07Service {
                 .leaveChangeReqResultList(leaveChangeReqResultList)
                 .convMinutes(convMinutes)
                 .neighborAttdSegmentList(neighborAttdSegmentList)
+                .otLeaveExemptWindowList(otLeaveExemptWindowList)
                 .build();
     }
 
@@ -1783,6 +1791,48 @@ public class Attd07ServiceImpl implements Attd07Service {
 
             log.info("초과근무 삭제 완료. otId={}, userCd={}, workYmd={}",
                     otId, param.userCd(), param.workYmd());
+        }
+    }
+
+    /**
+     * OT 칩 정합(2026-08-08): 일자상세 조회용 — 그날 확정 부분연차의 면제 구간을 표시용 뷰로 산출한다.
+     *
+     * <p>산출 경로는 OT 저장 검증(4-B)과 <b>완전히 동일</b>하다: 같은 매퍼 2본
+     * ({@code selectLeaveExemptWindows} / {@code selectAllowedWindow}(+무스케줄 폴백)) →
+     * {@code buildLeaveExemptSegments}. 조회와 검증이 다른 산식을 갖는 순간 칩 불일치가 재발하므로
+     * 여기서 별도 계산을 추가하지 않는다.
+     *
+     * <p>windows 폴백까지 전부 null(근태·스케줄 모두 부재)이면 빈 리스트 — 그 경우 FE 칩 자체가
+     * 뜨지 않아(실근태 없음) 무해하다. 조회 실패는 팝업 본체를 막지 않는다(표시 부가 정보).
+     */
+    private List<OtLeaveExemptWindowView> buildOtLeaveExemptWindows(DailyAttdDetailsParam param) {
+        try {
+            List<LeaveExemptWindowResult> rows = attd07Mapper.selectLeaveExemptWindows(
+                    param.gvCmpnyCd(), param.siteCd(), param.userCd(), param.workYmd());
+            if (rows == null || rows.isEmpty()) {
+                return List.of();
+            }
+            OvertimeAllowedWindowQuery query = new OvertimeAllowedWindowQuery(
+                    param.gvCmpnyCd(), param.siteCd(), param.userCd(), param.workYmd());
+            AllowedWindowResult windows = attd07Mapper.selectAllowedWindow(query);
+            if (windows == null) {
+                // 근무계획 미배정일 폴백 — OT 검증 경로(4.)와 동일
+                windows = attd07Mapper.selectActualWindowNoSchedule(query);
+            }
+            if (windows == null) {
+                return List.of();
+            }
+            List<int[]> segs = buildLeaveExemptSegments(param.workYmd(), rows, windows, param.userCd());
+            List<OtLeaveExemptWindowView> out = new ArrayList<>(segs.size());
+            for (int[] seg : segs) {
+                out.add(OtLeaveExemptWindowView.fromStampRange(param.workYmd(), seg));
+            }
+            return out;
+        } catch (RuntimeException e) {
+            // 표시 부가 정보 산출 실패로 일자상세 전체를 막지 않는다(칩만 종전 FE 계산으로 폴백).
+            log.warn("일자상세 - OT 면제 구간 산출 실패(칩 표시만 생략). userCd={}, workYmd={}",
+                    param.userCd(), param.workYmd(), e);
+            return List.of();
         }
     }
 

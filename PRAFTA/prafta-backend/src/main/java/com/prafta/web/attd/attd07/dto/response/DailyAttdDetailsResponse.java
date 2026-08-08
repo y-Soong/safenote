@@ -9,6 +9,7 @@ import com.prafta.web.attd.attd07.result.DailyLeaveChangeReqResult;
 import com.prafta.web.attd.attd07.result.DailyOvertimeResult;
 import com.prafta.web.attd.attd07.result.MonthlyAttdReqResult;
 import com.prafta.web.attd.attd07.result.NeighborAttdSegmentView;
+import com.prafta.web.attd.attd07.result.OtLeaveExemptWindowView;
 
 import lombok.Builder;
 import lombok.Value;
@@ -43,4 +44,12 @@ public class DailyAttdDetailsResponse {
      * 표시 문자열·상태(status)는 서버가 완성해 내려준다(프론트 재판정 금지). 0건이면 빈 리스트.
      */
     List<NeighborAttdSegmentView> neighborAttdSegmentList;
+
+    /**
+     * OT 칩 정합(2026-08-08): 그날 확정 부분연차(반차/시간차)의 면제 구간 — "등록 가능" OT 칩이
+     * FE 자체 계산(실근태−스케줄)에 이 구간을 추가로 빼서 서버 검증(ATTD_400_012)과 일치시킨다.
+     * 산출 = OT 저장 검증과 동일 단일 출처(buildLeaveExemptSegments). stamp 축 = FE 와 동일
+     * (workYmd−1 00:00 원점). additive — 구 FE 는 무시. 0건이면 빈 리스트.
+     */
+    List<OtLeaveExemptWindowView> otLeaveExemptWindowList;
 }

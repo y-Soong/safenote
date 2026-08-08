@@ -1248,6 +1248,12 @@ const convMinutes = ref(480);
 //   미수신(구서버)이면 빈 배열 → 섹션 미노출(회귀 없음).
 const neighborSegments = ref([]);
 
+// OT 칩 정합(2026-08-08): 그날 확정 부분연차(반차/시간차) 면제 구간 (otLeaveExemptWindowList).
+//   서버가 OT 저장 검증(ATTD_400_012)과 동일 산식으로 내려준다 — FE 는 재계산 없이 stamp 를 그대로
+//   차집합에 쓴다(startStamp/endStamp 축 = buildActualSegments 와 동일, workYmd-1 00:00 원점).
+//   미수신(구서버)이면 빈 배열 → 종전 계산(실근태−스케줄) 그대로(회귀 없음).
+const otLeaveExemptWindows = ref([]);
+
 // "YYYY-MM-DD" → "YYYYMMDD"
 const ymdDashToNum = (s) => (s || "").replace(/-/g, "");
 
@@ -2421,12 +2427,20 @@ const subtractIntervals = (a, b) => {
 const otAllowedWindowsBySeg = computed(() => {
   const actSegs = buildActualSegments();
   const schSegs = buildSchSegments();
+  // OT 칩 정합(2026-08-08): 서버가 내려준 연차 면제 구간을 피감수에 합친다.
+  //   서버 검증 산식(등록 가능 = 실근태 − (스케줄 ∪ 연차 면제), ATTD_400_012)과 동일해져
+  //   반차일 2차 재출근 구간에서 칩(전량)과 저장 결과(거부)가 어긋나던 불일치가 사라진다.
+  //   stamp 는 서버 값 그대로(동일 축 — FE 재계산 금지: 야간 wrap 재현 위험). 미수신이면 빈 배열이라 종전과 동일.
+  const exemptSegs = (otLeaveExemptWindows.value || [])
+    .map((w) => [w.startStamp, w.endStamp])
+    .filter(([s, e]) => Number.isFinite(s) && Number.isFinite(e) && e > s);
   return actSegs.map((act, i) => {
     if (!act) return [];
     const sch = schSegs[i];
-    // 매칭 스케줄이 있으면 차집합, 없으면 실근태 전체.
-    const allowed = sch
-      ? subtractIntervals(mergeIntervals([act]), mergeIntervals([sch]))
+    // 피감수 = 매칭 스케줄(있으면) ∪ 그날 연차 면제 구간 (서버 4-B 와 동일 형태).
+    const subtrahend = [...(sch ? [sch] : []), ...exemptSegs];
+    const allowed = subtrahend.length
+      ? subtractIntervals(mergeIntervals([act]), mergeIntervals(subtrahend))
       : [act];
     return allowed.map(([s, e]) => ({
       startMin: s,
@@ -3247,6 +3261,8 @@ const fnSearch = async () => {
   leaveChangeReqs.value = [];
   // PRAFTA-003-7: OT 리스트도 응답 전엔 비워두고, 응답 후 덮어쓴다.
   dailyOvertimeList.value = [];
+  // OT 칩 정합: 면제 구간도 응답 전엔 비운다(이전 사용자/일자 값 잔류 방지).
+  otLeaveExemptWindows.value = [];
   // PRAFTA-009 part2: reload 시 외근 GPS 패널을 닫는다(ATTD_ID 가 갱신될 수 있음).
   gpsPanel.value = { segIdx: null, attdId: "", trail: [], loading: false };
 
@@ -3298,6 +3314,8 @@ const fnSearch = async () => {
       convMinutes.value = response.data?.convMinutes ?? 480;
       // 겹침가드 개선: 앞뒤 근무일 근태 구간(당일 구간은 서버가 제외). 미수신이면 빈 배열.
       neighborSegments.value = response.data?.neighborAttdSegmentList ?? [];
+      // OT 칩 정합: 연차 면제 구간(서버 검증과 동일 산식). 미수신이면 빈 배열(종전 칩 계산 유지).
+      otLeaveExemptWindows.value = response.data?.otLeaveExemptWindowList ?? [];
     }
   } catch (err) {
     // 조회 실패해도 fallback 값으로 화면은 정상 렌더되도록 알림만 띄움

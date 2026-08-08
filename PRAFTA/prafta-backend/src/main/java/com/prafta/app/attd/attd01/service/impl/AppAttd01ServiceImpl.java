@@ -35,6 +35,7 @@ import com.prafta.app.attd.attd01.dto.response.DayActionsResponse;
 import com.prafta.app.attd.attd01.dto.response.LeaveMarkerItem;
 import com.prafta.app.attd.attd01.dto.response.MonthDayResponse;
 import com.prafta.app.attd.attd01.dto.response.MonthSummaryResponse;
+import com.prafta.app.attd.attd01.dto.response.LeaveExemptWindowItem;
 import com.prafta.app.attd.attd01.dto.response.MyAttendanceDayResponse;
 import com.prafta.app.attd.attd01.dto.response.MyMonthResponse;
 import com.prafta.app.attd.attd01.dto.response.MyWeekResponse;
@@ -326,6 +327,8 @@ public class AppAttd01ServiceImpl implements AppAttd01Service {
                 .leavePending(isLeavePending(dayLeave))
                 // 같은 날 부분연차 다건 표시용 마커 목록(시각순). dayLeaves 전체를 매핑(단건 스칼라는 첫 1건 하위호환).
                 .leaves(toLeaveMarkers(dayLeaves))
+                // OT 칩 정합(2026-08-08): 면제 구간(검증 ATTD_400_196 과 동일 산식) — OT 폼 칩이 그대로 뺀다.
+                .leaveExemptWindows(toLeaveExemptWindows(targetYmd, dayLeaves, sched))
                 // prafta-app-030 후속: 그날 적용(승인) 초과근무 목록(없으면 빈 리스트).
                 .appliedOvertimes(appliedOvertimes)
                 .build();
@@ -1565,8 +1568,45 @@ public class AppAttd01ServiceImpl implements AppAttd01Service {
                 .leaves(src.getLeaves())
                 // prafta-app-030 후속: 재조립 시 적용 초과근무 목록도 보존(buildDayResponse 산출값).
                 .appliedOvertimes(src.getAppliedOvertimes())
+                .leaveExemptWindows(src.getLeaveExemptWindows())
                 .isOffsite(isOffsite)
                 .build();
+    }
+
+    /**
+     * OT 칩 정합(2026-08-08): 그날 확정 부분연차(시각 보유 = 반차/시간차)를 면제 구간 아이템으로 환산한다.
+     *
+     * <p>산출은 앱 OT 신청 검증({@code AppReq07ServiceImpl.assertNoLeaveExemptOverlap})과 동일 규칙:
+     * 단일 진입점 {@code PartialLeaveWindowUtils.exemptStampRange}(그날 원 스케줄 프레임 정렬).
+     * 환산 불가(스케줄 프레임 부재·시각 비정상)는 <b>그날 전체 구간</b>으로 보수 변환한다 —
+     * 검증이 그날 OT 를 전면 거부(196)하므로 칩도 0건이 되어야 정합(§15-2-3 fail-open 금지 승계).
+     * 종일(00)·시각 미보유 행은 대상 아님(종일연차일은 슬롯 자체가 0이라 OT 폼 미진입).
+     */
+    private List<LeaveExemptWindowItem> toLeaveExemptWindows(
+            String targetYmd, List<LeaveUseResult> dayLeaves, ScheduleResult sched) {
+        if (dayLeaves == null || dayLeaves.isEmpty()) {
+            return List.of();
+        }
+        List<PartialLeaveWindowUtils.ScheduleSegment> frame = (sched == null)
+                ? List.of()
+                : PartialLeaveWindowUtils.scheduleSegments(
+                        sched.fstSchStrTime(), sched.fstSchEndTime(),
+                        sched.secSchStrTime(), sched.secSchEndTime());
+        List<LeaveExemptWindowItem> out = new ArrayList<>();
+        for (LeaveUseResult lv : dayLeaves) {
+            if (lv == null || !StringUtils.hasText(lv.startTime()) || !StringUtils.hasText(lv.endTime())) {
+                continue; // 종일 등 시각 미보유 — 면제 칩 대상 아님
+            }
+            int[] range = PartialLeaveWindowUtils.exemptStampRange(lv.startTime(), lv.endTime(), frame);
+            if (range == null) {
+                // 검증(196 전면 거부)과 정합 — 그날 전체를 면제로 내려 칩을 0건으로 만든다.
+                log.warn("[OT칩] 연차 면제 구간 환산 불가(그날 칩 전체 차단). workYmd={}, leave={}~{}",
+                        targetYmd, lv.startTime(), lv.endTime());
+                range = PartialLeaveWindowUtils.fullDayBlockStampRange();
+            }
+            out.add(LeaveExemptWindowItem.fromStampRange(targetYmd, range));
+        }
+        return out;
     }
 
     /**

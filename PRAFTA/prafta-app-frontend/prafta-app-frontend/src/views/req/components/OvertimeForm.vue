@@ -353,9 +353,21 @@ const slotWindows = (workSeq) => {
     if (Number.isNaN(inStamp) || Number.isNaN(outStamp) || outStamp <= inStamp) return []
     const actual = [inStamp, outStamp]
 
-    // 스케줄 없는 구간(추가 출근 등) → 실근무 전체가 등록 가능.
+    // OT 칩 정합(2026-08-08): 그날 연차 면제 구간(서버 산출, 검증 ATTD_400_196 과 동일 산식)도 뺀다.
+    //   반차일 재출근 구간(매칭 스케줄 없음)에서 칩이 전량을 보여주지만 서버는 면제 겹침을 거부하던
+    //   불일치 해소. 서버가 (일자,시각) 쌍으로 주므로 stampOf 로 그대로 축 정합. 미수신(구서버)이면
+    //   빈 배열 → 종전 계산과 동일(회귀 없음).
+    const exemptSegs = (props.context?.leaveExemptWindows || [])
+      .map((w) => [stampOf(w.startDate, w.startTime), stampOf(w.endDate, w.endTime)])
+      .filter(([s, e]) => !Number.isNaN(s) && !Number.isNaN(e) && e > s)
+    // 여러 피감수를 순차 차집합 — 조각 리스트에 반복 적용.
+    const subtractAll = (pieces, seg) => pieces.flatMap((p) => subtractInterval(p, seg))
+
+    // 스케줄 없는 구간(추가 출근 등) → 실근무 전체에서 연차 면제만 빼면 등록 가능.
     if (!schedule || (!schedule.startTime && !schedule.endTime)) {
-      return [makeWindow(actual[0], actual[1])]
+      return exemptSegs
+        .reduce(subtractAll, [actual])
+        .map(([s, e]) => makeWindow(s, e))
     }
 
     const schStartStamp = stampOf(workYmd, schedule.startTime)
@@ -364,10 +376,12 @@ const slotWindows = (workSeq) => {
     // 자정을 넘기는 스케줄(종료 < 시작)은 종료가 다음날이다.
     if (schEndStamp < schStartStamp) schEndStamp += 1440
 
-    // 실근태 − 스케줄 (구간 차집합). 스케줄 밖에서 실제로 일한 시간만 등록 가능하다.
+    // 실근태 − (스케줄 ∪ 연차 면제) (구간 차집합). 스케줄 밖에서 실제로 일한 시간만 등록 가능하다.
     //   "스케줄 종료 ~ 실퇴근" 으로 잡으면 실제로 근무하지 않은 공백(예: 스케줄 18:00 종료 후
     //   19:50 에 출근한 경우의 18:00~19:50)까지 포함돼 웹/백엔드 산출과 어긋난다.
-    return subtractInterval(actual, [schStartStamp, schEndStamp]).map(([s, e]) => makeWindow(s, e))
+    return [[schStartStamp, schEndStamp], ...exemptSegs]
+      .reduce(subtractAll, [actual])
+      .map(([s, e]) => makeWindow(s, e))
   } catch (e) {
     // 표시 전용 — 계산 실패는 무음 처리.
     return []

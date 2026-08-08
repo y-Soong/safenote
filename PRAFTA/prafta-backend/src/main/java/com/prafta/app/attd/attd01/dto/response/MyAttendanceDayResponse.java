@@ -73,4 +73,13 @@ public class MyAttendanceDayResponse {
     private final List<LeaveMarkerItem> leaves;
     // prafta-app-030 후속: 그날 적용(승인) 초과근무 목록(없으면 빈 리스트). 표시 전용 — 상태/슬롯/액션 무영향.
     private final List<AppliedOvertimeItem> appliedOvertimes;
+
+    /**
+     * OT 칩 정합(2026-08-08): 그날 확정 부분연차(반차/시간차)의 면제 구간 목록 — 초과근무 신청 폼의
+     * "등록 가능" 칩이 FE 계산(실근태−스케줄)에 이 구간을 추가로 빼서 서버 검증(ATTD_400_196)과
+     * 일치시킨다. 산출 = 검증과 동일 단일 진입점(PartialLeaveWindowUtils.exemptStampRange + 그날
+     * 스케줄 프레임). 환산 불가 행은 그날 전체 구간으로 보수 변환(검증의 전면 거부와 정합).
+     * additive — 구 FE 는 무시. 없으면 빈 리스트.
+     */
+    private final List<LeaveExemptWindowItem> leaveExemptWindows;
 }

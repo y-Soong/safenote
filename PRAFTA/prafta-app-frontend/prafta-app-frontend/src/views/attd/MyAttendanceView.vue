@@ -588,6 +588,8 @@ const toSheetDay = (detail) => {
     siteName: detail.siteName,
     hasIssue: detail.hasIssue,
     slots: detail.slots,
+    // OT 칩 정합(2026-08-08): 그날 연차 면제 구간(서버 산출) — OT 폼 칩이 실근태−스케줄에서 추가로 뺀다.
+    leaveExemptWindows: detail.leaveExemptWindows || [],
     // 작업지시서_연차변경화면_진입버튼: AttendanceActionSheet 라벨 분기 + LeaveMoveRequest 프리셀렉트용.
     isLeaveUsed: detail.isLeaveUsed,
     leaveId: detail.leaveId,
@@ -648,6 +650,8 @@ const buildContextFromDay = (day) => {
     hasIssue: day.hasIssue,
     // 출퇴근 시각 프리필용 (보정 폼이 사용). 백엔드 day-detail 응답의 slots 배열.
     slots: day.slots,
+    // OT 칩 정합(2026-08-08): 그날 연차 면제 구간(서버 산출) — OT 폼 칩이 실근태−스케줄에서 추가로 뺀다.
+    leaveExemptWindows: day.leaveExemptWindows || [],
   }
 }
 
