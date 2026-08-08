@@ -1,0 +1,34 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.prafta.common.cmm.sms.mapper.SmsSendResultMapper">
+
+    <!-- ============================================================
+         SMS 발송 결과 기록 (SMS-PPURIO-03, 전 흐름 공통)
+         ============================================================ -->
+
+    <!-- ★★UPDATE_NO / UPDATE_DATE 를 절대 SET 하지 말 것.
+         - PlatformLocationMapper.selectPlatformSmsVerified 는 UPDATE_DATE 를
+           "인증 통과 시각 = 위치열람 10분 창의 기산점" 으로 사용한다.
+         - AppMypage01Mapper.selectRecentVerifiedSmsId 는 UPDATE_DATE >= NOW()-5분 으로
+           검증 토큰 소비 창을 판정한다.
+         발송 결과 기록이 UPDATE_DATE 를 갱신하면 두 인증 창 판정이 통째로 오염된다.
+         그래서 발송 시각은 SEND_DATE 라는 별도 컬럼에 남긴다.
+         (선례: increasePlatformSmsFailCnt 도 같은 이유로 UPDATE_DATE 를 건드리지 않는다)
+
+         멱등성: SEND_STATUS='PENDING' 인 행만 갱신한다(결과 중복 기록 방지).
+         조회키: idx_sms_auth_send_ref (SEND_REF_KEY) -->
+    <update id="updateSmsSendResult">
+    /* SmsSendResultMapper.updateSmsSendResult */
+    UPDATE TB_SMS_AUTH_CODE
+    SET
+        SEND_STATUS    = #{sendStatus}
+        , SEND_MSG_KEY = #{sendMsgKey}
+        , SEND_ERR_CD  = #{sendErrCd}
+        , SEND_ERR_MSG = #{sendErrMsg}
+        , SEND_DATE    = NOW()
+    WHERE 1=1
+      AND SEND_REF_KEY = #{sendRefKey}
+      AND SEND_STATUS  = 'PENDING'
+    </update>
+
+</mapper>

@@ -195,8 +195,9 @@ const fnSmsAuthReq = async () => {
       }, 1000);
     }
   } catch (err) {
+    // SMS-PPURIO-08: 폴백 문구를 타 화면과 정렬(백엔드가 message 를 주면 그것이 우선 노출된다).
     await proxy.$alert(
-      resolveApiErrorMessage(err, "인증번호 발송 중 오류가 발생했습니다.")
+      resolveApiErrorMessage(err, "인증번호 발송에 실패했습니다.\n잠시 후 다시 시도해 주세요.")
     );
   }
 };

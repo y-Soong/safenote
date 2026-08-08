@@ -3,6 +3,7 @@ package com.prafta.common.cmm.baseinfo.mapper;
 import java.util.List;
 
 import org.apache.ibatis.annotations.Mapper;
+import org.apache.ibatis.annotations.Param;
 
 import com.prafta.common.cmm.baseinfo.application.command.MblUniqueCheckCommand;
 import com.prafta.common.cmm.baseinfo.application.command.SmsAuthConsumeCommand;
@@ -54,6 +55,12 @@ public interface BaseinfoMapper {
 	int selectMblUniqChk(MblUniqueCheckQuery dto);
 	
 	void insertSmsAuthNo(SmsAuthNoCommand dto);
+
+	/**
+	 * SMS-PPURIO-04: 최근 1분 내 동일 휴대폰(SELF_JOIN 목적) 발송 건수 — 서버측 레이트리밋.
+	 * 1 이상이면 신규 발송 거부(SMS_400_001). 발송 실패(FAILED) 행은 카운트에서 제외한다.
+	 */
+	int selectRecentSelfJoinSmsSendCnt(@Param("mblNoHmac") String mblNoHmac);
 	
 	int updateSmsAuthReq(MblUniqueCheckCommand mblUniqueCheckCommand);
 	
@@ -93,4 +100,33 @@ public interface BaseinfoMapper {
 	int consumeSmsAuth(SmsAuthConsumeCommand command);
 	
 	TermsDetailInfoResult selectTermsDetailInfo(TermsDetailInfoQuery query);
+
+	/**
+	 * SMS2-A1: 인증번호 불일치/만료/초과 시 최신 미검증 SELF_JOIN 레코드의 FAIL_CNT +1.
+	 *
+	 * <p>★UPDATE_NO / UPDATE_DATE 는 건드리지 않는다(XML 주석 참조).
+	 *    UPDATE_DATE 는 비밀번호 재설정 10분 창의 기산점이라 카운터가 갱신하면 인증 우회가 된다.
+	 * <p>★[3차 / sec N-2] 상한에 처음 도달하는 순간 {@code FAIL_LOCKED_AT} 을 함께 찍는다(잠금 시작 시각).
+	 *
+	 * @param verifyFailLimit 정책값 {@code TB_SMS_SEND_POLICY.VERIFY_FAIL_LIMIT}
+	 */
+	int increaseSelfJoinSmsFailCnt(@Param("mblNoHmac") String mblNoHmac
+			, @Param("verifyFailLimit") int verifyFailLimit);
+
+	/**
+	 * SMS2-A1: 최신 미검증 SELF_JOIN 레코드가 대입 상한에 도달(=현재 잠금 상태)했는지. 도달했으면 1, 아니면 0.
+	 * 초과 시에만 사용자에게 SMS_400_002 를 내려 정상 사용자의 이탈을 막는다.
+	 *
+	 * <p>★[3차] 잠금 만료분은 {@code SmsVerifyGuard} 가 이 호출 전에 이미 0 으로 되돌린다.
+	 *
+	 * @param verifyFailLimit 정책값 {@code TB_SMS_SEND_POLICY.VERIFY_FAIL_LIMIT}
+	 */
+	int selectSelfJoinFailExceeded(@Param("mblNoHmac") String mblNoHmac
+			, @Param("verifyFailLimit") int verifyFailLimit);
+
+	/**
+	 * SMS2-D4: 신규 인증코드 INSERT 직전에 동일 휴대폰(SELF_JOIN 목적)의 기존 미검증·미만료 코드를 만료 처리.
+	 * "동시에 유효한 코드 N개" 상태를 없애 무작위 대입 적중률이 N배로 커지는 것을 막는다(sec H-3).
+	 */
+	int expireOldSelfJoinSmsAuth(@Param("mblNoHmac") String mblNoHmac);
 }

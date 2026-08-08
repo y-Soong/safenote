@@ -19,7 +19,10 @@
     </select>
 
     <!-- 인증코드 INSERT - baseinfo insertSmsAuthNo 미러(코드 유효 1분).
-         PURPOSE_CD 는 XML 고정 리터럴(호출부 실수로 목적 혼용 방지). -->
+         PURPOSE_CD 는 XML 고정 리터럴(호출부 실수로 목적 혼용 방지).
+         SMS-PPURIO-06: SEND_REF_KEY 추가(발송 결과 UPDATE 의 조인키). SEND_STATUS 는 컬럼 기본값 'PENDING'.
+         ★EXPIRED_AT 의 1분과 발송 문구의 "1분 내 유효"는 한 쌍이다. 여기를 고치면
+           PlatformLocationServiceImpl.sendSmsAuth 의 dispatch(..., validMinutes) 도 함께 고칠 것. -->
     <insert id="insertPlatformSmsAuth" parameterType="com.prafta.platform.location.application.command.PlatformSmsAuthInsertCommand">
     /* PlatformLocationMapper.insertPlatformSmsAuth */
     INSERT INTO TB_SMS_AUTH_CODE (
@@ -29,6 +32,11 @@
         , PURPOSE_CD
         , EXPIRED_AT
         , INSERT_NO
+        , SEND_REF_KEY
+        <!-- SMS2-B4: IP 축/사용자 축 상한 재료. SEND_USER_CD 는 토큰의 운영자 코드를 그대로 쓴다
+             (이 흐름은 클라 입력 휴대폰을 신뢰하지 않고 운영자 본인 등록번호로만 발송한다). -->
+        , SEND_IP_HASH
+        , SEND_USER_CD
     )
     VALUES (
         #{mblNoEnc}
@@ -37,11 +45,28 @@
         , 'PLATFORM_LOCATION'
         , DATE_ADD(NOW(), INTERVAL 1 MINUTE)
         , #{gvUserCd}
+        , #{sendRefKey}
+        , #{sendIpHash}
+        , #{gvUserCd}
     )
     </insert>
 
-    <!-- 최근 1분 내 동일 HMAC·PLATFORM_LOCATION 목적 발송 건수 - 발송 레이트리밋(보안 리뷰 V-2).
-         1 이상이면 신규 발송 거부(PLATFORM_400_013). idx_sms_auth_mbl_hmac_ins 인덱스 정합. -->
+    <!-- ★★SMS2-B4: 미사용(SmsRateLimitGuard.selectPhoneWindowCnt 로 대체됨).
+         고정 1분이던 창이 정책값 PHONE_WINDOW_SEC(기본 55초) 바인딩으로 옮겨갔고,
+         사용자 노출 에러코드는 SmsSendContext.windowErrorCode 로 PLATFORM_400_013 을 그대로 유지한다(무회귀).
+         롤백 대비로 1릴리즈 유예 후 삭제할 것. 호출부(PlatformLocationServiceImpl)는 이미 제거됐다.
+
+         최근 1분 내 동일 HMAC·PLATFORM_LOCATION 목적 발송 건수 - 발송 레이트리밋(보안 리뷰 V-2).
+         1 이상이면 신규 발송 거부(PLATFORM_400_013). idx_sms_auth_mbl_hmac_ins 인덱스 정합.
+
+         ★SMS-PPURIO-06(요청서 §7-4): SEND_STATUS 판정표
+           PENDING / SENT / SKIPPED = 카운트 포함
+           FAILED                   = 제외
+         발송이 실패했는데 그 행이 카운트에 잡히면 "문자를 못 받은 사용자가 1분간 재시도 차단" 되므로
+         FAILED 만 제외한다.
+         ★SKIPPED 를 함께 제외하면 게이트 OFF 환경에서 기존에 걸리던 1분 제한이 사라져
+           무회귀 검증(§9-1)이 깨진다. 제외 금지.
+         ★PENDING 도 제외하지 않는다(발송 중/프로세스 사망 잔여분. 1분 창이라 자연 해소). -->
     <select id="selectRecentPlatformSmsSendCnt" resultType="int">
     /* PlatformLocationMapper.selectRecentPlatformSmsSendCnt */
     SELECT
@@ -50,6 +75,7 @@
     WHERE 1=1
       AND S.MBL_NO_HMAC = #{mblNoHmac}
       AND S.PURPOSE_CD  = 'PLATFORM_LOCATION'
+      AND S.SEND_STATUS <![CDATA[ <> ]]> 'FAILED'
       AND S.INSERT_DATE <![CDATA[ >= ]]> DATE_SUB(NOW(), INTERVAL 1 MINUTE)
     </select>
 

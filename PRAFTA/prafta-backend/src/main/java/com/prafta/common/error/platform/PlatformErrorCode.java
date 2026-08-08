@@ -55,6 +55,18 @@ public enum PlatformErrorCode implements ApiErrorCode {
     , PLATFORM_400_014(HttpStatus.BAD_REQUEST, "AI 토큰 한도 입력값이 올바르지 않습니다.")
     // 대상 회사 미존재(TB_CMPNY 부재) 또는 운영자 자기 자신(prafta_system_admin) 지정.
     , PLATFORM_400_015(HttpStatus.BAD_REQUEST, "대상 회사를 찾을 수 없습니다.")
+
+    // ===== SMS 발송 관리(Platform_05 — POST /platformApi/sms/*) =====
+    // 발송 임계값 입력 검증 실패(범위 위반 / 시간당 > 일별 교차조건 위반 / 정책행 부재).
+    // ★phoneWindowSec 는 1~59 만 허용한다 — 프론트 재발송 타이머(60초)보다 크면
+    //   타이머 만료 직후 클릭이 대부분 차단되는 결함이 화면을 통해 다시 들어온다.
+    , PLATFORM_400_016(HttpStatus.BAD_REQUEST, "발송 임계값 입력이 올바르지 않습니다.")
+    // 킬스위치가 이미 해제 상태(동시 클릭 포함).
+    , PLATFORM_400_017(HttpStatus.BAD_REQUEST, "이미 해제된 상태입니다.")
+    // [3차 / sec N-7] 킬스위치 발동 중 전역 상한 <b>상향</b> 시도 거부.
+    //   ★"발동 → 상한 상향 → 해제" 로 킬스위치를 사실상 무력화하는 우회를 막는다.
+    //     해제 버튼은 그대로 있으므로 정상 운영에 지장이 없다 — 원인 확인 후 해제하고, 그 다음에 상한을 조정한다.
+    , PLATFORM_400_018(HttpStatus.BAD_REQUEST, "킬스위치 발동 중에는 전역 상한을 올릴 수 없습니다.\n원인을 확인하고 킬스위치를 해제한 뒤 변경해 주세요.")
     ;
 
     private final HttpStatus httpStatus;

@@ -212,7 +212,10 @@
 	  AND A.MBL_NO_HMAC = #{mblNoHmac}
     </select>
     
-    <!-- PLT-LOC-03: PURPOSE_CD='SELF_JOIN' 명시(플랫폼 위치열람 인증과 목적 분리 - 혼용 금지). -->
+    <!-- PLT-LOC-03: PURPOSE_CD='SELF_JOIN' 명시(플랫폼 위치열람 인증과 목적 분리 - 혼용 금지).
+         SMS-PPURIO-04: SEND_REF_KEY 추가(발송 결과 UPDATE 의 조인키). SEND_STATUS 는 컬럼 기본값 'PENDING'.
+         ★EXPIRED_AT 의 1분과 발송 문구의 "1분 내 유효"는 한 쌍이다. 여기를 고치면
+           BaseinfoServiceImpl.insertSmsAuthNo 의 dispatch(..., validMinutes) 도 함께 고칠 것. -->
     <insert id="insertSmsAuthNo" parameterType="com.prafta.common.cmm.baseinfo.application.command.SmsAuthNoCommand">
     /* BaseinfoMapper.insertSmsAuthNo */
     INSERT INTO TB_SMS_AUTH_CODE (
@@ -221,6 +224,10 @@
 	    , AUTH_CD
 	    , PURPOSE_CD
 	    , EXPIRED_AT
+	    , SEND_REF_KEY
+	    <!-- SMS2-B4: IP 축 상한 재료(HMAC 해시. 확정 불가 시 NULL - fail-open).
+	         ★진입점 A 는 무인증이라 SEND_USER_CD 를 채우지 않는다(사용자 축 미적용). -->
+	    , SEND_IP_HASH
 	)
 	VALUES (
 		#{mblNoEnc}
@@ -228,9 +235,60 @@
 	    , #{certNo}
 	    , 'SELF_JOIN'
 	    , DATE_ADD(NOW(), INTERVAL 1 MINUTE)
+	    , #{sendRefKey}
+	    , #{sendIpHash}
 	)
     </insert>
-    
+
+    <!-- ★★SMS2-B4: 미사용(SmsRateLimitGuard.selectPhoneWindowCnt 로 대체됨).
+         고정 1분이던 창이 정책값 PHONE_WINDOW_SEC(기본 55초) 바인딩으로 옮겨갔다.
+         롤백 대비로 1릴리즈 유예 후 삭제할 것. 호출부(BaseinfoServiceImpl)는 이미 제거됐다.
+
+         SMS-PPURIO-04: 최근 1분 내 동일 HMAC·SELF_JOIN 목적 발송 건수 - 서버측 레이트리밋.
+         무인증(@NoAuth) 엔드포인트라 프론트 60초 타이머만으로는 반복 호출(=실과금)을 막지 못한다.
+         PlatformLocationMapper.selectRecentPlatformSmsSendCnt(1분 제한) 를 미러하며,
+         프론트 재발송 타이머와 동일한 값이라 정상 사용자에게는 무회귀다.
+
+         ★SEND_STATUS 판정표(요청서 §7-4)
+           PENDING / SENT / SKIPPED = 카운트 포함
+           FAILED                   = 제외 (문자를 못 받은 사용자를 1분간 묶어두지 않기 위함)
+         ★SKIPPED 를 제외하면 게이트 OFF 환경에서 제한이 아예 사라져 무회귀 검증(§9-1)이 깨진다. 제외 금지.
+         idx_sms_auth_mbl_hmac_ins 인덱스 정합. -->
+    <select id="selectRecentSelfJoinSmsSendCnt" resultType="int">
+    /* BaseinfoMapper.selectRecentSelfJoinSmsSendCnt */
+    SELECT
+        COUNT(1)
+    FROM TB_SMS_AUTH_CODE S
+    WHERE 1=1
+      AND S.MBL_NO_HMAC = #{mblNoHmac}
+      AND S.PURPOSE_CD  = 'SELF_JOIN'
+      AND S.SEND_STATUS <![CDATA[ <> ]]> 'FAILED'
+      AND S.INSERT_DATE <![CDATA[ >= ]]> DATE_SUB(NOW(), INTERVAL 1 MINUTE)
+    </select>
+
+    <!-- SMS2-D4(sec H-3): 신규 인증코드 INSERT 직전에 동일 (MBL_NO_HMAC, SELF_JOIN) 의 기존 미검증 코드를 만료시킨다.
+         목적: "동시에 유효한 코드가 N개" 상태를 없앤다. selectCertNoSmsId 는 AUTH_CD 가 일치하는 아무 행이나
+         매칭하므로, 유효 코드가 N개면 무작위 대입 적중률이 1/10^6 → N/10^6 으로 선형 증가한다(C-2 와 곱해진다).
+         유효 코드가 N개가 되는 경로 2가지: ①레이트리밋 TOCTOU ②SEND_STATUS<>'FAILED' 조건(게이트웨이 장애
+         국면에는 전 행이 FAILED 라 레이트리밋이 통째로 무효화된다).
+
+         ★VERIFIED_YN 을 건드리지 않는다. 'N' 이외 값으로 바꾸면 3값 체계(N:미검증 / Y:검증완료 / C:소비완료)가
+           깨지고 consumeSmsAuth 판정이 오염된다. EXPIRED_AT 을 당기는 것만으로 모든 검증 쿼리
+           (EXPIRED_AT >= NOW())에서 배제된다.
+         ★UPDATE_NO / UPDATE_DATE 미접촉(increaseSelfJoinSmsFailCnt 와 동일 사유 - 인증 창 기산점 보호).
+         UX: "마지막에 받은 코드만 유효" 로 자연스럽다. -->
+    <update id="expireOldSelfJoinSmsAuth">
+    /* BaseinfoMapper.expireOldSelfJoinSmsAuth */
+    UPDATE TB_SMS_AUTH_CODE
+    SET
+        EXPIRED_AT = NOW()
+    WHERE 1=1
+      AND MBL_NO_HMAC = #{mblNoHmac}
+      AND PURPOSE_CD  = 'SELF_JOIN'
+      AND VERIFIED_YN = 'N'
+      AND EXPIRED_AT <![CDATA[ > ]]> NOW()
+    </update>
+
     <select id="selectCertNoSmsId" parameterType="com.prafta.common.cmm.baseinfo.application.query.UserSmsAuthNoCheckQuery" resultType="string">
     /* BaseinfoMapper.selectCertNoSmsId */
     SELECT 
@@ -243,8 +301,16 @@
 	  AND PURPOSE_CD = 'SELF_JOIN'
 	  AND EXPIRED_AT <![CDATA[ >= ]]> NOW()
 	  AND VERIFIED_YN = 'N'
+	  <!-- SMS2-A1: 대입 실패 상한에 도달한 코드는 무효(브루트포스 방어 - sec C-2).
+	       PlatformLocationMapper.selectPlatformCertSmsId 미러.
+	       ★[3차 / sec N-2] 상한 도달은 이제 <b>영구 무효화가 아니라 시간 잠금</b>이다.
+	         SmsVerifyGuard 가 이 SELECT 직전에 resetExpiredVerifyLock 을 돌려 잠금이 만료된 행의
+	         FAIL_CNT 를 0 으로 되돌리므로, 잠금 시간이 지나면 같은 코드가 다시 매칭된다.
+	       ★[3차] 임계값을 정책 테이블(TB_SMS_SEND_POLICY.VERIFY_FAIL_LIMIT)로 옮겼다 - 코드 하드코딩 0건.
+	         2차의 상수 5 는 "A1 은 DDL 불필요가 성립 조건" 이라는 제약 때문이었고, 3차 DDL 로 그 제약이 사라졌다. -->
+	  AND FAIL_CNT <![CDATA[ < ]]> #{verifyFailLimit}
     </select>
-    
+
     <update id="updateSmsAuthReq" parameterType="com.prafta.common.cmm.baseinfo.application.command.MblUniqueCheckCommand">
     /* BaseinfoMapper.updateSmsAuthReq */
     UPDATE TB_SMS_AUTH_CODE
@@ -260,8 +326,73 @@
 	    AND PURPOSE_CD = 'SELF_JOIN'
 	    AND EXPIRED_AT <![CDATA[ >= ]]> NOW()
 	    AND VERIFIED_YN = 'N'
+	    <!-- SMS2-A1: select -> update 사이 TOCTOU 를 닫는다(선택 시점에는 4회였는데
+	         그 사이 상한에 도달한 코드가 통과하는 경로 차단). updatePlatformSmsVerified 미러.
+	         ★[3차] 임계값은 정책 테이블 값을 바인딩한다(selectCertNoSmsId 와 반드시 같은 값). -->
+	    AND FAIL_CNT <![CDATA[ < ]]> #{verifyFailLimit}
     </update>
-    
+
+    <!-- ============================================================
+         SMS2-A1: 인증번호 대입 방어(진입점 A - sms-auth-checks 는 @NoAuth 라 서버측 상한이 유일 방어)
+         플랫폼 위치열람 흐름(PlatformLocationMapper.increasePlatformSmsFailCnt) 을 그대로 미러한다.
+         ============================================================ -->
+
+    <!-- 인증번호 불일치/만료/초과 시 최신 미검증 SELF_JOIN 레코드의 FAIL_CNT +1.
+         ★UPDATE_NO / UPDATE_DATE 를 절대 SET 하지 않는다.
+           selectSmsVerifiedSmsId(비밀번호 재설정 10분 창)가 UPDATE_DATE 를 기산점으로 쓰므로,
+           카운터가 이를 갱신하면 만료된 인증을 무한 연장하는 인증 우회가 된다.
+         ★EXPIRED_AT 조건을 넣지 않는다(선례 동일). 만료 코드에도 카운터를 올려야
+           "만료 후에는 무제한 시도" 우회가 막힌다.
+
+         ★★[3차 / sec N-2] FAIL_LOCKED_AT 을 함께 찍는다(잠금 시작 시각).
+           - 상한에 <b>처음</b> 도달하는 순간에만 찍는다(FAIL_LOCKED_AT IS NULL 조건).
+             이미 잠긴 뒤의 추가 시도가 시각을 갱신하면 공격이 계속되는 동안 잠금이 영원히 연장되어
+             피해자가 무기한 차단된다(정확히 sec N-2 가 지적한 서비스 거부).
+           - 기준 시각으로 UPDATE_DATE 를 쓰지 않는 이유는 위와 동일하다(인증 창 4개 기산점).
+         MySQL 단일 테이블 UPDATE 의 ORDER BY + LIMIT 사용(최신 1건만). -->
+    <update id="increaseSelfJoinSmsFailCnt">
+    /* BaseinfoMapper.increaseSelfJoinSmsFailCnt */
+    UPDATE TB_SMS_AUTH_CODE
+    SET
+        FAIL_CNT         = FAIL_CNT + 1
+        , FAIL_LOCKED_AT = CASE
+                             WHEN FAIL_LOCKED_AT IS NULL
+                              AND FAIL_CNT + 1 <![CDATA[ >= ]]> #{verifyFailLimit}
+                             THEN NOW()
+                             ELSE FAIL_LOCKED_AT
+                           END
+    WHERE 1=1
+      AND MBL_NO_HMAC = #{mblNoHmac}
+      AND PURPOSE_CD  = 'SELF_JOIN'
+      AND VERIFIED_YN = 'N'
+    ORDER BY SMS_ID DESC
+    LIMIT 1
+    </update>
+
+    <!-- 최신 미검증 SELF_JOIN 레코드 1건이 대입 상한에 도달(=현재 잠금 상태)했는지.
+         ★카운터를 올린 행과 판정 대상 행의 기준을 일치시키려고 서브쿼리로 최신 1건만 본다
+           (전체 COUNT 로 세면 과거 소진된 행 때문에 항상 초과로 나온다).
+         ★[3차] "잠금 만료 여부" 는 여기서 보지 않는다 — SmsVerifyGuard 가 이 SELECT 이전에
+           resetExpiredVerifyLock 으로 만료분을 이미 0 으로 되돌렸기 때문이다.
+           따라서 여기서 상한 도달이면 "지금 잠겨 있다" 와 동치다. -->
+    <select id="selectSelfJoinFailExceeded" resultType="int">
+    /* BaseinfoMapper.selectSelfJoinFailExceeded */
+    SELECT
+        COUNT(1)
+    FROM (
+        SELECT
+            S.FAIL_CNT AS FAIL_CNT
+        FROM TB_SMS_AUTH_CODE S
+        WHERE 1=1
+          AND S.MBL_NO_HMAC = #{mblNoHmac}
+          AND S.PURPOSE_CD  = 'SELF_JOIN'
+          AND S.VERIFIED_YN = 'N'
+        ORDER BY S.SMS_ID DESC
+        LIMIT 1
+    ) T
+    WHERE T.FAIL_CNT <![CDATA[ >= ]]> #{verifyFailLimit}
+    </select>
+
     <select id="selectSiteInfoList" parameterType="com.prafta.common.cmm.baseinfo.application.query.SiteInfoQuery" resultType="com.prafta.common.cmm.baseinfo.result.SiteInfoResult">
     /* BaseinfoMapper."selectSiteInfoList" */
     SELECT 

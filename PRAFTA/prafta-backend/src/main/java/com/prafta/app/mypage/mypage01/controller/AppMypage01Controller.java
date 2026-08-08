@@ -29,9 +29,11 @@ import com.prafta.app.mypage.mypage01.dto.request.PresetSaveRequest;
 import com.prafta.app.mypage.mypage01.dto.request.ProfileUpdateRequest;
 import com.prafta.app.mypage.mypage01.dto.response.MypageProfileEditResponse;
 import com.prafta.app.mypage.mypage01.service.AppMypage01Service;
+import com.prafta.common.cmm.sms.policy.SmsClientIpResolver;
 import com.prafta.common.dto.TokenInfo;
 import com.prafta.common.security.JwtUtil;
 
+import jakarta.servlet.http.HttpServletRequest;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 
@@ -50,6 +52,8 @@ public class AppMypage01Controller {
 
     private final AppMypage01Service appMypage01Service;
     private final JwtUtil jwtUtil;
+    /** SMS2-B2/B4: SMS 상한 IP 축 전용 IP 해석기(확정 불가 시 null → IP 축 스킵). */
+    private final SmsClientIpResolver smsClientIpResolver;
 
     /** 010-01: 마이페이지 메인 프로필(마스킹). */
     @GetMapping("/profile")
@@ -87,13 +91,16 @@ public class AppMypage01Controller {
     }
 
     /** 010-03a: 휴대폰 변경 인증번호 발송(앱 전용). */
+    // SMS2-B4: IP 축 상한 재료(해시)를 컨트롤러에서 해석해 Param 으로 넘긴다(서비스는 HttpServletRequest 미의존).
     @PostMapping("/mobile/request-verification")
     public ResponseEntity<?> requestMobileVerification(
             @RequestBody MobileSendRequest request,
-            @RequestHeader(value = "Authorization", required = false) String authorization) {
+            @RequestHeader(value = "Authorization", required = false) String authorization,
+            HttpServletRequest httpServletRequest) {
 
         return ResponseEntity.status(HttpStatus.OK).body(appMypage01Service.sendMobileVerification(
-                MobileSendParam.from(request, jwtUtil.getAllClaimsAsMap(authorization))));
+                MobileSendParam.from(request, jwtUtil.getAllClaimsAsMap(authorization),
+                        smsClientIpResolver.resolveIpHash(httpServletRequest))));
     }
 
     /** 010-03b: 휴대폰 변경 인증 검증(앱 전용, 로그인 토큰 미발급). */

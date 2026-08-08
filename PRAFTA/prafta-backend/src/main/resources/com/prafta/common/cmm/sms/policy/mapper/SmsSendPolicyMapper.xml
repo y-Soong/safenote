@@ -1,0 +1,242 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.prafta.common.cmm.sms.policy.mapper.SmsSendPolicyMapper">
+
+    <!-- ============================================================
+         SMS2-B1 / B3 — 발송 다층 상한 정책 + 다축 카운트 + 킬스위치
+
+         ★공통 카운트 규칙(요청서 2차 §2 무회귀 — 4축 전부 동일하게 적용)
+           PENDING  = 포함 (발송 중이거나 결과 기록에 실패한 행. 실제로 나갔을 수 있다)
+           SENT     = 포함
+           SKIPPED  = 포함 (게이트 OFF 환경에서 제한이 통째로 사라지지 않게 하려면 반드시 포함)
+           FAILED   = 원칙 제외 (문자를 못 받은 사용자를 묶어두지 않기 위함)
+                      ★단 "발송됐을 수도 있는 실패" 는 포함한다 — 아래 countableSendStatus 참조(3차 / sec N-14).
+
+         ★창/시간/일 판정은 전부 INSERT_DATE 기준이다.
+           SEND_DATE 는 결과 UPDATE 때만 채워져 PENDING 행에서 NULL 이므로 상한 판정 기준으로 쓸 수 없다.
+           (전역 축만 예외 - 아래 selectGlobalSentCnt 주석 참조)
+         ============================================================ -->
+
+    <!-- ★★★[3차 / sec N-14 → 4차 / sec T-4] "FAILED 전면 제외" 규칙의 개정 — 상한 카운트에 넣을 상태 조건.
+
+         2차까지는 SEND_STATUS <![CDATA[ <> ]]> 'FAILED' 하나였다. 그런데 FAILED 를 통째로 빼면
+         **모든 방어를 동시에 끄는 스위치**가 된다.
+           ① 벤더 장애 국면(발신번호 미등록·잔액 소진·토큰 오류)에는 전 행이 FAILED →
+              창·번호·IP·사용자·전역 5축이 전부 0 으로 리셋되고 킬스위치도 재료를 잃는다.
+           ② ★더 중요 — **읽기 타임아웃은 "벤더가 접수하지 않았다" 를 의미하지 않는다.**
+              뿌리오가 접수·발송·과금했는데 응답만 늦은 경우가 정확히 여기 들어간다.
+              이것을 빼면 **과금은 되는데 상한은 0 인 루프**가 성립한다.
+              2차 D-11(read-timeout 10s→6s) + SEND_BUDGET_MS 8s 가 이 확률을 오히려 높였다.
+
+         ★★★[4차] 규칙을 화이트리스트에서 **블랙리스트로 뒤집는다.**
+           3차는 포함할 코드를 열거했다(CALL_FAILED / BUDGET_EXCEEDED). 그 결과
+           **HTTP 2xx 로 벤더가 접수(=과금)했는데 우리 파서가 식별자를 못 찾은 경우**가 전부 빠졌다
+           (EMPTY_RESPONSE / PARSE_FAILED / UNKNOWN_RESPONSE / DISPATCH_ERROR).
+           이들은 응답까지 돌아온 뒤의 실패라 CALL_FAILED 보다 **과금 확률이 높다.**
+           게다가 messageKey 필드명이 아직 미확정이라 첫 실연동에서 전건 발동할 개연성이 있었고,
+           그 순간 5축 + 킬스위치가 동시에 눈을 감아 1차 C-1(과금 폭주)이 그대로 재현된다.
+
+         → **미지의 errCd 는 기본값이 "집계함" 이다. 모르면 센다.**
+           제외가 확정된 것만 열거한다(벤더가 요청을 받지도 못한 것이 확실한 경우):
+              TOKEN_*         : 토큰 발급 단계 실패 = 발송 요청 자체를 보내지 못했다(TOKEN_HTTP_* / TOKEN_ISSUE_FAILED / TOKEN_RESPONSE_INVALID)
+              SERIALIZE_FAILED: 우리 코드가 요청 본문을 만들지도 못했다
+              RETRY_EXHAUSTED : 401/403 인증 실패 2회 = 벤더가 명시적으로 거절(접수 없음)
+           ★VENDOR_REJECTED 는 4차에서 "벤더가 인식 가능한 실패코드를 실제로 반환한 경우" 로 좁혔고,
+             2xx + 식별자 부재 + 벤더코드 부재는 UNKNOWN_RESPONSE(TRANSPORT)로 분류해 **집계한다**
+             (PpurioClient.parseSendResponse 참조). 그럼에도 벤더 실패코드 원문은 값이 무엇일지 모르므로
+             블랙리스트 밖 = 집계 대상이다 — 과금 위험 쪽으로 기운 기본값을 유지한다.
+           ★SEND_ERR_CD 가 NULL 인 FAILED 행도 **집계한다**(무엇 때문에 실패했는지 모르므로).
+             NOT IN 은 NULL 에 대해 UNKNOWN 을 돌려주므로 IS NULL 분기를 명시해야 한다 — 빠뜨리면
+             "모르면 센다" 가 조용히 "모르면 안 센다" 로 뒤집힌다.
+
+         ★1차 요청서 §7-4 "FAILED 제외" 지시를 이 범위에서 개정한 것이다. SKIPPED 포함은 그대로 유지한다.
+         ★TOKEN_ 접두 매칭에서 '_' 는 LIKE 와일드카드라 반드시 이스케이프한다(TOKEN\_%). -->
+    <sql id="countableSendStatus">
+        (
+              S.SEND_STATUS <![CDATA[ <> ]]> 'FAILED'
+           OR S.SEND_ERR_CD IS NULL
+           OR (
+                    S.SEND_ERR_CD NOT IN ('SERIALIZE_FAILED', 'RETRY_EXHAUSTED')
+                AND S.SEND_ERR_CD NOT LIKE 'TOKEN\_%'
+              )
+        )
+    </sql>
+
+    <!-- 정책행 배타 잠금 + 조회. TOCTOU 봉인의 유일한 직렬화 지점이다.
+
+         ★"분 버킷 유니크 제약" 안을 기각한 이유: 고정 분 버킷은 55초 슬라이딩 창과 정면 충돌한다
+           (12:00:59 <![CDATA[ <-> ]]> 12:01:00 = 1초 간격인데 통과 / 12:00:01 <![CDATA[ <-> ]]> 12:00:59 = 58초 간격인데 차단).
+         ★"대상 행 FOR UPDATE" 안을 기각한 이유: 첫 발송에는 잠글 행이 없어 갭락에 의존하게 되고
+           격리수준·인덱스에 따라 동작이 흔들린다.
+         ★"GET_LOCK()" 안을 기각한 이유: 커넥션 단위 락이라 트랜잭션 없는 진입점에서 커넥션이 갈릴 수 있다.
+         ★정책행은 시드로 항상 1행 존재하므로 PK 단건 잠금이 안정적이고, 시간당 500건 규모에서
+           전역 직렬화 비용은 무시할 수 있다. 잠금 보유 시간은 쿼리 5~7개 = 수 ms 다.
+
+         record 매핑은 SELECT 컬럼 순서 의존 - SmsSendPolicy 컴포넌트 순서와 함께 유지할 것. -->
+    <select id="selectPolicyForUpdate" resultType="com.prafta.common.cmm.sms.policy.SmsSendPolicy">
+    /* SmsSendPolicyMapper.selectPolicyForUpdate */
+    SELECT
+        P.PHONE_WINDOW_SEC    AS phoneWindowSec
+        , P.PHONE_HOUR_LIMIT  AS phoneHourLimit
+        , P.PHONE_DAY_LIMIT   AS phoneDayLimit
+        , P.IP_AXIS_ENABLED_YN AS ipAxisEnabledYn
+        , P.IP_HOUR_LIMIT     AS ipHourLimit
+        , P.IP_DAY_LIMIT      AS ipDayLimit
+        , P.USER_HOUR_LIMIT   AS userHourLimit
+        , P.USER_DAY_LIMIT    AS userDayLimit
+        , P.GLOBAL_HOUR_LIMIT AS globalHourLimit
+        , P.KILL_SWITCH_YN    AS killSwitchYn
+    FROM TB_SMS_SEND_POLICY P
+    WHERE P.POLICY_ID = 'DEFAULT'
+    FOR UPDATE
+    </select>
+
+    <!-- 정책행 조회(잠금 없음) — [3차 / qa Q-2] 55초 창 선검사 전용.
+         ★잠금을 잡기 <b>전에</b> 창을 먼저 보고 조기 반려하기 위한 읽기다.
+           무인증 EP 로 초당 수백 요청이 들어와도 대부분 여기서 끊겨 정책행 X 잠금 경합 자체가 줄어든다.
+         ★정확성(TOCTOU)은 이 읽기로 보장되지 않는다 — 통과한 요청은 잠금 안에서 반드시 재검사한다.
+         컬럼 목록은 selectPolicyForUpdate 와 동일하게 유지할 것(SmsSendPolicy record 순서 의존). -->
+    <select id="selectPolicyNoLock" resultType="com.prafta.common.cmm.sms.policy.SmsSendPolicy">
+    /* SmsSendPolicyMapper.selectPolicyNoLock */
+    SELECT
+        P.PHONE_WINDOW_SEC    AS phoneWindowSec
+        , P.PHONE_HOUR_LIMIT  AS phoneHourLimit
+        , P.PHONE_DAY_LIMIT   AS phoneDayLimit
+        , P.IP_AXIS_ENABLED_YN AS ipAxisEnabledYn
+        , P.IP_HOUR_LIMIT     AS ipHourLimit
+        , P.IP_DAY_LIMIT      AS ipDayLimit
+        , P.USER_HOUR_LIMIT   AS userHourLimit
+        , P.USER_DAY_LIMIT    AS userDayLimit
+        , P.GLOBAL_HOUR_LIMIT AS globalHourLimit
+        , P.KILL_SWITCH_YN    AS killSwitchYn
+    FROM TB_SMS_SEND_POLICY P
+    WHERE P.POLICY_ID = 'DEFAULT'
+    </select>
+
+    <!-- 번호 축 - 연속 발송 간격 창(정책값 초). 1 이상이면 "방금 발송됨".
+         ★경계는 >= 유지 + 창을 55초로 두어, 프론트 재발송 타이머(60초) 만료 직후 클릭이 통과하게 한다
+           (60초 창이면 DATE_SUB 의 초 절단과 겹쳐 정상 재발송의 약 90%가 차단된다 - qa D-1).
+         idx_sms_auth_mbl_hmac_ins 인덱스 정합. -->
+    <select id="selectPhoneWindowCnt" resultType="int">
+    /* SmsSendPolicyMapper.selectPhoneWindowCnt */
+    SELECT
+        COUNT(1)
+    FROM TB_SMS_AUTH_CODE S
+    WHERE 1=1
+      AND S.MBL_NO_HMAC = #{mblNoHmac}
+      AND S.PURPOSE_CD  = #{purposeCd}
+      AND <include refid="countableSendStatus"/>
+      AND S.INSERT_DATE <![CDATA[ >= ]]> DATE_SUB(NOW(), INTERVAL #{windowSec} SECOND)
+    </select>
+
+    <!-- 번호 축 - 최근 1시간/1일 건수(목적별). 1일 범위를 한 번 훑고 시간 카운트는 CASE 로 접는다(축당 1쿼리).
+         record 매핑은 SELECT 컬럼 순서 의존 - SmsAxisCount(hourCnt, dayCnt) 순서 유지. -->
+    <select id="selectPhoneAxisCount" resultType="com.prafta.common.cmm.sms.policy.SmsAxisCount">
+    /* SmsSendPolicyMapper.selectPhoneAxisCount */
+    SELECT
+        IFNULL(SUM(CASE WHEN S.INSERT_DATE <![CDATA[ >= ]]> DATE_SUB(NOW(), INTERVAL 1 HOUR) THEN 1 ELSE 0 END), 0) AS hourCnt
+        , COUNT(1) AS dayCnt
+    FROM TB_SMS_AUTH_CODE S
+    WHERE 1=1
+      AND S.MBL_NO_HMAC = #{mblNoHmac}
+      AND S.PURPOSE_CD  = #{purposeCd}
+      AND <include refid="countableSendStatus"/>
+      AND S.INSERT_DATE <![CDATA[ >= ]]> DATE_SUB(NOW(), INTERVAL 1 DAY)
+    </select>
+
+    <!-- IP 축 - 목적 무관 전체 카운트(공격자가 목적을 바꿔가며 우회하는 것을 막는다).
+         idx_sms_auth_ip_ins 인덱스 정합. -->
+    <select id="selectIpAxisCount" resultType="com.prafta.common.cmm.sms.policy.SmsAxisCount">
+    /* SmsSendPolicyMapper.selectIpAxisCount */
+    SELECT
+        IFNULL(SUM(CASE WHEN S.INSERT_DATE <![CDATA[ >= ]]> DATE_SUB(NOW(), INTERVAL 1 HOUR) THEN 1 ELSE 0 END), 0) AS hourCnt
+        , COUNT(1) AS dayCnt
+    FROM TB_SMS_AUTH_CODE S
+    WHERE 1=1
+      AND S.SEND_IP_HASH = #{ipHash}
+      AND <include refid="countableSendStatus"/>
+      AND S.INSERT_DATE <![CDATA[ >= ]]> DATE_SUB(NOW(), INTERVAL 1 DAY)
+    </select>
+
+    <!-- 사용자 축 - 목적 무관 전체 카운트. idx_sms_auth_user_ins 인덱스 정합. -->
+    <select id="selectUserAxisCount" resultType="com.prafta.common.cmm.sms.policy.SmsAxisCount">
+    /* SmsSendPolicyMapper.selectUserAxisCount */
+    SELECT
+        IFNULL(SUM(CASE WHEN S.INSERT_DATE <![CDATA[ >= ]]> DATE_SUB(NOW(), INTERVAL 1 HOUR) THEN 1 ELSE 0 END), 0) AS hourCnt
+        , COUNT(1) AS dayCnt
+    FROM TB_SMS_AUTH_CODE S
+    WHERE 1=1
+      AND S.SEND_USER_CD = #{userCd}
+      AND <include refid="countableSendStatus"/>
+      AND S.INSERT_DATE <![CDATA[ >= ]]> DATE_SUB(NOW(), INTERVAL 1 DAY)
+    </select>
+
+    <!-- 전역 축 - 최근 1시간 실발송 건수(킬스위치 판정 재료).
+
+         ★★판정식 보정(요청서 2차 B-4 원문은 틀렸다)
+           원문: SEND_STATUS IN ('SENT','PENDING') AND SEND_DATE >= NOW()-1시간
+           문제: SEND_DATE 는 발송 결과 UPDATE 때만 채워지므로 PENDING 행에서는 항상 NULL 이고,
+                 NULL 은 어떤 비교에도 참이 되지 않아 PENDING 이 전부 탈락한다.
+                 결과 기록이 실패하는 국면(=과금 폭주가 실제로 일어나는 국면)에서 킬스위치가 눈을 감는다.
+           보정: SENT 는 SEND_DATE 기준, PENDING 은 INSERT_DATE 기준으로 각각 판정한다.
+
+         ★SKIPPED 는 제외한다. 전역 축의 목적은 과금 방어이므로 실제 과금된 건만 센다.
+         ★★[3차 / sec N-14 → 4차 / sec T-4] FAILED 중 "벤더 미접수가 확실한 것" 만 제외하고 나머지는
+           전부 <b>포함</b>한다(블랙리스트 — 상세는 파일 상단 countableSendStatus 주석).
+           타임아웃/예산초과/2xx 후 파싱실패는 "벤더가 접수하지 않았다" 를 의미하지 않는다.
+           제외하면 과금은 되는데 상한은 0 인 루프가 되어 킬스위치가 눈을 감는다.
+         ★3차는 이 statement 만 조각을 쓰지 않고 IN 목록을 <b>복사</b>해 뒀다. 규칙이 두 곳에 갈리면
+           한쪽만 고쳐지는 사고가 난다(실제로 sec T-4 가 그 형태였다). 4차부터는 같은 조각을 include 한다.
+           조각의 첫 항(SEND_STATUS <![CDATA[ <> ]]> 'FAILED')은 이 분기에서 항상 거짓이라 무해하다.
+         ★FAILED 행은 결과 UPDATE 시 SEND_DATE 가 채워진다. 다만 그 UPDATE 자체가 실패하는 국면
+           (=과금 폭주가 실제로 일어나는 국면)을 고려해 COALESCE 로 INSERT_DATE 폴백을 둔다.
+           SEND_DATE 가 NULL 이라는 이유로 행이 조용히 빠지면 그 순간 킬스위치가 다시 눈을 감는다.
+         idx_sms_auth_send_stat 인덱스 정합(SENT / FAILED 분기). -->
+    <select id="selectGlobalSentCnt" resultType="int">
+    /* SmsSendPolicyMapper.selectGlobalSentCnt */
+    SELECT
+        COUNT(1)
+    FROM TB_SMS_AUTH_CODE S
+    WHERE 1=1
+      AND (
+            (S.SEND_STATUS = 'SENT'    AND S.SEND_DATE   <![CDATA[ >= ]]> DATE_SUB(NOW(), INTERVAL 1 HOUR))
+         OR (S.SEND_STATUS = 'PENDING' AND S.INSERT_DATE <![CDATA[ >= ]]> DATE_SUB(NOW(), INTERVAL 1 HOUR))
+         OR (S.SEND_STATUS = 'FAILED'
+             AND <include refid="countableSendStatus"/>
+             AND COALESCE(S.SEND_DATE, S.INSERT_DATE) <![CDATA[ >= ]]> DATE_SUB(NOW(), INTERVAL 1 HOUR))
+          )
+    </select>
+
+    <!-- 전역 축 - 게이트 OFF 드라이런용(SKIPPED 포함).
+         게이트 OFF 면 전 행이 SKIPPED 라 위 실발송 카운트가 항상 0 이 되어 드라이런 로그가 무의미해진다.
+         "게이트를 켰다면 몇 건이었을지"를 보여주는 용도이며 차단에는 쓰지 않는다. -->
+    <select id="selectGlobalDryRunCnt" resultType="int">
+    /* SmsSendPolicyMapper.selectGlobalDryRunCnt */
+    SELECT
+        COUNT(1)
+    FROM TB_SMS_AUTH_CODE S
+    WHERE 1=1
+      AND <include refid="countableSendStatus"/>
+      AND S.INSERT_DATE <![CDATA[ >= ]]> DATE_SUB(NOW(), INTERVAL 1 HOUR)
+    </select>
+
+    <!-- 킬스위치 발동.
+         ★AND KILL_SWITCH_YN = 'N' 멱등 가드 - updated == 1 일 때만 로그·감사로그를 남긴다.
+           없으면 초당 다발 발동 시 error 로그와 감사로그가 폭주한다.
+         ★KILL_SWITCH_AT / REASON 은 발동 때마다 갱신한다(최근 발동 이력).
+         ★자동 해제 경로는 코드 어디에도 만들지 않는다. 해제는 Platform_05 전용 API 만. -->
+    <update id="fireKillSwitch">
+    /* SmsSendPolicyMapper.fireKillSwitch */
+    UPDATE TB_SMS_SEND_POLICY
+    SET
+        KILL_SWITCH_YN       = 'Y'
+        , KILL_SWITCH_AT     = NOW()
+        , KILL_SWITCH_REASON = #{reason}
+        , UPDATE_NO          = 'SYSTEM'
+        , UPDATE_DATE        = NOW()
+    WHERE 1=1
+      AND POLICY_ID      = 'DEFAULT'
+      AND KILL_SWITCH_YN = 'N'
+    </update>
+
+</mapper>

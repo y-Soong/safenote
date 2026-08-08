@@ -15,6 +15,17 @@ public final class AuditActionType {
     /** 다운로드 (SYS060='01') */
     public static final String DOWNLOAD = "01";
 
+    /**
+     * 설정 변경 (SYS060='07') — SMS2-B3/C1.
+     *
+     * <p>운영 설정값 변경(SMS 발송 임계값 수정 / 킬스위치 자동 발동·수동 해제)에 사용한다.
+     *
+     * <p>★코드값 '07' 은 {@code prafta-sms-ppurio-2-rate-limit-policy.sql} 의 SYS060 시드와 한 쌍이다.
+     *    시드 적용 시 '07' 이 이미 점유돼 있어 다른 번호로 실행했다면 이 상수도 함께 바꿔야 한다.
+     *    (02~06 은 위 javadoc 대로 권한/상태/조직/삭제/조회용으로 예약돼 있다)
+     */
+    public static final String SETTING_CHANGE = "07";
+
     private AuditActionType() {
         // 상수 카탈로그 — 인스턴스화 방지
     }

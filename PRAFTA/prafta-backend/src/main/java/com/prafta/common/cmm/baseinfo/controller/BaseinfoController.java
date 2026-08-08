@@ -60,8 +60,11 @@ import com.prafta.common.cmm.baseinfo.dto.response.UserInfoListResponse;
 import com.prafta.common.cmm.baseinfo.dto.response.WebMenuListResponse;
 import com.prafta.common.cmm.baseinfo.service.BaseinfoService;
 import com.prafta.common.annotation.NoAuth;
+import com.prafta.common.cmm.sms.policy.SmsClientIpResolver;
 import com.prafta.common.security.JwtUtil;
 
+import jakarta.servlet.http.HttpServletRequest;
+import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 
@@ -74,6 +77,8 @@ public class BaseinfoController {
 	
 	private final BaseinfoService baseinfoService;
 	private final JwtUtil jwtUtil;
+	/** SMS2-B2/B4: SMS 상한 IP 축 전용 IP 해석기(신뢰 프록시 검증 + 우측 홉 채택, 확정 불가 시 null). */
+	private final SmsClientIpResolver smsClientIpResolver;
 
 	/* 공통코드 조회 */
 	@NoAuth
@@ -149,17 +154,27 @@ public class BaseinfoController {
     
     /* SMS 발송 */
     @NoAuth
+    // SMS2-D3: @Valid 로 수신번호 형식(국내 0으로 시작 10~11자리)을 강제한다. 무인증 EP 라 입력이 곧 발송 수신번호다.
+    //   검증 실패 응답은 ValidationExceptionHandler 가 errorCode='COMMON_400_VALIDATION' + 400 으로 통일 변환한다
+    //   (앱 인터셉터의 강제 로그아웃 코드 COMMON_400_003 / COMMON_400_600 과 겹치지 않음 - 실측 확인).
+    // SMS2-B4: IP 축 상한 재료(해시)를 컨트롤러에서 해석해 Param 으로 넘긴다.
+    //   ★서비스 계층이 HttpServletRequest 에 직접 의존하지 않게 한다(AuditContext 선례).
+    //   ★확정 불가 시 null 이며 IP 축은 판정하지 않는다(fail-open).
     @PostMapping("/sms-auth-sends")
-    public ResponseEntity<?> insertSmsAuthNo(@RequestBody UserSmsAuthNoRequest request) {
-        baseinfoService.insertSmsAuthNo(UserSmsAuthNoParam.from(request));
-        
+    public ResponseEntity<?> insertSmsAuthNo(@Valid @RequestBody UserSmsAuthNoRequest request,
+            HttpServletRequest httpServletRequest) {
+        baseinfoService.insertSmsAuthNo(
+                UserSmsAuthNoParam.from(request, smsClientIpResolver.resolveIpHash(httpServletRequest)));
+
         return ResponseEntity.status(HttpStatus.OK).build();
     }
     
     /* SMS 인증번호 확인  */
     @NoAuth
+    // [3차 / sec N-10 · qa Q-5] @Valid 추가 — mblNo 가 null 이면 서비스 첫 줄에서 NPE → 500 이었다(1차 L-3 잔여).
+    //   ★certNo 에는 형식 검증을 붙이지 않는다(카운터 회피 경로 — DTO 주석 참조).
     @PostMapping("/sms-auth-checks")
-    public ResponseEntity<?> userSmsAuthCheck(@RequestBody UserSmsAuthNoCheckRequest request) {
+    public ResponseEntity<?> userSmsAuthCheck(@Valid @RequestBody UserSmsAuthNoCheckRequest request) {
     	baseinfoService.userSmsAuthCheck(UserSmsAuthNoCheckParam.from(request));
     	
         return ResponseEntity.status(HttpStatus.OK).build();

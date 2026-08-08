@@ -64,22 +64,61 @@ public interface AppMypage01Mapper {
     // 휴대폰 변경 인증 (010-03, tb_sms_auth_code 재사용)
     // ============================================================
 
-    /** 인증번호 발송 INSERT(만료 3분). */
+    /**
+     * 인증번호 발송 INSERT(만료 3분).
+     * SMS-PPURIO-05: sendRefKey = 발송 결과 UPDATE 의 조인키(INSERT 전에 생성해 함께 저장).
+     * SMS2-D5: PURPOSE_CD 는 XML 고정 리터럴 'MOBILE_CHANGE'. ipHash/userCd 는 IP축·사용자축 상한 재료.
+     *
+     * @param ipHash 요청 IP 해시(확정 불가 시 null — IP 축 스킵)
+     * @param userCd 발송 요청 사용자(토큰에서만 결정)
+     */
     int insertSmsAuthCode(@Param("mblNoEnc") String mblNoEnc,
                           @Param("mblNoHmac") String mblNoHmac,
-                          @Param("authCode") String authCode);
+                          @Param("authCode") String authCode,
+                          @Param("sendRefKey") String sendRefKey,
+                          @Param("ipHash") String ipHash,
+                          @Param("userCd") String userCd);
 
-    /** 미만료/미검증 인증코드의 SMS_ID 조회(검증용). 없으면 null. */
+    /**
+     * SMS2-D5(D4 미러): 신규 코드 INSERT 직전에 기존 미검증 MOBILE_CHANGE 코드를 만료 처리.
+     * "동시에 유효한 코드 N개" 상태를 없앤다(sec H-3).
+     */
+    int expireOldMobileChangeSmsAuth(@Param("mblNoHmac") String mblNoHmac);
+
+    /**
+     * 미만료/미검증 인증코드의 SMS_ID 조회(검증용). 없으면 null.
+     *
+     * @param verifyFailLimit [3차 / sec N-4] 대입 실패 허용 횟수(정책값). 도달한 코드는 매칭되지 않는다
+     */
     Long selectValidSmsId(@Param("mblNoHmac") String mblNoHmac,
-                          @Param("authCode") String authCode);
+                          @Param("authCode") String authCode,
+                          @Param("verifyFailLimit") int verifyFailLimit);
 
     /** 미만료/미검증 인증코드 존재 여부(코드 불일치 시 만료/시도 구분용). 없으면 0. */
     int countUnverifiedByMblHmac(@Param("mblNoHmac") String mblNoHmac);
 
-    /** 검증 성공 처리(VERIFIED_YN='Y'). */
+    /**
+     * [3차 / sec N-4] 인증번호 불일치/만료/초과 시 최신 미검증 MOBILE_CHANGE 레코드의 FAIL_CNT +1.
+     *
+     * <p>★UPDATE_NO / UPDATE_DATE 는 건드리지 않는다 — UPDATE_DATE 는 {@link #selectRecentVerifiedSmsId}
+     *    의 5분 창 기산점이라 카운터가 갱신하면 인증 우회가 된다(XML 주석 참조).
+     */
+    int increaseMobileChangeSmsFailCnt(@Param("mblNoHmac") String mblNoHmac,
+                                       @Param("verifyFailLimit") int verifyFailLimit);
+
+    /** [3차 / sec N-4] 최신 미검증 MOBILE_CHANGE 레코드가 대입 상한에 도달(=현재 잠금)했으면 1, 아니면 0. */
+    int selectMobileChangeFailExceeded(@Param("mblNoHmac") String mblNoHmac,
+                                       @Param("verifyFailLimit") int verifyFailLimit);
+
+    /**
+     * 검증 성공 처리(VERIFIED_YN='Y').
+     *
+     * @param verifyFailLimit [3차 / sec N-4] select → update 사이 TOCTOU 차단용(조회와 같은 값일 것)
+     */
     int markSmsVerified(@Param("smsId") Long smsId,
                         @Param("mblNoHmac") String mblNoHmac,
-                        @Param("authCode") String authCode);
+                        @Param("authCode") String authCode,
+                        @Param("verifyFailLimit") int verifyFailLimit);
 
     /** 최근(5분 내) 검증완료·미소비 SMS_ID(저장 시 토큰-휴대폰 바인딩 검증). 없으면 null. */
     Long selectRecentVerifiedSmsId(@Param("mblNoHmac") String mblNoHmac);

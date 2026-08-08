@@ -543,9 +543,34 @@ public class LoginServiceImpl implements LoginService{
 	 *   <li>관리자가 등록한 휴대폰과 다르면 MBL_NO_ENC/HMAC/LAST4 갱신.</li>
 	 *   <li>ACCOUNT_STATUS 를 '01' 로 전이 + 정식 토큰/리프레시 발급.</li>
 	 * </ol>
+	 *
+	 * <p>★★[4차 / qa R-2] {@code noRollbackFor = ApiException.class} 는 <b>필수다. 절대 제거하지 말 것.</b>
+	 *    {@link BaseinfoService#userSmsAuthCheck} 와 {@code SmsVerifyGuard} 는 의도적으로 무트랜잭션이라
+	 *    <u>이 메서드의 트랜잭션에 참여</u>한다. 그 안에서 일어나는 쓰기는
+	 *    <ul>
+	 *      <li>{@code increaseSelfJoinSmsFailCnt} — 인증번호 대입 카운터(sec C-2 / N-4)</li>
+	 *      <li>{@code insertFailedVerifyAttempt} — 시간당 실패 시도 상한 재료(sec N-3 / T-2)</li>
+	 *      <li>{@code resetExpiredVerifyLock} — 만료 잠금 해제(sec N-2)</li>
+	 *    </ul>
+	 *    전부 <b>방어 기록</b>이다. {@code rollbackFor = Exception.class} 만 두면 인증번호가 틀렸을 때
+	 *    {@code ApiException} 전파로 이 기록들이 <b>통째로 롤백</b>되어, 이 EP 에서만 6자리 무제한 대입이
+	 *    가능해진다(계정 활성화 = 계정 탈취).
+	 *    <p>★<b>이 결함은 실동작 테스트로 잡히지 않는다</b> — 인증에 성공하면 정상 커밋되므로 증상이 없고,
+	 *    실패했을 때만 조용히 카운터가 0 으로 되돌아간다. <b>코드 검사가 유일한 발견 수단이다.</b>
+	 *    <p>선례: {@code PlatformLocationServiceImpl.verifySmsAuth} 가 정확히 같은 사유로 이미 이 조합을 쓴다.
+	 *    <p><b>부분 커밋 부작용 전수 점검(4차)</b> — {@code ApiException} 이 던져질 수 있는 지점과 그 앞의 쓰기:
+	 *    <ul>
+	 *      <li>1)~4) 인증 실패 계열 — 앞선 쓰기는 위 방어 기록 3종뿐이다. <b>커밋되어야 하는 것들이다.</b></li>
+	 *      <li>6) {@code activated == 0}({@code LOGIN_400_013}) — 앞서 {@code updateUserMblNo} 가 커밋된다.
+	 *          사용자가 SMS 로 <b>소유를 증명한</b> 번호이고 {@code selectUserMblHmacConflict} 로 타인 보유가 아님을
+	 *          이미 확인했으므로 안전하다(계정 상태는 그대로 '04' 라 재시도로 이어진다).</li>
+	 *      <li>7) {@code activatedUser == null}({@code LOGIN_400_002}) — 앞서 활성화('01')가 커밋된다.
+	 *          이 경우 사용자는 일반 로그인으로 진입할 수 있어 롤백보다 오히려 낫다.</li>
+	 *    </ul>
+	 *    ★{@code ApiException} 이 아닌 {@code RuntimeException} 은 여전히 전체 롤백된다({@code rollbackFor}).
 	 */
 	@Override
-	@Transactional(rollbackFor = Exception.class)
+	@Transactional(rollbackFor = Exception.class, noRollbackFor = ApiException.class)
 	public LoginResponse verifyPhoneAuth(VerifyPhoneAuthParam param) {
 
 		// 1) 대상 사용자 + 상태 검증.

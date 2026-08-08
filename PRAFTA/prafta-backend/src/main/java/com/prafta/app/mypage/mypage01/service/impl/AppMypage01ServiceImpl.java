@@ -33,6 +33,10 @@ import com.prafta.app.mypage.mypage01.result.PresetMasterResult;
 import com.prafta.app.mypage.mypage01.result.PresetStepResult;
 import com.prafta.app.mypage.mypage01.result.UserProfileResult;
 import com.prafta.app.mypage.mypage01.service.AppMypage01Service;
+import com.prafta.common.cmm.sms.AuthCodeSmsDispatcher;
+import com.prafta.common.cmm.sms.policy.SmsRateLimitGuard;
+import com.prafta.common.cmm.sms.policy.SmsSendContext;
+import com.prafta.common.cmm.sms.policy.SmsVerifyGuard;
 import com.prafta.common.dto.TokenInfo;
 import com.prafta.common.error.common.CommonErrorCode;
 import com.prafta.common.error.mypage.MypageErrorCode;
@@ -64,6 +68,13 @@ public class AppMypage01ServiceImpl implements AppMypage01Service {
     private final HmacSigner hmacSigner;
     private final PasswordHasher passwordHasher;
     private final JwtUtil jwtUtil;
+    /** SMS-PPURIO-05: 인증번호 실발송 디스패처(게이트 OFF 면 SKIPPED 기록 후 조용히 통과). */
+    private final AuthCodeSmsDispatcher authCodeSmsDispatcher;
+    /** SMS2-B4: 발송 다층 상한 가드(정책행 잠금으로 TOCTOU 봉인 + 인증코드 INSERT 를 함께 수행). */
+    private final SmsRateLimitGuard smsRateLimitGuard;
+
+    /** [3차 / sec N-4] 인증번호 검증(대입) 방어. ★발송 축(SmsRateLimitGuard)과 별개 경로다(sec N-3). */
+    private final SmsVerifyGuard smsVerifyGuard;
 
     // 휴대폰 정규화 후 허용 자리수(10~11). 정책 §3.2.
     private static final int PHONE_MIN_DIGITS = 10;
@@ -242,6 +253,12 @@ public class AppMypage01ServiceImpl implements AppMypage01Service {
     // 휴대폰 변경 인증 (010-03, 앱 전용, D4)
     // ============================================================
 
+    /**
+     * 휴대폰 변경 인증번호 발송(앱 전용, 유효 3분).
+     *
+     * <p>★{@code @Transactional} 을 붙이지 말 것. 트랜잭션이 없어 INSERT 가 즉시 커밋되고,
+     *    그 덕분에 "인증코드 커밋 → 외부 발송 → 결과 독립 기록" 경계가 이미 성립한다(요청서 §7-3).
+     */
     @Override
     public MobileSendResponse sendMobileVerification(MobileSendParam param) {
         String cmpnyCd = param.tokenInfo().gv_cmpnyCd();
@@ -262,15 +279,66 @@ public class AppMypage01ServiceImpl implements AppMypage01Service {
 
         String phoneEnc = aesGcmCrypto.encrypt(phoneNorm);
         String authCode = generateAuthCode();
-        appMypage01Mapper.insertSmsAuthCode(phoneEnc, phoneHmac, authCode);
 
-        // TODO(developer): 실제 문자 게이트웨이 발송은 baseinfo SMS 인프라와 동일하게 별도 연동 예정.
-        //  현재는 인증코드 레코드만 적재(기존 baseinfo insertSmsAuthNo 와 동일 수준). 코드 자체는 로그 금지(콘솔 노출 X).
+        // SMS-PPURIO-05: refKey 를 INSERT 전에 생성해 함께 저장한다(발송 결과 UPDATE 의 조인키).
+        String refKey = authCodeSmsDispatcher.newRefKey();
+
+        // SMS2-B4(sec H-4): 이 흐름에는 서버측 발송 상한이 전혀 없었다(로그인 상태라도 무제한 재발송 가능).
+        //   가드가 [정책행 잠금 → 4축 카운트 → 기존코드 만료 → INSERT] 를 한 트랜잭션으로 묶는다.
+        //   ★목적 코드는 MOBILE_CHANGE 라 진입점 A 의 번호 축과 서로 간섭하지 않는다(SMS2-D5).
+        //   ★로그인 흐름이므로 사용자 축(userCd)을 채운다.
+        //   ★★이 메서드에 @Transactional 을 붙이지 말 것 — 아래 dispatch(외부 HTTP)는 반드시
+        //     가드 트랜잭션 커밋 이후에 호출되어야 한다.
+        smsRateLimitGuard.guardAndInsert(
+                SmsSendContext.of("MOBILE_CHANGE", phoneHmac, param.ipHash(), userCd),
+                () -> {
+                    // SMS2-D4 미러: 신규 코드 INSERT 직전에 기존 미검증 MOBILE_CHANGE 코드를 만료(유효 코드 항상 1건).
+                    appMypage01Mapper.expireOldMobileChangeSmsAuth(phoneHmac);
+                    appMypage01Mapper.insertSmsAuthCode(
+                            phoneEnc, phoneHmac, authCode, refKey, param.ipHash(), userCd);
+                });
+
+        // 실발송 + 결과 기록. 게이트 OFF 면 SKIPPED 기록 후 조용히 통과(기존과 동일한 성공 응답).
+        // ★validMinutes=3 — 이 흐름만 유효시간이 3분이다(AppMypage01Mapper.xml INTERVAL 3 MINUTE +
+        //   아래 expiresInSeconds(180) 와 한 세트). 1 을 넣으면 문자가 "1분 내 유효"라고 거짓 안내를 한다.
+        // 발송 실패 시 ApiException(SMS_502_*) 전파 → 앱 ProfileEditView 의 catch 진입.
+        // 인증코드(authCode)는 어떤 로그에도 남기지 않는다(prafta-app-032 규약).
+        authCodeSmsDispatcher.dispatch(refKey, phoneNorm, authCode, 3);
+
         log.info("마이페이지 휴대폰 변경 인증번호 발송 - userCd={}, mblLast4={}", userCd, Normalizers.last4(phoneNorm));
 
         return MobileSendResponse.builder().expiresInSeconds(180).build();
     }
 
+    /**
+     * 휴대폰 변경 인증번호 검증(앱 전용).
+     *
+     * <p>★★[3차 / sec N-4] 대입 방어를 추가했다. 2차의 C-2 수정은 진입점 A 에만 적용됐고
+     *    이 흐름에는 {@code FAIL_CNT} 조건도 카운터 증가도 없어, 로그인 계정 1개만 있으면
+     *    3분 동안 6자리를 <b>무제한 대입</b>할 수 있었다. 성공하면 {@code PHONE_CHANGE_AUTH} scope 토큰이
+     *    발급되어 미소유 번호를 자기 프로필에 결속할 수 있다
+     *    (타 사용자가 쓰는 번호는 {@code countOtherUserByMblHmac} 가 막으므로 표적은 미등록 번호에 한정).
+     *
+     * <p>★★[4차 / sec T-2] 판정 순서를 바꿨다 — <b>코드 매칭이 시간당 상한보다 먼저다.</b>
+     *    3차는 코드를 보기도 전에 시간당 검증 시도 상한을 검사해, 공격자가 표적 번호로 상한을
+     *    소모시키면 정답을 가진 정상 사용자까지 반려됐다. 이제 상한은 <b>실패한 시도에만</b> 걸린다.
+     *
+     * <p>★{@code @Transactional} 을 절대 붙이지 말 것.
+     *    현재 트랜잭션이 없어 {@code increaseMobileChangeSmsFailCnt} 가 statement 단위로 즉시 커밋된다.
+     *    붙이는 순간 {@link ApiException} 롤백으로 카운터 증가가 통째로 사라져 본 방어가 무력화된다.
+     *    부득이 붙여야 한다면 {@code PlatformLocationServiceImpl} 의
+     *    {@code @Transactional(rollbackFor = Exception.class, noRollbackFor = ApiException.class)}
+     *    선례를 반드시 함께 적용할 것(진입점 A 와 동일 경고).
+     * <p>★★[4차 / qa R-2] <b>호출자에도 같은 규칙이 적용된다.</b> 이 메서드가 무트랜잭션이어도
+     *    트랜잭션을 가진 상위 메서드가 호출하면 카운터가 그 트랜잭션에 참여해 통째로 롤백된다
+     *    (진입점 A 에서 {@code LoginServiceImpl.verifyPhoneAuth} 가 실제로 그랬다).
+     *    현재 이 메서드의 호출자는 {@code AppMypage01Controller} 하나뿐이며 트랜잭션이 없다.
+     *    새 호출자를 추가할 때 반드시 재확인할 것 — <b>성공 시엔 커밋되므로 실동작 테스트로는 잡히지 않는다.</b>
+     *
+     * <p>★{@code verificationCode} 형식 검증(6자리 숫자)을 카운터 증가보다 앞에 두지 말 것 —
+     *    형식 오류 요청이 조기 반환되어 카운터 회피 우회가 생긴다.
+     *    (현재의 {@code code.isEmpty()} 검사는 빈 값이라 어떤 코드와도 매칭되지 않으므로 oracle 가치가 없다.)
+     */
     @Override
     public MobileVerifyResponse verifyMobile(MobileVerifyParam param) {
         String cmpnyCd = param.tokenInfo().gv_cmpnyCd();
@@ -283,8 +351,30 @@ public class AppMypage01ServiceImpl implements AppMypage01Service {
         }
         String phoneHmac = hmacSigner.hmacSha256Base64Url(phoneNorm);
 
-        Long smsId = appMypage01Mapper.selectValidSmsId(phoneHmac, code);
+        // [3차 / sec N-2] 만료된 대입 잠금 해제 + 실패 허용 횟수 조회.
+        //   ★반드시 조회 이전에 호출한다(잠금이 만료된 코드를 되살린 뒤 매칭해야 한다).
+        //   ★발송 축(SmsRateLimitGuard)을 재사용하지 않는다 — 검증 시도가 발송 카운트를 오염시킨다.
+        //   ★★[4차 / sec T-2] 여기서 시간당 상한을 보지 않는다. 상한은 아래 "불일치" 분기에서만 판정한다.
+        final int verifyFailLimit = smsVerifyGuard.beforeVerify(phoneHmac, "MOBILE_CHANGE");
+
+        Long smsId = appMypage01Mapper.selectValidSmsId(phoneHmac, code, verifyFailLimit);
         if (smsId == null) {
+            // [3차 / sec N-4] 불일치/만료/초과 → 최신 미검증 코드의 FAIL_CNT +1(즉시 커밋).
+            //   ★상한에 처음 도달하는 순간 FAIL_LOCKED_AT 도 함께 찍힌다(잠금 시작 시각).
+            //   ★★아래 afterFailedVerify 보다 먼저 실행해야 한다(그쪽이 예외를 던지면 여기가 실행되지 않는다).
+            appMypage01Mapper.increaseMobileChangeSmsFailCnt(phoneHmac, verifyFailLimit);
+
+            // [4차 / sec T-2 · T-3] 실패 시도 적재 + 시간당 실패 시도 상한 판정.
+            //   ★코드가 일치한 요청은 이 경로에 오지 않으므로 정상 사용자는 상한을 소모하지도, 막히지도 않는다.
+            smsVerifyGuard.afterFailedVerify(phoneHmac, "MOBILE_CHANGE", MypageErrorCode.TOO_MANY_ATTEMPTS);
+
+            // 상한 도달(=현재 잠금)이면 그 사실을 구분해 안내한다 — 진입점 A(SMS_400_002)와 동일 취지.
+            if (appMypage01Mapper.selectMobileChangeFailExceeded(phoneHmac, verifyFailLimit) > 0) {
+                log.warn("휴대폰 변경 인증번호 대입 상한 도달(일시 잠금) - userCd={}, mblLast4={}",
+                        userCd, Normalizers.last4(phoneNorm));
+                throw new ApiException(MypageErrorCode.TOO_MANY_ATTEMPTS);
+            }
+
             // 코드 불일치 vs 만료 구분: 미만료/미검증 레코드 존재 여부로 판단.
             int unverified = appMypage01Mapper.countUnverifiedByMblHmac(phoneHmac);
             if (unverified == 0) {
@@ -294,7 +384,7 @@ public class AppMypage01ServiceImpl implements AppMypage01Service {
         }
 
         // 검증 성공 처리(VERIFIED_YN='Y'). 동시성으로 이미 처리됐으면 만료/재시도로 간주.
-        if (appMypage01Mapper.markSmsVerified(smsId, phoneHmac, code) != 1) {
+        if (appMypage01Mapper.markSmsVerified(smsId, phoneHmac, code, verifyFailLimit) != 1) {
             throw new ApiException(MypageErrorCode.EXPIRED);
         }
 

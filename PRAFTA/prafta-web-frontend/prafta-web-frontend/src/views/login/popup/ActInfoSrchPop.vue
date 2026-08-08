@@ -306,10 +306,11 @@ const fnSmsAuthReqApi = async() => {
       }, 1000);
     }
   } catch (err) {
-    if (err.response?.data?.message) {
-      mblNo.value = "";
-      fnAlertMsg(resolveApiErrorMessage(err, "처리 중 오류가 발생했습니다."));
-    }
+    // SMS-PPURIO-08: message 유무 가드를 제거한다.
+    // 발송 실패는 502/타임아웃/네트워크 단절 형태로 오는데, 가드가 있으면 알럿이 아예 뜨지 않아
+    // 사용자에게는 "아무 일도 안 일어남"으로 보인다(본 작업의 목적 자체가 무산).
+    // 발송 실패인데 입력한 번호를 지워 재입력을 강요하지 않는다(mblNo 초기화 제거).
+    fnAlertMsg(resolveApiErrorMessage(err, "인증번호 발송에 실패했습니다.\n잠시 후 다시 시도해 주세요."));
   }
 }
 

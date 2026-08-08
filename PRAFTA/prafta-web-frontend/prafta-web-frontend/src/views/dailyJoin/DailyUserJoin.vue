@@ -440,8 +440,8 @@ const handleSmsAuthReq = async () => {
       }, 1000);
     }
   } catch (err) {
-    mblNo.value = "";
-    proxy.$alert(resolveApiErrorMessage(err, "처리 중 오류가 발생했습니다."));
+    // SMS-PPURIO-08: 발송 실패인데 입력한 번호를 지워 재입력을 강요하지 않는다(mblNo 초기화 제거).
+    proxy.$alert(resolveApiErrorMessage(err, "인증번호 발송에 실패했습니다.\n잠시 후 다시 시도해 주세요."));
   }
 };
 

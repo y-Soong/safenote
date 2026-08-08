@@ -10,6 +10,7 @@ import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
+import com.prafta.common.cmm.sms.policy.SmsClientIpResolver;
 import com.prafta.common.security.JwtUtil;
 import com.prafta.platform.common.PlatformOperatorGateInterceptor;
 import com.prafta.platform.location.application.param.GpsListParam;
@@ -48,14 +49,24 @@ public class PlatformLocationController {
     private final JwtUtil jwtUtil;
     /** 클라이언트 IP 해석 규칙 단일 출처(신뢰 프록시 검증 포함 — 게이트와 동일 규칙으로 열람 로그 기록). */
     private final PlatformOperatorGateInterceptor platformOperatorGateInterceptor;
+    /** SMS2-B2/B4: SMS 상한 IP 축 <b>전용</b> 해석기(우측 홉 채택). 열람 로그 IP 와 용도가 다르다. */
+    private final SmsClientIpResolver smsClientIpResolver;
 
-    /** SMS 인증코드 발송 — 클라 휴대폰 입력 없음(토큰의 운영자 본인 등록 휴대폰). 응답에도 휴대폰값 미포함. */
+    /**
+     * SMS 인증코드 발송 — 클라 휴대폰 입력 없음(토큰의 운영자 본인 등록 휴대폰). 응답에도 휴대폰값 미포함.
+     *
+     * <p>SMS2-B4: IP 축 상한 재료(해시)를 여기서 해석해 Param 으로 넘긴다.
+     * ★{@code SmsClientIpResolver} 는 SMS 상한 전용이며, 열람 로그의 IP 기록은 계속
+     * {@code PlatformOperatorGateInterceptor.resolveClientIp()} 가 단일 출처다(규칙 분기 금지).
+     */
     @PostMapping("/sms-send")
     public ResponseEntity<?> sendSmsAuth(
-            @RequestHeader(value = "Authorization", required = false) String authorization) {
+            @RequestHeader(value = "Authorization", required = false) String authorization,
+            HttpServletRequest httpServletRequest) {
 
         platformLocationService.sendSmsAuth(
-                PlatformOperatorParam.from(jwtUtil.getAllClaimsAsMap(authorization)));
+                PlatformOperatorParam.from(jwtUtil.getAllClaimsAsMap(authorization)
+                        , smsClientIpResolver.resolveIpHash(httpServletRequest)));
 
         return ResponseEntity.status(HttpStatus.OK).build();
     }

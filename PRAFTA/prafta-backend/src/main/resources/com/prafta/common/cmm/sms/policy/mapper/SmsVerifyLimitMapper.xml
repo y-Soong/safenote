@@ -1,0 +1,121 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.prafta.common.cmm.sms.policy.mapper.SmsVerifyLimitMapper">
+
+    <!-- ============================================================
+         [3차] 인증번호 검증(대입) 방어 — sec N-2(잠금시간 전환) · N-3(검증 시도 상한)
+         [4차] sec T-2(실패 시도만 카운트) · T-3(코드 존재 시에만 적재) · qa R-4b(부팅 프로브)
+
+         ★발송 축(SmsSendPolicyMapper)과 완전히 분리한다.
+           검증 시도를 발송 카운트에 섞으면 발송 상한이 검증 트래픽으로 오염되고,
+           반대로 발송 상한이 소진되면 정상 사용자의 검증까지 막힌다.
+         ============================================================ -->
+
+    <!-- 검증 방어 임계값(잠금 없음 - 검증 경로는 정책행을 잠그지 않는다).
+         ★행이 없으면 null → 호출자가 SmsVerifyPolicy.fallback() 을 쓴다.
+           발송 상한과 달리 검증 방어는 fail-open 하지 않는다(계정 탈취 방어의 유일 관문이라서).
+         record 매핑은 SELECT 컬럼 순서 의존 - SmsVerifyPolicy 컴포넌트 순서와 함께 유지할 것. -->
+    <select id="selectVerifyPolicy" resultType="com.prafta.common.cmm.sms.policy.SmsVerifyPolicy">
+    /* SmsVerifyLimitMapper.selectVerifyPolicy */
+    SELECT
+        P.VERIFY_FAIL_LIMIT   AS verifyFailLimit
+        , P.VERIFY_LOCK_SEC   AS verifyLockSec
+        , P.VERIFY_HOUR_LIMIT AS verifyHourLimit
+    FROM TB_SMS_SEND_POLICY P
+    WHERE P.POLICY_ID = 'DEFAULT'
+    </select>
+
+    <!-- 번호(HMAC)별 최근 N초 <b>실패</b> 검증 시도 건수.
+         ★목적(PURPOSE_CD) 무관 전체를 센다 - 공격자가 목적을 바꿔가며 우회하는 것을 막는다.
+           (발송 축의 번호 창이 목적별인 것과 반대다. 발송은 흐름끼리 간섭하면 안 되고,
+            검증은 같은 번호에 대한 대입 시도 총량이 문제라서 규칙이 다르다.)
+         ★★[4차 / sec T-2] 이 테이블에는 이제 "실패한 시도" 만 들어온다.
+           성공한 시도는 애초에 적재하지 않으므로 정상 사용자는 이 카운트를 소모하지 않는다.
+         idx_sms_verify_hmac_ins 인덱스 정합. -->
+    <select id="countFailedVerifyAttempts" resultType="int">
+    /* SmsVerifyLimitMapper.countFailedVerifyAttempts */
+    SELECT
+        COUNT(1)
+    FROM TB_SMS_VERIFY_ATTEMPT A
+    WHERE 1=1
+      AND A.MBL_NO_HMAC = #{mblNoHmac}
+      AND A.INSERT_DATE <![CDATA[ >= ]]> DATE_SUB(NOW(), INTERVAL #{windowSec} SECOND)
+    </select>
+
+    <!-- 실패한 검증 시도 1건 적재.
+
+         ★★[4차 / sec T-3] "그 번호에 최근 코드가 발급된 적이 있을 때" 만 적재한다.
+           3차는 무인증 EP 에서 요청당 무조건 INSERT 였다. 상한은 번호별이므로 공격자가 번호를
+           회전시키면 카운트가 항상 0 → 통과 → 매 요청 1행 적재로 상한이 완전히 무력화되면서
+           쓰기 부하만 늘었다(sec N-3 이 막으려던 바로 그 부하).
+           코드가 발급된 적 없는 번호에는 맞힐 대상 자체가 없어 브루트포스가 성립하지 않으므로,
+           적재하지 않아도 방어에 구멍이 생기지 않는다.
+
+         ★INSERT ... SELECT ... WHERE EXISTS 로 <b>한 문장</b>에 처리한다.
+           선(先)조회 후 INSERT 로 나누면 쿼리가 하나 늘 뿐 아니라 그 사이가 또 하나의 TOCTOU 가 된다.
+         ★조회 범위를 1일로 제한해 idx_sms_auth_mbl_hmac_ins 의 인덱스 구간을 좁게 유지한다.
+           코드 TTL 은 1~3분이라 1일보다 오래된 코드는 대입 가치가 없다. -->
+    <insert id="insertFailedVerifyAttempt">
+    /* SmsVerifyLimitMapper.insertFailedVerifyAttempt */
+    INSERT INTO TB_SMS_VERIFY_ATTEMPT (
+        MBL_NO_HMAC
+        , PURPOSE_CD
+    )
+    SELECT
+        #{mblNoHmac}
+        , #{purposeCd}
+    FROM DUAL
+    WHERE EXISTS (
+        SELECT 1
+        FROM TB_SMS_AUTH_CODE C
+        WHERE C.MBL_NO_HMAC = #{mblNoHmac}
+          AND C.INSERT_DATE <![CDATA[ >= ]]> DATE_SUB(NOW(), INTERVAL #{codeLookbackSec} SECOND)
+    )
+    </insert>
+
+    <!-- ★★sec N-2 핵심 — 잠금 시간이 지난 대입 카운터를 되돌린다.
+
+         2차는 FAIL_CNT >= 5 인 코드를 영구 무효화했다. 그 결과
+         무인증 공격자가 표적 번호로 틀린 코드 5회만 던지면 피해자가 방금 받은 코드가 죽고,
+         재발송해도 즉시 다시 죽는다 → 표적의 회원가입/계정찾기/비밀번호 재설정이 무기한 불가(서비스 거부).
+         비용은 HTTP 요청 몇 건이고 계정도 필요 없다.
+
+         → 잠금 시간(VERIFY_LOCK_SEC) 기반으로 바꾼다. 경과하면 카운터를 0 으로 되돌려
+           같은 코드로 재시도할 수 있다.
+         ★[4차 / qa R-6] 기본값을 180 → 60 으로 낮췄다. 잠금이 코드 TTL(A 60초 / B 180초) 이상이면
+           풀릴 때 코드가 이미 만료되어 "기다렸다 같은 코드로 재시도" 라는 잠금의 존재 이유가 사라진다.
+           (3차 기록의 "진입점 B 에서만 성립" 은 사실이 아니다 — B 도 성립하지 않았다.)
+
+         ★UPDATE_NO / UPDATE_DATE 를 절대 SET 하지 않는다.
+           UPDATE_DATE 는 인증 창 4개(비번재설정 10분 / 앱 휴대폰변경 5분 / 위치열람 10분)의 기산점이다.
+         ★기준 시각으로 FAIL_LOCKED_AT 전용 컬럼을 쓴다 — 같은 이유로 UPDATE_DATE 를 읽지도 쓰지도 않는다.
+         ★PURPOSE_CD 필터 때문에 진입점 C(PLATFORM_LOCATION) 행은 건드리지 않는다.
+           진입점 C 는 아직 영구 무효화 체계라 FAIL_LOCKED_AT 이 항상 NULL 이다(qa R-9 — 통계/purge 시 유의).
+         ★ORDER BY/LIMIT 를 두지 않는다. 조건에 맞는 행은 전부 "이미 잠금이 만료된" 행이므로 모두 풀어도 안전하다. -->
+    <update id="resetExpiredVerifyLock">
+    /* SmsVerifyLimitMapper.resetExpiredVerifyLock */
+    UPDATE TB_SMS_AUTH_CODE
+    SET
+        FAIL_CNT         = 0
+        , FAIL_LOCKED_AT = NULL
+    WHERE 1=1
+      AND MBL_NO_HMAC    = #{mblNoHmac}
+      AND PURPOSE_CD     = #{purposeCd}
+      AND VERIFIED_YN    = 'N'
+      AND FAIL_LOCKED_AT IS NOT NULL
+      AND FAIL_LOCKED_AT <![CDATA[ < ]]> DATE_SUB(NOW(), INTERVAL #{lockSec} SECOND)
+    </update>
+
+    <!-- [4차 / qa R-4b] 기동 시 스키마 프로브. 행을 읽지 않고 테이블/컬럼 존재만 확인한다.
+         테이블이 없으면 1146, 컬럼이 없으면 1054 로 예외가 나며 그것이 이 statement 의 목적이다. -->
+    <select id="probeVerifyAttemptTable" resultType="int">
+    /* SmsVerifyLimitMapper.probeVerifyAttemptTable */
+    SELECT
+        COUNT(A.ATTEMPT_ID)
+    FROM TB_SMS_VERIFY_ATTEMPT A
+    WHERE A.MBL_NO_HMAC IS NULL
+      AND A.PURPOSE_CD  IS NULL
+      AND A.INSERT_DATE IS NULL
+    </select>
+
+</mapper>
