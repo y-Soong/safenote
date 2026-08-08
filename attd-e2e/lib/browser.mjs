@@ -22,6 +22,23 @@ export async function closeAll() {
 }
 
 // 웹 관리자 로그인 — /safenote 로그인 화면 경유(#userId / password / button.login-btn).
+// 로그인 후 게이트 팝업(약관 재동의 등) 처리 — 제3자 제공동의 신설(07-28)로 전 계정 재동의 발생.
+// 게이트가 없으면 조용히 통과한다(timeout 짧게).
+async function passLoginGates(page) {
+  // 웹 = TermsPop 팝업("약관동의" + Confirm "확인") / 앱 = #/TermsAgree 전용 페이지("동의하고 시작")
+  try {
+    const agreeAll = page.locator("text=전체 동의하기").first();
+    await agreeAll.waitFor({ state: "visible", timeout: 4000 });
+    await agreeAll.click();
+    await page.waitForTimeout(400);
+    const submit = page.locator('button:has-text("약관동의"), button:has-text("동의하고 시작")').first();
+    await submit.click();
+    // 웹 경로는 Confirm 모달("저장하시겠습니까?")이 한 번 더 뜬다 — 앱 경로엔 없으므로 실패해도 무시
+    await page.locator('button:has-text("확인")').first().click({ timeout: 4000 }).catch(() => {});
+    await page.waitForTimeout(1500);
+  } catch {}
+}
+
 export async function webLogin(userId, userPw) {
   const key = `web:${userId}`;
   if (ctxCache.has(key)) return ctxCache.get(key);
@@ -32,6 +49,7 @@ export async function webLogin(userId, userPw) {
   await page.fill("#userId", userId);
   await page.fill('input[type="password"]', userPw);
   await page.click("button.login-btn");
+  await passLoginGates(page);
   await page.waitForURL(/\/safenote\/main/, { timeout: 20000 });
   const entry = { ctx, page, face: "web", userId };
   ctxCache.set(key, entry);
@@ -58,6 +76,7 @@ export async function appLogin(userId, userPw, { userType = "REGULAR", geo = DEF
   await page.fill('input[placeholder="아이디를 입력하세요"]', userId);
   await page.fill('input[placeholder="비밀번호를 입력하세요"]', userPw);
   await page.click("button.btn-login");
+  await passLoginGates(page);
   await page.waitForURL(/MainView|AdminHome/, { timeout: 20000 });
   await page.waitForLoadState("networkidle");
   const entry = { ctx, page, face: "app", userId };
