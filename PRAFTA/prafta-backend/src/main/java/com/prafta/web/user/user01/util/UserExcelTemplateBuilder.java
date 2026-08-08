@@ -29,7 +29,7 @@ import com.prafta.common.exception.ApiException;
  * <p>구조 (D4):
  * <ol>
  *   <li>1행: 빨간 글씨 안내문 "4행부터 데이터가 저장됩니다." (헤더 컬럼 전체 머지)</li>
- *   <li>2행: 한글 헤더 (필수 6 + 선택 8 = 14 컬럼)</li>
+ *   <li>2행: 한글 헤더 (필수 6 + 선택 7 = 13 컬럼)</li>
  *   <li>3행: 예시 데이터 (업로드 파서에서 skip)</li>
  *   <li>4행 ~: 실제 저장 대상 데이터</li>
  * </ol>
@@ -51,15 +51,8 @@ public final class UserExcelTemplateBuilder {
     /** 성별 허용 코드 (드롭다운). */
     private static final String[] GENDER_OPTIONS = new String[] { "M", "F" };
 
-    /** 고용형태 [SYS041] 허용 코드 (드롭다운). User01ServiceImpl.ALLOWED_EMPLOYMENT_TYPES 와 동일.
-     *  일용직(DAILY)은 QR/일용직 가입 별도 경로 전용 — 관리자 생성 경로에서는 선택 불가(F-13 확장). */
-    private static final String[] EMPLOYMENT_TYPE_OPTIONS = new String[] {
-            "REGULAR", "CONTRACT", "EXECUTIVE"
-    };
-
     // 컬럼 인덱스 ({@link UserExcelRowParser#HEADERS} 순서와 동일).
     private static final int COL_IDX_GENDER = 7;
-    private static final int COL_IDX_EMPLOYMENT_TYPE = 11;
 
     /** 예시 데이터 1행 — 파서에서 skip 되지만 사용자가 양식을 이해할 수 있도록 한 줄 채워둔다.
      *  코드 칸은 참조 시트④(권한)·②(사업장)·③(소속부서)의 실존 형식과 정합해야 한다(F-13). */
@@ -75,7 +68,6 @@ public final class UserExcelTemplateBuilder {
             , "900101"           // 생년월일
             , ""                 // 직급코드 (참조 시트⑤)
             , "20200101"         // 입사일
-            , "REGULAR"          // 고용형태
             , "0"                // 경력인정개월수
             , ""                 // 상세 설명(경력인정)
     };
@@ -171,10 +163,6 @@ public final class UserExcelTemplateBuilder {
                     GENDER_OPTIONS,
                     "성별 선택",
                     "M(남) 또는 F(여) 중에서 선택해 주세요.");
-            applyDropdownValidation(sheet, COL_IDX_EMPLOYMENT_TYPE,
-                    EMPLOYMENT_TYPE_OPTIONS,
-                    "고용형태 선택",
-                    "REGULAR(정규직)/CONTRACT(계약직)/EXECUTIVE(임원) 중에서 선택해 주세요. 일용직은 QR 가입 별도 경로로 생성됩니다.");
 
             // PRAFTA-049: 입력 코드 참조 시트②③④ (헤더 스타일 재사용) -------
             buildReferenceSheet(workbook, headerStyle, "사업장",

@@ -115,7 +115,6 @@ const EXCEL_HEADERS = [
   "생년월일(YYMMDD)",
   "직급코드",
   "입사일(YYYYMMDD)",
-  "고용형태(REGULAR/CONTRACT/EXECUTIVE)",
   "경력인정개월수",
   "상세 설명",
 ];
