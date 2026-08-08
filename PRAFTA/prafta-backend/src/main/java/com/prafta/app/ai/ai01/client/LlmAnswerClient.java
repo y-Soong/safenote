@@ -19,6 +19,7 @@ import javax.imageio.ImageReader;
 import javax.imageio.stream.ImageInputStream;
 
 import org.springframework.beans.factory.ObjectProvider;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.http.MediaType;
 import org.springframework.stereotype.Component;
 import org.springframework.web.client.RestClient;
@@ -62,7 +63,9 @@ public class LlmAnswerClient {
     private final AiProperties aiProperties;
     private final ObjectMapper objectMapper;
 
-    public LlmAnswerClient(ObjectProvider<RestClient> hcxRestClientProvider,
+    // ★ObjectProvider 지연 조회는 파라미터 이름을 한정자로 쓰지 않는다 — RestClient 빈이 2개(hcx/ppurio)인
+    //   운영에서 @Qualifier 없이는 getIfAvailable() 이 호출 시점 NoUniqueBeanDefinitionException 으로 죽는다.
+    public LlmAnswerClient(@Qualifier("hcxRestClient") ObjectProvider<RestClient> hcxRestClientProvider,
                            AiProperties aiProperties,
                            ObjectMapper objectMapper) {
         this.hcxRestClientProvider = hcxRestClientProvider;
