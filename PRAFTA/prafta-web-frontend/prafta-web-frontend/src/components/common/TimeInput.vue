@@ -188,7 +188,12 @@ watch(
 watch(
   [hourVal, minuteVal],
   ([h, m]) => {
-    if (props.readonly) return;
+    // disabled 상태에서는 내부 기본값("00:00")을 부모로 밀어올리지 않는다.
+    // immediate:true 라 마운트 직후 1회 무조건 실행되는데, disabled 시점엔 사용자가
+    // 아직 아무 값도 선택하지 않은 "미설정" 의미이므로 modelValue 를 건드리면 안 된다
+    // (근무타입 생성 팝업의 휴게시간 시작처럼, 휴게(분)=0이라 비활성화된 필드가
+    //  본인도 모르게 "00:00"으로 채워져 서버 검증에서 거부되는 결함의 원인이었다).
+    if (props.readonly || props.disabled) return;
     const val = h === "24" ? "24:00" : `${h}:${m}`;
     if (val !== props.modelValue) {
       emit("update:modelValue", val);
