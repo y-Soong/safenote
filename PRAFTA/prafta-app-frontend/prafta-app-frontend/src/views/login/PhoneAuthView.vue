@@ -40,14 +40,14 @@
             type="tel"
             placeholder="휴대폰번호 11자리"
             maxlength="13"
-            :disabled="verified"
+            :disabled="verified || mblNoLocked"
             @blur="focusKill"
             class="form-input"
           />
           <button
             class="btn btn-primary"
             @click="fnSendSms"
-            :disabled="resendTimer > 0 || verified"
+            :disabled="resendTimer > 0 || verified || !phoneLoaded"
           >
             {{ resendTimer > 0 ? `${resendTimer}초 후 재요청` : '인증요청' }}
           </button>
@@ -109,6 +109,16 @@ const certNoFcs = ref(null)
 const authReqSent = ref(false)
 const verified = ref(false)
 
+// 등록 휴대폰 자동기입(마스킹) 상태. mblNoActual 은 SMS 발송/검증에 실제로 쓰는 원본 번호,
+// mblNo(화면 표시)는 잠금 시 마스킹 문자열로 대체된다. 조회 실패/미등록이면 잠그지 않고
+// 기존처럼 수동 입력을 허용한다(자동기입은 편의 기능이지 필수 전제가 아님).
+const mblNoActual = ref('')
+const mblNoLocked = ref(false)
+const phoneLoaded = ref(false)
+const phoneToSend = computed(() =>
+  mblNoLocked.value ? mblNoActual.value : (mblNo.value || '').replace(/-/g, ''),
+)
+
 // 인증번호 재발송 카운트다운(60초)
 const resendTimer = ref(0)
 let resendInterval = null
@@ -158,7 +168,29 @@ onMounted(async () => {
     }, 1000)
   }
 
-  if (mblNoFcs.value) mblNoFcs.value.focus()
+  // 관리자가 등록한 휴대폰을 불러와 마스킹 표시 + 잠금(수정 불가).
+  //   웹 PhoneAuthPop 과 동일한 목적(사용자가 임의 번호로 바꿔 SMS 인증 후 계정 휴대폰을
+  //   탈취하는 것을 방지) — 다만 화면에는 원본 대신 마스킹 문자열만 노출한다.
+  //   조회 실패/미등록 시에는 잠그지 않고 수동 입력 폴백(사용자가 진행 가능하도록).
+  try {
+    const res = await axios.get('/comApi/login/phone-auth-phone')
+    const raw = (res.data?.mblNo || '').replace(/\D/g, '')
+    // maskPhoneNumber 는 10~11자리만 마스킹 문자열을 만든다. 그 외 길이(등록 당시 형식 오류 등)는
+    // 빈 문자열을 반환하는데, 이때 raw 로 폴백해 화면에 평문을 노출하면 마스킹 요구사항이 깨진다.
+    // 마스킹이 불가능하면 자동기입 자체를 포기하고 수동 입력 폴백(잠그지 않음)으로 넘긴다.
+    const masked = raw ? proxy.$util?.maskPhoneNumber?.(raw) : ''
+    if (raw && masked) {
+      mblNoActual.value = raw
+      mblNo.value = masked
+      mblNoLocked.value = true
+    }
+  } catch (err) {
+    // 폴백: 잠그지 않음(수동 입력 허용).
+  } finally {
+    phoneLoaded.value = true
+  }
+
+  if (mblNoFcs.value && !mblNoLocked.value) mblNoFcs.value.focus()
 })
 
 onBeforeUnmount(() => {
@@ -228,10 +260,10 @@ const fnExpire = async () => {
 }
 
 const fnSendSms = async () => {
-  const phone = (mblNo.value || '').replace(/-/g, '')
+  const phone = phoneToSend.value
   let valid = false
   if (proxy.$util && typeof proxy.$util.validatePhoneNumber === 'function') {
-    valid = proxy.$util.validatePhoneNumber(mblNo.value)
+    valid = proxy.$util.validatePhoneNumber(phone)
   } else {
     valid = /^010\d{7,8}$/.test(phone)
   }
@@ -277,9 +309,8 @@ const fnVerify = async () => {
   }
 
   try {
-    const phone = (mblNo.value || '').replace(/-/g, '')
     const response = await axios.post('/comApi/login/verify-phone-auth', {
-      mblNo: phone,
+      mblNo: phoneToSend.value,
       certNo: code,
     })
     if (response.status === 200) {

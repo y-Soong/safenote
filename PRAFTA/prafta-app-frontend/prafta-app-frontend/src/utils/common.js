@@ -8,6 +8,7 @@ export default {
   formatNumberWithComma,
   validatePhoneNumber,
   formatPhoneNumber,
+  maskPhoneNumber,
   validateBizNumber,
   deepClone,
   validateEmail,
@@ -31,6 +32,7 @@ export {
   formatNumberWithComma,
   validatePhoneNumber,
   formatPhoneNumber,
+  maskPhoneNumber,
   validateBizNumber,
   deepClone,
   validateEmail,
@@ -134,6 +136,18 @@ function formatPhoneNumber(value) {
   if (cleaned.length <= 10)
     return `${cleaned.slice(0, 3)}-${cleaned.slice(3, 6)}-${cleaned.slice(6)}`
   return `${cleaned.slice(0, 3)}-${cleaned.slice(3, 7)}-${cleaned.slice(7, 11)}`
+}
+
+// 6.2 전화번호 가운데 마스킹 (본인인증 자동기입 표시용) — 11자리 010-****-1234 / 10자리 010-***-1234
+function maskPhoneNumber(value) {
+  const digits = (value || '').replace(/\D+/g, '')
+  if (digits.length === 11) {
+    return `${digits.slice(0, 3)}-****-${digits.slice(7)}`
+  }
+  if (digits.length === 10) {
+    return `${digits.slice(0, 3)}-***-${digits.slice(6)}`
+  }
+  return ''
 }
 
 // 7. 사업자등록번호 형식 체크 (10자리 숫자)

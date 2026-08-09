@@ -17,10 +17,11 @@ export default {
             e.preventDefault();
             e.stopPropagation();
             // 팝업에서만 처리하도록 → 모달 안에 focus 고정
-            const modal = container.querySelector(
-              ".alert-modal, .confirm-modal"
-            );
-            const confirmBtn = modal?.querySelector(".confirm-btn");
+            // AlertModal/ConfirmModal 은 <Teleport to="body"> 라 실제 DOM 이 container 밖(body 직속)에 렌더된다
+            // — container.querySelector 는 항상 빈 컨테이너만 보므로 document 에서 찾는다(아래 nextTick 포커스 로직과 동일 패턴).
+            // 확정 버튼은 variant 에 따라 btn-primary(기본) 또는 btn-danger(F-10 파괴적 확인) — btn-ghost(취소)는 제외.
+            const modal = document.querySelector(".prafta-modal-alert-confirm");
+            const confirmBtn = modal?.querySelector(".btn-primary, .btn-danger");
             if (confirmBtn) confirmBtn.click();
           }
           if (e.key === "Escape") {
@@ -68,10 +69,11 @@ export default {
             e.preventDefault();
             e.stopPropagation();
             // 팝업에서만 처리하도록 → 모달 안에 focus 고정
-            const modal = container.querySelector(
-              ".alert-modal, .confirm-modal"
-            );
-            const confirmBtn = modal?.querySelector(".confirm-btn");
+            // AlertModal/ConfirmModal 은 <Teleport to="body"> 라 실제 DOM 이 container 밖(body 직속)에 렌더된다
+            // — container.querySelector 는 항상 빈 컨테이너만 보므로 document 에서 찾는다(아래 nextTick 포커스 로직과 동일 패턴).
+            // 확정 버튼은 variant 에 따라 btn-primary(기본) 또는 btn-danger(F-10 파괴적 확인) — btn-ghost(취소)는 제외.
+            const modal = document.querySelector(".prafta-modal-alert-confirm");
+            const confirmBtn = modal?.querySelector(".btn-primary, .btn-danger");
             if (confirmBtn) confirmBtn.click();
           }
           if (e.key === "Escape") {
