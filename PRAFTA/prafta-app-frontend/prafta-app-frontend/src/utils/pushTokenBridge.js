@@ -57,12 +57,14 @@ function normalize(res) {
  * 네이티브로부터 현재 FCM 토큰을 취득한다(브리지 부재/실패/권한거부 시 null).
  *
  * @param {Object} [opts]
- * @param {number} [opts.timeoutMs=5000] 브리지 응답 대기 타임아웃(ms).
+ * @param {number} [opts.timeoutMs=15000] 브리지 응답 대기 타임아웃(ms).
+ *   ★iOS는 FCM 토큰 발급 전에 APNs 등록 핸드셰이크가 선행돼야 해서, 특히 로그인/기기 전환
+ *     직후엔 안드로이드보다 오래 걸릴 수 있다(5초 타임아웃이 이 구간에서 조기 포기하던 원인).
  * @returns {Promise<{pushToken:string, platform:string}|null>}
  *   - null: 웹 디버그(브리지 부재) / 권한 denied / 토큰 미발급 → 등록 스킵.
  */
 export async function getPushToken(opts = {}) {
-  const timeoutMs = typeof opts.timeoutMs === 'number' ? opts.timeoutMs : 5000
+  const timeoutMs = typeof opts.timeoutMs === 'number' ? opts.timeoutMs : 15000
 
   // 웹 디버그 등 브리지가 없으면 즉시 null(네트워크 호출 금지).
   if (!isBridgeAvailable()) {
