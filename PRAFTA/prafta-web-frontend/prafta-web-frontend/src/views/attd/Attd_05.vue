@@ -90,7 +90,7 @@
       <select v-model="selectedSchType" class="toolbar-sch-select">
         <option value="">스케줄 타입 선택</option>
         <option v-for="sch in schTypeList" :key="sch.schCd" :value="sch.schCd">
-          {{ sch.schNo }} · {{ sch.schNm }}
+          [{{ sch.schNo }}] · {{ sch.schNm }}
         </option>
       </select>
       <div
@@ -508,7 +508,7 @@ const getCellNmValue = (userCd, workYmd) => {
 // ── 근무타입 표시명 조회 ───────────────────────────────────
 const getSchTypeNm = (schCd) => {
   const sch = schTypeList.value.find((s) => s.schCd === schCd);
-  return sch ? `${sch.schNo} · ${sch.schNm}` : schCd;
+  return sch ? `[${sch.schNo}] · ${sch.schNm}` : schCd;
 };
 
 // ── 사용자명 조회 (prafta-com-016-C-1 팝업 식별자용) ─────────
