@@ -126,6 +126,18 @@
       <section v-if="isHalfUnit" class="fs">
         <p class="fs__title">반차 구분</p>
 
+        <!-- 대상일 근무/휴게 시각 안내 — 반차 파트를 고를 때 참고할 수 있도록 원 스케줄을 보여준다. -->
+        <div v-if="dayScheduleInfo" class="sch-info">
+          <div class="sch-info__row">
+            <span class="sch-info__lbl">근무</span>
+            <span class="sch-info__val">{{ dayScheduleInfo.workText }}</span>
+          </div>
+          <div v-if="dayScheduleInfo.breakText" class="sch-info__row">
+            <span class="sch-info__lbl">휴게</span>
+            <span class="sch-info__val sch-info__val--brk">{{ dayScheduleInfo.breakText }}</span>
+          </div>
+        </div>
+
         <div class="half-list">
           <button
             type="button"
@@ -155,14 +167,16 @@
         <!-- 경계 안내 — 휴게를 건너뛰고 근로를 절반으로 나눈 시각임을 명시 -->
         <p v-if="halfBoundaryText" class="half-note">
           <span class="half-note__dot" aria-hidden="true">·</span>
-          이 날 근무를 절반으로 나누는 기준 시각은
-          <strong>{{ halfBoundaryText }}</strong> 예요. (휴게시간은 근무로 세지 않아요)
+          <span class="half-note__text">
+            이 날 근무를 절반으로 나누는 기준 시각은
+            <strong>{{ halfBoundaryText }}</strong> 예요. (휴게시간은 근무로 세지 않아요)
+          </span>
         </p>
         <!-- 차단이 확정된 경우에만 경고. daySchedule 미도착 구간에는 아무것도 띄우지 않는다
              (틀린 안내를 순간 노출하지 않기 위함 — halfPartBlocked 주석 참조) -->
         <p v-else-if="halfPartBlocked" class="half-note half-note--warn">
           <span class="half-note__dot" aria-hidden="true">·</span>
-          이 날은 근무계획이 없어 반차를 신청할 수 없어요. 종일 연차로 신청해 주세요.
+          <span class="half-note__text">이 날은 근무계획이 없어 반차를 신청할 수 없어요. 종일 연차로 신청해 주세요.</span>
         </p>
       </section>
 
@@ -1404,6 +1418,10 @@ onMounted(() => {
 .half-note__dot {
   flex-shrink: 0;
   color: var(--color-text-tertiary);
+}
+.half-note__text {
+  flex: 1;
+  min-width: 0;
 }
 
 /* 시간차 입력 영역 헤더(제목 + 편의버튼) */
