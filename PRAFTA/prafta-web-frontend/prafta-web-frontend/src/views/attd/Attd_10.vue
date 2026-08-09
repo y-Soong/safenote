@@ -255,6 +255,18 @@
               </dl>
             </div>
 
+            <!-- 앞뒤 근무일(D-1 / D+1) 근태 구간 (겹침가드) — 근태 보정 탭 전용.
+                 앱 관리자 승인 상세와 동일 정보(웹 일자상세 API 재사용, 서버 완성 표시값).
+                 0건이면 섹션 자체를 렌더하지 않는다(AttdDayDetailPop 과 동일 규약). -->
+            <AttdNeighborDaySegments
+              v-if="
+                activeTab === 'correction' &&
+                (neighborLoading || neighborSegments.length > 0)
+              "
+              :segments="neighborSegments"
+              :loading="neighborLoading"
+            />
+
             <!-- 결재 처리 — 요청대로 승인 / 반려 (연차 탭과 동일 패턴). 편의상 본 화면에서도 승인 가능. -->
             <div class="ra-sec ra-decide">
               <div class="ra-sec__title">결재 처리</div>
@@ -315,6 +327,7 @@ import {
 import axios from "@/api/axios";
 import ViewHeader from "@/components/common/ViewHeader.vue";
 import LeaveChangeConfirmPop from "./popup/LeaveChangeConfirmPop.vue";
+import AttdNeighborDaySegments from "./popup/AttdNeighborDaySegments.vue";
 import { resolveApiErrorMessage } from "@/utils/apiError";
 import { formatYmdDot } from "@/utils/dateFormat";
 
@@ -344,6 +357,9 @@ const reqSelected = ref(null);
 const reqDecision = ref("approve"); // approve | reject
 const reqRejectReason = ref("");
 const reqProcessing = ref(false);
+// 앞뒤 근무일(D-1/D+1) 근태 구간 — 근태 보정 승인 판단 보조(앱 승인 상세와 동일 정보).
+const neighborSegments = ref([]);
+const neighborLoading = ref(false);
 
 // 탭별 대기 건수 (배지용) — 활성 탭과 무관하게 유지
 const leaveCount = ref(0);
@@ -560,6 +576,33 @@ const fnSelectReq = (row) => {
   reqSelected.value = row;
   reqDecision.value = "approve";
   reqRejectReason.value = "";
+  fnLoadNeighborSegments(row);
+};
+
+// 앞뒤 근무일 근태 구간 로드 — 일자상세 API(daily-attd-details)의 neighborAttdSegmentList 만 취한다
+// (서버 완성 표시값 — 프론트 재판정 금지). 보조 정보이므로 실패해도 승인 흐름을 막지 않는다(빈 목록 유지).
+const fnLoadNeighborSegments = async (row) => {
+  neighborSegments.value = [];
+  if (activeTab.value !== "correction" || !row?.workYmd) return;
+  neighborLoading.value = true;
+  try {
+    const r = await axios.get("/webApi/attd07/daily-attd-details", {
+      params: {
+        siteCd: row.siteCd,
+        userCd: row.userCd,
+        workYmd: row.workYmd,
+        nodeCd: row.nodeCd || "",
+      },
+    });
+    // 응답 도착 전 다른 행을 선택했으면 늦게 온 응답은 버린다(경합 방지).
+    if (reqSelected.value?.reqId === row.reqId) {
+      neighborSegments.value = r.data?.neighborAttdSegmentList ?? [];
+    }
+  } catch (e) {
+    console.warn("[Attd_10] 앞뒤 근무일 근태 조회 실패", e);
+  } finally {
+    neighborLoading.value = false;
+  }
 };
 
 // 근태보정/초과근무 처리 진입점 — 라디오 선택에 따라 승인 또는 반려로 분기.
