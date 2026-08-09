@@ -201,7 +201,11 @@
     LIMIT 1
     </select>
 
-    <!-- 연차 요약 합산(법정+약정, ACTIVE & 미소멸). 부여 이력 없으면 SUM 이 null. -->
+    <!-- 연차 요약 합산(법정+약정, ACTIVE & 미소멸). 부여 이력 없으면 SUM 이 null.
+         ★AppLeave01Mapper.selectGroupAgg 와 활성집합 정합(원 주석 "home01 정합" 의도)이 목적인데,
+         prafta-com-011(가불) 도입 시 leave01 쪽에만 "미발생 가불 GRANT 제외" 조건이 붙고 여기는
+         누락됐다. 가불 신청 직후(GRANT 는 ACTIVE·AVAIL_FROM_DATE 는 미래) 홈 화면 잔여만 그 GRANT 의
+         미사용분을 더 포함해 leave01 과 달라지는 결함으로 실측됨(2026-08-09, 반차 시간대 실기기 테스트). -->
     <select id="selectLeaveSummary"
             parameterType="com.prafta.app.home.home01.application.query.HomeSummaryQuery"
             resultType="com.prafta.app.home.home01.result.LeaveSummaryResult">
@@ -216,6 +220,7 @@
       AND G.STATUS = 'ACTIVE'
       AND G.EXPIRE_YN = 'N'
       AND G.DEL_YN = 'N'
+      AND NOT (G.GRANT_REASON LIKE '[가불]%' AND G.AVAIL_FROM_DATE <![CDATA[ > ]]> #{ param.todayYmd })
     </select>
 
     <!--
