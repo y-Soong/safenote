@@ -128,8 +128,11 @@ public class LeaveRemnantCoverServiceImpl implements LeaveRemnantCoverService {
                 remaining = remaining.add(avail);
             }
         }
-        if (remaining.signum() <= 0) {
-            return null; // ⓓ 잔여 0 — 보전 대상 아님(진짜 잔여 부족)
+        if (remaining.compareTo(ROUNDING_DUST_THRESHOLD) < 0) {
+            // ⓓ 잔여가 절사 끝수 수준(순수 반올림 잔재, §5-④ 리포트 기준과 동일 임계) — 보전 대상 아님.
+            //   R2(DOWN 절사)로 누적된 미세 잔여가 여기서 걸러지지 않으면, 실질 잔여가 없는 사용자도
+            //   "잔여>0"로 오인돼 회사부담 발동으로 새어나간다(리포트 경로는 이미 이 임계로 걸러냄).
+            return null;
         }
         if (remaining.compareTo(chargeDays) >= 0) {
             return null; // ⓒ 잔여 충분 — 정상 차감 경로

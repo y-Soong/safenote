@@ -93,7 +93,7 @@
                   <input
                     type="text"
                     inputmode="numeric"
-                    v-model="fstSchBrkMin"
+                    :value="fstSchBrkMin"
                     @input="onBreakMinInput($event, 'fst')"
                   />
                 </div>
@@ -136,7 +136,7 @@
                   <input
                     type="text"
                     inputmode="numeric"
-                    v-model="secSchBrkMin"
+                    :value="secSchBrkMin"
                     @input="onBreakMinInput($event, 'sec')"
                   />
                 </div>
