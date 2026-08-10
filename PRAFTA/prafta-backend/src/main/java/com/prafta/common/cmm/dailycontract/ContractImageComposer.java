@@ -10,6 +10,8 @@ import java.io.ByteArrayOutputStream;
 
 import javax.imageio.ImageIO;
 
+import lombok.extern.slf4j.Slf4j;
+
 /**
  * 일용직 근로계약서 <b>서명 블록</b> 렌더 유틸 (R5 — 서버 합성).
  *
@@ -20,12 +22,14 @@ import javax.imageio.ImageIO;
  * <p>블록 구성: 성명 / 최초 근로일(=서명일) / 계약 단위 "근로일 당일 1일" /
  * 서명일시(서버 NOW) / 서명 이미지. 미래 종료일은 어디에도 기재하지 않는다(D1).
  *
- * <p>한글 렌더링 폰트: 논리 폰트 {@code SansSerif} 를 사용한다 — Windows 는 기본 매핑으로 한글이
- * 렌더되고, Linux 서버는 한글 폰트 패키지(예: fonts-nanum / noto-cjk) 설치가 전제된다.
- * 프로젝트 내 번들 폰트 리소스·기존 텍스트 렌더 전례가 없어(전수 grep 확인) 논리 폰트를 채택했다.
+ * <p>한글 렌더링 폰트: 번들 Pretendard TTF({@code resources/fonts/}, OFL-1.1)를 {@code Font.createFont}
+ * 로 로드한다 — 과거 논리 폰트 {@code SansSerif} 방식은 운영 Linux 에 한글 시스템 폰트가 없어
+ * 서명 블록의 한글이 전탈락하는 결함을 냈다(2026-08-10 실기기 확인). 번들 로드 실패 시에만
+ * {@code SansSerif} 폴백(로컬 Windows 는 기본 매핑으로 한글 렌더 가능).
  *
  * <p>도메인(일용직 계약서) 종속 유틸이므로 common.util 이 아닌 본 모듈에 둔다.
  */
+@Slf4j
 public final class ContractImageComposer {
 
     /** 합성 기준 최소 폭(px) — 원본이 지나치게 좁아도 블록 텍스트 가독성을 보장. */
@@ -34,8 +38,41 @@ public final class ContractImageComposer {
     /** 계약 단위 고정 문구 (D1 — 근로일 당일 1일 단위 계약). */
     private static final String CONTRACT_UNIT_LABEL = "근로일 당일 1일";
 
+    /** 번들 본문 폰트(Pretendard Regular). 로드 실패 시 null → 논리 폰트 SansSerif 폴백. */
+    private static final Font BUNDLED_REGULAR = loadBundledFont("/fonts/Pretendard-Regular.ttf");
+
+    /** 번들 제목 폰트(Pretendard Bold — 자체 볼드 글리프라 derive 시 스타일은 PLAIN 유지). */
+    private static final Font BUNDLED_BOLD = loadBundledFont("/fonts/Pretendard-Bold.ttf");
+
     private ContractImageComposer() {
         // 유틸리티 클래스 - 인스턴스 생성 금지
+    }
+
+    /**
+     * 클래스패스에서 TTF 를 로드한다. 실패해도 서명 흐름을 죽이지 않기 위해 null 을 반환하고
+     * 렌더 시 논리 폰트로 폴백한다(운영 Linux 폴백은 한글 탈락 가능성이 있으므로 로드 실패는 로그로 남긴다).
+     */
+    private static Font loadBundledFont(String resourcePath) {
+        try (java.io.InputStream in = ContractImageComposer.class.getResourceAsStream(resourcePath)) {
+            if (in == null) {
+                log.error("계약서 서명 블록 번들 폰트 리소스를 찾지 못했습니다 - 경로={}", resourcePath);
+                return null;
+            }
+            return Font.createFont(Font.TRUETYPE_FONT, in);
+        } catch (Exception e) {
+            log.error("계약서 서명 블록 번들 폰트 로드 실패 - 경로={}, 원인={}", resourcePath, e.toString());
+            return null;
+        }
+    }
+
+    /** 제목/본문 폰트 해석 — 번들 폰트 우선, 실패 시 논리 폰트 SansSerif. */
+    private static Font resolveFont(boolean bold, int fontSize) {
+        Font bundled = bold ? BUNDLED_BOLD : BUNDLED_REGULAR;
+        if (bundled != null) {
+            // Bold TTF 는 서체 자체가 볼드 → 알고리즘 볼드 중복 방지 위해 PLAIN 으로 derive.
+            return bundled.deriveFont(Font.PLAIN, (float) fontSize);
+        }
+        return new Font("SansSerif", bold ? Font.BOLD : Font.PLAIN, fontSize);
     }
 
     /**
@@ -67,8 +104,8 @@ public final class ContractImageComposer {
         int padding = fontSize;
         int lineGap = Math.round(fontSize * 1.7f);
 
-        Font titleFont = new Font("SansSerif", Font.BOLD, fontSize);
-        Font bodyFont = new Font("SansSerif", Font.PLAIN, fontSize);
+        Font titleFont = resolveFont(true, fontSize);
+        Font bodyFont = resolveFont(false, fontSize);
 
         // 서명 이미지 표시 크기 — 폭의 1/3 상한, 비율 유지.
         int signMaxW = width / 3;
