@@ -46,6 +46,7 @@ import com.prafta.web.attd.attd07.dto.response.AttdRecordListResponse;
 import com.prafta.web.attd.attd07.dto.response.DailyAttdDetailsResponse;
 import com.prafta.web.attd.attd07.mapper.Attd07Mapper;
 import com.prafta.web.attd.attd07.result.AllowedWindowResult;
+import com.prafta.web.attd.attd07.result.AttdKeyFieldsResult;
 import com.prafta.web.attd.attd07.result.AttdSnapshotResult;
 import com.prafta.web.attd.attd07.result.ConfirmedLeaveResult;
 import com.prafta.web.attd.attd07.result.LeaveExemptWindowResult;
@@ -196,6 +197,47 @@ public class Attd07ServiceImpl implements Attd07Service {
 
         for (int i = 0; i < models.size(); i++) {
             UpdateUserAttdInfosModel model = models.get(i);
+
+        	// ============================================================================
+        	// [기존 행 대조 게이트] 관리자 직접 "수정"(model.attdId() 보유) 본문 키 필드 검증.
+        	//   updateUserAttdInfos 매퍼는 upsert(ON DUPLICATE KEY UPDATE)라 WORK_YMD/WORK_SEQ/
+        	//   SITE_CD/USER_CD 를 편집 시 갱신하지 않는다(불변 전제). 본문이 이 필드들에
+        	//   기존 행과 다른 값을 보내면 조용한 병합이 일어나고, 마감(ensureNotClosed)·겹침(§7.6)
+        	//   검사가 본문 값 기준으로 돌아 실제 저장 행과 어긋난다(마감 잠금 우회 여지).
+        	//   승인 경로(updateUserAttdRequest)의 body/REQ 대조와 동일 원칙으로, 저장 전에
+        	//   (cmpnyCd, attdId) 기존 행과 대조해 불일치를 차단한다. 후속 게이트(권한/마감/겹침)가
+        	//   검증된 값 위에서 돌도록 루프 선두에 둔다. 신규 생성(attdId==null)은 대조 대상이
+        	//   없으므로 기존 흐름 그대로다(다중 구간 동시 생성 무영향).
+        	//   ★ NODE_CD 는 대조에서 제외한다 — 행의 NODE_CD 는 생성 시점 스냅샷(이후 무갱신)이고
+        	//   본문 nodeCd 는 아래 게이트(2)가 "현재 소속 권위 노드"와 대조하므로, 부서 이동자의
+        	//   과거 근태(구 노드 행) 편집 시 둘을 다 요구하면 어떤 본문 값도 통과 불가(데드락).
+        	//   ON DUP 절이 NODE_CD 를 갱신하지 않아 제외해도 영속 위험 없음(qa 2026-08-10 판정).
+        	// ============================================================================
+        	if (model.attdId() != null) {
+        		AttdKeyFieldsResult existingRow =
+        				attd07Mapper.selectAttdKeyFieldsById(model.gvCmpnyCd(), model.attdId());
+        		if (existingRow == null) {
+        			// 수정 대상 부재(미존재/삭제됨) — 클라이언트 지정 attdId 를 신규 INSERT(또는 삭제 행
+        			// 소생)로 흘려보내지 않고 명시적으로 거부한다(fail-closed).
+        			log.warn("admin-direct attd rejected - 수정 대상 근태 행 부재. cmpnyCd={}, attdId={}, userCd={}, workYmd={}",
+        					model.gvCmpnyCd(), model.attdId(), model.userCd(), model.workYmd());
+        			throw new ApiException(AttdErrorCode.ATTD_404_012);
+        		}
+        		if (StringEqualsUtils.isMismatched(model.workYmd(), existingRow.workYmd())
+        				|| StringEqualsUtils.isMismatched(model.workSeq(), existingRow.workSeq())
+        				|| StringEqualsUtils.isMismatched(model.siteCd(), existingRow.siteCd())
+        				|| StringEqualsUtils.isMismatched(model.userCd(), existingRow.userCd())) {
+        			log.warn("admin-direct attd rejected - body/기존 행 mismatch(변조). attdId={},"
+        					+ " bodyYmd={}, rowYmd={}, bodySeq={}, rowSeq={}, bodySite={}, rowSite={},"
+        					+ " bodyUser={}, rowUser={}",
+        					model.attdId(),
+        					model.workYmd(), existingRow.workYmd(),
+        					model.workSeq(), existingRow.workSeq(),
+        					model.siteCd(), existingRow.siteCd(),
+        					model.userCd(), existingRow.userCd());
+        			throw new ApiException(AttdErrorCode.ATTD_400_005);
+        		}
+        	}
 
         	// ============================================================================
         	// [보안 하드닝] 관리자 직접 근태 생성/수정 인가 게이트 (형제 경로 updateUserOvertimeRequests 미러링).

@@ -1457,6 +1457,26 @@
      LIMIT 1
     </select>
 
+    <!-- 관리자 직접 "수정"(attdId 보유) 기존 행 대조 게이트용 — upsert 가 편집 시 갱신하지 않는
+         키 필드만 활성 행 한정으로 조회한다. 행이 없으면(부재/삭제) 수정 대상 부재로 거부한다
+         (클라이언트 지정 attdId 의 신규 INSERT/삭제 행 소생 유입 차단).
+         NODE_CD 는 대조 대상이 아님(행=생성 시점 스냅샷, 본문 nodeCd 는 권위 노드 게이트가 별도 대조
+         - 둘 다 요구 시 부서 이동자 과거 근태 편집 데드락).
+         ★ 결과 record(AttdKeyFieldsResult) 컴포넌트 순서 = SELECT 컬럼 순서(불일치 시 무증상 오매핑). -->
+    <select id="selectAttdKeyFieldsById" resultType="com.prafta.web.attd.attd07.result.AttdKeyFieldsResult">
+    /* Attd07Mapper.selectAttdKeyFieldsById */
+    SELECT
+          M.WORK_YMD  AS workYmd
+        , M.WORK_SEQ  AS workSeq
+        , M.SITE_CD   AS siteCd
+        , M.USER_CD   AS userCd
+      FROM TB_USER_ATTD_MGMT M
+     WHERE M.CMPNY_CD = #{gvCmpnyCd}
+       AND M.ATTD_ID  = #{attdId}
+       AND M.DEL_YN   = 'N'
+     LIMIT 1
+    </select>
+
     <!-- PRAFTA-003-6: 일자 상세 조회 시 함께 노출되는 OT(초과근무) 리스트 조회.
          IDX_OT_USER_YMD (CMPNY_CD, SITE_CD, USER_CD, WORK_YMD) 인덱스 활용을 위해
          WHERE 절을 (CMPNY_CD -> SITE_CD -> USER_CD -> WORK_YMD -> DEL_YN -> OT_STATUS)

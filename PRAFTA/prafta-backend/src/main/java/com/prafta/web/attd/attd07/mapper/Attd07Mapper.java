@@ -16,6 +16,7 @@ import com.prafta.web.attd.attd07.application.query.DailyAttdDetailsQuery;
 import com.prafta.web.attd.attd07.application.query.MonthlyAttdListQuery;
 import com.prafta.web.attd.attd07.application.query.OvertimeAllowedWindowQuery;
 import com.prafta.web.attd.attd07.result.AllowedWindowResult;
+import com.prafta.web.attd.attd07.result.AttdKeyFieldsResult;
 import com.prafta.web.attd.attd07.result.AttdSnapshotResult;
 import com.prafta.web.attd.attd07.result.ConfirmedLeaveResult;
 import com.prafta.web.attd.attd07.result.LeaveExemptWindowResult;
@@ -165,6 +166,18 @@ public interface Attd07Mapper {
      * 서버 권위 데이터로 채우기 위한 용도(감사 무결성). 기존 행이 없으면(생성요청) null.
      */
     AttdSnapshotResult selectAttdSnapshotById(
+            @Param("gvCmpnyCd") String gvCmpnyCd,
+            @Param("attdId") String attdId);
+
+    /**
+     * 관리자 직접 "수정"(attdId 보유) 기존 행 대조 게이트용 — (cmpnyCd, attdId) 활성(DEL_YN='N')
+     * 근태 행의 키 필드(WORK_YMD/WORK_SEQ/SITE_CD/USER_CD/NODE_CD)만 조회한다.
+     *
+     * <p>updateUserAttdInfos 매퍼는 upsert 라 편집 시 위 5개 컬럼을 갱신하지 않는다(불변 전제).
+     * 본문 값이 기존 행과 불일치하면 조용한 병합·마감 우회가 생기므로, statement 실행 전에 본 조회
+     * 결과와 대조한다. 행이 없으면(부재/삭제) null — 수정 대상 부재로 거부한다(신규 INSERT 유입 차단).
+     */
+    AttdKeyFieldsResult selectAttdKeyFieldsById(
             @Param("gvCmpnyCd") String gvCmpnyCd,
             @Param("attdId") String attdId);
 
