@@ -55,6 +55,10 @@
         <section class="lad-card">
           <h2 class="lad-card__title">사용 구간</h2>
           <p class="lad-row">{{ rangeText }}</p>
+          <!-- 가불표시-05: 가불 포함 신청 표기 — borrowDays > 0 일 때만(일 단위 표기는 formatLeaveDaysOnly 단일 출처) -->
+          <p v-if="Number(body.borrowDays) > 0" class="lad-row lad-row--borrow">
+            가불 {{ formatLeaveDaysOnly(body.borrowDays) }} 포함
+          </p>
           <div class="lad-balance">
             <span>부여 {{ body.balance?.granted ?? '-' }}</span>
             <span>사용 {{ body.balance?.used ?? '-' }}</span>
@@ -128,6 +132,8 @@ import { useRoute, useRouter } from 'vue-router'
 import api from '@/api/axios'
 import { resolveApiErrorMessage } from '@/utils/apiError'
 import { formatYmdDisplay, formatDateTimeDisplay } from '@/utils/approvalFormat'
+// 가불표시-05: 일 단위 수량 표기 단일 출처(2026-08-09 규약)
+import { formatLeaveDaysOnly } from '@/utils/leaveFormat'
 import { usePullToRefresh } from '@/composables/usePullToRefresh'
 import PullRefreshIndicator from '@/components/common/PullRefreshIndicator.vue'
 
@@ -413,6 +419,11 @@ function fmtDt(v) {
   font-size: 14px;
   color: var(--color-text-primary);
   font-variant-numeric: tabular-nums;
+}
+/* 가불표시-05: 가불 포함 행 — warning 텍스트 토큰으로 주의 환기(신규 토큰 발행 없음) */
+.lad-row--borrow {
+  color: var(--color-warning-text);
+  font-weight: 600;
 }
 
 /* ① 메타 */

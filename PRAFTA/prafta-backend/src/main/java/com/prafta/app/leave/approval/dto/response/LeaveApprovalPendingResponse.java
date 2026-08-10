@@ -39,5 +39,7 @@ public class LeaveApprovalPendingResponse {
         private final String reqDate;
         /** 요청자 == 결재자(본인) 여부(§7.3). */
         private final String selfYn;
+        /** 가불(미래 연차 당겨쓰기) 충당 일수 (가불표시-02, additive). 항상 0 이상. */
+        private final BigDecimal borrowDays;
     }
 }

@@ -237,6 +237,12 @@
                           class="req-leave-seg"
                           >{{ card.leaveDaysLabel }}</span
                         >
+                        <!-- 가불표시-06: 가불(미래 연차 당겨쓰기) 포함 요청 배지 — borrowDays > 0 일 때만 -->
+                        <span
+                          v-if="card.borrowDays > 0"
+                          class="req-leave-seg req-leave-seg--borrow"
+                          >가불 {{ card.borrowDays }}일</span
+                        >
                       </div>
                     </template>
                     <!-- 그 외(01~04): 기존 출퇴근 시각 BEFORE/AFTER (현행 유지) -->
@@ -1782,6 +1788,8 @@ const reqCards = computed(() => {
           ? hourlyRangeLabel(req.startTime, req.endTime)
           : null,
         leaveDaysLabel: chargeDaysLabel(req.leaveDays),
+        // 가불표시-06: 가불 충당 일수(서버 산출, 0 이상). 0/구서버(undefined)는 0 정규화 → 배지 미표시.
+        borrowDays: Number(req.borrowDays) || 0,
       };
     }
     // 그 외(01~04): 출퇴근 시각 BEFORE/AFTER 모델.
@@ -3900,6 +3908,17 @@ onMounted(() => {
   margin-right: 6px;
   color: var(--color-text-muted, #9ca3af);
   font-weight: 400;
+}
+/* 가불표시-06: 가불 배지 세그먼트 — 경고(warning) 시맨틱 토큰(tokens.css) 재사용.
+   칩 형태라 세그먼트 구분점(·)은 배경 안에 들어가지 않도록 제거한다. */
+.req-leave-seg--borrow {
+  background: var(--color-warning-bg, #fef3c7);
+  color: var(--color-warning-text, #b45309);
+  border-radius: 4px;
+  padding: 1px 6px;
+}
+.req-leave-seg + .req-leave-seg--borrow::before {
+  content: none;
 }
 /* PRAFTA-APP-018-F: 확정 연차 사용 섹션 (요청 카드와 구분, 표시 전용) */
 .leave-use-section {

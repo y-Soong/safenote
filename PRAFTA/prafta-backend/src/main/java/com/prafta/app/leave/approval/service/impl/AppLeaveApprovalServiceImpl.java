@@ -102,6 +102,8 @@ public class AppLeaveApprovalServiceImpl implements AppLeaveApprovalService {
                         .summaryLines(summaryLeave(v))
                         .reqDate(v.reqDate())
                         .selfYn(v.selfYn())
+                        // 가불표시-02: 구조화 필드로 전달(summaryLines 문자열 오염 금지 — FE 가 칩 렌더).
+                        .borrowDays(v.borrowDays())
                         .build());
             }
         }
@@ -224,6 +226,8 @@ public class AppLeaveApprovalServiceImpl implements AppLeaveApprovalService {
             body.put("leaveNm", lb.leaveNm());
             body.put("paidYn", lb.paidYn());
             body.put("unitNm", lb.unitNm());
+            // 가불표시-02: 가불 충당 일수(0 이상). FE 는 0 초과일 때만 "가불 N일" 행 표시.
+            body.put("borrowDays", lb.borrowDays());
 
             Map<String, Object> applied = new LinkedHashMap<>();
             applied.put("startDate", lb.startDate());

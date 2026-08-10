@@ -175,6 +175,8 @@ const normalizeItem = (raw) => ({
   selfYn: raw.selfYn === 'Y' || raw.selfYn === true ? 'Y' : 'N',
   lockedYn: false,
   lockedByNm: '',
+  // 가불표시-04: 가불 충당 일수(연차만 세팅, 그 외/구서버는 null → 카드 배지 미표시)
+  borrowDays: raw.borrowDays ?? null,
 })
 
 // 칩/정렬/검색만 서버로 전달(식별자는 axios 인터셉터의 토큰 클레임 경유 — IDOR 차단, plan §3/§4).

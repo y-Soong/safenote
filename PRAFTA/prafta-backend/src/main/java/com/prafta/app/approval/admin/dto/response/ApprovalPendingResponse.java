@@ -1,5 +1,6 @@
 package com.prafta.app.approval.admin.dto.response;
 
+import java.math.BigDecimal;
 import java.util.List;
 import java.util.Map;
 
@@ -41,5 +42,10 @@ public class ApprovalPendingResponse {
         private final String lockedByNm;
         /** 연차만 결재 단계(근태보정/초과는 null). */
         private final Integer approvalStep;
+        /**
+         * 가불(미래 연차 당겨쓰기) 충당 일수 (가불표시-02, additive).
+         * 연차(LEAVE)만 세팅(0 이상) — CorrOt/스케줄 경로는 null 직렬화(구버전 앱 무영향).
+         */
+        private final BigDecimal borrowDays;
     }
 }

@@ -20,6 +20,8 @@
       </span>
       <span class="lac__badges">
         <span v-if="item.selfYn === 'Y'" class="lac__chip lac__chip--self">본인</span>
+        <!-- 가불표시-05: 가불(미래 연차 당겨쓰기) 포함 요청 배지 — borrowDays > 0 일 때만 -->
+        <span v-if="Number(item.borrowDays) > 0" class="lac__chip lac__chip--borrow">가불</span>
         <span v-if="mode === 'history' && item.myDecisionNm" class="lac__chip" :class="decisionChipClass">
           {{ item.myDecisionNm }}
         </span>
@@ -135,6 +137,11 @@ function fmtHm(v) {
   font-weight: 600;
 }
 .lac__chip--self {
+  background: var(--color-warning-tint);
+  color: var(--color-warning-text);
+}
+/* 가불표시-05: 가불 배지 — 본인 칩과 동일 warning 토큰(동시 출현 빈도 낮음, 텍스트로 구분) */
+.lac__chip--borrow {
   background: var(--color-warning-tint);
   color: var(--color-warning-text);
 }

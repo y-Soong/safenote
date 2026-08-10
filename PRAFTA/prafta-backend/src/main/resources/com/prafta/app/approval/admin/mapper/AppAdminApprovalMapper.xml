@@ -150,6 +150,22 @@
         , R.REQ_REASON                                                       AS reqReason
         , DATE_FORMAT(R.INSERT_DATE, '%Y-%m-%dT%H:%i:%s')                    AS reqDate
         , CASE WHEN R.USER_CD = #{approverUserCd} THEN 'Y' ELSE 'N' END      AS selfYn
+        <!-- 가불표시-01: 이 요청의 차감(use, CONFIRMED) 중 가불 GRANT(GRANT_REASON 프리픽스 '[가불] ')를
+             충당한 일수 합(web selectMyPendingLeaveApprovals 동일 서브쿼리). LEAVE_DAYS 만 합산 —
+             LEAVE_MINUTES 는 첫 행 총량 불변식이라 합산 금지. 06(연차수정)은 0 반환(배지 미표시 의도).
+             ★ record(PendingLeaveRow) 위치 기반 매핑: 맨 끝 필드 borrowDays 와 순서 일치 필수 - SELECT 맨 끝 유지. -->
+        , (SELECT IFNULL(SUM(BU.LEAVE_DAYS), 0)
+             FROM TB_USER_LEAVE_USE BU
+             JOIN TB_USER_LEAVE_GRANT BG
+               ON BG.CMPNY_CD = BU.CMPNY_CD
+              AND BG.GRANT_ID = BU.GRANT_ID
+              AND BG.DEL_YN   = 'N'
+              AND BG.GRANT_REASON LIKE '[가불] %'
+            WHERE BU.CMPNY_CD     = R.CMPNY_CD
+              AND BU.REQ_ID       = R.REQ_ID
+              AND BU.LEAVE_STATUS = 'CONFIRMED'
+              AND BU.DEL_YN       = 'N'
+          )                                                                  AS borrowDays
       FROM TB_USER_ATTD_REQ_APPROVAL AP
       JOIN TB_USER_ATTD_REQ R
         ON R.CMPNY_CD = AP.CMPNY_CD
@@ -310,6 +326,21 @@
         , U.START_TIME                                                   AS startTime
         , U.END_DATE                                                     AS endDate
         , U.END_TIME                                                     AS endTime
+        <!-- 가불표시-01: 요청(reqId) 차감 중 가불 GRANT(GRANT_REASON 프리픽스 '[가불] ') 충당 일수 합.
+             06(연차수정)은 대상 use 의 REQ_ID 가 원 신청 것이라 0 반환(배지 미표시 의도).
+             ★ record(LeaveBodyRow) 위치 기반 매핑: 맨 끝 필드 borrowDays 와 순서 일치 필수 - SELECT 맨 끝 유지. -->
+        , (SELECT IFNULL(SUM(BU.LEAVE_DAYS), 0)
+             FROM TB_USER_LEAVE_USE BU
+             JOIN TB_USER_LEAVE_GRANT BG
+               ON BG.CMPNY_CD = BU.CMPNY_CD
+              AND BG.GRANT_ID = BU.GRANT_ID
+              AND BG.DEL_YN   = 'N'
+              AND BG.GRANT_REASON LIKE '[가불] %'
+            WHERE BU.CMPNY_CD     = #{cmpnyCd}
+              AND BU.REQ_ID       = #{reqId}
+              AND BU.LEAVE_STATUS = 'CONFIRMED'
+              AND BU.DEL_YN       = 'N'
+          )                                                              AS borrowDays
       FROM TB_USER_LEAVE_USE U
       LEFT JOIN TB_LEAVE_TYPE_MGMT LT
         ON LT.CMPNY_CD = U.CMPNY_CD

@@ -48,6 +48,12 @@
                   <span class="ra-row__name">{{ row.requesterUserNm }}</span>
                   <span class="ra-row__dept">{{ row.nodeNm || "-" }}</span>
                   <span v-if="row.selfYn === 'Y'" class="ra-chip self">본인</span>
+                  <!-- 가불표시-03: 가불(미래 연차 당겨쓰기) 포함 요청 배지 — borrowDays > 0 일 때만 -->
+                  <span
+                    v-if="Number(row.borrowDays) > 0"
+                    class="ra-chip borrow"
+                    >가불</span
+                  >
                 </div>
                 <div class="ra-row__sub">
                   {{ fmtDate(row.workYmd) }} · {{ row.unitNm || row.leaveType }} ·
@@ -132,6 +138,12 @@
                 <dd>{{ selected.unitNm || "-" }}</dd>
                 <dt>사용 일수</dt>
                 <dd>{{ Number(selected.leaveDays) }}일</dd>
+                <!-- 가불표시-03: 가불 포함 신청 안내 — 승인 시 발생 예정 연차에서 미리 차감됨을 인지시킨다 -->
+                <dt v-if="Number(selected.borrowDays) > 0">가불</dt>
+                <dd v-if="Number(selected.borrowDays) > 0">
+                  가불 {{ Number(selected.borrowDays) }}일 포함 (미래 연차를
+                  당겨쓰는 신청 — 승인 시 발생 예정 연차에서 미리 차감됨)
+                </dd>
                 <dt v-if="selected.startTime">시간대</dt>
                 <dd v-if="selected.startTime">
                   {{ fmtTime(selected.startTime) }} ~
@@ -894,6 +906,14 @@ onMounted(() => {
   font-size: 0.7rem;
   background: var(--color-primary-tint, #dcfce7);
   color: var(--color-primary, #30796a);
+  border-radius: 0.3rem;
+  padding: 0.05rem 0.3rem;
+}
+/* 가불표시-03: 가불 배지 — 경고(warning) 시맨틱 토큰(tokens.css) 재사용, 신규 토큰 발행 없음 */
+.ra-chip.borrow {
+  font-size: 0.7rem;
+  background: var(--color-warning-bg, #fef3c7);
+  color: var(--color-warning-text, #b45309);
   border-radius: 0.3rem;
   padding: 0.05rem 0.3rem;
 }

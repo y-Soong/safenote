@@ -1089,6 +1089,23 @@
 		    , U.USE_UNIT_TYPE
 		    , 'SYS025'
 		) 						AS unitNm
+	    <!-- 가불표시-06: 연차(05) 요청 카드의 가불 충당 일수. 이 요청의 차감(use, CONFIRMED) 중
+	         가불 GRANT(GRANT_REASON 프리픽스 '[가불] ')를 충당한 LEAVE_DAYS 합(승인 목록 쿼리들과 동일 서브쿼리).
+	         01~04/06/10 요청은 매칭 use 없음 → 0 반환(배지 미표시).
+	         (record 끝 = SELECT 끝 — 위치 기반 매핑. record(MonthlyAttdReqResult) 의 마지막 필드
+	         borrowDays 와 "동일 순서"로 SELECT 맨 끝에 둔다. 순서 어긋나면 런타임 변환 폭발.) -->
+	    , (SELECT IFNULL(SUM(BU.LEAVE_DAYS), 0)
+	         FROM TB_USER_LEAVE_USE BU
+	         JOIN TB_USER_LEAVE_GRANT BG
+	           ON BG.CMPNY_CD = BU.CMPNY_CD
+	          AND BG.GRANT_ID = BU.GRANT_ID
+	          AND BG.DEL_YN   = 'N'
+	          AND BG.GRANT_REASON LIKE '[가불] %'
+	        WHERE BU.CMPNY_CD     = A.CMPNY_CD
+	          AND BU.REQ_ID       = A.REQ_ID
+	          AND BU.LEAVE_STATUS = 'CONFIRMED'
+	          AND BU.DEL_YN       = 'N'
+	      )						AS borrowDays
 	FROM TB_USER_ATTD_REQ A
 	     <!-- 목표 스케줄: REQ 의 SCH_CD 로 스케줄 마스터 조인 (회사/사업장 스코프 고정 — 타 사업장 스케줄 유출 차단) -->
 	     LEFT JOIN TB_SCH_MGMT TS

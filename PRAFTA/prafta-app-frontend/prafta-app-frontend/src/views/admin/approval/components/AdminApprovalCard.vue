@@ -25,6 +25,8 @@
       <span class="apc__badges">
         <!-- 본인 결재(②) -->
         <span v-if="item.selfYn === 'Y'" class="apc__chip apc__chip--self">본인</span>
+        <!-- 가불표시-04: 가불(미래 연차 당겨쓰기) 포함 요청 배지 — borrowDays > 0 일 때만(연차 그룹 한정 유입) -->
+        <span v-if="Number(item.borrowDays) > 0" class="apc__chip apc__chip--borrow">가불</span>
         <!-- 선점 중(③) -->
         <span v-if="item.lockedYn" class="apc__chip apc__chip--locked">
           {{ item.lockedByNm || '다른 관리자' }} 처리 중
@@ -157,6 +159,11 @@ const statusChipClass = computed(() => {
   font-weight: 600;
 }
 .apc__chip--self {
+  background: var(--color-warning-tint);
+  color: var(--color-warning-text);
+}
+/* 가불표시-04: 가불 배지 — 본인 칩과 동일 warning 토큰(동시 출현 빈도 낮음, 텍스트로 구분) */
+.apc__chip--borrow {
   background: var(--color-warning-tint);
   color: var(--color-warning-text);
 }

@@ -66,6 +66,21 @@
         , U.START_TIME                                                   AS startTime
         , U.END_DATE                                                     AS endDate
         , U.END_TIME                                                     AS endTime
+        <!-- 가불표시-01: 요청(reqId) 차감 중 가불 GRANT(GRANT_REASON 프리픽스 '[가불] ') 충당 일수 합
+             (AppAdminApprovalMapper.selectLeaveBody 동일 서브쿼리). 06(연차수정)은 0 반환(배지 미표시 의도).
+             ★ record(LeaveDetailBodyRow) 위치 기반 매핑: 맨 끝 필드 borrowDays 와 순서 일치 필수 - SELECT 맨 끝 유지. -->
+        , (SELECT IFNULL(SUM(BU.LEAVE_DAYS), 0)
+             FROM TB_USER_LEAVE_USE BU
+             JOIN TB_USER_LEAVE_GRANT BG
+               ON BG.CMPNY_CD = BU.CMPNY_CD
+              AND BG.GRANT_ID = BU.GRANT_ID
+              AND BG.DEL_YN   = 'N'
+              AND BG.GRANT_REASON LIKE '[가불] %'
+            WHERE BU.CMPNY_CD     = #{cmpnyCd}
+              AND BU.REQ_ID       = #{reqId}
+              AND BU.LEAVE_STATUS = 'CONFIRMED'
+              AND BU.DEL_YN       = 'N'
+          )                                                              AS borrowDays
       FROM TB_USER_LEAVE_USE U
       LEFT JOIN TB_LEAVE_TYPE_MGMT LT
         ON LT.CMPNY_CD = U.CMPNY_CD

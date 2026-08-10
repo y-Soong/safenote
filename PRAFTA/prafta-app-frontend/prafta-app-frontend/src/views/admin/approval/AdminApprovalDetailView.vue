@@ -123,6 +123,11 @@
               <dd>{{ detail.body.unitNm || '-' }}</dd>
               <dt>사용 구간</dt>
               <dd>{{ detail.body.appliedRangeDisplay || '-' }}</dd>
+              <!-- 가불표시-04: 가불 포함 신청 표기 — borrowDays > 0 일 때만(일 단위 표기는 formatLeaveDaysOnly 단일 출처) -->
+              <dt v-if="Number(detail.body.borrowDays) > 0">가불</dt>
+              <dd v-if="Number(detail.body.borrowDays) > 0">
+                가불 {{ formatLeaveDaysOnly(detail.body.borrowDays) }} 포함
+              </dd>
               <dt>잔여 현황</dt>
               <dd>
                 부여 {{ detail.body.balance?.granted ?? '-' }} · 사용
@@ -259,6 +264,8 @@ import { usePullToRefresh } from '@/composables/usePullToRefresh'
 import PullRefreshIndicator from '@/components/common/PullRefreshIndicator.vue'
 import { resolveApiErrorMessage } from '@/utils/apiError'
 import { formatYmdDisplay, formatDateTimeDisplay, formatTimeWithDateIfDiff } from '@/utils/approvalFormat'
+// 가불표시-04: 일 단위 수량 표기 단일 출처(2026-08-09 규약)
+import { formatLeaveDaysOnly } from '@/utils/leaveFormat'
 
 import AdminApprovalRejectSheet from './components/AdminApprovalRejectSheet.vue'
 import AdminApprovalAdjustSheet from './components/AdminApprovalAdjustSheet.vue'

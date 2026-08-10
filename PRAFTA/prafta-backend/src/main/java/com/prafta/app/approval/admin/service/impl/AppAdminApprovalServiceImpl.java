@@ -296,6 +296,8 @@ public class AppAdminApprovalServiceImpl implements AppAdminApprovalService {
                     .lockedYn(false)
                     .lockedByNm(null)
                     .approvalStep(r.approvalStep())
+                    // 가불표시-02: 구조화 필드로 전달(summaryLines 문자열 오염 금지 — FE 가 칩 렌더).
+                    .borrowDays(r.borrowDays())
                     .build());
         }
         return list;
@@ -410,6 +412,8 @@ public class AppAdminApprovalServiceImpl implements AppAdminApprovalService {
                 body.put("leaveNm", lb.leaveNm());
                 body.put("paidYn", null);          // 유급여부 컬럼 미확정(DDL) — 후속
                 body.put("unitNm", lb.unitNm());
+                // 가불표시-02: 가불 충당 일수(0 이상). FE 는 0 초과일 때만 "가불 N일" 행 표시.
+                body.put("borrowDays", lb.borrowDays());
                 Map<String, Object> applied = new LinkedHashMap<>();
                 applied.put("startDate", lb.startDate());
                 applied.put("startTime", lb.startTime());

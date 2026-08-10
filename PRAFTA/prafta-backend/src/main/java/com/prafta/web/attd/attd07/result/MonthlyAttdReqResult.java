@@ -1,5 +1,7 @@
 package com.prafta.web.attd.attd07.result;
 
+import java.math.BigDecimal;
+
 /**
  * Result row of {@code Attd07Mapper.selectMonthlyAttdReq}.
  *
@@ -119,5 +121,17 @@ public record MonthlyAttdReqResult(
     , String useUnitType
     /** 사용 단위 한글 라벨 (SYS025 FNC 산출: 종일/반차/2시간/1시간/30분, U 미매칭 시 NULL) */
     , String unitNm
+
+    // ────────────────────────────────────────────────────────────────
+    // 가불표시-06: 연차(05) 요청 카드의 가불(미래 연차 당겨쓰기) 충당 일수 표시용 컬럼.
+    //   승인 목록 쿼리들(selectMyPendingLeaveApprovals 등)과 동일한 [가불] GRANT 조인 서브쿼리 산출.
+    //   ⚠️ MyBatis record 는 컬럼을 "순서(위치)"로 생성자 인자에 바인딩한다. 이 필드는
+    //      반드시 record 끝(= unitNm 다음)이고 SELECT 절 끝과 "동일 순서"여야 한다.
+    //      중간 삽입 금지(전 필드 밀림 → 런타임 변환 폭발).
+    //   01~04/06/10 요청행은 매칭 use 없음 → 0 (배지 미표시). 항상 0 이상(null 없음).
+    // ────────────────────────────────────────────────────────────────
+
+    /** 가불 충당 일수 (0 초과일 때만 FE 가 "가불 N일" 세그먼트 표시) */
+    , BigDecimal borrowDays
 ) {
 }
