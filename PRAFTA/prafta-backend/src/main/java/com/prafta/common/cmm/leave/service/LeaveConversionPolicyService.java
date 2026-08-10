@@ -10,9 +10,10 @@ package com.prafta.common.cmm.leave.service;
  * <ul>
  *   <li><b>실차감(시간차 차감·재정산·이동 재차감·짜투리 발동 판정)</b> =
  *       {@link #resolveDailyConvMinutes} — 그날 D 계산({@code selectDailySchedule})과 단일 출처.</li>
- *   <li><b>참고 표시(잔여 카드·대시보드·리포트·apply-meta 등 특정일 없는 표기)</b> =
- *       {@link #resolvePersonalConvMinutes} — E4 규약(기본 근무타입 근사치, 미산출 480 폴백은 호출부).
- *       실스케줄과 편차 허용(사용자 확정 2026-08-03).</li>
+ *   <li><b>E4 참고 분모</b> = {@link #resolvePersonalConvMinutes} — 기본 근무타입 근사치(미산출
+ *       480 폴백은 호출부). <b>2026-08-09 표기 규약 변경</b>: FE 는 날짜 미정 문맥 잔여/부여를
+ *       일 단위 단독 표기로 전환 — E4 는 내부 판정(짜투리 리포트 최소단위 등)·구버전 앱 호환
+ *       (additive convMinutes 필드)용으로만 잔존한다(신 FE 표기 미사용).</li>
  *   <li>소정근로가 480분(8시간)을 초과하는 스케줄은 <b>480 캡</b>(E7 — 근로자 유리).</li>
  *   <li>산출 불가(미배정/스케줄 미존재/시각 비정상/0 이하)는 {@code null} — fail-closed.
  *       시간차 차단 판정({@code calcHourlyCharge} 진입부, ATTD_400_194)과 표기 폴백은 호출부 책임 분리.</li>

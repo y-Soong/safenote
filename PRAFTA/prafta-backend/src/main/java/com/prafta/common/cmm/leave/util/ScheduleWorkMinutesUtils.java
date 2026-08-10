@@ -13,7 +13,8 @@ import com.prafta.common.util.DateTimeUtils;
  * <ul>
  *   <li>그날 소정근로분 D(마일스톤 하한 기준 — {@code getDailyStdWorkMinutes})와</li>
  *   <li>실차감 분모 conv(당일 배정 스케줄 소정근로분 — {@code resolveDailyConvMinutes}, E1)와</li>
- *   <li>참고 표시 분모(기본 근무타입 소정근로분 — {@code resolvePersonalConvMinutes}, E4 전용)가</li>
+ *   <li>E4 참고 분모(기본 근무타입 소정근로분 — {@code resolvePersonalConvMinutes}.
+ *       2026-08-09 표기 규약 변경 이후 내부 판정·구버전 호환용, 신 FE 표기 미사용)가</li>
  * </ul>
  * 반드시 같은 산식을 공유하도록 본 클래스를 단일 출처로 사용한다.
  *

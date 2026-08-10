@@ -146,7 +146,9 @@
             <tr v-for="c in coverItems" :key="c.coverId">
               <td>{{ fnFormatDate(c.workYmd) }}</td>
               <td>{{ c.userNm }}</td>
-              <td>{{ fnDays(c.remnantDays, c.convMinutes) }}</td>
+              <!-- 차감 잔여: 발동 당시 당일 분모(E1)의 원장 저장값(c.convMinutes)으로 환산 — 날짜 확정
+                   문맥이라 시간 표기 유지(2026-08-09 규약 대상 아님). fnDays(일 단위 단독)와 분리. -->
+              <td>{{ formatLeaveDays(c.remnantDays, c.convMinutes) }}</td>
               <td>{{ fnCoverMinutesText(c.coverMinutes) }}</td>
               <td>{{ c.coverStatus === "ACTIVE" ? "유효" : "회수" }}</td>
             </tr>
@@ -320,51 +322,51 @@
                 {{ fnCreditText(row.creditMonths) }}
               </td>
 
-              <!-- PC-09(N8): 일수 표기는 행별 개인 분모(row.convMinutes, null=480 폴백)로 조립 -->
+              <!-- 2026-08-09 규약: 일수 표기는 일 단위 단독(fnDays) — 구 행별 개인 분모(E4) 환산 제거 -->
               <td class="is-right ld-grp-legal">
-                {{ fnDays(row.legal.granted, row.convMinutes) }}
+                {{ fnDays(row.legal.granted) }}
               </td>
               <td class="is-right ld-grp-legal">
-                {{ fnDays(row.legal.used, row.convMinutes) }}
+                {{ fnDays(row.legal.used) }}
               </td>
               <td class="is-right ld-grp-legal ld-scheduled">
-                {{ fnDays(row.legal.scheduled, row.convMinutes) }}
+                {{ fnDays(row.legal.scheduled) }}
               </td>
               <td class="is-right ld-grp-legal ld-cell-group-end ld-strong">
-                {{ fnDays(row.legal.remaining, row.convMinutes) }}
+                {{ fnDays(row.legal.remaining) }}
               </td>
 
               <td class="is-right ld-grp-nonlegal">
-                {{ fnDays(row.nonLegal.granted, row.convMinutes) }}
+                {{ fnDays(row.nonLegal.granted) }}
               </td>
               <td class="is-right ld-grp-nonlegal">
-                {{ fnDays(row.nonLegal.used, row.convMinutes) }}
+                {{ fnDays(row.nonLegal.used) }}
               </td>
               <td class="is-right ld-grp-nonlegal ld-scheduled">
-                {{ fnDays(row.nonLegal.scheduled, row.convMinutes) }}
+                {{ fnDays(row.nonLegal.scheduled) }}
               </td>
               <td class="is-right ld-grp-nonlegal ld-cell-group-end">
-                {{ fnDays(row.nonLegal.remaining, row.convMinutes) }}
+                {{ fnDays(row.nonLegal.remaining) }}
               </td>
 
               <td class="is-right ld-grp-total">
-                {{ fnDays(row.total.granted, row.convMinutes) }}
+                {{ fnDays(row.total.granted) }}
               </td>
               <td class="is-right ld-grp-total">
-                {{ fnDays(row.total.used, row.convMinutes) }}
+                {{ fnDays(row.total.used) }}
               </td>
               <td class="is-right ld-grp-total ld-scheduled">
-                {{ fnDays(row.total.scheduled, row.convMinutes) }}
+                {{ fnDays(row.total.scheduled) }}
               </td>
               <td class="is-right ld-grp-total ld-cell-group-end ld-strong">
-                {{ fnDays(row.total.remaining, row.convMinutes) }}
+                {{ fnDays(row.total.remaining) }}
                 <!-- 가불 사용분(prafta-com-011-7, 표시 전용) — 미발생 가불 USED 합이 있으면 잔여 아래 강조 표기 -->
                 <span
                   v-if="fnBorrowedDays(row) > 0"
                   class="ld-borrowed-badge"
                   title="아직 발생하지 않은 미래 연차를 미리 당겨 사용한 분(가불)"
                 >
-                  가불 {{ fnDays(row.borrowedDays, row.convMinutes) }}
+                  가불 {{ fnDays(row.borrowedDays) }}
                 </span>
               </td>
 
@@ -399,7 +401,13 @@ import { useModal } from "@/utils/useModal";
 import axios from "@/api/axios";
 import { resolveApiErrorMessage } from "@/utils/apiError";
 import { formatYmdDot } from "@/utils/dateFormat";
-import { formatLeaveDays, formatLeaveMinutes } from "@/utils/leaveFormat";
+// 2026-08-09 규약: 날짜 미정 표기는 formatLeaveDaysOnly(일 단위 단독).
+//   formatLeaveDays 는 coverItems "차감 잔여"(발동 당시 E1 원장 conv — 날짜 확정 문맥) 전용 잔존.
+import {
+  formatLeaveDays,
+  formatLeaveDaysOnly,
+  formatLeaveMinutes,
+} from "@/utils/leaveFormat";
 import { getMessage, MSG } from "@/messages";
 import search_icon from "@/assets/img/search_icon.png";
 import ViewHeader from "@/components/common/ViewHeader.vue";
@@ -485,10 +493,9 @@ const list = ref([]);
 // 선택된 직원 코드 목록
 const selectedUserCds = ref([]);
 
-// LC-09(§5-B): 1일 환산시간(분) — 목록 응답 최상위(convMinutes)에서 채움. 미수신 시 480 폴백.
-//   PC-09(N8): 표기 분모는 행별 개인 분모(row.convMinutes)가 우선이며, 본 값은
-//   행별 값이 없을 때의 폴백으로만 쓴다(정렬/내부 계산은 원 수치 유지).
-const convMinutes = ref(480);
+// 2026-08-09 규약: 구 표기 분모 ref(convMinutes)·행별 개인 분모(E4) 소비 제거 —
+//   일 단위 단독 표기(fnDays → formatLeaveDaysOnly)로 전환되어 분모 자체가 불필요.
+//   (응답의 convMinutes 필드는 구버전 호환으로 서버에 잔존 — FE 미사용)
 
 // PC-09(D9-②③): 짜투리 보전 정책 상태 — true=ON(집계 칩) / false=OFF(소멸 임박 리포트)
 //   null=미조회·조회 실패(칩/리포트 모두 비노출 — 오노출 방지)
@@ -522,10 +529,10 @@ const isAllSelected = computed(
     list.value.every((r) => selectedUserCds.value.includes(r.userCd))
 );
 
-// PC-09(D9-②): 집계 칩 텍스트 — 예: "1일 2시간 30분 / 4건".
-//   합계는 사용자별 분모가 섞인 집계라 표기 분모는 480(기본) 고정으로 조립한다.
+// PC-09(D9-②): 집계 칩 텍스트 — 예: "1.31일 / 4건".
+//   2026-08-09 규약: 사용자별 분모가 섞인 집계(날짜 미정류)라 일 단위 단독 표기(구 480 고정 환산 제거).
 const coverSummaryText = computed(
-  () => `${formatLeaveDays(coverTotalDays.value)} / ${coverCount.value}건`
+  () => `${formatLeaveDaysOnly(coverTotalDays.value)} / ${coverCount.value}건`
 );
 
 // ================ Life Cycle Functions ================
@@ -574,11 +581,10 @@ const fnLoad = async () => {
       const data = response.data || {};
 
       // 메트릭/총건수는 회사 공통 값이라 첫 페이지 응답만 채택한다.
+      //   (2026-08-09 규약: 응답 convMinutes 는 일 단위 단독 표기 전환으로 소비처 소멸 — 미보관)
       if (page === 1) {
         metricsData = data.metrics || {};
         total = data.paging?.totalCount ?? 0;
-        // LC-09: 환산시간(회사 공통) — 표기 조립용
-        convMinutes.value = data.convMinutes ?? 480;
       }
 
       const pageList = Array.isArray(data.list) ? data.list : [];
@@ -653,8 +659,8 @@ const fnLoadRemnantInfo = async () => {
     remnantReportRows.value = rows.map((row) => ({
       userCd: row.userCd,
       userNm: row.userNm,
-      // 잔여 표기는 본인 분모(convMinutes, 백엔드 480 폴백 보장) 기준으로 조립
-      remnantText: formatLeaveDays(row.remnantDays, row.convMinutes),
+      // 2026-08-09 규약: 소멸 임박 잔여(날짜 미정류)는 일 단위 단독 표기 — 구 본인 분모(E4) 환산 제거
+      remnantText: formatLeaveDaysOnly(row.remnantDays),
       isRoundingDust: row.roundingDust === true,
       nearestExpireDate: fnFormatDate(row.nearestExpireYmd),
     }));
@@ -690,8 +696,7 @@ const fnExcel = () => {
     "법정외잔여",
     "사용률(%)",
   ];
-  // LC-09(§5-B): 일수 컬럼은 화면과 동일하게 "N일 H시간 M분" 표기(소수점 노출 금지)
-  //   PC-09(N8): 화면과 동일하게 행별 개인 분모(convMinutes)로 조립
+  // 2026-08-09 규약: 일수 컬럼은 화면과 동일하게 일 단위 단독 표기(구 행별 개인 분모(E4) 환산 제거)
   const rows = list.value.map((r) => [
     r.userCd,
     r.userNm,
@@ -700,14 +705,14 @@ const fnExcel = () => {
     r.tenureText,
     fnEmploymentLabel(r.employmentType),
     r.creditMonths,
-    fnDays(r.legal?.granted, r.convMinutes),
-    fnDays(r.legal?.used, r.convMinutes),
-    fnDays(r.legal?.scheduled, r.convMinutes),
-    fnDays(r.legal?.remaining, r.convMinutes),
-    fnDays(r.nonLegal?.granted, r.convMinutes),
-    fnDays(r.nonLegal?.used, r.convMinutes),
-    fnDays(r.nonLegal?.scheduled, r.convMinutes),
-    fnDays(r.nonLegal?.remaining, r.convMinutes),
+    fnDays(r.legal?.granted),
+    fnDays(r.legal?.used),
+    fnDays(r.legal?.scheduled),
+    fnDays(r.legal?.remaining),
+    fnDays(r.nonLegal?.granted),
+    fnDays(r.nonLegal?.used),
+    fnDays(r.nonLegal?.scheduled),
+    fnDays(r.nonLegal?.remaining),
     r.usageRate,
   ]);
   const csvBody = [header, ...rows]
@@ -1052,7 +1057,7 @@ const fnViewLeavePlan = () => {
 
 // --- 가불 사용분(표시 전용, prafta-com-011-7) ---
 //   borrowedDays = 미발생 가불 GRANT 의 USED 합(BE 산정). 숫자로 정규화해 0 이하면 0 반환.
-//   LC-09(§5-B): 표기는 fnDays(소수점 노출 금지)로 조립하므로 본 함수는 배지 노출 판정에만 쓴다.
+//   표기는 fnDays(일 단위 단독 — 2026-08-09 규약)로 조립하므로 본 함수는 배지 노출 판정에만 쓴다.
 const fnBorrowedDays = (row) => {
   const n = Number(row?.borrowedDays ?? 0);
   if (!Number.isFinite(n) || n <= 0) return 0;
@@ -1071,9 +1076,10 @@ const fnEmploymentLabel = (type) => {
 };
 
 // ================ 내부 유틸 ================
-// LC-09(§5-B)·PC-09(N8): 일수 표기 — 소수점 노출 금지, "N일 H시간 M분"(leaveFormat 단일 출처).
-//   rowConv = 행별 개인 분모(list[].convMinutes). null/미전달이면 최상위 convMinutes(→480) 폴백.
-const fnDays = (v, rowConv) => formatLeaveDays(v, rowConv ?? convMinutes.value);
+// 2026-08-09 규약: 일수 표기 — 일 단위 단독(formatLeaveDaysOnly, 2자리 반올림 trim).
+//   구 "N일 H시간 M분"(E4 행별 개인 분모 환산)은 실차감 분모(E1)와 편차가 있어 표기 폐지.
+//   coverItems "차감 잔여"(발동 당시 원장 conv — E1)만 formatLeaveDays 직접 호출로 분리 유지.
+const fnDays = (v) => formatLeaveDaysOnly(v);
 
 // PC-09(D9-②): 회사 부담분(분) 표기 — "H시간 M분"
 const fnCoverMinutesText = (m) => formatLeaveMinutes(m);

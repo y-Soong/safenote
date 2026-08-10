@@ -96,9 +96,10 @@ public class AppLeave01ServiceImpl implements AppLeave01Service {
         BigDecimal halfDayPastDays = nz(hourlySplit == null ? null : hourlySplit.halfDayPastDays());
         BigDecimal halfDayPlannedDays = nz(hourlySplit == null ? null : hourlySplit.halfDayPlannedDays());
 
-        // E4 참고치 규약(당일분모 전환 후 유지): convMinutes = 오늘 기준 본인 참고 분모(기본 근무타입
-        //   근사치, 480 캡). 특정일 없는 잔여 카드 표기 전용 — 실차감 분모(당일 배정 스케줄, E1)와
-        //   편차 허용(사용자 확정 2026-08-03). 산출 불가면 480 폴백(FE formatLeaveDays 폴백과 정합).
+        // E4 참고치 규약: convMinutes = 오늘 기준 본인 참고 분모(기본 근무타입 근사치, 480 캡).
+        //   2026-08-09 표기 규약 변경: FE 는 날짜 미정 문맥 잔여/부여를 일 단위 단독 표기로 전환 —
+        //   본 convMinutes 는 구버전 앱 호환(additive)으로 잔존하는 참고 필드(신 FE 미사용).
+        //   산출 불가면 480 폴백(구버전 FE 폴백과 정합). 실차감 분모는 여전히 E1(당일 배정 스케줄).
         Integer personalConv = leaveConversionPolicyService.resolvePersonalConvMinutes(
                 param.cmpnyCd(), param.userCd(), todayYmd);
 

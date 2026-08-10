@@ -21,7 +21,7 @@
 
 <script setup>
 import { computed } from 'vue'
-import { splitLeaveDays, splitLeaveDaysWithHourly } from '@/utils/leaveFormat'
+import { splitLeaveDaysOnly, splitLeaveDaysWithHourly } from '@/utils/leaveFormat'
 
 const props = defineProps({
   // { granted, used, planned }
@@ -29,7 +29,8 @@ const props = defineProps({
     type: Object,
     default: null,
   },
-  // LC-11: 1일 환산시간(분) — "N일 H시간 M분" 표기 분모(서버 권위). 미제공 시 480 폴백.
+  // 1일 환산시간(분) — 2026-08-09 규약으로 시간 환산 표기가 소멸, WithHourly 계열의
+  //   dayPart 캐리 방어(decompose) 인자로만 잔존. 미제공 시 480 폴백.
   convMinutes: {
     type: Number,
     default: 480,
@@ -59,15 +60,14 @@ const props = defineProps({
 
 const numOr0 = (v) => Number(v ?? 0)
 
-// LC-11: 소수점 노출 금지 — 일(dayText)은 큰 숫자, 부가(subText)는 보조행으로 분리 표기.
+// 2026-08-09 규약: 부여 셀은 일 단위 단독(splitLeaveDaysOnly — E4 분모 시간 환산 제거).
 // HB-13(F-3 §20-2): 사용/사용예정은 반차 건수 + 시간차 실분 병기("2일" + "반차 1회, 시간차 3시간")
-//   — 일수→시간 역환산 제거. 반차·시간차가 모두 0이면 splitLeaveDays 와 완전히 동일(회귀 없음).
+//   — 일수→시간 역환산 제거. 반차·시간차가 모두 0이면 일 단위 단독 폴백(splitLeaveDaysOnly)과 동일.
 // NEW-2: 3열 셀 폭이 좁아 한 줄 텍스트(formatLeaveDaysWithHourly)는 4행 가까이 접힌다.
-//   마이페이지 요약 카드(MyPageView)와 같은 분리형(splitLeaveDays*)으로 통일해 소비처 간 표기도 맞춘다.
-//   부여는 부가 항목이 없는 값이므로 splitLeaveDays(잔여와 동일 규칙)를 쓴다.
+//   마이페이지 요약 카드(MyPageView)와 같은 분리형(splitLeaveDays* 계열)으로 통일해 소비처 간 표기도 맞춘다.
 const cells = computed(() => {
   const g = props.group || {}
-  const parts = (v) => splitLeaveDays(numOr0(v), props.convMinutes)
+  const parts = (v) => splitLeaveDaysOnly(numOr0(v))
   const partsWith = (v, min, halfDays) =>
     splitLeaveDaysWithHourly(numOr0(v), props.convMinutes, min, halfDays)
   return [

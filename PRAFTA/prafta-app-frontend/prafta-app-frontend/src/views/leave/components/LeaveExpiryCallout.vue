@@ -56,7 +56,7 @@
 
 <script setup>
 import { computed } from 'vue'
-import { formatLeaveDays } from '@/utils/leaveFormat'
+import { formatLeaveDaysOnly } from '@/utils/leaveFormat'
 
 const props = defineProps({
   // expiringSoon: { exists, daysUntilExpiry, totalRemainingDays, expiryDate }
@@ -64,19 +64,15 @@ const props = defineProps({
     type: Object,
     default: null,
   },
-  // LC-11: 1일 환산시간(분) — "N일 H시간 M분" 표기 분모(서버 권위). 미제공 시 480 폴백.
-  convMinutes: {
-    type: Number,
-    default: 480,
-  },
 })
 
 defineEmits(['close'])
 
-// "N일 후 소멸되는 연차 X일" (시안 §4.3 고정 문구, LC-11: 소수점 금지 — "N일 H시간 M분" 표기)
+// "N일 후 소멸되는 연차 X일" (시안 §4.3 고정 문구)
+//   2026-08-09 규약: 일 단위 단독 표기 — 구 E4 분모(convMinutes prop) 시간 환산 제거.
 const titleText = computed(() => {
   const days = props.info?.daysUntilExpiry ?? 0
-  const remain = formatLeaveDays(props.info?.totalRemainingDays ?? 0, props.convMinutes)
+  const remain = formatLeaveDaysOnly(props.info?.totalRemainingDays ?? 0)
   return `${days}일 후 소멸되는 연차 ${remain}`
 })
 </script>

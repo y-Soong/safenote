@@ -271,7 +271,8 @@ import { useModal } from "@/utils/useModal";
 import axios from "@/api/axios";
 import { resolveApiErrorMessage } from "@/utils/apiError";
 import { formatYmdDot } from "@/utils/dateFormat";
-import { formatLeaveDays, formatLeaveMinutes } from "@/utils/leaveFormat";
+// 2026-08-09 규약: 일수 표기는 일 단위 단독(formatLeaveDaysOnly) — E4 분모 환산 제거.
+import { formatLeaveDaysOnly, formatLeaveMinutes } from "@/utils/leaveFormat";
 import ManualGrantPop from "./ManualGrantPop.vue";
 import LeaveRecallPop from "./LeaveRecallPop.vue";
 
@@ -305,8 +306,9 @@ const user = ref({
 const legalSummary = ref({ granted: 0, used: 0, remaining: 0, expiresAt: "" });
 const nonLegalSummary = ref({ granted: 0, used: 0, remaining: 0 });
 
-// LC-09(§5-B): 1일 환산시간(분, 서버 폴백 480) + 시간차 CONFIRMED 사용 분 합계(원본 병기용)
-const convMinutes = ref(480);
+// LC-09(§5-B): 시간차 CONFIRMED 사용 분 합계(원본 병기용 — 실사용 정확값이라 유지).
+//   2026-08-09 규약: 구 환산 분모 ref(convMinutes)는 일 단위 단독 표기 전환으로 소비처 소멸 → 제거
+//   (응답 convMinutes 필드는 구버전 호환으로 서버에 잔존 — FE 미사용).
 const hourlyUsedMinutes = ref(0);
 
 // 신청형 휴가(LEAVE_TYPE='01') 타입별 잔여 현황 — 법정/법정외와 합산하지 않는 별도 섹션.
@@ -382,8 +384,7 @@ const fnLoadDetail = async () => {
       used: data.nonLegalSummary?.used ?? 0,
       remaining: data.nonLegalSummary?.remaining ?? 0,
     };
-    // LC-09: 표기 조립용 환산시간 + 시간차 원본 분 합계
-    convMinutes.value = data.convMinutes ?? 480;
+    // LC-09: 시간차 원본 분 합계(응답 convMinutes 는 2026-08-09 규약으로 미소비)
     hourlyUsedMinutes.value = data.hourlyUsedMinutes ?? 0;
     // 신청형 휴가: 서버 산출값(한도/사용/잔여)을 그대로 렌더(프론트 재계산 금지).
     //   한도(maxAplyDays)가 null로 내려오면 표기 안정성을 위해 0으로만 폴백(잔여는 서버값 유지).
@@ -510,8 +511,9 @@ const fnFormatDate = (yyyymmdd) => {
   return formatYmdDot(s);
 };
 
-// LC-09(§5-B): 일수 표기 — 소수점 노출 금지, "N일 H시간 M분"(leaveFormat 단일 출처)
-const fnDays = (v) => formatLeaveDays(v, convMinutes.value);
+// 2026-08-09 규약: 일수 표기 — 일 단위 단독(formatLeaveDaysOnly, 2자리 반올림 trim).
+//   구 "N일 H시간 M분"(E4 분모 환산)은 실차감 분모(E1)와 편차가 있어 표기 폐지.
+const fnDays = (v) => formatLeaveDaysOnly(v);
 
 // LC-09(§5-B): 분 → "H시간 M분" (시간차 LEAVE_MINUTES 원본 병기)
 const fnMinutes = (v) => formatLeaveMinutes(v);

@@ -177,8 +177,11 @@ public class AppLeaveFlowServiceImpl implements AppLeaveFlowService {
         //   입사일은 토큰 도출 userCd 로 1회 조회(식별값 본문 비신뢰). 미존재면 가불 한도 0(=비가불 동일).
         String hireDate = appLeaveFlowMapper.selectUserHireDate(param.cmpnyCd(), param.userCd());
 
-        // E4·E5(당일분모 전환): 오늘 기준 본인 분모는 "참고 표기 전용"(convMinutes — 기본 근무타입
-        //   근사치, 실스케줄과 편차 허용, 사용자 확정 2026-08-03). 구 D2 의 사용자 속성 기반 시간차
+        // E4·E5(당일분모 전환): 오늘 기준 본인 분모(convMinutes — 기본 근무타입 근사치).
+        //   2026-08-09 표기 규약 변경: FE 는 날짜 미정 문맥 잔여 표기를 일 단위 단독으로 전환 —
+        //   apply-meta 의 convMinutes 는 구버전 앱 호환(additive)으로 잔존하는 참고 필드(신 FE 미사용).
+        //   preview 쪽 convMinutes(신청일 기준 E1 당일분모)는 표기 유지 대상 — 본 건과 무관.
+        //   구 D2 의 사용자 속성 기반 시간차
         //   차단(hourlyBlocked 판정 + stripHourlyUnits)은 E5 로 해제 — 분모가 당일 배정 스케줄로
         //   전환되어 "기본 근무타입 미지정(교대 등)" 차단 근거가 소멸했다. 미배정일 시간차는 날짜
         //   속성으로 서버가 최종 차단(ATTD_400_110/194 — submit·preview)하고 FE 는 day-schedule

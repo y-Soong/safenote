@@ -303,9 +303,9 @@ import { usePullToRefresh } from '@/composables/usePullToRefresh'
 import PullRefreshIndicator from '@/components/common/PullRefreshIndicator.vue'
 // prafta-app-028: 일용직(DAILY) 게이트 — 연차 요약 섹션 노출 판정(MainView 잔여연차 카드와 동일 게이트).
 import { isDailyWorker as isDailyWorkerFn } from '@/utils/employment'
-// LC-11: 연차 일수 표기 공용 유틸 — 소수점 노출 금지, "N일 H시간 M분" 분리 표기.
+// 연차 일수 표기 공용 유틸 — 2026-08-09 규약: 잔여는 일 단위 단독(splitLeaveDaysOnly).
 // HB-13(F-3 §20-2): 사용/사용예정은 역환산 대신 반차 건수·시간차 실분 병기(splitLeaveDaysWithHourly).
-import { splitLeaveDays, splitLeaveDaysWithHourly } from '@/utils/leaveFormat'
+import { splitLeaveDaysOnly, splitLeaveDaysWithHourly } from '@/utils/leaveFormat'
 // PRAFTA-SUBCON-T4: 연동 회사 제3자 제공 동의(006) 식별 — 철회(Y→N) 확인 팝업 판별용.
 import { THIRD_PARTY_CONSENT_TERMS_ID } from '@/utils/termsGate'
 import { getShellInfo } from '@/utils/shellCapability'
@@ -368,8 +368,9 @@ const leaveRemaining = ref(0)
 const leavePlanned = ref(0)
 const leaveUsed = ref(0)
 const leaveSummaryFailed = ref(false)
-// LC-11: 1일 환산시간(분, 서버 권위 — my-leave-summary.convMinutes). "N일 H시간 M분" 분모. 미제공 시 480.
-//   PC-03(개인 분모 전환): 응답값이 회사 공통 480 → 본인 기본 근무타입 소정근로분(480 캡)으로 바뀜 — 소비 로직 무변경.
+// 1일 환산시간(분, 서버 권위 — my-leave-summary.convMinutes, E4 참고 분모). 미제공 시 480.
+//   2026-08-09 규약: 잔여 표기가 일 단위 단독으로 전환되어 시간 환산 분모로는 더 이상 쓰지 않는다
+//   — WithHourly 계열(사용/사용예정)의 dayPart 캐리 방어(decompose) 인자로만 잔존.
 const leaveConvMinutes = ref(480)
 // HB-13(F-3 §20-2): 사용/사용예정 셀의 부가 항목 원값(서버 additive 필드, 구 응답이면 0 폴백).
 //   시간차는 "실사용 분"(START_DATE <= 오늘 / > 오늘 로 분리), 반차는 "일수"(건수 아님 — 분할차감 대응).
@@ -403,10 +404,10 @@ const isTermsSaving = ref(false)
 // 일용직(DAILY) 여부 — 연차 요약 섹션 노출 게이트(라운드트립 없이 세션값으로 판정).
 const isDailyWorker = computed(() => isDailyWorkerFn())
 
-// LC-11: 소수점 노출 금지 — 일(dayText)은 큰 숫자, 시간·분(subText)은 보조 텍스트로 분리 표기.
+// 2026-08-09 규약: 남은 연차는 일 단위 단독(splitLeaveDaysOnly — subText 항상 '') —
+//   구 E4 역환산 참고치(splitLeaveDays + leaveConvMinutes) 제거.
 //   내부 계산값(leaveRemaining 등 숫자 ref)은 그대로 두고 표시만 교체(muted 판정 회귀 없음).
-// 잔여는 역환산 참고치 유지(E4·Q6 확정) — 부가 항목을 붙이지 않는다.
-const leaveRemainingParts = computed(() => splitLeaveDays(leaveRemaining.value, leaveConvMinutes.value))
+const leaveRemainingParts = computed(() => splitLeaveDaysOnly(leaveRemaining.value))
 // HB-13(F-3 §20-2): 사용예정/사용은 반차 건수 + 시간차 실분을 보조 텍스트에 병기(일수→시간 역환산 제거).
 //   상세 화면(MyLeaveSummaryView 의 LeaveBalanceCard/LeaveSplitKpi)과 동일 규칙·동일 원값을 쓴다
 //   — 메인 카드와 상세 화면의 수치가 어긋나지 않도록(F-3 이 화면 간 모순으로 번지는 것을 차단).

@@ -1,9 +1,11 @@
 /**
  * leaveFormat.js — 연차 일수 표기 공용 유틸 (연차 시간차 환산 개편 LC-10·LC-11)
  *
- * 표기 규칙(plan §5-B·§5-E — 웹과 동일):
- *   - 잔여/사용/부여 등 일수 수치의 소수점 노출 전면 금지.
- *   - 정수부 = "N일", 소수부 × convMinutes(1일 환산시간, 분) = "H시간 M분". 0시간 0분이면 "N일"만.
+ * 표기 규칙(2026-08-09 규약 반영 — 웹과 동일):
+ *   - [2026-08-09 규약] 날짜 미정 문맥(잔여/부여/사용예정/한도)은 시간·분 환산 금지 —
+ *     일 단위 단독 표기(formatLeaveDaysOnly/splitLeaveDaysOnly). 일 단위 소수 표기 허용.
+ *   - "N일 H시간 M분" 환산 표기(formatLeaveDays/splitLeaveDays)는 날짜 확정 문맥(E1 당일분모
+ *     conv) 전용으로 존치 — E4 참고 분모를 넘겨 호출하는 것 금지.
  *   - convMinutes 미제공/무효 시 480 폴백(8시간 사업장 기본).
  *   - 정렬/계산 내부값(days)은 그대로 유지하고 "표시만" 이 유틸로 교체한다.
  */
@@ -34,6 +36,9 @@ const decompose = (days, convMinutes) => {
 
 /**
  * 일수 → "N일 H시간 M분" 텍스트.
+ * ⚠️ [2026-08-09 규약] E1(당일분모) 문맥 전용 — 날짜가 확정되어 그날 스케줄 conv 로 환산하는
+ *   표기(preview 폴백 등)에만 사용한다. E4 참고 분모(요약 API convMinutes)를 넘겨 날짜 미정
+ *   잔여/부여 표기에 호출하는 것 금지 → formatLeaveDaysOnly 사용.
  * @param {number|string} days 일수(소수 가능, 음수는 '-' 부호 유지)
  * @param {number} [convMinutes] 1일 환산시간(분). 미제공 시 480 폴백
  * @returns {string} 예: formatLeaveDays(13.4375, 480) → "13일 3시간 30분" / 정수는 "13일"
@@ -50,6 +55,8 @@ export function formatLeaveDays(days, convMinutes) {
 
 /**
  * 일수 표기를 큰 숫자(일)와 부가 텍스트(시간·분)로 분리 — 카드 대형 숫자 레이아웃용.
+ * ⚠️ [2026-08-09 규약] E1(당일분모) 문맥 전용 — E4 참고 분모로 호출 금지(formatLeaveDays 와 동일).
+ *   날짜 미정 잔여/부여의 대형 숫자 표기는 splitLeaveDaysOnly 사용.
  * @returns {{ dayText: string, subText: string }} 예: { dayText: '13', subText: '3시간 30분' } (부가 없으면 '')
  */
 export function splitLeaveDays(days, convMinutes) {
@@ -63,6 +70,32 @@ export function splitLeaveDays(days, convMinutes) {
     dayText: (negative ? '-' : '') + String(dayPart),
     subText: parts.join(' '),
   }
+}
+
+/**
+ * 일수 → 일 단위 단독 표기 "N일" (2026-08-09 규약 — E4 시간 환산 제거).
+ *   소수 2자리 반올림 + 후행 0 제거 (attdFormat.formatLeaveDays 의 "앱 표시 자릿수 단일 출처"
+ *   규칙과 통일 — 캘린더 마커 "0.19일"·홈 잔여 표기와 시각적 정합).
+ *   날짜 미정 문맥(잔여/부여/사용예정/한도)의 유일한 표기 함수. 인라인 포맷 금지.
+ *   TODO(단시간근로자 시간 단위 부여): 표기 분기는 반드시 이 함수에 추가한다
+ *   (시그니처 확장 시 두 번째 인자는 옵션 객체로).
+ * @param {number|string|null} days
+ * @returns {string} 예: 0.5 → "0.5일", 13.4375 → "13.44일", -0.5 → "-0.5일", 무효 → "0일"
+ */
+export function formatLeaveDaysOnly(days) {
+  const n = Number(days)
+  if (!Number.isFinite(n)) return '0일'
+  return `${String(Number(n.toFixed(2)))}일`
+}
+
+/**
+ * 대형 숫자 레이아웃용 분리형 — splitLeaveDays 와 반환 형태 동일({ dayText, subText }).
+ *   subText 는 항상 ''(시간·분 환산 없음 — 2026-08-09 규약). 단위("일")는 마크업 소유.
+ *   자릿수 규칙은 formatLeaveDaysOnly 와 동일(2자리 반올림 + 후행 0 제거).
+ */
+export function splitLeaveDaysOnly(days) {
+  const n = Number(days)
+  return { dayText: Number.isFinite(n) ? String(Number(n.toFixed(2))) : '0', subText: '' }
 }
 
 /**
@@ -129,9 +162,9 @@ const buildHourlyParts = (days, convMinutes, hourlyMinutes, halfDayDays) => {
  *
  * 표기 규칙(§20-2, LC-11 소수점 금지 유지 — "0.5일" 이 아니라 "N회"):
  *   | 정수부 > 0, 부가 있음 | "2일 (반차 1회, 시간차 3시간)" |
- *   | 정수부 > 0, 부가 없음 | "2일"        (기존 formatLeaveDays 그대로) |
+ *   | 정수부 > 0, 부가 없음 | "2.5일"      (formatLeaveDaysOnly 폴백 — 2026-08-09 규약) |
  *   | 정수부 0,  부가 있음 | "반차 1회" / "시간차 3시간" / "반차 1회, 시간차 3시간" ("0일" 접두 생략) |
- *   | 전부 0               | "0일"        (기존 formatLeaveDays 그대로) |
+ *   | 전부 0               | "0일"        (formatLeaveDaysOnly 폴백) |
  * 역환산 0 — 종일=일수(정확) · 반차=0.5일 고정(정확) · 시간차=실분(정확). 셋 다 서버 원값이다.
  *
  * ⚠️ "정수부"는 days 전체가 아니라 <b>반차 일수를 뺀 나머지</b>의 정수부다. days 는 반차분을 포함한
@@ -149,8 +182,9 @@ const buildHourlyParts = (days, convMinutes, hourlyMinutes, halfDayDays) => {
  */
 export function formatLeaveDaysWithHourly(days, convMinutes, hourlyMinutes, halfDayDays) {
   const p = buildHourlyParts(days, convMinutes, hourlyMinutes, halfDayDays)
-  // 부가 항목이 전혀 없으면 기존 표기와 완전히 동일(회귀 방지).
-  if (!p) return formatLeaveDays(days, convMinutes)
+  // 부가 항목이 전혀 없으면 일 단위 단독 표기로 폴백(2026-08-09 규약 — 구 formatLeaveDays 폴백은
+  //   E4 분모 환산이 노출되던 경로라 교체. convMinutes 는 dayPart 캐리 방어(decompose)에만 잔존).
+  if (!p) return formatLeaveDaysOnly(days)
   // 정수부 0 이면 "0일" 접두를 생략한다(부호도 무의미하므로 붙이지 않는다).
   if (p.dayPart <= 0) return p.sub
   return `${p.negative ? '-' : ''}${p.dayPart}일 (${p.sub})`
@@ -162,7 +196,8 @@ export function formatLeaveDaysWithHourly(days, convMinutes, hourlyMinutes, half
  *   이미 고정된 소비처에서, 레이아웃을 바꾸지 않고 B안 부가 항목을 실을 수 있게 한다.
  *
  * 규칙(텍스트형 formatLeaveDaysWithHourly 와 동일 — 조립부 buildHourlyParts 공유):
- *   - 반차·시간차가 모두 0 이면 splitLeaveDays 와 <b>완전히 동일</b>(회귀 방지).
+ *   - 반차·시간차가 모두 0 이면 splitLeaveDaysOnly 와 <b>완전히 동일</b>(2026-08-09 규약 —
+ *     구 splitLeaveDays 폴백은 E4 분모 환산이 노출되던 경로).
  *   - 부가 항목이 있으면 dayText = "days − 반차분" 의 정수부, subText = "반차 1회, 시간차 3시간".
  *     이때 소수부의 시간·분 역환산은 표기하지 않는다(F-3 의 원인 자체를 제거).
  *   - 텍스트형은 정수부 0 일 때 "0일" 접두를 생략하지만, 여기서는 단위("일")를 마크업이 소유하므로
@@ -172,7 +207,8 @@ export function formatLeaveDaysWithHourly(days, convMinutes, hourlyMinutes, half
  */
 export function splitLeaveDaysWithHourly(days, convMinutes, hourlyMinutes, halfDayDays) {
   const p = buildHourlyParts(days, convMinutes, hourlyMinutes, halfDayDays)
-  if (!p) return splitLeaveDays(days, convMinutes)
+  // 2026-08-09 규약: 부가 항목 없음 폴백을 일 단위 단독(splitLeaveDaysOnly)으로 교체(위와 동일 사유).
+  if (!p) return splitLeaveDaysOnly(days)
   return {
     dayText: (p.negative ? '-' : '') + String(p.dayPart),
     subText: p.sub,

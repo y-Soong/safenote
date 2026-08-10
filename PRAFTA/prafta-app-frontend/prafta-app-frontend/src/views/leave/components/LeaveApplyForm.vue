@@ -64,9 +64,8 @@
           @click="onSelectType(lt)"
         >
           <span class="type-item__name">{{ lt.leaveNm }}</span>
-          <span class="type-item__bal"
-            >잔여 {{ formatLeaveDays(lt.balanceDays, metaConvMinutes) }}</span
-          >
+          <!-- 2026-08-09 규약: 날짜 선택 전 잔여는 일 단위 단독(E4 분모 환산 제거) -->
+          <span class="type-item__bal">잔여 {{ formatLeaveDaysOnly(lt.balanceDays) }}</span>
         </button>
 
         <p v-if="leaveTypes.length === 0" class="fs__empty">신청 가능한 연차 종류가 없어요</p>
@@ -75,12 +74,10 @@
 
     <!-- 종류 선택 이후 노출되는 본문 -->
     <template v-if="selectedType">
-      <!-- 잔여 요약 -->
+      <!-- 잔여 요약 (2026-08-09 규약: 일 단위 단독 — 날짜 미정 문맥) -->
       <div class="balance-box">
         <span class="balance-box__lbl">선택한 연차 잔여</span>
-        <span class="balance-box__val">{{
-          formatLeaveDays(selectedType.balanceDays, metaConvMinutes)
-        }}</span>
+        <span class="balance-box__val">{{ formatLeaveDaysOnly(selectedType.balanceDays) }}</span>
       </div>
 
       <!-- 2) 사용 단위 (allowedUnits 게이팅) -->
@@ -435,7 +432,12 @@
 
 <script setup>
 import { ref, computed, onMounted, onUnmounted, watch, getCurrentInstance } from 'vue'
-import { formatLeaveDays, formatMinutesToHm, trimRawDays } from '@/utils/leaveFormat'
+import {
+  formatLeaveDays,
+  formatLeaveDaysOnly,
+  formatMinutesToHm,
+  trimRawDays,
+} from '@/utils/leaveFormat'
 import DateStepperField from '@/components/common/DateStepperField.vue'
 import TimeStepperField from '@/components/common/TimeStepperField.vue'
 // HB-14(F-6): 화면마다 3벌이던 결재자 시트를 공용 1벌로 통합(LeaveApproverPickerSheet 대체).
@@ -443,8 +445,8 @@ import ApproverPickerSheet from '@/components/common/ApproverPickerSheet.vue'
 
 const props = defineProps({
   // 018-A apply-meta 응답: { leaveTypes: [{ leaveCd, leaveNm, systemYn, aprvRequired, allowedUnits[], balanceDays, applicable }],
-  //   convMinutes(오늘 기준 1일 환산시간(분) — E4 참고치: 본인 기본 근무타입 기준 근사·480 캡·
-  //     미산출 시 서버 480 폴백. 잔여 표기용 근사치(실차감 분모는 당일 배정 스케줄 — E1), 구응답이면 부재 → 480 폴백),
+  //   convMinutes(오늘 기준 1일 환산시간(분) — E4 참고치. 2026-08-09 표기 규약 변경으로 잔여 표기가
+  //     일 단위 단독으로 전환되어 FE 미사용 — 서버 additive 잔존 필드),
   //   hourlyBlocked(E5 교대 차단 해제로 서버가 항상 false 반환 — 하위호환 잔존 필드, FE 미사용.
   //     시간차 가능 여부는 날짜 속성(day-schedule hasSchedule)으로 게이팅) }
   meta: { type: Object, default: () => ({ leaveTypes: [] }) },
@@ -527,9 +529,8 @@ const approverPickerOpen = ref(false)
 // ── 파생값 (단순 표시/필터 — 비즈니스 로직 아님) ─────────────────────────
 const leaveTypes = computed(() => props.meta?.leaveTypes || [])
 
-// 잔여 "N일 H시간 M분" 표기용 환산시간(분) — apply-meta convMinutes(PC-03: 본인 개인 분모, 오늘 기준 근사치).
-//   구응답(필드 부재)/무효면 undefined → formatLeaveDays 내부 480 폴백.
-const metaConvMinutes = computed(() => props.meta?.convMinutes)
+// 2026-08-09 규약: 잔여 표기가 일 단위 단독으로 전환되어 apply-meta convMinutes 소비처 소멸
+//   (구 metaConvMinutes computed 제거 — preview 계열의 convMinutes(E1, 신청일 기준)는 그대로 유지).
 
 // E2·E5(당일분모 전환) + HB-11(F-4): "스케줄이 배정된 날에만 신청 가능한 단위" 게이팅은 날짜 속성 —
 //   당일 근무계획 미배정이면 칩 disable + 안내. day-schedule 미도착/조회 실패 시엔 enable 유지(낙관)

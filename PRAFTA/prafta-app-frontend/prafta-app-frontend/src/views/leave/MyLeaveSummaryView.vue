@@ -40,15 +40,11 @@
         <!-- 그룹 토글 (전체 / 법정 / 법정 외) -->
         <LeaveGroupToggle v-model="activeGroup" />
 
-        <!-- 소멸 임박 콜아웃 (전체 토글 + 노출 조건 충족 + 미닫힘) -->
-        <LeaveExpiryCallout
-          v-if="showCallout"
-          :info="expiringSoon"
-          :conv-minutes="convMinutes"
-          @close="onCalloutClose"
-        />
+        <!-- 소멸 임박 콜아웃 (전체 토글 + 노출 조건 충족 + 미닫힘)
+             2026-08-09 규약: 일 단위 단독 표기 — convMinutes prop 소멸 -->
+        <LeaveExpiryCallout v-if="showCallout" :info="expiringSoon" @close="onCalloutClose" />
 
-        <!-- 메인 잔여 카드 -->
+        <!-- 메인 잔여 카드 (convMinutes 는 WithHourly dayPart 캐리 방어용으로만 잔존) -->
         <LeaveBalanceCard
           :label="balanceLabel"
           :group="currentGroup"
@@ -57,7 +53,6 @@
           :hourly-planned-minutes="cellHourlyPlannedMinutes"
           :half-day-used-days="cellHalfDayUsedDays"
           :half-day-planned-days="cellHalfDayPlannedDays"
-          @guide="onRemainingGuide"
         />
 
         <!-- 3분할 KPI (부여 / 사용 / 사용예정) -->
@@ -78,18 +73,16 @@
         <!-- 메타 카드 (입사일 / 근속 / 사용률) -->
         <LeaveMetaCard :user="user" :usage-rate="currentUsageRate" />
 
-        <!-- 신청형 휴가 (LEAVE_TYPE='01') — 법정/관리자부여 그룹과 분리된 별도 섹션. 항목 1개 이상일 때만 노출. -->
-        <LeaveAppliedCard
-          v-if="hasAppliedLeave"
-          :types="appliedLeaveTypes"
-          :conv-minutes="convMinutes"
-        />
+        <!-- 신청형 휴가 (LEAVE_TYPE='01') — 법정/관리자부여 그룹과 분리된 별도 섹션. 항목 1개 이상일 때만 노출.
+             2026-08-09 규약: 일 단위 단독 표기 — convMinutes prop 소멸 -->
+        <LeaveAppliedCard v-if="hasAppliedLeave" :types="appliedLeaveTypes" />
 
-        <!-- 가불 사용분 (prafta-com-011-5) — 미상계 가불(borrowedDays>0)일 때만 노출. MVP 표시 전용(액션 없음). -->
+        <!-- 가불 사용분 (prafta-com-011-5) — 미상계 가불(borrowedDays>0)일 때만 노출. MVP 표시 전용(액션 없음).
+             2026-08-09 규약: 날짜 미정 잔여류 표기 → 일 단위 단독(E4 환산 제거) -->
         <section v-if="hasBorrowed" class="lv-borrow">
           <div class="lv-borrow__row">
             <span class="lv-borrow__lbl">가불 사용</span>
-            <span class="lv-borrow__val">{{ formatLeaveDays(borrowedDays, convMinutes) }}</span>
+            <span class="lv-borrow__val">{{ formatLeaveDaysOnly(borrowedDays) }}</span>
           </div>
           <p class="lv-borrow__note">미래 연차에서 상계 예정입니다.</p>
         </section>
@@ -165,22 +158,8 @@
       </button>
     </footer>
 
-    <!-- HB-13(F-3): 잔여 시간 표기 근사치 안내 — 공용 BaseBottomSheet 재사용(신규 시트 인프라 금지).
-         앱 전역 $alert 미등록이라 alert() 는 window.alert 로 떨어지므로 사용하지 않는다. -->
-    <BaseBottomSheet v-model="guideOpen" title="잔여 연차 시간 표기 안내" :show-footer="false">
-      <div class="lv-guide">
-        <p class="lv-guide__p">잔여 연차의 <strong>시간 표기는 참고용 근사치</strong>입니다.</p>
-        <p class="lv-guide__p">
-          연차는 일수로 관리되고, 실제 차감 시간은
-          <strong>그날 배정된 근무 스케줄에 따라 달라집니다.</strong>
-        </p>
-        <p class="lv-guide__p lv-guide__p--sub">
-          (예: 같은 반차라도 9시간 근무일과 8시간 근무일의 차감 시간이 다릅니다.)
-        </p>
-        <p class="lv-guide__p">이미 사용한 시간은 정확한 값이며, 잔여만 근사치입니다.</p>
-        <button type="button" class="lv-guide__close" @click="guideOpen = false">확인</button>
-      </div>
-    </BaseBottomSheet>
+    <!-- 2026-08-09 규약: 잔여 시간 근사치 안내 시트(HB-13 F-3) 제거 —
+         안내 대상이던 E4 시간 환산 표기 자체가 소멸(일 단위 단독 표기 전환). -->
 
     <!-- 인라인 SVG sprite (본 화면 전용) -->
     <svg width="0" height="0" class="lv-sprite" aria-hidden="true" focusable="false">
@@ -218,10 +197,9 @@ import { ref, computed, onMounted, getCurrentInstance } from 'vue'
 import { useRouter } from 'vue-router'
 
 import api from '@/api/axios'
-import { formatLeaveDays, formatMinutesToHm } from '@/utils/leaveFormat'
+import { formatLeaveDaysOnly, formatMinutesToHm } from '@/utils/leaveFormat'
 import { usePullToRefresh } from '@/composables/usePullToRefresh'
 import PullRefreshIndicator from '@/components/common/PullRefreshIndicator.vue'
-import BaseBottomSheet from '@/components/common/BaseBottomSheet.vue'
 
 import LeaveGroupToggle from './components/LeaveGroupToggle.vue'
 import LeaveExpiryCallout from './components/LeaveExpiryCallout.vue'
@@ -256,8 +234,9 @@ const expiringSoon = ref(null)
 const appliedLeaveTypes = ref([])
 // 미상계 가불 사용 합계(일) — prafta-com-011-5. 0이면 카드 숨김(MVP 표시 전용).
 const borrowedDays = ref(0)
-// LC-11: 1일 환산시간(분, 서버 권위 — 오늘 기준). "N일 H시간 M분" 조립 분모. 미제공 시 480 폴백.
-//   PC-03(개인 분모 전환): 응답값이 회사 공통 480 → 본인 기본 근무타입 소정근로분(480 캡)으로 바뀜 — 소비 로직 무변경.
+// 1일 환산시간(분, 서버 권위 — 오늘 기준 E4 참고 분모). 미제공 시 480 폴백.
+//   2026-08-09 규약: 잔여/부여 표기가 일 단위 단독으로 전환되어 시간 환산 분모로는 더 이상 쓰지 않는다
+//   — WithHourly 계열의 dayPart 캐리 방어(decompose) 인자로만 잔존(BalanceCard/SplitKpi 전달).
 const convMinutes = ref(480)
 // LC-11: 시간차(02/03/04) CONFIRMED 사용 분 합계(전 기간) — 원본(분) 병기용. 0이면 미노출.
 const hourlyUsedMinutes = ref(0)
@@ -269,9 +248,6 @@ const hourlyUsedMinutesPlanned = ref(0)
 //   정수부만 쓰는 표기에서 반차 0.5일이 증발하던 문제를 없애기 위한 값(구 응답이면 0 폴백).
 const halfDayUsedDaysPast = ref(0)
 const halfDayUsedDaysPlanned = ref(0)
-
-// HB-13(F-3): 잔여 시간 표기 근사치 안내 시트 오픈 상태(UI 상태).
-const guideOpen = ref(false)
 
 // 그룹 토글 (UI 상태 — 허용 범위). 진입 기본값: 전체
 const activeGroup = ref('TOTAL')
@@ -342,11 +318,6 @@ const showHourlyNote = computed(() => hourlyUsedMinutes.value > 0 && !isTotalGro
 const onBack = () => {
   // 메인 홈 복귀 (MyAttendanceView onBack 패턴 동일)
   router.push('/MainView')
-}
-
-// HB-13(F-3): 잔여 라벨 ⓘ 버튼 → 근사치 안내 시트 오픈(정확값인 사용/사용예정에는 붙이지 않는다).
-const onRemainingGuide = () => {
-  guideOpen.value = true
 }
 
 const onCalloutClose = () => {
@@ -454,12 +425,13 @@ const usedDateText = (row) => {
   return start
 }
 
-// 차감량 표기 — 시간차는 원본(분), 그 외는 일수(환산 조립은 공용 유틸).
+// 차감량 표기 — 시간차는 원본(분, 실사용 정확값 — 유지), 그 외는 일 단위 단독(2026-08-09 규약).
+//   구 표기는 E4 참고 분모(convMinutes)로 일→시간 환산해 반차가 "3시간 30분" 등으로 보였음 — 제거.
 const usedAmountText = (row) => {
   if (isHourlyUse(row) && Number(row.leaveMinutes) > 0) {
     return formatMinutesToHm(Number(row.leaveMinutes))
   }
-  return formatLeaveDays(Number(row.leaveDays) || 0, convMinutes.value)
+  return formatLeaveDaysOnly(Number(row.leaveDays) || 0)
 }
 
 // 미래 시작일(사용예정 확정분) 뱃지 판정 — 표시 전용이라 클라이언트 오늘 기준으로 충분.
@@ -593,40 +565,6 @@ onMounted(() => {
   font-size: 12px;
   color: var(--color-text-tertiary);
   font-variant-numeric: tabular-nums;
-}
-
-/* HB-13(F-3): 잔여 시간 표기 안내 시트 본문 — 시트 셸은 BaseBottomSheet 소유(토큰만 사용). */
-.lv-guide {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-sm);
-  padding: var(--space-sm) 0 var(--space-md);
-}
-.lv-guide__p {
-  margin: 0;
-  font-size: 14px;
-  line-height: 1.6;
-  color: var(--color-text-secondary);
-}
-.lv-guide__p strong {
-  color: var(--color-text-primary);
-  font-weight: 600;
-}
-.lv-guide__p--sub {
-  font-size: 13px;
-  color: var(--color-text-tertiary);
-}
-.lv-guide__close {
-  margin-top: var(--space-sm);
-  height: 48px;
-  background: var(--color-primary);
-  border: 0;
-  border-radius: var(--radius-md);
-  color: var(--color-surface);
-  font-size: 15px;
-  font-weight: 600;
-  cursor: pointer;
-  font-family: inherit;
 }
 
 /* 가불 사용분 카드 (prafta-com-011-5) — 표시 전용. 메타카드/경고 톤 재사용(CSS 변수만). */

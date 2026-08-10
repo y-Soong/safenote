@@ -155,9 +155,9 @@ public class LeaveDashboardServiceImpl implements LeaveDashboardService {
                 : leaveDashboardMapper.selectDashboardList(
                         cmpnyCd, siteFilter, nodeFilter, incSub, keyword, offset, safeSize);
 
-        // E4 참고치 규약(당일분모 전환 후 유지): 행별 conv = 대상 사용자의 오늘 기준 참고 분모(기본
-        //   근무타입 근사치, 480 캡, 미산출 null → FE 480 폴백). 특정일 없는 대시보드 표기 전용 —
-        //   실차감 분모(당일 배정 스케줄, E1)와 편차 허용(사용자 확정 2026-08-03).
+        // E4 참고치 규약: 행별 conv = 대상 사용자의 오늘 기준 참고 분모(기본 근무타입 근사치, 480 캡,
+        //   미산출 null). 2026-08-09 표기 규약 변경: FE 는 대시보드 일수 표기를 일 단위 단독으로 전환 —
+        //   본 행별 convMinutes 는 구버전 화면 호환(additive)으로 잔존하는 참고 필드(신 FE 미사용).
         //   페이지당 최대 100행이라 서비스 루프로 산출(SQL 조인안 대신 — effective-dating 서브쿼리 재사용).
         String todayYmd = LocalDate.now().format(DateTimeFormatter.BASIC_ISO_DATE);
         List<LeaveDashboardItemVO> items = new ArrayList<>(rows.size());
@@ -327,10 +327,10 @@ public class LeaveDashboardServiceImpl implements LeaveDashboardService {
         log.info("연차 상세 조회. cmpnyCd={}, userCd={}, history건수={}, 신청형타입건수={}",
                 cmpnyCd, userCd, history.size(), appliedLeaveTypes.size());
 
-        // E4 참고치 규약(당일분모 전환 후 유지): convMinutes = 오늘 기준 "대상 사용자" 참고 분모(기본
-        //   근무타입 근사치, 480 캡). 특정일 없는 상세 표기 전용 — 실차감 분모(당일 배정 스케줄, E1)와
-        //   편차 허용(사용자 확정 2026-08-03). 산출 불가면 480 폴백(FE formatLeaveDays 폴백과 정합)
-        //   + 시간차 사용 분 합계(전 기간, additive).
+        // E4 참고치 규약: convMinutes = 오늘 기준 "대상 사용자" 참고 분모(기본 근무타입 근사치, 480 캡).
+        //   2026-08-09 표기 규약 변경: FE 는 상세 일수 표기를 일 단위 단독으로 전환 — 본 convMinutes 는
+        //   구버전 화면 호환(additive)으로 잔존하는 참고 필드(신 FE 미사용). 산출 불가면 480 폴백.
+        //   + 시간차 사용 분 합계(전 기간, additive — 실사용 정확값이라 FE 표기 유지).
         Integer personalConv = leaveConversionPolicyService.resolvePersonalConvMinutes(
                 cmpnyCd, userCd, LocalDate.now().format(DateTimeFormatter.BASIC_ISO_DATE));
         int convMinutes = (personalConv != null) ? personalConv : LeaveConversionPolicyService.DEFAULT_CONV_MINUTES;

@@ -25,23 +25,18 @@
 </template>
 
 <script setup>
-import { formatLeaveDays } from '@/utils/leaveFormat'
+import { formatLeaveDaysOnly } from '@/utils/leaveFormat'
 
-const props = defineProps({
+defineProps({
   // 신청형 휴가('01') 타입 배열. [{ leaveCd, leaveNm, maxAplyDays, usedDays, remainDays }]
   types: {
     type: Array,
     default: () => [],
   },
-  // LC-11: 1일 환산시간(분) — "N일 H시간 M분" 표기 분모(서버 권위). 미제공 시 480 폴백.
-  convMinutes: {
-    type: Number,
-    default: 480,
-  },
 })
 
-// LC-11: 소수점 노출 금지 — "N일 H시간 M분" 표기(서버 권위값 그대로, 표시만 교체).
-const fmtDays = (v) => formatLeaveDays(Number(v ?? 0), props.convMinutes)
+// 2026-08-09 규약: 날짜 미정 잔여/한도 표기 → 일 단위 단독(구 E4 분모(convMinutes prop) 환산 제거).
+const fmtDays = (v) => formatLeaveDaysOnly(Number(v ?? 0))
 
 const isZero = (v) => Number(v ?? 0) === 0
 </script>

@@ -14,7 +14,8 @@ import lombok.extern.slf4j.Slf4j;
  * {@link LeaveConversionPolicyService} 구현 (PC-03 D1 → 당일분모 전환 E1).
  *
  * <p>실차감 분모 = 당일 배정 스케줄 소정근로분({@link #resolveDailyConvMinutes} — E1),
- * 참고 표시 분모 = 개인 기본 근무타입 소정근로분({@link #resolvePersonalConvMinutes} — E4 전용).
+ * E4 참고 분모 = 개인 기본 근무타입 소정근로분({@link #resolvePersonalConvMinutes} —
+ * 2026-08-09 표기 규약 변경 이후 내부 판정·구버전 호환용, 신 FE 표기 미사용).
  * 산식은 양쪽 모두 {@link ScheduleWorkMinutesUtils}(그날 D 계산과 단일 출처)를 공유한다.
  * 480 초과는 480 캡(근로자 유리, E7), 산출 불가는 null(fail-closed).
  */

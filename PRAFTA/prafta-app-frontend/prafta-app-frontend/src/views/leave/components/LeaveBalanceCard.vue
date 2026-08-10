@@ -8,35 +8,10 @@
 -->
 <template>
   <div class="card">
-    <!-- HB-13(F-3): 잔여 시간 표기는 참고용 근사치 — 라벨 옆 안내 버튼으로만 고지한다.
-         ("(참고)" 텍스트 접미 금지 / 사용·사용예정은 정확값이라 버튼을 붙이지 않는다) -->
-    <p class="card__label">
-      {{ label }}
-      <button
-        type="button"
-        class="card__guide"
-        aria-label="잔여 연차 시간 표기 안내"
-        @click="$emit('guide')"
-      >
-        <svg
-          width="14"
-          height="14"
-          viewBox="0 0 24 24"
-          fill="none"
-          stroke="currentColor"
-          stroke-width="2"
-          stroke-linecap="round"
-          stroke-linejoin="round"
-          aria-hidden="true"
-        >
-          <circle cx="12" cy="12" r="10" />
-          <line x1="12" y1="11" x2="12" y2="16" />
-          <line x1="12" y1="8" x2="12.01" y2="8" />
-        </svg>
-      </button>
-    </p>
+    <!-- 2026-08-09 규약: 잔여 표기가 일 단위 단독(정확값)으로 전환 — 근사치 안내 ⓘ 버튼(HB-13 F-3) 제거 -->
+    <p class="card__label">{{ label }}</p>
 
-    <!-- 큰 숫자 행 (LC-11: 소수점 금지 — 일은 대형 숫자, 시간·분은 보조 텍스트) -->
+    <!-- 큰 숫자 행 (2026-08-09 규약: 일 단위 단독 — 시간·분 보조 텍스트 없음) -->
     <div class="num-row">
       <span class="num" :class="{ 'num--zero': isZeroRemaining }">{{ remainingParts.dayText }}</span>
       <span class="num__unit">일</span>
@@ -65,9 +40,11 @@
 
 <script setup>
 import { computed } from 'vue'
-import { formatLeaveDays, formatLeaveDaysWithHourly, splitLeaveDays } from '@/utils/leaveFormat'
-
-defineEmits(['guide'])
+import {
+  formatLeaveDaysOnly,
+  formatLeaveDaysWithHourly,
+  splitLeaveDaysOnly,
+} from '@/utils/leaveFormat'
 
 const props = defineProps({
   // 메인 카드 라벨 ("잔여 일수" / "법정 잔여 일수" / "법정 외 잔여 일수")
@@ -80,7 +57,8 @@ const props = defineProps({
     type: Object,
     default: null,
   },
-  // LC-11: 1일 환산시간(분) — "N일 H시간 M분" 표기 분모(서버 권위). 미제공 시 480 폴백.
+  // 1일 환산시간(분) — 2026-08-09 규약으로 시간 환산 표기가 소멸, WithHourly 계열의
+  //   dayPart 캐리 방어(decompose) 인자로만 잔존. 미제공 시 480 폴백.
   convMinutes: {
     type: Number,
     default: 480,
@@ -118,8 +96,8 @@ const remaining = computed(() => numOr0(props.group?.remaining))
 const hasGrant = computed(() => granted.value > 0)
 const isZeroRemaining = computed(() => remaining.value === 0)
 
-// LC-11: 소수점 노출 금지 — "N일 H시간 M분" 표기(내부 계산값은 그대로, 표시만 교체).
-const grantedText = computed(() => formatLeaveDays(granted.value, props.convMinutes))
+// 2026-08-09 규약: 날짜 미정 문맥(부여/잔여)은 일 단위 단독 표기 — E4 분모 시간 환산 제거.
+const grantedText = computed(() => formatLeaveDaysOnly(granted.value))
 // HB-13(F-3 §20-2): 사용/사용예정은 반차 건수 + 시간차 실분을 별도 항목화(역환산 제거).
 //   반차·시간차가 모두 0이면 기존 표기와 완전히 동일.
 const usedText = computed(() =>
@@ -138,10 +116,10 @@ const plannedText = computed(() =>
     props.halfDayPlannedDays,
   ),
 )
-// 잔여는 역환산 참고치 유지(E4) — 안내 버튼으로 근사치임을 고지한다.
-const remainingText = computed(() => formatLeaveDays(remaining.value, props.convMinutes))
-// 대형 숫자 레이아웃용 분리 표기: dayText(큰 숫자) + subText("H시간 M분", 없으면 '').
-const remainingParts = computed(() => splitLeaveDays(remaining.value, props.convMinutes))
+// 2026-08-09 규약: 잔여도 일 단위 단독 — 구 E4 역환산 참고치(+근사치 안내 버튼) 제거.
+const remainingText = computed(() => formatLeaveDaysOnly(remaining.value))
+// 대형 숫자 레이아웃용 분리 표기: dayText(큰 숫자, 소수 허용) + subText(항상 '' — 환산 없음).
+const remainingParts = computed(() => splitLeaveDaysOnly(remaining.value))
 
 // 진행바 분할 (부여 100% 기준) — 단순 비율 산출(표시용)
 const pct = (v) => (granted.value > 0 ? `${(v / granted.value) * 100}%` : '0%')
@@ -165,20 +143,6 @@ const plannedPercent = computed(() => pct(planned.value))
   font-weight: 500;
   color: var(--color-text-secondary);
 }
-/* 잔여 시간 표기 안내 버튼(ⓘ) — 탭 영역 확보를 위해 최소 크기 유지 */
-.card__guide {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 24px;
-  height: 24px;
-  padding: 0;
-  background: transparent;
-  border: 0;
-  color: var(--color-text-tertiary);
-  cursor: pointer;
-}
-
 .num-row {
   display: flex;
   align-items: baseline;

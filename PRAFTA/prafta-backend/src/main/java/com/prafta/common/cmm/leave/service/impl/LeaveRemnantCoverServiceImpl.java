@@ -432,6 +432,8 @@ public class LeaveRemnantCoverServiceImpl implements LeaveRemnantCoverService {
             // M6·E4 참고치 규약(당일분모 전환 후 유지): 특정일 없는 배치성 판정(소멸 임박 리포트)은
             //   참고 분모(기본 근무타입 근사치, 미지정 480) 기준 — 실차감 분모(당일 배정 스케줄, E1)와
             //   편차 허용(사용자 확정 2026-08-03). 오늘 기준 conv, 미산출자는 시간차 제외 최소(반차).
+            //   2026-08-09 표기 규약 변경: rows 의 convMinutes 는 FE 표기에 더 이상 사용되지 않음
+            //   (additive 잔존 — 판정 로직 자체는 유지·불변).
             Integer conv = leaveConversionPolicyService.resolvePersonalConvMinutes(cmpnyCd, r.userCd(), today);
             String minUnit = resolveMinUnit(usageUnit, conv == null);
             int convOrDefault = (conv != null) ? conv : LeaveConversionPolicyService.DEFAULT_CONV_MINUTES;
