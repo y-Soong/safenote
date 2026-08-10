@@ -294,7 +294,7 @@
          ============================================================ -->
 
     <!-- 수신측 미러 SITE_CD 채번 — baim01 selectSiteCd 시퀀스 재사용(DST 회사 기준, 20자 이하 자동). -->
-    <select id="selectNewMirrorSiteCd" resultType="string">
+    <select id="selectNewMirrorSiteCd" resultType="string" flushCache="true">
     /* Subcon02Mapper.selectNewMirrorSiteCd */
     SELECT FNC_CMM_SEQ_NEXTVAL(#{dstCmpnyCd}, 'SITE_CD')
     FROM DUAL

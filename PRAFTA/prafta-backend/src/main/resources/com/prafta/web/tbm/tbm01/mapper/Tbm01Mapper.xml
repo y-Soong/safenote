@@ -136,13 +136,13 @@
 	ORDER BY A.SORT_IDX
     </select>
 
-	<select id="selectMtrlCd" parameterType="java.util.HashMap" resultType="java.lang.String">
+	<select id="selectMtrlCd" parameterType="java.util.HashMap" resultType="java.lang.String" flushCache="true">
     /* Tbm01Mapper.selectMtrlCd */
     SELECT CONCAT(DATE_FORMAT(CURDATE(), '%y%m%d'), FNC_CMM_SEQ_NEXTVAL(#{gvCmpnyCd}, 'MTRL_CD'))
 	FROM DUAL
     </select>
     
-    <select id="selectMtrlItemCd" parameterType="java.util.HashMap" resultType="java.lang.String">
+    <select id="selectMtrlItemCd" parameterType="java.util.HashMap" resultType="java.lang.String" flushCache="true">
     /* Tbm01Mapper.selectMtrlItemCd */
     SELECT CONCAT(DATE_FORMAT(CURDATE(), '%y%m%d'), FNC_CMM_SEQ_NEXTVAL(#{gvCmpnyCd}, 'MTRL_ITEM_CD'))
 	FROM DUAL

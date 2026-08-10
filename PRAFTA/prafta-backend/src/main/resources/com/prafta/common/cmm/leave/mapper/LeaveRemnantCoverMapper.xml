@@ -61,13 +61,13 @@
     </select>
 
     <!-- 사용기록 ID 채번 — LeaveFlowMapper.selectNextLeaveId 미러(동일 시퀀스 'LEAVE_USE_ID' 공유). -->
-    <select id="selectNextLeaveId" resultType="string">
+    <select id="selectNextLeaveId" resultType="string" flushCache="true">
     /* LeaveRemnantCoverMapper.selectNextLeaveId */
     SELECT CONCAT('LV', DATE_FORMAT(NOW(), '%Y%m%d'), FNC_CMM_SEQ_NEXTVAL(#{cmpnyCd}, 'LEAVE_USE_ID')) FROM DUAL
     </select>
 
     <!-- 보전 이력 ID 채번 — 신규 시퀀스 키 'LEAVE_REMNANT_COVER'(FNC_CMM_SEQ_NEXTVAL 회사별 자동 INSERT). -->
-    <select id="selectNextCoverId" resultType="string">
+    <select id="selectNextCoverId" resultType="string" flushCache="true">
     /* LeaveRemnantCoverMapper.selectNextCoverId */
     SELECT CONCAT('RC', DATE_FORMAT(NOW(), '%Y%m%d'), FNC_CMM_SEQ_NEXTVAL(#{cmpnyCd}, 'LEAVE_REMNANT_COVER')) FROM DUAL
     </select>

@@ -10,7 +10,7 @@
 
     <!-- ============ 채번 ============
       'LC' + YYYYMMDD + 시퀀스(FNC_CMM_SEQ_NEXTVAL, SEQ_KEY='LEAVE_CHANGE_REQ_ID'). -->
-    <select id="selectNextChangeReqId" resultType="string">
+    <select id="selectNextChangeReqId" resultType="string" flushCache="true">
     /* Attd13Mapper.selectNextChangeReqId */
     SELECT CONCAT('LC', DATE_FORMAT(NOW(), '%Y%m%d'), FNC_CMM_SEQ_NEXTVAL(#{cmpnyCd}, 'LEAVE_CHANGE_REQ_ID'))
       FROM DUAL

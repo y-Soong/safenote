@@ -11,7 +11,7 @@
 <mapper namespace="com.prafta.common.cmm.leave.mapper.LeaveRefusalMapper">
 
     <!-- REFUSAL_ID 채번: 'LR' + YYYYMMDD + 회사별 시퀀스. -->
-    <select id="selectNextRefusalId" resultType="string">
+    <select id="selectNextRefusalId" resultType="string" flushCache="true">
     /* LeaveRefusalMapper.selectNextRefusalId */
     SELECT CONCAT('LR', DATE_FORMAT(NOW(), '%Y%m%d'), FNC_CMM_SEQ_NEXTVAL(#{cmpnyCd}, 'LEAVE_REFUSAL_ID'))
       FROM DUAL

@@ -3,7 +3,7 @@
 <mapper namespace="com.prafta.common.cmm.dailyentry.mapper.DailyEntryMapper">
 
     <!-- 승인요청 ID 채번 ('ER' + YYYYMMDD + 시퀀스). dailyjoin selectDailySlotHisId 패턴 미러. -->
-    <select id="selectEntryRequestId" resultType="string">
+    <select id="selectEntryRequestId" resultType="string" flushCache="true">
     /* DailyEntryMapper.selectEntryRequestId */
     SELECT CONCAT('ER', DATE_FORMAT(NOW(), '%Y%m%d'), FNC_CMM_SEQ_NEXTVAL(#{cmpnyCd}, 'DAILY_ENTRY_REQ'))
     FROM DUAL

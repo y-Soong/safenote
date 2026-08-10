@@ -667,7 +667,7 @@
 	</update>
 
 	<!-- HIST_ID 채번 (prafta-032): 입사일 변경 + 연차 조정 멱등키(_HD{histId})에 쓰기 위해 INSERT 전 미리 채번. -->
-	<select id="selectNextHireHistId" resultType="java.lang.String">
+	<select id="selectNextHireHistId" resultType="java.lang.String" flushCache="true">
 	/* User01Mapper.selectNextHireHistId */
 	SELECT CONCAT('HH', DATE_FORMAT(NOW(), '%Y%m%d'), FNC_CMM_SEQ_NEXTVAL(#{cmpnyCd}, 'HIRE_HIST_ID'))
 	FROM DUAL
@@ -735,7 +735,7 @@
 	     ==================================================================== -->
 
 	<!-- USER_CD 채번 (LoginMapper.selectUserCd 와 동일 SQL — 모듈 결합 회피 위해 복제). -->
-	<select id="selectNextUserCd" resultType="java.lang.String">
+	<select id="selectNextUserCd" resultType="java.lang.String" flushCache="true">
 	/* User01Mapper.selectNextUserCd */
 	SELECT CONCAT(DATE_FORMAT(NOW(), '%Y%m'), FNC_CMM_SEQ_NEXTVAL(#{cmpnyCd}, 'USER_CD'))
 	FROM DUAL

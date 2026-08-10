@@ -461,7 +461,7 @@
     </select>
 
     <!-- GPS_ID 선채번 (회사별 시퀀스 'GPS_ID'). FNC_CMM_SEQ_NEXTVAL 이 키를 자동 생성. -->
-    <select id="selectGpsId" resultType="string">
+    <select id="selectGpsId" resultType="string" flushCache="true">
     /* AppAttd01Mapper.selectGpsId */
     SELECT CONCAT(DATE_FORMAT(NOW(), '%Y%m%d'), FNC_CMM_SEQ_NEXTVAL(#{cmpnyCd}, 'GPS_ID')) AS gpsId
     </select>
@@ -568,7 +568,7 @@
          ================================================================ -->
 
     <!-- ATTD_ID 선채번 (회사별 시퀀스 'ATTD_ID'). web attd07 selectAttdId 와 동일 패턴. -->
-    <select id="selectAttdId" resultType="string">
+    <select id="selectAttdId" resultType="string" flushCache="true">
     /* AppAttd01Mapper.selectAttdId */
     SELECT CONCAT(DATE_FORMAT(NOW(), '%Y%m%d'), FNC_CMM_SEQ_NEXTVAL(#{cmpnyCd}, 'ATTD_ID')) AS attdId
     </select>

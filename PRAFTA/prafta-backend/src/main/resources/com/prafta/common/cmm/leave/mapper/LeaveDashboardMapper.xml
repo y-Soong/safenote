@@ -467,7 +467,7 @@
       'G' + YYYYMMDD + 5자리 시퀀스(MAX_VAL=99999 기준 LPAD) = 14자 (varchar(20) 이내).
       SEQ_KEY='LEAVE_GRANT_ID' (회사별 자동 INSERT).
     -->
-    <select id="selectNextGrantId" resultType="string">
+    <select id="selectNextGrantId" resultType="string" flushCache="true">
     /* LeaveDashboardMapper.selectNextGrantId */
     SELECT CONCAT('G', DATE_FORMAT(NOW(), '%Y%m%d'), FNC_CMM_SEQ_NEXTVAL(#{cmpnyCd}, 'LEAVE_GRANT_ID'))
       FROM DUAL
@@ -561,7 +561,7 @@
 
     <!-- ============ 알림 outbox(PRAFTA-031): NOTI_ID 채번 ============
       'N' + YYYYMMDD + 시퀀스(FNC_CMM_SEQ_NEXTVAL, SEQ_KEY='NOTI_OUTBOX_ID'). selectNextGrantId 패턴 동일. -->
-    <select id="selectNextNotiId" resultType="string">
+    <select id="selectNextNotiId" resultType="string" flushCache="true">
     /* LeaveDashboardMapper.selectNextNotiId */
     SELECT CONCAT('N', DATE_FORMAT(NOW(), '%Y%m%d'), FNC_CMM_SEQ_NEXTVAL(#{cmpnyCd}, 'NOTI_OUTBOX_ID'))
       FROM DUAL

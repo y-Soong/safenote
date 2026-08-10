@@ -14,7 +14,7 @@
 	     T5 는 회사 경계를 넘어 SESSION_CD 단독으로 세션/출결을 식별하므로 코드가 전역 유일해야 한다.
 	     DB 보강: UX_TBM_SESSION_CD(UNIQUE) — 마이그레이션 prafta-subcon-t5-1.
 	     ※ MTRL_CD/MTRL_ITEM_CD 채번은 회사별 유지(전환 대상 아님). -->
-	<select id="selectSessionCd" parameterType="java.lang.String" resultType="java.lang.String">
+	<select id="selectSessionCd" parameterType="java.lang.String" resultType="java.lang.String" flushCache="true">
 	/* AppAdminTbmMapper.selectSessionCd */
 	SELECT CONCAT('T', DATE_FORMAT(CURDATE(), '%Y%m%d'), FNC_CMM_SEQ_NEXTVAL('__GLOBAL__', 'TBM_SESSION_CD'))
 	FROM DUAL
@@ -1238,13 +1238,13 @@
 	     companyWide(master/safe)=회사 전체. 노드관리자=회사공통(SITE_CD IS NULL) OR 접근가능 사업장. -->
 
 	<!-- 채번(web Tbm01.selectMtrlCd / selectMtrlItemCd 포팅) -->
-	<select id="selectMtrlCd" parameterType="java.lang.String" resultType="java.lang.String">
+	<select id="selectMtrlCd" parameterType="java.lang.String" resultType="java.lang.String" flushCache="true">
 	/* AppAdminTbmMapper.selectMtrlCd */
 	SELECT CONCAT(DATE_FORMAT(CURDATE(), '%y%m%d'), FNC_CMM_SEQ_NEXTVAL(#{gvCmpnyCd}, 'MTRL_CD'))
 	FROM DUAL
 	</select>
 
-	<select id="selectMtrlItemCd" parameterType="java.lang.String" resultType="java.lang.String">
+	<select id="selectMtrlItemCd" parameterType="java.lang.String" resultType="java.lang.String" flushCache="true">
 	/* AppAdminTbmMapper.selectMtrlItemCd */
 	SELECT CONCAT(DATE_FORMAT(CURDATE(), '%y%m%d'), FNC_CMM_SEQ_NEXTVAL(#{gvCmpnyCd}, 'MTRL_ITEM_CD'))
 	FROM DUAL

@@ -70,7 +70,7 @@
     </select>
 
     <!-- ATTD_ID 선채번(회사별 시퀀스 'ATTD_ID'). AppAttd01Mapper.selectAttdId 동형. -->
-    <select id="selectAttdId" resultType="string">
+    <select id="selectAttdId" resultType="string" flushCache="true">
     /* AppAdminSiteOpsMapper.selectAttdId */
     SELECT CONCAT(DATE_FORMAT(NOW(), '%Y%m%d'), FNC_CMM_SEQ_NEXTVAL(#{cmpnyCd}, 'ATTD_ID')) AS attdId
     </select>

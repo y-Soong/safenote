@@ -85,7 +85,7 @@
     </select>
 
     <!-- 블랙리스트ID 채번('B' + YYYYMMDD + 시퀀스). -->
-    <select id="selectBlacklistId" resultType="string">
+    <select id="selectBlacklistId" resultType="string" flushCache="true">
     /* User06Mapper.selectBlacklistId */
     SELECT CONCAT('B', DATE_FORMAT(NOW(), '%Y%m%d'), FNC_CMM_SEQ_NEXTVAL(#{cmpnyCd}, 'DAILY_BLACKLIST'))
     FROM DUAL

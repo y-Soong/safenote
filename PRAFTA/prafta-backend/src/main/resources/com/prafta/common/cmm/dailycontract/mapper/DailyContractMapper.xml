@@ -3,7 +3,7 @@
 <mapper namespace="com.prafta.common.cmm.dailycontract.mapper.DailyContractMapper">
 
     <!-- 서명 ID 채번 ('CS' + YYYYMMDD + 시퀀스). dailyentry selectEntryRequestId 패턴 미러. -->
-    <select id="selectSignId" resultType="string">
+    <select id="selectSignId" resultType="string" flushCache="true">
     /* DailyContractMapper.selectSignId */
     SELECT CONCAT('CS', DATE_FORMAT(NOW(), '%Y%m%d'), FNC_CMM_SEQ_NEXTVAL(#{cmpnyCd}, 'DAILY_CONTRACT_SIGN'))
     FROM DUAL

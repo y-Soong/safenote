@@ -113,7 +113,7 @@
 	</select>
 
 	<!-- 신규 문항코드 선채번(이력 적재를 위해 merge 이전에 코드 확정) -->
-	<select id="selectNextInspectItemCd" parameterType="com.prafta.web.chkLst.chkLst02.application.command.ChkptInspectItemCommand" resultType="String">
+	<select id="selectNextInspectItemCd" parameterType="com.prafta.web.chkLst.chkLst02.application.command.ChkptInspectItemCommand" resultType="String" flushCache="true">
 	/* ChkLst02Mapper.selectNextInspectItemCd */
 	SELECT CONCAT(
 		'DCHK'

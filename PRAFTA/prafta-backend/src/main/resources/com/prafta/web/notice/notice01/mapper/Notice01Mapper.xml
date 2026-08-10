@@ -921,7 +921,7 @@
          tb_cmm_seq(SEQ_KEY='NOTICE_PIN_LOCK') 행을 회사 단위로 원자 UPDATE(=행잠금) 하여
          같은 트랜잭션 동안 동일 회사의 고정 순번 연산을 직렬화한다(첫 고정 0건 시 잠글 행 부재 문제 해소).
          함수가 행 없으면 자동 INSERT 후 UPDATE 하므로 신규 회사도 안전. 반환값은 사용하지 않는다. -->
-    <select id="lockPinSerialization" resultType="java.lang.String">
+    <select id="lockPinSerialization" resultType="java.lang.String" flushCache="true">
     /* Notice01Mapper.lockPinSerialization */
     SELECT FNC_CMM_SEQ_NEXTVAL(#{cmpnyCd}, 'NOTICE_PIN_LOCK')
     </select>

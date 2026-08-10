@@ -59,7 +59,7 @@
     </insert>
 
     <!-- USER_CD 채번 (LoginMapper.selectUserCd / User01Mapper.selectNextUserCd 와 동일 SQL). -->
-    <select id="selectNextUserCd" resultType="java.lang.String">
+    <select id="selectNextUserCd" resultType="java.lang.String" flushCache="true">
     /* CompanyProvisionMapper.selectNextUserCd */
     SELECT CONCAT(DATE_FORMAT(NOW(), '%Y%m'), FNC_CMM_SEQ_NEXTVAL(#{cmpnyCd}, 'USER_CD'))
     FROM DUAL
@@ -117,7 +117,7 @@
          ============================================================ -->
 
     <!-- SITE_CD 채번 (Baim01Mapper.selectSiteCd 와 동일 SQL). -->
-    <select id="selectNextSiteCd" resultType="java.lang.String">
+    <select id="selectNextSiteCd" resultType="java.lang.String" flushCache="true">
     /* CompanyProvisionMapper.selectNextSiteCd */
     SELECT FNC_CMM_SEQ_NEXTVAL(#{cmpnyCd}, 'SITE_CD')
     FROM DUAL

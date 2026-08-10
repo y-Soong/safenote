@@ -167,12 +167,12 @@
          겹침 판정은 LeaveDeductionService.overlapsTimeLeaveOnDate 로 이관
          (행 조회 = LeaveDeductionMapper.selectTimeLeaveWindowsOnDate, 환산 = 그날 원 스케줄 프레임). -->
 
-    <select id="selectNextReqId" resultType="string">
+    <select id="selectNextReqId" resultType="string" flushCache="true">
     /* AppLeaveFlowMapper.selectNextReqId */
     SELECT CONCAT(DATE_FORMAT(NOW(), '%Y%m%d'), FNC_CMM_SEQ_NEXTVAL(#{cmpnyCd}, 'ATTD_REQ_ID')) FROM DUAL
     </select>
 
-    <select id="selectNextLeaveId" resultType="string">
+    <select id="selectNextLeaveId" resultType="string" flushCache="true">
     /* AppLeaveFlowMapper.selectNextLeaveId */
     SELECT CONCAT('LV', DATE_FORMAT(NOW(), '%Y%m%d'), FNC_CMM_SEQ_NEXTVAL(#{cmpnyCd}, 'LEAVE_USE_ID')) FROM DUAL
     </select>

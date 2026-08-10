@@ -116,7 +116,7 @@
      LIMIT 1
     </select>
 
-    <select id="selectNextPresetId" resultType="string">
+    <select id="selectNextPresetId" resultType="string" flushCache="true">
     /* User04Mapper.selectNextPresetId */
     SELECT CONCAT('P', DATE_FORMAT(NOW(), '%Y%m%d'), FNC_CMM_SEQ_NEXTVAL(#{cmpnyCd}, 'APRV_PRESET_ID'))
       FROM DUAL

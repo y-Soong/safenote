@@ -219,7 +219,7 @@
       HIST_ID 채번. prafta 표준 시퀀스 함수 사용.
       SEQ_KEY = 'LEAVE_POLICY_HIST' (회사별 자동 INSERT).
     -->
-    <select id="selectNextHistId" resultType="string">
+    <select id="selectNextHistId" resultType="string" flushCache="true">
     /* LeavePolicyMapper.selectNextHistId */
     SELECT FNC_CMM_SEQ_NEXTVAL(#{cmpnyCd}, 'LEAVE_POLICY_HIST')
       FROM DUAL

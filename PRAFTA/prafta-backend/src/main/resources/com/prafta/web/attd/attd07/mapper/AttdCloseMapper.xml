@@ -392,7 +392,7 @@
     </update>
 
     <!-- 마감 이력 ID 채번 -->
-    <select id="selectNextCloseHistId" resultType="string">
+    <select id="selectNextCloseHistId" resultType="string" flushCache="true">
     /* AttdCloseMapper.selectNextCloseHistId */
     SELECT FNC_CMM_SEQ_NEXTVAL(#{cmpnyCd}, 'ATTD_CLOSE_HIST')
       FROM DUAL

@@ -118,7 +118,7 @@
 	</select>
 
 	<!-- PRAFTA-SUBCON-T6-04: 신규 점검대상코드 선채번(mergeChkptList 의 IFNULL 채번과 동일 시퀀스) -->
-	<select id="selectNextChkptCd" resultType="String">
+	<select id="selectNextChkptCd" resultType="String" flushCache="true">
 	/* ChkLst01Mapper.selectNextChkptCd */
 	SELECT prafta.FNC_CMM_SEQ_NEXTVAL(#{gvCmpnyCd}, 'CHKPT_CD')
 	</select>

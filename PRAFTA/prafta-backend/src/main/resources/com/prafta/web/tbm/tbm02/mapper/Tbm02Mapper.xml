@@ -8,7 +8,7 @@
 	     회사별 채번을 유지하면 두 회사가 같은 날 개설한 세션이 동일 코드를 갖는다(교차 테넌트 오염).
 	     DB 보강: UX_TBM_SESSION_CD(UNIQUE) — 마이그레이션 prafta-subcon-t5-1.
 	     ※ MTRL_CD/MTRL_ITEM_CD 등 다른 채번은 회사별을 그대로 유지한다(전환 대상 아님). -->
-	<select id="selectSessionCd" parameterType="java.util.HashMap" resultType="java.lang.String">
+	<select id="selectSessionCd" parameterType="java.util.HashMap" resultType="java.lang.String" flushCache="true">
 	/* Tbm02Mapper.selectSessionCd */
 	SELECT CONCAT('T', DATE_FORMAT(CURDATE(), '%Y%m%d'), FNC_CMM_SEQ_NEXTVAL('__GLOBAL__', 'TBM_SESSION_CD'))
 	FROM DUAL

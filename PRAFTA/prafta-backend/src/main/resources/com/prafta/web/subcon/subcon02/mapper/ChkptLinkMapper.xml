@@ -107,14 +107,14 @@
     </select>
 
     <!-- 미러 점검대상코드 채번 — DST 회사 시퀀스(chkLst01 mergeChkptList 규칙 동형). -->
-    <select id="selectNewChkptCd" resultType="string">
+    <select id="selectNewChkptCd" resultType="string" flushCache="true">
     /* ChkptLinkMapper.selectNewChkptCd */
     SELECT FNC_CMM_SEQ_NEXTVAL(#{dstCmpnyCd}, 'CHKPT_CD')
     FROM DUAL
     </select>
 
     <!-- 미러 점검문항코드 채번 — DST 회사 시퀀스(chkLst02 selectNextInspectItemCd 규칙 동형). -->
-    <select id="selectNewInspectItemCd" resultType="string">
+    <select id="selectNewInspectItemCd" resultType="string" flushCache="true">
     /* ChkptLinkMapper.selectNewInspectItemCd */
     SELECT CONCAT(
         'DCHK'

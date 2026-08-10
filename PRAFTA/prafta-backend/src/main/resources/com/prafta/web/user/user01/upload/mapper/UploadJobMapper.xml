@@ -3,7 +3,7 @@
 <mapper namespace="com.prafta.web.user.user01.upload.mapper.UploadJobMapper">
 
     <!-- ============ JOB_ID 채번 (prafta-031 NOTI_OUTBOX_ID 패턴 동일) ============ -->
-    <select id="selectNextJobId" resultType="string">
+    <select id="selectNextJobId" resultType="string" flushCache="true">
     /* UploadJobMapper.selectNextJobId */
     SELECT CONCAT('U', DATE_FORMAT(NOW(), '%Y%m%d'), FNC_CMM_SEQ_NEXTVAL(#{cmpnyCd}, 'USER_UPLOAD_JOB_ID'))
       FROM DUAL

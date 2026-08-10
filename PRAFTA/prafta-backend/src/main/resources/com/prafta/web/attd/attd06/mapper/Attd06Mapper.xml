@@ -340,7 +340,7 @@
     </select>
     
     
-    <select id="selectShiftTeamCd" parameterType="string" resultType="string">
+    <select id="selectShiftTeamCd" parameterType="string" resultType="string" flushCache="true">
     /* Attd06Mapper.selectShiftTeamCd */
     SELECT CONCAT(DATE_FORMAT(NOW(), '%Y%m'), FNC_CMM_SEQ_NEXTVAL(#{gvCmpnyCd}, 'TEAM_SHIFT_ID')) AS teamShiftId
     FROM DUAL

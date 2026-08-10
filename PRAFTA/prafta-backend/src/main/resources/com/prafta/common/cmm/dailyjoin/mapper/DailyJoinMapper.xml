@@ -180,7 +180,7 @@
     </select>
 
     <!-- USER_CD 채번 -->
-    <select id="selectDailyUserCd" parameterType="com.prafta.common.cmm.dailyjoin.application.query.EmptySlotQuery" resultType="string">
+    <select id="selectDailyUserCd" parameterType="com.prafta.common.cmm.dailyjoin.application.query.EmptySlotQuery" resultType="string" flushCache="true">
     /* DailyJoinMapper.selectDailyUserCd */
     SELECT CONCAT('D', DATE_FORMAT(NOW(), '%Y%m%d'), FNC_CMM_SEQ_NEXTVAL(#{cmpnyCd}, 'DAILY_USER'))
     FROM DUAL
@@ -511,7 +511,7 @@
          ============================================================ -->
 
     <!-- 이력ID 채번('H' + YYYYMMDD + 시퀀스). baim05/dailyjoin 동일 시퀀스 'SLOT_HIS_ID' 공유. -->
-    <select id="selectDailySlotHisId" parameterType="string" resultType="string">
+    <select id="selectDailySlotHisId" parameterType="string" resultType="string" flushCache="true">
     /* DailyJoinMapper.selectDailySlotHisId */
     SELECT CONCAT('H', DATE_FORMAT(NOW(), '%Y%m%d'), FNC_CMM_SEQ_NEXTVAL(#{cmpnyCd}, 'SLOT_HIS_ID'))
     FROM DUAL

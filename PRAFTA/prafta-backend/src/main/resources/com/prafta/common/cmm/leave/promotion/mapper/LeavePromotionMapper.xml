@@ -174,7 +174,7 @@
       촉진 진행 ID 채번. 'LP' + YYYYMMDD + 시퀀스. LeaveDashboardMapper.selectNextNotiId 패턴 동일.
       SEQ_KEY 는 회사별 자동 INSERT(FNC_CMM_SEQ_NEXTVAL).
     -->
-    <select id="selectNextPromoId" resultType="string">
+    <select id="selectNextPromoId" resultType="string" flushCache="true">
     /* LeavePromotionMapper.selectNextPromoId */
     SELECT CONCAT('LP', DATE_FORMAT(NOW(), '%Y%m%d'), FNC_CMM_SEQ_NEXTVAL(#{cmpnyCd}, 'LEAVE_PROMOTION_ID'))
       FROM DUAL

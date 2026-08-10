@@ -273,7 +273,7 @@
 	    , UPDATE_DATE 	= NOW()
 	</update>
 	
-	<select id="selectDailyUserCd" parameterType="string" resultType="string">
+	<select id="selectDailyUserCd" parameterType="string" resultType="string" flushCache="true">
 	/* Baim05Mapper.selectDailyUserCd */
 	SELECT CONCAT('D', DATE_FORMAT(NOW(), '%Y%m%d'), FNC_CMM_SEQ_NEXTVAL(#{cmpnyCd}, 'DAILY_USER'))
 	FROM DUAL
@@ -684,7 +684,7 @@
 	     ============================================================ -->
 
 	<!-- 이력ID 채번('H' + YYYYMMDD + 시퀀스). 기존 self-numbering 관례 동형. -->
-	<select id="selectDailySlotHisId" parameterType="string" resultType="string">
+	<select id="selectDailySlotHisId" parameterType="string" resultType="string" flushCache="true">
 	/* Baim05Mapper.selectDailySlotHisId */
 	SELECT CONCAT('H', DATE_FORMAT(NOW(), '%Y%m%d'), FNC_CMM_SEQ_NEXTVAL(#{cmpnyCd}, 'SLOT_HIS_ID'))
 	FROM DUAL

@@ -5,7 +5,7 @@
     <!-- ============ 감사 로그(PRAFTA-037-F5): AUDIT_ID 채번 ============
       'A' + YYYYMMDD + 시퀀스(FNC_CMM_SEQ_NEXTVAL, SEQ_KEY='AUDIT_LOG_ID').
       prafta-031 NOTI_OUTBOX_ID 패턴과 동일. -->
-    <select id="selectNextAuditId" resultType="string">
+    <select id="selectNextAuditId" resultType="string" flushCache="true">
     /* AuditLogMapper.selectNextAuditId */
     SELECT CONCAT('A', DATE_FORMAT(NOW(), '%Y%m%d'), FNC_CMM_SEQ_NEXTVAL(#{cmpnyCd}, 'AUDIT_LOG_ID'))
       FROM DUAL

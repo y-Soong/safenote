@@ -228,7 +228,7 @@
     </select>
 
     <!-- 예약 ID 채번('TR' + YYYYMMDD + 시퀀스). -->
-    <select id="selectReservationId" resultType="string">
+    <select id="selectReservationId" resultType="string" flushCache="true">
     /* UserTransferMapper.selectReservationId */
     SELECT CONCAT('TR', DATE_FORMAT(NOW(), '%Y%m%d'), FNC_CMM_SEQ_NEXTVAL(#{cmpnyCd}, 'USER_TRANSFER'))
     FROM DUAL

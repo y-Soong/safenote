@@ -56,12 +56,12 @@
 	  AND A.HOLIDAY_MM = LPAD(#{month}, 2, '0')
 	</select>
 	
-	<select id="selectHolidayId" parameterType="map" resultType="string">
+	<select id="selectHolidayId" parameterType="map" resultType="string" flushCache="true">
     /* Attd02Mapper.selectHolidayId */
     SELECT CONCAT(DATE_FORMAT(NOW(), '%Y'), FNC_CMM_SEQ_NEXTVAL(#{gvCmpnyCd}, 'HOLIDAY_ID')) FROM DUAL
     </select>
     
-    <select id="selectHolidayRuleId" parameterType="map" resultType="string">
+    <select id="selectHolidayRuleId" parameterType="map" resultType="string" flushCache="true">
     /* Attd02Mapper.selectHolidayRuleId */
     SELECT CONCAT(DATE_FORMAT(NOW(), '%Y'), FNC_CMM_SEQ_NEXTVAL(#{gvCmpnyCd}, 'HOLIDAY_RULE_ID')) FROM DUAL
     </select>

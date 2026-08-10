@@ -5,7 +5,7 @@
     <!-- ============ REQ_ID 채번 ============
          LeaveFlowMapper.selectNextReqId 와 동일 시퀀스('ATTD_REQ_ID').
          네임스페이스만 분리 (dependency 최소화). -->
-    <select id="selectNextReqId" resultType="string">
+    <select id="selectNextReqId" resultType="string" flushCache="true">
     /* AppReq07Mapper.selectNextReqId */
     SELECT CONCAT(DATE_FORMAT(NOW(), '%Y%m%d'), FNC_CMM_SEQ_NEXTVAL(#{cmpnyCd}, 'ATTD_REQ_ID')) FROM DUAL
     </select>

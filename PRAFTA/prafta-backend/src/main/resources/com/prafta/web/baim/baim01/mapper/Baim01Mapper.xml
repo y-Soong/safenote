@@ -47,7 +47,7 @@
   	  </if>
 	</select>
 	
-	<select id="selectSiteCd" parameterType="string" resultType="string">
+	<select id="selectSiteCd" parameterType="string" resultType="string" flushCache="true">
     /* Baim01Mapper.selectSiteCd */
     SELECT FNC_CMM_SEQ_NEXTVAL(#{gvCmpnyCd}, 'SITE_CD')
 	FROM DUAL

@@ -79,7 +79,7 @@
 		, UPDATE_DATE     = NOW()
     </update>
     
-    <select id="selectLeaveCd" parameterType="string" resultType="string">
+    <select id="selectLeaveCd" parameterType="string" resultType="string" flushCache="true">
     /* Attd03Mapper.selectLeaveCd */
     SELECT FNC_CMM_SEQ_NEXTVAL(#{gvCmpnyCd}, 'LEAVE_CD')
     FROM DUAL

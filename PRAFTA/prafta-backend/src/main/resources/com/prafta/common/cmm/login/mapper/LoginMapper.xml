@@ -262,7 +262,7 @@
 	  AND USER_CD  = #{userCd}
     </update>
     
-    <select id="selectUserCd" resultType="string">
+    <select id="selectUserCd" resultType="string" flushCache="true">
     /* LoginMapper.selectUserCd */
     SELECT CONCAT(DATE_FORMAT(NOW(), '%Y%m'), FNC_CMM_SEQ_NEXTVAL(#{cmpnyCd}, 'USER_CD'))
     FROM DUAL

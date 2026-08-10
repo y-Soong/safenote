@@ -81,7 +81,7 @@
 	  </if>
     </select>
 	
-	<select id="selectSchCd" parameterType="com.prafta.web.attd.attd01.application.query.SchCdQuery" resultType="string">
+	<select id="selectSchCd" parameterType="com.prafta.web.attd.attd01.application.query.SchCdQuery" resultType="string" flushCache="true">
     /* Attd01Mapper.selectSchCd */
     SELECT FNC_CMM_SEQ_NEXTVAL(#{gvCmpnyCd}, CONCAT('SCH_CD-', #{siteCd}))
     FROM DUAL
@@ -399,7 +399,7 @@
 	  AND SHIFT_NO = #{shiftNo}
     </select>
     
-    <select id="selectShiftCd" parameterType="com.prafta.web.attd.attd01.application.query.ShiftCdQuery" resultType="string">
+    <select id="selectShiftCd" parameterType="com.prafta.web.attd.attd01.application.query.ShiftCdQuery" resultType="string" flushCache="true">
     /* Attd01Mapper.selectShiftCd */
     SELECT FNC_CMM_SEQ_NEXTVAL(#{gvCmpnyCd}, CONCAT('SHIFT_CD-', #{siteCd}))
     FROM DUAL
