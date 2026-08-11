@@ -35,5 +35,11 @@ public class SchInfoRequest{
 	private String secBrkStrTime;
 	private String secBrkEndTime;
 
+	// PRAFTA-FIXEDOT-1: 전방(출근 전)·후방(퇴근 후) 고정연장근무 FROM/TO (HHMM, 선택 — 쌍 완결성 V1)
+	private String preFixedOtStrTime;
+	private String preFixedOtEndTime;
+	private String fixedOtStrTime;
+	private String fixedOtEndTime;
+
 	private String useYn;
 }

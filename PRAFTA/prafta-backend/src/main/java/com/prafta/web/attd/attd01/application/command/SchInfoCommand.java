@@ -24,6 +24,12 @@ public record SchInfoCommand(
 	, String secBrkStrTime
 	, String secBrkEndTime
 
+	// PRAFTA-FIXEDOT-1: 전방·후방 고정연장근무 FROM/TO (HHMM, 선택)
+	, String preFixedOtStrTime
+	, String preFixedOtEndTime
+	, String fixedOtStrTime
+	, String fixedOtEndTime
+
 	, String useYn
 	, String gvCmpnyCd
 	, String gvUserCd
@@ -50,6 +56,10 @@ public record SchInfoCommand(
     		, param.secSchBrkMin()
     		, param.secBrkStrTime()
     		, param.secBrkEndTime()
+    		, param.preFixedOtStrTime()
+    		, param.preFixedOtEndTime()
+    		, param.fixedOtStrTime()
+    		, param.fixedOtEndTime()
     		, param.useYn()
     		, param.gvCmpnyCd()
     		, param.gvUserCd()

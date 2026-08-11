@@ -25,10 +25,16 @@ public record SchInfoParam(
 	, String secBrkStrTime
 	, String secBrkEndTime
 
+	// PRAFTA-FIXEDOT-1: 전방·후방 고정연장근무 FROM/TO (HHMM, 선택)
+	, String preFixedOtStrTime
+	, String preFixedOtEndTime
+	, String fixedOtStrTime
+	, String fixedOtEndTime
+
 	, String useYn
 	, String gvCmpnyCd
 	, String gvUserCd
-){	
+){
 	public static SchInfoParam from(SchInfoRequest request, TokenInfo tokenInfo) {
 		
         if (request == null)
@@ -51,6 +57,10 @@ public record SchInfoParam(
     		, request.getSecSchBrkMin()
     		, request.getSecBrkStrTime()
     		, request.getSecBrkEndTime()
+    		, request.getPreFixedOtStrTime()
+    		, request.getPreFixedOtEndTime()
+    		, request.getFixedOtStrTime()
+    		, request.getFixedOtEndTime()
     		, request.getUseYn()
     		, tokenInfo.gv_cmpnyCd()
     		, tokenInfo.gv_userCd()

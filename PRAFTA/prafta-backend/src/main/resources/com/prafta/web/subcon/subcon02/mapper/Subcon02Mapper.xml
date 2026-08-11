@@ -460,6 +460,11 @@
         , SEC_SCH_BRK_MIN
         , SEC_BRK_STR_TIME
         , SEC_BRK_END_TIME
+        <!-- PRAFTA-FIXEDOT-1: 전방·후방 고정연장근무 컬럼 복제 동기화(누락 시 미러 사업장만 고정연장 소실) -->
+        , PRE_FIXED_OT_STR_TIME
+        , PRE_FIXED_OT_END_TIME
+        , FIXED_OT_STR_TIME
+        , FIXED_OT_END_TIME
         , USE_YN
         , LINK_SRC_CMPNY_CD
         , LINK_SRC_SCH_CD
@@ -485,6 +490,10 @@
         , S.SEC_SCH_BRK_MIN
         , S.SEC_BRK_STR_TIME
         , S.SEC_BRK_END_TIME
+        , S.PRE_FIXED_OT_STR_TIME
+        , S.PRE_FIXED_OT_END_TIME
+        , S.FIXED_OT_STR_TIME
+        , S.FIXED_OT_END_TIME
         , S.USE_YN
         , #{srcCmpnyCd}
         , S.SCH_CD
@@ -658,6 +667,11 @@
         , SEC_SCH_BRK_MIN
         , SEC_BRK_STR_TIME
         , SEC_BRK_END_TIME
+        <!-- PRAFTA-FIXEDOT-1: 전방·후방 고정연장근무 컬럼 전파 동기화 -->
+        , PRE_FIXED_OT_STR_TIME
+        , PRE_FIXED_OT_END_TIME
+        , FIXED_OT_STR_TIME
+        , FIXED_OT_END_TIME
         , USE_YN
         , LINK_SRC_CMPNY_CD
         , LINK_SRC_SCH_CD
@@ -683,6 +697,10 @@
         , S.SEC_SCH_BRK_MIN
         , S.SEC_BRK_STR_TIME
         , S.SEC_BRK_END_TIME
+        , S.PRE_FIXED_OT_STR_TIME
+        , S.PRE_FIXED_OT_END_TIME
+        , S.FIXED_OT_STR_TIME
+        , S.FIXED_OT_END_TIME
         , S.USE_YN
         , #{srcCmpnyCd}
         , S.SCH_CD
@@ -708,6 +726,11 @@
         , SEC_SCH_BRK_MIN   = VALUES(SEC_SCH_BRK_MIN)
         , SEC_BRK_STR_TIME  = VALUES(SEC_BRK_STR_TIME)
         , SEC_BRK_END_TIME  = VALUES(SEC_BRK_END_TIME)
+        <!-- PRAFTA-FIXEDOT-1: INSERT...SELECT 라 행 별칭(AS NEW) 불가 — VALUES() 함수 유지(하우스 선례) -->
+        , PRE_FIXED_OT_STR_TIME = VALUES(PRE_FIXED_OT_STR_TIME)
+        , PRE_FIXED_OT_END_TIME = VALUES(PRE_FIXED_OT_END_TIME)
+        , FIXED_OT_STR_TIME = VALUES(FIXED_OT_STR_TIME)
+        , FIXED_OT_END_TIME = VALUES(FIXED_OT_END_TIME)
         , USE_YN            = VALUES(USE_YN)
         , LINK_SRC_CMPNY_CD = VALUES(LINK_SRC_CMPNY_CD)
         , LINK_SRC_SCH_CD   = VALUES(LINK_SRC_SCH_CD)
@@ -744,6 +767,11 @@
         , SEC_SCH_BRK_MIN
         , SEC_BRK_STR_TIME
         , SEC_BRK_END_TIME
+        <!-- PRAFTA-FIXEDOT-1: 전방·후방 고정연장근무 컬럼 이력 동기화 -->
+        , PRE_FIXED_OT_STR_TIME
+        , PRE_FIXED_OT_END_TIME
+        , FIXED_OT_STR_TIME
+        , FIXED_OT_END_TIME
         , USE_YN
         , INSERT_NO
         , INSERT_DATE
@@ -764,6 +792,10 @@
         , M.SEC_SCH_BRK_MIN
         , M.SEC_BRK_STR_TIME
         , M.SEC_BRK_END_TIME
+        , M.PRE_FIXED_OT_STR_TIME
+        , M.PRE_FIXED_OT_END_TIME
+        , M.FIXED_OT_STR_TIME
+        , M.FIXED_OT_END_TIME
         , M.USE_YN
         , 'SYSTEM'
         , NOW()

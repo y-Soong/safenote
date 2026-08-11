@@ -422,6 +422,12 @@ public enum AttdErrorCode implements ApiErrorCode {
     //   범위(오버나이트 포함)를 벗어나면 차단한다. 구체 사유는 detailMessage 로 대체된다
     //   (ApiException(errorCode, detailMessage) 패턴 — 아래 기본 메시지는 폴백용).
     , ATTD_400_197(HttpStatus.BAD_REQUEST, "휴게시간 설정이 올바르지 않습니다.")
+
+    // ===== PRAFTA-FIXEDOT-1: 근무타입 고정연장근무 검증(V1~V6, 2026-08-11) =====
+    // 전방·후방 고정연장근무(FROM/TO 2쌍)의 쌍 완결성(V1)·위치(V2/V3)·겹침(V4)·자정 넘김(V5)·
+    //   휴게 적법성(V6, 소정+고정연장 합산 기준 — 고정연장 존재 시에만 발동해 기존 타입 무회귀) 위반 차단.
+    //   구체 사유는 detailMessage 로 대체된다(ApiException(errorCode, detailMessage) 패턴 — 아래는 폴백용).
+    , ATTD_400_198(HttpStatus.BAD_REQUEST, "고정연장근무 시간 설정이 올바르지 않습니다.")
     ;
 
     private final HttpStatus httpStatus;

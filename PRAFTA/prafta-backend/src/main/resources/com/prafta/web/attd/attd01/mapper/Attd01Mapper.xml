@@ -49,6 +49,11 @@
     	) 							AS useYnNm
 	    <!-- PRAFTA-SUBCON-T2-04: 미러 여부 노출(record 순서 함정 — SELECT 말미 + record 말미 동시 유지). -->
 	    , A.LINK_SRC_CMPNY_CD		AS linkSrcCmpnyCd
+	    <!-- PRAFTA-FIXEDOT-1: 전방·후방 고정연장근무(HHMM, NULL=없음). record 순서 함정 — SchInfoResult 말미와 동일 순서로 append. -->
+	    , A.PRE_FIXED_OT_STR_TIME	AS preFixedOtStrTime
+	    , A.PRE_FIXED_OT_END_TIME	AS preFixedOtEndTime
+	    , A.FIXED_OT_STR_TIME		AS fixedOtStrTime
+	    , A.FIXED_OT_END_TIME		AS fixedOtEndTime
 	FROM TB_SCH_MGMT A
 	WHERE 1=1
 	  AND A.CMPNY_CD = #{gvCmpnyCd}
@@ -117,7 +122,13 @@
         , SEC_SCH_BRK_MIN
         , SEC_BRK_STR_TIME
         , SEC_BRK_END_TIME
-		
+
+        <!-- PRAFTA-FIXEDOT-1: 전방·후방 고정연장근무(HHMM, 미입력=NULL) -->
+        , PRE_FIXED_OT_STR_TIME
+        , PRE_FIXED_OT_END_TIME
+        , FIXED_OT_STR_TIME
+        , FIXED_OT_END_TIME
+
         , USE_YN
         , INSERT_NO
         , INSERT_DATE
@@ -131,19 +142,24 @@
         , #{schNo}
         , #{schType}
         , REPLACE(#{applyDate}, '-', '')
-		
+
         , REPLACE(#{fstSchStrTime}, ':', '')
         , REPLACE(#{fstSchEndTime}, ':', '')
         , #{fstSchBrkMin}
         , NULLIF(REPLACE(IFNULL(#{fstBrkStrTime}, ''), ':', ''), '')
         , NULLIF(REPLACE(IFNULL(#{fstBrkEndTime}, ''), ':', ''), '')
-		
+
         , REPLACE(IFNULL(#{secSchStrTime}, ''), ':', '')
         , REPLACE(IFNULL(#{secSchEndTime}, ''), ':', '')
         , IFNULL(#{secSchBrkMin}, '0')
         , NULLIF(REPLACE(IFNULL(#{secBrkStrTime}, ''), ':', ''), '')
         , NULLIF(REPLACE(IFNULL(#{secBrkEndTime}, ''), ':', ''), '')
-		
+
+        , NULLIF(REPLACE(IFNULL(#{preFixedOtStrTime}, ''), ':', ''), '')
+        , NULLIF(REPLACE(IFNULL(#{preFixedOtEndTime}, ''), ':', ''), '')
+        , NULLIF(REPLACE(IFNULL(#{fixedOtStrTime}, ''), ':', ''), '')
+        , NULLIF(REPLACE(IFNULL(#{fixedOtEndTime}, ''), ':', ''), '')
+
         , IFNULL(#{useYn}, 'Y')
         , #{gvUserCd}
         , NOW()
@@ -166,6 +182,11 @@
         , SEC_SCH_BRK_MIN 	= NEW.SEC_SCH_BRK_MIN
         , SEC_BRK_STR_TIME = NEW.SEC_BRK_STR_TIME
         , SEC_BRK_END_TIME = NEW.SEC_BRK_END_TIME
+
+        , PRE_FIXED_OT_STR_TIME = NEW.PRE_FIXED_OT_STR_TIME
+        , PRE_FIXED_OT_END_TIME = NEW.PRE_FIXED_OT_END_TIME
+        , FIXED_OT_STR_TIME = NEW.FIXED_OT_STR_TIME
+        , FIXED_OT_END_TIME = NEW.FIXED_OT_END_TIME
 
         , USE_YN          	= NEW.USE_YN
         , UPDATE_NO       	= NEW.UPDATE_NO
@@ -201,7 +222,13 @@
         , SEC_SCH_BRK_MIN
         , SEC_BRK_STR_TIME
         , SEC_BRK_END_TIME
-		
+
+        <!-- PRAFTA-FIXEDOT-1(V8): 전방·후방 고정연장근무도 이력 스냅샷에 동반 기록 -->
+        , PRE_FIXED_OT_STR_TIME
+        , PRE_FIXED_OT_END_TIME
+        , FIXED_OT_STR_TIME
+        , FIXED_OT_END_TIME
+
         , USE_YN
         , INSERT_NO
         , INSERT_DATE
@@ -212,19 +239,24 @@
         , #{histIdx}
         , #{schCd}
         , REPLACE(#{applyDate}, '-', '')
-		
+
         , REPLACE(#{fstSchStrTime}, ':', '')
         , REPLACE(#{fstSchEndTime}, ':', '')
         , #{fstSchBrkMin}
         , NULLIF(REPLACE(IFNULL(#{fstBrkStrTime}, ''), ':', ''), '')
         , NULLIF(REPLACE(IFNULL(#{fstBrkEndTime}, ''), ':', ''), '')
-		
+
         , REPLACE(IFNULL(#{secSchStrTime}, ''), ':', '')
         , REPLACE(IFNULL(#{secSchEndTime}, ''), ':', '')
         , IFNULL(#{secSchBrkMin}, '0')
         , NULLIF(REPLACE(IFNULL(#{secBrkStrTime}, ''), ':', ''), '')
         , NULLIF(REPLACE(IFNULL(#{secBrkEndTime}, ''), ':', ''), '')
-		
+
+        , NULLIF(REPLACE(IFNULL(#{preFixedOtStrTime}, ''), ':', ''), '')
+        , NULLIF(REPLACE(IFNULL(#{preFixedOtEndTime}, ''), ':', ''), '')
+        , NULLIF(REPLACE(IFNULL(#{fixedOtStrTime}, ''), ':', ''), '')
+        , NULLIF(REPLACE(IFNULL(#{fixedOtEndTime}, ''), ':', ''), '')
+
         , IFNULL(#{useYn}, 'Y')
         , #{gvUserCd}
         , NOW()
@@ -269,6 +301,11 @@
 	    	, null
 	    )											AS userNm
 	    , DATE_FORMAT(A.INSERT_DATE, '%Y-%m-%d %H:%i')	AS insertDate
+	    <!-- PRAFTA-FIXEDOT-1: 전방·후방 고정연장근무(HHMM, NULL=없음). record 순서 함정 — SchHistResult 말미와 동일 순서로 append. -->
+	    , A.PRE_FIXED_OT_STR_TIME	AS preFixedOtStrTime
+	    , A.PRE_FIXED_OT_END_TIME	AS preFixedOtEndTime
+	    , A.FIXED_OT_STR_TIME		AS fixedOtStrTime
+	    , A.FIXED_OT_END_TIME		AS fixedOtEndTime
 	FROM TB_SCH_MGMT_HIST A
 	WHERE A.CMPNY_CD = #{gvCmpnyCd}
 	  AND A.SITE_CD = #{siteCd}
@@ -297,6 +334,11 @@
          OR NOT (A.SEC_SCH_BRK_MIN <![CDATA[ <=> ]]> IFNULL(#{secSchBrkMin}, '0'))
          OR NOT (A.SEC_BRK_STR_TIME <![CDATA[ <=> ]]> NULLIF(REPLACE(IFNULL(#{secBrkStrTime}, ''), ':', ''), ''))
          OR NOT (A.SEC_BRK_END_TIME <![CDATA[ <=> ]]> NULLIF(REPLACE(IFNULL(#{secBrkEndTime}, ''), ':', ''), ''))
+         <!-- PRAFTA-FIXEDOT-1(V8): 고정연장근무만 바꿔도 시간 변경과 동일한 경고/이력 흐름을 탄다 -->
+         OR NOT (A.PRE_FIXED_OT_STR_TIME <![CDATA[ <=> ]]> NULLIF(REPLACE(IFNULL(#{preFixedOtStrTime}, ''), ':', ''), ''))
+         OR NOT (A.PRE_FIXED_OT_END_TIME <![CDATA[ <=> ]]> NULLIF(REPLACE(IFNULL(#{preFixedOtEndTime}, ''), ':', ''), ''))
+         OR NOT (A.FIXED_OT_STR_TIME <![CDATA[ <=> ]]> NULLIF(REPLACE(IFNULL(#{fixedOtStrTime}, ''), ':', ''), ''))
+         OR NOT (A.FIXED_OT_END_TIME <![CDATA[ <=> ]]> NULLIF(REPLACE(IFNULL(#{fixedOtEndTime}, ''), ':', ''), ''))
       )
     </select>
 

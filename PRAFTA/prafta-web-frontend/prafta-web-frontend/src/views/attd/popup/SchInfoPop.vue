@@ -155,6 +155,71 @@
             </div>
           </div>
 
+          <!-- PRAFTA-FIXEDOT-1: 고정연장근무(포괄임금형 고정 OT) — 후방(퇴근 후) 기본 노출, 전방(출근 전)은 접힘 옵션.
+               "야간" 용어 금지(법정 야간 22~06시 가산 축과 무관 — 정책 ⑤). -->
+          <div class="section-block">
+            <div class="section-block-title">고정연장근무</div>
+            <div class="form-row-max">
+              <label>고정연장근무 사용</label>
+              <div class="section-toggle">
+                <button
+                  type="button"
+                  :class="['btn-segment', { active: fixedOtEnabled }]"
+                  @click="toggleFixedOt(true)"
+                >
+                  사용
+                </button>
+                <button
+                  type="button"
+                  :class="['btn-segment', { active: !fixedOtEnabled }]"
+                  @click="toggleFixedOt(false)"
+                >
+                  미사용
+                </button>
+              </div>
+            </div>
+            <!-- 후방(퇴근 후): 토글 ON 시에만 렌더 — disabled TimeInput 기본값 밀어올림 함정 회피(커밋 ee85a483 규약) -->
+            <div v-if="fixedOtEnabled" class="work-time-block form-row-spaced">
+              <label class="work-time-label">퇴근 후 고정연장 *</label>
+              <div class="work-time-inputs">
+                <span class="work-time-sub">시작</span>
+                <TimeInput v-model="fixedOtStrTime" :minute-step="10" />
+                <span class="time-sep-label">~</span>
+                <span class="work-time-sub">종료</span>
+                <TimeInput v-model="fixedOtEndTime" :minute-step="10" />
+              </div>
+            </div>
+            <p v-if="fixedOtEnabled" class="form-hint">
+              고정연장근무는 소정 근무 종료 이후 구간만 입력할 수 있습니다. 종료
+              시각이 시작 시각보다 빠르면 자정을 넘기는 근무로 처리됩니다.
+            </p>
+            <!-- 전방(출근 전): 접힘 옵션 — 펼칠 때만 입력 렌더, 접으면 값 초기화 -->
+            <div class="form-row-spaced">
+              <button
+                type="button"
+                class="fixed-ot-collapse-toggle"
+                @click="togglePreFixedOt"
+              >
+                <span aria-hidden="true">{{ preFixedOtOpen ? "▾" : "▸" }}</span>
+                출근 전 고정연장 추가
+              </button>
+            </div>
+            <div v-if="preFixedOtOpen" class="work-time-block form-row-spaced">
+              <label class="work-time-label">출근 전 고정연장 *</label>
+              <div class="work-time-inputs">
+                <span class="work-time-sub">시작</span>
+                <TimeInput v-model="preFixedOtStrTime" :minute-step="10" />
+                <span class="time-sep-label">~</span>
+                <span class="work-time-sub">종료</span>
+                <TimeInput v-model="preFixedOtEndTime" :minute-step="10" />
+              </div>
+            </div>
+            <p v-if="preFixedOtOpen" class="form-hint">
+              출근 전 고정연장은 소정 근무 시작 이전의 당일 구간만 입력할 수
+              있습니다.
+            </p>
+          </div>
+
           <div class="form-row-max editable-form">
             <label>사용여부</label>
             <BaseSelect v-model="useYn">
@@ -272,6 +337,55 @@ const useYn = ref(
   props.schData_p?.useYn ?? props.systCodeArr_p?.SYS003?.[0]?.systValDCd ?? "Y"
 );
 
+// PRAFTA-FIXEDOT-1: 고정연장근무 — 후방(퇴근 후) 쌍 + 전방(출근 전) 쌍(HHMM).
+// 수정 모드에서 저장값이 있으면 해당 영역을 펼친 상태로 프리필한다.
+const fixedOtStrTime = ref(props.schData_p?.fixedOtStrTime ?? "");
+const fixedOtEndTime = ref(props.schData_p?.fixedOtEndTime ?? "");
+const preFixedOtStrTime = ref(props.schData_p?.preFixedOtStrTime ?? "");
+const preFixedOtEndTime = ref(props.schData_p?.preFixedOtEndTime ?? "");
+const fixedOtEnabled = ref(
+  !!(props.schData_p?.fixedOtStrTime && props.schData_p?.fixedOtEndTime)
+);
+const preFixedOtOpen = ref(
+  !!(props.schData_p?.preFixedOtStrTime && props.schData_p?.preFixedOtEndTime)
+);
+
+/**
+ * 후방(퇴근 후) 고정연장 토글. ON 시 시작·종료를 소정 마지막 구간 종료 시각으로 프리필한다
+ * (같은 시각이면 저장 검증에서 차단되므로 사용자가 종료를 반드시 명시하게 된다).
+ * OFF 시 값 초기화 — 토글 OFF 시 값 초기화 규약(TimeInput disabled 함정, 커밋 ee85a483).
+ */
+const toggleFixedOt = (on) => {
+  if (fixedOtEnabled.value === on) return;
+  fixedOtEnabled.value = on;
+  if (on) {
+    const base =
+      schType.value === "02" ? secSchEndTime.value : fstSchEndTime.value;
+    if (!fixedOtStrTime.value) fixedOtStrTime.value = base || "";
+    if (!fixedOtEndTime.value) fixedOtEndTime.value = base || "";
+  } else {
+    fixedOtStrTime.value = "";
+    fixedOtEndTime.value = "";
+  }
+};
+
+/**
+ * 전방(출근 전) 고정연장 접힘 토글. 펼칠 때 시작·종료를 소정 1구간 시작 시각으로 프리필,
+ * 접으면 값 초기화(미입력 상태로 복귀).
+ */
+const togglePreFixedOt = () => {
+  preFixedOtOpen.value = !preFixedOtOpen.value;
+  if (preFixedOtOpen.value) {
+    if (!preFixedOtStrTime.value)
+      preFixedOtStrTime.value = fstSchStrTime.value || "";
+    if (!preFixedOtEndTime.value)
+      preFixedOtEndTime.value = fstSchStrTime.value || "";
+  } else {
+    preFixedOtStrTime.value = "";
+    preFixedOtEndTime.value = "";
+  }
+};
+
 /**
  * 휴게 종료시각 자동 계산: 시작시각 + 휴게시간(분).
  * 시작 미입력 시 빈 문자열. 24:00(1440분) 상한.
@@ -375,6 +489,19 @@ const fnSave = async () => {
     );
     if (!okOvernight2) return;
   }
+  // PRAFTA-FIXEDOT-1: 고정연장근무 프리체크(V1~V6 — 백엔드 ATTD_400_198 룰과 동일 문구).
+  const fixedOtValidation = validateFixedOt();
+  if (!fixedOtValidation.valid) {
+    proxy.$alert(fixedOtValidation.message);
+    return;
+  }
+  // V5: 후방 고정연장이 자정을 넘기면(종료<시작) 오버나이트 여부 컨펌.
+  if (fixedOtValidation.rearOvernight) {
+    const okFixedOtOvernight = await proxy.$confirm(
+      getMessage(MSG.OVERNIGHT_CONFIRM, { section: "고정연장근무" })
+    );
+    if (!okFixedOtOvernight) return;
+  }
   if (isEditMode.value) {
     const today = new Date();
     today.setHours(0, 0, 0, 0);
@@ -393,6 +520,13 @@ const fnSave = async () => {
   if (stdWorkMin != null && stdWorkMin > 480) {
     await proxy.$alert(
       "소정근로가 8시간을 초과합니다. 휴게시간 입력을 확인하세요.\n(시간차 연차 분모는 8시간으로 계산됩니다)"
+    );
+  }
+
+  // PRAFTA-FIXEDOT-1(V7): 고정연장 일 합계 4시간(240분) 초과 시 경고 — 차단 아님.
+  if (fixedOtValidation.totalFixedOtMin > 240) {
+    await proxy.$alert(
+      "고정연장근무 합계가 1일 4시간을 초과합니다. 추가 휴게시간 의무와 주 12시간 연장 한도를 확인하세요.\n(저장은 가능합니다)"
     );
   }
 
@@ -425,6 +559,12 @@ const fnSave = async () => {
     secSchBrkMin: schType.value === "02" ? secSchBrkMin.value : "",
     secBrkStrTime: schType.value === "02" ? secBrkStrTime.value : "",
     secBrkEndTime: schType.value === "02" ? secBrkEndDerived.value : "",
+
+    // PRAFTA-FIXEDOT-1: 고정연장근무 — 미사용/접힘 상태는 빈값으로 보내 서버에서 NULL 저장.
+    preFixedOtStrTime: preFixedOtOpen.value ? preFixedOtStrTime.value : "",
+    preFixedOtEndTime: preFixedOtOpen.value ? preFixedOtEndTime.value : "",
+    fixedOtStrTime: fixedOtEnabled.value ? fixedOtStrTime.value : "",
+    fixedOtEndTime: fixedOtEnabled.value ? fixedOtEndTime.value : "",
 
     useYn: useYn.value,
   };
@@ -665,6 +805,182 @@ const validateWorkTime = () => {
   return { valid: true, fstOvernight, secOvernight };
 };
 
+/**
+ * PRAFTA-FIXEDOT-1: 고정연장근무 검증(plan §1-2 V1~V6 프리체크 — 백엔드 ATTD_400_198 룰과 동일 문구).
+ *  - V1 쌍 완결성은 UI 구조상(펼침 시 프리필) 자동 충족되나 방어적으로 검사한다.
+ *  - V2 전방: 당일 내(시작<종료) + 종료<=소정 1구간 시작.
+ *  - V3/V5 후방: 시작>=소정 마지막 구간 종료, 종료<시작이면 자정 넘김(+1440) — rearOvernight 로 반환해
+ *    저장 전 컨펌. 소정 구간이 하나라도 자정을 넘기면(anyWrap) 후방은 일자 프레임의
+ *    [마지막 소정 종료, 1구간 시작) 빈 구간 안에서만 시작 가능(qa G1)하고 재차 자정 넘김 불가.
+ *  - V4(일반화 — qa G1~G3 봉합): 소정 1·2구간 + 전방·후방 점유를 일자 프레임 [0,1440) 구간으로
+ *    전개(자정 넘김은 [시작,24:00)∪[00:00,종료) 분할)해 전 쌍(pairwise) 겹침 검사 — 방향성 검사의 안전망.
+ *  - V6 휴게 적법성: 소정+고정연장 합산 근로시간 기준(4h 이상 30분·8h 이상 60분) — 고정연장 있을 때만.
+ * 반환: { valid, message, rearOvernight, totalFixedOtMin }
+ */
+const validateFixedOt = () => {
+  const result = {
+    valid: true,
+    message: "",
+    rearOvernight: false,
+    totalFixedOtMin: 0,
+  };
+  const usePre = preFixedOtOpen.value;
+  const useRear = fixedOtEnabled.value;
+  if (!usePre && !useRear) return result;
+
+  const invalid = (message) => ({ ...result, valid: false, message });
+
+  const toMinutes = (v) => {
+    if (!v || typeof v !== "string") return null;
+    const s = String(v).trim().replace(/\D/g, "");
+    if (s.length < 4) return null;
+    const h = parseInt(s.slice(0, 2), 10);
+    const m = parseInt(s.slice(2, 4), 10);
+    if (h === 24 && m === 0) return 24 * 60;
+    if (h < 0 || h > 23 || m < 0 || m > 59) return null;
+    return h * 60 + m;
+  };
+  const span = (start, end) => (end > start ? end - start : end + 1440 - start);
+
+  const fstStart = toMinutes(fstSchStrTime.value);
+  const fstEnd = toMinutes(fstSchEndTime.value);
+  if (fstStart == null || fstEnd == null || fstStart === fstEnd) {
+    return invalid("소정 근무시간이 올바르지 않아 고정연장근무를 설정할 수 없습니다.");
+  }
+  const twoSeg = schType.value === "02";
+  let secStart = null;
+  let secEnd = null;
+  if (twoSeg) {
+    secStart = toMinutes(secSchStrTime.value);
+    secEnd = toMinutes(secSchEndTime.value);
+    if (secStart == null || secEnd == null || secStart === secEnd) {
+      return invalid("소정 근무시간이 올바르지 않아 고정연장근무를 설정할 수 없습니다.");
+    }
+  }
+  // 소정 구간 자정 넘김 여부 — 하나라도 넘기면(anyWrap) 후방은 일자 프레임의
+  // [마지막 소정 종료, 1구간 시작) 빈 구간 안에만 허용된다(qa G1 봉합).
+  const seg1Wrap = fstEnd < fstStart;
+  const seg2Wrap = twoSeg && secEnd < secStart;
+  const anyWrap = seg1Wrap || seg2Wrap;
+  const lastEnd = twoSeg ? secEnd : fstEnd;
+
+  let preStr = null;
+  let preEnd = null;
+  let rearStr = null;
+  let rearEnd = null;
+  let preDur = 0;
+  let rearDur = 0;
+
+  if (usePre) {
+    preStr = toMinutes(preFixedOtStrTime.value);
+    preEnd = toMinutes(preFixedOtEndTime.value);
+    if (preStr == null || preEnd == null) {
+      return invalid("전방 고정연장근무는 시작·종료 시각을 모두 입력해야 합니다.");
+    }
+    if (preStr >= preEnd) {
+      return invalid(
+        "전방 고정연장근무는 당일 내 구간이어야 합니다(시작 시각이 종료 시각보다 빨라야 합니다)."
+      );
+    }
+    // 소정 새벽 잔여 점유와의 겹침은 아래 pairwise 전수 검사가 잡는다(qa G2).
+    if (preEnd > fstStart) {
+      return invalid(
+        "전방 고정연장근무 종료 시각은 소정 근무 시작 시각 이전이어야 합니다."
+      );
+    }
+    preDur = preEnd - preStr;
+  }
+
+  if (useRear) {
+    rearStr = toMinutes(fixedOtStrTime.value);
+    rearEnd = toMinutes(fixedOtEndTime.value);
+    if (rearStr == null || rearEnd == null) {
+      return invalid("후방 고정연장근무는 시작·종료 시각을 모두 입력해야 합니다.");
+    }
+    if (rearStr === rearEnd) {
+      return invalid("후방 고정연장근무 시작 시각과 종료 시각이 같을 수 없습니다.");
+    }
+    if (!anyWrap) {
+      if (rearStr < lastEnd) {
+        return invalid(
+          "후방 고정연장근무 시작 시각은 소정 근무 종료 시각 이후여야 합니다."
+        );
+      }
+      result.rearOvernight = rearEnd < rearStr;
+    } else {
+      // 소정이 자정을 넘기는 타입: 후방은 일자 프레임 빈 구간 [마지막 소정 종료, 1구간 시작)
+      // 안에서 시작해야 한다(qa G1 — 2구간 사이·1구간 내부 배치 차단).
+      if (rearStr < lastEnd || rearStr >= fstStart) {
+        return invalid(
+          "후방 고정연장근무 시작 시각은 소정 근무 종료 시각 이후여야 합니다."
+        );
+      }
+      if (rearEnd < rearStr) {
+        return invalid(
+          "소정 근무가 자정을 넘기는 근무타입에서는 후방 고정연장근무가 다시 자정을 넘길 수 없습니다."
+        );
+      }
+    }
+    rearDur = span(rearStr, rearEnd);
+  }
+
+  // V4(일반화 — qa G1~G3 봉합): 점유를 일자 프레임 [0,1440) 구간으로 전개해 전 쌍 겹침 검사.
+  // 원소: [구간ID, 시작, 종료) — 자정 넘김은 [시작,24:00)∪[00:00,종료) 두 조각으로 분할.
+  const occupancies = [];
+  const addDayFrameOccupancy = (segId, s, e) => {
+    if (e > s) {
+      occupancies.push([segId, s, e]);
+      return;
+    }
+    occupancies.push([segId, s, 1440]);
+    if (e > 0) occupancies.push([segId, 0, e]);
+  };
+  addDayFrameOccupancy(0, fstStart, fstEnd);
+  if (twoSeg) addDayFrameOccupancy(1, secStart, secEnd);
+  if (usePre) addDayFrameOccupancy(2, preStr, preEnd);
+  if (useRear) addDayFrameOccupancy(3, rearStr, rearEnd);
+  const segLabels = ["소정 1구간", "소정 2구간", "전방 고정연장", "후방 고정연장"];
+  for (let i = 0; i < occupancies.length; i++) {
+    for (let j = i + 1; j < occupancies.length; j++) {
+      const a = occupancies[i];
+      const b = occupancies[j];
+      // 같은 구간의 분할 조각끼리는 비교하지 않는다.
+      if (a[0] === b[0]) continue;
+      if (a[1] < b[2] && b[1] < a[2]) {
+        return invalid(
+          segLabels[a[0]] + " 시간과 " + segLabels[b[0]] + " 시간이 겹칩니다."
+        );
+      }
+    }
+  }
+
+  result.totalFixedOtMin = preDur + rearDur;
+
+  // V6: 소정+고정연장 합산 근로 기준 법정 휴게 검증(고정연장 존재 시에만 — 기존 타입 무회귀).
+  const fstBrk = parseInt(String(fstSchBrkMin.value || "0"), 10) || 0;
+  const secBrk = twoSeg
+    ? parseInt(String(secSchBrkMin.value || "0"), 10) || 0
+    : 0;
+  let workMin = Math.max(0, span(fstStart, fstEnd) - fstBrk);
+  if (twoSeg) workMin += Math.max(0, span(secStart, secEnd) - secBrk);
+  const totalWorkMin = workMin + preDur + rearDur;
+  const requiredBreakMin = totalWorkMin >= 480 ? 60 : totalWorkMin >= 240 ? 30 : 0;
+  if (fstBrk + secBrk < requiredBreakMin) {
+    return {
+      ...result,
+      valid: false,
+      message:
+        "소정+고정연장 합산 근로시간(" +
+        totalWorkMin +
+        "분) 기준 법정 휴게시간(" +
+        requiredBreakMin +
+        "분) 이상을 입력해야 합니다.",
+    };
+  }
+
+  return result;
+};
+
 /** 날짜를 yyyy-mm-dd 형식으로 변환 (Date, 8자리 문자열 지원) */
 const formatYyyyMmDd = (d) => {
   if (!d) return "";
@@ -863,6 +1179,19 @@ const onBreakMinInput = (e, which) => {
   color: #6b7280;
   margin-top: 0.5rem;
   margin-bottom: 0;
+}
+/* PRAFTA-FIXEDOT-1: 전방(출근 전) 고정연장 접힘 토글 */
+.fixed-ot-collapse-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  padding: 0;
+  background: none;
+  border: none;
+  cursor: pointer;
+  font-size: 0.8125rem;
+  font-weight: 500;
+  color: var(--color-primary, #16a34a);
 }
 .modal-content-sch-info {
   max-width: 560px;

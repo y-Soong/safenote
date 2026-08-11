@@ -145,6 +145,10 @@ public class Attd01ServiceImpl implements Attd01Service{
 		// F-2: 휴게시각 서버 검증(fail-open 봉합). 신규/수정 공통 — API 직접 호출 등 프론트 우회 경로도 방어.
 		validateBreakTimeRange(command);
 
+		// PRAFTA-FIXEDOT-1: 고정연장근무 검증(V1~V6). 고정연장 미입력(4필드 전부 NULL)이면 즉시 통과
+		// — 기존 근무타입 저장 경로는 동작 변화 없음.
+		validateFixedOt(command);
+
 		// com-016-A 공통 가드 ③: 근무타입의 시간/휴게 변경 시,
 		// 그 타입을 쓰는 미래 적용분 근무계획에 시간차/반차 연차 또는 OT가 걸린 날이 있으면 하드 차단.
 		// 신규 생성(isEdit=false)은 기존 근무계획이 없으므로 가드 불필요. 시간/휴게 외 변경(이름·사용여부 등)은 통과.
@@ -378,6 +382,205 @@ public class Attd01ServiceImpl implements Attd01Service{
 		}
 		// 오버나이트: [start, 24:00) ∪ [00:00, end)
 		return t >= start || t < end;
+	}
+
+	/**
+	 * PRAFTA-FIXEDOT-1: 근무타입 고정연장근무(전방·후방 FROM/TO 2쌍) 서버 검증 — plan §1-2 V1~V6.
+	 *
+	 * <ul>
+	 *   <li>V1 쌍 완결성: 전방·후방 각각 시작/종료 둘 다 입력 또는 둘 다 미입력.</li>
+	 *   <li>V2 전방 위치: 당일 내 구간(전일 걸침 미지원) + 종료가 소정 1구간 시작 이하(같으면 연속 허용).</li>
+	 *   <li>V3 후방 위치: 시작이 소정 마지막 구간(schType 02 면 2구간) 종료 이상(같으면 연속 허용).
+	 *       소정 구간이 자정을 넘기는 타입은 일자 프레임 빈 구간 [마지막 소정 종료, 1구간 시작) 안만.</li>
+	 *   <li>V4 겹침 금지(일반화 — qa G1~G3 봉합): 소정 1·2구간 + 전방·후방 점유를 일자 프레임
+	 *       [0,1440) 구간으로 전개(자정 넘김은 wrap 분할)해 전 쌍(pairwise) 겹침 검사.
+	 *       V2/V3 방향성 검사의 안전망.</li>
+	 *   <li>V5 자정 넘김: 후방은 종료&lt;=시작이면 +1440 해석(기존 스케줄 오버나이트 규약 준용).
+	 *       단 소정 구간이 이미 자정을 넘기는 타입에서는 후방의 재차 자정 넘김 불가.</li>
+	 *   <li>V6 휴게 적법성: 소정+고정연장 합산 실근로 기준으로 법정 휴게(4h 이상 30분·8h 이상 60분)
+	 *       충족 검증. ★고정연장이 있을 때만 발동 — 고정연장 없는 기존 근무타입의 저장 동작은 불변.</li>
+	 * </ul>
+	 *
+	 * <p>V7(고정연장 4h 초과 경고)은 비차단 경고라 프론트(SchInfoPop) 전담. 이웃날(전일/익일) 점유
+	 * 겹침은 2단계 겹침 가드(M9·J9) 범위라 여기서 판단하지 않는다.
+	 */
+	private void validateFixedOt(SchInfoCommand command) {
+
+		boolean hasPreStr = hasTimeValue(command.preFixedOtStrTime());
+		boolean hasPreEnd = hasTimeValue(command.preFixedOtEndTime());
+		boolean hasRearStr = hasTimeValue(command.fixedOtStrTime());
+		boolean hasRearEnd = hasTimeValue(command.fixedOtEndTime());
+
+		// V1: 쌍 완결성 — 한쪽만 입력 시 거부.
+		if(hasPreStr != hasPreEnd) {
+			throw new ApiException(AttdErrorCode.ATTD_400_198,
+					"전방 고정연장근무는 시작·종료 시각을 모두 입력해야 합니다.");
+		}
+		if(hasRearStr != hasRearEnd) {
+			throw new ApiException(AttdErrorCode.ATTD_400_198,
+					"후방 고정연장근무는 시작·종료 시각을 모두 입력해야 합니다.");
+		}
+
+		boolean hasPre = hasPreStr;
+		boolean hasRear = hasRearStr;
+		// 고정연장 미사용 — 기존 근무타입 저장 경로 그대로 통과(무회귀 핵심).
+		if(!hasPre && !hasRear) {
+			return;
+		}
+
+		// 소정 구간 시각 파싱 — 고정연장 위치 검증의 기준. 비정상이면 판단 불가로 차단(fail-closed).
+		Integer fstStart = toBreakMinutes(command.fstSchStrTime());
+		Integer fstEnd = toBreakMinutes(command.fstSchEndTime());
+		if(fstStart == null || fstEnd == null || fstStart.equals(fstEnd)) {
+			throw new ApiException(AttdErrorCode.ATTD_400_198,
+					"소정 근무시간이 올바르지 않아 고정연장근무를 설정할 수 없습니다.");
+		}
+		boolean twoSeg = "02".equals(command.schType());
+		Integer secStart = null;
+		Integer secEnd = null;
+		if(twoSeg) {
+			secStart = toBreakMinutes(command.secSchStrTime());
+			secEnd = toBreakMinutes(command.secSchEndTime());
+			if(secStart == null || secEnd == null || secStart.equals(secEnd)) {
+				throw new ApiException(AttdErrorCode.ATTD_400_198,
+						"소정 근무시간이 올바르지 않아 고정연장근무를 설정할 수 없습니다.");
+			}
+		}
+
+		// 소정 구간 자정 넘김 여부 — 하나라도 넘기면(anyWrap) 후방은 일자 프레임의
+		// [마지막 소정 종료, 1구간 시작) 빈 구간 안에만 허용된다(qa G1 봉합 — 2구간 사이 배치 금지 포함).
+		boolean seg1Wrap = fstEnd < fstStart;
+		boolean seg2Wrap = twoSeg && secEnd < secStart;
+		boolean anyWrap = seg1Wrap || seg2Wrap;
+		int lastEnd = twoSeg ? secEnd : fstEnd;
+
+		Integer preStr = null;
+		Integer preEnd = null;
+		Integer rearStr = null;
+		Integer rearEnd = null;
+		int preDur = 0;
+		int rearDur = 0;
+
+		if(hasPre) {
+			preStr = toBreakMinutes(command.preFixedOtStrTime());
+			preEnd = toBreakMinutes(command.preFixedOtEndTime());
+			if(preStr == null || preEnd == null) {
+				throw new ApiException(AttdErrorCode.ATTD_400_198,
+						"전방 고정연장근무 시각 형식이 올바르지 않습니다.");
+			}
+			// V2: 전방은 당일 내 구간만(전일 걸침 미지원 — plan §1-2 V2 확정).
+			if(preStr >= preEnd) {
+				throw new ApiException(AttdErrorCode.ATTD_400_198,
+						"전방 고정연장근무는 당일 내 구간이어야 합니다(시작 시각이 종료 시각보다 빨라야 합니다).");
+			}
+			// V2: 종료 <= 소정 1구간 시작(같으면 연속 — 허용). 소정 새벽 잔여 점유와의 겹침은
+			// 아래 pairwise 전수 검사가 잡는다(qa G2).
+			if(preEnd > fstStart) {
+				throw new ApiException(AttdErrorCode.ATTD_400_198,
+						"전방 고정연장근무 종료 시각은 소정 근무 시작 시각 이전이어야 합니다.");
+			}
+			preDur = preEnd - preStr;
+		}
+
+		if(hasRear) {
+			rearStr = toBreakMinutes(command.fixedOtStrTime());
+			rearEnd = toBreakMinutes(command.fixedOtEndTime());
+			if(rearStr == null || rearEnd == null) {
+				throw new ApiException(AttdErrorCode.ATTD_400_198,
+						"후방 고정연장근무 시각 형식이 올바르지 않습니다.");
+			}
+			// 시작=종료는 자정 넘김 규약(V5)상 24시간 해석이 되므로 거부.
+			if(rearStr.equals(rearEnd)) {
+				throw new ApiException(AttdErrorCode.ATTD_400_198,
+						"후방 고정연장근무 시작 시각과 종료 시각이 같을 수 없습니다.");
+			}
+			if(!anyWrap) {
+				// V3: 시작 >= 소정 마지막 구간 종료(같으면 연속 — 허용). 익일 걸침(종료<=시작)은 V5 로 허용.
+				if(rearStr < lastEnd) {
+					throw new ApiException(AttdErrorCode.ATTD_400_198,
+							"후방 고정연장근무 시작 시각은 소정 근무 종료 시각 이후여야 합니다.");
+				}
+			} else {
+				// 소정이 자정을 넘기는 타입(예: 22~06 또는 2구간 19~03): 일자 프레임 소정 점유는
+				// [시작,24:00)∪[00:00,종료) 로 감기므로, 후방은 빈 구간 [마지막 소정 종료, 1구간 시작)
+				// 안에서 시작해야 한다(qa G1: 2구간 사이·1구간 내부 배치 차단).
+				if(rearStr < lastEnd || rearStr >= fstStart) {
+					throw new ApiException(AttdErrorCode.ATTD_400_198,
+							"후방 고정연장근무 시작 시각은 소정 근무 종료 시각 이후여야 합니다.");
+				}
+				if(rearEnd < rearStr) {
+					throw new ApiException(AttdErrorCode.ATTD_400_198,
+							"소정 근무가 자정을 넘기는 근무타입에서는 후방 고정연장근무가 다시 자정을 넘길 수 없습니다.");
+				}
+			}
+			rearDur = breakSpanMinutes(rearStr, rearEnd);
+		}
+
+		// V4(일반화 — qa G1~G3 봉합): 소정 1·2구간 + 전방·후방 점유를 일자 프레임 [0,1440) 구간으로
+		// 전개(자정 넘김은 [시작,24:00)∪[00:00,종료) 분할 — +1440 규약과 등가)해 전 쌍(pairwise) 겹침 검사.
+		// 위 V2/V3 방향성 검사(명확한 안내 메시지 용도)의 뒤를 받치는 안전망이다.
+		List<int[]> occupancies = new ArrayList<>();
+		addDayFrameOccupancy(occupancies, 0, fstStart, fstEnd);
+		if(twoSeg) {
+			addDayFrameOccupancy(occupancies, 1, secStart, secEnd);
+		}
+		if(hasPre) {
+			addDayFrameOccupancy(occupancies, 2, preStr, preEnd);
+		}
+		if(hasRear) {
+			addDayFrameOccupancy(occupancies, 3, rearStr, rearEnd);
+		}
+		String[] segLabels = { "소정 1구간", "소정 2구간", "전방 고정연장", "후방 고정연장" };
+		for(int i = 0; i < occupancies.size(); i++) {
+			for(int j = i + 1; j < occupancies.size(); j++) {
+				int[] a = occupancies.get(i);
+				int[] b = occupancies.get(j);
+				// 같은 구간의 분할 조각끼리는 비교하지 않는다.
+				if(a[0] == b[0]) {
+					continue;
+				}
+				if(a[1] < b[2] && b[1] < a[2]) {
+					throw new ApiException(AttdErrorCode.ATTD_400_198,
+							segLabels[a[0]] + " 시간과 " + segLabels[b[0]] + " 시간이 겹칩니다.");
+				}
+			}
+		}
+
+		// V6: 휴게 적법성 — 소정+고정연장 합산 실근로 기준. 고정연장 존재 시에만 발동(기존 타입 무회귀).
+		int fstBrk = parseBreakMin(command.fstSchBrkMin());
+		int secBrk = twoSeg ? parseBreakMin(command.secSchBrkMin()) : 0;
+		int workMin = Math.max(0, breakSpanMinutes(fstStart, fstEnd) - fstBrk);
+		if(twoSeg) {
+			workMin += Math.max(0, breakSpanMinutes(secStart, secEnd) - secBrk);
+		}
+		int totalWorkMin = workMin + preDur + rearDur;
+		int requiredBreakMin = totalWorkMin >= 480 ? 60 : (totalWorkMin >= 240 ? 30 : 0);
+		if(fstBrk + secBrk < requiredBreakMin) {
+			throw new ApiException(AttdErrorCode.ATTD_400_198,
+					"소정+고정연장 합산 근로시간(" + totalWorkMin + "분) 기준 법정 휴게시간("
+							+ requiredBreakMin + "분) 이상을 입력해야 합니다.");
+		}
+	}
+
+	/** 시각 문자열 입력 여부(NULL/빈값이면 미입력). */
+	private static boolean hasTimeValue(String v) {
+		return v != null && !v.isBlank();
+	}
+
+	/**
+	 * PRAFTA-FIXEDOT-1(V4 일반화): 구간 1개를 일자 프레임 [0,1440) 점유 구간으로 전개해 목록에 추가.
+	 * 종료&lt;=시작(자정 넘김)이면 [시작,24:00)∪[00:00,종료) 두 조각으로 분할한다.
+	 * 원소 형식: {구간ID, 시작분, 종료분} — 반개구간 [시작, 종료).
+	 */
+	private static void addDayFrameOccupancy(List<int[]> list, int segId, int start, int end) {
+		if(end > start) {
+			list.add(new int[] { segId, start, end });
+			return;
+		}
+		list.add(new int[] { segId, start, 1440 });
+		if(end > 0) {
+			list.add(new int[] { segId, 0, end });
+		}
 	}
 
 	public SchInfoHistResponse selectSchHistList(SchInfoHistParam param) {
