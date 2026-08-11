@@ -130,9 +130,9 @@
               </dd>
               <dt>잔여 현황</dt>
               <dd>
-                부여 {{ detail.body.balance?.granted ?? '-' }} · 사용
-                {{ detail.body.balance?.used ?? '-' }} · 잔여
-                {{ detail.body.balance?.remain ?? '-' }}
+                부여 {{ fnBalanceDays(detail.body.balance?.granted) }} · 사용
+                {{ fnBalanceDays(detail.body.balance?.used) }} · 잔여
+                {{ fnBalanceDays(detail.body.balance?.remain) }}
               </dd>
               <dt v-if="detail.body.stepDisplay">결재 단계</dt>
               <dd v-if="detail.body.stepDisplay">{{ detail.body.stepDisplay }}</dd>
@@ -274,6 +274,10 @@ import AdminApprovalNeighborSegments from './components/AdminApprovalNeighborSeg
 const router = useRouter()
 const route = useRoute()
 const { proxy } = getCurrentInstance() || { proxy: null }
+
+// 잔여 현황 수량 표기 — 백엔드 원시 소수(예: 9.68749)를 일 단위 규약(2026-08-09,
+// formatLeaveDaysOnly 2자리 반올림)으로 정리한다. 값 부재 시에만 '-' 유지.
+const fnBalanceDays = (v) => (v == null ? '-' : formatLeaveDaysOnly(v))
 
 // 공통: alert / confirm 폴백(앱 전역 우선) — AdminTbmSessionDetailView 패턴 동일
 const showAlert = (message) => {
