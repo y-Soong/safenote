@@ -25,6 +25,11 @@ public class MyAttendanceDayResponse {
     // prafta-app-013: 바텀시트 메타 1줄(이번주 days[] 와 동일) 구성용 요약 문자열.
     //   스케줄 없음/연차일 등 산출 불가 시 null.
     private final String scheduleSummary;
+    /**
+     * PRAFTA-FIXEDOT-2(표기): 고정연장 요약 — scheduleSummary 와 동일 형상(raw HHMM).
+     * 고정연장 없는 근무타입은 null(미표기 — 무회귀). WeekDayResponse.fixedOtSummary 와 동일 규약.
+     */
+    private final String fixedOtSummary;
     private final String attendanceSummary;
     private final String workStatus;
     @JsonProperty("isTwoSlot")
@@ -82,4 +87,12 @@ public class MyAttendanceDayResponse {
      * additive — 구 FE 는 무시. 없으면 빈 리스트.
      */
     private final List<LeaveExemptWindowItem> leaveExemptWindows;
+
+    /**
+     * PRAFTA-FIXEDOT-2(정책 ①·④): 그날 스케줄의 고정연장(전방·후방) 점유 구간 목록 — 초과근무
+     * 신청 폼의 "등록 가능" 칩이 연차 면제 구간과 동일하게 피감수에 합쳐(additive) 서버 검증
+     * (ATTD_400_100 고정연장 겹침 거부)과 일치시킨다. 표현/축은 leaveExemptWindows 와 동일
+     * ((일자,시각) 쌍 — 아이템 record 재사용). 고정연장 없는 근무타입/구 FE 는 빈 리스트/무시.
+     */
+    private final List<LeaveExemptWindowItem> fixedOtWindows;
 }

@@ -162,6 +162,8 @@ const metaText = computed(() => {
   if (d.workPlanName) parts.push(d.workPlanName)
   else if (d.leaveTypeName) parts.push(d.leaveTypeName)
   if (d.scheduleSummary) parts.push(formatTimeSummary(d.scheduleSummary))
+  // PRAFTA-FIXEDOT-2(표기): 고정연장 요약 — 소정과 구분 라벨(미수신/없으면 생략).
+  if (d.fixedOtSummary) parts.push(`고정연장 ${formatTimeSummary(d.fixedOtSummary)}`)
   if (d.attendanceSummary) parts.push(`근태 ${formatTimeSummary(d.attendanceSummary)}`)
   return parts.join(' · ')
 })

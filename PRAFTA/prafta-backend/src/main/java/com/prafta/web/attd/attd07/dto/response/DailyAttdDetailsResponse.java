@@ -52,4 +52,12 @@ public class DailyAttdDetailsResponse {
      * (workYmd−1 00:00 원점). additive — 구 FE 는 무시. 0건이면 빈 리스트.
      */
     List<OtLeaveExemptWindowView> otLeaveExemptWindowList;
+
+    /**
+     * PRAFTA-FIXEDOT-2(정책 ①·④): 그날 스케줄의 고정연장(전방·후방) 점유 구간 — "등록 가능" OT 칩이
+     * 연차 면제 구간과 동일하게 피감수에 합쳐(additive) 서버 검증(등록범위 = 실근태 −
+     * (소정 ∪ 고정연장 ∪ 연차면제))과 일치시킨다. stamp 축 = otLeaveExemptWindowList 와 동일.
+     * 고정연장 없는 근무타입/구 FE 는 빈 리스트/무시(무영향).
+     */
+    List<OtLeaveExemptWindowView> otFixedOtWindowList;
 }

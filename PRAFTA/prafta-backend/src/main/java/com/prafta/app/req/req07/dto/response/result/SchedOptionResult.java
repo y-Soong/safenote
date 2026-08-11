@@ -16,5 +16,12 @@ public record SchedOptionResult(
         , String fstEndTime
         , String secStrTime
         , String secEndTime
+
+        // PRAFTA-FIXEDOT-2(표기): 고정연장(전방·후방, HHmm, NULL=없음) — 옵션 선택 시 고정연장
+        // 유무/시각을 라벨로 노출(프론트 포맷). ⚠️ record 끝 = SELECT 끝 동일 순서(위치 기반 매핑).
+        , String preFixedOtStrTime
+        , String preFixedOtEndTime
+        , String fixedOtStrTime
+        , String fixedOtEndTime
 ) {
 }

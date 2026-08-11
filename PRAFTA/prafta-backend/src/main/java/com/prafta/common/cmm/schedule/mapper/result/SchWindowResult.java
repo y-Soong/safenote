@@ -14,6 +14,14 @@ public record SchWindowResult(
         , String fstEnd
         , String secStart
         , String secEnd
+
+        // PRAFTA-FIXEDOT-2: 고정연장(전방·후방 FROM/TO, HHMM, NULL=없음).
+        // 교차일 겹침 판정은 고정연장 포함 "전체 점유" 기준(지시서 지점 5).
+        // ⚠️ record 끝 = SELECT 끝 동일 순서(위치 기반 매핑, 중간 삽입 금지).
+        , String preFixedOtStart
+        , String preFixedOtEnd
+        , String fixedOtStart
+        , String fixedOtEnd
 ) {
 
 }

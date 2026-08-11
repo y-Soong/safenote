@@ -58,6 +58,7 @@ import com.prafta.app.tbm.tbm01.service.AppTbm01Service;
 import com.prafta.common.cmm.leave.service.LeaveRefusalConst;
 import com.prafta.common.cmm.leave.service.LeaveRefusalDetectService;
 import com.prafta.common.cmm.leave.util.PartialLeaveWindowUtils;
+import com.prafta.common.cmm.schedule.util.FixedOtScheduleUtils;
 import com.prafta.common.error.attd.AttdErrorCode;
 import com.prafta.common.exception.ApiException;
 import com.prafta.common.security.crypto.GpsCoordCrypto;
@@ -280,6 +281,8 @@ public class AppAttd01ServiceImpl implements AppAttd01Service {
 
         // prafta-app-013: 시트 메타 1줄(이번주와 동일) — 근무 스케줄 있을 때만 산출.
         String scheduleSummary = hasSchedule ? scheduleSummary(sched, isTwoSlot) : null;
+        // PRAFTA-FIXEDOT-2(표기): 고정연장 요약(소정과 구분 — FE 가 "고정연장" 라벨 부착).
+        String fixedOtSummary = hasSchedule ? fixedOtSummary(sched) : null;
         String attendanceSummary = hasSchedule ? attendanceSummary(attdBySeq, slotCount) : null;
 
         // dayType/hasIssue 산출 — selectMonth 와 동일 규칙(처리 필요 빠른 액션 노출 근거, 시안 §4.4.3).
@@ -303,6 +306,7 @@ public class AppAttd01ServiceImpl implements AppAttd01Service {
                 .workPlanCode(sched == null ? null : sched.workPlanCd())
                 .workPlanName(workPlanName)
                 .scheduleSummary(scheduleSummary)
+                .fixedOtSummary(fixedOtSummary)
                 .attendanceSummary(attendanceSummary)
                 .workStatus(workStatus)
                 .isTwoSlot(isTwoSlot)
@@ -329,6 +333,8 @@ public class AppAttd01ServiceImpl implements AppAttd01Service {
                 .leaves(toLeaveMarkers(dayLeaves))
                 // OT 칩 정합(2026-08-08): 면제 구간(검증 ATTD_400_196 과 동일 산식) — OT 폼 칩이 그대로 뺀다.
                 .leaveExemptWindows(toLeaveExemptWindows(targetYmd, dayLeaves, sched))
+                // PRAFTA-FIXEDOT-2: 고정연장 점유 구간 — OT 폼 칩이 피감수에 합친다(서버 검증 정합).
+                .fixedOtWindows(toFixedOtWindows(targetYmd, sched))
                 // prafta-app-030 후속: 그날 적용(승인) 초과근무 목록(없으면 빈 리스트).
                 .appliedOvertimes(appliedOvertimes)
                 .build();
@@ -597,10 +603,14 @@ public class AppAttd01ServiceImpl implements AppAttd01Service {
             // 합계: 예정=스케줄 합, 실=완료된 근무(출퇴근 모두 등록)만 합(slot2 기록 있으면 합산).
             if (hasSchCd) {
                 plannedSum += plannedMinutes(sched, isTwoSlot);
+                // PRAFTA-FIXEDOT-2(표기): 주간 예정 합계에 고정연장 분 편입(없는 타입은 0 — 무회귀).
+                plannedSum += fixedOtPlannedMinutes(sched);
             }
             actualSum += actualCompletedMinutes(sched, isTwoSlot, attdBySeq);
 
             String scheduleSummary = hasSchCd ? scheduleSummary(sched, isTwoSlot) : null;
+            // PRAFTA-FIXEDOT-2(표기): 고정연장 요약(소정과 구분 표기 — FE 가 "고정연장" 라벨 부착).
+            String fixedOtSummary = hasSchCd ? fixedOtSummary(sched) : null;
             String attendanceSummary = hasSchCd ? attendanceSummary(attdBySeq, slotCount) : null;
             String attendanceStatus = hasSchCd
                     // D-3: 그날 반차 전건(하루 2건 가능)을 넘겨 합집합으로 판정한다.
@@ -637,6 +647,7 @@ public class AppAttd01ServiceImpl implements AppAttd01Service {
                     .workPlanName(resolveWorkPlanName(sched, isLeaveDay, leave == null ? null : leave.leaveNm()))
                     .isTwoSlot(isTwoSlot)
                     .scheduleSummary(scheduleSummary)
+                    .fixedOtSummary(fixedOtSummary)
                     .attendanceSummary(attendanceSummary)
                     .attendanceStatus(attendanceStatus)
                     .actions(actions)
@@ -911,6 +922,8 @@ public class AppAttd01ServiceImpl implements AppAttd01Service {
 
             if (hasSchCd) {
                 plannedSum += plannedMinutes(sched, isTwoSlot);
+                // PRAFTA-FIXEDOT-2(표기): 월간 예정 합계에도 고정연장 분 편입(주간과 동일 규칙).
+                plannedSum += fixedOtPlannedMinutes(sched);
             }
             actualSum += actualCompletedMinutes(sched, isTwoSlot, attdBySeq);
 
@@ -1547,6 +1560,8 @@ public class AppAttd01ServiceImpl implements AppAttd01Service {
                 .workPlanCode(src.getWorkPlanCode())
                 .workPlanName(src.getWorkPlanName())
                 .scheduleSummary(src.getScheduleSummary())
+                // PRAFTA-FIXEDOT-2: 재조립 시 고정연장 요약도 보존.
+                .fixedOtSummary(src.getFixedOtSummary())
                 .attendanceSummary(src.getAttendanceSummary())
                 .workStatus(src.getWorkStatus())
                 .isTwoSlot(src.isTwoSlot())
@@ -1569,6 +1584,8 @@ public class AppAttd01ServiceImpl implements AppAttd01Service {
                 // prafta-app-030 후속: 재조립 시 적용 초과근무 목록도 보존(buildDayResponse 산출값).
                 .appliedOvertimes(src.getAppliedOvertimes())
                 .leaveExemptWindows(src.getLeaveExemptWindows())
+                // PRAFTA-FIXEDOT-2: 재조립 시 고정연장 점유 구간도 보존.
+                .fixedOtWindows(src.getFixedOtWindows())
                 .isOffsite(isOffsite)
                 .build();
     }
@@ -1605,6 +1622,34 @@ public class AppAttd01ServiceImpl implements AppAttd01Service {
                 range = PartialLeaveWindowUtils.fullDayBlockStampRange();
             }
             out.add(LeaveExemptWindowItem.fromStampRange(targetYmd, range));
+        }
+        return out;
+    }
+
+    /**
+     * PRAFTA-FIXEDOT-2: 그날 스케줄의 고정연장(전방·후방) 점유 구간을 (일자,시각) 아이템으로 환산한다.
+     *
+     * <p>환산은 {@link FixedOtScheduleUtils#fixedOtSegments} 단일 출처(일 anchor) → +1440 으로
+     * 공용 stamp 축(원점 = 전날 00:00)에 올린 뒤 {@link LeaveExemptWindowItem#fromStampRange} 재사용.
+     * 서버 검증({@code AppReq07ServiceImpl.assertNoFixedOtOverlap})과 동일 프레임이라 칩과 검증이
+     * 일치한다. 고정연장 없는 근무타입은 빈 리스트(무회귀).
+     */
+    private List<LeaveExemptWindowItem> toFixedOtWindows(String targetYmd, ScheduleResult sched) {
+        if (sched == null) {
+            return List.of();
+        }
+        List<int[]> segs = FixedOtScheduleUtils.fixedOtSegments(
+                sched.fstSchStrTime(), sched.fstSchEndTime(),
+                sched.secSchStrTime(), sched.secSchEndTime(),
+                sched.preFixedOtStrTime(), sched.preFixedOtEndTime(),
+                sched.fixedOtStrTime(), sched.fixedOtEndTime());
+        if (segs.isEmpty()) {
+            return List.of();
+        }
+        List<LeaveExemptWindowItem> out = new ArrayList<>(segs.size());
+        for (int[] seg : segs) {
+            out.add(LeaveExemptWindowItem.fromStampRange(targetYmd,
+                    new int[] { seg[0] + 1440, seg[1] + 1440 }));
         }
         return out;
     }
@@ -1963,6 +2008,43 @@ public class AppAttd01ServiceImpl implements AppAttd01Service {
     private boolean hasOpenSlot(Map<Integer, AttdRecordResult> attdBySeq) {
         return attdBySeq.values().stream()
                 .anyMatch(a -> a != null && !StringUtils.hasText(a.checkOutTime()));
+    }
+
+    /**
+     * PRAFTA-FIXEDOT-2(표기): 예정 합계에 편입할 고정연장 분(전방+후방, 휴게 없음).
+     * 환산은 {@link FixedOtScheduleUtils#totalFixedOtMinutes} 단일 출처. 없는 타입은 0(무회귀).
+     */
+    private int fixedOtPlannedMinutes(ScheduleResult sched) {
+        if (sched == null) {
+            return 0;
+        }
+        return FixedOtScheduleUtils.totalFixedOtMinutes(
+                sched.fstSchStrTime(), sched.fstSchEndTime(),
+                sched.secSchStrTime(), sched.secSchEndTime(),
+                sched.preFixedOtStrTime(), sched.preFixedOtEndTime(),
+                sched.fixedOtStrTime(), sched.fixedOtEndTime());
+    }
+
+    /**
+     * PRAFTA-FIXEDOT-2(표기): 고정연장 요약 문자열 — scheduleSummary 와 동일 형상(raw HHMM).
+     * 전방·후방 각각 "HHMM~HHMM", 둘 다 있으면 " / " 로 연결(전방 먼저). 없으면 null.
+     * FE(attdFormat.formatTimeSummary)가 그대로 "HH:MM ~ HH:MM" 로 변환해 "고정연장" 라벨과 표기한다.
+     */
+    private String fixedOtSummary(ScheduleResult sched) {
+        if (sched == null) {
+            return null;
+        }
+        StringBuilder sb = new StringBuilder();
+        if (StringUtils.hasText(sched.preFixedOtStrTime()) && StringUtils.hasText(sched.preFixedOtEndTime())) {
+            sb.append(sched.preFixedOtStrTime()).append("~").append(sched.preFixedOtEndTime());
+        }
+        if (StringUtils.hasText(sched.fixedOtStrTime()) && StringUtils.hasText(sched.fixedOtEndTime())) {
+            if (sb.length() > 0) {
+                sb.append(" / ");
+            }
+            sb.append(sched.fixedOtStrTime()).append("~").append(sched.fixedOtEndTime());
+        }
+        return sb.length() > 0 ? sb.toString() : null;
     }
 
     /** 스케줄 예정 근로분(1구간 + (2구간)). */

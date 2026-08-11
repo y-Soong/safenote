@@ -476,31 +476,11 @@ const fnSave = async () => {
     proxy.$alert(timeValidation.message);
     return;
   }
-  // 오버나이트(시작 > 종료) 후보 구간은 자정 넘김 근무인지 사용자에게 컨펌받는다.
-  if (timeValidation.fstOvernight) {
-    const okOvernight = await proxy.$confirm(
-      getMessage(MSG.OVERNIGHT_CONFIRM, { section: "구간1" })
-    );
-    if (!okOvernight) return;
-  }
-  if (schType.value === "02" && timeValidation.secOvernight) {
-    const okOvernight2 = await proxy.$confirm(
-      getMessage(MSG.OVERNIGHT_CONFIRM, { section: "구간2" })
-    );
-    if (!okOvernight2) return;
-  }
   // PRAFTA-FIXEDOT-1: 고정연장근무 프리체크(V1~V6 — 백엔드 ATTD_400_198 룰과 동일 문구).
   const fixedOtValidation = validateFixedOt();
   if (!fixedOtValidation.valid) {
     proxy.$alert(fixedOtValidation.message);
     return;
-  }
-  // V5: 후방 고정연장이 자정을 넘기면(종료<시작) 오버나이트 여부 컨펌.
-  if (fixedOtValidation.rearOvernight) {
-    const okFixedOtOvernight = await proxy.$confirm(
-      getMessage(MSG.OVERNIGHT_CONFIRM, { section: "고정연장근무" })
-    );
-    if (!okFixedOtOvernight) return;
   }
   if (isEditMode.value) {
     const today = new Date();
@@ -514,25 +494,44 @@ const fnSave = async () => {
     }
   }
 
-  // PC-09(N6): 소정근로(근무시간 − 휴게시간 합) 8시간(480분) 초과 시 저장 전 경고.
-  //   저장은 허용(차단 아님) — 시간차 연차 분모는 8시간 캡으로 계산됨을 안내한다.
+  // ★통합 안내(2026-08-11 UX 규약): 비차단 안내(자정 넘김 확인·8h/4h 초과 경고)는 개별 팝업
+  //   연쇄 대신 저장 컨펌 하나에 목록으로 병합한다 — 컨펌 1회로 전체 동의.
+  //   (작업지시서_연쇄-alert-전수조사-통합표시-전환 의 기준 사용처. 차단류는 종전대로 첫 위반 즉시 alert)
+  const notices = [];
+  if (timeValidation.fstOvernight) {
+    notices.push("구간1 근무가 자정을 넘어 익일에 종료됩니다.");
+  }
+  if (schType.value === "02" && timeValidation.secOvernight) {
+    notices.push("구간2 근무가 자정을 넘어 익일에 종료됩니다.");
+  }
+  // V5: 후방 고정연장이 자정을 넘기면(종료<시작) 익일 종료 확인.
+  if (fixedOtValidation.rearOvernight) {
+    notices.push("후방 고정연장근무가 자정을 넘어 익일에 종료됩니다.");
+  }
+  // PC-09(N6): 소정근로 8시간(480분) 초과 경고 — 시간차 연차 분모는 8시간 캡 안내.
   const stdWorkMin = calcStdWorkMinutes();
   if (stdWorkMin != null && stdWorkMin > 480) {
-    await proxy.$alert(
-      "소정근로가 8시간을 초과합니다. 휴게시간 입력을 확인하세요.\n(시간차 연차 분모는 8시간으로 계산됩니다)"
+    notices.push(
+      "소정근로가 8시간을 초과합니다. 휴게시간 입력을 확인하세요. (시간차 연차 분모는 8시간으로 계산됩니다)"
     );
   }
-
-  // PRAFTA-FIXEDOT-1(V7): 고정연장 일 합계 4시간(240분) 초과 시 경고 — 차단 아님.
+  // PRAFTA-FIXEDOT-1(V7): 고정연장 일 합계 4시간(240분) 초과 경고 — 차단 아님.
   if (fixedOtValidation.totalFixedOtMin > 240) {
-    await proxy.$alert(
-      "고정연장근무 합계가 1일 4시간을 초과합니다. 추가 휴게시간 의무와 주 12시간 연장 한도를 확인하세요.\n(저장은 가능합니다)"
+    notices.push(
+      "고정연장근무 합계가 1일 4시간을 초과합니다. 추가 휴게시간 의무와 주 12시간 연장 한도를 확인하세요."
     );
   }
 
-  const ok = await proxy.$confirm(
-    isEditMode.value ? getMessage(MSG.SAVE_CONFIRM) : getMessage(MSG.CREATE_CONFIRM)
-  );
+  const baseConfirmMsg = isEditMode.value
+    ? getMessage(MSG.SAVE_CONFIRM)
+    : getMessage(MSG.CREATE_CONFIRM);
+  const confirmMsg = notices.length
+    ? "다음 사항을 확인해 주세요.\n\n" +
+      notices.map((n) => "· " + n).join("\n") +
+      "\n\n" +
+      baseConfirmMsg
+    : baseConfirmMsg;
+  const ok = await proxy.$confirm(confirmMsg);
   if (!ok) return;
 
   const toHHmm = (v) =>

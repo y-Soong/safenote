@@ -248,8 +248,12 @@ public class AppAdminApprovalServiceImpl implements AppAdminApprovalService {
             //   비스케줄(근태보정/초과) 행은 sch*Time 이 전부 null → schedRange=null 로 기존 표기 그대로.
             String schedRange = null;
             if (G_SCHEDULE.equals(group)) {
-                schedRange = schedRangeText(
-                        r.schFstStrTime(), r.schFstEndTime(), r.schSecStrTime(), r.schSecEndTime());
+                // PRAFTA-FIXEDOT-2(표기): 고정연장(전방·후방) 구분 suffix — 없으면 빈 문자열(기존 표기 불변).
+                schedRange = appendFixedOtText(
+                        schedRangeText(
+                                r.schFstStrTime(), r.schFstEndTime(), r.schSecStrTime(), r.schSecEndTime()),
+                        r.schPreFixedOtStrTime(), r.schPreFixedOtEndTime(),
+                        r.schFixedOtStrTime(), r.schFixedOtEndTime());
             }
             list.add(ApprovalPendingResponse.PendingItem.builder()
                     .reqId(r.reqId())
@@ -442,14 +446,23 @@ public class AppAdminApprovalServiceImpl implements AppAdminApprovalService {
                     before = new LinkedHashMap<>();
                     before.put("schCd", sb.curSchCd());
                     before.put("schNm", sb.curSchNo());
+                    // PRAFTA-FIXEDOT-2(표기): 현재 스케줄 고정연장 구분 suffix(없으면 기존 표기 그대로).
                     before.put("rangeText",
-                            schedRangeText(sb.curFstStrTime(), sb.curFstEndTime(), sb.curSecStrTime(), sb.curSecEndTime()));
+                            appendFixedOtText(
+                                    schedRangeText(sb.curFstStrTime(), sb.curFstEndTime(), sb.curSecStrTime(), sb.curSecEndTime()),
+                                    sb.curPreFixedOtStrTime(), sb.curPreFixedOtEndTime(),
+                                    sb.curFixedOtStrTime(), sb.curFixedOtEndTime()));
                 }
                 after = new LinkedHashMap<>();
                 after.put("schCd", sb.reqSchCd());
                 after.put("schNm", sb.reqSchNo());
+                // PRAFTA-FIXEDOT-2(표기): 요청 스케줄 고정연장 구분 suffix — 고정연장만 다른 변경도
+                //   승인자가 before/after 차이를 볼 수 있다.
                 after.put("rangeText",
-                        schedRangeText(sb.reqFstStrTime(), sb.reqFstEndTime(), sb.reqSecStrTime(), sb.reqSecEndTime()));
+                        appendFixedOtText(
+                                schedRangeText(sb.reqFstStrTime(), sb.reqFstEndTime(), sb.reqSecStrTime(), sb.reqSecEndTime()),
+                                sb.reqPreFixedOtStrTime(), sb.reqPreFixedOtEndTime(),
+                                sb.reqFixedOtStrTime(), sb.reqFixedOtEndTime()));
             } else if (StringUtils.hasText(meta.schCd())) {
                 // 요청 SCH_CD 가 마스터에 미존재(데이터 이상) — 코드만 노출(시각 미상).
                 after = new LinkedHashMap<>();
@@ -517,6 +530,32 @@ public class AppAdminApprovalServiceImpl implements AppAdminApprovalService {
      * PRAFTA-APP-029(D6): 스케줄 시각 range 표기. 1구간 "07:00~15:00", 2구간 있으면 " / 16:00~20:00" 부착.
      * fmtHm(HHMM→HH:MM) 재사용. 1구간 시각이 모두 비면 null.
      */
+    /**
+     * PRAFTA-FIXEDOT-2(표기): 스케줄 range 문자열 뒤에 고정연장(전방·후방) 구분 suffix 를 붙인다.
+     * 예) "09:00~18:00" → "09:00~18:00 + 고정연장 18:00~20:00" (전방+후방이면 " · " 로 나열).
+     * 고정연장 미설정이면 base 그대로 반환(기존 표기 완전 불변 — 무회귀). base 가 null 이면 null 유지.
+     */
+    private String appendFixedOtText(String base, String preStr, String preEnd,
+                                     String rearStr, String rearEnd) {
+        if (base == null) {
+            return null;
+        }
+        StringBuilder parts = new StringBuilder();
+        if (StringUtils.hasText(preStr) && StringUtils.hasText(preEnd)) {
+            parts.append(fmtHm(preStr)).append("~").append(fmtHm(preEnd));
+        }
+        if (StringUtils.hasText(rearStr) && StringUtils.hasText(rearEnd)) {
+            if (parts.length() > 0) {
+                parts.append(" · ");
+            }
+            parts.append(fmtHm(rearStr)).append("~").append(fmtHm(rearEnd));
+        }
+        if (parts.length() == 0) {
+            return base;
+        }
+        return base + " + 고정연장 " + parts;
+    }
+
     private String schedRangeText(String fstStr, String fstEnd, String secStr, String secEnd) {
         String fs = fmtHm(fstStr);
         String fe = fmtHm(fstEnd);

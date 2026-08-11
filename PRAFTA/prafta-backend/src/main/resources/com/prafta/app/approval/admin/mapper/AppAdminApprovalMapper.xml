@@ -82,6 +82,12 @@
         , RSE.SEC_SCH_END_TIME                                           AS schSecEndTime
         , R.REQ_REASON                                                   AS reqReason
         , DATE_FORMAT(R.INSERT_DATE, '%Y-%m-%dT%H:%i:%s')               AS reqDate
+        <!-- PRAFTA-FIXEDOT-2: 요청 스케줄 고정연장(전방·후방) — 카드 요약 구분 표기용.
+             record(PendingCorrOtRow) 끝 4필드와 동일 순서로 SELECT 끝에 둔다(위치 기반 매핑). -->
+        , RSE.PRE_FIXED_OT_STR_TIME                                      AS schPreFixedOtStrTime
+        , RSE.PRE_FIXED_OT_END_TIME                                      AS schPreFixedOtEndTime
+        , RSE.FIXED_OT_STR_TIME                                          AS schFixedOtStrTime
+        , RSE.FIXED_OT_END_TIME                                          AS schFixedOtEndTime
       FROM TB_USER_ATTD_REQ R
       LEFT JOIN TB_USER U
         ON U.CMPNY_CD = R.CMPNY_CD
@@ -381,14 +387,19 @@
               E.CMPNY_CD, E.SITE_CD, E.SCH_CD, E.APPLY_DATE
             , E.FST_SCH_STR_TIME, E.FST_SCH_END_TIME
             , E.SEC_SCH_STR_TIME, E.SEC_SCH_END_TIME
+            <!-- PRAFTA-FIXEDOT-2: 고정연장(전방·후방) — 승인 카드/상세 표기용 -->
+            , E.PRE_FIXED_OT_STR_TIME, E.PRE_FIXED_OT_END_TIME
+            , E.FIXED_OT_STR_TIME, E.FIXED_OT_END_TIME
         FROM (
             SELECT M.CMPNY_CD, M.SITE_CD, M.SCH_CD, M.APPLY_DATE
                  , M.FST_SCH_STR_TIME, M.FST_SCH_END_TIME, M.SEC_SCH_STR_TIME, M.SEC_SCH_END_TIME
+                 , M.PRE_FIXED_OT_STR_TIME, M.PRE_FIXED_OT_END_TIME, M.FIXED_OT_STR_TIME, M.FIXED_OT_END_TIME
                  , 2147483647 AS HIST_IDX
             FROM TB_SCH_MGMT M
             UNION ALL
             SELECT H.CMPNY_CD, H.SITE_CD, H.SCH_CD, H.APPLY_DATE
                  , H.FST_SCH_STR_TIME, H.FST_SCH_END_TIME, H.SEC_SCH_STR_TIME, H.SEC_SCH_END_TIME
+                 , H.PRE_FIXED_OT_STR_TIME, H.PRE_FIXED_OT_END_TIME, H.FIXED_OT_STR_TIME, H.FIXED_OT_END_TIME
                  , H.HIST_IDX
             FROM TB_SCH_MGMT_HIST H
         ) E
@@ -443,6 +454,16 @@
         , TSE.FST_SCH_END_TIME  AS reqFstEndTime
         , TSE.SEC_SCH_STR_TIME  AS reqSecStrTime
         , TSE.SEC_SCH_END_TIME  AS reqSecEndTime
+        <!-- PRAFTA-FIXEDOT-2: 현재/요청 스케줄 고정연장(전방·후방) — 상세 비교 표기용.
+             record(SchedBodyRow) 끝 8필드와 동일 순서로 SELECT 끝에 둔다(위치 기반 매핑). -->
+        , CSE.PRE_FIXED_OT_STR_TIME  AS curPreFixedOtStrTime
+        , CSE.PRE_FIXED_OT_END_TIME  AS curPreFixedOtEndTime
+        , CSE.FIXED_OT_STR_TIME      AS curFixedOtStrTime
+        , CSE.FIXED_OT_END_TIME      AS curFixedOtEndTime
+        , TSE.PRE_FIXED_OT_STR_TIME  AS reqPreFixedOtStrTime
+        , TSE.PRE_FIXED_OT_END_TIME  AS reqPreFixedOtEndTime
+        , TSE.FIXED_OT_STR_TIME      AS reqFixedOtStrTime
+        , TSE.FIXED_OT_END_TIME      AS reqFixedOtEndTime
       FROM TB_SCH_MGMT TS
       LEFT JOIN ( <include refid="effectiveSchVersion"/> ) TSE
         ON TSE.CMPNY_CD = TS.CMPNY_CD

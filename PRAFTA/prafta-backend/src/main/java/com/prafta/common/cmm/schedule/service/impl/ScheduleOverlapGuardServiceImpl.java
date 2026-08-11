@@ -10,6 +10,7 @@ import org.springframework.stereotype.Service;
 
 import com.prafta.common.cmm.schedule.mapper.ScheduleGuardMapper;
 import com.prafta.common.cmm.schedule.mapper.result.SchWindowResult;
+import com.prafta.common.cmm.schedule.util.FixedOtScheduleUtils;
 import com.prafta.common.cmm.schedule.service.ScheduleOverlapGuardService;
 import com.prafta.common.util.DateTimeUtils;
 
@@ -99,7 +100,7 @@ public class ScheduleOverlapGuardServiceImpl implements ScheduleOverlapGuardServ
      * @param delta 대상일 대비 일수 오프셋(D=0 / D-1=-1 / D+1=+1)
      */
     private List<int[]> segmentsOf(String cmpnyCd, String siteCd, String schCd, String asOfYmd, int delta) {
-        List<int[]> out = new ArrayList<>(2);
+        List<int[]> out = new ArrayList<>(4);
         SchWindowResult w = scheduleGuardMapper.selectEffectiveSchWindow(cmpnyCd, siteCd, schCd, asOfYmd);
         if (w == null) {
             return out;
@@ -111,6 +112,16 @@ public class ScheduleOverlapGuardServiceImpl implements ScheduleOverlapGuardServ
         int[] s2 = seg(w.secStart(), w.secEnd(), delta);
         if (s2 != null) {
             out.add(s2);
+        }
+        // PRAFTA-FIXEDOT-2(지시서 지점 5): 고정연장(전방·후방)도 점유 구간에 편입 — 겹침 판정은
+        //   "전체 점유" 기준. 환산은 FixedOtScheduleUtils 단일 출처(일 anchor, 소정 wrap 시 후방 익일
+        //   배치 포함)이며 여기의 delta*1440 오프셋 규약과 동일 프레임이다.
+        //   고정연장 없는 근무타입은 빈 목록 → 기존 판정 완전 동일(무회귀).
+        int off = delta * DAY_MIN;
+        for (int[] f : FixedOtScheduleUtils.fixedOtSegments(
+                w.fstStart(), w.fstEnd(), w.secStart(), w.secEnd(),
+                w.preFixedOtStart(), w.preFixedOtEnd(), w.fixedOtStart(), w.fixedOtEnd())) {
+            out.add(new int[] { f[0] + off, f[1] + off });
         }
         return out;
     }

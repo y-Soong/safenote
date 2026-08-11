@@ -10,6 +10,7 @@ import java.util.Map;
 
 import org.springframework.stereotype.Service;
 
+import com.prafta.common.cmm.schedule.util.FixedOtScheduleUtils;
 import com.prafta.common.error.attd.AttdErrorCode;
 import com.prafta.common.exception.ApiException;
 import com.prafta.web.attd.attd07.service.AttdCloseService;
@@ -198,8 +199,16 @@ public class Attd15ServiceImpl implements Attd15Service {
             }
         }
 
+        // PRAFTA-FIXEDOT-2(지시서 지점 4): 예정 근로에 고정연장 분 편입 — 마감 예측(잠정치) 정합.
+        //   환산은 FixedOtScheduleUtils 단일 출처(휴게 없음 — 1단계 정책상 고정연장 휴게 컬럼 미도입).
+        //   고정연장 없는 근무타입은 0 → 종전 잠정치와 완전 동일(무회귀).
+        //   종일 연차일(아래 'Y' 분기)은 고정연장 의무 면제(정책 ③)까지 포함해 그날 예정 0 유지.
+        total += FixedOtScheduleUtils.totalFixedOtMinutes(
+                r.fstSchStrTime(), r.fstSchEndTime(), r.secSchStrTime(), r.secSchEndTime(),
+                r.preFixedOtStrTime(), r.preFixedOtEndTime(), r.fixedOtStrTime(), r.fixedOtEndTime());
+
         if ("Y".equals(r.fullDayLeaveYn())) {
-            // 종일 연차일: 면제분 = 그날 소정 전량 → 소정 0.
+            // 종일 연차일: 면제분 = 그날 소정 전량(고정연장 의무도 면제 — 정책 ③) → 예정 0.
             return 0L;
         }
         long exempt = Math.max(0, r.leaveExemptMinutes());

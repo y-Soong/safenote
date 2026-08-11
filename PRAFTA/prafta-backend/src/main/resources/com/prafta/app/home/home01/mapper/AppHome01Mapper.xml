@@ -98,6 +98,12 @@
         , S.FST_SCH_END_TIME    AS scheduleEnd
         , S.SEC_SCH_STR_TIME    AS secScheduleStart
         , S.SEC_SCH_END_TIME    AS secScheduleEnd
+        <!-- PRAFTA-FIXEDOT-2: 고정연장(전방·후방) — 홈 오늘 근무시간 구분 표기용.
+             record(ScheduleResult) 끝 4필드와 동일 순서로 SELECT 끝에 둔다(위치 기반 매핑). -->
+        , S.PRE_FIXED_OT_STR_TIME  AS preFixedOtStrTime
+        , S.PRE_FIXED_OT_END_TIME  AS preFixedOtEndTime
+        , S.FIXED_OT_STR_TIME      AS fixedOtStrTime
+        , S.FIXED_OT_END_TIME      AS fixedOtEndTime
     FROM TB_USER_WORK_PLAN P
          INNER JOIN TB_SCH_MGMT S
          ON (
@@ -154,6 +160,10 @@
         , S.FST_SCH_END_TIME    AS fstSchEndTime
         , S.SEC_SCH_STR_TIME    AS secSchStrTime
         , S.SEC_SCH_END_TIME    AS secSchEndTime
+        <!-- PRAFTA-FIXEDOT-2: 전일 후방 고정연장 — 마지막 점유 구간이면 그 종료가 오버나이트 경계.
+             record(OvernightScheduleResult) 끝 2필드와 동일 순서로 SELECT 끝에 둔다(위치 기반 매핑). -->
+        , S.FIXED_OT_STR_TIME   AS fixedOtStrTime
+        , S.FIXED_OT_END_TIME   AS fixedOtEndTime
     FROM TB_USER_WORK_PLAN P
          INNER JOIN TB_SCH_MGMT S
          ON (

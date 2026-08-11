@@ -104,6 +104,12 @@
          , S.FST_SCH_END_TIME  AS fstEndTime
          , S.SEC_SCH_STR_TIME  AS secStrTime
          , S.SEC_SCH_END_TIME  AS secEndTime
+         <!-- PRAFTA-FIXEDOT-2(표기): 고정연장(전방·후방) — 옵션 라벨 구분 표기용.
+              record(SchedOptionResult) 끝 4필드와 동일 순서로 SELECT 끝에 둔다(위치 기반 매핑). -->
+         , S.PRE_FIXED_OT_STR_TIME  AS preFixedOtStrTime
+         , S.PRE_FIXED_OT_END_TIME  AS preFixedOtEndTime
+         , S.FIXED_OT_STR_TIME      AS fixedOtStrTime
+         , S.FIXED_OT_END_TIME      AS fixedOtEndTime
       FROM TB_SCH_MGMT S
      WHERE S.CMPNY_CD = #{cmpnyCd}
        AND S.SITE_CD  = #{siteCd}
@@ -133,6 +139,12 @@
          , S.FST_SCH_END_TIME  AS fstEndTime
          , S.SEC_SCH_STR_TIME  AS secStrTime
          , S.SEC_SCH_END_TIME  AS secEndTime
+         <!-- PRAFTA-FIXEDOT-2: 고정연장(전방·후방) — OT 겹침 검증 대상 확장.
+              record(ScheduleWindowResult) 끝 4필드와 동일 순서로 SELECT 끝에 둔다(위치 기반 매핑). -->
+         , S.PRE_FIXED_OT_STR_TIME  AS preFixedOtStrTime
+         , S.PRE_FIXED_OT_END_TIME  AS preFixedOtEndTime
+         , S.FIXED_OT_STR_TIME      AS fixedOtStrTime
+         , S.FIXED_OT_END_TIME      AS fixedOtEndTime
       FROM TB_USER_WORK_PLAN P
       <!-- 근무일(P.WORK_YMD) 기준 유효 스케줄(effective-dating).
            현재본 + 이력본 UNION 후 APPLY_DATE <![CDATA[ <= ]]> WORK_YMD 인 최신 버전. attd07/attd11 동일 패턴.
@@ -146,11 +158,15 @@
                   E.CMPNY_CD, E.SITE_CD, E.SCH_CD, E.APPLY_DATE
                 , E.FST_SCH_STR_TIME, E.FST_SCH_END_TIME
                 , E.SEC_SCH_STR_TIME, E.SEC_SCH_END_TIME
+                , E.PRE_FIXED_OT_STR_TIME, E.PRE_FIXED_OT_END_TIME
+                , E.FIXED_OT_STR_TIME, E.FIXED_OT_END_TIME
             FROM (
                 SELECT
                       M.CMPNY_CD, M.SITE_CD, M.SCH_CD, M.APPLY_DATE
                     , M.FST_SCH_STR_TIME, M.FST_SCH_END_TIME
                     , M.SEC_SCH_STR_TIME, M.SEC_SCH_END_TIME
+                    , M.PRE_FIXED_OT_STR_TIME, M.PRE_FIXED_OT_END_TIME
+                    , M.FIXED_OT_STR_TIME, M.FIXED_OT_END_TIME
                     , 2147483647 AS HIST_IDX
                 FROM TB_SCH_MGMT M
                 UNION ALL
@@ -158,6 +174,8 @@
                       H.CMPNY_CD, H.SITE_CD, H.SCH_CD, H.APPLY_DATE
                     , H.FST_SCH_STR_TIME, H.FST_SCH_END_TIME
                     , H.SEC_SCH_STR_TIME, H.SEC_SCH_END_TIME
+                    , H.PRE_FIXED_OT_STR_TIME, H.PRE_FIXED_OT_END_TIME
+                    , H.FIXED_OT_STR_TIME, H.FIXED_OT_END_TIME
                     , H.HIST_IDX
                 FROM TB_SCH_MGMT_HIST H
             ) E

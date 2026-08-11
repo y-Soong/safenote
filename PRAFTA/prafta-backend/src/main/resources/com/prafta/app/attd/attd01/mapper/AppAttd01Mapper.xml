@@ -42,6 +42,12 @@
         , SC.SEC_SCH_BRK_MIN   AS secSchBrkMin
         , NULL                 AS leaveCd
         , NULL                 AS leaveNm
+        <!-- PRAFTA-FIXEDOT-2: 고정연장(전방·후방) — 표기 전용 공급(판정 비소비).
+             record(ScheduleResult) 끝 4필드와 동일 순서로 SELECT 끝에 둔다(위치 기반 매핑). -->
+        , SC.PRE_FIXED_OT_STR_TIME  AS preFixedOtStrTime
+        , SC.PRE_FIXED_OT_END_TIME  AS preFixedOtEndTime
+        , SC.FIXED_OT_STR_TIME      AS fixedOtStrTime
+        , SC.FIXED_OT_END_TIME      AS fixedOtEndTime
       FROM TB_USER_WORK_PLAN WP
       <!-- 근무일(WP.WORK_YMD) 기준 유효 스케줄(effective-dating). 범위 조회라 행별 WORK_YMD 로 상관.
            현재본 + 이력본 UNION 후 APPLY_DATE <![CDATA[ <= ]]> WORK_YMD 인 최신 버전. 과거 근무일을 현재본 시각으로 표시하던 문제 수정.
@@ -54,11 +60,15 @@
                 , MT.SCH_NO, MT.SCH_TYPE
                 , E.FST_SCH_STR_TIME, E.FST_SCH_END_TIME, E.FST_SCH_BRK_MIN
                 , E.SEC_SCH_STR_TIME, E.SEC_SCH_END_TIME, E.SEC_SCH_BRK_MIN
+                , E.PRE_FIXED_OT_STR_TIME, E.PRE_FIXED_OT_END_TIME
+                , E.FIXED_OT_STR_TIME, E.FIXED_OT_END_TIME
             FROM (
                 SELECT
                       M.CMPNY_CD, M.SITE_CD, M.SCH_CD, M.APPLY_DATE
                     , M.FST_SCH_STR_TIME, M.FST_SCH_END_TIME, M.FST_SCH_BRK_MIN
                     , M.SEC_SCH_STR_TIME, M.SEC_SCH_END_TIME, M.SEC_SCH_BRK_MIN
+                    , M.PRE_FIXED_OT_STR_TIME, M.PRE_FIXED_OT_END_TIME
+                    , M.FIXED_OT_STR_TIME, M.FIXED_OT_END_TIME
                     , 2147483647 AS HIST_IDX
                 FROM TB_SCH_MGMT M
                 UNION ALL
@@ -66,6 +76,8 @@
                       H.CMPNY_CD, H.SITE_CD, H.SCH_CD, H.APPLY_DATE
                     , H.FST_SCH_STR_TIME, H.FST_SCH_END_TIME, H.FST_SCH_BRK_MIN
                     , H.SEC_SCH_STR_TIME, H.SEC_SCH_END_TIME, H.SEC_SCH_BRK_MIN
+                    , H.PRE_FIXED_OT_STR_TIME, H.PRE_FIXED_OT_END_TIME
+                    , H.FIXED_OT_STR_TIME, H.FIXED_OT_END_TIME
                     , H.HIST_IDX
                 FROM TB_SCH_MGMT_HIST H
             ) E

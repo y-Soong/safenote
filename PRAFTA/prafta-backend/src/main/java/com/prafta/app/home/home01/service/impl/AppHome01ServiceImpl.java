@@ -19,6 +19,7 @@ import com.prafta.app.home.home01.result.LeaveSummaryResult;
 import com.prafta.app.home.home01.result.OvernightScheduleResult;
 import com.prafta.app.home.home01.result.PrevDayOpenAttdResult;
 import com.prafta.app.home.home01.result.ScheduleResult;
+import com.prafta.common.cmm.schedule.util.FixedOtScheduleUtils;
 import com.prafta.app.home.home01.result.TbmStatusResult;
 import com.prafta.app.home.home01.service.AppHome01Service;
 import com.prafta.common.cmm.leave.mapper.LeavePolicyMapper;
@@ -284,6 +285,12 @@ public class AppHome01ServiceImpl implements AppHome01Service {
                 .scheduleExists(scheduleExists) // prafta-app-013-2: 기준일 스케줄 존재 여부.
                 .scheduleStart(scheduleStart)
                 .scheduleEnd(scheduleEnd)
+                // PRAFTA-FIXEDOT-2(표기): 고정연장(전방·후방) — 연차일에는 스케줄과 동일하게 미노출.
+                //   고정연장 없는 근무타입/스케줄 없는 날은 전부 null(기존 표기 불변).
+                .preFixedOtStrTime(sch != null && !isLeaveDay ? sch.preFixedOtStrTime() : null)
+                .preFixedOtEndTime(sch != null && !isLeaveDay ? sch.preFixedOtEndTime() : null)
+                .fixedOtStrTime(sch != null && !isLeaveDay ? sch.fixedOtStrTime() : null)
+                .fixedOtEndTime(sch != null && !isLeaveDay ? sch.fixedOtEndTime() : null)
                 .checkInTime(checkInTime)
                 .checkOutTime(checkOutTime)
                 .isOffsite(isOffsite) // 오늘 최근 출근 GPS 행(01) 존재=외근 (prafta-app-003 B-1).
@@ -451,6 +458,22 @@ public class AppHome01ServiceImpl implements AppHome01Service {
                 appHome01Mapper.selectScheduleEndForOvernight(query, yesterdayYmd);
         if (prevSch == null) {
             return todayYmd; // 전일 스케줄(휴무/미배정 포함) 없음 → 당일.
+        }
+
+        // PRAFTA-FIXEDOT-2(지시서 지점 5): 전일 마지막 점유 구간이 후방 고정연장이면 그 종료가
+        //   오버나이트 경계다. 환산은 FixedOtScheduleUtils 단일 출처(전일 anchor 분 — 익일 걸침이면
+        //   1440 초과, 소정 wrap 타입의 후방(예: 소정 22~06 + 고정연장 06~08)도 익일 배치).
+        //   후방 고정연장이 없으면(null) 기존 소정 기준 로직을 그대로 탄다(무회귀).
+        Integer rearEnd = FixedOtScheduleUtils.rearFixedOtEnd(
+                prevSch.fstSchStrTime(), prevSch.fstSchEndTime(),
+                prevSch.secSchStrTime(), prevSch.secSchEndTime(),
+                prevSch.fixedOtStrTime(), prevSch.fixedOtEndTime());
+        if (rearEnd != null) {
+            // 전일 anchor 기준 1440 초과 = 오늘 새벽에 끝나는 점유. 그 종료 전이면 전일 기준.
+            if (rearEnd > 1440 && nowMinutes() < rearEnd - 1440) {
+                return yesterdayYmd;
+            }
+            return todayYmd;
         }
 
         // 마지막 구간: 2구간 스케줄이면 SEC, 아니면 FST.

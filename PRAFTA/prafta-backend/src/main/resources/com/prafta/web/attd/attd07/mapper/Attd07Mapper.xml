@@ -992,6 +992,15 @@
 	                  , ABS(TIMESTAMPDIFF(SECOND, R.PROCESS_DATE, B.INSERT_DATE)) ASC
 	           LIMIT 1
 	      ) ELSE NULL END			AS reqReason
+	    <!-- PRAFTA-FIXEDOT-2: 스케줄 수정 이력 전용 고정연장 8필드(record 끝) — 근태/OT 이력은 NULL. -->
+	    , NULL						AS befPreFixedOtStrTime
+	    , NULL						AS befPreFixedOtEndTime
+	    , NULL						AS befFixedOtStrTime
+	    , NULL						AS befFixedOtEndTime
+	    , NULL						AS aftPreFixedOtStrTime
+	    , NULL						AS aftPreFixedOtEndTime
+	    , NULL						AS aftFixedOtStrTime
+	    , NULL						AS aftFixedOtEndTime
 	FROM TB_USER_ATTD_HIST B
 	     LEFT JOIN TB_USER_ATTD_MGMT A
 			 ON (
@@ -1106,6 +1115,18 @@
 	          AND BU.LEAVE_STATUS = 'CONFIRMED'
 	          AND BU.DEL_YN       = 'N'
 	      )						AS borrowDays
+	    <!-- PRAFTA-FIXEDOT-2(표기): 스케줄 수정(10) 카드 비교에 고정연장(전방·후방) 포함 —
+	         고정연장만 바뀌는 변경도 승인자가 변경점을 볼 수 있어야 한다.
+	         (record 끝 = SELECT 끝 — 위치 기반 매핑. record(MonthlyAttdReqResult) 의 마지막
+	         8필드와 동일 순서로 SELECT 맨 끝에 둔다. 순서 어긋나면 런타임 변환 폭발.) -->
+	    , TS.PRE_FIXED_OT_STR_TIME	AS tgtPreFixedOtStrTime
+	    , TS.PRE_FIXED_OT_END_TIME	AS tgtPreFixedOtEndTime
+	    , TS.FIXED_OT_STR_TIME		AS tgtFixedOtStrTime
+	    , TS.FIXED_OT_END_TIME		AS tgtFixedOtEndTime
+	    , CS.PRE_FIXED_OT_STR_TIME	AS curPreFixedOtStrTime
+	    , CS.PRE_FIXED_OT_END_TIME	AS curPreFixedOtEndTime
+	    , CS.FIXED_OT_STR_TIME		AS curFixedOtStrTime
+	    , CS.FIXED_OT_END_TIME		AS curFixedOtEndTime
 	FROM TB_USER_ATTD_REQ A
 	     <!-- 목표 스케줄: REQ 의 SCH_CD 로 스케줄 마스터 조인 (회사/사업장 스코프 고정 — 타 사업장 스케줄 유출 차단) -->
 	     LEFT JOIN TB_SCH_MGMT TS
@@ -1307,6 +1328,15 @@
              reqReason 은 연결된 REQ 의 근로자 요청사유(R.REQ_REASON). -->
         , NULL                                                                 AS reqType
         , R.REQ_REASON                                                         AS reqReason
+        <!-- PRAFTA-FIXEDOT-2: 스케줄 수정 이력 전용 고정연장 8필드(record 끝) — 연차 이력은 NULL. -->
+        , NULL                                                                 AS befPreFixedOtStrTime
+        , NULL                                                                 AS befPreFixedOtEndTime
+        , NULL                                                                 AS befFixedOtStrTime
+        , NULL                                                                 AS befFixedOtEndTime
+        , NULL                                                                 AS aftPreFixedOtStrTime
+        , NULL                                                                 AS aftPreFixedOtEndTime
+        , NULL                                                                 AS aftFixedOtStrTime
+        , NULL                                                                 AS aftFixedOtEndTime
       FROM TB_USER_ATTD_REQ_APPROVAL AP
       JOIN TB_USER_ATTD_REQ R
         ON R.CMPNY_CD = AP.CMPNY_CD
@@ -1380,6 +1410,16 @@
              프론트가 승인·반려 모두 스케줄 라벨 분기를 타게 한다. reqReason = 근로자 요청사유. -->
         , R.REQ_TYPE                                                       AS reqType
         , R.REQ_REASON                                                     AS reqReason
+        <!-- PRAFTA-FIXEDOT-2: 변경 전/후 고정연장(전방·후방) — bef/aft 스케줄 시각과 동일 출처
+             (bef = BS 승인마커 / BWP 반려근무계획 COALESCE, aft = AS_). record 끝 8필드 위치 일치. -->
+        , COALESCE(BS.PRE_FIXED_OT_STR_TIME, BWP.PRE_FIXED_OT_STR_TIME)    AS befPreFixedOtStrTime
+        , COALESCE(BS.PRE_FIXED_OT_END_TIME, BWP.PRE_FIXED_OT_END_TIME)    AS befPreFixedOtEndTime
+        , COALESCE(BS.FIXED_OT_STR_TIME, BWP.FIXED_OT_STR_TIME)            AS befFixedOtStrTime
+        , COALESCE(BS.FIXED_OT_END_TIME, BWP.FIXED_OT_END_TIME)            AS befFixedOtEndTime
+        , AS_.PRE_FIXED_OT_STR_TIME                                        AS aftPreFixedOtStrTime
+        , AS_.PRE_FIXED_OT_END_TIME                                        AS aftPreFixedOtEndTime
+        , AS_.FIXED_OT_STR_TIME                                            AS aftFixedOtStrTime
+        , AS_.FIXED_OT_END_TIME                                            AS aftFixedOtEndTime
       FROM TB_USER_ATTD_REQ R
         <!-- 변경 후 스케줄: 승인('02')·반려('03') 모두 "요청했던 목표 스케줄"이므로 REQ_STATUS 가드 없이
              R.SCH_CD 로 조인한다. SCH_CD 가 없으면 미매칭(NULL). -->
@@ -1849,6 +1889,13 @@
         , A2.CHECK_OUT_DATE                                                AS act2OutDate
         , A2.CHECK_OUT_TIME                                                AS act2OutTime
 
+        /* PRAFTA-FIXEDOT-2: 전방·후방 고정연장(HHMM, NULL=없음) — 등록범위 피감수 확장(소정 ∪ 고정연장).
+           record(AllowedWindowResult) 끝 4필드와 동일 순서로 SELECT 끝에 둔다(위치 기반 매핑). */
+        , SCH.PRE_FIXED_OT_STR_TIME                                        AS preFixedOtStrTime
+        , SCH.PRE_FIXED_OT_END_TIME                                        AS preFixedOtEndTime
+        , SCH.FIXED_OT_STR_TIME                                            AS fixedOtStrTime
+        , SCH.FIXED_OT_END_TIME                                            AS fixedOtEndTime
+
     FROM TB_USER_WORK_PLAN WP
 
     /* 근무일(WP.WORK_YMD) 기준 유효 스케줄(effective-dating) 적용.
@@ -1869,6 +1916,10 @@
             , E.SEC_SCH_STR_TIME
             , E.SEC_SCH_END_TIME
             , E.SEC_SCH_BRK_MIN
+            , E.PRE_FIXED_OT_STR_TIME
+            , E.PRE_FIXED_OT_END_TIME
+            , E.FIXED_OT_STR_TIME
+            , E.FIXED_OT_END_TIME
         FROM (
             /* 현재본 (HIST_IDX 를 최댓값으로 두어 동일 APPLY_DATE 중복 시 현재본 우선) */
             SELECT
@@ -1882,6 +1933,10 @@
                 , M.SEC_SCH_STR_TIME
                 , M.SEC_SCH_END_TIME
                 , M.SEC_SCH_BRK_MIN
+                , M.PRE_FIXED_OT_STR_TIME
+                , M.PRE_FIXED_OT_END_TIME
+                , M.FIXED_OT_STR_TIME
+                , M.FIXED_OT_END_TIME
                 , 2147483647 AS HIST_IDX
             /* 사용중지(USE_YN='N') 근무타입도 이미 배정된 근무일에는 그대로 해석한다 — USE_YN 필터 없음 */
             FROM TB_SCH_MGMT M
@@ -1900,6 +1955,10 @@
                 , H.SEC_SCH_STR_TIME
                 , H.SEC_SCH_END_TIME
                 , H.SEC_SCH_BRK_MIN
+                , H.PRE_FIXED_OT_STR_TIME
+                , H.PRE_FIXED_OT_END_TIME
+                , H.FIXED_OT_STR_TIME
+                , H.FIXED_OT_END_TIME
                 , H.HIST_IDX
             FROM TB_SCH_MGMT_HIST H
         ) E
@@ -1990,6 +2049,12 @@
         , A2.CHECK_IN_TIME                                                 AS act2InTime
         , A2.CHECK_OUT_DATE                                                AS act2OutDate
         , A2.CHECK_OUT_TIME                                                AS act2OutTime
+
+        /* PRAFTA-FIXEDOT-2: 스케줄 부재 폴백 — 고정연장도 부재(NULL 4개, record 위치 유지). */
+        , NULL                                                             AS preFixedOtStrTime
+        , NULL                                                             AS preFixedOtEndTime
+        , NULL                                                             AS fixedOtStrTime
+        , NULL                                                             AS fixedOtEndTime
 
     /* WP 없이도 항상 1행을 보장하기 위한 dummy anchor.
        스코프(cmpny/site/user/workYmd) 조건은 각 LEFT JOIN 의 ON 절에 직접 명시한다. */

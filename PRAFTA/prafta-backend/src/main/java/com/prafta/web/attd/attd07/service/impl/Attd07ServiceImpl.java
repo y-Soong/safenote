@@ -11,6 +11,7 @@ import com.prafta.common.cmm.leave.service.LeaveRefusalConst;
 import com.prafta.common.cmm.leave.service.LeaveRefusalDetectService;
 import com.prafta.common.cmm.leave.util.PartialLeaveWindowUtils;
 import com.prafta.common.cmm.push.ApprovalResultNotiService;
+import com.prafta.common.cmm.schedule.util.FixedOtScheduleUtils;
 import com.prafta.common.cmm.siteauth.service.SiteAccessService;
 import com.prafta.common.error.attd.AttdErrorCode;
 import com.prafta.common.exception.ApiException;
@@ -612,6 +613,11 @@ public class Attd07ServiceImpl implements Attd07Service {
         //   로 산출한 면제 구간을 additive 로 내려 FE 가 계산 없이 그대로 뺀다. 구 FE 는 필드 무시(무영향).
         List<OtLeaveExemptWindowView> otLeaveExemptWindowList = buildOtLeaveExemptWindows(param);
 
+        // PRAFTA-FIXEDOT-2(정책 ①·④): 고정연장 점유 구간도 additive 로 내린다 — FE 칩이 연차 면제와
+        //   동일하게 피감수에 합쳐, 고정연장 구간이 "등록 가능"으로 오표시되는 불일치를 막는다(검증 동일 출처).
+        //   고정연장 없는 근무타입은 항상 빈 목록(구 FE·기존 타입 무영향).
+        List<OtLeaveExemptWindowView> otFixedOtWindowList = buildOtFixedOtWindows(param);
+
         return DailyAttdDetailsResponse.builder()
                 .dailyAttdDetailsResult(dailyAttdDetailsResult)
                 .dailyAttdDetailHistoryResultList(dailyAttdDetailHistoryResultList)
@@ -622,6 +628,7 @@ public class Attd07ServiceImpl implements Attd07Service {
                 .convMinutes(convMinutes)
                 .neighborAttdSegmentList(neighborAttdSegmentList)
                 .otLeaveExemptWindowList(otLeaveExemptWindowList)
+                .otFixedOtWindowList(otFixedOtWindowList)
                 .build();
     }
 
@@ -1544,8 +1551,14 @@ public class Attd07ServiceImpl implements Attd07Service {
                         param.gvCmpnyCd(), param.siteCd(), param.userCd(), param.workYmd()),
                 windows, param.userCd());
 
+        // 4-C. PRAFTA-FIXEDOT-2(정책 ①·④): 고정연장(전방·후방) 점유 구간.
+        //    등록 가능 범위 = 실근태 − (소정 ∪ 고정연장 ∪ 연차 면제) — 고정연장 구간의 OT 중복 신청을
+        //    구조적으로 차단한다(경계 접함은 기존 규약대로 허용 — 차집합 연산 특성상 자동).
+        //    고정연장 없는 근무타입은 빈 목록 → 아래 피감수가 현행과 완전히 동일(무회귀).
+        List<int[]> fixedOtSegs = buildFixedOtStampSegments(windows);
+
         // 5. PRAFTA-011 - 등록가능시간을 구간별로 분리 계산한다.
-        //    각 WORK_SEQ 에 대해 "그 구간 actual - (그 구간 schedule ∪ 연차 면제 구간)" 차집합을 구한다.
+        //    각 WORK_SEQ 에 대해 "그 구간 actual - (그 구간 schedule ∪ 고정연장 ∪ 연차 면제 구간)" 차집합을 구한다.
         //    매칭 스케줄이 없는 구간도 연차 면제 구간은 빼야 한다(D5 교정 지점).
         //    구간별 결과를 모두 합쳐 최종 allowed 윈도우를 만든다.
         //    1구간/2구간 actual 은 (오버나이트 보정 포함) 서로 겹치지 않도록 stamp 되어 있다.
@@ -1561,11 +1574,12 @@ public class Attd07ServiceImpl implements Attd07Service {
             actList.add(actSeg);
 
             int[] schSeg = schBySeq[seq];
-            // 피감수 = 그 구간 스케줄(있으면) ∪ 그날 연차 면제 구간.
-            List<int[]> subtrahend = new ArrayList<>(leaveExemptSegs.size() + 1);
+            // 피감수 = 그 구간 스케줄(있으면) ∪ 그날 고정연장 구간 ∪ 그날 연차 면제 구간.
+            List<int[]> subtrahend = new ArrayList<>(leaveExemptSegs.size() + fixedOtSegs.size() + 1);
             if (schSeg != null) {
                 subtrahend.add(schSeg);
             }
+            subtrahend.addAll(fixedOtSegs);
             subtrahend.addAll(leaveExemptSegs);
 
             List<int[]> seqAllowed;
@@ -1890,6 +1904,60 @@ public class Attd07ServiceImpl implements Attd07Service {
      * <p>산출 실패(스케줄 프레임 부재·시각 비정상)는 <b>스킵하지 않는다</b>(§15-2-3 fail-open 금지) —
      * 그날 전체를 면제로 보아 OT 를 거부하고 WARN 을 남긴다.
      */
+    /**
+     * PRAFTA-FIXEDOT-2: 고정연장(전방·후방) 점유를 근태 stamp 프레임(workYmd-1 00:00 = 0,
+     * 당일 00:00 = 1440)의 분 구간 목록으로 환산한다.
+     *
+     * <p>환산 규약(자정 넘김·소정 wrap)은 {@link FixedOtScheduleUtils#fixedOtSegments} 단일 출처.
+     * 그 결과는 일 anchor(당일 00:00 = 0) 프레임이므로 +1440 만 더한다
+     * ({@code AttdScheduleUtils.buildPlanSegment} 의 plan stamp origin 통일 규약과 동일).
+     * 고정연장 없는 근무타입은 빈 목록(무회귀).
+     */
+    private List<int[]> buildFixedOtStampSegments(AllowedWindowResult w) {
+        List<int[]> out = new ArrayList<>(2);
+        for (int[] seg : FixedOtScheduleUtils.fixedOtSegments(
+                w.plan1Start(), w.plan1End(), w.plan2Start(), w.plan2End(),
+                w.preFixedOtStrTime(), w.preFixedOtEndTime(),
+                w.fixedOtStrTime(), w.fixedOtEndTime())) {
+            out.add(new int[] { seg[0] + 1440, seg[1] + 1440 });
+        }
+        return out;
+    }
+
+    /**
+     * PRAFTA-FIXEDOT-2: 일자상세 조회용 — 고정연장 점유 구간을 표시용 뷰로 산출한다.
+     *
+     * <p>산출 경로는 OT 저장 검증(4-C)과 동일 출처({@code selectAllowedWindow}(+무스케줄 폴백) →
+     * {@code buildFixedOtStampSegments})다. FE 칩은 이 구간을 연차 면제 구간과 동일하게 피감수에
+     * 합쳐(additive), 고정연장 구간이 "등록 가능"으로 오표시되지 않게 한다.
+     *
+     * <p>조회 실패는 팝업 본체를 막지 않는다(표시 부가 정보 — buildOtLeaveExemptWindows 와 동일 방침).
+     */
+    private List<OtLeaveExemptWindowView> buildOtFixedOtWindows(DailyAttdDetailsParam param) {
+        try {
+            OvertimeAllowedWindowQuery query = new OvertimeAllowedWindowQuery(
+                    param.gvCmpnyCd(), param.siteCd(), param.userCd(), param.workYmd());
+            AllowedWindowResult windows = attd07Mapper.selectAllowedWindow(query);
+            if (windows == null) {
+                // 근무계획 미배정일 — 스케줄(고정연장 포함) 부재이므로 빈 목록.
+                return List.of();
+            }
+            List<int[]> segs = buildFixedOtStampSegments(windows);
+            if (segs.isEmpty()) {
+                return List.of();
+            }
+            List<OtLeaveExemptWindowView> out = new ArrayList<>(segs.size());
+            for (int[] seg : segs) {
+                out.add(OtLeaveExemptWindowView.fromStampRange(param.workYmd(), seg));
+            }
+            return out;
+        } catch (RuntimeException e) {
+            log.warn("일자상세 - 고정연장 점유 구간 산출 실패(칩 반영만 생략). userCd={}, workYmd={}",
+                    param.userCd(), param.workYmd(), e);
+            return List.of();
+        }
+    }
+
     private List<int[]> buildLeaveExemptSegments(String workYmd, List<LeaveExemptWindowResult> rows,
                                                  AllowedWindowResult windows, String userCd) {
         List<int[]> out = new ArrayList<>();

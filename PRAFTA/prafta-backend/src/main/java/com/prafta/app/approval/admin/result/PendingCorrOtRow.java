@@ -26,5 +26,11 @@ public record PendingCorrOtRow(
     , String schSecEndTime
     , String reqReason
     , String reqDate
+    // PRAFTA-FIXEDOT-2: 요청 스케줄 고정연장(전방·후방, HHmm, NULL=없음) — 카드 요약 구분 표기용.
+    //   ⚠️ record 끝 = SELECT 끝 동일 순서(위치 기반 매핑, 중간 삽입 금지).
+    , String schPreFixedOtStrTime
+    , String schPreFixedOtEndTime
+    , String schFixedOtStrTime
+    , String schFixedOtEndTime
 ) {
 }

@@ -39,5 +39,20 @@ public record AllowedWindowResult(
     /** 2차 근태 row — 퇴근 raw 일자 / 시각. */
     , String act2OutDate
     , String act2OutTime
+
+    // ────────────────────────────────────────────────────────────────
+    // PRAFTA-FIXEDOT-2: 근무타입 고정연장근무(전방·후방 FROM/TO, HHMM, NULL=없음).
+    //   OT 등록 가능 범위 = 실근태 − (소정 ∪ 고정연장 ∪ 연차면제) 로 확장(정책 ①·④).
+    //   ⚠️ 아래 4필드는 반드시 record 끝 = SELECT 절 끝 동일 순서(위치 기반 매핑, 중간 삽입 금지).
+    // ────────────────────────────────────────────────────────────────
+
+    /** 전방 고정연장 시작 (HHMM, 소정 1구간 시작 이전) */
+    , String preFixedOtStrTime
+    /** 전방 고정연장 종료 (HHMM) */
+    , String preFixedOtEndTime
+    /** 후방 고정연장 시작 (HHMM, 소정 마지막 구간 종료 이후) */
+    , String fixedOtStrTime
+    /** 후방 고정연장 종료 (HHMM, 종료<=시작이면 자정 넘김 +1440 해석) */
+    , String fixedOtEndTime
 ) {
 }

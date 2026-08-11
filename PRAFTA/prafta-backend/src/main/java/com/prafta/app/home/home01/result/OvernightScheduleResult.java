@@ -13,5 +13,12 @@ public record OvernightScheduleResult(
     , String fstSchEndTime
     , String secSchStrTime
     , String secSchEndTime
+
+    // PRAFTA-FIXEDOT-2(J13): 후방 고정연장(FROM/TO, HHMM, NULL=없음) — 전일 마지막 점유 구간이
+    // 후방 고정연장이면 그 종료가 오버나이트 기준일 경계가 된다(지시서 지점 5).
+    // 전방 고정연장은 전일 소정 시작 이전(당일 내 — V2)이라 이웃날 경계 판정과 무관 → 미조회.
+    // ⚠️ record 끝 = SELECT 끝 동일 순서(위치 기반 매핑).
+    , String fixedOtStrTime
+    , String fixedOtEndTime
 ) {
 }

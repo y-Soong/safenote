@@ -29,6 +29,7 @@ import com.prafta.app.req.req07.service.AppReq07Service;
 import com.prafta.app.req.req09.service.AttdApprovalLineService;
 import com.prafta.common.cmm.leave.service.LeaveRefusalConst;
 import com.prafta.common.cmm.leave.util.PartialLeaveWindowUtils;
+import com.prafta.common.cmm.schedule.util.FixedOtScheduleUtils;
 import com.prafta.common.cmm.leave.service.LeaveRefusalDetectService;
 import com.prafta.common.error.attd.AttdErrorCode;
 import com.prafta.common.exception.ApiException;
@@ -461,6 +462,10 @@ public class AppReq07ServiceImpl implements AppReq07Service {
                         param.workYmd(), s);
                 // (이슈①) OT 시각이 해당 구간 정규 스케줄과 겹치면 거부.
                 assertNoScheduleOverlap(param.workYmd(), schedule, s, param.userCd());
+                // (PRAFTA-FIXEDOT-2, 정책 ①·④) OT 시각이 고정연장(전방·후방) 구간과 겹치면 거부.
+                //   고정연장 구간은 신청 없이 계상되는 축이므로 중복 신청을 구조적으로 차단한다
+                //   (웹 selectAllowedWindow 의 피감수 확장과 쌍). 구간(workSeq) 무관 — 그날 전체 검사.
+                assertNoFixedOtOverlap(param.workYmd(), schedule, s, param.userCd());
                 // (HB-08 D5) OT 시각이 그날 연차 면제 구간과 겹치면 거부.
                 //   ★ 3차(§15-2): 면제 구간 환산에 그날 원 스케줄(schedule)을 프레임으로 넘긴다.
                 assertNoLeaveExemptOverlap(param.workYmd(), leaveWindows, schedule, s, param.userCd());
@@ -798,6 +803,47 @@ public class AppReq07ServiceImpl implements AppReq07Service {
                     userCd, workYmd, slot.getWorkSeq(),
                     slot.getStartTime(), slot.getEndTime(), schStrTime, schEndTime);
             throw new ApiException(AttdErrorCode.ATTD_400_100);
+        }
+    }
+
+    /**
+     * PRAFTA-FIXEDOT-2(정책 ①·④): OT 슬롯이 그날 스케줄의 고정연장(전방·후방) 구간과 겹치면
+     * 거부(ATTD_400_100 — 스케줄 겹침과 동일 코드 재사용, 신규 코드 신설 금지).
+     *
+     * <ul>
+     *   <li>스케줄 행 부재/고정연장 미설정이면 즉시 통과 — 기존 근무타입 경로 완전 무회귀(NULL 가드).</li>
+     *   <li>구간 환산은 {@link FixedOtScheduleUtils#fixedOtSegments} 단일 출처(자정 넘김·소정 wrap
+     *       규약 = 1단계 검증·웹 등록범위와 동일 프레임). 일 anchor 분에 근무일 절대 분을 더해 비교.</li>
+     *   <li>고정연장은 특정 WORK_SEQ 에 속하지 않으므로 슬롯 구간과 무관하게 그날 전체를 검사.</li>
+     *   <li>겹침 조건: otStart &lt; fixedEnd && fixedStart &lt; otEnd (접함 허용 — 기존 규약 동일).</li>
+     * </ul>
+     */
+    private void assertNoFixedOtOverlap(String workYmd, ScheduleWindowResult schedule,
+                                        SlotRequest slot, String userCd) {
+        if (schedule == null) {
+            return; // 스케줄 부재(연차/NULL/미매칭) → 고정연장도 부재 → 통과.
+        }
+        List<int[]> segs = FixedOtScheduleUtils.fixedOtSegments(
+                schedule.fstStrTime(), schedule.fstEndTime(),
+                schedule.secStrTime(), schedule.secEndTime(),
+                schedule.preFixedOtStrTime(), schedule.preFixedOtEndTime(),
+                schedule.fixedOtStrTime(), schedule.fixedOtEndTime());
+        if (segs.isEmpty()) {
+            return; // 고정연장 미설정(기존 근무타입) → 현행과 동일.
+        }
+        long base = ymdToDays(workYmd) * 1440L; // 일 anchor(당일 00:00 = 0) → 절대 분 환산 기준점.
+        long otStart = ymdToDays(slot.getStartDate()) * 1440L + parseHHmm(slot.getStartTime());
+        long otEnd = ymdToDays(slot.getEndDate()) * 1440L + parseHHmm(slot.getEndTime());
+        for (int[] seg : segs) {
+            long fixedStart = base + seg[0];
+            long fixedEnd = base + seg[1];
+            // 겹침: otStart < fixedEnd && fixedStart < otEnd (접함 허용).
+            if (otStart < fixedEnd && fixedStart < otEnd) {
+                log.info("[PRAFTA-FIXEDOT-2] OT 고정연장 구간 겹침 거부 — userCd={}, workYmd={}, workSeq={}, ot=[{}~{}], fixedOt=[{}~{}](분)",
+                        userCd, workYmd, slot.getWorkSeq(),
+                        slot.getStartTime(), slot.getEndTime(), seg[0], seg[1]);
+                throw new ApiException(AttdErrorCode.ATTD_400_100);
+            }
         }
     }
 

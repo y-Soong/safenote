@@ -211,13 +211,23 @@ const fmtTime = (t) => {
  * 스케줄 옵션 라벨 조립.
  * - 1구간만: "09:00~18:00"
  * - 2구간: "09:00~12:00 / 13:00~18:00"
+ * - PRAFTA-FIXEDOT-2: 고정연장 보유 타입은 " + 고정연장 HH:MM~HH:MM" 구분 suffix
+ *   (전방+후방이면 " · " 나열). 없는 타입은 기존 라벨 그대로(무회귀).
  */
 const buildLabel = (s) => {
   const fst = `${fmtTime(s.fstStrTime)}~${fmtTime(s.fstEndTime)}`
-  if (s.secStrTime && s.secEndTime) {
-    return `${fst} / ${fmtTime(s.secStrTime)}~${fmtTime(s.secEndTime)}`
+  const base =
+    s.secStrTime && s.secEndTime
+      ? `${fst} / ${fmtTime(s.secStrTime)}~${fmtTime(s.secEndTime)}`
+      : fst
+  const fixedParts = []
+  if (s.preFixedOtStrTime && s.preFixedOtEndTime) {
+    fixedParts.push(`${fmtTime(s.preFixedOtStrTime)}~${fmtTime(s.preFixedOtEndTime)}`)
   }
-  return fst
+  if (s.fixedOtStrTime && s.fixedOtEndTime) {
+    fixedParts.push(`${fmtTime(s.fixedOtStrTime)}~${fmtTime(s.fixedOtEndTime)}`)
+  }
+  return fixedParts.length ? `${base} + 고정연장 ${fixedParts.join(' · ')}` : base
 }
 
 // 트리거 버튼 표시 라벨

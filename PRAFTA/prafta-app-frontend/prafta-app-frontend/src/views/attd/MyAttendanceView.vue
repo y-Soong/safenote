@@ -583,6 +583,8 @@ const toSheetDay = (detail) => {
     workPlanName: detail.workPlanName,
     leaveTypeName: detail.leaveTypeName,
     scheduleSummary: detail.scheduleSummary,
+    // PRAFTA-FIXEDOT-2(표기): 고정연장 요약(시트 메타 구분 표기 — 없으면 미표기).
+    fixedOtSummary: detail.fixedOtSummary,
     attendanceSummary: detail.attendanceSummary,
     nodeCd: detail.nodeCd,
     siteName: detail.siteName,
@@ -590,6 +592,8 @@ const toSheetDay = (detail) => {
     slots: detail.slots,
     // OT 칩 정합(2026-08-08): 그날 연차 면제 구간(서버 산출) — OT 폼 칩이 실근태−스케줄에서 추가로 뺀다.
     leaveExemptWindows: detail.leaveExemptWindows || [],
+    // PRAFTA-FIXEDOT-2: 고정연장 점유 구간(서버 산출) — OT 폼 칩이 피감수에 합친다(서버 검증 정합).
+    fixedOtWindows: detail.fixedOtWindows || [],
     // 작업지시서_연차변경화면_진입버튼: AttendanceActionSheet 라벨 분기 + LeaveMoveRequest 프리셀렉트용.
     isLeaveUsed: detail.isLeaveUsed,
     leaveId: detail.leaveId,
@@ -645,6 +649,8 @@ const buildContextFromDay = (day) => {
     nodeCd: day.nodeCd,
     siteName: day.siteName,
     scheduleSummary: day.scheduleSummary,
+    // PRAFTA-FIXEDOT-2(표기): 고정연장 요약(폼 컨텍스트 구분 표기 — 없으면 미표기).
+    fixedOtSummary: day.fixedOtSummary,
     workPlanName: day.workPlanName,
     attendanceSummary: day.attendanceSummary,
     hasIssue: day.hasIssue,
@@ -652,6 +658,8 @@ const buildContextFromDay = (day) => {
     slots: day.slots,
     // OT 칩 정합(2026-08-08): 그날 연차 면제 구간(서버 산출) — OT 폼 칩이 실근태−스케줄에서 추가로 뺀다.
     leaveExemptWindows: day.leaveExemptWindows || [],
+    // PRAFTA-FIXEDOT-2: 고정연장 점유 구간(서버 산출) — OT 폼 칩이 피감수에 합친다(서버 검증 정합).
+    fixedOtWindows: day.fixedOtWindows || [],
   }
 }
 

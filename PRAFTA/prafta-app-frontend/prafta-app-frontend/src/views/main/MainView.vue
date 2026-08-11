@@ -65,6 +65,10 @@
           :is-offsite="isOffsite"
           :schedule-start-time="scheduleStartTime"
           :schedule-end-time="scheduleEndTime"
+          :pre-fixed-ot-start-time="preFixedOtStartTime"
+          :pre-fixed-ot-end-time="preFixedOtEndTime"
+          :fixed-ot-start-time="fixedOtStartTime"
+          :fixed-ot-end-time="fixedOtEndTime"
           :check-in-time="checkInTime"
           :check-out-time="checkOutTime"
           :schedule-exists="scheduleExists"
@@ -264,6 +268,11 @@ const attdStatus = ref('BEFORE_WORK') // 'BEFORE_WORK' | 'WORKING' | 'OFF_WORK'
 const isOffsite = ref(false)
 const scheduleStartTime = ref('') // HHMM
 const scheduleEndTime = ref('') // HHMM
+// PRAFTA-FIXEDOT-2(표기): 고정연장(전방·후방) 시각 — 카드가 소정과 구분해 표기(라벨 "고정연장").
+const preFixedOtStartTime = ref('') // HHMM
+const preFixedOtEndTime = ref('') // HHMM
+const fixedOtStartTime = ref('') // HHMM
+const fixedOtEndTime = ref('') // HHMM
 const checkInTime = ref('') // HHMM
 const checkOutTime = ref('') // HHMM (OFF_WORK 시 퇴근시각)
 const scheduleExists = ref(true) // 기준일 근무 스케줄 존재 여부
@@ -386,6 +395,11 @@ const applyAttendance = (attd) => {
   isOffsite.value = !!attd.isOffsite
   scheduleStartTime.value = attd.scheduleStart || ''
   scheduleEndTime.value = attd.scheduleEnd || ''
+  // PRAFTA-FIXEDOT-2(표기): 고정연장 시각(없는 타입/구서버 응답은 빈 문자열 — 표기 생략).
+  preFixedOtStartTime.value = attd.preFixedOtStrTime || ''
+  preFixedOtEndTime.value = attd.preFixedOtEndTime || ''
+  fixedOtStartTime.value = attd.fixedOtStrTime || ''
+  fixedOtEndTime.value = attd.fixedOtEndTime || ''
   checkInTime.value = attd.checkInTime || ''
   checkOutTime.value = attd.checkOutTime || ''
   scheduleExists.value = !!attd.scheduleExists

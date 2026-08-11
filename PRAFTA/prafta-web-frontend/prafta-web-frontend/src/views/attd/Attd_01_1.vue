@@ -385,6 +385,28 @@ const fnGetSystinfoList = async () => {
   }
 };
 
+// PRAFTA-FIXEDOT-2(표기): 근무시간 셀에 고정연장(전방·후방)을 구분 표기(라벨 "고정연장").
+//   표시 전용 필드(fstSchTime/secSchTime)만 데코레이션 — 원시 시각(fstSchStrTime 등)은 불변이라
+//   수정 팝업/저장 흐름에 영향 없다. 고정연장 없는 타입은 기존 표기 그대로(무회귀).
+const decorateFixedOt = (s) => {
+  const out = { ...s };
+  if (s.preFixedOtStrTime && s.preFixedOtEndTime) {
+    out.fstSchTime = `고정연장 ${s.preFixedOtStrTime}-${s.preFixedOtEndTime} + ${
+      s.fstSchTime ?? ""
+    }`;
+  }
+  if (s.fixedOtStrTime && s.fixedOtEndTime) {
+    const rearText = `고정연장 ${s.fixedOtStrTime}-${s.fixedOtEndTime}`;
+    // 후방은 소정 마지막 구간 뒤 — 2구간 타입이면 2구간 셀, 아니면 1구간 셀에 덧붙인다.
+    if (s.secSchTime) {
+      out.secSchTime = `${s.secSchTime} + ${rearText}`;
+    } else {
+      out.fstSchTime = `${out.fstSchTime ?? ""} + ${rearText}`;
+    }
+  }
+  return out;
+};
+
 const fnSearch = async () => {
   if (proxy.$util.isEmpty(siteCd.value)) {
     proxy.$alert(getMessage(MSG.SITE_REQUIRED));
@@ -401,7 +423,9 @@ const fnSearch = async () => {
       },
     });
     if (response.status === 200) {
-      schList.value = response.data.schInfoResultList;
+      schList.value = (response.data.schInfoResultList || []).map(
+        decorateFixedOt
+      );
     }
   } catch (err) {
     const msg = resolveApiErrorMessage(err, "조회 중 오류가 발생했습니다.");

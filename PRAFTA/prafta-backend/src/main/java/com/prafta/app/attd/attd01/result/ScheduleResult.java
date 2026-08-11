@@ -24,5 +24,14 @@ public record ScheduleResult(
     , String secSchBrkMin
     , String leaveCd
     , String leaveNm
+
+    // PRAFTA-FIXEDOT-2(M18): 고정연장(전방·후방 FROM/TO, HHMM, NULL=없음).
+    //   소비처(J1)가 용도별로 분리 사용: 표기(주간/일상세 fixedOtSummary·예정 합계)만 소비하고
+    //   지각/조퇴 판정(effectiveStart/End)·면제 프레임은 소정만 유지(정책 ②, 판정식 불변).
+    // ⚠️ record 끝 = SELECT 끝 동일 순서(위치 기반 매핑, 중간 삽입 금지).
+    , String preFixedOtStrTime
+    , String preFixedOtEndTime
+    , String fixedOtStrTime
+    , String fixedOtEndTime
 ) {
 }

@@ -133,5 +133,28 @@ public record MonthlyAttdReqResult(
 
     /** 가불 충당 일수 (0 초과일 때만 FE 가 "가불 N일" 세그먼트 표시) */
     , BigDecimal borrowDays
+
+    // ────────────────────────────────────────────────────────────────
+    // PRAFTA-FIXEDOT-2(표기): 스케줄 수정(10) 카드 비교용 고정연장(전방·후방) 시각.
+    //   목표(tgt*) = REQ.SCH_CD, 현재(cur*) = WORK_PLAN_CD. 미설정/미매칭이면 NULL.
+    //   ⚠️ record 끝 = SELECT 끝 동일 순서(위치 기반 매핑, 중간 삽입 금지).
+    // ────────────────────────────────────────────────────────────────
+
+    /** 목표 스케줄 전방 고정연장 시작 (HHmm, NULL=없음) */
+    , String tgtPreFixedOtStrTime
+    /** 목표 스케줄 전방 고정연장 종료 (HHmm) */
+    , String tgtPreFixedOtEndTime
+    /** 목표 스케줄 후방 고정연장 시작 (HHmm) */
+    , String tgtFixedOtStrTime
+    /** 목표 스케줄 후방 고정연장 종료 (HHmm) */
+    , String tgtFixedOtEndTime
+    /** 현재 스케줄 전방 고정연장 시작 (HHmm) */
+    , String curPreFixedOtStrTime
+    /** 현재 스케줄 전방 고정연장 종료 (HHmm) */
+    , String curPreFixedOtEndTime
+    /** 현재 스케줄 후방 고정연장 시작 (HHmm) */
+    , String curFixedOtStrTime
+    /** 현재 스케줄 후방 고정연장 종료 (HHmm) */
+    , String curFixedOtEndTime
 ) {
 }

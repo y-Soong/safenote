@@ -20,6 +20,9 @@ import com.prafta.common.util.DateTimeUtils;
  *
  * <p>산식: 각 구간 근로분 = {@code (종료 − 시작) − 휴게(분)} (종료 ≤ 시작이면 야간 구간 +1440 보정),
  * 1구간 필수 + 2구간 선택 합산. 도메인 종속(연차/스케줄) 유틸이므로 common.util 이 아닌 모듈 내부에 둔다.
+ *
+ * <p>★PRAFTA-FIXEDOT-2 가드: 연차 분모(D/E1)는 <b>소정근로만</b>이다 — 고정연장근무
+ * (PRE_FIXED_OT_ / FIXED_OT_ 계열 컬럼) 분을 여기에 절대 합산하지 말 것(480 캡 정합 — 지시서 지점 2).
  */
 public final class ScheduleWorkMinutesUtils {
 

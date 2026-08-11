@@ -63,5 +63,28 @@ public record DailyAttdDetailHistoryResult(
 	/** 근로자가 요청 시 입력한 사유(TB_USER_ATTD_REQ.REQ_REASON). REQ 연결이 없는
 	 *  관리자 직접수정/orphan 이력은 NULL. 관리자 처리사유(processReason)와는 별개 컬럼(com-013 #4). */
 	, String reqReason
+
+	// ────────────────────────────────────────────────────────────────
+	// PRAFTA-FIXEDOT-2(표기): 스케줄 수정(10) 이력의 변경 전/후 고정연장(전방·후방) 시각.
+	//   befSched*/aftSched* 와 동일 규약 — 스케줄 수정 이력만 채우고, 근태/OT/연차 이력은 NULL alias.
+	//   ⚠️ record 끝 = 세 쿼리 SELECT 끝 동일 순서(위치 기반 매핑, 중간 삽입 금지).
+	// ────────────────────────────────────────────────────────────────
+
+	/** 변경 전 전방 고정연장 시작 (HHmm, NULL=없음) */
+	, String befPreFixedOtStrTime
+	/** 변경 전 전방 고정연장 종료 (HHmm) */
+	, String befPreFixedOtEndTime
+	/** 변경 전 후방 고정연장 시작 (HHmm) */
+	, String befFixedOtStrTime
+	/** 변경 전 후방 고정연장 종료 (HHmm) */
+	, String befFixedOtEndTime
+	/** 변경 후 전방 고정연장 시작 (HHmm) */
+	, String aftPreFixedOtStrTime
+	/** 변경 후 전방 고정연장 종료 (HHmm) */
+	, String aftPreFixedOtEndTime
+	/** 변경 후 후방 고정연장 시작 (HHmm) */
+	, String aftFixedOtStrTime
+	/** 변경 후 후방 고정연장 종료 (HHmm) */
+	, String aftFixedOtEndTime
 ) {
 }

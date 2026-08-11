@@ -51,6 +51,12 @@ public class WeekDayResponse {
     @JsonProperty("isTwoSlot")
     private final boolean isTwoSlot;
     private final String scheduleSummary;
+    /**
+     * PRAFTA-FIXEDOT-2(표기): 고정연장 요약 — scheduleSummary 와 동일 형상(raw HHMM,
+     * 예 "1800~2000", 전방+후방이면 "0700~0830 / 1800~2000"). FE 가 "고정연장" 라벨과 함께
+     * 소정과 구분 표기한다. 고정연장 없는 근무타입은 null(미표기 — 무회귀).
+     */
+    private final String fixedOtSummary;
     private final String attendanceSummary;
     private final String attendanceStatus;
     private final WeekDayActionsResponse actions;

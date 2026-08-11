@@ -19,5 +19,13 @@ public record ScheduleWindowResult(
         , String fstEndTime   // HHmm
         , String secStrTime   // HHmm (nullable)
         , String secEndTime   // HHmm (nullable)
+
+        // PRAFTA-FIXEDOT-2: 고정연장(전방·후방 FROM/TO, HHMM, NULL=없음) — OT 신청이 고정연장
+        // 구간과 겹치면 거부(정책 ①·④, 웹 selectAllowedWindow 확장과 쌍).
+        // ⚠️ record 끝 = SELECT 끝 동일 순서(위치 기반 매핑, 중간 삽입 금지).
+        , String preFixedOtStrTime  // HHmm (nullable)
+        , String preFixedOtEndTime  // HHmm (nullable)
+        , String fixedOtStrTime     // HHmm (nullable)
+        , String fixedOtEndTime     // HHmm (nullable)
 ) {
 }

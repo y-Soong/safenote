@@ -23,5 +23,16 @@ public record SchedBodyRow(
     , String reqFstEndTime
     , String reqSecStrTime
     , String reqSecEndTime
+
+    // PRAFTA-FIXEDOT-2: 현재/요청 스케줄의 고정연장(전방·후방, HHmm, NULL=없음) — 상세 비교 표기용.
+    //   ⚠️ record 끝 = SELECT 끝 동일 순서(위치 기반 매핑, 중간 삽입 금지).
+    , String curPreFixedOtStrTime
+    , String curPreFixedOtEndTime
+    , String curFixedOtStrTime
+    , String curFixedOtEndTime
+    , String reqPreFixedOtStrTime
+    , String reqPreFixedOtEndTime
+    , String reqFixedOtStrTime
+    , String reqFixedOtEndTime
 ) {
 }

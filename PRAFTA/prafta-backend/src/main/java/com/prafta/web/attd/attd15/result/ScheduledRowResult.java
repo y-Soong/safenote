@@ -35,5 +35,13 @@ public record ScheduledRowResult(
          * HB-07(Q4): 그날 종일('00') 확정 연차 존재 여부('Y'/'N'). 'Y' 면 면제분 = D 로 보아 소정 0.
          */
         , String fullDayLeaveYn
+
+        // PRAFTA-FIXEDOT-2(지시서 지점 4): 고정연장(전방·후방 FROM/TO, HHMM, NULL=없음).
+        // 주간 "등록된 스케줄 기준" 잠정치(예정 근로)에 고정연장 분을 편입한다.
+        // ⚠️ record 끝 = SELECT 끝 동일 순서(위치 기반 매핑, 중간 삽입 금지).
+        , String preFixedOtStrTime
+        , String preFixedOtEndTime
+        , String fixedOtStrTime
+        , String fixedOtEndTime
 ) {
 }

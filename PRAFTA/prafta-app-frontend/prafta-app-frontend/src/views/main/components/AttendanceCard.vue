@@ -109,6 +109,23 @@ const props = defineProps({
     type: String,
     default: '',
   },
+  // PRAFTA-FIXEDOT-2(표기): 고정연장(전방·후방) 시각 (HHMM, 없으면 '') — 예정 표기에 구분 노출.
+  preFixedOtStartTime: {
+    type: String,
+    default: '',
+  },
+  preFixedOtEndTime: {
+    type: String,
+    default: '',
+  },
+  fixedOtStartTime: {
+    type: String,
+    default: '',
+  },
+  fixedOtEndTime: {
+    type: String,
+    default: '',
+  },
   // 실제 출근 시각 (HHMM, 예: "0928")
   checkInTime: {
     type: String,
@@ -208,7 +225,16 @@ const timeText = computed(() => {
     if (!props.scheduleExists) return '스케줄 없음'
     const start = formatHHMM(props.scheduleStartTime)
     const end = formatHHMM(props.scheduleEndTime)
-    return start && end ? `예정 ${start} ~ ${end}` : '예정 --:-- ~ --:--'
+    const base = start && end ? `예정 ${start} ~ ${end}` : '예정 --:-- ~ --:--'
+    // PRAFTA-FIXEDOT-2(표기): 고정연장(전방·후방)을 소정과 구분해 병기. 없는 타입은 기존 표기 그대로.
+    const fixedParts = []
+    const preS = formatHHMM(props.preFixedOtStartTime)
+    const preE = formatHHMM(props.preFixedOtEndTime)
+    if (preS && preE) fixedParts.push(`${preS}~${preE}`)
+    const rearS = formatHHMM(props.fixedOtStartTime)
+    const rearE = formatHHMM(props.fixedOtEndTime)
+    if (rearS && rearE) fixedParts.push(`${rearS}~${rearE}`)
+    return fixedParts.length ? `${base} + 고정연장 ${fixedParts.join(' · ')}` : base
   }
   // WORKING
   const t = formatHHMM(props.checkInTime)

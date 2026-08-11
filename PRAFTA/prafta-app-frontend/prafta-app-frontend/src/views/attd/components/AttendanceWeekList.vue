@@ -226,6 +226,12 @@ const summaryHtml = (day) => {
   if (isLeave(day) || isOffDay(day)) return ''
   if (!day.scheduleSummary) return ''
   let html = `<span class="lbl">스케줄</span> ${formatTimeSummary(day.scheduleSummary)}`
+  // PRAFTA-FIXEDOT-2(표기): 고정연장(전방·후방) 요약 — 소정과 구분해 라벨 병기.
+  //   서버 fixedOtSummary 는 scheduleSummary 와 동일 형상(raw HHMM)이라 같은 포매터 재사용.
+  //   미수신/고정연장 없는 타입은 기존 표기 그대로(무회귀).
+  if (day.fixedOtSummary) {
+    html += ` <span class="lbl">고정연장</span> ${formatTimeSummary(day.fixedOtSummary)}`
+  }
   // 근태 요약은 생성된 경우만(미래/미생성=null)
   if (day.attendanceSummary) {
     const tone = attendanceToneClass(day.attendanceStatus)

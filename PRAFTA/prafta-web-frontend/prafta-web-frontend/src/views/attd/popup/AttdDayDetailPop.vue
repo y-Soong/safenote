@@ -1260,6 +1260,9 @@ const neighborSegments = ref([]);
 //   차집합에 쓴다(startStamp/endStamp 축 = buildActualSegments 와 동일, workYmd-1 00:00 원점).
 //   미수신(구서버)이면 빈 배열 → 종전 계산(실근태−스케줄) 그대로(회귀 없음).
 const otLeaveExemptWindows = ref([]);
+// PRAFTA-FIXEDOT-2: 그날 스케줄의 고정연장(전방·후방) 점유 구간(서버 산출, stamp 동일 축).
+//   OT 칩 피감수에 연차 면제와 동일하게 합친다 — 서버 검증(실근태 − (소정 ∪ 고정연장 ∪ 연차면제)) 정합.
+const otFixedOtWindows = ref([]);
 
 // "YYYY-MM-DD" → "YYYYMMDD"
 const ymdDashToNum = (s) => (s || "").replace(/-/g, "");
@@ -1286,6 +1289,15 @@ const schedLabel = (fstStr, fstEnd, secStr, secEnd) => {
     return `${fst} / ${fmtTime(secStr)}~${fmtTime(secEnd)} (2구간)`;
   }
   return `${fst} (1구간)`;
+};
+
+// PRAFTA-FIXEDOT-2(표기): 고정연장(전방·후방) 라벨 suffix — 없으면 빈 문자열(기존 라벨 불변).
+//   스케줄 비교/이력 라벨 뒤에 붙여 소정과 시각적으로 구분한다(명칭 "고정연장" 통일 — 정책 ⑤).
+const fixedOtLabel = (preStr, preEnd, rearStr, rearEnd) => {
+  const parts = [];
+  if (preStr && preEnd) parts.push(`${fmtTime(preStr)}~${fmtTime(preEnd)}`);
+  if (rearStr && rearEnd) parts.push(`${fmtTime(rearStr)}~${fmtTime(rearEnd)}`);
+  return parts.length ? ` + 고정연장 ${parts.join(" · ")}` : "";
 };
 
 // LC-09(§5-B): 연차 차감일수 표기 — 소수점 노출 금지, "N일 H시간 M분 차감" 조립.
@@ -1684,6 +1696,13 @@ const historyView = computed(() =>
               h.befSchedFstEndTime,
               h.befSchedSecStrTime,
               h.befSchedSecEndTime
+            ) +
+            // PRAFTA-FIXEDOT-2: 변경 전 고정연장 구분 표기(없으면 빈 문자열 — 기존 라벨 불변).
+            fixedOtLabel(
+              h.befPreFixedOtStrTime,
+              h.befPreFixedOtEndTime,
+              h.befFixedOtStrTime,
+              h.befFixedOtEndTime
             )
           : "없음"
         : "",
@@ -1694,6 +1713,13 @@ const historyView = computed(() =>
               h.aftSchedFstEndTime,
               h.aftSchedSecStrTime,
               h.aftSchedSecEndTime
+            ) +
+            // PRAFTA-FIXEDOT-2: 변경 후 고정연장 구분 표기.
+            fixedOtLabel(
+              h.aftPreFixedOtStrTime,
+              h.aftPreFixedOtEndTime,
+              h.aftFixedOtStrTime,
+              h.aftFixedOtEndTime
             )
           : "없음"
         : "",
@@ -1749,14 +1775,30 @@ const reqCards = computed(() => {
             req.curFstEndTime,
             req.curSecStrTime,
             req.curSecEndTime
+          ) +
+          // PRAFTA-FIXEDOT-2: 현재 스케줄 고정연장 구분 표기(없으면 빈 문자열).
+          //   고정연장만 다른 변경도 befSched !== aftSched 로 변경점이 감지된다.
+          fixedOtLabel(
+            req.curPreFixedOtStrTime,
+            req.curPreFixedOtEndTime,
+            req.curFixedOtStrTime,
+            req.curFixedOtEndTime
           )
         : "없음";
-      const aftSched = schedLabel(
-        req.tgtFstStrTime,
-        req.tgtFstEndTime,
-        req.tgtSecStrTime,
-        req.tgtSecEndTime
-      );
+      const aftSched =
+        schedLabel(
+          req.tgtFstStrTime,
+          req.tgtFstEndTime,
+          req.tgtSecStrTime,
+          req.tgtSecEndTime
+        ) +
+        // PRAFTA-FIXEDOT-2: 목표 스케줄 고정연장 구분 표기.
+        fixedOtLabel(
+          req.tgtPreFixedOtStrTime,
+          req.tgtPreFixedOtEndTime,
+          req.tgtFixedOtStrTime,
+          req.tgtFixedOtEndTime
+        );
       return {
         ...base,
         mode: "sched",
@@ -2445,11 +2487,16 @@ const otAllowedWindowsBySeg = computed(() => {
   const exemptSegs = (otLeaveExemptWindows.value || [])
     .map((w) => [w.startStamp, w.endStamp])
     .filter(([s, e]) => Number.isFinite(s) && Number.isFinite(e) && e > s);
+  // PRAFTA-FIXEDOT-2: 고정연장 점유 구간(서버 산출)도 피감수에 합친다 — 고정연장 구간이
+  //   "등록 가능"으로 오표시되지 않게(서버 검증과 동일 산식). 미수신/빈 배열이면 종전과 동일.
+  const fixedOtSegs = (otFixedOtWindows.value || [])
+    .map((w) => [w.startStamp, w.endStamp])
+    .filter(([s, e]) => Number.isFinite(s) && Number.isFinite(e) && e > s);
   return actSegs.map((act, i) => {
     if (!act) return [];
     const sch = schSegs[i];
-    // 피감수 = 매칭 스케줄(있으면) ∪ 그날 연차 면제 구간 (서버 4-B 와 동일 형태).
-    const subtrahend = [...(sch ? [sch] : []), ...exemptSegs];
+    // 피감수 = 매칭 스케줄(있으면) ∪ 그날 고정연장 구간 ∪ 그날 연차 면제 구간 (서버 4-B/4-C 와 동일 형태).
+    const subtrahend = [...(sch ? [sch] : []), ...fixedOtSegs, ...exemptSegs];
     const allowed = subtrahend.length
       ? subtractIntervals(mergeIntervals([act]), mergeIntervals(subtrahend))
       : [act];
@@ -3274,6 +3321,8 @@ const fnSearch = async () => {
   dailyOvertimeList.value = [];
   // OT 칩 정합: 면제 구간도 응답 전엔 비운다(이전 사용자/일자 값 잔류 방지).
   otLeaveExemptWindows.value = [];
+  // PRAFTA-FIXEDOT-2: 고정연장 점유 구간도 동일하게 초기화.
+  otFixedOtWindows.value = [];
   // PRAFTA-009 part2: reload 시 외근 GPS 패널을 닫는다(ATTD_ID 가 갱신될 수 있음).
   gpsPanel.value = { segIdx: null, attdId: "", trail: [], loading: false };
 
@@ -3327,6 +3376,8 @@ const fnSearch = async () => {
       neighborSegments.value = response.data?.neighborAttdSegmentList ?? [];
       // OT 칩 정합: 연차 면제 구간(서버 검증과 동일 산식). 미수신이면 빈 배열(종전 칩 계산 유지).
       otLeaveExemptWindows.value = response.data?.otLeaveExemptWindowList ?? [];
+      // PRAFTA-FIXEDOT-2: 고정연장 점유 구간(서버 산출). 미수신/고정연장 없는 타입이면 빈 배열.
+      otFixedOtWindows.value = response.data?.otFixedOtWindowList ?? [];
     }
   } catch (err) {
     // 조회 실패해도 fallback 값으로 화면은 정상 렌더되도록 알림만 띄움

@@ -109,10 +109,17 @@
          , E.FST_SCH_END_TIME AS fstEnd
          , E.SEC_SCH_STR_TIME AS secStart
          , E.SEC_SCH_END_TIME AS secEnd
+         <!-- PRAFTA-FIXEDOT-2: 고정연장(전방·후방) — 겹침 판정은 전체 점유 기준.
+              record(SchWindowResult) 끝 4필드와 동일 순서로 SELECT 끝에 둔다(위치 기반 매핑). -->
+         , E.PRE_FIXED_OT_STR_TIME AS preFixedOtStart
+         , E.PRE_FIXED_OT_END_TIME AS preFixedOtEnd
+         , E.FIXED_OT_STR_TIME     AS fixedOtStart
+         , E.FIXED_OT_END_TIME     AS fixedOtEnd
       FROM (
             /* 현재본 (HIST_IDX 최댓값으로 두어 동일 APPLY_DATE 중복 시 현재본 우선) */
             SELECT M.SCH_CD, M.APPLY_DATE
                  , M.FST_SCH_STR_TIME, M.FST_SCH_END_TIME, M.SEC_SCH_STR_TIME, M.SEC_SCH_END_TIME
+                 , M.PRE_FIXED_OT_STR_TIME, M.PRE_FIXED_OT_END_TIME, M.FIXED_OT_STR_TIME, M.FIXED_OT_END_TIME
                  , 2147483647 AS HIST_IDX
               FROM TB_SCH_MGMT M
              WHERE M.CMPNY_CD = #{cmpnyCd}
@@ -122,6 +129,7 @@
             /* 이력본 */
             SELECT H.SCH_CD, H.APPLY_DATE
                  , H.FST_SCH_STR_TIME, H.FST_SCH_END_TIME, H.SEC_SCH_STR_TIME, H.SEC_SCH_END_TIME
+                 , H.PRE_FIXED_OT_STR_TIME, H.PRE_FIXED_OT_END_TIME, H.FIXED_OT_STR_TIME, H.FIXED_OT_END_TIME
                  , H.HIST_IDX
               FROM TB_SCH_MGMT_HIST H
              WHERE H.CMPNY_CD = #{cmpnyCd}

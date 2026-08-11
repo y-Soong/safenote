@@ -177,6 +177,12 @@
                     AND LF.START_DATE <![CDATA[ <= ]]> WP.WORK_YMD
                     AND LF.END_DATE   <![CDATA[ >= ]]> WP.WORK_YMD
               ) THEN 'Y' ELSE 'N' END  AS fullDayLeaveYn
+            /* PRAFTA-FIXEDOT-2: 고정연장(전방·후방) — 주간 잠정치(예정 근로) 편입용.
+               record(ScheduledRowResult) 끝 4필드와 동일 순서로 SELECT 끝에 둔다(위치 기반 매핑). */
+            , SCH.PRE_FIXED_OT_STR_TIME  AS preFixedOtStrTime
+            , SCH.PRE_FIXED_OT_END_TIME  AS preFixedOtEndTime
+            , SCH.FIXED_OT_STR_TIME      AS fixedOtStrTime
+            , SCH.FIXED_OT_END_TIME      AS fixedOtEndTime
         FROM target_user U
         INNER JOIN TB_USER_WORK_PLAN WP
             ON  WP.CMPNY_CD = U.CMPNY_CD
@@ -201,6 +207,10 @@
                 , E.SEC_SCH_STR_TIME
                 , E.SEC_SCH_END_TIME
                 , E.SEC_SCH_BRK_MIN
+                , E.PRE_FIXED_OT_STR_TIME
+                , E.PRE_FIXED_OT_END_TIME
+                , E.FIXED_OT_STR_TIME
+                , E.FIXED_OT_END_TIME
             FROM (
                 SELECT
                       M.CMPNY_CD
@@ -213,6 +223,10 @@
                     , M.SEC_SCH_STR_TIME
                     , M.SEC_SCH_END_TIME
                     , M.SEC_SCH_BRK_MIN
+                    , M.PRE_FIXED_OT_STR_TIME
+                    , M.PRE_FIXED_OT_END_TIME
+                    , M.FIXED_OT_STR_TIME
+                    , M.FIXED_OT_END_TIME
                     , 2147483647 AS HIST_IDX
                 FROM TB_SCH_MGMT M
 
@@ -229,6 +243,10 @@
                     , H.SEC_SCH_STR_TIME
                     , H.SEC_SCH_END_TIME
                     , H.SEC_SCH_BRK_MIN
+                    , H.PRE_FIXED_OT_STR_TIME
+                    , H.PRE_FIXED_OT_END_TIME
+                    , H.FIXED_OT_STR_TIME
+                    , H.FIXED_OT_END_TIME
                     , H.HIST_IDX
                 FROM TB_SCH_MGMT_HIST H
             ) E

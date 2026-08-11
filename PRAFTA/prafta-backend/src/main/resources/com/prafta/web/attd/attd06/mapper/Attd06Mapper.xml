@@ -180,7 +180,11 @@
 	            , A.TEAM_IDX
 	            , A.DAY_NO
 				, A.SCH_CD
-				,IFNULL(CONCAT(B.FST_SCH_STR_TIME, '~', B.FST_SCH_END_TIME), 'OFF') SCH_NM
+				<!-- PRAFTA-FIXEDOT-2(표기): 고정연장(전방/후방) 보유 근무타입은 마커를 덧붙여 구분.
+				     IF 는 항상 non-NULL('' 폴백)이라 고정연장 없는 타입 라벨은 기존과 동일(무회귀). -->
+				,IFNULL(CONCAT(B.FST_SCH_STR_TIME, '~', B.FST_SCH_END_TIME
+					, IF(B.FIXED_OT_STR_TIME IS NOT NULL OR B.PRE_FIXED_OT_STR_TIME IS NOT NULL, '(+고정연장)', '')
+				), 'OFF') SCH_NM
 			FROM TB_SHIFT_SCH_ASSIGN_MGMT A
 				 LEFT OUTER JOIN TB_SCH_MGMT B
 					ON (

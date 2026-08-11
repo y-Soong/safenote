@@ -395,25 +395,44 @@
 	    , A.SITE_CD		AS siteCd
 	    , A.SCH_CD		AS schCd
 	    , A.SCH_NO		AS schNo
-	    , CASE
-			WHEN SCH_TYPE = '01'
-				THEN CONCAT(
-					SUBSTRING(A.FST_SCH_STR_TIME, 1, 2), ':'
-                    , SUBSTRING(A.FST_SCH_STR_TIME, 3, 2), '~'
-                    , SUBSTRING(A.FST_SCH_END_TIME, 1, 2), ':'
-                    , SUBSTRING(A.FST_SCH_END_TIME, 3, 2))
-			ELSE 
-				CONCAT(
-	                SUBSTRING(A.FST_SCH_STR_TIME, 1, 2), ':'
-                    , SUBSTRING(A.FST_SCH_STR_TIME, 3, 2), '~'
-                    , SUBSTRING(A.FST_SCH_END_TIME, 1, 2), ':'
-                    , SUBSTRING(A.FST_SCH_END_TIME, 3, 2), '\n'
-                    , SUBSTRING(A.SEC_SCH_STR_TIME, 1, 2), ':'
-                    , SUBSTRING(A.SEC_SCH_STR_TIME, 3, 2), '~'
-                    , SUBSTRING(A.SEC_SCH_END_TIME, 1, 2), ':'
-                    , SUBSTRING(A.SEC_SCH_END_TIME, 3, 2)
-	            )
-		END schNm
+	    <!-- PRAFTA-FIXEDOT-2(표기): 소정 라벨 뒤에 고정연장(전방·후방)을 줄바꿈으로 구분 표기.
+	         CONCAT 은 인자에 NULL 이 있으면 전체 NULL 이므로, 고정연장 미설정 타입은 IFNULL 로
+	         빈 문자열 폴백 — 기존 라벨과 완전 동일(무회귀). 명칭은 "고정연장" 통일(정책 ⑤). -->
+	    , CONCAT(
+			CASE
+				WHEN SCH_TYPE = '01'
+					THEN CONCAT(
+						SUBSTRING(A.FST_SCH_STR_TIME, 1, 2), ':'
+	                    , SUBSTRING(A.FST_SCH_STR_TIME, 3, 2), '~'
+	                    , SUBSTRING(A.FST_SCH_END_TIME, 1, 2), ':'
+	                    , SUBSTRING(A.FST_SCH_END_TIME, 3, 2))
+				ELSE
+					CONCAT(
+		                SUBSTRING(A.FST_SCH_STR_TIME, 1, 2), ':'
+	                    , SUBSTRING(A.FST_SCH_STR_TIME, 3, 2), '~'
+	                    , SUBSTRING(A.FST_SCH_END_TIME, 1, 2), ':'
+	                    , SUBSTRING(A.FST_SCH_END_TIME, 3, 2), '\n'
+	                    , SUBSTRING(A.SEC_SCH_STR_TIME, 1, 2), ':'
+	                    , SUBSTRING(A.SEC_SCH_STR_TIME, 3, 2), '~'
+	                    , SUBSTRING(A.SEC_SCH_END_TIME, 1, 2), ':'
+	                    , SUBSTRING(A.SEC_SCH_END_TIME, 3, 2)
+		            )
+			END
+			, IFNULL(CONCAT(
+				'\n고정연장 '
+				, SUBSTRING(A.PRE_FIXED_OT_STR_TIME, 1, 2), ':'
+				, SUBSTRING(A.PRE_FIXED_OT_STR_TIME, 3, 2), '~'
+				, SUBSTRING(A.PRE_FIXED_OT_END_TIME, 1, 2), ':'
+				, SUBSTRING(A.PRE_FIXED_OT_END_TIME, 3, 2)
+			), '')
+			, IFNULL(CONCAT(
+				'\n고정연장 '
+				, SUBSTRING(A.FIXED_OT_STR_TIME, 1, 2), ':'
+				, SUBSTRING(A.FIXED_OT_STR_TIME, 3, 2), '~'
+				, SUBSTRING(A.FIXED_OT_END_TIME, 1, 2), ':'
+				, SUBSTRING(A.FIXED_OT_END_TIME, 3, 2)
+			), '')
+		) schNm
 	FROM TB_SCH_MGMT A
 	WHERE A.CMPNY_CD = #{gvCmpnyCd}
 	  AND A.SITE_CD = #{siteCd}

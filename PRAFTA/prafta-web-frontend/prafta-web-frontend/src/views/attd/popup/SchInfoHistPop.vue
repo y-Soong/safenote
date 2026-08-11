@@ -206,6 +206,27 @@ onMounted(() => {
   fnSearch();
 });
 
+// PRAFTA-FIXEDOT-2(표기): 이력 근무시간 셀에 고정연장(전방·후방) 구분 표기 — Attd_01_1 목록과 동일 규칙.
+//   표시 전용 필드(fstSchTime/secSchTime)만 데코레이션(원시 값 불변). 고정연장 없는 버전은 기존 표기 그대로.
+const decorateFixedOt = (s) => {
+  const out = { ...s };
+  if (s.preFixedOtStrTime && s.preFixedOtEndTime) {
+    out.fstSchTime = `고정연장 ${s.preFixedOtStrTime}-${s.preFixedOtEndTime} + ${
+      s.fstSchTime ?? ""
+    }`;
+  }
+  if (s.fixedOtStrTime && s.fixedOtEndTime) {
+    const rearText = `고정연장 ${s.fixedOtStrTime}-${s.fixedOtEndTime}`;
+    // 후방은 소정 마지막 구간 뒤 — 2구간 버전이면 2구간 셀, 아니면 1구간 셀에 덧붙인다.
+    if (s.secSchTime) {
+      out.secSchTime = `${s.secSchTime} + ${rearText}`;
+    } else {
+      out.fstSchTime = `${out.fstSchTime ?? ""} + ${rearText}`;
+    }
+  }
+  return out;
+};
+
 const fnSearch = async () => {
   try {
     const response = await axios.get("/webApi/attd01/sch-hist-lists", {
@@ -216,7 +237,9 @@ const fnSearch = async () => {
     });
 
     if (response.status === 200) {
-      schHistResultList.value = response.data.schHistResultList;
+      schHistResultList.value = (response.data.schHistResultList || []).map(
+        decorateFixedOt
+      );
     }
   } catch (err) {
     const msg = resolveApiErrorMessage(err, "조회 중 오류가 발생했습니다.");

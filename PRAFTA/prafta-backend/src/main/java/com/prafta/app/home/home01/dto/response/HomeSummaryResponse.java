@@ -38,6 +38,14 @@ public class HomeSummaryResponse {
         private final String scheduleStart;
         /** 예정 퇴근시각 HHMM (없으면 null) */
         private final String scheduleEnd;
+        /** PRAFTA-FIXEDOT-2(표기): 전방 고정연장 시작 HHMM (없으면 null — 소정과 구분 표기용) */
+        private final String preFixedOtStrTime;
+        /** PRAFTA-FIXEDOT-2(표기): 전방 고정연장 종료 HHMM (없으면 null) */
+        private final String preFixedOtEndTime;
+        /** PRAFTA-FIXEDOT-2(표기): 후방 고정연장 시작 HHMM (없으면 null) */
+        private final String fixedOtStrTime;
+        /** PRAFTA-FIXEDOT-2(표기): 후방 고정연장 종료 HHMM (없으면 null) */
+        private final String fixedOtEndTime;
         /** 실제 출근시각 HHMM (없으면 null) */
         private final String checkInTime;
         /** 실제 퇴근시각 HHMM (없으면 null) */
