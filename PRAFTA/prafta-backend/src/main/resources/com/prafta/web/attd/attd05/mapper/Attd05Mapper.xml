@@ -124,6 +124,12 @@
     /* 조회 그리드(selectUserList)와 동일한 사용자 스코프(부서 노드트리 + 하위포함/사용자명) 와
        조회월(workYm)로 제한한다. 과거(사업장 전체/전월) 근무계획이 프론트로 흘러가
        저장 시 무관한 셀까지 재저장되는 문제를 차단한다. */
+    /* Attd05 시점별 시각 표시: 셀 표시 라벨(schNm)을 현재본이 아니라 근무일(WORK_YMD) 기준 유효
+       버전으로 해석해 동반 반환한다(판정 계열 effective-dating 과 동일 규칙 - 적용일이 근무일 이하인
+       최신 버전, 근무일이 최초 적용일보다 앞서면 최이른 버전 폴백). 월 그리드는 인원 x 일수 규모라
+       셀별 상관 서브쿼리 대신 버전 파생 테이블(sch_ver: 버전별 유효구간을 적용일부터 차기 적용일
+       직전까지로 구간화)을 1회 구체화해 LEFT JOIN 한다. 고정연장 4컬럼도 유효 버전 값을 따른다.
+       근무타입이 아닌 코드(레거시 휴가코드 등)는 schNm 이 NULL 로 남고 FE 가 기존 경로로 폴백한다. */
     WITH RECURSIVE
 		node_tree AS (
 			/* 조회 부서부터 시작 */
@@ -148,6 +154,78 @@
 				ON C.CMPNY_CD = P.CMPNY_CD
 			   AND C.SITE_CD  = P.SITE_CD
 			   AND C.PARENT_NODE_CD = P.NODE_CD
+		),
+		sch_ver_base AS (
+			/* 근무타입 현재본 + 이력본 합집합. 현재본은 HIST_IDX 최댓값으로 두어 동일 APPLY_DATE
+			   중복 시 현재본 우선 채택(selectSchTypeUseYnList 와 동일 규칙).
+			   이력본(TB_SCH_MGMT_HIST)에는 SCH_TYPE 컬럼이 없어 2구간 여부를 SEC 시각 존재로 파생한다.
+			   이력 INSERT(Attd01)가 2구간 미사용 시 SEC 시각을 빈 문자열로 기록하므로 NULL/빈값 모두
+			   부재로 정규화(NULLIF)한다 - 라벨 CONCAT 의 NULL 전파(1구간 형식) 정합. */
+			SELECT
+				  M.CMPNY_CD
+				, M.SITE_CD
+				, M.SCH_CD
+				, M.APPLY_DATE
+				, M.SCH_TYPE
+				, M.FST_SCH_STR_TIME
+				, M.FST_SCH_END_TIME
+				, M.SEC_SCH_STR_TIME
+				, M.SEC_SCH_END_TIME
+				, M.PRE_FIXED_OT_STR_TIME
+				, M.PRE_FIXED_OT_END_TIME
+				, M.FIXED_OT_STR_TIME
+				, M.FIXED_OT_END_TIME
+				, 2147483647 AS HIST_IDX
+			FROM TB_SCH_MGMT M
+			WHERE M.CMPNY_CD = #{gvCmpnyCd}
+			  AND M.SITE_CD  = #{siteCd}
+
+			UNION ALL
+
+			SELECT
+				  H.CMPNY_CD
+				, H.SITE_CD
+				, H.SCH_CD
+				, H.APPLY_DATE
+				, CASE WHEN IFNULL(H.SEC_SCH_STR_TIME, '') = '' THEN '01' ELSE '02' END
+				, H.FST_SCH_STR_TIME
+				, H.FST_SCH_END_TIME
+				, NULLIF(H.SEC_SCH_STR_TIME, '')
+				, NULLIF(H.SEC_SCH_END_TIME, '')
+				, NULLIF(H.PRE_FIXED_OT_STR_TIME, '')
+				, NULLIF(H.PRE_FIXED_OT_END_TIME, '')
+				, NULLIF(H.FIXED_OT_STR_TIME, '')
+				, NULLIF(H.FIXED_OT_END_TIME, '')
+				, H.HIST_IDX
+			FROM TB_SCH_MGMT_HIST H
+			WHERE H.CMPNY_CD = #{gvCmpnyCd}
+			  AND H.SITE_CD  = #{siteCd}
+		),
+		sch_ver AS (
+			/* 동일 SCH_CD + APPLY_DATE 중복은 HIST_IDX 최댓값 1건만 채택(DUP_RN=1) 후,
+			   버전별 유효구간 경계(차기 적용일 NEXT_APPLY_DATE)와 최초 버전 표식(VER_SEQ=1)을 붙인다. */
+			SELECT
+				  D.CMPNY_CD
+				, D.SITE_CD
+				, D.SCH_CD
+				, D.APPLY_DATE
+				, D.SCH_TYPE
+				, D.FST_SCH_STR_TIME
+				, D.FST_SCH_END_TIME
+				, D.SEC_SCH_STR_TIME
+				, D.SEC_SCH_END_TIME
+				, D.PRE_FIXED_OT_STR_TIME
+				, D.PRE_FIXED_OT_END_TIME
+				, D.FIXED_OT_STR_TIME
+				, D.FIXED_OT_END_TIME
+				, LEAD(D.APPLY_DATE) OVER (PARTITION BY D.CMPNY_CD, D.SITE_CD, D.SCH_CD ORDER BY D.APPLY_DATE) AS NEXT_APPLY_DATE
+				, ROW_NUMBER() OVER (PARTITION BY D.CMPNY_CD, D.SITE_CD, D.SCH_CD ORDER BY D.APPLY_DATE) AS VER_SEQ
+			FROM (
+				SELECT B0.*
+					 , ROW_NUMBER() OVER (PARTITION BY B0.CMPNY_CD, B0.SITE_CD, B0.SCH_CD, B0.APPLY_DATE ORDER BY B0.HIST_IDX DESC) AS DUP_RN
+				FROM sch_ver_base B0
+			) D
+			WHERE D.DUP_RN = 1
 		)
     SELECT
 		A.CMPNY_CD 			AS cmpnyCd
@@ -155,6 +233,44 @@
 	    , A.USER_CD 		AS userCd
 	    , A.WORK_YMD		AS wrkYmd
 	    , A.WORK_PLAN_CD	AS workPlanCd
+	    /* 근무일 기준 유효 버전 라벨 - 현재본 목록(selectSchTypeList)의 schNm 과 동일 표기 규칙.
+	       CONCAT 은 인자에 NULL 이 있으면 전체 NULL 이므로 고정연장 미설정 버전은 IFNULL 빈 문자열 폴백.
+	       유효 버전 미매칭(비근무타입 코드)이면 전체 NULL. record 위치 매핑 - 마지막 컬럼(schNm). */
+	    , CONCAT(
+			CASE
+				WHEN V.SCH_TYPE = '01'
+					THEN CONCAT(
+						SUBSTRING(V.FST_SCH_STR_TIME, 1, 2), ':'
+	                    , SUBSTRING(V.FST_SCH_STR_TIME, 3, 2), '~'
+	                    , SUBSTRING(V.FST_SCH_END_TIME, 1, 2), ':'
+	                    , SUBSTRING(V.FST_SCH_END_TIME, 3, 2))
+				ELSE
+					CONCAT(
+		                SUBSTRING(V.FST_SCH_STR_TIME, 1, 2), ':'
+	                    , SUBSTRING(V.FST_SCH_STR_TIME, 3, 2), '~'
+	                    , SUBSTRING(V.FST_SCH_END_TIME, 1, 2), ':'
+	                    , SUBSTRING(V.FST_SCH_END_TIME, 3, 2), '\n'
+	                    , SUBSTRING(V.SEC_SCH_STR_TIME, 1, 2), ':'
+	                    , SUBSTRING(V.SEC_SCH_STR_TIME, 3, 2), '~'
+	                    , SUBSTRING(V.SEC_SCH_END_TIME, 1, 2), ':'
+	                    , SUBSTRING(V.SEC_SCH_END_TIME, 3, 2)
+		            )
+			END
+			, IFNULL(CONCAT(
+				'\n고정연장 '
+				, SUBSTRING(V.PRE_FIXED_OT_STR_TIME, 1, 2), ':'
+				, SUBSTRING(V.PRE_FIXED_OT_STR_TIME, 3, 2), '~'
+				, SUBSTRING(V.PRE_FIXED_OT_END_TIME, 1, 2), ':'
+				, SUBSTRING(V.PRE_FIXED_OT_END_TIME, 3, 2)
+			), '')
+			, IFNULL(CONCAT(
+				'\n고정연장 '
+				, SUBSTRING(V.FIXED_OT_STR_TIME, 1, 2), ':'
+				, SUBSTRING(V.FIXED_OT_STR_TIME, 3, 2), '~'
+				, SUBSTRING(V.FIXED_OT_END_TIME, 1, 2), ':'
+				, SUBSTRING(V.FIXED_OT_END_TIME, 3, 2)
+			), '')
+		)					AS schNm
 	FROM TB_USER_WORK_PLAN A
 		 INNER JOIN TB_USER U
 			ON U.CMPNY_CD = A.CMPNY_CD
@@ -164,6 +280,18 @@
 			ON U.CMPNY_CD = B.CMPNY_CD
 		   AND U.SITE_CD  = B.SITE_CD
 		   AND U.NODE_CD  = B.NODE_CD
+		 LEFT JOIN sch_ver V
+			ON V.CMPNY_CD = A.CMPNY_CD
+		   AND V.SITE_CD  = A.SITE_CD
+		   AND V.SCH_CD   = A.WORK_PLAN_CD
+		   /* 유효 버전 매칭: 통상은 적용일이 근무일 이하이고 근무일이 차기 적용일 이전인 구간 1건,
+		      근무일이 최초 적용일보다 앞서면 최초 버전(VER_SEQ=1) 폴백. 두 조건은 상호배타라
+		      셀당 최대 1개 버전만 매칭 - 행 증식 없음. */
+		   AND (
+		        ( V.APPLY_DATE <![CDATA[ <= ]]> A.WORK_YMD
+		          AND ( V.NEXT_APPLY_DATE IS NULL OR A.WORK_YMD <![CDATA[ < ]]> V.NEXT_APPLY_DATE ) )
+		     OR ( V.VER_SEQ = 1 AND A.WORK_YMD <![CDATA[ < ]]> V.APPLY_DATE )
+		   )
 	WHERE A.CMPNY_CD = #{gvCmpnyCd}
 	  AND A.SITE_CD = #{siteCd}
 	  AND A.WORK_YMD LIKE CONCAT(REPLACE(#{workYm}, '-', ''), '%')
@@ -445,10 +573,49 @@
        동일 SCH_CD + APPLY_DATE 가 중복되면 HIST_IDX 최댓값 1건만 채택한다.
        attd07 과 달리 USE_YN='N' 버전도 차단 근거로 살려야 하므로 USE_YN 필터를 걸지 않고
        USE_YN 을 컬럼으로 SELECT 해 판정에 사용한다. */
+    /* Attd05 시점별 시각 표시: 버전별 표시 라벨(schNm - 시각 + 고정연장 병기, selectSchTypeList 와
+       동일 표기 규칙)을 함께 반환한다. FE 적용 미리보기가 박스 적용 시 각 날짜의 유효 버전 시각을
+       표시하는 데 사용한다. 이력본에는 SCH_TYPE 컬럼이 없어 2구간 여부를 SEC 시각 존재로 파생하고,
+       이력 INSERT 가 미사용 구간을 빈 문자열로 기록하므로 NULLIF 로 부재 정규화한다(selectSchedList 정합). */
     SELECT
           E.SCH_CD       AS schCd
         , E.APPLY_DATE   AS applyDate
         , E.USE_YN       AS useYn
+        , CONCAT(
+            CASE
+                WHEN E.SCH_TYPE = '01'
+                    THEN CONCAT(
+                        SUBSTRING(E.FST_SCH_STR_TIME, 1, 2), ':'
+                        , SUBSTRING(E.FST_SCH_STR_TIME, 3, 2), '~'
+                        , SUBSTRING(E.FST_SCH_END_TIME, 1, 2), ':'
+                        , SUBSTRING(E.FST_SCH_END_TIME, 3, 2))
+                ELSE
+                    CONCAT(
+                        SUBSTRING(E.FST_SCH_STR_TIME, 1, 2), ':'
+                        , SUBSTRING(E.FST_SCH_STR_TIME, 3, 2), '~'
+                        , SUBSTRING(E.FST_SCH_END_TIME, 1, 2), ':'
+                        , SUBSTRING(E.FST_SCH_END_TIME, 3, 2), '\n'
+                        , SUBSTRING(E.SEC_SCH_STR_TIME, 1, 2), ':'
+                        , SUBSTRING(E.SEC_SCH_STR_TIME, 3, 2), '~'
+                        , SUBSTRING(E.SEC_SCH_END_TIME, 1, 2), ':'
+                        , SUBSTRING(E.SEC_SCH_END_TIME, 3, 2)
+                    )
+            END
+            , IFNULL(CONCAT(
+                '\n고정연장 '
+                , SUBSTRING(E.PRE_FIXED_OT_STR_TIME, 1, 2), ':'
+                , SUBSTRING(E.PRE_FIXED_OT_STR_TIME, 3, 2), '~'
+                , SUBSTRING(E.PRE_FIXED_OT_END_TIME, 1, 2), ':'
+                , SUBSTRING(E.PRE_FIXED_OT_END_TIME, 3, 2)
+            ), '')
+            , IFNULL(CONCAT(
+                '\n고정연장 '
+                , SUBSTRING(E.FIXED_OT_STR_TIME, 1, 2), ':'
+                , SUBSTRING(E.FIXED_OT_STR_TIME, 3, 2), '~'
+                , SUBSTRING(E.FIXED_OT_END_TIME, 1, 2), ':'
+                , SUBSTRING(E.FIXED_OT_END_TIME, 3, 2)
+            ), '')
+        )                AS schNm
     FROM (
         /* 현재본 (HIST_IDX 를 최댓값으로 두어 동일 APPLY_DATE 중복 시 현재본 우선) */
         SELECT
@@ -457,6 +624,15 @@
             , M.SCH_CD
             , M.APPLY_DATE
             , M.USE_YN
+            , M.SCH_TYPE
+            , M.FST_SCH_STR_TIME
+            , M.FST_SCH_END_TIME
+            , M.SEC_SCH_STR_TIME
+            , M.SEC_SCH_END_TIME
+            , M.PRE_FIXED_OT_STR_TIME
+            , M.PRE_FIXED_OT_END_TIME
+            , M.FIXED_OT_STR_TIME
+            , M.FIXED_OT_END_TIME
             , 2147483647 AS HIST_IDX
         FROM TB_SCH_MGMT M
         WHERE M.CMPNY_CD = #{gvCmpnyCd}
@@ -464,13 +640,22 @@
 
         UNION ALL
 
-        /* 이력본 */
+        /* 이력본 (SCH_TYPE 미보유 - SEC 시각 존재로 2구간 여부 파생, 빈 문자열은 부재로 정규화) */
         SELECT
               H.CMPNY_CD
             , H.SITE_CD
             , H.SCH_CD
             , H.APPLY_DATE
             , H.USE_YN
+            , CASE WHEN IFNULL(H.SEC_SCH_STR_TIME, '') = '' THEN '01' ELSE '02' END
+            , H.FST_SCH_STR_TIME
+            , H.FST_SCH_END_TIME
+            , NULLIF(H.SEC_SCH_STR_TIME, '')
+            , NULLIF(H.SEC_SCH_END_TIME, '')
+            , NULLIF(H.PRE_FIXED_OT_STR_TIME, '')
+            , NULLIF(H.PRE_FIXED_OT_END_TIME, '')
+            , NULLIF(H.FIXED_OT_STR_TIME, '')
+            , NULLIF(H.FIXED_OT_END_TIME, '')
             , H.HIST_IDX
         FROM TB_SCH_MGMT_HIST H
         WHERE H.CMPNY_CD = #{gvCmpnyCd}

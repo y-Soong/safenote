@@ -374,7 +374,9 @@ const nodeCdFcs = ref(null);
 const schTypeList = ref([]);
 
 // ── 근무타입(SCH_CD)별 검증 메타 ────────────────────────────
-// key = schCd, value = { createDt, versionList:[{ applyDate, useYn, histIdx }] }
+// key = schCd, value = { createDt, versionList:[{ applyDate, useYn, schNm }] }
+// Attd05 시점별 시각 표시: versionList 의 schNm(버전별 시각+고정연장 라벨)으로
+// 적용 미리보기/편집 셀의 날짜별 유효 버전 라벨을 해석한다(resolveSchLabelByDate).
 const schTypeValidMetaMap = ref({});
 
 // ── 연차 타입 목록 ───────────────────────────────────────
@@ -392,6 +394,12 @@ const { colWidths, onResize } = useColumnResize({ userInfo: 210 });
 
 // ── 셀 데이터: key = `${userCd}_${day}`, value = 표시문자열 ─
 const scheduleData = ref({});
+
+// Attd05 시점별 시각 표시: 서버가 근무일 기준 유효 버전으로 해석해 내려준 셀 라벨.
+//   key = `${userCd}_${workYmd}`, value = schNm(시각+고정연장 병기). 근무타입 시점 변경 시
+//   과거 날짜 셀이 현재본 시각으로 표시되던 결함의 저장분(미편집 셀) 표시 단일 출처.
+//   조회 응답으로만 갱신(저장 미관여). 편집/미리보기 셀은 버전 메타(resolveSchLabelByDate)로 해석.
+const schedLabelMap = ref({});
 
 // prafta-com-008-E-6: 연차 오버레이. key = `${userCd}_${workYmd}`, value = { leaveCd, leaveId }(종일 CONFIRMED).
 //   work_plan(SCH_CD) 위에 "연차" 표시를 덮는 단일 출처(모델 전환). 조회 응답으로만 갱신(저장 미관여).
@@ -477,6 +485,26 @@ const getRowLabel = (idx) => {
   );
 };
 
+// ── 근무타입(SCH_CD)×날짜 유효 버전 라벨 해석 ───────────────
+// Attd05 시점별 시각 표시: 버전 메타(versionList — APPLY_DATE 오름차순)의 schNm 으로
+//   해당 날짜에 유효한 버전(적용일이 날짜 이하인 최신)의 라벨을 반환한다.
+//   날짜가 최초 적용일보다 앞서면 최이른 버전 폴백(판정 계열 effective-dating 과 동일 규칙).
+//   메타/라벨이 없으면 null(호출부가 현재본 라벨로 폴백 — 회귀 없음).
+const resolveSchLabelByDate = (schCd, workYmd) => {
+  const versionList = schTypeValidMetaMap.value[schCd]?.versionList || [];
+  if (!versionList.length || !workYmd) return null;
+  let label = null;
+  for (const v of versionList) {
+    if (v.applyDate <= workYmd) {
+      label = v.schNm ?? label;
+    } else {
+      break;
+    }
+  }
+  if (label == null) label = versionList[0].schNm ?? null;
+  return label;
+};
+
 // ── 셀 값 조회 (표시명 변환) ──────────────────────────
 // prafta-com-008-E-6: 연차-스케줄 모델 전환 — work_plan 에는 SCH_CD 가 유지되므로,
 //   "연차" 표시는 leave_use 오버레이(leaveOverlay)를 work_plan 표시보다 우선한다(단일 출처).
@@ -497,7 +525,20 @@ const getCellNmValue = (userCd, workYmd) => {
   if (code === AUTO_LEGAL_LEAVE_CD) return "법정휴가";
 
   const sch = schTypeList.value.find((s) => s.schCd === code);
-  if (sch) return sch.schNm;
+  if (sch) {
+    // Attd05 시점별 시각 표시: 근무타입 라벨은 현재본이 아니라 "그 날짜의 유효 버전"으로 표시한다.
+    //   - 미편집 셀(코드가 baseline 과 동일): 서버가 근무일 기준으로 해석해 내려준 라벨을 그대로 사용.
+    //   - 편집/미리보기 셀(박스 적용 등): 버전 메타의 schNm 으로 날짜별 유효 버전 라벨을 해석.
+    //   버전 이력이 없는 타입은 버전이 1건뿐이라 현재본 라벨과 동일(회귀 없음). 해석 실패 시 현재본 폴백.
+    const key = `${userCd}_${workYmd}`;
+    if (
+      code === (scheduleBaseline.value[key] || "") &&
+      schedLabelMap.value[key]
+    ) {
+      return schedLabelMap.value[key];
+    }
+    return resolveSchLabelByDate(code, workYmd) || sch.schNm;
+  }
 
   const leave = leaveTypeList.value.find((l) => l.leaveCd === code);
   if (leave) return leave.leaveNm;
@@ -1265,8 +1306,14 @@ const fnSearch = async () => {
       userList.value = response.data.userListResultList;
       daysInMonth.value = response.data.dayResultList;
       scheduleData.value = {};
+      // Attd05 시점별 시각 표시: 서버가 근무일 기준 유효 버전으로 해석한 셀 라벨(schNm)을 동반 적재.
+      //   비근무타입 코드(레거시 휴가코드 등)는 schNm 이 null 로 내려와 기존 표시 경로로 폴백된다.
+      schedLabelMap.value = {};
       response.data.schedResultList.forEach((item) => {
         scheduleData.value[`${item.userCd}_${item.workYmd}`] = item.workPlanCd;
+        if (item.schNm) {
+          schedLabelMap.value[`${item.userCd}_${item.workYmd}`] = item.schNm;
+        }
       });
       // prafta-com-008-E-6: 연차 오버레이 적재(셀 "연차" 표시는 work_plan 코드가 아닌 leave_use 기준).
       //   prafta-com-008-B-7: leaveId 동반 적재(셀 개별 동의요청 진입 시 TARGET_LEAVE_ID 로 사용).
