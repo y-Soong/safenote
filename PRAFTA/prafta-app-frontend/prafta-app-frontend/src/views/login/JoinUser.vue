@@ -381,6 +381,8 @@ import { ref, getCurrentInstance, onUnmounted, onMounted, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import axios from '@/api/axios'
 import { resolveApiErrorMessage } from '@/utils/apiError'
+// 소정-12: 셀프가입 승인제 — 가입 직후 승인대기 안내 분기(판별 규칙은 utils/joinApproval.js).
+import { resolveJoinApprovalStatus, JOIN_APPROVAL_PENDING } from '@/utils/joinApproval'
 import SidePanel from '@/components/common/SidePanel.vue'
 
 const { proxy } = getCurrentInstance()
@@ -774,6 +776,12 @@ const fnUserJoin = async () => {
       birthDt: birthDt.value,
     })
     if (response.status === 200) {
+      // 소정-12: 셀프가입 승인제 — 서버가 승인대기('06') 신호를 주면 로그인 안내 대신 승인대기 화면으로.
+      //   서버가 신호를 주지 않으면(승인제 미적용 형상) 기존 "로그인 해주세요" 흐름을 그대로 유지한다.
+      if (resolveJoinApprovalStatus(response.data)) {
+        router.replace({ path: '/JoinApprovalPending', state: { status: JOIN_APPROVAL_PENDING } })
+        return
+      }
       const alertMsg = '회원가입에 성공했습니다.\n로그인 해주세요.'
       fnAlertMsg(alertMsg, () => {
         router.push({
@@ -785,8 +793,12 @@ const fnUserJoin = async () => {
       })
     }
   } catch (err) {
-    const alertMsg = '회원가입에 실패했습니다.\n관리자에게 문의해주세요.'
-    fnAlertMsg(alertMsg)
+    // ★서버 안내 문구를 우선 노출한다(qa F-1). 고정 문구로 덮으면 휴대폰 본인인증 만료
+    //   (LOGIN_400_022 — 30분 창)·아이디/휴대폰 중복(400_016/020/021) 안내가 전부 사장돼
+    //   사용자가 재인증하면 된다는 사실을 알 수 없다.
+    fnAlertMsg(
+      resolveApiErrorMessage(err, '회원가입에 실패했습니다.\n관리자에게 문의해주세요.')
+    )
   }
 }
 

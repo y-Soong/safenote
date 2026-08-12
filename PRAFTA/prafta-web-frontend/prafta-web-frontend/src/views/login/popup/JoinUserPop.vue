@@ -647,14 +647,25 @@ const fnUserJoin = async () => {
       birthDt: birthDt.value,
     });
     if (response.status === 200) {
-      const alertMsg = "회원가입에 성공했습니다.\n로그인 해주세요.";
+      // ★소정-04 승인제: 셀프가입은 '06 가입승인대기'로 생성되어 승인 전에는 로그인할 수 없다(qa F-2).
+      //   서버가 accountStatus='06' / nextStep='JOIN_APPROVAL_PENDING' 을 내려주므로 그 신호로 판별한다.
+      //   (승인제 미적용 형상에서는 신호가 없어 기존 문구로 자연 폴백)
+      const body = response.data ?? {};
+      const isPending =
+        body.accountStatus === "06" || body.nextStep === "JOIN_APPROVAL_PENDING";
+      const alertMsg = isPending
+        ? "회원가입 신청이 접수되었습니다.\n관리자 승인 후 로그인하실 수 있습니다."
+        : "회원가입에 성공했습니다.\n로그인 해주세요.";
       fnAlertMsg(alertMsg, () => {
         emit("close");
       });
     }
   } catch (err) {
-    const alertMsg = "회원가입에 실패했습니다.\n관리자에게 문의해주세요.";
-    fnAlertMsg(alertMsg);
+    // ★서버 안내 문구 우선 노출(qa F-1). 고정 문구로 덮으면 휴대폰 본인인증 만료
+    //   (LOGIN_400_022 — 30분 창)·아이디/휴대폰 중복(400_016/020/021) 안내가 사장된다.
+    fnAlertMsg(
+      resolveApiErrorMessage(err, "회원가입에 실패했습니다.\n관리자에게 문의해주세요.")
+    );
   }
 };
 

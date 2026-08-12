@@ -16,6 +16,18 @@ public final class AuditActionType {
     public static final String DOWNLOAD = "01";
 
     /**
+     * 상태 변경 (SYS060='03') — 소정-04/09 셀프가입 승인·거부.
+     *
+     * <p>계정 상태 전이(ACCOUNT_STATUS '06 가입승인대기' → '01 활성화' 또는 '07 가입거부')를 남긴다.
+     * ★거부 사유의 <b>유일한 보존처</b>이므로(tb_user 에 사유 컬럼 없음) 이 액션의 적재를
+     * 임의로 제거하지 말 것.
+     *
+     * <p>코드값 '03' 은 본 클래스 javadoc 의 예약(02 권한변경/03 상태변경/04 조직변경/05 삭제/06 조회)을
+     * 따른다. SYS060 코드표 시드는 {@code sojeong-3-1-user09-user10-menu-seed.sql} 참조.
+     */
+    public static final String STATUS_CHANGE = "03";
+
+    /**
      * 설정 변경 (SYS060='07') — SMS2-B3/C1.
      *
      * <p>운영 설정값 변경(SMS 발송 임계값 수정 / 킬스위치 자동 발동·수동 해제)에 사용한다.

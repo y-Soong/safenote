@@ -48,6 +48,32 @@
       <p class="existing-ot__hint">위 시간대와 겹치지 않도록 입력해 주세요.</p>
     </section>
 
+    <!-- 소정-12: 근로시간 단축 기간 안내 (사유 명칭은 표기하지 않는다 — 기간·규칙만 안내) -->
+    <!--   ① 연장근로 자체가 제한되는 기간 → 신청 차단 안내 -->
+    <section v-if="reducedWorkBlocked" class="reduced-box reduced-box--block">
+      <p class="reduced-box__title">근로시간 단축 기간</p>
+      <p v-if="reducedPeriodText" class="reduced-box__period">{{ reducedPeriodText }}</p>
+      <p class="reduced-box__desc">
+        이 기간에는 법령상 연장근로를 신청할 수 없어요. 자세한 사항은 관리자에게 문의해 주세요.
+      </p>
+    </section>
+
+    <!--   ② 본인이 청구한 경우에만 가능한 기간 → 명시 청구 확인 체크 -->
+    <section v-else-if="reducedWorkClaimRequired" class="reduced-box">
+      <p class="reduced-box__title">근로시간 단축 기간</p>
+      <p v-if="reducedPeriodText" class="reduced-box__period">{{ reducedPeriodText }}</p>
+      <p class="reduced-box__desc">
+        이 기간의 연장근로는 회사가 요구할 수 없고, 근로자 본인이 청구한 경우에만 주 12시간 이내로
+        가능해요.
+      </p>
+      <label class="reduced-check">
+        <input v-model="otClaimConfirmed" type="checkbox" class="reduced-check__box" />
+        <span class="reduced-check__text">
+          <span class="req">*</span>연장근로를 본인이 청구합니다.
+        </span>
+      </label>
+    </section>
+
     <!-- 초과근무 시간 -->
     <section class="fs">
       <p class="fs__title">초과근무 시간</p>
@@ -208,6 +234,11 @@ const props = defineProps({
   // prafta-app-030 후속: 대기중(미승인) OT 신청([{ startDate, startTime, endDate, endTime }]).
   //   표시 전용 — 겹침 사전차단 비대상(같은 날 대기 OT 등록은 서버 countDuplicateReq 가 ATTD_400_090 으로 신규 제출 자체를 차단).
   pendingOvertimes: { type: Array, default: () => [] },
+  // 소정-12: 본인 소정근로 요약(GET /comApi/leave-feature/std-work-summary 응답 그대로).
+  //   { weekStdMinutes, source, partTime, eligible, dailyWorker, applyStrDate, applyEndDate, reasonCd, reasonNm }
+  //   ★reasonCd 는 분기에만 쓰고 화면에 사유 명칭을 노출하지 않는다(본인 화면이라도 최소 표기 원칙).
+  //   null(미로드/조회 실패) → 단축 관련 UI 를 띄우지 않는다(기존 동작과 동일, 서버가 최종 판정).
+  stdWorkSummary: { type: Object, default: null },
 })
 const emit = defineEmits(['submit', 'cancel'])
 
@@ -271,6 +302,32 @@ const makeEmptySlot = (workSeq) => ({
 
 const slots = ref(buildInitialSlots())
 const reqReason = ref('')
+
+// ── 소정-12: 근로시간 단축 기간 판정 + 근로자 명시 청구 확인 ─────────────
+//   판정 원천 = 서버 std-work-summary 의 근무일 유효 소정근로 이력 사유코드[SYS083].
+//     PREGNANCY            → 연장근로 전면 금지(근기법 제74조) → 신청 차단
+//     CHILDCARE/FAMILY_CARE→ 근로자 명시 청구 시에만 주 12시간 이내 허용 → 확인 체크 필수
+//     그 외(NORMAL/PART_TIME/이력 없음/조회 실패) → 게이트 없음(기존 동작 그대로)
+//   ★사유 코드는 분기에만 쓰고 화면 문구로 노출하지 않는다.
+const REASON_OT_BLOCKED = 'PREGNANCY'
+const REASON_OT_CLAIM_REQUIRED = ['CHILDCARE', 'FAMILY_CARE']
+
+const stdWorkReasonCd = computed(() => props.stdWorkSummary?.reasonCd || '')
+// 연장근로 자체가 제한되는 기간인지(신청 차단).
+const reducedWorkBlocked = computed(() => stdWorkReasonCd.value === REASON_OT_BLOCKED)
+// 근로자 명시 청구 확인이 필요한 기간인지(체크박스 필수).
+const reducedWorkClaimRequired = computed(() =>
+  REASON_OT_CLAIM_REQUIRED.includes(stdWorkReasonCd.value),
+)
+// 단축 기간 표기(사유 없이 기간만). 종료일이 없으면 시작일만 표기.
+const reducedPeriodText = computed(() => {
+  const s = props.stdWorkSummary?.applyStrDate
+  const e = props.stdWorkSummary?.applyEndDate
+  if (!s) return ''
+  return e ? `${formatYmdDisplay(s)} ~ ${formatYmdDisplay(e)}` : `${formatYmdDisplay(s)} ~`
+})
+// 근로자 본인이 직접 체크해야만 true 가 된다(자동 체크·기본값 'Y' 금지 — 청구 사실을 대신 만들지 않는다).
+const otClaimConfirmed = ref(false)
 
 // ── 결재선 상태 (prafta-app-009) ─────────────────────────────────────────
 const approverList = ref([]) // [{ approverUserCd, userNm, userId, rankNm, nodeNm }] (순서 = 결재 단계)
@@ -631,6 +688,10 @@ const totalDisplay = computed(() => {
 
 // ── 검증 (#2: otType 조건 제거 / prafta-app-017: 스케줄 겹침 사전차단) ─────
 const isValid = computed(() => {
+  // 소정-12: 연장근로 제한 기간은 제출 자체를 막는다(서버도 ATTD_400_200 으로 최종 차단).
+  if (reducedWorkBlocked.value) return false
+  // 소정-12: 명시 청구 확인이 필요한 기간은 체크 전까지 제출 비활성(서버 ATTD_400_201 과 동일 취지).
+  if (reducedWorkClaimRequired.value && !otClaimConfirmed.value) return false
   // 사유 미입력은 버튼 비활성 사유에서 제외(제출 시 사유 전용 alert 로 안내).
   if (hasOverlap.value) return false
   // prafta-app-030: 신규 슬롯이 기존 적용 OT 또는 2구간 상호 간 겹치면 제출 차단.
@@ -662,6 +723,16 @@ const onRemoveSlot = (workSeq) => {
 
 // ── 제출 (#2: emit 에서 otType 제거) ────────────────────────────────────
 const onSubmit = () => {
+  // 소정-12: 연장근로 제한 기간 안내(서버도 ATTD_400_200 으로 최종 차단).
+  if (reducedWorkBlocked.value) {
+    showAlert('근로시간 단축 기간에는 연장근로를 신청할 수 없어요.')
+    return
+  }
+  // 소정-12: 명시 청구 확인 누락 안내(서버도 ATTD_400_201 로 최종 차단).
+  if (reducedWorkClaimRequired.value && !otClaimConfirmed.value) {
+    showAlert('연장근로를 본인이 청구한다는 확인에 체크해 주세요.')
+    return
+  }
   // prafta-app-017(이슈①): 정규 스케줄 겹침은 우선 안내(서버도 ATTD_400_100 으로 최종 차단).
   if (hasOverlap.value) {
     showAlert('스케줄 시간 내에는 초과근무를 등록할 수 없어요.')
@@ -702,6 +773,9 @@ const onSubmit = () => {
     // prafta-app-009: 결재선 노출 케이스만 approverUserCds 전개 전송(SSOT). 'Y' 케이스는 미전송(서버 분기).
     approverUserCds: showApprovalSection.value ? approverUserCds.value : undefined,
     presetId: undefined,
+    // 소정-12: 근로자가 실제로 체크한 경우에만 'Y'. 그 외에는 필드 자체를 만들지 않는다
+    //   (미전송 = 서버 fail-closed 유지 — 청구 사실을 클라이언트가 대신 단정하지 않는다).
+    reducedWorkOtClaimYn: otClaimConfirmed.value ? 'Y' : undefined,
   })
 }
 </script>
@@ -806,6 +880,69 @@ const onSubmit = () => {
   margin: 0;
   font-size: 12px;
   color: var(--color-text-secondary);
+}
+
+/* 소정-12: 근로시간 단축 기간 안내 + 명시 청구 확인 (기본=주의 톤, 차단=위험 톤) */
+.reduced-box {
+  background: var(--color-warning-tint);
+  border: 0.5px solid var(--color-warning);
+  border-radius: var(--radius-lg);
+  padding: var(--space-md);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-xs);
+}
+.reduced-box--block {
+  background: var(--color-danger-tint);
+  border-color: var(--color-danger);
+}
+.reduced-box__title {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--color-warning-text);
+}
+.reduced-box--block .reduced-box__title {
+  color: var(--color-danger);
+}
+.reduced-box__period {
+  margin: 0;
+  font-size: 12px;
+  color: var(--color-text-secondary);
+  font-variant-numeric: tabular-nums;
+}
+.reduced-box__desc {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.6;
+  color: var(--color-text-primary);
+}
+.reduced-check {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-sm);
+  margin-top: var(--space-xs);
+  padding: var(--space-sm) var(--space-md);
+  background: var(--color-surface);
+  border: 0.5px solid var(--color-border);
+  border-radius: var(--radius-md);
+  cursor: pointer;
+}
+.reduced-check__box {
+  width: 20px;
+  height: 20px;
+  flex-shrink: 0;
+  accent-color: var(--color-primary);
+}
+.reduced-check__text {
+  font-size: 13px;
+  font-weight: 500;
+  line-height: 1.5;
+  color: var(--color-text-primary);
+}
+.reduced-check__text .req {
+  color: var(--color-danger);
+  margin-right: var(--space-xs);
 }
 
 .fs {

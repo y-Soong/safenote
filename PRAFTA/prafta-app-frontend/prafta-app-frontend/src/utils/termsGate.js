@@ -14,6 +14,8 @@ import api from '@/api/axios'
 import { isDailyWorker } from '@/utils/employment'
 // 푸시 토큰 등록 — 반드시 필수 게이트(약관/비번) 해소 후에 호출한다(아래 routeAfterRequiredTerms 주석 참조).
 import { registerPushToken } from '@/utils/pushTokenBridge'
+// 소정-12(UI-E): 연차 기능 노출 판정 프리로드 — 모든 로그인 경로가 수렴하는 지점에서 1회 조회한다.
+import { loadLeaveFeatureVisibility } from '@/utils/leaveFeature'
 
 /** 연동 회사 제3자 제공 동의 약관 ID(SYS008 '006'). 마이페이지 철회 확인 팝업 판별에도 사용. */
 export const THIRD_PARTY_CONSENT_TERMS_ID = '006'
@@ -73,6 +75,10 @@ export async function routeAfterRequiredTerms(router, redirect) {
   //   이 시점으로 이연한다. 모든 로그인 경로가 본 함수로 수렴하므로 호출 누락 없음.
   //   (①-b 계약서·② 제3자 동의 게이트는 AUTH_403_001 차단 대상이 아니라 이 시점이면 안전)
   registerPushToken()
+
+  // 소정-12(UI-E): 연차 기능 노출 판정 프리로드(fire-and-forget). 홈/마이페이지가 진입 즉시 판정값을
+  //   쓸 수 있도록 여기서 미리 채운다. 실패는 비차단(노출 폴백) — 라우팅을 절대 지연·차단하지 않는다.
+  loadLeaveFeatureVisibility()
 
   if (isDailyWorker()) {
     try {

@@ -17,6 +17,7 @@ import com.prafta.common.cmm.login.application.command.UserPwdUnlockCommand;
 import com.prafta.common.cmm.login.application.query.LoginQuery;
 import com.prafta.common.cmm.login.application.query.UserRowLockQuery;
 import com.prafta.common.cmm.login.application.query.UserTermsAgreementCheckQuery;
+import com.prafta.common.cmm.login.result.JoinConflictResult;
 import com.prafta.common.cmm.login.result.RequiredTermsResult;
 import com.prafta.common.cmm.login.result.UserResult;
 import com.prafta.common.cmm.login.result.UserTermsAgreementCheckResult;
@@ -62,6 +63,11 @@ public interface LoginMapper {
 	 *
 	 * <p>★로그인 ID 전역 유일화: 로그인은 회사코드 없이 USER_ID 만으로 사용자를 찾으므로 ID 는 전역 유일해야 한다
 	 *   (UNIQUE UX_TB_USER_ID(USER_ID)). 셀프 회원가입에 서버측 사전검사가 없으면 INSERT 에서 제약 위반 500 이 난다.
+	 *
+	 * <p>★소정-04 이후 셀프가입 경로는 본 메서드를 쓰지 않는다. 거부('07') 행 재활용 재가입 때문에
+	 *   "TB_USER 점유 = 무조건 차단"이 성립하지 않게 되어, {@link #selectJoinConflictByUserId}(상태까지 판정)
+	 *   + {@link #selectDailyUserIdExists}(일용직) 조합으로 분리했다. 본 메서드는 동일 판정이 필요한
+	 *   다른 경로를 위해 남겨 둔다.
 	 */
 	int selectUserIdExistsGlobal(@Param("userId") String userId);
 
@@ -71,8 +77,90 @@ public interface LoginMapper {
 	int selectMirrorSiteCnt(@Param("cmpnyCd") String cmpnyCd, @Param("siteCd") String siteCd);
 
 	int insertUserInfo(UserJoinCommand dto);
-	
+
 	int insertUserSiteAuth(UserJoinCommand dto);
+
+	// ===== 소정-04 - 셀프가입 승인제 ('06 가입승인대기') + 거부('07') 행 재활용 재가입 =====
+
+	/**
+	 * 로그인 ID 사용중 여부 — <b>일용직(TB_DAILY_USER)만</b> 판정한다.
+	 *
+	 * <p>재가입 재활용 경로에서는 TB_USER 쪽 점유가 "재활용 대상인 본인의 '07' 행"일 수 있어
+	 * {@link #selectUserIdExistsGlobal}(TB_USER + 일용직 합산)을 그대로 쓰면 자기 자신 때문에
+	 * 막힌다. TB_USER 점유는 {@link #selectJoinConflictByUserId} 로 상태까지 보고 판정하고,
+	 * 일용직 ID 충돌만 본 메서드로 별도 확인한다(전역 유일 규칙은 그대로 유지).
+	 */
+	int selectDailyUserIdExists(@Param("userId") String userId);
+
+	/**
+	 * 해당 로그인 ID 를 점유 중인 TB_USER 행 1건 (전역 — USER_ID 는 전역 유일).
+	 *
+	 * @return 점유 행(회사/사용자코드/상태/사용여부). 미점유면 null
+	 */
+	JoinConflictResult selectJoinConflictByUserId(@Param("userId") String userId);
+
+	/**
+	 * 해당 휴대폰 HMAC 을 점유 중인 TB_USER 행 1건 (회사 스코프 — UNIQUE 가 CMPNY_CD+MBL_NO_HMAC).
+	 *
+	 * @return 점유 행. 미점유면 null
+	 */
+	JoinConflictResult selectJoinConflictByMblHmac(@Param("cmpnyCd") String cmpnyCd,
+			@Param("mblNoHmac") String mblNoHmac);
+
+	/**
+	 * 거부('07') 행 재활용 재가입 — 신청 정보 전량 갱신 + ACCOUNT_STATUS '07' → '06' 전이.
+	 *
+	 * <p>UNIQUE 제약(USER_ID 전역 / CMPNY_CD+MBL_NO_HMAC) 때문에 신규 INSERT 로는 같은 아이디·
+	 * 휴대폰 재가입이 불가능하므로 기존 행을 되살린다(plan §8 Q2 확정). WHERE 에
+	 * {@code ACCOUNT_STATUS='07'} 를 두어 활성 계정이 이 경로로 덮어써지는 것을 원천 차단한다.
+	 *
+	 * @return 갱신 행 수 (0 = 대상이 '07' 이 아님 → 동시성/변조)
+	 */
+	int updateRejectedUserForRejoin(UserJoinCommand dto);
+
+	/**
+	 * 재가입 시 <b>이전 신청 사업장</b>의 사업장 권한을 회수한다 (USE_YN='N').
+	 *
+	 * <p>거부 행을 재활용하면 이전 신청 때 만들어진 TB_USER_SITE_AUTH 행이 그대로 남는다.
+	 * 다른 사업장으로 재신청한 뒤 승인되면 그 계정이 <b>예전 사업장 데이터까지</b> 접근하게 되므로
+	 * (SiteAccessService 는 이 원장을 본다) 새 신청 사업장 외의 권한을 내린다.
+	 *
+	 * @param siteCd 이번 신청 사업장(유지 대상)
+	 * @return 회수된 행 수
+	 */
+	int deactivateOtherUserSiteAuth(@Param("cmpnyCd") String cmpnyCd,
+			@Param("userCd") String userCd, @Param("siteCd") String siteCd);
+
+	/**
+	 * 승인대기('06')·거부('07') 계정 1건을 로그인 ID 로 조회한다 (로그인 안내 분기 전용).
+	 *
+	 * <p>두 상태 모두 USE_YN='N' 이라 {@link #Login} 쿼리에 잡히지 않는다(security M-2 —
+	 * 미승인자가 재직자 목록에 유입되지 않게 하기 위한 적재 규약). 안내 메시지는
+	 * <b>비밀번호 검증을 통과한 경우에만</b> 노출한다(계정 존재 탐색 방지) — 그 검증에 쓸
+	 * USER_PW 를 포함해 반환한다.
+	 */
+	UserResult selectSelfJoinInactiveUserByUserId(@Param("userId") String userId);
+
+	// ===== [security H-1] 셀프가입 휴대폰 본인인증 서버 강제 =====
+
+	/**
+	 * 해당 휴대폰(HMAC)의 <b>최근 인증 완료</b> SMS 기록 1건 (PURPOSE_CD='SELF_JOIN', 30분 창).
+	 *
+	 * <p>비밀번호 재설정 흐름({@code BaseinfoMapper.selectSmsVerifiedSmsId})의 미러이며,
+	 * 가입 시점에는 TB_USER 행이 없으므로 사용자 조인 대신 휴대폰 HMAC 으로 찾는다.
+	 *
+	 * @param certNo 선택 대조용 인증번호(없으면 코드 대조 생략)
+	 * @return SMS_ID. 인증 기록이 없거나 창을 벗어났으면 null(→ 가입 차단)
+	 */
+	String selectSelfJoinVerifiedSmsId(@Param("mblNoHmac") String mblNoHmac,
+			@Param("certNo") String certNo);
+
+	/**
+	 * 인증 기록 소비('Y' → 'C'). 한 번의 인증이 여러 계정 생성에 재사용되지 않게 한다.
+	 *
+	 * @return 소비된 행 수(1 이 아니면 동시 요청이 먼저 소비 → 호출부에서 차단)
+	 */
+	int consumeSelfJoinSmsAuth(@Param("smsId") String smsId);
 	
 	List<RequiredTermsResult> selectRequiredTermsList();
 	

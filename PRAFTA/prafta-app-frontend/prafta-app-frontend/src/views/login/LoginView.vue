@@ -133,6 +133,8 @@ import safenote_logo from '@/assets/img/safenote_sign.png'
 import axios from '@/api/axios'
 import { requestDeviceInfo, getCachedDeviceMeta } from '@/utils/deviceBridge'
 import { routeAfterLogin } from '@/utils/termsGate'
+// 소정-12: 셀프가입 승인대기('06')/거부('07') 판별 — 판별 규칙·BE 계약 가정은 utils/joinApproval.js 참조.
+import { resolveJoinApprovalStatus } from '@/utils/joinApproval'
 
 const userId = ref('')
 const password = ref('')
@@ -199,6 +201,14 @@ const fnSubmitLogin = async () => {
     })
 
     if (response.status === 200) {
+      // 소정-12: 셀프가입 승인대기('06')/거부('07') 계정은 세션 저장 없이 안내 화면으로 보낸다.
+      //   ★반드시 sessionStorage 저장/토큰 세팅보다 앞에 둔다(PHONE_AUTH 분기와 동일 원칙).
+      const joinStatus = resolveJoinApprovalStatus(response.data)
+      if (joinStatus) {
+        router.replace({ path: '/JoinApprovalPending', state: { status: joinStatus } })
+        return
+      }
+
       // PRAFTA-037-F3: 인증대기(SYS013='04') 계정은 nextStep='PHONE_AUTH' + 임시 scope JWT 응답.
       // 임시 토큰은 URL 쿼리스트링 노출 금지 → vue-router history state 로만 전달.
       if (response.data?.nextStep === 'PHONE_AUTH') {
@@ -290,6 +300,13 @@ const fnSubmitLogin = async () => {
       await routeAfterLogin(router, redirect)
     }
   } catch (err) {
+    // 소정-12: 서버가 승인대기/거부를 4xx(errorCode/accountStatus)로 알리는 계약이면 여기서 분기한다.
+    //   판별 실패 시에는 기존 통합 메시지 alert 로 자연 폴백(오분기보다 안전).
+    const joinStatus = resolveJoinApprovalStatus(err.response?.data)
+    if (joinStatus) {
+      router.replace({ path: '/JoinApprovalPending', state: { status: joinStatus } })
+      return
+    }
     await proxy.$alert(err.response?.data?.message || '로그인에 실패했습니다.')
   }
 }

@@ -152,6 +152,8 @@ import PullRefreshIndicator from '@/components/common/PullRefreshIndicator.vue'
 import { requestGps } from '@/utils/gpsBridge'
 import { loadKakaoMapScript } from '@/utils/kakaoMap'
 import { isDailyWorker } from '@/utils/employment'
+// 소정-12(UI-E): 연차 기능 노출 판정 — 액션시트 "연차 신청/변경" 게이트.
+import { leaveFeatureVisible, ensureLeaveFeatureVisibility } from '@/utils/leaveFeature'
 import { dateToYmd, ymdToDate } from './attdFormat'
 
 import AttendanceTodayCard from './components/AttendanceTodayCard.vue'
@@ -577,9 +579,16 @@ const startCheckInOut = async (mode, targetWorkSeq = null) => {
 // ───────────────────────────────────────────────────────────
 const toSheetDay = (detail) => {
   if (!detail) return null
+  // 소정-12(UI-E): 연차 기능 미노출 회사(자동부여 off + 부여이력 0)는 "연차 신청/변경" 액션을 비활성화한다.
+  //   서버 sheetActions 를 재계산하지 않고 연차 플래그만 덮어쓴다(다른 3액션은 서버 판정 그대로).
+  //   판정 실패/미판정은 노출 폴백이므로 기존 동작이 유지된다.
+  const sheetActions = { ...(detail.sheetActions || {}) }
+  if (!leaveFeatureVisible.value) {
+    sheetActions.canRequestLeave = false
+  }
   return {
     workYmd: detail.workDate,
-    actions: detail.sheetActions || {},
+    actions: sheetActions,
     workPlanName: detail.workPlanName,
     leaveTypeName: detail.leaveTypeName,
     scheduleSummary: detail.scheduleSummary,
@@ -791,6 +800,8 @@ onMounted(() => {
     router.replace('/MainView')
     return
   }
+  // 소정-12(UI-E): 연차 노출 판정 확보(캐시 있으면 라운드트립 없음). 실패는 비차단(노출 폴백).
+  ensureLeaveFeatureVisibility()
   loadToday()
   // prafta-app-008: 외근 사유 시트(OffsiteReasonSheet)의 카카오 지도 SDK 프리로드.
   // 시트 오픈 시 SDK 네트워크 로드로 표시가 지연되는 문제 방지. 중복 가드로 idempotent, 실패는 폴백 동작.

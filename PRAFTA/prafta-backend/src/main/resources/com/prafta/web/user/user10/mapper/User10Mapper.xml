@@ -1,0 +1,131 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.prafta.web.user.user10.mapper.User10Mapper">
+
+    <!-- ================================================================
+         소정-10 — 소정근로시간 관리(User_10) 조회 매퍼.
+
+         ① selectStdWorkUserList : 대상 근로자 + 오늘 기준 유효 이력(LEFT JOIN).
+            - 기준일은 DB NOW() 로 만든다(JVM 시계 스큐 방지, StdWorkHoursMapper 규약 동일).
+            - 유효 행이 2건 이상 걸리는 데이터 파손 상황에 대비해 "최신 시작일 1건" 을
+              상관 서브쿼리로 고정한다(StdWorkHoursMapper.selectEffectiveRow 의 ORDER BY LIMIT 1 등가).
+            - 일용직(DAILY)은 소정근로 개념이 없어 목록에서 제외한다(등록도 서버가 403 으로 막는다).
+         ② selectUserScope       : 권한 게이트용 서버 권위값.
+
+         부서 술어에는 반드시 SITE_CD 를 함께 세운다(NODE_CD 는 사업장 간 중복 코드).
+         부등호는 CDATA 로 감싼다(XML 파싱 함정).
+         ================================================================ -->
+
+    <select id="selectStdWorkUserList" parameterType="com.prafta.web.user.user10.application.query.StdWorkUserListQuery" resultType="com.prafta.web.user.user10.result.StdWorkUserRowResult">
+    /* User10Mapper.selectStdWorkUserList */
+        <if test='nodeCd != null and nodeCd != "" and "Y".equals(incSubNodeYn)'>
+        WITH RECURSIVE node_tree AS (
+            SELECT
+                  N.CMPNY_CD
+                , N.SITE_CD
+                , N.NODE_CD
+            FROM TB_SITE_NODE N
+            WHERE N.CMPNY_CD = #{gvCmpnyCd}
+              AND N.SITE_CD  = #{siteCd}
+              AND N.NODE_CD  = #{nodeCd}
+
+            UNION ALL
+
+            SELECT
+                  C.CMPNY_CD
+                , C.SITE_CD
+                , C.NODE_CD
+            FROM TB_SITE_NODE C
+            INNER JOIN node_tree P
+                ON  C.CMPNY_CD       = P.CMPNY_CD
+                AND C.SITE_CD        = P.SITE_CD
+                AND C.PARENT_NODE_CD = P.NODE_CD
+        )
+        </if>
+
+        /* SELECT 컬럼 순서 = StdWorkUserRowResult 생성자 인자 순서와 1:1 (record 위치 매핑). */
+        SELECT
+              U.USER_CD             AS userCd
+            , U.USER_ID             AS userId
+            , U.USER_NM             AS userNm
+            , U.NODE_CD             AS nodeCd
+            , N.NODE_NM             AS nodeNm
+            , U.EMPLOYMENT_TYPE     AS employmentType
+            , U.HIRE_DATE           AS hireDate
+            , H.WEEK_STD_MINUTES    AS weekStdMinutes
+            , H.REASON_CD           AS reasonCd
+            , D.SYST_VAL_D_NM       AS reasonNm
+            , H.APPLY_STR_DATE      AS applyStrDate
+            , H.APPLY_END_DATE      AS applyEndDate
+
+        FROM TB_USER U
+
+        LEFT JOIN TB_SITE_NODE N
+            ON  N.CMPNY_CD = U.CMPNY_CD
+            AND N.SITE_CD  = U.SITE_CD
+            AND N.NODE_CD  = U.NODE_CD
+
+        /* 오늘 기준 유효 이력 1건. 시작일이 가장 늦은 행으로 고정(중복 방어). */
+        LEFT JOIN TB_USER_STD_WORK_HOURS H
+            ON  H.CMPNY_CD = U.CMPNY_CD
+            AND H.USER_CD  = U.USER_CD
+            AND H.APPLY_STR_DATE = (
+                    SELECT MAX(X.APPLY_STR_DATE)
+                      FROM TB_USER_STD_WORK_HOURS X
+                     WHERE X.CMPNY_CD = U.CMPNY_CD
+                       AND X.USER_CD  = U.USER_CD
+                       AND X.APPLY_STR_DATE <![CDATA[ <= ]]> DATE_FORMAT(NOW(), '%Y%m%d')
+                       AND ( X.APPLY_END_DATE IS NULL
+                             OR X.APPLY_END_DATE <![CDATA[ >= ]]> DATE_FORMAT(NOW(), '%Y%m%d') )
+                )
+
+        LEFT JOIN TB_SYST_VAL_D D
+            ON  D.SYST_VAL_CD   = 'SYS083'
+            AND D.SYST_VAL_D_CD = H.REASON_CD
+
+        WHERE U.CMPNY_CD = #{gvCmpnyCd}
+          AND U.SITE_CD  = #{siteCd}
+          AND U.USE_YN   = 'Y'
+          /* 탈퇴 계정 제외(계약량 관리 대상 아님). 승인대기·거부 계정도 아직 근로자가 아니라 제외. */
+          AND U.ACCOUNT_STATUS NOT IN ('03', '06', '07')
+          /* 일용직은 소정근로 개념이 없다(고용형태 미지정 NULL 계정은 관리 대상으로 남긴다). */
+          AND ( U.EMPLOYMENT_TYPE IS NULL OR U.EMPLOYMENT_TYPE != 'DAILY' )
+
+        <if test='nodeCd != null and nodeCd != "" and "Y".equals(incSubNodeYn)'>
+          AND EXISTS (
+              SELECT 1
+              FROM node_tree NT
+              WHERE NT.CMPNY_CD = U.CMPNY_CD
+                AND NT.SITE_CD  = U.SITE_CD
+                AND NT.NODE_CD  = U.NODE_CD
+          )
+        </if>
+        <if test='nodeCd != null and nodeCd != "" and !"Y".equals(incSubNodeYn)'>
+          AND U.NODE_CD = #{nodeCd}
+        </if>
+
+        <if test="userKeyword != null and userKeyword != ''">
+          AND ( U.USER_ID LIKE CONCAT('%', #{userKeyword}, '%')
+             OR U.USER_NM LIKE CONCAT('%', #{userKeyword}, '%') )
+        </if>
+
+        ORDER BY U.USER_NM, U.USER_CD
+    </select>
+
+    <!-- 권한 게이트/표시용 대상 스코프. USE_YN·상태는 화면 안내를 위해 그대로 실어 보낸다. -->
+    <select id="selectUserScope" resultType="com.prafta.web.user.user10.result.StdWorkUserScopeResult">
+    /* User10Mapper.selectUserScope */
+    SELECT
+          U.USER_CD         AS userCd
+        , U.USER_NM         AS userNm
+        , U.SITE_CD         AS siteCd
+        , U.NODE_CD         AS nodeCd
+        , U.EMPLOYMENT_TYPE AS employmentType
+        , U.USE_YN          AS useYn
+        , U.ACCOUNT_STATUS  AS accountStatus
+    FROM TB_USER U
+    WHERE U.CMPNY_CD = #{cmpnyCd}
+      AND U.USER_CD  = #{userCd}
+    </select>
+
+</mapper>

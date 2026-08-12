@@ -63,8 +63,9 @@
         <!-- prafta-app-028: 연차 요약 섹션 (3 KPI: 남은/사용예정/사용, 일 단위) -->
         <!--   일용직(DAILY)은 연차 해당없음 → 미노출(MainView 잔여연차 카드와 동일 게이트). -->
         <!--   연차요약 로드 실패는 비치명적: leaveSummaryFailed 면 섹션 자체 미노출(전체 화면 에러로 키우지 않음). -->
+        <!--   소정-12(UI-E): 연차 기능 미노출 회사(자동부여 off + 부여이력 0)는 섹션 자체를 숨긴다. -->
         <section
-          v-if="!isDailyWorker && !leaveSummaryFailed"
+          v-if="!isDailyWorker && leaveFeatureVisible && !leaveSummaryFailed"
           class="mp-leave"
           role="button"
           tabindex="0"
@@ -162,7 +163,8 @@
         </nav>
 
         <!-- 결재 그룹 — 일용직(DAILY)은 연차 결재선/결재 관리 모두 미노출(필요 없는 기능). -->
-        <template v-if="!isDailyWorker">
+        <!--   소정-12(UI-E): 두 메뉴 모두 연차 전용이므로 연차 기능 미노출 회사에서도 함께 숨긴다. -->
+        <template v-if="!isDailyWorker && leaveFeatureVisible">
           <p class="mp-group-label">결재</p>
           <nav class="mp-menu">
             <button type="button" class="mp-menu__row" @click="onPresetManage">
@@ -303,6 +305,8 @@ import { usePullToRefresh } from '@/composables/usePullToRefresh'
 import PullRefreshIndicator from '@/components/common/PullRefreshIndicator.vue'
 // prafta-app-028: 일용직(DAILY) 게이트 — 연차 요약 섹션 노출 판정(MainView 잔여연차 카드와 동일 게이트).
 import { isDailyWorker as isDailyWorkerFn } from '@/utils/employment'
+// 소정-12(UI-E): 연차 기능 노출 판정(회사 단위) — 연차 요약 섹션·연차 결재 메뉴 노출 게이트.
+import { leaveFeatureVisible, ensureLeaveFeatureVisibility } from '@/utils/leaveFeature'
 // 연차 일수 표기 공용 유틸 — 2026-08-09 규약: 잔여는 일 단위 단독(splitLeaveDaysOnly).
 // HB-13(F-3 §20-2): 사용/사용예정은 역환산 대신 반차 건수·시간차 실분 병기(splitLeaveDaysWithHourly).
 import { splitLeaveDaysOnly, splitLeaveDaysWithHourly } from '@/utils/leaveFormat'
@@ -718,6 +722,8 @@ const loadAll = async ({ showLoading = true } = {}) => {
 }
 
 onMounted(() => {
+  // 소정-12(UI-E): 연차 노출 판정 확보(캐시 있으면 라운드트립 없음). 실패는 비차단(노출 폴백).
+  ensureLeaveFeatureVisibility()
   // prafta-app-028: 진입 시 프로필/관리자판정/대기건수/연차요약을 loadAll 로 일괄 조회(중복 호출 제거).
   loadAll()
 })

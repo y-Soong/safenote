@@ -1,0 +1,160 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.prafta.web.user.user09.mapper.User09Mapper">
+
+    <!-- ================================================================
+         소정-09 — 셀프가입 승인/거부 (User_09).
+
+         상태[SYS013]: '06' 가입승인대기 / '07' 가입거부.
+         ★USE_YN 은 술어에 두지 않는다 — 거부('07') 행은 USE_YN='N' 로 보존되므로
+           USE_YN='Y' 를 걸면 거부 목록이 통째로 비어 버린다. 상태 필터가 곧 스코프다.
+
+         부서 술어에는 반드시 SITE_CD 를 함께 세운다(NODE_CD 는 사업장 간 중복 코드).
+         모든 파라미터는 샵중괄호 바인딩만 사용한다(동적 컬럼/정렬 없음).
+         ================================================================ -->
+
+    <select id="selectSelfJoinList" parameterType="com.prafta.web.user.user09.application.query.SelfJoinListQuery" resultType="com.prafta.web.user.user09.result.SelfJoinRowResult">
+    /* User09Mapper.selectSelfJoinList */
+        <if test='nodeCd != null and nodeCd != "" and "Y".equals(incSubNodeYn)'>
+        WITH RECURSIVE node_tree AS (
+            SELECT
+                  N.CMPNY_CD
+                , N.SITE_CD
+                , N.NODE_CD
+            FROM TB_SITE_NODE N
+            WHERE N.CMPNY_CD = #{gvCmpnyCd}
+              AND N.SITE_CD  = #{siteCd}
+              AND N.NODE_CD  = #{nodeCd}
+
+            UNION ALL
+
+            SELECT
+                  C.CMPNY_CD
+                , C.SITE_CD
+                , C.NODE_CD
+            FROM TB_SITE_NODE C
+            INNER JOIN node_tree P
+                ON  C.CMPNY_CD       = P.CMPNY_CD
+                AND C.SITE_CD        = P.SITE_CD
+                AND C.PARENT_NODE_CD = P.NODE_CD
+        )
+        </if>
+
+        /* SELECT 컬럼 순서 = SelfJoinRowResult 생성자 인자 순서와 1:1 (record 위치 매핑).
+           휴대폰은 암호문 + LAST4 만 내보내고 마스킹은 서비스가 수행한다(평문 SQL 노출 금지). */
+        SELECT
+              U.USER_CD                                     AS userCd
+            , U.USER_ID                                     AS userId
+            , U.USER_NM                                     AS userNm
+            , U.SITE_CD                                     AS siteCd
+            , S.SITE_NM                                     AS siteNm
+            , U.NODE_CD                                     AS nodeCd
+            , N.NODE_NM                                     AS nodeNm
+            , U.MBL_NO_ENC                                  AS mblNoEnc
+            , U.MBL_NO_LAST4                                AS mblNoLast4
+            , U.ACCOUNT_STATUS                              AS accountStatus
+            , DATE_FORMAT(U.INSERT_DATE, '%Y-%m-%d %H:%i')  AS applyDtime
+
+        FROM TB_USER U
+
+        LEFT JOIN TB_SITE S
+            ON  S.CMPNY_CD = U.CMPNY_CD
+            AND S.SITE_CD  = U.SITE_CD
+
+        /* 부서명은 사용자 본인 사업장 기준으로 조인한다(타 사업장 동일 코드 부서명 오표시 차단). */
+        LEFT JOIN TB_SITE_NODE N
+            ON  N.CMPNY_CD = U.CMPNY_CD
+            AND N.SITE_CD  = U.SITE_CD
+            AND N.NODE_CD  = U.NODE_CD
+
+        WHERE U.CMPNY_CD       = #{gvCmpnyCd}
+          AND U.SITE_CD        = #{siteCd}
+          AND U.ACCOUNT_STATUS = #{accountStatus}
+
+        <if test='nodeCd != null and nodeCd != "" and "Y".equals(incSubNodeYn)'>
+          AND EXISTS (
+              SELECT 1
+              FROM node_tree NT
+              WHERE NT.CMPNY_CD = U.CMPNY_CD
+                AND NT.SITE_CD  = U.SITE_CD
+                AND NT.NODE_CD  = U.NODE_CD
+          )
+        </if>
+        <if test='nodeCd != null and nodeCd != "" and !"Y".equals(incSubNodeYn)'>
+          AND U.NODE_CD = #{nodeCd}
+        </if>
+
+        <if test="userKeyword != null and userKeyword != ''">
+          AND ( U.USER_ID LIKE CONCAT('%', #{userKeyword}, '%')
+             OR U.USER_NM LIKE CONCAT('%', #{userKeyword}, '%') )
+        </if>
+
+        /* 최신 신청 우선. 동시각 tie-break 는 USER_CD. */
+        ORDER BY U.INSERT_DATE DESC, U.USER_CD DESC
+    </select>
+
+    <!-- 승인/거부 대상의 서버 권위값(사업장/부서/상태). 권한 게이트 입력이므로 바디 값 대신 이 결과를 쓴다. -->
+    <select id="selectSelfJoinTarget" resultType="com.prafta.web.user.user09.result.SelfJoinTargetResult">
+    /* User09Mapper.selectSelfJoinTarget */
+    SELECT
+          U.USER_CD         AS userCd
+        , U.USER_ID         AS userId
+        , U.USER_NM         AS userNm
+        , U.SITE_CD         AS siteCd
+        , U.NODE_CD         AS nodeCd
+        , U.ACCOUNT_STATUS  AS accountStatus
+        , U.USE_YN          AS useYn
+    FROM TB_USER U
+    WHERE U.CMPNY_CD = #{cmpnyCd}
+      AND U.USER_CD  = #{userCd}
+    </select>
+
+    <!-- 승인: 인사정보 보강 + '06' → '01'. 상태 술어가 동시 처리(중복 승인/승인-거부 경합)를 막는다. -->
+    <update id="updateApproveSelfJoin">
+    /* User09Mapper.updateApproveSelfJoin */
+    UPDATE TB_USER
+       SET HIRE_DATE        = #{hireDate}
+         , EMPLOYMENT_TYPE  = #{employmentType}
+         , RANK_CD          = #{rankCd}
+         <!-- ★★[security C-1] 승인 시 권한을 일반사원으로 <b>재확정</b>한다(방어적 이중화).
+              셀프가입 경로는 이제 권한을 리터럴로 넣지만, 그 이전에 바디의 authCd 로 오염되어
+              적재된 계정(운영 배포본에 존재 가능)이 승인만으로 활성화되는 것을 이 지점에서 끊는다.
+              승인 시트에는 권한 입력란이 없다 — 권한 상향은 User_01(권한레벨 이중 검증) 전용이다.
+              [security M-2] USE_YN='Y' 도 여기서 부여한다. 승인 전에는 'N' 으로 두어
+              재직자 목록/조직 조회에 미승인자가 섞이지 않게 한다. -->
+         , AUTH_CD          = '99999'
+         , USE_YN           = 'Y'
+         , ACCOUNT_STATUS   = '01'
+         , UPDATE_NO        = #{updateNo}
+         , UPDATE_DATE      = NOW()
+     WHERE CMPNY_CD       = #{cmpnyCd}
+       AND USER_CD        = #{userCd}
+       AND ACCOUNT_STATUS = '06'
+    </update>
+
+    <!-- 거부: '06' → '07' + 사용중지. 행은 삭제하지 않는다(재가입 시 이 행을 재활용).
+         WITHDRAWAL_DATE 는 건드리지 않는다 — 탈퇴('03')와 의미가 다르다. -->
+    <update id="updateRejectSelfJoin">
+    /* User09Mapper.updateRejectSelfJoin */
+    UPDATE TB_USER
+       SET ACCOUNT_STATUS   = '07'
+         , USE_YN           = 'N'
+         , UPDATE_NO        = #{updateNo}
+         , UPDATE_DATE      = NOW()
+     WHERE CMPNY_CD       = #{cmpnyCd}
+       AND USER_CD        = #{userCd}
+       AND ACCOUNT_STATUS = '06'
+    </update>
+
+    <!-- 직급코드[COM007] 화이트리스트 검증(회사 스코프). 클라이언트 제출 코드 신뢰 금지. -->
+    <select id="selectRankCdExists" resultType="int">
+    /* User09Mapper.selectRankCdExists */
+    SELECT COUNT(1)
+    FROM TB_BAIM_VAL_D D
+    WHERE D.CMPNY_CD      = #{cmpnyCd}
+      AND D.BAIM_VAL_CD   = 'COM007'
+      AND D.BAIM_VAL_D_CD = #{rankCd}
+      AND D.USE_YN        = 'Y'
+    </select>
+
+</mapper>

@@ -22,9 +22,10 @@
       </button>
     </div>
 
-    <div class="kpi-grid">
-      <!-- 잔여 연차 -->
+    <div class="kpi-grid" :class="{ 'kpi-grid--single': !showLeave }">
+      <!-- 잔여 연차 — 소정-12(UI-E): 연차 기능 미노출 회사(자동부여 off + 부여이력 0)는 숨김 -->
       <div
+        v-if="showLeave"
         class="kpi"
         role="button"
         tabindex="0"
@@ -87,6 +88,12 @@ const props = defineProps({
     type: Number,
     default: 0,
   },
+  // 소정-12(UI-E): 잔여 연차 KPI 노출 여부. false 면 승인 요청 KPI 만 남는다.
+  //   기본 true — 판정 실패/미판정은 "보이는 쪽" 폴백(연차 기능이 조용히 사라지지 않게).
+  showLeave: {
+    type: Boolean,
+    default: true,
+  },
 })
 
 defineEmits(['click:detail', 'click:leave', 'click:approval'])
@@ -146,6 +153,10 @@ const formattedGranted = computed(() => trimDays(props.grantedDays))
   display: grid;
   grid-template-columns: 1fr 1fr;
   gap: 8px;
+}
+/* 소정-12(UI-E): 잔여 연차 KPI 숨김 회사 — 남은 KPI 1개가 폭을 전부 사용한다. */
+.kpi-grid--single {
+  grid-template-columns: 1fr;
 }
 
 .kpi {

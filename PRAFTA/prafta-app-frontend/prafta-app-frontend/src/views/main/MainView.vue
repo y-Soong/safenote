@@ -89,6 +89,7 @@
           :remaining-days="remainingLeaveDays"
           :granted-days="grantedLeaveDays"
           :pending-count="approvalPendingCount"
+          :show-leave="leaveFeatureVisible"
           @click:detail="onAttdSummaryDetail"
           @click:leave="onLeaveClick"
           @click:approval="onApprovalClick"
@@ -96,8 +97,9 @@
 
         <!-- 신청형 휴가 요약 (LEAVE_TYPE='01') — 잔여연차(법정/관리자부여)와 분리된 별도 카드. -->
         <!--   일용직(DAILY)은 연차 해당없음(잔여연차 카드와 동일 게이트), 보유 타입 0이면 미노출. -->
+        <!--   소정-12(UI-E): 연차 기능 미노출 회사는 이 카드의 진입 목적지(연차 현황)도 함께 숨긴다. -->
         <AppliedLeaveSummaryCard
-          v-if="!isDailyWorker && appliedLeaveTypeCount > 0"
+          v-if="!isDailyWorker && leaveFeatureVisible && appliedLeaveTypeCount > 0"
           :type-count="appliedLeaveTypeCount"
           :remaining-days="appliedLeaveRemainingDays"
           @click:detail="onLeaveClick"
@@ -204,6 +206,8 @@ import PullRefreshIndicator from '@/components/common/PullRefreshIndicator.vue'
 import { requestGps } from '@/utils/gpsBridge'
 import { loadKakaoMapScript } from '@/utils/kakaoMap'
 import { isDailyWorker as isDailyWorkerFn } from '@/utils/employment'
+// 소정-12(UI-E): 연차 기능 노출 판정(회사 단위). false 면 잔여연차 카드/연차 진입점을 숨긴다.
+import { leaveFeatureVisible, ensureLeaveFeatureVisibility } from '@/utils/leaveFeature'
 import { formatMdDot } from '@/utils/approvalFormat'
 import { resolveApiErrorMessage } from '@/utils/apiError'
 import { TRANSFER_NOTICE_OPEN_EVENT } from '@/utils/pushRouteBridge'
@@ -764,6 +768,9 @@ const { onPullStart, onPullMove, onPullEnd, indicatorProps } = usePullToRefresh(
 
 onMounted(() => {
   applySessionHeader()
+  // 소정-12(UI-E): 연차 노출 판정 확보(캐시 있으면 라운드트립 없음). 웹뷰 재적재로 세션 캐시가
+  //   비었을 때를 대비한 보강 — 실패는 비차단(노출 폴백).
+  ensureLeaveFeatureVisibility()
   loadHomeSummary()
   // prafta-app-023-2: 공지 카드/배지 + 로그인 팝업을 home-summary 와 병행 로드(독립 실패 격리).
   loadMyNotices()

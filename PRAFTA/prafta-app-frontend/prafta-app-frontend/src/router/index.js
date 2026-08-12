@@ -439,6 +439,13 @@ const routes = [
     name: 'DailyEntryPending',
     component: () => import('@/views/login/DailyEntryPendingView.vue'),
   },
+  // 소정-12: 셀프가입 승인 대기/거부 안내 — 로그인 시 ACCOUNT_STATUS '06 가입승인대기'/'07 가입거부' 분기 진입.
+  //   비보호 라우트(publicPaths 포함) — 로그인 전 안내 전용(토큰 미발급, API 호출 없음).
+  {
+    path: '/JoinApprovalPending',
+    name: 'JoinApprovalPending',
+    component: () => import('@/views/login/JoinApprovalPendingView.vue'),
+  },
 
   // PRAFTA-SUBCON-T4: 연동 회사 제3자 제공 동의 게이트 — 활성 연동 사업장 소속 + 006 미응답 시 진입.
   //   보호 라우트(publicPaths 미포함, beforeEach 토큰 게이트). 정식 토큰으로 동의 EP 호출.
@@ -484,6 +491,7 @@ const publicPaths = [
   '/PhoneAuth', // PRAFTA-037-F3: 인증대기 단계는 정식 토큰 미발급 → public 라우트로 취급
   '/DefaultSchGate', // PRAFTA-COM-008-E-8c: 기본 근무타입 게이트 — 임시 토큰만, 정식 토큰 미발급 → public
   '/DailyEntryPending', // 일용직 계약서+승인제 T4: 승인 대기/거부 안내 — 로그인 실패 후 진입(토큰 미발급) → public
+  '/JoinApprovalPending', // 소정-12: 셀프가입 승인 대기/거부 안내 — 로그인 분기 진입(토큰 미발급) → public
 ]
 
 // ✅ refresh 동시 호출 방지

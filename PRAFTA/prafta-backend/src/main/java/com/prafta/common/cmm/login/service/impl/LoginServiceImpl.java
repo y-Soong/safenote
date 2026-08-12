@@ -21,6 +21,10 @@ import com.prafta.common.cmm.login.application.command.UserJoinCommand;
 import com.prafta.common.cmm.login.application.command.UserLogoutCommand;
 import com.prafta.common.cmm.login.application.command.UserPwdFailCommand;
 import com.prafta.common.cmm.login.application.command.UserPwdUnlockCommand;
+import com.prafta.common.cmm.audit.AuditActionType;
+import com.prafta.common.cmm.audit.AuditContext;
+import com.prafta.common.cmm.audit.AuditResourceType;
+import com.prafta.common.cmm.audit.command.AuditLogCommand;
 import com.prafta.common.cmm.baseinfo.application.param.UserSmsAuthNoCheckParam;
 import com.prafta.common.cmm.baseinfo.dto.request.UserSmsAuthNoCheckRequest;
 import com.prafta.common.cmm.baseinfo.service.BaseinfoService;
@@ -34,8 +38,10 @@ import com.prafta.common.cmm.login.application.query.LoginQuery;
 import com.prafta.common.cmm.login.application.query.UserRowLockQuery;
 import com.prafta.common.cmm.login.application.query.UserTermsAgreementCheckQuery;
 import com.prafta.common.cmm.login.dto.response.LoginResponse;
+import com.prafta.common.cmm.login.dto.response.UserJoinResponse;
 import com.prafta.common.cmm.login.dto.response.UserTermsAgreementCheckResponse;
 import com.prafta.common.cmm.login.mapper.LoginMapper;
+import com.prafta.common.cmm.login.result.JoinConflictResult;
 import com.prafta.common.cmm.login.result.RequiredTermsResult;
 import com.prafta.common.cmm.login.result.UserResult;
 import com.prafta.common.cmm.login.result.UserTermsAgreementCheckResult;
@@ -61,6 +67,8 @@ public class LoginServiceImpl implements LoginService{
 	private final PasswordHasher passwordHasher;
 	private final JwtUtil jwtUtil;
 	private final BaseinfoService baseinfoService; // PRAFTA-036 — SMS 인증번호 검증 재사용
+	// [security M-1] 셀프가입 재활용(거부 계정 부활) 감사 적재. 내부 REQUIRES_NEW + 예외 격리라 가입을 막지 않는다.
+	private final com.prafta.common.cmm.audit.service.AuditLogService auditLogService;
 	// PRAFTA-COM-008-E-8 — 기본 근무타입 로그인 게이트(교대 비소속 판정 + 설정 저장 + 즉시 생성).
 	private final com.prafta.common.cmm.shift.service.ShiftMembershipService shiftMembershipService;
 	private final com.prafta.common.cmm.sch.service.DefaultSchOptionService defaultSchOptionService;
@@ -69,6 +77,17 @@ public class LoginServiceImpl implements LoginService{
 
 	// PRAFTA-036 — 인증대기 분기에서 발급하는 임시 토큰 만료(분).
 	private static final int PHONE_AUTH_TOKEN_TTL_MINUTES = 10;
+
+	/**
+	 * 소정-04 — 계정상태[SYS013] '06 가입승인대기' (셀프가입 직후, 관리자 승인 전).
+	 *
+	 * <p>★plan §1.5 는 '05' 로 적었으나 실DB SYS013 에 '05 비활성화'가 이미 있어 '06/07'로 확정됐다
+	 * (마이그레이션 {@code sojeong-1-5-sys013-selfjoin-status-seed.sql} 참조).
+	 */
+	private static final String ACCOUNT_STATUS_JOIN_PENDING = "06";
+
+	/** 소정-04 — 계정상태[SYS013] '07 가입거부' (USE_YN='N' 보존, 재가입 시 행 재활용). */
+	private static final String ACCOUNT_STATUS_JOIN_REJECTED = "07";
 	// PRAFTA-COM-008-E-8 — 기본 근무타입 게이트 임시 토큰 만료(분, PhoneAuth 미러).
 	private static final int DEFAULT_SCH_TOKEN_TTL_MINUTES = 10;
 	// 자동생성 트리거 운영 게이트. 코드 기본값 true 로 통일(User_01/배치와 정합). properties 명시값 우선.
@@ -78,6 +97,11 @@ public class LoginServiceImpl implements LoginService{
 	@Value("${prafta.default-sch.gate.enabled:true}")
 	private boolean defaultSchGateEnabled;
 	
+	// [security H-1] 셀프가입 휴대폰 본인인증 서버 강제 토글(기본 on).
+	//   ★재가입(거부 행 재활용) 경로에는 적용되지 않는다 — 그쪽은 항상 강제한다.
+	@Value("${prafta.self-join.sms-verify.enabled:true}")
+	private boolean selfJoinSmsVerifyEnabled;
+
 	@Value("${login.lock.duration-minutes}")
 	private int lockDurationMinutes;
 
@@ -85,10 +109,13 @@ public class LoginServiceImpl implements LoginService{
 	private int maxFailCount;
 	
 	public LoginResponse Login(LoginParam param) {
-		
+
 		UserResult userResult = loginMapper.Login(LoginQuery.from(param));
-		
+
 		if (userResult == null) {
+			// 소정-04: 승인대기('06')·거부('07') 계정은 USE_YN='N' 이라 Login 쿼리에 잡히지 않는다.
+			//   비밀번호가 맞는 경우에만 상태 안내를 노출한다(계정 존재 탐색 방지) — 아래 헬퍼 참조.
+			assertNotPendingOrRejectedSelfJoin(param);
 			throw new ApiException(LoginErrorCode.LOGIN_400_001);
 	    }
 		
@@ -133,6 +160,20 @@ public class LoginServiceImpl implements LoginService{
 					userResult.cmpnyCd(), userResult.userCd(), PHONE_AUTH_TOKEN_TTL_MINUTES);
 			log.info("인증대기 계정 로그인 — 임시 토큰 발급(scope=PHONE_AUTH). userCd={}", userResult.userCd());
 			return LoginResponse.phoneAuthPending(userResult, phoneAuthToken);
+		}
+		// 소정-04: 셀프가입 승인대기('06') — 관리자 승인 전에는 어떤 토큰도 발급하지 않는다.
+		//   '04'(휴대폰 인증대기)와 달리 임시 scope 토큰조차 주지 않는다. 셀프가입자는 본인인증이
+		//   아니라 "관리자 승인"이라는 조직 판단을 기다리는 상태라 클라이언트가 스스로 통과시킬
+		//   경로가 없어야 하기 때문이다(승인은 User_09 관리자 화면에서만 일어난다).
+		if (ACCOUNT_STATUS_JOIN_PENDING.equals(accountStatus)) {
+			log.info("가입 승인대기 계정 로그인 시도 — 토큰 미발급. userCd={}", userResult.userCd());
+			throw new ApiException(LoginErrorCode.LOGIN_400_018);
+		}
+		// 소정-04: 거부('07')는 USE_YN='N' 이라 원칙적으로 여기 도달하지 않지만(Login 쿼리에서 제외),
+		//   사용여부만 되살아나는 운영 조작에 대비해 fail-closed 로 한 번 더 막는다.
+		if (ACCOUNT_STATUS_JOIN_REJECTED.equals(accountStatus)) {
+			log.info("가입 거부 계정 로그인 시도 — 차단. userCd={}", userResult.userCd());
+			throw new ApiException(LoginErrorCode.LOGIN_400_019);
 		}
 
 		// PRAFTA-COM-008-E-8: 기본 근무타입 로그인 게이트(D-E2: PHONE_AUTH 통과 후 평가).
@@ -181,6 +222,53 @@ public class LoginServiceImpl implements LoginService{
 		recordDeviceLogin(userResult, param);
 
 		return LoginResponse.from(userResult, refreshToken, token);
+	}
+
+	/**
+	 * 소정-04 — 승인대기('06')·거부('07') 계정 로그인 시도에 대한 안내 분기.
+	 *
+	 * <p>두 상태 모두 {@code USE_YN='N'}(security M-2: 미승인자의 재직자 목록 유입 차단)이라
+	 * {@code Login} 쿼리가 행을 반환하지 않아, 그대로 두면 "아이디 혹은 비밀번호를 확인해주세요"만
+	 * 뜬다. 승인 대기 중이라는 사실이나 재가입 가능 여부를 알려주지 않으면 사용자는 같은 아이디로
+	 * 무한 재시도하게 되므로 전용 안내를 준다.
+	 *
+	 * <p><b>노출 조건 = 비밀번호 일치</b>. 아이디만으로 "승인대기/거부 계정"이라고 알려주면 계정
+	 * 존재 여부 탐색(enumeration)이 되므로, 본인만 아는 비밀번호를 맞힌 경우에만 안내한다.
+	 * 비밀번호가 틀리면 실패 카운트를 누적하고(정규 경로 미러) 통합 메시지로 되돌린다.
+	 *
+	 * <p>어떤 경우에도 토큰을 발급하지 않는다(계정은 여전히 비활성).
+	 */
+	private void assertNotPendingOrRejectedSelfJoin(LoginParam param) {
+
+		UserResult inactive = loginMapper.selectSelfJoinInactiveUserByUserId(param.userId());
+		if (inactive == null) {
+			return; // 승인대기/거부 계정이 아님 → 호출부의 통합 차단 메시지로 진행.
+		}
+
+		// 잠금 중이면 비밀번호 검증 없이 통합 메시지(대입 시도 차단).
+		if ("Y".equals(inactive.pwdLockYn())) {
+			String unlockDtimeStr = inactive.pwdLockExpireDtime();
+			if (unlockDtimeStr != null) {
+				LocalDateTime unlockDtime = LocalDateTime.parse(unlockDtimeStr, DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss"));
+				if (LocalDateTime.now().isBefore(unlockDtime)) {
+					return;
+				}
+			}
+		}
+
+		if (!passwordHasher.matches(param.userPw(), inactive.userPw())) {
+			// 정규 경로와 동일하게 실패를 누적한다(비활성 계정을 무제한 비번 대입 창구로 쓰지 못하게).
+			loginMapper.updateUserPwdFail(UserPwdFailCommand.from(inactive, lockDurationMinutes, maxFailCount));
+			return;
+		}
+
+		if (ACCOUNT_STATUS_JOIN_PENDING.equals(inactive.accountStatus())) {
+			log.info("가입 승인대기 계정 로그인 시도(비밀번호 일치) — 승인대기 안내. userCd={}", inactive.userCd());
+			throw new ApiException(LoginErrorCode.LOGIN_400_018);
+		}
+
+		log.info("가입 거부 계정 로그인 시도(비밀번호 일치) — 재가입 안내. userCd={}", inactive.userCd());
+		throw new ApiException(LoginErrorCode.LOGIN_400_019);
 	}
 
 	/**
@@ -422,8 +510,19 @@ public class LoginServiceImpl implements LoginService{
         }
     }
 	
+	/**
+	 * 셀프가입(회원가입) 접수.
+	 *
+	 * <p>★소정-04 이후 이 메서드는 <b>계정을 활성화하지 않는다</b>. ACCOUNT_STATUS='06'(가입승인대기),
+	 * USE_YN='N' 으로 적재하고, 관리자가 User_09 에서 승인해야 '01' + USE_YN='Y' 가 된다.
+	 * 거부('07') 행이 있으면 그 행을 재활용한다.
+	 *
+	 * <p>★★[security H-1] 진입부에서 <b>서버측 휴대폰 본인인증</b>을 강제한다. 클라이언트 화면이
+	 * 인증 후에만 가입 버튼을 열어주는 것은 방어가 아니다(EP 직접 호출로 우회 가능).
+	 */
+	@Override
 	@Transactional
-    public void insertUserInfo(UserJoinParam param) {
+    public UserJoinResponse insertUserInfo(UserJoinParam param, AuditContext auditContext) {
 
 		// 0) PRAFTA-046: 가입 대상 노드에 정/부 관리자가 존재해야 가입 가능 (fail-closed).
 		//    노드 미존재/관리자 미지정이면 가입 거부 — 회사 내부구조 노출 없는 친화 메시지.
@@ -438,13 +537,6 @@ public class LoginServiceImpl implements LoginService{
 			log.info("회원가입 차단 - 연동 미러 사업장 cmpnyCd={}, siteCd={}",
 					sanitizeForLog(param.cmpnyCd()), sanitizeForLog(param.siteCd()));
 			throw new ApiException(LoginErrorCode.LOGIN_400_017);
-		}
-
-		// 0-1) 로그인 ID 중복 검사(전사 — 일용직 포함).
-		//      로그인은 USER_ID 만으로 사용자를 찾으므로 ID 는 전역 유일해야 한다. 서버측 사전검사가 없으면
-		//      DB UNIQUE(UX_TB_USER_ID) 위반이 500 으로 새어나간다.
-		if (loginMapper.selectUserIdExistsGlobal(param.userId()) > 0) {
-			throw new ApiException(LoginErrorCode.LOGIN_400_016);
 		}
 
 		String userPw = "";
@@ -472,13 +564,52 @@ public class LoginServiceImpl implements LoginService{
         // 5) 파생값
         String phoneLast4 = Normalizers.last4(phoneNorm);
         String emailDomain = Normalizers.emailDomain(emailNorm);
-        
-        String userCd = loginMapper.selectUserCd(param.cmpnyCd());
+
+        // 5-1) 소정-04: 아이디/휴대폰 중복 판정 + 거부('07') 행 재활용 대상 해석.
+        //      ★기존 중복 검사(LOGIN_400_016)를 대체하는 지점이다. 재활용 대상이 아니면 종전대로 차단한다.
+        JoinConflictResult rejoinTarget = resolveRejoinTarget(param, phoneHmac);
+
+        // 5-2) ★★[security H-1] 휴대폰 본인인증 서버 강제 — 쓰기 직전 fail-closed.
+        //      재활용(재가입) 경로는 계정 선점 공격이 성립하는 지점이라 토글과 무관하게 항상 강제한다.
+        assertPhoneOwnershipVerified(param, phoneHmac, rejoinTarget != null);
+
+        String userCd = (rejoinTarget != null)
+                ? rejoinTarget.userCd()                      // 재가입: 기존 '07' 행의 USER_CD 를 그대로 쓴다.
+                : loginMapper.selectUserCd(param.cmpnyCd()); // 신규 가입: 신규 채번.
 
         UserJoinCommand userJoinCommand = UserJoinCommand.from(param, userCd, userPw, phoneEnc, phoneHmac, phoneLast4, emailEnc, emailHmac, emailDomain, birthEnc);
-        
-        // 6) INSERT
-        loginMapper.insertUserInfo(userJoinCommand);
+
+        // 6) INSERT (신규) 또는 거부 행 재활용 UPDATE (재가입). 둘 다 ACCOUNT_STATUS='06'(가입승인대기).
+        if (rejoinTarget != null) {
+            int revived = loginMapper.updateRejectedUserForRejoin(userJoinCommand);
+            if (revived == 0) {
+                // 동시성: 판정과 갱신 사이에 상태가 바뀜(다른 요청이 먼저 재활용). 재시도를 안내한다.
+                log.info("재가입 재활용 실패(대상 상태 변경) - cmpnyCd={}, userCd={}",
+                        sanitizeForLog(param.cmpnyCd()), maskHead(userCd));
+                throw new ApiException(LoginErrorCode.LOGIN_400_016);
+            }
+            // 이전 신청 사업장 권한 회수 — 다른 사업장으로 재신청한 경우 승인 후 옛 사업장 데이터까지
+            //   접근하게 되는 것을 막는다(SiteAccessService 가 이 원장을 본다).
+            int revoked = loginMapper.deactivateOtherUserSiteAuth(param.cmpnyCd(), userCd, param.siteCd());
+            log.info("셀프가입 재신청(거부 계정 재활용) - cmpnyCd={}, userCd={}, 상태 07→06, 이전 사업장권한 회수={}건",
+                    sanitizeForLog(param.cmpnyCd()), maskHead(userCd), revoked);
+
+            // [security M-1] 재활용은 "거부된 계정이 되살아나는" 상태 전이다. 이 사실이 어디에도
+            //   남지 않으면 거부 이력(감사 로그)만 있고 그 뒤 무슨 일이 있었는지 추적할 수 없다.
+            //   비로그인 경로라 행위자 식별이 불가능하므로 userCd 에는 대상 계정을 넣고 IP/UA 로 보완한다.
+            auditLogService.record(AuditLogCommand.builder()
+                    .cmpnyCd(param.cmpnyCd())
+                    .userCd(userCd)
+                    .actionType(AuditActionType.STATUS_CHANGE)
+                    .resourceType(AuditResourceType.SELF_JOIN_APPROVAL)
+                    .resourceKey(userCd)
+                    .detailJson("{\"action\":\"REJOIN\",\"from\":\"07\",\"to\":\"06\"}")
+                    .build(), auditContext);
+        } else {
+            loginMapper.insertUserInfo(userJoinCommand);
+            log.info("셀프가입 신청 접수 - cmpnyCd={}, userCd={}, 상태=06(가입승인대기)",
+                    sanitizeForLog(param.cmpnyCd()), maskHead(userCd));
+        }
         loginMapper.insertUserSiteAuth(userJoinCommand);
 
         // 약관 동의 로직은 그대로
@@ -487,11 +618,131 @@ public class LoginServiceImpl implements LoginService{
             throw new ApiException(LoginErrorCode.LOGIN_500_001);
         }
         for (RequiredTermsResult RequiredTermsResult : RequiredTermsResultList) {
-        	
+
             loginMapper.insertTermsUserAgrMgmt(RequiredTermsInfoCommand.from(userCd, param, RequiredTermsResult));
         }
+
+        // 클라이언트가 "로그인 해주세요" 대신 승인대기 안내로 분기하도록 상태 신호를 돌려준다.
+        //   (앱 utils/joinApproval.js 계약 — nextStep / accountStatus 어느 쪽을 봐도 동일 결론)
+        return UserJoinResponse.pending();
     }
 	
+	/**
+	 * ★★[security H-1] 셀프가입 휴대폰 본인인증 서버 강제 (fail-closed).
+	 *
+	 * <p><b>무엇이 문제였나</b> — 가입 EP 는 {@code @NoAuth} 공개 경로인데 서버가 SMS 인증 여부를
+	 * 전혀 보지 않았다. 화면이 "인증 완료 후 가입 버튼 활성화"로 막고 있을 뿐이라, EP 를 직접
+	 * 호출하면 <b>타인의 휴대폰번호로 가입</b>할 수 있었다. 재가입(행 재활용)과 결합하면 더 심각하다:
+	 * 피해자 아이디가 거부('07')된 뒤 공격자가 자기 비밀번호로 그 행을 차지하면, 피해자는 이후
+	 * 재가입이 영구 차단(400_016)되고 관리자 화면에는 공격자 입력값만 보여 식별조차 안 된다.
+	 *
+	 * <p><b>어떻게 막나</b> — 클라이언트가 이미 호출하는 {@code /comApi/baseinfo/sms-auth-checks} 가
+	 * 성공하면 TB_SMS_AUTH_CODE 에 {@code VERIFIED_YN='Y'}(PURPOSE_CD='SELF_JOIN') 기록이 남는다.
+	 * 가입 시점에 <b>제출된 휴대폰의 HMAC 으로 그 기록을 직접 조회</b>하고, 있으면 소비('C')한다.
+	 * 즉 "그 번호로 실제 인증을 통과했음"을 서버가 확인한다. 인증번호(certNo) 재전송을 요구하지
+	 * 않으므로 <b>기존 앱·웹 가입 화면의 요청 페이로드를 바꾸지 않는다</b>(회귀 없음).
+	 *
+	 * <p><b>소비('C')하는 이유</b> — 한 번의 인증으로 계정을 여러 개 만드는 것을 막는다.
+	 * 소비 UPDATE 의 {@code WHERE VERIFIED_YN='Y'} 가 동시 요청 경합까지 닫는다(영향행 1건만 통과).
+	 *
+	 * <p><b>운영 토글</b> — {@code prafta.self-join.sms-verify.enabled}(기본 true). 예상 못한
+	 * 구버전 클라이언트 형상이 발견될 때만 임시로 내리는 escape hatch 이며,
+	 * <b>재활용(재가입) 경로에는 적용되지 않는다</b>(항상 강제 — 계정 선점 공격의 성립 지점이라
+	 * 여기서 예외를 두면 취약점이 그대로 남는다).
+	 *
+	 * @param forceRequired 재활용(재가입) 경로 여부 — true 면 토글과 무관하게 강제
+	 */
+	private void assertPhoneOwnershipVerified(UserJoinParam param, String phoneHmac, boolean forceRequired) {
+
+		if (phoneHmac == null) {
+			// 휴대폰이 없으면 본인인증 자체가 성립하지 않는다(가입 필수 입력이기도 하다).
+			throw new ApiException(LoginErrorCode.LOGIN_400_022);
+		}
+
+		String smsId = loginMapper.selectSelfJoinVerifiedSmsId(phoneHmac, param.certNo());
+		if (smsId == null) {
+			if (!forceRequired && !selfJoinSmsVerifyEnabled) {
+				// 운영 토글로 내린 상태 — 그대로 통과시키되 흔적은 반드시 남긴다(무음 우회 금지).
+				log.warn("셀프가입 휴대폰 본인인증 미확인 — 운영 토글(prafta.self-join.sms-verify.enabled=false)로 통과. cmpnyCd={}",
+						sanitizeForLog(param.cmpnyCd()));
+				return;
+			}
+			log.warn("셀프가입 차단 — 휴대폰 본인인증 기록 없음(또는 인증 창 만료). cmpnyCd={}, 재가입경로={}",
+					sanitizeForLog(param.cmpnyCd()), forceRequired);
+			throw new ApiException(LoginErrorCode.LOGIN_400_022);
+		}
+
+		if (loginMapper.consumeSelfJoinSmsAuth(smsId) != 1) {
+			// 동시 요청이 먼저 소비함 → 재인증을 요구한다(같은 인증의 중복 사용 차단).
+			log.warn("셀프가입 차단 — 휴대폰 본인인증 기록 소비 실패(중복 사용). cmpnyCd={}",
+					sanitizeForLog(param.cmpnyCd()));
+			throw new ApiException(LoginErrorCode.LOGIN_400_022);
+		}
+	}
+
+	/**
+	 * 소정-04 — 셀프가입 아이디/휴대폰 점유 판정 + 거부('07') 행 재활용 대상 해석.
+	 *
+	 * <p><b>왜 필요한가</b> — 거부는 계정을 지우지 않고 {@code '07' + USE_YN='N'} 로 보존한다
+	 * (감사·중복 신청 판별). 그런데 {@code UX_TB_USER_ID}(USER_ID 전역 유일)와
+	 * {@code UX_TB_USER_MBL_NO}(CMPNY_CD+MBL_NO_HMAC) 때문에 같은 아이디·휴대폰으로 신규 INSERT 를
+	 * 하면 제약 위반이 난다. 사용자 확정 요건은 "같은 아이디/휴대폰으로 재가입 가능"이므로
+	 * <b>그 '07' 행을 재활용</b>한다(plan §8 Q2).
+	 *
+	 * <p><b>판정식</b> (요청 회사 = {@code param.cmpnyCd()})
+	 * <pre>
+	 *   byId    = USER_ID 를 점유한 TB_USER 행 (전역)
+	 *   byPhone = (회사, 휴대폰 HMAC) 를 점유한 TB_USER 행
+	 *
+	 *   byId 가 있고  (같은 회사 &amp;&amp; '07') 아니면          → 아이디 중복 차단 (400_016)
+	 *   byPhone 이 있고 '07' 아니면                        → 휴대폰 중복 차단 (400_020)
+	 *   byId·byPhone 둘 다 있고 USER_CD 가 다르면            → 병합 불가 차단 (400_021)
+	 *   일용직(TB_DAILY_USER) 이 같은 ID 점유 중이면          → 아이디 중복 차단 (400_016)
+	 *   그 외: byId ?: byPhone (둘 다 없으면 null = 신규 가입)
+	 * </pre>
+	 *
+	 * <p>※ 휴대폰 중복은 종전에 사전 검사가 없어 UNIQUE 위반이 500 으로 새어나갔다. 재활용 판정을
+	 * 위해 어차피 조회하므로 이 기회에 친화 메시지(400_020)로 바꾼다(차단 대상은 종전과 동일).
+	 *
+	 * @return 재활용할 '07' 행. 신규 가입이면 null
+	 */
+	private JoinConflictResult resolveRejoinTarget(UserJoinParam param, String phoneHmac) {
+
+		// 일용직 ID 점유는 재활용 대상이 아니다(별 계통). 전역 유일 규칙 유지.
+		if (loginMapper.selectDailyUserIdExists(param.userId()) > 0) {
+			throw new ApiException(LoginErrorCode.LOGIN_400_016);
+		}
+
+		JoinConflictResult byId = loginMapper.selectJoinConflictByUserId(param.userId());
+		if (byId != null && !isRejoinable(byId, param.cmpnyCd())) {
+			throw new ApiException(LoginErrorCode.LOGIN_400_016);
+		}
+
+		JoinConflictResult byPhone = (phoneHmac == null)
+				? null
+				: loginMapper.selectJoinConflictByMblHmac(param.cmpnyCd(), phoneHmac);
+		if (byPhone != null && !isRejoinable(byPhone, param.cmpnyCd())) {
+			throw new ApiException(LoginErrorCode.LOGIN_400_020);
+		}
+
+		// 아이디와 휴대폰이 서로 다른 '07' 행을 가리키면 두 행을 하나로 합칠 수 없다.
+		//   한쪽만 살리면 남은 행의 UNIQUE 가 여전히 충돌하므로 관리자 개입으로 넘긴다.
+		if (byId != null && byPhone != null && !byId.userCd().equals(byPhone.userCd())) {
+			log.info("재가입 재활용 불가(아이디/휴대폰이 서로 다른 거부 행에 귀속) - cmpnyCd={}",
+					sanitizeForLog(param.cmpnyCd()));
+			throw new ApiException(LoginErrorCode.LOGIN_400_021);
+		}
+
+		return (byId != null) ? byId : byPhone;
+	}
+
+	/** 재활용 가능한 점유 행인지 — 같은 회사의 '07 가입거부' 행만 해당된다. */
+	private boolean isRejoinable(JoinConflictResult conflict, String cmpnyCd) {
+		return ACCOUNT_STATUS_JOIN_REJECTED.equals(conflict.accountStatus())
+				&& conflict.cmpnyCd() != null
+				&& conflict.cmpnyCd().equals(cmpnyCd);
+	}
+
 	public UserTermsAgreementCheckResponse userTermsAgrementCheck(UserTermsAgreementCheckParam param) {
 		
 		UserTermsAgreementCheckResponse response = null;

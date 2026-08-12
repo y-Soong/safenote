@@ -13,6 +13,7 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
 import com.prafta.common.annotation.NoAuth;
+import com.prafta.common.cmm.audit.AuditContext;
 import com.prafta.common.cmm.login.application.param.AuthMenuInfoParam;
 import com.prafta.common.cmm.login.application.param.LoginParam;
 import com.prafta.common.cmm.login.application.param.LogoutParam;
@@ -30,6 +31,7 @@ import com.prafta.common.exception.ApiException;
 import com.prafta.common.cmm.login.dto.response.AuthLogoutResponse;
 import com.prafta.common.cmm.login.dto.response.DefaultSchOptionsResponse;
 import com.prafta.common.cmm.login.dto.response.LoginResponse;
+import com.prafta.common.cmm.login.dto.response.UserJoinResponse;
 import com.prafta.common.cmm.login.dto.response.UserTermsAgreementCheckResponse;
 import com.prafta.common.cmm.login.mapper.LoginMapper;
 import com.prafta.common.cmm.login.result.UserResult;
@@ -87,12 +89,25 @@ public class LoginController {
     	return ResponseEntity.status(HttpStatus.OK).build();
     }
     
+    /**
+     * 셀프가입(회원가입) 접수.
+     *
+     * <p>소정-04: 가입은 즉시 활성화가 아니라 <b>관리자 승인 대기('06')</b>로 끝난다.
+     * 응답 body 의 {@code accountStatus='06'} / {@code nextStep='JOIN_APPROVAL_PENDING'} 로
+     * 클라이언트가 승인대기 안내 화면으로 분기한다(기존 빈 body → 상태 신호 추가).
+     */
     @PostMapping("/insert-user-info")
-    public ResponseEntity<?> insertUserInfo(@Valid @RequestBody UserJoinRequest request) {
-    	
-    	loginService.insertUserInfo(UserJoinParam.from(request));
-    	
-    	return ResponseEntity.status(HttpStatus.OK).build();
+    public ResponseEntity<?> insertUserInfo(@Valid @RequestBody UserJoinRequest request, HttpServletRequest httpRequest) {
+
+    	// [security M-1] 비로그인 경로라 행위자 식별이 불가능하므로 IP/UA 를 감사 컨텍스트로 넘긴다
+    	//   (재가입 = 거부 계정 부활 적재에 사용). IP 는 서버가 추출한다(클라 신뢰 금지).
+    	AuditContext auditContext = new AuditContext(
+    			ClientIpExtractor.extract(httpRequest),
+    			httpRequest != null ? httpRequest.getHeader("User-Agent") : null);
+
+    	UserJoinResponse response = loginService.insertUserInfo(UserJoinParam.from(request), auditContext);
+
+    	return ResponseEntity.status(HttpStatus.OK).body(response);
     }
     
     @GetMapping("/user-terms-agreement-check")

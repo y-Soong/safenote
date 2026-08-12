@@ -45,6 +45,7 @@
         :approval-context="approvalContext"
         :existing-overtimes="existingOvertimes"
         :pending-overtimes="pendingOvertimes"
+        :std-work-summary="stdWorkSummary"
         @submit="onSubmit"
         @cancel="onCancel"
       />
@@ -96,6 +97,12 @@ const showAlert = (message) => {
   return Promise.resolve()
 }
 
+// 소정-12: 확인 모달(전역 $confirm 우선, 미등록 환경은 window.confirm 폴백).
+const showConfirm = (message) => {
+  if (proxy?.$confirm) return proxy.$confirm(message)
+  return Promise.resolve(window.confirm(message))
+}
+
 // 폼 타입 (쿼리 파라미터)
 const ALLOWED_TYPES = ['schedModify', 'attdCorrection', 'overtime']
 const formType = computed(() => {
@@ -132,6 +139,12 @@ const approvalContext = ref(null)
 const existingOvertimes = ref([])
 // prafta-app-030 후속: 대기중(미승인) OT 신청 목록 — 표시 전용(겹침 사전차단 비대상). 실패 시 빈 배열.
 const pendingOvertimes = ref([])
+
+// 소정-12: 본인 소정근로 요약(GET /comApi/leave-feature/std-work-summary?baseYmd=근무일).
+//   초과근무 폼에서만 로드하며, 근로시간 단축 기간(육아기·가족돌봄)일 때 "근로자 명시 청구" 확인
+//   체크박스를 띄우기 위한 판정에만 쓴다. 실패는 비차단(null → 체크박스 미노출).
+//   ★사유 명칭(reasonNm)은 화면에 표시하지 않는다 — 폼은 reasonCd 로 분기만 한다.
+const stdWorkSummary = ref(null)
 
 const onCancel = () => {
   router.back()
@@ -178,6 +191,21 @@ const loadExistingOvertimes = async (workYmd) => {
   }
 }
 
+// 소정-12: 본인 소정근로 요약 로드(근무일 기준). 실패는 비차단 → null 유지.
+//   실패 시 체크박스가 뜨지 않으므로, 단축 근로자는 서버 거부(ATTD_400_201) 후
+//   onSubmit 의 명시 청구 재확인 흐름으로 구제된다(아래 참조).
+const loadStdWorkSummary = async (workYmd) => {
+  try {
+    const { data } = await api.get('/comApi/leave-feature/std-work-summary', {
+      params: { baseYmd: workYmd },
+    })
+    stdWorkSummary.value = data || null
+  } catch (e) {
+    console.error('[AttdRequest] 소정근로 요약 로드 실패:', e?.message)
+    stdWorkSummary.value = null
+  }
+}
+
 // 폼별 submit payload 구조 :
 //   schedModify    → { slots:[{workSeq, schCd}], reqReason }
 //   attdCorrection → { slots:[{workSeq, startDate, startTime, endDate, endTime}], reqReason }
@@ -203,6 +231,12 @@ const onSubmit = async (payload) => {
   if (payload.presetId) {
     body.presetId = payload.presetId
   }
+  // 소정-12: 근로시간 단축 기간(육아기·가족돌봄)의 "근로자 명시 청구" 확인 값.
+  //   ★반드시 근로자 본인이 체크한 경우에만 'Y' 를 보낸다(사업주 요구 금지 — 위반 시 1천만원 이하 벌금).
+  //   폼이 값을 주지 않으면(단축 기간 아님/판정 실패) 아예 필드를 싣지 않는다(서버 fail-closed 유지).
+  if (payload.reducedWorkOtClaimYn === 'Y') {
+    body.reducedWorkOtClaimYn = 'Y'
+  }
   isSubmitting.value = true
   try {
     await api.post(endpoint, body)
@@ -211,6 +245,33 @@ const onSubmit = async (payload) => {
   } catch (err) {
     // 백엔드 메시지 우선, 폴백은 한국어. PII 로깅 회피 — 메시지만.
     console.error('[AttdRequest] 요청 등록 실패:', err?.message)
+
+    // 소정-12 구제 경로: 소정근로 요약 조회가 실패해 체크박스를 띄우지 못한 상태에서
+    //   서버가 "근로자 명시 청구 확인 없음"(ATTD_400_201)으로 거부한 경우.
+    //   → 여기서 본인에게 직접 청구 의사를 확인받고(확인 시에만) 1회 재전송한다.
+    //   확인 없이 자동 재전송하지 않는다(청구 사실을 시스템이 대신 만들어 주면 안 됨).
+    const errorCode = err?.response?.data?.errorCode
+    if (errorCode === 'ATTD_400_201' && body.reducedWorkOtClaimYn !== 'Y') {
+      isSubmitting.value = false
+      const agreed = await showConfirm(
+        '근로시간 단축 기간의 연장근로는 근로자 본인이 청구한 경우에만 신청할 수 있어요.\n' +
+          '본인이 직접 청구하는 것이 맞나요?',
+      )
+      if (!agreed) return
+      isSubmitting.value = true
+      try {
+        await api.post(endpoint, { ...body, reducedWorkOtClaimYn: 'Y' })
+        await showAlert('요청이 등록되었습니다')
+        router.back()
+      } catch (retryErr) {
+        console.error('[AttdRequest] 명시 청구 확인 후 재요청 실패:', retryErr?.message)
+        showAlert(resolveApiErrorMessage(retryErr, '요청 등록 중 오류가 발생했습니다.'))
+      } finally {
+        isSubmitting.value = false
+      }
+      return
+    }
+
     const msg = resolveApiErrorMessage(err, '요청 등록 중 오류가 발생했습니다.')
     showAlert(msg)
   } finally {
@@ -263,6 +324,8 @@ onMounted(() => {
     // prafta-app-030: 초과근무 신청 타입일 때만 기존 적용 OT 로드(표시 + 겹침 경고). 실패 비차단.
     if (formType.value === 'overtime') {
       loadExistingOvertimes(workYmd)
+      // 소정-12: 근로시간 단축 기간 판정용 소정근로 요약(초과근무 폼 전용). 실패 비차단.
+      loadStdWorkSummary(workYmd)
     }
   } catch (e) {
     console.error('[AttdRequest] 컨텍스트 파싱 실패:', e?.message)

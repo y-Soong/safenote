@@ -126,6 +126,14 @@ public enum UserErrorCode implements ApiErrorCode {
     //     문구가 "시간 단위 연차"만 지목하면 반차로 막힌 관리자가 없는 시간차를 찾게 되므로
     //     "반차·시간 단위 연차"로 확장한다(F-7 동일 계열 — 동작은 맞는데 안내가 틀려 오진 유발).
     , USER_400_073(HttpStatus.BAD_REQUEST, "미래 일자에 반차 또는 시간 단위 연차가 신청·사용된 직원은 사업장을 이동할 수 없습니다.\n해당 연차를 먼저 취소·처리한 뒤 이동해 주세요.")
+
+    // ===== 소정-09 - 셀프가입 승인/거부 (User_09) =====
+    // 대상이 '06 가입승인대기' 가 아님(이미 처리됨/대상 아님 — 동시 처리 낙관적 차단 포함).
+    , USER_400_074(HttpStatus.BAD_REQUEST, "이미 처리되었거나 승인 대기 상태가 아닌 가입 신청입니다.")
+    , USER_400_075(HttpStatus.BAD_REQUEST, "거부 사유를 입력해 주세요.")
+    , USER_400_076(HttpStatus.BAD_REQUEST, "거부 사유는 200자 이하여야 합니다.")
+    , USER_400_077(HttpStatus.BAD_REQUEST, "입사일을 올바르게 입력해 주세요. (YYYYMMDD)")
+    , USER_400_078(HttpStatus.BAD_REQUEST, "직급 코드가 올바르지 않습니다.")
     ;
 
     private final HttpStatus httpStatus;
