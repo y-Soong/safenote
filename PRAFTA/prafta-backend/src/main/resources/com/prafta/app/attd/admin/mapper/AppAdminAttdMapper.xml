@@ -50,11 +50,17 @@
                 , E.SEC_SCH_STR_TIME
                 , E.SEC_SCH_END_TIME
                 , E.SEC_SCH_BRK_MIN
+                , E.PRE_FIXED_OT_STR_TIME
+                , E.PRE_FIXED_OT_END_TIME
+                , E.FIXED_OT_STR_TIME
+                , E.FIXED_OT_END_TIME
             FROM (
                 SELECT
                       M.CMPNY_CD, M.SITE_CD, M.SCH_CD, M.APPLY_DATE
                     , M.FST_SCH_STR_TIME, M.FST_SCH_END_TIME, M.FST_SCH_BRK_MIN
                     , M.SEC_SCH_STR_TIME, M.SEC_SCH_END_TIME, M.SEC_SCH_BRK_MIN
+                    , M.PRE_FIXED_OT_STR_TIME, M.PRE_FIXED_OT_END_TIME
+                    , M.FIXED_OT_STR_TIME, M.FIXED_OT_END_TIME
                     , 2147483647 AS HIST_IDX
                 FROM TB_SCH_MGMT M
                 UNION ALL
@@ -62,6 +68,8 @@
                       H.CMPNY_CD, H.SITE_CD, H.SCH_CD, H.APPLY_DATE
                     , H.FST_SCH_STR_TIME, H.FST_SCH_END_TIME, H.FST_SCH_BRK_MIN
                     , H.SEC_SCH_STR_TIME, H.SEC_SCH_END_TIME, H.SEC_SCH_BRK_MIN
+                    , H.PRE_FIXED_OT_STR_TIME, H.PRE_FIXED_OT_END_TIME
+                    , H.FIXED_OT_STR_TIME, H.FIXED_OT_END_TIME
                     , H.HIST_IDX
                 FROM TB_SCH_MGMT_HIST H
             ) E
@@ -132,6 +140,31 @@
                 ) THEN 'Y' ELSE 'N'
               END                                                                AS isOutsideYn
 
+            <!-- PRAFTA-FIXEDOT-3: 스케줄 원시 시각 + 고정연장 + 연차 계열 면제 존재(정책 ③ 존재 검사).
+                 지각/조퇴 판정식은 불변 — "고정연장 실적"과 "연장 미이행" 배지(정책 ② — 조퇴와 분리)
+                 파생 산출 전용(additive). ⚠️ record(DailyAttdRow) 끝 9필드와 동일 순서(위치 매핑). -->
+            , SCH.FST_SCH_STR_TIME                                               AS fstSchStrTime
+            , SCH.FST_SCH_END_TIME                                               AS fstSchEndTime
+            , SCH.SEC_SCH_STR_TIME                                               AS secSchStrTime
+            , SCH.SEC_SCH_END_TIME                                               AS secSchEndTime
+            , SCH.PRE_FIXED_OT_STR_TIME                                          AS preFixedOtStrTime
+            , SCH.PRE_FIXED_OT_END_TIME                                          AS preFixedOtEndTime
+            , SCH.FIXED_OT_STR_TIME                                              AS fixedOtStrTime
+            , SCH.FIXED_OT_END_TIME                                              AS fixedOtEndTime
+            , CASE WHEN EXISTS (
+                    SELECT 1
+                    FROM TB_USER_LEAVE_USE LX
+                    WHERE LX.CMPNY_CD     = A.CMPNY_CD
+                      AND LX.USER_CD      = A.USER_CD
+                      AND LX.LEAVE_STATUS = 'CONFIRMED'
+                      AND LX.DEL_YN       = 'N'
+                      AND ( ( LX.USE_UNIT_TYPE = '00'
+                              AND LX.START_DATE <![CDATA[ <= ]]> A.WORK_YMD
+                              AND LX.END_DATE   <![CDATA[ >= ]]> A.WORK_YMD )
+                         OR ( LX.USE_UNIT_TYPE <![CDATA[ <> ]]> '00'
+                              AND LX.START_DATE = A.WORK_YMD ) )
+              ) THEN 'Y' ELSE 'N' END                                            AS fixedOtExemptYn
+
         FROM TB_USER_ATTD_MGMT A
         INNER JOIN TB_USER U
             ON  U.CMPNY_CD = A.CMPNY_CD
@@ -169,6 +202,30 @@
             , A.CHECK_IN_TIME                                                    AS actInTime
             , A.CHECK_OUT_DATE                                                   AS actOutDate
             , A.CHECK_OUT_TIME                                                   AS actOutTime
+
+            <!-- PRAFTA-FIXEDOT-3: 일자 조회와 동일 취지(월 실적 합/미이행 카운트 파생 전용, 판정식 불변).
+                 ⚠️ record(MonthlyAttdRow) 끝 9필드와 동일 순서(위치 매핑). -->
+            , SCH.FST_SCH_STR_TIME                                               AS fstSchStrTime
+            , SCH.FST_SCH_END_TIME                                               AS fstSchEndTime
+            , SCH.SEC_SCH_STR_TIME                                               AS secSchStrTime
+            , SCH.SEC_SCH_END_TIME                                               AS secSchEndTime
+            , SCH.PRE_FIXED_OT_STR_TIME                                          AS preFixedOtStrTime
+            , SCH.PRE_FIXED_OT_END_TIME                                          AS preFixedOtEndTime
+            , SCH.FIXED_OT_STR_TIME                                              AS fixedOtStrTime
+            , SCH.FIXED_OT_END_TIME                                              AS fixedOtEndTime
+            , CASE WHEN EXISTS (
+                    SELECT 1
+                    FROM TB_USER_LEAVE_USE LX
+                    WHERE LX.CMPNY_CD     = A.CMPNY_CD
+                      AND LX.USER_CD      = A.USER_CD
+                      AND LX.LEAVE_STATUS = 'CONFIRMED'
+                      AND LX.DEL_YN       = 'N'
+                      AND ( ( LX.USE_UNIT_TYPE = '00'
+                              AND LX.START_DATE <![CDATA[ <= ]]> A.WORK_YMD
+                              AND LX.END_DATE   <![CDATA[ >= ]]> A.WORK_YMD )
+                         OR ( LX.USE_UNIT_TYPE <![CDATA[ <> ]]> '00'
+                              AND LX.START_DATE = A.WORK_YMD ) )
+              ) THEN 'Y' ELSE 'N' END                                            AS fixedOtExemptYn
 
         FROM TB_USER_ATTD_MGMT A
         INNER JOIN TB_USER U

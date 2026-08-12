@@ -167,13 +167,17 @@
                     <th style="width: 8%">퇴근</th>
                     <th style="width: 8%">판정</th>
                     <th style="width: 8%">초과(분)</th>
+                    <!-- PRAFTA-FIXEDOT-3(M21): 고정연장 실적(분) — 실근태가 근무타입 고정연장
+                         구간을 커버한 분. 승인 시점 스냅샷 고정값이며, "연장 미이행" 배지는
+                         판정 보조 정보라 공유 대상이 아니다(plan §5-2). -->
+                    <th style="width: 8%">고정연장(분)</th>
                     <th>연차</th>
                   </tr>
                 </thead>
                 <tbody>
                   <template v-if="!detailList.length">
                     <tr>
-                      <td colspan="11" class="edu-grid-empty">
+                      <td colspan="12" class="edu-grid-empty">
                         표시할 데이터가 없습니다.
                       </td>
                     </tr>
@@ -199,6 +203,10 @@
                       </td>
                       <td style="text-align: center">
                         {{ row.otMinutes || 0 }}
+                      </td>
+                      <!-- 구서버/구스냅샷(미수신)이면 0 표시 -->
+                      <td style="text-align: center">
+                        {{ row.fixedOtMinutes || 0 }}
                       </td>
                       <td>{{ row.leaveNm }}</td>
                     </tr>

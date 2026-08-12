@@ -82,8 +82,16 @@
           <div v-if="hasBadges(item)" class="aadc__badges">
             <span v-if="item.isLate" class="aadc__chip aadc__chip--late">지각</span>
             <span v-if="item.isEarly" class="aadc__chip aadc__chip--early">조퇴</span>
+            <!-- PRAFTA-FIXEDOT-3(정책 ②): 연장 미이행 — 조퇴와 분리된 별도 배지(서버 파생 판정,
+                 연차 계열 사용일에는 서버가 발화시키지 않음) -->
+            <span v-if="item.isFixedOtUnmet" class="aadc__chip aadc__chip--fixedot">연장 미이행</span>
             <span v-if="item.isOffsite" class="aadc__chip aadc__chip--offsite">외근</span>
             <span v-if="item.slotCount > 1" class="aadc__chip aadc__chip--slot">2구간</span>
+          </div>
+
+          <!-- PRAFTA-FIXEDOT-3(정책 ①): 고정연장 실적(실근태 ∩ 고정연장 파생 계상) — 실적 있는 날만 -->
+          <div v-if="Number(item.fixedOtMinutes) > 0" class="aadc__fixedot">
+            고정연장 실적 {{ fixedOtLabel(item) }}
           </div>
         </article>
 
@@ -158,7 +166,20 @@ const workHourLabel = (item) => {
 }
 
 const hasBadges = (item) =>
-  item.isLate || item.isEarly || item.isOffsite || (Number(item.slotCount) || 0) > 1
+  item.isLate ||
+  item.isEarly ||
+  item.isFixedOtUnmet ||
+  item.isOffsite ||
+  (Number(item.slotCount) || 0) > 1
+
+// PRAFTA-FIXEDOT-3: 고정연장 실적 분 → "N시간 M분" (workHourLabel 동일 톤)
+const fixedOtLabel = (item) => {
+  const m = Number(item?.fixedOtMinutes) || 0
+  if (m <= 0) return ''
+  const h = Math.floor(m / 60)
+  const mm = m % 60
+  return h > 0 ? (mm > 0 ? `${h}시간 ${mm}분` : `${h}시간`) : `${mm}분`
+}
 
 const buildParams = (targetPage) => {
   const params = { workYmd: workYmd.value, page: targetPage, pageSize: PAGE_SIZE }
@@ -491,6 +512,16 @@ onBeforeUnmount(() => {
 }
 .aadc__chip--slot {
   background: var(--color-border-light);
+  color: var(--color-text-secondary);
+}
+/* PRAFTA-FIXEDOT-3: 연장 미이행 배지 — 지각/조퇴와 동일 경고 톤(별도 축임은 라벨로 구분) */
+.aadc__chip--fixedot {
+  background: var(--color-warning-tint);
+  color: var(--color-warning-text);
+}
+/* PRAFTA-FIXEDOT-3: 고정연장 실적 보조 라인 */
+.aadc__fixedot {
+  font-size: 12px;
   color: var(--color-text-secondary);
 }
 </style>

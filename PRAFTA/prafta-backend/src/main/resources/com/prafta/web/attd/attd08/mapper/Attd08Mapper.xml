@@ -107,6 +107,32 @@
             , CASE WHEN A.WORK_SEQ = 2 THEN SCH.SEC_SCH_STR_TIME ELSE SCH.FST_SCH_STR_TIME END AS effPlanStart
             , CASE WHEN A.WORK_SEQ = 2 THEN SCH.SEC_SCH_END_TIME ELSE SCH.FST_SCH_END_TIME END AS effPlanEnd
 
+            <!-- PRAFTA-FIXEDOT-3: 고정연장(전방·후방) + 연차 계열 면제 존재 + 서비스 채움 자리 2개.
+                 판정(지각/조퇴)식은 불변 — 아래 컬럼은 "연장 미이행" 배지·고정연장 실적 표기 전용(additive).
+                 fixedOtExemptYn = 그날 종일('00', 기간 포함)/부분(01~04, 당일) 확정 연차 존재 여부(정책 ③
+                 존재 검사 — 시각 유무 무관). 'Y' 면 고정연장 의무 면제(미이행 배지 발화 금지).
+                 fixedOtUnfulfilledYn/fixedOtActMinutes 는 UNION 타입 고정용 CAST NULL — 값은 서비스가 채운다.
+                 ⚠️ record(AttdListsResult) 끝 7필드와 동일 순서(위치 매핑, UNION 분기 동수 유지). -->
+            , SCH.PRE_FIXED_OT_STR_TIME                                          AS preFixedOtStrTime
+            , SCH.PRE_FIXED_OT_END_TIME                                          AS preFixedOtEndTime
+            , SCH.FIXED_OT_STR_TIME                                              AS fixedOtStrTime
+            , SCH.FIXED_OT_END_TIME                                              AS fixedOtEndTime
+            , CASE WHEN EXISTS (
+                    SELECT 1
+                    FROM TB_USER_LEAVE_USE LX
+                    WHERE LX.CMPNY_CD     = A.CMPNY_CD
+                      AND LX.USER_CD      = A.USER_CD
+                      AND LX.LEAVE_STATUS = 'CONFIRMED'
+                      AND LX.DEL_YN       = 'N'
+                      AND ( ( LX.USE_UNIT_TYPE = '00'
+                              AND LX.START_DATE <![CDATA[ <= ]]> A.WORK_YMD
+                              AND LX.END_DATE   <![CDATA[ >= ]]> A.WORK_YMD )
+                         OR ( LX.USE_UNIT_TYPE <![CDATA[ <> ]]> '00'
+                              AND LX.START_DATE = A.WORK_YMD ) )
+              ) THEN 'Y' ELSE 'N' END                                            AS fixedOtExemptYn
+            , CAST(NULL AS CHAR(1))                                              AS fixedOtUnfulfilledYn
+            , CAST(NULL AS SIGNED)                                               AS fixedOtActMinutes
+
         FROM TB_USER_ATTD_MGMT A
         INNER JOIN node_tree NT
             ON  A.CMPNY_CD = NT.CMPNY_CD
@@ -141,11 +167,17 @@
                 , E.SEC_SCH_STR_TIME
                 , E.SEC_SCH_END_TIME
                 , E.SEC_SCH_BRK_MIN
+                , E.PRE_FIXED_OT_STR_TIME
+                , E.PRE_FIXED_OT_END_TIME
+                , E.FIXED_OT_STR_TIME
+                , E.FIXED_OT_END_TIME
             FROM (
                 SELECT
                       M.CMPNY_CD, M.SITE_CD, M.SCH_CD, M.APPLY_DATE
                     , M.FST_SCH_STR_TIME, M.FST_SCH_END_TIME, M.FST_SCH_BRK_MIN
                     , M.SEC_SCH_STR_TIME, M.SEC_SCH_END_TIME, M.SEC_SCH_BRK_MIN
+                    , M.PRE_FIXED_OT_STR_TIME, M.PRE_FIXED_OT_END_TIME
+                    , M.FIXED_OT_STR_TIME, M.FIXED_OT_END_TIME
                     , 2147483647 AS HIST_IDX
                 FROM TB_SCH_MGMT M
                 UNION ALL
@@ -153,6 +185,8 @@
                       H.CMPNY_CD, H.SITE_CD, H.SCH_CD, H.APPLY_DATE
                     , H.FST_SCH_STR_TIME, H.FST_SCH_END_TIME, H.FST_SCH_BRK_MIN
                     , H.SEC_SCH_STR_TIME, H.SEC_SCH_END_TIME, H.SEC_SCH_BRK_MIN
+                    , H.PRE_FIXED_OT_STR_TIME, H.PRE_FIXED_OT_END_TIME
+                    , H.FIXED_OT_STR_TIME, H.FIXED_OT_END_TIME
                     , H.HIST_IDX
                 FROM TB_SCH_MGMT_HIST H
             ) E
@@ -296,6 +330,15 @@
             /* HB-05: 정규근태 분기와 컬럼 수/순서를 맞추기 위한 자리(OT 행은 판정 대상 아님). */
             , NULL                                                               AS effPlanStart
             , NULL                                                               AS effPlanEnd
+
+            /* PRAFTA-FIXEDOT-3: 정규근태 분기와 컬럼 수/순서 동수 유지(OT 행은 고정연장 개념 없음). */
+            , NULL                                                               AS preFixedOtStrTime
+            , NULL                                                               AS preFixedOtEndTime
+            , NULL                                                               AS fixedOtStrTime
+            , NULL                                                               AS fixedOtEndTime
+            , NULL                                                               AS fixedOtExemptYn
+            , NULL                                                               AS fixedOtUnfulfilledYn
+            , NULL                                                               AS fixedOtActMinutes
 
         /* 초과근무의 NODE_CD 는 nullable 이다. node_tree 와 INNER JOIN 하므로
            NODE_CD 가 NULL 인 초과근무 행은 결과에서 제외된다. 이는 정규근태 분기와

@@ -33,5 +33,18 @@ public record AttdSummaryRowResult(
         , String actInTime        // HHmm, nullable
         , String actOutDate       // YYYYMMDD, nullable
         , String actOutTime       // HHmm, nullable
+
+        /* PRAFTA-FIXEDOT-3: 스케줄 원시 시각 + 고정연장(전방·후방) + 연차 계열 면제 존재('Y'/'N').
+           고정연장 실적(자동 계상) 합산·"연장 미이행" 월 카운트 전용 — 판정/집계식 불변.
+           ⚠️ record 끝 = SELECT 끝 동일 순서(위치 기반 매핑, 중간 삽입 금지). */
+        , String fstSchStrTime    // HHmm, nullable
+        , String fstSchEndTime
+        , String secSchStrTime
+        , String secSchEndTime
+        , String preFixedOtStrTime
+        , String preFixedOtEndTime
+        , String fixedOtStrTime
+        , String fixedOtEndTime
+        , String fixedOtExemptYn  // 'Y'/'N' — 정책 ③ 존재 검사(종일 기간 포함 + 부분 당일)
 ) {
 }

@@ -90,6 +90,21 @@
               <span class="aamc__metric-label">조퇴</span>
             </div>
           </div>
+
+          <!-- PRAFTA-FIXEDOT-3: 고정연장 실적(월 합) + 연장 미이행 일수 — 조퇴와 분리된 별도 축.
+               고정연장 없는 인원(둘 다 0)은 종전 카드와 동일(라인 미노출). -->
+          <div
+            v-if="(Number(item.fixedOtMinutes) || 0) > 0 || (Number(item.fixedOtUnmetCnt) || 0) > 0"
+            class="aamc__fixedot"
+          >
+            <span>고정연장 실적 {{ fixedOtHourLabel(item) }}</span>
+            <span
+              v-if="(Number(item.fixedOtUnmetCnt) || 0) > 0"
+              class="aamc__fixedot-unmet"
+            >
+              연장 미이행 {{ item.fixedOtUnmetCnt }}회
+            </span>
+          </div>
         </article>
 
         <div ref="sentinelRef" class="aam-sentinel" aria-hidden="true"></div>
@@ -147,6 +162,17 @@ let inflightSeq = 0
 const workHourLabel = (item) => {
   const m = Number(item?.workMinutes) || 0
   if (m <= 0) return '-'
+  const h = Math.floor(m / 60)
+  const mm = m % 60
+  if (h > 0 && mm > 0) return `${h}h ${mm}m`
+  if (h > 0) return `${h}h`
+  return `${mm}m`
+}
+
+// PRAFTA-FIXEDOT-3: 고정연장 실적 분 → "Nh Mm" (workHourLabel 동일 톤, 0이면 '0m')
+const fixedOtHourLabel = (item) => {
+  const m = Number(item?.fixedOtMinutes) || 0
+  if (m <= 0) return '0m'
   const h = Math.floor(m / 60)
   const mm = m % 60
   if (h > 0 && mm > 0) return `${h}h ${mm}m`
@@ -455,5 +481,17 @@ onBeforeUnmount(() => {
 .aamc__metric-label {
   font-size: 11px;
   color: var(--color-text-secondary);
+}
+/* PRAFTA-FIXEDOT-3: 고정연장 실적/미이행 보조 라인 — 조퇴 지표와 분리된 별도 축 */
+.aamc__fixedot {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+  font-size: 12px;
+  color: var(--color-text-secondary);
+}
+.aamc__fixedot-unmet {
+  color: var(--color-warning-text);
+  font-weight: 600;
 }
 </style>

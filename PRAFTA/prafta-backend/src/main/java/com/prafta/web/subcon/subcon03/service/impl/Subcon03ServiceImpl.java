@@ -27,6 +27,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.prafta.common.cmm.file.application.model.FileBytesResult;
 import com.prafta.common.cmm.file.application.query.FileReadQuery;
 import com.prafta.common.cmm.file.service.FileService;
+import com.prafta.common.cmm.attd.util.FixedOtMinutesUtils;
 import com.prafta.common.cmm.leave.util.PartialLeaveWindowUtils;
 import com.prafta.common.error.subcon.SubconErrorCode;
 import com.prafta.common.exception.ApiException;
@@ -57,6 +58,7 @@ import com.prafta.web.subcon.subcon03.dto.response.SnapshotNearmissDetailRespons
 import com.prafta.web.subcon.subcon03.dto.response.SnapshotRiskDetailResponse;
 import com.prafta.web.subcon.subcon03.mapper.Subcon03Mapper;
 import com.prafta.web.subcon.subcon03.result.ChainSiteResult;
+import com.prafta.web.subcon.subcon03.result.FixedOtScheduleRow;
 import com.prafta.web.subcon.subcon03.result.CloseGateResult;
 import com.prafta.web.subcon.subcon03.result.CoverageMonthResult;
 import com.prafta.web.subcon.subcon03.result.CoverageResult;
@@ -154,6 +156,8 @@ public class Subcon03ServiceImpl implements Subcon03Service {
     private static final String TYPE_ATTD = "ATTD";
     private static final String TYPE_RISK = "RISK";
     private static final String TYPE_NEARMISS = "NEARMISS";
+    /** PRAFTA-FIXEDOT-3(M21): 상세행 유형 — 근태행(OT_ONLY/LEAVE_ONLY 는 실근태 스탬프가 없어 실적 0). */
+    private static final String ROW_TYPE_ATTD = "ATTD";
 
     /**
      * [T7·§5-1] 확정 위험성평가 상태 필터(메인 세션 Q3 확정) — 001 검토요청(미검토) 제외.
@@ -604,7 +608,7 @@ public class Subcon03ServiceImpl implements Subcon03Service {
         // 9) 자체 상세행 INSERT(유형별 — 소속표시 = 제공사, 로컬 SEQ 채번, 첨부는 수신사 소유로 복제).
         int ownRowCnt;
         if (isAttd) {
-            ownRowCnt = insertOwnRows(snapshotId, attdIncluded, affilCmpnyNm, param.gvUserCd());
+            ownRowCnt = insertOwnRows(snapshotId, req, attdIncluded, affilCmpnyNm, param.gvUserCd());
         } else if (TYPE_RISK.equals(dataType)) {
             ownRowCnt = insertRiskOwnRows(snapshotId, req, riskData, affilCmpnyNm, param.gvUserCd());
         } else {
@@ -1550,10 +1554,15 @@ public class Subcon03ServiceImpl implements Subcon03Service {
      * 자체 생성 상세행 INSERT — WORKER_SEQ 는 스냅샷 스코프 로컬 번호(제공측 USER_CD 정렬 후 1..N)로 채번한다.
      * <b>USER_CD 는 어떤 컬럼에도 저장하지 않는다</b>(D8).
      */
-    private int insertOwnRows(Long snapshotId, List<SnapshotSourceRow> rows, String affilCmpnyNm, String actorUserCd) {
+    private int insertOwnRows(Long snapshotId, ShareReqRaw req, List<SnapshotSourceRow> rows,
+                              String affilCmpnyNm, String actorUserCd) {
         if (rows.isEmpty()) {
             return 0;
         }
+
+        // PRAFTA-FIXEDOT-3(M21): (근로자, 근무일) 고정연장 구간 맵 — 상세행별 "고정연장 실적(분)" 산출용.
+        //   고정연장이 설정된 배정일만 조회되므로 미사용 사업장은 빈 맵(현행 완전 동일).
+        Map<String, FixedOtScheduleRow> fixedOtSchByKey = loadFixedOtScheduleMap(req);
 
         // 로컬 인물 번호 채번(정규/일용 동명이인도 USER_CD 가 다르면 다른 번호).
         Set<String> userCds = new TreeSet<>();
@@ -1593,6 +1602,7 @@ public class Subcon03ServiceImpl implements Subcon03Service {
                     , row.checkOutTime()
                     , row.attdStatusCd()
                     , row.otMinutes() == null ? 0 : row.otMinutes()
+                    , resolveFixedOtMinutes(fixedOtSchByKey, row)
                     , row.leaveNm()
                     , row.leaveDays()
                     , row.leaveMinutes()
@@ -1611,6 +1621,53 @@ public class Subcon03ServiceImpl implements Subcon03Service {
             inserted += subcon03Mapper.insertSnapshotAttdRows(chunk);
         }
         return inserted;
+    }
+
+    /**
+     * PRAFTA-FIXEDOT-3(M21): 기간 내 고정연장 보유 배정일의 스케줄 시각을 (userCd|workYmd) 맵으로 적재한다.
+     * 고정연장 미사용 사업장은 0건 → 빈 맵(스냅샷 생성 경로 현행 완전 동일).
+     */
+    private Map<String, FixedOtScheduleRow> loadFixedOtScheduleMap(ShareReqRaw req) {
+        List<FixedOtScheduleRow> rows = subcon03Mapper.selectFixedOtScheduleRows(
+                req.prvCmpnyCd(), req.targetSiteCd(), req.periodStr(), req.periodEnd());
+        if (rows == null || rows.isEmpty()) {
+            return Collections.emptyMap();
+        }
+        Map<String, FixedOtScheduleRow> map = new HashMap<>(rows.size() * 2);
+        for (FixedOtScheduleRow r : rows) {
+            map.put(r.userCd() + "|" + r.workYmd(), r);
+        }
+        return map;
+    }
+
+    /**
+     * PRAFTA-FIXEDOT-3(M21): 상세행 1건의 고정연장 실적(분) = 그 행 실근태 구간 ∩ 그날 고정연장 구간
+     * (정책 ① 커버분만 — {@code FixedOtMinutesUtils} 단일 출처).
+     *
+     * <p>행(차수)별로 계산하므로 같은 날 1·2차 합이 곧 그날 실적이다(차수 구간은 서로 겹치지 않음 —
+     * 겹침 가드 전제). OT_ONLY/LEAVE_ONLY 행과 미완결(미출근·미퇴근) 행은 0.
+     *
+     * <p>"연장 미이행" 배지는 스냅샷에 넣지 않는다(plan §5-2 — 판정 보조 정보라 실적 분만 공유).
+     */
+    private int resolveFixedOtMinutes(Map<String, FixedOtScheduleRow> fixedOtSchByKey, SnapshotSourceRow row) {
+        if (fixedOtSchByKey.isEmpty() || !ROW_TYPE_ATTD.equals(row.rowType()) || row.workYmd() == null) {
+            return 0;
+        }
+        FixedOtScheduleRow sch = fixedOtSchByKey.get(row.userCd() + "|" + row.workYmd());
+        if (sch == null) {
+            return 0; // 그날 배정 근무타입에 고정연장 없음.
+        }
+        int[] actSeg = FixedOtMinutesUtils.actualSegment(
+                FixedOtMinutesUtils.dayAnchorMinutes(row.workYmd(), row.checkInDate(), blankToNull(row.checkInTime())),
+                FixedOtMinutesUtils.dayAnchorMinutes(row.workYmd(), row.checkOutDate(), blankToNull(row.checkOutTime())));
+        if (actSeg == null) {
+            return 0;
+        }
+        return FixedOtMinutesUtils.dayFixedOtActualMinutes(
+                sch.fstSchStrTime(), sch.fstSchEndTime(), sch.secSchStrTime(), sch.secSchEndTime(),
+                sch.preFixedOtStrTime(), sch.preFixedOtEndTime(),
+                sch.fixedOtStrTime(), sch.fixedOtEndTime(),
+                List.of(actSeg));
     }
 
     // =========================== private — 검증/공통 ===========================

@@ -199,8 +199,14 @@
                 <td>{{ fmtDow(r.workYmd) }}</td>
                 <!-- 차수: 초과근무 행은 '-' -->
                 <td>{{ r._isOt ? "-" : r.workSeq }}</td>
-                <!-- 스케줄(통합): 차수에 해당하는 구간. 초과근무 행은 '-' -->
-                <td>{{ scheduleCell(r) }}</td>
+                <!-- 스케줄(통합): 차수에 해당하는 구간. 초과근무 행은 '-'
+                     PRAFTA-FIXEDOT-3: 고정연장 보유 타입은 경계 슬롯에 구간을 구분 표기(additive) -->
+                <td>
+                  {{ scheduleCell(r) }}
+                  <div v-if="fixedOtCellLabel(r)" class="a08-fixedot-label">
+                    {{ fixedOtCellLabel(r) }}
+                  </div>
+                </td>
                 <!-- 실제근무 (차수에 해당하는 구간 / 초과근무 실제 출퇴근) -->
                 <td>{{ dCell(r._inDate) }}</td>
                 <td>{{ tCell(r._inTime) }}</td>
@@ -218,6 +224,14 @@
                     :class="['a08-badge', statusBadgeClass(r._status)]"
                   >
                     {{ statusLabel(r._status) }}
+                  </span>
+                  <!-- PRAFTA-FIXEDOT-3(정책 ②): "연장 미이행" 배지 — 조퇴 판정/통계와 완전 분리된
+                       별도 표식(서버 파생 판정, 연차 계열 사용일에는 서버가 발화시키지 않음) -->
+                  <span
+                    v-if="r.fixedOtUnfulfilledYn === 'Y'"
+                    class="a08-badge b-fixedot-unmet"
+                  >
+                    연장 미이행
                   </span>
                 </td>
                 <td>
@@ -270,7 +284,25 @@
             </div>
             <div class="meta-row">
               <span class="meta-label">스케줄</span>
-              <span class="meta-value">{{ scheduleCell(selected) }}</span>
+              <span class="meta-value">
+                {{ scheduleCell(selected) }}
+                <span v-if="fixedOtCellLabel(selected)" class="a08-fixedot-label">
+                  {{ fixedOtCellLabel(selected) }}
+                </span>
+              </span>
+            </div>
+            <!-- PRAFTA-FIXEDOT-3: 고정연장 실적(실근태 ∩ 고정연장 파생 계상) — 마지막 슬롯 행에만 수신 -->
+            <div v-if="selected.fixedOtActMinutes != null" class="meta-row">
+              <span class="meta-label">고정연장 실적</span>
+              <span class="meta-value">
+                {{ fmtDuration(selected.fixedOtActMinutes) }}
+                <span
+                  v-if="selected.fixedOtUnfulfilledYn === 'Y'"
+                  class="a08-badge b-fixedot-unmet"
+                >
+                  연장 미이행
+                </span>
+              </span>
             </div>
             <div class="meta-row">
               <span class="meta-label">실제근무</span>
@@ -1024,6 +1056,29 @@ const scheduleCell = (r) => {
   return isSeq2
     ? planRange(r.plan2Start, r.plan2End)
     : planRange(r.plan1Start, r.plan1End);
+};
+
+// PRAFTA-FIXEDOT-3(표기): 그 행 차수의 경계에 붙는 고정연장 구간 라벨.
+//   전방은 1구간(seq1) 행에, 후방은 마지막 스케줄 슬롯(2구간 스케줄이면 seq2, 아니면 seq1) 행에 표시.
+//   고정연장 없는 타입/구서버 응답이면 빈 문자열(기존 셀 표기 불변).
+const fixedOtCellLabel = (r) => {
+  if (r._isOt) return "";
+  const isSeq2 = String(r.workSeq) === "2";
+  const lastSlotIsSeq2 = !!r.plan2Start;
+  const parts = [];
+  if (!isSeq2 && r.preFixedOtStrTime && r.preFixedOtEndTime) {
+    parts.push(`${fmtHhmm(r.preFixedOtStrTime)}~${fmtHhmm(r.preFixedOtEndTime)}`);
+  }
+  if (isSeq2 === lastSlotIsSeq2 && r.fixedOtStrTime && r.fixedOtEndTime) {
+    parts.push(`${fmtHhmm(r.fixedOtStrTime)}~${fmtHhmm(r.fixedOtEndTime)}`);
+  }
+  return parts.length ? `+ 고정연장 ${parts.join(" · ")}` : "";
+};
+// HHMM → "HH:MM" (fixedOtCellLabel 전용 — planRange 내부 포맷과 동일 톤)
+const fmtHhmm = (hm) => {
+  const s = String(hm ?? "");
+  if (s.length !== 4) return "-";
+  return `${s.slice(0, 2)}:${s.slice(2, 4)}`;
 };
 
 // 행 클래스: 주말 배경 + 선택 행 강조
@@ -1842,6 +1897,18 @@ onBeforeUnmount(() => {
 .b-in {
   background: #f3f4f6;
   color: #374151;
+}
+/* PRAFTA-FIXEDOT-3: "연장 미이행" 배지 — 조퇴(b-early)와 시각적으로도 구분(경고 토큰, 하드코딩 금지) */
+.b-fixedot-unmet {
+  background: var(--color-warning-bg);
+  color: var(--color-warning-text);
+  margin-left: 0.25rem;
+}
+/* PRAFTA-FIXEDOT-3: 스케줄 셀 고정연장 구분 표기(보조 라벨) */
+.a08-fixedot-label {
+  font-size: 0.72rem;
+  color: var(--color-text-muted);
+  white-space: nowrap;
 }
 /* 근무구분 배지 (PRAFTA-015) — 정상근무/초과근무 구분 */
 .b-work-normal {

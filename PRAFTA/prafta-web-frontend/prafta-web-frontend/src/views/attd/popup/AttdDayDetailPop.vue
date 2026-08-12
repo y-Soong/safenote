@@ -62,6 +62,26 @@
                   </template>
                 </div>
               </div>
+              <!-- PRAFTA-FIXEDOT-3: 고정연장근무(소정과 분리된 별도 축).
+                   구간 = 근무타입 설정값, 실적 = 실근태가 그 구간을 커버한 분(정책 ① — 커버분만).
+                   "연장 미이행" 배지는 조퇴 판정/통계와 완전히 분리된 별도 표식이며(정책 ②),
+                   연차 계열 사용일에는 서버가 발화시키지 않는다(정책 ③ 의무 면제).
+                   고정연장이 없는 근무타입은 이 행 자체가 렌더되지 않는다(기존 팝업과 동일). -->
+              <div v-if="cfg.timeCard.fixedOt" class="time-row">
+                <div class="time-lbl">고정연장</div>
+                <div class="time-val">
+                  <span>{{ cfg.timeCard.fixedOt.range }}</span>
+                  <span v-if="cfg.timeCard.fixedOt.act" class="time-meta">
+                    실적 {{ cfg.timeCard.fixedOt.act }}
+                  </span>
+                  <span
+                    v-if="cfg.timeCard.fixedOt.unmet"
+                    class="fixedot-unmet"
+                  >
+                    연장 미이행
+                  </span>
+                </div>
+              </div>
               <!-- 실제 출퇴근 -->
               <div class="time-row">
                 <div class="time-lbl">실제 출퇴근</div>
@@ -1574,7 +1594,33 @@ const buildTimeCard = () => {
     note = { value: "−", cls: "val-empty" };
   }
 
-  return { plan, actual, note };
+  // PRAFTA-FIXEDOT-3: 고정연장근무(소정과 분리된 별도 축) — 구간 표기 + 실적(자동 계상) + 미이행 배지.
+  //   전부 서버 파생값을 그대로 표시만 한다(정책 ①·②·③ 판정은 서버 단일 출처).
+  //   고정연장 없는 근무타입/구서버 응답이면 null → 행 자체를 렌더하지 않는다(기존 팝업과 동일).
+  const fixedOt = buildFixedOtRow(r);
+
+  return { plan, actual, note, fixedOt };
+};
+
+// PRAFTA-FIXEDOT-3: 고정연장 표시 모델. 구간이 없으면 null.
+const buildFixedOtRow = (r) => {
+  if (!r) return null;
+  const ranges = [];
+  if (r.preFixedOtStrTime && r.preFixedOtEndTime) {
+    ranges.push(`${fmtTime(r.preFixedOtStrTime)} → ${fmtTime(r.preFixedOtEndTime)}`);
+  }
+  if (r.fixedOtStrTime && r.fixedOtEndTime) {
+    ranges.push(`${fmtTime(r.fixedOtStrTime)} → ${fmtTime(r.fixedOtEndTime)}`);
+  }
+  if (!ranges.length) return null;
+  const act = Number(r.fixedOtActMinutes);
+  return {
+    range: ranges.join(" · "),
+    // 실적 = 실근태가 고정연장 구간을 커버한 분(정책 ① — 커버분만 계상).
+    //   0분도 "0분"으로 명시한다(미이행 배지와 짝이 되는 정보라 숨기면 오독).
+    act: !Number.isFinite(act) ? "" : act > 0 ? fmtHm(act) : "0분",
+    unmet: r.fixedOtUnfulfilledYn === "Y",
+  };
 };
 
 // "20260503" → "2026-05-03" (CalendarSrch 입력 포맷)
@@ -3634,6 +3680,18 @@ onMounted(() => {
 .biko-out {
   color: #b91c1c;
   font-weight: 700;
+}
+/* PRAFTA-FIXEDOT-3: "연장 미이행" 배지 — 조퇴 표기와 다른 별도 축(경고 토큰만 사용, 하드코딩 금지) */
+.fixedot-unmet {
+  display: inline-flex;
+  align-items: center;
+  margin-left: 6px;
+  padding: 1px 8px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 600;
+  background: var(--color-warning-bg);
+  color: var(--color-warning-text);
 }
 .note-pending {
   display: inline-flex;

@@ -32,5 +32,11 @@ public record SnapshotDetailResult(
     , BigDecimal leaveDays
     , Integer leaveMinutes
     , String leaveEndYmd
+    /**
+     * PRAFTA-FIXEDOT-3(M21): 고정연장 실적(분) — 실근태가 근무타입 고정연장 구간을 커버한 분.
+     * 고정연장 미설정 타입은 0. "연장 미이행" 배지는 스냅샷 대상이 아니다(plan §5-2).
+     * ⚠️ record 끝 = SELECT 끝 동일 순서(MyBatis 위치 기반 매핑).
+     */
+    , Integer fixedOtMinutes
 ){
 }

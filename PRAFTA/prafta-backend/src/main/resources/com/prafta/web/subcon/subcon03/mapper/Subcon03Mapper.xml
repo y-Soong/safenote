@@ -491,12 +491,20 @@
             , E.SEC_SCH_STR_TIME
             , E.SEC_SCH_END_TIME
             , E.SEC_SCH_BRK_MIN
+            <!-- PRAFTA-FIXEDOT-3(M21): 고정연장(전방·후방) 4컬럼 동반 — 스냅샷 "고정연장 실적" 산출 입력.
+                 판정(ATTD_STATUS_CD)식은 이 컬럼을 쓰지 않는다(정책 ② — 조퇴 기준선 불변). -->
+            , E.PRE_FIXED_OT_STR_TIME
+            , E.PRE_FIXED_OT_END_TIME
+            , E.FIXED_OT_STR_TIME
+            , E.FIXED_OT_END_TIME
         FROM (
             <!-- 대상 사업장 스코프를 파생테이블 안에서 먼저 좁힌다(전사 UNION 전량 스캔 방지 — qa M5). -->
             SELECT
                   M.CMPNY_CD, M.SITE_CD, M.SCH_CD, M.APPLY_DATE
                 , M.FST_SCH_STR_TIME, M.FST_SCH_END_TIME, M.FST_SCH_BRK_MIN
                 , M.SEC_SCH_STR_TIME, M.SEC_SCH_END_TIME, M.SEC_SCH_BRK_MIN
+                , M.PRE_FIXED_OT_STR_TIME, M.PRE_FIXED_OT_END_TIME
+                , M.FIXED_OT_STR_TIME, M.FIXED_OT_END_TIME
                 , 2147483647 AS HIST_IDX
             FROM TB_SCH_MGMT M
             WHERE M.CMPNY_CD = #{prvCmpnyCd}
@@ -506,6 +514,8 @@
                   H.CMPNY_CD, H.SITE_CD, H.SCH_CD, H.APPLY_DATE
                 , H.FST_SCH_STR_TIME, H.FST_SCH_END_TIME, H.FST_SCH_BRK_MIN
                 , H.SEC_SCH_STR_TIME, H.SEC_SCH_END_TIME, H.SEC_SCH_BRK_MIN
+                , H.PRE_FIXED_OT_STR_TIME, H.PRE_FIXED_OT_END_TIME
+                , H.FIXED_OT_STR_TIME, H.FIXED_OT_END_TIME
                 , H.HIST_IDX
             FROM TB_SCH_MGMT_HIST H
             WHERE H.CMPNY_CD = #{prvCmpnyCd}
@@ -713,6 +723,54 @@
     </select>
 
     <!-- ============================================================
+         PRAFTA-FIXEDOT-3(M21) 고정연장 시각 원천 — 스냅샷 "고정연장 실적(분)" 파생 계산 입력.
+           SnapshotSourceRow(3쿼리 공용 record)의 컬럼 순서 계약을 건드리지 않기 위해 별도 경량 쿼리로 분리.
+           스코프/유효버전 해석은 selectAttdSourceRows 와 동일(schEffective + APPLY_DATE 폴백 체인).
+           고정연장 쌍이 설정된 배정일만 반환 → 고정연장 미사용 사업장은 0건(현행 완전 동일).
+         ============================================================ -->
+    <select id="selectFixedOtScheduleRows" resultType="com.prafta.web.subcon.subcon03.result.FixedOtScheduleRow">
+    /* Subcon03Mapper.selectFixedOtScheduleRows */
+    SELECT
+          WP.USER_CD                                                    AS userCd
+        , WP.WORK_YMD                                                   AS workYmd
+        , SCH.FST_SCH_STR_TIME                                          AS fstSchStrTime
+        , SCH.FST_SCH_END_TIME                                          AS fstSchEndTime
+        , SCH.SEC_SCH_STR_TIME                                          AS secSchStrTime
+        , SCH.SEC_SCH_END_TIME                                          AS secSchEndTime
+        , SCH.PRE_FIXED_OT_STR_TIME                                     AS preFixedOtStrTime
+        , SCH.PRE_FIXED_OT_END_TIME                                     AS preFixedOtEndTime
+        , SCH.FIXED_OT_STR_TIME                                         AS fixedOtStrTime
+        , SCH.FIXED_OT_END_TIME                                         AS fixedOtEndTime
+    FROM TB_USER_WORK_PLAN WP
+        INNER JOIN (
+            <include refid="schEffective"/>
+        ) SCH
+            ON  SCH.CMPNY_CD = WP.CMPNY_CD
+            AND SCH.SITE_CD  = WP.SITE_CD
+            AND SCH.SCH_CD   = WP.WORK_PLAN_CD
+            AND SCH.APPLY_DATE = (
+                SELECT COALESCE(
+                         MAX(CASE WHEN SE.APPLY_DATE <![CDATA[ <= ]]> WP.WORK_YMD THEN SE.APPLY_DATE END)
+                       , MIN(SE.APPLY_DATE)
+                       )
+                FROM (
+                    SELECT M3.CMPNY_CD, M3.SITE_CD, M3.SCH_CD, M3.APPLY_DATE
+                    FROM TB_SCH_MGMT M3
+                    UNION ALL
+                    SELECT H3.CMPNY_CD, H3.SITE_CD, H3.SCH_CD, H3.APPLY_DATE
+                    FROM TB_SCH_MGMT_HIST H3
+                ) SE
+                WHERE SE.CMPNY_CD = WP.CMPNY_CD
+                  AND SE.SITE_CD  = WP.SITE_CD
+                  AND SE.SCH_CD   = WP.WORK_PLAN_CD
+            )
+    WHERE WP.CMPNY_CD = #{prvCmpnyCd}
+      AND WP.SITE_CD  = #{targetSiteCd}
+      AND WP.WORK_YMD BETWEEN #{periodStr} AND #{periodEnd}
+      AND ( SCH.FIXED_OT_STR_TIME IS NOT NULL OR SCH.PRE_FIXED_OT_STR_TIME IS NOT NULL )
+    </select>
+
+    <!-- ============================================================
          (T3-04) 근태행 없는 초과근무 원천(ROW_TYPE='OT_ONLY' — 휴일근무 등. OT.ATTD_ID NULL 허용).
          같은 (근로자, 근무일) 에 유효 근태행이 없는 확정 OT 만 1행으로 요약한다.
          ============================================================ -->
@@ -914,6 +972,10 @@
         , CHECK_OUT_TIME
         , ATTD_STATUS_CD
         , OT_MINUTES
+        <!-- PRAFTA-FIXEDOT-3(M21): 고정연장 실적(분) — 실근태 ∩ 근무타입 고정연장 구간(정책 ①).
+             승인 시점 파생 산출값을 스냅샷으로 고정 복사한다. "연장 미이행" 배지는 판정 보조
+             정보라 스냅샷에서 제외한다(plan §5-2 확정). 고정연장 없는 타입은 항상 0. -->
+        , FIXED_OT_MINUTES
         , LEAVE_NM
         , LEAVE_DAYS
         , LEAVE_MINUTES
@@ -942,6 +1004,7 @@
             , #{row.checkOutTime}
             , #{row.attdStatusCd}
             , #{row.otMinutes}
+            , #{row.fixedOtMinutes}
             , #{row.leaveNm}
             , #{row.leaveDays}
             , #{row.leaveMinutes}
@@ -1041,6 +1104,8 @@
         , CHECK_OUT_TIME
         , ATTD_STATUS_CD
         , OT_MINUTES
+        <!-- PRAFTA-FIXEDOT-3(M21): 고정연장 실적(분)도 릴레이 복사에 동반한다(누락 시 n차 체인에서만 0). -->
+        , FIXED_OT_MINUTES
         , LEAVE_NM
         , LEAVE_DAYS
         , LEAVE_MINUTES
@@ -1068,6 +1133,7 @@
         , D.CHECK_OUT_TIME
         , D.ATTD_STATUS_CD
         , D.OT_MINUTES
+        , D.FIXED_OT_MINUTES
         , D.LEAVE_NM
         , D.LEAVE_DAYS
         , D.LEAVE_MINUTES
@@ -1195,6 +1261,9 @@
         , D.LEAVE_DAYS      AS leaveDays
         , D.LEAVE_MINUTES   AS leaveMinutes
         , D.LEAVE_END_YMD   AS leaveEndYmd
+        <!-- PRAFTA-FIXEDOT-3(M21): 고정연장 실적(분). ⚠️ record(SnapshotDetailResult) 끝 필드와
+             동일 순서로 SELECT 끝에 둔다(MyBatis 위치 기반 매핑). -->
+        , D.FIXED_OT_MINUTES AS fixedOtMinutes
     FROM TB_CMPNY_SHARE_SNAPSHOT_ATTD D
     WHERE D.SNAPSHOT_ID = #{snapshotId}
       AND EXISTS (

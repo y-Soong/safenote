@@ -13,7 +13,9 @@ import java.util.Set;
 
 import org.springframework.stereotype.Service;
 
+import com.prafta.common.cmm.attd.util.FixedOtMinutesUtils;
 import com.prafta.common.cmm.leave.util.PartialLeaveWindowUtils;
+import com.prafta.common.cmm.schedule.util.FixedOtScheduleUtils;
 import com.prafta.common.cmm.leave.util.ScheduleWorkMinutesUtils;
 import com.prafta.common.cmm.leave.vo.DailyScheduleVO;
 import com.prafta.common.error.attd.AttdErrorCode;
@@ -122,8 +124,18 @@ public class Attd11ServiceImpl implements Attd11Service {
         // 사용자별 누적기(등장 순서 유지 — 매퍼가 USER_CD, WORK_YMD, WORK_SEQ 순 정렬)
         Map<String, UserAccumulator> accByUser = new LinkedHashMap<>();
 
+        // PRAFTA-FIXEDOT-3: 일 단위 파생(실적·미이행)용 컨텍스트 — 같은 (사용자, 근무일)의 슬롯 행을 모은다.
+        Map<String, FixedOtDayCtx> fixedOtDayByKey = new LinkedHashMap<>();
+
         for (AttdSummaryRowResult r : rows) {
             UserAccumulator acc = accByUser.computeIfAbsent(r.userCd(), k -> new UserAccumulator(r));
+
+            // PRAFTA-FIXEDOT-3: 고정연장 보유 근무타입의 슬롯 실근태를 일 단위로 수집(판정과 무관 — additive).
+            if (r.workYmd() != null && (blankToNull(r.fixedOtStrTime()) != null
+                    || blankToNull(r.preFixedOtStrTime()) != null)) {
+                fixedOtDayByKey.computeIfAbsent(r.userCd() + "|" + r.workYmd(), k -> new FixedOtDayCtx(r))
+                        .addSlot(r);
+            }
 
             String inDate = blankToNull(r.actInDate());
             String inTime = blankToNull(r.actInTime());
@@ -192,6 +204,34 @@ public class Attd11ServiceImpl implements Attd11Service {
             }
         }
 
+        // PRAFTA-FIXEDOT-3: 일 단위 파생(실적 합 + "연장 미이행" 카운트)을 사용자 누적기에 반영한다.
+        //   정책 ①: 실적 = 실근태 슬롯 구간 ∩ 고정연장 구간(연차 계열 사용일에도 실적은 계상).
+        //   정책 ②③: 미이행 = 후방 존재 + 마지막 스케줄 슬롯 퇴근 완료 + 퇴근 < 후방 종료 + 연차 계열 미사용.
+        //   지각/조퇴/결근 지표는 위 루프에서 이미 확정 — 여기서는 신규 축만 더한다(완전 분리).
+        for (FixedOtDayCtx day : fixedOtDayByKey.values()) {
+            UserAccumulator acc = accByUser.get(day.userCd);
+            if (acc == null) {
+                continue;
+            }
+            List<int[]> fixedOtSegs = FixedOtScheduleUtils.fixedOtSegments(
+                    day.fstSchStrTime, day.fstSchEndTime, day.secSchStrTime, day.secSchEndTime,
+                    day.preFixedOtStrTime, day.preFixedOtEndTime, day.fixedOtStrTime, day.fixedOtEndTime);
+            if (fixedOtSegs.isEmpty()) {
+                continue;
+            }
+            acc.fixedOtMinutes += FixedOtMinutesUtils.coveredMinutes(fixedOtSegs, day.actualSegs);
+
+            boolean unmet = !"Y".equals(day.fixedOtExemptYn)
+                    && FixedOtMinutesUtils.isRearUnfulfilled(
+                            FixedOtMinutesUtils.rearFixedOtEndAnchor(
+                                    day.fstSchStrTime, day.fstSchEndTime, day.secSchStrTime, day.secSchEndTime,
+                                    day.fixedOtStrTime, day.fixedOtEndTime),
+                            day.lastSlotOutAnchor());
+            if (unmet) {
+                acc.fixedOtUnmetCnt += 1;
+            }
+        }
+
         List<MonthlyAttdSummaryResult> resultList = new ArrayList<>(accByUser.size() + otRows.size());
         for (Map.Entry<String, UserAccumulator> e : accByUser.entrySet()) {
             UserAccumulator acc = e.getValue();
@@ -213,6 +253,8 @@ public class Attd11ServiceImpl implements Attd11Service {
                     , absentDayCntOf(absentByUser.get(e.getKey()))
                     , absentMinutesOf(absentByUser.get(e.getKey()))
                     , absentDaysOf(absentByUser.get(e.getKey()))
+                    , acc.fixedOtMinutes
+                    , acc.fixedOtUnmetCnt
             ));
         }
 
@@ -239,6 +281,9 @@ public class Attd11ServiceImpl implements Attd11Service {
                     , absentDayCntOf(absentByUser.get(ot.userCd()))
                     , absentMinutesOf(absentByUser.get(ot.userCd()))
                     , absentDaysOf(absentByUser.get(ot.userCd()))
+                    // PRAFTA-FIXEDOT-3: OT-only 사용자(정규 출근기록 없음)는 고정연장 실적/미이행 산출 불가 — 0.
+                    , 0L
+                    , 0
             ));
         }
 
@@ -332,6 +377,9 @@ public class Attd11ServiceImpl implements Attd11Service {
         long lateMinutes = 0L;
         int earlyLeaveCnt = 0;
         long earlyLeaveMinutes = 0L;
+        // PRAFTA-FIXEDOT-3: 고정연장 실적 합(분) + "연장 미이행" 일수 — 기존 지표와 완전 분리(additive).
+        long fixedOtMinutes = 0L;
+        int fixedOtUnmetCnt = 0;
 
         UserAccumulator(AttdSummaryRowResult r) {
             this.userCd = r.userCd();
@@ -340,6 +388,61 @@ public class Attd11ServiceImpl implements Attd11Service {
             this.deptNm = r.deptNm();
             this.authCd = r.authCd();
             this.authNm = r.authNm();
+        }
+    }
+
+    /**
+     * PRAFTA-FIXEDOT-3: (사용자, 근무일) 단위 고정연장 파생 계산 컨텍스트.
+     * 스케줄/고정연장/면제 컬럼은 그날 모든 슬롯 행에서 동일하므로 첫 행 값을 쓰고,
+     * 슬롯별 실근태 구간과 "마지막 스케줄 슬롯"의 퇴근 스탬프만 행마다 수집한다.
+     */
+    private final class FixedOtDayCtx {
+        final String userCd;
+        final String workYmd;
+        final String fstSchStrTime;
+        final String fstSchEndTime;
+        final String secSchStrTime;
+        final String secSchEndTime;
+        final String preFixedOtStrTime;
+        final String preFixedOtEndTime;
+        final String fixedOtStrTime;
+        final String fixedOtEndTime;
+        final String fixedOtExemptYn;
+        final List<int[]> actualSegs = new ArrayList<>(2);
+        private Integer lastSlotOutAnchor;
+
+        FixedOtDayCtx(AttdSummaryRowResult r) {
+            this.userCd = r.userCd();
+            this.workYmd = r.workYmd();
+            this.fstSchStrTime = r.fstSchStrTime();
+            this.fstSchEndTime = r.fstSchEndTime();
+            this.secSchStrTime = r.secSchStrTime();
+            this.secSchEndTime = r.secSchEndTime();
+            this.preFixedOtStrTime = r.preFixedOtStrTime();
+            this.preFixedOtEndTime = r.preFixedOtEndTime();
+            this.fixedOtStrTime = r.fixedOtStrTime();
+            this.fixedOtEndTime = r.fixedOtEndTime();
+            this.fixedOtExemptYn = r.fixedOtExemptYn();
+        }
+
+        void addSlot(AttdSummaryRowResult r) {
+            int[] seg = FixedOtMinutesUtils.actualSegment(
+                    FixedOtMinutesUtils.dayAnchorMinutes(workYmd, r.actInDate(), blankToNull(r.actInTime())),
+                    FixedOtMinutesUtils.dayAnchorMinutes(workYmd, r.actOutDate(), blankToNull(r.actOutTime())));
+            if (seg != null) {
+                actualSegs.add(seg);
+            }
+            // 마지막 스케줄 슬롯(2구간 스케줄이면 seq2, 아니면 seq1)의 퇴근 스탬프 — 미이행 판정 기준.
+            int lastSlotSeq = (blankToNull(secSchStrTime) != null) ? 2 : 1;
+            if (r.workSeq() == lastSlotSeq) {
+                lastSlotOutAnchor = FixedOtMinutesUtils.dayAnchorMinutes(
+                        workYmd, r.actOutDate(), blankToNull(r.actOutTime()));
+            }
+        }
+
+        /** 마지막 스케줄 슬롯 퇴근 스탬프(일 anchor 분). 그 슬롯 행 부재/미퇴근이면 null(배지 비대상). */
+        Integer lastSlotOutAnchor() {
+            return lastSlotOutAnchor;
         }
     }
 }

@@ -10,6 +10,7 @@ import java.util.Map;
 
 import org.springframework.stereotype.Service;
 
+import com.prafta.common.cmm.attd.util.FixedOtMinutesUtils;
 import com.prafta.common.cmm.schedule.util.FixedOtScheduleUtils;
 import com.prafta.common.error.attd.AttdErrorCode;
 import com.prafta.common.exception.ApiException;
@@ -125,6 +126,32 @@ public class Attd15ServiceImpl implements Attd15Service {
             }
         }
 
+        // PRAFTA-FIXEDOT-3(J2): 사용자별 고정연장 자동 계상 실적(분) 합 — 파생 계산(저장 없음, 정책 ①).
+        //   슬롯(행) 단위 실근태 구간 ∩ 그날 고정연장 구간(FixedOtMinutesUtils 단일 출처, 일 anchor 프레임).
+        //   ★ 총량(actualMinutes)에는 가산하지 않는다 — 고정연장 근무분은 raw 실근태에 이미 포함되어 있어
+        //     여기 산출은 "연장 축 분류(actualOtMinutes)" 전용이다(이중 계상 금지).
+        //   고정연장 없는 근무타입은 빈 구간 → 0(기존 화면 값 전부 불변).
+        Map<String, Long> fixedOtMinutesByUser = new HashMap<>();
+        for (ActualRowResult r : actualRows) {
+            String workYmd = blankToNull(r.workYmd());
+            if (workYmd == null) {
+                continue;
+            }
+            int[] actSeg = FixedOtMinutesUtils.actualSegment(
+                    FixedOtMinutesUtils.dayAnchorMinutes(workYmd, r.actInDate(), blankToNull(r.actInTime())),
+                    FixedOtMinutesUtils.dayAnchorMinutes(workYmd, r.actOutDate(), blankToNull(r.actOutTime())));
+            if (actSeg == null) {
+                continue; // 미완결 슬롯(미출근/미퇴근)은 계상 대상 아님.
+            }
+            int covered = FixedOtMinutesUtils.dayFixedOtActualMinutes(
+                    r.fstSchStrTime(), r.fstSchEndTime(), r.secSchStrTime(), r.secSchEndTime(),
+                    r.preFixedOtStrTime(), r.preFixedOtEndTime(), r.fixedOtStrTime(), r.fixedOtEndTime(),
+                    List.of(actSeg));
+            if (covered > 0) {
+                fixedOtMinutesByUser.merge(r.userCd(), (long) covered, Long::sum);
+            }
+        }
+
         // 사용자별 초과근무 분 합(COMPLETED만, decisions §3-4 동일 기준).
         Map<String, Long> otMinutesByUser = new HashMap<>();
         for (OvertimeSummaryResult ot : otRows) {
@@ -141,6 +168,9 @@ public class Attd15ServiceImpl implements Attd15Service {
             // 실제 근무 기준 = workMinutes(원시 실근로) + otMinutes(승인된 초과근무).
             long actualMinutes = actualRawMinutesByUser.getOrDefault(u.userCd(), 0L)
                     + otMinutesByUser.getOrDefault(u.userCd(), 0L);
+            // PRAFTA-FIXEDOT-3(J2): 연장 축 분류 = 승인 OT + 고정연장 자동 계상 실적(구간 배타 — 중복 없음).
+            long actualOtMinutes = otMinutesByUser.getOrDefault(u.userCd(), 0L)
+                    + fixedOtMinutesByUser.getOrDefault(u.userCd(), 0L);
 
             // 하나라도 미마감이면 전체 잠정치(§13.5 마감 커버리지 정의 재사용).
             boolean startClosed = attdCloseService.isClosedForUser(param.gvCmpnyCd(), param.siteCd(), u.userCd(), startYm);
@@ -161,6 +191,7 @@ public class Attd15ServiceImpl implements Attd15Service {
                     , actualMinutes
                     , classifyStatus(actualMinutes)
                     , allMonthsClosed ? "N" : "Y"
+                    , actualOtMinutes
             ));
         }
 

@@ -14,6 +14,7 @@ import com.prafta.web.subcon.subcon03.application.command.SnapshotNearmissInsert
 import com.prafta.web.subcon.subcon03.application.command.SnapshotRiskImproveInsertCommand;
 import com.prafta.web.subcon.subcon03.application.command.SnapshotRiskInsertCommand;
 import com.prafta.web.subcon.subcon03.result.ChainSiteResult;
+import com.prafta.web.subcon.subcon03.result.FixedOtScheduleRow;
 import com.prafta.web.subcon.subcon03.result.HalfLeaveWindowRow;
 import com.prafta.web.subcon.subcon03.result.NearmissSourceRow;
 import com.prafta.web.subcon.subcon03.result.RelayCandidateResult;
@@ -149,6 +150,16 @@ public interface Subcon03Mapper {
 
     /** 근태행 원천(ATTD) — 스케줄 effective-dating + attd08 판정식 + 당일 OT/연차 결합. */
     List<SnapshotSourceRow> selectAttdSourceRows(@Param("prvCmpnyCd") String prvCmpnyCd,
+            @Param("targetSiteCd") String targetSiteCd, @Param("periodStr") String periodStr,
+            @Param("periodEnd") String periodEnd);
+
+    /**
+     * PRAFTA-FIXEDOT-3(M21): 기간 내 (근로자, 근무일)별 고정연장 보유 근무타입의 시각 원천.
+     *
+     * <p>스냅샷 "고정연장 실적(분)" 파생 계산 입력이다. 고정연장(전방·후방)이 설정된 배정일만
+     * 반환하므로 고정연장 미사용 사업장은 0건 → 스냅샷 생성 경로가 완전히 현행과 동일하다.
+     */
+    List<FixedOtScheduleRow> selectFixedOtScheduleRows(@Param("prvCmpnyCd") String prvCmpnyCd,
             @Param("targetSiteCd") String targetSiteCd, @Param("periodStr") String periodStr,
             @Param("periodEnd") String periodEnd);
 

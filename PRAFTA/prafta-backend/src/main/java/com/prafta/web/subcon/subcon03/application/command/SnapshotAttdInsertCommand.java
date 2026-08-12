@@ -29,6 +29,11 @@ public record SnapshotAttdInsertCommand(
     , String checkOutTime
     , String attdStatusCd
     , int otMinutes
+    /**
+     * PRAFTA-FIXEDOT-3(M21): 고정연장 실적(분) — 실근태 ∩ 근무타입 고정연장 구간(정책 ①, 커버분만).
+     * 승인 시점 파생 산출값을 스냅샷으로 고정 복사한다(원장 아님). 고정연장 미설정 타입은 0.
+     */
+    , int fixedOtMinutes
     , String leaveNm
     , BigDecimal leaveDays
     , Integer leaveMinutes

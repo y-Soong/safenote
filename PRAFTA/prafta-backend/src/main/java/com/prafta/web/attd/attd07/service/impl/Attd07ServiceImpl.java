@@ -6,6 +6,7 @@ import java.util.List;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import com.prafta.common.cmm.attd.util.FixedOtMinutesUtils;
 import com.prafta.common.cmm.leave.service.LeaveConversionPolicyService;
 import com.prafta.common.cmm.leave.service.LeaveRefusalConst;
 import com.prafta.common.cmm.leave.service.LeaveRefusalDetectService;
@@ -149,6 +150,11 @@ public class Attd07ServiceImpl implements Attd07Service {
         siteAccessService.assertSiteAccess(param.gvCmpnyCd(), param.gvUserCd(), param.gvAuthCd(), param.gvSiteCd(), param.siteCd());
 
         List<MonthlyAttdListResult> attdRecordResultList = attd07Mapper.selectMonthlyAttdList(MonthlyAttdListQuery.from(param));
+
+        // PRAFTA-FIXEDOT-3: 고정연장 실적(자동 계상) + "연장 미이행" 배지를 파생 산출해 각 행에 싣는다.
+        //   판정(지각/조퇴/결근)·근태 값에는 손대지 않는다(정책 ② — 조퇴 통계와 완전 분리).
+        applyFixedOtDerivation(attdRecordResultList);
+
         List<MonthlyAttdReqSummaryResult> monthlyAttdReqSummaryResultList = attd07Mapper.selectMonthlyAttdReqSummary(MonthlyAttdListQuery.from(param));
 
         // PRAFTA-017 - 목록뷰에 함께 노출할 일자별 초과근무 목록(월 단위)을 조회한다.
@@ -164,6 +170,118 @@ public class Attd07ServiceImpl implements Attd07Service {
                 .monthlyOvertimeResultList(monthlyOvertimeResultList)
                 .monthlyLeaveChangeSummaryResultList(monthlyLeaveChangeSummaryResultList)
                 .build();
+    }
+
+    // ================================================================
+    // PRAFTA-FIXEDOT-3: 고정연장 실적(자동 계상) + "연장 미이행" 배지 (파생 — 정책 ①·②·③)
+    //   신규 테이블/원장 없이 조회 시점마다 계산한다(plan §3-① — 근태 보정 시 자동 반영).
+    //   고정연장이 없는 근무타입은 구간이 비어 전 경로가 현행과 완전히 동일하다(무회귀).
+    // ================================================================
+
+    /**
+     * 월 그리드 각 행(사용자 × 근무일)에 고정연장 실적/미이행 배지를 채운다.
+     *
+     * <p>행 하나가 그날 1·2차 근태를 모두 들고 있으므로 행 단위로 완결 계산된다.
+     */
+    private void applyFixedOtDerivation(List<MonthlyAttdListResult> rows) {
+        if (rows == null || rows.isEmpty()) {
+            return;
+        }
+        for (int i = 0; i < rows.size(); i++) {
+            MonthlyAttdListResult r = rows.get(i);
+            FixedOtDerivation d = deriveFixedOt(
+                    r.workYmd(),
+                    r.plan1Start(), r.plan1End(), r.plan2Start(), r.plan2End(),
+                    r.preFixedOtStrTime(), r.preFixedOtEndTime(),
+                    r.fixedOtStrTime(), r.fixedOtEndTime(),
+                    r.fixedOtExemptYn(),
+                    r.act1InDate(), r.act1InTime(), r.act1OutDate(), r.act1OutTime(),
+                    r.act2InDate(), r.act2InTime(), r.act2OutDate(), r.act2OutTime());
+            if (d == null) {
+                continue; // 고정연장 없는 근무타입 — 완전 불변 경로.
+            }
+            rows.set(i, r.withFixedOt(d.unfulfilledYn(), d.actMinutes()));
+        }
+    }
+
+    /**
+     * 일자상세(단건)에 고정연장 실적/미이행 배지를 채운다. 고정연장 없는 타입이면 원본 그대로 반환.
+     */
+    private DailyAttdDetailsResult applyFixedOtDerivation(DailyAttdDetailsResult r) {
+        if (r == null) {
+            return null;
+        }
+        FixedOtDerivation d = deriveFixedOt(
+                r.workYmd(),
+                r.plan1Start(), r.plan1End(), r.plan2Start(), r.plan2End(),
+                r.preFixedOtStrTime(), r.preFixedOtEndTime(),
+                r.fixedOtStrTime(), r.fixedOtEndTime(),
+                r.fixedOtExemptYn(),
+                r.act1InDate(), r.act1InTime(), r.act1OutDate(), r.act1OutTime(),
+                r.act2InDate(), r.act2InTime(), r.act2OutDate(), r.act2OutTime());
+        return (d == null) ? r : r.withFixedOt(d.unfulfilledYn(), d.actMinutes());
+    }
+
+    /** 고정연장 파생 산출 결과(배지 'Y'/null + 실적 분). */
+    private record FixedOtDerivation(String unfulfilledYn, Integer actMinutes) {
+    }
+
+    /**
+     * 고정연장 실적 + 후방 "연장 미이행" 판정을 한 번에 산출한다({@code FixedOtMinutesUtils} 단일 출처).
+     *
+     * <ul>
+     *   <li>실적(정책 ①): 실근태 슬롯 구간들 ∩ 고정연장 구간들 — 커버분만. 연차 계열 사용일에도
+     *       실제로 근무했으면 그대로 계상한다("의무 면제, 근무하면 실적 계상").</li>
+     *   <li>배지(정책 ②③): 후방 고정연장 존재 + 마지막 스케줄 슬롯 퇴근 완료 + 퇴근 스탬프 &lt; 후방 종료
+     *       + 연차 계열 미사용(fixedOtExemptYn != 'Y'). 미퇴근·결근은 비대상(별도 축).
+     *       조퇴 판정과 어떤 상태도 공유하지 않는다.</li>
+     * </ul>
+     *
+     * <p>TODO(developer): 전방 고정연장 미이행(늦은 출근으로 전방 구간 미커버) 배지는 1차 제외
+     * (plan §5-3 확정 — 후속 확장). 전방 실사용 타입 등장 시 FixedOtMinutesUtils 의 전방 판정과
+     * 함께 이 메서드/표기 지점을 확장할 것.
+     *
+     * @return 고정연장이 없는 근무타입이면 null(호출부는 원본을 그대로 둔다)
+     */
+    private FixedOtDerivation deriveFixedOt(
+            String workYmd,
+            String plan1Start, String plan1End, String plan2Start, String plan2End,
+            String preFixedOtStrTime, String preFixedOtEndTime,
+            String fixedOtStrTime, String fixedOtEndTime,
+            String fixedOtExemptYn,
+            String act1InDate, String act1InTime, String act1OutDate, String act1OutTime,
+            String act2InDate, String act2InTime, String act2OutDate, String act2OutTime) {
+
+        List<int[]> fixedOtSegs = FixedOtScheduleUtils.fixedOtSegments(
+                plan1Start, plan1End, plan2Start, plan2End,
+                preFixedOtStrTime, preFixedOtEndTime, fixedOtStrTime, fixedOtEndTime);
+        if (fixedOtSegs.isEmpty()) {
+            return null;
+        }
+
+        List<int[]> actualSegs = FixedOtMinutesUtils.buildActualSegments(workYmd, new String[][] {
+                { act1InDate, blankToNullStr(act1InTime), act1OutDate, blankToNullStr(act1OutTime) },
+                { act2InDate, blankToNullStr(act2InTime), act2OutDate, blankToNullStr(act2OutTime) }
+        });
+        int actMinutes = FixedOtMinutesUtils.coveredMinutes(fixedOtSegs, actualSegs);
+
+        // 마지막 스케줄 슬롯(2구간 스케줄이면 2차, 아니면 1차)의 퇴근 스탬프가 미이행 판정 기준이다.
+        boolean hasSlot2 = blankToNullStr(plan2Start) != null;
+        Integer lastOutAnchor = FixedOtMinutesUtils.dayAnchorMinutes(
+                workYmd,
+                hasSlot2 ? act2OutDate : act1OutDate,
+                blankToNullStr(hasSlot2 ? act2OutTime : act1OutTime));
+        Integer rearEndAnchor = FixedOtMinutesUtils.rearFixedOtEndAnchor(
+                plan1Start, plan1End, plan2Start, plan2End, fixedOtStrTime, fixedOtEndTime);
+        boolean unfulfilled = !"Y".equals(fixedOtExemptYn)
+                && FixedOtMinutesUtils.isRearUnfulfilled(rearEndAnchor, lastOutAnchor);
+
+        return new FixedOtDerivation(unfulfilled ? "Y" : null, actMinutes);
+    }
+
+    /** 빈 문자열을 null 로 정규화(근태 스탬프 컬럼이 ''(빈값)로 저장된 레거시 행 방어). */
+    private static String blankToNullStr(String v) {
+        return (v == null || v.isBlank()) ? null : v;
     }
 
     @Override
@@ -546,6 +664,10 @@ public class Attd07ServiceImpl implements Attd07Service {
         }
 
         DailyAttdDetailsResult dailyAttdDetailsResult = attd07Mapper.selectDailyAttdDetails(DailyAttdDetailsQuery.from(param));
+
+        // PRAFTA-FIXEDOT-3: 고정연장 실적(자동 계상) + "연장 미이행" 배지 파생 산출(저장 없음).
+        //   판정(지각/조퇴)·연차 차감·OT 창 계산에는 영향이 없다(표기·배지 전용 additive).
+        dailyAttdDetailsResult = applyFixedOtDerivation(dailyAttdDetailsResult);
 
         List<DailyAttdDetailHistoryResult> dailyAttdDetailHistoryResultList = attd07Mapper.selectDailyAttdDetailHistory(DailyAttdDetailsQuery.from(param));
 

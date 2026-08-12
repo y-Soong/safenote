@@ -46,5 +46,16 @@ public class DailyAttdResponse {
         private final long workMinutes;
         /** 출근 차수 수(1 또는 2). */
         private final int slotCount;
+        /**
+         * PRAFTA-FIXEDOT-3(정책 ①): 그날 고정연장 실적 분(실근태 ∩ 고정연장 — 파생 계산, 저장 없음).
+         * 고정연장 없는 근무타입은 0.
+         */
+        private final long fixedOtMinutes;
+        /**
+         * PRAFTA-FIXEDOT-3(정책 ②③): "연장 미이행" 배지 — 후방 고정연장을 다 채우지 못한 퇴근.
+         * 조퇴(isEarly)와 완전 분리된 별도 표식이며, 연차 계열 사용일·미퇴근에는 발화하지 않는다.
+         */
+        @JsonProperty("isFixedOtUnmet")
+        private final boolean isFixedOtUnmet;
     }
 }

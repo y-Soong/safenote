@@ -354,6 +354,18 @@
             , A.CHECK_IN_TIME                                                  AS actInTime
             , A.CHECK_OUT_DATE                                                 AS actOutDate
             , A.CHECK_OUT_TIME                                                 AS actOutTime
+            /* PRAFTA-FIXEDOT-3(J2): 그날 스케줄 원시 시각 + 고정연장(전방·후방) — 서비스가
+               "고정연장 실적(실근태 ∩ 고정연장, FixedOtMinutesUtils)"을 파생 계산해 연장 축에 분류한다.
+               실근무 총량 합산식은 불변(이중 계상 없음 — 계상분은 raw 실근태에 이미 포함).
+               ⚠️ record(ActualRowResult) 끝 8필드와 동일 순서로 SELECT 끝에 둔다(위치 기반 매핑). */
+            , SCH.FST_SCH_STR_TIME                                             AS fstSchStrTime
+            , SCH.FST_SCH_END_TIME                                             AS fstSchEndTime
+            , SCH.SEC_SCH_STR_TIME                                             AS secSchStrTime
+            , SCH.SEC_SCH_END_TIME                                             AS secSchEndTime
+            , SCH.PRE_FIXED_OT_STR_TIME                                        AS preFixedOtStrTime
+            , SCH.PRE_FIXED_OT_END_TIME                                        AS preFixedOtEndTime
+            , SCH.FIXED_OT_STR_TIME                                            AS fixedOtStrTime
+            , SCH.FIXED_OT_END_TIME                                            AS fixedOtEndTime
 
         FROM target_user U
         INNER JOIN TB_USER_ATTD_MGMT A
@@ -384,6 +396,10 @@
                 , E.SEC_SCH_STR_TIME
                 , E.SEC_SCH_END_TIME
                 , E.SEC_SCH_BRK_MIN
+                , E.PRE_FIXED_OT_STR_TIME
+                , E.PRE_FIXED_OT_END_TIME
+                , E.FIXED_OT_STR_TIME
+                , E.FIXED_OT_END_TIME
             FROM (
                 SELECT
                       M.CMPNY_CD
@@ -396,6 +412,10 @@
                     , M.SEC_SCH_STR_TIME
                     , M.SEC_SCH_END_TIME
                     , M.SEC_SCH_BRK_MIN
+                    , M.PRE_FIXED_OT_STR_TIME
+                    , M.PRE_FIXED_OT_END_TIME
+                    , M.FIXED_OT_STR_TIME
+                    , M.FIXED_OT_END_TIME
                     , 2147483647 AS HIST_IDX
                 FROM TB_SCH_MGMT M
 
@@ -412,6 +432,10 @@
                     , H.SEC_SCH_STR_TIME
                     , H.SEC_SCH_END_TIME
                     , H.SEC_SCH_BRK_MIN
+                    , H.PRE_FIXED_OT_STR_TIME
+                    , H.PRE_FIXED_OT_END_TIME
+                    , H.FIXED_OT_STR_TIME
+                    , H.FIXED_OT_END_TIME
                     , H.HIST_IDX
                 FROM TB_SCH_MGMT_HIST H
             ) E

@@ -114,11 +114,14 @@
                 <th>대상 주</th>
                 <th>스케줄기준</th>
                 <th>실제기준</th>
+                <!-- PRAFTA-FIXEDOT-3(J2): 연장 축(주 12h) = 승인 OT + 고정연장 자동 계상 실적.
+                     실제기준 총량과 별개 축(고정연장분은 raw 에 이미 포함 — 분류 표시). -->
+                <th>연장(실제)</th>
               </tr>
             </thead>
             <tbody>
               <tr v-if="rows.length === 0">
-                <td colspan="6" class="a15-empty">조회 결과가 없습니다.</td>
+                <td colspan="7" class="a15-empty">조회 결과가 없습니다.</td>
               </tr>
               <tr v-for="r in rows" :key="r.userCd">
                 <td>{{ r.siteNm }}</td>
@@ -149,6 +152,16 @@
                   </span>
                   <span v-if="r.provisionalYn === 'Y'" class="a15-provisional">
                     잠정치
+                  </span>
+                </td>
+                <!-- 연장 축(주 12h): 승인 OT + 고정연장 실적. 720분(12h) 초과 시 경고색.
+                     미수신(구서버)이면 '-' (fmtDuration null 처리). -->
+                <td>
+                  <span
+                    class="a15-cell-minutes"
+                    :class="{ 'a15-ot-over': Number(r.actualOtMinutes) > 720 }"
+                  >
+                    {{ fmtDuration(r.actualOtMinutes) }}
                   </span>
                 </td>
               </tr>
@@ -632,6 +645,10 @@ onMounted(() => {
   margin-right: 0.4rem;
   font-weight: 600;
   color: var(--color-text-strong);
+}
+/* PRAFTA-FIXEDOT-3(J2): 주 연장 12h(720분) 초과 경고 — 기존 danger 토큰만 사용(하드코딩 금지) */
+.a15-ot-over {
+  color: var(--color-danger);
 }
 
 /* 상태 뱃지 4단계 — tokens.css 에 "위험" 전용 색상 토큰이 없어(plan.md 확인필요 ③)

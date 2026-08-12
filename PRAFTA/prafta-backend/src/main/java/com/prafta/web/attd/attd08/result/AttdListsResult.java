@@ -59,6 +59,35 @@ public record AttdListsResult(
 
     /** HB-05(D1): 그 행(차수 구간)의 반차 반영 유효 소정 종료(HHmm). 구간 전체 면제면 null. */
     , String effPlanEnd
+
+    /* ────────────────────────────────────────────────────────────────
+       PRAFTA-FIXEDOT-3: 고정연장(전방·후방) 표기 + "연장 미이행" 배지(정책 ② — 조퇴와 완전 분리).
+       ⚠️ record 끝 = SELECT 끝 동일 순서(위치 매핑, UNION 양 분기 동수). OT 행은 전부 NULL.
+       ──────────────────────────────────────────────────────────────── */
+
+    /** 전방 고정연장 시작(HHMM, 없으면 null) — 표기 전용. */
+    , String preFixedOtStrTime
+    /** 전방 고정연장 종료(HHMM). */
+    , String preFixedOtEndTime
+    /** 후방 고정연장 시작(HHMM, 없으면 null). */
+    , String fixedOtStrTime
+    /** 후방 고정연장 종료(HHMM, 종료<=시작이면 자정 넘김 +1440 해석). */
+    , String fixedOtEndTime
+    /**
+     * 그날 연차 계열(종일/반차/시간차) 확정 사용 존재 여부('Y'/'N') — 정책 ③ 존재 검사.
+     * 'Y' 면 고정연장 의무 면제(미이행 배지 발화 금지 — 단 실적 계상은 그대로).
+     */
+    , String fixedOtExemptYn
+    /**
+     * "연장 미이행" 배지('Y'/null) — 서비스 파생 판정(저장 없음). 그날 마지막 스케줄 슬롯 행에만 'Y'.
+     * 조건: 후방 고정연장 존재 + 마지막 슬롯 퇴근 완료 + 퇴근 스탬프 &lt; 후방 종료 + 연차 계열 미사용.
+     */
+    , String fixedOtUnfulfilledYn
+    /**
+     * 그날 고정연장 실적(분, 실근태 ∩ 고정연장 — FixedOtMinutesUtils 파생 계산). 그날 마지막
+     * 슬롯 행에만 실리며(일 단위 값의 행 중복 방지) 고정연장 없는 타입은 null.
+     */
+    , Integer fixedOtActMinutes
 ) {
 
     /**
@@ -74,6 +103,26 @@ public record AttdListsResult(
             , isOutsideYn, newAttdStatusCd
             , rowType, otId, otWorkMinutes
             , newEffPlanStart, newEffPlanEnd
+            , preFixedOtStrTime, preFixedOtEndTime, fixedOtStrTime, fixedOtEndTime
+            , fixedOtExemptYn, fixedOtUnfulfilledYn, fixedOtActMinutes
+        );
+    }
+
+    /**
+     * PRAFTA-FIXEDOT-3: 고정연장 파생 산출(미이행 배지 + 실적 분)을 반영한 새 인스턴스.
+     * 판정(attdStatusCd)·유효 소정 시각에는 손대지 않는다(조퇴 통계와 완전 분리).
+     */
+    public AttdListsResult withFixedOt(String newFixedOtUnfulfilledYn, Integer newFixedOtActMinutes) {
+        return new AttdListsResult(
+              attdId, userCd, userId, userNm, nodeCd, nodeNm, cmpnyCd, siteCd, workYmd, workSeq
+            , schType, plan1Start, plan1End, plan1BreakMin, plan2Start, plan2End, plan2BreakMin
+            , act1InDate, act1InTime, act1InMethod, act1OutDate, act1OutTime, act1OutMethod
+            , act2InDate, act2InTime, act2InMethod, act2OutDate, act2OutTime, act2OutMethod
+            , isOutsideYn, attdStatusCd
+            , rowType, otId, otWorkMinutes
+            , effPlanStart, effPlanEnd
+            , preFixedOtStrTime, preFixedOtEndTime, fixedOtStrTime, fixedOtEndTime
+            , fixedOtExemptYn, newFixedOtUnfulfilledYn, newFixedOtActMinutes
         );
     }
 }

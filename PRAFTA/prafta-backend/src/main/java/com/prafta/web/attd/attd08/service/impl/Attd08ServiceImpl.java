@@ -9,7 +9,9 @@ import java.util.Map;
 
 import org.springframework.stereotype.Service;
 
+import com.prafta.common.cmm.attd.util.FixedOtMinutesUtils;
 import com.prafta.common.cmm.leave.util.PartialLeaveWindowUtils;
+import com.prafta.common.cmm.schedule.util.FixedOtScheduleUtils;
 import com.prafta.common.cmm.siteauth.service.SiteAccessService;
 import com.prafta.common.error.attd.AttdErrorCode;
 import com.prafta.common.exception.ApiException;
@@ -95,9 +97,82 @@ public class Attd08ServiceImpl implements Attd08Service {
             judged.add(judge(r, leaveByUserYmd));
         }
 
+        // PRAFTA-FIXEDOT-3: 고정연장 실적(자동 계상) + "연장 미이행" 배지 파생 산출(저장 없음).
+        //   판정(judge)·조퇴 통계와 완전 분리 — 위 결과에는 손대지 않고 배지/실적 필드만 채운다.
+        applyFixedOtDerivation(judged);
+
         return AttdListsResponse.builder()
                 .attdListsResultList(judged)
                 .build();
+    }
+
+    // ================================================================
+    // PRAFTA-FIXEDOT-3: 고정연장 실적 + "연장 미이행" 배지 (파생 — 정책 ①·②·③)
+    // ================================================================
+
+    /**
+     * 그날(사용자×근무일)의 고정연장 실적(분)과 후방 "연장 미이행" 배지를 파생 산출해
+     * <b>마지막 스케줄 슬롯 행</b>에 싣는다(일 단위 값의 행 중복 방지).
+     *
+     * <ul>
+     *   <li>실적(정책 ①): 실근태 슬롯 구간들 ∩ 고정연장 구간들 — {@code FixedOtMinutesUtils} 단일 출처.
+     *       연차 계열 사용일에도 실근태가 있으면 그대로 계상("의무 면제, 근무하면 실적 계상").</li>
+     *   <li>배지(정책 ②③): 후방 고정연장 존재 + 마지막 슬롯 퇴근 완료 + 퇴근 &lt; 후방 종료
+     *       + 연차 계열 미사용(fixedOtExemptYn='N'). 미퇴근·결근·OT 행은 비대상.
+     *       조퇴 판정(attdStatusCd)과 어떤 상태도 공유하지 않는다.</li>
+     * </ul>
+     *
+     * <p>고정연장 없는 근무타입은 구간이 비어 전 행이 그대로 유지된다(무회귀).
+     * TODO(developer): 전방 고정연장 미이행 배지는 1차 제외(plan §5-3) — 전방 실사용 타입 등장 시
+     * FixedOtMinutesUtils 의 전방 판정 추가와 함께 확장.
+     */
+    private void applyFixedOtDerivation(List<AttdListsResult> judged) {
+        // 그날 마지막 스케줄 슬롯 행 인덱스: 2구간 스케줄이면 seq2 행, 아니면 seq1 행.
+        Map<String, Integer> targetIdxByDay = new HashMap<>();
+        for (int i = 0; i < judged.size(); i++) {
+            AttdListsResult r = judged.get(i);
+            if (ROW_TYPE_OT.equals(r.rowType()) || r.workYmd() == null) {
+                continue;
+            }
+            int lastSlotSeq = (blankToNull(r.plan2Start()) != null) ? 2 : 1;
+            if (r.workSeq() != null && r.workSeq() == lastSlotSeq) {
+                targetIdxByDay.put(leaveKey(r.userCd(), r.workYmd()), i);
+            }
+        }
+
+        for (Map.Entry<String, Integer> e : targetIdxByDay.entrySet()) {
+            int idx = e.getValue();
+            AttdListsResult r = judged.get(idx);
+
+            List<int[]> fixedOtSegs = FixedOtScheduleUtils.fixedOtSegments(
+                    r.plan1Start(), r.plan1End(), r.plan2Start(), r.plan2End(),
+                    r.preFixedOtStrTime(), r.preFixedOtEndTime(),
+                    r.fixedOtStrTime(), r.fixedOtEndTime());
+            if (fixedOtSegs.isEmpty()) {
+                continue; // 고정연장 없는 근무타입 — 완전 불변 경로.
+            }
+
+            // 실적: 그날 1·2차 실근태 구간(행이 A1/A2 를 모두 들고 있어 한 행으로 충분) ∩ 고정연장.
+            List<int[]> actualSegs = FixedOtMinutesUtils.buildActualSegments(r.workYmd(), new String[][] {
+                    { r.act1InDate(), blankToNull(r.act1InTime()), r.act1OutDate(), blankToNull(r.act1OutTime()) },
+                    { r.act2InDate(), blankToNull(r.act2InTime()), r.act2OutDate(), blankToNull(r.act2OutTime()) }
+            });
+            int actMinutes = FixedOtMinutesUtils.coveredMinutes(fixedOtSegs, actualSegs);
+
+            // 배지: 마지막 슬롯(이 행의 차수) 퇴근 완료 + 퇴근 < 후방 종료 + 연차 계열 미사용.
+            boolean isSeq2 = Integer.valueOf(2).equals(r.workSeq());
+            Integer lastOutAnchor = FixedOtMinutesUtils.dayAnchorMinutes(
+                    r.workYmd(),
+                    isSeq2 ? r.act2OutDate() : r.act1OutDate(),
+                    blankToNull(isSeq2 ? r.act2OutTime() : r.act1OutTime()));
+            Integer rearEndAnchor = FixedOtMinutesUtils.rearFixedOtEndAnchor(
+                    r.plan1Start(), r.plan1End(), r.plan2Start(), r.plan2End(),
+                    r.fixedOtStrTime(), r.fixedOtEndTime());
+            boolean unfulfilled = !"Y".equals(r.fixedOtExemptYn())
+                    && FixedOtMinutesUtils.isRearUnfulfilled(rearEndAnchor, lastOutAnchor);
+
+            judged.set(idx, r.withFixedOt(unfulfilled ? "Y" : null, actMinutes));
+        }
     }
 
     @Override

@@ -109,6 +109,9 @@
                 <th rowspan="2">근무일수</th>
                 <th rowspan="2">총 근무시간</th>
                 <th rowspan="2">초과근무시간</th>
+                <!-- PRAFTA-FIXEDOT-3: 고정연장 실적(자동 계상) + 연장 미이행 — 조퇴 지표와 분리된 신규 축 -->
+                <th rowspan="2">고정연장 실적</th>
+                <th rowspan="2">연장 미이행</th>
                 <th colspan="2">지각</th>
                 <th colspan="2">조퇴</th>
                 <th rowspan="2">미출근</th>
@@ -123,7 +126,7 @@
             <tbody>
               <!-- 조회 결과 0건 -->
               <tr v-if="rows.length === 0">
-                <td colspan="12" class="a11-empty">조회 결과가 없습니다.</td>
+                <td colspan="14" class="a11-empty">조회 결과가 없습니다.</td>
               </tr>
               <tr v-for="r in rows" :key="r.userCd">
                 <td>{{ r.userId }}</td>
@@ -135,6 +138,9 @@
                 <!-- 시간 컬럼: "N시간 M분" -->
                 <td class="a11-cell-num">{{ fmtMinutes(r.workMinutes) }}</td>
                 <td class="a11-cell-num">{{ fmtMinutes(r.otMinutes) }}</td>
+                <!-- 고정연장 실적(분 합) / 연장 미이행(일수) — 구서버 응답이면 '-'/0 폴백 -->
+                <td class="a11-cell-num">{{ fmtMinutes(r.fixedOtMinutes) }}</td>
+                <td class="a11-cell-num">{{ fmtCount(r.fixedOtUnmetCnt) }}</td>
                 <td class="a11-cell-num">{{ fmtCount(r.lateCnt) }}</td>
                 <td class="a11-cell-num">{{ fmtMinutes(r.lateMinutes) }}</td>
                 <td class="a11-cell-num">{{ fmtCount(r.earlyLeaveCnt) }}</td>
@@ -472,6 +478,9 @@ const fnExcel = async () => {
     { header: "근무일수", fixed: false, width: 10 },
     { header: "총 근무시간", fixed: false, width: 14 },
     { header: "초과근무시간", fixed: false, width: 14 },
+    // PRAFTA-FIXEDOT-3: 화면 컬럼과 동일 순서(고정연장 실적/연장 미이행 — 조퇴와 분리 축)
+    { header: "고정연장 실적", fixed: false, width: 14 },
+    { header: "연장 미이행", fixed: false, width: 10 },
     { header: "지각 횟수", fixed: false, width: 10 },
     { header: "지각 시간 누계", fixed: false, width: 14 },
     { header: "조퇴 횟수", fixed: false, width: 10 },
@@ -486,6 +495,8 @@ const fnExcel = async () => {
     fmtCount(r.workDayCnt),
     fmtMinutes(r.workMinutes),
     fmtMinutes(r.otMinutes),
+    fmtMinutes(r.fixedOtMinutes),
+    fmtCount(r.fixedOtUnmetCnt),
     fmtCount(r.lateCnt),
     fmtMinutes(r.lateMinutes),
     fmtCount(r.earlyLeaveCnt),

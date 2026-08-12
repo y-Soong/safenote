@@ -24,5 +24,18 @@ public record ActualRowResult(
         , String actInTime        // HHmm, nullable
         , String actOutDate       // YYYYMMDD, nullable
         , String actOutTime       // HHmm, nullable
+
+        /* PRAFTA-FIXEDOT-3(J2): 그날 스케줄 원시 시각 + 고정연장(전방·후방 FROM/TO, HHMM, NULL=없음).
+           서비스가 FixedOtMinutesUtils 로 "고정연장 실적(실근태 ∩ 고정연장)"을 파생 계산해
+           주52 연장 축(actualOtMinutes)에 분류한다. 실근무 총량 합산식은 불변(이중 계상 금지).
+           ⚠️ record 끝 = SELECT 끝 동일 순서(위치 기반 매핑, 중간 삽입 금지). */
+        , String fstSchStrTime    // HHmm, nullable
+        , String fstSchEndTime
+        , String secSchStrTime
+        , String secSchEndTime
+        , String preFixedOtStrTime
+        , String preFixedOtEndTime
+        , String fixedOtStrTime
+        , String fixedOtEndTime
 ) {
 }

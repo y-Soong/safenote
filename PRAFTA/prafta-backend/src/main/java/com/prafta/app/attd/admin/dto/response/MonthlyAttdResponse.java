@@ -32,5 +32,9 @@ public class MonthlyAttdResponse {
         private final int lateCnt;
         /** 조퇴 횟수(차수 단위). */
         private final int earlyCnt;
+        /** PRAFTA-FIXEDOT-3(정책 ①): 월 고정연장 실적 합(분, 실근태 ∩ 고정연장 — 파생 계산). */
+        private final long fixedOtMinutes;
+        /** PRAFTA-FIXEDOT-3(정책 ②③): "연장 미이행" 발생 일수 — 조퇴(earlyCnt)와 분리된 별도 지표. */
+        private final int fixedOtUnmetCnt;
     }
 }

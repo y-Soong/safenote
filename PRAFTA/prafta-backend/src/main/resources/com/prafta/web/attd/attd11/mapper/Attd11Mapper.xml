@@ -101,6 +101,33 @@
             , A.CHECK_OUT_DATE                                                 AS actOutDate
             , A.CHECK_OUT_TIME                                                 AS actOutTime
 
+            /* PRAFTA-FIXEDOT-3: 스케줄 원시 시각 + 고정연장(전방·후방) + 연차 계열 면제 존재.
+               지각/조퇴/근무시간 판정·집계식은 불변 — 아래 컬럼은 "고정연장 실적(자동 계상)" 합산과
+               "연장 미이행" 월 카운트(정책 ② — 조퇴 통계와 분리) 전용이다(additive).
+               fixedOtExemptYn = 그날 종일('00' 기간 포함)/부분(01~04 당일) 확정 연차 존재(정책 ③).
+               ⚠️ record(AttdSummaryRowResult) 끝 9필드와 동일 순서(위치 기반 매핑). */
+            , SCH.FST_SCH_STR_TIME                                             AS fstSchStrTime
+            , SCH.FST_SCH_END_TIME                                             AS fstSchEndTime
+            , SCH.SEC_SCH_STR_TIME                                             AS secSchStrTime
+            , SCH.SEC_SCH_END_TIME                                             AS secSchEndTime
+            , SCH.PRE_FIXED_OT_STR_TIME                                        AS preFixedOtStrTime
+            , SCH.PRE_FIXED_OT_END_TIME                                        AS preFixedOtEndTime
+            , SCH.FIXED_OT_STR_TIME                                            AS fixedOtStrTime
+            , SCH.FIXED_OT_END_TIME                                            AS fixedOtEndTime
+            , CASE WHEN EXISTS (
+                    SELECT 1
+                    FROM TB_USER_LEAVE_USE LX
+                    WHERE LX.CMPNY_CD     = A.CMPNY_CD
+                      AND LX.USER_CD      = A.USER_CD
+                      AND LX.LEAVE_STATUS = 'CONFIRMED'
+                      AND LX.DEL_YN       = 'N'
+                      AND ( ( LX.USE_UNIT_TYPE = '00'
+                              AND LX.START_DATE <![CDATA[ <= ]]> A.WORK_YMD
+                              AND LX.END_DATE   <![CDATA[ >= ]]> A.WORK_YMD )
+                         OR ( LX.USE_UNIT_TYPE <![CDATA[ <> ]]> '00'
+                              AND LX.START_DATE = A.WORK_YMD ) )
+              ) THEN 'Y' ELSE 'N' END                                          AS fixedOtExemptYn
+
             /* (삭제) 그날 확정 반차 면제 구간 MIN 스칼라 서브쿼리 — 2026-08-07 D-3.
                "반차는 하루 1건"을 전제했으나 실제로는 하루 2건(시작기준 0.5 + 종료기준 0.5 = 1.0)이
                성립해 MIN 이 0900 + 1300 을 섞어 종일 쉰 사람에게 지각·조퇴가 떴다.
@@ -139,6 +166,10 @@
                 , E.SEC_SCH_STR_TIME
                 , E.SEC_SCH_END_TIME
                 , E.SEC_SCH_BRK_MIN
+                , E.PRE_FIXED_OT_STR_TIME
+                , E.PRE_FIXED_OT_END_TIME
+                , E.FIXED_OT_STR_TIME
+                , E.FIXED_OT_END_TIME
             FROM (
                 SELECT
                       M.CMPNY_CD
@@ -151,6 +182,10 @@
                     , M.SEC_SCH_STR_TIME
                     , M.SEC_SCH_END_TIME
                     , M.SEC_SCH_BRK_MIN
+                    , M.PRE_FIXED_OT_STR_TIME
+                    , M.PRE_FIXED_OT_END_TIME
+                    , M.FIXED_OT_STR_TIME
+                    , M.FIXED_OT_END_TIME
                     , 2147483647 AS HIST_IDX
                 FROM TB_SCH_MGMT M
 
@@ -167,6 +202,10 @@
                     , H.SEC_SCH_STR_TIME
                     , H.SEC_SCH_END_TIME
                     , H.SEC_SCH_BRK_MIN
+                    , H.PRE_FIXED_OT_STR_TIME
+                    , H.PRE_FIXED_OT_END_TIME
+                    , H.FIXED_OT_STR_TIME
+                    , H.FIXED_OT_END_TIME
                     , H.HIST_IDX
                 FROM TB_SCH_MGMT_HIST H
             ) E

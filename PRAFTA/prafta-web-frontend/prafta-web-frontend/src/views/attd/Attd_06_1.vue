@@ -474,8 +474,10 @@
               class="legend-item"
             >
               <span class="legend-chip" :style="getShiftStyle(sch)"></span>
+              <!-- PRAFTA-FIXEDOT-3(표기): 고정연장은 fstSchTime 문자열에 섞지 않고 별도 필드로 덧붙인다 -->
               {{ sch.fstSchTime
-              }}{{ sch.schType === "02" ? " / " + sch.secSchTime : "" }}
+              }}{{ sch.schType === "02" ? " / " + sch.secSchTime : ""
+              }}{{ fixedOtSuffix(sch) }}
             </span>
             <span class="legend-item">
               <span class="legend-chip shift-off"></span>휴무
@@ -521,7 +523,7 @@
                         :key="s.teamKey"
                         class="team-dot"
                         :style="getShiftStyle(s)"
-                        :title="`${s.teamKey}조: ${s.assignYn === 'N' ? '휴무' : s.fstSchTime + (s.schType === '02' ? ' / ' + s.secSchTime : '')}`"
+                        :title="`${s.teamKey}조: ${s.assignYn === 'N' ? '휴무' : s.fstSchTime + (s.schType === '02' ? ' / ' + s.secSchTime : '') + fixedOtSuffix(s)}`"
                       >
                         {{ s.teamKey }}
                       </div>
@@ -584,7 +586,8 @@
                         : shift.fstSchTime +
                           (shift.schType === '02'
                             ? ' / ' + shift.secSchTime
-                            : '')
+                            : '') +
+                          fixedOtSuffix(shift)
                     "
                   >
                     <template v-if="!timelineData.days[di]?.inRange">
@@ -823,6 +826,17 @@ const shiftSchMap = computed(() => {
   return map;
 });
 
+// PRAFTA-FIXEDOT-3(표기, qa 이관분): 고정연장(전방·후방) 구간 접미 라벨.
+//   ★ fstSchTime/secSchTime 문자열에 섞지 않는다 — 타임라인 셀이 fstSchTime.slice(0, 2) 로
+//     "시"만 잘라 쓰기 때문에 접두/접미를 붙이면 표기가 왜곡된다(백엔드도 별도 필드로 내려준다).
+//   고정연장 없는 근무타입은 빈 문자열 → 기존 표기와 완전히 동일(무회귀).
+const fixedOtSuffix = (s) => {
+  const parts = [];
+  if (s?.preFixedOtTime) parts.push(s.preFixedOtTime);
+  if (s?.fixedOtTime) parts.push(s.fixedOtTime);
+  return parts.length ? ` (+고정연장 ${parts.join(" · ")})` : "";
+};
+
 const uniqueScheds = computed(() => {
   const seen = new Set();
   return shiftSchDetails.value.filter((d) => {
@@ -1059,6 +1073,9 @@ const calendarRows = computed(() => {
             fstSchTime: detail?.fstSchTime ?? "",
             secSchTime: detail?.secSchTime ?? "",
             schType: detail?.schType ?? "01",
+            // PRAFTA-FIXEDOT-3(표기): 고정연장 구간(별도 필드 — fstSchTime 문자열 오염 금지)
+            preFixedOtTime: detail?.preFixedOtTime ?? "",
+            fixedOtTime: detail?.fixedOtTime ?? "",
           };
         });
       }
@@ -1101,6 +1118,8 @@ const timelineData = computed(() => {
           fstSchTime: "",
           secSchTime: "",
           schType: "01",
+          preFixedOtTime: "",
+          fixedOtTime: "",
         };
       const diffDays = Math.floor((date - rangeStart) / (1000 * 60 * 60 * 24));
       const dayNo = (((diffDays % cycle) + cycle) % cycle) + 1;
@@ -1111,6 +1130,9 @@ const timelineData = computed(() => {
         fstSchTime: detail?.fstSchTime ?? "",
         secSchTime: detail?.secSchTime ?? "",
         schType: detail?.schType ?? "01",
+        // PRAFTA-FIXEDOT-3(표기): 고정연장 구간(별도 필드 — fstSchTime 문자열 오염 금지)
+        preFixedOtTime: detail?.preFixedOtTime ?? "",
+        fixedOtTime: detail?.fixedOtTime ?? "",
       };
     });
     return { team: t, shifts };

@@ -24,6 +24,7 @@ import com.prafta.app.attd.admin.result.DailyAttdRow;
 import com.prafta.app.attd.admin.result.HalfLeaveWindowRow;
 import com.prafta.app.attd.admin.result.MonthlyAttdRow;
 import com.prafta.app.attd.admin.service.AppAdminAttdService;
+import com.prafta.common.cmm.attd.util.FixedOtMinutesUtils;
 import com.prafta.common.cmm.leave.util.PartialLeaveWindowUtils;
 import com.prafta.common.error.attd.AttdErrorCode;
 import com.prafta.common.exception.ApiException;
@@ -144,8 +145,21 @@ public class AppAdminAttdServiceImpl implements AppAdminAttdService {
 
         // 사용자 단위 집계(등장 순서 유지 — 매퍼가 USER_CD, WORK_SEQ 순 정렬).
         Map<String, DailyAcc> accByUser = new LinkedHashMap<>();
+        // PRAFTA-FIXEDOT-3: (사용자, 근무일=단일일) 고정연장 파생 컨텍스트 — 판정과 완전 분리(additive).
+        Map<String, FixedOtDayCtx> fixedOtByUser = new LinkedHashMap<>();
         for (DailyAttdRow r : rows) {
             DailyAcc acc = accByUser.computeIfAbsent(r.userCd(), k -> new DailyAcc(r));
+
+            if (r.workYmd() != null && (blankToNull(r.fixedOtStrTime()) != null
+                    || blankToNull(r.preFixedOtStrTime()) != null)) {
+                fixedOtByUser.computeIfAbsent(r.userCd(), k -> new FixedOtDayCtx(
+                                r.userCd(), r.workYmd(), r.fstSchStrTime(), r.fstSchEndTime(),
+                                r.secSchStrTime(), r.secSchEndTime(),
+                                r.preFixedOtStrTime(), r.preFixedOtEndTime(),
+                                r.fixedOtStrTime(), r.fixedOtEndTime(), r.fixedOtExemptYn()))
+                        .addSlot(r.workSeq(), r.checkInDate(), blankToNull(r.checkInTime()),
+                                r.checkOutDate(), blankToNull(r.checkOutTime()));
+            }
 
             String inDate = blankToNull(r.checkInDate());
             String inTime = blankToNull(r.checkInTime());
@@ -218,7 +232,17 @@ public class AppAdminAttdServiceImpl implements AppAdminAttdService {
         }
 
         List<DailyAttdResponse.DailyItem> all = new ArrayList<>(accByUser.size());
-        for (DailyAcc acc : accByUser.values()) {
+        for (Map.Entry<String, DailyAcc> entry : accByUser.entrySet()) {
+            DailyAcc acc = entry.getValue();
+            // PRAFTA-FIXEDOT-3: 고정연장 실적(그날 실근태 ∩ 고정연장) + "연장 미이행" 배지(조퇴와 분리).
+            //   고정연장 없는 타입은 ctx 미생성 → 0/false(기존 응답과 완전 동일 경로).
+            FixedOtDayCtx fx = fixedOtByUser.get(entry.getKey());
+            long fixedOtMinutes = 0L;
+            boolean fixedOtUnmet = false;
+            if (fx != null) {
+                fixedOtMinutes = fx.actualMinutes();
+                fixedOtUnmet = fx.rearUnfulfilled();
+            }
             all.add(DailyAttdResponse.DailyItem.builder()
                     .userCd(acc.userCd)
                     .userNm(acc.userNm)
@@ -230,6 +254,8 @@ public class AppAdminAttdServiceImpl implements AppAdminAttdService {
                     .isOffsite(acc.isOffsite)
                     .workMinutes(acc.workMinutes)
                     .slotCount(acc.slotCount)
+                    .fixedOtMinutes(fixedOtMinutes)
+                    .isFixedOtUnmet(fixedOtUnmet)
                     .build());
         }
 
@@ -270,8 +296,21 @@ public class AppAdminAttdServiceImpl implements AppAdminAttdService {
                 groupHalfLeaveWindows(mapper.selectHalfLeaveWindows(query));
 
         Map<String, MonthlyAcc> accByUser = new LinkedHashMap<>();
+        // PRAFTA-FIXEDOT-3: (사용자, 근무일) 단위 고정연장 파생 컨텍스트(월 실적 합·미이행 카운트용).
+        Map<String, FixedOtDayCtx> fixedOtDayByKey = new LinkedHashMap<>();
         for (MonthlyAttdRow r : rows) {
             MonthlyAcc acc = accByUser.computeIfAbsent(r.userCd(), k -> new MonthlyAcc(r));
+
+            if (r.workYmd() != null && (blankToNull(r.fixedOtStrTime()) != null
+                    || blankToNull(r.preFixedOtStrTime()) != null)) {
+                fixedOtDayByKey.computeIfAbsent(leaveKey(r.userCd(), r.workYmd()), k -> new FixedOtDayCtx(
+                                r.userCd(), r.workYmd(), r.fstSchStrTime(), r.fstSchEndTime(),
+                                r.secSchStrTime(), r.secSchEndTime(),
+                                r.preFixedOtStrTime(), r.preFixedOtEndTime(),
+                                r.fixedOtStrTime(), r.fixedOtEndTime(), r.fixedOtExemptYn()))
+                        .addSlot(r.workSeq(), r.actInDate(), blankToNull(r.actInTime()),
+                                r.actOutDate(), blankToNull(r.actOutTime()));
+            }
 
             String inDate = blankToNull(r.actInDate());
             String inTime = blankToNull(r.actInTime());
@@ -330,6 +369,18 @@ public class AppAdminAttdServiceImpl implements AppAdminAttdService {
             }
         }
 
+        // PRAFTA-FIXEDOT-3: 일 단위 파생을 사용자 누적기에 반영(실적 합 + 미이행 일수 — 조퇴 카운트와 분리).
+        for (FixedOtDayCtx fx : fixedOtDayByKey.values()) {
+            MonthlyAcc acc = accByUser.get(fx.userCd);
+            if (acc == null) {
+                continue;
+            }
+            acc.fixedOtMinutes += fx.actualMinutes();
+            if (fx.rearUnfulfilled()) {
+                acc.fixedOtUnmetCnt += 1;
+            }
+        }
+
         List<MonthlyAttdResponse.MonthlyItem> all = new ArrayList<>(accByUser.size());
         for (MonthlyAcc acc : accByUser.values()) {
             all.add(MonthlyAttdResponse.MonthlyItem.builder()
@@ -340,6 +391,8 @@ public class AppAdminAttdServiceImpl implements AppAdminAttdService {
                     .workMinutes(acc.workMinutes)
                     .lateCnt(acc.lateCnt)
                     .earlyCnt(acc.earlyCnt)
+                    .fixedOtMinutes(acc.fixedOtMinutes)
+                    .fixedOtUnmetCnt(acc.fixedOtUnmetCnt)
                     .build());
         }
 
@@ -384,11 +437,85 @@ public class AppAdminAttdServiceImpl implements AppAdminAttdService {
         long workMinutes;
         int lateCnt;
         int earlyCnt;
+        // PRAFTA-FIXEDOT-3: 고정연장 실적 합(분) + "연장 미이행" 일수 — 조퇴 카운트와 분리(additive).
+        long fixedOtMinutes;
+        int fixedOtUnmetCnt;
 
         MonthlyAcc(MonthlyAttdRow r) {
             this.userCd = r.userCd();
             this.userNm = r.userNm();
             this.nodeNm = r.nodeNm();
+        }
+    }
+
+    /**
+     * PRAFTA-FIXEDOT-3: (사용자, 근무일) 단위 고정연장 파생 계산 컨텍스트(web Attd11 동형).
+     * 스케줄/고정연장/면제 값은 그날 전 슬롯 행에서 동일 — 첫 행 값 고정. 슬롯별 실근태 구간과
+     * 마지막 스케줄 슬롯의 퇴근 스탬프만 행마다 수집한다. 판정(지각/조퇴)과 어떤 상태도 공유하지 않는다.
+     */
+    private static final class FixedOtDayCtx {
+        final String userCd;
+        final String workYmd;
+        final String fstSchStrTime;
+        final String fstSchEndTime;
+        final String secSchStrTime;
+        final String secSchEndTime;
+        final String preFixedOtStrTime;
+        final String preFixedOtEndTime;
+        final String fixedOtStrTime;
+        final String fixedOtEndTime;
+        final String fixedOtExemptYn;
+        final List<int[]> actualSegs = new ArrayList<>(2);
+        private Integer lastSlotOutAnchor;
+
+        FixedOtDayCtx(String userCd, String workYmd,
+                      String fstSchStrTime, String fstSchEndTime,
+                      String secSchStrTime, String secSchEndTime,
+                      String preFixedOtStrTime, String preFixedOtEndTime,
+                      String fixedOtStrTime, String fixedOtEndTime, String fixedOtExemptYn) {
+            this.userCd = userCd;
+            this.workYmd = workYmd;
+            this.fstSchStrTime = fstSchStrTime;
+            this.fstSchEndTime = fstSchEndTime;
+            this.secSchStrTime = secSchStrTime;
+            this.secSchEndTime = secSchEndTime;
+            this.preFixedOtStrTime = preFixedOtStrTime;
+            this.preFixedOtEndTime = preFixedOtEndTime;
+            this.fixedOtStrTime = fixedOtStrTime;
+            this.fixedOtEndTime = fixedOtEndTime;
+            this.fixedOtExemptYn = fixedOtExemptYn;
+        }
+
+        void addSlot(int workSeq, String inDate, String inTime, String outDate, String outTime) {
+            int[] seg = FixedOtMinutesUtils.actualSegment(
+                    FixedOtMinutesUtils.dayAnchorMinutes(workYmd, inDate, inTime),
+                    FixedOtMinutesUtils.dayAnchorMinutes(workYmd, outDate, outTime));
+            if (seg != null) {
+                actualSegs.add(seg);
+            }
+            // 마지막 스케줄 슬롯(2구간 스케줄이면 seq2, 아니면 seq1)의 퇴근 스탬프 — 미이행 판정 기준.
+            int lastSlotSeq = (secSchStrTime != null && !secSchStrTime.isEmpty()) ? 2 : 1;
+            if (workSeq == lastSlotSeq) {
+                lastSlotOutAnchor = FixedOtMinutesUtils.dayAnchorMinutes(workYmd, outDate, outTime);
+            }
+        }
+
+        /** 그날 고정연장 실적(분) — 실근태 ∩ 고정연장(정책 ① — 연차 사용일도 근무하면 계상). */
+        long actualMinutes() {
+            return FixedOtMinutesUtils.dayFixedOtActualMinutes(
+                    fstSchStrTime, fstSchEndTime, secSchStrTime, secSchEndTime,
+                    preFixedOtStrTime, preFixedOtEndTime, fixedOtStrTime, fixedOtEndTime,
+                    actualSegs);
+        }
+
+        /** "연장 미이행"(후방) — 정책 ②③: 연차 계열 사용일·미퇴근이면 false. 전방 배지는 1차 제외(TODO). */
+        boolean rearUnfulfilled() {
+            return !"Y".equals(fixedOtExemptYn)
+                    && FixedOtMinutesUtils.isRearUnfulfilled(
+                            FixedOtMinutesUtils.rearFixedOtEndAnchor(
+                                    fstSchStrTime, fstSchEndTime, secSchStrTime, secSchEndTime,
+                                    fixedOtStrTime, fixedOtEndTime),
+                            lastSlotOutAnchor);
         }
     }
 

@@ -319,6 +319,9 @@
                 <col class="c-act-time" />
                 <col class="c-total" />
                 <col class="c-total" />
+                <!-- PRAFTA-FIXEDOT-3: 고정연장 구간 / 실적(자동 계상) -->
+                <col class="c-fixedot" />
+                <col class="c-fixedot" />
               </colgroup>
               <thead>
                 <!-- Level 1: 비고 / 날짜 / 스케줄·근태(1·2구간) / 실근로시간 / 인정시간 -->
@@ -331,6 +334,10 @@
                   <th class="l2-actual bdr-sub" colspan="4">2구간 근태</th>
                   <th class="l1-rs bdr-section" rowspan="2">실근로시간</th>
                   <th class="l1-rs bdr-section" rowspan="2">인정시간</th>
+                  <!-- PRAFTA-FIXEDOT-3: 고정연장근무(소정과 분리된 별도 축).
+                       구간 = 근무타입에 설정된 전방/후방 고정연장, 실적 = 실근태가 그 구간을 커버한 분.
+                       "연장 미이행" 배지는 조퇴 판정/통계와 완전히 분리된 별도 표식이다(정책 ②). -->
+                  <th class="l2-plan bdr-section" colspan="2">고정연장</th>
                 </tr>
                 <!-- Level 2: 컬럼명 -->
                 <tr class="lvl2">
@@ -346,6 +353,8 @@
                   <th class="l3-actual">출근</th>
                   <th class="l3-actual">퇴근일자</th>
                   <th class="l3-actual">퇴근</th>
+                  <th class="l3-plan bdr-section">구간</th>
+                  <th class="l3-plan">실적</th>
                 </tr>
               </thead>
               <tbody>
@@ -394,6 +403,9 @@
                     <td class="bdr-section right">
                       {{ valOrDash(r.recognized) }}
                     </td>
+                    <!-- PRAFTA-FIXEDOT-3: OT 행은 고정연장 개념이 없다(구간이 서로 배타) -->
+                    <td class="col-plan bdr-section">−</td>
+                    <td class="col-plan">−</td>
                   </tr>
                   <!-- 정규근무 행 (kind === 'work') -->
                   <!-- 행 더블클릭 → 일자 상세 팝업. 캘린더 뷰(m-day-cell @dblclick)와 동일 제스처·동일 조건
@@ -466,6 +478,17 @@
                     <!-- 인정시간 -->
                     <td class="bdr-section right">
                       {{ valOrDash(r.recognized) }}
+                    </td>
+                    <!-- PRAFTA-FIXEDOT-3: 고정연장 구간 / 실적 + "연장 미이행" 배지.
+                         배지는 서버 파생 판정(조퇴와 분리·연차 계열 사용일 미발화)을 그대로 표시만 한다. -->
+                    <td class="col-plan bdr-section">
+                      {{ valOrDash(r.fixedOtRange) }}
+                    </td>
+                    <td class="col-plan">
+                      <span v-if="r.fixedOtUnmet" class="badge-fixedot-unmet"
+                        >미이행</span
+                      >
+                      {{ valOrDash(r.fixedOtAct) }}
                     </td>
                   </tr>
                 </template>
@@ -1116,7 +1139,30 @@ function buildDetailRow(user, d) {
     status,
     // 외근 배지 — 구간별 외근 플래그(attd{1,2}OutsideYn)가 'Y'인 구간만 노출
     outsideList: buildOutsideList(d, r),
+    // PRAFTA-FIXEDOT-3: 고정연장 구간/실적/미이행 배지(서버 파생값 표시만 — 판정 로직 없음)
+    fixedOtRange: fixedOtRangeLabel(r),
+    // 0분도 "0분"으로 명시한다(미이행 배지와 짝이 되는 정보라 '−' 로 숨기면 오독)
+    fixedOtAct:
+      r.fixedOtActMinutes == null
+        ? ""
+        : Number(r.fixedOtActMinutes) > 0
+          ? fmtMinutes(r.fixedOtActMinutes)
+          : "0분",
+    fixedOtUnmet: r.fixedOtUnfulfilledYn === "Y",
   };
+}
+
+// PRAFTA-FIXEDOT-3: 근무타입에 설정된 고정연장 구간 라벨(전방 · 후방 순).
+//   고정연장 없는 타입/구서버 응답이면 빈 문자열 → 셀은 기존과 동일하게 '−'.
+function fixedOtRangeLabel(r) {
+  const parts = [];
+  if (r.preFixedOtStrTime && r.preFixedOtEndTime) {
+    parts.push(`${fmtTime(r.preFixedOtStrTime)}~${fmtTime(r.preFixedOtEndTime)}`);
+  }
+  if (r.fixedOtStrTime && r.fixedOtEndTime) {
+    parts.push(`${fmtTime(r.fixedOtStrTime)}~${fmtTime(r.fixedOtEndTime)}`);
+  }
+  return parts.join(" · ");
 }
 
 // 정규근무 행의 외근 배지 목록 빌드.
@@ -1208,6 +1254,10 @@ function emptyRow(d, status) {
     note: "",
     status,
     outsideList: [],
+    // PRAFTA-FIXEDOT-3: 휴무/무배정 행 — 고정연장 표기 없음
+    fixedOtRange: "",
+    fixedOtAct: "",
+    fixedOtUnmet: false,
   };
 }
 
@@ -2135,6 +2185,10 @@ table.a07-detail-table col.c-total {
 table.a07-detail-table col.c-note {
   width: 120px;
 }
+/* PRAFTA-FIXEDOT-3: 고정연장 구간/실적 컬럼 */
+table.a07-detail-table col.c-fixedot {
+  width: 120px;
+}
 
 table.a07-detail-table th {
   padding: 7px 8px;
@@ -2337,6 +2391,17 @@ table.a07-detail-table tr.pre td {
   background: #eff6ff;
   color: #1d4ed8;
   border: 0.5px solid #93c5fd;
+}
+/* PRAFTA-FIXEDOT-3: "연장 미이행" 배지 — 조퇴(badge-warn)와 다른 별도 축임을 색으로도 구분.
+   서버 파생 판정 결과를 표시만 한다(연차 계열 사용일에는 서버가 발화시키지 않음). */
+.badge-fixedot-unmet {
+  font-size: 0.625rem;
+  padding: 2px 6px;
+  border-radius: 9px;
+  font-weight: 600;
+  background: var(--color-warning-bg);
+  color: var(--color-warning-text);
+  margin-right: 2px;
 }
 .dash {
   color: var(--color-text-muted, #9ca3af);

@@ -32,5 +32,18 @@ public record DailyAttdRow(
         , String checkOutTime     // HHmm, nullable
 
         , String isOutsideYn      // 'Y' | 'N'
+
+        /* PRAFTA-FIXEDOT-3: 스케줄 원시 시각 + 고정연장(전방·후방) + 연차 계열 면제 존재('Y'/'N').
+           "고정연장 실적"·"연장 미이행" 배지(조퇴와 분리) 파생 산출 전용 — 판정식 불변.
+           ⚠️ record 끝 = SELECT 끝 동일 순서(위치 기반 매핑, 중간 삽입 금지). */
+        , String fstSchStrTime    // HHmm, nullable
+        , String fstSchEndTime
+        , String secSchStrTime
+        , String secSchEndTime
+        , String preFixedOtStrTime
+        , String preFixedOtEndTime
+        , String fixedOtStrTime
+        , String fixedOtEndTime
+        , String fixedOtExemptYn  // 정책 ③ 존재 검사(종일 기간 포함 + 부분 당일)
 ) {
 }

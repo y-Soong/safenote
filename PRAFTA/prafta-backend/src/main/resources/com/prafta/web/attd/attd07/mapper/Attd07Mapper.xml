@@ -185,7 +185,33 @@
 	                    )
 	               THEN 'Y' ELSE 'N'
 	          END                                                              AS attd2OutsideYn
-	
+
+	        <!-- PRAFTA-FIXEDOT-3: 고정연장(전방·후방) 구간 표기 + "연장 미이행" 배지·실적 자리.
+	             지각/조퇴 판정식은 불변 — 아래 컬럼은 전부 표기·파생 전용(additive)이다.
+	             fixedOtExemptYn = 그날 종일('00', 기간 포함)/부분(01~04, 당일) 확정 연차 존재 여부
+	             (정책 ③ 존재 검사 — 시각 유무 무관). 'Y' 면 고정연장 의무 면제(미이행 배지 발화 금지).
+	             fixedOtUnfulfilledYn/fixedOtActMinutes 는 타입 고정용 CAST NULL — 값은 서비스가 채운다.
+	             ⚠️ record(MonthlyAttdListResult) 끝 7필드와 동일 순서(위치 기반 매핑, 중간 삽입 금지). -->
+	        , SCH.PRE_FIXED_OT_STR_TIME                                        AS preFixedOtStrTime
+	        , SCH.PRE_FIXED_OT_END_TIME                                        AS preFixedOtEndTime
+	        , SCH.FIXED_OT_STR_TIME                                            AS fixedOtStrTime
+	        , SCH.FIXED_OT_END_TIME                                            AS fixedOtEndTime
+	        , CASE WHEN EXISTS (
+	                SELECT 1
+	                FROM TB_USER_LEAVE_USE LX
+	                WHERE LX.CMPNY_CD     = U.CMPNY_CD
+	                  AND LX.USER_CD      = U.USER_CD
+	                  AND LX.LEAVE_STATUS = 'CONFIRMED'
+	                  AND LX.DEL_YN       = 'N'
+	                  AND ( ( LX.USE_UNIT_TYPE = '00'
+	                          AND LX.START_DATE <![CDATA[ <= ]]> D.WORK_YMD
+	                          AND LX.END_DATE   <![CDATA[ >= ]]> D.WORK_YMD )
+	                     OR ( LX.USE_UNIT_TYPE <![CDATA[ <> ]]> '00'
+	                          AND LX.START_DATE = D.WORK_YMD ) )
+	          ) THEN 'Y' ELSE 'N' END                                          AS fixedOtExemptYn
+	        , CAST(NULL AS CHAR(1))                                            AS fixedOtUnfulfilledYn
+	        , CAST(NULL AS SIGNED)                                             AS fixedOtActMinutes
+
 	    FROM target_user U
 	    CROSS JOIN month_days D
 	
@@ -212,6 +238,10 @@
 	            , E.SEC_SCH_STR_TIME
 	            , E.SEC_SCH_END_TIME
 	            , E.SEC_SCH_BRK_MIN
+	            , E.PRE_FIXED_OT_STR_TIME
+	            , E.PRE_FIXED_OT_END_TIME
+	            , E.FIXED_OT_STR_TIME
+	            , E.FIXED_OT_END_TIME
 	        FROM (
 	            /* 현재본 (HIST_IDX 를 최댓값으로 두어 동일 APPLY_DATE 중복 시 현재본 우선) */
 	            SELECT
@@ -225,6 +255,10 @@
 	                , M.SEC_SCH_STR_TIME
 	                , M.SEC_SCH_END_TIME
 	                , M.SEC_SCH_BRK_MIN
+	                , M.PRE_FIXED_OT_STR_TIME
+	                , M.PRE_FIXED_OT_END_TIME
+	                , M.FIXED_OT_STR_TIME
+	                , M.FIXED_OT_END_TIME
 	                , 2147483647 AS HIST_IDX
 	            /* 사용중지(USE_YN='N') 근무타입도 이미 배정된 근무일에는 그대로 해석한다(신규 배정 가능 여부와 무관) — USE_YN 필터 없음 */
 	            FROM TB_SCH_MGMT M
@@ -243,6 +277,10 @@
 	                , H.SEC_SCH_STR_TIME
 	                , H.SEC_SCH_END_TIME
 	                , H.SEC_SCH_BRK_MIN
+	                , H.PRE_FIXED_OT_STR_TIME
+	                , H.PRE_FIXED_OT_END_TIME
+	                , H.FIXED_OT_STR_TIME
+	                , H.FIXED_OT_END_TIME
 	                , H.HIST_IDX
 	            FROM TB_SCH_MGMT_HIST H
 	        ) E
@@ -742,6 +780,31 @@
 	                )
 	           THEN 'Y' ELSE 'N'
 	      END                                                              AS attd2OutsideYn
+
+	    <!-- PRAFTA-FIXEDOT-3: 고정연장(전방·후방) 구간 표기 + "연장 미이행" 배지·실적 자리.
+	         지각/조퇴 판정식은 불변 — 아래 컬럼은 전부 표기·파생 전용(additive)이다.
+	         fixedOtExemptYn = 그날 종일('00', 기간 포함)/부분(01~04, 당일) 확정 연차 존재(정책 ③).
+	         fixedOtUnfulfilledYn/fixedOtActMinutes 는 타입 고정용 CAST NULL — 값은 서비스가 채운다.
+	         ⚠️ record(DailyAttdDetailsResult) 끝 7필드와 동일 순서(위치 기반 매핑, 중간 삽입 금지). -->
+	    , SCH.PRE_FIXED_OT_STR_TIME                                        AS preFixedOtStrTime
+	    , SCH.PRE_FIXED_OT_END_TIME                                        AS preFixedOtEndTime
+	    , SCH.FIXED_OT_STR_TIME                                            AS fixedOtStrTime
+	    , SCH.FIXED_OT_END_TIME                                            AS fixedOtEndTime
+	    , CASE WHEN EXISTS (
+	            SELECT 1
+	            FROM TB_USER_LEAVE_USE LX
+	            WHERE LX.CMPNY_CD     = A.CMPNY_CD
+	              AND LX.USER_CD      = A.USER_CD
+	              AND LX.LEAVE_STATUS = 'CONFIRMED'
+	              AND LX.DEL_YN       = 'N'
+	              AND ( ( LX.USE_UNIT_TYPE = '00'
+	                      AND LX.START_DATE <![CDATA[ <= ]]> A.WORK_YMD
+	                      AND LX.END_DATE   <![CDATA[ >= ]]> A.WORK_YMD )
+	                 OR ( LX.USE_UNIT_TYPE <![CDATA[ <> ]]> '00'
+	                      AND LX.START_DATE = A.WORK_YMD ) )
+	      ) THEN 'Y' ELSE 'N' END                                          AS fixedOtExemptYn
+	    , CAST(NULL AS CHAR(1))                                            AS fixedOtUnfulfilledYn
+	    , CAST(NULL AS SIGNED)                                             AS fixedOtActMinutes
 	FROM TB_USER_ATTD_MGMT A
 		 INNER JOIN TB_USER B
 			ON (
@@ -772,6 +835,11 @@
 				, E.SEC_SCH_STR_TIME
 				, E.SEC_SCH_END_TIME
 				, E.SEC_SCH_BRK_MIN
+				<!-- PRAFTA-FIXEDOT-3: 고정연장(전방·후방) 4컬럼 동반(월 그리드 CTE 와 동일). -->
+				, E.PRE_FIXED_OT_STR_TIME
+				, E.PRE_FIXED_OT_END_TIME
+				, E.FIXED_OT_STR_TIME
+				, E.FIXED_OT_END_TIME
 			FROM (
 				/* 현재본 (HIST_IDX 를 최댓값으로 두어 동일 APPLY_DATE 중복 시 현재본 우선) */
 				SELECT
@@ -785,6 +853,10 @@
 					, M.SEC_SCH_STR_TIME
 					, M.SEC_SCH_END_TIME
 					, M.SEC_SCH_BRK_MIN
+					, M.PRE_FIXED_OT_STR_TIME
+					, M.PRE_FIXED_OT_END_TIME
+					, M.FIXED_OT_STR_TIME
+					, M.FIXED_OT_END_TIME
 					, 2147483647 AS HIST_IDX
 				/* 사용중지(USE_YN='N') 근무타입도 이미 배정된 근무일에는 그대로 해석한다 — USE_YN 필터 없음 */
 				FROM TB_SCH_MGMT M
@@ -803,6 +875,10 @@
 					, H.SEC_SCH_STR_TIME
 					, H.SEC_SCH_END_TIME
 					, H.SEC_SCH_BRK_MIN
+					, H.PRE_FIXED_OT_STR_TIME
+					, H.PRE_FIXED_OT_END_TIME
+					, H.FIXED_OT_STR_TIME
+					, H.FIXED_OT_END_TIME
 					, H.HIST_IDX
 				FROM TB_SCH_MGMT_HIST H
 			) E

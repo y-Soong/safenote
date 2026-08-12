@@ -34,5 +34,17 @@ public record MonthlyAttdSummaryResult(
          * 화면 표기는 "0.5일 (3시간 45분)" 처럼 일수 + 시간 병기(B안 확정 2026-08-07).
          */
         , double absentDays
+
+        /**
+         * PRAFTA-FIXEDOT-3(정책 ①): 고정연장 자동 계상 실적 월 합(분) =
+         * Σ 일자별 (실근태 슬롯 구간 ∩ 고정연장 구간) — FixedOtMinutesUtils 파생 계산(저장 없음).
+         * otMinutes(승인 OT)와 구간이 배타라 중복 없음. 고정연장 없는 타입은 항상 0.
+         */
+        , long fixedOtMinutes
+        /**
+         * PRAFTA-FIXEDOT-3(정책 ②③): "연장 미이행" 발생 일수(월 카운트) — 조퇴(earlyLeaveCnt)와
+         * 완전 분리된 별도 지표. 연차 계열 사용일·미퇴근·결근일은 카운트하지 않는다.
+         */
+        , int fixedOtUnmetCnt
 ) {
 }

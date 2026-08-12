@@ -299,6 +299,13 @@
 	    , B.FST_SCH_TIME	AS fstSchTime
 	    , B.SEC_SCH_TIME	AS secSchTime
 	    , B.SCH_TYPE		AS schType
+		<!-- PRAFTA-FIXEDOT-3(표기, qa 이관분): 고정연장(전방/후방)은 fstSchTime/secSchTime 문자열에
+		     섞지 않고 별도 필드로 내린다 — FE(Attd_06_1 타임라인)가 fstSchTime 을 slice(0,2) 로
+		     "시" 만 잘라 쓰기 때문에 접두/접미를 붙이면 표기가 왜곡된다.
+		     고정연장 없는 근무타입은 NULL → 기존 화면과 완전히 동일(무회귀).
+		     ⚠️ record(ShiftTypeDetailListsResult) 끝 2필드와 동일 순서(위치 기반 매핑). -->
+	    , B.PRE_FIXED_OT_TIME	AS preFixedOtTime
+	    , B.FIXED_OT_TIME		AS fixedOtTime
 	FROM TB_SHIFT_SCH_MGMT A
 		 INNER JOIN (
 			SELECT 
@@ -318,6 +325,13 @@
 					ELSE NULL
 				END SEC_SCH_TIME
 				, B.SCH_TYPE
+				<!-- PRAFTA-FIXEDOT-3: 고정연장 구간 표기용 별도 필드(쌍이 완결된 경우만 — V1). -->
+				, CASE WHEN B.PRE_FIXED_OT_STR_TIME IS NOT NULL AND B.PRE_FIXED_OT_END_TIME IS NOT NULL
+					THEN CONCAT(B.PRE_FIXED_OT_STR_TIME, '-', B.PRE_FIXED_OT_END_TIME)
+				  END PRE_FIXED_OT_TIME
+				, CASE WHEN B.FIXED_OT_STR_TIME IS NOT NULL AND B.FIXED_OT_END_TIME IS NOT NULL
+					THEN CONCAT(B.FIXED_OT_STR_TIME, '-', B.FIXED_OT_END_TIME)
+				  END FIXED_OT_TIME
 			FROM TB_SHIFT_SCH_ASSIGN_MGMT A
 				 INNER JOIN TB_SCH_MGMT B
 					ON (
