@@ -1,0 +1,314 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.prafta.common.cmm.stdwork.mapper.StdWorkHoursMapper">
+
+    <!--
+      소정-02: 근로자별 소정근로시간(TB_USER_STD_WORK_HOURS) 공용 매퍼.
+      DDL: sql/migration/sojeong-1-1-user-std-work-hours-ddl.sql
+           sql/migration/sojeong-1-2-cmpny-std-work-policy-ddl.sql
+           sql/migration/sojeong-1-4-sys083-std-work-reason-seed.sql
+
+      규약
+        - 전 쿼리 CMPNY_CD 술어 필수(멀티테넌시).
+        - 부등호는 CDATA 로 감싼다(XML 파싱 함정 — feedback_mybatis_xml_comment_lt_breaks_parse).
+        - 주석 안에 파라미터 표기를 넣지 않는다(주석 속 바인딩 = 조회 전멸 함정).
+        - 조회 select 에 flushCache 를 두지 않는다. MyBatis 는 insert/update/delete 시 로컬
+          1차 캐시를 자동 clear 하므로 등록 직후 재조회도 최신값을 읽는다. 코드베이스 관례상
+          flushCache 는 채번·락 select 전용이며, 조회에 붙이면 배치 루프에서 세션 캐시를
+          매번 비워 같은 트랜잭션의 타 매퍼 캐시까지 소거된다.
+    -->
+
+    <!-- DB NOW() 기준 오늘 일자. 자정 경계에서 판정/데이터 일자 불일치 방지. -->
+    <select id="selectTodayYmd" resultType="string">
+    /* StdWorkHoursMapper.selectTodayYmd */
+    SELECT DATE_FORMAT(NOW(), '%Y%m%d')
+    </select>
+
+    <!-- 이력 1행 공통 컬럼 (SYS083 사유명 조인 포함). -->
+    <sql id="rowColumns">
+          H.CMPNY_CD                                        AS cmpnyCd
+        , H.USER_CD                                         AS userCd
+        , H.APPLY_STR_DATE                                  AS applyStrDate
+        , H.APPLY_END_DATE                                  AS applyEndDate
+        , H.WEEK_STD_MINUTES                                AS weekStdMinutes
+        , H.REASON_CD                                       AS reasonCd
+        , D.SYST_VAL_D_NM                                   AS reasonNm
+        , H.REASON_DETAIL                                   AS reasonDetail
+        , H.INSERT_NO                                       AS insertNo
+        , DATE_FORMAT(H.INSERT_DATE, '%Y-%m-%dT%H:%i:%s')   AS insertDate
+        , H.UPDATE_NO                                       AS updateNo
+        , DATE_FORMAT(H.UPDATE_DATE, '%Y-%m-%dT%H:%i:%s')   AS updateDate
+    </sql>
+
+    <!--
+      기준일 유효 이력 1건 (effective-dating).
+      유효 = 시작일이 기준일 이하 AND (종료일 NULL 또는 종료일이 기준일 이상). 양 끝 당일 포함.
+      데이터 정합이 깨져 2건 이상 걸려도 최신 시작일 1건만 반환한다(방어).
+    -->
+    <select id="selectEffectiveRow" resultType="com.prafta.common.cmm.stdwork.vo.StdWorkHoursVO">
+    /* StdWorkHoursMapper.selectEffectiveRow */
+    SELECT
+        <include refid="rowColumns"/>
+      FROM TB_USER_STD_WORK_HOURS H
+      LEFT JOIN TB_SYST_VAL_D D
+        ON D.SYST_VAL_CD = 'SYS083'
+       AND D.SYST_VAL_D_CD = H.REASON_CD
+     WHERE H.CMPNY_CD = #{cmpnyCd}
+       AND H.USER_CD  = #{userCd}
+       AND H.APPLY_STR_DATE <![CDATA[ <= ]]> #{baseYmd}
+       AND ( H.APPLY_END_DATE IS NULL
+             OR H.APPLY_END_DATE <![CDATA[ >= ]]> #{baseYmd} )
+     ORDER BY H.APPLY_STR_DATE DESC
+     LIMIT 1
+    </select>
+
+    <!-- 이력 전체 (최신 적용 시작일 우선 — 화면 타임라인 표기 순서). -->
+    <select id="selectHistory" resultType="com.prafta.common.cmm.stdwork.vo.StdWorkHoursVO">
+    /* StdWorkHoursMapper.selectHistory */
+    SELECT
+        <include refid="rowColumns"/>
+      FROM TB_USER_STD_WORK_HOURS H
+      LEFT JOIN TB_SYST_VAL_D D
+        ON D.SYST_VAL_CD = 'SYS083'
+       AND D.SYST_VAL_D_CD = H.REASON_CD
+     WHERE H.CMPNY_CD = #{cmpnyCd}
+       AND H.USER_CD  = #{userCd}
+     ORDER BY H.APPLY_STR_DATE DESC
+    </select>
+
+    <!-- PK 단건 조회 (정정 대상 존재 확인 / 동일 시작일 중복 확인). -->
+    <select id="selectRowByApplyStrDate" resultType="com.prafta.common.cmm.stdwork.vo.StdWorkHoursVO">
+    /* StdWorkHoursMapper.selectRowByApplyStrDate */
+    SELECT
+        <include refid="rowColumns"/>
+      FROM TB_USER_STD_WORK_HOURS H
+      LEFT JOIN TB_SYST_VAL_D D
+        ON D.SYST_VAL_CD = 'SYS083'
+       AND D.SYST_VAL_D_CD = H.REASON_CD
+     WHERE H.CMPNY_CD       = #{cmpnyCd}
+       AND H.USER_CD        = #{userCd}
+       AND H.APPLY_STR_DATE = #{applyStrDate}
+    </select>
+
+    <!--
+      신규 구간과 겹치는 기존 이력 건수.
+      제외 1) 자동 마감 대상 = 종료일 NULL 이면서 시작일이 신규 시작일보다 이른 행.
+              등록 시 전일로 마감되므로 겹침이 아니다.
+      제외 2) 정정(correct) 대상 자기 자신 행 / 함께 이동될 복귀 행 (excludeStrDate 2개).
+      겹침 = (기존 시작일이 신규 종료일 이하) AND (기존 종료일이 NULL 이거나 신규 시작일 이상).
+             신규 종료일이 NULL(무기한)이면 앞 조건은 항상 참이므로 생략한다.
+    -->
+    <select id="countOverlap" resultType="int">
+    /* StdWorkHoursMapper.countOverlap */
+    SELECT COUNT(1)
+      FROM TB_USER_STD_WORK_HOURS H
+     WHERE H.CMPNY_CD = #{cmpnyCd}
+       AND H.USER_CD  = #{userCd}
+       AND NOT ( H.APPLY_END_DATE IS NULL
+                 AND H.APPLY_STR_DATE <![CDATA[ < ]]> #{applyStrDate} )
+       AND ( H.APPLY_END_DATE IS NULL
+             OR H.APPLY_END_DATE <![CDATA[ >= ]]> #{applyStrDate} )
+    <if test="applyEndDate != null and applyEndDate != ''">
+       AND H.APPLY_STR_DATE <![CDATA[ <= ]]> #{applyEndDate}
+    </if>
+    <if test="excludeStrDate != null and excludeStrDate != ''">
+       AND H.APPLY_STR_DATE != #{excludeStrDate}
+    </if>
+    <if test="excludeStrDate2 != null and excludeStrDate2 != ''">
+       AND H.APPLY_STR_DATE != #{excludeStrDate2}
+    </if>
+    </select>
+
+    <!--
+      마감 대상이 될 직전 열린 행 1건 (종료일 NULL, 시작일이 신규 시작일보다 이른 행).
+      단축 사유 등록 시 "단축 종료 후 복귀 행"이 승계할 값(주 소정근로분·사유)의 출처다.
+      데이터 정합이 깨져 열린 행이 2건 이상이면 최신 시작일 1건.
+    -->
+    <select id="selectOpenRowBefore" resultType="com.prafta.common.cmm.stdwork.vo.StdWorkHoursVO">
+    /* StdWorkHoursMapper.selectOpenRowBefore */
+    SELECT
+        <include refid="rowColumns"/>
+      FROM TB_USER_STD_WORK_HOURS H
+      LEFT JOIN TB_SYST_VAL_D D
+        ON D.SYST_VAL_CD = 'SYS083'
+       AND D.SYST_VAL_D_CD = H.REASON_CD
+     WHERE H.CMPNY_CD = #{cmpnyCd}
+       AND H.USER_CD  = #{userCd}
+       AND H.APPLY_END_DATE IS NULL
+       AND H.APPLY_STR_DATE <![CDATA[ < ]]> #{applyStrDate}
+     ORDER BY H.APPLY_STR_DATE DESC
+     LIMIT 1
+    </select>
+
+    <!--
+      직전 열린 행 마감. 이력 원칙(값 덮어쓰기 금지)의 유일한 예외 UPDATE 로,
+      종료일만 채우고 WEEK_STD_MINUTES / REASON_CD 는 건드리지 않는다.
+    -->
+    <update id="closeOpenRowBefore">
+    /* StdWorkHoursMapper.closeOpenRowBefore */
+    UPDATE TB_USER_STD_WORK_HOURS
+       SET APPLY_END_DATE = #{closeYmd}
+         , UPDATE_NO      = #{updateNo}
+         , UPDATE_DATE    = NOW()
+     WHERE CMPNY_CD = #{cmpnyCd}
+       AND USER_CD  = #{userCd}
+       AND APPLY_END_DATE IS NULL
+       AND APPLY_STR_DATE <![CDATA[ < ]]> #{applyStrDate}
+    </update>
+
+    <insert id="insertRow">
+    /* StdWorkHoursMapper.insertRow */
+    INSERT INTO TB_USER_STD_WORK_HOURS
+        ( CMPNY_CD
+        , USER_CD
+        , APPLY_STR_DATE
+        , APPLY_END_DATE
+        , WEEK_STD_MINUTES
+        , REASON_CD
+        , REASON_DETAIL
+        , INSERT_NO
+        , INSERT_DATE )
+    VALUES
+        ( #{cmd.cmpnyCd}
+        , #{cmd.userCd}
+        , #{cmd.applyStrDate}
+        , #{cmd.applyEndDate}
+        , #{cmd.weekStdMinutes}
+        , #{cmd.reasonCd}
+        , #{cmd.reasonDetail}
+        , #{cmd.actorNo}
+        , NOW() )
+    </insert>
+
+    <!--
+      복귀 행 이동 전용 DELETE.
+      PK 에 APPLY_STR_DATE 가 포함되어 있어 시작일 변경을 UPDATE 로 할 수 없다.
+      정정(correct) 트랜잭션 안에서 DELETE + insertMovedRow 쌍으로만 사용한다.
+    -->
+    <delete id="deleteRow">
+    /* StdWorkHoursMapper.deleteRow */
+    DELETE FROM TB_USER_STD_WORK_HOURS
+     WHERE CMPNY_CD       = #{cmpnyCd}
+       AND USER_CD        = #{userCd}
+       AND APPLY_STR_DATE = #{applyStrDate}
+    </delete>
+
+    <!--
+      복귀 행 이동 전용 INSERT (DELETE 와 쌍).
+      원 행의 값 전량을 승계하되 APPLY_STR_DATE 만 새 위치로 바뀐 상태로 들어온다.
+      INSERT_NO / INSERT_DATE 는 원 행 값을 보존하고(생성 감사 유지),
+      이동을 수행한 작업자는 UPDATE_NO / UPDATE_DATE 에 기록한다.
+    -->
+    <insert id="insertMovedRow">
+    /* StdWorkHoursMapper.insertMovedRow */
+    INSERT INTO TB_USER_STD_WORK_HOURS
+        ( CMPNY_CD
+        , USER_CD
+        , APPLY_STR_DATE
+        , APPLY_END_DATE
+        , WEEK_STD_MINUTES
+        , REASON_CD
+        , REASON_DETAIL
+        , INSERT_NO
+        , INSERT_DATE
+        , UPDATE_NO
+        , UPDATE_DATE )
+    VALUES
+        ( #{row.cmpnyCd}
+        , #{row.userCd}
+        , #{row.applyStrDate}
+        , #{row.applyEndDate}
+        , #{row.weekStdMinutes}
+        , #{row.reasonCd}
+        , #{row.reasonDetail}
+        , #{row.insertNo}
+        , COALESCE(STR_TO_DATE(#{row.insertDate}, '%Y-%m-%dT%H:%i:%s'), NOW())
+        , #{updateNo}
+        , NOW() )
+    </insert>
+
+    <!-- 오입력 정정 전용. PK(적용 시작일)는 변경하지 않는다. -->
+    <update id="updateRow">
+    /* StdWorkHoursMapper.updateRow */
+    UPDATE TB_USER_STD_WORK_HOURS
+       SET APPLY_END_DATE   = #{cmd.applyEndDate}
+         , WEEK_STD_MINUTES = #{cmd.weekStdMinutes}
+         , REASON_CD        = #{cmd.reasonCd}
+         , REASON_DETAIL    = #{cmd.reasonDetail}
+         , UPDATE_NO        = #{cmd.actorNo}
+         , UPDATE_DATE      = NOW()
+     WHERE CMPNY_CD       = #{cmd.cmpnyCd}
+       AND USER_CD        = #{cmd.userCd}
+       AND APPLY_STR_DATE = #{cmd.applyStrDate}
+    </update>
+
+    <!--
+      회사 통상근로자 기준값 (COMPANY 스코프 1행).
+      0단계는 SITE 오버라이드를 사용하지 않으므로 COMPANY 만 조회한다.
+      행이 없으면 null 반환 -> 서비스가 코드 상수 2400 으로 폴백.
+    -->
+    <select id="selectCmpnyWeekStdMinutes" resultType="java.lang.Integer">
+    /* StdWorkHoursMapper.selectCmpnyWeekStdMinutes */
+    SELECT P.WEEK_STD_MINUTES
+      FROM TB_CMPNY_STD_WORK_POLICY P
+     WHERE P.CMPNY_CD   = #{cmpnyCd}
+       AND P.SCOPE_TYPE = 'COMPANY'
+       AND P.SCOPE_CD   = '-'
+     LIMIT 1
+    </select>
+
+    <!--
+      대상 사용자 고용형태 (일용직 제외 게이트 판정용).
+      USE_YN='Y' 술어로 탈퇴·사용중지 계정을 제외한다 — 사용중지 계정에 소정근로 이력이
+      등록되면 이후 재활성 시 예기치 않은 계약값이 되살아난다.
+
+      ★TB_USER.EMPLOYMENT_TYPE 은 NULL 허용 컬럼이다(User_01 선택 입력). 컬럼값을 그대로
+      반환하면 "계정 없음"과 "고용형태 미지정"을 서비스가 구분할 수 없으므로,
+      COALESCE 로 미지정을 빈 문자열로 치환한다. 즉 반환 null = 계정 없음/사용중지 뿐이다.
+      빈 문자열은 일용직이 아니므로 등록이 허용된다(현행 미지정 계정 회귀 방지).
+    -->
+    <select id="selectUserEmploymentType" resultType="string">
+    /* StdWorkHoursMapper.selectUserEmploymentType */
+    SELECT COALESCE(U.EMPLOYMENT_TYPE, '') AS employmentType
+      FROM TB_USER U
+     WHERE U.CMPNY_CD = #{cmpnyCd}
+       AND U.USER_CD  = #{userCd}
+       AND U.USE_YN   = 'Y'
+    </select>
+
+    <!-- SYS083 사유코드 규칙 공통 컬럼. -->
+    <sql id="reasonRuleColumns">
+          D.SYST_VAL_D_CD   AS reasonCd
+        , D.SYST_VAL_D_NM   AS reasonNm
+        , D.VAL_D_INFO_1    AS deductRule
+        , D.VAL_D_INFO_2    AS grantRule
+        , D.VAL_D_DESC      AS reasonDesc
+        , D.SORT_IDX        AS sortIdx
+    </sql>
+
+    <!--
+      사유코드 1건. 등록 검증(존재 여부)과 2단계 차감·부여 분기가 함께 쓴다.
+      차감 규칙 = VAL_D_INFO_1, 부여 규칙 = VAL_D_INFO_2 (하드코딩 금지 축).
+    -->
+    <select id="selectReasonRule" resultType="com.prafta.common.cmm.stdwork.vo.StdWorkReasonRuleVO">
+    /* StdWorkHoursMapper.selectReasonRule */
+    SELECT
+        <include refid="reasonRuleColumns"/>
+      FROM TB_SYST_VAL_D D
+     WHERE D.SYST_VAL_CD   = 'SYS083'
+       AND D.SYST_VAL_D_CD = #{reasonCd}
+       AND D.USE_YN        = 'Y'
+    </select>
+
+    <!-- 사용중 사유코드 전체 (화면 셀렉트). -->
+    <select id="selectReasonRules" resultType="com.prafta.common.cmm.stdwork.vo.StdWorkReasonRuleVO">
+    /* StdWorkHoursMapper.selectReasonRules */
+    SELECT
+        <include refid="reasonRuleColumns"/>
+      FROM TB_SYST_VAL_D D
+     WHERE D.SYST_VAL_CD = 'SYS083'
+       AND D.USE_YN      = 'Y'
+     ORDER BY D.SORT_IDX
+    </select>
+
+</mapper>
