@@ -208,6 +208,32 @@ public class User01Controller {
     	return ResponseEntity.status(HttpStatus.OK).body(response);
     }
 
+    // ===== 소정-03/08 - 계정 생성 폼 소정근로시간 입력 옵션 =====
+
+    /**
+     * 회사 통상 기준값(주 소정근로 분) + 단시간 선택 시 고를 수 있는 사유코드 목록.
+     *
+     * <p>화면이 "풀타임(주 40시간)" 라벨과 사유 셀렉트를 하드코딩 없이 그리기 위한 조회다.
+     * 회사 스코프는 토큰에서만 도출한다(cross-tenant 방지, 파라미터 없음).
+     *
+     * <p><b>권한 게이트 미부여(의도적, security Info 검토 반영)</b> — 형제 옵션 조회 EP
+     * ({@code /sch-type-options}, {@code /my-default-sch-options})와 동일 수준으로 맞춘다.
+     * 반환값은 회사 단위 정책 상수(주 소정근로 분)와 시스템 코드표(SYS083 사유 코드/명칭)뿐이라
+     * 개인정보·타 테넌트 데이터가 없고, 실제 쓰기 경로({@code /insert-user-info})는
+     * {@code AuthRoleUtils.isManager} 로 fail-closed 차단된다. 옵션 조회에 게이트를 걸면
+     * 형제 EP 와 비대칭이 생기고 이후 비관리자 화면 재사용 시 조용히 깨진다.
+     */
+    @GetMapping("/std-work-options")
+    public ResponseEntity<?> getStdWorkOptions(
+            @RequestHeader(value = "Authorization", required = false) String authorization) {
+
+        com.prafta.common.dto.TokenInfo tokenInfo = jwtUtil.getAllClaimsAsMap(authorization);
+        String cmpnyCd = (tokenInfo == null) ? null : tokenInfo.gv_cmpnyCd();
+
+        return ResponseEntity.status(HttpStatus.OK)
+                .body(user01Service.getStdWorkOptions(cmpnyCd));
+    }
+
     // ===== PRAFTA-COM-008-E-5 - 기본 근무타입 select 옵션(대상 사업장 활성 근무타입) =====
 
     @GetMapping("/sch-type-options")

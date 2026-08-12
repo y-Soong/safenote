@@ -59,6 +59,9 @@
     SELECT DISTINCT P.CMPNY_CD
       FROM TB_LEAVE_POLICY P
      WHERE P.USE_YN = 'Y'
+       /* 소정-05 게이트 ①: 법정 연차 자동 부여를 끈 회사(5인 미만 등)는 정기부여 배치 대상에서 제외.
+          컬럼은 NOT NULL DEFAULT 'Y' 라 기존 전 회사가 그대로 대상으로 남는다(무회귀). */
+       AND P.STATUTORY_AUTO_GRANT_YN = 'Y'
      ORDER BY P.CMPNY_CD
     </select>
 

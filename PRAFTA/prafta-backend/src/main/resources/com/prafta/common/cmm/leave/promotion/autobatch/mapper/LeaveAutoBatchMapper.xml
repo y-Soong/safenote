@@ -10,6 +10,17 @@
 -->
 <mapper namespace="com.prafta.common.cmm.leave.promotion.autobatch.mapper.LeaveAutoBatchMapper">
 
+    <!--
+      2차 직권지정 자동배치 대상 조회.
+
+      ★소정-05 게이트 ② 의도적 미적용: 본 쿼리에는 STATUTORY_AUTO_GRANT_YN 조건을 넣지 않는다.
+        대상 조건이 "SECOND 마스터(STATUS NOTICED/DESIGNATED) 보유"라 이미 1·2차 촉진이 진행된
+        사용자만 남는다. 회사가 토글을 끈 순간 이 목록이 비면 관리자가 진행 중인 촉진 회차를
+        마무리(직권 지정)할 수 없게 된다 — 진행분 유지 원칙(= 기부여 연차 유지, LeavePromotionMapper
+        .selectActiveFirstContext 와 동일 계열).
+        신규 도래 판정(LeavePromotionMapper.selectPromotionCandidates/selectPromotionCandidate)만
+        게이트하며, off 회사에는 새 회차가 더 이상 생기지 않으므로 본 목록도 자연히 소진된다.
+    -->
     <select id="selectAutoBatchTargets" resultType="com.prafta.common.cmm.leave.promotion.autobatch.AutoBatchTargetVO">
     /* LeaveAutoBatchMapper.selectAutoBatchTargets */
         WITH RECURSIVE

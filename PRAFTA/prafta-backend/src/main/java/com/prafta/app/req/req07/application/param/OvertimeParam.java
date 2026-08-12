@@ -24,7 +24,17 @@ public record OvertimeParam(
         , String reqReason
         , List<String> approverUserCds
         , String presetId
+        /**
+         * 소정-07 - 근로자 명시 청구 확인 값('Y' 만 확인으로 인정). 단축 기간(육아기·가족돌봄)에만 소비된다.
+         * 미전송(null)이면 확인 없음으로 보고 단축 기간 한정 거부(ATTD_400_201) — fail-safe.
+         */
+        , String reducedWorkOtClaimYn
 ) {
+
+    /** 소정-07 - 근로자 명시 청구가 확인되었는지 여부('Y' 만 인정). */
+    public boolean workerClaimConfirmed() {
+        return "Y".equalsIgnoreCase(reducedWorkOtClaimYn);
+    }
 
     public static OvertimeParam from(OvertimeRequest request, TokenInfo tokenInfo) {
 
@@ -64,8 +74,9 @@ public record OvertimeParam(
                 : new ArrayList<>(request.getApproverUserCds());
         String presetId = trim(request.getPresetId());
 
+        // 소정-07: 근로자 명시 청구 확인 값(단축 기간에만 소비. 미전송이면 null → 거부).
         return new OvertimeParam(cmpnyCd, siteCd, userCd, workYmd, nodeCd, slots, reqReason,
-                approverUserCds, presetId);
+                approverUserCds, presetId, trim(request.getReducedWorkOtClaimYn()));
     }
 
     private static String trim(String s) {

@@ -34,6 +34,12 @@ public record UserCreateParam(
     , List<String> additionalSiteCdList
     // PRAFTA-COM-008-E-5 — 기본 근무타입(SCH_CD, 선택). 엑셀 업로드는 null.
     , String defaultSchCd
+    // 소정-03 — 계정 생성 시 소정근로시간 필수 입력 (FULL:풀타임 / DIRECT:직접 입력).
+    , String stdWorkType
+    // 소정-03 — 주 소정근로 분 (stdWorkType=DIRECT 필수).
+    , Integer stdWorkWeekMinutes
+    // 소정-03 — 사유코드[SYS083] (미입력 시 회사 통상 기준값 비교로 자동 판정).
+    , String stdWorkReasonCd
     , String gvCmpnyCd
     , String gvUserCd
     , String gvAuthCd
@@ -72,6 +78,9 @@ public record UserCreateParam(
             , request.getCreditReasonDetail()
             , request.getAdditionalSiteCdList()
             , request.getDefaultSchCd()
+            , request.getStdWorkType()
+            , request.getStdWorkWeekMinutes()
+            , request.getStdWorkReasonCd()
             , tokenInfo.gv_cmpnyCd()
             , tokenInfo.gv_userCd()
             , tokenInfo.gv_authCd()

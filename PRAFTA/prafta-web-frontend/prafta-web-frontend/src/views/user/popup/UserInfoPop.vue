@@ -224,6 +224,71 @@
               근무계획이 자동 생성·갱신됩니다(빈 날·자동생성분만,
               휴일·연차·교대팀 구간 제외).
             </p>
+
+            <!-- 소정-08(UI-A): 소정근로시간 필수 입력 — "풀타임 / 단시간(직접 입력)" 선택식.
+                 풀타임의 주 소정근로 분은 서버가 회사 통상 기준값으로 채운다(화면 하드코딩 금지). -->
+            <div class="form-row-max">
+              <label>소정근로시간</label>
+              <div class="std-work-radio-group">
+                <label class="std-work-radio">
+                  <input type="radio" value="FULL" v-model="stdWorkType" />
+                  <span>풀타임 ({{ stdWorkFullTimeLabel }})</span>
+                </label>
+                <label class="std-work-radio">
+                  <input type="radio" value="DIRECT" v-model="stdWorkType" />
+                  <span>단시간(직접 입력)</span>
+                </label>
+              </div>
+            </div>
+
+            <div class="form-row-max" v-if="isStdWorkDirect">
+              <label>주 소정근로</label>
+              <input
+                class="row-short"
+                type="number"
+                min="0"
+                max="168"
+                v-model.number="stdWorkHours"
+                placeholder="시간"
+              />
+              <span class="std-work-suffix">시간</span>
+              <input
+                class="row-short"
+                type="number"
+                min="0"
+                max="59"
+                v-model.number="stdWorkMinutes"
+                placeholder="분"
+              />
+              <span class="std-work-suffix">분</span>
+            </div>
+
+            <div class="form-row-max" v-if="isStdWorkDirect">
+              <label>소정근로 사유</label>
+              <BaseSelect id="stdWorkReasonCd" v-model="stdWorkReasonCd">
+                <option
+                  v-for="opt in stdWorkReasonOptions"
+                  :key="opt.reasonCd"
+                  :value="opt.reasonCd"
+                >
+                  {{ opt.reasonNm }}
+                </option>
+              </BaseSelect>
+            </div>
+
+            <p
+              class="std-work-warning"
+              v-for="(warn, idx) in stdWorkWarnings"
+              :key="idx"
+            >
+              ⚠ {{ warn }}
+            </p>
+
+            <p class="default-sch-hint" v-if="isStdWorkDirect">
+              ⓘ 육아기·임신기·가족돌봄 단축은 적용 기간이 필요해 계정 생성
+              단계에서는 등록할 수 없습니다. 계정 생성 후 소정근로시간
+              관리에서 기간과 함께 등록해 주세요.
+            </p>
           </template>
 
           <!-- 수정 모드: 사업장/부서는 읽기전용(변경은 '소속이동'으로 일원화, PRAFTA-WEB_001-4).
@@ -605,6 +670,14 @@ const legalTenureBaseDate = ref(""); // 법적 근속 기준일 (YYYY-MM-DD)
 // PRAFTA-036 생성 모드 전용 입력값
 const hireDateInput = ref("");          // CalendarSrch — YYYY-MM-DD
 
+// 소정-08(UI-A) 생성 모드 소정근로시간 입력값
+const stdWorkType = ref("FULL");        // FULL:풀타임 / DIRECT:단시간(직접 입력)
+const stdWorkHours = ref(null);         // 단시간 주 소정근로 시간 부분
+const stdWorkMinutes = ref(0);          // 단시간 주 소정근로 분 부분
+const stdWorkReasonCd = ref("");        // 사유코드 [SYS083] — 단시간 선택 시만 사용
+const stdWorkReasonOptions = ref([]);   // 사유 셀렉트 옵션(서버 제공 — 코드 하드코딩 금지)
+const cmpnyWeekStdMinutes = ref(null);  // 회사 통상 기준값(분) — 풀타임 라벨 표기용
+
 // =========================== Data ===========================
 const { open: openPop } = useModal();
 const { proxy } = getCurrentInstance();
@@ -663,6 +736,61 @@ const fnLoadSchTypeOptions = async (targetSiteCd) => {
 watch(siteCd, (newSiteCd) => {
   fnLoadSchTypeOptions(newSiteCd);
 });
+
+// ── 소정-08(UI-A): 소정근로시간 선택식 입력 ────────────────
+// 단시간 선택 여부. 풀타임이면 시간/사유 입력을 노출하지 않는다(값도 전송하지 않음).
+const isStdWorkDirect = computed(() => stdWorkType.value === "DIRECT");
+
+// 풀타임 라벨은 서버가 내려준 회사 통상 기준값으로 만든다("주 40시간" 하드코딩 금지 — 지시서 B-1).
+const stdWorkFullTimeLabel = computed(() => {
+  const total = Number(cmpnyWeekStdMinutes.value);
+  if (!Number.isFinite(total) || total <= 0) return "회사 기준";
+  const hours = Math.floor(total / 60);
+  const minutes = total % 60;
+  return minutes === 0 ? `주 ${hours}시간` : `주 ${hours}시간 ${minutes}분`;
+});
+
+// 단시간 입력값(시간/분)의 합 — 서버에는 항상 분 단위로 보낸다.
+const stdWorkInputMinutes = computed(() => {
+  const hours = Number(stdWorkHours.value) || 0;
+  const minutes = Number(stdWorkMinutes.value) || 0;
+  return Math.round(hours * 60 + minutes);
+});
+
+// 경고 배너(저장은 허용 — plan §8 Q4 확정). 주 15시간(900분) 미만 = 초단시간 경계.
+//   ★육아기 주 15~35시간 범위 경고는 이 폼의 대상이 아니다: 단축 사유(육아기·임신기·가족돌봄)는
+//   적용 종료일이 필수라 사유 셀렉트 옵션(서버 std-work-options)에서 제외되며, 기간과 함께
+//   등록하는 소정근로시간 관리 화면이 그 경고를 담당한다.
+const stdWorkWarnings = computed(() => {
+  const warnings = [];
+  if (!isStdWorkDirect.value) return warnings;
+  const total = stdWorkInputMinutes.value;
+  if (total > 0 && total < 900) {
+    warnings.push(
+      "주 소정근로시간이 15시간 미만입니다. 초단시간근로자는 연차·주휴 적용 대상에서 제외될 수 있으니 계약 내용을 확인해 주세요."
+    );
+  }
+  return warnings;
+});
+
+// 소정근로 입력 옵션(회사 통상 기준값 + 사유 셀렉트) 조회. 회사 스코프는 서버가 토큰에서 강제.
+const fnLoadStdWorkOptions = async () => {
+  try {
+    const response = await axios.get("/webApi/user01/std-work-options");
+    const data = response.data || {};
+    cmpnyWeekStdMinutes.value = data.cmpnyWeekStdMinutes ?? null;
+    stdWorkReasonOptions.value = data.reasonOptions ?? [];
+    // 기본 선택 = 첫 옵션(단시간계약). 옵션이 없으면 빈 값으로 두고 저장 시 검증에서 막는다.
+    if (!stdWorkReasonCd.value && stdWorkReasonOptions.value.length > 0) {
+      stdWorkReasonCd.value = stdWorkReasonOptions.value[0].reasonCd;
+    }
+  } catch (err) {
+    stdWorkReasonOptions.value = [];
+    fnAlertMsg(
+      resolveApiErrorMessage(err, "소정근로시간 옵션 조회 중 오류가 발생했습니다.")
+    );
+  }
+};
 
 // 경력 인정 총 개월/년 (프론트 계산, 요약 표시용)
 const creditTotalMonths = computed(() =>
@@ -730,6 +858,10 @@ onMounted(async () => {
 
     // PRAFTA_COM_003-B 3.1.4: 고용형태는 정규직(REGULAR) 고정.
     employmentType.value = "REGULAR";
+
+    // 소정-08(UI-A): 소정근로시간 기본 선택 = 풀타임. 라벨/사유 옵션은 서버에서 받아온다.
+    stdWorkType.value = "FULL";
+    await fnLoadStdWorkOptions();
     return;
   }
 
@@ -978,6 +1110,11 @@ const fnUserInfoSave = async () => {
         additionalSiteCdList: [],
         // PRAFTA-COM-008-E-5: 기본 근무타입(선택). 빈값이면 미설정.
         defaultSchCd: defaultSchCd.value || null,
+        // 소정-08(UI-A): 소정근로시간(필수). 풀타임은 회사 통상 기준값을 서버가 채우므로
+        //   시간/사유를 보내지 않는다(클라 값 신뢰 금지).
+        stdWorkType: stdWorkType.value,
+        stdWorkWeekMinutes: isStdWorkDirect.value ? stdWorkInputMinutes.value : null,
+        stdWorkReasonCd: isStdWorkDirect.value ? stdWorkReasonCd.value || null : null,
       };
 
       const response = await axios.post("/webApi/user01/insert-user-info", payload);
@@ -1266,6 +1403,22 @@ const fnUserInfoValidationChk = () => {
       fnAlertMsg("생년월일을 입력해 주세요.");
       return false;
     }
+    // 소정-08(UI-A): 소정근로시간 필수. 단시간은 시간과 사유가 모두 있어야 한다.
+    //   (15시간 미만은 경고일 뿐 저장 허용 — plan §8 Q4)
+    if (stdWorkType.value !== "FULL" && stdWorkType.value !== "DIRECT") {
+      fnAlertMsg("소정근로시간을 선택해 주세요.");
+      return false;
+    }
+    if (isStdWorkDirect.value) {
+      if (stdWorkInputMinutes.value <= 0) {
+        fnAlertMsg("주 소정근로시간을 입력해 주세요.");
+        return false;
+      }
+      if (proxy.$util.isEmpty(stdWorkReasonCd.value)) {
+        fnAlertMsg("소정근로 사유를 선택해 주세요.");
+        return false;
+      }
+    }
     return true;
   }
 
@@ -1351,6 +1504,39 @@ const fnConfirmMsg = async (message, afterConfirmCallback) => {
   padding: 1.2rem;
   max-width: 500px;
   margin: 0 auto;
+}
+
+/* 소정-08(UI-A): 소정근로시간 선택식 입력 */
+.std-work-radio-group {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  flex-wrap: wrap;
+}
+
+.std-work-radio {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.375rem;
+  font-size: 0.8125rem;
+  color: var(--color-text-strong, #111827);
+  cursor: pointer;
+}
+
+.std-work-suffix {
+  font-size: 0.75rem;
+  color: var(--color-text-muted, #4b5563);
+}
+
+.std-work-warning {
+  margin: 0;
+  padding: 0.5rem 0.75rem;
+  border-radius: var(--input-radius, 10px);
+  background: var(--color-warning-bg, #fffbeb);
+  color: var(--color-warning-text, #b45309);
+  font-size: 0.6875rem;
+  line-height: 1.5;
 }
 
 /* PRAFTA-COM-008-E-5: 기본 근무타입 안내 문구 */

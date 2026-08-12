@@ -99,9 +99,10 @@ const { position, startDrag } = useCenteredDraggable(modalRef, {
 });
 
 /*
- * prafta-052 — 엑셀 업로드 실패 행 재업로드용 양식 헤더(16컬럼).
+ * prafta-052 — 엑셀 업로드 실패 행 재업로드용 양식 헤더(14컬럼).
  * [중요] 백엔드 UserExcelRowParser.HEADERS 와 순서·문자열을 동일하게 유지해야 한다.
  * 양식이 변경되면 백엔드 HEADERS 와 이 배열을 반드시 동시에 수정한다(drift 방지).
+ * 소정-03: 14번째 "주소정근로시간(필수,시간)" 컬럼 추가.
  */
 const EXCEL_HEADERS = [
   "사용자ID(필수)",
@@ -117,6 +118,7 @@ const EXCEL_HEADERS = [
   "입사일(YYYYMMDD)",
   "경력인정개월수",
   "상세 설명",
+  "주소정근로시간(필수,시간)",
 ];
 
 /*

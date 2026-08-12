@@ -29,7 +29,7 @@ import com.prafta.common.exception.ApiException;
  * <p>구조 (D4):
  * <ol>
  *   <li>1행: 빨간 글씨 안내문 "4행부터 데이터가 저장됩니다." (헤더 컬럼 전체 머지)</li>
- *   <li>2행: 한글 헤더 (필수 6 + 선택 7 = 13 컬럼)</li>
+ *   <li>2행: 한글 헤더 (필수 7 + 선택 7 = 14 컬럼 — 소정-03 에서 주소정근로시간 필수 컬럼 추가)</li>
  *   <li>3행: 예시 데이터 (업로드 파서에서 skip)</li>
  *   <li>4행 ~: 실제 저장 대상 데이터</li>
  * </ol>
@@ -70,6 +70,7 @@ public final class UserExcelTemplateBuilder {
             , "20200101"         // 입사일
             , "0"                // 경력인정개월수
             , ""                 // 상세 설명(경력인정)
+            , "40"               // 주소정근로시간(시간) — 풀타임 40, 단시간이면 실제 계약 시간(예: 20)
     };
 
     /**
@@ -129,7 +130,8 @@ public final class UserExcelTemplateBuilder {
             int totalCols = UserExcelRowParser.HEADERS.length;
             Row noticeRow = sheet.createRow(0);
             Cell noticeCell = noticeRow.createCell(0);
-            noticeCell.setCellValue("4행부터 데이터가 저장됩니다. 1행(안내)과 3행(예시) 사이의 2행은 헤더이며, 헤더 행은 수정/삭제하지 마세요.");
+            noticeCell.setCellValue("4행부터 데이터가 저장됩니다. 1행(안내)과 3행(예시) 사이의 2행은 헤더이며, 헤더 행은 수정/삭제하지 마세요."
+                    + " 주소정근로시간은 필수이며 시간 단위로 입력합니다(풀타임 40, 단시간은 실제 계약 시간).");
             noticeCell.setCellStyle(noticeStyle);
             // 컬럼 전체 머지(가독성)
             sheet.addMergedRegion(new CellRangeAddress(0, 0, 0, totalCols - 1));

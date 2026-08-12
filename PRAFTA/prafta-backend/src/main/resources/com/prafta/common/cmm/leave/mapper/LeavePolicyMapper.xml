@@ -24,6 +24,8 @@
         , P.AXIS5_MAX_DAYS            AS axis5MaxDays
         , P.AXIS6_VALIDITY_MONTHS     AS axis6ValidityMonths
         , P.AXIS7_USE_PROMOTION       AS axis7UsePromotion
+        /* 소정-05: 법정 연차 자동 부여 토글(5인 미만 대응). 기본 'Y' — 기존 회사 동작 불변 */
+        , P.STATUTORY_AUTO_GRANT_YN   AS statutoryAutoGrantYn
         , P.APRV_USE_YN               AS aprvUseYn
         , P.USE_YN                    AS useYn
         , P.APPLY_FROM_DATE           AS applyFromDate
@@ -70,6 +72,8 @@
         , P.AXIS5_MAX_DAYS            AS axis5MaxDays
         , P.AXIS6_VALIDITY_MONTHS     AS axis6ValidityMonths
         , P.AXIS7_USE_PROMOTION       AS axis7UsePromotion
+        /* 소정-05: 법정 연차 자동 부여 토글. 변경 트랜잭션(FOR UPDATE)에서도 PREV 스냅샷 비교에 필요 */
+        , P.STATUTORY_AUTO_GRANT_YN   AS statutoryAutoGrantYn
         , P.APRV_USE_YN               AS aprvUseYn
         , P.USE_YN                    AS useYn
         , P.APPLY_FROM_DATE           AS applyFromDate
@@ -120,6 +124,7 @@
         , AXIS5_MAX_DAYS
         , AXIS6_VALIDITY_MONTHS
         , AXIS7_USE_PROMOTION
+        , STATUTORY_AUTO_GRANT_YN
         , APRV_USE_YN
         , USE_YN
         , APPLY_FROM_DATE
@@ -143,6 +148,8 @@
         , #{axis5MaxDays}
         , #{axis6ValidityMonths}
         , #{axis7UsePromotion}
+        /* 소정-05: 서비스에서 Y/N 정규화(비정상/미지정 → 'Y' = 기존 동작) 후 전달 */
+        , #{statutoryAutoGrantYn}
         , #{aprvUseYn}
         , #{useYn}
         , #{applyFromDate}

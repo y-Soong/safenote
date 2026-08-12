@@ -31,7 +31,10 @@ public final class UserExcelRowParser {
 
     /** 헤더 정의 — 컬럼 순서가 곧 파서 인덱스. {@link UserExcelTemplateBuilder#EXAMPLE_ROW} 와 동일 순서.
      *  F-13 확장: 계약종료일·경력인정사유유형·고용형태 컬럼 제거(단건 생성 팝업과 동일 정책 —
-     *  고용형태는 REGULAR 고정, 일용직은 QR/일용직 가입 별도 경로 전용). */
+     *  고용형태는 REGULAR 고정, 일용직은 QR/일용직 가입 별도 경로 전용).
+     *  소정-03 확장: 14번째 "주소정근로시간(시간)" 컬럼 추가(필수). 계정 생성 3경로 전부에서
+     *  소정근로시간을 받는다는 지시서 확정에 따른 것으로, 값이 비면 그 행은 생성되지 않는다
+     *  (구 13컬럼 양식으로 업로드하면 전 행이 "소정근로시간 누락" 사유로 실패 목록에 담긴다). */
     public static final String[] HEADERS = new String[] {
             "사용자ID(필수)"
             , "사용자명(필수)"
@@ -46,7 +49,17 @@ public final class UserExcelRowParser {
             , "입사일(YYYYMMDD)"
             , "경력인정개월수"
             , "상세 설명"
+            , "주소정근로시간(필수,시간)"
     };
+
+    /** 소정근로시간 컬럼 인덱스(시간 단위 입력 → 분으로 환산해 서버에 전달). */
+    private static final int COL_IDX_STD_WORK_HOURS = 13;
+
+    /** 시간 → 분 환산 계수. */
+    private static final int MINUTES_PER_HOUR = 60;
+
+    /** 주 소정근로 분을 직접 입력하는 유형(User01ServiceImpl 의 STD_WORK_TYPE_DIRECT 와 동일 규약). */
+    private static final String STD_WORK_TYPE_DIRECT = "DIRECT";
 
     /**
      * 시트의 데이터 영역을 {@link UserCreateParam} 리스트로 파싱한다.
@@ -89,19 +102,29 @@ public final class UserExcelRowParser {
             req.setCreditMonths(intAt(row, 11));
             req.setCreditReasonDetail(strAt(row, 12));
 
+            // 소정-03: 주 소정근로시간(시간) → 분 환산. 사유 컬럼은 두지 않고(단축 사유는 기간이
+            //   필수라 엑셀로 받을 수 없다) 서버가 회사 통상 기준값과 비교해 통상/단시간계약을 판정한다.
+            //   값이 비어 있으면 유형을 세팅하지 않아 서비스 검증에서 행 오류(필수 누락)로 떨어진다.
+            Integer stdWorkWeekMinutes = weekMinutesAt(row, COL_IDX_STD_WORK_HOURS);
+            if (stdWorkWeekMinutes != null) {
+                req.setStdWorkType(STD_WORK_TYPE_DIRECT);
+                req.setStdWorkWeekMinutes(stdWorkWeekMinutes);
+            }
+
             result.add(UserCreateParam.from(req, tokenInfo));
         }
         return result;
     }
 
     /**
-     * prafta-052 — 실패 행 재업로드용 원본 행(양식 13컬럼 순서)으로 변환한다.
+     * prafta-052 — 실패 행 재업로드용 원본 행(양식 14컬럼 순서)으로 변환한다.
      * {@link #HEADERS} 순서와 1:1 일치해야 한다(시트1 재업로드 호환의 핵심).
      * creditMonths(Integer)는 문자열로, null 은 빈 문자열로 정규화한다.
-     * additionalSiteCdList/gv* 토큰 클레임은 양식 13컬럼이 아니므로 포함하지 않는다.
+     * 주 소정근로 분은 입력 단위(시간)로 되돌려 담는다(소정-03).
+     * additionalSiteCdList/gv* 토큰 클레임은 양식 컬럼이 아니므로 포함하지 않는다.
      *
      * @param p 실패한 행의 생성 파라미터(null 이면 빈 리스트)
-     * @return 양식 13컬럼 순서의 문자열 리스트(시트1에 그대로 펼침)
+     * @return 양식 14컬럼 순서의 문자열 리스트(시트1에 그대로 펼침)
      */
     public static List<String> toSourceRow(UserCreateParam p) {
         if (p == null) {
@@ -121,7 +144,22 @@ public final class UserExcelRowParser {
               , nz(p.hireDate())          // 10 입사일(YYYYMMDD)
               , p.creditMonths() == null ? "" : String.valueOf(p.creditMonths()) // 11 경력인정개월수
               , nz(p.creditReasonDetail())// 12 상세 설명(경력인정)
+              , hoursText(p.stdWorkWeekMinutes()) // 13 주소정근로시간(시간)
         );
+    }
+
+    /**
+     * 소정-03 — 주 소정근로 분을 양식 입력 단위(시간) 문자열로 되돌린다.
+     * 정수 시간이면 소수점을 붙이지 않는다(40 / 20.5).
+     */
+    private static String hoursText(Integer weekStdMinutes) {
+        if (weekStdMinutes == null) {
+            return "";
+        }
+        if (weekStdMinutes % MINUTES_PER_HOUR == 0) {
+            return Integer.toString(weekStdMinutes / MINUTES_PER_HOUR);
+        }
+        return Double.toString(weekStdMinutes / (double) MINUTES_PER_HOUR);
     }
 
     /** null 을 빈 문자열로 정규화. */
@@ -165,6 +203,32 @@ public final class UserExcelRowParser {
             String v = readCellAsString(cell);
             if (v == null || v.isBlank()) return null;
             return Integer.parseInt(v.trim());
+        } catch (Exception e) {
+            return null;
+        }
+    }
+
+    /**
+     * 소정-03 — 주 소정근로시간(시간 단위) 셀을 읽어 <b>분</b>으로 환산한다.
+     *
+     * <p>0.5시간 단위 계약(예: 37.5시간)을 지원하기 위해 소수 입력을 허용하고, 분 미만은
+     * 반올림한다. 빈 값/숫자 아님/0 이하는 null 을 반환해 서비스 검증(필수 누락·값 범위)이
+     * 행 오류로 처리하게 둔다 — 파서가 임의 기본값을 채우면 잘못된 계약량이 조용히 저장된다.
+     */
+    private static Integer weekMinutesAt(Row row, int colIdx) {
+        Cell cell = row.getCell(colIdx);
+        if (cell == null) return null;
+        try {
+            double hours;
+            if (cell.getCellType() == CellType.NUMERIC) {
+                hours = cell.getNumericCellValue();
+            } else {
+                String v = readCellAsString(cell);
+                if (v == null || v.isBlank()) return null;
+                hours = Double.parseDouble(v.trim());
+            }
+            if (!(hours > 0)) return null;
+            return (int) Math.round(hours * MINUTES_PER_HOUR);
         } catch (Exception e) {
             return null;
         }

@@ -43,9 +43,34 @@ public record UpdateUserOvertimeRequestParam(
     , String gvUserCd
     , String gvAuthCd
     , String gvSiteCd
+    /**
+     * 소정-07 - 근로자 명시 청구 확인 값('Y' 만 확인으로 인정). 단축 기간(육아기·가족돌봄)에만 소비된다.
+     * 미전송(null)이면 확인 없음으로 보고 단축 기간 한정 거부(ATTD_400_201) — fail-safe.
+     */
+    , String reducedWorkOtClaimYn
 ) {
 
     private static final Logger log = LoggerFactory.getLogger(UpdateUserOvertimeRequestParam.class);
+
+    /**
+     * 소정-07 이전 형태(12-인자) 호환 생성자.
+     *
+     * <p>앱 관리자 승인 경로({@code AppAdminApprovalServiceImpl.doApproveAsis})처럼 근로자 명시 청구
+     * 확인 값을 운반하지 않는 기존 호출부를 그대로 유지하기 위한 위임 생성자다. 확인 값은 null 로
+     * 채워지므로 단축 기간(육아기·가족돌봄) 대상이면 거부된다(fail-safe 방향 — 소정-07 확정).
+     */
+    public UpdateUserOvertimeRequestParam(String userCd, String siteCd, String nodeCd, String workYmd,
+                                          String attdId, String reqId, String reqReason,
+                                          List<OvertimeItemModel> overtimes,
+                                          String gvCmpnyCd, String gvUserCd, String gvAuthCd, String gvSiteCd) {
+        this(userCd, siteCd, nodeCd, workYmd, attdId, reqId, reqReason, overtimes,
+                gvCmpnyCd, gvUserCd, gvAuthCd, gvSiteCd, null);
+    }
+
+    /** 소정-07 - 근로자 명시 청구가 확인되었는지 여부('Y' 만 인정). */
+    public boolean workerClaimConfirmed() {
+        return "Y".equalsIgnoreCase(reducedWorkOtClaimYn);
+    }
 
     public static UpdateUserOvertimeRequestParam from(UpdateUserOvertimeRequestRequest request, TokenInfo tokenInfo) {
 
@@ -122,6 +147,19 @@ public record UpdateUserOvertimeRequestParam(
             , tokenInfo.gv_userCd()
             , tokenInfo.gv_authCd()
             , tokenInfo.gv_siteCd()
+            // 소정-07: 근로자 명시 청구 확인 값(단축 기간에만 소비. 미전송이면 null → 거부).
+            //   앱 OvertimeParam 과 동일하게 trim 한다 — " Y" 같은 공백 포함 전송이 미확인으로
+            //   오판정되지 않게 하기 위함(security Info 지적, 2026-08-12).
+            , trimToNull(request.getReducedWorkOtClaimYn())
         );
+    }
+
+    /** 앞뒤 공백을 제거하고, 빈 문자열이면 null 로 반환한다(앱 {@code OvertimeParam.trim} 과 동일 규약). */
+    private static String trimToNull(String s) {
+        if (s == null) {
+            return null;
+        }
+        String t = s.trim();
+        return t.isEmpty() ? null : t;
     }
 }

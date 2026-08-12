@@ -13,13 +13,90 @@
            본문 상단 액션바로 이동 검토 (UI 스펙 결정 필요 D-3). -->
     </ViewHeader>
 
-    <div class="viewBody leave-policy">
+    <div
+      class="viewBody leave-policy"
+      :class="{ 'is-auto-grant-off': statutoryAutoGrantYn === 'N' }"
+    >
       <!-- 페이지 액션 영역: [변경 이력] (헤더 ViewHeader가 slot 미지원이므로 본문 상단에 배치) -->
       <div class="lp-page-actions">
         <button class="btn btn-second lp-history-btn" @click="fnOpenHistory">
           변경 이력
         </button>
       </div>
+
+      <!-- ============ 법정 연차 자동 부여 on/off (소정-05, UI-D) ============
+           5인 미만 사업장 등 연차유급휴가(근기법 60조) 적용 제외 사업장 대응.
+           해제 시 아래 정책 항목은 dim 처리되지만 값은 그대로 보존/저장된다
+           (다시 사용으로 바꾸면 종전 정책이 그대로 적용되도록). -->
+      <section class="lp-card lp-autogrant">
+        <header class="lp-card__head">
+          <h3 class="lp-card__title">
+            법정 연차 자동 부여
+            <span
+              v-if="statutoryAutoGrantYn === 'N'"
+              class="lp-badge lp-badge--cond"
+              >사용 안 함</span
+            >
+          </h3>
+        </header>
+        <p class="lp-card__desc">
+          회사 전체에 <strong>법정 연차를 자동으로 부여할지</strong> 결정합니다.
+          5인 미만 사업장 등
+          <strong>연차유급휴가 적용 제외 사업장</strong>에서 해제합니다.
+        </p>
+        <label class="lp-check lp-autogrant__check">
+          <input
+            type="checkbox"
+            v-model="statutoryAutoGrantYn"
+            true-value="Y"
+            false-value="N"
+          />
+          법정 연차 자동 부여 사용
+        </label>
+        <div class="lp-note lp-note--info">
+          <svg
+            viewBox="0 0 24 24"
+            width="13"
+            height="13"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="2"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+          >
+            <circle cx="12" cy="12" r="10" />
+            <line x1="12" y1="16" x2="12" y2="12" />
+            <line x1="12" y1="8" x2="12.01" y2="8" />
+          </svg>
+          <span>
+            해제하면 <strong>자동 부여·사용촉진·가불</strong>이 중지됩니다.
+            <strong>이미 부여된 연차</strong>는 그대로 남아 계속 사용할 수 있고,
+            <strong>관리자 수동(약정) 부여</strong>도 계속 가능합니다. (몰수
+            아님)
+          </span>
+        </div>
+        <div class="lp-note lp-note--legal">
+          <svg
+            viewBox="0 0 24 24"
+            width="13"
+            height="13"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="2"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+          >
+            <circle cx="12" cy="12" r="10" />
+            <line x1="12" y1="16" x2="12" y2="12" />
+            <line x1="12" y1="8" x2="12.01" y2="8" />
+          </svg>
+          <span>
+            <strong>상시 근로자 5명 이상</strong> 사업장은 연차유급휴가가
+            <strong>법정 의무</strong>입니다 (근로기준법 제60조). 해제는 적용
+            제외 사업장에서만 사용하세요.
+          </span>
+        </div>
+      </section>
 
       <!-- 부여 시점 미리보기 안내 카드 -->
       <div class="lp-help-card">
@@ -833,6 +910,15 @@ const axis5MaxDays = ref(25);
 const axis6ValidityMonths = ref(12); // UI 6번
 const axis7UsePromotion = ref("N"); // UI 7번
 
+// --- 소정-05: 법정 연차 자동 부여 on/off (TB_LEAVE_POLICY.STATUTORY_AUTO_GRANT_YN) ---
+//   'Y'(기본) = 기존 동작 / 'N' = 자동 부여·사용촉진·가불 중지 (기부여분·수동 약정 부여는 유지).
+//   ★서버는 미전송/비정상 값을 'Y' 로 정규화한다. 따라서 저장 payload(fnBuildSaveRequest)와
+//     영향 분석 payload(fnBuildTargetForImpact) 양쪽에 반드시 현재값을 실어 왕복시켜야
+//     'N' 설정이 저장 시 조용히 'Y' 로 되돌아가지 않는다.
+const statutoryAutoGrantYn = ref("Y");
+// 조회 시점의 값(변경 감지용). Y→N 전환 저장에서만 영향 확인 confirm 을 띄운다.
+const loadedStatutoryAutoGrantYn = ref("Y");
+
 // --- 메타 ---
 const applyFromDate = ref(""); // YYYYMMDD. 저장 직전 내일(오늘+1일)로 세팅 (§7.2 D-1)
 const changeReason = ref("");
@@ -975,6 +1061,24 @@ const fnSave = async () => {
   // 1) 1차 검증
   if (!fnValidate()) return;
 
+  // 1-1) 소정-05: 자동 부여를 끄는 변경(Y→N)만 영향 요약 confirm.
+  //      이미 'N' 인 상태에서의 재저장은 되묻지 않는다(반복 확인 피로 방지).
+  if (
+    statutoryAutoGrantYn.value === "N" &&
+    loadedStatutoryAutoGrantYn.value !== "N"
+  ) {
+    const ok = await proxy.$confirm(
+      "법정 연차 자동 부여를 사용하지 않도록 변경합니다.\n\n" +
+        "· 자동 부여(정기 부여)가 중지됩니다.\n" +
+        "· 연차 사용촉진이 중지됩니다.\n" +
+        "· 연차 가불을 사용할 수 없습니다.\n" +
+        "· 부여 이력이 없으면 직원 화면에서 연차 항목이 숨겨집니다.\n\n" +
+        "이미 부여된 연차와 관리자 수동(약정) 부여는 그대로 유지됩니다.\n" +
+        "계속하시겠습니까?"
+    );
+    if (!ok) return;
+  }
+
   // 2) 변경 사유 입력 (ReasonInputModal) → changeReason → 본 저장 진행
   openPop(ReasonInputModal, {
     title: "정책 변경 사유 입력",
@@ -1035,6 +1139,8 @@ const fnBuildSaveRequest = () => {
     axis5MaxDays: toIntOr(axis5MaxDays.value, 25),
     axis6ValidityMonths: toIntOr(axis6ValidityMonths.value, 12),
     axis7UsePromotion: axis7UsePromotion.value,
+    // 소정-05: 미전송 시 서버가 'Y' 로 정규화하므로 항상 현재값을 실어 왕복시킨다
+    statutoryAutoGrantYn: statutoryAutoGrantYn.value,
 
     // UI3(반올림): axis3Active(=UI2 PRORATE) 아니면 'CEIL' 정규화 (백엔드도 강제)
     axis4ProrateRounding: axis3Active.value
@@ -1096,6 +1202,9 @@ const fnApplyPolicyToState = (p) => {
   axis5MaxDays.value = p.axis5MaxDays ?? 25;
   axis6ValidityMonths.value = 12; // prafta-028: 연차 유효기간 12개월 법정 고정 (구버전 24 데이터도 12로 정규화)
   axis7UsePromotion.value = p.axis7UsePromotion ?? "N";
+  // 소정-05: 미지정/구버전 응답은 'Y'(기존 동작) 폴백 — 서버 정규화 방향과 동일
+  statutoryAutoGrantYn.value = p.statutoryAutoGrantYn ?? "Y";
+  loadedStatutoryAutoGrantYn.value = statutoryAutoGrantYn.value;
 
   // 사용 단위(단일): 미지정/구버전 데이터는 FULL_DAY로 폴백
   //   HB-04(2026-08-07): 반반차 폐지 — 구 데이터의 'QUARTER_DAY' 는 HALF_DAY 로 정규화해 표시한다.
@@ -1122,6 +1231,9 @@ const fnResetToDefault = () => {
   axis5MaxDays.value = 25;
   axis6ValidityMonths.value = 12;
   axis7UsePromotion.value = "N";
+  // 소정-05: 신규 작성 기본값 = 사용('Y'). 법정 의무가 원칙이고 해제가 예외다.
+  statutoryAutoGrantYn.value = "Y";
+  loadedStatutoryAutoGrantYn.value = "Y";
   usageUnit.value = "FULL_DAY";
   aprvUseYn.value = "N";
   allowRemnantRoundUp.value = "N"; // PC-08: 기본 OFF
@@ -1265,6 +1377,8 @@ const fnBuildTargetForImpact = () => {
     axis5MaxDays: toIntOr(axis5MaxDays.value, 25),
     axis6ValidityMonths: toIntOr(axis6ValidityMonths.value, 12),
     axis7UsePromotion: axis7UsePromotion.value,
+    // 소정-05: 영향 분석 경유 [정책 변경 진행] 저장에서도 토글이 'Y'로 묵시 초기화되지 않도록 포함
+    statutoryAutoGrantYn: statutoryAutoGrantYn.value,
     axis4ProrateRounding: axis3Active.value
       ? axis4ProrateRounding.value
       : "CEIL",
@@ -1376,6 +1490,21 @@ const fnTomorrowYyyymmdd = () => {
 
 .lp-card.is-conditional {
   opacity: 0.75;
+}
+
+/* ===== 소정-05: 법정 연차 자동 부여 토글 카드 ===== */
+.lp-autogrant__check {
+  margin-bottom: 0.75rem;
+}
+
+/* 자동 부여 '사용 안 함' 상태에서는 하위 정책 항목을 dim 처리한다(UI-D).
+   ★값은 그대로 보존/저장된다 — 입력을 막지 않는 시각 표시만이다.
+   토글 카드(.lp-autogrant) 자신은 제외해야 조작 대상이 흐려지지 않는다. */
+.leave-policy.is-auto-grant-off .lp-help-card,
+.leave-policy.is-auto-grant-off .lp-card:not(.lp-autogrant),
+.leave-policy.is-auto-grant-off .lp-divider,
+.leave-policy.is-auto-grant-off .lp-extra-card {
+  opacity: 0.55;
 }
 
 .lp-card__head {

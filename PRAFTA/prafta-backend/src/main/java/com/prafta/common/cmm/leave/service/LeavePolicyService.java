@@ -33,6 +33,31 @@ public interface LeavePolicyService {
     LeavePolicyVO findActivePolicy(String cmpnyCd);
 
     /**
+     * 소정-05: 회사의 <b>법정 연차 자동 부여</b> 사용 여부 (5인 미만 사업장 토글).
+     *
+     * <p>지시서 {@code 작업지시서_근로자별-소정근로시간-관리-도입.md} §연차 부여 on/off 토글.
+     *
+     * <p>false 인 회사에서 중지되는 것은 <b>신규 법정 자동 부여</b> 뿐이다.
+     * <ul>
+     *   <li>중지: 부여 엔진(정기부여 배치·Attd_09 정책 기준 부여)·사용촉진 도래 판정·가불(선차감) 부여</li>
+     *   <li>유지: 관리자 수동(약정) 부여, 이미 부여된 연차의 잔여·사용(몰수 아님)</li>
+     * </ul>
+     *
+     * <p><b>★기본값 가드</b>: 활성 정책이 없거나 값이 NULL/공백이면 <b>true</b>(기존 동작)를 반환한다.
+     * 컬럼에 'N' 이 명시된 회사만 게이트에 걸린다.
+     *
+     * @return 자동 부여 사용 여부 (기본 true)
+     */
+    boolean isStatutoryAutoGrantEnabled(String cmpnyCd);
+
+    /**
+     * 소정-05: 이미 조회해 둔 정책 VO 로 판정 (조회 중복 방지용 오버로딩).
+     *
+     * @param policy 활성 정책 VO. {@code null} 이면 true(기존 동작)
+     */
+    boolean isStatutoryAutoGrantEnabled(LeavePolicyVO policy);
+
+    /**
      * 정책 생성.
      *
      * <p>처리 순서:

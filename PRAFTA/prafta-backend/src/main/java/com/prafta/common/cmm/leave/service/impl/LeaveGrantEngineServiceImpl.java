@@ -34,6 +34,7 @@ import com.prafta.common.cmm.leave.vo.PolicyGrantPreviewRowVO;
 import com.prafta.common.cmm.leave.vo.PolicyGrantPreviewVO;
 import com.prafta.common.error.attd.AttdErrorCode;
 import com.prafta.common.error.common.CommonErrorCode;
+import com.prafta.common.error.leave.LeaveErrorCode;
 import com.prafta.common.error.user.UserErrorCode;
 import com.prafta.common.exception.ApiException;
 import com.prafta.common.util.AuthRoleUtils;
@@ -311,6 +312,15 @@ public class LeaveGrantEngineServiceImpl implements LeaveGrantEngineService {
             return 0;
         }
         LeavePolicyVO policy = leavePolicyService.findActivePolicy(cmpnyCd);
+
+        // 소정-05 게이트(qa Medium / security L-3): 법정 자동 부여 off 회사는 추정 누락 부여도 0.
+        //   본 값은 입사일 변경 영향분석 화면이 "추가 부여 예정 N일"로 안내하는 숫자다. 실제 조정
+        //   (adjustStatutoryGrantsByHireDateChange)이 추가 부여를 skip 하므로, 여기서 0 을 반환하지 않으면
+        //   화면이 "들어오지 않을 연차"를 권하게 되어 관리자가 그대로 저장하는 오유도가 발생한다.
+        if (!leavePolicyService.isStatutoryAutoGrantEnabled(policy)) {
+            return 0;
+        }
+
         String today = LocalDate.now().format(DateTimeFormatter.BASIC_ISO_DATE);
         // 추정용 경량 컨텍스트(정책 + 오늘만 사용; policySeq/availToDate는 차액 산정에 불필요)
         GrantContext ctx = new GrantContext(policy, null, today, null);
@@ -443,6 +453,37 @@ public class LeaveGrantEngineServiceImpl implements LeaveGrantEngineService {
         }
 
         if (diff.signum() > 0) {
+            // ★소정-05 게이트(qa Medium / security L-3): 법정 자동 부여 off 회사는 "추가 부여" 분기만 skip 한다.
+            //   본 경로(applyHireChangeAdd → insertHireAdjustGrant)는 GRANT_BY_TYPE='01'(자동) +
+            //   STATUTORY_* 를 생성하므로, 게이트가 없으면 입사일 수정만으로 법정 자동 부여가 우회 생성된다.
+            //   ★전면 throw 금지 이유: 입사일 변경 트랜잭션(User01ServiceImpl) 전체가 롤백되어
+            //     off 회사에서 인사 데이터(입사일) 수정 자체가 불가능해지는 회귀가 발생한다.
+            //   ★회수(diff<0)·무처리(diff=0)는 그대로 허용한다 — 기부여 축소는 off 취지와 충돌하지 않는다.
+            if (!leavePolicyService.isStatutoryAutoGrantEnabled(cmpnyCd)) {
+                log.warn("법정 연차 자동 부여 off 회사 — 입사일 변경 추가 부여 skip. "
+                                + "cmpnyCd={}, userCd={}, 현재={}, 목표={}, 요청차액={}, histId={}",
+                        cmpnyCd, userCd, currentTotal.toPlainString(), newTotal.toPlainString(),
+                        diff.toPlainString(), histId);
+
+                // 원장은 그대로이므로 결과도 "무처리"로 반환한다(newGrantTotal=현재값, diff=0).
+                //   → 이력(tb_user_hire_date_history)의 NEW_GRANT_TOTAL 이 실제 원장과 어긋나지 않고,
+                //     호출부의 회수 사유 기록 분기(diff<0)도 오작동하지 않는다.
+                //   요청된 목표/차액과 skip 사유는 AFFECTED_GRANT_SNAPSHOT 에 남겨 감사 추적을 유지한다.
+                List<Map<String, Object>> skipSnapshot = new ArrayList<>();
+                skipSnapshot.add(autoGrantOffSkipSnapshotRow(currentTotal, newTotal, diff));
+
+                return HireDateAdjustResultVO.builder()
+                        .oldGrantTotal(currentTotal)
+                        .newGrantTotal(currentTotal)
+                        .diff(BigDecimal.ZERO.setScale(1))
+                        .addedDays(BigDecimal.ZERO.setScale(1))
+                        .withdrawnDays(BigDecimal.ZERO.setScale(1))
+                        .recallableDays(recallable)
+                        .canceledGrantCount(0).reducedGrantCount(0).addedGrantCount(0)
+                        .affectedSnapshotJson(serializeSnapshot(skipSnapshot))
+                        .build();
+            }
+
             // 차액 > 0: 추가 부여 (D4)
             return applyHireChangeAdd(cmpnyCd, userCd, newHireDate, currentTotal, newTotal, diff, recallable,
                     histId, operatorUserCd);
@@ -469,6 +510,14 @@ public class LeaveGrantEngineServiceImpl implements LeaveGrantEngineService {
         LocalDate hire = parseYyyymmdd(hireDate);
         LocalDate todayDate = LocalDate.now();
         if (hire == null || hire.isAfter(todayDate)) {
+            return BigDecimal.ZERO;
+        }
+
+        // 소정-05(plan §8 Q3 확정): 법정 자동 부여 off 회사는 가불 한도 0.
+        //   가불은 "차기 부여 예정 법정 연차의 선차감"이라 상계될 부여가 없으면 영구 마이너스가 된다.
+        //   한도 0 을 반환하면 웹(Attd_05)·앱(신청 메타)의 가불 토글이 자연히 미노출되고,
+        //   신청 흐름은 부족분 > 한도 판정으로 차단된다(createBorrowGrant 진입 자체가 없음).
+        if (!leavePolicyService.isStatutoryAutoGrantEnabled(cmpnyCd)) {
             return BigDecimal.ZERO;
         }
 
@@ -636,6 +685,16 @@ public class LeaveGrantEngineServiceImpl implements LeaveGrantEngineService {
         }
 
         LeavePolicyVO policy = leavePolicyService.findActivePolicy(cmpnyCd);
+
+        // 소정-05(plan §8 Q3 확정): 법정 자동 부여 off 회사는 가불 GRANT 생성을 fail-closed 로 차단한다.
+        //   computeBorrowQuota 가 이미 0 을 반환하므로 정상 흐름에서는 도달하지 않는다(2차 방어선 —
+        //   한도 검사를 우회한 직접 호출/후속 신규 경로 대비). 기본값 가드로 'Y' 회사는 무영향.
+        if (!leavePolicyService.isStatutoryAutoGrantEnabled(policy)) {
+            log.warn("법정 연차 자동 부여 off 회사 — 가불 부여 차단. cmpnyCd={}, userCd={}, family={}",
+                    cmpnyCd, userCd, family);
+            throw new ApiException(LeaveErrorCode.LEAVE_400_002);
+        }
+
         Long policySeq = (policy == null) ? null : policy.getPolicySeq();
         String today = LocalDate.now().format(DateTimeFormatter.BASIC_ISO_DATE);
 
@@ -1174,6 +1233,24 @@ public class LeaveGrantEngineServiceImpl implements LeaveGrantEngineService {
         return m;
     }
 
+    /**
+     * 소정-05: 법정 자동 부여 off 로 입사일 변경 추가 부여를 건너뛴 사실의 스냅샷 1행.
+     *
+     * <p>부여 행이 없으므로 grantId/availFrom/availTo 는 남기지 않고, <b>요청된 목표·차액과 사유</b>를
+     * 기록해 "왜 추가 부여가 없었는지"를 노무 감사에서 추적할 수 있게 한다.
+     */
+    private Map<String, Object> autoGrantOffSkipSnapshotRow(BigDecimal currentTotal, BigDecimal targetTotal,
+                                                            BigDecimal requestedDiff) {
+        Map<String, Object> m = new LinkedHashMap<>();
+        m.put("action", "SKIP_STATUTORY_AUTO_GRANT_OFF");
+        m.put("currentTotal", currentTotal.stripTrailingZeros().toPlainString());
+        m.put("requestedTotal", targetTotal.stripTrailingZeros().toPlainString());
+        m.put("requestedDiff", requestedDiff.stripTrailingZeros().toPlainString());
+        m.put("addedDays", "0");
+        m.put("reason", "법정 연차 자동 부여 사용 안 함(STATUTORY_AUTO_GRANT_YN='N') — 추가 부여 건너뜀");
+        return m;
+    }
+
     private Map<String, Object> recallSnapshotRow(String action, String grantId, String grantType, BigDecimal take,
                                                   BigDecimal beforeGrantDays, BigDecimal usedDays, String availTo) {
         Map<String, Object> m = new LinkedHashMap<>();
@@ -1247,6 +1324,17 @@ public class LeaveGrantEngineServiceImpl implements LeaveGrantEngineService {
 
         // 활성 정책(AXIS1/AXIS2/AXIS3/근속가산/유효기간) + 부여 공통값
         LeavePolicyVO policy = leavePolicyService.findActivePolicy(cmpnyCd);
+
+        // 소정-05 게이트 ①·③: 법정 연차 자동 부여 토글 off 회사는 "법정(정책 기준) 부여" 경로를 전면 차단한다.
+        //   - 본 진입부는 Attd_09 [정책 기준 부여] 미리보기/적용(③)과 정기부여 배치(①)가 공유하는 유일한 관문이다.
+        //   - 배치는 selectAutoGrantCompanyCds 에서 이미 회사가 제외되므로 여기는 fail-closed 2차 방어선이다.
+        //   - ★관리자 수동(약정) 부여(LeaveDashboardService.manualGrant)는 본 게이트를 타지 않는다 — 허용 유지.
+        //   - 활성 정책이 없거나 값이 'N' 이 아니면 통과(기본값 가드) → 기존 회사 동작 불변.
+        if (!leavePolicyService.isStatutoryAutoGrantEnabled(policy)) {
+            log.warn("법정 연차 자동 부여 off 회사 — 정책 기준 부여 차단. cmpnyCd={}, 대상={}명", cmpnyCd, userCds.size());
+            throw new ApiException(LeaveErrorCode.LEAVE_400_001);
+        }
+
         Long policySeq = (policy == null) ? null : policy.getPolicySeq();
         int validityMonths = resolveValidityMonths(cmpnyCd);
         String today = LocalDate.now().format(DateTimeFormatter.BASIC_ISO_DATE);

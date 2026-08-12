@@ -116,6 +116,26 @@ public class LeavePolicyServiceImpl implements LeavePolicyService {
     }
 
     @Override
+    public boolean isStatutoryAutoGrantEnabled(String cmpnyCd) {
+        // 소정-05: 법정 자동 부여 게이트의 단일 판정 출처.
+        //   ★기본값 'Y' 가드 — 회사 코드 미상/활성 정책 없음/컬럼 NULL 은 모두 "사용(기존 동작)"이다.
+        //   'N' 이 명시된 회사만 게이트에 걸리므로 기존 전 회사는 동작이 완전히 불변이다.
+        if (cmpnyCd == null || cmpnyCd.isBlank()) {
+            return true;
+        }
+        LeavePolicyVO policy = leavePolicyMapper.selectActivePolicy(cmpnyCd);
+        return isStatutoryAutoGrantEnabled(policy);
+    }
+
+    @Override
+    public boolean isStatutoryAutoGrantEnabled(LeavePolicyVO policy) {
+        if (policy == null) {
+            return true; // 활성 정책 미설정 회사 = 기존 동작 유지
+        }
+        return !YN_N.equals(policy.getStatutoryAutoGrantYn());
+    }
+
+    @Override
     @Transactional
     public Long createPolicy(String cmpnyCd, LeavePolicyCommand command, String authCd, String userCd) {
         return saveInternal(cmpnyCd, null, command, authCd, userCd, CHANGE_TYPE_CREATE);
@@ -472,6 +492,14 @@ public class LeavePolicyServiceImpl implements LeavePolicyService {
             violation("AXIS7_USE_PROMOTION 값이 유효하지 않음: " + cmd.axis7UsePromotion());
         }
 
+        // 소정-05: 법정 연차 자동 부여 토글 값 검증.
+        //   NULL/공백은 buildNewPolicyVO 에서 'Y'(기존 동작)로 정규화하므로 여기서 막지 않는다
+        //   (본 필드를 보내지 않는 구 클라이언트 무회귀). 값이 실려 있으면 Y/N 만 허용한다.
+        if (cmd.statutoryAutoGrantYn() != null && !cmd.statutoryAutoGrantYn().isBlank()
+                && !YN_Y.equals(cmd.statutoryAutoGrantYn()) && !YN_N.equals(cmd.statutoryAutoGrantYn())) {
+            violation("STATUTORY_AUTO_GRANT_YN 값이 유효하지 않음: " + cmd.statutoryAutoGrantYn());
+        }
+
         // 사용 단위(단일, prafta-024): 값이 있으면 화이트리스트여야 한다(공백은 buildNewPolicyVO에서 FULL_DAY로 정규화).
         //   결정 2b: AXIS3=PRORATE + AXIS4=HALF_DAY(0.5일 단위 절사)면 USAGE_UNIT은 HALF_DAY만 허용.
         if (cmd.usageUnit() != null && !cmd.usageUnit().isBlank()) {
@@ -540,6 +568,11 @@ public class LeavePolicyServiceImpl implements LeavePolicyService {
 
         vo.setAxis6ValidityMonths(cmd.axis6ValidityMonths());
         vo.setAxis7UsePromotion(cmd.axis7UsePromotion());
+
+        // 소정-05: 법정 연차 자동 부여 토글 — 기본 'Y'(기존 동작). 비정상/미지정 값은 'Y' 로 정규화한다.
+        //   ★fail-closed 가 아니라 fail-open('Y') 인 이유: 'N' 은 법정 부여를 멈추는 예외 설정이므로,
+        //     값이 유실됐을 때 부여가 조용히 멈추는 쪽(근로자 불이익)이 더 위험하다.
+        vo.setStatutoryAutoGrantYn(normalizeYn(cmd.statutoryAutoGrantYn(), YN_Y));
 
         vo.setUseYn(YN_Y);
         vo.setApplyFromDate(cmd.applyFromDate());
@@ -615,6 +648,7 @@ public class LeavePolicyServiceImpl implements LeavePolicyService {
             changed.add("AXIS5_MAX_DAYS");
             changed.add("AXIS6_VALIDITY_MONTHS");
             changed.add("AXIS7_USE_PROMOTION");
+            changed.add("STATUTORY_AUTO_GRANT_YN"); // 소정-05
             return changed;
         }
         if (!Objects.equals(current.getAxis1GrantBase(), cmd.axis1GrantBase())) {
@@ -644,6 +678,11 @@ public class LeavePolicyServiceImpl implements LeavePolicyService {
         }
         if (!Objects.equals(current.getAxis7UsePromotion(), cmd.axis7UsePromotion())) {
             changed.add("AXIS7_USE_PROMOTION");
+        }
+        // 소정-05: 토글 변경도 IMPACT_SUMMARY.axesChanged 에 남긴다(양쪽 'Y' 기본 정규화 후 비교).
+        if (!Objects.equals(normalizeYn(current.getStatutoryAutoGrantYn(), YN_Y),
+                normalizeYn(cmd.statutoryAutoGrantYn(), YN_Y))) {
+            changed.add("STATUTORY_AUTO_GRANT_YN");
         }
         return changed;
     }
@@ -693,6 +732,10 @@ public class LeavePolicyServiceImpl implements LeavePolicyService {
         snap.put("axis5MaxDays", vo.getAxis5MaxDays());
         snap.put("axis6ValidityMonths", vo.getAxis6ValidityMonths());
         snap.put("axis7UsePromotion", vo.getAxis7UsePromotion());
+        // ★소정-05: 법정 연차 자동 부여 토글(5인 미만 대응). 본 화이트리스트는 테이블 전체 덤프가 아니라
+        //   명시 나열이므로, 여기에 넣지 않으면 on/off 변경이 노무 감사 이력(TB_LEAVE_POLICY_HISTORY)에
+        //   전혀 남지 않는다(마이그레이션 sojeong-1-3 헤더 경고).
+        snap.put("statutoryAutoGrantYn", vo.getStatutoryAutoGrantYn());
         snap.put("aprvUseYn", vo.getAprvUseYn());
         snap.put("useYn", vo.getUseYn());
         snap.put("applyFromDate", vo.getApplyFromDate());
@@ -805,6 +848,18 @@ public class LeavePolicyServiceImpl implements LeavePolicyService {
                 promotionLabel(t.axis7UsePromotion()),
                 current == null ? null : current.getAxis7UsePromotion(),
                 t.axis7UsePromotion()));
+
+        // 표시 8(소정-05): 법정 연차 자동 부여 토글. axis 는 아니지만 정책 폼의 저장 항목이므로 diff 에 싣는다.
+        //   ★싣지 않으면 "토글만 변경"한 경우 analyzeImpact 가 §9.10-4(변경 없음)로 거부되어
+        //     영향 분석 경유 [정책 변경 진행] 경로로는 토글을 저장할 수 없다.
+        //   비교는 양쪽을 'Y' 기본으로 정규화한 뒤 수행한다(미전송/NULL 을 변경으로 오판하지 않도록).
+        String curAutoGrant = normalizeYn(current == null ? null : current.getStatutoryAutoGrantYn(), YN_Y);
+        String tgtAutoGrant = normalizeYn(t.statutoryAutoGrantYn(), YN_Y);
+        list.add(simpleDiff(8, "법정 연차 자동 부여",
+                autoGrantLabel(current == null ? null : curAutoGrant),
+                autoGrantLabel(tgtAutoGrant),
+                current == null ? null : curAutoGrant,
+                tgtAutoGrant));
 
         return list;
     }
@@ -1164,6 +1219,13 @@ public class LeavePolicyServiceImpl implements LeavePolicyService {
     private String promotionLabel(String yn) {
         if (YN_Y.equals(yn)) return "사용 (자동 통지)";
         if (YN_N.equals(yn)) return "사용 안 함";
+        return yn == null ? "-" : yn;
+    }
+
+    /** 소정-05: 법정 연차 자동 부여 토글 라벨. */
+    private String autoGrantLabel(String yn) {
+        if (YN_N.equals(yn)) return "사용 안 함 (5인 미만 등 적용 제외)";
+        if (YN_Y.equals(yn)) return "사용";
         return yn == null ? "-" : yn;
     }
 

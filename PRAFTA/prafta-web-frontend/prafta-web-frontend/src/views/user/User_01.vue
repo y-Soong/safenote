@@ -140,6 +140,15 @@
           </div>
         </div>
 
+        <!-- 소정-08: 엑셀 양식 안내(14컬럼). 소정근로시간 컬럼 추가에 따른 구양식 호환 안내. -->
+        <p class="excel-guide-hint">
+          ⓘ 사용자 생성 엑셀 양식은 <strong>14컬럼</strong>입니다.
+          <strong>주소정근로시간(필수, 시간 단위)</strong> 컬럼이 추가되어,
+          풀타임은 40, 단시간은 실제 계약 시간을 입력합니다. 값이 비어 있으면 해당
+          행은 생성되지 않으니, 이전 13컬럼 양식을 쓰던 경우 양식을 다시 내려받아
+          주세요.
+        </p>
+
         <!-- PRAFTA-037-F6: 비동기 업로드 진행률 모달 -->
         <div v-if="uploadJobActive" class="upload-progress-overlay">
           <div class="upload-progress-modal">
@@ -1091,6 +1100,21 @@ const isRowLocked = (user) => Number(user.authLevel) < Number(authLevel.value);
   cursor: pointer;
   accent-color: var(--color-primary, #16a34a);
   flex-shrink: 0;
+}
+
+/* 소정-08: 엑셀 양식(14컬럼) 안내 문구 */
+.excel-guide-hint {
+  margin: 0 0 0.5rem;
+  padding: 0.5rem 0.75rem;
+  border-radius: var(--input-radius, 10px);
+  background: var(--color-info-bg, #eff6ff);
+  color: var(--color-info-text, #1d4ed8);
+  font-size: 0.75rem;
+  line-height: 1.5;
+}
+
+.excel-guide-hint strong {
+  font-weight: 600;
 }
 
 /* PRAFTA-037-F6: 비동기 업로드 진행률 모달 */

@@ -2,6 +2,7 @@ package com.prafta.web.user.user01.service.impl;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
+import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -13,8 +14,12 @@ import org.springframework.transaction.annotation.Transactional;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.prafta.common.cmm.stdwork.StdWorkReasonCd;
+import com.prafta.common.cmm.stdwork.command.StdWorkHoursSaveCommand;
+import com.prafta.common.cmm.stdwork.vo.StdWorkHoursSaveResult;
 import com.prafta.common.error.common.CommonErrorCode;
 import com.prafta.common.error.login.LoginErrorCode;
+import com.prafta.common.error.stdwork.StdWorkErrorCode;
 import com.prafta.common.error.user.UserErrorCode;
 import com.prafta.common.exception.ApiException;
 import com.prafta.common.security.crypto.AesGcmCrypto;
@@ -113,6 +118,8 @@ public class User01ServiceImpl implements User01Service{
 	private final com.prafta.common.cmm.sch.mapper.DefaultSchGenMapper defaultSchGenMapper;
 	// F1/QT-11-7: 비활성/탈퇴 시 진행중 대기요청 일괄 반려 + 연차 원장 원복(소속이동 발효와 단일 출처).
 	private final com.prafta.web.user.user01.service.UserPendingRequestTerminationService userPendingRequestTerminationService;
+	// 소정-03: 계정 생성 시 소정근로시간 이력 등록(겹침/범위/일용직 검증 포함) 공용 서비스(common.cmm.stdwork).
+	private final com.prafta.common.cmm.stdwork.service.StdWorkHoursService stdWorkHoursService;
 
 	private static final int PW_MIN_LEN = 6;
 	private static final int PW_MAX_LEN = 15;
@@ -717,6 +724,18 @@ public class User01ServiceImpl implements User01Service{
 	private static final int PHONE_MIN_DIGITS = 10;
 	private static final int PHONE_MAX_DIGITS = 11;
 
+	// ===== 소정-03 : 계정 생성 시 소정근로시간 필수 입력 =====
+	// 지시서 §0단계 "계정별 필수 입력(08-11 확정)" — UX 는 "풀타임 / 단시간(직접 입력)" 선택식이다.
+
+	/** 풀타임 — 주 소정근로분을 회사 통상 기준값으로 서버가 채운다(기준값 하드코딩 금지, 지시서 B-1). */
+	private static final String STD_WORK_TYPE_FULL = "FULL";
+
+	/** 직접 입력 — 단건 폼의 "단시간" 선택과 엑셀 업로드가 쓴다(주 소정근로 분 필수). */
+	private static final String STD_WORK_TYPE_DIRECT = "DIRECT";
+
+	/** 소정근로 이력 적용 시작일 포맷(YYYYMMDD) — 입사일 미입력 시 가입일 폴백에 쓴다. */
+	private static final DateTimeFormatter YMD_BASIC = DateTimeFormatter.ofPattern("yyyyMMdd");
+
 	@Override
 	@Transactional(propagation = Propagation.REQUIRES_NEW, rollbackFor = Exception.class)
 	public void insertUserOne(UserCreateParam param) {
@@ -739,6 +758,28 @@ public class User01ServiceImpl implements User01Service{
 		if (!isBlank(param.employmentType())
 				&& !ALLOWED_EMPLOYMENT_TYPES.contains(param.employmentType())) {
 			throw new ApiException(UserErrorCode.USER_400_047);
+		}
+
+		// 3-2) 소정-03: 소정근로시간 입력 검증(필수). 계정을 만들기 전에 먼저 막는다.
+		//   FULL   : 추가 입력 없음(회사 통상 기준값을 서버가 채움).
+		//   DIRECT : 주 소정근로 분 필수. 사유코드는 선택(미입력 시 통상 기준값 비교로 자동 판정).
+		//   값 범위·사유코드 존재·일용직 차단 등 나머지 규칙은 StdWorkHoursService 가 단일 출처로 검증한다.
+		String stdWorkType = isBlank(param.stdWorkType()) ? null : param.stdWorkType().trim();
+		if (stdWorkType == null
+				|| (!STD_WORK_TYPE_FULL.equals(stdWorkType) && !STD_WORK_TYPE_DIRECT.equals(stdWorkType))) {
+			throw new ApiException(StdWorkErrorCode.STDWORK_400_001);
+		}
+		if (STD_WORK_TYPE_DIRECT.equals(stdWorkType)
+				&& (param.stdWorkWeekMinutes() == null || param.stdWorkWeekMinutes() <= 0)) {
+			throw new ApiException(StdWorkErrorCode.STDWORK_400_004);
+		}
+		// 사유코드는 화면에 내려준 목록(selectableStdWorkReasonCds)으로 서버가 다시 검증한다.
+		//   SYS083 존재 검증만으로는 NORMAL(통상)이 통과해 "주 20시간인데 사유는 통상"처럼
+		//   단시간 판정을 왜곡하는 값이 저장될 수 있다(클라 바디 신뢰 금지).
+		if (STD_WORK_TYPE_DIRECT.equals(stdWorkType) && !isBlank(param.stdWorkReasonCd())
+				&& !selectableStdWorkReasonCds().contains(param.stdWorkReasonCd().trim())) {
+			log.warn("신규 계정 소정근로 사유코드 거부(선택 불가 코드) - 요청자={}", param.gvUserCd());
+			throw new ApiException(StdWorkErrorCode.STDWORK_400_005);
 		}
 
 		// 4) 경력 인정 사유 유형 검증 (입력 시만).
@@ -874,6 +915,12 @@ public class User01ServiceImpl implements User01Service{
 			log.info("신규 계정 생성 - 무담당 부서 담당(정) 자동지정. userCd={}, siteCd={}, nodeCd={}", userCd, siteCd, param.nodeCd());
 		}
 
+		// 17-2) 소정-03: 소정근로시간 이력 INSERT — 계정 생성과 <b>같은 트랜잭션</b>.
+		//   StdWorkHoursService.register 는 @Transactional(REQUIRED) 라 본 메서드의
+		//   REQUIRES_NEW 트랜잭션에 참여한다. 즉 이력 등록이 실패하면 계정 생성 전체가 롤백되어
+		//   "소정근로 미기록 계정"이 조용히 만들어지지 않는다(지시서 요구).
+		insertStdWorkHoursOnCreate(param, userCd, stdWorkType);
+
 		// 18) TB_USER_SITE_AUTH INSERT (사용자 ↔ 사이트 권한 한 줄).
 		user01Mapper.insertOneUserSiteAuth(param.gvCmpnyCd(), userCd, siteCd, param.gvUserCd());
 
@@ -933,6 +980,142 @@ public class User01ServiceImpl implements User01Service{
 
 		log.info("신규 계정 생성 완료 - 요청자={}, 신규userCd={}, userId={}, authCd={}, siteCd={}, nodeCd={}, defaultSchCd={}, accountStatus=04",
 				param.gvUserCd(), userCd, param.userId(), param.authCd(), siteCd, param.nodeCd(), defaultSchCd);
+	}
+
+	/**
+	 * 소정-03: 신규 계정의 소정근로시간 이력 1행을 등록한다 (계정 생성 트랜잭션 내부).
+	 *
+	 * <p><b>적용 시작일</b> = 입사일(HIRE_DATE). 미입력이거나 형식이 올바르지 않으면
+	 * <b>가입일(계정 생성일)</b>로 폴백한다(plan §4 소정-03). 적용 종료일은 두지 않는다 —
+	 * 계약 변경은 관리 화면에서 새 이력 행으로 쌓이며, 이때 직전 열린 행이 자동 마감된다.
+	 *
+	 * <p><b>주 소정근로 분</b>
+	 * <ul>
+	 *   <li>풀타임(FULL) — 회사 통상 기준값(TB_CMPNY_STD_WORK_POLICY, 행 부재 시 2400분).
+	 *       화면이 보낸 값을 쓰지 않는다(기준값 하드코딩·클라 신뢰 금지).</li>
+	 *   <li>직접 입력(DIRECT) — 화면/엑셀 입력값.</li>
+	 * </ul>
+	 *
+	 * <p><b>사유코드</b> — 풀타임은 NORMAL 고정. 직접 입력은 화면 선택값을 쓰고, 사유가 없으면
+	 * (엑셀 업로드는 사유 컬럼이 없다) 회사 통상 기준값과 비교해 판정한다: 본인 주 소정이 통상
+	 * 기준보다 짧으면 PART_TIME(단시간계약), 아니면 NORMAL(지시서 B-2 단시간 파생 판정).
+	 *
+	 * <p><b>일용직 제외</b> — 소정근로 개념이 없는 계정(DAILY)은 이력을 만들지 않는다.
+	 */
+	private void insertStdWorkHoursOnCreate(UserCreateParam param, String userCd, String stdWorkType) {
+
+		// 관리자 생성 경로는 ALLOWED_EMPLOYMENT_TYPES 로 이미 DAILY 를 거부하지만,
+		// 고용형태 판정의 단일 출처(StdWorkHoursService)로 한 번 더 확인한다(fail-closed).
+		if (!stdWorkHoursService.isEligible(param.gvCmpnyCd(), userCd)) {
+			log.info("신규 계정 소정근로시간 이력 생략(관리 대상 아님) - userCd={}", userCd);
+			return;
+		}
+
+		int cmpnyWeekStdMinutes = stdWorkHoursService.resolveCmpnyWeekStdMinutes(param.gvCmpnyCd());
+		int weekStdMinutes = STD_WORK_TYPE_FULL.equals(stdWorkType)
+				? cmpnyWeekStdMinutes
+				: param.stdWorkWeekMinutes();
+
+		String reasonCd;
+		if (STD_WORK_TYPE_FULL.equals(stdWorkType)) {
+			reasonCd = StdWorkReasonCd.NORMAL;
+		} else if (!isBlank(param.stdWorkReasonCd())) {
+			reasonCd = param.stdWorkReasonCd().trim();
+		} else {
+			reasonCd = (weekStdMinutes < cmpnyWeekStdMinutes)
+					? StdWorkReasonCd.PART_TIME
+					: StdWorkReasonCd.NORMAL;
+		}
+
+		String hireYmd = isBlank(param.hireDate()) ? null : param.hireDate().trim();
+		String applyStrDate = (DateTimeUtils.parseYyyymmdd(hireYmd) != null)
+				? hireYmd
+				: LocalDate.now().format(YMD_BASIC);
+
+		StdWorkHoursSaveResult stdWorkResult = stdWorkHoursService.register(StdWorkHoursSaveCommand.builder()
+				.cmpnyCd(param.gvCmpnyCd())
+				.userCd(userCd)
+				.applyStrDate(applyStrDate)
+				.applyEndDate(null)
+				.weekStdMinutes(weekStdMinutes)
+				.reasonCd(reasonCd)
+				.reasonDetail(null)
+				.actorNo(param.gvUserCd())
+				.build());
+
+		// ★사유코드는 로그에 남기지 않는다(security M-3): userCd + 사유(임신기·육아기·가족돌봄)
+		//   조합은 건강·가족관계 정보에 해당한다(정책 §11.1). 감사 추적은 이력 테이블의
+		//   INSERT_NO/INSERT_DATE 로 충분하다.
+		log.info("신규 계정 소정근로시간 이력 등록 - userCd={}, 적용시작일={}(입사일폴백여부={}), 주소정={}분, 경고={}건",
+				userCd, applyStrDate, hireYmd == null || DateTimeUtils.parseYyyymmdd(hireYmd) == null,
+				weekStdMinutes,
+				stdWorkResult.getWarnings() == null ? 0 : stdWorkResult.getWarnings().size());
+	}
+
+	/**
+	 * 소정-03/08: 계정 생성 경로에서 <b>선택 가능한</b> 소정근로 사유코드 규칙 목록 (allow-list 단일 출처).
+	 *
+	 * <p>화면 셀렉트({@link #getStdWorkOptions})와 저장 검증({@code insertUserOne} 3-2 단계)이
+	 * <b>같은 메서드</b>를 쓴다 — 목록에서만 빼고 서버가 강제하지 않으면 클라이언트가 임의 코드를
+	 * 보내 데이터가 오염된다(security L-2). 코드 나열 복제 금지.
+	 *
+	 * <p>제외 대상
+	 * <ul>
+	 *   <li>{@code NORMAL} — 풀타임 라디오가 담당한다. 이 값이 단시간 입력과 함께 저장되면
+	 *       "주 20시간인데 통상근로자"가 되어 2단계 단시간 판정·비례부여 분모가 틀어진다.</li>
+	 *   <li>단축 사유 — 적용 종료일이 필수인데 생성 폼에는 기간 입력이 없다. 판정은
+	 *       {@code StdWorkReasonCd.isReduced}(단축 여부 단일 출처).</li>
+	 * </ul>
+	 */
+	private List<com.prafta.common.cmm.stdwork.vo.StdWorkReasonRuleVO> selectableStdWorkReasonRules() {
+
+		List<com.prafta.common.cmm.stdwork.vo.StdWorkReasonRuleVO> rules = new ArrayList<>();
+		for (com.prafta.common.cmm.stdwork.vo.StdWorkReasonRuleVO rule : stdWorkHoursService.findReasonRules()) {
+			if (rule == null || rule.getReasonCd() == null) {
+				continue;
+			}
+			if (StdWorkReasonCd.NORMAL.equals(rule.getReasonCd()) || StdWorkReasonCd.isReduced(rule.getReasonCd())) {
+				continue;
+			}
+			rules.add(rule);
+		}
+		return rules;
+	}
+
+	/** {@link #selectableStdWorkReasonRules} 의 코드 집합 (저장 검증용 allow-list). */
+	private java.util.Set<String> selectableStdWorkReasonCds() {
+
+		java.util.Set<String> codes = new java.util.HashSet<>();
+		for (com.prafta.common.cmm.stdwork.vo.StdWorkReasonRuleVO rule : selectableStdWorkReasonRules()) {
+			codes.add(rule.getReasonCd());
+		}
+		return codes;
+	}
+
+	/**
+	 * 소정-03/08: 계정 생성 폼의 소정근로 입력 옵션(회사 통상 기준값 + 사유 셀렉트).
+	 *
+	 * <p>사유 목록은 {@link #selectableStdWorkReasonRules} 단일 출처를 쓴다(저장 검증과 동일 집합).
+	 */
+	@Override
+	public com.prafta.web.user.user01.dto.response.StdWorkOptionsResponse getStdWorkOptions(String cmpnyCd) {
+
+		if (isBlank(cmpnyCd)) {
+			throw new ApiException(CommonErrorCode.COMMON_400_003);
+		}
+
+		List<com.prafta.web.user.user01.dto.response.StdWorkOptionsResponse.ReasonOption> options = new ArrayList<>();
+		for (com.prafta.common.cmm.stdwork.vo.StdWorkReasonRuleVO rule : selectableStdWorkReasonRules()) {
+			options.add(com.prafta.web.user.user01.dto.response.StdWorkOptionsResponse.ReasonOption.builder()
+					.reasonCd(rule.getReasonCd())
+					.reasonNm(rule.getReasonNm())
+					.build());
+		}
+
+		return com.prafta.web.user.user01.dto.response.StdWorkOptionsResponse.builder()
+				.cmpnyWeekStdMinutes(stdWorkHoursService.resolveCmpnyWeekStdMinutes(cmpnyCd))
+				.reasonOptions(options)
+				.build();
 	}
 
 	private static boolean isBlank(String s) {

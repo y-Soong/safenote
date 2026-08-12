@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+
+<!--
+  소정-06: 연차 기능 노출 판정 Mapper.
+  SQL 규칙: leading comma, #{...} 바인딩, SELECT * 금지(명시 컬럼). MySQL 8.
+  ★주석 안에 '<' 와 #{...} 를 쓰지 않는다(파싱 실패/바인딩 오염 함정).
+-->
+<mapper namespace="com.prafta.common.cmm.leave.feature.mapper.LeaveFeatureMapper">
+
+    <!--
+      회사 연차 부여 이력 존재 여부(1/0).
+      - EXISTS 로 조기 종료시켜 대량 회사에서도 인덱스 프로브 1회로 끝낸다(COUNT 전수 집계 회피).
+      - DEL_YN='N' 만 이력으로 본다. 상태(STATUS)/부여분류(GRANT_TYPE)는 가리지 않는다.
+    -->
+    <select id="existsLeaveGrant" resultType="int">
+    /* LeaveFeatureMapper.existsLeaveGrant */
+    SELECT EXISTS (
+             SELECT 1
+               FROM TB_USER_LEAVE_GRANT G
+              WHERE G.CMPNY_CD = #{cmpnyCd}
+                AND G.DEL_YN   = 'N'
+              LIMIT 1
+           ) AS existsYn
+    </select>
+
+</mapper>

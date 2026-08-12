@@ -59,6 +59,7 @@ public record LeavePolicySaveParam(
             , request.getAxis5MaxDays()
             , request.getAxis6ValidityMonths()
             , request.getAxis7UsePromotion()
+            , request.getStatutoryAutoGrantYn() // 소정-05: 미전송/비정상 값은 서비스에서 'Y'(기존 동작) 정규화
             , request.getAprvUseYn()
             , request.getApplyFromDate()
             , request.getUsageUnit() // LC-10: 반반차는 'QUARTER_DAY' 값으로 표현(구 allowQuarter 토글 폐기)

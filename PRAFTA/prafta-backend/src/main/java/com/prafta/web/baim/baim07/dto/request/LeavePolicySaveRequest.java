@@ -91,6 +91,15 @@ public class LeavePolicySaveRequest {
     @Size(max = 1)
     private String axis7UsePromotion;
 
+    // 소정-05: 법정 연차 자동 부여 on/off (5인 미만 사업장 대응, 회사 단위 토글).
+    //   ★미전송(NULL)/공백/비정상 값은 서버에서 'Y'(= 기존 동작) 로 정규화한다.
+    //   따라서 본 필드를 보내지 않는 구 클라이언트는 종전과 동일하게 동작하지만,
+    //   'N' 으로 설정한 회사가 본 필드를 빠뜨린 채 저장하면 'Y' 로 되돌아간다
+    //   (Baim_07 은 저장/영향분석 두 payload 모두에 현재값을 실어 왕복시킨다).
+    @FieldLabel("법정 연차 자동 부여")
+    @Size(max = 1)
+    private String statutoryAutoGrantYn;
+
     @FieldLabel("법정연차 결재 여부")
     @Size(max = 1)
     private String aprvUseYn;

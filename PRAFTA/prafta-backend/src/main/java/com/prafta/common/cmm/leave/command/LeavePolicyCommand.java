@@ -24,6 +24,8 @@ package com.prafta.common.cmm.leave.command;
  * @param axis5MaxDays           5번 axis: 최대 연차일수
  * @param axis6ValidityMonths    6번 axis: 12 또는 24
  * @param axis7UsePromotion      7번 axis: Y/N
+ * @param statutoryAutoGrantYn   법정 연차 자동 부여 사용 여부 (Y/N — 소정-05, 5인 미만 사업장 토글).
+ *                               NULL/공백/비정상 값은 'Y'(기존 동작)로 정규화한다.
  * @param aprvUseYn              법정연차 신청 결재 여부 (Y/N)
  * @param applyFromDate          정책 적용 시작일 (YYYYMMDD, 오늘 이상)
  * @param usageUnit              회사 허용 사용 단위 (단일): FULL_DAY/HALF_DAY/QUARTER_DAY/HOUR_2/HOUR_1/MIN_30
@@ -45,6 +47,7 @@ public record LeavePolicyCommand(
     , Integer axis5MaxDays
     , Integer axis6ValidityMonths
     , String axis7UsePromotion
+    , String statutoryAutoGrantYn
     , String aprvUseYn
     , String applyFromDate
     , String usageUnit

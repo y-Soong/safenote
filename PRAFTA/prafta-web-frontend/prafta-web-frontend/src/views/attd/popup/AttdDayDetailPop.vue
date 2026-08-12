@@ -755,6 +755,35 @@
                       >
                         + {{ i + 1 }}구간 초과근무 추가
                       </button>
+                      <!-- 소정-07: 단축근무자(육아기·가족돌봄) 연장근로 명시 청구 확인.
+                           관리자 직접 등록(reqId 없음) 경로에서만 서버가 이 값을 요구한다.
+                           일자상세 응답에 단축 대상 여부 필드가 없어 조건부 노출이 불가하므로
+                           항상 노출 + 안내 문구로 두고, 실제 판정·차단은 서버 게이트가 수행한다
+                           (미체크 저장 시 ATTD_400_201 메시지가 그대로 노출된다).
+                           근로자 신청 승인(요청 카드) 경로는 신청 시점에 확인된 사실이라 이 값을 쓰지 않는다. -->
+                      <div
+                        v-if="
+                          !isDailyWorker && isSegmentFromDb(i) && hasAnyOt(i)
+                        "
+                        class="ot-claim-row"
+                      >
+                        <label class="ot-claim-label">
+                          <input
+                            type="checkbox"
+                            v-model="otWorkerClaimConfirmed"
+                          />
+                          <span
+                            >근로자가 연장근로를 명시적으로 청구했음을
+                            확인</span
+                          >
+                        </label>
+                        <p class="ot-claim-help">
+                          육아기·가족돌봄 근로시간 단축 기간의 근로자는 본인이
+                          청구한 경우에만 연장근로를 등록할 수 있습니다(임신기
+                          단축은 등록 불가). 단축 기간이 아닌 근로자는 체크 여부와
+                          무관합니다.
+                        </p>
+                      </div>
                       <div
                         v-if="
                           !isDailyWorker && isSegmentFromDb(i) && hasAnyOt(i)
@@ -2347,6 +2376,11 @@ const segSummary = (seg) => {
 // 저장 진행 중 플래그 (모든 segment 의 ot-actions 가 공유)
 const otSaving = ref(false);
 
+// 소정-07: 단축근무자(육아기·가족돌봄) 연장근로 "근로자 명시 청구 확인" 체크.
+//   otSaving 과 동일하게 모든 segment 의 OT 블록이 공유한다(한 일자 = 한 근로자 = 하나의 청구 사실).
+//   서버에는 'Y'/'N' 문자열로 전송하며, 단축 기간이 아닌 근로자에게는 서버가 값을 보지 않는다.
+const otWorkerClaimConfirmed = ref(false);
+
 // ── 외근 GPS 동선 (PRAFTA-009 part2) ───────────────────────
 //   외근 버튼 클릭 시 해당 구간의 ATTD_ID 로 GET /attd08/attd-gps-trail 호출,
 //   응답 trail 을 AttdGpsCoordPanel 에 전달한다. 같은 구간 버튼 재클릭 시 패널 닫힘.
@@ -2735,6 +2769,9 @@ const fnApproveOvertime = async (segIdx) => {
     reqId: null,
     overtimes,
     reqReason: form.value.reason || "",
+    // 소정-07: 근로자 명시 청구 확인 값. 관리자 직접 등록(reqId=null) 경로에서만 서버가 요구한다.
+    //   단축 기간(육아기·가족돌봄) 대상이 아니면 서버가 이 값을 보지 않는다.
+    reducedWorkOtClaimYn: otWorkerClaimConfirmed.value ? "Y" : "N",
   };
 
   otSaving.value = true;
@@ -5388,6 +5425,29 @@ textarea.input {
 
 .ot-allowed-item:active {
   transform: translateY(1px);
+}
+
+/* 소정-07 — 단축근무자 연장근로 명시 청구 확인 체크 영역 */
+.ot-claim-row {
+  display: flex;
+  flex-direction: column;
+  gap: var(--header-right-gap);
+  margin-top: var(--header-right-gap);
+}
+
+.ot-claim-label {
+  display: flex;
+  align-items: center;
+  gap: var(--header-right-gap);
+  font-size: var(--btn-font-sm);
+  color: var(--color-text);
+  cursor: pointer;
+}
+
+.ot-claim-help {
+  margin: 0;
+  font-size: var(--btn-font-sm);
+  color: var(--color-text-muted);
 }
 
 /* PRAFTA-003 F1 — 초과근무 저장 액션 영역 (com-013 #6b: 반려 버튼/스타일 제거) */

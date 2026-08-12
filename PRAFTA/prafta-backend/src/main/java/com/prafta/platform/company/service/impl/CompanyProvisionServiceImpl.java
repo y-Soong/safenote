@@ -9,6 +9,9 @@ import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.support.TransactionSynchronization;
 import org.springframework.transaction.support.TransactionSynchronizationManager;
 
+import com.prafta.common.cmm.stdwork.StdWorkReasonCd;
+import com.prafta.common.cmm.stdwork.command.StdWorkHoursSaveCommand;
+import com.prafta.common.cmm.stdwork.service.StdWorkHoursService;
 import com.prafta.common.error.platform.PlatformErrorCode;
 import com.prafta.common.exception.ApiException;
 import com.prafta.common.schedule.holiday.service.HolidaySyncService;
@@ -41,6 +44,8 @@ public class CompanyProvisionServiceImpl implements CompanyProvisionService {
     private final HmacSigner hmacSigner;
     private final PasswordHasher passwordHasher;
     private final HolidaySyncService holidaySyncService;
+    // 소정-03: master 계정 소정근로시간 이력 시드(계정 생성 3경로 중 프로비저닝 경로).
+    private final StdWorkHoursService stdWorkHoursService;
 
     /** 템플릿(시드 원천) 회사코드 — 권한/운영사변수 복제 기준. */
     private static final String TEMPLATE_CMPNY_CD = "001";
@@ -174,6 +179,24 @@ public class CompanyProvisionServiceImpl implements CompanyProvisionService {
                 , phoneLast4
                 , param.gvUserCd()
         ));
+
+        // 11-1) 소정-03: master 계정 소정근로시간 이력 시드(풀타임 NORMAL 1행).
+        //   계정 생성 3경로 중 프로비저닝 경로 — 여기서 넣지 않으면 신규 고객사의 첫 계정만
+        //   소정근로 미입력 상태로 남아 폴백(통상 간주)에 의존하게 된다.
+        //   주 소정근로 분은 회사 통상 기준값에서 가져온다(신규 회사는 정책 행이 없어 2400 폴백).
+        //   적용 시작일 = 프로비저닝 일자(master 계정은 입사일을 받지 않는다 — 입사일 폴백 규약과 동일 계열).
+        //   register 는 @Transactional(REQUIRED) 라 본 프로비저닝 트랜잭션에 참여한다(실패 시 전체 롤백).
+        int masterWeekStdMinutes = stdWorkHoursService.resolveCmpnyWeekStdMinutes(cmpnyCd);
+        stdWorkHoursService.register(StdWorkHoursSaveCommand.builder()
+                .cmpnyCd(cmpnyCd)
+                .userCd(userCd)
+                .applyStrDate(todayYmd)
+                .applyEndDate(null)
+                .weekStdMinutes(masterWeekStdMinutes)
+                .reasonCd(StdWorkReasonCd.NORMAL)
+                .reasonDetail(null)
+                .actorNo(param.gvUserCd())
+                .build());
 
         // 12) TB_SITE INSERT(최초 사업장 — SITE_NM=회사명, 관리자=master, SITE_NO=siteCd 기본).
         companyProvisionMapper.insertSite(new SiteInsertCommand(

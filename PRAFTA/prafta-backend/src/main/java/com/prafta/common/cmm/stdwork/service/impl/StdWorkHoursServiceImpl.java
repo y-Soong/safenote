@@ -43,6 +43,12 @@ import lombok.extern.slf4j.Slf4j;
  * 끝난 다음 날부터 이력이 비면 폴백(통상 간주)으로 승격되어 단시간 판정·비례부여 분모가
  * 틀어지므로, 마감된 직전 행의 값을 승계한 열린 행을 같은 트랜잭션에서 만든다.
  *
+ * <p><b>★로깅 규약 (security M-3)</b> — 로그에 <b>사유코드(REASON_CD)를 남기지 않는다.</b>
+ * {@code userCd + 사유}(임신기·육아기·가족돌봄 단축) 조합은 건강·가족관계 정보에 해당하고
+ * (정책 §11.1), 운영이 파일 로깅 상태라 로그 열람자 전원에게 노출된다. 어떤 사유였는지는
+ * 이력 테이블(TB_USER_STD_WORK_HOURS)과 INSERT_NO/UPDATE_NO 로 추적한다. 분기 진단이
+ * 필요하면 사유코드 대신 "단축 사유 인접" 같은 <b>정적 문구</b>로 표현할 것.
+ *
  * <p><b>동시성 메모(현재 미조치)</b> — 겹침 검증(countOverlap)과 INSERT/UPDATE 사이에 행 락이
  * 없어, 같은 근로자의 이력을 두 관리자가 동시에 저장하면 이론적으로 겹치는 구간이 들어갈 수
  * 있다. 0단계는 호출부가 아직 없고 실사용도 관리자 단독 작성 전제라 조치하지 않았다.
@@ -219,10 +225,10 @@ public class StdWorkHoursServiceImpl implements StdWorkHoursService {
 
         stdWorkHoursMapper.insertRow(cmd);
 
-        log.info("[stdWork] 소정근로시간 이력 등록: cmpnyCd={}, userCd={}, 적용={}~{}, 주소정={}분, 사유={}, 직전행마감={}건, 경고={}건",
+        log.info("[stdWork] 소정근로시간 이력 등록: cmpnyCd={}, userCd={}, 적용={}~{}, 주소정={}분, 직전행마감={}건, 경고={}건",
                 cmd.getCmpnyCd(), cmd.getUserCd(), cmd.getApplyStrDate(),
                 cmd.getApplyEndDate() == null ? "무기한" : cmd.getApplyEndDate(),
-                cmd.getWeekStdMinutes(), cmd.getReasonCd(), closed, warnings.size());
+                cmd.getWeekStdMinutes(), closed, warnings.size());
 
         // 단축 종료 후 복귀 행 자동 생성(H-1). 경고가 추가될 수 있어 warnings 를 그대로 넘긴다.
         StdWorkHoursVO restoreRow = createRestoreRowIfNeeded(cmd, prevOpenRow, closed, warnings);
@@ -284,8 +290,8 @@ public class StdWorkHoursServiceImpl implements StdWorkHoursService {
 
         // 3) 방어: 승계 사유가 단축 사유면 열린 행으로 만들 수 없다(종료일 필수 규칙과 충돌).
         if (StdWorkReasonCd.isReduced(prevOpenRow.getReasonCd())) {
-            log.info("[stdWork] 복귀 행 자동 생성 skip(승계 사유가 단축 사유): cmpnyCd={}, userCd={}, 승계사유={}",
-                    cmd.getCmpnyCd(), cmd.getUserCd(), prevOpenRow.getReasonCd());
+            log.info("[stdWork] 복귀 행 자동 생성 skip(승계 사유가 단축 사유): cmpnyCd={}, userCd={}",
+                    cmd.getCmpnyCd(), cmd.getUserCd());
             return null;
         }
 
@@ -316,9 +322,9 @@ public class StdWorkHoursServiceImpl implements StdWorkHoursService {
                 .build();
         stdWorkHoursMapper.insertRow(restoreCmd);
 
-        log.info("[stdWork] 단축 종료 후 복귀 이력 자동 생성: cmpnyCd={}, userCd={}, 복귀시작일={}, 주소정={}분, 승계사유={}",
+        log.info("[stdWork] 단축 종료 후 복귀 이력 자동 생성: cmpnyCd={}, userCd={}, 복귀시작일={}, 주소정={}분",
                 cmd.getCmpnyCd(), cmd.getUserCd(), restoreStrDate,
-                prevOpenRow.getWeekStdMinutes(), prevOpenRow.getReasonCd());
+                prevOpenRow.getWeekStdMinutes());
 
         StdWorkHoursVO restoreRow = new StdWorkHoursVO();
         restoreRow.setCmpnyCd(cmd.getCmpnyCd());
@@ -393,10 +399,10 @@ public class StdWorkHoursServiceImpl implements StdWorkHoursService {
             log.info("[stdWork] 정정에 따른 복귀 이력 이동: cmpnyCd={}, userCd={}, 정정행시작={}, 복귀행 {} -> {}",
                     cmd.getCmpnyCd(), cmd.getUserCd(), cmd.getApplyStrDate(), fromStrDate, movedStrDate);
 
-            log.info("[stdWork] 소정근로시간 이력 정정: cmpnyCd={}, userCd={}, 적용시작={}, 종료일 {} -> {}, 주소정={}분, 사유={}, 경고={}건",
+            log.info("[stdWork] 소정근로시간 이력 정정: cmpnyCd={}, userCd={}, 적용시작={}, 종료일 {} -> {}, 주소정={}분, 경고={}건",
                     cmd.getCmpnyCd(), cmd.getUserCd(), cmd.getApplyStrDate(),
                     current.getApplyEndDate(), cmd.getApplyEndDate(),
-                    cmd.getWeekStdMinutes(), cmd.getReasonCd(), warnings.size());
+                    cmd.getWeekStdMinutes(), warnings.size());
 
             return StdWorkHoursSaveResult.builder()
                     .applyStrDate(cmd.getApplyStrDate())
@@ -407,10 +413,10 @@ public class StdWorkHoursServiceImpl implements StdWorkHoursService {
                     .build();
         }
 
-        log.info("[stdWork] 소정근로시간 이력 정정: cmpnyCd={}, userCd={}, 적용시작={}, 종료일 {} -> {}, 주소정={}분, 사유={}, 경고={}건",
+        log.info("[stdWork] 소정근로시간 이력 정정: cmpnyCd={}, userCd={}, 적용시작={}, 종료일 {} -> {}, 주소정={}분, 경고={}건",
                 cmd.getCmpnyCd(), cmd.getUserCd(), cmd.getApplyStrDate(),
                 current.getApplyEndDate(), cmd.getApplyEndDate(),
-                cmd.getWeekStdMinutes(), cmd.getReasonCd(), warnings.size());
+                cmd.getWeekStdMinutes(), warnings.size());
 
         return StdWorkHoursSaveResult.builder()
                 .applyStrDate(cmd.getApplyStrDate())
@@ -465,9 +471,9 @@ public class StdWorkHoursServiceImpl implements StdWorkHoursService {
 
         // ★N-2: 단축 사유 행은 법정 기간이므로 정정에 딸려 움직이면 안 된다.
         if (StdWorkReasonCd.isReduced(adjacentRow.getReasonCd())) {
-            log.info("[stdWork] 정정 차단(후속 단축 이력 인접): cmpnyCd={}, userCd={}, 정정행시작={}, 인접행={} 사유={}",
+            log.info("[stdWork] 정정 차단(후속 단축 이력 인접): cmpnyCd={}, userCd={}, 정정행시작={}, 인접행={}",
                     cmd.getCmpnyCd(), cmd.getUserCd(), cmd.getApplyStrDate(),
-                    adjacentRow.getApplyStrDate(), adjacentRow.getReasonCd());
+                    adjacentRow.getApplyStrDate());
             throw new ApiException(StdWorkErrorCode.STDWORK_409_003);
         }
         return adjacentRow;

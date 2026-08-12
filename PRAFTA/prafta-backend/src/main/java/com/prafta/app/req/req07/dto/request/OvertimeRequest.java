@@ -40,4 +40,17 @@ public class OvertimeRequest {
 
     /** prafta-app-009: approverUserCds 가 비었을 때 전개할 본인 소유 프리셋 ID(없으면 null). */
     private String presetId;
+
+    /**
+     * 소정-07 - 근로자 명시 청구 확인 값 ('Y' 만 확인으로 인정).
+     *
+     * <p>육아기·가족돌봄 근로시간 단축 기간의 연장근로는 사업주가 요구할 수 없고 근로자가 명시적으로
+     * 청구한 경우에만 가능하다(위반 시 1천만원 이하 벌금). 단축 기간이 아닌 근로자(대다수)에게는
+     * 값이 무엇이든 아무 영향이 없다 — 게이트 진입 자체가 없다.
+     *
+     * <p><b>additive 필드</b>: 구버전 앱이 미전송하면 null → 확인 없음 → 단축 기간 한정 거부
+     * (ATTD_400_201). 허용이 아니라 거부가 기본값인 fail-safe 방향이다.
+     * (앱 화면의 확인 체크박스는 소정-12 범위 — 여기서는 서버 계약만 연다.)
+     */
+    private String reducedWorkOtClaimYn;
 }

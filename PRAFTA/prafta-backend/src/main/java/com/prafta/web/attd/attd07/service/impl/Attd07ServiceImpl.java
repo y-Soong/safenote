@@ -66,6 +66,7 @@ import com.prafta.web.attd.attd07.result.NeighborAttdSegmentView;
 import com.prafta.web.attd.attd07.result.UserAttdReqResult;
 import com.prafta.web.attd.attd07.service.Attd07Service;
 import com.prafta.web.attd.attd07.service.AttdCloseService;
+import com.prafta.web.attd.attd07.service.ReducedWorkOtGuardService;
 import com.prafta.web.attd.attd07.util.AttdReqTypeUtils;
 import com.prafta.web.attd.attd07.util.AttdScheduleUtils;
 
@@ -93,6 +94,8 @@ public class Attd07ServiceImpl implements Attd07Service {
     private final SiteAccessService siteAccessService;
     /** PC-07(N8): 일자상세 응답 convMinutes(대상 사용자·대상일 개인 분모) — AttdDayDetailPop 480 폴백 해소. */
     private final LeaveConversionPolicyService leaveConversionPolicyService;
+    /** 소정-07: 단축근무자(육아기·임신기·가족돌봄) 초과근무 게이트(공용 빈 — 앱 경로와 판정 단일 출처). */
+    private final ReducedWorkOtGuardService reducedWorkOtGuardService;
 
     /**
      * 출퇴근 방법(METHOD) 기본값. SYS031 '01'(사용자/앱). 근태 보정 승인 시 METHOD 미전달(앱 관리자 경로)일 때
@@ -1567,12 +1570,21 @@ public class Attd07ServiceImpl implements Attd07Service {
                 throw new ApiException(AttdErrorCode.ATTD_400_006);
             }
             isModify = AttdReqTypeUtils.isOvertimeModify(reqRow.reqType());
+            // ★M-2(security 지적, 2026-08-12): workYmd 대조 추가 — 형제 승인 경로(근태 승인·반려·
+            //   스케줄수정 승인 등)는 전부 workYmd 를 대조하는데 이 경로만 빠져 있었다.
+            //   workYmd=A일 + reqId=같은 주 B일 대기 OT 요청 조합으로 호출하면
+            //     ① B일 신청이 A일 등록으로 조용히 종결되고(기존 결함),
+            //     ② 소정-07 게이트가 excludeReqId / reqRow.targetId() 로 "다른 날"의 REQ·OT 를 주간
+            //        합계에서 빼버려 720분 한도가 과소 집계된다(게이트 우회).
+            //   청구 확인 생략 분기의 근거를 reqId 에 둔 이상 REQ 권위값 대조 범위를 형제와 맞춘다.
             if (StringEqualsUtils.isMismatched(param.userCd(), reqRow.userCd())
-                    || StringEqualsUtils.isMismatched(param.siteCd(), reqRow.siteCd())) {
-                log.warn("OT register rejected - reqId scope mismatch. reqId={}, paramUser={}, reqUser={}, paramSite={}, reqSite={}",
+                    || StringEqualsUtils.isMismatched(param.siteCd(), reqRow.siteCd())
+                    || StringEqualsUtils.isMismatched(param.workYmd(), reqRow.workYmd())) {
+                log.warn("OT register rejected - reqId scope mismatch. reqId={}, paramUser={}, reqUser={}, paramSite={}, reqSite={}, paramYmd={}, reqYmd={}",
                         reqRow.reqId(),
                         param.userCd(), reqRow.userCd(),
-                        param.siteCd(), reqRow.siteCd());
+                        param.siteCd(), reqRow.siteCd(),
+                        param.workYmd(), reqRow.workYmd());
                 throw new ApiException(AttdErrorCode.ATTD_400_005);
             }
             // 요청 승인 관리(Attd_10) 인박스 경유 승인: 대기('01' 신청) 상태의 요청만 승인 가능.
@@ -1624,6 +1636,44 @@ public class Attd07ServiceImpl implements Attd07Service {
                     param.userCd(), param.workYmd());
             throw new ApiException(AttdErrorCode.ATTD_400_013);
         }
+
+        // 3-1. 소정-07 - 단축근무자(육아기·임신기·가족돌봄) 초과근무 게이트.
+        //   임신기 = 전면 금지 / 육아기·가족돌봄 = 근로자 명시 청구 확인 + 주 12시간(720분) 이내.
+        //   ★ 이 위치인 이유: 주 한도 판정에 "이번 요청분 분(minutes)"이 필요하므로 구간 정규화(2)와
+        //     구간 겹침 검사(3) 직후에 둔다. 등록 가능 범위 계산(4~6)·DB 변경(7 이후)보다 앞이라
+        //     여전히 INSERT/UPDATE 이전 fail-closed 이며, 기존 OT 창(raw − (소정 ∪ 고정연장 ∪ 연차 면제))
+        //     계산 로직에는 손대지 않는다(앞단 추가 거부 조건).
+        //   ★ 단축 이력이 없는 근로자(대다수)는 소정 이력 조회 1회 후 즉시 통과 — 동작 완전 불변.
+        //   이중 계상 방지: in-place 갱신 대상 OT_ID(직접수정) + 수정 승인 대상 OT_ID(TARGET_ID) 및
+        //     이번 승인으로 닫힐 REQ_ID 는 주 합계에서 제외한다.
+        //
+        //   ★청구 확인 검사 분기(2026-08-12 확정) — 명시 청구는 "신청 시점의 사실"이지 승인자가
+        //     재확인할 값이 아니다. 판정 근거는 reqId 유무다.
+        //     - reqId 있음  = 근로자 신청(TB_USER_ATTD_REQ) 경유 승인. 인박스 03 생성승인 / 04 수정승인 /
+        //                     앱 관리자 승인(AppAdminApprovalServiceImpl 위임)이 모두 여기 해당하며,
+        //                     그 REQ 는 앱 registerOvertime 단계에서 이미 같은 게이트를 통과했다
+        //                     → 청구 확인 검사 생략(claimVerifiedAtRequest=true).
+        //     - reqId 없음  = 관리자 직접 등록/수정(Attd_07 일자상세). 근로자의 청구가 시스템에 남은 적이
+        //                     없으므로 확인 값(reducedWorkOtClaimYn='Y')을 계속 요구한다.
+        //     주 720분 한도는 두 경우 모두 검사한다(신청~승인 사이에 다른 OT 가 쌓일 수 있음).
+        boolean reducedGateReqOriginated = param.reqId() != null && !param.reqId().isBlank();
+        int reducedGateRequestMinutes = 0;
+        for (int[] stamp : reqStamps) {
+            reducedGateRequestMinutes += (stamp[1] - stamp[0]);
+        }
+        List<String> reducedGateExcludeOtIds = new ArrayList<>();
+        for (OvertimeItemModel ot : param.overtimes()) {
+            if (ot.otId() != null && !ot.otId().isBlank()) {
+                reducedGateExcludeOtIds.add(ot.otId());
+            }
+        }
+        if (isModify && reqRow != null && reqRow.targetId() != null && !reqRow.targetId().isBlank()) {
+            reducedGateExcludeOtIds.add(reqRow.targetId());
+        }
+        reducedWorkOtGuardService.assertOvertimeAllowed(
+                param.gvCmpnyCd(), param.siteCd(), param.userCd(), param.workYmd(),
+                reducedGateRequestMinutes, param.workerClaimConfirmed(), reducedGateReqOriginated,
+                reducedGateExcludeOtIds, param.reqId());
 
         // 4. 스케줄과 raw 실근태 구간을 로드한다.
         //    초과근무 등록 가능 범위는 "실근태 − 스케줄" 로 계산한다.

@@ -81,4 +81,33 @@ public class UserCreateRequest {
      * 엑셀 업로드 행은 본 필드를 사용하지 않는다(null).
      */
     private String defaultSchCd;
+
+    // ===== 소정-03 : 계정 생성 시 소정근로시간 필수 입력 =====
+    // (지시서 §0단계 "계정별 필수 입력(08-11 확정)" / plan §4 소정-03)
+
+    /**
+     * 소정근로 입력 유형 (<b>필수</b>).
+     * <ul>
+     *   <li>{@code FULL} — 풀타임. 주 소정근로분을 회사 통상 기준값(TB_CMPNY_STD_WORK_POLICY,
+     *       행 부재 시 2400분)으로 서버가 채운다. 화면/엑셀에서 시간을 직접 받지 않는다
+     *       (기준값 하드코딩 금지 — 지시서 B-1).</li>
+     *   <li>{@code DIRECT} — 주 소정근로분 직접 입력. 단건 폼의 "단시간" 선택과 엑셀 업로드가 쓴다.</li>
+     * </ul>
+     */
+    private String stdWorkType;
+
+    /** 주 소정근로 분 — stdWorkType=DIRECT 일 때 필수(2400 = 주 40시간). FULL 이면 무시된다. */
+    private Integer stdWorkWeekMinutes;
+
+    /**
+     * 소정근로 사유코드 [SYS083] — stdWorkType=DIRECT 일 때만 의미 있다.
+     *
+     * <p>미입력이면 서버가 회사 통상 기준값과 비교해 판정한다(본인 주 소정이 통상 기준보다
+     * 짧으면 PART_TIME, 아니면 NORMAL — 지시서 B-2 단시간 파생 판정). 엑셀 업로드는 사유
+     * 컬럼이 없으므로 항상 이 자동 판정을 탄다.
+     *
+     * <p>단축 사유(육아기·임신기·가족돌봄)는 적용 종료일이 필수라 계정 생성 경로에서는
+     * 등록할 수 없다(소정근로시간 관리 화면에서 기간과 함께 등록).
+     */
+    private String stdWorkReasonCd;
 }

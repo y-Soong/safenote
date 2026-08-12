@@ -36,6 +36,9 @@
         ON P.CMPNY_CD             = U.CMPNY_CD
        AND P.USE_YN               = 'Y'
        AND P.AXIS7_USE_PROMOTION  = 'Y'
+       /* 소정-05 게이트 ②: 법정 연차 자동 부여를 끈 회사(5인 미만 등)는 사용촉진 배치 대상에서 제외.
+          컬럼은 NOT NULL DEFAULT 'Y' 라 기존 전 회사는 종전대로 후보에 남는다(무회귀). */
+       AND P.STATUTORY_AUTO_GRANT_YN = 'Y'
       JOIN (
             /* 사용자별 가장 임박한 본연차(STATUTORY_ANNUAL) ACTIVE grant 1건 (역산 기준) */
             SELECT
@@ -123,6 +126,8 @@
         ON P.CMPNY_CD             = U.CMPNY_CD
        AND P.USE_YN               = 'Y'
        AND P.AXIS7_USE_PROMOTION  = 'Y'
+       /* 소정-05 게이트 ②: 배치와 동일 판정(recomputeForUser 단건 재판정). off 회사는 도래 후보 제외 */
+       AND P.STATUTORY_AUTO_GRANT_YN = 'Y'
       JOIN (
             SELECT
                   G1.GRANT_ID
@@ -321,6 +326,11 @@
       게이트: AXIS7='Y' 회사 + 활성 계정 + ACTIVE STATUTORY_ANNUAL 보유 + 잔여>0
               + FIRST 마스터(STATUS IN ('NOTICED','COMPLETED')) 존재(=1차 통지됨).
       BASE = 본연차 ACTIVE 중 가장 임박한 AVAIL_TO_DATE 1건. grantedDays/remainingDays = 본연차+근속가산 합.
+
+      ★소정-05 게이트 ② 의도적 미적용: 본 쿼리에는 STATUTORY_AUTO_GRANT_YN 조건을 넣지 않는다.
+        이미 1차 통지가 나간 사용자의 "진행 중" 계획서 화면이므로, 회사가 토글을 끈 순간 화면이
+        사라지면 근로자가 계획서를 제출할 수 없게 된다(진행분 유지 원칙 = 기부여 연차 유지와 동일 계열).
+        신규 도래 판정(selectPromotionCandidates/selectPromotionCandidate)만 게이트한다.
     -->
     <select id="selectActiveFirstContext" resultType="com.prafta.common.cmm.leave.promotion.vo.PromotionActiveContextVO">
     /* LeavePromotionMapper.selectActiveFirstContext */

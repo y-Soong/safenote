@@ -64,6 +64,20 @@ public class LeavePolicyVO {
     /** 7번 axis: 사용촉진 Y/N */
     private String axis7UsePromotion;
 
+    /**
+     * 법정 연차 자동 부여 사용 Y/N (소정-05, 5인 미만 사업장 대응 — 회사 단위 토글).
+     *
+     * <p>'N' 이면 <b>신규 법정 자동 부여만</b> 중지된다.
+     * <ul>
+     *   <li>중지: 부여 엔진·정기부여 배치(cron)·Attd_09 법정(정책 기준) 부여·사용촉진 도래 판정·가불(선차감) 부여</li>
+     *   <li>유지: 관리자 수동(약정) 부여, <b>이미 부여된 연차의 잔여·사용</b> (몰수 아님)</li>
+     * </ul>
+     *
+     * <p>★NULL/공백은 'Y'(기존 동작)로 해석한다 — 전 게이트가 {@code "N".equals(...)} 판정이므로
+     * 컬럼 미적용 환경/구 스냅샷에서도 회귀가 발생하지 않는다.
+     */
+    private String statutoryAutoGrantYn;
+
     /** 법정연차 신청 결재 여부 (Y/N) — prafta-019-E 결정 #2 */
     private String aprvUseYn;
 

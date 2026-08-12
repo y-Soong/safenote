@@ -420,6 +420,38 @@ public interface Attd07Mapper {
             @Param("newEnd") String newEnd);
 
     /**
+     * 소정-07 - 단축근무자 OT 주 한도(720분) 판정용 주간 초과근무 분 합계.
+     *
+     * <p>합계 = ①등록·승인된 활성 OT(TB_USER_OVERTIME_MGMT, DEL_YN='N' AND OT_STATUS &lt;&gt; 'CANCELLED')의
+     * WORK_MINUTES 합 + ②대기중(REQ_STATUS='01') 초과근무 요청(TB_USER_ATTD_REQ, REQ_TYPE '03'/'04')의
+     * 신청 구간 분 합. 형제 술어(selectDailyOvertimeList / selectPendingOvertimeReqs)와 동일 기준이다.
+     *
+     * <p>대기 요청 분은 START_DATE(8)+START_TIME(4) / END_DATE(8)+END_TIME(4) 를 분으로 환산해 더한다
+     * (오버나이트 정확). 음수(데이터 이상)는 0으로 클램프한다.
+     *
+     * <p>주 범위는 호출부(ReducedWorkOtGuardService)가 근무일이 속한 주의 월~일로 산출해 넘긴다
+     * (Attd_15 주52 기준과 동일). 귀속 기준은 WORK_YMD(근무일)다.
+     *
+     * <p><b>★사업장 무관 집계(M-1)</b> — 집계 키는 {@code CMPNY_CD + USER_CD + 주 범위}이며
+     * <b>SITE_CD 술어를 두지 않는다.</b> 연장근로 주 한도는 근로자 기준이라, 사업장으로 좁히면
+     * 추가 사업장 권한을 가진 근로자가 사업장마다 720분씩 등록해 법정 한도를 넘길 수 있다.
+     *
+     * <p>★수정('04') 대기 요청은 원본 OT 행과 함께 계상되어 실제보다 크게 잡힐 수 있다. 컴플라이언스
+     * 게이트라 과소 계상보다 과대 계상이 안전측이므로 의도된 동작이다.
+     *
+     * @param excludeOtIds 이번 등록에서 in-place 갱신될 OT_ID 목록(자기 자신 이중 계상 방지). null/빈 값이면 제외 없음
+     * @param excludeReqId 이번 승인으로 닫힐 REQ_ID(자기 자신 이중 계상 방지). null/빈 값이면 제외 없음
+     * @return 주간 초과근무 분 합계 (해당 없으면 0)
+     */
+    Integer selectWeeklyOvertimeMinutes(
+            @Param("cmpnyCd") String cmpnyCd,
+            @Param("userCd") String userCd,
+            @Param("weekStartYmd") String weekStartYmd,
+            @Param("weekEndYmd") String weekEndYmd,
+            @Param("excludeOtIds") java.util.List<String> excludeOtIds,
+            @Param("excludeReqId") String excludeReqId);
+
+    /**
      * com-013-06 A - 관리자 직접수정 in-place UPDATE.
      *
      * 기존 OT 행(OT_ID=otId)을 요청 구간으로 갱신한다. {@link #updateUserOvertimeModify} 와 달리

@@ -34,6 +34,7 @@ import com.prafta.common.cmm.leave.service.LeaveRefusalDetectService;
 import com.prafta.common.error.attd.AttdErrorCode;
 import com.prafta.common.exception.ApiException;
 import com.prafta.web.attd.attd07.service.AttdCloseService;
+import com.prafta.web.attd.attd07.service.ReducedWorkOtGuardService;
 import com.prafta.web.attd.attd07.util.AttdReqTypeUtils;
 
 import lombok.RequiredArgsConstructor;
@@ -77,6 +78,8 @@ public class AppReq07ServiceImpl implements AppReq07Service {
     private final com.prafta.common.cmm.schedule.service.ScheduleChangeGuardService scheduleChangeGuardService;
     /** prafta-com-008-B-3: 연차일 OT 차단 판정용 종일연차 카운트(단일출처 술어 재사용 — 신규쿼리 금지). */
     private final AppAttd01Mapper appAttd01Mapper;
+    /** 소정-07: 단축근무자(육아기·임신기·가족돌봄) 초과근무 게이트(공용 빈 재사용 — 웹 경로와 판정 단일 출처). */
+    private final ReducedWorkOtGuardService reducedWorkOtGuardService;
 
     /** REQ_STATUS = '01' 신청 (등록 직후 고정 — P3). */
     private static final String REQ_STATUS_REQUESTED = AttdReqTypeUtils.REQ_STATUS_REQUESTED;
@@ -420,6 +423,21 @@ public class AppReq07ServiceImpl implements AppReq07Service {
                 throw new ApiException(AttdErrorCode.ATTD_400_151);
             }
 
+            // ----- 소정-07: 단축근무자(육아기·임신기·가족돌봄) 초과근무 게이트 -----
+            //   임신기 = 전면 금지(ATTD_400_200) / 육아기·가족돌봄 = 근로자 명시 청구 확인(201) +
+            //   주 12시간(720분) 이내(202). 판정은 웹 등록 경로와 동일한 공용 빈 단일 출처.
+            //   ★ 단축 이력이 없는 근로자(대다수)는 소정 이력 조회 1회 후 즉시 통과 — 동작 완전 불변.
+            //   ★ 위치: dup 락 안(TOCTOU 방어) + 모든 INSERT 이전(fail-closed). 기존 OT 창(실근태 범위·
+            //     스케줄/고정연장/연차 면제 겹침) 판정에는 손대지 않는 앞단 추가 거부 조건이다.
+            //   요청분 분(minutes) 은 validateSlotsTimes 통과분(형식·순서 안전)으로 산출한다.
+            //   ★ 여기가 "근로자 명시 청구"를 실제로 확인하는 유일한 지점이다(claimVerifiedAtRequest=false).
+            //     이 경로를 통과한 REQ 를 나중에 관리자가 승인할 때는 웹 등록 경로가 reqId 를 근거로
+            //     청구 확인 검사를 생략한다(청구 = 신청 시점의 사실 — 2026-08-12 확정).
+            reducedWorkOtGuardService.assertOvertimeAllowed(
+                    param.cmpnyCd(), param.siteCd(), param.userCd(), param.workYmd(),
+                    sumSlotMinutes(param.slots()), param.workerClaimConfirmed(), false,
+                    null, null);
+
             // ===== prafta-app-017 등록 가드 — 모든 거부 게이트를 INSERT 시작 전에 모아 fail-closed =====
             //   순서: (이슈②) 스케줄수정 미처리(전일 차단) → (이슈②) 슬롯별 근태보정 미처리(구간 차단)
             //         → (이슈①) 슬롯별 스케줄 겹침(구간 차단). 위반 시 즉시 throw(부분 INSERT 방지).
@@ -682,6 +700,35 @@ public class AppReq07ServiceImpl implements AppReq07Service {
                 throw new ApiException(AttdErrorCode.ATTD_400_094);
             }
         }
+    }
+
+    /**
+     * 소정-07: 요청 슬롯들의 초과근무 분 합계 (단축근무자 주 720분 한도 판정 입력).
+     *
+     * <p>{@code validateSlotsTimes} 통과분만 넘어오므로 형식·순서(start &lt; end)는 안전하다.
+     * 환산은 형제 가드와 동일하게 {@code ymdToDays(date) * 1440 + parseHHmm(time)}(오버나이트 정확).
+     * 방어적으로 음수/파싱 실패 구간은 0으로 본다.
+     */
+    private int sumSlotMinutes(List<SlotRequest> slots) {
+        if (slots == null || slots.isEmpty()) {
+            return 0;
+        }
+        int total = 0;
+        for (SlotRequest s : slots) {
+            int sMin = parseHHmm(s.getStartTime());
+            int eMin = parseHHmm(s.getEndTime());
+            if (sMin < 0 || eMin < 0
+                    || !StringUtils.hasText(s.getStartDate())
+                    || !StringUtils.hasText(s.getEndDate())) {
+                continue;
+            }
+            long sAbs = ymdToDays(s.getStartDate()) * 1440L + sMin;
+            long eAbs = ymdToDays(s.getEndDate()) * 1440L + eMin;
+            if (eAbs > sAbs) {
+                total += (int) (eAbs - sAbs);
+            }
+        }
+        return total;
     }
 
     /**
