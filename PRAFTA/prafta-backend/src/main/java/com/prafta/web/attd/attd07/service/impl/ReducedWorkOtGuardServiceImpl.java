@@ -66,15 +66,15 @@ public class ReducedWorkOtGuardServiceImpl implements ReducedWorkOtGuardService 
     private static final DateTimeFormatter YMD = DateTimeFormatter.ofPattern("yyyyMMdd");
 
     @Override
-    public void assertOvertimeAllowed(String cmpnyCd,
-                                      String siteCd,
-                                      String userCd,
-                                      String workYmd,
-                                      int requestMinutes,
-                                      boolean workerClaimConfirmed,
-                                      boolean claimVerifiedAtRequest,
-                                      List<String> excludeOtIds,
-                                      String excludeReqId) {
+    public boolean assertOvertimeAllowed(String cmpnyCd,
+                                         String siteCd,
+                                         String userCd,
+                                         String workYmd,
+                                         int requestMinutes,
+                                         boolean workerClaimConfirmed,
+                                         boolean claimVerifiedAtRequest,
+                                         List<String> excludeOtIds,
+                                         String excludeReqId) {
 
         // ★L-1(security 지적): 식별값 blank 는 fail-closed 로 거부한다.
         //   보안 게이트가 입력 결손에 통과(fail-open)로 반응하면 하류 형식오류 분기(fail-closed)와
@@ -91,7 +91,9 @@ public class ReducedWorkOtGuardServiceImpl implements ReducedWorkOtGuardService 
         // 1) 근무일 기준 유효 소정근로 이력 행. 미입력 계정(대다수)은 null → 게이트 미적용.
         StdWorkHoursVO effective = stdWorkHoursService.findEffectiveRow(cmpnyCd, userCd, workYmd);
         if (effective == null || !StdWorkReasonCd.isReduced(effective.getReasonCd())) {
-            return; // 단축 기간이 아님 → 종전 동작과 완전히 동일(추가 쿼리 없음).
+            // 단축 기간이 아님 → 종전 동작과 완전히 동일(추가 쿼리 없음).
+            //   false 를 받은 호출부는 OT 행의 REDUCED_CLAIM_* 감사 컬럼을 NULL 로 둔다(M-4 불변식).
+            return false;
         }
 
         // ★M-3(security 지적): 사유코드·적용기간은 로그에 남기지 않는다.
@@ -155,6 +157,10 @@ public class ReducedWorkOtGuardServiceImpl implements ReducedWorkOtGuardService 
         log.info("[소정-07] 단축 기간 초과근무 게이트 통과. cmpnyCd={}, siteCd={}, userCd={}, workYmd={}, 주={}~{}, 합계={}분/{}분",
                 cmpnyCd, siteCd, userCd, workYmd, weekStartYmd, weekEndYmd,
                 totalMinutes, WEEKLY_OT_LIMIT_MINUTES);
+
+        // M-4: 단축 대상 + 게이트 통과 = "청구가 확인된 육아기·가족돌봄 단축 연장근로".
+        //   호출부는 이 true 로 OT 행의 REDUCED_CLAIM_* 감사 컬럼을 채운다(사유는 노출하지 않음).
+        return true;
     }
 
     private boolean isBlank(String s) {

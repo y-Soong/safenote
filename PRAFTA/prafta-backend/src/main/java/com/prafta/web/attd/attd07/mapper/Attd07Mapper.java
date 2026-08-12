@@ -457,6 +457,9 @@ public interface Attd07Mapper {
      * 기존 OT 행(OT_ID=otId)을 요청 구간으로 갱신한다. {@link #updateUserOvertimeModify} 와 달리
      * ATTD_ID 까지 스코프(WHERE)에 포함해, 다른 일자/근태에 속한 행을 이 일자로 옮기는 변조를 차단한다.
      * (cmpny/site/user/attdId/otId scope + 활성 조건). 갱신 행이 0 이면 스코프 밖이거나 이미 취소/삭제됨.
+     *
+     * @param reducedClaimYn 소정-07 M-4 — 단축 대상이면 "Y"(청구 확인 기록 갱신), 아니면 null(기존 값 보존)
+     * @param reducedClaimBy 소정-07 M-4 — 확인 주체 USER_CD. reducedClaimYn 이 null 이면 무시된다
      */
     int updateUserOvertimeDirect(
             @Param("otId") String otId,
@@ -469,7 +472,9 @@ public interface Attd07Mapper {
             @Param("endDate") String endDate,
             @Param("endTime") String endTime,
             @Param("workMinutes") int workMinutes,
-            @Param("updateNo") String updateNo);
+            @Param("updateNo") String updateNo,
+            @Param("reducedClaimYn") String reducedClaimYn,
+            @Param("reducedClaimBy") String reducedClaimBy);
 
     /**
      * PRAFTA-025 - 초과근무 수정('04') 승인: 기존 OT 행(OT_ID=otId)을 요청 구간으로 UPDATE한다.
@@ -511,6 +516,10 @@ public interface Attd07Mapper {
             @Param("userCd") String userCd,
             @Param("otId") String otId);
 
+    /**
+     * @param reducedClaimYn 소정-07 M-4 — 단축 대상이면 "Y"(청구 확인 기록 갱신), 아니면 null(기존 값 보존)
+     * @param reducedClaimBy 소정-07 M-4 — 확인 주체 USER_CD. reducedClaimYn 이 null 이면 무시된다
+     */
     int updateUserOvertimeModify(
             @Param("otId") String otId,
             @Param("cmpnyCd") String cmpnyCd,
@@ -521,5 +530,7 @@ public interface Attd07Mapper {
             @Param("endDate") String endDate,
             @Param("endTime") String endTime,
             @Param("workMinutes") int workMinutes,
-            @Param("updateNo") String updateNo);
+            @Param("updateNo") String updateNo,
+            @Param("reducedClaimYn") String reducedClaimYn,
+            @Param("reducedClaimBy") String reducedClaimBy);
 }

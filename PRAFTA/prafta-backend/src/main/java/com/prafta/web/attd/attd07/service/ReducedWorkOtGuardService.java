@@ -48,6 +48,13 @@ public interface ReducedWorkOtGuardService {
     /**
      * 단축근무자 초과근무 게이트. 위반이면 {@code ApiException} 을 던지고, 대상이 아니면 조용히 통과한다.
      *
+     * <p><b>반환값(M-4)</b> — 근무일이 <b>단축 기간에 속하는지</b>만 알려준다(true/false).
+     * 호출부는 이 값으로 OT 행의 명시 청구 확인 감사 컬럼(REDUCED_CLAIM_*)을 채울지 판단한다.
+     * <b>사유 구분(임신기/육아기/가족돌봄)은 반환하지 않는다</b> — userCd 와 결합하면 건강정보·
+     * 가족관계 정보가 되어 목적 범위를 넘기 때문이다(M-3 규약, 정책 §11.1).
+     * true 를 받고도 예외가 없었다면 그 요청은 "청구가 확인된 육아기·가족돌봄 단축 연장근로"다
+     * (임신기는 항상 예외로 끊기고, 청구 미확인도 예외로 끊긴다).
+     *
      * <p>거부 코드
      * <ul>
      *   <li>{@code ATTD_400_200} — 임신기 단축(연장근로 전면 금지)</li>
@@ -70,14 +77,16 @@ public interface ReducedWorkOtGuardService {
      *                               호출부는 {@code reqId} 유무로 판정한다.
      * @param excludeOtIds           이번 등록에서 in-place 갱신될 기존 OT_ID 목록(주 합계 이중 계상 방지). null 허용
      * @param excludeReqId           이번 승인으로 닫힐 REQ_ID(주 합계 이중 계상 방지). null 허용
+     * @return 근무일이 단축 기간(육아기·임신기·가족돌봄)에 속하면 true. 단축 이력이 없거나
+     *         통상·단시간계약이면 false. 사유 구분은 노출하지 않는다.
      */
-    void assertOvertimeAllowed(String cmpnyCd,
-                               String siteCd,
-                               String userCd,
-                               String workYmd,
-                               int requestMinutes,
-                               boolean workerClaimConfirmed,
-                               boolean claimVerifiedAtRequest,
-                               List<String> excludeOtIds,
-                               String excludeReqId);
+    boolean assertOvertimeAllowed(String cmpnyCd,
+                                  String siteCd,
+                                  String userCd,
+                                  String workYmd,
+                                  int requestMinutes,
+                                  boolean workerClaimConfirmed,
+                                  boolean claimVerifiedAtRequest,
+                                  List<String> excludeOtIds,
+                                  String excludeReqId);
 }

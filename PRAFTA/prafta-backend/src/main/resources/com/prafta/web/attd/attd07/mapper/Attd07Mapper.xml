@@ -2320,6 +2320,12 @@
 
         , OT_STATUS
 
+        <!-- 소정-07 M-4: 단축근무 연장근로 명시 청구 확인 기록(법정 요건 증빙).
+             단축 대상이 아니면 3컬럼 전부 NULL 이 불변식이다(reducedClaimYn=null 이면 DTIME 도 NULL). -->
+        , REDUCED_CLAIM_YN
+        , REDUCED_CLAIM_BY
+        , REDUCED_CLAIM_DTIME
+
         , DEL_YN
         , INSERT_NO
         , INSERT_DATE
@@ -2351,6 +2357,12 @@
 
         , #{otStatus}
 
+        , #{reducedClaimYn}
+        , #{reducedClaimBy}
+        <!-- 확인 일시는 서버 시계가 아니라 DB NOW() 로 채운다(감사 기록 — JVM 시계 스큐 방지).
+             단축 비대상이면 NULL 로 남겨 "해당 없음" 불변식을 지킨다. -->
+        , <choose><when test="reducedClaimYn != null">NOW()</when><otherwise>NULL</otherwise></choose>
+
         , 'N'
         , #{gvUserCd}
         , NOW()
@@ -2372,6 +2384,14 @@
          , ACTUAL_END_DATE   = #{endDate}
          , ACTUAL_END_TIME   = #{endTime}
          , WORK_MINUTES      = #{workMinutes}
+        <!-- 소정-07 M-4: 단축 대상일 때만 명시 청구 확인 기록을 새로 남긴다.
+             비대상(reducedClaimYn=null)이면 기존 값을 건드리지 않는다 — 단축 종료 뒤의 사후 수정이
+             과거 청구 사실을 지우면 감사 기록이 훼손되기 때문이다. -->
+        <if test="reducedClaimYn != null">
+         , REDUCED_CLAIM_YN    = #{reducedClaimYn}
+         , REDUCED_CLAIM_BY    = #{reducedClaimBy}
+         , REDUCED_CLAIM_DTIME = NOW()
+        </if>
          , UPDATE_NO         = #{updateNo}
          , UPDATE_DATE       = NOW()
      WHERE CMPNY_CD   = #{cmpnyCd}
@@ -2394,6 +2414,12 @@
          , ACTUAL_END_DATE   = #{endDate}
          , ACTUAL_END_TIME   = #{endTime}
          , WORK_MINUTES      = #{workMinutes}
+        <!-- 소정-07 M-4: 단축 대상일 때만 명시 청구 확인 기록을 새로 남긴다(형제 updateUserOvertimeModify 동일 규약). -->
+        <if test="reducedClaimYn != null">
+         , REDUCED_CLAIM_YN    = #{reducedClaimYn}
+         , REDUCED_CLAIM_BY    = #{reducedClaimBy}
+         , REDUCED_CLAIM_DTIME = NOW()
+        </if>
          , UPDATE_NO         = #{updateNo}
          , UPDATE_DATE       = NOW()
      WHERE CMPNY_CD   = #{cmpnyCd}

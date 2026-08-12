@@ -1670,10 +1670,27 @@ public class Attd07ServiceImpl implements Attd07Service {
         if (isModify && reqRow != null && reqRow.targetId() != null && !reqRow.targetId().isBlank()) {
             reducedGateExcludeOtIds.add(reqRow.targetId());
         }
-        reducedWorkOtGuardService.assertOvertimeAllowed(
+        boolean reducedTarget = reducedWorkOtGuardService.assertOvertimeAllowed(
                 param.gvCmpnyCd(), param.siteCd(), param.userCd(), param.workYmd(),
                 reducedGateRequestMinutes, param.workerClaimConfirmed(), reducedGateReqOriginated,
                 reducedGateExcludeOtIds, param.reqId());
+
+        // 3-2. 소정-07 M-4 - 명시 청구 확인 기록(감사 증빙) 값 산출.
+        //   위반 시 1천만원 이하 벌금이 따르는 법정 요건이라 판정만 하고 버리면 사후 분쟁에서
+        //   "근로자가 청구했다"를 입증할 수 없다(정책 §11.3 누가/언제/무엇을/왜).
+        //   게이트를 예외 없이 통과한 단축 대상 = "청구가 확인된 육아기·가족돌봄 단축 연장근로"다
+        //   (임신기는 200 으로, 청구 미확인은 201 로 이미 끊긴다).
+        //   ★확인 주체(BY) 판정:
+        //     - REQ 경유(reqId 있음): 신청한 <b>근로자 본인</b>(param.userCd). REQ 는 근로자 본인만
+        //       만들 수 있고 신청 시점에 게이트를 통과했으므로 청구 주체가 곧 신청자다.
+        //       (TB_USER_ATTD_REQ 에 별도 컬럼을 만들지 않은 이유 — 추가 DDL 없이 사실관계가 정확)
+        //     - 직접 등록(reqId 없음): 청구를 확인한 <b>관리자</b>(param.gvUserCd).
+        //   ★단축 비대상이면 두 값 모두 null → OT 행의 REDUCED_CLAIM_* 3컬럼 전부 NULL(불변식).
+        //   ★사유코드는 담지 않는다(M-3 규약 — 건강정보·가족관계 정보화 방지).
+        String reducedClaimYn = reducedTarget ? "Y" : null;
+        String reducedClaimBy = reducedTarget
+                ? (reducedGateReqOriginated ? param.userCd() : param.gvUserCd())
+                : null;
 
         // 4. 스케줄과 raw 실근태 구간을 로드한다.
         //    초과근무 등록 가능 범위는 "실근태 − 스케줄" 로 계산한다.
@@ -1831,7 +1848,9 @@ public class Attd07ServiceImpl implements Attd07Service {
             int updatedOt = attd07Mapper.updateUserOvertimeModify(
                     reqRow.targetId(), param.gvCmpnyCd(), param.siteCd(), param.userCd(),
                     ot.startDate(), ot.startTime(), ot.endDate(), ot.endTime(),
-                    workMinutes, param.gvUserCd());
+                    workMinutes, param.gvUserCd(),
+                    // 소정-07 M-4: 단축 대상일 때만 청구 확인 기록 갱신(비대상은 기존 값 보존).
+                    reducedClaimYn, reducedClaimBy);
             if (updatedOt == 0) {
                 // 대상 OT가 스코프 밖이거나 이미 취소/삭제됨 → 잘못된 TARGET_ID 또는 변조.
                 log.warn("OT modify rejected - target OT not updatable. reqId={}, otId={}",
@@ -1854,7 +1873,9 @@ public class Attd07ServiceImpl implements Attd07Service {
                             ot.otId(), param.gvCmpnyCd(), param.siteCd(), param.userCd(),
                             param.attdId(),
                             ot.startDate(), ot.startTime(), ot.endDate(), ot.endTime(),
-                            workMinutes, param.gvUserCd());
+                            workMinutes, param.gvUserCd(),
+                            // 소정-07 M-4: 단축 대상일 때만 청구 확인 기록 갱신(비대상은 기존 값 보존).
+                            reducedClaimYn, reducedClaimBy);
                     if (updated == 0) {
                         log.warn("OT direct edit rejected - target OT not updatable. userCd={}, attdId={}, otId={}",
                                 param.userCd(), param.attdId(), ot.otId());
@@ -1863,8 +1884,10 @@ public class Attd07ServiceImpl implements Attd07Service {
                 } else {
                     // 신규 INSERT. 시퀀스는 row마다 가져와 동시 insert에서도 고유 ID를 보장한다.
                     String otId = attd07Mapper.selectOtId(param.gvCmpnyCd());
+                    // 소정-07 M-4: 단축 대상이면 명시 청구 확인 기록을 함께 적재(비대상은 3컬럼 NULL).
                     attd07Mapper.insertUserOvertime(
-                            InsertUserOvertimeCommand.from(otId, param, ot, workMinutes));
+                            InsertUserOvertimeCommand.from(otId, param, ot, workMinutes,
+                                    reducedClaimYn, reducedClaimBy));
                 }
             }
         }
