@@ -243,7 +243,12 @@ const fnJoinUser = () => {
     if (proxy.$util.isNotEmpty(props.loginFlg_p)) {
       fnUpdateUserTermsAgrList();
     } else {
-      openPop(JoinUserPop, {});
+      // 동의 결과를 가입 팝업으로 넘긴다 — 서버가 필수약관 동의를 검증한다.
+      openPop(JoinUserPop, {
+        agrTermsList_p: termsList.value.map((terms) => ({
+          termsId: terms.systValDCd,
+        })),
+      });
       emit("close");
     }
   } else {

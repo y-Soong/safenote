@@ -249,7 +249,17 @@ import { resolveApiErrorMessage } from "@/utils/apiError";
 import SiteSearchPop from "@/components/popup/SiteSearchPop.vue";
 import SiteNodeSearchPop from "@/components/popup/SiteNodeSearchPop.vue";
 
-defineProps({ visible: Boolean });
+const props = defineProps({
+  visible: Boolean,
+  /**
+   * 앞 단계(TermsPop)에서 동의한 약관 목록 — [{ termsId }] 형태. 가입 제출 시 서버로 보낸다.
+   *
+   * ★서버는 이 목록에 필수약관이 모두 들어 있는지 검증한다(LoginServiceImpl.assertJoinTermsAgreed).
+   *   종전에는 TermsPop 이 빈 객체만 넘겨 동의 기록이 사용자의 체크가 아니라
+   *   서버의 가정('Y' 리터럴)으로 만들어졌다. 값을 화면에서 임의로 만들어 채우지 말 것.
+   */
+  agrTermsList_p: { type: Array, default: () => [] },
+});
 const emit = defineEmits(["close", "reset"]);
 
 const { open: openPop } = useModal();
@@ -645,6 +655,7 @@ const fnUserJoin = async () => {
       email: email.value,
       gender: gender.value,
       birthDt: birthDt.value,
+      agrTermsList: props.agrTermsList_p,
     });
     if (response.status === 200) {
       // ★소정-04 승인제: 셀프가입은 '06 가입승인대기'로 생성되어 승인 전에는 로그인할 수 없다(qa F-2).

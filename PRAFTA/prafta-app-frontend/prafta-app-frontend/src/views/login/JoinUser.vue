@@ -402,6 +402,15 @@ const nodeList = ref([])
 const selectedNodes = ref([])
 
 const router = useRouter()
+
+// 앞 단계(TermsInfo)에서 동의한 약관 목록 — [{ termsId }] 형태. 가입 제출 시 서버로 보낸다.
+//   ★서버는 이 목록에 필수약관이 모두 들어 있는지 검증한다(LoginServiceImpl.assertJoinTermsAgreed).
+//   약관 화면을 거치지 않고 이 화면에 직접 들어오면 빈 배열이 되고, 그때는 서버가
+//   구버전 클라이언트로 보고 통과시킨다(과도기). 넘겨받은 값을 임의로 만들어 채우지 말 것.
+const agrTermsList = ref(
+  Array.isArray(window.history.state?.agrTermsList) ? window.history.state.agrTermsList : [],
+)
+
 const systCodeArr = ref({})
 const cmpnyCd = ref('')
 const cmpnyNm = ref('')
@@ -774,6 +783,7 @@ const fnUserJoin = async () => {
       email: email.value,
       gender: gender.value,
       birthDt: birthDt.value,
+      agrTermsList: agrTermsList.value,
     })
     if (response.status === 200) {
       // 소정-12: 셀프가입 승인제 — 서버가 승인대기('06') 신호를 주면 로그인 안내 대신 승인대기 화면으로.

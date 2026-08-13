@@ -102,6 +102,12 @@ public class LoginServiceImpl implements LoginService{
 	@Value("${prafta.self-join.sms-verify.enabled:true}")
 	private boolean selfJoinSmsVerifyEnabled;
 
+	// 셀프가입 필수약관 동의 강제 토글.
+	//   ★기본 off — 스토어 배포된 구버전 앱은 agrTermsList 를 보내지 않는다(과도기).
+	//   앱 버전 수렴 후 true 로 전환. 전환 판단은 assertJoinTermsAgreed 의 경고 로그로 한다.
+	@Value("${prafta.self-join.terms-consent.enforced:false}")
+	private boolean selfJoinTermsConsentEnforced;
+
 	@Value("${login.lock.duration-minutes}")
 	private int lockDurationMinutes;
 
@@ -612,11 +618,14 @@ public class LoginServiceImpl implements LoginService{
         }
         loginMapper.insertUserSiteAuth(userJoinCommand);
 
-        // 약관 동의 로직은 그대로
+        // 약관 동의 이력 저장. 약관 버전은 클라이언트 값이 아닌 서버 조회값을 쓴다.
         List<RequiredTermsResult> RequiredTermsResultList = loginMapper.selectRequiredTermsList();
         if (RequiredTermsResultList == null || RequiredTermsResultList.isEmpty()) {
             throw new ApiException(LoginErrorCode.LOGIN_500_001);
         }
+
+        assertJoinTermsAgreed(param, RequiredTermsResultList);
+
         for (RequiredTermsResult RequiredTermsResult : RequiredTermsResultList) {
 
             loginMapper.insertTermsUserAgrMgmt(RequiredTermsInfoCommand.from(userCd, param, RequiredTermsResult));
@@ -734,6 +743,46 @@ public class LoginServiceImpl implements LoginService{
 		}
 
 		return (byId != null) ? byId : byPhone;
+	}
+
+	/**
+	 * 셀프가입 필수약관 동의 검증 — 필수약관이 요청의 동의 목록에 모두 들어 있어야 한다.
+	 * (일용직 {@code DailyJoinServiceImpl.insertTermsAgreement} 와 동일 규약)
+	 *
+	 * <p>★<b>과도기 동작</b>: 스토어 배포된 구버전 앱은 {@code agrTermsList} 를 보내지 않는다.
+	 * 지금 fail-closed 로 막으면 그 즉시 구버전 전원의 가입이 끊긴다. 그래서 목록이 아예 비어
+	 * 있으면(= 구버전 클라이언트) 경고만 남기고 통과시키고, 목록을 보냈는데 필수약관이 빠진
+	 * 경우(= 신버전 클라이언트의 계약 위반)는 항상 막는다.
+	 *
+	 * <p>앱 버전이 수렴하면 {@code prafta.self-join.terms-consent.enforced=true} 로 전환해
+	 * 빈 목록도 차단한다. 전환 전에 위 경고 로그가 0건인지 먼저 확인할 것 — 로그가 남아 있으면
+	 * 아직 구버전 사용자가 가입 중이라는 뜻이다.
+	 *
+	 * <p>여기서 막지 않으면 동의 기록(TB_TERMS_USER_AGR_MGMT)이 사용자의 응답이 아니라
+	 * 서버의 가정이 된다. 이 EP 는 비로그인 공개 EP 라 화면을 거치지 않은 직접 호출도 가능하다.
+	 */
+	private void assertJoinTermsAgreed(UserJoinParam param, List<RequiredTermsResult> requiredTermsList) {
+
+		List<String> agreed = param.agrTermsIdList();
+
+		if (agreed == null || agreed.isEmpty()) {
+			if (selfJoinTermsConsentEnforced) {
+				log.info("회원가입 차단 - 약관 동의 목록 없음 cmpnyCd={}", sanitizeForLog(param.cmpnyCd()));
+				throw new ApiException(LoginErrorCode.LOGIN_400_023);
+			}
+			// 구버전 클라이언트 허용 경로. 전환 판단 근거가 되는 로그이므로 지우지 말 것.
+			log.warn("[selfJoin] 약관 동의 목록 미전송 가입 - 구버전 클라이언트 추정, 서버 판정으로 적재. cmpnyCd={}",
+					sanitizeForLog(param.cmpnyCd()));
+			return;
+		}
+
+		for (RequiredTermsResult required : requiredTermsList) {
+			if (!agreed.contains(required.termsId())) {
+				log.info("회원가입 차단 - 필수약관 미동의 cmpnyCd={}, termsId={}",
+						sanitizeForLog(param.cmpnyCd()), sanitizeForLog(required.termsId()));
+				throw new ApiException(LoginErrorCode.LOGIN_400_023);
+			}
+		}
 	}
 
 	/** 재활용 가능한 점유 행인지 — 같은 회사의 '07 가입거부' 행만 해당된다. */

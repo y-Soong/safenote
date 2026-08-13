@@ -41,6 +41,11 @@ public enum LoginErrorCode implements ApiErrorCode {
     // ===== [security H-1] 셀프가입 휴대폰 본인인증 서버 강제 =====
     // 인증 기록 없음 / 인증 창(30분) 만료 / 이미 사용된 인증 — 셋을 구분하지 않는다(공격자에게 상태 힌트 금지).
     , LOGIN_400_022(HttpStatus.BAD_REQUEST, "휴대폰 본인인증 후 가입할 수 있습니다.\n인증을 다시 진행해 주세요.")
+
+    // ===== 셀프가입 필수약관 동의 검증 =====
+    // 정상 화면에서는 전 항목 체크 전까지 다음 단계로 넘어가지 못하므로 사용자가 볼 일이 거의 없다.
+    // (EP 직접 호출 / 신버전 클라이언트의 계약 위반 시 도달)
+    , LOGIN_400_023(HttpStatus.BAD_REQUEST, "필수 약관에 모두 동의해야 가입할 수 있습니다.")
     ;
 
     private final HttpStatus httpStatus;

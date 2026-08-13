@@ -156,10 +156,14 @@ function fnJoinUser() {
   const joinFlg = termsList.value.every((terms) => terms.checked)
 
   if (joinFlg) {
+    // ★동의 결과는 history state 로 넘긴다(TermsAgreeView 와 동일 방식).
+    //   종전에는 query 로 넘겼는데, ① JoinUser 가 useRoute 조차 import 하지 않아 읽지 않았고
+    //   ② query 는 문자열만 담아 객체 배열이 "[object Object]" 로 뭉개지는 이중 결함이었다.
+    //   그 탓에 동의 기록이 사용자의 체크가 아니라 서버의 가정('Y' 리터럴)으로 만들어졌다.
     router.push({
       path: '/JoinUser',
-      query: {
-        termsList_p: termsList.value,
+      state: {
+        agrTermsList: termsList.value.map((terms) => ({ termsId: terms.termsId })),
       },
     })
   } else {

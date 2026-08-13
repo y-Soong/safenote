@@ -1,5 +1,7 @@
 package com.prafta.common.cmm.login.dto.request;
 
+import java.util.List;
+
 import com.prafta.common.annotation.FieldLabel;
 
 import jakarta.validation.constraints.NotBlank;
@@ -71,4 +73,19 @@ public class UserJoinRequest{
      * 값이 오면 인증 기록의 코드와 일치하는지 한 번 더 대조한다(향후 클라이언트 계약 강화용).
      */
     String certNo;
+
+    /**
+     * 화면에서 동의한 약관 목록.
+     *
+     * <p>종전에는 이 필드가 없어 서버가 필수약관 전건을 {@code AGR_YN='Y'} 리터럴로 적재했다.
+     * 즉 동의 기록이 사용자의 체크가 아니라 <b>가입 API 가 호출됐다는 사실</b>만으로 만들어졌다
+     * (화면이 넘긴 termsList 는 어느 경로에서도 읽히지 않았다 — 2026-08-13 확인).
+     * 개인정보 수집이용·제3자 제공 동의는 분쟁 시 입증 자료이므로 실제 응답을 받아 적재한다.
+     *
+     * <p>★<b>필수(@NotNull)로 만들지 말 것.</b> 이 EP 는 스토어 배포된 구버전 앱도 호출한다.
+     * 구버전은 이 필드를 보내지 않으므로 필수화하면 그 즉시 전 구버전 가입이 막힌다.
+     * 강제 여부는 {@code prafta.self-join.terms-consent.enforced} 토글이 판정한다
+     * (앱 버전 수렴 후 on — LoginServiceImpl.assertJoinTermsAgreed 주석 참조).
+     */
+    List<AgrTermsRequest> agrTermsList;
 }
