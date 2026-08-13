@@ -231,6 +231,7 @@ import axios from "@/api/axios";
 import ViewHeader from "@/components/common/ViewHeader.vue";
 import { getMessage, MSG } from "@/messages";
 import { resolveApiErrorMessage } from "@/utils/apiError";
+import { createNotices } from "@/utils/validationNotice";
 import search_icon from "@/assets/img/search_icon.png";
 import SiteSearchPop from "@/components/popup/SiteSearchPop.vue";
 import BaseSelect from "@/components/common/BaseSelect.vue";
@@ -432,13 +433,21 @@ const fnDelete = async () => {
     return;
   }
 
+  // ★통합 안내(2026-08-11 UX 규약): 비차단 안내는 단독 alert 대신 삭제 컨펌 하나에 병합한다.
+  //   (작업지시서_연쇄-alert-전수조사-통합표시-전환 / @/utils/validationNotice)
+  //   종전에는 이 alert 을 await 하지 않아 안내 alert 과 삭제 컨펌이 동시에 겹쳐 떴다 — 병합으로 함께 해소.
+  const notices = createNotices({
+    alert: proxy.$alert,
+    confirm: proxy.$confirm,
+  });
+
   if (selected.length !== filteredData.length) {
-    proxy.$alert(
+    notices.warn(
       "연동(미러) 점검대상은 삭제 대상에서 제외됩니다. 나머지 행만 삭제합니다."
     );
   }
 
-  const ok = await proxy.$confirm(getMessage(MSG.DELETE_CONFIRM), {
+  const ok = await notices.resolve(getMessage(MSG.DELETE_CONFIRM), {
     variant: "danger",
   });
   if (!ok) return;

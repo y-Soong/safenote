@@ -259,6 +259,7 @@ import CalendarSrch from "@/components/common/CalendarSrch.vue";
 import axios from "@/api/axios";
 import { getMessage, MSG } from "@/messages";
 import { resolveApiErrorMessage } from "@/utils/apiError";
+import { createNotices } from "@/utils/validationNotice";
 
 // ================ Props & Emits ================
 const props = defineProps({
@@ -497,27 +498,32 @@ const fnSave = async () => {
   // ★통합 안내(2026-08-11 UX 규약): 비차단 안내(자정 넘김 확인·8h/4h 초과 경고)는 개별 팝업
   //   연쇄 대신 저장 컨펌 하나에 목록으로 병합한다 — 컨펌 1회로 전체 동의.
   //   (작업지시서_연쇄-alert-전수조사-통합표시-전환 의 기준 사용처. 차단류는 종전대로 첫 위반 즉시 alert)
-  const notices = [];
+  //   인라인 조립이던 것을 공통 수집기(@/utils/validationNotice)로 이관 — 표시 결과는 종전과 동일.
+  //   alwaysList:true = 안내 1건일 때도 헤더+불릿 형태를 유지(기존 노출 형태 보존).
+  const notices = createNotices({
+    alert: proxy.$alert,
+    confirm: proxy.$confirm,
+  });
   if (timeValidation.fstOvernight) {
-    notices.push("구간1 근무가 자정을 넘어 익일에 종료됩니다.");
+    notices.note("구간1 근무가 자정을 넘어 익일에 종료됩니다.");
   }
   if (schType.value === "02" && timeValidation.secOvernight) {
-    notices.push("구간2 근무가 자정을 넘어 익일에 종료됩니다.");
+    notices.note("구간2 근무가 자정을 넘어 익일에 종료됩니다.");
   }
   // V5: 후방 고정연장이 자정을 넘기면(종료<시작) 익일 종료 확인.
   if (fixedOtValidation.rearOvernight) {
-    notices.push("후방 고정연장근무가 자정을 넘어 익일에 종료됩니다.");
+    notices.note("후방 고정연장근무가 자정을 넘어 익일에 종료됩니다.");
   }
   // PC-09(N6): 소정근로 8시간(480분) 초과 경고 — 시간차 연차 분모는 8시간 캡 안내.
   const stdWorkMin = calcStdWorkMinutes();
   if (stdWorkMin != null && stdWorkMin > 480) {
-    notices.push(
+    notices.warn(
       "소정근로가 8시간을 초과합니다. 휴게시간 입력을 확인하세요. (시간차 연차 분모는 8시간으로 계산됩니다)"
     );
   }
   // PRAFTA-FIXEDOT-1(V7): 고정연장 일 합계 4시간(240분) 초과 경고 — 차단 아님.
   if (fixedOtValidation.totalFixedOtMin > 240) {
-    notices.push(
+    notices.warn(
       "고정연장근무 합계가 1일 4시간을 초과합니다. 추가 휴게시간 의무와 주 12시간 연장 한도를 확인하세요."
     );
   }
@@ -525,13 +531,7 @@ const fnSave = async () => {
   const baseConfirmMsg = isEditMode.value
     ? getMessage(MSG.SAVE_CONFIRM)
     : getMessage(MSG.CREATE_CONFIRM);
-  const confirmMsg = notices.length
-    ? "다음 사항을 확인해 주세요.\n\n" +
-      notices.map((n) => "· " + n).join("\n") +
-      "\n\n" +
-      baseConfirmMsg
-    : baseConfirmMsg;
-  const ok = await proxy.$confirm(confirmMsg);
+  const ok = await notices.resolve(baseConfirmMsg, { alwaysList: true });
   if (!ok) return;
 
   const toHHmm = (v) =>

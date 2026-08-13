@@ -581,6 +581,7 @@ import { useCenteredDraggable } from "@/composables/useCenteredDraggable";
 import axios from "@/api/axios";
 import { getMessage, MSG } from "@/messages";
 import { resolveApiErrorMessage } from "@/utils/apiError";
+import { createNotices } from "@/utils/validationNotice";
 import SiteSearchPop from "@/components/popup/SiteSearchPop.vue";
 import SiteNodeSearchPop from "@/components/popup/SiteNodeSearchPop.vue";
 import BaseSelect from "@/components/common/BaseSelect.vue";
@@ -1073,15 +1074,21 @@ const fnUserInfoSave = async () => {
     return;
   }
 
-  // F-8-1: 기본 근무타입 변경은 미래 스케줄 대량 갱신을 유발하므로 별도 1단계 확인창을 먼저 띄운다.
+  // ★통합 안내(2026-08-11 UX 규약): 비차단 안내는 개별 확인창 연쇄 대신 저장 컨펌 하나에 병합한다.
+  //   (작업지시서_연쇄-alert-전수조사-통합표시-전환 / @/utils/validationNotice)
+  const notices = createNotices({
+    alert: proxy.$alert,
+    confirm: proxy.$confirm,
+  });
+
+  // F-8-1: 기본 근무타입 변경은 미래 스케줄 대량 갱신을 유발하므로 저장 전 확인을 받는다(문구 원문 보존).
   if (!isCreate.value && defaultSchCd.value !== oriDefaultSchCd.value) {
-    const schConfirmed = await proxy.$confirm(
+    notices.note(
       "기본 근무타입 변경 시 명일부터 연말까지 근무계획이 자동 생성·갱신됩니다. 계속하시겠습니까?"
     );
-    if (!schConfirmed) return;
   }
 
-  const result = await proxy.$confirm(getMessage(MSG.SAVE_CONFIRM));
+  const result = await notices.resolve(getMessage(MSG.SAVE_CONFIRM));
   if (!result) return;
 
   // 생성 모드: /insert-user-info 단건 호출. 경력은 같은 트랜잭션으로 서버에서 함께 INSERT.
