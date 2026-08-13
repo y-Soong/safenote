@@ -33,6 +33,7 @@ import com.prafta.common.cmm.baseinfo.result.MenuInfoResult;
 import com.prafta.common.cmm.baseinfo.result.SiteInfoResult;
 import com.prafta.common.cmm.baseinfo.result.SiteNodeInfoResult;
 import com.prafta.common.cmm.baseinfo.result.SystInfoResult;
+import com.prafta.common.cmm.baseinfo.result.JoinTermsResult;
 import com.prafta.common.cmm.baseinfo.result.TermsDetailInfoResult;
 import com.prafta.common.cmm.baseinfo.result.UserIdInfoResult;
 import com.prafta.common.cmm.baseinfo.result.UserInfoResult;
@@ -100,6 +101,14 @@ public interface BaseinfoMapper {
 	int consumeSmsAuth(SmsAuthConsumeCommand command);
 	
 	TermsDetailInfoResult selectTermsDetailInfo(TermsDetailInfoQuery query);
+
+	/**
+	 * 회원가입 화면용 필수약관 목록 (TB_TERMS.REQUIRED_YN='Y').
+	 *
+	 * <p>가입 시 동의 행을 넣는 {@code LoginMapper.selectRequiredTermsList} 와 판정 조건이
+	 * 같다. 화면 목록과 저장 목록이 어긋나지 않도록 한쪽만 바꾸지 말 것.
+	 */
+	List<JoinTermsResult> selectJoinTermsList();
 
 	/**
 	 * SMS2-A1: 인증번호 불일치/만료/초과 시 최신 미검증 SELF_JOIN 레코드의 FAIL_CNT +1.

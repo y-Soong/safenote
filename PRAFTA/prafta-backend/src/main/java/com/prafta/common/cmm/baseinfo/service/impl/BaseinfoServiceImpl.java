@@ -56,6 +56,7 @@ import com.prafta.common.cmm.baseinfo.dto.response.SiteInfoResponse;
 import com.prafta.common.cmm.baseinfo.dto.response.SiteNodeListResponse;
 import com.prafta.common.cmm.baseinfo.dto.response.SystInfoListResponse;
 import com.prafta.common.cmm.baseinfo.dto.response.SystInfoResponse;
+import com.prafta.common.cmm.baseinfo.dto.response.JoinTermsListResponse;
 import com.prafta.common.cmm.baseinfo.dto.response.TermsDetailInfoResponse;
 import com.prafta.common.cmm.baseinfo.dto.response.UserIdDupleCheckResponse;
 import com.prafta.common.cmm.baseinfo.dto.response.UserIdInfoResponse;
@@ -69,6 +70,7 @@ import com.prafta.common.cmm.baseinfo.result.MenuInfoResult;
 import com.prafta.common.cmm.baseinfo.result.SiteInfoResult;
 import com.prafta.common.cmm.baseinfo.result.SiteNodeInfoResult;
 import com.prafta.common.cmm.baseinfo.result.SystInfoResult;
+import com.prafta.common.cmm.baseinfo.result.JoinTermsResult;
 import com.prafta.common.cmm.baseinfo.result.TermsDetailInfoResult;
 import com.prafta.common.cmm.baseinfo.result.UserIdInfoResult;
 import com.prafta.common.cmm.baseinfo.result.UserInfoResult;
@@ -581,7 +583,28 @@ public class BaseinfoServiceImpl implements BaseinfoService{
 		} else {
 			throw new ApiException(CommonErrorCode.COMMON_400_401);
 		}
-		
+
 		return response;
+	}
+
+	/**
+	 * 회원가입 화면용 필수약관 목록.
+	 *
+	 * <p>목록이 비면 가입 자체가 성립하지 않는다(가입 트랜잭션도 같은 조건으로
+	 * LOGIN_500_001 을 던진다). 화면이 "약관 0건"을 통과시켜 동의 없이 가입 버튼을
+	 * 누르게 두면 안 되므로 여기서 설정 오류로 차단한다.
+	 */
+	@Override
+	public JoinTermsListResponse selectJoinTermsList() {
+
+		List<JoinTermsResult> joinTermsList = baseinfoMapper.selectJoinTermsList();
+
+		if (joinTermsList == null || joinTermsList.isEmpty()) {
+			throw new ApiException(CommonErrorCode.COMMON_400_401);
+		}
+
+		return JoinTermsListResponse.builder()
+									.joinTermsList(joinTermsList)
+									.build();
 	}
 }

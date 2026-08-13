@@ -329,25 +329,30 @@ const fnGetSiteInfo = async () => {
   }
 };
 
-/** 약관 목록 조회 (SYS008). */
+/**
+ * 필수약관 목록 조회.
+ *
+ * ★필수 여부의 단일 출처는 서버(TB_TERMS.REQUIRED_YN='Y')다. 종전에는 SYS008 코드표
+ *   (syst-info-lists)를 받아 "SYS008 에 있으면 전부 필수"로 그려, 선택약관인 006
+ *   (연동 회사 제3자 제공 동의)까지 필수 체크를 강요했다. 006 은 제출 목록에 실려도
+ *   서버가 필수약관만 저장하므로(DailyJoinServiceImpl.insertTermsAgreement) 버려졌고,
+ *   로그인 후 게이트(termsGate ②)가 같은 약관을 다시 물었다.
+ *   006 은 연동 사업장 소속자에게만 묻는 게이트 전용 약관이라 가입 화면에서 제외한다.
+ *   여기를 코드표 기반으로 되돌리지 말 것(중복 동의 재발).
+ *
+ * 약관 버전은 서버가 신뢰값으로 저장하므로 화면에서는 termsId 만 사용한다.
+ */
 const fnGetTermsList = async () => {
   try {
-    const response = await axios.get("/comApi/baseinfo/syst-info-lists", {
-      params: {
-        systCodeList: ["SYS008"],
-      },
-    });
+    const response = await axios.get("/comApi/baseinfo/join-terms-lists");
 
     if (response.status === 200) {
-      const resData = response.data?.systInfoList || [];
-
-      // 약관 버전은 서버가 신뢰값으로 저장하므로 화면에서는 termsId 만 사용한다.
-      termsList.value = resData
-        .filter((o) => o.systValDCd != null)
-        .map((o) => ({
-          ...o,
-          checked: false,
-        }));
+      // 화면·제출 계약은 systValDCd/systValDNm 필드명을 쓰므로 그 형태로 정규화한다.
+      termsList.value = (response.data?.joinTermsList || []).map((o) => ({
+        systValDCd: o.termsId,
+        systValDNm: o.termsNm,
+        checked: false,
+      }));
     }
   } catch (err) {
     proxy.$alert(

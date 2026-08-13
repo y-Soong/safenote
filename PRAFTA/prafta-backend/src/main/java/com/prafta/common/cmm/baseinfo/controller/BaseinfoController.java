@@ -53,6 +53,7 @@ import com.prafta.common.cmm.baseinfo.dto.response.SiteInfoResponse;
 import com.prafta.common.cmm.baseinfo.dto.response.SiteNodeListResponse;
 import com.prafta.common.cmm.baseinfo.dto.response.SystInfoListResponse;
 import com.prafta.common.cmm.baseinfo.dto.response.SystInfoResponse;
+import com.prafta.common.cmm.baseinfo.dto.response.JoinTermsListResponse;
 import com.prafta.common.cmm.baseinfo.dto.response.TermsDetailInfoResponse;
 import com.prafta.common.cmm.baseinfo.dto.response.UserIdDupleCheckResponse;
 import com.prafta.common.cmm.baseinfo.dto.response.UserIdInfoResponse;
@@ -261,6 +262,22 @@ public class BaseinfoController {
     	return ResponseEntity.status(HttpStatus.OK).build();
     }
     
+    /**
+     * 회원가입 화면용 필수약관 목록 (앱 TermsInfo / 웹 TermsPop 가입 분기).
+     *
+     * <p>종전에는 화면이 SYS008 코드표를 그대로 그려 선택약관(006 연동 회사 제3자 제공 동의)까지
+     * 필수로 강요했고, 그 동의는 저장되지 않아 로그인 후 게이트가 다시 물었다. 필수 판정의
+     * 단일 출처를 TB_TERMS.REQUIRED_YN 으로 옮긴다.
+     */
+    @NoAuth
+    @GetMapping("/join-terms-lists")
+    public ResponseEntity<?> getJoinTermsList() {
+
+    	JoinTermsListResponse response = baseinfoService.selectJoinTermsList();
+
+    	return ResponseEntity.status(HttpStatus.OK).body(response);
+    }
+
     @NoAuth
     @GetMapping("/terms-detail-infos")
     public ResponseEntity<?> getTermsDetailInfo(@ModelAttribute TermsDetailInfoRequest request) {

@@ -26,6 +26,7 @@ import com.prafta.common.cmm.baseinfo.dto.response.SiteInfoResponse;
 import com.prafta.common.cmm.baseinfo.dto.response.SiteNodeListResponse;
 import com.prafta.common.cmm.baseinfo.dto.response.SystInfoListResponse;
 import com.prafta.common.cmm.baseinfo.dto.response.SystInfoResponse;
+import com.prafta.common.cmm.baseinfo.dto.response.JoinTermsListResponse;
 import com.prafta.common.cmm.baseinfo.dto.response.TermsDetailInfoResponse;
 import com.prafta.common.cmm.baseinfo.dto.response.UserIdDupleCheckResponse;
 import com.prafta.common.cmm.baseinfo.dto.response.UserIdInfoResponse;
@@ -71,4 +72,7 @@ public interface BaseinfoService {
 	void updateUserPw(UserPasswordParam param);
 	
 	TermsDetailInfoResponse selectTermsDetailInfo(TermsDetailInfoParam param);
+
+	/** 회원가입 화면용 필수약관 목록 (선택약관은 제외 — 006 연동 회사 제3자 제공 동의 등). */
+	JoinTermsListResponse selectJoinTermsList();
 }

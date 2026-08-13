@@ -478,6 +478,8 @@ const focusKill = (e) => {
   color: var(--color-text-muted, #6b7280);
   cursor: pointer;
   user-select: none;
+  /* 앞 항목(소속부서) 쪽으로 당겨 붙인다(Attd_07 규격) */
+  margin-left: -1rem;
   margin-right: 0.4rem;
   white-space: nowrap;
 }

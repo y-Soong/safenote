@@ -794,6 +794,37 @@
 	  AND VERIFIED_YN = 'Y'
     </update>
     
+    <!--
+      회원가입 화면에 띄울 필수약관 목록.
+
+      ★필수 여부의 단일 출처는 TB_TERMS.REQUIRED_YN 이다. 종전에는 가입 화면이 SYS008
+        코드표(TB_SYST_VAL_D)만 받아 "SYS008 에 있으면 전부 필수"로 그렸고, 그 결과
+        선택약관인 006(연동 회사 제3자 제공 동의)까지 필수로 체크를 강요했다.
+        006 은 로그인 후 연동 사업장 소속자에게만 묻는 게이트 전용 약관이라(termsGate ②),
+        가입 때 받아도 저장되지 않아 로그인 후 다시 묻는 중복이 발생했다(2026-08-13 실측).
+
+      가입 시 실제 동의 행을 넣는 쿼리(LoginMapper.selectRequiredTermsList)와 판정 조건이
+      동일하다 — 화면이 보여준 목록과 서버가 저장하는 목록이 어긋날 수 없다. 한쪽만 바꾸지 말 것.
+
+      비로그인 호출(@NoAuth)이라 약관 메타(코드·이름·버전)만 싣는다. 전문은 terms-detail-infos.
+    -->
+    <select id="selectJoinTermsList" resultType="com.prafta.common.cmm.baseinfo.result.JoinTermsResult">
+    /* BaseinfoMapper.selectJoinTermsList */
+    SELECT
+    	A.SYST_VAL_D_CD		AS termsId
+	    , A.SYST_VAL_D_NM	AS termsNm
+	    , B.TERMS_VERSION	AS termsVersion
+	FROM TB_SYST_VAL_D A
+	     INNER JOIN TB_TERMS B
+	        ON (
+	            A.SYST_VAL_D_CD = B.TERMS_ID
+	        AND B.REQUIRED_YN   = 'Y'
+	        AND B.USE_YN        = 'Y'
+	        )
+	WHERE A.SYST_VAL_CD = 'SYS008'
+	ORDER BY A.SORT_IDX
+    </select>
+
     <select id="selectTermsDetailInfo" parameterType="com.prafta.common.cmm.baseinfo.application.query.TermsDetailInfoQuery" resultType="com.prafta.common.cmm.baseinfo.result.TermsDetailInfoResult">
     /* BaseinfoMapper."selectTermsDetailInfo" */
     SELECT 

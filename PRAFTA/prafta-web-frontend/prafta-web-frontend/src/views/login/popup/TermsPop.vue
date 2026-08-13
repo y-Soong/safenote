@@ -49,7 +49,7 @@
           <label
             class="flex items-center cursor-pointer select-none mb-3"
             v-for="terms in termsList"
-            :key="terms.SYST_VAL_D_CD"
+            :key="terms.systValDCd"
           >
             <input type="checkbox" v-model="terms.checked" class="hidden" />
             <span
@@ -138,7 +138,6 @@ const { position, startDrag } = useCenteredDraggable(modalRef, {
 });
 
 // ================ Refs (Variables) ================
-const systCodeArr = ref({});
 const checked = ref(false);
 const termsList = ref([]);
 const btnName = ref("회원가입");
@@ -155,49 +154,36 @@ onMounted(async () => {
 });
 
 // ================ API Functions ================
+//
+// ★필수약관 목록은 서버(TB_TERMS.REQUIRED_YN='Y')가 판정한다.
+//   종전에는 SYS008 코드표(syst-info-lists)를 받아 "SYS008 에 있으면 전부 필수"로 그렸다.
+//   그 탓에 선택약관인 006(연동 회사 제3자 제공 동의)까지 필수 체크를 강요했고, 006 은
+//   가입 시 저장되지 않는 약관이라 로그인 후 게이트가 다시 물었다(앱 TermsInfo.vue 와 동일 결함).
+//   여기를 코드표 기반으로 되돌리지 말 것(중복 동의 재발).
+//
+//   화면·저장(update-auth-menu-info) 계약은 systValDCd/systValDNm 필드명을 쓰므로
+//   응답을 그 형태로 정규화해 넘긴다(계약 변경 없음).
 const fnGetSystinfoList = async () => {
   try {
-    const response = await axios.get("/comApi/baseinfo/syst-info-lists", {
-      params: {
-        systCodeList: ["SYS008"],
-      },
-    });
+    const response = await axios.get("/comApi/baseinfo/join-terms-lists");
 
     if (response.status === 200) {
-      const resData = response.data?.systInfoList || [];
-
-      console.log(resData);
-
-      const grouped = {};
-      resData.forEach((item) => {
-        const key = item.systValCd;
-        if (!grouped[key]) {
-          grouped[key] = [];
-        }
-        grouped[key].push(item);
-      });
-
-      systCodeArr.value = grouped;
+      const requiredTerms = (response.data?.joinTermsList || []).map((o) => ({
+        systValDCd: o.termsId,
+        systValDNm: o.termsNm,
+        termsVersion: o.termsVersion,
+        checked: false, // 각 항목별 체크 상태 추가
+      }));
 
       if (proxy.$util.isNotEmpty(userTermsNonAgrList.value)) {
-        termsList.value = (grouped["SYS008"] || [])
-          .filter((o) => o.systValDCd != null)
-          .map((o) => ({
-            ...o,
-            checked: false, // 각 항목별 체크 상태 추가
-          }))
-          .filter((sys) =>
-            userTermsNonAgrList.value.some(
-              (terms) => terms.termsId === sys.systValDCd
-            )
-          );
+        // 로그인 후 미동의 약관 재동의 분기 — 서버가 준 미동의 목록으로 한 번 더 좁힌다.
+        termsList.value = requiredTerms.filter((sys) =>
+          userTermsNonAgrList.value.some(
+            (terms) => terms.termsId === sys.systValDCd
+          )
+        );
       } else {
-        termsList.value = (grouped["SYS008"] || [])
-          .filter((o) => o.systValDCd != null)
-          .map((o) => ({
-            ...o,
-            checked: false, // 각 항목별 체크 상태 추가
-          }));
+        termsList.value = requiredTerms;
       }
     }
   } catch (err) {
@@ -244,6 +230,13 @@ const fnClose = () => {
 };
 
 const fnJoinUser = () => {
+  // 목록이 비면(조회 실패) 통과시키지 않는다 — every() 는 빈 배열에서 true 라 약관을
+  //   하나도 못 본 채 가입 화면으로 넘어갔다(fail-open). 앱 TermsInfo.vue 와 동일 보강.
+  if (termsList.value.length === 0) {
+    proxy.$alert("약관 정보를 불러오지 못했습니다. 잠시 후 다시 시도해 주세요.");
+    return;
+  }
+
   const joinFlg = termsList.value.every((terms) => terms.checked);
 
   if (joinFlg) {
