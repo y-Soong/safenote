@@ -59,18 +59,12 @@
             <CalendarSrch v-model="hireDateInput" class="hire-date-field" />
           </div>
 
-          <div class="form-row-max">
-            <label>고용형태 *</label>
-            <BaseSelect id="employmentType" v-model="employmentType">
-              <option
-                v-for="opt in employmentTypeOptions"
-                :key="opt.systValDCd"
-                :value="opt.systValDCd"
-              >
-                {{ opt.systValDNm }}
-              </option>
-            </BaseSelect>
-          </div>
+          <!-- 고용형태 입력은 두지 않는다(2026-08-13 사용자 확정).
+               서버 로직은 일용직(DAILY) 여부만 분기하고 정규직·계약직·임원은 완전히 동일하게
+               동작한다(Java·SQL 전수 확인 — 조건절은 전부 = 'DAILY' / <> 'DAILY').
+               셀프가입자는 일반 직원이므로 REGULAR 고정 전송하고, 계약직·임원 관리가 필요하면
+               승인 후 User_01 에서 변경한다. 값을 비우면 Attd_09 배지·엑셀이 '-' 로 떨어지므로
+               비우지 않는다. -->
 
           <div class="form-row-max">
             <label>직급</label>
@@ -192,9 +186,10 @@ const { proxy } = getCurrentInstance();
 
 // =========================== Ref ===========================
 const hireDateInput = ref(""); // CalendarSrch — YYYY-MM-DD
-const employmentType = ref("REGULAR");
+// 고용형태는 화면에서 받지 않고 REGULAR 고정 전송한다(위 template 주석 참조).
+// 서버 화이트리스트(User09ServiceImpl.ALLOWED_EMPLOYMENT_TYPES)가 REGULAR 를 허용한다.
+const EMPLOYMENT_TYPE_DEFAULT = "REGULAR";
 const rankCd = ref("");
-const employmentTypeOptions = ref([]);
 const rankOptions = ref([]);
 
 // 소정근로시간 입력값(UserInfoPop 생성 모드와 동일 규약)
@@ -251,13 +246,10 @@ onMounted(async () => {
 });
 
 // =========================== Methods ===========================
-// 고용형태(SYS041) · 직급(COM007) 셀렉트 옵션. 일용직(DAILY)은 별도 계통이라 제외한다.
+// 직급(COM007) 셀렉트 옵션. 고용형태(SYS041)는 화면 입력을 없애 조회하지 않는다.
 const fnLoadCodeOptions = async () => {
   try {
-    const [systRes, baseRes] = await Promise.all([
-      axios.get("/comApi/baseinfo/syst-info-lists", {
-        params: { systCodeList: ["SYS041"] },
-      }),
+    const [baseRes] = await Promise.all([
       axios.get("/comApi/baseinfo/base-info-lists", {
         params: {
           cmpnyCd: sessionStorage.getItem("gv_cmpnyCd"),
@@ -265,18 +257,6 @@ const fnLoadCodeOptions = async () => {
         },
       }),
     ]);
-
-    if (systRes.status === 200) {
-      const rows = systRes.data?.systInfoList || [];
-      employmentTypeOptions.value = rows.filter(
-        (o) => o.systValDCd != null && o.systValDCd !== "DAILY"
-      );
-      if (
-        !employmentTypeOptions.value.some((o) => o.systValDCd === employmentType.value)
-      ) {
-        employmentType.value = employmentTypeOptions.value[0]?.systValDCd || "";
-      }
-    }
 
     if (baseRes.status === 200) {
       const rows = baseRes.data?.baseInfoList || [];
@@ -319,10 +299,6 @@ const fnApprove = async () => {
     await proxy.$alert("입사일을 선택해 주세요.");
     return;
   }
-  if (proxy.$util.isEmpty(employmentType.value)) {
-    await proxy.$alert("고용형태를 선택해 주세요.");
-    return;
-  }
   if (stdWorkType.value !== "FULL" && stdWorkType.value !== "DIRECT") {
     await proxy.$alert("소정근로시간을 선택해 주세요.");
     return;
@@ -350,7 +326,7 @@ const fnApprove = async () => {
     const response = await axios.post("/webApi/user09/self-join-approve", {
       userCd: props.userCd_p,
       hireDate: (hireDateInput.value || "").replace(/-/g, ""),
-      employmentType: employmentType.value,
+      employmentType: EMPLOYMENT_TYPE_DEFAULT,
       rankCd: proxy.$util.isEmpty(rankCd.value) ? null : rankCd.value,
       stdWorkType: stdWorkType.value,
       stdWorkWeekMinutes: isStdWorkDirect.value ? stdWorkInputMinutes.value : null,
