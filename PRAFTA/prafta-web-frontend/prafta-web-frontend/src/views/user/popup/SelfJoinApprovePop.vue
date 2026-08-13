@@ -32,8 +32,16 @@
 
           <div class="form-row-max">
             <label>신청자</label>
-            <input class="row-readonly" :value="props.userNm_p" readonly />
-            <input class="row-readonly" :value="props.userId_p" readonly />
+            <input
+              class="row-readonly applicant-field"
+              :value="props.userNm_p"
+              readonly
+            />
+            <input
+              class="row-readonly applicant-field"
+              :value="props.userId_p"
+              readonly
+            />
           </div>
 
           <div class="form-row-max">
@@ -369,11 +377,30 @@ const fnApprove = async () => {
   flex-direction: column;
   gap: 0.75rem;
   padding: 1.2rem;
-  max-width: 520px;
-  margin: 0 auto;
+  /* ★가로 넘침 방지: 팝업(.modal-content-narrow)이 이미 max-width 500px 이라
+     여기서 520px 를 잡으면 팝업보다 넓어져 가로 스크롤이 생긴다. 폭은 팝업이 결정한다. */
+  width: 100%;
+  box-sizing: border-box;
   /* 팝업 높이 바운딩 — 내용이 길어지면 본문만 스크롤(modal-popup-guide) */
   max-height: 60vh;
   overflow-y: auto;
+  overflow-x: hidden;
+}
+
+/* ★공용 .form-row-max 는 "라벨 120px + 입력 flex 1 1 150px" 로 라벨 1 + 입력 1 을 전제한다.
+   입력이 2개 이상인 행(신청자, 주 소정근로)에서는 flex-basis 150px + input 고유 최소폭이
+   합산돼 팝업 폭(약 460px 가용)을 넘긴다. min-width:0 을 줘야 flex 가 실제로 축소된다. */
+.form-container :deep(.form-row-max) {
+  min-width: 0;
+}
+.form-container :deep(.form-row-max input),
+.form-container :deep(.form-row-max select) {
+  min-width: 0;
+}
+/* 신청자 행: 이름·아이디 두 입력이 남은 폭을 균등 분배하도록 basis 를 0 으로 */
+.applicant-field {
+  flex: 1 1 0 !important;
+  min-width: 0;
 }
 
 .reg-guide {
@@ -404,6 +431,8 @@ const fnApprove = async () => {
 .std-work-radio {
   display: inline-flex;
   align-items: center;
+  /* ★라벨이 좁은 폭에 밀려 글자 단위로 쪼개지던 문제("주 40시 / 간") — 항목 단위 줄바꿈만 허용 */
+  white-space: nowrap;
   gap: 0.375rem;
   font-size: 0.8125rem;
   color: var(--color-text-strong, #111827);

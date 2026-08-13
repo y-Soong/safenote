@@ -379,11 +379,24 @@ const fnFmtMinutes = (minutes) => {
   flex-direction: column;
   gap: 0.75rem;
   padding: 1.2rem;
-  max-width: 520px;
-  margin: 0 auto;
+  /* ★가로 넘침 방지: 팝업(.modal-content-narrow)이 max-width 500px 라 여기서 520px 를 잡으면
+     팝업보다 넓어져 가로 스크롤이 생기고 입력이 잘린다. 폭은 팝업이 결정한다. */
+  width: 100%;
+  box-sizing: border-box;
   /* 팝업 높이 바운딩 — 내용이 길어지면 본문만 스크롤(modal-popup-guide) */
   max-height: 60vh;
   overflow-y: auto;
+  overflow-x: hidden;
+}
+
+/* ★공용 .form-row-max 는 라벨 120px + 입력 flex 1 1 150px 로 입력 1개를 전제한다.
+   입력이 2개인 행(주 소정근로 = 시간/분)에서 min-width:0 이 없으면 flex 가 축소되지 못해 넘친다. */
+.form-container :deep(.form-row-max) {
+  min-width: 0;
+}
+.form-container :deep(.form-row-max input),
+.form-container :deep(.form-row-max select) {
+  min-width: 0;
 }
 
 .reg-guide {
