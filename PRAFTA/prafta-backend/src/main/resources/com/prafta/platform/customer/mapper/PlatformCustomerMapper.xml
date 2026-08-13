@@ -35,9 +35,16 @@
         , IFNULL(U.INPUT_TOKENS + U.OUTPUT_TOKENS, 0)        AS usedTokens
         , IFNULL(Q.MONTHLY_TOKEN_LIMIT, 800000)              AS tokenLimit
         , CASE WHEN Q.CMPNY_CD IS NULL THEN 'N' ELSE 'Y' END AS quotaCustomYn
+        <!-- 통상근로시간 회사 기본값. NULL = 직접 지정 없음(코드 폴백 2400분).
+             ★IFNULL 로 2400 을 채우지 않는다 - 화면이 "직접 지정 40시간"과 "미지정"을 구분해야 한다. -->
+        , P.WEEK_STD_MINUTES                                 AS weekStdMinutes
     FROM TB_CMPNY A
     LEFT JOIN TB_AI_TOKEN_QUOTA Q ON Q.CMPNY_CD = A.CMPNY_CD
     LEFT JOIN TB_AI_TOKEN_USAGE U ON U.CMPNY_CD = A.CMPNY_CD AND U.USE_YM = #{useYm}
+    LEFT JOIN TB_CMPNY_STD_WORK_POLICY P
+           ON P.CMPNY_CD   = A.CMPNY_CD
+          AND P.SCOPE_TYPE = 'COMPANY'
+          AND P.SCOPE_CD   = '-'
     <include refid="customerListWhere"/>
     ORDER BY A.CMPNY_CD ASC
     LIMIT 500

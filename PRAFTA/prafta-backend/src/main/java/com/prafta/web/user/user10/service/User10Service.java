@@ -31,8 +31,14 @@ public interface User10Service {
     StdWorkHistoryResponse selectStdWorkHistory(String gvCmpnyCd, String gvAuthCd, String gvUserCd,
                                                 String gvSiteCd, String targetUserCd);
 
-    /** 등록/정정 팝업 옵션 — 회사 기준값 + SYS083 전 사유(단축 포함) + 경고 임계값. */
-    StdWorkReasonOptionsResponse getReasonOptions(String cmpnyCd);
+    /**
+     * 등록/정정 팝업 옵션 — 통상 기준값 + SYS083 전 사유(단축 포함) + 경고 임계값.
+     *
+     * @param siteCd 대상 사업장(선택). 지정 시 사업장 오버라이드 기준값을 내려주며, 다른 사업장
+     *               기준값 열람을 막기 위해 사업장 인가를 건다. 미지정이면 회사 기본값.
+     */
+    StdWorkReasonOptionsResponse getReasonOptions(String cmpnyCd, String gvAuthCd, String gvUserCd,
+                                                  String gvSiteCd, String siteCd);
 
     /** 이력 등록(계약 변경 — 직전 열린 행 자동 마감 + 신규 행). 결과의 경고/복귀 행 정보를 그대로 반환. */
     StdWorkSaveResponse registerStdWorkHours(StdWorkSaveParam param);

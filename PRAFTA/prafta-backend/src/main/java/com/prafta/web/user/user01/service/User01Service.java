@@ -63,7 +63,7 @@ public interface User01Service {
 	byte[] buildUserCreateTemplate(TokenInfo tokenInfo, AuditContext auditContext);
 
 	// ===== 소정-03/08 - 계정 생성 폼 소정근로시간 입력 옵션(회사 통상 기준값 + 사유코드) =====
-	com.prafta.web.user.user01.dto.response.StdWorkOptionsResponse getStdWorkOptions(String cmpnyCd);
+	com.prafta.web.user.user01.dto.response.StdWorkOptionsResponse getStdWorkOptions(String cmpnyCd, String siteCd);
 
 	// ===== PRAFTA-COM-008-E-5 - 기본 근무타입 select 옵션(대상 사업장 활성 근무타입) =====
 	java.util.List<com.prafta.common.cmm.sch.vo.SchOptionVO> getSchTypeOptions(String cmpnyCd, String siteCd);

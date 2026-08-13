@@ -40,6 +40,7 @@ public record SiteInfoParam(
                     , req.getSiteDesc()
                     , req.getLat()
                     , req.getLon()
+                    , req.getWeekStdMinutes()
                     , tokenInfo.gv_cmpnyCd()
                     , tokenInfo.gv_userCd()
                 );

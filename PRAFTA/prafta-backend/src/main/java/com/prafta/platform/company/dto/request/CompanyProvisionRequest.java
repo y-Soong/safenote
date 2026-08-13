@@ -11,7 +11,7 @@ import lombok.Setter;
  * 운영자 인가/식별은 토큰 + 플랫폼 게이트가 강제하므로 본 요청에 운영자 정보는 포함하지 않는다.
  *
  * <p>필수: cmpnyNm / bsnsLcnNo / adminNm / adminId / adminMbl
- * <p>선택: contractEndDate(YYYYMMDD, 무기한/미정이면 미입력)
+ * <p>선택: contractEndDate(YYYYMMDD, 무기한/미정이면 미입력) / weekStdMinutes(통상근로시간 기준값)
  */
 @Getter
 @Setter
@@ -26,6 +26,15 @@ public class CompanyProvisionRequest {
 
     /** 계약 종료일 YYYYMMDD (선택). 무기한/미정이면 미입력. */
     private String contractEndDate;
+
+    /**
+     * 통상근로자 주 소정근로 분 (선택, 0 초과 ~ 2400분).
+     *
+     * <p>단시간 판정 분모·연차 비례부여 분모·소정 이력 미입력 계정 폴백에 쓰이는 회사 기본값이다.
+     * <b>미입력이면 행을 만들지 않는다</b> — 코드 폴백 2400분(주 40시간)이 그대로 적용된다.
+     * 사업장별로 다르면 사업장 관리(Baim_01)에서 오버라이드한다.
+     */
+    private Integer weekStdMinutes;
 
     /** 최초 master 계정 관리자명(TB_USER.USER_NM). */
     private String adminNm;

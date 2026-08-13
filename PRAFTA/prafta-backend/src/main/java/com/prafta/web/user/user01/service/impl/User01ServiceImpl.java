@@ -919,7 +919,7 @@ public class User01ServiceImpl implements User01Service{
 		//   StdWorkHoursService.register 는 @Transactional(REQUIRED) 라 본 메서드의
 		//   REQUIRES_NEW 트랜잭션에 참여한다. 즉 이력 등록이 실패하면 계정 생성 전체가 롤백되어
 		//   "소정근로 미기록 계정"이 조용히 만들어지지 않는다(지시서 요구).
-		insertStdWorkHoursOnCreate(param, userCd, stdWorkType);
+		insertStdWorkHoursOnCreate(param, userCd, siteCd, stdWorkType);
 
 		// 18) TB_USER_SITE_AUTH INSERT (사용자 ↔ 사이트 권한 한 줄).
 		user01Mapper.insertOneUserSiteAuth(param.gvCmpnyCd(), userCd, siteCd, param.gvUserCd());
@@ -991,18 +991,22 @@ public class User01ServiceImpl implements User01Service{
 	 *
 	 * <p><b>주 소정근로 분</b>
 	 * <ul>
-	 *   <li>풀타임(FULL) — 회사 통상 기준값(TB_CMPNY_STD_WORK_POLICY, 행 부재 시 2400분).
-	 *       화면이 보낸 값을 쓰지 않는다(기준값 하드코딩·클라 신뢰 금지).</li>
+	 *   <li>풀타임(FULL) — <b>배정 사업장</b>의 통상 기준값(사업장 오버라이드 → 회사 기본값 →
+	 *       2400분). 화면이 보낸 값을 쓰지 않는다(기준값 하드코딩·클라 신뢰 금지).</li>
 	 *   <li>직접 입력(DIRECT) — 화면/엑셀 입력값.</li>
 	 * </ul>
 	 *
 	 * <p><b>사유코드</b> — 풀타임은 NORMAL 고정. 직접 입력은 화면 선택값을 쓰고, 사유가 없으면
-	 * (엑셀 업로드는 사유 컬럼이 없다) 회사 통상 기준값과 비교해 판정한다: 본인 주 소정이 통상
+	 * (엑셀 업로드는 사유 컬럼이 없다) 통상 기준값과 비교해 판정한다: 본인 주 소정이 통상
 	 * 기준보다 짧으면 PART_TIME(단시간계약), 아니면 NORMAL(지시서 B-2 단시간 파생 판정).
+	 * ★비교 분모가 <b>배정 사업장 기준값</b>이어야 통상 40시간이 아닌 사업장의 통상근로자가
+	 * 단시간으로 오분류되지 않는다.
 	 *
 	 * <p><b>일용직 제외</b> — 소정근로 개념이 없는 계정(DAILY)은 이력을 만들지 않는다.
+	 *
+	 * @param siteCd 검증을 마친 배정 사업장(클라 바디가 아니라 서비스가 확정한 값)
 	 */
-	private void insertStdWorkHoursOnCreate(UserCreateParam param, String userCd, String stdWorkType) {
+	private void insertStdWorkHoursOnCreate(UserCreateParam param, String userCd, String siteCd, String stdWorkType) {
 
 		// 관리자 생성 경로는 ALLOWED_EMPLOYMENT_TYPES 로 이미 DAILY 를 거부하지만,
 		// 고용형태 판정의 단일 출처(StdWorkHoursService)로 한 번 더 확인한다(fail-closed).
@@ -1011,7 +1015,7 @@ public class User01ServiceImpl implements User01Service{
 			return;
 		}
 
-		int cmpnyWeekStdMinutes = stdWorkHoursService.resolveCmpnyWeekStdMinutes(param.gvCmpnyCd());
+		int cmpnyWeekStdMinutes = stdWorkHoursService.resolveSiteWeekStdMinutes(param.gvCmpnyCd(), siteCd);
 		int weekStdMinutes = STD_WORK_TYPE_FULL.equals(stdWorkType)
 				? cmpnyWeekStdMinutes
 				: param.stdWorkWeekMinutes();
@@ -1098,7 +1102,7 @@ public class User01ServiceImpl implements User01Service{
 	 * <p>사유 목록은 {@link #selectableStdWorkReasonRules} 단일 출처를 쓴다(저장 검증과 동일 집합).
 	 */
 	@Override
-	public com.prafta.web.user.user01.dto.response.StdWorkOptionsResponse getStdWorkOptions(String cmpnyCd) {
+	public com.prafta.web.user.user01.dto.response.StdWorkOptionsResponse getStdWorkOptions(String cmpnyCd, String siteCd) {
 
 		if (isBlank(cmpnyCd)) {
 			throw new ApiException(CommonErrorCode.COMMON_400_003);
@@ -1113,7 +1117,7 @@ public class User01ServiceImpl implements User01Service{
 		}
 
 		return com.prafta.web.user.user01.dto.response.StdWorkOptionsResponse.builder()
-				.cmpnyWeekStdMinutes(stdWorkHoursService.resolveCmpnyWeekStdMinutes(cmpnyCd))
+				.cmpnyWeekStdMinutes(stdWorkHoursService.resolveSiteWeekStdMinutes(cmpnyCd, siteCd))
 				.reasonOptions(options)
 				.build();
 	}

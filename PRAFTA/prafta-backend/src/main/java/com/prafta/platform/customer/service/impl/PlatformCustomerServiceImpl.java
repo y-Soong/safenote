@@ -8,14 +8,17 @@ import java.util.List;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import com.prafta.common.cmm.stdwork.service.StdWorkHoursService;
 import com.prafta.common.error.platform.PlatformErrorCode;
 import com.prafta.common.exception.ApiException;
 import com.prafta.platform.common.PlatformConstants;
 import com.prafta.platform.customer.application.param.CustomerListParam;
+import com.prafta.platform.customer.application.param.StdWorkPolicyUpdateParam;
 import com.prafta.platform.customer.application.param.TokenQuotaUpdateParam;
 import com.prafta.platform.customer.application.query.CustomerListQuery;
 import com.prafta.platform.customer.application.result.CustomerListResult;
 import com.prafta.platform.customer.dto.response.CustomerListResponse;
+import com.prafta.platform.customer.dto.response.StdWorkPolicyUpdateResponse;
 import com.prafta.platform.customer.dto.response.TokenQuotaUpdateResponse;
 import com.prafta.platform.customer.dto.response.TokenUsageListResponse;
 import com.prafta.platform.customer.mapper.PlatformCustomerMapper;
@@ -30,6 +33,9 @@ import lombok.extern.slf4j.Slf4j;
 public class PlatformCustomerServiceImpl implements PlatformCustomerService {
 
     private final PlatformCustomerMapper platformCustomerMapper;
+
+    /** 통상근로시간 기준값 저장·검증 단일 출처(값 범위·법정 상한 문구 포함). */
+    private final StdWorkHoursService stdWorkHoursService;
 
     /** 당월 사용량 조인 키(USE_YM) 기준 타임존 — 쿼터 서비스(AiQuotaServiceImpl)와 동일하게 KST 고정. */
     private static final ZoneId ZONE_KST = ZoneId.of("Asia/Seoul");
@@ -81,6 +87,34 @@ public class PlatformCustomerServiceImpl implements PlatformCustomerService {
                 .cmpnyCd(param.cmpnyCd())
                 .tokenLimit(param.monthlyTokenLimit())
                 .quotaCustomYn("Y")
+                .build();
+    }
+
+    @Override
+    @Transactional
+    public StdWorkPolicyUpdateResponse updateStdWorkPolicy(StdWorkPolicyUpdateParam param) {
+
+        // 대상 검증은 AI 토큰 한도 변경과 동일 기준 — 운영자 자기 자신(prafta_system_admin) 지정 거부
+        // + TB_CMPNY 미존재 거부. 값 범위 검증은 StdWorkHoursService 가 수행한다(문구 단일 출처).
+        if (PlatformConstants.PLATFORM_CMPNY_CD.equals(param.cmpnyCd())
+                || platformCustomerMapper.selectCmpnyExists(param.cmpnyCd()) == 0) {
+            log.warn("통상근로시간 기준값 변경 거부 - 대상 회사 미존재/운영자 자기 지정 - cmpnyCd={}", param.cmpnyCd());
+            throw new ApiException(PlatformErrorCode.PLATFORM_400_015);
+        }
+
+        // siteCd=null → COMPANY 스코프. weekStdMinutes=null → 행 삭제(주 40시간 폴백으로 복귀).
+        stdWorkHoursService.saveWeekStdMinutesPolicy(
+            param.cmpnyCd(), null, param.weekStdMinutes(), param.operatorUserCd());
+
+        log.info("통상근로시간 기준값 변경 완료 - cmpnyCd={}, 주소정={}, operator={}",
+            param.cmpnyCd(),
+            param.weekStdMinutes() == null ? "미지정(기본 2400분)" : param.weekStdMinutes() + "분",
+            param.operatorUserCd());
+
+        return StdWorkPolicyUpdateResponse.builder()
+                .cmpnyCd(param.cmpnyCd())
+                .weekStdMinutes(param.weekStdMinutes())
+                .policyCustomYn(param.weekStdMinutes() == null ? "N" : "Y")
                 .build();
     }
 

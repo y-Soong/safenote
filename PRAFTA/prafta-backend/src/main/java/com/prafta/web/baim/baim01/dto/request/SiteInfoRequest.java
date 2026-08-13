@@ -58,4 +58,13 @@ public class SiteInfoRequest {
 	@DecimalMin(value = "-180.0")
 	@DecimalMax(value = "180.0")
 	private BigDecimal lon;
+
+	/**
+	 * 통상근로자 주 소정근로 분 — 사업장 오버라이드 (선택, 0 초과 ~ 2400분).
+	 *
+	 * <p>null = 회사 기본값 상속(기존 오버라이드 행이 있으면 삭제). 값 범위 검증과 저장은
+	 * {@code StdWorkHoursService.saveWeekStdMinutesPolicy} 단일 출처가 담당하므로 여기서는
+	 * Bean Validation 을 걸지 않는다(에러 문구에 법정 상한 근거를 담기 위함).
+	 */
+	private Integer weekStdMinutes;
 }

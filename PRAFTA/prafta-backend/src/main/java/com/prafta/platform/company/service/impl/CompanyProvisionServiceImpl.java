@@ -180,10 +180,20 @@ public class CompanyProvisionServiceImpl implements CompanyProvisionService {
                 , param.gvUserCd()
         ));
 
+        // 11-0) 통상근로자 주 소정근로 기준값(TB_CMPNY_STD_WORK_POLICY, COMPANY 스코프) 1행.
+        //   ★미입력이면 행을 만들지 않는다 — 코드 폴백 2400분(주 40시간)이 그대로 적용된다(현행 동작 유지).
+        //   값 범위 검증(0 초과 ~ 2400분)과 저장은 StdWorkHoursService 단일 출처가 담당한다.
+        //   아래 master 시드가 이 값을 읽으므로 반드시 시드보다 먼저 저장해야 한다.
+        //   saveWeekStdMinutesPolicy 는 @Transactional(REQUIRED) 라 본 프로비저닝 트랜잭션에 참여한다.
+        if (param.weekStdMinutes() != null) {
+            stdWorkHoursService.saveWeekStdMinutesPolicy(cmpnyCd, null, param.weekStdMinutes(), param.gvUserCd());
+        }
+
         // 11-1) 소정-03: master 계정 소정근로시간 이력 시드(풀타임 NORMAL 1행).
         //   계정 생성 3경로 중 프로비저닝 경로 — 여기서 넣지 않으면 신규 고객사의 첫 계정만
         //   소정근로 미입력 상태로 남아 폴백(통상 간주)에 의존하게 된다.
-        //   주 소정근로 분은 회사 통상 기준값에서 가져온다(신규 회사는 정책 행이 없어 2400 폴백).
+        //   주 소정근로 분은 회사 통상 기준값에서 가져온다(11-0 에서 입력했으면 그 값, 아니면 2400 폴백).
+        //   사업장 오버라이드는 이 시점에 존재할 수 없으므로(사업장은 12단계에서 생성) 회사 스코프로 조회한다.
         //   적용 시작일 = 프로비저닝 일자(master 계정은 입사일을 받지 않는다 — 입사일 폴백 규약과 동일 계열).
         //   register 는 @Transactional(REQUIRED) 라 본 프로비저닝 트랜잭션에 참여한다(실패 시 전체 롤백).
         int masterWeekStdMinutes = stdWorkHoursService.resolveCmpnyWeekStdMinutes(cmpnyCd);

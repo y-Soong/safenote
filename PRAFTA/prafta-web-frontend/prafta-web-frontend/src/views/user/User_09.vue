@@ -353,6 +353,8 @@ const fnOpenApprovePop = (row) => {
     userCd_p: row.userCd,
     userId_p: row.userId,
     userNm_p: row.userNm,
+    // 통상 기준값(풀타임 라벨)은 대상자 소속 사업장 기준이다.
+    siteCd_p: row.siteCd,
     siteNm_p: row.siteNm,
     nodeNm_p: row.nodeNm,
     onSaved: fnSearch,
@@ -464,6 +466,28 @@ const focusKill = (e) => {
 
 .status-select {
   width: 120px;
+}
+
+/* 하위부서 조회 체크박스 — Attd_07 규격과 동일(검색바 표기 통일).
+   스타일이 없으면 검색바의 일반 input 규칙이 적용돼 체크박스가 과도하게 커진다. */
+.checkbox-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  font-size: 0.85rem;
+  color: var(--color-text-muted, #6b7280);
+  cursor: pointer;
+  user-select: none;
+  margin-right: 0.4rem;
+  white-space: nowrap;
+}
+
+.checkbox-label input[type="checkbox"] {
+  width: 13px;
+  height: 13px;
+  cursor: pointer;
+  accent-color: var(--color-primary, #16a34a);
+  flex-shrink: 0;
 }
 
 /* 안내문 — 팝업 안내(reg-guide)와 동일 톤 */

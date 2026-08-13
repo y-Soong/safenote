@@ -22,8 +22,11 @@ public record SiteInfoResult(
 	, BigDecimal lat
 	, BigDecimal lon
 	// PRAFTA-SUBCON-T2-04: 연동 원본 회사코드(NULL=일반, NOT NULL=미러 — 배지/편집 비활성 근거).
-	// ★record 매핑은 SELECT 컬럼 순서와 일치해야 하므로 반드시 말미 유지.
+	// ★record 매핑은 SELECT 컬럼 순서와 일치해야 한다. 신규 컬럼은 반드시 아래에 덧붙일 것.
 	, String linkSrcCmpnyCd
+	// 통상근로시간 사업장 오버라이드(TB_CMPNY_STD_WORK_POLICY SITE 스코프).
+	// NULL = 직접 지정 없음 = 회사 기본값 상속.
+	, Integer weekStdMinutes
 ){
 
 }

@@ -61,6 +61,39 @@
               />
             </td>
           </tr>
+          <!-- 통상근로시간(회사 기본값) — 미입력이면 행을 만들지 않고 주 40시간 폴백을 쓴다. -->
+          <tr>
+            <th>통상근로시간</th>
+            <td>
+              <div class="std-work-field">
+                <span>주</span>
+                <input
+                  v-model="form.stdWorkHours"
+                  type="text"
+                  inputmode="numeric"
+                  maxlength="2"
+                  placeholder="40"
+                  :disabled="saving"
+                />
+                <span>시간</span>
+                <input
+                  v-model="form.stdWorkMinutes"
+                  type="text"
+                  inputmode="numeric"
+                  maxlength="2"
+                  placeholder="0"
+                  :disabled="saving"
+                />
+                <span>분</span>
+              </div>
+              <p class="hint">
+                통상근로자(풀타임)의 주 소정근로시간입니다. 단시간근로자 판정과
+                연차 비례부여의 기준이 됩니다. 미입력 시 주 40시간으로 적용되며,
+                사업장별로 다르면 사업장 관리에서 따로 지정할 수 있습니다.
+                (법정 상한 주 40시간 — 초과 근무는 연장근로로 근무타입에서 관리)
+              </p>
+            </td>
+          </tr>
           <tr>
             <th>관리자명 <span class="req">*</span></th>
             <td>
@@ -168,6 +201,9 @@ const form = reactive({
   cmpnyNm: "",
   bsnsLcnNo: "",
   contractEndDate: "",
+  // 통상근로자 주 소정근로시간(선택). 시간/분 분리 입력 → 서버에는 분으로 환산해 보낸다.
+  stdWorkHours: "",
+  stdWorkMinutes: "",
   adminNm: "",
   adminId: "",
   adminMbl: "",
@@ -178,6 +214,21 @@ const result = ref(null);
 
 // 숫자만 남기기(하이픈/공백 제거)
 const digits = (v) => String(v || "").replace(/[^0-9]/g, "");
+
+// 법정 상한(근로기준법 제50조 1주 40시간). 서버가 최종 검증하며 여기서는 1차 안내만 한다.
+const LEGAL_MAX_WEEK_MINUTES = 2400;
+
+// 통상근로시간 입력 여부(시간·분 중 하나라도 입력하면 지정으로 본다).
+const isStdWorkEntered = () =>
+  digits(form.stdWorkHours) !== "" || digits(form.stdWorkMinutes) !== "";
+
+// 입력값 → 분. 미입력이면 null(= 기준값 행을 만들지 않음).
+const stdWorkWeekMinutes = () => {
+  if (!isStdWorkEntered()) return null;
+  const h = Number(digits(form.stdWorkHours) || 0);
+  const m = Number(digits(form.stdWorkMinutes) || 0);
+  return h * 60 + m;
+};
 
 // 클라 1차 검증(서버가 최종 검증). 형식은 서버와 동일 기준.
 function validate() {
@@ -207,6 +258,16 @@ function validate() {
   if (form.contractEndDate && digits(form.contractEndDate).length !== 8) {
     return "계약 종료일은 YYYYMMDD 8자리여야 합니다(미입력 시 무기한).";
   }
+  // 통상근로시간: 입력했다면 0 초과 ~ 주 40시간(2400분) 이하.
+  const stdMinutes = stdWorkWeekMinutes();
+  if (stdMinutes !== null) {
+    if (stdMinutes <= 0) {
+      return "통상근로시간을 0보다 크게 입력해 주세요(비워두면 주 40시간이 적용됩니다).";
+    }
+    if (stdMinutes > LEGAL_MAX_WEEK_MINUTES) {
+      return "통상근로시간은 주 40시간을 초과할 수 없습니다.\n근로기준법 제50조상 1주 소정근로시간의 법정 상한입니다.\n40시간을 넘는 근무는 연장근로이므로 고정연장근무 근무타입으로 등록해 주세요.";
+    }
+  }
   return null;
 }
 
@@ -231,6 +292,8 @@ async function fnSave() {
       cmpnyNm: form.cmpnyNm,
       bsnsLcnNo: digits(form.bsnsLcnNo),
       contractEndDate: form.contractEndDate ? digits(form.contractEndDate) : "",
+      // null 이면 서버가 기준값 행을 만들지 않는다(= 주 40시간 폴백 유지).
+      weekStdMinutes: stdWorkWeekMinutes(),
       adminNm: form.adminNm,
       adminId: form.adminId,
       adminMbl: digits(form.adminMbl),
@@ -246,6 +309,8 @@ async function fnSave() {
     form.cmpnyNm = "";
     form.bsnsLcnNo = "";
     form.contractEndDate = "";
+    form.stdWorkHours = "";
+    form.stdWorkMinutes = "";
     form.adminNm = "";
     form.adminId = "";
     form.adminMbl = "";
@@ -308,6 +373,19 @@ async function fnSave() {
 }
 .req {
   color: #ef4444;
+}
+/* 통상근로시간 — 시간/분 분리 입력(폼 테이블 입력 폭 규칙과 별개로 좁게) */
+.std-work-field {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  font-size: 0.85rem;
+  color: #374151;
+}
+.std-work-field input {
+  width: 64px;
+  max-width: 64px;
+  text-align: right;
 }
 .hint {
   margin: 0.35rem 0 0;

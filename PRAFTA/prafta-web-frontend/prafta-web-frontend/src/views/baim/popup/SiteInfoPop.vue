@@ -171,6 +171,59 @@
               </div>
             </div>
 
+            <!-- 통상근로시간 사업장 오버라이드.
+                 비워두면(회사 기본값 사용) 오버라이드 행을 만들지 않거나 기존 행을 삭제한다. -->
+            <div class="form-row-max std-work-row">
+              <label>통상근로시간</label>
+              <div class="std-work-field">
+                <label class="std-work-radio">
+                  <input
+                    type="radio"
+                    value="INHERIT"
+                    v-model="stdWorkMode"
+                    :disabled="isMirror"
+                  />
+                  회사 기본값 사용{{ cmpnyStdWorkLabel }}
+                </label>
+                <label class="std-work-radio">
+                  <input
+                    type="radio"
+                    value="DIRECT"
+                    v-model="stdWorkMode"
+                    :disabled="isMirror"
+                  />
+                  직접 지정
+                </label>
+                <template v-if="stdWorkMode === 'DIRECT'">
+                  <span>주</span>
+                  <input
+                    class="std-work-num"
+                    v-model="stdWorkHours"
+                    maxlength="2"
+                    inputmode="numeric"
+                    :disabled="isMirror"
+                    @input="handleStdWorkNumInput($event, 'H')"
+                  />
+                  <span>시간</span>
+                  <input
+                    class="std-work-num"
+                    v-model="stdWorkMinutes"
+                    maxlength="2"
+                    inputmode="numeric"
+                    :disabled="isMirror"
+                    @input="handleStdWorkNumInput($event, 'M')"
+                  />
+                  <span>분</span>
+                </template>
+              </div>
+            </div>
+            <p class="std-work-hint">
+              이 사업장 통상근로자(풀타임)의 주 소정근로시간입니다. 단시간근로자
+              판정과 연차 비례부여의 기준이 되며, 지정하지 않으면 회사 기본값을
+              따릅니다. (법정 상한 주 40시간 — 초과 근무는 연장근로이므로
+              고정연장근무 근무타입으로 관리)
+            </p>
+
             <div class="form-row-max">
               <label>사업장비고</label>
               <textarea
@@ -241,6 +294,10 @@ const props = defineProps({
   // visible: Boolean,
   cmpnyCd_p: String,
   siteCd_p: String,
+  // 회사 통상근로시간 기준값(분) — 부모(Baim_01)가 목록 조회 응답에서 받은 값.
+  //   "회사 기본값 사용" 라벨을 하드코딩 없이 그리는 용도. 기존 사업장 로드 시에는
+  //   자체 조회 응답값으로 덮어쓴다(신규 등록 경로는 조회가 없어 이 prop 이 유일한 출처).
+  cmpnyWeekStdMinutes_p: Number,
   onSelect: Function,
   reset: Function,
 });
@@ -275,6 +332,17 @@ const siteDescFcs = ref("");
 
 // PRAFTA-SUBCON-T2-09: 미러(연동) 사업장 여부 — 잠금 필드 입력 비활성 근거(서버 T2-04 가 최종 강제).
 const isMirror = ref(false);
+
+/* 통상근로시간 사업장 오버라이드 (TB_CMPNY_STD_WORK_POLICY, SITE 스코프) */
+// 'INHERIT' = 회사 기본값 사용(행 없음/삭제) / 'DIRECT' = 이 사업장 값 직접 지정.
+const stdWorkMode = ref("INHERIT");
+const stdWorkHours = ref("");
+const stdWorkMinutes = ref("");
+// 회사 기본값(분) — 라벨 표기용. 조회 응답 > prop 순으로 채운다.
+const cmpnyWeekStdMinutes = ref(null);
+
+// 법정 상한(근로기준법 제50조 1주 40시간). 서버가 최종 검증하며 여기서는 1차 안내만 한다.
+const LEGAL_MAX_WEEK_MINUTES = 2400;
 
 // 지오코딩 산출 좌표 (BE 계약 필드명 lat/lon, 문자열 전송)
 const lat = ref("");
@@ -503,6 +571,35 @@ function toYmdDash(val) {
 // 사업종료일 선택 하한 = 사업개시일 당일(5.2.1: 개시일 이후 모든 날짜, 개시일 당일 허용).
 const endDateMinDate = computed(() => toYmdDash(strDate.value));
 
+// "회사 기본값 사용 (주 40시간)" 라벨. 값이 없으면 괄호 없이 표기한다(하드코딩 금지).
+const cmpnyStdWorkLabel = computed(() => {
+  const total = Number(cmpnyWeekStdMinutes.value);
+  if (!Number.isFinite(total) || total <= 0) return "";
+  const h = Math.floor(total / 60);
+  const m = total % 60;
+  return m === 0 ? ` (주 ${h}시간)` : ` (주 ${h}시간 ${m}분)`;
+});
+
+// 직접 지정 입력값 → 분. 'INHERIT' 이거나 미입력이면 null(= 오버라이드 해제).
+const stdWorkOverrideMinutes = () => {
+  if (stdWorkMode.value !== "DIRECT") return null;
+  const h = Number(String(stdWorkHours.value || "").replace(/[^0-9]/g, "") || 0);
+  const m = Number(String(stdWorkMinutes.value || "").replace(/[^0-9]/g, "") || 0);
+  const total = h * 60 + m;
+  return total > 0 ? total : null;
+};
+
+// 시간/분 입력 제한(숫자 2자리). GPS 반경 입력과 동일 규약.
+const handleStdWorkNumInput = (e, part) => {
+  const value = e.target.value.replace(/[^0-9]/g, "").slice(0, 2);
+  if (part === "H") {
+    stdWorkHours.value = value;
+  } else {
+    stdWorkMinutes.value = value;
+  }
+  e.target.value = value;
+};
+
 // PRAFTA-COM-001-T2-5: 사업개시일 변경 시 종료일이 그보다 앞서면 종료일 초기화(UI 정합).
 watch(
   () => strDate.value,
@@ -541,6 +638,11 @@ watch(
 onMounted(async () => {
   await fnGetSystinfoList();
   cmpnyCd.value = props.cmpnyCd_p;
+
+  // 회사 기본값은 부모가 넘겨준 값으로 먼저 채운다(신규 등록 경로는 조회가 없다).
+  cmpnyWeekStdMinutes.value = Number.isFinite(Number(props.cmpnyWeekStdMinutes_p))
+    ? Number(props.cmpnyWeekStdMinutes_p)
+    : null;
 
   if (props.siteCd_p) {
     siteCd.value = props.siteCd_p;
@@ -635,7 +737,22 @@ const fnGetSiteInfo = async (siteCd) => {
       },
     });
     if (response.status === 200) {
+      // 회사 기본값(라벨 표기용)은 목록 유무와 무관하게 응답 루트에서 받는다.
+      if (response.data?.cmpnyWeekStdMinutes != null) {
+        cmpnyWeekStdMinutes.value = Number(response.data.cmpnyWeekStdMinutes);
+      }
       if (response.data?.siteInfoList?.length == 1) {
+        // 통상근로시간 오버라이드: 값이 있으면 '직접 지정', 없으면 '회사 기본값 사용'.
+        const overrideMinutes = response.data?.siteInfoList[0].weekStdMinutes;
+        if (overrideMinutes != null && Number(overrideMinutes) > 0) {
+          stdWorkMode.value = "DIRECT";
+          stdWorkHours.value = String(Math.floor(Number(overrideMinutes) / 60));
+          stdWorkMinutes.value = String(Number(overrideMinutes) % 60);
+        } else {
+          stdWorkMode.value = "INHERIT";
+          stdWorkHours.value = "";
+          stdWorkMinutes.value = "";
+        }
         siteNo.value = response.data?.siteInfoList[0].siteNo;
         siteNm.value = response.data?.siteInfoList[0].siteNm;
         zipCode.value = response.data?.siteInfoList[0]?.zipCode;
@@ -732,6 +849,8 @@ const fnSiteSave = async () => {
           siteDesc: siteDesc.value,
           lat: proxy.$util.isEmpty(lat.value) ? null : lat.value,
           lon: proxy.$util.isEmpty(lon.value) ? null : lon.value,
+          // null = 회사 기본값 상속(서버가 기존 오버라이드 행을 삭제한다).
+          weekStdMinutes: stdWorkOverrideMinutes(),
         },
       ]);
       if (response.status === 200) {
@@ -829,6 +948,21 @@ function fnSiteInfoValidationChk() {
       alertMsg = "사업종료일은 사업개시일 이후로 지정해주세요.";
       fnAlertMsg(alertMsg);
       retVal = false;
+    } else if (
+      stdWorkMode.value === "DIRECT" &&
+      stdWorkOverrideMinutes() === null
+    ) {
+      // '직접 지정'을 골랐는데 값이 비어 있으면 의도가 불분명하다(상속으로 조용히 저장하지 않는다).
+      alertMsg =
+        "통상근로시간을 입력해주세요.\n회사 기본값을 따르려면 '회사 기본값 사용'을 선택하세요.";
+      fnAlertMsg(alertMsg);
+      retVal = false;
+    } else if (stdWorkOverrideMinutes() > LEGAL_MAX_WEEK_MINUTES) {
+      // FE 1차 검증(서버 STDWORK_400_007 이 최종 검증).
+      alertMsg =
+        "통상근로시간은 주 40시간을 초과할 수 없습니다.\n근로기준법 제50조상 1주 소정근로시간의 법정 상한입니다.\n40시간을 넘는 근무는 연장근로이므로 고정연장근무 근무타입으로 등록해 주세요.";
+      fnAlertMsg(alertMsg);
+      retVal = false;
     }
   }
 
@@ -858,6 +992,34 @@ async function fnConfirmMsg(message, afterConfirmCallback) {
   background: var(--color-primary-bg, #dcfce7);
   color: var(--color-primary, #16a34a);
   font-size: var(--btn-font-sm, 12px);
+}
+
+/* 통상근로시간 오버라이드 — 선택식(회사 기본값 사용 / 직접 지정) + 시간·분 입력 */
+.std-work-row {
+  flex-wrap: wrap;
+}
+.std-work-field {
+  display: inline-flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+}
+.std-work-radio {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.2rem;
+  white-space: nowrap;
+  cursor: pointer;
+}
+.std-work-num {
+  width: 3.5rem;
+  text-align: right;
+}
+.std-work-hint {
+  margin: 0;
+  color: var(--color-text-muted, #6b7280);
+  font-size: var(--btn-font-sm, 12px);
+  line-height: 1.5;
 }
 
 /* GPS 반경 입력 우측 단위 표기 */

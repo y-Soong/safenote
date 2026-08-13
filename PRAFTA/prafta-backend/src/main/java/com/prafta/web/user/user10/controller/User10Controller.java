@@ -73,15 +73,23 @@ public class User10Controller {
                         tokenInfo.gv_siteCd(), userCd));
     }
 
-    /** 옵션 조회 — 회사 스코프는 토큰에서만 도출(파라미터 없음). */
+    /**
+     * 옵션 조회 — 회사 스코프는 토큰에서만 도출한다.
+     *
+     * <p>{@code siteCd} 는 통상 기준값(사업장 오버라이드)을 고르기 위한 화면 선택값이며,
+     * 지정 시 서비스가 사업장 인가를 건다. 미지정이면 회사 기본값을 내려준다(종전 동작).
+     */
     @GetMapping("/std-work-reason-options")
     public ResponseEntity<?> getReasonOptions(
+            @RequestParam(value = "siteCd", required = false) String siteCd,
             @RequestHeader(value = "Authorization", required = false) String authorization) {
 
         TokenInfo tokenInfo = resolveToken(authorization);
 
         return ResponseEntity.status(HttpStatus.OK).body(
-                user10Service.getReasonOptions(tokenInfo.gv_cmpnyCd()));
+                user10Service.getReasonOptions(
+                        tokenInfo.gv_cmpnyCd(), tokenInfo.gv_authCd(), tokenInfo.gv_userCd(),
+                        tokenInfo.gv_siteCd(), siteCd));
     }
 
     @PostMapping("/std-work-register")

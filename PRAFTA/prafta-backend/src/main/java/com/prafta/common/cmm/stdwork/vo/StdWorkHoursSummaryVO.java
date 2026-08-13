@@ -26,8 +26,17 @@ public class StdWorkHoursSummaryVO {
     /** 해석된 본인 주 소정근로 분 (폴백 포함, 항상 값 존재) */
     private final int weekStdMinutes;
 
-    /** 회사 통상근로자 기준 주 소정근로 분 (비교 분모, 항상 값 존재) */
+    /**
+     * 통상근로자 기준 주 소정근로 분 (단시간 판정·비례부여의 비교 분모, 항상 값 존재).
+     *
+     * <p>★대상 근로자의 <b>소속 사업장 오버라이드가 있으면 그 값</b>이고, 없으면 회사 기본값,
+     * 그것도 없으면 코드 상수 2400분이다(3단 폴백). 필드명은 하위 호환을 위해 유지하지만
+     * 의미는 "적용 기준값"이다 — 어느 단에서 왔는지는 {@link #source} 로 구분한다.
+     */
     private final int cmpnyWeekStdMinutes;
+
+    /** 기준값 판정에 사용한 소속 사업장 코드 (미지정 계정이면 null). */
+    private final String siteCd;
 
     /** 값의 출처 — {@link StdWorkSource} */
     private final StdWorkSource source;
@@ -61,9 +70,11 @@ public class StdWorkHoursSummaryVO {
     public enum StdWorkSource {
         /** 근로자 소정근로시간 이력 행에서 해석 */
         USER_HISTORY,
-        /** 이력 부재 → 회사 통상 기준값(TB_CMPNY_STD_WORK_POLICY) 폴백 */
+        /** 이력 부재 → 소속 사업장 오버라이드(TB_CMPNY_STD_WORK_POLICY, SITE 스코프) 폴백 */
+        SITE_POLICY,
+        /** 이력·사업장 오버라이드 부재 → 회사 통상 기준값(COMPANY 스코프) 폴백 */
         COMPANY_POLICY,
-        /** 이력·회사 기준값 모두 부재 → 코드 상수 2400분 폴백 */
+        /** 이력·기준값 모두 부재 → 코드 상수 2400분 폴백 */
         SYSTEM_DEFAULT
     }
 

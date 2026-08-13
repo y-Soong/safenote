@@ -15,7 +15,9 @@ import com.prafta.common.cmm.stdwork.service.StdWorkHoursService;
 import com.prafta.common.cmm.stdwork.vo.StdWorkHoursSaveResult;
 import com.prafta.common.cmm.stdwork.vo.StdWorkHoursSummaryVO;
 import com.prafta.common.cmm.stdwork.vo.StdWorkHoursVO;
+import com.prafta.common.cmm.stdwork.vo.StdWorkPolicyVO;
 import com.prafta.common.cmm.stdwork.vo.StdWorkReasonRuleVO;
+import com.prafta.common.cmm.stdwork.vo.StdWorkUserScopeVO;
 import com.prafta.common.error.stdwork.StdWorkErrorCode;
 import com.prafta.common.exception.ApiException;
 import com.prafta.common.util.AuthRoleUtils;
@@ -94,17 +96,36 @@ public class StdWorkHoursServiceImpl implements StdWorkHoursService {
 
     @Override
     public int resolveCmpnyWeekStdMinutes(String cmpnyCd) {
+        return resolveSiteWeekStdMinutes(cmpnyCd, null);
+    }
+
+    @Override
+    public int resolveSiteWeekStdMinutes(String cmpnyCd, String siteCd) {
 
         if (!StringUtils.hasText(cmpnyCd)) {
             throw new ApiException(StdWorkErrorCode.STDWORK_400_001);
         }
 
-        Integer cmpnyMinutes = stdWorkHoursMapper.selectCmpnyWeekStdMinutes(cmpnyCd);
-        if (cmpnyMinutes == null || cmpnyMinutes <= 0) {
-            // 행 부재 = 통상 주 40시간. 전 회사 백필 시드를 두지 않는 설계의 근거 지점(plan §1.2).
-            return DEFAULT_WEEK_STD_MINUTES;
+        StdWorkPolicyVO policy = stdWorkHoursMapper.selectEffectivePolicy(cmpnyCd, trimToNull(siteCd));
+        return resolvePolicyMinutes(policy);
+    }
+
+    @Override
+    public Integer findPolicyWeekStdMinutes(String cmpnyCd, String siteCd) {
+
+        if (!StringUtils.hasText(cmpnyCd)) {
+            throw new ApiException(StdWorkErrorCode.STDWORK_400_001);
         }
-        return cmpnyMinutes;
+
+        String site = trimToNull(siteCd);
+        StdWorkPolicyVO policy = (site == null)
+                ? stdWorkHoursMapper.selectPolicy(cmpnyCd, StdWorkPolicyVO.SCOPE_TYPE_COMPANY, StdWorkPolicyVO.SCOPE_CD_COMPANY)
+                : stdWorkHoursMapper.selectPolicy(cmpnyCd, StdWorkPolicyVO.SCOPE_TYPE_SITE, site);
+
+        if (policy == null || policy.getWeekStdMinutes() == null || policy.getWeekStdMinutes() <= 0) {
+            return null;
+        }
+        return policy.getWeekStdMinutes();
     }
 
     @Override
@@ -116,44 +137,67 @@ public class StdWorkHoursServiceImpl implements StdWorkHoursService {
 
         String ymd = resolveBaseYmd(baseYmd);
 
-        // 회사 기준값은 1회만 조회한다.
-        Integer cmpnyPolicyMinutes = stdWorkHoursMapper.selectCmpnyWeekStdMinutes(cmpnyCd);
-        boolean cmpnyPolicyExists = cmpnyPolicyMinutes != null && cmpnyPolicyMinutes > 0;
-        int cmpnyMinutes = cmpnyPolicyExists ? cmpnyPolicyMinutes : DEFAULT_WEEK_STD_MINUTES;
+        // 대상 여부(일용직·탈퇴·미존재)와 소속 사업장을 한 행으로 읽는다.
+        // 조회 경로에서는 대상이 아니어도 예외를 던지지 않는다(배치 루프 전체 실패 방지).
+        StdWorkUserScopeVO userScope = stdWorkHoursMapper.selectUserScope(cmpnyCd, userCd);
+        String employmentType = (userScope == null) ? null : userScope.getEmploymentType();
+        String userSiteCd = (userScope == null) ? null : trimToNull(userScope.getSiteCd());
+        boolean dailyWorker = AuthRoleUtils.isDailyWorker(employmentType);
+
+        // 기준값(비교 분모)은 대상 근로자의 소속 사업장 기준으로 1회만 조회한다.
+        // ★사업장 오버라이드가 있으면 그 값이 분모다 — 회사 기본값으로 고정하면 통상 40시간이
+        //   아닌 사업장의 통상근로자가 단시간으로 오분류된다(지시서 사고 시나리오).
+        StdWorkPolicyVO policy = stdWorkHoursMapper.selectEffectivePolicy(cmpnyCd, userSiteCd);
+        int baseMinutes = resolvePolicyMinutes(policy);
 
         StdWorkHoursVO row = stdWorkHoursMapper.selectEffectiveRow(cmpnyCd, userCd, ymd);
 
-        // 폴백 체인: 이력 행 → 회사 기준값 → 코드 상수 2400.
+        // 폴백 체인: 이력 행 → 사업장 오버라이드 → 회사 기준값 → 코드 상수 2400.
         int weekStdMinutes;
         StdWorkHoursSummaryVO.StdWorkSource source;
         if (row != null && row.getWeekStdMinutes() != null && row.getWeekStdMinutes() > 0) {
             weekStdMinutes = row.getWeekStdMinutes();
             source = StdWorkHoursSummaryVO.StdWorkSource.USER_HISTORY;
         } else {
-            weekStdMinutes = cmpnyMinutes;
-            source = cmpnyPolicyExists
-                    ? StdWorkHoursSummaryVO.StdWorkSource.COMPANY_POLICY
-                    : StdWorkHoursSummaryVO.StdWorkSource.SYSTEM_DEFAULT;
+            weekStdMinutes = baseMinutes;
+            source = resolvePolicySource(policy);
             row = null;
         }
-
-        // 대상 여부(일용직·탈퇴·미존재)를 함께 실어 소비처가 폴백 값을 오독하지 않게 한다.
-        // 조회 경로에서는 대상이 아니어도 예외를 던지지 않는다(배치 루프 전체 실패 방지).
-        String employmentType = stdWorkHoursMapper.selectUserEmploymentType(cmpnyCd, userCd);
-        boolean dailyWorker = AuthRoleUtils.isDailyWorker(employmentType);
 
         return StdWorkHoursSummaryVO.builder()
                 .cmpnyCd(cmpnyCd)
                 .userCd(userCd)
+                .siteCd(userSiteCd)
                 .baseYmd(ymd)
                 .weekStdMinutes(weekStdMinutes)
-                .cmpnyWeekStdMinutes(cmpnyMinutes)
+                .cmpnyWeekStdMinutes(baseMinutes)
                 .source(source)
-                .partTime(weekStdMinutes < cmpnyMinutes)
+                .partTime(weekStdMinutes < baseMinutes)
                 .effectiveRow(row)
                 .eligible(employmentType != null && !dailyWorker)
                 .dailyWorker(dailyWorker)
                 .build();
+    }
+
+    /** 기준값 행 → 적용 분. 행 부재/비정상 값이면 코드 상수 2400 으로 폴백(plan §1.2). */
+    private int resolvePolicyMinutes(StdWorkPolicyVO policy) {
+
+        if (policy == null || policy.getWeekStdMinutes() == null || policy.getWeekStdMinutes() <= 0) {
+            // 행 부재 = 통상 주 40시간. 전 회사 백필 시드를 두지 않는 설계의 근거 지점(plan §1.2).
+            return DEFAULT_WEEK_STD_MINUTES;
+        }
+        return policy.getWeekStdMinutes();
+    }
+
+    /** 기준값 폴백 출처 — 화면 배지가 "사업장 지정 / 회사 기본 / 시스템 기본"을 구분한다. */
+    private StdWorkHoursSummaryVO.StdWorkSource resolvePolicySource(StdWorkPolicyVO policy) {
+
+        if (policy == null || policy.getWeekStdMinutes() == null || policy.getWeekStdMinutes() <= 0) {
+            return StdWorkHoursSummaryVO.StdWorkSource.SYSTEM_DEFAULT;
+        }
+        return policy.isSiteScope()
+                ? StdWorkHoursSummaryVO.StdWorkSource.SITE_POLICY
+                : StdWorkHoursSummaryVO.StdWorkSource.COMPANY_POLICY;
     }
 
     @Override
@@ -195,8 +239,8 @@ public class StdWorkHoursServiceImpl implements StdWorkHoursService {
             throw new ApiException(StdWorkErrorCode.STDWORK_400_001);
         }
 
-        String employmentType = stdWorkHoursMapper.selectUserEmploymentType(cmpnyCd, userCd);
-        return employmentType != null && !AuthRoleUtils.isDailyWorker(employmentType);
+        StdWorkUserScopeVO userScope = stdWorkHoursMapper.selectUserScope(cmpnyCd, userCd);
+        return userScope != null && !AuthRoleUtils.isDailyWorker(userScope.getEmploymentType());
     }
 
     // ===================== 등록 / 변경 =====================
@@ -484,7 +528,62 @@ public class StdWorkHoursServiceImpl implements StdWorkHoursService {
         return validateCommon(normalize(command));
     }
 
+    // ===================== 기준값(TB_CMPNY_STD_WORK_POLICY) 등록 / 변경 =====================
+
+    @Override
+    @Transactional
+    public void saveWeekStdMinutesPolicy(String cmpnyCd, String siteCd, Integer weekStdMinutes, String actorNo) {
+
+        if (!StringUtils.hasText(cmpnyCd) || !StringUtils.hasText(actorNo)) {
+            throw new ApiException(StdWorkErrorCode.STDWORK_400_001);
+        }
+
+        String site = trimToNull(siteCd);
+        String scopeType = (site == null) ? StdWorkPolicyVO.SCOPE_TYPE_COMPANY : StdWorkPolicyVO.SCOPE_TYPE_SITE;
+        String scopeCd = (site == null) ? StdWorkPolicyVO.SCOPE_CD_COMPANY : site;
+
+        // 미지정 = 행 삭제(상속). "0 으로 저장"이 아니라 상위 스코프로 되돌리는 동작이다.
+        if (weekStdMinutes == null) {
+            int deleted = stdWorkHoursMapper.deletePolicy(cmpnyCd, scopeType, scopeCd);
+            if (deleted > 0) {
+                log.info("[stdWork] 통상근로시간 기준값 지정 해제(상속) - cmpnyCd={}, scope={}/{}, 삭제={}건",
+                        cmpnyCd, scopeType, scopeCd, deleted);
+            }
+            return;
+        }
+
+        // 차단: 0 이하 / 법정 상한(주 40시간) 초과.
+        if (weekStdMinutes <= 0) {
+            throw new ApiException(StdWorkErrorCode.STDWORK_400_004);
+        }
+        if (weekStdMinutes > LEGAL_MAX_WEEK_MINUTES) {
+            log.info("[stdWork] 통상근로시간 기준값 상한 초과 차단 - cmpnyCd={}, scope={}/{}, 입력={}분",
+                    cmpnyCd, scopeType, scopeCd, weekStdMinutes);
+            throw new ApiException(StdWorkErrorCode.STDWORK_400_007);
+        }
+
+        // 경고(저장 허용): 회사·사업장 통상 기준값이 초단시간 경계 미만이면 오입력 가능성이 높다.
+        if (weekStdMinutes < MIN_WARN_WEEK_MINUTES) {
+            log.warn("[stdWork] 통상근로시간 기준값이 주 15시간 미만입니다(오입력 확인 필요) - cmpnyCd={}, scope={}/{}, 입력={}분",
+                    cmpnyCd, scopeType, scopeCd, weekStdMinutes);
+        }
+
+        stdWorkHoursMapper.upsertPolicy(cmpnyCd, scopeType, scopeCd, weekStdMinutes, actorNo);
+
+        log.info("[stdWork] 통상근로시간 기준값 저장 - cmpnyCd={}, scope={}/{}, 주소정={}분",
+                cmpnyCd, scopeType, scopeCd, weekStdMinutes);
+    }
+
     // ===================== 내부 =====================
+
+    /** 빈 문자열/공백만 있는 값을 null 로 정규화한다(사업장 미지정 = 회사 스코프). */
+    private String trimToNull(String value) {
+
+        if (!StringUtils.hasText(value)) {
+            return null;
+        }
+        return value.trim();
+    }
 
     /** 기준일 미지정 시 DB NOW 기준 오늘로 대체한다(JVM 시계 스큐 방지). */
     private String resolveBaseYmd(String baseYmd) {
@@ -573,11 +672,11 @@ public class StdWorkHoursServiceImpl implements StdWorkHoursService {
         // 6) 계정 존재(USE_YN='Y') + 일용직 제외 게이트.
         //    탈퇴·사용중지 계정은 매퍼의 USE_YN 술어로 걸러져 null 이 되고 404 로 차단된다.
         //    고용형태 미지정 계정은 빈 문자열이 오므로(매퍼 COALESCE) 404 가 아니라 통과한다.
-        String employmentType = stdWorkHoursMapper.selectUserEmploymentType(cmd.getCmpnyCd(), cmd.getUserCd());
-        if (employmentType == null) {
+        StdWorkUserScopeVO userScope = stdWorkHoursMapper.selectUserScope(cmd.getCmpnyCd(), cmd.getUserCd());
+        if (userScope == null) {
             throw new ApiException(StdWorkErrorCode.STDWORK_404_001);
         }
-        if (AuthRoleUtils.isDailyWorker(employmentType)) {
+        if (AuthRoleUtils.isDailyWorker(userScope.getEmploymentType())) {
             log.info("[stdWork] 일용직 소정근로시간 등록 차단: cmpnyCd={}, userCd={}", cmd.getCmpnyCd(), cmd.getUserCd());
             throw new ApiException(StdWorkErrorCode.STDWORK_403_001);
         }

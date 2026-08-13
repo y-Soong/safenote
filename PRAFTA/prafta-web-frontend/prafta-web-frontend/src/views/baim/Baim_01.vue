@@ -263,6 +263,8 @@ const { colWidths, onResize } = useColumnResize({
   endDate: 110,
 });
 const systCodeArr = ref({});
+// 회사 통상근로시간 기준값(분) — 사업장 팝업의 "회사 기본값 사용" 라벨 표기용.
+const cmpnyWeekStdMinutes = ref(null);
 
 // 조회조건 변수
 const siteNo = ref("");
@@ -334,6 +336,7 @@ const fnSearch = async () => {
 
     if (response.status === 200) {
       siteInfoList.value = response.data?.siteInfoList || [];
+      cmpnyWeekStdMinutes.value = response.data?.cmpnyWeekStdMinutes ?? null;
     }
   } catch (err) {
     const msg = resolveApiErrorMessage(err, "조회 중 오류가 발생했습니다.");
@@ -392,6 +395,7 @@ const fnSiteInfoPopOpen = (siteInfo) => {
   fnSiteOpenPop(SiteInfoPop, {
     cmpnyCd_p: sessionStorage.getItem("gv_cmpnyCd"),
     siteCd_p: p_siteCd.value,
+    cmpnyWeekStdMinutes_p: cmpnyWeekStdMinutes.value,
     onSelect: fnSearch,
     reset: fnCreate,
   });
@@ -400,6 +404,7 @@ const fnSiteInfoPopOpen = (siteInfo) => {
 const fnCreate = () => {
   fnSiteOpenPop(SiteInfoPop, {
     cmpnyCd_p: sessionStorage.getItem("gv_cmpnyCd"),
+    cmpnyWeekStdMinutes_p: cmpnyWeekStdMinutes.value,
     onSelect: fnSearch,
   });
 };

@@ -109,7 +109,7 @@
           </p>
 
           <p class="reg-hint" v-if="cmpnyWeekStdMinutes">
-            ⓘ 회사 통상근로자 기준은 {{ fnFmtMinutes(cmpnyWeekStdMinutes) }}입니다. 이보다
+            ⓘ 이 사업장의 통상근로자 기준은 {{ fnFmtMinutes(cmpnyWeekStdMinutes) }}입니다. 이보다
             짧으면 단시간근로자로 판정됩니다.
           </p>
         </div>
@@ -149,6 +149,9 @@ const props = defineProps({
   mode_p: { type: String, default: "REGISTER" },
   userCd_p: String,
   userNm_p: String,
+  // 대상 근로자의 사업장 — 통상 기준값이 사업장별로 다를 수 있어 옵션 조회에 함께 보낸다.
+  //   서버가 사업장 인가를 다시 검증한다(바디 값 신뢰 금지).
+  siteCd_p: String,
   row_p: Object,
   onSaved: Function,
 });
@@ -245,7 +248,9 @@ onMounted(async () => {
 // 사유 옵션(SYS083 전 사유 — 단축 포함) + 회사 기준값 + 경고 임계값.
 const fnLoadOptions = async () => {
   try {
-    const response = await axios.get("/webApi/user10/std-work-reason-options");
+    const response = await axios.get("/webApi/user10/std-work-reason-options", {
+      params: { siteCd: props.siteCd_p || "" },
+    });
     if (response.status === 200) {
       const data = response.data || {};
       reasonOptions.value = data.reasonOptions || [];

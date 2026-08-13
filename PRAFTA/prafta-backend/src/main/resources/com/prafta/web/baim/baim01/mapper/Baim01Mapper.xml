@@ -25,11 +25,19 @@
     	, A.LON						AS lon
     	<!-- PRAFTA-SUBCON-T2-04: 미러 여부 노출(record 순서 함정 — SELECT 말미 + record 말미 동시 유지). -->
     	, A.LINK_SRC_CMPNY_CD		AS linkSrcCmpnyCd
+    	<!-- 통상근로시간 사업장 오버라이드. NULL = 직접 지정 없음(회사 기본값 상속). -->
+    	, P.WEEK_STD_MINUTES		AS weekStdMinutes
    	FROM TB_SITE A
  		 LEFT JOIN TB_USER B
 			ON (
 				A.CMPNY_CD = B.CMPNY_CD
 			AND A.SITE_ADMIN_CD = B.USER_CD
+            )
+ 		 LEFT JOIN TB_CMPNY_STD_WORK_POLICY P
+			ON (
+				P.CMPNY_CD   = A.CMPNY_CD
+			AND P.SCOPE_TYPE = 'SITE'
+			AND P.SCOPE_CD   = A.SITE_CD
             )
   	WHERE 1=1
   	  AND A.CMPNY_CD = #{gvCmpnyCd}

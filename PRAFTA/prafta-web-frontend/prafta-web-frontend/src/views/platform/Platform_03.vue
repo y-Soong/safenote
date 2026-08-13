@@ -135,6 +135,15 @@
                   @update:width="onResize"
                 />
                 <ThSortable
+                  label="통상근로시간"
+                  col-key="weekStdMinutes"
+                  :sort-key="sortKey"
+                  :sort-order="sortOrder"
+                  :width="colWidths.weekStdMinutes"
+                  @sort="onSort"
+                  @update:width="onResize"
+                />
+                <ThSortable
                   label="당월 AI 사용량"
                   col-key="usedTokens"
                   :sort-key="sortKey"
@@ -169,7 +178,7 @@
             <tbody>
               <template v-if="!customerList || customerList.length === 0">
                 <tr>
-                  <td colspan="12" class="edu-grid-empty">
+                  <td colspan="13" class="edu-grid-empty">
                     등록된 고객사가 없습니다.
                   </td>
                 </tr>
@@ -196,6 +205,21 @@
                     }}
                   </td>
                   <td style="text-align: center">{{ customer.useYn }}</td>
+                  <td style="text-align: center">
+                    <!-- 셀 클릭 = 기준값 변경 팝업 (당월 AI 사용량 링크 셀 전례) -->
+                    <button
+                      class="p03-usage-link"
+                      title="통상근로시간 변경"
+                      @click="fnOpenStdWorkPop(customer)"
+                    >
+                      {{ fnStdWorkLabel(customer.weekStdMinutes) }}
+                    </button>
+                    <span
+                      v-if="customer.weekStdMinutes == null"
+                      class="p03-default-tag"
+                      >(기본)</span
+                    >
+                  </td>
                   <td style="text-align: right">
                     <button
                       class="p03-usage-link"
@@ -252,6 +276,16 @@
         :cmpny-nm="usageTarget.cmpnyNm"
         @close="usagePopVisible = false"
       />
+
+      <!-- 통상근로시간 기준값 변경 팝업 -->
+      <StdWorkPolicyPop
+        v-if="stdWorkPopVisible"
+        :cmpny-cd="stdWorkTarget.cmpnyCd"
+        :cmpny-nm="stdWorkTarget.cmpnyNm"
+        :week-std-minutes="stdWorkTarget.weekStdMinutes"
+        :on-saved="fnSearch"
+        @close="stdWorkPopVisible = false"
+      />
     </div>
   </div>
 </template>
@@ -277,6 +311,7 @@ import axios from "@/api/axios";
 import { resolveApiErrorMessage } from "@/utils/apiError";
 import AiTokenQuotaPop from "@/views/platform/popup/AiTokenQuotaPop.vue";
 import AiTokenUsagePop from "@/views/platform/popup/AiTokenUsagePop.vue";
+import StdWorkPolicyPop from "@/views/platform/popup/StdWorkPolicyPop.vue";
 
 // keep-alive 매칭용 컴포넌트 이름 = 라우트 이름(MENU_D_ID)
 defineOptions({ name: "Platform_03" });
@@ -307,6 +342,10 @@ const quotaTarget = ref({});
 const usagePopVisible = ref(false);
 const usageTarget = ref({});
 
+/* 통상근로시간 기준값 변경 팝업 상태 */
+const stdWorkPopVisible = ref(false);
+const stdWorkTarget = ref({});
+
 /* 총건수 라벨: 절단 시 서버 전체 건수와 표시 건수를 함께 표기(qa D-3) */
 const countLabel = computed(() => {
   if (truncated.value) {
@@ -325,6 +364,7 @@ const { colWidths, onResize } = useColumnResize({
   contractYn: 70,
   contractEndDate: 110,
   useYn: 70,
+  weekStdMinutes: 120,
   usedTokens: 110,
   tokenLimit: 100,
   usageRate: 80,
@@ -418,6 +458,25 @@ function fnOpenQuotaPop(customer) {
 function fnOpenUsagePop(customer) {
   usageTarget.value = customer;
   usagePopVisible.value = true;
+}
+
+/*
+ * 통상근로시간 라벨.
+ *   null = 직접 지정 없음 → 코드 폴백 주 40시간. 값과 별개로 (기본) 태그를 함께 표기해
+ *   "직접 지정 40시간"과 구분한다(서버가 IFNULL 로 채우지 않는 이유).
+ */
+function fnStdWorkLabel(weekStdMinutes) {
+  const total = weekStdMinutes == null ? 2400 : Number(weekStdMinutes);
+  if (!Number.isFinite(total) || total <= 0) return "-";
+  const h = Math.floor(total / 60);
+  const m = total % 60;
+  return m === 0 ? `주 ${h}시간` : `주 ${h}시간 ${m}분`;
+}
+
+/* 행 "통상근로시간" 셀 → 기준값 변경 팝업 오픈(저장 콜백 = fnSearch 재조회) */
+function fnOpenStdWorkPop(customer) {
+  stdWorkTarget.value = customer;
+  stdWorkPopVisible.value = true;
 }
 
 /*

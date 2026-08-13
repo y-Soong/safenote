@@ -243,22 +243,83 @@
     </update>
 
     <!--
-      회사 통상근로자 기준값 (COMPANY 스코프 1행).
-      0단계는 SITE 오버라이드를 사용하지 않으므로 COMPANY 만 조회한다.
+      통상근로자 기준값 1행 — 사업장 오버라이드 우선.
+      폴백 3단(사업장 지정값 -> 회사 기본값 -> 코드 상수 2400) 중 앞 2단을 한 번의 조회로 끝낸다.
+      사업장 코드가 비어 있으면 회사 기본값만 후보에 든다(종전 동작과 동일 결과).
+      정렬은 SITE 를 앞세워 1건으로 고정한다.
       행이 없으면 null 반환 -> 서비스가 코드 상수 2400 으로 폴백.
     -->
-    <select id="selectCmpnyWeekStdMinutes" resultType="java.lang.Integer">
-    /* StdWorkHoursMapper.selectCmpnyWeekStdMinutes */
-    SELECT P.WEEK_STD_MINUTES
+    <select id="selectEffectivePolicy" resultType="com.prafta.common.cmm.stdwork.vo.StdWorkPolicyVO">
+    /* StdWorkHoursMapper.selectEffectivePolicy */
+    SELECT
+          P.SCOPE_TYPE       AS scopeType
+        , P.SCOPE_CD         AS scopeCd
+        , P.WEEK_STD_MINUTES AS weekStdMinutes
       FROM TB_CMPNY_STD_WORK_POLICY P
-     WHERE P.CMPNY_CD   = #{cmpnyCd}
-       AND P.SCOPE_TYPE = 'COMPANY'
-       AND P.SCOPE_CD   = '-'
+     WHERE P.CMPNY_CD = #{cmpnyCd}
+       AND (
+             ( P.SCOPE_TYPE = 'COMPANY' AND P.SCOPE_CD = '-' )
+    <if test="siteCd != null and siteCd != ''">
+          OR ( P.SCOPE_TYPE = 'SITE' AND P.SCOPE_CD = #{siteCd} )
+    </if>
+           )
+     ORDER BY CASE WHEN P.SCOPE_TYPE = 'SITE' THEN 0 ELSE 1 END
      LIMIT 1
     </select>
 
     <!--
-      대상 사용자 고용형태 (일용직 제외 게이트 판정용).
+      특정 스코프 1행 (폴백 없음). 화면이 "회사 기본값 사용 / 직접 지정"을 구분해 그릴 때 쓴다.
+      없으면 null = 상위 스코프 상속.
+    -->
+    <select id="selectPolicy" resultType="com.prafta.common.cmm.stdwork.vo.StdWorkPolicyVO">
+    /* StdWorkHoursMapper.selectPolicy */
+    SELECT
+          P.SCOPE_TYPE       AS scopeType
+        , P.SCOPE_CD         AS scopeCd
+        , P.WEEK_STD_MINUTES AS weekStdMinutes
+      FROM TB_CMPNY_STD_WORK_POLICY P
+     WHERE P.CMPNY_CD   = #{cmpnyCd}
+       AND P.SCOPE_TYPE = #{scopeType}
+       AND P.SCOPE_CD   = #{scopeCd}
+    </select>
+
+    <!--
+      기준값 upsert. 값 자체가 정책이라 이력을 쌓지 않고 덮어쓴다(변경 주체는 UPDATE_NO 로 남는다).
+      ★기존 값 참조가 없어도 우변 별칭은 행 별칭(NEW)으로 한정한다(MySQL 1052 모호성 함정).
+    -->
+    <insert id="upsertPolicy">
+    /* StdWorkHoursMapper.upsertPolicy */
+    INSERT INTO TB_CMPNY_STD_WORK_POLICY
+        ( CMPNY_CD
+        , SCOPE_TYPE
+        , SCOPE_CD
+        , WEEK_STD_MINUTES
+        , INSERT_NO
+        , INSERT_DATE )
+    VALUES
+        ( #{cmpnyCd}
+        , #{scopeType}
+        , #{scopeCd}
+        , #{weekStdMinutes}
+        , #{actorNo}
+        , NOW() ) AS NEW
+    ON DUPLICATE KEY UPDATE
+          WEEK_STD_MINUTES = NEW.WEEK_STD_MINUTES
+        , UPDATE_NO        = NEW.INSERT_NO
+        , UPDATE_DATE      = NOW()
+    </insert>
+
+    <!-- 기준값 행 삭제 = 상위 스코프 상속으로 되돌림(사업장 오버라이드 해제). -->
+    <delete id="deletePolicy">
+    /* StdWorkHoursMapper.deletePolicy */
+    DELETE FROM TB_CMPNY_STD_WORK_POLICY
+     WHERE CMPNY_CD   = #{cmpnyCd}
+       AND SCOPE_TYPE = #{scopeType}
+       AND SCOPE_CD   = #{scopeCd}
+    </delete>
+
+    <!--
+      대상 사용자 고용형태 + 소속 사업장 (일용직 제외 게이트 + 사업장별 기준값 판정용).
       USE_YN='Y' 술어로 탈퇴·사용중지 계정을 제외한다 — 사용중지 계정에 소정근로 이력이
       등록되면 이후 재활성 시 예기치 않은 계약값이 되살아난다.
 
@@ -266,10 +327,13 @@
       반환하면 "계정 없음"과 "고용형태 미지정"을 서비스가 구분할 수 없으므로,
       COALESCE 로 미지정을 빈 문자열로 치환한다. 즉 반환 null = 계정 없음/사용중지 뿐이다.
       빈 문자열은 일용직이 아니므로 등록이 허용된다(현행 미지정 계정 회귀 방지).
+      SITE_CD 도 NULL 허용이므로 사업장 미지정 계정은 회사 기본값으로 폴백된다.
     -->
-    <select id="selectUserEmploymentType" resultType="string">
-    /* StdWorkHoursMapper.selectUserEmploymentType */
-    SELECT COALESCE(U.EMPLOYMENT_TYPE, '') AS employmentType
+    <select id="selectUserScope" resultType="com.prafta.common.cmm.stdwork.vo.StdWorkUserScopeVO">
+    /* StdWorkHoursMapper.selectUserScope */
+    SELECT
+          COALESCE(U.EMPLOYMENT_TYPE, '') AS employmentType
+        , U.SITE_CD                       AS siteCd
       FROM TB_USER U
      WHERE U.CMPNY_CD = #{cmpnyCd}
        AND U.USER_CD  = #{userCd}

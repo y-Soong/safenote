@@ -13,10 +13,13 @@ import org.springframework.web.bind.annotation.RestController;
 
 import com.prafta.common.security.JwtUtil;
 import com.prafta.platform.customer.application.param.CustomerListParam;
+import com.prafta.platform.customer.application.param.StdWorkPolicyUpdateParam;
 import com.prafta.platform.customer.application.param.TokenQuotaUpdateParam;
 import com.prafta.platform.customer.dto.request.CustomerListRequest;
+import com.prafta.platform.customer.dto.request.StdWorkPolicyUpdateRequest;
 import com.prafta.platform.customer.dto.request.TokenQuotaUpdateRequest;
 import com.prafta.platform.customer.dto.response.CustomerListResponse;
+import com.prafta.platform.customer.dto.response.StdWorkPolicyUpdateResponse;
 import com.prafta.platform.customer.dto.response.TokenQuotaUpdateResponse;
 import com.prafta.platform.customer.dto.response.TokenUsageListResponse;
 import com.prafta.platform.customer.service.PlatformCustomerService;
@@ -29,6 +32,7 @@ import lombok.extern.slf4j.Slf4j;
  *
  * <p>최종 경로: {@code GET /prafta/platformApi/customer/customer-lists}
  * / {@code POST /prafta/platformApi/customer/token-quota}
+ * / {@code POST /prafta/platformApi/customer/std-work-policy}
  * (패키지 {@code com.prafta.platform.*} → ApiPrefixConfig 가 {@code /prafta/platformApi} 프리픽스 부여).
  *
  * <p>운영자 인가/IP 게이트는 {@code PlatformOperatorGateInterceptor} 가, JWT 유효성은 {@code AuthAspect}
@@ -69,6 +73,23 @@ public class PlatformCustomerController {
 
         TokenQuotaUpdateResponse response = platformCustomerService.updateTokenQuota(
                 TokenQuotaUpdateParam.from(request, jwtUtil.getAllClaimsAsMap(authorization)));
+
+        return ResponseEntity.status(HttpStatus.OK).body(response);
+    }
+
+    /**
+     * 회사 통상근로자 주 소정근로 기준값 변경(운영자 식별은 토큰에서만).
+     *
+     * <p>회사 등록(Platform_01)에서만 입력 가능하던 기준값의 사후 정정 경로다.
+     * 단시간 판정 분모·연차 비례부여 분모가 바뀌므로 운영자 전용 콘솔에서만 노출한다.
+     */
+    @PostMapping("/std-work-policy")
+    public ResponseEntity<?> updateStdWorkPolicy(
+            @RequestBody StdWorkPolicyUpdateRequest request,
+            @RequestHeader(value = "Authorization", required = false) String authorization) {
+
+        StdWorkPolicyUpdateResponse response = platformCustomerService.updateStdWorkPolicy(
+                StdWorkPolicyUpdateParam.from(request, jwtUtil.getAllClaimsAsMap(authorization)));
 
         return ResponseEntity.status(HttpStatus.OK).body(response);
     }

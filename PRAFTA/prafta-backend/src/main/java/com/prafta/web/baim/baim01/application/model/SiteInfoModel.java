@@ -19,6 +19,8 @@ public record SiteInfoModel(
 		, String siteDesc
 		, BigDecimal lat
 		, BigDecimal lon
+		// 통상근로자 주 소정근로 분(사업장 오버라이드). null = 회사 기본값 상속(행 삭제).
+		, Integer weekStdMinutes
 
 		, String gvCmpnyCd
 		, String gvUserCd

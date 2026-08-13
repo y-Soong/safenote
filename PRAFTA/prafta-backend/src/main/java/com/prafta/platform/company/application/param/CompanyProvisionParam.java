@@ -15,6 +15,8 @@ public record CompanyProvisionParam(
     String cmpnyNm
     , String bsnsLcnNo
     , String contractEndDate
+    // 통상근로자 주 소정근로 분(선택). null 이면 기준값 행을 만들지 않고 코드 폴백 2400분을 쓴다.
+    , Integer weekStdMinutes
     , String adminNm
     , String adminId
     , String adminMbl
@@ -33,6 +35,7 @@ public record CompanyProvisionParam(
             request.getCmpnyNm()
             , request.getBsnsLcnNo()
             , request.getContractEndDate()
+            , request.getWeekStdMinutes()
             , request.getAdminNm()
             , request.getAdminId()
             , request.getAdminMbl()

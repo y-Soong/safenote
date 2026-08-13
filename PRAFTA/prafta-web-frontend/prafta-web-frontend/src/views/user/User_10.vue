@@ -488,6 +488,8 @@ const fnOpenRegisterPop = () => {
     mode_p: "REGISTER",
     userCd_p: selectedUserCd.value,
     userNm_p: historyUserNm.value,
+    // 통상 기준값은 사업장별로 다를 수 있다 — 조회 사업장 기준으로 옵션을 받는다.
+    siteCd_p: siteCd.value,
     row_p: null,
     onSaved: fnAfterSave,
   });
@@ -499,6 +501,7 @@ const fnOpenCorrectPop = (row) => {
     mode_p: "CORRECT",
     userCd_p: selectedUserCd.value,
     userNm_p: historyUserNm.value,
+    siteCd_p: siteCd.value,
     row_p: { ...row },
     onSaved: fnAfterSave,
   });
@@ -543,8 +546,10 @@ const fnEmploymentTypeNm = (code) => {
   return employmentTypeMap.value[code] || code;
 };
 
-// 폴백 출처 표기 — 회사 기준값 행이 있는지(COMPANY_POLICY) 시스템 기본값인지(SYSTEM_DEFAULT) 구분.
+// 폴백 출처 표기 — 사업장 오버라이드(SITE_POLICY) / 회사 기준값(COMPANY_POLICY) /
+//   시스템 기본값(SYSTEM_DEFAULT) 3단을 구분한다.
 const fnSourceNm = (source) => {
+  if (source === "SITE_POLICY") return "사업장 통상 기준";
   if (source === "COMPANY_POLICY") return "회사 통상 기준";
   if (source === "SYSTEM_DEFAULT") return "시스템 기본값";
   return "통상 기준";
@@ -614,6 +619,28 @@ const focusKill = (e) => {
 }
 .viewSearch > div:first-child {
   margin-left: 0;
+}
+
+/* 하위부서 조회 체크박스 — Attd_07 규격과 동일(검색바 표기 통일).
+   스타일이 없으면 검색바의 일반 input 규칙이 적용돼 체크박스가 과도하게 커진다. */
+.checkbox-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  font-size: 0.85rem;
+  color: var(--color-text-muted, #6b7280);
+  cursor: pointer;
+  user-select: none;
+  margin-right: 0.4rem;
+  white-space: nowrap;
+}
+
+.checkbox-label input[type="checkbox"] {
+  width: 13px;
+  height: 13px;
+  cursor: pointer;
+  accent-color: var(--color-primary, #16a34a);
+  flex-shrink: 0;
 }
 
 /* 목록 아래 이력 패널 */

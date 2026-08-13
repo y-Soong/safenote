@@ -176,6 +176,9 @@ const props = defineProps({
   userCd_p: String,
   userId_p: String,
   userNm_p: String,
+  // 통상 기준값이 사업장별로 다를 수 있어 "풀타임" 라벨 조회에 사업장을 함께 보낸다.
+  //   실제 저장 시 서버는 대상자의 서버 권위 사업장으로 다시 판정한다(바디 값 신뢰 금지).
+  siteCd_p: String,
   siteNm_p: String,
   nodeNm_p: String,
   onSaved: Function,
@@ -198,7 +201,7 @@ const stdWorkHours = ref(null);
 const stdWorkMinutes = ref(0);
 const stdWorkReasonCd = ref("");
 const stdWorkReasonOptions = ref([]);
-const cmpnyWeekStdMinutes = ref(null); // 회사 통상 기준값(분) — 풀타임 라벨 표기용
+const cmpnyWeekStdMinutes = ref(null); // 통상 기준값(분, 소속 사업장 오버라이드 반영) — 풀타임 라벨 표기용
 
 const saving = ref(false);
 
@@ -275,7 +278,9 @@ const fnLoadCodeOptions = async () => {
 //   승인 시트에서 고를 수 있는 사유 집합(통상/단축 제외)이 계정 생성과 동일하기 때문이다.
 const fnLoadStdWorkOptions = async () => {
   try {
-    const response = await axios.get("/webApi/user01/std-work-options");
+    const response = await axios.get("/webApi/user01/std-work-options", {
+      params: { siteCd: props.siteCd_p || "" },
+    });
     if (response.status === 200) {
       const data = response.data || {};
       cmpnyWeekStdMinutes.value = data.cmpnyWeekStdMinutes ?? null;

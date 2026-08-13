@@ -23,9 +23,16 @@ import com.prafta.common.cmm.stdwork.vo.StdWorkReasonRuleVO;
  * <p><b>폴백 체인</b> (지시서 확정 — 미입력 계정 = 통상근로자 간주)
  * <ol>
  *   <li>TB_USER_STD_WORK_HOURS 의 기준일 유효 행</li>
- *   <li>없으면 TB_CMPNY_STD_WORK_POLICY 의 회사 통상 기준값(COMPANY 스코프)</li>
+ *   <li>없으면 TB_CMPNY_STD_WORK_POLICY 의 <b>소속 사업장 오버라이드</b>(SITE 스코프)</li>
+ *   <li>없으면 같은 테이블의 회사 통상 기준값(COMPANY 스코프)</li>
  *   <li>그것도 없으면 코드 상수 {@link #DEFAULT_WEEK_STD_MINUTES}(2400분 = 주 40시간)</li>
  * </ol>
+ *
+ * <p><b>★사업장 오버라이드 (작업지시서_통상근로시간-회사-사업장별-설정)</b> — 통상근로시간이
+ * 주 40시간이 아닌 사업장(예: 교대제 공장 주 35시간)에서 단시간 판정 분모가 회사 기본값으로
+ * 고정되면 그 사업장의 <b>통상근로자가 단시간근로자로 오분류</b>된다. 판정에 쓰는 사업장은
+ * 언제나 <b>대상 근로자의 소속 사업장</b>({@code TB_USER.SITE_CD})이며, 오버라이드 행이 없는
+ * 사업장은 회사 기본값으로 폴백되어 종전과 결과가 100% 동일하다(무회귀 보장).
  *
  * <p><b>일용직 제외 (★소비처 주의)</b>
  * <ul>
@@ -47,6 +54,19 @@ public interface StdWorkHoursService {
 
     /** 회사 기준값도 없을 때 쓰는 시스템 폴백 (2400분 = 주 40시간, 지시서 B-1). */
     int DEFAULT_WEEK_STD_MINUTES = 2400;
+
+    /**
+     * 통상근로자 주 소정근로시간의 <b>법정 상한</b> (2400분 = 주 40시간).
+     *
+     * <p>근로기준법 제50조 — 1주 40시간·1일 8시간 초과 금지. 소정근로시간은 그 범위 <i>안에서</i>
+     * 정하는 시간이므로 회사·사업장 기준값이 이 값을 넘을 수 없다. "주 44시간 사업장"은
+     * 소정 40h + 연장 4h 이며, 연장분은 고정연장근무(근무타입)로 잡는다.
+     *
+     * <p>★근로자 <b>개인</b> 이력({@code register}/{@code correct})의 상한과는 별개다. 개인 이력은
+     * 오입력 방어선(주 168시간)만 두고 값 자체는 제한하지 않는다 — 감시·단속적 근로 승인 등
+     * 특례 데이터를 서비스가 임의로 막지 않기 위함.
+     */
+    int LEGAL_MAX_WEEK_MINUTES = 2400;
 
     /** 주 15시간(900분) — 미만이면 경고(초단시간 경계, plan §8 Q4: 차단 아님). */
     int MIN_WARN_WEEK_MINUTES = 900;
@@ -80,8 +100,33 @@ public interface StdWorkHoursService {
     /** 오늘 기준 본인 주 소정근로 분 (폴백 포함). */
     int resolveCurrentWeekStdMinutes(String cmpnyCd, String userCd);
 
-    /** 회사 통상근로자 주 소정근로 분 (행 부재 시 {@link #DEFAULT_WEEK_STD_MINUTES}). */
+    /**
+     * 회사 통상근로자 주 소정근로 분 (COMPANY 스코프만 — 행 부재 시 {@link #DEFAULT_WEEK_STD_MINUTES}).
+     *
+     * <p>사업장이 특정되지 않는 자리(신규 회사 프로비저닝 등)에서만 쓴다. 대상 근로자의
+     * 사업장을 알 수 있으면 {@link #resolveSiteWeekStdMinutes} 를 써야 단시간 오분류가 없다.
+     */
     int resolveCmpnyWeekStdMinutes(String cmpnyCd);
+
+    /**
+     * 사업장 기준 통상근로자 주 소정근로 분 — <b>사업장 오버라이드 → 회사 기본값 → 2400분</b>.
+     *
+     * <p>단시간 판정 분모·연차 비례부여 분모·"풀타임" 입력 기본값의 단일 진입점이다.
+     *
+     * @param siteCd 대상 사업장. null/빈 값이면 회사 기본값만 본다
+     *               (= {@link #resolveCmpnyWeekStdMinutes} 와 동일 결과)
+     */
+    int resolveSiteWeekStdMinutes(String cmpnyCd, String siteCd);
+
+    /**
+     * 특정 스코프에 <b>직접 지정된</b> 기준값 (상속 폴백 없음).
+     *
+     * <p>화면이 "회사 기본값 사용 / 직접 지정"을 구분해 그리기 위한 조회다.
+     *
+     * @param siteCd null/빈 값이면 회사(COMPANY) 스코프, 값이 있으면 그 사업장(SITE) 스코프
+     * @return 직접 지정된 분. 지정이 없으면 null (= 상위 스코프 상속)
+     */
+    Integer findPolicyWeekStdMinutes(String cmpnyCd, String siteCd);
 
     /**
      * 기준일 기준 소정근로 요약 — 해석값·회사 기준값·출처·단시간 파생 판정을 함께 반환.
@@ -182,4 +227,24 @@ public interface StdWorkHoursService {
      * <p>차단 사유는 예외로 던지고, 경고만 목록으로 반환한다.
      */
     List<String> validateForWarning(StdWorkHoursSaveCommand command);
+
+    // ===== 기준값(TB_CMPNY_STD_WORK_POLICY) 등록 / 변경 =====
+
+    /**
+     * 통상근로자 주 소정근로 기준값 저장 (회사 기본값 / 사업장 오버라이드 공용).
+     *
+     * <p><b>검증(차단)</b> — 0 초과, {@link #LEGAL_MAX_WEEK_MINUTES}(주 40시간) 이하.
+     * 상한 초과는 근로기준법 제50조 근거로 차단한다.
+     * <p><b>경고(저장 허용)</b> — 주 15시간 미만은 오입력 가능성이 높아 로그 경고만 남긴다
+     * (회사 기준값이 초단시간인 경우는 현실적으로 없다).
+     *
+     * <p><b>★미지정 = 행 없음</b> — {@code weekStdMinutes} 가 null 이면 해당 스코프 행을
+     * <b>삭제</b>한다. 회사 스코프면 코드 폴백 2400분으로, 사업장 스코프면 회사 기본값으로
+     * 되돌아간다. 즉 "0 으로 저장"이 아니라 "상속"이다.
+     *
+     * @param siteCd         null/빈 값이면 회사(COMPANY) 스코프, 값이 있으면 그 사업장(SITE) 스코프
+     * @param weekStdMinutes 주 소정근로 분. null 이면 해당 스코프 지정 해제(상속)
+     * @param actorNo        작업자 USER_CD (감사 컬럼)
+     */
+    void saveWeekStdMinutesPolicy(String cmpnyCd, String siteCd, Integer weekStdMinutes, String actorNo);
 }

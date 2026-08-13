@@ -7,6 +7,7 @@ import java.util.List;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import com.prafta.common.cmm.stdwork.service.StdWorkHoursService;
 import com.prafta.common.error.baim.BaimErrorCode;
 import com.prafta.common.error.subcon.SubconErrorCode;
 import com.prafta.common.exception.ApiException;
@@ -35,29 +36,33 @@ public class Baim01ServiceImpl implements Baim01Service{
 	// PRAFTA-SUBCON-T2-05: 원본 사업장 변경의 미러 재귀 전파(동기 + 동일 트랜잭션 — 실패 시 전체 롤백).
 	private final SiteLinkPropagationService siteLinkPropagationService;
 
+	// 통상근로시간 사업장 오버라이드(TB_CMPNY_STD_WORK_POLICY, SITE 스코프) 저장 단일 출처.
+	private final StdWorkHoursService stdWorkHoursService;
+
 	// PRAFTA-COM-001-T2-2: END_DATE/STR_DATE 는 varchar(8) YYYYMMDD 문자열. 오늘과의 비교도 8자리 문자열 비교로 일관.
 	private static final DateTimeFormatter YMD = DateTimeFormatter.ofPattern("yyyyMMdd");
 
 	public Baim01ServiceImpl(Baim01Mapper baim01Mapper,
-			SiteLinkPropagationService siteLinkPropagationService) {
+			SiteLinkPropagationService siteLinkPropagationService,
+			StdWorkHoursService stdWorkHoursService) {
 		this.baim01Mapper = baim01Mapper;
 		this.siteLinkPropagationService = siteLinkPropagationService;
+		this.stdWorkHoursService = stdWorkHoursService;
 	}
 	
 	
 	public SiteInfoListResponse selectSiteInfoList(SiteInfoListParam param) {
-		
-		SiteInfoListResponse response = null;
-		
+
 		List<SiteInfoResult> siteInfoList = baim01Mapper.selectSiteInfoList(SiteInfoListQuery.from(param));
-		
-		if(siteInfoList.size() > 0) {
-			response = SiteInfoListResponse.builder()
-					.siteInfoList(siteInfoList)
-					.build();
-		}
-		
-		return response;	
+
+		// ★조회 결과가 0건이어도 응답을 만든다(종전에는 null 반환).
+		//   사업장 팝업이 "회사 기본값 사용 (주 N시간)" 라벨을 그리려면 신규 등록(사업장 0건 포함)
+		//   경로에서도 회사 기준값을 받아야 하기 때문이다. 프론트는 이미
+		//   siteInfoList 를 옵셔널 체이닝(|| [])으로 읽고 있어 회귀가 없다.
+		return SiteInfoListResponse.builder()
+				.siteInfoList(siteInfoList == null ? List.of() : siteInfoList)
+				.cmpnyWeekStdMinutes(stdWorkHoursService.resolveCmpnyWeekStdMinutes(param.gvCmpnyCd()))
+				.build();
 	}
 	
 	@Transactional
@@ -109,6 +114,15 @@ public class Baim01ServiceImpl implements Baim01Service{
 			String resolvedUseYn   = resolved[1];
 
 			baim01Mapper.mergeSiteInfo(SiteInfoCommand.from(model, siteCd, resolvedEndDate, resolvedUseYn));
+
+			// 통상근로시간 사업장 오버라이드 저장(같은 트랜잭션 — 실패 시 사업장 저장도 롤백).
+			//   null = 회사 기본값 상속(기존 오버라이드 행 삭제). 값 범위 검증(0 초과 ~ 2400분)과
+			//   법정 상한 문구는 StdWorkHoursService 단일 출처가 담당한다.
+			//   ★미러(연동) 사업장은 위 분기에서 continue 되므로 여기 도달하지 않는다 — 미러의
+			//     기준값은 원본 소유사가 자기 회사 스코프에서 관리하며, 미러 회사는 자기 회사
+			//     기본값을 상속한다(사업장 정보 자체가 읽기 전용인 것과 같은 취급).
+			stdWorkHoursService.saveWeekStdMinutesPolicy(
+					model.gvCmpnyCd(), siteCd, model.weekStdMinutes(), model.gvUserCd());
 
 			// PRAFTA-SUBCON-T2-05: 저장 후 미러 재귀 전파(활성 링크 없으면 no-op — 동일 트랜잭션).
 			siteLinkPropagationService.propagateSiteInfo(model.gvCmpnyCd(), siteCd);

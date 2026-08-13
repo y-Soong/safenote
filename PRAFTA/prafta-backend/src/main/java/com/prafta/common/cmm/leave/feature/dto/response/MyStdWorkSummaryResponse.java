@@ -24,11 +24,12 @@ public class MyStdWorkSummaryResponse {
     /** 본인 주 소정근로 분 (폴백 포함 — 항상 값 존재. 2400 = 주 40시간) */
     int weekStdMinutes;
 
-    /** 회사 통상근로자 주 소정근로 분 (비교 분모) */
+    /** 통상근로자 주 소정근로 분 (비교 분모 — 소속 사업장 오버라이드가 있으면 그 값) */
     int cmpnyWeekStdMinutes;
 
     /**
-     * 값의 출처. USER_HISTORY(이력 행) / COMPANY_POLICY(회사 기준값 폴백) / SYSTEM_DEFAULT(코드 상수 2400).
+     * 값의 출처. USER_HISTORY(이력 행) / SITE_POLICY(소속 사업장 오버라이드 폴백) /
+     * COMPANY_POLICY(회사 기준값 폴백) / SYSTEM_DEFAULT(코드 상수 2400).
      * 화면이 "미입력(통상 기준 40h 간주)" 배지를 그릴 때 쓴다.
      */
     String source;
@@ -36,7 +37,7 @@ public class MyStdWorkSummaryResponse {
     /** 소정근로 이력이 실제로 입력된 계정인지 (false = 폴백 해석) */
     boolean fromHistory;
 
-    /** 단시간근로자 파생 여부 (본인 주 소정 &lt; 회사 통상 기준) */
+    /** 단시간근로자 파생 여부 (본인 주 소정 &lt; 소속 사업장 통상 기준) */
     boolean partTime;
 
     /** 소정근로시간 관리 대상 계정인지 (일용직·사용중지·미존재 계정은 false) */

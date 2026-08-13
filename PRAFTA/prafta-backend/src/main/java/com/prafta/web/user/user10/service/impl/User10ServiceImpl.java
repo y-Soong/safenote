@@ -65,7 +65,10 @@ public class User10ServiceImpl implements User10Service {
                 param.gvCmpnyCd(), param.gvUserCd(), param.gvAuthCd(), param.gvSiteCd(), param.siteCd());
         assertCanManageNode(param.gvAuthCd(), param.gvUserCd(), param.gvCmpnyCd(), param.siteCd(), param.nodeCd());
 
-        int cmpnyWeekStdMinutes = stdWorkHoursService.resolveCmpnyWeekStdMinutes(param.gvCmpnyCd());
+        // 단시간 판정 분모는 조회 대상 사업장의 기준값이다(사업장 오버라이드 → 회사 기본값 → 2400).
+        //   목록은 항상 사업장 1곳으로 한정되므로(StdWorkUserListParam 이 siteCd 를 필수로 강제)
+        //   행마다 다른 사업장이 섞이지 않는다.
+        int cmpnyWeekStdMinutes = stdWorkHoursService.resolveSiteWeekStdMinutes(param.gvCmpnyCd(), param.siteCd());
 
         List<StdWorkUserRowResult> rows = user10Mapper.selectStdWorkUserList(StdWorkUserListQuery.from(param));
 
@@ -132,11 +135,22 @@ public class User10ServiceImpl implements User10Service {
                 .build();
     }
 
+    /**
+     * 등록 팝업 옵션.
+     *
+     * <p>{@code siteCd} 는 "풀타임 기본값"으로 채워 넣을 통상 기준값을 고르기 위한 <b>대상 사업장</b>이다.
+     * 미지정이면 회사 기본값을 쓴다(종전 동작). 지정 시에는 다른 사업장의 기준값이 새어 나가지
+     * 않도록 사업장 인가를 건다.
+     */
     @Override
-    public StdWorkReasonOptionsResponse getReasonOptions(String cmpnyCd) {
+    public StdWorkReasonOptionsResponse getReasonOptions(String cmpnyCd, String gvAuthCd, String gvUserCd,
+                                                         String gvSiteCd, String siteCd) {
 
         if (cmpnyCd == null || cmpnyCd.isBlank()) {
             throw new ApiException(CommonErrorCode.COMMON_400_003);
+        }
+        if (siteCd != null && !siteCd.isBlank()) {
+            siteAccessService.assertSiteAccess(cmpnyCd, gvUserCd, gvAuthCd, gvSiteCd, siteCd);
         }
 
         List<StdWorkReasonOptionsResponse.ReasonOption> options = new ArrayList<>();
@@ -152,7 +166,7 @@ public class User10ServiceImpl implements User10Service {
         }
 
         return StdWorkReasonOptionsResponse.builder()
-                .cmpnyWeekStdMinutes(stdWorkHoursService.resolveCmpnyWeekStdMinutes(cmpnyCd))
+                .cmpnyWeekStdMinutes(stdWorkHoursService.resolveSiteWeekStdMinutes(cmpnyCd, siteCd))
                 .minWarnWeekMinutes(StdWorkHoursService.MIN_WARN_WEEK_MINUTES)
                 .childcareMinWeekMinutes(StdWorkHoursService.CHILDCARE_MIN_WEEK_MINUTES)
                 .childcareMaxWeekMinutes(StdWorkHoursService.CHILDCARE_MAX_WEEK_MINUTES)

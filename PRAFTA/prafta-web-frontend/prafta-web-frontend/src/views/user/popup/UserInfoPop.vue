@@ -677,7 +677,7 @@ const stdWorkHours = ref(null);         // 단시간 주 소정근로 시간 부
 const stdWorkMinutes = ref(0);          // 단시간 주 소정근로 분 부분
 const stdWorkReasonCd = ref("");        // 사유코드 [SYS083] — 단시간 선택 시만 사용
 const stdWorkReasonOptions = ref([]);   // 사유 셀렉트 옵션(서버 제공 — 코드 하드코딩 금지)
-const cmpnyWeekStdMinutes = ref(null);  // 회사 통상 기준값(분) — 풀타임 라벨 표기용
+const cmpnyWeekStdMinutes = ref(null);  // 통상 기준값(분, 배정 사업장 오버라이드 반영) — 풀타임 라벨 표기용
 
 // =========================== Data ===========================
 const { open: openPop } = useModal();
@@ -734,8 +734,12 @@ const fnLoadSchTypeOptions = async (targetSiteCd) => {
 };
 
 // 사업장 선택/변경 시 근무타입 옵션 재조회.
+//   통상근로시간 기준값도 사업장별로 다를 수 있어 함께 재조회한다(풀타임 라벨/저장값 정합).
 watch(siteCd, (newSiteCd) => {
   fnLoadSchTypeOptions(newSiteCd);
+  if (isCreate.value) {
+    fnLoadStdWorkOptions();
+  }
 });
 
 // ── 소정-08(UI-A): 소정근로시간 선택식 입력 ────────────────
@@ -774,10 +778,13 @@ const stdWorkWarnings = computed(() => {
   return warnings;
 });
 
-// 소정근로 입력 옵션(회사 통상 기준값 + 사유 셀렉트) 조회. 회사 스코프는 서버가 토큰에서 강제.
+// 소정근로 입력 옵션(통상 기준값 + 사유 셀렉트) 조회. 회사 스코프는 서버가 토큰에서 강제.
+//   siteCd 는 배정 사업장 — 사업장 오버라이드가 있으면 그 기준값이 내려온다(없으면 회사 기본값).
 const fnLoadStdWorkOptions = async () => {
   try {
-    const response = await axios.get("/webApi/user01/std-work-options");
+    const response = await axios.get("/webApi/user01/std-work-options", {
+      params: { siteCd: siteCd.value || "" },
+    });
     const data = response.data || {};
     cmpnyWeekStdMinutes.value = data.cmpnyWeekStdMinutes ?? null;
     stdWorkReasonOptions.value = data.reasonOptions ?? [];

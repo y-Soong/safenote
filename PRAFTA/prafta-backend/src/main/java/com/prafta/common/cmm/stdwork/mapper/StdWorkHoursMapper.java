@@ -7,7 +7,9 @@ import org.apache.ibatis.annotations.Param;
 
 import com.prafta.common.cmm.stdwork.command.StdWorkHoursSaveCommand;
 import com.prafta.common.cmm.stdwork.vo.StdWorkHoursVO;
+import com.prafta.common.cmm.stdwork.vo.StdWorkPolicyVO;
 import com.prafta.common.cmm.stdwork.vo.StdWorkReasonRuleVO;
+import com.prafta.common.cmm.stdwork.vo.StdWorkUserScopeVO;
 
 /**
  * 소정-02: 근로자별 소정근로시간(TB_USER_STD_WORK_HOURS) 공용 Mapper.
@@ -115,22 +117,53 @@ public interface StdWorkHoursMapper {
                        @Param("updateNo") String updateNo);
 
     /**
-     * 회사 통상근로자 주 소정근로 분 (TB_CMPNY_STD_WORK_POLICY, COMPANY 스코프).
+     * 통상근로자 주 소정근로 기준값 1행 — <b>사업장 오버라이드 우선</b>(TB_CMPNY_STD_WORK_POLICY).
      *
-     * @return 기준값. 행이 없으면 null (서비스가 코드 상수 2400 으로 폴백)
+     * <p>{@code siteCd} 가 있으면 {@code SITE/siteCd} 행을, 없으면 {@code COMPANY/'-'} 행을
+     * 우선 반환한다(정렬로 1건 고정). 어느 스코프에서 나왔는지는 반환 VO 의 SCOPE_TYPE 으로
+     * 판별한다.
+     *
+     * @param siteCd 대상 사업장. null/빈 값이면 회사 기본값만 조회한다.
+     * @return 기준값 행. 둘 다 없으면 null (서비스가 코드 상수 2400 으로 폴백)
      */
-    Integer selectCmpnyWeekStdMinutes(@Param("cmpnyCd") String cmpnyCd);
+    StdWorkPolicyVO selectEffectivePolicy(@Param("cmpnyCd") String cmpnyCd,
+                                          @Param("siteCd") String siteCd);
 
     /**
-     * 대상 사용자의 고용형태(EMPLOYMENT_TYPE). USE_YN='Y' 인 계정만 조회한다.
+     * 특정 스코프의 기준값 행 1건 (폴백 없음 — 화면이 "직접 지정 여부"를 그리는 데 쓴다).
+     *
+     * @return 해당 스코프 행. 없으면 null (= 상위 스코프 상속)
+     */
+    StdWorkPolicyVO selectPolicy(@Param("cmpnyCd") String cmpnyCd,
+                                 @Param("scopeType") String scopeType,
+                                 @Param("scopeCd") String scopeCd);
+
+    /** 기준값 행 upsert (PK = CMPNY_CD + SCOPE_TYPE + SCOPE_CD). */
+    int upsertPolicy(@Param("cmpnyCd") String cmpnyCd,
+                     @Param("scopeType") String scopeType,
+                     @Param("scopeCd") String scopeCd,
+                     @Param("weekStdMinutes") int weekStdMinutes,
+                     @Param("actorNo") String actorNo);
+
+    /** 기준값 행 삭제 (= 상위 스코프 상속으로 되돌림). */
+    int deletePolicy(@Param("cmpnyCd") String cmpnyCd,
+                     @Param("scopeType") String scopeType,
+                     @Param("scopeCd") String scopeCd);
+
+    /**
+     * 대상 사용자의 고용형태 + 소속 사업장. USE_YN='Y' 인 계정만 조회한다.
      *
      * <p>★EMPLOYMENT_TYPE 은 NULL 허용 컬럼이므로 "계정 없음"과 "고용형태 미지정"을
-     * 구분할 수 있게 미지정은 빈 문자열로 치환해 반환한다.
+     * 구분할 수 있게 미지정은 빈 문자열로 치환해 반환한다. 즉 반환 null = 계정 없음/사용중지.
      *
-     * @return 고용형태(미지정이면 빈 문자열). 계정이 없거나 탈퇴·사용중지면 null
+     * <p>사업장(SITE_CD)을 함께 읽는 이유는 기준값 폴백이 <b>사업장 → 회사 → 2400</b> 3단이
+     * 되면서 판정 분모가 소속 사업장에 따라 달라지기 때문이다. 고용형태와 별도 쿼리로 나누면
+     * {@code resolveSummary} 왕복이 1회 늘어난다.
+     *
+     * @return 스코프 행. 계정이 없거나 탈퇴·사용중지면 null
      */
-    String selectUserEmploymentType(@Param("cmpnyCd") String cmpnyCd,
-                                    @Param("userCd") String userCd);
+    StdWorkUserScopeVO selectUserScope(@Param("cmpnyCd") String cmpnyCd,
+                                       @Param("userCd") String userCd);
 
     /**
      * SYS083 사유코드의 정책 규칙 1건 (사용중 코드만).

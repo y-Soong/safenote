@@ -22,6 +22,10 @@ public enum StdWorkErrorCode implements ApiErrorCode {
     , STDWORK_400_004(HttpStatus.BAD_REQUEST, "주 소정근로시간 값이 올바르지 않습니다.")
     , STDWORK_400_005(HttpStatus.BAD_REQUEST, "사용할 수 없는 소정근로시간 사유코드입니다.")
     , STDWORK_400_006(HttpStatus.BAD_REQUEST, "단축 근무 사유는 적용 종료일이 반드시 필요합니다.")
+    // 통상근로시간 기준값(회사/사업장) 전용 — 근로기준법 제50조(1주 40시간) 상한.
+    //   주 44시간 사업장 = 소정 40h + 연장 4h 이며, 연장분은 고정연장근무(근무타입)로 잡는다.
+    , STDWORK_400_007(HttpStatus.BAD_REQUEST,
+            "통상근로시간은 주 40시간(2400분)을 초과할 수 없습니다.\n근로기준법 제50조상 1주 소정근로시간의 법정 상한입니다.\n40시간을 넘는 근무는 연장근로이므로 고정연장근무 근무타입으로 등록해 주세요.")
     , STDWORK_403_001(HttpStatus.FORBIDDEN, "일용직 회원은 소정근로시간을 등록할 수 없습니다.")
     , STDWORK_404_001(HttpStatus.NOT_FOUND, "대상 사용자를 찾을 수 없습니다.")
     , STDWORK_404_002(HttpStatus.NOT_FOUND, "정정할 소정근로시간 이력이 없습니다.")

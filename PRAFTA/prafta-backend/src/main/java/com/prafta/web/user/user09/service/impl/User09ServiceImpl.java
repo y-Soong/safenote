@@ -195,7 +195,11 @@ public class User09ServiceImpl implements User09Service {
 
         // 4) 소정근로 이력 INSERT (같은 트랜잭션).
         //    적용 시작일 = 입사일. 승인 시트에서 입사일이 필수라 폴백 분기가 필요 없다.
-        int cmpnyWeekStdMinutes = stdWorkHoursService.resolveCmpnyWeekStdMinutes(param.gvCmpnyCd());
+        //    ★통상 기준값(풀타임 값·단시간 판정 분모)은 대상자의 소속 사업장 기준으로 읽는다.
+        //      사업장 오버라이드가 없으면 회사 기본값으로 폴백되어 종전과 결과가 같다.
+        //      사업장은 서버 권위값(target)만 쓴다 — 요청 바디의 사업장은 신뢰하지 않는다.
+        int cmpnyWeekStdMinutes =
+                stdWorkHoursService.resolveSiteWeekStdMinutes(param.gvCmpnyCd(), target.siteCd());
         int weekStdMinutes = STD_WORK_TYPE_FULL.equals(stdWorkType)
                 ? cmpnyWeekStdMinutes
                 : param.stdWorkWeekMinutes();
