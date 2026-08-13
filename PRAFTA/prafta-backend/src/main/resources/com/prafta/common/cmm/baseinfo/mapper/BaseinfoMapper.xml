@@ -184,21 +184,41 @@
 	  AND A.CMPNY_CD = #{cmpnyCd}
     </select>
     
+    <!--
+      셀프가입 아이디 중복확인. 호출부는 셀프가입 2곳뿐이다(웹 JoinUserPop / 앱 JoinUser).
+      일용직은 별 계통 EP(DailyJoinController)를 쓴다.
+
+      ★판정은 실제 가입 판정(LoginServiceImpl.resolveRejoinTarget)과 반드시 일치해야 한다.
+        어긋나면 화면에서 통과한 아이디가 제출에서 거부되거나(가입 불가), 반대로 화면이
+        막아서 정상 재가입이 시작조차 못 된다(2026-08-13 실기기 실측 — 거부 계정 재가입 차단).
+
+      판정 규칙(= resolveRejoinTarget 과 동형)
+        1) 일용직(TB_DAILY_USER, USE_YN='Y')이 점유 → 중복('N'). 재활용 대상이 아니다.
+        2) TB_USER 점유 행이 있고 그것이 "같은 회사의 거부('07') 행"이 아니면 → 중복('N').
+           ★USER_ID 는 전역 유일(UX_TB_USER_ID)이므로 회사로 좁히지 않는다. 종전에는
+             CMPNY_CD 로 좁혀 타 회사가 쓰는 아이디를 "사용 가능"으로 안내한 뒤 제출에서
+             LOGIN_400_016 으로 막히는 불일치가 있었다.
+        3) 같은 회사의 '07' 행이면 → 사용 가능('Y'). 그 행을 재활용해 재가입한다(plan §8 Q2).
+        4) 어디에도 없으면 → 사용 가능('Y').
+    -->
     <select id="getUserIdDupleCheck" parameterType="com.prafta.common.cmm.baseinfo.application.query.UserIdDupleCheckQuery" resultType="string">
     /* BaseinfoMapper.getUserIdDupleCheck */
-	(
-		SELECT 
-			'N' AS UNIQUE_YN
-		FROM TB_USER
-		WHERE 1=1
-		  AND CMPNY_CD = #{cmpnyCd}
-		  AND USER_ID = #{userId}
-	)
-	UNION
-	(
-		SELECT 'Y' FROM DUAL
-	)
-	LIMIT 1;
+	SELECT
+		CASE
+			WHEN EXISTS (
+				SELECT 1
+				  FROM TB_DAILY_USER D
+				 WHERE D.USER_ID = #{userId}
+				   AND D.USE_YN  = 'Y'
+			) THEN 'N'
+			WHEN EXISTS (
+				SELECT 1
+				  FROM TB_USER U
+				 WHERE U.USER_ID = #{userId}
+				   AND NOT (U.ACCOUNT_STATUS = '07' AND U.CMPNY_CD = #{cmpnyCd})
+			) THEN 'N'
+			ELSE 'Y'
+		END AS UNIQUE_YN
     </select>
     
     <select id="selectMblUniqChk" parameterType="com.prafta.common.cmm.baseinfo.application.query.MblUniqueCheckQuery" resultType="int">
