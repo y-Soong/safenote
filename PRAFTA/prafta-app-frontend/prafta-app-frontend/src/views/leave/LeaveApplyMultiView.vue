@@ -138,6 +138,40 @@
           <h2 class="lam-section__title">사유</h2>
           <textarea v-model="reason" class="lam-textarea" rows="3" placeholder="사유를 입력하세요"></textarea>
         </section>
+
+        <!-- 결재선 — 결재가 필요한 종류일 때만.
+             ★단건 화면과 동일한 구성(프리셋 전개 + 직접 추가). 서버는 approverUserCds 를 SSOT 로 받는다
+               (배열 순서 = STEP_NO 이므로 재인덱싱 금지). 비우면 COMMON_400_001 로 거부된다. -->
+        <section v-if="days.length && aprvRequired" class="lam-section">
+          <h2 class="lam-section__title">결재선</h2>
+
+          <div v-if="presets.length" class="lam-presets">
+            <button
+              v-for="p in presets"
+              :key="p.presetId"
+              type="button"
+              class="lam-preset"
+              :class="{ 'is-on': selectedPresetId === p.presetId }"
+              @click="onSelectPreset(p)"
+            >
+              {{ p.presetNm }}
+            </button>
+          </div>
+
+          <ul v-if="approverList.length" class="lam-aprv">
+            <li v-for="(a, i) in approverList" :key="a.approverUserCd" class="lam-aprv__item">
+              <span class="lam-aprv__step">{{ i + 1 }}</span>
+              <span class="lam-aprv__name">{{ a.userNm }}</span>
+              <span class="lam-aprv__meta">{{ a.rankNm || a.nodeNm || '' }}</span>
+              <button type="button" class="lam-aprv__del" @click="onRemoveApprover(a)">✕</button>
+            </li>
+          </ul>
+          <p v-else class="lam-hint">결재자를 지정해 주세요. 프리셋을 고르거나 직접 추가할 수 있어요.</p>
+
+          <button type="button" class="lam-btn lam-btn--sub" @click="approverPickerOpen = true">
+            결재자 추가
+          </button>
+        </section>
       </template>
     </main>
 
@@ -146,6 +180,14 @@
         {{ submitting ? '신청 중...' : `${checkedCount}일 신청하기` }}
       </button>
     </footer>
+
+    <!-- 결재자 추가 시트 — 단건 화면과 동일한 공용 컴포넌트 재사용 -->
+    <ApproverPickerSheet
+      v-if="aprvRequired"
+      v-model="approverPickerOpen"
+      :excluded-user-cds="approverUserCds"
+      @add="onAddApprovers"
+    />
   </div>
 </template>
 
@@ -156,6 +198,7 @@ import { useRouter } from 'vue-router'
 import api from '@/api/axios'
 import { resolveApiErrorMessage } from '@/utils/apiError'
 import DateStepperField from '@/components/common/DateStepperField.vue'
+import ApproverPickerSheet from '@/components/common/ApproverPickerSheet.vue'
 
 const router = useRouter()
 const { proxy } = getCurrentInstance() || { proxy: null }
@@ -179,6 +222,60 @@ const days = ref([])
 const checked = reactive({})
 const shortageDays = ref(0)
 const submitting = ref(false)
+
+// ── 결재선 ───────────────────────────────────────────────────────────────
+//   ★연차·월차는 aprvRequired=true 다(운영 실측). 결재자를 안 보내면 서버가
+//     COMMON_400_001('요청 파라미터가 누락되었습니다')로 거부한다.
+//   단건 화면과 동일하게 approverUserCds 를 SSOT 로 보낸다(배열 순서 = STEP_NO, 재인덱싱 금지).
+const presets = ref([])
+const selectedPresetId = ref('')
+const approverList = ref([])
+const approverPickerOpen = ref(false)
+
+/** 선택한 종류가 결재 대상인지 — 메타의 aprvRequired 를 그대로 따른다. */
+const aprvRequired = computed(() => {
+  const t = (leaveTypes.value || []).find((x) => x.leaveCd === leaveCd.value)
+  return !!t?.aprvRequired
+})
+const approverUserCds = computed(() => approverList.value.map((a) => a.approverUserCd))
+
+/** 프리셋 선택 → steps 를 결재선으로 전개(순서 보존). 같은 프리셋 재선택 시 해제. */
+const onSelectPreset = (preset) => {
+  if (selectedPresetId.value === preset.presetId) {
+    selectedPresetId.value = ''
+    approverList.value = []
+    return
+  }
+  selectedPresetId.value = preset.presetId
+  approverList.value = (preset.steps || []).map((s) => ({
+    approverUserCd: s.approverUserCd,
+    userNm: s.userNm,
+    rankNm: s.rankNm,
+    nodeNm: s.nodeNm,
+  }))
+}
+
+/** 시트에서 추가 — userCd 기준 중복 제거. */
+const onAddApprovers = (picked) => {
+  const exists = new Set(approverUserCds.value)
+  for (const p of picked || []) {
+    if (!p?.userCd || exists.has(p.userCd)) continue
+    exists.add(p.userCd)
+    approverList.value.push({
+      approverUserCd: p.userCd,
+      userNm: p.userNm,
+      rankNm: p.rankNm,
+      nodeNm: p.nodeNm,
+    })
+  }
+  // 직접 추가하면 더 이상 프리셋과 동일하지 않으므로 선택 표시를 해제한다.
+  selectedPresetId.value = ''
+}
+
+const onRemoveApprover = (a) => {
+  approverList.value = approverList.value.filter((x) => x.approverUserCd !== a.approverUserCd)
+  selectedPresetId.value = ''
+}
 
 // 종일 사용이 가능한 종류만 — 기간 신청은 종일 전용이다.
 //   ★응답 필드는 allowedUnits(List<String>) 다. 종전에 useUnitType 을 보다가 전 종류가 걸러져
@@ -208,7 +305,13 @@ const checkedDates = computed(() =>
 )
 const checkedCount = computed(() => checkedDates.value.length)
 const blockedCount = computed(() => days.value.filter((d) => !d.selectable).length)
-const canSubmit = computed(() => checkedCount.value > 0 && !!reason.value.trim())
+// 결재 대상 종류인데 결재자가 없으면 제출을 막는다(서버 COMMON_400_001 을 미리 차단).
+const canSubmit = computed(
+  () =>
+    checkedCount.value > 0 &&
+    !!reason.value.trim() &&
+    (!aprvRequired.value || approverUserCds.value.length > 0),
+)
 
 const onBack = () => router.back()
 
@@ -300,9 +403,12 @@ const onSubmit = async () => {
   try {
     await api.post('/appApi/leaveflow/apply-multi', {
       leaveCd: leaveCd.value,
-      leaveType: (leaveTypes.value.find((t) => t.leaveCd === leaveCd.value) || {}).leaveType,
+      // ★leaveType 은 apply-meta 응답(LeaveTypeItem)에 없는 필드다 — 보내지 않는다.
+      //   서버가 leaveCd 로 종류를 조회해 판정하므로 불필요하다.
       dates,
       reason: reason.value,
+      // 결재 대상이 아니면 undefined (단건 화면과 동일 규약).
+      approverUserCds: aprvRequired.value ? approverUserCds.value : undefined,
     })
     await showAlert(`${dates.length}일 신청되었어요`)
     router.back()
@@ -341,8 +447,16 @@ const onSubmit = async () => {
 
 onMounted(async () => {
   try {
-    const { data } = await api.get('/appApi/leaveflow/apply-meta')
-    leaveTypes.value = Array.isArray(data?.leaveTypes) ? data.leaveTypes : []
+    // 종류 메타 + 결재선 프리셋을 함께 받는다(단건 화면과 동일).
+    const [metaRes, presetRes] = await Promise.all([
+      api.get('/appApi/leaveflow/apply-meta'),
+      api.get('/appApi/leaveflow/approval-presets'),
+    ])
+    leaveTypes.value = Array.isArray(metaRes?.data?.leaveTypes) ? metaRes.data.leaveTypes : []
+    presets.value = Array.isArray(presetRes?.data?.presets) ? presetRes.data.presets : []
+    // 기본 프리셋이 있으면 미리 전개해 둔다(관리자가 매번 고르지 않아도 되게).
+    const def = presets.value.find((p) => p.defaultYn === 'Y' || p.defaultYn === true)
+    if (def) onSelectPreset(def)
   } catch (err) {
     showAlert(resolveApiErrorMessage(err, '연차 종류를 불러오지 못했어요.'))
   } finally {
@@ -504,6 +618,73 @@ onMounted(async () => {
   color: var(--color-danger, #ef4444);
   line-height: 1.5;
 }
+/* 결재선 — 프리셋 칩 + 지정된 결재자 목록 */
+.lam-presets {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.3rem;
+  margin-bottom: 0.5rem;
+}
+.lam-preset {
+  padding: 0.25rem 0.6rem;
+  font-size: 0.78rem;
+  border: 1px solid var(--color-border, #d1d5db);
+  border-radius: 1rem;
+  background: #fff;
+  color: var(--color-text-muted, #6b7280);
+  cursor: pointer;
+  font-family: inherit;
+}
+.lam-preset.is-on {
+  border-color: #16a34a;
+  background: #dcfce7;
+  color: #16a34a;
+  font-weight: 700;
+}
+.lam-aprv {
+  list-style: none;
+  margin: 0 0 0.4rem;
+  padding: 0;
+}
+.lam-aprv__item {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.35rem 0;
+  border-bottom: 1px solid var(--color-border-weak, #f3f4f6);
+}
+.lam-aprv__step {
+  width: 1.15rem;
+  height: 1.15rem;
+  flex: none;
+  border-radius: 50%;
+  background: #dcfce7;
+  color: #16a34a;
+  font-size: 0.7rem;
+  font-weight: 700;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+.lam-aprv__name {
+  font-size: 0.85rem;
+  color: var(--color-text-strong, #111827);
+}
+.lam-aprv__meta {
+  flex: 1;
+  font-size: 0.72rem;
+  color: var(--color-text-muted, #9ca3af);
+}
+.lam-aprv__del {
+  border: none;
+  background: transparent;
+  color: var(--color-text-muted, #9ca3af);
+  cursor: pointer;
+  font-size: 0.8rem;
+  padding: 0.1rem 0.3rem;
+  font-family: inherit;
+}
+
 .lam-foot {
   padding: 0.6rem 0.75rem calc(0.6rem + env(safe-area-inset-bottom));
   background: #fff;
