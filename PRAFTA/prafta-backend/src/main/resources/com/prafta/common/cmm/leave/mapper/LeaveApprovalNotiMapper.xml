@@ -62,4 +62,17 @@
      LIMIT 1
     </select>
 
+    <!--
+      prafta-leavemulti: 동일 dedupKey outbox 존재 여부(묶음 알림 1건 수렴용 사전 확인).
+      UNIQUE 인덱스 UK_NOTI_OUTBOX_DEDUP(CMPNY_CD, DEDUP_KEY) 를 그대로 탄다.
+      호출자 트랜잭션 안에서 실행되므로 DuplicateKeyException 을 만들지 않기 위한 선검사다.
+    -->
+    <select id="countOutboxByDedupKey" resultType="int">
+    /* LeaveApprovalNotiMapper.countOutboxByDedupKey */
+    SELECT COUNT(*)
+      FROM TB_NOTI_OUTBOX O
+     WHERE O.CMPNY_CD  = #{cmpnyCd}
+       AND O.DEDUP_KEY = #{dedupKey}
+    </select>
+
 </mapper>

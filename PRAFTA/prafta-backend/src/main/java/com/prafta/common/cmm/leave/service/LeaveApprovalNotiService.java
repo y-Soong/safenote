@@ -31,6 +31,23 @@ public interface LeaveApprovalNotiService {
                             String reqId, int approvalStep, String approverUserCd, String insertNo);
 
     /**
+     * 시나리오 A' — 연차 기간(From-To) 신청 묶음용 오버로드 (prafta-leavemulti).
+     *
+     * <p>기간신청은 날짜별 REQ N건으로 분해되므로 위 메서드를 그대로 쓰면 결재자에게 <b>N개</b> 가 간다
+     * (14일이면 14개). 묶음 ID 기준으로 dedupKey 를 바꿔 <b>1건으로 수렴</b>시킨다 —
+     * outbox 의 dedupKey UNIQUE 충돌을 구현부가 멱등 흡수하므로 별도 집계 로직이 필요 없다.
+     *
+     * <p>dedupKey = {@code groupId == null ? "LV_TURN_"+reqId+"_"+step : "LV_TURN_GRP_"+groupId+"_"+step}
+     *
+     * <p><b>★ groupId 가 null 이면 기존 메서드와 완전히 동일하게 동작한다</b>(단일일 경로 무회귀).
+     *
+     * @param groupId 연차 기간신청 묶음 ID. 단일일 신청은 null.
+     */
+    void notifyApprovalTurn(String cmpnyCd, String siteCd, String applicantUserCd,
+                            String reqId, int approvalStep, String approverUserCd, String insertNo,
+                            String groupId);
+
+    /**
      * 시나리오 B — 무결재(aprvRequired=false) 연차 즉시 확정 시, 신청자 소속 노드 main/sub 관리자에게
      * "누가/언제/어떤 단위의 연차를 사용했다"를 통보. 관리자별 outbox 1건씩 적재.
      *
@@ -51,4 +68,21 @@ public interface LeaveApprovalNotiService {
     void notifyLeaveUsedNoAprv(String cmpnyCd, String siteCd, String applicantUserCd,
                                String leaveId, String useUnitType, BigDecimal leaveDays,
                                String workYmd, String startTime, String endTime, String insertNo);
+
+    /**
+     * 시나리오 B' — 연차 기간(From-To) 신청 묶음용 오버로드 (prafta-leavemulti).
+     *
+     * <p>무결재 연차도 기간신청이면 날짜별로 분해되어 관리자에게 <b>N개</b> 가 간다. 묶음 ID 기준
+     * dedupKey 로 관리자 1인당 1건만 적재한다.
+     *
+     * <p>dedupKey = {@code groupId == null ? "LV_USED_"+leaveId+"_"+admin : "LV_USED_GRP_"+groupId+"_"+admin}
+     *
+     * <p><b>★ groupId 가 null 이면 기존 메서드와 완전히 동일하게 동작한다</b>(단일일 경로 무회귀).
+     *
+     * @param groupId 연차 기간신청 묶음 ID. 단일일 신청은 null.
+     */
+    void notifyLeaveUsedNoAprv(String cmpnyCd, String siteCd, String applicantUserCd,
+                               String leaveId, String useUnitType, BigDecimal leaveDays,
+                               String workYmd, String startTime, String endTime, String insertNo,
+                               String groupId);
 }

@@ -1,5 +1,7 @@
 package com.prafta.app.leave.leaveflow.controller;
 
+import java.util.Map;
+
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -15,6 +17,7 @@ import com.prafta.app.leave.leaveflow.application.param.LeaveApplyParam;
 import com.prafta.app.leave.leaveflow.application.param.LeaveApproverSearchParam;
 import com.prafta.app.leave.leaveflow.application.param.LeaveDayScheduleParam;
 import com.prafta.app.leave.leaveflow.application.param.LeaveDeductionPreviewParam;
+import com.prafta.app.leave.leaveflow.dto.request.LeaveApplyMultiRequest;
 import com.prafta.app.leave.leaveflow.dto.request.LeaveApplyRequest;
 import com.prafta.app.leave.leaveflow.dto.request.LeaveDeductionPreviewRequest;
 import com.prafta.app.leave.leaveflow.dto.response.ApprovalPresetListResponse;
@@ -23,6 +26,7 @@ import com.prafta.app.leave.leaveflow.dto.response.LeaveApplyMetaResponse;
 import com.prafta.app.leave.leaveflow.dto.response.LeaveDayScheduleResponse;
 import com.prafta.app.leave.leaveflow.dto.response.LeaveDeductionPreviewResponse;
 import com.prafta.app.leave.leaveflow.service.AppLeaveFlowService;
+import com.prafta.app.leave.leaveflow.service.MultiDayLeaveApplyService;
 import com.prafta.common.dto.TokenInfo;
 import com.prafta.common.security.JwtUtil;
 import com.prafta.common.util.EmploymentTypeGuard;
@@ -51,6 +55,8 @@ import lombok.extern.slf4j.Slf4j;
 public class AppLeaveFlowController {
 
     private final AppLeaveFlowService appLeaveFlowService;
+    /** prafta-leavemulti: 기간(From-To) 신청 오케스트레이터(별도 빈 — self-invocation 함정 회피). */
+    private final MultiDayLeaveApplyService multiDayLeaveApplyService;
     private final JwtUtil jwtUtil;
 
     /** 신청 가능 연차종류 + 허용 사용단위 + 잔여 메타. */
@@ -161,5 +167,52 @@ public class AppLeaveFlowController {
         appLeaveFlowService.submitLeave(LeaveApplyParam.from(request, tokenInfo));
 
         return ResponseEntity.status(HttpStatus.OK).build();
+    }
+
+    // ============================================================
+    // prafta-leavemulti: 연차 기간(From-To) 신청 — 종일 전용
+    // ============================================================
+
+    /**
+     * 기간 신청 미리보기 — 구간의 날짜별 선택 가능 여부·기본 체크 상태·잔여 배정 결과.
+     *
+     * <p>화면은 범위(From-To) 확정 직후 <b>1회</b> 호출한다(체크 토글마다 재호출하지 않음 — 로컬 처리).
+     * 식별값(cmpny/site/user)은 토큰에서만 도출한다(IDOR).
+     */
+    @GetMapping("/apply-multi-preview")
+    public ResponseEntity<?> applyMultiPreview(
+            @RequestParam("leaveCd") String leaveCd,
+            @RequestParam("fromYmd") String fromYmd,
+            @RequestParam("toYmd") String toYmd,
+            @RequestHeader(value = "Authorization", required = false) String authorization
+    ) {
+        TokenInfo tokenInfo = jwtUtil.getAllClaimsAsMap(authorization);
+        EmploymentTypeGuard.assertNotDailyWorker(tokenInfo);
+
+        return ResponseEntity.status(HttpStatus.OK)
+                .body(multiDayLeaveApplyService.preview(tokenInfo, leaveCd, fromYmd, toYmd));
+    }
+
+    /**
+     * 기간 신청 제출 — 선택된 날짜 목록을 날짜별 단일일 신청 N건으로 분해한다.
+     *
+     * <p>정책 ②에 따라 <b>하나라도 막히면 전체 실패</b>하며, 막힌 날짜 전부를 응답의
+     * {@code blockedDates} 로 함께 돌려준다(첫 실패에서 끊으면 "고침 → 재제출"이 반복된다).
+     */
+    @PostMapping("/apply-multi")
+    public ResponseEntity<?> applyLeaveMulti(
+            @Valid @RequestBody LeaveApplyMultiRequest request,
+            @RequestHeader(value = "Authorization", required = false) String authorization
+    ) {
+        TokenInfo tokenInfo = jwtUtil.getAllClaimsAsMap(authorization);
+
+        // 단건 신청과 동일 — 일용직은 연차 신청 비해당(서버 차단).
+        EmploymentTypeGuard.assertNotDailyWorker(tokenInfo);
+
+        String groupId = multiDayLeaveApplyService.applyMulti(
+                tokenInfo, request.getLeaveCd(), request.getLeaveType(), request.getDates(),
+                request.getReason(), request.getApproverUserCds(), request.getPresetId());
+
+        return ResponseEntity.status(HttpStatus.OK).body(Map.of("groupId", groupId));
     }
 }

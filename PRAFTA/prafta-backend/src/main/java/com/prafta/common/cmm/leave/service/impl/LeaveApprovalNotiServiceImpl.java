@@ -44,6 +44,15 @@ public class LeaveApprovalNotiServiceImpl implements LeaveApprovalNotiService {
     public void notifyApprovalTurn(String cmpnyCd, String siteCd, String applicantUserCd,
                                    String reqId, int approvalStep, String approverUserCd,
                                    String insertNo) {
+        // 기존 시그니처 유지 — 묶음 없이(groupId=null) 위임한다. 동작 완전 동일.
+        notifyApprovalTurn(cmpnyCd, siteCd, applicantUserCd, reqId, approvalStep, approverUserCd,
+                insertNo, null);
+    }
+
+    @Override
+    public void notifyApprovalTurn(String cmpnyCd, String siteCd, String applicantUserCd,
+                                   String reqId, int approvalStep, String approverUserCd,
+                                   String insertNo, String groupId) {
         try {
             if (approverUserCd == null || approverUserCd.isBlank()) {
                 log.info("[leaveAprvNoti] 차례 도래 결재자 없음 — 적재 생략 (reqId={}, step={})", reqId, approvalStep);
@@ -53,13 +62,30 @@ public class LeaveApprovalNotiServiceImpl implements LeaveApprovalNotiService {
             String title = LeaveApprovalNotiConst.TURN_TITLE;
             String body = String.format(LeaveApprovalNotiConst.TURN_BODY_FORMAT, applicantNm);
             String payload = buildTurnPayload(reqId, approvalStep, applicantUserCd);
-            String dedupKey = "LV_TURN_" + reqId + "_" + approvalStep;
+            // prafta-leavemulti: 기간신청 묶음이면 묶음 단위 키를 써서 1건만 적재한다
+            //   (날짜별 REQ N건 → 결재자에게 알림 N개 가는 것 방지. 14일이면 14개).
+            //   ★ groupId == null(단일일) 이면 종전 키 그대로 → 무회귀.
+            boolean grouped = (groupId != null && !groupId.isBlank());
+            String dedupKey = grouped
+                    ? "LV_TURN_GRP_" + groupId + "_" + approvalStep
+                    : "LV_TURN_" + reqId + "_" + approvalStep;
+
+            // 묶음 2번째 이후는 같은 키가 되므로 INSERT 전에 존재 여부를 확인해 건너뛴다.
+            //   ★예외 기반 흡수를 쓰지 않는 이유: 이 적재는 호출자(연차 신청) 트랜잭션 안에서 실행되므로
+            //     DuplicateKeyException 을 유발하면 휴가 1건당 에러 로그가 13개 남고 트랜잭션 오염 우려도 있다.
+            //     단일 트랜잭션 내 순차 호출이라 검사~삽입 사이 경합이 없다.
+            //   단일일(grouped=false)은 키가 매번 달라 검사 자체를 생략한다 → 쿼리 증가 없음(무회귀).
+            if (grouped && leaveApprovalNotiMapper.countOutboxByDedupKey(cmpnyCd, dedupKey) > 0) {
+                log.info("[leaveAprvNoti] 묶음 차례 도래 PUSH 이미 적재됨 — 생략 (groupId={}, step={})",
+                        groupId, approvalStep);
+                return;
+            }
 
             insertOutbox(cmpnyCd, siteCd, approverUserCd, LeaveApprovalNotiConst.NOTI_TYPE_APPROVAL_TURN,
                     title, body, payload, dedupKey, insertNo);
 
-            log.info("[leaveAprvNoti] 결재 차례 도래 PUSH 적재 (reqId={}, step={}, approver={})",
-                    reqId, approvalStep, approverUserCd);
+            log.info("[leaveAprvNoti] 결재 차례 도래 PUSH 적재 (reqId={}, step={}, approver={}, groupId={})",
+                    reqId, approvalStep, approverUserCd, groupId);
         } catch (Exception e) {
             // 적재 실패는 연차 흐름을 막지 않는다 — 로그만 남기고 흡수.
             log.error("[leaveAprvNoti] 결재 차례 도래 PUSH 적재 실패(연차 흐름 영향 없음) (reqId={}, step={})",
@@ -72,6 +98,16 @@ public class LeaveApprovalNotiServiceImpl implements LeaveApprovalNotiService {
                                       String leaveId, String useUnitType, BigDecimal leaveDays,
                                       String workYmd, String startTime, String endTime,
                                       String insertNo) {
+        // 기존 시그니처 유지 — 묶음 없이(groupId=null) 위임한다. 동작 완전 동일.
+        notifyLeaveUsedNoAprv(cmpnyCd, siteCd, applicantUserCd, leaveId, useUnitType, leaveDays,
+                workYmd, startTime, endTime, insertNo, null);
+    }
+
+    @Override
+    public void notifyLeaveUsedNoAprv(String cmpnyCd, String siteCd, String applicantUserCd,
+                                      String leaveId, String useUnitType, BigDecimal leaveDays,
+                                      String workYmd, String startTime, String endTime,
+                                      String insertNo, String groupId) {
         try {
             List<String> admins =
                     leaveApprovalNotiMapper.selectNodeAdmins(cmpnyCd, siteCd, applicantUserCd);
@@ -92,7 +128,18 @@ public class LeaveApprovalNotiServiceImpl implements LeaveApprovalNotiService {
                 if (targetUserCd == null || targetUserCd.equals(applicantUserCd)) {
                     continue;
                 }
-                String dedupKey = "LV_USED_" + leaveId + "_" + targetUserCd;
+                // prafta-leavemulti: 묶음이면 (묶음×관리자) 단위로 1건만 — 날짜별 N개 방지.
+                //   ★ groupId == null(단일일) 이면 종전 키 그대로 → 무회귀.
+                boolean grouped = (groupId != null && !groupId.isBlank());
+                String dedupKey = grouped
+                        ? "LV_USED_GRP_" + groupId + "_" + targetUserCd
+                        : "LV_USED_" + leaveId + "_" + targetUserCd;
+
+                // 묶음 2번째 이후는 같은 키 → INSERT 전에 확인해 건너뛴다(호출자 트랜잭션 오염·에러로그 폭증 방지).
+                //   단일일은 검사 생략 → 쿼리 증가 없음(무회귀). 기존 DuplicateKey 흡수는 그대로 남긴다.
+                if (grouped && leaveApprovalNotiMapper.countOutboxByDedupKey(cmpnyCd, dedupKey) > 0) {
+                    continue;
+                }
                 try {
                     insertOutbox(cmpnyCd, siteCd, targetUserCd, LeaveApprovalNotiConst.NOTI_TYPE_USED_NO_APRV,
                             title, body, payload, dedupKey, insertNo);

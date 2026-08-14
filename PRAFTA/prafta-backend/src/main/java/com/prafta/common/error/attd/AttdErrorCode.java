@@ -283,6 +283,16 @@ public enum AttdErrorCode implements ApiErrorCode {
     , ATTD_400_135(HttpStatus.BAD_REQUEST,
             "결재가 진행 중인 연차는 변경·삭제할 수 없습니다. 신청 취소 또는 결재 반려로 처리해 주세요.")
 
+    // ===== prafta-leavemulti: 연차 기간(From-To) 신청 (2026-08-14) =====
+    // 선택한 날짜 중 신청 불가일이 섞여 있다. 정책 ② = 전체 실패(부분 성공 없음)이며,
+    //   막힌 날짜 전체를 응답 extraData 의 blockedDates 로 함께 내려 한 번에 고치게 한다
+    //   (첫 실패에서 끊으면 "고침 → 재제출"이 반복된다).
+    , ATTD_400_136(HttpStatus.BAD_REQUEST,
+            "신청할 수 없는 날짜가 포함되어 있어 신청되지 않았습니다. 해당 날짜를 제외하고 다시 시도해 주세요.")
+    // 한 번에 신청 가능한 구간 상한 초과(MultiDayLeavePlanner.MAX_RANGE_DAYS).
+    , ATTD_400_137(HttpStatus.BAD_REQUEST,
+            "한 번에 신청할 수 있는 기간을 초과했습니다. 기간을 나누어 신청해 주세요.")
+
     // ===== PRAFTA-COM-008-E 기본 근무타입 설정/로그인 게이트 =====
     // 선택한 기본 근무타입이 해당 사업장의 활성 근무타입이 아님(화이트리스트 위반).
     , ATTD_400_140(HttpStatus.BAD_REQUEST, "선택한 기본 근무타입을 사용할 수 없습니다. 사업장 근무타입을 확인해 주세요.")

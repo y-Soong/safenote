@@ -1029,7 +1029,9 @@ public class AppLeaveFlowServiceImpl implements AppLeaveFlowService {
         //   ★ Q5 정정: START_DATE = END_DATE = workYmd 고정(자정 넘김은 시각 wrap 으로만 표현).
         appLeaveFlowMapper.insertLeaveReq(new LeaveReqInsertCommand(
                 reqId, cmpny, site, user, reqStatus, p.reason(), workYmd, reqNodeCd,
-                workYmd, startTime, workYmd, endTime, p.leaveType(), leaveDays, user));
+                workYmd, startTime, workYmd, endTime, p.leaveType(), leaveDays, user,
+                // prafta-leavemulti: 기간신청 묶음 ID. 단일일 신청은 null → 컬럼 NULL(종전과 동일).
+                p.groupId()));
 
         // 7) 결재 Y → 라인 일괄 생성 + 자기 승인 원칙(§9.5, 웹 161~200 미러)
         boolean fullyAutoApproved = false;
@@ -1132,12 +1134,15 @@ public class AppLeaveFlowServiceImpl implements AppLeaveFlowService {
         //  - 시나리오 B: 순수 무결재(!aprvRequired)만. fullyAutoApproved 제외(D1).
         //  앱에는 연차 승인 경로가 없으므로 "다음 단계" hook 은 없다(웹 approveStep 단일 경로).
         try {
+            // prafta-leavemulti: 기간(From-To) 신청은 날짜별 REQ N건으로 분해되므로 묶음 ID 를 함께 넘겨
+            //   알림을 1건으로 수렴시킨다. ★단일일 신청은 p.groupId()==null → 종전 동작과 완전히 동일.
             if (aprvRequired && turnApprover != null) {
-                leaveApprovalNotiService.notifyApprovalTurn(cmpny, site, user, reqId, turnStep, turnApprover, user);
+                leaveApprovalNotiService.notifyApprovalTurn(cmpny, site, user, reqId, turnStep, turnApprover, user,
+                        p.groupId());
             }
             if (!aprvRequired) {
                 leaveApprovalNotiService.notifyLeaveUsedNoAprv(cmpny, site, user, leaveId, unit, leaveDays,
-                        workYmd, startTime, endTime, user);
+                        workYmd, startTime, endTime, user, p.groupId());
             }
         } catch (Exception e) {
             log.error("[leaveflow] 연차 신청 PUSH 적재 hook 실패(신청 영향 없음) reqId={}", reqId, e);

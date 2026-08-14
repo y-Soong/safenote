@@ -31,6 +31,12 @@ public record LeaveApplyParam(
     , String gvCmpnyCd
     , String gvSiteCd
     , String gvUserCd
+    /**
+     * 연차 기간(From-To) 신청 묶음 ID (prafta-leavemulti). 같은 신청에서 분해된 날짜별 REQ 가 동일 값.
+     * <p><b>단일일 신청은 항상 null</b> 이며, null 이면 알림 dedupKey 가 기존(REQ 단위)으로 동작한다
+     * — 단일일 경로 무회귀의 근거다. 생성 경로가 {@link #from} 하나뿐이라 여기서 null 로 고정된다.
+     */
+    , String groupId
 ) {
     public static LeaveApplyParam from(LeaveApplyRequest request, TokenInfo tokenInfo) {
         if (request == null || tokenInfo == null) {
@@ -61,6 +67,37 @@ public record LeaveApplyParam(
             , tokenInfo.gv_cmpnyCd()
             , tokenInfo.gv_siteCd()
             , tokenInfo.gv_userCd()
+            , null   // groupId — 단일일 신청은 묶음이 아니다(무회귀: 기존 동작 완전 동일)
+        );
+    }
+
+    /**
+     * 기간(From-To) 신청 분해용 — 이 param 을 기준으로 "특정 날짜 1건" 파생 param 을 만든다.
+     *
+     * <p>기간신청은 종일({@code useUnitType='00'})만 대상이므로 반차/시간차 관련 필드
+     * (halfPart/startTime/endTime)는 원본값을 그대로 승계한다(호출부가 null 로 넘긴다).
+     * 가불은 1차 범위에서 제외이므로 {@code isBorrow=false} 로 고정한다 — 가불 분기 미진입.
+     *
+     * @param targetYmd 파생 대상 근무일 (YYYYMMDD)
+     * @param groupId   묶음 ID (null 이면 단일일과 동일 동작)
+     */
+    public LeaveApplyParam deriveForDate(String targetYmd, String groupId) {
+        return new LeaveApplyParam(
+              leaveCd
+            , leaveType
+            , targetYmd
+            , useUnitType
+            , halfPart
+            , startTime
+            , endTime
+            , reason
+            , approverUserCds
+            , presetId
+            , false          // 가불 미사용 고정(1차 범위 — 다일에서 가불 분기 진입 금지)
+            , gvCmpnyCd
+            , gvSiteCd
+            , gvUserCd
+            , groupId
         );
     }
 }

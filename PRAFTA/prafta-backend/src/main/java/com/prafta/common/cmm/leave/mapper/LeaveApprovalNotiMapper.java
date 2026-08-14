@@ -52,4 +52,18 @@ public interface LeaveApprovalNotiMapper {
      */
     String selectUserNm(@Param("cmpnyCd") String cmpnyCd,
                         @Param("userCd") String userCd);
+
+    /**
+     * prafta-leavemulti: 동일 dedupKey 의 outbox 적재가 이미 존재하는지 (0 = 없음).
+     *
+     * <p>연차 기간(From-To) 신청은 날짜별 REQ N건으로 분해되므로, 묶음 알림은 첫 건에서만 적재되고
+     * 2번째부터는 같은 dedupKey 가 된다. UNIQUE(UK_NOTI_OUTBOX_DEDUP: CMPNY_CD+DEDUP_KEY) 때문에
+     * 그냥 INSERT 하면 DuplicateKeyException 이 나는데, 이 적재는 <b>호출자 트랜잭션 안에서 실행</b>되므로
+     * 예외 기반 흡수는 (ⓐ휴가 1건당 에러 로그 13개 ⓑ트랜잭션 오염 우려) 로 바람직하지 않다.
+     * → INSERT 이전에 존재 여부를 먼저 확인해 <b>예외 자체를 만들지 않는다</b>.
+     *
+     * <p>단일 트랜잭션 내 순차 호출이라 검사~삽입 사이 경합이 없다.
+     */
+    int countOutboxByDedupKey(@Param("cmpnyCd") String cmpnyCd,
+                              @Param("dedupKey") String dedupKey);
 }

@@ -13,6 +13,8 @@ import com.prafta.app.leave.leaveflow.result.DeductibleGrantRow;
 import com.prafta.app.leave.leaveflow.result.LeaveTypeInfoRow;
 import com.prafta.app.leave.leaveflow.result.LeaveTypeMetaRow;
 import com.prafta.app.leave.leaveflow.result.LeaveUsagePolicyRow;
+import com.prafta.app.leave.leaveflow.result.MultiDayLeaveDayRow;
+import com.prafta.app.leave.leaveflow.result.RangeGrantRow;
 
 /**
  * prafta-app-018-A: 앱 연차 신청 폼 메타 조회 Mapper.
@@ -208,4 +210,42 @@ public interface AppLeaveFlowMapper {
      */
     String selectUserNodeSelfApproveYn(@Param("cmpnyCd") String cmpnyCd,
                                        @Param("userCd") String userCd);
+
+    // ============================================================
+    // prafta-leavemulti: 연차 기간(From-To) 신청 — 종일 전용
+    // ============================================================
+
+    /**
+     * 구간(fromYmd~toYmd) 날짜별 판정 재료를 1회 조회한다(미리보기 + 제출 Phase 1 공용).
+     *
+     * <p>날짜마다 단건 가드 쿼리를 N회 도는 대신 구간 1회로 모은다. 술어는 기존 단일일 가드
+     * ({@code countAttendanceByDate} / {@code selectOccupiedLeaveDaysOnDate})와 동일하게 맞춰
+     * "미리보기는 통과했는데 제출은 실패"가 나지 않게 한다.
+     *
+     * <p>구간 길이 상한은 서비스가 강제한다(재귀 CTE 폭주 방지).
+     */
+    List<MultiDayLeaveDayRow> selectMultiDayLeaveDayRows(@Param("cmpnyCd") String cmpnyCd,
+                                                         @Param("siteCd") String siteCd,
+                                                         @Param("userCd") String userCd,
+                                                         @Param("fromYmd") String fromYmd,
+                                                         @Param("toYmd") String toYmd);
+
+    /**
+     * 잔여 배정 시뮬레이션용 부여 목록(구간과 겹치는 것만, 유효기간 동반, 만료 임박순).
+     *
+     * <p>잔여는 날짜마다 다르므로("총 N일 ≤ 잔여" 단순 비교는 틀림) 유효기간을 함께 받아
+     * 날짜 오름차순 그리디 배정을 시뮬레이션한다. 술어·정렬은 실제 차감
+     * ({@link #selectDeductibleGrants})과 동일하되 <b>FOR UPDATE 는 걸지 않는다</b>(사전판정 전용).
+     */
+    /**
+     * 기간신청 묶음 ID 채번 ('LG'+YYYYMMDD+SEQ). REQ_ID/LEAVE_ID 와 동일한 시퀀스 함수 방식이다.
+     * 시퀀스 키는 함수가 자동 생성하므로 시드 마이그레이션이 필요 없다.
+     */
+    String selectNextLeaveGroupId(@Param("cmpnyCd") String cmpnyCd);
+
+    List<RangeGrantRow> selectDeductibleGrantsForRange(@Param("cmpnyCd") String cmpnyCd,
+                                                       @Param("userCd") String userCd,
+                                                       @Param("leaveCd") String leaveCd,
+                                                       @Param("fromYmd") String fromYmd,
+                                                       @Param("toYmd") String toYmd);
 }

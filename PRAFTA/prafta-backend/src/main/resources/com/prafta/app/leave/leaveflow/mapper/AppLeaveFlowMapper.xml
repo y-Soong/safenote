@@ -167,6 +167,119 @@
          겹침 판정은 LeaveDeductionService.overlapsTimeLeaveOnDate 로 이관
          (행 조회 = LeaveDeductionMapper.selectTimeLeaveWindowsOnDate, 환산 = 그날 원 스케줄 프레임). -->
 
+    <!-- ============================================================
+         prafta-leavemulti: 연차 기간(From-To) 신청 미리보기 — 구간 날짜별 판정 재료 1회 조회.
+         날짜마다 단건 쿼리를 N회 도는 대신 구간 1회로 모은다(14일이면 42회 → 1회).
+
+         ★판정 술어는 기존 단일일 가드와 반드시 동일해야 한다(미리보기 ≠ 제출 방지):
+           - attdCnt      = countAttendanceByDate        (TB_USER_ATTD_MGMT, DEL_YN='N')
+           - occupiedDays = selectOccupiedLeaveDaysOnDate (CONFIRMED·DEL_YN='N'·START~END 포함,
+                                                          종일=1.0 / 그 외=LEAVE_DAYS 합)
+           - hasScheduleYn= work_plan 행 존재 AND 그 코드가 실제 근무타입(TB_SCH_MGMT.SCH_CD)
+                            (레거시 휴가코드가 든 셀은 'N' — Attd_05 "스케줄 있음" 정의와 동형)
+         휴일 판정은 TB_HOLIDAY(CMPNY_CD + HOLIDAY_YMD + USE_YN='Y') — Attd_05 selectDayList 와 동일 출처.
+         마감은 월 단위(AttdCloseService)라 여기 포함하지 않는다(서비스가 별도 판정).
+
+         ⚠️ SELECT 컬럼 순서 = MultiDayLeaveDayRow 생성자 인자 순서(위치 기반 record 매핑).
+         구간 길이는 서비스가 상한을 강제한다(재귀 CTE 폭주 방지).
+         ============================================================ -->
+    <select id="selectMultiDayLeaveDayRows" resultType="com.prafta.app.leave.leaveflow.result.MultiDayLeaveDayRow">
+    /* AppLeaveFlowMapper.selectMultiDayLeaveDayRows */
+    WITH RECURSIVE date_range AS (
+        SELECT STR_TO_DATE(#{fromYmd}, '%Y%m%d') AS dt
+        UNION ALL
+        SELECT DATE_ADD(dt, INTERVAL 1 DAY)
+          FROM date_range
+         WHERE DATE_ADD(dt, INTERVAL 1 DAY) <![CDATA[ <= ]]> STR_TO_DATE(#{toYmd}, '%Y%m%d')
+    )
+    SELECT
+          DATE_FORMAT(d.dt, '%Y%m%d')                       AS ymd
+        , CASE DAYOFWEEK(d.dt)
+              WHEN 1 THEN '일' WHEN 2 THEN '월' WHEN 3 THEN '화' WHEN 4 THEN '수'
+              WHEN 5 THEN '목' WHEN 6 THEN '금' WHEN 7 THEN '토'
+          END                                               AS dow
+        , CASE WHEN DAYOFWEEK(d.dt) IN (1, 7) THEN 'Y' ELSE 'N' END AS weekendYn
+        , CASE WHEN h.HOLIDAY_YMD IS NOT NULL THEN 'Y' ELSE 'N' END AS holidayYn
+        , CASE WHEN EXISTS (
+                    SELECT 1
+                      FROM TB_USER_WORK_PLAN WP
+                     WHERE WP.CMPNY_CD = #{cmpnyCd}
+                       AND WP.SITE_CD  = #{siteCd}
+                       AND WP.USER_CD  = #{userCd}
+                       AND WP.WORK_YMD = DATE_FORMAT(d.dt, '%Y%m%d')
+                       AND EXISTS (
+                            SELECT 1
+                              FROM TB_SCH_MGMT S
+                             WHERE S.CMPNY_CD = WP.CMPNY_CD
+                               AND S.SITE_CD  = WP.SITE_CD
+                               AND S.SCH_CD   = WP.WORK_PLAN_CD
+                       )
+               ) THEN 'Y' ELSE 'N' END                      AS hasScheduleYn
+        , (
+            SELECT COUNT(1)
+              FROM TB_USER_ATTD_MGMT A
+             WHERE A.CMPNY_CD = #{cmpnyCd}
+               AND A.SITE_CD  = #{siteCd}
+               AND A.USER_CD  = #{userCd}
+               AND A.WORK_YMD = DATE_FORMAT(d.dt, '%Y%m%d')
+               AND A.DEL_YN   = 'N'
+          )                                                 AS attdCnt
+        , (
+            SELECT COALESCE(SUM(
+                     CASE WHEN U.USE_UNIT_TYPE = '00' THEN 1.0 ELSE U.LEAVE_DAYS END
+                   ), 0)
+              FROM TB_USER_LEAVE_USE U
+             WHERE U.CMPNY_CD     = #{cmpnyCd}
+               AND U.USER_CD      = #{userCd}
+               AND U.LEAVE_STATUS = 'CONFIRMED'
+               AND U.DEL_YN       = 'N'
+               AND U.START_DATE  <![CDATA[ <= ]]> DATE_FORMAT(d.dt, '%Y%m%d')
+               AND U.END_DATE    <![CDATA[ >= ]]> DATE_FORMAT(d.dt, '%Y%m%d')
+          )                                                 AS occupiedDays
+      FROM date_range d
+      LEFT JOIN TB_HOLIDAY h
+             ON h.CMPNY_CD     = #{cmpnyCd}
+            AND h.HOLIDAY_YMD  = DATE_FORMAT(d.dt, '%Y%m%d')
+            AND h.USE_YN       = 'Y'
+     ORDER BY d.dt ASC
+    </select>
+
+    <!-- ============================================================
+         prafta-leavemulti: 잔여 배정 시뮬레이션용 부여 목록(구간과 겹치는 것만, 유효기간 동반).
+         술어·정렬은 실제 차감(selectDeductibleGrants)과 동일하게 맞춘다 —
+         미리보기 판정과 실제 차감이 갈리면 "미리보기는 통과했는데 제출은 실패"가 난다.
+         ★단 미리보기/사전판정 전용이므로 FOR UPDATE 를 걸지 않는다(행 잠금 금지 — 웹 미러 주석 참조).
+         ⚠️ SELECT 컬럼 순서 = RangeGrantRow 생성자 인자 순서(위치 기반 record 매핑).
+         ============================================================ -->
+    <select id="selectDeductibleGrantsForRange" resultType="com.prafta.app.leave.leaveflow.result.RangeGrantRow">
+    /* AppLeaveFlowMapper.selectDeductibleGrantsForRange */
+    SELECT
+          G.GRANT_ID        AS grantId
+        , G.GRANT_DAYS      AS grantDays
+        , G.USED_DAYS       AS usedDays
+        , G.AVAIL_FROM_DATE AS availFromDate
+        , G.AVAIL_TO_DATE   AS availToDate
+      FROM TB_USER_LEAVE_GRANT G
+     WHERE G.CMPNY_CD = #{cmpnyCd}
+       AND G.USER_CD  = #{userCd}
+       AND G.LEAVE_CD = #{leaveCd}
+       AND G.DEL_YN   = 'N'
+       AND G.STATUS   = 'ACTIVE'
+       AND (G.GRANT_DAYS - G.USED_DAYS) <![CDATA[ > ]]> 0
+       <!-- 구간과 겹치는 부여만 — 구간 밖에서만 유효한 부여는 이번 신청에 쓸 수 없다 -->
+       AND G.AVAIL_FROM_DATE <![CDATA[ <= ]]> #{toYmd}
+       AND G.AVAIL_TO_DATE   <![CDATA[ >= ]]> #{fromYmd}
+     ORDER BY G.AVAIL_TO_DATE ASC, G.GRANT_DATE ASC, G.GRANT_ID ASC
+    </select>
+
+    <!-- prafta-leavemulti: 기간신청 묶음 ID 채번. 'LG'+YYYYMMDD+SEQ(5).
+         FNC_CMM_SEQ_NEXTVAL 은 tb_cmm_seq 에 키가 없으면 자동 생성(INSERT ... ON DUPLICATE KEY)하므로
+         별도 시드 마이그레이션이 필요 없다. REQ_ID/LEAVE_ID 와 동일한 채번 방식(COUNT(*) 채번 아님 — 다건 안전). -->
+    <select id="selectNextLeaveGroupId" resultType="string" flushCache="true">
+    /* AppLeaveFlowMapper.selectNextLeaveGroupId */
+    SELECT CONCAT('LG', DATE_FORMAT(NOW(), '%Y%m%d'), FNC_CMM_SEQ_NEXTVAL(#{cmpnyCd}, 'LEAVE_GROUP_ID')) FROM DUAL
+    </select>
+
     <select id="selectNextReqId" resultType="string" flushCache="true">
     /* AppLeaveFlowMapper.selectNextReqId */
     SELECT CONCAT(DATE_FORMAT(NOW(), '%Y%m%d'), FNC_CMM_SEQ_NEXTVAL(#{cmpnyCd}, 'ATTD_REQ_ID')) FROM DUAL
@@ -300,6 +413,8 @@
         , END_TIME
         , LEAVE_TYPE
         , LEAVE_DAYS
+        <!-- prafta-leavemulti: 기간(From-To) 신청 묶음 ID. 단일일 신청은 null → 종전과 동일하게 NULL 저장. -->
+        , LEAVE_GROUP_ID
         , DEL_YN
         , INSERT_NO
         , INSERT_DATE
@@ -320,6 +435,7 @@
         , #{endTime}
         , #{leaveType}
         , #{leaveDays}
+        , #{leaveGroupId}
         , 'N'
         , #{insertNo}
         , NOW()

@@ -24,5 +24,10 @@ public record LeaveReqInsertCommand(
     , String leaveType
     , BigDecimal leaveDays
     , String insertNo
+    /**
+     * prafta-leavemulti: 연차 기간(From-To) 신청 묶음 ID. 같은 신청에서 분해된 날짜별 REQ 가 동일 값.
+     * <p><b>단일일 신청은 null</b> → 컬럼에 NULL 이 들어가 기존 데이터/조회와 동일하다.
+     */
+    , String leaveGroupId
 ) {
 }
