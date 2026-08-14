@@ -54,7 +54,7 @@
             <!-- 잔여를 함께 보여준다 — 종류마다 잔여가 달라 선택 판단에 필요하다
                  (앱 홈의 '잔여 6.3일'은 전 종류 합계라 종류별 가용량과 다르다). -->
             <option v-for="t in fullDayLeaveTypes" :key="t.leaveCd" :value="t.leaveCd">
-              {{ t.leaveNm }} (잔여 {{ Number(t.balanceDays ?? 0) }}일)
+              {{ t.leaveNm }} (잔여 {{ fmtDays(t.balanceDays) }}일)
             </option>
           </select>
           <p class="lam-hint">기간 신청은 종일 연차만 가능합니다. 반차·시간차는 단건 신청을 이용해 주세요.</p>
@@ -128,7 +128,8 @@
             </span>
           </div>
           <p v-if="Number(shortageDays) > 0" class="lam-warn">
-            기본 선택 기준 잔여가 {{ shortageDays }}일 부족합니다. 기간을 줄이거나 잔여를 확인해 주세요.
+            기본 선택 기준 잔여가 {{ fmtShortage(shortageDays) }}일 부족합니다. 기간을 줄이거나 잔여를
+            확인해 주세요.
           </p>
         </section>
 
@@ -217,6 +218,28 @@ const fmt = (ymd) =>
 // 'YYYY-MM-DD' → 'YYYYMMDD' (DateStepperField 는 하이픈 형식을 쓴다)
 const toYmd = (v) => String(v || '').replace(/-/g, '')
 
+/**
+ * 연차 일수 표기 — 소수 2자리 반올림 + 의미 없는 뒤 0 제거.
+ *   1.60000 → '1.6'   1.40000 → '1.4'   2.71251 → '2.71'   1.00000 → '1'
+ *
+ * ★1자리로 자르지 않는 이유: 연차는 시간차 환산 때문에 0.14285 같은 값이 실재한다.
+ *   1자리면 부족 0.04 가 '0.0일 부족'으로 표시돼 "부족한데 0" 이라는 모순이 생긴다.
+ *   2자리로 두되 뒤 0 을 없애면 대부분 1~2자리로 짧게 보이면서 그 모순도 안 생긴다.
+ *   그래도 2자리에서 0 으로 떨어지는 극소량은 fmtShortage 가 따로 처리한다.
+ */
+const fmtDays = (v) => {
+  const n = Number(v ?? 0)
+  if (!isFinite(n)) return '0'
+  return String(Math.round(n * 100) / 100)
+}
+
+/** 부족 일수 전용 — 2자리에서 0 으로 떨어지지만 실제로는 0 초과인 경우를 구분해 표기한다. */
+const fmtShortage = (v) => {
+  const n = Number(v ?? 0)
+  if (n > 0 && Math.round(n * 100) / 100 === 0) return '0.01 미만'
+  return fmtDays(n)
+}
+
 const resetPreview = () => {
   days.value = []
   Object.keys(checked).forEach((k) => delete checked[k])
@@ -289,8 +312,10 @@ const onSubmit = async () => {
     //   잔여는 부여 유효기간 때문에 날짜마다 달라, 단순 합계로는 알 수 없는 값이다.
     if (body?.shortageDays !== undefined && Number(body.shortageDays) > 0) {
       await showAlert(
-        `잔여 연차가 부족해 신청되지 않았어요.\n` +
-          `필요 ${body.neededDays}일 · 사용 가능 ${body.assignedDays}일 · 부족 ${body.shortageDays}일\n` +
+        `잔여 연차가 부족해 신청되지 않았어요.\n\n` +
+          `· 필요 ${fmtDays(body.neededDays)}일\n` +
+          `· 사용 가능 ${fmtDays(body.assignedDays)}일\n` +
+          `· 부족 ${fmtShortage(body.shortageDays)}일\n\n` +
           `기간을 줄이거나 잔여를 확인해 주세요.`,
       )
       return
@@ -484,17 +509,25 @@ onMounted(async () => {
   background: #fff;
   border-top: 1px solid var(--color-border, #e5e7eb);
 }
+/* ★색상은 앱 실제 팔레트(assets/css/button.css 의 .btn-primary)와 동일한 #16a34a 를 직접 쓴다.
+   이 앱 프론트에는 --color-primary 토큰이 정의돼 있지 않아, var(--color-primary, …) 로 두면
+   폴백값(#30796a)이 그대로 나와 다른 화면 버튼과 톤이 어긋난다(실기기에서 확인됨).
+   button.css 는 전역 import 대상이 아니라 .btn-primary 클래스도 쓸 수 없다. */
 .lam-btn {
   width: 100%;
   padding: 0.7rem;
   border: none;
   border-radius: 0.5rem;
-  background: var(--color-primary, #30796a);
+  background: #16a34a;
   color: #fff;
   font-size: 0.95rem;
   font-weight: 700;
   cursor: pointer;
   font-family: inherit;
+  transition: background 0.2s;
+}
+.lam-btn:hover:not(:disabled) {
+  background: #15803d;
 }
 .lam-btn:disabled {
   background: var(--color-border, #d1d5db);
@@ -504,7 +537,10 @@ onMounted(async () => {
   margin-top: 0.5rem;
   padding: 0.5rem;
   font-size: 0.85rem;
-  background: var(--color-primary-tint, #dcfce7);
-  color: var(--color-primary, #30796a);
+  background: #dcfce7;
+  color: #16a34a;
+}
+.lam-btn--sub:hover:not(:disabled) {
+  background: #bbf7d0;
 }
 </style>
