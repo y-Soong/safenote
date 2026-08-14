@@ -8,8 +8,10 @@ import com.prafta.common.error.attd.AttdErrorCode;
 import com.prafta.common.error.common.CommonErrorCode;
 import com.prafta.common.exception.ApiException;
 import com.prafta.common.util.AuthRoleUtils;
+import com.prafta.web.attd.attd07.util.AttdReqTypeUtils;
 import com.prafta.web.attd.reqinbox.mapper.ReqInboxMapper;
 import com.prafta.web.attd.reqinbox.result.PendingReqResult;
+import com.prafta.web.attd.reqinbox.result.PendingSchedReqResult;
 import com.prafta.web.attd.reqinbox.service.ReqInboxService;
 
 import lombok.RequiredArgsConstructor;
@@ -42,9 +44,21 @@ public class ReqInboxServiceImpl implements ReqInboxService {
             //  승인 시 03=새 OT INSERT / 04=기존 OT(TARGET_ID) UPDATE 로 분기 처리된다.)
             reqTypes = List.of("03", "04");
         } else {
-            // 스케줄 수정 등은 별도 REQ_TYPE 부재 — 미지원
+            // 스케줄 수정('10')은 컬럼 세트가 달라 getPendingSchedRequests 전용 경로로 처리한다(plan 결정 B).
+            // 그 외 값은 미지원 — fail-closed.
             throw new ApiException(CommonErrorCode.COMMON_400_001);
         }
         return reqInboxMapper.selectPendingRequests(cmpnyCd, siteCd, reqTypes);
+    }
+
+    @Override
+    public List<PendingSchedReqResult> getPendingSchedRequests(String cmpnyCd, String siteCd, String authCd) {
+        // 매니저 전용 게이트 — getPendingRequests 와 동일 규칙(JWT 기반 authCd, body 위조로 escalation 불가).
+        if (!AuthRoleUtils.isManager(authCd)) {
+            log.warn("reqinbox pending rejected - insufficient privilege. authCd={}", authCd);
+            throw new ApiException(AttdErrorCode.ATTD_403_002);
+        }
+        return reqInboxMapper.selectPendingSchedRequests(
+                cmpnyCd, siteCd, AttdReqTypeUtils.REQ_TYPE_SCHED_MODIFY);
     }
 }

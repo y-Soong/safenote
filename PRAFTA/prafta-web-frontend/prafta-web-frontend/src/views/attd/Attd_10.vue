@@ -188,9 +188,13 @@
         </section>
       </template>
 
-      <!-- 근태 보정 / 초과근무: 통합 대기요청 접수함 + 인라인 반려 -->
+      <!-- 근태 보정 / 초과근무 / 스케줄 수정: 통합 대기요청 접수함 + 인라인 반려 -->
       <template
-        v-else-if="activeTab === 'correction' || activeTab === 'overtime'"
+        v-else-if="
+          activeTab === 'correction' ||
+          activeTab === 'overtime' ||
+          activeTab === 'schedule'
+        "
       >
         <!-- 접수함 -->
         <section class="ra-inbox">
@@ -212,8 +216,18 @@
                 <span class="ra-row__name">{{ row.userNm || row.userCd }}</span>
                 <span class="ra-row__dept">{{ row.nodeNm || "-" }}</span>
                 <span class="ra-chip type">{{ reqTypeNm(row.reqType) }}</span>
+                <!-- 부서 정보 결측 — 웹에서 승인/반려 불가한 건임을 목록에서 미리 알린다. -->
+                <span v-if="isSchedNodeMissing(row)" class="ra-chip warn"
+                  >부서 정보 없음</span
+                >
               </div>
-              <div class="ra-row__sub">
+              <!-- 스케줄 수정: 시각 range 주 + 코드 괄호 병기(재기획서 §5.5.2) -->
+              <div v-if="activeTab === 'schedule'" class="ra-row__sub">
+                {{ fmtDate(row.workYmd) }}
+                <template v-if="row.workSeq"> · {{ row.workSeq }}차</template> ·
+                {{ schedSummary(row) }}
+              </div>
+              <div v-else class="ra-row__sub">
                 {{ fmtDate(row.workYmd || row.startDate) }} ·
                 {{ fmtTime(row.startTime)
                 }}<template v-if="row.endTime">
@@ -279,6 +293,12 @@
               :loading="neighborLoading"
             />
 
+            <!-- 현재 → 요청 스케줄 비교 (스케줄 수정 탭 전용, 재기획서 §5.7 ③) -->
+            <AttdSchedCompareSection
+              v-if="activeTab === 'schedule'"
+              :row="reqSelected"
+            />
+
             <!-- 결재 처리 — 요청대로 승인 / 반려 (연차 탭과 동일 패턴). 편의상 본 화면에서도 승인 가능. -->
             <div class="ra-sec ra-decide">
               <div class="ra-sec__title">결재 처리</div>
@@ -291,8 +311,11 @@
                 반려
               </label>
               <p v-if="reqDecision === 'approve'" class="ra-decide__note">
-                {{ approveScreenNm(activeTab) }}와 동일하게
-                처리됩니다(근태/초과근무 기록 반영 + 요청 승인).
+                {{ approveNoteText }}
+              </p>
+              <!-- 부서 정보 결측 건 안내 — 버튼은 활성 상태를 유지하고 클릭 시 같은 사유를 안내한다. -->
+              <p v-if="schedSelectedNodeMissing" class="ra-decide__warn">
+                {{ SCHED_NO_NODE_MSG }}
               </p>
               <textarea
                 v-if="reqDecision === 'reject'"
@@ -340,6 +363,7 @@ import axios from "@/api/axios";
 import ViewHeader from "@/components/common/ViewHeader.vue";
 import LeaveChangeConfirmPop from "./popup/LeaveChangeConfirmPop.vue";
 import AttdNeighborDaySegments from "./popup/AttdNeighborDaySegments.vue";
+import AttdSchedCompareSection from "./popup/AttdSchedCompareSection.vue";
 import { resolveApiErrorMessage } from "@/utils/apiError";
 import { formatYmdDot } from "@/utils/dateFormat";
 
@@ -351,7 +375,9 @@ const props = defineProps({
 const { proxy } = getCurrentInstance();
 
 const localButtons = ref({ ...props.buttons });
+// 탭 순서는 재기획서 §5.3 표(스케줄 수정 / 근태 보정 / 초과 / 연차)를 따른다.
 const tabs = [
+  { key: "schedule", label: "스케줄 수정" },
   { key: "correction", label: "근태 보정" },
   { key: "overtime", label: "초과근무 상신" },
   { key: "leave", label: "연차 상신" },
@@ -377,6 +403,7 @@ const neighborLoading = ref(false);
 const leaveCount = ref(0);
 const correctionCount = ref(0);
 const overtimeCount = ref(0);
+const scheduleCount = ref(0);
 
 // "연차 상신" 탭 내 "연차 변경 요청 대기" 소섹션(B안) — approvalList 와 별개 배열, 데이터 병합 없음.
 //   상세/확인/반려는 기존 LeaveChangeConfirmPop 재사용, 중복 컴포넌트 금지.
@@ -415,20 +442,43 @@ const tabCount = (key) => {
   if (key === "leave") return leaveCount.value;
   if (key === "correction") return correctionCount.value;
   if (key === "overtime") return overtimeCount.value;
+  if (key === "schedule") return scheduleCount.value;
   return 0;
 };
 
 // REQ_TYPE(SYS032) 표시명 — 본 화면에서 다루는 값만.
 const reqTypeNm = (t) =>
-  ({ "01": "근태 생성", "02": "근태 수정", "03": "초과근무 생성" }[t] || t || "-");
+  ({
+    "01": "근태 생성",
+    "02": "근태 수정",
+    "03": "초과근무 생성",
+    "10": "스케줄 수정",
+  }[t] ||
+  t ||
+  "-");
 
 // 승인을 처리하는 원 화면명 (반려 안내용).
 const approveScreenNm = (tab) =>
   tab === "overtime" ? "초과근무 관리" : "근태 관리";
 
+// "요청대로 승인" 선택 시 안내 문구 — 탭별로 승인 효과가 다르다.
+//   correction/overtime 은 기존 문구를 문자 단위로 유지하고, schedule 만 별도 문구를 쓴다.
+const approveNoteText = computed(() => {
+  if (activeTab.value === "schedule") {
+    return "승인 시 해당 일자 근무계획(스케줄)이 요청 스케줄로 변경되고 요청이 승인됩니다.";
+  }
+  return `${approveScreenNm(activeTab.value)}와 동일하게 처리됩니다(근태/초과근무 기록 반영 + 요청 승인).`;
+});
+
 // 탭 → reqTypeGroup 매핑 (백엔드 /reqinbox/pending).
-const reqTypeGroupOf = (tab) =>
-  tab === "overtime" ? "overtime" : "correction";
+//   삼항식은 schedule 을 correction 으로 오분류하므로 명시 매핑을 쓴다.
+//   (correction/overtime 반환값은 종전과 동일. leave 탭은 이 함수를 호출하지 않는다.)
+const REQ_TYPE_GROUP_BY_TAB = {
+  correction: "correction",
+  overtime: "overtime",
+  schedule: "schedule",
+};
+const reqTypeGroupOf = (tab) => REQ_TYPE_GROUP_BY_TAB[tab] ?? "correction";
 
 // 표시용 날짜 포맷은 dateFormat 단일 출처에 위임(점). 빈값/형식불충분은 "-".
 const fmtDate = (ymd) => {
@@ -439,6 +489,46 @@ const fmtTime = (hhmm) => {
   if (!hhmm || hhmm.length < 4) return hhmm || "";
   return `${hhmm.slice(0, 2)}:${hhmm.slice(2, 4)}`;
 };
+
+// 스케줄 1차 구간 시각 range("HH:MM-HH:MM"). 시작/종료 어느 하나라도 없으면 "".
+const schedRange = (strTime, endTime) => {
+  const s = fmtTime(strTime);
+  const e = fmtTime(endTime);
+  if (!s || !e) return "";
+  return `${s}-${e}`;
+};
+
+// 목록 행 요약(재기획서 §5.5.2) — 시각 range 를 주로, 스케줄 코드는 괄호 병기.
+//   예) "정규 09:00-18:00 → 야간 18:00-04:00 (00011→00022)"
+//   목록은 1차 구간만 축약 표기하며, 2차·고정연장은 상세 비교 섹션에서 본다.
+const schedSummary = (row) => {
+  if (!row) return "";
+  const cur = [row.curSchNo, schedRange(row.curFstStrTime, row.curFstEndTime)]
+    .filter(Boolean)
+    .join(" ");
+  const req = [row.reqSchNo, schedRange(row.reqFstStrTime, row.reqFstEndTime)]
+    .filter(Boolean)
+    .join(" ");
+  const head = `${cur || "현재 없음"} → ${req || "요청 스케줄 확인 불가"}`;
+  if (!row.curSchCd && !row.reqSchCd) return head;
+  const codeText =
+    row.curSchCd && row.reqSchCd
+      ? `${row.curSchCd}→${row.reqSchCd}`
+      : row.curSchCd || row.reqSchCd;
+  return `${head} (${codeText})`;
+};
+
+// 스케줄 탭 승인/반려 차단 사유 — REQ 원본 NODE_CD 결측.
+//   서버 DTO 가 nodeCd 를 @NotBlank 로 요구하고 REQ row 와 일치까지 검증하므로,
+//   결측 건은 웹에서 처리 불가하다(앱 관리자 승인 경로 이용). 버튼은 비활성화하지 않고
+//   활성 상태를 유지한 뒤 클릭 시 사유를 안내한다(비활성 버튼은 사유에 도달할 수 없어 오인된다).
+const SCHED_NO_NODE_MSG =
+  "이 요청에 부서 정보가 없어 승인/반려할 수 없습니다. 관리자에게 문의하세요.";
+const isSchedNodeMissing = (row) =>
+  activeTab.value === "schedule" && !!row && !row.nodeCd;
+const schedSelectedNodeMissing = computed(() =>
+  isSchedNodeMissing(reqSelected.value)
+);
 
 // 연차 타입 표시 — 연차명(연차번호) 형태. 일부 누락 시 가능한 값만, 모두 없으면 leaveCd → "-".
 const leaveTypeLabel = (row) => {
@@ -460,7 +550,11 @@ const fnLoad = async () => {
     // B안: 결재 대기 + 연차 변경 대기 두 소섹션을 동시 로드(데이터 병합 없음, 별개 배열 유지)
     return Promise.all([fnLoadApprovals(), fnLoadLeaveChanges()]);
   }
-  if (activeTab.value === "correction" || activeTab.value === "overtime") {
+  if (
+    activeTab.value === "correction" ||
+    activeTab.value === "overtime" ||
+    activeTab.value === "schedule"
+  ) {
     return fnLoadReqInbox();
   }
 };
@@ -576,6 +670,17 @@ const fnLoadCounts = async () => {
       console.warn("[Attd_10] 연차 변경 요청 카운트 로드 실패", e);
     }
 
+    // 스케줄 수정 대기 건수도 별도 try/catch 로 격리한다. 위 Promise.all 에 넣으면 스케줄 조회가
+    //   실패할 때 기존 3개 배지가 함께 죽는다(무회귀 최우선).
+    try {
+      const schedRes = await axios.get("/webApi/reqinbox/pending", {
+        params: { reqTypeGroup: "schedule" },
+      });
+      scheduleCount.value = (schedRes.data?.pendingList ?? []).length;
+    } catch (e) {
+      console.warn("[Attd_10] 스케줄 수정 요청 카운트 로드 실패", e);
+    }
+
     // B안 배지 합산 결정(상세설명 5번 근거): 탭 배지는 "이 탭에 처리할 게 총 몇 건" 을 보여줘야 하므로
     //   결재 대기 + 연차 변경 대기를 합산한다. 소섹션별 개별 건수는 각 블록 헤더에서 별도 표시.
     leaveCount.value = approvalCnt + leavechangeCount.value;
@@ -617,8 +722,13 @@ const fnLoadNeighborSegments = async (row) => {
   }
 };
 
-// 근태보정/초과근무 처리 진입점 — 라디오 선택에 따라 승인 또는 반려로 분기.
+// 근태보정/초과근무/스케줄 수정 처리 진입점 — 라디오 선택에 따라 승인 또는 반려로 분기.
 const fnProcessReq = () => {
+  // 스케줄 탭 전용 가드: 부서 정보가 없으면 서버가 400/ATTD_400_005 로만 응답해 원인 파악이 어렵다.
+  //   버튼은 활성 상태로 두고 클릭 시 사유를 안내한다(correction/overtime 에는 적용하지 않는다).
+  if (schedSelectedNodeMissing.value) {
+    return proxy.$alert(SCHED_NO_NODE_MSG);
+  }
   if (reqDecision.value === "reject") return fnRejectReq();
   return fnApproveReq();
 };
@@ -633,9 +743,23 @@ const fnApproveReq = async () => {
   if (!ok) return;
 
   const isOvertime = activeTab.value === "overtime";
+  const isSchedule = activeTab.value === "schedule";
   let url;
   let payload;
-  if (isOvertime) {
+  if (isSchedule) {
+    // 스케줄 수정 승인: 목표 스케줄 코드(SCH_CD)는 body 로 보내지 않는다.
+    //   서버가 REQ row 의 SCH_CD 를 권위값으로 써서 work_plan 의 WORK_PLAN_CD 를 갱신한다.
+    //   키 필드는 목록 응답 값을 그대로 전달한다(임의 폴백 금지 — 서버가 REQ row 와 일치를 요구).
+    url = "/webApi/attd07/approve-sched-modify-requests";
+    payload = {
+      reqId: r.reqId,
+      siteCd: r.siteCd,
+      userCd: r.userCd,
+      workYmd: r.workYmd,
+      workSeq: String(r.workSeq),
+      nodeCd: r.nodeCd,
+    };
+  } else if (isOvertime) {
     // 초과근무 승인: 요청 구간 그대로 OT 등록 + 연결 요청 승인 마감.
     url = "/webApi/attd07/update-user-overtime-requests";
     payload = {
@@ -701,10 +825,17 @@ const fnRejectReq = async () => {
 
   const r = reqSelected.value;
   const isOvertime = activeTab.value === "overtime";
+  const isSchedule = activeTab.value === "schedule";
   // 반려 엔드포인트는 서버 보관 REQ 와 키필드 일치를 요구한다(변조 방지).
-  const url = isOvertime
-    ? "/webApi/attd07/reject-user-overtime-requests"
-    : "/webApi/attd07/reject-user-attd-requests";
+  //   스케줄 수정 반려는 근태 반려와 동일한 body 형태를 쓰되 전용 엔드포인트를 호출한다.
+  let url;
+  if (isSchedule) {
+    url = "/webApi/attd07/reject-sched-modify-requests";
+  } else if (isOvertime) {
+    url = "/webApi/attd07/reject-user-overtime-requests";
+  } else {
+    url = "/webApi/attd07/reject-user-attd-requests";
+  }
   const payload = isOvertime
     ? {
         reqId: r.reqId,
@@ -917,6 +1048,14 @@ onMounted(() => {
   border-radius: 0.3rem;
   padding: 0.05rem 0.3rem;
 }
+/* 스케줄 수정 탭 — 부서 정보 결측(웹 처리 불가) 배지. 경고 시맨틱 토큰 재사용. */
+.ra-chip.warn {
+  font-size: 0.7rem;
+  background: var(--color-warning-bg, #fef3c7);
+  color: var(--color-warning-text, #b45309);
+  border-radius: 0.3rem;
+  padding: 0.05rem 0.3rem;
+}
 .ra-empty,
 .ra-detail__empty {
   color: var(--color-text-muted, #9ca3af);
@@ -991,6 +1130,15 @@ onMounted(() => {
 .ra-decide__note {
   font-size: 0.78rem;
   color: var(--color-text-muted, #6b7280);
+  margin: 0 0 0.4rem;
+  line-height: 1.4;
+}
+.ra-decide__warn {
+  font-size: 0.78rem;
+  background: var(--color-warning-bg, #fef3c7);
+  color: var(--color-warning-text, #b45309);
+  border-radius: 0.3rem;
+  padding: 0.3rem 0.4rem;
   margin: 0 0 0.4rem;
   line-height: 1.4;
 }

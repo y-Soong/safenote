@@ -95,7 +95,7 @@
       <!-- 요청 스케줄 유효버전 시각(회사/사업장 스코프로 한정해 타 사업장 스케줄 유출 차단).
            근무일 기준 유효버전(APPLY_DATE<=근무일)을 우선하되, 없으면(근무일보다 늦게 적용 시작된 스케줄을
            과거일에 적용하는 요청 등) 최이른 적용버전(MIN APPLY_DATE)으로 폴백 — 코드(00011) 대신 항상 시각 표시. -->
-      LEFT JOIN ( <include refid="effectiveSchVersion"/> ) RSE
+      LEFT JOIN ( <include refid="com.prafta.common.cmm.sch.mapper.SchEffectiveMapper.effectiveSchVersion"/> ) RSE
         ON RSE.CMPNY_CD = R.CMPNY_CD
        AND RSE.SITE_CD  = R.SITE_CD
        AND RSE.SCH_CD   = R.SCH_CD
@@ -104,7 +104,7 @@
                          MAX(CASE WHEN SE.APPLY_DATE <![CDATA[ <= ]]> R.WORK_YMD THEN SE.APPLY_DATE END)
                        , MIN(SE.APPLY_DATE)
                        )
-                FROM ( <include refid="effectiveSchApplyKeys"/> ) SE
+                FROM ( <include refid="com.prafta.common.cmm.sch.mapper.SchEffectiveMapper.effectiveSchApplyKeys"/> ) SE
                 WHERE SE.CMPNY_CD    = R.CMPNY_CD
                   AND SE.SITE_CD     = R.SITE_CD
                   AND SE.SCH_CD      = R.SCH_CD
@@ -378,56 +378,9 @@
        AND G.DEL_YN    = 'N'
     </select>
 
-    <!-- 근무일 기준 유효 스케줄(effective-dating) 버전 1건(현재본+이력본 UNION, APPLY_DATE 동일 시 MAX(HIST_IDX)).
-         시각 컬럼만 반환. 외부에서 APPLY_DATE <![CDATA[ <= ]]> 근무일 MAX 로 상관(effectiveSchApplyKeys 사용).
-         결재 본문의 스케줄 시각 표시용이므로 USE_YN 필터를 두지 않는다 — 사용중지된 근무타입도 이미 배정된
-         근무일에는 그 시각 그대로 보여야 하며, USE_YN 은 신규 배정 가능 여부일 뿐이다. -->
-    <sql id="effectiveSchVersion">
-        SELECT
-              E.CMPNY_CD, E.SITE_CD, E.SCH_CD, E.APPLY_DATE
-            , E.FST_SCH_STR_TIME, E.FST_SCH_END_TIME
-            , E.SEC_SCH_STR_TIME, E.SEC_SCH_END_TIME
-            <!-- PRAFTA-FIXEDOT-2: 고정연장(전방·후방) — 승인 카드/상세 표기용 -->
-            , E.PRE_FIXED_OT_STR_TIME, E.PRE_FIXED_OT_END_TIME
-            , E.FIXED_OT_STR_TIME, E.FIXED_OT_END_TIME
-        FROM (
-            SELECT M.CMPNY_CD, M.SITE_CD, M.SCH_CD, M.APPLY_DATE
-                 , M.FST_SCH_STR_TIME, M.FST_SCH_END_TIME, M.SEC_SCH_STR_TIME, M.SEC_SCH_END_TIME
-                 , M.PRE_FIXED_OT_STR_TIME, M.PRE_FIXED_OT_END_TIME, M.FIXED_OT_STR_TIME, M.FIXED_OT_END_TIME
-                 , 2147483647 AS HIST_IDX
-            FROM TB_SCH_MGMT M
-            UNION ALL
-            SELECT H.CMPNY_CD, H.SITE_CD, H.SCH_CD, H.APPLY_DATE
-                 , H.FST_SCH_STR_TIME, H.FST_SCH_END_TIME, H.SEC_SCH_STR_TIME, H.SEC_SCH_END_TIME
-                 , H.PRE_FIXED_OT_STR_TIME, H.PRE_FIXED_OT_END_TIME, H.FIXED_OT_STR_TIME, H.FIXED_OT_END_TIME
-                 , H.HIST_IDX
-            FROM TB_SCH_MGMT_HIST H
-        ) E
-        WHERE E.HIST_IDX = (
-            SELECT MAX(E2.HIST_IDX)
-            FROM (
-                SELECT M2.CMPNY_CD, M2.SITE_CD, M2.SCH_CD, M2.APPLY_DATE, 2147483647 AS HIST_IDX
-                FROM TB_SCH_MGMT M2
-                UNION ALL
-                SELECT H2.CMPNY_CD, H2.SITE_CD, H2.SCH_CD, H2.APPLY_DATE, H2.HIST_IDX
-                FROM TB_SCH_MGMT_HIST H2
-            ) E2
-            WHERE E2.CMPNY_CD   = E.CMPNY_CD
-              AND E2.SITE_CD    = E.SITE_CD
-              AND E2.SCH_CD     = E.SCH_CD
-              AND E2.APPLY_DATE = E.APPLY_DATE
-        )
-    </sql>
-
-    <!-- 유효버전 APPLY_DATE MAX 산출용 키 전용 UNION(현재본+이력본).
-         effectiveSchVersion 과 동일 집합이어야 하므로 여기서도 USE_YN 필터를 두지 않는다(사용중지 근무타입 포함). -->
-    <sql id="effectiveSchApplyKeys">
-        SELECT M3.CMPNY_CD, M3.SITE_CD, M3.SCH_CD, M3.APPLY_DATE
-        FROM TB_SCH_MGMT M3
-        UNION ALL
-        SELECT H3.CMPNY_CD, H3.SITE_CD, H3.SCH_CD, H3.APPLY_DATE
-        FROM TB_SCH_MGMT_HIST H3
-    </sql>
+    <!-- 스케줄 유효버전 판정 fragment(effectiveSchVersion / effectiveSchApplyKeys)는
+         com.prafta.common.cmm.sch.mapper.SchEffectiveMapper 로 이관됨(2026-08-14, 앱/웹 단일 출처).
+         본 매퍼는 완전수식 refid 로 참조한다. -->
 
     <!--
       PRAFTA-APP-029-2(D6): 스케줄 수정(10) 상세 본문 — 현재 → 요청 스케줄.
@@ -465,7 +418,7 @@
         , TSE.FIXED_OT_STR_TIME      AS reqFixedOtStrTime
         , TSE.FIXED_OT_END_TIME      AS reqFixedOtEndTime
       FROM TB_SCH_MGMT TS
-      LEFT JOIN ( <include refid="effectiveSchVersion"/> ) TSE
+      LEFT JOIN ( <include refid="com.prafta.common.cmm.sch.mapper.SchEffectiveMapper.effectiveSchVersion"/> ) TSE
         ON TSE.CMPNY_CD = TS.CMPNY_CD
        AND TSE.SITE_CD  = TS.SITE_CD
        AND TSE.SCH_CD   = TS.SCH_CD
@@ -476,7 +429,7 @@
                          MAX(CASE WHEN SE.APPLY_DATE <![CDATA[ <= ]]> #{workYmd} THEN SE.APPLY_DATE END)
                        , MIN(SE.APPLY_DATE)
                        )
-                FROM ( <include refid="effectiveSchApplyKeys"/> ) SE
+                FROM ( <include refid="com.prafta.common.cmm.sch.mapper.SchEffectiveMapper.effectiveSchApplyKeys"/> ) SE
                 WHERE SE.CMPNY_CD    = TS.CMPNY_CD
                   AND SE.SITE_CD     = TS.SITE_CD
                   AND SE.SCH_CD      = TS.SCH_CD
@@ -490,7 +443,7 @@
         ON CS.CMPNY_CD = #{cmpnyCd}
        AND CS.SITE_CD  = #{siteCd}
        AND CS.SCH_CD   = WP.WORK_PLAN_CD
-      LEFT JOIN ( <include refid="effectiveSchVersion"/> ) CSE
+      LEFT JOIN ( <include refid="com.prafta.common.cmm.sch.mapper.SchEffectiveMapper.effectiveSchVersion"/> ) CSE
         ON CSE.CMPNY_CD = WP.CMPNY_CD
        AND CSE.SITE_CD  = WP.SITE_CD
        AND CSE.SCH_CD   = WP.WORK_PLAN_CD
@@ -500,7 +453,7 @@
                          MAX(CASE WHEN SE.APPLY_DATE <![CDATA[ <= ]]> WP.WORK_YMD THEN SE.APPLY_DATE END)
                        , MIN(SE.APPLY_DATE)
                        )
-                FROM ( <include refid="effectiveSchApplyKeys"/> ) SE
+                FROM ( <include refid="com.prafta.common.cmm.sch.mapper.SchEffectiveMapper.effectiveSchApplyKeys"/> ) SE
                 WHERE SE.CMPNY_CD    = WP.CMPNY_CD
                   AND SE.SITE_CD     = WP.SITE_CD
                   AND SE.SCH_CD      = WP.WORK_PLAN_CD

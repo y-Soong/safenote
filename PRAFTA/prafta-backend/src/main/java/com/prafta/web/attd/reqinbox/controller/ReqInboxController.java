@@ -11,6 +11,7 @@ import org.springframework.web.bind.annotation.RestController;
 import com.prafta.common.dto.TokenInfo;
 import com.prafta.common.security.JwtUtil;
 import com.prafta.web.attd.reqinbox.dto.response.PendingReqListResponse;
+import com.prafta.web.attd.reqinbox.dto.response.PendingSchedReqListResponse;
 import com.prafta.web.attd.reqinbox.service.ReqInboxService;
 
 import lombok.RequiredArgsConstructor;
@@ -29,13 +30,28 @@ public class ReqInboxController {
     private final ReqInboxService reqInboxService;
     private final JwtUtil jwtUtil;
 
-    /** 매니저 스코프 대기 요청 목록 (reqTypeGroup: correction | overtime). */
+    /**
+     * 매니저 스코프 대기 요청 목록 (reqTypeGroup: correction | overtime | schedule).
+     *
+     * <p>schedule('10')은 현재→요청 스케줄 비교값을 함께 내려주어 컬럼 세트가 다르므로
+     * 전용 서비스/응답으로 분기한다. 응답 필드명은 {@code pendingList} 로 동일하다.
+     */
     @GetMapping("/pending")
     public ResponseEntity<?> pending(
             @RequestParam("reqTypeGroup") String reqTypeGroup,
             @RequestHeader(value = "Authorization", required = true) String authorization) {
 
         TokenInfo token = jwtUtil.getAllClaimsAsMap(authorization);
+
+        if ("schedule".equals(reqTypeGroup)) {
+            PendingSchedReqListResponse schedResponse = PendingSchedReqListResponse.builder()
+                    .pendingList(reqInboxService.getPendingSchedRequests(
+                            token.gv_cmpnyCd(), token.gv_siteCd(), token.gv_authCd()))
+                    .build();
+
+            return ResponseEntity.status(HttpStatus.OK).body(schedResponse);
+        }
+
         PendingReqListResponse response = PendingReqListResponse.builder()
                 .pendingList(reqInboxService.getPendingRequests(
                         token.gv_cmpnyCd(), token.gv_siteCd(), token.gv_authCd(), reqTypeGroup))

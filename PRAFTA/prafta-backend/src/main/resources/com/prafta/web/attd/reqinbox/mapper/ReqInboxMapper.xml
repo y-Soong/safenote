@@ -37,4 +37,107 @@
      ORDER BY R.INSERT_DATE DESC
     </select>
 
+    <!--
+      스케줄 수정('10') 대기 목록 + 현재→요청 스케줄 비교값(요청 승인 관리 "스케줄 수정" 탭).
+
+      ⚠ 기본 컬럼 15개 중 11개가 위 selectPendingRequests 와 중복 기재된다. 공통 sql fragment 로
+        묶으려면 기존 statement 를 수정해야 하는데, 기존 3탭(근태보정/초과/연차) 무회귀가 본 작업의
+        최우선 제약이므로 의도적으로 중복을 남긴다(무회귀 > DRY). 위 statement 는 무수정이다.
+
+      스케줄 시각 해석 규칙은 앱 관리자 승인(AppAdminApprovalMapper.selectSchedBody)과 동일하다.
+      - 유효버전 판정 fragment 는 common/cmm/sch/SchEffectiveMapper 단일 출처를 참조한다.
+      - 근무일 기준 유효버전(APPLY_DATE 가 근무일 이하인 최신본) 우선, 없으면 최이른 적용버전으로 폴백
+        (근무일보다 늦게 적용 시작된 스케줄로의 요청도 코드가 아닌 시각으로 표시).
+      - 타 사업장 스케줄 유출 차단: TS/TSE/CS/CSE 모든 조인에 CMPNY_CD + SITE_CD 를 건다
+        (SCH_CD 는 사업장별 별개 행).
+      - 루트가 REQ(R) 이므로 요청 스케줄 코드가 사라진 이상 건도 목록에 보이고 req* 만 NULL 이 된다
+        (접수함은 fail-visible — 안 보이면 영원히 미처리로 남는다).
+      - 현재 근무계획이 없거나 WORK_PLAN_CD 가 연차코드면 CS 미매치 → cur* 전부 NULL.
+    -->
+    <select id="selectPendingSchedRequests" resultType="com.prafta.web.attd.reqinbox.result.PendingSchedReqResult">
+    /* ReqInboxMapper.selectPendingSchedRequests */
+    SELECT
+          R.REQ_ID                                                     AS reqId
+        , R.REQ_TYPE                                                   AS reqType
+        , R.USER_CD                                                    AS userCd
+        , FNC_CMM_INFO_SRCH(R.CMPNY_CD, 'USER_NM', R.USER_CD, null)     AS userNm
+        , R.SITE_CD                                                    AS siteCd
+        , R.NODE_CD                                                    AS nodeCd
+        , FNC_CMM_INFO_SRCH(R.CMPNY_CD, 'NODE', R.SITE_CD, R.NODE_CD)   AS nodeNm
+        , R.WORK_YMD                                                   AS workYmd
+        , R.WORK_SEQ                                                   AS workSeq
+        , R.REQ_REASON                                                 AS reqReason
+        , DATE_FORMAT(R.INSERT_DATE, '%Y-%m-%dT%H:%i:%s')              AS reqDate
+        , TS.SCH_CD                                                    AS reqSchCd
+        , TS.SCH_NO                                                    AS reqSchNo
+        , TSE.FST_SCH_STR_TIME                                         AS reqFstStrTime
+        , TSE.FST_SCH_END_TIME                                         AS reqFstEndTime
+        , TSE.SEC_SCH_STR_TIME                                         AS reqSecStrTime
+        , TSE.SEC_SCH_END_TIME                                         AS reqSecEndTime
+        , TSE.PRE_FIXED_OT_STR_TIME                                    AS reqPreFixedOtStrTime
+        , TSE.PRE_FIXED_OT_END_TIME                                    AS reqPreFixedOtEndTime
+        , TSE.FIXED_OT_STR_TIME                                        AS reqFixedOtStrTime
+        , TSE.FIXED_OT_END_TIME                                        AS reqFixedOtEndTime
+        , CS.SCH_CD                                                    AS curSchCd
+        , CS.SCH_NO                                                    AS curSchNo
+        , CSE.FST_SCH_STR_TIME                                         AS curFstStrTime
+        , CSE.FST_SCH_END_TIME                                         AS curFstEndTime
+        , CSE.SEC_SCH_STR_TIME                                         AS curSecStrTime
+        , CSE.SEC_SCH_END_TIME                                         AS curSecEndTime
+        , CSE.PRE_FIXED_OT_STR_TIME                                    AS curPreFixedOtStrTime
+        , CSE.PRE_FIXED_OT_END_TIME                                    AS curPreFixedOtEndTime
+        , CSE.FIXED_OT_STR_TIME                                        AS curFixedOtStrTime
+        , CSE.FIXED_OT_END_TIME                                        AS curFixedOtEndTime
+      FROM TB_USER_ATTD_REQ R
+      <!-- 요청 스케줄: SCH_NO 는 이력본에 없는 비-versioned 컬럼이라 현재본(TS)에서, 시각은 유효버전(TSE)에서. -->
+      LEFT JOIN TB_SCH_MGMT TS
+        ON TS.CMPNY_CD = R.CMPNY_CD
+       AND TS.SITE_CD  = R.SITE_CD
+       AND TS.SCH_CD   = R.SCH_CD
+      LEFT JOIN ( <include refid="com.prafta.common.cmm.sch.mapper.SchEffectiveMapper.effectiveSchVersion"/> ) TSE
+        ON TSE.CMPNY_CD = R.CMPNY_CD
+       AND TSE.SITE_CD  = R.SITE_CD
+       AND TSE.SCH_CD   = R.SCH_CD
+       AND TSE.APPLY_DATE = (
+                SELECT COALESCE(
+                         MAX(CASE WHEN SE.APPLY_DATE <![CDATA[ <= ]]> R.WORK_YMD THEN SE.APPLY_DATE END)
+                       , MIN(SE.APPLY_DATE)
+                       )
+                FROM ( <include refid="com.prafta.common.cmm.sch.mapper.SchEffectiveMapper.effectiveSchApplyKeys"/> ) SE
+                WHERE SE.CMPNY_CD    = R.CMPNY_CD
+                  AND SE.SITE_CD     = R.SITE_CD
+                  AND SE.SCH_CD      = R.SCH_CD
+           )
+      <!-- 현재 스케줄: 해당 사용자-일자 근무계획의 WORK_PLAN_CD. 연차코드면 TB_SCH_MGMT 미매치로 cur* 전부 NULL. -->
+      LEFT JOIN TB_USER_WORK_PLAN WP
+        ON WP.CMPNY_CD = R.CMPNY_CD
+       AND WP.SITE_CD  = R.SITE_CD
+       AND WP.USER_CD  = R.USER_CD
+       AND WP.WORK_YMD = R.WORK_YMD
+      LEFT JOIN TB_SCH_MGMT CS
+        ON CS.CMPNY_CD = WP.CMPNY_CD
+       AND CS.SITE_CD  = WP.SITE_CD
+       AND CS.SCH_CD   = WP.WORK_PLAN_CD
+      LEFT JOIN ( <include refid="com.prafta.common.cmm.sch.mapper.SchEffectiveMapper.effectiveSchVersion"/> ) CSE
+        ON CSE.CMPNY_CD = WP.CMPNY_CD
+       AND CSE.SITE_CD  = WP.SITE_CD
+       AND CSE.SCH_CD   = WP.WORK_PLAN_CD
+       AND CSE.APPLY_DATE = (
+                SELECT COALESCE(
+                         MAX(CASE WHEN SE.APPLY_DATE <![CDATA[ <= ]]> WP.WORK_YMD THEN SE.APPLY_DATE END)
+                       , MIN(SE.APPLY_DATE)
+                       )
+                FROM ( <include refid="com.prafta.common.cmm.sch.mapper.SchEffectiveMapper.effectiveSchApplyKeys"/> ) SE
+                WHERE SE.CMPNY_CD    = WP.CMPNY_CD
+                  AND SE.SITE_CD     = WP.SITE_CD
+                  AND SE.SCH_CD      = WP.WORK_PLAN_CD
+           )
+     WHERE R.CMPNY_CD   = #{cmpnyCd}
+       AND R.SITE_CD    = #{siteCd}
+       AND R.REQ_STATUS = '01'
+       AND R.DEL_YN     = 'N'
+       AND R.REQ_TYPE   = #{reqType}
+     ORDER BY R.INSERT_DATE DESC
+    </select>
+
 </mapper>

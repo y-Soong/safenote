@@ -1,0 +1,66 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+
+<mapper namespace="com.prafta.common.cmm.sch.mapper.SchEffectiveMapper">
+
+    <!--
+      스케줄 유효버전(effective-dating) 판정 SQL fragment 단일 출처.
+      원 위치 = AppAdminApprovalMapper.xml (2026-08-14 이관, 본문 무변경).
+      앱(관리자 승인)·웹(요청 승인 관리 스케줄 탭)이 완전수식 refid 로 공유한다
+      — 판정 규칙이 두 벌로 갈라지면 같은 요청이 앱/웹에서 다른 시각으로 보인다.
+      USE_YN 필터 없음(사용중지 근무타입도 이미 배정된 근무일에는 그 시각 그대로 표시).
+      참조 예: refid="com.prafta.common.cmm.sch.mapper.SchEffectiveMapper.effectiveSchVersion"
+    -->
+
+    <!-- 근무일 기준 유효 스케줄(effective-dating) 버전 1건(현재본+이력본 UNION, APPLY_DATE 동일 시 MAX(HIST_IDX)).
+         시각 컬럼만 반환. 외부에서 APPLY_DATE <![CDATA[ <= ]]> 근무일 MAX 로 상관(effectiveSchApplyKeys 사용).
+         결재 본문의 스케줄 시각 표시용이므로 USE_YN 필터를 두지 않는다 — 사용중지된 근무타입도 이미 배정된
+         근무일에는 그 시각 그대로 보여야 하며, USE_YN 은 신규 배정 가능 여부일 뿐이다. -->
+    <sql id="effectiveSchVersion">
+        SELECT
+              E.CMPNY_CD, E.SITE_CD, E.SCH_CD, E.APPLY_DATE
+            , E.FST_SCH_STR_TIME, E.FST_SCH_END_TIME
+            , E.SEC_SCH_STR_TIME, E.SEC_SCH_END_TIME
+            <!-- PRAFTA-FIXEDOT-2: 고정연장(전방·후방) — 승인 카드/상세 표기용 -->
+            , E.PRE_FIXED_OT_STR_TIME, E.PRE_FIXED_OT_END_TIME
+            , E.FIXED_OT_STR_TIME, E.FIXED_OT_END_TIME
+        FROM (
+            SELECT M.CMPNY_CD, M.SITE_CD, M.SCH_CD, M.APPLY_DATE
+                 , M.FST_SCH_STR_TIME, M.FST_SCH_END_TIME, M.SEC_SCH_STR_TIME, M.SEC_SCH_END_TIME
+                 , M.PRE_FIXED_OT_STR_TIME, M.PRE_FIXED_OT_END_TIME, M.FIXED_OT_STR_TIME, M.FIXED_OT_END_TIME
+                 , 2147483647 AS HIST_IDX
+            FROM TB_SCH_MGMT M
+            UNION ALL
+            SELECT H.CMPNY_CD, H.SITE_CD, H.SCH_CD, H.APPLY_DATE
+                 , H.FST_SCH_STR_TIME, H.FST_SCH_END_TIME, H.SEC_SCH_STR_TIME, H.SEC_SCH_END_TIME
+                 , H.PRE_FIXED_OT_STR_TIME, H.PRE_FIXED_OT_END_TIME, H.FIXED_OT_STR_TIME, H.FIXED_OT_END_TIME
+                 , H.HIST_IDX
+            FROM TB_SCH_MGMT_HIST H
+        ) E
+        WHERE E.HIST_IDX = (
+            SELECT MAX(E2.HIST_IDX)
+            FROM (
+                SELECT M2.CMPNY_CD, M2.SITE_CD, M2.SCH_CD, M2.APPLY_DATE, 2147483647 AS HIST_IDX
+                FROM TB_SCH_MGMT M2
+                UNION ALL
+                SELECT H2.CMPNY_CD, H2.SITE_CD, H2.SCH_CD, H2.APPLY_DATE, H2.HIST_IDX
+                FROM TB_SCH_MGMT_HIST H2
+            ) E2
+            WHERE E2.CMPNY_CD   = E.CMPNY_CD
+              AND E2.SITE_CD    = E.SITE_CD
+              AND E2.SCH_CD     = E.SCH_CD
+              AND E2.APPLY_DATE = E.APPLY_DATE
+        )
+    </sql>
+
+    <!-- 유효버전 APPLY_DATE MAX 산출용 키 전용 UNION(현재본+이력본).
+         effectiveSchVersion 과 동일 집합이어야 하므로 여기서도 USE_YN 필터를 두지 않는다(사용중지 근무타입 포함). -->
+    <sql id="effectiveSchApplyKeys">
+        SELECT M3.CMPNY_CD, M3.SITE_CD, M3.SCH_CD, M3.APPLY_DATE
+        FROM TB_SCH_MGMT M3
+        UNION ALL
+        SELECT H3.CMPNY_CD, H3.SITE_CD, H3.SCH_CD, H3.APPLY_DATE
+        FROM TB_SCH_MGMT_HIST H3
+    </sql>
+
+</mapper>
