@@ -339,6 +339,19 @@
         , DATE_FORMAT(d.dt, '%Y%m%d')        AS workYmd
         , L.LEAVE_CD                         AS leaveCd
         , L.LEAVE_ID                         AS leaveId
+        <!-- 2026-08-14: 결재 대기 여부. 연차 신청 시점에 사용실적이 CONFIRMED 로 선차감 생성되므로
+             승인 전/후가 화면에서 구분되지 않았다. 관리자가 "승인된 연차"로 오인하지 않도록 구분 표시용
+             플래그를 동반한다(잠금 판정은 서버가 별도로 하며 본 값과 무관 — 표시 전용).
+             결재 미경유(REQ_ID IS NULL) 직접 차감 건은 'N'(확정 취급).
+             ★record(LeaveOverlayResult) 위치 기반 매핑이므로 반드시 SELECT 마지막에 둔다. -->
+        , CASE WHEN EXISTS (
+                    SELECT 1
+                      FROM TB_USER_ATTD_REQ PR
+                     WHERE PR.CMPNY_CD   = L.CMPNY_CD
+                       AND PR.REQ_ID     = L.REQ_ID
+                       AND PR.REQ_STATUS = '01'
+                       AND PR.DEL_YN     = 'N'
+               ) THEN 'Y' ELSE 'N' END       AS pendingYn
     FROM date_range d
     INNER JOIN TB_USER_LEAVE_USE L
         ON L.CMPNY_CD      = #{gvCmpnyCd}
@@ -414,6 +427,16 @@
         , L.START_TIME                       AS startTime
         , L.END_TIME                         AS endTime
         , L.LEAVE_MINUTES                    AS leaveMinutes
+        <!-- 2026-08-14: 결재 대기 여부(종일 오버레이와 동일 술어·동일 목적 — 승인 전/후 구분 표시).
+             ★record(PartialLeaveOverlayResult) 위치 기반 매핑이므로 반드시 SELECT 마지막에 둔다. -->
+        , CASE WHEN EXISTS (
+                    SELECT 1
+                      FROM TB_USER_ATTD_REQ PR
+                     WHERE PR.CMPNY_CD   = L.CMPNY_CD
+                       AND PR.REQ_ID     = L.REQ_ID
+                       AND PR.REQ_STATUS = '01'
+                       AND PR.DEL_YN     = 'N'
+               ) THEN 'Y' ELSE 'N' END       AS pendingYn
     FROM date_range d
     INNER JOIN TB_USER_LEAVE_USE L
         ON L.CMPNY_CD      = #{gvCmpnyCd}

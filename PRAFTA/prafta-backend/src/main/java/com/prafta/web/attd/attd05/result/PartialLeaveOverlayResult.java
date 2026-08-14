@@ -11,6 +11,9 @@ package com.prafta.web.attd.attd05.result;
  * <p>useUnitNm 은 SYS025(사용 단위) 코드명을 DB 에서 직접 도출한다(코드→라벨 단일 출처).
  * startTime/endTime 은 HHMM(시간단위 휴가 시. 반차 등 시각 미보유면 null), leaveMinutes 는 사용 분.
  *
+ * <p>2026-08-14: {@code pendingYn}('Y'/'N') 동반 — 연결된 연차사용 요청이 결재 대기('01')인지.
+ * 종일 오버레이({@code LeaveOverlayResult})와 동일 술어·동일 목적(승인 전/후 구분 표시).
+ *
  * <p>⚠️ MyBatis 위치매핑 — record 필드 순서 = SELECT 컬럼 순서.
  */
 public record PartialLeaveOverlayResult(
@@ -22,5 +25,6 @@ public record PartialLeaveOverlayResult(
         , String startTime
         , String endTime
         , Integer leaveMinutes
+        , String pendingYn
 ) {
 }

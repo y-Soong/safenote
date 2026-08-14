@@ -159,6 +159,13 @@
       <!-- 적용 버튼과 동일 — 마감 사유는 fnClearCells 선두 가드가 안내한다. -->
       <button class="btn-toolbar-clear" @click="fnClearCells">지우기</button>
 
+      <!-- 범례 — 연차는 신청 시점에 선차감되어 승인 전/후가 셀 값으로는 구분되지 않는다.
+           대기 셀의 시각 표시가 무엇을 뜻하는지 알려준다(구분 표시 도입, 2026-08-14). -->
+      <span class="toolbar-legend">
+        <span class="legend-swatch legend-swatch-pending"></span>
+        연차 결재 대기(승인 전)
+      </span>
+
       <div class="toolbar-spacer"></div>
       <button class="btn-toolbar-upload" @click="fnUploadExcel">
         엑셀 업로드
@@ -244,6 +251,9 @@
                     : '',
                   isCellSelected(rowIdx, d.workYmd) ? 'td-selected' : '',
                   isLeaveCell(user.userCd, d.workYmd) ? 'td-leave' : '',
+                  isPendingLeaveCell(user.userCd, d.workYmd)
+                    ? 'is-leave-pending'
+                    : '',
                   isShiftLockedCell(user.userCd, d.workYmd)
                     ? 'is-shift-locked'
                     : '',
@@ -255,11 +265,13 @@
                 :title="
                   isShiftLockedCell(user.userCd, d.workYmd)
                     ? '교대근무팀 소속 기간입니다. 교대패턴 자동 생성으로만 설정되며, 연차는 사용할 수 있습니다.'
-                    : isLeaveCell(user.userCd, d.workYmd)
-                      ? '연차 등록일입니다. 더블클릭하면 연차 변경/삭제 요청을 할 수 있습니다.'
-                      : isShiftTeamCell(user.userCd, d.workYmd)
-                        ? '교대근무팀 소속 기간입니다.'
-                        : null
+                    : isPendingLeaveCell(user.userCd, d.workYmd)
+                      ? '결재가 진행 중인 연차입니다. 승인 전이라 변경/삭제 요청은 할 수 없으며, 신청 취소 또는 결재 반려로 처리합니다.'
+                      : isLeaveCell(user.userCd, d.workYmd)
+                        ? '연차 등록일입니다. 더블클릭하면 연차 변경/삭제 요청을 할 수 있습니다.'
+                        : isShiftTeamCell(user.userCd, d.workYmd)
+                          ? '교대근무팀 소속 기간입니다.'
+                          : null
                 "
                 @mousedown.prevent="onCellDown(rowIdx, d.workYmd, $event)"
                 @mousemove="onCellMove(rowIdx, d.workYmd)"
@@ -285,7 +297,19 @@
                   v-if="getPartialLeaves(user.userCd, d.workYmd).length"
                   type="button"
                   class="td-partial-leave"
-                  title="클릭하면 등록된 시간차/반차 정보를 볼 수 있습니다."
+                  :class="{
+                    'is-pending': getPartialLeaves(
+                      user.userCd,
+                      d.workYmd
+                    ).some((p) => p.pending),
+                  }"
+                  :title="
+                    getPartialLeaves(user.userCd, d.workYmd).some(
+                      (p) => p.pending
+                    )
+                      ? '결재가 진행 중인 시간차/반차가 포함되어 있습니다. 클릭하면 등록된 정보를 볼 수 있습니다.'
+                      : '클릭하면 등록된 시간차/반차 정보를 볼 수 있습니다.'
+                  "
                   @mousedown.stop.prevent
                   @mouseup.stop
                   @dblclick.stop.prevent
@@ -564,6 +588,16 @@ const getUserNm = (userCd) => {
 const isLeaveCell = (userCd, workYmd) =>
   !!leaveOverlay.value[`${userCd}_${workYmd}`]?.leaveId;
 
+// ── 결재 대기 연차 셀 여부 ─────────────────────────────────
+//   연차는 신청 시점에 선차감(leave_use CONFIRMED)되므로 승인 전/후가 값으로는 구분되지 않는다.
+//   대기 건도 그날 스케줄 변경을 막으므로 숨기지 않고 "표시하되 구분"한다(잠금 판정은 서버가 별도 수행).
+//   종일 오버레이 또는 부분 휴가 칩 중 하나라도 대기면 셀을 대기로 본다.
+const isPendingLeaveCell = (userCd, workYmd) => {
+  const key = `${userCd}_${workYmd}`;
+  if (leaveOverlay.value[key]?.pending) return true;
+  return (partialLeaveOverlay.value[key] || []).some((p) => p.pending);
+};
+
 // ── 부분 휴가(반차/시간차) 셀 정보 조회 ───────────────────────
 //   해당 셀에 종일이 아닌 확정 휴가 목록(배열)을 반환한다. 없으면 빈 배열.
 const getPartialLeaves = (userCd, workYmd) =>
@@ -632,6 +666,14 @@ const fnOpenLeaveChangeRequest = (rowIdx, workYmd) => {
   const overlay = leaveOverlay.value[`${user.userCd}_${workYmd}`];
   // 연차 오버레이(leaveId) 없는 셀은 동의요청 대상이 아님(일반 스케줄 셀).
   if (!overlay?.leaveId) return;
+  // 결재 진행 중인 연차는 변경/삭제 대상이 아니다(서버도 ATTD_400_135 로 차단).
+  //   팝업을 띄웠다가 제출 시점에 실패하면 사유가 늦게 보이므로 진입 단계에서 안내한다.
+  if (overlay.pending) {
+    proxy.$alert(
+      "결재가 진행 중인 연차입니다.\n승인 전에는 변경·삭제할 수 없으며, 신청 취소 또는 결재 반려로 처리해 주세요."
+    );
+    return;
+  }
 
   const leave = leaveTypeList.value.find((l) => l.leaveCd === overlay.leaveCd);
   // YYYYMMDD → "YYYY.MM.DD" (팝업 표시용). dateFormat 단일 출처에 위임.
@@ -1328,6 +1370,9 @@ const fnSearch = async () => {
         leaveOverlay.value[`${item.userCd}_${item.workYmd}`] = {
           leaveCd: item.leaveCd,
           leaveId: item.leaveId,
+          // 결재 대기 여부 — 연차는 신청 시점에 선차감(CONFIRMED)되므로 승인 전/후가 값으로는
+          //   구분되지 않는다. 셀을 시각적으로 구분하기 위한 표시 전용 플래그.
+          pending: item.pendingYn === "Y",
         };
       });
       // 부분 휴가(반차/시간차) 오버레이 적재 — 근무 스케줄 위 칩 표시용(셀 값 미변경).
@@ -1343,6 +1388,8 @@ const fnSearch = async () => {
           endTime: item.endTime,
           leaveMinutes: item.leaveMinutes,
           leaveCd: item.leaveCd,
+          // 종일 오버레이와 동일 — 결재 대기 건은 칩을 시각적으로 구분한다.
+          pending: item.pendingYn === "Y",
         });
       });
       // prafta-com-008-D-5: 교대 잠금 오버레이 적재(교대팀 소속 구간 SCH 셀 비활성/자물쇠 표시 단일출처).
@@ -1763,6 +1810,26 @@ onUnmounted(() => {
   font-weight: 600;
   color: var(--color-text-strong, #111827);
   padding-right: 0.2rem;
+}
+
+/* 연차 결재 대기 셀 범례 — 그리드의 대기 표시가 무엇인지 알려준다. */
+.toolbar-legend {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  font-size: 0.75rem;
+  color: var(--color-text-muted, #6b7280);
+  white-space: nowrap;
+}
+.legend-swatch {
+  display: inline-block;
+  width: 0.85rem;
+  height: 0.85rem;
+  border-radius: 3px;
+}
+.legend-swatch-pending {
+  background: var(--color-warning-bg, #fef3c7);
+  border: 1px dashed var(--color-warning-text, #b45309);
 }
 
 /* 마감월 안내 배지 — 툴바 선두에서 변경 불가 사유를 알린다. */
@@ -2240,6 +2307,37 @@ onUnmounted(() => {
 }
 .td-partial-leave:hover {
   background: var(--color-warning-bg-strong, rgba(245, 158, 11, 0.24));
+}
+
+/* 2026-08-14: 결재 대기 연차 구분 표시.
+   연차는 신청 시점에 선차감(leave_use CONFIRMED)되어 승인 전/후가 값으로 구분되지 않았다.
+   대기 건도 그날 스케줄 변경을 막으므로 숨기지 않고 "표시하되 구분"한다
+   (숨기면 변경이 막히는 이유가 화면에서 사라진다). 확정 연차는 실선 톤, 대기는 점선 + 낮은 채도.
+   셀 좌상단의 작은 삼각 마커로 그리드에서도 한눈에 구분된다. */
+.td-day.is-leave-pending {
+  position: relative;
+  background: var(--color-warning-bg, #fef3c7);
+}
+.td-day.is-leave-pending .td-val {
+  text-decoration: underline dashed;
+  text-underline-offset: 2px;
+  color: var(--color-warning-text, #b45309);
+  font-weight: 600;
+}
+.td-day.is-leave-pending::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 0;
+  border-width: 0.32rem;
+  border-style: solid;
+  border-color: var(--color-warning-text, #b45309) transparent transparent
+    var(--color-warning-text, #b45309);
+}
+/* 대기 시간차/반차 칩 — 점선 테두리로 확정 칩과 구분(색상 계열은 동일 유지). */
+.td-partial-leave.is-pending {
+  border-style: dashed;
+  opacity: 0.85;
 }
 
 /* prafta-com-008-D-5: 교대팀 소속 구간 SCH 셀 — 비활성(자물쇠) 표시.
