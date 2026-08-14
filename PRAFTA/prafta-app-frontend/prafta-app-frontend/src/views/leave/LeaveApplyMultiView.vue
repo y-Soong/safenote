@@ -252,8 +252,19 @@ const onSubmit = async () => {
     await showAlert(`${dates.length}일 신청되었어요`)
     router.back()
   } catch (err) {
-    // 서버는 신청 불가일이 있으면 전체 거부하고 blockedDates 로 전부 내려준다(첫 건만 알려주지 않는다).
-    const blocked = err?.response?.data?.blockedDates
+    const body = err?.response?.data
+    // 잔여 부족(전체 거부) — 서버가 필요/배정/부족 일수를 함께 내려준다.
+    //   잔여는 부여 유효기간 때문에 날짜마다 달라, 단순 합계로는 알 수 없는 값이다.
+    if (body?.shortageDays !== undefined && Number(body.shortageDays) > 0) {
+      await showAlert(
+        `잔여 연차가 부족해 신청되지 않았어요.\n` +
+          `필요 ${body.neededDays}일 · 사용 가능 ${body.assignedDays}일 · 부족 ${body.shortageDays}일\n` +
+          `기간을 줄이거나 잔여를 확인해 주세요.`,
+      )
+      return
+    }
+    // 신청 불가일이 있으면 전체 거부하고 blockedDates 로 전부 내려준다(첫 건만 알려주지 않는다).
+    const blocked = body?.blockedDates
     if (Array.isArray(blocked) && blocked.length) {
       const lines = blocked
         .slice(0, 8)
