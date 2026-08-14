@@ -74,6 +74,8 @@ public class Attd13ServiceImpl implements Attd13Service {
     private static final String RESPONSE_REJECT = "REJECT";
 
     private static final String LEAVE_STATUS_CONFIRMED = "CONFIRMED";
+    /** 연차사용 요청(TB_USER_ATTD_REQ REQ_TYPE='05'/'06')이 결재 대기 중인 상태[SYS033 01:신청]. */
+    private static final String ATTD_REQ_STATUS_REQUESTED = "01";
     private static final String UNIT_FULL = "00"; // 일 단위(출근 차단 블록 대상)
     private static final String UNIT_HALF = "01"; // 반차(T1 재차감 고정 요금 0.5)
     private static final String UNIT_QUARTER = "05"; // 반반차(T1 재차감 고정 요금 0.25)
@@ -373,6 +375,19 @@ public class Attd13ServiceImpl implements Attd13Service {
                     throw new ApiException(AttdErrorCode.ATTD_404_120);
                 }
             }
+        }
+        // 2026-08-14: 결재 진행 중('01')인 연차사용 요청에 연결된 건은 변경/삭제 대상이 아니다(fail-closed).
+        //   연차 신청 시점에 TB_USER_LEAVE_USE 가 CONFIRMED 로 선차감 생성되므로, 종전에는 결재가
+        //   끝나지 않은 연차도 leaveStatus 만 보고 대상이 되었다. 그 결과 삭제 확정 → 이후 결재 승인
+        //   순서로 진행되면 "요청은 승인(02)인데 사용실적은 CANCELLED" 인 모순 상태가 남았다(운영 확인:
+        //   REQ 2026081400214 / LV2026081400130). 결재 중인 건의 정상 경로는 신청 취소 또는 결재 반려다.
+        //   ★본 헬퍼는 관리자 발의(createChangeRequest)·관리자 확인(confirmChangeRequest)·
+        //     근로자 이동 발의(createWorkerMoveRequest) 세 진입점이 모두 거치므로 여기 한 곳으로 전부 막힌다.
+        //   결재 미경유(직접 차감) 건은 reqStatus 가 null 이라 통과한다(동작 불변).
+        if (ATTD_REQ_STATUS_REQUESTED.equals(target.reqStatus())) {
+            log.info("연차 변경/삭제 거부: 결재 진행 중인 연차. cmpnyCd={}, leaveId={}, reqId={}",
+                    cmpnyCd, target.leaveId(), target.reqId());
+            throw new ApiException(AttdErrorCode.ATTD_400_135);
         }
         return target;
     }

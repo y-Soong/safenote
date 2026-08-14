@@ -42,6 +42,11 @@
         , U.ORIG_DESIGNATED_DATE AS origDesignatedDate
         , U.LEAVE_REASON         AS leaveReason
         , U.EVIDENCE_FILE_ID     AS evidenceFileId
+        <!-- 2026-08-14: 연결된 연차사용 요청의 결재 상태. 결재 진행 중('01')인 연차를 변경/삭제
+             대상으로 삼는 것을 차단하는 데 쓴다(loadConfirmedTarget). 이미 있는 LEFT JOIN 재사용 —
+             결재 미경유(직접 차감) 건은 REQ_ID 가 없어 null 이 되고, 확정 취급된다.
+             ★record(LeaveUseTargetResult) 위치 기반 매핑이므로 반드시 SELECT 마지막에 둔다. -->
+        , R.REQ_STATUS           AS reqStatus
       FROM TB_USER_LEAVE_USE U
       LEFT JOIN TB_USER_ATTD_REQ R
         ON R.CMPNY_CD = U.CMPNY_CD
@@ -193,6 +198,17 @@
        AND U.LEAVE_STATUS = 'CONFIRMED'
        AND U.DEL_YN       = 'N'
        AND U.START_DATE  >= #{todayYmd}
+       <!-- 2026-08-14: 결재 진행 중('01')인 연차사용 요청 연결 건은 picker 에서 제외한다.
+            발의 측(loadConfirmedTarget)이 ATTD_400_130 으로 차단하므로, 목록에 남겨두면
+            "선택했더니 에러" 가 된다. 결재 미경유(REQ_ID IS NULL) 직접 차감 건은 그대로 포함. -->
+       AND NOT EXISTS (
+            SELECT 1
+              FROM TB_USER_ATTD_REQ PR
+             WHERE PR.CMPNY_CD   = U.CMPNY_CD
+               AND PR.REQ_ID     = U.REQ_ID
+               AND PR.REQ_STATUS = '01'
+               AND PR.DEL_YN     = 'N'
+       )
        AND ( U.REQ_ID IS NULL
           OR U.LEAVE_ID = (
                 SELECT MIN(X.LEAVE_ID)

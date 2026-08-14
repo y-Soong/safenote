@@ -11,6 +11,10 @@ package com.prafta.web.attd.attd13.result;
  * (TB_USER_ATTD_REQ.LEAVE_TYPE — PC-05 발동 건은 행 LEAVE_CD 가 부여 귀속이라 다를 수 있음).
  *
  * <p>F6(qa D-8): {@code evidenceFileId} 를 마지막에 추가(증빙 링크 승계 — SELECT 마지막 컬럼과 동시).
+ *
+ * <p>2026-08-14: {@code reqStatus}(연결된 연차사용 요청 TB_USER_ATTD_REQ.REQ_STATUS)를 <b>마지막에</b> 추가.
+ * 결재 진행 중('01')인 연차를 변경/삭제 대상으로 삼는 것을 차단하는 데 쓴다. 결재를 거치지 않은
+ * 직접 차감 건은 {@code reqId}·{@code reqStatus} 가 모두 null 이다.
  */
 public record LeaveUseTargetResult(
       String leaveId
@@ -32,5 +36,6 @@ public record LeaveUseTargetResult(
     , String origDesignatedDate
     , String leaveReason
     , String evidenceFileId
+    , String reqStatus
 ) {
 }
