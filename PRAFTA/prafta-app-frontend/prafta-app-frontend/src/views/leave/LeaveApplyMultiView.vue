@@ -21,9 +21,21 @@
 <template>
   <div class="lam-view">
     <header class="lam-hd">
+      <!-- ★아이콘은 인라인 SVG 로 직접 그린다. <use href="#..."> 스프라이트 참조는 그 <symbol> 을
+           정의한 화면(LeaveMoveRequestView)에서만 유효해 여기서는 빈 버튼으로 렌더됐다. -->
       <button type="button" class="lam-hd__back" aria-label="뒤로" @click="onBack">
-        <svg class="icon" width="22" height="22" aria-hidden="true">
-          <use href="#i-lmv-chev-left" />
+        <svg
+          width="22"
+          height="22"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="2"
+          stroke-linecap="round"
+          stroke-linejoin="round"
+          aria-hidden="true"
+        >
+          <polyline points="15 18 9 12 15 6" />
         </svg>
       </button>
       <h1 class="lam-hd__title">기간 연차 신청</h1>
@@ -39,8 +51,10 @@
           <h2 class="lam-section__title">연차 종류</h2>
           <select v-model="leaveCd" class="lam-select" @change="resetPreview">
             <option value="" disabled>연차 종류를 선택하세요</option>
+            <!-- 잔여를 함께 보여준다 — 종류마다 잔여가 달라 선택 판단에 필요하다
+                 (앱 홈의 '잔여 6.3일'은 전 종류 합계라 종류별 가용량과 다르다). -->
             <option v-for="t in fullDayLeaveTypes" :key="t.leaveCd" :value="t.leaveCd">
-              {{ t.leaveNm }}
+              {{ t.leaveNm }} (잔여 {{ Number(t.balanceDays ?? 0) }}일)
             </option>
           </select>
           <p class="lam-hint">기간 신청은 종일 연차만 가능합니다. 반차·시간차는 단건 신청을 이용해 주세요.</p>
@@ -54,6 +68,10 @@
             <span class="lam-range__tilde">~</span>
             <DateStepperField v-model="toDate" placeholder="종료일" @update:modelValue="resetPreview" />
           </div>
+          <!-- From > To 역전 안내 — 서버도 거부하지만(COMMON_400_001) 조회 버튼을 누르기 전에 알린다. -->
+          <p v-if="rangeReversed" class="lam-warn">
+            종료일이 시작일보다 빠릅니다. 기간을 다시 선택해 주세요.
+          </p>
           <button
             type="button"
             class="lam-btn lam-btn--sub"
@@ -162,13 +180,27 @@ const shortageDays = ref(0)
 const submitting = ref(false)
 
 // 종일 사용이 가능한 종류만 — 기간 신청은 종일 전용이다.
-//   메타의 useUnitType 표기가 종류마다 다를 수 있어(단일코드/복수) 문자열 포함으로 관대하게 본다.
-//   최종 판정은 서버가 한다(ATTD_400_102).
+//   ★응답 필드는 allowedUnits(List<String>) 다. 종전에 useUnitType 을 보다가 전 종류가 걸러져
+//     select 가 비어 있었다(apply-meta 의 LeaveTypeItem 에 useUnitType 필드 자체가 없다).
+//   applicable=false(신청 불가 종류)도 제외한다. 최종 판정은 서버(ATTD_400_102).
 const fullDayLeaveTypes = computed(() =>
-  (leaveTypes.value || []).filter((t) => String(t.useUnitType ?? '').includes('00')),
+  (leaveTypes.value || []).filter((t) => {
+    if (t.applicable === false) return false
+    const units = Array.isArray(t.allowedUnits) ? t.allowedUnits : []
+    // allowedUnits 가 비어 오면(구버전 응답 등) 막지 않는다 — 서버가 최종 판정한다.
+    return units.length === 0 || units.includes('00')
+  }),
 )
 
-const canPreview = computed(() => !!leaveCd.value && !!fromDate.value && !!toDate.value)
+// From > To 역전 여부. DateStepperField 가 상호 제약을 걸지 않으므로 화면에서 판정한다.
+const rangeReversed = computed(
+  () => !!fromDate.value && !!toDate.value && toYmd(fromDate.value) > toYmd(toDate.value),
+)
+
+// 역전 상태면 조회 자체를 막는다(서버 왕복 없이 즉시 안내).
+const canPreview = computed(
+  () => !!leaveCd.value && !!fromDate.value && !!toDate.value && !rangeReversed.value,
+)
 
 const checkedDates = computed(() =>
   days.value.filter((d) => d.selectable && checked[d.ymd]).map((d) => d.ymd),
