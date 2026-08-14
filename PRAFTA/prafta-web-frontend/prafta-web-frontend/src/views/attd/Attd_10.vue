@@ -37,29 +37,92 @@
               <div v-if="approvalList.length === 0" class="ra-empty">
                 대기 중인 연차 결재가 없습니다.
               </div>
-              <div
-                v-for="row in approvalList"
-                :key="row.reqId + '-' + row.approvalStep"
-                class="ra-row"
-                :class="{ selected: selected && selected.reqId === row.reqId }"
-                @click="fnSelect(row)"
-              >
-                <div class="ra-row__main">
-                  <span class="ra-row__name">{{ row.requesterUserNm }}</span>
-                  <span class="ra-row__dept">{{ row.nodeNm || "-" }}</span>
-                  <span v-if="row.selfYn === 'Y'" class="ra-chip self">본인</span>
-                  <!-- 가불표시-03: 가불(미래 연차 당겨쓰기) 포함 요청 배지 — borrowDays > 0 일 때만 -->
-                  <span
-                    v-if="Number(row.borrowDays) > 0"
-                    class="ra-chip borrow"
-                    >가불</span
+              <!-- prafta-leavemulti: 단건은 종전 그대로, 기간신청 묶음은 1행으로 접어 표시한다. -->
+              <template v-for="entry in approvalEntries" :key="entry.key">
+                <!-- 단건 (leaveGroupId 없음) — 마크업/동작 종전과 동일 -->
+                <div
+                  v-if="entry.kind === 'single'"
+                  class="ra-row"
+                  :class="{
+                    selected: selected && selected.reqId === entry.row.reqId,
+                  }"
+                  @click="fnSelect(entry.row)"
+                >
+                  <div class="ra-row__main">
+                    <span class="ra-row__name">{{
+                      entry.row.requesterUserNm
+                    }}</span>
+                    <span class="ra-row__dept">{{ entry.row.nodeNm || "-" }}</span>
+                    <span v-if="entry.row.selfYn === 'Y'" class="ra-chip self"
+                      >본인</span
+                    >
+                    <!-- 가불표시-03: 가불(미래 연차 당겨쓰기) 포함 요청 배지 — borrowDays > 0 일 때만 -->
+                    <span
+                      v-if="Number(entry.row.borrowDays) > 0"
+                      class="ra-chip borrow"
+                      >가불</span
+                    >
+                  </div>
+                  <div class="ra-row__sub">
+                    {{ fmtDate(entry.row.workYmd) }} ·
+                    {{ entry.row.unitNm || entry.row.leaveType }} ·
+                    {{ Number(entry.row.leaveDays) }}일
+                  </div>
+                </div>
+
+                <!-- 묶음 1행 — 클릭하면 일괄 처리, ▸ 로 펼치면 개별 처리 -->
+                <div v-else class="ra-group">
+                  <div
+                    class="ra-row ra-row--group"
+                    :class="{
+                      selected:
+                        selectedGroup && selectedGroup.groupId === entry.groupId,
+                    }"
+                    @click="fnSelectGroup(entry)"
                   >
+                    <div class="ra-row__main">
+                      <button
+                        type="button"
+                        class="ra-group__toggle"
+                        :title="
+                          isGroupExpanded(entry.groupId)
+                            ? '접기'
+                            : '펼쳐서 개별 처리'
+                        "
+                        @click.stop="fnToggleGroup(entry.groupId)"
+                      >
+                        {{ isGroupExpanded(entry.groupId) ? "▾" : "▸" }}
+                      </button>
+                      <span class="ra-row__name">{{ entry.requesterUserNm }}</span>
+                      <span class="ra-row__dept">{{ entry.nodeNm || "-" }}</span>
+                      <span class="ra-chip group">기간 {{ entry.rows.length }}건</span>
+                      <span v-if="entry.anySelf" class="ra-chip self">본인</span>
+                      <span v-if="entry.anyBorrow" class="ra-chip borrow">가불</span>
+                    </div>
+                    <div class="ra-row__sub">
+                      {{ fmtDate(entry.fromYmd) }} ~ {{ fmtDate(entry.toYmd) }} ·
+                      총 {{ entry.days }}일
+                    </div>
+                  </div>
+
+                  <!-- 펼침: 개별 건은 단건과 동일하게 선택·처리된다(정책 ④ 개별 예외) -->
+                  <div v-if="isGroupExpanded(entry.groupId)" class="ra-group__items">
+                    <div
+                      v-for="row in entry.rows"
+                      :key="row.reqId + '-' + row.approvalStep"
+                      class="ra-row ra-row--child"
+                      :class="{ selected: selected && selected.reqId === row.reqId }"
+                      @click="fnSelect(row)"
+                    >
+                      <div class="ra-row__sub">
+                        {{ fmtDate(row.workYmd) }} ·
+                        {{ row.unitNm || row.leaveType }} ·
+                        {{ Number(row.leaveDays) }}일
+                      </div>
+                    </div>
+                  </div>
                 </div>
-                <div class="ra-row__sub">
-                  {{ fmtDate(row.workYmd) }} · {{ row.unitNm || row.leaveType }} ·
-                  {{ Number(row.leaveDays) }}일
-                </div>
-              </div>
+              </template>
             </div>
           </div>
 
@@ -100,7 +163,69 @@
 
         <!-- 상세 패널 (§5.8.4) -->
         <section class="ra-detail">
-          <div v-if="!selected" class="ra-detail__empty">
+          <!-- prafta-leavemulti: 묶음 선택 시 — 기간 요약 + 일괄 승인/반려.
+               개별 처리가 필요하면 좌측에서 묶음을 펼쳐 건별로 선택하면 기존 단건 패널이 뜬다. -->
+          <template v-if="selectedGroup">
+            <div class="ra-sec">
+              <div class="ra-sec__title">기간 연차 신청 (묶음)</div>
+              <dl class="ra-meta">
+                <dt>요청자</dt>
+                <dd>{{ selectedGroup.requesterUserNm }}</dd>
+                <dt>소속</dt>
+                <dd>{{ selectedGroup.nodeNm || "-" }}</dd>
+                <dt>기간</dt>
+                <dd>
+                  {{ fmtDate(selectedGroup.fromYmd) }} ~
+                  {{ fmtDate(selectedGroup.toYmd) }}
+                </dd>
+                <dt>건수 / 일수</dt>
+                <dd>{{ selectedGroup.rows.length }}건 · {{ selectedGroup.days }}일</dd>
+              </dl>
+              <div class="ra-group__datelist">
+                <span
+                  v-for="row in selectedGroup.rows"
+                  :key="row.reqId"
+                  class="ra-group__date"
+                >
+                  {{ fmtDate(row.workYmd) }}
+                </span>
+              </div>
+            </div>
+
+            <div class="ra-sec">
+              <div class="ra-sec__title">처리</div>
+              <div class="ra-decision">
+                <label class="ra-radio">
+                  <input type="radio" value="approve" v-model="decision" />
+                  <span>승인</span>
+                </label>
+                <label class="ra-radio">
+                  <input type="radio" value="reject" v-model="decision" />
+                  <span>반려</span>
+                </label>
+              </div>
+              <textarea
+                v-if="decision === 'reject'"
+                v-model="rejectReason"
+                class="ra-textarea"
+                rows="3"
+                placeholder="반려 사유를 입력하세요."
+              ></textarea>
+              <p class="ra-group__note">
+                묶음 {{ selectedGroup.rows.length }}건을 한 번에 처리합니다. 마감 등으로
+                처리할 수 없는 건이 있으면 그 건만 제외되고 사유가 안내됩니다.
+              </p>
+              <button
+                class="btn-primary"
+                :disabled="groupProcessing"
+                @click="fnProcessGroup"
+              >
+                {{ decision === "approve" ? "일괄 승인" : "일괄 반려" }}
+              </button>
+            </div>
+          </template>
+
+          <div v-else-if="!selected" class="ra-detail__empty">
             좌측에서 결재 건을 선택하세요.
           </div>
           <template v-else>
@@ -388,6 +513,135 @@ const selected = ref(null);
 const decision = ref("approve");
 const rejectReason = ref("");
 const processing = ref(false);
+
+// ── prafta-leavemulti: 연차 기간(From-To) 신청 묶음 ─────────────
+//   기간신청은 날짜별 REQ N건으로 분해되므로 2주 휴가면 결재함에 14행이 뜬다.
+//   같은 leaveGroupId 를 1행으로 접어 일괄 처리한다. 단일일 신청은 leaveGroupId 가 null 이라
+//   기존과 동일하게 개별 행으로 보인다(무회귀).
+/** 펼쳐 놓은 묶음 ID 집합 — 펼치면 개별 건을 그대로 단건 처리할 수 있다(정책 ④ 개별 예외). */
+const expandedGroups = ref([]);
+/** 선택된 묶음(단건 선택 시 null). 단건 선택 경로(selected)는 손대지 않는다. */
+const selectedGroup = ref(null);
+const groupProcessing = ref(false);
+
+/**
+ * 결재함 표시 엔트리 — 단건은 그대로, 묶음은 1행으로 접는다.
+ *   { kind: 'single', row } | { kind: 'group', groupId, rows, requesterUserNm, nodeNm, fromYmd, toYmd, days, anySelf, anyBorrow }
+ * 원본 approvalList 는 건드리지 않는다(다른 로직이 그대로 쓴다).
+ */
+const approvalEntries = computed(() => {
+  const entries = [];
+  const groupIdx = new Map();
+  for (const row of approvalList.value) {
+    const gid = row.leaveGroupId;
+    if (!gid) {
+      // key 는 <template v-for> 에 부여한다(Vue 3 권장) — 엔트리가 스스로 들고 있게 한다.
+      entries.push({
+        kind: "single",
+        key: "s-" + row.reqId + "-" + row.approvalStep,
+        row,
+      });
+      continue;
+    }
+    if (!groupIdx.has(gid)) {
+      const g = {
+        kind: "group",
+        key: "g-" + gid,
+        groupId: gid,
+        rows: [],
+        requesterUserNm: row.requesterUserNm,
+        nodeNm: row.nodeNm,
+      };
+      groupIdx.set(gid, g);
+      entries.push(g);
+    }
+    groupIdx.get(gid).rows.push(row);
+  }
+  // 묶음 요약값 산출(기간·일수·배지)
+  for (const g of entries) {
+    if (g.kind !== "group") continue;
+    const ymds = g.rows.map((r) => r.workYmd).filter(Boolean).sort();
+    g.fromYmd = ymds[0];
+    g.toYmd = ymds[ymds.length - 1];
+    g.days = g.rows.reduce((s, r) => s + Number(r.leaveDays || 0), 0);
+    g.anySelf = g.rows.some((r) => r.selfYn === "Y");
+    g.anyBorrow = g.rows.some((r) => Number(r.borrowDays) > 0);
+  }
+  return entries;
+});
+
+const isGroupExpanded = (gid) => expandedGroups.value.includes(gid);
+
+const fnToggleGroup = (gid) => {
+  const i = expandedGroups.value.indexOf(gid);
+  if (i >= 0) expandedGroups.value.splice(i, 1);
+  else expandedGroups.value.push(gid);
+};
+
+/** 묶음 선택 — 단건 선택(selected)과 상호배타. */
+const fnSelectGroup = (group) => {
+  selectedGroup.value = group;
+  selected.value = null;
+  decision.value = "approve";
+  rejectReason.value = "";
+};
+
+/**
+ * 묶음 일괄 승인/반려.
+ *   서버는 부분 성공을 반환한다(1건이 마감 등으로 막혀도 나머지는 확정) —
+ *   실패 건은 사유와 함께 안내하고 목록을 재조회한다.
+ */
+const fnProcessGroup = async () => {
+  const g = selectedGroup.value;
+  if (!g || !g.rows.length) return;
+
+  if (decision.value === "reject" && !(rejectReason.value || "").trim()) {
+    return proxy.$alert("반려 사유를 입력해주세요.");
+  }
+  const isApprove = decision.value === "approve";
+  const ok = await proxy.$confirm(
+    `${g.rows.length}건을 ${isApprove ? "승인" : "반려"} 처리하시겠습니까?`
+  );
+  if (!ok) return;
+
+  groupProcessing.value = true;
+  try {
+    const url = isApprove
+      ? "/webApi/leaveflow/approve-bulk"
+      : "/webApi/leaveflow/reject-bulk";
+    const { data } = await axios.post(url, {
+      items: g.rows.map((r) => ({
+        reqId: r.reqId,
+        approvalStep: r.approvalStep,
+      })),
+      comment: isApprove ? "" : rejectReason.value,
+    });
+
+    const failed = Array.isArray(data?.failedList) ? data.failedList : [];
+    if (failed.length === 0) {
+      await proxy.$alert(`${data?.successCount ?? g.rows.length}건 처리되었습니다.`);
+    } else {
+      // 부분 성공 — 성공분은 확정됐고 실패분만 사유와 함께 알린다.
+      const lines = failed
+        .slice(0, 10)
+        .map((f) => `· ${f.reqId}: ${f.reason || "처리 실패"}`)
+        .join("\n");
+      const more = failed.length > 10 ? `\n외 ${failed.length - 10}건` : "";
+      await proxy.$alert(
+        `${data?.successCount ?? 0}건 처리 · ${failed.length}건 제외\n${lines}${more}`
+      );
+    }
+    selectedGroup.value = null;
+    await fnLoad();
+    await fnLoadCounts();
+  } catch (e) {
+    await proxy.$alert(
+      resolveApiErrorMessage(e, "일괄 결재 처리 중 오류가 발생했습니다.")
+    );
+  } finally {
+    groupProcessing.value = false;
+  }
+};
 
 // 근태 보정 / 초과근무 통합 대기요청 접수함
 const reqList = ref([]);
@@ -869,6 +1123,7 @@ const fnRejectReq = async () => {
 
 const fnSelect = (row) => {
   selected.value = row;
+  selectedGroup.value = null;   // 단건 선택 시 묶음 선택 해제(상호배타)
   decision.value = "approve";
   rejectReason.value = "";
 };
@@ -1047,6 +1302,58 @@ onMounted(() => {
   color: var(--color-warning-text, #b45309);
   border-radius: 0.3rem;
   padding: 0.05rem 0.3rem;
+}
+/* prafta-leavemulti: 기간(From-To) 신청 묶음 배지 — 종류 배지(type)와 같은 primary 계열.
+   "이 행은 여러 건이 접혀 있다"를 알리는 용도라 개수를 함께 표기한다. */
+.ra-chip.group {
+  font-size: 0.7rem;
+  background: var(--color-primary-tint, #dcfce7);
+  color: var(--color-primary, #30796a);
+  border-radius: 0.3rem;
+  padding: 0.05rem 0.3rem;
+  font-weight: 700;
+}
+/* 묶음 행 — 좌측 강조선으로 단건과 구분한다. */
+.ra-row--group {
+  border-left: 3px solid var(--color-primary, #30796a);
+}
+/* 펼치기 토글 — 행 선택과 충돌하지 않도록 클릭 전파를 막는다(@click.stop). */
+.ra-group__toggle {
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  padding: 0 0.2rem;
+  font-size: 0.8rem;
+  color: var(--color-text-muted, #6b7280);
+  font-family: inherit;
+}
+/* 펼친 개별 건 — 들여쓰기로 소속을 드러낸다. 동작은 단건과 완전히 동일. */
+.ra-group__items {
+  padding-left: 1.1rem;
+}
+.ra-row--child {
+  border-left: 1px dashed var(--color-border, #e5e7eb);
+}
+/* 묶음 상세 — 대상 날짜 나열 */
+.ra-group__datelist {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.25rem;
+  margin-top: 0.4rem;
+}
+.ra-group__date {
+  font-size: 0.72rem;
+  padding: 0.08rem 0.35rem;
+  border: 1px solid var(--color-border, #e5e7eb);
+  border-radius: 0.3rem;
+  color: var(--color-text-muted, #6b7280);
+  white-space: nowrap;
+}
+.ra-group__note {
+  font-size: 0.76rem;
+  color: var(--color-text-muted, #6b7280);
+  margin: 0.4rem 0;
+  line-height: 1.5;
 }
 /* 스케줄 수정 탭 — 부서 정보 결측(웹 처리 불가) 배지. 경고 시맨틱 토큰 재사용. */
 .ra-chip.warn {
