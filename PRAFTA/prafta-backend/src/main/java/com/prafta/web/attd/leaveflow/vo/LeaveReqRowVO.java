@@ -24,5 +24,14 @@ public record LeaveReqRowVO(
     , String endDate
     , String endTime
     , BigDecimal leaveDays
+    /**
+     * prafta-leavemulti: 연차 기간(From-To) 신청 묶음 ID. 단일일 신청은 null.
+     *
+     * <p>승인/반려 결과 통보를 <b>묶음 1건으로 수렴</b>시키는 데 쓴다. 이 값이 없으면 14일 휴가를
+     * 승인할 때 신청자에게 결과 알림이 14개 간다(QA 에서 실제로 5건 발생해 발견).
+     *
+     * <p>★ MyBatis record 위치 기반 매핑 — 반드시 맨 끝 유지(SELECT 맨 끝 컬럼과 순서 일치).
+     */
+    , String leaveGroupId
 ) {
 }

@@ -876,8 +876,11 @@ public class LeaveFlowServiceImpl implements LeaveFlowService {
             // PRAFTA-APP-021-3a(W2): 최종 승인 시점에 신청자 본인에게 결과 통보 PUSH 적재(afterCommit 격리).
             //   중간 단계 승인(nextStep != null)은 통보 대상 아님(최종 확정에서만 1회).
             try {
+                // prafta-leavemulti: 기간신청 묶음이면 결과 통보를 1건으로 수렴시킨다
+                //   (14일 휴가 승인 시 신청자에게 알림 14개 가는 것 방지). 단일일은 null → 종전 동일.
                 approvalResultNotiService.notifyLeaveResult(
-                        p.gvCmpnyCd(), req.siteCd(), req.userCd(), p.reqId(), true, p.gvUserCd());
+                        p.gvCmpnyCd(), req.siteCd(), req.userCd(), p.reqId(), true, p.gvUserCd(),
+                        req.leaveGroupId());
             } catch (Exception e) {
                 log.error("연차 최종 승인 결과 통보 PUSH 적재 hook 실패(승인 영향 없음). reqId={}", p.reqId(), e);
             }
@@ -908,8 +911,10 @@ public class LeaveFlowServiceImpl implements LeaveFlowService {
             log.info("연차 수정 반려(기존 휴가 유지). reqId={}, approver={}", p.reqId(), p.gvUserCd());
             // PRAFTA-APP-021-3a(W2): 연차 수정 반려 결과를 신청자 본인에게 통보(afterCommit 격리).
             try {
+                // prafta-leavemulti: 묶음이면 1건으로 수렴(단일일은 null → 종전 동일).
                 approvalResultNotiService.notifyLeaveResult(
-                        p.gvCmpnyCd(), req.siteCd(), req.userCd(), p.reqId(), false, p.gvUserCd());
+                        p.gvCmpnyCd(), req.siteCd(), req.userCd(), p.reqId(), false, p.gvUserCd(),
+                        req.leaveGroupId());
             } catch (Exception e) {
                 log.error("연차 수정 반려 결과 통보 PUSH 적재 hook 실패(반려 영향 없음). reqId={}", p.reqId(), e);
             }
@@ -925,8 +930,10 @@ public class LeaveFlowServiceImpl implements LeaveFlowService {
 
         // PRAFTA-APP-021-3a(W2): 연차 사용 반려 결과를 신청자 본인에게 통보(afterCommit 격리).
         try {
+            // prafta-leavemulti: 묶음이면 1건으로 수렴(단일일은 null → 종전 동일).
             approvalResultNotiService.notifyLeaveResult(
-                    p.gvCmpnyCd(), req.siteCd(), req.userCd(), p.reqId(), false, p.gvUserCd());
+                    p.gvCmpnyCd(), req.siteCd(), req.userCd(), p.reqId(), false, p.gvUserCd(),
+                    req.leaveGroupId());
         } catch (Exception e) {
             log.error("연차 반려 결과 통보 PUSH 적재 hook 실패(반려 영향 없음). reqId={}", p.reqId(), e);
         }

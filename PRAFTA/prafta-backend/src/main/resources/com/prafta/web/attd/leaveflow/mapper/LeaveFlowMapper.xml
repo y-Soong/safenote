@@ -274,6 +274,10 @@
         , A.END_DATE   AS endDate
         , A.END_TIME   AS endTime
         , A.LEAVE_DAYS AS leaveDays
+        <!-- prafta-leavemulti: 기간신청 묶음 ID. 승인/반려 결과 통보를 묶음 1건으로 수렴시키는 데 쓴다.
+             단일일 신청은 NULL → 종전 dedupKey 그대로(무회귀).
+             ★record(LeaveReqRowVO) 위치 기반 매핑이므로 반드시 SELECT 마지막에 둔다. -->
+        , A.LEAVE_GROUP_ID AS leaveGroupId
       FROM TB_USER_ATTD_REQ A
      WHERE A.CMPNY_CD = #{cmpnyCd}
        AND A.REQ_ID   = #{reqId}

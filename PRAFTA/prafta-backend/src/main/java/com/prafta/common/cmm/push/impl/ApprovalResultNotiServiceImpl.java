@@ -52,8 +52,15 @@ public class ApprovalResultNotiServiceImpl implements ApprovalResultNotiService 
     @Override
     public void notifyLeaveResult(String cmpnyCd, String siteCd, String applicantUserCd,
                                   String reqId, boolean approved, String actorUserCd) {
+        // 기존 시그니처 유지 — 묶음 없이(groupId=null) 위임한다. 동작 완전 동일.
+        notifyLeaveResult(cmpnyCd, siteCd, applicantUserCd, reqId, approved, actorUserCd, null);
+    }
+
+    @Override
+    public void notifyLeaveResult(String cmpnyCd, String siteCd, String applicantUserCd,
+                                  String reqId, boolean approved, String actorUserCd, String groupId) {
         runAfterCommit(() -> self.runLeaveResultOutbox(
-                cmpnyCd, siteCd, applicantUserCd, reqId, approved, actorUserCd));
+                cmpnyCd, siteCd, applicantUserCd, reqId, approved, actorUserCd, groupId));
     }
 
     @Override
@@ -93,12 +100,19 @@ public class ApprovalResultNotiServiceImpl implements ApprovalResultNotiService 
     @Override
     @Transactional(propagation = Propagation.REQUIRES_NEW, rollbackFor = Exception.class)
     public void runLeaveResultOutbox(String cmpnyCd, String siteCd, String applicantUserCd,
-                                     String reqId, boolean approved, String actorUserCd) {
+                                     String reqId, boolean approved, String actorUserCd, String groupId) {
         String notiType = approved
                 ? ApprovalResultNotiConst.NOTI_TYPE_LEAVE_APPROVED
                 : ApprovalResultNotiConst.NOTI_TYPE_LEAVE_REJECTED;
         String body = approved ? ApprovalResultNotiConst.BODY_APPROVED : ApprovalResultNotiConst.BODY_REJECTED;
-        String dedupKey = "LV_RESULT_" + reqId + "_" + (approved ? "APPROVED" : "REJECTED");
+        // prafta-leavemulti: 기간신청 묶음이면 묶음 단위 키로 1건만 적재한다.
+        //   묶음 2번째부터는 같은 키가 되어 insertOrSkip 의 DuplicateKeyException 흡수로 자연 수렴한다
+        //   (이 적재는 REQUIRES_NEW 별도 트랜잭션이라 호출자 트랜잭션을 오염시키지 않는다).
+        //   ★ groupId == null(단일일) 이면 종전 키 그대로 → 무회귀.
+        String result = approved ? "APPROVED" : "REJECTED";
+        String dedupKey = (groupId == null || groupId.isBlank())
+                ? "LV_RESULT_" + reqId + "_" + result
+                : "LV_RESULT_GRP_" + groupId + "_" + result;
         insertOrSkip(cmpnyCd, siteCd, applicantUserCd, notiType,
                 ApprovalResultNotiConst.LEAVE_TITLE, body, reqId, dedupKey, actorUserCd, "연차");
     }

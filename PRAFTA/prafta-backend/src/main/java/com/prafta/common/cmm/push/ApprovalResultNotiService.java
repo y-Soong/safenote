@@ -27,6 +27,22 @@ public interface ApprovalResultNotiService {
                            String reqId, boolean approved, String actorUserCd);
 
     /**
+     * prafta-leavemulti: 연차 기간(From-To) 신청 묶음용 오버로드.
+     *
+     * <p>기간신청은 날짜별 REQ N건으로 분해되므로, 위 메서드를 그대로 쓰면 승인 시 신청자에게
+     * <b>N개</b> 의 결과 알림이 간다(QA 에서 5건 실제 발생해 발견). 묶음 ID 기준 dedupKey 로
+     * <b>1건으로 수렴</b>시킨다 — dedupKey UNIQUE 충돌을 구현부가 멱등 흡수한다.
+     *
+     * <p>dedupKey = {@code groupId == null ? "LV_RESULT_"+reqId+"_"+결과 : "LV_RESULT_GRP_"+groupId+"_"+결과}
+     *
+     * <p><b>★ groupId 가 null 이면 기존 메서드와 완전히 동일하게 동작한다</b>(단일일 경로 무회귀).
+     *
+     * @param groupId 연차 기간신청 묶음 ID. 단일일 신청은 null.
+     */
+    void notifyLeaveResult(String cmpnyCd, String siteCd, String applicantUserCd,
+                           String reqId, boolean approved, String actorUserCd, String groupId);
+
+    /**
      * 근태/초과근무 보정 결재 결과 통보(승인/반려). 신청자 본인에게 1건.
      */
     void notifyAttdResult(String cmpnyCd, String siteCd, String applicantUserCd,
@@ -34,9 +50,13 @@ public interface ApprovalResultNotiService {
 
     // ── 실행부: afterCommit 콜백이 프록시 경유로 호출하는 REQUIRES_NEW 경계 메서드 ──
 
-    /** 연차 결과 outbox 적재(REQUIRES_NEW). 콜백 전용 — 직접 호출 금지. */
+    /**
+     * 연차 결과 outbox 적재(REQUIRES_NEW). 콜백 전용 — 직접 호출 금지.
+     *
+     * @param groupId prafta-leavemulti 기간신청 묶음 ID. null 이면 종전 dedupKey(REQ 단위).
+     */
     void runLeaveResultOutbox(String cmpnyCd, String siteCd, String applicantUserCd,
-                              String reqId, boolean approved, String actorUserCd);
+                              String reqId, boolean approved, String actorUserCd, String groupId);
 
     /** 근태/OT 결과 outbox 적재(REQUIRES_NEW). 콜백 전용 — 직접 호출 금지. */
     void runAttdResultOutbox(String cmpnyCd, String siteCd, String applicantUserCd,
