@@ -35,5 +35,14 @@ public record MyLeaveApprovalVO(
      * ★ MyBatis record 위치 기반 매핑 — 반드시 맨 끝 유지(SELECT 맨 끝 컬럼 borrowDays 와 순서 일치).
      */
     , BigDecimal borrowDays
+    /**
+     * prafta-leavemulti: 연차 기간(From-To) 신청 묶음 ID. 같은 신청에서 분해된 날짜별 REQ 가 동일 값.
+     *
+     * <p>화면은 이 값이 같은 행들을 <b>1행으로 접어</b> 표시하고 일괄 승인/반려한다
+     * (2주 휴가면 14건 → 1행). <b>단일일 신청은 null</b> 이므로 기존처럼 개별 행으로 보인다.
+     *
+     * <p>★ MyBatis record 위치 기반 매핑 — 반드시 맨 끝 유지(SELECT 맨 끝 컬럼과 순서 일치).
+     */
+    , String leaveGroupId
 ) {
 }

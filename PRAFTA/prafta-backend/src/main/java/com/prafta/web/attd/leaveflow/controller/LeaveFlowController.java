@@ -16,9 +16,11 @@ import com.prafta.web.attd.leaveflow.application.param.LeaveApprovalActionParam;
 import com.prafta.web.attd.leaveflow.application.param.LeaveDeductionPreviewParam;
 import com.prafta.web.attd.leaveflow.dto.request.LeaveApplyRequest;
 import com.prafta.web.attd.leaveflow.dto.request.LeaveApprovalActionRequest;
+import com.prafta.web.attd.leaveflow.dto.request.LeaveApprovalBulkRequest;
 import com.prafta.web.attd.leaveflow.dto.request.LeaveDeductionPreviewRequest;
 import com.prafta.web.attd.leaveflow.dto.response.LeaveDeductionPreviewResponse;
 import com.prafta.web.attd.leaveflow.dto.response.MyApprovalListResponse;
+import com.prafta.web.attd.leaveflow.service.LeaveApprovalBulkService;
 import com.prafta.web.attd.leaveflow.service.LeaveFlowService;
 
 import jakarta.validation.Valid;
@@ -36,6 +38,8 @@ import lombok.extern.slf4j.Slf4j;
 public class LeaveFlowController {
 
     private final LeaveFlowService leaveFlowService;
+    /** prafta-leavemulti: 일괄 승인/반려(별도 빈 — 건별 트랜잭션 분리를 위해 프록시 경유가 필요). */
+    private final LeaveApprovalBulkService leaveApprovalBulkService;
     private final JwtUtil jwtUtil;
 
     /** 연차 신청. */
@@ -88,6 +92,34 @@ public class LeaveFlowController {
                 LeaveApprovalActionParam.from(request, jwtUtil.getAllClaimsAsMap(authorization)));
 
         return ResponseEntity.status(HttpStatus.OK).build();
+    }
+
+    /**
+     * prafta-leavemulti: 연차 결재 <b>일괄</b> 승인.
+     *
+     * <p>기간(From-To) 신청은 날짜별 REQ N건으로 분해되므로 2주 휴가면 14번 승인해야 한다.
+     * 묶음(또는 화면에서 선택한 임의 건)을 한 번에 처리한다.
+     *
+     * <p><b>부분 성공</b>이다 — 1건이 마감 등으로 막혀도 나머지는 확정된다.
+     * 판정·권한 가드는 전부 단건 경로가 그대로 수행하며, 실패 건은 사유와 함께 응답에 담긴다.
+     */
+    @PostMapping("/approve-bulk")
+    public ResponseEntity<?> approveBulk(
+            @RequestBody @Valid LeaveApprovalBulkRequest request,
+            @RequestHeader(value = "Authorization", required = true) String authorization) {
+
+        return ResponseEntity.status(HttpStatus.OK).body(
+                leaveApprovalBulkService.approveBulk(jwtUtil.getAllClaimsAsMap(authorization), request));
+    }
+
+    /** prafta-leavemulti: 연차 결재 일괄 반려. 규약은 일괄 승인과 동일(부분 성공). */
+    @PostMapping("/reject-bulk")
+    public ResponseEntity<?> rejectBulk(
+            @RequestBody @Valid LeaveApprovalBulkRequest request,
+            @RequestHeader(value = "Authorization", required = true) String authorization) {
+
+        return ResponseEntity.status(HttpStatus.OK).body(
+                leaveApprovalBulkService.rejectBulk(jwtUtil.getAllClaimsAsMap(authorization), request));
     }
 
     /** 내 결재함: 내가 현재 단계 결재자인 연차 요청 목록 (요청승인관리 연차 탭). */

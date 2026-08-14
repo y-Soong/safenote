@@ -583,6 +583,10 @@
               AND BU.LEAVE_STATUS = 'CONFIRMED'
               AND BU.DEL_YN       = 'N'
           )                                                                  AS borrowDays
+        <!-- prafta-leavemulti: 기간(From-To) 신청 묶음 ID. 화면이 같은 값을 1행으로 접어 일괄 처리한다.
+             단일일 신청은 NULL 이라 기존처럼 개별 행으로 표시된다(무회귀).
+             ★record(MyLeaveApprovalVO) 위치 기반 매핑이므로 반드시 SELECT 마지막에 둔다. -->
+        , R.LEAVE_GROUP_ID                                                   AS leaveGroupId
       FROM TB_USER_ATTD_REQ_APPROVAL AP
       JOIN TB_USER_ATTD_REQ R
         ON R.CMPNY_CD = AP.CMPNY_CD
