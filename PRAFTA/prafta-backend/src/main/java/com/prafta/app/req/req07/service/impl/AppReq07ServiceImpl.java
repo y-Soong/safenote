@@ -80,6 +80,8 @@ public class AppReq07ServiceImpl implements AppReq07Service {
     private final AppAttd01Mapper appAttd01Mapper;
     /** 소정-07: 단축근무자(육아기·임신기·가족돌봄) 초과근무 게이트(공용 빈 재사용 — 웹 경로와 판정 단일 출처). */
     private final ReducedWorkOtGuardService reducedWorkOtGuardService;
+    /** 근무타입 시점 적법성(effective-dating) 판정용 공용 매퍼 — 스케줄수정 발의 시 적용일 검증(2026-08-14). */
+    private final com.prafta.common.cmm.schedule.mapper.ScheduleGuardMapper scheduleGuardMapper;
 
     /** REQ_STATUS = '01' 신청 (등록 직후 고정 — P3). */
     private static final String REQ_STATUS_REQUESTED = AttdReqTypeUtils.REQ_STATUS_REQUESTED;
@@ -103,6 +105,19 @@ public class AppReq07ServiceImpl implements AppReq07Service {
         for (SlotRequest s : param.slots()) {
             if (!StringUtils.hasText(s.getSchCd())) {
                 throw new ApiException(AttdErrorCode.ATTD_400_097);
+            }
+            // 2026-08-14: 근무타입 시점 적법성(effective-dating) 검증 — fail-closed.
+            //   종전에는 schCd 공백 검사만 있어, 적용일이 근무일보다 미래인 타입도 발의·승인이 통과해
+            //   tb_user_work_plan 에 반영됐다(운영 확인: 적용일 2026-08-01 인 TH-A 가 2026-07-21 에 배정).
+            //   판정은 웹 Attd_05 validateSchCell(BEFORE_CREATE / USE_YN_N)과 동형이며 공용 매퍼 단일 출처를 쓴다.
+            //   null = 그 근무일에 유효 버전 없음(최초 적용일 이전 또는 SCH_CD 부재), 'N' = 그날 미사용 기간.
+            //   ★ 옵션 목록(selectSchedOptions)에서 이미 걸러지지만, API 직접 호출 우회를 막는 서버 권위 가드다.
+            String effUseYn = scheduleGuardMapper.selectEffectiveSchUseYn(
+                    param.cmpnyCd(), param.siteCd(), s.getSchCd(), param.workYmd());
+            if (!"Y".equals(effUseYn)) {
+                log.info("[req07] 스케줄수정 발의 거부: 근무일 기준 유효하지 않은 근무타입. userCd={}, workYmd={}, schCd={}, effUseYn={}",
+                        param.userCd(), param.workYmd(), s.getSchCd(), effUseYn);
+                throw new ApiException(AttdErrorCode.ATTD_400_203);
             }
         }
 
@@ -543,7 +558,9 @@ public class AppReq07ServiceImpl implements AppReq07Service {
     @Override
     @Transactional(readOnly = true)
     public SchedOptionResponse getSchedOptions(String cmpnyCd, String siteCd, String userCd, String workYmd) {
-        List<SchedOptionResult> schedules = mapper.selectSchedOptions(cmpnyCd, siteCd);
+        // 2026-08-14: 근무일 기준 유효 버전만 반환(적용일 미래·그날 미사용 타입은 목록에서 제외).
+        //   workYmd 미전달(목록 단독 조회)이면 매퍼가 최신 버전을 채택 — 종전 동작과 동일.
+        List<SchedOptionResult> schedules = mapper.selectSchedOptions(cmpnyCd, siteCd, workYmd);
         if (schedules == null) {
             schedules = new ArrayList<>();
         }

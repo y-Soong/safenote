@@ -58,12 +58,17 @@ public interface AppReq07Mapper {
 
     /**
      * prafta-app-007 F2: 스케줄 선택 옵션 목록 조회.
-     * tb_sch_mgmt 의 사용중(USE_YN='Y') 스케줄을 회사/사업장 범위로 조회한다.
+     * 회사/사업장 범위에서 <b>근무일(workYmd) 기준 유효 버전</b>이 사용중(USE_YN='Y')인 근무타입만 반환한다.
+     * 적용일이 근무일보다 미래인 타입(= 그날 유효 버전 없음)과, 그 날짜에 미사용이던 타입은 제외된다
+     * — 선택 불가 항목을 애초에 노출하지 않는다(2026-08-14).
+     * 시각도 현재본이 아니라 채택 버전 값을 반환한다(Attd_05 시점별 시각 표시와 정합).
      * 식별값(cmpnyCd/siteCd)은 컨트롤러에서 JWT 로만 도출 (IDOR 가드).
+     * workYmd 는 optional — null 이면 최신 버전을 채택한다(목록 단독 조회 호환, 종전 동작과 동일).
      * 결과 없으면 빈 List.
      */
     List<SchedOptionResult> selectSchedOptions(@Param("cmpnyCd") String cmpnyCd
-                                               , @Param("siteCd") String siteCd);
+                                               , @Param("siteCd") String siteCd
+                                               , @Param("workYmd") String workYmd);
 
     /**
      * prafta-com-008-E-9a: 사용자 본인 기본 근무타입(tb_user.DEFAULT_SCH_CD) 조회.

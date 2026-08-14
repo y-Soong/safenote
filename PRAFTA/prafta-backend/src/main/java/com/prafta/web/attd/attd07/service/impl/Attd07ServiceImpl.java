@@ -96,6 +96,8 @@ public class Attd07ServiceImpl implements Attd07Service {
     private final LeaveConversionPolicyService leaveConversionPolicyService;
     /** 소정-07: 단축근무자(육아기·임신기·가족돌봄) 초과근무 게이트(공용 빈 — 앱 경로와 판정 단일 출처). */
     private final ReducedWorkOtGuardService reducedWorkOtGuardService;
+    /** 근무타입 시점 적법성(effective-dating) 판정용 공용 매퍼 — 스케줄수정 승인 시 적용일 검증(2026-08-14). */
+    private final com.prafta.common.cmm.schedule.mapper.ScheduleGuardMapper scheduleGuardMapper;
 
     /**
      * 출퇴근 방법(METHOD) 기본값. SYS031 '01'(사용자/앱). 근태 보정 승인 시 METHOD 미전달(앱 관리자 경로)일 때
@@ -1228,6 +1230,21 @@ public class Attd07ServiceImpl implements Attd07Service {
         if (schCd == null || schCd.isEmpty()) {
             log.warn("sched-modify approve rejected - REQ.SCH_CD missing(데이터 부재/마이그 미적용). reqId={}", reqRow.reqId());
             throw new ApiException(AttdErrorCode.ATTD_400_005);
+        }
+
+        // 5-0. 2026-08-14: 근무타입 시점 적법성(effective-dating) 검증 — fail-closed(최종 방어선).
+        //      REQ 의 권위값(schCd/siteCd/workYmd)으로 "그 근무일에 유효한 버전이 있고 사용중인지"를 본다.
+        //      null = 유효 버전 없음(최초 적용일 이전 날짜 또는 SCH_CD 부재), 'N' = 그날 미사용 기간 → 둘 다 차단.
+        //      발의 측(앱 registerSchedModify)에도 동일 가드가 있으나, 발의 이후 근무타입 적용일이 변경되는
+        //      경우와 구버전 앱/직접 호출로 들어온 기존 대기 요청까지 막으려면 승인 측 재검증이 필요하다.
+        //      판정은 웹 Attd_05 validateSchCell(BEFORE_CREATE / USE_YN_N)과 동형(공용 매퍼 단일 출처).
+        //      upsert(work_plan 갱신) 이전에 차단하여 레코드 오염을 막는다.
+        String effUseYn = scheduleGuardMapper.selectEffectiveSchUseYn(
+                param.gvCmpnyCd(), reqRow.siteCd(), schCd, reqRow.workYmd());
+        if (!"Y".equals(effUseYn)) {
+            log.warn("sched-modify approve rejected - 근무일 기준 유효하지 않은 근무타입. reqId={}, workYmd={}, schCd={}, effUseYn={}",
+                    reqRow.reqId(), reqRow.workYmd(), schCd, effUseYn);
+            throw new ApiException(AttdErrorCode.ATTD_400_203);
         }
 
         // 5-1. [D15] upsert 로 덮어쓰기 전에 "변경 전 근무계획 코드"를 캡처한다(같은 트랜잭션).

@@ -450,6 +450,16 @@ public enum AttdErrorCode implements ApiErrorCode {
     //   이번 요청분을 더한 값이 720분을 넘으면 거부한다.
     , ATTD_400_202(HttpStatus.BAD_REQUEST,
             "근로시간 단축 기간의 연장근로는 주 12시간을 넘을 수 없습니다. 해당 주에 이미 등록·신청된 초과근무 시간을 확인해 주세요.")
+
+    // ===== 스케줄수정요청 근무타입 시점 적법성 가드 (2026-08-14) =====
+    // 근무타입의 적용일(effective-dating)을 무시하고 근무일에 유효하지 않은 타입이 배정되는 것을 막는다.
+    //   재현: 적용일 2026-08-01 인 TH-A 를 2026-07-21 근무일로 스케줄수정요청 → 발의·승인 모두 통과해
+    //         tb_user_work_plan 에 반영됨(운영 확인). 웹 Attd_05 는 동일 판정을 이미 갖고 있어,
+    //         앱 요청 경로가 그 검증의 우회로였다.
+    // 발의(앱 registerSchedModify)와 승인(웹 approveSchedModifyRequest) 양쪽에서 fail-closed 로 사용한다.
+    // ★ 003/600 금지(앱 인터셉터가 토큰오류로 오인해 강제 로그아웃하는 함정 회피) → 400대 유지.
+    , ATTD_400_203(HttpStatus.BAD_REQUEST,
+            "해당 근무일에는 사용할 수 없는 근무타입입니다. 근무타입의 적용일 이후 날짜인지 확인해 주세요.")
     ;
 
     private final HttpStatus httpStatus;

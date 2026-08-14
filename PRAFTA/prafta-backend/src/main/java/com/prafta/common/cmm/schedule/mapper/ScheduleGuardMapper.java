@@ -58,6 +58,24 @@ public interface ScheduleGuardMapper {
                                              @Param("asOfYmd") String asOfYmd);
 
     /**
+     * 근무타입 "시점 적법성" 판정용 — (SCH_CD, asOfYmd) 기준 effective 버전의 USE_YN 을 반환한다.
+     * effective-dating 규칙은 {@link #selectEffectiveSchWindow} 와 동일하다.
+     *
+     * <ul>
+     *   <li>{@code null} : asOfYmd 이전 버전이 없음 = <b>최초 적용일 이전 날짜</b>(또는 SCH_CD 부재).</li>
+     *   <li>{@code "N"}  : 그 날짜는 근무타입 미사용 기간.</li>
+     *   <li>{@code "Y"}  : 그 날짜에 사용 가능.</li>
+     * </ul>
+     *
+     * <p>공통 가드는 판정만 반환하고 차단 예외는 호출자가 던진다(ScheduleOverlapGuardService 와 동일 규약).
+     * Attd_05 의 {@code validateSchCell}(BEFORE_CREATE / USE_YN_N) 과 판정 동형이다.
+     */
+    String selectEffectiveSchUseYn(@Param("cmpnyCd") String cmpnyCd,
+                                   @Param("siteCd") String siteCd,
+                                   @Param("schCd") String schCd,
+                                   @Param("asOfYmd") String asOfYmd);
+
+    /**
      * 교차일 겹침 가드용 — (cmpny, site, user, ymd) 한 칸의 WORK_PLAN_CD 를 반환한다(없으면 null).
      * 이웃 날짜의 적용 스케줄 코드 조회에 사용한다.
      */

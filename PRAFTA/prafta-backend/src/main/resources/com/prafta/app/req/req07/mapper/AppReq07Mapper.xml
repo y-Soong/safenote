@@ -98,23 +98,86 @@
               으로 프론트가 처리한다(prafta-com-008-E-9a: 사업장 BASE_YN 폐기). -->
     <select id="selectSchedOptions" resultType="com.prafta.app.req.req07.dto.response.result.SchedOptionResult">
     /* AppReq07Mapper.selectSchedOptions */
-    SELECT S.SCH_CD            AS schCd
-         , S.SCH_NO            AS schNo
-         , S.FST_SCH_STR_TIME  AS fstStrTime
-         , S.FST_SCH_END_TIME  AS fstEndTime
-         , S.SEC_SCH_STR_TIME  AS secStrTime
-         , S.SEC_SCH_END_TIME  AS secEndTime
+    /* 근무일(workYmd) 기준 "그 날짜에 실제 사용 가능한" 근무타입만 반환한다(선택 불가 항목은 숨김).
+       종전에는 현재본(TB_SCH_MGMT) + USE_YN='Y' 만 보고 전 타입을 반환해, 적용일이 근무일보다 미래인
+       타입도 선택지로 노출됐다(운영 확인: 적용일 2026-08-01 인 TH-A 가 2026-07-21 요청에 선택됨).
+       판정은 판정 계열과 동일한 effective-dating:
+         ① 현재본 + 이력본 UNION (현재본 HIST_IDX=2147483647 → 동일 APPLY_DATE 중복 시 현재본 우선)
+         ② 동일 SCH_CD + APPLY_DATE 중복은 HIST_IDX 최댓값 1건만 채택(DUP_RN=1)
+         ③ APPLY_DATE <![CDATA[ <= ]]> workYmd 중 최신 버전 1건 채택(EFF_RN=1) → 없으면 그 타입은 탈락(최초 적용일 이전)
+         ④ 채택 버전의 USE_YN='Y' 만 반환(그 날짜에 미사용 기간이던 타입 제외)
+       시각도 현재본이 아니라 채택 버전 값을 반환한다(Attd_05 시점별 시각 표시와 정합).
+       ★ workYmd 는 optional(목록 단독 조회 호환) — 미전달 시 '99991231' 로 폴백해 최신 버전을 채택하며,
+         이는 종전의 현재본 기준 동작과 동일하다(무회귀).
+       SCH_NO 는 이력본에 없는 컬럼이라 현재본(M)에서 가져온다(버전 무관 식별자).
+       ⚠️ SELECT 컬럼 순서 = SchedOptionResult 생성자 인자 순서(위치 기반 record 매핑) — 종전과 동일 순서 유지. */
+    SELECT V.SCH_CD                AS schCd
+         , M.SCH_NO                AS schNo
+         , V.FST_SCH_STR_TIME      AS fstStrTime
+         , V.FST_SCH_END_TIME      AS fstEndTime
+         , V.SEC_SCH_STR_TIME      AS secStrTime
+         , V.SEC_SCH_END_TIME      AS secEndTime
          <!-- PRAFTA-FIXEDOT-2(표기): 고정연장(전방·후방) — 옵션 라벨 구분 표기용.
               record(SchedOptionResult) 끝 4필드와 동일 순서로 SELECT 끝에 둔다(위치 기반 매핑). -->
-         , S.PRE_FIXED_OT_STR_TIME  AS preFixedOtStrTime
-         , S.PRE_FIXED_OT_END_TIME  AS preFixedOtEndTime
-         , S.FIXED_OT_STR_TIME      AS fixedOtStrTime
-         , S.FIXED_OT_END_TIME      AS fixedOtEndTime
-      FROM TB_SCH_MGMT S
-     WHERE S.CMPNY_CD = #{cmpnyCd}
-       AND S.SITE_CD  = #{siteCd}
-       AND S.USE_YN   = 'Y'
-     ORDER BY S.SCH_NO ASC
+         , V.PRE_FIXED_OT_STR_TIME AS preFixedOtStrTime
+         , V.PRE_FIXED_OT_END_TIME AS preFixedOtEndTime
+         , V.FIXED_OT_STR_TIME     AS fixedOtStrTime
+         , V.FIXED_OT_END_TIME     AS fixedOtEndTime
+      FROM (
+            SELECT D.SCH_CD
+                 , D.USE_YN
+                 , D.FST_SCH_STR_TIME
+                 , D.FST_SCH_END_TIME
+                 , D.SEC_SCH_STR_TIME
+                 , D.SEC_SCH_END_TIME
+                 , D.PRE_FIXED_OT_STR_TIME
+                 , D.PRE_FIXED_OT_END_TIME
+                 , D.FIXED_OT_STR_TIME
+                 , D.FIXED_OT_END_TIME
+                 , ROW_NUMBER() OVER (PARTITION BY D.SCH_CD ORDER BY D.APPLY_DATE DESC) AS EFF_RN
+              FROM (
+                    SELECT B0.*
+                         , ROW_NUMBER() OVER (PARTITION BY B0.SCH_CD, B0.APPLY_DATE
+                                              ORDER BY B0.HIST_IDX DESC) AS DUP_RN
+                      FROM (
+                            /* 현재본 */
+                            SELECT M0.SCH_CD, M0.APPLY_DATE, M0.USE_YN
+                                 , M0.FST_SCH_STR_TIME, M0.FST_SCH_END_TIME
+                                 , M0.SEC_SCH_STR_TIME, M0.SEC_SCH_END_TIME
+                                 , M0.PRE_FIXED_OT_STR_TIME, M0.PRE_FIXED_OT_END_TIME
+                                 , M0.FIXED_OT_STR_TIME, M0.FIXED_OT_END_TIME
+                                 , 2147483647 AS HIST_IDX
+                              FROM TB_SCH_MGMT M0
+                             WHERE M0.CMPNY_CD = #{cmpnyCd}
+                               AND M0.SITE_CD  = #{siteCd}
+                            UNION ALL
+                            /* 이력본 — 이력 INSERT 가 미사용 구간을 빈 문자열로 기록하므로 NULLIF 로 부재 정규화 */
+                            SELECT H0.SCH_CD, H0.APPLY_DATE, H0.USE_YN
+                                 , H0.FST_SCH_STR_TIME, H0.FST_SCH_END_TIME
+                                 , NULLIF(H0.SEC_SCH_STR_TIME, ''), NULLIF(H0.SEC_SCH_END_TIME, '')
+                                 , NULLIF(H0.PRE_FIXED_OT_STR_TIME, ''), NULLIF(H0.PRE_FIXED_OT_END_TIME, '')
+                                 , NULLIF(H0.FIXED_OT_STR_TIME, ''), NULLIF(H0.FIXED_OT_END_TIME, '')
+                                 , H0.HIST_IDX
+                              FROM TB_SCH_MGMT_HIST H0
+                             WHERE H0.CMPNY_CD = #{cmpnyCd}
+                               AND H0.SITE_CD  = #{siteCd}
+                           ) B0
+                   ) D
+             WHERE D.DUP_RN = 1
+               <!-- ★ IFNULL(#{workYmd}, '99991231') 로 합치지 말 것 — 컬럼(utf8mb4_unicode_ci)과
+                    리터럴(접속 기본 utf8mb4_0900_ai_ci) 혼합으로 ERROR 1267 이 난다(운영 8.4 실측).
+                    바인딩 파라미터 단독 비교는 컬럼 컬레이션을 따라가므로 안전하다. -->
+               <if test="workYmd != null and workYmd != ''">
+               AND D.APPLY_DATE <![CDATA[ <= ]]> #{workYmd}
+               </if>
+           ) V
+           INNER JOIN TB_SCH_MGMT M
+              ON M.CMPNY_CD = #{cmpnyCd}
+             AND M.SITE_CD  = #{siteCd}
+             AND M.SCH_CD   = V.SCH_CD
+     WHERE V.EFF_RN = 1
+       AND V.USE_YN = 'Y'
+     ORDER BY M.SCH_NO ASC
     </select>
 
     <!-- prafta-com-008-E-9a: 사용자 본인 기본 근무타입(DEFAULT_SCH_CD). "기본" 칩/상단 정렬용(미설정 시 null). -->

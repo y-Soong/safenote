@@ -156,6 +156,52 @@
     </select>
 
     <!--
+      근무일 기준 유효 버전의 사용여부(USE_YN) — 근무타입 "시점 적법성" 판정용.
+      selectEffectiveSchWindow 와 동일한 effective-dating 규칙:
+        현재본 + 이력본 UNION → 동일 APPLY_DATE 는 HIST_IDX 최댓값 채택 → APPLY_DATE <![CDATA[ <= ]]> asOfYmd 중 최신 1건.
+      ★ 결과 0행(null) = 그 근무일에 유효한 버전이 없음 = 최초 적용일 이전 날짜.
+        'N' = 그 날짜엔 미사용 기간. 둘 다 차단 사유이며, 예외는 호출자가 던진다
+        (공통 가드는 판정만 반환 — ScheduleOverlapGuardService 와 동일 규약).
+      Attd_05 의 validateSchCell(BEFORE_CREATE / USE_YN_N) 과 판정 동형.
+    -->
+    <select id="selectEffectiveSchUseYn" resultType="string">
+    /* ScheduleGuardMapper.selectEffectiveSchUseYn */
+    SELECT E.USE_YN
+      FROM (
+            /* 현재본 (HIST_IDX 최댓값으로 두어 동일 APPLY_DATE 중복 시 현재본 우선) */
+            SELECT M.SCH_CD, M.APPLY_DATE, M.USE_YN, 2147483647 AS HIST_IDX
+              FROM TB_SCH_MGMT M
+             WHERE M.CMPNY_CD = #{cmpnyCd}
+               AND M.SITE_CD  = #{siteCd}
+               AND M.SCH_CD   = #{schCd}
+            UNION ALL
+            /* 이력본 */
+            SELECT H.SCH_CD, H.APPLY_DATE, H.USE_YN, H.HIST_IDX
+              FROM TB_SCH_MGMT_HIST H
+             WHERE H.CMPNY_CD = #{cmpnyCd}
+               AND H.SITE_CD  = #{siteCd}
+               AND H.SCH_CD   = #{schCd}
+           ) E
+     WHERE E.APPLY_DATE <![CDATA[ <= ]]> #{asOfYmd}
+       AND E.HIST_IDX = (
+            SELECT MAX(E2.HIST_IDX)
+              FROM (
+                    SELECT M2.SCH_CD, M2.APPLY_DATE, 2147483647 AS HIST_IDX
+                      FROM TB_SCH_MGMT M2
+                     WHERE M2.CMPNY_CD = #{cmpnyCd} AND M2.SITE_CD = #{siteCd} AND M2.SCH_CD = #{schCd}
+                    UNION ALL
+                    SELECT H2.SCH_CD, H2.APPLY_DATE, H2.HIST_IDX
+                      FROM TB_SCH_MGMT_HIST H2
+                     WHERE H2.CMPNY_CD = #{cmpnyCd} AND H2.SITE_CD = #{siteCd} AND H2.SCH_CD = #{schCd}
+                   ) E2
+             WHERE E2.SCH_CD     = E.SCH_CD
+               AND E2.APPLY_DATE = E.APPLY_DATE
+           )
+     ORDER BY E.APPLY_DATE DESC
+     LIMIT 1
+    </select>
+
+    <!--
       교차일 겹침 가드 — 이웃 날짜의 적용 근무계획 코드(work_plan 한 칸).
     -->
     <select id="selectUserWorkPlanCd" resultType="string">
