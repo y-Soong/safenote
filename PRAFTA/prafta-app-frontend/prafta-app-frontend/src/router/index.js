@@ -81,6 +81,16 @@ const routes = [
     component: () => import('@/views/leave/LeaveApplyView.vue'),
   },
 
+  // prafta-leavemulti: 연차 기간(From-To) 신청 — 종일 전용 (보호 — beforeEach 토큰 게이트)
+  //   진입: /LeaveApply 상단 "기간으로 신청" 버튼.
+  //   ★기존 단건 신청 화면(LeaveApplyView/LeaveApplyForm)은 손대지 않는다 —
+  //     1884줄 폼을 수술하는 대신 별도 화면으로 분리해 회귀 위험을 0 으로 둔다.
+  {
+    path: '/LeaveApplyMulti',
+    name: 'LeaveApplyMulti',
+    component: () => import('@/views/leave/LeaveApplyMultiView.vue'),
+  },
+
   // PRAFTA-COM-008-C: 근로자 발의 연차 이동 요청 (취소 불가, 관리자 승인 대상)
   {
     path: '/LeaveMoveRequest',

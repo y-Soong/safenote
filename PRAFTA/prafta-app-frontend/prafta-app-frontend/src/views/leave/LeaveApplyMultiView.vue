@@ -1,0 +1,467 @@
+<!--
+  LeaveApplyMultiView.vue — 연차 기간(From-To) 신청 화면 (prafta-leavemulti, 앱)
+  유형: frontend-screen (모바일 앱, 근로자)
+  참조 패턴: views/leave/LeaveMoveRequestView.vue (헤더 + 본문 + 섹션 + DateStepperField)
+
+  ★ 종일 연차 전용이다. 반차·반반차·시간차는 기존 단건 신청(/LeaveApply)을 쓴다.
+  ★ 기존 단건 신청 화면(LeaveApplyView / LeaveApplyForm 1884줄)은 손대지 않는다 —
+    별도 화면으로 분리해 기존 연차 기능의 회귀 위험을 0 으로 둔다.
+
+  흐름
+    1) 연차 종류 + 기간(From~To) 선택 → 미리보기 1회 조회(GET apply-multi-preview)
+    2) 날짜별 체크리스트 3단 표시
+         ☑ 신청 가능 · 근무계획 있음        (기본 체크)
+         ☐ 신청 가능 · 스케줄 없음(주말/휴무) (기본 해제 — 체크하면 신청된다)
+         ⊘ 신청 불가 + 사유                  (선택 불가)
+       ※ 주말 자동 제외를 하지 않는 이유: 운영에 주말 근무자가 있고 토요일 종일 연차 승인 사례가
+         실재한다. 단건 신청에도 휴일 검증이 없어, 자동 제외는 기능 후퇴가 된다.
+    3) 제출(POST apply-multi) — 체크된 날짜 목록만 보낸다(범위가 아니라 목록이 서버 계약).
+       신청 불가일이 섞이면 서버가 전체 거부하고 blockedDates 로 전부 알려준다(부분 성공 없음).
+-->
+<template>
+  <div class="lam-view">
+    <header class="lam-hd">
+      <button type="button" class="lam-hd__back" aria-label="뒤로" @click="onBack">
+        <svg class="icon" width="22" height="22" aria-hidden="true">
+          <use href="#i-lmv-chev-left" />
+        </svg>
+      </button>
+      <h1 class="lam-hd__title">기간 연차 신청</h1>
+      <span class="lam-hd__spacer" aria-hidden="true"></span>
+    </header>
+
+    <main class="lam-body">
+      <p v-if="metaLoading" class="lam-state">불러오는 중...</p>
+
+      <template v-else>
+        <!-- 연차 종류 — 종일 사용이 가능한 종류만 노출 -->
+        <section class="lam-section">
+          <h2 class="lam-section__title">연차 종류</h2>
+          <select v-model="leaveCd" class="lam-select" @change="resetPreview">
+            <option value="" disabled>연차 종류를 선택하세요</option>
+            <option v-for="t in fullDayLeaveTypes" :key="t.leaveCd" :value="t.leaveCd">
+              {{ t.leaveNm }}
+            </option>
+          </select>
+          <p class="lam-hint">기간 신청은 종일 연차만 가능합니다. 반차·시간차는 단건 신청을 이용해 주세요.</p>
+        </section>
+
+        <!-- 기간 -->
+        <section class="lam-section">
+          <h2 class="lam-section__title">기간</h2>
+          <div class="lam-range">
+            <DateStepperField v-model="fromDate" placeholder="시작일" @update:modelValue="resetPreview" />
+            <span class="lam-range__tilde">~</span>
+            <DateStepperField v-model="toDate" placeholder="종료일" @update:modelValue="resetPreview" />
+          </div>
+          <button
+            type="button"
+            class="lam-btn lam-btn--sub"
+            :disabled="!canPreview || previewLoading"
+            @click="loadPreview"
+          >
+            {{ previewLoading ? '조회 중...' : '대상일 조회' }}
+          </button>
+        </section>
+
+        <!-- 날짜별 체크리스트 -->
+        <section v-if="days.length" class="lam-section">
+          <h2 class="lam-section__title">신청 대상일</h2>
+
+          <div class="lam-quick">
+            <button type="button" class="lam-quick__btn" @click="checkAll(true)">전체 선택</button>
+            <button type="button" class="lam-quick__btn" @click="checkAll(false)">전체 해제</button>
+            <button type="button" class="lam-quick__btn" @click="checkDefaults">기본값</button>
+          </div>
+
+          <ul class="lam-days">
+            <li
+              v-for="d in days"
+              :key="d.ymd"
+              class="lam-day"
+              :class="{
+                'is-blocked': !d.selectable,
+                'is-weekend': d.weekend || d.holiday,
+                'is-checked': checked[d.ymd],
+              }"
+            >
+              <label class="lam-day__label">
+                <input
+                  type="checkbox"
+                  :disabled="!d.selectable"
+                  :checked="!!checked[d.ymd]"
+                  @change="toggle(d)"
+                />
+                <span class="lam-day__date">{{ fmt(d.ymd) }}({{ d.dow }})</span>
+              </label>
+              <span v-if="!d.selectable" class="lam-day__reason">
+                {{ d.blockedReason || '신청 불가' }}
+              </span>
+              <span v-else-if="!d.hasSchedule" class="lam-day__note">
+                {{ d.holiday ? '휴일' : '스케줄 없음' }}
+              </span>
+            </li>
+          </ul>
+
+          <div class="lam-summary">
+            <span>선택 <b>{{ checkedCount }}</b>일</span>
+            <span v-if="blockedCount > 0" class="lam-summary__blocked">
+              · 신청 불가 {{ blockedCount }}일
+            </span>
+          </div>
+          <p v-if="Number(shortageDays) > 0" class="lam-warn">
+            기본 선택 기준 잔여가 {{ shortageDays }}일 부족합니다. 기간을 줄이거나 잔여를 확인해 주세요.
+          </p>
+        </section>
+
+        <!-- 사유 -->
+        <section v-if="days.length" class="lam-section">
+          <h2 class="lam-section__title">사유</h2>
+          <textarea v-model="reason" class="lam-textarea" rows="3" placeholder="사유를 입력하세요"></textarea>
+        </section>
+      </template>
+    </main>
+
+    <footer v-if="days.length" class="lam-foot">
+      <button type="button" class="lam-btn" :disabled="!canSubmit || submitting" @click="onSubmit">
+        {{ submitting ? '신청 중...' : `${checkedCount}일 신청하기` }}
+      </button>
+    </footer>
+  </div>
+</template>
+
+<script setup>
+import { ref, reactive, computed, onMounted, getCurrentInstance } from 'vue'
+import { useRouter } from 'vue-router'
+
+import api from '@/api/axios'
+import { resolveApiErrorMessage } from '@/utils/apiError'
+import DateStepperField from '@/components/common/DateStepperField.vue'
+
+const router = useRouter()
+const { proxy } = getCurrentInstance() || { proxy: null }
+
+const showAlert = (message) => {
+  if (proxy?.$alert) return proxy.$alert(message)
+  window.alert(message)
+  return Promise.resolve()
+}
+
+// ── 상태 ────────────────────────────────────────────────────────────────
+const metaLoading = ref(true)
+const leaveTypes = ref([])
+const leaveCd = ref('')
+const fromDate = ref('')
+const toDate = ref('')
+const reason = ref('')
+
+const previewLoading = ref(false)
+const days = ref([])
+const checked = reactive({})
+const shortageDays = ref(0)
+const submitting = ref(false)
+
+// 종일 사용이 가능한 종류만 — 기간 신청은 종일 전용이다.
+//   메타의 useUnitType 표기가 종류마다 다를 수 있어(단일코드/복수) 문자열 포함으로 관대하게 본다.
+//   최종 판정은 서버가 한다(ATTD_400_102).
+const fullDayLeaveTypes = computed(() =>
+  (leaveTypes.value || []).filter((t) => String(t.useUnitType ?? '').includes('00')),
+)
+
+const canPreview = computed(() => !!leaveCd.value && !!fromDate.value && !!toDate.value)
+
+const checkedDates = computed(() =>
+  days.value.filter((d) => d.selectable && checked[d.ymd]).map((d) => d.ymd),
+)
+const checkedCount = computed(() => checkedDates.value.length)
+const blockedCount = computed(() => days.value.filter((d) => !d.selectable).length)
+const canSubmit = computed(() => checkedCount.value > 0 && !!reason.value.trim())
+
+const onBack = () => router.back()
+
+const fmt = (ymd) =>
+  !ymd || ymd.length !== 8 ? ymd : `${ymd.slice(4, 6)}.${ymd.slice(6, 8)}`
+
+// 'YYYY-MM-DD' → 'YYYYMMDD' (DateStepperField 는 하이픈 형식을 쓴다)
+const toYmd = (v) => String(v || '').replace(/-/g, '')
+
+const resetPreview = () => {
+  days.value = []
+  Object.keys(checked).forEach((k) => delete checked[k])
+  shortageDays.value = 0
+}
+
+// ── 미리보기 ────────────────────────────────────────────────────────────
+//   범위 확정 직후 1회만 호출한다. 체크 토글은 로컬 처리(재호출 없음).
+const loadPreview = async () => {
+  if (!canPreview.value) return
+  previewLoading.value = true
+  try {
+    const { data } = await api.get('/appApi/leaveflow/apply-multi-preview', {
+      params: {
+        leaveCd: leaveCd.value,
+        fromYmd: toYmd(fromDate.value),
+        toYmd: toYmd(toDate.value),
+      },
+    })
+    days.value = Array.isArray(data?.days) ? data.days : []
+    shortageDays.value = data?.shortageDays ?? 0
+    Object.keys(checked).forEach((k) => delete checked[k])
+    days.value.forEach((d) => {
+      // 서버가 계산한 기본 체크(근무계획 기준, 무계획 구간은 달력 폴백)를 그대로 반영한다.
+      checked[d.ymd] = !!d.defaultChecked
+    })
+  } catch (err) {
+    resetPreview()
+    showAlert(resolveApiErrorMessage(err, '대상일을 불러오지 못했어요.'))
+  } finally {
+    previewLoading.value = false
+  }
+}
+
+const toggle = (d) => {
+  if (!d.selectable) return
+  checked[d.ymd] = !checked[d.ymd]
+}
+const checkAll = (v) => {
+  days.value.forEach((d) => {
+    if (d.selectable) checked[d.ymd] = v
+  })
+}
+const checkDefaults = () => {
+  days.value.forEach((d) => {
+    checked[d.ymd] = !!d.defaultChecked
+  })
+}
+
+// ── 제출 ────────────────────────────────────────────────────────────────
+const onSubmit = async () => {
+  if (!canSubmit.value || submitting.value) return
+  const dates = checkedDates.value
+  const ok = window.confirm(`${dates.length}일을 신청할까요?`)
+  if (!ok) return
+
+  submitting.value = true
+  try {
+    await api.post('/appApi/leaveflow/apply-multi', {
+      leaveCd: leaveCd.value,
+      leaveType: (leaveTypes.value.find((t) => t.leaveCd === leaveCd.value) || {}).leaveType,
+      dates,
+      reason: reason.value,
+    })
+    await showAlert(`${dates.length}일 신청되었어요`)
+    router.back()
+  } catch (err) {
+    // 서버는 신청 불가일이 있으면 전체 거부하고 blockedDates 로 전부 내려준다(첫 건만 알려주지 않는다).
+    const blocked = err?.response?.data?.blockedDates
+    if (Array.isArray(blocked) && blocked.length) {
+      const lines = blocked
+        .slice(0, 8)
+        .map((b) => `· ${fmt(b.date)} ${b.reason || ''}`)
+        .join('\n')
+      const more = blocked.length > 8 ? `\n외 ${blocked.length - 8}일` : ''
+      await showAlert(`신청할 수 없는 날짜가 있어 신청되지 않았어요.\n${lines}${more}`)
+      // 상태가 바뀐 것이므로 미리보기를 다시 받아 화면을 최신화한다.
+      await loadPreview()
+    } else {
+      showAlert(resolveApiErrorMessage(err, '연차 신청 중 오류가 발생했습니다.'))
+    }
+  } finally {
+    submitting.value = false
+  }
+}
+
+onMounted(async () => {
+  try {
+    const { data } = await api.get('/appApi/leaveflow/apply-meta')
+    leaveTypes.value = Array.isArray(data?.leaveTypes) ? data.leaveTypes : []
+  } catch (err) {
+    showAlert(resolveApiErrorMessage(err, '연차 종류를 불러오지 못했어요.'))
+  } finally {
+    metaLoading.value = false
+  }
+})
+</script>
+
+<style scoped>
+.lam-view {
+  display: flex;
+  flex-direction: column;
+  min-height: 100vh;
+  background: var(--color-bg, #f7f8fa);
+}
+.lam-hd {
+  display: flex;
+  align-items: center;
+  padding: 0.6rem 0.75rem;
+  background: #fff;
+  border-bottom: 1px solid var(--color-border, #e5e7eb);
+}
+.lam-hd__back {
+  border: none;
+  background: transparent;
+  padding: 0.2rem;
+  cursor: pointer;
+}
+.lam-hd__title {
+  flex: 1;
+  text-align: center;
+  font-size: 1rem;
+  font-weight: 700;
+  margin: 0;
+  color: var(--color-text-strong, #111827);
+}
+.lam-hd__spacer {
+  width: 22px;
+}
+.lam-body {
+  flex: 1;
+  padding: 0.75rem;
+  overflow-y: auto;
+}
+.lam-state {
+  text-align: center;
+  color: var(--color-text-muted, #9ca3af);
+  font-size: 0.9rem;
+  padding: 2rem 0;
+}
+.lam-section {
+  background: #fff;
+  border: 1px solid var(--color-border, #e5e7eb);
+  border-radius: 0.6rem;
+  padding: 0.75rem;
+  margin-bottom: 0.6rem;
+}
+.lam-section__title {
+  font-size: 0.85rem;
+  font-weight: 700;
+  margin: 0 0 0.5rem;
+  color: var(--color-text-strong, #111827);
+}
+.lam-select,
+.lam-textarea {
+  width: 100%;
+  padding: 0.5rem;
+  border: 1px solid var(--color-border, #d1d5db);
+  border-radius: 0.4rem;
+  font-size: 0.9rem;
+  font-family: inherit;
+  color: var(--color-text-strong, #111827);
+  background: #fff;
+}
+.lam-hint {
+  font-size: 0.75rem;
+  color: var(--color-text-muted, #6b7280);
+  margin: 0.4rem 0 0;
+  line-height: 1.5;
+}
+.lam-range {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+.lam-range__tilde {
+  color: var(--color-text-muted, #9ca3af);
+}
+.lam-quick {
+  display: flex;
+  gap: 0.35rem;
+  margin-bottom: 0.5rem;
+}
+.lam-quick__btn {
+  flex: 1;
+  padding: 0.3rem;
+  font-size: 0.75rem;
+  border: 1px solid var(--color-border, #d1d5db);
+  border-radius: 0.35rem;
+  background: #fff;
+  color: var(--color-text-muted, #6b7280);
+  cursor: pointer;
+  font-family: inherit;
+}
+.lam-days {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  max-height: 46vh;
+  overflow-y: auto;
+}
+.lam-day {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.4rem;
+  padding: 0.4rem 0.2rem;
+  border-bottom: 1px solid var(--color-border-weak, #f3f4f6);
+}
+.lam-day__label {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  cursor: pointer;
+}
+.lam-day__date {
+  font-size: 0.85rem;
+  color: var(--color-text-strong, #111827);
+}
+/* 신청 불가(⊘) — 사유와 함께 흐리게. 선택 자체가 막힌다. */
+.lam-day.is-blocked {
+  opacity: 0.55;
+}
+.lam-day.is-blocked .lam-day__label {
+  cursor: not-allowed;
+}
+.lam-day__reason {
+  font-size: 0.72rem;
+  color: var(--color-warning-text, #b45309);
+  text-align: right;
+  line-height: 1.4;
+}
+/* 기본 해제(☐) — 주말·휴무. 선택은 가능하다는 걸 흐린 안내로 알린다. */
+.lam-day__note {
+  font-size: 0.72rem;
+  color: var(--color-text-muted, #9ca3af);
+}
+.lam-summary {
+  margin-top: 0.5rem;
+  font-size: 0.82rem;
+  color: var(--color-text-strong, #111827);
+}
+.lam-summary__blocked {
+  color: var(--color-warning-text, #b45309);
+}
+.lam-warn {
+  margin: 0.4rem 0 0;
+  font-size: 0.78rem;
+  color: var(--color-danger, #ef4444);
+  line-height: 1.5;
+}
+.lam-foot {
+  padding: 0.6rem 0.75rem calc(0.6rem + env(safe-area-inset-bottom));
+  background: #fff;
+  border-top: 1px solid var(--color-border, #e5e7eb);
+}
+.lam-btn {
+  width: 100%;
+  padding: 0.7rem;
+  border: none;
+  border-radius: 0.5rem;
+  background: var(--color-primary, #30796a);
+  color: #fff;
+  font-size: 0.95rem;
+  font-weight: 700;
+  cursor: pointer;
+  font-family: inherit;
+}
+.lam-btn:disabled {
+  background: var(--color-border, #d1d5db);
+  cursor: not-allowed;
+}
+.lam-btn--sub {
+  margin-top: 0.5rem;
+  padding: 0.5rem;
+  font-size: 0.85rem;
+  background: var(--color-primary-tint, #dcfce7);
+  color: var(--color-primary, #30796a);
+}
+</style>

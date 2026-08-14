@@ -22,6 +22,12 @@
 
     <!-- 본문 (스크롤 영역) -->
     <main class="lav-body">
+      <!-- prafta-leavemulti: 기간(From-To) 신청 진입. 종일 연차를 여러 날 한 번에 신청한다.
+           ★기존 단건 폼은 그대로 두고 별도 화면으로 분리했다(회귀 위험 0). -->
+      <button type="button" class="lav-multi-entry" @click="onGoMulti">
+        여러 날 한 번에 신청하기 (기간 선택)
+      </button>
+
       <!-- 로딩 -->
       <p v-if="isLoadingMeta" class="lav-state">불러오는 중...</p>
 
@@ -196,6 +202,9 @@ const onDayScheduleRequest = async (workYmd) => {
 // payload(폼 emit): { leaveCd, leaveType, workYmd, useUnitType, halfPart, startTime, endTime,
 //                     reason, approverUserCds, presetId } ← 018-B 요청 본문과 1:1
 //   HB-10: halfPart('START'|'END')는 반차('01') 신청 시 필수 — 미전송이면 서버가 ATTD_400_195 로 거부한다.
+// prafta-leavemulti: 기간(From-To) 신청 화면으로 이동. 종일 연차 전용 별도 화면이다.
+const onGoMulti = () => router.push({ name: 'LeaveApplyMulti' })
+
 const onSubmit = async (payload) => {
   if (isSubmitting.value) return
   // TODO(developer):
@@ -323,6 +332,21 @@ onMounted(() => {
   display: flex;
   flex-direction: column;
   gap: var(--space-md);
+}
+
+/* prafta-leavemulti: 기간 신청 진입 버튼 — 보조 액션이라 primary tint 로 낮은 강조. */
+.lav-multi-entry {
+  width: 100%;
+  padding: 0.6rem;
+  margin-bottom: 0.6rem;
+  border: 1px solid var(--color-primary, #30796a);
+  border-radius: 0.5rem;
+  background: var(--color-primary-tint, #dcfce7);
+  color: var(--color-primary, #30796a);
+  font-size: 0.88rem;
+  font-weight: 700;
+  cursor: pointer;
+  font-family: inherit;
 }
 
 .lav-state {
