@@ -85,6 +85,13 @@
 
     <!-- 적용 툴바 -->
     <div class="attd05-toolbar">
+      <!-- 마감 안내 배지 — 마감월에는 근무타입/휴가 적용·비우기·저장·삭제가 전부 차단된다.
+           종전에는 버튼만 조용히 비활성되어 "버튼이 안 먹는다"로만 보였으므로,
+           차단 사유를 툴바 선두에 먼저 노출한다(마감 여부는 백엔드 authoritative — fnLoadCloseStatus). -->
+      <span v-if="isMonthClosed" class="toolbar-closed-badge">
+        {{ workYm }} 마감됨 · 근무계획 변경 불가
+      </span>
+
       <!-- ── 근무 타입 적용 섹션 ─────────────────────────── -->
       <span class="toolbar-label">근무 타입</span>
       <select v-model="selectedSchType" class="toolbar-sch-select">
@@ -109,13 +116,10 @@
           <span>휴일 포함</span>
         </label>
       </div>
-      <button
-        class="btn-toolbar-apply"
-        :disabled="isMonthClosed"
-        @click="fnApplySchType"
-      >
-        적용
-      </button>
+      <!-- 마감월에도 버튼은 활성으로 두고 클릭 시 사유를 안내한다(fnApplySchType 선두 가드).
+           종전 :disabled 는 핸들러 안의 안내에 도달할 수 없어 무반응으로 보였다.
+           저장/삭제 버튼과 동일한 방식으로 통일 — 최종 차단은 백엔드 가드(ATTD_400_042). -->
+      <button class="btn-toolbar-apply" @click="fnApplySchType">적용</button>
       <span class="toolbar-count-label" :class="{ invisible: !selectionLabel }">
         선택: {{ selectionLabel || "–" }} &middot; {{ selectionCount }}건
       </span>
@@ -152,13 +156,8 @@
       <div class="toolbar-divider"></div>
 
       <!-- ── 셀 비우기 (지우기) ─────────────────────────────── -->
-      <button
-        class="btn-toolbar-clear"
-        :disabled="isMonthClosed"
-        @click="fnClearCells"
-      >
-        지우기
-      </button>
+      <!-- 적용 버튼과 동일 — 마감 사유는 fnClearCells 선두 가드가 안내한다. -->
+      <button class="btn-toolbar-clear" @click="fnClearCells">지우기</button>
 
       <div class="toolbar-spacer"></div>
       <button class="btn-toolbar-upload" @click="fnUploadExcel">
@@ -979,6 +978,13 @@ const fnApplySchType = async () => {
 // prafta-com-016-C-4: 종류 선택 없이 자동 법정휴가 마커를 셀에 적용한다.
 //   저장 시 백엔드가 후보(연차/월차) 중 소멸 임박 통합순으로 잔여 차감하고, 부족분은 사유로 제외 안내한다.
 const fnApplyLeaveType = async () => {
+  // 마감 가드(누락 보완) — 종전에는 이 경로만 마감 검사가 없어 마감월에도 셀이 채워졌고,
+  //   저장 단계에서야 백엔드(ATTD_400_042)가 거부해 사용자가 원인을 늦게 알았다.
+  //   근무타입 적용/비우기/저장/삭제와 동일 시점에 동일 방식으로 안내한다.
+  if (isMonthClosed.value) {
+    await proxy.$alert("마감된 월입니다. 법정 휴가를 적용할 수 없습니다.");
+    return;
+  }
   // 선택된 셀(사용자, 일자) 집합을 순회한다(Excel 식 다중/비사각형 선택 대응).
   const selectedTargets = getSelectedCellTargets();
   if (selectedTargets.length === 0) {
@@ -1757,6 +1763,20 @@ onUnmounted(() => {
   font-weight: 600;
   color: var(--color-text-strong, #111827);
   padding-right: 0.2rem;
+}
+
+/* 마감월 안내 배지 — 툴바 선두에서 변경 불가 사유를 알린다. */
+.toolbar-closed-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.25rem 0.55rem;
+  border: 1px solid var(--color-warning-text, #b45309);
+  border-radius: var(--input-radius, 6px);
+  background: var(--color-warning-bg, #fef3c7);
+  color: var(--color-warning-text, #b45309);
+  font-size: 0.8125rem;
+  font-weight: 700;
+  white-space: nowrap;
 }
 
 .toolbar-sch-select {
