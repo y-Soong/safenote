@@ -354,7 +354,8 @@
                 v-if="!DailyUserSlotList || DailyUserSlotList.length === 0"
               >
                 <tr>
-                  <td colspan="13" class="edu-grid-empty">
+                  <!-- 컬럼 수 = ThSortable 4 + th 10 = 14 (본문 td 14개와 일치) -->
+                  <td colspan="14" class="edu-grid-empty">
                     등록된 세부 항목이 없습니다.
                   </td>
                 </tr>

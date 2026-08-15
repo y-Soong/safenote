@@ -31,8 +31,12 @@
           </button>
         </div>
 
-        <!-- 사용자 기본정보 -->
-        <div class="section-title">기본 정보</div>
+        <!-- ★스크롤 담당 래퍼 — 전역 modal-popup-guide.css 는 .form-container 를 "모달 바디"로 보고
+             overflow-y:auto + flex:1 을 건다. 이 팝업은 섹션이 4개라 래퍼가 없으면 섹션마다
+             스크롤바가 따로 생긴다(2026-08-15 통합테스트 지적). 스크롤은 이 래퍼 하나만 갖는다. -->
+        <div class="modal-body my-info-body">
+          <!-- 사용자 기본정보 -->
+          <div class="section-title">기본 정보</div>
         <div class="form-container">
           <div class="form-row-max">
             <label>아이디</label>
@@ -202,6 +206,8 @@
             />
           </div>
         </div>
+        </div>
+        <!-- /.my-info-body -->
 
         <!-- 푸터 버튼 -->
         <div class="modal-footer">
@@ -533,6 +539,19 @@ const fnChangePassword = async () => {
 </script>
 
 <style scoped>
+/* ★섹션별 스크롤바 제거 (2026-08-15 통합테스트 지적)
+   전역 modal-popup-guide.css 가 `.form-container` 에 overflow-y:auto + flex:1 1 auto 를 건다.
+   그 규칙은 "팝업 바디가 .form-container 하나"인 화면을 전제로 한 것이라, 섹션이 4개인 이 팝업에서는
+   섹션마다 스크롤 영역이 만들어져 스크롤바가 4개 보였다(한 줄짜리 근무정보·약관 섹션에도 붙었다).
+   스크롤은 .my-info-body 래퍼가 전담하고, 내부 섹션은 내용 높이만큼만 차지하게 되돌린다.
+   전역 규칙(.prafta-modal-popup .form-container)보다 우선하도록 선택자를 한 단계 더 붙인다. */
+.prafta-modal-popup .my-info-body .form-container {
+  overflow: visible;
+  flex: 0 0 auto;
+  min-height: auto;
+  padding: 0 1.2rem 1rem;
+}
+
 .section-title {
   font-size: 0.8rem;
   font-weight: 600;

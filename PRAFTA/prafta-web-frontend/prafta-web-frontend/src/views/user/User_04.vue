@@ -245,8 +245,13 @@ const fnInitSite = () => {
 };
 
 // ===== 조회 =====
+// 좌측 후보 목록과 우측 프리셋을 함께 다시 읽는다.
+//   프리셋을 최초 1회만 읽으면, 화면을 띄워둔 사이 앱에서 프리셋을 지워도 조회 버튼으로
+//   반영되지 않아 이미 없는 프리셋이 계속 보인다(2026-08-15 통합테스트 적발).
+//   현재 선택은 유지한다 — 서버에서 사라진 프리셋이면 fnLoadPresets 가 기본/첫번째로 재선택한다.
 const fnSearch = () => {
   fnLoadCandidates();
+  fnLoadPresets(selectedPresetId.value);
 };
 
 const fnLoadCandidates = async () => {

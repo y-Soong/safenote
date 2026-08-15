@@ -220,8 +220,11 @@
             <p class="std-work-hint">
               이 사업장 통상근로자(풀타임)의 주 소정근로시간입니다. 단시간근로자
               판정과 연차 비례부여의 기준이 되며, 지정하지 않으면 회사 기본값을
-              따릅니다. (법정 상한 주 40시간 — 초과 근무는 연장근로이므로
-              고정연장근무 근무타입으로 관리)
+              따릅니다.
+              <!-- 괄호 보충 설명은 문장 중간에서 끊기지 않도록 항상 새 줄에서 시작한다. -->
+              <br />
+              (법정 상한 주 40시간 — 초과 근무는 연장근로이므로 고정연장근무
+              근무타입으로 관리)
             </p>
 
             <div class="form-row-max">
@@ -1012,6 +1015,10 @@ async function fnConfirmMsg(message, afterConfirmCallback) {
   cursor: pointer;
 }
 .std-work-num {
+  /* ★전역 modal.css 의 `.form-row-max input { flex: 1 1 150px }` 가 grow 를 켜 둬서
+     width 를 줘도 입력칸이 늘어난다(시간칸이 과하게 넓어지고 분칸은 다음 줄로 밀렸다).
+     grow/shrink 를 꺼야 아래 width 가 실제로 먹는다. */
+  flex: 0 0 auto;
   width: 3.5rem;
   text-align: right;
 }

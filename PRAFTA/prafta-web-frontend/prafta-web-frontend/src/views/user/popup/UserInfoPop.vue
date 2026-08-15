@@ -1533,6 +1533,9 @@ const fnConfirmMsg = async (message, afterConfirmCallback) => {
   display: inline-flex;
   align-items: center;
   gap: 0.375rem;
+  /* 라벨이 글자 단위로 쪼개져 3줄이 되던 것을 막는다. 폭이 모자라면 그룹의 flex-wrap 이
+     라디오 단위로 줄바꿈하므로 문구는 온전히 유지된다. */
+  white-space: nowrap;
   font-size: 0.8125rem;
   color: var(--color-text-strong, #111827);
   cursor: pointer;

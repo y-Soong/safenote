@@ -137,7 +137,9 @@
             AND H.ACTION_CMPNY_CD = #{gvCmpnyCd}
             )
     WHERE H.RELATION_ID = #{relationId}
-    ORDER BY H.ACTION_DTIME ASC, H.HIST_ID ASC
+    /* 최신 이력이 위로 오도록 내림차순(2026-08-15 통합테스트 지적).
+       동시각 이력은 HIST_ID 역순으로 안정 정렬한다. */
+    ORDER BY H.ACTION_DTIME DESC, H.HIST_ID DESC
     </select>
 
     <!-- ============================================================
