@@ -134,6 +134,12 @@ public enum UserErrorCode implements ApiErrorCode {
     , USER_400_076(HttpStatus.BAD_REQUEST, "거부 사유는 200자 이하여야 합니다.")
     , USER_400_077(HttpStatus.BAD_REQUEST, "입사일을 올바르게 입력해 주세요. (YYYYMMDD)")
     , USER_400_078(HttpStatus.BAD_REQUEST, "직급 코드가 올바르지 않습니다.")
+
+    // ===== 엑셀 업로드 값 검증 (통합테스트 2026-08-15) =====
+    // 자릿수만 보던 종전 검증(USER_400_049)은 엑셀 서식 유실로 앞자리 0 이 빠진 10자리 값을
+    // 그대로 통과시켰다. 형식(이동전화 여부)까지 판정한다.
+    , USER_400_079(HttpStatus.BAD_REQUEST, "휴대폰번호 형식이 올바르지 않습니다. 이동전화 번호를 입력해 주세요.")
+    , USER_400_080(HttpStatus.BAD_REQUEST, "생년월일을 올바르게 입력해 주세요. (YYMMDD)")
     ;
 
     private final HttpStatus httpStatus;

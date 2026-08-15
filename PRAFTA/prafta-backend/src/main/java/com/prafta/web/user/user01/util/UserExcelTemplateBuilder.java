@@ -54,6 +54,11 @@ public final class UserExcelTemplateBuilder {
     // 컬럼 인덱스 ({@link UserExcelRowParser#HEADERS} 순서와 동일).
     private static final int COL_IDX_GENDER = 7;
 
+    /** 텍스트 서식(@)으로 고정할 컬럼 — 앞자리 0 이 유의미하거나 숫자 변환이 값을 망치는 컬럼.
+     *  경력인정개월수(11)·주소정근로시간(13)은 숫자 입력이 자연스러워 제외한다.
+     *  {@link UserExcelRowParser#HEADERS} 인덱스와 1:1. */
+    private static final int[] TEXT_FORMAT_COL_IDXS = { 0, 2, 3, 4, 5, 8, 9, 10 };
+
     /** 예시 데이터 1행 — 파서에서 skip 되지만 사용자가 양식을 이해할 수 있도록 한 줄 채워둔다.
      *  코드 칸은 참조 시트④(권한)·②(사업장)·③(소속부서)의 실존 형식과 정합해야 한다(F-13). */
     private static final String[] EXAMPLE_ROW = new String[] {
@@ -155,6 +160,18 @@ public final class UserExcelTemplateBuilder {
             // 컬럼 너비 ------------------------------------------------------
             for (int i = 0; i < totalCols; i++) {
                 sheet.setColumnWidth(i, 4500);
+            }
+
+            // ★앞자리 0 이 있는 컬럼은 텍스트 서식(@) 으로 고정한다 ----------------
+            //   일반 서식이면 엑셀이 값을 숫자로 저장하면서 맨 앞 0 하나를 떨어뜨린다.
+            //   01077635257 → 1077635257 / 050101 → 50101 / 사업장번호 00001 → 1.
+            //   setDefaultColumnStyle 은 사용자가 새로 입력하는 셀에도 적용된다.
+            //   ※ 서식이 유실된 파일이 올라와도 업로드 측에서 복원·검증하므로(UserExcelValueRestorer)
+            //     이건 1차 방어다. 서식만 믿지 않는다.
+            CellStyle textStyle = workbook.createCellStyle();
+            textStyle.setDataFormat(workbook.createDataFormat().getFormat("@"));
+            for (int col : TEXT_FORMAT_COL_IDXS) {
+                sheet.setDefaultColumnStyle(col, textStyle);
             }
             // 행 높이 (1행 안내문 가독성)
             noticeRow.setHeightInPoints((short) 24);

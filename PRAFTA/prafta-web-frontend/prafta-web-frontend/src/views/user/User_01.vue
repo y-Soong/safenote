@@ -749,6 +749,9 @@ const uploadProgress = ref({
   failCount: 0,
   percent: 0,
 });
+// 서식 유실 보정 내역 — [{ rowNo, columnNm, before, after }].
+//   업로드 시작 응답으로 즉시 받아 두었다가 처리 완료 시점에 함께 안내한다.
+const uploadAdjustments = ref([]);
 let uploadPollTimer = null;
 const POLL_INTERVAL_MS = 1500;
 
@@ -811,11 +814,14 @@ const fnExcelFileChange = async (event) => {
     );
 
     if (response.status === 200) {
-      const { jobId, totalRows } = response.data || {};
+      const { jobId, totalRows, adjustments } = response.data || {};
       if (!jobId) {
         await proxy.$alert("업로드 작업을 시작하지 못했습니다.");
         return;
       }
+      // 엑셀 서식 유실로 앞자리 0 이 떨어진 값을 서버가 복원한 내역.
+      //   조용히 고치지 않고 처리 결과와 함께 보여준다(사용자가 눈으로 검증할 수 있도록).
+      uploadAdjustments.value = Array.isArray(adjustments) ? adjustments : [];
       // 진행률 초기화 + 모달 노출 + 폴링 시작.
       uploadJobActive.value = true;
       uploadProgress.value = {
@@ -851,6 +857,28 @@ const fnStopUploadJobPolling = () => {
     clearInterval(uploadPollTimer);
     uploadPollTimer = null;
   }
+};
+
+// 서식 유실 보정 내역 안내. 건수가 많을 수 있어 앞 10건만 나열하고 나머지는 건수로 요약한다.
+const MAX_ADJUST_PREVIEW = 10;
+const fnAlertAdjustments = async () => {
+  const list = uploadAdjustments.value || [];
+  if (list.length === 0) return;
+
+  const lines = list
+    .slice(0, MAX_ADJUST_PREVIEW)
+    .map((a) => `· ${a.rowNo}행 ${a.columnNm}: ${a.before} → ${a.after}`)
+    .join("\n");
+  const more =
+    list.length > MAX_ADJUST_PREVIEW
+      ? `\n외 ${list.length - MAX_ADJUST_PREVIEW}건`
+      : "";
+
+  await proxy.$alert(
+    `엑셀 서식 때문에 앞자리 0 이 빠진 값 ${list.length}건을 보정해 저장했습니다.\n` +
+      `값이 맞는지 확인해 주세요.\n\n${lines}${more}`
+  );
+  uploadAdjustments.value = [];
 };
 
 const fnPollUploadJob = async (jobId) => {
@@ -900,6 +928,9 @@ const fnPollUploadJob = async (jobId) => {
       } else {
         await proxy.$alert(`총 ${totalRows}건 모두 생성 완료되었습니다.`);
       }
+      // 서식 유실 보정이 있었다면 결과 안내 뒤에 이어서 알린다.
+      //   조용히 고치면 사용자가 잘못된 값이 들어간 줄 모른 채 넘어간다.
+      await fnAlertAdjustments();
       fnSearch();
     }
   } catch (err) {

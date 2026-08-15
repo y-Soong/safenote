@@ -91,6 +91,7 @@ import com.prafta.common.cmm.leave.service.LeaveGrantEngineService;
 import com.prafta.common.cmm.leave.vo.HireDateAdjustResultVO;
 import com.prafta.common.dto.TokenInfo;
 import com.prafta.web.user.user01.util.UserExcelTemplateBuilder;
+import com.prafta.web.user.user01.util.UserExcelValueRestorer;
 
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -851,6 +852,15 @@ public class User01ServiceImpl implements User01Service{
 				|| phoneNorm.length() > PHONE_MAX_DIGITS) {
 			throw new ApiException(UserErrorCode.USER_400_049);
 		}
+		// 10-1) 형식 검증 — 자릿수만으로는 부족하다(2026-08-15 통합테스트).
+		//   엑셀 서식 유실로 앞자리 0 이 빠진 "1077635257"(10자리)이 하한을 통과해 그대로 저장됐다.
+		//   이 컬럼은 로그인 계정·초기 비밀번호·SMS 인증에 쓰이므로 이동전화만 허용한다
+		//   (유선·인터넷전화는 복원은 되지만 용도상 부적합 — 사유를 구분해 안내한다).
+		//   ★ Normalizers.normalizePhone 은 비숫자를 조용히 제거하므로 이 검증이 없으면
+		//     "김철수010..." 같은 값도 멀쩡한 번호로 둔갑한다.
+		if (!UserExcelValueRestorer.isKrMobile(phoneNorm)) {
+			throw new ApiException(UserErrorCode.USER_400_079);
+		}
 
 		// 11) 휴대폰 HMAC 중복 사전 진단 (UX_TB_USER_MBL_NO UNIQUE).
 		String phoneHmac = hmacSigner.hmacSha256Base64Url(phoneNorm);
@@ -859,9 +869,14 @@ public class User01ServiceImpl implements User01Service{
 			throw new ApiException(UserErrorCode.USER_400_042);
 		}
 
-		// 12) 이메일/생년월일 정규화.
+		// 12) 이메일/생년월일 정규화 + 생년월일 유효성 검증.
+		//   ★ normalizeBirth 는 비숫자를 제거만 하므로 "abc" 는 null 이 되어 조용히 미저장됐다
+		//     (필수 검증은 원본 param.birthDt() 를 보므로 통과한다). 실제 달력 날짜인지까지 본다.
 		String emailNorm = Normalizers.normalizeEmail(param.email());
 		String birthNorm = Normalizers.normalizeBirth(param.birthDt());
+		if (!UserExcelValueRestorer.isValidBirth(birthNorm)) {
+			throw new ApiException(UserErrorCode.USER_400_080);
+		}
 
 		// 13) AES-GCM 암호화 (정책 §11.1 PII 평문 저장 금지).
 		String phoneEnc = aesGcmCrypto.encrypt(phoneNorm);

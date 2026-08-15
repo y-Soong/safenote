@@ -70,6 +70,16 @@ public final class UserExcelRowParser {
      * @return 파싱된 UserCreateParam 리스트 (헤더/예시/빈 행 제외)
      */
     public static List<UserCreateParam> parse(Sheet sheet, TokenInfo tokenInfo) {
+        return parse(sheet, tokenInfo, null);
+    }
+
+    /**
+     * 위 {@link #parse(Sheet, TokenInfo)} 와 동일하되, 서식 유실 보정 내역을 함께 수집한다.
+     *
+     * @param adjustments 보정 내역 수집처(null 허용) — 앞자리 0 복원이 일어난 행/컬럼/전후값
+     */
+    public static List<UserCreateParam> parse(
+            Sheet sheet, TokenInfo tokenInfo, List<UserExcelValueRestorer.Adjustment> adjustments) {
 
         List<UserCreateParam> result = new ArrayList<>();
 
@@ -90,10 +100,16 @@ public final class UserExcelRowParser {
             req.setAuthCd(strAt(row, 2));
             req.setSiteNo(strAt(row, 3));
             req.setNodeCd(strAt(row, 4));
-            req.setMblNo(strAt(row, 5));
+            // ★서식 유실 복원 — 셀 서식이 텍스트가 아니면 엑셀이 맨 앞 0 하나를 떨어뜨린다.
+            //   01077635257 → 1077635257 (휴대폰 자릿수 하한 10 을 그대로 통과해 잘못 저장됐다)
+            //   050101      → 50101
+            //   복원 불가한 값은 손대지 않고 넘겨 서비스 검증에서 형식 오류로 떨어뜨린다.
+            //   rowNo 는 사용자가 화면에서 보는 번호(1-based).
+            int rowNo = rowIdx + 1;
+            req.setMblNo(UserExcelValueRestorer.restorePhone(strAt(row, 5), rowNo, adjustments));
             req.setEmail(strAt(row, 6));
             req.setGender(strAt(row, 7));
-            req.setBirthDt(strAt(row, 8));
+            req.setBirthDt(UserExcelValueRestorer.restoreBirth(strAt(row, 8), rowNo, adjustments));
             req.setRankCd(strAt(row, 9));
             req.setHireDate(strAt(row, 10));
             // 고용형태는 단건 생성 팝업(PRAFTA_COM_003-B 3.1.4)과 동일하게 REGULAR 고정.

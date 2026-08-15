@@ -28,6 +28,7 @@ import com.prafta.web.user.user01.upload.result.UploadJobResult;
 import com.prafta.web.user.user01.upload.service.UploadJobAsyncRunner;
 import com.prafta.web.user.user01.upload.service.UploadJobService;
 import com.prafta.web.user.user01.util.UserExcelRowParser;
+import com.prafta.web.user.user01.util.UserExcelValueRestorer;
 
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -77,6 +78,9 @@ public class UploadJobServiceImpl implements UploadJobService {
         }
 
         // 3) POI 시트 파싱 (동기).
+        //   서식 유실로 앞자리 0 이 떨어진 값(휴대폰·생년월일)은 파서가 복원하고, 그 내역을 여기 모은다.
+        //   파싱이 동기 구간이라 보정 내역은 시작 응답으로 바로 내려줄 수 있다(잡 테이블 확장 불필요).
+        List<UserExcelValueRestorer.Adjustment> adjustments = new ArrayList<>();
         List<UserCreateParam> params;
         try (InputStream in = file.getInputStream();
              XSSFWorkbook workbook = new XSSFWorkbook(in)) {
@@ -85,7 +89,7 @@ public class UploadJobServiceImpl implements UploadJobService {
                 throw new ApiException(UserErrorCode.USER_400_053);
             }
             Sheet sheet = workbook.getSheetAt(0);
-            params = UserExcelRowParser.parse(sheet, tokenInfo);
+            params = UserExcelRowParser.parse(sheet, tokenInfo, adjustments);
 
         } catch (ApiException e) {
             throw e;
@@ -118,8 +122,12 @@ public class UploadJobServiceImpl implements UploadJobService {
         // 6) 비동기 실행 (별도 Bean 호출 → 프록시 정상 통과).
         uploadJobAsyncRunner.runAsync(jobId, tokenInfo.gv_cmpnyCd(), tokenInfo.gv_userCd(), params);
 
+        if (!adjustments.isEmpty()) {
+            log.info("엑셀 업로드 서식 보정 - jobId={}, 보정건수={}", jobId, adjustments.size());
+        }
+
         // 7) 즉시 응답.
-        return new UserUploadJobStartResponse(jobId, params.size());
+        return new UserUploadJobStartResponse(jobId, params.size(), adjustments);
     }
 
     @Override
