@@ -93,6 +93,204 @@
         ORDER BY U.INSERT_DATE DESC, U.USER_CD DESC
     </select>
 
+    <!-- ================================================================
+         셀프가입 처리 이력 (User_09 처리 이력 탭).
+
+         출처는 TB_AUDIT_LOG (RESOURCE_TYPE='SELF_JOIN_APPROVAL') 한 곳이다.
+         승인되면 계정 상태가 일반 재직자('01')와 같아져 TB_USER 로는 승인 건을 뽑을 수 없다.
+
+         ★USE_YN / ACCOUNT_STATUS 는 술어에 두지 않는다 — 거부 계정은 USE_YN='N', 상태 '07' 이라
+           어느 쪽을 걸어도 이력의 절반이 사라진다. 이력의 대상은 모든 상태다.
+         ★대상자(TB_USER) 조인은 INNER JOIN 이다. 감사 로그에는 사업장이 없어 스코프 판정 근거가
+           대상자 행뿐이며, LEFT JOIN 으로 두면 스코프를 판정할 수 없는 행이 전 관리자에게 노출된다.
+         ★DETAIL 은 네이티브 json 컬럼이라 JSON_VALID 가드가 필요 없다(깨진 JSON 이 들어갈 수 없다).
+           NULL 이면 JSON_EXTRACT 가 SQL NULL 을 돌려주므로 COALESCE 폴백이 정상 동작한다.
+         ★JSON 추출값은 테이블 컬럼과 섞이는 자리(COALESCE/비교)에서 collation 충돌(1267)이 날 수
+           있어 utf8mb4_unicode_ci 로 명시 고정한다.
+         ================================================================ -->
+
+    <!-- 처리 결과 추출식 단일 출처 — 목록 SELECT 절과 WHERE 절이 같은 식을 써야 한다. -->
+    <sql id="historyDetailAction">JSON_UNQUOTE(JSON_EXTRACT(A.DETAIL, '$.action')) COLLATE utf8mb4_unicode_ci</sql>
+
+    <!-- 목록/건수 공통 술어. 별칭 A(감사 로그)와 U(대상자)만 참조한다
+         (건수 쿼리가 사업장/부서/직급 조인을 생략할 수 있게 하기 위함). -->
+    <sql id="historyWhere">
+        WHERE A.CMPNY_CD      = #{gvCmpnyCd}
+          AND A.RESOURCE_TYPE = 'SELF_JOIN_APPROVAL'
+          AND A.DEL_YN        = 'N'
+          AND U.SITE_CD       = #{siteCd}
+
+        <!-- ★처리 결과 화이트리스트 — RESOURCE_TYPE 만으로는 부족하다.
+             거부 계정의 셀프 재가입(LoginServiceImpl 의 상태 07→06 재활용)이 같은 RESOURCE_TYPE 으로
+             action=REJOIN 감사 행을 남긴다. 이 행은 관리자가 처리한 것이 아니고 행위자(USER_CD)가
+             신청자 본인이라, 걸러내지 않으면 "거부 / 처리자=신청자 본인" 으로 오표시되고 총 건수까지
+             부풀린다. 비로그인 경로라 외부에서 반복 유발이 가능하다(security 지적).
+             본 화면의 대상은 관리자 처리 이력(승인/거부)뿐이다. -->
+          AND <include refid="historyDetailAction" /> IN ('APPROVE', 'REJECT')
+
+        <if test='nodeCd != null and nodeCd != "" and "Y".equals(incSubNodeYn)'>
+          AND EXISTS (
+              SELECT 1
+              FROM node_tree NT
+              WHERE NT.CMPNY_CD = U.CMPNY_CD
+                AND NT.SITE_CD  = U.SITE_CD
+                AND NT.NODE_CD  = U.NODE_CD
+          )
+        </if>
+        <if test='nodeCd != null and nodeCd != "" and !"Y".equals(incSubNodeYn)'>
+          AND U.NODE_CD = #{nodeCd}
+        </if>
+
+        <if test="userKeyword != null and userKeyword != ''">
+          AND ( U.USER_ID LIKE CONCAT('%', #{userKeyword}, '%')
+             OR U.USER_NM LIKE CONCAT('%', #{userKeyword}, '%') )
+        </if>
+
+        <if test="actionType != null and actionType != ''">
+          AND <include refid="historyDetailAction" /> = #{actionType}
+        </if>
+
+        /* 처리기간은 서비스 계층에서 datetime 문자열로 정규화해 넘어온다.
+           DATE() 함수 술어를 쓰면 IX_AUDIT_LOG_RESOURCE 를 못 탄다. */
+        <if test="startDtime != null and startDtime != ''">
+          AND A.INSERT_DATE &gt;= #{startDtime}
+        </if>
+        <if test="endDtime != null and endDtime != ''">
+          AND A.INSERT_DATE &lt;= #{endDtime}
+        </if>
+    </sql>
+
+    <select id="selectSelfJoinHistoryList" parameterType="com.prafta.web.user.user09.application.query.SelfJoinHistoryListQuery" resultType="com.prafta.web.user.user09.result.SelfJoinHistoryRowResult">
+    /* User09Mapper.selectSelfJoinHistoryList */
+        <if test='nodeCd != null and nodeCd != "" and "Y".equals(incSubNodeYn)'>
+        WITH RECURSIVE node_tree AS (
+            SELECT
+                  N.CMPNY_CD
+                , N.SITE_CD
+                , N.NODE_CD
+            FROM TB_SITE_NODE N
+            WHERE N.CMPNY_CD = #{gvCmpnyCd}
+              AND N.SITE_CD  = #{siteCd}
+              AND N.NODE_CD  = #{nodeCd}
+
+            UNION ALL
+
+            SELECT
+                  C.CMPNY_CD
+                , C.SITE_CD
+                , C.NODE_CD
+            FROM TB_SITE_NODE C
+            INNER JOIN node_tree P
+                ON  C.CMPNY_CD       = P.CMPNY_CD
+                AND C.SITE_CD        = P.SITE_CD
+                AND C.PARENT_NODE_CD = P.NODE_CD
+        )
+        </if>
+
+        /* SELECT 컬럼 순서 = SelfJoinHistoryRowResult 생성자 인자 순서와 1:1 (record 위치 매핑).
+           휴대폰은 암호문 + LAST4 만 내보내고 마스킹은 서비스가 수행한다(평문 SQL 노출 금지).
+           입사일/직급은 감사 로그의 승인 당시 값 우선, 없으면(T1 배포 이전 적재분) 현재값 폴백. */
+        SELECT
+              A.AUDIT_ID                                    AS auditId
+            , DATE_FORMAT(A.INSERT_DATE, '%Y-%m-%d %H:%i')  AS processDtime
+            , <include refid="historyDetailAction" />       AS actionType
+            , U.USER_CD                                     AS userCd
+            , U.USER_ID                                     AS userId
+            , U.USER_NM                                     AS userNm
+            , S.SITE_NM                                     AS siteNm
+            , N.NODE_NM                                     AS nodeNm
+            , U.MBL_NO_ENC                                  AS mblNoEnc
+            , U.MBL_NO_LAST4                                AS mblNoLast4
+            , DATE_FORMAT(U.INSERT_DATE, '%Y-%m-%d %H:%i')  AS applyDtime
+            , CASE WHEN <include refid="historyDetailAction" /> = 'APPROVE'
+                   THEN COALESCE(JSON_UNQUOTE(JSON_EXTRACT(A.DETAIL, '$.hireDate')) COLLATE utf8mb4_unicode_ci
+                               , U.HIRE_DATE)
+              END                                           AS hireDate
+            , R.BAIM_VAL_D_NM                               AS rankNm
+            , COALESCE(P.USER_NM, A.USER_CD)                AS processorNm
+            , JSON_UNQUOTE(JSON_EXTRACT(A.DETAIL, '$.reason')) AS rejectReason
+
+        FROM TB_AUDIT_LOG A
+
+        /* 대상자(신청자). 스코프 판정의 유일한 근거이므로 INNER JOIN 이다(fail-closed). */
+        INNER JOIN TB_USER U
+            ON  U.CMPNY_CD = A.CMPNY_CD
+            AND U.USER_CD  = A.RESOURCE_KEY
+
+        /* 처리자 이름. 퇴사/삭제 등으로 없으면 서비스가 아니라 SQL 에서 USER_CD 로 폴백한다. */
+        LEFT JOIN TB_USER P
+            ON  P.CMPNY_CD = A.CMPNY_CD
+            AND P.USER_CD  = A.USER_CD
+
+        LEFT JOIN TB_SITE S
+            ON  S.CMPNY_CD = U.CMPNY_CD
+            AND S.SITE_CD  = U.SITE_CD
+
+        /* 부서명은 대상자 본인 사업장 기준으로 조인한다(타 사업장 동일 코드 부서명 오표시 차단). */
+        LEFT JOIN TB_SITE_NODE N
+            ON  N.CMPNY_CD = U.CMPNY_CD
+            AND N.SITE_CD  = U.SITE_CD
+            AND N.NODE_CD  = U.NODE_CD
+
+        /* 직급명[COM007]. 사용중지된 직급도 이름은 보여야 하므로 USE_YN 술어를 두지 않는다.
+           ★승인 행에만 조인한다 — 입사일/직급은 "승인 시 지정한 값"이라 거부 행에는 존재하지 않는
+             개념이다. action 가드 없이 현재값 폴백을 걸면, 거부→재가입→승인 경로에서 거부 행에
+             나중 승인의 입사일·직급이 실려 "거부 시점에 없던 값"이 응답에 나간다(qa D1).
+             웹은 화면에서 막지만 응답 계약을 그대로 재사용하는 앱에서 그대로 노출된다. */
+        LEFT JOIN TB_BAIM_VAL_D R
+            ON  R.CMPNY_CD      = A.CMPNY_CD
+            AND R.BAIM_VAL_CD   = 'COM007'
+            AND <include refid="historyDetailAction" /> = 'APPROVE'
+            AND R.BAIM_VAL_D_CD = COALESCE(JSON_UNQUOTE(JSON_EXTRACT(A.DETAIL, '$.rankCd')) COLLATE utf8mb4_unicode_ci
+                                         , U.RANK_CD)
+
+        <include refid="historyWhere" />
+
+        /* 최신 처리 우선. 동시각 tie-break 는 AUDIT_ID (페이지 경계 중복/누락 방지). */
+        ORDER BY A.INSERT_DATE DESC, A.AUDIT_ID DESC
+        LIMIT #{pageSize} OFFSET #{offset}
+    </select>
+
+    <select id="selectSelfJoinHistoryCount" parameterType="com.prafta.web.user.user09.application.query.SelfJoinHistoryListQuery" resultType="int">
+    /* User09Mapper.selectSelfJoinHistoryCount */
+        <if test='nodeCd != null and nodeCd != "" and "Y".equals(incSubNodeYn)'>
+        WITH RECURSIVE node_tree AS (
+            SELECT
+                  N.CMPNY_CD
+                , N.SITE_CD
+                , N.NODE_CD
+            FROM TB_SITE_NODE N
+            WHERE N.CMPNY_CD = #{gvCmpnyCd}
+              AND N.SITE_CD  = #{siteCd}
+              AND N.NODE_CD  = #{nodeCd}
+
+            UNION ALL
+
+            SELECT
+                  C.CMPNY_CD
+                , C.SITE_CD
+                , C.NODE_CD
+            FROM TB_SITE_NODE C
+            INNER JOIN node_tree P
+                ON  C.CMPNY_CD       = P.CMPNY_CD
+                AND C.SITE_CD        = P.SITE_CD
+                AND C.PARENT_NODE_CD = P.NODE_CD
+        )
+        </if>
+
+        /* 사업장/부서/직급 조인은 건수에 영향이 없어 생략한다.
+           단 INNER JOIN TB_USER 와 historyWhere 는 목록과 반드시 동일해야 한다(불일치 = 페이저 붕괴). */
+        SELECT COUNT(1)
+
+        FROM TB_AUDIT_LOG A
+
+        INNER JOIN TB_USER U
+            ON  U.CMPNY_CD = A.CMPNY_CD
+            AND U.USER_CD  = A.RESOURCE_KEY
+
+        <include refid="historyWhere" />
+    </select>
+
     <!-- 승인/거부 대상의 서버 권위값(사업장/부서/상태). 권한 게이트 입력이므로 바디 값 대신 이 결과를 쓴다. -->
     <select id="selectSelfJoinTarget" resultType="com.prafta.web.user.user09.result.SelfJoinTargetResult">
     /* User09Mapper.selectSelfJoinTarget */

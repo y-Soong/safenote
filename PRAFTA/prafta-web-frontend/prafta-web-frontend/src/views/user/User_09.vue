@@ -1,5 +1,25 @@
 <template>
   <div class="viewComm">
+    <!-- [T5] 탭바 — Attd_01/Attd_10 표준(밑줄형 14px). 탭바는 화면명(ViewHeader) 위에 둔다. -->
+    <div class="u09-tabs">
+      <button
+        type="button"
+        class="u09-tab"
+        :class="{ active: activeTab === 'pending' }"
+        @click="fnSelectTab('pending')"
+      >
+        승인 대기
+      </button>
+      <button
+        type="button"
+        class="u09-tab"
+        :class="{ active: activeTab === 'history' }"
+        @click="fnSelectTab('history')"
+      >
+        처리 이력
+      </button>
+    </div>
+
     <ViewHeader
       class="commViewHeader"
       :title="props.title"
@@ -7,9 +27,9 @@
       @search="fnSearch"
     />
 
-    <!-- 검색바: 사업장 / 소속부서(+하위) / 상태(승인대기·거부) / 사용자정보
+    <!-- 검색바: 사업장 / 소속부서(+하위) / (이력 탭) 처리결과·처리일시 / 사용자정보
          스코프는 서버가 강제한다(사업장 인가 + 부서 관리 권한). 전사 권한이 아니면
-         부서를 지정해야 조회된다. -->
+         부서를 지정해야 조회된다. 두 탭이 사업장·부서·검색어 조건을 공유한다. -->
     <div class="viewSearch">
       <div>
         <label>사업장</label>
@@ -66,12 +86,22 @@
         </label>
       </div>
 
-      <div>
-        <label>상태</label>
-        <select v-model="accountStatus" class="status-select" @change="fnSearch">
-          <option value="06">승인 대기</option>
-          <option value="07">거부</option>
+      <!-- [T5] 이력 탭 전용 조회조건 — 처리결과 -->
+      <div v-if="activeTab === 'history'">
+        <label>처리결과</label>
+        <select v-model="historyAction" class="u09-action-select" @change="fnSearch">
+          <option value="">전체</option>
+          <option value="APPROVE">승인</option>
+          <option value="REJECT">거부</option>
         </select>
+      </div>
+
+      <!-- [T5] 이력 탭 전용 조회조건 — 처리일시 기간(선택, 비우면 전체) -->
+      <div v-if="activeTab === 'history'">
+        <label>처리일시</label>
+        <CalendarSrch v-model="historyStartDate" />
+        <span class="u09-date-sep">~</span>
+        <CalendarSrch v-model="historyEndDate" />
       </div>
 
       <div>
@@ -87,7 +117,8 @@
     </div>
 
     <div class="viewBody">
-      <div class="table-wrapper subtitle-pane">
+      <!-- ==================== 탭1: 승인 대기 ==================== -->
+      <div v-show="activeTab === 'pending'" class="table-wrapper subtitle-pane">
         <div class="subtitle-row">
           <div class="subtitle">
             <span class="subtitle-icon" aria-hidden="true">
@@ -101,7 +132,8 @@
 
         <p class="guide-text">
           ⓘ 회원가입 신청은 관리자 승인 후 계정이 활성화됩니다. 승인 시 입사일·고용형태·소정근로시간을
-          함께 등록하며, 거부한 신청도 동일한 아이디·휴대폰으로 다시 가입할 수 있습니다.
+          함께 등록하며, 거부한 신청도 동일한 아이디·휴대폰으로 다시 가입할 수 있습니다. 처리한 건은
+          <strong>처리 이력</strong> 탭에서 확인할 수 있습니다.
         </p>
 
         <div
@@ -166,24 +198,20 @@
                   @sort="onSort"
                   @update:width="onResize"
                 />
-                <th class="event_cell" style="text-align: center; width: 90px">상태</th>
+                <!-- [T5] 상태 컬럼 제거 — 본 탭은 승인 대기(06) 전용이라 전 행이 동일값이다. -->
                 <th class="event_cell" style="text-align: center; width: 140px">관리</th>
               </tr>
             </thead>
             <tbody>
               <template v-if="loading">
                 <tr>
-                  <td colspan="9" class="edu-grid-empty">조회 중입니다...</td>
+                  <td colspan="8" class="edu-grid-empty">조회 중입니다...</td>
                 </tr>
               </template>
               <template v-else-if="!selfJoinList || selfJoinList.length === 0">
                 <tr>
-                  <td colspan="9" class="edu-grid-empty">
-                    {{
-                      accountStatus === "06"
-                        ? "승인 대기 중인 가입 신청이 없습니다."
-                        : "거부한 가입 신청이 없습니다."
-                    }}
+                  <td colspan="8" class="edu-grid-empty">
+                    승인 대기 중인 가입 신청이 없습니다.
                   </td>
                 </tr>
               </template>
@@ -196,14 +224,6 @@
                   <td>{{ row.siteNm }}</td>
                   <td>{{ row.nodeNm }}</td>
                   <td>{{ row.mblNo }}</td>
-                  <td style="text-align: center">
-                    <span
-                      class="status-badge"
-                      :class="row.accountStatus === '06' ? 'is-pending' : 'is-rejected'"
-                    >
-                      {{ row.accountStatus === "06" ? "승인 대기" : "거부" }}
-                    </span>
-                  </td>
                   <td style="text-align: center">
                     <div class="row-btn-area" v-if="canSave && row.accountStatus === '06'">
                       <button class="btn btn-sm btn-primary" @click="fnOpenApprovePop(row)">
@@ -219,6 +239,118 @@
               </template>
             </tbody>
           </table>
+        </div>
+      </div>
+
+      <!-- ==================== 탭2: 처리 이력 ==================== -->
+      <div v-show="activeTab === 'history'" class="table-wrapper subtitle-pane">
+        <div class="subtitle-row">
+          <div class="subtitle">
+            <span class="subtitle-icon" aria-hidden="true">
+              <svg viewBox="0 0 24 24" width="18" height="18">
+                <path d="M4 4h16v4H4zM4 10h10v10H4z" />
+              </svg>
+            </span>
+            <span class="subtitle-text">셀프가입 처리 이력</span>
+          </div>
+        </div>
+
+        <p class="guide-text">
+          ⓘ 승인·거부 처리 기록입니다. 최신 처리순으로 표시하며, 승인 시 지정한 입사일·직급을 함께
+          보여줍니다. 거부 사유는 감사 기록에 보관된 원문입니다. 사업장·부서는 해당 사용자의 현재
+          소속 기준입니다.
+        </p>
+
+        <div
+          class="table-box overflow-x-auto rounded-md border border-slate-300"
+          style="--box-h: 62vh; --box-sticky-top: 1px; --box-ox: auto"
+        >
+          <table class="data-grid w-full table-fixed text-sm text-left rtl:text-right">
+            <thead>
+              <tr>
+                <th class="event_cell" style="text-align: center; width: 3%">No</th>
+                <th style="width: 10%">처리일시</th>
+                <th style="width: 6%; text-align: center">결과</th>
+                <th style="width: 7%">이름</th>
+                <th style="width: 9%">아이디</th>
+                <th style="width: 10%">사업장</th>
+                <th style="width: 9%">부서</th>
+                <th style="width: 9%">휴대폰</th>
+                <th style="width: 10%">신청일시</th>
+                <th style="width: 9%">승인정보</th>
+                <th style="width: 7%">처리자</th>
+                <th style="width: 11%">거부사유</th>
+              </tr>
+            </thead>
+            <tbody>
+              <template v-if="historyLoading">
+                <tr>
+                  <td colspan="12" class="edu-grid-empty">조회 중입니다...</td>
+                </tr>
+              </template>
+              <template v-else-if="!historyList || historyList.length === 0">
+                <tr>
+                  <td colspan="12" class="edu-grid-empty">
+                    조회된 처리 이력이 없습니다.
+                  </td>
+                </tr>
+              </template>
+              <template v-else>
+                <tr v-for="(row, idx) in historyList" :key="row.auditId">
+                  <td style="text-align: center">
+                    {{ (historyPage - 1) * historyPageSize + idx + 1 }}
+                  </td>
+                  <td>{{ row.processDtime }}</td>
+                  <td style="text-align: center">
+                    <span
+                      class="status-badge"
+                      :class="row.actionType === 'APPROVE' ? 'is-approved' : 'is-rejected'"
+                    >
+                      {{ row.actionType === "APPROVE" ? "승인" : "거부" }}
+                    </span>
+                  </td>
+                  <td>{{ row.userNm }}</td>
+                  <td>{{ row.userId }}</td>
+                  <td>{{ row.siteNm }}</td>
+                  <td>{{ row.nodeNm }}</td>
+                  <td>{{ row.mblNo }}</td>
+                  <td>{{ row.applyDtime }}</td>
+                  <td>
+                    <template v-if="row.actionType === 'APPROVE'">
+                      <span class="u09-approve-date">{{ row.hireDate || "-" }}</span>
+                      <span v-if="row.rankNm" class="u09-approve-rank">{{ row.rankNm }}</span>
+                    </template>
+                    <span v-else>-</span>
+                  </td>
+                  <td>{{ row.processorNm || "-" }}</td>
+                  <td class="u09-reason-cell" :title="row.rejectReason || ''">
+                    {{ row.rejectReason || "-" }}
+                  </td>
+                </tr>
+              </template>
+            </tbody>
+          </table>
+        </div>
+
+        <!-- 페이징 (Tbm_04 패턴) -->
+        <div v-if="historyTotalCount > 0" class="pager">
+          <button
+            class="btn btn-second btn-sm"
+            :disabled="historyPage <= 1"
+            @click="fnGoPage(historyPage - 1)"
+          >
+            이전
+          </button>
+          <span class="pager-info">
+            {{ historyPage }} / {{ historyTotalPages }} (총 {{ historyTotalCount }}건)
+          </span>
+          <button
+            class="btn btn-second btn-sm"
+            :disabled="historyPage >= historyTotalPages"
+            @click="fnGoPage(historyPage + 1)"
+          >
+            다음
+          </button>
         </div>
       </div>
     </div>
@@ -241,6 +373,7 @@ import { resolveApiErrorMessage } from "@/utils/apiError";
 import axios from "@/api/axios";
 import ViewHeader from "@/components/common/ViewHeader.vue";
 import ThSortable from "@/components/common/ThSortable.vue";
+import CalendarSrch from "@/components/common/CalendarSrch.vue";
 import search_icon from "@/assets/img/search_icon.png";
 import SiteSearchPop from "@/components/popup/SiteSearchPop.vue";
 import SiteNodeSearchPop from "@/components/popup/SiteNodeSearchPop.vue";
@@ -255,6 +388,10 @@ const props = defineProps({
   buttons: Object,
 });
 
+// =========================== Const ===========================
+// 대기 탭은 승인대기[SYS013 '06'] 전용이다(상태 select 제거 — 처리한 건은 처리 이력 탭에서 본다).
+const PENDING_STATUS = "06";
+
 // =========================== Ref ===========================
 const localButtons = ref({ ...props.buttons });
 const selfJoinList = ref([]);
@@ -268,7 +405,10 @@ const { colWidths, onResize } = useColumnResize({
   mblNo: 130,
 });
 
-// 조회조건
+// 탭 상태 — 기본 탭은 반드시 '승인 대기'다(처리해야 할 건이 이력에 묻히지 않게).
+const activeTab = ref("pending");
+
+// 조회조건 (사업장/부서/하위부서/검색어는 두 탭이 공유한다)
 const siteCd = ref("");
 const siteNo = ref("");
 const siteNm = ref("");
@@ -276,9 +416,26 @@ const nodeCd = ref("");
 const nodeNm = ref("");
 const nodeDisabled = ref(true);
 const incSubNodeYn = ref(false);
-const accountStatus = ref("06");
 const userKeyword = ref("");
 const loading = ref(false);
+
+// 이력 탭 전용 조회조건
+const historyAction = ref(""); // "" 전체 | "APPROVE" 승인 | "REJECT" 거부
+const historyStartDate = ref(""); // YYYY-MM-DD (비우면 전체)
+const historyEndDate = ref(""); // YYYY-MM-DD (비우면 전체)
+
+// 이력 탭 목록/페이징 — 서버 페이징이라 응답 건수(totalCount)로만 페이저를 계산한다.
+//   서버는 page/pageSize 를 되돌려주지 않으므로 로컬 ref 가 페이저의 단일 출처다.
+const historyList = ref([]);
+const historyLoading = ref(false);
+const historyPage = ref(1);
+const historyPageSize = ref(20); // 서버 기본 20 / 상한 100
+const historyTotalCount = ref(0);
+
+const historyTotalPages = computed(() => {
+  const pages = Math.ceil(historyTotalCount.value / historyPageSize.value);
+  return pages < 1 ? 1 : pages;
+});
 
 // 승인/거부 버튼 노출 — 메뉴 버튼 권한(BTN_SAVE). 실제 인가는 서버가 강제한다(부서 관리 권한).
 const canSave = computed(() => localButtons.value?.save === "Y");
@@ -314,14 +471,38 @@ onMounted(async () => {
 });
 
 // =========================== Methods ===========================
-// 목록 조회 — GET /webApi/user09/self-join-lists.
-//   cmpnyCd/권한은 서버 JWT 클레임 사용(파라미터 전달 금지).
+// 탭 전환 — 이력 탭은 페이지를 1로 되돌린 뒤 조회한다(이전 탭의 페이지 번호를 물고 들어가지 않게).
+//   그리드는 v-show 로 전환하므로 조회조건/스크롤 상태는 유지된다.
+const fnSelectTab = async (key) => {
+  if (activeTab.value === key) return;
+  activeTab.value = key;
+  if (key === "history") {
+    historyPage.value = 1;
+  }
+  await fnSearch();
+};
+
+// 조회 진입점 — ViewHeader [조회] 버튼 / Enter / 처리결과 변경이 모두 여기로 들어온다.
+//   활성 탭에 따라 대기/이력 조회로 분기한다.
 const fnSearch = async () => {
   if (proxy.$util.isEmpty(siteCd.value)) {
     await proxy.$alert(getMessage(MSG.SITE_REQUIRED));
     return;
   }
 
+  if (activeTab.value === "history") {
+    // 조회조건이 바뀐 새 조회이므로 첫 페이지부터 본다(페이지 이동은 fnGoPage 가 담당).
+    historyPage.value = 1;
+    await fnSearchHistory();
+    return;
+  }
+
+  await fnSearchPending();
+};
+
+// 대기 목록 조회 — GET /webApi/user09/self-join-lists.
+//   cmpnyCd/권한은 서버 JWT 클레임 사용(파라미터 전달 금지).
+const fnSearchPending = async () => {
   loading.value = true;
   selfJoinList.value = [];
 
@@ -331,7 +512,7 @@ const fnSearch = async () => {
         siteCd: siteCd.value,
         nodeCd: nodeCd.value,
         incSubNodeYn: incSubNodeYn.value ? "Y" : "N",
-        accountStatus: accountStatus.value,
+        accountStatus: PENDING_STATUS,
         userKeyword: userKeyword.value,
       },
     });
@@ -347,7 +528,53 @@ const fnSearch = async () => {
   }
 };
 
-// 승인 시트 오픈 — 승인 확정은 팝업이 수행하고, 성공 시 목록을 재조회한다.
+// 처리 이력 조회 — GET /webApi/user09/self-join-histories.
+//   cmpnyCd/권한은 서버 JWT 클레임 사용(파라미터 전달 금지).
+//   응답은 historyList + totalCount 뿐이며 page/pageSize 는 서버가 되돌려주지 않는다.
+const fnSearchHistory = async () => {
+  historyLoading.value = true;
+  historyList.value = [];
+
+  try {
+    const response = await axios.get("/webApi/user09/self-join-histories", {
+      params: {
+        siteCd: siteCd.value,
+        nodeCd: nodeCd.value,
+        incSubNodeYn: incSubNodeYn.value ? "Y" : "N",
+        userKeyword: userKeyword.value,
+        actionType: historyAction.value,
+        startDate: historyStartDate.value,
+        endDate: historyEndDate.value,
+        page: historyPage.value,
+        pageSize: historyPageSize.value,
+      },
+    });
+
+    if (response.status === 200) {
+      const data = response.data || {};
+      historyList.value = data.historyList || [];
+      historyTotalCount.value = data.totalCount || 0;
+    }
+  } catch (err) {
+    // 실패 시 목록과 건수를 함께 비운다(건수만 남으면 페이저가 유령 페이지를 가리킨다).
+    historyList.value = [];
+    historyTotalCount.value = 0;
+    const msg = resolveApiErrorMessage(err, "조회 중 오류가 발생했습니다.");
+    await proxy.$alert(msg);
+  } finally {
+    historyLoading.value = false;
+  }
+};
+
+// 페이지 이동 (Tbm_04 fnGoPage 동일 규약)
+const fnGoPage = (target) => {
+  if (target < 1 || target > historyTotalPages.value) return;
+  historyPage.value = target;
+  fnSearchHistory();
+};
+
+// 승인 시트 오픈 — 승인 확정은 팝업이 수행하고, 성공 시 대기 목록을 재조회한다.
+//   재조회는 진입점 분기(fnSearch)가 아니라 대기 조회를 직접 부른다(승인/거부는 대기 탭 전용 액션).
 const fnOpenApprovePop = (row) => {
   openPop(SelfJoinApprovePop, {
     userCd_p: row.userCd,
@@ -357,7 +584,7 @@ const fnOpenApprovePop = (row) => {
     siteCd_p: row.siteCd,
     siteNm_p: row.siteNm,
     nodeNm_p: row.nodeNm,
-    onSaved: fnSearch,
+    onSaved: fnSearchPending,
   });
 };
 
@@ -389,7 +616,7 @@ const fnRejectSubmit = async (row, reason) => {
 
     if (response.status === 200) {
       await proxy.$alert("가입 신청을 거부했습니다.");
-      await fnSearch();
+      await fnSearchPending();
     }
   } catch (err) {
     const msg = resolveApiErrorMessage(err, "거부 처리 중 오류가 발생했습니다.");
@@ -455,6 +682,33 @@ const focusKill = (e) => {
 </script>
 
 <style scoped>
+/* 탭바 — Attd_01 .attd01-tab-bar/.attd01-tab-btn 스펙 준수(밑줄형 14px) */
+.u09-tabs {
+  display: flex;
+  gap: 0.25rem;
+  padding: 0.5rem 0 0;
+  margin-bottom: 0.5rem;
+  border-bottom: 1px solid var(--color-border);
+}
+.u09-tab {
+  padding: 0.5rem 1rem;
+  border: none;
+  border-bottom: 2px solid transparent;
+  margin-bottom: -1px;
+  background: none;
+  font-size: 0.875rem;
+  color: var(--color-text-muted);
+  cursor: pointer;
+}
+.u09-tab:hover {
+  color: var(--color-text);
+}
+.u09-tab.active {
+  font-weight: 600;
+  color: var(--color-primary);
+  border-bottom-color: var(--color-primary);
+}
+
 /* 검색바 좌측 정렬(User_01/User_06 패턴) */
 .viewSearch {
   padding-left: calc(0.5rem + var(--space-md, 0.75rem));
@@ -464,8 +718,14 @@ const focusKill = (e) => {
   margin-left: 0;
 }
 
-.status-select {
-  width: 120px;
+/* 이력 탭 처리결과 select */
+.u09-action-select {
+  width: 100px;
+}
+
+/* 이력 탭 처리일시 기간 구분자 (Tbm_04 .date-range-sep 동일) */
+.u09-date-sep {
+  margin: 0 0.25rem;
 }
 
 /* 하위부서 조회 체크박스 — Attd_07 규격과 동일(검색바 표기 통일).
@@ -519,11 +779,52 @@ const focusKill = (e) => {
   background: var(--color-border, #e5e7eb);
   color: var(--color-text-muted, #4b5563);
 }
+/* 승인 배지 — tokens.css 에 정의된 토큰만 사용한다(--color-primary-bg 는 없음) */
+.status-badge.is-approved {
+  background: var(--color-surface);
+  color: var(--color-primary);
+  border: 1px solid var(--color-primary);
+}
+
+/* 승인정보 셀 — 입사일 + 직급명 */
+.u09-approve-date {
+  color: var(--color-text);
+}
+.u09-approve-rank {
+  margin-left: 0.25rem;
+  color: var(--color-text-muted);
+  font-size: var(--btn-font-sm);
+}
+
+/* 거부사유 셀 — 최대 200자. 한 줄 말줄임 + title 툴팁으로 전문 확인 */
+.u09-reason-cell {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 
 /* 행 관리 버튼 */
 .row-btn-area {
   display: flex;
   gap: 0.25rem;
   justify-content: center;
+}
+
+/* 페이징 (Tbm_04 .pager/.pager-info/.btn-sm 동일) */
+.pager {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.75rem;
+  margin-top: 0.75rem;
+}
+.pager-info {
+  font-size: var(--btn-font);
+  color: var(--color-text-muted);
+}
+.btn-sm {
+  height: var(--btn-height-sm);
+  padding: 0 var(--btn-padding-sm);
+  font-size: var(--btn-font-sm);
 }
 </style>

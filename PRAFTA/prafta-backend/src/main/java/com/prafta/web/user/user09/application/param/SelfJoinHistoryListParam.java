@@ -52,6 +52,15 @@ public record SelfJoinHistoryListParam(
      */
     public static final int MAX_PAGE_SIZE = 100;
 
+    /**
+     * 페이지 번호 상한.
+     *
+     * <p>★상한이 없으면 {@code page * pageSize} 의 int 곱셈이 오버플로해 <b>음수 OFFSET</b> 이 되고
+     * (예: {@code page=2147483647&pageSize=100} → offset -200) MySQL 1064 로 500 이 난다.
+     * 실데이터로 도달할 수 없는 값이므로 넉넉히 두되 곱셈이 int 범위를 넘지 않게 막는다.
+     */
+    public static final int MAX_PAGE = 100_000;
+
     /** 처리기간 입력 형식(yyyy-MM-dd). 화면은 CalendarSrch 로만 입력하므로 형식 위반은 미입력 취급한다. */
     private static final Pattern DATE_PATTERN = Pattern.compile("\\d{4}-\\d{2}-\\d{2}");
 
@@ -76,6 +85,9 @@ public record SelfJoinHistoryListParam(
         }
 
         int page = (request.getPage() == null || request.getPage() < 1) ? 1 : request.getPage();
+        if (page > MAX_PAGE) {
+            page = MAX_PAGE;
+        }
         int pageSize = (request.getPageSize() == null || request.getPageSize() < 1)
                 ? DEFAULT_PAGE_SIZE : request.getPageSize();
         if (pageSize > MAX_PAGE_SIZE) {
