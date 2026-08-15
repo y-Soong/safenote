@@ -9,7 +9,7 @@
   <section class="aprv-sec">
     <p class="aprv-sec__title">결재선</p>
 
-    <!-- 프리셋 칩 (Q2: 자동선택 안 함 — 사용자 명시 선택) -->
+    <!-- 프리셋 칩 (2026-08-15: 기본 프리셋 자동 전개로 변경 — 종전 Q2 "자동선택 안 함" 폐기) -->
     <div v-if="presets.length > 0" class="preset-list">
       <button
         v-for="p in presets"
@@ -60,7 +60,7 @@
 </template>
 
 <script setup>
-import { ref } from 'vue'
+import { ref, watch } from 'vue'
 
 const props = defineProps({
   // 기존 GET /appApi/mypage01/approval-presets(또는 leaveflow/approval-presets)의 presets 배열
@@ -95,6 +95,23 @@ const onSelectPreset = (preset) => {
   }))
   emit('update:modelValue', list)
 }
+
+// 기본 프리셋 자동 전개 (2026-08-15 사용자 지시 — 화면 간 동작 통일).
+//   기간 연차 신청(LeaveApplyMultiView)이 이미 자동 전개라 나머지 결재선 화면을 그쪽에 맞춘다.
+//   ⚠️ 결재선이 비어 있을 때만 적용한다 — 사용자가 직접 편집했거나 부모가 프리필한 값을 덮어쓰지 않는다.
+//   ⚠️ 칩 재선택(토글 해제)으로 비워진 뒤에는 재적용하지 않는다(watch 의존값이 안 바뀌므로 자연히 성립).
+//   ★ defaultYn 은 엔드포인트마다 형이 다르다 — leaveflow=boolean / mypage=('Y'|'N') 문자열. 둘 다 수용.
+const isDefaultPreset = (p) => p?.defaultYn === true || p?.defaultYn === 'Y'
+
+const applyDefaultPreset = () => {
+  if (selectedPresetId.value) return
+  if ((props.modelValue || []).length > 0) return
+  const def = (props.presets || []).find(isDefaultPreset)
+  if (def) onSelectPreset(def)
+}
+
+// 프리셋은 부모가 비동기로 채우므로 도착 시점에 전개한다(immediate: 이미 있으면 마운트 즉시).
+watch(() => props.presets, applyDefaultPreset, { immediate: true })
 
 // 결재자 제거 — userCd 식별자 필터(위치 index 재인덱싱 금지). 프리셋 이탈 표기.
 const onRemove = (approverUserCd) => {

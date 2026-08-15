@@ -1065,6 +1065,7 @@ const onSelectType = (lt) => {
   selectedPresetId.value = ''
   approverList.value = []
   borrowAgreed.value = false // 가불 동의는 종류별 — 종류 변경 시 해제
+  applyDefaultPreset() // 종류 변경으로 비운 결재선에 기본 프리셋 재전개(2026-08-15)
 }
 
 // 단위 전환. 시간차가 아닌 단위(종일/반차)로 전환 시 잔존 시작값을 비워 누수 방지.
@@ -1119,6 +1120,26 @@ const onSelectPreset = (preset) => {
     nodeNm: s.nodeNm,
   }))
 }
+
+// 기본 프리셋 자동 전개 (2026-08-15 사용자 지시 — 화면 간 동작 통일).
+//   기간 연차 신청(LeaveApplyMultiView)이 이미 자동 전개라 단건 화면을 그쪽에 맞춘다.
+//   ⚠️ 결재선이 비어 있을 때만 적용 — 사용자가 직접 편집한 상태를 덮어쓰지 않는다.
+//   ⚠️ 칩 재선택(토글 해제)으로 비운 뒤에는 재적용하지 않는다(watch 의존값이 안 바뀌므로 성립).
+//   ★ defaultYn 은 엔드포인트마다 형이 다르다 — leaveflow=boolean / mypage=('Y'|'N') 문자열. 둘 다 수용.
+const isDefaultPreset = (p) => p?.defaultYn === true || p?.defaultYn === 'Y'
+
+const applyDefaultPreset = () => {
+  if (!aprvRequired.value) return // 무결재 종류는 섹션 자체가 없다
+  if (selectedPresetId.value) return
+  if (approverList.value.length > 0) return
+  const def = (props.presets || []).find(isDefaultPreset)
+  if (def) onSelectPreset(def)
+}
+
+// 프리셋 도착(비동기) · 결재 필요 여부 전환(종류 선택 / 가불 동의) 시점에 전개.
+//   같은 aprvRequired=true 종류끼리의 변경은 값이 안 바뀌어 여기서 안 잡히므로
+//   onSelectType 이 초기화 직후 직접 호출한다(아래).
+watch([() => props.presets, aprvRequired], applyDefaultPreset, { immediate: true })
 
 const onOpenApproverPicker = () => {
   approverPickerOpen.value = true

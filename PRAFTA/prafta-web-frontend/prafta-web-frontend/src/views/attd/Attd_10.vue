@@ -215,8 +215,11 @@
                 묶음 {{ selectedGroup.rows.length }}건을 한 번에 처리합니다. 마감 등으로
                 처리할 수 없는 건이 있으면 그 건만 제외되고 사유가 안내됩니다.
               </p>
+              <!-- ★.btn 기본 클래스 필수 — .btn-primary 는 배경/글자색만 준다.
+                   단독 사용 시 padding·height·radius·font 가 브라우저 기본값으로 남아
+                   다른 화면 버튼과 모양이 어긋난다(2026-08-15 수정). -->
               <button
-                class="btn-primary"
+                class="btn btn-primary"
                 :disabled="groupProcessing"
                 @click="fnProcessGroup"
               >
@@ -301,7 +304,7 @@
               />
               <div class="ra-decide__actions">
                 <button
-                  class="btn-process"
+                  class="btn btn-primary"
                   :disabled="processing"
                   @click="fnProcess"
                 >
@@ -451,7 +454,7 @@
               />
               <div class="ra-decide__actions">
                 <button
-                  class="btn-process"
+                  class="btn btn-primary"
                   :class="{ 'btn-reject': reqDecision === 'reject' }"
                   :disabled="reqProcessing"
                   @click="fnProcessReq"
@@ -499,7 +502,16 @@ const props = defineProps({
 });
 const { proxy } = getCurrentInstance();
 
-const localButtons = ref({ ...props.buttons });
+// ★이 화면은 ViewHeader 이벤트 중 @search 만 처리한다(결재 처리는 상세 패널 버튼 소관).
+//   메뉴가 넘겨준 buttons 를 그대로 쓰면 생성/저장/삭제/엑셀 버튼이 렌더되지만 받는 핸들러가 없어
+//   눌러도 무반응이다 — "승인 체크 후 저장" 으로 오해할 여지가 커 노출을 끊는다(2026-08-15).
+const localButtons = ref({
+  ...props.buttons,
+  create: "N",
+  save: "N",
+  delete: "N",
+  excel: "N",
+});
 // 탭 순서는 재기획서 §5.3 표(스케줄 수정 / 근태 보정 / 초과 / 연차)를 따른다.
 const tabs = [
   { key: "schedule", label: "스케줄 수정" },
@@ -1418,20 +1430,15 @@ onMounted(() => {
   justify-content: flex-end;
   margin-top: 0.4rem;
 }
-.btn-process {
-  background: var(--color-primary, #30796a);
-  color: #fff;
-  border: none;
-  border-radius: 0.35rem;
-  padding: 0.45rem 1.1rem;
-  font-size: 0.85rem;
-  cursor: pointer;
-}
-.btn-process:disabled {
-  opacity: 0.6;
-  cursor: default;
-}
-.btn-reject {
+/* 처리 버튼은 전역 디자인 시스템(button.css)의 .btn + .btn-primary 를 쓴다.
+   구 .btn-process 는 이 화면 전용 커스텀이라 다른 화면과 크기·폰트·radius 가 어긋났다(2026-08-15 제거).
+   ★.btn-primary 는 배경/글자색만 준다 — 크기·padding·radius 는 .btn 에 있으므로 항상 함께 붙인다. */
+
+/* 반려 선택 시 위험색 변형. .btn-primary 는 hover/active 상태 규칙까지 배경을 지정하므로
+   같은 상태 선택자로 맞춰 덮지 않으면 마우스를 올리는 순간 초록으로 되돌아간다. */
+.btn-reject,
+.btn-reject:hover:not(:disabled),
+.btn-reject:active:not(:disabled) {
   background: var(--color-danger, #dc2626);
 }
 .ra-decide__note {

@@ -467,6 +467,38 @@ onMounted(async () => {
 
 <style scoped>
 .lam-view {
+  /* ★디자인 토큰 선언 — 이 앱 프론트는 :root 전역 토큰이 없고 화면마다 자기 루트에 선언한다
+     (LeaveApplyView / LeaveMoveRequestView / MyLeaveSummaryView 등 전부 동일 패턴).
+     이 블록이 없으면 공용 자식 컴포넌트(BaseBottomSheet·ApproverPickerSheet)가 쓰는
+     폴백 없는 var(--color-surface) 가 값 없음으로 풀려 시트가 투명하게 렌더된다
+     (2026-08-15 실기기 결함 — 종전 --color-primary 미정의로 버튼색이 틀어진 것과 같은 뿌리).
+     값은 LeaveApplyView 와 동일하게 맞춘다. */
+  --color-primary: #16a34a;
+  --color-primary-tint: #f0fdf4;
+  --color-primary-tint-border: #dcfce7;
+  --color-primary-text-deep: #15803d;
+  --color-primary-text-darkest: #14532d;
+  --color-danger: #ef4444;
+  --color-danger-tint: #fef2f2;
+  --color-warning: #f59e0b;
+  --color-warning-tint: #fffbeb;
+  --color-warning-text: #b45309;
+  --color-text-primary: #111827;
+  --color-text-secondary: #6b7280;
+  --color-text-tertiary: #9ca3af;
+  --color-border: #e5e7eb;
+  --color-border-light: #f3f4f6;
+  --color-surface: #ffffff;
+  --color-bg: #f9fafb;
+  --radius-sm: 6px;
+  --radius-md: 10px;
+  --radius-lg: 14px;
+  --radius-full: 9999px;
+  --space-xs: 4px;
+  --space-sm: 8px;
+  --space-md: 12px;
+  --space-lg: 16px;
+
   display: flex;
   flex-direction: column;
   min-height: 100vh;
