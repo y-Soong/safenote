@@ -7,16 +7,27 @@ import lombok.Setter;
 /**
  * 신규 고객사 프로비저닝 요청 DTO (POST /platformApi/company).
  *
- * <p>회사코드(CMPNY_CD)는 서버에서 추측 불가한 20자 랜덤값으로 발급한다(요청에 포함하지 않음).
+ * <p>회사코드(CMPNY_CD)는 2026-08-16 부터 <b>운영자가 직접 입력</b>한다(종전 서버 랜덤 20자 발급).
+ * 모든 사용자가 가입 시 관리자 승인을 받는 구조로 바뀌어, 코드 복잡도를 방어 수단으로 쓸 이유가 없어졌다.
  * 운영자 인가/식별은 토큰 + 플랫폼 게이트가 강제하므로 본 요청에 운영자 정보는 포함하지 않는다.
  *
- * <p>필수: cmpnyNm / bsnsLcnNo / adminNm / adminId / adminMbl
+ * <p>필수: cmpnyCd / cmpnyNm / bsnsLcnNo / adminNm / adminId / adminMbl
  * <p>선택: contractEndDate(YYYYMMDD, 무기한/미정이면 미입력) / weekStdMinutes(통상근로시간 기준값)
  */
 @Getter
 @Setter
 @NoArgsConstructor
 public class CompanyProvisionRequest {
+
+    /**
+     * 회사코드(TB_CMPNY.CMPNY_CD) — 운영자가 직접 입력. 영문·숫자 2~20자.
+     *
+     * <p>★서버가 대문자로 정규화해 저장한다. DB 콜레이션이 대소문자를 무시(utf8mb4_unicode_ci)해
+     * 'parma' 와 'PARMA' 가 어차피 같은 값으로 충돌하므로, 표기를 하나로 고정해 혼동을 없앤다.
+     *
+     * <p>★한 번 저장되면 사실상 변경 불가다 — 22개 테이블의 복합 PK 선두 컬럼이다.
+     */
+    private String cmpnyCd;
 
     /** 회사명(TB_CMPNY.CMPNY_NM). */
     private String cmpnyNm;

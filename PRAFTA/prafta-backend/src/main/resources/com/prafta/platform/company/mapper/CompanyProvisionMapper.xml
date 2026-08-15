@@ -212,14 +212,29 @@
     </insert>
 
     <!-- tb_syst_auth_menu: 템플릿(srcCmpnyCd) AUTH_CD ∈ {master,hr,safe,99999} 행을 신규 회사로 복제. -->
+    <!-- 신규 고객사 화면권한 시드.
+         일반사용자(99999)는 화면접근·버튼권한을 모두 'N' 으로 깔고 시작한다(2026-08-16 통합테스트 지적).
+           종전에는 템플릿 001 의 99999 행(59건, 전부 USE_YN='Y')을 그대로 복제한 데다
+           BTN_* 를 INSERT 컬럼에 나열하지 않아 DB 기본값 'Y' 까지 딸려갔다.
+           결과적으로 신규 고객사의 일반사용자가 전 화면·전 버튼을 가진 채 생성됐다.
+         master/hr/safe 는 종전 동작을 그대로 유지한다 — BTN_* 에 'Y' 를 명시해 둔 것은
+           값이 바뀐 게 아니라 종전의 DB 기본값 의존을 눈에 보이게 옮겨 적은 것이다. -->
     <insert id="copyAuthMenuFromTemplate">
     /* CompanyProvisionMapper.copyAuthMenuFromTemplate */
     INSERT INTO tb_syst_auth_menu (
-        CMPNY_CD, AUTH_CD, MENU_D_ID, USE_YN, INSERT_NO, INSERT_DATE, UPDATE_NO, UPDATE_DATE
+        CMPNY_CD, AUTH_CD, MENU_D_ID, USE_YN
+        , BTN_SRCH, BTN_NEW, BTN_DELT, BTN_SAVE, BTN_EXCL
+        , INSERT_NO, INSERT_DATE, UPDATE_NO, UPDATE_DATE
     )
     SELECT
-        #{newCmpnyCd}, AUTH_CD, MENU_D_ID, USE_YN,
-        #{gvUserCd}, NOW(), #{gvUserCd}, NOW()
+        #{newCmpnyCd}, AUTH_CD, MENU_D_ID
+        , CASE WHEN AUTH_CD = '99999' THEN 'N' ELSE USE_YN END
+        , CASE WHEN AUTH_CD = '99999' THEN 'N' ELSE 'Y' END
+        , CASE WHEN AUTH_CD = '99999' THEN 'N' ELSE 'Y' END
+        , CASE WHEN AUTH_CD = '99999' THEN 'N' ELSE 'Y' END
+        , CASE WHEN AUTH_CD = '99999' THEN 'N' ELSE 'Y' END
+        , CASE WHEN AUTH_CD = '99999' THEN 'N' ELSE 'Y' END
+        , #{gvUserCd}, NOW(), #{gvUserCd}, NOW()
     FROM tb_syst_auth_menu
     WHERE CMPNY_CD = #{srcCmpnyCd}
       AND AUTH_CD IN ('master', 'hr', 'safe', '99999')

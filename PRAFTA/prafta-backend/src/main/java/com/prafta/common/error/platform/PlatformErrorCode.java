@@ -29,6 +29,11 @@ public enum PlatformErrorCode implements ApiErrorCode {
     , PLATFORM_400_004(HttpStatus.BAD_REQUEST, "계약 종료일 형식이 올바르지 않습니다.")
     // 회사코드(CMPNY_CD) 발급 실패(충돌 재시도 한도 초과 — 일시적 오류, 재시도 권장).
     , PLATFORM_400_005(HttpStatus.BAD_REQUEST, "회사코드 발급에 실패했습니다. 잠시 후 다시 시도해 주세요.")
+
+    // 회사코드 직접 입력 전환(2026-08-16). CMPNY_CD 는 22개 테이블 복합 PK 선두 컬럼이라
+    // 한 번 저장되면 사실상 변경 불가다 — 입력 시점에 형식·중복을 확실히 막는다.
+    , PLATFORM_400_020(HttpStatus.BAD_REQUEST, "회사코드는 영문·숫자 2~20자로 입력해 주세요.")
+    , PLATFORM_400_021(HttpStatus.BAD_REQUEST, "이미 사용 중인 회사코드입니다. 다른 코드를 입력해 주세요.")
     // 관리자 ID 길이 오류(3~50자).
     , PLATFORM_400_006(HttpStatus.BAD_REQUEST, "관리자 ID는 3~50자여야 합니다.")
     // 관리자 ID 형식 오류(영문/숫자/특수문자(_,-,.) 조합).

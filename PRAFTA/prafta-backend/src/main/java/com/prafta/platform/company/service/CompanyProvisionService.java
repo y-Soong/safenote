@@ -1,6 +1,7 @@
 package com.prafta.platform.company.service;
 
 import com.prafta.platform.company.application.param.CompanyProvisionParam;
+import com.prafta.platform.company.dto.response.CmpnyCdCheckResponse;
 import com.prafta.platform.company.dto.response.CompanyProvisionResponse;
 
 /**
@@ -12,4 +13,12 @@ import com.prafta.platform.company.dto.response.CompanyProvisionResponse;
 public interface CompanyProvisionService {
 
     CompanyProvisionResponse provisionCompany(CompanyProvisionParam param);
+
+    /**
+     * 회사코드 사용 가능 여부(입력 즉시 안내용).
+     *
+     * @param cmpnyCd 운영자가 입력한 회사코드(정규화 전 원본)
+     * @return 정규화 결과·형식 유효성·중복 여부
+     */
+    CmpnyCdCheckResponse checkCmpnyCdAvailable(String cmpnyCd);
 }

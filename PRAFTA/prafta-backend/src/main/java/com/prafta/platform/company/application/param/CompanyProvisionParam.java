@@ -12,7 +12,9 @@ import com.prafta.platform.company.dto.request.CompanyProvisionRequest;
  * 서비스 계층에서 발급하므로 본 파라미터에 포함하지 않는다. gvUserCd 는 생성 레코드의 INSERT_NO 로 쓴다.
  */
 public record CompanyProvisionParam(
-    String cmpnyNm
+    // 운영자가 직접 입력한 회사코드(2026-08-16 전환). 형식·중복 검증은 서비스 계층이 담당한다.
+    String cmpnyCd
+    , String cmpnyNm
     , String bsnsLcnNo
     , String contractEndDate
     // 통상근로자 주 소정근로 분(선택). null 이면 기준값 행을 만들지 않고 코드 폴백 2400분을 쓴다.
@@ -32,7 +34,8 @@ public record CompanyProvisionParam(
         }
 
         return new CompanyProvisionParam(
-            request.getCmpnyNm()
+            request.getCmpnyCd()
+            , request.getCmpnyNm()
             , request.getBsnsLcnNo()
             , request.getContractEndDate()
             , request.getWeekStdMinutes()

@@ -12,7 +12,7 @@
 
     <div class="viewBody platform-create">
       <p class="desc">
-        신규 고객사를 등록합니다. 회사코드는 자동 발급되며, 입력한 관리자 정보로
+        신규 고객사를 등록합니다. 회사코드를 직접 지정하며, 입력한 관리자 정보로
         master 계정 1개가 생성됩니다.
       </p>
 
@@ -23,6 +23,42 @@
           <col />
         </colgroup>
         <tbody>
+          <!-- 회사코드 — 등록 후 변경 불가(22개 테이블 복합 PK 선두 컬럼)라
+               입력 즉시 확인 + 저장 시 서버 재검사(2중)로 막는다. -->
+          <tr>
+            <th>회사코드 <span class="req">*</span></th>
+            <td>
+              <div class="cmpny-cd-row">
+                <input
+                  v-model.trim="form.cmpnyCd"
+                  type="text"
+                  maxlength="20"
+                  placeholder="영문·숫자 2~20자 (예: PARMA)"
+                  :disabled="saving"
+                  @input="onCmpnyCdInput"
+                />
+                <button
+                  type="button"
+                  class="btn btn-sm btn-custom"
+                  :disabled="saving || checkingCd || !form.cmpnyCd"
+                  @click="fnCheckCmpnyCd"
+                >
+                  {{ checkingCd ? "확인 중…" : "중복확인" }}
+                </button>
+              </div>
+              <p
+                v-if="cmpnyCdCheck.message"
+                class="cmpny-cd-msg"
+                :class="cmpnyCdCheck.available ? 'is-ok' : 'is-err'"
+              >
+                {{ cmpnyCdCheck.message }}
+              </p>
+              <p class="cmpny-cd-hint">
+                입력한 값이 그대로 회사코드가 됩니다.
+                <b>등록 후에는 변경할 수 없습니다.</b> 소문자는 대문자로 자동 변환됩니다.
+              </p>
+            </td>
+          </tr>
           <tr>
             <th>회사명 <span class="req">*</span></th>
             <td>
@@ -168,8 +204,8 @@
           </tbody>
         </table>
         <p class="result-note">
-          위 정보를 고객사 관리자에게 안전하게 전달하세요. 회사코드는 추측
-          불가한 식별자이며, 분실 시 재확인이 어렵습니다.
+          위 정보를 고객사 관리자에게 안전하게 전달하세요. 초기 비밀번호는 첫 로그인
+          시 변경하도록 안내해 주세요.
         </p>
       </div>
     </div>
@@ -198,6 +234,7 @@ const showConfirm = (msg) =>
   proxy?.$confirm ? proxy.$confirm(msg) : Promise.resolve(window.confirm(msg));
 
 const form = reactive({
+  cmpnyCd: "",
   cmpnyNm: "",
   bsnsLcnNo: "",
   contractEndDate: "",
@@ -211,6 +248,49 @@ const form = reactive({
 
 const saving = ref(false);
 const result = ref(null);
+
+// ── 회사코드 중복확인 ────────────────────────────────────────────────────
+//   ★1차 확인일 뿐이다. 확인과 저장 사이에 다른 운영자가 선점할 수 있어 서버가 저장
+//     트랜잭션에서 다시 검사한다. 여기 통과했다고 저장이 보장되지 않는다.
+const checkingCd = ref(false);
+const cmpnyCdCheck = reactive({ checked: "", available: false, message: "" });
+
+// 대문자로 즉시 변환해 보여준다 — 서버도 대문자로 정규화하므로 "보이는 값 = 저장될 값"이 된다.
+//   (DB 콜레이션이 대소문자를 무시해 parma 와 PARMA 는 어차피 같은 코드다)
+const onCmpnyCdInput = () => {
+  form.cmpnyCd = String(form.cmpnyCd || "")
+    .toUpperCase()
+    .replace(/[^A-Z0-9]/g, "");
+  // 값이 바뀌면 이전 확인 결과는 무효다.
+  if (cmpnyCdCheck.checked !== form.cmpnyCd) {
+    cmpnyCdCheck.checked = "";
+    cmpnyCdCheck.available = false;
+    cmpnyCdCheck.message = "";
+  }
+};
+
+const fnCheckCmpnyCd = async () => {
+  if (!form.cmpnyCd) return;
+  checkingCd.value = true;
+  try {
+    const { data } = await api.get("/platformApi/company/cmpny-cd-available", {
+      params: { cmpnyCd: form.cmpnyCd },
+    });
+    form.cmpnyCd = data?.normalized || form.cmpnyCd;
+    cmpnyCdCheck.checked = data?.available ? form.cmpnyCd : "";
+    cmpnyCdCheck.available = Boolean(data?.available);
+    cmpnyCdCheck.message = data?.message || "";
+  } catch (e) {
+    cmpnyCdCheck.checked = "";
+    cmpnyCdCheck.available = false;
+    cmpnyCdCheck.message = resolveApiErrorMessage(
+      e,
+      "회사코드 확인 중 오류가 발생했습니다."
+    );
+  } finally {
+    checkingCd.value = false;
+  }
+};
 
 // 숫자만 남기기(하이픈/공백 제거)
 const digits = (v) => String(v || "").replace(/[^0-9]/g, "");
@@ -233,13 +313,21 @@ const stdWorkWeekMinutes = () => {
 // 클라 1차 검증(서버가 최종 검증). 형식은 서버와 동일 기준.
 function validate() {
   if (
+    !form.cmpnyCd ||
     !form.cmpnyNm ||
     !form.bsnsLcnNo ||
     !form.adminNm ||
     !form.adminId ||
     !form.adminMbl
   ) {
-    return "필수 입력값(회사명/사업자번호/관리자명/관리자ID/관리자 휴대폰)을 모두 입력해 주세요.";
+    return "필수 입력값(회사코드/회사명/사업자번호/관리자명/관리자ID/관리자 휴대폰)을 모두 입력해 주세요.";
+  }
+  if (!/^[A-Z0-9]{2,20}$/.test(form.cmpnyCd)) {
+    return "회사코드는 영문·숫자 2~20자로 입력해 주세요.";
+  }
+  // 등록 후 변경이 불가능하므로 중복확인을 반드시 거치게 한다(서버도 저장 시 재검사).
+  if (cmpnyCdCheck.checked !== form.cmpnyCd) {
+    return "회사코드 중복확인을 해 주세요.";
   }
   if (digits(form.bsnsLcnNo).length !== 10) {
     return "사업자등록번호는 숫자 10자리여야 합니다.";
@@ -281,7 +369,9 @@ async function fnSave() {
   }
 
   const ok = await showConfirm(
-    `'${form.cmpnyNm}' 고객사를 등록할까요? 회사코드와 master 계정이 생성됩니다.`
+    `'${form.cmpnyNm}' 고객사를 등록할까요?\n\n` +
+      `회사코드: ${form.cmpnyCd}\n` +
+      `회사코드는 등록 후 변경할 수 없습니다.`
   );
   if (!ok) return;
 
@@ -289,6 +379,7 @@ async function fnSave() {
   result.value = null;
   try {
     const payload = {
+      cmpnyCd: form.cmpnyCd,
       cmpnyNm: form.cmpnyNm,
       bsnsLcnNo: digits(form.bsnsLcnNo),
       contractEndDate: form.contractEndDate ? digits(form.contractEndDate) : "",
@@ -306,6 +397,10 @@ async function fnSave() {
         data?.initialPasswordGuide || "초기 비밀번호 = 관리자 휴대폰번호",
     };
     // 입력 폼 초기화(중복 등록 방지)
+    form.cmpnyCd = "";
+    cmpnyCdCheck.checked = "";
+    cmpnyCdCheck.available = false;
+    cmpnyCdCheck.message = "";
     form.cmpnyNm = "";
     form.bsnsLcnNo = "";
     form.contractEndDate = "";
@@ -454,5 +549,40 @@ async function fnSave() {
   margin: 0.75rem 0 0;
   font-size: 0.78rem;
   color: #166534;
+}
+
+/* ── 회사코드 입력(직접 지정 전환, 2026-08-16) ───────────────────────────── */
+.cmpny-cd-row {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  flex-wrap: wrap;
+}
+.cmpny-cd-row input {
+  /* 코드값이라 등폭 글꼴이 오독(0/O, 1/I)을 줄인다. */
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+}
+.cmpny-cd-msg {
+  margin: 0.25rem 0 0;
+  font-size: 12px;
+  line-height: 1.5;
+}
+.cmpny-cd-msg.is-ok {
+  color: var(--color-success-text, #15803d);
+}
+.cmpny-cd-msg.is-err {
+  color: var(--color-danger, #dc2626);
+}
+.cmpny-cd-hint {
+  margin: 0.2rem 0 0;
+  font-size: 11px;
+  line-height: 1.5;
+  color: var(--color-text-muted, #6b7280);
+}
+.cmpny-cd-hint b {
+  font-weight: 600;
+  color: var(--color-danger, #dc2626);
 }
 </style>

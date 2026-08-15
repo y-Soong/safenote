@@ -1,8 +1,9 @@
 package com.prafta.platform.company.service.impl;
 
-import java.security.SecureRandom;
 import java.time.LocalDate;
 import java.time.format.DateTimeFormatter;
+import java.util.Locale;
+import java.util.regex.Pattern;
 
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -27,6 +28,7 @@ import com.prafta.platform.company.application.command.SiteInsertCommand;
 import com.prafta.platform.company.application.command.SiteNodeInsertCommand;
 import com.prafta.platform.company.application.command.WorktypeSeedCommand;
 import com.prafta.platform.company.application.param.CompanyProvisionParam;
+import com.prafta.platform.company.dto.response.CmpnyCdCheckResponse;
 import com.prafta.platform.company.dto.response.CompanyProvisionResponse;
 import com.prafta.platform.company.mapper.CompanyProvisionMapper;
 import com.prafta.platform.company.service.CompanyProvisionService;
@@ -50,15 +52,17 @@ public class CompanyProvisionServiceImpl implements CompanyProvisionService {
     /** 템플릿(시드 원천) 회사코드 — 권한/운영사변수 복제 기준. */
     private static final String TEMPLATE_CMPNY_CD = "001";
 
-    /** 발급 회사코드 길이(추측 불가 20자). */
-    private static final int CMPNY_CD_LENGTH = 20;
-
-    /** 회사코드 충돌 재시도 한도. */
-    private static final int CMPNY_CD_MAX_RETRY = 10;
-
-    /** 회사코드 발급 문자집합(영숫자). */
-    private static final char[] CMPNY_CD_ALPHABET =
-            "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789".toCharArray();
+    /**
+     * 회사코드 허용 형식 — 영문 대문자·숫자 2~20자.
+     *
+     * <p>2026-08-16 운영자 직접 입력으로 전환하면서 도입. 종전에는 서버가 랜덤 20자를 발급했다
+     * (추측 불가로 미승인 가입을 막으려던 설계). 모든 사용자가 가입 시 관리자 승인을 받는 구조가
+     * 되어 코드 복잡도가 방어 수단일 이유가 사라졌다.
+     *
+     * <p>상한 20자는 종전 발급 길이를 그대로 이어받은 것이고, 하한 2자는 한 글자 코드가
+     * 오타로 만들어지는 것을 막기 위한 최소선이다.
+     */
+    private static final Pattern CMPNY_CD_PATTERN = Pattern.compile("^[A-Z0-9]{2,20}$");
 
     /** 최초 노드 코드/타입(Baim01 최초 1depth 노드 패턴 미러). */
     private static final String FIRST_NODE_CD = "n1";
@@ -80,8 +84,6 @@ public class CompanyProvisionServiceImpl implements CompanyProvisionService {
     private static final int ADMIN_ID_MAX_LENGTH = 50;
 
     private static final DateTimeFormatter YMD = DateTimeFormatter.ofPattern("yyyyMMdd");
-
-    private final SecureRandom secureRandom = new SecureRandom();
 
     @Override
     @Transactional(rollbackFor = Exception.class)
@@ -135,8 +137,10 @@ public class CompanyProvisionServiceImpl implements CompanyProvisionService {
             throw new ApiException(PlatformErrorCode.PLATFORM_400_004);
         }
 
-        // 7) 회사코드 발급(추측 불가 20자 + 충돌검사 재시도).
-        String cmpnyCd = issueUniqueCmpnyCd();
+        // 7) 회사코드 확정 — 운영자 직접 입력(2026-08-16 전환, 종전 서버 랜덤 20자 발급).
+        //    형식 검증 + 중복 검사를 여기서 한다. CMPNY_CD 는 22개 테이블 복합 PK 선두 컬럼이라
+        //    한 번 저장되면 사실상 되돌릴 수 없다 — 저장 직전 마지막 관문이다.
+        String cmpnyCd = resolveInputCmpnyCd(param.cmpnyCd());
 
         // 8) TB_CMPNY INSERT(계약 고객사 — CONTRACT_YN='Y', USE_YN='Y').
         companyProvisionMapper.insertCmpny(new CompanyInsertCommand(
@@ -314,25 +318,49 @@ public class CompanyProvisionServiceImpl implements CompanyProvisionService {
                 .build();
     }
 
-    /** 추측 불가 20자 영숫자 회사코드 발급 + 충돌검사(최대 N회 재시도). */
-    private String issueUniqueCmpnyCd() {
-        for (int attempt = 0; attempt < CMPNY_CD_MAX_RETRY; attempt++) {
-            String candidate = randomCmpnyCd();
-            if (companyProvisionMapper.selectCmpnyExists(candidate) == 0) {
-                return candidate;
-            }
-            log.warn("회사코드 충돌 - 재시도 {}/{}", attempt + 1, CMPNY_CD_MAX_RETRY);
+    @Override
+    public CmpnyCdCheckResponse checkCmpnyCdAvailable(String cmpnyCd) {
+        String normalized = (cmpnyCd == null) ? "" : cmpnyCd.trim().toUpperCase(Locale.ROOT);
+
+        if (normalized.isEmpty()) {
+            return new CmpnyCdCheckResponse(normalized, false, false, "회사코드를 입력해 주세요.");
         }
-        throw new ApiException(PlatformErrorCode.PLATFORM_400_005);
+        if (!CMPNY_CD_PATTERN.matcher(normalized).matches()) {
+            return new CmpnyCdCheckResponse(normalized, false, false,
+                    PlatformErrorCode.PLATFORM_400_020.message());
+        }
+        if (companyProvisionMapper.selectCmpnyExists(normalized) > 0) {
+            return new CmpnyCdCheckResponse(normalized, true, false,
+                    PlatformErrorCode.PLATFORM_400_021.message());
+        }
+        return new CmpnyCdCheckResponse(normalized, true, true, "사용할 수 있는 회사코드입니다.");
     }
 
-    /** 영숫자 20자 랜덤 문자열(SecureRandom). */
-    private String randomCmpnyCd() {
-        StringBuilder sb = new StringBuilder(CMPNY_CD_LENGTH);
-        for (int i = 0; i < CMPNY_CD_LENGTH; i++) {
-            sb.append(CMPNY_CD_ALPHABET[secureRandom.nextInt(CMPNY_CD_ALPHABET.length)]);
+    /**
+     * 운영자가 입력한 회사코드를 정규화·검증하고 확정한다(2026-08-16 — 종전 서버 랜덤 발급 대체).
+     *
+     * <p>대문자로 정규화한다. DB 콜레이션이 대소문자를 무시(utf8mb4_unicode_ci)해 'parma' 와
+     * 'PARMA' 는 어차피 같은 값으로 충돌하므로, 표기를 하나로 고정해 혼동을 없앤다.
+     *
+     * <p>중복 검사도 같은 이유로 DB 가 대소문자 무시 비교를 해 준다 — 기존 랜덤 코드(혼합 대소문자)와의
+     * 충돌도 정상적으로 걸린다.
+     *
+     * <p>⚠️ 이 검사는 프론트 중복확인과 별개인 <b>2차 방어</b>다. 프론트에서 확인한 뒤 저장까지
+     * 사이에 다른 운영자가 같은 코드를 선점할 수 있으므로 저장 트랜잭션 안에서 다시 본다.
+     * 동시 INSERT 경합의 최종 백스톱은 TB_CMPNY 의 PK 제약이다.
+     */
+    private String resolveInputCmpnyCd(String raw) {
+        if (raw == null || raw.isBlank()) {
+            throw new ApiException(PlatformErrorCode.PLATFORM_400_001);
         }
-        return sb.toString();
+        String normalized = raw.trim().toUpperCase(Locale.ROOT);
+        if (!CMPNY_CD_PATTERN.matcher(normalized).matches()) {
+            throw new ApiException(PlatformErrorCode.PLATFORM_400_020);
+        }
+        if (companyProvisionMapper.selectCmpnyExists(normalized) > 0) {
+            throw new ApiException(PlatformErrorCode.PLATFORM_400_021);
+        }
+        return normalized;
     }
 
     /** 휴일 동기화 best-effort 래퍼(실패는 경고 로그만, 트랜잭션 무영향). */
