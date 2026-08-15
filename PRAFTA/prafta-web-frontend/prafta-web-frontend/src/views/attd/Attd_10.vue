@@ -217,14 +217,17 @@
               </p>
               <!-- ★.btn 기본 클래스 필수 — .btn-primary 는 배경/글자색만 준다.
                    단독 사용 시 padding·height·radius·font 가 브라우저 기본값으로 남아
-                   다른 화면 버튼과 모양이 어긋난다(2026-08-15 수정). -->
-              <button
-                class="btn btn-primary"
-                :disabled="groupProcessing"
-                @click="fnProcessGroup"
-              >
-                {{ decision === "approve" ? "일괄 승인" : "일괄 반려" }}
-              </button>
+                   다른 화면 버튼과 모양이 어긋난다(2026-08-15 수정).
+                   정렬은 단건 패널과 같은 .ra-decide__actions 래퍼를 재사용해 우측으로 맞춘다. -->
+              <div class="ra-decide__actions">
+                <button
+                  class="btn btn-primary"
+                  :disabled="groupProcessing"
+                  @click="fnProcessGroup"
+                >
+                  {{ decision === "approve" ? "일괄 승인" : "일괄 반려" }}
+                </button>
+              </div>
             </div>
           </template>
 
