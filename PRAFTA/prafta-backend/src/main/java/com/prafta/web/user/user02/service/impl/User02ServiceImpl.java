@@ -5,6 +5,7 @@ import java.util.List;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import com.prafta.common.util.MenuAccessNotePolicy;
 import com.prafta.common.util.MenuLockPolicy;
 import com.prafta.web.user.user02.application.command.AuthMenuInfoCommand;
 import com.prafta.web.user.user02.application.model.AuthMenuInfoModel;
@@ -39,6 +40,8 @@ public class User02ServiceImpl implements User02Service{
 		if(authMenuList.size() > 0) {
 			retDto = AuthMenuListResponse.builder()
 					.authMenuList(authMenuList)
+					// 화면별 추가 조건 안내(표시 전용). 인가는 각 화면의 서버 게이트가 담당한다.
+					.menuNotes(MenuAccessNotePolicy.all())
 					.build();
 		}
 

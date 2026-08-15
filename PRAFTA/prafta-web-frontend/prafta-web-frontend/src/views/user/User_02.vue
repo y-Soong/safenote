@@ -123,6 +123,31 @@
           </div>
         </div>
 
+        <!-- 배지 범례 — 대상 화면이 있을 때만 노출.
+             ★제목 옆이 아니라 별도 줄에 둔다. .subtitle-row 는 space-between + nowrap 이라
+             긴 문구를 끼우면 우측 일괄제어 버튼들을 밀어낸다. -->
+        <p v-if="hasAccessNote" class="menu-note-legend">
+          <svg
+            width="13"
+            height="13"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="2"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+            aria-hidden="true"
+          >
+            <circle cx="12" cy="12" r="10" />
+            <line x1="12" y1="16" x2="12" y2="12" />
+            <line x1="12" y1="8" x2="12.01" y2="8" />
+          </svg>
+          <span>
+            배지가 있는 화면은 <b>권한 부여만으로는 이용할 수 없습니다.</b>
+            배지에 마우스를 올리면 필요한 조건을 볼 수 있습니다.
+          </span>
+        </p>
+
         <div
           class="table-box"
           style="
@@ -196,7 +221,38 @@
                     />
                   </td>
                   <td>{{ menu.menuMNm }}</td>
-                  <td>{{ menu.menuDNm }}</td>
+                  <td>
+                    <!-- 화면명 + 추가 조건 배지. 컬럼 폭이 좁아지면 배지가 아랫줄로 내려가고
+                         화면명은 잘리지 않는다(리사이즈 가능한 표라 wrap 허용). -->
+                    <div class="menu-name-cell">
+                      <span class="menu-name-text">{{ menu.menuDNm }}</span>
+                      <span
+                        v-if="accessNoteOf(menu)"
+                        class="menu-note-badge"
+                        :title="accessNoteOf(menu).detail"
+                        tabindex="0"
+                        role="note"
+                        :aria-label="`추가 조건: ${accessNoteOf(menu).detail}`"
+                      >
+                        <svg
+                          width="12"
+                          height="12"
+                          viewBox="0 0 24 24"
+                          fill="none"
+                          stroke="currentColor"
+                          stroke-width="2"
+                          stroke-linecap="round"
+                          stroke-linejoin="round"
+                          aria-hidden="true"
+                        >
+                          <circle cx="12" cy="12" r="10" />
+                          <line x1="12" y1="16" x2="12" y2="12" />
+                          <line x1="12" y1="8" x2="12.01" y2="8" />
+                        </svg>
+                        {{ accessNoteOf(menu).badge }}
+                      </span>
+                    </div>
+                  </td>
                   <td>
                     <BaseSelect v-model="menu.useYn" name="useYn">
                       <option
@@ -332,6 +388,22 @@ const props = defineProps({
 const localButtons = ref({ ...props.buttons });
 const authList = ref([]);
 const authMenuList = ref([]);
+
+// 화면권한 부여만으로는 이용할 수 없는 화면의 추가 조건 안내(표시 전용, 서버 SSOT).
+//   { "attd_05": { badge, detail }, ... } — 키는 소문자 MENU_D_ID.
+//   ⚠️ 인가와 무관하다. 실제 접근 제어는 각 화면의 서버 게이트가 한다.
+const menuNotes = ref({});
+
+/** 해당 메뉴 행의 추가 조건 안내(없으면 null). */
+const accessNoteOf = (menu) => {
+  const id = (menu?.menuDId || "").toLowerCase();
+  return id ? menuNotes.value[id] || null : null;
+};
+
+/** 현재 목록에 안내 대상 화면이 하나라도 있는지 — 범례 노출 조건. */
+const hasAccessNote = computed(() =>
+  (authMenuList.value || []).some((m) => accessNoteOf(m) !== null)
+);
 const { sortKey: authSortKey, sortOrder: authSortOrder, sortedData: authSortedData, onSort: authOnSort } = useTableSort(authList);
 const { colWidths: authColWidths, onResize: authOnResize } = useColumnResize({ baimValDNm: 160 });
 const { sortKey: menuSortKey, sortOrder: menuSortOrder, sortedData: menuSortedData, onSort: menuOnSort } = useTableSort(authMenuList);
@@ -479,6 +551,8 @@ const fnSubSearch = async (auth) => {
 
     if (response.status === 200) {
       authMenuList.value = response.data.authMenuList;
+      // 화면별 추가 조건 안내(표시 전용). 서버가 소문자 MENU_D_ID 로 키를 준다.
+      menuNotes.value = response.data.menuNotes || {};
     }
   } catch (err) {
     const msg = resolveApiErrorMessage(err, "조회 중 오류가 발생했습니다.");
@@ -584,5 +658,65 @@ const fnSetAllForChecked = (value) => {
 .menu-batch-control .btn:disabled {
   opacity: 0.5;
   cursor: not-allowed;
+}
+
+/* ── 화면 추가 조건 안내 (2026-08-16) ──────────────────────────────────────
+   오류가 아니라 정보다. 경고색(빨강/주황)을 쓰지 않고 중립적인 파랑 계열로 둔다.
+   관리자가 "뭔가 잘못됐나?" 로 읽지 않게 하는 것이 요점. */
+
+/* 화면명 셀 — 배지가 붙어도 화면명이 잘리지 않도록 wrap 허용.
+   표 컬럼이 리사이즈 가능하므로 폭이 좁아지면 배지가 아랫줄로 내려간다. */
+.menu-name-cell {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.25rem 0.35rem;
+  min-width: 0;
+}
+.menu-name-text {
+  min-width: 0;
+}
+
+.menu-note-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.15rem;
+  flex-shrink: 0;
+  padding: 0.05rem 0.35rem;
+  border-radius: 999px;
+  border: 1px solid var(--color-info-border, #bfdbfe);
+  background: var(--color-info-bg, #eff6ff);
+  color: var(--color-info-text, #1d4ed8);
+  font-size: 10.5px;
+  font-weight: 500;
+  line-height: 1.6;
+  white-space: nowrap;
+  /* 전문은 title 툴팁으로만 노출한다 — 표 안에 다 적으면 행이 뭉개진다. */
+  cursor: help;
+}
+/* 키보드 사용자도 툴팁 대상임을 알 수 있게 포커스 링을 준다(tabindex="0"). */
+.menu-note-badge:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 var(--focus-ring-width, 3px) var(--color-focus-ring);
+}
+
+/* 범례 — 표 바로 위 한 줄. 배지와 같은 파랑 아이콘을 써서 같은 것을 가리킴을 보인다. */
+.menu-note-legend {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.3rem;
+  margin: 0 0 0.35rem;
+  font-size: 11px;
+  line-height: 1.5;
+  color: var(--color-text-muted, #6b7280);
+}
+.menu-note-legend svg {
+  flex-shrink: 0;
+  margin-top: 0.1rem;
+  color: var(--color-info-text, #1d4ed8);
+}
+.menu-note-legend b {
+  font-weight: 600;
+  color: var(--color-text-strong, #374151);
 }
 </style>

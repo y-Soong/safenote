@@ -26,11 +26,15 @@ import com.prafta.common.security.crypto.AesGcmCrypto;
 import com.prafta.common.util.DateTimeUtils;
 import com.prafta.web.attd.attd07.service.AttdCloseService;
 import com.prafta.web.user.user09.application.param.SelfJoinApproveParam;
+import com.prafta.web.user.user09.application.param.SelfJoinHistoryListParam;
 import com.prafta.web.user.user09.application.param.SelfJoinListParam;
 import com.prafta.web.user.user09.application.param.SelfJoinRejectParam;
+import com.prafta.web.user.user09.application.query.SelfJoinHistoryListQuery;
 import com.prafta.web.user.user09.application.query.SelfJoinListQuery;
+import com.prafta.web.user.user09.dto.response.SelfJoinHistoryListResponse;
 import com.prafta.web.user.user09.dto.response.SelfJoinListResponse;
 import com.prafta.web.user.user09.mapper.User09Mapper;
+import com.prafta.web.user.user09.result.SelfJoinHistoryRowResult;
 import com.prafta.web.user.user09.result.SelfJoinRowResult;
 import com.prafta.web.user.user09.result.SelfJoinTargetResult;
 import com.prafta.web.user.user09.service.User09Service;
@@ -129,6 +133,72 @@ public class User09ServiceImpl implements User09Service {
 
         return SelfJoinListResponse.builder()
                 .selfJoinList(list)
+                .build();
+    }
+
+    /**
+     * 셀프가입 처리 이력 목록 (승인/거부, 서버 페이징).
+     *
+     * <p><b>스코프 = 대상 계정의 현재 소속</b> — WHERE 술어도 화면 표시값도 {@code TB_USER} 의
+     * <b>현재</b> 사업장/부서를 쓴다. 권한 게이트가 "지금 이 사업장/부서를 관리할 수 있는가"를
+     * 검사하므로 필터 축을 "처리 당시 소속"으로 두면 게이트 축과 어긋나 인가 논증이 무너진다.
+     * <br>알려진 한계: 승인 후 소속을 옮긴 사용자의 이력은 <b>현재 소속</b> 관리자에게 보이고
+     * <b>처리 당시 소속</b> 관리자에게는 보이지 않는다. 처리 당시 소속은 감사 로그
+     * {@code DETAIL.siteCd/nodeCd} 에 보존되어 있다(사후 추적·포렌식용).
+     *
+     * <p><b>입사일·직급의 폴백 한계</b> — 감사 로그 확장(T1) 배포 이전 적재분에는
+     * {@code DETAIL.hireDate/rankCd} 가 없어 {@code TB_USER} 현재값으로 폴백한다. 승인 후 User_01 에서
+     * 입사일·직급을 수정했다면 <b>승인 당시 값이 아닐 수 있다.</b> 이를 화면에서 구분 표시하지 않는
+     * 것은 사용자 확정 사항이다(과잉설계 방지).
+     */
+    @Override
+    public SelfJoinHistoryListResponse selectSelfJoinHistoryList(SelfJoinHistoryListParam param) {
+
+        // 1) 사업장 접근 인가.
+        siteAccessService.assertSiteAccess(
+                param.gvCmpnyCd(), param.gvUserCd(), param.gvAuthCd(), param.gvSiteCd(), param.siteCd());
+
+        // 2) 부서 스코프 게이트 — ★대기 목록과 동일하게 2단을 전부 건다. 사업장 인가만으로는
+        //    자기 사업장 fast path 때문에 일반 사원이 전 직원 PII 를 열람하게 된다.
+        assertCanManageNode(param.gvAuthCd(), param.gvUserCd(), param.gvCmpnyCd(), param.siteCd(), param.nodeCd());
+
+        SelfJoinHistoryListQuery query = SelfJoinHistoryListQuery.from(param);
+
+        // 페이저 기준 건수를 먼저 구하고, 0건이면 목록 쿼리를 생략한다.
+        int totalCount = user09Mapper.selectSelfJoinHistoryCount(query);
+
+        List<SelfJoinHistoryListResponse.Row> list = new ArrayList<>();
+        if (totalCount > 0) {
+            List<SelfJoinHistoryRowResult> rows = user09Mapper.selectSelfJoinHistoryList(query);
+            if (rows != null) {
+                for (SelfJoinHistoryRowResult row : rows) {
+                    list.add(SelfJoinHistoryListResponse.Row.builder()
+                            .auditId(row.auditId())
+                            .processDtime(row.processDtime())
+                            .actionType(row.actionType())
+                            .userCd(row.userCd())
+                            .userId(row.userId())
+                            .userNm(row.userNm())
+                            .siteNm(row.siteNm())
+                            .nodeNm(row.nodeNm())
+                            .mblNo(maskMblNo(decryptMblNo(row.mblNoEnc()), row.mblNoLast4()))
+                            .applyDtime(row.applyDtime())
+                            .hireDate(toDisplayDate(row.hireDate()))
+                            .rankNm(row.rankNm())
+                            .processorNm(row.processorNm())
+                            .rejectReason(row.rejectReason())
+                            .build());
+                }
+            }
+        }
+
+        // ★거부 사유 본문은 로그에 남기지 않는다 — PII 가 섞여 들어올 수 있다.
+        log.info("User_09 셀프가입 처리 이력 조회 - siteCd={}, nodeCd={}, 처리결과={}, page={}, {}건/전체 {}건",
+                param.siteCd(), param.nodeCd(), param.actionType(), param.page(), list.size(), totalCount);
+
+        return SelfJoinHistoryListResponse.builder()
+                .historyList(list)
+                .totalCount(totalCount)
                 .build();
     }
 
@@ -232,13 +302,25 @@ public class User09ServiceImpl implements User09Service {
                 param.gvUserCd(), target.userCd(), hireDate, weekStdMinutes,
                 stdWorkResult.getWarnings() == null ? 0 : stdWorkResult.getWarnings().size());
 
+        // 승인 당시 지정값(입사일/고용형태/직급)과 당시 소속(사업장/부서)을 함께 남긴다.
+        //   이후 인사정보가 바뀌어도 "그때 무엇을 승인했는가"가 보존된다(처리 이력 조회의 1차 출처).
+        //   ★사업장/부서는 서버 권위값(target)만 쓴다 — 요청 바디 값은 신뢰하지 않는다.
+        //   ★PII(이름/휴대폰/이메일/생년월일)는 넣지 않는다(detailJson 규약).
+        StringBuilder approveDetail = new StringBuilder("{\"action\":\"APPROVE\",\"from\":\"06\",\"to\":\"01\"");
+        appendJsonField(approveDetail, "hireDate", hireDate);
+        appendJsonField(approveDetail, "employmentType", param.employmentType());
+        appendJsonField(approveDetail, "rankCd", param.rankCd());
+        appendJsonField(approveDetail, "siteCd", target.siteCd());
+        appendJsonField(approveDetail, "nodeCd", target.nodeCd());
+        approveDetail.append("}");
+
         auditLogService.record(AuditLogCommand.builder()
                 .cmpnyCd(param.gvCmpnyCd())
                 .userCd(param.gvUserCd())
                 .actionType(AuditActionType.STATUS_CHANGE)
                 .resourceType(AuditResourceType.SELF_JOIN_APPROVAL)
                 .resourceKey(target.userCd())
-                .detailJson("{\"action\":\"APPROVE\",\"from\":\"06\",\"to\":\"01\"}")
+                .detailJson(approveDetail.toString())
                 .build(), auditContext);
     }
 
@@ -271,14 +353,20 @@ public class User09ServiceImpl implements User09Service {
 
         // 거부 사유의 유일한 보존처 = 감사 로그. tb_user 에 사유 컬럼을 두면 재가입 시 행 재활용으로
         //   과거 사유가 덮어써져 이력 가치가 사라진다.
+        //   당시 소속(사업장/부서)도 함께 남긴다 — 이후 소속이 바뀐 계정의 사후 추적용.
+        StringBuilder rejectDetail = new StringBuilder("{\"action\":\"REJECT\",\"from\":\"06\",\"to\":\"07\",\"reason\":\""
+                + escapeJson(reason) + "\"");
+        appendJsonField(rejectDetail, "siteCd", target.siteCd());
+        appendJsonField(rejectDetail, "nodeCd", target.nodeCd());
+        rejectDetail.append("}");
+
         auditLogService.record(AuditLogCommand.builder()
                 .cmpnyCd(param.gvCmpnyCd())
                 .userCd(param.gvUserCd())
                 .actionType(AuditActionType.STATUS_CHANGE)
                 .resourceType(AuditResourceType.SELF_JOIN_APPROVAL)
                 .resourceKey(target.userCd())
-                .detailJson("{\"action\":\"REJECT\",\"from\":\"06\",\"to\":\"07\",\"reason\":\""
-                        + escapeJson(reason) + "\"}")
+                .detailJson(rejectDetail.toString())
                 .build(), auditContext);
     }
 
@@ -350,6 +438,21 @@ public class User09ServiceImpl implements User09Service {
         return codes;
     }
 
+    /**
+     * 입사일 표기 변환 (yyyyMMdd → yyyy-MM-dd).
+     *
+     * <p>미입력(거부 건 등)은 null 로 내려 화면이 '-' 로 표기하게 한다.
+     * {@code DateTimeUtils.toHyphenDate} 는 실패 시 빈 문자열을 주므로 여기서 null 로 되돌린다.
+     */
+    private String toDisplayDate(String yyyymmdd) {
+
+        if (yyyymmdd == null || yyyymmdd.isBlank()) {
+            return null;
+        }
+        String formatted = DateTimeUtils.toHyphenDate(yyyymmdd);
+        return formatted.isEmpty() ? null : formatted;
+    }
+
     /** MBL_NO_ENC(AES-GCM) 복호화. 실패는 목록 조회를 막지 않고 LAST4 폴백으로 넘긴다(평문 로깅 금지). */
     private String decryptMblNo(String mblNoEnc) {
 
@@ -382,11 +485,36 @@ public class User09ServiceImpl implements User09Service {
         return "-";
     }
 
-    /** 감사 detailJson 안전화 — 역슬래시/따옴표/제어문자 제거(JSON 파손 방지). */
+    /**
+     * 감사 detailJson 선택 필드 1개 추가 — {@code ,"키":"값"} 형태로 이어 붙인다.
+     *
+     * <p>★값이 null/공백이면 <b>키 자체를 출력하지 않는다.</b> {@code "키":null} 로 남기면
+     * 조회 측 {@code JSON_UNQUOTE(JSON_EXTRACT(...))} 가 SQL NULL 이 아니라 <b>문자열 "null"</b> 을
+     * 돌려주어 {@code COALESCE(감사값, 현재값)} 폴백이 무력화되고 화면에 {@code null} 이 찍힌다.
+     *
+     * <p>호출부가 여는 중괄호와 최소 1개 필드를 이미 붙인 상태를 전제로 한다(선행 콤마 고정).
+     */
+    private void appendJsonField(StringBuilder sb, String key, String value) {
+
+        if (value == null || value.isBlank()) {
+            return;
+        }
+        sb.append(",\"").append(key).append("\":\"").append(escapeJson(value)).append("\"");
+    }
+
+    /**
+     * 감사 detailJson 안전화 — 역슬래시/따옴표 이스케이프 + 제어문자 제거(JSON 파손 방지).
+     *
+     * <p>★제어문자는 개행/탭만이 아니라 <b>U+0000~U+001F 전 구간</b>을 공백으로 바꾼다.
+     * {@code TB_AUDIT_LOG.DETAIL} 은 네이티브 json 컬럼이라 이스케이프되지 않은 제어문자가 하나라도
+     * 섞이면 INSERT 가 3140(Invalid JSON text)으로 실패한다. 감사 적재는 REQUIRES_NEW + 예외 격리라
+     * 거부 처리 자체는 성공하지만, <b>그 거부 건은 처리 이력 화면에서 통째로 사라지고 사유도 영구
+     * 소실</b>된다(거부 사유의 유일한 보존처가 감사 로그다).
+     */
     private String escapeJson(String value) {
 
         return value.replace("\\", "\\\\")
                 .replace("\"", "\\\"")
-                .replaceAll("[\\r\\n\\t]", " ");
+                .replaceAll("\\p{Cntrl}", " ");
     }
 }

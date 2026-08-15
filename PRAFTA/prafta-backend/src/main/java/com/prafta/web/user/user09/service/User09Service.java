@@ -2,8 +2,10 @@ package com.prafta.web.user.user09.service;
 
 import com.prafta.common.cmm.audit.AuditContext;
 import com.prafta.web.user.user09.application.param.SelfJoinApproveParam;
+import com.prafta.web.user.user09.application.param.SelfJoinHistoryListParam;
 import com.prafta.web.user.user09.application.param.SelfJoinListParam;
 import com.prafta.web.user.user09.application.param.SelfJoinRejectParam;
+import com.prafta.web.user.user09.dto.response.SelfJoinHistoryListResponse;
 import com.prafta.web.user.user09.dto.response.SelfJoinListResponse;
 
 /**
@@ -25,6 +27,21 @@ public interface User09Service {
 
     /** 셀프가입 신청 목록 ('06' 승인대기 / '07' 가입거부). 휴대폰은 마스킹되어 나간다. */
     SelfJoinListResponse selectSelfJoinList(SelfJoinListParam param);
+
+    /**
+     * 셀프가입 처리 이력 목록 (승인/거부, 서버 페이징). 휴대폰은 마스킹되어 나간다.
+     *
+     * <p>출처는 감사 로그(TB_AUDIT_LOG {@code SELF_JOIN_APPROVAL}) 한 곳이다 — 승인되면 계정 상태가
+     * 일반 재직자('01')와 같아져 TB_USER 로는 승인 건을 구분할 수 없다.
+     *
+     * <p>★권한은 대기 목록과 <b>완전히 동일한 2단 게이트</b>다(사업장 인가 + 부서 관리 권한).
+     * 사업장 인가만으로는 자기 사업장 fast path 때문에 일반 사원이 전 직원의 이름·휴대폰을
+     * 열람할 수 있다(feedback_web_new_query_screen_needs_node_gate, 3회 재발 실증).
+     *
+     * <p>모바일 앱은 컨트롤러만 추가해 본 메서드를 그대로 재사용한다(파라미터/응답 계약에 웹 전용
+     * 타입이 없다).
+     */
+    SelfJoinHistoryListResponse selectSelfJoinHistoryList(SelfJoinHistoryListParam param);
 
     /**
      * 셀프가입 승인 — <b>단일 트랜잭션</b>: TB_USER 보강(입사일/고용형태/직급) + 상태 '06'→'01'

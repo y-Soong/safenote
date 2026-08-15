@@ -44,7 +44,10 @@ import lombok.extern.slf4j.Slf4j;
  * <p>시간차 1일 환산시간 GET/POST /baim07/conversion 은 480분 고정 전환(2026-07-21)으로
  * 제거 — {@code LeaveConversionPolicyService} javadoc 참조.
  *
- * <p>권한 가드는 서비스 계층 진입부에서 {@code AuthRoleUtils.isManager(authCd)}로 강제 (§8.5.7).
+ * <p>권한 가드는 <b>쓰기 경로에만</b> 있다(2026-08-16 실측 정정 — 종전 주석은 "서비스 진입부에서
+ * 전면 강제"라고 적혀 있었으나 사실과 달랐다). {@code getActivePolicy}(조회)는 역할 게이트가 없고,
+ * {@code createPolicy} 등 저장 경로가 {@code gvAuthCd} 를 받아 검사한다.
+ * 이 차이는 User_02 화면권한 안내({@code MenuAccessNotePolicy} baim_07 = "저장 제한")의 근거다.
  * GET endpoints(active, history)는 인증 사용자 + 사업장 스코프 수준만 요구.
  */
 @Slf4j

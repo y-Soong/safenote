@@ -14,11 +14,14 @@ import com.prafta.common.cmm.audit.AuditContext;
 import com.prafta.common.security.JwtUtil;
 import com.prafta.common.util.ClientIpExtractor;
 import com.prafta.web.user.user09.application.param.SelfJoinApproveParam;
+import com.prafta.web.user.user09.application.param.SelfJoinHistoryListParam;
 import com.prafta.web.user.user09.application.param.SelfJoinListParam;
 import com.prafta.web.user.user09.application.param.SelfJoinRejectParam;
 import com.prafta.web.user.user09.dto.request.SelfJoinApproveRequest;
+import com.prafta.web.user.user09.dto.request.SelfJoinHistoryListRequest;
 import com.prafta.web.user.user09.dto.request.SelfJoinListRequest;
 import com.prafta.web.user.user09.dto.request.SelfJoinRejectRequest;
+import com.prafta.web.user.user09.dto.response.SelfJoinHistoryListResponse;
 import com.prafta.web.user.user09.dto.response.SelfJoinListResponse;
 import com.prafta.web.user.user09.service.User09Service;
 
@@ -31,9 +34,10 @@ import lombok.extern.slf4j.Slf4j;
  *
  * <p>실제 매핑(자동 프리픽스 {@code com.prafta.web.*} → {@code /prafta/webApi}):
  * <ul>
- *   <li>GET  /prafta/webApi/user09/self-join-lists   — 신청 목록('06' 승인대기 / '07' 거부)</li>
- *   <li>POST /prafta/webApi/user09/self-join-approve — 승인(인사정보 보강 + 소정근로 이력)</li>
- *   <li>POST /prafta/webApi/user09/self-join-reject  — 거부(사유는 감사 로그 보존)</li>
+ *   <li>GET  /prafta/webApi/user09/self-join-lists     — 신청 목록('06' 승인대기 / '07' 거부)</li>
+ *   <li>GET  /prafta/webApi/user09/self-join-histories — 처리 이력(감사 로그 기준, 서버 페이징)</li>
+ *   <li>POST /prafta/webApi/user09/self-join-approve   — 승인(인사정보 보강 + 소정근로 이력)</li>
+ *   <li>POST /prafta/webApi/user09/self-join-reject    — 거부(사유는 감사 로그 보존)</li>
  * </ul>
  *
  * <p>회사/권한/요청자/토큰 사업장은 <b>JWT 클레임에서만</b> 도출한다. 승인·거부 대상의 사업장/부서는
@@ -55,6 +59,23 @@ public class User09Controller {
 
         SelfJoinListResponse response = user09Service.selectSelfJoinList(
                 SelfJoinListParam.from(request, jwtUtil.getAllClaimsAsMap(authorization)));
+
+        return ResponseEntity.status(HttpStatus.OK).body(response);
+    }
+
+    /**
+     * 셀프가입 처리 이력 목록 (승인/거부).
+     *
+     * <p>조회는 감사 대상이 아니므로 감사 컨텍스트(IP/UA)를 만들지 않는다 —
+     * {@code HttpServletRequest} 를 받지 않는다.
+     */
+    @GetMapping("/self-join-histories")
+    public ResponseEntity<?> getSelfJoinHistoryList(
+            @ModelAttribute SelfJoinHistoryListRequest request,
+            @RequestHeader(value = "Authorization", required = false) String authorization) {
+
+        SelfJoinHistoryListResponse response = user09Service.selectSelfJoinHistoryList(
+                SelfJoinHistoryListParam.from(request, jwtUtil.getAllClaimsAsMap(authorization)));
 
         return ResponseEntity.status(HttpStatus.OK).body(response);
     }
