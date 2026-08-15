@@ -691,6 +691,14 @@ const fnDeleteManager = ({ node, field }) => {
 
 /** 담당 관리자 정/부 선택 팝업 */
 const fnOpenUserSearch = ({ node, field }) => {
+  // ★저장 전(isNew) 노드에는 담당 정/부를 지정할 수 없다.
+  //   이때의 nodeCd 는 화면에서 임시 채번한 값이라 DB 에 존재하지 않는다. 그대로 지정하면
+  //   사용자의 소속이 없는 부서로 박혀 User_01 목록에서 사라진다(2026-08-15 통합테스트 적발).
+  if (node?.isNew) {
+    proxy.$alert(getMessage(MSG.ASSIGN_MANAGER_NEED_SAVE));
+    return;
+  }
+
   openPop(UserSearchPop, {
     cmpnyCd_p: sessionStorage.getItem("gv_cmpnyCd"),
     siteCd_p: siteCd.value,
