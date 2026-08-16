@@ -72,6 +72,8 @@
 <script setup>
 import { computed } from 'vue'
 
+import { splitLeaveDaysOnly } from '@/utils/leaveFormat'
+
 const props = defineProps({
   // 이번 연도 잔여 연차 일수
   remainingDays: {
@@ -100,15 +102,19 @@ defineEmits(['click:detail', 'click:leave', 'click:approval'])
 
 // 0.5 단위 표시 처리 (정수면 정수로, 소수면 1자리)
 // TODO(developer): 정책서에 따라 시간 단위 휴가 표시 검토 (attd §8.4)
-const trimDays = (v) => {
-  if (v == null) return '0'
-  const n = Number(v)
-  if (Number.isInteger(n)) return String(n)
-  return n.toFixed(1)
-}
-
-const formattedRemaining = computed(() => trimDays(props.remainingDays))
-const formattedGranted = computed(() => trimDays(props.grantedDays))
+/*
+ * 잔여/부여 일수 표기 — 공용 splitLeaveDaysOnly 단일 출처.
+ *
+ * ★종전에는 이 파일에 trimDays(소수 1자리) 인라인 포맷을 두고 있었다. 그래서 같은 값이
+ *   이 카드에서는 "13.4", 연차 현황 화면에서는 "13.44" 로 보여 잔여가 서로 다른 것처럼 읽혔다.
+ *   leaveFormat.js 주석이 이미 "날짜 미정 문맥(잔여/부여/사용예정/한도)의 유일한 표기 함수,
+ *   인라인 포맷 금지" 를 규정하고 있었으므로 규약 위반이기도 했다.
+ *   자릿수를 여기서 다시 정하지 말 것 — 규칙이 바뀌면 leaveFormat.js 만 고친다.
+ *
+ * 단위("일")는 마크업이 소유하므로 숫자 문자열만 주는 splitLeaveDaysOnly().dayText 를 쓴다.
+ */
+const formattedRemaining = computed(() => splitLeaveDaysOnly(props.remainingDays).dayText)
+const formattedGranted = computed(() => splitLeaveDaysOnly(props.grantedDays).dayText)
 </script>
 
 <style scoped>

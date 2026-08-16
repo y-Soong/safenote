@@ -26,6 +26,8 @@
 <script setup>
 import { computed } from 'vue'
 
+import { splitLeaveDaysOnly } from '@/utils/leaveFormat'
+
 const props = defineProps({
   // 신청형 휴가('01') 보유 타입 수
   typeCount: {
@@ -41,14 +43,15 @@ const props = defineProps({
 
 defineEmits(['click:detail'])
 
-// 0.5 단위 표시 (정수면 정수, 소수면 1자리) — AttendanceSummaryCard.trimDays 동일.
-const trimDays = (v) => {
-  if (v == null) return '0'
-  const n = Number(v)
-  return Number.isInteger(n) ? String(n) : n.toFixed(1)
-}
-
-const formattedRemaining = computed(() => trimDays(props.remainingDays))
+/*
+ * 총잔여 표기 — 공용 splitLeaveDaysOnly 단일 출처(AttendanceSummaryCard 와 동일 규칙).
+ *
+ * ★종전 trimDays(소수 1자리) 인라인 포맷은 제거했다. 홈 카드가 "13.4", 연차 현황 화면이
+ *   "13.44" 를 보여 같은 값이 서로 달라 보이는 원인이었다. leaveFormat.js 가 이미
+ *   "잔여/부여 표기의 유일한 함수, 인라인 포맷 금지" 를 규정한다.
+ *   단위("일 잔여")는 마크업이 소유하므로 숫자 문자열만 쓴다.
+ */
+const formattedRemaining = computed(() => splitLeaveDaysOnly(props.remainingDays).dayText)
 </script>
 
 <style scoped>

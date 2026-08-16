@@ -271,7 +271,7 @@
         <div v-if="borrowAgreed" class="borrow-info">
           <div class="borrow-info__row">
             <span class="borrow-info__lbl">가불 가능 한도</span>
-            <span class="borrow-info__val">{{ formatDays(borrowQuota) }}일</span>
+            <span class="borrow-info__val">{{ formatLeaveDaysOnly(borrowQuota) }}</span>
           </div>
           <div v-if="borrowExpiryDisplay" class="borrow-info__row">
             <span class="borrow-info__lbl">만료(소멸)</span>
@@ -883,7 +883,7 @@ const borrowDeficitText = computed(() => {
   if (Number.isNaN(bal) || est === null) return ''
   const deficit = est - Math.max(0, bal)
   if (deficit <= 0) return ''
-  return `남은 ${formatDays(Math.max(0, bal))}일 + 가불 ${formatDays(deficit)}일`
+  return `남은 ${formatLeaveDaysOnly(Math.max(0, bal))} + 가불 ${formatLeaveDaysOnly(deficit)}`
 })
 
 // 선택 일자가 가불 만료(소멸)일을 지났는지(가불 토글 ON 한정 가드). 만료 미산정이면 false.
@@ -1030,12 +1030,14 @@ const isValid = computed(() => {
 })
 
 // ── 표시 헬퍼 (UI — 허용) ────────────────────────────────────────────────
-const formatDays = (d) => {
-  const n = Number(d)
-  if (Number.isNaN(n)) return '0'
-  // 정수면 정수로, 소수면 1자리. 표시 전용.
-  return Number.isInteger(n) ? String(n) : n.toFixed(1)
-}
+/*
+ * ★잔여/한도 일수 표기용 formatDays(소수 1자리) 인라인 포맷은 제거했다.
+ *   leaveFormat.js 가 "날짜 미정 문맥(잔여/부여/사용예정/한도)의 유일한 표기 함수,
+ *   인라인 포맷 금지" 를 규정하는데도 이 파일은 formatLeaveDaysOnly 를 이미 import 해 쓰면서
+ *   그 옆에 1자리 복사본을 따로 두고 있었다. 그 결과 같은 잔여값이 이 화면에서는 "13.4",
+ *   연차 현황 화면에서는 "13.44" 로 보여 서로 다른 값처럼 읽혔다.
+ *   자릿수를 여기서 다시 정하지 말 것 — 규칙이 바뀌면 leaveFormat.js 만 고친다.
+ */
 const approverMetaOf = (ap) => [ap?.nodeNm, ap?.rankNm].filter(Boolean).join(' · ')
 
 // ── UI 토글/선택 (developer: 종류 변경 시 단위/시각/결재선 재구성 로직 보완) ─
