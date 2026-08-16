@@ -11,6 +11,7 @@ C:\PRAFTA\                    ← 워크스페이스 루트 (cwd)
 │   ├── prafta-web-frontend\      Vue 3 + Vite (관리자 웹)
 │   │   └── prafta-web-frontend\  실제 Vite 루트(이중 중첩, 의도된 구조)
 │   └── prafta-app-frontend\      Vue 3 + Vite (모바일 webview 콘텐츠)
+│       └── prafta-app-frontend\  실제 Vite 루트(이중 중첩, 웹과 동일 구조)
 └── PRAFTA_FLUTTER\           ← 모바일 셸 앱 프로젝트
     └── safenote\                 Flutter (webview_flutter + mobile_scanner)
 ```
@@ -160,7 +161,7 @@ prafta는 별도의 web-frontend 프로젝트를 가진다.
 
 `src/components/layout/` — 앱 셸
 
-모바일 webview 콘텐츠 프론트: `PRAFTA/prafta-app-frontend/` (별도 Vite 프로젝트, Flutter 셸의 `assets/vue_app/`에 빌드 산출물 번들).
+모바일 webview 콘텐츠 프론트: `PRAFTA/prafta-app-frontend/prafta-app-frontend/` (이중 중첩이 실제 Vite 루트 — 웹과 동일 구조. 별도 Vite 프로젝트이며, Flutter 셸의 `assets/vue_app/`에 빌드 산출물 번들).
 
 화면 작업 흐름
 
