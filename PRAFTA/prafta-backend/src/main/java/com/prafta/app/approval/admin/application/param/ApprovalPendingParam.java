@@ -15,6 +15,12 @@ public record ApprovalPendingParam(
     , String keyword
     , int page
     , int pageSize
+    /**
+     * prafta-leavemulti: 연차 기간(From-To) 신청 묶음을 카드 1건으로 접어 내릴지 여부.
+     *
+     * <p>구버전 앱 번들 무회귀를 위한 게이팅 값이다. 미지정(false)이면 종전 SQL·종전 응답 그대로다.
+     */
+    , boolean groupLeave
     , String gvCmpnyCd
     , String gvUserCd
     , String gvSiteCd
@@ -27,7 +33,7 @@ public record ApprovalPendingParam(
     private static final int MAX_PAGE = 1_000_000;
 
     public static ApprovalPendingParam of(String group, String sort, String keyword,
-            Integer page, Integer pageSize, TokenInfo token) {
+            Integer page, Integer pageSize, String groupLeave, TokenInfo token) {
         if (token == null || token.gv_cmpnyCd() == null || token.gv_userCd() == null) {
             throw new ApiException(CommonErrorCode.COMMON_400_003);
         }
@@ -36,8 +42,10 @@ public record ApprovalPendingParam(
         int p = (page == null || page < 1) ? 1 : Math.min(page, MAX_PAGE);
         int ps = (pageSize == null || pageSize < 1) ? DEFAULT_PAGE_SIZE
                 : Math.min(pageSize, MAX_PAGE_SIZE);
+        // prafta-leavemulti: 'Y'/'true' 만 접기 활성(그 외·미지정은 종전 동작). 구버전 앱 번들 무회귀 게이트.
+        boolean gl = "Y".equalsIgnoreCase(groupLeave) || "true".equalsIgnoreCase(groupLeave);
         return new ApprovalPendingParam(g, s,
                 (keyword == null || keyword.isBlank()) ? null : keyword.trim(),
-                p, ps, token.gv_cmpnyCd(), token.gv_userCd(), token.gv_siteCd(), token.gv_authCd());
+                p, ps, gl, token.gv_cmpnyCd(), token.gv_userCd(), token.gv_siteCd(), token.gv_authCd());
     }
 }

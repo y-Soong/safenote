@@ -13,6 +13,7 @@ import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
 
 import com.prafta.app.admin.common.scope.application.query.ScopedNodeQuery;
+import com.prafta.app.leave.leaveflow.service.MultiDayLeavePlanner;
 import com.prafta.app.admin.common.scope.mapper.AdminScopeMapper;
 import com.prafta.app.approval.admin.application.param.ApprovalDetailParam;
 import com.prafta.app.approval.admin.application.param.ApprovalHistoryParam;
@@ -151,7 +152,11 @@ public class AppAdminApprovalServiceImpl implements AppAdminApprovalService {
                 CORRECTION_TYPES, List.of("01"), param.keyword(), null, null, 0, 0));
         int otCount = mapper.countPendingCorrOt(scopeQuery(scope, param.gvCmpnyCd(),
                 OVERTIME_TYPES, List.of("01"), param.keyword(), null, null, 0, 0));
-        int leaveCount = mapper.countPendingLeave(param.gvCmpnyCd(), param.gvUserCd(), param.keyword());
+        // prafta-leavemulti: groupLeave=Y 면 연차 건수를 "카드 수(묶음 수)"로 산출한다.
+        //   목록 아이템도 접힌 카드 1건이므로 counts/totalCount/hasMore 가 서로 정합해진다.
+        int leaveCount = param.groupLeave()
+                ? mapper.countPendingLeaveGroups(param.gvCmpnyCd(), param.gvUserCd(), param.keyword())
+                : mapper.countPendingLeave(param.gvCmpnyCd(), param.gvUserCd(), param.keyword());
         int schedCount = mapper.countPendingCorrOt(scopeQuery(scope, param.gvCmpnyCd(),
                 SCHEDULE_TYPES, List.of("01"), param.keyword(), null, null, 0, 0));
         int allCount = corrCount + otCount + leaveCount + schedCount;
@@ -192,9 +197,7 @@ public class AppAdminApprovalServiceImpl implements AppAdminApprovalService {
             totalCount = otCount;
             hasMore = offset + items.size() < totalCount;
         } else if (G_LEAVE.equals(param.group())) {
-            List<PendingLeaveRow> rows = mapper.selectPendingLeave(
-                    param.gvCmpnyCd(), param.gvUserCd(), param.keyword(), offset, pageSize);
-            items = mapLeave(rows);
+            items = selectLeaveItems(param, offset, pageSize);
             totalCount = leaveCount;
             hasMore = offset + items.size() < totalCount;
         } else if (G_SCHEDULE.equals(param.group())) {
@@ -215,8 +218,17 @@ public class AppAdminApprovalServiceImpl implements AppAdminApprovalService {
                     OVERTIME_TYPES, List.of("01"), param.keyword(), null, null, 0, fetch)), param.gvUserCd()));
             merged.addAll(mapCorrOt(mapper.selectPendingCorrOt(scopeQuery(scope, param.gvCmpnyCd(),
                     SCHEDULE_TYPES, List.of("01"), param.keyword(), null, null, 0, fetch)), param.gvUserCd()));
-            merged.addAll(mapLeave(mapper.selectPendingLeave(
-                    param.gvCmpnyCd(), param.gvUserCd(), param.keyword(), 0, fetch)));
+            // prafta-leavemulti: groupLeave=Y 면 접힌 아이템 1건으로 병합에 참여한다 →
+            //   ALL 슬라이스 경계에서 묶음이 갈리는 경로가 함께 소멸한다.
+            //   ★단 그룹 모드의 limit 은 "묶음 수"라 적재 행 수가 묶음 크기만큼 곱해진다(security M-1).
+            //     Fix1 의 fetch 캡은 "행 수" 상한을 노린 값이므로, 그대로 넘기면 한 요청이
+            //     fetch × 최대 묶음 크기(MAX_RANGE_DAYS=62) 행까지 적재하고 행마다 복호화 함수와
+            //     상관 서브쿼리가 돈다. 연차 소스에만 묶음 상한으로 나눈 fetch 를 준다.
+            //     (하한 pageSize+1 은 첫 페이지 슬라이스와 hasMore 판정에 필요한 최소치다.)
+            int leaveFetch = param.groupLeave()
+                    ? Math.max(pageSize + 1, fetch / MultiDayLeavePlanner.MAX_RANGE_DAYS)
+                    : fetch;
+            merged.addAll(selectLeaveItems(param, 0, leaveFetch));
             merged.sort(Comparator.comparing(
                     ApprovalPendingResponse.PendingItem::getReqDate,
                     Comparator.nullsLast(Comparator.reverseOrder())));
@@ -307,6 +319,125 @@ public class AppAdminApprovalServiceImpl implements AppAdminApprovalService {
         return list;
     }
 
+    /**
+     * prafta-leavemulti: 연차 대기 아이템 산출(단건 페이징 / 묶음 접기 분기).
+     *
+     * <p>{@code groupLeave=false} 면 종전 경로(selectPendingLeave + mapLeave)를 그대로 탄다 — 구버전 앱 무회귀.
+     *
+     * @param offset 그룹 모드에서는 "묶음 기준" offset, 아니면 행 기준 offset.
+     * @param limit  그룹 모드에서는 "묶음 기준" 개수, 아니면 행 기준 개수.
+     */
+    private List<ApprovalPendingResponse.PendingItem> selectLeaveItems(
+            ApprovalPendingParam param, int offset, int limit) {
+        if (param.groupLeave()) {
+            return mapLeaveGrouped(mapper.selectPendingLeaveGrouped(
+                    param.gvCmpnyCd(), param.gvUserCd(), param.keyword(), offset, limit));
+        }
+        return mapLeave(mapper.selectPendingLeave(
+                param.gvCmpnyCd(), param.gvUserCd(), param.keyword(), offset, limit));
+    }
+
+    /**
+     * prafta-leavemulti: 연차 기간(From-To) 신청 묶음을 카드 1건으로 접는다.
+     *
+     * <p>묶음키 = {@code COALESCE(LEAVE_GROUP_ID, REQ_ID)}. 단일일 신청(LEAVE_GROUP_ID=null)은
+     * 종전 {@code mapLeave} 와 완전히 동일한 아이템을 만들고 묶음 필드는 전부 null 로 둔다.
+     *
+     * <p>대표행은 근무일 최소(첫날) — 카드 본문을 눌러 상세로 가면 첫날 건이 열린다.
+     * ★{@code groupDays} 는 LEAVE_DAYS 만 합산한다. LEAVE_MINUTES 는 분할차감 시 첫 행에만 총량을 싣는
+     * 불변식이라 합산하면 틀린 값이 된다.
+     */
+    private List<ApprovalPendingResponse.PendingItem> mapLeaveGrouped(List<PendingLeaveRow> rows) {
+        List<ApprovalPendingResponse.PendingItem> list = new ArrayList<>();
+        if (rows == null || rows.isEmpty()) {
+            return list;
+        }
+        // 쿼리 정렬(그룹 → 근무일 오름차순)을 그대로 보존하기 위해 LinkedHashMap 사용.
+        Map<String, List<PendingLeaveRow>> grouped = new LinkedHashMap<>();
+        for (PendingLeaveRow r : rows) {
+            String key = StringUtils.hasText(r.leaveGroupId()) ? r.leaveGroupId() : r.reqId();
+            grouped.computeIfAbsent(key, k -> new ArrayList<>()).add(r);
+        }
+
+        for (Map.Entry<String, List<PendingLeaveRow>> e : grouped.entrySet()) {
+            List<PendingLeaveRow> members = e.getValue();
+            PendingLeaveRow head = members.get(0);
+
+            // 단일일 신청(묶음 아님) — 종전 단건 아이템과 동일(묶음 필드 전부 null).
+            if (!StringUtils.hasText(head.leaveGroupId())) {
+                list.addAll(mapLeave(members));
+                continue;
+            }
+
+            // 대표행 = 근무일 최소(첫날). 쿼리가 이미 WORK_YMD ASC 지만 방어적으로 재산출한다.
+            PendingLeaveRow rep = head;
+            String fromYmd = head.workYmd();
+            String toYmd = head.workYmd();
+            BigDecimal daysSum = BigDecimal.ZERO;
+            BigDecimal borrowSum = BigDecimal.ZERO;
+            boolean anySelf = false;
+            List<ApprovalPendingResponse.PendingItem.GroupItem> children = new ArrayList<>(members.size());
+
+            for (PendingLeaveRow m : members) {
+                if (m.workYmd() != null) {
+                    if (fromYmd == null || m.workYmd().compareTo(fromYmd) < 0) {
+                        fromYmd = m.workYmd();
+                        rep = m;
+                    }
+                    if (toYmd == null || m.workYmd().compareTo(toYmd) > 0) {
+                        toYmd = m.workYmd();
+                    }
+                }
+                if (m.leaveDays() != null) {
+                    daysSum = daysSum.add(m.leaveDays());
+                }
+                if (m.borrowDays() != null) {
+                    borrowSum = borrowSum.add(m.borrowDays());
+                }
+                if ("Y".equals(m.selfYn())) {
+                    anySelf = true;
+                }
+                children.add(ApprovalPendingResponse.PendingItem.GroupItem.builder()
+                        .reqId(m.reqId())
+                        .approvalStep(m.approvalStep())
+                        .targetYmd(m.workYmd())
+                        .leaveDays(m.leaveDays())
+                        .unitNm(m.unitNm())
+                        .selfYn(m.selfYn())
+                        .borrowDays(m.borrowDays())
+                        .summaryLines(summaryLeave(m))
+                        .build());
+            }
+
+            list.add(ApprovalPendingResponse.PendingItem.builder()
+                    .reqId(rep.reqId())
+                    .group(G_LEAVE)
+                    .reqType(rep.reqType())
+                    .reqTypeNm(reqTypeNm(rep.reqType()))
+                    .requesterUserNm(rep.requesterUserNm())
+                    .requesterUserCd(rep.requesterUserCd())
+                    .nodeNm(rep.nodeNm())
+                    .targetYmd(rep.workYmd())
+                    .summaryLines(summaryLeave(rep))
+                    .reqDate(rep.reqDate())
+                    .deadlineDday(null)
+                    .deadlineLevel(null)
+                    .selfYn(anySelf ? "Y" : "N")
+                    .lockedYn(false)
+                    .lockedByNm(null)
+                    .approvalStep(rep.approvalStep())
+                    .borrowDays(borrowSum)
+                    .leaveGroupId(e.getKey())
+                    .groupCount(members.size())
+                    .groupFromYmd(fromYmd)
+                    .groupToYmd(toYmd)
+                    .groupDays(daysSum)
+                    .groupItems(children)
+                    .build());
+        }
+        return list;
+    }
+
     // ============================ A-2 상세 ============================
 
     @Override
@@ -334,14 +465,21 @@ public class AppAdminApprovalServiceImpl implements AppAdminApprovalService {
         List<ApprovalStepVO> steps = approvalLineMapper.selectApprovalLineByReqId(param.gvCmpnyCd(), param.reqId());
         Integer currentStep = currentAppliedStep(steps);
 
-        boolean selfBlocked = meta.userCd() != null && meta.userCd().equals(param.gvUserCd());
+        // prafta-leavemulti(정책 변경 2026-08-16, 사용자 확정): 관리자 본인이 낸 요청을 스스로 승인해도 무방하다.
+        //   종전에는 앱만 본인결재를 무조건 차단(gate.selfBlockedYn=true → 버튼 비활성)했고 웹은 차단하지 않아
+        //   앱이 더 엄격했다. 화면에 "본인 결재 불가" 배너가 남지 않도록 표시 플래그도 함께 내린다.
+        //   근태보정/초과/스케줄은 위임 대상 web Attd07Service 가 노드 정책(SELF_ATTD_APPRV_YN)으로 여전히
+        //   판정하므로(403_001/403_003), 여기서는 막지 않고 서버 처리 시점 메시지로 안내한다
+        //   (:disabled 로 감추면 "눌러도 아무 일이 없다"로 오인된다).
+        boolean selfRequested = meta.userCd() != null && meta.userCd().equals(param.gvUserCd());
         boolean closed = isClosed(param.gvCmpnyCd(), meta);
         boolean conflict = !"01".equals(meta.reqStatus());
-        boolean canProcess = !selfBlocked && !closed && !conflict;
+        boolean canProcess = !closed && !conflict;
 
         ApprovalDetailResponse.Gate gate = ApprovalDetailResponse.Gate.builder()
                 .canProcess(canProcess)
-                .selfBlockedYn(selfBlocked)
+                // 본인결재 차단 해제 — 항상 false(응답 계약은 유지, 구버전 앱도 배너 미표시).
+                .selfBlockedYn(false)
                 .closedYn(closed)
                 .lockedYn(false)
                 .lockedByNm(null)
@@ -368,7 +506,7 @@ public class AppAdminApprovalServiceImpl implements AppAdminApprovalService {
         Map<String, Object> body = buildBody(param.gvCmpnyCd(), group, meta, steps);
 
         log.info("앱 관리자 승인 상세 조회 - reqId={}, group={}, canProcess={}, self={}, closed={}, conflict={}",
-                meta.reqId(), group, canProcess, selfBlocked, closed, conflict);
+                meta.reqId(), group, canProcess, selfRequested, closed, conflict);
 
         return ApprovalDetailResponse.builder()
                 .meta(metaOut)
@@ -725,7 +863,7 @@ public class AppAdminApprovalServiceImpl implements AppAdminApprovalService {
     // ============================ A-3 처리(승인/조정후승인/반려) ============================
 
     /**
-     * group·decision 디스패치. 처리 전 IDOR 스코프 + ②본인결재차단 + 멱등(409) + ④마감을 서버에서 재검증한 뒤,
+     * group·decision 디스패치. 처리 전 IDOR 스코프 + 멱등(409) + ④마감을 서버에서 재검증한 뒤,
      * 실제 기록 반영은 web 처리 자산(attd07/leaveflow)에 위임한다(같은 트랜잭션, 원자적 전이).
      *
      * <p>위임 대상 web 서비스도 자체 가드(매니저 게이트 canManageNode / REQ_STATUS '01' / 마감 / 연차 결재자 본인·단계)를
@@ -750,7 +888,7 @@ public class AppAdminApprovalServiceImpl implements AppAdminApprovalService {
             throw new ApiException(AttdErrorCode.ATTD_400_006);
         }
 
-        // ②④ + IDOR + 멱등 재검증(서버 단일 출처). 위반 시 적절한 코드로 거부.
+        // ④ + IDOR + 멱등 재검증(서버 단일 출처). 위반 시 적절한 코드로 거부.
         revalidateGate(scope, meta, group, p);
 
         // Fix3(F1): 근태보정/초과/스케줄 위임 시 web canManageNode/변조검증이 app 과 동일 결론을 내도록
@@ -789,7 +927,7 @@ public class AppAdminApprovalServiceImpl implements AppAdminApprovalService {
                 .build();
     }
 
-    /** 처리 직전 게이트 재검증: IDOR 스코프 → ②본인결재차단 → 멱등(이미 처리) → ④마감. */
+    /** 처리 직전 게이트 재검증: IDOR 스코프 → 멱등(이미 처리) → ④마감. (본인결재차단은 2026-08-16 제거) */
     private void revalidateGate(ScopeContext scope, ReqMetaRow meta, String group, ApprovalProcessParam p) {
         // IDOR: 토큰 스코프 내인지 재검증. 연차는 결재선 참여(결재자 본인)도 허용(상세와 동일 규칙).
         boolean inScope = isInScope(scope, meta);
@@ -800,11 +938,16 @@ public class AppAdminApprovalServiceImpl implements AppAdminApprovalService {
                     p.gvUserCd(), meta.reqId(), meta.siteCd(), meta.nodeCd());
             throw new ApiException(AttdErrorCode.ATTD_403_002);
         }
-        // ② 본인 결재 차단: 요청자=처리자면 거부(상세 gate.selfBlockedYn 과 동일 판정).
-        if (meta.userCd() != null && meta.userCd().equals(p.gvUserCd())) {
-            log.warn("승인 처리 본인결재 차단 - reqId={}, userCd={}", meta.reqId(), p.gvUserCd());
-            throw new ApiException(AttdErrorCode.ATTD_403_001);
-        }
+        // ② 본인 결재 차단은 제거됐다(2026-08-16 사용자 확정: "관리자는 본인이 낸 요청을 스스로 승인해도 무방하다").
+        //   - 연차뿐 아니라 근태보정/초과/스케줄 전 유형에 적용한다.
+        //   - 웹은 원래 이 무조건 차단이 없었다(앱만 더 엄격했다). 웹 일괄 승인 경로도 self-block 이 없어
+        //     앱 단건에서만 막히는 비대칭이 있었다.
+        //   - 같은 메서드의 IDOR 검사가 이미 "연차는 결재선 참여자면 통과"라는 예외를 두고 있어,
+        //     결재선에 본인이 들어간 연차를 본인이 못 여는 것 자체가 앞뒤가 맞지 않았다.
+        //   ★나머지 가드는 그대로 유지한다: IDOR 스코프(403_002) / 멱등 409 / 마감(400_042).
+        //   ★근태보정/초과/스케줄은 위임 대상 web Attd07Service 가 노드 정책(SELF_ATTD_APPRV_YN)으로
+        //     자기처리 허용 여부를 계속 판정한다(403_001/403_003) — 웹과 동일한 판정으로 수렴한다.
+
         // 멱등 충돌: REQ 가 이미 처리됨(대기 '01' 아님) → 409("다른 관리자가 이미 처리").
         //   연차 다단은 REQ 가 최종 승인 전까지 '01' 을 유지하므로, 단계 차례/중복은 위임 web 서비스가 추가 차단한다.
         if (!"01".equals(meta.reqStatus())) {

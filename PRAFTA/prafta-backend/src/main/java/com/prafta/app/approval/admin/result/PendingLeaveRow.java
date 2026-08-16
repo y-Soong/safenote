@@ -29,6 +29,13 @@ public record PendingLeaveRow(
     , String reqDate
     , String selfYn
     /**
+     * prafta-leavemulti: 연차 기간(From-To) 신청 묶음 키(TB_USER_ATTD_REQ.LEAVE_GROUP_ID). 단일일 신청은 null.
+     *
+     * <p>★ MyBatis record 위치 기반 매핑 — selfYn 뒤 / borrowDays 앞 위치를 지켜야 한다.
+     *   SELECT 절(pendingLeaveColumns 조각)과 순서가 어긋나면 대기목록 매핑이 통째로 밀린다.
+     */
+    , String leaveGroupId
+    /**
      * 가불(미래 연차 당겨쓰기) 충당 일수 (가불표시-01). 항상 0 이상(null 없음).
      * ★ MyBatis record 위치 기반 매핑 — 반드시 맨 끝 유지(SELECT 맨 끝 컬럼 borrowDays 와 순서 일치).
      */

@@ -46,6 +46,26 @@ public interface AppAdminApprovalMapper {
                           @Param("approverUserCd") String approverUserCd,
                           @Param("keyword") String keyword);
 
+    /**
+     * prafta-leavemulti: 연차 대기 목록 — <b>묶음키 단위</b> 페이징(그룹 원자 페이징).
+     *
+     * <p>페이징 단위가 REQ 행이 아니라 {@code COALESCE(LEAVE_GROUP_ID, REQ_ID)} 다. 한 기간신청 묶음은
+     * 항상 한 페이지에 통째로 들어오므로, 부분 로드 상태에서 일괄 승인해 일부만 처리되는 사고가 없다.
+     *
+     * @param offset 그룹 기준 offset(행 기준 아님).
+     * @param limit  그룹 기준 개수(행 기준 아님 — 반환 행 수는 묶음 크기만큼 늘어난다).
+     */
+    List<PendingLeaveRow> selectPendingLeaveGrouped(@Param("cmpnyCd") String cmpnyCd,
+                                                    @Param("approverUserCd") String approverUserCd,
+                                                    @Param("keyword") String keyword,
+                                                    @Param("offset") int offset,
+                                                    @Param("limit") int limit);
+
+    /** prafta-leavemulti: 연차 대기 묶음 수(= 카드 수). WHERE 는 countPendingLeave 와 동일. */
+    int countPendingLeaveGroups(@Param("cmpnyCd") String cmpnyCd,
+                                @Param("approverUserCd") String approverUserCd,
+                                @Param("keyword") String keyword);
+
     // ============================ A-2 상세 ============================
 
     /** 요청 메타 1건(회사 스코프). 없으면 null. 요청자 NODE_CD(fallback)·이름 포함. */

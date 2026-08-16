@@ -132,10 +132,14 @@
     <!--
       web LeaveFlowMapper.selectMyPendingLeaveApprovals 포팅: 내가 현재 단계('01' 신청) 결재자인 05/06 요청.
       관리자 스코프(master/hr/node)와 무관하게 web 동일 — 결재선이 곧 노출 스코프(결재자 본인).
+
+      prafta-leavemulti: 단건 페이징(selectPendingLeave)과 그룹 원자 페이징(selectPendingLeaveGrouped)이
+      컬럼/FROM/WHERE 를 아래 sql 조각 3개로 공유한다. record(PendingLeaveRow) 는 위치 기반 매핑이라
+      두 SELECT 의 컬럼 순서가 어긋나면 대기목록이 통째로 밀리므로, 조각 공유로 그 사고를 구조적으로 차단한다.
     -->
-    <select id="selectPendingLeave" resultType="com.prafta.app.approval.admin.result.PendingLeaveRow">
-    /* AppAdminApprovalMapper.selectPendingLeave */
-    SELECT
+
+    <!-- 연차 대기 SELECT 컬럼(record PendingLeaveRow 필드 순서와 1:1). 맨 끝 borrowDays 불변식 유지. -->
+    <sql id="pendingLeaveColumns">
           AP.REQ_ID                                                          AS reqId
         , AP.APPROVAL_STEP                                                   AS approvalStep
         , R.REQ_TYPE                                                         AS reqType
@@ -156,6 +160,9 @@
         , R.REQ_REASON                                                       AS reqReason
         , DATE_FORMAT(R.INSERT_DATE, '%Y-%m-%dT%H:%i:%s')                    AS reqDate
         , CASE WHEN R.USER_CD = #{approverUserCd} THEN 'Y' ELSE 'N' END      AS selfYn
+        <!-- prafta-leavemulti: 연차 기간(From-To) 신청 묶음 키. 단일일 신청은 NULL.
+             record 위치는 selfYn 뒤 / borrowDays 앞 — 순서 변경 금지. -->
+        , R.LEAVE_GROUP_ID                                                   AS leaveGroupId
         <!-- 가불표시-01: 이 요청의 차감(use, CONFIRMED) 중 가불 GRANT(GRANT_REASON 프리픽스 '[가불] ')를
              충당한 일수 합(web selectMyPendingLeaveApprovals 동일 서브쿼리). LEAVE_DAYS 만 합산 —
              LEAVE_MINUTES 는 첫 행 총량 불변식이라 합산 금지. 06(연차수정)은 0 반환(배지 미표시 의도).
@@ -172,6 +179,10 @@
               AND BU.LEAVE_STATUS = 'CONFIRMED'
               AND BU.DEL_YN       = 'N'
           )                                                                  AS borrowDays
+    </sql>
+
+    <!-- 연차 대기 FROM/JOIN 조각(단건·그룹 페이징 공용). 별칭 AP/R/U/LT 는 컬럼·WHERE 조각과 짝을 이룬다. -->
+    <sql id="pendingLeaveFrom">
       FROM TB_USER_ATTD_REQ_APPROVAL AP
       JOIN TB_USER_ATTD_REQ R
         ON R.CMPNY_CD = AP.CMPNY_CD
@@ -197,7 +208,15 @@
       LEFT JOIN TB_LEAVE_TYPE_MGMT LT
         ON LT.CMPNY_CD = U.CMPNY_CD
        AND LT.LEAVE_CD = U.LEAVE_CD
-     WHERE AP.CMPNY_CD         = #{cmpnyCd}
+    </sql>
+
+    <!--
+      연차 대기 WHERE 조각(목록·건수·그룹키 서브쿼리 공용).
+      한 벌만 두어 "서브쿼리 WHERE 와 본 쿼리 WHERE 가 어긋나 카드 건수와 실제 행이 불일치"하는 사고를 차단한다.
+      호출부는 앞에 WHERE 1 = 1 을 둔다(모든 조건이 AND 로 시작).
+    -->
+    <sql id="pendingLeaveWhere">
+       AND AP.CMPNY_CD         = #{cmpnyCd}
        AND AP.APPROVER_USER_CD = #{approverUserCd}
        AND AP.APPROVAL_STATUS  = '01'
        AND R.REQ_TYPE IN ('05', '06')
@@ -209,7 +228,21 @@
           OR FNC_CMM_INFO_SRCH(R.CMPNY_CD, 'USER_NM', R.USER_CD, null) LIKE CONCAT('%', #{keyword}, '%')
        )
        </if>
-     ORDER BY R.INSERT_DATE DESC
+    </sql>
+
+    <select id="selectPendingLeave" resultType="com.prafta.app.approval.admin.result.PendingLeaveRow">
+    /* AppAdminApprovalMapper.selectPendingLeave */
+    SELECT
+    <include refid="pendingLeaveColumns"/>
+    <include refid="pendingLeaveFrom"/>
+     WHERE 1 = 1
+     <include refid="pendingLeaveWhere"/>
+    <!--
+      prafta-leavemulti(정렬 안정화): 기간신청 묶음 N행은 한 트랜잭션에서 INSERT 되어 INSERT_DATE 가 동일하다.
+      tiebreaker 가 없으면 LIMIT/OFFSET 페이지 사이에서 같은 행이 두 번 나오거나 한 행이 사라질 수 있다.
+      REQ_ID 를 2차 정렬키로 두어 전순서를 확정한다(1차 정렬 결과 자체는 종전과 동일).
+    -->
+     ORDER BY R.INSERT_DATE DESC, R.REQ_ID DESC
      LIMIT #{limit} OFFSET #{offset}
     </select>
 
@@ -220,18 +253,58 @@
       JOIN TB_USER_ATTD_REQ R
         ON R.CMPNY_CD = AP.CMPNY_CD
        AND R.REQ_ID   = AP.REQ_ID
-     WHERE AP.CMPNY_CD         = #{cmpnyCd}
-       AND AP.APPROVER_USER_CD = #{approverUserCd}
-       AND AP.APPROVAL_STATUS  = '01'
-       AND R.REQ_TYPE IN ('05', '06')
-       AND R.REQ_STATUS        = '01'
-       AND R.DEL_YN            = 'N'
-       <if test="keyword != null">
-       AND (
-             R.USER_CD LIKE CONCAT('%', #{keyword}, '%')
-          OR FNC_CMM_INFO_SRCH(R.CMPNY_CD, 'USER_NM', R.USER_CD, null) LIKE CONCAT('%', #{keyword}, '%')
-       )
-       </if>
+     WHERE 1 = 1
+     <include refid="pendingLeaveWhere"/>
+    </select>
+
+    <!--
+      prafta-leavemulti: 그룹 원자 페이징 — 페이징 단위를 REQ 행이 아니라
+      "묶음키 COALESCE(LEAVE_GROUP_ID, REQ_ID)" 로 바꾼다.
+
+      한 묶음(14일 신청 등)은 정의상 한 페이지에 통째로 들어오므로, 부분 로드 상태에서 일괄 승인해
+      일부만 처리되는 사고(관리자는 전부 승인했다고 믿는다)가 구조적으로 불가능해진다.
+
+      ★성능: 그룹 원자 페이징은 EXPLAIN 상 temporary + filesort 다(GROUP BY 표현식 + ORDER BY 집계값).
+        현재 규모(대기 연차 수십~수백 행)에서는 무해하다는 것을 개발 DB EXPLAIN 으로 확인했다
+        (type=ref, key=PRIMARY, rows=100). 요청량이 크게 늘면 인덱스 추가를 재검토할 것.
+
+      ★서브쿼리는 GROUP BY + 집계 + LIMIT 를 모두 가져 MySQL 이 병합(derived merge)하지 않고 반드시
+        물리화하므로, 안쪽 별칭 AP/R 은 바깥쪽과 완전히 분리된 스코프다(조각 재사용을 위해 동일 별칭 사용).
+    -->
+    <select id="selectPendingLeaveGrouped" resultType="com.prafta.app.approval.admin.result.PendingLeaveRow">
+    /* AppAdminApprovalMapper.selectPendingLeaveGrouped */
+    SELECT
+    <include refid="pendingLeaveColumns"/>
+    <include refid="pendingLeaveFrom"/>
+      JOIN (
+            SELECT COALESCE(R.LEAVE_GROUP_ID, R.REQ_ID) AS GK
+                 , MAX(R.INSERT_DATE)                   AS GK_DT
+              FROM TB_USER_ATTD_REQ_APPROVAL AP
+              JOIN TB_USER_ATTD_REQ R
+                ON R.CMPNY_CD = AP.CMPNY_CD
+               AND R.REQ_ID   = AP.REQ_ID
+             WHERE 1 = 1
+             <include refid="pendingLeaveWhere"/>
+             GROUP BY COALESCE(R.LEAVE_GROUP_ID, R.REQ_ID)
+             ORDER BY GK_DT DESC, GK DESC
+             LIMIT #{limit} OFFSET #{offset}
+           ) G
+        ON G.GK = COALESCE(R.LEAVE_GROUP_ID, R.REQ_ID)
+     WHERE 1 = 1
+     <include refid="pendingLeaveWhere"/>
+     ORDER BY G.GK_DT DESC, G.GK DESC, R.WORK_YMD ASC, R.REQ_ID ASC
+    </select>
+
+    <!-- prafta-leavemulti: 그룹 수(= 카드 수). WHERE 는 countPendingLeave 와 동일 조각을 공유한다. -->
+    <select id="countPendingLeaveGroups" resultType="int">
+    /* AppAdminApprovalMapper.countPendingLeaveGroups */
+    SELECT COUNT(DISTINCT COALESCE(R.LEAVE_GROUP_ID, R.REQ_ID))
+      FROM TB_USER_ATTD_REQ_APPROVAL AP
+      JOIN TB_USER_ATTD_REQ R
+        ON R.CMPNY_CD = AP.CMPNY_CD
+       AND R.REQ_ID   = AP.REQ_ID
+     WHERE 1 = 1
+     <include refid="pendingLeaveWhere"/>
     </select>
 
     <!-- ============================ A-2 상세 ============================ -->

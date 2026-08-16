@@ -30,7 +30,8 @@ public interface AppAdminApprovalService {
     /**
      * A-3 처리(승인/조정후승인/반려). group·decision 에 따라 web attd07/leaveflow 자산으로 디스패치한다.
      *
-     * <p>처리 전 ②본인결재차단·④마감·멱등(409)·IDOR 스코프를 서버에서 재검증한다.
+     * <p>처리 전 ④마감·멱등(409)·IDOR 스코프를 서버에서 재검증한다.
+     * (본인결재차단은 2026-08-16 사용자 확정으로 제거 — 관리자 자기승인 허용.)
      * APPROVE_ADJUST 는 본 라운드 보류(연차는 계약상 조정 불가). reqId 토큰 스코프 위반 시 403.
      */
     ApprovalProcessResponse process(ApprovalProcessParam param);

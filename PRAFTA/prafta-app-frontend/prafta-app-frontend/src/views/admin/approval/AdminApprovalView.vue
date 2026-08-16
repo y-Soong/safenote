@@ -7,6 +7,10 @@
       ⚠️ C1: 진입 게이팅은 access-context.moduleActiveMap.APPROVAL(서버 산출)로 상위(AdminLauncher)에서 처리.
               본 화면은 클라이언트 역할(AUTH_CD) 분기 없음.
   - 디폴트 탭 = 승인 대기(요청서). 탭 전환은 UI 토글(허용 범위). 각 탭 데이터 조회는 자식 컴포넌트가 담당.
+  - prafta-leavemulti(PRAFTA-APP-LM-5): 대기 탭 배지(pendingTotal)의 의미가 "요청 행 수"에서 "카드 수"로 바뀌었다.
+      자식(AdminApprovalPendingList)이 groupLeave=Y 로 조회하면 연차 기간신청 묶음이 카드 1건으로 접히고,
+      서버 counts/totalCount 도 카드 기준으로 내려온다. 묶음의 실제 날짜 수는 카드의 "기간 N건" 배지가 표기한다.
+      (본 셸은 코드 변경 없음 — 표기 의미 변화만 명시)
   - 디자인 토큰: AdminTbmView/MyRequestsView 세트를 .admin-approval-view 루트에 1회 선언.
       자식(리스트/카드)은 scoped 상태로 var(--...) 상속. 하드코딩 색/픽셀 금지.
   - planner 라운드 스코프: template + style 완성. script 는 선언 + TODO(developer) 골격만.
