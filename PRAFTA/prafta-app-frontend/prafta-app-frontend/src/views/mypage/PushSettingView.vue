@@ -186,6 +186,15 @@ const adminToggles = ref([
   { key: 'M3_REFUSAL_CHECKIN', label: '노무수령거부일 출근 감지', desc: '', on: true, savable: true },
   { key: 'M4_NEAR_MISS', label: '아차사고 보고 알림', desc: '', on: true, savable: true },
   { key: 'M5_RISK_REQUEST', label: '위험성평가 요청 알림', desc: '', on: true, savable: true },
+  // A5: 셀프가입 승인 대기 알림. 토글키는 BE PushNotiTypeConst.M6_SELFJOIN_PENDING 과 문자 단위로 일치해야 한다
+  //   (한쪽만 바꾸면 토글은 보이는데 아무 효과가 없다).
+  {
+    key: 'M6_SELFJOIN_PENDING',
+    label: '가입 승인 대기 알림',
+    desc: '셀프가입 신청 접수',
+    on: true,
+    savable: true,
+  },
 ])
 
 // ───────────────────────────────────────────────────────────

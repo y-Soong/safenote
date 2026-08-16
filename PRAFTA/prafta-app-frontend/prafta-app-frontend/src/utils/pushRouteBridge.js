@@ -87,6 +87,21 @@ function routeByPushType(data) {
     case 'TRANSFER_RESERVED':
       openTransferNotice()
       break
+    case 'SELFJOIN_PENDING':
+      // A8: 관리자 셀프가입 승인 화면으로 이동. 진입 인가는 서버(access-context / EP 게이트)가 최종 판정한다.
+      //   ★payload 의 siteCd 를 query 로 반드시 넘긴다(qa D1). 넘기지 않으면 서버가 토큰 gv_siteCd 로
+      //     폴백하는데, 수신자의 토큰 사업장과 신청 사업장은 다를 수 있다 —
+      //     ① 타 사업장 노드의 정/부 관리자로 지정된 경우 ② master/hr 폴백 수신자(여러 사업장 인가 보유)
+      //     이때 "알림은 왔는데 목록에 그 신청이 없다"가 된다. 알림이 가리키는 사업장을 그대로 연다.
+      //   siteCd 는 화면 조회 조건일 뿐이고 인가는 서버 2단 게이트가 판정하므로 신뢰 경계 문제는 없다.
+      if (data.siteCd) {
+        router
+          .push({ path: '/AdminSelfJoin', query: { siteCd: String(data.siteCd) } })
+          .catch(() => {})
+      } else {
+        router.push('/AdminSelfJoin').catch(() => {})
+      }
+      break
     default:
       // 미지원 type 은 무시(향후 확장 지점).
       console.log('[pushRouteBridge] 미지원 푸시 type:', data.type)

@@ -222,6 +222,16 @@ const routes = [
     component: () => import('@/views/admin/entry/AdminEntryApprovalView.vue'),
   },
 
+  // A8: 관리자 모드 셀프가입(회원가입) 승인 (보호 — publicPaths 미포함, beforeEach 토큰 게이트).
+  //   진입: AdminLauncherView 본문 SELF_JOIN 섹션(moduleActiveMap.SELF_JOIN===true)
+  //         → /AdminSelfJoin?siteCd={currentSiteCd}. 푸시(SELFJOIN_PENDING) 탭에서도 진입한다.
+  //   진입 게이팅은 서버 access-context, 조회/처리 인가는 서버 EP 2단 게이트가 최종 판정한다.
+  {
+    path: '/AdminSelfJoin',
+    name: 'AdminSelfJoin',
+    component: () => import('@/views/admin/selfjoin/AdminSelfJoinView.vue'),
+  },
+
   // 관리자 연차 변경/삭제 최종 확인 (보호 — publicPaths 미포함, beforeEach 토큰 게이트).
   //   진입: AdminLauncherView 상단 "연차 변경 확인 대기 N건" 배너 → /AdminLeaveChangeConfirm.
   //   스코프/권한은 서버(공유 Attd13Service)가 단일 출처로 재강제(비관리자 fail-closed).

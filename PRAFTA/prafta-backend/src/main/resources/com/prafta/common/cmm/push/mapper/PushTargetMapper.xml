@@ -33,4 +33,66 @@
            )
     </select>
 
+    <!--
+      셀프가입 승인 대기 통보(M6): 기준 노드 + 조상 노드의 정/부 관리자 USER_CD 목록.
+      - AttdCloseMapper.countNodeAdmin 의 조상 재귀 CTE 를 역방향으로 뒤집었다(판정에서 열거로).
+        술어가 동일해야 "수신자 집합 = 조회 권한자 집합의 부분집합" 불변식이 성립한다.
+        한쪽만 고치면 "알림은 왔는데 열어보니 403" 이 발생한다.
+      - 조상 전개는 PARENT_NODE_CD 를 타고 올라간다(IX_NODE_PARENT 는 자손 방향 인덱스이므로
+        본 쿼리는 PK(CMPNY_CD, SITE_CD, NODE_CD) 단건 조회를 반복한다 - 깊이만큼만 접근).
+      - 재직/활성(USE_YN='Y', ACCOUNT_STATUS='01')만 반환하므로 승인 대기 상태인 신청자 본인과
+        과거 관리자였던 탈퇴 계정이 구조적으로 배제된다.
+      - MAIN/SUB 관리자 컬럼은 NULL 또는 공백일 수 있어 NULLIF(TRIM(...), '') 로 걸러낸다.
+    -->
+    <select id="selectNodeAdminChainUserCds" resultType="string">
+    /* PushTargetMapper.selectNodeAdminChainUserCds */
+    WITH RECURSIVE anc AS (
+        SELECT N.NODE_CD, N.PARENT_NODE_CD, N.MAIN_ADMIN_CD, N.SUB_ADMIN_CD
+          FROM TB_SITE_NODE N
+         WHERE N.CMPNY_CD = #{cmpnyCd} AND N.SITE_CD = #{siteCd} AND N.NODE_CD = #{nodeCd}
+        UNION ALL
+        SELECT P.NODE_CD, P.PARENT_NODE_CD, P.MAIN_ADMIN_CD, P.SUB_ADMIN_CD
+          FROM TB_SITE_NODE P
+          JOIN anc A2
+            ON P.CMPNY_CD = #{cmpnyCd} AND P.SITE_CD = #{siteCd} AND P.NODE_CD = A2.PARENT_NODE_CD
+    )
+    SELECT DISTINCT U.USER_CD
+      FROM (
+            SELECT MAIN_ADMIN_CD AS ADMIN_CD FROM anc
+            UNION
+            SELECT SUB_ADMIN_CD  AS ADMIN_CD FROM anc
+           ) A
+           INNER JOIN TB_USER U
+              ON  U.CMPNY_CD = #{cmpnyCd}
+              AND U.USER_CD  = A.ADMIN_CD
+     WHERE NULLIF(TRIM(A.ADMIN_CD), '') IS NOT NULL
+       AND U.USE_YN         = 'Y'
+       AND U.ACCOUNT_STATUS = '01'
+    </select>
+
+    <!--
+      셀프가입 승인 대기 통보(M6) 폴백: 해당 사업장 권한을 가진 역할(master/hr) USER_CD 목록.
+      - 신청자 부서와 조상 전체에 정/부 관리자가 0명일 때만 호출한다(전사 발송 방지).
+      - 사업장 원장(TB_USER_SITE_AUTH) 조인은 LeaveRefusalMapper.selectSiteRefusalAdmins 의
+        역할 기반 절과 동일 형태라 폴백 수신자도 사업장 인가를 통과하는 사람만 남는다.
+      - authCdList 가 비면 SQL 문법 오류(IN ()) 가 나므로 호출부에서 빈 목록을 막는다.
+    -->
+    <select id="selectSiteRoleAdminUserCds" resultType="string">
+    /* PushTargetMapper.selectSiteRoleAdminUserCds */
+    SELECT DISTINCT U.USER_CD
+      FROM TB_USER U
+           INNER JOIN TB_USER_SITE_AUTH SA
+              ON  U.CMPNY_CD = SA.CMPNY_CD
+              AND U.USER_CD  = SA.USER_CD
+              AND SA.SITE_CD = #{siteCd}
+              AND SA.USE_YN  = 'Y'
+     WHERE U.CMPNY_CD       = #{cmpnyCd}
+       AND U.USE_YN         = 'Y'
+       AND U.ACCOUNT_STATUS = '01'
+       AND U.AUTH_CD IN
+           <foreach collection="authCdList" item="authCd" open="(" separator="," close=")">
+               #{authCd}
+           </foreach>
+    </select>
+
 </mapper>

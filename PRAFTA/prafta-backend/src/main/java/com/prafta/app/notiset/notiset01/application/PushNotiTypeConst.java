@@ -47,6 +47,7 @@ public final class PushNotiTypeConst {
     public static final String M3_REFUSAL_CHECKIN = "M3_REFUSAL_CHECKIN";
     public static final String M4_NEAR_MISS = "M4_NEAR_MISS";
     public static final String M5_RISK_REQUEST = "M5_RISK_REQUEST";
+    public static final String M6_SELFJOIN_PENDING = "M6_SELFJOIN_PENDING";
 
     // ── 읽기전용 항목키(R*) — 노출하되 저장 불가(ON 고정), plan §8-R 7 ──
     public static final String R1_REFUSAL_NOTICE = "R1_REFUSAL_NOTICE";
@@ -109,6 +110,10 @@ public final class PushNotiTypeConst {
         put(M3_REFUSAL_CHECKIN, ToggleGroup.ADMIN, "LEAVE_REFUSAL_CHECKIN_ALERT");
         put(M4_NEAR_MISS, ToggleGroup.ADMIN, "NEAR_MISS_REPORTED");
         put(M5_RISK_REQUEST, ToggleGroup.ADMIN, "RISK_ASSESS_REQUESTED");
+        // 셀프가입 승인 대기 통보(부서 정/부 관리자 대상). 기본 ON(opt-out).
+        //   ★FE PushSettingView 의 토글키와 문자 단위로 일치해야 한다 — 한쪽만 바꾸면 토글은 보이는데
+        //     아무 효과가 없다(발송 억제는 TB_USER_PUSH_SETTING.NOTI_TYPE 기준으로 발송 시점에 걸린다).
+        put(M6_SELFJOIN_PENDING, ToggleGroup.ADMIN, "SELFJOIN_PENDING");
 
         // 읽기전용 항목(저장 불가 — ON 고정)
         put(R1_REFUSAL_NOTICE, ToggleGroup.READONLY, "LEAVE_REFUSAL_NOTICE");

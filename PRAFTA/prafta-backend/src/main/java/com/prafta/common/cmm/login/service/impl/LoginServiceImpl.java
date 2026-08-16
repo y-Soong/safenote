@@ -74,6 +74,8 @@ public class LoginServiceImpl implements LoginService{
 	private final com.prafta.common.cmm.sch.service.DefaultSchOptionService defaultSchOptionService;
 	private final com.prafta.common.cmm.sch.service.DefaultSchGenService defaultSchGenService;
 	private final com.prafta.common.cmm.sch.mapper.DefaultSchGenMapper defaultSchGenMapper;
+	// 셀프가입 승인 대기 통보(M6). afterCommit + REQUIRES_NEW 격리라 푸시 실패가 가입 접수를 롤백시키지 않는다.
+	private final com.prafta.common.cmm.push.SelfJoinPendingNotiService selfJoinPendingNotiService;
 
 	// PRAFTA-036 — 인증대기 분기에서 발급하는 임시 토큰 만료(분).
 	private static final int PHONE_AUTH_TOKEN_TTL_MINUTES = 10;
@@ -630,6 +632,13 @@ public class LoginServiceImpl implements LoginService{
 
             loginMapper.insertTermsUserAgrMgmt(RequiredTermsInfoCommand.from(userCd, param, RequiredTermsResult));
         }
+
+        // 승인권자 통보(공통 정책서 §10.2 "요청 등록 → 승인권자에게 알림").
+        //   ★신규 INSERT 경로와 거부 행 재활용(재가입) UPDATE 경로 양쪽을 한 지점에서 덮는다.
+        //   afterCommit 등록이라 이 트랜잭션이 커밋된 뒤에만 적재되고, 적재 실패는 가입 접수에
+        //   영향을 주지 않는다. 인자는 서버가 방금 확정한 권위값만 넘긴다(요청 바디 재사용 금지).
+        selfJoinPendingNotiService.notifyJoinRequested(
+                param.cmpnyCd(), param.siteCd(), param.nodeCd(), userCd);
 
         // 클라이언트가 "로그인 해주세요" 대신 승인대기 안내로 분기하도록 상태 신호를 돌려준다.
         //   (앱 utils/joinApproval.js 계약 — nextStep / accountStatus 어느 쪽을 봐도 동일 결론)

@@ -199,6 +199,15 @@ const modules = [
   // 일용직 계약서+승인제 T4: 일용직 입장 승인(활성=서버 moduleActiveMap.ENTRY, master∥hr).
   //   아이콘은 기존 스프라이트(i-admin-approval) 재사용 — template(스프라이트) 무변경.
   { key: 'ENTRY', title: '입장 승인', iconId: 'i-admin-approval', route: '/AdminEntryApproval', note: '' },
+  // A8: 셀프가입(회원가입) 승인. 활성=서버 moduleActiveMap.SELF_JOIN(master∥hr∥노드관리자).
+  //   아이콘은 기존 스프라이트(i-admin-approval) 재사용 — template(스프라이트) 무변경.
+  {
+    key: 'SELF_JOIN',
+    title: '가입 승인',
+    iconId: 'i-admin-approval',
+    route: '/AdminSelfJoin',
+    note: '',
+  },
   { key: 'ATTD_DETAIL', title: '근태 상세', iconId: 'i-admin-attd', route: '/AdminAttdDetail', note: '' },
   { key: 'SAFETY', title: '안전 관리', iconId: 'i-admin-safety', route: '/AdminSafety', note: '' },
   { key: 'TBM', title: 'TBM 관리', iconId: 'i-admin-tbm', route: '/AdminTbm', note: '' },
@@ -313,6 +322,26 @@ const loadModuleBadges = async () => {
     )
   }
 
+  // A8: 셀프가입 승인 대기 건수. 대기 목록은 페이징이 없어 목록 길이가 곧 건수다
+  //   (전용 count EP 를 신설하지 않는다).
+  //   ⚠️ 한계: 대기 목록 EP 에는 부서 게이트가 있어 노드관리자가 nodeCd 없이 호출하면 403 이다.
+  //      → 노드관리자의 배지는 0 으로 남는다(진입은 막지 않는다). 정확한 건수는 화면 대기 탭이 보여준다.
+  //      v1 은 전사역할(master/hr)만 배지 정확으로 둔다(홈 진입 왕복을 늘리지 않기 위해).
+  if (moduleActiveMap.value.SELF_JOIN === true) {
+    tasks.push(
+      api
+        .get('/appApi/admin/self-join/pending', {
+          params: currentSiteCd.value ? { siteCd: currentSiteCd.value } : {},
+        })
+        .then(({ data }) => {
+          next.SELF_JOIN = Array.isArray(data?.selfJoinList) ? data.selfJoinList.length : 0
+        })
+        .catch(() => {
+          next.SELF_JOIN = 0
+        }),
+    )
+  }
+
   await Promise.all(tasks)
   moduleBadgeMap.value = next
 }
@@ -344,7 +373,17 @@ const onBackToUser = () => {
 //   Phase 1 = ComingSoon 으로 라우팅하며 query.module 로 모듈 키 전달(Phase 2~8 에서 실화면 교체).
 const onModuleSelect = (module) => {
   if (!module?.route) return
-  router.push({ path: module.route, query: { module: module.key } })
+
+  const query = { module: module.key }
+  // A8: 셀프가입 승인 화면만 현장 전환 컨텍스트(siteCd)를 넘긴다.
+  //   관리자 모드는 현장 전환 시 토큰을 재발급하지 않아 화면이 조회 사업장을 알아야 한다.
+  //   ★전 모듈 공통으로 siteCd 를 붙이지 않은 이유: 기존 화면들이 query 를 어떻게 소비하는지에
+  //     의존하지 않기 위해서다(회귀 위험 0 을 택했다). 서버는 값이 없으면 토큰 gv_siteCd 로 폴백한다.
+  if (module.key === 'SELF_JOIN' && currentSiteCd.value) {
+    query.siteCd = currentSiteCd.value
+  }
+
+  router.push({ path: module.route, query })
 }
 
 // 탭 key ↔ access-context 모듈 key 매핑(단순 식별자 매핑 — 역할 분기 아님, C1 무관).

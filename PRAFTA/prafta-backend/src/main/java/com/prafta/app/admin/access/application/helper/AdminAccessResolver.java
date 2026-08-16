@@ -30,6 +30,8 @@ public final class AdminAccessResolver {
     public static final String MODULE_SETTINGS = "SETTINGS";
     /** 일용직 입장 승인(일용직 계약서+승인제 T4). 서버 최종 강제는 DailyEntryService.assertSiteAuthority. */
     public static final String MODULE_ENTRY = "ENTRY";
+    /** 셀프가입(회원가입) 승인. 서버 최종 강제는 User09Service 의 2단 게이트. */
+    public static final String MODULE_SELF_JOIN = "SELF_JOIN";
 
     private AdminAccessResolver() {
         // 유틸리티 클래스 - 인스턴스 생성 금지
@@ -74,6 +76,9 @@ public final class AdminAccessResolver {
      *   <li>ENTRY : master ∥ hr (일용직 입장 승인 — 일용직 계약서+승인제 T4).
      *       서버 EP(entryadmin01)의 최종 인가(DailyEntryService.assertSiteAuthority = master/hr)와
      *       동일 기준. nodeAdmin 단독은 서버가 403 이므로 여기서도 열지 않는다(fail-closed 정합).</li>
+     *   <li>SELF_JOIN : master ∥ hr ∥ nodeAdmin (셀프가입 승인 — safe 단독 ⛔).
+     *       서버 EP(User09Service)의 최종 인가(canManageNodeExcludeSafe = master/hr 전사 통과 +
+     *       해당·상위 부서 정/부 관리자)와 정확히 같은 집합이라 APPROVAL 활성식을 재사용한다.</li>
      * </ul>
      *
      * @param isNodeAdminInSite 현재 선택 사업장 기준 노드 정/부 관리자 여부
@@ -92,6 +97,8 @@ public final class AdminAccessResolver {
         map.put(MODULE_APPROVAL, approvalActive);
         map.put(MODULE_ATTD_DETAIL, approvalActive);
         map.put(MODULE_ENTRY, entryActive);
+        // 셀프가입 승인 — 서버 게이트(canManageNodeExcludeSafe)와 동일 집합이라 approvalActive 재사용.
+        map.put(MODULE_SELF_JOIN, approvalActive);
         map.put(MODULE_SAFETY, safetyActive);
         map.put(MODULE_TBM, safetyActive);
         map.put(MODULE_SITE_OPS, siteOpsActive);
@@ -121,6 +128,7 @@ public final class AdminAccessResolver {
         map.put(MODULE_HOME, isNodeAdminInSite && !anyCompanyWide);
         map.put(MODULE_APPROVAL, isNodeAdminInSite && !approvalCompanyWide);
         map.put(MODULE_ATTD_DETAIL, isNodeAdminInSite && !approvalCompanyWide);
+        map.put(MODULE_SELF_JOIN, isNodeAdminInSite && !approvalCompanyWide);
         map.put(MODULE_SAFETY, isNodeAdminInSite && !safetyCompanyWide);
         map.put(MODULE_TBM, isNodeAdminInSite && !safetyCompanyWide);
         map.put(MODULE_SITE_OPS, isNodeAdminInSite && !anyCompanyWide);

@@ -43,4 +43,25 @@
     <include refid="scopedNodeCds"/>
     </select>
 
+    <!--
+      내가 정/부 관리자인 노드(seed) 목록(코드 + 노드명) — 앱 부서 필터 칩 소스.
+      - 위 scopedNodeCds 의 seed 절과 동일 술어(MAIN_ADMIN_CD/SUB_ADMIN_CD)이며 자손은 전개하지 않는다.
+      - 자손을 섞으면 화면 칩이 불필요하게 늘고 "내가 관리하는 부서" 의미가 흐려진다.
+      - resultType record(AdminSeedNodeResult): SELECT 컬럼 순서 = 필드 순서 고정(위치 매핑).
+      - 파라미터: cmpnyCd / siteCd / userCd (token 출처).
+    -->
+    <select id="selectAdminSeedNodes"
+            parameterType="com.prafta.app.admin.common.scope.application.query.ScopedNodeQuery"
+            resultType="com.prafta.app.admin.common.scope.result.AdminSeedNodeResult">
+    /* AdminScopeMapper.selectAdminSeedNodes */
+    SELECT
+          N.NODE_CD    AS nodeCd
+        , N.NODE_NM    AS nodeNm
+      FROM TB_SITE_NODE N
+     WHERE N.CMPNY_CD = #{cmpnyCd}
+       AND N.SITE_CD  = #{siteCd}
+       AND ( N.MAIN_ADMIN_CD = #{userCd} OR N.SUB_ADMIN_CD = #{userCd} )
+     ORDER BY N.NODE_NM, N.NODE_CD
+    </select>
+
 </mapper>
