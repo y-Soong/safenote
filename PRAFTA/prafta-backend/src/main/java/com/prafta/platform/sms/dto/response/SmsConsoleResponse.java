@@ -9,7 +9,14 @@ import lombok.Getter;
 /**
  * Platform_05(SMS 발송 관리) 화면 조회 응답 — 현황·상태·임계값을 한 번에 담는다.
  *
- * <p>★PII 노출 금지: 개별 발송 이력(휴대폰/인증번호/refKey/IP)을 담지 않는다. <b>집계와 설정값만</b>이다.
+ * <p>★PII 노출 금지: <b>이 응답</b>에는 개별 발송 이력을 담지 않는다. <b>집계와 설정값만</b>이다.
+ *
+ * <p>★★<b>[방침 변경 / 2026-08-16]</b> 개별 발송 이력은 <b>플랫폼 운영자 콘솔에 한해</b>
+ *    별도 응답({@link SmsHistoryListResponse}, {@code POST /platformApi/sms/send-histories/search})으로 노출한다
+ *    — 휴대폰은 서버에서 복호 후 마스킹한다.
+ *    다만 <b>인증번호({@code AUTH_CD}) · {@code MBL_NO_HMAC} · {@code SEND_IP_HASH} · refKey 는 여전히 제외</b> 다.
+ *    ({@code TB_SMS_AUTH_CODE} 에 {@code CMPNY_CD} 가 없어 테넌트 경계를 걸 수 없으므로,
+ *     개별 행 조회는 {@code /platformApi} 게이트 뒤에서만 성립한다.)
  *
  * <p>★{@code gateEnabled} 는 읽기전용 표시용이다(서버 secrets {@code PPURIO_ENABLED} 소관).
  *    화면에서 토글하지 않는다 — 진실 원천을 하나로 유지하기 위함.

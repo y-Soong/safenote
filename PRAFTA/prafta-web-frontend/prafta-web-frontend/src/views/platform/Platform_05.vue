@@ -2,24 +2,104 @@
   Platform_05.vue — SMS 발송 관리 (플랫폼 운영자 전용 콘솔)
   - 메뉴: tb_syst_menu_d MENU_D_ID='Platform_05', MENU_VIEW='platform/Platform_05.vue'
   - 접근: CMPNY_CD='prafta_system_admin' 운영자만(서버 /platformApi 게이트가 강제. 메뉴 숨김은 보조).
-  - 동작: GET /platformApi/sms/console 로 현황·상태·임계값을 한 번에 조회 →
+  - 탭1(발송 현황): GET /platformApi/sms/console 로 현황·상태·임계값을 한 번에 조회 →
           POST /platformApi/sms/send-policy(임계값 저장) / POST /platformApi/sms/kill-switch-release(킬스위치 해제).
+  - 탭2(발송 이력): POST /platformApi/sms/send-histories/search 로 TB_SMS_AUTH_CODE 를
+          기간 필터 + 서버 페이징 조회.
+    ★조회인데 POST 인 이유 — 검색 조건에 휴대폰 평문이 들어간다. 쿼리스트링으로 보내면 서버가 로그를
+      남기지 않아도 nginx/ALB access log · CloudFront 로그 · 브라우저 히스토리에 평문 휴대폰이 복제된다.
+      바디로 보내면 그 경로가 사라진다. 휴대폰 조건을 쿼리스트링으로 되돌리지 말 것.
   - ★발송 게이트(prafta.sms.enabled)는 서버 secrets(PPURIO_ENABLED) 소관이라 화면에서 바꾸지 않는다(읽기전용 표시).
     킬스위치만 DB 상태이며 화면에서 수동 해제한다.
-  - ★개별 발송 이력(휴대폰/인증번호)은 표시하지 않는다 — 집계만(PII 최소 처리).
-  - 골격: planner 작성(template + scoped style), script 로직: developer 작성(SMS2-C2).
+  - ★★[방침 변경] 개별 발송 이력은 이 플랫폼 운영자 콘솔에 한해 노출한다(휴대폰은 서버에서 마스킹).
+    다만 인증번호(AUTH_CD)·MBL_NO_HMAC·SEND_IP_HASH 는 여전히 어떤 응답에도 담지 않는다 —
+    만료 전 인증번호는 그 자체로 계정 탈취(비밀번호 재설정 통과)에 쓰이는 유효 자격증명이다.
+    화면에도 인증번호를 표시하지 않는다(응답에 아예 없는 필드다).
+  - ★TB_SMS_AUTH_CODE 에는 CMPNY_CD 가 없다. 이 조회는 플랫폼 운영자 전용에서만 성립한다.
+  - 골격: planner 작성(template + scoped style), script 로직: developer 작성(SMS2-C2 / P05H-4).
 -->
 <template>
   <div class="viewComm">
+    <!-- 탭바 — Attd_01/User_09 표준(밑줄형 0.875rem). ★기본 탭은 기존 화면(발송 현황)이다. -->
+    <div class="p05-tabs">
+      <button
+        type="button"
+        class="p05-tab"
+        :class="{ active: activeTab === 'console' }"
+        @click="fnSelectTab('console')"
+      >
+        발송 현황
+      </button>
+      <button
+        type="button"
+        class="p05-tab"
+        :class="{ active: activeTab === 'history' }"
+        @click="fnSelectTab('history')"
+      >
+        발송 이력
+      </button>
+    </div>
+
     <ViewHeader
       class="commViewHeader"
       :title="props.title"
       :buttons="localButtons"
-      @search="fnSearch"
+      @search="fnHeaderSearch"
     />
 
+    <!-- 이력 탭 전용 조회조건. 기간을 비워도 서버가 최근 7일로 채운다(기간 상한은 없다). -->
+    <div v-if="activeTab === 'history'" class="viewSearch">
+      <div>
+        <label>발송기간</label>
+        <CalendarSrch v-model="histStartDate" />
+        <span class="p05-date-sep">~</span>
+        <CalendarSrch v-model="histEndDate" />
+      </div>
+
+      <div>
+        <label>목적</label>
+        <div class="p05-select">
+          <BaseSelect v-model="histPurposeCd">
+            <option value="">전체</option>
+            <option value="SELF_JOIN">셀프가입</option>
+            <option value="PLATFORM_LOCATION">위치정보 열람</option>
+            <option value="MOBILE_CHANGE">휴대폰 변경</option>
+          </BaseSelect>
+        </div>
+      </div>
+
+      <div>
+        <label>발송상태</label>
+        <div class="p05-select">
+          <BaseSelect v-model="histSendStatus">
+            <option value="">전체</option>
+            <option value="PENDING">대기</option>
+            <option value="SENT">성공</option>
+            <option value="FAILED">실패</option>
+            <option value="SKIPPED">미발송</option>
+          </BaseSelect>
+        </div>
+      </div>
+
+      <!--
+        휴대폰 검색 — 평문 입력이지만 요청 바디로만 나간다(위 상단 주석의 POST 사유).
+        서버가 HMAC 으로 변환해 정확 일치로만 조회한다(부분일치 없음). 하이픈은 서버가 제거한다.
+      -->
+      <div>
+        <label>휴대폰</label>
+        <input
+          v-model.trim="histMblNo"
+          type="text"
+          class="p05-mbl-input"
+          placeholder="휴대폰 번호(정확히 일치)"
+          @keyup.enter="fnHeaderSearch"
+        />
+      </div>
+    </div>
+
     <div class="viewBody">
-      <!-- 킬스위치 발동 배너 — 차단/제한 상황은 배너로 명시(공통 정책서 §13.3) -->
+      <!-- 킬스위치 발동 배너 — 차단/제한 상황은 배너로 명시(공통 정책서 §13.3).
+           ★탭 밖에 둔다: 시스템 전역 차단 상태라 어느 탭에서도 보여야 한다. -->
       <div v-if="killSwitchOn" class="p05-killswitch-banner">
         <span class="p05-killswitch-banner__text">
           발송이 중지되었습니다. {{ killSwitchAtLabel }} 발동 · {{ killSwitchReason }}
@@ -33,209 +113,332 @@
         </button>
       </div>
 
-      <LoadingSpinner v-if="loading" />
+      <!-- ==================== 탭1: 발송 현황(기존 화면 그대로) ==================== -->
+      <div v-show="activeTab === 'console'">
+        <LoadingSpinner v-if="loading" />
 
-      <template v-else>
-        <!-- ===================== 발송 현황 ===================== -->
-        <div class="table-wrapper subtitle-pane">
-          <div class="subtitle">
-            <span class="subtitle-icon" aria-hidden="true">
-              <svg viewBox="0 0 24 24" width="18" height="18">
-                <path d="M4 4h16v4H4zM4 10h10v10H4z" />
-              </svg>
-            </span>
-            <span class="subtitle-text">발송 현황</span>
-          </div>
-
-          <div class="p05-kpi-row">
-            <div class="p05-kpi">
-              <span class="p05-kpi__label">최근 1시간</span>
-              <span class="p05-kpi__value">{{ stat1h.total }}</span>
-              <span class="p05-kpi__unit">건</span>
-            </div>
-            <div class="p05-kpi">
-              <span class="p05-kpi__label">최근 24시간</span>
-              <span class="p05-kpi__value">{{ stat24h.total }}</span>
-              <span class="p05-kpi__unit">건</span>
-            </div>
-            <div class="p05-kpi">
-              <span class="p05-kpi__label">성공 / 실패 (24h)</span>
-              <span class="p05-kpi__value">{{ stat24h.sent }}</span>
-              <span class="p05-kpi__sep">/</span>
-              <span class="p05-kpi__value p05-kpi__value--danger">{{ stat24h.failed }}</span>
-            </div>
-            <div class="p05-kpi">
-              <span class="p05-kpi__label">스킵 / 대기 (24h)</span>
-              <span class="p05-kpi__value">{{ stat24h.skipped }}</span>
-              <span class="p05-kpi__sep">/</span>
-              <span class="p05-kpi__value">{{ stat24h.pending }}</span>
-            </div>
-          </div>
-
-          <div class="p05-gauge-row">
-            <span class="p05-gauge-label">전역 상한 소진율</span>
-            <div class="p05-gauge">
-              <div class="p05-gauge__fill" :class="gaugeClass" :style="gaugeStyle"></div>
-            </div>
-            <span class="p05-gauge-text">{{ gaugeText }}</span>
-          </div>
-        </div>
-
-        <!-- ===================== 발송 상태 ===================== -->
-        <div class="table-wrapper subtitle-pane">
-          <div class="subtitle">
-            <span class="subtitle-icon" aria-hidden="true">
-              <svg viewBox="0 0 24 24" width="18" height="18">
-                <path d="M12 2l9 5v10l-9 5-9-5V7z" />
-              </svg>
-            </span>
-            <span class="subtitle-text">발송 상태</span>
-          </div>
-
-          <div class="p05-status">
-            <!--
-              ★게이트 토글과 "실제 발송 가능" 을 분리해 보여준다.
-                키 미주입 / base URL 이 http 면 토글은 ON 인데 전 흐름이 조용히 SKIPPED 로 흐른다.
-                토글만 보여 주면 "켜져 있으니 나가고 있다" 고 오판하게 된다.
-            -->
-            <div class="p05-status__row">
-              <span class="p05-status__label">발송 가능</span>
-              <span class="p05-badge" :class="sendableBadgeClass">{{ sendableLabel }}</span>
-              <span class="p05-status__desc">{{ sendableDesc }}</span>
-            </div>
-            <div class="p05-status__row">
-              <span class="p05-status__label">발송 게이트(설정)</span>
-              <span class="p05-badge" :class="gateBadgeClass">{{ gateLabel }}</span>
-              <span class="p05-status__desc">
-                읽기전용 — 변경은 서버 secrets 의 PPURIO_ENABLED
+        <template v-else>
+          <!-- ===================== 발송 현황 ===================== -->
+          <div class="table-wrapper subtitle-pane">
+            <div class="subtitle">
+              <span class="subtitle-icon" aria-hidden="true">
+                <svg viewBox="0 0 24 24" width="18" height="18">
+                  <path d="M4 4h16v4H4zM4 10h10v10H4z" />
+                </svg>
               </span>
+              <span class="subtitle-text">발송 현황</span>
             </div>
-            <div class="p05-status__row">
-              <span class="p05-status__label">킬스위치</span>
-              <span class="p05-badge" :class="killSwitchBadgeClass">{{ killSwitchLabel }}</span>
+
+            <div class="p05-kpi-row">
+              <div class="p05-kpi">
+                <span class="p05-kpi__label">최근 1시간</span>
+                <span class="p05-kpi__value">{{ stat1h.total }}</span>
+                <span class="p05-kpi__unit">건</span>
+              </div>
+              <div class="p05-kpi">
+                <span class="p05-kpi__label">최근 24시간</span>
+                <span class="p05-kpi__value">{{ stat24h.total }}</span>
+                <span class="p05-kpi__unit">건</span>
+              </div>
+              <div class="p05-kpi">
+                <span class="p05-kpi__label">성공 / 실패 (24h)</span>
+                <span class="p05-kpi__value">{{ stat24h.sent }}</span>
+                <span class="p05-kpi__sep">/</span>
+                <span class="p05-kpi__value p05-kpi__value--danger">{{ stat24h.failed }}</span>
+              </div>
+              <div class="p05-kpi">
+                <span class="p05-kpi__label">스킵 / 대기 (24h)</span>
+                <span class="p05-kpi__value">{{ stat24h.skipped }}</span>
+                <span class="p05-kpi__sep">/</span>
+                <span class="p05-kpi__value">{{ stat24h.pending }}</span>
+              </div>
+            </div>
+
+            <div class="p05-gauge-row">
+              <span class="p05-gauge-label">전역 상한 소진율</span>
+              <div class="p05-gauge">
+                <div class="p05-gauge__fill" :class="gaugeClass" :style="gaugeStyle"></div>
+              </div>
+              <span class="p05-gauge-text">{{ gaugeText }}</span>
+            </div>
+          </div>
+
+          <!-- ===================== 발송 상태 ===================== -->
+          <div class="table-wrapper subtitle-pane">
+            <div class="subtitle">
+              <span class="subtitle-icon" aria-hidden="true">
+                <svg viewBox="0 0 24 24" width="18" height="18">
+                  <path d="M12 2l9 5v10l-9 5-9-5V7z" />
+                </svg>
+              </span>
+              <span class="subtitle-text">발송 상태</span>
+            </div>
+
+            <div class="p05-status">
+              <!--
+                ★게이트 토글과 "실제 발송 가능" 을 분리해 보여준다.
+                  키 미주입 / base URL 이 http 면 토글은 ON 인데 전 흐름이 조용히 SKIPPED 로 흐른다.
+                  토글만 보여 주면 "켜져 있으니 나가고 있다" 고 오판하게 된다.
+              -->
+              <div class="p05-status__row">
+                <span class="p05-status__label">발송 가능</span>
+                <span class="p05-badge" :class="sendableBadgeClass">{{ sendableLabel }}</span>
+                <span class="p05-status__desc">{{ sendableDesc }}</span>
+              </div>
+              <div class="p05-status__row">
+                <span class="p05-status__label">발송 게이트(설정)</span>
+                <span class="p05-badge" :class="gateBadgeClass">{{ gateLabel }}</span>
+                <span class="p05-status__desc">
+                  읽기전용 — 변경은 서버 secrets 의 PPURIO_ENABLED
+                </span>
+              </div>
+              <div class="p05-status__row">
+                <span class="p05-status__label">킬스위치</span>
+                <span class="p05-badge" :class="killSwitchBadgeClass">{{ killSwitchLabel }}</span>
+                <button
+                  v-if="killSwitchOn"
+                  class="btn btn-primary p05-status__btn"
+                  :disabled="releasing"
+                  @click="fnReleaseKillSwitch"
+                >
+                  해제
+                </button>
+              </div>
+              <div class="p05-status__row">
+                <span class="p05-status__label">최근 발동</span>
+                <span class="p05-status__value">{{ killSwitchAtLabel }}</span>
+              </div>
+              <div class="p05-status__row">
+                <span class="p05-status__label">발동 사유</span>
+                <span class="p05-status__value">{{ killSwitchReason }}</span>
+              </div>
+              <div class="p05-status__row">
+                <span class="p05-status__label">최근 해제</span>
+                <span class="p05-status__value">{{ killSwitchReleaseLabel }}</span>
+              </div>
+            </div>
+          </div>
+
+          <!-- ===================== 발송 임계값 ===================== -->
+          <div class="table-wrapper subtitle-pane">
+            <div class="subtitle">
+              <span class="subtitle-icon" aria-hidden="true">
+                <svg viewBox="0 0 24 24" width="18" height="18">
+                  <path d="M4 6h16M4 12h16M4 18h10" />
+                </svg>
+              </span>
+              <span class="subtitle-text">발송 임계값</span>
               <button
-                v-if="killSwitchOn"
-                class="btn btn-primary p05-status__btn"
-                :disabled="releasing"
-                @click="fnReleaseKillSwitch"
+                class="btn btn-primary p05-save-btn"
+                :disabled="saving || !policyLoaded"
+                @click="fnSavePolicy"
               >
-                해제
+                저장
               </button>
             </div>
-            <div class="p05-status__row">
-              <span class="p05-status__label">최근 발동</span>
-              <span class="p05-status__value">{{ killSwitchAtLabel }}</span>
-            </div>
-            <div class="p05-status__row">
-              <span class="p05-status__label">발동 사유</span>
-              <span class="p05-status__value">{{ killSwitchReason }}</span>
-            </div>
-            <div class="p05-status__row">
-              <span class="p05-status__label">최근 해제</span>
-              <span class="p05-status__value">{{ killSwitchReleaseLabel }}</span>
-            </div>
-          </div>
-        </div>
 
-        <!-- ===================== 발송 임계값 ===================== -->
-        <div class="table-wrapper subtitle-pane">
-          <div class="subtitle">
-            <span class="subtitle-icon" aria-hidden="true">
-              <svg viewBox="0 0 24 24" width="18" height="18">
-                <path d="M4 6h16M4 12h16M4 18h10" />
-              </svg>
-            </span>
-            <span class="subtitle-text">발송 임계값</span>
-            <button
-              class="btn btn-primary p05-save-btn"
-              :disabled="saving || !policyLoaded"
-              @click="fnSavePolicy"
-            >
-              저장
-            </button>
-          </div>
-
-          <div class="p05-form">
-            <span v-if="!policyLoaded" class="p05-form__msg">
-              정책 설정을 불러오지 못했습니다. 관리자에게 문의해 주세요.
-            </span>
-
-            <div class="p05-form__row">
-              <span class="p05-form__label">번호별 연속 발송 간격</span>
-              <input
-                v-model.number="policy.phoneWindowSec"
-                type="number"
-                min="1"
-                max="59"
-                step="1"
-                class="p05-input"
-              />
-              <span class="p05-form__unit">초</span>
-              <span class="p05-form__desc">
-                1~59. 프론트 재발송 타이머(60초)보다 반드시 짧아야 합니다.
+            <div class="p05-form">
+              <span v-if="!policyLoaded" class="p05-form__msg">
+                정책 설정을 불러오지 못했습니다. 관리자에게 문의해 주세요.
               </span>
-            </div>
 
-            <div class="p05-form__row">
-              <span class="p05-form__label">번호별 상한</span>
-              <input v-model.number="policy.phoneHourLimit" type="number" min="0" step="1" class="p05-input" />
-              <span class="p05-form__unit">건/시간</span>
-              <input v-model.number="policy.phoneDayLimit" type="number" min="0" step="1" class="p05-input" />
-              <span class="p05-form__unit">건/일</span>
-            </div>
-
-            <div class="p05-form__row">
-              <span class="p05-form__label">IP별 상한</span>
-              <input v-model.number="policy.ipHourLimit" type="number" min="0" step="1" class="p05-input" />
-              <span class="p05-form__unit">건/시간</span>
-              <input v-model.number="policy.ipDayLimit" type="number" min="0" step="1" class="p05-input" />
-              <span class="p05-form__unit">건/일</span>
-              <span class="p05-form__desc">IP 를 신뢰 수준으로 확정하지 못하면 이 축은 적용되지 않습니다.</span>
-            </div>
-
-            <!-- SMS2-B2 2단계 전환용 토글 — 운영 XFF 구조를 계측해 홉 수를 확정한 뒤에만 '차단'으로 바꾼다. -->
-            <div class="p05-form__row">
-              <span class="p05-form__label">IP축 동작</span>
-              <div class="p05-select">
-                <BaseSelect v-model="policy.ipAxisEnabledYn">
-                  <option value="N">관측만(차단 안 함)</option>
-                  <option value="Y">차단</option>
-                </BaseSelect>
+              <div class="p05-form__row">
+                <span class="p05-form__label">번호별 연속 발송 간격</span>
+                <input
+                  v-model.number="policy.phoneWindowSec"
+                  type="number"
+                  min="1"
+                  max="59"
+                  step="1"
+                  class="p05-input"
+                />
+                <span class="p05-form__unit">초</span>
+                <span class="p05-form__desc">
+                  1~59. 프론트 재발송 타이머(60초)보다 반드시 짧아야 합니다.
+                </span>
               </div>
-              <span class="p05-form__desc">
-                서버 로그의 [SMS상한:IP축진단] 으로 X-Forwarded-For 홉 수를 확정한 뒤 '차단'으로 바꾸세요.
-              </span>
+
+              <div class="p05-form__row">
+                <span class="p05-form__label">번호별 상한</span>
+                <input v-model.number="policy.phoneHourLimit" type="number" min="0" step="1" class="p05-input" />
+                <span class="p05-form__unit">건/시간</span>
+                <input v-model.number="policy.phoneDayLimit" type="number" min="0" step="1" class="p05-input" />
+                <span class="p05-form__unit">건/일</span>
+              </div>
+
+              <div class="p05-form__row">
+                <span class="p05-form__label">IP별 상한</span>
+                <input v-model.number="policy.ipHourLimit" type="number" min="0" step="1" class="p05-input" />
+                <span class="p05-form__unit">건/시간</span>
+                <input v-model.number="policy.ipDayLimit" type="number" min="0" step="1" class="p05-input" />
+                <span class="p05-form__unit">건/일</span>
+                <span class="p05-form__desc">IP 를 신뢰 수준으로 확정하지 못하면 이 축은 적용되지 않습니다.</span>
+              </div>
+
+              <!-- SMS2-B2 2단계 전환용 토글 — 운영 XFF 구조를 계측해 홉 수를 확정한 뒤에만 '차단'으로 바꾼다. -->
+              <div class="p05-form__row">
+                <span class="p05-form__label">IP축 동작</span>
+                <div class="p05-select">
+                  <BaseSelect v-model="policy.ipAxisEnabledYn">
+                    <option value="N">관측만(차단 안 함)</option>
+                    <option value="Y">차단</option>
+                  </BaseSelect>
+                </div>
+                <span class="p05-form__desc">
+                  서버 로그의 [SMS상한:IP축진단] 으로 X-Forwarded-For 홉 수를 확정한 뒤 '차단'으로 바꾸세요.
+                </span>
+              </div>
+
+              <div class="p05-form__row">
+                <span class="p05-form__label">사용자별 상한</span>
+                <input v-model.number="policy.userHourLimit" type="number" min="0" step="1" class="p05-input" />
+                <span class="p05-form__unit">건/시간</span>
+                <input v-model.number="policy.userDayLimit" type="number" min="0" step="1" class="p05-input" />
+                <span class="p05-form__unit">건/일</span>
+                <span class="p05-form__desc">로그인 흐름(앱 휴대폰 변경 · 플랫폼 위치열람)에만 적용됩니다.</span>
+              </div>
+
+              <!-- ★전역 상한만 하한이 1 이다(다른 축과 달리 0=무제한을 허용하지 않는다).
+                   0 이면 킬스위치가 영구 무력화되어 최후 방어선이 사라진다. -->
+              <div class="p05-form__row">
+                <span class="p05-form__label">전역 상한</span>
+                <input v-model.number="policy.globalHourLimit" type="number" min="1" step="1" class="p05-input" />
+                <span class="p05-form__unit">건/시간</span>
+                <span class="p05-form__desc">
+                  1 이상만 입력할 수 있습니다(0=무제한은 킬스위치를 무력화). 초과하면 킬스위치가 자동 발동하며, 해제는 이 화면에서만 가능합니다.
+                </span>
+              </div>
+
+              <span v-show="policyMsg" class="p05-form__msg">{{ policyMsg }}</span>
+
+              <p class="p05-guide">
+                0 을 입력하면 해당 축은 무제한입니다. 저장 즉시 다음 발송부터 적용되며,
+                변경 이력(변경 전·후 값)은 감사 로그에 기록됩니다.
+              </p>
             </div>
-
-            <div class="p05-form__row">
-              <span class="p05-form__label">사용자별 상한</span>
-              <input v-model.number="policy.userHourLimit" type="number" min="0" step="1" class="p05-input" />
-              <span class="p05-form__unit">건/시간</span>
-              <input v-model.number="policy.userDayLimit" type="number" min="0" step="1" class="p05-input" />
-              <span class="p05-form__unit">건/일</span>
-              <span class="p05-form__desc">로그인 흐름(앱 휴대폰 변경 · 플랫폼 위치열람)에만 적용됩니다.</span>
-            </div>
-
-            <!-- ★전역 상한만 하한이 1 이다(다른 축과 달리 0=무제한을 허용하지 않는다).
-                 0 이면 킬스위치가 영구 무력화되어 최후 방어선이 사라진다. -->
-            <div class="p05-form__row">
-              <span class="p05-form__label">전역 상한</span>
-              <input v-model.number="policy.globalHourLimit" type="number" min="1" step="1" class="p05-input" />
-              <span class="p05-form__unit">건/시간</span>
-              <span class="p05-form__desc">
-                1 이상만 입력할 수 있습니다(0=무제한은 킬스위치를 무력화). 초과하면 킬스위치가 자동 발동하며, 해제는 이 화면에서만 가능합니다.
-              </span>
-            </div>
-
-            <span v-show="policyMsg" class="p05-form__msg">{{ policyMsg }}</span>
-
-            <p class="p05-guide">
-              0 을 입력하면 해당 축은 무제한입니다. 저장 즉시 다음 발송부터 적용되며,
-              변경 이력(변경 전·후 값)은 감사 로그에 기록됩니다.
-            </p>
           </div>
+        </template>
+      </div>
+
+      <!-- ==================== 탭2: 발송 이력 ==================== -->
+      <div v-show="activeTab === 'history'" class="table-wrapper subtitle-pane">
+        <div class="subtitle">
+          <span class="subtitle-icon" aria-hidden="true">
+            <svg viewBox="0 0 24 24" width="18" height="18">
+              <path d="M4 4h16v4H4zM4 10h10v10H4z" />
+            </svg>
+          </span>
+          <span class="subtitle-text">발송 이력</span>
         </div>
-      </template>
+
+        <p class="p05-guide">
+          ⓘ 인증번호는 표시하지 않습니다. 휴대폰 번호는 마스킹 처리되며, 발송
+          요청자는 로그인 상태에서 발송한 경우에만 표시됩니다(셀프가입 등
+          비로그인 흐름은 -). 실패 횟수는 인증번호 검증 실패 누적으로, 5회
+          이상이면 코드가 무효화되며 무차별 대입 시도를 의심할 수 있습니다.
+          <span class="p05-guide__note">
+            ※ 발송 상태 추적은 2026년 8월 문자 발송사 연동부터 기록됩니다. 그
+            이전 요청은 상태가 갱신된 적이 없어 실제 발송 여부와 무관하게
+            '대기(발송전)'로 남아 있으며, 발송 실패를 뜻하지 않습니다.
+          </span>
+        </p>
+
+        <div
+          class="table-box"
+          style="--box-h: 60vh; --box-sticky-top: 1px; --box-ox: auto"
+        >
+          <table
+            class="data-grid w-full table-fixed text-sm text-left rtl:text-right"
+          >
+            <thead>
+              <tr>
+                <th class="event_cell" style="text-align: center; width: 3%">
+                  No
+                </th>
+                <th style="width: 11%">요청일시</th>
+                <th style="width: 10%">휴대폰</th>
+                <th style="width: 10%">목적</th>
+                <th style="width: 7%; text-align: center">상태</th>
+                <th style="width: 11%">결과일시</th>
+                <th style="width: 5%; text-align: center">인증</th>
+                <th style="width: 5%; text-align: center">실패</th>
+                <th style="width: 10%">오류코드</th>
+                <th style="width: 17%">오류메시지</th>
+                <th style="width: 11%">요청자</th>
+              </tr>
+            </thead>
+            <tbody>
+              <template v-if="histLoading">
+                <tr>
+                  <td colspan="11" class="edu-grid-empty">조회 중입니다...</td>
+                </tr>
+              </template>
+              <template v-else-if="!histList || histList.length === 0">
+                <tr>
+                  <td colspan="11" class="edu-grid-empty">
+                    조회된 발송 이력이 없습니다. 기간을 넓혀 다시 조회해 주세요.
+                  </td>
+                </tr>
+              </template>
+              <template v-else>
+                <tr v-for="(row, idx) in histList" :key="row.smsId">
+                  <td style="text-align: center">
+                    {{ (histPage - 1) * histPageSize + idx + 1 }}
+                  </td>
+                  <td>{{ row.insertDate }}</td>
+                  <td>{{ row.mblNo || "-" }}</td>
+                  <td>{{ fnPurposeLabel(row.purposeCd) }}</td>
+                  <td style="text-align: center">
+                    <span
+                      class="p05-badge"
+                      :class="fnStatusClass(row.sendStatus)"
+                    >
+                      {{ fnStatusLabel(row.sendStatus) }}
+                    </span>
+                  </td>
+                  <td>{{ row.sendDate || "-" }}</td>
+                  <td style="text-align: center">
+                    {{ fnVerifiedLabel(row.verifiedYn) }}
+                  </td>
+                  <td style="text-align: center">
+                    <span v-if="row.failCnt >= 5" class="p05-fail-cnt">{{
+                      row.failCnt
+                    }}</span>
+                    <span v-else-if="row.failCnt > 0">{{ row.failCnt }}</span>
+                    <span v-else>-</span>
+                  </td>
+                  <td>{{ row.sendErrCd || "-" }}</td>
+                  <td class="p05-errmsg-cell" :title="row.sendErrMsg || ''">
+                    {{ row.sendErrMsg || "-" }}
+                  </td>
+                  <td>{{ row.sendUserCd || "-" }}</td>
+                </tr>
+              </template>
+            </tbody>
+          </table>
+        </div>
+
+        <!-- 페이징 (User_09 / Tbm_04 패턴) -->
+        <div v-if="histTotalCount > 0" class="p05-pager">
+          <button
+            class="btn btn-second p05-pager__btn"
+            :disabled="histPage <= 1"
+            @click="fnGoHistPage(histPage - 1)"
+          >
+            이전
+          </button>
+          <span class="p05-pager__info">
+            {{ histPage }} / {{ histTotalPages }} (총 {{ histTotalCount }}건)
+          </span>
+          <button
+            class="btn btn-second p05-pager__btn"
+            :disabled="histPage >= histTotalPages"
+            @click="fnGoHistPage(histPage + 1)"
+          >
+            다음
+          </button>
+        </div>
+      </div>
     </div>
   </div>
 </template>
@@ -252,6 +455,7 @@ import {
 import ViewHeader from "@/components/common/ViewHeader.vue";
 import LoadingSpinner from "@/components/common/LoadingSpinner.vue";
 import BaseSelect from "@/components/common/BaseSelect.vue";
+import CalendarSrch from "@/components/common/CalendarSrch.vue";
 import axios from "@/api/axios";
 import { resolveApiErrorMessage } from "@/utils/apiError";
 
@@ -270,6 +474,9 @@ const { proxy } = getCurrentInstance();
 const loading = ref(false);
 const saving = ref(false);
 const releasing = ref(false);
+
+/* ── 탭 상태 — ★기본 탭은 기존 화면(발송 현황)이다 ── */
+const activeTab = ref("console");
 
 /* 현황 — GET /platformApi/sms/console 응답으로 채운다 */
 const stat1h = ref({ sent: 0, failed: 0, skipped: 0, pending: 0, total: 0 });
@@ -316,7 +523,50 @@ const policy = ref({
 });
 const policyMsg = ref("");
 
-/* 조회 외 헤더 버튼 숨김 — 저장은 임계값 섹션 내부 버튼이 담당(Platform_03 fnButtonControll 전례) */
+/* ── 발송 이력 탭 상태 ──
+ * 서버 페이징이라 페이저는 응답 totalCount + 로컬 page/pageSize 로만 계산한다
+ * (서버는 page/pageSize 를 되돌려주지 않는다). 클라이언트 정렬은 두지 않는다 —
+ * 현재 페이지 안에서만 정렬돼 "최신순" 이라는 계약을 오해하게 만든다(정렬은 서버 고정).
+ */
+const histLoading = ref(false);
+const histList = ref([]);
+const histStartDate = ref(""); // YYYY-MM-DD (비우면 서버가 최근 7일로 채운다)
+const histEndDate = ref("");
+const histPurposeCd = ref("");
+const histSendStatus = ref("");
+const histMblNo = ref(""); // 평문 입력. 하이픈 허용 — 서버가 정규화 후 HMAC 정확 일치로 조회한다.
+const histPage = ref(1);
+const histPageSize = ref(20); // 서버 기본 20 / 상한 100
+const histTotalCount = ref(0);
+const histLoadedOnce = ref(false); // 이력 탭 최초 진입 시 1회 자동 조회 여부
+
+/* 목적/상태 코드 → 한글 라벨. 서버는 코드값만 내려준다(기존 Platform_05 방식과 동일). */
+const PURPOSE_LABEL = {
+  SELF_JOIN: "셀프가입",
+  PLATFORM_LOCATION: "위치정보 열람",
+  MOBILE_CHANGE: "휴대폰 변경",
+};
+const STATUS_LABEL = {
+  PENDING: "대기",
+  SENT: "성공",
+  FAILED: "실패",
+  SKIPPED: "미발송",
+};
+const STATUS_CLASS = {
+  PENDING: "is-wait",
+  SENT: "is-on",
+  FAILED: "is-fired",
+  SKIPPED: "is-off",
+};
+
+/* 0건이면 1페이지로 본다(페이저가 "1 / 0" 을 그리지 않게) */
+const histTotalPages = computed(() => {
+  const pages = Math.ceil(histTotalCount.value / histPageSize.value);
+  return pages < 1 ? 1 : pages;
+});
+
+/* 조회 외 헤더 버튼 숨김 — 저장은 임계값 섹션 내부 버튼이 담당(Platform_03 fnButtonControll 전례).
+   ★엑셀은 계속 'N' 이다 — 다운로드를 켜는 순간 공통 정책서 §11.3 감사 대상이 된다. */
 const localButtons = ref({ ...props.buttons });
 function fnButtonControll() {
   localButtons.value.create = "N";
@@ -401,8 +651,39 @@ const gaugeText = computed(() => {
 
 onMounted(async () => {
   fnButtonControll();
+  fnInitHistPeriod();
   await fnSearch();
 });
+
+/* ── 탭 전환 ── */
+/*
+ * 탭은 v-show 로 전환하므로 조회조건/목록 상태가 유지된다.
+ * 이력 탭은 최초 진입 시에만 1회 자동 조회한다(재진입마다 재조회하면 페이지 위치가 리셋된다).
+ */
+async function fnSelectTab(key) {
+  if (activeTab.value === key) return;
+  activeTab.value = key;
+
+  if (key === "history" && !histLoadedOnce.value) {
+    histPage.value = 1;
+    await fnSearchHistory();
+  }
+}
+
+/*
+ * ViewHeader [조회] 진입점 — 활성 탭에 따라 분기한다.
+ * ★fnSearch(발송 현황 조회)는 이름/동작을 그대로 둔다 — 임계값 저장·킬스위치 해제 후 재조회가
+ *   이 함수를 직접 부르고 있어, 여기서 분기시키면 저장 직후 엉뚱한 탭을 조회하게 된다.
+ */
+async function fnHeaderSearch() {
+  if (activeTab.value === "history") {
+    // 조회조건이 바뀐 새 조회이므로 첫 페이지부터 본다(페이지 이동은 fnGoHistPage 가 담당).
+    histPage.value = 1;
+    await fnSearchHistory();
+    return;
+  }
+  await fnSearch();
+}
 
 /* ── 조회 ── */
 async function fnSearch() {
@@ -470,6 +751,109 @@ function fnNormalizeStat(stat) {
     pending: stat?.pending ?? 0,
     total: stat?.total ?? 0,
   };
+}
+
+/* ── 발송 이력 조회 ── */
+/*
+ * POST /platformApi/sms/send-histories/search (조회지만 POST — 검색 조건에 휴대폰 평문이 들어간다.
+ * 쿼리스트링이면 access log·CDN 로그·브라우저 히스토리에 평문이 복제되므로 반드시 바디로 보낸다).
+ * 응답은 historyList + totalCount 뿐이며 page/pageSize 는 서버가 되돌려주지 않는다.
+ * ★휴대폰은 서버가 이미 마스킹해서 내려준다 — 프론트에서 재가공하지 않는다.
+ */
+async function fnSearchHistory() {
+  if (histLoading.value) return;
+  histLoading.value = true;
+
+  try {
+    const response = await axios.post(
+      "/platformApi/sms/send-histories/search",
+      {
+        startDate: histStartDate.value,
+        endDate: histEndDate.value,
+        purposeCd: histPurposeCd.value,
+        sendStatus: histSendStatus.value,
+        mblNo: histMblNo.value,
+        page: histPage.value,
+        pageSize: histPageSize.value,
+      }
+    );
+
+    if (response.status === 200) {
+      const data = response.data || {};
+      histList.value = data.historyList || [];
+      histTotalCount.value = data.totalCount || 0;
+      histLoadedOnce.value = true;
+    }
+  } catch (err) {
+    // 실패 시 목록과 건수를 함께 비운다(건수만 남으면 페이저가 유령 페이지를 가리킨다).
+    histList.value = [];
+    histTotalCount.value = 0;
+    const msg = resolveApiErrorMessage(err, "조회 중 오류가 발생했습니다.");
+    await proxy.$alert(msg);
+  } finally {
+    histLoading.value = false;
+  }
+}
+
+/* 페이지 이동
+   ★조회 중이면 page 를 올리지 않고 즉시 빠진다(qa D1).
+     fnSearchHistory 에 재진입 가드가 있어서, 로딩 중 [다음]을 연타하면
+     histPage 만 3으로 올라가고 실제 요청은 나가지 않는다. 그러면 먼저 보낸
+     2페이지 응답이 렌더되는데 페이저는 "3 / 5", No. 컬럼도 41~ 로 어긋난다.
+     (User_09 는 fnSearchHistory 에 재진입 가드가 없어 이 조합이 성립하지 않는다
+      — "동일 규약"이라는 이유로 이 가드를 빼지 말 것.) */
+function fnGoHistPage(target) {
+  if (histLoading.value) return;
+  if (target < 1 || target > histTotalPages.value) return;
+  histPage.value = target;
+  fnSearchHistory();
+}
+
+/* 이력 탭 기본 기간 — 오늘 포함 최근 7일(서버 기본값과 동일하게 화면에도 보이게 채운다)
+   ★기준 시각대는 KST 고정이다(qa D3). 서버 기본값이 Asia/Seoul 이라, 브라우저 로컬 TZ 로
+     계산하면 운영자 PC 가 UTC 인 경우 endDate 가 KST 오늘보다 하루 이르게 채워진다.
+     프론트는 항상 명시 날짜를 보내므로, 그 상태로 조회하면 당일 발송분이 조용히 누락된다. */
+function fnInitHistPeriod() {
+  const today = fnKstToday();
+  const from = new Date(today.getTime());
+  from.setUTCDate(today.getUTCDate() - 6);
+  histStartDate.value = fnFormatDate(from);
+  histEndDate.value = fnFormatDate(today);
+}
+
+/* 현재 시각의 KST 달력일. UTC 기준으로 +9시간 민 뒤 getUTC* 로 읽으면
+   브라우저 TZ 와 무관하게 한국 날짜가 나온다. */
+function fnKstToday() {
+  return new Date(Date.now() + 9 * 60 * 60 * 1000);
+}
+
+function fnFormatDate(date) {
+  const yyyy = date.getUTCFullYear();
+  const mm = String(date.getUTCMonth() + 1).padStart(2, "0");
+  const dd = String(date.getUTCDate()).padStart(2, "0");
+  return `${yyyy}-${mm}-${dd}`;
+}
+
+/* 코드 → 라벨(미매핑 코드는 원문 그대로 — 신규 목적/상태가 추가돼도 화면이 값을 숨기지 않게) */
+function fnPurposeLabel(purposeCd) {
+  return PURPOSE_LABEL[purposeCd] || purposeCd || "-";
+}
+
+function fnStatusLabel(sendStatus) {
+  return STATUS_LABEL[sendStatus] || sendStatus || "-";
+}
+
+function fnStatusClass(sendStatus) {
+  return STATUS_CLASS[sendStatus] || "";
+}
+
+/*
+ * 인증 여부 — ★'Y'(검증완료) 와 'C'(소비완료) 를 모두 "완료" 로 표기한다.
+ * 'C' 는 검증을 통과한 뒤 코드가 소비된 상태라 'N'(미검증)과 의미가 정반대다.
+ * 'Y' 만 완료로 보면 실제로 인증에 성공한 건이 미인증으로 뒤집혀 보인다.
+ */
+function fnVerifiedLabel(verifiedYn) {
+  return verifiedYn === "Y" || verifiedYn === "C" ? "완료" : "-";
 }
 
 /* ── 임계값 저장 ── */
@@ -593,6 +977,43 @@ async function fnReleaseKillSwitch() {
 </script>
 
 <style scoped>
+/* 탭바 — Attd_01 .attd01-tab-bar / User_09 .u09-tabs 스펙 준수(밑줄형 0.875rem) */
+.p05-tabs {
+  display: flex;
+  gap: 0.25rem;
+  padding: 0.5rem 0 0;
+  margin-bottom: 0.5rem;
+  border-bottom: 1px solid var(--color-border);
+}
+.p05-tab {
+  padding: 0.5rem 1rem;
+  border: none;
+  border-bottom: 2px solid transparent;
+  margin-bottom: -1px;
+  background: none;
+  font-size: 0.875rem;
+  color: var(--color-text-muted);
+  cursor: pointer;
+}
+.p05-tab:hover {
+  color: var(--color-text);
+}
+.p05-tab.active {
+  font-weight: 600;
+  color: var(--color-primary);
+  border-bottom-color: var(--color-primary);
+}
+
+/* 이력 탭 기간 구분자 (User_09 .u09-date-sep 동일) */
+.p05-date-sep {
+  margin: 0 0.25rem;
+}
+
+/* 휴대폰 검색 입력 — 정확 일치 안내가 잘리지 않을 폭 */
+.p05-mbl-input {
+  width: 12rem;
+}
+
 /* 킬스위치 발동 배너 — Platform_03 .p03-truncated-banner 전례 */
 .p05-killswitch-banner {
   display: flex;
@@ -743,6 +1164,42 @@ async function fnReleaseKillSwitch() {
   color: var(--color-danger);
   border-color: var(--color-danger);
 }
+/* 대기(PENDING) — 실패가 아니라 "아직 결과가 확정되지 않음" 이므로 경고색 계열로 구분한다 */
+.p05-badge.is-wait {
+  color: var(--color-warning-text);
+  border-color: var(--color-warning-text);
+}
+
+/* 검증 실패 누적 — 5회 이상이면 코드가 무효화된다(무차별 대입 단서라 눈에 띄게) */
+.p05-fail-cnt {
+  font-weight: 700;
+  color: var(--color-danger);
+}
+
+/* 오류메시지 셀 — 벤더 원문. 1줄 말줄임 + title 툴팁(v-html 사용 금지) */
+.p05-errmsg-cell {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* 페이징 (User_09 .pager / Tbm_04 동일 규격) */
+.p05-pager {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.75rem;
+  margin-top: 0.75rem;
+}
+.p05-pager__info {
+  font-size: var(--btn-font);
+  color: var(--color-text-muted);
+}
+.p05-pager__btn {
+  height: var(--btn-height-sm);
+  padding: 0 var(--btn-padding-sm);
+  font-size: var(--btn-font-sm);
+}
 
 /* ── 임계값 폼 ── */
 .p05-save-btn {
@@ -810,5 +1267,13 @@ async function fnReleaseKillSwitch() {
   color: var(--color-text-muted);
   background: var(--color-warning-bg);
   border-radius: var(--btn-radius);
+}
+
+/* 안내문 보조 줄 — 과거 데이터의 상태 미기록을 별도 줄로 분리(실패로 오해하지 않게) */
+.p05-guide__note {
+  display: block;
+  margin-top: 0.25rem;
+  font-weight: 600;
+  color: var(--color-warning-text);
 }
 </style>

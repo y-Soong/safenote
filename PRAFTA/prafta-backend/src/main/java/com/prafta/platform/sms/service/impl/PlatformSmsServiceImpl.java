@@ -1,5 +1,8 @@
 package com.prafta.platform.sms.service.impl;
 
+import java.util.ArrayList;
+import java.util.List;
+
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -12,10 +15,16 @@ import com.prafta.common.cmm.sms.policy.mapper.SmsSendPolicyMapper;
 import com.prafta.common.config.SmsProperties;
 import com.prafta.common.error.platform.PlatformErrorCode;
 import com.prafta.common.exception.ApiException;
+import com.prafta.common.security.crypto.AesGcmCrypto;
+import com.prafta.common.security.crypto.HmacSigner;
 import com.prafta.platform.common.PlatformConstants;
+import com.prafta.platform.sms.application.param.SmsHistoryListParam;
 import com.prafta.platform.sms.application.param.SmsPolicyUpdateParam;
+import com.prafta.platform.sms.application.query.SmsHistoryListQuery;
+import com.prafta.platform.sms.application.result.SmsHistoryRowResult;
 import com.prafta.platform.sms.application.result.SmsPolicyResult;
 import com.prafta.platform.sms.dto.response.SmsConsoleResponse;
+import com.prafta.platform.sms.dto.response.SmsHistoryListResponse;
 import com.prafta.platform.sms.mapper.PlatformSmsMapper;
 import com.prafta.platform.sms.service.PlatformSmsService;
 
@@ -50,9 +59,23 @@ public class PlatformSmsServiceImpl implements PlatformSmsService {
 
     private final AuditLogService auditLogService;
 
+    /** 발송 이력의 휴대폰 복호(마스킹 전 단계). ★복호 결과는 마스킹 이후 즉시 버린다. */
+    private final AesGcmCrypto aesGcmCrypto;
+
+    /**
+     * 휴대폰 검색 입력을 {@code MBL_NO_HMAC} 로 변환한다.
+     *
+     * <p>★적재 경로({@code BaseinfoServiceImpl} 등)와 <b>동일한 유틸·동일한 정규화</b>를 재사용한다.
+     *    키/알고리즘/도메인 구분자가 어긋나면 예외 없이 조용히 0건이 된다(직접 구현 금지).
+     */
+    private final HmacSigner hmacSigner;
+
     /** 현황 카드 집계 구간(시간). */
     private static final int STAT_HOURS_1H = 1;
     private static final int STAT_HOURS_24H = 24;
+
+    /** 마스킹 불가(복호 실패/암호문 결측) 시 표기. ★TB_SMS_AUTH_CODE 에는 LAST4 컬럼이 없어 폴백이 없다. */
+    private static final String MASK_UNAVAILABLE = "-";
 
     @Override
     public SmsConsoleResponse selectConsole() {
@@ -75,6 +98,108 @@ public class PlatformSmsServiceImpl implements PlatformSmsService {
                 .globalUsedCnt(smsSendPolicyMapper.selectGlobalSentCnt())
                 .globalHourLimit(policy == null ? 0 : policy.globalHourLimit())
                 .build();
+    }
+
+    /**
+     * 발송 이력 목록 조회(기간 필터 + 서버 페이징, 최신순).
+     *
+     * <p>★★<b>인가 논증</b> — {@code TB_SMS_AUTH_CODE} 에는 {@code CMPNY_CD} 컬럼이 없어
+     * 테넌트 술어를 걸 수단이 없다. 따라서 이 조회는 {@code PlatformOperatorGateInterceptor}
+     * ({@code /prafta/platformApi/**} 전 경로에 {@code gv_cmpnyCd == prafta_system_admin} 강제)
+     * 뒤에서만 성립한다. 게이트는 <b>어노테이션이 아니라 경로 기반</b>이므로,
+     * 이 메서드를 {@code com.prafta.web.*} / {@code com.prafta.app.*} 컨트롤러에서 호출하면
+     * 회사 경계 없이 전 고객사 휴대폰이 새어나간다.
+     *
+     * <p>★휴대폰은 서버에서 복호 후 마스킹한다. 인증번호·HMAC·IP 해시는 응답에 담지 않는다.
+     * <p>★감사 로그(§11.3) 대상이 아니다(마스킹 목록 조회) — 서버 로그만 남긴다.
+     *    ※엑셀 다운로드를 추가하면 §11.3 "다운로드" 에 해당해 감사 적재가 <b>필수</b>가 된다.
+     * <p>{@code @Transactional} 을 두지 않는다(읽기 전용 단순 조회 — {@code selectConsole} 과 동일).
+     */
+    @Override
+    public SmsHistoryListResponse selectSendHistory(SmsHistoryListParam param) {
+
+        // 검색 입력 평문은 여기서 HMAC 으로만 변환하고 이후 어디에도 남기지 않는다.
+        String mblNoHmac = (param.mblNo() == null) ? null : hmacSigner.hmacSha256Base64Url(param.mblNo());
+
+        SmsHistoryListQuery query = SmsHistoryListQuery.from(param, mblNoHmac);
+
+        // 페이저 기준 건수를 먼저 구하고, 0건이면 목록 쿼리를 생략한다.
+        int totalCount = platformSmsMapper.selectSendHistoryCount(query);
+
+        List<SmsHistoryListResponse.Row> list = new ArrayList<>();
+        if (totalCount > 0) {
+            List<SmsHistoryRowResult> rows = platformSmsMapper.selectSendHistoryList(query);
+            if (rows != null) {
+                for (SmsHistoryRowResult row : rows) {
+                    list.add(SmsHistoryListResponse.Row.builder()
+                            .smsId(row.smsId())
+                            .insertDate(row.insertDate())
+                            .mblNo(maskMblNo(decryptMblNo(row.mblNoEnc())))
+                            .purposeCd(row.purposeCd())
+                            .sendStatus(row.sendStatus())
+                            .sendDate(row.sendDate())
+                            .verifiedYn(row.verifiedYn())
+                            .failCnt(row.failCnt())
+                            .sendErrCd(row.sendErrCd())
+                            .sendErrMsg(row.sendErrMsg())
+                            .sendUserCd(row.sendUserCd())
+                            .build());
+                }
+            }
+        }
+
+        // ★로그에는 운영자 + 조건 요약 + 건수만 남긴다.
+        //   휴대폰 평문·검색 입력 번호·인증번호·sendErrMsg 본문은 절대 남기지 않는다
+        //   (벤더 원문에 수신번호가 섞일 수 있다). 검색 사용 여부만 Y/N 으로 남긴다.
+        log.info("Platform_05 SMS 발송 이력 조회 - 운영자={}, 기간={}~{}, 목적={}, 상태={}, 번호검색={}, page={}, {}건/전체 {}건",
+                param.gvUserCd(), param.startDate(), param.endDate(), param.purposeCd(), param.sendStatus(),
+                (mblNoHmac == null ? "N" : "Y"), param.page(), list.size(), totalCount);
+
+        return SmsHistoryListResponse.builder()
+                .historyList(list)
+                .totalCount(totalCount)
+                .build();
+    }
+
+    /**
+     * 휴대폰 암호문 복호. 실패해도 목록 조회를 막지 않는다(해당 셀만 {@code "-"}).
+     *
+     * <p>★예외 메시지에 평문이 섞이지 않도록 {@code e.getMessage()} 만 남긴다(스택트레이스·암호문 금지).
+     */
+    private String decryptMblNo(String mblNoEnc) {
+
+        if (mblNoEnc == null || mblNoEnc.isBlank()) {
+            return null;
+        }
+        try {
+            return aesGcmCrypto.decrypt(mblNoEnc);
+        } catch (Exception e) {
+            log.warn("Platform_05 발송 이력 휴대폰 복호화 실패(마스킹 불가로 표기 대체) - {}", e.getMessage());
+            return null;
+        }
+    }
+
+    /**
+     * 휴대폰 가운데 마스킹 — User_09 와 <b>동일 규칙</b>(11자리 앞3-****-뒤4 / 10자리 앞3-***-뒤4).
+     *
+     * <p>★{@code TB_SMS_AUTH_CODE} 에는 {@code MBL_NO_LAST4} 컬럼이 없다. 그래서 User_09 의 LAST4 폴백이
+     *    여기에는 없고, 복호 실패 시 폴백은 {@code "-"} 다.
+     *    <b>LAST4 를 만들려고 {@code MBL_NO_HMAC} 등을 끌어오지 말 것</b>(상관·역추적 재료 노출).
+     * <p>공통 유틸로 빼지 않는 것은 의도적이다 — {@code common.util} 로 올리면 web/app 어디서나
+     *    호출 가능해져 PII 마스킹 규칙의 검토 범위가 넓어진다(User_09 와 동일 판단).
+     */
+    private String maskMblNo(String digits) {
+
+        if (digits != null && !digits.isBlank()) {
+            String d = digits.replaceAll("\\D", "");
+            if (d.length() == 11) {
+                return d.substring(0, 3) + "-****-" + d.substring(7);
+            }
+            if (d.length() == 10) {
+                return d.substring(0, 3) + "-***-" + d.substring(6);
+            }
+        }
+        return MASK_UNAVAILABLE;
     }
 
     /**

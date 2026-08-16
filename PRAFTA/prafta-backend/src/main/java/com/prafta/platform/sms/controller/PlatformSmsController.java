@@ -13,9 +13,12 @@ import com.prafta.common.cmm.audit.AuditContext;
 import com.prafta.common.dto.TokenInfo;
 import com.prafta.common.security.JwtUtil;
 import com.prafta.platform.common.PlatformOperatorGateInterceptor;
+import com.prafta.platform.sms.application.param.SmsHistoryListParam;
 import com.prafta.platform.sms.application.param.SmsPolicyUpdateParam;
+import com.prafta.platform.sms.dto.request.SmsHistoryListRequest;
 import com.prafta.platform.sms.dto.request.SmsPolicyUpdateRequest;
 import com.prafta.platform.sms.dto.response.SmsConsoleResponse;
+import com.prafta.platform.sms.dto.response.SmsHistoryListResponse;
 import com.prafta.platform.sms.service.PlatformSmsService;
 
 import jakarta.servlet.http.HttpServletRequest;
@@ -57,6 +60,42 @@ public class PlatformSmsController {
     public ResponseEntity<?> getConsole() {
 
         SmsConsoleResponse response = platformSmsService.selectConsole();
+
+        return ResponseEntity.status(HttpStatus.OK).body(response);
+    }
+
+    /**
+     * 발송 이력 목록 조회(기간 필터 + 서버 페이징).
+     *
+     * <p>최종 경로: {@code POST /prafta/platformApi/sms/send-histories/search}
+     *
+     * <p>★<b>조회인데 POST 인 이유</b> — 검색 조건에 <b>휴대폰 평문</b>이 들어간다. GET 쿼리스트링으로
+     * 받으면 서버 코드가 로그를 남기지 않아도 <b>nginx/ALB access log · CloudFront 로그 · 브라우저
+     * 히스토리·리퍼러</b>에 평문 휴대폰이 복제된다. 이들은 애플리케이션 로그와 보존주기·접근통제가
+     * 달라 사후 회수가 어렵다(정책 §11.1 최소 수집 / 평문 PII 로깅 금지).
+     * 바디로 받으면 그 경로가 전부 사라진다. <b>휴대폰 조건을 쿼리스트링으로 되돌리지 말 것.</b>
+     *
+     * <p>★★<b>인가는 {@code PlatformOperatorGateInterceptor}(경로 기반)가 강제한다 — 어노테이션이 없다.</b>
+     * 이 클래스가 {@code com.prafta.platform.*} 아래에 있어 {@code /prafta/platformApi/**} 로 매핑되기 때문에
+     * 게이트가 자동 적용된다({@code gv_cmpnyCd != prafta_system_admin} 이면 {@code PLATFORM_403_001}).
+     * <b>같은 서비스/매퍼를 {@code web}/{@code app} 컨트롤러로 옮기면 게이트가 사라진다</b> —
+     * {@code TB_SMS_AUTH_CODE} 에는 {@code CMPNY_CD} 가 없어 회사 경계 없이 전 고객사 휴대폰이 샌다.
+     *
+     * <p>★<b>감사 대상이 아니므로 {@code HttpServletRequest} 를 받지 않는다</b>(마스킹 목록 조회 —
+     * 공통 정책서 §11.3 대상 목록 어디에도 해당하지 않는다. User_09 처리 이력 조회 선례와 동일).
+     * {@code buildAuditContext} 를 호출하지 않는다.
+     *
+     * <p>★응답에는 인증번호({@code AUTH_CD})·{@code MBL_NO_HMAC}·{@code SEND_IP_HASH} 가 없다.
+     * 휴대폰은 서버에서 복호 후 마스킹된 문자열만 내려간다.
+     */
+    @PostMapping("/send-histories/search")
+    public ResponseEntity<?> getSendHistories(
+            @RequestBody SmsHistoryListRequest request,
+            @RequestHeader(value = "Authorization", required = false) String authorization) {
+
+        TokenInfo tokenInfo = jwtUtil.getAllClaimsAsMap(authorization);
+        SmsHistoryListResponse response =
+                platformSmsService.selectSendHistory(SmsHistoryListParam.from(request, tokenInfo));
 
         return ResponseEntity.status(HttpStatus.OK).body(response);
     }
