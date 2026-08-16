@@ -122,7 +122,7 @@
               <dt>사용 단위</dt>
               <dd>{{ detail.body.unitNm || '-' }}</dd>
               <dt>사용 구간</dt>
-              <dd>{{ detail.body.appliedRangeDisplay || '-' }}</dd>
+              <dd class="ap-meta__dd--range">{{ detail.body.appliedRangeDisplay || '-' }}</dd>
               <!-- 가불표시-04: 가불 포함 신청 표기 — borrowDays > 0 일 때만(일 단위 표기는 formatLeaveDaysOnly 단일 출처) -->
               <dt v-if="Number(detail.body.borrowDays) > 0">가불</dt>
               <dd v-if="Number(detail.body.borrowDays) > 0">
@@ -263,7 +263,12 @@ import api from '@/api/axios'
 import { usePullToRefresh } from '@/composables/usePullToRefresh'
 import PullRefreshIndicator from '@/components/common/PullRefreshIndicator.vue'
 import { resolveApiErrorMessage } from '@/utils/apiError'
-import { formatYmdDisplay, formatDateTimeDisplay, formatTimeWithDateIfDiff } from '@/utils/approvalFormat'
+import {
+  formatYmdDisplay,
+  formatDateTimeDisplay,
+  formatTimeWithDateIfDiff,
+  formatHhmmDisplay,
+} from '@/utils/approvalFormat'
 // 가불표시-04: 일 단위 수량 표기 단일 출처(2026-08-09 규약)
 import { formatLeaveDaysOnly } from '@/utils/leaveFormat'
 
@@ -383,15 +388,48 @@ const breakAfterTilde = (v) => {
 }
 
 // 연차 사용 구간(문자열 또는 {from,to})
+/**
+ * 연차 사용 구간 표시 문자열.
+ *
+ * <p>서버(body.appliedRange)는 startDate/startTime/endDate/endTime 을 원본 포맷으로 준다
+ * (날짜 YYYYMMDD, 시각 HHmm, 종일 신청이면 시각 null).
+ * ★종전 구현은 from/to/startYmd/endYmd 를 찾았는데 서버가 보내는 키와 하나도 맞지 않아
+ *   항상 빈 문자열이 됐고, 화면에 "사용 구간 -" 만 떴다. 시각은 읽지도 않았다.
+ *   "언제부터 언제까지 쉬는지"가 승인 판단의 핵심 정보다 — 키 이름을 임의로 바꾸지 말 것.
+ *
+ * <p>표기(웹 Attd_10 과 동일 정보를 한 줄로 합친다):
+ *   같은 날 + 시간대 → "2026.08.11 14:00 ~ 15:00"  (날짜를 반복하지 않는다)
+ *   같은 날 + 종일   → "2026.08.11"
+ *   기간 + 종일      → "2026.08.11 ~ 2026.08.13"
+ *   기간 + 시간대    → "2026.08.11 14:00 ~ 2026.08.13 15:00"
+ *
+ * <p>★날짜와 시각 사이는 <b>줄바꿈 없는 공백(U+00A0)</b>으로 묶는다. 일반 공백이면 좁은 화면에서
+ *   "2026.08.11" 과 "14:00" 사이가 갈라져 어색하게 개행된다. 이렇게 두면 끊길 수 있는 자리가
+ *   " ~ " 양옆뿐이라, 넘칠 때 "시작구간 ~ / 종료구간" 으로만 깔끔하게 접힌다.
+ */
+const NBSP = ' '
+
 const buildAppliedRange = (v) => {
   if (!v) return ''
   if (typeof v === 'string') return v
-  if (typeof v === 'object') {
-    const from = v.from || v.startYmd || ''
-    const to = v.to || v.endYmd || ''
-    return from && to ? `${from} ~ ${to}` : from || to || ''
-  }
-  return ''
+  if (typeof v !== 'object') return ''
+
+  const startDate = formatYmdDisplay(v.startDate)
+  const endDate = formatYmdDisplay(v.endDate)
+  const startTime = formatHhmmDisplay(v.startTime)
+  const endTime = formatHhmmDisplay(v.endTime)
+
+  // 날짜 + 시각을 한 덩어리로(중간에서 개행되지 않게)
+  const glue = (date, time) => (date && time ? `${date}${NBSP}${time}` : date || time || '')
+
+  const sameDay = !endDate || startDate === endDate
+  const head = glue(startDate, startTime)
+
+  // 같은 날이면 종료는 시각만 — 날짜를 두 번 쓰지 않는다.
+  const tail = sameDay ? endTime : glue(endDate, endTime)
+
+  if (head && tail) return `${head} ~ ${tail}`
+  return head || tail || ''
 }
 
 // 스케줄 표시 결합(현재/요청): { schNm, rangeText } → "{schNm} · {rangeText}".
@@ -722,6 +760,13 @@ onMounted(loadDetail)
 }
 .ap-meta__dd--break {
   white-space: pre-line;
+}
+/* 사용 구간 — 좁은 화면에서 날짜·시각이 토막나지 않게 한다.
+   값 안의 날짜~시각 사이는 U+00A0 로 묶여 있어 끊길 수 있는 자리가 " ~ " 뿐이고,
+   keep-all 로 어절 중간 분절까지 막아 "시작구간 ~ / 종료구간" 으로만 접힌다. */
+.ap-meta__dd--range {
+  word-break: keep-all;
+  overflow-wrap: normal;
 }
 
 /* 배너 */

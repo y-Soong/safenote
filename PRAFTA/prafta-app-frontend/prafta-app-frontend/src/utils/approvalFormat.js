@@ -18,6 +18,17 @@ function digitsOnly(value) {
 }
 
 /**
+ * 시각(HHmm / HH:mm / HHmmss 등) → "HH:mm".
+ * 값이 없거나 4자리 미만이면 빈 문자열(연차 종일 신청은 START_TIME 이 null 이다).
+ */
+export function formatHhmmDisplay(value) {
+  if (value == null || value === '') return ''
+  const d = digitsOnly(value)
+  if (d.length < 4) return ''
+  return `${d.slice(0, 2)}:${d.slice(2, 4)}`
+}
+
+/**
  * 대상일자(YYYYMMDD 또는 YYYY-MM-DD 등) → "YYYY.MM.DD".
  * 파싱 불가하면 원본 문자열을 그대로 반환(표시 깨짐 방지).
  */
