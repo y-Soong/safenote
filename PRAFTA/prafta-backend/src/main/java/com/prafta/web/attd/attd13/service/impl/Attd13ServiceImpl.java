@@ -30,6 +30,7 @@ import com.prafta.common.error.attd.AttdErrorCode;
 import com.prafta.common.exception.ApiException;
 import com.prafta.common.util.AdvisoryLockTxUtils;
 import com.prafta.common.util.AuthRoleUtils;
+import com.prafta.common.util.DateTimeUtils;
 import com.prafta.web.attd.attd13.application.command.LeaveChangeRequestInsertCommand;
 import com.prafta.web.attd.attd13.application.command.MovedLeaveUseInsertCommand;
 import com.prafta.web.attd.attd13.application.param.ChangeRequestConfirmParam;
@@ -480,6 +481,30 @@ public class Attd13ServiceImpl implements Attd13Service {
                 target.leaveId(), target.reqId());
         if (conflict > 0) {
             throw new ApiException(AttdErrorCode.ATTD_400_126);
+        }
+        // 2026-08-17(A안 후속): 시간차(02/03/04)는 시각 구간을 원값 그대로 승계하므로 대상일에서도
+        //   "근무시간 내" + "휴게 가로지름 금지"를 신청 경로와 동일하게 검증한다. 종전엔 미검증이라
+        //   근무시간 밖에 떠 있는 시간차(쉬는 효과 없이 차감만 발생)가 만들어질 수 있었다.
+        //   반차('01')는 applyMove 가 대상일 스케줄로 경계를 재산출하므로 대상이 아니고,
+        //   시각 결손 구 데이터는 판정 불가 — 스킵(추정 금지, 종전 동작 유지).
+        //   발의(관리자/근로자)·확정 재검증 3경로가 본 메서드를 공유하므로 여기 한 곳이 단일 지점이다.
+        if (isHourlyUnit(target.useUnitType())) {
+            Integer sMin = DateTimeUtils.hhmmToMinutes(target.startTime());
+            Integer eMin = DateTimeUtils.hhmmToMinutes(target.endTime());
+            if (sMin != null && eMin != null && eMin > sMin) {
+                if (!leaveDeductionService.withinScheduledWorkHours(
+                        cmpnyCd, target.siteCd(), target.userCd(), moveTargetDate, sMin, eMin)) {
+                    log.info("연차 이동 거부: 대상일 근무시간 밖 시간차. cmpnyCd={}, leaveId={}, moveTo={}, {}~{}",
+                            cmpnyCd, target.leaveId(), moveTargetDate, target.startTime(), target.endTime());
+                    throw new ApiException(AttdErrorCode.ATTD_400_103);
+                }
+                if (leaveDeductionService.crossesBreak(
+                        cmpnyCd, target.siteCd(), target.userCd(), moveTargetDate, sMin, eMin)) {
+                    log.info("연차 이동 거부: 대상일 휴게 가로지름. cmpnyCd={}, leaveId={}, moveTo={}, {}~{}",
+                            cmpnyCd, target.leaveId(), moveTargetDate, target.startTime(), target.endTime());
+                    throw new ApiException(AttdErrorCode.ATTD_400_055);
+                }
+            }
         }
     }
 
