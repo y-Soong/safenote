@@ -204,6 +204,17 @@ public interface Attd07Mapper {
     int deleteOvertimeByAttdId(DailyAttdDetailDeleteCommand command);
 
     /**
+     * A안(2026-08-17): 해당 구간(WORK_SEQ)의 활성 근태 행 ATTD_ID 조회.
+     * OT 승인 시 REQ 권위값의 WORK_SEQ 로 소속 근태를 결정적으로 연결한다. 없으면 null.
+     */
+    String selectActiveAttdIdBySlot(
+            @Param("cmpnyCd") String cmpnyCd,
+            @Param("siteCd") String siteCd,
+            @Param("userCd") String userCd,
+            @Param("workYmd") String workYmd,
+            @Param("workSeq") String workSeq);
+
+    /**
      * Server-authoritative load of an attendance request row.
      * Used to validate that the body fields match the stored request and to enforce
      * self-approval / status-state policies before issuing the approve UPDATE.

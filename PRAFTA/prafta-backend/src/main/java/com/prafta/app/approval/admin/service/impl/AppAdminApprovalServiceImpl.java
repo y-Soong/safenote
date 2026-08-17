@@ -1086,7 +1086,9 @@ public class AppAdminApprovalServiceImpl implements AppAdminApprovalService {
                         p.gvCmpnyCd(), p.gvUserCd(), p.gvAuthCd(), p.gvSiteCd()));
                 break;
             case G_OVERTIME:
-                // 초과근무 승인: 신청 구간 1건(START~END)을 OT 등록 엔진(web)에 투입해 등록. attdId 는 일자 기준 서버 도출 위임(null).
+                // 초과근무 승인: 신청 구간 1건(START~END)을 OT 등록 엔진(web)에 투입해 등록.
+                //   attdId=null 위임 — A안(2026-08-17): 등록 엔진이 REQ 권위값의 WORK_SEQ 로 그 구간의
+                //   활성 근태 ATTD_ID 를 조회해 연결하고, 근태 부재 시 ATTD_400_205 로 승인을 거부한다.
                 //   nodeCd = 유효 노드(Fix3): web canManageNode(param.nodeCd) 통과(OT 승인은 nodeCd 변조검증 없음).
                 List<OvertimeItemModel> overtimes = new ArrayList<>(1);
                 overtimes.add(new OvertimeItemModel(

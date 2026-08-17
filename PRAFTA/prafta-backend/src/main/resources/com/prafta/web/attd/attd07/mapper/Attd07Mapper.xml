@@ -1751,6 +1751,22 @@
       AND DEL_YN   = 'N'
     </update>
 
+    <!-- A안(2026-08-17): 해당 구간(WORK_SEQ)의 활성 근태 행 ATTD_ID 조회 — OT 승인 시
+         REQ 권위값의 WORK_SEQ 로 소속 근태를 결정적으로 연결한다(근접 매칭 불사용).
+         앱 AppReq07Mapper 의 동일 취지 조회를 웹 네임스페이스에 복제(크로스 refid 금지 관례). -->
+    <select id="selectActiveAttdIdBySlot" resultType="string">
+    /* Attd07Mapper.selectActiveAttdIdBySlot */
+    SELECT A.ATTD_ID
+      FROM TB_USER_ATTD_MGMT A
+     WHERE A.CMPNY_CD = #{cmpnyCd}
+       AND A.SITE_CD  = #{siteCd}
+       AND A.USER_CD  = #{userCd}
+       AND A.WORK_YMD = #{workYmd}
+       AND A.WORK_SEQ = #{workSeq}
+       AND A.DEL_YN   = 'N'
+     LIMIT 1
+    </select>
+
     <!-- com-013 #6 - 관리자 직접 등록 OT 단건 소프트삭제(OT_ID + scope).
          selectDailyOvertimeList 술어(DEL_YN='N' AND OT_STATUS != 'CANCELLED')와 정합:
          취소/삭제된 행은 재삭제하지 않으며, 삭제 즉시 목록에서 사라진다. -->

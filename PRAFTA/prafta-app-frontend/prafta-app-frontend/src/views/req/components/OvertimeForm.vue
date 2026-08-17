@@ -699,6 +699,28 @@ const totalDisplay = computed(() => {
   return `${h}시간 ${min}분`
 })
 
+// ── A안 부속(2026-08-17): 구간 실근태 포함 사전 검증(서버 ATTD_400_104 미러) ──
+//   각 구간 카드의 입력 시각은 "그 구간(workSeq)의 실제 출퇴근" 안에 있어야 한다.
+//   1구간 카드에 2구간 시간대를 넣는 식의 교차 입력을 제출 전에 안내한다(서버가 최종 차단).
+//   그 구간 근태가 없거나 판정 불가(형식/미퇴근)는 무음 통과 — 서버 판정에 위임(차단 아님).
+const slotOutsideActualSeq = computed(() => {
+  for (const s of slots.value) {
+    if (!s.startDate || !s.startTime || !s.endDate || !s.endTime) continue
+    const ctxSlots = props.context?.slots || []
+    const ctx = ctxSlots.find((c, i) => (c?.workSeq ?? i + 1) === s.workSeq)
+    const att = ctx?.attendance
+    if (!att || !att.checkInTime || !att.checkOutTime) continue
+    const workYmd = props.context.workYmd
+    const attIn = stampOf(att.checkInDate || workYmd, att.checkInTime)
+    const attOut = stampOf(att.checkOutDate || workYmd, att.checkOutTime)
+    const otStart = stampOf(inputToYmd(s.startDate), timeToHhmm(s.startTime))
+    const otEnd = stampOf(inputToYmd(s.endDate), timeToHhmm(s.endTime))
+    if ([attIn, attOut, otStart, otEnd].some((v) => Number.isNaN(v))) continue
+    if (otStart < attIn || otEnd > attOut) return s.workSeq
+  }
+  return null
+})
+
 // ── 검증 (#2: otType 조건 제거 / prafta-app-017: 스케줄 겹침 사전차단) ─────
 const isValid = computed(() => {
   // 소정-12: 연장근로 제한 기간은 제출 자체를 막는다(서버도 ATTD_400_200 으로 최종 차단).
@@ -759,6 +781,13 @@ const onSubmit = () => {
   // prafta-app-030: 기존 적용 초과근무와 시간 겹침 안내(서버도 ATTD_409_002 로 최종 차단).
   if (hasExistingOverlap.value) {
     showAlert('이미 등록된 초과근무와 시간이 겹칩니다. 시간이 겹치지 않도록 입력해 주세요.')
+    return
+  }
+  // A안 부속(2026-08-17): 구간 실근태 밖 입력 안내(서버도 ATTD_400_104 로 최종 차단).
+  if (slotOutsideActualSeq.value != null) {
+    showAlert(
+      `${slotOutsideActualSeq.value}구간 초과근무는 해당 구간의 실제 출퇴근 시간 안에서만 신청할 수 있어요.`
+    )
     return
   }
   // 사유 전용 가드(버튼은 기본 활성 → 빈값 제출 시 사유 안내).

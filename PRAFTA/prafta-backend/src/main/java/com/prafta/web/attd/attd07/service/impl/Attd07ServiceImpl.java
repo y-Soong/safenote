@@ -1892,9 +1892,39 @@ public class Attd07ServiceImpl implements Attd07Service {
                 throw new ApiException(AttdErrorCode.ATTD_404_012);
             }
         } else {
-            // Attd_07 직접 등록/수정(reqId=null).
+            // Attd_07 직접 등록/수정(reqId=null) + 인박스/앱 승인 신규 등록(reqId 존재, REQ_TYPE 03).
             //   com-013-06 A: OT_ID 를 보유한 행은 in-place UPDATE, 미보유 행은 신규 INSERT.
             //   (UPDATE/INSERT 모두 위 2~6 검증(허용구간/겹침)을 그대로 거치므로 동일 규칙으로 재검증된다.)
+
+            // A안(2026-08-17 확정): 신규 INSERT 되는 OT 는 소속 근태 행(ATTD_ID)에 반드시 연결한다.
+            //   - 승인 경유(reqRow 존재): REQ 권위값의 WORK_SEQ 로 그 구간의 활성 근태를 조회해 연결.
+            //     승인 시점에 그 구간 근태가 없으면(삭제됨) 승인 거부(ATTD_400_205) — 근태 삭제
+            //     연쇄(deleteOvertimeByAttdId)를 빠져나가는 고아 OT(ATTD_ID NULL) 생성 구멍을 원천 차단.
+            //   - 직접 등록(reqRow 없음): 팝업 전달 attdId 를 필수화한다(소유 검증은 SEC-017(b)에서 완료).
+            //   in-place UPDATE 항목은 기존 행의 ATTD_ID 를 유지하므로 이 결정과 무관하다.
+            String insertAttdId = null;
+            boolean hasInsertItem = param.overtimes().stream()
+                    .anyMatch(o -> o.otId() == null || o.otId().isBlank());
+            if (hasInsertItem) {
+                if (reqRow != null) {
+                    insertAttdId = attd07Mapper.selectActiveAttdIdBySlot(
+                            param.gvCmpnyCd(), param.siteCd(), param.userCd(),
+                            param.workYmd(), reqRow.workSeq());
+                    if (insertAttdId == null || insertAttdId.isBlank()) {
+                        log.warn("OT approve rejected - no active attendance for slot(A안). reqId={}, userCd={}, workYmd={}, workSeq={}",
+                                reqRow.reqId(), param.userCd(), param.workYmd(), reqRow.workSeq());
+                        throw new ApiException(AttdErrorCode.ATTD_400_205);
+                    }
+                } else {
+                    insertAttdId = param.attdId();
+                    if (insertAttdId == null || insertAttdId.isBlank()) {
+                        log.warn("OT direct register rejected - attdId missing(A안). userCd={}, workYmd={}",
+                                param.userCd(), param.workYmd());
+                        throw new ApiException(AttdErrorCode.ATTD_400_205);
+                    }
+                }
+            }
+
             for (int i = 0; i < param.overtimes().size(); i++) {
                 OvertimeItemModel ot = param.overtimes().get(i);
                 int[] stamp = reqStamps.get(i);
@@ -1921,7 +1951,7 @@ public class Attd07ServiceImpl implements Attd07Service {
                     // 소정-07 M-4: 단축 대상이면 명시 청구 확인 기록을 함께 적재(비대상은 3컬럼 NULL).
                     attd07Mapper.insertUserOvertime(
                             InsertUserOvertimeCommand.from(otId, param, ot, workMinutes,
-                                    reducedClaimYn, reducedClaimBy));
+                                    reducedClaimYn, reducedClaimBy, insertAttdId));
                 }
             }
         }

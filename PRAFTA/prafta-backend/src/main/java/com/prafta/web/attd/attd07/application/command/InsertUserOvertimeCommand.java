@@ -75,12 +75,19 @@ public record InsertUserOvertimeCommand(
      * @param reducedClaimYn 단축 대상이면 "Y", 아니면 null (게이트 판정 결과로 결정)
      * @param reducedClaimBy 확인 주체 USER_CD. reducedClaimYn 이 null 이면 함께 null
      */
+    /**
+     * A안(2026-08-17): ATTD_ID 는 호출부(서비스)가 결정한 값을 명시적으로 받는다.
+     *   승인 경유 = REQ.WORK_SEQ 로 조회한 그 구간의 활성 근태 ATTD_ID,
+     *   직접 등록 = 팝업 전달 attdId(서비스가 필수·소유 검증 완료).
+     *   종전처럼 param.attdId()(승인 경로에서 null)를 그대로 쓰면 고아 OT 가 생긴다.
+     */
     public static InsertUserOvertimeCommand from(String otId,
                                                  UpdateUserOvertimeRequestParam param,
                                                  OvertimeItemModel ot,
                                                  int workMinutes,
                                                  String reducedClaimYn,
-                                                 String reducedClaimBy) {
+                                                 String reducedClaimBy,
+                                                 String attdId) {
 
         // SEC-019 - do not leak the precise missing field name to the client.
         // Log the internal field name server-side and surface a generic 400.
@@ -103,7 +110,7 @@ public record InsertUserOvertimeCommand(
             , param.siteCd()
             , param.userCd()
 
-            , param.attdId()
+            , attdId
             , param.reqId()
 
             , param.workYmd()

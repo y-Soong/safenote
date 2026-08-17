@@ -485,6 +485,13 @@ public enum AttdErrorCode implements ApiErrorCode {
     //   원인을 날짜 관점으로 안내한다. 앱/웹 submitLeave 공용.
     , ATTD_400_204(HttpStatus.BAD_REQUEST,
             "선택한 날짜에 사용할 수 있는 연차가 없어요. 연차 부여의 사용 가능 기간 안의 날짜로 신청해 주세요.")
+
+    // ===== 초과근무-근태 연결(A안, 2026-08-17 확정) =====
+    // OT 는 소속 근태 행(ATTD_ID)에 반드시 연결한다. 승인 시점에 해당 구간의 활성 근태가
+    // 없거나(삭제됨), 직접 등록에 attdId 가 누락되면 거부 — 근태 삭제 연쇄를 빠져나가는
+    // 고아 OT(ATTD_ID NULL) 생성 구멍을 원천 차단한다.
+    , ATTD_400_205(HttpStatus.BAD_REQUEST,
+            "해당 구간의 근태 기록이 없어 초과근무를 처리할 수 없습니다. 근태 기록을 먼저 확인해 주세요.")
     ;
 
     private final HttpStatus httpStatus;
