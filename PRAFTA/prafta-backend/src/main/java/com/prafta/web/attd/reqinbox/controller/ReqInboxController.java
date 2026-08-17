@@ -12,6 +12,7 @@ import com.prafta.common.dto.TokenInfo;
 import com.prafta.common.security.JwtUtil;
 import com.prafta.web.attd.reqinbox.dto.response.PendingReqListResponse;
 import com.prafta.web.attd.reqinbox.dto.response.PendingSchedReqListResponse;
+import com.prafta.web.attd.reqinbox.dto.response.ProcessedReqListResponse;
 import com.prafta.web.attd.reqinbox.service.ReqInboxService;
 
 import lombok.RequiredArgsConstructor;
@@ -56,6 +57,25 @@ public class ReqInboxController {
                 .pendingList(reqInboxService.getPendingRequests(
                         token.gv_cmpnyCd(), token.gv_siteCd(), token.gv_authCd(), reqTypeGroup))
                 .build();
+
+        return ResponseEntity.status(HttpStatus.OK).body(response);
+    }
+
+    /**
+     * 내 처리 이력 — 로그인 관리자가 승인/반려 처리한 요청 목록
+     * (reqTypeGroup: correction | overtime | schedule | leave, 최근 300건).
+     *
+     * <p>처리자 필터는 토큰의 본인 userCd 로 서버가 강제한다(파라미터 비신뢰).
+     */
+    @GetMapping("/processed")
+    public ResponseEntity<?> processed(
+            @RequestParam("reqTypeGroup") String reqTypeGroup,
+            @RequestHeader(value = "Authorization", required = true) String authorization) {
+
+        TokenInfo token = jwtUtil.getAllClaimsAsMap(authorization);
+
+        ProcessedReqListResponse response = reqInboxService.getProcessedRequests(
+                token.gv_cmpnyCd(), token.gv_siteCd(), token.gv_userCd(), token.gv_authCd(), reqTypeGroup);
 
         return ResponseEntity.status(HttpStatus.OK).body(response);
     }

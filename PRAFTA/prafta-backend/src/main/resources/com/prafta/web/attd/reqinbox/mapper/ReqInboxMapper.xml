@@ -140,4 +140,154 @@
      ORDER BY R.INSERT_DATE DESC
     </select>
 
+    <!--
+      내 처리 이력(근태보정/초과/스케줄 탭): 내가 승인('02')/반려('03') 처리한 요청.
+      PROCESS_USER_CD = 본인 조건이 스코프의 핵심이라 본인이 처리한 건만 나온다(타 관리자 처리분 미노출).
+      스케줄 수정('10')은 요청 스케줄 번호(schNo) 표시용으로 TB_SCH_MGMT 를 LEFT JOIN 한다
+      (그 외 유형은 R.SCH_CD 가 NULL 이라 미매치 - schNo NULL).
+      ★ ProcessedReqResult record 위치 기반 매핑 - SELECT 컬럼 순서 변경 금지.
+    -->
+    <select id="selectProcessedRequests" resultType="com.prafta.web.attd.reqinbox.result.ProcessedReqResult">
+    /* ReqInboxMapper.selectProcessedRequests */
+    SELECT
+          R.REQ_ID                                                     AS reqId
+        , R.REQ_TYPE                                                   AS reqType
+        , R.USER_CD                                                    AS userCd
+        , FNC_CMM_INFO_SRCH(R.CMPNY_CD, 'USER_NM', R.USER_CD, null)     AS userNm
+        , FNC_CMM_INFO_SRCH(R.CMPNY_CD, 'NODE', R.SITE_CD, R.NODE_CD)   AS nodeNm
+        , R.WORK_YMD                                                   AS workYmd
+        , R.START_DATE                                                 AS startDate
+        , R.START_TIME                                                 AS startTime
+        , R.END_DATE                                                   AS endDate
+        , R.END_TIME                                                   AS endTime
+        , NULL                                                         AS leaveTypeNm
+        , NULL                                                         AS leaveDays
+        , NULL                                                         AS unitNm
+        , TS.SCH_NO                                                    AS schNo
+        , R.REQ_REASON                                                 AS reqReason
+        , DATE_FORMAT(R.INSERT_DATE, '%Y-%m-%dT%H:%i:%s')              AS reqDate
+        , R.REQ_STATUS                                                 AS procStatus
+        , DATE_FORMAT(R.PROCESS_DATE, '%Y-%m-%dT%H:%i:%s')             AS processDate
+        , R.PROCESS_COMMENT                                            AS processComment
+        , NULL                                                         AS approvalStep
+      FROM TB_USER_ATTD_REQ R
+      LEFT JOIN TB_SCH_MGMT TS
+        ON TS.CMPNY_CD = R.CMPNY_CD
+       AND TS.SITE_CD  = R.SITE_CD
+       AND TS.SCH_CD   = R.SCH_CD
+     WHERE R.CMPNY_CD        = #{cmpnyCd}
+       AND R.SITE_CD         = #{siteCd}
+       AND R.PROCESS_USER_CD = #{processUserCd}
+       AND R.REQ_STATUS IN ('02', '03')
+       AND R.DEL_YN          = 'N'
+       AND R.REQ_TYPE IN
+       <foreach collection="reqTypes" item="rt" open="(" separator="," close=")">
+           #{rt}
+       </foreach>
+     ORDER BY R.PROCESS_DATE DESC, R.REQ_ID DESC
+     LIMIT 300
+    </select>
+
+    <!--
+      내 처리 이력(연차 탭): 결재라인에서 내가 승인('02')/반려('03')한 연차 요청.
+      APPROVER_USER_CD = 본인인 결재라인 행 기준이라 다단계 결재 중 내 단계 처리분이 그대로 이력이 된다
+      (최종 확정 전 건도 "내가 승인함"으로 노출 - 의도 동작).
+      연차 내용 조인(U/LT)·부서명 폴백은 LeaveFlowMapper.selectMyPendingLeaveApprovals 와 동형이되,
+      본 조회는 표시 전용이라 05 의 use 조인에서 CONFIRMED 제한을 뺀다 - 반려 건은 use 행이
+      CANCELLED 로 남는데(개발 DB 실측) 그 행에서 연차 종류/단위를 읽어야 하기 때문(차감량 계산 없음).
+      ★ ProcessedReqResult record 위치 기반 매핑 - SELECT 컬럼 순서 변경 금지.
+    -->
+    <select id="selectProcessedLeaveApprovals" resultType="com.prafta.web.attd.reqinbox.result.ProcessedReqResult">
+    /* ReqInboxMapper.selectProcessedLeaveApprovals */
+    SELECT
+          AP.REQ_ID                                                    AS reqId
+        , R.REQ_TYPE                                                   AS reqType
+        , R.USER_CD                                                    AS userCd
+        , FNC_CMM_INFO_SRCH(R.CMPNY_CD, 'USER_NM', R.USER_CD, null)     AS userNm
+        , FNC_CMM_INFO_SRCH(R.CMPNY_CD, 'NODE', R.SITE_CD, COALESCE(NULLIF(R.NODE_CD, ''), (
+              SELECT RU.NODE_CD
+                FROM TB_USER RU
+               WHERE RU.CMPNY_CD = R.CMPNY_CD
+                 AND RU.SITE_CD  = R.SITE_CD
+                 AND RU.USER_CD  = R.USER_CD
+               LIMIT 1
+          )))                                                          AS nodeNm
+        , R.WORK_YMD                                                   AS workYmd
+        , R.START_DATE                                                 AS startDate
+        , R.START_TIME                                                 AS startTime
+        , R.END_DATE                                                   AS endDate
+        , R.END_TIME                                                   AS endTime
+        , COALESCE(LT.LEAVE_NM, R.LEAVE_TYPE)                          AS leaveTypeNm
+        , R.LEAVE_DAYS                                                 AS leaveDays
+        , FNC_CMM_INFO_SRCH(R.CMPNY_CD, 'SYST_VAL', U.USE_UNIT_TYPE, 'SYS025') AS unitNm
+        , NULL                                                         AS schNo
+        , R.REQ_REASON                                                 AS reqReason
+        , DATE_FORMAT(R.INSERT_DATE, '%Y-%m-%dT%H:%i:%s')              AS reqDate
+        , AP.APPROVAL_STATUS                                           AS procStatus
+        , DATE_FORMAT(AP.APPROVAL_DATE, '%Y-%m-%dT%H:%i:%s')           AS processDate
+        , AP.APPROVAL_COMMENT                                          AS processComment
+        , AP.APPROVAL_STEP                                             AS approvalStep
+      FROM TB_USER_ATTD_REQ_APPROVAL AP
+      JOIN TB_USER_ATTD_REQ R
+        ON R.CMPNY_CD = AP.CMPNY_CD
+       AND R.REQ_ID   = AP.REQ_ID
+      LEFT JOIN TB_USER_LEAVE_USE U
+        ON U.CMPNY_CD = R.CMPNY_CD
+       AND U.DEL_YN   = 'N'
+       AND (
+             (R.REQ_TYPE = '05' AND U.REQ_ID   = R.REQ_ID
+              AND U.LEAVE_ID = (
+                    SELECT MIN(X.LEAVE_ID)
+                      FROM TB_USER_LEAVE_USE X
+                     WHERE X.CMPNY_CD     = R.CMPNY_CD
+                       AND X.REQ_ID       = R.REQ_ID
+                       AND X.DEL_YN       = 'N'
+              ))
+          OR (R.REQ_TYPE = '06' AND U.LEAVE_ID = R.TARGET_ID)
+       )
+      LEFT JOIN TB_LEAVE_TYPE_MGMT LT
+        ON LT.CMPNY_CD = U.CMPNY_CD
+       AND LT.LEAVE_CD = U.LEAVE_CD
+     WHERE AP.CMPNY_CD         = #{cmpnyCd}
+       AND AP.APPROVER_USER_CD = #{approverUserCd}
+       AND AP.APPROVAL_STATUS IN ('02', '03')
+       AND R.REQ_TYPE IN ('05', '06')
+       AND R.DEL_YN            = 'N'
+     ORDER BY AP.APPROVAL_DATE DESC, AP.REQ_ID DESC
+     LIMIT 300
+    </select>
+
+    <!--
+      내 처리 이력(연차 탭 보조 섹션): 내가 확인(CONFIRMED)/반려(REJECTED)한 연차 변경(이동/삭제) 요청.
+      CONFIRM_USER_CD = 본인 기준. 대상 연차일은 Attd13Mapper.selectChangeRequests 와 동일하게
+      대상 use 행(TARGET_LEAVE_ID)의 START_DATE 로 표시한다(이동 확정 후에는 이동된 날짜가 보임).
+      ★ ProcessedLeaveChangeResult record 위치 기반 매핑 - SELECT 컬럼 순서 변경 금지.
+    -->
+    <select id="selectProcessedLeaveChangeRequests" resultType="com.prafta.web.attd.reqinbox.result.ProcessedLeaveChangeResult">
+    /* ReqInboxMapper.selectProcessedLeaveChangeRequests */
+    SELECT
+          R.CHANGE_REQ_ID                                              AS changeReqId
+        , R.REQ_TYPE                                                   AS reqType
+        , R.TARGET_USER_CD                                             AS targetUserCd
+        , FNC_CMM_INFO_SRCH(R.CMPNY_CD, 'USER_NM', R.TARGET_USER_CD, null) AS targetUserNm
+        , LU.START_DATE                                                AS targetStartDate
+        , R.MOVE_TARGET_DATE                                           AS moveTargetDate
+        , R.INITIATOR_TYPE                                             AS initiatorType
+        , R.REQ_STATUS                                                 AS reqStatus
+        , R.REQ_REASON                                                 AS reqReason
+        , R.REJECT_REASON                                              AS rejectReason
+        , DATE_FORMAT(R.CONFIRM_DATE, '%Y-%m-%dT%H:%i:%s')             AS confirmDate
+      FROM TB_LEAVE_CHANGE_REQUEST R
+      LEFT JOIN TB_USER_LEAVE_USE LU
+        ON LU.CMPNY_CD = R.CMPNY_CD
+       AND LU.LEAVE_ID = R.TARGET_LEAVE_ID
+     WHERE R.CMPNY_CD        = #{cmpnyCd}
+       AND R.SITE_CD         = #{siteCd}
+       AND R.CONFIRM_USER_CD = #{confirmUserCd}
+       AND R.REQ_STATUS IN ('CONFIRMED', 'REJECTED')
+       AND R.DEL_YN          = 'N'
+     ORDER BY R.CONFIRM_DATE DESC, R.CHANGE_REQ_ID DESC
+     LIMIT 300
+    </select>
+
 </mapper>

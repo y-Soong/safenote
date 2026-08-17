@@ -14,6 +14,15 @@
           {{ tabCount(t.key) }}
         </span>
       </button>
+      <!-- 내 처리 이력: 현재 탭 유형에서 내가 승인/반려한 이력 팝업(읽기 전용). 기존 UI 무수정 - 버튼만 추가. -->
+      <button
+        type="button"
+        class="ra-history-btn"
+        title="현재 탭에서 내가 승인/반려 처리한 이력을 봅니다"
+        @click="showHistoryPop = true"
+      >
+        내 처리 이력
+      </button>
     </div>
 
     <ViewHeader
@@ -477,6 +486,15 @@
       @close="showLeaveChangePop = false"
       @confirmed="fnAfterLeaveChangeConfirmed"
     />
+
+    <!-- 내 처리 이력 팝업 — key 로 탭 전환 시 재조회(읽기 전용, 기존 결재 로직 무접점) -->
+    <ReqProcessedHistoryPop
+      v-if="showHistoryPop"
+      :key="activeTab"
+      :req-type-group="activeTab"
+      :tab-label="activeTabLabel"
+      @close="showHistoryPop = false"
+    />
   </div>
 </template>
 
@@ -493,6 +511,7 @@ import {
 import axios from "@/api/axios";
 import ViewHeader from "@/components/common/ViewHeader.vue";
 import LeaveChangeConfirmPop from "./popup/LeaveChangeConfirmPop.vue";
+import ReqProcessedHistoryPop from "./popup/ReqProcessedHistoryPop.vue";
 import AttdNeighborDaySegments from "./popup/AttdNeighborDaySegments.vue";
 import AttdSchedCompareSection from "./popup/AttdSchedCompareSection.vue";
 import { resolveApiErrorMessage } from "@/utils/apiError";
@@ -523,6 +542,11 @@ const tabs = [
   { key: "leave", label: "연차 상신" },
 ];
 const activeTab = ref("leave");
+// 내 처리 이력 팝업 토글 — 팝업은 activeTab 을 그대로 받아 해당 유형 이력을 조회한다.
+const showHistoryPop = ref(false);
+const activeTabLabel = computed(
+  () => tabs.find((t) => t.key === activeTab.value)?.label || ""
+);
 const approvalList = ref([]);
 const selected = ref(null);
 const decision = ref("approve");
@@ -1190,10 +1214,26 @@ onMounted(() => {
 /* 탭바 표준(Attd_01 .attd01-tab-bar/.attd01-tab-btn 스펙 준수 — 밑줄형 14px) */
 .ra-tabs {
   display: flex;
+  align-items: center;
   gap: 0.25rem;
   padding: 0.5rem 0 0;
   margin-bottom: 0.5rem;
   border-bottom: 1px solid var(--color-border, #e5e7eb);
+}
+/* 내 처리 이력 버튼 — 탭바 우측 끝. 탭과 혼동되지 않게 외곽선 칩 형태. */
+.ra-history-btn {
+  margin-left: auto;
+  border: 1px solid var(--color-border, #e5e7eb);
+  background: none;
+  color: var(--color-text-muted, #6b7280);
+  border-radius: 999px;
+  padding: 0.25rem 0.75rem;
+  font-size: 12px;
+  cursor: pointer;
+}
+.ra-history-btn:hover {
+  color: var(--color-primary);
+  border-color: var(--color-primary);
 }
 .ra-tab {
   padding: 0.5rem 1rem;

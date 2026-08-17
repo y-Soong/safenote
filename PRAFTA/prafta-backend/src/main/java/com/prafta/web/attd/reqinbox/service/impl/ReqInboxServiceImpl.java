@@ -9,6 +9,7 @@ import com.prafta.common.error.common.CommonErrorCode;
 import com.prafta.common.exception.ApiException;
 import com.prafta.common.util.AuthRoleUtils;
 import com.prafta.web.attd.attd07.util.AttdReqTypeUtils;
+import com.prafta.web.attd.reqinbox.dto.response.ProcessedReqListResponse;
 import com.prafta.web.attd.reqinbox.mapper.ReqInboxMapper;
 import com.prafta.web.attd.reqinbox.result.PendingReqResult;
 import com.prafta.web.attd.reqinbox.result.PendingSchedReqResult;
@@ -60,5 +61,41 @@ public class ReqInboxServiceImpl implements ReqInboxService {
         }
         return reqInboxMapper.selectPendingSchedRequests(
                 cmpnyCd, siteCd, AttdReqTypeUtils.REQ_TYPE_SCHED_MODIFY);
+    }
+
+    @Override
+    public ProcessedReqListResponse getProcessedRequests(String cmpnyCd, String siteCd, String userCd,
+                                                         String authCd, String reqTypeGroup) {
+        // 매니저 전용 게이트 — 대기 목록과 동일 규칙(JWT 기반 authCd, body 위조로 escalation 불가).
+        // 조회 자체는 "처리자 = 본인" 스코프라 타인 데이터 열람이 성립하지 않지만,
+        // 요청자명 노출 화면이므로 신규 조회 EP 게이트 원칙에 따라 동일하게 막는다.
+        if (!AuthRoleUtils.isManager(authCd)) {
+            log.warn("reqinbox processed rejected - insufficient privilege. authCd={}", authCd);
+            throw new ApiException(AttdErrorCode.ATTD_403_002);
+        }
+
+        // 연차 탭: 결재라인 이력 + 연차 변경 확인 이력(보조 섹션)
+        if ("leave".equals(reqTypeGroup)) {
+            return ProcessedReqListResponse.builder()
+                    .processedList(reqInboxMapper.selectProcessedLeaveApprovals(cmpnyCd, userCd))
+                    .leaveChangeList(reqInboxMapper.selectProcessedLeaveChangeRequests(cmpnyCd, siteCd, userCd))
+                    .build();
+        }
+
+        List<String> reqTypes;
+        if ("correction".equals(reqTypeGroup)) {
+            reqTypes = List.of("01", "02");
+        } else if ("overtime".equals(reqTypeGroup)) {
+            reqTypes = List.of("03", "04");
+        } else if ("schedule".equals(reqTypeGroup)) {
+            reqTypes = List.of(AttdReqTypeUtils.REQ_TYPE_SCHED_MODIFY);
+        } else {
+            // 미지원 그룹 — fail-closed(대기 목록과 동일).
+            throw new ApiException(CommonErrorCode.COMMON_400_001);
+        }
+        return ProcessedReqListResponse.builder()
+                .processedList(reqInboxMapper.selectProcessedRequests(cmpnyCd, siteCd, userCd, reqTypes))
+                .leaveChangeList(List.of())
+                .build();
     }
 }
