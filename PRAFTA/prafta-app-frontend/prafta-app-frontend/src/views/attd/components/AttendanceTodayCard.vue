@@ -60,6 +60,11 @@
                 {{ formatRange(slot.schedule.startTime, slot.schedule.endTime) }}
               </div>
               <div class="tm">{{ scheduleMetaText(slot.schedule) }}</div>
+              <!-- PRAFTA-FIXEDOT-2(표기): 고정연장(전방·후방) 시각 — 일 단위 요약이라 첫 스케줄 구간에만 표기
+                   (2구간 중복 방지). 없는 타입/구서버 응답은 미노출(무회귀). -->
+              <div v-if="fixedOtDisplay && idx === firstScheduleSlotIdx" class="tm">
+                고정연장 {{ fixedOtDisplay }}
+              </div>
             </template>
             <template v-else>
               <div class="tt2">스케줄 없음</div>
@@ -315,6 +320,7 @@ import {
   formatRange,
   formatYmdLong,
   formatDowLong,
+  formatTimeSummary,
   minutesToKorean,
   formatLeaveMarkers,
   formatOvertimeLine,
@@ -432,6 +438,11 @@ const hasMultiSlot = computed(() => slotCount.value >= 2)
 // 슬롯이 스케줄 대응(지각·조퇴 적용 대상)인지: schedule 객체+시작시각 존재.
 //   서버는 미대응 슬롯의 schedule 을 null 로 내려준다(D2).
 const slotHasSchedule = (slot) => !!(slot && slot.schedule && slot.schedule.startTime)
+
+// PRAFTA-FIXEDOT-2(표기): 고정연장 요약(raw HHMM, 일 단위) — 없는 타입/구서버 응답은 빈 문자열.
+const fixedOtDisplay = computed(() => formatTimeSummary(props.detail && props.detail.fixedOtSummary))
+// 고정연장 표기 위치 = 첫 스케줄 대응 슬롯(2구간 중복 표기 방지).
+const firstScheduleSlotIdx = computed(() => slots.value.findIndex(slotHasSchedule))
 
 // 구분선 라벨: 스케줄 대응이면 "1구간"/"2구간", 미대응이면 "추가 근무".
 const slotDividerLabel = (slot, idx) => {
