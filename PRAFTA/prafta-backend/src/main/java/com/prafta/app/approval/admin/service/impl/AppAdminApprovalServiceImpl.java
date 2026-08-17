@@ -26,6 +26,7 @@ import com.prafta.app.approval.admin.dto.response.ApprovalPendingResponse;
 import com.prafta.app.approval.admin.dto.response.ApprovalProcessResponse;
 import com.prafta.app.approval.admin.mapper.AppAdminApprovalMapper;
 import com.prafta.app.approval.admin.result.AttdSnapshotRow;
+import com.prafta.app.approval.admin.result.DayScheduleRow;
 import com.prafta.app.approval.admin.result.HistoryRow;
 import com.prafta.app.approval.admin.result.LeaveBalanceRow;
 import com.prafta.app.approval.admin.result.LeaveBodyRow;
@@ -547,6 +548,10 @@ public class AppAdminApprovalServiceImpl implements AppAdminApprovalService {
             body.put("claimed", claimed);
             body.put("systemCalc", null);          // 시스템 계산값은 OT 윈도우 엔진(A-3/R3) 포팅 후 제공
             body.put("approved", null);
+            // 2026-08-17: 승인 판단 컨텍스트 — 당일 스케줄/고정연장/실근태(표시 전용, 서버 완성 문자열).
+            //   상신 구간만으로는 "이 초과가 스케줄·실근태와 정합인지" 판단이 어렵다는 현장 피드백 반영.
+            //   상세 EP 진입부의 scope/node 권한 가드를 승계하고 쿼리 WHERE 로 스코프를 이중 차단한다.
+            body.put("dayContext", buildOvertimeDayContext(cmpnyCd, meta.siteCd(), meta.userCd(), meta.workYmd()));
         } else if (G_LEAVE.equals(group)) {
             LeaveBodyRow lb = mapper.selectLeaveBody(cmpnyCd, meta.reqId(), meta.targetId());
             if (lb != null) {
@@ -678,6 +683,18 @@ public class AppAdminApprovalServiceImpl implements AppAdminApprovalService {
         if (base == null) {
             return null;
         }
+        String parts = fixedOtPartsText(preStr, preEnd, rearStr, rearEnd);
+        if (parts == null) {
+            return base;
+        }
+        return base + " + 고정연장 " + parts;
+    }
+
+    /**
+     * 고정연장(전방·후방) 구간 문자열 — "07:00~08:00 · 18:00~20:00" 형태(한쪽만 있으면 그 구간만).
+     * 미설정이면 null. appendFixedOtText(suffix 표기)와 초과근무 dayContext(독립 행 표기)가 공용한다.
+     */
+    private String fixedOtPartsText(String preStr, String preEnd, String rearStr, String rearEnd) {
         StringBuilder parts = new StringBuilder();
         if (StringUtils.hasText(preStr) && StringUtils.hasText(preEnd)) {
             parts.append(fmtHm(preStr)).append("~").append(fmtHm(preEnd));
@@ -688,10 +705,63 @@ public class AppAdminApprovalServiceImpl implements AppAdminApprovalService {
             }
             parts.append(fmtHm(rearStr)).append("~").append(fmtHm(rearEnd));
         }
-        if (parts.length() == 0) {
-            return base;
+        return parts.length() == 0 ? null : parts.toString();
+    }
+
+    /**
+     * 초과근무 승인 상세 — 당일 컨텍스트(스케줄/고정연장/실근태) 표시 문자열 묶음 (2026-08-17 요청).
+     *
+     * <p>표시 전용이며 승인 판정(gate)·검증에는 관여하지 않는다. 값이 없는 항목은 null 로 내려
+     * FE 가 '-' 로 표기한다(스케줄 미배정·근태 미기록도 그 자체가 판단 정보다 — 행을 숨기지 않는다).
+     * <ul>
+     *   <li>scheduleText — 당일 배정 스케줄 소정 구간("08:00~17:00", 2구간이면 " / " 나열)</li>
+     *   <li>schNm — 스케줄 번호(SCH_NO)</li>
+     *   <li>fixedOtText — 스케줄의 고정연장(전방·후방) 구간</li>
+     *   <li>actualText — 당일 실근태 구간("08:01 ~ 19:32", 2건이면 " / " 나열, 퇴근 미기록은 "미퇴근",
+     *       교차일 시각은 stampText 규칙("MM-DD HH:MM")을 따른다)</li>
+     * </ul>
+     */
+    private Map<String, Object> buildOvertimeDayContext(String cmpnyCd, String siteCd,
+                                                        String userCd, String workYmd) {
+        Map<String, Object> ctx = new LinkedHashMap<>();
+        String scheduleText = null;
+        String schNm = null;
+        String fixedOtText = null;
+        if (StringUtils.hasText(siteCd) && StringUtils.hasText(userCd) && StringUtils.hasText(workYmd)) {
+            DayScheduleRow ds = mapper.selectDayScheduleBody(cmpnyCd, siteCd, userCd, workYmd);
+            if (ds != null && StringUtils.hasText(ds.schCd())) {
+                schNm = ds.schNo();
+                scheduleText = schedRangeText(ds.fstStrTime(), ds.fstEndTime(), ds.secStrTime(), ds.secEndTime());
+                fixedOtText = fixedOtPartsText(ds.preFixedOtStrTime(), ds.preFixedOtEndTime(),
+                        ds.fixedOtStrTime(), ds.fixedOtEndTime());
+            }
         }
-        return base + " + 고정연장 " + parts;
+        ctx.put("schNm", schNm);
+        ctx.put("scheduleText", scheduleText);
+        ctx.put("fixedOtText", fixedOtText);
+        ctx.put("actualText", buildDayActualText(cmpnyCd, siteCd, userCd, workYmd));
+        return ctx;
+    }
+
+    /** 당일 실근태 구간 표시 문자열. 근태 행이 없으면 null(FE '-' 표기). */
+    private String buildDayActualText(String cmpnyCd, String siteCd, String userCd, String workYmd) {
+        if (!StringUtils.hasText(siteCd) || !StringUtils.hasText(userCd) || !StringUtils.hasText(workYmd)) {
+            return null;
+        }
+        List<NeighborAttdSegmentRow> rows = mapper.selectDayAttdSegments(cmpnyCd, siteCd, userCd, workYmd);
+        if (rows == null || rows.isEmpty()) {
+            return null;
+        }
+        List<String> parts = new ArrayList<>();
+        for (NeighborAttdSegmentRow row : rows) {
+            String in = AttdOverlapMessages.stampText(workYmd, row.checkInDate(), row.checkInTime());
+            String out = AttdOverlapMessages.stampText(workYmd, row.checkOutDate(), row.checkOutTime());
+            if (in == null && out == null) {
+                continue; // 시각 미성립 행(이론상 미도달) — 표시 생략
+            }
+            parts.add((in == null ? "-" : in) + " ~ " + (out == null ? "미퇴근" : out));
+        }
+        return parts.isEmpty() ? null : String.join(" / ", parts);
     }
 
     private String schedRangeText(String fstStr, String fstEnd, String secStr, String secEnd) {

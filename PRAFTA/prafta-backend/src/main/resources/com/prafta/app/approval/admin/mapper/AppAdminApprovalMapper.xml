@@ -537,6 +537,71 @@
      LIMIT 1
     </select>
 
+    <!-- 초과근무 승인 상세: 당일 배정 스케줄(소정 구간 + 고정연장) — 2026-08-17 요청.
+         selectSchedBody 의 현재(cur*) 측과 동일 규칙(근무일 기준 유효버전 우선, 없으면 최이른 적용버전 폴백)이되
+         루트를 WP 로 바꿔 요청 SCH_CD 없이(초과근무 REQ 는 SCH_CD 미보유) 당일 스케줄만 1행 조회한다.
+         근무계획이 없거나 WORK_PLAN_CD 가 연차코드면 CS 미매치 - schCd NULL.
+         ★ DayScheduleRow record 위치 기반 매핑 - SELECT 컬럼 순서 변경 금지. -->
+    <select id="selectDayScheduleBody" resultType="com.prafta.app.approval.admin.result.DayScheduleRow">
+    /* AppAdminApprovalMapper.selectDayScheduleBody */
+    SELECT
+          CS.SCH_CD                  AS schCd
+        , CS.SCH_NO                  AS schNo
+        , CSE.FST_SCH_STR_TIME       AS fstStrTime
+        , CSE.FST_SCH_END_TIME       AS fstEndTime
+        , CSE.SEC_SCH_STR_TIME       AS secStrTime
+        , CSE.SEC_SCH_END_TIME       AS secEndTime
+        , CSE.PRE_FIXED_OT_STR_TIME  AS preFixedOtStrTime
+        , CSE.PRE_FIXED_OT_END_TIME  AS preFixedOtEndTime
+        , CSE.FIXED_OT_STR_TIME      AS fixedOtStrTime
+        , CSE.FIXED_OT_END_TIME      AS fixedOtEndTime
+      FROM TB_USER_WORK_PLAN WP
+      LEFT JOIN TB_SCH_MGMT CS
+        ON CS.CMPNY_CD = WP.CMPNY_CD
+       AND CS.SITE_CD  = WP.SITE_CD
+       AND CS.SCH_CD   = WP.WORK_PLAN_CD
+      LEFT JOIN ( <include refid="com.prafta.common.cmm.sch.mapper.SchEffectiveMapper.effectiveSchVersion"/> ) CSE
+        ON CSE.CMPNY_CD = WP.CMPNY_CD
+       AND CSE.SITE_CD  = WP.SITE_CD
+       AND CSE.SCH_CD   = WP.WORK_PLAN_CD
+       AND CSE.APPLY_DATE = (
+                SELECT COALESCE(
+                         MAX(CASE WHEN SE.APPLY_DATE <![CDATA[ <= ]]> WP.WORK_YMD THEN SE.APPLY_DATE END)
+                       , MIN(SE.APPLY_DATE)
+                       )
+                FROM ( <include refid="com.prafta.common.cmm.sch.mapper.SchEffectiveMapper.effectiveSchApplyKeys"/> ) SE
+                WHERE SE.CMPNY_CD    = WP.CMPNY_CD
+                  AND SE.SITE_CD     = WP.SITE_CD
+                  AND SE.SCH_CD      = WP.WORK_PLAN_CD
+           )
+     WHERE WP.CMPNY_CD = #{cmpnyCd}
+       AND WP.SITE_CD  = #{siteCd}
+       AND WP.USER_CD  = #{userCd}
+       AND WP.WORK_YMD = #{workYmd}
+     LIMIT 1
+    </select>
+
+    <!-- 초과근무 승인 상세: 당일 실근태 구간(WORK_SEQ 순) — 2026-08-17 요청.
+         selectNeighborAttdSegments 와 동일 형상(NeighborAttdSegmentRow)이되 당일 행만 조회한다.
+         회사/사업장/사용자 스코프 필수(cross-site IDOR 이중 차단). -->
+    <select id="selectDayAttdSegments" resultType="com.prafta.app.approval.admin.result.NeighborAttdSegmentRow">
+    /* AppAdminApprovalMapper.selectDayAttdSegments */
+    SELECT
+          M.WORK_YMD        AS workYmd
+        , M.WORK_SEQ        AS workSeq
+        , M.CHECK_IN_DATE   AS checkInDate
+        , M.CHECK_IN_TIME   AS checkInTime
+        , M.CHECK_OUT_DATE  AS checkOutDate
+        , M.CHECK_OUT_TIME  AS checkOutTime
+      FROM TB_USER_ATTD_MGMT M
+     WHERE M.CMPNY_CD = #{cmpnyCd}
+       AND M.SITE_CD  = #{siteCd}
+       AND M.USER_CD  = #{userCd}
+       AND M.WORK_YMD = #{workYmd}
+       AND M.DEL_YN   = 'N'
+     ORDER BY M.WORK_SEQ
+    </select>
+
     <!-- ④ 마감 차단 판정 — web AttdCloseMapper.countCovering 포팅(자기/상위(INC_SUB)/전체 '*'). -->
     <select id="countCloseCovering" resultType="int">
     /* AppAdminApprovalMapper.countCloseCovering */

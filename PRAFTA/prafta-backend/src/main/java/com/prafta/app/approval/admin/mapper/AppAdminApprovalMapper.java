@@ -7,6 +7,7 @@ import org.apache.ibatis.annotations.Param;
 
 import com.prafta.app.approval.admin.application.query.ApprovalScopeQuery;
 import com.prafta.app.approval.admin.result.AttdSnapshotRow;
+import com.prafta.app.approval.admin.result.DayScheduleRow;
 import com.prafta.app.approval.admin.result.HistoryRow;
 import com.prafta.app.approval.admin.result.LeaveBalanceRow;
 import com.prafta.app.approval.admin.result.LeaveBodyRow;
@@ -108,6 +109,24 @@ public interface AppAdminApprovalMapper {
                                  @Param("userCd") String userCd,
                                  @Param("workYmd") String workYmd,
                                  @Param("reqSchCd") String reqSchCd);
+
+    /**
+     * 초과근무 승인 상세 — 당일 배정 스케줄(소정 구간 + 고정연장) 1행 (2026-08-17 요청).
+     * 근무계획이 없거나 WORK_PLAN_CD 가 연차코드면 schCd NULL(스케줄 없음).
+     */
+    DayScheduleRow selectDayScheduleBody(@Param("cmpnyCd") String cmpnyCd,
+                                         @Param("siteCd") String siteCd,
+                                         @Param("userCd") String userCd,
+                                         @Param("workYmd") String workYmd);
+
+    /**
+     * 초과근무 승인 상세 — 당일 실근태 구간 목록(WORK_SEQ 순, 2026-08-17 요청).
+     * {@link #selectNeighborAttdSegments} 와 동일 형상이되 당일 행만 조회한다.
+     */
+    List<NeighborAttdSegmentRow> selectDayAttdSegments(@Param("cmpnyCd") String cmpnyCd,
+                                                       @Param("siteCd") String siteCd,
+                                                       @Param("userCd") String userCd,
+                                                       @Param("workYmd") String workYmd);
 
     /**
      * 마감 차단 판정(web AttdCloseMapper.countCovering 포팅): 대상 NODE_CD 의 자기/상위(INC_SUB)/전체('*')

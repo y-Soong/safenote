@@ -98,12 +98,23 @@
             </div>
           </div>
 
-          <!-- 초과근무: 시스템계산/상신/(조정)승인 3단 -->
+          <!-- 초과근무: 당일 컨텍스트(스케줄/실근태/고정연장) + 시스템계산/상신/(조정)승인 3단 -->
           <div v-else-if="detail.group === 'OVERTIME'" class="ap-ot">
             <span v-if="detail.body.claimModeNm" class="ap-corr-chip">
               {{ detail.body.claimModeNm }}
             </span>
             <dl class="ap-meta">
+              <!-- 2026-08-17: 승인 판단 컨텍스트 — 서버 완성 문자열(dayContext) 표시 전용.
+                   값이 없어도 행을 유지해 '-' 로 명시한다(스케줄 미배정·근태 미기록도 판단 정보).
+                   구서버(dayContext 미수신)면 세 행 모두 미노출(회귀 없음). -->
+              <template v-if="detail.body.dayContext">
+                <dt>당일 스케줄</dt>
+                <dd>{{ dayScheduleDisplay || '-' }}</dd>
+                <dt>실제 근무</dt>
+                <dd class="ap-meta__dd--break">{{ detail.body.dayContext.actualText || '-' }}</dd>
+                <dt>고정연장</dt>
+                <dd>{{ detail.body.dayContext.fixedOtText || '-' }}</dd>
+              </template>
               <dt>시스템 계산</dt>
               <dd>{{ detail.body.systemCalcDisplay || '-' }}</dd>
               <dt>근로자 상신</dt>
@@ -331,6 +342,13 @@ const adjustSheetOpen = ref(false)
 //   백엔드 미지원 상태에서 라디오를 노출하면 ATTD_400_006 이 발생하므로 노출 자체를 차단한다.
 //   R3 구현 후 원복: ['CORRECTION', 'OVERTIME'].includes(detail.value?.group)
 const adjustable = computed(() => false)
+
+// 초과근무 당일 스케줄 표시: "{스케줄번호} · {소정 구간}" (2026-08-17 — 서버 dayContext 결합만).
+const dayScheduleDisplay = computed(() => {
+  const c = detail.value?.body?.dayContext
+  if (!c) return ''
+  return [c.schNm, c.scheduleText].filter(Boolean).join(' · ')
+})
 
 // ② 검증·제약 배너 텍스트/색상(서버 gate 산출값 렌더만)
 const gateBanner = computed(() => {
