@@ -377,12 +377,13 @@
          1=획득, 0=타임아웃, null=오류. 트랜잭션 무관(세션 단위) → 호출부 finally 에서 RELEASE_LOCK. -->
     <select id="getAdvisoryLock" resultType="java.lang.Integer">
     /* AppReq07Mapper.getAdvisoryLock */
-    SELECT GET_LOCK(#{lockKey}, #{timeoutSec})
+    <!-- 락 이름 64자 제한(MySQL) 대응: MD5 해시로 32자 고정 — 셀프가입 20자 회사코드 키(ATTD_CORR 66자)가 제한 초과(2026-08-17 운영 실증). acquire/release 쌍 동일 적용 필수. -->
+    SELECT GET_LOCK(MD5(#{lockKey}), #{timeoutSec})
     </select>
 
     <select id="releaseAdvisoryLock" resultType="java.lang.Integer">
     /* AppReq07Mapper.releaseAdvisoryLock */
-    SELECT RELEASE_LOCK(#{lockKey})
+    SELECT RELEASE_LOCK(MD5(#{lockKey}))
     </select>
 
     <!-- ============ prafta-app-030: 이미 등록(적용)된 초과근무 목록 ============

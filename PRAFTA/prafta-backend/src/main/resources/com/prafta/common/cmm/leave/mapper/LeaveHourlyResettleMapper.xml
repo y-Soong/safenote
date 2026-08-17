@@ -83,12 +83,13 @@
 
     <select id="getAdvisoryLock" resultType="java.lang.Integer">
     /* LeaveHourlyResettleMapper.getAdvisoryLock */
-    SELECT GET_LOCK(#{lockKey}, #{timeoutSec})
+    <!-- 락 이름 64자 제한(MySQL) 대응: MD5 해시로 32자 고정 — 셀프가입 20자 회사코드 조합 키가 제한 초과(2026-08-17 운영 실증). acquire/release 쌍 동일 적용 필수. -->
+    SELECT GET_LOCK(MD5(#{lockKey}), #{timeoutSec})
     </select>
 
     <select id="releaseAdvisoryLock" resultType="java.lang.Integer">
     /* LeaveHourlyResettleMapper.releaseAdvisoryLock */
-    SELECT RELEASE_LOCK(#{lockKey})
+    SELECT RELEASE_LOCK(MD5(#{lockKey}))
     </select>
 
 </mapper>
