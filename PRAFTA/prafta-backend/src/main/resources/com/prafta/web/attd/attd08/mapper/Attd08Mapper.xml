@@ -367,10 +367,13 @@
         ORDER BY workYmd, userCd, rowType, workSeq
     </select>
 
-    <!-- HB-05(D1)/D-3: 조회기간 안의 확정 반차('01' + 시각 보유) 면제 구간 목록.
+    <!-- HB-05(D1)/D-3: 조회기간 안의 확정 부분연차(시각 보유) 면제 구간 목록 — 지각·조퇴 판정 입력.
          한 날에 여러 건(시작기준 + 종료기준)이 있을 수 있으므로 집계하지 않고 행 그대로 내린다
          — 합집합 판정은 서비스(PartialLeaveWindowUtils.resolveAll)가 한다.
-         시각 없는 구 반차/시간차는 대상이 아니다(시간차 판정 변경은 요청서 §2 비목표).
+         ★2026-08-17 사용자 확정(HB-05 §2 비목표 해제): 시간차(02/03/04)도 판정 면제에 포함한다 —
+           소정 경계에 붙은 시간차(예: 16:30~17:00 사용 후 16:32 퇴근)가 조퇴로 오판정되던 문제.
+           경계 접촉 시간차는 유효 소정을 치환하고, 구간 중간 시간차는 resolve 가 원값을 유지해 판정 불변.
+           시각 없는 구 반차는 여전히 대상이 아니다(시각 부재 = 구간 특정 불가).
          분할차감(PC-02/PC-05) 행은 같은 시각이 여러 행으로 오므로 DISTINCT 로 접는다.
          ⚠️ sec L-4: 회사·사업장·조회기간 술어 필수(전건 스캔 금지).
          ⚠️ SELECT 컬럼 순서 = HalfLeaveWindowResult 컴포넌트 순서(위치 매핑). -->
@@ -386,7 +389,7 @@
           AND L.SITE_CD       = #{siteCd}
           AND L.START_DATE <![CDATA[ >= ]]> #{fromYmd}
           AND L.START_DATE <![CDATA[ <= ]]> #{toYmd}
-          AND L.USE_UNIT_TYPE = '01'
+          AND L.USE_UNIT_TYPE IN ('01', '02', '03', '04')
           AND L.LEAVE_STATUS  = 'CONFIRMED'
           AND L.DEL_YN        = 'N'
           AND L.START_TIME IS NOT NULL

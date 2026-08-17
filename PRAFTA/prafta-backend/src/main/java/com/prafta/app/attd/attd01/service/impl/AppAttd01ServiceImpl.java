@@ -116,6 +116,14 @@ public class AppAttd01ServiceImpl implements AppAttd01Service {
     /** 사용 단위 [SYS025] '01' 반차 — HB-05 지각·조퇴 판정 보정 대상(시각 보유분 한정). */
     private static final String LEAVE_UNIT_HALF_DAY = "01";
 
+    /**
+     * 지각·조퇴 판정 면제 대상 사용 단위 [SYS025] — 반차('01') + 시간차('02'/'03'/'04').
+     * ★2026-08-17 사용자 확정(HB-05 §2 비목표 해제): 소정 경계에 붙은 시간차가 조퇴로
+     * 오판정되던 문제 — 시각 보유 부분연차 전부를 판정 면제 입력에 포함한다(웹 Attd_08/11 동일).
+     */
+    private static final java.util.Set<String> JUDGE_EXEMPT_LEAVE_UNITS =
+            java.util.Set.of("01", "02", "03", "04");
+
     // dayType 값 (month)
     private static final String DAY_WORK = "WORK";
     private static final String DAY_LEAVE = "LEAVE";
@@ -755,7 +763,8 @@ public class AppAttd01ServiceImpl implements AppAttd01Service {
             List<LeaveUseResult> leaves = nullSafe(appAttd01Mapper.selectLeaveUseByRange(
                     new AttdRangeQuery(cmpnyCd, siteCd, userCd, workYmd, workYmd)));
             for (LeaveUseResult lv : leaves) {
-                if (LEAVE_UNIT_HALF_DAY.equals(lv.useUnitType())
+                // ★2026-08-17: 반차 한정 → 시각 보유 부분연차(반차+시간차) 전체로 확장(판정 면제 입력).
+                if (JUDGE_EXEMPT_LEAVE_UNITS.contains(lv.useUnitType())
                         && StringUtils.hasText(lv.startTime())
                         && StringUtils.hasText(lv.endTime())) {
                     out.add(lv);
@@ -769,8 +778,9 @@ public class AppAttd01ServiceImpl implements AppAttd01Service {
     }
 
     /**
-     * 반차('01') + 시각 보유 건만 골라 유효 소정 구간을 산출한다. 대상이 없으면 null
-     * → 호출부가 원값을 유지한다(요청서 §2 비목표: 시간차 판정 변경 없음).
+     * 시각 보유 부분연차(반차 '01' + 시간차 '02'/'03'/'04')를 골라 유효 소정 구간을 산출한다.
+     * 대상이 없으면 null → 호출부가 원값을 유지한다.
+     * ★2026-08-17 사용자 확정: 시간차도 판정 면제에 포함(HB-05 §2 비목표 해제 — 웹 Attd_08/11 동일).
      * 하루 2건(시작기준 + 종료기준)이면 순차 적용되어 구간 전체 면제로 수렴한다(D-3).
      */
     private PartialLeaveWindowUtils.EffectiveWorkWindow resolveHalfWindow(
@@ -781,8 +791,9 @@ public class AppAttd01ServiceImpl implements AppAttd01Service {
         }
         List<PartialLeaveWindowUtils.LeaveWindow> windows = new ArrayList<>(leaves.size());
         for (LeaveUseResult lv : leaves) {
+            // ★2026-08-17: 반차 한정 → 시각 보유 부분연차(반차+시간차) 전체로 확장(판정 면제 입력).
             if (lv != null
-                    && LEAVE_UNIT_HALF_DAY.equals(lv.useUnitType())
+                    && JUDGE_EXEMPT_LEAVE_UNITS.contains(lv.useUnitType())
                     && StringUtils.hasText(lv.startTime())
                     && StringUtils.hasText(lv.endTime())) {
                 windows.add(new PartialLeaveWindowUtils.LeaveWindow(lv.startTime(), lv.endTime()));

@@ -404,10 +404,11 @@
         )
     </sql>
 
-    <!-- NF-2b: 그날 확정 부분연차(반차 '01', 시각 보유) 보유 여부. 별칭 PD 는 호출부의 계획일 소스.
+    <!-- NF-2b: 그날 확정 부분연차(01~04, 시각 보유) 보유 여부. 별칭 PD 는 호출부의 계획일 소스.
          술어는 web Attd08Mapper/Attd11Mapper.selectHalfLeaveWindows 및
          selectDashPartialLeaveWindows 와 동일해야 한다(세 곳이 같은 집합을 가리킨다).
-         시각 없는 구 반차/시간차(02~04)는 대상이 아니다(판정 변경 비목표). -->
+         ★2026-08-17 사용자 확정: 시간차(02/03/04)도 판정 면제에 포함(HB-05 §2 비목표 해제).
+           시각 없는 구 반차는 여전히 대상이 아니다(구간 특정 불가). -->
     <sql id="dashPartialLeaveDayExists">
                     SELECT 1
                     FROM TB_USER_LEAVE_USE L
@@ -415,7 +416,7 @@
                       AND L.SITE_CD       = PD.SITE_CD
                       AND L.USER_CD       = PD.USER_CD
                       AND L.START_DATE    = PD.WORK_YMD
-                      AND L.USE_UNIT_TYPE = '01'
+                      AND L.USE_UNIT_TYPE IN ('01', '02', '03', '04')
                       AND L.LEAVE_STATUS  = 'CONFIRMED'
                       AND L.DEL_YN        = 'N'
                       AND L.START_TIME IS NOT NULL
@@ -619,7 +620,7 @@
         WHERE L.CMPNY_CD      = #{gvCmpnyCd}
           AND L.SITE_CD       = #{siteCd}
           AND L.START_DATE LIKE CONCAT(REPLACE(#{workYm}, '-', ''), '%')
-          AND L.USE_UNIT_TYPE = '01'
+          AND L.USE_UNIT_TYPE IN ('01', '02', '03', '04')
           AND L.LEAVE_STATUS  = 'CONFIRMED'
           AND L.DEL_YN        = 'N'
           AND L.START_TIME IS NOT NULL

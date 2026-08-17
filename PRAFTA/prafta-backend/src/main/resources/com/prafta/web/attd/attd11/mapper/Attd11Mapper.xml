@@ -572,7 +572,9 @@
         WHERE L.CMPNY_CD      = #{gvCmpnyCd}
           AND L.SITE_CD       = #{siteCd}
           AND L.START_DATE LIKE CONCAT(REPLACE(#{workYm}, '-', ''), '%')
-          AND L.USE_UNIT_TYPE = '01'
+          <!-- ★2026-08-17 사용자 확정: 시간차(02/03/04)도 지각·조퇴 판정 면제에 포함(HB-05 §2 비목표 해제).
+               경계 접촉 시간차는 유효 소정 치환, 중간 시간차는 resolve 가 원값 유지(판정 불변). -->
+          AND L.USE_UNIT_TYPE IN ('01', '02', '03', '04')
           AND L.LEAVE_STATUS  = 'CONFIRMED'
           AND L.DEL_YN        = 'N'
           AND L.START_TIME IS NOT NULL
