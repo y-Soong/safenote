@@ -165,9 +165,11 @@ public class Attd15ServiceImpl implements Attd15Service {
         List<Weekly52hListResult> resultList = new ArrayList<>(targetUsers.size());
         for (TargetUserResult u : targetUsers) {
             long scheduledMinutes = scheduledMinutesByUser.getOrDefault(u.userCd(), 0L);
-            // 실제 근무 기준 = workMinutes(원시 실근로) + otMinutes(승인된 초과근무).
-            long actualMinutes = actualRawMinutesByUser.getOrDefault(u.userCd(), 0L)
-                    + otMinutesByUser.getOrDefault(u.userCd(), 0L);
+            // 2026-08-17: 실제 근무 기준 = 원시 실근로(raw)만 — 승인 OT 가산 제거(이중 계상 수정).
+            //   OT 는 등록 가드(ATTD_400_104)상 항상 실근태 구간 안에서만 생성되므로 raw 에 이미
+            //   포함되어 있다(운영 실발생: raw 21:42 + OT 3:24 = 25:06 과대 표시). 고정연장 J2 규약
+            //   ("raw 포함분은 총량에 가산 금지")과 동일 원리. OT·고정연장 분류는 연장 축(actualOtMinutes)이 표시.
+            long actualMinutes = actualRawMinutesByUser.getOrDefault(u.userCd(), 0L);
             // PRAFTA-FIXEDOT-3(J2): 연장 축 분류 = 승인 OT + 고정연장 자동 계상 실적(구간 배타 — 중복 없음).
             long actualOtMinutes = otMinutesByUser.getOrDefault(u.userCd(), 0L)
                     + fixedOtMinutesByUser.getOrDefault(u.userCd(), 0L);
