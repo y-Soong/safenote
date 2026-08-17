@@ -47,6 +47,19 @@ public class CompanyProvisionRequest {
      */
     private Integer weekStdMinutes;
 
+    /**
+     * 기본 근무타입 근무 시작/종료 시각(HHMM, 선택 — 미입력 시 09:00~18:00).
+     *
+     * <p>프로비저닝이 시드하는 기본 근무타입(ST001)의 1구간 시각이다. 당일 주간 근무만
+     * 허용(종료 &gt; 시작)하며, 야간 등 다른 형태는 등록 후 근무타입 관리(Attd_01)에서 만든다.
+     */
+    private String schStrTime;
+    private String schEndTime;
+
+    /** 기본 근무타입 휴게 시작/종료 시각(HHMM, 선택 쌍 — 미입력 시 휴게 없음. 근무구간 내부여야 함). */
+    private String brkStrTime;
+    private String brkEndTime;
+
     /** 최초 master 계정 관리자명(TB_USER.USER_NM). */
     private String adminNm;
 

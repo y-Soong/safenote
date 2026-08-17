@@ -326,10 +326,12 @@
     /* CompanyProvisionMapper.insertWorktype */
     INSERT INTO TB_SCH_MGMT (
         CMPNY_CD, SITE_CD, SCH_CD, SCH_NO, SCH_TYPE, APPLY_DATE, FST_SCH_STR_TIME, FST_SCH_END_TIME,
+        FST_SCH_BRK_MIN, FST_BRK_STR_TIME, FST_BRK_END_TIME,
         USE_YN, INSERT_NO, INSERT_DATE, UPDATE_NO, UPDATE_DATE
     )
     VALUES (
         #{cmpnyCd}, #{siteCd}, #{schCd}, #{schNo}, #{schType}, #{applyDate}, #{fstSchStrTime}, #{fstSchEndTime},
+        #{fstSchBrkMin}, #{fstBrkStrTime}, #{fstBrkEndTime},
         'Y', #{insertNo}, NOW(), #{insertNo}, NOW()
     )
     </insert>

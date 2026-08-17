@@ -19,6 +19,11 @@ public record CompanyProvisionParam(
     , String contractEndDate
     // 통상근로자 주 소정근로 분(선택). null 이면 기준값 행을 만들지 않고 코드 폴백 2400분을 쓴다.
     , Integer weekStdMinutes
+    // 기본 근무타입 시각(HHMM, 선택 — 미입력 시 09:00~18:00·휴게 없음). 검증은 서비스 계층.
+    , String schStrTime
+    , String schEndTime
+    , String brkStrTime
+    , String brkEndTime
     , String adminNm
     , String adminId
     , String adminMbl
@@ -39,6 +44,10 @@ public record CompanyProvisionParam(
             , request.getBsnsLcnNo()
             , request.getContractEndDate()
             , request.getWeekStdMinutes()
+            , request.getSchStrTime()
+            , request.getSchEndTime()
+            , request.getBrkStrTime()
+            , request.getBrkEndTime()
             , request.getAdminNm()
             , request.getAdminId()
             , request.getAdminMbl()

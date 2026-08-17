@@ -137,6 +137,39 @@ public class CompanyProvisionServiceImpl implements CompanyProvisionService {
             throw new ApiException(PlatformErrorCode.PLATFORM_400_004);
         }
 
+        // 6-1) 기본 근무타입 시간(선택 입력 — Platform_01 확장 2026-08-17. 미입력이면 09:00~18:00·휴게 없음).
+        //   기본 근무타입은 당일 주간 1구간만 허용한다(종료 > 시작). 야간·2구간 등은 등록 후
+        //   근무타입 관리(Attd_01)에서 만든다. 휴게는 시작·종료 쌍으로만 받고 근무구간 내부여야 하며,
+        //   FST_SCH_BRK_MIN 은 그 차이(분)로 서버가 산출한다(클라 계산 신뢰 금지).
+        String schStrTime = DEFAULT_SCH_STR_TIME;
+        String schEndTime = DEFAULT_SCH_END_TIME;
+        String brkStrTime = null;
+        String brkEndTime = null;
+        String brkMin = null;
+        if (!isBlank(param.schStrTime()) || !isBlank(param.schEndTime())) {
+            schStrTime = normalizeHhmmOrNull(param.schStrTime());
+            schEndTime = normalizeHhmmOrNull(param.schEndTime());
+            if (schStrTime == null || schEndTime == null
+                    || hhmmToMinutes(schEndTime) <= hhmmToMinutes(schStrTime)) {
+                throw new ApiException(PlatformErrorCode.PLATFORM_400_019);
+            }
+        }
+        if (!isBlank(param.brkStrTime()) || !isBlank(param.brkEndTime())) {
+            brkStrTime = normalizeHhmmOrNull(param.brkStrTime());
+            brkEndTime = normalizeHhmmOrNull(param.brkEndTime());
+            if (brkStrTime == null || brkEndTime == null) {
+                throw new ApiException(PlatformErrorCode.PLATFORM_400_019); // 쌍 필수
+            }
+            int brkStr = hhmmToMinutes(brkStrTime);
+            int brkEnd = hhmmToMinutes(brkEndTime);
+            if (brkEnd <= brkStr
+                    || brkStr < hhmmToMinutes(schStrTime)
+                    || brkEnd > hhmmToMinutes(schEndTime)) {
+                throw new ApiException(PlatformErrorCode.PLATFORM_400_019);
+            }
+            brkMin = String.valueOf(brkEnd - brkStr); // FST_SCH_BRK_MIN varchar(3) — 구간상한(1440미만)으로 자릿수 안전
+        }
+
         // 7) 회사코드 확정 — 운영자 직접 입력(2026-08-16 전환, 종전 서버 랜덤 20자 발급).
         //    형식 검증 + 중복 검사를 여기서 한다. CMPNY_CD 는 22개 테이블 복합 PK 선두 컬럼이라
         //    한 번 저장되면 사실상 되돌릴 수 없다 — 저장 직전 마지막 관문이다.
@@ -251,7 +284,7 @@ public class CompanyProvisionServiceImpl implements CompanyProvisionService {
         // 17) tb_cmm_seq: 복제된 baim_val_d 그룹별 건수를 CURR_VAL 로 시드(그 외 키는 FNC get-or-create).
         companyProvisionMapper.seedCmmSeqFromBaimValD(cmpnyCd);
 
-        // 18) 기본 근무타입(ST001, 1구간 09:00~18:00) 시드.
+        // 18) 기본 근무타입(ST001, 1구간) 시드 — 시각·휴게는 운영자 입력값(6-1 검증 통과분, 미입력 시 09:00~18:00·휴게 없음).
         companyProvisionMapper.insertWorktype(new WorktypeSeedCommand(
                 cmpnyCd
                 , siteCd
@@ -259,8 +292,11 @@ public class CompanyProvisionServiceImpl implements CompanyProvisionService {
                 , DEFAULT_SCH_NO
                 , DEFAULT_SCH_TYPE
                 , todayYmd
-                , DEFAULT_SCH_STR_TIME
-                , DEFAULT_SCH_END_TIME
+                , schStrTime
+                , schEndTime
+                , brkMin
+                , brkStrTime
+                , brkEndTime
                 , param.gvUserCd()
         ));
 
@@ -386,5 +422,22 @@ public class CompanyProvisionServiceImpl implements CompanyProvisionService {
 
     private boolean isBlank(String s) {
         return s == null || s.trim().isEmpty();
+    }
+
+    /** "HH:MM"/"HHMM" → "HHMM" 정규화. 형식·범위(00:00~23:59) 위반이면 null. */
+    private String normalizeHhmmOrNull(String raw) {
+        if (raw == null) {
+            return null;
+        }
+        String compact = raw.replace(":", "").trim();
+        if (!compact.matches("^([01]\\d|2[0-3])[0-5]\\d$")) {
+            return null;
+        }
+        return compact;
+    }
+
+    /** "HHMM" → 자정 기준 분. normalizeHhmmOrNull 통과값만 넣는다. */
+    private int hhmmToMinutes(String hhmm) {
+        return Integer.parseInt(hhmm.substring(0, 2)) * 60 + Integer.parseInt(hhmm.substring(2, 4));
     }
 }

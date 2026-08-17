@@ -72,6 +72,10 @@ public enum PlatformErrorCode implements ApiErrorCode {
     //   ★"발동 → 상한 상향 → 해제" 로 킬스위치를 사실상 무력화하는 우회를 막는다.
     //     해제 버튼은 그대로 있으므로 정상 운영에 지장이 없다 — 원인 확인 후 해제하고, 그 다음에 상한을 조정한다.
     , PLATFORM_400_018(HttpStatus.BAD_REQUEST, "킬스위치 발동 중에는 전역 상한을 올릴 수 없습니다.\n원인을 확인하고 킬스위치를 해제한 뒤 변경해 주세요.")
+
+    // ===== 신규 고객사 기본 근무타입 시간(Platform_01, 2026-08-17 확장) =====
+    // 기본 근무시간/휴게시간 검증 실패(HHMM 형식, 종료>시작, 휴게는 근무구간 안에서 시작·종료 쌍 입력).
+    , PLATFORM_400_019(HttpStatus.BAD_REQUEST, "기본 근무시간 입력이 올바르지 않습니다.\n종료는 시작 이후여야 하고, 휴게시간은 근무시간 안에서 시작·종료를 함께 입력해 주세요.")
     ;
 
     private final HttpStatus httpStatus;

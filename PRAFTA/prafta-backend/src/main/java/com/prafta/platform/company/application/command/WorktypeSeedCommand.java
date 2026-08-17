@@ -15,6 +15,10 @@ public record WorktypeSeedCommand(
     , String applyDate
     , String fstSchStrTime
     , String fstSchEndTime
+    // 휴게(선택 — Platform_01 입력 확장 2026-08-17): 분(varchar)·시작/종료 HHMM. 미입력이면 null(휴게 없음).
+    , String fstSchBrkMin
+    , String fstBrkStrTime
+    , String fstBrkEndTime
     , String insertNo
 ) {
 }

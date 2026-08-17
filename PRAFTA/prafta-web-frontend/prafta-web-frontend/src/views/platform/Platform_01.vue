@@ -130,6 +130,27 @@
               </p>
             </td>
           </tr>
+          <!-- 기본 근무시간 — 프로비저닝이 시드하는 기본 근무타입(ST001)의 근무/휴게 시각.
+               서버가 형식·구간을 최종 검증하고 휴게 분(FST_SCH_BRK_MIN)은 서버가 산출한다. -->
+          <tr>
+            <th>기본 근무시간 <span class="req">*</span></th>
+            <td>
+              <div class="std-work-field">
+                <input v-model="form.schStrTime" type="time" :disabled="saving" />
+                <span>~</span>
+                <input v-model="form.schEndTime" type="time" :disabled="saving" />
+                <span>· 휴게</span>
+                <input v-model="form.brkStrTime" type="time" :disabled="saving" />
+                <span>~</span>
+                <input v-model="form.brkEndTime" type="time" :disabled="saving" />
+              </div>
+              <p class="hint">
+                등록 시 생성되는 기본 근무타입의 근무시간입니다. 휴게시간이 없으면
+                휴게 시작·종료를 모두 비워 두세요. 야간·2교대 등 다른 형태는 등록
+                후 근무타입 관리에서 추가할 수 있습니다.
+              </p>
+            </td>
+          </tr>
           <tr>
             <th>관리자명 <span class="req">*</span></th>
             <td>
@@ -241,6 +262,11 @@ const form = reactive({
   // 통상근로자 주 소정근로시간(선택). 시간/분 분리 입력 → 서버에는 분으로 환산해 보낸다.
   stdWorkHours: "",
   stdWorkMinutes: "",
+  // 기본 근무타입(ST001) 근무/휴게 시각 — 표준 기본값 프리필(수정 가능). 휴게 없으면 둘 다 비움.
+  schStrTime: "09:00",
+  schEndTime: "18:00",
+  brkStrTime: "12:00",
+  brkEndTime: "13:00",
   adminNm: "",
   adminId: "",
   adminMbl: "",
@@ -346,6 +372,31 @@ function validate() {
   if (form.contractEndDate && digits(form.contractEndDate).length !== 8) {
     return "계약 종료일은 YYYYMMDD 8자리여야 합니다(미입력 시 무기한).";
   }
+  // 기본 근무시간: 시작·종료 필수, 종료 > 시작(당일 주간만). 휴게는 쌍 입력 + 근무구간 내부.
+  //   서버(PLATFORM_400_019)와 동일 기준의 1차 검증이다.
+  const toMin = (t) => {
+    if (!t || !/^\d{2}:\d{2}$/.test(t)) return null;
+    const [h, m] = t.split(":").map(Number);
+    return h * 60 + m;
+  };
+  const schStr = toMin(form.schStrTime);
+  const schEnd = toMin(form.schEndTime);
+  if (schStr == null || schEnd == null) {
+    return "기본 근무시간(시작·종료)을 입력해 주세요.";
+  }
+  if (schEnd <= schStr) {
+    return "기본 근무시간 종료는 시작 이후여야 합니다.\n야간 등 다른 형태는 등록 후 근무타입 관리에서 추가해 주세요.";
+  }
+  if (form.brkStrTime || form.brkEndTime) {
+    const brkStr = toMin(form.brkStrTime);
+    const brkEnd = toMin(form.brkEndTime);
+    if (brkStr == null || brkEnd == null) {
+      return "휴게시간은 시작·종료를 함께 입력해 주세요(휴게가 없으면 모두 비움).";
+    }
+    if (brkEnd <= brkStr || brkStr < schStr || brkEnd > schEnd) {
+      return "휴게시간은 근무시간 안에 있어야 하고, 종료가 시작보다 늦어야 합니다.";
+    }
+  }
   // 통상근로시간: 입력했다면 0 초과 ~ 주 40시간(2400분) 이하.
   const stdMinutes = stdWorkWeekMinutes();
   if (stdMinutes !== null) {
@@ -385,6 +436,11 @@ async function fnSave() {
       contractEndDate: form.contractEndDate ? digits(form.contractEndDate) : "",
       // null 이면 서버가 기준값 행을 만들지 않는다(= 주 40시간 폴백 유지).
       weekStdMinutes: stdWorkWeekMinutes(),
+      // 기본 근무타입 시각(HHMM). 휴게 미입력이면 빈 문자열(서버가 휴게 없음으로 처리).
+      schStrTime: form.schStrTime.replace(":", ""),
+      schEndTime: form.schEndTime.replace(":", ""),
+      brkStrTime: form.brkStrTime ? form.brkStrTime.replace(":", "") : "",
+      brkEndTime: form.brkEndTime ? form.brkEndTime.replace(":", "") : "",
       adminNm: form.adminNm,
       adminId: form.adminId,
       adminMbl: digits(form.adminMbl),
@@ -406,6 +462,10 @@ async function fnSave() {
     form.contractEndDate = "";
     form.stdWorkHours = "";
     form.stdWorkMinutes = "";
+    form.schStrTime = "09:00";
+    form.schEndTime = "18:00";
+    form.brkStrTime = "12:00";
+    form.brkEndTime = "13:00";
     form.adminNm = "";
     form.adminId = "";
     form.adminMbl = "";
