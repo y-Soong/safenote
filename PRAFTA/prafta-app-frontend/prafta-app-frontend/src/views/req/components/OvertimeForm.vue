@@ -3,6 +3,9 @@
   - 작업 ID: prafta-app-016-2 (분해: .claude/requests/app_requests/prafta-app-016-plan.md)
   - 변경점:
       #1 근태 기반 프리필: context.slots 의 존재 구간 모두 카드화 + 실 출퇴근(checkInTime/checkOutTime) 프리필.
+          ★2026-08-17 사용자 확정: 시각 프리필 폐지 — 구간 카드는 유지하되 시각은 빈 값으로 시작한다.
+            (실출퇴근 프리필은 그대로 제출 불가한 값인 데다, 기존 등록 OT와 겹쳐 보여 혼란 유발.
+             입력은 "등록 가능 시간" 칩 탭 또는 직접 입력으로 한다. 날짜만 근무일로 프리필.)
       #2 유형(OT_TYPE) 칩 제거 — emit payload 에서 otType 미포함(백엔드가 NULL 저장: 016-1).
           prafta-043: 초과근무 유형(OT_TYPE) 전면 파기 — 유형 안내 문구 제거(컬럼 DROP, 단일 '초과근무').
       #3 구간별 등록 가능 시간 표시(앞 OT=실출근~스케줄시작 / 뒤 OT=스케줄종료~실퇴근). 표시 전용, 차단 아님.
@@ -275,15 +278,18 @@ function hhmmDisplay(hhmm) {
   return `${hhmm.slice(0, 2)}:${hhmm.slice(2)}`
 }
 
-// ── #1 근태 기반 프리필 ─────────────────────────────────────────────────
-// ⚠️ 백엔드 attendance 응답 키는 checkInDate/checkInTime/checkOutDate/checkOutTime 이다.
-//    (AttdCorrectionForm 이 쓰던 attendance.startTime/endTime 은 잘못된 키 — 본 폼은 정확한 키 사용.)
+// ── #1 구간 카드 초기화 ─────────────────────────────────────────────────
+// ★2026-08-17 사용자 확정: 실 출퇴근 시각 프리필 폐지 — 시각은 빈 값으로 시작한다.
+//   실출퇴근 전체는 스케줄과 겹쳐 그대로 제출이 불가능한 값이고, 기존 등록 OT 시각과
+//   겹쳐 보여 "이미 올린 걸 또 올리라는 건가" 혼란을 유발했다(08-14 2구간+OT 2건 실증).
+//   날짜는 근무일로 프리필하고, 시각 입력은 "등록 가능 시간" 칩 탭 또는 직접 입력으로 한다
+//   (칩이 날짜·시각을 함께 채우므로 야간/익일 케이스도 칩 경유가 정확하다).
 const slotFromContext = (s, idx) => ({
   workSeq: s?.workSeq ?? idx + 1,
-  startDate: ymdToInput(s?.attendance?.checkInDate || props.context.workYmd),
-  startTime: hhmmToTime(s?.attendance?.checkInTime),
-  endDate: ymdToInput(s?.attendance?.checkOutDate || props.context.workYmd),
-  endTime: hhmmToTime(s?.attendance?.checkOutTime),
+  startDate: ymdToInput(props.context.workYmd),
+  startTime: '',
+  endDate: ymdToInput(props.context.workYmd),
+  endTime: '',
 })
 
 const buildInitialSlots = () => {
