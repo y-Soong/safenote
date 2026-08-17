@@ -140,6 +140,8 @@
         ※ <b>실근로시간</b>과 <b>인정시간(정상근무)</b>은 스케줄에 등록된
         휴게시간을 자동 차감하여 표시합니다. 초과근무 인정시간은 정해진
         휴게시간이 없어 관리자가 승인한 근로시간 전체를 표시합니다.
+        <b>고정연장</b>은 실제 근무가 고정연장 구간과 겹친 시간만 별도로
+        계상합니다(인정시간과 합산하지 않음).
       </p>
     </div>
 
@@ -165,6 +167,8 @@
                 <th colspan="4">실제근무</th>
                 <th rowspan="2">실근로시간</th>
                 <th rowspan="2">인정시간</th>
+                <!-- PRAFTA-FIXEDOT-3(정책 ①): 고정연장 실적 별도 축 — 인정시간(소정)과 분리 표기 -->
+                <th rowspan="2">고정연장</th>
                 <th rowspan="2">상태</th>
                 <th rowspan="2">상세</th>
               </tr>
@@ -177,7 +181,7 @@
             </thead>
             <tbody>
               <tr v-if="displayRows.length === 0">
-                <td colspan="15" class="a08-empty">조회 결과가 없습니다.</td>
+                <td colspan="16" class="a08-empty">조회 결과가 없습니다.</td>
               </tr>
               <tr
                 v-for="r in displayRows"
@@ -216,6 +220,9 @@
                 <td>{{ fmtDuration(workedNetMin(r)) }}</td>
                 <!-- 인정시간: 정상=(실제∩스케줄)−휴게 / 초과=관리자 승인 시간 -->
                 <td>{{ fmtDuration(recognizedMin(r)) }}</td>
+                <!-- PRAFTA-FIXEDOT-3(정책 ①): 고정연장 실적(실근태∩고정연장, 서버 파생 fixedOtActMinutes).
+                     일 단위 값이라 그날 마지막 스케줄 슬롯 행에만 실림(그 외 행·초과근무 행은 '-'). -->
+                <td>{{ r.fixedOtActMinutes != null ? fmtDuration(r.fixedOtActMinutes) : "-" }}</td>
                 <!-- 상태: 초과근무 행은 배지 없이 '-' 텍스트만 -->
                 <td>
                   <template v-if="r._isOt">-</template>
@@ -437,6 +444,7 @@
                 <th>요일</th>
                 <th>실근로시간(분)</th>
                 <th>인정시간(분)</th>
+                <th>고정연장(분)</th>
                 <th>지각(분)</th>
                 <th>조기퇴근(분)</th>
                 <th>상태</th>
@@ -444,7 +452,7 @@
             </thead>
             <tbody>
               <tr v-if="summaryRows.length === 0">
-                <td colspan="9" class="a08-empty">조회 결과가 없습니다.</td>
+                <td colspan="10" class="a08-empty">조회 결과가 없습니다.</td>
               </tr>
               <tr
                 v-for="s in summaryRows"
@@ -457,6 +465,7 @@
                 <td>{{ fmtDow(s.workYmd) }}</td>
                 <td>{{ fmtMinutes(s.workedMin) }}</td>
                 <td>{{ fmtMinutes(s.recognizedMin) }}</td>
+                <td>{{ fmtMinutes(s.fixedOtMin) }}</td>
                 <td>{{ fmtMinutes(s.lateMin) }}</td>
                 <td>{{ fmtMinutes(s.earlyMin) }}</td>
                 <td>
@@ -844,6 +853,7 @@ const fnExcel = async () => {
       { header: "요일", fixed: false, width: 6 },
       { header: "실근로시간(분)", fixed: false, width: 14 },
       { header: "인정시간(분)", fixed: false, width: 14 },
+      { header: "고정연장(분)", fixed: false, width: 14 },
       { header: "지각(분)", fixed: false, width: 10 },
       { header: "조기퇴근(분)", fixed: false, width: 12 },
       { header: "상태", fixed: false, width: 10 },
@@ -855,6 +865,7 @@ const fnExcel = async () => {
       fmtDow(s.workYmd),
       fmtMinutes(s.workedMin),
       fmtMinutes(s.recognizedMin),
+      fmtMinutes(s.fixedOtMin),
       fmtMinutes(s.lateMin),
       fmtMinutes(s.earlyMin),
       s._status ? statusLabel(s._status) : "-",
@@ -889,6 +900,7 @@ const fnExcel = async () => {
     { header: "실제 퇴근시각", fixed: false, width: 10 },
     { header: "실근로시간", fixed: false, width: 12 },
     { header: "인정시간", fixed: false, width: 12 },
+    { header: "고정연장", fixed: false, width: 12 },
     { header: "상태", fixed: false, width: 10 },
     { header: "외근여부", fixed: false, width: 8 },
   ];
@@ -906,6 +918,7 @@ const fnExcel = async () => {
     tCell(r._outTime),
     fmtDuration(workedNetMin(r)),
     fmtDuration(recognizedMin(r)),
+    r.fixedOtActMinutes != null ? fmtDuration(r.fixedOtActMinutes) : "-",
     r._isOt ? "-" : statusLabel(r._status),
     r.isOutsideYn === "Y" ? "외근" : "내근",
   ]);
@@ -1332,6 +1345,7 @@ const summaryRows = computed(() => {
         workYmd: r.workYmd,
         workedMin: 0,
         recognizedMin: 0,
+        fixedOtMin: 0,
         lateMin: 0,
         earlyMin: 0,
         _statusPriority: -1,
@@ -1343,6 +1357,8 @@ const summaryRows = computed(() => {
     if (wn != null) g.workedMin += wn;
     const rn = recognizedMin(r);
     if (rn != null) g.recognizedMin += rn;
+    // PRAFTA-FIXEDOT-3: 고정연장 실적은 일 단위 값이 마지막 슬롯 행에만 실리므로 그대로 합산해도 중복 없음.
+    if (r.fixedOtActMinutes != null) g.fixedOtMin += r.fixedOtActMinutes;
     g.lateMin += lateMin(r);
     g.earlyMin += earlyLeaveMin(r);
     if (!r._isOt && r._status) {
