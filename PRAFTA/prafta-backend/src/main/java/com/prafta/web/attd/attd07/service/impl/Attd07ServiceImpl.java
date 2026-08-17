@@ -14,6 +14,9 @@ import com.prafta.common.cmm.leave.util.PartialLeaveWindowUtils;
 import com.prafta.common.cmm.push.ApprovalResultNotiService;
 import com.prafta.common.cmm.schedule.util.FixedOtScheduleUtils;
 import com.prafta.common.cmm.siteauth.service.SiteAccessService;
+import com.prafta.common.cmm.stdwork.StdWorkReasonCd;
+import com.prafta.common.cmm.stdwork.service.StdWorkHoursService;
+import com.prafta.common.cmm.stdwork.vo.StdWorkHoursVO;
 import com.prafta.common.error.attd.AttdErrorCode;
 import com.prafta.common.exception.ApiException;
 import com.prafta.common.util.AttdOverlapMessages;
@@ -96,6 +99,9 @@ public class Attd07ServiceImpl implements Attd07Service {
     private final LeaveConversionPolicyService leaveConversionPolicyService;
     /** 소정-07: 단축근무자(육아기·임신기·가족돌봄) 초과근무 게이트(공용 빈 — 앱 경로와 판정 단일 출처). */
     private final ReducedWorkOtGuardService reducedWorkOtGuardService;
+
+    /** 소정-07 후속: 일자상세 응답의 단축 기간 여부(reducedWorkYn) 산출용(읽기 전용 — 게이트와 동일 단일 출처). */
+    private final StdWorkHoursService stdWorkHoursService;
     /** 근무타입 시점 적법성(effective-dating) 판정용 공용 매퍼 — 스케줄수정 승인 시 적용일 검증(2026-08-14). */
     private final com.prafta.common.cmm.schedule.mapper.ScheduleGuardMapper scheduleGuardMapper;
 
@@ -745,6 +751,14 @@ public class Attd07ServiceImpl implements Attd07Service {
         //   고정연장 없는 근무타입은 항상 빈 목록(구 FE·기존 타입 무영향).
         List<OtLeaveExemptWindowView> otFixedOtWindowList = buildOtFixedOtWindows(param);
 
+        // 소정-07 후속(2026-08-17): 근무일 기준 단축 기간 여부 — 팝업이 "명시 청구 확인" 체크박스를
+        //   단축 대상자에게만 노출하는 조건. 사유 구분은 내리지 않는다(M-3 — 건강·가족관계 정보).
+        //   판정·차단의 단일 출처는 저장 시점의 ReducedWorkOtGuardService 게이트 그대로다(표시 조건 전용).
+        StdWorkHoursVO effectiveStdWork = stdWorkHoursService.findEffectiveRow(
+                param.gvCmpnyCd(), param.userCd(), param.workYmd());
+        String reducedWorkYn = (effectiveStdWork != null && StdWorkReasonCd.isReduced(effectiveStdWork.getReasonCd()))
+                ? "Y" : "N";
+
         return DailyAttdDetailsResponse.builder()
                 .dailyAttdDetailsResult(dailyAttdDetailsResult)
                 .dailyAttdDetailHistoryResultList(dailyAttdDetailHistoryResultList)
@@ -756,6 +770,7 @@ public class Attd07ServiceImpl implements Attd07Service {
                 .neighborAttdSegmentList(neighborAttdSegmentList)
                 .otLeaveExemptWindowList(otLeaveExemptWindowList)
                 .otFixedOtWindowList(otFixedOtWindowList)
+                .reducedWorkYn(reducedWorkYn)
                 .build();
     }
 

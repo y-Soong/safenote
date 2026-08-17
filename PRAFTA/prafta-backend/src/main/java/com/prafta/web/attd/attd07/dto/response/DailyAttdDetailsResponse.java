@@ -60,4 +60,13 @@ public class DailyAttdDetailsResponse {
      * 고정연장 없는 근무타입/구 FE 는 빈 리스트/무시(무영향).
      */
     List<OtLeaveExemptWindowView> otFixedOtWindowList;
+
+    /**
+     * 소정-07 후속(2026-08-17): 대상 근로자가 근무일 기준 근로시간 단축 기간(육아기·임신기·가족돌봄)에
+     * 속하는지 여부('Y'/'N'). 팝업이 "근로자 연장근로 명시 청구 확인" 체크박스를 단축 대상자에게만
+     * 노출하는 조건으로 쓴다. ★단축 사유 구분은 내려주지 않는다 — userCd 와 결합하면 건강정보·
+     * 가족관계 정보가 되기 때문(ReducedWorkOtGuardService M-3/M-4 규약과 동일). 판정·차단의
+     * 단일 출처는 여전히 서버 게이트이며 이 플래그는 표시 조건 전용이다(구 FE 는 무시 — additive).
+     */
+    String reducedWorkYn;
 }

@@ -757,13 +757,16 @@
                       </button>
                       <!-- 소정-07: 단축근무자(육아기·가족돌봄) 연장근로 명시 청구 확인.
                            관리자 직접 등록(reqId 없음) 경로에서만 서버가 이 값을 요구한다.
-                           일자상세 응답에 단축 대상 여부 필드가 없어 조건부 노출이 불가하므로
-                           항상 노출 + 안내 문구로 두고, 실제 판정·차단은 서버 게이트가 수행한다
-                           (미체크 저장 시 ATTD_400_201 메시지가 그대로 노출된다).
+                           2026-08-17: 일자상세 응답에 단축 기간 여부(reducedWorkYn)가 추가되어
+                           단축 대상 근로자('Y')에게만 노출한다 — 일반 근로자 팝업에서는 숨김(사용자 요청).
+                           실제 판정·차단은 종전대로 서버 게이트가 수행한다(미체크 저장 시 ATTD_400_201).
                            근로자 신청 승인(요청 카드) 경로는 신청 시점에 확인된 사실이라 이 값을 쓰지 않는다. -->
                       <div
                         v-if="
-                          !isDailyWorker && isSegmentFromDb(i) && hasAnyOt(i)
+                          !isDailyWorker &&
+                          isSegmentFromDb(i) &&
+                          hasAnyOt(i) &&
+                          reducedWorkYn === 'Y'
                         "
                         class="ot-claim-row"
                       >
@@ -2381,6 +2384,12 @@ const otSaving = ref(false);
 //   서버에는 'Y'/'N' 문자열로 전송하며, 단축 기간이 아닌 근로자에게는 서버가 값을 보지 않는다.
 const otWorkerClaimConfirmed = ref(false);
 
+// 소정-07 후속(2026-08-17): 대상 근로자의 근무일 기준 단축 기간 여부(서버 파생 'Y'/'N').
+//   'Y' 일 때만 위 체크박스·안내 문구를 노출한다(대다수 일반 근로자 팝업에서는 숨김).
+//   판정·차단의 단일 출처는 여전히 서버 게이트(ATTD_400_200/201/202) — 이 값은 표시 조건 전용이라
+//   구서버(필드 미수신)면 'Y' 로 폴백해 종전처럼 항상 노출한다(fail-visible: 숨겨서 등록이 막히는 것 방지).
+const reducedWorkYn = ref("Y");
+
 // ── 외근 GPS 동선 (PRAFTA-009 part2) ───────────────────────
 //   외근 버튼 클릭 시 해당 구간의 ATTD_ID 로 GET /attd08/attd-gps-trail 호출,
 //   응답 trail 을 AttdGpsCoordPanel 에 전달한다. 같은 구간 버튼 재클릭 시 패널 닫힘.
@@ -3461,6 +3470,8 @@ const fnSearch = async () => {
       otLeaveExemptWindows.value = response.data?.otLeaveExemptWindowList ?? [];
       // PRAFTA-FIXEDOT-2: 고정연장 점유 구간(서버 산출). 미수신/고정연장 없는 타입이면 빈 배열.
       otFixedOtWindows.value = response.data?.otFixedOtWindowList ?? [];
+      // 소정-07 후속: 단축 기간 여부. 미수신(구서버)이면 'Y' 폴백 — 체크박스를 종전처럼 항상 노출.
+      reducedWorkYn.value = response.data?.reducedWorkYn ?? "Y";
     }
   } catch (err) {
     // 조회 실패해도 fallback 값으로 화면은 정상 렌더되도록 알림만 띄움
