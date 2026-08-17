@@ -79,6 +79,9 @@ public class SiteLinkTerminationHandler implements RelationTerminationHandler {
                                 link.dstCmpnyCd(), link.dstSiteCd(), link.srcCmpnyCd(), actionUserCd);
                         subcon02Mapper.clearSchLinkSrc(
                                 link.dstCmpnyCd(), link.dstSiteCd(), link.srcCmpnyCd(), actionUserCd);
+                        // SHIFT-LINK-T5: 교대근무 타입도 독립화(NULL 화만 — 데이터 유지).
+                        subcon02Mapper.clearShiftLinkSrc(
+                                link.dstCmpnyCd(), link.dstSiteCd(), link.srcCmpnyCd(), actionUserCd);
                         // PRAFTA-SUBCON-T6-08: 산하 연동(점검 구성) 자동 독립화 훅 — 동일 트랜잭션.
                         siteLinkTerminationListeners.orderedStream()
                                 .forEach(listener -> listener.onSiteLinkTerminated(link, actionUserCd));

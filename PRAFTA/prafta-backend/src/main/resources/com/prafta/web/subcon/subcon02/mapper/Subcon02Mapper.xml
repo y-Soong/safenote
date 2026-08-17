@@ -507,6 +507,166 @@
       AND S.USE_YN   = 'Y'
     </insert>
 
+    <!-- ============================================================
+         교대 정의 초기 복제(SHIFT-LINK-T2) — 정의 4테이블만(TEAM_MGMT/TEAM_USER 실인원 계열 제외).
+         SHIFT_CD·SCH_CD = 원본 그대로(D3 — 미러 TB_SCH_MGMT 의 SCH_CD 와 동일 코드라 참조 성립).
+         값은 원본 행에서 직접 읽는다(insertMirrorSchAll 원칙). HIST 테이블 자체가 없어 이력 미기록.
+         ============================================================ -->
+
+    <!-- TB_SHIFT_SCH_MGMT 활성분 전량 복제 — 부모 USE_YN='Y' 만. USE_YN 은 char(1)
+         (TB_SCH_MGMT 의 varchar(2)와 타입이 다르나 'Y' 리터럴 처리라 동작 무영향). -->
+    <insert id="insertMirrorShiftAll">
+    /* Subcon02Mapper.insertMirrorShiftAll */
+    INSERT INTO TB_SHIFT_SCH_MGMT (
+          CMPNY_CD
+        , SITE_CD
+        , SHIFT_CD
+        , SHIFT_NO
+        , SHIFT_PTRN_CNT
+        , SHIFT_TEAM_CNT
+        , SHIFT_CYCLE_DAYS
+        , USE_YN
+        , LINK_SRC_CMPNY_CD
+        , LINK_SRC_SHIFT_CD
+        , INSERT_NO
+        , INSERT_DATE
+        , UPDATE_NO
+        , UPDATE_DATE
+    )
+    SELECT
+          #{dstCmpnyCd}
+        , #{dstSiteCd}
+        , S.SHIFT_CD
+        , S.SHIFT_NO
+        , S.SHIFT_PTRN_CNT
+        , S.SHIFT_TEAM_CNT
+        , S.SHIFT_CYCLE_DAYS
+        , S.USE_YN
+        , #{srcCmpnyCd}
+        , S.SHIFT_CD
+        , #{insertNo}
+        , NOW()
+        , #{insertNo}
+        , NOW()
+    FROM TB_SHIFT_SCH_MGMT S
+    WHERE S.CMPNY_CD = #{srcCmpnyCd}
+      AND S.SITE_CD  = #{srcSiteCd}
+      AND S.USE_YN   = 'Y'
+    </insert>
+
+    <!-- 교대 패턴 회차 복제 — 부모 USE_YN='Y' 인 SHIFT_CD 의 하위 행 전량.
+         LINK_SRC 컬럼 없음(부모 좌표로 미러 판정 — 지시서 §2.1-3). -->
+    <insert id="insertMirrorShiftPtrnAll">
+    /* Subcon02Mapper.insertMirrorShiftPtrnAll */
+    INSERT INTO TB_SHIFT_SCH_PTRN_MGMT (
+          CMPNY_CD
+        , SITE_CD
+        , SHIFT_CD
+        , PTRN_IDX
+        , SCH_CD
+        , INSERT_NO
+        , INSERT_DATE
+        , UPDATE_NO
+        , UPDATE_DATE
+    )
+    SELECT
+          #{dstCmpnyCd}
+        , #{dstSiteCd}
+        , P.SHIFT_CD
+        , P.PTRN_IDX
+        , P.SCH_CD
+        , #{insertNo}
+        , NOW()
+        , #{insertNo}
+        , NOW()
+    FROM TB_SHIFT_SCH_PTRN_MGMT P
+        INNER JOIN TB_SHIFT_SCH_MGMT S
+            ON (
+                S.CMPNY_CD = P.CMPNY_CD
+            AND S.SITE_CD  = P.SITE_CD
+            AND S.SHIFT_CD = P.SHIFT_CD
+            )
+    WHERE P.CMPNY_CD = #{srcCmpnyCd}
+      AND P.SITE_CD  = #{srcSiteCd}
+      AND S.USE_YN   = 'Y'
+    </insert>
+
+    <!-- 교대 조 이름(메타) 복제 — 부모 USE_YN='Y' 인 SHIFT_CD 의 하위 행 전량. -->
+    <insert id="insertMirrorShiftTeamMetaAll">
+    /* Subcon02Mapper.insertMirrorShiftTeamMetaAll */
+    INSERT INTO TB_SHIFT_SCH_TEAM_META_INFO (
+          CMPNY_CD
+        , SITE_CD
+        , SHIFT_CD
+        , TEAM_IDX
+        , TEAM_NM
+        , INSERT_NO
+        , INSERT_DATE
+        , UPDATE_NO
+        , UPDATE_DATE
+    )
+    SELECT
+          #{dstCmpnyCd}
+        , #{dstSiteCd}
+        , T.SHIFT_CD
+        , T.TEAM_IDX
+        , T.TEAM_NM
+        , #{insertNo}
+        , NOW()
+        , #{insertNo}
+        , NOW()
+    FROM TB_SHIFT_SCH_TEAM_META_INFO T
+        INNER JOIN TB_SHIFT_SCH_MGMT S
+            ON (
+                S.CMPNY_CD = T.CMPNY_CD
+            AND S.SITE_CD  = T.SITE_CD
+            AND S.SHIFT_CD = T.SHIFT_CD
+            )
+    WHERE T.CMPNY_CD = #{srcCmpnyCd}
+      AND T.SITE_CD  = #{srcSiteCd}
+      AND S.USE_YN   = 'Y'
+    </insert>
+
+    <!-- 교대 조 x 일차 배정표 복제 — 부모 USE_YN='Y' 인 SHIFT_CD 의 하위 행 전량. -->
+    <insert id="insertMirrorShiftAssignAll">
+    /* Subcon02Mapper.insertMirrorShiftAssignAll */
+    INSERT INTO TB_SHIFT_SCH_ASSIGN_MGMT (
+          CMPNY_CD
+        , SITE_CD
+        , SHIFT_CD
+        , TEAM_IDX
+        , DAY_NO
+        , ASSIGN_YN
+        , SCH_CD
+        , INSERT_NO
+        , INSERT_DATE
+        , UPDATE_NO
+        , UPDATE_DATE
+    )
+    SELECT
+          #{dstCmpnyCd}
+        , #{dstSiteCd}
+        , A.SHIFT_CD
+        , A.TEAM_IDX
+        , A.DAY_NO
+        , A.ASSIGN_YN
+        , A.SCH_CD
+        , #{insertNo}
+        , NOW()
+        , #{insertNo}
+        , NOW()
+    FROM TB_SHIFT_SCH_ASSIGN_MGMT A
+        INNER JOIN TB_SHIFT_SCH_MGMT S
+            ON (
+                S.CMPNY_CD = A.CMPNY_CD
+            AND S.SITE_CD  = A.SITE_CD
+            AND S.SHIFT_CD = A.SHIFT_CD
+            )
+    WHERE A.CMPNY_CD = #{srcCmpnyCd}
+      AND A.SITE_CD  = #{srcSiteCd}
+      AND S.USE_YN   = 'Y'
+    </insert>
+
     <!-- 링크 행에 채번된 DST_SITE_CD 기록(§5-4 #7). -->
     <update id="updateSiteLinkDstSite">
     /* Subcon02Mapper.updateSiteLinkDstSite */
@@ -540,6 +700,20 @@
     UPDATE TB_SCH_MGMT
        SET LINK_SRC_CMPNY_CD = NULL
          , LINK_SRC_SCH_CD   = NULL
+         , UPDATE_NO         = #{updateNo}
+         , UPDATE_DATE       = NOW()
+     WHERE CMPNY_CD = #{dstCmpnyCd}
+       AND SITE_CD  = #{dstSiteCd}
+       AND LINK_SRC_CMPNY_CD = #{srcCmpnyCd}
+    </update>
+
+    <!-- 미러 사업장 소속 교대근무 타입 전량 독립화(SHIFT-LINK-T5 — clearSchLinkSrc 동형).
+         NULL 화만, 행 삭제·하위 테이블 접촉 없음(데이터 유지 — 안전 §8.6). 출처 일치 가드 유지. -->
+    <update id="clearShiftLinkSrc">
+    /* Subcon02Mapper.clearShiftLinkSrc */
+    UPDATE TB_SHIFT_SCH_MGMT
+       SET LINK_SRC_CMPNY_CD = NULL
+         , LINK_SRC_SHIFT_CD = NULL
          , UPDATE_NO         = #{updateNo}
          , UPDATE_DATE       = NOW()
      WHERE CMPNY_CD = #{dstCmpnyCd}
@@ -803,5 +977,146 @@
     WHERE M.CMPNY_CD = #{cmpnyCd}
       AND M.SITE_CD  = #{siteCd}
       AND M.SCH_CD   = #{schCd}
+    </insert>
+
+    <!-- ============================================================
+         교대 정의 전파(SHIFT-LINK-T3) — 신규 생성 전파 한정(교대 정의는 insert-only, 지시서 §2.1-2).
+         값은 DB 원본 행에서만 복제(사용자 입력 미경유 — 주입 면 차단, INSERT_NO/UPDATE_NO='SYSTEM').
+         순수 INSERT(UPSERT 아님) — 신규 채번 SHIFT_CD 는 미러에 존재할 수 없어 충돌 없음.
+         PK 충돌 발생 = 링크/데이터 오염이므로 예외 전파 = 원본 저장 롤백이 올바른 동작.
+         ============================================================ -->
+
+    <!-- 교대 타입 정의 단건 전파 — SHIFT_CD = 원본 그대로(D3 동형), LINK_SRC 세팅. -->
+    <insert id="propagateMirrorShift">
+    /* Subcon02Mapper.propagateMirrorShift */
+    INSERT INTO TB_SHIFT_SCH_MGMT (
+          CMPNY_CD
+        , SITE_CD
+        , SHIFT_CD
+        , SHIFT_NO
+        , SHIFT_PTRN_CNT
+        , SHIFT_TEAM_CNT
+        , SHIFT_CYCLE_DAYS
+        , USE_YN
+        , LINK_SRC_CMPNY_CD
+        , LINK_SRC_SHIFT_CD
+        , INSERT_NO
+        , INSERT_DATE
+        , UPDATE_NO
+        , UPDATE_DATE
+    )
+    SELECT
+          #{dstCmpnyCd}
+        , #{dstSiteCd}
+        , S.SHIFT_CD
+        , S.SHIFT_NO
+        , S.SHIFT_PTRN_CNT
+        , S.SHIFT_TEAM_CNT
+        , S.SHIFT_CYCLE_DAYS
+        , S.USE_YN
+        , #{srcCmpnyCd}
+        , S.SHIFT_CD
+        , 'SYSTEM'
+        , NOW()
+        , 'SYSTEM'
+        , NOW()
+    FROM TB_SHIFT_SCH_MGMT S
+    WHERE S.CMPNY_CD = #{srcCmpnyCd}
+      AND S.SITE_CD  = #{srcSiteCd}
+      AND S.SHIFT_CD = #{shiftCd}
+    </insert>
+
+    <!-- 교대 패턴 회차 전파(단건 SHIFT_CD 하위 전량). -->
+    <insert id="propagateMirrorShiftPtrn">
+    /* Subcon02Mapper.propagateMirrorShiftPtrn */
+    INSERT INTO TB_SHIFT_SCH_PTRN_MGMT (
+          CMPNY_CD
+        , SITE_CD
+        , SHIFT_CD
+        , PTRN_IDX
+        , SCH_CD
+        , INSERT_NO
+        , INSERT_DATE
+        , UPDATE_NO
+        , UPDATE_DATE
+    )
+    SELECT
+          #{dstCmpnyCd}
+        , #{dstSiteCd}
+        , P.SHIFT_CD
+        , P.PTRN_IDX
+        , P.SCH_CD
+        , 'SYSTEM'
+        , NOW()
+        , 'SYSTEM'
+        , NOW()
+    FROM TB_SHIFT_SCH_PTRN_MGMT P
+    WHERE P.CMPNY_CD = #{srcCmpnyCd}
+      AND P.SITE_CD  = #{srcSiteCd}
+      AND P.SHIFT_CD = #{shiftCd}
+    </insert>
+
+    <!-- 교대 조 이름(메타) 전파(단건 SHIFT_CD 하위 전량). -->
+    <insert id="propagateMirrorShiftTeamMeta">
+    /* Subcon02Mapper.propagateMirrorShiftTeamMeta */
+    INSERT INTO TB_SHIFT_SCH_TEAM_META_INFO (
+          CMPNY_CD
+        , SITE_CD
+        , SHIFT_CD
+        , TEAM_IDX
+        , TEAM_NM
+        , INSERT_NO
+        , INSERT_DATE
+        , UPDATE_NO
+        , UPDATE_DATE
+    )
+    SELECT
+          #{dstCmpnyCd}
+        , #{dstSiteCd}
+        , T.SHIFT_CD
+        , T.TEAM_IDX
+        , T.TEAM_NM
+        , 'SYSTEM'
+        , NOW()
+        , 'SYSTEM'
+        , NOW()
+    FROM TB_SHIFT_SCH_TEAM_META_INFO T
+    WHERE T.CMPNY_CD = #{srcCmpnyCd}
+      AND T.SITE_CD  = #{srcSiteCd}
+      AND T.SHIFT_CD = #{shiftCd}
+    </insert>
+
+    <!-- 교대 조 x 일차 배정표 전파(단건 SHIFT_CD 하위 전량). -->
+    <insert id="propagateMirrorShiftAssign">
+    /* Subcon02Mapper.propagateMirrorShiftAssign */
+    INSERT INTO TB_SHIFT_SCH_ASSIGN_MGMT (
+          CMPNY_CD
+        , SITE_CD
+        , SHIFT_CD
+        , TEAM_IDX
+        , DAY_NO
+        , ASSIGN_YN
+        , SCH_CD
+        , INSERT_NO
+        , INSERT_DATE
+        , UPDATE_NO
+        , UPDATE_DATE
+    )
+    SELECT
+          #{dstCmpnyCd}
+        , #{dstSiteCd}
+        , A.SHIFT_CD
+        , A.TEAM_IDX
+        , A.DAY_NO
+        , A.ASSIGN_YN
+        , A.SCH_CD
+        , 'SYSTEM'
+        , NOW()
+        , 'SYSTEM'
+        , NOW()
+    FROM TB_SHIFT_SCH_ASSIGN_MGMT A
+    WHERE A.CMPNY_CD = #{srcCmpnyCd}
+      AND A.SITE_CD  = #{srcSiteCd}
+      AND A.SHIFT_CD = #{shiftCd}
     </insert>
 </mapper>

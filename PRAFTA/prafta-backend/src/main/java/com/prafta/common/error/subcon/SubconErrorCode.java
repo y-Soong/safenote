@@ -87,6 +87,11 @@ public enum SubconErrorCode implements ApiErrorCode {
     // ===== PRAFTA-SUBCON-T7 - 스냅샷 유형 확장(위험성평가/아차사고) =====
     // 수신 스냅샷 첨부 미존재/비소유(소유·참조 검증 실패 통합 — IDOR 열거 방지).
     , SUBCON_404_007(HttpStatus.NOT_FOUND, "요청한 첨부를 찾을 수 없습니다.")
+
+    // ===== SHIFT-LINK - 교대근무 타입 사업장 연동(복제·전파) =====
+    // 미러 사업장 교대근무 타입 정의 잠금(신규 생성 전면 거부 — 정의 4테이블은 원본 소유사의 전파로만 갱신.
+    // 팀 구성·인원 배속(Attd06)은 수신사 자율이라 잠그지 않는다 — 지시서 §2.1-1).
+    , SUBCON_403_006(HttpStatus.FORBIDDEN, "연동 사업장의 교대근무 타입은 제공 회사에서 관리합니다.")
     ;
 
     private final HttpStatus httpStatus;

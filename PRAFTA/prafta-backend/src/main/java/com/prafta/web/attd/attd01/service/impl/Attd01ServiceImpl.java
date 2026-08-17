@@ -601,7 +601,17 @@ public class Attd01ServiceImpl implements Attd01Service{
 	
 	@Transactional
 	public void updateShiftSchInfo(ShiftSchInfoParam param) {
-		
+
+		// SHIFT-LINK-T4: 미러 사업장 교대근무 타입 정의 전면 잠금(신규 생성 거부 — T2-04 근무타입 게이트 동형).
+		//   미러 교대 정의는 원본 소유사의 전파로만 갱신된다. authCd/회사 스코프는 JWT 도출값만 신뢰
+		//   (siteCd 는 요청값이나 gvCmpnyCd 스코프 내 판정이라 타 테넌트 영향 없음 — updateSchInfo 게이트 동일).
+		//   조회(selectShiftSchInfoList/selectShiftSchDetail)는 차단하지 않는다(지시서 §3.3).
+		String siteCd = param.shiftType().siteCd();
+		if (attd01Mapper.selectSiteLinkSrcCmpny(param.gvCmpnyCd(), siteCd) != null) {
+			log.warn("미러 사업장 교대근무 타입 생성 거부 - gvCmpnyCd={}, siteCd={}", param.gvCmpnyCd(), siteCd);
+			throw new ApiException(SubconErrorCode.SUBCON_403_006);
+		}
+
 		int shiftSchNoCnt = attd01Mapper.selectShiftSchNoCount(ShiftSchNoCountQuery.from(param.shiftType(), param.gvCmpnyCd()));
 		
 		if(shiftSchNoCnt > 0) {
@@ -612,25 +622,32 @@ public class Attd01ServiceImpl implements Attd01Service{
 		
 		attd01Mapper.insertShiftSch(ShiftTypeCommand.from(param, shiftCd));
 		
+		// SEC-1: 하위 항목(패턴/팀/배정표)의 siteCd 는 게이트를 통과한 부모(siteCd = shiftType.siteCd)로
+		//   서버 강제 — 요청 항목별 siteCd 를 신뢰하면 부모만 게이트 판정되는 구조상 미러 사업장
+		//   하위 테이블에 임의 행 주입이 가능해진다(보안 강제 — security SEC-1 / qa D-1).
 		if(param.shiftPatternList() != null && param.shiftPatternList().size() > 0) {
 			for(ShiftPatternParam shiftPatternParam : param.shiftPatternList()) {
-				attd01Mapper.insertShiftSchPtrn(ShiftPatternCommand.from(shiftPatternParam, shiftCd, param.gvCmpnyCd(), param.gvUserCd()));
+				attd01Mapper.insertShiftSchPtrn(ShiftPatternCommand.from(shiftPatternParam, shiftCd, siteCd, param.gvCmpnyCd(), param.gvUserCd()));
 			}
 		}
-		
+
 		if(param.shiftTeamList() != null && param.shiftTeamList().size() > 0) {
 			for(ShiftTeamParam shiftTeamParam : param.shiftTeamList()) {
-				
-				attd01Mapper.insertShiftSchTeam(ShiftTeamCommand.from(shiftTeamParam, shiftCd, param.gvCmpnyCd(), param.gvUserCd()));
+
+				attd01Mapper.insertShiftSchTeam(ShiftTeamCommand.from(shiftTeamParam, shiftCd, siteCd, param.gvCmpnyCd(), param.gvUserCd()));
 			}
 		}
-		
+
 		if(param.shiftAssignList() != null && param.shiftAssignList().size() > 0) {
 			for(ShiftAssignParam shiftAssignParam : param.shiftAssignList()) {
 
-				attd01Mapper.insertShiftSchAssign(ShiftAssignCommand.from(shiftAssignParam, shiftCd, param.gvCmpnyCd(), param.gvUserCd()));
+				attd01Mapper.insertShiftSchAssign(ShiftAssignCommand.from(shiftAssignParam, shiftCd, siteCd, param.gvCmpnyCd(), param.gvUserCd()));
 			}
 		}
+
+		// SHIFT-LINK-T3: 저장 후 교대 정의 미러 재귀 전파(신규 생성 전파 한정 — insert-only.
+		//   활성 링크 없으면 no-op, 전파 실패 시 원본 저장 전체 롤백. 값은 DB 원본 행에서만 복제).
+		siteLinkPropagationService.propagateShiftInfo(param.gvCmpnyCd(), siteCd, shiftCd);
 	}
 	
 	public ShiftSchInfoListResponse selectShiftSchInfoList(ShiftSchInfoListParam param) {

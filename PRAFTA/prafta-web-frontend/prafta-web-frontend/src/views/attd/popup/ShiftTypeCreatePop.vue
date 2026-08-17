@@ -203,7 +203,9 @@
           <p class="footer-hint">① 입력 오류가 있는 경우 생성할 수 없습니다.</p>
           <!-- F-10 규약: 왼쪽=진행/확정(생성·수정, primary), 오른쪽=이탈(취소·닫기) -->
           <div class="footer-actions">
+            <!-- 교대 연동(SHIFT-LINK-T7): 미러 사업장은 저장 액션 숨김(조회 전용 — 서버 게이트가 최종 강제) -->
             <button
+              v-if="!isMirrorSite_p"
               class="btn btn-primary"
               :disabled="!canCreate"
               @click="fnCreate"
@@ -236,6 +238,9 @@ import { resolveApiErrorMessage } from "@/utils/apiError";
 const props = defineProps({
   siteCd_p: { type: String, default: "" },
   shift_p: { type: Object, default: null },
+  // 교대 연동(SHIFT-LINK-T7, plan §2-7): 미러(연동) 사업장 여부 — true 면 저장 액션("수정") 버튼 숨김
+  // (미러 교대 정의는 원본 소유사의 전파로만 갱신 — 우회 시도는 서버 T4 게이트가 403 거부).
+  isMirrorSite_p: { type: Boolean, default: false },
   onSearch: { type: Function, default: null },
 });
 const emit = defineEmits(["close"]); // eslint-disable-line no-unused-vars -- used in template

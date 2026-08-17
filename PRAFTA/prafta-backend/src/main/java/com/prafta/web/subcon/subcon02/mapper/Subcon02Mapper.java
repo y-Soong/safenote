@@ -113,6 +113,28 @@ public interface Subcon02Mapper {
             @Param("dstCmpnyCd") String dstCmpnyCd, @Param("dstSiteCd") String dstSiteCd,
             @Param("insertNo") String insertNo);
 
+    // =========================== 교대 정의 초기 복제(SHIFT-LINK-T2) ===========================
+
+    /** TB_SHIFT_SCH_MGMT 활성분 전량 복제(SHIFT_CD=원본 그대로 — D3 동형, LINK_SRC_* 세팅). 복제 건수 반환. */
+    int insertMirrorShiftAll(@Param("srcCmpnyCd") String srcCmpnyCd, @Param("srcSiteCd") String srcSiteCd,
+            @Param("dstCmpnyCd") String dstCmpnyCd, @Param("dstSiteCd") String dstSiteCd,
+            @Param("insertNo") String insertNo);
+
+    /** 교대 패턴 회차 복제(부모 USE_YN='Y' 하위 전량 — SCH_CD 원본 그대로). 복제 건수 반환. */
+    int insertMirrorShiftPtrnAll(@Param("srcCmpnyCd") String srcCmpnyCd, @Param("srcSiteCd") String srcSiteCd,
+            @Param("dstCmpnyCd") String dstCmpnyCd, @Param("dstSiteCd") String dstSiteCd,
+            @Param("insertNo") String insertNo);
+
+    /** 교대 조 이름(메타) 복제(부모 USE_YN='Y' 하위 전량). 복제 건수 반환. */
+    int insertMirrorShiftTeamMetaAll(@Param("srcCmpnyCd") String srcCmpnyCd, @Param("srcSiteCd") String srcSiteCd,
+            @Param("dstCmpnyCd") String dstCmpnyCd, @Param("dstSiteCd") String dstSiteCd,
+            @Param("insertNo") String insertNo);
+
+    /** 교대 조 x 일차 배정표 복제(부모 USE_YN='Y' 하위 전량 — SCH_CD 원본 그대로). 복제 건수 반환. */
+    int insertMirrorShiftAssignAll(@Param("srcCmpnyCd") String srcCmpnyCd, @Param("srcSiteCd") String srcSiteCd,
+            @Param("dstCmpnyCd") String dstCmpnyCd, @Param("dstSiteCd") String dstSiteCd,
+            @Param("insertNo") String insertNo);
+
     /** 링크 행에 채번된 DST_SITE_CD 기록(§5-4 #7). */
     int updateSiteLinkDstSite(@Param("linkId") Long linkId, @Param("dstSiteCd") String dstSiteCd,
             @Param("updateNo") String updateNo);
@@ -125,6 +147,10 @@ public interface Subcon02Mapper {
 
     /** 미러 사업장 소속 근무타입 전량 LINK_SRC_* NULL 화. 영향행 수 반환. */
     int clearSchLinkSrc(@Param("dstCmpnyCd") String dstCmpnyCd, @Param("dstSiteCd") String dstSiteCd,
+            @Param("srcCmpnyCd") String srcCmpnyCd, @Param("updateNo") String updateNo);
+
+    /** 미러 사업장 소속 교대근무 타입 전량 LINK_SRC_* NULL 화(SHIFT-LINK-T5 — 출처 일치 가드). 영향행 수 반환. */
+    int clearShiftLinkSrc(@Param("dstCmpnyCd") String dstCmpnyCd, @Param("dstSiteCd") String dstSiteCd,
             @Param("srcCmpnyCd") String srcCmpnyCd, @Param("updateNo") String updateNo);
 
     /** 관계ID 산하 활성(PROPOSED/ACTIVE) 링크 목록(관계 해지 훅용 — T1 훅 계약 경로 한정). */
@@ -164,4 +190,29 @@ public interface Subcon02Mapper {
     /** 미러 테넌트 TB_SCH_MGMT_HIST INSERT(전파 변경분 — D7, INSERT_NO='SYSTEM', 현재본 스냅샷). */
     void insertMirrorSchHist(@Param("cmpnyCd") String cmpnyCd, @Param("siteCd") String siteCd,
             @Param("schCd") String schCd, @Param("histIdx") int histIdx);
+
+    // =========================== 교대 정의 전파(SHIFT-LINK-T3) ===========================
+
+    /**
+     * 교대 타입 정의 단건 전파(순수 INSERT — 교대 정의는 insert-only, 지시서 §2.1-2.
+     * SHIFT_CD = 원본 그대로 — D3 동형, LINK_SRC_* 세팅, INSERT_NO/UPDATE_NO='SYSTEM'). 영향행 수 반환.
+     */
+    int propagateMirrorShift(@Param("srcCmpnyCd") String srcCmpnyCd, @Param("srcSiteCd") String srcSiteCd,
+            @Param("shiftCd") String shiftCd, @Param("dstCmpnyCd") String dstCmpnyCd,
+            @Param("dstSiteCd") String dstSiteCd);
+
+    /** 교대 패턴 회차 전파(단건 SHIFT_CD 하위 전량 — 순수 INSERT). 영향행 수 반환. */
+    int propagateMirrorShiftPtrn(@Param("srcCmpnyCd") String srcCmpnyCd, @Param("srcSiteCd") String srcSiteCd,
+            @Param("shiftCd") String shiftCd, @Param("dstCmpnyCd") String dstCmpnyCd,
+            @Param("dstSiteCd") String dstSiteCd);
+
+    /** 교대 조 이름(메타) 전파(단건 SHIFT_CD 하위 전량 — 순수 INSERT). 영향행 수 반환. */
+    int propagateMirrorShiftTeamMeta(@Param("srcCmpnyCd") String srcCmpnyCd, @Param("srcSiteCd") String srcSiteCd,
+            @Param("shiftCd") String shiftCd, @Param("dstCmpnyCd") String dstCmpnyCd,
+            @Param("dstSiteCd") String dstSiteCd);
+
+    /** 교대 조 x 일차 배정표 전파(단건 SHIFT_CD 하위 전량 — 순수 INSERT). 영향행 수 반환. */
+    int propagateMirrorShiftAssign(@Param("srcCmpnyCd") String srcCmpnyCd, @Param("srcSiteCd") String srcSiteCd,
+            @Param("shiftCd") String shiftCd, @Param("dstCmpnyCd") String dstCmpnyCd,
+            @Param("dstSiteCd") String dstSiteCd);
 }

@@ -76,6 +76,10 @@
             </svg>
           </span>
           <span class="subtitle-text">교대근무 타입 리스트</span>
+          <!-- 교대 연동: 미러(연동) 사업장 안내 — 신규 생성은 차단(서버 게이트가 최종 강제), 목록·상세 조회는 정상. -->
+          <span v-if="isMirrorSite" class="mirror-guide"
+            >연동 사업장의 교대근무 타입은 제공 회사에서 관리합니다.</span
+          >
         </div>
 
         <div
@@ -253,6 +257,9 @@ const siteNo = ref("");
 const siteNm = ref("");
 const siteDisabled = ref(false);
 
+// 교대 연동(SHIFT-LINK-T7): 선택 사업장의 미러(연동) 여부 — 교대 타입 신규 생성 차단 판정(T2-09 동형).
+const isMirrorSite = ref(false);
+
 const fnInit = () => {
   siteCd.value = sessionStorage.getItem("gv_siteCd") ?? "";
   siteNo.value = sessionStorage.getItem("gv_siteNo") ?? "";
@@ -263,7 +270,33 @@ onMounted(async () => {
   fnInit();
   fnButtonControll();
   await fnGetSystinfoList();
+  // 세션 기본 사업장이 있으면 미러 여부 판정(응답 linkSrcCmpnyCd — T2-04 확정 필드).
+  await fnResolveMirrorFlag(siteCd.value);
 });
+
+// 교대 연동(SHIFT-LINK-T7): 사업장 미러 여부 조회 — 사업장 목록 응답의 linkSrcCmpnyCd 로 판정.
+//   판정 실패(조회 오류)는 신규 생성을 차단하지 않는다(서버 T4 게이트가 최종 강제 — Attd_01_1 원칙 동일).
+const fnResolveMirrorFlag = async (siteCdVal) => {
+  isMirrorSite.value = false;
+  if (proxy.$util.isEmpty(siteCdVal)) return;
+
+  try {
+    const response = await axios.get("/comApi/baseinfo/site-lists", {
+      params: {
+        cmpnyCd: sessionStorage.getItem("gv_cmpnyCd"),
+      },
+    });
+    if (response.status === 200) {
+      const found = (response.data?.siteInfoResultList ?? []).find(
+        (s) => s.siteCd === siteCdVal
+      );
+      isMirrorSite.value = !!found?.linkSrcCmpnyCd;
+    }
+  } catch (err) {
+    // 판정 실패는 안내 배지만 미표시 — 우회 시도는 서버가 403 거부.
+    console.warn("미러 여부 판정 실패:", err);
+  }
+};
 
 const fnGetSystinfoList = async () => {
   try {
@@ -363,12 +396,15 @@ const fnCallback = (res) => {
         siteCd.value = siteList[0].siteCd;
         siteNo.value = siteList[0].siteNo;
         siteNm.value = siteList[0].siteNm;
+        // 교대 연동: 응답에 미러 여부가 포함되어 있어 즉시 판정(Attd_01_1 동형).
+        isMirrorSite.value = !!siteList[0].linkSrcCmpnyCd;
       } else if (siteList.length > 1) {
         fnSiteSearchPopOpen();
       } else {
         siteCd.value = "";
         siteNo.value = "";
         siteNm.value = "";
+        isMirrorSite.value = false;
       }
     }
   }
@@ -378,6 +414,8 @@ const onSiteSelected = (siteCdVal, siteNoVal, siteNmVal) => {
   siteCd.value = siteCdVal;
   siteNo.value = siteNoVal;
   siteNm.value = siteNmVal;
+  // 교대 연동: 팝업 선택 콜백은 코드/명만 전달 — 미러 여부는 별도 판정(Attd_01_1 동형).
+  fnResolveMirrorFlag(siteCdVal);
 };
 
 const siteFocusKill = async () => {
@@ -413,6 +451,11 @@ const fnCreate = () => {
     proxy.$alert(getMessage(MSG.SITE_REQUIRED));
     return;
   }
+  // 교대 연동: 미러 사업장은 교대 타입 신규 생성 차단(서버 게이트가 최종 강제).
+  if (isMirrorSite.value) {
+    proxy.$alert("연동 사업장의 교대근무 타입은 제공 회사에서 관리합니다.");
+    return;
+  }
   openPop(ShiftTypeCreatePop, {
     siteCd_p: siteCd.value,
     onSearch: fnSearch,
@@ -420,9 +463,12 @@ const fnCreate = () => {
 };
 
 const fnShiftTypeDetail = (shift) => {
+  // 교대 연동(plan §2-7 실측 처리): 상세 팝업에 저장 액션("수정")이 실존 — 미러 사업장은
+  // 해당 버튼을 숨긴다(조회는 정상, 우회 시도는 서버 T4 가 403 거부).
   openPop(ShiftTypeCreatePop, {
     siteCd_p: shift.siteCd,
     shift_p: shift,
+    isMirrorSite_p: isMirrorSite.value,
     onSearch: fnSearch,
   });
 };
@@ -453,6 +499,17 @@ const fnShiftTypeDetail = (shift) => {
   font-size: 0.75rem;
   font-weight: 600;
   flex-shrink: 0;
+}
+/* 교대 연동(SHIFT-LINK-T7): 연동(미러) 사업장 안내 문구 — Attd_01_1 T2-09 배지 복제(scoped 라 파일 간 공유 불가) */
+.mirror-guide {
+  display: inline-block;
+  margin-left: 0.5rem;
+  padding: 0.05rem 0.4rem;
+  border-radius: var(--btn-radius, 8px);
+  background: var(--color-primary-bg, #dcfce7);
+  color: var(--color-primary, #16a34a);
+  font-size: var(--btn-font-sm, 11px);
+  line-height: 1.4;
 }
 .type-code-link {
   color: #16a34a;

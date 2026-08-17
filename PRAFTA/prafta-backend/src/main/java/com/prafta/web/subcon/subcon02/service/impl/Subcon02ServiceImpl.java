@@ -247,11 +247,23 @@ public class Subcon02ServiceImpl implements Subcon02Service {
         int schCnt = subcon02Mapper.insertMirrorSchAll(
                 link.srcCmpnyCd(), link.srcSiteCd(), param.gvCmpnyCd(), dstSiteCd, param.gvUserCd());
 
+        // 8-1) SHIFT-LINK-T2: 교대 정의 4테이블 복제(TEAM_MGMT/TEAM_USER 실인원 계열 제외 — 지시서 §2).
+        //      패턴/배정표의 SCH_CD 참조 정합을 위해 근무타입 복제(8번) 직후에만 호출한다(지시서 §4-1).
+        //      INSERT 대상 CMPNY_CD 는 gvCmpnyCd 강제(타 테넌트 쓰기 봉인 — 5번 단계 원칙 동일).
+        int shiftCnt = subcon02Mapper.insertMirrorShiftAll(
+                link.srcCmpnyCd(), link.srcSiteCd(), param.gvCmpnyCd(), dstSiteCd, param.gvUserCd());
+        subcon02Mapper.insertMirrorShiftPtrnAll(
+                link.srcCmpnyCd(), link.srcSiteCd(), param.gvCmpnyCd(), dstSiteCd, param.gvUserCd());
+        subcon02Mapper.insertMirrorShiftTeamMetaAll(
+                link.srcCmpnyCd(), link.srcSiteCd(), param.gvCmpnyCd(), dstSiteCd, param.gvUserCd());
+        subcon02Mapper.insertMirrorShiftAssignAll(
+                link.srcCmpnyCd(), link.srcSiteCd(), param.gvCmpnyCd(), dstSiteCd, param.gvUserCd());
+
         // 9) 링크 행에 DST_SITE_CD 기록.
         subcon02Mapper.updateSiteLinkDstSite(link.linkId(), dstSiteCd, param.gvUserCd());
 
-        log.info("미러 생성 — link={}, 사업장 {}:{} -> {}:{}, 근무타입 {}건",
-                link.linkId(), link.srcCmpnyCd(), link.srcSiteCd(), param.gvCmpnyCd(), dstSiteCd, schCnt);
+        log.info("미러 생성 — link={}, 사업장 {}:{} -> {}:{}, 근무타입 {}건, 교대타입 {}건",
+                link.linkId(), link.srcCmpnyCd(), link.srcSiteCd(), param.gvCmpnyCd(), dstSiteCd, schCnt, shiftCnt);
     }
 
     @Override
@@ -388,9 +400,12 @@ public class Subcon02ServiceImpl implements Subcon02Service {
                 link.dstCmpnyCd(), link.dstSiteCd(), link.srcCmpnyCd(), actionUserCd);
         int schCleared = subcon02Mapper.clearSchLinkSrc(
                 link.dstCmpnyCd(), link.dstSiteCd(), link.srcCmpnyCd(), actionUserCd);
+        // SHIFT-LINK-T5: 교대근무 타입도 독립화(NULL 화만 — 데이터 유지, 하위 3테이블 무접촉).
+        int shiftCleared = subcon02Mapper.clearShiftLinkSrc(
+                link.dstCmpnyCd(), link.dstSiteCd(), link.srcCmpnyCd(), actionUserCd);
 
-        log.info("미러 독립화 — link={}, {}:{} 일반 전환(site={}행, sch={}행)",
-                link.linkId(), link.dstCmpnyCd(), link.dstSiteCd(), siteCleared, schCleared);
+        log.info("미러 독립화 — link={}, {}:{} 일반 전환(site={}행, sch={}행, shift={}행)",
+                link.linkId(), link.dstCmpnyCd(), link.dstSiteCd(), siteCleared, schCleared, shiftCleared);
     }
 
     // =========================== private ===========================

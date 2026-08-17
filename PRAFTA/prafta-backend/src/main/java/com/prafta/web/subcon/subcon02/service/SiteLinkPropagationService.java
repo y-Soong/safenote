@@ -22,7 +22,8 @@ import lombok.extern.slf4j.Slf4j;
  * <p>재귀 단위 = tb_site_link ACTIVE 행. 중간 해지로 링크가 끊기면 그 지점에서 전파가
  * 자연 정지하고, 독립화된 수신사의 자체 수정은 자기 하위 활성 링크로만 전파된다(새 루트 — plan D8).
  *
- * <p>훅 호출부: {@code Baim01ServiceImpl.saveSiteInfo}(저장 후), {@code Attd01ServiceImpl.updateSchInfo}(저장 후).
+ * <p>훅 호출부: {@code Baim01ServiceImpl.saveSiteInfo}(저장 후), {@code Attd01ServiceImpl.updateSchInfo}(저장 후),
+ * {@code Attd01ServiceImpl.updateShiftSchInfo}(저장 후 — SHIFT-LINK-T3).
  */
 @Slf4j
 @Service
@@ -51,6 +52,16 @@ public class SiteLinkPropagationService {
     @Transactional
     public void propagateSchInfo(String cmpnyCd, String siteCd, String schCd) {
         propagateSchInfoInternal(cmpnyCd, siteCd, schCd, 0);
+    }
+
+    /**
+     * 교대 정의 신규 생성 전파(SHIFT-LINK-T3 — 정의 4테이블, 신규 생성 전파 한정: 지시서 §2.1-2).
+     * 미러 SHIFT_CD = 원본 SHIFT_CD(D3 동형)라 재귀에서도 동일 shiftCd 로 하강한다.
+     * 교대 정의는 HIST 테이블이 없어 이력 기록 없음(plan §0-2). 활성 링크가 없으면 no-op.
+     */
+    @Transactional
+    public void propagateShiftInfo(String cmpnyCd, String siteCd, String shiftCd) {
+        propagateShiftInfoInternal(cmpnyCd, siteCd, shiftCd, 0);
     }
 
     // =========================== private ===========================
@@ -88,6 +99,34 @@ public class SiteLinkPropagationService {
                     link.linkId(), cmpnyCd, siteCd, schCd, link.dstCmpnyCd(), link.dstSiteCd(), affected);
 
             propagateSchInfoInternal(link.dstCmpnyCd(), link.dstSiteCd(), schCd, depth + 1);
+        }
+    }
+
+    private void propagateShiftInfoInternal(String cmpnyCd, String siteCd, String shiftCd, int depth) {
+        assertDepth(depth, cmpnyCd, siteCd);
+
+        List<LinkDstRaw> links = subcon02Mapper.selectActiveLinksBySrcSite(cmpnyCd, siteCd);
+        for (LinkDstRaw link : links) {
+            // 부모 정의 전파(순수 INSERT — 신규 채번 SHIFT_CD 라 미러에 없음. PK 충돌 = 데이터 오염 →
+            // 예외 전파 = 원본 저장 롤백이 올바른 동작이므로 UPSERT 로 덮지 않는다).
+            int affected = subcon02Mapper.propagateMirrorShift(
+                    cmpnyCd, siteCd, shiftCd, link.dstCmpnyCd(), link.dstSiteCd());
+
+            // 원본 행이 없으면(affected=0) 하위 전파할 것도 없다 — 하위 3문 생략.
+            if (affected > 0) {
+                subcon02Mapper.propagateMirrorShiftPtrn(
+                        cmpnyCd, siteCd, shiftCd, link.dstCmpnyCd(), link.dstSiteCd());
+                subcon02Mapper.propagateMirrorShiftTeamMeta(
+                        cmpnyCd, siteCd, shiftCd, link.dstCmpnyCd(), link.dstSiteCd());
+                subcon02Mapper.propagateMirrorShiftAssign(
+                        cmpnyCd, siteCd, shiftCd, link.dstCmpnyCd(), link.dstSiteCd());
+            }
+
+            log.info("교대 정의 전파 - link={}, {}:{}:{} -> {}:{}, 영향행={}",
+                    link.linkId(), cmpnyCd, siteCd, shiftCd, link.dstCmpnyCd(), link.dstSiteCd(), affected);
+
+            // 하위 미러로 재귀(수신 미러가 다시 SRC 인 활성 링크 — n차 체인, 미러 SHIFT_CD=원본 코드).
+            propagateShiftInfoInternal(link.dstCmpnyCd(), link.dstSiteCd(), shiftCd, depth + 1);
         }
     }
 
