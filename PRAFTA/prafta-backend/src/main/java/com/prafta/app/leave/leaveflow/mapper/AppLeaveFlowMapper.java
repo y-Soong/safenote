@@ -186,6 +186,21 @@ public interface AppLeaveFlowMapper {
                                                       @Param("workYmd") String workYmd);
 
     /**
+     * 2026-08-17: 대상 날짜 기준 유효한 활성 부여 건수(잔여 무관).
+     * 0건이면 잔여 부족(051)이 아니라 "부여 유효기간 밖 날짜"(ATTD_400_204/noGrantOnDate)로 분기한다.
+     */
+    int countGrantsValidOnDate(@Param("cmpnyCd") String cmpnyCd,
+                               @Param("userCd") String userCd,
+                               @Param("leaveCd") String leaveCd,
+                               @Param("workYmd") String workYmd);
+
+    /** 2026-08-17: 대상 날짜 이후 가장 이른 부여 시작일(YYYYMMDD, 안내 전용 — 없으면 null). */
+    String selectMinAvailFromAfterDate(@Param("cmpnyCd") String cmpnyCd,
+                                       @Param("userCd") String userCd,
+                                       @Param("leaveCd") String leaveCd,
+                                       @Param("workYmd") String workYmd);
+
+    /**
      * prafta-com-011-2 가불(Q1=b 잔여 우선 차감): 차감 가능한 활성 부여 목록(만료 임박순, 잔여>0, FOR UPDATE).
      * 웹 {@code LeaveFlowMapper.selectBorrowDeductibleGrants} 미러(SQL 본문 동일). 비가불 경로는 호출하지 않는다.
      */

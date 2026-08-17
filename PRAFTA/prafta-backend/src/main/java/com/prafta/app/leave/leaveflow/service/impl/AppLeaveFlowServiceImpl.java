@@ -613,6 +613,15 @@ public class AppLeaveFlowServiceImpl implements AppLeaveFlowService {
                     remnantPlan = leaveRemnantCoverService.evaluateTrigger(
                             cmpny, user, workYmd, leaveCd, unit, leaveMinutes, leaveDays, convForRemnant);
                     if (remnantPlan == null) {
+                        // 2026-08-17: 대상 날짜 기준 유효한 부여가 0건이면 "잔여 부족"이 아니라
+                        //   "부여 유효기간 밖 날짜"다(예: 부여 시작 8/16 계정의 8/13 자 신청).
+                        //   화면 잔여(오늘 기준)와 판정이 어긋나 보여 혼란이 실발생 — 날짜 관점으로 안내한다.
+                        if (appLeaveFlowMapper.countGrantsValidOnDate(cmpny, user, leaveCd, workYmd) == 0) {
+                            log.info("[leaveflow] 연차 신청 거부: 대상일 기준 유효 부여 없음(부여 유효기간 밖) "
+                                            + "(userCd={}, leaveCd={}, workYmd={})",
+                                    user, leaveCd, workYmd);
+                            throw new ApiException(AttdErrorCode.ATTD_400_204);
+                        }
                         log.info("[leaveflow] 연차 신청 거부: 합산 잔여 부족(짜투리 발동 비대상) "
                                         + "(userCd={}, leaveCd={}, needed={})",
                                 user, leaveCd, leaveDays.toPlainString());
@@ -815,14 +824,26 @@ public class AppLeaveFlowServiceImpl implements AppLeaveFlowService {
             }
         }
 
+        // 2026-08-17: 잔여 부족의 원인 구분 — 대상 날짜 기준 유효한 부여가 0건이면(부여 유효기간 밖 날짜)
+        //   FE 가 "예상 차감 초과" 대신 날짜 안내를 띄우도록 플래그 + 이후 가장 이른 부여 시작일을 싣는다.
+        //   (submit 의 ATTD_400_204 분기와 동일 판정 — preview≠확정 불일치 방지.)
+        boolean noGrantOnDate = false;
+        String grantAvailFromDate = null;
+        if (insufficient && grantBased
+                && appLeaveFlowMapper.countGrantsValidOnDate(cmpny, user, leaveCd, workYmd) == 0) {
+            noGrantOnDate = true;
+            grantAvailFromDate = appLeaveFlowMapper.selectMinAvailFromAfterDate(cmpny, user, leaveCd, workYmd);
+        }
+
         log.debug("[leaveflow] 예상 차감 preview: userCd={}, workYmd={}, unit={}, charge={}, 하한={}, 캡={}, "
-                        + "잔여부족={}, conv={}, 짜투리발동={}",
+                        + "잔여부족={}, conv={}, 짜투리발동={}, 유효부여없음={}",
                 user, workYmd, unit, charge.toPlainString(), floorApplied, capApplied, insufficient, conv,
-                remnantTriggered);
+                remnantTriggered, noGrantOnDate);
 
         return new LeaveDeductionPreviewResponse(charge, floorApplied, capApplied, insufficient, conv, floorDays,
                 remnantTriggered, remnantDays, companyCoverMinutes,
-                halfDayBoundaryTime(halfBoundary), halfStartPartRange(halfBoundary), halfEndPartRange(halfBoundary));
+                halfDayBoundaryTime(halfBoundary), halfStartPartRange(halfBoundary), halfEndPartRange(halfBoundary),
+                noGrantOnDate, grantAvailFromDate);
     }
 
     @Override

@@ -23,6 +23,11 @@ import java.math.BigDecimal;
  * @param halfDayBoundaryTime 반차 경계 시각(HHMM) — 반차 단위 preview 에서만 채워진다. 그 외 {@code null}(HB-03, additive)
  * @param halfStartPartRange  시작기준(늦게 출근) 반차가 쉬는 구간 "HHMM~HHMM". 반차 외/산출 불가면 {@code null}
  * @param halfEndPartRange    종료기준(일찍 퇴근) 반차가 쉬는 구간 "HHMM~HHMM". 반차 외/산출 불가면 {@code null}
+ * @param noGrantOnDate       2026-08-17: 잔여 부족의 원인이 "대상 날짜 기준 유효한 부여 0건"인 경우 true —
+ *                            일반 잔여 부족과 구분해 FE 가 날짜 안내 문구를 띄운다(부여 시작 전 날짜 신청 혼란 방지).
+ *                            true 면 insufficientBalance 도 항상 true 다(신청 시 ATTD_400_204 거부될 값). additive
+ * @param grantAvailFromDate  noGrantOnDate=true 일 때 안내용: 대상 날짜 이후 가장 이른 부여 시작일(YYYYMMDD).
+ *                            이후 부여가 없으면 {@code null}
  */
 public record LeaveDeductionPreviewResponse(
       BigDecimal chargeDays
@@ -37,5 +42,7 @@ public record LeaveDeductionPreviewResponse(
     , String halfDayBoundaryTime
     , String halfStartPartRange
     , String halfEndPartRange
+    , boolean noGrantOnDate
+    , String grantAvailFromDate
 ) {
 }

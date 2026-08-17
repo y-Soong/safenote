@@ -390,7 +390,19 @@
           <p v-if="preview.floorApplied" class="preview-card__floor">
             {{ floorNoticeText }}
           </p>
-          <p v-if="preview.insufficientBalance" class="preview-card__warn">
+          <!-- 2026-08-17: 잔여 부족 원인 분기 — 부여 유효기간 밖 날짜(noGrantOnDate)는 잔여 문제가 아니라
+               날짜 문제라서 별도 안내한다(화면 잔여는 오늘 기준이라 "잔여 있는데 왜 초과?" 혼란 실발생).
+               구서버 응답(필드 부재)이면 falsy → 기존 문구 그대로(무회귀). -->
+          <p v-if="preview.insufficientBalance && preview.noGrantOnDate" class="preview-card__warn">
+            선택한 날짜에는 사용할 수 있는 연차가 없어요.
+            <template v-if="grantAvailFromText">
+              연차 부여 시작일({{ grantAvailFromText }}) 이후 날짜로 신청해 주세요.
+            </template>
+            <template v-else>
+              연차 부여의 사용 가능 기간 안의 날짜로 신청해 주세요.
+            </template>
+          </p>
+          <p v-else-if="preview.insufficientBalance" class="preview-card__warn">
             예상 차감이 남은 연차를 초과해요. 이대로 신청하면 거절될 수 있어요.
           </p>
           <!-- PC-11: 짜투리 발동 회사 부담 행 (웹 UI-C 미러 — D6). 발동 예상 시 서버가
@@ -1002,6 +1014,14 @@ const coverMinutesText = computed(() => {
   const p = props.preview
   if (!p || !p.remnantTriggered) return ''
   return formatMinutesToHm(p.companyCoverMinutes)
+})
+
+// 2026-08-17: 부여 유효기간 밖 날짜 안내 — 대상일 이후 가장 이른 부여 시작일(YYYYMMDD → 'YYYY.MM.DD').
+//   서버 grantAvailFromDate 부재/형식 위반이면 '' (일반화 문구로 폴백).
+const grantAvailFromText = computed(() => {
+  const v = props.preview?.grantAvailFromDate
+  if (typeof v !== 'string' || !/^\d{8}$/.test(v)) return ''
+  return `${v.slice(0, 4)}.${v.slice(4, 6)}.${v.slice(6, 8)}`
 })
 
 // 'HHMM' → 분. 형식 위반 시 -1. (스케줄 HHMM 용)
