@@ -317,11 +317,11 @@
                 <col class="c-act-time" />
                 <col class="c-day" />
                 <col class="c-act-time" />
-                <col class="c-total" />
-                <col class="c-total" />
-                <!-- PRAFTA-FIXEDOT-3: 고정연장 구간 / 실적(자동 계상) -->
+                <!-- PRAFTA-FIXEDOT-3: 고정연장 구간 / 실적(자동 계상) — 실근로시간 왼쪽 배치(2026-08-17 요청) -->
                 <col class="c-fixedot" />
                 <col class="c-fixedot" />
+                <col class="c-total" />
+                <col class="c-total" />
               </colgroup>
               <thead>
                 <!-- Level 1: 비고 / 날짜 / 스케줄·근태(1·2구간) / 실근로시간 / 인정시간 -->
@@ -332,12 +332,13 @@
                   <th class="l2-actual bdr-sub" colspan="4">1구간 근태</th>
                   <th class="l2-plan bdr-section" colspan="2">2구간 스케줄</th>
                   <th class="l2-actual bdr-sub" colspan="4">2구간 근태</th>
-                  <th class="l1-rs bdr-section" rowspan="2">실근로시간</th>
-                  <th class="l1-rs bdr-section" rowspan="2">인정시간</th>
                   <!-- PRAFTA-FIXEDOT-3: 고정연장근무(소정과 분리된 별도 축).
                        구간 = 근무타입에 설정된 전방/후방 고정연장, 실적 = 실근태가 그 구간을 커버한 분.
-                       "연장 미이행" 배지는 조퇴 판정/통계와 완전히 분리된 별도 표식이다(정책 ②). -->
+                       "연장 미이행" 배지는 조퇴 판정/통계와 완전히 분리된 별도 표식이다(정책 ②).
+                       위치: 실근로시간 왼쪽(2026-08-17 요청). -->
                   <th class="l2-plan bdr-section" colspan="2">고정연장</th>
+                  <th class="l1-rs bdr-section" rowspan="2">실근로시간</th>
+                  <th class="l1-rs bdr-section" rowspan="2">인정시간</th>
                 </tr>
                 <!-- Level 2: 컬럼명 -->
                 <tr class="lvl2">
@@ -399,13 +400,13 @@
                     <td class="col-actual">
                       {{ r.seg === 2 ? valOrDash(r.otOut) : "−" }}
                     </td>
+                    <!-- PRAFTA-FIXEDOT-3: OT 행은 고정연장 개념이 없다(구간이 서로 배타) -->
+                    <td class="col-plan bdr-section">−</td>
+                    <td class="col-plan">−</td>
                     <td class="bdr-section right">{{ valOrDash(r.total) }}</td>
                     <td class="bdr-section right">
                       {{ valOrDash(r.recognized) }}
                     </td>
-                    <!-- PRAFTA-FIXEDOT-3: OT 행은 고정연장 개념이 없다(구간이 서로 배타) -->
-                    <td class="col-plan bdr-section">−</td>
-                    <td class="col-plan">−</td>
                   </tr>
                   <!-- 정규근무 행 (kind === 'work') -->
                   <!-- 행 더블클릭 → 일자 상세 팝업. 캘린더 뷰(m-day-cell @dblclick)와 동일 제스처·동일 조건
@@ -471,14 +472,6 @@
                     <td class="col-actual">{{ valOrDash(r.a2In) }}</td>
                     <td class="col-actual">{{ valOrDash(r.a2OutDate) }}</td>
                     <td class="col-actual">{{ valOrDash(r.a2Out) }}</td>
-                    <!-- 실근로시간 -->
-                    <td class="bdr-section right">
-                      {{ valOrDash(r.total) }}
-                    </td>
-                    <!-- 인정시간 -->
-                    <td class="bdr-section right">
-                      {{ valOrDash(r.recognized) }}
-                    </td>
                     <!-- PRAFTA-FIXEDOT-3: 고정연장 구간 / 실적 + "연장 미이행" 배지.
                          배지는 서버 파생 판정(조퇴와 분리·연차 계열 사용일 미발화)을 그대로 표시만 한다. -->
                     <td class="col-plan bdr-section">
@@ -489,6 +482,14 @@
                         >미이행</span
                       >
                       {{ valOrDash(r.fixedOtAct) }}
+                    </td>
+                    <!-- 실근로시간 -->
+                    <td class="bdr-section right">
+                      {{ valOrDash(r.total) }}
+                    </td>
+                    <!-- 인정시간 -->
+                    <td class="bdr-section right">
+                      {{ valOrDash(r.recognized) }}
                     </td>
                   </tr>
                 </template>
