@@ -23,6 +23,11 @@
           >{{ context.workPlanName }} · {{ scheduleSummaryDisplay || '-' }}</span
         >
       </div>
+      <!-- PRAFTA-FIXEDOT-2(표기): 고정연장(전방·후방) 시각 — 소정과 구분해 별도 행 표기(없는 타입/미수신은 미노출). -->
+      <div v-if="fixedOtSummaryDisplay" class="ctx__row">
+        <span class="ctx__lbl">고정연장</span>
+        <span class="ctx__val">{{ fixedOtSummaryDisplay }}</span>
+      </div>
       <div v-if="context.attendanceSummary" class="ctx__row">
         <span class="ctx__lbl">근태</span>
         <span class="ctx__val">{{ attendanceSummaryDisplay }}</span>
@@ -378,6 +383,8 @@ const ctxDateDisplay = computed(() => {
 const ctxSiteDisplay = computed(() => props.context.siteName || '')
 // BE raw HHMM 요약("0716~1811" / "0700~1300 / 1700~2100")을 "HH:MM ~ HH:MM" 표시형으로 변환.
 const scheduleSummaryDisplay = computed(() => formatTimeSummary(props.context.scheduleSummary))
+// PRAFTA-FIXEDOT-2(표기): 고정연장 요약(raw HHMM) — 없는 타입/구서버 응답은 빈 문자열이라 행 자체가 숨는다.
+const fixedOtSummaryDisplay = computed(() => formatTimeSummary(props.context.fixedOtSummary))
 const attendanceSummaryDisplay = computed(() => formatTimeSummary(props.context.attendanceSummary))
 
 // ── 구간별 등록 가능 시간 (칩 — 탭하면 입력칸에 자동 반영) ──────────────
