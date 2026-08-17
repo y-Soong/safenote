@@ -48,6 +48,12 @@ public interface Attd07Mapper {
     List<MonthlyOvertimeResult> selectMonthlyOvertimeList(MonthlyAttdListQuery query);
 
     /**
+     * A안(2026-08-17): 조회 월 안의 확정 "시각 보유" 연차(반차 01 + 시간차 02/03/04) 구간 목록.
+     * 목록 뷰 실근로/인정시간 표시에서 실근태와의 겹침 차감용(연차 시간은 근로시간 미산입).
+     */
+    List<com.prafta.web.attd.attd07.result.MonthlyTimeLeaveWindowResult> selectMonthlyTimeLeaveWindows(MonthlyAttdListQuery query);
+
+    /**
      * PRAFTA-COM-008-B-3: 그날 종일(USE_UNIT_TYPE='00') 확정 연차 존재 카운트(웹 OT 등록 차단 판정).
      *
      * <p>app 측 단일출처 {@code AppAttd01Mapper.countFullDayLeaveOn}(=AppHome01Mapper 미러) 와 동일 술어를

@@ -23,6 +23,7 @@ import com.prafta.web.attd.attd15.result.ActualRowResult;
 import com.prafta.web.attd.attd15.result.OvertimeSummaryResult;
 import com.prafta.web.attd.attd15.result.ScheduledRowResult;
 import com.prafta.web.attd.attd15.result.TargetUserResult;
+import com.prafta.web.attd.attd15.result.TimeLeaveWindowResult;
 import com.prafta.web.attd.attd15.result.Weekly52hListResult;
 import com.prafta.web.attd.attd15.service.Attd15Service;
 
@@ -106,7 +107,27 @@ public class Attd15ServiceImpl implements Attd15Service {
             scheduledMinutesByUser.merge(r.userCd(), plannedMinutesOfRow(r), Long::sum);
         }
 
+        // A안(2026-08-17): 사용자·일 단위 확정 "시각 보유" 연차(반차 01 + 시간차 02/03/04) 구간 맵.
+        //   연차 사용 시간은 유급이되 근로시간이 아니므로(주52·연장 판정은 실근로 기준 — 고용부 해석),
+        //   실제기준(raw) 합산에서 실근태와의 겹침만큼 차감한다. 시각 wrap(END<=START=익일)은 저장 규약.
+        //   확정 구간은 겹침 가드(ATTD_400_112/HB-09)로 상호 배타지만 방어적으로 병합 후 사용한다.
+        Map<String, List<int[]>> leaveSegsByUserDay = new HashMap<>();
+        for (TimeLeaveWindowResult w : attd15Mapper.selectWeeklyTimeLeaveWindows(query)) {
+            Integer s = FixedOtMinutesUtils.dayAnchorMinutes(w.workYmd(), w.workYmd(), w.startTime());
+            Integer e = FixedOtMinutesUtils.dayAnchorMinutes(w.workYmd(), w.workYmd(), w.endTime());
+            if (s == null || e == null) {
+                continue; // 시각 비정상 행 — 차감 제외(추정 금지)
+            }
+            int end = (e <= s) ? e + 1440 : e;
+            leaveSegsByUserDay
+                    .computeIfAbsent(w.userCd() + "_" + w.workYmd(), k -> new ArrayList<>())
+                    .add(new int[] { s, end });
+        }
+        leaveSegsByUserDay.replaceAll((k, v) -> mergeSegments(v));
+
         // 사용자별 "실제 근무 기준" 원시 합계(분) — Attd11ServiceImpl.UserAccumulator.workMinutes 포팅.
+        //   A안: 슬롯별로 (raw − 휴게) − (확정 시각 연차 ∩ 실근태) 를 합산한다. 시간차는 휴게 가로지름
+        //   금지(ATTD_400_055)라 휴게와 연차 차감이 이중으로 겹칠 수 없다.
         Map<String, Long> actualRawMinutesByUser = new HashMap<>();
         for (ActualRowResult r : actualRows) {
             String inDate = blankToNull(r.actInDate());
@@ -120,6 +141,15 @@ public class Attd15ServiceImpl implements Attd15Service {
                 long inStamp = toMinuteStamp(inDate != null ? inDate : workYmd, inTime);
                 long outStamp = toMinuteStamp(outDate != null ? outDate : workYmd, outTime);
                 long worked = (outStamp - inStamp) - breakMin;
+                List<int[]> leaveSegs = leaveSegsByUserDay.get(r.userCd() + "_" + workYmd);
+                if (worked > 0 && leaveSegs != null && !leaveSegs.isEmpty()) {
+                    int[] actSeg = FixedOtMinutesUtils.actualSegment(
+                            FixedOtMinutesUtils.dayAnchorMinutes(workYmd, inDate, inTime),
+                            FixedOtMinutesUtils.dayAnchorMinutes(workYmd, outDate, outTime));
+                    if (actSeg != null) {
+                        worked -= FixedOtMinutesUtils.coveredMinutes(leaveSegs, List.of(actSeg));
+                    }
+                }
                 if (worked > 0) {
                     actualRawMinutesByUser.merge(r.userCd(), worked, Long::sum);
                 }
@@ -274,6 +304,31 @@ public class Attd15ServiceImpl implements Attd15Service {
         }
         int net = span - (breakMin == null ? 0 : breakMin);
         return Math.max(net, 0);
+    }
+
+    /**
+     * A안(2026-08-17): 구간 목록 병합(시작 오름차순 정렬 후 겹침/인접 통합).
+     * 확정 연차 구간은 가드로 상호 배타지만, 겹치는 입력이 와도 이중 차감이 없도록 방어한다.
+     */
+    private static List<int[]> mergeSegments(List<int[]> segs) {
+        if (segs == null || segs.size() <= 1) {
+            return segs;
+        }
+        List<int[]> sorted = new ArrayList<>(segs);
+        sorted.sort(Comparator.comparingInt(a -> a[0]));
+        List<int[]> merged = new ArrayList<>();
+        int[] cur = sorted.get(0).clone();
+        for (int i = 1; i < sorted.size(); i++) {
+            int[] next = sorted.get(i);
+            if (next[0] <= cur[1]) {
+                cur[1] = Math.max(cur[1], next[1]);
+            } else {
+                merged.add(cur);
+                cur = next.clone();
+            }
+        }
+        merged.add(cur);
+        return merged;
     }
 
     /** 일자(YYYYMMDD) + 시각(HHmm) 을 1970-01-01 기준 통합 분(minute) stamp 로 환산(Attd11ServiceImpl 동일). */

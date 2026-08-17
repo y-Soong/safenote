@@ -550,4 +550,28 @@
         GROUP BY O.USER_CD
     </select>
 
+    <!-- A안(2026-08-17): 조회 주간 안의 확정 "시각 보유" 연차(반차 01 + 시간차 02/03/04) 구간 목록.
+         연차 사용 시간은 근로시간이 아니므로 실제기준(raw) 합산에서 실근태와의 겹침만큼 차감한다(서비스 산출).
+         사용자 스코프는 서비스가 target 사용자 키로 매칭하므로 여기선 회사+사업장+기간 술어만 건다.
+         분할차감 행은 같은 시각이 여러 행으로 오므로 DISTINCT 로 접는다(Attd08 selectHalfLeaveWindows 동형).
+         ★ TimeLeaveWindowResult record 위치 기반 매핑 - SELECT 컬럼 순서 변경 금지. -->
+    <select id="selectWeeklyTimeLeaveWindows" parameterType="com.prafta.web.attd.attd15.application.query.Weekly52hListsQuery" resultType="com.prafta.web.attd.attd15.result.TimeLeaveWindowResult">
+    /* Attd15Mapper.selectWeeklyTimeLeaveWindows */
+        SELECT DISTINCT
+              L.USER_CD     AS userCd
+            , L.START_DATE  AS workYmd
+            , L.START_TIME  AS startTime
+            , L.END_TIME    AS endTime
+        FROM TB_USER_LEAVE_USE L
+        WHERE L.CMPNY_CD      = #{gvCmpnyCd}
+          AND L.SITE_CD       = #{siteCd}
+          AND L.START_DATE <![CDATA[ >= ]]> #{weekStartYmd}
+          AND L.START_DATE <![CDATA[ <= ]]> #{weekEndYmd}
+          AND L.USE_UNIT_TYPE IN ('01', '02', '03', '04')
+          AND L.LEAVE_STATUS  = 'CONFIRMED'
+          AND L.DEL_YN        = 'N'
+          AND L.START_TIME IS NOT NULL
+          AND L.END_TIME   IS NOT NULL
+    </select>
+
 </mapper>

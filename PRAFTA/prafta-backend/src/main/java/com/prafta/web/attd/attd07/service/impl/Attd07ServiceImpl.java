@@ -180,6 +180,8 @@ public class Attd07ServiceImpl implements Attd07Service {
                 .monthlyAttdReqSummaryResultList(monthlyAttdReqSummaryResultList)
                 .monthlyOvertimeResultList(monthlyOvertimeResultList)
                 .monthlyLeaveChangeSummaryResultList(monthlyLeaveChangeSummaryResultList)
+                // A안(2026-08-17): 확정 시각 연차 구간 — FE 가 실근로/인정시간에서 겹침 차감(연차 시간은 근로시간 미산입).
+                .timeLeaveWindowList(attd07Mapper.selectMonthlyTimeLeaveWindows(MonthlyAttdListQuery.from(param)))
                 .build();
     }
 

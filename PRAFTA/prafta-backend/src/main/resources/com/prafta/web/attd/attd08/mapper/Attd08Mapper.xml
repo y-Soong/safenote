@@ -393,6 +393,29 @@
           AND L.END_TIME   IS NOT NULL
     </select>
 
+    <!-- A안(2026-08-17): 조회기간 안의 확정 "시각 보유" 연차(반차 01 + 시간차 02/03/04) 구간 목록.
+         연차 사용 시간은 근로시간이 아니므로 FE 가 실근로/인정시간 표시에서 실근태와의 겹침을 차감한다.
+         selectHalfLeaveWindows(판정용, 반차 한정)와 별개 statement 로 둔다 - 판정 로직 무회귀.
+         ★ HalfLeaveWindowResult record 재사용(동일 4컬럼) - SELECT 컬럼 순서 변경 금지. -->
+    <select id="selectTimeLeaveWindows" parameterType="com.prafta.web.attd.attd08.application.query.AttdListsQuery" resultType="com.prafta.web.attd.attd08.result.HalfLeaveWindowResult">
+    /* Attd08Mapper.selectTimeLeaveWindows */
+        SELECT DISTINCT
+              L.USER_CD     AS userCd
+            , L.START_DATE  AS workYmd
+            , L.START_TIME  AS startTime
+            , L.END_TIME    AS endTime
+        FROM TB_USER_LEAVE_USE L
+        WHERE L.CMPNY_CD      = #{gvCmpnyCd}
+          AND L.SITE_CD       = #{siteCd}
+          AND L.START_DATE <![CDATA[ >= ]]> #{fromYmd}
+          AND L.START_DATE <![CDATA[ <= ]]> #{toYmd}
+          AND L.USE_UNIT_TYPE IN ('01', '02', '03', '04')
+          AND L.LEAVE_STATUS  = 'CONFIRMED'
+          AND L.DEL_YN        = 'N'
+          AND L.START_TIME IS NOT NULL
+          AND L.END_TIME   IS NOT NULL
+    </select>
+
     <!-- security H-1: attd-gps-trail 인가 판정용 — 근태 행의 소속(사업장/부서)과 소유자.
          파라미터(attdId)만으로는 인가를 판정할 수 없어 행을 먼저 읽는다. 좌표는 읽지 않는다. -->
     <select id="selectAttdOwnerScope" resultType="com.prafta.web.attd.attd08.result.AttdOwnerScopeResult">

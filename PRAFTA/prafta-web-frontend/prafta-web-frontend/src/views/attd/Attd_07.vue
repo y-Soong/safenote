@@ -770,6 +770,11 @@ const reqCellSet = computed(() => {
 //   PRAFTA-017 신규 응답. 목록 뷰에서 일자별 정규근무 행 아래 OT 행으로 펼침.
 const monthlyOvertimeList = ref([]);
 
+// A안(2026-08-17): 확정 "시각 보유" 연차(반차/시간차) 구간 맵 — `${userCd}_${workYmd}` → [[s,e],...]
+//   (근무일 00:00 anchor 분, END<=START 는 익일 wrap). 연차 사용 시간은 근로시간이 아니므로
+//   실근로시간/인정시간 표시에서 실근태와의 겹침만큼 차감한다(구서버 응답 미수신이면 빈 맵 = 종전 값).
+const timeLeaveWindowsMap = ref({});
+
 const selectedUserId = ref("");
 const selectedUser = computed(
   () => userList.value.find((u) => u.userId === selectedUserId.value) ?? null
@@ -824,6 +829,44 @@ const normHhmm = (v) =>
   String(v ?? "")
     .replace(/\D/g, "")
     .slice(0, 4);
+
+// A안(2026-08-17): 'HHMM' → 분(0~1439). 형식 위반이면 null.
+const hhmmToMin = (hhmm) => {
+  const v = String(hhmm ?? "");
+  if (!/^\d{4}$/.test(v)) return null;
+  const h = parseInt(v.slice(0, 2), 10);
+  const m = parseInt(v.slice(2, 4), 10);
+  if (h > 24 || m > 59) return null;
+  return h * 60 + m;
+};
+
+// A안: 확정 시각 연차 구간과 그날 실근태(1·2구간)의 겹침(분).
+//   실근태 스탬프를 근무일 00:00 anchor 분으로 환산해(전일 음수/익일 1440+) 구간 교집합을 합산한다.
+//   시간차는 스케줄 안에서만 신청되므로(등록 가드) 이 값은 인정시간(실제∩스케줄) 차감에도 그대로 쓴다.
+const timeLeaveOverlapMin = (r, workYmd) => {
+  const wins = timeLeaveWindowsMap.value[`${r.userCd}_${workYmd}`];
+  if (!wins || !wins.length) return 0;
+  let total = 0;
+  for (const seg of [1, 2]) {
+    const inT = normHhmm(seg === 2 ? r.act2InTime : r.act1InTime);
+    const outT = normHhmm(seg === 2 ? r.act2OutTime : r.act1OutTime);
+    if (inT.length !== 4 || outT.length !== 4) continue;
+    const inD = String((seg === 2 ? r.act2InDate : r.act1InDate) || workYmd);
+    const outD = String((seg === 2 ? r.act2OutDate : r.act1OutDate) || workYmd);
+    const im = hhmmToMin(inT);
+    const om = hhmmToMin(outT);
+    if (im == null || om == null) continue;
+    const s = ymdDayDiff(workYmd, inD) * 1440 + im;
+    const e = ymdDayDiff(workYmd, outD) * 1440 + om;
+    if (e <= s) continue;
+    for (const w of wins) {
+      const os = Math.max(s, w[0]);
+      const oe = Math.min(e, w[1]);
+      if (oe > os) total += oe - os;
+    }
+  }
+  return total;
+};
 
 // 출퇴근 상태 판정 (오늘/미래는 누락이 아니라 "출근전"/"퇴근전" 으로 분류)
 // 반환: { status: 'alert' | 'pre' | '', note }
@@ -901,7 +944,8 @@ const calcMin = (inT, outT, breakMin, inDate, outDate) => {
   const dayDiff = ymdDayDiff(inDate, outDate);
   return Math.max(0, om - im + dayDiff * 1440 - (parseInt(breakMin, 10) || 0));
 };
-const calcTotal = (r) => {
+// A안(2026-08-17): minusMin = 확정 시각 연차와 실근태의 겹침(분) — 연차 시간은 근로시간 미산입.
+const calcTotal = (r, minusMin = 0) => {
   const t =
     calcMin(
       r.act1InTime,
@@ -916,7 +960,8 @@ const calcTotal = (r) => {
       r.plan2BreakMin,
       r.act2InDate,
       r.act2OutDate
-    );
+    ) -
+    (minusMin || 0);
   if (t <= 0) return "";
   return `${Math.floor(t / 60)}시간 ${String(t % 60).padStart(2, "0")}분`;
 };
@@ -1117,6 +1162,10 @@ function buildDetailRow(user, d) {
     `${workYm.value.replace("-", "")}${String(d.day).padStart(2, "0")}`;
   const { status, note } = detectAttdState(r, ymd);
 
+  // A안: 확정 시각 연차(반차/시간차)와 실근태의 겹침 — 실근로/인정시간에서 공통 차감.
+  //   (시간차는 스케줄 안에서만 신청되므로 인정시간(실제∩스케줄) 차감량도 동일하다.)
+  const leaveOverlapMin = timeLeaveOverlapMin(r, ymd);
+
   return {
     kind: "work",
     rowKey: `work_${d.day}`,
@@ -1134,8 +1183,8 @@ function buildDetailRow(user, d) {
     a2In: fmtTime(r.act2InTime),
     a2OutDate: fmtMmdd(r.act2OutDate),
     a2Out: fmtTime(r.act2OutTime),
-    total: calcTotal(r),
-    recognized: fmtRecognized(calcRecognized(r)),
+    total: calcTotal(r, leaveOverlapMin),
+    recognized: fmtRecognized(calcRecognized(r) - leaveOverlapMin),
     note,
     status,
     // 외근 배지 — 구간별 외근 플래그(attd{1,2}OutsideYn)가 'Y'인 구간만 노출
@@ -1462,6 +1511,19 @@ const fnBindResponse = (data) => {
   leaveChangeSummaryList.value =
     data?.monthlyLeaveChangeSummaryResultList ?? [];
   monthlyOvertimeList.value = data?.monthlyOvertimeResultList ?? [];
+
+  // A안: 확정 시각 연차 구간 맵 빌드 — 근무일 00:00 anchor 분, END<=START 는 익일 wrap(저장 규약).
+  const tlMap = {};
+  for (const w of data?.timeLeaveWindowList ?? []) {
+    const s = hhmmToMin(w.startTime);
+    let e = hhmmToMin(w.endTime);
+    if (s == null || e == null) continue;
+    if (e <= s) e += 1440;
+    const key = `${w.userCd}_${w.workYmd}`;
+    if (!tlMap[key]) tlMap[key] = [];
+    tlMap[key].push([s, e]);
+  }
+  timeLeaveWindowsMap.value = tlMap;
 
   const recs = data?.attdRecordResultList ?? [];
 

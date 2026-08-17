@@ -742,6 +742,9 @@ const fnSiteNodeSearchPopOpen = () => {
 
 // 결과
 const rows = ref([]);
+// A안(2026-08-17): 확정 "시각 보유" 연차(반차/시간차) 구간 맵 — `${userCd}_${workYmd}` → [[startHHMM,endHHMM],...]
+//   실근로/인정시간 표시에서 실근태와의 겹침 차감용(연차 시간은 근로시간 미산입).
+const timeLeaveWinMap = ref({});
 const selected = ref(null);
 
 // 뷰 전환 모드 — 'full'(전체) | 'summary'(요약) (Attd_07 토글 패턴 차용)
@@ -825,6 +828,15 @@ const fnSearch = async () => {
     if (response.status === 200) {
       console.log(response.data);
       rows.value = response.data?.attdListsResultList ?? [];
+      // A안(2026-08-17): 확정 시각 연차 구간 맵 — `${userCd}_${workYmd}` → [[startHHMM,endHHMM],...]
+      //   구서버 응답(필드 부재)이면 빈 맵 = 종전 값 그대로(무회귀).
+      const tlMap = {};
+      for (const w of response.data?.timeLeaveWindowList ?? []) {
+        const key = `${w.userCd}_${w.workYmd}`;
+        if (!tlMap[key]) tlMap[key] = [];
+        tlMap[key].push([w.startTime, w.endTime]);
+      }
+      timeLeaveWinMap.value = tlMap;
       // 상세 닫기 (조회 결과가 갱신됨)
       fnCloseDetail();
     }
@@ -1019,11 +1031,38 @@ const actualGrossMin = (r) => {
   if (outM < inM) return null;
   return outM - inM;
 };
-// 실근로시간(분) = 실제 구간 − 휴게.
+// A안(2026-08-17): 확정 "시각 보유" 연차(반차/시간차) 구간과 [sM,eM] 구간의 겹침(분).
+//   연차 사용 시간은 유급이되 근로시간이 아니므로 실근로/인정시간에서 차감한다.
+//   구간 절대분 프레임은 dtMinutes(epoch 분)와 동일 축, END<=START 는 익일 wrap(저장 규약).
+const leaveOverlapForRange = (r, sM, eM) => {
+  if (r._isOt || sM == null || eM == null || eM <= sM) return 0;
+  const wins = timeLeaveWinMap.value[`${r.userCd}_${r.workYmd}`];
+  if (!wins || !wins.length) return 0;
+  let total = 0;
+  for (const w of wins) {
+    const ws = dtMinutes(r.workYmd, w[0], r.workYmd);
+    let we = dtMinutes(r.workYmd, w[1], r.workYmd);
+    if (ws == null || we == null) continue;
+    if (we <= ws) we += 1440;
+    const os = Math.max(sM, ws);
+    const oe = Math.min(eM, we);
+    if (oe > os) total += oe - os;
+  }
+  return total;
+};
+
+// 실근로시간(분) = 실제 구간 − 휴게 − 확정 시각 연차 겹침(A안).
 const workedNetMin = (r) => {
   const gross = actualGrossMin(r);
   if (gross == null) return null;
-  return Math.max(0, gross - schedBreakMin(r));
+  const inM = dtMinutes(r._inDate, r._inTime, r.workYmd);
+  let outM = dtMinutes(r._outDate, r._outTime, r.workYmd);
+  let leaveOverlap = 0;
+  if (inM != null && outM != null) {
+    if (outM < inM) outM += 1440;
+    leaveOverlap = leaveOverlapForRange(r, inM, outM);
+  }
+  return Math.max(0, gross - schedBreakMin(r) - leaveOverlap);
 };
 // 인정시간(분).
 const recognizedMin = (r) => {
@@ -1050,7 +1089,13 @@ const recognizedMin = (r) => {
     0,
     Math.min(outM, schEndM) - Math.max(inM, schStartM)
   );
-  return Math.max(0, overlap - schedBreakMin(r));
+  // A안: 확정 시각 연차 겹침 차감 — (실제∩스케줄) 구간과의 겹침만 뺀다(과차감 방지).
+  const leaveOverlap = leaveOverlapForRange(
+    r,
+    Math.max(inM, schStartM),
+    Math.min(outM, schEndM)
+  );
+  return Math.max(0, overlap - schedBreakMin(r) - leaveOverlap);
 };
 // 분 → "N시간 M분" 표기. null/0 처리.
 const fmtDuration = (min) => {

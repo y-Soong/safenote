@@ -23,6 +23,12 @@ public interface Attd08Mapper {
      */
     List<HalfLeaveWindowResult> selectHalfLeaveWindows(AttdListsQuery query);
 
+    /**
+     * A안(2026-08-17): 조회기간 안의 확정 "시각 보유" 연차(반차 01 + 시간차 02/03/04) 구간 목록.
+     * FE 실근로/인정시간 표시의 겹침 차감용(연차 시간은 근로시간 미산입). record 는 동일 4컬럼이라 재사용.
+     */
+    List<HalfLeaveWindowResult> selectTimeLeaveWindows(AttdListsQuery query);
+
     /** security H-1: GPS 궤적 인가 판정용 근태 행 스코프(사업장/부서/소유자). 없으면 null. */
     AttdOwnerScopeResult selectAttdOwnerScope(@Param("cmpnyCd") String cmpnyCd,
                                               @Param("attdId") String attdId);

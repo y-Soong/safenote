@@ -9,6 +9,7 @@ import com.prafta.web.attd.attd15.result.ActualRowResult;
 import com.prafta.web.attd.attd15.result.OvertimeSummaryResult;
 import com.prafta.web.attd.attd15.result.ScheduledRowResult;
 import com.prafta.web.attd.attd15.result.TargetUserResult;
+import com.prafta.web.attd.attd15.result.TimeLeaveWindowResult;
 
 /**
  * ATTD15-T1 - 주52시간 관리 매퍼.
@@ -47,4 +48,10 @@ public interface Attd15Mapper {
      * Attd11Mapper.selectOvertimeSummary 를 주간 범위로 이식.
      */
     List<OvertimeSummaryResult> selectWeeklyOvertimeSummary(Weekly52hListsQuery query);
+
+    /**
+     * A안(2026-08-17): 조회 주간 안의 확정 "시각 보유" 연차(반차 01 + 시간차 02/03/04) 구간 목록.
+     * 실제기준(raw) 합산에서 실근태와의 겹침을 차감하는 데 쓴다(연차 시간은 근로시간 미산입).
+     */
+    List<TimeLeaveWindowResult> selectWeeklyTimeLeaveWindows(Weekly52hListsQuery query);
 }

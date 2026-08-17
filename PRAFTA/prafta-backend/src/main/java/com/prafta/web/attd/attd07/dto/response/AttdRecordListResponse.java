@@ -24,4 +24,11 @@ public class AttdRecordListResponse {
      * reqId 자리에 CHANGE_REQ_ID 가 들어가며, MOVE 는 출발일·이동대상일 두 행이 나올 수 있다.
      */
     List<MonthlyAttdReqSummaryResult> monthlyLeaveChangeSummaryResultList;
+
+    /*
+     * A안(2026-08-17): 확정 "시각 보유" 연차(반차/시간차) 구간 목록 (월 단위).
+     * 목록 뷰 실근로/인정시간 표시에서 실근태와의 겹침을 차감하는 데 쓴다(연차 시간은 근로시간 미산입).
+     * additive — 구 FE 는 무시(무회귀).
+     */
+    List<com.prafta.web.attd.attd07.result.MonthlyTimeLeaveWindowResult> timeLeaveWindowList;
 }

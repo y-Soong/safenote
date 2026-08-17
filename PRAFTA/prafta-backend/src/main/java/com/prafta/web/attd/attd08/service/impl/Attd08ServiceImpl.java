@@ -103,6 +103,8 @@ public class Attd08ServiceImpl implements Attd08Service {
 
         return AttdListsResponse.builder()
                 .attdListsResultList(judged)
+                // A안(2026-08-17): 확정 시각 연차 구간 — FE 실근로/인정시간의 겹침 차감용(연차 시간은 근로시간 미산입).
+                .timeLeaveWindowList(attd08Mapper.selectTimeLeaveWindows(query))
                 .build();
     }
 
