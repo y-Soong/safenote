@@ -159,13 +159,6 @@
       <!-- 적용 버튼과 동일 — 마감 사유는 fnClearCells 선두 가드가 안내한다. -->
       <button class="btn-toolbar-clear" @click="fnClearCells">지우기</button>
 
-      <!-- 범례 — 연차는 신청 시점에 선차감되어 승인 전/후가 셀 값으로는 구분되지 않는다.
-           대기 셀의 시각 표시가 무엇을 뜻하는지 알려준다(구분 표시 도입, 2026-08-14). -->
-      <span class="toolbar-legend">
-        <span class="legend-swatch legend-swatch-pending"></span>
-        연차 결재 대기(승인 전)
-      </span>
-
       <div class="toolbar-spacer"></div>
       <button class="btn-toolbar-upload" @click="fnUploadExcel">
         엑셀 업로드
@@ -321,6 +314,16 @@
             </tr>
           </tbody>
         </table>
+      </div>
+
+      <!-- 범례 — 연차는 신청 시점에 선차감되어 승인 전/후가 셀 값으로는 구분되지 않는다.
+           대기 셀의 시각 표시가 무엇을 뜻하는지 알려준다(구분 표시 도입, 2026-08-14).
+           툴바 한 행 확보를 위해 테이블 좌측 하단으로 이동(2026-08-17). -->
+      <div class="attd05-legend-row">
+        <span class="toolbar-legend">
+          <span class="legend-swatch legend-swatch-pending"></span>
+          연차 결재 대기(승인 전)
+        </span>
       </div>
     </div>
   </div>
@@ -1797,7 +1800,7 @@ onUnmounted(() => {
 .attd05-toolbar {
   display: flex;
   align-items: center;
-  gap: 0.6rem;
+  gap: 0.5rem;
   padding: 0.45rem 0.75rem;
   border-bottom: 1px solid var(--color-border, #e5e7eb);
   background: var(--color-bg, #f9fafb);
@@ -1812,7 +1815,15 @@ onUnmounted(() => {
   padding-right: 0.2rem;
 }
 
-/* 연차 결재 대기 셀 범례 — 그리드의 대기 표시가 무엇인지 알려준다. */
+/* 연차 결재 대기 셀 범례 — 그리드의 대기 표시가 무엇인지 알려준다.
+   툴바 폭 확보를 위해 테이블 좌측 하단 범례 행으로 이동. */
+.attd05-legend-row {
+  display: flex;
+  justify-content: flex-start;
+  align-items: center;
+  padding-top: 0.4rem;
+  flex-shrink: 0;
+}
 .toolbar-legend {
   display: inline-flex;
   align-items: center;
@@ -1969,7 +1980,7 @@ onUnmounted(() => {
   width: 1px;
   height: 28px;
   background: var(--color-border, #d1d5db);
-  margin: 0 0.75rem;
+  margin: 0 0.4rem;
   flex-shrink: 0;
 }
 
