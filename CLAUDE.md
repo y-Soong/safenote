@@ -216,6 +216,7 @@ Bash 도구 호출 시 빌드 명령은 타임아웃 600초(10분) 권장. 첫 �
 
 절대 금지 사항:
 
+- **`web_app.dart` 의 웹뷰 콜백/설정(InAppWebViewSettings, `onReceived*` 핸들러 등) 변경을 안드로이드 검증만으로 릴리즈 금지** — iOS(WKWebView)는 콜백 의미가 다르다. 실증된 함정: 서버신뢰 챌린지는 **유효 인증서에도 매 https 연결마다 발생**하고, 유효 인증서의 정상 평가 결과가 `sslError=UNSPECIFIED` 로 실려 온다(2026-08-17 TestFlight 130~132 — iOS 웹뷰 API 전멸, 서버 접근로그 요청 0건). 서버신뢰 판정은 `lib/server_trust_policy.dart` 단일 출처를 유지하고(인라인 판정 회귀 금지), 셸 변경 시 ①`flutter test`(회귀 테스트 포함) 통과 ②iOS TestFlight 스모크(가입 약관 조회 또는 로그인 = 실 API 1건 이상) 통과 후 배포한다.
 - Flutter 코드 내부에서 비즈니스 로직(연차 계산, 결재 흐름 등) 구현 금지 — Vue 측으로 위임.
 - 네이티브 권한 prompt 가 발생할 수 있는 작업은 사용자에게 사전 안내(에뮬레이터/실기기 모두).
 - `flutter run` 을 Claude Code Bash 도구로 직접 실행 금지 (실기기 hot-reload는 사용자 위임).
