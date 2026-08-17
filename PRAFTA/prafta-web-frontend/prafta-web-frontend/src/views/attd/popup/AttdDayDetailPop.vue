@@ -62,6 +62,14 @@
                   </template>
                 </div>
               </div>
+              <!-- 2026-08-17: 휴게시간(스케줄 설정값) — 근무계획과 함께 참고 표시.
+                   시각 미설정(분만 설정)이면 "N분"으로 폴백, 휴게 없는 타입은 행 미렌더. -->
+              <div v-if="cfg.timeCard.breakInfo" class="time-row">
+                <div class="time-lbl">휴게</div>
+                <div class="time-val">
+                  <span>{{ cfg.timeCard.breakInfo }}</span>
+                </div>
+              </div>
               <!-- PRAFTA-FIXEDOT-3: 고정연장근무(소정과 분리된 별도 축).
                    구간 = 근무타입 설정값, 실적 = 실근태가 그 구간을 커버한 분(정책 ① — 커버분만).
                    "연장 미이행" 배지는 조퇴 판정/통계와 완전히 분리된 별도 표식이며(정책 ②),
@@ -1631,7 +1639,28 @@ const buildTimeCard = () => {
   //   고정연장 없는 근무타입/구서버 응답이면 null → 행 자체를 렌더하지 않는다(기존 팝업과 동일).
   const fixedOt = buildFixedOtRow(r);
 
-  return { plan, actual, note, fixedOt };
+  // 2026-08-17: 휴게시간 표시(스케줄 설정값 — 참고 표기 전용, 판정 로직 없음).
+  const breakInfo = buildBreakInfo(r);
+
+  return { plan, actual, note, fixedOt, breakInfo };
+};
+
+// 2026-08-17: 휴게 표시 문자열 — 시각 설정이면 "11:00 → 12:00", 분만 설정이면 "60분".
+//   2구간 스케줄은 " · " 로 병기, 휴게 없는 타입/구서버 응답이면 null(행 미렌더).
+const buildBreakInfo = (r) => {
+  if (!r) return null;
+  const parts = [];
+  if (r.fstBrkStrTime && r.fstBrkEndTime) {
+    parts.push(`${fmtTime(r.fstBrkStrTime)} → ${fmtTime(r.fstBrkEndTime)}`);
+  } else if (Number(r.plan1BreakMin) > 0) {
+    parts.push(`${Number(r.plan1BreakMin)}분`);
+  }
+  if (r.secBrkStrTime && r.secBrkEndTime) {
+    parts.push(`${fmtTime(r.secBrkStrTime)} → ${fmtTime(r.secBrkEndTime)}`);
+  } else if (Number(r.plan2BreakMin) > 0) {
+    parts.push(`${Number(r.plan2BreakMin)}분`);
+  }
+  return parts.length ? parts.join(" · ") : null;
 };
 
 // PRAFTA-FIXEDOT-3: 고정연장 표시 모델. 구간이 없으면 null.

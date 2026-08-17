@@ -828,6 +828,12 @@
 	      ) THEN 'Y' ELSE 'N' END                                          AS fixedOtExemptYn
 	    , CAST(NULL AS CHAR(1))                                            AS fixedOtUnfulfilledYn
 	    , CAST(NULL AS SIGNED)                                             AS fixedOtActMinutes
+	    <!-- 2026-08-17: 휴게 시각(스케줄 설정값) — 일자상세 팝업 근무계획 휴게 표기 전용(additive).
+	         ⚠️ record(DailyAttdDetailsResult) 끝 4필드와 동일 순서(위치 기반 매핑, 중간 삽입 금지). -->
+	    , SCH.FST_BRK_STR_TIME                                             AS fstBrkStrTime
+	    , SCH.FST_BRK_END_TIME                                             AS fstBrkEndTime
+	    , SCH.SEC_BRK_STR_TIME                                             AS secBrkStrTime
+	    , SCH.SEC_BRK_END_TIME                                             AS secBrkEndTime
 	FROM TB_USER_ATTD_MGMT A
 		 INNER JOIN TB_USER B
 			ON (
@@ -858,6 +864,11 @@
 				, E.SEC_SCH_STR_TIME
 				, E.SEC_SCH_END_TIME
 				, E.SEC_SCH_BRK_MIN
+				<!-- 2026-08-17: 휴게 시각(전/후 구간) — 일자상세 팝업 근무계획 휴게 표기용. -->
+				, E.FST_BRK_STR_TIME
+				, E.FST_BRK_END_TIME
+				, E.SEC_BRK_STR_TIME
+				, E.SEC_BRK_END_TIME
 				<!-- PRAFTA-FIXEDOT-3: 고정연장(전방·후방) 4컬럼 동반(월 그리드 CTE 와 동일). -->
 				, E.PRE_FIXED_OT_STR_TIME
 				, E.PRE_FIXED_OT_END_TIME
@@ -876,6 +887,10 @@
 					, M.SEC_SCH_STR_TIME
 					, M.SEC_SCH_END_TIME
 					, M.SEC_SCH_BRK_MIN
+					, M.FST_BRK_STR_TIME
+					, M.FST_BRK_END_TIME
+					, M.SEC_BRK_STR_TIME
+					, M.SEC_BRK_END_TIME
 					, M.PRE_FIXED_OT_STR_TIME
 					, M.PRE_FIXED_OT_END_TIME
 					, M.FIXED_OT_STR_TIME
@@ -898,6 +913,10 @@
 					, H.SEC_SCH_STR_TIME
 					, H.SEC_SCH_END_TIME
 					, H.SEC_SCH_BRK_MIN
+					, H.FST_BRK_STR_TIME
+					, H.FST_BRK_END_TIME
+					, H.SEC_BRK_STR_TIME
+					, H.SEC_BRK_END_TIME
 					, H.PRE_FIXED_OT_STR_TIME
 					, H.PRE_FIXED_OT_END_TIME
 					, H.FIXED_OT_STR_TIME

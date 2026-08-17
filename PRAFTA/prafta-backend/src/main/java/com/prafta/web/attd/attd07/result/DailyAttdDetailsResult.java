@@ -74,6 +74,18 @@ public record DailyAttdDetailsResult(
     , String fixedOtUnfulfilledYn
     /** 그날 고정연장 실적(분, 실근태 ∩ 고정연장 — FixedOtMinutesUtils 파생). 고정연장 없는 타입은 null. */
     , Integer fixedOtActMinutes
+
+    /* 2026-08-17: 휴게 시각(스케줄 설정값) — 일자상세 팝업 근무계획 휴게 표기 전용(additive).
+       ⚠️ record 끝 = SELECT 끝 동일 순서(위치 기반 매핑, 중간 삽입 금지). */
+
+    /** 1구간 휴게 시작(HHMM, 미설정 null). */
+    , String fstBrkStrTime
+    /** 1구간 휴게 종료(HHMM). */
+    , String fstBrkEndTime
+    /** 2구간 휴게 시작(HHMM, 미설정 null). */
+    , String secBrkStrTime
+    /** 2구간 휴게 종료(HHMM). */
+    , String secBrkEndTime
 ) {
 
     /**
@@ -91,6 +103,7 @@ public record DailyAttdDetailsResult(
             , attd1OutsideYn, attd2OutsideYn
             , preFixedOtStrTime, preFixedOtEndTime, fixedOtStrTime, fixedOtEndTime
             , fixedOtExemptYn, newFixedOtUnfulfilledYn, newFixedOtActMinutes
+            , fstBrkStrTime, fstBrkEndTime, secBrkStrTime, secBrkEndTime
         );
     }
 }
