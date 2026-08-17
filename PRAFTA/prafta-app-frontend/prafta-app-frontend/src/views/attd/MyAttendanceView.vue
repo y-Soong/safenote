@@ -466,6 +466,16 @@ const callCheckInOut = async (mode, ctx) => {
   try {
     const res = await api.post(url, body)
     await reloadToday()
+    // 2026-08-17: 이번달 탭 일자상세에서 출퇴근한 경우 — 달력·선택 일자 상세도 갱신(캐시 무효화).
+    //   오늘 탭에서의 출퇴근은 종전대로 reloadToday 만 수행(무회귀).
+    if (activeTab.value === 'month' && currentYearMonth.value) {
+      monthCache.delete(currentYearMonth.value)
+      await loadMonth(currentYearMonth.value)
+      if (selectedYmd.value) {
+        dayDetailCache.delete(selectedYmd.value)
+        await loadDayDetail(selectedYmd.value)
+      }
+    }
     if (res?.data?.isOffsite) {
       showAlert('근무지 밖이라 외근으로 처리되었어요.')
     } else {
@@ -529,7 +539,10 @@ const onOffsiteCancel = () => {
 
 // 출퇴근 진입 — 확인 → GPS 브리지 → status 분기 → 2-pass 호출 진입.
 //   prafta-app-015: targetWorkSeq(1|2|null) — 2구간 스케줄 출근 구간 선택. 그 외(퇴근/단일출근)는 null.
-const startCheckInOut = async (mode, targetWorkSeq = null) => {
+//   2026-08-17: workYmd(YYYYMMDD|null) — 이번달 탭 일자상세에서 출퇴근 시 대상 근무일 전달.
+//     null 이면 종전대로 오늘 카드(todayDetail.workDate) 기준(오늘 탭 무회귀). 게이팅은 서버 단일 출처
+//     (버튼 활성 자체가 그 일자 day-detail 의 actions.canCheckIn/OUT 서버 산출값이고, EP 도 재검증).
+const startCheckInOut = async (mode, targetWorkSeq = null, workYmd = null) => {
   let confirmMsg
   if (mode === 'checkOut') confirmMsg = '퇴근하시겠어요?'
   else if (targetWorkSeq === 1) confirmMsg = '1구간 출근하시겠어요?'
@@ -554,8 +567,8 @@ const startCheckInOut = async (mode, targetWorkSeq = null) => {
       lon: gps.lon,
       accuracy: gps.accuracy,
       isMocked: gps.isMocked ? 'Y' : 'N',
-      // 출퇴근 대상 근무일. 오늘 카드의 workDate 기준.
-      workYmd: todayDetail.value?.workDate,
+      // 출퇴근 대상 근무일. 호출부가 지정하면 그 일자(이번달 탭 일자상세), 아니면 오늘 카드의 workDate.
+      workYmd: workYmd || todayDetail.value?.workDate,
       offsiteReason: null,
       targetWorkSeq,
     })
@@ -702,11 +715,26 @@ const navigateToAttdRequest = async (formType, day) => {
   })
 }
 
-// payload.type: requestModify
+// payload.type: requestModify | checkOut | checkIn
 //   prafta-app-013: 이번달 일자상세 하단 2버튼(근태 보정/초과근무)을 제거하고 시트로 통일.
 //   본체 "수정 요청" → requestModify 수신 → dayDetail 기준 4액션 시트 오픈(onSheetAction 재사용).
-const onDayDetailAction = (payload) => {
+//   2026-08-17: 일자상세 카드가 오늘 카드를 재사용하며 서버 판정(actions.canCheckIn/OUT)으로
+//   출퇴근 버튼이 활성으로 뜨는데 핸들러 미연결로 "준비 중입니다"에 떨어지던 결함 수정 —
+//   오늘 탭과 동일 플로우(startCheckInOut)로 연결하되 대상 근무일은 보고 있는 일자상세의 workDate.
+const onDayDetailAction = async (payload) => {
   const type = payload?.type
+  const detailWorkYmd = payload?.detail?.workDate || dayDetail.value?.workDate || null
+  if (type === 'checkOut') {
+    await startCheckInOut('checkOut', null, detailWorkYmd)
+    return
+  }
+  if (type === 'checkIn') {
+    // prafta-app-015: 2구간 스케줄은 카드에서 선택한 구간(payload.targetWorkSeq=1|2)을 전달.
+    const targetWorkSeq =
+      payload?.targetWorkSeq === 1 || payload?.targetWorkSeq === 2 ? payload.targetWorkSeq : null
+    await startCheckInOut('checkIn', targetWorkSeq, detailWorkYmd)
+    return
+  }
   if (type === 'requestModify') {
     const day = toSheetDay(payload?.detail || dayDetail.value)
     if (!day) {
