@@ -1923,7 +1923,7 @@ const reqCards = computed(() => {
       const isTimed = ["02", "03", "04"].includes(unitCode);
       // 라벨: 시간차면 '시간차 ' 접두(목표 포맷), 그 외엔 unitNm 그대로. unitNm 없으면 '연차' fallback.
       const leaveTypeLabel = req.unitNm
-        ? isTimed
+        ? isTimed && !req.unitNm.startsWith("시간차")
           ? `시간차 ${req.unitNm}`
           : req.unitNm
         : "연차";
@@ -1968,7 +1968,7 @@ const confirmedLeaveCards = computed(() =>
     const unitCode = lv.useUnitType ?? null; // '00'~'04' 또는 null
     const isTimed = ["02", "03", "04"].includes(unitCode);
     const unitLabel = lv.unitNm
-      ? isTimed
+      ? isTimed && !lv.unitNm.startsWith("시간차")
         ? `시간차 ${lv.unitNm}`
         : lv.unitNm
       : "연차";
@@ -2008,7 +2008,7 @@ const leaveChangeCards = computed(() => {
     // 시간차(02 2시간 / 03 1시간 / 04 30분)일 때만 시각 범위 병기 — 연차 카드와 동일 규칙
     const isTimed = ["02", "03", "04"].includes(unitCode);
     const unitLabel = r.unitNm
-      ? isTimed
+      ? isTimed && !r.unitNm.startsWith("시간차")
         ? `시간차 ${r.unitNm}`
         : r.unitNm
       : "연차";

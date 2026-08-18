@@ -193,9 +193,10 @@ const hhmmToMin = (hhmm) => {
 }
 
 // 사용 단위 라벨 — 시간차면 '시간차 ' 접두(웹 AttdDayDetailPop 표기 관례와 동형).
+//   단, SYS025 단위명이 이미 '시간차(…)' 형태면 접두 생략(중복 표기 방지).
 const unitLabel = (req) => {
   if (!req?.unitNm) return ''
-  return isHourlyUnit(req.useUnitType) ? `시간차 ${req.unitNm}` : req.unitNm
+  return isHourlyUnit(req.useUnitType) && !req.unitNm.startsWith('시간차') ? `시간차 ${req.unitNm}` : req.unitNm
 }
 
 // 사용 구간 — "10:00~12:00 (2시간)". 차감 분(원본)이 있으면 그 값을, 없으면 구간에서 산출.

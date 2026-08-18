@@ -230,7 +230,8 @@ const fmtYmd = (ymd) => formatYmdDot(ymd);
 const HOURLY_UNITS = ["02", "03", "04"];
 const unitLabelOf = (unitCode, unitNm) => {
   if (!unitNm) return "";
-  return HOURLY_UNITS.includes(unitCode) ? `시간차 ${unitNm}` : unitNm;
+  // SYS025 단위명이 이미 '시간차(…)' 형태면 접두 생략(중복 표기 방지)
+  return HOURLY_UNITS.includes(unitCode) && !unitNm.startsWith("시간차") ? `시간차 ${unitNm}` : unitNm;
 };
 
 // 서버 row → 그리드 표시 객체로 보강(라벨/포맷)
