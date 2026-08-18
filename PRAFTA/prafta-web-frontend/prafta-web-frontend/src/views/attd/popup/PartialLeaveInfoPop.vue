@@ -1,7 +1,7 @@
 <template>
   <Transition name="fade">
     <div v-show="true" class="modal-overlay prafta-modal-popup">
-      <div class="modal-content partial-leave-modal">
+      <div class="modal-content-narrow partial-leave-modal">
         <!-- ============ 헤더 ============ -->
         <div class="modal-header">
           <span>부분 휴가 상세</span>
@@ -127,6 +127,8 @@ const fnClose = () => {
 
 /* 헤더/푸터/본문 패딩은 공용 가이드(modal-popup-guide.css)의 표준값을 그대로 따른다
    (다른 팝업 LeaveDetailPop 등과 동일: 헤더 52px·본문 20px·푸터 60px, 좌우 0 20px).
+   컨테이너는 modal-content-narrow 사용 — 전역 modal.css의 .modal-content 는
+   자체 padding 20px 가 있어 헤더/푸터가 가장자리에서 떨어져 보인다.
    본문은 요약 + 목록 테이블을 세로로 쌓기 위한 플렉스 컬럼만 지정한다. */
 .partial-leave-modal .plp-body {
   display: flex;
