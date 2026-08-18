@@ -69,22 +69,69 @@
        AND U.DEL_YN       = 'N'
     </select>
 
-    <!-- 이동 대상일 동일 연차 기존재(DIRECT_USE_KEY 충돌) 카운트. 자기자신 제외 +
-      T3 확장: 자기 REQ 전 행(분할 묶음)도 제외(excludeReqId 는 nullable). -->
-    <select id="countLeaveUseOnDate" resultType="int">
-    /* Attd13Mapper.countLeaveUseOnDate */
+    <!-- (2026-08-18 완화) 이동 대상일 하루 초과 합산 가드 - 신청 3-B(LeaveFlowMapper.
+      selectOccupiedLeaveDaysOnDate) 산식 미러(종일=1.0 / 그 외=LEAVE_DAYS, CONFIRMED·미삭제·
+      START~END 포함일)에 자기 행(excludeLeaveId) + 자기 REQ 묶음(excludeReqId, nullable) 제외를
+      더한 것. 호출부는 점유 + 이동분 이 1.0 을 넘으면 ATTD_400_209 거부. -->
+    <select id="sumOccupiedLeaveDaysOnDateExcludingSelf" resultType="java.math.BigDecimal">
+    /* Attd13Mapper.sumOccupiedLeaveDaysOnDateExcludingSelf */
+    SELECT COALESCE(SUM(
+             CASE WHEN U.USE_UNIT_TYPE = '00' THEN 1.0 ELSE U.LEAVE_DAYS END
+           ), 0)
+      FROM TB_USER_LEAVE_USE U
+     WHERE U.CMPNY_CD     = #{cmpnyCd}
+       AND U.USER_CD      = #{userCd}
+       AND U.LEAVE_STATUS = 'CONFIRMED'
+       AND U.DEL_YN       = 'N'
+       AND U.START_DATE  <![CDATA[ <= ]]> #{targetDate}
+       AND U.END_DATE    <![CDATA[ >= ]]> #{targetDate}
+       AND U.LEAVE_ID    != #{excludeLeaveId}
+    <if test="excludeReqId != null and excludeReqId != ''">
+       AND (U.REQ_ID IS NULL OR U.REQ_ID != #{excludeReqId})
+    </if>
+    </select>
+
+    <!-- (2026-08-18 완화) 직접사용 실충돌 사전 검증 - 원본이 직접사용(REQ_ID IS NULL)일 때만 호출.
+      생성컬럼 키 활성 조건과 정합: 동일 종류(UK_LEAVE_USE_DIRECT = USER|DATE|LEAVE_CD, 단위 무관)
+      직접사용 CONFIRMED 존재를 세고, 종일 원본(fullDayYn='Y')이면 종일 직접사용 셀 키
+      (UK_LEAVE_USE_DIRECT_CELL = USER|DATE, 종류 무관·종일 전용)까지 함께 센다.
+      자기 자신 제외는 방어적 유지(F3 이 출발일과 대상일 상이를 보장해 실제로는 미해당). -->
+    <select id="countDirectUseConflictOnDate" resultType="int">
+    /* Attd13Mapper.countDirectUseConflictOnDate */
     SELECT COUNT(*)
       FROM TB_USER_LEAVE_USE U
      WHERE U.CMPNY_CD     = #{cmpnyCd}
        AND U.USER_CD      = #{userCd}
-       AND U.LEAVE_CD     = #{leaveCd}
        AND U.START_DATE   = #{targetDate}
-       AND U.LEAVE_ID    != #{excludeLeaveId}
+       AND U.REQ_ID IS NULL
        AND U.LEAVE_STATUS = 'CONFIRMED'
        AND U.DEL_YN       = 'N'
-    <if test="excludeReqId != null and excludeReqId != ''">
-       AND (U.REQ_ID IS NULL OR U.REQ_ID != #{excludeReqId})
+       AND U.LEAVE_ID    != #{excludeLeaveId}
+       AND ( U.LEAVE_CD   = #{leaveCd}
+    <if test='fullDayYn == "Y"'>
+          OR U.USE_UNIT_TYPE = '00'
     </if>
+           )
+    </select>
+
+    <!-- (2026-08-18 완화) 자기 묶음 차감 일수 합 - 시간차 이동분 근사(원일자 분모 기준 LEAVE_DAYS 합).
+      reqId 연결 건은 REQ 스코프, 직접사용은 leaveId 단건 스코프(sumSelfRestorableDaysOnDate 의
+      스코프 분기 관례. 부여 유효 필터는 없음 - 하루 점유 합산 판정용). -->
+    <select id="sumTargetLeaveDays" resultType="java.math.BigDecimal">
+    /* Attd13Mapper.sumTargetLeaveDays */
+    SELECT COALESCE(SUM(U.LEAVE_DAYS), 0)
+      FROM TB_USER_LEAVE_USE U
+     WHERE U.CMPNY_CD     = #{cmpnyCd}
+       AND U.LEAVE_STATUS = 'CONFIRMED'
+       AND U.DEL_YN       = 'N'
+    <choose>
+        <when test="reqId != null and reqId != ''">
+       AND U.REQ_ID       = #{reqId}
+        </when>
+        <otherwise>
+       AND U.LEAVE_ID     = #{leaveId}
+        </otherwise>
+    </choose>
     </select>
 
     <!-- T1 발의 soft 체크(§2-6): 자기 묶음의 CONFIRMED 차감분 중 "대상일 기준 유효 + 원 종류 귀속"

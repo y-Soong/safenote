@@ -564,7 +564,8 @@ public class Attd13ServiceImpl implements Attd13Service {
     }
 
     /**
-     * 이동 검증(발의·확인 재검증 공통): 형식·실재 날짜 + 과거일 + 동일일 + 만료일 이내 + DIRECT_USE_KEY 충돌.
+     * 이동 검증(발의·확인 재검증 공통): 형식·실재 날짜 + 과거일 + 동일일 + 만료일 이내
+     * + 대상일 하루 초과 합산(신청 대칭) + 직접사용 실키 충돌.
      *
      * <ul>
      *   <li>F7c(sec Low-003): YYYYMMDD 형식 + LocalDate 실재 검증(비실재 날짜 "20261399" 등 거부) —
@@ -573,7 +574,10 @@ public class Attd13ServiceImpl implements Attd13Service {
      *   <li>F1(2026-08-04 사용자 확정 — 만료 초과 허용 철회): 이동 대상일이 원 차감 부여들의
      *       min(AVAIL_TO_DATE) 초과면 ATTD_400_125 거부. "이동"이 올해분 소멸+내년분 차감을 숨기는
      *       함정 방지 — 만료 이후 날짜가 필요하면 삭제 후 재신청이 정답 흐름(com-008-C §3-2 원 조항 복원).</li>
-     *   <li>충돌 검증은 T3 확장 — 자기 REQ 전 행(분할 묶음) 제외 + 종류 = REQ 원 종류.</li>
+     *   <li>충돌 검증(2026-08-18 완화 — 신청 정책 대칭): 종전 광역 400_126(대상일 동일 종류 존재 =
+     *       무조건 거부)을 폐기하고, ① 대상일 하루 초과 합산(신청 400_111 산식 미러, 자기 행·자기 REQ
+     *       묶음 제외) → ATTD_400_209 ② 원본이 직접사용(REQ_ID NULL)일 때만 생성컬럼 키 실충돌 사전
+     *       검사 → ATTD_400_126 두 갈래로 분리. 종류 기준은 종전대로 REQ 원 종류(resolveEffectiveLeaveCd).</li>
      *   <li>위치선택 확장(2026-08-18): {@code moveTargetStartTime}(시간차 지정 시작 시각, nullable —
      *       {@link #validateMovePosition} 통과값 또는 확정 시 요청 행 DB 저장값)이 있으면 근무시간 내·
      *       휴게 가로지름 가드를 "지정 시각 + 원 분량 파생 종료" 구간으로 수행. null 이면 종전 원 시각 경로 그대로.</li>
@@ -616,12 +620,37 @@ public class Attd13ServiceImpl implements Attd13Service {
                     cmpnyCd, target.leaveId(), moveTargetDate, minAvailTo);
             throw new ApiException(AttdErrorCode.ATTD_400_125);
         }
-        // DIRECT_USE_KEY 충돌(§2-2): 이동 대상일에 동일 연차 기존재(자기 자신 + 자기 REQ 묶음 제외)
-        int conflict = attd13Mapper.countLeaveUseOnDate(
-                cmpnyCd, target.userCd(), resolveEffectiveLeaveCd(target), moveTargetDate,
-                target.leaveId(), target.reqId());
-        if (conflict > 0) {
-            throw new ApiException(AttdErrorCode.ATTD_400_126);
+        // (2026-08-18 완화 — 신청 정책 대칭) 종전 "대상일 동일 종류 CONFIRMED 존재 = 무조건 400_126"
+        //   광역 거부 폐기. 신청으로 만들 수 있는 조합(반차+시간차 공존 등)은 이동으로도 허용한다.
+        // (a) 하루 초과 합산 가드: 신청 3-B(ATTD_400_111) 산식 미러 — 대상일 기존 CONFIRMED 점유 합
+        //     (종일=1.0 / 그 외=LEAVE_DAYS, 자기 행·자기 REQ 묶음 제외) + 이동해 올 분량이 1.0 을
+        //     넘으면 거부. 코드는 이동 맥락 문구의 신규 ATTD_400_209(400_111 은 신청 문구라 재사용 부적합).
+        //     종일 이동은 대상일에 어떤 연차든 점유가 있으면 합산 초과로 자연 거부(신청과 동일).
+        //     발의 단계 soft — 확정은 applyMove 4-b F5 가 대상일 분모 재산출 요금(chargeDays)으로
+        //     최종 판정하는 기존 구조가 신뢰 지점(확정 경로의 본 검사는 보수적 선차단으로 무해).
+        BigDecimal incoming = resolveIncomingDaysSoft(cmpnyCd, target);
+        if (incoming != null) {
+            BigDecimal occupied = nz(attd13Mapper.sumOccupiedLeaveDaysOnDateExcludingSelf(
+                    cmpnyCd, target.userCd(), moveTargetDate, target.leaveId(), target.reqId()));
+            if (occupied.add(incoming).compareTo(BigDecimal.ONE) > 0) {
+                log.info("연차 이동 거부: 대상일 하루 초과 합산. cmpnyCd={}, leaveId={}, moveTo={}, 점유={}, 이동분={}",
+                        cmpnyCd, target.leaveId(), moveTargetDate,
+                        occupied.toPlainString(), incoming.toPlainString());
+                throw new ApiException(AttdErrorCode.ATTD_400_209);
+            }
+        }
+        // (b) 직접사용 실충돌만 400_126 유지: applyMove 재INSERT 는 REQ_ID 를 승계하므로 생성컬럼 키
+        //     (UK_LEAVE_USE_DIRECT / UK_LEAVE_USE_DIRECT_CELL)는 원본이 직접사용(REQ_ID NULL)일 때만
+        //     활성이다. 그 경우에 한해 대상일 동일 종류 직접사용 CONFIRMED 존재(+종일 원본이면 종일
+        //     직접사용 셀 키까지)를 사전 거부한다. REQ 연결 건은 키 자체가 NULL 이라 DB 충돌 불가 —
+        //     검사 대상 아님. 경합 최종 방어선은 applyMove 의 DuplicateKeyException 변환(무수정 유지).
+        if (target.reqId() == null || target.reqId().isBlank()) {
+            int conflict = attd13Mapper.countDirectUseConflictOnDate(
+                    cmpnyCd, target.userCd(), resolveEffectiveLeaveCd(target), moveTargetDate,
+                    target.leaveId(), UNIT_FULL.equals(target.useUnitType()) ? "Y" : "N");
+            if (conflict > 0) {
+                throw new ApiException(AttdErrorCode.ATTD_400_126);
+            }
         }
         // 2026-08-17(A안 후속): 시간차(02/03/04)는 시각 구간을 원값 그대로 승계하므로 대상일에서도
         //   "근무시간 내" + "휴게 가로지름 금지"를 신청 경로와 동일하게 검증한다. 종전엔 미검증이라
@@ -688,6 +717,33 @@ public class Attd13ServiceImpl implements Attd13Service {
                 }
             }
         }
+    }
+
+    /**
+     * (2026-08-18 완화) 이동 대상일 하루 초과 합산 가드의 "이동해 올 분량" soft 산출.
+     *
+     * <p>신청 경로 3-B 가 합산하는 신규 일수와 대칭: 고정단위는 고정 요금(종일 1.0 / 반차 0.5 /
+     * 반반차 0.25 — applyMove 요금 상수 미러), 시간차는 원 차감 일수 합(자기 묶음 LEAVE_DAYS 합 —
+     * 원일자 분모 기준 근사). 발의 단계 soft 로, 확정 시 applyMove 4-b F5 가 대상일 분모 재산출
+     * 요금으로 최종 판정한다(기존 구조 유지 — 본 값은 요금 산출에 일절 관여하지 않는다).
+     *
+     * @return 이동해 올 일수. 알 수 없는 단위는 null(판정 불가 — 확정 F5 위임, validateMoveBalanceSoft 관례)
+     */
+    private BigDecimal resolveIncomingDaysSoft(String cmpnyCd, LeaveUseTargetResult target) {
+        String unit = target.useUnitType();
+        if (UNIT_FULL.equals(unit)) {
+            return new BigDecimal("1.00000");
+        }
+        if (UNIT_HALF.equals(unit)) {
+            return new BigDecimal("0.50000");
+        }
+        if (UNIT_QUARTER.equals(unit)) {
+            return new BigDecimal("0.25000");
+        }
+        if (isHourlyUnit(unit)) {
+            return nz(attd13Mapper.sumTargetLeaveDays(cmpnyCd, target.leaveId(), target.reqId()));
+        }
+        return null;
     }
 
     /**

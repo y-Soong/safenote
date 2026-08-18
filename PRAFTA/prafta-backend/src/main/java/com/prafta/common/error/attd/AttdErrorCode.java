@@ -512,6 +512,13 @@ public enum AttdErrorCode implements ApiErrorCode {
     //   단위 판정은 서버 재조회 target.useUnitType 기준(클라 값 비신뢰) — fail-closed 단일 수렴 코드.
     , ATTD_400_208(HttpStatus.BAD_REQUEST,
             "해당 연차 단위에는 지정할 수 없는 항목입니다. 이동 위치 지정 값을 확인해 주세요.")
+
+    // ===== 연차 이동 충돌 가드 완화 (2026-08-18) =====
+    // 종전 광역 400_126(대상일 동일 종류 CONFIRMED 존재 = 무조건 거부)을 신청 정책과 대칭으로 완화 —
+    //   대상일 기존 점유 합산 + 이동해 올 분량이 하루(1.0)를 넘을 때만 거부(신청 400_111 산식 미러,
+    //   문구는 이동 맥락 신규 채번). 400_126 은 직접사용 실키 충돌 전용으로 유지.
+    , ATTD_400_209(HttpStatus.BAD_REQUEST,
+            "이동 대상일에 이미 등록된 연차가 있어 하루를 초과하게 됩니다. 다른 날짜를 선택해 주세요.")
     ;
 
     private final HttpStatus httpStatus;

@@ -46,17 +46,39 @@ public interface Attd13Mapper {
                                               @Param("leaveId") String leaveId);
 
     /**
-     * 이동 대상일에 동일 직원·동일 연차코드의 확정(CONFIRMED) 사용행이 이미 있는지 카운트
-     * (DIRECT_USE_KEY 충돌 사전 검증). 자기 자신(leaveId)을 제외하고, T3 확장으로
-     * {@code excludeReqId} 가 있으면 자기 REQ 전 행(분할 묶음)도 제외한다.
-     * {@code leaveCd} 는 REQ 연결 건이면 REQ 원 종류(TB_USER_ATTD_REQ.LEAVE_TYPE) 기준.
+     * (2026-08-18 완화) 이동 대상일의 기존 CONFIRMED 점유 일수 합 — 신청 3-B
+     * ({@code LeaveFlowMapper.selectOccupiedLeaveDaysOnDate}) 산식 미러(종일=1.0 / 그 외=LEAVE_DAYS)에
+     * 자기 행({@code excludeLeaveId}) + 자기 REQ 묶음({@code excludeReqId}, nullable) 제외를 더한 것.
+     * 호출부(validateMove)는 (점유 + 이동해 올 분량) &gt; 1.0 이면 ATTD_400_209 로 거부한다.
      */
-    int countLeaveUseOnDate(@Param("cmpnyCd") String cmpnyCd,
-                            @Param("userCd") String userCd,
-                            @Param("leaveCd") String leaveCd,
-                            @Param("targetDate") String targetDate,
-                            @Param("excludeLeaveId") String excludeLeaveId,
-                            @Param("excludeReqId") String excludeReqId);
+    BigDecimal sumOccupiedLeaveDaysOnDateExcludingSelf(@Param("cmpnyCd") String cmpnyCd,
+                                                       @Param("userCd") String userCd,
+                                                       @Param("targetDate") String targetDate,
+                                                       @Param("excludeLeaveId") String excludeLeaveId,
+                                                       @Param("excludeReqId") String excludeReqId);
+
+    /**
+     * (2026-08-18 완화) 직접사용 실충돌 사전 검증 — 이동 원본이 직접사용(REQ_ID NULL)일 때만 호출.
+     * applyMove 재INSERT 가 REQ_ID 를 승계하므로 생성컬럼 키는 직접사용 원본에서만 활성이다:
+     * 대상일의 동일 종류({@code leaveCd}) 직접사용 CONFIRMED 행(UK_LEAVE_USE_DIRECT, 단위 무관)과,
+     * 종일 원본({@code fullDayYn}='Y')이면 종일 직접사용 행(UK_LEAVE_USE_DIRECT_CELL, 종류 무관)까지 센다.
+     * 자기 자신({@code excludeLeaveId}) 제외는 방어적 유지. 초과 시 호출부가 ATTD_400_126 거부.
+     */
+    int countDirectUseConflictOnDate(@Param("cmpnyCd") String cmpnyCd,
+                                     @Param("userCd") String userCd,
+                                     @Param("leaveCd") String leaveCd,
+                                     @Param("targetDate") String targetDate,
+                                     @Param("excludeLeaveId") String excludeLeaveId,
+                                     @Param("fullDayYn") String fullDayYn);
+
+    /**
+     * (2026-08-18 완화) 자기 묶음의 CONFIRMED 차감 일수 합 — 시간차 이동분 근사(원일자 분모 기준).
+     * {@code reqId} 연결 건은 REQ 스코프, 직접사용은 {@code leaveId} 단건 스코프
+     * ({@link #sumSelfRestorableDaysOnDate} 스코프 분기 관례 — 부여 유효 필터 없음).
+     */
+    BigDecimal sumTargetLeaveDays(@Param("cmpnyCd") String cmpnyCd,
+                                  @Param("leaveId") String leaveId,
+                                  @Param("reqId") String reqId);
 
     /**
      * T3: 같은 REQ 분할 묶음의 대표행(MIN LEAVE_ID, CONFIRMED·미삭제) 단건. 없으면 null.

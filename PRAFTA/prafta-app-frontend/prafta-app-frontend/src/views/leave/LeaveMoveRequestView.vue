@@ -597,6 +597,8 @@ onMounted(loadMyLeaves)
 
 .lmv-submit {
   height: 48px;
+  /* lmv-body(flex-column) 내용 증가 시 고정 height 버튼이 압축되는 것 방지(실기기 실증) */
+  flex-shrink: 0;
   margin-top: var(--space-sm);
   border: 0;
   border-radius: var(--radius-md);
