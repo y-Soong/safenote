@@ -100,6 +100,10 @@
                   {{ fmtYmd(row.targetStartDate) }}
                   <template v-if="row.reqType === 'MOVE'">
                     → {{ fmtYmd(row.moveTargetDate) }}
+                    <!-- 위치선택 확장(2026-08-18): 지정 파트/시각 병기(미지정이면 종전 표시 그대로) -->
+                    <template v-if="leaveChangeMovePosLabel(row)">
+                      · {{ leaveChangeMovePosLabel(row) }}
+                    </template>
                   </template>
                 </div>
                 <div v-if="row.reqReason" class="rph-row__reason">
@@ -172,6 +176,37 @@ const reqTypeNm = (t) => REQ_TYPE_NM[t] || t;
 
 const CHANGE_TYPE_NM = { MOVE: "이동", DELETE: "삭제" };
 const changeTypeNm = (t) => CHANGE_TYPE_NM[t] || t;
+
+// ── 위치선택 확장(2026-08-18): 연차 변경 처리 이력에 지정 파트/시각 병기 ──
+//   미지정(null/구서버 미수신)이면 빈 값 → 종전 표시 바이트 그대로(무회귀). Attd_10 로컬 헬퍼 미러.
+//   반차 파트는 대상일 경계 조회 없이 "시작 기준(늦게 출근)/종료 기준(일찍 퇴근)" 고정 표기.
+//   시간차 종료는 시작+원 분량(leaveMinutes) 클라 파생(표시 전용), 분량 결손 시 "HH:MM 시작" 폴백.
+const LEAVE_CHANGE_HALF_PART_NM = {
+  START: "시작 기준(늦게 출근)",
+  END: "종료 기준(일찍 퇴근)",
+};
+const lcHhmmToMin = (hhmm) => {
+  const v = String(hhmm ?? "");
+  if (v.length !== 4) return null;
+  const h = parseInt(v.slice(0, 2), 10);
+  const m = parseInt(v.slice(2, 4), 10);
+  if (Number.isNaN(h) || Number.isNaN(m)) return null;
+  if (h < 0 || h > 23 || m < 0 || m > 59) return null;
+  return h * 60 + m;
+};
+const leaveChangeMovePosLabel = (row) => {
+  if (row?.moveTargetHalfPart)
+    return LEAVE_CHANGE_HALF_PART_NM[row.moveTargetHalfPart] || "";
+  const s = lcHhmmToMin(row?.moveTargetStartTime);
+  if (s == null) return "";
+  const dur = Number(row?.leaveMinutes);
+  if (!Number.isFinite(dur) || dur <= 0)
+    return `${fmtTime(row.moveTargetStartTime)} 시작`;
+  // 자정 넘김(END<START)은 익일 저장 규약 — 시각만 모듈러 표기
+  const e = (s + dur) % 1440;
+  const pad = (n) => String(n).padStart(2, "0");
+  return `${fmtTime(row.moveTargetStartTime)}~${pad(Math.floor(e / 60))}:${pad(e % 60)}`;
+};
 
 const fmtYmd = (ymd) => {
   if (!ymd || String(ymd).length !== 8) return ymd ?? "";

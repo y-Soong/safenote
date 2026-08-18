@@ -1992,6 +1992,31 @@ const LC_STATUS_NM = {
 };
 const LC_INITIATOR_NM = { ADMIN: "관리자 발의", WORKER: "근로자 요청" };
 
+// ── 위치선택 확장(2026-08-18): 이동 대상 위치(반차 파트/시간차 지정 시각) 병기 ──
+//   구서버 응답에 필드가 없으면 빈 값 → 카드 표시 종전 그대로(회귀 없음 — leaveChangeReqs 방어 관례 미러).
+//   반차 파트는 대상일 경계 조회 없이 "시작 기준(늦게 출근)/종료 기준(일찍 퇴근)" 고정 표기
+//   (오전/오후 환산 금지 — plan §4 사용자 확정).
+//   attd07 read-model 은 leaveMinutes 미보유 — 시간차 종료는 원 구간 길이(END−START)로 파생
+//   (시간차 use 행은 항상 시각 보유). hhmmToMin/fmtTime 은 computed 내부 호출이라 선언 순서 무관.
+const LC_MOVE_HALF_PART_NM = {
+  START: "시작 기준(늦게 출근)",
+  END: "종료 기준(일찍 퇴근)",
+};
+const lcMoveTargetPosLabel = (r) => {
+  if (r?.moveTargetHalfPart)
+    return LC_MOVE_HALF_PART_NM[r.moveTargetHalfPart] || "";
+  const s = hhmmToMin(r?.moveTargetStartTime);
+  if (s == null) return "";
+  const os = hhmmToMin(r?.startTime);
+  const oe = hhmmToMin(r?.endTime);
+  const dur = os != null && oe != null && oe > os ? oe - os : null;
+  if (dur == null) return fmtTime(r.moveTargetStartTime);
+  // 자정 넘김(END<START)은 익일 저장 규약 — 시각만 모듈러 표기
+  const e = (s + dur) % 1440;
+  const pad = (n) => String(n).padStart(2, "0");
+  return `${fmtTime(r.moveTargetStartTime)}~${pad(Math.floor(e / 60))}:${pad(e % 60)}`;
+};
+
 // "20260805" → "08.05(수)". 값이 없으면 "-".
 const fmtLeaveChangeDate = (ymd) => {
   const s = String(ymd ?? "");
@@ -2015,6 +2040,8 @@ const leaveChangeCards = computed(() => {
     // 지금 열려 있는 셀이 출발일인지 이동 대상일인지 — 카드 상단에 방향 안내를 띄운다.
     //   (근태 요청처럼 관련된 두 날짜 모두에서 같은 요청이 보이므로 혼동 방지용)
     const isTargetSide = isMove && viewYmd && viewYmd === r.moveTargetDate;
+    // 위치선택 확장: 이동 대상 위치(파트/지정 시각) — 미지정/구서버면 빈 값(종전 표시 그대로)
+    const movePos = isMove ? lcMoveTargetPosLabel(r) : "";
     return {
       key: `lc-${r.changeReqId ?? i}`,
       changeReqId: r.changeReqId,
@@ -2027,7 +2054,10 @@ const leaveChangeCards = computed(() => {
       reqReason: r.reqReason || "",
       // BEFORE/AFTER 칸: 좌=현재 연차일(출발일), 우=이동 대상일(삭제면 "삭제")
       fromDateLabel: fmtLeaveChangeDate(r.targetStartDate),
-      toDateLabel: isMove ? fmtLeaveChangeDate(r.moveTargetDate) : "삭제",
+      // 위치선택 확장: 지정 파트/시각이 있으면 접미 병기(미지정이면 종전 문자열 바이트 그대로)
+      toDateLabel: isMove
+        ? fmtLeaveChangeDate(r.moveTargetDate) + (movePos ? ` · ${movePos}` : "")
+        : "삭제",
       // 연차 상세 1줄(종류·단위·시간차 범위·차감일수) — 연차 카드 표기 규칙 재사용
       leaveNm: r.leaveNm || "연차",
       unitLabel,

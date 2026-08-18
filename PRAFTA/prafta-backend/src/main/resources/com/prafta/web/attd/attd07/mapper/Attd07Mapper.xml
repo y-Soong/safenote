@@ -1387,6 +1387,9 @@
                                  AND X.DEL_YN       = 'N' )
                           , LU.LEAVE_DAYS )
           END                                                                      AS leaveDays
+        <!-- 위치선택 확장(2026-08-18): 카드 "이동 후" 파트/시각 병기용 — record 마지막 2 컴포넌트와 1:1. -->
+        , R.MOVE_TARGET_HALF_PART                                                  AS moveTargetHalfPart
+        , R.MOVE_TARGET_START_TIME                                                 AS moveTargetStartTime
       FROM TB_LEAVE_CHANGE_REQUEST R
       INNER JOIN TB_USER_LEAVE_USE LU
               ON LU.CMPNY_CD = R.CMPNY_CD

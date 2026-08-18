@@ -64,5 +64,13 @@ public record DailyLeaveChangeReqResult(
 
     /** 차감 일수 (decimal 문자열 그대로 — FE 가 정규화) */
     , String leaveDays
+
+    /* ── 위치선택 확장(2026-08-18) — SELECT 절 끝과 1:1(위치매핑). 표시 전용 ── */
+
+    /** 이동 대상 반차 파트 (START:시작기준-늦게출근 / END:종료기준-일찍퇴근 / NULL:원 파트 유지) */
+    , String moveTargetHalfPart
+
+    /** 이동 대상 시간차 시작 시각 (HHMM / NULL:원 시각 유지. 종료는 원 분량으로 서버 파생) */
+    , String moveTargetStartTime
 ) {
 }

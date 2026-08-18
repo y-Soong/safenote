@@ -57,5 +57,13 @@ public record LeaveChangeRequestRowResult(
 
     /** 차감 분 (시간차 원본. 대표행이 총량을 보유 — 불변식 1) */
     , Integer leaveMinutes
+
+    /* ── 위치선택 확장(2026-08-18) — SELECT 절 끝에 동일 순서로 3쿼리 동시 추가(위치매핑) ── */
+
+    /** 이동 대상 반차 파트 (START:시작기준-늦게출근 / END:종료기준-일찍퇴근 / NULL:원 파트 유지) */
+    , String moveTargetHalfPart
+
+    /** 이동 대상 시간차 시작 시각 (HHMM / NULL:원 시각 유지. 종료는 원 분량으로 서버 파생) */
+    , String moveTargetStartTime
 ) {
 }

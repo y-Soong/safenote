@@ -53,9 +53,15 @@ public interface Attd13Service {
     /** 근로자 본인 이동 가능 연차일 목록(C-5a). */
     List<MovableLeaveResult> getMovableLeaves(String cmpnyCd, String userCd);
 
-    /** 근로자 이동 발의(C-5a, MOVE 전용·취소 불가) → REQUESTED 생성. 관리자 승인은 confirm 흐름과 통합. */
+    /**
+     * 근로자 이동 발의(C-5a, MOVE 전용·취소 불가) → REQUESTED 생성. 관리자 승인은 confirm 흐름과 통합.
+     *
+     * <p>위치선택 확장(2026-08-18): {@code moveTargetHalfPart}(반차 파트 START/END)·
+     * {@code moveTargetStartTime}(시간차 시작 HHMM)은 선택 입력 — null 이면 종전 동작(원 위치 유지) 그대로.
+     */
     void createWorkerMoveRequest(String cmpnyCd, String userCd, String targetLeaveId,
-                                 String moveTargetDate, String reqReason);
+                                 String moveTargetDate, String moveTargetHalfPart,
+                                 String moveTargetStartTime, String reqReason);
 
     /**
      * 근로자 취소(삭제) 발의(2026-08-18 개방 — 008-C §3-2 "근로자 취소 불가" 조항 개정).

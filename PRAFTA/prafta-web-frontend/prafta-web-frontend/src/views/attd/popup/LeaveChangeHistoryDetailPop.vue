@@ -49,7 +49,13 @@
             </div>
             <div v-if="detail.reqType === 'MOVE'">
               <dt>이동 대상일</dt>
-              <dd>{{ detail.moveTargetDateText || "-" }}</dd>
+              <dd>
+                {{ detail.moveTargetDateText || "-" }}
+                <!-- 위치선택 확장(2026-08-18): 지정 파트/시각 병기(미지정이면 종전 표시 그대로) -->
+                <template v-if="detail.movePosLabel">
+                  · {{ detail.movePosLabel }}
+                </template>
+              </dd>
             </div>
             <div>
               <dt>요청 사유</dt>
@@ -164,6 +170,41 @@ const STATUS_CLASS = {
 const fmtYmd = (ymd) => formatYmdDot(ymd);
 const fmtDateTime = (v) => formatDateTimeDot(v);
 
+// ── 위치선택 확장(2026-08-18): 이동 대상 지정 파트/시각 병기 ──
+//   미지정(null/구서버 미수신)이면 빈 값 → 종전 표시 바이트 그대로(무회귀). Attd_10 로컬 헬퍼 미러.
+//   반차 파트는 대상일 경계 조회 없이 "시작 기준(늦게 출근)/종료 기준(일찍 퇴근)" 고정 표기.
+//   시간차 종료는 시작+원 분량(leaveMinutes) 클라 파생(표시 전용), 분량 결손 시 "HH:MM 시작" 폴백.
+const LEAVE_CHANGE_HALF_PART_NM = {
+  START: "시작 기준(늦게 출근)",
+  END: "종료 기준(일찍 퇴근)",
+};
+const fmtTime = (hhmm) => {
+  const v = String(hhmm ?? "");
+  return v.length >= 4 ? `${v.slice(0, 2)}:${v.slice(2, 4)}` : "";
+};
+const lcHhmmToMin = (hhmm) => {
+  const v = String(hhmm ?? "");
+  if (v.length !== 4) return null;
+  const h = parseInt(v.slice(0, 2), 10);
+  const m = parseInt(v.slice(2, 4), 10);
+  if (Number.isNaN(h) || Number.isNaN(m)) return null;
+  if (h < 0 || h > 23 || m < 0 || m > 59) return null;
+  return h * 60 + m;
+};
+const leaveChangeMovePosLabel = (row) => {
+  if (row?.moveTargetHalfPart)
+    return LEAVE_CHANGE_HALF_PART_NM[row.moveTargetHalfPart] || "";
+  const s = lcHhmmToMin(row?.moveTargetStartTime);
+  if (s == null) return "";
+  const dur = Number(row?.leaveMinutes);
+  if (!Number.isFinite(dur) || dur <= 0)
+    return `${fmtTime(row.moveTargetStartTime)} 시작`;
+  // 자정 넘김(END<START)은 익일 저장 규약 — 시각만 모듈러 표기
+  const e = (s + dur) % 1440;
+  const pad = (n) => String(n).padStart(2, "0");
+  return `${fmtTime(row.moveTargetStartTime)}~${pad(Math.floor(e / 60))}:${pad(e % 60)}`;
+};
+
 // 근로자 응답 단계 상태(완료/거부/대기) 색 분기
 const workerStepClass = computed(() => {
   const w = detail.value?.workerResponse;
@@ -242,6 +283,8 @@ const fnLoadDetail = async () => {
           reqStatusNm: codeNm("SYS072", d.reqStatus),
           workerResponseNm: codeNm("SYS073", d.workerResponse),
           statusClass: STATUS_CLASS[d.reqStatus] || "is-pending",
+          // 위치선택 확장(2026-08-18): 미지정이면 빈 값 → 병기 미노출(종전 표시 그대로)
+          movePosLabel: leaveChangeMovePosLabel(d),
         };
       }
     }

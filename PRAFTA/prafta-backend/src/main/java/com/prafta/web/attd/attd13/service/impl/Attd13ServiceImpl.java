@@ -80,6 +80,9 @@ public class Attd13ServiceImpl implements Attd13Service {
     private static final String UNIT_FULL = "00"; // 일 단위(출근 차단 블록 대상)
     private static final String UNIT_HALF = "01"; // 반차(T1 재차감 고정 요금 0.5)
     private static final String UNIT_QUARTER = "05"; // 반반차(T1 재차감 고정 요금 0.25)
+    /** 위치선택 확장(2026-08-18): 반차 파트 코드(LeaveFlowServiceImpl HALF_PART_* 관례 미러). */
+    private static final String HALF_PART_START = "START";
+    private static final String HALF_PART_END = "END";
     private static final String WHOLE_SITE = "*"; // 전체 부서 스코프(노드 관리자는 사용 불가)
 
     /** T1 이동 반영 advisory lock 타임아웃(초) — 신청 경로 관례 미러. 타임아웃 시 ATTD_409_071(§2-1). */
@@ -163,16 +166,25 @@ public class Attd13ServiceImpl implements Attd13Service {
 
         // 3) 마감 가드(§3-2-1): 대상일(출발일) + 이동 대상일(MOVE 시) 양쪽 검사
         ensureNotClosed(param.gvCmpnyCd(), target.siteCd(), target.userCd(), target.startDate());
+        // 위치선택 확장(2026-08-18): 선택 입력 정규화 결과(미지정=null — 종전 경로 그대로). DELETE 는 param 에서 null 강제.
+        String moveHalfPart = null;
+        String moveStartTime = null;
         if (REQ_TYPE_MOVE.equals(param.reqType())) {
             ensureNotClosed(param.gvCmpnyCd(), target.siteCd(), target.userCd(), param.moveTargetDate());
-            // 이동 검증(형식·과거일·동일일 F3·만료 F1·충돌) + 대상일 잔여 soft 체크(§2-6)
-            validateMove(param.gvCmpnyCd(), target, param.moveTargetDate());
+            // 위치선택 교차 검증(단위=서버 재조회 target 기준, fail-closed) + 정규화
+            MovePosition pos = validateMovePosition(param.gvCmpnyCd(), target,
+                    param.moveTargetHalfPart(), param.moveTargetStartTime());
+            moveHalfPart = pos.halfPart();
+            moveStartTime = pos.startTime();
+            // 이동 검증(형식·과거일·동일일 F3·만료 F1·충돌 + 지정 시각 근무시간 내·휴게 가드) + 대상일 잔여 soft 체크(§2-6)
+            validateMove(param.gvCmpnyCd(), target, param.moveTargetDate(), moveStartTime);
             validateMoveBalanceSoft(param.gvCmpnyCd(), target, param.moveTargetDate());
         }
 
         // 4) REQUESTED 생성(활성요청 멱등 — UNIQUE 위반 시 변환)
         String changeReqId = insertRequest(param.gvCmpnyCd(), target.siteCd(), target.userCd(), target.leaveId(),
-                INITIATOR_ADMIN, param.reqType(), param.moveTargetDate(), param.reqReason(), param.gvUserCd());
+                INITIATOR_ADMIN, param.reqType(), param.moveTargetDate(), moveHalfPart, moveStartTime,
+                param.reqReason(), param.gvUserCd());
         // (관리자 발의는 근로자 응답 단계가 필요하므로 REQUESTED 유지)
 
         // 5) 근로자 PUSH 적재(요청 통지). 예외 격리(본 흐름 영향 금지).
@@ -205,9 +217,14 @@ public class Attd13ServiceImpl implements Attd13Service {
 
         // 5) 마감 재가드(확인 시점 기준)
         ensureNotClosed(param.gvCmpnyCd(), target.siteCd(), target.userCd(), target.startDate());
+        MovePosition movePos = null;
         if (REQ_TYPE_MOVE.equals(req.reqType())) {
             ensureNotClosed(param.gvCmpnyCd(), target.siteCd(), target.userCd(), req.moveTargetDate());
-            validateMove(param.gvCmpnyCd(), target, req.moveTargetDate());
+            // 위치선택 확장(2026-08-18): 확정 재검증은 요청 행 DB 저장값 기준(파라미터 아님 — 확정 재검증
+            //   단일 신뢰 지점 규약. 발의~확정 사이 스케줄/데이터 변경 대비). 교차 검증도 동일 값으로 재수행.
+            //   sec-10 Low: 재검증의 정규화 반환값(movePos)을 그대로 적용값으로 사용 — 검증 통과값=적용값 구조 보장.
+            movePos = validateMovePosition(param.gvCmpnyCd(), target, req.moveTargetHalfPart(), req.moveTargetStartTime());
+            validateMove(param.gvCmpnyCd(), target, req.moveTargetDate(), movePos.startTime());
         }
 
         // 6) 상태 전이(AGREED → CONFIRMED). 경합 시 0행 → 충돌
@@ -215,9 +232,10 @@ public class Attd13ServiceImpl implements Attd13Service {
             throw new ApiException(AttdErrorCode.ATTD_409_120);
         }
 
-        // 7) 실제 반영
+        // 7) 실제 반영 (위치 지정값은 재검증 통과·정규화값 — movePos)
         if (REQ_TYPE_MOVE.equals(req.reqType())) {
-            applyMove(param.gvCmpnyCd(), target, req.moveTargetDate(), param.gvUserCd());
+            applyMove(param.gvCmpnyCd(), target, req.moveTargetDate(),
+                    movePos.halfPart(), movePos.startTime(), param.gvUserCd());
         } else {
             applyDelete(param.gvCmpnyCd(), target, param.gvUserCd());
         }
@@ -320,7 +338,8 @@ public class Attd13ServiceImpl implements Attd13Service {
     @Override
     @Transactional
     public void createWorkerMoveRequest(String cmpnyCd, String userCd, String targetLeaveId,
-                                        String moveTargetDate, String reqReason) {
+                                        String moveTargetDate, String moveTargetHalfPart,
+                                        String moveTargetStartTime, String reqReason) {
         // 1) 대상 연차 재조회(본인 소유 확인 — IDOR fail-closed)
         LeaveUseTargetResult target = loadConfirmedTarget(cmpnyCd, targetLeaveId);
         if (!userCd.equals(target.userCd())) {
@@ -334,13 +353,17 @@ public class Attd13ServiceImpl implements Attd13Service {
         // 2) 마감 가드(출발일 + 이동 대상일)
         ensureNotClosed(cmpnyCd, target.siteCd(), target.userCd(), target.startDate());
         ensureNotClosed(cmpnyCd, target.siteCd(), target.userCd(), moveTargetDate);
-        // 3) 이동 검증(형식·과거일·동일일 F3·만료 F1·충돌) + 대상일 잔여 soft 체크(§2-6)
-        validateMove(cmpnyCd, target, moveTargetDate);
+        // 2-1) 위치선택 확장(2026-08-18): 선택 입력 교차 검증(단위=서버 재조회 target 기준, fail-closed) + 정규화.
+        //      미지정(null)이면 종전 경로 그대로.
+        MovePosition pos = validateMovePosition(cmpnyCd, target, moveTargetHalfPart, moveTargetStartTime);
+        // 3) 이동 검증(형식·과거일·동일일 F3·만료 F1·충돌 + 지정 시각 근무시간 내·휴게 가드) + 대상일 잔여 soft 체크(§2-6)
+        validateMove(cmpnyCd, target, moveTargetDate, pos.startTime());
         validateMoveBalanceSoft(cmpnyCd, target, moveTargetDate);
 
         // 4) REQUESTED 생성(WORKER 발의, MOVE 전용)
         String changeReqId = insertRequest(cmpnyCd, target.siteCd(), target.userCd(), target.leaveId(),
-                INITIATOR_WORKER, REQ_TYPE_MOVE, moveTargetDate, reqReason, userCd);
+                INITIATOR_WORKER, REQ_TYPE_MOVE, moveTargetDate, pos.halfPart(), pos.startTime(),
+                reqReason, userCd);
 
         // 5) 관리자 승인은 attd13 confirm 흐름과 통합(WORKER 발의도 AGREED 후 확인 시 반영).
         //    근로자 발의는 별도 응답 단계가 불요하므로 생성 즉시 AGREED 로 둔다(관리자 승인=START_DATE 갱신 / 반려=불변).
@@ -380,9 +403,9 @@ public class Attd13ServiceImpl implements Attd13Service {
         ensureNotClosed(cmpnyCd, target.siteCd(), target.userCd(), target.startDate());
         // (validateMove / validateMoveBalanceSoft 미호출 — 관리자 발의 DELETE 경로와 동일)
 
-        // 3) REQUESTED 생성(WORKER 발의, DELETE 전용 — moveTargetDate 없음)
+        // 3) REQUESTED 생성(WORKER 발의, DELETE 전용 — moveTargetDate·위치 지정값 없음)
         String changeReqId = insertRequest(cmpnyCd, target.siteCd(), target.userCd(), target.leaveId(),
-                INITIATOR_WORKER, REQ_TYPE_DELETE, null, reqReason, userCd);
+                INITIATOR_WORKER, REQ_TYPE_DELETE, null, null, null, reqReason, userCd);
 
         // 4) 근로자 발의는 별도 응답 단계가 불요하므로 생성 즉시 AGREED 로 둔다(이동 발의 관례 미러 —
         //    관리자 승인=applyDelete 반영 / 반려=원 연차 불변).
@@ -456,15 +479,20 @@ public class Attd13ServiceImpl implements Attd13Service {
     /**
      * REQUESTED 1건 INSERT(활성요청 멱등). UNIQUE(ACTIVE_LEAVE_KEY) 위반 시 진행중 요청 충돌로 변환.
      *
+     * <p>위치선택 확장(2026-08-18): {@code moveTargetHalfPart}/{@code moveTargetStartTime} 은
+     * {@link #validateMovePosition} 을 통과한 정규화 값만 받는다. DELETE 경로는 항상 null.
+     *
      * @return 채번된 changeReqId
      */
     private String insertRequest(String cmpnyCd, String siteCd, String userCd, String leaveId,
                                  String initiatorType, String reqType, String moveTargetDate,
+                                 String moveTargetHalfPart, String moveTargetStartTime,
                                  String reqReason, String initiatorUserCd) {
         String changeReqId = attd13Mapper.selectNextChangeReqId(cmpnyCd);
         LeaveChangeRequestInsertCommand cmd = new LeaveChangeRequestInsertCommand(
                 changeReqId, cmpnyCd, siteCd, userCd, leaveId, initiatorType, reqType,
-                moveTargetDate, reqReason, initiatorUserCd, initiatorUserCd);
+                moveTargetDate, moveTargetHalfPart, moveTargetStartTime,
+                reqReason, initiatorUserCd, initiatorUserCd);
         try {
             attd13Mapper.insertChangeRequest(cmd);
         } catch (org.springframework.dao.DuplicateKeyException e) {
@@ -472,6 +500,67 @@ public class Attd13ServiceImpl implements Attd13Service {
             throw new ApiException(AttdErrorCode.ATTD_400_128);
         }
         return changeReqId;
+    }
+
+    /**
+     * 위치선택 확장(2026-08-18): 이동 위치 지정 입력(반차 파트/시간차 시작 시각)의 정규화 + 단위 교차 검증.
+     *
+     * <p>단위 판정은 서버 재조회 {@code target.useUnitType()} 기준(클라 값 비신뢰). 미지정(null/공백)이면
+     * 검증 없이 null 쌍을 반환한다 — 종전 경로 무회귀(§0). 지정 입력이 있으면 fail-closed:
+     * <ul>
+     *   <li>halfPart: START/END 외 값 거부(normalizeHalfPart 관례 미러 — trim+upper) + 반차('01') 외 단위 거부
+     *       + 원행 시각 결손(START/END_TIME NULL 구 반차 — D-5 재산출 비대상이라 파트 적용 불가) 거부.</li>
+     *   <li>startTime: HHMM 형식·범위(0~1439) 검증(30분 그리드 서버 강제는 신청 경로에 없음 — 미러)
+     *       + 시간차('02'/'03'/'04') 외 단위 거부.</li>
+     *   <li>종일('00')·반반차('05')는 위 단위 제약에 의해 둘 중 무엇을 지정해도 거부된다.</li>
+     * </ul>
+     * 발의 2경로(파라미터 값)와 확정 재검증(요청 행 DB 저장값)이 공유하는 단일 지점이다.
+     *
+     * @return 정규화된 (halfPart, startTime) — 미지정 항목은 null
+     */
+    private MovePosition validateMovePosition(String cmpnyCd, LeaveUseTargetResult target,
+                                              String moveTargetHalfPart, String moveTargetStartTime) {
+        String halfPart = (moveTargetHalfPart == null || moveTargetHalfPart.isBlank())
+                ? null : moveTargetHalfPart.trim().toUpperCase();
+        String startTime = (moveTargetStartTime == null || moveTargetStartTime.isBlank())
+                ? null : moveTargetStartTime.trim();
+        if (halfPart == null && startTime == null) {
+            return new MovePosition(null, null); // 미지정 — 종전 경로 그대로(검증 없음)
+        }
+        String unit = target.useUnitType();
+        if (halfPart != null) {
+            // sec L-1 관례: 클라 원시 입력은 로그에 미출력(CR/LF 로그 위조 여지).
+            if (!HALF_PART_START.equals(halfPart) && !HALF_PART_END.equals(halfPart)) {
+                log.info("이동 위치 지정 거부: 반차 파트 값 부적합. cmpnyCd={}, leaveId={}", cmpnyCd, target.leaveId());
+                throw new ApiException(AttdErrorCode.ATTD_400_208);
+            }
+            if (!UNIT_HALF.equals(unit)) {
+                log.info("이동 위치 지정 거부: 반차 외 단위에 파트 지정. cmpnyCd={}, leaveId={}, unit={}",
+                        cmpnyCd, target.leaveId(), unit);
+                throw new ApiException(AttdErrorCode.ATTD_400_208);
+            }
+            if (target.startTime() == null || target.endTime() == null) {
+                // 시각 결손 구 반차는 applyMove D-5 경계 재산출 비대상 — 파트 지정이 무의미해지므로 거부(지정의 의미 보장).
+                log.info("이동 위치 지정 거부: 시각 결손 구 반차에 파트 지정. cmpnyCd={}, leaveId={}", cmpnyCd, target.leaveId());
+                throw new ApiException(AttdErrorCode.ATTD_400_208);
+            }
+        }
+        if (startTime != null) {
+            if (!isHourlyUnit(unit)) {
+                log.info("이동 위치 지정 거부: 시간차 외 단위에 시작 시각 지정. cmpnyCd={}, leaveId={}, unit={}",
+                        cmpnyCd, target.leaveId(), unit);
+                throw new ApiException(AttdErrorCode.ATTD_400_208);
+            }
+            if (DateTimeUtils.hhmmToMinutes(startTime) == null) {
+                log.info("이동 위치 지정 거부: 시작 시각 형식 부적합. cmpnyCd={}, leaveId={}", cmpnyCd, target.leaveId());
+                throw new ApiException(AttdErrorCode.ATTD_400_208);
+            }
+        }
+        return new MovePosition(halfPart, startTime);
+    }
+
+    /** 위치선택 확장(2026-08-18): {@link #validateMovePosition} 정규화 결과 운반체. */
+    private record MovePosition(String halfPart, String startTime) {
     }
 
     /**
@@ -485,9 +574,13 @@ public class Attd13ServiceImpl implements Attd13Service {
      *       min(AVAIL_TO_DATE) 초과면 ATTD_400_125 거부. "이동"이 올해분 소멸+내년분 차감을 숨기는
      *       함정 방지 — 만료 이후 날짜가 필요하면 삭제 후 재신청이 정답 흐름(com-008-C §3-2 원 조항 복원).</li>
      *   <li>충돌 검증은 T3 확장 — 자기 REQ 전 행(분할 묶음) 제외 + 종류 = REQ 원 종류.</li>
+     *   <li>위치선택 확장(2026-08-18): {@code moveTargetStartTime}(시간차 지정 시작 시각, nullable —
+     *       {@link #validateMovePosition} 통과값 또는 확정 시 요청 행 DB 저장값)이 있으면 근무시간 내·
+     *       휴게 가로지름 가드를 "지정 시각 + 원 분량 파생 종료" 구간으로 수행. null 이면 종전 원 시각 경로 그대로.</li>
      * </ul>
      */
-    private void validateMove(String cmpnyCd, LeaveUseTargetResult target, String moveTargetDate) {
+    private void validateMove(String cmpnyCd, LeaveUseTargetResult target, String moveTargetDate,
+                              String moveTargetStartTime) {
         // F7c: 형식(YYYYMMDD) + 실재 날짜 검증. BASIC_ISO_DATE 는 STRICT 리졸버라 2월 31일 등도 거부.
         if (moveTargetDate == null || !moveTargetDate.matches("\\d{8}")) {
             throw new ApiException(AttdErrorCode.ATTD_400_131);
@@ -537,6 +630,47 @@ public class Attd13ServiceImpl implements Attd13Service {
         //   시각 결손 구 데이터는 판정 불가 — 스킵(추정 금지, 종전 동작 유지).
         //   발의(관리자/근로자)·확정 재검증 3경로가 본 메서드를 공유하므로 여기 한 곳이 단일 지점이다.
         if (isHourlyUnit(target.useUnitType())) {
+            if (moveTargetStartTime != null) {
+                // 위치선택 확장(2026-08-18): 지정 시각 우선 — sMin=지정분, eMin=지정분+원 분량(파생 종료).
+                //   지정 입력이 있는데 판정 재료가 결손(형식 오류·분량 결손)이면 fail-closed 거부 —
+                //   원값 경로의 "결손=스킵(종전 유지)" 과 구분해 지정의 의미를 보장한다.
+                Integer sMin = DateTimeUtils.hhmmToMinutes(moveTargetStartTime);
+                Integer minutes = target.leaveMinutes();
+                if (sMin == null || minutes == null || minutes <= 0) {
+                    log.info("연차 이동 거부: 지정 시각 판정 재료 결손. cmpnyCd={}, leaveId={}, moveTo={}, 분량결손={}",
+                            cmpnyCd, target.leaveId(), moveTargetDate, (minutes == null || minutes <= 0));
+                    throw new ApiException(AttdErrorCode.ATTD_400_208);
+                }
+                int eMin = sMin + minutes;
+                if (!leaveDeductionService.withinScheduledWorkHours(
+                        cmpnyCd, target.siteCd(), target.userCd(), moveTargetDate, sMin, eMin)) {
+                    log.info("연차 이동 거부: 대상일 근무시간 밖 시간차(지정 시각). cmpnyCd={}, leaveId={}, moveTo={}, {}+{}분",
+                            cmpnyCd, target.leaveId(), moveTargetDate, moveTargetStartTime, minutes);
+                    throw new ApiException(AttdErrorCode.ATTD_400_103);
+                }
+                if (leaveDeductionService.crossesBreak(
+                        cmpnyCd, target.siteCd(), target.userCd(), moveTargetDate, sMin, eMin)) {
+                    log.info("연차 이동 거부: 대상일 휴게 가로지름(지정 시각). cmpnyCd={}, leaveId={}, moveTo={}, {}+{}분",
+                            cmpnyCd, target.leaveId(), moveTargetDate, moveTargetStartTime, minutes);
+                    throw new ApiException(AttdErrorCode.ATTD_400_055);
+                }
+                // 재작업 A(2026-08-18 qa 후속): 지정 시각 경로만 발의 단계에서 기존 시간차 겹침을 선검사 —
+                //   확정 F5(applyMove 4-b)와 동일 판정(overlapsTimeLeaveOnDate 무수정 재사용)·동일 거부
+                //   코드(ATTD_400_112). F5 의 자기 제외는 "같은 트랜잭션 soft cancel(3단계)" 방식이지만,
+                //   발의 시점엔 위 F3(동일일 이동 거부)이 출발일≠대상일을 보장하므로 자기 행(원본
+                //   leaveId/REQ 묶음 — 전부 출발일 소재)이 대상일 조회에 나타날 수 없다(자기 제외 자연 성립).
+                //   확정 경로(validateMove 공유)에서 F5 와 중복 수행되나 soft cancel 전에도 같은 이유로 무해.
+                //   종료는 F5 입력과 동일 규약(hhmmOfDay wrap — END<START=익일 표기)으로 파생한다.
+                String designatedEnd = ScheduleWorkMinutesUtils.hhmmOfDay(eMin);
+                if (leaveDeductionService.overlapsTimeLeaveOnDate(
+                        cmpnyCd, target.siteCd(), target.userCd(), moveTargetDate,
+                        moveTargetStartTime, designatedEnd)) {
+                    log.info("연차 이동 거부: 대상일 연차 시간대 겹침(지정 시각). cmpnyCd={}, leaveId={}, moveTo={}, {}~{}",
+                            cmpnyCd, target.leaveId(), moveTargetDate, moveTargetStartTime, designatedEnd);
+                    throw new ApiException(AttdErrorCode.ATTD_400_112);
+                }
+                return;
+            }
             Integer sMin = DateTimeUtils.hhmmToMinutes(target.startTime());
             Integer eMin = DateTimeUtils.hhmmToMinutes(target.endTime());
             if (sMin != null && eMin != null && eMin > sMin) {
@@ -635,8 +769,14 @@ public class Attd13ServiceImpl implements Attd13Service {
      * <p>수정 배치 F1~F7(2026-08-04 사용자 확정): 만료 초과 이동 허용은 철회(F1 — validateMove 에서
      * ATTD_400_125 거부), 동일일 이동 거부(F3), 직접사용은 원 GRANT 유지 단건 재차감(F4), 하루 점유·
      * 시간대 겹침 미러 가드(F5), EVIDENCE_FILE_ID 승계(F6), 촉진 건 재발동 차단(F2).
+     *
+     * <p>위치선택 확장(2026-08-18): {@code moveTargetHalfPart}/{@code moveTargetStartTime} 은 요청 행
+     * DB 저장값(확정 재검증 통과분). 지정 시에만 "movedStartTime/EndTime·파트 결정부" 국소 분기 2곳이
+     * 동작하고, null 이면 종전 경로(반차=원일자 파트 역산 / 시간차=원 시각 승계) 그대로 — 이후
+     * 겹침(F5)·요금·재차감·재정산 훅은 movedStartTime/EndTime 을 인자로 소비하므로 무수정(§0 골격 무수정).
      */
-    private void applyMove(String cmpnyCd, LeaveUseTargetResult target, String newDate, String operatorUserCd) {
+    private void applyMove(String cmpnyCd, LeaveUseTargetResult target, String newDate,
+                           String moveTargetHalfPart, String moveTargetStartTime, String operatorUserCd) {
         final String siteCd = target.siteCd();
         final String userCd = target.userCd();
         final String unit = target.useUnitType();
@@ -693,10 +833,16 @@ public class Attd13ServiceImpl implements Attd13Service {
                                 hbOld != null, hbNew != null);
                         throw new ApiException(AttdErrorCode.ATTD_400_110);
                     }
-                    // 파트(시작기준/종료기준)는 별도 컬럼 없이 원일자 경계에서 역산한다
+                    // 파트 결정(위치선택 확장 2026-08-18): 요청 행에 지정 파트가 있으면 그 값(확정 재검증
+                    //   통과분 — START/END 정규화 저장)을 쓰고, 없으면 종전대로 원일자 경계에서 역산한다
                     //   (저장 시각의 시작이 그날 근무 시작과 같으면 시작기준).
-                    boolean startPart = movedStartTime.equals(
-                            ScheduleWorkMinutesUtils.hhmmOfDay(hbOld.workStartMin()));
+                    boolean startPart;
+                    if (moveTargetHalfPart != null) {
+                        startPart = HALF_PART_START.equals(moveTargetHalfPart);
+                    } else {
+                        startPart = movedStartTime.equals(
+                                ScheduleWorkMinutesUtils.hhmmOfDay(hbOld.workStartMin()));
+                    }
                     int startMin = startPart ? hbNew.workStartMin() : hbNew.boundaryMin();
                     int endMin = startPart ? hbNew.boundaryMin() : hbNew.workEndMin();
                     movedStartTime = ScheduleWorkMinutesUtils.hhmmOfDay(startMin);
@@ -712,6 +858,22 @@ public class Attd13ServiceImpl implements Attd13Service {
                 if (totalMinutes == null || totalMinutes <= 0) {
                     // 대표행 분 결손(불변식 위반 데이터 방어) — 요금 산출 불가
                     throw new ApiException(AttdErrorCode.ATTD_400_052);
+                }
+                // 위치선택 확장(2026-08-18): 지정 시작 시각이 있으면 movedStart/End 를 "지정 시각 +
+                //   원 분량(totalMinutes) 파생 종료" 로 교체(확정 재검증 통과분 — 분량 입력은 받지 않는다).
+                //   hhmmOfDay 는 1440 초과를 모듈러(wrap)로 처리하므로 자정 넘김은 END<START=익일
+                //   표기 규약이 자동 성립한다. 미지정이면 종전 원값 승계 그대로.
+                if (moveTargetStartTime != null) {
+                    Integer designatedMin = DateTimeUtils.hhmmToMinutes(moveTargetStartTime);
+                    if (designatedMin == null) {
+                        // 확정 재검증(validateMovePosition/validateMove)이 선차단 — 도달 불가 방어(fail-closed).
+                        throw new ApiException(AttdErrorCode.ATTD_400_208);
+                    }
+                    movedStartTime = ScheduleWorkMinutesUtils.hhmmOfDay(designatedMin);
+                    movedEndTime = ScheduleWorkMinutesUtils.hhmmOfDay(designatedMin + totalMinutes);
+                    log.info("연차 이동 시간차 지정 시각 적용. cmpnyCd={}, leaveId={}, {}→{}, {}~{}, 분량={}분",
+                            cmpnyCd, target.leaveId(), target.startDate(), newDate,
+                            movedStartTime, movedEndTime, totalMinutes);
                 }
                 // 분모·하한·캡 재적용(E1: 분모 = 이동 대상일 당일 배정 스케줄).
                 //   산출 불가(대상일 스케줄 없음 400_052 / 분모 불가 400_194)는 그대로 전파.

@@ -58,7 +58,8 @@
             </div>
             <div v-if="detail.reqType === 'MOVE'">
               <dt>이동대상일</dt>
-              <dd>{{ detail.moveTargetDate }}</dd>
+              <!-- 위치선택 확장(2026-08-18): 지정 파트/시각이 있으면 병기. 미지정이면 종전 표시 그대로 -->
+              <dd>{{ detail.moveTargetDate }}<template v-if="detail.moveTargetPos"> · {{ detail.moveTargetPos }}</template></dd>
             </div>
             <div>
               <dt>발의주체</dt>
@@ -216,6 +217,26 @@ const timeRangeOf = (unitCode, startTime, endTime, leaveMinutes) => {
   return `${range} (${formatLeaveMinutes(e - s)})`;
 };
 
+// ── 위치선택 확장(2026-08-18): 이동 대상 위치(반차 파트/시간차 지정 시각) 병기 ──
+//   미지정(null/구서버 미수신)이면 빈 값 → 종전 표시 바이트 그대로(무회귀).
+//   반차 파트는 대상일 경계 조회 없이 "시작 기준(늦게 출근)/종료 기준(일찍 퇴근)" 고정 표기
+//   (오전/오후 환산 금지 — plan §4 사용자 확정). 시간차 종료는 시작+원 분량(leaveMinutes) 클라 파생(표시 전용).
+const MOVE_HALF_PART_NM = {
+  START: "시작 기준(늦게 출근)",
+  END: "종료 기준(일찍 퇴근)",
+};
+const moveTargetPosLabelOf = (halfPart, moveStartTime, leaveMinutes) => {
+  if (halfPart) return MOVE_HALF_PART_NM[halfPart] || "";
+  const s = hhmmToMin(moveStartTime);
+  if (s == null) return "";
+  const dur = Number(leaveMinutes);
+  if (!Number.isFinite(dur) || dur <= 0) return fmtTime(moveStartTime);
+  // 자정 넘김(END<START)은 익일 저장 규약 — 시각만 모듈러 표기
+  const e = (s + dur) % 1440;
+  const pad = (n) => String(n).padStart(2, "0");
+  return `${fmtTime(moveStartTime)}~${pad(Math.floor(e / 60))}:${pad(e % 60)}`;
+};
+
 // 차감 일수 — 개인 분모(convMinutes)가 응답에 없으므로 "N일 H시간" 조립을 하지 않는다
 //   (480 폴백 오표기 방지). 단순 일수 표기 + 시간차는 원본 분을 병기한다.
 const leaveDaysLabelOf = (leaveDays, unitCode, leaveMinutes) => {
@@ -259,6 +280,12 @@ const fnLoadDetail = async () => {
           userNm: d.targetUserNm,
           targetStartDate: fmtYmd(d.targetStartDate),
           moveTargetDate: fmtYmd(d.moveTargetDate),
+          // 위치선택 확장: 지정 파트/시각 병기 라벨(미지정이면 빈 값 — 종전 표시 그대로)
+          moveTargetPos: moveTargetPosLabelOf(
+            d.moveTargetHalfPart,
+            d.moveTargetStartTime,
+            d.leaveMinutes
+          ),
           reqReason: d.reqReason,
           responseReason: d.responseReason,
           rejectReason: d.rejectReason,

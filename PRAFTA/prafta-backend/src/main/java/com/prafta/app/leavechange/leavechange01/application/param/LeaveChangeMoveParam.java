@@ -14,6 +14,8 @@ import com.prafta.common.exception.ApiException;
 public record LeaveChangeMoveParam(
       String targetLeaveId
     , String moveTargetDate
+    , String moveTargetHalfPart
+    , String moveTargetStartTime
     , String reqReason
     , String gvCmpnyCd
     , String gvUserCd
@@ -35,9 +37,13 @@ public record LeaveChangeMoveParam(
         if (request.getREQ_REASON() == null || request.getREQ_REASON().isBlank()) {
             throw new ApiException(AttdErrorCode.ATTD_400_120);
         }
+        // 위치선택 확장(2026-08-18): 선택 필드 2개 pass-through(미전송=null=원 위치 유지).
+        //   단위 교차 검증·정규화는 서비스가 서버 재조회 target 기준으로 수행(클라 값 비신뢰).
         return new LeaveChangeMoveParam(
               request.getTARGET_LEAVE_ID()
             , request.getMOVE_TARGET_DATE()
+            , request.getMOVE_TARGET_HALF_PART()
+            , request.getMOVE_TARGET_START_TIME()
             , request.getREQ_REASON()
             , tokenInfo.gv_cmpnyCd()
             , tokenInfo.gv_userCd()

@@ -50,6 +50,12 @@
                 </span>
               </div>
             </div>
+            <!-- 연차이동확장-07: 지정 이동 위치(반차 파트/시간차 시각) 병기.
+                 미지정(null) 건은 행 자체 미노출 — 종전 표시 그대로(분기 추가만). -->
+            <div v-if="movedPositionLabel(req)" class="lcc-card__row">
+              <span class="lcc-card__label">이동 후</span>
+              <span class="lcc-card__value">{{ movedPositionLabel(req) }}</span>
+            </div>
             <!-- G1: 대상 연차 속성(종류/단위/구간/차감량) — 근로자가 "무슨 연차인지" 알고 동의하도록.
                  사용 구간은 시간차(02~04)만 값이 있다(반차·반반차는 시각 미기록). -->
             <div v-if="req.leaveNm" class="lcc-card__row">
@@ -158,7 +164,8 @@ const props = defineProps({
   },
   // 미응답(REQUESTED) 관리자 발의 요청 목록 — 부모(MainView)가 조회해 전달.
   //   각 항목: { changeReqId, reqType('MOVE'|'DELETE'), targetStartDate(YYYYMMDD), moveTargetDate, reqReason,
-  //             leaveNm, useUnitType(SYS025), unitNm, startTime(HHmm), endTime(HHmm), leaveDays, leaveMinutes }
+  //             leaveNm, useUnitType(SYS025), unitNm, startTime(HHmm), endTime(HHmm), leaveDays, leaveMinutes,
+  //             moveTargetHalfPart('START'|'END'|null), moveTargetStartTime(HHmm|null) } ← 연차이동확장-07
   items: {
     type: Array,
     default: () => [],
@@ -240,6 +247,34 @@ const leaveDaysLabel = (req) => {
     return `${base} (${formatMinutesToHm(raw)})`
   }
   return base
+}
+
+// ── 연차이동확장-07: 지정 이동 위치 표기 ──────────────────────────────────
+// 분 → "HH:MM" (자정 넘김은 익일 표시 — 저장 규약·확정 값은 서버 파생)
+const fmtMin = (min) => {
+  const m = ((min % 1440) + 1440) % 1440
+  return `${String(Math.floor(m / 60)).padStart(2, '0')}:${String(m % 60).padStart(2, '0')}`
+}
+
+// 요청 행에 지정 파트/시각이 있으면 "이동 후" 라벨 생성. 없으면 ''(행 미노출 — 종전 표시 불변).
+//   반차 파트: 오전/오후 환산 금지(대상일 경계 미보유) — "시작 기준(늦게 출근)/종료 기준(일찍 퇴근)" 표기(사용자 확정).
+//   시간차: 종료=시작+원 분량(leaveMinutes) 클라 파생(표시 전용).
+const movedPositionLabel = (req) => {
+  if (req?.reqType !== 'MOVE') return ''
+  const date = fmtYmd(req.moveTargetDate)
+  if (req.moveTargetHalfPart === 'START' || req.moveTargetHalfPart === 'END') {
+    const part = req.moveTargetHalfPart === 'START' ? '시작 기준(늦게 출근)' : '종료 기준(일찍 퇴근)'
+    return `${date} ${part}`
+  }
+  if (req.moveTargetStartTime) {
+    const s = hhmmToMin(req.moveTargetStartTime)
+    const mins = Number(req.leaveMinutes)
+    if (s != null && Number.isFinite(mins) && mins > 0) {
+      return `${date} ${fmtHm(req.moveTargetStartTime)}~${fmtMin(s + mins)}`
+    }
+    return `${date} ${fmtHm(req.moveTargetStartTime)} 시작`
+  }
+  return ''
 }
 
 const startReject = (req) => {

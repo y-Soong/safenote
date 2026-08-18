@@ -162,6 +162,10 @@
                   {{ fmtDate(row.targetStartDate) }}
                   <template v-if="row.reqType === 'MOVE'">
                     → {{ fmtDate(row.moveTargetDate) }}
+                    <!-- 위치선택 확장(2026-08-18): 지정 파트/시각 병기(미지정이면 종전 표시 그대로) -->
+                    <template v-if="leaveChangeMovePosLabel(row)">
+                      · {{ leaveChangeMovePosLabel(row) }}
+                    </template>
                   </template>
                   · {{ leaveChangeStatusNm(row.reqStatus) }}
                 </div>
@@ -727,6 +731,36 @@ const LEAVE_CHANGE_STATUS_NM = {
 const leaveChangeTypeNm = (t) => LEAVE_CHANGE_TYPE_NM[t] || t || "-";
 const leaveChangeInitiatorNm = (t) => LEAVE_CHANGE_INITIATOR_NM[t] || t || "-";
 const leaveChangeStatusNm = (s) => LEAVE_CHANGE_STATUS_NM[s] || s || "-";
+
+// ── 위치선택 확장(2026-08-18): 연차 이동 요청 카드에 지정 파트/시각 병기 ──
+//   미지정(null/구서버 미수신)이면 빈 값 → 종전 표시 바이트 그대로(무회귀).
+//   반차 파트는 대상일 경계 조회 없이 "시작 기준(늦게 출근)/종료 기준(일찍 퇴근)" 고정 표기
+//   (오전/오후 환산 금지 — plan §4 사용자 확정). 시간차 종료는 시작+원 분량(leaveMinutes) 클라 파생(표시 전용).
+const LEAVE_CHANGE_HALF_PART_NM = {
+  START: "시작 기준(늦게 출근)",
+  END: "종료 기준(일찍 퇴근)",
+};
+const lcHhmmToMin = (hhmm) => {
+  const v = String(hhmm ?? "");
+  if (v.length !== 4) return null;
+  const h = parseInt(v.slice(0, 2), 10);
+  const m = parseInt(v.slice(2, 4), 10);
+  if (Number.isNaN(h) || Number.isNaN(m)) return null;
+  if (h < 0 || h > 23 || m < 0 || m > 59) return null;
+  return h * 60 + m;
+};
+const leaveChangeMovePosLabel = (row) => {
+  if (row?.moveTargetHalfPart)
+    return LEAVE_CHANGE_HALF_PART_NM[row.moveTargetHalfPart] || "";
+  const s = lcHhmmToMin(row?.moveTargetStartTime);
+  if (s == null) return "";
+  const dur = Number(row?.leaveMinutes);
+  if (!Number.isFinite(dur) || dur <= 0) return fmtTime(row.moveTargetStartTime);
+  // 자정 넘김(END<START)은 익일 저장 규약 — 시각만 모듈러 표기
+  const e = (s + dur) % 1440;
+  const pad = (n) => String(n).padStart(2, "0");
+  return `${fmtTime(row.moveTargetStartTime)}~${pad(Math.floor(e / 60))}:${pad(e % 60)}`;
+};
 
 const tabLabel = (key) => tabs.find((t) => t.key === key)?.label ?? "";
 

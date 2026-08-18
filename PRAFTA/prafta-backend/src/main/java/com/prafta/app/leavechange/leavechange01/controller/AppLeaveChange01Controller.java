@@ -109,7 +109,8 @@ public class AppLeaveChange01Controller {
 
         attd13Service.createWorkerMoveRequest(
                 param.gvCmpnyCd(), param.gvUserCd(), param.targetLeaveId(),
-                param.moveTargetDate(), param.reqReason());
+                param.moveTargetDate(), param.moveTargetHalfPart(), param.moveTargetStartTime(),
+                param.reqReason());
 
         return ResponseEntity.status(HttpStatus.OK).build();
     }

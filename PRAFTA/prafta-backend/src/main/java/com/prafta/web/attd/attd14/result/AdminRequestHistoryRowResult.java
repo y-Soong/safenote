@@ -29,5 +29,11 @@ public record AdminRequestHistoryRowResult(
     , String confirmUserNm
     , String confirmDate
     , String insertDate
+    // 위치선택 확장(2026-08-18 재작업 B): 이동 대상 위치 병기용 — 미지정(NULL)이면 종전 표시 그대로.
+    //   ★ 목록(selectAdminRequestHistory)·상세(selectAdminRequestHistoryDetail) 두 쿼리가 본 record 를
+    //   공유하므로 SELECT 끝 3컬럼을 두 쿼리에 동시 유지할 것.
+    , String moveTargetHalfPart  // 이동 대상 반차 파트 (START/END, NULL:원 파트 유지)
+    , String moveTargetStartTime // 이동 대상 시간차 시작 시각 (HHMM, NULL:원 시각 유지)
+    , Integer leaveMinutes       // 대상 use 대표행 분량(분) — 시간차 종료 파생용(시작+분량)
 ) {
 }

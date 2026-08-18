@@ -504,6 +504,14 @@ public enum AttdErrorCode implements ApiErrorCode {
     //   관리자 발의 삭제는 현행대로(촉진 가드 없음) — 근로자 발의만 차단.
     , ATTD_400_207(HttpStatus.BAD_REQUEST,
             "연차사용촉진으로 지정된 연차는 취소를 요청할 수 없습니다. 관리자에게 문의해 주세요.")
+
+    // ===== 연차 이동 위치선택 확장 (2026-08-18) =====
+    // 이동 발의의 선택 입력(반차 파트 MOVE_TARGET_HALF_PART / 시간차 시작 시각 MOVE_TARGET_START_TIME)이
+    //   대상 연차 단위와 불일치(반차 외 halfPart / 시간차 외 startTime / 종일·반반차에 지정)하거나
+    //   형식 오류(START·END 외 값, HHMM 비유효)·적용 불가(시각 결손 구 반차, 분량 결손)일 때 거부.
+    //   단위 판정은 서버 재조회 target.useUnitType 기준(클라 값 비신뢰) — fail-closed 단일 수렴 코드.
+    , ATTD_400_208(HttpStatus.BAD_REQUEST,
+            "해당 연차 단위에는 지정할 수 없는 항목입니다. 이동 위치 지정 값을 확인해 주세요.")
     ;
 
     private final HttpStatus httpStatus;

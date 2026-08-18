@@ -31,6 +31,22 @@ public class LeaveChangeMoveRequest {
     @JsonProperty("MOVE_TARGET_DATE")
     private String MOVE_TARGET_DATE;
 
+    /**
+     * 이동 대상 반차 파트 (선택. 위치선택 확장 2026-08-18 — 반차 건만 유효, 미지정=원 파트 유지).
+     * START:시작기준(늦게 출근) / END:종료기준(일찍 퇴근). 단위 교차 검증은 서버 재조회 기준(fail-closed).
+     */
+    @Pattern(regexp = "(?i)START|END")
+    @JsonProperty("MOVE_TARGET_HALF_PART")
+    private String MOVE_TARGET_HALF_PART;
+
+    /**
+     * 이동 대상 시간차 시작 시각 (선택. HHMM — 시간차 건만 유효, 미지정=원 시각 유지).
+     * 종료 시각·분량은 입력받지 않는다(원 분량으로 서버 파생 — 분량 변조 원천 차단).
+     */
+    @Pattern(regexp = "\\d{4}")
+    @JsonProperty("MOVE_TARGET_START_TIME")
+    private String MOVE_TARGET_START_TIME;
+
     /** 이동 사유 (필수). */
     @NotBlank
     @JsonProperty("REQ_REASON")

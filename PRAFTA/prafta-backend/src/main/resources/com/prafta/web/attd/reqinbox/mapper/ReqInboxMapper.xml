@@ -277,6 +277,9 @@
         , R.REQ_REASON                                                 AS reqReason
         , R.REJECT_REASON                                              AS rejectReason
         , DATE_FORMAT(R.CONFIRM_DATE, '%Y-%m-%dT%H:%i:%s')             AS confirmDate
+        , R.MOVE_TARGET_HALF_PART                                      AS moveTargetHalfPart
+        , R.MOVE_TARGET_START_TIME                                     AS moveTargetStartTime
+        , LU.LEAVE_MINUTES                                             AS leaveMinutes
       FROM TB_LEAVE_CHANGE_REQUEST R
       LEFT JOIN TB_USER_LEAVE_USE LU
         ON LU.CMPNY_CD = R.CMPNY_CD

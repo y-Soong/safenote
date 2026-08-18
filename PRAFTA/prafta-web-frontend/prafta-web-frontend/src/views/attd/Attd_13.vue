@@ -120,8 +120,10 @@
                     {{ item.unitLabel || "-" }}
                   </td>
                   <td style="text-align: center">{{ item.reqTypeNm }}</td>
+                  <!-- 위치선택 확장(2026-08-18): 지정 파트/시각 병기(그리드 폭 고려 축약 라벨 —
+                       전체 라벨은 확인 팝업에서 표기). 미지정이면 종전 표시 그대로 -->
                   <td style="text-align: center">
-                    {{ item.moveTargetDate || "-" }}
+                    {{ item.moveTargetDate || "-" }}<template v-if="item.moveTargetPos"> · {{ item.moveTargetPos }}</template>
                   </td>
                   <td style="text-align: center">{{ item.initiatorTypeNm }}</td>
                   <td style="text-align: center">{{ item.reqStatusNm }}</td>
@@ -234,6 +236,36 @@ const unitLabelOf = (unitCode, unitNm) => {
   return HOURLY_UNITS.includes(unitCode) && !unitNm.startsWith("시간차") ? `시간차 ${unitNm}` : unitNm;
 };
 
+// ── 위치선택 확장(2026-08-18): 이동 대상 위치(반차 파트/시간차 지정 시각) 병기 ──
+//   그리드는 폭 제약으로 축약 라벨("시작 기준/종료 기준")을 쓰고,
+//   전체 라벨("시작 기준(늦게 출근)")은 확인 팝업(LeaveChangeConfirmPop)에서 표기한다.
+//   미지정(null)이면 빈 값 → 종전 표시 바이트 그대로(무회귀). 오전/오후 환산 금지(plan §4 사용자 확정).
+const MOVE_HALF_PART_NM_SHORT = { START: "시작 기준", END: "종료 기준" };
+const fmtHhmm = (hhmm) => {
+  const v = String(hhmm ?? "");
+  return v.length >= 4 ? `${v.slice(0, 2)}:${v.slice(2, 4)}` : "";
+};
+const hhmmToMin = (hhmm) => {
+  const v = String(hhmm ?? "");
+  if (v.length !== 4) return null;
+  const h = parseInt(v.slice(0, 2), 10);
+  const m = parseInt(v.slice(2, 4), 10);
+  if (Number.isNaN(h) || Number.isNaN(m)) return null;
+  if (h < 0 || h > 23 || m < 0 || m > 59) return null;
+  return h * 60 + m;
+};
+const moveTargetPosLabelOf = (halfPart, moveStartTime, leaveMinutes) => {
+  if (halfPart) return MOVE_HALF_PART_NM_SHORT[halfPart] || "";
+  const s = hhmmToMin(moveStartTime);
+  if (s == null) return "";
+  const dur = Number(leaveMinutes);
+  if (!Number.isFinite(dur) || dur <= 0) return fmtHhmm(moveStartTime);
+  // 시간차 종료는 시작+원 분량(leaveMinutes) 클라 파생(표시 전용). 자정 넘김은 익일 규약 — 모듈러 표기.
+  const e = (s + dur) % 1440;
+  const pad = (n) => String(n).padStart(2, "0");
+  return `${fmtHhmm(moveStartTime)}~${pad(Math.floor(e / 60))}:${pad(e % 60)}`;
+};
+
 // 서버 row → 그리드 표시 객체로 보강(라벨/포맷)
 const toRow = (r) => ({
   changeReqId: r.changeReqId,
@@ -244,6 +276,12 @@ const toRow = (r) => ({
   unitLabel: unitLabelOf(r.useUnitType, r.unitNm),
   reqTypeNm: REQ_TYPE_NM[r.reqType] || r.reqType,
   moveTargetDate: fmtYmd(r.moveTargetDate),
+  // 위치선택 확장: 지정 파트/시각 병기 라벨(미지정이면 빈 값 — 종전 표시 그대로)
+  moveTargetPos: moveTargetPosLabelOf(
+    r.moveTargetHalfPart,
+    r.moveTargetStartTime,
+    r.leaveMinutes
+  ),
   initiatorTypeNm: INITIATOR_TYPE_NM[r.initiatorType] || r.initiatorType,
   reqStatusNm: REQ_STATUS_NM[r.reqStatus] || r.reqStatus,
   workerResponseNm: WORKER_RESPONSE_NM[r.workerResponse] || r.workerResponse,

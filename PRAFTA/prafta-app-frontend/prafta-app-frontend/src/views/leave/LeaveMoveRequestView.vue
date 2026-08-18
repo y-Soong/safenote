@@ -76,6 +76,59 @@
           <DateStepperField v-model="moveTargetDate" placeholder="이동 대상일 선택" />
         </section>
 
+        <!-- 연차이동확장-06: 이동 위치 선택(반차 파트/시간차 시각) — MOVE 모드 + 대상 선택 시 단위별 조건부.
+             미지정=원 위치 유지(기본, 필드 미전송). 종일 건은 섹션 미노출. 교차/형식 검증은 서버(400_208) 최종 방어. -->
+        <section
+          v-if="reqMode === 'MOVE' && (isHalfSelected || isHourlySelected)"
+          class="lmv-section"
+        >
+          <h2 class="lmv-section__title">이동 위치</h2>
+
+          <!-- 반차(01): 파트 라디오 3옵션 — 기본「그대로 유지」(미전송) -->
+          <template v-if="isHalfSelected">
+            <div class="lmv-radios" role="radiogroup" aria-label="반차 위치 선택">
+              <label class="lmv-radio">
+                <input type="radio" name="lmv-half-part" value="" v-model="halfPartChoice" />
+                <span>그대로 유지</span>
+              </label>
+              <label class="lmv-radio">
+                <input type="radio" name="lmv-half-part" value="START" v-model="halfPartChoice" />
+                <span>시작 기준(늦게 출근)</span>
+              </label>
+              <label class="lmv-radio">
+                <input type="radio" name="lmv-half-part" value="END" v-model="halfPartChoice" />
+                <span>종료 기준(일찍 퇴근)</span>
+              </label>
+            </div>
+            <p class="lmv-help">별도로 선택하지 않으면 「그대로 유지」가 기본입니다.</p>
+          </template>
+
+          <!-- 시간차(02|03|04): 원 시각 유지(기본, 미전송) ↔ 시각 지정 + 30분 스텝 시각 필드 -->
+          <template v-else>
+            <div class="lmv-seg" role="tablist" aria-label="이동 시각 지정 여부">
+              <button
+                type="button"
+                class="lmv-seg__btn"
+                :class="{ 'lmv-seg__btn--on': timeChoice === 'KEEP' }"
+                @click="timeChoice = 'KEEP'"
+              >원 시각 유지</button>
+              <button
+                type="button"
+                class="lmv-seg__btn"
+                :class="{ 'lmv-seg__btn--on': timeChoice === 'SET' }"
+                @click="timeChoice = 'SET'"
+              >시각 지정</button>
+            </div>
+            <template v-if="timeChoice === 'SET'">
+              <TimeStepperField v-model="moveStartTimeInput" :step="30" placeholder="시작 시각" />
+              <p class="lmv-help">종료 시각은 원 분량({{ originMinutesText }})으로 자동 결정됩니다.</p>
+            </template>
+          </template>
+
+          <!-- 선택 요약(지정 시에만 노출 — 표시 전용, 종료=시작+원 분량 클라 파생) -->
+          <p v-if="positionSummary" class="lmv-summary">{{ positionSummary }}</p>
+        </section>
+
         <!-- 사유 -->
         <section class="lmv-section">
           <h2 class="lmv-section__title">{{ reqMode === 'MOVE' ? '이동 사유' : '취소 사유' }}</h2>
@@ -116,7 +169,7 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted, getCurrentInstance } from 'vue'
+import { ref, computed, watch, onMounted, getCurrentInstance } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 
 import api from '@/api/axios'
@@ -125,6 +178,7 @@ import PullRefreshIndicator from '@/components/common/PullRefreshIndicator.vue'
 import { resolveApiErrorMessage } from '@/utils/apiError'
 import { formatYmdDisplay } from '@/utils/approvalFormat'
 import DateStepperField from '@/components/common/DateStepperField.vue'
+import TimeStepperField from '@/components/common/TimeStepperField.vue'
 
 const route = useRoute()
 const router = useRouter()
@@ -147,6 +201,56 @@ const submitting = ref(false)
 
 // 연차취소개방-02: 요청 유형(MOVE=이동 | DELETE=취소). 기본 이동 — 종전 동작·프리셀렉트 보존.
 const reqMode = ref('MOVE')
+
+// ── 연차이동확장-06: 이동 위치 선택 상태 ─────────────────────────────────
+// 반차 파트: ''=그대로 유지(기본, 미전송) | 'START' | 'END'
+const halfPartChoice = ref('')
+// 시간차 시각: 'KEEP'=원 시각 유지(기본, 미전송) | 'SET'=시각 지정
+const timeChoice = ref('KEEP')
+// 지정 시작 시각 'HH:MM' (TimeStepperField v-model, 30분 스텝)
+const moveStartTimeInput = ref('')
+
+// 시간차 단위(SYS025 02:2시간 / 03:1시간 / 04:30분)
+const HOURLY_UNITS = ['02', '03', '04']
+
+// 선택된 대상 연차 행(원본 단위/시각/분 보존값 — toLeave 매핑)
+const selectedLeave = computed(
+  () => movableLeaves.value.find((it) => it.leaveId === selectedLeaveId.value) || null,
+)
+const isHalfSelected = computed(() => selectedLeave.value?.useUnitType === '01')
+const isHourlySelected = computed(() => HOURLY_UNITS.includes(selectedLeave.value?.useUnitType))
+
+// 원 분량 안내 문구("종료는 원 분량(30분)으로 자동 결정")
+const originMinutesText = computed(() => {
+  const n = Number(selectedLeave.value?.leaveMinutes)
+  return Number.isFinite(n) && n > 0 ? `${n}분` : '원 사용 시간'
+})
+
+// 선택 요약 1줄(지정 시에만) — 종료=시작+원 분량 클라 파생(표시 전용, 확정 값은 서버 파생).
+const positionSummary = computed(() => {
+  if (isHalfSelected.value && halfPartChoice.value) {
+    const label = halfPartChoice.value === 'START' ? '시작 기준(늦게 출근)' : '종료 기준(일찍 퇴근)'
+    return `→ ${label}으로 이동`
+  }
+  if (isHourlySelected.value && timeChoice.value === 'SET' && moveStartTimeInput.value) {
+    const [h, m] = moveStartTimeInput.value.split(':').map(Number)
+    const mins = Number(selectedLeave.value?.leaveMinutes)
+    if (Number.isFinite(h) && Number.isFinite(m) && Number.isFinite(mins) && mins > 0) {
+      const end = (h * 60 + m + mins) % 1440 // 자정 넘김은 익일 표시(저장 규약은 서버)
+      const endStr = `${String(Math.floor(end / 60)).padStart(2, '0')}:${String(end % 60).padStart(2, '0')}`
+      return `→ ${moveStartTimeInput.value}~${endStr}으로 이동`
+    }
+    return `→ ${moveStartTimeInput.value} 시작으로 이동`
+  }
+  return ''
+})
+
+// 대상 연차/모드 변경 시 위치 선택 초기화 — 다른 단위의 잔존값 오전송 방지.
+watch([selectedLeaveId, reqMode], () => {
+  halfPartChoice.value = ''
+  timeChoice.value = 'KEEP'
+  moveStartTimeInput.value = ''
+})
 
 // 단순 필수값 검증만 골격에서. 만료/충돌/마감은 서버(developer).
 const canSubmit = computed(
@@ -190,6 +294,11 @@ const toLeave = (lv) => ({
   promotionStageNm: PROMOTION_STAGE_NM[lv.promotionStage] || '',
   // 연차취소개방-02: 촉진 판정용 원본 코드 보존(FIRST/SECOND) — 표시 라벨과 별개.
   promotionStage: lv.promotionStage || 'NONE',
+  // 연차이동확장-06: 단위별 조건부 UI·요약 파생용 원본 값 보존(movable-leaves 확장 필드).
+  useUnitType: lv.useUnitType || '',
+  startTime: lv.startTime || '',
+  endTime: lv.endTime || '',
+  leaveMinutes: lv.leaveMinutes ?? null,
 })
 
 // GET /appApi/leavechange/movable-leaves
@@ -216,17 +325,32 @@ const loadMyLeaves = async () => {
 
 // POST /appApi/leavechange/move-requests
 //   body(대문자 키) = { TARGET_LEAVE_ID, MOVE_TARGET_DATE, REQ_REASON }
-//   서버: 본인 LEAVE_ID 검증(body 비신뢰) + 만료/충돌/마감 검증 →
+//   연차이동확장-06: 위치 지정 시에만 MOVE_TARGET_HALF_PART("START"|"END") 또는
+//     MOVE_TARGET_START_TIME("HHMM") 선택 포함 — 미지정이면 필드 자체 미전송(R1 페이로드 동일성).
+//   서버: 본인 LEAVE_ID 검증(body 비신뢰) + 만료/충돌/마감 + 단위 교차·근무시간 내 검증(400_208 등) →
 //         initiatorType=WORKER, reqType=MOVE 요청 생성(관리자 승인 대상) + 관리자 PUSH.
 const onSubmit = async () => {
   if (!canSubmit.value || submitting.value) return
+  // 시각 지정 토글인데 시각 미선택 — disabled 숨김 대신 클릭 시 안내(안내 도달 불가 함정 회피).
+  if (isHourlySelected.value && timeChoice.value === 'SET' && !moveStartTimeInput.value) {
+    await showAlert('지정할 시작 시각을 선택해 주세요.')
+    return
+  }
   submitting.value = true
   try {
-    await api.post('/appApi/leavechange/move-requests', {
+    const body = {
       TARGET_LEAVE_ID: selectedLeaveId.value,
       MOVE_TARGET_DATE: toYmd8(moveTargetDate.value),
       REQ_REASON: reason.value.trim(),
-    })
+    }
+    // 미지정 시 필드 자체 미전송(null 전송 아님) — 종전 페이로드와 바이트 동일.
+    if (isHalfSelected.value && halfPartChoice.value) {
+      body.MOVE_TARGET_HALF_PART = halfPartChoice.value
+    }
+    if (isHourlySelected.value && timeChoice.value === 'SET' && moveStartTimeInput.value) {
+      body.MOVE_TARGET_START_TIME = moveStartTimeInput.value.replace(':', '')
+    }
+    await api.post('/appApi/leavechange/move-requests', body)
     await showAlert('이동 요청을 보냈어요. 관리자 승인 후 반영됩니다.')
     router.back()
   } catch (err) {
@@ -423,6 +547,40 @@ onMounted(loadMyLeaves)
   background: var(--color-primary);
   color: #fff;
   font-weight: 600;
+}
+
+/* 연차이동확장-06: 이동 위치 선택(반차 파트 라디오/시간차 시각 지정) */
+.lmv-radios {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-sm);
+}
+.lmv-radio {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+  padding: var(--space-sm) var(--space-md);
+  background: var(--color-surface);
+  border: 0.5px solid var(--color-border);
+  border-radius: var(--radius-md);
+  font-size: 14px;
+  color: var(--color-text-primary);
+  cursor: pointer;
+}
+.lmv-radio input {
+  margin: 0;
+  accent-color: var(--color-primary);
+}
+.lmv-help {
+  margin: 0;
+  font-size: 12px;
+  color: var(--color-text-secondary);
+}
+.lmv-summary {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--color-primary);
 }
 
 /* 연차취소개방-02: 취소 모드 안내(차감 복원 고지) */

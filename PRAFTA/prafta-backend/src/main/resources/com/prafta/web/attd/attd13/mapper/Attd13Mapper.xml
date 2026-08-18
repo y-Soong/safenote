@@ -189,6 +189,10 @@
         , U.PROMOTION_STAGE  AS promotionStage
         , U.DESIGNATOR_TYPE  AS designatorType
         , G.AVAIL_TO_DATE    AS availToDate
+    <!-- 위치선택 확장(2026-08-18): 앱 발의 화면 단위별 조건부 UI용 원본 시각/분 — record 마지막 3 컴포넌트와 1:1. -->
+        , U.START_TIME       AS startTime
+        , U.END_TIME         AS endTime
+        , U.LEAVE_MINUTES    AS leaveMinutes
       FROM TB_USER_LEAVE_USE U
       LEFT JOIN TB_USER_LEAVE_GRANT G
         ON G.CMPNY_CD = U.CMPNY_CD
@@ -234,6 +238,8 @@
         , INITIATOR_TYPE
         , REQ_TYPE
         , MOVE_TARGET_DATE
+        , MOVE_TARGET_HALF_PART
+        , MOVE_TARGET_START_TIME
         , REQ_REASON
         , WORKER_RESPONSE
         , REQ_STATUS
@@ -251,6 +257,8 @@
         , #{initiatorType}
         , #{reqType}
         , #{moveTargetDate}
+        , #{moveTargetHalfPart}
+        , #{moveTargetStartTime}
         , #{reqReason}
         , 'PENDING'
         , 'REQUESTED'
@@ -308,6 +316,9 @@
                           , LU.LEAVE_DAYS )
           END                                        AS leaveDays
         , LU.LEAVE_MINUTES                           AS leaveMinutes
+    <!-- 위치선택 확장(2026-08-18): record 마지막 2 컴포넌트와 1:1(3쿼리 동시 확장 — 위치매핑). -->
+        , R.MOVE_TARGET_HALF_PART                    AS moveTargetHalfPart
+        , R.MOVE_TARGET_START_TIME                   AS moveTargetStartTime
       FROM TB_LEAVE_CHANGE_REQUEST R
       LEFT JOIN TB_USER TU
         ON TU.CMPNY_CD = R.CMPNY_CD
@@ -402,6 +413,9 @@
                           , LU.LEAVE_DAYS )
           END                                        AS leaveDays
         , LU.LEAVE_MINUTES                           AS leaveMinutes
+    <!-- 위치선택 확장(2026-08-18): record 마지막 2 컴포넌트와 1:1(3쿼리 동시 확장 — 위치매핑). -->
+        , R.MOVE_TARGET_HALF_PART                    AS moveTargetHalfPart
+        , R.MOVE_TARGET_START_TIME                   AS moveTargetStartTime
       FROM TB_LEAVE_CHANGE_REQUEST R
       LEFT JOIN TB_USER TU
         ON TU.CMPNY_CD = R.CMPNY_CD
@@ -460,6 +474,9 @@
                           , LU.LEAVE_DAYS )
           END                                        AS leaveDays
         , LU.LEAVE_MINUTES                           AS leaveMinutes
+    <!-- 위치선택 확장(2026-08-18): record 마지막 2 컴포넌트와 1:1(3쿼리 동시 확장 — 위치매핑). -->
+        , R.MOVE_TARGET_HALF_PART                    AS moveTargetHalfPart
+        , R.MOVE_TARGET_START_TIME                   AS moveTargetStartTime
       FROM TB_LEAVE_CHANGE_REQUEST R
       LEFT JOIN TB_USER TU
         ON TU.CMPNY_CD = R.CMPNY_CD

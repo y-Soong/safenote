@@ -20,5 +20,9 @@ public record ProcessedLeaveChangeResult(
     , String reqReason
     , String rejectReason     // 관리자 반려 사유(REJECTED 시)
     , String confirmDate      // 내가 확인/반려한 일시
+    // 위치선택 확장(2026-08-18 재작업 B): 이동 대상 위치 병기용 — 미지정(NULL)이면 종전 표시 그대로.
+    , String moveTargetHalfPart  // 이동 대상 반차 파트 (START/END, NULL:원 파트 유지)
+    , String moveTargetStartTime // 이동 대상 시간차 시작 시각 (HHMM, NULL:원 시각 유지)
+    , Integer leaveMinutes       // 대상 use 대표행 분량(분) — 시간차 종료 파생용(시작+분량)
 ) {
 }

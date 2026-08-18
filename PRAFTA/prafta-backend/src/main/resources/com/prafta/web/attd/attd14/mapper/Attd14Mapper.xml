@@ -90,6 +90,9 @@
         , CU.USER_NM                                 AS confirmUserNm
         , DATE_FORMAT(R.CONFIRM_DATE, '%Y%m%d%H%i%s') AS confirmDate
         , DATE_FORMAT(R.INSERT_DATE,  '%Y%m%d%H%i%s') AS insertDate
+        , R.MOVE_TARGET_HALF_PART                    AS moveTargetHalfPart
+        , R.MOVE_TARGET_START_TIME                   AS moveTargetStartTime
+        , LU.LEAVE_MINUTES                           AS leaveMinutes
       FROM TB_LEAVE_CHANGE_REQUEST R
       LEFT JOIN TB_USER TU
         ON TU.CMPNY_CD = R.CMPNY_CD
@@ -145,6 +148,9 @@
         , CU.USER_NM                                 AS confirmUserNm
         , DATE_FORMAT(R.CONFIRM_DATE, '%Y%m%d%H%i%s') AS confirmDate
         , DATE_FORMAT(R.INSERT_DATE,  '%Y%m%d%H%i%s') AS insertDate
+        , R.MOVE_TARGET_HALF_PART                    AS moveTargetHalfPart
+        , R.MOVE_TARGET_START_TIME                   AS moveTargetStartTime
+        , LU.LEAVE_MINUTES                           AS leaveMinutes
       FROM TB_LEAVE_CHANGE_REQUEST R
       LEFT JOIN TB_USER TU
         ON TU.CMPNY_CD = R.CMPNY_CD
