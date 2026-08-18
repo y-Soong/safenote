@@ -176,8 +176,9 @@ public class Attd13ServiceImpl implements Attd13Service {
                     param.moveTargetHalfPart(), param.moveTargetStartTime());
             moveHalfPart = pos.halfPart();
             moveStartTime = pos.startTime();
-            // 이동 검증(형식·과거일·동일일 F3·만료 F1·충돌 + 지정 시각 근무시간 내·휴게 가드) + 대상일 잔여 soft 체크(§2-6)
-            validateMove(param.gvCmpnyCd(), target, param.moveTargetDate(), moveStartTime);
+            // 이동 검증(형식·과거일·동일일 F3·만료 F1·충돌 + 지정 시각 근무시간 내·휴게 가드
+            //   + 반차 예상 경계 겹침 선검사) + 대상일 잔여 soft 체크(§2-6)
+            validateMove(param.gvCmpnyCd(), target, param.moveTargetDate(), moveHalfPart, moveStartTime);
             validateMoveBalanceSoft(param.gvCmpnyCd(), target, param.moveTargetDate());
         }
 
@@ -224,7 +225,7 @@ public class Attd13ServiceImpl implements Attd13Service {
             //   단일 신뢰 지점 규약. 발의~확정 사이 스케줄/데이터 변경 대비). 교차 검증도 동일 값으로 재수행.
             //   sec-10 Low: 재검증의 정규화 반환값(movePos)을 그대로 적용값으로 사용 — 검증 통과값=적용값 구조 보장.
             movePos = validateMovePosition(param.gvCmpnyCd(), target, req.moveTargetHalfPart(), req.moveTargetStartTime());
-            validateMove(param.gvCmpnyCd(), target, req.moveTargetDate(), movePos.startTime());
+            validateMove(param.gvCmpnyCd(), target, req.moveTargetDate(), movePos.halfPart(), movePos.startTime());
         }
 
         // 6) 상태 전이(AGREED → CONFIRMED). 경합 시 0행 → 충돌
@@ -356,8 +357,9 @@ public class Attd13ServiceImpl implements Attd13Service {
         // 2-1) 위치선택 확장(2026-08-18): 선택 입력 교차 검증(단위=서버 재조회 target 기준, fail-closed) + 정규화.
         //      미지정(null)이면 종전 경로 그대로.
         MovePosition pos = validateMovePosition(cmpnyCd, target, moveTargetHalfPart, moveTargetStartTime);
-        // 3) 이동 검증(형식·과거일·동일일 F3·만료 F1·충돌 + 지정 시각 근무시간 내·휴게 가드) + 대상일 잔여 soft 체크(§2-6)
-        validateMove(cmpnyCd, target, moveTargetDate, pos.startTime());
+        // 3) 이동 검증(형식·과거일·동일일 F3·만료 F1·충돌 + 지정 시각 근무시간 내·휴게 가드
+        //    + 반차 예상 경계 겹침 선검사) + 대상일 잔여 soft 체크(§2-6)
+        validateMove(cmpnyCd, target, moveTargetDate, pos.halfPart(), pos.startTime());
         validateMoveBalanceSoft(cmpnyCd, target, moveTargetDate);
 
         // 4) REQUESTED 생성(WORKER 발의, MOVE 전용)
@@ -581,10 +583,14 @@ public class Attd13ServiceImpl implements Attd13Service {
      *   <li>위치선택 확장(2026-08-18): {@code moveTargetStartTime}(시간차 지정 시작 시각, nullable —
      *       {@link #validateMovePosition} 통과값 또는 확정 시 요청 행 DB 저장값)이 있으면 근무시간 내·
      *       휴게 가로지름 가드를 "지정 시각 + 원 분량 파생 종료" 구간으로 수행. null 이면 종전 원 시각 경로 그대로.</li>
+     *   <li>재작업 B(2026-08-18 사용자 확정): 반차('01') 대상은 발의 단계에서 "대상일 예상 경계" 기반
+     *       기존 시간차/반차 겹침 선검사 수행 — {@code moveTargetHalfPart}(nullable, 동일 출처) 지정값
+     *       우선, 미지정이면 원행 시각으로 파트 역산(applyMove D-5 역산식과 동일). 예측 불가면 스킵
+     *       (fail-open — 확정 경로 위임). 메서드 말미 분기 주석 참조.</li>
      * </ul>
      */
     private void validateMove(String cmpnyCd, LeaveUseTargetResult target, String moveTargetDate,
-                              String moveTargetStartTime) {
+                              String moveTargetHalfPart, String moveTargetStartTime) {
         // F7c: 형식(YYYYMMDD) + 실재 날짜 검증. BASIC_ISO_DATE 는 STRICT 리졸버라 2월 31일 등도 거부.
         if (moveTargetDate == null || !moveTargetDate.matches("\\d{8}")) {
             throw new ApiException(AttdErrorCode.ATTD_400_131);
@@ -715,6 +721,55 @@ public class Attd13ServiceImpl implements Attd13Service {
                             cmpnyCd, target.leaveId(), moveTargetDate, target.startTime(), target.endTime());
                     throw new ApiException(AttdErrorCode.ATTD_400_055);
                 }
+            }
+        }
+        // 재작업 B(2026-08-18 사용자 확정): 반차('01') 대상 발의 겹침 선검사 — 확정 F5(applyMove 4-b)
+        //   에서야 잡히던 기존 시간차와의 겹침(실사례: 오후반차 13:30~18:00 을 08-24 로 START 지정
+        //   이동 → 발의·동의 통과 후 확정에서야 오전 시간차 10:30~12:00 겹침 거부)을 발의 시점에
+        //   거부해 헛 동의 사이클을 없앤다. 안전성 방어선은 그대로 확정 F5(본 검사는 예측용 선검사).
+        //   - 경계 산출: applyMove D-5 와 동일 헬퍼(getHalfDayBoundary)·동일 산식(START=근무시작~경계 /
+        //     END=경계~근무종료, hhmmOfDay 환산) 재사용 — 확정 산출과 단일 출처(자체 산식 없음).
+        //   - 파트: 지정값(validateMovePosition 통과 START/END — 확정 경로는 DB 저장값) 우선,
+        //     미지정이면 applyMove 역산식 그대로(원행 시작 시각 == 원일자 근무 시작이면 시작기준).
+        //   - 판정: F5 와 동일(overlapsTimeLeaveOnDate 무수정 재사용)·동일 거부 코드(ATTD_400_112).
+        //     자기 제외는 위 F3(동일일 이동 거부)이 출발일≠대상일을 보장해 자기 행(전부 출발일 소재)이
+        //     대상일 조회에 안 나타나 자연 성립(시간차 지정 시각 선검사와 동일 논리). 확정 경로
+        //     (validateMove 공유)에선 F5 와 중복 수행되나 무해 — soft cancel 전에도 같은 이유로 자기 미포함.
+        //   - fail-open 스킵(예측 불가 = 종전대로 확정에 위임, 본 분기의 신규 fail-closed 는 겹침 하나뿐):
+        //     ① 대상일 스케줄 부재/경계 산출 불가(hbNew null — 확정 D-5 가 ATTD_400_110 처리)
+        //     ② 미지정인데 원행 시각 결손(구 반차 — 역산 불가. 확정도 재산출·겹침 검사 비대상)
+        //     ③ 미지정인데 원일자 경계 산출 불가(hbOld null — 역산 불가. 확정 D-5 가 400_110 처리)
+        if (UNIT_HALF.equals(target.useUnitType())) {
+            HalfDayBoundary hbNew = leaveDeductionService.getHalfDayBoundary(
+                    cmpnyCd, target.siteCd(), target.userCd(), moveTargetDate);
+            if (hbNew == null) {
+                return; // 스킵 ①
+            }
+            boolean startPart;
+            if (moveTargetHalfPart != null) {
+                startPart = HALF_PART_START.equals(moveTargetHalfPart);
+            } else {
+                if (target.startTime() == null || target.endTime() == null) {
+                    return; // 스킵 ②
+                }
+                HalfDayBoundary hbOld = leaveDeductionService.getHalfDayBoundary(
+                        cmpnyCd, target.siteCd(), target.userCd(), target.startDate());
+                if (hbOld == null) {
+                    return; // 스킵 ③
+                }
+                startPart = target.startTime().equals(
+                        ScheduleWorkMinutesUtils.hhmmOfDay(hbOld.workStartMin()));
+            }
+            String expStart = ScheduleWorkMinutesUtils.hhmmOfDay(
+                    startPart ? hbNew.workStartMin() : hbNew.boundaryMin());
+            String expEnd = ScheduleWorkMinutesUtils.hhmmOfDay(
+                    startPart ? hbNew.boundaryMin() : hbNew.workEndMin());
+            if (leaveDeductionService.overlapsTimeLeaveOnDate(
+                    cmpnyCd, target.siteCd(), target.userCd(), moveTargetDate, expStart, expEnd)) {
+                log.info("연차 이동 거부: 대상일 연차 시간대 겹침(반차 예상 경계). cmpnyCd={}, leaveId={}, moveTo={}, part={}, {}~{}",
+                        cmpnyCd, target.leaveId(), moveTargetDate,
+                        startPart ? "START" : "END", expStart, expEnd);
+                throw new ApiException(AttdErrorCode.ATTD_400_112);
             }
         }
     }
