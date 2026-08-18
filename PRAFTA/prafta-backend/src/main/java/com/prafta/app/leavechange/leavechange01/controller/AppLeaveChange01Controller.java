@@ -12,8 +12,10 @@ import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
+import com.prafta.app.leavechange.leavechange01.application.param.LeaveChangeDeleteParam;
 import com.prafta.app.leavechange.leavechange01.application.param.LeaveChangeMoveParam;
 import com.prafta.app.leavechange.leavechange01.application.param.LeaveChangeRespondParam;
+import com.prafta.app.leavechange.leavechange01.dto.request.LeaveChangeDeleteRequest;
 import com.prafta.app.leavechange.leavechange01.dto.request.LeaveChangeMoveRequest;
 import com.prafta.app.leavechange.leavechange01.dto.request.LeaveChangeRespondRequest;
 import com.prafta.app.leavechange.leavechange01.dto.response.MovableLeaveListResponse;
@@ -37,7 +39,8 @@ import lombok.extern.slf4j.Slf4j;
  *   <li>GET  /prafta/appApi/leavechange/pending-consents   (본인 대기 응답 대상)</li>
  *   <li>POST /prafta/appApi/leavechange/{id}/respond        (동의/거부)</li>
  *   <li>GET  /prafta/appApi/leavechange/movable-leaves      (본인 이동가능 연차)</li>
- *   <li>POST /prafta/appApi/leavechange/move-requests       (근로자 이동 발의, 취소 불가)</li>
+ *   <li>POST /prafta/appApi/leavechange/move-requests       (근로자 이동 발의)</li>
+ *   <li>POST /prafta/appApi/leavechange/delete-requests     (근로자 취소 발의, 2026-08-18 개방)</li>
  * </ul>
  * 식별값(회사/사용자)은 JWT 에서만 도출(IDOR 차단). 비즈니스 로직은 공유 {@link Attd13Service} 위임.
  */
@@ -107,6 +110,23 @@ public class AppLeaveChange01Controller {
         attd13Service.createWorkerMoveRequest(
                 param.gvCmpnyCd(), param.gvUserCd(), param.targetLeaveId(),
                 param.moveTargetDate(), param.reqReason());
+
+        return ResponseEntity.status(HttpStatus.OK).build();
+    }
+
+    /** 근로자 취소(삭제) 발의 (2026-08-18 개방 — 008-C §3-2 개정). */
+    @PostMapping("/delete-requests")
+    public ResponseEntity<?> createDeleteRequest(
+            @RequestBody @Valid LeaveChangeDeleteRequest request,
+            @RequestHeader(value = "Authorization", required = false) String authorization) {
+
+        TokenInfo tokenInfo = jwtUtil.getAllClaimsAsMap(authorization);
+        // 일용직은 연차 취소 발의(연차 관련 쓰기) 비해당 → 서버 차단(move-requests 가드 미러).
+        EmploymentTypeGuard.assertNotDailyWorker(tokenInfo);
+        LeaveChangeDeleteParam param = LeaveChangeDeleteParam.from(request, tokenInfo);
+
+        attd13Service.createWorkerDeleteRequest(
+                param.gvCmpnyCd(), param.gvUserCd(), param.targetLeaveId(), param.reqReason());
 
         return ResponseEntity.status(HttpStatus.OK).build();
     }

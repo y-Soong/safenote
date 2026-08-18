@@ -256,8 +256,12 @@ public class Attd13ServiceImpl implements Attd13Service {
         }
 
         // 5) 근로자(발의자) PUSH 적재(반려 결과). WORKER 발의건이면 발의자=대상 근로자.
+        //    body 는 reqType 분기(2026-08-18 B-2 승인 — 취소 건 "이동" 오문구 방지, 문구 외 불변).
+        String rejectBody = REQ_TYPE_MOVE.equals(req.reqType())
+                ? "요청하신 연차 이동이 관리자에 의해 반려되었어요."
+                : "요청하신 연차 취소가 관리자에 의해 반려되었어요.";
         enqueuePush(param.gvCmpnyCd(), req.siteCd(), req.initiatorUserCd(), NOTI_REJECTED,
-                "연차 변경 반려", "요청하신 연차 이동이 관리자에 의해 반려되었어요.", param.changeReqId(), param.gvUserCd());
+                "연차 변경 반려", rejectBody, param.changeReqId(), param.gvUserCd());
 
         log.info("관리자 연차 변경 반려. cmpnyCd={}, changeReqId={}, by={}",
                 param.gvCmpnyCd(), param.changeReqId(), param.gvUserCd());
@@ -349,6 +353,50 @@ public class Attd13ServiceImpl implements Attd13Service {
 
         log.info("근로자 연차 이동 발의(AGREED). cmpnyCd={}, changeReqId={}, leaveId={}, moveTo={}, by={}",
                 cmpnyCd, changeReqId, target.leaveId(), moveTargetDate, userCd);
+    }
+
+    @Override
+    @Transactional
+    public void createWorkerDeleteRequest(String cmpnyCd, String userCd, String targetLeaveId, String reqReason) {
+        // 1) 대상 연차 재조회(본인 소유 확인 — IDOR fail-closed)
+        LeaveUseTargetResult target = loadConfirmedTarget(cmpnyCd, targetLeaveId);
+        if (!userCd.equals(target.userCd())) {
+            throw new ApiException(AttdErrorCode.ATTD_404_120);
+        }
+        // 1-1) 미래일 가드(이동 D2 미러): 출발일이 오늘 이후인 연차만 취소 발의 가능.
+        //      과거 확정 연차 직접 POST 우회 차단(과거 연차일 취소는 근태 보정/관리자 영역 유지).
+        if (target.startDate() == null || target.startDate().compareTo(todayYmd()) < 0) {
+            throw new ApiException(AttdErrorCode.ATTD_400_206);
+        }
+        // 1-2) 촉진 가드(2026-08-18 사용자 확정 — 보수): 촉진 지정(FIRST/SECOND) 건은 근로자 취소 발의 차단.
+        //      임의 취소가 노무수령거부 판정 연속성을 끊는 것을 원천 차단(이동 F2 판별식 재사용).
+        //      관리자 발의 삭제(createChangeRequest)는 현행대로 촉진 가드 없음 — 근로자 발의만 차단.
+        if (target.promotionStage() != null && !"NONE".equals(target.promotionStage())) {
+            log.info("근로자 연차 취소 발의 거부: 촉진 지정 건. cmpnyCd={}, leaveId={}, stage={}",
+                    cmpnyCd, target.leaveId(), target.promotionStage());
+            throw new ApiException(AttdErrorCode.ATTD_400_207);
+        }
+        // 2) 마감 가드(출발일만 — DELETE 는 이동 대상일 없음)
+        ensureNotClosed(cmpnyCd, target.siteCd(), target.userCd(), target.startDate());
+        // (validateMove / validateMoveBalanceSoft 미호출 — 관리자 발의 DELETE 경로와 동일)
+
+        // 3) REQUESTED 생성(WORKER 발의, DELETE 전용 — moveTargetDate 없음)
+        String changeReqId = insertRequest(cmpnyCd, target.siteCd(), target.userCd(), target.leaveId(),
+                INITIATOR_WORKER, REQ_TYPE_DELETE, null, reqReason, userCd);
+
+        // 4) 근로자 발의는 별도 응답 단계가 불요하므로 생성 즉시 AGREED 로 둔다(이동 발의 관례 미러 —
+        //    관리자 승인=applyDelete 반영 / 반려=원 연차 불변).
+        //    (D5) 반환 0행이면 직전 INSERT 와의 불일치(고아 REQUESTED 행) — 충돌로 처리하여 롤백.
+        int agreed = attd13Mapper.applyWorkerResponse(
+                cmpnyCd, changeReqId, userCd, RESPONSE_AGREE, null, STATUS_AGREED, userCd);
+        if (agreed == 0) {
+            throw new ApiException(AttdErrorCode.ATTD_409_120);
+        }
+
+        // 관리자 PUSH 미발송(2026-08-18 사용자 확정 B-1 — 이동 발의와 동일 수준, 로그만.
+        //   관리자는 Attd_10 목록/Attd_07 카드에서 인지).
+        log.info("근로자 연차 취소 발의(AGREED). cmpnyCd={}, changeReqId={}, leaveId={}, by={}",
+                cmpnyCd, changeReqId, target.leaveId(), userCd);
     }
 
     // ============================================================

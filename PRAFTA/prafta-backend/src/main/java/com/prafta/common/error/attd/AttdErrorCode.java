@@ -492,6 +492,18 @@ public enum AttdErrorCode implements ApiErrorCode {
     // 고아 OT(ATTD_ID NULL) 생성 구멍을 원천 차단한다.
     , ATTD_400_205(HttpStatus.BAD_REQUEST,
             "해당 구간의 근태 기록이 없어 초과근무를 처리할 수 없습니다. 근태 기록을 먼저 확인해 주세요.")
+
+    // ===== 연차 취소(삭제) 근로자 발의 개방 (2026-08-18) =====
+    // 근로자 취소 발의 대상 = 본인 소유 + CONFIRMED + 미도래(START_DATE >= 오늘).
+    //   과거 연차일 취소는 근태 보정/관리자 영역 유지 — 직접 POST 우회 차단(이동 D2 가드 미러).
+    //   ATTD_400_129 는 "이동" 전제 문구라 취소 경로엔 오문구 — 신규 채번.
+    , ATTD_400_206(HttpStatus.BAD_REQUEST, "취소를 요청할 수 없는 연차입니다.")
+
+    // 연차사용촉진 지정(FIRST/SECOND) 건은 근로자 취소 발의 차단(2026-08-18 사용자 확정 — 보수).
+    //   촉진 지정 연차의 임의 취소는 노무수령거부 판정 연속성을 끊을 수 있다(이동 F2 와 동일 판별식).
+    //   관리자 발의 삭제는 현행대로(촉진 가드 없음) — 근로자 발의만 차단.
+    , ATTD_400_207(HttpStatus.BAD_REQUEST,
+            "연차사용촉진으로 지정된 연차는 취소를 요청할 수 없습니다. 관리자에게 문의해 주세요.")
     ;
 
     private final HttpStatus httpStatus;

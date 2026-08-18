@@ -1,10 +1,10 @@
 <!--
-  LeaveMoveRequestView.vue — 근로자 발의 연차 이동 요청 화면 (prafta-com-008-C-3, 앱)
+  LeaveMoveRequestView.vue — 근로자 발의 연차 변경 요청 화면 (prafta-com-008-C-3 + 연차취소개방-02, 앱)
   유형: frontend-screen (모바일 앱, 근로자)
-  연결 작업: PRAFTA-{C-5-app}
-  참조 패턴: views/leave/LeaveApplyView.vue (헤더 + 본문 + 폼 + TODO(developer) + 디자인 토큰 루트 1회)
-  역할 분담: 골격 = 본인 연차일 선택 + 이동대상일 + 사유 입력 UI. developer = 조회/제출 API + 라우팅.
-  ※ 근로자는 본인 연차일(특히 촉진 확정 연차)을 다른 날로 "이동만" 요청(취소·삭제 불가).
+  연결 작업: PRAFTA-{C-5-app} → 연차취소개방-02 (이동/취소 유형 세그먼트 확장, 라우트 /LeaveMoveRequest 불변)
+  참조 패턴: views/leave/LeaveApplyView.vue (헤더 + 본문 + 폼 + 디자인 토큰 루트 1회)
+  역할 분담: 이동(MOVE) = 종전 동작 무수정. 취소(DELETE) = 신규 세그먼트(연차취소개방 지시서 §4-2).
+  ※ 취소 발의는 촉진 지정(FIRST/SECOND) 연차 불가(서버 400_207 최종 방어 + 인라인 경고 배지).
     만료일(AVAIL_TO_DATE) 이내 + DIRECT_USE_KEY 충돌 + 마감월은 서버 강제. 본인 LEAVE_ID 한정(JWT).
 -->
 <template>
@@ -13,7 +13,7 @@
       <button type="button" class="lmv-hd__back" aria-label="뒤로" @click="onBack">
         <svg class="icon" width="22" height="22" aria-hidden="true"><use href="#i-lmv-chev-left" /></svg>
       </button>
-      <h1 class="lmv-hd__title">연차 이동 요청</h1>
+      <h1 class="lmv-hd__title">연차 변경 요청</h1>
       <span class="lmv-hd__spacer" aria-hidden="true"></span>
     </header>
 
@@ -36,20 +36,41 @@
       </div>
 
       <template v-else>
-        <!-- 이동할 연차일 선택 -->
+        <!-- 요청 유형 세그먼트 (연차취소개방-02) — 기본 이동(종전 동작 보존) -->
         <section class="lmv-section">
-          <h2 class="lmv-section__title">이동할 연차일</h2>
+          <div class="lmv-seg" role="tablist" aria-label="요청 유형">
+            <button
+              type="button"
+              class="lmv-seg__btn"
+              :class="{ 'lmv-seg__btn--on': reqMode === 'MOVE' }"
+              @click="reqMode = 'MOVE'"
+            >이동</button>
+            <button
+              type="button"
+              class="lmv-seg__btn"
+              :class="{ 'lmv-seg__btn--on': reqMode === 'DELETE' }"
+              @click="reqMode = 'DELETE'"
+            >취소</button>
+          </div>
+        </section>
+
+        <!-- 대상 연차일 선택 -->
+        <section class="lmv-section">
+          <h2 class="lmv-section__title">대상 연차일</h2>
           <select v-model="selectedLeaveId" class="lmv-select">
             <option value="" disabled>연차일을 선택하세요</option>
             <option v-for="lv in movableLeaves" :key="lv.leaveId" :value="lv.leaveId">
               {{ lv.startDate }} · {{ lv.leaveNm }}{{ lv.promotionStageNm ? ' (' + lv.promotionStageNm + ')' : '' }}
             </option>
           </select>
-          <p class="lmv-hint">취소는 불가하며 다른 날짜로 이동만 가능합니다.</p>
+          <!-- 촉진 지정 건 + 취소 모드: 인라인 경고 배지(제출 버튼 disabled 숨김 금지 — 클릭 시 안내) -->
+          <p v-if="reqMode === 'DELETE' && selectedIsPromotion" class="lmv-hint">
+            촉진 지정 연차는 취소 요청이 불가합니다.
+          </p>
         </section>
 
-        <!-- 이동 대상일 -->
-        <section class="lmv-section">
+        <!-- 이동 대상일 (이동 모드에서만) -->
+        <section v-if="reqMode === 'MOVE'" class="lmv-section">
           <h2 class="lmv-section__title">이동 대상일</h2>
           <!-- 공통 날짜 휠 필드(modelValue 'YYYY-MM-DD'). 만료일 이내/마감/충돌은 서버 강제. -->
           <DateStepperField v-model="moveTargetDate" placeholder="이동 대상일 선택" />
@@ -57,23 +78,28 @@
 
         <!-- 사유 -->
         <section class="lmv-section">
-          <h2 class="lmv-section__title">이동 사유</h2>
+          <h2 class="lmv-section__title">{{ reqMode === 'MOVE' ? '이동 사유' : '취소 사유' }}</h2>
           <textarea
             v-model="reason"
             class="lmv-textarea"
             rows="3"
             maxlength="500"
-            placeholder="이동 사유를 입력하세요"
+            :placeholder="reqMode === 'MOVE' ? '이동 사유를 입력하세요' : '취소 사유를 입력하세요'"
           ></textarea>
         </section>
+
+        <!-- 취소 안내 (지시서 §4-2 원문) -->
+        <p v-if="reqMode === 'DELETE'" class="lmv-notice">
+          취소가 확정되면 해당 연차 차감이 복원됩니다. 다시 사용하려면 새로 신청해 주세요.
+        </p>
 
         <button
           type="button"
           class="lmv-submit"
-          :disabled="!canSubmit || submitting"
-          @click="onSubmit"
+          :disabled="!submitEnabled || submitting"
+          @click="handleSubmit"
         >
-          이동 요청
+          {{ reqMode === 'MOVE' ? '이동 요청' : '취소 요청' }}
         </button>
       </template>
     </main>
@@ -119,10 +145,28 @@ const moveTargetDate = ref('')
 const reason = ref('')
 const submitting = ref(false)
 
+// 연차취소개방-02: 요청 유형(MOVE=이동 | DELETE=취소). 기본 이동 — 종전 동작·프리셀렉트 보존.
+const reqMode = ref('MOVE')
+
 // 단순 필수값 검증만 골격에서. 만료/충돌/마감은 서버(developer).
 const canSubmit = computed(
   () => !!selectedLeaveId.value && !!moveTargetDate.value && !!reason.value.trim(),
 )
+
+// 연차취소개방-02: 취소 모드 필수값 = 대상 연차 + 사유만(이동 대상일 제외).
+const canSubmitDelete = computed(() => !!selectedLeaveId.value && !!reason.value.trim())
+
+// 모드별 제출 가능 여부 — 이동 모드는 기존 canSubmit 그대로(무수정).
+const submitEnabled = computed(() =>
+  reqMode.value === 'MOVE' ? canSubmit.value : canSubmitDelete.value,
+)
+
+// 연차취소개방-02: 선택 연차의 촉진 지정 여부(promotionStage FIRST/SECOND) — 취소 모드 경고 배지용.
+//   버튼 disabled 로 숨기지 않는다(안내 도달 불가 함정) — 클릭 시 안내 + 서버 400_207 최종 방어.
+const selectedIsPromotion = computed(() => {
+  const lv = movableLeaves.value.find((it) => it.leaveId === selectedLeaveId.value)
+  return !!lv && lv.promotionStage != null && lv.promotionStage !== 'NONE'
+})
 
 const onBack = () => router.back()
 
@@ -144,6 +188,8 @@ const toLeave = (lv) => ({
   startDate: fmtYmd(lv.startDate),
   leaveNm: lv.leaveDays != null ? `연차 ${lv.leaveDays}일` : '연차',
   promotionStageNm: PROMOTION_STAGE_NM[lv.promotionStage] || '',
+  // 연차취소개방-02: 촉진 판정용 원본 코드 보존(FIRST/SECOND) — 표시 라벨과 별개.
+  promotionStage: lv.promotionStage || 'NONE',
 })
 
 // GET /appApi/leavechange/movable-leaves
@@ -189,6 +235,35 @@ const onSubmit = async () => {
     submitting.value = false
   }
 }
+
+// 연차취소개방-02: POST /appApi/leavechange/delete-requests
+//   body(대문자 키) = { TARGET_LEAVE_ID, REQ_REASON } — 이동 대상일 미포함.
+//   서버: 본인 LEAVE_ID(IDOR)·미도래(400_206)·촉진 지정(400_207)·활성요청 중복(400_128)·마감 검증 →
+//         initiatorType=WORKER, reqType=DELETE 요청 생성(관리자 확인 대상, PUSH 없음 — B-1 확정).
+const onSubmitDelete = async () => {
+  if (!canSubmitDelete.value || submitting.value) return
+  // 촉진 지정 건: disabled 숨김 대신 클릭 시 안내(최종 방어는 서버 400_207).
+  if (selectedIsPromotion.value) {
+    await showAlert('촉진 지정 연차는 취소 요청이 불가합니다. 관리자에게 문의해 주세요.')
+    return
+  }
+  submitting.value = true
+  try {
+    await api.post('/appApi/leavechange/delete-requests', {
+      TARGET_LEAVE_ID: selectedLeaveId.value,
+      REQ_REASON: reason.value.trim(),
+    })
+    await showAlert('취소 요청을 보냈어요. 관리자 확인 후 반영됩니다.')
+    router.back()
+  } catch (err) {
+    await showAlert(resolveApiErrorMessage(err, '요청에 실패했어요.'))
+  } finally {
+    submitting.value = false
+  }
+}
+
+// 모드별 제출 디스패처 — 이동 모드는 기존 onSubmit 그대로 호출(무수정).
+const handleSubmit = () => (reqMode.value === 'MOVE' ? onSubmit() : onSubmitDelete())
 
 // 당겨서 새로고침 — 이동 가능한 연차 목록만 재조회(부작용 없는 조회).
 const scrollRef = ref(null)
@@ -322,6 +397,44 @@ onMounted(loadMyLeaves)
   margin: 0;
   font-size: 12px;
   color: var(--color-warning-text);
+}
+
+/* 연차취소개방-02: 요청 유형 세그먼트(이동/취소) */
+.lmv-seg {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--space-xs);
+  padding: var(--space-xs);
+  background: var(--color-surface);
+  border: 0.5px solid var(--color-border);
+  border-radius: var(--radius-md);
+}
+.lmv-seg__btn {
+  height: 36px;
+  border: 0;
+  border-radius: calc(var(--radius-md) - 4px);
+  background: transparent;
+  color: var(--color-text-secondary);
+  font-size: 14px;
+  font-family: inherit;
+  cursor: pointer;
+}
+.lmv-seg__btn--on {
+  background: var(--color-primary);
+  color: #fff;
+  font-weight: 600;
+}
+
+/* 연차취소개방-02: 취소 모드 안내(차감 복원 고지) */
+.lmv-notice {
+  margin: 0;
+  padding: var(--space-md);
+  background: var(--color-surface);
+  border: 0.5px solid var(--color-border);
+  border-radius: var(--radius-md);
+  font-size: 13px;
+  color: var(--color-text-secondary);
+  line-height: 1.5;
 }
 
 .lmv-submit {

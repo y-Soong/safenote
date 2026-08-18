@@ -56,4 +56,11 @@ public interface Attd13Service {
     /** 근로자 이동 발의(C-5a, MOVE 전용·취소 불가) → REQUESTED 생성. 관리자 승인은 confirm 흐름과 통합. */
     void createWorkerMoveRequest(String cmpnyCd, String userCd, String targetLeaveId,
                                  String moveTargetDate, String reqReason);
+
+    /**
+     * 근로자 취소(삭제) 발의(2026-08-18 개방 — 008-C §3-2 "근로자 취소 불가" 조항 개정).
+     * 대상 = 본인 소유 + CONFIRMED + 미도래. 촉진 지정 건은 차단. 생성 즉시 AGREED(WORKER 발의 관례) —
+     * 관리자 승인(applyDelete 반영)/반려는 confirm/reject 흐름과 통합.
+     */
+    void createWorkerDeleteRequest(String cmpnyCd, String userCd, String targetLeaveId, String reqReason);
 }
