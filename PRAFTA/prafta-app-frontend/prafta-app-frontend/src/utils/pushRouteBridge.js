@@ -172,19 +172,51 @@ function routeByPushType(data) {
   }
 
   const resolve = PUSH_ROUTE_MAP[data.type]
+  // 매핑 없는 type → 메인 화면(사용자 확정). 향후 목적 화면이 정해지면 표에 추가한다.
+  const target = resolve ? resolve(data) : '/MainView'
   if (!resolve) {
-    // 매핑 없는 type → 메인 화면(사용자 확정). 향후 목적 화면이 정해지면 표에 추가한다.
     console.log('[pushRouteBridge] 매핑 없는 푸시 type → MainView:', data.type)
-    router.push('/MainView').catch(() => {})
-    return
   }
+  navigateAfterReady(target, data.type)
+}
 
-  try {
-    // best-effort: 라우팅 실패는 조용히 무시한다(앱 기동/조작을 막지 않는다).
-    router.push(resolve(data)).catch(() => {})
-  } catch (e) {
-    console.warn('[pushRouteBridge] 라우팅 실패(무시):', e && e.message)
+/**
+ * 라우터의 "초기 내비게이션이 끝난 뒤"에 이동한다.
+ *
+ * <p>★콜드스타트 경합 방지(2026-08-19 실기기 실측): 셸은 onLoadStop 에서 __onPushOpened 를 호출하는데,
+ *    그 시점에 라우터는 아직 초기 이동('/' → ensureAccessToken 네트워크 대기 → /MainView replace)을
+ *    진행 중일 수 있다. 이때 곧바로 push 하면 뒤늦게 완료된 초기 이동이 목적지를 덮어써
+ *    <b>항상 MainView 에서 멈추는</b> 증상이 된다(실패가 .catch 로 삼켜져 무증상).
+ *    router.isReady() 는 초기 이동이 확정된 뒤 resolve 되므로 그 이후에 push 하면 덮어쓰기가 없다.
+ *    (이미 준비됐으면 즉시 resolve — 백그라운드 복귀 경로에는 영향 없음.)
+ */
+function navigateAfterReady(target, notiType) {
+  const go = () => {
+    router
+      .push(target)
+      .then(() => {
+        console.log('[pushRouteBridge] 라우팅 완료:', notiType, '→', targetLabel(target))
+      })
+      .catch((e) => {
+        // best-effort: 실패해도 앱 기동/조작을 막지 않는다. 다만 원인 추적을 위해 남긴다.
+        console.warn('[pushRouteBridge] 라우팅 실패:', notiType, targetLabel(target), e && e.message)
+      })
   }
+  try {
+    if (typeof router.isReady === 'function') {
+      router.isReady().then(go).catch(go)
+    } else {
+      go()
+    }
+  } catch (e) {
+    console.warn('[pushRouteBridge] 라우팅 준비 실패(무시):', e && e.message)
+  }
+}
+
+// 로그용 라벨(문자열 경로 / {path,query} 객체 모두 허용).
+function targetLabel(target) {
+  if (!target) return ''
+  return typeof target === 'string' ? target : target.path || ''
 }
 
 /**
