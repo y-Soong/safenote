@@ -12,7 +12,10 @@
       <span class="badge" :class="badgeClass">
         <span class="badge__dot"></span>{{ badgeText }}
       </span>
-      <span class="att-time" :class="{ 'att-time--muted': isTimeMuted }">{{ timeText }}</span>
+      <!-- 시간 텍스트 — 예정/고정연장은 줄 분리(가독성). 그 외 상태는 1줄(기존 표기 그대로). -->
+      <span class="att-time" :class="{ 'att-time--muted': isTimeMuted }">
+        <span v-for="(line, i) in timeLines" :key="i" class="att-time__line">{{ line }}</span>
+      </span>
     </div>
 
     <!-- 3·4영역: 출근/퇴근 버튼 -->
@@ -208,21 +211,24 @@ const formatHHMM = (s) => {
   if (!s || s.length < 4) return ''
   return `${s.slice(0, 2)}:${s.slice(2, 4)}`
 }
-const timeText = computed(() => {
+// 시간 텍스트(줄 배열) — 템플릿이 줄마다 렌더한다.
+//   출근 전 + 고정연장 보유 시에만 2줄("예정 …" / "고정연장 …")이고, 그 외 상태는 1줄로 기존과 동일.
+//   ※기존에는 한 문자열("예정 … + 고정연장 …")이라 카드 폭에서 임의 위치로 접혀 가독성이 나빴다.
+const timeLines = computed(() => {
   // prafta-app-021: 전날 미퇴근 마감 대기 시 전날 출근 시각을 우선 표시.
   if (props.prevDayCheckoutPending) {
     const t = formatHHMM(props.prevDayCheckInTime)
-    return t ? `출근 ${t} (전날)` : '출근 --:-- (전날)'
+    return [t ? `출근 ${t} (전날)` : '출근 --:-- (전날)']
   }
   if (isOffWork.value) {
     const inT = formatHHMM(props.checkInTime)
     const outT = formatHHMM(props.checkOutTime)
-    if (inT && outT) return `출근 ${inT} · 퇴근 ${outT}`
-    if (inT) return `출근 ${inT}`
-    return '-'
+    if (inT && outT) return [`출근 ${inT} · 퇴근 ${outT}`]
+    if (inT) return [`출근 ${inT}`]
+    return ['-']
   }
   if (isBeforeWork.value) {
-    if (!props.scheduleExists) return '스케줄 없음'
+    if (!props.scheduleExists) return ['스케줄 없음']
     const start = formatHHMM(props.scheduleStartTime)
     const end = formatHHMM(props.scheduleEndTime)
     const base = start && end ? `예정 ${start} ~ ${end}` : '예정 --:-- ~ --:--'
@@ -230,15 +236,16 @@ const timeText = computed(() => {
     const fixedParts = []
     const preS = formatHHMM(props.preFixedOtStartTime)
     const preE = formatHHMM(props.preFixedOtEndTime)
-    if (preS && preE) fixedParts.push(`${preS}~${preE}`)
+    if (preS && preE) fixedParts.push(`${preS} ~ ${preE}`)
     const rearS = formatHHMM(props.fixedOtStartTime)
     const rearE = formatHHMM(props.fixedOtEndTime)
-    if (rearS && rearE) fixedParts.push(`${rearS}~${rearE}`)
-    return fixedParts.length ? `${base} + 고정연장 ${fixedParts.join(' · ')}` : base
+    if (rearS && rearE) fixedParts.push(`${rearS} ~ ${rearE}`)
+    // 고정연장은 별도 줄로 분리(전방·후방 둘 다면 한 줄 안에서 ' · ' 로 병기).
+    return fixedParts.length ? [base, `고정연장 ${fixedParts.join(' · ')}`] : [base]
   }
   // WORKING
   const t = formatHHMM(props.checkInTime)
-  return t ? `출근 ${t}` : '출근 --:--'
+  return [t ? `출근 ${t}` : '출근 --:--']
 })
 
 // 위치 표시 텍스트
@@ -292,10 +299,12 @@ const onCheckOut = () => {
   box-shadow: var(--shadow-sm);
 }
 
+/* 시간 텍스트가 2줄(예정/고정연장)이 될 수 있어 고정 height → min-height.
+   배지는 첫 줄에 맞춰 상단 정렬한다. 1줄 상태에서는 종전과 동일하게 보인다. */
 .att-head {
   display: flex;
-  align-items: center;
-  height: 22px;
+  align-items: flex-start;
+  min-height: 22px;
   margin-bottom: 12px;
 }
 
@@ -303,6 +312,9 @@ const onCheckOut = () => {
   display: inline-flex;
   align-items: center;
   gap: 4px;
+  /* ★flex 축소 금지 + 줄바꿈 금지 — 옆 시간 텍스트가 길 때 '출근 전'이 2줄로 깨지던 결함 방지. */
+  flex: 0 0 auto;
+  white-space: nowrap;
   height: 22px;
   padding: 0 8px;
   font-size: 12px;
@@ -346,12 +358,20 @@ const onCheckOut = () => {
 
 .att-time {
   margin-left: 8px;
-  height: 22px;
+  /* 1줄이면 22px(종전과 동일 높이·수직중앙), 2줄이면 자연 확장. */
+  min-height: 22px;
   font-size: 14px;
   color: var(--color-text-secondary);
   font-variant-numeric: tabular-nums;
   display: inline-flex;
-  align-items: center;
+  flex-direction: column;
+  align-items: flex-start;
+  justify-content: center;
+  gap: 2px;
+  min-width: 0; /* 긴 텍스트가 배지를 밀지 않도록 축소 허용 */
+}
+.att-time__line {
+  line-height: 1.35;
 }
 .att-time--muted {
   color: var(--color-text-tertiary);
