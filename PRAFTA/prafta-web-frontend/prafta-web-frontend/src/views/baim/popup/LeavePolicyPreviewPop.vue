@@ -116,6 +116,12 @@ const props = defineProps({
   prorateRounding: { type: String, default: "CEIL" },
   // 시뮬레이션 기준 입사일 (기본 2025-07-15)
   hireDate: { type: String, default: "2025-07-15" },
+  // ★근속가산(AXIS5) — 2026-08-19 추가. 종전엔 본연차를 15 고정으로만 표기해
+  //   가산 시작 연차를 CUSTOM(1~2년차)으로 설정한 회사에서 화면과 실제 부여가 어긋났다.
+  //   백엔드 tenureBonusDays 와 동일 산식으로 계산한다.
+  tenureStartYear: { type: [Number, String], default: 3 },
+  tenureInterval: { type: [Number, String], default: 2 },
+  tenureMaxDays: { type: [Number, String], default: 25 },
 });
 defineEmits(["close"]);
 
@@ -140,6 +146,31 @@ const positionStyle = computed(() => {
 // ================ 상수 ================
 const BASE_DAYS = 15; // 본연차 기본 일수
 const MONTHLY_MAX = 11; // 1년 미만 법정 월차 최대치
+
+/**
+ * 근속연차 → 본연차 총일수(본연차 + 근속가산, 상한 적용).
+ * 백엔드 LeaveGrantEngineServiceImpl.tenureBonusDays 와 동일 산식:
+ *   bonus = (year >= start) ? floor((year - start) / interval) + 1 : 0
+ *   total = min(BASE_DAYS + bonus, maxDays)
+ * @param {number} tenureYear 해당 부여 시점의 근속연차(회계연도 기준이면 crossed-1)
+ */
+const annualDaysAt = (tenureYear) => {
+  const start = Number(props.tenureStartYear) || 3;
+  const interval = Math.max(1, Number(props.tenureInterval) || 2);
+  const maxDays = Number(props.tenureMaxDays) || 25;
+  const bonus =
+    tenureYear >= start ? Math.floor((tenureYear - start) / interval) + 1 : 0;
+  return Math.min(BASE_DAYS + bonus, maxDays);
+};
+
+/** 셀 표기 문자열 — 가산이 붙으면 내역을 함께 보여준다(예: "본연차 16 (15+가산1)"). */
+const annualText = (tenureYear) => {
+  const total = annualDaysAt(tenureYear);
+  const bonus = total - BASE_DAYS;
+  return bonus > 0
+    ? `본연차 ${total} (${BASE_DAYS}+가산${bonus})`
+    : `본연차 ${total}`;
+};
 
 // ================ Computed ================
 const fiscalLabel = computed(
@@ -336,13 +367,16 @@ const headerGroups = computed(() => {
 });
 
 // 시간축 셀 구성 헬퍼. timeAxis(17)와 1:1 대응하는 셀 배열을 생성한다.
-//   fiscalFirstGrant — idx 6 (차년 회계 본연차) 셀 텍스트
-//   fiscalRecur      — idx 14·16 (회계 본연차 반복) 셀 텍스트
-//   hireGrant        — idx 13 (입사 1주년 본연차) 셀 텍스트
-//   hireRecur        — idx 15 (입사 2주년 본연차) 셀 텍스트
-const FISCAL_RECUR_IDX = [14, 16];
+//   fiscalFirstGrant — idx 6  (차년 회계 본연차)      · 근속연차 0 (첫 회계연도=부분기간)
+//   fiscalRecur2     — idx 14 (차차년 회계 본연차)    · 근속연차 1
+//   fiscalRecur3     — idx 16 (3년차 회계 본연차)     · 근속연차 2
+//   hireGrant        — idx 13 (입사 1주년 본연차)     · 근속연차 1
+//   hireRecur        — idx 15 (입사 2주년 본연차)     · 근속연차 2
+// ★2026-08-19: 회계 반복분(14·16)을 하나의 문자열로 공유하던 것을 시점별로 분리.
+//   근속연차가 다르면 가산도 달라지므로 같은 값을 쓸 수 없다.
 const buildCells = (opts) => {
-  const { fiscalFirstGrant, fiscalRecur, hireGrant, hireRecur } = opts;
+  const { fiscalFirstGrant, fiscalRecur2, fiscalRecur3, hireGrant, hireRecur } =
+    opts;
   return timeAxis.value.map((col, idx) => {
     if (col.kind === "hire") {
       // idx 0 — 입사일: 월차 표기 금지(3.2.4.1).
@@ -372,10 +406,16 @@ const buildCells = (opts) => {
         ? { text: hireRecur, cls: "event" }
         : { text: "", cls: "" };
     }
-    if (FISCAL_RECUR_IDX.includes(idx)) {
-      // 차차년·3년차 회계 본연차 반복(3.2.4.4).
-      return fiscalRecur
-        ? { text: fiscalRecur, cls: "event" }
+    if (idx === 14) {
+      // 차차년 회계 본연차 반복(3.2.4.4) — 근속연차 1.
+      return fiscalRecur2
+        ? { text: fiscalRecur2, cls: "event" }
+        : { text: "", cls: "" };
+    }
+    if (idx === 16) {
+      // 3년차 회계 본연차 반복(3.2.4.4) — 근속연차 2.
+      return fiscalRecur3
+        ? { text: fiscalRecur3, cls: "event" }
         : { text: "", cls: "" };
     }
     return { text: "", cls: "" };
@@ -384,22 +424,28 @@ const buildCells = (opts) => {
 
 // 3개 정책의 시간순 부여 행. "회계연도 기준 - 월차만 부여" 행은 정책상 폐기(3.2.3).
 const previewRows = computed(() => {
-  const annual = `본연차 ${BASE_DAYS}`;
+  // ★근속연차는 시점마다 다르다(2026-08-19 반영).
+  //   입사일 기준: 1주년=1년차, 2주년=2년차.
+  //   회계연도 기준: 근속연차 = 회계연도 시작 도래 횟수 - 1 (첫 회계연도는 부분기간이라 0년차).
+  //     → 차년(첫 부여)=0, 차차년=1, 3년차 회계시작=2.
   return [
     {
       name: "입사일 기준 - 월차만 부여",
       cells: buildCells({
         fiscalFirstGrant: "",
-        fiscalRecur: "",
-        hireGrant: annual,
-        hireRecur: annual,
+        fiscalRecur2: "",
+        fiscalRecur3: "",
+        hireGrant: annualText(1),
+        hireRecur: annualText(2),
       }),
     },
     {
       name: "회계연도 기준 - 비례 부여",
       cells: buildCells({
+        // 첫 회계연도는 비례분(근속가산 대상 아님).
         fiscalFirstGrant: `비례 약 ${prorateDays.value}`,
-        fiscalRecur: annual,
+        fiscalRecur2: annualText(1),
+        fiscalRecur3: annualText(2),
         hireGrant: "",
         hireRecur: "",
       }),
@@ -407,8 +453,10 @@ const previewRows = computed(() => {
     {
       name: "회계연도 기준 - 차년도 일괄 부여",
       cells: buildCells({
-        fiscalFirstGrant: annual,
-        fiscalRecur: annual,
+        // 첫 회계연도 일괄분은 부분기간에 대한 부여라 근속 0년차 → 가산 없음.
+        fiscalFirstGrant: annualText(0),
+        fiscalRecur2: annualText(1),
+        fiscalRecur3: annualText(2),
         hireGrant: "",
         hireRecur: "",
       }),

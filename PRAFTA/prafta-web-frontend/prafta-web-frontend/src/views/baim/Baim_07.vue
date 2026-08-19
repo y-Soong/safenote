@@ -1373,6 +1373,10 @@ const fnOpenPreview = () => {
     fiscalStartDd: padMmDd(axis2FiscalStartDd.value),
     prorateRounding: axis4ProrateRounding.value,
     hireDate: PREVIEW_HIRE_DATE,
+    // ★근속가산(AXIS5) 전달 — 미전달 시 팝업이 본연차를 15 고정으로 그려 CUSTOM 설정과 어긋난다(2026-08-19).
+    tenureStartYear: axis5StartYear.value,
+    tenureInterval: axis5Interval.value,
+    tenureMaxDays: axis5MaxDays.value,
   });
 };
 
