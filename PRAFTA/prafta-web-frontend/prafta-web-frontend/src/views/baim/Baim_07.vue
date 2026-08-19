@@ -208,7 +208,14 @@
             <span class="lp-radio" aria-hidden="true"></span>
             <span class="lp-option__text">
               <span class="lp-option__label">비례 부여</span>
-              <span class="lp-option__sub">회계연도 기준 시만</span>
+              <!-- ★잠정 봉인 중에는 사유를 라벨에 노출한다(선택 못 하는 이유를 화면에서 알 수 있게). -->
+              <span class="lp-option__sub">
+                {{
+                  PRORATE_TEMPORARILY_DISABLED
+                    ? "추후 지원 예정"
+                    : "회계연도 기준 시만"
+                }}
+              </span>
             </span>
           </button>
           <button
@@ -243,7 +250,14 @@
             <line x1="12" y1="16" x2="12" y2="12" />
             <line x1="12" y1="8" x2="12.01" y2="8" />
           </svg>
-          <span>
+          <span v-if="PRORATE_TEMPORARILY_DISABLED">
+            <strong>회계연도 기준</strong> 선택 시 [차년도 일괄 부여]만 선택
+            가능 ([월차만 부여]는 입사일 기준 전용).<br />
+            <strong>[비례 부여]는 준비 중</strong>입니다 — 입사일 기준 법정
+            연차와의 차액 보전 방식이 확정되면 지원할 예정입니다. 필요하시면
+            담당자에게 문의해 주세요.
+          </span>
+          <span v-else>
             <strong>회계연도 기준</strong> 선택 시 [비례 부여]·[차년도 일괄
             부여]만 선택 가능 ([월차만 부여]는 입사일 기준 전용).
           </span>
@@ -941,12 +955,27 @@ const remnantDetailOpen = ref(false);
 const isLoading = ref(false);
 
 // ================ Computed ================
+// ★비례부여(PRORATE) 잠정 봉인 (2026-08-19 사용자 결정)
+//   회계연도 기준 + 비례부여 조합은 "입사일 기준 1년 시점에 발생하는 법정 연차와의 차액을
+//   보전해야 하는가"가 법적으로 확정되지 않았다(근로기준법 제60조 자체엔 규정이 없고,
+//   행정해석·실무관행 영역). 현재 부여 엔진에는 그 보정 로직이 없어, 선택 가능하게 두면
+//   법정 미달 상태가 발생할 수 있다.
+//   → 항목은 남겨두되(추후 지원 예정) 선택만 막는다. 실제 요구 고객사가 생기면 노무사 확인 후 해제.
+//   참고: .claude/refs/연차_회계연도_비례부여_타임라인.md
+//   ※운영 실측(2026-08-19): PRORATE 를 쓰는 정책 0건 — 기존 고객사 영향 없음.
+const PRORATE_TEMPORARILY_DISABLED = true;
+
 // 1번 매트릭스(§4.3 / prafta-029): axis1=HIRE_DATE면 PRORATE/NEXT_YEAR_BULK 비활성,
 //   axis1=FISCAL_YEAR면 MONTHLY_ONLY 비활성(회계연도는 PRORATE/NEXT_YEAR_BULK만 허용)
 const axis2Disabled = computed(() => {
   const fiscal = axis1GrantBase.value === "FISCAL_YEAR";
   const hireDate = axis1GrantBase.value === "HIRE_DATE";
-  return { MONTHLY_ONLY: fiscal, PRORATE: hireDate, NEXT_YEAR_BULK: hireDate };
+  return {
+    MONTHLY_ONLY: fiscal,
+    // 매트릭스상 조건 + 잠정 봉인 — 둘 중 하나라도 걸리면 선택 불가.
+    PRORATE: hireDate || PRORATE_TEMPORARILY_DISABLED,
+    NEXT_YEAR_BULK: hireDate,
+  };
 });
 
 // UI 3번(반올림) 활성 = UI 2번이 PRORATE일 때만 (§4.4)
@@ -1009,8 +1038,13 @@ watch(axis1GrantBase, (val) => {
       axis3FirstYearMethod.value = "MONTHLY_ONLY";
     }
   } else if (val === "FISCAL_YEAR") {
+    // ★PRORATE 잠정 봉인(위 PRORATE_TEMPORARILY_DISABLED) 중에는 NEXT_YEAR_BULK 로 보정한다.
+    //   봉인 상태에서 PRORATE 로 보정하면 "비활성 옵션이 선택된" 모순 상태가 되고,
+    //   그대로 저장하면 화면에서 막은 조합이 DB 에 들어간다.
     if (axis3FirstYearMethod.value === "MONTHLY_ONLY") {
-      axis3FirstYearMethod.value = "PRORATE";
+      axis3FirstYearMethod.value = PRORATE_TEMPORARILY_DISABLED
+        ? "NEXT_YEAR_BULK"
+        : "PRORATE";
     }
   }
 });

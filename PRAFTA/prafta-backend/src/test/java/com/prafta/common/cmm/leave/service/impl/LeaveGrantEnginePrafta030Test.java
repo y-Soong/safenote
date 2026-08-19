@@ -79,6 +79,13 @@ class LeaveGrantEnginePrafta030Test {
         dash = mock(LeaveDashboardMapper.class);
         eng = mock(LeaveGrantEngineMapper.class);
         policySvc = mock(LeavePolicyService.class);
+
+        // ★소정-05 게이트 스텁 (2026-08-19 추가): prepareGrantContext 진입부가
+        //   isStatutoryAutoGrantEnabled(policy)=false 면 LEAVE_400_001 로 전면 차단한다.
+        //   실제 구현은 '값이 N 이 아니면 통과'라 기본 통과지만, mock 기본값은 false 라
+        //   스텁이 없으면 모든 시나리오가 계산 이전에 튕긴다(테스트 전멸의 원인).
+        when(policySvc.isStatutoryAutoGrantEnabled(any(LeavePolicyVO.class))).thenReturn(true);
+        when(policySvc.isStatutoryAutoGrantEnabled(anyString())).thenReturn(true);
         statusSvc = mock(LeaveGrantStatusService.class);
         svc = new LeaveGrantEngineServiceImpl(dash, eng, policySvc, statusSvc);
 
@@ -278,6 +285,9 @@ class LeaveGrantEnginePrafta030Test {
 
     private void resetMocks() {
         org.mockito.Mockito.reset(dash, eng, policySvc, statusSvc);
+        // ★reset 은 setUp 의 소정-05 게이트 스텁까지 지운다 → 여기서 즉시 복원(없으면 LEAVE_400_001 전멸).
+        when(policySvc.isStatutoryAutoGrantEnabled(any(LeavePolicyVO.class))).thenReturn(true);
+        when(policySvc.isStatutoryAutoGrantEnabled(anyString())).thenReturn(true);
         when(dash.countActiveUser(anyString(), anyString())).thenReturn(1);
         when(dash.countLeaveTypeExists(anyString(), anyString())).thenReturn(1);
         when(dash.selectCreditMonths(anyString(), anyString())).thenReturn(0);

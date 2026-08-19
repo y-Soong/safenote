@@ -73,6 +73,12 @@ class LeaveGrantEnginePrafta029Test {
 
     /** Pinned "today" = prafta-029 current date. */
     private static final LocalDate TODAY = LocalDate.of(2026, 5, 25);
+    /**
+     * 회계연도 시작일 당일(정기부여 배치가 실제로 도는 날) — fiscalTenureYear 회귀에서 재고정용.
+     * ★반드시 클래스 상수로 둔다: mockStatic(LocalDate) 활성 중에 {@code LocalDate.of(...)} 를
+     *   {@code when(...).thenReturn(...)} 안에서 호출하면 UnfinishedStubbingException 이 난다.
+     */
+    private static final LocalDate FISCAL_GRANT_DAY = LocalDate.of(2026, 1, 1);
     private static final String CMPNY = "C001";
     private static final String USER = "U001";
     private static final String MGR = "master";
@@ -95,6 +101,13 @@ class LeaveGrantEnginePrafta029Test {
         dash = mock(LeaveDashboardMapper.class);
         eng = mock(LeaveGrantEngineMapper.class);
         policySvc = mock(LeavePolicyService.class);
+
+        // ★소정-05 게이트 스텁 (2026-08-19 추가): prepareGrantContext 진입부가
+        //   isStatutoryAutoGrantEnabled(policy)=false 면 LEAVE_400_001 로 전면 차단한다.
+        //   실제 구현은 '값이 N 이 아니면 통과'라 기본 통과지만, mock 기본값은 false 라
+        //   스텁이 없으면 모든 시나리오가 계산 이전에 튕긴다(테스트 전멸의 원인).
+        when(policySvc.isStatutoryAutoGrantEnabled(any(LeavePolicyVO.class))).thenReturn(true);
+        when(policySvc.isStatutoryAutoGrantEnabled(anyString())).thenReturn(true);
         statusSvc = mock(LeaveGrantStatusService.class);
         svc = new LeaveGrantEngineServiceImpl(dash, eng, policySvc, statusSvc);
 
@@ -331,18 +344,69 @@ class LeaveGrantEnginePrafta029Test {
         assertEquals(4, previewDays(prorate, "20260102"), "PRORATE future2 2026-01-02: crossed=0 본연차 미발생 → 월차만4");
         // prafta-030 D2-B: 만 1년 도래일(2025-02-22 + 1년 − 1일 = 2026-02-21)이 TODAY(2026-05-25) 이전이므로 첫해 월차 일괄 소멸 → 월차 0.
         assertEquals(13, previewDays(prorate, "20250222"), "PRORATE past2 2025-02-22: 비례13 + 월차0(만1년소멸) = 13");
-        // GROUP_B (확정 1년초과, crossed>=2) → 만연차15 + 근속가산(3년차 +1)=16 (월차는 원래 소멸 → 0)
-        assertEquals(16, previewDays(prorate, "20230721"), "PRORATE B base 2023-07-21: 만연차15 + 근속1");
-        assertEquals(16, previewDays(prorate, "20230211"), "PRORATE B past 2023-02-11");
+        // GROUP_B (확정 1년초과, crossed>=2) → 만연차15 (+ 근속가산은 아래 각 케이스 주석 참조. 월차는 원래 소멸 → 0)
+        //
+        // ★2026-08-19 근속연차 산정 정정: tenureYear = max(crossedFiscalStarts - 1, creditedYears)
+        //   ① crossedFiscalStarts - 1 : 회계연도 기준 근속연차. 첫 회계연도 도래분은 "입사~첫 회계연도 시작"의
+        //      부분기간이라 근속 1년으로 세지 않는다(종전엔 crossed 를 그대로 써 한 칸씩 앞당겨졌다).
+        //   ② creditedYears = (실근속개월 + 경력인정개월)/12 : <b>평가 시점(TODAY)</b> 기준 총 근속연차.
+        //   ⚠️ 본 테스트는 TODAY 를 2026-05-25(= prafta-029 분석 요청일)로 고정한다. 실제 정기부여 배치는
+        //      매일 00:30 실행이라 회계연도 시작일 당일(01-01)에 부여되고 그때는 ①==② 로 일치한다.
+        //      즉 아래 값 중 ②가 이기는 케이스는 "부여를 수개월 늦게 실행했을 때"의 동작이다.
+        //
+        // 2023-07-21: ①=3-1=2, ②=34개월/12=2 → max=2 → 가산 없음(3년 미만) → 15
+        assertEquals(15, previewDays(prorate, "20230721"), "PRORATE B base 2023-07-21: ①2 ②2 → 15 (가산 없음)");
+        // 2023-02-11: ①=3-1=2 이지만 ②=39개월/12=3 → max=3 → 가산 +1 → 16
+        //   (2026-02-11 에 만 3년 도래. 부여를 5개월 늦게 실행한 시점 기준이라 ②가 이긴다.)
+        assertEquals(16, previewDays(prorate, "20230211"), "PRORATE B past 2023-02-11: ①2 ②3 → 16 (②가 우세)");
 
         LeavePolicyVO bulk = fiscalPolicy("NEXT_YEAR_BULK", "CEIL");
         // crossed==1 → 만연차 일괄(비례 아님) + 법정 월차(정상근로자, 게이트 비대상)
         assertEquals(25, previewDays(bulk, "20250721"), "BULK base 2025-07-21: 만연차15 + 월차10 = 25");
         assertEquals(4, previewDays(bulk, "20260102"), "BULK future2 2026-01-02: crossed=0 본연차 미발생 → 월차만4");
-        assertEquals(16, previewDays(bulk, "20230721"), "BULK B base 2023-07-21: 만연차15 + 근속1");
+        // ★위 2023-07-21 과 동일(가산 판정은 PRORATE/NEXT_YEAR_BULK 공통 분기): ①2 ②2 → 가산 없음.
+        assertEquals(15, previewDays(bulk, "20230721"), "BULK B base 2023-07-21: ①2 ②2 → 15 (가산 없음)");
     }
 
     /** 신규 사용자(기존 부여 0, 미적용 이력 없음) 기준 1명 부여 예정 일수. */
+    /**
+     * REGRESSION(2026-08-19): 회계연도 근속연차 = crossedFiscalStarts - 1.
+     *
+     * <p>첫 회계연도 도래분은 "입사~첫 회계연도 시작"의 <b>부분기간</b>에 대한 부여라 근속 1년으로 세지 않는다.
+     *    이를 1년으로 세면(종전 구현) 가산 판정이 한 칸씩 앞당겨져 법정 하한보다 이르게 가산이 붙는다.
+     *
+     * <p>★평가 시점을 <b>회계연도 시작일 당일(2026-01-01)</b> 로 다시 고정한다. 정기부여 배치는 매일 00:30
+     *    실행이라 실제 부여는 이 날 일어나며, 클래스 기본 TODAY(2026-05-25)로 재면 "부여를 5개월 늦게
+     *    실행한" 인위적 조건이 되어 {@code creditedYears}(평가시점 총 근속)가 개입해 본 축을 가린다.
+     *
+     * <p>가산 설정은 LEGAL 기본(3년차부터 2년마다 +1, 상한 25). 경력인정 0.
+     */
+    @Test
+    @DisplayName("REGRESSION: 회계연도 근속연차는 crossed-1 — 첫 회계연도(부분기간)를 1년차로 세지 않는다")
+    void fiscalTenureYear_excludesPartialFirstFiscalPeriod() {
+        // 실제 부여가 일어나는 시점 = 회계연도 시작일 당일.
+        localDateMock.when(LocalDate::now).thenReturn(FISCAL_GRANT_DAY);
+
+        LeavePolicyVO bulk = fiscalPolicy("NEXT_YEAR_BULK", "CEIL");
+
+        // 2024-07-21 입사 → 부여일 실근속 1년5개월(1년차) → 가산 없음. crossed=2 → ①=1, ②=17/12=1
+        assertEquals(15, previewDays(bulk, "20240721"), "1년차: 만연차15, 가산 없음");
+
+        // 2023-07-21 입사 → 부여일 실근속 2년5개월(2년차) → 3년 미만이라 가산 없음. crossed=3 → ①=2, ②=2
+        //   ★종전 구현은 crossed=3 을 그대로 3년차로 봐 16을 줬다(오프바이원 — 본 회귀의 핵심).
+        assertEquals(15, previewDays(bulk, "20230721"), "2년차: 만연차15, 가산 없음 (종전 16이었던 지점)");
+
+        // 2023-02-11 입사 → 부여일 실근속 2년10개월(2년차) → 가산 없음. crossed=3 → ①=2, ②=34/12=2
+        //   (클래스 기본 TODAY(05-25)로 재면 ②=3 이 되어 16이 나온다 — 부여 시점 기준이라야 2년차로 잡힌다.)
+        assertEquals(15, previewDays(bulk, "20230211"), "2년차(연초 입사): 부여 시점 기준이면 가산 없음");
+
+        // 2022-07-21 입사 → 부여일 실근속 3년5개월(3년차) → 가산 +1. crossed=4 → ①=3
+        assertEquals(16, previewDays(bulk, "20220721"), "3년차: 만연차15 + 가산1 = 16");
+
+        // 2020-07-21 입사 → 부여일 실근속 5년5개월(5년차) → 가산 +2. crossed=6 → ①=5
+        assertEquals(17, previewDays(bulk, "20200721"), "5년차: 만연차15 + 가산2 = 17");
+    }
+
     private int previewDays(LeavePolicyVO policy, String hire) {
         when(policySvc.findActivePolicy(anyString())).thenReturn(policy);
         when(dash.selectUserHireDate(eq(CMPNY), eq(USER))).thenReturn(hire);
@@ -521,6 +585,9 @@ class LeaveGrantEnginePrafta029Test {
 
     private void resetFresh() {
         reset(dash, eng, policySvc, statusSvc);
+        // ★reset 은 setUp 의 소정-05 게이트 스텁까지 지운다 → 여기서 즉시 복원(없으면 LEAVE_400_001 전멸).
+        when(policySvc.isStatutoryAutoGrantEnabled(any(LeavePolicyVO.class))).thenReturn(true);
+        when(policySvc.isStatutoryAutoGrantEnabled(anyString())).thenReturn(true);
         when(dash.countActiveUser(anyString(), anyString())).thenReturn(1);
         when(dash.countLeaveTypeExists(anyString(), anyString())).thenReturn(1);
         when(dash.selectCreditMonths(anyString(), anyString())).thenReturn(0);

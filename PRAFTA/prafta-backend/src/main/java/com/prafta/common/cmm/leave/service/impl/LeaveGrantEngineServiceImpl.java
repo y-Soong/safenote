@@ -1531,8 +1531,16 @@ public class LeaveGrantEngineServiceImpl implements LeaveGrantEngineService {
         if (crossedFiscalStarts >= 2) {
             // 회계연도 시작 2회 이상 도래: 본연차 15 + 근속가산 (PRORATE/NEXT_YEAR_BULK 동일)
             comps.add(new GrantComponent(LEAVE_CD_ANNUAL, GRANT_TYPE_ANNUAL, BigDecimal.valueOf(BASE_ANNUAL_DAYS)));
-            // 경력 인정 개월이 있으면 근속 연차에 가산(개월→연차). 회계연도 도래 횟수와 경력 인정 연차 중 큰 값을 근속연차로.
-            int tenureYear = Math.max(crossedFiscalStarts, creditedYears);
+            // ★근속연차 = crossedFiscalStarts - 1 (2026-08-19 수정)
+            //   첫 회계연도 도래분은 "입사~첫 회계연도 시작"의 <b>부분기간</b>에 대한 부여라 근속 1년으로 세지 않는다.
+            //   이를 1년으로 세면 이후 가산 판정이 한 칸씩 앞당겨진다(회계연도 시작 시점에서
+            //   {@code crossedFiscalStarts - 1 == floor(경과연수)} 가 항상 성립).
+            //   예) 2025-07-12 입사·회계연도 01-01 → 2028-01-01 은 실근속 2년5개월(=2년차)이므로 가산 없음.
+            //       종전 코드는 crossed=3 을 3년차로 봐 가산 +1 을 붙였다(법정 하한보다 유리하나 기준 불일치).
+            //   근거: 근로기준법 제60조④ "3년 이상 계속하여 근로한" = 실제 계속근로연수.
+            //   참고: .claude/refs/연차_회계연도_비례부여_타임라인.md §3.2/§4 타임라인과 전 구간 일치.
+            //   경력 인정 개월이 있으면 그 연차와 큰 값을 취한다(경력 인정 채용).
+            int tenureYear = Math.max(crossedFiscalStarts - 1, creditedYears);
             int bonus = tenureBonusDays(policy, tenureYear);
             if (bonus > 0) {
                 comps.add(new GrantComponent(LEAVE_CD_TENURE, GRANT_TYPE_TENURE, BigDecimal.valueOf(bonus)));
@@ -1547,14 +1555,17 @@ public class LeaveGrantEngineServiceImpl implements LeaveGrantEngineService {
                 }
             } else {
                 // crossed==1 + NEXT_YEAR_BULK(표준) / MONTHLY_ONLY(잔존, 폴백) / null:
-                //   본연차 15 일괄 부여. 근속가산은 crossed 기준이라 보통 0(tenureYear=max(1, creditedYears)).
+                //   본연차 15 일괄 부여. 첫 회계연도 도래분은 부분기간이라 근속연차 0 (위 crossed>=2 분기와 동일 규칙).
+                //   ★종전 max(1, creditedYears) 는 부분기간을 1년차로 세어, AXIS5 를 CUSTOM(가산 시작 1~2년차)으로
+                //     설정한 회사에서 <b>첫 회계연도부터 가산이 붙는</b> 문제가 있었다(LEGAL=3년차 설정에선 미발현).
                 if (policy != null && AXIS3_MONTHLY_ONLY.equals(axis3)) {
                     // 작업 3(백워드호환): DB에 잔존하는 비표준 조합(FISCAL+MONTHLY_ONLY)은 NEXT_YEAR_BULK로 폴백.
                     //   FE 정규화 + 신규저장 차단으로 자연 교정되며 DB 마이그레이션은 하지 않는다.
                     log.info("비표준 조합(FISCAL_YEAR+MONTHLY_ONLY)이라 NEXT_YEAR_BULK로 처리. cmpnyCd={}, userCd={}", cmpnyCd, userCd);
                 }
                 comps.add(new GrantComponent(LEAVE_CD_ANNUAL, GRANT_TYPE_ANNUAL, BigDecimal.valueOf(BASE_ANNUAL_DAYS)));
-                int tenureYear = Math.max(1, creditedYears);
+                int tenureYear = Math.max(crossedFiscalStarts - 1, creditedYears); // crossed==1 → 0
+
                 int bonus = tenureBonusDays(policy, tenureYear);
                 if (bonus > 0) {
                     comps.add(new GrantComponent(LEAVE_CD_TENURE, GRANT_TYPE_TENURE, BigDecimal.valueOf(bonus)));
