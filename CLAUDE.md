@@ -220,7 +220,8 @@ Bash 도구 호출 시 빌드 명령은 타임아웃 600초(10분) 권장. 첫 �
 - Flutter 코드 내부에서 비즈니스 로직(연차 계산, 결재 흐름 등) 구현 금지 — Vue 측으로 위임.
 - 네이티브 권한 prompt 가 발생할 수 있는 작업은 사용자에게 사전 안내(에뮬레이터/실기기 모두).
 - `flutter run` 을 Claude Code Bash 도구로 직접 실행 금지 (실기기 hot-reload는 사용자 위임).
-- `assets/vue_app/` 하위 파일을 직접 편집 금지 — 항상 `prafta-app-frontend` 에서 빌드 후 복사. 이 번들은 원격 로딩 실패 시 **폴백용**이며, 평상시 반영은 `prafta-app-frontend` 의 `scripts/deploy-app-web.ps1` 원격 배포(app.prafta.com)가 표준이다. 단 현재 롤아웃 1단계(매니페스트 `enabled:false` = 전원 번들)라 **전환 완료 전까지는 번들 갱신도 병행 필요** (상세: `.claude/refs/앱_웹뷰_원격로딩_전환_작업지시서.md`).
+- `assets/vue_app/` 하위 파일을 직접 편집 금지 — 항상 `prafta-app-frontend` 에서 빌드 후 복사. 이 번들은 원격 로딩 실패 시 **폴백용**이며, 평상시 반영은 `prafta-app-frontend` 의 `scripts/deploy-app-web.ps1` 원격 배포(app.prafta.com)가 표준이다.
+- ★**2026-08-20 롤아웃 3단계 전환 완료** (매니페스트 `enabled:true` = 전원 원격, 양 플랫폼 실기기 검증 통과). 따라서 **앱 프론트 수정은 원격 배포만으로 반영**되며, 종전처럼 커밋마다 `chore: vue_app 번들 동기화` 를 쌍으로 붙이지 않는다. 번들은 **스토어 릴리즈(AAB/IPA 빌드) 직전에만** 최신으로 동기화한다(폴백 바닥 갱신). 킬 스위치·롤백은 `.claude/refs/배포_운영_매뉴얼.md` §3-2, 배경은 `.claude/refs/앱_웹뷰_원격로딩_전환_작업지시서.md` §6-5.
 - `android/key.properties`, `*.keystore`, `google-services.json` 등 서명/시크릿 파일은 절대 커밋/출력 금지.
 
 스키마/정책서 규칙 적용:

@@ -3,7 +3,7 @@
 > 작성일: 2026-07-18 / 최종 갱신: 2026-07-19 (★07-19 밤 파일 유실 발견 → 세션 기록에서 전문 복원 + 실무 명령어 최상단 재배치)
 > 작성 배경: 로컬 개발 환경에서 운영하던 PRAFTA 전체 스택(백엔드·웹·앱·AI)을 AWS 클라우드로 이전 완료.
 > 현재 단계: **시연 단계** (실고객 0, 무료 플랜 크레딧 운영)
-> **★2026-07-18 앞단 Cloudflare→CloudFront+WAF 전환 완료(§8). ★2026-07-19 git 기반 배포 스크립트 정립 + HTTP 80 폐쇄 + CloudFront 오리진 https-only 수정(§3·§6-14·§8). ★2026-08-04 앱 프론트(웹뷰 콘텐츠) 원격 호스팅 `app.prafta.com` 신설(§2·§3 — 현재 킬 스위치 OFF=전원 번들).**
+> **★2026-07-18 앞단 Cloudflare→CloudFront+WAF 전환 완료(§8). ★2026-07-19 git 기반 배포 스크립트 정립 + HTTP 80 폐쇄 + CloudFront 오리진 https-only 수정(§3·§6-14·§8). ★2026-08-04 앱 프론트(웹뷰 콘텐츠) 원격 호스팅 `app.prafta.com` 신설(§2·§3). ★2026-08-20 **웹뷰 원격 로딩 전면 활성화**(킬 스위치 ON=전원 원격 — 앱 프론트는 스토어 재배포 없이 원격 배포만으로 반영).**
 
 ---
 
@@ -184,10 +184,11 @@ python -m awscli ec2 stop-instances --instance-ids i-0920b060dee420594 --region 
 | 인증서 | ACM us-east-1 `84d3578b…` + 최소 TLSv1.2_2021. **검증 CNAME 2건(`_e01ca….app` / `_e5fd….prafta.com`)은 자동 갱신용 — Cloudflare 에서 영구 유지(삭제 금지)** |
 | SPA 폴백 | 오류페이지 403/404 → /index.html + 200 |
 | 캐시 정책 | `index.html`·`app-manifest.json`=no-cache / 해시 청크=장기캐시 |
-| 킬 스위치 | `https://app.prafta.com/app-manifest.json` 의 `enabled` — **현재 `enabled:false` (롤아웃 1단계 = 전원 번들)** |
-| 배포 스크립트 | `PRAFTA/prafta-app-frontend/prafta-app-frontend/scripts/deploy-app-web.ps1` — git 커밋 코드만 배포(worktree) + `__APP_BUILD__` 주입 + 매니페스트 생성. `-ManifestOnly`=매니페스트(enabled 토글)만 즉시 배포. ※param 기본값에 배포 ID 미반영 상태라 `-DistributionId E20RXW16D6VDSN` 지정 필요 |
+| 킬 스위치 | `https://app.prafta.com/app-manifest.json` 의 `enabled` — **현재 `enabled:true` (★2026-08-20 롤아웃 3단계 = 전원 원격)** |
+| 배포 스크립트 | `PRAFTA/prafta-app-frontend/prafta-app-frontend/scripts/deploy-app-web.ps1` — git 커밋 코드만 배포(worktree) + `__APP_BUILD__` 주입 + 매니페스트 생성. `-ManifestOnly`=매니페스트(enabled 토글)만 즉시 배포. 배포 ID·enabled 승계는 param 기본값에 반영됨(08-20) |
 
-- 첫 배포(08-04)는 `-UseWorkingTree` 비상 모드였음 — **정식 롤아웃 전 커밋 후 git 기반 재배포로 교체할 것.**
+- 첫 배포(08-04)는 `-UseWorkingTree` 비상 모드였음 → **git 기반 정상 경로로 교체 완료(08-17)**.
+- ★**매니페스트는 `no-store` 여도 CloudFront 가 캐싱한다**(응답 `x-cache: Hit` 실측 08-20). 킬 스위치를 확실히 전파하려면 **무효화가 필수** — 스크립트 기본 `-DistributionId E20RXW16D6VDSN` 로 자동 수행.
 - 배경·로딩 전략·롤아웃 단계·테스트: `.claude/refs/앱_웹뷰_원격로딩_전환_작업지시서.md` §4·§6-2·§7-8 참조.
 
 ### Cloudflare DNS 레코드 (전 레코드 DNS only/회색)

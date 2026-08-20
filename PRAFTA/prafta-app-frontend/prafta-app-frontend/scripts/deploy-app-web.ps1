@@ -12,13 +12,16 @@
       → CloudFront 무효화(T6 완료 후 -DistributionId 지정)
    6) 라이브 검증(매니페스트 커밋 해시 대조) 후 배포 이력 기록
 
- ★ 킬 스위치 운용:
-   - 기본은 enabled:false 로 배포된다(롤아웃 §7-8 1단계 — 원격 코드는 올라가 있으나 전원 번들).
-   - 원격 활성화는 -RemoteEnabled 를 명시해 재배포. 비상 회귀는 스위치 없이 재실행(즉시 enabled:false).
-   - 매니페스트만 바꾸고 싶으면 -ManifestOnly (빌드·에셋 업로드 생략, 수 초 내 반영).
+ ★ 킬 스위치 운용 (2026-08-20 롤아웃 3단계 전환 이후 규칙 변경):
+   - 전체 배포에서 스위치를 생략하면 **라이브 매니페스트의 현재 enabled 값을 승계**한다.
+     (종전에는 생략 = enabled:false 였다. 3단계 전환 후 그 동작은 평상시 콘텐츠 배포가
+      전 사용자를 조용히 번들로 되돌리는 사고가 되므로 폐기.)
+   - 명시 전환: -RemoteEnabled(ON) / -RemoteDisabled(OFF). 둘 다 지정하면 오류.
+   - 승계를 위한 라이브 조회가 실패하면 **추측하지 않고 중단**한다(둘 중 하나를 명시할 것).
+   - -ManifestOnly 는 긴급 중단 명령이므로 종전 관례 유지 — 스위치 생략 시 enabled:false.
 
  사용:
-   powershell -ExecutionPolicy Bypass -File .\scripts\deploy-app-web.ps1                      # origin/main, enabled:false
+   powershell -ExecutionPolicy Bypass -File .\scripts\deploy-app-web.ps1                      # origin/main, 현재 enabled 승계
    powershell -ExecutionPolicy Bypass -File .\scripts\deploy-app-web.ps1 -RemoteEnabled       # 원격 활성화 배포
    powershell -ExecutionPolicy Bypass -File .\scripts\deploy-app-web.ps1 -ManifestOnly        # 킬 스위치만 OFF (긴급 회귀)
    powershell -ExecutionPolicy Bypass -File .\scripts\deploy-app-web.ps1 -ManifestOnly -RemoteEnabled  # 킬 스위치만 ON
@@ -34,12 +37,13 @@ param(
     [switch]$UseWorkingTree,
     [switch]$SkipFetch,
     [switch]$SkipInvalidation,
-    [switch]$RemoteEnabled,                 # 매니페스트 enabled 값(기본 false = 전원 번들)
+    [switch]$RemoteEnabled,                 # 매니페스트 enabled:true 로 전환(명시)
+    [switch]$RemoteDisabled,                # 매니페스트 enabled:false 로 전환(명시). 미지정 시 §킬 스위치 운용 규칙
     [switch]$ManifestOnly,                  # 매니페스트만 갱신(빌드·에셋 업로드 생략)
     [int]$MinShellBridgeVersion = 1,        # 이 값 미만 셸은 번들 폴백(web_app.dart _kBridgeVersion 과 동기)
     [string]$Entry = '/',                   # 원격 진입 경로(버전 핀 시 예: /r/2026-08-04/)
     [string]$Bucket = 'app.prafta.com',
-    [string]$DistributionId = '',           # T6 완료 후 실측값 지정. 빈값이면 무효화 생략+경고
+    [string]$DistributionId = 'E20RXW16D6VDSN',           # T6 완료 후 실측값 지정. 빈값이면 무효화 생략+경고
     [string]$LiveUrl = 'https://app.prafta.com'
 )
 
@@ -81,8 +85,32 @@ function Invoke-Aws([string[]]$AwsArgs) {
     & $awsExe @awsPrefix @AwsArgs
 }
 
+# 매니페스트 enabled 값 확정 — ★3단계 전환(2026-08-20) 이후 평상시 배포가 킬 스위치를 끄지 않게 한다.
+#   명시(-RemoteEnabled/-RemoteDisabled) > -ManifestOnly 기본 false(긴급 중단 관례) > 라이브 값 승계.
+#   승계 조회 실패는 폴백 없이 중단한다 — 여기서 추측하면 전 사용자 로딩 소스가 바뀐다.
+$script:remoteEnabledValue = $null
+function Resolve-RemoteEnabled {
+    if ($null -ne $script:remoteEnabledValue) { return $script:remoteEnabledValue }
+    if ($RemoteEnabled -and $RemoteDisabled) { throw '-RemoteEnabled 와 -RemoteDisabled 는 동시에 지정할 수 없음' }
+    if ($RemoteEnabled)  { $script:remoteEnabledValue = $true;  Write-Host "매니페스트 enabled: true (명시)" }
+    elseif ($RemoteDisabled) { $script:remoteEnabledValue = $false; Write-Host "매니페스트 enabled: false (명시)" }
+    elseif ($ManifestOnly) { $script:remoteEnabledValue = $false; Write-Host "매니페스트 enabled: false (킬 스위치 기본값)" -ForegroundColor Yellow }
+    else {
+        try {
+            $probe = Invoke-WebRequest -Uri "$LiveUrl/app-manifest.json?stateCheck=$([Guid]::NewGuid().ToString('N'))" -UseBasicParsing -TimeoutSec 15
+            $cur = ($probe.Content | ConvertFrom-Json).enabled
+        } catch {
+            throw "라이브 매니페스트 조회 실패로 enabled 값을 승계할 수 없음. -RemoteEnabled 또는 -RemoteDisabled 를 명시할 것. ($_)"
+        }
+        if ($cur -isnot [bool]) { throw "라이브 매니페스트 enabled 값이 bool 이 아님($cur). -RemoteEnabled/-RemoteDisabled 를 명시할 것." }
+        $script:remoteEnabledValue = $cur
+        Write-Host "매니페스트 enabled: $cur (라이브 값 승계 — 전환하려면 -RemoteEnabled/-RemoteDisabled 명시)"
+    }
+    return $script:remoteEnabledValue
+}
+
 function Write-DeployLog([string]$commit, [string]$result) {
-    $flag = if ($RemoteEnabled) { 'enabled' } else { 'disabled' }
+    $flag = if (Resolve-RemoteEnabled) { 'enabled' } else { 'disabled' }
     $line = "{0} | app-web | {1} | {2} | {3} (remote:{4})" -f (Get-Date -Format 'yyyy-MM-dd HH:mm:ss'), $commit, $Ref, $result, $flag
     Add-Content -Path $deployLog -Value $line -Encoding UTF8
 }
@@ -98,7 +126,7 @@ function Remove-DeployWorktree {
 # 매니페스트 JSON 생성(셸 T4 계약: enabled / minShellBridgeVersion / entry. commit·deployedAt 은 검증·추적용)
 function New-ManifestJson([string]$commit) {
     $obj = [ordered]@{
-        enabled               = [bool]$RemoteEnabled.IsPresent
+        enabled               = [bool](Resolve-RemoteEnabled)
         minShellBridgeVersion = $MinShellBridgeVersion
         entry                 = $Entry
         commit                = $commit
@@ -139,7 +167,7 @@ try {
 
     # ── ManifestOnly: 킬 스위치 즉시 반영 경로 ───────────
     if ($ManifestOnly) {
-        Write-Step "1/2 매니페스트만 갱신 (enabled:$($RemoteEnabled.IsPresent))"
+        Write-Step "1/2 매니페스트만 갱신 (enabled:$(Resolve-RemoteEnabled))"
         $tmpManifest = Join-Path (Resolve-TempRoot) 'prafta-app-manifest.json'
         [IO.File]::WriteAllText($tmpManifest, (New-ManifestJson $commit), (New-Object Text.UTF8Encoding($false)))
         Upload-Manifest $tmpManifest
@@ -150,7 +178,7 @@ try {
         }
         Write-Step "2/2 배포 이력 기록"
         Write-DeployLog $commit 'OK(manifest-only)'
-        Write-Host "`n매니페스트 갱신 완료 (enabled:$($RemoteEnabled.IsPresent))." -ForegroundColor Green
+        Write-Host "`n매니페스트 갱신 완료 (enabled:$(Resolve-RemoteEnabled))." -ForegroundColor Green
         exit 0
     }
 
@@ -247,7 +275,7 @@ try {
     Write-Step "6/6 배포 이력 기록"
     if ($verified) {
         Write-DeployLog $commit 'OK'
-        Write-Host "`n배포 완료. 커밋 $commit 라이브 반영 확인됨 (remote enabled:$($RemoteEnabled.IsPresent))." -ForegroundColor Green
+        Write-Host "`n배포 완료. 커밋 $commit 라이브 반영 확인됨 (remote enabled:$(Resolve-RemoteEnabled))." -ForegroundColor Green
         exit 0
     }
 
