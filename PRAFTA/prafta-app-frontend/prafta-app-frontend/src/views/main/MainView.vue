@@ -38,7 +38,7 @@
       <!-- 인사말 -->
       <div class="greeting">
         <p class="greeting__date">{{ todayDateText }}</p>
-        <p class="greeting__msg">오늘도 좋은 하루 되세요</p>
+        <p class="greeting__msg">오늘도 좋은 하루 되세요.</p>
       </div>
 
       <!-- 로딩 표시 (home-summary 응답 대기) -->
