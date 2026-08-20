@@ -185,7 +185,8 @@ public class LeaveGrantEngineServiceImpl implements LeaveGrantEngineService {
             }
 
             // (c) 월차 per-월 누적 (prafta-023 #1) — 법정 의무(§8.5.4). 레거시 ACTIVE 집계 연도는 상호배타 제외.
-            //     ⚠️ prafta-030 BE-2(D2): 본연차가 실제 발생하는 직원이면 computeMonthlyPeriods가 빈 목록을 반환(월차 게이트).
+            //     ⚠️ prafta-030 BE-2(D2, 2026-08-20 현행화): 경력인정으로 산정근속이 1년 이상이 된 직원이면
+            //        computeMonthlyPeriods가 빈 목록을 반환한다(월차 게이트). 경력인정 0이면 게이트 비대상.
             for (PeriodComponent mp : computeMonthlyPeriods(cmpnyCd, tu, hireDate, ctx, plan.keySuffix)) {
                 if (!mp.newInsert) {
                     continue;
@@ -530,9 +531,8 @@ public class LeaveGrantEngineServiceImpl implements LeaveGrantEngineService {
             if (monthlyExpiry.compareTo(today) < 0) {
                 return BigDecimal.ZERO; // 만1년 경과(소멸)
             }
-            LeavePolicyVO policy = leavePolicyService.findActivePolicy(cmpnyCd);
             int creditMonths = leaveDashboardMapper.selectCreditMonths(cmpnyCd, userCd);
-            if (isCreditDoubleDip(policy, hire, todayDate, creditMonths, cmpnyCd, userCd)) {
+            if (isCreditDoubleDip(hire, todayDate, creditMonths)) {
                 return BigDecimal.ZERO; // 더블딥(월차 비대상)
             }
             int actualMonths = (int) Math.max(0, ChronoUnit.MONTHS.between(hire, todayDate));
@@ -1826,15 +1826,18 @@ public class LeaveGrantEngineServiceImpl implements LeaveGrantEngineService {
         if (hire == null || todayDate == null || hire.isAfter(todayDate)) {
             return out;
         }
-        // prafta-030 BE-2(D2, 2026-05-26 정정) 월차 게이트: "고용승계 더블딥"에만 한정해 월차를 차단한다(빈 목록).
-        //   차단 = (실근속<12) AND (경력인정 포함 산정근속>=12) AND (이번 부여 entitlement에 full 본연차 15 발생).
-        //   ⚠️ 이전 초안("본연차 발생 시 차단")은 과잉 — 경력인정 없는 정상 FISCAL 비례부여 중도입사자의 법정
-        //      월차(§8.5.4)까지 차단했다. 좁힌 결과: 정상 근로자(경력인정 0)·FISCAL 비례(crossed==1 PRORATE,<15)·
-        //      FISCAL 첫 부분기(crossed==0)는 모두 월차 보존. 오직 경력인정으로 실근속<1년인데 full 15를 받는
-        //      더블딥만 차단(본연차 15 >= 월차 상한 11 + 즉시 사용 가능 → "더 유리한 처우"라 §60② 위반 아님).
+        // prafta-030 BE-2(D2) 월차 게이트: "고용승계 더블딥"에 한정해 월차를 차단한다(빈 목록).
+        //   차단 = (실근속<12) AND (경력인정 포함 산정근속>=12).  ★2026-08-20 정정: 종전 AND 조건이던
+        //      "이번 부여 entitlement에 full 본연차 15 발생"을 제거했다. 그 조건 탓에 AXIS1 축에 따라 같은
+        //      사람의 월차가 갈렸다 — HIRE_DATE 는 산정근속 도달 즉시 본연차가 나와 차단됐지만, FISCAL 은
+        //      부여 시점이 회계기준일뿐이라 crossed==0 구간 내내 게이트가 열려 경력인정 18개월자도 월차를
+        //      계속 받았다. 축은 부여 "시점"만 정해야지 월차 "발생 여부"까지 좌우해선 안 된다.
+        //   ⚠️ FISCAL 은 차단 시점(산정근속 1년)과 부여 시점(다음 회계기준일) 사이에 발생 공백이 생긴다.
+        //      경력인정이 아니라 회계연도 축 고유의 지연이며 PRORATE(봉인 중)·부족분 보정 트랙의 몫이다.
+        //   ※ 경력인정 0(활성 고객사 전부)은 산정=실근속이라 (2) 거짓 → 월차 보존. 무회귀.
         //   ※ 기존 부여(이미 INSERT된 월차)는 건드리지 않는다(미래 부여 산정만 게이트, §8.5.8 기부여보호).
         int creditMonths = leaveDashboardMapper.selectCreditMonths(cmpnyCd, userCd);
-        if (isCreditDoubleDip(ctx.policy, hire, todayDate, creditMonths, cmpnyCd, userCd)) {
+        if (isCreditDoubleDip(hire, todayDate, creditMonths)) {
             return out;
         }
         int actualMonths = (int) Math.max(0, ChronoUnit.MONTHS.between(hire, todayDate));
@@ -1878,24 +1881,30 @@ public class LeaveGrantEngineServiceImpl implements LeaveGrantEngineService {
     /**
      * "경력인정으로 인한 고용승계 더블딥"인지 판정 (prafta-030 BE-2 / D2 월차 게이트용, read-only).
      *
-     * <p>월차 차단을 "더블딥"으로 좁힌다(결정문서 D2 정정 2026-05-26). 세 조건을 모두 만족할 때만 true.
+     * <p><b>2026-08-20 정정</b>: 판정 기준을 <b>산정근속 도달 시점</b>으로 통일했다. 두 조건을 모두
+     * 만족하면 true.
      * <ul>
      *   <li>(1) 실근속 {@code actualMonths < 12} — 실제 재직 1년 미만.</li>
      *   <li>(2) 경력 인정 포함 산정근속 {@code creditedMonths >= 12} — 경력인정으로 1년 이상으로 산정됨.</li>
-     *   <li>(3) 이번 부여 entitlement에 full 본연차(STATUTORY_ANNUAL, days {@code >= 15}) 발생.</li>
      * </ul>
-     * <p>좁힌 결과:
+     * <p>종전에는 (3) "이번 부여 entitlement에 full 본연차(&gt;=15) 발생"을 AND 조건으로 더 봤다. 그 결과
+     * <b>AXIS1 축에 따라 같은 사람의 월차가 갈렸다</b> — HIRE_DATE 축은 산정근속 도달 즉시 본연차가 나와
+     * 차단됐지만, FISCAL 축은 부여 시점이 회계기준일 하루뿐이라 {@code crossed==0} 구간 내내 본연차가 없어
+     * 게이트가 열린 채였다(경력인정 18개월이어도 첫 회계기준일까지 월차가 계속 발생). 축이 부여 <b>시점</b>을
+     * 정할 뿐인데 <b>월차 발생 여부</b>까지 좌우하던 셈이라 (3)을 제거했다.
+     * <p>결과:
      * <ul>
-     *   <li>정상 근로자(경력인정 0): 산정=실근속 → (2) 거짓 → 월차 보존.</li>
-     *   <li>FISCAL 비례(crossed==1 PRORATE, 비례&lt;15): (3) 거짓 → 월차+비례 보존.</li>
-     *   <li>FISCAL 첫 부분기(crossed==0): 본연차 미발생 → (3) 거짓 → 월차 보존(공백 방지).</li>
-     *   <li>경력인정으로 실근속&lt;1년인데 full 15(고용승계 더블딥): 세 조건 충족 → 차단(중복 월차 제거).</li>
+     *   <li>정상 근로자(경력인정 0): 산정=실근속 → (2) 거짓 → <b>월차 보존</b>(무회귀 — 활성 고객사 전부 이 경로).</li>
+     *   <li>경력인정으로 산정근속 1년 도달: 그 시점부터 차단(AXIS1 무관, HIRE_DATE·FISCAL 동일).</li>
      * </ul>
-     * <p>full 15일 때만 차단이 정당(본연차 15 ≥ 월차 상한 11 + 즉시 사용 가능 → "더 유리한 처우"). 비례 7 등
-     * {@code < 11}이면 차단 시 법정 미달이므로 (3)에서 걸러 차단하지 않는다.
+     * <p>⚠️ FISCAL 축에서는 차단 시점(산정근속 1년)과 본연차 부여 시점(다음 회계기준일) 사이에 <b>발생 공백</b>이
+     * 생긴다. 이는 경력인정이 아니라 <b>회계연도 축 고유의 부여 지연</b>이며, 중도입사자 비례부여(PRORATE,
+     * 현재 {@code PRORATE_TEMPORARILY_DISABLED} 봉인)와 입사일 기준 부족분 보정 트랙이 담당할 몫이다.
+     * 상세: {@code .claude/refs/연차_회계연도_비례부여_타임라인.md} §3.3·§6.3 (노무사 확인 후 확정 예정).
+     * <p>부수 효과: (3)이 호출하던 {@code resolveEntitlement}는 내부적으로 {@code LocalDate.now()}를 쓰기
+     * 때문에, (1)(2)가 보는 {@code today} 파라미터와 기준일이 어긋났다(백필·시점이동 경로). (3) 제거로 함께 해소.
      */
-    private boolean isCreditDoubleDip(LeavePolicyVO policy, LocalDate hire, LocalDate today,
-                                      int creditMonths, String cmpnyCd, String userCd) {
+    private boolean isCreditDoubleDip(LocalDate hire, LocalDate today, int creditMonths) {
         if (hire == null || today == null || hire.isAfter(today)) {
             return false;
         }
@@ -1905,20 +1914,7 @@ public class LeaveGrantEngineServiceImpl implements LeaveGrantEngineService {
             return false;
         }
         int creditedMonths = actualMonths + Math.max(0, creditMonths);
-        if (creditedMonths < 12) {
-            return false;
-        }
-        // (3) 이번 부여 entitlement에 full 본연차(STATUTORY_ANNUAL, days >= 15)가 발생하는지 확인(read-only 재호출).
-        String hireYmd = hire.format(DateTimeFormatter.BASIC_ISO_DATE);
-        Entitlement ent = resolveEntitlement(policy, hireYmd, creditMonths, cmpnyCd, userCd);
-        for (GrantComponent gc : ent.components) {
-            if (GRANT_TYPE_ANNUAL.equals(gc.grantType)
-                    && gc.days != null
-                    && gc.days.compareTo(BigDecimal.valueOf(BASE_ANNUAL_DAYS)) >= 0) {
-                return true;
-            }
-        }
-        return false;
+        return creditedMonths >= 12;
     }
 
     /** 해당 연도에 연 단위 집계 월차(레거시 {@code {YYYY}_STATUTORY_MONTHLY} 또는 {@code ..._HIRE})가 ACTIVE로 존재하는지. */

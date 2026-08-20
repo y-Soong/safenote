@@ -265,6 +265,42 @@ class LeaveGrantEnginePrafta030Test {
         assertTrue(countMonthlyInserts() > 0, "FISCAL crossed==0 → 월차 유지(공백 방지)");
     }
 
+    /**
+     * ★2026-08-20 정정 회귀 — 월차 게이트 판정을 <b>산정근속 도달 시점</b>으로 통일.
+     *
+     * <p>종전에는 "이번 부여에 full 본연차 15 발생"이 AND 조건이라, FISCAL 축에서 {@code crossed==0} 인
+     * 동안은 경력인정으로 산정근속이 1년을 넘겨도 월차가 계속 발생했다(같은 사람이 AXIS1 축에 따라 갈림).
+     * 이 테스트가 실패하면 그 조건이 되살아난 것이다.
+     */
+    @Test
+    @DisplayName("월차 게이트(정정): 경력인정으로 산정근속 1년 도달 → AXIS1 무관 월차 차단, 부분 인정(<1년)은 유지")
+    void monthlyGate_blocksOnCreditedTenureRegardlessOfAxis() {
+        // (A) HIRE_DATE — 입사 2025-11-26(실근속 6개월) + 경력인정 6개월 = 산정근속 12 → 차단.
+        when(policySvc.findActivePolicy(anyString())).thenReturn(hirePolicy());
+        when(dash.selectUserHireDate(eq(CMPNY), eq(USER))).thenReturn("20251126");
+        when(dash.selectCreditMonths(anyString(), anyString())).thenReturn(6);
+        svc.hireDateGrant(CMPNY, List.of(USER), MGR, OP);
+        assertEquals(0, countMonthlyInserts(), "(A) HIRE_DATE 산정근속 12개월 → 월차 차단");
+
+        resetMocks();
+        // (B) ★핵심: FISCAL crossed==0 — 입사 2026-02-01(실근속 3개월, 2026-01-01은 입사 전이라 미도래)
+        //     + 경력인정 9개월 = 산정근속 12 → 본연차는 아직 없지만(부여 시점 미도래) 월차는 차단한다.
+        //     종전 규칙에서는 여기서 월차 3개가 발생했다.
+        when(policySvc.findActivePolicy(anyString())).thenReturn(fiscalPolicy("NEXT_YEAR_BULK", "CEIL"));
+        when(dash.selectUserHireDate(eq(CMPNY), eq(USER))).thenReturn("20260201");
+        when(dash.selectCreditMonths(anyString(), anyString())).thenReturn(9);
+        svc.hireDateGrant(CMPNY, List.of(USER), MGR, OP);
+        assertEquals(0, countMonthlyInserts(), "(B) FISCAL crossed==0 이어도 산정근속 12개월 → 월차 차단");
+
+        resetMocks();
+        // (C) 무회귀 — 부분 경력인정(산정근속 8개월 < 12)은 게이트 비대상이라 월차가 그대로 발생.
+        when(policySvc.findActivePolicy(anyString())).thenReturn(fiscalPolicy("NEXT_YEAR_BULK", "CEIL"));
+        when(dash.selectUserHireDate(eq(CMPNY), eq(USER))).thenReturn("20260201");
+        when(dash.selectCreditMonths(anyString(), anyString())).thenReturn(5);
+        svc.hireDateGrant(CMPNY, List.of(USER), MGR, OP);
+        assertTrue(countMonthlyInserts() > 0, "(C) 산정근속 8개월 → 월차 유지(게이트 비대상)");
+    }
+
     // ============================ 옵션2(APPLY_NEW)·옵션3(RESET_ALL) 회귀 ============================
     // (prafta-032 009: @Disabled backfill_idempotentReclick / preview_backfillShortfallReflected 물리 삭제 —
     //  차액보전 부여·preview 반영 분기가 부여 엔진에서 제거되어 검증 대상이 사라짐.)

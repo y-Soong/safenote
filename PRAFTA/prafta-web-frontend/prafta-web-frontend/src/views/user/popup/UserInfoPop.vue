@@ -415,10 +415,18 @@
                 >
               </p>
               <p>
-                인정 경력으로 <strong>산정 근속이 1년 이상</strong>이 되면
-                본연차가 발생하며, 이때 실제 근무 1년 미만이라도
-                <strong>1년 미만 월차는 중복 부여되지 않습니다</strong>(고용승계
-                등 — 재직자와 동일 대우).
+                인정 경력으로 <strong>산정 근속이 1년 이상</strong>이 되는
+                시점부터는 실제 근무가 1년 미만이라도
+                <strong>1년 미만 월차가 더 이상 발생하지 않습니다</strong>(고용승계
+                등 — 재직자와 동일 대우). 예를 들어 경력 6개월을 인정하면 입사
+                6개월째부터 월차가 멈춥니다.
+              </p>
+              <p class="credit-notice-warn">
+                ※ <strong>회계연도 기준으로 연차를 부여하는 회사</strong>는 본연차
+                부여일이 회계 기준일 하루뿐이라, 월차가 멈춘 시점과 첫 본연차
+                부여일 사이에 <strong>연차가 발생하지 않는 기간</strong>이 생길 수
+                있습니다. 해당 기간분은 노무 검토 후 별도 보전 예정이며, 필요하면
+                사용자 연차관리(Attd_09)에서 수동 부여로 처리하세요.
               </p>
               <p>
                 실제 연차 반영(소급·부여)은
@@ -1812,5 +1820,13 @@ const fnConfirmMsg = async (message, afterConfirmCallback) => {
   background: var(--color-surface, #ffffff);
   color: var(--color-text-muted, #4b5563);
   font-size: 0.625rem;
+}
+
+/* 회계연도 기준 부여 시 발생 공백 안내 — 본문과 구분되도록 경고 톤 */
+.credit-notice-warn {
+  margin-top: 0.25rem;
+  padding-top: 0.375rem;
+  border-top: 1px solid var(--color-border, #e5e7eb);
+  color: var(--color-warning-text, #b45309);
 }
 </style>

@@ -237,8 +237,9 @@ public class LeaveRemnantCoverServiceImpl implements LeaveRemnantCoverService {
      * <ul>
      *   <li>월차: 실근속(경력인정 제외 — §8.5.4, 가불 슬롯 산식 createMonthlyBorrowGrant 동일 기준) 기준
      *       다음 슬롯 m = actualMonths+1 이 11 이하이면 hire+m개월. m &gt; 11 이면 도래 없음.
-     *       경력인정 더블딥(월차 비대상) 보수 근사: 실근속&lt;12 인데 산정근속(실근속+경력인정)&ge;12 이면
-     *       월차 미생성 가능성이 있어 월차 계열을 무시한다(오차 방향 = 발동 유지 — 과스킵 없음).</li>
+     *       경력인정 더블딥(월차 비대상): 실근속&lt;12 인데 산정근속(실근속+경력인정)&ge;12 이면 월차 계열을
+     *       무시한다. ★2026-08-20 엔진 {@code isCreditDoubleDip} 이 같은 2조건으로 정정되어 <b>근사가 아니라
+     *       정확히 일치</b>한다(종전에는 엔진이 full 본연차 발생까지 봐서 이쪽이 보수 근사였다).</li>
      *   <li>본연차/근속가산: {@code projectNextAnnualGrant} 재사용 — days &gt; 0 일 때만 availFromYmd 인정.</li>
      * </ul>
      *
@@ -262,8 +263,8 @@ public class LeaveRemnantCoverServiceImpl implements LeaveRemnantCoverService {
             int actualMonths = (int) Math.max(0, ChronoUnit.MONTHS.between(hire, today));
             int nextSlot = actualMonths + 1;
             if (nextSlot <= MONTHLY_MAX) {
-                // 더블딥 보수 근사: 정확 판정(엔진 isCreditDoubleDip)은 full 본연차 발생까지 보나 private —
-                //   (1)(2) 조건만으로 근사하고, 해당하면 월차 계열 무시(무시 방향 = 발동 유지라 무손해).
+                // 더블딥 판정: 엔진 isCreditDoubleDip 과 동일한 2조건(실근속<12 AND 산정근속>=12).
+                //   ★2026-08-20 엔진이 같은 기준으로 정정되어 근사가 아닌 정합 판정이 됐다(기준 일원화).
                 int creditMonths = Math.max(0, leaveDashboardMapper.selectCreditMonths(cmpnyCd, userCd));
                 if (actualMonths + creditMonths < 12) {
                     monthlyNext = hire.plusMonths(nextSlot).format(DateTimeFormatter.BASIC_ISO_DATE);

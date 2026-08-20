@@ -930,6 +930,11 @@ public class LeavePolicyServiceImpl implements LeavePolicyService {
         int monthsSinceHire = monthsSinceHire(emp.getHireDate(), applyDate);
 
         // 월차: 두 정책 공통(법정, AXIS 무관). 1년 미만 경과개월수 근사, 최대 11.
+        //   ⚠️ 알려진 근사(2026-08-20 확인): 경력인정을 반영하지 않는다. 엔진은 산정근속(실근속+경력인정)이
+        //      12개월 이상이면 월차를 차단(isCreditDoubleDip)하므로, 경력인정 보유자에 대해 이 시뮬레이션은
+        //      월차를 과다 계상한다. AffectedEmployeeBaseVO 에 경력인정 필드가 없어 전 대상자 조회가 필요해
+        //      의도적으로 미반영(정책 변경 "영향 추정" 화면 전용이며 실제 부여는 엔진이 판정). 경력인정
+        //      보유자는 극소수라 추정 오차 영향이 작다. 정밀화하려면 대상자 조회에 경력인정 합계를 조인할 것.
         int monthly = Math.max(0, Math.min(monthsSinceHire, MONTHLY_MAX));
         BigDecimal days = BigDecimal.valueOf(monthly);
 
