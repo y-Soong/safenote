@@ -119,7 +119,19 @@ function isScopeToken(token) {
 }
 
 /**
- * sessionStorage.token이 없으면 refreshToken으로 한 번 복구를 시도한다.
+ * JWT exp 클레임 기준 만료 여부. exp가 없으면 판단 보류(false) — 기존 동작 유지.
+ * sessionStorage에 토큰이 "있기만" 하면 유효하다고 보던 가드의 허점을 막기 위함:
+ * 장시간 방치 후 메뉴 이동 시, 실제로는 만료된 토큰인데도 가드를 그냥 통과해
+ * 화면 마운트 후 API 호출에서야 401이 나던 지연 처리 구간을 없앤다.
+ */
+function isTokenExpired(token) {
+  const payload = decodeJwtPayload(token);
+  if (!payload || typeof payload.exp !== "number") return false;
+  return Date.now() >= payload.exp * 1000;
+}
+
+/**
+ * sessionStorage.token이 없거나 만료됐으면 refreshToken으로 한 번 복구를 시도한다.
  * - 성공: sessionStorage.token 갱신 후 token 반환.
  * - 실패(또는 refreshToken 부재): 강제 로그아웃 정리 후 null 반환.
  */
@@ -131,7 +143,12 @@ async function ensureAccessToken() {
       sessionStorage.removeItem("token");
       return null;
     }
-    return token;
+    if (isTokenExpired(token)) {
+      // 만료된 액세스 토큰을 들고 있는 상태 — 정리 후 아래 refreshToken 경로로 넘어간다.
+      sessionStorage.removeItem("token");
+    } else {
+      return token;
+    }
   }
 
   const rt = getRefreshToken();

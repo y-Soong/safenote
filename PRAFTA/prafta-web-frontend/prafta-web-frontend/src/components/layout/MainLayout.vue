@@ -97,9 +97,12 @@ const selectedTopMenuId = ref(null);
    식별자는 MENU_D_ID(= menu.route)로 통일한다(BE favorites/토글 EP 키계와 동일). */
 const favoriteIds = ref(new Set());
 
-/* 탭 상태 */
+/* 탭 상태
+   activeTab 은 실제 라우트(route.path)에서 파생한다(단일 출처).
+   탭 클릭 시 router.push 가 가드에 의해 다른 곳으로 리다이렉트되거나 취소돼도
+   activeTab 은 항상 실제로 표시 중인 화면과 일치한다 — "탭만 생기고 화면은 안 바뀌는" 불일치 방지. */
 const tabs = ref([]);
-const activeTab = ref(null);
+const activeTab = computed(() => route.path);
 
 /* PRAFTA-005 후속: 메뉴 로드 + 탭 구성이 끝나야 본문(router-view)을 렌더한다.
    새 탭 직진입 시 뷰가 메뉴 로드보다 먼저 마운트되어 공통 버튼 props가
@@ -190,54 +193,61 @@ async function onToggleFavorite(menu) {
 }
 
 /* 메뉴/탭 네비게이션 */
-function onNavigate(menu) {
+async function onNavigate(menu) {
   if (typeof menu === "object" && menu.route) {
-    const route = `/safenote/main/${menu.route}`;
+    const targetRoute = `/safenote/main/${menu.route}`;
     const label = menu.label;
     const buttons = menu.buttons || {};
-    addTab({ label, route, buttons });
+    await addTab({ label, route: targetRoute, buttons });
   } else {
     const matched = topMenus.value.find((m) => m.id === menu);
     if (matched) selectTopMenu(menu);
   }
 }
 
-/* 탭 추가. 성공 여부를 반환한다 (탭 상한 거부 시 false — 호출부가 후속 정리 판단). */
-function addTab(tab) {
+/* 탭 목록에 항목만 등록한다(네비게이션 없음). 이미 있으면 무시. */
+function registerTab(tab) {
+  const exists = tabs.value.find((t) => t.route === tab.route);
+  if (!exists) tabs.value.push(tab);
+}
+
+/* 탭 추가 + 실제 이동.
+   router.push 결과와 무관하게 탭을 먼저 만들어두면, 세션 만료 등으로 가드가 다른 곳으로
+   리다이렉트하거나 내비게이션이 취소될 때 "탭은 생겼는데 화면은 안 바뀌는" 불일치가 생긴다.
+   그래서 이동을 먼저 마친 뒤 실제로 목적 라우트에 도달했을 때만 탭을 등록한다.
+   성공 여부를 반환한다 (탭 상한 거부·이동 실패 시 false — 호출부가 후속 정리 판단). */
+async function addTab(tab) {
   // 홈 포함 탭 개수 제한 (10개)
   if (tabs.value.length > 10) {
     alert("탭은 최대 10개까지만 열 수 있습니다.");
     return false;
   }
 
-  const exists = tabs.value.find((t) => t.route === tab.route);
-  if (!exists) tabs.value.push(tab);
+  await router.push(tab.route).catch(() => {});
 
-  activeTab.value = tab.route;
-  router.push(tab.route);
+  // 가드 리다이렉트(세션 만료 등)나 내비게이션 취소로 목적지에 도달하지 못했으면 탭을 만들지 않는다.
+  if (route.path !== tab.route) return false;
+
+  registerTab(tab);
   return true;
 }
 
-function selectTab(route) {
-  activeTab.value = route;
-  router.push(route);
+async function selectTab(targetRoute) {
+  await router.push(targetRoute).catch(() => {});
 }
 
-function closeTab(route) {
-  if (route === "/safenote/main") return; // 대시보드는 닫지 않음
+async function closeTab(targetRoute) {
+  if (targetRoute === "/safenote/main") return; // 대시보드는 닫지 않음
 
-  const idx = tabs.value.findIndex((t) => t.route === route);
-  if (idx !== -1) {
-    tabs.value.splice(idx, 1);
+  const idx = tabs.value.findIndex((t) => t.route === targetRoute);
+  if (idx === -1) return;
 
-    if (activeTab.value === route) {
-      const nextTab = tabs.value[idx] || tabs.value[idx - 1];
-      if (nextTab) {
-        activeTab.value = nextTab.route;
-        router.push(nextTab.route);
-      } else {
-        activeTab.value = null;
-      }
+  tabs.value.splice(idx, 1);
+
+  if (activeTab.value === targetRoute) {
+    const nextTab = tabs.value[idx] || tabs.value[idx - 1];
+    if (nextTab) {
+      await router.push(nextTab.route).catch(() => {});
     }
   }
 }
@@ -282,7 +292,7 @@ function findInGroups(groups, targetRoute) {
  */
 watch(
   () => dashNav.openTabRequest,
-  (req) => {
+  async (req) => {
     if (!req || !req.routeName) return;
     const targetRoute = `/safenote/main/${req.routeName}`;
     const matched = findMenuByRoute(targetRoute, allSideMenus.value);
@@ -293,13 +303,13 @@ watch(
       return;
     }
     // 탭 열기 성공 시에만 LNB(상단 메뉴 그룹)를 전환한다 — 거부 시 화면과 LNB 불일치 방지
-    const added = addTab({
+    const added = await addTab({
       label: matched.menu.label,
       route: targetRoute,
       buttons: matched.menu.buttons || {},
     });
     if (!added) {
-      // 탭 상한 등으로 열기 실패 — 잔존 주입 파라미터 정리 (consume-once 보장)
+      // 탭 상한 또는 이동 실패(세션 만료 등) — 잔존 주입 파라미터 정리 (consume-once 보장)
       dashNav.consumeParams(req.routeName);
       return;
     }
@@ -308,6 +318,12 @@ watch(
 );
 
 onMounted(async () => {
+  // 마운트 시점의 실제 경로를 먼저 캡처한다(딥링크 케이스).
+  // registerTab은 네비게이션을 하지 않지만, 아래 로직이 비동기(await)로 나뉘면서
+  // route.path를 뒤늦게 다시 읽으면 그 사이 다른 내비게이션에 의해 값이 바뀔 수 있어
+  // 최초 값을 고정해둔다.
+  const initialPath = route.path;
+
   try {
     const retMenu = await fnGetMenuList();
     topMenus.value = retMenu.topMenus || [];
@@ -321,28 +337,30 @@ onMounted(async () => {
     const defaultTop = topMenus.value[0];
     if (defaultTop) selectTopMenu(defaultTop.id);
 
-    addTab({ label: "🏠", route: "/safenote/main", buttons: {} });
+    // 홈 탭은 현재 화면이 홈이 아니어도 항상 목록에 존재해야 한다 — 네비게이션은 하지 않는다
+    // (이미 라우터가 현재 경로로 진입을 마친 뒤라 재이동이 불필요/유해할 수 있음).
+    registerTab({ label: "🏠", route: "/safenote/main", buttons: {} });
 
     // PRAFTA-005: URL이 /main 자식 라우트로 직진입된 경우 해당 탭을 자동 추가
     if (
-      route.path &&
-      route.path !== "/safenote/main" &&
-      route.path.startsWith("/safenote/main/")
+      initialPath &&
+      initialPath !== "/safenote/main" &&
+      initialPath.startsWith("/safenote/main/")
     ) {
-      const matched = findMenuByRoute(route.path, allSideMenus.value);
+      const matched = findMenuByRoute(initialPath, allSideMenus.value);
       if (matched) {
         // 해당 메뉴가 속한 상단 메뉴 탭을 선택
         selectTopMenu(matched.topId);
-        const label = matched.menu.label || route.meta?.title || route.path;
-        addTab({
+        const label = matched.menu.label || route.meta?.title || initialPath;
+        registerTab({
           label,
-          route: route.path,
+          route: initialPath,
           buttons: matched.menu.buttons || {},
         });
       } else {
         // 메뉴 트리에서 찾지 못해도 라우트 메타에서 라벨만 가져와 탭에 추가
-        const label = route.meta?.title || route.path;
-        addTab({ label, route: route.path, buttons: {} });
+        const label = route.meta?.title || initialPath;
+        registerTab({ label, route: initialPath, buttons: {} });
       }
     }
   } finally {
@@ -352,13 +370,12 @@ onMounted(async () => {
   }
 });
 
-function closeAllTabsExceptHome() {
+async function closeAllTabsExceptHome() {
   // 홈(/main)만 남기고 모두 제거
   tabs.value = tabs.value.filter((t) => t.route === "/safenote/main");
 
-  // 홈을 활성화
-  activeTab.value = "/safenote/main";
-  router.push("/safenote/main");
+  // 홈으로 이동(activeTab은 route.path에서 파생되므로 별도 대입 불필요)
+  await router.push("/safenote/main").catch(() => {});
 }
 </script>
 
